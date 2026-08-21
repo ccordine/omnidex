@@ -152,6 +152,8 @@ func statusProviderProbeURL(provider string) string {
 	}
 
 	switch p {
+	case "brave":
+		return "https://search.brave.com"
 	case "google":
 		return "https://www.google.com"
 	case "yahoo":

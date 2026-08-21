@@ -42,6 +42,28 @@ func TestRoutedWebStationsRequireAllFiveExactStationAuthorities(t *testing.T) {
 	}
 }
 
+func TestRoutedWebEvidenceStationsRequireOnlyTermsAndRelevance(t *testing.T) {
+	ids := []station.ID{}
+	stations, err := newRoutedWebEvidenceStations(func(id station.ID) webresearch.PortableRuntime {
+		ids = append(ids, id)
+		return webresearch.PortableRuntime{
+			Execute: func(context.Context, assemblyline.PortableJob) (assemblyline.PortableResult, error) {
+				return assemblyline.PortableResult{}, nil
+			},
+			Finalize: func(context.Context, assemblyline.PortableJob, assemblyline.PortableResult, error) error {
+				return nil
+			},
+		}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []station.ID{station.WebSearchTerms, station.WebRelevance}
+	if fmt.Sprint(ids) != fmt.Sprint(want) || stations.terms == nil || stations.relevance == nil {
+		t.Fatalf("evidence station ids=%v stations=%+v", ids, stations)
+	}
+}
+
 func TestObjectiveWebWorkflowBoundFitsProductionAcquisition(t *testing.T) {
 	config := objectiveWebResearchConfig()
 	if config.MaxFetchCandidates != 2 || config.MaxRelevantCandidates > config.MaxFetchCandidates {
@@ -79,6 +101,37 @@ func TestObjectiveExternalAnswerConsumesExactWebCompletionAuthority(t *testing.T
 	}
 }
 
+func TestObjectiveExternalAnswerPropagatesSecondProjectionTruncationAuthority(t *testing.T) {
+	item := objectiveWebEvidenceFixture(
+		t, "https://example.test/large", "Large source",
+		strings.Repeat("Exact acquired evidence. ", 180),
+	)
+	rendered := "The large source supports the result. [1]\n\nSources:\n[1] Large source — " + item.URL
+	answer, err := objectiveExternalAnswerFromWebResult(objectiveWebResult{
+		Complete: true, Status: webresearch.ObjectiveComplete,
+		Paragraphs: []webresearch.GroundedParagraph{{
+			Text:        "The large source supports the result.",
+			EvidenceIDs: []webresearch.EvidenceID{item.ID},
+		}},
+		Sources: []webresearch.CitationSource{{
+			Number: 1, EvidenceID: item.ID, CandidateID: item.CandidateID,
+			DocumentID: item.DocumentID, URL: item.URL, Title: item.Title,
+			ContentSHA256: item.ContentSHA256, ObservedAt: item.ObservedAt,
+			Truncated: false,
+		}},
+		Rendered: rendered, RenderedSHA256: objectiveTestSHA256(rendered),
+		Evidence: []webresearch.Evidence{item}, SynthesisCalls: 1,
+		ClaimEvidenceReviewCalls: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(answer.Evidence) != 1 || !answer.Evidence[0].Truncated ||
+		!strings.HasSuffix(answer.Evidence[0].Capsule.Text, objectiveEvidenceTruncationMarker) {
+		t.Fatalf("second projection truncation authority was lost: %#v", answer.Evidence)
+	}
+}
+
 func TestObjectiveExternalAnswerConsumesOneBoundedCorrectionReviewLedger(t *testing.T) {
 	item := objectiveWebEvidenceFixture(t, "https://example.test/corrected", "Corrected", "Version 2 is current.")
 	id := item.ID
@@ -102,11 +155,36 @@ func TestObjectiveExternalAnswerConsumesOneBoundedCorrectionReviewLedger(t *test
 	}
 }
 
+func TestObjectiveExternalAnswerConsumesRecordedZeroDeltaCorrection(t *testing.T) {
+	item := objectiveWebEvidenceFixture(t, "https://example.test/unchanged", "Unchanged", "Version 2 is current.")
+	rendered := "Version 2 is current. [1]\n\nSources:\n[1] Unchanged — " + item.URL
+	answer, err := objectiveExternalAnswerFromWebResult(objectiveWebResult{
+		Complete: true, Status: webresearch.ObjectiveComplete,
+		Paragraphs: []webresearch.GroundedParagraph{{Text: "Version 2 is current.", EvidenceIDs: []webresearch.EvidenceID{item.ID}}},
+		Sources: []webresearch.CitationSource{{
+			Number: 1, EvidenceID: item.ID, CandidateID: item.CandidateID, DocumentID: item.DocumentID,
+			URL: item.URL, Title: item.Title, ContentSHA256: item.ContentSHA256,
+			ObservedAt: item.ObservedAt, Truncated: item.Truncated,
+		}},
+		Rendered: rendered, RenderedSHA256: objectiveTestSHA256(rendered), Evidence: []webresearch.Evidence{item},
+		SynthesisCalls: 1, SynthesisCorrectionCalls: 1,
+		SynthesisCorrectionZeroDeltas: 1, ClaimEvidenceReviewCalls: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if answer.ModelCalls != 3 || answer.Text != "Version 2 is current." {
+		t.Fatalf("zero-delta answer=%#v", answer)
+	}
+}
+
 func TestObjectiveExternalAnswerRejectsUnboundedCorrectionReviewLedger(t *testing.T) {
 	for _, result := range []objectiveWebResult{
 		{Paragraphs: []webresearch.GroundedParagraph{{Text: "Claim."}}, SynthesisCorrectionCalls: 2, ClaimEvidenceReviewCalls: 3},
 		{Paragraphs: []webresearch.GroundedParagraph{{Text: "Claim."}}, SynthesisCorrectionCalls: 1, ClaimEvidenceReviewCalls: 1},
 		{Paragraphs: []webresearch.GroundedParagraph{{Text: "Claim."}}, SynthesisCorrectionCalls: 0, ClaimEvidenceReviewCalls: 2},
+		{Paragraphs: []webresearch.GroundedParagraph{{Text: "Claim."}}, SynthesisCorrectionZeroDeltas: 1, ClaimEvidenceReviewCalls: 1},
+		{Paragraphs: []webresearch.GroundedParagraph{{Text: "Claim."}}, SynthesisCorrectionCalls: 1, SynthesisCorrectionZeroDeltas: 2, ClaimEvidenceReviewCalls: 1},
 	} {
 		if validWebReviewCallLedger(result) {
 			t.Fatalf("invalid correction/review ledger accepted: %#v", result)

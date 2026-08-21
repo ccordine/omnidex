@@ -59,6 +59,7 @@ type ProjectedEvidence struct {
 	Title       string
 	Snippet     string
 	Content     string
+	Truncated   bool
 }
 
 type GroundedSynthesisCall struct {

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
-	"time"
 )
 
 var uiAdminTabs = map[string]struct{}{
@@ -42,11 +41,11 @@ func (s *Server) renderUIAdminTab(r *http.Request, tab string) (string, error) {
 	case "overview":
 		return s.renderUIAdminOverview(r)
 	case "ai":
-		modelOffset, err := exactChannelQueryInteger(r, "model_offset", 0, 0, 1<<30)
+		query, err := parseUIOllamaManagerQuery(r)
 		if err != nil {
 			return "", err
 		}
-		return s.renderUIAdminAI(r.Context(), modelOffset)
+		return s.renderUIAdminAI(r.Context(), query)
 	case "datasources":
 		return `<div data-admin-tab-panel="datasources" class="mx-auto max-w-6xl space-y-4">` +
 			`<div data-controller="admin-data-sources" data-recyclr-sink="admin-data-sources" class="space-y-4">` + uiLoading("Loading data sources…") + `</div></div>`, nil
@@ -84,7 +83,7 @@ func (s *Server) renderUIAdminOverview(r *http.Request) (string, error) {
 		`</div>`, nil
 }
 
-func (s *Server) renderUIAdminAI(ctx context.Context, modelOffset int) (string, error) {
+func (s *Server) renderUIAdminAI(ctx context.Context, query uiOllamaManagerQuery) (string, error) {
 	modelSettings, err := buildModelSettingsResponse()
 	if err != nil {
 		return "", fmt.Errorf("load model settings: %w", err)
@@ -96,32 +95,15 @@ func (s *Server) renderUIAdminAI(ctx context.Context, modelOffset int) (string, 
 			return "", fmt.Errorf("load stored API secrets: %w", err)
 		}
 	}
-	modelsBody, err := s.renderUIOllamaModels(ctx, modelOffset)
+	modelsBody, err := s.renderUIOllamaManager(ctx, query)
 	if err != nil {
 		return "", err
 	}
 	return `<div data-admin-tab-panel="ai" class="mx-auto max-w-5xl space-y-4">` +
 		uiAdminSection("API keys", "Stored in PostgreSQL; environment values are used only when no database value is set.", renderUISecretFields(storedSecrets)) +
-		uiAdminSection("Ollama models", "Pull, inspect, and remove local models used by the stack.", modelsBody) +
+		uiAdminSection("Local Ollama model manager", "Search the official catalog, watch durable downloads, and manage models available to character personalities.", modelsBody) +
 		uiAdminSection("Global model defaults", "Exact station model settings from the authoritative environment file.", renderUIModelFields(modelSettings)) +
 		`</div>`, nil
-}
-
-func (s *Server) renderUIOllamaModels(parent context.Context, offset int) (string, error) {
-	ctx, cancel := context.WithTimeout(parent, 30*time.Second)
-	defer cancel()
-	page, err := s.ollamaClient().ListModelPage(ctx, dataSourceUIPageSize, offset)
-	if err != nil {
-		return "", fmt.Errorf("Ollama models unavailable: %w", err)
-	}
-	configured := map[string]struct{}{}
-	if cfg, configErr := s.envModelConfig(); configErr == nil {
-		for _, name := range cfg.ModelNames() {
-			configured[name] = struct{}{}
-		}
-	}
-	return renderUIOllamaModelList(s.ollamaEndpoint(), page.Models, configured) +
-		renderUIDataPagination("admin#loadModelPage", "model", page.Offset, len(page.Models), page.HasMore), nil
 }
 
 func renderUIAdminHealth() string {

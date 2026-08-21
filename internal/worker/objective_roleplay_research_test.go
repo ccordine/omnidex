@@ -13,10 +13,11 @@ import (
 	"github.com/gryph/omnidex/internal/assemblyline"
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/roleplay"
+	"github.com/gryph/omnidex/internal/webresearch"
 	"github.com/gryph/omnidex/internal/websearch"
 )
 
-func TestResolveObjectiveRoleplayResearchUsesOneResponseCallAcrossUnrelatedFixtures(t *testing.T) {
+func TestResolveObjectiveRoleplayResearchUsesSharedEvidenceSieveAndOneResponseAcrossUnrelatedFixtures(t *testing.T) {
 	t.Parallel()
 	fixtures := []struct {
 		name, question, url, title, content, answer string
@@ -39,30 +40,46 @@ func TestResolveObjectiveRoleplayResearchUsesOneResponseCallAcrossUnrelatedFixtu
 		t.Run(fixture.name, func(t *testing.T) {
 			t.Parallel()
 			authority, research, narrative := objectiveRoleplayResearchFixture(index, fixture.question)
-			candidate, document := objectiveRoleplayResearchDocumentFixture(t, fixture.url, fixture.title, fixture.content)
+			irrelevantCandidate, irrelevantDocument := objectiveRoleplayResearchDocumentFixture(
+				t, fmt.Sprintf("https://noise.example/%d", index), "Unrelated result", "Steam and flour notes unrelated to this question.",
+			)
+			candidate, document := objectiveRoleplayResearchDocumentFixture(
+				t, fixture.url, fixture.title, fixture.content,
+			)
+			term := fixture.title + " evidence"
 			acquisition := &scriptedObjectiveRoleplayAcquisition{
-				question: fixture.question, candidates: []websearch.Candidate{candidate},
-				documents: []websearch.Document{document},
+				query: term, candidates: []websearch.Candidate{irrelevantCandidate, candidate},
+				documents: []websearch.Document{irrelevantDocument, document},
 			}
+			terms := &scriptedObjectiveRoleplayTermsStation{term: term}
+			relevance := &scriptedObjectiveRoleplayRelevanceStation{selected: []websearch.CandidateID{candidate.ID}}
 			station := &scriptedObjectiveRoleplayGroundedStation{answer: fixture.answer}
 			result, err := resolveObjectiveRoleplayResearch(
-				context.Background(), authority, research, narrative, acquisition, station,
+				context.Background(), authority, research, narrative, acquisition,
+				terms, relevance, station,
 			)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if acquisition.discoverCalls != 1 || acquisition.fetchCalls != 1 || station.calls != 1 ||
-				result.ModelCalls != 1 {
-				t.Fatalf("calls discover=%d fetch=%d response=%d result=%d",
-					acquisition.discoverCalls, acquisition.fetchCalls, station.calls, result.ModelCalls)
+			if acquisition.discoverCalls != 1 || acquisition.fetchCalls != 1 || terms.calls != 1 ||
+				relevance.calls != 1 || station.calls != 1 || result.ModelCalls != objectiveRoleplayResearchModelCalls {
+				t.Fatalf("calls discover=%d fetch=%d terms=%d relevance=%d response=%d result=%d",
+					acquisition.discoverCalls, acquisition.fetchCalls, terms.calls,
+					relevance.calls, station.calls, result.ModelCalls)
 			}
 			if !strings.Contains(result.Rendered, fixture.url) || !strings.Contains(result.Rendered, "[1]") ||
 				result.Text != fixture.answer || result.Research.Question != fixture.question ||
 				len(result.Evidence) != 1 || result.Evidence[0].SourceSHA256 != document.ContentSHA256 {
 				t.Fatalf("grounded result lost code-owned provenance: %#v", result)
 			}
-			if !reflect.DeepEqual(acquisition.selected, []websearch.CandidateID{candidate.ID}) {
-				t.Fatalf("deterministic selection = %v, want %v", acquisition.selected, []websearch.CandidateID{candidate.ID})
+			if !reflect.DeepEqual(acquisition.selected, []websearch.CandidateID{irrelevantCandidate.ID, candidate.ID}) {
+				t.Fatalf("code-owned fetch set = %v", acquisition.selected)
+			}
+			if len(station.input.RealWorldEvidence) != 1 ||
+				station.input.RealWorldEvidence[0].ID != result.Evidence[0].Capsule.ID ||
+				station.input.RoleplayIdentity.CharacterName != narrative.Viewpoint.Name ||
+				!reflect.DeepEqual(station.input.Context, authority.Context) {
+				t.Fatalf("final roleplay research projection is not minimal and selected: %#v", station.input)
 			}
 			job, err := assemblyline.NewRoleplayGroundedResponseJob(station.input)
 			if err != nil {
@@ -72,8 +89,14 @@ func TestResolveObjectiveRoleplayResearchUsesOneResponseCallAcrossUnrelatedFixtu
 			if err != nil {
 				t.Fatal(err)
 			}
-			if strings.Contains(renderedPrompt, authority.Instruction) || strings.Contains(renderedPrompt, "/research") {
-				t.Fatalf("rendered grounded prompt leaked external command bytes: %s", renderedPrompt)
+			for _, forbidden := range []string{
+				authority.Instruction, "/research", narrative.Scene.Description,
+				"fictional_narrative_state", "Unrelated result", "Steam and flour notes",
+				"Curious", "Explain clearly",
+			} {
+				if strings.Contains(renderedPrompt, forbidden) {
+					t.Fatalf("rendered grounded prompt leaked %q: %s", forbidden, renderedPrompt)
+				}
 			}
 		})
 	}
@@ -95,21 +118,46 @@ func TestObjectiveRoleplayResearchRejectsCharacterAndNamespaceMismatchBeforeAcqu
 		changed := authority
 		mutate(&changed)
 		acquisition := &scriptedObjectiveRoleplayAcquisition{
-			question: research.Question, candidates: []websearch.Candidate{candidate}, documents: []websearch.Document{document},
+			query: "Mars orbital period", candidates: []websearch.Candidate{candidate}, documents: []websearch.Document{document},
 		}
+		terms := &scriptedObjectiveRoleplayTermsStation{term: "Mars orbital period"}
+		relevance := &scriptedObjectiveRoleplayRelevanceStation{selected: []websearch.CandidateID{candidate.ID}}
 		_, err := resolveObjectiveRoleplayResearch(
 			context.Background(), changed, research, narrative, acquisition,
+			terms, relevance,
 			&scriptedObjectiveRoleplayGroundedStation{answer: "unused"},
 		)
-		if err == nil || acquisition.discoverCalls != 0 || acquisition.fetchCalls != 0 {
-			t.Fatalf("mismatched authority reached acquisition: err=%v discover=%d fetch=%d",
-				err, acquisition.discoverCalls, acquisition.fetchCalls)
+		if err == nil || acquisition.discoverCalls != 0 || acquisition.fetchCalls != 0 ||
+			terms.calls != 0 || relevance.calls != 0 {
+			t.Fatalf("mismatched authority reached sieve: err=%v discover=%d fetch=%d terms=%d relevance=%d",
+				err, acquisition.discoverCalls, acquisition.fetchCalls, terms.calls, relevance.calls)
 		}
 	}
 }
 
+func TestRoleplayResearchPropagatesSecondProjectionTruncationAuthority(t *testing.T) {
+	item := objectiveWebEvidenceFixture(
+		t, "https://science.example/large-roleplay-source", "Large roleplay source",
+		strings.Repeat("Bounded real-world evidence. ", 160),
+	)
+	projected, err := projectObjectiveRoleplayResearchEvidence(
+		[]webresearch.Evidence{item},
+		[]webresearch.ProjectedEvidence{{
+			EvidenceID: item.ID, CandidateID: item.CandidateID,
+			Title: item.Title, Snippet: item.Snippet, Content: item.Content,
+		}},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(projected) != 1 || !projected[0].Truncated ||
+		!strings.HasSuffix(projected[0].Capsule.Text, objectiveEvidenceTruncationMarker) {
+		t.Fatalf("roleplay second projection truncation authority was lost: %#v", projected)
+	}
+}
+
 type scriptedObjectiveRoleplayAcquisition struct {
-	question                  string
+	query                     string
 	candidates                []websearch.Candidate
 	documents                 []websearch.Document
 	selected                  []websearch.CandidateID
@@ -125,11 +173,15 @@ func (fixture *scriptedObjectiveRoleplayAcquisition) Discover(
 	request websearch.QueryRequest,
 ) (websearch.CandidateReport, error) {
 	fixture.discoverCalls++
-	if request.Query != fixture.question {
+	if request.Query != fixture.query {
 		return websearch.CandidateReport{}, fmt.Errorf("query changed")
 	}
 	return websearch.CandidateReport{
 		Query: request.Query, Candidates: append([]websearch.Candidate(nil), fixture.candidates...),
+		Diagnostics: []websearch.ProviderDiagnostic{{
+			Provider: websearch.ProviderGoogle, Outcome: websearch.DiscoverySucceeded,
+			CandidateCount: len(fixture.candidates),
+		}},
 	}, nil
 }
 
@@ -139,7 +191,50 @@ func (fixture *scriptedObjectiveRoleplayAcquisition) Fetch(
 ) (websearch.DocumentReport, error) {
 	fixture.fetchCalls++
 	fixture.selected = append([]websearch.CandidateID(nil), request.CandidateIDs...)
-	return websearch.DocumentReport{Documents: append([]websearch.Document(nil), fixture.documents...)}, nil
+	diagnostics := make([]websearch.DocumentDiagnostic, len(fixture.documents))
+	for index, document := range fixture.documents {
+		diagnostics[index] = websearch.DocumentDiagnostic{
+			CandidateID: document.CandidateID, URL: document.URL, Outcome: websearch.FetchSucceeded,
+		}
+	}
+	return websearch.DocumentReport{
+		Documents: append([]websearch.Document(nil), fixture.documents...), Diagnostics: diagnostics,
+	}, nil
+}
+
+type scriptedObjectiveRoleplayTermsStation struct {
+	term  string
+	calls int
+}
+
+func (station *scriptedObjectiveRoleplayTermsStation) Resolve(
+	_ context.Context,
+	call webresearch.SearchTermsCall,
+) (webresearch.SearchTermsDecision, error) {
+	station.calls++
+	if call.Question == "" || len(call.AttemptedQueries) != 0 {
+		return webresearch.SearchTermsDecision{}, fmt.Errorf("search terms received invalid authority")
+	}
+	return webresearch.SearchTermsDecision{Terms: []string{station.term}}, nil
+}
+
+type scriptedObjectiveRoleplayRelevanceStation struct {
+	selected []websearch.CandidateID
+	calls    int
+}
+
+func (station *scriptedObjectiveRoleplayRelevanceStation) Select(
+	_ context.Context,
+	call webresearch.RelevanceCall,
+) (webresearch.RelevanceDecision, error) {
+	station.calls++
+	if call.Question == "" || len(call.Candidates) == 0 {
+		return webresearch.RelevanceDecision{}, fmt.Errorf("relevance received invalid authority")
+	}
+	return webresearch.RelevanceDecision{
+		Outcome:      webresearch.RelevanceSelected,
+		CandidateIDs: append([]websearch.CandidateID(nil), station.selected...),
+	}, nil
 }
 
 type scriptedObjectiveRoleplayGroundedStation struct {
@@ -200,10 +295,32 @@ func objectiveRoleplayResearchFixture(
 		RoleplayInputKind:               roleplay.SimulationTurnExternalCommand,
 		RoleplayParticipantCharacterIDs: []model.RoleplayCharacterID{model.RoleplayCharacterID(characterID)},
 		RoleplayNarrativeFingerprint:    fingerprint,
+		RoleplayGenerationConfig: func() *roleplay.CharacterGenerationConfig {
+			config := roleplayGenerationFixture(suffix)
+			return &config
+		}(),
 	}
+	authority.RoleplayResponders = []roleplay.SimulationResponderRoute{{
+		Position: 0, CharacterID: characterID,
+		GenerationConfig:     *authority.RoleplayGenerationConfig,
+		NarrativeFingerprint: fingerprint,
+	}}
+	contextSource := "The active viewpoint is Ada in the observatory."
+	contextText := "Ada is answering from the observatory."
+	authority.Context = assemblyline.ObjectiveContext{Capsules: []assemblyline.ObjectiveContextCapsule{{
+		Sources: []assemblyline.ObjectiveContextSource{{
+			Namespace: "roleplay_scene", CandidateID: "CTX_1",
+			ContentSHA256: assemblyline.ExactObjectiveContextSHA(contextSource),
+		}},
+		Content: contextText, ContentSHA256: assemblyline.ExactObjectiveContextSHA(contextText),
+	}}}
 	narrative := roleplay.NarrativeSimulationProjection{
-		Schema:       roleplay.NarrativeSimulationProjectionSchemaV1,
-		Scene:        roleplay.NarrativeScene{Title: "Observatory kitchen", Description: "A quiet room.", ActiveCharacterName: "Ada"},
+		Schema: roleplay.NarrativeSimulationProjectionSchemaV1,
+		Scene: roleplay.NarrativeScene{
+			Title:               "Observatory kitchen",
+			Description:         "The unrelated crown archive remains locked beneath the northern tower.",
+			ActiveCharacterName: "Ada",
+		},
 		Participants: []string{"Ada"},
 		Viewpoint: roleplay.NarrativePersona{
 			Name: "Ada", Summary: "A careful scholar.", Voice: "Measured",

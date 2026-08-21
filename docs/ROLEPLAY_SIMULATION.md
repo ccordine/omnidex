@@ -28,6 +28,11 @@ rules, and mutation controls are not model context.
 
 The roleplay runtime keeps these authorities distinct:
 
+- user-turn authority: the selected user persona, its exact scene character
+  identity when applicable, and whether the exact bytes are dialogue, action,
+  action plus dialogue, narrator-established fiction, narrator direction, or
+  an explicit command. The current responding character is a different
+  authority and cannot simultaneously be selected as the user's persona.
 - `FICTIONAL_CANON`: events established in one fictional world.
 - `CHARACTER_KNOWLEDGE`: the subset of canon a specific character may know.
 - `CHARACTER_MEMORY`: character-scoped retained subjective information.
@@ -43,7 +48,10 @@ A model response is not a state transition.
 
 ## Code-owned turn flow
 
-1. Persist the exact user turn under its channel authority.
+1. Persist the exact user turn together with its selected persona and
+   contribution kind. Code validates that a selected character is a current
+   participant distinct from the responding character. Slash input is
+   deterministically recorded as a narrator command.
 2. If the roleplay turn uses the explicit slash-command grammar, code parses it
    exactly and rejects malformed or unknown commands before mutation.
 3. Inside a nested transaction, code resolves the configured interaction or
@@ -54,17 +62,27 @@ A model response is not a state transition.
    transition, safe narrative projection, active participant, and exact
    provenance. Meters, inventory, scene revision, and transition history remain
    unchanged.
-5. The model receives only the prepared narrative projection. Raw slash syntax,
-   interaction registries, item rules, triggers, effects, identities, and
-   mutation controls are absent.
-6. One narrative station returns one prose response for that projection.
-7. A separate bounded semantic station may extract newly established canon
-   when that exact uncertainty exists.
-8. At terminal completion, code locks the unchanged base revision, reapplies
+5. Before inference, code re-derives the prepared transition and narrative from
+   current authority. A changed scene, cast, responding character, meter,
+   inventory, canon fact, memory, or simulation event fails immediately with
+   the exact changed category and an explicit restore-and-retry path.
+6. Code deterministically compiles the smallest relevant continuity context.
+   Search-term interpretation, relevance, or minification is invoked only when
+   one corresponding semantic uncertainty actually remains; context that
+   already fits is retained without a minification call.
+7. One response station receives the exact typed user contribution, the
+   distinct responding character's current identity and voice, the prepared
+   narrative projection, and only the selected continuity. It returns the
+   final visible prose once. There is no post-response voice rewrite,
+   preservation review, or narrative restatement chain.
+8. A separate bounded semantic station extracts newly established canon from
+   the final visible prose. Code validates, deduplicates, grants, and persists
+   only that returned semantic leaf.
+9. At terminal completion, code locks the unchanged base revision, reapplies
    the transition, and verifies that its result and narrative fingerprint equal
    the immutable preview.
-9. Code atomically commits the verified transition, assistant message,
-   validated semantic leaves, provenance, and the next turn position.
+10. Code atomically commits the verified transition, assistant message,
+    validated semantic leaves, provenance, and the next turn position.
 
 When a retained character memory is exactly the newly granted visible canon
 fact, code copies those already-validated bytes into `CHARACTER_MEMORY` in the
@@ -75,6 +93,29 @@ grants knowledge.
 
 Failure at any step leaves no partial transition and does not fall back to
 free-form interpretation or a second roleplay runtime.
+
+## Dynamic composition boundary
+
+World, scene, cast, persona sheets, responder model selection, and the user's
+selected persona/contribution are server authority. The composer displays the
+current responding character, effective response model, world, scene, and
+revision beside the input.
+
+Each submitted turn is composed from the latest committed values and snapshots
+them atomically with the exact user message. That snapshot is immutable for the
+duration of the turn so one response cannot mix two scene revisions or two
+model configurations. A committed edit is therefore visible to the next
+submitted turn; it does not silently rewrite a turn already in flight. If a
+narrative-affecting edit races an in-flight turn, the freshness fence fails
+loudly before inference when possible and again at terminal publication, and
+the transcript preserves the exact failed turn for explicit retry.
+
+Only completed user/assistant exchanges enter narrative continuity. Each
+exchange preserves explicit labels for the user persona, contribution kind,
+and responding character; unanswered failed turns are visible in the
+transcript but do not become fictional history. A failed or canceled turn
+retains its exact error and can be restored into the composer for an explicit
+new attempt without mutating or silently replaying the original turn.
 
 ## Generic data model
 
@@ -105,6 +146,15 @@ typed evidence need, invokes the registered resolver, validates provenance, and
 projects the bounded result. The character model never receives a search
 operation or resolver catalog and never claims that it performed the search.
 
+The production research sieve has one fixed shape. A search-term station sees
+only the exact question and compiled minimal context and returns bounded query
+strings. Code invokes the configured acquisition providers, fetches the bounded
+candidate set, and gives an ID-only relevance station bounded excerpts. The
+final roleplay response station receives only the exact question, minimal
+character identity, compiled context, and selected bounded evidence. The full
+simulation projection remains server authority and is never research-response
+context. Code alone binds returned evidence IDs to exact citations.
+
 Do not expose a research checkbox until that end-to-end consumer exists and is
 tested. Write-only capability metadata is forbidden.
 
@@ -121,6 +171,12 @@ The production path must prove:
 - multiple characters and durable turn advancement;
 - character knowledge and memory isolation across sessions;
 - narrative context contains state projections but no operation catalog;
+- each user message preserves the selected persona and contribution kind, and
+  the response prompt keeps that persona distinct from the responder;
+- a committed scene, persona, or response-model edit is projected into the
+  next turn while an already-submitted turn keeps its immutable snapshot;
+- stale prepared narrative authority is rejected before response inference and
+  names the changed authority in the recoverable failure;
 - rendered narrative and canon prompts contain no raw slash-command bytes;
 - newly extracted canon reaches only the active viewpoint unless a later,
   separately authoritative visibility mechanism grants it;

@@ -72,19 +72,6 @@ func TestExactRawTextProtocolOmitsFormatAndBindsExactBytes(t *testing.T) {
 	}
 }
 
-func TestExactRawTextProtocolBindsRegisteredAdvisoryTerminator(t *testing.T) {
-	prepared := exactProtocolPrepared(t, ExactPreparedProtocolRawTextV1)
-	prepared.RawTextStopSequence = ExactPreparedObjectiveAdvisoryStopV1
-	got, err := ExactPreparedRequestBytes(prepared)
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := `{"model":"qwen:9b","options":{"num_ctx":32768,"num_predict":1024,"stop":["\n<END_OBJECTIVE_ADVISORY_V1>"],"temperature":0},"prompt":"return one declaration\nReturn only the requested output.","raw":true,"shift":false,"stream":false,"think":false,"truncate":false}`
-	if string(got) != want {
-		t.Fatalf("raw-text stopped request changed:\n got %s\nwant %s", got, want)
-	}
-}
-
 func TestExactRawTextProtocolBindsRegisteredCodeTerminator(t *testing.T) {
 	prepared := exactProtocolPrepared(t, ExactPreparedProtocolRawTextV1)
 	prepared.RawTextStopSequence = ExactPreparedCodeStopV1
@@ -101,7 +88,7 @@ func TestExactRawTextProtocolBindsRegisteredCodeTerminator(t *testing.T) {
 
 func TestExactPreparedStopIsRawOnlyAndRegistered(t *testing.T) {
 	structured := exactProtocolPrepared(t, ExactPreparedProtocolStructuredV1)
-	structured.RawTextStopSequence = ExactPreparedObjectiveAdvisoryStopV1
+	structured.RawTextStopSequence = ExactPreparedCodeStopV1
 	if _, err := ExactPreparedRequestBytes(structured); err == nil {
 		t.Fatal("structured exact request accepted a raw-text stop sequence")
 	}

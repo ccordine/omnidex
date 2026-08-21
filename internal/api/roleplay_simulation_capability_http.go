@@ -1,7 +1,6 @@
 package api
 
 import (
-	"fmt"
 	"net/http"
 
 	"github.com/gryph/omnidex/internal/model"
@@ -31,25 +30,15 @@ func (s *Server) configureRoleplayResearch(
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	page, err := s.roleplaySimulation.ListSimulationCharactersPage(
-		r.Context(), world.ID, roleplaySimulationPageSize, *request.CharactersOffset,
+	character, err := s.roleplaySimulation.ProjectChannelCharacterContext(
+		r.Context(), string(channel.ID), characterID, 1,
 	)
 	if err != nil {
 		writeRoleplaySimulationError(w, err)
 		return
 	}
-	visible := false
-	for _, character := range page.Items {
-		if character.ID == characterID && character.WorldID == world.ID {
-			visible = true
-			break
-		}
-	}
-	if !visible {
-		writeRoleplaySimulationError(w, fmt.Errorf(
-			"%w: research access character is not visible on the submitted server page",
-			roleplay.ErrSimulationIllegal,
-		))
+	if character.CharacterID != characterID || character.WorldID != world.ID {
+		writeError(w, http.StatusInternalServerError, "roleplay research character authority changed during projection")
 		return
 	}
 	projection, err := s.roleplaySimulation.ConfigureCharacterCapability(
@@ -63,7 +52,5 @@ func (s *Server) configureRoleplayResearch(
 		writeError(w, http.StatusInternalServerError, "research capability reconciliation changed server authority")
 		return
 	}
-	s.writeRoleplaySimulationComponent(w, r, http.StatusOK, channel, world, roleplaySimulationPageState{
-		Characters: *request.CharactersOffset,
-	})
+	s.writeRoleplaySimulationComponent(w, r, http.StatusOK, channel, world, roleplaySimulationPageState{})
 }

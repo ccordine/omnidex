@@ -8,10 +8,14 @@ import (
 	"github.com/gryph/omnidex/internal/model"
 )
 
-func TestRoleplayFactsRequireExactRoleplayChatAuthority(t *testing.T) {
+func TestRoleplayResponsesRequireExactRoleplayChatAuthority(t *testing.T) {
 	command := CompleteStepCommand{
-		ContextKey:    "objective_result",
-		RoleplayFacts: []string{"A new fictional fact."},
+		ContextKey: "objective_result",
+		RoleplayResponses: []RoleplayResponseCompletion{{
+			Position: 0,
+			CharacterID: "rpc_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+			Output: "A response.",
+		}},
 	}
 	for name, job := range map[string]model.Job{
 		"non-chat": {Pipeline: model.PipelineCoding},
@@ -33,7 +37,7 @@ func TestRoleplayFactsRequireExactRoleplayChatAuthority(t *testing.T) {
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
-			if err := requireRoleplayFactsJobAuthority(job, command); err == nil ||
+			if err := requireRoleplayCompletionJobAuthority(job, command); err == nil ||
 				!strings.Contains(err.Error(), "roleplay") {
 				t.Fatalf("error=%v", err)
 			}

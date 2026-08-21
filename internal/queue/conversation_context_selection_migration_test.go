@@ -36,3 +36,30 @@ func TestConversationContextSelectionMigrationIsNarrowAndHashGuarded(t *testing.
 		}
 	}
 }
+
+func TestPostgresConversationContextSelectionMigrationRejectsChangedPriorFunction(t *testing.T) {
+	pool := openIsolatedMigrationPool(t)
+	repository := New(pool)
+	if err := repository.EnsureSchema(t.Context(), loadMigrationBundleThroughPrefix(t, "072")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(t.Context(), `
+		CREATE OR REPLACE FUNCTION station_owns_portable_work(station TEXT, work_kind TEXT, payload JSONB)
+		RETURNS BOOLEAN AS 'SELECT FALSE' LANGUAGE SQL IMMUTABLE STRICT
+	`); err != nil {
+		t.Fatal(err)
+	}
+	err := repository.EnsureSchema(t.Context(), loadMigrationBundleThroughPrefix(t, "073"))
+	if err == nil || !strings.Contains(err.Error(), "prior station function hash") {
+		t.Fatalf("migration error=%v", err)
+	}
+	var installed bool
+	if err := pool.QueryRow(t.Context(), `
+		SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE filename='073_conversation_context_selection_station.sql')
+	`).Scan(&installed); err != nil {
+		t.Fatal(err)
+	}
+	if installed {
+		t.Fatal("rejected migration wrote its ledger entry")
+	}
+}

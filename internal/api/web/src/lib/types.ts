@@ -75,6 +75,13 @@ export interface ChannelMessage {
   id: number;
   channel_id: string;
   role: "user" | "assistant";
+  speaker_name?: string;
+  roleplay?: {
+    persona_kind: "character" | "narrator";
+    character_id?: string;
+    contribution_kind: "dialogue" | "action" | "action_dialogue" | "structured_turn" | "narration" | "direction" | "narration_direction" | "command";
+    parts?: Array<{ kind: "message" | "action" | "event"; text: string }>;
+  };
   content: string;
   created_at: string;
 }

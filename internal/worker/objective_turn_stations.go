@@ -6,57 +6,19 @@ import (
 	"strings"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
+	"github.com/gryph/omnidex/internal/llm"
 	"github.com/gryph/omnidex/internal/station"
 )
 
+func validateObjectiveTextTransportBoundary(label, value string) error {
+	if strings.Contains(value, llm.MinimalGeneratePrompt) {
+		return fmt.Errorf("%s exposed the private provider prompt hint", label)
+	}
+	return nil
+}
+
 type portableObjectiveKindStation struct {
 	runtime *nativeRuntimeV3
-}
-
-type portableObjectiveContextSelectionStation struct {
-	runtime *nativeRuntimeV3
-}
-
-func (adapter portableObjectiveContextSelectionStation) Select(
-	ctx context.Context,
-	input assemblyline.ConversationContextSelectionInput,
-) (assemblyline.ConversationContextSelectionDecision, objectiveStationReceipt, error) {
-	model, err := objectiveStationModel(adapter.runtime, station.ConversationContextSelection)
-	if err != nil {
-		return assemblyline.ConversationContextSelectionDecision{}, objectiveStationReceipt{}, err
-	}
-	job, err := assemblyline.NewConversationContextSelectionJob(input)
-	if err != nil {
-		return assemblyline.ConversationContextSelectionDecision{}, objectiveStationReceipt{}, err
-	}
-	decision, calls, err := runObjectivePortableCall[assemblyline.ConversationContextSelectionDecision](
-		ctx, adapter.runtime, model, "conversation_context_selection", job,
-		func(value assemblyline.ConversationContextSelectionDecision) error {
-			return value.ValidateFor(input)
-		},
-	)
-	return decision, objectiveStationReceipt{Calls: calls}, err
-}
-
-func (adapter portableObjectiveContextSelectionStation) SelectMemory(
-	ctx context.Context,
-	input assemblyline.MemoryContextSelectionInput,
-) (assemblyline.MemoryContextSelectionDecision, objectiveStationReceipt, error) {
-	model, err := objectiveStationModel(adapter.runtime, station.MemoryContextSelection)
-	if err != nil {
-		return assemblyline.MemoryContextSelectionDecision{}, objectiveStationReceipt{}, err
-	}
-	job, err := assemblyline.NewMemoryContextSelectionJob(input)
-	if err != nil {
-		return assemblyline.MemoryContextSelectionDecision{}, objectiveStationReceipt{}, err
-	}
-	decision, calls, err := runObjectivePortableCall[assemblyline.MemoryContextSelectionDecision](
-		ctx, adapter.runtime, model, "memory_context_selection", job,
-		func(value assemblyline.MemoryContextSelectionDecision) error {
-			return value.ValidateFor(input)
-		},
-	)
-	return decision, objectiveStationReceipt{Calls: calls}, err
 }
 
 func (adapter portableObjectiveKindStation) Classify(
@@ -97,22 +59,33 @@ func (adapter portableObjectiveRoleplayCanonStation) ExtractCanon(
 	if err != nil {
 		return assemblyline.RoleplayCanonExtractionDecision{}, objectiveStationReceipt{}, err
 	}
+	var resolved assemblyline.RoleplayCanonExtractionDecision
 	decision, calls, err := runObjectivePortableCall[assemblyline.RoleplayCanonExtractionDecision](
 		ctx, adapter.runtime, model, "roleplay_canon_extraction", job,
 		func(value assemblyline.RoleplayCanonExtractionDecision) error {
-			return value.ValidateFor(input)
+			var resolveErr error
+			resolved, resolveErr = value.ResolveFor(input)
+			return resolveErr
 		},
 	)
+	if err == nil {
+		decision = resolved
+	}
 	return decision, objectiveStationReceipt{Calls: calls}, err
 }
 
 func (adapter portableObjectiveConversationStation) Respond(
 	ctx context.Context,
 	input assemblyline.ConversationResponseInput,
+	requestedModel string,
 ) (assemblyline.ConversationResponseDecision, objectiveStationReceipt, error) {
-	model, err := objectiveStationModel(adapter.runtime, station.ConversationResponse)
-	if err != nil {
-		return assemblyline.ConversationResponseDecision{}, objectiveStationReceipt{}, err
+	model := strings.TrimSpace(requestedModel)
+	if model == "" {
+		var err error
+		model, err = objectiveStationModel(adapter.runtime, station.ConversationResponse)
+		if err != nil {
+			return assemblyline.ConversationResponseDecision{}, objectiveStationReceipt{}, err
+		}
 	}
 	job, err := assemblyline.NewConversationResponseJob(input)
 	if err != nil {
@@ -120,7 +93,12 @@ func (adapter portableObjectiveConversationStation) Respond(
 	}
 	decision, calls, err := runObjectivePortableCall[assemblyline.ConversationResponseDecision](
 		ctx, adapter.runtime, model, "conversation_response", job,
-		func(value assemblyline.ConversationResponseDecision) error { return value.ValidateFor(input) },
+		func(value assemblyline.ConversationResponseDecision) error {
+			if err := value.ValidateFor(input); err != nil {
+				return err
+			}
+			return validateObjectiveTextTransportBoundary("conversation response", value.Text)
+		},
 	)
 	return decision, objectiveStationReceipt{Calls: calls}, err
 }

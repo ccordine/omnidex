@@ -148,14 +148,14 @@ func characterAuthority(
 	var worldAuthority, characterAuthority string
 	err := tx.QueryRow(ctx, `
 		SELECT world.id,world.channel_id,world.name,world.authority_namespace,world.created_at,
-		       character.id,character.world_id,character.name,
+		       character.id,character.world_id,character.library_character_id,character.name,
 		       character.authority_namespace,character.created_at
 		FROM roleplay_characters AS character
 		JOIN roleplay_worlds AS world ON world.id=character.world_id
 		WHERE character.id=$1 AND ($2='' OR world.channel_id=$2)
 	`, characterID, channelID).Scan(
 		&world.ID, &world.ChannelID, &world.Name, &worldAuthority, &world.CreatedAt,
-		&character.ID, &character.WorldID, &character.Name,
+		&character.ID, &character.WorldID, &character.LibraryID, &character.Name,
 		&characterAuthority, &character.CreatedAt,
 	)
 	if err != nil {
@@ -165,6 +165,9 @@ func characterAuthority(
 	character.Authority = AuthorityNamespace(characterAuthority)
 	if world.Authority != AuthorityFictionalCanon || character.Authority != AuthorityFictionalCanon {
 		return World{}, Character{}, fmt.Errorf("roleplay character authority is invalid")
+	}
+	if err := validateIdentity(character.LibraryID, libraryCharacterIdentity); err != nil {
+		return World{}, Character{}, fmt.Errorf("roleplay character library authority is invalid: %w", err)
 	}
 	return world, character, nil
 }

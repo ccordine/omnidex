@@ -2,6 +2,14 @@ package llm
 
 var exactProviderModelProfiles = []exactProviderModelProfile{
 	{
+		tokenizerProfile: ExactPreparedTokenizerProfileRoleplayRaw,
+		// This profile is selected only by explicit code-owned policy and must
+		// never structurally match the strict registered-profile loop.
+		architecture: "__roleplay_raw_policy__",
+		transport:    exactPreparedTransportNativeSystemNoThinking, requestTemperature: 0.8,
+		requestTemperatureSet: true, requestTemperatureCeiling: 1,
+	},
+	{
 		tokenizerProfile: ExactPreparedTokenizerProfile,
 		architecture:     "qwen35", tokenizerModel: "gpt2", tokenizerPre: "qwen35",
 		capabilities:   []string{"completion", "vision", "tools", "thinking"},

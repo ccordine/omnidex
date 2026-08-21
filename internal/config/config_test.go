@@ -216,6 +216,21 @@ func TestLoadRealtimeDefaults(t *testing.T) {
 	}
 }
 
+func TestLoadUsesRegisteredWebSearchDefaults(t *testing.T) {
+	t.Setenv("DATABASE_URL", "")
+	t.Setenv("WRAPPER_ONLY", "true")
+	t.Setenv("WEB_SEARCH_PROVIDERS", "")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"brave", "google", "reddit"}
+	if strings.Join(cfg.WebSearchProviders, ",") != strings.Join(want, ",") {
+		t.Fatalf("WebSearchProviders=%v want %v", cfg.WebSearchProviders, want)
+	}
+}
+
 func TestLoadRejectsMalformedTypedEnvironment(t *testing.T) {
 	tests := []struct {
 		key   string

@@ -1,6 +1,9 @@
 package assemblyline
 
-import "strings"
+import (
+	"fmt"
+	"strings"
+)
 
 type ApplicationClassificationInput struct {
 	UserRequest string `json:"user_request"`
@@ -35,6 +38,7 @@ type ResponseCorrectionInput struct {
 	Original          PortableJob `json:"original"`
 	ValidationFailure string      `json:"validation_failure"`
 	TargetField       string      `json:"target_field,omitempty"`
+	RetainedCandidate string      `json:"retained_candidate,omitempty"`
 }
 
 func NewApplicationContextNeedJob(input ApplicationContextNeedInput) (PortableJob, error) {
@@ -94,8 +98,19 @@ func NewResponseCorrectionJob(
 	original PortableJob,
 	validationFailure string,
 ) (PortableJob, error) {
+	return PortableJob{}, fmt.Errorf(
+		"response correction requires the exact retained candidate; use NewRetainedResponseCorrectionJob",
+	)
+}
+
+func NewRetainedResponseCorrectionJob(
+	original PortableJob,
+	validationFailure string,
+	retainedCandidate string,
+) (PortableJob, error) {
 	input := ResponseCorrectionInput{
 		Original: original, ValidationFailure: strings.TrimSpace(validationFailure),
+		RetainedCandidate: strings.TrimSpace(retainedCandidate),
 	}
 	return newValidatedPortableJob(WorkResponseCorrection, input, input.validate)
 }

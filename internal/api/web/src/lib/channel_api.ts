@@ -6,6 +6,7 @@ import type {
   ChannelTurnAccepted,
   UserChannel,
 } from "./types";
+import type { RoleplayTurnInput } from "./roleplay_turn_input";
 
 const JOB_STATUSES = ["pending", "running", "waiting_input", "completed", "failed", "canceled"] as const;
 
@@ -58,23 +59,27 @@ export async function fetchChannelTranscript(
 export async function sendChannelMessage(
   channelID: string,
   prompt: string,
+  roleplayTurn?: RoleplayTurnInput,
 ): Promise<ChannelTurnAccepted> {
   requireChannelID(channelID, "Channel turn request");
   requireBoundedText(prompt, "Channel turn prompt", 4096, false);
   const response = await fetch(`/v1/channels/${encodeURIComponent(channelID)}/messages`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ prompt }),
+    body: JSON.stringify({ prompt, ...(roleplayTurn === undefined ? {} : { roleplay_turn: roleplayTurn }) }),
   });
   const payload = await readJSON<Record<string, unknown>>(response);
   requireStatus(response, 202, "channel turn");
   const accepted: ChannelTurnAccepted = {
     channel: requireUserChannel(payload.channel, "Channel turn channel"),
-    user_message: requireChannelMessage(payload.user_message, "Channel turn user_message"),
+    user_message: requireChannelMessage(payload.user_message, "Channel turn user_message", roleplayTurn),
     job: requireChannelTurnJob(payload.job, "Channel turn job"),
   };
   if (accepted.channel.id !== channelID || accepted.user_message.channel_id !== channelID) {
     throw new Error(`Channel turn response identity does not match ${JSON.stringify(channelID)}.`);
+  }
+  if ((accepted.channel.mode === "roleplay") !== (roleplayTurn !== undefined)) {
+    throw new Error("Channel turn roleplay authority differs from the persisted channel mode.");
   }
   if (accepted.user_message.role !== "user") {
     throw new Error("Channel turn response user_message role must be exactly user.");
@@ -105,9 +110,9 @@ export async function createUserChannel(input: {
     ? undefined
     : requireDataSourceID(input.data_source_id, "Channel create data_source_id");
   const creation = requireChannelCreationContext(input);
-	if (creation.mode === "roleplay" && dataSourceID !== undefined) {
-		throw new Error("Roleplay channel creation cannot bind a real-world data source.");
-	}
+  if (creation.mode === "roleplay" && dataSourceID !== undefined) {
+    throw new Error("Roleplay channel creation cannot bind a real-world data source.");
+  }
   const response = await fetch("/v1/channels", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -150,9 +155,9 @@ function requireUserChannel(value: unknown, source: string): UserChannel {
   if (mode === "roleplay" && viewpointID === undefined) {
     throw new Error(`${source} roleplay mode requires its persisted viewpoint identity.`);
   }
-	if (mode === "roleplay" && dataSourceID !== undefined) {
-		throw new Error(`${source} roleplay mode cannot carry a real-world data source.`);
-	}
+  if (mode === "roleplay" && dataSourceID !== undefined) {
+    throw new Error(`${source} roleplay mode cannot carry a real-world data source.`);
+  }
   return {
     id,
     scope: "user",
@@ -208,19 +213,107 @@ function requireDataSourceID(value: unknown, source: string): string {
   return value;
 }
 
-function requireChannelMessage(value: unknown, source: string): ChannelMessage {
+function requireChannelMessage(
+  value: unknown,
+  source: string,
+  requestedRoleplayTurn?: RoleplayTurnInput,
+): ChannelMessage {
   const raw = requireRecord(value, source);
   const role = raw.role;
   if (role !== "user" && role !== "assistant") {
     throw new Error(`${source} has unsupported role ${JSON.stringify(role)}.`);
   }
+  const speakerName = raw.speaker_name === undefined
+    ? undefined
+    : requireExactText(raw.speaker_name, `${source} speaker_name`);
+  let roleplay: ChannelMessage["roleplay"];
+  if (raw.roleplay !== undefined) {
+    const presentation = requireRecord(raw.roleplay, `${source} roleplay`);
+    const personaKind = presentation.persona_kind;
+    const contributionKind = presentation.contribution_kind;
+    if (personaKind !== "character" && personaKind !== "narrator") {
+      throw new Error(`${source} roleplay persona_kind is unsupported.`);
+    }
+    const characterID = presentation.character_id === undefined
+      ? undefined
+      : requireRoleplayCharacterID(presentation.character_id, `${source} roleplay character_id`);
+    const parts = parseRoleplayPresentationParts(presentation.parts, `${source} roleplay parts`);
+    if (personaKind === "character") {
+      if (characterID === undefined ||
+        (contributionKind !== "dialogue" && contributionKind !== "action" &&
+         contributionKind !== "action_dialogue" && contributionKind !== "structured_turn")) {
+        throw new Error(`${source} character roleplay presentation is contradictory.`);
+      }
+      roleplay = {
+        persona_kind: personaKind, character_id: characterID, contribution_kind: contributionKind,
+        ...(parts === undefined ? {} : { parts }),
+      };
+    } else {
+      if (characterID !== undefined ||
+        (contributionKind !== "narration" && contributionKind !== "direction" &&
+         contributionKind !== "narration_direction" && contributionKind !== "command")) {
+        throw new Error(`${source} narrator roleplay presentation is contradictory.`);
+      }
+      roleplay = {
+        persona_kind: personaKind, contribution_kind: contributionKind,
+        ...(parts === undefined ? {} : { parts }),
+      };
+    }
+  }
+  if (requestedRoleplayTurn === undefined) {
+    if (speakerName !== undefined || roleplay !== undefined) {
+      throw new Error(`${source} unexpectedly carries roleplay presentation authority.`);
+    }
+  } else if (speakerName === undefined || roleplay === undefined ||
+    !sameRoleplayTurnAuthority(roleplay, requestedRoleplayTurn)) {
+    throw new Error(`${source} changed the requested roleplay turn authority.`);
+  }
   return {
     id: requireBoundedInteger(raw.id, `${source} id`, 1, Number.MAX_SAFE_INTEGER),
     channel_id: requireChannelID(raw.channel_id, source),
     role,
+    ...(speakerName === undefined ? {} : { speaker_name: speakerName }),
+    ...(roleplay === undefined ? {} : { roleplay }),
     content: requireBoundedText(raw.content, `${source} content`, role === "user" ? 4096 : 32768, false),
     created_at: requireTimestamp(raw.created_at, `${source} created_at`),
   };
+}
+
+function sameRoleplayTurnAuthority(
+  presentation: NonNullable<ChannelMessage["roleplay"]>,
+  requested: RoleplayTurnInput,
+): boolean {
+  if (presentation.persona_kind !== requested.persona_kind ||
+    presentation.contribution_kind !== requested.contribution_kind) {
+    return false;
+  }
+  if (requested.persona_kind === "character") {
+    if (presentation.character_id !== requested.character_id) return false;
+  } else if (presentation.character_id !== undefined) {
+    return false;
+  }
+  const requestedParts = "parts" in requested ? requested.parts : [];
+  return JSON.stringify(presentation.parts ?? []) === JSON.stringify(requestedParts);
+}
+
+function parseRoleplayPresentationParts(
+  value: unknown,
+  source: string,
+): NonNullable<ChannelMessage["roleplay"]>["parts"] {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value) || value.length < 1 || value.length > 16) {
+    throw new Error(`${source} must be a bounded array.`);
+  }
+  return value.map((item, index) => {
+    const part = requireRecord(item, `${source} ${index + 1}`);
+    if (part.kind !== "message" && part.kind !== "action" && part.kind !== "event") {
+      throw new Error(`${source} ${index + 1} has an unsupported kind.`);
+    }
+    return {
+      kind: part.kind,
+      text: requireExactText(part.text, `${source} ${index + 1} text`),
+    };
+  });
 }
 
 function requireChannelTurnJob(value: unknown, source: string): ChannelTurnJob {

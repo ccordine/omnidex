@@ -52,13 +52,6 @@ user authority ─────────┘
 
 The model may forget everything after every call. Omnidex must not.
 
-A passive grounded-objective advisory call is a deliberately weaker side branch: code
-projects already-grounded authority, a configured model returns plain text, and code
-owns an in-memory non-authoritative artifact. Only a relevance-selected bounded
-capsule may join one registered later Context Projection. It does not enter the Task
-Ledger or Working Set, cannot become evidence, and cannot produce a typed execution
-leaf. Persistence remains blocked behind the behavior-first proof gates.
-
 The domain-neutral coordinator that consumes these authorities is specified in
 [`CHARMELEON_COGNITION_RUNTIME.md`](CHARMELEON_COGNITION_RUNTIME.md), with its
 code-owned prerequisite and named-uncertainty boundary in
@@ -181,8 +174,6 @@ Selection begins with structured authority, never embeddings:
 7. direct dependencies and tests;
 8. permitted durable historical references;
 9. semantic retrieval only when structured retrieval is insufficient.
-10. at most one relevance-selected advisory capsule, after every authoritative item,
-    only for the explicitly registered consumer.
 
 A projection records selected and omitted references, omission reasons, the working-set
 version, renderer/spec versions, byte and token estimates, and the exact rendered hash.
@@ -210,6 +201,37 @@ RAG is one provider, not the architecture. Typed providers may acquire candidate
 
 The working-set contract is independent of how a reference was acquired. It validates
 identity, authority, scope, provenance, freshness, and cost.
+
+### Need-driven context compilation
+
+Context compilation does not call a model merely because a context station exists.
+Code uses an explicit structured retrieval directive when the caller already knows
+the lookup. A search-term station is legal only when query formulation remains one
+real semantic uncertainty. Independent canonical query embeddings may execute
+concurrently; database queries, ranking, filtering, authority checks, deduplication,
+ordering, hashing, provenance binding, and result combination remain deterministic.
+Concurrency never creates model researchers or model-owned retrieval.
+
+After code has acquired and validated candidates, `context_relevance` receives only
+bounded pages of candidate text and may return only opaque supplied IDs. Code restores
+the selected authorities in authoritative order. Per-call count and byte budgets
+partition work; they are not global correctness ceilings.
+
+Selected content that fits the target projection budget is used verbatim with zero
+minification calls. Content beyond the target first exhausts the available lossless
+code-owned filtering and deduplication. Only then does one unresolved semantic
+question exist—what smaller text preserves the selected authority for the current
+instruction—and the `context_minification` station may run. Oversized sets are reduced
+hierarchically in bounded groups. Each round must make measurable progress; an invalid
+result or a no-progress round fails explicitly. One extra byte never creates an
+artificial terminal failure, while a real per-call or provider resource limit still
+fails loudly.
+
+Model routes are qualified station profiles, not parameter-count classes. The station
+contract stays stable while deployment configuration resolves it to one exact model.
+Browser WebGPU is one provider below that same contract; its current first vertical
+and qualification status are documented in
+[`BROWSER_INFERENCE.md`](BROWSER_INFERENCE.md).
 
 ## Human-readable projections
 
@@ -278,12 +300,6 @@ machine passes its executable gates:
 9. **Durability** — only after the preceding behavior survives the production path do
    PostgreSQL Task Ledger state, accepted facts, gap records, artifacts, Working Set,
    projections, restart, replay, and provenance become promotion work.
-
-The passive objective-advisory vertical follows the same order. Its current Gates A–C
-are in memory only: one post-grounding trigger, off/shadow/active comparison, and one
-repository-grounded semantic-review consumer. Gate D durability is intentionally
-absent until repeated paired cases show useful rescues, zero authority violations,
-and no baseline-to-advisory regressions.
 
 Existing ledger and context primitives remain useful foundations, but their existence
 is not evidence that the replacement cognition behavior works. Persistence may add

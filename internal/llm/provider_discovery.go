@@ -9,9 +9,19 @@ import (
 // discover a live generation provider. Provider-maintained identity fields are
 // observed by the provider implementation and never copied from configuration.
 type ProviderIdentitySelection struct {
-	Model              string `json:"model"`
-	NativeContextLimit int    `json:"native_context_limit"`
+	Model              string                        `json:"model"`
+	NativeContextLimit int                           `json:"native_context_limit"`
+	ProfilePolicy      ProviderIdentityProfilePolicy `json:"profile_policy,omitempty"`
 }
+
+// ProviderIdentityProfilePolicy is code-owned provider admission authority.
+// The empty value preserves the exact registered-profile policy used by every
+// ordinary semantic and coding station. Fictional prose stations may select
+// the roleplay completion policy because code supplies one bounded system
+// envelope through the locally attested model's native instruction template.
+type ProviderIdentityProfilePolicy string
+
+const ProviderIdentityProfileRoleplayRawCompletion ProviderIdentityProfilePolicy = "roleplay_raw_completion"
 
 type ProviderIdentityEvidenceDiscoverer interface {
 	DiscoverProviderIdentityEvidence(
@@ -21,13 +31,59 @@ type ProviderIdentityEvidenceDiscoverer interface {
 	) (ObservedProviderIdentity, error)
 }
 
+// RoleplayRawContextResolver deterministically reads one local model's native
+// context metadata. It is separate from ExactStationClient so providers cannot
+// silently acquire this roleplay-only capability.
+type RoleplayRawContextResolver interface {
+	ResolveRoleplayRawContext(context.Context, string, int) (int, error)
+}
+
 func (selection ProviderIdentitySelection) Validate() error {
-	if !providerIdentityText(selection.Model, 256) ||
-		selection.NativeContextLimit < MinInferenceContextTokens ||
-		selection.NativeContextLimit > MaxInferenceContextTokens {
+	if !providerIdentityText(selection.Model, 256) {
 		return fmt.Errorf("provider identity discovery selection is invalid")
 	}
+	if selection.ProfilePolicy != "" &&
+		selection.ProfilePolicy != ProviderIdentityProfileRoleplayRawCompletion {
+		return fmt.Errorf("provider identity profile policy is not registered")
+	}
+	if selection.ProfilePolicy == ProviderIdentityProfileRoleplayRawCompletion {
+		if err := ValidateRoleplayRawContextTokens(selection.NativeContextLimit); err != nil {
+			return fmt.Errorf("provider identity discovery selection is invalid: %w", err)
+		}
+		return nil
+	}
+	if err := ValidateInferenceContextTokens(selection.NativeContextLimit); err != nil {
+		return fmt.Errorf("provider identity discovery selection is invalid: %w", err)
+	}
 	return nil
+}
+
+func ProviderIdentitySelectionForExpectation(
+	expected ProviderIdentityExpectation,
+) (ProviderIdentitySelection, error) {
+	if err := ValidateExactPreparedProviderExpectation(expected); err != nil {
+		return ProviderIdentitySelection{}, err
+	}
+	return ProviderIdentitySelectionForProfile(
+		expected.Model, expected.NativeContextLimit, expected.TokenizerProfile,
+	)
+}
+
+func ProviderIdentitySelectionForProfile(
+	model string,
+	nativeContextLimit int,
+	tokenizerProfile string,
+) (ProviderIdentitySelection, error) {
+	if _, err := exactProviderModelProfileByID(tokenizerProfile); err != nil {
+		return ProviderIdentitySelection{}, err
+	}
+	selection := ProviderIdentitySelection{
+		Model: model, NativeContextLimit: nativeContextLimit,
+	}
+	if tokenizerProfile == ExactPreparedTokenizerProfileRoleplayRaw {
+		selection.ProfilePolicy = ProviderIdentityProfileRoleplayRawCompletion
+	}
+	return selection, selection.Validate()
 }
 
 func RequireDiscoveredProviderIdentityEvidence(

@@ -127,9 +127,16 @@ func (s *Service) persistExactStationCallResult(
 			ctx, authority, gap, fmt.Errorf("record exact station metrics: %w", err),
 		)
 	}
+	selection, err := llm.ProviderIdentitySelectionForProfile(
+		requestedModel, call.ContextTokens, call.TokenizerProfile,
+	)
+	if err != nil {
+		return assemblyline.PortableResult{}, exactStationExecution{}, s.failStationGap(
+			ctx, authority, gap, fmt.Errorf("reconstruct completed station provider policy: %w", err),
+		)
+	}
 	identity, err := llm.DeriveExactProviderIdentityExpectation(
-		result.ProviderIdentityEvidence,
-		llm.ProviderIdentitySelection{Model: requestedModel, NativeContextLimit: s.inferenceContextTokens},
+		result.ProviderIdentityEvidence, selection,
 	)
 	if err != nil {
 		return assemblyline.PortableResult{}, exactStationExecution{}, s.failStationGap(

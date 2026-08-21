@@ -29,6 +29,11 @@ func TestGroundedAnswerStationCarriesOneRequirementAndOpaqueEvidence(t *testing.
 		}
 	}
 	assertExactObjectSchemaFields(t, schema, []string{"schema", "requirement_id", "text", "evidence_ids"})
+	properties := schema["properties"].(map[string]any)
+	textSchema := properties["text"].(map[string]any)
+	if _, finiteGrammarBound := textSchema["maxLength"]; finiteGrammarBound {
+		t.Fatalf("grounded-answer schema encodes the code-owned byte ceiling: %#v", textSchema)
+	}
 	assertExactJSONFields(t, reflect.TypeOf(input), []string{
 		"requirement_id", "exact_requirement", "objective_context", "evidence",
 	})
@@ -94,10 +99,9 @@ func TestGroundedAnswerRejectsMalformedInput(t *testing.T) {
 		"oversized_requirement": func(value *GroundedAnswerInput) {
 			value.ExactRequirement = strings.Repeat("x", maxGroundedRequirementBytes+1)
 		},
-		"orphan_assistant_result": func(value *GroundedAnswerInput) {
-			value.Context.AssistantResults = []ConversationSelectedAssistantResult{{
-				UserMessageID: 41, MessageID: 42, JobID: 43, Content: "Earlier answer.",
-			}}
+		"rewritten_context_capsule": func(value *GroundedAnswerInput) {
+			value.Context = minifiedObjectiveContext("Earlier answer.")
+			value.Context.Capsules[0].Content = "Rewritten answer."
 		},
 		"no_evidence": func(value *GroundedAnswerInput) { value.Evidence = nil },
 		"too_many_evidence": func(value *GroundedAnswerInput) {

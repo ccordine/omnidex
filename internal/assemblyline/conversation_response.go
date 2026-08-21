@@ -3,21 +3,36 @@ package assemblyline
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/gryph/omnidex/internal/roleplay"
 )
 
 const (
-	ConversationResponseSchemaV1     = "omnidex.conversation-response.v1"
-	maxConversationResponseTextBytes = 8 * 1024
+	ConversationResponseSchemaV1             = "omnidex.conversation-response.v1"
+	maxConversationResponseTextBytes         = 8 * 1024
+	maxRoleplayConversationResponseTextBytes = 2 * 1024
 )
 
 type ConversationResponseInput struct {
-	Kind             ConversationObjectiveKind               `json:"kind"`
-	ExactInstruction string                                  `json:"exact_instruction"`
-	Context          ObjectiveContext                        `json:"objective_context"`
-	RoleplayContext  *roleplay.NarrativeSimulationProjection `json:"roleplay_context"`
+	Kind                     ConversationObjectiveKind   `json:"kind"`
+	ExactInstruction         string                      `json:"exact_instruction"`
+	Context                  ObjectiveContext            `json:"objective_context"`
+	RoleplayIdentity         *RoleplayResponseIdentity   `json:"roleplay_identity"`
+	RoleplayUserTurn         *RoleplayUserTurnProjection `json:"roleplay_user_turn"`
+	EarlierRoleplayResponses []RoleplayEarlierResponse   `json:"earlier_roleplay_responses,omitempty"`
+}
+
+type RoleplayResponseIdentity struct {
+	CharacterName string `json:"character_name"`
+	Summary       string `json:"summary"`
+	Voice         string `json:"voice"`
+}
+
+type RoleplayEarlierResponse struct {
+	CharacterName string `json:"character_name"`
+	Text          string `json:"text"`
 }
 
 type ConversationResponseDecision struct {
@@ -33,13 +48,54 @@ func (input ConversationResponseInput) validate() error {
 	if input.Kind != ObjectiveKindAnswer && input.Kind != ObjectiveKindStory {
 		return fmt.Errorf("conversation response kind %q is unsupported", input.Kind)
 	}
-	if input.RoleplayContext != nil {
+	if input.RoleplayIdentity != nil {
 		if input.Kind != ObjectiveKindStory {
 			return fmt.Errorf("fictional character authority is valid only for a story response")
 		}
-		if err := input.RoleplayContext.Validate(); err != nil {
-			return fmt.Errorf("roleplay response context: %w", err)
+		for label, value := range map[string]string{
+			"character name":    input.RoleplayIdentity.CharacterName,
+			"character summary": input.RoleplayIdentity.Summary,
+		} {
+			if err := validateContextText("roleplay "+label, value, 1024); err != nil {
+				return err
+			}
 		}
+		if err := validateOptionalContextText(
+			"roleplay character voice", input.RoleplayIdentity.Voice, 1024,
+		); err != nil {
+			return err
+		}
+		if input.RoleplayUserTurn == nil {
+			return fmt.Errorf("roleplay response requires exact user persona and contribution authority")
+		}
+		if err := input.RoleplayUserTurn.validate(); err != nil {
+			return err
+		}
+		if len(input.EarlierRoleplayResponses) >= roleplay.MaxSceneParticipants {
+			return fmt.Errorf("roleplay response has too many earlier responses in its current round")
+		}
+		seenNames := make(map[string]struct{}, len(input.EarlierRoleplayResponses))
+		for index, earlier := range input.EarlierRoleplayResponses {
+			if err := validateContextText(
+				fmt.Sprintf("earlier roleplay response %d character", index), earlier.CharacterName, 256,
+			); err != nil {
+				return err
+			}
+			if _, duplicate := seenNames[earlier.CharacterName]; duplicate {
+				return fmt.Errorf("earlier roleplay response character %q is duplicated", earlier.CharacterName)
+			}
+			seenNames[earlier.CharacterName] = struct{}{}
+			if err := validateGroundedText(
+				fmt.Sprintf("earlier roleplay response %d text", index), earlier.Text,
+				maxRoleplayConversationResponseTextBytes, true,
+			); err != nil {
+				return err
+			}
+		}
+	} else if input.RoleplayUserTurn != nil {
+		return fmt.Errorf("roleplay user turn requires one responding character identity")
+	} else if input.EarlierRoleplayResponses != nil {
+		return fmt.Errorf("earlier roleplay responses require one responding character identity")
 	}
 	return (ConversationObjectiveKindInput{
 		ExactInstruction: input.ExactInstruction,
@@ -54,10 +110,15 @@ func (decision ConversationResponseDecision) ValidateFor(input ConversationRespo
 	if decision.Schema != ConversationResponseSchemaV1 {
 		return fmt.Errorf("conversation response schema must be %q", ConversationResponseSchemaV1)
 	}
-	if err := validateGroundedText(
-		"conversation response text", decision.Text, maxConversationResponseTextBytes, true,
-	); err != nil {
+	maxBytes := maxConversationResponseTextBytes
+	if input.RoleplayIdentity != nil {
+		maxBytes = maxRoleplayConversationResponseTextBytes
+	}
+	if err := validateGroundedText("conversation response text", decision.Text, maxBytes, true); err != nil {
 		return err
+	}
+	if input.RoleplayIdentity != nil {
+		return validateRoleplayProse("conversation response text", decision.Text)
 	}
 	return nil
 }
@@ -85,26 +146,87 @@ func BuildConversationResponsePrompt(input ConversationResponseInput) (string, e
 	if err := input.validate(); err != nil {
 		return "", err
 	}
-	context, err := json.Marshal(input.Context)
+	modelContext, err := projectObjectiveContextForModel(input.Context)
+	if err != nil {
+		return "", err
+	}
+	context, err := json.Marshal(modelContext)
 	if err != nil {
 		return "", fmt.Errorf("encode objective context: %w", err)
 	}
 	sections := []string{"Answer exactly one user instruction.",
 		"Return one bounded response text leaf that directly satisfies that instruction using only the supplied context.",
 		"OBJECTIVE_CONTEXT_JSON:\n" + string(context)}
-	if input.RoleplayContext != nil {
-		roleplayContext, err := json.Marshal(input.RoleplayContext)
+	if input.RoleplayIdentity != nil {
+		identity, err := json.Marshal(input.RoleplayIdentity)
 		if err != nil {
-			return "", fmt.Errorf("encode roleplay character context: %w", err)
+			return "", fmt.Errorf("encode roleplay character identity: %w", err)
+		}
+		userTurn, err := json.Marshal(input.RoleplayUserTurn)
+		if err != nil {
+			return "", fmt.Errorf("encode roleplay user turn: %w", err)
+		}
+		responderName := strconv.Quote(input.RoleplayIdentity.CharacterName)
+		personaName := strconv.Quote(input.RoleplayUserTurn.PersonaName)
+		earlierResponses, err := json.Marshal(input.EarlierRoleplayResponses)
+		if err != nil {
+			return "", fmt.Errorf("encode earlier roleplay responses: %w", err)
 		}
 		sections = []string{
 			"Write one in-character narrative response to exactly one user turn.",
+			"The responding character is " + responderName + "; the user-controlled persona is " + personaName + ". These are distinct narrative identities.",
+			"The exact user turn controls the immediate response. Respond to what the user just said or did; background state supports the response and must not replace it with an unrelated continuation.",
+			"Begin with the character's direct reaction or reply to the current user turn before advancing any other scene beat. When the user speaks, answer or acknowledge that speech in character.",
+			"Treat the compact objective context as background constraint only; it must not replace a direct response to the current turn.",
+			"A short user turn permits a short response. Do not invent a different request merely to use background details.",
 			"Keep the prose consistent with the supplied fictional reality and already-applied recent events.",
-			"FICTIONAL_REALITY_JSON:\n" + string(roleplayContext),
+			"EARLIER_ROLEPLAY_RESPONSES_JSON contains only responses already generated earlier in this same ordered response round. They happened after the user turn. React after them without changing their words or speaking for those characters.",
+			roleplayContributionInstruction(*input.RoleplayUserTurn, responderName, personaName),
+			fmt.Sprintf(
+				"Keep the response text to one to three short paragraphs and no more than %d UTF-8 bytes. End as soon as the response is complete.",
+				maxRoleplayConversationResponseTextBytes,
+			),
+			"ROLEPLAY_IDENTITY_JSON:\n" + string(identity),
+			"ROLEPLAY_USER_TURN_JSON:\n" + string(userTurn),
+			"EARLIER_ROLEPLAY_RESPONSES_JSON:\n" + string(earlierResponses),
+			"COMPILED_OBJECTIVE_CONTEXT_JSON:\n" + string(context),
 		}
 	}
 	sections = append(sections, "EXACT_INSTRUCTION:\n"+input.ExactInstruction)
 	return strings.Join(sections, "\n\n"), nil
+}
+
+func roleplayContributionInstruction(
+	turn RoleplayUserTurnProjection,
+	responderName string,
+	personaName string,
+) string {
+	if len(turn.Parts) != 0 {
+		return "Honor ROLEPLAY_USER_TURN_JSON.parts in their exact order. Each Message is speech by " +
+			personaName + "; each Action is performed or attempted by " + personaName +
+			"; each Event is narrator-established fictional reality. React as " + responderName +
+			" without transferring the user's words, actions, or established events to the responder and without embellishing what the user supplied."
+	}
+	switch turn.ContributionKind {
+	case roleplay.UserContributionDialogue:
+		return "The exact instruction is speech by " + personaName + ". Answer that speech as " + responderName + "; do not quote or paraphrase it as the responder's own words."
+	case roleplay.UserContributionAction:
+		return "The exact instruction describes an action or attempt by " + personaName + ". React as " + responderName + ". Never narrate " + personaName + "'s action as " + responderName + "'s action, and do not embellish what the user did."
+	case roleplay.UserContributionActionDialogue:
+		return "Actions and quoted speech in the exact instruction belong to " + personaName + ". React as " + responderName + "; never transfer those actions or words to the responder."
+	case roleplay.UserContributionNarration:
+		return "The exact instruction is narrator-authored fictional narration. Treat explicitly stated events as established unless they contradict supplied authoritative state; react as " + responderName + " without rewriting them as the responder's actions."
+	case roleplay.UserContributionDirection:
+		return "The exact instruction is a narrator direction or question, not itself a fictional event. Fulfill it directly as " + responderName + " while preserving supplied state and recent continuity."
+	case roleplay.UserContributionNarrationDirection:
+		return "The exact instruction contains ordered narrator-authored Action and Message parts. Treat Action parts as established fictional events and Message parts as directions or questions. Fulfill them in order as " + responderName + " without transferring narrator-authored actions to the responder."
+	case roleplay.UserContributionStructured:
+		return "The exact instruction is an ordered structured turn. Preserve the distinct ownership of every message, action, and event while reacting as " + responderName + "."
+	case roleplay.UserContributionCommand:
+		return "The exact instruction describes the already-applied deterministic result of an explicit command. Continue from that supplied result as " + responderName + "."
+	default:
+		return ""
+	}
 }
 
 func ConversationResponseSchema() map[string]any {
@@ -113,7 +235,7 @@ func ConversationResponseSchema() map[string]any {
 		map[string]any{
 			"schema": map[string]any{"type": "string", "const": ConversationResponseSchemaV1},
 			"text": map[string]any{
-				"type": "string", "minLength": 1, "maxLength": maxConversationResponseTextBytes,
+				"type": "string", "minLength": 1,
 			},
 		},
 	)

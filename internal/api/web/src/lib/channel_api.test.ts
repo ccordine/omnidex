@@ -99,6 +99,37 @@ describe("channel API authority", () => {
     expect(JSON.parse(String(request.body))).toEqual({ prompt: userMessage.content });
   });
 
+  it("sends and verifies exact roleplay persona and contribution authority", async () => {
+    const roleplayTurn = {
+      persona_kind: "character" as const,
+      character_id: "rpc_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      contribution_kind: "action_dialogue" as const,
+      parts: [
+        { kind: "action" as const, text: "I lift the key." },
+        { kind: "message" as const, text: "Stay." },
+      ],
+    };
+    const roleplayChannel = {
+      ...channel, mode: "roleplay" as const,
+      roleplay_viewpoint_character_id: "rpc_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    };
+    const roleplayMessage = {
+      ...userMessage, speaker_name: "Gryph", roleplay: roleplayTurn,
+    };
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => response({
+      channel: roleplayChannel, user_message: roleplayMessage, job,
+    }, 202));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(sendChannelMessage("chat-42", userMessage.content, roleplayTurn)).resolves.toEqual({
+      channel: roleplayChannel, user_message: roleplayMessage, job,
+    });
+    const request = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    expect(JSON.parse(String(request.body))).toEqual({
+      prompt: userMessage.content, roleplay_turn: roleplayTurn,
+    });
+  });
+
   it("rejects a successful but non-202 turn response", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => response({
       channel,

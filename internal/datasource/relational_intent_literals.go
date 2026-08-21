@@ -44,8 +44,11 @@ func validateLiteralForColumn(literal IntentLiteral, column SchemaColumn) error 
 func validateLiteral(literal IntentLiteral) error {
 	switch literal.Type {
 	case LiteralString:
-		if len(literal.Value) > 2048 || strings.ContainsRune(literal.Value, '\x00') {
-			return fmt.Errorf("string literal is invalid or exceeds 2048 bytes")
+		if len(literal.Value) > MaxIntentStringLiteralBytes || strings.ContainsRune(literal.Value, '\x00') {
+			return fmt.Errorf(
+				"string literal is invalid or exceeds %d bytes",
+				MaxIntentStringLiteralBytes,
+			)
 		}
 	case LiteralInteger:
 		if !intentIntegerPattern.MatchString(literal.Value) {

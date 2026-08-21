@@ -40,7 +40,10 @@ func TestChatProgressClientAppliesOnlyBoundedServerComponentAuthority(t *testing
 			}
 		}
 	}
-	if !strings.Contains(view, `requireServerComponentBundle(details, "Job state")`) ||
+	if !strings.Contains(execution, "requireServerComponentBundle(payload") ||
+		!strings.Contains(execution, "renderJobState(jobStateBundle)") ||
+		!strings.Contains(view, "renderJobState(bundle: string)") ||
+		!strings.Contains(view, "this.renderComponentBundle(bundle)") ||
 		!strings.Contains(view, "this.recyclrController.renderBundle(bundle)") {
 		t.Fatal("chat view does not apply required server markup through the Recyclr bridge")
 	}

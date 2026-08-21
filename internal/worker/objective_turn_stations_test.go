@@ -6,8 +6,23 @@ import (
 	"testing"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
+	"github.com/gryph/omnidex/internal/llm"
 	"github.com/gryph/omnidex/internal/model"
 )
+
+func TestObjectiveTextRejectsTransportPromptDisclosure(t *testing.T) {
+	t.Parallel()
+	if err := validateObjectiveTextTransportBoundary(
+		"roleplay narrative", "The archive door opens into moonlight.",
+	); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateObjectiveTextTransportBoundary(
+		"roleplay narrative", "The archive door opens.\n"+llm.MinimalGeneratePrompt,
+	); err == nil {
+		t.Fatal("roleplay narrative exposed the private provider prompt hint")
+	}
+}
 
 func TestObjectivePortableCallUsesSuppliedAuthorityContext(t *testing.T) {
 	t.Parallel()

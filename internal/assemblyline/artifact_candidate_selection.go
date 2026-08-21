@@ -110,7 +110,7 @@ func BuildArtifactCandidateSelectionPrompt(input ArtifactCandidateSelectionInput
 	}
 	return strings.Join([]string{
 		"Select the one opaque candidate whose bounded declaration evidence resolves which known semantic artifact the exact requirement explicitly identifies as required to be absent.",
-		"Return its candidate ID, or NONE when the evidence cannot distinguish exactly one. Do not infer missing evidence. Candidate IDs are opaque. Code separately owns desired-state compilation, repository mechanics, verification, and completion.",
+		"Return its opaque candidate ID, or NONE when the supplied evidence cannot distinguish exactly one.",
 		"EXACT_REQUIREMENT:\n" + input.RequirementQuote,
 		"BOUNDED_CANDIDATES:\n" + string(evidence),
 	}, "\n\n"), nil

@@ -52,11 +52,16 @@ func (r *Repository) ProjectRoleplaySimulationContext(
 	if err != nil {
 		return roleplay.SimulationTurnAuthority{}, roleplay.NarrativeSimulationProjection{}, err
 	}
-	preparation, err := store.LoadSimulationTurnForJob(ctx, preparationID, jobID)
+	preparation, err := store.LoadFreshSimulationTurnForJob(ctx, preparationID, jobID)
 	if err != nil {
 		return roleplay.SimulationTurnAuthority{}, roleplay.NarrativeSimulationProjection{}, err
 	}
-	projection := roleplay.CloneNarrativeSimulationProjection(preparation.NarrativeProjection)
+	if len(preparation.Responders) < 1 {
+		return roleplay.SimulationTurnAuthority{}, roleplay.NarrativeSimulationProjection{},
+			fmt.Errorf("prepared roleplay turn has no response round")
+	}
+	primary := preparation.Responders[0]
+	projection := roleplay.CloneNarrativeSimulationProjection(primary.NarrativeProjection)
 	authority := preparation.NarrativeAuthority
 	if err := projection.Validate(); err != nil {
 		return roleplay.SimulationTurnAuthority{}, roleplay.NarrativeSimulationProjection{},
@@ -64,7 +69,7 @@ func (r *Repository) ProjectRoleplaySimulationContext(
 	}
 	if authority.WorldID != preparation.WorldID || authority.SceneID != preparation.SceneID ||
 		authority.SceneRevision != preparation.SceneRevision ||
-		authority.ViewpointID != preparation.ActiveCharacterID ||
+		authority.ViewpointID != primary.CharacterID ||
 		authority.Fingerprint != preparation.NarrativeFingerprint ||
 		len(authority.ParticipantIDs) != len(preparation.ParticipantCharacterIDs) {
 		return roleplay.SimulationTurnAuthority{}, roleplay.NarrativeSimulationProjection{},

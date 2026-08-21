@@ -205,58 +205,44 @@ func (r *Repository) ListChannels(ctx context.Context, scope model.ChannelScope,
 	return channels, rows.Err()
 }
 
-func (r *Repository) ListChannelMessages(ctx context.Context, channelID model.ChannelID, limit int, beforeID *int64) (model.ChannelMessagePage, error) {
-	if err := channelID.Validate(); err != nil {
-		return model.ChannelMessagePage{}, err
+func (r *Repository) ListChannelsByMode(
+	ctx context.Context,
+	scope model.ChannelScope,
+	mode model.ChannelMode,
+	limit, offset int,
+) ([]model.Channel, error) {
+	if err := scope.Validate(); err != nil {
+		return nil, err
+	}
+	if err := mode.Validate(); err != nil {
+		return nil, err
 	}
 	if limit <= 0 || limit > 200 {
-		return model.ChannelMessagePage{}, fmt.Errorf("channel message limit must be between 1 and 200")
+		return nil, fmt.Errorf("channel list limit must be between 1 and 200")
 	}
-	if beforeID != nil && *beforeID < 1 {
-		return model.ChannelMessagePage{}, fmt.Errorf("channel message cursor must be positive")
-	}
-	var exists bool
-	if err := r.pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM ai_channels WHERE id=$1)`, channelID).Scan(&exists); err != nil {
-		return model.ChannelMessagePage{}, err
-	}
-	if !exists {
-		return model.ChannelMessagePage{}, pgx.ErrNoRows
+	if offset < 0 {
+		return nil, fmt.Errorf("channel list offset must be nonnegative")
 	}
 	rows, err := r.pool.Query(ctx, `
-		SELECT id, channel_id, role, content, created_at
-		FROM ai_channel_messages
-		WHERE channel_id=$1 AND ($3::bigint IS NULL OR id<$3)
-		ORDER BY id DESC LIMIT $2
-	`, channelID, limit+1, beforeID)
+		SELECT `+channelSelectColumns+`
+		FROM ai_channels
+		WHERE scope=$1 AND mode=$2
+		ORDER BY updated_at DESC,id ASC LIMIT $3 OFFSET $4
+	`, scope, mode, limit, offset)
 	if err != nil {
-		return model.ChannelMessagePage{}, err
+		return nil, err
 	}
 	defer rows.Close()
-	messages := []model.ChannelMessage{}
+	channels := []model.Channel{}
 	for rows.Next() {
-		var message model.ChannelMessage
-		if err := rows.Scan(&message.ID, &message.ChannelID, &message.Role, &message.Content, &message.CreatedAt); err != nil {
-			return model.ChannelMessagePage{}, err
+		channel, err := scanChannel(rows)
+		if err != nil {
+			return nil, err
 		}
-		if err := model.ValidateChannelMessage(message.Role, message.Content); err != nil {
-			return model.ChannelMessagePage{}, err
-		}
-		messages = append(messages, message)
+		channels = append(channels, channel)
 	}
 	if err := rows.Err(); err != nil {
-		return model.ChannelMessagePage{}, err
+		return nil, err
 	}
-	hasMore := len(messages) > limit
-	if hasMore {
-		messages = messages[:limit]
-	}
-	for left, right := 0, len(messages)-1; left < right; left, right = left+1, right-1 {
-		messages[left], messages[right] = messages[right], messages[left]
-	}
-	var nextBeforeID *int64
-	if hasMore && len(messages) > 0 {
-		value := messages[0].ID
-		nextBeforeID = &value
-	}
-	return model.ChannelMessagePage{Messages: messages, NextBeforeID: nextBeforeID, HasMore: hasMore}, nil
+	return channels, nil
 }

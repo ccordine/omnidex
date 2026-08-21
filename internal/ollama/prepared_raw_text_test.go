@@ -39,27 +39,6 @@ func TestGeneratePreparedExactRawTextReturnsTypeScriptWithoutFormat(t *testing.T
 	}
 }
 
-func TestGeneratePreparedExactRawTextSendsRegisteredAdvisoryTerminator(t *testing.T) {
-	t.Parallel()
-	expected := ollamaIdentityExpectation()
-	captured := make(map[string][]byte)
-	client := exactPreparedIdentityClient(
-		t, expected, http.StatusOK, exactRawBody(), make(map[string]int), captured,
-	)
-	prepared := exactPreparedRequest(expected)
-	prepared.Protocol = llm.ExactPreparedProtocolRawTextV1
-	prepared.ResponseFormat = ""
-	prepared.ResponseSchema = nil
-	prepared.RawTextStopSequence = llm.ExactPreparedObjectiveAdvisoryStopV1
-	if _, err := client.GeneratePreparedExact(context.Background(), prepared); err != nil {
-		t.Fatal(err)
-	}
-	request := string(captured["/api/generate"])
-	if !strings.Contains(request, `"stop":["\n<END_OBJECTIVE_ADVISORY_V1>"]`) {
-		t.Fatalf("raw provider request omitted exact advisory terminator: %s", request)
-	}
-}
-
 func TestGeneratePreparedExactDispatchesMeasuredCorrectionEnvelopeWithoutByteTokenGuess(t *testing.T) {
 	t.Parallel()
 	expected := ollamaIdentityExpectation()

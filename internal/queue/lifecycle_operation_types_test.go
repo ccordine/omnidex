@@ -43,37 +43,35 @@ func TestRoleplayCompletionKnowledgeRecipientsAreExactAndBounded(t *testing.T) {
 	base := CompleteStepCommand{
 		OperationID: id, Authority: authority, StepID: 1, Output: "response",
 		ContextKey: "objective_result", ContextValue: "result",
-		RoleplayFacts: []string{"A new fictional fact."},
+		RoleplayResponses: []RoleplayResponseCompletion{{
+			Position: 0, CharacterID: character, Output: "response",
+			Facts: []string{"A new fictional fact."},
+			KnowledgeCharacterIDs: []model.RoleplayCharacterID{character},
+		}},
 	}
 
-	valid := base
-	valid.RoleplayKnowledgeCharacterIDs = []model.RoleplayCharacterID{character}
-	if _, err := normalizeCompleteStepCommand(valid); err != nil {
+	if _, err := normalizeCompleteStepCommand(base); err != nil {
 		t.Fatalf("valid recipient rejected: %v", err)
 	}
 
 	withoutFacts := base
-	withoutFacts.RoleplayFacts = nil
-	withoutFacts.RoleplayKnowledgeCharacterIDs = []model.RoleplayCharacterID{character}
+	withoutFacts.RoleplayResponses = append([]RoleplayResponseCompletion(nil), base.RoleplayResponses...)
+	withoutFacts.RoleplayResponses[0].Facts = nil
 	if _, err := normalizeCompleteStepCommand(withoutFacts); err == nil {
 		t.Fatal("knowledge recipient without new canon facts was accepted")
 	}
 
 	duplicated := base
-	duplicated.RoleplayKnowledgeCharacterIDs = []model.RoleplayCharacterID{character, character}
+	duplicated.RoleplayResponses = append(duplicated.RoleplayResponses, duplicated.RoleplayResponses[0])
+	duplicated.RoleplayResponses[1].Position = 1
 	if _, err := normalizeCompleteStepCommand(duplicated); err == nil {
-		t.Fatal("duplicated knowledge recipient was accepted")
+		t.Fatal("duplicated responding character was accepted")
 	}
 
 	overBound := base
-	overBound.RoleplayKnowledgeCharacterIDs = make(
-		[]model.RoleplayCharacterID, roleplay.MaxKnowledgeRecipientsPerTurn+1,
-	)
-	for index := range overBound.RoleplayKnowledgeCharacterIDs {
-		overBound.RoleplayKnowledgeCharacterIDs[index] = character
-	}
+	overBound.RoleplayResponses = make([]RoleplayResponseCompletion, roleplay.MaxSceneParticipants+1)
 	if _, err := normalizeCompleteStepCommand(overBound); err == nil {
-		t.Fatal("over-bound knowledge recipient list was accepted")
+		t.Fatal("over-bound response round was accepted")
 	}
 }
 
@@ -98,9 +96,10 @@ func TestLifecycleOperationCommandsRejectMissingOrInvalidAuthority(t *testing.T)
 			_, err := normalizeCompleteStepCommand(CompleteStepCommand{OperationID: validID, StepID: 1, ContextValue: "orphan"})
 			return err
 		}},
-		{name: "roleplay facts without objective completion", run: func() error {
+		{name: "roleplay responses without objective completion", run: func() error {
 			_, err := normalizeCompleteStepCommand(CompleteStepCommand{
-				OperationID: validID, StepID: 1, RoleplayFacts: []string{"A fact."},
+				OperationID: validID, StepID: 1,
+				RoleplayResponses: []RoleplayResponseCompletion{{Output: "response"}},
 			})
 			return err
 		}},

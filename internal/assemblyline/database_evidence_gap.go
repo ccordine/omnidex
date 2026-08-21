@@ -1,7 +1,6 @@
 package assemblyline
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 )
@@ -85,7 +84,7 @@ func BuildDatabaseEvidenceGapPrompt(input DatabaseEvidenceGapInput) (string, err
 	if err := input.validate(); err != nil {
 		return "", err
 	}
-	projection, err := json.Marshal(input)
+	projection, err := marshalObjectiveContextInputForModel(input, input.Context)
 	if err != nil {
 		return "", fmt.Errorf("encode database evidence gap projection: %w", err)
 	}
@@ -104,7 +103,7 @@ func DatabaseEvidenceGapResponseSchema(input DatabaseEvidenceGapInput) (map[stri
 		"schema":         map[string]any{"type": "string", "const": DatabaseEvidenceGapV1},
 		"requirement_id": map[string]any{"type": "string", "const": input.RequirementID},
 		"missing_information": map[string]any{
-			"type": "string", "minLength": 0, "maxLength": maxDatabaseEvidenceGapBytes,
+			"type": "string", "minLength": 0,
 		},
 	}), nil
 }

@@ -4,14 +4,43 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/gryph/omnidex/internal/assemblyline"
 	"github.com/gryph/omnidex/internal/model"
+	"github.com/gryph/omnidex/internal/roleplay"
 	"github.com/jackc/pgx/v5"
 )
 
+const (
+	maxConversationCandidateAuthorities = 8
+	maxConversationCandidateBytes       = 6 * 1024
+)
+
+type ConversationCandidateRole string
+
+const (
+	ConversationCandidateUser      ConversationCandidateRole = "user"
+	ConversationCandidateAssistant ConversationCandidateRole = "assistant"
+)
+
+type ConversationCandidateTurn struct {
+	MessageID           int64
+	Role                ConversationCandidateRole
+	PairedUserMessageID int64
+	SpeakerName         string
+	RoleplayUserTurn    *roleplay.UserTurnAuthority
+	Content             string
+}
+
+type ConversationAssistantResultAuthority struct {
+	UserMessageID int64
+	MessageID     int64
+	JobID         int64
+	SpeakerName   string
+	Content       string
+}
+
 type ConversationCandidateAuthoritySet struct {
-	Turns            []assemblyline.ConversationContextTurn
-	AssistantResults []assemblyline.ConversationSelectedAssistantResult
+	Turns            []ConversationCandidateTurn
+	AssistantResults []ConversationAssistantResultAuthority
 }
 
 // ConversationCandidateAuthorities returns one immutable, bounded suffix of
@@ -60,12 +89,12 @@ func (r *Repository) ConversationCandidateAuthorities(
 		WHERE channel_id=$1 AND id<$2
 		ORDER BY id DESC
 		LIMIT $3
-	`, binding.ChannelID, binding.UserMessageID, assemblyline.MaxConversationContextCandidateAuthorities)
+	`, binding.ChannelID, binding.UserMessageID, maxConversationCandidateAuthorities)
 	if err != nil {
 		return ConversationCandidateAuthoritySet{}, err
 	}
 	defer rows.Close()
-	descending := make([]model.ChannelMessage, 0, assemblyline.MaxConversationContextCandidateAuthorities)
+	descending := make([]model.ChannelMessage, 0, maxConversationCandidateAuthorities)
 	totalBytes := 0
 	for rows.Next() {
 		var message model.ChannelMessage
@@ -77,11 +106,11 @@ func (r *Repository) ConversationCandidateAuthorities(
 		if err := model.ValidateChannelMessage(message.Role, message.Content); err != nil {
 			return ConversationCandidateAuthoritySet{}, fmt.Errorf("invalid stored conversation candidate %d: %w", message.ID, err)
 		}
-		if totalBytes+len(message.Content) > assemblyline.MaxConversationContextCandidateBytes {
+		if totalBytes+len(message.Content) > maxConversationCandidateBytes {
 			if len(descending) == 0 {
 				return ConversationCandidateAuthoritySet{}, fmt.Errorf(
 					"nearest conversation candidate exceeds the %d-byte bound",
-					assemblyline.MaxConversationContextCandidateBytes,
+					maxConversationCandidateBytes,
 				)
 			}
 			break
@@ -100,18 +129,29 @@ func (r *Repository) ConversationCandidateAuthorities(
 		descending = descending[1:]
 	}
 	set := ConversationCandidateAuthoritySet{
-		Turns: make([]assemblyline.ConversationContextTurn, 0, len(descending)),
+		Turns: make([]ConversationCandidateTurn, 0, len(descending)),
 	}
 	var pendingUserID int64
 	for _, message := range descending {
-		role := assemblyline.ConversationContextUser
+		role := ConversationCandidateUser
 		if message.Role == model.ChannelMessageRoleAssistant {
-			role = assemblyline.ConversationContextAssistant
+			role = ConversationCandidateAssistant
 		}
 		if message.Role == model.ChannelMessageRoleUser {
-			set.Turns = append(set.Turns, assemblyline.ConversationContextTurn{
+			turn := ConversationCandidateTurn{
 				MessageID: message.ID, Role: role, Content: message.Content,
-			})
+			}
+			if binding.Mode == model.ChannelModeRoleplay {
+				userTurn, err := loadConversationRoleplayUserTurn(
+					ctx, tx, binding.ChannelID, message.ID, message.Content,
+				)
+				if err != nil {
+					return ConversationCandidateAuthoritySet{}, err
+				}
+				turn.SpeakerName = userTurn.PersonaName
+				turn.RoleplayUserTurn = &userTurn
+			}
+			set.Turns = append(set.Turns, turn)
 			pendingUserID = message.ID
 			continue
 		}
@@ -121,13 +161,14 @@ func (r *Repository) ConversationCandidateAuthorities(
 			)
 		}
 		result, err := loadExactConversationAssistantResult(
-			ctx, tx, binding.ChannelID, pendingUserID, message,
+			ctx, tx, binding.ChannelID, binding.Mode, pendingUserID, message,
 		)
 		if err != nil {
 			return ConversationCandidateAuthoritySet{}, err
 		}
-		set.Turns = append(set.Turns, assemblyline.ConversationContextTurn{
-			MessageID: message.ID, Role: role, PairedUserMessageID: pendingUserID, Content: message.Content,
+		set.Turns = append(set.Turns, ConversationCandidateTurn{
+			MessageID: message.ID, Role: role, PairedUserMessageID: pendingUserID,
+			SpeakerName: result.SpeakerName, Content: message.Content,
 		})
 		set.AssistantResults = append(set.AssistantResults, result)
 		pendingUserID = 0
@@ -142,9 +183,10 @@ func loadExactConversationAssistantResult(
 	ctx context.Context,
 	tx pgx.Tx,
 	channelID string,
+	mode model.ChannelMode,
 	userMessageID int64,
 	message model.ChannelMessage,
-) (assemblyline.ConversationSelectedAssistantResult, error) {
+) (ConversationAssistantResultAuthority, error) {
 	rows, err := tx.Query(ctx, `
 		SELECT id, result
 		FROM jobs
@@ -154,7 +196,7 @@ func loadExactConversationAssistantResult(
 		ORDER BY id ASC LIMIT 2
 	`, channelID, userMessageID)
 	if err != nil {
-		return assemblyline.ConversationSelectedAssistantResult{}, err
+		return ConversationAssistantResultAuthority{}, err
 	}
 	defer rows.Close()
 	type completion struct {
@@ -165,23 +207,30 @@ func loadExactConversationAssistantResult(
 	for rows.Next() {
 		var value completion
 		if err := rows.Scan(&value.jobID, &value.result); err != nil {
-			return assemblyline.ConversationSelectedAssistantResult{}, err
+			return ConversationAssistantResultAuthority{}, err
 		}
 		completions = append(completions, value)
 	}
 	if err := rows.Err(); err != nil {
-		return assemblyline.ConversationSelectedAssistantResult{}, err
+		return ConversationAssistantResultAuthority{}, err
 	}
 	if len(completions) != 1 || completions[0].result != message.Content {
-		return assemblyline.ConversationSelectedAssistantResult{}, fmt.Errorf(
+		return ConversationAssistantResultAuthority{}, fmt.Errorf(
 			"assistant message %d is not the unique exact result for user message %d",
 			message.ID, userMessageID,
 		)
 	}
-	return assemblyline.ConversationSelectedAssistantResult{
+	speakerName, err := loadConversationAssistantSpeaker(
+		ctx, tx, channelID, mode, message.ID,
+	)
+	if err != nil {
+		return ConversationAssistantResultAuthority{}, err
+	}
+	return ConversationAssistantResultAuthority{
 		UserMessageID: userMessageID,
 		MessageID:     message.ID,
 		JobID:         completions[0].jobID,
+		SpeakerName:   speakerName,
 		Content:       message.Content,
 	}, nil
 }

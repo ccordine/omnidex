@@ -47,10 +47,12 @@ func stationForPortableWorkKind(kind assemblyline.WorkKind) (station.ID, error) 
 		return station.CodingRepositorySearchTerm, nil
 	case assemblyline.WorkRepositoryChangeSurface:
 		return station.CodingRepositoryChange, nil
-	case assemblyline.WorkConversationContextSelection:
-		return station.ConversationContextSelection, nil
-	case assemblyline.WorkMemoryContextSelection:
-		return station.MemoryContextSelection, nil
+	case assemblyline.WorkContextSearchTerms:
+		return station.ContextSearchTerms, nil
+	case assemblyline.WorkContextRelevance:
+		return station.ContextRelevance, nil
+	case assemblyline.WorkContextMinification:
+		return station.ContextMinification, nil
 	case assemblyline.WorkConversationObjectiveKind:
 		return station.ConversationObjectiveKind, nil
 	case assemblyline.WorkConversationResponse, assemblyline.WorkRoleplayGroundedResponse:

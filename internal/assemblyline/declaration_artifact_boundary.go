@@ -91,7 +91,7 @@ func BuildDeclarationArtifactBoundaryPrompt(input DeclarationArtifactBoundaryInp
 	}
 	return strings.Join([]string{
 		"Classify only the explicit semantic artifact boundary of FOCUSED_DECLARATION in REQUIREMENT_QUOTE.",
-		"Choose independent_artifact when the quote explicitly requires the declaration to be an independently owned artifact, existing_artifact when it explicitly requires the declaration to belong to a previously established artifact, or none when neither relationship is specified. Do not infer a boundary from conventions. Code separately owns physical representation, repository mechanics, ordering, verification, and completion.",
+		"Choose independent_artifact when the quote explicitly requires the declaration to be an independently owned artifact, existing_artifact when it explicitly requires the declaration to belong to a previously established artifact, or none when neither relationship is specified.",
 		"FOCUSED_DECLARATION: " + input.DeclarationID,
 		"EXACT_GO_SIGNATURE: " + input.GoSignature,
 		"REQUIREMENT_QUOTE:\n" + input.RequirementQuote,

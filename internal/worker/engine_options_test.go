@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/gryph/omnidex/internal/llm"
-	"github.com/gryph/omnidex/internal/objectiveadvisory"
 	"github.com/gryph/omnidex/internal/station"
 )
 
@@ -44,14 +43,13 @@ func (startupTestLLM) Embedding(context.Context, string) ([]float64, error) {
 
 func validWorkerOptions() Options {
 	return Options{
-		WorkerCount:               2,
-		FragmentConcurrency:       1,
-		PollInterval:              time.Second,
-		InferenceContextTokens:    32768,
-		InferenceProvider:         "ollama",
-		EmbeddingProvider:         "ollama",
-		EmbeddingModel:            "nomic-embed-text",
-		ObjectiveAdvisoryProvider: "ollama",
+		WorkerCount:            2,
+		FragmentConcurrency:    1,
+		PollInterval:           time.Second,
+		InferenceContextTokens: 32768,
+		InferenceProvider:      "ollama",
+		EmbeddingProvider:      "ollama",
+		EmbeddingModel:         "nomic-embed-text",
 		Models: ModelRouting{
 			Stations: validStationModels(),
 		},
@@ -72,51 +70,6 @@ func TestValidateWorkerOptionsDoesNotRequireBroadModelRoles(t *testing.T) {
 	opts := validWorkerOptions()
 	if err := validateWorkerOptions(opts); err != nil {
 		t.Fatalf("validateWorkerOptions() rejected station-only routing: %v", err)
-	}
-}
-
-func TestWorkerObjectiveAdvisoryModeIsOffByDefaultAndRejectsUnknownValues(t *testing.T) {
-	opts := validWorkerOptions()
-	if err := validateWorkerOptions(opts); err != nil {
-		t.Fatal(err)
-	}
-	if got := normalizeWorkerOptions(opts).ObjectiveAdvisoryMode; got != objectiveadvisory.ModeOff {
-		t.Fatalf("normalized mode=%q want off", got)
-	}
-
-	opts.ObjectiveAdvisoryMode = objectiveadvisory.Mode("enabled")
-	if err := validateWorkerOptions(opts); err == nil || !strings.Contains(err.Error(), "objective advisory mode") {
-		t.Fatalf("invalid advisory mode error=%v", err)
-	}
-}
-
-func TestWorkerObjectiveAdvisoryEnabledModeRequiresExactProvider(t *testing.T) {
-	opts := validWorkerOptions()
-	opts.ObjectiveAdvisoryMode = objectiveadvisory.ModeShadow
-
-	opts.ObjectiveAdvisoryProvider = ""
-	if err := validateWorkerOptions(opts); err == nil ||
-		!strings.Contains(err.Error(), "objective advisory provider") {
-		t.Fatalf("missing provider error=%v", err)
-	}
-
-	opts.ObjectiveAdvisoryProvider = "openai"
-	if err := validateWorkerOptions(opts); err == nil ||
-		!strings.Contains(err.Error(), "supports only exact provider") {
-		t.Fatalf("inexact provider error=%v", err)
-	}
-
-	opts.ObjectiveAdvisoryProvider = llm.ExactPreparedProviderBackend
-	if err := validateWorkerOptions(opts); err != nil {
-		t.Fatalf("exact provider rejected: %v", err)
-	}
-}
-
-func TestWorkerObjectiveAdvisoryOffModeDoesNotRequireProvider(t *testing.T) {
-	opts := validWorkerOptions()
-	opts.ObjectiveAdvisoryProvider = ""
-	if err := validateWorkerOptions(opts); err != nil {
-		t.Fatalf("off mode resolved provider configuration: %v", err)
 	}
 }
 

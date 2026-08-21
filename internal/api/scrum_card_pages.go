@@ -52,7 +52,7 @@ func dbScrumCardSummaryToAPI(stored queue.DBScrumCardSummary) (ScrumCard, error)
 		ID: stored.ID, Title: stored.Title, Description: stored.Description, Column: stored.Column,
 		Summary: true, ChecklistDone: stored.ChecklistDone, ChecklistTotal: stored.ChecklistTotal,
 		RefFileCount: stored.RefFileCount, ChatCount: stored.ChatCount,
-		TestCriteriaDone: stored.TestCriteriaDone,
+		TestCriteriaDone:  stored.TestCriteriaDone,
 		TestCriteriaTotal: stored.TestCriteriaTotal, HasCardTicket: stored.HasCardTicket,
 		Tags: tags, FlowMetrics: stored.FlowMetrics, JobID: stored.JobID,
 		PlayState: stored.PlayState, QueueOrder: stored.QueueOrder, BoardOrder: stored.BoardOrder,

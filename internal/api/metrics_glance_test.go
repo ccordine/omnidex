@@ -23,13 +23,20 @@ func TestParseTelemetryNotifyPayloadRequiresTypedJSON(t *testing.T) {
 	}
 }
 
-func TestTelemetryJobProgressSignalsIntermediateStateWithoutDuplicatingTerminalEvents(t *testing.T) {
+func TestTelemetryJobProgressSignalsIntermediateAndTerminalState(t *testing.T) {
 	phase, summary, ok := telemetryJobProgress(telemetryNotifyPayload{EventType: "tool_call_complete", JobID: 42})
 	if !ok || phase != realtimeJobChanged || summary != "tool call complete" {
 		t.Fatalf("phase=%q summary=%q ok=%t", phase, summary, ok)
 	}
-	if _, _, ok := telemetryJobProgress(telemetryNotifyPayload{EventType: "run_completed", JobID: 42}); ok {
-		t.Fatal("terminal telemetry must not duplicate the worker completion event")
+	for eventType, expectedSummary := range map[string]string{
+		"run_completed": "Job completed",
+		"run_failed":    "Job failed",
+		"run_cancelled": "Job canceled",
+	} {
+		phase, summary, ok = telemetryJobProgress(telemetryNotifyPayload{EventType: eventType, JobID: 42})
+		if !ok || phase != realtimeJobFinished || summary != expectedSummary {
+			t.Fatalf("terminal event=%q phase=%q summary=%q ok=%t", eventType, phase, summary, ok)
+		}
 	}
 	if _, _, ok := telemetryJobProgress(telemetryNotifyPayload{EventType: "tool_call_begin"}); ok {
 		t.Fatal("telemetry without job id must not publish job progress")

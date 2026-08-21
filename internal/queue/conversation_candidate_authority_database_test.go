@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/gryph/omnidex/internal/assemblyline"
 	"github.com/gryph/omnidex/internal/model"
 )
 
@@ -44,8 +43,8 @@ func TestPostgresConversationCandidatesBindPriorUserAndAssistantResult(t *testin
 		t.Fatal(err)
 	}
 	if len(set.Turns) != 2 || set.Turns[0].MessageID != firstUser.ID ||
-		set.Turns[0].Role != assemblyline.ConversationContextUser ||
-		set.Turns[1].Role != assemblyline.ConversationContextAssistant {
+		set.Turns[0].Role != ConversationCandidateUser ||
+		set.Turns[1].Role != ConversationCandidateAssistant {
 		t.Fatalf("candidate turns=%+v", set.Turns)
 	}
 	if len(set.AssistantResults) != 1 {
@@ -92,9 +91,9 @@ func TestPostgresConversationCandidatesRejectForeignFutureAndMissingCurrentAutho
 			value.ChannelUserMessageID = message.ID + 100
 			return value
 		}(),
-		"missing_message": func() channelTurnMetadata {
+		"absent_message": func() channelTurnMetadata {
 			value := binding
-			value.ChannelUserMessageID = 1
+			value.ChannelUserMessageID = message.ID + 1
 			return value
 		}(),
 	} {

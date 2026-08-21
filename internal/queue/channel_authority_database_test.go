@@ -12,7 +12,7 @@ func TestPostgresChannelAuthorityIsTypedPaginatedAndSingular(t *testing.T) {
 	ctx := context.Background()
 	pool := openIsolatedMigrationPool(t)
 	repository := New(pool)
-	if err := repository.EnsureSchema(ctx, loadMigrationBundleThroughPrefix(t, "117")); err != nil {
+	if err := repository.EnsureSchema(ctx, loadCheckedMigrationBundle(t)); err != nil {
 		t.Fatal(err)
 	}
 	channel, err := repository.CreateChannel(ctx, model.Channel{

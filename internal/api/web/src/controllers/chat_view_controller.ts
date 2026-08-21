@@ -1,5 +1,8 @@
-import { badgeClass } from "../lib/dom";
-import { fetchChatTimelinePage, requireServerComponentBundle } from "../lib/chat_component_api";
+import { fetchChatTimelinePage } from "../lib/chat_component_api";
+import {
+  ChatActivityIndicator,
+  type ChatTransportActivityState,
+} from "../lib/chat_activity_indicator";
 import type { StatusTone } from "../lib/types";
 import type RecyclrController from "./recyclr_controller";
 import { ChatTargetsController } from "./chat_targets_controller";
@@ -14,12 +17,17 @@ export abstract class ChatViewController extends ChatTargetsController {
   activityLabel = "";
   private transcriptRenderPending = false;
   private roleplayComposerAvailable = true;
+  private turnActive = false;
+  private activityIndicator: ChatActivityIndicator | null = null;
 
   protected initializeViewState(): void {
     this.seenProgress = new Set();
     this.busy = false;
     this.transcriptRenderPending = false;
     this.roleplayComposerAvailable = true;
+    this.turnActive = false;
+    this.systemActivity().acknowledge();
+    this.syncTypingIndicatorState();
   }
 
   addEvent(type: string, details: Record<string, unknown> = {}, full: unknown = null): void {
@@ -95,10 +103,11 @@ export abstract class ChatViewController extends ChatTargetsController {
       this.progressLoadingTarget.textContent = text;
       this.progressLoadingTarget.classList.remove("hidden");
     }
+    this.systemActivity().pulse();
   }
 
-  async renderJobState(details: unknown): Promise<void> {
-    await this.renderComponentBundle(requireServerComponentBundle(details, "Job state"));
+  async renderJobState(bundle: string): Promise<void> {
+    await this.renderComponentBundle(bundle);
   }
 
   setBusy(value: boolean): void {
@@ -106,7 +115,23 @@ export abstract class ChatViewController extends ChatTargetsController {
     this.syncComposerAvailability();
     if (this.hasSpinnerTarget) this.spinnerTarget.classList.toggle("hidden", !value);
     if (!value) this.activityLabel = "";
+    if (value) this.systemActivity().begin("request");
+    else this.systemActivity().end("request");
     this.syncTranscriptLoadingState();
+    this.syncTypingIndicatorState();
+  }
+
+  setTurnActive(value: boolean): void {
+    this.turnActive = value;
+    if (value) this.systemActivity().begin("turn");
+    else this.systemActivity().end("turn");
+    this.syncComposerAvailability();
+    this.syncTranscriptLoadingState();
+    this.syncTypingIndicatorState();
+  }
+
+  isTurnActive(): boolean {
+    return this.turnActive;
   }
 
   setRoleplayComposerAvailable(available: boolean): void {
@@ -128,23 +153,72 @@ export abstract class ChatViewController extends ChatTargetsController {
     const disabled = this.busy || !this.roleplayComposerAvailable;
     if (this.hasInputTarget) this.inputTarget.disabled = disabled;
     if (this.hasSendTarget) {
-      this.sendTarget.disabled = disabled;
-      this.sendTarget.textContent = this.busy ? "Working" : this.roleplayComposerAvailable ? "Send" : "Configure simulation";
+      this.sendTarget.disabled = disabled || this.turnActive;
+      this.sendTarget.textContent = this.busy
+        ? "Sending…"
+        : this.turnActive
+          ? "Replying…"
+          : this.roleplayComposerAvailable
+            ? "Send"
+            : "Configure simulation";
     }
   }
 
   private syncTranscriptLoadingState(): void {
     const loading = this.busy || this.transcriptRenderPending;
-    if (this.hasMessagesTarget) this.messagesTarget.setAttribute("aria-busy", String(loading));
+    if (this.hasMessagesTarget) this.messagesTarget.setAttribute("aria-busy", String(loading || this.turnActive));
     if (this.hasTranscriptLoadingTarget) this.transcriptLoadingTarget.classList.toggle("hidden", !loading);
+  }
+
+  private syncTypingIndicatorState(): void {
+    if (!this.hasTypingIndicatorTarget) return;
+    const visible = this.turnActive || (this.busy && this.activityLabel.trim() !== "");
+    this.typingIndicatorTarget.classList.toggle("hidden", !visible);
+    this.typingIndicatorTarget.setAttribute("aria-hidden", String(!visible));
+    if (visible && this.hasMessagesTarget) {
+      this.messagesTarget.scrollTop = this.messagesTarget.scrollHeight;
+    }
   }
 
   setStatus(text: string, mode: StatusTone): void {
     if (this.hasStatusTarget) this.statusTarget.textContent = text;
-    if (this.hasLiveBadgeTarget) {
-      this.liveBadgeTarget.textContent = text;
-      this.liveBadgeTarget.className = badgeClass(mode);
-    }
+    this.systemActivity().reportStatus(text, mode);
+  }
+
+  acknowledgeActivityProblems(event: Event): void {
+    event.preventDefault();
+    this.systemActivity().acknowledge();
+  }
+
+  protected pulseSystemActivity(): void {
+    this.systemActivity().pulse();
+  }
+
+  protected reportSystemProblem(message: string): void {
+    this.systemActivity().problem(message);
+  }
+
+  protected reportTransportActivity(state: ChatTransportActivityState, message: string): void {
+    this.systemActivity().reportTransport(state, message);
+  }
+
+  protected refreshSystemActivity(): void {
+    this.systemActivity().refresh();
+  }
+
+  protected disconnectSystemActivity(): void {
+    this.activityIndicator?.disconnect();
+  }
+
+  private systemActivity(): ChatActivityIndicator {
+    this.activityIndicator ??= new ChatActivityIndicator({
+      hasIndicator: () => this.hasLiveBadgeTarget,
+      indicator: () => this.liveBadgeTarget,
+      text: () => this.activityTextTarget,
+      dot: () => this.activityDotTarget,
+      problems: () => this.activityProblemsTarget,
+    });
+    return this.activityIndicator;
   }
 }
 

@@ -68,11 +68,11 @@ func TestConfiguredWebSearchProvidersHasNoImplicitFallback(t *testing.T) {
 	if err != nil || len(got) != 0 {
 		t.Fatalf("implicit providers=%v", got)
 	}
-	got, err = configuredWebSearchProviders([]string{" reddit ", "reddit", "google"})
+	got, err = configuredWebSearchProviders([]string{" brave ", "brave", "google"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(got) != 2 || got[0] != "reddit" || got[1] != "google" {
+	if len(got) != 2 || got[0] != "brave" || got[1] != "google" {
 		t.Fatalf("providers=%v", got)
 	}
 }

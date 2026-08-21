@@ -7,22 +7,26 @@ import (
 	"strings"
 
 	"github.com/gryph/omnidex/internal/model"
+	"github.com/gryph/omnidex/internal/modelref"
 	"github.com/gryph/omnidex/internal/roleplay"
 )
 
 const (
-	roleplaySimulationTarget   = "roleplay-simulation"
-	roleplaySimulationPageSize = 4
+	roleplaySimulationTarget        = "roleplay-simulation"
+	roleplayComposerAuthorityTarget = "roleplay-composer-authority"
+	roleplayCastSidebarTarget       = "roleplay-cast-sidebar"
+	roleplaySimulationPageSize      = 4
 )
 
 type roleplaySimulationPageState struct {
-	Characters    int
-	Personas      int
-	TurnOrder     int
-	Meters        int
-	Inventory     int
-	Interactions  int
-	ItemTemplates int
+	Characters               int
+	Personas                 int
+	TurnOrder                int
+	Meters                   int
+	Inventory                int
+	Interactions             int
+	ItemTemplates            int
+	ComposerPersonaCharacter string
 }
 
 type roleplayNamedPersona struct {
@@ -35,9 +39,11 @@ type roleplaySimulationComponentState struct {
 	World                 roleplay.World
 	Scene                 *roleplay.SceneSheet
 	Characters            []roleplay.SimulationCharacterSummary
+	UserPersonaCharacters []roleplay.SimulationCharacterSummary
 	CharactersMore        bool
 	CharacterHasPersona   map[string]bool
 	CharacterCapabilities map[string]roleplay.CharacterCapabilityProjection
+	CharacterGeneration   map[string]roleplay.CharacterGenerationProjection
 	CharacterNames        map[string]string
 	Personas              []roleplayNamedPersona
 	PersonasMore          bool
@@ -53,17 +59,21 @@ type roleplaySimulationComponentState struct {
 	ItemTemplatesMore     bool
 	AllParticipants       []roleplay.SceneParticipantProjection
 	ActiveCharacterName   string
+	ActiveGeneration      *roleplay.CharacterGenerationProjection
+	LastUserTurn          *roleplay.UserTurnAuthority
+	InstalledModelNames   []string
 	SceneDraft            roleplaySceneDraft
 	Page                  roleplaySimulationPageState
 }
 
 type roleplaySimulationComponentResponse struct {
-	ChannelID          model.ChannelID   `json:"channel_id"`
-	WorldID            string            `json:"world_id"`
-	Configured         bool              `json:"configured"`
-	SceneRevision      *int64            `json:"scene_revision,omitempty"`
-	SceneDraftRevision int64             `json:"scene_draft_revision"`
-	HTML               chatComponentHTML `json:"html"`
+	ChannelID                  model.ChannelID   `json:"channel_id"`
+	WorldID                    string            `json:"world_id"`
+	Configured                 bool              `json:"configured"`
+	SceneRevision              *int64            `json:"scene_revision,omitempty"`
+	SceneDraftRevision         int64             `json:"scene_draft_revision"`
+	ComposerPersonaCharacterID string            `json:"composer_persona_character_id,omitempty"`
+	HTML                       chatComponentHTML `json:"html"`
 }
 
 func renderRoleplaySimulationComponent(
@@ -74,9 +84,9 @@ func renderRoleplaySimulationComponent(
 	}
 	configured := state.Scene != nil
 	var body strings.Builder
-	body.WriteString(`<div class="space-y-3" data-roleplay-world-id="` + html.EscapeString(state.World.ID) +
+	body.WriteString(`<div class="flex h-full min-h-0 flex-col" data-roleplay-world-id="` + html.EscapeString(state.World.ID) +
 		`" data-roleplay-scene-draft-revision="` + strconv.FormatInt(state.SceneDraft.Revision, 10) + `">`)
-	body.WriteString(`<header class="rounded-md border border-violet-300/20 bg-violet-300/5 p-3">`)
+	body.WriteString(`<header class="shrink-0 border-b border-violet-300/15 bg-violet-300/[.04] px-4 py-3 md:px-5">`)
 	body.WriteString(`<p class="text-[10px] uppercase tracking-[.16em] text-violet-200/80">Roleplay simulation</p>`)
 	body.WriteString(`<h3 class="mt-1 text-base font-semibold text-zinc-100">` + html.EscapeString(state.World.Name) + `</h3>`)
 	if configured {
@@ -97,11 +107,22 @@ func renderRoleplaySimulationComponent(
 	}
 	body.WriteString(sections)
 	body.WriteString(`</div>`)
-	bundle := renderRecyclrTemplateHTML(roleplaySimulationTarget, body.String(), "innerHTML")
+	composer, err := renderRoleplayComposerAuthority(state)
+	if err != nil {
+		return roleplaySimulationComponentResponse{}, err
+	}
+	cast, err := renderRoleplayCastSidebar(state)
+	if err != nil {
+		return roleplaySimulationComponentResponse{}, err
+	}
+	bundle := renderRecyclrTemplateHTML(roleplaySimulationTarget, body.String(), "innerHTML") +
+		renderRecyclrTemplateHTML(roleplayComposerAuthorityTarget, composer, "innerHTML") +
+		renderRecyclrTemplateHTML(roleplayCastSidebarTarget, cast, "innerHTML")
 	response := roleplaySimulationComponentResponse{
 		ChannelID: state.Channel.ID, WorldID: state.World.ID, Configured: configured,
-		SceneDraftRevision: state.SceneDraft.Revision,
-		HTML:               chatComponentHTML{Bundle: bundle},
+		SceneDraftRevision:         state.SceneDraft.Revision,
+		ComposerPersonaCharacterID: state.Page.ComposerPersonaCharacter,
+		HTML:                       chatComponentHTML{Bundle: bundle},
 	}
 	if configured {
 		revision := state.Scene.Revision
@@ -130,6 +151,16 @@ func validateRoleplaySimulationComponentState(state roleplaySimulationComponentS
 			return fmt.Errorf("roleplay component omitted a scene-draft participant name")
 		}
 	}
+	seenModels := make(map[string]struct{}, len(state.InstalledModelNames))
+	for _, modelName := range state.InstalledModelNames {
+		if err := modelref.ValidateOllamaName(modelName); err != nil {
+			return fmt.Errorf("roleplay component installed model: %w", err)
+		}
+		if _, duplicate := seenModels[modelName]; duplicate {
+			return fmt.Errorf("roleplay component duplicates an installed model")
+		}
+		seenModels[modelName] = struct{}{}
+	}
 	counts := []struct {
 		name    string
 		count   int
@@ -150,6 +181,35 @@ func validateRoleplaySimulationComponentState(state roleplaySimulationComponentS
 			return fmt.Errorf("roleplay %s page is invalid", page.name)
 		}
 	}
+	if len(state.UserPersonaCharacters) < 1 {
+		return fmt.Errorf("roleplay component requires world character authority")
+	}
+	seenPersonaCharacters := make(map[string]struct{}, len(state.UserPersonaCharacters))
+	activeCharacterPresent := false
+	selectedCharacterPresent := state.Page.ComposerPersonaCharacter == ""
+	for _, character := range state.UserPersonaCharacters {
+		if character.WorldID != state.World.ID || character.ID == "" || character.Name == "" ||
+			character.Name != strings.TrimSpace(character.Name) {
+			return fmt.Errorf("roleplay user-persona character authority is invalid")
+		}
+		if _, duplicate := seenPersonaCharacters[character.ID]; duplicate {
+			return fmt.Errorf("roleplay user-persona character authority is duplicated")
+		}
+		seenPersonaCharacters[character.ID] = struct{}{}
+		generation, exists := state.CharacterGeneration[character.ID]
+		if !exists || generation.CharacterID != character.ID || generation.Config.LibraryCharacterID != character.LibraryID {
+			return fmt.Errorf("roleplay component omitted world character generation authority")
+		}
+		if err := generation.Config.Validate(); err != nil {
+			return fmt.Errorf("roleplay character generation: %w", err)
+		}
+		activeCharacterPresent = activeCharacterPresent ||
+			(state.Scene != nil && character.ID == state.Scene.ActiveCharacterID)
+		selectedCharacterPresent = selectedCharacterPresent || character.ID == state.Page.ComposerPersonaCharacter
+	}
+	if !selectedCharacterPresent {
+		return fmt.Errorf("roleplay composer selection is not a world character")
+	}
 	if state.Scene == nil {
 		if state.SceneDraft.SceneRevision != 0 {
 			return fmt.Errorf("unconfigured roleplay component contains a configured scene draft")
@@ -158,6 +218,9 @@ func validateRoleplaySimulationComponentState(state roleplaySimulationComponentS
 			return fmt.Errorf("unconfigured roleplay component contains configured scene state")
 		}
 		return nil
+	}
+	if !activeCharacterPresent {
+		return fmt.Errorf("roleplay user-persona authority omitted the responding character")
 	}
 	if state.Scene.WorldID != state.World.ID || state.Scene.ID == "" || state.Scene.Revision < 1 {
 		return fmt.Errorf("roleplay component scene does not share exact world authority")
@@ -168,10 +231,32 @@ func validateRoleplaySimulationComponentState(state roleplaySimulationComponentS
 	if state.ActiveCharacterName == "" || state.ActiveCharacterName != strings.TrimSpace(state.ActiveCharacterName) {
 		return fmt.Errorf("roleplay component requires the active character's exact server name")
 	}
+	if state.ActiveGeneration == nil ||
+		state.ActiveGeneration.CharacterID != state.Scene.ActiveCharacterID {
+		return fmt.Errorf("roleplay component requires the active character's current generation authority")
+	}
+	if err := state.ActiveGeneration.Config.Validate(); err != nil {
+		return fmt.Errorf("roleplay active generation: %w", err)
+	}
+	if listed := state.CharacterGeneration[state.Scene.ActiveCharacterID]; listed.Config != state.ActiveGeneration.Config {
+		return fmt.Errorf("roleplay active generation differs from world character authority")
+	}
+	if state.LastUserTurn != nil {
+		if err := state.LastUserTurn.Validate(); err != nil {
+			return fmt.Errorf("roleplay component latest user turn: %w", err)
+		}
+		if state.LastUserTurn.PersonaKind == roleplay.UserPersonaLegacy ||
+			state.LastUserTurn.ContributionKind == roleplay.UserContributionCommand {
+			return fmt.Errorf("roleplay component latest user turn is not a reusable composer selection")
+		}
+	}
 	if len(state.AllParticipants) < 1 || len(state.AllParticipants) > roleplay.MaxSceneParticipants {
 		return fmt.Errorf("roleplay component requires its bounded complete participant authority")
 	}
 	for index, participant := range state.AllParticipants {
+		if _, exists := seenPersonaCharacters[participant.CharacterID]; !exists {
+			return fmt.Errorf("roleplay responder is not a current world character")
+		}
 		if participant.TurnPosition != index {
 			return fmt.Errorf("roleplay complete participant authority is not contiguous")
 		}
@@ -204,11 +289,18 @@ func renderRoleplaySetupSections(state roleplaySimulationComponentState) (string
 	if err != nil {
 		return "", err
 	}
-	personas, err := renderRoleplayPersonaSheets(state)
-	if err != nil {
-		return "", err
-	}
-	return roster + personas + renderRoleplaySceneForm(state), nil
+	return renderRoleplaySetupFlow("cast", []roleplaySetupSection{
+		{
+			Key: "cast", Label: "1 · Cast",
+			Description: "Choose scene participation. Select a character in the sidebar to edit them.",
+			Body:        roster,
+		},
+		{
+			Key: "scene", Label: "2 · Scene",
+			Description: "Create the opening scene after selecting at least one cast member.",
+			Body:        renderRoleplaySceneForm(state),
+		},
+	})
 }
 
 func renderRoleplayConfiguredSections(state roleplaySimulationComponentState) (string, error) {
@@ -217,10 +309,6 @@ func renderRoleplayConfiguredSections(state roleplaySimulationComponentState) (s
 		return "", err
 	}
 	turnOrder, err := renderRoleplayTurnOrder(state)
-	if err != nil {
-		return "", err
-	}
-	personas, err := renderRoleplayPersonaSheets(state)
 	if err != nil {
 		return "", err
 	}
@@ -240,6 +328,26 @@ func renderRoleplayConfiguredSections(state roleplaySimulationComponentState) (s
 	if err != nil {
 		return "", err
 	}
-	return renderRoleplaySceneSheet(state) + roster + turnOrder + personas + meters +
-		inventory + interactions + items + renderRoleplayDefinitionForms(), nil
+	return renderRoleplaySetupFlow("scene", []roleplaySetupSection{
+		{
+			Key: "scene", Label: "Scene",
+			Description: "Edit the current scene and review its server-owned turn order.",
+			Body:        renderRoleplaySceneSheet(state) + turnOrder,
+		},
+		{
+			Key: "cast", Label: "Cast",
+			Description: "Choose scene participation. Character editing opens from the sidebar.",
+			Body:        roster,
+		},
+		{
+			Key: "state", Label: "State",
+			Description: "Review and update the active character's meters and inventory.",
+			Body:        meters + inventory,
+		},
+		{
+			Key: "actions", Label: "Actions & rules",
+			Description: "Manage interaction commands, item templates, and simulation definitions.",
+			Body:        interactions + items + renderRoleplayDefinitionForms(),
+		},
+	})
 }

@@ -37,10 +37,6 @@ func TestPostgresScrumRealtimeCardPayloadIsBoundedAndTyped(t *testing.T) {
 			CreatedAt: time.Date(2026, 8, 13, 12, 0, 0, index*1_000, time.UTC).Format(time.RFC3339Nano),
 		})
 	}
-	messages, err := scrumChannelMessageAppends(chat)
-	if err != nil {
-		t.Fatal(err)
-	}
 	operationID, err := queue.NewLifecycleOperationID("scrum-realtime-page", fmt.Sprintf("%d", project.ID))
 	if err != nil {
 		t.Fatal(err)
@@ -48,6 +44,13 @@ func TestPostgresScrumRealtimeCardPayloadIsBoundedAndTyped(t *testing.T) {
 	request := queue.ScrumChannelOperationRequest{
 		OperationID: operationID, ProjectID: project.ID, CardID: stored.ID,
 		Message: "append realtime fixture rows",
+	}
+	chat[0].Role = "user"
+	chat[0].Content = request.Message
+	chat[0].OperationID = string(request.OperationID)
+	messages, err := scrumChannelMessageAppends(chat)
+	if err != nil {
+		t.Fatal(err)
 	}
 	result, err := repository.ExecuteScrumChannelOperation(
 		t.Context(), queue.ScrumChannelOperationCommand{

@@ -78,7 +78,8 @@ func TestPostgresChannelTurnCompletesThroughOneAuthoritativeJob(t *testing.T) {
 	}
 	messages := page.Messages
 	if len(messages) != 2 || messages[0].Role != model.ChannelMessageRoleUser || messages[0].Content != exact ||
-		messages[1].Role != model.ChannelMessageRoleAssistant || messages[1].Content != output {
+		messages[0].SpeakerName != "" || messages[1].Role != model.ChannelMessageRoleAssistant ||
+		messages[1].SpeakerName != "" || messages[1].Content != output {
 		t.Fatalf("channel transcript=%+v", messages)
 	}
 }

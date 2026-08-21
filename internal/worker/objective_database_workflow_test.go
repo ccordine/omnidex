@@ -51,16 +51,6 @@ func (station *databaseTestAnswerStation) Answer(
 	}, objectiveStationReceipt{Calls: 1}, nil
 }
 
-type databaseTestCandidateProvider struct{}
-
-func (databaseTestCandidateProvider) Candidates(context.Context, model.Job) (conversationCandidateSet, error) {
-	return conversationCandidateSet{}, nil
-}
-
-func (databaseTestCandidateProvider) MemoryCandidates(context.Context, model.Job) (objectiveMemoryContextCandidateSet, error) {
-	return objectiveMemoryContextCandidateSet{}, nil
-}
-
 func (station *scriptedObjectiveDatabaseStations) SelectSchema(
 	context.Context,
 	assemblyline.DatabaseSchemaSelectionInput,
@@ -138,7 +128,7 @@ func TestDatabaseBoundObjectiveRunsTypedEvidenceLoopAndGroundsAnswer(t *testing.
 	result, err := runObjectiveTurn(context.Background(), model.Job{
 		ID: 71, Pipeline: model.PipelineChat, Instruction: "How many appointments exist?",
 		Metadata: objectiveAssistantDataSourceMetadata(),
-	}, databaseTestCandidateProvider{}, nil, kind, nil, answer,
+	}, scriptedConversationCandidateProvider{}, emptyContextSieveStation(), kind, nil, answer,
 		objectiveWorkflows{DatabaseRead: workflow})
 	if err != nil {
 		t.Fatal(err)
@@ -146,7 +136,7 @@ func TestDatabaseBoundObjectiveRunsTypedEvidenceLoopAndGroundsAnswer(t *testing.
 	if !kind.input.DatabaseEvidenceAvailable || executions != 1 || stations.intentCalls != 1 || stations.gapCalls != 1 {
 		t.Fatalf("availability=%v executions=%d intent=%d gap=%d", kind.input.DatabaseEvidenceAvailable, executions, stations.intentCalls, stations.gapCalls)
 	}
-	if result.Kind != assemblyline.ObjectiveKindDatabaseRead || !result.Complete || result.ModelCalls != 4 || len(result.Citations) != 1 {
+	if result.Kind != assemblyline.ObjectiveKindDatabaseRead || !result.Complete || result.ModelCalls != 5 || len(result.Citations) != 1 {
 		t.Fatalf("result=%+v", result)
 	}
 	if strings.Contains(answer.input.Evidence[0].Text, "SELECT") || !strings.Contains(answer.input.Evidence[0].Text, `"label":"count_rows"`) {

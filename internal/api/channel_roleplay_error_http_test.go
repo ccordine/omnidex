@@ -37,14 +37,14 @@ func TestRoleplayChannelTurnPreparationErrorsAreNotAccepted(t *testing.T) {
 			channel.RoleplayViewpointCharacterID = "rpc_0123456789abcdef0123456789abcdef"
 			store.channels["authority"] = channel
 			calls := 0
-			server.enqueueChannelTurn = func(
-				context.Context, model.ChannelID, string, string,
+			server.enqueueRoleplayChannelTurn = func(
+				context.Context, model.ChannelID, string, roleplay.UserTurnRequest,
 			) (model.ChannelMessage, model.Job, error) {
 				calls++
 				return model.ChannelMessage{}, model.Job{}, test.err
 			}
 			request := httptest.NewRequest(
-				http.MethodPost, "/v1/channels/authority/messages", bytes.NewBufferString(`{"prompt":"/calibrate malformed"}`),
+				http.MethodPost, "/v1/channels/authority/messages", bytes.NewBufferString(`{"prompt":"/calibrate malformed","roleplay_turn":{"persona_kind":"narrator","contribution_kind":"command"}}`),
 			)
 			response := httptest.NewRecorder()
 

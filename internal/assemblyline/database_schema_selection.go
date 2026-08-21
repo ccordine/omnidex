@@ -1,7 +1,6 @@
 package assemblyline
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 )
@@ -125,7 +124,7 @@ func BuildDatabaseSchemaSelectionPrompt(input DatabaseSchemaSelectionInput) (str
 	if err := input.validate(); err != nil {
 		return "", err
 	}
-	projection, err := json.Marshal(input)
+	projection, err := marshalObjectiveContextInputForModel(input, input.Context)
 	if err != nil {
 		return "", fmt.Errorf("encode database schema selection projection: %w", err)
 	}

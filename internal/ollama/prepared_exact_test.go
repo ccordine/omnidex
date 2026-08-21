@@ -89,9 +89,10 @@ func TestGeneratePreparedExactPreservesCompleteProviderErrorResponse(t *testing.
 	t.Parallel()
 	expected := ollamaIdentityExpectation()
 	body := `{"error":"busy","prompt_eval_count":4}`
+	seen := make(map[string]int)
 	client := exactPreparedIdentityClient(
 		t, expected, http.StatusServiceUnavailable, body,
-		make(map[string]int), make(map[string][]byte),
+		seen, make(map[string][]byte),
 	)
 	partial, err := client.GeneratePreparedExact(
 		context.Background(), exactPreparedRequest(expected),
@@ -110,6 +111,12 @@ func TestGeneratePreparedExactPreservesCompleteProviderErrorResponse(t *testing.
 		partial.ProviderResponseCapturedBytes != len(body) ||
 		partial.Usage != (llm.ProviderGenerationUsage{}) || partial.UsagePresent || partial.Content != "" {
 		t.Fatalf("partial provider response evidence=%+v", partial)
+	}
+	if seen["/api/generate"] != 2 {
+		t.Fatalf(
+			"HTTP failure dispatched %d generate requests; want one identity probe and one exact request",
+			seen["/api/generate"],
+		)
 	}
 }
 

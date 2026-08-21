@@ -11,6 +11,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/gryph/omnidex/internal/exactjson"
+	"github.com/gryph/omnidex/internal/modelref"
 	"github.com/gryph/omnidex/internal/secrets"
 )
 
@@ -153,15 +154,8 @@ func decodeOllamaPullRequest(w http.ResponseWriter, r *http.Request) (ollamaPull
 	if err := decodeExactSettingsJSON(raw, "Ollama pull request", &request); err != nil {
 		return ollamaPullRequest{}, err
 	}
-	if request.Model == "" || request.Model != strings.TrimSpace(request.Model) || len(request.Model) > 256 {
-		return ollamaPullRequest{}, fmt.Errorf("Ollama model must be canonical exact text of at most 256 bytes")
-	}
-	for _, character := range request.Model {
-		if character >= 'a' && character <= 'z' || character >= 'A' && character <= 'Z' ||
-			character >= '0' && character <= '9' || strings.ContainsRune("._:/@-", character) {
-			continue
-		}
-		return ollamaPullRequest{}, fmt.Errorf("Ollama model contains unsupported character %q", character)
+	if err := modelref.ValidateOllamaName(request.Model); err != nil {
+		return ollamaPullRequest{}, err
 	}
 	return request, nil
 }

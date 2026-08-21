@@ -101,23 +101,6 @@ func TestNewAcceptsLazyAbsentProviderAuthority(t *testing.T) {
 	}
 }
 
-func TestNewRetainsExplicitObjectiveAdvisoryMode(t *testing.T) {
-	opts := validWorkerOptions()
-	opts.ObjectiveAdvisoryMode = "shadow"
-	service, err := New(
-		&queue.Repository{}, startupTestLLM{}, startupTestLLM{}, nil, opts,
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if service.objectiveAdvisoryMode != "shadow" {
-		t.Fatalf("service advisory mode=%q want shadow", service.objectiveAdvisoryMode)
-	}
-	if service.objectiveAdvisoryProvider != llm.ExactPreparedProviderBackend {
-		t.Fatalf("service advisory provider=%q want exact backend", service.objectiveAdvisoryProvider)
-	}
-}
-
 func TestNewRejectsTypedNilTransportsAtConstruction(t *testing.T) {
 	var missing *pointerWorkerTransport
 	for _, test := range []struct {

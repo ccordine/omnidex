@@ -4,11 +4,53 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/gryph/omnidex/internal/exactjson"
 )
+
+// DeriveRoleplayRawContextLimit reads the architecture-owned native context
+// field from one exact /api/show body and clamps it to the configured request
+// ceiling. No model output participates in this decision.
+func DeriveRoleplayRawContextLimit(showResponse []byte, requested int) (int, error) {
+	if err := ValidateInferenceContextTokens(requested); err != nil {
+		return 0, fmt.Errorf("roleplay raw configured context: %w", err)
+	}
+	if err := exactjson.ValidateCompatibleObject(
+		showResponse, exactIdentityShowResponse{}, "roleplay raw context response",
+	); err != nil {
+		return 0, err
+	}
+	var response exactIdentityShowResponse
+	if err := json.Unmarshal(showResponse, &response); err != nil {
+		return 0, err
+	}
+	if _, err := deriveRoleplayRawProviderModelProfile(response); err != nil {
+		return 0, err
+	}
+	architecture, err := exactTokenizerString(response.ModelInfo, "general.architecture")
+	if err != nil {
+		return 0, err
+	}
+	field := architecture + ".context_length"
+	raw, exists := response.ModelInfo[field]
+	if !exists {
+		return 0, fmt.Errorf("roleplay raw provider model is missing exact context field %q", field)
+	}
+	native, err := strconv.Atoi(string(raw))
+	if err != nil || strconv.Itoa(native) != string(raw) {
+		return 0, fmt.Errorf("roleplay raw provider context field %q is not an exact integer", field)
+	}
+	if err := ValidateRoleplayRawContextTokens(native); err != nil {
+		return 0, fmt.Errorf("roleplay raw provider context field %q: %w", field, err)
+	}
+	if native < requested {
+		return native, nil
+	}
+	return requested, nil
+}
 
 type exactIdentityVersionResponse struct {
 	Version string `json:"version"`
@@ -88,7 +130,7 @@ func DeriveExactProviderIdentityExpectation(
 	if err := decodeExactIdentityJSON(operations[1].ResponseCapture, &installed, "installed models"); err != nil {
 		return ProviderIdentityExpectation{}, err
 	}
-	installedModel, err := exactIdentitySelectedModel(installed.Models, selection.Model, false)
+	installedModel, err := exactIdentityInstalledModel(installed.Models, selection.Model)
 	if err != nil {
 		return ProviderIdentityExpectation{}, err
 	}
@@ -103,7 +145,7 @@ func DeriveExactProviderIdentityExpectation(
 	if err := decodeExactIdentityJSON(operations[4].ResponseCapture, &running, "running models"); err != nil {
 		return ProviderIdentityExpectation{}, err
 	}
-	runningModel, err := exactIdentitySelectedModel(running.Models, selection.Model, true)
+	runningModel, err := exactIdentityRunningModel(running.Models, installedModel)
 	if err != nil {
 		return ProviderIdentityExpectation{}, err
 	}
@@ -145,7 +187,48 @@ func validateExactTokenizerOperation(
 	if err := json.Unmarshal(operation.ResponseCapture, &response); err != nil {
 		return exactProviderModelProfile{}, err
 	}
+	if selection.ProfilePolicy == ProviderIdentityProfileRoleplayRawCompletion {
+		return deriveRoleplayRawProviderModelProfile(response)
+	}
 	return deriveExactProviderModelProfile(response)
+}
+
+func deriveRoleplayRawProviderModelProfile(
+	response exactIdentityShowResponse,
+) (exactProviderModelProfile, error) {
+	architecture, err := exactTokenizerString(response.ModelInfo, "general.architecture")
+	if err != nil {
+		return exactProviderModelProfile{}, err
+	}
+	tokenizerModel, err := exactTokenizerString(response.ModelInfo, "tokenizer.ggml.model")
+	if err != nil {
+		return exactProviderModelProfile{}, err
+	}
+	if _, err := exactTokenizerOptionalString(response.ModelInfo, "tokenizer.ggml.pre"); err != nil {
+		return exactProviderModelProfile{}, err
+	}
+	if !providerIdentityText(architecture, 256) || !providerIdentityText(tokenizerModel, 256) {
+		return exactProviderModelProfile{}, fmt.Errorf("roleplay raw provider tokenizer identity is not bounded text")
+	}
+	seen := make(map[string]struct{}, len(response.Capabilities))
+	hasCompletion := false
+	if len(response.Capabilities) == 0 || len(response.Capabilities) > 32 {
+		return exactProviderModelProfile{}, fmt.Errorf("roleplay raw provider capabilities are outside bounds")
+	}
+	for _, capability := range response.Capabilities {
+		if !providerIdentityText(capability, 64) {
+			return exactProviderModelProfile{}, fmt.Errorf("roleplay raw provider capability is not bounded text")
+		}
+		if _, exists := seen[capability]; exists {
+			return exactProviderModelProfile{}, fmt.Errorf("roleplay raw provider capability %q is duplicated", capability)
+		}
+		seen[capability] = struct{}{}
+		hasCompletion = hasCompletion || capability == "completion"
+	}
+	if !hasCompletion {
+		return exactProviderModelProfile{}, fmt.Errorf("roleplay raw provider does not advertise completion capability")
+	}
+	return exactProviderModelProfileByID(ExactPreparedTokenizerProfileRoleplayRaw)
 }
 
 func validateExactPreloadOperation(
@@ -185,19 +268,42 @@ func decodeExactIdentityJSON(raw []byte, target any, subject string) error {
 	return json.Unmarshal(raw, target)
 }
 
-func exactIdentitySelectedModel(
-	models []exactIdentityModel,
-	name string,
-	requireRunner bool,
-) (exactIdentityModel, error) {
+func exactIdentityInstalledModel(models []exactIdentityModel, name string) (exactIdentityModel, error) {
 	found := make([]exactIdentityModel, 0, 1)
 	for _, model := range models {
 		if model.Name == name && (model.Model == "" || model.Model == name) {
 			found = append(found, model)
 		}
 	}
-	if len(found) != 1 || (requireRunner && found[0].ContextLength <= 0) {
+	if len(found) != 1 {
 		return exactIdentityModel{}, fmt.Errorf("provider model %q matched %d exact records", name, len(found))
+	}
+	return found[0], nil
+}
+
+func exactIdentityRunningModel(
+	models []exactIdentityModel,
+	installed exactIdentityModel,
+) (exactIdentityModel, error) {
+	if !providerIdentityDigest.MatchString(installed.Digest) ||
+		!providerIdentityText(installed.Details.QuantizationLevel, 256) {
+		return exactIdentityModel{}, fmt.Errorf("installed provider model identity is invalid")
+	}
+	found := make([]exactIdentityModel, 0, 1)
+	for _, model := range models {
+		if model.Digest == installed.Digest &&
+			model.Details.QuantizationLevel == installed.Details.QuantizationLevel &&
+			providerIdentityText(model.Name, 256) &&
+			(model.Model == "" || model.Model == model.Name) {
+			found = append(found, model)
+		}
+	}
+	if len(found) != 1 || found[0].ContextLength <= 0 {
+		return exactIdentityModel{}, fmt.Errorf(
+			"running provider identity for model %q matched %d exact records",
+			installed.Name,
+			len(found),
+		)
 	}
 	return found[0], nil
 }

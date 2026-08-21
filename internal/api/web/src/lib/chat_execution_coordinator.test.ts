@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ChatExecutionCoordinator, type ChatExecutionHost } from "./chat_execution_coordinator";
 
 function response(body: unknown): Response {
@@ -31,6 +31,10 @@ describe("ChatExecutionCoordinator", () => {
     vi.restoreAllMocks();
   });
 
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("waits for an existing channel job without creating transcript state", async () => {
     const fetchMock = vi.fn(async () => response({
       job: { id: 73, status: "completed", current_generation: 1, result: "Result persisted to the channel" },
@@ -47,7 +51,25 @@ describe("ChatExecutionCoordinator", () => {
     expect(fetchMock).toHaveBeenCalledWith("/v1/ui/chat/jobs/73");
     expect(coordinator.currentJobID()).toBe(73);
     expect(fixture.jobBadge.textContent).toBe("#73");
+    expect(fixture.host.renderJobState).toHaveBeenCalledWith("server-job-state");
     expect(fixture.host.setStatus).toHaveBeenLastCalledWith("completed", "ready");
+  });
+
+  it("keeps server job-state markup after validating semantic job details", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => response({
+      job: { id: 77, status: "completed", current_generation: 1 },
+      steps: [],
+      progress: { latest_context_id: 0, count: 0 },
+      html: { bundle: "<template data-recyclr-target=\"job-details\"></template>" },
+    })));
+    const fixture = createHost();
+    const coordinator = new ChatExecutionCoordinator(fixture.host);
+
+    await coordinator.waitForExistingJob(77);
+
+    expect(fixture.host.renderJobState).toHaveBeenCalledWith(
+      "<template data-recyclr-target=\"job-details\"></template>",
+    );
   });
 
   it("allows a completed channel job without copying its result into browser state", async () => {
@@ -61,6 +83,54 @@ describe("ChatExecutionCoordinator", () => {
     const coordinator = new ChatExecutionCoordinator(fixture.host);
 
     await expect(coordinator.waitForExistingJob(75)).resolves.toBeUndefined();
+    expect(fixture.host.setStatus).toHaveBeenLastCalledWith("completed", "ready");
+  });
+
+  it("reconciles a running channel job when authoritative terminal telemetry arrives", async () => {
+    let status: "running" | "completed" = "running";
+    const fetchMock = vi.fn(async () => response({
+      job: { id: 78, status, current_generation: 1 },
+      steps: [],
+      progress: { latest_context_id: 0, count: 0 },
+      html: { bundle: "server-job-state" },
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    const fixture = createHost();
+    const coordinator = new ChatExecutionCoordinator(fixture.host);
+
+    const completion = coordinator.waitForExistingJob(78);
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    status = "completed";
+    coordinator.handleProgress(new CustomEvent("omni:job-progress", {
+      detail: { jobID: 78, phase: "finished", summary: "Job completed" },
+    }));
+
+    await expect(completion).resolves.toBeUndefined();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fixture.host.setStatus).toHaveBeenLastCalledWith("completed", "ready");
+  });
+
+  it("reconciles active work from server authority when realtime completion is missed", async () => {
+    vi.useFakeTimers();
+    let status: "running" | "completed" = "running";
+    const fetchMock = vi.fn(async () => response({
+      job: { id: 79, status, current_generation: 1 },
+      steps: [],
+      progress: { latest_context_id: 0, count: 0 },
+      html: { bundle: "server-job-state" },
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    const fixture = createHost();
+    const coordinator = new ChatExecutionCoordinator(fixture.host);
+
+    const completion = coordinator.waitForExistingJob(79);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    status = "completed";
+    await vi.advanceTimersByTimeAsync(750);
+
+    await expect(completion).resolves.toBeUndefined();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(fixture.host.setStatus).toHaveBeenLastCalledWith("completed", "ready");
   });
 

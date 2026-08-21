@@ -8,9 +8,9 @@ import (
 
 const objectiveEvidenceTruncationMarker = "\n...[truncated]"
 
-func boundedObjectiveEvidenceText(maximum int, values ...string) (string, error) {
+func boundedObjectiveEvidenceText(maximum int, values ...string) (string, bool, error) {
 	if maximum <= len(objectiveEvidenceTruncationMarker) {
-		return "", fmt.Errorf("objective evidence bound %d cannot represent truncation", maximum)
+		return "", false, fmt.Errorf("objective evidence bound %d cannot represent truncation", maximum)
 	}
 	trimmed := make([]string, 0, len(values))
 	required := 0
@@ -20,7 +20,7 @@ func boundedObjectiveEvidenceText(maximum int, values ...string) (string, error)
 			continue
 		}
 		if !utf8.ValidString(value) || strings.ContainsRune(value, '\x00') {
-			return "", fmt.Errorf("objective evidence projection contains invalid text")
+			return "", false, fmt.Errorf("objective evidence projection contains invalid text")
 		}
 		if len(trimmed) > 0 {
 			required++
@@ -29,7 +29,7 @@ func boundedObjectiveEvidenceText(maximum int, values ...string) (string, error)
 		trimmed = append(trimmed, value)
 	}
 	if len(trimmed) == 0 {
-		return "", fmt.Errorf("objective evidence projection is blank")
+		return "", false, fmt.Errorf("objective evidence projection is blank")
 	}
 	limit := maximum
 	truncated := required > maximum
@@ -57,5 +57,5 @@ func boundedObjectiveEvidenceText(maximum int, values ...string) (string, error)
 	if truncated {
 		result.WriteString(objectiveEvidenceTruncationMarker)
 	}
-	return result.String(), nil
+	return result.String(), truncated, nil
 }

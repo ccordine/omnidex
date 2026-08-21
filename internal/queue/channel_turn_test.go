@@ -62,9 +62,14 @@ func TestChannelTurnMetadataRejectsMalformedOptionalDataSourceAuthority(t *testi
 func TestChannelTurnMetadataRequiresExactRoleplayViewpoint(t *testing.T) {
 	viewpoint := model.RoleplayCharacterID("rpc_0123456789abcdef0123456789abcdef")
 	simulation := testSimulationTurnAuthority("story-one", 41, viewpoint)
+	simulation.GenerationConfig.NarrativeModel = "story-model:latest"
+	simulation.Responders[0].GenerationConfig.NarrativeModel = "story-model:latest"
+	simulation.ResponderRoutes[0].GenerationConfig.NarrativeModel = "story-model:latest"
 	raw, err := marshalChannelTurnMetadata(
 		"story-one", 41, 7, "/srv/workspaces/one", "", "",
-		model.ChannelModeRoleplay, modelconfig.Config{}, &simulation,
+		model.ChannelModeRoleplay, modelconfig.Config{
+			"conversation_response_model": "global-story:latest",
+		}, &simulation,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -73,7 +78,9 @@ func TestChannelTurnMetadataRequiresExactRoleplayViewpoint(t *testing.T) {
 	if err := json.Unmarshal(raw, &got); err != nil {
 		t.Fatal(err)
 	}
-	if got.ChannelMode != model.ChannelModeRoleplay || got.RoleplayViewpointCharacterID != viewpoint {
+	if got.ChannelMode != model.ChannelModeRoleplay || got.RoleplayViewpointCharacterID != viewpoint ||
+		got.RoleplayGenerationConfig == nil || *got.RoleplayGenerationConfig != simulation.GenerationConfig ||
+		got.ModelConfig.Get("conversation_response_model") != "story-model:latest" {
 		t.Fatalf("metadata=%+v", got)
 	}
 	if _, err := marshalChannelTurnMetadata(
@@ -89,15 +96,32 @@ func testSimulationTurnAuthority(
 	messageID int64,
 	viewpoint model.RoleplayCharacterID,
 ) roleplay.SimulationTurnAuthority {
-	return roleplay.SimulationTurnAuthority{
+	authority := roleplay.SimulationTurnAuthority{
 		PreparationID: "rpt_11111111111111111111111111111111",
 		ChannelID:     channelID, UserMessageID: messageID,
 		WorldID: "rpw_22222222222222222222222222222222",
 		SceneID: "rps_33333333333333333333333333333333", SceneRevision: 1,
 		ActiveCharacterID: string(viewpoint), InputKind: roleplay.SimulationTurnProse,
+		UserTurn: roleplay.UserTurnAuthority{
+			PersonaKind: roleplay.UserPersonaNarrator, PersonaName: roleplay.NarratorPersonaName,
+			ContributionKind: roleplay.UserContributionDirection, ExactText: "Continue.",
+		},
 		ParticipantCharacterIDs: []string{string(viewpoint)},
-		NarrativeFingerprint:    strings.Repeat("a", 64), CreatedAt: time.Now().UTC(),
+		GenerationConfig: roleplay.CharacterGenerationConfig{
+			Schema:             roleplay.CharacterGenerationConfigSchemaV2,
+			LibraryCharacterID: "rpl_44444444444444444444444444444444", Revision: 1,
+		},
+		NarrativeFingerprint: strings.Repeat("a", 64), CreatedAt: time.Now().UTC(),
 	}
+	authority.Responders = []roleplay.SimulationResponderAuthority{{
+		Position: 0, CharacterID: string(viewpoint), GenerationConfig: authority.GenerationConfig,
+		NarrativeFingerprint: authority.NarrativeFingerprint,
+	}}
+	authority.ResponderRoutes = []roleplay.SimulationResponderRoute{{
+		Position: 0, CharacterID: string(viewpoint), GenerationConfig: authority.GenerationConfig,
+		NarrativeFingerprint: authority.NarrativeFingerprint,
+	}}
+	return authority
 }
 
 func TestChannelTurnMetadataRejectsUnsupportedModelSnapshot(t *testing.T) {

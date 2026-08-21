@@ -48,7 +48,7 @@ func TestDirectCodingSemanticCallReportsPromptMeasurementWithoutContents(t *test
 	}
 }
 
-func TestDirectCodingSemanticCorrectionPatchesRetainedCandidateWithoutReplayingIt(t *testing.T) {
+func TestDirectCodingSemanticCorrectionReceivesExactQuestionCandidateAndDefect(t *testing.T) {
 	t.Parallel()
 
 	job, err := assemblyline.NewApplicationClassificationJob(
@@ -81,10 +81,10 @@ func TestDirectCodingSemanticCorrectionPatchesRetainedCandidateWithoutReplayingI
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(prompts) != 2 || strings.Contains(prompts[1], rejected) ||
-		strings.Contains(prompts[1], "Build a browser tool.") ||
+	if len(prompts) != 2 || !strings.Contains(prompts[1], rejected) ||
+		!strings.Contains(prompts[1], "Build a browser tool.") ||
 		!strings.Contains(prompts[1], "explicitly asks for a browser tool") {
-		t.Fatalf("semantic correction replayed retained context or omitted direct failure:\n%s", strings.Join(prompts, "\n---\n"))
+		t.Fatalf("semantic correction omitted exact retained authority or defect:\n%s", strings.Join(prompts, "\n---\n"))
 	}
 }
 

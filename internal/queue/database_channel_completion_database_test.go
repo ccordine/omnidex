@@ -16,7 +16,7 @@ func TestDatabaseBoundChannelCompletionPersistsCitationAndAssistantTranscript(t 
 	ctx := t.Context()
 	pool := openIsolatedMigrationPool(t)
 	repository := New(pool)
-	if err := repository.EnsureSchema(ctx, loadMigrationBundleThroughPrefix(t, "121")); err != nil {
+	if err := repository.EnsureSchema(ctx, loadCheckedMigrationBundle(t)); err != nil {
 		t.Fatal(err)
 	}
 	source, err := repository.CreateDataSource(ctx, DataSourceUpsert{
@@ -89,8 +89,9 @@ func TestDatabaseBoundChannelCompletionPersistsCitationAndAssistantTranscript(t 
 		t.Fatal(err)
 	}
 	if len(page.Messages) != 2 || page.Messages[0].Content != exactInstruction ||
+		page.Messages[0].SpeakerName != "" ||
 		page.Messages[1].Role != model.ChannelMessageRoleAssistant ||
-		page.Messages[1].Content != command.Output {
+		page.Messages[1].SpeakerName != "" || page.Messages[1].Content != command.Output {
 		t.Fatalf("database channel transcript=%+v", page.Messages)
 	}
 	var persisted int

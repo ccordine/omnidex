@@ -1,11 +1,9 @@
 package api
 
 import (
-	"fmt"
 	"strconv"
 	"strings"
 
-	"github.com/gryph/omnidex/internal/ollama"
 	"github.com/gryph/omnidex/internal/secrets"
 )
 
@@ -67,27 +65,6 @@ func renderUIAdminIngest() string {
 		`<div class="grid gap-3 md:grid-cols-2"><label class="block text-xs text-zinc-500">Staging<select data-admin-target="ingestStage" class="mt-1 w-full rounded-md border border-white/10 bg-zinc-900 px-3 py-2"><option value="candidate">Candidate review</option><option value="durable">Durable memory</option></select></label>` +
 		`<label class="block text-xs text-zinc-500">Extra tags<input data-admin-target="ingestTags" class="mt-1 w-full rounded-md border border-white/10 bg-zinc-900 px-3 py-2" /></label></div>` +
 		`<button type="submit" class="rounded-md bg-cyan-300 px-4 py-2 text-sm font-semibold text-zinc-950">Upload and study</button></form>`
-}
-
-func renderUIOllamaModelList(endpoint string, models []ollama.ModelInfo, configured map[string]struct{}) string {
-	var body strings.Builder
-	body.WriteString(`<form data-action="submit->admin#pullModel" class="flex flex-wrap gap-2"><input data-admin-target="pullModel" placeholder="model:tag" class="min-w-[220px] flex-1 rounded-md border border-white/10 bg-zinc-900 px-3 py-2 font-mono text-sm" /><button type="submit" class="rounded-md bg-cyan-300 px-4 py-2 text-sm font-semibold text-zinc-950">Pull model</button></form>`)
-	body.WriteString(`<p class="mb-3 mt-4 font-mono text-xs text-zinc-500">` + uiEscape(endpoint) + `</p>`)
-	if len(models) == 0 {
-		body.WriteString(`<p class="text-sm text-zinc-500">No models installed.</p>`)
-		return body.String()
-	}
-	body.WriteString(`<div class="space-y-2">`)
-	for _, model := range models {
-		_, active := configured[model.Name]
-		badge := ""
-		if active {
-			badge = `<span class="rounded-full border border-cyan-300/30 bg-cyan-300/10 px-2 py-0.5 text-[10px] text-cyan-200">In config</span>`
-		}
-		body.WriteString(`<article class="flex items-center justify-between gap-3 rounded-md border border-white/10 bg-zinc-900/50 px-3 py-2"><div><div class="font-mono text-sm text-zinc-100">` + uiEscape(model.Name) + `</div><div class="text-[11px] text-zinc-500">` + fmt.Sprintf("%.2f GB", float64(model.Size)/(1024*1024*1024)) + `</div></div><div class="flex items-center gap-2">` + badge + `<button type="button" data-action="admin#deleteOllamaModel" data-model-name="` + uiAttribute(model.Name) + `" class="rounded-md border border-rose-300/30 px-2 py-1 text-xs text-rose-200">Remove</button></div></article>`)
-	}
-	body.WriteString(`</div>`)
-	return body.String()
 }
 
 func renderUIModelFields(payload map[string]any) string {

@@ -17,8 +17,7 @@ func TestCoreBuildsLazyProviderResolversAfterStoredSecretOverlay(t *testing.T) {
 	transports := strings.Index(text, "llmprovider.NewLazyFromConfig(cfg)")
 	workerStations := strings.Index(text, "llmTransports.Stations")
 	workerEmbeddings := strings.Index(text, "llmTransports.Embeddings")
-	advisoryProvider := strings.Index(text, "ObjectiveAdvisoryProvider: cfg.LLMProvider")
-	if overlay < 0 || validation < 0 || transports < 0 || workerStations < 0 || workerEmbeddings < 0 || advisoryProvider < 0 {
+	if overlay < 0 || validation < 0 || transports < 0 || workerStations < 0 || workerEmbeddings < 0 {
 		t.Fatalf("startup is missing overlay, validation, typed transport construction, or worker wiring: overlay=%d validation=%d transports=%d stations=%d embeddings=%d", overlay, validation, transports, workerStations, workerEmbeddings)
 	}
 	if !(overlay < validation && validation < transports && transports < workerStations) {

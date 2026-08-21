@@ -253,7 +253,9 @@ func summarizeChatPortableEvent(namespace, state, message string) (chatProgressK
 
 func chatStationLabel(subject string) (string, chatProgressKind) {
 	labels := map[string]string{
-		"conversation_context_selection":    "Context selection",
+		"context_search_terms":              "Context search concepts",
+		"context_relevance":                 "Context relevance",
+		"context_minification":              "Context minification",
 		"conversation_objective_kind":       "Objective classification",
 		"conversation_response":             "Response",
 		"grounded_answer":                   "Grounded answer",
@@ -281,7 +283,8 @@ func chatStationLabel(subject string) (string, chatProgressKind) {
 	}
 	category := chatProgressStation
 	switch subject {
-	case "conversation_context_selection", "database_schema_selection", "database_evidence_gap",
+	case "context_search_terms", "context_relevance", "context_minification",
+		"database_schema_selection", "database_evidence_gap",
 		"database_join_path_selection", "repository_search_term", "repository_evidence_relevance",
 		"web_search_terms", "web_relevance", "skill_selection":
 		category = chatProgressRetrieval

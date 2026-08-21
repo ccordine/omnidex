@@ -129,14 +129,10 @@ func TestRepositoryReviewValidationRetryRetainsIndependentIdentityGuard(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	retry, err := assemblyline.NewResponseCorrectionJob(reviewJob, "outcome is invalid")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := guard.validate(
-		retry,
-		exactStationExecution{ProviderIdentity: answerIdentity},
-	); err == nil || !strings.Contains(err.Error(), "answer generation") {
-		t.Fatalf("review validation retry used answer identity: error=%v", err)
+	if _, err := assemblyline.NewRetainedResponseCorrectionJob(
+		reviewJob, "outcome is invalid",
+		`{"schema":"omnidex.repository-grounded-review.v1","outcome":"invalid","issue_kind":"","detail":""}`,
+	); err == nil || !strings.Contains(err.Error(), "exactly one code-owned mutable semantic field") {
+		t.Fatalf("multi-leaf repository review correction was accepted: %v", err)
 	}
 }

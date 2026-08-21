@@ -15,23 +15,26 @@ import (
 )
 
 type channelTurnMetadata struct {
-	ChannelID                       model.ChannelID                  `json:"channel_id"`
-	SessionID                       string                           `json:"session_id"`
-	ChannelUserMessageID            int64                            `json:"channel_user_message_id"`
-	ProjectID                       int64                            `json:"project_id"`
-	ClientCWD                       string                           `json:"client_cwd"`
-	DataSourceID                    model.DataSourceID               `json:"data_source_id,omitempty"`
-	DelegatedDataAuthorityID        string                           `json:"delegated_data_authority_id,omitempty"`
-	ChannelMode                     model.ChannelMode                `json:"channel_mode"`
-	RoleplayViewpointCharacterID    model.RoleplayCharacterID        `json:"roleplay_viewpoint_character_id,omitempty"`
-	RoleplaySimulationPreparationID string                           `json:"roleplay_simulation_preparation_id,omitempty"`
-	RoleplayWorldID                 string                           `json:"roleplay_world_id,omitempty"`
-	RoleplaySceneID                 string                           `json:"roleplay_scene_id,omitempty"`
-	RoleplaySceneRevision           int64                            `json:"roleplay_scene_revision,omitempty"`
-	RoleplayInputKind               roleplay.SimulationTurnInputKind `json:"roleplay_input_kind,omitempty"`
-	RoleplayParticipantCharacterIDs []model.RoleplayCharacterID      `json:"roleplay_participant_character_ids,omitempty"`
-	RoleplayNarrativeFingerprint    string                           `json:"roleplay_narrative_fingerprint,omitempty"`
-	ModelConfig                     modelconfig.Config               `json:"model_config"`
+	ChannelID                       model.ChannelID                     `json:"channel_id"`
+	SessionID                       string                              `json:"session_id"`
+	ChannelUserMessageID            int64                               `json:"channel_user_message_id"`
+	ProjectID                       int64                               `json:"project_id"`
+	ClientCWD                       string                              `json:"client_cwd"`
+	DataSourceID                    model.DataSourceID                  `json:"data_source_id,omitempty"`
+	DelegatedDataAuthorityID        string                              `json:"delegated_data_authority_id,omitempty"`
+	ChannelMode                     model.ChannelMode                   `json:"channel_mode"`
+	RoleplayViewpointCharacterID    model.RoleplayCharacterID           `json:"roleplay_viewpoint_character_id,omitempty"`
+	RoleplaySimulationPreparationID string                              `json:"roleplay_simulation_preparation_id,omitempty"`
+	RoleplayWorldID                 string                              `json:"roleplay_world_id,omitempty"`
+	RoleplaySceneID                 string                              `json:"roleplay_scene_id,omitempty"`
+	RoleplaySceneRevision           int64                               `json:"roleplay_scene_revision,omitempty"`
+	RoleplayInputKind               roleplay.SimulationTurnInputKind    `json:"roleplay_input_kind,omitempty"`
+	RoleplayParticipantCharacterIDs []model.RoleplayCharacterID         `json:"roleplay_participant_character_ids,omitempty"`
+	RoleplayNarrativeFingerprint    string                              `json:"roleplay_narrative_fingerprint,omitempty"`
+	RoleplayGenerationConfig        *roleplay.CharacterGenerationConfig `json:"roleplay_generation_config,omitempty"`
+	RoleplayResponders              []roleplay.SimulationResponderRoute `json:"roleplay_responders,omitempty"`
+	RoleplayUserTurn                *roleplay.UserTurnAuthority         `json:"roleplay_user_turn,omitempty"`
+	ModelConfig                     modelconfig.Config                  `json:"model_config"`
 }
 
 // EnqueueChannelTurn atomically records the exact user message and creates the
@@ -41,7 +44,7 @@ func (r *Repository) EnqueueChannelTurn(
 	channelID model.ChannelID,
 	instruction string,
 ) (model.ChannelMessage, model.Job, error) {
-	return r.enqueueChannelTurn(ctx, channelID, instruction, "")
+	return r.enqueueChannelTurn(ctx, channelID, instruction, "", nil)
 }
 
 // EnqueueChannelTurnWithDataAuthority binds one host-issued opaque authority
@@ -52,7 +55,18 @@ func (r *Repository) EnqueueChannelTurnWithDataAuthority(
 	instruction string,
 	delegatedAuthorityID string,
 ) (model.ChannelMessage, model.Job, error) {
-	return r.enqueueChannelTurn(ctx, channelID, instruction, delegatedAuthorityID)
+	return r.enqueueChannelTurn(ctx, channelID, instruction, delegatedAuthorityID, nil)
+}
+
+// EnqueueRoleplayChannelTurn requires the exact user-controlled persona and
+// contribution modality before the message can enter fictional authority.
+func (r *Repository) EnqueueRoleplayChannelTurn(
+	ctx context.Context,
+	channelID model.ChannelID,
+	instruction string,
+	userTurn roleplay.UserTurnRequest,
+) (model.ChannelMessage, model.Job, error) {
+	return r.enqueueChannelTurn(ctx, channelID, instruction, "", &userTurn)
 }
 
 func (r *Repository) enqueueChannelTurn(
@@ -60,6 +74,7 @@ func (r *Repository) enqueueChannelTurn(
 	channelID model.ChannelID,
 	instruction string,
 	delegatedAuthorityID string,
+	userTurnRequest *roleplay.UserTurnRequest,
 ) (model.ChannelMessage, model.Job, error) {
 	if ctx == nil || r == nil || r.pool == nil {
 		return model.ChannelMessage{}, model.Job{}, fmt.Errorf("channel turn requires PostgreSQL and context")
@@ -116,6 +131,19 @@ func (r *Repository) enqueueChannelTurn(
 	if err := validateChannelTurnDataAuthority(ctx, tx, dataSourceID, delegatedAuthorityID); err != nil {
 		return model.ChannelMessage{}, model.Job{}, err
 	}
+	switch channelMode {
+	case model.ChannelModeAssistant:
+		if userTurnRequest != nil {
+			return model.ChannelMessage{}, model.Job{}, fmt.Errorf("assistant channel turn cannot carry roleplay user authority")
+		}
+	case model.ChannelModeRoleplay:
+		if userTurnRequest == nil {
+			return model.ChannelMessage{}, model.Job{}, fmt.Errorf("roleplay channel turn requires explicit user persona and contribution authority")
+		}
+		if err := userTurnRequest.ValidateForExactText(instruction); err != nil {
+			return model.ChannelMessage{}, model.Job{}, err
+		}
+	}
 	if projectLocation != workspaceRoot {
 		return model.ChannelMessage{}, model.Job{}, fmt.Errorf(
 			"channel %q project location %q differs from workspace binding %q",
@@ -159,6 +187,18 @@ func (r *Repository) enqueueChannelTurn(
 	var simulation *roleplay.SimulationTurnAuthority
 	var researchPreparation *RoleplayResearchPreparation
 	if channelMode == model.ChannelModeRoleplay {
+		userTurn, err := roleplay.PersistUserTurnAuthorityTx(
+			ctx, tx, string(channelID), message.ID, instruction, *userTurnRequest,
+		)
+		if err != nil {
+			return model.ChannelMessage{}, model.Job{}, err
+		}
+		message.SpeakerName = userTurn.PersonaName
+		message.Roleplay = &model.ChannelMessageRoleplayAuthority{
+			PersonaKind:      string(userTurn.PersonaKind),
+			CharacterID:      model.RoleplayCharacterID(userTurn.CharacterID),
+			ContributionKind: string(userTurn.ContributionKind),
+		}
 		research, matched, prepareErr := PrepareRoleplayResearchTurnTx(
 			ctx, tx, string(channelID), message.ID, instruction,
 		)
@@ -251,6 +291,10 @@ func marshalChannelTurnMetadata(
 	modelSnapshot modelconfig.Config,
 	simulation *roleplay.SimulationTurnAuthority,
 ) ([]byte, error) {
+	modelSnapshot = maps.Clone(modelSnapshot)
+	if modelSnapshot == nil {
+		modelSnapshot = modelconfig.Config{}
+	}
 	binding := channelTurnMetadata{
 		ChannelID: channelID, SessionID: "channel:" + string(channelID),
 		ChannelUserMessageID: messageID, ProjectID: projectID, ClientCWD: workspaceRoot,
@@ -260,7 +304,17 @@ func marshalChannelTurnMetadata(
 		ModelConfig:              modelSnapshot,
 	}
 	if simulation != nil {
-		binding.RoleplayViewpointCharacterID = model.RoleplayCharacterID(simulation.ActiveCharacterID)
+		if len(simulation.Responders) == 0 || len(simulation.ResponderRoutes) == 0 {
+			return nil, fmt.Errorf("channel roleplay turn authority has no prepared responders")
+		}
+		config := simulation.GenerationConfig
+		binding.RoleplayGenerationConfig = &config
+		if config.NarrativeModel != "" {
+			modelSnapshot["conversation_response_model"] = config.NarrativeModel
+		}
+		binding.ModelConfig = modelSnapshot
+		binding.RoleplayViewpointCharacterID = model.RoleplayCharacterID(simulation.Responders[0].CharacterID)
+		binding.RoleplayResponders = append([]roleplay.SimulationResponderRoute(nil), simulation.ResponderRoutes...)
 		binding.RoleplaySimulationPreparationID = simulation.PreparationID
 		binding.RoleplayWorldID = simulation.WorldID
 		binding.RoleplaySceneID = simulation.SceneID
@@ -268,6 +322,8 @@ func marshalChannelTurnMetadata(
 		binding.RoleplayInputKind = simulation.InputKind
 		binding.RoleplayParticipantCharacterIDs = modelRoleplayCharacterIDs(simulation.ParticipantCharacterIDs)
 		binding.RoleplayNarrativeFingerprint = simulation.NarrativeFingerprint
+		userTurn := simulation.UserTurn
+		binding.RoleplayUserTurn = &userTurn
 	}
 	if err := validateChannelTurnMetadata(binding); err != nil {
 		return nil, err
@@ -304,7 +360,8 @@ func validateChannelTurnMetadata(binding channelTurnMetadata) error {
 	}
 	switch binding.ChannelMode {
 	case model.ChannelModeAssistant:
-		if binding.hasRoleplaySimulationAuthority() {
+		if binding.hasRoleplaySimulationAuthority() || binding.RoleplayGenerationConfig != nil ||
+			binding.RoleplayUserTurn != nil {
 			return fmt.Errorf("assistant channel job cannot carry fictional simulation authority")
 		}
 	case model.ChannelModeRoleplay:
@@ -316,6 +373,40 @@ func validateChannelTurnMetadata(binding channelTurnMetadata) error {
 		}
 		if err := binding.validateRoleplaySimulationAuthority(); err != nil {
 			return err
+		}
+		if binding.RoleplayGenerationConfig == nil {
+			return fmt.Errorf("roleplay channel job requires frozen character generation authority")
+		}
+		if len(binding.RoleplayResponders) < 1 || len(binding.RoleplayResponders) > roleplay.MaxSceneParticipants {
+			return fmt.Errorf("roleplay channel job requires a bounded ordered response round")
+		}
+		for index, responder := range binding.RoleplayResponders {
+			if responder.Position != index || model.RoleplayCharacterID(responder.CharacterID) == "" {
+				return fmt.Errorf("roleplay channel job responder %d has invalid order or identity", index)
+			}
+			if err := model.RoleplayCharacterID(responder.CharacterID).Validate(); err != nil {
+				return fmt.Errorf("roleplay channel job responder %d: %w", index, err)
+			}
+			if err := responder.GenerationConfig.Validate(); err != nil {
+				return fmt.Errorf("roleplay channel job responder %d generation: %w", index, err)
+			}
+			if responder.NarrativeFingerprint == "" {
+				return fmt.Errorf("roleplay channel job responder %d has no narrative fingerprint", index)
+			}
+		}
+		if binding.RoleplayResponders[0].CharacterID != string(binding.RoleplayViewpointCharacterID) ||
+			binding.RoleplayResponders[0].GenerationConfig != *binding.RoleplayGenerationConfig ||
+			binding.RoleplayResponders[0].NarrativeFingerprint != binding.RoleplayNarrativeFingerprint {
+			return fmt.Errorf("roleplay channel job primary responder differs from its response round")
+		}
+		if err := binding.RoleplayGenerationConfig.Validate(); err != nil {
+			return fmt.Errorf("channel job metadata roleplay generation config: %w", err)
+		}
+		if binding.RoleplayUserTurn == nil {
+			return fmt.Errorf("roleplay channel job requires frozen user persona and contribution authority")
+		}
+		if err := binding.RoleplayUserTurn.Validate(); err != nil {
+			return fmt.Errorf("channel job metadata roleplay user turn: %w", err)
 		}
 	}
 	raw, err := json.Marshal(binding.ModelConfig)
@@ -391,7 +482,7 @@ func (binding channelTurnMetadata) hasRoleplaySimulationAuthority() bool {
 		binding.RoleplaySimulationPreparationID != "" || binding.RoleplayWorldID != "" ||
 		binding.RoleplaySceneID != "" || binding.RoleplaySceneRevision != 0 ||
 		binding.RoleplayInputKind != "" || binding.RoleplayParticipantCharacterIDs != nil ||
-		binding.RoleplayNarrativeFingerprint != ""
+		binding.RoleplayNarrativeFingerprint != "" || binding.RoleplayResponders != nil || binding.RoleplayUserTurn != nil
 }
 
 func (binding channelTurnMetadata) validateRoleplaySimulationAuthority() error {

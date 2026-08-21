@@ -109,17 +109,22 @@ func BuildConversationObjectiveKindPrompt(input ConversationObjectiveKindInput) 
 	if err := input.validate(); err != nil {
 		return "", err
 	}
-	context, err := json.Marshal(input.Context)
+	modelContext, err := projectObjectiveContextForModel(input.Context)
+	if err != nil {
+		return "", err
+	}
+	context, err := json.Marshal(modelContext)
 	if err != nil {
 		return "", fmt.Errorf("encode objective context: %w", err)
 	}
 	lines := []string{
 		"Classify one exact user instruction into exactly one registered code-owned objective kind.",
-		"answer: answer without inspecting a repository or acquiring current external evidence.",
-		"repository_read: inspect an existing repository without changing it.",
-		"workspace_mutation: change a workspace and verify the change.",
-		"external_answer: answer using current or externally acquired evidence.",
+		"answer: converse directly, including greetings and small talk, or answer without inspecting a repository or acquiring current external evidence.",
+		"repository_read: satisfying the instruction requires inspecting an existing repository without changing it.",
+		"workspace_mutation: satisfying the instruction requires changing a workspace and verifying the change.",
+		"external_answer: satisfying the instruction requires current or externally acquired evidence, including an explicit web-search or research request.",
 		"story: produce narrative or roleplay text.",
+		"Choose repository_read, workspace_mutation, or external_answer only when the instruction requires that corresponding evidence or side effect; otherwise choose answer or story.",
 	}
 	if input.DatabaseEvidenceAvailable {
 		lines = append(lines, "database_read: answer using the explicitly bound database when its records are required as evidence.")

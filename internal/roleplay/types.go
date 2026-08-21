@@ -17,6 +17,7 @@ type AuthorityNamespace string
 const (
 	AuthorityFictionalCanon     AuthorityNamespace = "FICTIONAL_CANON"
 	AuthorityCharacterKnowledge AuthorityNamespace = "CHARACTER_KNOWLEDGE"
+	AuthorityCharacterIdentity  AuthorityNamespace = "CHARACTER_IDENTITY"
 )
 
 type World struct {
@@ -30,6 +31,7 @@ type World struct {
 type Character struct {
 	ID        string
 	WorldID   string
+	LibraryID string
 	Name      string
 	Authority AuthorityNamespace
 	CreatedAt time.Time

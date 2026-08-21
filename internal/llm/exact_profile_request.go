@@ -76,6 +76,12 @@ func (profile exactProviderModelProfile) preparedRequest(
 		think := true
 		request.Think = &think
 		return request, nil
+	case exactPreparedTransportNativeSystemNoThinking:
+		request.Prompt = prepared.PromptHint
+		request.System = prepared.Prompt
+		think := false
+		request.Think = &think
+		return request, nil
 	case exactPreparedTransportNativePrompt:
 		prompt, err := ExactPreparedModelInput(prepared.Prompt, prepared.PromptHint)
 		if err != nil {

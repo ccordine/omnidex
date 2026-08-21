@@ -88,6 +88,9 @@ func exactConvergenceGap(
 	job assemblyline.PortableJob,
 ) (queue.StationGapOpening, llmResponseContract, error) {
 	var zero queue.StationGapOpening
+	if err := rejectRetiredStationReplayJob(job); err != nil {
+		return zero, llmResponseContract{}, err
+	}
 	prompt, schema, err := assemblyline.RenderPortableJob(job)
 	if err != nil {
 		return zero, llmResponseContract{}, err

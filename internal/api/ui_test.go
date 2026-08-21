@@ -22,7 +22,8 @@ func TestUIServesChatShell(t *testing.T) {
 	body := rec.Body.String()
 	for _, want := range []string{
 		"Omni Chat",
-		`data-controller="shell recyclr chat projects scrum"`,
+		`<link rel="icon" href="data:image/svg+xml,`,
+		`data-controller="shell recyclr chat projects scrum browser-inference"`,
 		`data-recyclr-scope-value="page"`,
 		`data-recyclr-target="status"`,
 		`data-recyclr-sink="app-panel"`,
@@ -47,7 +48,7 @@ func TestUIServesChatShell(t *testing.T) {
 	}
 }
 
-func TestChatPanelOffersExplicitCreationModeAndCreationOnlyEvidenceSourceSelection(t *testing.T) {
+func TestChatPanelOffersFrictionlessNeutralComposerAndOptionalCreationSettings(t *testing.T) {
 	server := NewServer(nil, &fakeLLMClient{})
 	request := httptest.NewRequest(http.MethodGet, "/v1/ui/panel?panel=chat", nil)
 	response := httptest.NewRecorder()
@@ -64,20 +65,23 @@ func TestChatPanelOffersExplicitCreationModeAndCreationOnlyEvidenceSourceSelecti
 		t.Fatal(err)
 	}
 	for _, expected := range []string{
-		`role="group" aria-label="Create conversation"`,
+		`data-action="chat#newThread"`,
+		`New chat`,
+		`>Options</summary>`,
 		`data-chat-target="newChannelModeSelect"`,
-		`<span>Type</span>`,
 		`<option value="assistant" selected>Assistant</option>`,
-		`<option value="roleplay">Roleplay</option>`,
-		`data-chat-target="newChannelRoleplayFields"`,
-		`data-chat-target="newChannelRoleplayWorldName"`,
-		`data-chat-target="newChannelRoleplayViewpointName"`,
 		`data-chat-target="newChannelDataSourceSelect"`,
 		`data-recyclr-sink="new-channel-data-source-options"`,
-		`<span>Data</span>`,
+		`>Data connection</span>`,
 		`<option value="" selected>No data</option>`,
-		`<option value="" disabled selected>Choose a conversation</option>`,
-		`<option value="__omnidex_new_conversation__">+ New conversation…</option>`,
+		`<option value="" disabled selected>New conversation</option>`,
+		`Sending your first message creates and selects a new conversation automatically.`,
+		`data-chat-target="typingIndicator"`,
+		`aria-hidden="true"`,
+		`Omni is responding`,
+		`chat-typing-dot`,
+		`data-action="input->chat#composerInput keydown->chat#slashCommandKeydown keydown->chat#composerKeydown"`,
+		`Enter to send · Shift+Enter for a new line`,
 	} {
 		if !strings.Contains(payload.HTML.Bundle, expected) {
 			t.Errorf("chat panel lacks %q: %s", expected, payload.HTML.Bundle)
@@ -86,6 +90,8 @@ func TestChatPanelOffersExplicitCreationModeAndCreationOnlyEvidenceSourceSelecti
 	for _, forbidden := range []string{
 		`channel-options-pagination`, `new-channel-data-source-pagination`,
 		`Load more channels`, `New conversation evidence source`, `data-action="chat#createChannel"`,
+		`<option value="roleplay">`, `data-chat-target="newChannelRoleplayFields"`,
+		`data-recyclr-sink="roleplay-simulation"`,
 	} {
 		if strings.Contains(payload.HTML.Bundle, forbidden) {
 			t.Errorf("chat panel retains obsolete bulky control %q: %s", forbidden, payload.HTML.Bundle)
@@ -93,9 +99,9 @@ func TestChatPanelOffersExplicitCreationModeAndCreationOnlyEvidenceSourceSelecti
 	}
 }
 
-func TestChatPanelProvidesOneServerRenderedRoleplaySimulationSink(t *testing.T) {
+func TestRoleplayPanelProvidesDedicatedWorldLibraryAndSimulationWorkspace(t *testing.T) {
 	server := NewServer(nil, &fakeLLMClient{})
-	request := httptest.NewRequest(http.MethodGet, "/v1/ui/panel?panel=chat", nil)
+	request := httptest.NewRequest(http.MethodGet, "/v1/ui/panel?panel=roleplay", nil)
 	response := httptest.NewRecorder()
 
 	server.Handler().ServeHTTP(response, request)
@@ -110,17 +116,60 @@ func TestChatPanelProvidesOneServerRenderedRoleplaySimulationSink(t *testing.T) 
 		t.Fatal(err)
 	}
 	for _, expected := range []string{
+		`data-panel-name="roleplay"`,
 		`data-chat-target="roleplayPanel"`,
 		`data-chat-target="roleplayLoading"`,
+		`data-chat-target="roleplayWorkspaceLoading"`,
+		`data-chat-target="roleplayWorldDialog"`,
+		`data-chat-target="roleplayCharacterDialog"`,
+		`data-chat-target="roleplaySetupDialog"`,
+		`data-roleplay-dialog="worlds"`,
+		`data-roleplay-dialog="characters"`,
+		`data-roleplay-dialog="setup"`,
+		`data-action="chat#openRoleplayWorldBrowser"`,
+		`data-action="chat#openRoleplayCharacterLibrary"`,
 		`data-recyclr-sink="roleplay-simulation"`,
-		`aria-label="Roleplay simulation"`,
+		`data-recyclr-sink="roleplay-world-list"`,
+		`data-recyclr-sink="roleplay-library-list"`,
+		`data-action="submit->chat#createRoleplayWorld"`,
+		`data-action="submit->chat#createRoleplayLibraryCharacter"`,
+		`data-recyclr-sink="roleplay-composer-authority"`,
+		`data-chat-target="roleplayDraftParts"`,
+		`data-chat-target="roleplayDraftPartPool"`,
+		`data-action="chat#addRoleplayDraftPart"`,
+		`data-recyclr-sink="roleplay-cast-sidebar"`,
+		`aria-label="Active world"`,
+		`>+ Message</button>`,
+		`>+ Action</button>`,
+		`>+ Event</button>`,
+		`aria-labelledby="roleplay-world-setup-title"`,
 	} {
 		if !strings.Contains(payload.HTML.Bundle, expected) {
-			t.Errorf("chat panel lacks roleplay host %q: %s", expected, payload.HTML.Bundle)
+			t.Errorf("roleplay panel lacks workspace host %q: %s", expected, payload.HTML.Bundle)
 		}
 	}
 	if strings.Count(payload.HTML.Bundle, `data-recyclr-sink="roleplay-simulation"`) != 1 {
-		t.Fatalf("chat panel must contain one roleplay simulation sink: %s", payload.HTML.Bundle)
+		t.Fatalf("roleplay panel must contain one roleplay simulation sink: %s", payload.HTML.Bundle)
+	}
+	composer := strings.Index(payload.HTML.Bundle, `class="chat-composer `)
+	authority := strings.Index(payload.HTML.Bundle, `data-recyclr-sink="roleplay-composer-authority"`)
+	input := strings.Index(payload.HTML.Bundle, `aria-label="Story message"`)
+	if composer < 0 || authority <= composer || input <= authority ||
+		strings.Count(payload.HTML.Bundle, `data-recyclr-sink="roleplay-composer-authority"`) != 1 {
+		t.Fatalf("roleplay persona authority must render once inside the composer directly before its input: %s", payload.HTML.Bundle)
+	}
+	for _, obsolete := range []string{
+		`data-action="chat#openRoleplayWorldSetup"`,
+		`data-action="chat#continueRoleplayScene"`,
+		`aria-label="Worlds and character library"`,
+		`aria-label="World controls"`,
+		`data-roleplay-collection-dialog=`,
+		`xl:grid-cols-[18rem_minmax(24rem,1fr)_22rem]`,
+		`xl:grid-cols-[minmax(24rem,1fr)_22rem]`,
+	} {
+		if strings.Contains(payload.HTML.Bundle, obsolete) {
+			t.Fatalf("roleplay panel keeps permanently visible collection UI %q: %s", obsolete, payload.HTML.Bundle)
+		}
 	}
 }
 

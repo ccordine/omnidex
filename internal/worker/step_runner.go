@@ -76,6 +76,10 @@ func (s *Service) run(ctx context.Context, workerID string) {
 			continue
 		}
 		s.emitStepEvent(claim.Authority, "step_complete", fmt.Sprintf("action=%s worker=%s", claim.Step.Action, workerID))
+		s.logger.Printf(
+			"worker=%s job=%d step=%d action=%s completed",
+			workerID, claim.Job.ID, claim.Step.ID, claim.Step.Action,
+		)
 	}
 }
 

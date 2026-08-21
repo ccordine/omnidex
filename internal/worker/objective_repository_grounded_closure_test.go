@@ -2,6 +2,7 @@ package worker
 
 import (
 	"context"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -22,7 +23,6 @@ func TestRepositoryGroundedClosureRequiresIndependentReviewBeforeReturningAnswer
 	}
 	result, err := runObjectiveRepositoryGroundedClosure(
 		context.Background(), repositoryGroundedAnswerInput(), stations,
-		objectiveRepositoryGroundedClosureOptions{},
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -44,11 +44,13 @@ func TestRepositoryGroundedClosureCorrectsOneTextLeafThenReReviews(t *testing.T)
 	t.Parallel()
 	input := repositoryGroundedAnswerInput()
 	input.ExactRequirement = "  Which component owns the operation?  \n"
-	input.Context.UserAuthorities = []assemblyline.ConversationSelectedUserAuthority{{
-		MessageID: 17, Content: "The earlier question named the operation.",
-	}}
-	input.Context.AssistantResults = []assemblyline.ConversationSelectedAssistantResult{{
-		UserMessageID: 17, MessageID: 18, JobID: 19, Content: "The earlier result named First.",
+	contextText := "The earlier question and result identified the operation as First."
+	input.Context.Capsules = []assemblyline.ObjectiveContextCapsule{{
+		Sources: []assemblyline.ObjectiveContextSource{{
+			Namespace: "conversation_exchange", CandidateID: "CTX_1",
+			ContentSHA256: assemblyline.ExactObjectiveContextSHA("exact prior exchange"),
+		}},
+		Content: contextText, ContentSHA256: assemblyline.ExactObjectiveContextSHA(contextText),
 	}}
 	stations := &recordingRepositoryGroundingStation{
 		answer: assemblyline.GroundedAnswerDecision{
@@ -63,7 +65,7 @@ func TestRepositoryGroundedClosureCorrectsOneTextLeafThenReReviews(t *testing.T)
 		correction: assemblyline.RepositoryGroundedCorrectionDecision{Text: "The evidence identifies First and Second."},
 	}
 	result, err := runObjectiveRepositoryGroundedClosure(
-		context.Background(), input, stations, objectiveRepositoryGroundedClosureOptions{},
+		context.Background(), input, stations,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -89,20 +91,10 @@ func TestRepositoryGroundedClosureCorrectsOneTextLeafThenReReviews(t *testing.T)
 		t.Fatalf("exact requirement was rewritten across closure: correction=%q reviews=%#v",
 			stations.correctionInputs[0].ExactRequirement, stations.reviewInputs)
 	}
-	if len(stations.correctionInputs[0].Context.UserAuthorities) != 1 ||
-		stations.correctionInputs[0].Context.UserAuthorities[0] != input.Context.UserAuthorities[0] ||
-		len(stations.reviewInputs[0].Context.UserAuthorities) != 1 ||
-		stations.reviewInputs[0].Context.UserAuthorities[0] != input.Context.UserAuthorities[0] {
-		t.Fatalf("selected user authority was lost or rewritten: correction=%#v reviews=%#v",
-			stations.correctionInputs[0], stations.reviewInputs)
-	}
-	if len(stations.correctionInputs[0].Context.AssistantResults) != 1 ||
-		stations.correctionInputs[0].Context.AssistantResults[0] != input.Context.AssistantResults[0] ||
-		len(stations.reviewInputs[0].Context.AssistantResults) != 1 ||
-		stations.reviewInputs[0].Context.AssistantResults[0] != input.Context.AssistantResults[0] ||
-		len(stations.reviewInputs[1].Context.AssistantResults) != 1 ||
-		stations.reviewInputs[1].Context.AssistantResults[0] != input.Context.AssistantResults[0] {
-		t.Fatalf("selected assistant result was merged, lost, or rewritten: correction=%#v reviews=%#v",
+	if !reflect.DeepEqual(stations.correctionInputs[0].Context.Capsules, input.Context.Capsules) ||
+		!reflect.DeepEqual(stations.reviewInputs[0].Context.Capsules, input.Context.Capsules) ||
+		!reflect.DeepEqual(stations.reviewInputs[1].Context.Capsules, input.Context.Capsules) {
+		t.Fatalf("minified context capsule was lost or rewritten: correction=%#v reviews=%#v",
 			stations.correctionInputs[0], stations.reviewInputs)
 	}
 }
@@ -124,7 +116,6 @@ func TestRepositoryGroundedClosureFailsAfterSecondIssueWithoutAnotherCorrection(
 	}
 	result, err := runObjectiveRepositoryGroundedClosure(
 		context.Background(), repositoryGroundedAnswerInput(), stations,
-		objectiveRepositoryGroundedClosureOptions{},
 	)
 	if err == nil || !strings.Contains(err.Error(), "remained unsupported") ||
 		result.CorrectionCalls != 1 || len(stations.correctionInputs) != 1 || len(stations.reviewInputs) != 2 {
@@ -148,7 +139,6 @@ func TestRepositoryGroundedClosureRejectsNoopCorrection(t *testing.T) {
 	}
 	_, err := runObjectiveRepositoryGroundedClosure(
 		context.Background(), repositoryGroundedAnswerInput(), stations,
-		objectiveRepositoryGroundedClosureOptions{},
 	)
 	if err == nil || !strings.Contains(err.Error(), "must change exactly the text leaf") {
 		t.Fatalf("error=%v", err)

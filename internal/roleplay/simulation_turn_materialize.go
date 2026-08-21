@@ -123,6 +123,8 @@ func loadMaterializationAuthorityTx(
 		  AND job.metadata->>'roleplay_simulation_preparation_id'=preparation.operation_id
 		  AND job.metadata->>'roleplay_scene_revision'=preparation.scene_revision::text
 		  AND job.metadata->>'roleplay_narrative_fingerprint'=preparation.result->>'narrative_fingerprint'
+		  AND job.metadata->'roleplay_responders'=preparation.result->'responder_routes'
+		  AND job.metadata->'roleplay_user_turn'=preparation.result->'user_turn'
 	`, request.PreparationID, request.ChannelID, request.UserMessageID, request.JobID).Scan(
 		&payload, &requestHash, &exactText,
 	)
@@ -159,15 +161,25 @@ func requirePreparedNarrativeTx(
 	tx pgx.Tx,
 	preparation SimulationTurnAuthority,
 ) error {
-	projection, authority, err := projectSimulationNarrativeTx(
-		ctx, tx, preparation.WorldID, preparation.ActiveCharacterID,
-	)
-	if err != nil {
-		return err
+	actual := make([]SimulationResponderAuthority, len(preparation.Responders))
+	for index, responder := range preparation.Responders {
+		projection, authority, err := projectSimulationNarrativeTx(
+			ctx, tx, preparation.WorldID, responder.CharacterID,
+		)
+		if err != nil {
+			return err
+		}
+		generation, err := projectCharacterGenerationTx(
+			ctx, tx, preparation.WorldID, responder.CharacterID,
+		)
+		if err != nil {
+			return err
+		}
+		actual[index] = SimulationResponderAuthority{
+			Position: index, CharacterID: responder.CharacterID,
+			GenerationConfig: generation.Config, NarrativeProjection: projection,
+			NarrativeAuthority: authority, NarrativeFingerprint: authority.Fingerprint,
+		}
 	}
-	if !reflect.DeepEqual(projection, preparation.NarrativeProjection) ||
-		authority.Fingerprint != preparation.NarrativeFingerprint {
-		return fmt.Errorf("%w: materialized narrative differs from preparation", ErrSimulationConflict)
-	}
-	return nil
+	return requirePreparedResponderRound(preparation.Responders, actual)
 }

@@ -53,6 +53,11 @@ func responseCorrectionSchema(original PortableJob, targetField string) (map[str
 		mutable = map[string]any{targetField: definition}
 	} else if targetField != "" {
 		return nil, fmt.Errorf("field-scoped response correction is unsupported for %s", original.Kind)
+	} else if len(mutable) != 1 {
+		return nil, fmt.Errorf(
+			"response correction requires exactly one code-owned mutable semantic field; %s exposes %d",
+			original.Kind, len(mutable),
+		)
 	}
 	return map[string]any{
 		"type":                 "object",

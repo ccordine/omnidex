@@ -1,7 +1,6 @@
 package assemblyline
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 )
@@ -97,13 +96,13 @@ func BuildWebSearchTermsPrompt(input WebSearchTermsInput) (string, error) {
 	if err := input.validate(); err != nil {
 		return "", err
 	}
-	projection, err := json.Marshal(input)
+	projection, err := marshalObjectiveContextInputForModel(input, input.Context)
 	if err != nil {
 		return "", fmt.Errorf("encode web search terms projection: %w", err)
 	}
 	return strings.Join([]string{
 		"Resolve one named web search-term uncertainty.",
-		"Return only bounded alternate query terms that do not repeat an attempted query. Do not choose providers, fetch anything, or decide subsequent work.",
+		"Return only bounded alternate query terms that do not repeat an attempted query.",
 		"WEB_SEARCH_TERM_GAP_JSON:\n" + string(projection),
 	}, "\n\n"), nil
 }

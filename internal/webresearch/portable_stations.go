@@ -120,7 +120,11 @@ func (stations *PortableStations) Select(ctx context.Context, call RelevanceCall
 	for index, id := range decision.CandidateIDs {
 		ids[index] = websearch.CandidateID(id)
 	}
-	return RelevanceDecision{Outcome: RelevanceOutcome(decision.Outcome), CandidateIDs: ids}, nil
+	outcome := RelevanceNone
+	if len(ids) > 0 {
+		outcome = RelevanceSelected
+	}
+	return RelevanceDecision{Outcome: outcome, CandidateIDs: ids}, nil
 }
 
 func (stations *PortableStations) Synthesize(ctx context.Context, call GroundedSynthesisCall) (GroundedSynthesisDecision, error) {

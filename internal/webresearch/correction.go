@@ -13,9 +13,9 @@ func (machine *Machine) correctSynthesis(
 	projected []ProjectedEvidence,
 	issue ClaimEvidenceReviewDecision,
 	result *Result,
-) ([]GroundedParagraph, error) {
+) ([]GroundedParagraph, bool, error) {
 	if err := ctx.Err(); err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	call := GroundedSynthesisCorrectionCall{
 		Question:   machine.objective.Question,
@@ -27,23 +27,26 @@ func (machine *Machine) correctSynthesis(
 	decision, err := machine.correction.Correct(ctx, cloneGroundedSynthesisCorrectionCall(call))
 	result.SynthesisCorrectionCalls++
 	if err != nil {
-		return nil, fmt.Errorf("grounded synthesis correction station: %w", err)
+		return nil, false, fmt.Errorf("grounded synthesis correction station: %w", err)
 	}
 	if err := ctx.Err(); err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	if err := validateGroundedSynthesisCorrectionDecision(decision, call); err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	corrected := cloneParagraphs(paragraphs)
 	index := paragraphIndexForID(call.Issue.ParagraphID, len(corrected))
 	if index < 0 {
-		return nil, fmt.Errorf("%w: corrected paragraph ID is unbound", ErrInvalidSynthesisCorrection)
+		return nil, false, fmt.Errorf("%w: corrected paragraph ID is unbound", ErrInvalidSynthesisCorrection)
+	}
+	if corrected[index].Text == decision.Text {
+		return corrected, false, nil
 	}
 	retainedEvidenceIDs := append([]EvidenceID{}, corrected[index].EvidenceIDs...)
 	corrected[index].Text = decision.Text
 	corrected[index].EvidenceIDs = retainedEvidenceIDs
-	return corrected, nil
+	return corrected, true, nil
 }
 
 func validateGroundedSynthesisCorrectionDecision(

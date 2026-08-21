@@ -22,6 +22,8 @@ type channelCompletionBinding struct {
 	RoleplaySimulationPreparationID string
 	RoleplaySceneRevision           int64
 	RoleplayParticipantCharacterIDs []model.RoleplayCharacterID
+	RoleplayResponders              []roleplay.SimulationResponderRoute
+	RoleplayUserTurn                *roleplay.UserTurnAuthority
 }
 
 func (binding channelCompletionBinding) equal(other channelCompletionBinding) bool {
@@ -30,7 +32,16 @@ func (binding channelCompletionBinding) equal(other channelCompletionBinding) bo
 		binding.RoleplayViewpointCharacterID == other.RoleplayViewpointCharacterID &&
 		binding.RoleplaySimulationPreparationID == other.RoleplaySimulationPreparationID &&
 		binding.RoleplaySceneRevision == other.RoleplaySceneRevision &&
-		slices.Equal(binding.RoleplayParticipantCharacterIDs, other.RoleplayParticipantCharacterIDs)
+		slices.Equal(binding.RoleplayParticipantCharacterIDs, other.RoleplayParticipantCharacterIDs) &&
+		slices.Equal(binding.RoleplayResponders, other.RoleplayResponders) &&
+		equalRoleplayUserTurn(binding.RoleplayUserTurn, other.RoleplayUserTurn)
+}
+
+func equalRoleplayUserTurn(left, right *roleplay.UserTurnAuthority) bool {
+	if left == nil || right == nil {
+		return left == right
+	}
+	return left.Equal(*right)
 }
 
 func channelBindingForJob(job model.Job) (channelCompletionBinding, bool, error) {
@@ -69,6 +80,10 @@ func channelBindingForJob(job model.Job) (channelCompletionBinding, bool, error)
 		RoleplayParticipantCharacterIDs: append(
 			[]model.RoleplayCharacterID(nil), metadataBinding.RoleplayParticipantCharacterIDs...,
 		),
+		RoleplayResponders: append(
+			[]roleplay.SimulationResponderRoute(nil), metadataBinding.RoleplayResponders...,
+		),
+		RoleplayUserTurn: metadataBinding.RoleplayUserTurn,
 	}
 	return binding, true, nil
 }
@@ -126,33 +141,32 @@ func materializeChannelCompletionTx(
 			return fmt.Errorf("materialize roleplay simulation turn: %w", err)
 		}
 	}
-	var assistantMessageID int64
-	if err := tx.QueryRow(ctx, `
-		INSERT INTO ai_channel_messages (channel_id, role, content)
-		VALUES ($1, 'assistant', $2)
-		RETURNING id
-	`, binding.ChannelID, output).Scan(&assistantMessageID); err != nil {
-		return err
-	}
-	if binding.Mode == model.ChannelModeRoleplay {
-		researchHandled, err := MaterializeRoleplayResearchCompletionTx(
-			ctx, tx, job, command, assistantMessageID,
-		)
-		if err != nil {
+	if binding.Mode == model.ChannelModeRoleplay && len(command.RoleplayResponses) != 0 {
+		if err := materializeRoleplayResponseRoundTx(ctx, tx, binding, command); err != nil {
 			return err
 		}
-		if !researchHandled {
-			if err := requireRoleplayViewpointKnowledgeRecipients(binding, command); err != nil {
+	} else {
+		var assistantMessageID int64
+		if err := tx.QueryRow(ctx, `
+			INSERT INTO ai_channel_messages (channel_id, role, content)
+			VALUES ($1, 'assistant', $2)
+			RETURNING id
+		`, binding.ChannelID, output).Scan(&assistantMessageID); err != nil {
+			return err
+		}
+		if binding.Mode == model.ChannelModeRoleplay {
+			researchHandled, err := MaterializeRoleplayResearchCompletionTx(
+				ctx, tx, job, command, assistantMessageID,
+			)
+			if err != nil {
 				return err
 			}
-			if _, err := roleplay.AppendTurnCanonTx(
-				ctx, tx, string(command.OperationID), binding.ChannelID, assistantMessageID,
-				string(binding.RoleplayViewpointCharacterID), command.RoleplayFacts,
-				roleplayKnowledgeRecipientStrings(command.RoleplayKnowledgeCharacterIDs),
-			); err != nil {
-				return fmt.Errorf("append roleplay turn canon: %w", err)
+			if !researchHandled {
+				return fmt.Errorf("roleplay completion has neither an ordered fictional response round nor research authority")
 			}
 		}
+	}
+	if binding.Mode == model.ChannelModeRoleplay {
 		advanceOperationID := roleplayTurnAdvanceOperationID(command.OperationID)
 		if _, err := roleplay.AdvanceTurnTx(ctx, tx, roleplay.SimulationTurnAdvanceRequest{
 			OperationID:   advanceOperationID,
@@ -165,23 +179,6 @@ func materializeChannelCompletionTx(
 	}
 	_, err = tx.Exec(ctx, `UPDATE ai_channels SET updated_at=NOW() WHERE id=$1`, binding.ChannelID)
 	return err
-}
-
-func requireRoleplayViewpointKnowledgeRecipients(
-	binding channelCompletionBinding,
-	command CompleteStepCommand,
-) error {
-	if len(command.RoleplayFacts) == 0 {
-		if len(command.RoleplayKnowledgeCharacterIDs) != 0 {
-			return fmt.Errorf("roleplay knowledge recipients require new canon facts")
-		}
-		return nil
-	}
-	want := []model.RoleplayCharacterID{binding.RoleplayViewpointCharacterID}
-	if !slices.Equal(command.RoleplayKnowledgeCharacterIDs, want) {
-		return fmt.Errorf("roleplay knowledge recipient must be the exact active viewpoint character")
-	}
-	return nil
 }
 
 func roleplayTurnAdvanceOperationID(operationID LifecycleOperationID) string {

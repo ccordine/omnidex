@@ -64,12 +64,9 @@ func TestRoleplayResearchCapabilityIsPerCharacterRevocableAndReserved(t *testing
 		t.Fatal("fixture give did not create its deterministic simulation transition")
 	}
 	const exact = `/research "How do ocean currents redistribute heat?"`
-	if _, err := pool.Exec(ctx, `
-		INSERT INTO ai_channel_messages (id,channel_id,role,content)
-		VALUES (301,$1,'user',$2)
-	`, world.ChannelID, exact); err != nil {
-		t.Fatal(err)
-	}
+	insertNarratorRoleplayUserMessage(
+		t, pool, 301, world.ChannelID, exact, UserContributionCommand,
+	)
 
 	if err := authorizeResearchDatabaseFixture(ctx, pool, world.ChannelID, 301, exact); !errors.Is(err, ErrResearchCapabilityDenied) {
 		t.Fatalf("capability absence error=%v", err)
@@ -218,6 +215,8 @@ func persistResearchDatabaseFixture(
 		"roleplay_participant_character_ids": preparation.ParticipantCharacterIDs,
 		"roleplay_narrative_fingerprint":     preparation.NarrativeFingerprint,
 		"roleplay_viewpoint_character_id":    preparation.ActiveCharacterID,
+		"roleplay_generation_config":         preparation.GenerationConfig,
+		"roleplay_user_turn":                 preparation.UserTurn,
 	})
 	if err != nil {
 		return ResearchTurnAuthority{}, err

@@ -17,7 +17,7 @@ func TestChatJobProgressIsTypedEscapedServerMarkup(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
 	presentation := chatProgressPresentationFixture(now, []string{
 		"event=coding_file_written path=src/<unsafe>.go bytes=42 operation=create result=accepted",
-		"event=objective_worker_started kind=semantic subject=conversation_context_selection model=local attempt=1/3 context=prompt:120B,capabilities:0B,current:0B,correction:0B",
+		"event=objective_worker_started kind=semantic subject=context_minification model=local attempt=1/3 context=prompt:120B,capabilities:0B,current:0B,correction:0B",
 		"event=coding_verification_failed command=go_test_./... diagnostic=<script>alert(1)</script> exact failure",
 		"event=coding_file_deleted path=src/old.go result=deleted",
 	})
@@ -28,7 +28,7 @@ func TestChatJobProgressIsTypedEscapedServerMarkup(t *testing.T) {
 	for _, expected := range []string{
 		`data-recyclr-target="job-progress-events"`,
 		`Accepted src/&lt;unsafe&gt;.go (42 bytes)`,
-		`Context selection station started (attempt 1/3)`,
+		`Context minification station started (attempt 1/3)`,
 		`Verification failed for go_test_./...: &lt;script&gt;alert(1)&lt;/script&gt; exact failure`,
 		`Deleted src/old.go`,
 		`Latest 4 authoritative events`,

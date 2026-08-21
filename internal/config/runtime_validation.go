@@ -9,11 +9,21 @@ import (
 	"github.com/gryph/omnidex/internal/llm"
 )
 
+const (
+	ContextRelevanceProviderServer        = "server"
+	ContextRelevanceProviderBrowserWebGPU = "browser_webgpu"
+)
+
 func validateRuntimeConfig(cfg Config) error {
-	if cfg.ObjectiveAdvisoryMode != "" {
-		if err := cfg.ObjectiveAdvisoryMode.Validate(); err != nil {
-			return err
-		}
+	switch cfg.ContextRelevanceProvider {
+	case ContextRelevanceProviderServer, ContextRelevanceProviderBrowserWebGPU:
+	default:
+		return fmt.Errorf(
+			"OMNI_CONTEXT_RELEVANCE_PROVIDER must be %q or %q, received %q",
+			ContextRelevanceProviderServer,
+			ContextRelevanceProviderBrowserWebGPU,
+			cfg.ContextRelevanceProvider,
+		)
 	}
 	if cfg.WorkerCount < 1 {
 		return fmt.Errorf("WORKER_COUNT must be at least 1, received %d", cfg.WorkerCount)
@@ -68,6 +78,7 @@ func validateRuntimeConfig(cfg Config) error {
 
 func validateWebSearchProviders(providers []string) error {
 	known := map[string]struct{}{
+		"brave":      {},
 		"duckduckgo": {},
 		"google":     {},
 		"reddit":     {},

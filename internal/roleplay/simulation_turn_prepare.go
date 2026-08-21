@@ -21,14 +21,15 @@ func PrepareSimulationTurnTx(
 	if err := validateTurnPreparationRequest(request); err != nil {
 		return SimulationTurnAuthority{}, err
 	}
-	worldID, sceneID, exactText, err := loadPreparationMessageAuthorityTx(ctx, tx, request)
+	worldID, sceneID, exactText, userTurn, err := loadPreparationMessageAuthorityTx(ctx, tx, request)
 	if err != nil {
 		return SimulationTurnAuthority{}, err
 	}
-	requestHash, err := simulationRequestHash("turn-preparation.v1", struct {
+	requestHash, err := simulationRequestHash("turn-preparation.v2", struct {
 		SimulationTurnPreparationRequest
-		ExactText string `json:"exact_text"`
-	}{request, exactText})
+		ExactText string            `json:"exact_text"`
+		UserTurn  UserTurnAuthority `json:"user_turn"`
+	}{request, exactText, userTurn})
 	if err != nil {
 		return SimulationTurnAuthority{}, err
 	}
@@ -64,8 +65,14 @@ func PrepareSimulationTurnTx(
 	default:
 		return SimulationTurnAuthority{}, fmt.Errorf("simulation turn input kind is invalid")
 	}
-	transition, projection, narrativeAuthority, err := previewSimulationTurnTx(
+	participantIDs := simulationParticipantIDs(locked.Participants)
+	responderIDs := simulationResponderIDs(participantIDs, userTurn)
+	if len(responderIDs) == 0 {
+		return SimulationTurnAuthority{}, fmt.Errorf("%w: enable at least one character other than the acting persona", ErrSimulationNotConfigured)
+	}
+	transition, responders, err := previewSimulationTurnTx(
 		ctx, tx, locked, request.OperationID, requestHash, exactActionText(action, exactText), action,
+		responderIDs,
 	)
 	if err != nil {
 		return SimulationTurnAuthority{}, err
@@ -74,17 +81,29 @@ func PrepareSimulationTurnTx(
 	if transition != nil {
 		revision = transition.AfterRevision
 	}
-	participantIDs := simulationParticipantIDs(locked.Participants)
+	primary := responders[0]
+	routes := make([]SimulationResponderRoute, len(responders))
+	for index, responder := range responders {
+		routes[index] = SimulationResponderRoute{
+			Position: responder.Position, CharacterID: responder.CharacterID,
+			GenerationConfig:     responder.GenerationConfig,
+			NarrativeFingerprint: responder.NarrativeFingerprint,
+		}
+	}
 	authority := SimulationTurnAuthority{
 		PreparationID: request.OperationID, ChannelID: request.ChannelID,
 		UserMessageID: request.UserMessageID, WorldID: worldID, SceneID: sceneID,
 		BaseSceneRevision: locked.Sheet.Revision, SceneRevision: revision,
 		ActiveCharacterID: locked.Sheet.ActiveCharacterID,
+		UserTurn:          userTurn,
 		InputKind:         request.InputKind,
 		ExplicitAction:    action != nil, PendingTransition: transition,
 		ParticipantCharacterIDs: participantIDs,
-		NarrativeProjection:     projection, NarrativeAuthority: narrativeAuthority,
-		NarrativeFingerprint: narrativeAuthority.Fingerprint,
+		GenerationConfig:        primary.GenerationConfig,
+		NarrativeProjection:     primary.NarrativeProjection, NarrativeAuthority: primary.NarrativeAuthority,
+		NarrativeFingerprint: primary.NarrativeFingerprint,
+		Responders:           responders,
+		ResponderRoutes:      routes,
 		CreatedAt:            time.Now().UTC().Truncate(time.Microsecond),
 	}
 	if err := authority.Validate(); err != nil {
@@ -94,6 +113,17 @@ func PrepareSimulationTurnTx(
 		return SimulationTurnAuthority{}, err
 	}
 	return authority, nil
+}
+
+func simulationResponderIDs(participantIDs []string, userTurn UserTurnAuthority) []string {
+	responders := make([]string, 0, len(participantIDs))
+	for _, id := range participantIDs {
+		if userTurn.IsCharacter() && id == userTurn.CharacterID {
+			continue
+		}
+		responders = append(responders, id)
+	}
+	return responders
 }
 
 func BindSimulationPreparationJobTx(
@@ -141,8 +171,12 @@ func BindSimulationPreparationJobTx(
 		  AND job.metadata->>'roleplay_scene_revision'=preparation.scene_revision::text
 		  AND job.metadata->>'roleplay_input_kind'=preparation.input_kind
 		  AND job.metadata->>'roleplay_narrative_fingerprint'=preparation.result->>'narrative_fingerprint'
-		  AND job.metadata->>'roleplay_viewpoint_character_id'=preparation.active_character_id
+		  AND job.metadata->>'roleplay_viewpoint_character_id'=
+		      preparation.result->'responder_routes'->0->>'character_id'
 		  AND job.metadata->'roleplay_participant_character_ids'=preparation.result->'participant_character_ids'
+		  AND job.metadata->'roleplay_generation_config'=preparation.result->'generation_config'
+		  AND job.metadata->'roleplay_responders'=preparation.result->'responder_routes'
+		  AND job.metadata->'roleplay_user_turn'=preparation.result->'user_turn'
 	`, preparationID, jobID)
 	if err != nil {
 		return simulationDefinitionError("simulation preparation job binding", err)
@@ -157,21 +191,31 @@ func loadPreparationMessageAuthorityTx(
 	ctx context.Context,
 	tx pgx.Tx,
 	request SimulationTurnPreparationRequest,
-) (string, string, string, error) {
-	var worldID, sceneID, exactText string
-	err := tx.QueryRow(ctx, `
-		SELECT world.id,scene.id,message.content
+) (string, string, string, UserTurnAuthority, error) {
+	var sceneID, exactText string
+	userTurn, worldID, err := loadUserTurnAuthorityTx(ctx, tx, request.ChannelID, request.UserMessageID)
+	if err != nil {
+		return "", "", "", UserTurnAuthority{}, err
+	}
+	err = tx.QueryRow(ctx, `
+		SELECT scene.id,message.content
 		FROM ai_channels AS channel
 		JOIN roleplay_worlds AS world ON world.channel_id=channel.id
 		JOIN roleplay_current_scenes AS scene ON scene.world_id=world.id
 		JOIN ai_channel_messages AS message ON message.channel_id=channel.id
 		WHERE channel.id=$1 AND channel.mode='roleplay'
 		  AND message.id=$2 AND message.role='user'
-	`, request.ChannelID, request.UserMessageID).Scan(&worldID, &sceneID, &exactText)
+	`, request.ChannelID, request.UserMessageID).Scan(&sceneID, &exactText)
 	if err == pgx.ErrNoRows {
-		return "", "", "", fmt.Errorf("%w: channel message has no simulation scene", ErrSimulationNotConfigured)
+		return "", "", "", UserTurnAuthority{}, fmt.Errorf("%w: channel message has no simulation scene", ErrSimulationNotConfigured)
 	}
-	return worldID, sceneID, exactText, err
+	if err != nil {
+		return "", "", "", UserTurnAuthority{}, err
+	}
+	if exactText != userTurn.ExactText {
+		return "", "", "", UserTurnAuthority{}, fmt.Errorf("roleplay user turn differs from exact message authority")
+	}
+	return worldID, sceneID, exactText, userTurn, nil
 }
 
 func validateTurnPreparationRequest(request SimulationTurnPreparationRequest) error {

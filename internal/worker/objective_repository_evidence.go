@@ -129,7 +129,7 @@ func acquireObjectiveRepositoryEvidenceClosure(
 			if err := decision.ValidateFor(input); err != nil {
 				return objectiveEvidenceAcquisition{}, err
 			}
-			if decision.Outcome == assemblyline.RepositoryEvidenceRelevant {
+			if len(decision.EvidenceIDs) > 0 {
 				selected, err := filterObjectiveRepositoryEvidence(evidence, decision.EvidenceIDs)
 				if err != nil {
 					return objectiveEvidenceAcquisition{}, err

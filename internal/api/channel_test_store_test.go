@@ -97,6 +97,27 @@ func (s *channelTestStore) ListChannels(_ context.Context, scope model.ChannelSc
 	return out, nil
 }
 
+func (s *channelTestStore) ListChannelsByMode(
+	_ context.Context, scope model.ChannelScope, mode model.ChannelMode, limit, offset int,
+) ([]model.Channel, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]model.Channel, 0, len(s.channels))
+	for _, channel := range s.channels {
+		if channel.Scope == scope && channel.Mode == mode {
+			out = append(out, channel)
+		}
+	}
+	if offset >= len(out) {
+		return []model.Channel{}, nil
+	}
+	out = out[offset:]
+	if len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
+}
+
 func (s *channelTestStore) appendMessage(channelID model.ChannelID, role model.ChannelMessageRole, content string) (model.ChannelMessage, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

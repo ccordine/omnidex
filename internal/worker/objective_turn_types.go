@@ -11,9 +11,10 @@ import (
 	"unicode/utf8"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
+	"github.com/gryph/omnidex/internal/contextcompiler"
 	"github.com/gryph/omnidex/internal/datasource"
 	"github.com/gryph/omnidex/internal/model"
-	"github.com/gryph/omnidex/internal/objectiveadvisory"
+	"github.com/gryph/omnidex/internal/queue"
 	"github.com/gryph/omnidex/internal/roleplay"
 	"github.com/gryph/omnidex/internal/webresearch"
 )
@@ -44,7 +45,10 @@ type turnAuthority struct {
 	RoleplayInputKind               roleplay.SimulationTurnInputKind
 	RoleplayParticipantCharacterIDs []model.RoleplayCharacterID
 	RoleplayNarrativeFingerprint    string
-	RoleplayContext                 *roleplay.NarrativeSimulationProjection
+	RoleplayGenerationConfig        *roleplay.CharacterGenerationConfig
+	RoleplayResponders              []roleplay.SimulationResponderRoute
+	RoleplayUserTurn                *roleplay.UserTurnAuthority
+	RoleplayIdentity                *assemblyline.RoleplayResponseIdentity
 	Context                         assemblyline.ObjectiveContext
 }
 
@@ -58,34 +62,21 @@ type objectiveKindStation interface {
 	)
 }
 
-type conversationCandidateSet struct {
-	Turns            []assemblyline.ConversationContextTurn
-	AssistantResults []assemblyline.ConversationSelectedAssistantResult
+type objectiveContextCandidateSource interface {
+	ContextCandidates(
+		context.Context,
+		model.Job,
+		turnAuthority,
+		*roleplay.SimulationTurnAuthority,
+		*roleplay.NarrativeSimulationProjection,
+		[]string,
+	) (contextcompiler.CandidateSet, error)
 }
 
-type objectiveConversationCandidateProvider interface {
-	Candidates(context.Context, model.Job) (conversationCandidateSet, error)
-}
-
-type objectiveContextSelectionStation interface {
-	Select(context.Context, assemblyline.ConversationContextSelectionInput) (
-		assemblyline.ConversationContextSelectionDecision, objectiveStationReceipt, error,
-	)
-}
-
-type objectiveMemoryContextCandidateSet struct {
-	Replan     *assemblyline.ObjectiveReplanAuthority
-	Candidates []assemblyline.MemoryContextCandidate
-}
-
-type objectiveMemoryContextCandidateProvider interface {
-	MemoryCandidates(context.Context, model.Job) (objectiveMemoryContextCandidateSet, error)
-}
-
-type objectiveMemoryContextSelectionStation interface {
-	SelectMemory(context.Context, assemblyline.MemoryContextSelectionInput) (
-		assemblyline.MemoryContextSelectionDecision, objectiveStationReceipt, error,
-	)
+type objectiveContextSieveStations interface {
+	contextcompiler.SearchTermsStation
+	contextcompiler.RelevanceStation
+	contextcompiler.MinificationStation
 }
 
 type objectiveAnswerStation interface {
@@ -95,7 +86,7 @@ type objectiveAnswerStation interface {
 }
 
 type objectiveConversationStation interface {
-	Respond(context.Context, assemblyline.ConversationResponseInput) (
+	Respond(context.Context, assemblyline.ConversationResponseInput, string) (
 		assemblyline.ConversationResponseDecision, objectiveStationReceipt, error,
 	)
 }
@@ -120,7 +111,6 @@ type objectiveWorkflows struct {
 	RoleplaySimulation func(context.Context, string, int64) (roleplay.SimulationTurnAuthority, roleplay.NarrativeSimulationProjection, error)
 	RoleplayCanon      objectiveRoleplayCanonStation
 	RoleplayResearch   func(context.Context, turnAuthority) (objectiveRoleplayResearchAnswer, error)
-	ObjectiveAdvisory  objectiveAdvisoryRunner
 }
 
 type objectiveEvidenceAcquisition struct {
@@ -162,19 +152,17 @@ type objectiveEvidence struct {
 }
 
 type objectiveTurnResult struct {
-	ObjectiveID                   string
-	RequirementID                 string
-	InstructionSHA256             string
-	Kind                          assemblyline.ConversationObjectiveKind
-	Citations                     []objectiveEvidence
-	Output                        string
-	CitationsRendered             bool
-	ModelCalls                    int
-	Advisory                      objectiveadvisory.Report
-	RoleplayFacts                 []string
-	RoleplayKnowledgeCharacterIDs []model.RoleplayCharacterID
-	RoleplayResearch              *roleplay.ResearchTurnAuthority
-	Complete                      bool
+	ObjectiveID       string
+	RequirementID     string
+	InstructionSHA256 string
+	Kind              assemblyline.ConversationObjectiveKind
+	Citations         []objectiveEvidence
+	Output            string
+	CitationsRendered bool
+	ModelCalls        int
+	RoleplayResponses []queue.RoleplayResponseCompletion
+	RoleplayResearch  *roleplay.ResearchTurnAuthority
+	Complete          bool
 }
 
 func newObjectiveEvidence(
@@ -236,18 +224,21 @@ func newTurnAuthority(job model.Job) (turnAuthority, error) {
 	}
 	digest := sha256.Sum256([]byte(job.Instruction))
 	var metadata struct {
-		ChannelID                       model.ChannelID                  `json:"channel_id"`
-		DataSourceID                    model.DataSourceID               `json:"data_source_id"`
-		DelegatedDataAuthorityID        string                           `json:"delegated_data_authority_id"`
-		ChannelMode                     model.ChannelMode                `json:"channel_mode"`
-		RoleplayViewpointCharacterID    model.RoleplayCharacterID        `json:"roleplay_viewpoint_character_id"`
-		RoleplaySimulationPreparationID string                           `json:"roleplay_simulation_preparation_id"`
-		RoleplayWorldID                 string                           `json:"roleplay_world_id"`
-		RoleplaySceneID                 string                           `json:"roleplay_scene_id"`
-		RoleplaySceneRevision           int64                            `json:"roleplay_scene_revision"`
-		RoleplayInputKind               roleplay.SimulationTurnInputKind `json:"roleplay_input_kind"`
-		RoleplayParticipantCharacterIDs []model.RoleplayCharacterID      `json:"roleplay_participant_character_ids"`
-		RoleplayNarrativeFingerprint    string                           `json:"roleplay_narrative_fingerprint"`
+		ChannelID                       model.ChannelID                     `json:"channel_id"`
+		DataSourceID                    model.DataSourceID                  `json:"data_source_id"`
+		DelegatedDataAuthorityID        string                              `json:"delegated_data_authority_id"`
+		ChannelMode                     model.ChannelMode                   `json:"channel_mode"`
+		RoleplayViewpointCharacterID    model.RoleplayCharacterID           `json:"roleplay_viewpoint_character_id"`
+		RoleplaySimulationPreparationID string                              `json:"roleplay_simulation_preparation_id"`
+		RoleplayWorldID                 string                              `json:"roleplay_world_id"`
+		RoleplaySceneID                 string                              `json:"roleplay_scene_id"`
+		RoleplaySceneRevision           int64                               `json:"roleplay_scene_revision"`
+		RoleplayInputKind               roleplay.SimulationTurnInputKind    `json:"roleplay_input_kind"`
+		RoleplayParticipantCharacterIDs []model.RoleplayCharacterID         `json:"roleplay_participant_character_ids"`
+		RoleplayNarrativeFingerprint    string                              `json:"roleplay_narrative_fingerprint"`
+		RoleplayGenerationConfig        *roleplay.CharacterGenerationConfig `json:"roleplay_generation_config"`
+		RoleplayResponders              []roleplay.SimulationResponderRoute `json:"roleplay_responders"`
+		RoleplayUserTurn                *roleplay.UserTurnAuthority         `json:"roleplay_user_turn"`
 	}
 	if len(job.Metadata) == 0 {
 		return turnAuthority{}, fmt.Errorf("conversation turn requires exact channel mode authority")
@@ -279,7 +270,9 @@ func newTurnAuthority(job model.Job) (turnAuthority, error) {
 		if metadata.RoleplayViewpointCharacterID != "" || metadata.RoleplaySimulationPreparationID != "" ||
 			metadata.RoleplayWorldID != "" || metadata.RoleplaySceneID != "" ||
 			metadata.RoleplaySceneRevision != 0 || metadata.RoleplayInputKind != "" ||
-			metadata.RoleplayParticipantCharacterIDs != nil || metadata.RoleplayNarrativeFingerprint != "" {
+			metadata.RoleplayParticipantCharacterIDs != nil || metadata.RoleplayNarrativeFingerprint != "" ||
+			metadata.RoleplayGenerationConfig != nil || metadata.RoleplayResponders != nil ||
+			metadata.RoleplayUserTurn != nil {
 			return turnAuthority{}, fmt.Errorf("assistant conversation cannot carry fictional simulation authority")
 		}
 	case model.ChannelModeRoleplay:
@@ -314,6 +307,43 @@ func newTurnAuthority(job model.Job) (turnAuthority, error) {
 		if !activeFound {
 			return turnAuthority{}, fmt.Errorf("conversation turn roleplay viewpoint is not a prepared participant")
 		}
+		if metadata.RoleplayGenerationConfig == nil {
+			return turnAuthority{}, fmt.Errorf("conversation turn requires frozen character generation authority")
+		}
+		if len(metadata.RoleplayResponders) < 1 || len(metadata.RoleplayResponders) > roleplay.MaxSceneParticipants {
+			return turnAuthority{}, fmt.Errorf("conversation turn requires a bounded ordered roleplay response round")
+		}
+		for index, responder := range metadata.RoleplayResponders {
+			if responder.Position != index {
+				return turnAuthority{}, fmt.Errorf("conversation turn roleplay responder order is invalid")
+			}
+			if err := model.RoleplayCharacterID(responder.CharacterID).Validate(); err != nil {
+				return turnAuthority{}, fmt.Errorf("conversation turn roleplay responder %d: %w", index, err)
+			}
+			if err := responder.GenerationConfig.Validate(); err != nil {
+				return turnAuthority{}, fmt.Errorf("conversation turn roleplay responder %d generation: %w", index, err)
+			}
+			if responder.NarrativeFingerprint == "" {
+				return turnAuthority{}, fmt.Errorf("conversation turn roleplay responder %d has no narrative fingerprint", index)
+			}
+		}
+		if metadata.RoleplayResponders[0].CharacterID != string(metadata.RoleplayViewpointCharacterID) ||
+			metadata.RoleplayResponders[0].GenerationConfig != *metadata.RoleplayGenerationConfig ||
+			metadata.RoleplayResponders[0].NarrativeFingerprint != metadata.RoleplayNarrativeFingerprint {
+			return turnAuthority{}, fmt.Errorf("conversation turn primary roleplay responder differs from its response round")
+		}
+		if err := metadata.RoleplayGenerationConfig.Validate(); err != nil {
+			return turnAuthority{}, fmt.Errorf("conversation turn roleplay generation authority: %w", err)
+		}
+		if metadata.RoleplayUserTurn == nil {
+			return turnAuthority{}, fmt.Errorf("conversation turn requires frozen user persona and contribution authority")
+		}
+		if err := metadata.RoleplayUserTurn.Validate(); err != nil {
+			return turnAuthority{}, fmt.Errorf("conversation turn roleplay user authority: %w", err)
+		}
+		if metadata.RoleplayUserTurn.ExactText != job.Instruction {
+			return turnAuthority{}, fmt.Errorf("conversation turn roleplay user authority changed exact instruction bytes")
+		}
 	}
 	authority := turnAuthority{
 		JobID: job.ID, Pipeline: pipeline, Instruction: job.Instruction,
@@ -327,6 +357,9 @@ func newTurnAuthority(job model.Job) (turnAuthority, error) {
 		RoleplaySceneRevision: metadata.RoleplaySceneRevision, RoleplayInputKind: metadata.RoleplayInputKind,
 		RoleplayParticipantCharacterIDs: append([]model.RoleplayCharacterID(nil), metadata.RoleplayParticipantCharacterIDs...),
 		RoleplayNarrativeFingerprint:    metadata.RoleplayNarrativeFingerprint,
+		RoleplayGenerationConfig:        metadata.RoleplayGenerationConfig,
+		RoleplayResponders:              append([]roleplay.SimulationResponderRoute(nil), metadata.RoleplayResponders...),
+		RoleplayUserTurn:                metadata.RoleplayUserTurn,
 	}
 	if err := authority.Context.Validate(); err != nil {
 		return turnAuthority{}, err
@@ -341,19 +374,15 @@ func objectiveTurnID(authority turnAuthority, kind assemblyline.ConversationObje
 	_, _ = fmt.Fprintf(hash, "\x00delegated-data-authority\x00%s", authority.DelegatedDataAuthorityID)
 	_, _ = fmt.Fprintf(hash, "\x00channel\x00%s\x00channel-mode\x00%s\x00viewpoint\x00%s",
 		authority.ChannelID, authority.ChannelMode, authority.RoleplayViewpointCharacterID)
-	if authority.RoleplayContext != nil {
+	if authority.RoleplayIdentity != nil {
 		_, _ = fmt.Fprintf(hash, "\x00roleplay-context\x00%s", authority.RoleplayNarrativeFingerprint)
 	}
-	for _, selected := range authority.Context.UserAuthorities {
-		_, _ = fmt.Fprintf(hash, "\x00user\x00%d\x00%x", selected.MessageID, sha256.Sum256([]byte(selected.Content)))
-	}
-	for _, selected := range authority.Context.AssistantResults {
-		_, _ = fmt.Fprintf(hash, "\x00assistant\x00%d\x00%d\x00%d\x00%x",
-			selected.UserMessageID, selected.MessageID, selected.JobID, sha256.Sum256([]byte(selected.Content)))
-	}
-	for _, selected := range authority.Context.MemoryAuthorities {
-		_, _ = fmt.Fprintf(hash, "\x00memory\x00%d\x00%s\x00%s",
-			selected.MemoryID, selected.Kind, selected.ContentSHA256)
+	for _, capsule := range authority.Context.Capsules {
+		_, _ = fmt.Fprintf(hash, "\x00minified-context\x00%s", capsule.ContentSHA256)
+		for _, source := range capsule.Sources {
+			_, _ = fmt.Fprintf(hash, "\x00source\x00%s\x00%s\x00%s",
+				source.Namespace, source.CandidateID, source.ContentSHA256)
+		}
 	}
 	if replan := authority.Context.ReplanAuthority; replan != nil {
 		_, _ = fmt.Fprintf(hash, "\x00replan\x00%d\x00%d\x00%s",

@@ -56,7 +56,7 @@ func MaterializeRoleplayResearchCompletionTx(
 		command.ContextKey != "objective_result" || assistantMessageID < 1 {
 		return true, fmt.Errorf("roleplay research completion differs from exact job and message authority")
 	}
-	if len(command.RoleplayFacts) != 0 || len(command.RoleplayKnowledgeCharacterIDs) != 0 {
+	if len(command.RoleplayResponses) != 0 {
 		return true, fmt.Errorf("REAL_WORLD research completion cannot append fictional canon or character knowledge")
 	}
 	if command.Output == "" || command.Output != strings.TrimSpace(command.Output) {

@@ -69,7 +69,7 @@ func TestObjectiveTurnProductionRepositoryPathConsumesReviewCorrectionAndReRevie
 		context.Background(),
 		model.Job{ID: 901, Pipeline: model.PipelineChat, Instruction: "Which type owns dispatch?", Metadata: objectiveAssistantMetadata()},
 		scriptedConversationCandidateProvider{},
-		nil,
+		emptyContextSieveStation(),
 		&scriptedObjectiveKindStation{decision: assemblyline.ConversationObjectiveKindDecision{
 			Schema: assemblyline.ConversationObjectiveKindSchemaV1,
 			Kind:   assemblyline.ObjectiveKindRepositoryRead,
@@ -86,7 +86,7 @@ func TestObjectiveTurnProductionRepositoryPathConsumesReviewCorrectionAndReRevie
 	if strings.Join(stations.events, ",") != "answer,review,correct,review" {
 		t.Fatalf("repository production station sequence=%v", stations.events)
 	}
-	if !result.Complete || result.Output != "DispatchOwner handles dispatch." || result.ModelCalls != 10 {
+	if !result.Complete || result.Output != "DispatchOwner handles dispatch." || result.ModelCalls != 11 {
 		t.Fatalf("repository production result=%#v", result)
 	}
 	if len(result.Citations) != 1 || result.Citations[0] != evidence || len(stations.reviewInputs) != 2 {
@@ -100,7 +100,7 @@ func TestObjectiveTurnRepositoryPathRejectsAnswerOnlyStation(t *testing.T) {
 	_, err := runObjectiveTurn(
 		context.Background(),
 		model.Job{ID: 902, Pipeline: model.PipelineChat, Instruction: "Explain the owner.", Metadata: objectiveAssistantMetadata()},
-		scriptedConversationCandidateProvider{}, nil,
+		scriptedConversationCandidateProvider{}, emptyContextSieveStation(),
 		&scriptedObjectiveKindStation{decision: assemblyline.ConversationObjectiveKindDecision{
 			Schema: assemblyline.ConversationObjectiveKindSchemaV1,
 			Kind:   assemblyline.ObjectiveKindRepositoryRead,
@@ -129,7 +129,7 @@ func TestObjectiveTurnRelationshipQueryRetainsRelationThroughReviewAndCitation(t
 	result, err := runObjectiveTurn(
 		context.Background(),
 		model.Job{ID: 903, Pipeline: model.PipelineChat, Instruction: "How does Caller reach Callee?", Metadata: objectiveAssistantMetadata()},
-		scriptedConversationCandidateProvider{}, nil,
+		scriptedConversationCandidateProvider{}, emptyContextSieveStation(),
 		&scriptedObjectiveKindStation{decision: assemblyline.ConversationObjectiveKindDecision{
 			Schema: assemblyline.ConversationObjectiveKindSchemaV1,
 			Kind:   assemblyline.ObjectiveKindRepositoryRead,

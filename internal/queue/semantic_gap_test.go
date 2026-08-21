@@ -99,6 +99,21 @@ func TestStationMappingRejectsRemovedSkillProcedureWork(t *testing.T) {
 	}
 }
 
+func TestStationMappingRejectsRetiredContextWork(t *testing.T) {
+	t.Parallel()
+
+	for _, retired := range []assemblyline.WorkKind{
+		"conversation_context_selection",
+		"memory_context_selection",
+		"roleplay_narrative_continuity",
+	} {
+		if _, err := stationForPortableWorkKind(retired); err == nil ||
+			!strings.Contains(err.Error(), "not a production semantic station") {
+			t.Fatalf("retired context mapping %q error=%v", retired, err)
+		}
+	}
+}
+
 func TestStationGapTerminalRequiresOneExactOutcome(t *testing.T) {
 	t.Parallel()
 

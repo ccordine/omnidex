@@ -182,7 +182,7 @@ func BuildDatabaseQueryIntentPrompt(input DatabaseQueryIntentInput) (string, err
 	if err := input.validate(); err != nil {
 		return "", err
 	}
-	projection, err := json.Marshal(input)
+	projection, err := marshalObjectiveContextInputForModel(input, input.Context)
 	if err != nil {
 		return "", fmt.Errorf("encode database query intent projection: %w", err)
 	}

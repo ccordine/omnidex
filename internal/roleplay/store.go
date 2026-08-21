@@ -63,6 +63,10 @@ func BootstrapWorldTx(
 	if err := validateName(viewpointName, "roleplay character name"); err != nil {
 		return World{}, Character{}, err
 	}
+	libraryID, err := NewLibraryCharacterIdentity()
+	if err != nil {
+		return World{}, Character{}, err
+	}
 	world, err := scanWorld(tx.QueryRow(ctx, `
 		INSERT INTO roleplay_worlds (id,channel_id,name)
 		VALUES ($1,$2,$3)
@@ -71,11 +75,17 @@ func BootstrapWorldTx(
 	if err != nil {
 		return World{}, Character{}, err
 	}
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO roleplay_character_library (id,name)
+		VALUES ($1,$2)
+	`, libraryID, viewpointName); err != nil {
+		return World{}, Character{}, err
+	}
 	character, err := scanCharacter(tx.QueryRow(ctx, `
-		INSERT INTO roleplay_characters (id,world_id,name)
-		VALUES ($1,$2,$3)
-		RETURNING id,world_id,name,authority_namespace,created_at
-	`, viewpointID, world.ID, viewpointName))
+		INSERT INTO roleplay_characters (id,world_id,library_character_id,name)
+		VALUES ($1,$2,$3,$4)
+		RETURNING id,world_id,library_character_id,name,authority_namespace,created_at
+	`, viewpointID, world.ID, libraryID, viewpointName))
 	if err != nil {
 		return World{}, Character{}, err
 	}
@@ -96,11 +106,33 @@ func (s *Store) CreateCharacter(ctx context.Context, worldID, name string) (Char
 	if err != nil {
 		return Character{}, err
 	}
-	return scanCharacter(s.pool.QueryRow(ctx, `
-		INSERT INTO roleplay_characters (id,world_id,name)
-		VALUES ($1,$2,$3)
-		RETURNING id,world_id,name,authority_namespace,created_at
-	`, id, worldID, name))
+	libraryID, err := NewLibraryCharacterIdentity()
+	if err != nil {
+		return Character{}, err
+	}
+	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return Character{}, err
+	}
+	defer tx.Rollback(context.Background())
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO roleplay_character_library (id,name)
+		VALUES ($1,$2)
+	`, libraryID, name); err != nil {
+		return Character{}, err
+	}
+	character, err := scanCharacter(tx.QueryRow(ctx, `
+		INSERT INTO roleplay_characters (id,world_id,library_character_id,name)
+		VALUES ($1,$2,$3,$4)
+		RETURNING id,world_id,library_character_id,name,authority_namespace,created_at
+	`, id, worldID, libraryID, name))
+	if err != nil {
+		return Character{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return Character{}, err
+	}
+	return character, nil
 }
 
 func (s *Store) ListCharacters(ctx context.Context, worldID string) ([]Character, error) {
@@ -111,7 +143,7 @@ func (s *Store) ListCharacters(ctx context.Context, worldID string) ([]Character
 		return nil, err
 	}
 	rows, err := s.pool.Query(ctx, `
-		SELECT id,world_id,name,authority_namespace,created_at
+		SELECT id,world_id,library_character_id,name,authority_namespace,created_at
 		FROM roleplay_characters
 		WHERE world_id=$1
 		ORDER BY created_at ASC,id ASC
@@ -167,13 +199,17 @@ func scanCharacter(row rowScanner) (Character, error) {
 	var character Character
 	var authority string
 	if err := row.Scan(
-		&character.ID, &character.WorldID, &character.Name, &authority, &character.CreatedAt,
+		&character.ID, &character.WorldID, &character.LibraryID,
+		&character.Name, &authority, &character.CreatedAt,
 	); err != nil {
 		return Character{}, err
 	}
 	character.Authority = AuthorityNamespace(authority)
 	if character.Authority != AuthorityFictionalCanon {
 		return Character{}, fmt.Errorf("roleplay character has invalid authority %q", authority)
+	}
+	if err := validateIdentity(character.LibraryID, libraryCharacterIdentity); err != nil {
+		return Character{}, fmt.Errorf("roleplay character has invalid library authority: %w", err)
 	}
 	return character, nil
 }

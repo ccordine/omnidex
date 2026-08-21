@@ -220,11 +220,21 @@ func validateObjectiveTurnResult(result objectiveTurnResult) error {
 		}
 		exactInstruction := "/research " + strconv.Quote(result.RoleplayResearch.Question)
 		digest := sha256.Sum256([]byte(exactInstruction))
-		if result.Kind != assemblyline.ObjectiveKindExternalAnswer ||
-			result.InstructionSHA256 != hex.EncodeToString(digest[:]) ||
-			result.ModelCalls != 1 || len(result.RoleplayFacts) != 0 ||
-			len(result.RoleplayKnowledgeCharacterIDs) != 0 {
-			return fmt.Errorf("roleplay research result differs from its exact external-answer authority")
+		minimumCalls := objectiveRoleplayResearchModelCalls
+		if result.Kind != assemblyline.ObjectiveKindExternalAnswer {
+			return fmt.Errorf("roleplay research result has objective kind %q", result.Kind)
+		}
+		if result.InstructionSHA256 != hex.EncodeToString(digest[:]) {
+			return fmt.Errorf("roleplay research result differs from its exact instruction authority")
+		}
+		if result.ModelCalls < minimumCalls {
+			return fmt.Errorf(
+				"roleplay research result has %d model calls below the %d-call semantic minimum",
+				result.ModelCalls, minimumCalls,
+			)
+		}
+		if len(result.RoleplayResponses) != 0 {
+			return fmt.Errorf("roleplay research result attempted to persist fictional canon")
 		}
 	}
 	switch result.Kind {

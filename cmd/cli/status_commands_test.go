@@ -48,6 +48,7 @@ func TestStatusProviderProbeURL(t *testing.T) {
 		provider string
 		want     string
 	}{
+		{provider: "brave", want: "https://search.brave.com"},
 		{provider: "google", want: "https://www.google.com"},
 		{provider: "yahoo", want: "https://search.yahoo.com"},
 		{provider: "reddit", want: "https://www.reddit.com"},

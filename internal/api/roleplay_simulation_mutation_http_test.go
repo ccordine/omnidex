@@ -22,6 +22,7 @@ func TestRoleplaySceneCreateUsesServerIdentityAndExactSelectedOrder(t *testing.T
 		{ID: first, WorldID: simulation.world.ID, Name: "North Cartographer", CreatedAt: now},
 		{ID: second, WorldID: simulation.world.ID, Name: "Signal Keeper", CreatedAt: now},
 	}
+	simulation.worldCharacters = append([]roleplay.SimulationCharacterSummary(nil), simulation.characters.Items...)
 	simulation.names[first], simulation.names[second] = "North Cartographer", "Signal Keeper"
 	simulation.personaConfigured[first], simulation.personaConfigured[second] = true, true
 	server := newRoleplayHTTPTestServer(t, simulation)
@@ -47,6 +48,12 @@ func TestRoleplaySceneCreateUsesServerIdentityAndExactSelectedOrder(t *testing.T
 func TestRoleplayDefinitionEndpointsConsumeExactTypedRequests(t *testing.T) {
 	t.Parallel()
 	simulation := newRoleplaySimulationTestStore(roleplayHTTPChannelID)
+	character := roleplay.SimulationCharacterSummary{
+		ID: roleplayHTTPViewpoint, WorldID: simulation.world.ID,
+		Name: "Definition Keeper", CreatedAt: time.Now().UTC(),
+	}
+	simulation.worldCharacters = []roleplay.SimulationCharacterSummary{character}
+	simulation.names[character.ID] = character.Name
 	server := newRoleplayHTTPTestServer(t, simulation)
 	tests := []struct {
 		path  string
@@ -91,6 +98,7 @@ func TestRoleplayDefinitionEndpointsConsumeExactTypedRequests(t *testing.T) {
 func TestRoleplayRevisionedWritesMapConflictsAndPreserveAuthority(t *testing.T) {
 	t.Parallel()
 	simulation := newRoleplaySimulationTestStore(roleplayHTTPChannelID)
+	simulation.names[roleplayHTTPActive] = "Signal Keeper"
 	simulation.writePersonaErr = roleplay.ErrSimulationStaleRevision
 	server := newRoleplayHTTPTestServer(t, simulation)
 	body := `{"expected_revision":7,"summary":"Maps signals","voice":"Precise","traits":[],"goals":[]}`
@@ -106,6 +114,59 @@ func TestRoleplayRevisionedWritesMapConflictsAndPreserveAuthority(t *testing.T) 
 	if response.Code != http.StatusConflict || simulation.lastPersona.ExpectedRevision != 7 ||
 		simulation.lastPersona.CharacterID != roleplayHTTPActive || simulation.personaConfigured[roleplayHTTPActive] {
 		t.Fatalf("status=%d persona=%+v body=%s", response.Code, simulation.lastPersona, response.Body.String())
+	}
+}
+
+func TestRoleplayPersonaWriteRequiresExactSelectedWorldCharacter(t *testing.T) {
+	t.Parallel()
+	foreignCharacterID := "rpc_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	foreignWorldID := "rpw_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	simulation := newRoleplaySimulationTestStore(roleplayHTTPChannelID)
+	simulation.names[foreignCharacterID] = "Foreign Archivist"
+	simulation.characterWorldIDs[foreignCharacterID] = foreignWorldID
+	server := newRoleplayHTTPTestServer(t, simulation)
+	request := httptest.NewRequest(
+		http.MethodPut,
+		"/v1/channels/story-http/roleplay/personas/"+foreignCharacterID,
+		bytes.NewBufferString(`{"expected_revision":0,"summary":"Must not cross worlds.","voice":"","traits":[],"goals":[]}`),
+	)
+	response := httptest.NewRecorder()
+
+	server.Handler().ServeHTTP(response, request)
+
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+	if simulation.lastPersona.CharacterID != "" || simulation.personaConfigured[foreignCharacterID] {
+		t.Fatalf("foreign character mutated persona authority: %+v", simulation.lastPersona)
+	}
+}
+
+func TestRoleplayPersonaWriteAcceptsExactSelectedWorldCharacter(t *testing.T) {
+	t.Parallel()
+	simulation := newRoleplaySimulationTestStore(roleplayHTTPChannelID)
+	character := roleplay.SimulationCharacterSummary{
+		ID: roleplayHTTPActive, WorldID: simulation.world.ID, Name: "Signal Keeper", CreatedAt: time.Now().UTC(),
+	}
+	simulation.characters.Items = []roleplay.SimulationCharacterSummary{character}
+	simulation.worldCharacters = []roleplay.SimulationCharacterSummary{character}
+	simulation.names[roleplayHTTPActive] = character.Name
+	server := newRoleplayHTTPTestServer(t, simulation)
+	request := httptest.NewRequest(
+		http.MethodPut,
+		"/v1/channels/story-http/roleplay/personas/"+roleplayHTTPActive,
+		bytes.NewBufferString(`{"expected_revision":2,"summary":"Keeps the signal map.","voice":"Precise","traits":["Patient"],"goals":["Preserve the archive"]}`),
+	)
+	response := httptest.NewRecorder()
+
+	server.Handler().ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+	if simulation.lastPersona.CharacterID != roleplayHTTPActive || simulation.lastPersona.ExpectedRevision != 2 ||
+		simulation.lastPersona.Sheet.Summary != "Keeps the signal map." {
+		t.Fatalf("same-world persona was not written exactly: %+v", simulation.lastPersona)
 	}
 }
 
@@ -129,62 +190,82 @@ func TestRoleplayMeterWriteCarriesActiveCharacterAndRevision(t *testing.T) {
 	}
 }
 
-func TestRoleplayResearchAccessRequiresVisibleSameWorldCharacter(t *testing.T) {
+func TestRoleplayResearchAccessAcceptsExactCharacterBeyondFirstPage(t *testing.T) {
 	t.Parallel()
-	tests := []struct {
-		name      string
-		character roleplay.SimulationCharacterSummary
-		routeID   string
-		status    int
-		calls     int
-	}{
-		{
-			name: "visible same world",
-			character: roleplay.SimulationCharacterSummary{
-				ID: roleplayHTTPActive, WorldID: "rpw_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", Name: "Signal Keeper",
-			},
-			routeID: roleplayHTTPActive, status: http.StatusOK, calls: 1,
-		},
-		{
-			name: "identity is not visible",
-			character: roleplay.SimulationCharacterSummary{
-				ID: roleplayHTTPActive, WorldID: "rpw_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", Name: "Signal Keeper",
-			},
-			routeID: "rpc_99999999999999999999999999999999", status: http.StatusConflict, calls: 0,
-		},
-		{
-			name: "visible identity belongs to another world",
-			character: roleplay.SimulationCharacterSummary{
-				ID: roleplayHTTPActive, WorldID: "rpw_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", Name: "Foreign Keeper",
-			},
-			routeID: roleplayHTTPActive, status: http.StatusConflict, calls: 0,
-		},
+	simulation := newRoleplaySimulationTestStore(roleplayHTTPChannelID)
+	target := roleplay.SimulationCharacterSummary{
+		ID: roleplayHTTPActive, WorldID: simulation.world.ID, Name: "Off-page Archivist",
 	}
-	for _, test := range tests {
-		test := test
-		t.Run(test.name, func(t *testing.T) {
-			t.Parallel()
-			simulation := newRoleplaySimulationTestStore(roleplayHTTPChannelID)
-			simulation.characters.Items = []roleplay.SimulationCharacterSummary{test.character}
-			simulation.names[test.character.ID] = test.character.Name
-			simulation.personaConfigured[test.character.ID] = true
-			server := newRoleplayHTTPTestServer(t, simulation)
-			request := httptest.NewRequest(
-				http.MethodPut,
-				"/v1/channels/story-http/roleplay/capabilities/"+test.routeID+"/web-research",
-				bytes.NewBufferString(`{"enabled":true,"characters_offset":0}`),
-			)
-			response := httptest.NewRecorder()
+	simulation.characters = roleplay.SimulationCharacterPage{HasMore: true, Items: []roleplay.SimulationCharacterSummary{
+		{ID: "rpc_22222222222222222222222222222222", WorldID: simulation.world.ID, Name: "Second"},
+		{ID: "rpc_33333333333333333333333333333333", WorldID: simulation.world.ID, Name: "Third"},
+		{ID: "rpc_44444444444444444444444444444444", WorldID: simulation.world.ID, Name: "Fourth"},
+		{ID: "rpc_55555555555555555555555555555555", WorldID: simulation.world.ID, Name: "Fifth"},
+	}}
+	simulation.worldCharacters = append(append(
+		[]roleplay.SimulationCharacterSummary(nil), simulation.characters.Items...), target,
+	)
+	simulation.names[target.ID] = target.Name
+	simulation.personaConfigured[target.ID] = true
+	for _, character := range simulation.characters.Items {
+		simulation.names[character.ID] = character.Name
+		simulation.personaConfigured[character.ID] = true
+	}
+	server := newRoleplayHTTPTestServer(t, simulation)
+	request := httptest.NewRequest(
+		http.MethodPut,
+		"/v1/channels/story-http/roleplay/capabilities/"+target.ID+"/web-research",
+		bytes.NewBufferString(`{"enabled":true}`),
+	)
+	response := httptest.NewRecorder()
 
-			server.Handler().ServeHTTP(response, request)
+	server.Handler().ServeHTTP(response, request)
 
-			if response.Code != test.status || simulation.capabilityConfigureCalls != test.calls {
-				t.Fatalf("status=%d calls=%d body=%s", response.Code, simulation.capabilityConfigureCalls, response.Body.String())
-			}
-			if test.calls == 1 && (!simulation.lastCapability.WebResearch ||
-				!strings.Contains(response.Body.String(), "/research")) {
-				t.Fatalf("configured access was not server-reconciled: %+v body=%s", simulation.lastCapability, response.Body.String())
-			}
-		})
+	if response.Code != http.StatusOK || simulation.capabilityConfigureCalls != 1 {
+		t.Fatalf("status=%d calls=%d body=%s", response.Code, simulation.capabilityConfigureCalls, response.Body.String())
+	}
+	if !simulation.lastCapability.WebResearch || simulation.lastCapability.CharacterID != target.ID ||
+		!strings.Contains(response.Body.String(), "openRoleplayCharacterEditor") ||
+		!strings.Contains(response.Body.String(), target.ID) {
+		t.Fatalf("off-page exact character was not server-reconciled: %+v body=%s", simulation.lastCapability, response.Body.String())
+	}
+}
+
+func TestRoleplayResearchAccessRejectsForeignCharacter(t *testing.T) {
+	t.Parallel()
+	simulation := configuredRoleplayHTTPTestStore()
+	foreignCharacterID := "rpc_99999999999999999999999999999999"
+	simulation.names[foreignCharacterID] = "Foreign Keeper"
+	simulation.characterWorldIDs[foreignCharacterID] = "rpw_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	server := newRoleplayHTTPTestServer(t, simulation)
+	request := httptest.NewRequest(
+		http.MethodPut,
+		"/v1/channels/story-http/roleplay/capabilities/"+foreignCharacterID+"/web-research",
+		bytes.NewBufferString(`{"enabled":true}`),
+	)
+	response := httptest.NewRecorder()
+
+	server.Handler().ServeHTTP(response, request)
+
+	if response.Code != http.StatusNotFound || simulation.capabilityConfigureCalls != 0 {
+		t.Fatalf("status=%d calls=%d body=%s", response.Code, simulation.capabilityConfigureCalls, response.Body.String())
+	}
+}
+
+func TestRoleplayResearchAccessRejectsRemovedPageOffset(t *testing.T) {
+	t.Parallel()
+	simulation := configuredRoleplayHTTPTestStore()
+	server := newRoleplayHTTPTestServer(t, simulation)
+	request := httptest.NewRequest(
+		http.MethodPut,
+		"/v1/channels/story-http/roleplay/capabilities/"+roleplayHTTPActive+"/web-research",
+		bytes.NewBufferString(`{"enabled":true,"characters_offset":0}`),
+	)
+	response := httptest.NewRecorder()
+
+	server.Handler().ServeHTTP(response, request)
+
+	if response.Code != http.StatusBadRequest || simulation.capabilityConfigureCalls != 0 {
+		t.Fatalf("status=%d calls=%d body=%s", response.Code, simulation.capabilityConfigureCalls, response.Body.String())
 	}
 }

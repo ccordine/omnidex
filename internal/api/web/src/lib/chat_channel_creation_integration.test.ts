@@ -1,57 +1,52 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { createUserChannel, fetchChannelTranscript } from "./channel_api";
+import { createUserChannel, fetchChannelTranscript, sendChannelMessage } from "./channel_api";
 import type { ChannelCreationContext } from "./channel_api";
 import { fetchChannelOptionsPage } from "./chat_component_api";
-import {
-  ChatChannelCoordinator,
-  NEW_CONVERSATION_OPTION_VALUE,
-  type ChatChannelHost,
-} from "./chat_channel_coordinator";
+import { ChatChannelCoordinator, type ChatChannelHost } from "./chat_channel_coordinator";
+import type { UserChannel } from "./types";
 
 vi.mock("./channel_api", () => ({
   createUserChannel: vi.fn(),
   fetchChannelTranscript: vi.fn(),
   sendChannelMessage: vi.fn(),
 }));
-vi.mock("./chat_component_api", () => ({ fetchChannelOptionsPage: vi.fn() }));
+vi.mock("./chat_component_api", () => ({
+  fetchChannelOptionsPage: vi.fn(),
+  fetchNeutralChatTranscript: vi.fn(),
+}));
 
 const channel = {
-  id: "chat-42",
-  scope: "user" as const,
-  name: "Exact chat",
-  tags: ["user-channel"],
-  project_id: 42,
-  workspace_root: "/workspace/project",
-  mode: "assistant" as const,
-  created_at: "2026-08-19T02:00:00Z",
-  updated_at: "2026-08-19T02:00:00Z",
+  id: "chat-42", scope: "user" as const, name: "Exact chat", tags: ["user-channel"],
+  project_id: 42, workspace_root: "/workspace/project", mode: "assistant" as const,
+  created_at: "2026-08-19T02:00:00Z", updated_at: "2026-08-19T02:00:00Z",
 };
-const secondIdentity = { id: "chat-43", name: "Conversation second" };
 
-function channelBundle(
-  id = channel.id,
-  name = channel.name,
-  mode: "assistant" | "roleplay" = "assistant",
-): string {
+function channelBundle(mode: "assistant" | "roleplay" = "assistant"): string {
   return `<template data-recyclr-target="channel-options" data-recyclr-location="innerHTML">` +
-    `<option value="" disabled selected>Choose a conversation</option>` +
-    `<option value="${NEW_CONVERSATION_OPTION_VALUE}">+ New conversation…</option>` +
-    `<option value="${id}" data-channel-mode="${mode}">${name}</option></template>`;
+    `<option value="" disabled selected>New conversation</option>` +
+    `<option value="${channel.id}" data-channel-mode="${mode}">${channel.name}</option></template>`;
 }
 
-function transcript(channelID = channel.id) {
+function transcript() {
   return {
-    channel_id: channelID,
+    channel_id: channel.id,
     has_more: false,
     html: { bundle: '<template data-recyclr-target="channel-transcript-messages">transcript</template>' },
+  };
+}
+
+function acceptedTurn(prompt: string, acceptedChannel: UserChannel = channel) {
+  return {
+    channel: acceptedChannel,
+    user_message: { id: 91, channel_id: channel.id, role: "user" as const, content: prompt, created_at: channel.created_at },
+    job: { id: 73, instruction: prompt, pipeline: "chat" as const, status: "pending" as const },
   };
 }
 
 function createHost() {
   const channelSelect = document.createElement("select");
   const transport = document.createElement("div");
-  channelSelect.innerHTML = `<option value="" disabled selected>Choose a conversation</option>` +
-    `<option value="${NEW_CONVERSATION_OPTION_VALUE}">+ New conversation…</option>`;
+  channelSelect.innerHTML = `<option value="" disabled selected>New conversation</option>`;
   const workspaceRoot = vi.fn<() => string | null>(() => channel.workspace_root);
   const dataSourceID = vi.fn<() => string | undefined>(() => undefined);
   const creationContext = vi.fn<() => ChannelCreationContext>(() => ({ mode: "assistant" }));
@@ -78,7 +73,6 @@ function createHost() {
     newChannelCreationContext: creationContext,
     setActivityLabel: vi.fn(),
     renderProgressActivity: vi.fn(),
-    setBusy: vi.fn(),
     waitForJob: vi.fn(async () => undefined),
     synchronizeRoleplay: vi.fn(async () => undefined),
     roleplayConfigured: vi.fn(() => true),
@@ -87,27 +81,22 @@ function createHost() {
   return { host, channelSelect, workspaceRoot, dataSourceID, creationContext };
 }
 
-function selectEvent(select: HTMLSelectElement): Event {
-  return { currentTarget: select } as unknown as Event;
-}
-
 describe("ChatChannelCoordinator creation authority", () => {
   beforeEach(() => vi.resetAllMocks());
 
-  it("creates immediately from the sentinel with exact assistant data settings", async () => {
-    vi.mocked(createUserChannel).mockResolvedValueOnce({ ...channel, data_source_id: "ds.primary-1" });
-    vi.mocked(fetchChannelOptionsPage).mockResolvedValueOnce({
-      has_more: false,
-      html: { bundle: channelBundle(channel.id, "Exact chat · data connected") },
-    });
-    vi.mocked(fetchChannelTranscript).mockResolvedValueOnce(transcript());
+  it("creates and selects one assistant conversation on the first neutral send", async () => {
+    const accepted = { ...channel, data_source_id: "ds.primary-1" };
+    vi.mocked(createUserChannel).mockResolvedValueOnce(accepted);
+    vi.mocked(fetchChannelOptionsPage).mockResolvedValueOnce({ has_more: false, html: { bundle: channelBundle() } });
+    vi.mocked(fetchChannelTranscript).mockResolvedValue(transcript());
+    vi.mocked(sendChannelMessage).mockResolvedValueOnce(acceptedTurn("exact first message", accepted));
     const fixture = createHost();
     fixture.dataSourceID.mockReturnValue("ds.primary-1");
     const coordinator = new ChatChannelCoordinator(fixture.host, () => ({ id: channel.id, name: channel.name }));
-    fixture.channelSelect.value = NEW_CONVERSATION_OPTION_VALUE;
 
-    await coordinator.select(selectEvent(fixture.channelSelect));
+    const result = await coordinator.createAndSubmit("exact first message");
 
+    expect(result.kind).toBe("submitted");
     expect(createUserChannel).toHaveBeenCalledWith({
       id: channel.id,
       name: channel.name,
@@ -116,21 +105,21 @@ describe("ChatChannelCoordinator creation authority", () => {
       data_source_id: "ds.primary-1",
       mode: "assistant",
     });
+    expect(sendChannelMessage).toHaveBeenCalledWith(channel.id, "exact first message");
     expect(coordinator.selectedID()).toBe(channel.id);
     expect(fixture.channelSelect.value).toBe(channel.id);
-    expect(fixture.host.transport().textContent).not.toContain(NEW_CONVERSATION_OPTION_VALUE);
   });
 
-  it("omits workspace authority when no project is open and accepts the server binding", async () => {
+  it("omits workspace authority when the neutral send has no open project", async () => {
     vi.mocked(createUserChannel).mockResolvedValueOnce(channel);
     vi.mocked(fetchChannelOptionsPage).mockResolvedValueOnce({ has_more: false, html: { bundle: channelBundle() } });
-    vi.mocked(fetchChannelTranscript).mockResolvedValueOnce(transcript());
+    vi.mocked(fetchChannelTranscript).mockResolvedValue(transcript());
+    vi.mocked(sendChannelMessage).mockResolvedValueOnce(acceptedTurn("hello"));
     const fixture = createHost();
     fixture.workspaceRoot.mockReturnValue(null);
     const coordinator = new ChatChannelCoordinator(fixture.host, () => ({ id: channel.id, name: channel.name }));
-    fixture.channelSelect.value = NEW_CONVERSATION_OPTION_VALUE;
 
-    await coordinator.select(selectEvent(fixture.channelSelect));
+    await coordinator.createAndSubmit("hello");
 
     expect(createUserChannel).toHaveBeenCalledWith({
       id: channel.id,
@@ -138,40 +127,31 @@ describe("ChatChannelCoordinator creation authority", () => {
       tags: ["user-channel"],
       mode: "assistant",
     });
-    expect(coordinator.selectedID()).toBe(channel.id);
   });
 
-  it("restores the prior explicit channel after a pre-201 create failure", async () => {
-    vi.mocked(fetchChannelOptionsPage).mockResolvedValueOnce({ has_more: false, html: { bundle: channelBundle() } });
-    vi.mocked(fetchChannelTranscript).mockResolvedValueOnce(transcript());
+  it("preserves neutral authority and the prompt path after a pre-201 create failure", async () => {
     vi.mocked(createUserChannel).mockRejectedValueOnce(new Error("database unavailable"));
     const fixture = createHost();
-    const coordinator = new ChatChannelCoordinator(fixture.host, () => secondIdentity);
-    await coordinator.loadChannels();
-    fixture.channelSelect.value = channel.id;
-    await coordinator.select(selectEvent(fixture.channelSelect));
-    fixture.channelSelect.value = NEW_CONVERSATION_OPTION_VALUE;
+    const coordinator = new ChatChannelCoordinator(fixture.host, () => ({ id: channel.id, name: channel.name }));
 
-    await coordinator.select(selectEvent(fixture.channelSelect));
+    const result = await coordinator.createAndSubmit("retry me");
 
-    expect(coordinator.selectedID()).toBe(channel.id);
-    expect(fixture.channelSelect.value).toBe(channel.id);
-    expect(createUserChannel).toHaveBeenCalledWith(expect.objectContaining(secondIdentity));
+    expect(result).toEqual({ kind: "creation_failed" });
+    expect(coordinator.selectedID()).toBe("");
+    expect(sendChannelMessage).not.toHaveBeenCalled();
     expect(fixture.host.setStatus).toHaveBeenLastCalledWith("database unavailable", "error");
   });
 
-  it("passes exact roleplay creation settings through the single typed flow", async () => {
+  it("passes exact roleplay settings through the single neutral creation flow", async () => {
     const roleplay = {
       ...channel,
       mode: "roleplay" as const,
       roleplay_viewpoint_character_id: "rpc_0123456789abcdef0123456789abcdef",
     };
     vi.mocked(createUserChannel).mockResolvedValueOnce(roleplay);
-    vi.mocked(fetchChannelOptionsPage).mockResolvedValueOnce({
-      has_more: false,
-      html: { bundle: channelBundle(channel.id, channel.name, "roleplay") },
-    });
-    vi.mocked(fetchChannelTranscript).mockResolvedValueOnce(transcript());
+    vi.mocked(fetchChannelOptionsPage).mockResolvedValueOnce({ has_more: false, html: { bundle: channelBundle("roleplay") } });
+    vi.mocked(fetchChannelTranscript).mockResolvedValue(transcript());
+    vi.mocked(sendChannelMessage).mockResolvedValueOnce(acceptedTurn("begin", roleplay));
     const fixture = createHost();
     fixture.creationContext.mockReturnValue({
       mode: "roleplay",
@@ -179,9 +159,8 @@ describe("ChatChannelCoordinator creation authority", () => {
       roleplay_viewpoint_name: "Alice",
     });
     const coordinator = new ChatChannelCoordinator(fixture.host, () => ({ id: channel.id, name: channel.name }));
-    fixture.channelSelect.value = NEW_CONVERSATION_OPTION_VALUE;
 
-    await coordinator.select(selectEvent(fixture.channelSelect));
+    await coordinator.createAndSubmit("begin");
 
     expect(createUserChannel).toHaveBeenCalledWith({
       id: channel.id,
@@ -195,31 +174,20 @@ describe("ChatChannelCoordinator creation authority", () => {
     expect(fixture.host.synchronizeRoleplay).toHaveBeenCalledWith(channel.id, "roleplay");
   });
 
-  it("retains post-201 authority and blocks duplicate creation when reconciliation fails", async () => {
+  it("retains post-201 authority and blocks duplicate neutral creation after reconciliation fails", async () => {
     vi.mocked(createUserChannel).mockResolvedValueOnce(channel);
     vi.mocked(fetchChannelOptionsPage).mockRejectedValueOnce(new Error("options unavailable"));
     const fixture = createHost();
     const coordinator = new ChatChannelCoordinator(fixture.host, () => ({ id: channel.id, name: channel.name }));
-    fixture.channelSelect.value = NEW_CONVERSATION_OPTION_VALUE;
 
-    await coordinator.select(selectEvent(fixture.channelSelect));
-    fixture.channelSelect.value = NEW_CONVERSATION_OPTION_VALUE;
-    await coordinator.select(selectEvent(fixture.channelSelect));
+    await coordinator.createAndSubmit("first");
+    await coordinator.createAndSubmit("second");
 
     expect(createUserChannel).toHaveBeenCalledOnce();
-    expect(coordinator.selectedID()).toBe("");
-    expect(fixture.channelSelect.value).toBe("");
-    expect(fixture.host.addEvent).toHaveBeenCalledWith("channel_creation_reconciliation_failed", {
-      channel_id: channel.id,
-      error: "options unavailable",
-    });
+    expect(sendChannelMessage).not.toHaveBeenCalled();
     expect(fixture.host.addEvent).toHaveBeenCalledWith(
       "channel_create_blocked_pending_reconciliation",
       { channel_id: channel.id },
-    );
-    expect(fixture.host.setStatus).toHaveBeenLastCalledWith(
-      `Conversation ${channel.id} was created but could not be reconciled. Reload and select it before creating another.`,
-      "error",
     );
   });
 });

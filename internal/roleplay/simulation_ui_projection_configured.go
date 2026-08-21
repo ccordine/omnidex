@@ -2,6 +2,7 @@ package roleplay
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -34,6 +35,15 @@ func projectConfiguredSimulationUI(
 	}
 	if projection.ActiveCharacterName == "" {
 		return SimulationUIProjection{}, fmt.Errorf("%w: active scene character is absent from turn order", ErrSimulationNotConfigured)
+	}
+	activeGeneration, exists := projection.CharacterGeneration[scene.ActiveCharacterID]
+	if !exists {
+		return SimulationUIProjection{}, fmt.Errorf("%w: active scene character generation authority is absent", ErrSimulationNotConfigured)
+	}
+	projection.ActiveGeneration = &activeGeneration
+	projection.LastUserTurn, err = loadLastPresentedUserTurnTx(ctx, tx, projection.WorldID)
+	if err != nil {
+		return SimulationUIProjection{}, err
 	}
 	projection.Participants, err = loadSceneParticipantsPage(
 		ctx, tx, projection.WorldID, scene.ID, page.Limit, page.TurnOrderOffset,
@@ -68,6 +78,36 @@ func projectConfiguredSimulationUI(
 		return SimulationUIProjection{}, err
 	}
 	return projection, nil
+}
+
+func loadLastPresentedUserTurnTx(
+	ctx context.Context,
+	tx pgx.Tx,
+	worldID string,
+) (*UserTurnAuthority, error) {
+	var authority UserTurnAuthority
+	var payload []byte
+	err := tx.QueryRow(ctx, `
+		SELECT authority
+		FROM roleplay_user_turns
+		WHERE world_id=$1 AND persona_kind<>'legacy_untyped'
+		  AND contribution_kind<>'command'
+		ORDER BY user_message_id DESC
+		LIMIT 1
+	`, worldID).Scan(&payload)
+	if err == pgx.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if err := json.Unmarshal(payload, &authority); err != nil {
+		return nil, fmt.Errorf("decode latest roleplay user-turn presentation: %w", err)
+	}
+	if err := authority.Validate(); err != nil {
+		return nil, fmt.Errorf("latest roleplay user-turn presentation is invalid: %w", err)
+	}
+	return &authority, nil
 }
 
 func trimPage[T any](items []T, limit int) []T {

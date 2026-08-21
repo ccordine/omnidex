@@ -45,7 +45,7 @@ func configuredWebSearchProviders(values []string) ([]string, error) {
 			continue
 		}
 		switch provider {
-		case "duckduckgo", "google", "reddit", "yahoo":
+		case "brave", "duckduckgo", "google", "reddit", "yahoo":
 		default:
 			return nil, fmt.Errorf("web search status rejects unregistered provider %q", value)
 		}

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/gryph/omnidex/internal/model"
+	"github.com/gryph/omnidex/internal/ollama"
 	"github.com/gryph/omnidex/internal/roleplay"
 )
 
@@ -25,7 +26,7 @@ func TestRoleplaySimulationRouteFailsLoudlyWithoutInjectedStore(t *testing.T) {
 	requests := []*http.Request{
 		httptest.NewRequest(http.MethodGet, "/v1/ui/chat/roleplay?channel_id=story-http", nil),
 		httptest.NewRequest(
-			http.MethodPost, "/v1/channels/story-http/roleplay/characters", bytes.NewBufferString(`{"name":"Signal Keeper"}`),
+			http.MethodPost, "/v1/ui/roleplay/library", bytes.NewBufferString(`{"name":"Signal Keeper"}`),
 		),
 	}
 	for _, request := range requests {
@@ -72,12 +73,42 @@ func TestRoleplaySimulationComponentUsesSQLPagesAndActiveSceneCharacter(t *testi
 	}
 }
 
+func TestRoleplaySimulationRouteRendersWhenPersistedModelIsNoLongerInstalled(t *testing.T) {
+	t.Parallel()
+	simulation := configuredRoleplayHTTPTestStore()
+	character := simulation.worldCharacters[0]
+	simulation.generation[character.ID] = roleplay.CharacterGenerationProjection{
+		CharacterID: character.ID,
+		Config: roleplay.CharacterGenerationConfig{
+			Schema: roleplay.CharacterGenerationConfigSchemaV2, LibraryCharacterID: testRoleplayLibraryID(character.ID),
+			Revision: 4, NarrativeModel: "removed-model:9b",
+		},
+		UpdatedAt: time.Now().UTC(),
+	}
+	server := newRoleplayHTTPTestServer(t, simulation)
+	server.ollamaModelAuthority = &roleplayModelPageProbe{pages: map[int]ollama.ModelPage{
+		0: {Offset: 0, Models: []ollama.ModelInfo{{Name: "replacement-model:4b"}}},
+	}}
+	query := "channel_id=story-http&characters_offset=4&personas_offset=4&turn_order_offset=4" +
+		"&meters_offset=4&inventory_offset=4&interactions_offset=4&item_templates_offset=4"
+	request := httptest.NewRequest(http.MethodGet, "/v1/ui/chat/roleplay?"+query, nil)
+	response := httptest.NewRecorder()
+
+	server.Handler().ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "Current turn: Active Archivist") {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
 func TestRoleplaySimulationUnconfiguredStateDoesNotQueryScenePages(t *testing.T) {
 	t.Parallel()
 	simulation := newRoleplaySimulationTestStore(roleplayHTTPChannelID)
 	simulation.characters.Items = []roleplay.SimulationCharacterSummary{{
 		ID: roleplayHTTPViewpoint, WorldID: simulation.world.ID, Name: "Initial Navigator", CreatedAt: time.Now().UTC(),
 	}}
+	simulation.worldCharacters = append([]roleplay.SimulationCharacterSummary(nil), simulation.characters.Items...)
+	simulation.names[roleplayHTTPViewpoint] = "Initial Navigator"
 	simulation.personaConfigured[roleplayHTTPViewpoint] = true
 	server := newRoleplayHTTPTestServer(t, simulation)
 	request := httptest.NewRequest(http.MethodGet, "/v1/ui/chat/roleplay?channel_id=story-http", nil)
@@ -94,7 +125,7 @@ func TestRoleplaySimulationUnconfiguredStateDoesNotQueryScenePages(t *testing.T)
 	}
 }
 
-func TestRoleplayCharacterCreateIssuesIdentityAndReconcilesServerComponent(t *testing.T) {
+func TestWorldLocalCharacterCreationRouteIsRemoved(t *testing.T) {
 	t.Parallel()
 	simulation := newRoleplaySimulationTestStore(roleplayHTTPChannelID)
 	server := newRoleplayHTTPTestServer(t, simulation)
@@ -107,12 +138,8 @@ func TestRoleplayCharacterCreateIssuesIdentityAndReconcilesServerComponent(t *te
 
 	server.Handler().ServeHTTP(response, request)
 
-	if response.Code != http.StatusCreated || simulation.characterCreateCalls != 1 ||
-		!strings.Contains(response.Body.String(), "Orchid Cartographer") {
+	if response.Code != http.StatusNotFound || simulation.characterCreateCalls != 0 {
 		t.Fatalf("status=%d calls=%d body=%s", response.Code, simulation.characterCreateCalls, response.Body.String())
-	}
-	if strings.Contains(response.Body.String(), "rpc_cccccccccccccccccccccccccccccccc</") {
-		t.Fatalf("component exposed an opaque identity as user-facing text: %s", response.Body.String())
 	}
 }
 
@@ -127,8 +154,9 @@ func TestRoleplayConfigRejectsSecondActionTransportAndInexactBodies(t *testing.T
 	}{
 		{"/v1/channels/story-http/roleplay/actions", `{"command":"/give \"lens\""}`, http.StatusNotFound},
 		{"/v1/channels/story-http/roleplay/research", `{"question":"run this now"}`, http.StatusNotFound},
-		{"/v1/channels/story-http/roleplay/characters", `{"name":"Exact","id":"rpc_22222222222222222222222222222222"}`, http.StatusBadRequest},
-		{"/v1/channels/story-http/roleplay/characters", `{"name":"Exact","name":"Duplicate"}`, http.StatusBadRequest},
+		{"/v1/channels/story-http/roleplay/characters", `{"name":"Exact"}`, http.StatusNotFound},
+		{"/v1/ui/roleplay/library", `{"name":"Exact","id":"rpl_22222222222222222222222222222222"}`, http.StatusBadRequest},
+		{"/v1/ui/roleplay/library", `{"name":"Exact","name":"Duplicate"}`, http.StatusBadRequest},
 	}
 	for _, test := range tests {
 		request := httptest.NewRequest(http.MethodPost, test.path, bytes.NewBufferString(test.body))
@@ -170,6 +198,7 @@ func configuredRoleplayHTTPTestStore() *roleplaySimulationTestStore {
 	store.characters.Items = []roleplay.SimulationCharacterSummary{{
 		ID: roleplayHTTPActive, WorldID: store.world.ID, Name: "Active Archivist", CreatedAt: now,
 	}}
+	store.worldCharacters = append([]roleplay.SimulationCharacterSummary(nil), store.characters.Items...)
 	store.names[roleplayHTTPActive] = "Active Archivist"
 	store.personaConfigured[roleplayHTTPActive] = true
 	store.personas.Items = []roleplay.PersonaProjection{{

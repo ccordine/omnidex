@@ -22,7 +22,10 @@ func TestKnownArtifactTruthHasOneExactStationOwner(t *testing.T) {
 	if got != station.CodingKnownArtifactTruth {
 		t.Fatalf("station=%q want=%q", got, station.CodingKnownArtifactTruth)
 	}
-	correction, err := assemblyline.NewResponseCorrectionJob(job, "truth is unsupported")
+	correction, err := assemblyline.NewRetainedResponseCorrectionJob(
+		job, "truth is unsupported",
+		`{"schema":"omnidex.known-artifact-truth.v1","truth":"none"}`,
+	)
 	if err != nil {
 		t.Fatal(err)
 	}

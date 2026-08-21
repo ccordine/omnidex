@@ -18,15 +18,11 @@ func (r *nativeRuntimeV3) runObjectiveResolve() error {
 	if err != nil {
 		return err
 	}
-	objectiveAdvisory, err := r.newObjectiveAdvisoryRunner()
-	if err != nil {
-		return err
-	}
 	result, err := runObjectiveTurn(
 		r.ctx,
 		r.claim.Job,
 		runtimeConversationCandidateProvider{runtime: r},
-		portableObjectiveContextSelectionStation{runtime: r},
+		portableObjectiveContextSieveStations{runtime: r},
 		portableObjectiveKindStation{runtime: r},
 		portableObjectiveConversationStation{runtime: r},
 		repositoryStations,
@@ -38,7 +34,6 @@ func (r *nativeRuntimeV3) runObjectiveResolve() error {
 			RoleplaySimulation: r.projectObjectiveRoleplaySimulation,
 			RoleplayCanon:      portableObjectiveRoleplayCanonStation{runtime: r},
 			RoleplayResearch:   r.acquireObjectiveRoleplayResearch,
-			ObjectiveAdvisory:  objectiveAdvisory,
 		},
 	)
 	if err != nil {
@@ -52,8 +47,7 @@ func (r *nativeRuntimeV3) runObjectiveResolve() error {
 		return err
 	}
 	return r.completeWithEvidence(
-		"objective_result", output, result.ObjectiveID, records, result.RoleplayFacts,
-		result.RoleplayKnowledgeCharacterIDs,
+		"objective_result", output, result.ObjectiveID, records, result.RoleplayResponses,
 	)
 }
 
@@ -64,9 +58,17 @@ func (r *nativeRuntimeV3) runObjectiveWorkspaceMutation(
 	if r.claim.Job.ID != authority.JobID || r.claim.Job.Instruction != authority.Instruction {
 		return "", fmt.Errorf("workspace mutation authority does not match the claimed conversation job")
 	}
-	request := directCodingRequest{
-		Instruction:       authority.Instruction,
-		MemoryAuthorities: append([]assemblyline.ObjectiveMemoryAuthority(nil), authority.Context.MemoryAuthorities...),
+	request := directCodingRequest{Instruction: authority.Instruction}
+	for _, capsule := range authority.Context.Capsules {
+		isReplan := false
+		for _, source := range capsule.Sources {
+			isReplan = isReplan || source.Namespace == "objective_replan"
+		}
+		if isReplan {
+			request.Feedback = append(request.Feedback, capsule.Content)
+		} else {
+			request.AdditionalAuthority = append(request.AdditionalAuthority, capsule.Content)
+		}
 	}
 	if request.Instruction != authority.Instruction {
 		return "", fmt.Errorf("direct coding request rewrote exact conversation authority")

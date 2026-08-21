@@ -29,7 +29,17 @@ export interface RoleplayComponentResponse {
   configured: boolean;
   scene_revision?: number;
   scene_draft_revision: number;
+  composer_persona_character_id?: string;
   html: { bundle: string };
+}
+
+export function createRoleplayUserPersona(
+  channelID: string,
+  name: string,
+): Promise<RoleplayComponentResponse> {
+  return mutate(channelID, "/user-personas", jsonRequest({
+    name: requireText(name, "Identity name", 256, true),
+  }), 201);
 }
 
 export interface PersonaInput {
@@ -60,6 +70,11 @@ export interface SceneDraftParticipantInput {
   characters_offset: number;
 }
 
+export interface ResponderOrderInput {
+  expected_revision: number;
+  character_ids: string[];
+}
+
 export interface MeterDefinitionInput {
   key: string;
   name: string;
@@ -75,7 +90,11 @@ export interface MeterValueInput {
 
 export interface ResearchCapabilityInput {
   enabled: boolean;
-  characters_offset: number;
+}
+
+export interface RoleplayGenerationInput {
+  expected_revision: number;
+  narrative_model: string;
 }
 
 export interface MeterDeltaInput {
@@ -121,8 +140,16 @@ export async function fetchRoleplayComponent(
   return requestRoleplayComponent(`/v1/ui/chat/roleplay?${query}`, undefined, 200, id);
 }
 
-export function createRoleplayCharacter(channelID: string, name: string): Promise<RoleplayComponentResponse> {
-  return mutate(channelID, "/characters", jsonRequest({ name: requireText(name, "Character name", 256, true) }), 201);
+export function placeRoleplayLibraryCharacter(
+  channelID: string,
+  libraryCharacterID: string,
+): Promise<RoleplayComponentResponse> {
+  return mutate(
+    channelID,
+    `/library/${roleplayID(libraryCharacterID, "library character", "rpl")}`,
+    { method: "POST" },
+    201,
+  );
 }
 
 export function writeRoleplayPersona(
@@ -156,6 +183,21 @@ export function updateRoleplayScene(
     expected_revision: requireInteger(expectedRevision, "Scene revision", 1, Number.MAX_SAFE_INTEGER),
 		expected_draft_revision: requireInteger(input.expected_draft_revision, "Scene draft revision", 0, Number.MAX_SAFE_INTEGER),
     ...requireScene(input),
+  }), 200);
+}
+
+export function updateRoleplayResponders(
+  channelID: string,
+  input: ResponderOrderInput,
+): Promise<RoleplayComponentResponse> {
+  const characterIDs = input.character_ids.map((id) => roleplayID(id, "responder", "rpc"));
+  if (characterIDs.length < 1 || characterIDs.length > 16 ||
+      new Set(characterIDs).size !== characterIDs.length) {
+    throw new Error("Responders must contain 1 to 16 unique characters.");
+  }
+  return mutate(channelID, "/responders", jsonPut({
+    expected_revision: requireInteger(input.expected_revision, "Scene revision", 1, Number.MAX_SAFE_INTEGER),
+    character_ids: characterIDs,
   }), 200);
 }
 
@@ -211,14 +253,35 @@ export function configureRoleplayResearch(
   input: ResearchCapabilityInput,
 ): Promise<RoleplayComponentResponse> {
   if (typeof input.enabled !== "boolean") throw new Error("Research access must be an exact boolean.");
-  const offset = requireInteger(input.characters_offset, "Character page offset", 0, Number.MAX_SAFE_INTEGER);
-  if (offset % 4 !== 0) throw new Error("Character page offset must use the server page size.");
   return mutate(
     channelID,
     `/capabilities/${roleplayID(characterID, "character", "rpc")}/web-research`,
-    jsonPut({ enabled: input.enabled, characters_offset: offset }),
+    jsonPut({ enabled: input.enabled }),
     200,
   );
+}
+
+export function writeRoleplayGeneration(
+  channelID: string,
+  characterID: string,
+  input: RoleplayGenerationInput,
+): Promise<RoleplayComponentResponse> {
+  const narrative = requireOllamaModel(input.narrative_model, false);
+  return mutate(
+    channelID,
+    `/generation/${roleplayID(characterID, "character", "rpc")}`,
+    jsonPut({
+      expected_revision: requireInteger(input.expected_revision, "Character generation revision", 1, Number.MAX_SAFE_INTEGER),
+      narrative_model: narrative,
+    }),
+    200,
+  );
+}
+
+function requireOllamaModel(value: string, required: boolean): string {
+  const model = requireText(value, "Ollama model", 256, required);
+  if (model && !/^[A-Za-z0-9._:/@-]+$/.test(model)) throw new Error("Ollama model contains unsupported characters.");
+  return model;
 }
 
 export function registerRoleplayInteraction(

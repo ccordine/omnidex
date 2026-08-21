@@ -32,6 +32,9 @@ func loadStationReplayPortableBoundary(
 		Schema: gap.PortableSchema, ID: gap.WorkID, Kind: assemblyline.WorkKind(gap.WorkKind),
 		Payload: append(json.RawMessage(nil), gap.PortablePayload...),
 	}
+	if err := rejectRetiredStationReplayJob(boundary.Job); err != nil {
+		return boundary, err
+	}
 	if err := boundary.Job.Validate(); err != nil {
 		return boundary, fmt.Errorf("validate station replay portable job: %w", err)
 	}
@@ -69,6 +72,37 @@ func loadStationReplayPortableBoundary(
 	}
 	boundary.Prompt, boundary.Schema, boundary.Contract = gap.Prompt, schema, contract
 	return boundary, nil
+}
+
+func rejectRetiredStationReplayJob(job assemblyline.PortableJob) error {
+	switch job.Kind {
+	case assemblyline.WorkKind("conversation_context_selection"),
+		assemblyline.WorkKind("memory_context_selection"),
+		assemblyline.WorkKind("roleplay_narrative_continuity"):
+		return fmt.Errorf("station replay rejects retired context work kind %q", job.Kind)
+	case assemblyline.WorkResponseCorrection:
+		var correction assemblyline.ResponseCorrectionInput
+		if err := json.Unmarshal(job.Payload, &correction); err != nil {
+			return fmt.Errorf("decode station replay correction authority: %w", err)
+		}
+		if correction.Original.Kind == assemblyline.WorkResponseCorrection {
+			return fmt.Errorf("station replay rejects nested response correction authority")
+		}
+		if err := rejectRetiredStationReplayJob(correction.Original); err != nil {
+			return err
+		}
+		if strings.TrimSpace(correction.RetainedCandidate) == "" &&
+			correction.Original.Kind != assemblyline.WorkApplicationJobSpecification &&
+			correction.Original.Kind != assemblyline.WorkApplicationAcceptanceGroundingReview {
+			return fmt.Errorf(
+				"station replay rejects %s correction without one exact retained candidate",
+				correction.Original.Kind,
+			)
+		}
+		return nil
+	default:
+		return nil
+	}
 }
 
 func validateCurrentContractStationReplayPoint(

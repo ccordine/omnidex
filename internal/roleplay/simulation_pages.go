@@ -38,7 +38,7 @@ func loadSimulationCharactersPage(
 	limit, offset int,
 ) (SimulationCharacterPage, error) {
 	rows, err := query.Query(ctx, `
-		SELECT id,world_id,name,authority_namespace,created_at
+		SELECT id,world_id,library_character_id,name,authority_namespace,created_at
 		FROM roleplay_characters
 		WHERE world_id=$1
 		ORDER BY created_at ASC,id ASC
@@ -52,7 +52,7 @@ func loadSimulationCharactersPage(
 	for rows.Next() {
 		var item SimulationCharacterSummary
 		var authority AuthorityNamespace
-		if err := rows.Scan(&item.ID, &item.WorldID, &item.Name, &authority, &item.CreatedAt); err != nil {
+		if err := rows.Scan(&item.ID, &item.WorldID, &item.LibraryID, &item.Name, &authority, &item.CreatedAt); err != nil {
 			return SimulationCharacterPage{}, err
 		}
 		if authority != AuthorityFictionalCanon {
@@ -68,6 +68,27 @@ func loadSimulationCharactersPage(
 		items = items[:limit]
 	}
 	return SimulationCharacterPage{Items: items, HasMore: hasMore}, nil
+}
+
+func loadAllSimulationCharacters(
+	ctx context.Context,
+	query simulationQuerier,
+	worldID string,
+) ([]SimulationCharacterSummary, error) {
+	var characters []SimulationCharacterSummary
+	for offset := 0; ; offset += MaxSimulationPageSize {
+		page, err := loadSimulationCharactersPage(ctx, query, worldID, MaxSimulationPageSize, offset)
+		if err != nil {
+			return nil, err
+		}
+		characters = append(characters, page.Items...)
+		if !page.HasMore {
+			return characters, nil
+		}
+		if len(page.Items) != MaxSimulationPageSize {
+			return nil, fmt.Errorf("roleplay character projection returned a contradictory page")
+		}
+	}
 }
 
 func (s *Store) ListPersonaPage(
@@ -91,11 +112,13 @@ func loadPersonaPage(
 	limit, offset int,
 ) (PersonaPage, error) {
 	rows, err := query.Query(ctx, `
-		SELECT persona.character_id,persona.revision,persona.summary,persona.voice,
-		       persona.traits,persona.goals,persona.updated_at
-		FROM roleplay_character_personas AS persona
-		WHERE persona.world_id=$1
-		ORDER BY persona.character_id ASC
+		SELECT character.id,profile.revision,profile.summary,profile.voice,
+		       profile.traits,profile.goals,profile.updated_at
+		FROM roleplay_characters AS character
+		JOIN roleplay_character_profiles AS profile
+		  ON profile.library_character_id=character.library_character_id
+		WHERE character.world_id=$1
+		ORDER BY character.id ASC
 		LIMIT $2 OFFSET $3
 	`, worldID, limit+1, offset)
 	if err != nil {

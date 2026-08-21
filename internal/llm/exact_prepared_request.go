@@ -12,13 +12,13 @@ import (
 const (
 	// The protocol fixes the station result shape. The structurally attested
 	// provider profile separately owns raw/native template framing.
-	ExactPreparedProviderBackend            = "ollama"
-	ExactPreparedProviderVersion            = "0.24.0"
-	ExactPreparedTokenizerProfile           = "ollama-0.24.0-qwen35-gpt2-boundary-v1"
-	ExactPreparedTokenizerProfileQwen3Qwen2 = "ollama-0.24.0-qwen3-qwen2-boundary-v1"
-	ExactPreparedPromptJoiner               = "\n"
-	ExactPreparedObjectiveAdvisoryStopV1    = "\n<END_OBJECTIVE_ADVISORY_V1>"
-	ExactPreparedCodeStopV1                 = "<|endoftext|>"
+	ExactPreparedProviderBackend             = "ollama"
+	ExactPreparedProviderVersion             = "0.24.0"
+	ExactPreparedTokenizerProfile            = "ollama-0.24.0-qwen35-gpt2-boundary-v1"
+	ExactPreparedTokenizerProfileQwen3Qwen2  = "ollama-0.24.0-qwen3-qwen2-boundary-v1"
+	ExactPreparedTokenizerProfileRoleplayRaw = "ollama-0.24.0-roleplay-raw-completion-v1"
+	ExactPreparedPromptJoiner                = "\n"
+	ExactPreparedCodeStopV1                  = "<|endoftext|>"
 	// MaxExactPreparedModelInputBytes is a gross transport/resource ceiling.
 	// It is deliberately not a token estimate; the provider's tokenizer owns
 	// native context admission and reports the actual counts in its receipt.
@@ -118,7 +118,6 @@ func validateExactPreparedRequest(prepared PreparedModel) error {
 			return fmt.Errorf("exact raw-text protocol forbids response format and schema")
 		}
 		if prepared.RawTextStopSequence != "" &&
-			prepared.RawTextStopSequence != ExactPreparedObjectiveAdvisoryStopV1 &&
 			prepared.RawTextStopSequence != ExactPreparedCodeStopV1 {
 			return fmt.Errorf("exact raw-text protocol stop sequence is not registered")
 		}
@@ -145,7 +144,7 @@ func validateExactPreparedRequest(prepared PreparedModel) error {
 // transport bounds. Natural output shares the remaining native context and is
 // checked from the provider's tokenizer-owned receipt.
 func ValidateExactPreparedNaturalInputAuthority(contextTokens int, rawInput string) error {
-	if err := ValidateInferenceContextTokens(contextTokens); err != nil {
+	if err := ValidateExactPreparedContextTokens(contextTokens); err != nil {
 		return err
 	}
 	return validateExactPreparedInputBytes(rawInput)
@@ -170,7 +169,7 @@ func ValidateExactPreparedInputAuthority(
 	maxOutputTokens int,
 	rawInput string,
 ) error {
-	if err := ValidateInferenceContextTokens(contextTokens); err != nil {
+	if err := ValidateExactPreparedContextTokens(contextTokens); err != nil {
 		return err
 	}
 	if maxInputTokens <= 0 || maxOutputTokens <= 0 ||
@@ -226,7 +225,7 @@ func ValidateExactPreparedNaturalUsage(
 	contextTokens int,
 	usage ProviderGenerationUsage,
 ) error {
-	if err := ValidateInferenceContextTokens(contextTokens); err != nil {
+	if err := ValidateExactPreparedContextTokens(contextTokens); err != nil {
 		return err
 	}
 	if usage.PromptEvalCount <= 0 || usage.EvalCount <= 0 {

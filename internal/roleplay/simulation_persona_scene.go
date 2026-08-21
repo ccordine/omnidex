@@ -32,12 +32,15 @@ func (s *Store) WritePersona(ctx context.Context, request PersonaWriteRequest) (
 	var projection PersonaProjection
 	if request.ExpectedRevision == 0 {
 		projection, err = scanPersonaProjection(s.pool.QueryRow(ctx, `
-			INSERT INTO roleplay_character_personas (
-				world_id,character_id,summary,voice,traits,goals
+			WITH inserted AS (
+				INSERT INTO roleplay_character_profiles (
+					library_character_id,summary,voice,traits,goals
+				)
+				SELECT library_character_id,$2,$3,$4::jsonb,$5::jsonb
+				FROM roleplay_characters WHERE id=$1
+				RETURNING revision,summary,voice,traits,goals,updated_at
 			)
-			SELECT world_id,id,$2,$3,$4::jsonb,$5::jsonb
-			FROM roleplay_characters WHERE id=$1
-			RETURNING character_id,revision,summary,voice,traits,goals,updated_at
+			SELECT $1,revision,summary,voice,traits,goals,updated_at FROM inserted
 		`, request.CharacterID, request.Sheet.Summary, request.Sheet.Voice, string(traits), string(goals)))
 		if err == pgx.ErrNoRows {
 			return PersonaProjection{}, fmt.Errorf("%w: character is absent", ErrSimulationNotConfigured)
@@ -48,11 +51,14 @@ func (s *Store) WritePersona(ctx context.Context, request PersonaWriteRequest) (
 		return projection, nil
 	}
 	projection, err = scanPersonaProjection(s.pool.QueryRow(ctx, `
-		UPDATE roleplay_character_personas
+		UPDATE roleplay_character_profiles AS profile
 		SET summary=$3,voice=$4,traits=$5::jsonb,goals=$6::jsonb,
 		    revision=revision+1,updated_at=NOW()
-		WHERE character_id=$1 AND revision=$2
-		RETURNING character_id,revision,summary,voice,traits,goals,updated_at
+		FROM roleplay_characters AS character
+		WHERE character.id=$1 AND profile.library_character_id=character.library_character_id
+		  AND profile.revision=$2
+		RETURNING character.id,profile.revision,profile.summary,profile.voice,
+		          profile.traits,profile.goals,profile.updated_at
 	`, request.CharacterID, request.ExpectedRevision, request.Sheet.Summary,
 		request.Sheet.Voice, string(traits), string(goals)))
 	if err == pgx.ErrNoRows {
@@ -69,8 +75,12 @@ func (s *Store) ProjectPersona(ctx context.Context, characterID string) (Persona
 		return PersonaProjection{}, err
 	}
 	projection, err := scanPersonaProjection(s.pool.QueryRow(ctx, `
-		SELECT character_id,revision,summary,voice,traits,goals,updated_at
-		FROM roleplay_character_personas WHERE character_id=$1
+		SELECT character.id,profile.revision,profile.summary,profile.voice,
+		       profile.traits,profile.goals,profile.updated_at
+		FROM roleplay_characters AS character
+		JOIN roleplay_character_profiles AS profile
+		  ON profile.library_character_id=character.library_character_id
+		WHERE character.id=$1
 	`, characterID))
 	if err == pgx.ErrNoRows {
 		return PersonaProjection{}, fmt.Errorf("%w: character persona is absent", ErrSimulationNotConfigured)
@@ -135,8 +145,8 @@ func requireSimulationParticipantsTx(
 		err := tx.QueryRow(ctx, `
 			SELECT character.id,character.name
 			FROM roleplay_characters AS character
-			JOIN roleplay_character_personas AS persona
-			  ON persona.world_id=character.world_id AND persona.character_id=character.id
+			JOIN roleplay_character_profiles AS profile
+			  ON profile.library_character_id=character.library_character_id
 			WHERE character.world_id=$1 AND character.id=$2
 		`, worldID, characterID).Scan(&found, &name)
 		if err == pgx.ErrNoRows {

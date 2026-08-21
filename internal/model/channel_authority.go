@@ -199,6 +199,16 @@ func ValidateChannelMessage(role ChannelMessageRole, content string) error {
 	return nil
 }
 
+func ValidateChannelMessageSpeaker(role ChannelMessageRole, speakerName string) error {
+	if err := role.Validate(); err != nil {
+		return err
+	}
+	if speakerName == "" {
+		return nil
+	}
+	return validateExactChannelText(speakerName, "channel message speaker", 256)
+}
+
 func validateExactChannelText(value, name string, maxBytes int) error {
 	if len(value) == 0 || len(value) > maxBytes || !utf8.ValidString(value) || strings.IndexByte(value, 0) >= 0 {
 		return fmt.Errorf("%s must contain 1..%d valid UTF-8 bytes without NUL", name, maxBytes)

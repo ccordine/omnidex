@@ -1,12 +1,11 @@
 import { Controller } from "@hotwired/stimulus";
 import {
-  deleteOllamaModel,
   ingestDocuments,
-  pullOllamaModel,
   saveAPISecrets,
   saveModelSettings,
   saveNetworkSettings,
 } from "../lib/admin_api";
+import { deleteOllamaModel, pullOllamaModel } from "../lib/ollama_model_api";
 import { fetchAdminComponent } from "../lib/operational_component_api";
 import { renderServerBundle } from "../lib/server_component_api";
 import type RecyclrController from "./recyclr_controller";
@@ -18,12 +17,14 @@ import { setGlobalLoading } from "../lib/loading";
 const ADMIN_TABS = new Set(["overview", "ai", "datasources", "health", "advanced"]);
 
 export default class AdminController extends Controller {
-  static targets = ["tabNav", "tabPanel", "adminStatus", "pullModel", "ingestFiles", "ingestStage", "ingestTags"];
+  static targets = ["tabNav", "tabPanel", "adminStatus", "pullModel", "catalogQuery", "ingestFiles", "ingestStage", "ingestTags"];
 
   declare readonly tabNavTarget: HTMLElement;
   declare readonly adminStatusTarget: HTMLElement;
   declare readonly pullModelTarget: HTMLInputElement;
   declare readonly hasPullModelTarget: boolean;
+  declare readonly catalogQueryTarget: HTMLInputElement;
+  declare readonly hasCatalogQueryTarget: boolean;
   declare readonly ingestFilesTarget: HTMLInputElement;
   declare readonly hasIngestFilesTarget: boolean;
   declare readonly ingestStageTarget: HTMLSelectElement;
@@ -32,8 +33,13 @@ export default class AdminController extends Controller {
   declare readonly hasIngestTagsTarget: boolean;
 
   private activeTab = "overview";
-	private modelOffset = 0;
+  private modelOffset = 0;
+  private catalogQuery = "";
+  private catalogPage = 1;
+  private downloadOffset = 0;
   private panelShownHandler: ((event: Event) => void) | null = null;
+  private ollamaDownloadHandler: ((event: Event) => void) | null = null;
+  private ollamaRefreshTimer: number | null = null;
 
   connect(): void {
     const tab = parseAdminTabFromLocation();
@@ -42,12 +48,26 @@ export default class AdminController extends Controller {
       if ((event as CustomEvent<{ panel?: string }>).detail?.panel === "admin") void this.load();
     };
     document.addEventListener("omni:panel-shown", this.panelShownHandler);
+    this.ollamaDownloadHandler = (event) => {
+      if (this.activeTab !== "ai") return;
+      const summary = String((event as CustomEvent<Record<string, unknown>>).detail?.summary ?? "").trim();
+      if (summary) this.setAdminStatus(summary, "busy");
+      if (this.ollamaRefreshTimer != null) return;
+      this.ollamaRefreshTimer = window.setTimeout(() => {
+        this.ollamaRefreshTimer = null;
+        void this.load();
+      }, 300);
+    };
+    document.addEventListener("omni:ollama-download", this.ollamaDownloadHandler);
     this.applyTabState();
     void this.load();
   }
 
   disconnect(): void {
     if (this.panelShownHandler) document.removeEventListener("omni:panel-shown", this.panelShownHandler);
+    if (this.ollamaDownloadHandler) document.removeEventListener("omni:ollama-download", this.ollamaDownloadHandler);
+    if (this.ollamaRefreshTimer != null) window.clearTimeout(this.ollamaRefreshTimer);
+    this.ollamaRefreshTimer = null;
   }
 
   private recyclrController(): RecyclrController {
@@ -88,7 +108,6 @@ export default class AdminController extends Controller {
     const tab = (event.currentTarget as HTMLElement).dataset.adminTab ?? "";
     if (!ADMIN_TABS.has(tab)) throw new Error(`Unsupported admin tab ${JSON.stringify(tab)}.`);
     this.activeTab = tab;
-		if (tab !== "ai") this.modelOffset = 0;
     this.applyTabState();
     this.recyclrController().pushRoute(panelHref("admin", window.location, { admin_tab: tab }));
     void this.load();
@@ -97,7 +116,12 @@ export default class AdminController extends Controller {
   async load(): Promise<void> {
     this.setAdminStatus("Loading admin settings…", "busy");
     try {
-		const payload = await fetchAdminComponent(this.activeTab, this.modelOffset);
+      const payload = await fetchAdminComponent(this.activeTab, {
+        modelOffset: this.modelOffset,
+        catalogQuery: this.catalogQuery,
+        catalogPage: this.catalogPage,
+        downloadOffset: this.downloadOffset,
+      });
       await renderServerBundle(this.recyclrController(), payload, "Admin component");
       if (this.activeTab === "health") await this.chatController()?.loadStatus();
       this.setAdminStatus("Ready", "idle");
@@ -113,15 +137,45 @@ export default class AdminController extends Controller {
     await this.load();
   }
 
-	loadModelPage(event: Event): void {
-		event.preventDefault();
-		const offset = Number((event.currentTarget as HTMLElement | null)?.dataset.pageOffset ?? -1);
-		if (!Number.isSafeInteger(offset) || offset < 0) {
-			throw new Error("Ollama model page control is invalid.");
-		}
-		this.modelOffset = offset;
-		void this.load();
-	}
+  loadModelPage(event: Event): void {
+    this.modelOffset = this.pageOffset(event, "model");
+    void this.load();
+  }
+
+  loadDownloadPage(event: Event): void {
+    this.downloadOffset = this.pageOffset(event, "download");
+    void this.load();
+  }
+
+  private pageOffset(event: Event, kind: string): number {
+    event.preventDefault();
+    const target = event.currentTarget as HTMLElement | null;
+    const offset = Number(target?.dataset.pageOffset ?? -1);
+    if (target?.dataset.pageKind !== kind || !Number.isSafeInteger(offset) || offset < 0) {
+      throw new Error(`Ollama ${kind} page control is invalid.`);
+    }
+    return offset;
+  }
+
+  searchOllamaCatalog(event: Event): void {
+    event.preventDefault();
+    const query = this.hasCatalogQueryTarget ? this.catalogQueryTarget.value.trim() : "";
+    if (!query) return reportErrorMessage(this.setAdminStatus.bind(this), "Enter a catalog search");
+    this.catalogQuery = query;
+    this.catalogPage = 1;
+    this.catalogQueryTarget.value = query;
+    void this.load();
+  }
+
+  loadCatalogPage(event: Event): void {
+    event.preventDefault();
+    const page = Number((event.currentTarget as HTMLElement | null)?.dataset.catalogPage ?? -1);
+    if (!Number.isSafeInteger(page) || page < 1 || page > 100 || !this.catalogQuery) {
+      throw new Error("Ollama catalog page control is invalid.");
+    }
+    this.catalogPage = page;
+    void this.load();
+  }
 
   private field(root: ParentNode, name: string): HTMLInputElement | HTMLSelectElement | null {
     return root.querySelector(`[data-admin-field='${name}']`);
@@ -167,7 +221,15 @@ export default class AdminController extends Controller {
     event.preventDefault();
     const model = this.hasPullModelTarget ? this.pullModelTarget.value.trim() : "";
     if (!model) return;
-    await this.mutate(`Pulling ${model}…`, `Pulled ${model}`, () => pullOllamaModel(model));
+    this.pullModelTarget.value = "";
+    await this.mutate(`Queueing ${model}…`, `Download queued for ${model}`, () => pullOllamaModel(model));
+  }
+
+  async downloadCatalogModel(event: Event): Promise<void> {
+    event.preventDefault();
+    const model = (event.currentTarget as HTMLElement | null)?.dataset.modelName?.trim() ?? "";
+    if (!model) throw new Error("Catalog download control has no model authority.");
+    await this.mutate(`Queueing ${model}…`, `Download queued for ${model}`, () => pullOllamaModel(model));
   }
 
   async deleteOllamaModel(event: Event): Promise<void> {

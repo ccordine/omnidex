@@ -144,8 +144,12 @@ func projectCurrentSceneTx(ctx context.Context, tx pgx.Tx, worldID string) (Scen
 
 func projectPersonaTx(ctx context.Context, tx pgx.Tx, characterID string) (PersonaProjection, error) {
 	projection, err := scanPersonaProjection(tx.QueryRow(ctx, `
-		SELECT character_id,revision,summary,voice,traits,goals,updated_at
-		FROM roleplay_character_personas WHERE character_id=$1
+		SELECT character.id,profile.revision,profile.summary,profile.voice,
+		       profile.traits,profile.goals,profile.updated_at
+		FROM roleplay_characters AS character
+		JOIN roleplay_character_profiles AS profile
+		  ON profile.library_character_id=character.library_character_id
+		WHERE character.id=$1
 	`, characterID))
 	if err == pgx.ErrNoRows {
 		return PersonaProjection{}, fmt.Errorf("%w: viewpoint persona is absent", ErrSimulationNotConfigured)

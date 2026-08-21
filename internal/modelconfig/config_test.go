@@ -58,11 +58,19 @@ func TestFromJSONRejectsMalformedAndUnknownValues(t *testing.T) {
 		json.RawMessage(`{"tagger_model":"x"}`),
 		json.RawMessage(`{"search_model":"x"}`),
 		json.RawMessage(`{"memory_model":"x"}`),
+		json.RawMessage(`{"objective_advisory_model":"x"}`),
 		json.RawMessage(`{"default_model":"x"} {}`),
 	} {
 		if _, err := FromJSON(raw); err == nil {
 			t.Fatalf("model config %s must fail", raw)
 		}
+	}
+}
+
+func TestFromJSONRejectsRetiredObjectiveAdvisoryRoute(t *testing.T) {
+	_, err := FromJSON(json.RawMessage(`{"objective_advisory_model":"qwen"}`))
+	if err == nil || !strings.Contains(err.Error(), `unsupported field "objective_advisory_model"`) {
+		t.Fatalf("retired objective advisory route error=%v", err)
 	}
 }
 
@@ -91,9 +99,9 @@ func TestModelNamesReturnsEverySelectedProviderModel(t *testing.T) {
 
 func TestApplyExactStationRoutingFields(t *testing.T) {
 	applied := Apply(Routing{}, Config{
-		"objective_advisory_model":                "qwen3:8b-advisory",
 		"conversation_objective_kind_model":       "qwen3:4b-kind",
 		"conversation_response_model":             "qwen3:8b-response",
+		"roleplay_canon_extraction_model":         "qwen3:8b-roleplay-fidelity",
 		"grounded_answer_model":                   "qwen3:8b-grounded",
 		"web_search_terms_model":                  "qwen3:4b-terms",
 		"web_relevance_model":                     "qwen3:4b-relevance",
@@ -111,14 +119,14 @@ func TestApplyExactStationRoutingFields(t *testing.T) {
 		"coding_fragment_repair_guidance_model":   "deepseek-r1:8b-guidance",
 		"coding_fragment_correction_model":        "qwen2.5-coder:14b-correction",
 	})
-	if got := applied.Stations[station.ObjectiveAdvisory]; got != "qwen3:8b-advisory" {
-		t.Fatalf("objective advisory model=%q", got)
-	}
 	if got := applied.Stations[station.ConversationObjectiveKind]; got != "qwen3:4b-kind" {
 		t.Fatalf("conversation kind model=%q", got)
 	}
 	if got := applied.Stations[station.ConversationResponse]; got != "qwen3:8b-response" {
 		t.Fatalf("conversation response model=%q", got)
+	}
+	if got := applied.Stations[station.RoleplayCanonExtraction]; got != "qwen3:8b-roleplay-fidelity" {
+		t.Fatalf("roleplay canon model=%q", got)
 	}
 	if got := applied.Stations[station.GroundedAnswer]; got != "qwen3:8b-grounded" {
 		t.Fatalf("grounded answer model=%q", got)

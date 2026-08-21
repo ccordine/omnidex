@@ -1,12 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  createRoleplayCharacter,
   configureRoleplayResearch,
 	createRoleplayScene,
   fetchRoleplayComponent,
+  placeRoleplayLibraryCharacter,
   registerRoleplayItem,
 	updateRoleplayScene,
-	writeRoleplaySceneDraftParticipant,
+  writeRoleplaySceneDraftParticipant,
+	writeRoleplayGeneration,
   writeRoleplayPersona,
 } from "./roleplay_api";
 
@@ -103,15 +104,17 @@ describe("roleplay simulation API", () => {
 		});
 	});
 
-  it("creates a character from its exact name without accepting a client identity", async () => {
+  it("places one canonical library character into the selected world", async () => {
     const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => response(false, 201));
     vi.stubGlobal("fetch", fetchMock);
 
-    await createRoleplayCharacter(channelID, "Rin");
+    const libraryID = "rpl_abcdefabcdefabcdefabcdefabcdefab";
+    await placeRoleplayLibraryCharacter(channelID, libraryID);
 
-    expect(String(fetchMock.mock.calls[0]?.[0])).toBe(`/v1/channels/${channelID}/roleplay/characters`);
+    expect(String(fetchMock.mock.calls[0]?.[0])).toBe(`/v1/channels/${channelID}/roleplay/library/${libraryID}`);
     const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
-    expect(JSON.parse(String(init.body))).toEqual({ name: "Rin" });
+    expect(init.method).toBe("POST");
+    expect(init.body).toBeUndefined();
   });
 
   it("writes a character sheet with its exact expected revision", async () => {
@@ -137,19 +140,39 @@ describe("roleplay simulation API", () => {
     });
   });
 
-  it("configures only one character from its exact visible server page", async () => {
+  it("configures only the exact route character without browser page authority", async () => {
     const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => response(true, 200));
     vi.stubGlobal("fetch", fetchMock);
 
-    await configureRoleplayResearch(channelID, characterID, { enabled: true, characters_offset: 8 });
+    await configureRoleplayResearch(channelID, characterID, { enabled: true });
 
     expect(String(fetchMock.mock.calls[0]?.[0])).toBe(
       `/v1/channels/${channelID}/roleplay/capabilities/${characterID}/web-research`,
     );
     const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
     expect(init.method).toBe("PUT");
-    expect(JSON.parse(String(init.body))).toEqual({ enabled: true, characters_offset: 8 });
+    expect(JSON.parse(String(init.body))).toEqual({ enabled: true });
   });
+
+	it("persists the exact installed response model for one character", async () => {
+		const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => response(true, 200));
+		vi.stubGlobal("fetch", fetchMock);
+
+		await writeRoleplayGeneration(channelID, characterID, {
+			expected_revision: 3,
+			narrative_model: "dolphin3:latest",
+		});
+
+		expect(String(fetchMock.mock.calls[0]?.[0])).toBe(
+			`/v1/channels/${channelID}/roleplay/generation/${characterID}`,
+		);
+		const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
+		expect(init.method).toBe("PUT");
+		expect(JSON.parse(String(init.body))).toEqual({
+			expected_revision: 3,
+			narrative_model: "dolphin3:latest",
+		});
+	});
 
   it("requires explicit finite/infinite item authority", async () => {
     const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => response(true, 201));

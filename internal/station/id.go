@@ -7,10 +7,10 @@ import "fmt"
 type ID string
 
 const (
-	ConversationContextSelection      ID = "conversation_context_selection"
-	MemoryContextSelection            ID = "memory_context_selection"
+	ContextSearchTerms                ID = "context_search_terms"
+	ContextRelevance                  ID = "context_relevance"
+	ContextMinification               ID = "context_minification"
 	ConversationObjectiveKind         ID = "conversation_objective_kind"
-	ObjectiveAdvisory                 ID = "objective_advisory"
 	ConversationResponse              ID = "conversation_response"
 	RoleplayCanonExtraction           ID = "roleplay_canon_extraction"
 	GroundedAnswer                    ID = "grounded_answer"
@@ -45,10 +45,10 @@ const (
 )
 
 var registered = [...]ID{
-	ConversationContextSelection,
-	MemoryContextSelection,
+	ContextSearchTerms,
+	ContextRelevance,
+	ContextMinification,
 	ConversationObjectiveKind,
-	ObjectiveAdvisory,
 	ConversationResponse,
 	RoleplayCanonExtraction,
 	GroundedAnswer,

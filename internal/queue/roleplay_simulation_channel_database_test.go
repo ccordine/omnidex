@@ -13,7 +13,7 @@ func TestCanonicalRoleplayTurnAppliesSimulationNarratesCanonAndAdvancesAtomicall
 	ctx := t.Context()
 	pool := openIsolatedMigrationPool(t)
 	repository := New(pool)
-	if err := repository.EnsureSchema(ctx, loadMigrationBundleThroughPrefix(t, "120")); err != nil {
+	if err := repository.EnsureSchema(ctx, loadCheckedMigrationBundle(t)); err != nil {
 		t.Fatal(err)
 	}
 	channel, err := repository.CreateRoleplayChannel(ctx, model.Channel{
@@ -80,7 +80,7 @@ func TestCanonicalRoleplayTurnAppliesSimulationNarratesCanonAndAdvancesAtomicall
 		t.Fatal(err)
 	}
 
-	message, job, err := repository.EnqueueChannelTurn(ctx, channel.ID, `/give "Field kit"`)
+	message, job, err := enqueueNarratorRoleplayTurn(ctx, repository, channel.ID, `/give "Field kit"`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -141,12 +141,20 @@ func TestCanonicalRoleplayTurnAppliesSimulationNarratesCanonAndAdvancesAtomicall
 	}
 	operationID := testLifecycleOperationID(t, "simulation-turn-complete", claim.Step.ID)
 	fact := "Mara used the field kit on the observation deck."
+	maraOutput := "Mara opens the compact kit and steadies herself as the storm rolls east."
+	ivoOutput := "Ivo keeps watch while Mara regains her footing."
 	command := CompleteStepCommand{
 		OperationID: operationID, Authority: claim.Authority, StepID: claim.Step.ID,
-		Output:     "Mara opens the compact kit and steadies herself as the storm rolls east.",
+		Output:     maraOutput + "\n\n" + ivoOutput,
 		ContextKey: "objective_result", ContextValue: "simulation-objective-proof",
-		RoleplayFacts:                 []string{fact},
-		RoleplayKnowledgeCharacterIDs: []model.RoleplayCharacterID{channel.RoleplayViewpointCharacterID},
+		RoleplayResponses: []RoleplayResponseCompletion{
+			{
+				Position: 0, CharacterID: channel.RoleplayViewpointCharacterID, Output: maraOutput,
+				Facts:                 []string{fact},
+				KnowledgeCharacterIDs: []model.RoleplayCharacterID{channel.RoleplayViewpointCharacterID},
+			},
+			{Position: 1, CharacterID: model.RoleplayCharacterID(ivo.ID), Output: ivoOutput},
+		},
 	}
 	completion := CompleteStepEvidenceCommand{CompleteStepCommand: command, Evidence: nil}
 	if err := repository.CompleteStepWithEvidence(ctx, completion); err != nil {
@@ -162,7 +170,7 @@ func TestCanonicalRoleplayTurnAppliesSimulationNarratesCanonAndAdvancesAtomicall
 	`, world.ID).Scan(&activeCharacterID, &sceneRevision); err != nil {
 		t.Fatal(err)
 	}
-	if activeCharacterID != ivo.ID || sceneRevision != 3 {
+	if activeCharacterID != string(channel.RoleplayViewpointCharacterID) || sceneRevision != 3 {
 		t.Fatalf("advanced active=%q revision=%d", activeCharacterID, sceneRevision)
 	}
 	var assistantMessages, transitions, preparations, advances int
@@ -175,7 +183,7 @@ func TestCanonicalRoleplayTurnAppliesSimulationNarratesCanonAndAdvancesAtomicall
 	`, channel.ID, world.ID).Scan(&assistantMessages, &transitions, &preparations, &advances); err != nil {
 		t.Fatal(err)
 	}
-	if assistantMessages != 1 || transitions != 1 || preparations != 1 || advances != 1 {
+	if assistantMessages != 2 || transitions != 1 || preparations != 1 || advances != 1 {
 		t.Fatalf("assistant=%d transitions=%d preparations=%d advances=%d", assistantMessages, transitions, preparations, advances)
 	}
 	var eventID string
@@ -212,7 +220,7 @@ func TestCanonicalRoleplayTurnAppliesSimulationNarratesCanonAndAdvancesAtomicall
 		t.Fatalf("memory isolation mara=%v ivo=%v", maraProjection.Memories, ivoProjection.Memories)
 	}
 
-	_, failedJob, err := repository.EnqueueChannelTurn(ctx, channel.ID, `/give "Field kit"`)
+	_, failedJob, err := enqueueNarratorRoleplayTurn(ctx, repository, channel.ID, `/give "Field kit"`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -249,20 +257,20 @@ func TestCanonicalRoleplayTurnAppliesSimulationNarratesCanonAndAdvancesAtomicall
 		t.Fatal(err)
 	}
 	if failedRevision != 3 || failedStrain != 80 || failedMorale != 40 || failedInventory != 0 ||
-		failedTransitions != 1 || failedAssistants != 1 || failedCanon != 1 || failedAdvances != 1 {
+		failedTransitions != 1 || failedAssistants != 2 || failedCanon != 1 || failedAdvances != 1 {
 		t.Fatalf("failed turn published state revision=%d strain=%d morale=%d inventory=%d transitions=%d assistants=%d canon=%d advances=%d",
 			failedRevision, failedStrain, failedMorale, failedInventory, failedTransitions,
 			failedAssistants, failedCanon, failedAdvances)
 	}
 
-	_, nextJob, err := repository.EnqueueChannelTurn(ctx, channel.ID, "Ivo watches the horizon.")
+	_, nextJob, err := enqueueNarratorRoleplayTurn(ctx, repository, channel.ID, "Ivo watches the horizon.")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := json.Unmarshal(nextJob.Metadata, &metadata); err != nil {
 		t.Fatal(err)
 	}
-	if metadata.RoleplayViewpointCharacterID != model.RoleplayCharacterID(ivo.ID) ||
+	if metadata.RoleplayViewpointCharacterID != channel.RoleplayViewpointCharacterID ||
 		metadata.RoleplayInputKind != roleplay.SimulationTurnProse {
 		t.Fatalf("next prepared turn=%+v", metadata)
 	}
@@ -277,8 +285,18 @@ func TestCanonicalRoleplayTurnAppliesSimulationNarratesCanonAndAdvancesAtomicall
 		CompleteStepCommand: CompleteStepCommand{
 			OperationID: testLifecycleOperationID(t, "simulation-prose-complete", nextClaim.Step.ID),
 			Authority:   nextClaim.Authority, StepID: nextClaim.Step.ID,
-			Output:     "Ivo declares that his morale is now ninety-nine.",
+			Output:     "Mara answers without changing the instruments.\n\nIvo declares that his morale is now ninety-nine.",
 			ContextKey: "objective_result", ContextValue: "simulation-prose-proof",
+			RoleplayResponses: []RoleplayResponseCompletion{
+				{
+					Position: 0, CharacterID: channel.RoleplayViewpointCharacterID,
+					Output: "Mara answers without changing the instruments.",
+				},
+				{
+					Position: 1, CharacterID: model.RoleplayCharacterID(ivo.ID),
+					Output: "Ivo declares that his morale is now ninety-nine.",
+				},
+			},
 		},
 		Evidence: nil,
 	}); err != nil {

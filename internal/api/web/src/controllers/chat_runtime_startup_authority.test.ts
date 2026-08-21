@@ -16,13 +16,19 @@ it("binds project authority before the first asynchronous startup boundary", asy
     openedProjectID: null as number | null,
     openedProjectLocation: null as string | null,
     initializeViewState: vi.fn(),
+    focusComposer: vi.fn(),
+    addEvent: vi.fn(),
     wireCoordinators: vi.fn(),
     bindDocumentEvents() {
       order.push("bind");
       bindDocumentEvents.call(this);
     },
+    ollamaDownloadHandler: vi.fn(),
     jobProgressHandler: vi.fn(),
     realtimeSyncHandler: vi.fn(),
+    realtimeActivityHandler: vi.fn(),
+    realtimeStatusHandler: vi.fn(),
+    disconnectSystemActivity: vi.fn(),
     channel: {
       detectTransport: vi.fn(() => { order.push("detect"); return transport; }),
       loadChannels: vi.fn(async () => undefined),

@@ -38,6 +38,11 @@ type roleplaySceneRequest struct {
 	ParticipantIDs        []string `json:"participant_ids"`
 }
 
+type roleplayResponderOrderRequest struct {
+	ExpectedRevision *int64   `json:"expected_revision"`
+	CharacterIDs     []string `json:"character_ids"`
+}
+
 type roleplayMeterRequest struct {
 	Key          string `json:"key"`
 	Name         string `json:"name"`
@@ -141,8 +146,12 @@ type roleplayMeterValueRequest struct {
 }
 
 type roleplayResearchCapabilityRequest struct {
-	Enabled          *bool `json:"enabled"`
-	CharactersOffset *int  `json:"characters_offset"`
+	Enabled *bool `json:"enabled"`
+}
+
+type roleplayGenerationRequest struct {
+	ExpectedRevision *int64 `json:"expected_revision"`
+	NarrativeModel   string `json:"narrative_model"`
 }
 
 func decodeExactRoleplayJSON(w http.ResponseWriter, r *http.Request, name string, target any) error {

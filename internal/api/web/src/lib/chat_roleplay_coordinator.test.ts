@@ -1,27 +1,27 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  configureRoleplayResearch,
-  createRoleplayCharacter,
 	fetchRoleplayComponent,
 	updateRoleplayScene,
   type RoleplayComponentResponse,
 } from "./roleplay_api";
 import { HTTPResponseError } from "./api";
+import { pullOllamaModel } from "./ollama_model_api";
 import { ChatRoleplayCoordinator, type ChatRoleplayHost } from "./chat_roleplay_coordinator";
 
 vi.mock("./roleplay_api", () => ({
 	emptyRoleplayPage: { characters: 0, personas: 0, turn_order: 0, meters: 0, inventory: 0, interactions: 0, item_templates: 0 },
   fetchRoleplayComponent: vi.fn(),
-  createRoleplayCharacter: vi.fn(),
   createRoleplayScene: vi.fn(),
-  configureRoleplayResearch: vi.fn(),
   registerRoleplayInteraction: vi.fn(),
   registerRoleplayItem: vi.fn(),
   registerRoleplayMeter: vi.fn(),
 	setRoleplayMeter: vi.fn(),
 	updateRoleplayScene: vi.fn(),
 	writeRoleplaySceneDraftParticipant: vi.fn(),
-  writeRoleplayPersona: vi.fn(),
+}));
+
+vi.mock("./ollama_model_api", () => ({
+  pullOllamaModel: vi.fn(),
 }));
 
 const channelID = "story-42";
@@ -82,56 +82,27 @@ describe("ChatRoleplayCoordinator", () => {
     expect(fixture.host.renderComponentBundle).toHaveBeenLastCalledWith(expect.stringContaining("configured"));
   });
 
-  it("disables configuration controls while awaiting server reconciliation", async () => {
-    vi.mocked(fetchRoleplayComponent).mockResolvedValueOnce(component(false));
-    let resolveMutation!: (value: RoleplayComponentResponse) => void;
-    vi.mocked(createRoleplayCharacter).mockReturnValueOnce(new Promise((resolve) => { resolveMutation = resolve; }));
-    const fixture = createHost();
-    const coordinator = new ChatRoleplayCoordinator(fixture.host);
-    await coordinator.activate(channelID, "roleplay");
-    const form = document.createElement("form");
-    form.innerHTML = '<input name="name" value="Signal Keeper"><button type="submit">Create</button>';
-    const input = form.elements.namedItem("name") as HTMLInputElement;
-    const pending = coordinator.createCharacter({
-      currentTarget: form,
-      preventDefault: vi.fn(),
-    } as unknown as Event);
-
-    expect(input.disabled).toBe(true);
-    expect(form.getAttribute("aria-busy")).toBe("true");
-    expect(fixture.loading.classList.contains("hidden")).toBe(false);
-
-    resolveMutation(component(false, "reconciled"));
-    await pending;
-    expect(input.disabled).toBe(false);
-    expect(form.getAttribute("aria-busy")).toBe("false");
-    expect(fixture.host.reportError).not.toHaveBeenCalled();
-    expect(fixture.host.renderComponentBundle).toHaveBeenLastCalledWith(expect.stringContaining("reconciled"));
-  });
-
-  it("reconciles research access for one server-rendered visible character", async () => {
+  it("queues an exact model download from the inline roleplay control", async () => {
     vi.mocked(fetchRoleplayComponent).mockResolvedValueOnce(component(true));
-    vi.mocked(configureRoleplayResearch).mockResolvedValueOnce(component(true, "research-reconciled"));
+    vi.mocked(pullOllamaModel).mockResolvedValueOnce(undefined);
     const fixture = createHost();
     const coordinator = new ChatRoleplayCoordinator(fixture.host);
     await coordinator.activate(channelID, "roleplay");
     const form = document.createElement("form");
-    form.dataset.characterId = "rpc_0123456789abcdef0123456789abcdef";
-    form.dataset.charactersOffset = "8";
-    form.innerHTML = '<input name="enabled" type="checkbox" checked><button type="submit">Save</button>';
+    form.innerHTML = '<input name="model" value="qwen3.5:4b"><button type="submit">Download</button>';
 
-    await coordinator.configureResearch({
+    await coordinator.downloadModel({
       currentTarget: form,
       preventDefault: vi.fn(),
     } as unknown as Event);
 
-    expect(configureRoleplayResearch).toHaveBeenCalledWith(
-      channelID,
-      "rpc_0123456789abcdef0123456789abcdef",
-      { enabled: true, characters_offset: 8 },
-    );
-    expect(fixture.host.renderComponentBundle).toHaveBeenLastCalledWith(expect.stringContaining("research-reconciled"));
-    expect(fixture.host.refreshSlashCommands).toHaveBeenCalledOnce();
+    expect(pullOllamaModel).toHaveBeenCalledWith("qwen3.5:4b");
+    expect((form.elements.namedItem("model") as HTMLInputElement).value).toBe("");
+    expect(fixture.host.setStatus).toHaveBeenLastCalledWith("Downloading qwen3.5:4b…", "active");
+    expect(fixture.host.addEvent).toHaveBeenCalledWith("roleplay_model_download_queued", {
+      channel_id: channelID,
+      model: "qwen3.5:4b",
+    });
   });
 
   it("places only exact server-rendered command syntax in the canonical composer", () => {

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   fetchChannelOptionsPage,
+  fetchNeutralChatTranscript,
   fetchChatDataSourceOptionsPage,
   fetchChatMemoryPage,
   fetchChatTimelinePage,
@@ -50,6 +51,20 @@ describe("chat server component API", () => {
       html: { bundle: "server-data-source-options" },
     });
     expect(fetchMock).toHaveBeenCalledWith("/v1/ui/chat/data-sources?limit=20&offset=20");
+  });
+
+  it("loads the neutral conversation as one server-rendered component", async () => {
+    const fetchMock = vi.fn(async () => response({
+      has_more: false,
+      html: { bundle: "server-neutral-transcript" },
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(fetchNeutralChatTranscript()).resolves.toEqual({
+      has_more: false,
+      html: { bundle: "server-neutral-transcript" },
+    });
+    expect(fetchMock).toHaveBeenCalledWith("/v1/ui/chat/neutral");
   });
 
   it("rejects contradictory pagination and missing component markup", async () => {

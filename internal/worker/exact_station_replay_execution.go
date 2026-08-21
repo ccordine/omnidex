@@ -34,9 +34,12 @@ func executeExactStationReplayPrepared(
 	if owned.ProviderRequestSHA256 != result.PreparedRequestSHA256 || owned.ProviderResponseModel != result.Model {
 		return result, fmt.Errorf("station replay generation differs from its prepared authority")
 	}
+	selection, err := llm.ProviderIdentitySelectionForExpectation(result.ExpectedIdentity)
+	if err != nil {
+		return result, fmt.Errorf("reconstruct station replay provider policy: %w", err)
+	}
 	derived, err := llm.DeriveExactProviderIdentityExpectation(
-		owned.ProviderIdentityEvidence,
-		llm.ProviderIdentitySelection{Model: result.Model, NativeContextLimit: contextTokens},
+		owned.ProviderIdentityEvidence, selection,
 	)
 	if err != nil || derived != result.ExpectedIdentity {
 		return result, fmt.Errorf("station replay provider identity differs from discovery authority")

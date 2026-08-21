@@ -8,6 +8,11 @@ import (
 	"github.com/gryph/omnidex/internal/websearch"
 )
 
+const (
+	projectionTruncationMarker = "\n...[projection truncated]"
+	relevanceTruncationMarker  = "...[truncated]"
+)
+
 func (machine *Machine) selectAndProject(
 	ctx context.Context,
 	evidence []Evidence,
@@ -59,12 +64,22 @@ func buildRelevanceCandidates(evidence []Evidence, summaryBytes int) []Relevance
 		perField := summaryBytes / 3
 		result[index] = RelevanceCandidate{
 			CandidateID: item.CandidateID,
-			Title:       truncateBytes(item.Title, perField),
-			Snippet:     truncateBytes(item.Snippet, perField),
-			Excerpt:     truncateBytes(item.Content, summaryBytes-2*perField),
+			Title:       truncateRelevanceField(item.Title, perField),
+			Snippet:     truncateRelevanceField(item.Snippet, perField),
+			Excerpt:     truncateRelevanceField(item.Content, summaryBytes-2*perField),
 		}
 	}
 	return result
+}
+
+func truncateRelevanceField(value string, limit int) string {
+	if len(value) <= limit {
+		return value
+	}
+	if limit <= len(relevanceTruncationMarker) {
+		return truncateBytes(relevanceTruncationMarker, limit)
+	}
+	return truncateBytes(value, limit-len(relevanceTruncationMarker)) + relevanceTruncationMarker
 }
 
 func validateRelevanceDecision(decision RelevanceDecision, evidence []Evidence, limit int) ([]Evidence, error) {
@@ -134,7 +149,10 @@ func buildProjection(evidence []Evidence, budget int) ([]ProjectedEvidence, erro
 		if entryBudget <= identityBytes+2 {
 			return nil, fmt.Errorf("%w: projection bound cannot carry evidence identities", ErrInvalidConfiguration)
 		}
-		remaining := entryBudget - identityBytes
+		if entryBudget <= identityBytes+len(projectionTruncationMarker) {
+			return nil, fmt.Errorf("%w: projection bound cannot carry explicit truncation authority", ErrInvalidConfiguration)
+		}
+		remaining := entryBudget - identityBytes - len(projectionTruncationMarker)
 		titleBudget := remaining / 8
 		snippetBudget := remaining / 4
 		title := truncateBytes(item.Title, titleBudget)
@@ -144,14 +162,39 @@ func buildProjection(evidence []Evidence, budget int) ([]ProjectedEvidence, erro
 		if content == "" {
 			return nil, fmt.Errorf("%w: projection omitted evidence content", ErrInvalidConfiguration)
 		}
+		truncated := title != item.Title || snippet != item.Snippet || content != item.Content
+		if !truncated {
+			return nil, fmt.Errorf("%w: bounded projection accounting is inconsistent", ErrInvalidConfiguration)
+		}
+		content += projectionTruncationMarker
 		result[index] = ProjectedEvidence{
 			EvidenceID: item.ID, CandidateID: item.CandidateID,
-			Title: title, Snippet: snippet, Content: content,
+			Title: title, Snippet: snippet, Content: content, Truncated: true,
 		}
 		used += projectionBytes(result[index])
 	}
 	if used > budget {
 		return nil, fmt.Errorf("%w: projection used %d bytes over bound %d", ErrInvalidConfiguration, used, budget)
+	}
+	return result, nil
+}
+
+func applyProjectionTruncation(
+	evidence []Evidence,
+	projected []ProjectedEvidence,
+) ([]Evidence, error) {
+	truncatedByID := make(map[EvidenceID]bool, len(projected))
+	for _, item := range projected {
+		if _, duplicate := truncatedByID[item.EvidenceID]; duplicate {
+			return nil, fmt.Errorf("%w: projected evidence ID %q is duplicated", ErrInvalidAcquisition, item.EvidenceID)
+		}
+		truncatedByID[item.EvidenceID] = item.Truncated
+	}
+	result := cloneEvidence(evidence)
+	for index := range result {
+		if truncated, selected := truncatedByID[result[index].ID]; selected && truncated {
+			result[index].Truncated = true
+		}
 	}
 	return result, nil
 }

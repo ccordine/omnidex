@@ -1,10 +1,10 @@
 package worker
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/gryph/omnidex/internal/evidence"
-	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/queue"
 )
 
@@ -19,7 +19,10 @@ func (r *nativeRuntimeV3) complete(contextKey, output, contextValue string) erro
 	if err != nil {
 		return err
 	}
-	return r.svc.repo.CompleteStep(r.ctx, command)
+	if r.svc.completeStep == nil {
+		return fmt.Errorf("native completion requires the worker step completer")
+	}
+	return r.svc.completeStep(r.ctx, command)
 }
 
 func (r *nativeRuntimeV3) writeEvidence(record evidence.Record) error {
@@ -31,8 +34,7 @@ func (r *nativeRuntimeV3) writeEvidence(record evidence.Record) error {
 func (r *nativeRuntimeV3) completeWithEvidence(
 	contextKey, output, contextValue string,
 	records []evidence.Record,
-	roleplayFacts []string,
-	roleplayKnowledgeCharacterIDs []model.RoleplayCharacterID,
+	roleplayResponses []queue.RoleplayResponseCompletion,
 ) error {
 	output = strings.TrimSpace(output)
 	contextValue = strings.TrimSpace(contextValue)
@@ -43,10 +45,7 @@ func (r *nativeRuntimeV3) completeWithEvidence(
 	if err != nil {
 		return err
 	}
-	command.RoleplayFacts = append([]string(nil), roleplayFacts...)
-	command.RoleplayKnowledgeCharacterIDs = append(
-		[]model.RoleplayCharacterID(nil), roleplayKnowledgeCharacterIDs...,
-	)
+	command.RoleplayResponses = append([]queue.RoleplayResponseCompletion(nil), roleplayResponses...)
 	bound := make([]evidence.Record, len(records))
 	for index, record := range records {
 		record.JobID = r.claim.Job.ID
@@ -59,6 +58,7 @@ func (r *nativeRuntimeV3) completeWithEvidence(
 	}); err != nil {
 		return err
 	}
+	r.svc.notifyJobFinishedForStep(r.ctx, command.StepID)
 	r.contexts[contextKey] = contextValue
 	return nil
 }

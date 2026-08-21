@@ -37,17 +37,23 @@ type scriptedObjectiveAnswerStation struct {
 type scriptedObjectiveConversationStation struct {
 	calls int
 	input assemblyline.ConversationResponseInput
+	text  string
 	err   error
 }
 
 func (station *scriptedObjectiveConversationStation) Respond(
 	_ context.Context,
 	input assemblyline.ConversationResponseInput,
+	_ string,
 ) (assemblyline.ConversationResponseDecision, objectiveStationReceipt, error) {
 	station.calls++
 	station.input = input
+	text := station.text
+	if text == "" {
+		text = "A bounded answer."
+	}
 	return assemblyline.ConversationResponseDecision{
-		Schema: assemblyline.ConversationResponseSchemaV1, Text: "A bounded answer.",
+		Schema: assemblyline.ConversationResponseSchemaV1, Text: text,
 	}, objectiveStationReceipt{Calls: 1}, station.err
 }
 
@@ -91,7 +97,7 @@ func TestObjectiveTurnPreservesExactAuthorityAndCodeOwnsCompletion(t *testing.T)
 	answer := &scriptedObjectiveAnswerStation{}
 	result, err := runObjectiveTurn(context.Background(), model.Job{
 		ID: 41, Pipeline: model.PipelineChat, Instruction: exact, Metadata: objectiveAssistantMetadata(),
-	}, scriptedConversationCandidateProvider{}, nil, kind, conversation, answer, objectiveWorkflows{})
+	}, scriptedConversationCandidateProvider{}, emptyContextSieveStation(), kind, conversation, answer, objectiveWorkflows{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -104,7 +110,7 @@ func TestObjectiveTurnPreservesExactAuthorityAndCodeOwnsCompletion(t *testing.T)
 	if answer.calls != 0 {
 		t.Fatalf("ungrounded answer invoked grounded station %d times", answer.calls)
 	}
-	if !result.Complete || result.Kind != assemblyline.ObjectiveKindAnswer || result.ModelCalls != 2 {
+	if !result.Complete || result.Kind != assemblyline.ObjectiveKindAnswer || result.ModelCalls != 3 {
 		t.Fatalf("result=%#v", result)
 	}
 	if result.ObjectiveID == "" || result.RequirementID == "" || result.Output != "A bounded answer." {
@@ -121,7 +127,7 @@ func TestObjectiveTurnMapsWorkspaceFactToCodeOwnedMutation(t *testing.T) {
 	var got turnAuthority
 	result, err := runObjectiveTurn(context.Background(), model.Job{
 		ID: 42, Pipeline: model.PipelineChat, Instruction: exact, Metadata: objectiveAssistantMetadata(),
-	}, scriptedConversationCandidateProvider{}, nil, kind, &scriptedObjectiveConversationStation{}, answer, objectiveWorkflows{WorkspaceMutation: func(_ context.Context, authority turnAuthority) (string, error) {
+	}, scriptedConversationCandidateProvider{}, emptyContextSieveStation(), kind, &scriptedObjectiveConversationStation{}, answer, objectiveWorkflows{WorkspaceMutation: func(_ context.Context, authority turnAuthority) (string, error) {
 		got = authority
 		return "compiler and tests passed", nil
 	}})
@@ -131,7 +137,7 @@ func TestObjectiveTurnMapsWorkspaceFactToCodeOwnedMutation(t *testing.T) {
 	if got.Instruction != exact || got.JobID != 42 {
 		t.Fatalf("mutation authority=%#v", got)
 	}
-	if answer.calls != 0 || !result.Complete || result.ModelCalls != 1 {
+	if answer.calls != 0 || !result.Complete || result.ModelCalls != 2 {
 		t.Fatalf("answer calls=%d result=%#v", answer.calls, result)
 	}
 }
@@ -146,7 +152,7 @@ func TestObjectiveTurnConsumesOneCodeOwnedExternalWorkflowWithoutRestatingIt(t *
 	rendered := "Current answer. [1]\n\nSources:\n[1] Current — https://example.test/current"
 	result, err := runObjectiveTurn(context.Background(), model.Job{
 		ID: 43, Pipeline: model.PipelineChat, Instruction: "What changed today?", Metadata: objectiveAssistantMetadata(),
-	}, scriptedConversationCandidateProvider{}, nil, kind, &scriptedObjectiveConversationStation{}, answer, objectiveWorkflows{ExternalAnswer: func(context.Context, turnAuthority) (objectiveExternalAnswer, error) {
+	}, scriptedConversationCandidateProvider{}, emptyContextSieveStation(), kind, &scriptedObjectiveConversationStation{}, answer, objectiveWorkflows{ExternalAnswer: func(context.Context, turnAuthority) (objectiveExternalAnswer, error) {
 		return objectiveExternalAnswer{
 			Text: "Current answer.", Rendered: rendered,
 			RenderedSHA256: objectiveTestSHA256(rendered),
@@ -161,7 +167,7 @@ func TestObjectiveTurnConsumesOneCodeOwnedExternalWorkflowWithoutRestatingIt(t *
 	if answer.calls != 0 {
 		t.Fatalf("external synthesis was restated by grounded-answer station %d times", answer.calls)
 	}
-	if !result.Complete || result.Output != rendered || result.ModelCalls != 3 ||
+	if !result.Complete || result.Output != rendered || result.ModelCalls != 4 ||
 		!reflect.DeepEqual(result.Citations, []objectiveEvidence{evidence}) {
 		t.Fatalf("result=%#v", result)
 	}
@@ -175,7 +181,7 @@ func TestObjectiveTurnFailsWithoutFallback(t *testing.T) {
 	answer := &scriptedObjectiveAnswerStation{}
 	result, err := runObjectiveTurn(context.Background(), model.Job{
 		ID: 44, Pipeline: model.PipelineChat, Instruction: "Explain this repository.", Metadata: objectiveAssistantMetadata(),
-	}, scriptedConversationCandidateProvider{}, nil, kind, &scriptedObjectiveConversationStation{}, answer, objectiveWorkflows{RepositoryRead: func(context.Context, turnAuthority) (objectiveEvidenceAcquisition, error) {
+	}, scriptedConversationCandidateProvider{}, emptyContextSieveStation(), kind, &scriptedObjectiveConversationStation{}, answer, objectiveWorkflows{RepositoryRead: func(context.Context, turnAuthority) (objectiveEvidenceAcquisition, error) {
 		return objectiveEvidenceAcquisition{}, providerErr
 	}})
 	if !errors.Is(err, providerErr) {
@@ -192,7 +198,7 @@ func TestRetiredStoryTransportCannotReceiveTurnAuthority(t *testing.T) {
 	}}
 	result, err := runObjectiveTurn(context.Background(), model.Job{
 		ID: 45, Pipeline: "story", Instruction: "Continue the scene.",
-	}, scriptedConversationCandidateProvider{}, nil, kind, &scriptedObjectiveConversationStation{}, &scriptedObjectiveAnswerStation{}, objectiveWorkflows{WorkspaceMutation: func(context.Context, turnAuthority) (string, error) {
+	}, scriptedConversationCandidateProvider{}, emptyContextSieveStation(), kind, &scriptedObjectiveConversationStation{}, &scriptedObjectiveAnswerStation{}, objectiveWorkflows{WorkspaceMutation: func(context.Context, turnAuthority) (string, error) {
 		return "must not execute", nil
 	}})
 	if err == nil || result.Complete || kind.calls != 0 {
@@ -205,7 +211,7 @@ func TestObjectiveStationCannotMutateCodeOwnedEvidenceBeforeAcceptance(t *testin
 	station := &mutatingObjectiveAnswerStation{}
 	result, err := runObjectiveTurn(context.Background(), model.Job{
 		ID: 46, Pipeline: model.PipelineChat, Instruction: "Summarize the evidence.", Metadata: objectiveAssistantMetadata(),
-	}, scriptedConversationCandidateProvider{}, nil, &scriptedObjectiveKindStation{decision: assemblyline.ConversationObjectiveKindDecision{
+	}, scriptedConversationCandidateProvider{}, emptyContextSieveStation(), &scriptedObjectiveKindStation{decision: assemblyline.ConversationObjectiveKindDecision{
 		Schema: assemblyline.ConversationObjectiveKindSchemaV1, Kind: assemblyline.ObjectiveKindRepositoryRead,
 	}}, &scriptedObjectiveConversationStation{}, station, objectiveWorkflows{RepositoryRead: func(context.Context, turnAuthority) (objectiveEvidenceAcquisition, error) {
 		return objectiveRepositoryTestAcquisition(evidence, 1), nil
@@ -232,7 +238,7 @@ func TestObjectiveTurnRejectsInvalidEvidenceBeforeInference(t *testing.T) {
 	answer := &scriptedObjectiveAnswerStation{}
 	_, err := runObjectiveTurn(context.Background(), model.Job{
 		ID: 47, Pipeline: model.PipelineChat, Instruction: "Summarize current evidence.", Metadata: objectiveAssistantMetadata(),
-	}, scriptedConversationCandidateProvider{}, nil, kind, &scriptedObjectiveConversationStation{}, answer, objectiveWorkflows{ExternalAnswer: func(context.Context, turnAuthority) (objectiveExternalAnswer, error) {
+	}, scriptedConversationCandidateProvider{}, emptyContextSieveStation(), kind, &scriptedObjectiveConversationStation{}, answer, objectiveWorkflows{ExternalAnswer: func(context.Context, turnAuthority) (objectiveExternalAnswer, error) {
 		return objectiveExternalAnswer{
 			Text: "Invalid answer.", Rendered: rendered, RenderedSHA256: objectiveTestSHA256(rendered),
 			Paragraphs: []webresearch.GroundedParagraph{{Text: "Invalid answer.", EvidenceIDs: []webresearch.EvidenceID{"W01"}}},

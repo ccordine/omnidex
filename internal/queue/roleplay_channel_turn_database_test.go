@@ -13,7 +13,7 @@ func TestOrdinaryRoleplayTurnAtomicallyPersistsCanonForNextProjection(t *testing
 	ctx := t.Context()
 	pool := openIsolatedMigrationPool(t)
 	repository := New(pool)
-	if err := repository.EnsureSchema(ctx, loadMigrationBundleThroughPrefix(t, "119")); err != nil {
+	if err := repository.EnsureSchema(ctx, loadCheckedMigrationBundle(t)); err != nil {
 		t.Fatal(err)
 	}
 	channel, err := repository.CreateRoleplayChannel(ctx, model.Channel{
@@ -39,7 +39,7 @@ func TestOrdinaryRoleplayTurnAtomicallyPersistsCanonForNextProjection(t *testing
 		t.Fatal(err)
 	}
 	configureRoleplayQueueTestScene(
-		t, roleplayStore, world.ID, string(channel.RoleplayViewpointCharacterID), witness.ID,
+		t, roleplayStore, world.ID, string(channel.RoleplayViewpointCharacterID),
 	)
 	other, err := repository.CreateRoleplayChannel(ctx, model.Channel{
 		ID: "separate-story", Scope: model.ChannelScopeUser, Name: "Separate story",
@@ -53,7 +53,7 @@ func TestOrdinaryRoleplayTurnAtomicallyPersistsCanonForNextProjection(t *testing
 	); err == nil {
 		t.Fatal("roleplay viewpoint projected through a different channel")
 	}
-	_, job, err := repository.EnqueueChannelTurn(ctx, channel.ID, "Continue the storm scene.")
+	_, job, err := enqueueNarratorRoleplayTurn(ctx, repository, channel.ID, "Continue the storm scene.")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -73,36 +73,46 @@ func TestOrdinaryRoleplayTurnAtomicallyPersistsCanonForNextProjection(t *testing
 		t.Fatalf("claim=%+v job=%d", claim, job.ID)
 	}
 	fact := "Rain began over the harbor."
+	responseText := "Rain swept across the harbor as Bob watched from the gate."
 	operationID := testLifecycleOperationID(t, "roleplay-turn-complete", claim.Step.ID)
 	invalidRecipientCommand := CompleteStepCommand{
 		OperationID: operationID,
 		Authority:   claim.Authority, StepID: claim.Step.ID,
-		Output:     "Rain swept across the harbor as Bob watched from the gate.",
+		Output:     responseText,
 		ContextKey: "objective_result", ContextValue: "roleplay-objective-proof",
-		RoleplayFacts:                 []string{fact},
-		RoleplayKnowledgeCharacterIDs: []model.RoleplayCharacterID{other.RoleplayViewpointCharacterID},
+		RoleplayResponses: []RoleplayResponseCompletion{{
+			Position: 0, CharacterID: channel.RoleplayViewpointCharacterID, Output: responseText,
+			Facts:                 []string{fact},
+			KnowledgeCharacterIDs: []model.RoleplayCharacterID{other.RoleplayViewpointCharacterID},
+		}},
 	}
 	if err := repository.CompleteStepWithEvidence(ctx, CompleteStepEvidenceCommand{
 		CompleteStepCommand: invalidRecipientCommand, Evidence: nil,
-	}); err == nil || !strings.Contains(err.Error(), "exact active viewpoint") {
+	}); err == nil || !strings.Contains(err.Error(), "responding character") {
 		t.Fatalf("cross-world knowledge recipient error=%v", err)
 	}
 	overbroadRecipientCommand := invalidRecipientCommand
-	overbroadRecipientCommand.RoleplayKnowledgeCharacterIDs = []model.RoleplayCharacterID{
+	overbroadRecipientCommand.RoleplayResponses = append(
+		[]RoleplayResponseCompletion(nil), invalidRecipientCommand.RoleplayResponses...,
+	)
+	overbroadRecipientCommand.RoleplayResponses[0].KnowledgeCharacterIDs = []model.RoleplayCharacterID{
 		channel.RoleplayViewpointCharacterID, model.RoleplayCharacterID(witness.ID),
 	}
 	if err := repository.CompleteStepWithEvidence(ctx, CompleteStepEvidenceCommand{
 		CompleteStepCommand: overbroadRecipientCommand, Evidence: nil,
-	}); err == nil || !strings.Contains(err.Error(), "exact active viewpoint") {
+	}); err == nil || !strings.Contains(err.Error(), "responding character") {
 		t.Fatalf("overbroad knowledge recipient error=%v", err)
 	}
 	command := CompleteStepCommand{
 		OperationID: operationID,
 		Authority:   claim.Authority, StepID: claim.Step.ID,
-		Output:     "Rain swept across the harbor as Bob watched from the gate.",
+		Output:     responseText,
 		ContextKey: "objective_result", ContextValue: "roleplay-objective-proof",
-		RoleplayFacts:                 []string{fact},
-		RoleplayKnowledgeCharacterIDs: []model.RoleplayCharacterID{channel.RoleplayViewpointCharacterID},
+		RoleplayResponses: []RoleplayResponseCompletion{{
+			Position: 0, CharacterID: channel.RoleplayViewpointCharacterID, Output: responseText,
+			Facts:                 []string{fact},
+			KnowledgeCharacterIDs: []model.RoleplayCharacterID{channel.RoleplayViewpointCharacterID},
+		}},
 	}
 	if err := repository.CompleteStepWithEvidence(ctx, CompleteStepEvidenceCommand{
 		CompleteStepCommand: command, Evidence: nil,
@@ -113,6 +123,21 @@ func TestOrdinaryRoleplayTurnAtomicallyPersistsCanonForNextProjection(t *testing
 		CompleteStepCommand: command, Evidence: nil,
 	}); err != nil {
 		t.Fatalf("exact roleplay completion replay: %v", err)
+	}
+	page, err := repository.ListChannelMessages(ctx, channel.ID, 10, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Messages) != 2 {
+		t.Fatalf("roleplay transcript speaker authority=%+v", page.Messages)
+	}
+	userMessage := page.Messages[0]
+	if userMessage.Role != model.ChannelMessageRoleUser ||
+		userMessage.SpeakerName != "Narrator" || userMessage.Roleplay == nil ||
+		userMessage.Roleplay.PersonaKind != string(roleplay.UserPersonaNarrator) ||
+		userMessage.Roleplay.ContributionKind != string(roleplay.UserContributionDirection) ||
+		page.Messages[1].Role != model.ChannelMessageRoleAssistant || page.Messages[1].SpeakerName != "Bob" {
+		t.Fatalf("roleplay transcript speaker authority=%+v", page.Messages)
 	}
 	projection, err := repository.ProjectRoleplayCharacterContext(
 		ctx, channel.ID, channel.RoleplayViewpointCharacterID, roleplay.MaxProjectionEvents,
@@ -127,7 +152,7 @@ func TestOrdinaryRoleplayTurnAtomicallyPersistsCanonForNextProjection(t *testing
 		t, repository, roleplayStore, channel, world.ID, witness.ID,
 		projection.Facts[0].EventID, fact, command,
 	)
-	_, nextJob, err := repository.EnqueueChannelTurn(ctx, channel.ID, "What does Bob do next?")
+	_, nextJob, err := enqueueNarratorRoleplayTurn(ctx, repository, channel.ID, "What does Bob do next?")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -136,7 +161,7 @@ func TestOrdinaryRoleplayTurnAtomicallyPersistsCanonForNextProjection(t *testing
 		t.Fatal(err)
 	}
 	if binding.ChannelMode != model.ChannelModeRoleplay ||
-		binding.RoleplayViewpointCharacterID != model.RoleplayCharacterID(witness.ID) {
+		binding.RoleplayViewpointCharacterID != channel.RoleplayViewpointCharacterID {
 		t.Fatalf("next turn binding=%+v", binding)
 	}
 }
@@ -149,7 +174,7 @@ func TestRoleplayFactsRejectNonterminalCompletionWithoutSideEffects(t *testing.T
 	ctx := t.Context()
 	pool := openIsolatedMigrationPool(t)
 	repository := New(pool)
-	if err := repository.EnsureSchema(ctx, loadMigrationBundleThroughPrefix(t, "119")); err != nil {
+	if err := repository.EnsureSchema(ctx, loadCheckedMigrationBundle(t)); err != nil {
 		t.Fatal(err)
 	}
 	channel, err := repository.CreateRoleplayChannel(ctx, model.Channel{
@@ -170,7 +195,7 @@ func TestRoleplayFactsRejectNonterminalCompletionWithoutSideEffects(t *testing.T
 	configureRoleplayQueueTestScene(
 		t, roleplayStore, world.ID, string(channel.RoleplayViewpointCharacterID),
 	)
-	_, job, err := repository.EnqueueChannelTurn(ctx, channel.ID, "Continue the scene.")
+	_, job, err := enqueueNarratorRoleplayTurn(ctx, repository, channel.ID, "Continue the scene.")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -188,14 +213,17 @@ func TestRoleplayFactsRejectNonterminalCompletionWithoutSideEffects(t *testing.T
 		t.Fatalf("claim=%+v", claim)
 	}
 	command := CompleteStepCommand{
-		OperationID:                   testLifecycleOperationID(t, "nonterminal-roleplay", claim.Step.ID),
-		Authority:                     claim.Authority,
-		StepID:                        claim.Step.ID,
-		Output:                        "A bounded response.",
-		ContextKey:                    "objective_result",
-		ContextValue:                  "nonterminal-proof",
-		RoleplayFacts:                 []string{"A newly established fictional fact."},
-		RoleplayKnowledgeCharacterIDs: []model.RoleplayCharacterID{channel.RoleplayViewpointCharacterID},
+		OperationID:  testLifecycleOperationID(t, "nonterminal-roleplay", claim.Step.ID),
+		Authority:    claim.Authority,
+		StepID:       claim.Step.ID,
+		Output:       "A bounded response.",
+		ContextKey:   "objective_result",
+		ContextValue: "nonterminal-proof",
+		RoleplayResponses: []RoleplayResponseCompletion{{
+			Position: 0, CharacterID: channel.RoleplayViewpointCharacterID, Output: "A bounded response.",
+			Facts:                 []string{"A newly established fictional fact."},
+			KnowledgeCharacterIDs: []model.RoleplayCharacterID{channel.RoleplayViewpointCharacterID},
+		}},
 	}
 	err = repository.CompleteStepWithEvidence(ctx, CompleteStepEvidenceCommand{
 		CompleteStepCommand: command, Evidence: nil,

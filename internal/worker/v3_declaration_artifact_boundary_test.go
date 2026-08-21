@@ -53,12 +53,12 @@ func TestDeclarationArtifactBoundaryCorrectionChangesOnlyBoundaryLeaf(t *testing
 		kinds[1] != assemblyline.WorkResponseCorrection {
 		t.Fatalf("calls=%v prompts=%d", kinds, len(prompts))
 	}
-	for _, retained := range []string{input.RequirementQuote, input.GoSignature, input.DeclarationID} {
-		if strings.Contains(prompts[1], retained) {
-			t.Fatalf("correction replayed retained authority %q: %s", retained, prompts[1])
+	for _, required := range []string{
+		"ORIGINAL_SEMANTIC_QUESTION:", input.RequirementQuote, input.GoSignature, input.DeclarationID,
+		"CURRENT_INVALID_RESPONSE:", `"boundary":"unsupported"`, "EXACT_VALIDATION_DEFECT:",
+	} {
+		if !strings.Contains(prompts[1], required) {
+			t.Fatalf("correction omitted retained one-leaf authority %q: %s", required, prompts[1])
 		}
-	}
-	if !strings.Contains(prompts[1], "unsupported") {
-		t.Fatalf("correction omitted exact validation failure: %s", prompts[1])
 	}
 }

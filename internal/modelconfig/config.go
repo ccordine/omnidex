@@ -19,12 +19,12 @@ type Field struct {
 }
 
 var Fields = []Field{
-	{Key: "conversation_context_selection_model", Label: "Conversation context selection", Description: "Selects only required prior user authority IDs from one code-bounded candidate set", EnvKeys: []string{"OMNI_CONVERSATION_CONTEXT_SELECTION_MODEL"}},
-	{Key: "memory_context_selection_model", Label: "Memory context selection", Description: "Selects only relevant immutable memory IDs from one code-bounded scoped candidate set", EnvKeys: []string{"OMNI_MEMORY_CONTEXT_SELECTION_MODEL"}},
+	{Key: "context_search_terms_model", Label: "Context search terms", Description: "Returns bounded query concepts from only the exact current instruction", EnvKeys: []string{"OMNI_CONTEXT_SEARCH_TERMS_MODEL"}},
+	{Key: "context_relevance_model", Label: "Context relevance", Description: "Selects only relevant opaque IDs from one code-bounded context candidate set", EnvKeys: []string{"OMNI_CONTEXT_RELEVANCE_MODEL"}},
+	{Key: "context_minification_model", Label: "Context minification", Description: "Reduces selected exact authorities into one bounded minimal-context leaf", EnvKeys: []string{"OMNI_CONTEXT_MINIFICATION_MODEL"}},
 	{Key: "conversation_objective_kind_model", Label: "Conversation objective kind", Description: "Classifies one exact free-form turn into one registered objective kind", EnvKeys: []string{"OMNI_CONVERSATION_OBJECTIVE_KIND_MODEL"}},
-	{Key: "objective_advisory_model", Label: "Objective advisory", Description: "Returns passive non-authoritative plain-text considerations for one grounded objective", EnvKeys: []string{"OMNI_OBJECTIVE_ADVISORY_MODEL"}},
 	{Key: "conversation_response_model", Label: "Conversation response", Description: "Returns one bounded answer or story response", EnvKeys: []string{"OMNI_CONVERSATION_RESPONSE_MODEL"}},
-	{Key: "roleplay_canon_extraction_model", Label: "Roleplay canon extraction", Description: "Extracts only newly established fictional fact leaves from one accepted story response", EnvKeys: []string{"OMNI_ROLEPLAY_CANON_EXTRACTION_MODEL"}},
+	{Key: "roleplay_canon_extraction_model", Label: "Roleplay canon", Description: "Extracts newly established fictional fact leaves from the final visible response", EnvKeys: []string{"OMNI_ROLEPLAY_CANON_EXTRACTION_MODEL"}},
 	{Key: "grounded_answer_model", Label: "Grounded answer", Description: "Synthesizes one answer from code-selected evidence IDs", EnvKeys: []string{"OMNI_GROUNDED_ANSWER_MODEL"}},
 	{Key: "database_schema_selection_model", Label: "Database schema selection", Description: "Selects only semantically relevant opaque relation IDs from one bounded schema set", EnvKeys: []string{"OMNI_DATABASE_SCHEMA_SELECTION_MODEL"}},
 	{Key: "database_query_intent_model", Label: "Database query intent", Description: "Expresses one exact evidence need as a typed relational intent over known opaque schema IDs", EnvKeys: []string{"OMNI_DATABASE_QUERY_INTENT_MODEL"}},

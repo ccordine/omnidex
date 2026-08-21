@@ -74,9 +74,53 @@ func TestDatabaseQueryIntentResponseSchemaPermitsCodeValidatedExistenceShape(t *
 	if !ok || projections["minItems"] != 0 {
 		t.Fatalf("projection schema=%v, want minItems=0 for existence", projections)
 	}
+	filters := properties["filters"].(map[string]any)
+	filter := filters["items"].(map[string]any)
+	filterProperties := filter["properties"].(map[string]any)
+	values := filterProperties["values"].(map[string]any)
+	literal := values["items"].(map[string]any)
+	literalProperties := literal["properties"].(map[string]any)
+	literalValue := literalProperties["value"].(map[string]any)
+	if _, finiteGrammarBound := literalValue["maxLength"]; finiteGrammarBound {
+		t.Fatalf("database literal schema encodes the code-owned byte ceiling: %#v", literalValue)
+	}
 	existence := `{"schema":"omnidex.database-query-intent.v1","evidence_need_id":"need-2","from_relation_id":"` + input.SchemaProjection.Relations[0].ID + `","shape":"existence","projections":[],"filters":[],"temporal_windows":[],"exists":[],"group_by":[],"having":[],"order_by":[],"limit":1}`
 	if _, err := DecodeDatabaseQueryIntentDecision(input, existence); err != nil {
 		t.Fatalf("existence intent rejected: %v", err)
+	}
+}
+
+func TestDatabaseQueryIntentRejectsStringLiteralBeyondCodeOwnedByteCeiling(t *testing.T) {
+	input, _, _ := databaseQueryIntentFixture(t)
+	relation := input.SchemaProjection.Relations[0]
+	textFieldID := ""
+	for _, column := range relation.Columns {
+		if column.TypeCategory == datasource.TypeText && len(column.AllowedValues) == 0 {
+			textFieldID = column.ID
+			break
+		}
+	}
+	if textFieldID == "" {
+		t.Fatal("fixture omitted an unrestricted text field")
+	}
+	decision := DatabaseQueryIntentDecision{
+		Schema: DatabaseQueryIntentV1, EvidenceNeedID: input.EvidenceNeedID,
+		FromRelationID: relation.ID, Shape: datasource.ResultRecords,
+		Projections: []datasource.RelationalProjection{{FieldID: textFieldID}},
+		Filters: []datasource.RelationalPredicate{{
+			FieldID: textFieldID, Operator: datasource.FilterEqual,
+			Values: []datasource.IntentLiteral{{
+				Type:  datasource.LiteralString,
+				Value: strings.Repeat("x", datasource.MaxIntentStringLiteralBytes+1),
+			}},
+		}},
+		Limit: 1,
+	}
+	if err := decision.ValidateFor(input); err == nil {
+		t.Fatalf(
+			"database query intent accepted a string literal beyond %d bytes",
+			datasource.MaxIntentStringLiteralBytes,
+		)
 	}
 }
 

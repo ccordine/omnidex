@@ -113,4 +113,8 @@ func TestWebGroundedSynthesisBoundsEvidenceIDsPerParagraph(t *testing.T) {
 	if evidenceIDs["maxItems"] != maxWebEvidenceIDsPerParagraph {
 		t.Fatalf("maxItems=%v", evidenceIDs["maxItems"])
 	}
+	textSchema := paragraphProperties["text"].(map[string]any)
+	if _, providerHostileBound := textSchema["maxLength"]; providerHostileBound {
+		t.Fatalf("web synthesis schema contains a provider-hostile grammar repetition: %#v", textSchema)
+	}
 }

@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-func TestRepositoryEvidenceRelevanceReturnsSelectedIDsOrExplicitNone(t *testing.T) {
+func TestRepositoryEvidenceRelevanceReturnsOnlySelectedIDsOrExplicitEmptyIDs(t *testing.T) {
 	t.Parallel()
 	input := repositoryEvidenceRelevanceFixture()
 	job, err := NewRepositoryEvidenceRelevanceJob(input)
@@ -29,33 +29,38 @@ func TestRepositoryEvidenceRelevanceReturnsSelectedIDsOrExplicitNone(t *testing.
 	}
 
 	selected := RepositoryEvidenceRelevanceDecision{
-		Schema: RepositoryEvidenceRelevanceSchemaV1, Outcome: RepositoryEvidenceRelevant,
+		Schema:      RepositoryEvidenceRelevanceSchemaV1,
 		EvidenceIDs: []string{"R02"},
 	}
 	if err := selected.ValidateFor(input); err != nil {
 		t.Fatal(err)
 	}
 	none := RepositoryEvidenceRelevanceDecision{
-		Schema: RepositoryEvidenceRelevanceSchemaV1, Outcome: RepositoryEvidenceNone,
+		Schema:      RepositoryEvidenceRelevanceSchemaV1,
 		EvidenceIDs: []string{},
 	}
 	if err := none.ValidateFor(input); err != nil {
 		t.Fatal(err)
 	}
-	assertExactJSONFields(t, reflect.TypeOf(RepositoryEvidenceRelevanceDecision{}), []string{"schema", "outcome", "evidence_ids"})
+	assertExactJSONFields(t, reflect.TypeOf(RepositoryEvidenceRelevanceDecision{}), []string{"schema", "evidence_ids"})
+	properties := schema["properties"].(map[string]any)
+	if len(properties) != 2 || properties["outcome"] != nil {
+		t.Fatalf("repository relevance schema exposes a redundant control outcome: %#v", schema)
+	}
+	evidenceIDs := properties["evidence_ids"].(map[string]any)
+	if evidenceIDs["minItems"] != 0 || evidenceIDs["maxItems"] != input.MaxSelections {
+		t.Fatalf("repository evidence ID bounds=%#v", evidenceIDs)
+	}
 }
 
 func TestRepositoryEvidenceRelevanceRejectsAmbiguousOrUnboundSelections(t *testing.T) {
 	t.Parallel()
 	input := repositoryEvidenceRelevanceFixture()
 	tests := map[string]RepositoryEvidenceRelevanceDecision{
-		"nil IDs":       {Schema: RepositoryEvidenceRelevanceSchemaV1, Outcome: RepositoryEvidenceNone},
-		"none with ID":  {Schema: RepositoryEvidenceRelevanceSchemaV1, Outcome: RepositoryEvidenceNone, EvidenceIDs: []string{"R01"}},
-		"selected none": {Schema: RepositoryEvidenceRelevanceSchemaV1, Outcome: RepositoryEvidenceRelevant, EvidenceIDs: []string{}},
-		"unknown ID":    {Schema: RepositoryEvidenceRelevanceSchemaV1, Outcome: RepositoryEvidenceRelevant, EvidenceIDs: []string{"R99"}},
-		"duplicate ID":  {Schema: RepositoryEvidenceRelevanceSchemaV1, Outcome: RepositoryEvidenceRelevant, EvidenceIDs: []string{"R01", "R01"}},
-		"too many":      {Schema: RepositoryEvidenceRelevanceSchemaV1, Outcome: RepositoryEvidenceRelevant, EvidenceIDs: []string{"R01", "R02"}},
-		"unknown kind":  {Schema: RepositoryEvidenceRelevanceSchemaV1, Outcome: "maybe", EvidenceIDs: []string{}},
+		"nil IDs":      {Schema: RepositoryEvidenceRelevanceSchemaV1},
+		"unknown ID":   {Schema: RepositoryEvidenceRelevanceSchemaV1, EvidenceIDs: []string{"R99"}},
+		"duplicate ID": {Schema: RepositoryEvidenceRelevanceSchemaV1, EvidenceIDs: []string{"R01", "R01"}},
+		"too many":     {Schema: RepositoryEvidenceRelevanceSchemaV1, EvidenceIDs: []string{"R01", "R02"}},
 	}
 	for name, decision := range tests {
 		decision := decision
@@ -72,7 +77,7 @@ func TestRepositoryEvidenceRelevanceDecodeRejectsExtraOrDuplicateState(t *testin
 	t.Parallel()
 	input := repositoryEvidenceRelevanceFixture()
 	valid := fmt.Sprintf(
-		`{"schema":%q,"outcome":"selected","evidence_ids":["R01"]}`,
+		`{"schema":%q,"evidence_ids":["R01"]}`,
 		RepositoryEvidenceRelevanceSchemaV1,
 	)
 	if _, err := DecodeRepositoryEvidenceRelevanceDecision(input, valid); err != nil {
@@ -80,8 +85,10 @@ func TestRepositoryEvidenceRelevanceDecodeRejectsExtraOrDuplicateState(t *testin
 	}
 	for _, raw := range []string{
 		strings.TrimSuffix(valid, "}") + `,"extra":true}`,
-		fmt.Sprintf(`{"schema":%q,"schema":%q,"outcome":"none","evidence_ids":[]}`,
+		fmt.Sprintf(`{"schema":%q,"schema":%q,"evidence_ids":[]}`,
 			RepositoryEvidenceRelevanceSchemaV1, RepositoryEvidenceRelevanceSchemaV1),
+		fmt.Sprintf(`{"schema":%q,"outcome":"none","evidence_ids":[]}`,
+			RepositoryEvidenceRelevanceSchemaV1),
 	} {
 		if _, err := DecodeRepositoryEvidenceRelevanceDecision(input, raw); err == nil {
 			t.Fatalf("malformed decision accepted: %s", raw)

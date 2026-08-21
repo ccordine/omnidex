@@ -18,7 +18,7 @@ func TestRoleplayResearchCanonicalQueueCompletionReplayAndNoCanon(t *testing.T) 
 	ctx := t.Context()
 	pool := openIsolatedMigrationPool(t)
 	repository := New(pool)
-	if err := repository.EnsureSchema(ctx, loadMigrationBundleThroughPrefix(t, "120")); err != nil {
+	if err := repository.EnsureSchema(ctx, loadCheckedMigrationBundle(t)); err != nil {
 		t.Fatal(err)
 	}
 	channel, err := repository.CreateRoleplayChannel(ctx, model.Channel{
@@ -41,12 +41,12 @@ func TestRoleplayResearchCanonicalQueueCompletionReplayAndNoCanon(t *testing.T) 
 	)
 
 	const exact = `/research "How do ocean currents redistribute heat?"`
-	if _, _, err := repository.EnqueueChannelTurn(ctx, channel.ID, exact); !errors.Is(err, roleplay.ErrResearchCapabilityDenied) {
+	if _, _, err := enqueueNarratorRoleplayTurn(ctx, repository, channel.ID, exact); !errors.Is(err, roleplay.ErrResearchCapabilityDenied) {
 		t.Fatalf("missing capability enqueue error=%v", err)
 	}
 	assertRoleplayResearchQueueCounts(t, repository, channel.ID, 0, 0, 0)
-	if _, _, err := repository.EnqueueChannelTurn(
-		ctx, channel.ID, `/research ocean currents`,
+	if _, _, err := enqueueNarratorRoleplayTurn(
+		ctx, repository, channel.ID, `/research ocean currents`,
 	); err == nil || !strings.Contains(err.Error(), "canonical quoted question") {
 		t.Fatalf("malformed reserved syntax error=%v", err)
 	}
@@ -59,7 +59,7 @@ func TestRoleplayResearchCanonicalQueueCompletionReplayAndNoCanon(t *testing.T) 
 	if err != nil || !capability.WebResearch {
 		t.Fatalf("enable research capability=%+v err=%v", capability, err)
 	}
-	message, job, err := repository.EnqueueChannelTurn(ctx, channel.ID, exact)
+	message, job, err := enqueueNarratorRoleplayTurn(ctx, repository, channel.ID, exact)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -123,7 +123,7 @@ func TestRoleplayResearchCanonicalQueueCompletionReplayAndNoCanon(t *testing.T) 
 	); err != nil {
 		t.Fatal(err)
 	}
-	secondMessage, secondJob, err := repository.EnqueueChannelTurn(ctx, channel.ID, exact)
+	secondMessage, secondJob, err := enqueueNarratorRoleplayTurn(ctx, repository, channel.ID, exact)
 	if err != nil || secondMessage.Content != exact {
 		t.Fatalf("second research enqueue message=%+v error=%v", secondMessage, err)
 	}
@@ -189,7 +189,8 @@ func TestRoleplayResearchCanonicalQueueCompletionReplayAndNoCanon(t *testing.T) 
 	}
 	if len(page.Messages) != 3 || page.Messages[0].Role != model.ChannelMessageRoleUser ||
 		page.Messages[1].Role != model.ChannelMessageRoleAssistant ||
-		page.Messages[2].Role != model.ChannelMessageRoleUser {
+		page.Messages[1].SpeakerName != "Ada" ||
+		page.Messages[2].Role != model.ChannelMessageRoleUser || page.Messages[2].SpeakerName != "" {
 		t.Fatalf("canonical research transcript=%+v", page.Messages)
 	}
 	var deniedAssistant, deniedCanon, deniedAdvance, deniedLifecycle, deniedEvidence int

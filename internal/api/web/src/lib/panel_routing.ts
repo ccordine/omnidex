@@ -1,4 +1,4 @@
-export const OMNI_PANELS = ["chat", "data", "projects", "jobs", "memory", "metrics", "admin"] as const;
+export const OMNI_PANELS = ["chat", "roleplay", "data", "projects", "jobs", "memory", "metrics", "admin"] as const;
 
 export type OmniPanel = (typeof OMNI_PANELS)[number];
 

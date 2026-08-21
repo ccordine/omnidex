@@ -47,7 +47,7 @@ func (r *Repository) completeStep(
 	if err != nil {
 		return err
 	}
-	if err := requireRoleplayFactsJobAuthority(job, command); err != nil {
+	if err := requireRoleplayCompletionJobAuthority(job, command); err != nil {
 		return err
 	}
 	if existing, found, err := loadLifecycleOperationTx(ctx, tx, descriptor, jobID); err != nil {

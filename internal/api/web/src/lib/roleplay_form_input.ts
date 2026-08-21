@@ -6,15 +6,12 @@ import type {
   MeterValueInput,
   PersonaInput,
   ResearchCapabilityInput,
+	RoleplayGenerationInput,
   SceneInput,
 	SceneCreateInput,
 	SceneDraftParticipantInput,
 	SceneUpdateInput,
 } from "./roleplay_api";
-
-export function characterName(form: HTMLFormElement): string {
-  return exactField(form, "name");
-}
 
 export function personaInput(form: HTMLFormElement): PersonaInput {
   return {
@@ -84,8 +81,14 @@ export function researchCapabilityInput(form: HTMLFormElement): ResearchCapabili
   }
   return {
     enabled: control.checked,
-    characters_offset: requiredDatasetInteger(form, "charactersOffset"),
   };
+}
+
+export function roleplayGenerationInput(form: HTMLFormElement): RoleplayGenerationInput {
+	return {
+		expected_revision: integerField(form, "expected_revision"),
+		narrative_model: exactField(form, "narrative_model", false),
+	};
 }
 
 export function interactionDefinitionInput(form: HTMLFormElement): InteractionDefinitionInput {

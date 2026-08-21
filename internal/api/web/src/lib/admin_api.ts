@@ -12,14 +12,6 @@ export async function saveAPISecrets(values: Record<string, string>, clearKeys: 
   await readJSON(await fetch("/v1/settings/secrets", jsonPut({ values, clear_keys: clearKeys })));
 }
 
-export async function pullOllamaModel(model: string): Promise<void> {
-  await readJSON(await fetch("/v1/ollama/models", jsonRequest({ model })));
-}
-
-export async function deleteOllamaModel(name: string): Promise<void> {
-  await readJSON(await fetch(`/v1/ollama/models/${encodeURIComponent(name)}`, { method: "DELETE" }));
-}
-
 export async function ingestDocuments(
   files: FileList | File[],
   options: { stage?: string; kind?: string; tags?: string },

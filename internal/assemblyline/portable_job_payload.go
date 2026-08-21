@@ -41,10 +41,12 @@ func validatePortableJobPayload(kind WorkKind, payload json.RawMessage) error {
 		return decodeAndValidatePortablePayload[RepositoryGroundedReviewInput](payload, RepositoryGroundedReviewInput.validate)
 	case WorkRepositoryGroundedCorrection:
 		return decodeAndValidatePortablePayload[RepositoryGroundedCorrectionInput](payload, RepositoryGroundedCorrectionInput.validate)
-	case WorkConversationContextSelection:
-		return decodeAndValidatePortablePayload[ConversationContextSelectionInput](payload, ConversationContextSelectionInput.validate)
-	case WorkMemoryContextSelection:
-		return decodeAndValidatePortablePayload[MemoryContextSelectionInput](payload, MemoryContextSelectionInput.validate)
+	case WorkContextSearchTerms:
+		return decodeAndValidatePortablePayload[ContextSearchTermsInput](payload, ContextSearchTermsInput.validate)
+	case WorkContextRelevance:
+		return decodeAndValidatePortablePayload[ContextRelevanceInput](payload, ContextRelevanceInput.validate)
+	case WorkContextMinification:
+		return decodeAndValidatePortablePayload[ContextMinificationInput](payload, ContextMinificationInput.validate)
 	case WorkConversationObjectiveKind:
 		return decodeAndValidatePortablePayload[ConversationObjectiveKindInput](payload, ConversationObjectiveKindInput.validate)
 	case WorkConversationResponse:

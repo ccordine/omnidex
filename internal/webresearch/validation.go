@@ -54,6 +54,23 @@ func validateObjective(objective Objective) error {
 }
 
 func validateConfig(config Config) error {
+	if err := validateEvidenceConfig(EvidenceConfig{
+		MaxSearchTerms: config.MaxSearchTerms, MaxSearchTermBytes: config.MaxSearchTermBytes,
+		MaxFetchCandidates: config.MaxFetchCandidates, MaxProjectionBytes: config.MaxProjectionBytes,
+		MaxRelevantCandidates: config.MaxRelevantCandidates, CandidateSummaryBytes: config.CandidateSummaryBytes,
+	}); err != nil {
+		return err
+	}
+	if config.MaxSynthesisParagraphs < 1 || config.MaxSynthesisParagraphs > 4 {
+		return fmt.Errorf("%w: synthesis paragraph bound must be 1..4", ErrInvalidConfiguration)
+	}
+	if config.MaxSynthesisParagraphBytes < 64 || config.MaxSynthesisParagraphBytes > 2_048 {
+		return fmt.Errorf("%w: paragraph byte bound must be 64..2048", ErrInvalidConfiguration)
+	}
+	return nil
+}
+
+func validateEvidenceConfig(config EvidenceConfig) error {
 	if config.MaxSearchTerms < 1 || config.MaxSearchTerms > 3 {
 		return fmt.Errorf("%w: max search terms must be 1..3", ErrInvalidConfiguration)
 	}
@@ -74,12 +91,6 @@ func validateConfig(config Config) error {
 	}
 	if config.MaxFetchCandidates*(config.CandidateSummaryBytes+128) > 8_192 {
 		return fmt.Errorf("%w: bounded relevance projection exceeds 8192 bytes", ErrInvalidConfiguration)
-	}
-	if config.MaxSynthesisParagraphs < 1 || config.MaxSynthesisParagraphs > 4 {
-		return fmt.Errorf("%w: synthesis paragraph bound must be 1..4", ErrInvalidConfiguration)
-	}
-	if config.MaxSynthesisParagraphBytes < 64 || config.MaxSynthesisParagraphBytes > 2_048 {
-		return fmt.Errorf("%w: paragraph byte bound must be 64..2048", ErrInvalidConfiguration)
 	}
 	return nil
 }

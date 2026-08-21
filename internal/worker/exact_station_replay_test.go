@@ -2,6 +2,7 @@ package worker
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
@@ -9,6 +10,53 @@ import (
 	"github.com/gryph/omnidex/internal/llm"
 	"github.com/gryph/omnidex/internal/queue"
 )
+
+func TestStationReplayRejectsRetiredContextKindsDirectlyAndThroughCorrection(t *testing.T) {
+	for _, kind := range []assemblyline.WorkKind{
+		"conversation_context_selection",
+		"memory_context_selection",
+		"roleplay_narrative_continuity",
+	} {
+		t.Run(string(kind), func(t *testing.T) {
+			retired := assemblyline.PortableJob{Kind: kind}
+			if err := rejectRetiredStationReplayJob(retired); err == nil ||
+				!strings.Contains(err.Error(), "retired context work kind") {
+				t.Fatalf("direct retired replay error=%v", err)
+			}
+			payload, err := json.Marshal(assemblyline.ResponseCorrectionInput{Original: retired})
+			if err != nil {
+				t.Fatal(err)
+			}
+			nested := assemblyline.PortableJob{
+				Kind: assemblyline.WorkResponseCorrection, Payload: payload,
+			}
+			if err := rejectRetiredStationReplayJob(nested); err == nil ||
+				!strings.Contains(err.Error(), "retired context work kind") {
+				t.Fatalf("nested retired replay error=%v", err)
+			}
+		})
+	}
+}
+
+func TestStationReplayRejectsGenericCorrectionWithoutRetainedCandidate(t *testing.T) {
+	original, err := assemblyline.NewKnownArtifactTruthJob(assemblyline.KnownArtifactTruthInput{
+		RequirementQuote: "The known semantic artifact must be absent.",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload, err := json.Marshal(assemblyline.ResponseCorrectionInput{
+		Original: original, ValidationFailure: "truth is unsupported",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	job := assemblyline.PortableJob{Kind: assemblyline.WorkResponseCorrection, Payload: payload}
+	if err := rejectRetiredStationReplayJob(job); err == nil ||
+		!strings.Contains(err.Error(), "without one exact retained candidate") {
+		t.Fatalf("empty-retained replay error=%v", err)
+	}
+}
 
 func TestValidateExactStationReplayPointPreservesFrozenPortableBoundary(t *testing.T) {
 	job, err := assemblyline.NewFragmentCorrectionJob(assemblyline.FragmentCorrectionInput{

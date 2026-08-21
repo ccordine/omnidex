@@ -6,11 +6,14 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/gryph/omnidex/internal/modelref"
 	"github.com/gryph/omnidex/internal/roleplay"
 )
 
 var (
 	roleplayCharacterIdentityPattern = regexp.MustCompile(`^rpc_[0-9a-f]{32}$`)
+	roleplayLibraryIdentityPattern   = regexp.MustCompile(`^rpl_[0-9a-f]{32}$`)
+	roleplayWorldIdentityPattern     = regexp.MustCompile(`^rpw_[0-9a-f]{32}$`)
 	roleplaySimulationKeyPattern     = regexp.MustCompile(`^[a-z][a-z0-9-]{0,31}$`)
 )
 
@@ -66,6 +69,26 @@ func validateRoleplaySceneRequest(request roleplaySceneRequest, update bool) err
 	return nil
 }
 
+func validateRoleplayResponderOrderRequest(request roleplayResponderOrderRequest) error {
+	if request.ExpectedRevision == nil || *request.ExpectedRevision < 1 {
+		return fmt.Errorf("responder order requires a positive expected_revision")
+	}
+	if len(request.CharacterIDs) < 1 || len(request.CharacterIDs) > roleplay.MaxSceneParticipants {
+		return fmt.Errorf("responder order requires 1 to %d characters", roleplay.MaxSceneParticipants)
+	}
+	seen := make(map[string]struct{}, len(request.CharacterIDs))
+	for _, id := range request.CharacterIDs {
+		if !roleplayCharacterIdentityPattern.MatchString(id) {
+			return fmt.Errorf("roleplay responder identity is invalid")
+		}
+		if _, duplicate := seen[id]; duplicate {
+			return fmt.Errorf("roleplay responder is duplicated")
+		}
+		seen[id] = struct{}{}
+	}
+	return nil
+}
+
 func validateRoleplayMeterDefinition(definition roleplay.MeterDefinition) error {
 	if !roleplaySimulationKeyPattern.MatchString(definition.Key) {
 		return fmt.Errorf("meter key is invalid")
@@ -93,11 +116,20 @@ func validateRoleplayMeterValueRequest(request roleplayMeterValueRequest) error 
 }
 
 func validateRoleplayResearchCapabilityRequest(request roleplayResearchCapabilityRequest) error {
-	if request.Enabled == nil || request.CharactersOffset == nil {
-		return fmt.Errorf("research capability enabled and characters_offset are required")
+	if request.Enabled == nil {
+		return fmt.Errorf("research capability enabled is required")
 	}
-	if *request.CharactersOffset < 0 || *request.CharactersOffset%(roleplaySimulationPageSize) != 0 {
-		return fmt.Errorf("research capability character page must use the server page size")
+	return nil
+}
+
+func validateRoleplayGenerationRequest(request roleplayGenerationRequest) error {
+	if request.ExpectedRevision == nil || *request.ExpectedRevision < 1 {
+		return fmt.Errorf("character generation expected_revision is required")
+	}
+	if request.NarrativeModel != "" {
+		if err := modelref.ValidateOllamaName(request.NarrativeModel); err != nil {
+			return err
+		}
 	}
 	return nil
 }

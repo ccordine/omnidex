@@ -53,30 +53,53 @@ func TestConversationObjectiveKindStationHasOneExactSemanticResponsibility(t *te
 	}
 }
 
-func TestConversationObjectiveKindProjectsOnlyCodeSelectedUserAuthorities(t *testing.T) {
+func TestConversationObjectiveKindProjectsOnlyMinifiedContextCapsule(t *testing.T) {
 	t.Parallel()
 	input := ConversationObjectiveKindInput{
 		ExactInstruction: "Do that.",
-		Context: ObjectiveContext{
-			UserAuthorities: []ConversationSelectedUserAuthority{{
-				MessageID: 17, Content: "Replace the cache implementation.",
-			}},
-			AssistantResults: []ConversationSelectedAssistantResult{{
-				UserMessageID: 17, MessageID: 18, JobID: 9, Content: "The parser owns that implementation.",
-			}},
-		},
+		Context: minifiedObjectiveContext(
+			"The requested action is to replace the parser-owned cache implementation.",
+		),
 	}
 	prompt, err := BuildConversationObjectiveKindPrompt(input)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(prompt, `"message_id":17`) || !strings.Contains(prompt, "Replace the cache implementation.") ||
-		!strings.Contains(prompt, "The parser owns that implementation.") {
-		t.Fatalf("selected authority missing from prompt: %s", prompt)
+	if !strings.Contains(prompt, "replace the parser-owned cache implementation") {
+		t.Fatalf("minified context capsule missing from prompt: %s", prompt)
 	}
-	input.Context.UserAuthorities[0].Content = "\x00"
+	for _, forbidden := range []string{
+		"user_authorities", "assistant_results", `"message_id"`, `"job_id"`,
+		`"candidate_id"`, `"content_sha256"`, `"namespace"`,
+	} {
+		if strings.Contains(prompt, forbidden) {
+			t.Fatalf("raw context field %q leaked into prompt: %s", forbidden, prompt)
+		}
+	}
+	input.Context.Capsules[0].Content = "\x00"
 	if _, err := NewConversationObjectiveKindJob(input); err == nil {
-		t.Fatal("invalid selected authority was accepted")
+		t.Fatal("invalid minified context capsule was accepted")
+	}
+}
+
+func TestConversationObjectiveKindPromptDefinesConversationalAndOperationalBoundaries(t *testing.T) {
+	t.Parallel()
+	prompt, err := BuildConversationObjectiveKindPrompt(ConversationObjectiveKindInput{
+		ExactInstruction: "Hello there.",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, required := range []string{
+		"including greetings and small talk",
+		"requires inspecting an existing repository",
+		"requires changing a workspace",
+		"explicit web-search or research request",
+		"only when the instruction requires",
+	} {
+		if !strings.Contains(prompt, required) {
+			t.Fatalf("objective-kind prompt omits boundary %q:\n%s", required, prompt)
+		}
 	}
 }
 

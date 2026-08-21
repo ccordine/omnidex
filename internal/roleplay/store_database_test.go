@@ -130,6 +130,19 @@ func TestRoleplayCanonPersistsAndCharacterProjectionCannotSeeUnknownFacts(t *tes
 }
 
 func openRoleplayTestPool(t *testing.T) (*pgxpool.Pool, func(*testing.T) *pgxpool.Pool) {
+	return openRoleplayTestPoolWithMigrations(t, []string{
+		"117_roleplay_canon_authority.sql",
+		"118_roleplay_simulation_authority.sql",
+		"122_roleplay_character_library.sql",
+		"124_roleplay_character_generation_authority.sql",
+		"128_roleplay_user_turn_authority.sql",
+	})
+}
+
+func openRoleplayTestPoolWithMigrations(
+	t *testing.T,
+	migrationNames []string,
+) (*pgxpool.Pool, func(*testing.T) *pgxpool.Pool) {
 	t.Helper()
 	databaseURL := strings.TrimSpace(os.Getenv("OMNI_TEST_DATABASE_URL"))
 	if databaseURL == "" {
@@ -165,10 +178,12 @@ func openRoleplayTestPool(t *testing.T) (*pgxpool.Pool, func(*testing.T) *pgxpoo
 			id BIGINT PRIMARY KEY,
 			channel_id TEXT NOT NULL REFERENCES ai_channels(id) ON DELETE CASCADE,
 			role TEXT NOT NULL,
-			content TEXT NOT NULL
+			content TEXT NOT NULL,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 		);
 		CREATE TABLE jobs (
 			id BIGINT PRIMARY KEY,
+			instruction TEXT NOT NULL DEFAULT '',
 			pipeline TEXT NOT NULL,
 			metadata JSONB NOT NULL DEFAULT '{}'::jsonb
 		);
@@ -177,22 +192,31 @@ func openRoleplayTestPool(t *testing.T) (*pgxpool.Pool, func(*testing.T) *pgxpoo
 			kind TEXT NOT NULL,
 			command_payload JSONB NOT NULL
 		);
+		CREATE TABLE station_call_openings (
+			id BIGINT PRIMARY KEY,
+			tokenizer_profile TEXT NOT NULL,
+			CONSTRAINT station_call_openings_tokenizer_profile_check CHECK (
+				tokenizer_profile='ollama-0.24.0-qwen3-qwen2-boundary-v1'
+			)
+		);
 		CREATE TABLE station_gap_openings (id BIGINT PRIMARY KEY);
 	`); err != nil {
 		pool.Close()
 		admin.Close()
 		t.Fatal(err)
 	}
-	migration, err := os.ReadFile(filepath.Join("..", "..", "migrations", "117_roleplay_canon_authority.sql"))
-	if err != nil {
-		pool.Close()
-		admin.Close()
-		t.Fatal(err)
-	}
-	if _, err := pool.Exec(ctx, string(migration)); err != nil {
-		pool.Close()
-		admin.Close()
-		t.Fatalf("install roleplay migration: %v", err)
+	for _, name := range migrationNames {
+		migration, err := os.ReadFile(filepath.Join("..", "..", "migrations", name))
+		if err != nil {
+			pool.Close()
+			admin.Close()
+			t.Fatal(err)
+		}
+		if _, err := pool.Exec(ctx, string(migration)); err != nil {
+			pool.Close()
+			admin.Close()
+			t.Fatalf("install roleplay migration %s: %v", name, err)
+		}
 	}
 	t.Cleanup(func() {
 		pool.Close()

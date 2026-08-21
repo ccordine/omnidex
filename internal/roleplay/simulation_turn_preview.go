@@ -19,10 +19,26 @@ func previewSimulationTurnTx(
 	locked lockedSimulationScene,
 	operationID, requestHash, exactAction string,
 	action *SimulationAction,
-) (*SimulationTransitionResult, NarrativeSimulationProjection, SimulationNarrativeAuthority, error) {
+	responderIDs []string,
+) (*SimulationTransitionResult, []SimulationResponderAuthority, error) {
+	return previewSimulationTurnAtTx(
+		ctx, tx, locked, operationID, requestHash, exactAction, action,
+		time.Now().UTC().Truncate(time.Microsecond), responderIDs,
+	)
+}
+
+func previewSimulationTurnAtTx(
+	ctx context.Context,
+	tx pgx.Tx,
+	locked lockedSimulationScene,
+	operationID, requestHash, exactAction string,
+	action *SimulationAction,
+	createdAt time.Time,
+	responderIDs []string,
+) (*SimulationTransitionResult, []SimulationResponderAuthority, error) {
 	preview, err := tx.Begin(ctx)
 	if err != nil {
-		return nil, NarrativeSimulationProjection{}, SimulationNarrativeAuthority{},
+		return nil, nil,
 			fmt.Errorf("begin simulation preview: %w", err)
 	}
 	rolledBack := false
@@ -31,23 +47,36 @@ func previewSimulationTurnTx(
 			_ = preview.Rollback(context.Background())
 		}
 	}()
-	createdAt := time.Now().UTC().Truncate(time.Microsecond)
 	transition, _, err := applySimulationStateTx(
 		ctx, preview, locked, operationID, requestHash, exactAction, action, createdAt,
 	)
 	if err != nil {
-		return nil, NarrativeSimulationProjection{}, SimulationNarrativeAuthority{}, err
+		return nil, nil, err
 	}
-	content, authority, err := projectSimulationNarrativeTx(
-		ctx, preview, locked.Sheet.WorldID, locked.Sheet.ActiveCharacterID,
-	)
-	if err != nil {
-		return nil, NarrativeSimulationProjection{}, SimulationNarrativeAuthority{}, err
+	responders := make([]SimulationResponderAuthority, len(responderIDs))
+	for index, characterID := range responderIDs {
+		content, authority, projectionErr := projectSimulationNarrativeTx(
+			ctx, preview, locked.Sheet.WorldID, characterID,
+		)
+		if projectionErr != nil {
+			return nil, nil, projectionErr
+		}
+		generation, generationErr := projectCharacterGenerationTx(
+			ctx, preview, locked.Sheet.WorldID, characterID,
+		)
+		if generationErr != nil {
+			return nil, nil, generationErr
+		}
+		responders[index] = SimulationResponderAuthority{
+			Position: index, CharacterID: characterID, GenerationConfig: generation.Config,
+			NarrativeProjection: content, NarrativeAuthority: authority,
+			NarrativeFingerprint: authority.Fingerprint,
+		}
 	}
 	if err := preview.Rollback(ctx); err != nil && !errors.Is(err, pgx.ErrTxClosed) {
-		return nil, NarrativeSimulationProjection{}, SimulationNarrativeAuthority{},
+		return nil, nil,
 			fmt.Errorf("rollback simulation preview: %w", err)
 	}
 	rolledBack = true
-	return transition, content, authority, nil
+	return transition, responders, nil
 }

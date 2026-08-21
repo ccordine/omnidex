@@ -121,6 +121,9 @@ func TestProjectsControllerDelegatesFocusedModalWorkflows(t *testing.T) {
 func TestChatControllerDelegatesOperationalPanels(t *testing.T) {
 	paths := []string{
 		"web/src/controllers/chat_controller.ts",
+		"web/src/controllers/chat_roleplay_turn_controller.ts",
+		"web/src/controllers/chat_roleplay_draft_controller.ts",
+		"web/src/controllers/chat_roleplay_dialog_controller.ts",
 		"web/src/controllers/chat_runtime_controller.ts",
 		"web/src/controllers/chat_view_controller.ts",
 	}
@@ -133,8 +136,11 @@ func TestChatControllerDelegatesOperationalPanels(t *testing.T) {
 		sources = append(sources, source)
 	}
 	source := strings.Join(sources, "\n")
-	if !strings.Contains(sources[0], "ChatRuntimeController") {
-		t.Error("chat controller does not delegate lifecycle authority to ChatRuntimeController")
+	if !strings.Contains(sources[0], "ChatRoleplayTurnController") ||
+		!strings.Contains(sources[1], "ChatRoleplayDraftController") ||
+		!strings.Contains(sources[2], "ChatRoleplayDialogController") ||
+		!strings.Contains(sources[3], "ChatRuntimeController") {
+		t.Error("chat controller does not delegate modal and lifecycle authority through focused controllers")
 	}
 	for _, required := range []string{
 		"ChatTargetsController",
@@ -190,6 +196,8 @@ func TestOrdinaryWebChatUsesOnlyServerAuthoritativeChannels(t *testing.T) {
 		"web/src/controllers/chat_runtime_controller.ts",
 		"web/src/controllers/chat_view_controller.ts",
 		"web/src/lib/chat_channel_coordinator.ts",
+		"web/src/lib/chat_channel_options.ts",
+		"web/src/lib/chat_channel_turn.ts",
 		"web/src/lib/chat_execution_coordinator.ts",
 	} {
 		source := readFrontendSource(t, path)
@@ -214,11 +222,17 @@ func TestOrdinaryWebChatUsesOnlyServerAuthoritativeChannels(t *testing.T) {
 	}
 	channel := readFrontendSource(t, "web/src/lib/chat_channel_coordinator.ts")
 	for _, required := range []string{
-		"sendChannelMessage(",
 		"new ChatChannelCreationFlow(host, identityFactory)",
+		"new ChatChannelTurnCoordinator(",
 	} {
 		if !strings.Contains(channel, required) {
 			t.Errorf("channel-only chat path is missing %q", required)
+		}
+	}
+	turn := readFrontendSource(t, "web/src/lib/chat_channel_turn.ts")
+	for _, required := range []string{"sendChannelMessage(", "this.host.loadTranscript(", "this.host.waitForJob("} {
+		if !strings.Contains(turn, required) {
+			t.Errorf("bounded channel-turn path is missing %q", required)
 		}
 	}
 	creation := readFrontendSource(t, "web/src/lib/chat_channel_creation_flow.ts")

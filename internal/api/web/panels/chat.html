@@ -1,85 +1,82 @@
-<section data-chat-target="panel" data-panel-name="chat" class="flex h-full min-h-0 flex-col">
-        <header class="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 bg-zinc-950/45 px-3 py-2 backdrop-blur-xl md:px-4">
-          <div>
-            <p class="text-[10px] uppercase tracking-[.18em] text-cyan-200/80" data-i18n="panel.chat.brand">Omni</p>
-            <h2 class="text-lg font-semibold tracking-tight" data-i18n="panel.chat.title">Chat Console</h2>
-          </div>
-          <div class="flex flex-wrap items-center gap-2">
-            <label class="flex items-center gap-2 text-xs text-zinc-500">
-              <span class="hidden sm:inline" data-i18n="panel.chat.channel">Channel</span>
-              <select data-chat-target="channelSelect" data-recyclr-sink="channel-options" data-action="change->chat#selectChannel" class="max-w-[14rem] rounded-md border border-white/10 bg-zinc-900 px-3 py-1.5 text-sm text-zinc-100 outline-none focus:border-cyan-300/40">
-                <option value="" disabled selected>Choose a conversation</option>
-                <option value="__omnidex_new_conversation__">+ New conversation…</option>
+<section data-chat-target="panel" data-panel-name="chat" class="chat-panel flex h-full min-h-0 flex-col bg-zinc-950/20">
+  <header class="chat-header border-b border-white/10 bg-zinc-950/70 px-3 py-2.5 backdrop-blur-xl md:px-5">
+    <div class="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-3">
+      <div class="min-w-0">
+        <p class="text-[10px] font-semibold uppercase tracking-[.2em] text-cyan-300/80" data-i18n="panel.chat.brand">Omni</p>
+        <h2 class="truncate text-base font-semibold tracking-tight" data-i18n="panel.chat.title">Chat</h2>
+      </div>
+      <div class="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-2">
+        <label class="min-w-0 flex-1 sm:max-w-xs">
+          <span class="sr-only" data-i18n="panel.chat.channel">Conversation</span>
+          <select data-chat-target="channelSelect" data-recyclr-sink="channel-options" data-action="change->chat#selectChannel" aria-label="Conversation" class="w-full truncate rounded-lg border border-white/10 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-none transition focus:border-cyan-300/50 focus:ring-2 focus:ring-cyan-300/10 disabled:cursor-wait disabled:opacity-60">
+            <option value="" disabled selected>New conversation</option>
+          </select>
+        </label>
+        <button type="button" data-action="chat#newThread" class="rounded-lg border border-white/10 bg-white/[.04] px-3 py-2 text-xs font-semibold text-zinc-100 transition hover:border-cyan-300/40 hover:bg-cyan-300/10 focus:outline-none focus:ring-2 focus:ring-cyan-300/30">
+          New chat
+        </button>
+        <select data-chat-target="newChannelModeSelect" class="hidden" aria-hidden="true" tabindex="-1">
+          <option value="assistant" selected>Assistant</option>
+        </select>
+        <details class="relative">
+          <summary class="cursor-pointer list-none rounded-lg border border-white/10 bg-white/[.04] px-3 py-2 text-xs font-semibold text-zinc-300 transition hover:border-white/20 hover:text-white focus:outline-none focus:ring-2 focus:ring-cyan-300/30">Options</summary>
+          <div class="absolute right-0 z-30 mt-2 w-[min(24rem,calc(100vw-2rem))] space-y-3 rounded-xl border border-white/10 bg-zinc-950/95 p-4 shadow-2xl shadow-black/50 backdrop-blur-xl">
+            <p class="text-xs leading-5 text-zinc-500">Applied only when your next message creates a conversation.</p>
+            <label class="grid gap-1.5 text-xs text-zinc-400">
+              <span class="font-medium text-zinc-300">Data connection</span>
+              <select data-chat-target="newChannelDataSourceSelect" data-recyclr-sink="new-channel-data-source-options" disabled class="rounded-lg border border-white/10 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-cyan-300/40 disabled:cursor-wait disabled:opacity-60">
+                <option value="" selected>No data</option>
               </select>
             </label>
-            <div role="group" aria-label="Create conversation" class="flex flex-wrap items-center gap-2">
-              <span class="hidden text-[10px] font-semibold uppercase tracking-[.14em] text-zinc-600 2xl:inline">New</span>
-              <label class="flex items-center gap-1.5 text-xs text-zinc-500">
-                <span>Type</span>
-                <select data-chat-target="newChannelModeSelect" data-action="change->chat#selectNewChannelMode" class="rounded-md border border-white/10 bg-zinc-900 px-2.5 py-1.5 text-sm text-zinc-100 outline-none focus:border-cyan-300/40">
-                  <option value="assistant" selected>Assistant</option>
-                  <option value="roleplay">Roleplay</option>
-                </select>
-              </label>
-              <div data-chat-target="newChannelRoleplayFields" class="hidden flex flex-wrap items-center gap-2">
-                <label class="flex items-center gap-1.5 text-xs text-zinc-500">
-                  <span>World</span>
-                  <input data-chat-target="newChannelRoleplayWorldName" type="text" maxlength="256" disabled placeholder="World name" class="max-w-[12rem] rounded-md border border-white/10 bg-zinc-900 px-2.5 py-1.5 text-sm text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-cyan-300/40 disabled:opacity-60">
-                </label>
-                <label class="flex items-center gap-1.5 text-xs text-zinc-500">
-                  <span>Viewpoint</span>
-                  <input data-chat-target="newChannelRoleplayViewpointName" type="text" maxlength="256" disabled placeholder="Viewpoint character" class="max-w-[12rem] rounded-md border border-white/10 bg-zinc-900 px-2.5 py-1.5 text-sm text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-cyan-300/40 disabled:opacity-60">
-                </label>
-              </div>
-              <label class="flex items-center gap-1.5 text-xs text-zinc-500">
-                <span>Data</span>
-                <select data-chat-target="newChannelDataSourceSelect" data-recyclr-sink="new-channel-data-source-options" disabled class="max-w-[12rem] rounded-md border border-white/10 bg-zinc-900 px-2.5 py-1.5 text-sm text-zinc-100 outline-none focus:border-cyan-300/40 disabled:cursor-wait disabled:opacity-60">
-                  <option value="" selected>No data</option>
-                </select>
-              </label>
-            </div>
-            <span data-chat-target="liveBadge" class="rounded-full border border-amber-300/30 bg-amber-300/10 px-3 py-1 text-xs font-medium text-amber-100" data-i18n="status.idle">idle</span>
           </div>
-        </header>
+        </details>
+        <button type="button" data-chat-target="liveBadge" data-action="chat#acknowledgeActivityProblems" data-state="ready" class="system-activity-indicator" aria-label="System activity: Ready. Omnidex is ready. No reported problems." title="Omnidex is ready. No reported problems.">
+          <span data-chat-target="activityDot" class="system-activity-dot" aria-hidden="true"></span>
+          <span data-chat-target="activityText">Ready</span>
+          <span data-chat-target="activityProblems" class="system-activity-problems hidden">0</span>
+        </button>
+      </div>
+    </div>
+  </header>
 
-        <div class="grid min-h-0 flex-1 grid-cols-1 xl:grid-cols-[minmax(0,1fr)_24rem]">
-          <div data-chat-target="messages" id="channel-transcript" aria-live="polite" aria-busy="false" class="scrollbar relative min-h-0 overflow-y-auto px-3 py-3 md:px-4">
-            <div data-recyclr-sink="channel-transcript-pagination" class="mb-3 flex justify-center"></div>
-            <div id="channel-transcript-messages" data-recyclr-sink="channel-transcript-messages" class="space-y-1.5">
-              <p role="status" class="rounded-md border border-dashed border-white/10 px-4 py-8 text-center text-sm text-zinc-500">Select or create a channel to load its transcript.</p>
-            </div>
-            <div data-chat-target="transcriptLoading" role="status" aria-live="polite" class="hidden py-3 text-center text-xs font-medium text-cyan-200">
-              <span class="mr-2 inline-block h-2 w-2 animate-pulse rounded-full bg-cyan-300" aria-hidden="true"></span>
-              Loading transcript…
-            </div>
+  <div class="chat-content grid min-h-0 flex-1 grid-cols-1">
+    <div data-chat-target="messages" id="channel-transcript" aria-live="polite" aria-busy="false" class="scrollbar min-h-0 overflow-y-auto px-3 py-6 md:px-6">
+      <div class="mx-auto max-w-3xl">
+        <div data-recyclr-sink="channel-transcript-pagination" class="mb-4 flex justify-center"></div>
+        <div id="channel-transcript-messages" data-recyclr-sink="channel-transcript-messages" class="space-y-5">
+          <div role="status" class="mx-auto max-w-xl rounded-2xl border border-dashed border-white/10 bg-white/[.02] px-6 py-10 text-center">
+            <p class="text-base font-semibold text-zinc-200">Start a new conversation</p>
+            <p class="mt-2 text-sm leading-6 text-zinc-400">Start typing below. Sending your first message creates and selects a new conversation automatically.</p>
           </div>
-
-          <aside data-chat-target="roleplayPanel" aria-label="Roleplay simulation" class="scrollbar hidden min-h-0 overflow-y-auto border-l border-white/10 bg-zinc-950/35 p-3">
-            <div data-chat-target="roleplayLoading" role="status" aria-live="polite" class="hidden rounded-md border border-cyan-300/20 bg-cyan-300/5 px-3 py-2 text-xs font-medium text-cyan-100">
-              <span class="mr-2 inline-block h-2 w-2 animate-pulse rounded-full bg-cyan-300" aria-hidden="true"></span>
-              Refreshing simulation…
-            </div>
-            <div data-recyclr-sink="roleplay-simulation">
-              <p role="status" class="rounded-md border border-dashed border-white/10 px-4 py-8 text-center text-sm text-zinc-500">Select a roleplay channel to load its simulation.</p>
-            </div>
-          </aside>
         </div>
+        <div data-chat-target="typingIndicator" role="status" aria-live="polite" aria-hidden="true" class="chat-typing-indicator hidden py-4">
+          <span class="sr-only">Omni is responding</span>
+          <span class="chat-typing-bubble" aria-hidden="true">
+            <span class="chat-typing-dot"></span>
+            <span class="chat-typing-dot"></span>
+            <span class="chat-typing-dot"></span>
+          </span>
+        </div>
+        <div data-chat-target="transcriptLoading" role="status" aria-live="polite" class="hidden py-4 text-center text-xs font-medium text-cyan-200">
+          <span class="mr-2 inline-block h-2 w-2 animate-pulse rounded-full bg-cyan-300" aria-hidden="true"></span>
+          Syncing conversation…
+        </div>
+      </div>
+    </div>
+  </div>
 
-        <form data-action="submit->chat#submit" class="border-t border-white/10 bg-zinc-950/70 p-3 backdrop-blur-xl md:px-4">
-          <div class="relative rounded-md border border-white/10 bg-zinc-900/90 p-2">
-            <div data-chat-target="slashPalette" class="absolute bottom-[calc(100%+.5rem)] left-0 right-0 z-30 hidden max-h-72 overflow-y-auto rounded-md border border-white/10 bg-zinc-950/95 p-1 shadow-2xl shadow-black/50 backdrop-blur-xl">
-              <div id="slash-command-options" data-chat-target="slashOptions" data-recyclr-sink="slash-command-options"></div>
-            </div>
-            <textarea data-chat-target="input" rows="2" role="combobox" aria-autocomplete="list" aria-haspopup="listbox" aria-controls="slash-command-list" aria-expanded="false" data-action="input->chat#composerInput keydown->chat#slashCommandKeydown keydown->chat#composerKeydown" data-i18n-placeholder="panel.chat.placeholder" placeholder="Ask Omni to inspect, build, research, or explain..." class="scrollbar max-h-32 min-h-[3.25rem] w-full resize-none bg-transparent text-sm leading-5 text-zinc-100 outline-none placeholder:text-zinc-500"></textarea>
-            <div class="mt-2 flex flex-wrap items-center justify-between gap-2 border-t border-white/10 pt-2">
-              <div class="flex items-center gap-1.5 text-[10px] text-zinc-500">
-                <span class="rounded border border-white/10 px-1.5 py-0.5" data-i18n="panel.chat.enterNewline">Enter newline</span>
-                <span class="rounded border border-white/10 px-1.5 py-0.5" data-i18n="panel.chat.ctrlEnterSend">⌘/Ctrl+Enter send</span>
-              </div>
-              <button data-chat-target="send" type="submit" class="rounded-md bg-cyan-300 px-3 py-1.5 text-xs font-semibold text-zinc-950 transition hover:bg-cyan-200 disabled:cursor-not-allowed disabled:bg-zinc-700 disabled:text-zinc-400" data-i18n="panel.chat.send">
-                Send
-              </button>
-            </div>
-          </div>
-        </form>
-      </section>
+  <form data-action="submit->chat#submit" class="border-t border-white/10 bg-zinc-950/80 px-3 py-3 backdrop-blur-xl md:px-6 md:py-4">
+    <div class="mx-auto max-w-3xl">
+      <div class="chat-composer relative rounded-2xl border border-white/10 bg-zinc-900/95 p-2 shadow-2xl shadow-black/20 transition focus-within:border-cyan-300/40 focus-within:ring-2 focus-within:ring-cyan-300/10">
+        <div data-chat-target="slashPalette" class="absolute bottom-[calc(100%+.5rem)] left-0 right-0 z-30 hidden max-h-72 overflow-y-auto rounded-xl border border-white/10 bg-zinc-950/95 p-1 shadow-2xl shadow-black/50 backdrop-blur-xl">
+          <div id="slash-command-options" data-chat-target="slashOptions" data-recyclr-sink="slash-command-options"></div>
+        </div>
+        <textarea data-chat-target="input" rows="1" role="combobox" aria-label="Message Omni" aria-autocomplete="list" aria-haspopup="listbox" aria-controls="slash-command-list" aria-expanded="false" data-action="input->chat#composerInput keydown->chat#slashCommandKeydown keydown->chat#composerKeydown" data-i18n-placeholder="panel.chat.placeholder" placeholder="Message Omni…" class="chat-composer-input scrollbar max-h-48 min-h-[3rem] w-full resize-none bg-transparent px-2 py-2 text-[15px] leading-6 text-zinc-100 outline-none placeholder:text-zinc-600 disabled:cursor-wait disabled:opacity-60"></textarea>
+        <div class="flex items-center justify-between gap-3 border-t border-white/10 px-1 pt-2">
+          <p class="text-[11px] text-zinc-600">Enter to send · Shift+Enter for a new line</p>
+          <button data-chat-target="send" type="submit" class="rounded-xl bg-cyan-300 px-4 py-2 text-xs font-semibold text-zinc-950 transition hover:bg-cyan-200 focus:outline-none focus:ring-2 focus:ring-cyan-100/60 disabled:cursor-not-allowed disabled:bg-zinc-700 disabled:text-zinc-400" data-i18n="panel.chat.send">Send</button>
+        </div>
+      </div>
+    </div>
+  </form>
+</section>

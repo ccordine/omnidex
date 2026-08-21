@@ -30,6 +30,7 @@ type ProviderID string
 
 const (
 	ProviderDuckDuckGo ProviderID = "duckduckgo"
+	ProviderBrave      ProviderID = "brave"
 	ProviderGoogle     ProviderID = "google"
 	ProviderReddit     ProviderID = "reddit"
 	ProviderYahoo      ProviderID = "yahoo"

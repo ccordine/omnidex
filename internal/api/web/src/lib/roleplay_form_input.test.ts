@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
 	researchCapabilityInput,
+	roleplayGenerationInput,
 	sceneCreateInput,
 	sceneDraftParticipantInput,
 	sceneInput,
@@ -67,11 +68,23 @@ describe("roleplay form input", () => {
 		});
 	});
 
-  it("reads research access with its exact visible character page", () => {
+  it("reads only the exact research-access boolean", () => {
     const form = document.createElement("form");
-    form.dataset.charactersOffset = "4";
     form.innerHTML = '<input type="checkbox" name="enabled" checked>';
 
-    expect(researchCapabilityInput(form)).toEqual({ enabled: true, characters_offset: 4 });
+    expect(researchCapabilityInput(form)).toEqual({ enabled: true });
   });
+
+	it("reads the exact local response-model choice", () => {
+		const form = document.createElement("form");
+		form.innerHTML = `
+			<input name="expected_revision" value="3">
+			<input name="narrative_model" value="dolphin3:latest">
+		`;
+
+		expect(roleplayGenerationInput(form)).toEqual({
+			expected_revision: 3,
+			narrative_model: "dolphin3:latest",
+		});
+	});
 });

@@ -1,7 +1,10 @@
 package api
 
 import (
+	"context"
+	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/roleplay"
@@ -14,17 +17,29 @@ func (s *Server) handleRoleplaySimulationChannel(
 	parts []string,
 ) {
 	switch {
-	case len(parts) == 1 && parts[0] == "characters":
+	case len(parts) == 1 && parts[0] == "user-personas":
 		if requireRoleplayMethod(w, r, http.MethodPost) {
-			s.createRoleplayCharacter(w, r, channelID)
+			s.createRoleplayUserPersona(w, r, channelID)
 		}
 	case len(parts) == 2 && parts[0] == "personas":
 		if requireRoleplayMethod(w, r, http.MethodPut) {
 			s.writeRoleplayPersona(w, r, channelID, parts[1])
 		}
+	case len(parts) == 2 && parts[0] == "generation":
+		if requireRoleplayMethod(w, r, http.MethodPut) {
+			s.writeRoleplayCharacterGeneration(w, r, channelID, parts[1])
+		}
+	case len(parts) == 2 && parts[0] == "library":
+		if requireRoleplayMethod(w, r, http.MethodPost) {
+			s.placeRoleplayLibraryCharacter(w, r, channelID, parts[1])
+		}
 	case len(parts) == 1 && parts[0] == "scene":
 		if requireRoleplayMethod(w, r, http.MethodPost, http.MethodPut) {
 			s.writeRoleplayScene(w, r, channelID)
+		}
+	case len(parts) == 1 && parts[0] == "responders":
+		if requireRoleplayMethod(w, r, http.MethodPut) {
+			s.writeRoleplayResponders(w, r, channelID)
 		}
 	case len(parts) == 3 && parts[0] == "scene-draft" && parts[1] == "participants":
 		if requireRoleplayMethod(w, r, http.MethodPut) {
@@ -55,13 +70,55 @@ func (s *Server) handleRoleplaySimulationChannel(
 	}
 }
 
-func (s *Server) createRoleplayCharacter(w http.ResponseWriter, r *http.Request, channelID model.ChannelID) {
+func (s *Server) writeRoleplayResponders(
+	w http.ResponseWriter,
+	r *http.Request,
+	channelID model.ChannelID,
+) {
+	channel, world, ok := s.roleplayMutationAuthority(w, r, channelID)
+	if !ok {
+		return
+	}
+	var request roleplayResponderOrderRequest
+	if err := decodeExactRoleplayJSON(w, r, "roleplay responder order request", &request); err != nil {
+		writeChannelBodyError(w, err)
+		return
+	}
+	if err := validateRoleplayResponderOrderRequest(request); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	current, err := s.roleplaySimulation.ProjectCurrentScene(r.Context(), world.ID)
+	if err != nil {
+		writeRoleplaySimulationError(w, err)
+		return
+	}
+	if current.Revision != *request.ExpectedRevision {
+		writeRoleplaySimulationError(w, fmt.Errorf("%w: scene revision changed", roleplay.ErrSimulationStaleRevision))
+		return
+	}
+	if _, err := s.roleplaySimulation.UpdateCurrentScene(r.Context(), roleplay.SceneUpdate{
+		WorldID: world.ID, SceneID: current.ID, ExpectedRevision: current.Revision,
+		Title: current.Title, Description: current.Description,
+		ParticipantIDs: append([]string(nil), request.CharacterIDs...),
+	}); err != nil {
+		writeRoleplaySimulationError(w, err)
+		return
+	}
+	s.writeRoleplaySimulationComponent(w, r, http.StatusOK, channel, world, roleplaySimulationPageState{})
+}
+
+func (s *Server) createRoleplayUserPersona(
+	w http.ResponseWriter,
+	r *http.Request,
+	channelID model.ChannelID,
+) {
 	channel, world, ok := s.roleplayMutationAuthority(w, r, channelID)
 	if !ok {
 		return
 	}
 	var request roleplayCharacterRequest
-	if err := decodeExactRoleplayJSON(w, r, "roleplay character request", &request); err != nil {
+	if err := decodeExactRoleplayJSON(w, r, "roleplay user persona request", &request); err != nil {
 		writeChannelBodyError(w, err)
 		return
 	}
@@ -69,7 +126,80 @@ func (s *Server) createRoleplayCharacter(w http.ResponseWriter, r *http.Request,
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if _, err := s.roleplaySimulation.CreateCharacter(r.Context(), world.ID, request.Name); err != nil {
+	character, err := s.roleplaySimulation.CreateCharacter(r.Context(), world.ID, request.Name)
+	if err != nil {
+		writeRoleplaySimulationError(w, err)
+		return
+	}
+	s.writeRoleplaySimulationComponent(w, r, http.StatusCreated, channel, world, roleplaySimulationPageState{
+		ComposerPersonaCharacter: character.ID,
+	})
+}
+
+func (s *Server) writeRoleplayCharacterGeneration(
+	w http.ResponseWriter,
+	r *http.Request,
+	channelID model.ChannelID,
+	characterID string,
+) {
+	if !roleplayCharacterIdentityPattern.MatchString(characterID) {
+		writeError(w, http.StatusBadRequest, "roleplay character identity is invalid")
+		return
+	}
+	channel, world, ok := s.roleplayMutationAuthority(w, r, channelID)
+	if !ok {
+		return
+	}
+	var request roleplayGenerationRequest
+	if err := decodeExactRoleplayJSON(w, r, "roleplay character generation request", &request); err != nil {
+		writeChannelBodyError(w, err)
+		return
+	}
+	if err := validateRoleplayGenerationRequest(request); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	for _, modelName := range []string{request.NarrativeModel} {
+		if modelName == "" {
+			continue
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+		installed, err := s.hasInstalledOllamaModel(ctx, modelName)
+		cancel()
+		if err != nil {
+			writeError(w, http.StatusBadGateway, err.Error())
+			return
+		}
+		if !installed {
+			writeError(w, http.StatusConflict, "Ollama model is not installed: "+modelName)
+			return
+		}
+	}
+	if _, err := s.roleplaySimulation.WriteCharacterGeneration(r.Context(), roleplay.CharacterGenerationWriteRequest{
+		WorldID: world.ID, CharacterID: characterID, ExpectedRevision: *request.ExpectedRevision,
+		NarrativeModel: request.NarrativeModel,
+	}); err != nil {
+		writeRoleplaySimulationError(w, err)
+		return
+	}
+	s.writeRoleplaySimulationComponent(w, r, http.StatusOK, channel, world, roleplaySimulationPageState{})
+}
+
+func (s *Server) placeRoleplayLibraryCharacter(
+	w http.ResponseWriter,
+	r *http.Request,
+	channelID model.ChannelID,
+	libraryID string,
+) {
+	if !roleplayLibraryIdentityPattern.MatchString(libraryID) {
+		writeError(w, http.StatusBadRequest, "roleplay library character identity is invalid")
+		return
+	}
+	channel, world, ok := s.roleplayMutationAuthority(w, r, channelID)
+	if !ok {
+		return
+	}
+	if _, err := s.roleplaySimulation.PlaceLibraryCharacter(r.Context(), world.ID, libraryID); err != nil {
 		writeRoleplaySimulationError(w, err)
 		return
 	}
@@ -97,6 +227,19 @@ func (s *Server) writeRoleplayPersona(
 	}
 	if err := validateRoleplayPersonaRequest(request); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	character, err := s.roleplaySimulation.ProjectChannelCharacterContext(
+		r.Context(), string(channel.ID), characterID, 1,
+	)
+	if err != nil {
+		writeRoleplaySimulationError(w, err)
+		return
+	}
+	if character.CharacterID != characterID || character.WorldID != world.ID || character.CharacterName == "" {
+		writeRoleplaySimulationError(w, fmt.Errorf(
+			"%w: persona character changed authority", roleplay.ErrSimulationIllegal,
+		))
 		return
 	}
 	if _, err := s.roleplaySimulation.WritePersona(r.Context(), roleplay.PersonaWriteRequest{

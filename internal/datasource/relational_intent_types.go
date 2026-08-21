@@ -1,15 +1,16 @@
 package datasource
 
 const (
-	RelationalIntentV1       = "omnidex.relational-intent.v1"
-	MaxIntentBytes           = 16 * 1024
-	MaxIntentProjections     = 16
-	MaxIntentFilters         = 24
-	MaxIntentFilterValues    = 50
-	MaxIntentGroups          = 8
-	MaxIntentOrderTerms      = 8
-	MaxIntentExistenceChecks = 8
-	MaxIntentRows            = 500
+	RelationalIntentV1          = "omnidex.relational-intent.v1"
+	MaxIntentBytes              = 16 * 1024
+	MaxIntentProjections        = 16
+	MaxIntentFilters            = 24
+	MaxIntentFilterValues       = 50
+	MaxIntentGroups             = 8
+	MaxIntentOrderTerms         = 8
+	MaxIntentExistenceChecks    = 8
+	MaxIntentRows               = 500
+	MaxIntentStringLiteralBytes = 2 * 1024
 )
 
 type ResultShape string

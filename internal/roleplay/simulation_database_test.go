@@ -3,8 +3,6 @@ package roleplay
 import (
 	"context"
 	"errors"
-	"os"
-	"path/filepath"
 	"reflect"
 	"testing"
 
@@ -119,11 +117,14 @@ func TestRoleplaySimulationPersistsDeterministicTransitionsAndTurnAuthority(t *t
 	}
 
 	if _, err := pool.Exec(ctx, `
-		INSERT INTO ai_channel_messages (id,channel_id,role,content) VALUES
-		(91,$1,'assistant','The fire gutters.'),(92,$1,'user','The night grows colder.')
+		INSERT INTO ai_channel_messages (id,channel_id,role,content)
+		VALUES (91,$1,'assistant','The fire gutters.')
 	`, world.ChannelID); err != nil {
 		t.Fatal(err)
 	}
+	insertNarratorRoleplayUserMessage(
+		t, pool, 92, world.ChannelID, "The night grows colder.", UserContributionNarration,
+	)
 	event, err := store.AppendCanonEvent(ctx, world.ID, 91, "Ari saw the campfire gutter.")
 	if err != nil {
 		t.Fatal(err)
@@ -206,12 +207,9 @@ func TestRoleplaySimulationPersistsDeterministicTransitionsAndTurnAuthority(t *t
 		replayedAdvance.NarrativeFingerprint != advance.NarrativeFingerprint {
 		t.Fatalf("advance replay=%+v error=%v", replayedAdvance, err)
 	}
-	if _, err := pool.Exec(ctx, `
-		INSERT INTO ai_channel_messages (id,channel_id,role,content)
-		VALUES (93,$1,'user','Bex listens in silence.')
-	`, world.ChannelID); err != nil {
-		t.Fatal(err)
-	}
+	insertNarratorRoleplayUserMessage(
+		t, pool, 93, world.ChannelID, "Bex listens in silence.", UserContributionNarration,
+	)
 	quiet := prepareAndBindTestTurn(t, pool, world.ChannelID, 93, 202, "Bex listens in silence.")
 	if quiet.PendingTransition != nil || quiet.BaseSceneRevision != advance.AfterRevision ||
 		quiet.SceneRevision != advance.AfterRevision {
@@ -263,14 +261,13 @@ func assertDatabaseRejectsUnaddressableItemNames(
 
 func installSimulationTestSchema(t *testing.T, pool *pgxpool.Pool) {
 	t.Helper()
-	if _, err := pool.Exec(context.Background(), `ALTER TABLE jobs ADD COLUMN instruction TEXT NOT NULL DEFAULT ''`); err != nil {
+	var installed bool
+	if err := pool.QueryRow(context.Background(), `
+		SELECT to_regclass('roleplay_current_scenes') IS NOT NULL
+	`).Scan(&installed); err != nil {
 		t.Fatal(err)
 	}
-	body, err := os.ReadFile(filepath.Join("..", "..", "migrations", "118_roleplay_simulation_authority.sql"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := pool.Exec(context.Background(), string(body)); err != nil {
-		t.Fatalf("install simulation migration: %v", err)
+	if !installed {
+		t.Fatal("latest roleplay test schema omitted simulation authority")
 	}
 }

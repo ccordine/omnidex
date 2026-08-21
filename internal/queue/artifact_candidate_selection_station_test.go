@@ -28,7 +28,10 @@ func TestArtifactCandidateSelectionHasOneExactStationOwner(t *testing.T) {
 	if got != station.CodingArtifactCandidateSelection {
 		t.Fatalf("station=%q want=%q", got, station.CodingArtifactCandidateSelection)
 	}
-	correction, err := assemblyline.NewResponseCorrectionJob(job, "candidate is unavailable")
+	correction, err := assemblyline.NewRetainedResponseCorrectionJob(
+		job, "candidate is unavailable",
+		`{"schema":"omnidex.artifact-candidate-selection.v1","candidate_id":"ARTIFACT_CANDIDATE_1"}`,
+	)
 	if err != nil {
 		t.Fatal(err)
 	}

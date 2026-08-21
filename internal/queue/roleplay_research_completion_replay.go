@@ -23,7 +23,7 @@ func requireRoleplayResearchCompletionReplayTx(
 		return false, err
 	}
 	if record.ResultJobStatus != model.JobStatusCompleted ||
-		len(command.RoleplayFacts) != 0 || len(command.RoleplayKnowledgeCharacterIDs) != 0 {
+		len(command.RoleplayResponses) != 0 {
 		return true, lifecycleReplayStateError(record.ID, "REAL_WORLD research completion")
 	}
 	if err := roleplay.RequireSimulationTurnMaterializedReplayTx(

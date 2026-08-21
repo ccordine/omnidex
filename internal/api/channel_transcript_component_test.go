@@ -46,6 +46,66 @@ func TestChannelTranscriptComponentOwnsEscapedAccessibleMessageMarkup(t *testing
 	}
 }
 
+func TestChannelTranscriptComponentNamesThePersistedRoleplaySpeaker(t *testing.T) {
+	t.Parallel()
+	page := model.ChannelMessagePage{Messages: []model.ChannelMessage{{
+		ID: 12, ChannelID: "story", Role: model.ChannelMessageRoleAssistant,
+		SpeakerName: "Mira <Harbor>", Content: "I found the signal.",
+		CreatedAt: time.Date(2026, 8, 19, 20, 3, 0, 0, time.UTC),
+	}}}
+	response, err := channelTranscriptResponseFor("story", page, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, required := range []string{
+		`data-channel-message-speaker="Mira &lt;Harbor&gt;"`,
+		`aria-label="Mira &lt;Harbor&gt; message"`,
+		`<span>Mira &lt;Harbor&gt;</span>`,
+	} {
+		if !strings.Contains(response.HTML.Bundle, required) {
+			t.Errorf("roleplay transcript lacks %q: %s", required, response.HTML.Bundle)
+		}
+	}
+}
+
+func TestChannelTranscriptComponentShowsTypedUserContributionAndRecoverableFailure(t *testing.T) {
+	t.Parallel()
+	page := model.ChannelMessagePage{Messages: []model.ChannelMessage{{
+		ID: 13, ChannelID: "story", Role: model.ChannelMessageRoleUser,
+		SpeakerName: "Gryph", Content: "[Action]\nI take Mara's hand.\n\n[Message]\nStay.",
+		Roleplay: &model.ChannelMessageRoleplayAuthority{
+			PersonaKind: "character", CharacterID: "rpc_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+			ContributionKind: "action_dialogue",
+			Parts: []model.ChannelMessageRoleplayPart{
+				{Kind: "action", Text: "I take Mara's hand."},
+				{Kind: "message", Text: "Stay."},
+			},
+		},
+		Turn: &model.ChannelMessageTurnState{
+			JobID: 91, Status: model.JobStatusFailed, Error: `provider failed <loudly>`,
+		},
+		CreatedAt: time.Date(2026, 8, 20, 20, 3, 0, 0, time.UTC),
+	}}}
+	response, err := channelTranscriptResponseFor("story", page, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bundle := response.HTML.Bundle
+	for _, required := range []string{
+		`data-channel-message-speaker="Gryph"`, `>ACTION</span>`, `I take Mara&#39;s hand.`,
+		`>MESSAGE</span>`, `>Stay.</span>`,
+		`role="alert"`, `data-job-id="91"`, `This turn failed.`,
+		`provider failed &lt;loudly&gt;`, `data-action="chat#restoreFailedTurn"`,
+		`data-roleplay-persona-kind="character"`,
+		`data-roleplay-character-id="rpc_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"`,
+		`data-roleplay-contribution-kind="action_dialogue"`, `Restore and retry`,
+	} {
+		if !strings.Contains(bundle, required) {
+			t.Errorf("failed typed roleplay turn lacks %q: %s", required, bundle)
+		}
+	}
+}
+
 func TestChannelTranscriptComponentOwnsCursorAndPrependMode(t *testing.T) {
 	t.Parallel()
 	next := int64(31)
@@ -73,12 +133,52 @@ func TestChannelTranscriptComponentOwnsCursorAndPrependMode(t *testing.T) {
 	}
 }
 
+func TestNeutralChatTranscriptIsOneServerRenderedActionableState(t *testing.T) {
+	t.Parallel()
+	component := neutralChannelTranscriptComponent()
+	for _, required := range []string{
+		`data-recyclr-target="channel-transcript-messages"`,
+		`data-recyclr-target="channel-transcript-pagination"`,
+		"Start a new conversation",
+		"Sending your first message creates and selects a new conversation automatically.",
+	} {
+		if !strings.Contains(component.HTML.Bundle, required) {
+			t.Errorf("neutral transcript lacks %q: %s", required, component.HTML.Bundle)
+		}
+	}
+	if component.HasMore || component.NextOffset != nil {
+		t.Fatalf("neutral transcript exposed pagination: %+v", component)
+	}
+}
+
+func TestNeutralChatTranscriptHTTPRejectsInexactTransport(t *testing.T) {
+	t.Parallel()
+	server := &Server{}
+	for _, test := range []struct {
+		request *http.Request
+		status  int
+	}{
+		{httptest.NewRequest(http.MethodGet, "/v1/ui/chat/neutral", nil), http.StatusOK},
+		{httptest.NewRequest(http.MethodPost, "/v1/ui/chat/neutral", nil), http.StatusMethodNotAllowed},
+		{httptest.NewRequest(http.MethodGet, "/v1/ui/chat/neutral?unknown=1", nil), http.StatusBadRequest},
+	} {
+		response := httptest.NewRecorder()
+		server.handleChatNeutralTranscript(response, test.request)
+		if response.Code != test.status {
+			t.Errorf("method=%s url=%s status=%d want=%d body=%s",
+				test.request.Method, test.request.URL, response.Code, test.status, response.Body.String())
+		}
+	}
+}
+
 func TestChannelTranscriptComponentRejectsInvalidStoredPresentation(t *testing.T) {
 	t.Parallel()
 	wrongCursor := int64(9)
 	fixtures := []model.ChannelMessagePage{
 		{Messages: []model.ChannelMessage{{ID: 1, ChannelID: "other", Role: model.ChannelMessageRoleUser, Content: "wrong channel", CreatedAt: time.Now()}}},
 		{Messages: []model.ChannelMessage{{ID: 1, ChannelID: "channel-one", Role: "tool", Content: "wrong role", CreatedAt: time.Now()}}},
+		{Messages: []model.ChannelMessage{{ID: 1, ChannelID: "channel-one", Role: model.ChannelMessageRoleUser, SpeakerName: "Mira", Content: "wrong speaker", CreatedAt: time.Now()}}},
+		{Messages: []model.ChannelMessage{{ID: 1, ChannelID: "channel-one", Role: model.ChannelMessageRoleAssistant, SpeakerName: " Mira", Content: "wrong speaker", CreatedAt: time.Now()}}},
 		{Messages: []model.ChannelMessage{{ID: 2, ChannelID: "channel-one", Role: model.ChannelMessageRoleUser, Content: "later", CreatedAt: time.Now()}, {ID: 1, ChannelID: "channel-one", Role: model.ChannelMessageRoleUser, Content: "earlier", CreatedAt: time.Now()}}},
 		{Messages: []model.ChannelMessage{{ID: 1, ChannelID: "channel-one", Role: model.ChannelMessageRoleUser, Content: "cursor mismatch", CreatedAt: time.Now()}}, NextBeforeID: &wrongCursor, HasMore: true},
 	}

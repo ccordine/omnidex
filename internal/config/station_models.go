@@ -9,10 +9,10 @@ import (
 
 func loadStationModels(_ Config) map[station.ID]string {
 	keys := map[station.ID]string{
-		station.ConversationContextSelection:      "OMNI_CONVERSATION_CONTEXT_SELECTION_MODEL",
-		station.MemoryContextSelection:            "OMNI_MEMORY_CONTEXT_SELECTION_MODEL",
+		station.ContextSearchTerms:                "OMNI_CONTEXT_SEARCH_TERMS_MODEL",
+		station.ContextRelevance:                  "OMNI_CONTEXT_RELEVANCE_MODEL",
+		station.ContextMinification:               "OMNI_CONTEXT_MINIFICATION_MODEL",
 		station.ConversationObjectiveKind:         "OMNI_CONVERSATION_OBJECTIVE_KIND_MODEL",
-		station.ObjectiveAdvisory:                 "OMNI_OBJECTIVE_ADVISORY_MODEL",
 		station.ConversationResponse:              "OMNI_CONVERSATION_RESPONSE_MODEL",
 		station.RoleplayCanonExtraction:           "OMNI_ROLEPLAY_CANON_EXTRACTION_MODEL",
 		station.GroundedAnswer:                    "OMNI_GROUNDED_ANSWER_MODEL",

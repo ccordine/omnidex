@@ -113,6 +113,14 @@ func TestCheckedMigrationBundleFreezesExactProviderSplitSet(t *testing.T) {
 	roleplayResearchAuthorityCount := 0
 	roleplayTerminalSimulationPublicationCount := 0
 	delegatedDataSourceAuthorityCount := 0
+	roleplayCharacterLibraryCount := 0
+	ollamaModelDownloadAuthorityCount := 0
+	roleplayCharacterGenerationAuthorityCount := 0
+	roleplayVoicePreservationStationCount := 0
+	roleplayNarrativeContinuityStationCount := 0
+	contextSieveCutoverCount := 0
+	roleplayUserTurnAuthorityCount := 0
+	roleplayVoiceRetirementCount := 0
 	for _, entry := range bundle.entries {
 		if strings.HasPrefix(entry.name, "060_") {
 			got[entry.name]++
@@ -261,9 +269,33 @@ func TestCheckedMigrationBundleFreezesExactProviderSplitSet(t *testing.T) {
 		if entry.name == "121_delegated_data_source_authority.sql" {
 			delegatedDataSourceAuthorityCount++
 		}
+		if entry.name == "122_roleplay_character_library.sql" {
+			roleplayCharacterLibraryCount++
+		}
+		if entry.name == "123_ollama_model_download_authority.sql" {
+			ollamaModelDownloadAuthorityCount++
+		}
+		if entry.name == "124_roleplay_character_generation_authority.sql" {
+			roleplayCharacterGenerationAuthorityCount++
+		}
+		if entry.name == "125_roleplay_voice_preservation_station.sql" {
+			roleplayVoicePreservationStationCount++
+		}
+		if entry.name == "126_roleplay_narrative_continuity_station.sql" {
+			roleplayNarrativeContinuityStationCount++
+		}
+		if entry.name == contextSieveCutoverMigration {
+			contextSieveCutoverCount++
+		}
+		if entry.name == roleplayUserTurnAuthorityMigration {
+			roleplayUserTurnAuthorityCount++
+		}
+		if entry.name == "129_retire_roleplay_voice_rewrite.sql" {
+			roleplayVoiceRetirementCount++
+		}
 	}
-	if len(bundle.entries) != 172 || len(got) != len(want) {
-		t.Fatalf("checked migration counts total/provider=%d/%d want 172/%d",
+	if len(bundle.entries) != 183 || len(got) != len(want) {
+		t.Fatalf("checked migration counts total/provider=%d/%d want 183/%d",
 			len(bundle.entries), len(got), len(want))
 	}
 	for _, name := range want {
@@ -283,12 +315,20 @@ func TestCheckedMigrationBundleFreezesExactProviderSplitSet(t *testing.T) {
 	}
 	if databaseCognitionAuthorityCount != 1 || roleplayCanonAuthorityCount != 1 ||
 		roleplaySimulationAuthorityCount != 1 || roleplayResearchAuthorityCount != 1 ||
-		roleplayTerminalSimulationPublicationCount != 1 || delegatedDataSourceAuthorityCount != 1 {
+		roleplayTerminalSimulationPublicationCount != 1 || delegatedDataSourceAuthorityCount != 1 ||
+		roleplayCharacterLibraryCount != 1 || ollamaModelDownloadAuthorityCount != 1 ||
+		roleplayCharacterGenerationAuthorityCount != 1 || roleplayVoicePreservationStationCount != 1 ||
+		roleplayNarrativeContinuityStationCount != 1 || contextSieveCutoverCount != 1 ||
+		roleplayUserTurnAuthorityCount != 1 || roleplayVoiceRetirementCount != 1 {
 		t.Fatalf(
-			"checked database/roleplay/delegated authority migration counts=%d/%d/%d/%d/%d/%d want all one",
+			"checked database/roleplay/delegated/context authority migration counts=%d/%d/%d/%d/%d/%d/%d/%d/%d/%d/%d/%d/%d/%d want all one",
 			databaseCognitionAuthorityCount, roleplayCanonAuthorityCount,
 			roleplaySimulationAuthorityCount, roleplayResearchAuthorityCount,
 			roleplayTerminalSimulationPublicationCount, delegatedDataSourceAuthorityCount,
+			roleplayCharacterLibraryCount, ollamaModelDownloadAuthorityCount,
+			roleplayCharacterGenerationAuthorityCount, roleplayVoicePreservationStationCount,
+			roleplayNarrativeContinuityStationCount, contextSieveCutoverCount,
+			roleplayUserTurnAuthorityCount, roleplayVoiceRetirementCount,
 		)
 	}
 	if conversationCutoverCount != 1 {

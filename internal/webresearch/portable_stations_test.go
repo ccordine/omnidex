@@ -43,13 +43,13 @@ func TestPortableStationsExecuteFiveExactLeafJobs(t *testing.T) {
 		case assemblyline.WorkWebSearchTerms:
 			candidate = fmt.Sprintf(`{"schema":%q,"terms":["stable release"]}`, assemblyline.WebSearchTermsSchemaV1)
 		case assemblyline.WorkWebRelevance:
-			candidate = fmt.Sprintf(`{"schema":%q,"outcome":"selected","candidate_ids":["C31"]}`, assemblyline.WebRelevanceSchemaV1)
+			candidate = fmt.Sprintf(`{"schema":%q,"candidate_ids":["C31"]}`, assemblyline.WebRelevanceSchemaV1)
 		case assemblyline.WorkWebGroundedSynthesis:
 			candidate = fmt.Sprintf(`{"schema":%q,"paragraphs":[{"text":"Version 2 is current.","evidence_ids":["E31"]}]}`, assemblyline.WebGroundedSynthesisSchemaV1)
 		case assemblyline.WorkWebGroundedSynthesisCorrection:
 			candidate = `{"text":"Version 2 is current."}`
 		case assemblyline.WorkWebClaimEvidenceReview:
-			candidate = fmt.Sprintf(`{"schema":%q,"outcome":"none","paragraph_id":"","evidence_ids":[],"issue_kind":"","detail":""}`, assemblyline.WebClaimEvidenceReviewSchemaV1)
+			candidate = fmt.Sprintf(`{"schema":%q,"outcome":"none"}`, assemblyline.WebClaimEvidenceReviewSchemaV1)
 		default:
 			return assemblyline.PortableResult{}, fmt.Errorf("unexpected job %q", job.Kind)
 		}
@@ -127,7 +127,7 @@ func TestPortableStationsRejectInvalidResultWithoutFallback(t *testing.T) {
 		return assemblyline.PortableResult{
 			JobID: job.ID,
 			Candidate: fmt.Sprintf(
-				`{"schema":%q,"outcome":"selected","candidate_ids":["C99"]}`,
+				`{"schema":%q,"candidate_ids":["C99"]}`,
 				assemblyline.WebRelevanceSchemaV1,
 			),
 		}, nil

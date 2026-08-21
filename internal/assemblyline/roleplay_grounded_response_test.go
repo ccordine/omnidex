@@ -8,7 +8,7 @@ import (
 	"github.com/gryph/omnidex/internal/roleplay"
 )
 
-func TestRoleplayGroundedResponseReceivesStateAndEvidenceWithoutControlPlane(t *testing.T) {
+func TestRoleplayGroundedResponseReceivesOnlyIdentityMinifiedContextAndEvidence(t *testing.T) {
 	t.Parallel()
 	input := roleplayGroundedFixture()
 	job, err := NewRoleplayGroundedResponseJob(input)
@@ -24,13 +24,22 @@ func TestRoleplayGroundedResponseReceivesStateAndEvidenceWithoutControlPlane(t *
 		t.Fatalf("grounded roleplay input was not projected: %s", prompt)
 	}
 	assertExactObjectSchemaFields(t, schema, []string{"schema", "paragraphs"})
+	properties := schema["properties"].(map[string]any)
+	paragraphs := properties["paragraphs"].(map[string]any)
+	paragraph := paragraphs["items"].(map[string]any)
+	paragraphProperties := paragraph["properties"].(map[string]any)
+	textSchema := paragraphProperties["text"].(map[string]any)
+	if _, providerHostileBound := textSchema["maxLength"]; providerHostileBound {
+		t.Fatalf("roleplay response schema contains a provider-hostile grammar repetition: %#v", textSchema)
+	}
 	assertExactJSONFields(t, reflect.TypeOf(input), []string{
-		"exact_question", "fictional_narrative_state", "real_world_evidence",
+		"exact_question", "roleplay_identity", "roleplay_user_turn", "objective_context", "real_world_evidence",
 	})
 	lower := strings.ToLower(prompt)
 	for _, forbidden := range []string{
 		"/research", "external_command", "web_research", "resolver", "catalog", "tool schema",
 		"call a tool", "choose a tool", "capability toggle", "perform an operation",
+		"fictional_narrative_state", "unrelated crown archive", "meters", "inventory",
 	} {
 		if strings.Contains(lower, forbidden) {
 			t.Fatalf("model-visible prompt exposes %q: %s", forbidden, prompt)
@@ -56,21 +65,24 @@ func TestRoleplayGroundedResponseRejectsUnavailableAndModelAuthoredCitations(t *
 }
 
 func roleplayGroundedFixture() RoleplayGroundedResponseInput {
+	contextText := "Ada is answering from the observatory."
+	contextSource := "The current scene is the observatory."
 	return RoleplayGroundedResponseInput{
 		ExactQuestion: "What is Earth's orbital period?",
-		FictionalNarrativeState: roleplay.NarrativeSimulationProjection{
-			Schema: roleplay.NarrativeSimulationProjectionSchemaV1,
-			Scene: roleplay.NarrativeScene{
-				Title: "Observatory", Description: "A quiet dome beneath the stars.", ActiveCharacterName: "Ada",
-			},
-			Participants: []string{"Ada"},
-			Viewpoint: roleplay.NarrativePersona{
-				Name: "Ada", Summary: "A careful astronomer.", Voice: "Measured",
-				Traits: []string{"Curious"}, Goals: []string{"Explain clearly"},
-			},
-			Meters:       []roleplay.NarrativeMeter{{Name: "Focus", Minimum: 0, Maximum: 10, Value: 8}},
-			VisibleFacts: []string{"The observatory is open."},
+		RoleplayIdentity: RoleplayResponseIdentity{
+			CharacterName: "Ada", Summary: "A careful astronomer.", Voice: "Measured",
 		},
+		RoleplayUserTurn: RoleplayUserTurnProjection{
+			PersonaKind: roleplay.UserPersonaNarrator, PersonaName: roleplay.NarratorPersonaName,
+			ContributionKind: roleplay.UserContributionCommand,
+		},
+		Context: ObjectiveContext{Capsules: []ObjectiveContextCapsule{{
+			Sources: []ObjectiveContextSource{{
+				Namespace: "roleplay_scene", CandidateID: "CTX_1",
+				ContentSHA256: ExactObjectiveContextSHA(contextSource),
+			}},
+			Content: contextText, ContentSHA256: ExactObjectiveContextSHA(contextText),
+		}}},
 		RealWorldEvidence: []GroundedEvidenceCapsule{{
 			ID: "doc-1", Text: "Earth's orbital period is approximately 365.25 days.",
 		}},

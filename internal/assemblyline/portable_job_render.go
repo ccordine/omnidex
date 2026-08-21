@@ -117,20 +117,31 @@ func RenderPortableJob(job PortableJob) (string, map[string]any, error) {
 		}
 		schema, err := RepositoryGroundedCorrectionResponseSchema(input)
 		return prompt, schema, err
-	case WorkConversationContextSelection:
-		var input ConversationContextSelectionInput
+	case WorkContextSearchTerms:
+		var input ContextSearchTermsInput
 		if err := decodePortablePayload(job.Payload, &input); err != nil {
 			return "", nil, err
 		}
-		prompt, err := BuildConversationContextSelectionPrompt(input)
-		return prompt, ConversationContextSelectionResponseSchema(), err
-	case WorkMemoryContextSelection:
-		var input MemoryContextSelectionInput
+		prompt, err := BuildContextSearchTermsPrompt(input)
+		return prompt, ContextSearchTermsResponseSchema(), err
+	case WorkContextRelevance:
+		var input ContextRelevanceInput
 		if err := decodePortablePayload(job.Payload, &input); err != nil {
 			return "", nil, err
 		}
-		prompt, err := BuildMemoryContextSelectionPrompt(input)
-		return prompt, MemoryContextSelectionResponseSchema(), err
+		prompt, err := BuildContextRelevancePrompt(input)
+		if err != nil {
+			return "", nil, err
+		}
+		schema, err := ContextRelevanceResponseSchema(input)
+		return prompt, schema, err
+	case WorkContextMinification:
+		var input ContextMinificationInput
+		if err := decodePortablePayload(job.Payload, &input); err != nil {
+			return "", nil, err
+		}
+		prompt, err := BuildContextMinificationPrompt(input)
+		return prompt, ContextMinificationResponseSchema(), err
 	case WorkConversationObjectiveKind:
 		var input ConversationObjectiveKindInput
 		if err := decodePortablePayload(job.Payload, &input); err != nil {
@@ -401,8 +412,29 @@ func renderPortableResponseCorrection(input ResponseCorrectionInput) (string, ma
 		prompt, promptErr := buildApplicationJobSpecificationResponseCorrectionPrompt(input)
 		return prompt, schema, promptErr
 	}
-	instruction := "Return a JSON merge patch containing exactly one top-level field and changing exactly one invalid leaf. " +
-		"The retained response and its accepted fields are code-owned and unavailable. Resolve only this failure:\n" +
-		input.ValidationFailure
-	return instruction, schema, nil
+	if input.Original.Kind == WorkApplicationAcceptanceGroundingReview {
+		prompt, promptErr := buildApplicationAcceptanceGroundingResponseCorrectionPrompt(input)
+		return prompt, schema, promptErr
+	}
+	if input.RetainedCandidate != "" {
+		originalPrompt, _, promptErr := RenderPortableJob(input.Original)
+		if promptErr != nil {
+			return "", nil, promptErr
+		}
+		properties := schema["properties"].(map[string]any)
+		var target string
+		for field := range properties {
+			target = field
+		}
+		return strings.Join([]string{
+			"Return a JSON merge patch containing only the " + target + " field. Replace that one invalid semantic leaf while preserving every retained field.",
+			"ORIGINAL_SEMANTIC_QUESTION:\n" + originalPrompt,
+			"CURRENT_INVALID_RESPONSE:\n" + input.RetainedCandidate,
+			"EXACT_VALIDATION_DEFECT:\n" + input.ValidationFailure,
+		}, "\n\n"), schema, nil
+	}
+	return "", nil, fmt.Errorf(
+		"%s response correction cannot render without one exact retained candidate",
+		input.Original.Kind,
+	)
 }

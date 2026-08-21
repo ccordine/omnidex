@@ -10,10 +10,7 @@ import (
 
 func renderRoleplayCharacterRoster(state roleplaySimulationComponentState) (string, error) {
 	var body strings.Builder
-	body.WriteString(roleplaySectionStart("Character setup", "Create characters and revisioned sheets for this fictional world."))
-	body.WriteString(`<form data-action="submit->chat#createRoleplayCharacter" class="flex items-end gap-2 rounded-md border border-white/10 bg-zinc-900/40 p-3">` +
-		`<div class="min-w-0 flex-1">` + roleplayTextInput("name", "New character name", "", "text", true) + `</div>` +
-		roleplaySubmitButton("Create") + `</form>`)
+	body.WriteString(roleplaySectionStart("World cast", "Choose scene participation here. Select a character in the sidebar to edit their sheet, model, and research access."))
 	if len(state.Characters) == 0 {
 		body.WriteString(chatEmptyState("No characters are available in this world."))
 	}
@@ -21,12 +18,11 @@ func renderRoleplayCharacterRoster(state roleplaySimulationComponentState) (stri
 		body.WriteString(`<article class="rounded-md border border-white/10 bg-zinc-900/60 p-3">`)
 		body.WriteString(`<h5 class="text-sm font-semibold text-zinc-100">` + html.EscapeString(character.Name) + `</h5>`)
 		if state.CharacterHasPersona[character.ID] {
-			body.WriteString(`<p class="mt-2 text-[11px] text-emerald-200">Character sheet configured. Edit it in the paginated sheets below.</p>`)
+			body.WriteString(`<p class="mt-2 text-[11px] text-emerald-200">Character sheet configured.</p>`)
 			body.WriteString(renderRoleplaySceneDraftParticipantForm(state, character))
 		} else {
-			body.WriteString(renderRoleplayPersonaForm(character.ID, 0, roleplay.PersonaSheet{}))
+			body.WriteString(`<p class="mt-2 text-[11px] text-amber-200">Character sheet required before adding this character to a scene.</p>`)
 		}
-		body.WriteString(renderRoleplayResearchCapabilityForm(state, character))
 		body.WriteString(`</article>`)
 	}
 	pagination, err := renderRoleplayPagination(
@@ -71,68 +67,6 @@ func renderRoleplaySceneDraftParticipantForm(
 		`<input type="checkbox" name="selected"` + checked + `><span>` + html.EscapeString(label) + `</span></label>` +
 		`<span class="text-[10px] text-zinc-500">` + html.EscapeString(positionText) + `</span></div>` +
 		`<div class="mt-2">` + roleplaySubmitButton("Save scene selection") + `</div></form>`
-}
-
-func renderRoleplayResearchCapabilityForm(
-	state roleplaySimulationComponentState,
-	character roleplay.SimulationCharacterSummary,
-) string {
-	capability := state.CharacterCapabilities[character.ID]
-	checked := ""
-	if capability.WebResearch {
-		checked = " checked"
-	}
-	var syntax string
-	if capability.WebResearch {
-		exact := `/research "question"`
-		syntax = `<div class="mt-2 flex items-center justify-between gap-2"><code class="rounded border border-white/10 bg-zinc-950 px-2 py-1 text-[10px] text-violet-100">` +
-			html.EscapeString(exact) + `</code><button type="button" data-action="chat#useRoleplayCommand" data-roleplay-command="` +
-			html.EscapeString(exact) + `" class="rounded-md border border-white/10 px-2.5 py-1 text-[11px] font-semibold text-zinc-300 transition hover:border-violet-300/40">Place in composer</button></div>`
-	}
-	return `<form data-action="submit->chat#configureRoleplayResearch" data-character-id="` +
-		html.EscapeString(character.ID) + `" data-characters-offset="` + strconv.Itoa(state.Page.Characters) +
-		`" class="mt-3 rounded-md border border-white/10 bg-zinc-950/45 p-2.5">` +
-		`<div class="flex items-center justify-between gap-2"><label class="flex items-center gap-2 text-[11px] text-zinc-300">` +
-		`<input type="checkbox" name="enabled"` + checked + `><span>Allow web research</span></label>` +
-		roleplaySubmitButton("Save access") + `</div>` + syntax + `</form>`
-}
-
-func renderRoleplayPersonaSheets(state roleplaySimulationComponentState) (string, error) {
-	var body strings.Builder
-	body.WriteString(roleplaySectionStart("Character sheets", "Persona edits require the exact current revision."))
-	if len(state.Personas) == 0 {
-		body.WriteString(chatEmptyState("No character sheets are configured on this page."))
-	}
-	for _, persona := range state.Personas {
-		body.WriteString(`<article class="rounded-md border border-white/10 bg-zinc-900/60 p-3">`)
-		body.WriteString(`<div class="flex items-start justify-between gap-2"><div><h5 class="text-sm font-semibold text-zinc-100">` +
-			html.EscapeString(persona.Name) + `</h5></div><span class="rounded border border-white/10 px-2 py-1 text-[10px] text-zinc-400">revision ` +
-			strconv.FormatInt(persona.Projection.Revision, 10) + `</span></div>`)
-		body.WriteString(renderRoleplayPersonaForm(
-			persona.Projection.CharacterID, persona.Projection.Revision, persona.Projection.Sheet,
-		))
-		body.WriteString(`</article>`)
-	}
-	pagination, err := renderRoleplayPagination(
-		state, "personas", state.Page.Personas, len(state.Personas), state.PersonasMore,
-	)
-	if err != nil {
-		return "", err
-	}
-	body.WriteString(pagination)
-	body.WriteString(`</section>`)
-	return body.String(), nil
-}
-
-func renderRoleplayPersonaForm(characterID string, revision int64, sheet roleplay.PersonaSheet) string {
-	return `<form data-action="submit->chat#saveRoleplayPersona" data-character-id="` +
-		html.EscapeString(characterID) + `" class="mt-3 space-y-2">` +
-		`<input type="hidden" name="expected_revision" value="` + strconv.FormatInt(revision, 10) + `">` +
-		roleplayTextArea("summary", "Summary", sheet.Summary, true) +
-		roleplayTextInput("voice", "Voice", sheet.Voice, "text", false) +
-		roleplayTextArea("traits", "Traits, one per line", strings.Join(sheet.Traits, "\n"), false) +
-		roleplayTextArea("goals", "Goals, one per line", strings.Join(sheet.Goals, "\n"), false) +
-		roleplaySubmitButton("Save character sheet") + `</form>`
 }
 
 func renderRoleplayInventory(state roleplaySimulationComponentState) (string, error) {

@@ -104,3 +104,24 @@ func TestChannelMessageBoundsAreOwnedByTypedRole(t *testing.T) {
 		t.Fatal("oversized assistant response was accepted")
 	}
 }
+
+func TestChannelMessageSpeakerValidatesExactPresentationTextIndependentOfRole(t *testing.T) {
+	t.Parallel()
+	for _, fixture := range []struct {
+		role    ChannelMessageRole
+		speaker string
+		valid   bool
+	}{
+		{role: ChannelMessageRoleAssistant, speaker: "", valid: true},
+		{role: ChannelMessageRoleAssistant, speaker: "Mira", valid: true},
+		{role: ChannelMessageRoleUser, speaker: "", valid: true},
+		{role: ChannelMessageRoleUser, speaker: "Mira", valid: true},
+		{role: ChannelMessageRoleAssistant, speaker: " Mira", valid: false},
+		{role: ChannelMessageRoleAssistant, speaker: strings.Repeat("m", 257), valid: false},
+	} {
+		err := ValidateChannelMessageSpeaker(fixture.role, fixture.speaker)
+		if (err == nil) != fixture.valid {
+			t.Errorf("role=%q speaker=%q valid=%t error=%v", fixture.role, fixture.speaker, fixture.valid, err)
+		}
+	}
+}

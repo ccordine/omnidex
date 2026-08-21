@@ -1,7 +1,6 @@
 package assemblyline
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 )
@@ -109,7 +108,7 @@ func BuildDatabaseJoinPathSelectionPrompt(input DatabaseJoinPathSelectionInput) 
 	if err := input.validate(); err != nil {
 		return "", err
 	}
-	projection, err := json.Marshal(input)
+	projection, err := marshalObjectiveContextInputForModel(input, input.Context)
 	if err != nil {
 		return "", fmt.Errorf("encode database join-path projection: %w", err)
 	}

@@ -9,6 +9,7 @@ import {
   requireJobDetails,
   requiredMessage,
 } from "./chat_execution_contract";
+import { requireServerComponentBundle } from "./chat_component_api";
 import { t, tf } from "./i18n";
 import { debounce } from "./main_thread";
 import type { OmniPanel } from "./panel_routing";
@@ -20,6 +21,8 @@ type JobCompletion = {
   reject: (error: unknown) => void;
 };
 
+const authoritativeReconcileDelayMilliseconds = 750;
+
 export interface ChatExecutionHost {
   currentPanel(): OmniPanel;
   hasJobBadge(): boolean;
@@ -27,7 +30,7 @@ export interface ChatExecutionHost {
   setActivityLabel(label: string): void;
   setStatus(text: string, mode: StatusTone): void;
   renderProgressActivity(label: string): void;
-  renderJobState(details: unknown): Promise<void>;
+  renderJobState(bundle: string): Promise<void>;
   addEvent(type: string, details?: Record<string, unknown>, full?: unknown): void;
   loadJobs(options: { quiet?: boolean; strict?: boolean }): Promise<void>;
   loadGlobalActivity(options: { quiet?: boolean; strict?: boolean }): Promise<void>;
@@ -39,6 +42,7 @@ export class ChatExecutionCoordinator {
   private pending: JobCompletion | null = null;
   private refreshPromise: Promise<void> | null = null;
   private refreshRequested = false;
+  private authoritativeRefreshTimer: number | null = null;
   private lastSignature = "";
 
   private readonly scheduleJobsPanelRefresh = debounce(() => {
@@ -87,6 +91,7 @@ export class ChatExecutionCoordinator {
       if (this.pending?.jobID === jobID) {
         this.host.setActivityLabel(phaseLabel);
         this.host.renderProgressActivity(phaseLabel);
+        this.clearAuthoritativeRefresh();
       }
       this.scheduleCurrentJobRefresh(jobID);
     }
@@ -104,6 +109,7 @@ export class ChatExecutionCoordinator {
   }
 
   disconnect(): void {
+    this.clearAuthoritativeRefresh();
     if (!this.pending) return;
     const pending = this.pending;
     this.pending = null;
@@ -148,6 +154,7 @@ export class ChatExecutionCoordinator {
   private async reconcile(jobID: number): Promise<void> {
     const payload = await readJSON<Record<string, any>>(await fetch(`/v1/ui/chat/jobs/${jobID}`));
     const details = requireJobDetails(payload, jobID);
+    const jobStateBundle = requireServerComponentBundle(payload, `Job #${jobID} state`);
     const signature = JSON.stringify({
       status: details.job.status,
       result: details.job.result,
@@ -155,6 +162,7 @@ export class ChatExecutionCoordinator {
       steps: details.steps.map((step) => [step.id, step.action, step.status, step.generation]),
       generation: details.job.current_generation,
       progress: [details.progress.latest_context_id, details.progress.count],
+      jobStateBundle,
     });
     if (signature !== this.lastSignature) {
       const stepLabel = describeChatJobProgress(details);
@@ -166,7 +174,7 @@ export class ChatExecutionCoordinator {
       if (this.pending?.jobID === jobID) {
         this.host.renderProgressActivity(label);
       }
-      await this.host.renderJobState(details);
+      await this.host.renderJobState(jobStateBundle);
       this.lastSignature = signature;
     }
 
@@ -174,12 +182,30 @@ export class ChatExecutionCoordinator {
       this.finishCompleted(jobID);
     } else if (details.job.status === "failed" || details.job.status === "canceled") {
       this.finishFailed(jobID, details.job.status, details.job.error);
+    } else if (this.pending?.jobID === jobID) {
+      this.scheduleAuthoritativeRefresh(jobID);
     }
+  }
+
+  private scheduleAuthoritativeRefresh(jobID: number): void {
+    this.clearAuthoritativeRefresh();
+    this.authoritativeRefreshTimer = window.setTimeout(() => {
+      this.authoritativeRefreshTimer = null;
+      if (this.pending?.jobID !== jobID) return;
+      void this.refresh(jobID).catch((error) => this.failRefresh(jobID, error));
+    }, authoritativeReconcileDelayMilliseconds);
+  }
+
+  private clearAuthoritativeRefresh(): void {
+    if (this.authoritativeRefreshTimer === null) return;
+    window.clearTimeout(this.authoritativeRefreshTimer);
+    this.authoritativeRefreshTimer = null;
   }
 
   private finishCompleted(jobID: number): void {
     const pending = this.pending;
     if (!pending || pending.jobID !== jobID) return;
+    this.clearAuthoritativeRefresh();
     this.pending = null;
     this.host.setStatus(describeJobStatus("completed"), "ready");
     pending.resolve();
@@ -189,6 +215,7 @@ export class ChatExecutionCoordinator {
     const pending = this.pending;
     if (!pending || pending.jobID !== jobID) return;
     const message = requiredMessage(rawError, `Job #${jobID} entered ${status} without an error message.`);
+    this.clearAuthoritativeRefresh();
     this.pending = null;
     this.host.setStatus(describeJobStatus(status), "error");
     pending.reject(new Error(message));
@@ -198,6 +225,7 @@ export class ChatExecutionCoordinator {
     console.error(`Failed to reconcile job #${jobID}`, error);
     const pending = this.pending;
     if (pending?.jobID === jobID) {
+      this.clearAuthoritativeRefresh();
       this.pending = null;
       pending.reject(error);
       return;

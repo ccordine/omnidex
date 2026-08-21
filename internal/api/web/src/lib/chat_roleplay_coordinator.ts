@@ -1,7 +1,6 @@
 import {
-  createRoleplayCharacter,
   createRoleplayScene,
-  configureRoleplayResearch,
+  createRoleplayUserPersona,
   emptyRoleplayPage,
   fetchRoleplayComponent,
   registerRoleplayInteraction,
@@ -9,19 +8,16 @@ import {
   registerRoleplayMeter,
   setRoleplayMeter,
 	updateRoleplayScene,
+	updateRoleplayResponders,
 	writeRoleplaySceneDraftParticipant,
-  writeRoleplayPersona,
   type RoleplayComponentResponse,
   type RoleplayPageState,
 } from "./roleplay_api";
 import {
-  characterName,
   interactionDefinitionInput,
   itemDefinitionInput,
   meterDefinitionInput,
   meterValueInput,
-  personaInput,
-  researchCapabilityInput,
   requiredDataset,
 	requiredDatasetInteger,
 	sceneCreateInput,
@@ -29,6 +25,7 @@ import {
 	sceneUpdateInput,
 } from "./roleplay_form_input";
 import { HTTPResponseError } from "./api";
+import { pullOllamaModel } from "./ollama_model_api";
 import {
   pageFromRoleplayButton,
   roleplayErrorMessage,
@@ -93,16 +90,61 @@ export class ChatRoleplayCoordinator {
     this.host.focusComposer();
   }
 
-  async createCharacter(event: Event): Promise<void> {
-    await this.mutate(event, (form) => createRoleplayCharacter(this.requireChannel(), characterName(form)), "character_created");
+  async createUserPersona(name: string): Promise<string> {
+    const requestedChannel = this.requireChannel();
+    const generation = ++this.responseGeneration;
+    this.beginRequest();
+    try {
+      const component = await createRoleplayUserPersona(requestedChannel, name);
+      if (!this.isCurrentResponse(requestedChannel, generation)) {
+        throw new Error("The selected world changed while creating the identity.");
+      }
+      const characterID = component.composer_persona_character_id;
+      if (!characterID) throw new Error("Created identity response omitted its character authority.");
+      if (!await this.applyComponent(component, requestedChannel, generation)) {
+        throw new Error("Created identity was not applied to the selected world.");
+      }
+      this.host.setStatus("identity added", "ready");
+      this.host.addEvent("roleplay_user_persona_created", {
+        channel_id: requestedChannel,
+        character_id: characterID,
+      });
+      return characterID;
+    } catch (error) {
+      this.reportMutationFailure(error);
+      throw error;
+    } finally {
+      this.endRequest();
+    }
   }
 
-  async savePersona(event: Event): Promise<void> {
-    await this.mutate(event, (form) => writeRoleplayPersona(
-      this.requireChannel(),
-      requiredDataset(form, "characterId"),
-      personaInput(form),
-    ), "persona_saved");
+  async updateResponders(characterIDs: string[], expectedRevision: number): Promise<void> {
+    const requestedChannel = this.requireChannel();
+    const generation = ++this.responseGeneration;
+    this.beginRequest();
+    try {
+      const component = await updateRoleplayResponders(requestedChannel, {
+        expected_revision: expectedRevision,
+        character_ids: characterIDs,
+      });
+      if (!this.isCurrentResponse(requestedChannel, generation)) return;
+      if (!await this.applyComponent(component, requestedChannel, generation)) return;
+      this.host.setStatus("responders updated", "ready");
+      this.host.addEvent("roleplay_responders_updated", {
+        channel_id: requestedChannel,
+        character_ids: characterIDs,
+      });
+    } catch (error) {
+      if (error instanceof HTTPResponseError && error.status === 409 &&
+          this.isCurrentResponse(requestedChannel, generation)) {
+        this.reportMutationFailure(error);
+        await this.load(emptyRoleplayPage);
+        return;
+      }
+      if (this.isCurrentResponse(requestedChannel, generation)) this.reportMutationFailure(error);
+    } finally {
+      this.endRequest();
+    }
   }
 
 	async createScene(event: Event): Promise<void> {
@@ -140,12 +182,31 @@ export class ChatRoleplayCoordinator {
     ), "meter_saved");
   }
 
-  async configureResearch(event: Event): Promise<void> {
-    await this.mutate(event, (form) => configureRoleplayResearch(
-      this.requireChannel(),
-      requiredDataset(form, "characterId"),
-      researchCapabilityInput(form),
-    ), "research_access_saved");
+  async downloadModel(event: Event): Promise<void> {
+    event.preventDefault();
+    const form = event.currentTarget;
+    if (!(form instanceof HTMLFormElement)) throw new Error("Roleplay model download form is invalid.");
+    const control = form.elements.namedItem("model");
+    if (!(control instanceof HTMLInputElement)) throw new Error("Roleplay model download input is missing.");
+    const model = control.value.trim();
+    if (!model || model.length > 256 || !/^[A-Za-z0-9._:/@-]+$/.test(model)) {
+      this.host.setStatus("Enter a valid Ollama model tag.", "error");
+      control.focus();
+      return;
+    }
+    await withRoleplayFormFeedback(form, async () => {
+      try {
+        await pullOllamaModel(model);
+        control.value = "";
+        this.host.setStatus(`Downloading ${model}…`, "active");
+        this.host.addEvent("roleplay_model_download_queued", {
+          channel_id: this.requireChannel(),
+          model,
+        });
+      } catch (error) {
+        this.reportMutationFailure(error);
+      }
+    });
   }
 
   async registerInteraction(event: Event): Promise<void> {
@@ -234,6 +295,7 @@ export class ChatRoleplayCoordinator {
   }
 
 	private async refreshSlashCommands(): Promise<void> {
+		if (!this.configured) return;
 		try {
 			await this.host.refreshSlashCommands();
 		} catch (error) {

@@ -6,8 +6,6 @@ import (
 	"fmt"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
-	"github.com/gryph/omnidex/internal/specialistworkflow"
-	"github.com/gryph/omnidex/internal/websearch"
 )
 
 type Machine struct {
@@ -86,62 +84,11 @@ func (machine *Machine) Run(ctx context.Context) (Result, error) {
 		}
 		return cloned, runErr
 	}
-	attempts, err := specialistworkflow.NewAttemptBudget(attemptLimit)
-	if err != nil {
-		return fail(fmt.Errorf("%w: acquisition attempt budget: %w", ErrInvalidConfiguration, err))
-	}
-	candidates, initialUsable, err := machine.initialAcquisition(ctx, attempts, &result)
-	if err != nil {
+	if err := machine.gatherRelevantEvidence(ctx, &result); err != nil {
 		return fail(err)
 	}
-	var documents []websearch.Document
-	if initialUsable {
-		documents, err = machine.fetch(ctx, attempts, candidates, &result)
-		if err == nil {
-			result.Steps = append(result.Steps, StepDocumentsFetched)
-		} else if !errors.Is(err, websearch.ErrNoDocuments) || !isRecoverableEmptyFetch(result.Fetches[len(result.Fetches)-1]) {
-			return fail(err)
-		}
-	}
-	if len(documents) == 0 {
-		candidates, err = machine.resolveSearchTerms(ctx, attempts, &result)
-		if err != nil {
-			return fail(err)
-		}
-		documents, err = machine.fetch(ctx, attempts, candidates, &result)
-		if err != nil {
-			return fail(fmt.Errorf("%w after bounded search-term resolution: %w", ErrEvidenceUnavailable, err))
-		}
-		result.Steps = append(result.Steps, StepDocumentsFetched)
-	}
-	var evidence []Evidence
-	var projected []ProjectedEvidence
-	for {
-		evidence = evidenceFromDocuments(documents)
-		result.Evidence = cloneEvidence(evidence)
-		var relevant bool
-		projected, relevant, err = machine.selectAndProject(ctx, evidence, &result)
-		if err != nil {
-			return fail(err)
-		}
-		if relevant {
-			break
-		}
-		if result.SearchTermsCalls > 0 {
-			return fail(fmt.Errorf("%w after bounded relevance and search-term resolution", ErrEvidenceUnavailable))
-		}
-		candidates, err = machine.resolveSearchTerms(ctx, attempts, &result)
-		if err != nil {
-			return fail(err)
-		}
-		documents, err = machine.fetch(ctx, attempts, candidates, &result)
-		if err != nil {
-			return fail(fmt.Errorf("%w after bounded relevance search-term resolution: %w", ErrEvidenceUnavailable, err))
-		}
-		result.Steps = append(result.Steps, StepDocumentsFetched)
-	}
-	result.Projected = cloneProjection(projected)
-	result.Steps = append(result.Steps, StepEvidenceProjected)
+	evidence := result.Evidence
+	projected := result.Projected
 	if err := ctx.Err(); err != nil {
 		return fail(err)
 	}
@@ -169,21 +116,26 @@ func (machine *Machine) Run(ctx context.Context) (Result, error) {
 		return fail(err)
 	}
 	if issue != nil {
-		corrected, correctionErr := machine.correctSynthesis(ctx, artifact.Paragraphs, projected, *issue, &result)
+		corrected, changed, correctionErr := machine.correctSynthesis(ctx, artifact.Paragraphs, projected, *issue, &result)
 		if correctionErr != nil {
 			return fail(correctionErr)
 		}
-		artifact, err = buildArtifact(GroundedSynthesisDecision{Paragraphs: corrected}, projected, evidence, machine.config)
-		if err != nil {
-			return fail(err)
-		}
-		result.Steps = append(result.Steps, StepSynthesisCorrected)
-		secondIssue, reviewErr := machine.reviewSynthesis(ctx, artifact.Paragraphs, projected, &result)
-		if reviewErr != nil {
-			return fail(reviewErr)
-		}
-		if secondIssue != nil {
-			return fail(claimEvidenceIssueError(*secondIssue))
+		if !changed {
+			result.SynthesisCorrectionZeroDeltas++
+			result.Steps = append(result.Steps, StepSynthesisZeroDelta)
+		} else {
+			artifact, err = buildArtifact(GroundedSynthesisDecision{Paragraphs: corrected}, projected, evidence, machine.config)
+			if err != nil {
+				return fail(err)
+			}
+			result.Steps = append(result.Steps, StepSynthesisCorrected)
+			secondIssue, reviewErr := machine.reviewSynthesis(ctx, artifact.Paragraphs, projected, &result)
+			if reviewErr != nil {
+				return fail(reviewErr)
+			}
+			if secondIssue != nil {
+				return fail(claimEvidenceIssueError(*secondIssue))
+			}
 		}
 	}
 	if err := commitReviewedCompletion(ctx, &result, artifact); err != nil {

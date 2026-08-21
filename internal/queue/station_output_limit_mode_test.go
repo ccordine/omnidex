@@ -7,6 +7,7 @@ import (
 	"github.com/gryph/omnidex/internal/assemblyline"
 	"github.com/gryph/omnidex/internal/llm"
 	"github.com/gryph/omnidex/internal/model"
+	"github.com/gryph/omnidex/internal/roleplay"
 	"github.com/gryph/omnidex/internal/station"
 )
 
@@ -81,6 +82,51 @@ func TestStationGapOpeningRequiresExactOutputLimitAuthority(t *testing.T) {
 	rawExplicit.MaxOutputTokens = 1024
 	if _, err := validateStationGapOpening(rawExplicit); err == nil {
 		t.Fatal("fragment scope accepted an explicit output cap")
+	}
+}
+
+func TestStationGapContextFloorIsLowerOnlyForRoleplayRawProse(t *testing.T) {
+	t.Parallel()
+	authority := model.StepAttemptAuthority{
+		JobID: 3, Generation: 2, StepID: 7, Attempt: 1, WorkerID: "worker-a",
+	}
+	strictJob, err := assemblyline.NewConversationResponseJob(assemblyline.ConversationResponseInput{
+		Kind: assemblyline.ObjectiveKindAnswer, ExactInstruction: "Explain rain.",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := validateStationGapOpening(StationGapOpenRecord{
+		Authority: authority, Job: strictJob, Station: station.ConversationResponse,
+		ContextTokens: 4096, MaxOutputTokens: 4096,
+		OutputLimitMode: llm.ExactPreparedOutputLimitNatural,
+	}); err == nil {
+		t.Fatal("ordinary semantic station accepted the roleplay-only context floor")
+	}
+
+	roleplayJob, err := assemblyline.NewConversationResponseJob(assemblyline.ConversationResponseInput{
+		Kind: assemblyline.ObjectiveKindStory, ExactInstruction: "Close the gate.",
+		RoleplayIdentity: &assemblyline.RoleplayResponseIdentity{
+			CharacterName: "Mara", Voice: "Low and precise.", Summary: "An archivist.",
+		},
+		RoleplayUserTurn: &assemblyline.RoleplayUserTurnProjection{
+			PersonaKind: roleplay.UserPersonaNarrator, PersonaName: roleplay.NarratorPersonaName,
+			ContributionKind: roleplay.UserContributionDirection,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	opening, err := validateStationGapOpening(StationGapOpenRecord{
+		Authority: authority, Job: roleplayJob, Station: station.ConversationResponse,
+		ContextTokens: 4096, MaxOutputTokens: 4096,
+		OutputLimitMode: llm.ExactPreparedOutputLimitNatural,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if opening.ContextTokens != 4096 {
+		t.Fatalf("roleplay context=%d want 4096", opening.ContextTokens)
 	}
 }
 

@@ -80,36 +80,6 @@ tree diff; see [TARGET_TREE_PLANNING.md](TARGET_TREE_PLANNING.md).
 18. Only an isolated complete assembly that passes is written to the authoritative workspace.
 19. Code reconciles exact files and protected paths, repeats authoritative verification, and declares completion. The workload has no learned-skill mutation authority.
 
-## Passive grounded-objective advisory
-
-The only promoted passive-advice trigger is
-`post_grounding_objective_advisory`. It is optional and defaults to `off`. The
-initial consumer is the existing repository-grounded semantic review, after code
-has selected bounded evidence and produced the candidate answer. It is not part of
-application intake, workload planning, source generation, mutation routing, or
-completion.
-
-Code renders one hash-bound grounded projection and an explicitly configured model
-returns ordinary final text through the raw-text prepared protocol. The text becomes
-an in-memory artifact with `non_authoritative_advisory` authority. Code performs
-bounded span-preserving chunking, deterministic whitespace minification, and
-embedding relevance selection. At most one 1 KiB capsule may enter the review prompt,
-under the `ADVISORY — NON-AUTHORITATIVE` label and separate from cited evidence.
-Neither the repair-guidance nor repair-execution station receives the capsule.
-
-`off` constructs no advisory runtime and preserves the pre-advisory review bytes.
-`shadow` records artifacts, reduction, cost, and failure metrics but exposes zero
-downstream advisory bytes. `active` exposes only the one selected capsule. Provider,
-truncation, output-bound, and embedding failures are explicit in the in-memory report
-and server log; they never select another provider and the baseline grounded review
-continues without advice. No advisory text can create an objective, operation, tool
-call, path, mutation, evidence fact, accepted decision, Task Ledger entry, or
-completion transition.
-
-This is the behavior-first Gates A–C vertical. Advisory persistence and replay remain
-unimplemented until repeated paired evaluation demonstrates value without authority
-violations or baseline regressions.
-
 ## Semantic correction
 
 A decoded semantic response is retained in code and never replayed to another semantic model. A valid application-intent or job-specification candidate advances without a ceremonial model review. Structural correction is leaf-scoped and exists only after deterministic validation identifies the exact invalid field. Code performs the exact one-field merge and proves that exactly one leaf changed. A byte-identical correction is invalid, not malformed JSON and not a response-correction job. Repository requirement extraction remains a separate existing-repository boundary and must not be used as an application-intent fallback. Other semantic stations that permit structural correction receive only the exact validation failure and one schema-bound mutable field, never the full prior response or unrelated accepted fields.

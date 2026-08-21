@@ -73,8 +73,8 @@ func runDirectCodingSemanticCall[T any](
 			if !retainedCandidate {
 				break
 			}
-			attemptJob, err = assemblyline.NewResponseCorrectionJob(
-				job, trimForBudget(lastErr.Error(), 1200),
+			attemptJob, err = assemblyline.NewRetainedResponseCorrectionJob(
+				job, trimForBudget(lastErr.Error(), 1200), lastCandidate,
 			)
 			if err != nil {
 				return zero, failDirectCodingSemanticCall(runtime, modelName, subject, attempt-1, err)

@@ -81,10 +81,10 @@ func ReplayExactStation(
 	if err := client.RequireExactPreparedContract(); err != nil {
 		return result, fmt.Errorf("station replay provider: %w", err)
 	}
-	selection := llm.ProviderIdentitySelection{
-		Model: result.Model, NativeContextLimit: point.Gap.ContextTokens,
-	}
-	if err := selection.Validate(); err != nil {
+	selection, err := providerSelectionForPortableJob(
+		boundary.Job, result.Model, point.Gap.ContextTokens,
+	)
+	if err != nil {
 		return result, err
 	}
 	discoveryScope := fmt.Sprintf("station-replay:%d:%s", point.Call.ID, point.Gap.GapID)
@@ -135,9 +135,11 @@ func validateExactStationReplayPoint(
 		replaySHA256(modelInput) != call.ModelInputSHA256 {
 		return boundary, fmt.Errorf("station replay model input differs from its stored identity")
 	}
-	if err := validateExactStationStaticCall(boundary.Prompt, boundary.Schema, contract, llm.ProviderIdentitySelection{
-		Model: call.Model, NativeContextLimit: call.ContextTokens,
-	}); err != nil {
+	selection, err := providerSelectionForPortableJob(boundary.Job, call.Model, call.ContextTokens)
+	if err != nil {
+		return boundary, err
+	}
+	if err := validateExactStationStaticCall(boundary.Prompt, boundary.Schema, contract, selection); err != nil {
 		return boundary, fmt.Errorf("validate frozen station replay boundary: %w", err)
 	}
 	return boundary, nil

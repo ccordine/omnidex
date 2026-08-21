@@ -2,75 +2,35 @@ package worker
 
 import (
 	"context"
-	"crypto/sha256"
 	"encoding/json"
-	"fmt"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
+	"github.com/gryph/omnidex/internal/contextcompiler"
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/roleplay"
 )
 
-type roleplayContextProviderProbe struct {
-	candidateCalls int
-	memoryCalls    int
-	candidates     conversationCandidateSet
-}
-
-type scriptedRoleplayCanonStation struct {
-	calls int
-	input assemblyline.RoleplayCanonExtractionInput
-	facts []string
-}
-
-func (station *scriptedRoleplayCanonStation) ExtractCanon(
-	_ context.Context,
-	input assemblyline.RoleplayCanonExtractionInput,
-) (assemblyline.RoleplayCanonExtractionDecision, objectiveStationReceipt, error) {
-	station.calls++
-	station.input = input
-	return assemblyline.RoleplayCanonExtractionDecision{
-		Schema: assemblyline.RoleplayCanonExtractionSchemaV1,
-		Facts:  append([]string(nil), station.facts...),
-	}, objectiveStationReceipt{Calls: 1}, nil
-}
-
-func (provider *roleplayContextProviderProbe) Candidates(
-	context.Context,
-	model.Job,
-) (conversationCandidateSet, error) {
-	provider.candidateCalls++
-	return provider.candidates, nil
-}
-
-func (provider *roleplayContextProviderProbe) MemoryCandidates(
-	context.Context,
-	model.Job,
-) (objectiveMemoryContextCandidateSet, error) {
-	provider.memoryCalls++
-	return objectiveMemoryContextCandidateSet{}, nil
-}
-
-func TestRoleplayChannelBypassesObjectiveClassificationAndProjectsOnlyCharacterKnowledge(t *testing.T) {
+func TestRoleplayChannelUsesOnlySelectedCharacterScopedKnowledge(t *testing.T) {
 	viewpoint := model.RoleplayCharacterID("rpc_0123456789abcdef0123456789abcdef")
-	participant := model.RoleplayCharacterID("rpc_11111111111111111111111111111111")
 	preparationID := "rpt_22222222222222222222222222222222"
 	worldID := "rpw_11111111111111111111111111111111"
 	sceneID := "rps_33333333333333333333333333333333"
+	generationConfig := roleplayGenerationFixture("0123456789abcdef0123456789abcdef")
+	userTurn := narratorDirectionTurn("Continue the scene.")
 	projectedNarrative := roleplay.NarrativeSimulationProjection{
 		Schema:       roleplay.NarrativeSimulationProjectionSchemaV1,
-		Scene:        roleplay.NarrativeScene{Title: "Harbor", Description: "Rain falls over the quay.", ActiveCharacterName: "Bob"},
-		Participants: []string{"Bob", "Alice"},
+		Scene:        roleplay.NarrativeScene{Title: "Harbor", Description: "FULL_PROJECTION_SENTINEL remains in code-owned state.", ActiveCharacterName: "Bob"},
+		Participants: []string{"Bob"},
 		Viewpoint:    roleplay.NarrativePersona{Name: "Bob", Summary: "The harbor watchman.", Voice: "Quiet.", Traits: []string{}, Goals: []string{}},
 		Meters:       []roleplay.NarrativeMeter{}, Inventory: []roleplay.NarrativeInventoryItem{},
 		VisibleFacts: []string{"Rain began over the harbor."}, Memories: []string{}, RecentEvents: []string{},
 	}
 	narrativeAuthority := roleplay.SimulationNarrativeAuthority{
 		WorldID: worldID, SceneID: sceneID, SceneRevision: 1, ViewpointID: string(viewpoint),
-		ParticipantIDs: []string{string(viewpoint), string(participant)}, MeterKeys: []string{},
+		ParticipantIDs: []string{string(viewpoint)}, MeterKeys: []string{},
 		InventoryItemIDs: []string{}, CanonEventIDs: []string{}, MemoryIDs: []string{}, TransitionIDs: []string{},
 	}
 	fingerprint := roleplayNarrativeFixtureFingerprint(t, projectedNarrative, narrativeAuthority)
@@ -82,25 +42,47 @@ func TestRoleplayChannelBypassesObjectiveClassificationAndProjectsOnlyCharacterK
 		"roleplay_simulation_preparation_id": preparationID,
 		"roleplay_world_id":                  worldID, "roleplay_scene_id": sceneID,
 		"roleplay_scene_revision": 1, "roleplay_input_kind": roleplay.SimulationTurnProse,
-		"roleplay_participant_character_ids": []model.RoleplayCharacterID{viewpoint, participant},
+		"roleplay_participant_character_ids": []model.RoleplayCharacterID{viewpoint},
 		"roleplay_narrative_fingerprint":     fingerprint,
+		"roleplay_generation_config":         generationConfig,
+		"roleplay_responders": []roleplay.SimulationResponderRoute{{
+			Position: 0, CharacterID: string(viewpoint), GenerationConfig: generationConfig,
+			NarrativeFingerprint: fingerprint,
+		}},
+		"roleplay_user_turn": userTurn,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	provider := &roleplayContextProviderProbe{candidates: conversationCandidateSet{
-		Turns: []assemblyline.ConversationContextTurn{{
-			MessageID: 7, Role: assemblyline.ConversationContextUser,
-			Content: "The crown is hidden beneath the west gate.",
-		}},
-	}}
+	relevant, err := assemblyline.NewContextCandidateAuthority(
+		"fictional_canon", "CTX_1", "Rain began over the harbor before Bob's watch.",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	unrelated, err := assemblyline.NewContextCandidateAuthority(
+		"fictional_canon", "CTX_2", "UNRELATED_LIGHTHOUSE_SENTINEL is sealed in the eastern ledger.",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := &roleplayContextProviderProbe{
+		contextSet: contextcompiler.CandidateSet{
+			Optional: []assemblyline.ContextCandidateAuthority{relevant, unrelated},
+		},
+	}
+	contextSieve := &scriptedConversationContextStation{
+		terms:          []string{"harbor rain"},
+		relevantIDs:    []string{"CTX_1"},
+		minimalContext: "must not run for fitting selected context",
+	}
 	kind := answerObjectiveKindStation()
-	conversation := &scriptedObjectiveConversationStation{}
+	conversation := &scriptedObjectiveConversationStation{text: "Bob closes the west gate."}
 	projected := 0
 	canon := &scriptedRoleplayCanonStation{facts: []string{"Bob closed the west gate."}}
 	result, err := runObjectiveTurn(context.Background(), model.Job{
 		ID: 911, Pipeline: model.PipelineChat, Instruction: "Continue the scene.", Metadata: metadata,
-	}, provider, nil, kind, conversation, &scriptedObjectiveAnswerStation{}, objectiveWorkflows{
+	}, provider, contextSieve, kind, conversation, &scriptedObjectiveAnswerStation{}, objectiveWorkflows{
 		RoleplaySimulation: func(
 			_ context.Context,
 			gotPreparationID string,
@@ -114,9 +96,20 @@ func TestRoleplayChannelBypassesObjectiveClassificationAndProjectsOnlyCharacterK
 				PreparationID: preparationID, ChannelID: "story-chat", UserMessageID: 7,
 				WorldID: worldID, SceneID: sceneID, BaseSceneRevision: 1, SceneRevision: 1,
 				ActiveCharacterID: string(viewpoint), InputKind: roleplay.SimulationTurnProse,
-				ParticipantCharacterIDs: []string{string(viewpoint), string(participant)},
+				UserTurn:                userTurn,
+				ParticipantCharacterIDs: []string{string(viewpoint)},
+				GenerationConfig:        generationConfig,
 				NarrativeProjection:     projectedNarrative, NarrativeAuthority: narrativeAuthority,
 				NarrativeFingerprint: fingerprint, CreatedAt: time.Now().UTC(),
+				Responders: []roleplay.SimulationResponderAuthority{{
+					Position: 0, CharacterID: string(viewpoint), GenerationConfig: generationConfig,
+					NarrativeProjection: projectedNarrative, NarrativeAuthority: narrativeAuthority,
+					NarrativeFingerprint: fingerprint,
+				}},
+				ResponderRoutes: []roleplay.SimulationResponderRoute{{
+					Position: 0, CharacterID: string(viewpoint), GenerationConfig: generationConfig,
+					NarrativeFingerprint: fingerprint,
+				}},
 			}
 			return preparation, projectedNarrative, nil
 		},
@@ -125,36 +118,65 @@ func TestRoleplayChannelBypassesObjectiveClassificationAndProjectsOnlyCharacterK
 	if err != nil {
 		t.Fatal(err)
 	}
-	if kind.calls != 0 || provider.candidateCalls != 0 || provider.memoryCalls != 0 || projected != 1 || canon.calls != 1 {
+	if kind.calls != 0 || provider.contextCalls != 1 || projected != 1 ||
+		canon.calls != 1 {
 		t.Fatalf(
-			"classifier=%d transcript=%d memory=%d projections=%d canon=%d",
-			kind.calls, provider.candidateCalls, provider.memoryCalls, projected, canon.calls,
+			"classifier=%d context=%d projections=%d canon=%d",
+			kind.calls, provider.contextCalls,
+			projected, canon.calls,
 		)
 	}
 	if result.Kind != assemblyline.ObjectiveKindStory || !result.Complete {
 		t.Fatalf("result=%#v", result)
 	}
-	if conversation.input.RoleplayContext == nil ||
-		len(conversation.input.RoleplayContext.VisibleFacts) != 1 ||
-		conversation.input.RoleplayContext.Viewpoint.Name != "Bob" {
-		t.Fatalf("roleplay context=%#v", conversation.input.RoleplayContext)
+	if conversation.input.RoleplayIdentity == nil ||
+		conversation.input.RoleplayIdentity.CharacterName != "Bob" ||
+		conversation.input.RoleplayIdentity.Summary != "The harbor watchman." ||
+		conversation.input.RoleplayIdentity.Voice != "Quiet." {
+		t.Fatalf("roleplay identity=%#v", conversation.input.RoleplayIdentity)
 	}
-	if len(result.RoleplayFacts) != 1 || result.RoleplayFacts[0] != "Bob closed the west gate." {
-		t.Fatalf("persistable roleplay facts=%#v", result.RoleplayFacts)
+	if len(conversation.input.Context.Capsules) != 1 ||
+		conversation.input.Context.Capsules[0].Content != relevant.Content ||
+		len(conversation.input.Context.Capsules[0].Sources) != 1 ||
+		conversation.input.Context.Capsules[0].Sources[0].CandidateID != "CTX_1" {
+		t.Fatalf("selected roleplay context=%#v", conversation.input.Context)
 	}
-	if len(result.RoleplayKnowledgeCharacterIDs) != 1 ||
-		result.RoleplayKnowledgeCharacterIDs[0] != viewpoint {
-		t.Fatalf("roleplay knowledge recipients=%#v", result.RoleplayKnowledgeCharacterIDs)
+	if len(result.RoleplayResponses) != 1 ||
+		len(result.RoleplayResponses[0].Facts) != 1 ||
+		result.RoleplayResponses[0].Facts[0] != "Bob closed the west gate." {
+		t.Fatalf("persistable roleplay responses=%#v", result.RoleplayResponses)
 	}
-	if len(canon.input.KnownFacts) != 1 || canon.input.KnownFacts[0] != "Rain began over the harbor." {
-		t.Fatalf("canon extraction visible facts=%#v", canon.input.KnownFacts)
+	if canon.input.AssistantResponse != "Bob closes the west gate." ||
+		result.Output != "Bob closes the west gate." {
+		t.Fatalf("canon=%q output=%q", canon.input.AssistantResponse, result.Output)
+	}
+	if len(result.RoleplayResponses[0].KnowledgeCharacterIDs) != 1 ||
+		result.RoleplayResponses[0].KnowledgeCharacterIDs[0] != viewpoint {
+		t.Fatalf("roleplay knowledge recipients=%#v", result.RoleplayResponses[0].KnowledgeCharacterIDs)
+	}
+	if len(provider.terms) != 1 || provider.terms[0] != "harbor rain" ||
+		provider.authority.RoleplayWorldID != worldID ||
+		provider.authority.RoleplayViewpointCharacterID != viewpoint ||
+		provider.preparation == nil || provider.preparation.PreparationID != preparationID ||
+		provider.projection == nil || provider.projection.Viewpoint.Name != "Bob" {
+		t.Fatalf("fixed context retrieval terms=%#v preparation=%#v projection=%#v", provider.terms, provider.preparation, provider.projection)
+	}
+	if contextSieve.termCalls != 1 || contextSieve.relevanceCalls != 1 ||
+		contextSieve.minificationCalls != 0 || result.ModelCalls != 4 {
+		t.Fatalf(
+			"sieve_calls=(%d,%d,%d) total_model_calls=%d",
+			contextSieve.termCalls, contextSieve.relevanceCalls,
+			contextSieve.minificationCalls, result.ModelCalls,
+		)
 	}
 	raw, err := json.Marshal(conversation.input)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(raw), "crown") {
-		t.Fatalf("unknown canon leaked into station input: %s", raw)
+	for _, forbidden := range []string{"UNRELATED_LIGHTHOUSE_SENTINEL", "FULL_PROJECTION_SENTINEL"} {
+		if strings.Contains(string(raw), forbidden) {
+			t.Fatalf("irrelevant or character-unknown authority %q leaked into response input: %s", forbidden, raw)
+		}
 	}
 	conversationJob, err := assemblyline.NewConversationResponseJob(conversation.input)
 	if err != nil {
@@ -172,25 +194,26 @@ func TestRoleplayChannelBypassesObjectiveClassificationAndProjectsOnlyCharacterK
 	if err != nil {
 		t.Fatal(err)
 	}
-	for name, prompt := range map[string]string{"narrative": conversationPrompt, "canon": canonPrompt} {
-		if strings.Contains(prompt, "crown") {
-			t.Fatalf("%s rendered prompt leaked command or hidden canon: %s", name, prompt)
+	for promptName, prompt := range map[string]string{
+		"response": conversationPrompt,
+		"canon":    canonPrompt,
+	} {
+		for _, forbidden := range []string{"UNRELATED_LIGHTHOUSE_SENTINEL", "FULL_PROJECTION_SENTINEL"} {
+			if strings.Contains(prompt, forbidden) {
+				t.Fatalf("rendered %s prompt leaked %q: %s", promptName, forbidden, prompt)
+			}
+		}
+		if !strings.Contains(prompt, relevant.Content) ||
+			!strings.Contains(prompt, `"capsules":["Rain began over the harbor before Bob's watch."]`) ||
+			strings.Contains(prompt, "CTX_") {
+			t.Fatalf("rendered %s prompt lacks the exact compiled selection: %s", promptName, prompt)
 		}
 	}
 }
 
 func TestRoleplaySlashCommandBytesAreAbsentFromRenderedNarrativeAndCanonPrompts(t *testing.T) {
-	projection := roleplay.NarrativeSimulationProjection{
-		Schema: roleplay.NarrativeSimulationProjectionSchemaV1,
-		Scene: roleplay.NarrativeScene{
-			Title: "Workshop", Description: "A quiet workshop.", ActiveCharacterName: "Ari",
-		},
-		Participants: []string{"Ari"},
-		Viewpoint: roleplay.NarrativePersona{
-			Name: "Ari", Summary: "A careful artisan.", Voice: "Measured.", Traits: []string{}, Goals: []string{},
-		},
-		Meters: []roleplay.NarrativeMeter{}, Inventory: []roleplay.NarrativeInventoryItem{},
-		VisibleFacts: []string{}, Memories: []string{}, RecentEvents: []string{"A parcel is now present."},
+	identity := &assemblyline.RoleplayResponseIdentity{
+		CharacterName: "Ari", Summary: "A careful artisan.", Voice: "Measured.",
 	}
 	for _, fixture := range []struct {
 		kind roleplay.SimulationTurnInputKind
@@ -204,9 +227,14 @@ func TestRoleplaySlashCommandBytesAreAbsentFromRenderedNarrativeAndCanonPrompts(
 			t.Fatal(err)
 		}
 		inputs := []assemblyline.PortableJob{}
+		userTurn := assemblyline.RoleplayUserTurnProjection{
+			PersonaKind: roleplay.UserPersonaNarrator, PersonaName: roleplay.NarratorPersonaName,
+			ContributionKind: roleplay.UserContributionCommand,
+		}
 		conversationJob, err := assemblyline.NewConversationResponseJob(assemblyline.ConversationResponseInput{
 			Kind: assemblyline.ObjectiveKindStory, ExactInstruction: visible,
-			RoleplayContext: &projection,
+			Context:          assemblyline.ObjectiveContext{Capsules: []assemblyline.ObjectiveContextCapsule{}},
+			RoleplayIdentity: identity, RoleplayUserTurn: &userTurn,
 		})
 		if err != nil {
 			t.Fatal(err)
@@ -214,7 +242,8 @@ func TestRoleplaySlashCommandBytesAreAbsentFromRenderedNarrativeAndCanonPrompts(
 		inputs = append(inputs, conversationJob)
 		canonJob, err := assemblyline.NewRoleplayCanonExtractionJob(assemblyline.RoleplayCanonExtractionInput{
 			ExactInstruction: visible, AssistantResponse: "Ari acknowledges the settled scene.",
-			KnownFacts: []string{},
+			RespondingCharacterName: "Ari", UserTurn: userTurn,
+			Context: assemblyline.ObjectiveContext{Capsules: []assemblyline.ObjectiveContextCapsule{}},
 		})
 		if err != nil {
 			t.Fatal(err)
@@ -233,31 +262,13 @@ func TestRoleplaySlashCommandBytesAreAbsentFromRenderedNarrativeAndCanonPrompts(
 	}
 }
 
-func roleplayNarrativeFixtureFingerprint(
-	t *testing.T,
-	projection roleplay.NarrativeSimulationProjection,
-	authority roleplay.SimulationNarrativeAuthority,
-) string {
-	t.Helper()
-	authority.Fingerprint = ""
-	payload, err := json.Marshal(struct {
-		Content   roleplay.NarrativeSimulationProjection `json:"content"`
-		Authority roleplay.SimulationNarrativeAuthority  `json:"authority"`
-	}{Content: projection, Authority: authority})
-	if err != nil {
-		t.Fatal(err)
-	}
-	digest := sha256.Sum256(payload)
-	return fmt.Sprintf("%x", digest[:])
-}
-
 func TestRoleplayChannelFailsBeforeInferenceWithoutPreparedSimulation(t *testing.T) {
 	metadata := json.RawMessage(`{"channel_id":"story-chat","channel_mode":"roleplay","roleplay_viewpoint_character_id":"rpc_0123456789abcdef0123456789abcdef"}`)
 	kind := answerObjectiveKindStation()
 	conversation := &scriptedObjectiveConversationStation{}
 	_, err := runObjectiveTurn(context.Background(), model.Job{
 		ID: 912, Pipeline: model.PipelineChat, Instruction: "Continue.", Metadata: metadata,
-	}, &roleplayContextProviderProbe{}, nil, kind, conversation,
+	}, &roleplayContextProviderProbe{}, emptyContextSieveStation(), kind, conversation,
 		&scriptedObjectiveAnswerStation{}, objectiveWorkflows{})
 	if err == nil || !strings.Contains(err.Error(), "simulation preparation") {
 		t.Fatalf("error=%v", err)

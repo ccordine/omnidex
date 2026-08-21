@@ -50,11 +50,14 @@ func TestKnownArtifactTruthCorrectionChangesOnlyTruthLeaf(t *testing.T) {
 		kinds[1] != assemblyline.WorkResponseCorrection {
 		t.Fatalf("calls=%v prompts=%d", kinds, len(prompts))
 	}
-	if strings.Contains(prompts[1], input.RequirementQuote) {
-		t.Fatalf("correction replayed retained quote: %s", prompts[1])
-	}
-	if !strings.Contains(prompts[1], "delete_file") {
-		t.Fatalf("correction omitted exact validation failure: %s", prompts[1])
+	for _, required := range []string{
+		"ORIGINAL_SEMANTIC_QUESTION:", input.RequirementQuote,
+		"CURRENT_INVALID_RESPONSE:", `"truth":"delete_file"`,
+		"EXACT_VALIDATION_DEFECT:", "unsupported",
+	} {
+		if !strings.Contains(prompts[1], required) {
+			t.Fatalf("correction omitted retained one-leaf authority %q: %s", required, prompts[1])
+		}
 	}
 }
 

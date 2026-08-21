@@ -15,7 +15,7 @@ import (
 func TestRoleplayChannelCreateEndpointAtomicallyBootstrapsPersistedAuthority(t *testing.T) {
 	pool := openIsolatedAPIMigrationPool(t)
 	repository := queue.New(pool)
-	if err := repository.EnsureSchema(t.Context(), loadAPITestMigrationBundleThroughPrefix(t, "117")); err != nil {
+	if err := repository.EnsureSchema(t.Context(), loadAPITestMigrationBundle(t)); err != nil {
 		t.Fatal(err)
 	}
 	server := NewServer(nil, nil)

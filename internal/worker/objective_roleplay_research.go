@@ -10,21 +10,15 @@ import (
 	"github.com/gryph/omnidex/internal/assemblyline"
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/roleplay"
+	"github.com/gryph/omnidex/internal/station"
 	"github.com/gryph/omnidex/internal/webresearch"
-	"github.com/gryph/omnidex/internal/websearch"
 )
 
 const (
-	maxObjectiveRoleplayResearchDocuments      = 2
 	maxObjectiveRoleplayResearchParagraphs     = 4
 	maxObjectiveRoleplayResearchParagraphBytes = 2 * 1024
+	objectiveRoleplayResearchModelCalls        = 3
 )
-
-type objectiveRoleplayResearchAcquisition interface {
-	Limits() websearch.AcquisitionLimits
-	Discover(context.Context, websearch.QueryRequest) (websearch.CandidateReport, error)
-	Fetch(context.Context, websearch.FetchRequest) (websearch.DocumentReport, error)
-}
 
 func (r *nativeRuntimeV3) acquireObjectiveRoleplayResearch(
 	ctx context.Context,
@@ -52,8 +46,16 @@ func (r *nativeRuntimeV3) acquireObjectiveRoleplayResearch(
 	if err != nil {
 		return objectiveRoleplayResearchAnswer{}, err
 	}
+	identityGuard := &webModelIdentityGuard{}
+	stations, err := newRoutedWebEvidenceStations(func(id station.ID) webresearch.PortableRuntime {
+		return runtimeWebPortableRuntime(r, id, identityGuard)
+	})
+	if err != nil {
+		return objectiveRoleplayResearchAnswer{}, err
+	}
 	return resolveObjectiveRoleplayResearch(
 		ctx, authority, research, narrative, r.svc.webSearch,
+		stations.terms, stations.relevance,
 		portableObjectiveRoleplayGroundedStation{runtime: r},
 	)
 }
@@ -63,12 +65,14 @@ func resolveObjectiveRoleplayResearch(
 	authority turnAuthority,
 	research roleplay.ResearchTurnAuthority,
 	narrative roleplay.NarrativeSimulationProjection,
-	acquisition objectiveRoleplayResearchAcquisition,
+	acquisition webresearch.Acquisition,
+	terms webresearch.SearchTermsStation,
+	relevance webresearch.RelevanceStation,
 	response objectiveRoleplayGroundedStation,
 ) (objectiveRoleplayResearchAnswer, error) {
-	if ctx == nil || acquisition == nil || response == nil {
+	if ctx == nil || acquisition == nil || terms == nil || relevance == nil || response == nil {
 		return objectiveRoleplayResearchAnswer{}, fmt.Errorf(
-			"roleplay research requires context, acquisition, and one response station",
+			"roleplay research requires context, code-owned acquisition, search terms, relevance, and one response station",
 		)
 	}
 	if err := ctx.Err(); err != nil {
@@ -80,15 +84,27 @@ func resolveObjectiveRoleplayResearch(
 	if err := roleplay.ValidateResearchNarrativeProjection(narrative); err != nil {
 		return objectiveRoleplayResearchAnswer{}, err
 	}
-	documents, err := acquireObjectiveRoleplayResearchDocuments(ctx, acquisition, research.Question)
+	gathered, err := webresearch.GatherRelevantEvidence(
+		ctx,
+		webresearch.EvidenceRequest{
+			ID:       webresearch.ObjectiveID(objectiveTurnID(authority, assemblyline.ObjectiveKindExternalAnswer)),
+			Question: research.Question, Context: assemblyline.CloneObjectiveContext(authority.Context),
+			// An empty initial query intentionally requires the bounded terms-only
+			// station before code invokes fixed acquisition providers.
+			InitialQuery: "",
+		},
+		objectiveWebEvidenceConfig(), acquisition, terms, relevance,
+	)
 	if err != nil {
 		return objectiveRoleplayResearchAnswer{}, err
 	}
-	webEvidence, err := webresearch.EvidenceFromDocuments(documents)
-	if err != nil {
-		return objectiveRoleplayResearchAnswer{}, err
+	if gathered.SearchTermsCalls != 1 || gathered.RelevanceCalls != 1 {
+		return objectiveRoleplayResearchAnswer{}, fmt.Errorf(
+			"roleplay research evidence sieve requires one search-term and one relevance call; received %d and %d",
+			gathered.SearchTermsCalls, gathered.RelevanceCalls,
+		)
 	}
-	projected, err := projectObjectiveRoleplayResearchEvidence(webEvidence)
+	projected, err := projectObjectiveRoleplayResearchEvidence(gathered.Evidence, gathered.Projected)
 	if err != nil {
 		return objectiveRoleplayResearchAnswer{}, err
 	}
@@ -97,9 +113,18 @@ func resolveObjectiveRoleplayResearch(
 		capsules[index] = item.Capsule
 	}
 	input := assemblyline.RoleplayGroundedResponseInput{
-		ExactQuestion:           research.Question,
-		FictionalNarrativeState: roleplay.CloneResearchNarrativeProjection(narrative),
-		RealWorldEvidence:       capsules,
+		ExactQuestion: research.Question,
+		RoleplayIdentity: assemblyline.RoleplayResponseIdentity{
+			CharacterName: narrative.Viewpoint.Name,
+			Summary:       narrative.Viewpoint.Summary,
+			Voice:         narrative.Viewpoint.Voice,
+		},
+		RoleplayUserTurn: assemblyline.RoleplayUserTurnProjection{
+			PersonaKind: roleplay.UserPersonaNarrator, PersonaName: roleplay.NarratorPersonaName,
+			ContributionKind: roleplay.UserContributionCommand,
+		},
+		Context:           assemblyline.CloneObjectiveContext(authority.Context),
+		RealWorldEvidence: capsules,
 	}
 	decision, receipt, err := response.RespondGrounded(ctx, input)
 	if err != nil {
@@ -121,7 +146,7 @@ func resolveObjectiveRoleplayResearch(
 		}
 	}
 	artifact, err := webresearch.BuildGroundedCompletionArtifact(
-		paragraphs, webEvidence,
+		paragraphs, gathered.Evidence,
 		maxObjectiveRoleplayResearchParagraphs,
 		maxObjectiveRoleplayResearchParagraphBytes,
 	)
@@ -140,7 +165,8 @@ func resolveObjectiveRoleplayResearch(
 		Research: research, Text: strings.Join(plain, "\n\n"),
 		Rendered: artifact.Rendered, RenderedSHA256: artifact.SHA256,
 		Paragraphs: cloneWebParagraphs(artifact.Paragraphs), Evidence: selected,
-		EvidenceIDs: ids, ModelCalls: 1,
+		EvidenceIDs: ids,
+		ModelCalls:  gathered.SearchTermsCalls + gathered.RelevanceCalls + receipt.Calls,
 	}, nil
 }
 
@@ -166,69 +192,22 @@ func validateObjectiveRoleplayResearchTurn(
 	return nil
 }
 
-func acquireObjectiveRoleplayResearchDocuments(
-	ctx context.Context,
-	acquisition objectiveRoleplayResearchAcquisition,
-	question string,
-) ([]websearch.Document, error) {
-	limits := acquisition.Limits()
-	if limits.MaxDocuments < 1 || limits.MaxDocuments > 32 {
-		return nil, fmt.Errorf("roleplay research acquisition has invalid document limits")
-	}
-	report, err := acquisition.Discover(ctx, websearch.QueryRequest{Query: question})
-	if err != nil {
-		return nil, fmt.Errorf("roleplay research discovery: %w", err)
-	}
-	if report.Query != question || len(report.Candidates) == 0 {
-		return nil, fmt.Errorf("roleplay research discovery returned no exact-query candidates")
-	}
-	count := min(maxObjectiveRoleplayResearchDocuments, limits.MaxDocuments, len(report.Candidates))
-	selected := make([]websearch.CandidateID, count)
-	selectedSet := make(map[websearch.CandidateID]struct{}, count)
-	for index := range count {
-		candidate := report.Candidates[index]
-		if err := websearch.ValidateCandidate(candidate); err != nil {
-			return nil, fmt.Errorf("roleplay research candidate %d: %w", index, err)
-		}
-		if _, duplicate := selectedSet[candidate.ID]; duplicate {
-			return nil, fmt.Errorf("roleplay research discovery duplicated candidate %q", candidate.ID)
-		}
-		selected[index] = candidate.ID
-		selectedSet[candidate.ID] = struct{}{}
-	}
-	fetched, err := acquisition.Fetch(ctx, websearch.FetchRequest{
-		Candidates:   append([]websearch.Candidate(nil), report.Candidates...),
-		CandidateIDs: selected,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("roleplay research fetch: %w", err)
-	}
-	if len(fetched.Documents) == 0 || len(fetched.Documents) > count {
-		return nil, fmt.Errorf("roleplay research fetch returned an invalid document count")
-	}
-	seen := make(map[websearch.CandidateID]struct{}, len(fetched.Documents))
-	for index, document := range fetched.Documents {
-		if _, allowed := selectedSet[document.CandidateID]; !allowed {
-			return nil, fmt.Errorf("roleplay research document %d was not deterministically selected", index)
-		}
-		if _, duplicate := seen[document.CandidateID]; duplicate {
-			return nil, fmt.Errorf("roleplay research fetch duplicated candidate %q", document.CandidateID)
-		}
-		if err := websearch.ValidateDocument(document); err != nil {
-			return nil, fmt.Errorf("roleplay research document %d: %w", index, err)
-		}
-		seen[document.CandidateID] = struct{}{}
-	}
-	return append([]websearch.Document(nil), fetched.Documents...), nil
-}
-
 func projectObjectiveRoleplayResearchEvidence(
 	evidence []webresearch.Evidence,
+	projection []webresearch.ProjectedEvidence,
 ) ([]objectiveEvidence, error) {
-	projected := make([]objectiveEvidence, len(evidence))
-	for index, item := range evidence {
-		text, err := boundedObjectiveEvidenceText(
-			maxObjectiveEvidenceTextBytes, item.Title, item.Snippet, item.Content,
+	byID := make(map[webresearch.EvidenceID]webresearch.Evidence, len(evidence))
+	for _, item := range evidence {
+		byID[item.ID] = item
+	}
+	projected := make([]objectiveEvidence, len(projection))
+	for index, bounded := range projection {
+		item, exists := byID[bounded.EvidenceID]
+		if !exists || item.CandidateID != bounded.CandidateID {
+			return nil, fmt.Errorf("roleplay research bounded evidence lost exact acquisition authority")
+		}
+		text, capsuleTruncated, err := boundedObjectiveEvidenceText(
+			maxObjectiveEvidenceTextBytes, bounded.Title, bounded.Snippet, bounded.Content,
 		)
 		if err != nil {
 			return nil, err
@@ -241,7 +220,7 @@ func projectObjectiveRoleplayResearchEvidence(
 		}
 		projected[index].SourceSHA256 = item.ContentSHA256
 		projected[index].ObservedAt = item.ObservedAt
-		projected[index].Truncated = item.Truncated
+		projected[index].Truncated = item.Truncated || bounded.Truncated || capsuleTruncated
 	}
 	return projected, nil
 }

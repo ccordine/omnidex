@@ -17,7 +17,7 @@ function createFixture() {
     root.append(button);
   }
   const renderPanel = vi.fn(async () => undefined);
-  const loadPanelData = vi.fn();
+  const loadPanelData = vi.fn(async () => undefined);
   const pushRoute = vi.fn();
   const addEvent = vi.fn();
   const reportError = vi.fn();

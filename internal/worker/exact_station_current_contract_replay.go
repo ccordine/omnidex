@@ -49,6 +49,9 @@ func replayCurrentPortableStation(
 	if err := ctx.Err(); err != nil {
 		return result, err
 	}
+	if err := rejectRetiredStationReplayJob(job); err != nil {
+		return result, err
+	}
 	gap, contract, err := exactConvergenceGap(point, job)
 	if err != nil {
 		return result, err
@@ -57,9 +60,9 @@ func replayCurrentPortableStation(
 	if err != nil {
 		return result, fmt.Errorf("render current-contract station schema: %w", err)
 	}
-	selection := llm.ProviderIdentitySelection{
-		Model:              result.Model,
-		NativeContextLimit: gap.ContextTokens,
+	selection, err := providerSelectionForPortableJob(job, result.Model, gap.ContextTokens)
+	if err != nil {
+		return result, err
 	}
 	if err := validateExactStationStaticCall(gap.Prompt, schema, contract, selection); err != nil {
 		return result, err

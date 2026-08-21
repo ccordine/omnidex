@@ -10,6 +10,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/gryph/omnidex/internal/modelref"
 )
 
 type Client struct {
@@ -139,9 +141,8 @@ func newClient(
 }
 
 func (c *Client) PullModel(ctx context.Context, model string) error {
-	model = strings.TrimSpace(model)
-	if model == "" {
-		return fmt.Errorf("model is required")
+	if err := modelref.ValidateOllamaName(model); err != nil {
+		return err
 	}
 	payload, err := json.Marshal(pullModelRequest{
 		Name:   model,
@@ -182,9 +183,8 @@ func (c *Client) postJSON(ctx context.Context, endpoint string, payload []byte) 
 }
 
 func (c *Client) DeleteModel(ctx context.Context, model string) error {
-	model = strings.TrimSpace(model)
-	if model == "" {
-		return fmt.Errorf("model name is required")
+	if err := modelref.ValidateOllamaName(model); err != nil {
+		return err
 	}
 	payload, err := json.Marshal(deleteModelRequest{Name: model, Model: model})
 	if err != nil {

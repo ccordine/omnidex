@@ -44,12 +44,25 @@ func TestWebGroundedSynthesisCorrectionReturnsOneExactBoundParagraph(t *testing.
 			t.Fatalf("prompt lost retained correction input %s: %q", exact, prompt)
 		}
 	}
+	for _, contract := range []string{
+		"return its exact text unchanged",
+		"exact zero delta is a valid semantic result",
+		"Never write an opaque evidence ID",
+	} {
+		if !strings.Contains(prompt, contract) {
+			t.Fatalf("prompt lost zero-delta correction contract %q: %q", contract, prompt)
+		}
+	}
 	if schema["additionalProperties"] != false {
 		t.Fatalf("correction schema is open: %#v", schema)
 	}
 	properties, ok := schema["properties"].(map[string]any)
 	if !ok || len(properties) != 1 || properties["text"] == nil {
 		t.Fatalf("correction output is not one text leaf: %#v", schema)
+	}
+	textSchema := properties["text"].(map[string]any)
+	if _, providerHostileBound := textSchema["maxLength"]; providerHostileBound {
+		t.Fatalf("web synthesis correction schema contains a provider-hostile grammar repetition: %#v", textSchema)
 	}
 	raw := `{"text":"Version 2 is current."}`
 	decision, err := DecodeWebGroundedSynthesisCorrectionDecision(input, raw)
@@ -61,11 +74,56 @@ func TestWebGroundedSynthesisCorrectionReturnsOneExactBoundParagraph(t *testing.
 	}
 }
 
-func TestWebGroundedSynthesisCorrectionRejectsUnboundOrNoopResults(t *testing.T) {
+func TestWebGroundedSynthesisCorrectionAcceptsExactZeroDelta(t *testing.T) {
+	input := webGroundedSynthesisCorrectionFixture()
+	decision, err := DecodeWebGroundedSynthesisCorrectionDecision(input, `{"text":"Version 3 is current."}`)
+	if err != nil || decision.Text != input.Paragraphs[0].Text {
+		t.Fatalf("zero-delta decision=%+v error=%v", decision, err)
+	}
+}
+
+func TestWebGroundedSynthesisCorrectionProjectsZeroDeltaContractForUnrelatedFixtures(t *testing.T) {
+	fixtures := []struct {
+		question string
+		text     string
+		evidence string
+	}{
+		{question: "When does the museum open?", text: "The museum opens at nine.", evidence: "The doors open at 9:00."},
+		{question: "What temperature melts the alloy?", text: "The alloy melts at 600 degrees.", evidence: "Melting point: 600 degrees."},
+	}
+	for index, fixture := range fixtures {
+		input := WebGroundedSynthesisCorrectionInput{
+			ExactQuestion: fixture.question,
+			Paragraphs: []WebReviewParagraph{{
+				ParagraphID: "P1", Text: fixture.text, EvidenceIDs: []string{"E1"},
+			}},
+			Issue: WebClaimEvidenceReviewDecision{
+				Schema: WebClaimEvidenceReviewSchemaV1, Outcome: WebClaimEvidenceReviewIssue,
+				ParagraphID: "P1", EvidenceIDs: []string{"E1"},
+				IssueKind: WebClaimEvidenceInsufficientSupport, Detail: "The claim lacks support.",
+			},
+			Evidence:          []WebGroundedEvidence{{EvidenceID: "E1", Content: fixture.evidence}},
+			MaxParagraphBytes: 500,
+		}
+		prompt, err := BuildWebGroundedSynthesisCorrectionPrompt(input)
+		if err != nil {
+			t.Fatalf("fixture %d prompt: %v", index, err)
+		}
+		if !strings.Contains(prompt, "exact zero delta is a valid semantic result") {
+			t.Fatalf("fixture %d prompt lost zero-delta authority: %q", index, prompt)
+		}
+		decision, err := DecodeWebGroundedSynthesisCorrectionDecision(input, `{"text":"`+fixture.text+`"}`)
+		if err != nil || decision.Text != fixture.text {
+			t.Fatalf("fixture %d zero delta=%+v error=%v", index, decision, err)
+		}
+	}
+}
+
+func TestWebGroundedSynthesisCorrectionRejectsUnboundResults(t *testing.T) {
 	input := webGroundedSynthesisCorrectionFixture()
 	tests := map[string]string{
-		"no-op":           `{"text":"Version 3 is current."}`,
 		"citation syntax": `{"text":"Version 2 is current. [1]"}`,
+		"embedded ID":     `{"text":"Version 2 is current according to E31."}`,
 		"null text":       `{"text":null}`,
 		"paragraph ID":    `{"text":"Version 2 is current.","paragraph_id":"P1"}`,
 		"evidence IDs":    `{"text":"Version 2 is current.","evidence_ids":["E31"]}`,

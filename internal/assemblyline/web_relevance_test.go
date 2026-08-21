@@ -35,7 +35,7 @@ func TestWebRelevancePortableContractReturnsOnlyProjectedIDs(t *testing.T) {
 	if ids["minItems"] != 0 || ids["maxItems"] != 1 {
 		t.Fatalf("candidate ID bounds=%v", ids)
 	}
-	raw := fmt.Sprintf(`{"schema":%q,"outcome":"selected","candidate_ids":["C31"]}`, WebRelevanceSchemaV1)
+	raw := fmt.Sprintf(`{"schema":%q,"candidate_ids":["C31"]}`, WebRelevanceSchemaV1)
 	decision, err := DecodeWebRelevanceDecision(input, raw)
 	if err != nil {
 		t.Fatal(err)
@@ -45,14 +45,30 @@ func TestWebRelevancePortableContractReturnsOnlyProjectedIDs(t *testing.T) {
 	}
 }
 
-func TestWebRelevancePortableContractReturnsTypedNone(t *testing.T) {
+func TestWebRelevanceResponseSchemaUsesOnlyBoundedIDsWithEmptyMeaningNone(t *testing.T) {
 	input := webRelevanceFixture()
-	raw := fmt.Sprintf(`{"schema":%q,"outcome":"none","candidate_ids":[]}`, WebRelevanceSchemaV1)
+	schema, err := WebRelevanceResponseSchema(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	properties := schema["properties"].(map[string]any)
+	if len(properties) != 2 || properties["outcome"] != nil {
+		t.Fatalf("web relevance schema exposes a redundant control outcome: %#v", schema)
+	}
+	selectedIDs := properties["candidate_ids"].(map[string]any)
+	if selectedIDs["minItems"] != 0 || selectedIDs["maxItems"] != input.MaxSelections {
+		t.Fatalf("candidate ID schema does not permit bounded explicit none: %#v", schema)
+	}
+}
+
+func TestWebRelevancePortableContractReturnsExplicitEmptyIDsForNone(t *testing.T) {
+	input := webRelevanceFixture()
+	raw := fmt.Sprintf(`{"schema":%q,"candidate_ids":[]}`, WebRelevanceSchemaV1)
 	decision, err := DecodeWebRelevanceDecision(input, raw)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if decision.Outcome != WebRelevanceNone || decision.CandidateIDs == nil || len(decision.CandidateIDs) != 0 {
+	if decision.CandidateIDs == nil || len(decision.CandidateIDs) != 0 {
 		t.Fatalf("decision=%+v", decision)
 	}
 }
@@ -61,18 +77,16 @@ func TestWebRelevanceRejectsAmbiguousAndOutOfSetIDs(t *testing.T) {
 	input := webRelevanceFixture()
 	validSchema := fmt.Sprintf(`"schema":%q`, WebRelevanceSchemaV1)
 	tests := map[string]string{
-		"duplicate field": `{` + validSchema + `,"outcome":"selected","candidate_ids":["C31"],"candidate_ids":["C17"]}`,
-		"case alias":      `{` + validSchema + `,"outcome":"selected","Candidate_Ids":["C31"]}`,
-		"unknown field":   `{` + validSchema + `,"outcome":"selected","candidate_ids":["C31"],"tool":"browser"}`,
-		"trailing value":  `{` + validSchema + `,"outcome":"selected","candidate_ids":["C31"]} []`,
-		"markdown fence":  "```\n{" + validSchema + `,"outcome":"selected","candidate_ids":["C31"]}` + "\n```",
-		"out of set":      `{` + validSchema + `,"outcome":"selected","candidate_ids":["C99"]}`,
-		"duplicate ID":    `{` + validSchema + `,"outcome":"selected","candidate_ids":["C31","C31"]}`,
-		"over selection":  `{` + validSchema + `,"outcome":"selected","candidate_ids":["C17","C31"]}`,
-		"selected empty":  `{` + validSchema + `,"outcome":"selected","candidate_ids":[]}`,
-		"none selected":   `{` + validSchema + `,"outcome":"none","candidate_ids":["C31"]}`,
-		"none null":       `{` + validSchema + `,"outcome":"none","candidate_ids":null}`,
-		"unknown outcome": `{` + validSchema + `,"outcome":"maybe","candidate_ids":[]}`,
+		"duplicate field": `{` + validSchema + `,"candidate_ids":["C31"],"candidate_ids":["C17"]}`,
+		"case alias":      `{` + validSchema + `,"Candidate_Ids":["C31"]}`,
+		"unknown field":   `{` + validSchema + `,"candidate_ids":["C31"],"tool":"browser"}`,
+		"trailing value":  `{` + validSchema + `,"candidate_ids":["C31"]} []`,
+		"markdown fence":  "```\n{" + validSchema + `,"candidate_ids":["C31"]}` + "\n```",
+		"out of set":      `{` + validSchema + `,"candidate_ids":["C99"]}`,
+		"duplicate ID":    `{` + validSchema + `,"candidate_ids":["C31","C31"]}`,
+		"over selection":  `{` + validSchema + `,"candidate_ids":["C17","C31"]}`,
+		"null IDs":        `{` + validSchema + `,"candidate_ids":null}`,
+		"control outcome": `{` + validSchema + `,"outcome":"none","candidate_ids":[]}`,
 		"oversized raw":   strings.Repeat("x", maxPortableCandidateBytes+1),
 	}
 	for name, raw := range tests {

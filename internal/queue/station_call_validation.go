@@ -170,7 +170,10 @@ func validateStationCallReceipt(
 	if err := json.Unmarshal(opening.Expectation, &expected); err != nil {
 		return nil, fmt.Errorf("decode station call expectation: %w", err)
 	}
-	selection := llm.ProviderIdentitySelection{Model: opening.Model, NativeContextLimit: opening.ContextTokens}
+	selection, err := llm.ProviderIdentitySelectionForExpectation(expected)
+	if err != nil {
+		return nil, fmt.Errorf("derive station call provider selection: %w", err)
+	}
 	if authorityEnded {
 		successfulDiscovery := record.Result.ProviderIdentityEvidence.ValidateRequests(selection) == nil &&
 			record.Result.ProviderIdentityEvidence.Successful()

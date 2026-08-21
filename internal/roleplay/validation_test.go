@@ -11,6 +11,7 @@ func TestOpaqueRoleplayIdentitiesAreExact(t *testing.T) {
 	}{
 		{name: "world", id: "rpw_0123456789abcdef0123456789abcdef", kind: worldIdentity, ok: true},
 		{name: "character", id: "rpc_0123456789abcdef0123456789abcdef", kind: characterIdentity, ok: true},
+		{name: "library character", id: "rpl_0123456789abcdef0123456789abcdef", kind: libraryCharacterIdentity, ok: true},
 		{name: "event", id: "rpe_0123456789abcdef0123456789abcdef", kind: eventIdentity, ok: true},
 		{name: "knowledge", id: "rpk_0123456789abcdef0123456789abcdef", kind: knowledgeIdentity, ok: true},
 		{name: "wrong prefix", id: "rpc_0123456789abcdef0123456789abcdef", kind: worldIdentity},

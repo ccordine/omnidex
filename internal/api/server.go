@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gryph/omnidex/internal/browserinference"
 	"github.com/gryph/omnidex/internal/config"
 	"github.com/gryph/omnidex/internal/llm"
 	"github.com/gryph/omnidex/internal/llmprovider/catalog"
@@ -16,69 +17,85 @@ import (
 )
 
 type Server struct {
-	lifecycleContext          context.Context
-	repo                      *queue.Repository
-	migrationBundle           queue.MigrationBundle
-	channelStore              channelStore
-	roleplaySimulation        RoleplaySimulationStore
-	enqueueChannelTurn        enqueueChannelTurnFunc
-	embeddingClient           llm.EmbeddingClient
-	mux                       *http.ServeMux
-	providerConfig            config.Config
-	defaultProvider           string
-	requestTimeout            time.Duration
-	ollamaBaseURL             string
-	ollamaEmbeddingModel      string
-	webSearchProviders        []string
-	secretsResolver           *secrets.Resolver
-	coreURLDefault            string
-	listenAddr                string
-	realtimeMaxClients        int
-	realtimeStreamMaxAge      time.Duration
-	realtimeHeartbeat         time.Duration
-	realtimeWriteTimeout      time.Duration
-	redisURL                  string
-	uiRedisRequired           bool
-	uiSessionTTL              time.Duration
-	uiRedis                   *uiRedisClient
-	uiRedisInitError          string
-	uiMemoryMu                sync.RWMutex
-	uiMemorySessions          map[string]uiMemorySessionRecord
-	roleplaySceneDraftMu      sync.Mutex
-	ollamaURLMu               sync.RWMutex
-	hostAgentURL              string
-	hostAgentToken            string
-	integrationAPIToken       string
-	realtimeHub               *RealtimeHub
-	jobOutputOnce             sync.Once
-	jobOutputCoalescer        *jobOutputCoalescer
-	telemetryRealtimeOnce     sync.Once
-	telemetryRealtime         *telemetryRealtimeCoalescer
-	scrumAutoWorkMu           sync.Mutex
-	scrumAutoWorkAsyncMu      sync.Mutex
-	scrumAutoWorkAsyncRunning bool
-	scrumAutoWorkAsyncPending bool
+	lifecycleContext           context.Context
+	repo                       *queue.Repository
+	migrationBundle            queue.MigrationBundle
+	channelStore               channelStore
+	roleplaySimulation         RoleplaySimulationStore
+	enqueueChannelTurn         enqueueChannelTurnFunc
+	enqueueRoleplayChannelTurn enqueueRoleplayChannelTurnFunc
+	embeddingClient            llm.EmbeddingClient
+	mux                        *http.ServeMux
+	providerConfig             config.Config
+	defaultProvider            string
+	requestTimeout             time.Duration
+	ollamaBaseURL              string
+	ollamaEmbeddingModel       string
+	ollamaModelAuthority       OllamaModelAuthority
+	ollamaModelLifecycle       OllamaModelLifecycleAuthority
+	ollamaDownloads            OllamaDownloadStore
+	ollamaCatalog              OllamaCatalogAuthority
+	ollamaDownloadMu           sync.Mutex
+	ollamaDownloadRunning      map[string]struct{}
+	ollamaDownloadSlots        chan struct{}
+	webSearchProviders         []string
+	secretsResolver            *secrets.Resolver
+	coreURLDefault             string
+	listenAddr                 string
+	realtimeMaxClients         int
+	realtimeStreamMaxAge       time.Duration
+	realtimeHeartbeat          time.Duration
+	realtimeWriteTimeout       time.Duration
+	redisURL                   string
+	uiRedisRequired            bool
+	uiSessionTTL               time.Duration
+	uiRedis                    *uiRedisClient
+	uiRedisInitError           string
+	uiMemoryMu                 sync.RWMutex
+	uiMemorySessions           map[string]uiMemorySessionRecord
+	roleplaySceneDraftMu       sync.Mutex
+	ollamaURLMu                sync.RWMutex
+	hostAgentURL               string
+	hostAgentToken             string
+	integrationAPIToken        string
+	realtimeHub                *RealtimeHub
+	jobOutputOnce              sync.Once
+	jobOutputCoalescer         *jobOutputCoalescer
+	telemetryRealtimeOnce      sync.Once
+	telemetryRealtime          *telemetryRealtimeCoalescer
+	scrumAutoWorkMu            sync.Mutex
+	scrumAutoWorkAsyncMu       sync.Mutex
+	scrumAutoWorkAsyncRunning  bool
+	scrumAutoWorkAsyncPending  bool
+	browserContextRelevance    *browserinference.ContextRelevanceBroker
+	browserContextModel        string
 }
 
 type ServerOptions struct {
-	LifecycleContext     context.Context
-	MigrationBundle      queue.MigrationBundle
-	ProviderConfig       config.Config
-	RequestTimeout       time.Duration
-	WebSearchProviders   []string
-	CoreURL              string
-	ListenAddr           string
-	HostAgentURL         string
-	HostAgentToken       string
-	IntegrationAPIToken  string
-	RealtimeMaxClients   int
-	RealtimeStreamMaxAge time.Duration
-	RealtimeHeartbeat    time.Duration
-	RealtimeWriteTimeout time.Duration
-	RedisURL             string
-	UIRedisRequired      bool
-	UISessionTTL         time.Duration
-	RoleplaySimulation   RoleplaySimulationStore
+	LifecycleContext        context.Context
+	MigrationBundle         queue.MigrationBundle
+	ProviderConfig          config.Config
+	RequestTimeout          time.Duration
+	WebSearchProviders      []string
+	CoreURL                 string
+	ListenAddr              string
+	HostAgentURL            string
+	HostAgentToken          string
+	IntegrationAPIToken     string
+	RealtimeMaxClients      int
+	RealtimeStreamMaxAge    time.Duration
+	RealtimeHeartbeat       time.Duration
+	RealtimeWriteTimeout    time.Duration
+	RedisURL                string
+	UIRedisRequired         bool
+	UISessionTTL            time.Duration
+	RoleplaySimulation      RoleplaySimulationStore
+	OllamaModelAuthority    OllamaModelAuthority
+	OllamaModelLifecycle    OllamaModelLifecycleAuthority
+	OllamaDownloads         OllamaDownloadStore
+	OllamaCatalog           OllamaCatalogAuthority
+	BrowserContextRelevance *browserinference.ContextRelevanceBroker
+	BrowserContextModel     string
 }
 
 type memoryCandidatePromotionRequest struct {
@@ -138,9 +155,15 @@ func NewServerWithOptions(repo *queue.Repository, embeddingClient llm.EmbeddingC
 
 	var channels channelStore
 	var enqueueChannelTurn enqueueChannelTurnFunc
+	var enqueueRoleplayChannelTurn enqueueRoleplayChannelTurnFunc
+	var ollamaDownloads OllamaDownloadStore = options.OllamaDownloads
 	if repo != nil {
 		channels = repo
 		enqueueChannelTurn = repo.EnqueueChannelTurnWithDataAuthority
+		enqueueRoleplayChannelTurn = repo.EnqueueRoleplayChannelTurn
+		if ollamaDownloads == nil {
+			ollamaDownloads = repo
+		}
 	}
 	ollamaModels := providerConfig.ProviderModels["ollama"]
 	ollamaEmbeddingModel := strings.TrimSpace(ollamaModels.Embedding)
@@ -149,33 +172,42 @@ func NewServerWithOptions(repo *queue.Repository, embeddingClient llm.EmbeddingC
 	}
 
 	s := &Server{
-		lifecycleContext:     lifecycleContext,
-		repo:                 repo,
-		migrationBundle:      options.MigrationBundle,
-		channelStore:         channels,
-		roleplaySimulation:   options.RoleplaySimulation,
-		enqueueChannelTurn:   enqueueChannelTurn,
-		embeddingClient:      embeddingClient,
-		mux:                  http.NewServeMux(),
-		providerConfig:       providerConfig,
-		defaultProvider:      defaultProvider,
-		requestTimeout:       options.RequestTimeout,
-		ollamaBaseURL:        strings.TrimSpace(providerConfig.OllamaBaseURL),
-		ollamaEmbeddingModel: ollamaEmbeddingModel,
-		webSearchProviders:   append([]string(nil), options.WebSearchProviders...),
-		coreURLDefault:       strings.TrimSpace(options.CoreURL),
-		listenAddr:           strings.TrimSpace(options.ListenAddr),
-		realtimeMaxClients:   options.RealtimeMaxClients,
-		realtimeStreamMaxAge: options.RealtimeStreamMaxAge,
-		realtimeHeartbeat:    options.RealtimeHeartbeat,
-		realtimeWriteTimeout: options.RealtimeWriteTimeout,
-		redisURL:             strings.TrimSpace(options.RedisURL),
-		uiRedisRequired:      options.UIRedisRequired,
-		uiSessionTTL:         options.UISessionTTL,
-		uiMemorySessions:     make(map[string]uiMemorySessionRecord),
-		hostAgentURL:         strings.TrimSpace(options.HostAgentURL),
-		hostAgentToken:       strings.TrimSpace(options.HostAgentToken),
-		integrationAPIToken:  options.IntegrationAPIToken,
+		lifecycleContext:           lifecycleContext,
+		repo:                       repo,
+		migrationBundle:            options.MigrationBundle,
+		channelStore:               channels,
+		roleplaySimulation:         options.RoleplaySimulation,
+		enqueueChannelTurn:         enqueueChannelTurn,
+		enqueueRoleplayChannelTurn: enqueueRoleplayChannelTurn,
+		embeddingClient:            embeddingClient,
+		mux:                        http.NewServeMux(),
+		providerConfig:             providerConfig,
+		defaultProvider:            defaultProvider,
+		requestTimeout:             options.RequestTimeout,
+		ollamaBaseURL:              strings.TrimSpace(providerConfig.OllamaBaseURL),
+		ollamaEmbeddingModel:       ollamaEmbeddingModel,
+		ollamaModelAuthority:       options.OllamaModelAuthority,
+		ollamaModelLifecycle:       options.OllamaModelLifecycle,
+		ollamaDownloads:            ollamaDownloads,
+		ollamaCatalog:              options.OllamaCatalog,
+		ollamaDownloadRunning:      make(map[string]struct{}),
+		ollamaDownloadSlots:        make(chan struct{}, 1),
+		webSearchProviders:         append([]string(nil), options.WebSearchProviders...),
+		coreURLDefault:             strings.TrimSpace(options.CoreURL),
+		listenAddr:                 strings.TrimSpace(options.ListenAddr),
+		realtimeMaxClients:         options.RealtimeMaxClients,
+		realtimeStreamMaxAge:       options.RealtimeStreamMaxAge,
+		realtimeHeartbeat:          options.RealtimeHeartbeat,
+		realtimeWriteTimeout:       options.RealtimeWriteTimeout,
+		redisURL:                   strings.TrimSpace(options.RedisURL),
+		uiRedisRequired:            options.UIRedisRequired,
+		uiSessionTTL:               options.UISessionTTL,
+		uiMemorySessions:           make(map[string]uiMemorySessionRecord),
+		hostAgentURL:               strings.TrimSpace(options.HostAgentURL),
+		hostAgentToken:             strings.TrimSpace(options.HostAgentToken),
+		integrationAPIToken:        options.IntegrationAPIToken,
+		browserContextRelevance:    options.BrowserContextRelevance,
+		browserContextModel:        strings.TrimSpace(options.BrowserContextModel),
 	}
 	if redis, err := newUIRedisClient(s.redisURL); err == nil {
 		s.uiRedis = redis
@@ -190,6 +222,9 @@ func NewServerWithOptions(repo *queue.Repository, embeddingClient llm.EmbeddingC
 	s.routes()
 	if repo != nil {
 		s.startRealtimeTelemetryListener(lifecycleContext)
+	}
+	if s.ollamaDownloads != nil {
+		s.resumeOllamaModelDownloads()
 	}
 	return s
 }
@@ -221,8 +256,12 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/v1/ui/runtime-config", s.handleUIRuntimeConfig)
 	s.mux.HandleFunc("/v1/ui/session", s.handleUISession)
 	s.mux.HandleFunc("/v1/ui/panel", s.handleUIPanel)
+	s.mux.HandleFunc("/v1/ui/chat/neutral", s.handleChatNeutralTranscript)
 	s.mux.HandleFunc("/v1/ui/chat/roleplay", s.handleChatRoleplaySimulation)
 	s.mux.HandleFunc("/v1/ui/chat/slash-commands", s.handleChatSlashCommands)
+	s.mux.HandleFunc("/v1/ui/roleplay/worlds", s.handleRoleplayWorldsComponent)
+	s.mux.HandleFunc("/v1/ui/roleplay/library", s.handleRoleplayLibraryComponent)
+	s.mux.HandleFunc("/v1/ui/roleplay/character", s.handleRoleplayCharacterEditor)
 	s.mux.HandleFunc("/v1/ui/admin", s.handleUIAdminComponent)
 	s.mux.HandleFunc("/v1/host/screen/monitors", s.handleHostScreenMonitors)
 	s.mux.HandleFunc("/v1/ui/screen/monitors", s.handleUIScreenMonitors)
@@ -230,6 +269,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/v1/projects", s.handleProjects)
 	s.mux.HandleFunc("/v1/projects/", s.handleProjectByID)
 	s.mux.HandleFunc("/v1/realtime/ws", s.handleRealtimeWS)
+	s.mux.HandleFunc("/v1/browser-inference/context-relevance", s.handleBrowserContextRelevanceConfig)
+	s.mux.HandleFunc("/v1/browser-inference/context-relevance/ws", s.handleBrowserContextRelevanceWS)
 	if s.repo != nil {
 		s.mux.HandleFunc("/v1/ai/control", s.handleAIControl)
 		s.mux.HandleFunc("/v1/jobs", s.handleJobs)
@@ -256,6 +297,8 @@ func (s *Server) routes() {
 		s.mux.HandleFunc("/v1/data-sources/", s.handlePublicDataSourceByID)
 		s.mux.HandleFunc("/v1/ollama/models", s.handleOllamaModels)
 		s.mux.HandleFunc("/v1/ollama/models/", s.handleOllamaModelByName)
+		s.mux.HandleFunc("/v1/ollama/catalog", s.handleOllamaCatalog)
+		s.mux.HandleFunc("/v1/ollama/downloads", s.handleOllamaDownloads)
 		s.mux.HandleFunc("/v1/memory-candidates", s.handleMemoryCandidates)
 		s.mux.HandleFunc("/v1/memory-candidates/", s.handleMemoryCandidateByID)
 		s.mux.HandleFunc("/v1/admin/migrate-fresh", s.handleAdminMigrateFresh)

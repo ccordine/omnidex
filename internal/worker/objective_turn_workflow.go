@@ -15,8 +15,8 @@ import (
 func runObjectiveTurn(
 	ctx context.Context,
 	job model.Job,
-	candidateProvider objectiveConversationCandidateProvider,
-	contextStation objectiveContextSelectionStation,
+	candidateProvider objectiveContextCandidateSource,
+	contextStation objectiveContextSieveStations,
 	kindStation objectiveKindStation,
 	conversationStation objectiveConversationStation,
 	answerStation objectiveAnswerStation,
@@ -33,27 +33,44 @@ func runObjectiveTurn(
 		return objectiveTurnResult{}, err
 	}
 	if authority.ChannelMode == model.ChannelModeRoleplay {
+		if workflows.RoleplaySimulation == nil {
+			return objectiveTurnResult{}, fmt.Errorf("roleplay character context projection is unavailable")
+		}
+		preparation, projection, err := workflows.RoleplaySimulation(
+			ctx, authority.RoleplaySimulationPreparationID, authority.JobID,
+		)
+		if err != nil {
+			return objectiveTurnResult{}, err
+		}
+		if err := preparation.Validate(); err != nil {
+			return objectiveTurnResult{}, fmt.Errorf("roleplay turn preparation: %w", err)
+		}
+		if err := projection.Validate(); err != nil {
+			return objectiveTurnResult{}, fmt.Errorf("roleplay narrative authority: %w", err)
+		}
+		if err := requireObjectiveRoleplayPreparation(authority, preparation); err != nil {
+			return objectiveTurnResult{}, err
+		}
 		if authority.RoleplayInputKind == roleplay.SimulationTurnExternalCommand {
-			return runObjectiveRoleplayResearchTurn(ctx, authority, workflows.RoleplayResearch)
+			authority, contextCalls, err := compileObjectiveTurnContext(
+				ctx, job, authority, candidateProvider, contextStation,
+				&preparation, &projection,
+			)
+			if err != nil {
+				return objectiveTurnResult{}, err
+			}
+			result, err := runObjectiveRoleplayResearchTurn(ctx, authority, workflows.RoleplayResearch)
+			result.ModelCalls += contextCalls
+			return result, err
 		}
 		return runObjectiveRoleplayTurn(
-			ctx, authority, 0, conversationStation,
-			workflows.RoleplaySimulation, workflows.RoleplayCanon,
+			ctx, job, authority, candidateProvider, contextStation, conversationStation,
+			preparation,
+			workflows.RoleplayCanon,
 		)
 	}
-	authority, contextCalls, err := resolveObjectiveConversationContext(
-		ctx, job, authority, candidateProvider, contextStation,
-	)
-	if err != nil {
-		return objectiveTurnResult{}, err
-	}
-	memoryProvider, ok := candidateProvider.(objectiveMemoryContextCandidateProvider)
-	if !ok {
-		return objectiveTurnResult{}, fmt.Errorf("objective context provider lacks memory authority")
-	}
-	memorySelector, _ := contextStation.(objectiveMemoryContextSelectionStation)
-	authority, memoryCalls, err := resolveObjectiveMemoryContext(
-		ctx, job, authority, memoryProvider, memorySelector,
+	authority, contextCalls, err := compileObjectiveTurnContext(
+		ctx, job, authority, candidateProvider, contextStation, nil, nil,
 	)
 	if err != nil {
 		return objectiveTurnResult{}, err
@@ -87,14 +104,14 @@ func runObjectiveTurn(
 	}
 	result := objectiveTurnResult{
 		ObjectiveID: objectiveTurnID(authority, decision.Kind), Kind: decision.Kind,
-		InstructionSHA256: authority.SHA256, ModelCalls: contextCalls + memoryCalls + kindCalls,
+		InstructionSHA256: authority.SHA256, ModelCalls: contextCalls + kindCalls,
 	}
 	result.RequirementID = objectiveRequirementID(result.ObjectiveID)
 	if decision.Kind == assemblyline.ObjectiveKindWorkspaceMutation {
 		return runObjectiveWorkspaceMutation(ctx, authority, result, workflows.WorkspaceMutation)
 	}
 	if decision.Kind == assemblyline.ObjectiveKindAnswer || decision.Kind == assemblyline.ObjectiveKindStory {
-		return runObjectiveConversationResponse(ctx, authority, result, conversationStation)
+		return runObjectiveConversationResponse(ctx, authority, result, conversationStation, "", nil)
 	}
 	if decision.Kind == assemblyline.ObjectiveKindExternalAnswer {
 		return runObjectiveExternalAnswer(ctx, authority, result, workflows.ExternalAnswer)
@@ -132,17 +149,11 @@ func runObjectiveTurn(
 		ctx,
 		answerInput,
 		repositoryStations,
-		objectiveRepositoryGroundedClosureOptions{
-			ObjectiveID: result.ObjectiveID,
-			Generation:  job.CurrentGeneration,
-			Advisory:    workflows.ObjectiveAdvisory,
-		},
 	)
 	if err != nil {
 		return result, err
 	}
 	result.ModelCalls += grounded.ModelCalls
-	result.Advisory = grounded.Advisory
 	citations, err := selectObjectiveCitations(acquisition.Evidence, grounded.Answer.EvidenceIDs)
 	if err != nil {
 		return result, err
@@ -174,7 +185,7 @@ func runObjectiveRoleplayResearchTurn(
 		return result, err
 	}
 	if strings.TrimSpace(answer.Text) == "" || answer.Text != strings.TrimSpace(answer.Text) ||
-		len(answer.Text) > maxObjectiveOutputBytes || answer.ModelCalls != 1 ||
+		len(answer.Text) > maxObjectiveOutputBytes || answer.ModelCalls != objectiveRoleplayResearchModelCalls ||
 		answer.Rendered == "" || answer.Rendered != strings.TrimSpace(answer.Rendered) ||
 		len(answer.Rendered) > maxObjectiveOutputBytes ||
 		!validObjectiveTextSHA(answer.Rendered, answer.RenderedSHA256) || len(answer.Paragraphs) == 0 {

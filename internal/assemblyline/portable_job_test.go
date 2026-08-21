@@ -154,6 +154,24 @@ func TestPortableJobRejectsRemovedFeaturePresencePath(t *testing.T) {
 	}
 }
 
+func TestPortableJobRejectsRetiredContextStationKinds(t *testing.T) {
+	t.Parallel()
+
+	for _, retired := range []WorkKind{
+		"conversation_context_selection",
+		"memory_context_selection",
+		"roleplay_narrative_continuity",
+	} {
+		if validWorkKind(retired) {
+			t.Fatalf("retired context work kind %q remains registered", retired)
+		}
+		if _, err := newPortableJob(retired, map[string]string{"value": "x"}); err == nil ||
+			!strings.Contains(err.Error(), "unsupported") {
+			t.Fatalf("retired context work kind %q error=%v", retired, err)
+		}
+	}
+}
+
 func TestPortableJobRejectsUnknownWirePayloadFields(t *testing.T) {
 	t.Parallel()
 
@@ -187,7 +205,10 @@ func TestPortableResponseCorrectionExposesOnlyOneFieldPatchAndDirectFailure(t *t
 	if err != nil {
 		t.Fatal(err)
 	}
-	correction, err := NewResponseCorrectionJob(original, "application surface is unsupported")
+	retained := `{"schema":"omnidex.application-class.v1","surface":"unsupported"}`
+	correction, err := NewRetainedResponseCorrectionJob(
+		original, "application surface is unsupported", retained,
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -201,20 +222,25 @@ func TestPortableResponseCorrectionExposesOnlyOneFieldPatchAndDirectFailure(t *t
 	if schema == nil || schema["minProperties"] != 1 || schema["maxProperties"] != 1 {
 		t.Fatalf("semantic correction omitted its one-field response schema: %#v", schema)
 	}
-	for _, required := range []string{"JSON merge patch", "application surface is unsupported"} {
+	for _, required := range []string{
+		"JSON merge patch", "application surface is unsupported",
+		"Build a small browser tool.", retained,
+	} {
 		if !strings.Contains(prompt, required) {
 			t.Fatalf("correction prompt omitted %q:\n%s", required, prompt)
 		}
 	}
 	for _, forbidden := range []string{
-		"Build a small browser tool.", "omnidex.application-class.v1",
 		"workspace", "filename", "dependency graph", "agent",
 	} {
 		if strings.Contains(strings.ToLower(prompt), strings.ToLower(forbidden)) {
 			t.Fatalf("correction prompt leaked %q:\n%s", forbidden, prompt)
 		}
 	}
-	if _, err := NewResponseCorrectionJob(correction, "another failure"); err == nil {
+	if _, err := NewResponseCorrectionJob(original, "missing retained response"); err == nil {
+		t.Fatal("ungrounded correction constructor was accepted")
+	}
+	if _, err := NewRetainedResponseCorrectionJob(correction, "another failure", retained); err == nil {
 		t.Fatal("nested correction chain was accepted")
 	}
 }

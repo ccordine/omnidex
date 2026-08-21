@@ -14,6 +14,38 @@ import (
 
 const ollamaProviderBackend = "ollama"
 
+func (c *Client) ResolveRoleplayRawContext(
+	ctx context.Context,
+	model string,
+	requested int,
+) (int, error) {
+	if ctx == nil || c == nil || c.httpClient == nil || c.baseURL == "" {
+		return 0, fmt.Errorf("ollama roleplay context resolver is uninitialized")
+	}
+	selection := llm.ProviderIdentitySelection{
+		Model: model, NativeContextLimit: requested,
+		ProfilePolicy: llm.ProviderIdentityProfileRoleplayRawCompletion,
+	}
+	showRequest, err := llm.ExactProviderTokenizerRequestBytes(selection)
+	if err != nil {
+		return 0, err
+	}
+	operation, err := c.observeProviderIdentityOperation(ctx, providerIdentityOperationSpec{
+		operation: llm.ProviderIdentityTokenizer,
+		method:    http.MethodPost, endpoint: "/api/show", request: showRequest,
+	})
+	if err != nil {
+		return 0, fmt.Errorf("observe roleplay model context: %w", err)
+	}
+	contextTokens, err := llm.DeriveRoleplayRawContextLimit(
+		operation.ResponseCapture, requested,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("derive roleplay model context: %w", err)
+	}
+	return contextTokens, nil
+}
+
 func (c *Client) ObserveProviderIdentity(
 	ctx context.Context,
 	request llm.ProviderIdentityObservationRequest,
@@ -27,9 +59,11 @@ func (c *Client) ObserveProviderIdentity(
 			"ollama cannot attest backend %q", expected.Backend,
 		)
 	}
-	observed, err := c.discoverProviderIdentity(ctx, llm.ProviderIdentitySelection{
-		Model: expected.Model, NativeContextLimit: expected.NativeContextLimit,
-	}, request.ChallengeSHA256)
+	selection, err := llm.ProviderIdentitySelectionForExpectation(expected)
+	if err != nil {
+		return llm.ObservedProviderIdentity{}, err
+	}
+	observed, err := c.discoverProviderIdentity(ctx, selection, request.ChallengeSHA256)
 	if err != nil {
 		return observed, err
 	}

@@ -40,8 +40,9 @@ const (
 	WorkRepositoryEvidenceRelevance          WorkKind = "repository_evidence_relevance"
 	WorkRepositoryGroundedReview             WorkKind = "repository_grounded_review"
 	WorkRepositoryGroundedCorrection         WorkKind = "repository_grounded_correction"
-	WorkConversationContextSelection         WorkKind = "conversation_context_selection"
-	WorkMemoryContextSelection               WorkKind = "memory_context_selection"
+	WorkContextSearchTerms                   WorkKind = "context_search_terms"
+	WorkContextRelevance                     WorkKind = "context_relevance"
+	WorkContextMinification                  WorkKind = "context_minification"
 	WorkConversationObjectiveKind            WorkKind = "conversation_objective_kind"
 	WorkConversationResponse                 WorkKind = "conversation_response"
 	WorkRoleplayGroundedResponse             WorkKind = "roleplay_grounded_response"
@@ -264,9 +265,10 @@ func validWorkKind(kind WorkKind) bool {
 		WorkRepositoryRequirements,
 		WorkRepositorySearchTerm, WorkRepositoryChangeSurface, WorkRepositoryEvidenceRelevance,
 		WorkRepositoryGroundedReview, WorkRepositoryGroundedCorrection,
-		WorkConversationContextSelection, WorkMemoryContextSelection,
+		WorkContextSearchTerms, WorkContextRelevance, WorkContextMinification,
 		WorkConversationObjectiveKind, WorkConversationResponse, WorkRoleplayGroundedResponse,
-		WorkRoleplayCanonExtraction, WorkGroundedAnswer,
+		WorkRoleplayCanonExtraction,
+		WorkGroundedAnswer,
 		WorkDatabaseSchemaSelection, WorkDatabaseQueryIntent, WorkDatabaseEvidenceGap,
 		WorkDatabaseJoinPathSelection,
 		WorkWebSearchTerms, WorkWebRelevance, WorkWebGroundedSynthesis,
@@ -293,9 +295,10 @@ func AllWorkKinds() []WorkKind {
 		WorkRepositoryRequirements,
 		WorkRepositorySearchTerm, WorkRepositoryChangeSurface, WorkRepositoryEvidenceRelevance,
 		WorkRepositoryGroundedReview, WorkRepositoryGroundedCorrection,
-		WorkConversationContextSelection, WorkMemoryContextSelection,
+		WorkContextSearchTerms, WorkContextRelevance, WorkContextMinification,
 		WorkConversationObjectiveKind, WorkConversationResponse, WorkRoleplayGroundedResponse,
-		WorkRoleplayCanonExtraction, WorkGroundedAnswer,
+		WorkRoleplayCanonExtraction,
+		WorkGroundedAnswer,
 		WorkDatabaseSchemaSelection, WorkDatabaseQueryIntent, WorkDatabaseEvidenceGap,
 		WorkDatabaseJoinPathSelection,
 		WorkWebSearchTerms, WorkWebRelevance, WorkWebGroundedSynthesis,

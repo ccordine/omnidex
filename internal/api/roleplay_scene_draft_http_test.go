@@ -27,6 +27,7 @@ func TestRoleplaySceneDraftPersistsFiveOrderedParticipantsAcrossPagesRefreshAndT
 		simulation.personaConfigured[id] = true
 	}
 	simulation.characters = roleplay.SimulationCharacterPage{Items: characters[:4], HasMore: true}
+	simulation.worldCharacters = append([]roleplay.SimulationCharacterSummary(nil), characters...)
 	server := newRoleplayHTTPTestServer(t, simulation)
 	initial := httptest.NewRecorder()
 	server.Handler().ServeHTTP(initial, httptest.NewRequest(

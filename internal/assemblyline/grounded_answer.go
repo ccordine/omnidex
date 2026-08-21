@@ -1,7 +1,6 @@
 package assemblyline
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 	"unicode/utf8"
@@ -148,13 +147,13 @@ func BuildGroundedAnswerPrompt(input GroundedAnswerInput) (string, error) {
 	if err := input.validate(); err != nil {
 		return "", err
 	}
-	projection, err := json.Marshal(input)
+	projection, err := marshalObjectiveContextInputForModel(input, input.Context)
 	if err != nil {
 		return "", fmt.Errorf("encode grounded answer projection: %w", err)
 	}
 	return strings.Join([]string{
 		"Answer exactly one requirement using only the supplied evidence capsules.",
-		"Return the answer text and the opaque IDs of every capsule used. Do not invent evidence, perform work, or add another objective.",
+		"Return the answer text and the opaque IDs of every capsule used. Every factual claim must be supported by those capsules.",
 		"GROUNDING_PROJECTION_JSON:\n" + string(projection),
 	}, "\n\n"), nil
 }
@@ -175,7 +174,7 @@ func GroundedAnswerResponseSchema(input GroundedAnswerInput) (map[string]any, er
 				"type": "string", "const": input.RequirementID,
 			},
 			"text": map[string]any{
-				"type": "string", "minLength": 1, "maxLength": maxGroundedAnswerTextBytes,
+				"type": "string", "minLength": 1,
 			},
 			"evidence_ids": map[string]any{
 				"type": "array", "minItems": 1, "maxItems": len(evidenceIDs),

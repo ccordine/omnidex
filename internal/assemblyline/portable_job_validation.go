@@ -159,8 +159,25 @@ func (input ResponseCorrectionInput) validate() error {
 	if len(input.ValidationFailure) > 1200 {
 		return fmt.Errorf("response correction validation failure exceeds 1200 bytes")
 	}
-	if input.Original.Kind == WorkApplicationAcceptanceGroundingReview ||
-		input.Original.Kind == WorkApplicationJobSpecification {
+	specializedFieldCorrection := input.Original.Kind == WorkApplicationAcceptanceGroundingReview ||
+		input.Original.Kind == WorkApplicationJobSpecification
+	if specializedFieldCorrection {
+		if input.RetainedCandidate != "" {
+			return fmt.Errorf("%s field correction cannot carry a retained candidate", input.Original.Kind)
+		}
+	} else {
+		if input.RetainedCandidate == "" {
+			return fmt.Errorf("%s response correction requires one exact retained candidate", input.Original.Kind)
+		}
+		if input.RetainedCandidate != strings.TrimSpace(input.RetainedCandidate) ||
+			len(input.RetainedCandidate) > maxPortableCandidateBytes {
+			return fmt.Errorf("retained response correction candidate is invalid or oversized")
+		}
+		if _, err := decodeJSONObject(input.RetainedCandidate, "retained semantic candidate"); err != nil {
+			return err
+		}
+	}
+	if specializedFieldCorrection {
 		if input.TargetField == "" || input.TargetField != strings.TrimSpace(input.TargetField) {
 			return fmt.Errorf("%s response correction requires one exact target field", input.Original.Kind)
 		}

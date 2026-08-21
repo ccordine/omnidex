@@ -198,11 +198,32 @@ const (
 )
 
 type ChannelMessage struct {
-	ID        int64              `json:"id"`
-	ChannelID ChannelID          `json:"channel_id"`
-	Role      ChannelMessageRole `json:"role"`
-	Content   string             `json:"content"`
-	CreatedAt time.Time          `json:"created_at"`
+	ID          int64                            `json:"id"`
+	ChannelID   ChannelID                        `json:"channel_id"`
+	Role        ChannelMessageRole               `json:"role"`
+	SpeakerName string                           `json:"speaker_name,omitempty"`
+	Roleplay    *ChannelMessageRoleplayAuthority `json:"roleplay,omitempty"`
+	Turn        *ChannelMessageTurnState         `json:"turn,omitempty"`
+	Content     string                           `json:"content"`
+	CreatedAt   time.Time                        `json:"created_at"`
+}
+
+type ChannelMessageRoleplayAuthority struct {
+	PersonaKind      string                       `json:"persona_kind"`
+	CharacterID      RoleplayCharacterID          `json:"character_id,omitempty"`
+	ContributionKind string                       `json:"contribution_kind"`
+	Parts            []ChannelMessageRoleplayPart `json:"parts,omitempty"`
+}
+
+type ChannelMessageRoleplayPart struct {
+	Kind string `json:"kind"`
+	Text string `json:"text"`
+}
+
+type ChannelMessageTurnState struct {
+	JobID  int64  `json:"job_id"`
+	Status string `json:"status"`
+	Error  string `json:"error,omitempty"`
 }
 
 type ChannelMessagePage struct {

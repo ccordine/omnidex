@@ -98,23 +98,15 @@ func TestRoleplaySimulationJSONRejectsUnknownAndDuplicateFields(t *testing.T) {
 	}
 }
 
-func TestRoleplayResearchCapabilityRequiresExplicitBooleanAndPage(t *testing.T) {
+func TestRoleplayResearchCapabilityRequiresOnlyExplicitBoolean(t *testing.T) {
 	t.Parallel()
 	enabled := false
-	offset := 4
-	inexactOffset := 2
 	if err := validateRoleplayResearchCapabilityRequest(roleplayResearchCapabilityRequest{
-		Enabled: &enabled, CharactersOffset: &offset,
+		Enabled: &enabled,
 	}); err != nil {
 		t.Fatalf("explicit disabled capability was rejected: %v", err)
 	}
-	for _, request := range []roleplayResearchCapabilityRequest{
-		{CharactersOffset: &offset},
-		{Enabled: &enabled},
-		{Enabled: &enabled, CharactersOffset: &inexactOffset},
-	} {
-		if err := validateRoleplayResearchCapabilityRequest(request); err == nil {
-			t.Fatalf("inexact capability request was accepted: %+v", request)
-		}
+	if err := validateRoleplayResearchCapabilityRequest(roleplayResearchCapabilityRequest{}); err == nil {
+		t.Fatal("research capability without an explicit boolean was accepted")
 	}
 }

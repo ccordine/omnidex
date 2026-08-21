@@ -87,7 +87,7 @@ func BootstrapApplicationContext(
 	if err := validateApplicationWorkspaceState(workspace); err != nil {
 		return zero, err
 	}
-	if err := (ObjectiveContext{MemoryAuthorities: memory}).Validate(); err != nil {
+	if err := ValidateObjectiveMemoryAuthorities(memory); err != nil {
 		return zero, fmt.Errorf("application context memory authority: %w", err)
 	}
 	facts := make([]ApplicationContextFact, 0, len(memory)+1)

@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
-	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/websearch"
 )
 
@@ -22,9 +21,12 @@ func TestWebWorkflowProjectsOneUnifiedObjectiveContext(t *testing.T) {
 	memory := "Exact activated memory."
 	feedback := "Preserve the exact question and correct the current generation."
 	objectiveContext := assemblyline.ObjectiveContext{
-		MemoryAuthorities: []assemblyline.ObjectiveMemoryAuthority{{
-			MemoryID: 71, Kind: model.MemoryKindReference, Content: memory,
-			ContentSHA256: assemblyline.ExactObjectiveContextSHA(memory),
+		Capsules: []assemblyline.ObjectiveContextCapsule{{
+			Sources: []assemblyline.ObjectiveContextSource{{
+				Namespace: "memory", CandidateID: "CTX_1",
+				ContentSHA256: assemblyline.ExactObjectiveContextSHA(memory),
+			}},
+			Content: memory, ContentSHA256: assemblyline.ExactObjectiveContextSHA(memory),
 		}},
 		ReplanAuthority: &assemblyline.ObjectiveReplanAuthority{
 			JobID: 31, Generation: 2, Feedback: feedback,

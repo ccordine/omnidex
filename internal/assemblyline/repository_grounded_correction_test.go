@@ -26,6 +26,11 @@ func TestRepositoryGroundedCorrectionReturnsOneChangedTextLeaf(t *testing.T) {
 	if schema["additionalProperties"] != false {
 		t.Fatalf("schema is not closed: %#v", schema)
 	}
+	properties := schema["properties"].(map[string]any)
+	textSchema := properties["text"].(map[string]any)
+	if _, finiteGrammarBound := textSchema["maxLength"]; finiteGrammarBound {
+		t.Fatalf("repository correction schema encodes the code-owned byte ceiling: %#v", textSchema)
+	}
 	assertExactJSONFields(t, reflect.TypeOf(input), []string{
 		"requirement_id", "exact_requirement", "objective_context",
 		"current_text", "evidence_ids", "evidence", "issue",
@@ -75,12 +80,7 @@ func TestRepositoryGroundedCorrectionRejectsExtraOrOversizedLeaf(t *testing.T) {
 func repositoryGroundedCorrectionFixture() RepositoryGroundedCorrectionInput {
 	return RepositoryGroundedCorrectionInput{
 		RequirementID: "requirement-17", ExactRequirement: "Which component owns dispatch?",
-		Context: ObjectiveContext{
-			UserAuthorities: []ConversationSelectedUserAuthority{{MessageID: 17, Content: "What did the earlier result say?"}},
-			AssistantResults: []ConversationSelectedAssistantResult{{
-				UserMessageID: 17, MessageID: 18, JobID: 19, Content: "The earlier result discussed dispatch.",
-			}},
-		},
+		Context:     minifiedObjectiveContext("The earlier result discussed dispatch ownership."),
 		CurrentText: "Scheduler owns dispatch.", EvidenceIDs: []string{"R01"},
 		Evidence: []GroundedEvidenceCapsule{{ID: "R01", Text: "func ScheduleDispatch() starts dispatch."}},
 		Issue: RepositoryGroundedReviewDecision{

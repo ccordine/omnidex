@@ -135,6 +135,7 @@ export default class RecyclrController extends Controller<HTMLElement> {
       "scrum-board-refresh": "omni:scrum-refresh",
       "job-progress": "omni:job-progress",
       "ai-control-updated": "omni:ai-control-updated",
+      "ollama-download": "omni:ollama-download",
     };
     const browserEvent = eventMap[eventName];
     if (browserEvent) document.dispatchEvent(new CustomEvent(browserEvent, { detail: message }));
@@ -193,6 +194,8 @@ export default class RecyclrController extends Controller<HTMLElement> {
           ? "inline-block h-2 w-2 rounded-full bg-cyan-300 shadow-[0_0_8px_rgba(103,232,249,.8)]"
           : "inline-block h-2 w-2 animate-pulse rounded-full bg-amber-300";
     }
-    document.dispatchEvent(new CustomEvent("omni:realtime-status", { detail: { state, transport, message: labels[state] } }));
+    document.dispatchEvent(new CustomEvent("omni:realtime-status", {
+      detail: { state, transport, message: detail || labels[state] },
+    }));
   }
 }

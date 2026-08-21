@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -26,6 +27,7 @@ type channelStore interface {
 	CreateRoleplayChannel(ctx context.Context, channel model.Channel, worldName, viewpointName string) (model.Channel, error)
 	GetChannel(ctx context.Context, id model.ChannelID) (model.Channel, error)
 	ListChannels(ctx context.Context, scope model.ChannelScope, limit, offset int) ([]model.Channel, error)
+	ListChannelsByMode(ctx context.Context, scope model.ChannelScope, mode model.ChannelMode, limit, offset int) ([]model.Channel, error)
 	ListChannelMessages(ctx context.Context, channelID model.ChannelID, limit int, beforeID *int64) (model.ChannelMessagePage, error)
 }
 
@@ -85,6 +87,7 @@ func (name *channelCreateRoleplayName) UnmarshalJSON(raw []byte) error {
 type channelMessageRequest struct {
 	Prompt                   string                          `json:"prompt"`
 	DelegatedDataAuthorityID channelDelegatedDataAuthorityID `json:"delegated_data_authority_id,omitempty"`
+	RoleplayTurn             *roleplay.UserTurnRequest       `json:"roleplay_turn,omitempty"`
 }
 
 type channelDelegatedDataAuthorityID struct {
@@ -119,6 +122,13 @@ type enqueueChannelTurnFunc func(
 	model.ChannelID,
 	string,
 	string,
+) (model.ChannelMessage, model.Job, error)
+
+type enqueueRoleplayChannelTurnFunc func(
+	context.Context,
+	model.ChannelID,
+	string,
+	roleplay.UserTurnRequest,
 ) (model.ChannelMessage, model.Job, error)
 
 func (s *Server) handleChannels(w http.ResponseWriter, r *http.Request) {
@@ -298,13 +308,45 @@ func (s *Server) postChannelMessage(w http.ResponseWriter, r *http.Request, chan
 		writeError(w, http.StatusNotFound, "channel not found")
 		return
 	}
-	if s.enqueueChannelTurn == nil {
-		writeError(w, http.StatusServiceUnavailable, "channel job queue is unavailable")
+	var userMessage model.ChannelMessage
+	var job model.Job
+	switch channel.Mode {
+	case model.ChannelModeAssistant:
+		if req.RoleplayTurn != nil {
+			writeError(w, http.StatusBadRequest, "assistant channel turn cannot carry roleplay user authority")
+			return
+		}
+		if s.enqueueChannelTurn == nil {
+			writeError(w, http.StatusServiceUnavailable, "channel job queue is unavailable")
+			return
+		}
+		userMessage, job, err = s.enqueueChannelTurn(
+			r.Context(), channel.ID, prompt, req.DelegatedDataAuthorityID.Value,
+		)
+	case model.ChannelModeRoleplay:
+		if req.DelegatedDataAuthorityID.Present {
+			writeError(w, http.StatusBadRequest, "roleplay channel turn cannot carry delegated data authority")
+			return
+		}
+		if req.RoleplayTurn == nil {
+			writeError(w, http.StatusBadRequest, "roleplay channel turn requires persona and contribution authority")
+			return
+		}
+		if err = req.RoleplayTurn.ValidateForExactText(prompt); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		if s.enqueueRoleplayChannelTurn == nil {
+			writeError(w, http.StatusServiceUnavailable, "roleplay channel job queue is unavailable")
+			return
+		}
+		userMessage, job, err = s.enqueueRoleplayChannelTurn(
+			r.Context(), channel.ID, prompt, *req.RoleplayTurn,
+		)
+	default:
+		writeError(w, http.StatusInternalServerError, "channel has unsupported stored mode")
 		return
 	}
-	userMessage, job, err := s.enqueueChannelTurn(
-		r.Context(), channel.ID, prompt, req.DelegatedDataAuthorityID.Value,
-	)
 	if err != nil {
 		status := http.StatusInternalServerError
 		switch {
@@ -323,6 +365,10 @@ func (s *Server) postChannelMessage(w http.ResponseWriter, r *http.Request, chan
 		writeError(w, status, err.Error())
 		return
 	}
+	log.Printf(
+		"channel turn accepted channel=%s mode=%s message=%d job=%d",
+		channel.ID, channel.Mode, userMessage.ID, job.ID,
+	)
 	writeJSON(w, http.StatusAccepted, channelMessageResponse{
 		Channel: channel, UserMessage: userMessage, Job: job,
 	})

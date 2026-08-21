@@ -14,7 +14,7 @@ func DatabaseQueryIntentResponseSchema(input DatabaseQueryIntentInput) (map[stri
 	})
 	literal := objectSchema([]string{"type", "value"}, map[string]any{
 		"type":  enumStringSchema([]string{"string", "integer", "decimal", "boolean", "timestamp", "date", "uuid"}),
-		"value": map[string]any{"type": "string", "maxLength": 4096},
+		"value": map[string]any{"type": "string"},
 	})
 	filter := databaseIntentFilterSchema(columnIDs, literal)
 	having := objectSchema([]string{"aggregate", "field_id", "operator", "value"}, map[string]any{

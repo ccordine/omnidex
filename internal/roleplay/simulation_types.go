@@ -183,6 +183,7 @@ type SceneParticipantProjection struct {
 type SimulationCharacterSummary struct {
 	ID        string    `json:"id"`
 	WorldID   string    `json:"world_id"`
+	LibraryID string    `json:"library_id"`
 	Name      string    `json:"name"`
 	CreatedAt time.Time `json:"created_at"`
 }

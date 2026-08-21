@@ -75,7 +75,7 @@ func TestPortableClaimEvidenceReviewFinalizesExactlyOnceAfterTypedValidation(t *
 			return assemblyline.PortableResult{
 				JobID: job.ID,
 				Candidate: fmt.Sprintf(
-					`{"schema":%q,"outcome":"none","paragraph_id":"","evidence_ids":[],"issue_kind":"","detail":""}`,
+					`{"schema":%q,"outcome":"none"}`,
 					assemblyline.WebClaimEvidenceReviewSchemaV1,
 				),
 			}, nil

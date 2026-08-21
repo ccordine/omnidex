@@ -8,10 +8,7 @@ import (
 	"github.com/gryph/omnidex/internal/model"
 )
 
-const (
-	chatChannelOptionsTarget       = "channel-options"
-	chatNewConversationOptionValue = "__omnidex_new_conversation__"
-)
+const chatChannelOptionsTarget = "channel-options"
 
 type chatChannelOptionsPage struct {
 	chatComponentPage
@@ -21,11 +18,15 @@ func renderChatChannelOptionsPage(
 	channels []model.Channel,
 	nextOffset *int,
 	appendOptions bool,
+	mode string,
 ) (chatChannelOptionsPage, error) {
 	var options strings.Builder
 	if !appendOptions {
-		options.WriteString(`<option value="" disabled selected>Choose a conversation</option>`)
-		options.WriteString(`<option value="` + chatNewConversationOptionValue + `">+ New conversation…</option>`)
+		label := "New conversation"
+		if mode == string(model.ChannelModeRoleplay) {
+			label = "Select a world"
+		}
+		options.WriteString(`<option value="" disabled selected>` + label + `</option>`)
 	}
 	for index, channel := range channels {
 		if err := channel.ValidateStored(); err != nil {

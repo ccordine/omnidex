@@ -61,7 +61,7 @@ func BuildKnownArtifactTruthPrompt(input KnownArtifactTruthInput) (string, error
 	}
 	return strings.Join([]string{
 		"Classify only the explicit desired truth of the exact requirement.",
-		"Choose known_artifact_must_be_absent only when the quote explicitly requires one semantic artifact already established by repository authority, including all behavior it owns, to be absent. Choose not_applicable for addition, modification, advice, partial behavior removal, or when that complete absence is not explicit. Do not infer identity or representation. Code separately owns repository mechanics, verification, and completion.",
+		"Choose known_artifact_must_be_absent only when the quote explicitly requires one semantic artifact already established by repository authority, including all behavior it owns, to be absent. Choose not_applicable for addition, modification, advice, partial behavior removal, or when that complete absence is not explicit.",
 		"EXACT_REQUIREMENT:\n" + input.RequirementQuote,
 	}, "\n\n"), nil
 }

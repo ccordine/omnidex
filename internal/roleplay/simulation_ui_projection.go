@@ -24,8 +24,10 @@ type SimulationUIProjection struct {
 	WorldID               string
 	Scene                 *SceneSheet
 	Characters            SimulationCharacterPage
+	UserPersonaCharacters []SimulationCharacterSummary
 	CharacterHasPersona   map[string]bool
 	CharacterCapabilities map[string]CharacterCapabilityProjection
+	CharacterGeneration   map[string]CharacterGenerationProjection
 	Personas              PersonaPage
 	CharacterNames        map[string]string
 	Participants          SceneParticipantPage
@@ -35,6 +37,8 @@ type SimulationUIProjection struct {
 	Interactions          InteractionCommandPage
 	ItemTemplates         ItemTemplatePage
 	ActiveCharacterName   string
+	ActiveGeneration      *CharacterGenerationProjection
+	LastUserTurn          *UserTurnAuthority
 }
 
 func (s *Store) ProjectSimulationUI(
@@ -101,14 +105,32 @@ func projectSimulationUITx(
 	if err != nil {
 		return SimulationUIProjection{}, err
 	}
+	userPersonaCharacters, err := loadAllSimulationCharacters(ctx, tx, worldID)
+	if err != nil {
+		return SimulationUIProjection{}, err
+	}
+	characterGeneration, err := loadWorldCharacterGeneration(ctx, tx, worldID)
+	if err != nil {
+		return SimulationUIProjection{}, err
+	}
+	if len(characterGeneration) != len(userPersonaCharacters) {
+		return SimulationUIProjection{}, fmt.Errorf("%w: world character generation authority is incomplete", ErrSimulationNotConfigured)
+	}
+	for _, character := range userPersonaCharacters {
+		generation, exists := characterGeneration[character.ID]
+		if !exists || generation.Config.LibraryCharacterID != character.LibraryID {
+			return SimulationUIProjection{}, fmt.Errorf("%w: world character generation authority differs from character identity", ErrSimulationNotConfigured)
+		}
+	}
 	personas, err := loadPersonaPage(ctx, tx, worldID, page.Limit, page.PersonasOffset)
 	if err != nil {
 		return SimulationUIProjection{}, err
 	}
 	projection := SimulationUIProjection{
-		WorldID: worldID, Characters: characters, Personas: personas,
+		WorldID: worldID, Characters: characters, UserPersonaCharacters: userPersonaCharacters, Personas: personas,
 		CharacterHasPersona:   make(map[string]bool, len(characters.Items)),
 		CharacterCapabilities: make(map[string]CharacterCapabilityProjection, len(characters.Items)),
+		CharacterGeneration:   characterGeneration,
 		CharacterNames:        make(map[string]string, len(characters.Items)+len(personas.Items)),
 	}
 	for _, character := range characters.Items {

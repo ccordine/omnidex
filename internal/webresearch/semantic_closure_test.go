@@ -201,6 +201,48 @@ func TestClaimEvidenceIssueUsesOneCorrectionThenIndependentReReview(t *testing.T
 	}
 }
 
+func TestNoopClaimEvidenceCorrectionRecordsZeroDeltaWithoutAnotherReview(t *testing.T) {
+	candidate := candidateFixture("https://evidence.example/already-grounded", "Current")
+	document := documentFixture(candidate.URL, candidate.Title, "Version 2 is current.")
+	evidence := evidenceID(document.ID)
+	acquisition := &scriptedAcquisition{
+		discoveries: map[string]discoverOutcome{"current version": {report: candidateReport("current version", candidate)}},
+		documents:   map[websearch.CandidateID]websearch.Document{candidate.ID: document},
+	}
+	synthesis := &recordingSynthesisStation{decision: GroundedSynthesisDecision{Paragraphs: []GroundedParagraph{{
+		Text: "Version 2 is current.", EvidenceIDs: []EvidenceID{evidence},
+	}}}}
+	issue := ClaimEvidenceReviewDecision{
+		Outcome: ClaimEvidenceReviewIssue, ParagraphID: "P1", EvidenceIDs: []EvidenceID{evidence},
+		IssueKind: ClaimEvidenceInsufficientSupport, Detail: "The already cited version needs correction.",
+	}
+	review := &recordingClaimEvidenceReviewStation{decisions: []ClaimEvidenceReviewDecision{issue}}
+	correction := &recordingSynthesisCorrectionStation{decision: GroundedSynthesisCorrectionDecision{Text: "Version 2 is current."}}
+	machine := newFixtureMachineWithCorrection(t, Objective{
+		ID: "objective_zero_delta", Question: "Which version is current?", InitialQuery: "current version",
+		Acceptance: exactAcceptance(), Status: ObjectivePending,
+	}, acquisition, &recordingTermsStation{}, &recordingRelevanceStation{decision: RelevanceDecision{
+		Outcome: RelevanceSelected, CandidateIDs: []websearch.CandidateID{candidate.ID},
+	}}, synthesis, correction, review, 2_000)
+
+	result, err := machine.Run(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Complete || result.SynthesisCorrectionCalls != 1 ||
+		result.SynthesisCorrectionZeroDeltas != 1 || result.ClaimEvidenceReviewCalls != 1 ||
+		correction.calls != 1 || review.calls != 1 || result.Artifact.Paragraphs[0].Text != "Version 2 is current." {
+		t.Fatalf("zero-delta result=%#v correction=%d review=%d", result, correction.calls, review.calls)
+	}
+	wantSteps := []Step{
+		StepInitialDiscovery, StepDocumentsFetched, StepRelevanceResolved, StepEvidenceProjected,
+		StepSynthesisResolved, StepSynthesisZeroDelta, StepClaimEvidenceReviewed, StepObjectiveCompleted,
+	}
+	if fmt.Sprint(result.Steps) != fmt.Sprint(wantSteps) {
+		t.Fatalf("zero-delta steps=%v want %v", result.Steps, wantSteps)
+	}
+}
+
 func TestSecondClaimEvidenceIssueFailsWithoutAnotherCorrectionOrCompletion(t *testing.T) {
 	candidate := candidateFixture("https://evidence.example/repeated-issue", "Current")
 	document := documentFixture(candidate.URL, candidate.Title, "Version 2 is current.")

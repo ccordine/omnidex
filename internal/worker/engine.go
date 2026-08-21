@@ -7,9 +7,9 @@ import (
 	"reflect"
 	"time"
 
+	"github.com/gryph/omnidex/internal/assemblyline"
 	"github.com/gryph/omnidex/internal/llm"
 	"github.com/gryph/omnidex/internal/model"
-	"github.com/gryph/omnidex/internal/objectiveadvisory"
 	"github.com/gryph/omnidex/internal/queue"
 	repositoryindex "github.com/gryph/omnidex/internal/repository/indexing"
 	repositoryretrieval "github.com/gryph/omnidex/internal/repository/retrieval"
@@ -32,47 +32,56 @@ type WorkspaceSettings struct {
 	HostRoot string
 }
 
+// ContextRelevanceExecutor is a provider-level semantic transport. It receives
+// the same station contract regardless of whether execution is local Ollama or
+// browser WebGPU; the cognition workflow does not see provider-specific work.
+type ContextRelevanceExecutor interface {
+	ExecuteContextRelevance(
+		context.Context,
+		string,
+		assemblyline.ContextRelevanceInput,
+	) (assemblyline.ContextRelevanceDecision, error)
+}
+
 type Options struct {
-	WorkerCount               int
-	FragmentConcurrency       int
-	PollInterval              time.Duration
-	InferenceContextTokens    int
-	InferenceProvider         string
-	EmbeddingProvider         string
-	EmbeddingModel            string
-	Models                    ModelRouting
-	ObjectiveAdvisoryMode     objectiveadvisory.Mode
-	ObjectiveAdvisoryProvider string
-	Workspace                 WorkspaceSettings
-	Logger                    *log.Logger
-	OnJobFinished             func(jobID int64)
-	OnJobOutput               func(jobID int64, delta string)
+	WorkerCount             int
+	FragmentConcurrency     int
+	PollInterval            time.Duration
+	InferenceContextTokens  int
+	InferenceProvider       string
+	EmbeddingProvider       string
+	EmbeddingModel          string
+	Models                  ModelRouting
+	Workspace               WorkspaceSettings
+	Logger                  *log.Logger
+	OnJobFinished           func(jobID int64)
+	OnJobOutput             func(jobID int64, delta string)
+	BrowserContextRelevance ContextRelevanceExecutor
 }
 
 type Service struct {
-	repo                      *queue.Repository
-	embeddings                llm.EmbeddingClient
-	stationClient             llm.ExactStationClient
-	webSearch                 *websearch.Service
-	workerCount               int
-	fragmentConcurrency       int
-	pollInterval              time.Duration
-	inferenceContextTokens    int
-	inferenceProvider         string
-	embeddingProvider         string
-	embeddingModel            string
-	models                    ModelRouting
-	objectiveAdvisoryMode     objectiveadvisory.Mode
-	objectiveAdvisoryProvider string
-	workspaceRoot             string
-	repositoryIndex           repositoryIndexRefresher
-	repositoryRetrieval       repositoryEvidenceBuilder
-	workspaceHostRoot         string
-	completeStep              stepCompleteFunc
-	nativeV3Runner            nativeV3StepRunner
-	logger                    *log.Logger
-	onJobFinished             func(jobID int64)
-	onJobOutput               func(jobID int64, delta string)
+	repo                    *queue.Repository
+	embeddings              llm.EmbeddingClient
+	stationClient           llm.ExactStationClient
+	webSearch               *websearch.Service
+	workerCount             int
+	fragmentConcurrency     int
+	pollInterval            time.Duration
+	inferenceContextTokens  int
+	inferenceProvider       string
+	embeddingProvider       string
+	embeddingModel          string
+	models                  ModelRouting
+	workspaceRoot           string
+	repositoryIndex         repositoryIndexRefresher
+	repositoryRetrieval     repositoryEvidenceBuilder
+	workspaceHostRoot       string
+	completeStep            stepCompleteFunc
+	nativeV3Runner          nativeV3StepRunner
+	logger                  *log.Logger
+	onJobFinished           func(jobID int64)
+	onJobOutput             func(jobID int64, delta string)
+	browserContextRelevance ContextRelevanceExecutor
 }
 
 func New(
@@ -110,28 +119,27 @@ func New(
 		completeStep = repo.CompleteStep
 	}
 	svc := &Service{
-		repo:                      repo,
-		embeddings:                embeddings,
-		stationClient:             stationClient,
-		webSearch:                 webSearch,
-		workerCount:               opts.WorkerCount,
-		fragmentConcurrency:       opts.FragmentConcurrency,
-		pollInterval:              opts.PollInterval,
-		inferenceContextTokens:    opts.InferenceContextTokens,
-		inferenceProvider:         opts.InferenceProvider,
-		embeddingProvider:         opts.EmbeddingProvider,
-		embeddingModel:            opts.EmbeddingModel,
-		models:                    opts.Models,
-		objectiveAdvisoryMode:     opts.ObjectiveAdvisoryMode,
-		objectiveAdvisoryProvider: opts.ObjectiveAdvisoryProvider,
-		workspaceRoot:             opts.Workspace.Root,
-		repositoryIndex:           repositoryIndex,
-		repositoryRetrieval:       repositoryRetrieval,
-		workspaceHostRoot:         opts.Workspace.HostRoot,
-		completeStep:              completeStep,
-		logger:                    opts.Logger,
-		onJobFinished:             opts.OnJobFinished,
-		onJobOutput:               opts.OnJobOutput,
+		repo:                    repo,
+		embeddings:              embeddings,
+		stationClient:           stationClient,
+		webSearch:               webSearch,
+		workerCount:             opts.WorkerCount,
+		fragmentConcurrency:     opts.FragmentConcurrency,
+		pollInterval:            opts.PollInterval,
+		inferenceContextTokens:  opts.InferenceContextTokens,
+		inferenceProvider:       opts.InferenceProvider,
+		embeddingProvider:       opts.EmbeddingProvider,
+		embeddingModel:          opts.EmbeddingModel,
+		models:                  opts.Models,
+		workspaceRoot:           opts.Workspace.Root,
+		repositoryIndex:         repositoryIndex,
+		repositoryRetrieval:     repositoryRetrieval,
+		workspaceHostRoot:       opts.Workspace.HostRoot,
+		completeStep:            completeStep,
+		logger:                  opts.Logger,
+		onJobFinished:           opts.OnJobFinished,
+		onJobOutput:             opts.OnJobOutput,
+		browserContextRelevance: opts.BrowserContextRelevance,
 	}
 	if repo != nil && completeStep != nil {
 		svc.completeStep = svc.wrapStepCompleter(completeStep)

@@ -1,57 +1,68 @@
 import { describe, expect, it, vi } from "vitest";
+import type { ChatChannelTurnReceipt } from "../lib/chat_channel_turn";
 import ChatController from "./chat_controller";
-
-const reportSubmitFailure = Reflect.get(
-  ChatController.prototype,
-  "reportSubmitFailure",
-) as (this: SubmitHarness, error: unknown) => void;
 
 type SubmitHarness = {
   hasInputTarget: boolean;
-  inputTarget: { value: string };
+  inputTarget: HTMLTextAreaElement;
   busy: boolean;
   activityLabel: string;
   setBusy: ReturnType<typeof vi.fn>;
+  setTurnActive: ReturnType<typeof vi.fn>;
+  isTurnActive: ReturnType<typeof vi.fn>;
+  focusComposer: ReturnType<typeof vi.fn>;
   renderProgressActivity: ReturnType<typeof vi.fn>;
   submitChannel: ReturnType<typeof vi.fn>;
   activatePanel: ReturnType<typeof vi.fn>;
   addEvent: ReturnType<typeof vi.fn>;
   setStatus: ReturnType<typeof vi.fn>;
-  reportSubmitFailure(error: unknown): void;
-  roleplay: { isConfigured(): boolean };
-  slashPalette: { dismiss(): void };
+  synchronizeSlashCommands: ReturnType<typeof vi.fn>;
+  roleplay: { isConfigured: () => boolean };
+  slashPalette: { dismiss: ReturnType<typeof vi.fn> };
   channel: {
-    selectedID(): string;
+    selectedID: () => string;
+    selectedMode: () => "assistant" | "roleplay";
     hasSelection: ReturnType<typeof vi.fn>;
     createAndSubmit: ReturnType<typeof vi.fn>;
+    reconcileTurn: ReturnType<typeof vi.fn>;
     select: ReturnType<typeof vi.fn>;
   };
-  synchronizeSlashCommands: ReturnType<typeof vi.fn>;
 };
 
+function receipt(completion: Promise<void> = Promise.resolve()): ChatChannelTurnReceipt {
+  return { channelID: "story-42", jobID: 73, acceptedTranscript: Promise.resolve(), completion };
+}
+
 function harness(value: string): SubmitHarness {
-  return {
+  const input = document.createElement("textarea");
+  input.value = value;
+  const turn = receipt();
+  return Object.assign(Object.create(ChatController.prototype), {
     hasInputTarget: true,
-    inputTarget: { value },
+    inputTarget: input,
     busy: false,
-	activityLabel: "",
+    activityLabel: "",
     setBusy: vi.fn(),
+    setTurnActive: vi.fn(),
+    isTurnActive: vi.fn(() => false),
+    focusComposer: vi.fn(),
     renderProgressActivity: vi.fn(),
-    submitChannel: vi.fn(async () => undefined),
+    submitChannel: vi.fn(async () => turn),
     activatePanel: vi.fn(async () => undefined),
     addEvent: vi.fn(),
     setStatus: vi.fn(),
-    reportSubmitFailure,
     roleplay: { isConfigured: () => true },
     slashPalette: { dismiss: vi.fn() },
     channel: {
       selectedID: () => "story-42",
+      selectedMode: () => "roleplay",
       hasSelection: vi.fn(() => true),
-      createAndSubmit: vi.fn(async () => "submitted" as const),
+      createAndSubmit: vi.fn(async () => ({ kind: "submitted" as const, turn })),
+      reconcileTurn: vi.fn(async (accepted: ChatChannelTurnReceipt) => accepted.completion),
       select: vi.fn(async () => undefined),
     },
     synchronizeSlashCommands: vi.fn(async () => undefined),
-  };
+  }) as SubmitHarness;
 }
 
 const submit = ChatController.prototype.submit as unknown as (
@@ -64,27 +75,68 @@ const selectChannel = ChatController.prototype.selectChannel as unknown as (
 ) => Promise<void>;
 
 describe("ChatController exact authority", () => {
-  it("passes the exact composer value only to the channel coordinator", async () => {
+  it("passes exact composer bytes to the selected channel and clears after acceptance", async () => {
     const exact = "  preserve leading space\npreserve trailing tab\t ";
     const controller = harness(exact);
 
     await submit.call(controller, { preventDefault: vi.fn() });
 
-	expect(controller.submitChannel).toHaveBeenCalledWith(exact);
+    expect(controller.submitChannel).toHaveBeenCalledWith(exact);
     expect(controller.inputTarget.value).toBe("");
-    expect(controller.synchronizeSlashCommands).toHaveBeenCalledWith("story-42");
+    expect(controller.setTurnActive).toHaveBeenCalledWith(true);
+    expect(controller.setBusy).toHaveBeenLastCalledWith(false);
+    expect(controller.channel.reconcileTurn).toHaveBeenCalledOnce();
+  });
+
+  it("submits the selected user character and ordered message part as immutable roleplay authority", async () => {
+    const exact = "I follow Mara closely and watch the floorboards.";
+    const controller = harness(exact) as SubmitHarness & {
+      hasRoleplayPersonaTarget: boolean;
+      roleplayPersonaTarget: HTMLSelectElement;
+    };
+    const persona = document.createElement("select");
+    persona.innerHTML = `
+      <option value="narrator" data-persona-kind="narrator">Narrator</option>
+      <option value="rpc_0123456789abcdef0123456789abcdef" data-persona-kind="character" selected>Gryph</option>
+    `;
+    Object.assign(controller, {
+      hasRoleplayPersonaTarget: true,
+      roleplayPersonaTarget: persona,
+    });
+
+    await submit.call(controller, { preventDefault: vi.fn() });
+
+    expect(controller.submitChannel).toHaveBeenCalledWith(`[Message]\n${exact}`, {
+      persona_kind: "character",
+      character_id: "rpc_0123456789abcdef0123456789abcdef",
+      contribution_kind: "dialogue",
+      parts: [{ kind: "message", text: exact }],
+    });
+  });
+
+  it("keeps the composer recoverable until server acceptance and then clears it", async () => {
+    let accept!: (value: ChatChannelTurnReceipt) => void;
+    const pending = new Promise<ChatChannelTurnReceipt>((resolve) => { accept = resolve; });
+    const controller = harness("clear this now");
+    controller.submitChannel.mockReturnValueOnce(pending);
+
+    const submission = submit.call(controller, { preventDefault: vi.fn() });
+
+    expect(controller.inputTarget.value).toBe("clear this now");
+    expect(controller.submitChannel).toHaveBeenCalledWith("clear this now");
+    accept(receipt());
+    await submission;
+    expect(controller.inputTarget.value).toBe("");
   });
 
   it("rejects blank composer input without dispatching", async () => {
     const controller = harness(" \n\t ");
-
     await submit.call(controller, { preventDefault: vi.fn() });
-
-	expect(controller.submitChannel).not.toHaveBeenCalled();
+    expect(controller.submitChannel).not.toHaveBeenCalled();
     expect(controller.inputTarget.value).toBe(" \n\t ");
   });
 
-  it("creates one typed channel while neutral, then sends the exact composer bytes", async () => {
+  it("creates one typed channel from a neutral first send", async () => {
     const exact = "  neutral request\nwith exact spacing  ";
     const controller = harness(exact);
     controller.channel.hasSelection.mockReturnValue(false);
@@ -96,26 +148,40 @@ describe("ChatController exact authority", () => {
     expect(controller.inputTarget.value).toBe("");
   });
 
-  it("clears an accepted neutral prompt before a slow command refresh can re-expose it", async () => {
-    let releaseSlash!: () => void;
-    const slash = new Promise<void>((resolve) => { releaseSlash = resolve; });
-    const controller = harness("do not submit twice");
-    controller.channel.hasSelection.mockReturnValue(false);
-    controller.channel.createAndSubmit.mockImplementationOnce(async () => {
-      controller.busy = false;
-      return "submitted";
-    });
-    controller.synchronizeSlashCommands.mockReturnValueOnce(slash);
+  it("clears an accepted prompt while realtime completion remains pending", async () => {
+    let finish!: () => void;
+    const completion = new Promise<void>((resolve) => { finish = resolve; });
+    const accepted = receipt(completion);
+    const controller = harness("accepted immediately");
+    controller.submitChannel.mockResolvedValueOnce(accepted);
+    controller.channel.reconcileTurn.mockImplementationOnce(async () => completion);
 
-    const submitting = submit.call(controller, { preventDefault: vi.fn() });
-    await vi.waitFor(() => expect(controller.synchronizeSlashCommands).toHaveBeenCalledOnce());
+    await submit.call(controller, { preventDefault: vi.fn() });
+
     expect(controller.inputTarget.value).toBe("");
-
-    releaseSlash();
-    await submitting;
+    expect(controller.setTurnActive).toHaveBeenCalledWith(true);
+    expect(controller.focusComposer).toHaveBeenCalled();
+    expect(controller.setTurnActive).not.toHaveBeenCalledWith(false);
+    finish();
+    await vi.waitFor(() => expect(controller.setTurnActive).toHaveBeenCalledWith(false));
   });
 
-  it("blocks composer submission through channel selection and slash synchronization", async () => {
+  it("blocks a second send while the current authoritative turn is active", async () => {
+    const controller = harness("draft next message");
+    controller.isTurnActive.mockReturnValue(true);
+
+    await submit.call(controller, { preventDefault: vi.fn() });
+
+    expect(controller.submitChannel).not.toHaveBeenCalled();
+    expect(controller.channel.createAndSubmit).not.toHaveBeenCalled();
+    expect(controller.inputTarget.value).toBe("draft next message");
+    expect(controller.setStatus).toHaveBeenCalledWith(
+      "Wait for the current reply before sending another message.",
+      "active",
+    );
+  });
+
+  it("blocks submission through channel selection and command synchronization", async () => {
     let releaseSelection!: () => void;
     let releaseSlash!: () => void;
     const selection = new Promise<void>((resolve) => { releaseSelection = resolve; });
@@ -129,127 +195,71 @@ describe("ChatController exact authority", () => {
     await vi.waitFor(() => expect(controller.channel.select).toHaveBeenCalledOnce());
     await submit.call(controller, { preventDefault: vi.fn() });
     expect(controller.submitChannel).not.toHaveBeenCalled();
-    expect(controller.channel.createAndSubmit).not.toHaveBeenCalled();
     expect(controller.busy).toBe(true);
-
     releaseSelection();
     await vi.waitFor(() => expect(controller.synchronizeSlashCommands).toHaveBeenCalledOnce());
-    expect(controller.busy).toBe(true);
     releaseSlash();
     await selecting;
     expect(controller.busy).toBe(false);
-    expect(controller.inputTarget.value).toBe("do not race this prompt");
   });
 
-  it("preserves the neutral composer when typed channel creation cannot complete", async () => {
-    const exact = "creation failure exact";
-    const controller = harness(exact);
+  it("preserves the neutral composer when channel creation cannot complete", async () => {
+    const controller = harness("creation failure exact");
     controller.channel.hasSelection.mockReturnValue(false);
-    controller.channel.createAndSubmit.mockResolvedValueOnce("creation_failed");
+    controller.channel.createAndSubmit.mockResolvedValueOnce({ kind: "creation_failed" });
 
     await submit.call(controller, { preventDefault: vi.fn() });
 
-    expect(controller.submitChannel).not.toHaveBeenCalled();
-    expect(controller.inputTarget.value).toBe(exact);
+    expect(controller.inputTarget.value).toBe("creation failure exact");
     expect(controller.setBusy).toHaveBeenLastCalledWith(false);
   });
 
-  it("reports a neutral transition error without clearing the exact composer", async () => {
-    const controller = harness("retry exact neutral prompt");
-    controller.channel.hasSelection.mockReturnValue(false);
-    controller.channel.createAndSubmit.mockRejectedValueOnce(new Error("transition invariant failed"));
+  it("reports a pre-acceptance failure without clearing exact composer bytes", async () => {
+    const controller = harness("retry exact prompt");
+    controller.submitChannel.mockRejectedValueOnce(new Error("transition invariant failed"));
 
     await submit.call(controller, { preventDefault: vi.fn() });
 
-    expect(controller.inputTarget.value).toBe("retry exact neutral prompt");
+    expect(controller.inputTarget.value).toBe("retry exact prompt");
     expect(controller.addEvent).toHaveBeenCalledWith("request_failed", {
       error: "transition invariant failed",
     });
-    expect(controller.setStatus).toHaveBeenLastCalledWith("failed", "error");
-    expect(controller.setBusy).toHaveBeenLastCalledWith(false);
+    expect(controller.setStatus).toHaveBeenLastCalledWith("transition invariant failed", "error");
   });
 
-  it("does not invent or clear channel transcript state before server completion", async () => {
-    let resolveSubmission!: () => void;
-    const pending = new Promise<void>((resolve) => { resolveSubmission = resolve; });
-	const controller = harness("exact channel prompt");
-    controller.submitChannel.mockReturnValueOnce(pending);
-
-    const result = submit.call(controller, { preventDefault: vi.fn() });
-    await vi.waitFor(() => expect(controller.submitChannel).toHaveBeenCalledWith("exact channel prompt"));
-
-    expect(controller.inputTarget.value).toBe("exact channel prompt");
-    expect(controller.setBusy).toHaveBeenCalledWith(true);
-
-    resolveSubmission();
-    await result;
-    expect(controller.inputTarget.value).toBe("");
-  });
-
-  it("preserves the channel composer and adds no synthetic transcript on failure", async () => {
-	const controller = harness("retry this exact prompt");
-    controller.submitChannel.mockRejectedValueOnce(new Error("channel job failed"));
-
-    await submit.call(controller, { preventDefault: vi.fn() });
-
-    expect(controller.inputTarget.value).toBe("retry this exact prompt");
-    expect(controller.setStatus).toHaveBeenLastCalledWith("failed", "error");
-    expect(controller.setBusy).toHaveBeenLastCalledWith(false);
-  });
-
-  it("rejects a turn while the selected roleplay simulation is unconfigured", async () => {
-    const controller = harness("do not accept this turn");
+  it("preserves a roleplay prompt until its simulation is configured", async () => {
+    const controller = harness("preserve roleplay prompt");
     controller.roleplay.isConfigured = () => false;
 
     await submit.call(controller, { preventDefault: vi.fn() });
 
     expect(controller.submitChannel).not.toHaveBeenCalled();
-    expect(controller.inputTarget.value).toBe("do not accept this turn");
+    expect(controller.inputTarget.value).toBe("preserve roleplay prompt");
     expect(controller.setStatus).toHaveBeenCalledWith("roleplay setup required", "error");
   });
 
-  it("creates a neutral roleplay channel but preserves the turn until scene setup", async () => {
-    const exact = "preserve this roleplay turn";
-    const controller = harness(exact);
+  it("preserves a neutral roleplay prompt after its channel requires setup", async () => {
+    const controller = harness("preserve this roleplay turn");
     controller.channel.hasSelection.mockReturnValue(false);
-    controller.channel.createAndSubmit.mockResolvedValueOnce("roleplay_setup_required");
+    controller.channel.createAndSubmit.mockResolvedValueOnce({ kind: "roleplay_setup_required" });
 
     await submit.call(controller, { preventDefault: vi.fn() });
 
-    expect(controller.channel.createAndSubmit).toHaveBeenCalledWith(exact);
-    expect(controller.submitChannel).not.toHaveBeenCalled();
-    expect(controller.inputTarget.value).toBe(exact);
+    expect(controller.inputTarget.value).toBe("preserve this roleplay turn");
     expect(controller.setStatus).toHaveBeenCalledWith("roleplay setup required", "error");
-    expect(controller.setBusy).toHaveBeenLastCalledWith(false);
   });
 
-  it("leaves exact composer bytes for the canonical submit path on modified Enter", () => {
-    const exact = "/ta";
-    const controller = { submit: vi.fn(), inputTarget: { value: exact } };
-    const event = new KeyboardEvent("keydown", { key: "Enter", metaKey: true, cancelable: true });
+  it("uses Enter to send and Shift+Enter for a newline", () => {
+    const controller = { submit: vi.fn() };
+    const send = new KeyboardEvent("keydown", { key: "Enter", cancelable: true });
+    const newline = new KeyboardEvent("keydown", { key: "Enter", shiftKey: true, cancelable: true });
 
-    ChatController.prototype.composerKeydown.call(controller as never, event);
+    ChatController.prototype.composerKeydown.call(controller as never, send);
+    ChatController.prototype.composerKeydown.call(controller as never, newline);
 
-    expect(event.defaultPrevented).toBe(true);
-    expect(controller.submit).toHaveBeenCalledWith(event);
-    expect(controller.inputTarget.value).toBe(exact);
-  });
-
-  it("runs slash coordination before canonical modified-Enter submission without replacing bytes", () => {
-    const inputTarget = { value: "/ta" };
-    const submitted: string[] = [];
-    const controller = {
-      inputTarget,
-      slashPalette: { keydown: vi.fn() },
-      submit: vi.fn(() => { submitted.push(inputTarget.value); }),
-    };
-    const event = new KeyboardEvent("keydown", { key: "Enter", ctrlKey: true, cancelable: true });
-
-    ChatController.prototype.slashCommandKeydown.call(controller as never, event);
-    ChatController.prototype.composerKeydown.call(controller as never, event);
-
-    expect(controller.slashPalette.keydown).toHaveBeenCalledWith(event);
-    expect(submitted).toEqual(["/ta"]);
-    expect(controller.inputTarget.value).toBe("/ta");
+    expect(send.defaultPrevented).toBe(true);
+    expect(newline.defaultPrevented).toBe(false);
+    expect(controller.submit).toHaveBeenCalledTimes(1);
+    expect(controller.submit).toHaveBeenCalledWith(send);
   });
 });

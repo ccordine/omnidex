@@ -1,6 +1,7 @@
 package assemblyline
 
 import (
+	"encoding/json"
 	"fmt"
 	"reflect"
 	"strings"
@@ -29,7 +30,7 @@ func TestRepositoryGroundedReviewReturnsOnlyNoneOrOneIssue(t *testing.T) {
 	}
 	assertExactJSONFields(t, reflect.TypeOf(input), []string{
 		"requirement_id", "exact_requirement", "objective_context",
-		"answer_text", "evidence_ids", "evidence", "advisory_capsules",
+		"answer_text", "evidence_ids", "evidence",
 	})
 	none := RepositoryGroundedReviewDecision{
 		Schema: RepositoryGroundedReviewSchemaV1, Outcome: RepositoryGroundedReviewNone,
@@ -64,6 +65,20 @@ func TestRepositoryGroundedReviewRequiresExactlyTheCitedEvidence(t *testing.T) {
 	input.Evidence = append(input.Evidence, GroundedEvidenceCapsule{ID: "R02", Text: input.Evidence[0].Text})
 	if _, err := NewRepositoryGroundedReviewJob(input); err == nil {
 		t.Fatal("duplicate evidence text was accepted under another ID")
+	}
+}
+
+func TestRepositoryGroundedReviewRejectsRetiredAdvisoryProjection(t *testing.T) {
+	t.Parallel()
+	raw, err := json.Marshal(repositoryGroundedReviewFixture())
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw = append(raw[:len(raw)-1], []byte(`,"advisory_capsules":[]}`)...)
+	var decoded RepositoryGroundedReviewInput
+	if err := decodePortablePayload(raw, &decoded); err == nil ||
+		!strings.Contains(err.Error(), "advisory_capsules") {
+		t.Fatalf("retired advisory projection error=%v", err)
 	}
 }
 
@@ -116,12 +131,7 @@ func TestRepositoryGroundedReviewDecodeRejectsExtraOrDuplicateState(t *testing.T
 func repositoryGroundedReviewFixture() RepositoryGroundedReviewInput {
 	return RepositoryGroundedReviewInput{
 		RequirementID: "requirement-17", ExactRequirement: "Which component owns dispatch?",
-		Context: ObjectiveContext{
-			UserAuthorities: []ConversationSelectedUserAuthority{{MessageID: 17, Content: "What did the earlier result say?"}},
-			AssistantResults: []ConversationSelectedAssistantResult{{
-				UserMessageID: 17, MessageID: 18, JobID: 19, Content: "The earlier result discussed dispatch.",
-			}},
-		},
+		Context:    minifiedObjectiveContext("The earlier result discussed dispatch ownership."),
 		AnswerText: "ScheduleDispatch owns dispatch.", EvidenceIDs: []string{"R01"},
 		Evidence: []GroundedEvidenceCapsule{{ID: "R01", Text: "func ScheduleDispatch() starts dispatch."}},
 	}

@@ -18,7 +18,7 @@ export interface ChatPanelHost {
   root(): Element;
   locale(): string;
   renderPanel(html: string): Promise<void>;
-  loadPanelData(panel: OmniPanel): void;
+  loadPanelData(panel: OmniPanel): Promise<void>;
   pushRoute(path: string): void;
   addEvent(type: string, details?: Record<string, unknown>, full?: unknown): void;
   reportError(error: unknown): void;
@@ -63,7 +63,13 @@ export class ChatPanelCoordinator {
     this.activePanel = panel;
     this.updateNavigation(panel);
     document.dispatchEvent(new CustomEvent("omni:panel-shown", { detail: { panel } }));
-    this.host.loadPanelData(panel);
+    try {
+      await this.host.loadPanelData(panel);
+    } catch (error) {
+      this.host.addEvent("ui_panel_data_error", { panel, error: errorMessage(error) });
+      this.host.reportError(error);
+      throw error;
+    }
 
     if (options.pushHistory) {
       const extra = panel === "admin" ? { admin_tab: parseAdminTabFromLocation() } : {};

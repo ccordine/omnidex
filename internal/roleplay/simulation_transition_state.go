@@ -86,9 +86,22 @@ func loadSceneParticipantsTx(
 }
 
 func nextSceneCharacter(scene lockedSimulationScene) (string, error) {
+	return nextSceneCharacterExcept(scene, "")
+}
+
+func nextSceneCharacterExcept(scene lockedSimulationScene, excludedCharacterID string) (string, error) {
 	for index, participant := range scene.Participants {
 		if participant.CharacterID == scene.Sheet.ActiveCharacterID {
-			return scene.Participants[(index+1)%len(scene.Participants)].CharacterID, nil
+			for offset := 1; offset <= len(scene.Participants); offset++ {
+				candidate := scene.Participants[(index+offset)%len(scene.Participants)].CharacterID
+				if candidate != excludedCharacterID {
+					return candidate, nil
+				}
+			}
+			return "", fmt.Errorf(
+				"%w: no responding character remains after excluding the user persona",
+				ErrSimulationNotConfigured,
+			)
 		}
 	}
 	return "", fmt.Errorf("%w: active character is not a scene participant", ErrSimulationNotConfigured)

@@ -26,7 +26,10 @@ func TestDeclarationArtifactBoundaryHasOneExactStationOwner(t *testing.T) {
 	if got != station.CodingDeclarationArtifactBoundary {
 		t.Fatalf("station=%q want=%q", got, station.CodingDeclarationArtifactBoundary)
 	}
-	correction, err := assemblyline.NewResponseCorrectionJob(job, "boundary is unsupported")
+	correction, err := assemblyline.NewRetainedResponseCorrectionJob(
+		job, "boundary is unsupported",
+		`{"schema":"omnidex.declaration-artifact-boundary.v1","declaration_id":"DECLARATION_1","boundary":"none"}`,
+	)
 	if err != nil {
 		t.Fatal(err)
 	}

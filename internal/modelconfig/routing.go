@@ -19,17 +19,17 @@ func Apply(base Routing, cfg Config) Routing {
 		}
 		out.Stations = clone
 	}
-	if value := cfg.Get("conversation_context_selection_model"); value != "" {
-		out.Stations[station.ConversationContextSelection] = value
+	if value := cfg.Get("context_search_terms_model"); value != "" {
+		out.Stations[station.ContextSearchTerms] = value
 	}
-	if value := cfg.Get("memory_context_selection_model"); value != "" {
-		out.Stations[station.MemoryContextSelection] = value
+	if value := cfg.Get("context_relevance_model"); value != "" {
+		out.Stations[station.ContextRelevance] = value
+	}
+	if value := cfg.Get("context_minification_model"); value != "" {
+		out.Stations[station.ContextMinification] = value
 	}
 	if value := cfg.Get("conversation_objective_kind_model"); value != "" {
 		out.Stations[station.ConversationObjectiveKind] = value
-	}
-	if value := cfg.Get("objective_advisory_model"); value != "" {
-		out.Stations[station.ObjectiveAdvisory] = value
 	}
 	if value := cfg.Get("conversation_response_model"); value != "" {
 		out.Stations[station.ConversationResponse] = value

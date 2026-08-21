@@ -44,8 +44,12 @@ func (s *Store) LoadSimulationTurnForJob(
 		  AND job.metadata->>'roleplay_scene_revision'=preparation.scene_revision::text
 		  AND job.metadata->>'roleplay_input_kind'=preparation.input_kind
 		  AND job.metadata->>'roleplay_narrative_fingerprint'=preparation.result->>'narrative_fingerprint'
-		  AND job.metadata->>'roleplay_viewpoint_character_id'=preparation.active_character_id
+		  AND job.metadata->>'roleplay_viewpoint_character_id'=
+		      preparation.result->'responder_routes'->0->>'character_id'
 		  AND job.metadata->'roleplay_participant_character_ids'=preparation.result->'participant_character_ids'
+		  AND job.metadata->'roleplay_generation_config'=preparation.result->'generation_config'
+		  AND job.metadata->'roleplay_responders'=preparation.result->'responder_routes'
+		  AND job.metadata->'roleplay_user_turn'=preparation.result->'user_turn'
 	`, preparationID, jobID).Scan(&payload)
 	if err == pgx.ErrNoRows {
 		return SimulationTurnAuthority{}, fmt.Errorf("%w: simulation preparation and job authority do not match", ErrSimulationIllegal)

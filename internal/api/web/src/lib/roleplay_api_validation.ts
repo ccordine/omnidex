@@ -24,6 +24,13 @@ export function requireRoleplayComponent(payload: Record<string, unknown>): Role
   } else if (payload.scene_revision !== undefined) {
     throw new Error("Unconfigured roleplay response cannot carry a scene revision.");
   }
+  if (payload.composer_persona_character_id !== undefined) {
+    result.composer_persona_character_id = roleplayID(
+      payload.composer_persona_character_id,
+      "Composer persona character",
+      "rpc",
+    );
+  }
   return result;
 }
 

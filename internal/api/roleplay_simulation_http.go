@@ -93,9 +93,11 @@ func (s *Server) loadRoleplaySimulationState(
 	}
 	state := roleplaySimulationComponentState{
 		Channel: channel, World: world, Characters: projection.Characters.Items,
+		UserPersonaCharacters: projection.UserPersonaCharacters,
 		CharactersMore:        projection.Characters.HasMore,
 		CharacterHasPersona:   projection.CharacterHasPersona,
 		CharacterCapabilities: projection.CharacterCapabilities,
+		CharacterGeneration:   projection.CharacterGeneration,
 		CharacterNames:        projection.CharacterNames,
 		PersonasMore:          projection.Personas.HasMore, Page: page,
 		Participants: projection.Participants.Items, ParticipantsMore: projection.Participants.HasMore,
@@ -105,6 +107,12 @@ func (s *Server) loadRoleplaySimulationState(
 		Interactions: projection.Interactions.Items, InteractionsMore: projection.Interactions.HasMore,
 		ItemTemplates: projection.ItemTemplates.Items, ItemTemplatesMore: projection.ItemTemplates.HasMore,
 		ActiveCharacterName: projection.ActiveCharacterName,
+		ActiveGeneration:    projection.ActiveGeneration,
+		LastUserTurn:        projection.LastUserTurn,
+	}
+	state.InstalledModelNames, err = s.loadInstalledRoleplayModelNames(ctx)
+	if err != nil {
+		return roleplaySimulationComponentState{}, err
 	}
 	for _, persona := range projection.Personas.Items {
 		name := projection.CharacterNames[persona.CharacterID]

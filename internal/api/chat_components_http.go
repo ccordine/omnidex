@@ -14,22 +14,53 @@ const (
 	maxChatComponentPageLimit     = 50
 )
 
+func (s *Server) handleChatNeutralTranscript(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if err := validateExactQuery(r); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeChatComponentJSON(w, neutralChannelTranscriptComponent())
+}
+
 func (s *Server) handleChatChannelOptions(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if err := validateExactQuery(r, "limit", "offset", "mode"); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	limit, offset, ok := exactChatComponentPage(w, r)
 	if !ok {
 		return
 	}
-	channels, err := s.channelStore.ListChannels(r.Context(), model.ChannelScopeUser, limit+1, offset)
+	modeValue, err := exactChatComponentString(r, "mode", 16)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	var channels []model.Channel
+	if modeValue == "" {
+		channels, err = s.channelStore.ListChannels(r.Context(), model.ChannelScopeUser, limit+1, offset)
+	} else {
+		mode := model.ChannelMode(modeValue)
+		if err := mode.Validate(); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		channels, err = s.channelStore.ListChannelsByMode(r.Context(), model.ChannelScopeUser, mode, limit+1, offset)
+	}
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	channels, next, _ := boundedChatComponentPage(channels, limit, offset)
-	payload, err := renderChatChannelOptionsPage(channels, next, offset > 0)
+	payload, err := renderChatChannelOptionsPage(channels, next, offset > 0, modeValue)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return

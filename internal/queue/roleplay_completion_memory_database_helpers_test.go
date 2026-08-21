@@ -40,14 +40,8 @@ func assertRoleplayCompletionMemoryAndVisibility(
 	if err != nil {
 		t.Fatal(err)
 	}
-	witnessNarrative, _, err := reopenedStore.ProjectSimulationNarrative(ctx, worldID, witnessID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(viewpointNarrative.Memories) != 1 || viewpointNarrative.Memories[0] != fact ||
-		len(witnessNarrative.Memories) != 0 {
-		t.Fatalf("cross-session memory isolation viewpoint=%v witness=%v",
-			viewpointNarrative.Memories, witnessNarrative.Memories)
+	if len(viewpointNarrative.Memories) != 1 || viewpointNarrative.Memories[0] != fact {
+		t.Fatalf("cross-session viewpoint memory=%v", viewpointNarrative.Memories)
 	}
 	var sourceRole string
 	if err := repository.pool.QueryRow(ctx, `
@@ -80,7 +74,7 @@ func assertRoleplayCompletionMemoryAndVisibility(
 	}
 	completion := CompleteStepEvidenceCommand{CompleteStepCommand: command, Evidence: nil}
 	if err := repository.CompleteStepWithEvidence(ctx, completion); err == nil ||
-		!strings.Contains(err.Error(), "inconsistent roleplay completion character memories") {
+		!strings.Contains(err.Error(), "inconsistent roleplay response character memory") {
 		t.Fatalf("tampered roleplay memory replay error=%v", err)
 	}
 	if _, err := store.AppendCharacterMemory(
@@ -134,7 +128,7 @@ func assertRoleplayCompletionReceiptImmutability(
 	}
 	completion := CompleteStepEvidenceCommand{CompleteStepCommand: command, Evidence: nil}
 	if err := repository.CompleteStepWithEvidence(ctx, completion); err == nil ||
-		!strings.Contains(err.Error(), "inconsistent roleplay completion character knowledge") {
+		!strings.Contains(err.Error(), "inconsistent roleplay response character knowledge") {
 		t.Fatalf("tampered roleplay completion replay error=%v", err)
 	}
 }

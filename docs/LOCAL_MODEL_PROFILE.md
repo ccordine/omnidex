@@ -4,6 +4,13 @@ This profile is for the Framework 16 host used to run Omnidex. It is a
 deployment choice, not model-aware application logic: every role remains an
 explicit immutable route and no model is used as a fallback for another.
 
+Parameter count is never a routing rule. Each station retains one stable semantic
+contract, and deployment configuration resolves that station to one exact model only
+after the candidate has demonstrated the required schema fidelity, semantic quality,
+latency, and resource use. A smaller candidate that passes is valid; a larger candidate
+that fails is not. Context and output numbers are operating targets and per-call
+resource bounds, not arbitrary global correctness ceilings.
+
 ## Measured host boundary
 
 The host has:
@@ -46,9 +53,7 @@ independent route is unavailable. Keeping every other authoritative semantic
 route on one stable Qwen model avoids needless reloads between tiny stations.
 Production requirement extraction and splitting use the same schema-bound Qwen
 route; the final-partition reasoning-adviser protocol remains an offline gauntlet
-experiment. The separate passive objective advisory defaults to `off` and currently
-uses the exact-compatible Qwen route when explicitly set to `shadow` or `active`.
-It returns plain text only after grounding and cannot plan, mutate, or complete work.
+experiment.
 
 Qwen 3.5 9B is the practical structured repair-analysis choice because its Q4_K_M Ollama image is
 6.6 GB and Qwen publishes strong instruction following, tool-use, and coding
@@ -112,6 +117,20 @@ go test ./internal/worker \
   -run '^TestLiveTypeScriptGuidanceExecutorCompilerConvergence$' \
   -count=1 -v -timeout=15m
 ```
+
+## Browser context-relevance qualification
+
+The browser WebGPU provider is implemented below the existing
+`context_relevance` station, but remains disabled by default. Its small ten-case live
+corpus and report format deliberately stop at the minimum useful qualification record:
+station, exact model, corpus version/hash, pass/fail, measured latency, measured
+quality, and `qualified`.
+
+Three initial candidates completed real WebGPU inference through the production UI
+bridge and server validator. All three met the supplied latency target and failed the
+semantic contract, so none was promoted. The results and rerun command are in
+[`BROWSER_INFERENCE.md`](BROWSER_INFERENCE.md); compact evidence is retained in
+[`evidence/2026-08-20-browser-context-relevance-candidates.json`](evidence/2026-08-20-browser-context-relevance-candidates.json).
 
 ## Local measurements
 

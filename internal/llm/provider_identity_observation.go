@@ -65,9 +65,9 @@ func RequireProviderIdentityObservation(
 		)
 	}
 	if err != nil {
-		selection := ProviderIdentitySelection{
-			Model:              request.Expectation.Model,
-			NativeContextLimit: request.Expectation.NativeContextLimit,
+		selection, selectionErr := ProviderIdentitySelectionForExpectation(request.Expectation)
+		if selectionErr != nil {
+			return observed, selectionErr
 		}
 		if evidenceErr := observed.Evidence.ValidateFailure(
 			selection, &request.Expectation,
@@ -99,8 +99,11 @@ func NewObservedProviderIdentity(
 			"provider identity observation time must be nonzero UTC with PostgreSQL microsecond precision",
 		)
 	}
-	selection := ProviderIdentitySelection{
-		Model: attestation.Model, NativeContextLimit: attestation.NativeContextLimit,
+	selection, err := ProviderIdentitySelectionForProfile(
+		attestation.Model, attestation.NativeContextLimit, attestation.TokenizerProfile,
+	)
+	if err != nil {
+		return ObservedProviderIdentity{}, err
 	}
 	expected, err := DeriveExactProviderIdentityExpectation(evidence, selection)
 	if err != nil || attestation.ValidateFor(expected) != nil {
@@ -211,16 +214,14 @@ func (observed ObservedProviderIdentity) ValidateFor(
 	if err := observed.Observation.ValidateEvidence(observed.Evidence); err != nil {
 		return fmt.Errorf("provider identity observation lacks its exact raw evidence")
 	}
-	selection := ProviderIdentitySelection{
-		Model:              request.Expectation.Model,
-		NativeContextLimit: request.Expectation.NativeContextLimit,
+	selection, err := ProviderIdentitySelectionForExpectation(request.Expectation)
+	if err != nil {
+		return err
 	}
 	if err := observed.Evidence.ValidateRequests(selection); err != nil {
 		return fmt.Errorf("provider identity raw evidence changed its exact requests: %w", err)
 	}
-	derived, err := DeriveExactProviderIdentityExpectation(observed.Evidence, ProviderIdentitySelection{
-		Model: request.Expectation.Model, NativeContextLimit: request.Expectation.NativeContextLimit,
-	})
+	derived, err := DeriveExactProviderIdentityExpectation(observed.Evidence, selection)
 	if err != nil || derived != request.Expectation {
 		return fmt.Errorf("provider identity raw evidence differs from its frozen expectation")
 	}

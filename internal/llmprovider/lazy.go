@@ -96,6 +96,22 @@ func (resolver *lazyExactStationResolver) DiscoverProviderIdentityEvidence(
 	)
 }
 
+func (resolver *lazyExactStationResolver) ResolveRoleplayRawContext(
+	ctx context.Context,
+	model string,
+	requested int,
+) (int, error) {
+	client, err := resolver.resolve()
+	if err != nil {
+		return 0, fmt.Errorf("resolve roleplay raw context provider authority: %w", err)
+	}
+	contextResolver, ok := client.(llm.RoleplayRawContextResolver)
+	if !ok {
+		return 0, fmt.Errorf("exact station provider does not implement roleplay raw context resolution")
+	}
+	return contextResolver.ResolveRoleplayRawContext(ctx, model, requested)
+}
+
 func (resolver *lazyExactStationResolver) resolve() (llm.ExactStationClient, error) {
 	if resolver == nil {
 		return nil, fmt.Errorf("lazy exact station resolver is uninitialized")

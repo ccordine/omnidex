@@ -21,3 +21,7 @@ func NewWorldIdentity() (string, error) {
 func NewCharacterIdentity() (string, error) {
 	return newIdentity("rpc_")
 }
+
+func NewLibraryCharacterIdentity() (string, error) {
+	return newIdentity("rpl_")
+}

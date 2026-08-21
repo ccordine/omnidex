@@ -134,14 +134,14 @@ func TestSimulationTurnAuthorityValidation(t *testing.T) {
 	projection := NarrativeSimulationProjection{
 		Schema:       NarrativeSimulationProjectionSchemaV1,
 		Scene:        NarrativeScene{Title: "Crossroads", Description: "A quiet road.", ActiveCharacterName: "Ari"},
-		Participants: []string{"Ari"},
+		Participants: []string{"Ari", "Bex"},
 		Viewpoint:    NarrativePersona{Name: "Ari", Summary: "A traveler.", Voice: "Measured.", Traits: []string{}, Goals: []string{}},
 		Meters:       []NarrativeMeter{}, Inventory: []NarrativeInventoryItem{},
 		VisibleFacts: []string{}, Memories: []string{}, RecentEvents: []string{},
 	}
 	narrativeAuthority := SimulationNarrativeAuthority{
 		WorldID: testWorldID, SceneID: testSceneID, SceneRevision: 3,
-		ViewpointID: testCharacterID, ParticipantIDs: []string{testCharacterID},
+		ViewpointID: testCharacterID, ParticipantIDs: []string{testCharacterID, "rpc_eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"},
 		MeterKeys: []string{}, InventoryItemIDs: []string{}, CanonEventIDs: []string{},
 		MemoryIDs: []string{}, TransitionIDs: []string{},
 	}
@@ -154,10 +154,29 @@ func TestSimulationTurnAuthorityValidation(t *testing.T) {
 		PreparationID: testActionID, ChannelID: "roleplay-channel", UserMessageID: 7,
 		WorldID: testWorldID, SceneID: testSceneID, BaseSceneRevision: 3, SceneRevision: 3,
 		ActiveCharacterID: testCharacterID, InputKind: SimulationTurnProse,
-		ParticipantCharacterIDs: []string{testCharacterID}, NarrativeProjection: projection,
+		UserTurn: UserTurnAuthority{
+			PersonaKind: UserPersonaCharacter, CharacterID: "rpc_eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+			PersonaName: "Bex", PersonaSummary: "Another traveler.",
+			ContributionKind: UserContributionDialogue, ExactText: "Hello.",
+		},
+		ParticipantCharacterIDs: []string{testCharacterID, "rpc_eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"}, NarrativeProjection: projection,
+		GenerationConfig: CharacterGenerationConfig{
+			Schema:             CharacterGenerationConfigSchemaV2,
+			LibraryCharacterID: "rpl_0123456789abcdef0123456789abcdef", Revision: 1,
+		},
 		NarrativeAuthority: narrativeAuthority, NarrativeFingerprint: fingerprint,
 		CreatedAt: time.Now().UTC(),
 	}
+	authority.Responders = []SimulationResponderAuthority{{
+		Position: 0, CharacterID: testCharacterID,
+		GenerationConfig: authority.GenerationConfig,
+		NarrativeProjection: projection, NarrativeAuthority: narrativeAuthority,
+		NarrativeFingerprint: fingerprint,
+	}}
+	authority.ResponderRoutes = []SimulationResponderRoute{{
+		Position: 0, CharacterID: testCharacterID,
+		GenerationConfig: authority.GenerationConfig, NarrativeFingerprint: fingerprint,
+	}}
 	if err := authority.Validate(); err != nil {
 		t.Fatal(err)
 	}
@@ -165,7 +184,7 @@ func TestSimulationTurnAuthorityValidation(t *testing.T) {
 	if err := authority.Validate(); err == nil {
 		t.Fatal("authority without active participant unexpectedly validated")
 	}
-	authority.ParticipantCharacterIDs = []string{testCharacterID}
+	authority.ParticipantCharacterIDs = []string{testCharacterID, "rpc_eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"}
 	authority.InputKind = SimulationTurnAction
 	if err := authority.Validate(); err == nil {
 		t.Fatal("action authority without transition unexpectedly validated")

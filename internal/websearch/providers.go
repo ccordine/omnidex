@@ -9,6 +9,7 @@ import (
 )
 
 var (
+	braveResultRE  = regexp.MustCompile(`(?is)<a\s+href=["'](https?://[^"']+)["'][^>]*class=["'][^"']*\bl1\b[^"']*["'][^>]*>(.*?)</a>`)
 	googleResultRE = regexp.MustCompile(`(?is)<a[^>]+href=["'](/url\?q=[^"']+)["'][^>]*>(.*?)</a>`)
 	duckResultRE   = regexp.MustCompile(`(?is)<a[^>]+class=["'][^"']*result__a[^"']*["'][^>]+href=["']([^"']+)["'][^>]*>(.*?)</a>`)
 	yahooResultRE  = regexp.MustCompile(`(?is)<a[^>]+href=["'](https?://[^"']+)["'][^>]*>(.*?)</a>`)
@@ -22,6 +23,13 @@ type providerDefinition struct {
 
 func providerDefinitionFor(id ProviderID) (providerDefinition, bool) {
 	definitions := map[ProviderID]providerDefinition{
+		ProviderBrave: {
+			id: ProviderBrave,
+			searchURL: func(query string) string {
+				return "https://search.brave.com/search?q=" + url.QueryEscape(query) + "&source=web"
+			},
+			resultRE: braveResultRE,
+		},
 		ProviderDuckDuckGo: {
 			id: ProviderDuckDuckGo,
 			searchURL: func(query string) string {
@@ -130,6 +138,8 @@ func isProviderOwnedURL(provider ProviderID, rawURL string) bool {
 	}
 	host := strings.ToLower(parsed.Hostname())
 	switch provider {
+	case ProviderBrave:
+		return host == "search.brave.com" || strings.HasSuffix(host, ".search.brave.com")
 	case ProviderGoogle, ProviderReddit:
 		return strings.Contains(host, "google.")
 	case ProviderDuckDuckGo:

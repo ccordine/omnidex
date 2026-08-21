@@ -15,7 +15,7 @@ func TestPreparedRoleplaySimulationCannotPublishBeforeTerminalCompletion(t *test
 	ctx := t.Context()
 	pool := openIsolatedMigrationPool(t)
 	repository := New(pool)
-	if err := repository.EnsureSchema(ctx, loadMigrationBundleThroughPrefix(t, "120")); err != nil {
+	if err := repository.EnsureSchema(ctx, loadCheckedMigrationBundle(t)); err != nil {
 		t.Fatal(err)
 	}
 	channel, err := repository.CreateRoleplayChannel(ctx, model.Channel{
@@ -53,7 +53,7 @@ func TestPreparedRoleplaySimulationCannotPublishBeforeTerminalCompletion(t *test
 		t.Fatal(err)
 	}
 
-	_, actionJob, err := repository.EnqueueChannelTurn(ctx, channel.ID, "/settle")
+	_, actionJob, err := enqueueNarratorRoleplayTurn(ctx, repository, channel.ID, "/settle")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,7 +91,7 @@ func TestPreparedRoleplaySimulationCannotPublishBeforeTerminalCompletion(t *test
 	}
 	assertTerminalGuardState(t, pool, world.ID, characterID, 1, 5, 0, 0)
 
-	_, quietJob, err := repository.EnqueueChannelTurn(ctx, channel.ID, "Ari waits in silence.")
+	_, quietJob, err := enqueueNarratorRoleplayTurn(ctx, repository, channel.ID, "Ari waits in silence.")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -13,6 +13,7 @@ func AppendTurnCanonTx(
 	ctx context.Context,
 	tx pgx.Tx,
 	completionOperationID string,
+	responsePosition int,
 	channelID string,
 	sourceMessageID int64,
 	viewpointID string,
@@ -24,6 +25,9 @@ func AppendTurnCanonTx(
 	}
 	if err := validateCompletionOperationID(completionOperationID); err != nil {
 		return nil, err
+	}
+	if responsePosition < 0 || responsePosition >= MaxSceneParticipants {
+		return nil, fmt.Errorf("roleplay turn canon requires a bounded response position")
 	}
 	if err := validateChannelID(channelID); err != nil {
 		return nil, err
@@ -100,10 +104,10 @@ func AppendTurnCanonTx(
 	}
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO roleplay_turn_completions (
-			operation_id,world_id,viewpoint_character_id,source_message_id,
+			operation_id,response_position,world_id,viewpoint_character_id,source_message_id,
 			facts,knowledge_character_ids
-		) VALUES ($1,$2,$3,$4,$5::jsonb,$6::jsonb)
-	`, completionOperationID, worldID, viewpointID, sourceMessageID,
+		) VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7::jsonb)
+	`, completionOperationID, responsePosition, worldID, viewpointID, sourceMessageID,
 		string(factsJSON), string(knowledgeJSON)); err != nil {
 		return nil, fmt.Errorf("record roleplay turn completion: %w", err)
 	}

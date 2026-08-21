@@ -8,7 +8,6 @@ import (
 
 	"github.com/gryph/omnidex/internal/db"
 	"github.com/gryph/omnidex/internal/llm"
-	"github.com/gryph/omnidex/internal/objectiveadvisory"
 	"github.com/gryph/omnidex/internal/station"
 )
 
@@ -35,7 +34,7 @@ type Config struct {
 	HuggingFaceBaseURL        string
 	HuggingFaceAPIKey         string
 	StationModels             map[station.ID]string
-	ObjectiveAdvisoryMode     objectiveadvisory.Mode
+	ContextRelevanceProvider  string
 	EmbeddingModel            string
 	WebSearchProviders        []string
 	WebSearchTimeout          time.Duration
@@ -68,10 +67,6 @@ func Load() (Config, error) {
 	provider, embeddingProvider := loadProviderSelection()
 	compatibleProviders := loadCompatibleProviderConfigs()
 	providerModels := loadProviderModelConfigs()
-	objectiveAdvisoryMode, err := objectiveadvisory.ParseMode(os.Getenv("OMNI_OBJECTIVE_ADVISORY_MODE"))
-	if err != nil {
-		return Config{}, err
-	}
 	databaseSchema, err := loadDatabaseSchema()
 	if err != nil {
 		return Config{}, err
@@ -91,7 +86,6 @@ func Load() (Config, error) {
 		ProviderModels:            providerModels,
 		OllamaBaseURL:             getenv("OLLAMA_BASE_URL", ""),
 		CompatibleProviders:       compatibleProviders,
-		ObjectiveAdvisoryMode:     objectiveAdvisoryMode,
 		AzureAIBaseURL:            firstNonEmptyEnv([]string{"AZURE_AI_BASE_URL", "AZURE_OPENAI_ENDPOINT", "AZURE_OPENAI_BASE_URL"}, ""),
 		AzureAIAPIKey:             firstEnv("AZURE_AI_API_KEY", "AZURE_OPENAI_API_KEY"),
 		AzureAIAPIVersion:         getenv("AZURE_AI_API_VERSION", getenv("AZURE_OPENAI_API_VERSION", "")),
@@ -101,7 +95,8 @@ func Load() (Config, error) {
 		HuggingFaceBaseURL:        getenv("HUGGINGFACE_BASE_URL", "https://router.huggingface.co"),
 		HuggingFaceAPIKey:         firstEnv("HUGGINGFACE_API_KEY", "HF_TOKEN"),
 		EmbeddingModel:            embeddingModelForProvider(embeddingProvider),
-		WebSearchProviders:        getenvCSV("WEB_SEARCH_PROVIDERS", []string{"duckduckgo", "google", "reddit"}),
+		ContextRelevanceProvider:  strings.ToLower(getenv("OMNI_CONTEXT_RELEVANCE_PROVIDER", ContextRelevanceProviderServer)),
+		WebSearchProviders:        getenvCSV("WEB_SEARCH_PROVIDERS", []string{"brave", "google", "reddit"}),
 		WebSearchTimeout:          getenvDuration("WEB_SEARCH_TIMEOUT", 15*time.Second),
 		WebSearchPerSourceBudget:  getenvInt("WEB_SEARCH_PER_SOURCE_BUDGET", 3000),
 		WebSearchTotalBudget:      getenvInt("WEB_SEARCH_TOTAL_BUDGET", 6000),

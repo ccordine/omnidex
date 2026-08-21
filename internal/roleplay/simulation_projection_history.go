@@ -45,10 +45,14 @@ func loadCharacterMemoriesTx(
 	worldID, characterID string,
 ) ([]CharacterMemory, error) {
 	rows, err := tx.Query(ctx, `
-		SELECT id,source_event_id,content,created_at
-		FROM roleplay_character_memories
-		WHERE world_id=$1 AND character_id=$2
-		ORDER BY ordinal DESC,id DESC LIMIT $3
+		SELECT memory.id,memory.source_event_id,memory.content,memory.created_at
+		FROM roleplay_characters AS viewpoint
+		JOIN roleplay_characters AS placement
+		  ON placement.library_character_id=viewpoint.library_character_id
+		JOIN roleplay_character_memories AS memory
+		  ON memory.character_id=placement.id AND memory.world_id=placement.world_id
+		WHERE viewpoint.world_id=$1 AND viewpoint.id=$2
+		ORDER BY memory.ordinal DESC,memory.id DESC LIMIT $3
 	`, worldID, characterID, MaxProjectionEvents)
 	if err != nil {
 		return nil, err

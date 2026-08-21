@@ -174,6 +174,8 @@ func prepareAndBindTestTurn(
 		"roleplay_participant_character_ids": authority.ParticipantCharacterIDs,
 		"roleplay_narrative_fingerprint":     authority.NarrativeFingerprint,
 		"roleplay_viewpoint_character_id":    authority.ActiveCharacterID,
+		"roleplay_generation_config":         authority.GenerationConfig,
+		"roleplay_user_turn":                 authority.UserTurn,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -203,6 +205,42 @@ func prepareAndBindTestTurn(
 		t.Fatalf("preparation replay=%+v error=%v", replayed, err)
 	}
 	return authority
+}
+
+func insertNarratorRoleplayUserMessage(
+	t *testing.T,
+	pool *pgxpool.Pool,
+	messageID int64,
+	channelID string,
+	exactText string,
+	contribution UserContributionKind,
+) {
+	t.Helper()
+	ctx := context.Background()
+	tx, err := pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback(ctx)
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO ai_channel_messages (id,channel_id,role,content)
+		VALUES ($1,$2,'user',$3)
+	`, messageID, channelID, exactText); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO roleplay_user_turns (
+			user_message_id,channel_id,world_id,persona_kind,persona_name,
+			contribution_kind,exact_text
+		)
+		SELECT $1,$2,world.id,'narrator','Narrator',$4,$3
+		FROM roleplay_worlds AS world WHERE world.channel_id=$2
+	`, messageID, channelID, exactText, contribution); err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func mustTransitionID(t *testing.T) string {

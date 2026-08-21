@@ -20,6 +20,10 @@ var (
 		name:    "roleplay character",
 		pattern: regexp.MustCompile(`^rpc_[0-9a-f]{32}$`),
 	}
+	libraryCharacterIdentity = identityKind{
+		name:    "roleplay library character",
+		pattern: regexp.MustCompile(`^rpl_[0-9a-f]{32}$`),
+	}
 	eventIdentity = identityKind{
 		name:    "roleplay canon event",
 		pattern: regexp.MustCompile(`^rpe_[0-9a-f]{32}$`),

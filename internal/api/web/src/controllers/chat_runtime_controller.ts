@@ -4,34 +4,34 @@ import { ChatDataSourceCoordinator } from "../lib/chat_data_source_coordinator";
 import { ChatExecutionCoordinator } from "../lib/chat_execution_coordinator";
 import { ChatJobsCoordinator } from "../lib/chat_jobs_coordinator";
 import { ChatMemoryCoordinator } from "../lib/chat_memory_coordinator";
+import { handleOllamaDownload } from "../lib/chat_ollama_download";
 import { ChatPanelCoordinator } from "../lib/chat_panel_coordinator";
 import { ChatRoleplayCoordinator } from "../lib/chat_roleplay_coordinator";
+import { RoleplayCharacterEditorCoordinator } from "../lib/roleplay_character_editor_coordinator";
+import { RoleplayWorkspaceCoordinator } from "../lib/roleplay_workspace_coordinator";
+import { RoleplayWorkspaceDialogs } from "../lib/roleplay_workspace_dialogs";
 import { ChatSlashPaletteCoordinator } from "../lib/chat_slash_palette_coordinator";
 import { ChatSystemCoordinator } from "../lib/chat_system_coordinator";
 import { toastFromError } from "../lib/feedback";
 import { getLocale } from "../lib/i18n";
-import { parsePanelFromLocation, type OmniPanel } from "../lib/panel_routing";
+import { parsePanelFromLocation } from "../lib/panel_routing";
 import type { RealtimeSyncDetail } from "../lib/realtime_sync";
 import type RecyclrController from "./recyclr_controller";
-import { ChatViewController } from "./chat_view_controller";
-
-export abstract class ChatRuntimeController extends ChatViewController {
-  protected channel!: ChatChannelCoordinator;
-  protected creation!: ChatChannelCreationCoordinator;
-  protected dataSources!: ChatDataSourceCoordinator;
-  protected jobs!: ChatJobsCoordinator;
-  protected memory!: ChatMemoryCoordinator;
-  protected system!: ChatSystemCoordinator;
-  protected execution!: ChatExecutionCoordinator;
-  protected panels!: ChatPanelCoordinator;
-  protected roleplay!: ChatRoleplayCoordinator;
-  protected slashPalette!: ChatSlashPaletteCoordinator;
-
+import { ChatSynchronizationController } from "./chat_synchronization_controller";
+export abstract class ChatRuntimeController extends ChatSynchronizationController {
   private memoryChangedHandler: (() => void) | null = null;
   private networkSettingsHandler: ((event: Event) => void) | null = null;
   private projectOpenedHandler: ((event: Event) => void) | null = null;
   private projectClosedHandler: (() => void) | null = null;
   private metricsGlanceHandler: (() => void) | null = null;
+  private readonly ollamaDownloadHandler = (event: Event) => handleOllamaDownload(event, {
+    roleplayIsCurrent: () => this.panels.isCurrent("roleplay"),
+    hasSelectedChannel: () => this.channel.hasSelection(),
+    setStatus: (message, tone) => this.setStatus(message, tone),
+    refreshRoleplay: async () => { await Promise.all([this.roleplay.refresh(), this.roleplayCharacterEditor.refreshIfOpen()]); },
+    addEvent: (type, details) => this.addEvent(type, details),
+    reportError: (error) => this.reportRuntimeError(error),
+  });
   private readonly jobProgressHandler = (event: Event) => this.execution.handleProgress(event);
   private readonly realtimeSyncHandler = (event: Event) => {
     const detail = (event as CustomEvent<RealtimeSyncDetail>).detail;
@@ -39,6 +39,32 @@ export abstract class ChatRuntimeController extends ChatViewController {
       throw new Error("Realtime synchronization event is missing waitUntil().");
     }
     detail.waitUntil(this.synchronizeRealtimeState());
+  };
+  private readonly realtimeActivityHandler = (event: Event) => {
+    const detail = (event as CustomEvent<Record<string, unknown>>).detail;
+    if (!detail || typeof detail !== "object" || Array.isArray(detail)) {
+      throw new Error("Realtime activity event is missing typed detail.");
+    }
+    this.pulseSystemActivity();
+    if (detail.toastTone === "error") {
+      const problem = typeof detail.toast === "string" ? detail.toast.trim() : "";
+      if (!problem) throw new Error("Realtime error activity is missing a problem message.");
+      this.reportSystemProblem(problem);
+    }
+  };
+  private readonly realtimeStatusHandler = (event: Event) => {
+    const detail = (event as CustomEvent<Record<string, unknown>>).detail;
+    if (!detail || typeof detail !== "object" || Array.isArray(detail)) {
+      throw new Error("Realtime status event is missing typed detail.");
+    }
+    const state = detail.state;
+    if (state !== "connecting" && state !== "syncing" && state !== "live" &&
+        state !== "reconnecting" && state !== "error") {
+      throw new Error(`Realtime status has unregistered state ${JSON.stringify(state)}.`);
+    }
+    const message = typeof detail.message === "string" ? detail.message.trim() : "";
+    if (!message) throw new Error("Realtime status is missing a nonblank message.");
+    this.reportTransportActivity(state, message);
   };
 
   async connect(): Promise<void> {
@@ -50,14 +76,16 @@ export abstract class ChatRuntimeController extends ChatViewController {
     this.initializeViewState();
     this.wireCoordinators();
     this.bindDocumentEvents();
-    await this.channel.detectTransport();
-    await this.panels.activate(parsePanelFromLocation(), { pushHistory: false });
-    this.creation.synchronize();
-		this.dataSources.setCreationMode(this.creation.selectedMode());
-    await this.system.loadStatus();
-    await this.dataSources.load();
-    await this.channel.loadChannels();
-    await this.memory.loadGlobalActivity();
+    await Promise.all([
+      this.channel.detectTransport(),
+      this.panels.activate(parsePanelFromLocation(), { pushHistory: false }),
+    ]);
+    void Promise.all([this.system.loadStatus(), this.memory.loadGlobalActivity()]).catch((error) => {
+      this.addEvent("chat_startup_synchronization_failed", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      this.reportRuntimeError(error);
+    });
   }
 
   disconnect(): void {
@@ -66,9 +94,13 @@ export abstract class ChatRuntimeController extends ChatViewController {
     if (this.projectOpenedHandler) document.removeEventListener("omni:project-opened", this.projectOpenedHandler);
     if (this.projectClosedHandler) document.removeEventListener("omni:project-closed", this.projectClosedHandler);
     if (this.metricsGlanceHandler) document.removeEventListener("omni:metrics-glance", this.metricsGlanceHandler);
+    document.removeEventListener("omni:ollama-download", this.ollamaDownloadHandler);
     document.removeEventListener("omni:job-progress", this.jobProgressHandler);
     document.removeEventListener("omni:realtime-sync-required", this.realtimeSyncHandler);
+    document.removeEventListener("omni:realtime-activity", this.realtimeActivityHandler);
+    document.removeEventListener("omni:realtime-status", this.realtimeStatusHandler);
     this.execution.disconnect();
+    this.disconnectSystemActivity();
   }
 
   private wireCoordinators(): void {
@@ -83,14 +115,48 @@ export abstract class ChatRuntimeController extends ChatViewController {
 		panel: () => this.roleplayPanelTarget,
 		hasLoading: () => this.hasRoleplayLoadingTarget,
 		loading: () => this.roleplayLoadingTarget,
-		renderComponentBundle: (bundle) => this.renderComponentBundle(bundle),
+		renderComponentBundle: async (bundle) => {
+			await this.renderComponentBundle(bundle);
+			this.roleplayWorkspaceDialogs.restoreSetupSection();
+		},
 		setComposerAvailable: (available) => this.setRoleplayComposerAvailable(available),
 		setComposerText: (value) => this.setComposerText(value),
 		focusComposer: () => this.focusComposer(),
 		setStatus: (text, mode) => this.setStatus(text, mode),
 		addEvent: (type, details) => this.addEvent(type, details),
-		reportError: (error) => toastFromError(error),
+			reportError: (error) => this.reportRuntimeError(error),
 		refreshSlashCommands: () => this.slashPalette.refresh(),
+	});
+	this.roleplayWorkspace = new RoleplayWorkspaceCoordinator({
+		hasLoading: () => this.hasRoleplayWorkspaceLoadingTarget,
+		loading: () => this.roleplayWorkspaceLoadingTarget,
+		renderComponentBundle: (bundle) => this.renderComponentBundle(bundle),
+		selectedChannelID: () => this.channel.selectedID(),
+		firstChannelID: () => this.channel.firstAvailableID(),
+		selectChannelID: (id) => this.channel.selectID(id),
+		createWorld: () => this.channel.createConversation(),
+		refreshRoleplay: () => this.roleplay.refresh(),
+		setStatus: (text, tone) => this.setStatus(text, tone),
+		addEvent: (type, details) => this.addEvent(type, details),
+		reportError: (error) => this.reportRuntimeError(error),
+	});
+	this.roleplayWorkspaceDialogs = new RoleplayWorkspaceDialogs({
+		worldDialog: () => this.roleplayWorldDialogTarget,
+		characterDialog: () => this.roleplayCharacterDialogTarget,
+		setupDialog: () => this.roleplaySetupDialogTarget,
+		characterEditorDialog: () => this.roleplayCharacterEditorDialogTarget,
+	});
+	this.roleplayCharacterEditor = new RoleplayCharacterEditorCoordinator({
+		selectedChannelID: () => this.channel.selectedID(),
+		renderComponentBundle: (bundle) => this.renderComponentBundle(bundle),
+		refreshRoleplay: () => this.roleplay.refresh(),
+		openDialog: () => this.roleplayWorkspaceDialogs.open("character-editor"),
+		closeDialog: () => this.roleplayWorkspaceDialogs.close("character-editor"),
+		closeDialogFromBackdrop: (event) => this.roleplayWorkspaceDialogs.closeFromBackdrop("character-editor", event),
+		dialogIsOpen: () => this.roleplayCharacterEditorDialogTarget.open,
+		setStatus: (text, tone) => this.setStatus(text, tone),
+		addEvent: (type, details) => this.addEvent(type, details),
+		reportError: (error) => this.reportRuntimeError(error),
 	});
     this.creation = new ChatChannelCreationCoordinator({
       hasMode: () => this.hasNewChannelModeSelectTarget,
@@ -127,7 +193,6 @@ export abstract class ChatRuntimeController extends ChatViewController {
       newChannelCreationContext: () => this.creation.parameters(),
       setActivityLabel: (label) => { this.activityLabel = label; },
       renderProgressActivity: (label) => this.renderProgressActivity(label),
-      setBusy: (value) => this.setBusy(value),
       waitForJob: (id) => this.execution.waitForExistingJob(id),
 			synchronizeRoleplay: (channelID, mode) => this.roleplay.activate(channelID, mode),
 			roleplayConfigured: () => this.roleplay.isConfigured(),
@@ -140,11 +205,11 @@ export abstract class ChatRuntimeController extends ChatViewController {
       setActivityLabel: (label) => { this.activityLabel = label; },
       setStatus: (text, mode) => this.setStatus(text, mode),
       renderProgressActivity: (label) => this.renderProgressActivity(label),
-      renderJobState: (details) => this.renderJobState(details),
+      renderJobState: (bundle) => this.renderJobState(bundle),
       addEvent: (type, details, full) => this.addEvent(type, details, full),
       loadJobs: (options) => this.jobs.load(options),
       loadGlobalActivity: (options) => this.memory.loadGlobalActivity(options),
-      reportError: (error) => toastFromError(error),
+      reportError: (error) => this.reportRuntimeError(error),
     });
     this.jobs = new ChatJobsCoordinator({
       queueEnabled: () => this.queueEnabled,
@@ -162,7 +227,7 @@ export abstract class ChatRuntimeController extends ChatViewController {
       loadPanelData: (panel) => this.loadPanelData(panel),
       pushRoute: (path) => this.recyclrController!.pushRoute(path),
       addEvent: (type, details, full) => this.addEvent(type, details, full),
-      reportError: (error) => toastFromError(error),
+      reportError: (error) => this.reportRuntimeError(error),
     });
     this.wireMemoryAndSystem();
   }
@@ -219,33 +284,16 @@ export abstract class ChatRuntimeController extends ChatViewController {
       if (this.panels.isCurrent("metrics")) void this.system.loadMetrics();
     };
     document.addEventListener("omni:metrics-glance", this.metricsGlanceHandler);
+    document.addEventListener("omni:ollama-download", this.ollamaDownloadHandler);
     document.addEventListener("omni:job-progress", this.jobProgressHandler);
     document.addEventListener("omni:realtime-sync-required", this.realtimeSyncHandler);
+    document.addEventListener("omni:realtime-activity", this.realtimeActivityHandler);
+    document.addEventListener("omni:realtime-status", this.realtimeStatusHandler);
   }
 
-  private loadPanelData(panel: OmniPanel): void {
-    let task: Promise<void> | null = null;
-    if (panel === "chat" && this.channel.hasSelection()) {
-      task = this.channel.loadTranscript(this.channel.selectedID());
-    }
-    if (panel === "jobs") task = this.jobs.load({ strict: true });
-    if (panel === "memory") task = this.memory.load();
-    if (panel === "metrics") task = this.system.loadMetrics({ strict: true });
-    if (!task) return;
-    void task.catch((error) => {
-      this.addEvent("ui_panel_data_error", { panel, error: error instanceof Error ? error.message : String(error) });
-      toastFromError(error);
-    });
-  }
-
-  private async synchronizeRealtimeState(): Promise<void> {
-    const tasks: Promise<unknown>[] = [this.memory.loadGlobalActivity({ quiet: true, strict: true })];
-    if (this.execution.currentJobID() !== null) tasks.push(this.execution.refreshCurrent());
-    if (this.channel.hasSelection()) tasks.push(this.channel.loadTranscript(this.channel.selectedID()));
-	if (this.channel.hasSelection()) tasks.push(this.roleplay.refresh());
-    if (this.channel.hasSelection()) tasks.push(this.slashPalette.refresh());
-    if (this.panels.isCurrent("jobs")) tasks.push(this.jobs.load({ quiet: true, strict: true }));
-    if (this.panels.isCurrent("metrics")) tasks.push(this.system.loadMetrics({ strict: true }));
-    await Promise.all(tasks);
+  private reportRuntimeError(error: unknown): void {
+    const message = error instanceof Error ? error.message : String(error);
+    this.reportSystemProblem(message);
+    toastFromError(error);
   }
 }

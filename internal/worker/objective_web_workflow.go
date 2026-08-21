@@ -21,37 +21,35 @@ type routedWebStations struct {
 	review     *webresearch.PortableStations
 }
 
+type routedWebEvidenceStations struct {
+	terms     *webresearch.PortableStations
+	relevance *webresearch.PortableStations
+}
+
 type objectiveWebResult struct {
-	Complete                 bool
-	Status                   webresearch.ObjectiveStatus
-	Paragraphs               []webresearch.GroundedParagraph
-	Sources                  []webresearch.CitationSource
-	Evidence                 []webresearch.Evidence
-	Rendered                 string
-	RenderedSHA256           string
-	SearchTermsCalls         int
-	RelevanceCalls           int
-	SynthesisCalls           int
-	SynthesisCorrectionCalls int
-	ClaimEvidenceReviewCalls int
+	Complete                      bool
+	Status                        webresearch.ObjectiveStatus
+	Paragraphs                    []webresearch.GroundedParagraph
+	Sources                       []webresearch.CitationSource
+	Evidence                      []webresearch.Evidence
+	Rendered                      string
+	RenderedSHA256                string
+	SearchTermsCalls              int
+	RelevanceCalls                int
+	SynthesisCalls                int
+	SynthesisCorrectionCalls      int
+	SynthesisCorrectionZeroDeltas int
+	ClaimEvidenceReviewCalls      int
 }
 
 func newRoutedWebStations(
 	runtimeFor func(station.ID) webresearch.PortableRuntime,
 ) (routedWebStations, error) {
-	if runtimeFor == nil {
-		return routedWebStations{}, fmt.Errorf("web research portable runtime is unavailable")
-	}
-	var result routedWebStations
-	var err error
-	result.terms, err = webresearch.NewPortableStations(runtimeFor(station.WebSearchTerms))
+	evidence, err := newRoutedWebEvidenceStations(runtimeFor)
 	if err != nil {
 		return routedWebStations{}, err
 	}
-	result.relevance, err = webresearch.NewPortableStations(runtimeFor(station.WebRelevance))
-	if err != nil {
-		return routedWebStations{}, err
-	}
+	result := routedWebStations{terms: evidence.terms, relevance: evidence.relevance}
 	result.synthesis, err = webresearch.NewPortableStations(runtimeFor(station.WebGroundedSynthesis))
 	if err != nil {
 		return routedWebStations{}, err
@@ -62,6 +60,23 @@ func newRoutedWebStations(
 	}
 	result.review, err = webresearch.NewPortableStations(runtimeFor(station.WebClaimEvidenceReview))
 	return result, err
+}
+
+func newRoutedWebEvidenceStations(
+	runtimeFor func(station.ID) webresearch.PortableRuntime,
+) (routedWebEvidenceStations, error) {
+	if runtimeFor == nil {
+		return routedWebEvidenceStations{}, fmt.Errorf("web evidence portable runtime is unavailable")
+	}
+	terms, err := webresearch.NewPortableStations(runtimeFor(station.WebSearchTerms))
+	if err != nil {
+		return routedWebEvidenceStations{}, err
+	}
+	relevance, err := webresearch.NewPortableStations(runtimeFor(station.WebRelevance))
+	if err != nil {
+		return routedWebEvidenceStations{}, err
+	}
+	return routedWebEvidenceStations{terms: terms, relevance: relevance}, nil
 }
 
 func runtimeWebPortableRuntime(
@@ -94,11 +109,21 @@ func runtimeWebPortableRuntime(
 }
 
 func objectiveWebResearchConfig() webresearch.Config {
+	evidence := objectiveWebEvidenceConfig()
 	return webresearch.Config{
+		MaxSearchTerms: evidence.MaxSearchTerms, MaxSearchTermBytes: evidence.MaxSearchTermBytes,
+		MaxFetchCandidates: evidence.MaxFetchCandidates, MaxProjectionBytes: evidence.MaxProjectionBytes,
+		MaxRelevantCandidates: evidence.MaxRelevantCandidates,
+		CandidateSummaryBytes: evidence.CandidateSummaryBytes, MaxSynthesisParagraphs: 4,
+		MaxSynthesisParagraphBytes: 2 * 1024,
+	}
+}
+
+func objectiveWebEvidenceConfig() webresearch.EvidenceConfig {
+	return webresearch.EvidenceConfig{
 		MaxSearchTerms: 3, MaxSearchTermBytes: 256, MaxFetchCandidates: 2,
 		MaxProjectionBytes: 8 * 1024, MaxRelevantCandidates: 2,
-		CandidateSummaryBytes: 512, MaxSynthesisParagraphs: 4,
-		MaxSynthesisParagraphBytes: 2 * 1024,
+		CandidateSummaryBytes: 512,
 	}
 }
 
@@ -110,8 +135,9 @@ func objectiveExternalAnswerFromWeb(result webresearch.Result) (objectiveExterna
 		RenderedSHA256:   result.Artifact.SHA256,
 		SearchTermsCalls: result.SearchTermsCalls,
 		RelevanceCalls:   result.RelevanceCalls, SynthesisCalls: result.SynthesisCalls,
-		SynthesisCorrectionCalls: result.SynthesisCorrectionCalls,
-		ClaimEvidenceReviewCalls: result.ClaimEvidenceReviewCalls,
+		SynthesisCorrectionCalls:      result.SynthesisCorrectionCalls,
+		SynthesisCorrectionZeroDeltas: result.SynthesisCorrectionZeroDeltas,
+		ClaimEvidenceReviewCalls:      result.ClaimEvidenceReviewCalls,
 	})
 }
 
@@ -158,7 +184,7 @@ func objectiveExternalAnswerFromWebResult(result objectiveWebResult) (objectiveE
 		if _, used := cited[source.EvidenceID]; !used {
 			return objectiveExternalAnswer{}, fmt.Errorf("web source %q was not cited by synthesis", source.EvidenceID)
 		}
-		capsuleText, err := boundedObjectiveEvidenceText(
+		capsuleText, capsuleTruncated, err := boundedObjectiveEvidenceText(
 			maxObjectiveEvidenceTextBytes, item.Title, item.Snippet, item.Content,
 		)
 		if err != nil {
@@ -170,7 +196,7 @@ func objectiveExternalAnswerFromWebResult(result objectiveWebResult) (objectiveE
 		}
 		projected.SourceSHA256 = item.ContentSHA256
 		projected.ObservedAt = item.ObservedAt
-		projected.Truncated = item.Truncated
+		projected.Truncated = item.Truncated || capsuleTruncated
 		for paragraphIndex, paragraph := range result.Paragraphs {
 			for _, paragraphEvidenceID := range paragraph.EvidenceIDs {
 				if paragraphEvidenceID == source.EvidenceID {
@@ -202,10 +228,17 @@ func objectiveExternalAnswerFromWebResult(result objectiveWebResult) (objectiveE
 
 func validWebReviewCallLedger(result objectiveWebResult) bool {
 	paragraphs := len(result.Paragraphs)
+	if result.SynthesisCorrectionZeroDeltas < 0 ||
+		result.SynthesisCorrectionZeroDeltas > result.SynthesisCorrectionCalls {
+		return false
+	}
 	switch result.SynthesisCorrectionCalls {
 	case 0:
-		return result.ClaimEvidenceReviewCalls == paragraphs
+		return result.SynthesisCorrectionZeroDeltas == 0 && result.ClaimEvidenceReviewCalls == paragraphs
 	case 1:
+		if result.SynthesisCorrectionZeroDeltas == 1 {
+			return result.ClaimEvidenceReviewCalls >= 1 && result.ClaimEvidenceReviewCalls <= paragraphs
+		}
 		return result.ClaimEvidenceReviewCalls > paragraphs &&
 			result.ClaimEvidenceReviewCalls <= 2*paragraphs
 	default:

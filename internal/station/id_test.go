@@ -11,8 +11,8 @@ func TestIDRejectsUnregisteredSemanticAuthority(t *testing.T) {
 	if err := CodingFragment.Validate(); err != nil {
 		t.Fatalf("registered leaf station rejected: %v", err)
 	}
-	if err := ObjectiveAdvisory.Validate(); err != nil {
-		t.Fatalf("registered passive advisory source rejected: %v", err)
+	if err := ID("objective_advisory").Validate(); err == nil {
+		t.Fatal("retired objective advisory station was accepted")
 	}
 }
 
@@ -31,5 +31,21 @@ func TestAllContainsOnlyUniqueRegisteredStations(t *testing.T) {
 	}
 	if len(seen) != 35 {
 		t.Fatalf("registered stations=%d want 35", len(seen))
+	}
+}
+
+func TestRetiredContextStationsAreUnregistered(t *testing.T) {
+	t.Parallel()
+
+	for _, retired := range []ID{
+		"conversation_context_selection",
+		"memory_context_selection",
+		"roleplay_narrative_continuity",
+		"roleplay_voice_rewrite",
+		"roleplay_voice_preservation",
+	} {
+		if err := retired.Validate(); err == nil {
+			t.Fatalf("retired context station %q remains registered", retired)
+		}
 	}
 }

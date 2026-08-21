@@ -48,8 +48,15 @@ func (s *Service) executeExactPortableStation(
 	if err != nil {
 		return assemblyline.PortableResult{}, exactStationExecution{}, err
 	}
-	selection := llm.ProviderIdentitySelection{
-		Model: modelName, NativeContextLimit: s.inferenceContextTokens,
+	contextTokens, err := s.exactStationContextTokens(ctx, job, modelName)
+	if err != nil {
+		return assemblyline.PortableResult{}, exactStationExecution{}, fmt.Errorf(
+			"resolve exact station context: %w", err,
+		)
+	}
+	selection, err := providerSelectionForPortableJob(job, modelName, contextTokens)
+	if err != nil {
+		return assemblyline.PortableResult{}, exactStationExecution{}, err
 	}
 	if err := validateExactStationStaticCall(prompt, schema, contract, selection); err != nil {
 		return assemblyline.PortableResult{}, exactStationExecution{}, err
@@ -57,7 +64,7 @@ func (s *Service) executeExactPortableStation(
 	opening, err := s.repo.OpenStationGapDiscovery(ctx, queue.StationGapDiscoveryOpenRecord{
 		Gap: queue.StationGapOpenRecord{
 			Authority: authority, Job: job, Station: stationID,
-			ContextTokens: s.inferenceContextTokens, MaxOutputTokens: s.inferenceContextTokens,
+			ContextTokens: contextTokens, MaxOutputTokens: contextTokens,
 			OutputLimitMode: contract.OutputLimitMode,
 		},
 		Selection: selection,

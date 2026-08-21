@@ -87,36 +87,36 @@ func main() {
 	for index, provider := range cfg.WebSearchProviders {
 		providers[index] = websearch.ProviderID(provider)
 	}
-	webSearchService, err = websearch.New(websearch.Config{
-		Providers: providers, Timeout: cfg.WebSearchTimeout,
-		PerDocumentBytes:         cfg.WebSearchPerSourceBudget,
-		TotalDocumentBytes:       cfg.WebSearchTotalBudget,
-		MaxCandidatesPerProvider: 8, MaxCandidates: 16,
-		MaxDocuments: 2, MaxResponseBytes: int64(cfg.WebSearchTotalBudget * 8),
-	})
+	webSearchService, err = websearch.New(runtimeWebSearchConfig(cfg, providers))
 	if err != nil {
 		log.Fatalf("web search configuration error: %v", err)
 	}
+	browserContextRelevance, browserContextModel, err := runtimeBrowserContextRelevance(cfg)
+	if err != nil {
+		log.Fatalf("browser context relevance configuration error: %v", err)
+	}
 
 	httpServer := api.NewServerWithOptions(repo, llmTransports.Embeddings, api.ServerOptions{
-		LifecycleContext:     ctx,
-		MigrationBundle:      migrationBundle,
-		ProviderConfig:       cfg,
-		RequestTimeout:       cfg.RequestTimeout,
-		WebSearchProviders:   cfg.WebSearchProviders,
-		CoreURL:              cfg.CoreURL,
-		ListenAddr:           cfg.ListenAddr,
-		HostAgentURL:         cfg.HostAgentURL,
-		HostAgentToken:       cfg.HostAgentToken,
-		IntegrationAPIToken:  cfg.IntegrationAPIToken,
-		RealtimeMaxClients:   cfg.RealtimeMaxClients,
-		RealtimeStreamMaxAge: cfg.RealtimeStreamMaxAge,
-		RealtimeHeartbeat:    cfg.RealtimeHeartbeat,
-		RealtimeWriteTimeout: cfg.RealtimeWriteTimeout,
-		RedisURL:             cfg.RedisURL,
-		UIRedisRequired:      cfg.UIRedisRequired,
-		UISessionTTL:         cfg.UISessionTTL,
-		RoleplaySimulation:   roleplaySimulation,
+		LifecycleContext:        ctx,
+		MigrationBundle:         migrationBundle,
+		ProviderConfig:          cfg,
+		RequestTimeout:          cfg.RequestTimeout,
+		WebSearchProviders:      cfg.WebSearchProviders,
+		CoreURL:                 cfg.CoreURL,
+		ListenAddr:              cfg.ListenAddr,
+		HostAgentURL:            cfg.HostAgentURL,
+		HostAgentToken:          cfg.HostAgentToken,
+		IntegrationAPIToken:     cfg.IntegrationAPIToken,
+		RealtimeMaxClients:      cfg.RealtimeMaxClients,
+		RealtimeStreamMaxAge:    cfg.RealtimeStreamMaxAge,
+		RealtimeHeartbeat:       cfg.RealtimeHeartbeat,
+		RealtimeWriteTimeout:    cfg.RealtimeWriteTimeout,
+		RedisURL:                cfg.RedisURL,
+		UIRedisRequired:         cfg.UIRedisRequired,
+		UISessionTTL:            cfg.UISessionTTL,
+		RoleplaySimulation:      roleplaySimulation,
+		BrowserContextRelevance: browserContextRelevance,
+		BrowserContextModel:     browserContextModel,
 	})
 	if !cfg.WrapperOnly {
 		workerService, err := worker.New(
@@ -135,15 +135,14 @@ func main() {
 				Models: worker.ModelRouting{
 					Stations: cfg.StationModels,
 				},
-				ObjectiveAdvisoryMode:     cfg.ObjectiveAdvisoryMode,
-				ObjectiveAdvisoryProvider: cfg.LLMProvider,
 				Workspace: worker.WorkspaceSettings{
 					Root:     cfg.WorkspaceRoot,
 					HostRoot: cfg.WorkspaceHostRoot,
 				},
-				Logger:        log.Default(),
-				OnJobFinished: httpServer.OnJobFinishedAsync,
-				OnJobOutput:   httpServer.OnJobOutputAsync,
+				Logger:                  log.Default(),
+				OnJobFinished:           httpServer.OnJobFinishedAsync,
+				OnJobOutput:             httpServer.OnJobOutputAsync,
+				BrowserContextRelevance: browserContextRelevance,
 			},
 		)
 		if err != nil {
@@ -162,5 +161,18 @@ func main() {
 	log.Printf("core listening on %s core_url=%s llm_provider=%s wrapper_only=%t", cfg.ListenAddr, cfg.CoreURL, cfg.LLMProvider, cfg.WrapperOnly)
 	if err := api.Run(ctx, cfg.ListenAddr, httpServer.Handler()); err != nil {
 		log.Fatalf("server error: %v", err)
+	}
+}
+
+func runtimeWebSearchConfig(cfg config.Config, providers []websearch.ProviderID) websearch.Config {
+	return websearch.Config{
+		Providers:                append([]websearch.ProviderID(nil), providers...),
+		Timeout:                  cfg.WebSearchTimeout,
+		PerDocumentBytes:         cfg.WebSearchPerSourceBudget,
+		TotalDocumentBytes:       cfg.WebSearchTotalBudget,
+		MaxCandidatesPerProvider: 8,
+		MaxCandidates:            16,
+		MaxDocuments:             2,
+		MaxResponseBytes:         1 << 20,
 	}
 }

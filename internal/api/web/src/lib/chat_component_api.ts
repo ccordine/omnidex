@@ -12,12 +12,21 @@ export interface ChatMemoryPage {
   html: { bundle: string };
 }
 
-export async function fetchChannelOptionsPage(offset = 0, limit = 20): Promise<ChatComponentPage> {
+export async function fetchChannelOptionsPage(
+  offset = 0,
+  limit = 20,
+  mode?: "assistant" | "roleplay",
+): Promise<ChatComponentPage> {
+  const query = componentPageQuery(offset, limit);
+  if (mode !== undefined) query.set("mode", mode);
   return fetchComponentPage(
-    `/v1/ui/chat/channels?limit=${boundedPageInteger(limit, "channel page limit", 1, 50)}` +
-      `&offset=${boundedPageInteger(offset, "channel page offset", 0, Number.MAX_SAFE_INTEGER)}`,
+    `/v1/ui/chat/channels?${query}`,
     "Channel options",
   );
+}
+
+export async function fetchNeutralChatTranscript(): Promise<ChatComponentPage> {
+  return fetchComponentPage("/v1/ui/chat/neutral", "Neutral chat transcript");
 }
 
 export async function fetchChatDataSourceOptionsPage(offset = 0, limit = 20): Promise<ChatComponentPage> {

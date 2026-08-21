@@ -55,6 +55,8 @@ func writeRoleplaySimulationError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, errRoleplaySimulationUnavailable), errors.Is(err, errRoleplayChannelStoreUnavailable):
 		writeError(w, http.StatusServiceUnavailable, err.Error())
+	case errors.Is(err, errRoleplayModelCatalogUnavailable):
+		writeError(w, http.StatusBadGateway, err.Error())
 	case errors.Is(err, pgx.ErrNoRows):
 		writeError(w, http.StatusNotFound, "roleplay authority was not found")
 	case errors.Is(err, roleplay.ErrSimulationNotConfigured),

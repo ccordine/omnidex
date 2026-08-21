@@ -33,6 +33,7 @@ const (
 	exactPreparedTransportNativeThinking
 	exactPreparedTransportNativeSystem
 	exactPreparedTransportNativeSystemThinking
+	exactPreparedTransportNativeSystemNoThinking
 	exactPreparedTransportNativePrompt
 )
 
@@ -96,6 +97,10 @@ func (profile exactProviderModelProfile) transportSettings() ExactPreparedTransp
 	case exactPreparedTransportNativeSystemThinking:
 		settings.NativeTemplate = true
 		settings.SeparateThinking = true
+		settings.SeparateSystem = true
+		return settings
+	case exactPreparedTransportNativeSystemNoThinking:
+		settings.NativeTemplate = true
 		settings.SeparateSystem = true
 		return settings
 	case exactPreparedTransportNativePrompt:

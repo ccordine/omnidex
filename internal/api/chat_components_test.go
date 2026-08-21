@@ -19,14 +19,13 @@ func TestChatChannelOptionsAreEscapedServerComponentsWithoutVisiblePagination(t 
 		Tags: []string{"user-channel"}, ProjectID: 42, WorkspaceRoot: "/workspace/project",
 		Mode:      model.ChannelModeAssistant,
 		CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC(),
-	}}, &next, false)
+	}}, &next, false, "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, expected := range []string{
 		`data-recyclr-target="channel-options"`,
-		`<option value="" disabled selected>Choose a conversation</option>`,
-		`<option value="__omnidex_new_conversation__">+ New conversation…</option>`,
+		`<option value="" disabled selected>New conversation</option>`,
 		`<option value="chat-42" data-channel-mode="assistant">`,
 		`&lt;script&gt;unsafe&lt;/script&gt;`, `&lt;/script&gt; · assistant`,
 	} {
@@ -37,43 +36,42 @@ func TestChatChannelOptionsAreEscapedServerComponentsWithoutVisiblePagination(t 
 	if !page.HasMore {
 		t.Fatalf("channel page=%+v", page)
 	}
-	if err := (model.ChannelID(chatNewConversationOptionValue)).Validate(); err == nil {
-		t.Fatalf("new-conversation option value %q can collide with a canonical channel id", chatNewConversationOptionValue)
-	}
-	for _, forbidden := range []string{"loadMoreChannels", "channel-options-pagination", `data-next-offset=`} {
+	for _, forbidden := range []string{
+		"loadMoreChannels", "channel-options-pagination", `data-next-offset=`,
+		"__omnidex_new_conversation__", "+ New conversation",
+	} {
 		if strings.Contains(page.HTML.Bundle, forbidden) {
 			t.Errorf("channel component exposes obsolete pagination control %q: %s", forbidden, page.HTML.Bundle)
 		}
 	}
 }
 
-func TestChatChannelOptionsKeepCreationActionForEmptyListAndOffAppendedPages(t *testing.T) {
+func TestChatChannelOptionsKeepOneNeutralStateForEmptyListAndOffAppendedPages(t *testing.T) {
 	t.Parallel()
-	empty, err := renderChatChannelOptionsPage(nil, nil, false)
+	empty, err := renderChatChannelOptionsPage(nil, nil, false, "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, expected := range []string{
-		`<option value="" disabled selected>Choose a conversation</option>`,
-		`<option value="__omnidex_new_conversation__">+ New conversation…</option>`,
+		`<option value="" disabled selected>New conversation</option>`,
 	} {
 		if !strings.Contains(empty.HTML.Bundle, expected) {
 			t.Errorf("empty channel component lacks %q: %s", expected, empty.HTML.Bundle)
 		}
 	}
-	if strings.Count(empty.HTML.Bundle, chatNewConversationOptionValue) != 1 {
-		t.Fatalf("empty channel component must render one creation action: %s", empty.HTML.Bundle)
+	if strings.Count(empty.HTML.Bundle, `<option value=""`) != 1 {
+		t.Fatalf("empty channel component must render one neutral state: %s", empty.HTML.Bundle)
 	}
 
 	appended, err := renderChatChannelOptionsPage([]model.Channel{{
 		ID: "chat-43", Scope: model.ChannelScopeUser, Name: "Next chat",
 		Tags: []string{"user-channel"}, ProjectID: 42, WorkspaceRoot: "/workspace/project",
 		Mode: model.ChannelModeAssistant, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC(),
-	}}, nil, true)
+	}}, nil, true, "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, forbidden := range []string{chatNewConversationOptionValue, `value=""`, "Choose a conversation"} {
+	for _, forbidden := range []string{`value=""`, "New conversation"} {
 		if strings.Contains(appended.HTML.Bundle, forbidden) {
 			t.Errorf("appended channel component duplicated reset-only control %q: %s", forbidden, appended.HTML.Bundle)
 		}
@@ -90,7 +88,7 @@ func TestChatChannelOptionCarriesImmutableServerDataSourceBinding(t *testing.T) 
 		Tags: []string{"user-channel"}, ProjectID: 42, WorkspaceRoot: "/workspace/project",
 		DataSourceID: "ds.primary-1", Mode: model.ChannelModeAssistant,
 		CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC(),
-	}}, nil, false)
+	}}, nil, false, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -112,7 +110,7 @@ func TestChatChannelOptionCarriesPersistedRoleplayModeAndOpaqueViewpoint(t *test
 		Mode:                         model.ChannelModeRoleplay,
 		RoleplayViewpointCharacterID: "rpc_0123456789abcdef0123456789abcdef",
 		CreatedAt:                    time.Now().UTC(), UpdatedAt: time.Now().UTC(),
-	}}, nil, false)
+	}}, nil, false, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -127,6 +125,41 @@ func TestChatChannelOptionCarriesPersistedRoleplayModeAndOpaqueViewpoint(t *test
 	}
 	if strings.Contains(page.HTML.Bundle, "roleplay_world_name") || strings.Contains(page.HTML.Bundle, "Alice") {
 		t.Fatalf("roleplay channel option exposed creation-only names: %s", page.HTML.Bundle)
+	}
+}
+
+func TestChatChannelOptionsHTTPScopesAssistantThreadsAndRoleplayWorlds(t *testing.T) {
+	t.Parallel()
+	server, store := newChannelFrontdoorTestServer(t)
+	store.channels["story-42"] = model.Channel{
+		ID: "story-42", Scope: model.ChannelScopeUser, Name: "Harbor story",
+		Tags: []string{"user-channel"}, ProjectID: 42, WorkspaceRoot: "/srv/workspaces/story-42",
+		Mode: model.ChannelModeRoleplay, RoleplayViewpointCharacterID: "rpc_0123456789abcdef0123456789abcdef",
+		CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC(),
+	}
+
+	for _, test := range []struct {
+		mode    string
+		present string
+		absent  string
+		neutral string
+	}{
+		{mode: "assistant", present: "authority", absent: "story-42", neutral: "New conversation"},
+		{mode: "roleplay", present: "story-42", absent: "authority", neutral: "Select a world"},
+	} {
+		request := httptest.NewRequest(http.MethodGet, "/v1/ui/chat/channels?limit=20&offset=0&mode="+test.mode, nil)
+		response := httptest.NewRecorder()
+		server.Handler().ServeHTTP(response, request)
+		if response.Code != http.StatusOK {
+			t.Fatalf("mode=%s status=%d body=%s", test.mode, response.Code, response.Body.String())
+		}
+		body := response.Body.String()
+		if !strings.Contains(body, test.present) || !strings.Contains(body, test.neutral) {
+			t.Errorf("mode=%s lacks scoped option or neutral label: %s", test.mode, body)
+		}
+		if strings.Contains(body, test.absent) {
+			t.Errorf("mode=%s leaked an out-of-scope channel: %s", test.mode, body)
+		}
 	}
 }
 

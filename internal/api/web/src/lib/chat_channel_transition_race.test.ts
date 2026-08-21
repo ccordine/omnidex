@@ -1,12 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createUserChannel, fetchChannelTranscript, sendChannelMessage } from "./channel_api";
 import type { ChannelCreationContext } from "./channel_api";
-import { fetchChannelOptionsPage } from "./chat_component_api";
-import {
-  ChatChannelCoordinator,
-  NEW_CONVERSATION_OPTION_VALUE,
-  type ChatChannelHost,
-} from "./chat_channel_coordinator";
+import { fetchChannelOptionsPage, fetchNeutralChatTranscript } from "./chat_component_api";
+import { ChatChannelCoordinator, type ChatChannelHost } from "./chat_channel_coordinator";
 import { ChatChannelTransitionGate } from "./chat_channel_transition_gate";
 import type { UserChannel } from "./types";
 
@@ -15,18 +11,15 @@ vi.mock("./channel_api", () => ({
   fetchChannelTranscript: vi.fn(),
   sendChannelMessage: vi.fn(),
 }));
-vi.mock("./chat_component_api", () => ({ fetchChannelOptionsPage: vi.fn() }));
+vi.mock("./chat_component_api", () => ({
+  fetchChannelOptionsPage: vi.fn(),
+  fetchNeutralChatTranscript: vi.fn(),
+}));
 
 const first: UserChannel = {
-  id: "chat-42",
-  scope: "user",
-  name: "First conversation",
-  tags: ["user-channel"],
-  project_id: 42,
-  workspace_root: "/workspace/project",
-  mode: "assistant",
-  created_at: "2026-08-19T02:00:00Z",
-  updated_at: "2026-08-19T02:00:00Z",
+  id: "chat-42", scope: "user", name: "First conversation", tags: ["user-channel"],
+  project_id: 42, workspace_root: "/workspace/project", mode: "assistant",
+  created_at: "2026-08-19T02:00:00Z", updated_at: "2026-08-19T02:00:00Z",
 };
 const second: UserChannel = { ...first, id: "chat-43", name: "Second conversation" };
 
@@ -35,8 +28,7 @@ function optionsBundle(...channels: UserChannel[]): string {
     `<option value="${channel.id}" data-channel-mode="${channel.mode}">${channel.name}</option>`,
   ).join("");
   return `<template data-recyclr-target="channel-options" data-recyclr-location="innerHTML">` +
-    `<option value="" disabled selected>Choose a conversation</option>` +
-    `<option value="${NEW_CONVERSATION_OPTION_VALUE}">+ New conversation…</option>${options}</template>`;
+    `<option value="" disabled selected>New conversation</option>${options}</template>`;
 }
 
 function transcript(channelID: string) {
@@ -49,9 +41,8 @@ function transcript(channelID: string) {
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
-  let reject!: (reason?: unknown) => void;
-  const promise = new Promise<T>((accept, decline) => { resolve = accept; reject = decline; });
-  return { promise, resolve, reject };
+  const promise = new Promise<T>((accept) => { resolve = accept; });
+  return { promise, resolve };
 }
 
 function createHost(initial: UserChannel[] = []) {
@@ -62,8 +53,8 @@ function createHost(initial: UserChannel[] = []) {
   const synchronizeRoleplay = vi.fn(async (_id: string, _mode: "assistant" | "roleplay") => undefined);
   const refreshRoleplay = vi.fn(async () => undefined);
   const renderComponentBundle = vi.fn(async (bundle: string) => {
-    const documentFragment = new DOMParser().parseFromString(bundle, "text/html");
-    const template = documentFragment.querySelector<HTMLTemplateElement>('template[data-recyclr-target="channel-options"]');
+    const fragment = new DOMParser().parseFromString(bundle, "text/html");
+    const template = fragment.querySelector<HTMLTemplateElement>('template[data-recyclr-target="channel-options"]');
     if (template) channelSelect.innerHTML = template.innerHTML;
   });
   const host: ChatChannelHost = {
@@ -84,17 +75,12 @@ function createHost(initial: UserChannel[] = []) {
     newChannelCreationContext: vi.fn<() => ChannelCreationContext>(() => ({ mode: "assistant" })),
     setActivityLabel: vi.fn(),
     renderProgressActivity: vi.fn(),
-    setBusy: vi.fn(),
     waitForJob,
     synchronizeRoleplay,
     roleplayConfigured: () => true,
     refreshRoleplay,
   };
   return { host, channelSelect, waitForJob, synchronizeRoleplay, refreshRoleplay };
-}
-
-function selectEvent(select: HTMLSelectElement): Event {
-  return { currentTarget: select } as unknown as Event;
 }
 
 function acceptedTurn(channel: UserChannel, prompt: string) {
@@ -105,45 +91,14 @@ function acceptedTurn(channel: UserChannel, prompt: string) {
   };
 }
 
+function selectEvent(select: HTMLSelectElement): Event {
+  return { currentTarget: select } as unknown as Event;
+}
+
 describe("ChatChannelCoordinator transition serialization", () => {
   beforeEach(() => vi.resetAllMocks());
 
-  it("serializes two New events and keeps the canonical select disabled through both", async () => {
-    const firstCreate = deferred<UserChannel>();
-    const secondCreate = deferred<UserChannel>();
-    vi.mocked(createUserChannel)
-      .mockReturnValueOnce(firstCreate.promise)
-      .mockReturnValueOnce(secondCreate.promise);
-    vi.mocked(fetchChannelOptionsPage)
-      .mockResolvedValueOnce({ has_more: false, html: { bundle: optionsBundle(first) } })
-      .mockResolvedValueOnce({ has_more: false, html: { bundle: optionsBundle(second) } });
-    vi.mocked(fetchChannelTranscript).mockImplementation(async (id) => transcript(id));
-    const fixture = createHost();
-    const identityFactory = vi.fn()
-      .mockReturnValueOnce({ id: first.id, name: first.name })
-      .mockReturnValueOnce({ id: second.id, name: second.name });
-    const coordinator = new ChatChannelCoordinator(fixture.host, identityFactory);
-    fixture.channelSelect.value = NEW_CONVERSATION_OPTION_VALUE;
-
-    const firstTransition = coordinator.select(selectEvent(fixture.channelSelect));
-    const secondTransition = coordinator.select(selectEvent(fixture.channelSelect));
-    await vi.waitFor(() => expect(createUserChannel).toHaveBeenCalledTimes(1));
-    expect(fixture.channelSelect.disabled).toBe(true);
-
-    firstCreate.resolve(first);
-    await vi.waitFor(() => expect(createUserChannel).toHaveBeenCalledTimes(2));
-    expect(vi.mocked(fetchChannelTranscript).mock.invocationCallOrder[0])
-      .toBeLessThan(vi.mocked(createUserChannel).mock.invocationCallOrder[1]);
-    expect(fixture.channelSelect.disabled).toBe(true);
-
-    secondCreate.resolve(second);
-    await Promise.all([firstTransition, secondTransition]);
-    expect(identityFactory).toHaveBeenCalledTimes(2);
-    expect(coordinator.selectedID()).toBe(second.id);
-    expect(fixture.channelSelect.disabled).toBe(false);
-  });
-
-  it("holds neutral create and exact send together before a queued selection", async () => {
+  it("releases channel navigation after server acceptance while completion stays realtime", async () => {
     const created = deferred<UserChannel>();
     const completed = deferred<void>();
     const prompt = "  exact neutral prompt\n  ";
@@ -156,33 +111,26 @@ describe("ChatChannelCoordinator transition serialization", () => {
     vi.mocked(sendChannelMessage).mockResolvedValueOnce(acceptedTurn(first, prompt));
     const fixture = createHost([second]);
     fixture.waitForJob.mockReturnValueOnce(completed.promise);
-    const coordinator = new ChatChannelCoordinator(
-      fixture.host,
-      () => ({ id: first.id, name: first.name }),
-    );
+    const coordinator = new ChatChannelCoordinator(fixture.host, () => ({ id: first.id, name: first.name }));
 
     const sending = coordinator.createAndSubmit(prompt);
     await vi.waitFor(() => expect(createUserChannel).toHaveBeenCalledOnce());
-    fixture.channelSelect.value = second.id;
-    const selecting = coordinator.select(selectEvent(fixture.channelSelect));
     created.resolve(first);
-    await vi.waitFor(() => expect(fixture.waitForJob).toHaveBeenCalledWith(73));
+    const result = await sending;
+    expect(result.kind).toBe("submitted");
+    expect(fixture.channelSelect.disabled).toBe(false);
 
+    fixture.channelSelect.value = second.id;
+    await coordinator.select(selectEvent(fixture.channelSelect));
+    expect(coordinator.selectedID()).toBe(second.id);
     expect(sendChannelMessage).toHaveBeenCalledWith(first.id, prompt);
-    expect(coordinator.selectedID()).toBe(first.id);
-    expect(vi.mocked(fetchChannelTranscript).mock.calls.some(([id]) => id === second.id)).toBe(false);
-    expect(fixture.channelSelect.disabled).toBe(true);
 
     completed.resolve();
-    await expect(sending).resolves.toBe("submitted");
-    await selecting;
-    expect(coordinator.selectedID()).toBe(second.id);
-    expect(fixture.refreshRoleplay.mock.invocationCallOrder[0])
-      .toBeLessThan(fixture.synchronizeRoleplay.mock.invocationCallOrder.at(-1) ?? 0);
-    expect(fixture.channelSelect.disabled).toBe(false);
+    if (result.kind === "submitted") await coordinator.reconcileTurn(result.turn);
+    expect(fixture.refreshRoleplay).not.toHaveBeenCalled();
   });
 
-  it("does not let a queued selection retarget an existing-channel turn", async () => {
+  it("does not let a selection retarget an accepted existing-channel turn", async () => {
     const completed = deferred<void>();
     vi.mocked(fetchChannelOptionsPage).mockResolvedValueOnce({
       has_more: false,
@@ -197,26 +145,41 @@ describe("ChatChannelCoordinator transition serialization", () => {
     fixture.channelSelect.value = first.id;
     await coordinator.select(selectEvent(fixture.channelSelect));
 
-    const sending = coordinator.submit("exact");
-    await vi.waitFor(() => expect(fixture.waitForJob).toHaveBeenCalledOnce());
+    const receipt = await coordinator.submit("exact");
     fixture.channelSelect.value = second.id;
-    const selecting = coordinator.select(selectEvent(fixture.channelSelect));
-    expect(vi.mocked(fetchChannelTranscript).mock.calls.some(([id]) => id === second.id)).toBe(false);
+    await coordinator.select(selectEvent(fixture.channelSelect));
+    expect(coordinator.selectedID()).toBe(second.id);
 
     completed.resolve();
-    await sending;
-    await selecting;
+    await coordinator.reconcileTurn(receipt);
     expect(sendChannelMessage).toHaveBeenCalledWith(first.id, "exact");
-    expect(coordinator.selectedID()).toBe(second.id);
+    expect(fixture.refreshRoleplay).not.toHaveBeenCalled();
+  });
+
+  it("serializes a server-rendered neutral reset with channel selection", async () => {
+    const neutral = deferred<{ has_more: boolean; html: { bundle: string } }>();
+    vi.mocked(fetchChannelOptionsPage).mockResolvedValueOnce({ has_more: false, html: { bundle: optionsBundle(first) } });
+    vi.mocked(fetchChannelTranscript).mockImplementation(async (id) => transcript(id));
+    vi.mocked(fetchNeutralChatTranscript).mockReturnValueOnce(neutral.promise);
+    const fixture = createHost();
+    const coordinator = new ChatChannelCoordinator(fixture.host);
+    await coordinator.loadChannels();
+    fixture.channelSelect.value = first.id;
+    await coordinator.select(selectEvent(fixture.channelSelect));
+
+    const resetting = coordinator.beginNewConversation();
+    expect(fixture.channelSelect.disabled).toBe(true);
+    neutral.resolve({ has_more: false, html: { bundle: "neutral" } });
+    await resetting;
+    expect(coordinator.selectedID()).toBe("");
+    expect(fixture.channelSelect.disabled).toBe(false);
   });
 
   it("restores a preexisting fail-closed disabled select", async () => {
     const select = document.createElement("select");
     select.disabled = true;
     const gate = new ChatChannelTransitionGate({ hasChannelSelect: () => true, channelSelect: () => select });
-
     await gate.run(async () => undefined);
-
     expect(select.disabled).toBe(true);
   });
 });
