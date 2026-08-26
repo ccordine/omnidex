@@ -69,7 +69,7 @@ func TestKnownArtifactTruthAcceptsOnlyClosedDesiredTruth(t *testing.T) {
 func TestKnownArtifactTruthRejectsPhysicalArtifactQuote(t *testing.T) {
 	t.Parallel()
 	for _, quote := range []string{
-		"obsolete.go must no longer exist.",
+		"./obsolete.go must no longer exist.",
 		"Remove internal/legacy/adapter.",
 	} {
 		if _, err := NewKnownArtifactTruthJob(KnownArtifactTruthInput{RequirementQuote: quote}); err == nil {

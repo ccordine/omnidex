@@ -45,25 +45,36 @@ func TestFreshApplicationDriverFreezesWorkloadBeforeCompilationAndGeneration(t *
 	if !(interpreter < freeze && freeze < capabilities && capabilities < compile && compile < execute) {
 		t.Fatalf("fresh path call order=%v", calls)
 	}
-	bindings := uniqueWorkloadCallIndex(t, calls, "deriveDirectCodingTargetTreeBindings")
+	targetTree := uniqueWorkloadCallIndex(t, calls, "resolveDirectCodingTargetTree")
+	bindTargetProvenance := uniqueWorkloadCallIndex(t, calls, "bindDirectCodingTargetTreePathProvenance")
+	bindProgramProvenance := uniqueWorkloadCallIndex(t, calls, "bindDirectCodingProgramPathProvenance")
 	assembly := uniqueWorkloadCallIndex(t, calls, "directCodingAssemblyFromProgram")
+	preflight := uniqueWorkloadCallIndex(t, calls, "validateDirectCodingAssemblySources")
 	graph := uniqueWorkloadCallIndex(t, calls, "directCodingArtifactGraphFromProgram")
 	record := uniqueWorkloadCallIndex(t, calls, "RecordArtifactGraph")
 	planLeaves := uniqueWorkloadCallIndex(t, calls, "PlanTreeTransitionsWithArtifactGraph")
-	if !(execute < assembly && assembly < graph && graph < record && record < planLeaves) {
-		t.Fatalf("artifact graph was not persisted before filesystem leaf planning: %v", calls)
+	if !(execute < assembly && assembly < preflight && preflight < graph && graph < record && record < planLeaves) {
+		t.Fatalf("complete artifact preflight and graph persistence order=%v", calls)
 	}
-	if !(freeze < bindings && bindings < compile) {
-		t.Fatalf("code-derived forced tree binding order=%v", calls)
+	if !(freeze < targetTree && targetTree < bindTargetProvenance &&
+		bindTargetProvenance < capabilities && compile < bindProgramProvenance &&
+		bindProgramProvenance < execute) {
+		t.Fatalf("focused target-tree coverage order=%v", calls)
 	}
-	for _, forbidden := range []string{"generateProgramFragments", "stageProgram", "resolveDirectCodingFileContents"} {
+	for _, forbidden := range []string{
+		"deriveDirectCodingTargetTreeBindings",
+		"generateProgramFragments",
+		"stageProgram",
+		"resolveDirectCodingFileContents",
+	} {
 		if slices.Contains(calls, forbidden) {
 			t.Fatalf("fresh path bypasses the task lifecycle through %s: %v", forbidden, calls)
 		}
 	}
 	if compileCall == nil || !callHasNamedArgument(compileCall, "workload") ||
-		!callHasNamedArgument(compileCall, "capabilit") {
-		t.Fatal("deterministic compiler did not receive the frozen workload and separate capability graph")
+		!callHasNamedArgument(compileCall, "capabilit") ||
+		!callHasNamedArgument(compileCall, "coverage") {
+		t.Fatal("deterministic compiler did not receive the frozen workload, separate capability graph, and code-owned coverage plan")
 	}
 }
 

@@ -10,8 +10,9 @@ import (
 
 func genericBrowserAppDocument(
 	specification assemblyline.ApplicationSpecification,
-	targetTree assemblyline.TargetTree,
-) (assemblyline.TypeScriptDocument, error) {
+	contexts map[string]assemblyline.ApplicationTaskContext,
+	coverage assemblyline.ApplicationFileCoveragePlan,
+) (assemblyline.SourceDocument, error) {
 	imports := []string{
 		"import { useMemo } from 'react';",
 		"import type { ReactElement } from 'react';",
@@ -19,17 +20,24 @@ func genericBrowserAppDocument(
 	}
 	dependencies := []string{"runtime.factory"}
 	for index := range specification.Requirements {
-		files, err := targetTree.RequirementFiles(specification.Requirements[index].ID)
+		requirement := specification.Requirements[index]
+		context, exists := contexts[requirement.ID]
+		if !exists {
+			return assemblyline.SourceDocument{}, fmt.Errorf(
+				"application workload omits requirement %s", requirement.ID,
+			)
+		}
+		files, err := directCodingTaskSinglePair(coverage, context.Task.TaskID)
 		if err != nil {
-			return assemblyline.TypeScriptDocument{}, err
+			return assemblyline.SourceDocument{}, err
 		}
 		name := fmt.Sprintf("Feature%03d", index+1)
 		imports = append(imports, fmt.Sprintf("import { %s } from '%s';", name, typeScriptRelativeModule("src/App.tsx", files.ImplementationPath)))
 		dependencies = append(dependencies, fmt.Sprintf("feature.%03d", index+1))
 	}
-	return assemblyline.TypeScriptDocument{
-		ID: "application_shell", Path: "src/App.tsx", Header: strings.Join(imports, "\n"),
-		Blocks: []assemblyline.TypeScriptBlock{{
+	return assemblyline.SourceDocument{
+		ID: "application_shell", Path: "src/App.tsx", Preamble: strings.Join(imports, "\n"),
+		Blocks: []assemblyline.SourceBlock{{
 			ID: "application.render", Static: genericBrowserAppSource(specification),
 			API: "function App(): ReactElement", DependsOn: dependencies,
 		}},
@@ -45,12 +53,12 @@ func genericBrowserAppSource(specification assemblyline.ApplicationSpecification
 		sequence := index + 1
 		body.WriteString(fmt.Sprintf(
 			"    feature%03d: createFeatureRuntime(runtime, %s),\n",
-			sequence, strconv.Quote(genericBrowserCapabilityID(sequence)),
+			sequence, strconv.Quote(genericApplicationCapabilityID(sequence)),
 		))
 	}
 	body.WriteString("  }), [runtime]);\n")
 	body.WriteString("  return (\n")
-	body.WriteString("    <main className=\"application-shell\">\n")
+	body.WriteString("    <main className=\"application-shell isolate\">\n")
 	body.WriteString("      <header className=\"application-header\">\n")
 	body.WriteString("        <p className=\"application-kicker\">Live workspace</p>\n")
 	body.WriteString("        <h1>" + escapeTypeScriptJSXText(specification.ProductQuote) + "</h1>\n")
@@ -72,19 +80,29 @@ func genericBrowserAppSource(specification assemblyline.ApplicationSpecification
 	return body.String()
 }
 
+func genericBrowserEntrypointDocument() assemblyline.SourceDocument {
+	return assemblyline.SourceDocument{
+		ID: "application_entrypoint", Path: "src/main.tsx",
+		Blocks: []assemblyline.SourceBlock{{
+			ID: "application.mount", Static: typeScriptWebMainSource(),
+			API: "mount the assembled browser application", DependsOn: []string{"application.render"},
+		}},
+	}
+}
+
 func escapeTypeScriptJSXText(value string) string {
 	return strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;", "{", "&#123;", "}", "&#125;").Replace(value)
 }
 
 func genericBrowserSmokeTestDocument(
 	specification assemblyline.ApplicationSpecification,
-) assemblyline.TypeScriptDocument {
-	return assemblyline.TypeScriptDocument{
+) assemblyline.SourceDocument {
+	return assemblyline.SourceDocument{
 		ID: "application_smoke_test", Path: "src/App.test.tsx",
-		Header: `import '@testing-library/jest-dom/vitest';
+		Preamble: `import '@testing-library/jest-dom/vitest';
 import { render, screen } from '@testing-library/react';
 import { App } from './App';`,
-		Blocks: []assemblyline.TypeScriptBlock{{
+		Blocks: []assemblyline.SourceBlock{{
 			ID: "tests.application_smoke", Static: genericBrowserSmokeTestSource(specification),
 			API: "tests assembled application rendering", DependsOn: []string{"application.render"},
 		}},

@@ -39,10 +39,10 @@ func directCodingArtifactGraphFromProgram(
 	}
 
 	blockDocuments := make(map[string]string)
-	for _, document := range program.TypeScript.Documents {
+	for _, document := range program.Source.Documents {
 		artifact, exists := byPath[document.Path]
 		if !exists {
-			return assemblyline.ArtifactGraph{}, fmt.Errorf("assembled graph lacks TypeScript document %q", document.Path)
+			return assemblyline.ArtifactGraph{}, fmt.Errorf("assembled graph lacks source document %q", document.Path)
 		}
 		for _, block := range document.Blocks {
 			if previous, exists := blockDocuments[block.ID]; exists {
@@ -74,7 +74,7 @@ func directCodingArtifactGraphFromProgram(
 		relations[key] = relation
 		return nil
 	}
-	for _, document := range program.TypeScript.Documents {
+	for _, document := range program.Source.Documents {
 		consumer, exists := byPath[document.Path]
 		if !exists {
 			return assemblyline.ArtifactGraph{}, fmt.Errorf("artifact graph lacks consumer document %q", document.Path)
@@ -98,19 +98,28 @@ func directCodingArtifactGraphFromProgram(
 			}
 		}
 	}
-	// This baseline composition is fixed by the selected browser adapter, not
-	// inferred from model prose or a source-text heuristic.
-	if _, mainExists := byPath["src/main.tsx"]; mainExists {
-		if _, appExists := byPath["src/App.tsx"]; appExists {
-			if err := addRelation("src/main.tsx", "src/App.tsx", assemblyline.ArtifactRelationComposes); err != nil {
-				return assemblyline.ArtifactGraph{}, err
+	stack, err := directCodingProjectStackByID(program.StackID)
+	if err != nil {
+		return assemblyline.ArtifactGraph{}, err
+	}
+	if stack.DeriveRelations != nil {
+		derived, err := stack.DeriveRelations(program, assembly)
+		if err != nil {
+			return assemblyline.ArtifactGraph{}, fmt.Errorf(
+				"derive %s artifact relations: %w", stack.ID, err,
+			)
+		}
+		for _, relation := range derived {
+			if relation.FromPath == relation.ToPath {
+				return assemblyline.ArtifactGraph{}, fmt.Errorf(
+					"project stack %s derived a self relation for %q", stack.ID, relation.FromPath,
+				)
 			}
-			if err := addRelation("src/App.tsx", "src/main.tsx", assemblyline.ArtifactRelationProvides); err != nil {
+			if err := addRelation(relation.FromPath, relation.ToPath, relation.Kind); err != nil {
 				return assemblyline.ArtifactGraph{}, err
 			}
 		}
 	}
-
 	orderedRelations := make([]assemblyline.ArtifactGraphRelation, 0, len(relations))
 	for _, relation := range relations {
 		orderedRelations = append(orderedRelations, relation)

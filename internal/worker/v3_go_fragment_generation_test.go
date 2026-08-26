@@ -23,7 +23,7 @@ func TestGoFragmentGenerationReturnsOnlyOneSignatureBoundDeclaration(t *testing.
 	got, err := runDirectCodingGoFragmentGenerationWorker(runtime, "coder", directCodingGoGenerationJob{
 		Subject: "desired_artifact_opaque",
 		Input: assemblyline.FragmentGenerationInput{
-			Language: "go", Signature: "func Added() int", Behavior: "return two",
+			Language: "go", Dialect: "Go 1.24", Signature: "func Added() int", Behavior: "return two",
 		},
 	})
 	if err != nil {
@@ -51,7 +51,7 @@ func TestGoFragmentGenerationRejectsOperationShapedResponse(t *testing.T) {
 	_, err := runDirectCodingGoFragmentGenerationWorker(runtime, "coder", directCodingGoGenerationJob{
 		Subject: "desired_artifact_opaque",
 		Input: assemblyline.FragmentGenerationInput{
-			Language: "go", Signature: "func Added() int", Behavior: "return two",
+			Language: "go", Dialect: "Go 1.24", Signature: "func Added() int", Behavior: "return two",
 		},
 	})
 	if err == nil || !strings.Contains(err.Error(), "parse Go fragment") {

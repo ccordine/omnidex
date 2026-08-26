@@ -12,6 +12,9 @@ func validateRequirementQuote(label, quote string) error {
 	if len(quote) > maxRequirementQuoteBytes {
 		return fmt.Errorf("%s source quote exceeds %d bytes", label, maxRequirementQuoteBytes)
 	}
+	if err := ValidatePathFreeModelContext(label, quote); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -75,50 +78,64 @@ func (input FragmentGenerationInput) validate() error {
 	if input.Behavior == "" || input.Behavior != strings.TrimSpace(input.Behavior) {
 		return fmt.Errorf("fragment generation behavior is required and must be trimmed")
 	}
+	if input.Dialect == "" || input.Dialect != strings.TrimSpace(input.Dialect) ||
+		strings.ContainsAny(input.Dialect, "\x00\r\n") || len(input.Dialect) > 256 {
+		return fmt.Errorf("fragment generation dialect is required as one bounded label")
+	}
 	if len(input.Behavior) > maxLocalBehaviorBytes {
 		return fmt.Errorf("fragment generation behavior exceeds %d bytes", maxLocalBehaviorBytes)
 	}
-	return nil
+	return input.ValidatePathFree(ArtifactIdentityProvenance{})
+}
+
+// ValidatePathFree applies the field-scoped path boundary to the exact
+// fragment envelope. Behavior is prose; signatures and capability projections
+// are parser-proven source syntax.
+func (input FragmentGenerationInput) ValidatePathFree(
+	provenance ArtifactIdentityProvenance,
+) error {
+	if err := ValidatePathFreeModelContextWithProvenance(
+		"fragment generation behavior", provenance, input.Dialect, input.Behavior,
+	); err != nil {
+		return err
+	}
+	sourceValues := []string{input.Signature}
+	sourceValues = append(sourceValues, input.Capabilities...)
+	sourceValues = append(sourceValues, input.PermittedSymbols...)
+	return ValidatePathFreeSourceModelContextWithProvenance(
+		"fragment generation", provenance, sourceValues...,
+	)
 }
 
 func (input FragmentCorrectionInput) validate() error {
-	if err := validatePortableFragmentCore(input.Language, input.Signature, input.Capabilities, input.PermittedSymbols); err != nil {
-		return err
+	if (input.Language == "") != (input.Signature == "") {
+		return fmt.Errorf("fragment correction language and signature metadata must be both present or both absent")
 	}
-	guided := input.RepairGuidance != ""
-	diagnosticCorrection := input.RequiredChange != "" || input.Diagnostic != ""
-	if guided == diagnosticCorrection {
+	if input.Language != "" {
+		if err := validatePortableFragmentCore(
+			input.Language, input.Signature, input.Capabilities, input.PermittedSymbols,
+		); err != nil {
+			return err
+		}
+	}
+	if input.RepairGuidance == "" || input.RepairGuidance != strings.TrimSpace(input.RepairGuidance) {
+		return fmt.Errorf("fragment correction requires one trimmed repair guidance instruction")
+	}
+	if len(input.RepairGuidance) > maxTypeScriptRepairGuidanceBytes {
 		return fmt.Errorf(
-			"fragment correction requires exactly one repair guidance or diagnostic correction authority",
+			"fragment correction repair guidance exceeds %d bytes",
+			maxTypeScriptRepairGuidanceBytes,
 		)
 	}
-	if guided {
-		if input.Language != "typescript" {
-			return fmt.Errorf("guided fragment correction requires TypeScript")
-		}
-		if input.RepairGuidance != strings.TrimSpace(input.RepairGuidance) {
-			return fmt.Errorf("fragment correction repair guidance must be trimmed")
-		}
-		if len(input.RepairGuidance) > maxTypeScriptRepairGuidanceBytes {
-			return fmt.Errorf(
-				"fragment correction repair guidance exceeds %d bytes",
-				maxTypeScriptRepairGuidanceBytes,
-			)
-		}
-		if len(input.Capabilities) != 0 || len(input.PermittedSymbols) != 0 {
-			return fmt.Errorf(
-				"guided fragment correction executor cannot receive diagnostic-analysis context",
-			)
-		}
-	} else {
-		for label, value := range map[string]string{
-			"required change": input.RequiredChange,
-			"diagnostic":      input.Diagnostic,
-		} {
-			if value == "" || value != strings.TrimSpace(value) {
-				return fmt.Errorf("fragment correction %s is required and must be trimmed", label)
-			}
-		}
+	if input.RequiredChange != "" || input.Diagnostic != "" {
+		return fmt.Errorf(
+			"fragment correction executor cannot receive a raw diagnostic or required change",
+		)
+	}
+	if len(input.Capabilities) != 0 || len(input.PermittedSymbols) != 0 {
+		return fmt.Errorf(
+			"fragment correction executor cannot receive diagnostic-analysis context",
+		)
 	}
 	current := input.CurrentDeclaration
 	if (current == "") == (input.RepairRegion == nil) {
@@ -130,20 +147,50 @@ func (input FragmentCorrectionInput) validate() error {
 		}
 	}
 	if input.RepairRegion != nil {
-		if input.Language != "typescript" {
+		if input.Language != "typescript" || input.Signature == "" {
 			return fmt.Errorf("fragment correction repair regions require TypeScript")
 		}
 		if err := input.RepairRegion.validate(); err != nil {
 			return fmt.Errorf("fragment correction repair region: %w", err)
 		}
 	}
-	if !guided && len(input.RequiredChange) > maxTypeScriptRequiredChangeBytes {
-		return fmt.Errorf("fragment correction required change exceeds %d bytes", maxTypeScriptRequiredChangeBytes)
+	return input.ValidatePathFree(ArtifactIdentityProvenance{})
+}
+
+// ValidatePathFree preserves source grammar in declaration and repair-region
+// fields while keeping diagnostic and instruction prose on the strict prose
+// boundary.
+func (input FragmentCorrectionInput) ValidatePathFree(
+	provenance ArtifactIdentityProvenance,
+) error {
+	proseValues := []string{input.RequiredChange, input.Diagnostic, input.RepairGuidance}
+	sourceValues := []string{input.Signature, input.CurrentDeclaration}
+	sourceValues = append(sourceValues, input.Capabilities...)
+	sourceValues = append(sourceValues, input.PermittedSymbols...)
+	if input.RepairRegion != nil {
+		sourceValues = append(sourceValues, input.RepairRegion.Source)
+		for _, binding := range append(
+			append([]TypeScriptRepairBinding(nil), input.RepairRegion.Bindings...),
+			input.RepairRegion.UnavailableBindings...,
+		) {
+			sourceValues = append(sourceValues, binding.Name, binding.Type)
+			sourceValues = append(sourceValues, binding.CallableSignatures...)
+			sourceValues = append(sourceValues, binding.Members...)
+		}
+		for _, evidence := range input.RepairRegion.ExpressionEvidence {
+			sourceValues = append(sourceValues, evidence.Source, evidence.InferredType, evidence.ContextualType)
+			sourceValues = append(sourceValues, evidence.IncompatibleTypes...)
+			sourceValues = append(sourceValues, evidence.ReferencedBindings...)
+		}
 	}
-	if !guided && len(input.Diagnostic) > maxTypeScriptDiagnosticBytes {
-		return fmt.Errorf("fragment correction diagnostic exceeds %d bytes", maxTypeScriptDiagnosticBytes)
+	if err := ValidatePathFreeModelContextWithProvenance(
+		"fragment correction", provenance, proseValues...,
+	); err != nil {
+		return err
 	}
-	return nil
+	return ValidatePathFreeSourceModelContextWithProvenance(
+		"fragment correction", provenance, sourceValues...,
+	)
 }
 
 func (input ResponseCorrectionInput) validate() error {
@@ -159,8 +206,7 @@ func (input ResponseCorrectionInput) validate() error {
 	if len(input.ValidationFailure) > 1200 {
 		return fmt.Errorf("response correction validation failure exceeds 1200 bytes")
 	}
-	specializedFieldCorrection := input.Original.Kind == WorkApplicationAcceptanceGroundingReview ||
-		input.Original.Kind == WorkApplicationJobSpecification
+	specializedFieldCorrection := input.Original.Kind == WorkApplicationJobSpecification
 	if specializedFieldCorrection {
 		if input.RetainedCandidate != "" {
 			return fmt.Errorf("%s field correction cannot carry a retained candidate", input.Original.Kind)

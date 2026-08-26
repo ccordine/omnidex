@@ -2,10 +2,8 @@ package worker
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -46,7 +44,7 @@ func verifyDirectCodingTypeScriptStageCommands(
 	program directCodingProgram,
 	commands [][]string,
 ) (*directCodingStageDiagnostic, error) {
-	documents, err := composeDirectCodingTypeScriptProgram(program)
+	documents, err := composeDirectCodingSourceProgram(program)
 	if err != nil {
 		return nil, err
 	}
@@ -108,7 +106,7 @@ func routeDirectCodingAcceptanceFailure(
 	if diagnostic == nil {
 		return nil, fmt.Errorf("route acceptance failure: diagnostic is nil")
 	}
-	origin, exists := directCodingTypeScriptBlueprintBlock(program.TypeScript, diagnostic.BlockID)
+	origin, exists := directCodingSourceBlueprintBlock(program.Source, diagnostic.BlockID)
 	if !exists {
 		return nil, fmt.Errorf("route acceptance failure: unknown originating block %s", diagnostic.BlockID)
 	}
@@ -117,7 +115,7 @@ func routeDirectCodingAcceptanceFailure(
 	}
 	owners := make([]string, 0, len(origin.DependsOn))
 	for _, dependencyID := range origin.DependsOn {
-		dependency, found := directCodingTypeScriptBlueprintBlock(program.TypeScript, dependencyID)
+		dependency, found := directCodingSourceBlueprintBlock(program.Source, dependencyID)
 		if found && dependency.Generated() {
 			owners = append(owners, dependencyID)
 		}
@@ -143,22 +141,18 @@ func runDirectCodingStageCommand(
 	name string,
 	args ...string,
 ) (string, error) {
-	ctx, cancel := context.WithTimeout(parent, timeout)
-	defer cancel()
-	command := exec.CommandContext(ctx, name, args...)
-	command.Dir = root
-	command.Env = os.Environ()
-	output, err := command.CombinedOutput()
-	rendered := strings.TrimSpace(string(output))
-	if ctx.Err() != nil {
-		return rendered, fmt.Errorf("command exceeded %s: %w", timeout, ctx.Err())
-	}
+	execution, err := runValidatedV3Command(parent, root, codeCommand{
+		Program: name, Args: append([]string(nil), args...), Timeout: timeout,
+	})
 	if err != nil {
-		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) {
-			return rendered, fmt.Errorf("exit code %d", exitErr.ExitCode())
-		}
-		return rendered, err
+		return "", fmt.Errorf("staged command is outside the code-owned verification boundary: %w", err)
+	}
+	rendered := renderV3CommandOutput(execution)
+	if execution.ContextError != nil {
+		return rendered, fmt.Errorf("command exceeded %s: %w", timeout, execution.ContextError)
+	}
+	if execution.RunError != nil {
+		return rendered, fmt.Errorf("exit code %d", execution.ExitCode)
 	}
 	return rendered, nil
 }
@@ -179,27 +173,31 @@ func directCodingUnmappedStageFailure(
 	)
 }
 
-func directCodingTypeScriptBlockIsTSX(blueprint assemblyline.TypeScriptBlueprint, blockID string) bool {
+func directCodingTypeScriptBlockIsTSX(blueprint assemblyline.SourceBlueprint, blockID string) bool {
 	for _, document := range blueprint.Documents {
 		for _, block := range document.Blocks {
 			if block.ID == blockID {
-				return document.TSX()
+				return directCodingTypeScriptDocumentIsTSX(document)
 			}
 		}
 	}
 	return false
 }
 
+func directCodingTypeScriptDocumentIsTSX(document assemblyline.SourceDocument) bool {
+	return strings.HasSuffix(strings.ToLower(document.Path), ".tsx")
+}
+
 func directCodingTypeScriptCorrectionBlock(
-	blueprint assemblyline.TypeScriptBlueprint,
+	blueprint assemblyline.SourceBlueprint,
 	blockID string,
-) (assemblyline.TypeScriptBlock, error) {
-	block, exists := directCodingTypeScriptBlueprintBlock(blueprint, blockID)
+) (assemblyline.SourceBlock, error) {
+	block, exists := directCodingSourceBlueprintBlock(blueprint, blockID)
 	if !exists {
-		return assemblyline.TypeScriptBlock{}, fmt.Errorf("diagnostic names unknown block %s", blockID)
+		return assemblyline.SourceBlock{}, fmt.Errorf("diagnostic names unknown block %s", blockID)
 	}
 	if !block.Generated() {
-		return assemblyline.TypeScriptBlock{}, fmt.Errorf(
+		return assemblyline.SourceBlock{}, fmt.Errorf(
 			"code-owned browser adapter block %s failed validation and cannot be delegated",
 			block.ID,
 		)

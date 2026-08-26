@@ -31,7 +31,7 @@ func TestApplicationTaskStageProjectionExcludesOtherTasksAndApplicationEntrypoin
 	if got, want := taskStageDocumentIDs(stage), []string{"acceptance_001", "application_runtime", "feature_001"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("task stage documents=%v want=%v", got, want)
 	}
-	if got, want := taskStageStaticPaths(stage), []string{"package.json", "tsconfig.json", "vite.config.ts"}; !reflect.DeepEqual(got, want) {
+	if got, want := taskStageStaticPaths(stage), []string{"package-lock.json", "package.json", "tsconfig.json", "vite.config.ts"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("task stage static paths=%v want=%v", got, want)
 	}
 	if got, want := sortedGeneratedIDs(stage.Generated), []string{"acceptance.001", "feature.001"}; !reflect.DeepEqual(got, want) {
@@ -45,7 +45,7 @@ func TestApplicationTaskStageProjectionExcludesOtherTasksAndApplicationEntrypoin
 			t.Fatalf("task stage exposed unrelated identity %q", forbidden)
 		}
 	}
-	if _, err := directCodingTypeScriptCorrectionBlock(stage.TypeScript, "feature.002"); err == nil {
+	if _, err := directCodingTypeScriptCorrectionBlock(stage.Source, "feature.002"); err == nil {
 		t.Fatal("task stage allowed correction of another task block")
 	}
 	routed, err := routeDirectCodingAcceptanceFailure(
@@ -64,7 +64,7 @@ func TestApplicationTaskStageProjectionSupportsMultipleTasksInOneFile(t *testing
 	t.Parallel()
 
 	input, frozen, program := applicationTaskLifecycleFixture(t)
-	program.TypeScript.Documents = coalesceApplicationTaskFixtureDocuments(t, program.TypeScript.Documents)
+	program.Source.Documents = coalesceApplicationTaskFixtureDocuments(t, program.Source.Documents)
 	context, err := assemblyline.ProjectApplicationTaskContext(input, frozen, "task_002")
 	if err != nil {
 		t.Fatal(err)
@@ -73,22 +73,22 @@ func TestApplicationTaskStageProjectionSupportsMultipleTasksInOneFile(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, exists := directCodingTypeScriptBlueprintBlock(stage.TypeScript, "feature.002"); !exists {
+	if _, exists := directCodingSourceBlueprintBlock(stage.Source, "feature.002"); !exists {
 		t.Fatal("grouped stage omits feature.002")
 	}
-	if _, exists := directCodingTypeScriptBlueprintBlock(stage.TypeScript, "acceptance.002"); !exists {
+	if _, exists := directCodingSourceBlueprintBlock(stage.Source, "acceptance.002"); !exists {
 		t.Fatal("grouped stage omits acceptance.002")
 	}
 }
 
 func coalesceApplicationTaskFixtureDocuments(
 	t *testing.T,
-	documents []assemblyline.TypeScriptDocument,
-) []assemblyline.TypeScriptDocument {
+	documents []assemblyline.SourceDocument,
+) []assemblyline.SourceDocument {
 	t.Helper()
-	output := make([]assemblyline.TypeScriptDocument, 0, len(documents)-2)
-	features := assemblyline.TypeScriptDocument{ID: "features", Path: "src/Counter.tsx"}
-	acceptance := assemblyline.TypeScriptDocument{ID: "acceptance", Path: "src/Counter.test.tsx"}
+	output := make([]assemblyline.SourceDocument, 0, len(documents)-2)
+	features := assemblyline.SourceDocument{ID: "features", Path: "src/Counter.tsx", AdapterID: "typescript_react"}
+	acceptance := assemblyline.SourceDocument{ID: "acceptance", Path: "src/Counter.test.tsx", AdapterID: "typescript_react"}
 	for _, document := range documents {
 		switch document.ID {
 		case "feature_001", "feature_002":
@@ -100,7 +100,7 @@ func coalesceApplicationTaskFixtureDocuments(
 		}
 	}
 	output = append(output, features, acceptance)
-	if err := (assemblyline.TypeScriptBlueprint{Documents: output}).Validate(); err != nil {
+	if err := (assemblyline.SourceBlueprint{Documents: output}).Validate(); err != nil {
 		t.Fatal(err)
 	}
 	return output
@@ -152,56 +152,58 @@ func applicationTaskLifecycleFixture(
 		t.Fatal(err)
 	}
 	program := directCodingProgram{
-		Adapter: "test", PackageName: "test", Workload: frozen, Generated: map[string]string{},
-		TypeScript: applicationTaskLifecycleBlueprint(),
+		StackID: genericTypeScriptBrowserAdapter, Workload: frozen, Generated: map[string]string{},
+		Source: applicationTaskLifecycleBlueprint(),
 		StaticFiles: []directCodingFileTask{
-			{Path: "package.json", Content: `{}`}, {Path: "tsconfig.json", Content: `{}`},
+			{Path: "package.json", Content: `{}`}, {Path: "package-lock.json", Content: `{}`},
+			{Path: "tsconfig.json", Content: `{}`},
 			{Path: "vite.config.ts", Content: "export default {};"},
 			{Path: "index.html", Content: `<div id="root"></div>`},
 			{Path: "src/main.tsx", Content: "import { App } from './App';"},
 			{Path: "src/styles.css", Content: "body {}"},
 		},
 	}
-	if err := program.TypeScript.Validate(); err != nil {
+	if err := program.Source.Validate(); err != nil {
 		t.Fatal(err)
 	}
 	return input, frozen, program
 }
 
-func applicationTaskLifecycleBlueprint() assemblyline.TypeScriptBlueprint {
-	documents := []assemblyline.TypeScriptDocument{{
-		ID: "application_runtime", Path: "src/runtime.tsx", Blocks: []assemblyline.TypeScriptBlock{
+func applicationTaskLifecycleBlueprint() assemblyline.SourceBlueprint {
+	documents := []assemblyline.SourceDocument{{
+		ID: "application_runtime", Path: "src/runtime.tsx", AdapterID: "typescript_react", Blocks: []assemblyline.SourceBlock{
 			{ID: "runtime.api", Static: "interface Runtime {}", API: "interface Runtime {}"},
 			{ID: "runtime.factory", Static: "function runtime(): number { return 1; }", API: "function runtime(): number", DependsOn: []string{"runtime.api"}},
 		},
 	}}
 	for sequence := 1; sequence <= 2; sequence++ {
 		suffix := formatTaskSequence(sequence)
+		taskID := "task_" + suffix
 		featureID := "feature." + suffix
 		documents = append(documents,
-			assemblyline.TypeScriptDocument{
-				ID: "feature_" + suffix, Path: "src/features/Feature" + suffix + ".tsx",
-				Blocks: []assemblyline.TypeScriptBlock{
-					{ID: "feature.context." + suffix, Static: "interface Context" + suffix + " {}", API: "interface Context" + suffix + " {}", DependsOn: []string{"runtime.api"}},
-					{ID: featureID, Signature: "function Feature" + suffix + "View(): number", Contract: "Return a value.", API: "function Feature" + suffix + "View(): number", DependsOn: []string{"feature.context." + suffix}},
-					{ID: "feature.wrapper." + suffix, Static: "function Feature" + suffix + "(): number { return 1; }", API: "function Feature" + suffix + "(): number", DependsOn: []string{featureID}},
+			assemblyline.SourceDocument{
+				ID: "feature_" + suffix, Path: "src/features/Feature" + suffix + ".tsx", AdapterID: "typescript_react",
+				Blocks: []assemblyline.SourceBlock{
+					{ID: "feature.context." + suffix, Static: "interface Context" + suffix + " {}", API: "interface Context" + suffix + " {}", DependsOn: []string{"runtime.api"}, TaskID: taskID, Role: assemblyline.SourceBlockTaskSupport},
+					{ID: featureID, Signature: "function Feature" + suffix + "View(): number", Contract: "Return a value.", API: "function Feature" + suffix + "View(): number", DependsOn: []string{"feature.context." + suffix}, TaskID: taskID, Role: assemblyline.SourceBlockTaskImplementation},
+					{ID: "feature.wrapper." + suffix, Static: "function Feature" + suffix + "(): number { return 1; }", API: "function Feature" + suffix + "(): number", DependsOn: []string{featureID}, TaskID: taskID, Role: assemblyline.SourceBlockTaskSupport},
 				},
 			},
-			assemblyline.TypeScriptDocument{
-				ID: "acceptance_" + suffix, Path: "src/features/Feature" + suffix + ".test.tsx",
-				Blocks: []assemblyline.TypeScriptBlock{
-					{ID: "acceptance." + suffix, Signature: "function VerifyFeature" + suffix + "(): number", Contract: "Verify the feature.", API: "function VerifyFeature" + suffix + "(): number", DependsOn: []string{"runtime.factory", featureID}},
-					{ID: "acceptance.register." + suffix, Static: "void 0;", API: "registered acceptance " + suffix, DependsOn: []string{"acceptance." + suffix}},
+			assemblyline.SourceDocument{
+				ID: "acceptance_" + suffix, Path: "src/features/Feature" + suffix + ".test.tsx", AdapterID: "typescript_react",
+				Blocks: []assemblyline.SourceBlock{
+					{ID: "acceptance." + suffix, Signature: "function VerifyFeature" + suffix + "(): number", Contract: "Verify the feature.", API: "function VerifyFeature" + suffix + "(): number", DependsOn: []string{"runtime.factory", featureID}, TaskID: taskID, Role: assemblyline.SourceBlockTaskVerification},
+					{ID: "acceptance.register." + suffix, Static: "void 0;", API: "registered acceptance " + suffix, DependsOn: []string{"acceptance." + suffix}, TaskID: taskID, Role: assemblyline.SourceBlockTaskSupport},
 				},
 			},
 		)
 	}
 	documents = append(documents,
-		assemblyline.TypeScriptDocument{ID: "application_shell", Path: "src/App.tsx", Blocks: []assemblyline.TypeScriptBlock{{ID: "application.render", Static: "function App(): number { return 1; }", API: "function App(): number", DependsOn: []string{"feature.001", "feature.002"}}}},
-		assemblyline.TypeScriptDocument{ID: "application_smoke_test", Path: "src/App.test.tsx", Blocks: []assemblyline.TypeScriptBlock{{ID: "tests.application_smoke", Static: "void 0;", API: "application smoke", DependsOn: []string{"application.render"}}}},
-		assemblyline.TypeScriptDocument{ID: "application_runtime_test", Path: "src/runtime.test.ts", Blocks: []assemblyline.TypeScriptBlock{{ID: "tests.runtime", Static: "void 0;", API: "runtime test", DependsOn: []string{"runtime.factory"}}}},
+		assemblyline.SourceDocument{ID: "application_shell", Path: "src/App.tsx", AdapterID: "typescript_react", Blocks: []assemblyline.SourceBlock{{ID: "application.render", Static: "function App(): number { return 1; }", API: "function App(): number", DependsOn: []string{"feature.001", "feature.002"}}}},
+		assemblyline.SourceDocument{ID: "application_smoke_test", Path: "src/App.test.tsx", AdapterID: "typescript_react", Blocks: []assemblyline.SourceBlock{{ID: "tests.application_smoke", Static: "void 0;", API: "application smoke", DependsOn: []string{"application.render"}}}},
+		assemblyline.SourceDocument{ID: "application_runtime_test", Path: "src/runtime.test.ts", AdapterID: "typescript", Blocks: []assemblyline.SourceBlock{{ID: "tests.runtime", Static: "void 0;", API: "runtime test", DependsOn: []string{"runtime.factory"}}}},
 	)
-	return assemblyline.TypeScriptBlueprint{Documents: documents}
+	return assemblyline.SourceBlueprint{Documents: documents}
 }
 
 func formatTaskSequence(sequence int) string {
@@ -221,8 +223,8 @@ func assertTaskStageOwnsOnly(t *testing.T, stage directCodingProgram, taskID str
 }
 
 func taskStageDocumentIDs(program directCodingProgram) []string {
-	ids := make([]string, 0, len(program.TypeScript.Documents))
-	for _, document := range program.TypeScript.Documents {
+	ids := make([]string, 0, len(program.Source.Documents))
+	for _, document := range program.Source.Documents {
 		ids = append(ids, document.ID)
 	}
 	sort.Strings(ids)

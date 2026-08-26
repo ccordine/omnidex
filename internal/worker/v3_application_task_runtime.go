@@ -1,6 +1,7 @@
 package worker
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -11,9 +12,9 @@ import (
 func (s *directCodingSession) generateDirectCodingApplicationTaskBlock(
 	_ assemblyline.ApplicationTaskContext,
 	stage *directCodingProgram,
-	block assemblyline.TypeScriptBlock,
+	ref assemblyline.SourceBlockRef,
 ) (string, error) {
-	job, err := directCodingApplicationTaskFragmentJob(stage, block)
+	job, err := directCodingApplicationTaskFragmentJob(stage, ref)
 	if err != nil {
 		return "", err
 	}
@@ -21,32 +22,34 @@ func (s *directCodingSession) generateDirectCodingApplicationTaskBlock(
 	if err != nil {
 		return "", err
 	}
-	correctionModel, err := s.workerModel(station.CodingFragmentCorrection)
-	if err != nil {
-		return "", err
-	}
 	runtime := directCodingWorkerRuntime(s)
-	runtime.CorrectionModel = correctionModel
 	return runDirectCodingTypeScriptFragmentWorker(runtime, modelName, job)
 }
 
 func directCodingApplicationTaskFragmentJob(
 	stage *directCodingProgram,
-	block assemblyline.TypeScriptBlock,
+	ref assemblyline.SourceBlockRef,
 ) (directCodingTypeScriptFragmentJob, error) {
 	if stage == nil {
 		return directCodingTypeScriptFragmentJob{}, fmt.Errorf("application task generation requires one isolated stage")
 	}
+	profile, err := directCodingVersionProfileForProgram(*stage)
+	if err != nil {
+		return directCodingTypeScriptFragmentJob{}, err
+	}
 	declarations := make(map[string]string)
-	tsx := false
+	block := ref.Block
+	tsx := directCodingTypeScriptDocumentIsTSX(ref.Document)
 	found := false
-	for _, document := range stage.TypeScript.Documents {
+	for _, document := range stage.Source.Documents {
 		for _, candidate := range document.Blocks {
 			if !candidate.Generated() || strings.TrimSpace(stage.Generated[candidate.ID]) != "" {
 				declarations[candidate.ID] = strings.TrimSpace(candidate.API)
 			}
 			if candidate.ID == block.ID {
-				tsx = document.TSX()
+				if document.ID != ref.Document.ID || document.AdapterID != ref.Document.AdapterID {
+					return directCodingTypeScriptFragmentJob{}, fmt.Errorf("source block %s reference differs from isolated stage", block.ID)
+				}
 				found = true
 			}
 		}
@@ -58,19 +61,23 @@ func directCodingApplicationTaskFragmentJob(
 	if err != nil {
 		return directCodingTypeScriptFragmentJob{}, err
 	}
-	return directCodingTypeScriptFragmentJob{block: block, tsx: tsx, available: available}, nil
+	return directCodingTypeScriptFragmentJob{
+		block: block, dialect: profile.SourceDialect, tsx: tsx, available: available,
+	}, nil
 }
 
 func directCodingApplicationTaskStageCommands(
 	stage directCodingProgram,
 	context assemblyline.ApplicationTaskContext,
 ) ([][]string, error) {
-	_, acceptanceID, err := applicationTaskBlockIDs(context.Task.TaskID)
+	acceptanceID, err := directCodingTaskBlockIDByRole(
+		stage.Source, context.Task.TaskID, assemblyline.SourceBlockTaskVerification,
+	)
 	if err != nil {
 		return nil, err
 	}
 	path := ""
-	for _, document := range stage.TypeScript.Documents {
+	for _, document := range stage.Source.Documents {
 		for _, block := range document.Blocks {
 			if block.ID == acceptanceID {
 				if path != "" {
@@ -94,13 +101,18 @@ func (s *directCodingSession) runDirectCodingApplicationTaskLifecycle(
 	if program == nil {
 		return fmt.Errorf("application task lifecycle requires one program")
 	}
-	workspace, err := newDirectCodingTypeScriptStageWorkspace(s.runtime.ctx, *program)
+	if _, err := directCodingVersionProfileForProgram(*program); err != nil {
+		return err
+	}
+	stack, err := directCodingProjectStackByID(program.StackID)
 	if err != nil {
 		return err
 	}
-	defer workspace.Close()
-	correctionProgress := newDirectCodingTypeScriptCorrectionProgress()
-	return runDirectCodingApplicationTaskLifecycle(
+	executor, err := stack.NewStageExecutor(s, *program)
+	if err != nil {
+		return err
+	}
+	lifecycleErr := runDirectCodingApplicationTaskLifecycle(
 		input, frozen, program,
 		directCodingApplicationTaskLifecycleHooks{
 			BeginTask: func(context assemblyline.ApplicationTaskContext) error {
@@ -109,15 +121,19 @@ func (s *directCodingSession) runDirectCodingApplicationTaskLifecycle(
 				}
 				return s.cognition.Begin(context.Task.TaskID)
 			},
-			BuildBlock: s.generateDirectCodingApplicationTaskBlock,
+			BuildBlock: executor.GenerateBlock,
+			VerifyTask: executor.VerifyTask,
 			CompleteTask: func(context assemblyline.ApplicationTaskContext, generated map[string]string) error {
 				return s.cognition.CompleteTask(context.Task.TaskID, generated)
 			},
 			FinalStage: func(complete *directCodingProgram) error {
-				return s.stageTypeScriptProgramIn(
-					workspace.Root(), complete, directCodingFullStageCommands(), correctionProgress,
-				)
+				return executor.VerifyFinal(complete)
 			},
 		},
 	)
+	closeErr := executor.Close()
+	if lifecycleErr != nil || closeErr != nil {
+		return errors.Join(lifecycleErr, closeErr)
+	}
+	return nil
 }

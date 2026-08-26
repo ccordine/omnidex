@@ -60,5 +60,9 @@ func normalizeWorkerOptions(opts Options) Options {
 	opts.Models.Stations = stationModels
 	opts.Workspace.Root = strings.TrimSpace(opts.Workspace.Root)
 	opts.Workspace.HostRoot = strings.TrimSpace(opts.Workspace.HostRoot)
+	opts.Deployment.KeyFile = strings.TrimSpace(opts.Deployment.KeyFile)
+	opts.Deployment.BindAddress = strings.TrimSpace(opts.Deployment.BindAddress)
+	opts.Deployment.AdvertisedHost = strings.TrimSpace(opts.Deployment.AdvertisedHost)
+	opts.Deployment.ProbeHost = strings.TrimSpace(opts.Deployment.ProbeHost)
 	return opts
 }

@@ -20,6 +20,7 @@ func TestRawCodingPromptsAdmitExactDirectCapabilitiesBeyondLegacyTwoKiB(t *testi
 			job: func(capability string) (PortableJob, error) {
 				return NewFragmentGenerationJob(FragmentGenerationInput{
 					Language:         "typescript",
+					Dialect:          "TypeScript 5.9.3 with TSX",
 					Signature:        "function firstCalendarEntry(value: CalendarSnapshot): string",
 					Behavior:         "Return the first available calendar entry.",
 					Capabilities:     []string{capability},
@@ -28,17 +29,15 @@ func TestRawCodingPromptsAdmitExactDirectCapabilitiesBeyondLegacyTwoKiB(t *testi
 			},
 		},
 		{
-			name:       "geometry correction",
+			name:       "geometry generation",
 			capability: largeTypeScriptCapability("MeshVertexCatalog", "vertex"),
 			job: func(capability string) (PortableJob, error) {
-				return NewFragmentCorrectionJob(FragmentCorrectionInput{
-					Language:           "typescript",
-					Signature:          "function vertexCount(value: MeshVertexCatalog): number",
-					Capabilities:       []string{capability},
-					PermittedSymbols:   []string{"MeshVertexCatalog"},
-					CurrentDeclaration: "function vertexCount(value: MeshVertexCatalog): number { return 0; }",
-					RequiredChange:     "Return the catalog vertex count.",
-					Diagnostic:         "expected the catalog count, received zero",
+				return NewFragmentGenerationJob(FragmentGenerationInput{
+					Language:     "typescript",
+					Dialect:      "TypeScript 5.9.3 with TSX",
+					Signature:    "function vertexCount(value: MeshVertexCatalog): number",
+					Capabilities: []string{capability}, PermittedSymbols: []string{"MeshVertexCatalog"},
+					Behavior: "Return the catalog vertex count.",
 				})
 			},
 		},
@@ -76,7 +75,7 @@ func TestExpandedRawCodingCapabilitySizeRetainsExactSetAndSymbolAuthority(t *tes
 	t.Parallel()
 
 	base := FragmentGenerationInput{
-		Language: "typescript", Signature: "function readValue(): number",
+		Language: "typescript", Dialect: "TypeScript 5.9.3 with TSX", Signature: "function readValue(): number",
 		Behavior:         "Return the permitted value.",
 		Capabilities:     []string{"declare const PermittedValue: number;"},
 		PermittedSymbols: []string{"PermittedValue"},

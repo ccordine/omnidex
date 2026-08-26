@@ -43,15 +43,7 @@ func responseCorrectionSchema(original PortableJob, targetField string) (map[str
 	if len(mutable) == 0 {
 		return nil, fmt.Errorf("response correction original schema has no mutable field")
 	}
-	if original.Kind == WorkApplicationAcceptanceGroundingReview {
-		definition, exists := mutable[targetField]
-		if targetField == "" || !exists {
-			return nil, fmt.Errorf(
-				"acceptance grounding response correction target %q is unavailable", targetField,
-			)
-		}
-		mutable = map[string]any{targetField: definition}
-	} else if targetField != "" {
+	if targetField != "" {
 		return nil, fmt.Errorf("field-scoped response correction is unsupported for %s", original.Kind)
 	} else if len(mutable) != 1 {
 		return nil, fmt.Errorf(
@@ -102,21 +94,6 @@ func applyResponseCorrection(
 	if err != nil {
 		return "", err
 	}
-	var beforeGrounding acceptanceGroundingCorrectionState
-	if original.Kind == WorkApplicationAcceptanceGroundingReview {
-		beforeGrounding, err = applicationAcceptanceGroundingCorrectionState(
-			original, retainedCandidate,
-		)
-		if err != nil {
-			return "", err
-		}
-		if !beforeGrounding.allows(targetField) {
-			return "", fmt.Errorf(
-				"acceptance grounding correction target %s does not own current defect %s",
-				targetField, beforeGrounding.identity,
-			)
-		}
-	}
 	retained, err := decodeJSONObject(retainedCandidate, "retained semantic candidate")
 	if err != nil {
 		return "", err
@@ -148,21 +125,7 @@ func applyResponseCorrection(
 	if err != nil {
 		return "", fmt.Errorf("encode corrected semantic response: %w", err)
 	}
-	corrected := string(raw)
-	if original.Kind == WorkApplicationAcceptanceGroundingReview {
-		afterGrounding, stateErr := applicationAcceptanceGroundingCorrectionState(original, corrected)
-		if stateErr != nil {
-			return "", stateErr
-		}
-		if afterGrounding.rank < beforeGrounding.rank ||
-			afterGrounding.identity == beforeGrounding.identity {
-			return "", fmt.Errorf(
-				"acceptance grounding correction did not advance exact defect %s",
-				beforeGrounding.identity,
-			)
-		}
-	}
-	return corrected, nil
+	return string(raw), nil
 }
 
 func decodeJSONObject(raw string, label string) (map[string]any, error) {

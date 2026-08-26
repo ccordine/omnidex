@@ -6,73 +6,91 @@ import (
 	"github.com/gryph/omnidex/internal/assemblyline"
 )
 
-// deriveDirectCodingTargetTreeBindings derives only bindings forced by the accepted
-// path topology. It must not ask a model to restate a binding code already
-// knows. A multi-artifact topology needs an explicit future coordination task;
-// the removed requirement-to-path mapper was neither content planning nor a
-// coherent semantic uncertainty.
-func deriveDirectCodingTargetTreeBindings(
-	specification assemblyline.ApplicationSpecification,
-	tree assemblyline.TargetTree,
-) (assemblyline.TargetTree, error) {
-	stack, err := directCodingProjectStackByID(tree.StackID)
-	if err != nil {
-		return assemblyline.TargetTree{}, err
+// buildDirectCodingApplicationFileCoveragePlan consumes only code-retained
+// provenance from focused path-only tree calls. It does not infer meaning from
+// filenames and does not invoke a model to restate code-owned task identity.
+func buildDirectCodingApplicationFileCoveragePlan(
+	stack directCodingProjectStack,
+	workload assemblyline.FrozenApplicationWorkload,
+	target assemblyline.TargetTree,
+	taskPaths map[string][]string,
+) (assemblyline.ApplicationFileCoveragePlan, error) {
+	provenance := make(map[string][]string, len(target.Paths))
+	kinds := make(map[string]assemblyline.TargetArtifactKind, len(target.Paths))
+	knownPaths := make(map[string]struct{}, len(target.Paths))
+	for _, artifactPath := range target.Paths {
+		_, kind, err := directCodingArtifactAdapterForTreePath(stack, artifactPath)
+		if err != nil {
+			return assemblyline.ApplicationFileCoveragePlan{}, err
+		}
+		knownPaths[artifactPath] = struct{}{}
+		kinds[artifactPath] = kind
 	}
-	if bindings, forced, err := directCodingForcedTargetTreeBindings(stack, tree.Paths, specification.Requirements); err != nil {
-		return assemblyline.TargetTree{}, err
-	} else if forced {
-		tree.Bindings = bindings
-		return tree, nil
+	for _, task := range workload.Tasks {
+		paths, exists := taskPaths[task.ID]
+		if !exists || len(paths) == 0 {
+			return assemblyline.ApplicationFileCoveragePlan{}, fmt.Errorf(
+				"focused target-tree provenance omits task %s", task.ID,
+			)
+		}
+		seen := make(map[string]struct{}, len(paths))
+		for _, artifactPath := range paths {
+			if _, exists := knownPaths[artifactPath]; !exists {
+				return assemblyline.ApplicationFileCoveragePlan{}, fmt.Errorf(
+					"task %s provenance names non-target path %s", task.ID, artifactPath,
+				)
+			}
+			if _, duplicate := seen[artifactPath]; duplicate {
+				return assemblyline.ApplicationFileCoveragePlan{}, fmt.Errorf(
+					"task %s repeats target path %s", task.ID, artifactPath,
+				)
+			}
+			seen[artifactPath] = struct{}{}
+			provenance[artifactPath] = append(provenance[artifactPath], task.ID)
+		}
 	}
-	return assemblyline.TargetTree{}, fmt.Errorf(
-		"target-tree topology has no deterministic implementation/verification binding; explicit artifact coordination is required before content or source work",
-	)
+	return assemblyline.NewApplicationFileCoveragePlan(workload, target, provenance, kinds)
 }
 
-// directCodingForcedTargetTreeBindings resolves only the topology that has one
-// possible requirement binding: exactly one implementation leaf and exactly
-// one verification leaf. Asking a model to choose in that state is illegal;
-// each accepted requirement must bind to the sole leaf of each required kind.
-func directCodingForcedTargetTreeBindings(
-	stack directCodingProjectStack,
-	paths []string,
-	requirements []assemblyline.Requirement,
-) ([]assemblyline.TargetTreeRequirementBinding, bool, error) {
-	if len(paths) != 2 || len(requirements) == 0 {
-		return nil, false, nil
+type directCodingTaskArtifactPair struct {
+	ImplementationPath string
+	VerificationPath   string
+}
+
+// directCodingTaskSinglePair is a stack-specific constraint helper. The
+// generic coverage plan deliberately permits plural or implementation-only
+// files; stacks that truly require a pair must say so at their own boundary.
+func directCodingTaskSinglePair(
+	coverage assemblyline.ApplicationFileCoveragePlan,
+	taskID string,
+) (directCodingTaskArtifactPair, error) {
+	files, err := coverage.FilesForTask(taskID)
+	if err != nil {
+		return directCodingTaskArtifactPair{}, err
 	}
-	var implementationPath string
-	var verificationPath string
-	for _, filePath := range paths {
-		_, kind, err := directCodingArtifactAdapterForTreePath(stack, filePath)
-		if err != nil {
-			return nil, false, err
-		}
-		switch kind {
+	var pair directCodingTaskArtifactPair
+	for _, file := range files {
+		switch file.Kind {
 		case assemblyline.TargetArtifactImplementation:
-			if implementationPath != "" {
-				return nil, false, nil
+			if pair.ImplementationPath != "" {
+				return directCodingTaskArtifactPair{}, fmt.Errorf(
+					"task %s has multiple implementation files in a single-pair stack", taskID,
+				)
 			}
-			implementationPath = filePath
+			pair.ImplementationPath = file.Path
 		case assemblyline.TargetArtifactVerification:
-			if verificationPath != "" {
-				return nil, false, nil
+			if pair.VerificationPath != "" {
+				return directCodingTaskArtifactPair{}, fmt.Errorf(
+					"task %s has multiple verification files in a single-pair stack", taskID,
+				)
 			}
-			verificationPath = filePath
-		default:
-			return nil, false, fmt.Errorf("target-tree file %q has unsupported artifact kind %q", filePath, kind)
+			pair.VerificationPath = file.Path
 		}
 	}
-	if implementationPath == "" || verificationPath == "" {
-		return nil, false, nil
+	if pair.ImplementationPath == "" || pair.VerificationPath == "" {
+		return directCodingTaskArtifactPair{}, fmt.Errorf(
+			"task %s lacks the implementation/verification pair required by the selected stack", taskID,
+		)
 	}
-	ids := make([]string, len(requirements))
-	for index, requirement := range requirements {
-		ids[index] = requirement.ID
-	}
-	return []assemblyline.TargetTreeRequirementBinding{
-		{Path: implementationPath, Kind: assemblyline.TargetArtifactImplementation, RequirementIDs: append([]string(nil), ids...)},
-		{Path: verificationPath, Kind: assemblyline.TargetArtifactVerification, RequirementIDs: append([]string(nil), ids...)},
-	}, true, nil
+	return pair, nil
 }

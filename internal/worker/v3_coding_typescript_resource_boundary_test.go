@@ -36,12 +36,11 @@ func TestTypeScriptWholeDeclarationCorrectionCrossesFormerLocalByteCeilings(t *t
 			}
 
 			job := directCodingTypeScriptFragmentJob{
-				block: assemblyline.TypeScriptBlock{
+				block: assemblyline.SourceBlock{
 					ID: "calculation.revise", Signature: signature,
 					Contract: "Return the corrected numeric result.", API: signature,
 				},
-				current: current,
-				failure: "AssertionError: corrected result was not returned",
+				current: current, repairGuidance: "Add one to the returned value.",
 			}
 			var promptBytes int
 			var payloadBytes int
@@ -70,7 +69,7 @@ func TestTypeScriptWholeDeclarationCorrectionCrossesFormerLocalByteCeilings(t *t
 					return assemblyline.PortableResult{JobID: portable.ID, Candidate: corrected}, nil
 				},
 			}
-			source, err := runDirectCodingTypeScriptFragmentWorker(runtime, "coder", job)
+			source, err := runDirectCodingTypeScriptFragmentWorker(runtime, "executor", job)
 			if err != nil {
 				t.Fatalf("valid %dB whole-declaration correction was rejected: %v", len(corrected), err)
 			}
@@ -95,7 +94,7 @@ func TestTypeScriptWorkerProjectsRawOutputBeyondFormerPortableCandidateCeiling(t
 	if len(raw) <= testPortableGrossResourceBytes {
 		t.Fatalf("raw fixture=%dB did not cross former candidate ceiling", len(raw))
 	}
-	job := directCodingTypeScriptFragmentJob{block: assemblyline.TypeScriptBlock{
+	job := directCodingTypeScriptFragmentJob{dialect: "TypeScript 5.9.3", block: assemblyline.SourceBlock{
 		ID: "calculation.revise", Signature: signature,
 		Contract: "Return the corrected numeric result.", API: signature,
 	}}
@@ -136,7 +135,7 @@ func TestTypeScriptWorkerProjectsRawOutputBeyondFormerPortableCandidateCeiling(t
 	)
 
 	job.current = oversized
-	job.failure = "AssertionError: corrected result was not returned"
+	job.repairGuidance = "Add one to the returned value."
 	executions = 0
 	_, err = runDirectCodingTypeScriptFragmentWorker(runtime, "coder", job)
 	if err == nil || !strings.Contains(err.Error(), "portable job payload exceeds gross resource ceiling of 131072 bytes") {
@@ -150,7 +149,7 @@ func TestTypeScriptWorkerProjectsRawOutputBeyondFormerPortableCandidateCeiling(t
 func TestTypeScriptWorkerStopsRepeatedUnprojectableResponseState(t *testing.T) {
 	t.Parallel()
 
-	job := directCodingTypeScriptFragmentJob{block: assemblyline.TypeScriptBlock{
+	job := directCodingTypeScriptFragmentJob{dialect: "TypeScript 5.9.3", block: assemblyline.SourceBlock{
 		ID: "calculation.revise", Signature: "function revise(value: number): number",
 		Contract: "Return the revised value.", API: "function revise(value: number): number",
 	}}
@@ -169,11 +168,11 @@ func TestTypeScriptWorkerStopsRepeatedUnprojectableResponseState(t *testing.T) {
 				}),
 			}
 			_, err := runDirectCodingTypeScriptFragmentWorker(runtime, "coder", job)
-			if err == nil || !strings.Contains(err.Error(), "repeated candidate/diagnostic correction state") {
+			if err == nil {
 				t.Fatalf("projection error=%v", err)
 			}
-			if executions != 2 {
-				t.Fatalf("repeated invalid projection dispatched %d calls, want exactly 2", executions)
+			if executions != 1 {
+				t.Fatalf("invalid projection dispatched %d calls, want exactly 1", executions)
 			}
 		})
 	}

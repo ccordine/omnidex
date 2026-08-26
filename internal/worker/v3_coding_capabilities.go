@@ -145,7 +145,7 @@ func assembleDirectCodingCapabilityGraph(
 		dependency := requirements[dependencyIndex]
 		graph[owner.ID] = append(graph[owner.ID], directCodingCapabilityBinding{
 			RequirementID: dependency.ID,
-			CapabilityID:  genericBrowserCapabilityID(dependencyIndex + 1),
+			CapabilityID:  genericApplicationCapabilityID(dependencyIndex + 1),
 			Purpose:       dependency.SourceQuote,
 		})
 	}
@@ -161,9 +161,6 @@ func assembleDirectCodingCapabilityGraph(
 		case assemblyline.CapabilityLeftReadsRight:
 			add(result.Pair.LeftIndex, result.Pair.RightIndex)
 		case assemblyline.CapabilityRightReadsLeft:
-			add(result.Pair.RightIndex, result.Pair.LeftIndex)
-		case assemblyline.CapabilityBidirectional:
-			add(result.Pair.LeftIndex, result.Pair.RightIndex)
 			add(result.Pair.RightIndex, result.Pair.LeftIndex)
 		}
 	}
@@ -196,7 +193,7 @@ func validateDirectCodingCapabilityGraph(
 			if !exists || dependency.RequirementID == owner.ID {
 				return fmt.Errorf("requirement %s has invalid capability dependency %s", owner.ID, dependency.RequirementID)
 			}
-			if dependency.CapabilityID != genericBrowserCapabilityID(index+1) ||
+			if dependency.CapabilityID != genericApplicationCapabilityID(index+1) ||
 				dependency.Purpose != requirements[index].SourceQuote {
 				return fmt.Errorf("requirement %s capability dependency %s is not code-owned", owner.ID, dependency.RequirementID)
 			}

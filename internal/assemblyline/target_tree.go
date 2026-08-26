@@ -12,6 +12,7 @@ const (
 	TargetTreeCandidateSchemaV1 = "omnidex.target-tree.v1"
 	maxTargetTreePaths          = 128
 	maxTargetTreePathBytes      = 512
+	maxTargetTreeObjectiveBytes = 4096
 )
 
 type TargetArtifactKind string
@@ -21,8 +22,9 @@ const (
 	TargetArtifactVerification   TargetArtifactKind = "verification"
 )
 
-// TargetTreeInput is code-owned context for one structural question. Existing
-// paths are evidence supplied to the model; they are not part of its output.
+// TargetTreeInput is code-owned context for one structural question. ExistingPaths
+// contains the current workspace plus path leaves already reserved by earlier
+// focused tree calls; those paths are evidence, not part of the model's output.
 type TargetTreeInput struct {
 	Objective        string                `json:"objective"`
 	TechnicalContext string                `json:"technical_context"`
@@ -44,54 +46,13 @@ type TargetTreeCandidate struct {
 }
 
 type TargetTree struct {
-	StackID  string
-	Paths    []string
-	Bindings []TargetTreeRequirementBinding
-}
-
-// TargetTreeRequirementBinding is code-derived from a topology with one
-// possible implementation and verification owner. It is deliberately not
-// part of the tree-model schema and is never model-authored control data.
-type TargetTreeRequirementBinding struct {
-	Path           string
-	Kind           TargetArtifactKind
-	RequirementIDs []string
-}
-
-type TargetTreeRequirementFiles struct {
-	ImplementationPath string
-	VerificationPath   string
-}
-
-func (target TargetTree) RequirementFiles(requirementID string) (TargetTreeRequirementFiles, error) {
-	var files TargetTreeRequirementFiles
-	for _, binding := range target.Bindings {
-		for _, boundRequirementID := range binding.RequirementIDs {
-			if boundRequirementID != requirementID {
-				continue
-			}
-			switch binding.Kind {
-			case TargetArtifactImplementation:
-				if files.ImplementationPath != "" {
-					return TargetTreeRequirementFiles{}, fmt.Errorf("target-tree bindings assign multiple implementation files to requirement %q", requirementID)
-				}
-				files.ImplementationPath = binding.Path
-			case TargetArtifactVerification:
-				if files.VerificationPath != "" {
-					return TargetTreeRequirementFiles{}, fmt.Errorf("target-tree bindings assign multiple verification files to requirement %q", requirementID)
-				}
-				files.VerificationPath = binding.Path
-			}
-		}
-	}
-	if files.ImplementationPath == "" || files.VerificationPath == "" {
-		return TargetTreeRequirementFiles{}, fmt.Errorf("target-tree bindings have no complete artifact pair for requirement %q", requirementID)
-	}
-	return files, nil
+	StackID          string
+	VersionProfileID string
+	Paths            []string
 }
 
 func (input TargetTreeInput) Validate() error {
-	if err := validateTargetTreeText("objective", input.Objective, maxTargetTreePathBytes); err != nil {
+	if err := validateTargetTreeText("objective", input.Objective, maxTargetTreeObjectiveBytes); err != nil {
 		return err
 	}
 	if err := validateTargetTreeText("technical context", input.TechnicalContext, maxTargetTreePathBytes); err != nil {

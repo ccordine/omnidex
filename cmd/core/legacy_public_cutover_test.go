@@ -32,7 +32,7 @@ func TestLegacyPublicPreservationConfigIgnoresUnrelatedModelRuntime(t *testing.T
 	t.Setenv("DATABASE_URL", "postgres://agent:secret@127.0.0.1/omnidex")
 	t.Setenv("LLM_PROVIDER", "ollama")
 	t.Setenv("OLLAMA_BASE_URL", "")
-	config, err := loadLegacyPublicPreservationConfig()
+	config, err := loadCoreDatabaseCommandConfig()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -44,21 +44,21 @@ func TestLegacyPublicPreservationConfigIgnoresUnrelatedModelRuntime(t *testing.T
 
 func TestLegacyPublicPreservationConfigFailsLoudly(t *testing.T) {
 	t.Setenv("DATABASE_URL", "")
-	if _, err := loadLegacyPublicPreservationConfig(); err == nil ||
+	if _, err := loadCoreDatabaseCommandConfig(); err == nil ||
 		!strings.Contains(err.Error(), "DATABASE_URL is required") {
 		t.Fatalf("missing DATABASE_URL error=%v", err)
 	}
 
 	t.Setenv("DATABASE_URL", "postgres://agent:secret@127.0.0.1/omnidex")
 	t.Setenv("DATABASE_SCHEMA", "")
-	if _, err := loadLegacyPublicPreservationConfig(); err == nil ||
+	if _, err := loadCoreDatabaseCommandConfig(); err == nil ||
 		!strings.Contains(err.Error(), "DATABASE_SCHEMA is explicitly empty") {
 		t.Fatalf("empty DATABASE_SCHEMA error=%v", err)
 	}
 
 	t.Setenv("DATABASE_SCHEMA", db.DefaultRuntimeSchema)
 	t.Setenv("WRAPPER_ONLY", "true")
-	if _, err := loadLegacyPublicPreservationConfig(); err == nil ||
+	if _, err := loadCoreDatabaseCommandConfig(); err == nil ||
 		!strings.Contains(err.Error(), "database-backed core") {
 		t.Fatalf("wrapper-only error=%v", err)
 	}

@@ -10,12 +10,7 @@ const DeclarationArtifactBoundarySchemaV1 = "omnidex.declaration-artifact-bounda
 
 const maxDeclarationBoundaryQuoteBytes = 1024
 
-var (
-	opaqueDeclarationPattern  = regexp.MustCompile(`^DECLARATION_[1-9][0-9]*$`)
-	goPhysicalArtifactPattern = regexp.MustCompile(
-		`(?i)(?:\b[a-z0-9_.-]+/)+[a-z0-9_.-]+\b|\b[a-z0-9_.-]+\.go\b`,
-	)
-)
+var opaqueDeclarationPattern = regexp.MustCompile(`^DECLARATION_[1-9][0-9]*$`)
 
 type DeclarationArtifactBoundary string
 
@@ -55,9 +50,6 @@ func (input DeclarationArtifactBoundaryInput) validate() error {
 	}
 	if !opaqueDeclarationPattern.MatchString(input.DeclarationID) {
 		return fmt.Errorf("declaration artifact boundary ID %q is not code-owned and opaque", input.DeclarationID)
-	}
-	if goPhysicalArtifactPattern.MatchString(input.RequirementQuote) {
-		return fmt.Errorf("declaration artifact boundary requirement exposes a physical artifact identity")
 	}
 	return nil
 }

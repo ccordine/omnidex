@@ -8,7 +8,8 @@ import (
 )
 
 type directCodingTypeScriptFragmentJob struct {
-	block          assemblyline.TypeScriptBlock
+	block          assemblyline.SourceBlock
+	dialect        string
 	tsx            bool
 	available      string
 	current        string
@@ -19,7 +20,7 @@ type directCodingTypeScriptFragmentJob struct {
 }
 
 func directCodingTypeScriptAvailableDeclarations(
-	block assemblyline.TypeScriptBlock,
+	block assemblyline.SourceBlock,
 	declarations map[string]string,
 ) (string, error) {
 	available := make([]string, 0, len(block.Capabilities))
@@ -34,7 +35,7 @@ func directCodingTypeScriptAvailableDeclarations(
 }
 
 func directCodingTypeScriptAcceptedDeclarations(
-	blueprint assemblyline.TypeScriptBlueprint,
+	blueprint assemblyline.SourceBlueprint,
 	generated map[string]string,
 ) (map[string]string, error) {
 	declarations := make(map[string]string)
@@ -53,10 +54,10 @@ func directCodingTypeScriptAcceptedDeclarations(
 	return declarations, nil
 }
 
-func directCodingTypeScriptBlueprintBlock(
-	blueprint assemblyline.TypeScriptBlueprint,
+func directCodingSourceBlueprintBlock(
+	blueprint assemblyline.SourceBlueprint,
 	blockID string,
-) (assemblyline.TypeScriptBlock, bool) {
+) (assemblyline.SourceBlock, bool) {
 	for _, document := range blueprint.Documents {
 		for _, block := range document.Blocks {
 			if block.ID == blockID {
@@ -64,5 +65,5 @@ func directCodingTypeScriptBlueprintBlock(
 			}
 		}
 	}
-	return assemblyline.TypeScriptBlock{}, false
+	return assemblyline.SourceBlock{}, false
 }

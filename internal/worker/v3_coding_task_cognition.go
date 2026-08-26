@@ -22,15 +22,18 @@ import (
 // select tools, or call a model: it records deterministic progress through the
 // already accepted workload and real verification results.
 type directCodingTaskCognition struct {
-	ctx         context.Context
-	store       directCodingTaskCognitionStore
-	authority   model.StepAttemptAuthority
-	instruction string
-	objectiveID taskstate.NodeID
-	taskIDs     map[string]taskstate.NodeID
-	treeTaskIDs map[string]taskstate.NodeID
-	treeFiles   map[string]assemblyline.TargetTreeTransition
-	treeDirs    map[string]assemblyline.TargetTreeTransition
+	ctx                context.Context
+	store              directCodingTaskCognitionStore
+	authority          model.StepAttemptAuthority
+	instruction        string
+	objectiveID        taskstate.NodeID
+	taskIDs            map[string]taskstate.NodeID
+	treeTaskIDs        map[string]taskstate.NodeID
+	treeFiles          map[string]assemblyline.TargetTreeTransition
+	treeDirs           map[string]assemblyline.TargetTreeTransition
+	verificationTaskID taskstate.NodeID
+	deploymentTaskID   taskstate.NodeID
+	deploymentRequired bool
 }
 
 type directCodingTaskCognitionStore interface {
@@ -51,16 +54,25 @@ func newDirectCodingTaskCognition(session *directCodingSession) (*directCodingTa
 		session.runtime.claim.Authority.StepID <= 0 {
 		return nil, fmt.Errorf("direct coding task cognition requires complete step authority")
 	}
+	deploymentRequired := session.deploymentDisposition ==
+		assemblyline.ApplicationServiceDeploymentPersistCurrentHost
+	if session.deploymentDisposition != assemblyline.ApplicationServiceDeploymentVerifyOnly &&
+		!deploymentRequired {
+		return nil, fmt.Errorf("direct coding task cognition requires one resolved deployment disposition")
+	}
 	return &directCodingTaskCognition{
-		ctx:         session.runtime.ctx,
-		store:       session.runtime.svc.repo,
-		authority:   session.runtime.claim.Authority,
-		instruction: session.request.Instruction,
-		objectiveID: taskstate.NodeID("direct-coding-objective"),
-		taskIDs:     make(map[string]taskstate.NodeID),
-		treeTaskIDs: make(map[string]taskstate.NodeID),
-		treeFiles:   make(map[string]assemblyline.TargetTreeTransition),
-		treeDirs:    make(map[string]assemblyline.TargetTreeTransition),
+		ctx:                session.runtime.ctx,
+		store:              session.runtime.svc.repo,
+		authority:          session.runtime.claim.Authority,
+		instruction:        session.request.Instruction,
+		objectiveID:        taskstate.NodeID("direct-coding-objective"),
+		taskIDs:            make(map[string]taskstate.NodeID),
+		treeTaskIDs:        make(map[string]taskstate.NodeID),
+		treeFiles:          make(map[string]assemblyline.TargetTreeTransition),
+		treeDirs:           make(map[string]assemblyline.TargetTreeTransition),
+		verificationTaskID: directCodingVerificationTaskNodeID,
+		deploymentTaskID:   directCodingDeploymentTaskNodeID,
+		deploymentRequired: deploymentRequired,
 	}, nil
 }
 
@@ -128,7 +140,7 @@ func (c *directCodingTaskCognition) Bootstrap(workload assemblyline.FrozenApplic
 		if err := c.transition(c.objectiveID, taskstate.NodeActive, nil, nil); err != nil {
 			return err
 		}
-	} else if objective.Status != taskstate.NodeActive {
+	} else if objective.Status != taskstate.NodeActive && objective.Status != taskstate.NodeDone {
 		return fmt.Errorf("direct coding task cognition objective %q is %q", objective.ID, objective.Status)
 	}
 	if err := c.ensureWorkingSet(); err != nil {
@@ -192,8 +204,8 @@ func (c *directCodingTaskCognition) CompleteObjective(verification directCodingV
 		return err
 	}
 	objective, ok := ledger.Node(c.objectiveID)
-	if !ok || objective.Status != taskstate.NodeActive {
-		return fmt.Errorf("direct coding task cognition objective is not active")
+	if !ok || (objective.Status != taskstate.NodeActive && objective.Status != taskstate.NodeDone) {
+		return fmt.Errorf("direct coding task cognition objective is neither active nor done")
 	}
 	for taskID, id := range c.taskIDs {
 		node, exists := ledger.Node(id)
@@ -207,8 +219,27 @@ func (c *directCodingTaskCognition) CompleteObjective(verification directCodingV
 			return fmt.Errorf("direct coding task cognition tree leaf %q is not complete", leafKey)
 		}
 	}
+	verificationNode, exists := ledger.Node(c.verificationTaskID)
+	if !exists || verificationNode.Status != taskstate.NodeDone {
+		return fmt.Errorf("direct coding task cognition workspace verification is not complete")
+	}
+	if c.deploymentRequired {
+		deploymentNode, exists := ledger.Node(c.deploymentTaskID)
+		if !exists || deploymentNode.Status != taskstate.NodeDone {
+			return fmt.Errorf("direct coding task cognition requested deployment is not complete")
+		}
+	}
 	stepID := c.authority.StepID
 	proof := directCodingVerificationProof(c.authority.JobID, verification.Commands)
+	if objective.Status == taskstate.NodeDone {
+		if !directCodingCompletionProofEqual(objective.VerificationRefs, proof) {
+			return fmt.Errorf("direct coding task cognition objective proof conflicts with persisted completion")
+		}
+		return c.closeScope(
+			workingset.Scope{Kind: workingset.ScopeObjective, ID: workingset.ScopeID(c.objectiveID)},
+			"real workspace verification passed",
+		)
+	}
 	if err := c.transition(c.objectiveID, taskstate.NodeDone, &stepID, []taskstate.Ref{proof}); err != nil {
 		return err
 	}
@@ -217,6 +248,10 @@ func (c *directCodingTaskCognition) CompleteObjective(verification directCodingV
 
 func (c *directCodingTaskCognition) addObjective(workload assemblyline.FrozenApplicationWorkload) error {
 	stepID := c.authority.StepID
+	criterion := "The complete generated workspace passes code-selected verification."
+	if c.deploymentRequired {
+		criterion = "The complete generated workspace passes code-selected verification and remains healthy at its persisted current-host endpoint."
+	}
 	return c.apply(func(ledger *taskstate.Ledger) (taskstate.Command, error) {
 		commandID, err := c.commandID("add-objective", workload.SHA256)
 		if err != nil {
@@ -226,7 +261,7 @@ func (c *directCodingTaskCognition) addObjective(workload assemblyline.FrozenApp
 			CommandID: commandID, ExpectedVersion: ledger.Version(), Actor: taskstate.AuthorityCode,
 			ID: c.objectiveID, ParentID: taskstate.NodeID("goal:root"), Kind: taskstate.NodeObjective,
 			Title: workload.ProductQuote, Priority: 100, CreatedStepID: &stepID,
-			AcceptanceCriteria: []string{"The complete generated workspace passes code-selected verification."},
+			AcceptanceCriteria: []string{criterion},
 			Metadata:           taskstate.EmptyJSONObject(),
 		}, nil
 	})

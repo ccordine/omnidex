@@ -8,7 +8,7 @@ import (
 func TestGoFragmentGenerationIsOnePathBlindDeclaration(t *testing.T) {
 	t.Parallel()
 	job, err := NewFragmentGenerationJob(FragmentGenerationInput{
-		Language: "go", Signature: "func Added() int", Behavior: "return two",
+		Language: "go", Dialect: "Go 1.24", Signature: "func Added() int", Behavior: "return two",
 	})
 	if err != nil {
 		t.Fatal(err)

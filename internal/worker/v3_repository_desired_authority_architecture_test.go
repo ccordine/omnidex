@@ -84,12 +84,7 @@ func TestDesiredStateModelSchemasContainNoMutationToolSurface(t *testing.T) {
 			},
 		})),
 		must(assemblyline.NewFragmentGenerationJob(assemblyline.FragmentGenerationInput{
-			Language: "go", Signature: "func Added() string", Behavior: "Return a stable semantic value.",
-		})),
-		must(assemblyline.NewFragmentCorrectionJob(assemblyline.FragmentCorrectionInput{
-			Language: "go", Signature: "func Added() string",
-			CurrentDeclaration: "func Added() string { return 1 }",
-			RequiredChange:     "Return the declared result type.", Diagnostic: "return type does not match",
+			Language: "go", Dialect: "Go 1.24", Signature: "func Added() string", Behavior: "Return a stable semantic value.",
 		})),
 	}
 	for _, job := range jobs {

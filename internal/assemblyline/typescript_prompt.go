@@ -1,20 +1,18 @@
 package assemblyline
 
 import (
-	"bytes"
-	"encoding/json"
 	"fmt"
 	"strings"
 )
 
 const (
-	maxTypeScriptRequiredChangeBytes  = 512
 	maxTypeScriptDiagnosticBytes      = 1024
 	maxTypeScriptInitialEnvelopeBytes = maxPortableResourceBytes
 	maxTypeScriptFragmentPromptBytes  = maxPortableResourceBytes
 )
 
 type TypeScriptFragmentPrompt struct {
+	Dialect        string
 	Signature      string
 	Contract       string
 	Available      string
@@ -32,83 +30,53 @@ func BuildTypeScriptFragmentPrompt(input TypeScriptFragmentPrompt) (string, erro
 	available := strings.TrimSpace(input.Available)
 	current := strings.TrimSpace(input.Current)
 	hasRegion := input.RepairRegion != nil
-	requiredChange := strings.TrimSpace(input.RequiredChange)
-	diagnostic := strings.TrimSpace(input.Diagnostic)
 	repairGuidance := strings.TrimSpace(input.RepairGuidance)
+	dialect := strings.TrimSpace(input.Dialect)
 	if signature == "" || strings.ContainsAny(signature, "\r\n") {
 		return "", fmt.Errorf("TypeScript fragment prompt requires one single-line signature")
 	}
-	if contract == "" && current == "" && !hasRegion {
-		return "", fmt.Errorf("TypeScript fragment prompt requires a local behavior contract")
-	}
-	if contract != "" && (current != "" || hasRegion) {
-		return "", fmt.Errorf("TypeScript correction prompt cannot replay the initial behavior contract")
+	if strings.TrimSpace(input.RequiredChange) != "" || strings.TrimSpace(input.Diagnostic) != "" {
+		return "", fmt.Errorf(
+			"unguided TypeScript fragment correction is forbidden; derive one repair instruction first",
+		)
 	}
 	if current != "" && hasRegion {
 		return "", fmt.Errorf("TypeScript correction prompt requires one current declaration or repair region")
 	}
-	if repairGuidance != "" && (contract != "" || requiredChange != "" || diagnostic != "") {
-		return "", fmt.Errorf("guided TypeScript correction requires exactly one repair authority")
-	}
-	if repairGuidance != "" && (available != "" || len(input.Globals) != 0) {
-		return "", fmt.Errorf("guided TypeScript correction cannot receive diagnostic-analysis context")
-	}
-	if len(repairGuidance) > maxTypeScriptRepairGuidanceBytes {
-		return "", fmt.Errorf("TypeScript repair guidance exceeds %d bytes", maxTypeScriptRepairGuidanceBytes)
-	}
-	if len(requiredChange) > maxTypeScriptRequiredChangeBytes {
-		return "", fmt.Errorf("TypeScript fragment required change exceeds %d bytes", maxTypeScriptRequiredChangeBytes)
-	}
-	if len(diagnostic) > maxTypeScriptDiagnosticBytes {
-		return "", fmt.Errorf("TypeScript fragment diagnostic exceeds %d bytes", maxTypeScriptDiagnosticBytes)
-	}
-	if current == "" && !hasRegion && (requiredChange != "" || diagnostic != "" || repairGuidance != "") {
-		return "", fmt.Errorf("TypeScript fragment generation cannot carry correction fields")
-	}
-	if (current != "" || hasRegion) && repairGuidance == "" && (requiredChange == "" || diagnostic == "") {
-		return "", fmt.Errorf("TypeScript fragment correction requires one change and diagnostic")
-	}
-	if (current != "" || hasRegion) && repairGuidance != "" {
+	if current != "" || hasRegion {
+		if repairGuidance == "" {
+			return "", fmt.Errorf(
+				"unguided TypeScript fragment correction is forbidden; derive one repair instruction first",
+			)
+		}
+		if dialect != "" || contract != "" || available != "" || len(input.Globals) != 0 {
+			return "", fmt.Errorf(
+				"guided TypeScript correction cannot receive diagnostic-analysis context",
+			)
+		}
+		if len(repairGuidance) > maxTypeScriptRepairGuidanceBytes {
+			return "", fmt.Errorf(
+				"TypeScript repair guidance exceeds %d bytes",
+				maxTypeScriptRepairGuidanceBytes,
+			)
+		}
 		return buildGuidedTypeScriptRepairPrompt(input, current, hasRegion, repairGuidance)
 	}
-	encodedCurrent := ""
-	if current != "" {
-		var err error
-		encodedCurrent, err = marshalUntrustedPromptString(current)
-		if err != nil {
-			return "", fmt.Errorf("TypeScript fragment current declaration: %w", err)
-		}
+	if repairGuidance != "" {
+		return "", fmt.Errorf("TypeScript fragment generation cannot carry repair guidance")
 	}
-	encodedRegion := ""
-	if hasRegion {
-		if err := input.RepairRegion.validate(); err != nil {
-			return "", fmt.Errorf("TypeScript fragment repair region: %w", err)
-		}
-		encodedSource, err := marshalUntrustedPromptString(input.RepairRegion.Source)
-		if err != nil {
-			return "", fmt.Errorf("TypeScript fragment repair region: %w", err)
-		}
-		encodedRegion = fmt.Sprintf(
-			`{"kind":%q,"start_line":%d,"end_line":%d,"source":%s}`,
-			input.RepairRegion.Kind, input.RepairRegion.StartLine, input.RepairRegion.EndLine, encodedSource,
-		)
+	if contract == "" {
+		return "", fmt.Errorf("TypeScript fragment prompt requires a local behavior contract")
 	}
-	parts := []string{}
-	if hasRegion {
-		parts = append(parts,
-			"Repair one local region inside a TypeScript function declaration.",
-			"Return only the raw replacement source for the selected region. Do not return JSON, line numbers, Markdown, explanation, or the full declaration.",
-			"The enclosing declaration has this exact signature:\n"+signature,
-		)
-	} else {
-		parts = append(parts,
-			"Implement exactly one TypeScript function declaration.",
-			"Return raw code only: no Markdown, import, export, surrounding explanation, or additional declaration.",
-			"The declaration must match this signature exactly:\n"+signature,
-		)
+	if dialect == "" || dialect != input.Dialect || strings.ContainsAny(dialect, "\x00\r\n") || len(dialect) > 256 {
+		return "", fmt.Errorf("TypeScript fragment prompt requires one bounded source dialect")
 	}
-	if contract != "" {
-		parts = append(parts, "LOCAL_BEHAVIOR:\n"+contract)
+	parts := []string{
+		"Implement exactly one TypeScript function declaration.",
+		"Return raw code only: no Markdown, import, export, surrounding explanation, or additional declaration.",
+		"SOURCE_DIALECT:\n" + dialect,
+		"The declaration must match this signature exactly:\n" + signature,
+		"LOCAL_BEHAVIOR:\n" + contract,
 	}
 	if available != "" {
 		parts = append(parts, "ONLY_AVAILABLE_DECLARATIONS:\n"+available)
@@ -116,59 +84,12 @@ func BuildTypeScriptFragmentPrompt(input TypeScriptFragmentPrompt) (string, erro
 	if len(input.Globals) > 0 {
 		parts = append(parts, "ALREADY_IN_SCOPE_IDENTIFIERS:\n"+strings.Join(input.Globals, ", "))
 	}
-	if current != "" {
-		parts = append(parts, "CURRENT_DECLARATION_JSON:\n"+encodedCurrent)
-	}
-	if hasRegion {
-		parts = append(parts, "CURRENT_REPAIR_REGION_JSON:\n"+encodedRegion)
-		if input.RepairRegion.Kind == TypeScriptRepairRegionCompilerOwner {
-			var encodedBindings bytes.Buffer
-			encoder := json.NewEncoder(&encodedBindings)
-			encoder.SetEscapeHTML(false)
-			err := encoder.Encode(input.RepairRegion.Bindings)
-			if err != nil {
-				return "", fmt.Errorf("encode TypeScript compiler local bindings: %w", err)
-			}
-			parts = append(parts,
-				"LOCAL_BINDINGS_AVAILABLE_AT_FAILURE_JSON:\n"+strings.TrimSuffix(encodedBindings.String(), "\n"),
-			)
-			if len(input.RepairRegion.UnavailableBindings) > 0 {
-				var encodedUnavailable bytes.Buffer
-				unavailableEncoder := json.NewEncoder(&encodedUnavailable)
-				unavailableEncoder.SetEscapeHTML(false)
-				if err := unavailableEncoder.Encode(input.RepairRegion.UnavailableBindings); err != nil {
-					return "", fmt.Errorf("encode TypeScript compiler unavailable bindings: %w", err)
-				}
-				parts = append(parts,
-					"NESTED_BINDINGS_UNAVAILABLE_AT_FAILURE_JSON:\n"+
-						strings.TrimSuffix(encodedUnavailable.String(), "\n"),
-				)
-			}
-			parts = append(parts,
-				"Identifiers absent from the local bindings and ALREADY_IN_SCOPE_IDENTIFIERS are unavailable at the failing expression. When the failure crosses a nested scope, restructure only the supplied repair region instead of guessing another identifier.",
-			)
-		}
-	}
-	if current != "" || hasRegion {
-		parts = append(parts,
-			"REQUIRED_CHANGE:\n"+requiredChange,
-			"OBSERVED_FAILURE:\n"+diagnostic,
-		)
-		if hasRegion {
-			parts = append(parts, fmt.Sprintf(
-				"Return replacement source for only lines %d through %d. Do not return JSON, line numbers, Markdown, explanation, or the whole declaration.",
-				input.RepairRegion.StartLine, input.RepairRegion.EndLine,
-			))
-		} else {
-			parts = append(parts, "Return the corrected declaration only.")
-		}
-	}
 	prompt := strings.Join(parts, "\n\n")
-	if current == "" && !hasRegion && len(prompt) > maxTypeScriptInitialEnvelopeBytes {
-		return "", fmt.Errorf("TypeScript fragment initial envelope exceeds %d bytes", maxTypeScriptInitialEnvelopeBytes)
-	}
-	if len(prompt) > maxTypeScriptFragmentPromptBytes {
-		return "", fmt.Errorf("TypeScript fragment prompt exceeds %d bytes", maxTypeScriptFragmentPromptBytes)
+	if len(prompt) > maxTypeScriptInitialEnvelopeBytes {
+		return "", fmt.Errorf(
+			"TypeScript fragment initial envelope exceeds %d bytes",
+			maxTypeScriptInitialEnvelopeBytes,
+		)
 	}
 	return prompt, nil
 }

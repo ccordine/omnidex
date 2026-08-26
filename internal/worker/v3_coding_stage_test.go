@@ -11,15 +11,16 @@ import (
 )
 
 func TestTypeScriptStageMapsCompilerLocationsToOneGeneratedBlock(t *testing.T) {
-	document := assemblyline.TypeScriptDocument{
+	document := assemblyline.SourceDocument{
 		ID: "capability", Path: "src/capability.tsx",
-		Blocks: []assemblyline.TypeScriptBlock{{
+		Blocks: []assemblyline.SourceBlock{{
 			ID: "capability.render", Signature: "function Capability(): ReactElement",
 			Contract: "Render one usable capability.", API: "function Capability(): ReactElement",
 		}},
 	}
-	composed, err := assemblyline.ComposeTypeScriptDocument(document, map[string]string{
-		"capability.render": "function Capability(): ReactElement { return <section />; }",
+	composed, err := assemblyline.ComposeTypeScriptDocument(document, assemblyline.SourceComposition{
+		Generated:  map[string]string{"capability.render": "function Capability(): ReactElement { return <section />; }"},
+		Interfaces: map[string]string{},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -32,7 +33,7 @@ func TestTypeScriptStageMapsCompilerLocationsToOneGeneratedBlock(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			diagnostic, mapped := mapDirectCodingTypeScriptStageDiagnostic(
-				[]assemblyline.ComposedTypeScriptDocument{composed},
+				[]assemblyline.ComposedSourceDocument{composed},
 				output,
 			)
 			if !mapped || diagnostic.BlockID != "capability.render" ||
@@ -67,17 +68,18 @@ func TestStructuredVitestFramesMapExactlyWithoutInventingFailureRouting(t *testi
 				acceptanceID = "acceptance.normalization"
 				featureID = "feature.normalization"
 			}
-			document := assemblyline.TypeScriptDocument{
+			document := assemblyline.SourceDocument{
 				ID: "acceptance", Path: testCase.path,
-				Header: "import { expect } from 'vitest';",
-				Blocks: []assemblyline.TypeScriptBlock{{
+				Preamble: "import { expect } from 'vitest';",
+				Blocks: []assemblyline.SourceBlock{{
 					ID: acceptanceID, Signature: "function Verify(): void",
 					Contract: "Verify one observable result.", API: "function Verify(): void",
 					DependsOn: []string{featureID},
 				}},
 			}
-			composed, err := assemblyline.ComposeTypeScriptDocument(document, map[string]string{
-				acceptanceID: "function Verify(): void { expect(true).toBe(false); }",
+			composed, err := assemblyline.ComposeTypeScriptDocument(document, assemblyline.SourceComposition{
+				Generated:  map[string]string{acceptanceID: "function Verify(): void { expect(true).toBe(false); }"},
+				Interfaces: map[string]string{},
 			})
 			if err != nil {
 				t.Fatal(err)
@@ -95,7 +97,7 @@ func TestStructuredVitestFramesMapExactlyWithoutInventingFailureRouting(t *testi
 				}},
 			}
 			diagnostic, mapped, err := mapDirectCodingVitestFailureReceipt(
-				root, []assemblyline.ComposedTypeScriptDocument{composed}, receipt,
+				root, []assemblyline.ComposedSourceDocument{composed}, receipt,
 			)
 			if err != nil {
 				t.Fatal(err)
@@ -103,13 +105,13 @@ func TestStructuredVitestFramesMapExactlyWithoutInventingFailureRouting(t *testi
 			if !mapped || diagnostic.BlockID != acceptanceID {
 				t.Fatalf("mapped diagnostic=%+v mapped=%t", diagnostic, mapped)
 			}
-			blueprint := assemblyline.TypeScriptBlueprint{Documents: []assemblyline.TypeScriptDocument{
+			blueprint := assemblyline.SourceBlueprint{Documents: []assemblyline.SourceDocument{
 				document,
-				{ID: "feature", Path: "src/feature.tsx", Blocks: []assemblyline.TypeScriptBlock{{
+				{ID: "feature", Path: "src/feature.tsx", Blocks: []assemblyline.SourceBlock{{
 					ID: featureID, Signature: "function Feature(): void", Contract: "Implement one result.", API: "function Feature(): void",
 				}}},
 			}}
-			routed, err := routeDirectCodingAcceptanceFailure(directCodingProgram{TypeScript: blueprint}, diagnostic)
+			routed, err := routeDirectCodingAcceptanceFailure(directCodingProgram{Source: blueprint}, diagnostic)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -133,9 +135,9 @@ func TestUnmappedStageFailureIncludesStructuredReceiptEvidence(t *testing.T) {
 }
 
 func TestTypeScriptStageNeverDelegatesCodeOwnedFailures(t *testing.T) {
-	blueprint := assemblyline.TypeScriptBlueprint{Documents: []assemblyline.TypeScriptDocument{{
+	blueprint := assemblyline.SourceBlueprint{Documents: []assemblyline.SourceDocument{{
 		ID: "application", Path: "src/application.tsx",
-		Blocks: []assemblyline.TypeScriptBlock{
+		Blocks: []assemblyline.SourceBlock{
 			{
 				ID: "capability.render", Signature: "function Capability(): ReactElement",
 				Contract: "Render one usable capability.", API: "function Capability(): ReactElement",
@@ -156,18 +158,18 @@ func TestTypeScriptStageNeverDelegatesCodeOwnedFailures(t *testing.T) {
 }
 
 func TestRuntimeAcceptanceBehaviorFailureRoutesToExactGeneratedOwner(t *testing.T) {
-	blueprint := assemblyline.TypeScriptBlueprint{Documents: []assemblyline.TypeScriptDocument{
-		{ID: "feature", Path: "src/feature.tsx", Blocks: []assemblyline.TypeScriptBlock{{
+	blueprint := assemblyline.SourceBlueprint{Documents: []assemblyline.SourceDocument{
+		{ID: "feature", Path: "src/feature.tsx", Blocks: []assemblyline.SourceBlock{{
 			ID: "feature.render", Signature: "function Feature(): ReactElement",
 			Contract: "Render a usable feature.", API: "function Feature(): ReactElement",
 		}}},
-		{ID: "acceptance", Path: "src/feature.test.tsx", Blocks: []assemblyline.TypeScriptBlock{{
+		{ID: "acceptance", Path: "src/feature.test.tsx", Blocks: []assemblyline.SourceBlock{{
 			ID: "feature.acceptance", Signature: "async function Verify(): Promise<void>",
 			Contract: "Verify observable feature behavior.", API: "async function Verify(): Promise<void>",
 			DependsOn: []string{"feature.render"},
 		}}},
 	}}
-	diagnostic, err := routeDirectCodingAcceptanceFailure(directCodingProgram{TypeScript: blueprint}, &directCodingStageDiagnostic{
+	diagnostic, err := routeDirectCodingAcceptanceFailure(directCodingProgram{Source: blueprint}, &directCodingStageDiagnostic{
 		BlockID: "feature.acceptance", Message: "expected working, received idle", Output: "failure",
 		FailureClass: directCodingStageFailureVitestBehavior,
 	})
@@ -181,22 +183,22 @@ func TestRuntimeAcceptanceBehaviorFailureRoutesToExactGeneratedOwner(t *testing.
 
 func TestRuntimeAcceptanceBehaviorFailureRequiresOneExactGeneratedOwner(t *testing.T) {
 	t.Parallel()
-	blueprint := assemblyline.TypeScriptBlueprint{Documents: []assemblyline.TypeScriptDocument{
-		{ID: "first", Path: "src/first.tsx", Blocks: []assemblyline.TypeScriptBlock{{
+	blueprint := assemblyline.SourceBlueprint{Documents: []assemblyline.SourceDocument{
+		{ID: "first", Path: "src/first.tsx", Blocks: []assemblyline.SourceBlock{{
 			ID: "feature.first", Signature: "function First(): ReactElement",
 			Contract: "Render the first result.", API: "function First(): ReactElement",
 		}}},
-		{ID: "second", Path: "src/second.tsx", Blocks: []assemblyline.TypeScriptBlock{{
+		{ID: "second", Path: "src/second.tsx", Blocks: []assemblyline.SourceBlock{{
 			ID: "feature.second", Signature: "function Second(): ReactElement",
 			Contract: "Render the second result.", API: "function Second(): ReactElement",
 		}}},
-		{ID: "acceptance", Path: "src/feature.test.tsx", Blocks: []assemblyline.TypeScriptBlock{{
+		{ID: "acceptance", Path: "src/feature.test.tsx", Blocks: []assemblyline.SourceBlock{{
 			ID: "feature.acceptance", Signature: "async function Verify(): Promise<void>",
 			Contract: "Verify observable behavior.", API: "async function Verify(): Promise<void>",
 			DependsOn: []string{"feature.first", "feature.second"},
 		}}},
 	}}
-	_, err := routeDirectCodingAcceptanceFailure(directCodingProgram{TypeScript: blueprint}, &directCodingStageDiagnostic{
+	_, err := routeDirectCodingAcceptanceFailure(directCodingProgram{Source: blueprint}, &directCodingStageDiagnostic{
 		BlockID: "feature.acceptance", Message: "expected working, received idle",
 		FailureClass: directCodingStageFailureVitestBehavior,
 	})
@@ -206,18 +208,18 @@ func TestRuntimeAcceptanceBehaviorFailureRequiresOneExactGeneratedOwner(t *testi
 }
 
 func TestUnclassifiedAcceptanceFailureStaysWithAcceptanceBlock(t *testing.T) {
-	blueprint := assemblyline.TypeScriptBlueprint{Documents: []assemblyline.TypeScriptDocument{
-		{ID: "feature", Path: "src/feature.tsx", Blocks: []assemblyline.TypeScriptBlock{{
+	blueprint := assemblyline.SourceBlueprint{Documents: []assemblyline.SourceDocument{
+		{ID: "feature", Path: "src/feature.tsx", Blocks: []assemblyline.SourceBlock{{
 			ID: "feature.render", Signature: "function Feature(): ReactElement",
 			Contract: "Render a usable feature.", API: "function Feature(): ReactElement",
 		}}},
-		{ID: "acceptance", Path: "src/feature.test.tsx", Blocks: []assemblyline.TypeScriptBlock{{
+		{ID: "acceptance", Path: "src/feature.test.tsx", Blocks: []assemblyline.SourceBlock{{
 			ID: "feature.acceptance", Signature: "async function Verify(): Promise<void>",
 			Contract: "Verify observable feature behavior.", API: "async function Verify(): Promise<void>",
 			DependsOn: []string{"feature.render"},
 		}}},
 	}}
-	diagnostic, err := routeDirectCodingAcceptanceFailure(directCodingProgram{TypeScript: blueprint}, &directCodingStageDiagnostic{
+	diagnostic, err := routeDirectCodingAcceptanceFailure(directCodingProgram{Source: blueprint}, &directCodingStageDiagnostic{
 		BlockID: "feature.acceptance", Message: "acceptance declaration failed", Output: "failure",
 	})
 	if err != nil {

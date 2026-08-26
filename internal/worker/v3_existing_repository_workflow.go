@@ -21,7 +21,9 @@ func (session *directCodingSession) runExistingRepositoryChangeWorkflow() (strin
 		return "", fmt.Errorf("existing repository change workflow requires an immutable index")
 	}
 	authority := existingRepositoryAuthority(session.request)
-	redacted, identities, err := assemblyline.RedactArtifactIdentities(authority)
+	redacted, identities, err := assemblyline.RedactArtifactIdentities(
+		authority, session.pathProvenance,
+	)
 	if err != nil {
 		return "", err
 	}

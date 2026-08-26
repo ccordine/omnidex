@@ -18,7 +18,7 @@ func newDirectCodingTypeScriptStageWorkspace(
 	ctx context.Context,
 	program directCodingProgram,
 ) (*directCodingTypeScriptStageWorkspace, error) {
-	packageFile, err := directCodingStagePackageFile(program.StaticFiles)
+	packageFiles, err := directCodingStagePackageFiles(program.StaticFiles)
 	if err != nil {
 		return nil, err
 	}
@@ -28,22 +28,24 @@ func newDirectCodingTypeScriptStageWorkspace(
 	}
 	workspace := &directCodingTypeScriptStageWorkspace{root: root}
 	if err := writeDirectCodingVitestReporter(root); err != nil {
-		workspace.Close()
+		_ = workspace.Close()
 		return nil, err
 	}
 	if err := writeDirectCodingTypeScriptScopeInspector(root); err != nil {
-		workspace.Close()
+		_ = workspace.Close()
 		return nil, err
 	}
-	if err := os.WriteFile(filepath.Join(root, packageFile.Path), []byte(packageFile.Content), 0o600); err != nil {
-		workspace.Close()
-		return nil, fmt.Errorf("write staged TypeScript package manifest: %w", err)
+	for _, packageFile := range packageFiles {
+		if err := os.WriteFile(filepath.Join(root, packageFile.Path), []byte(packageFile.Content), 0o600); err != nil {
+			_ = workspace.Close()
+			return nil, fmt.Errorf("write staged TypeScript package authority %s: %w", packageFile.Path, err)
+		}
 	}
 	output, err := runDirectCodingStageCommand(
 		ctx, root, directCodingTypeScriptInstallTimeout, "npm", directCodingNPMInstallArgs()...,
 	)
 	if err != nil {
-		workspace.Close()
+		_ = workspace.Close()
 		return nil, fmt.Errorf(
 			"staged TypeScript dependency installation failed: %w\n%s",
 			err, trimForBudget(output, 12_000),
@@ -52,19 +54,27 @@ func newDirectCodingTypeScriptStageWorkspace(
 	return workspace, nil
 }
 
-func directCodingStagePackageFile(files []directCodingFileTask) (directCodingFileTask, error) {
-	var packageFile directCodingFileTask
-	count := 0
+func directCodingStagePackageFiles(files []directCodingFileTask) ([]directCodingFileTask, error) {
+	required := map[string]directCodingFileTask{
+		"package.json":      {},
+		"package-lock.json": {},
+	}
+	counts := map[string]int{}
 	for _, file := range files {
-		if file.Path == "package.json" {
-			packageFile = file
-			count++
+		if _, exists := required[file.Path]; exists {
+			required[file.Path] = file
+			counts[file.Path]++
 		}
 	}
-	if count != 1 || strings.TrimSpace(packageFile.Content) == "" {
-		return directCodingFileTask{}, fmt.Errorf("TypeScript stage requires one non-empty package.json")
+	ordered := make([]directCodingFileTask, 0, len(required))
+	for _, artifactPath := range []string{"package.json", "package-lock.json"} {
+		file := required[artifactPath]
+		if counts[artifactPath] != 1 || strings.TrimSpace(file.Content) == "" {
+			return nil, fmt.Errorf("TypeScript stage requires one non-empty %s", artifactPath)
+		}
+		ordered = append(ordered, file)
 	}
-	return packageFile, nil
+	return ordered, nil
 }
 
 func (workspace *directCodingTypeScriptStageWorkspace) Root() string {
@@ -74,12 +84,16 @@ func (workspace *directCodingTypeScriptStageWorkspace) Root() string {
 	return workspace.root
 }
 
-func (workspace *directCodingTypeScriptStageWorkspace) Close() {
+func (workspace *directCodingTypeScriptStageWorkspace) Close() error {
 	if workspace == nil || workspace.root == "" {
-		return
+		return nil
 	}
-	_ = os.RemoveAll(workspace.root)
+	err := os.RemoveAll(workspace.root)
 	workspace.root = ""
+	if err != nil {
+		return fmt.Errorf("remove isolated TypeScript stage: %w", err)
+	}
+	return nil
 }
 
 func resetDirectCodingTypeScriptStage(root string) error {
@@ -107,6 +121,9 @@ func (s *directCodingSession) stageTypeScriptProgramIn(
 		return fmt.Errorf("staged TypeScript verification requires a program and correction progress authority")
 	}
 	if err := resetDirectCodingTypeScriptStage(root); err != nil {
+		return err
+	}
+	if err := progress.beginStage(); err != nil {
 		return err
 	}
 	for attempt := 1; ; attempt++ {
@@ -146,7 +163,7 @@ func (s *directCodingSession) correctDirectCodingTypeScriptStage(
 	if diagnostic == nil {
 		return fmt.Errorf("correct staged TypeScript program requires one diagnostic")
 	}
-	target, err := directCodingTypeScriptCorrectionBlock(program.TypeScript, diagnostic.BlockID)
+	target, err := directCodingTypeScriptCorrectionBlock(program.Source, diagnostic.BlockID)
 	if err != nil {
 		return fmt.Errorf("route staged TypeScript diagnostic: %w: %s", err, diagnostic.Message)
 	}
@@ -158,7 +175,7 @@ func (s *directCodingSession) correctDirectCodingTypeScriptStage(
 	if err != nil {
 		return err
 	}
-	tsx := directCodingTypeScriptBlockIsTSX(program.TypeScript, target.ID)
+	tsx := directCodingTypeScriptBlockIsTSX(program.Source, target.ID)
 	var repairRegion *assemblyline.TypeScriptFragmentRepairRegion
 	if diagnostic.CompilerIssue {
 		scope, bindingErr := inspectDirectCodingTypeScriptScope(s.runtime.ctx, root, *diagnostic)
@@ -211,7 +228,7 @@ func (s *directCodingSession) correctDirectCodingTypeScriptStage(
 	); err != nil {
 		return err
 	}
-	declarations, err := directCodingTypeScriptAcceptedDeclarations(program.TypeScript, program.Generated)
+	declarations, err := directCodingTypeScriptAcceptedDeclarations(program.Source, program.Generated)
 	if err != nil {
 		return err
 	}
@@ -226,8 +243,12 @@ func (s *directCodingSession) correctDirectCodingTypeScriptStage(
 		// one type-narrowing uncertainty.
 		available = ""
 	}
+	profile, err := directCodingVersionProfileForProgram(*program)
+	if err != nil {
+		return err
+	}
 	source, err := s.convergeDirectCodingTypeScriptGuidedRepair(
-		target, tsx, available, current, repairRegion, failure,
+		target, tsx, profile.SourceDialect, available, current, repairRegion, failure,
 	)
 	if err != nil {
 		return fmt.Errorf(

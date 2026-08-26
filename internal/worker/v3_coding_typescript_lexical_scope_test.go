@@ -388,8 +388,15 @@ func TestTypeScriptCompilerScopeProjectsOneExactIncompatibility(t *testing.T) {
 
 func writeTypeScriptLexicalScopeFixtureProject(t *testing.T, root string) {
 	t.Helper()
-	for _, file := range typeScriptBrowserStaticFiles("scope-fixture", "Scope fixture", "") {
-		if file.Path != "package.json" && file.Path != "tsconfig.json" {
+	files, err := typeScriptBrowserStaticFiles(
+		requireDirectCodingVersionProfile(t, typeScriptBrowserVersionProfileV1),
+		"scope-fixture", "Scope fixture", "",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, file := range files {
+		if file.Path != "package.json" && file.Path != "package-lock.json" && file.Path != "tsconfig.json" {
 			continue
 		}
 		if err := os.WriteFile(filepath.Join(root, file.Path), []byte(file.Content), 0o600); err != nil {

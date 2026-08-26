@@ -44,10 +44,12 @@ func TestCapabilityRelationRejectsUnknownDirection(t *testing.T) {
 		LeftNeed:     "filter visible records",
 		RightNeed:    "show a selected record summary",
 	}
-	err := (CapabilityRelationDecision{
-		Schema: CapabilityRelationSchemaV1, Relation: "similar",
-	}).ValidateFor(input)
-	if err == nil {
-		t.Fatal("capability relation accepted a model-invented direction")
+	for _, relation := range []CapabilityRelation{"similar", "bidirectional"} {
+		err := (CapabilityRelationDecision{
+			Schema: CapabilityRelationSchemaV1, Relation: relation,
+		}).ValidateFor(input)
+		if err == nil {
+			t.Fatalf("capability relation accepted unsupported direction %q", relation)
+		}
 	}
 }

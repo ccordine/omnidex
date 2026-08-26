@@ -43,7 +43,7 @@ func TestDesiredRepositoryCallProofUsesExactWorkKinds(t *testing.T) {
 func TestDesiredRepositoryCallProofCountsGenericFragmentCorrectionAsCorrection(t *testing.T) {
 	t.Parallel()
 	original, err := assemblyline.NewFragmentGenerationJob(assemblyline.FragmentGenerationInput{
-		Language: "go", Signature: "func Added() int",
+		Language: "go", Dialect: "Go 1.24", Signature: "func Added() int",
 		Behavior: "Return the accepted integer.",
 	})
 	if err != nil {

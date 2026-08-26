@@ -27,6 +27,91 @@ func RenderPortableJob(job PortableJob) (string, map[string]any, error) {
 		}
 		prompt, err := BuildApplicationIntentPrompt(input)
 		return prompt, ApplicationIntentResponseSchema(), err
+	case WorkApplicationProjectStackConstraint:
+		var input ApplicationProjectStackConstraintInput
+		if err := decodePortablePayload(job.Payload, &input); err != nil {
+			return "", nil, err
+		}
+		prompt, err := BuildApplicationProjectStackConstraintPrompt(input)
+		return prompt, ApplicationProjectStackConstraintResponseSchema(input), err
+	case WorkApplicationServiceDeploymentIntent:
+		var input ApplicationServiceDeploymentIntentInput
+		if err := decodePortablePayload(job.Payload, &input); err != nil {
+			return "", nil, err
+		}
+		prompt, err := BuildApplicationServiceDeploymentIntentPrompt(input)
+		return prompt, ApplicationServiceDeploymentIntentResponseSchema(), err
+	case WorkApplicationServiceStateLifetime:
+		var input ApplicationServiceStateLifetimeInput
+		if err := decodePortablePayload(job.Payload, &input); err != nil {
+			return "", nil, err
+		}
+		prompt, err := BuildApplicationServiceStateLifetimePrompt(input)
+		return prompt, ApplicationServiceStateLifetimeResponseSchema(), err
+	case WorkApplicationServiceStateInterface:
+		var input ApplicationServiceStateInterfaceInput
+		if err := decodePortablePayload(job.Payload, &input); err != nil {
+			return "", nil, err
+		}
+		prompt, err := BuildApplicationServiceStateInterfacePrompt(input)
+		return prompt, ApplicationServiceStateInterfaceResponseSchema(), err
+	case WorkApplicationServiceEndpointRequirement:
+		var input ApplicationServiceEndpointRequirementInput
+		if err := decodePortablePayload(job.Payload, &input); err != nil {
+			return "", nil, err
+		}
+		prompt, err := BuildApplicationServiceEndpointRequirementPrompt(input)
+		return prompt, ApplicationServiceEndpointRequirementResponseSchema(), err
+	case WorkApplicationServiceEndpointExposure:
+		var input ApplicationServiceEndpointExposureInput
+		if err := decodePortablePayload(job.Payload, &input); err != nil {
+			return "", nil, err
+		}
+		prompt, err := BuildApplicationServiceEndpointExposurePrompt(input)
+		return prompt, ApplicationServiceEndpointExposureResponseSchema(), err
+	case WorkApplicationServiceEndpointMethod:
+		var input ApplicationServiceEndpointMethodInput
+		if err := decodePortablePayload(job.Payload, &input); err != nil {
+			return "", nil, err
+		}
+		prompt, err := BuildApplicationServiceEndpointMethodPrompt(input)
+		return prompt, ApplicationServiceEndpointMethodResponseSchema(), err
+	case WorkApplicationServiceEndpointRouteTemplate:
+		var input ApplicationServiceEndpointRouteTemplateInput
+		if err := decodePortablePayload(job.Payload, &input); err != nil {
+			return "", nil, err
+		}
+		prompt, err := BuildApplicationServiceEndpointRouteTemplatePrompt(input)
+		return prompt, ApplicationServiceEndpointRouteTemplateResponseSchema(), err
+	case WorkApplicationServiceEndpointRequestMedia:
+		var input ApplicationServiceEndpointRequestMediaInput
+		if err := decodePortablePayload(job.Payload, &input); err != nil {
+			return "", nil, err
+		}
+		prompt, err := BuildApplicationServiceEndpointRequestMediaPrompt(input)
+		if err != nil {
+			return "", nil, err
+		}
+		schema, err := ApplicationServiceEndpointRequestMediaResponseSchema(input)
+		return prompt, schema, err
+	case WorkApplicationServiceEndpointResponseMedia:
+		var input ApplicationServiceEndpointResponseMediaInput
+		if err := decodePortablePayload(job.Payload, &input); err != nil {
+			return "", nil, err
+		}
+		prompt, err := BuildApplicationServiceEndpointResponseMediaPrompt(input)
+		return prompt, ApplicationServiceEndpointResponseMediaResponseSchema(), err
+	case WorkApplicationServiceEndpointSuccessStatus:
+		var input ApplicationServiceEndpointSuccessStatusInput
+		if err := decodePortablePayload(job.Payload, &input); err != nil {
+			return "", nil, err
+		}
+		prompt, err := BuildApplicationServiceEndpointSuccessStatusPrompt(input)
+		if err != nil {
+			return "", nil, err
+		}
+		schema, err := ApplicationServiceEndpointSuccessStatusResponseSchema(input)
+		return prompt, schema, err
 	case WorkApplicationClassify:
 		var input ApplicationClassificationInput
 		if err := decodePortablePayload(job.Payload, &input); err != nil {
@@ -52,17 +137,6 @@ func RenderPortableJob(job PortableJob) (string, map[string]any, error) {
 		}
 		prompt, err := BuildTargetTreePrompt(input)
 		return prompt, TargetTreeResponseSchema(), err
-	case WorkApplicationAcceptanceGroundingReview:
-		var input ApplicationAcceptanceGroundingReviewInput
-		if err := decodePortablePayload(job.Payload, &input); err != nil {
-			return "", nil, err
-		}
-		prompt, err := BuildApplicationAcceptanceGroundingReviewPrompt(input)
-		if err != nil {
-			return "", nil, err
-		}
-		schema, err := ApplicationAcceptanceGroundingReviewResponseSchema(input)
-		return prompt, schema, err
 	case WorkRepositoryRequirements:
 		var input RepositoryRequirementInterpretationInput
 		if err := decodePortablePayload(job.Payload, &input); err != nil {
@@ -327,12 +401,12 @@ func RenderPortableJob(job PortableJob) (string, map[string]any, error) {
 		prompt, err := BuildSkillSelectionPrompt(input)
 		return prompt, SkillSelectionResponseSchema(input), err
 	case WorkTypeScriptRepairGuidance:
-		var input TypeScriptRepairGuidanceInput
+		var input FragmentRepairGuidanceInput
 		if err := decodePortablePayload(job.Payload, &input); err != nil {
 			return "", nil, err
 		}
-		prompt, err := BuildTypeScriptRepairGuidancePrompt(input)
-		return prompt, TypeScriptRepairGuidanceResponseSchema(), err
+		prompt, err := BuildFragmentRepairGuidancePrompt(input)
+		return prompt, FragmentRepairGuidanceResponseSchema(), err
 	case WorkFragmentGeneration:
 		var input FragmentGenerationInput
 		if err := decodePortablePayload(job.Payload, &input); err != nil {
@@ -370,11 +444,15 @@ func renderPortableFragmentGeneration(input FragmentGenerationInput) (string, ma
 		return prompt, nil, err
 	case "typescript":
 		prompt, err := BuildTypeScriptFragmentPrompt(TypeScriptFragmentPrompt{
+			Dialect:   input.Dialect,
 			Signature: input.Signature,
 			Contract:  input.Behavior,
 			Available: strings.Join(input.Capabilities, "\n"),
 			Globals:   input.PermittedSymbols,
 		})
+		return prompt, nil, err
+	case "javascript", "java", "rust", "php":
+		prompt, err := BuildBoundedSourceFragmentGenerationPrompt(input)
 		return prompt, nil, err
 	default:
 		return "", nil, fmt.Errorf("no fragment renderer supports language %q", input.Language)
@@ -382,25 +460,8 @@ func renderPortableFragmentGeneration(input FragmentGenerationInput) (string, ma
 }
 
 func renderPortableFragmentCorrection(input FragmentCorrectionInput) (string, map[string]any, error) {
-	switch input.Language {
-	case "go":
-		prompt, err := BuildGoFragmentCorrectionPrompt(input)
-		return prompt, nil, err
-	case "typescript":
-		prompt, err := BuildTypeScriptFragmentPrompt(TypeScriptFragmentPrompt{
-			Signature:      input.Signature,
-			Available:      strings.Join(input.Capabilities, "\n"),
-			Globals:        input.PermittedSymbols,
-			Current:        input.CurrentDeclaration,
-			RepairRegion:   input.RepairRegion,
-			RequiredChange: input.RequiredChange,
-			Diagnostic:     input.Diagnostic,
-			RepairGuidance: input.RepairGuidance,
-		})
-		return prompt, nil, err
-	default:
-		return "", nil, fmt.Errorf("no fragment renderer supports language %q", input.Language)
-	}
+	prompt, err := BuildFragmentCorrectionPrompt(input)
+	return prompt, nil, err
 }
 
 func renderPortableResponseCorrection(input ResponseCorrectionInput) (string, map[string]any, error) {
@@ -410,10 +471,6 @@ func renderPortableResponseCorrection(input ResponseCorrectionInput) (string, ma
 	}
 	if input.Original.Kind == WorkApplicationJobSpecification {
 		prompt, promptErr := buildApplicationJobSpecificationResponseCorrectionPrompt(input)
-		return prompt, schema, promptErr
-	}
-	if input.Original.Kind == WorkApplicationAcceptanceGroundingReview {
-		prompt, promptErr := buildApplicationAcceptanceGroundingResponseCorrectionPrompt(input)
 		return prompt, schema, promptErr
 	}
 	if input.RetainedCandidate != "" {

@@ -43,7 +43,7 @@ func (session *directCodingSession) prepareVerifiedDesiredRepositoryState(
 	}
 	if err := session.runExistingRepositoryVerification(
 		stage.Workspace(), repositoryVerificationStaged,
-		commands, authority, nil,
+		commands, authority,
 		func(ctx context.Context) error { return stage.VerifyExactWorkspace(ctx) },
 	); err != nil {
 		return nil, cleanupFailedRepositoryStage(stage, err)

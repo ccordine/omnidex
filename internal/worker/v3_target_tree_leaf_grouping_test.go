@@ -1,52 +1,49 @@
 package worker
 
 import (
+	"reflect"
 	"testing"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
 )
 
-func TestOneTreeLeafGroupsSeveralBoundedBlocks(t *testing.T) {
-	specification := assemblyline.ApplicationSpecification{
-		Surface:      assemblyline.ApplicationSurfaceBrowser,
-		ProductQuote: "counter application",
-		Requirements: []assemblyline.Requirement{
-			{ID: "requirement_001", SourceQuote: "display a current count"},
-			{ID: "requirement_002", SourceQuote: "increment the current count"},
+func TestOneTargetTreePairCarriesSharedCoverageForSeveralTasks(t *testing.T) {
+	_, workload := testApplicationFileCoverageAuthority(
+		t, assemblyline.ApplicationSurfaceBrowser,
+		"counter application", "display a current count", "increment the current count",
+	)
+	target := assemblyline.TargetTree{
+		StackID: genericTypeScriptBrowserAdapter,
+		Paths:   []string{"src/counter.tsx", "tests/counter.test.tsx"},
+	}
+	plan, err := assemblyline.NewApplicationFileCoveragePlan(
+		workload, target,
+		map[string][]string{
+			"src/counter.tsx":        {workload.Tasks[0].ID, workload.Tasks[1].ID},
+			"tests/counter.test.tsx": {workload.Tasks[0].ID, workload.Tasks[1].ID},
 		},
-	}
-	input := applicationWorkloadInput(specification)
-	workload, err := assemblyline.FreezeApplicationWorkload(input, assemblyline.ApplicationWorkloadDraft{
-		Schema: assemblyline.ApplicationWorkloadDraftSchemaV1,
-		Tasks: []assemblyline.ApplicationWorkloadTaskDraft{
-			{RequirementID: "requirement_001", Objective: "Implement count display.", RequiredBehaviors: []string{"Show the current count."}, AcceptanceCriteria: []string{"The current count is visible."}},
-			{RequirementID: "requirement_002", Objective: "Implement count increment.", RequiredBehaviors: []string{"Provide an increment control."}, AcceptanceCriteria: []string{"Activating the control increases the count."}},
+		map[string]assemblyline.TargetArtifactKind{
+			"src/counter.tsx":        assemblyline.TargetArtifactImplementation,
+			"tests/counter.test.tsx": assemblyline.TargetArtifactVerification,
 		},
-	})
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	contexts, err := directCodingApplicationTaskContexts(input, workload)
+	for _, task := range workload.Tasks {
+		pair, err := directCodingTaskSinglePair(plan, task.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if pair.ImplementationPath != "src/counter.tsx" || pair.VerificationPath != "tests/counter.test.tsx" {
+			t.Fatalf("task %s pair=%+v", task.ID, pair)
+		}
+	}
+	owners, err := plan.TasksForPath("src/counter.tsx")
 	if err != nil {
 		t.Fatal(err)
 	}
-	tree := assemblyline.TargetTree{Bindings: []assemblyline.TargetTreeRequirementBinding{
-		{Path: "src/counter.tsx", Kind: assemblyline.TargetArtifactImplementation, RequirementIDs: []string{"requirement_001", "requirement_002"}},
-		{Path: "tests/counter.test.tsx", Kind: assemblyline.TargetArtifactVerification, RequirementIDs: []string{"requirement_001", "requirement_002"}},
-	}}
-	capabilities := directCodingCapabilityGraph{"requirement_001": nil, "requirement_002": nil}
-	features, err := genericBrowserFeatureDocuments(specification, map[string]directCodingSkillBinding{}, contexts, capabilities, tree)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(features) != 1 || features[0].Path != "src/counter.tsx" || len(features[0].Blocks) != 6 {
-		t.Fatalf("features=%+v", features)
-	}
-	acceptance, err := genericBrowserAcceptanceDocuments(specification, contexts, capabilities, tree)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(acceptance) != 1 || acceptance[0].Path != "tests/counter.test.tsx" || len(acceptance[0].Blocks) != 6 {
-		t.Fatalf("acceptance=%+v", acceptance)
+	if want := []string{workload.Tasks[0].ID, workload.Tasks[1].ID}; !reflect.DeepEqual(owners, want) {
+		t.Fatalf("shared implementation owners=%v want=%v", owners, want)
 	}
 }

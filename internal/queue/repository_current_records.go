@@ -3,6 +3,7 @@ package queue
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/gryph/omnidex/internal/artifacts"
@@ -59,30 +60,40 @@ func (r *Repository) WriteEvidence(
 	authority model.StepAttemptAuthority,
 	record evidence.Record,
 ) error {
+	_, err := r.WriteEvidenceReturningID(ctx, authority, record)
+	return err
+}
+
+func (r *Repository) WriteEvidenceReturningID(
+	ctx context.Context,
+	authority model.StepAttemptAuthority,
+	record evidence.Record,
+) (int64, error) {
 	if err := record.Validate(); err != nil {
-		return err
+		return 0, err
 	}
 	if record.Kind == evidence.KindObjectiveCitation {
-		return fmt.Errorf("objective citations require atomic completion evidence authority")
+		return 0, fmt.Errorf("objective citations require atomic completion evidence authority")
 	}
 	if record.JobID != authority.JobID || record.StepID != authority.StepID {
-		return fmt.Errorf("%w: evidence owner disagrees with step attempt", ErrStaleStepAttempt)
+		return 0, fmt.Errorf("%w: evidence owner disagrees with step attempt", ErrStaleStepAttempt)
 	}
 	payload, err := json.Marshal(record)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	tx, err := r.pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
-		return err
+		return 0, err
 	}
 	defer tx.Rollback(ctx)
 	if jobStatus, stepStatus, _, err := requireActiveStepAttemptTx(ctx, tx, authority); err != nil {
-		return err
+		return 0, err
 	} else if jobStatus != model.JobStatusRunning || stepStatus != model.StepStatusRunning {
-		return fmt.Errorf("%w: evidence attempt is not running", ErrStaleStepAttempt)
+		return 0, fmt.Errorf("%w: evidence attempt is not running", ErrStaleStepAttempt)
 	}
-	result, err := tx.Exec(ctx, `
+	var evidenceID int64
+	err = tx.QueryRow(ctx, `
 		INSERT INTO evidence (job_id, step_id, kind, source_type, source_ref, payload_json)
 		SELECT steps.job_id, steps.id, $3, $4, $5, $6::jsonb
 		FROM job_steps AS steps
@@ -92,14 +103,21 @@ func (r *Repository) WriteEvidence(
 		  AND steps.generation=$8 AND steps.current_attempt=$9 AND steps.worker_id=$10
 		  AND steps.superseded_at_generation IS NULL
 		  AND steps.generation=jobs.current_generation
+		RETURNING id
 	`, record.JobID, record.StepID, record.Kind, record.SourceType, record.SourceRef,
 		string(payload), model.StepStatusRunning, authority.Generation,
-		authority.Attempt, authority.WorkerID)
+		authority.Attempt, authority.WorkerID).Scan(&evidenceID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, staleStepAttemptError(authority, "evidence target lost current authority", nil)
+	}
 	if err != nil {
-		return err
+		return 0, err
 	}
-	if result.RowsAffected() != 1 {
-		return staleStepAttemptError(authority, "evidence target lost current authority", nil)
+	if evidenceID <= 0 {
+		return 0, fmt.Errorf("evidence insert returned invalid identity")
 	}
-	return tx.Commit(ctx)
+	if err := tx.Commit(ctx); err != nil {
+		return 0, err
+	}
+	return evidenceID, nil
 }

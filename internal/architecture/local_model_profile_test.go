@@ -14,7 +14,6 @@ const (
 	localFragmentModel       = "qwen2.5-coder:7b"
 	localRepairGuidanceModel = "qwen3.5:9b-q4_K_M"
 	localReviewModel         = "deepseek-r1:8b"
-	localWorkloadReviewModel = "qwen3.5:9b-q4_K_M"
 )
 
 func TestLocalModelProfileUsesStableSemanticAndFragmentModels(t *testing.T) {
@@ -59,9 +58,6 @@ func TestLocalModelProfileUsesStableSemanticAndFragmentModels(t *testing.T) {
 				t.Errorf("%s: %s=%q, want %q", name, key, got, localPlannerModel)
 			}
 		}
-		if got := values["OMNI_CODING_WORKLOAD_REVIEW_MODEL"]; got != localWorkloadReviewModel {
-			t.Errorf("%s: workload review model=%q, want %q", name, got, localWorkloadReviewModel)
-		}
 		if got := values["OMNI_WEB_CLAIM_EVIDENCE_REVIEW_MODEL"]; got != localReviewModel {
 			t.Errorf("%s: independent web review model=%q, want %q", name, got, localReviewModel)
 		}
@@ -95,6 +91,7 @@ func TestLocalModelProfileUsesStableSemanticAndFragmentModels(t *testing.T) {
 			"OLLAMA_MODEL_SPECIALIST_CODING_REQUIREMENT_SPLIT",
 			"OMNI_CODING_PRODUCT_IDENTITY_MODEL",
 			"OMNI_CODING_REQUIREMENT_PARTITION_MODEL",
+			"OMNI_CODING_WORKLOAD_REVIEW_MODEL",
 			"OMNI_CONVERSATION_CONTEXT_SELECTION_MODEL",
 			"OMNI_MEMORY_CONTEXT_SELECTION_MODEL",
 			"OMNI_ROLEPLAY_NARRATIVE_CONTINUITY_MODEL",

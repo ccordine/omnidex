@@ -11,41 +11,55 @@ type typeScriptPackageManifest struct {
 	Private         bool              `json:"private"`
 	Version         string            `json:"version"`
 	Type            string            `json:"type"`
+	Engines         map[string]string `json:"engines"`
 	Scripts         map[string]string `json:"scripts"`
 	Dependencies    map[string]string `json:"dependencies"`
 	DevDependencies map[string]string `json:"devDependencies"`
 }
 
-func typeScriptBrowserStaticFiles(packageName, productName, stylesheet string) []directCodingFileTask {
+func typeScriptBrowserStaticFiles(
+	profile directCodingProjectVersionProfile,
+	packageName, productName, stylesheet string,
+) ([]directCodingFileTask, error) {
+	node, err := directCodingVersionComponent(profile, "node")
+	if err != nil {
+		return nil, err
+	}
+	npm, err := directCodingVersionComponent(profile, "npm")
+	if err != nil {
+		return nil, err
+	}
+	ecmascript, err := directCodingVersionComponent(profile, "ecmascript")
+	if err != nil {
+		return nil, err
+	}
 	manifest := typeScriptPackageManifest{
 		Name: packageName, Private: true, Version: "1.0.0", Type: "module",
+		Engines: map[string]string{"node": node, "npm": npm},
 		Scripts: map[string]string{
 			"dev": "vite", "test": "vitest run", "typecheck": "tsc --noEmit",
 			"build": "npm run typecheck && vite build",
 		},
-		Dependencies: map[string]string{
-			"react": "19.2.7", "react-dom": "19.2.7",
-		},
-		DevDependencies: map[string]string{
-			"@testing-library/jest-dom": "7.0.0", "@testing-library/react": "16.3.2",
-			"@types/react":     "19.2.17",
-			"@types/react-dom": "19.2.3", "@vitejs/plugin-react": "5.2.0",
-			"jsdom": "26.1.0", "typescript": "5.9.3", "vite": "6.4.2", "vitest": "4.1.8",
-		},
+		Dependencies:    profile.NPMDependencies,
+		DevDependencies: profile.NPMDevDependencies,
 	}
 	encoded, err := json.MarshalIndent(manifest, "", "  ")
 	if err != nil {
-		panic(fmt.Sprintf("marshal code-owned TypeScript package manifest: %v", err))
+		return nil, fmt.Errorf("marshal code-owned TypeScript package manifest: %w", err)
+	}
+	packageLock, err := typeScriptBrowserPackageLock(profile, packageName)
+	if err != nil {
+		return nil, err
 	}
 	return []directCodingFileTask{
 		{Path: ".gitignore", Content: "node_modules\ndist\n.vite\n*.log\n"},
 		{Path: "package.json", Content: string(encoded) + "\n"},
+		{Path: "package-lock.json", Content: packageLock},
 		{Path: "index.html", Content: typeScriptWebIndexSource(productName)},
-		{Path: "tsconfig.json", Content: typeScriptWebConfigSource()},
+		{Path: "tsconfig.json", Content: typeScriptWebConfigSource(ecmascript)},
 		{Path: "vite.config.ts", Content: typeScriptViteConfigSource()},
-		{Path: "src/main.tsx", Content: typeScriptWebMainSource()},
-		{Path: "src/styles.css", Content: stylesheet},
-	}
+		{Path: "src/styles.css", Content: typeScriptTailwindStylesSource(stylesheet)},
+	}, nil
 }
 
 func typeScriptWebIndexSource(productName string) string {
@@ -65,12 +79,12 @@ func typeScriptWebIndexSource(productName string) string {
 `, html.EscapeString(productName))
 }
 
-func typeScriptWebConfigSource() string {
-	return `{
+func typeScriptWebConfigSource(ecmascript string) string {
+	return fmt.Sprintf(`{
   "compilerOptions": {
-    "target": "ES2022",
+    "target": %q,
     "useDefineForClassFields": true,
-    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "lib": [%q, "DOM", "DOM.Iterable"],
     "allowJs": false,
     "skipLibCheck": true,
     "esModuleInterop": true,
@@ -88,15 +102,16 @@ func typeScriptWebConfigSource() string {
   "include": ["src"],
   "exclude": ["dist", "node_modules"]
 }
-`
+`, ecmascript, ecmascript)
 }
 
 func typeScriptViteConfigSource() string {
 	return `import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
+import tailwindcss from '@tailwindcss/vite';
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), tailwindcss()],
   test: {
     environment: 'jsdom',
     globals: true,

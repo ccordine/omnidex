@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 	"unicode"
+
+	"github.com/gryph/omnidex/internal/queue"
 )
 
 type directCodingPhase string
@@ -12,6 +14,7 @@ const (
 	directCodingPhaseAssembling   directCodingPhase = "assembling"
 	directCodingPhaseConstructing directCodingPhase = "constructing"
 	directCodingPhaseVerifying    directCodingPhase = "verifying"
+	directCodingPhaseDeploying    directCodingPhase = "deploying"
 	directCodingPhaseCompleted    directCodingPhase = "completed"
 	directCodingPhaseFailed       directCodingPhase = "failed"
 )
@@ -54,10 +57,20 @@ type directCodingVerification struct {
 	Passed      bool
 	TestsPassed bool
 	Commands    []string
+	EvidenceIDs []int64
 	Diagnostic  *directCodingDiagnostic
 }
 
 func (v directCodingVerification) validate() error {
+	if len(v.Commands) != len(v.EvidenceIDs) ||
+		len(v.Commands) > queue.MaxGeneratedWorkloadVerificationEvidence-1 {
+		return fmt.Errorf("coding verification command and evidence identities must be exact")
+	}
+	for index, id := range v.EvidenceIDs {
+		if id <= 0 || index > 0 && id <= v.EvidenceIDs[index-1] {
+			return fmt.Errorf("coding verification evidence identities must be ordered")
+		}
+	}
 	if v.Passed {
 		if v.Diagnostic != nil {
 			return fmt.Errorf("successful coding verification cannot include a diagnostic")
@@ -79,7 +92,12 @@ type directCodingWorkflowDriver interface {
 	EnsureDirectory(path string) (bool, error)
 	Delete(path string) (bool, error)
 	MaterializeTask(task directCodingFileTask) (bool, error)
+	BeginVerification() (directCodingCompletionTaskDisposition, error)
 	Verify() (directCodingVerification, error)
+	FinalizeVerified(
+		verification directCodingVerification,
+		beginState directCodingCompletionTaskDisposition,
+	) error
 	Complete(verification directCodingVerification) (string, error)
 }
 
@@ -130,6 +148,10 @@ func runDirectCodingWorkflow(driver directCodingWorkflowDriver, allowExistingWor
 	}
 
 	driver.Phase(directCodingPhaseVerifying, "running code-selected verification")
+	verificationBeginState, err := driver.BeginVerification()
+	if err != nil {
+		return failDirectCodingWorkflow(driver, "begin workspace verification", err)
+	}
 	verification, verifyErr := driver.Verify()
 	if verifyErr != nil {
 		return failDirectCodingWorkflow(driver, "verify accepted workspace", verifyErr)
@@ -143,6 +165,9 @@ func runDirectCodingWorkflow(driver directCodingWorkflowDriver, allowExistingWor
 			safeLine(verification.Diagnostic.Stage, "unknown"),
 			trimForBudget(verification.Diagnostic.Detail, 1200),
 		))
+	}
+	if err := driver.FinalizeVerified(verification, verificationBeginState); err != nil {
+		return failDirectCodingWorkflow(driver, "finalize verified workspace", err)
 	}
 	summary, completeErr := driver.Complete(verification)
 	if completeErr != nil {

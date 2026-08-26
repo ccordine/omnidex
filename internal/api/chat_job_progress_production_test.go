@@ -21,6 +21,7 @@ func TestProductionStepEventFormsHaveTypedGUIProjections(t *testing.T) {
 		"coding_phase_changed phase=assembling detail=compiling deterministic source assembly",
 		"coding_specification_accepted surface=browser requirements=3 product_bytes=920",
 		"coding_assembly_ready adapter=typescript files=5 blocks=9 waves=3",
+		"coding_artifact_sieve_passed stack=typescript_browser_v1 files=5",
 		"coding_workload_frozen tasks=3 sha256=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 		"coding_task_verification_started task=application_task_001 requirement_bytes=42",
 		"coding_task_verified task=application_task_001",

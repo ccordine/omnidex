@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
+	"github.com/gryph/omnidex/internal/modelcontext"
 	repositoryfacts "github.com/gryph/omnidex/internal/repository"
 )
 
@@ -45,8 +46,14 @@ func TestDesiredRepositoryGenerationRejectsForbiddenEnvelopeBeforeInference(t *t
 
 func TestDesiredRepositoryModelResponseCannotSelectOperationOrPath(t *testing.T) {
 	t.Parallel()
+	provenance, err := modelcontext.NewArtifactIdentityProvenance(
+		[]string{"omni_added_artifact.go"},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
 	input := assemblyline.FragmentGenerationInput{
-		Language: "go", Signature: "func Added() string",
+		Language: "go", Dialect: "Go 1.24", Signature: "func Added() string",
 		Behavior: "Return one stable semantic value.",
 	}
 	for _, candidate := range []string{
@@ -55,7 +62,7 @@ func TestDesiredRepositoryModelResponseCannotSelectOperationOrPath(t *testing.T)
 	} {
 		_, err := runDirectCodingGoFragmentGenerationWorker(
 			typedWorkerRuntime{
-				Context: context.Background(), MaxAttempts: 1,
+				Context: context.Background(), MaxAttempts: 1, PathProvenance: provenance,
 				Execute: func(job assemblyline.PortableJob, _ string) (assemblyline.PortableResult, error) {
 					return assemblyline.PortableResult{JobID: job.ID, Candidate: candidate}, nil
 				},

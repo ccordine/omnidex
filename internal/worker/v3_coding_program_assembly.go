@@ -11,7 +11,7 @@ import (
 
 func directCodingAssemblyFromProgram(program directCodingProgram) (directCodingAssembly, error) {
 	files := append([]directCodingFileTask(nil), program.StaticFiles...)
-	composed, err := composeDirectCodingTypeScriptProgram(program)
+	composed, err := composeDirectCodingSourceProgram(program)
 	if err != nil {
 		return directCodingAssembly{}, err
 	}
@@ -43,7 +43,7 @@ func directCodingAssemblyFromProgram(program directCodingProgram) (directCodingA
 	// The path-only tree declares workload artifacts only. Runtime shells,
 	// manifests, generated application composition, and adapter tests are
 	// deterministic adapter output, not omissions from the model tree.
-	assembly := directCodingAssembly{Files: files}
+	assembly := directCodingAssembly{VersionProfileID: program.VersionProfileID, Files: files}
 	if err := assembly.normalize(); err != nil {
 		return directCodingAssembly{}, err
 	}
@@ -151,19 +151,7 @@ func requireDirectCodingTargetTreeLeafSource(
 	)
 }
 
-func composeDirectCodingTypeScriptProgram(program directCodingProgram) ([]assemblyline.ComposedTypeScriptDocument, error) {
-	composed := make([]assemblyline.ComposedTypeScriptDocument, 0, len(program.TypeScript.Documents))
-	for _, document := range program.TypeScript.Documents {
-		source, err := assemblyline.ComposeTypeScriptDocument(document, program.Generated)
-		if err != nil {
-			return nil, fmt.Errorf("compose deterministic TypeScript document %s: %w", document.ID, err)
-		}
-		composed = append(composed, source)
-	}
-	return composed, nil
-}
-
-func directCodingTypeScriptBlueprintBlockCount(blueprint assemblyline.TypeScriptBlueprint) int {
+func directCodingSourceBlueprintBlockCount(blueprint assemblyline.SourceBlueprint) int {
 	count := 0
 	for _, document := range blueprint.Documents {
 		count += len(document.Blocks)
@@ -172,6 +160,6 @@ func directCodingTypeScriptBlueprintBlockCount(blueprint assemblyline.TypeScript
 }
 
 func directCodingProgramGraphMetrics(program directCodingProgram) (int, int, error) {
-	waves, err := program.TypeScript.BuildWaves()
-	return directCodingTypeScriptBlueprintBlockCount(program.TypeScript), len(waves), err
+	waves, err := program.Source.BuildWaves()
+	return directCodingSourceBlueprintBlockCount(program.Source), len(waves), err
 }

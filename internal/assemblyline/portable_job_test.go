@@ -59,10 +59,8 @@ func TestPortableJobIdentityChangesWhenLocalWorkChanges(t *testing.T) {
 	first, err := NewFragmentCorrectionJob(FragmentCorrectionInput{
 		Language:           "typescript",
 		Signature:          "function clamp(value: number): number",
-		Capabilities:       []string{"const MIN = 0;", "const MAX = 1;"},
 		CurrentDeclaration: "function clamp(value: number): number { return value; }",
-		RequiredChange:     "Return a value bounded by MIN and MAX.",
-		Diagnostic:         "expected 1, received 2",
+		RepairGuidance:     "Clamp the returned value to the accepted range.",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -70,10 +68,8 @@ func TestPortableJobIdentityChangesWhenLocalWorkChanges(t *testing.T) {
 	second, err := NewFragmentCorrectionJob(FragmentCorrectionInput{
 		Language:           "typescript",
 		Signature:          "function clamp(value: number): number",
-		Capabilities:       []string{"const MIN = 0;", "const MAX = 1;"},
 		CurrentDeclaration: "function clamp(value: number): number { return Math.min(value, MAX); }",
-		RequiredChange:     "Return a value bounded by MIN and MAX.",
-		Diagnostic:         "expected 0, received -1",
+		RepairGuidance:     "Clamp the returned value to the accepted range.",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -90,8 +86,7 @@ func TestFragmentCorrectionWirePayloadCannotCarryInitialBehavior(t *testing.T) {
 		Language:           "typescript",
 		Signature:          "function render(): null",
 		CurrentDeclaration: "function render(): null { return null; }",
-		RequiredChange:     "Remove the rejected construct.",
-		Diagnostic:         "comment nodes are forbidden",
+		RepairGuidance:     "Remove the rejected construct.",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -154,13 +149,14 @@ func TestPortableJobRejectsRemovedFeaturePresencePath(t *testing.T) {
 	}
 }
 
-func TestPortableJobRejectsRetiredContextStationKinds(t *testing.T) {
+func TestPortableJobRejectsRetiredStationKinds(t *testing.T) {
 	t.Parallel()
 
 	for _, retired := range []WorkKind{
 		"conversation_context_selection",
 		"memory_context_selection",
 		"roleplay_narrative_continuity",
+		"application_acceptance_grounding_review",
 	} {
 		if validWorkKind(retired) {
 			t.Fatalf("retired context work kind %q remains registered", retired)

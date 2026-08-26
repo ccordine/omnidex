@@ -16,6 +16,7 @@ type ArtifactHandlingInput struct {
 
 type FragmentGenerationInput struct {
 	Language         string   `json:"language"`
+	Dialect          string   `json:"dialect"`
 	Signature        string   `json:"signature"`
 	Behavior         string   `json:"behavior"`
 	Capabilities     []string `json:"capabilities"`
@@ -23,10 +24,10 @@ type FragmentGenerationInput struct {
 }
 
 type FragmentCorrectionInput struct {
-	Language           string                          `json:"language"`
-	Signature          string                          `json:"signature"`
-	Capabilities       []string                        `json:"capabilities"`
-	PermittedSymbols   []string                        `json:"permitted_symbols"`
+	Language           string                          `json:"language,omitempty"`
+	Signature          string                          `json:"signature,omitempty"`
+	Capabilities       []string                        `json:"capabilities,omitempty"`
+	PermittedSymbols   []string                        `json:"permitted_symbols,omitempty"`
 	CurrentDeclaration string                          `json:"current_declaration,omitempty"`
 	RepairRegion       *TypeScriptFragmentRepairRegion `json:"repair_region,omitempty"`
 	RequiredChange     string                          `json:"required_change,omitempty"`
@@ -57,14 +58,6 @@ func NewApplicationJobSpecificationJob(input ApplicationJobSpecificationInput) (
 	return newValidatedPortableJob(
 		WorkApplicationJobSpecification, input,
 		func() error { return validateApplicationJobSpecificationInput(input) },
-	)
-}
-
-func NewApplicationAcceptanceGroundingReviewJob(
-	input ApplicationAcceptanceGroundingReviewInput,
-) (PortableJob, error) {
-	return newValidatedPortableJob(
-		WorkApplicationAcceptanceGroundingReview, input, input.validate,
 	)
 }
 

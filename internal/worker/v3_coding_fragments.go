@@ -15,7 +15,7 @@ func validateDirectCodingFragmentConcurrency(value int) error {
 	return nil
 }
 
-func directCodingTypeScriptBlueprintHasGeneratedBlocks(blueprint assemblyline.TypeScriptBlueprint) bool {
+func directCodingSourceBlueprintHasGeneratedBlocks(blueprint assemblyline.SourceBlueprint) bool {
 	for _, document := range blueprint.Documents {
 		for _, block := range document.Blocks {
 			if block.Generated() {

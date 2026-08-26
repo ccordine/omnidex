@@ -12,7 +12,7 @@ import (
 func TestPostgresStationOutcomeStoresOnlyExactProjectedTypeScriptSpan(t *testing.T) {
 	repository, _, claim := semanticGapTestClaim(t, "station-output-artifact-projection")
 	job, err := assemblyline.NewFragmentGenerationJob(assemblyline.FragmentGenerationInput{
-		Language: "typescript", Signature: "function ready(): boolean",
+		Language: "typescript", Dialect: "TypeScript 5.9.3", Signature: "function ready(): boolean",
 		Behavior: "Return whether the operation is ready.",
 	})
 	if err != nil {

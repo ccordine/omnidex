@@ -8,12 +8,12 @@ import (
 
 func TestDirectCodingWorkflowWritesOnlyACompletedAssemblyThenVerifiesOnce(t *testing.T) {
 	driver := &workflowDriverStub{
-		assembly: directCodingAssembly{Files: []directCodingFileTask{
+		assembly: directCodingAssembly{VersionProfileID: goCommandLineVersionProfileV1, Files: []directCodingFileTask{
 			{Path: "service.go", Content: "package main\n"},
 			{Path: "store.go", Content: "package main\n"},
 		}},
 		verification: directCodingVerification{
-			Passed: true, TestsPassed: true, Commands: []string{"go test ./..."},
+			Passed: true, TestsPassed: true, Commands: []string{"go test ./..."}, EvidenceIDs: []int64{11},
 		},
 	}
 	summary, err := runDirectCodingWorkflow(driver, false)
@@ -26,8 +26,9 @@ func TestDirectCodingWorkflowWritesOnlyACompletedAssemblyThenVerifiesOnce(t *tes
 	if strings.Join(driver.generatedPaths, ",") != "service.go,store.go" {
 		t.Fatalf("generated=%v", driver.generatedPaths)
 	}
-	if driver.generatedBeforeVerification != 2 || driver.verifyCalls != 1 {
-		t.Fatalf("generated_before_verify=%d verify_calls=%d", driver.generatedBeforeVerification, driver.verifyCalls)
+	if driver.generatedBeforeVerification != 2 || driver.beginVerificationCalls != 1 ||
+		driver.verifyCalls != 1 || driver.finalizeCalls != 1 {
+		t.Fatalf("generated_before_verify=%d begin_calls=%d verify_calls=%d finalize_calls=%d", driver.generatedBeforeVerification, driver.beginVerificationCalls, driver.verifyCalls, driver.finalizeCalls)
 	}
 	if got := strings.Join(driver.phases, ","); got != "assembling,constructing,verifying,completed" {
 		t.Fatalf("phases=%q", got)
@@ -36,7 +37,7 @@ func TestDirectCodingWorkflowWritesOnlyACompletedAssemblyThenVerifiesOnce(t *tes
 
 func TestDirectCodingWorkflowFailsLoudlyInsteadOfStartingAFileRepairAgent(t *testing.T) {
 	driver := &workflowDriverStub{
-		assembly: directCodingAssembly{Files: []directCodingFileTask{{
+		assembly: directCodingAssembly{VersionProfileID: goCommandLineVersionProfileV1, Files: []directCodingFileTask{{
 			Path: "main.go", Content: "package main\n",
 		}}},
 		verification: directCodingVerification{Diagnostic: &directCodingDiagnostic{
@@ -57,7 +58,7 @@ func TestDirectCodingWorkflowFailsLoudlyInsteadOfStartingAFileRepairAgent(t *tes
 
 func TestDirectCodingWorkflowRejectsFreshNoMutationAssembly(t *testing.T) {
 	driver := &workflowDriverStub{
-		assembly: directCodingAssembly{Files: []directCodingFileTask{{
+		assembly: directCodingAssembly{VersionProfileID: goCommandLineVersionProfileV1, Files: []directCodingFileTask{{
 			Path: "main.go", Content: "package main\n",
 		}}},
 		unchanged: true,
@@ -71,9 +72,54 @@ func TestDirectCodingWorkflowRejectsFreshNoMutationAssembly(t *testing.T) {
 	}
 }
 
+func TestDirectCodingWorkflowReverifiesBeforeAcceptingPersistedVerification(t *testing.T) {
+	driver := &workflowDriverStub{
+		assembly: directCodingAssembly{
+			VersionProfileID: goCommandLineVersionProfileV1,
+			Files:            []directCodingFileTask{{Path: "main.go", Content: "package main\n"}},
+		},
+		unchanged:              true,
+		beginVerificationState: directCodingCompletionTaskAlreadyDone,
+		verification: directCodingVerification{
+			Passed: true, TestsPassed: true, Commands: []string{"go test ./..."}, EvidenceIDs: []int64{12},
+		},
+	}
+	if _, err := runDirectCodingWorkflow(driver, true); err != nil {
+		t.Fatal(err)
+	}
+	if driver.beginVerificationCalls != 1 || driver.verifyCalls != 1 ||
+		driver.finalizeCalls != 1 ||
+		driver.finalizeBeginState != directCodingCompletionTaskAlreadyDone {
+		t.Fatalf(
+			"begin=%d verify=%d finalize=%d final_state=%q",
+			driver.beginVerificationCalls, driver.verifyCalls,
+			driver.finalizeCalls, driver.finalizeBeginState,
+		)
+	}
+}
+
 func TestDirectCodingEventTokenPreservesCompleteCommandAsOneField(t *testing.T) {
 	if got := directCodingEventToken("go test ./...", "unknown"); got != "go_test_./..." {
 		t.Fatalf("event token=%q", got)
+	}
+}
+
+func TestDirectCodingVerificationRequiresExactOrderedEvidenceIdentities(t *testing.T) {
+	diagnostic := &directCodingDiagnostic{Stage: "verify", Detail: "failed"}
+	for _, invalid := range []directCodingVerification{
+		{Passed: true, Commands: []string{"go test"}},
+		{Commands: []string{"go test"}, EvidenceIDs: nil, Diagnostic: diagnostic},
+		{Commands: []string{"go test", "go vet"}, EvidenceIDs: []int64{12, 11}, Diagnostic: diagnostic},
+	} {
+		if err := invalid.validate(); err == nil {
+			t.Fatalf("verification accepted non-exact evidence identities: %+v", invalid)
+		}
+	}
+	valid := directCodingVerification{
+		Commands: []string{"go test"}, EvidenceIDs: []int64{11}, Diagnostic: diagnostic,
+	}
+	if err := valid.validate(); err != nil {
+		t.Fatalf("exact failed verification proof error=%v", err)
 	}
 }
 
@@ -84,7 +130,11 @@ type workflowDriverStub struct {
 	phases                      []string
 	generatedPaths              []string
 	generatedBeforeVerification int
+	beginVerificationCalls      int
+	beginVerificationState      directCodingCompletionTaskDisposition
 	verifyCalls                 int
+	finalizeCalls               int
+	finalizeBeginState          directCodingCompletionTaskDisposition
 }
 
 func (d *workflowDriverStub) Phase(phase directCodingPhase, _ string) {
@@ -104,6 +154,14 @@ func (d *workflowDriverStub) MaterializeTask(task directCodingFileTask) (bool, e
 	return !d.unchanged, nil
 }
 
+func (d *workflowDriverStub) BeginVerification() (directCodingCompletionTaskDisposition, error) {
+	d.beginVerificationCalls++
+	if d.beginVerificationState == "" {
+		return directCodingCompletionTaskStarted, nil
+	}
+	return d.beginVerificationState, nil
+}
+
 func (d *workflowDriverStub) Verify() (directCodingVerification, error) {
 	d.generatedBeforeVerification = len(d.generatedPaths)
 	d.verifyCalls++
@@ -111,6 +169,18 @@ func (d *workflowDriverStub) Verify() (directCodingVerification, error) {
 		return d.verification, nil
 	}
 	return directCodingVerification{}, fmt.Errorf("verification result is not configured")
+}
+
+func (d *workflowDriverStub) FinalizeVerified(
+	verification directCodingVerification,
+	beginState directCodingCompletionTaskDisposition,
+) error {
+	if !verification.Passed {
+		return fmt.Errorf("cannot finalize failed verification")
+	}
+	d.finalizeCalls++
+	d.finalizeBeginState = beginState
+	return nil
 }
 
 func (d *workflowDriverStub) Complete(directCodingVerification) (string, error) {

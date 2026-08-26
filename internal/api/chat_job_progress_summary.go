@@ -80,6 +80,19 @@ func summarizeChatStepEvent(event parsedChatStepEvent, stepAction string) (chatP
 			return "", "", err
 		}
 		return chatProgressReview, fmt.Sprintf("Assembly ready: %d files, %d typed blocks", files, blocks), nil
+	case "coding_artifact_sieve_passed":
+		fields, err := exactChatEventFields(event.Message, "stack", "files")
+		if err != nil {
+			return "", "", err
+		}
+		stack, err := requireChatEventToken(fields, "stack", 128)
+		if err != nil {
+			return "", "", err
+		}
+		files, err := requireChatEventInteger(fields, "files", false)
+		return chatProgressVerification, fmt.Sprintf(
+			"Artifact sieve passed for %s: %d files", displayChatProgressToken(stack), files,
+		), err
 	case "coding_workload_frozen":
 		fields, err := exactChatEventFields(event.Message, "tasks", "sha256")
 		if err != nil {

@@ -46,9 +46,6 @@ func (input ArtifactCandidateSelectionInput) validate() error {
 	if len(input.RequirementQuote) > maxDeclarationBoundaryQuoteBytes {
 		return fmt.Errorf("artifact candidate selection quote exceeds %d bytes", maxDeclarationBoundaryQuoteBytes)
 	}
-	if goPhysicalArtifactPattern.MatchString(input.RequirementQuote) {
-		return fmt.Errorf("artifact candidate selection requirement exposes a physical artifact identity")
-	}
 	if len(input.Candidates) < 2 || len(input.Candidates) > maxArtifactSelectionCandidates {
 		return fmt.Errorf(
 			"artifact candidate selection requires 2-%d bounded candidates",
@@ -70,8 +67,13 @@ func (input ArtifactCandidateSelectionInput) validate() error {
 		for _, declaration := range candidate.Declarations {
 			if declaration == "" || declaration != strings.TrimSpace(declaration) ||
 				len(declaration) > maxArtifactCandidateEvidenceBytes || !utf8.ValidString(declaration) ||
-				strings.ContainsAny(declaration, "\x00\r\n") || goPhysicalArtifactPattern.MatchString(declaration) {
+				strings.ContainsAny(declaration, "\x00\r\n") {
 				return fmt.Errorf("artifact candidate %s contains invalid semantic declaration evidence", candidate.CandidateID)
+			}
+			if err := ValidatePathFreeModelContext(
+				"artifact candidate semantic declaration", declaration,
+			); err != nil {
+				return err
 			}
 			if _, duplicate := seenDeclarations[declaration]; duplicate {
 				return fmt.Errorf("artifact candidate %s repeats declaration evidence", candidate.CandidateID)

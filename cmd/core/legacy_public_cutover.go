@@ -13,42 +13,42 @@ import (
 	"github.com/gryph/omnidex/internal/queue"
 )
 
-type legacyPublicPreservationConfig struct {
+type coreDatabaseCommandConfig struct {
 	databaseURL   string
 	runtimeSchema string
 }
 
-func loadLegacyPublicPreservationConfig() (legacyPublicPreservationConfig, error) {
+func loadCoreDatabaseCommandConfig() (coreDatabaseCommandConfig, error) {
 	databaseURL, configured := os.LookupEnv("DATABASE_URL")
 	if !configured || strings.TrimSpace(databaseURL) == "" {
-		return legacyPublicPreservationConfig{}, fmt.Errorf("DATABASE_URL is required")
+		return coreDatabaseCommandConfig{}, fmt.Errorf("DATABASE_URL is required")
 	}
 	if databaseURL != strings.TrimSpace(databaseURL) {
-		return legacyPublicPreservationConfig{}, fmt.Errorf("DATABASE_URL must not contain surrounding whitespace")
+		return coreDatabaseCommandConfig{}, fmt.Errorf("DATABASE_URL must not contain surrounding whitespace")
 	}
 	runtimeSchema, configured := os.LookupEnv("DATABASE_SCHEMA")
 	if !configured {
 		runtimeSchema = db.DefaultRuntimeSchema
 	} else if runtimeSchema == "" {
-		return legacyPublicPreservationConfig{}, fmt.Errorf("DATABASE_SCHEMA is explicitly empty")
+		return coreDatabaseCommandConfig{}, fmt.Errorf("DATABASE_SCHEMA is explicitly empty")
 	}
 	if err := db.ValidateRuntimeSchemaName(runtimeSchema); err != nil {
-		return legacyPublicPreservationConfig{}, fmt.Errorf("DATABASE_SCHEMA: %w", err)
+		return coreDatabaseCommandConfig{}, fmt.Errorf("DATABASE_SCHEMA: %w", err)
 	}
 	if raw, configured := os.LookupEnv("WRAPPER_ONLY"); configured {
 		wrapperOnly, err := strconv.ParseBool(raw)
 		if err != nil {
-			return legacyPublicPreservationConfig{}, fmt.Errorf("WRAPPER_ONLY must be one boolean: %w", err)
+			return coreDatabaseCommandConfig{}, fmt.Errorf("WRAPPER_ONLY must be one boolean: %w", err)
 		}
 		if wrapperOnly {
-			return legacyPublicPreservationConfig{}, fmt.Errorf("legacy public preservation requires the database-backed core")
+			return coreDatabaseCommandConfig{}, fmt.Errorf("database command requires the database-backed core")
 		}
 	}
-	return legacyPublicPreservationConfig{databaseURL: databaseURL, runtimeSchema: runtimeSchema}, nil
+	return coreDatabaseCommandConfig{databaseURL: databaseURL, runtimeSchema: runtimeSchema}, nil
 }
 
 func runLegacyPublicPreservationCommand() error {
-	cfg, err := loadLegacyPublicPreservationConfig()
+	cfg, err := loadCoreDatabaseCommandConfig()
 	if err != nil {
 		return fmt.Errorf("load command configuration: %w", err)
 	}

@@ -204,7 +204,6 @@ func assertContextSieveNewStationsOpen(t *testing.T, repository *Repository) {
 		{station: station.ContextMinification, job: minificationJob},
 		{station: station.ContextSearchTerms, job: retainedCorrection},
 		{station: station.CodingWorkload, job: mustApplicationJobSpecificationCorrection(t)},
-		{station: station.CodingWorkloadReview, job: mustAcceptanceGroundingCorrection(t)},
 	}
 	for _, fixture := range jobs {
 		if _, err := repository.OpenStationGap(t.Context(), StationGapOpenRecord{
@@ -236,41 +235,6 @@ func mustApplicationJobSpecificationCorrection(t *testing.T) assemblyline.Portab
 	}
 	correction, err := assemblyline.NewResponseCorrectionJobForField(
 		original, "the objective leaf is missing", "objective",
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return correction
-}
-
-func mustAcceptanceGroundingCorrection(t *testing.T) assemblyline.PortableJob {
-	t.Helper()
-	const source = `function VerifyNotifications(): void {
-  expect(screen.getByRole("checkbox", { name: "Email notices" })).toBeVisible();
-}`
-	input, err := assemblyline.NewApplicationAcceptanceGroundingReviewInput(
-		assemblyline.ApplicationTaskContext{
-			WorkloadSHA256: strings.Repeat("a", 64),
-			Task: assemblyline.ApplicationTaskContextTask{
-				TaskID: "task_004",
-				AcceptanceCriteria: []string{
-					"A user can find the email-notice control by its accessible name.",
-				},
-			},
-		},
-		source,
-		true,
-		nil,
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	original, err := assemblyline.NewApplicationAcceptanceGroundingReviewJob(input)
-	if err != nil {
-		t.Fatal(err)
-	}
-	correction, err := assemblyline.NewResponseCorrectionJobForField(
-		original, "the grounding leaf is absent", "site_001__criterion_001",
 	)
 	if err != nil {
 		t.Fatal(err)

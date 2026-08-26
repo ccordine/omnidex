@@ -12,15 +12,11 @@ func genericBrowserAcceptanceDocuments(
 	specification assemblyline.ApplicationSpecification,
 	contexts map[string]assemblyline.ApplicationTaskContext,
 	capabilities directCodingCapabilityGraph,
-	targetTree assemblyline.TargetTree,
-) ([]assemblyline.TypeScriptDocument, error) {
-	documents := make([]assemblyline.TypeScriptDocument, 0, len(specification.Requirements))
+	coverage assemblyline.ApplicationFileCoveragePlan,
+) ([]assemblyline.SourceDocument, error) {
+	documents := make([]assemblyline.SourceDocument, 0, len(specification.Requirements))
 	documentByPath := make(map[string]int, len(specification.Requirements))
 	for index, requirement := range specification.Requirements {
-		files, err := targetTree.RequirementFiles(requirement.ID)
-		if err != nil {
-			return nil, err
-		}
 		sequence := index + 1
 		functionName := fmt.Sprintf("Feature%03d", sequence)
 		verifyName := fmt.Sprintf("VerifyFeature%03d", sequence)
@@ -32,6 +28,10 @@ func genericBrowserAcceptanceDocuments(
 		if !exists {
 			return nil, fmt.Errorf("application workload omits requirement %s", requirement.ID)
 		}
+		files, err := directCodingTaskSinglePair(coverage, taskContext.Task.TaskID)
+		if err != nil {
+			return nil, err
+		}
 		behavior, err := compileDirectCodingApplicationTaskBehavior(
 			taskContext, capabilities[requirement.ID],
 		)
@@ -42,28 +42,35 @@ func genericBrowserAcceptanceDocuments(
 		if !exists {
 			documentIndex = len(documents)
 			documentByPath[files.VerificationPath] = documentIndex
-			documents = append(documents, assemblyline.TypeScriptDocument{
+			documents = append(documents, assemblyline.SourceDocument{
 				ID:   fmt.Sprintf("acceptance_%03d", sequence),
 				Path: files.VerificationPath,
-				Header: fmt.Sprintf(`import '@testing-library/jest-dom/vitest';
+				Preamble: fmt.Sprintf(`import '@testing-library/jest-dom/vitest';
 import React from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 			import { createApplicationRuntime, createFeatureRuntime } from '%s';`,
 					typeScriptRelativeModule(files.VerificationPath, "src/runtime.tsx")),
 			})
 		}
-		documents[documentIndex].Header += fmt.Sprintf("\nimport { %s } from '%s';",
-			functionName, typeScriptRelativeModule(files.VerificationPath, files.ImplementationPath))
+		taskID := taskContext.Task.TaskID
+		documents[documentIndex].ScopedPreambles = append(
+			documents[documentIndex].ScopedPreambles,
+			assemblyline.SourcePreamble{
+				TaskID: taskID,
+				Source: fmt.Sprintf("import { %s } from '%s';",
+					functionName, typeScriptRelativeModule(files.VerificationPath, files.ImplementationPath)),
+			},
+		)
 		documents[documentIndex].Blocks = append(documents[documentIndex].Blocks,
-			assemblyline.TypeScriptBlock{
+			assemblyline.SourceBlock{
 				ID:        verificationID,
 				Signature: fmt.Sprintf("async function %s(): Promise<void>", verifyName),
 				Contract:  genericBrowserAcceptanceContract(behavior),
 				API:       fmt.Sprintf("async function %s(): Promise<void>", verifyName),
 				DependsOn: []string{fmt.Sprintf("feature.%03d", sequence)},
 				Globals:   []string{"fireEvent", "screen", "waitFor", "expect"},
-				Policy: assemblyline.TypeScriptFunctionPolicy{
-					RequiredCalls: []assemblyline.TypeScriptCallRequirement{
+				Policy: assemblyline.SourceFunctionPolicy{
+					RequiredCalls: []assemblyline.SourceCallRequirement{
 						{Callees: []string{"expect"}},
 					},
 					ForbiddenIdentifiers: append(
@@ -71,24 +78,27 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 						"render", "createApplicationRuntime", "createFeatureRuntime", functionName,
 					),
 				},
+				TaskID: taskID, Role: assemblyline.SourceBlockTaskVerification,
 			},
-			assemblyline.TypeScriptBlock{
+			assemblyline.SourceBlock{
 				ID: harnessID,
 				Static: genericBrowserAcceptanceHarnessSource(
-					harnessName, verifyName, functionName, genericBrowserCapabilityID(sequence),
+					harnessName, verifyName, functionName, genericApplicationCapabilityID(sequence),
 				),
 				API: fmt.Sprintf("async function %s(): Promise<void>", harnessName),
 				DependsOn: []string{
 					"runtime.factory", wrapperID, verificationID,
 				},
+				TaskID: taskID, Role: assemblyline.SourceBlockTaskSupport,
 			},
-			assemblyline.TypeScriptBlock{
+			assemblyline.SourceBlock{
 				ID: fmt.Sprintf("acceptance.register.%03d", sequence),
 				Static: fmt.Sprintf(
 					"it(%s, %s);", strconv.Quote("delivers "+requirement.SourceQuote), harnessName,
 				),
 				API:       "registered independent acceptance for " + requirement.ID,
 				DependsOn: []string{harnessID},
+				TaskID:    taskID, Role: assemblyline.SourceBlockTaskSupport,
 			},
 		)
 	}
@@ -100,7 +110,7 @@ func genericBrowserAcceptanceContract(
 ) string {
 	return strings.Join([]string{
 		behavior,
-		"The code-owned harness renders the public component before invoking this function. Assert every observable acceptance criterion using direct screen queries only as standalone throwing observations, expect subjects, or fireEvent targets. Use only static arguments and event payloads. Await findBy, findAllBy, and waitFor; a waitFor callback may contain only those same direct forms. Do not create aliases, local proof values, UI, arbitrary calls, assignments, or control flow. Do not inspect source or internal state, use class names or data attributes, or merely assert that the component exists.",
+		"The code-owned harness renders the public component before invoking this function. The function body is a sequence of direct screen-query throwing observations, expect statements, and fireEvent calls using static arguments and event payloads. Asynchronous evidence uses awaited findBy, findAllBy, or waitFor calls whose callbacks contain those same direct forms. Every observable acceptance criterion has user-visible evidence in that sequence.",
 	}, "\n")
 }
 

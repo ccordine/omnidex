@@ -6,6 +6,7 @@ import (
 
 	"github.com/gryph/omnidex/internal/assemblyline"
 	"github.com/gryph/omnidex/internal/model"
+	"github.com/gryph/omnidex/internal/modelcontext"
 	repositoryindex "github.com/gryph/omnidex/internal/repository/indexing"
 	"github.com/gryph/omnidex/internal/scrum"
 )
@@ -18,20 +19,42 @@ type directCodingRequest struct {
 }
 
 type directCodingSession struct {
-	runtime         *nativeRuntimeV3
-	request         directCodingRequest
-	root            string
-	specification   *assemblyline.ApplicationSpecification
-	program         *directCodingProgram
-	completion      directCodingCompletionState
-	sequence        int
-	protectedPaths  map[string]directCodingProtectedPath
-	lastCommands    []string
-	repositoryIndex *repositoryindex.Result
-	plannedFiles    int
-	plannedDeletes  int
-	mutationJournal []directCodingMutationJournalEntry
-	cognition       *directCodingTaskCognition
+	runtime               *nativeRuntimeV3
+	request               directCodingRequest
+	root                  string
+	specification         *assemblyline.ApplicationSpecification
+	program               *directCodingProgram
+	completion            directCodingCompletionState
+	sequence              int
+	protectedPaths        map[string]directCodingProtectedPath
+	lastCommands          []string
+	repositoryIndex       *repositoryindex.Result
+	plannedFiles          int
+	plannedDeletes        int
+	mutationJournal       []directCodingMutationJournalEntry
+	cognition             *directCodingTaskCognition
+	pathProvenance        assemblyline.ArtifactIdentityProvenance
+	initialPaths          map[string]directCodingInitialPath
+	deploymentResolution  directCodingServiceDeploymentResolution
+	deploymentDisposition assemblyline.ApplicationServiceDeploymentDisposition
+	deploymentOperationID string
+	deploymentReceiptSHA  string
+	deployedEndpoint      directCodingObservedEndpoint
+	deploymentRecovery    directCodingDeploymentRecoveryHook
+}
+
+func (s *directCodingSession) Phase(phase directCodingPhase, detail string) {
+	detail = trimForBudget(strings.TrimSpace(detail), 1200)
+	s.runtime.svc.emitStepEvent(s.runtime.claim.Authority, "coding_phase_changed", fmt.Sprintf(
+		"phase=%s detail=%s", phase, safeLine(detail, "none"),
+	))
+}
+
+func (s *directCodingSession) directCodingAuthority() string {
+	parts := []string{s.request.Instruction}
+	parts = append(parts, s.request.AdditionalAuthority...)
+	parts = append(parts, s.request.Feedback...)
+	return strings.TrimSpace(strings.Join(parts, "\n"))
 }
 
 type directCodingMutationJournalEntry struct {
@@ -90,6 +113,9 @@ func (r *nativeRuntimeV3) runDirectCodingSession(request directCodingRequest) (s
 	if r == nil || r.svc == nil {
 		return "", fmt.Errorf("direct coding runtime is unavailable")
 	}
+	if summary, handled, err := r.recoverDeploymentBeforeWorkspace(request); handled || err != nil {
+		return summary, err
+	}
 	scope, err := r.svc.workspaceScopeForV3Job(r.claim.Job)
 	if err != nil {
 		return "", err
@@ -120,6 +146,18 @@ func (r *nativeRuntimeV3) runDirectCodingSession(request directCodingRequest) (s
 			TestsRequired:          true,
 			WrittenSource:          map[string]string{},
 		},
+	}
+	session.deploymentRecovery = newDirectCodingDeploymentRecovery(session)
+	if indexed != nil {
+		paths := make([]string, len(indexed.Snapshot.Files))
+		for index, file := range indexed.Snapshot.Files {
+			paths[index] = file.Path
+		}
+		provenance, provenanceErr := modelcontext.NewArtifactIdentityProvenance(paths)
+		if provenanceErr != nil {
+			return "", fmt.Errorf("derive indexed artifact provenance: %w", provenanceErr)
+		}
+		session.pathProvenance = provenance
 	}
 	if indexed != nil {
 		return session.runExistingRepositoryChangeWorkflow()

@@ -20,11 +20,15 @@ func TestApplicationTaskLifecycleGeneratesAllBlocksBeforeFinalStage(t *testing.T
 		BuildBlock: func(
 			context assemblyline.ApplicationTaskContext,
 			stage *directCodingProgram,
-			block assemblyline.TypeScriptBlock,
+			ref assemblyline.SourceBlockRef,
 		) (string, error) {
-			events = append(events, "generate:"+block.ID)
+			events = append(events, "generate:"+ref.Block.ID)
 			assertTaskStageOwnsOnly(t, *stage, context.Task.TaskID)
-			return block.Signature + " { return 1; }", nil
+			return ref.Block.Signature + " { return 1; }", nil
+		},
+		VerifyTask: func(context assemblyline.ApplicationTaskContext, _ *directCodingProgram) error {
+			events = append(events, "verify:"+context.Task.TaskID)
+			return nil
 		},
 		FinalStage: func(complete *directCodingProgram) error {
 			finalCalls++
@@ -39,8 +43,8 @@ func TestApplicationTaskLifecycleGeneratesAllBlocksBeforeFinalStage(t *testing.T
 		t.Fatal(err)
 	}
 	want := []string{
-		"generate:feature.001", "generate:acceptance.001",
-		"generate:feature.002", "generate:acceptance.002",
+		"generate:feature.001", "generate:acceptance.001", "verify:task_001",
+		"generate:feature.002", "generate:acceptance.002", "verify:task_002",
 		"final",
 	}
 	if !reflect.DeepEqual(events, want) || finalCalls != 1 {
@@ -59,14 +63,15 @@ func TestApplicationTaskLifecycleGenerationFailureStartsNoLaterTaskOrFinalStage(
 			BuildBlock: func(
 				_ assemblyline.ApplicationTaskContext,
 				_ *directCodingProgram,
-				block assemblyline.TypeScriptBlock,
+				ref assemblyline.SourceBlockRef,
 			) (string, error) {
-				events = append(events, "generate:"+block.ID)
-				if block.ID == "acceptance.001" {
+				events = append(events, "generate:"+ref.Block.ID)
+				if ref.Block.ID == "acceptance.001" {
 					return "", errors.New("current task generation failed")
 				}
-				return block.Signature + " { return 1; }", nil
+				return ref.Block.Signature + " { return 1; }", nil
 			},
+			VerifyTask: func(assemblyline.ApplicationTaskContext, *directCodingProgram) error { return nil },
 			FinalStage: func(*directCodingProgram) error {
 				events = append(events, "final")
 				return nil
@@ -91,9 +96,13 @@ func TestApplicationTaskLifecycleWrapsEveryGeneratedTaskInCodeOwnedCognitionTran
 			events = append(events, "begin:"+context.Task.TaskID)
 			return nil
 		},
-		BuildBlock: func(_ assemblyline.ApplicationTaskContext, _ *directCodingProgram, block assemblyline.TypeScriptBlock) (string, error) {
-			events = append(events, "generate:"+block.ID)
-			return block.Signature + " { return 1; }", nil
+		BuildBlock: func(_ assemblyline.ApplicationTaskContext, _ *directCodingProgram, ref assemblyline.SourceBlockRef) (string, error) {
+			events = append(events, "generate:"+ref.Block.ID)
+			return ref.Block.Signature + " { return 1; }", nil
+		},
+		VerifyTask: func(context assemblyline.ApplicationTaskContext, _ *directCodingProgram) error {
+			events = append(events, "verify:"+context.Task.TaskID)
+			return nil
 		},
 		CompleteTask: func(context assemblyline.ApplicationTaskContext, generated map[string]string) error {
 			events = append(events, "complete:"+context.Task.TaskID)
@@ -111,8 +120,8 @@ func TestApplicationTaskLifecycleWrapsEveryGeneratedTaskInCodeOwnedCognitionTran
 		t.Fatal(err)
 	}
 	want := []string{
-		"begin:task_001", "generate:feature.001", "generate:acceptance.001", "complete:task_001",
-		"begin:task_002", "generate:feature.002", "generate:acceptance.002", "complete:task_002",
+		"begin:task_001", "generate:feature.001", "generate:acceptance.001", "verify:task_001", "complete:task_001",
+		"begin:task_002", "generate:feature.002", "generate:acceptance.002", "verify:task_002", "complete:task_002",
 		"final",
 	}
 	if !reflect.DeepEqual(events, want) {

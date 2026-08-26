@@ -8,6 +8,7 @@ import (
 
 	"github.com/gryph/omnidex/internal/assemblyline"
 	"github.com/gryph/omnidex/internal/exactjson"
+	"github.com/gryph/omnidex/internal/modelcontext"
 )
 
 type semanticCandidateExhaustedError struct {
@@ -47,7 +48,9 @@ func runDirectCodingSemanticCall[T any](
 	if err != nil {
 		return zero, err
 	}
-	if err := validateDirectCodingSemanticPrompt(basePrompt, identities); err != nil {
+	if err := validateDirectCodingSemanticPrompt(
+		basePrompt, identities, runtime.PathProvenance,
+	); err != nil {
 		return zero, err
 	}
 	emitTypedWorker(runtime, typedWorkerEvent{
@@ -84,7 +87,9 @@ func runDirectCodingSemanticCall[T any](
 		if err != nil {
 			return zero, failDirectCodingSemanticCall(runtime, modelName, subject, attempt-1, err)
 		}
-		if err := validateDirectCodingSemanticPrompt(prompt, identities); err != nil {
+		if err := validateDirectCodingSemanticPrompt(
+			prompt, identities, runtime.PathProvenance,
+		); err != nil {
 			return zero, failDirectCodingSemanticCall(runtime, modelName, subject, attempt-1, err)
 		}
 		if _, duplicate := seenJobs[attemptJob.ID]; duplicate {
@@ -117,6 +122,18 @@ func runDirectCodingSemanticCall[T any](
 			var value T
 			value, err = decodeDirectCodingSemanticJSON[T](candidate)
 			if err == nil {
+				if boundary, ok := any(value).(interface {
+					ValidatePathFree(assemblyline.ArtifactIdentityProvenance) error
+				}); ok {
+					err = boundary.ValidatePathFree(runtime.PathProvenance)
+					if err != nil {
+						err = finalizeTypedWorkerResult(runtime, attemptJob, result, err)
+						emitDirectCodingSemanticRejection(runtime, modelName, subject, attempt, err)
+						return zero, failDirectCodingSemanticCall(
+							runtime, modelName, subject, attempt, err,
+						)
+					}
+				}
 				lastCandidate = candidate
 				retainedCandidate = true
 				err = validate(value)
@@ -182,11 +199,21 @@ func decodeDirectCodingSemanticJSON[T any](raw string) (T, error) {
 	return value, nil
 }
 
-func validateDirectCodingSemanticPrompt(prompt string, identities []assemblyline.ArtifactIdentity) error {
+func validateDirectCodingSemanticPrompt(
+	prompt string,
+	identities []assemblyline.ArtifactIdentity,
+	provenance assemblyline.ArtifactIdentityProvenance,
+) error {
 	for _, identity := range identities {
 		if value := strings.TrimSpace(identity.Value); value != "" && strings.Contains(prompt, value) {
 			return fmt.Errorf("coding semantic prompt exposes source identity behind %s", identity.Token)
 		}
+	}
+	if matches := modelcontext.ProvenArtifactIdentities(prompt, provenance); len(matches) > 0 {
+		return fmt.Errorf(
+			"coding semantic prompt exposes known artifact identity %q",
+			prompt[matches[0].Start:matches[0].End],
+		)
 	}
 	return nil
 }

@@ -39,7 +39,9 @@ func (input RepositorySearchTermInput) validate() error {
 	if strings.ContainsRune(input.UnresolvedConcept, '\x00') {
 		return fmt.Errorf("repository search unresolved concept contains NUL")
 	}
-	return nil
+	return ValidatePathFreeModelContext(
+		"repository search unresolved concept", input.UnresolvedConcept,
+	)
 }
 
 func (decision RepositorySearchTermDecision) ValidateFor(input RepositorySearchTermInput) error {
@@ -59,12 +61,23 @@ func (decision RepositorySearchTermDecision) ValidateFor(input RepositorySearchT
 		); err != nil {
 			return err
 		}
+		if err := ValidatePathFreeModelContext("repository search anchor", anchor); err != nil {
+			return fmt.Errorf("repository search anchor %d: %w", index, err)
+		}
 		if _, duplicate := seen[anchor]; duplicate {
 			return fmt.Errorf("repository search anchors must be unique")
 		}
 		seen[anchor] = struct{}{}
 	}
 	return nil
+}
+
+func (decision RepositorySearchTermDecision) ValidatePathFree(
+	provenance ArtifactIdentityProvenance,
+) error {
+	return ValidatePathFreeModelContextWithProvenance(
+		"repository search decision", provenance, decision.Anchors...,
+	)
 }
 
 func BuildRepositorySearchTermPrompt(input RepositorySearchTermInput) (string, error) {

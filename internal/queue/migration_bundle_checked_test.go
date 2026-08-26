@@ -121,6 +121,19 @@ func TestCheckedMigrationBundleFreezesExactProviderSplitSet(t *testing.T) {
 	contextSieveCutoverCount := 0
 	roleplayUserTurnAuthorityCount := 0
 	roleplayVoiceRetirementCount := 0
+	projectStackConstraintStationCount := 0
+	serviceEndpointContractStationCount := 0
+	serviceEndpointRequirementStationCount := 0
+	acceptanceGroundingRetirementCount := 0
+	serviceEndpointLeafStationCount := 0
+	serviceStateLifetimeStationCount := 0
+	serviceDeploymentIntentStationCount := 0
+	generatedWorkloadDeploymentJournalCount := 0
+	generatedWorkloadDeploymentEvidenceCount := 0
+	generatedWorkloadProjectDeploymentHeadCount := 0
+	generatedWorkloadDeploymentRecoveryCount := 0
+	generatedWorkloadDeploymentNamespacePreflightCount := 0
+	serviceStateInterfaceStationCount := 0
 	for _, entry := range bundle.entries {
 		if strings.HasPrefix(entry.name, "060_") {
 			got[entry.name]++
@@ -224,7 +237,7 @@ func TestCheckedMigrationBundleFreezesExactProviderSplitSet(t *testing.T) {
 		if entry.name == stationPromptTransportMigration {
 			stationPromptTransportCount++
 		}
-		if entry.name == applicationAcceptanceGroundingReviewMigration {
+		if entry.name == "098_application_acceptance_grounding_review_station.sql" {
 			acceptanceGroundingReviewStationCount++
 		}
 		if entry.name == stationResponseSchemaResourceMigration {
@@ -293,9 +306,48 @@ func TestCheckedMigrationBundleFreezesExactProviderSplitSet(t *testing.T) {
 		if entry.name == "129_retire_roleplay_voice_rewrite.sql" {
 			roleplayVoiceRetirementCount++
 		}
+		if entry.name == "133_application_project_stack_constraint_station.sql" {
+			projectStackConstraintStationCount++
+		}
+		if entry.name == applicationServiceEndpointContractMigration {
+			serviceEndpointContractStationCount++
+		}
+		if entry.name == applicationServiceEndpointRequirementMigration {
+			serviceEndpointRequirementStationCount++
+		}
+		if entry.name == applicationAcceptanceGroundingRetirementMigration {
+			acceptanceGroundingRetirementCount++
+		}
+		if entry.name == applicationServiceEndpointLeafMigration {
+			serviceEndpointLeafStationCount++
+		}
+		if entry.name == applicationServiceStateLifetimeMigration {
+			serviceStateLifetimeStationCount++
+		}
+		if entry.name == applicationServiceDeploymentIntentMigration {
+			serviceDeploymentIntentStationCount++
+		}
+		if entry.name == "140_generated_workload_deployment_journal.sql" {
+			generatedWorkloadDeploymentJournalCount++
+		}
+		if entry.name == "141_generated_workload_deployment_evidence_rail.sql" {
+			generatedWorkloadDeploymentEvidenceCount++
+		}
+		if entry.name == "142_generated_workload_project_deployment_head.sql" {
+			generatedWorkloadProjectDeploymentHeadCount++
+		}
+		if entry.name == applicationServiceStateInterfaceMigration {
+			serviceStateInterfaceStationCount++
+		}
+		if entry.name == "144_generated_workload_deployment_recovery.sql" {
+			generatedWorkloadDeploymentRecoveryCount++
+		}
+		if entry.name == "145_generated_workload_deployment_namespace_preflight.sql" {
+			generatedWorkloadDeploymentNamespacePreflightCount++
+		}
 	}
-	if len(bundle.entries) != 183 || len(got) != len(want) {
-		t.Fatalf("checked migration counts total/provider=%d/%d want 183/%d",
+	if len(bundle.entries) != 196 || len(got) != len(want) {
+		t.Fatalf("checked migration counts total/provider=%d/%d want 196/%d",
 			len(bundle.entries), len(got), len(want))
 	}
 	for _, name := range want {
@@ -319,9 +371,10 @@ func TestCheckedMigrationBundleFreezesExactProviderSplitSet(t *testing.T) {
 		roleplayCharacterLibraryCount != 1 || ollamaModelDownloadAuthorityCount != 1 ||
 		roleplayCharacterGenerationAuthorityCount != 1 || roleplayVoicePreservationStationCount != 1 ||
 		roleplayNarrativeContinuityStationCount != 1 || contextSieveCutoverCount != 1 ||
-		roleplayUserTurnAuthorityCount != 1 || roleplayVoiceRetirementCount != 1 {
+		roleplayUserTurnAuthorityCount != 1 || roleplayVoiceRetirementCount != 1 ||
+		projectStackConstraintStationCount != 1 {
 		t.Fatalf(
-			"checked database/roleplay/delegated/context authority migration counts=%d/%d/%d/%d/%d/%d/%d/%d/%d/%d/%d/%d/%d/%d want all one",
+			"checked database/roleplay/delegated/context authority migration counts=%d/%d/%d/%d/%d/%d/%d/%d/%d/%d/%d/%d/%d/%d/%d want all one",
 			databaseCognitionAuthorityCount, roleplayCanonAuthorityCount,
 			roleplaySimulationAuthorityCount, roleplayResearchAuthorityCount,
 			roleplayTerminalSimulationPublicationCount, delegatedDataSourceAuthorityCount,
@@ -329,10 +382,67 @@ func TestCheckedMigrationBundleFreezesExactProviderSplitSet(t *testing.T) {
 			roleplayCharacterGenerationAuthorityCount, roleplayVoicePreservationStationCount,
 			roleplayNarrativeContinuityStationCount, contextSieveCutoverCount,
 			roleplayUserTurnAuthorityCount, roleplayVoiceRetirementCount,
+			projectStackConstraintStationCount,
 		)
 	}
 	if conversationCutoverCount != 1 {
 		t.Fatalf("checked conversation cutover migration count=%d want 1", conversationCutoverCount)
+	}
+	if serviceEndpointContractStationCount != 1 {
+		t.Fatalf(
+			"checked service endpoint contract migration count=%d want 1",
+			serviceEndpointContractStationCount,
+		)
+	}
+	if serviceEndpointRequirementStationCount != 1 {
+		t.Fatalf(
+			"checked service endpoint requirement migration count=%d want 1",
+			serviceEndpointRequirementStationCount,
+		)
+	}
+	if acceptanceGroundingRetirementCount != 1 {
+		t.Fatalf(
+			"checked acceptance-grounding retirement migration count=%d want 1",
+			acceptanceGroundingRetirementCount,
+		)
+	}
+	if serviceEndpointLeafStationCount != 1 {
+		t.Fatalf(
+			"checked service endpoint leaf migration count=%d want 1",
+			serviceEndpointLeafStationCount,
+		)
+	}
+	if serviceStateLifetimeStationCount != 1 {
+		t.Fatalf(
+			"checked service state lifetime migration count=%d want 1",
+			serviceStateLifetimeStationCount,
+		)
+	}
+	if serviceDeploymentIntentStationCount != 1 {
+		t.Fatalf(
+			"checked service deployment intent migration count=%d want 1",
+			serviceDeploymentIntentStationCount,
+		)
+	}
+	if generatedWorkloadDeploymentJournalCount != 1 {
+		t.Fatalf(
+			"checked generated workload deployment journal migration count=%d want 1",
+			generatedWorkloadDeploymentJournalCount,
+		)
+	}
+	if generatedWorkloadDeploymentEvidenceCount != 1 ||
+		generatedWorkloadProjectDeploymentHeadCount != 1 ||
+		serviceStateInterfaceStationCount != 1 ||
+		generatedWorkloadDeploymentRecoveryCount != 1 ||
+		generatedWorkloadDeploymentNamespacePreflightCount != 1 {
+		t.Fatalf(
+			"checked deployment evidence/head/state-interface/recovery/namespace-preflight migration counts=%d/%d/%d/%d/%d want all one",
+			generatedWorkloadDeploymentEvidenceCount,
+			generatedWorkloadProjectDeploymentHeadCount,
+			serviceStateInterfaceStationCount,
+			generatedWorkloadDeploymentRecoveryCount,
+			generatedWorkloadDeploymentNamespacePreflightCount,
+		)
 	}
 	if semanticGapCount != 1 || stationCallCount != 1 || channelAuthorityCount != 1 {
 		t.Fatalf("checked horizontal authority migrations gap/call/channel=%d/%d/%d want 1/1/1",

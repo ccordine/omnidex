@@ -38,7 +38,23 @@ func validateApplicationJobSpecificationInput(input ApplicationJobSpecificationI
 	if input.FocusedRequirement != input.AcceptedRequirements[focused] {
 		return fmt.Errorf("application job specification focused requirement differs from accepted authority")
 	}
-	return nil
+	return input.ValidatePathFree(ArtifactIdentityProvenance{})
+}
+
+// ValidatePathFree applies current-tree provenance at the final model-call
+// boundary. Exact known bare artifact names are code-owned identities even
+// though the qualified-path grammar intentionally preserves other dotted
+// semantic names.
+func (input ApplicationJobSpecificationInput) ValidatePathFree(
+	provenance ArtifactIdentityProvenance,
+) error {
+	values := []string{input.ProductQuote, input.FocusedRequirement.SourceQuote}
+	for _, requirement := range input.AcceptedRequirements {
+		values = append(values, requirement.SourceQuote)
+	}
+	return ValidatePathFreeModelContextWithProvenance(
+		"application job specification input", provenance, values...,
+	)
 }
 
 func BuildApplicationJobSpecificationPrompt(input ApplicationJobSpecificationInput) (string, error) {
@@ -153,6 +169,19 @@ func ValidateApplicationJobSpecification(specification ApplicationJobSpecificati
 		return defect
 	}
 	return nil
+}
+
+// ValidatePathFree is the provenance-aware acceptance boundary for a complete
+// model-authored job specification.
+func (specification ApplicationJobSpecification) ValidatePathFree(
+	provenance ArtifactIdentityProvenance,
+) error {
+	values := []string{specification.Objective}
+	values = append(values, specification.RequiredBehaviors...)
+	values = append(values, specification.AcceptanceCriteria...)
+	return ValidatePathFreeModelContextWithProvenance(
+		"application job specification", provenance, values...,
+	)
 }
 
 func applicationJobSpecificationLineSchema(maximum int) map[string]any {

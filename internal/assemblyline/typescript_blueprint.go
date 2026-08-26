@@ -7,25 +7,43 @@ import (
 )
 
 const (
-	maxTypeScriptAPIBytes = 4800
+	maxSourceAPIBytes = 4800
 )
 
-type TypeScriptBlueprint struct {
-	Documents []TypeScriptDocument
+type SourceBlueprint struct {
+	Documents []SourceDocument
 }
 
-type TypeScriptDocument struct {
-	ID     string
-	Path   string
-	Header string
-	Blocks []TypeScriptBlock
+type SourceDocument struct {
+	ID              string
+	Path            string
+	AdapterID       string
+	Preamble        string
+	ScopedPreambles []SourcePreamble
+	Postamble       string
+	Blocks          []SourceBlock
 }
 
-func (d TypeScriptDocument) TSX() bool {
-	return strings.EqualFold(path.Ext(d.Path), ".tsx")
+type SourcePreamble struct {
+	TaskID string
+	Source string
 }
 
-type TypeScriptBlock struct {
+type SourceComposition struct {
+	Generated  map[string]string
+	Interfaces map[string]string
+}
+
+type SourceBlockRole string
+
+const (
+	SourceBlockTaskSupport        SourceBlockRole = "task_support"
+	SourceBlockTaskImplementation SourceBlockRole = "task_implementation"
+	SourceBlockTaskRepresentation SourceBlockRole = "task_representation"
+	SourceBlockTaskVerification   SourceBlockRole = "task_verification"
+)
+
+type SourceBlock struct {
 	ID           string
 	Static       string
 	Signature    string
@@ -34,44 +52,46 @@ type TypeScriptBlock struct {
 	DependsOn    []string
 	Capabilities []string
 	Globals      []string
-	Policy       TypeScriptFunctionPolicy
+	Policy       SourceFunctionPolicy
 	Export       bool
+	TaskID       string
+	Role         SourceBlockRole
 }
 
-type TypeScriptCallRequirement struct {
+type SourceCallRequirement struct {
 	Callees             []string
 	StringArgument      string
 	StringArgumentIndex int
 }
 
-type TypeScriptFunctionPolicy struct {
-	RequiredCalls        []TypeScriptCallRequirement
-	RestrictedCalls      []TypeScriptCallRestriction
+type SourceFunctionPolicy struct {
+	RequiredCalls        []SourceCallRequirement
+	RestrictedCalls      []SourceCallRestriction
 	TopLevelCalls        []string
-	RequiredJSXElements  []string
+	RequiredElementNames []string
 	ForbiddenIdentifiers []string
 }
 
-type TypeScriptCallRestriction struct {
+type SourceCallRestriction struct {
 	Callees                []string
 	StringArgumentIndex    int
 	AllowedStringArguments []string
 }
 
-func (b TypeScriptBlock) Generated() bool {
+func (b SourceBlock) Generated() bool {
 	return strings.TrimSpace(b.Static) == ""
 }
 
-type TypeScriptBlockRef struct {
+type SourceBlockRef struct {
 	DocumentIndex int
 	BlockIndex    int
-	Document      TypeScriptDocument
-	Block         TypeScriptBlock
+	Document      SourceDocument
+	Block         SourceBlock
 }
 
-func (b TypeScriptBlueprint) Validate() error {
+func (b SourceBlueprint) Validate() error {
 	if len(b.Documents) == 0 || len(b.Documents) > maxConstructionDocuments {
-		return fmt.Errorf("TypeScript blueprint requires between 1 and %d documents", maxConstructionDocuments)
+		return fmt.Errorf("source blueprint requires between 1 and %d documents", maxConstructionDocuments)
 	}
 	ids := make(map[string]struct{})
 	paths := make(map[string]struct{})
@@ -80,24 +100,36 @@ func (b TypeScriptBlueprint) Validate() error {
 		if !graphIdentifierPattern.MatchString(document.ID) {
 			return fmt.Errorf("document %d id %q is invalid", documentIndex, document.ID)
 		}
+		if document.AdapterID != "" && !graphIdentifierPattern.MatchString(document.AdapterID) {
+			return fmt.Errorf("document %s adapter id %q is invalid", document.ID, document.AdapterID)
+		}
+		seenPreambles := make(map[string]struct{}, len(document.ScopedPreambles))
+		for preambleIndex, preamble := range document.ScopedPreambles {
+			if !graphIdentifierPattern.MatchString(preamble.TaskID) || strings.TrimSpace(preamble.Source) == "" {
+				return fmt.Errorf("document %s scoped preamble %d is invalid", document.ID, preambleIndex)
+			}
+			if _, duplicate := seenPreambles[preamble.TaskID]; duplicate {
+				return fmt.Errorf("document %s repeats scoped preamble for task %s", document.ID, preamble.TaskID)
+			}
+			seenPreambles[preamble.TaskID] = struct{}{}
+		}
 		clean := path.Clean(strings.TrimSpace(document.Path))
-		extension := strings.ToLower(path.Ext(clean))
-		if clean == "." || clean == ".." || strings.HasPrefix(clean, "../") || path.IsAbs(clean) || clean != document.Path || extension != ".ts" && extension != ".tsx" {
-			return fmt.Errorf("document %s path %q must be normalized TypeScript source", document.ID, document.Path)
+		if clean == "." || clean == ".." || strings.HasPrefix(clean, "../") || path.IsAbs(clean) || clean != document.Path {
+			return fmt.Errorf("document %s path %q must be normalized relative source", document.ID, document.Path)
 		}
 		if _, duplicate := paths[clean]; duplicate {
-			return fmt.Errorf("TypeScript blueprint repeats document path %q", clean)
+			return fmt.Errorf("source blueprint repeats document path %q", clean)
 		}
 		paths[clean] = struct{}{}
 		if len(document.Blocks) == 0 {
 			return fmt.Errorf("document %s requires at least one block", document.ID)
 		}
 		for blockIndex, block := range document.Blocks {
-			if err := validateTypeScriptBlock(block); err != nil {
+			if err := validateSourceBlock(block); err != nil {
 				return fmt.Errorf("document %s block %d: %w", document.ID, blockIndex, err)
 			}
 			if _, duplicate := ids[block.ID]; duplicate {
-				return fmt.Errorf("TypeScript blueprint repeats block id %q", block.ID)
+				return fmt.Errorf("source blueprint repeats block id %q", block.ID)
 			}
 			ids[block.ID] = struct{}{}
 			nodes = append(nodes, DependencyNode{ID: block.ID, DependsOn: block.DependsOn})
@@ -107,7 +139,7 @@ func (b TypeScriptBlueprint) Validate() error {
 	return err
 }
 
-func validateTypeScriptBlock(block TypeScriptBlock) error {
+func validateSourceBlock(block SourceBlock) error {
 	if !graphIdentifierPattern.MatchString(block.ID) {
 		return fmt.Errorf("block id %q is invalid", block.ID)
 	}
@@ -121,11 +153,14 @@ func validateTypeScriptBlock(block TypeScriptBlock) error {
 	if generated && (!hasSignature || !hasContract) {
 		return fmt.Errorf("generated block %s requires both one signature and one local behavior contract", block.ID)
 	}
-	if strings.TrimSpace(block.API) == "" || len(block.API) > maxTypeScriptAPIBytes {
+	if strings.TrimSpace(block.API) == "" || len(block.API) > maxSourceAPIBytes {
 		return fmt.Errorf("block %s requires a bounded code-owned API declaration", block.ID)
 	}
 	if generated && (strings.ContainsAny(block.Signature, "\r\n") || len(block.Contract) > maxLocalBehaviorBytes) {
 		return fmt.Errorf("generated block %s has an invalid signature or oversized contract", block.ID)
+	}
+	if err := validateSourceBlockTaskOwnership(block); err != nil {
+		return err
 	}
 	seen := make(map[string]struct{})
 	for _, dependency := range block.DependsOn {
@@ -163,13 +198,36 @@ func validateTypeScriptBlock(block TypeScriptBlock) error {
 		}
 		seenGlobals[global] = struct{}{}
 	}
-	if err := validateTypeScriptFunctionPolicy(block.Policy); err != nil {
+	if err := validateSourceFunctionPolicy(block.Policy); err != nil {
 		return fmt.Errorf("block %s function policy: %w", block.ID, err)
 	}
 	return nil
 }
 
-func validateTypeScriptFunctionPolicy(policy TypeScriptFunctionPolicy) error {
+func validateSourceBlockTaskOwnership(block SourceBlock) error {
+	if block.TaskID == "" && block.Role == "" {
+		return nil
+	}
+	if !graphIdentifierPattern.MatchString(block.TaskID) {
+		return fmt.Errorf("block %s task id %q is invalid", block.ID, block.TaskID)
+	}
+	switch block.Role {
+	case SourceBlockTaskSupport, SourceBlockTaskImplementation,
+		SourceBlockTaskRepresentation, SourceBlockTaskVerification:
+	default:
+		return fmt.Errorf("block %s task role %q is invalid", block.ID, block.Role)
+	}
+	if block.Generated() && block.Role == SourceBlockTaskSupport {
+		return fmt.Errorf("generated block %s cannot use task-support role", block.ID)
+	}
+	if !block.Generated() && (block.Role == SourceBlockTaskImplementation ||
+		block.Role == SourceBlockTaskRepresentation || block.Role == SourceBlockTaskVerification) {
+		return fmt.Errorf("static block %s cannot claim generated task role %s", block.ID, block.Role)
+	}
+	return nil
+}
+
+func validateSourceFunctionPolicy(policy SourceFunctionPolicy) error {
 	for index, requirement := range policy.RequiredCalls {
 		if len(requirement.Callees) == 0 {
 			return fmt.Errorf("required call %d has no allowed callee", index)
@@ -214,9 +272,9 @@ func validateTypeScriptFunctionPolicy(policy TypeScriptFunctionPolicy) error {
 			}
 		}
 	}
-	for _, element := range policy.RequiredJSXElements {
+	for _, element := range policy.RequiredElementNames {
 		if !codeIdentifierPattern.MatchString(element) {
-			return fmt.Errorf("required JSX element %q is invalid", element)
+			return fmt.Errorf("required element name %q is invalid", element)
 		}
 	}
 	for _, callee := range policy.TopLevelCalls {
@@ -232,15 +290,15 @@ func validateTypeScriptFunctionPolicy(policy TypeScriptFunctionPolicy) error {
 	return nil
 }
 
-func (b TypeScriptBlueprint) BuildWaves() ([][]TypeScriptBlockRef, error) {
+func (b SourceBlueprint) BuildWaves() ([][]SourceBlockRef, error) {
 	if err := b.Validate(); err != nil {
 		return nil, err
 	}
-	byID := make(map[string]TypeScriptBlockRef)
+	byID := make(map[string]SourceBlockRef)
 	nodes := make([]DependencyNode, 0)
 	for documentIndex, document := range b.Documents {
 		for blockIndex, block := range document.Blocks {
-			ref := TypeScriptBlockRef{DocumentIndex: documentIndex, BlockIndex: blockIndex, Document: document, Block: block}
+			ref := SourceBlockRef{DocumentIndex: documentIndex, BlockIndex: blockIndex, Document: document, Block: block}
 			byID[block.ID] = ref
 			nodes = append(nodes, DependencyNode{ID: block.ID, DependsOn: block.DependsOn})
 		}
@@ -249,9 +307,9 @@ func (b TypeScriptBlueprint) BuildWaves() ([][]TypeScriptBlockRef, error) {
 	if err != nil {
 		return nil, err
 	}
-	waves := make([][]TypeScriptBlockRef, 0, len(idsByWave))
+	waves := make([][]SourceBlockRef, 0, len(idsByWave))
 	for _, ids := range idsByWave {
-		wave := make([]TypeScriptBlockRef, 0, len(ids))
+		wave := make([]SourceBlockRef, 0, len(ids))
 		for _, id := range ids {
 			wave = append(wave, byID[id])
 		}

@@ -13,8 +13,9 @@ func BuildGoFragmentGenerationPrompt(input FragmentGenerationInput) (string, err
 		return "", fmt.Errorf("Go fragment generation does not support language %q", input.Language)
 	}
 	return strings.Join([]string{
-		"Return exactly one raw Go function declaration with the exact signature. Do not use Markdown fences, imports, package clauses, comments, methods, helper declarations, paths, files, commands, operations, or explanations.",
-		"Implement only the exact local behavior. Use only predeclared Go identifiers or identifiers explicitly listed as permitted direct capabilities.",
+		"The complete response grammar is exactly one raw Go function declaration with the exact signature and one body.",
+		"Implement only the exact local behavior. The declaration's identifier vocabulary consists of predeclared Go identifiers and identifiers explicitly listed as permitted direct capabilities.",
+		"SOURCE_DIALECT:\n" + input.Dialect,
 		"EXACT_SIGNATURE:\n" + input.Signature,
 		"EXACT_LOCAL_BEHAVIOR:\n" + input.Behavior,
 		"DIRECT_CAPABILITIES:\n" + strings.Join(input.Capabilities, "\n"),

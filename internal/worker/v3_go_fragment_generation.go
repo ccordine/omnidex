@@ -8,7 +8,7 @@ import (
 	"github.com/gryph/omnidex/internal/gofragment"
 )
 
-const directCodingGoGenerationRequiredChange = "Fix only the observed local declaration validation failure while preserving the exact signature and local behavior."
+const directCodingGoModelAttempts = 1
 
 type directCodingGoGenerationJob struct {
 	Subject string
@@ -37,90 +37,60 @@ func runDirectCodingGoFragmentGenerationWorker(
 	if err != nil {
 		return "", failDirectCodingGoGeneration(runtime, modelName, job.Subject, 0, err)
 	}
-	seen := make(map[string]struct{})
-	var lastCandidate string
-	var lastErr error
-	for attempt := 1; attempt <= runtime.MaxAttempts; attempt++ {
-		if err := runtime.Context.Err(); err != nil {
-			return "", failDirectCodingGoGeneration(runtime, modelName, job.Subject, attempt-1, err)
-		}
-		attemptJob, attemptModel := baseJob, modelName
-		if lastErr != nil {
-			attemptModel = strings.TrimSpace(runtime.CorrectionModel)
-			if attemptModel == "" {
-				return "", failDirectCodingGoGeneration(runtime, modelName, job.Subject, attempt-1,
-					fmt.Errorf("Go fragment correction requires one configured correction model"))
-			}
-			attemptJob, err = assemblyline.NewFragmentCorrectionJob(assemblyline.FragmentCorrectionInput{
-				Language: "go", Signature: job.Input.Signature,
-				Capabilities:       append([]string(nil), job.Input.Capabilities...),
-				PermittedSymbols:   append([]string(nil), job.Input.PermittedSymbols...),
-				CurrentDeclaration: lastCandidate,
-				RequiredChange:     directCodingGoGenerationRequiredChange,
-				Diagnostic:         trimForBudget(lastErr.Error(), 1200),
-			})
-			if err != nil {
-				return "", failDirectCodingGoGeneration(runtime, attemptModel, job.Subject, attempt-1, err)
-			}
-		}
-		prompt, _, err := assemblyline.RenderPortableJob(attemptJob)
-		if err != nil {
-			return "", failDirectCodingGoGeneration(runtime, attemptModel, job.Subject, attempt-1, err)
-		}
-		emitTypedWorker(runtime, typedWorkerEvent{
-			State: typedWorkerStarted, Kind: typedWorkerFragment, Subject: job.Subject,
-			Model: attemptModel, Attempt: attempt, MaxAttempts: runtime.MaxAttempts,
-			PromptBytes: len(prompt), CapabilityBytes: goGenerationCapabilityBytes(job.Input),
-		})
-		result, err := runtime.Execute(attemptJob, attemptModel)
-		if err != nil {
-			return "", failDirectCodingGoGeneration(runtime, attemptModel, job.Subject, attempt, err)
-		}
-		if err := result.ValidateFor(attemptJob); err != nil {
-			err = finalizeTypedWorkerResult(runtime, attemptJob, result, err)
-			return "", failDirectCodingGoGeneration(runtime, attemptModel, job.Subject, attempt, err)
-		}
-		rawCandidate := strings.TrimSpace(result.Candidate)
-		lastCandidate = rawCandidate
-		projected, projectionErr := gofragment.ProjectFunctionModelResponse(rawCandidate)
-		if projectionErr == nil {
-			lastCandidate = projected
-		}
-		if _, duplicate := seen[lastCandidate]; duplicate {
-			lastErr = fmt.Errorf("repeated identical candidate rejected; the correction made no progress")
-		} else {
-			seen[lastCandidate] = struct{}{}
-			rejectedCandidate := lastCandidate
-			lastErr = projectionErr
-			if lastErr == nil {
-				lastCandidate, lastErr = gofragment.ParseNewFunction(
-					job.Input.Signature, job.Input.PermittedSymbols, lastCandidate,
-				)
-			}
-			if lastErr == nil {
-				if err = finalizeTypedWorkerResult(runtime, attemptJob, result, nil); err != nil {
-					return "", failDirectCodingGoGeneration(runtime, attemptModel, job.Subject, attempt, err)
-				}
-				emitTypedWorker(runtime, typedWorkerEvent{
-					State: typedWorkerCompleted, Kind: typedWorkerFragment, Subject: job.Subject,
-					Model: attemptModel, Attempt: attempt, MaxAttempts: runtime.MaxAttempts,
-				})
-				return lastCandidate, nil
-			}
-			lastCandidate = rejectedCandidate
-		}
-		lastErr = finalizeTypedWorkerResult(runtime, attemptJob, result, lastErr)
+	if err := job.Input.ValidatePathFree(runtime.PathProvenance); err != nil {
+		return "", failDirectCodingGoGeneration(runtime, modelName, job.Subject, 0, err)
+	}
+	if err := runtime.Context.Err(); err != nil {
+		return "", failDirectCodingGoGeneration(runtime, modelName, job.Subject, 0, err)
+	}
+	prompt, _, err := assemblyline.RenderPortableJob(baseJob)
+	if err != nil {
+		return "", failDirectCodingGoGeneration(runtime, modelName, job.Subject, 0, err)
+	}
+	emitTypedWorker(runtime, typedWorkerEvent{
+		State: typedWorkerStarted, Kind: typedWorkerFragment, Subject: job.Subject,
+		Model: modelName, Attempt: 1, MaxAttempts: directCodingGoModelAttempts,
+		PromptBytes: len(prompt), CapabilityBytes: goGenerationCapabilityBytes(job.Input),
+	})
+	result, err := runtime.Execute(baseJob, modelName)
+	if err != nil {
+		return "", failDirectCodingGoGeneration(runtime, modelName, job.Subject, 1, err)
+	}
+	if err := result.ValidateFor(baseJob); err != nil {
+		err = finalizeTypedWorkerResult(runtime, baseJob, result, err)
+		return "", failDirectCodingGoGeneration(runtime, modelName, job.Subject, 1, err)
+	}
+	candidate, candidateErr := gofragment.ProjectFunctionModelResponse(strings.TrimSpace(result.Candidate))
+	if candidateErr == nil {
+		candidate, candidateErr = gofragment.ParseNewFunction(
+			job.Input.Signature, job.Input.PermittedSymbols, candidate,
+		)
+	}
+	if candidateErr == nil {
+		candidateErr = assemblyline.ValidatePathFreeSourceModelContextWithProvenance(
+			"Go fragment candidate", runtime.PathProvenance, candidate,
+		)
+	}
+	if candidateErr != nil {
+		candidateErr = finalizeTypedWorkerResult(runtime, baseJob, result, candidateErr)
 		emitTypedWorker(runtime, typedWorkerEvent{
 			State: typedWorkerRejected, Kind: typedWorkerFragment, Subject: job.Subject,
-			Model: attemptModel, Attempt: attempt, MaxAttempts: runtime.MaxAttempts,
-			Detail: trimForBudget(lastErr.Error(), 1200),
+			Model: modelName, Attempt: 1, MaxAttempts: directCodingGoModelAttempts,
+			Detail: trimForBudget(candidateErr.Error(), 1200),
 		})
-		if strings.Contains(lastErr.Error(), "repeated identical candidate") {
-			break
-		}
+		return "", failDirectCodingGoGeneration(
+			runtime, modelName, job.Subject, 1,
+			fmt.Errorf("initial candidate rejected: %w", candidateErr),
+		)
 	}
-	return "", failDirectCodingGoGeneration(runtime, modelName, job.Subject, runtime.MaxAttempts,
-		fmt.Errorf("failed after %d bounded attempts: %w", runtime.MaxAttempts, lastErr))
+	if err = finalizeTypedWorkerResult(runtime, baseJob, result, nil); err != nil {
+		return "", failDirectCodingGoGeneration(runtime, modelName, job.Subject, 1, err)
+	}
+	emitTypedWorker(runtime, typedWorkerEvent{
+		State: typedWorkerCompleted, Kind: typedWorkerFragment, Subject: job.Subject,
+		Model: modelName, Attempt: 1, MaxAttempts: directCodingGoModelAttempts,
+	})
+	return candidate, nil
 }
 
 func goGenerationCapabilityBytes(input assemblyline.FragmentGenerationInput) int {
@@ -135,7 +105,7 @@ func failDirectCodingGoGeneration(
 ) error {
 	emitTypedWorker(runtime, typedWorkerEvent{
 		State: typedWorkerFailed, Kind: typedWorkerFragment, Subject: subject,
-		Model: modelName, Attempt: attempt, MaxAttempts: runtime.MaxAttempts,
+		Model: modelName, Attempt: attempt, MaxAttempts: directCodingGoModelAttempts,
 		Detail: trimForBudget(err.Error(), 1200),
 	})
 	return fmt.Errorf("Go fragment generation worker failed: %w", err)

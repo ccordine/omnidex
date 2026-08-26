@@ -36,12 +36,17 @@ func (t directCodingFileTask) validate() error {
 }
 
 type directCodingAssembly struct {
-	Directories []string
-	Files       []directCodingFileTask
-	DeletePaths []string
+	VersionProfileID string
+	Directories      []string
+	Files            []directCodingFileTask
+	DeletePaths      []string
 }
 
 func (a *directCodingAssembly) normalize() error {
+	if a.VersionProfileID == "" || a.VersionProfileID != strings.TrimSpace(a.VersionProfileID) ||
+		strings.ContainsAny(a.VersionProfileID, "\x00\r\n") {
+		return fmt.Errorf("coding assembly requires one normalized version profile ID")
+	}
 	if len(a.Files) > maxDirectCodingAssemblyUnits {
 		return fmt.Errorf("coding assembly exceeds the %d-source-unit limit", maxDirectCodingAssemblyUnits)
 	}

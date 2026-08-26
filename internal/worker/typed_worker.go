@@ -54,6 +54,7 @@ type typedWorkerRuntime struct {
 	MaxAttempts     int
 	MaxConcurrency  int
 	CorrectionModel string
+	PathProvenance  assemblyline.ArtifactIdentityProvenance
 	Execute         func(job assemblyline.PortableJob, model string) (assemblyline.PortableResult, error)
 	Finalize        func(job assemblyline.PortableJob, result assemblyline.PortableResult, validationErr error) error
 	Emit            func(event typedWorkerEvent)

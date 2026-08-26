@@ -91,16 +91,16 @@ func TestParseTypeScriptFunctionRejectsNonRawOrExpandedAuthority(t *testing.T) {
 }
 
 func TestTypeScriptBlueprintBuildsDependencyWavesWithoutExposingPaths(t *testing.T) {
-	blueprint := TypeScriptBlueprint{Documents: []TypeScriptDocument{
+	blueprint := SourceBlueprint{Documents: []SourceDocument{
 		{
 			ID: "domain", Path: "src/domain.ts",
-			Blocks: []TypeScriptBlock{{
+			Blocks: []SourceBlock{{
 				ID: "domain.types", Static: "interface Item { id: number }", API: "interface Item { id: number }",
 			}},
 		},
 		{
-			ID: "view", Path: "src/View.tsx", Header: "import type { Item } from './domain';",
-			Blocks: []TypeScriptBlock{{
+			ID: "view", Path: "src/View.tsx", Preamble: "import type { Item } from './domain';",
+			Blocks: []SourceBlock{{
 				ID: "view.render", Signature: "function View(props: { item: Item }): JSX.Element",
 				Contract: "Render the supplied item identifier in a real output element.", API: "function View(props: { item: Item }): JSX.Element",
 				DependsOn: []string{"domain.types"}, Capabilities: []string{"domain.types"},
@@ -117,13 +117,13 @@ func TestTypeScriptBlueprintBuildsDependencyWavesWithoutExposingPaths(t *testing
 }
 
 func TestTypeScriptBlueprintRejectsHalfDefinedGeneratedAuthority(t *testing.T) {
-	for name, block := range map[string]TypeScriptBlock{
+	for name, block := range map[string]SourceBlock{
 		"signature only": {ID: "view.render", Signature: "function View(): null", API: "function View(): null"},
 		"contract only":  {ID: "view.render", Contract: "Return null.", API: "function View(): null"},
 	} {
 		t.Run(name, func(t *testing.T) {
-			blueprint := TypeScriptBlueprint{Documents: []TypeScriptDocument{{
-				ID: "view", Path: "src/View.tsx", Blocks: []TypeScriptBlock{block},
+			blueprint := SourceBlueprint{Documents: []SourceDocument{{
+				ID: "view", Path: "src/View.tsx", Blocks: []SourceBlock{block},
 			}}}
 			if err := blueprint.Validate(); err == nil || !strings.Contains(err.Error(), "requires both") {
 				t.Fatalf("validation error=%v", err)
@@ -133,7 +133,7 @@ func TestTypeScriptBlueprintRejectsHalfDefinedGeneratedAuthority(t *testing.T) {
 }
 
 func TestTypeScriptBlueprintRejectsUnscopedModelCapabilities(t *testing.T) {
-	for name, block := range map[string]TypeScriptBlock{
+	for name, block := range map[string]SourceBlock{
 		"not a dependency": {
 			ID: "view.render", Signature: "function View(): null", Contract: "Return null.",
 			API: "function View(): null", Capabilities: []string{"domain.secret"},
@@ -144,8 +144,8 @@ func TestTypeScriptBlueprintRejectsUnscopedModelCapabilities(t *testing.T) {
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
-			blueprint := TypeScriptBlueprint{Documents: []TypeScriptDocument{{
-				ID: "domain", Path: "src/domain.ts", Blocks: []TypeScriptBlock{
+			blueprint := SourceBlueprint{Documents: []SourceDocument{{
+				ID: "domain", Path: "src/domain.ts", Blocks: []SourceBlock{
 					{ID: "domain.secret", Static: "export const secret = 1;", API: "const secret: 1"},
 					block,
 				},

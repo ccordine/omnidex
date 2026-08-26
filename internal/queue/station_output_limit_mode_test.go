@@ -34,7 +34,7 @@ func TestStationGapOpeningRequiresExactOutputLimitAuthority(t *testing.T) {
 	}
 
 	fragmentJob, err := assemblyline.NewFragmentGenerationJob(assemblyline.FragmentGenerationInput{
-		Language: "typescript", Signature: "function Feature(): string",
+		Language: "typescript", Dialect: "TypeScript 5.9.3", Signature: "function Feature(): string",
 		Behavior: "Return the exact accepted value.", PermittedSymbols: []string{"String"},
 	})
 	if err != nil {
@@ -180,7 +180,7 @@ func stationCallNaturalTestAuthority(
 ) (StationGapOpening, llm.PreparedModel) {
 	t.Helper()
 	job, err := assemblyline.NewFragmentGenerationJob(assemblyline.FragmentGenerationInput{
-		Language: "typescript", Signature: "function Feature(): string",
+		Language: "typescript", Dialect: "TypeScript 5.9.3", Signature: "function Feature(): string",
 		Behavior: "Return the exact accepted value.", PermittedSymbols: []string{"String"},
 	})
 	if err != nil {

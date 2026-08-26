@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
+	"github.com/gryph/omnidex/internal/modelcontext"
 )
 
 const exactTypeScriptReplayBlockID = "replay.fragment"
@@ -141,7 +142,11 @@ func exactTypeScriptReplayDiagnosticLines(output string) []string {
 		if !strings.Contains(issue.message, "error TS") {
 			continue
 		}
-		message := directCodingTypeScriptIdentityPattern.ReplaceAllString(issue.message, "[source]")
+		provenance, err := modelcontext.NewArtifactIdentityProvenance([]string{issue.path})
+		if err != nil {
+			continue
+		}
+		message := redactDirectCodingPathIdentities(issue.message, provenance)
 		line := fmt.Sprintf("[source]:%d:%d: %s", issue.line, issue.column, message)
 		if _, duplicate := seen[line]; !duplicate {
 			seen[line] = struct{}{}
@@ -176,25 +181,37 @@ func exactTypeScriptReplayProgram(
 	if err != nil {
 		return directCodingProgram{}, err
 	}
-	document := assemblyline.TypeScriptDocument{
-		ID: "station_replay", Path: "src/replay.tsx", Header: header,
-		Blocks: []assemblyline.TypeScriptBlock{{
+	document := assemblyline.SourceDocument{
+		ID: "station_replay", Path: "src/replay.tsx", AdapterID: "typescript_react", Preamble: header,
+		Blocks: []assemblyline.SourceBlock{{
 			ID: exactTypeScriptReplayBlockID, Signature: input.Signature,
 			Contract: "Compile the exact untrusted correction candidate.", API: input.Signature,
 		}},
 	}
 	static := make([]directCodingFileTask, 0, 3)
-	for _, file := range typeScriptBrowserStaticFiles("station-replay", "Station replay", "") {
-		if file.Path == "package.json" || file.Path == "tsconfig.json" || file.Path == "vite.config.ts" {
+	stack, err := directCodingProjectStackByID(genericTypeScriptBrowserAdapter)
+	if err != nil {
+		return directCodingProgram{}, err
+	}
+	profile, err := directCodingDefaultVersionProfileForStack(stack)
+	if err != nil {
+		return directCodingProgram{}, err
+	}
+	fixtureFiles, err := typeScriptBrowserStaticFiles(profile, "station-replay", "Station replay", "")
+	if err != nil {
+		return directCodingProgram{}, err
+	}
+	for _, file := range fixtureFiles {
+		if file.Path == "package.json" || file.Path == "package-lock.json" || file.Path == "tsconfig.json" || file.Path == "vite.config.ts" {
 			static = append(static, file)
 		}
 	}
 	program := directCodingProgram{
-		Adapter: "exact_typescript_station_replay", PackageName: "station-replay",
-		TypeScript:  assemblyline.TypeScriptBlueprint{Documents: []assemblyline.TypeScriptDocument{document}},
+		StackID: genericTypeScriptBrowserAdapter, VersionProfileID: profile.ID,
+		Source:      assemblyline.SourceBlueprint{Documents: []assemblyline.SourceDocument{document}},
 		StaticFiles: static, Generated: map[string]string{exactTypeScriptReplayBlockID: source},
 	}
-	if err := program.TypeScript.Validate(); err != nil {
+	if err := program.Source.Validate(); err != nil {
 		return directCodingProgram{}, err
 	}
 	return program, nil

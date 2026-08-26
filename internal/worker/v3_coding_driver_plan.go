@@ -6,24 +6,34 @@ import (
 	"strings"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
+	"github.com/gryph/omnidex/internal/modelcontext"
 	"github.com/gryph/omnidex/internal/station"
 )
 
-func (s *directCodingSession) Phase(phase directCodingPhase, detail string) {
-	detail = trimForBudget(strings.TrimSpace(detail), 1200)
-	s.runtime.svc.emitStepEvent(s.runtime.claim.Authority, "coding_phase_changed", fmt.Sprintf(
-		"phase=%s detail=%s",
-		phase,
-		safeLine(detail, "none"),
-	))
-}
-
 func (s *directCodingSession) Assemble() (directCodingAssembly, error) {
-	authorityParts := []string{s.request.Instruction}
-	authorityParts = append(authorityParts, s.request.AdditionalAuthority...)
-	authorityParts = append(authorityParts, s.request.Feedback...)
-	authority := strings.TrimSpace(strings.Join(authorityParts, "\n"))
-	redacted, identities, err := assemblyline.RedactArtifactIdentities(authority)
+	if err := validateDirectCodingArtifactRegistries(); err != nil {
+		return directCodingAssembly{}, err
+	}
+	authority := s.directCodingAuthority()
+	existingPaths, existingDirs, err := snapshotDirectCodingTargetTreePaths(s.root)
+	if err != nil {
+		return directCodingAssembly{}, err
+	}
+	initialPaths, err := snapshotDirectCodingInitialPaths(s.root, existingPaths)
+	if err != nil {
+		return directCodingAssembly{}, err
+	}
+	s.initialPaths = initialPaths
+	existingManifests, err := snapshotDirectCodingVersionManifests(s.root, existingPaths)
+	if err != nil {
+		return directCodingAssembly{}, err
+	}
+	provenance, err := modelcontext.NewArtifactIdentityProvenance(existingPaths)
+	if err != nil {
+		return directCodingAssembly{}, fmt.Errorf("derive current-tree artifact provenance: %w", err)
+	}
+	s.pathProvenance = provenance
+	redacted, identities, err := assemblyline.RedactArtifactIdentities(authority, provenance)
 	if err != nil {
 		return directCodingAssembly{}, err
 	}
@@ -35,23 +45,24 @@ func (s *directCodingSession) Assemble() (directCodingAssembly, error) {
 	if err != nil {
 		return directCodingAssembly{}, err
 	}
-	workloadModel, err := s.workerModel(station.CodingWorkload)
-	if err != nil {
-		return directCodingAssembly{}, err
-	}
-	targetTreeModel, err := s.workerModel(station.CodingTargetTree)
-	if err != nil {
-		return directCodingAssembly{}, err
-	}
-	targetTreeCorrectionModel, err := s.workerModel(station.CodingWorkloadReview)
-	if err != nil {
-		return directCodingAssembly{}, err
-	}
 	artifactModel, err := s.workerModel(station.CodingArtifactHandling)
 	if err != nil {
 		return directCodingAssembly{}, err
 	}
 	workerRuntime := directCodingWorkerRuntime(s)
+	deploymentModel, err := s.workerModel(station.CodingServiceDeploymentIntent)
+	if err != nil {
+		return directCodingAssembly{}, err
+	}
+	deploymentResolution, err := resolveDirectCodingServiceDeploymentDisposition(
+		workerRuntime, deploymentModel, redacted, identities,
+	)
+	if err != nil {
+		return directCodingAssembly{}, err
+	}
+	deploymentDisposition := deploymentResolution.Disposition
+	s.deploymentResolution = deploymentResolution
+	s.deploymentDisposition = deploymentDisposition
 	applicationContext, err := assemblyline.BootstrapApplicationContext(
 		redacted, assemblyline.ApplicationWorkspaceEmpty, s.request.MemoryAuthorities,
 	)
@@ -68,6 +79,31 @@ func (s *directCodingSession) Assemble() (directCodingAssembly, error) {
 	if err := validateDirectCodingRequirementCount(specification.Requirements); err != nil {
 		return directCodingAssembly{}, err
 	}
+	selection, err := selectDirectCodingProject(
+		workerRuntime, func() (string, error) {
+			return s.workerModel(station.CodingProjectStackConstraint)
+		}, specification, existingManifests, identities,
+	)
+	if err != nil {
+		return directCodingAssembly{}, err
+	}
+	selectedStack := selection.Stack
+	if deploymentDisposition == assemblyline.ApplicationServiceDeploymentPersistCurrentHost &&
+		selectedStack.Deployment == nil {
+		return directCodingAssembly{}, fmt.Errorf(
+			"selected project stack %s has no registered persistent deployment transport",
+			selectedStack.ID,
+		)
+	}
+	if err := validateDirectCodingSelectedVersionRuntime(
+		selection, directCodingSessionVersionProbe(s.runtime.ctx, s.root),
+	); err != nil {
+		return directCodingAssembly{}, err
+	}
+	workloadModel, err := s.workerModel(station.CodingWorkload)
+	if err != nil {
+		return directCodingAssembly{}, err
+	}
 	workloadInput := applicationWorkloadInput(specification)
 	workload, err := resolveDirectCodingApplicationWorkload(
 		workerRuntime, workloadModel, workloadInput,
@@ -75,21 +111,38 @@ func (s *directCodingSession) Assemble() (directCodingAssembly, error) {
 	if err != nil {
 		return directCodingAssembly{}, err
 	}
-	existingPaths, existingDirs, err := snapshotDirectCodingTargetTreePaths(s.root)
-	if err != nil {
-		return directCodingAssembly{}, err
-	}
-	targetTree, err := resolveDirectCodingTargetTree(
-		workerRuntime, targetTreeModel, targetTreeCorrectionModel, specification, existingPaths, existingDirs,
+	serviceState, err := s.resolveServiceStateBeforeTargetTree(
+		workerRuntime, selectedStack, specification, workload, identities,
 	)
 	if err != nil {
 		return directCodingAssembly{}, err
 	}
-	targetTree, err = deriveDirectCodingTargetTreeBindings(specification, targetTree)
+	var targetTreeModel, targetTreeCorrectionModel string
+	if selectedStack.ProjectFocusedTargetTree == nil {
+		targetTreeModel, err = s.workerModel(station.CodingTargetTree)
+		if err != nil {
+			return directCodingAssembly{}, err
+		}
+		targetTreeCorrectionModel = targetTreeModel
+	}
+	targetTree, coverage, err := resolveDirectCodingTargetTree(
+		workerRuntime, targetTreeModel, targetTreeCorrectionModel, specification, workload, selectedStack,
+		existingPaths, existingDirs,
+	)
 	if err != nil {
 		return directCodingAssembly{}, err
 	}
-	targetTreeInput, _, err := directCodingTargetTreeInput(specification, existingPaths, existingDirs)
+	targetTree.VersionProfileID = selection.VersionProfileID
+	if _, err := directCodingVersionProfileForTargetTree(targetTree); err != nil {
+		return directCodingAssembly{}, err
+	}
+	if err := s.bindDirectCodingTargetTreePathProvenance(targetTree); err != nil {
+		return directCodingAssembly{}, err
+	}
+	workerRuntime.PathProvenance = s.pathProvenance
+	targetTreeInput, err := directCodingTargetTreeInput(
+		specification, selectedStack, existingPaths, existingDirs,
+	)
 	if err != nil {
 		return directCodingAssembly{}, err
 	}
@@ -110,14 +163,47 @@ func (s *directCodingSession) Assemble() (directCodingAssembly, error) {
 	if err != nil {
 		return directCodingAssembly{}, err
 	}
-	program, err := compileDirectCodingProgram(
-		filepath.Base(s.root), specification, identities, skills, workload, capabilities, targetTree,
-	)
+	if selectedStack.CompileServiceSource != nil {
+		serviceState, err = s.resolveServiceStateInterfaces(
+			workerRuntime, workload, capabilities, serviceState, identities,
+		)
+		if err != nil {
+			return directCodingAssembly{}, err
+		}
+	}
+	var program directCodingProgram
+	if selectedStack.CompileServiceSource != nil {
+		endpoints, endpointErr := s.resolveEndpointsForHTTPStack(
+			workerRuntime, selectedStack, specification, workload, capabilities, identities,
+		)
+		if endpointErr != nil {
+			return directCodingAssembly{}, endpointErr
+		}
+		program, err = compileDirectCodingServiceProgram(
+			filepath.Base(s.root), specification, identities, skills, workload, capabilities,
+			targetTree, coverage, serviceState, endpoints,
+		)
+	} else {
+		program, err = compileDirectCodingProgram(
+			filepath.Base(s.root), specification, identities, skills, workload, capabilities,
+			targetTree, coverage,
+		)
+	}
 	if err != nil {
 		return directCodingAssembly{}, err
 	}
+	if targetTree.StackID != selectedStack.ID || program.StackID != selectedStack.ID {
+		return directCodingAssembly{}, fmt.Errorf(
+			"project stack authority diverged: selected=%s tree=%s program=%s",
+			selectedStack.ID, targetTree.StackID, program.StackID,
+		)
+	}
 	program.TargetTree = targetTree
+	program.Coverage = coverage
 	program.StructureTransitions = append([]assemblyline.TargetTreeTransition(nil), structureTransitions...)
+	if err := s.bindDirectCodingProgramPathProvenance(program); err != nil {
+		return directCodingAssembly{}, err
+	}
 	cognition, err := newDirectCodingTaskCognition(s)
 	if err != nil {
 		return directCodingAssembly{}, err
@@ -140,6 +226,12 @@ func (s *directCodingSession) Assemble() (directCodingAssembly, error) {
 	if err != nil {
 		return directCodingAssembly{}, err
 	}
+	if err := validateDirectCodingAssemblySources(program, assembly); err != nil {
+		return directCodingAssembly{}, fmt.Errorf("validate complete in-memory artifact assembly: %w", err)
+	}
+	s.runtime.svc.emitStepEvent(s.runtime.claim.Authority, "coding_artifact_sieve_passed", fmt.Sprintf(
+		"stack=%s files=%d", program.StackID, len(assembly.Files),
+	))
 	artifactGraph, err := directCodingArtifactGraphFromProgram(program, assembly)
 	if err != nil {
 		return directCodingAssembly{}, err
@@ -188,7 +280,7 @@ func (s *directCodingSession) Assemble() (directCodingAssembly, error) {
 	))
 	s.runtime.svc.emitStepEvent(s.runtime.claim.Authority, "coding_assembly_ready", fmt.Sprintf(
 		"adapter=%s files=%d blocks=%d waves=%d artifact_graph_nodes=%d artifact_graph_relations=%d",
-		program.Adapter, len(assembly.Files), blockCount, waveCount, len(artifactGraph.Artifacts), len(artifactGraph.Relations),
+		program.StackID, len(assembly.Files), blockCount, waveCount, len(artifactGraph.Artifacts), len(artifactGraph.Relations),
 	))
 	return assembly, nil
 }

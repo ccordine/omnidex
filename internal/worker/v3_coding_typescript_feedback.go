@@ -7,20 +7,19 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/gryph/omnidex/internal/assemblyline"
 	"github.com/gryph/omnidex/internal/modelcontext"
 )
 
 const maxDirectCodingStructuredTestDiagnosticBytes = 900
 
 var (
-	directCodingANSISequencePattern       = regexp.MustCompile(`\x1b\[[0-9;?]*[ -/]*[@-~]`)
-	directCodingTypeScriptIdentityPattern = regexp.MustCompile(
-		`(?:[A-Za-z]:)?(?:\.{0,2}/|/)?(?:[A-Za-z0-9_.-]+/)*[A-Za-z0-9_.-]+\.tsx?(?:(?::[0-9]+){1,2}|\([0-9]+,[0-9]+\))?`,
-	)
+	directCodingANSISequencePattern = regexp.MustCompile(`\x1b\[[0-9;?]*[ -/]*[@-~]`)
 )
 
 func directCodingTypeScriptStructuredTestModelFailure(
 	failure directCodingVitestFailureEvidence,
+	provenance assemblyline.ArtifactIdentityProvenance,
 	authorizedRegexLiterals ...string,
 ) (string, error) {
 	name := strings.TrimSpace(failure.Name)
@@ -30,13 +29,12 @@ func directCodingTypeScriptStructuredTestModelFailure(
 	}
 	clean := directCodingANSISequencePattern.ReplaceAllString(name+": "+message, "")
 	clean = strings.ReplaceAll(strings.ReplaceAll(clean, "\r", " "), "\n", " ")
-	clean = directCodingTypeScriptIdentityPattern.ReplaceAllString(clean, "[source]")
 	fields := strings.Fields(clean)
 	for index, field := range fields {
 		pathCheck := maskDirectCodingAuthorizedRegularExpressions(
 			field, authorizedRegexLiterals,
 		)
-		if modelcontext.ContainsPathIdentity(pathCheck) {
+		if modelcontext.ContainsPathIdentityWithProvenance(pathCheck, provenance) {
 			fields[index] = "[source]"
 		}
 	}
@@ -49,10 +47,29 @@ func directCodingTypeScriptStructuredTestModelFailure(
 	pathCheck := maskDirectCodingAuthorizedRegularExpressions(
 		clean, authorizedRegexLiterals,
 	)
-	if modelcontext.ContainsPathIdentity(pathCheck) {
+	if modelcontext.ContainsPathIdentityWithProvenance(pathCheck, provenance) {
 		return "", fmt.Errorf("structured Vitest failure retained path identity after redaction")
 	}
 	return clean, nil
+}
+
+func redactDirectCodingPathIdentities(
+	value string,
+	provenance assemblyline.ArtifactIdentityProvenance,
+) string {
+	identities := modelcontext.PathIdentities(value, provenance)
+	if len(identities) == 0 {
+		return value
+	}
+	var redacted strings.Builder
+	previous := 0
+	for _, identity := range identities {
+		redacted.WriteString(value[previous:identity.Start])
+		redacted.WriteString("[source]")
+		previous = identity.End
+	}
+	redacted.WriteString(value[previous:])
+	return redacted.String()
 }
 
 func directCodingTypeScriptStageModelFeedback(diagnostic *directCodingStageDiagnostic) (string, error) {

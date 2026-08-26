@@ -56,16 +56,16 @@ func TestTypeScriptCompilerRepairPromptCarriesExactLocalBindings(t *testing.T) {
 				Source: fixture.source, Bindings: fixture.bindings,
 				UnavailableBindings: fixture.unavailable,
 			}
-			prompt, err := BuildTypeScriptFragmentPrompt(TypeScriptFragmentPrompt{
+			prompt, err := BuildTypeScriptRepairGuidancePrompt(TypeScriptRepairGuidanceInput{
+				Language: "typescript", Dialect: "TypeScript function syntax",
 				Signature: fixture.signature, RepairRegion: &region,
-				RequiredChange: "Eliminate the exact compiler failure using only bindings available at the failure.",
-				Diagnostic:     "TS2304: one identifier is unavailable at the failing expression.",
+				Diagnostic: "TS2304: one identifier is unavailable at the failing expression.",
 			})
 			if err != nil {
 				t.Fatal(err)
 			}
-			if !strings.Contains(prompt, "LOCAL_BINDINGS_AVAILABLE_AT_FAILURE_JSON:") ||
-				!strings.Contains(prompt, "Identifiers absent from the local bindings") {
+			if !strings.Contains(prompt, "BINDINGS_AVAILABLE_AT_FAILURE_JSON:") ||
+				!strings.Contains(prompt, "An unavailable binding cannot be referenced") {
 				t.Fatalf("prompt omitted lexical authority:\n%s", prompt)
 			}
 			for _, value := range fixture.required {
@@ -74,7 +74,7 @@ func TestTypeScriptCompilerRepairPromptCarriesExactLocalBindings(t *testing.T) {
 				}
 			}
 			bindingsSection := strings.SplitN(
-				strings.SplitN(prompt, "LOCAL_BINDINGS_AVAILABLE_AT_FAILURE_JSON:\n", 2)[1],
+				strings.SplitN(prompt, "BINDINGS_AVAILABLE_AT_FAILURE_JSON:\n", 2)[1],
 				"\n\nNESTED_BINDINGS_UNAVAILABLE_AT_FAILURE_JSON:", 2,
 			)[0]
 			for _, value := range fixture.unavailableRequired {

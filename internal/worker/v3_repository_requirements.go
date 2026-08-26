@@ -21,8 +21,7 @@ func interpretRepositoryRequirements(
 	interpretation, err := runDirectCodingSemanticCall[assemblyline.RepositoryRequirementInterpretation](
 		oneCallRuntime, modelName, "repository_requirements", job, identities,
 		func(value assemblyline.RepositoryRequirementInterpretation) error {
-			_, validationErr := assemblyline.ResolveRepositoryRequirements(input, value)
-			return validationErr
+			return value.ValidateFor(input)
 		},
 	)
 	if err != nil {

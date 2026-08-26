@@ -21,8 +21,7 @@ func TestTypeScriptCorrectionAdmitsLegitimateDeclarationBeyondLegacyByteCeilings
 		Language:           "typescript",
 		Signature:          contract.Signature,
 		CurrentDeclaration: current,
-		RequiredChange:     "Subtract one from the returned payload length.",
-		Diagnostic:         "expected 40959, received 40960",
+		RepairGuidance:     "Subtract one from the returned payload length.",
 	})
 	if err != nil {
 		t.Fatalf("create correction for legitimate large declaration: %v", err)
@@ -34,7 +33,7 @@ func TestTypeScriptCorrectionAdmitsLegitimateDeclarationBeyondLegacyByteCeilings
 	if schema != nil {
 		t.Fatal("whole-declaration correction unexpectedly requested structured output")
 	}
-	if !strings.Contains(prompt, "CURRENT_DECLARATION_JSON:") ||
+	if !strings.Contains(prompt, "EXACT_MUTABLE_SOURCE_JSON:") ||
 		!strings.Contains(prompt, "return payload.length;") {
 		t.Fatal("correction prompt omitted retained declaration authority")
 	}
@@ -69,8 +68,7 @@ func TestTypeScriptLengthIsNotSourceInvalidityAndPortableTransportKeepsRunawayCe
 		Language:           "typescript",
 		Signature:          contract.Signature,
 		CurrentDeclaration: runaway,
-		RequiredChange:     "Return the payload length.",
-		Diagnostic:         "runaway fixture",
+		RepairGuidance:     "Return the payload length.",
 	})
 	if err == nil || !strings.Contains(err.Error(), "exceeds") {
 		t.Fatalf("runaway correction job error=%v", err)

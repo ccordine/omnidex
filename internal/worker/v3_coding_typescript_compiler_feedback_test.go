@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
+	"github.com/gryph/omnidex/internal/modelcontext"
 )
 
 func TestTypeScriptCompilerFeedbackPreservesOneExactDeclarationLocation(t *testing.T) {
@@ -49,15 +50,15 @@ func TestTypeScriptCompilerFeedbackPreservesOneExactDeclarationLocation(t *testi
 		},
 	} {
 		t.Run(fixture.name, func(t *testing.T) {
-			document := assemblyline.TypeScriptDocument{
-				ID: "fixture", Path: fixture.path, Header: "type SharedValue = null | boolean | number | string;",
-				Blocks: []assemblyline.TypeScriptBlock{{
+			document := assemblyline.SourceDocument{
+				ID: "fixture", Path: fixture.path, Preamble: "type SharedValue = null | boolean | number | string;",
+				Blocks: []assemblyline.SourceBlock{{
 					ID: "fixture.block", Signature: fixture.signature,
 					Contract: "Return one derived value.", API: fixture.signature,
 				}},
 			}
-			composed, err := assemblyline.ComposeTypeScriptDocument(document, map[string]string{
-				"fixture.block": fixture.source,
+			composed, err := assemblyline.ComposeTypeScriptDocument(document, assemblyline.SourceComposition{
+				Generated: map[string]string{"fixture.block": fixture.source}, Interfaces: map[string]string{},
 			})
 			if err != nil {
 				t.Fatal(err)
@@ -68,7 +69,7 @@ func TestTypeScriptCompilerFeedbackPreservesOneExactDeclarationLocation(t *testi
 				fixture.location(fixture.path, span.StartLine+4, 7, fixture.other),
 			}, "\n")
 			diagnostic, mapped := mapDirectCodingTypeScriptStageDiagnostic(
-				[]assemblyline.ComposedTypeScriptDocument{composed}, output,
+				[]assemblyline.ComposedSourceDocument{composed}, output,
 			)
 			if !mapped {
 				t.Fatal("compiler diagnostic was not mapped")
@@ -146,9 +147,12 @@ func TestTypeScriptCompilerFeedbackPreservesPathFreeTypeSemantics(t *testing.T) 
 	for _, message := range []string{
 		"error TS7053: Element implicitly has an 'any' type because expression of type 'number' can't be used to index type 'SharedValue'. No index signature with a parameter of type 'number' was found on type 'SharedValue'.",
 		"error TS2339: Property 'visible.label' does not exist on type 'InventoryRecord'.",
+		"error TS2339: Property 'Node.js' does not exist on type 'RuntimeLabels'.",
 		"error TS2488: Type 'SharedValue' must have a '[Symbol.iterator]()' method that returns an iterator.",
 	} {
-		feedback := directCodingTypeScriptLocatedCompilerFailure(7, 11, message)
+		feedback := directCodingTypeScriptLocatedCompilerFailure(
+			7, 11, message, assemblyline.ArtifactIdentityProvenance{},
+		)
 		want := "DECLARATION_LOCATION: line 7 column 11\nTYPESCRIPT_DIAGNOSTIC: " + message
 		if feedback != want {
 			t.Fatalf("path-free compiler semantics were discarded:\nGOT:  %q\nWANT: %q", feedback, want)
@@ -160,10 +164,24 @@ func TestTypeScriptCompilerFeedbackRejectsRemainingFileIdentity(t *testing.T) {
 	t.Parallel()
 	for _, message := range []string{
 		"error TS2307: Cannot find module '../private/generated' or its corresponding type declarations.",
+		"error TS6053: File '/workspace/generated' not found.",
+		"error TS6053: File '~/private/value' not found.",
+		`error TS6053: File 'C:\private\value' not found.`,
+		`error TS6053: File '\\server\share\value' not found.`,
+		"error TS6053: File 'foo/value.unregistered' not found.",
 		"error TS6053: File 'private-config.json' not found.",
 	} {
-		if feedback := directCodingTypeScriptLocatedCompilerFailure(3, 5, message); feedback != "" {
-			t.Fatalf("compiler feedback retained file identity: %q", feedback)
+		provenance, err := modelcontext.NewArtifactIdentityProvenance([]string{"private-config.json"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		feedback := directCodingTypeScriptLocatedCompilerFailure(
+			3, 5, message, provenance,
+		)
+		if feedback == "" || !strings.Contains(feedback, "[source]") ||
+			modelcontext.ContainsPathIdentityWithProvenance(feedback, provenance) ||
+			strings.Contains(feedback, "private-config.json") {
+			t.Fatalf("compiler feedback did not safely redact file identity: %q", feedback)
 		}
 	}
 }
@@ -204,7 +222,7 @@ func TestTypeScriptCompilerCorrectionReceivesAndReplacesOnlyASTOwner(t *testing.
 	calls := 0
 	models := make([]string, 0, 2)
 	const instruction = "Move actions.set(selected, nextMuted) into the setMuteList callback immediately before return next, where nextMuted is available; preserve every other statement."
-	block := assemblyline.TypeScriptBlock{
+	block := assemblyline.SourceBlock{
 		ID: "toggle.handler", Signature: "function Toggle(index: number, actions: Actions): void",
 		API: "function Toggle(index: number, actions: Actions): void", Globals: []string{"useCallback", "useState"},
 	}
@@ -267,7 +285,8 @@ func TestTypeScriptCompilerCorrectionReceivesAndReplacesOnlyASTOwner(t *testing.
 		},
 	}
 	guidance, err := runDirectCodingTypeScriptRepairGuidance(
-		runtime, "analyst", block, available, current, &region, failure,
+		runtime, "analyst", block, "TypeScript TSX function syntax",
+		available, current, &region, failure,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -301,7 +320,8 @@ func TestTypeScriptRepairAnalystRetainsCanonicalCompilerFeedbackBytes(t *testing
 	failure := "DECLARATION_LOCATION: line 17 column 9\nTYPESCRIPT_DIAGNOSTIC: error TS2322: " +
 		strings.TrimSpace(strings.Repeat("Type 'RecordedValue' is not assignable to 'VisibleValue'. ", 7))
 	job, err := assemblyline.NewTypeScriptRepairGuidanceJob(assemblyline.TypeScriptRepairGuidanceInput{
-		Language: "typescript", Signature: "function RecordsView(): ReactElement",
+		Language: "typescript", Dialect: "TypeScript TSX function syntax",
+		Signature:          "function RecordsView(): ReactElement",
 		CurrentDeclaration: "function RecordsView(): ReactElement { return <div />; }",
 		Diagnostic:         failure,
 	})

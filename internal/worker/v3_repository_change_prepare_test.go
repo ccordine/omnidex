@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -12,9 +13,9 @@ import (
 	"github.com/gryph/omnidex/internal/repository/changeapply"
 )
 
-func TestPrepareVerifiedRepositoryChangeCorrectsOnlyOwnerAndRestagesAllCandidates(t *testing.T) {
+func TestPrepareVerifiedRepositoryChangeKeepsOneSuccessfulStage(t *testing.T) {
 	t.Parallel()
-	snapshot, analysis, contract, candidates := repositoryCorrectionFixture(t)
+	snapshot, analysis, contract, candidates := repositoryPreparationFixture(t)
 	commands, err := existingRepositoryGoVerificationCommands(snapshot, analysis, contract)
 	if err != nil {
 		t.Fatal(err)
@@ -23,12 +24,11 @@ func TestPrepareVerifiedRepositoryChangeCorrectsOnlyOwnerAndRestagesAllCandidate
 	second := existingRepositoryVerificationSymbol(t, analysis, "Second")
 	var stagedRoots []string
 	verifications := 0
-	corrections := 0
 	prepared, err := prepareVerifiedRepositoryChangeWithOperations(
 		context.Background(), snapshot, analysis, contract, candidates, commands,
 		repositoryChangePrepareOperations{
-			plan: repositoryCorrectionPlanner(snapshot, analysis, contract, &stagedRoots),
-			verify: func(stage *changeapply.StagedChange, _ repositoryGoCorrectionOwnership) error {
+			plan: repositoryPreparationPlanner(snapshot, analysis, contract, &stagedRoots),
+			verify: func(stage *changeapply.StagedChange) error {
 				verifications++
 				firstContent, readErr := os.ReadFile(filepath.Join(stage.Workspace(), "first.go"))
 				if readErr != nil {
@@ -38,28 +38,11 @@ func TestPrepareVerifiedRepositoryChangeCorrectsOnlyOwnerAndRestagesAllCandidate
 				if readErr != nil {
 					return readErr
 				}
-				if !strings.Contains(string(secondContent), "return 12") {
-					t.Fatalf("accepted non-owner candidate was not preserved:\n%s", secondContent)
-				}
-				if verifications == 1 {
-					if !strings.Contains(string(firstContent), "return 11") {
-						t.Fatalf("initial owner candidate missing:\n%s", firstContent)
-					}
-					return &repositoryGoVerificationFailure{
-						targetSymbolID: first.ID, diagnostic: "got 11, want 1",
-					}
-				}
-				if !strings.Contains(string(firstContent), "return 13") {
-					t.Fatalf("corrected owner candidate was not restaged:\n%s", firstContent)
+				if !strings.Contains(string(firstContent), "return 11") ||
+					!strings.Contains(string(secondContent), "return 12") {
+					t.Fatalf("stage omitted exact candidates:\n%s\n%s", firstContent, secondContent)
 				}
 				return nil
-			},
-			correct: func(target repositoryfacts.ChangeTarget, current, diagnostic string) (string, error) {
-				corrections++
-				if target.SymbolID != first.ID || current != candidates[first.ID] || diagnostic != "got 11, want 1" {
-					t.Fatalf("correction target=%q current=%q diagnostic=%q", target.SymbolID, current, diagnostic)
-				}
-				return "func First() int { return 13 }", nil
 			},
 		},
 	)
@@ -70,14 +53,11 @@ func TestPrepareVerifiedRepositoryChangeCorrectsOnlyOwnerAndRestagesAllCandidate
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = prepared.Cleanup() })
-	if verifications != 2 || corrections != 1 || len(stagedRoots) != 2 {
-		t.Fatalf("verifications=%d corrections=%d stages=%d", verifications, corrections, len(stagedRoots))
+	if verifications != 1 || len(stagedRoots) != 1 {
+		t.Fatalf("verifications=%d stages=%d", verifications, len(stagedRoots))
 	}
-	if _, err := os.Stat(stagedRoots[0]); !os.IsNotExist(err) {
-		t.Fatalf("failed stage was not cleaned: %v", err)
-	}
-	if _, err := os.Stat(stagedRoots[1]); err != nil {
-		t.Fatalf("final verified stage was not kept live: %v", err)
+	if _, err := os.Stat(stagedRoots[0]); err != nil {
+		t.Fatalf("verified stage was not kept live: %v", err)
 	}
 	if candidates[first.ID] != "func First() int { return 11 }" ||
 		candidates[second.ID] != "func Second() int { return 12 }" {
@@ -85,89 +65,63 @@ func TestPrepareVerifiedRepositoryChangeCorrectsOnlyOwnerAndRestagesAllCandidate
 	}
 }
 
-func TestPrepareVerifiedRepositoryChangeEnforcesCorrectionCapAndNoProgress(t *testing.T) {
+func TestPrepareVerifiedRepositoryChangeFailsOnceAndCleansStage(t *testing.T) {
 	t.Parallel()
-	snapshot, analysis, contract, candidates := repositoryCorrectionFixture(t)
+	snapshot, analysis, contract, candidates := repositoryPreparationFixture(t)
 	commands, err := existingRepositoryGoVerificationCommands(snapshot, analysis, contract)
 	if err != nil {
 		t.Fatal(err)
 	}
-	first := existingRepositoryVerificationSymbol(t, analysis, "First")
-	t.Run("hard cap", func(t *testing.T) {
-		var stagedRoots []string
-		corrections := 0
-		_, err := prepareVerifiedRepositoryChangeWithOperations(
-			context.Background(), snapshot, analysis, contract, candidates, commands,
-			repositoryChangePrepareOperations{
-				plan: repositoryCorrectionPlanner(snapshot, analysis, contract, &stagedRoots),
-				verify: func(*changeapply.StagedChange, repositoryGoCorrectionOwnership) error {
-					return &repositoryGoVerificationFailure{targetSymbolID: first.ID, diagnostic: "still wrong"}
+	for name, failure := range map[string]error{
+		"verification failure":   errors.New("got 11, want 1"),
+		"infrastructure failure": errors.New("sandbox integrity evidence failure"),
+	} {
+		t.Run(name, func(t *testing.T) {
+			var stagedRoots []string
+			verifications := 0
+			_, err := prepareVerifiedRepositoryChangeWithOperations(
+				context.Background(), snapshot, analysis, contract, candidates, commands,
+				repositoryChangePrepareOperations{
+					plan: repositoryPreparationPlanner(snapshot, analysis, contract, &stagedRoots),
+					verify: func(*changeapply.StagedChange) error {
+						verifications++
+						return failure
+					},
 				},
-				correct: func(_ repositoryfacts.ChangeTarget, _, _ string) (string, error) {
-					corrections++
-					return "func First() int { return " + string(rune('1'+corrections)) + " }", nil
-				},
-			},
-		)
-		if err == nil || !strings.Contains(err.Error(), "correction round limit") {
-			t.Fatalf("correction cap error=%v", err)
-		}
-		if corrections != maxRepositoryGoVerificationCorrectionRounds ||
-			len(stagedRoots) != maxRepositoryGoVerificationCorrectionRounds+1 {
-			t.Fatalf("corrections=%d stages=%d", corrections, len(stagedRoots))
-		}
-		assertRepositoryCorrectionStagesCleaned(t, stagedRoots)
-	})
-	t.Run("no progress", func(t *testing.T) {
-		var stagedRoots []string
-		_, err := prepareVerifiedRepositoryChangeWithOperations(
-			context.Background(), snapshot, analysis, contract, candidates, commands,
-			repositoryChangePrepareOperations{
-				plan: repositoryCorrectionPlanner(snapshot, analysis, contract, &stagedRoots),
-				verify: func(*changeapply.StagedChange, repositoryGoCorrectionOwnership) error {
-					return &repositoryGoVerificationFailure{targetSymbolID: first.ID, diagnostic: "still wrong"}
-				},
-				correct: func(_ repositoryfacts.ChangeTarget, current, _ string) (string, error) {
-					return current, nil
-				},
-			},
-		)
-		if err == nil || !strings.Contains(err.Error(), "no progress") {
-			t.Fatalf("no-progress error=%v", err)
-		}
-		assertRepositoryCorrectionStagesCleaned(t, stagedRoots)
-	})
+			)
+			if err == nil || !strings.Contains(err.Error(), failure.Error()) {
+				t.Fatalf("staged failure=%v", err)
+			}
+			if verifications != 1 || len(stagedRoots) != 1 {
+				t.Fatalf("verifications=%d stages=%d", verifications, len(stagedRoots))
+			}
+			assertRepositoryPreparationStagesCleaned(t, stagedRoots)
+		})
+	}
 }
 
-func TestPrepareVerifiedRepositoryChangeDoesNotCorrectInfrastructureFailure(t *testing.T) {
-	t.Parallel()
-	snapshot, analysis, contract, candidates := repositoryCorrectionFixture(t)
-	commands, err := existingRepositoryGoVerificationCommands(snapshot, analysis, contract)
+func repositoryPreparationFixture(
+	t *testing.T,
+) (repositoryfacts.Snapshot, repositoryfacts.Analysis, repositoryfacts.ChangeContract, map[string]string) {
+	t.Helper()
+	snapshot, analysis := existingRepositoryVerificationFixture(t)
+	requests := make([]repositoryfacts.ChangeRequest, 0, 2)
+	candidates := make(map[string]string)
+	for index, name := range []string{"First", "Second"} {
+		symbol := existingRepositoryVerificationSymbol(t, analysis, name)
+		requests = append(requests, repositoryfacts.ChangeRequest{
+			SymbolID: symbol.ID, RequirementQuote: "change " + name,
+		})
+		candidates[symbol.ID] = "func " + name + "() int { return " + strconv.Itoa(11+index) + " }"
+	}
+	contract, err := repositoryfacts.BuildChangeContract(snapshot, analysis, requests)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var stagedRoots []string
-	corrections := 0
-	_, err = prepareVerifiedRepositoryChangeWithOperations(
-		context.Background(), snapshot, analysis, contract, candidates, commands,
-		repositoryChangePrepareOperations{
-			plan: repositoryCorrectionPlanner(snapshot, analysis, contract, &stagedRoots),
-			verify: func(*changeapply.StagedChange, repositoryGoCorrectionOwnership) error {
-				return errors.New("sandbox integrity evidence failure")
-			},
-			correct: func(repositoryfacts.ChangeTarget, string, string) (string, error) {
-				corrections++
-				return "", nil
-			},
-		},
-	)
-	if err == nil || !strings.Contains(err.Error(), "sandbox integrity evidence failure") || corrections != 0 {
-		t.Fatalf("fatal verification error=%v corrections=%d", err, corrections)
-	}
-	assertRepositoryCorrectionStagesCleaned(t, stagedRoots)
+	return snapshot, analysis, contract, candidates
 }
 
-func repositoryCorrectionPlanner(
+func repositoryPreparationPlanner(
 	snapshot repositoryfacts.Snapshot,
 	analysis repositoryfacts.Analysis,
 	contract repositoryfacts.ChangeContract,
@@ -184,11 +138,11 @@ func repositoryCorrectionPlanner(
 	}
 }
 
-func assertRepositoryCorrectionStagesCleaned(t *testing.T, roots []string) {
+func assertRepositoryPreparationStagesCleaned(t *testing.T, roots []string) {
 	t.Helper()
 	for _, root := range roots {
 		if _, err := os.Stat(root); !os.IsNotExist(err) {
-			t.Fatalf("failed correction stage %q remains: %v", root, err)
+			t.Fatalf("failed stage %q remains: %v", root, err)
 		}
 	}
 }

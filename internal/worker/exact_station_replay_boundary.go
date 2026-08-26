@@ -78,8 +78,9 @@ func rejectRetiredStationReplayJob(job assemblyline.PortableJob) error {
 	switch job.Kind {
 	case assemblyline.WorkKind("conversation_context_selection"),
 		assemblyline.WorkKind("memory_context_selection"),
-		assemblyline.WorkKind("roleplay_narrative_continuity"):
-		return fmt.Errorf("station replay rejects retired context work kind %q", job.Kind)
+		assemblyline.WorkKind("roleplay_narrative_continuity"),
+		assemblyline.WorkKind("application_service_endpoint_contract"):
+		return fmt.Errorf("station replay rejects retired station work kind %q", job.Kind)
 	case assemblyline.WorkResponseCorrection:
 		var correction assemblyline.ResponseCorrectionInput
 		if err := json.Unmarshal(job.Payload, &correction); err != nil {
@@ -92,8 +93,7 @@ func rejectRetiredStationReplayJob(job assemblyline.PortableJob) error {
 			return err
 		}
 		if strings.TrimSpace(correction.RetainedCandidate) == "" &&
-			correction.Original.Kind != assemblyline.WorkApplicationJobSpecification &&
-			correction.Original.Kind != assemblyline.WorkApplicationAcceptanceGroundingReview {
+			correction.Original.Kind != assemblyline.WorkApplicationJobSpecification {
 			return fmt.Errorf(
 				"station replay rejects %s correction without one exact retained candidate",
 				correction.Original.Kind,

@@ -86,6 +86,11 @@ func (r *Repository) completeStep(
 	if err := requireNoOpenStationGapsTx(ctx, tx, command.Authority); err != nil {
 		return err
 	}
+	if err := rejectUnresolvedGeneratedWorkloadDeploymentsTx(
+		ctx, tx, command.Authority.JobID,
+	); err != nil {
+		return err
+	}
 	if objectiveEvidencePayloads != nil {
 		if err := insertObjectiveCompletionEvidenceTx(ctx, tx, command, objectiveEvidencePayloads); err != nil {
 			return err
@@ -234,6 +239,11 @@ func (r *Repository) FailStep(ctx context.Context, command FailStepCommand) erro
 			"failure writer job status %q step status %q",
 			lockedAttempt.JobStatus, lockedAttempt.StepStatus,
 		), nil)
+	}
+	if err := rejectUnresolvedGeneratedWorkloadDeploymentsTx(
+		ctx, tx, command.Authority.JobID,
+	); err != nil {
+		return err
 	}
 	generation := command.Authority.Generation
 	if err := terminalizeStepAttemptTx(ctx, tx, command.Authority, model.StepAttemptFailed); err != nil {

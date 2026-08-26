@@ -15,11 +15,11 @@ func TestRealVitestBehaviorFailureRoutesToImplementationOwner(t *testing.T) {
 	if os.Getenv("OMNIDEX_NODE_INTEGRATION") != "1" {
 		t.Skip("set OMNIDEX_NODE_INTEGRATION=1 to install the pinned Vitest toolchain")
 	}
-	blueprint := assemblyline.TypeScriptBlueprint{Documents: []assemblyline.TypeScriptDocument{
+	blueprint := assemblyline.SourceBlueprint{Documents: []assemblyline.SourceDocument{
 		{
 			ID: "feature", Path: "src/feature.tsx",
-			Header: "import type { ReactElement } from 'react';",
-			Blocks: []assemblyline.TypeScriptBlock{{
+			Preamble: "import type { ReactElement } from 'react';",
+			Blocks: []assemblyline.SourceBlock{{
 				ID: "feature.render", Signature: "function Feature(): ReactElement",
 				Contract: "Render the observable value.", API: "function Feature(): ReactElement",
 				Export: true,
@@ -27,11 +27,11 @@ func TestRealVitestBehaviorFailureRoutesToImplementationOwner(t *testing.T) {
 		},
 		{
 			ID: "acceptance", Path: "src/feature.test.tsx",
-			Header: `import '@testing-library/jest-dom/vitest';
+			Preamble: `import '@testing-library/jest-dom/vitest';
 import React from 'react';
 import { render, screen } from '@testing-library/react';
 import { Feature } from './feature';`,
-			Blocks: []assemblyline.TypeScriptBlock{
+			Blocks: []assemblyline.SourceBlock{
 				{
 					ID: "feature.acceptance", Signature: "async function Verify(): Promise<void>",
 					Contract: "Verify the observable value.", API: "async function Verify(): Promise<void>",
@@ -57,18 +57,33 @@ import { Feature } from './feature';`,
 		},
 	}}
 	staticFiles := make([]directCodingFileTask, 0, 3)
-	for _, file := range typeScriptBrowserStaticFiles("vitest-route", "Vitest route", "") {
-		if file.Path == "package.json" || file.Path == "tsconfig.json" || file.Path == "vite.config.ts" {
+	fixtureFiles, err := typeScriptBrowserStaticFiles(
+		requireDirectCodingVersionProfile(t, typeScriptBrowserVersionProfileV1),
+		"vitest-route", "Vitest route", "",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, file := range fixtureFiles {
+		if file.Path == "package.json" || file.Path == "package-lock.json" || file.Path == "tsconfig.json" || file.Path == "vite.config.ts" {
 			staticFiles = append(staticFiles, file)
 		}
 	}
 	program := directCodingProgram{
-		Adapter: "browser_typescript", PackageName: "vitest-route", TypeScript: blueprint,
+		StackID: genericTypeScriptBrowserAdapter, Source: blueprint,
 		StaticFiles: staticFiles,
 		Generated: map[string]string{
 			"feature.render":     `function Feature(): ReactElement { return <p>actual</p>; }`,
 			"feature.acceptance": `async function Verify(): Promise<void> { expect(screen.getByText('expected')).toBeInTheDocument(); }`,
 		},
+	}
+	stack, err := directCodingProjectStackByID(program.StackID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	program.Source, err = bindDirectCodingSourceBlueprintAdapters(stack, program.Source)
+	if err != nil {
+		t.Fatal(err)
 	}
 	root := t.TempDir()
 	if err := writeDirectCodingVitestReporter(root); err != nil {

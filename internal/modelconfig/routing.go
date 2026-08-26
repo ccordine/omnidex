@@ -81,13 +81,21 @@ func Apply(base Routing, cfg Config) Routing {
 	}
 	if value := cfg.Get("coding_requirements_model"); value != "" {
 		out.Stations[station.CodingRequirements] = value
+		out.Stations[station.CodingProjectStackConstraint] = value
+		out.Stations[station.CodingServiceDeploymentIntent] = value
 	}
 	if value := cfg.Get("coding_workload_model"); value != "" {
 		out.Stations[station.CodingWorkload] = value
 		out.Stations[station.CodingTargetTree] = value
-	}
-	if value := cfg.Get("coding_workload_review_model"); value != "" {
-		out.Stations[station.CodingWorkloadReview] = value
+		out.Stations[station.CodingServiceStateLifetime] = value
+		out.Stations[station.CodingServiceStateInterface] = value
+		out.Stations[station.CodingServiceEndpointRequirement] = value
+		out.Stations[station.CodingServiceEndpointExposure] = value
+		out.Stations[station.CodingServiceEndpointMethod] = value
+		out.Stations[station.CodingServiceEndpointRouteTemplate] = value
+		out.Stations[station.CodingServiceEndpointRequestMedia] = value
+		out.Stations[station.CodingServiceEndpointResponseMedia] = value
+		out.Stations[station.CodingServiceEndpointSuccessStatus] = value
 	}
 	if value := cfg.Get("coding_artifact_handling_model"); value != "" {
 		out.Stations[station.CodingArtifactHandling] = value

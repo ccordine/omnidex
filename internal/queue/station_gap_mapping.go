@@ -33,6 +33,28 @@ func stationForPortableWorkKind(kind assemblyline.WorkKind) (station.ID, error) 
 	case assemblyline.WorkApplicationContextNeeds,
 		assemblyline.WorkApplicationIntent:
 		return station.CodingRequirements, nil
+	case assemblyline.WorkApplicationProjectStackConstraint:
+		return station.CodingProjectStackConstraint, nil
+	case assemblyline.WorkApplicationServiceDeploymentIntent:
+		return station.CodingServiceDeploymentIntent, nil
+	case assemblyline.WorkApplicationServiceStateLifetime:
+		return station.CodingServiceStateLifetime, nil
+	case assemblyline.WorkApplicationServiceStateInterface:
+		return station.CodingServiceStateInterface, nil
+	case assemblyline.WorkApplicationServiceEndpointRequirement:
+		return station.CodingServiceEndpointRequirement, nil
+	case assemblyline.WorkApplicationServiceEndpointExposure:
+		return station.CodingServiceEndpointExposure, nil
+	case assemblyline.WorkApplicationServiceEndpointMethod:
+		return station.CodingServiceEndpointMethod, nil
+	case assemblyline.WorkApplicationServiceEndpointRouteTemplate:
+		return station.CodingServiceEndpointRouteTemplate, nil
+	case assemblyline.WorkApplicationServiceEndpointRequestMedia:
+		return station.CodingServiceEndpointRequestMedia, nil
+	case assemblyline.WorkApplicationServiceEndpointResponseMedia:
+		return station.CodingServiceEndpointResponseMedia, nil
+	case assemblyline.WorkApplicationServiceEndpointSuccessStatus:
+		return station.CodingServiceEndpointSuccessStatus, nil
 	case assemblyline.WorkApplicationClassify:
 		return station.CodingSurface, nil
 	case assemblyline.WorkRepositoryRequirements:
@@ -41,8 +63,6 @@ func stationForPortableWorkKind(kind assemblyline.WorkKind) (station.ID, error) 
 		return station.CodingWorkload, nil
 	case assemblyline.WorkApplicationTargetTree:
 		return station.CodingTargetTree, nil
-	case assemblyline.WorkApplicationAcceptanceGroundingReview:
-		return station.CodingWorkloadReview, nil
 	case assemblyline.WorkRepositorySearchTerm:
 		return station.CodingRepositorySearchTerm, nil
 	case assemblyline.WorkRepositoryChangeSurface:

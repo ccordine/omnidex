@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/gryph/omnidex/internal/modelcontext"
 )
 
 func TestTypeScriptRepairGuidanceAndExecutionHaveDisjointAuthority(t *testing.T) {
@@ -19,7 +21,7 @@ func TestTypeScriptRepairGuidanceAndExecutionHaveDisjointAuthority(t *testing.T)
 		UnavailableBindings: []TypeScriptRepairBinding{{Name: "value", Type: "number"}},
 	}
 	analysis, err := NewTypeScriptRepairGuidanceJob(TypeScriptRepairGuidanceInput{
-		Language:  "typescript",
+		Language: "typescript", Dialect: "TypeScript function syntax",
 		Signature: "function Apply(index: number, actions: Actions): void",
 		Capabilities: []string{
 			"interface Actions { set(index: number, value: number): void }",
@@ -98,10 +100,46 @@ func TestTypeScriptRepairGuidanceAndExecutionHaveDisjointAuthority(t *testing.T)
 	}
 }
 
+func TestTypeScriptRepairGuidanceUsesTypedSourcePathBoundary(t *testing.T) {
+	t.Parallel()
+	input := TypeScriptRepairGuidanceInput{
+		Language: "typescript", Dialect: "TypeScript function syntax",
+		Signature: "function Ratio(left: number, right: number): boolean",
+		CurrentDeclaration: `function Ratio(left: number, right: number): boolean {
+  const fraction = left / right;
+  return /\d+\/\d+/.test(String(fraction));
+}`,
+		Diagnostic: "error TS2322: The observed result has the wrong type.",
+	}
+	if _, err := NewTypeScriptRepairGuidanceJob(input); err != nil {
+		t.Fatalf("parser-proven division or regex was rejected: %v", err)
+	}
+	input.CurrentDeclaration = `function Ratio(): boolean { return "../private/value"; }`
+	if _, err := NewTypeScriptRepairGuidanceJob(input); err == nil {
+		t.Fatal("path-bearing source literal was accepted")
+	}
+}
+
+func TestTypeScriptRepairGuidanceRejectsKnownBareArtifactWithProvenance(t *testing.T) {
+	t.Parallel()
+	provenance, err := modelcontext.NewArtifactIdentityProvenance([]string{"internal/transport.go"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	guidance := TypeScriptRepairGuidance{Instruction: "Move the value into transport.go."}
+	if err := guidance.Validate(); err != nil {
+		t.Fatalf("bare dotted atom was inferred without provenance: %v", err)
+	}
+	if err := guidance.ValidatePathFree(provenance); err == nil {
+		t.Fatal("known bare artifact survived provenance-aware guidance acceptance")
+	}
+}
+
 func TestTypeScriptRepairGuidanceRequiresExactSourceAndFailure(t *testing.T) {
 	t.Parallel()
 	base := TypeScriptRepairGuidanceInput{
-		Language: "typescript", Signature: "function Apply(): void",
+		Language: "typescript", Dialect: "TypeScript function syntax",
+		Signature:          "function Apply(): void",
 		CurrentDeclaration: "function Apply(): void { run(); }",
 		Diagnostic:         "error TS2304: Cannot find name 'run'.",
 	}
@@ -137,7 +175,7 @@ func TestGuidedFragmentCorrectionRejectsMixedDiagnosticAuthority(t *testing.T) {
 		RepairGuidance:     "Call run exactly once.",
 		RequiredChange:     "Fix it.", Diagnostic: "run failed.",
 	})
-	if err == nil || !strings.Contains(err.Error(), "exactly one") {
+	if err == nil || !strings.Contains(err.Error(), "raw diagnostic") {
 		t.Fatalf("mixed repair authority error=%v", err)
 	}
 }

@@ -20,6 +20,9 @@ const (
 	KindRepositoryChangeContract = "repository_change_contract"
 	KindRepositoryDesiredGraph   = "repository_desired_graph"
 	KindObjectiveCitation        = "objective_citation"
+	KindWorkspaceVerification    = "workspace_verification_receipt"
+	KindDeploymentObservation    = "deployment_observation"
+	KindDeploymentReceipt        = "deployment_receipt"
 )
 
 type Record struct {

@@ -34,9 +34,6 @@ func (input KnownArtifactTruthInput) validate() error {
 	if len(input.RequirementQuote) > maxDeclarationBoundaryQuoteBytes {
 		return fmt.Errorf("known artifact truth quote exceeds %d bytes", maxDeclarationBoundaryQuoteBytes)
 	}
-	if goPhysicalArtifactPattern.MatchString(input.RequirementQuote) {
-		return fmt.Errorf("known artifact truth requirement exposes a physical artifact identity")
-	}
 	return nil
 }
 

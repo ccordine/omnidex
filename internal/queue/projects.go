@@ -17,6 +17,7 @@ var (
 	ErrProjectNotFound        = errors.New("project not found")
 	ErrProjectVersionConflict = errors.New("project version conflict")
 	ErrProjectActiveWork      = errors.New("project has active work")
+	ErrProjectDeploymentAudit = errors.New("project has immutable deployment history")
 )
 
 func scanProject(row pgx.Row) (model.Project, error) {
@@ -223,6 +224,20 @@ func (r *Repository) DeleteProjectAtRevision(ctx context.Context, id int64, expe
 	}
 	if !errors.Is(err, pgx.ErrNoRows) {
 		return fmt.Errorf("inspect nonterminal jobs before project deletion: %w", err)
+	}
+	var deploymentID string
+	err = tx.QueryRow(ctx, `
+		SELECT id FROM generated_workload_deployments
+		WHERE project_id=$1 ORDER BY prepared_at,id LIMIT 1 FOR SHARE
+	`, id).Scan(&deploymentID)
+	if err == nil {
+		return fmt.Errorf(
+			"%w: deployment %q must remain attached to its audited project",
+			ErrProjectDeploymentAudit, deploymentID,
+		)
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return fmt.Errorf("inspect deployment history before project deletion: %w", err)
 	}
 	tag, err := tx.Exec(ctx, `DELETE FROM projects WHERE id=$1 AND updated_at=$2`, id, expectedUpdatedAt)
 	if err != nil {

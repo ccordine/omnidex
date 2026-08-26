@@ -129,6 +129,9 @@ func validateApplicationWorkloadLine(label, value string, maximum int) error {
 			return fmt.Errorf("%s must not contain control characters", label)
 		}
 	}
+	if err := ValidatePathFreeModelContext(label, value); err != nil {
+		return err
+	}
 	return nil
 }
 

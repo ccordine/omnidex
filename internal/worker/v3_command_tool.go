@@ -2,10 +2,7 @@ package worker
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -23,15 +20,22 @@ const (
 )
 
 var (
-	v3GoModulePattern  = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._~+/-]*$`)
-	v3CargoNamePattern = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_-]*$`)
+	v3GoModulePattern   = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._~+/-]*$`)
+	v3JavaClassPattern  = regexp.MustCompile(`^[A-Za-z_$][A-Za-z0-9_$]*$`)
+	v3JavaMethodPattern = regexp.MustCompile(`^[A-Za-z_$][A-Za-z0-9_$]*$`)
 )
 
 type codeCommand struct {
-	Program string
-	Args    []string
-	Timeout time.Duration
+	Program     string
+	Args        []string
+	Timeout     time.Duration
+	Profile     codeCommandProfile
+	Environment map[string]string
 }
+
+type codeCommandProfile string
+
+const codeCommandProfileDeployment codeCommandProfile = "persistent_deployment"
 
 func executeCodeCommandAtRoot(
 	ctx context.Context,
@@ -41,66 +45,36 @@ func executeCodeCommandAtRoot(
 	if ctx == nil {
 		return operation.Result{}, fmt.Errorf("command.run requires a context")
 	}
-	root = strings.TrimSpace(root)
-	if root == "" || !filepath.IsAbs(root) {
-		return operation.Result{}, fmt.Errorf("command.run requires one absolute server-authoritative root")
-	}
-	rootInfo, err := os.Lstat(root)
-	if err != nil || !rootInfo.IsDir() || rootInfo.Mode()&os.ModeSymlink != 0 {
-		return operation.Result{}, fmt.Errorf("command.run root is not an exact directory: %s", root)
-	}
 	program := strings.TrimSpace(command.Program)
 	args := append([]string(nil), command.Args...)
-	if err := validateV3Command(program, args); err != nil {
+	if err := validateV3CommandForProfile(program, args, command.Profile); err != nil {
 		return operation.Result{}, operation.Reject(err)
+	}
+	if err := validateV3CommandEnvironment(command); err != nil {
+		return operation.Result{}, operation.Reject(err)
+	}
+	execution, err := runValidatedV3Command(ctx, root, command)
+	if err != nil {
+		return operation.Result{}, err
 	}
 	timeout := command.Timeout
 	if timeout == 0 {
 		timeout = defaultV3CommandLimit
 	}
-	if timeout <= 0 || timeout > maxV3CommandLimit {
-		return operation.Result{}, operation.Reject(fmt.Errorf("command.run timeout must be between 1 and %d seconds", int(maxV3CommandLimit/time.Second)))
+	if execution.ContextError == context.DeadlineExceeded {
+		return operation.Result{}, fmt.Errorf("command.run timed out after %s", timeout)
 	}
-	runCtx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-	started := time.Now()
-	cmd := exec.CommandContext(runCtx, program, args...)
-	cmd.Dir = root
-	cmd.Env = v3CommandEnvironment(os.Environ())
-	stdout, err := newBoundedCommandOutput(maxV3CommandOutput)
-	if err != nil {
-		return operation.Result{}, err
+	if execution.ContextError == context.Canceled {
+		return operation.Result{}, fmt.Errorf(
+			"command.run canceled because step authority ended: %w", execution.ContextError,
+		)
 	}
-	stderr, err := newBoundedCommandOutput(maxV3CommandOutput)
-	if err != nil {
-		return operation.Result{}, err
-	}
-	cmd.Stdout = stdout
-	cmd.Stderr = stderr
-	runErr := cmd.Run()
-	duration := time.Since(started)
-	exitCode := 0
-	if runErr != nil {
-		exitCode = -1
-		var exitErr *exec.ExitError
-		if errors.As(runErr, &exitErr) {
-			exitCode = exitErr.ExitCode()
-		}
-		if errors.Is(runCtx.Err(), context.DeadlineExceeded) {
-			return operation.Result{}, fmt.Errorf("command.run timed out after %s", timeout)
-		}
-		if errors.Is(runCtx.Err(), context.Canceled) {
-			return operation.Result{}, fmt.Errorf("command.run canceled because step authority ended: %w", runCtx.Err())
-		}
-	}
-	stdoutText, stdoutBytes, stdoutTruncated := stdout.Result()
-	stderrText, stderrBytes, stderrTruncated := stderr.Result()
-	succeeded := runErr == nil
+	succeeded := execution.RunError == nil
 	commandText := strings.Join(append([]string{program}, args...), " ")
-	summary := fmt.Sprintf("command %s exit_code=%d duration_ms=%d", program, exitCode, duration.Milliseconds())
+	summary := fmt.Sprintf("command %s exit_code=%d duration_ms=%d", program, execution.ExitCode, execution.Duration.Milliseconds())
 	warnings := []string(nil)
-	if runErr != nil {
-		warnings = []string{"command failed: " + runErr.Error()}
+	if execution.RunError != nil {
+		warnings = []string{"command failed: " + execution.RunError.Error()}
 	}
 	kind := evidence.KindCommandOutput
 	if isV3TestCommand(program, args) {
@@ -109,26 +83,34 @@ func executeCodeCommandAtRoot(
 	return operation.Result{
 		Summary: summary, Warnings: warnings,
 		Output: map[string]any{
-			"summary": summary, "program": program, "args": args, "exit_code": exitCode, "stdout": stdoutText,
-			"stderr": stderrText, "stdout_observed_bytes": stdoutBytes,
-			"stderr_observed_bytes": stderrBytes, "stdout_truncated": stdoutTruncated,
-			"stderr_truncated": stderrTruncated, "duration_ms": duration.Milliseconds(), "succeeded": succeeded,
+			"summary": summary, "program": program, "args": args, "exit_code": execution.ExitCode, "stdout": execution.Stdout,
+			"stderr": execution.Stderr, "stdout_observed_bytes": execution.StdoutBytes,
+			"stderr_observed_bytes": execution.StderrBytes, "stdout_truncated": execution.StdoutTruncated,
+			"stderr_truncated": execution.StderrTruncated, "duration_ms": execution.Duration.Milliseconds(), "succeeded": succeeded,
 		},
 		Evidence: []evidence.Record{{
 			Kind: kind, SourceType: "command", SourceRef: program, Command: commandText,
-			Excerpt: trimForBudget("stdout:\n"+stdoutText+"\nstderr:\n"+stderrText, maxV3CommandOutput), Summary: summary,
+			Excerpt: trimForBudget("stdout:\n"+execution.Stdout+"\nstderr:\n"+execution.Stderr, maxV3CommandOutput), Summary: summary,
 			Confidence: 1, Warnings: warnings,
 			Metadata: map[string]any{
 				"execution": true, "side_effect_possible": true, "succeeded": succeeded,
-				"exit_code": exitCode, "duration_ms": duration.Milliseconds(), "workspace": root,
-				"stdout_observed_bytes": stdoutBytes, "stderr_observed_bytes": stderrBytes,
-				"stdout_truncated": stdoutTruncated, "stderr_truncated": stderrTruncated,
+				"exit_code": execution.ExitCode, "duration_ms": execution.Duration.Milliseconds(), "workspace": root,
+				"stdout_observed_bytes": execution.StdoutBytes, "stderr_observed_bytes": execution.StderrBytes,
+				"stdout_truncated": execution.StdoutTruncated, "stderr_truncated": execution.StderrTruncated,
 			},
 		}},
 	}, nil
 }
 
 func validateV3Command(program string, args []string) error {
+	return validateV3CommandForProfile(program, args, "")
+}
+
+func validateV3CommandForProfile(
+	program string,
+	args []string,
+	profile codeCommandProfile,
+) error {
 	if program == "" || program != strings.ToLower(program) || filepath.Base(program) != program || strings.ContainsAny(program, `/\\`) {
 		return fmt.Errorf("command.run program must be a bare allowlisted executable name")
 	}
@@ -148,10 +130,25 @@ func validateV3Command(program string, args []string) error {
 			return fmt.Errorf("command.run argument %q escapes the authoritative workspace", arg)
 		}
 	}
+	if profile == codeCommandProfileDeployment {
+		if program != "docker" {
+			return fmt.Errorf("persistent deployment permits only Docker Compose")
+		}
+		return validateV3DeploymentDockerCompose(args)
+	}
+	if profile != "" {
+		return fmt.Errorf("command.run profile %q is unsupported", profile)
+	}
+	if directCodingVersionProbeCommand(program, args) {
+		return nil
+	}
 	verb := strings.ToLower(strings.TrimSpace(args[0]))
 	allowed := map[string]map[string]struct{}{
-		"go": {"build": {}, "fmt": {}, "list": {}, "mod": {}, "test": {}, "version": {}, "vet": {}}, "git": {"diff": {}, "log": {}, "rev-parse": {}, "show": {}, "status": {}},
-		"npm": {"init": {}, "install": {}, "run": {}, "test": {}}, "pnpm": {"run": {}, "test": {}}, "yarn": {"run": {}, "test": {}},
+		"go": {"build": {}, "fmt": {}, "list": {}, "mod": {}, "test": {}, "vet": {}}, "git": {"diff": {}, "log": {}, "rev-parse": {}, "show": {}, "status": {}},
+		"node":  {"--permission": {}},
+		"javac": {"--release": {}}, "java": {"-ea": {}}, "jar": {"--create": {}},
+		"docker": {"compose": {}},
+		"npm":    {"ci": {}, "init": {}, "run": {}, "test": {}}, "pnpm": {"run": {}, "test": {}}, "yarn": {"run": {}, "test": {}},
 		"cargo": {"build": {}, "check": {}, "clippy": {}, "fmt": {}, "init": {}, "test": {}}, "pytest": {verb: {}}, "python3": {"-m": {}},
 		"dotnet": {"build": {}, "test": {}}, "mvn": {"test": {}, "verify": {}}, "gradle": {"build": {}, "check": {}, "test": {}},
 		"phpunit": {verb: {}}, "composer": {"test": {}, "validate": {}},
@@ -168,16 +165,44 @@ func validateV3Command(program string, args []string) error {
 			return fmt.Errorf("command.run permits go mod only as go mod init <module>")
 		}
 	}
-	if program == "cargo" && verb == "init" {
-		if err := validateV3CargoInit(args); err != nil {
+	if program == "cargo" {
+		if err := validateV3Cargo(args); err != nil {
 			return err
 		}
 	}
 	if program == "npm" && verb == "init" && (len(args) != 2 || args[1] != "--yes" && args[1] != "-y") {
 		return fmt.Errorf("command.run permits npm init only as npm init --yes")
 	}
-	if program == "npm" && verb == "install" && !slicesEqualStrings(args, directCodingNPMInstallArgs()) {
-		return fmt.Errorf("command.run permits npm install only with the code-owned no-script verification arguments")
+	if program == "npm" && verb == "ci" && !slicesEqualStrings(args, directCodingNPMInstallArgs()) {
+		return fmt.Errorf("command.run permits npm ci only with the code-owned locked no-script verification arguments")
+	}
+	if program == "node" {
+		if err := validateV3Node(args); err != nil {
+			return err
+		}
+	}
+	if program == "javac" {
+		if err := validateV3JavaCompile(args); err != nil {
+			return err
+		}
+	}
+	if program == "java" {
+		if len(args) != 6 || args[0] != "-ea" || args[1] != "-cp" ||
+			args[2] != "build/classes" || args[3] != "TestRunner" ||
+			!v3JavaClassPattern.MatchString(args[4]) || !v3JavaMethodPattern.MatchString(args[5]) {
+			return fmt.Errorf("command.run permits java only through the code-owned TestRunner")
+		}
+	}
+	if program == "jar" && !slicesEqualStrings(args, []string{
+		"--create", "--file", "build/application.jar", "--main-class", "Main",
+		"-C", "build/classes", ".",
+	}) {
+		return fmt.Errorf("command.run permits only the code-owned Java application archive command")
+	}
+	if program == "docker" {
+		if err := validateV3DockerCompose(args); err != nil {
+			return err
+		}
 	}
 	if program == "python3" && (len(args) < 2 || args[0] != "-m" || args[1] != "pytest") {
 		return fmt.Errorf("command.run permits python3 only as python3 -m pytest")
@@ -185,13 +210,77 @@ func validateV3Command(program string, args []string) error {
 	if (program == "npm" || program == "pnpm" || program == "yarn") && verb == "run" && (len(args) < 2 || !v3VerificationScriptName(args[1])) {
 		return fmt.Errorf("command.run permits package scripts only when their name is test, check, lint, build, typecheck, or verify oriented")
 	}
-	if program == "cargo" && verb == "fmt" && !containsString(args[1:], "--check") {
-		return fmt.Errorf("command.run permits cargo fmt only with --check")
-	}
 	if program == "git" && verb == "diff" && (!containsString(args[1:], "--no-ext-diff") || !containsString(args[1:], "--no-textconv")) {
 		return fmt.Errorf("command.run requires git diff --no-ext-diff --no-textconv to disable repository-configured executors")
 	}
 	return nil
+}
+
+func validateV3JavaCompile(args []string) error {
+	if len(args) < 7 || args[0] != "--release" || !directCodingRegisteredJavaRelease(args[1]) ||
+		args[2] != "-Xlint:all" || args[3] != "-Werror" ||
+		args[4] != "-d" || args[5] != "build/classes" {
+		return fmt.Errorf("command.run permits javac only with strict code-owned output arguments")
+	}
+	last := ""
+	for _, sourcePath := range args[6:] {
+		clean := filepath.ToSlash(filepath.Clean(sourcePath))
+		if clean != sourcePath || !strings.HasSuffix(sourcePath, ".java") ||
+			(last != "" && sourcePath <= last) {
+			return fmt.Errorf("command.run javac sources must be unique normalized Java paths in order")
+		}
+		last = sourcePath
+	}
+	return nil
+}
+
+func directCodingVersionProbeCommand(program string, args []string) bool {
+	switch program {
+	case "node", "npm", "rustc", "cargo":
+		return slicesEqualStrings(args, []string{"--version"})
+	case "go":
+		return slicesEqualStrings(args, []string{"version"})
+	case "java":
+		return slicesEqualStrings(args, []string{"-version"})
+	case "jar":
+		return slicesEqualStrings(args, []string{"--version"})
+	case "javac":
+		return len(args) == 3 && args[0] == "--release" &&
+			directCodingRegisteredJavaRelease(args[1]) && args[2] == "-version"
+	case "docker":
+		return slicesEqualStrings(args, []string{"compose", "version", "--short"}) ||
+			slicesEqualStrings(args, []string{
+				"version", "--format", "{{.Server.Version}}",
+			})
+	default:
+		return false
+	}
+}
+
+func directCodingRegisteredJavaRelease(release string) bool {
+	for _, profile := range registeredDirectCodingProjectVersionProfiles() {
+		if profile.StackID != genericJavaCommandLineAdapter {
+			continue
+		}
+		value, err := directCodingVersionComponent(profile, "java_release")
+		if err == nil && value == release {
+			return true
+		}
+	}
+	return false
+}
+
+func javascriptArtifactPath(value string) bool {
+	clean := filepath.ToSlash(filepath.Clean(value))
+	if clean != value || clean == "." || strings.HasPrefix(clean, "../") {
+		return false
+	}
+	switch strings.ToLower(filepath.Ext(clean)) {
+	case ".js", ".jsx", ".mjs", ".cjs":
+		return true
+	default:
+		return false
+	}
 }
 
 func slicesEqualStrings(left, right []string) bool {
@@ -206,43 +295,6 @@ func slicesEqualStrings(left, right []string) bool {
 	return true
 }
 
-func validateV3CargoInit(args []string) error {
-	seenName := false
-	seenVCS := false
-	seenTarget := false
-	for index := 1; index < len(args); index++ {
-		switch args[index] {
-		case "--bin", "--lib":
-			continue
-		case "--name":
-			if seenName || index+1 >= len(args) || !v3CargoNamePattern.MatchString(args[index+1]) {
-				return fmt.Errorf("command.run cargo init requires a valid unique --name value")
-			}
-			seenName = true
-			index++
-		case "--vcs":
-			if seenVCS || index+1 >= len(args) || args[index+1] != "none" {
-				return fmt.Errorf("command.run cargo init permits only --vcs none")
-			}
-			seenVCS = true
-			index++
-		case "--edition":
-			if index+1 >= len(args) || !containsString([]string{"2015", "2018", "2021", "2024"}, args[index+1]) {
-				return fmt.Errorf("command.run cargo init requires a supported --edition value")
-			}
-			index++
-		case ".":
-			if seenTarget {
-				return fmt.Errorf("command.run cargo init accepts at most one current-directory target")
-			}
-			seenTarget = true
-		default:
-			return fmt.Errorf("command.run cargo init argument %q is not allowlisted", args[index])
-		}
-	}
-	return nil
-}
-
 func v3CommandPathCandidate(argument string) string {
 	candidate := strings.TrimSpace(argument)
 	if strings.HasPrefix(candidate, "-") {
@@ -251,18 +303,6 @@ func v3CommandPathCandidate(argument string) string {
 		}
 	}
 	return candidate
-}
-
-func v3CommandEnvironment(current []string) []string {
-	out := make([]string, 0, len(current)+2)
-	for _, item := range current {
-		key, _, _ := strings.Cut(item, "=")
-		if key == "GIT_PAGER" || key == "PAGER" {
-			continue
-		}
-		out = append(out, item)
-	}
-	return append(out, "GIT_PAGER=cat", "PAGER=cat")
 }
 
 func strictV3StringArray(value any, field string) ([]string, error) {

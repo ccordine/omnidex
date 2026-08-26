@@ -143,7 +143,7 @@ func (session *directCodingSession) proveExistingRepositoryBaseline(
 		return nil, fmt.Errorf("construct exact repository baseline projection: %w", err)
 	}
 	verificationErr := session.runExistingRepositoryVerification(
-		workspace.Root(), repositoryVerificationBaseline, commands, authority, nil,
+		workspace.Root(), repositoryVerificationBaseline, commands, authority,
 		func(ctx context.Context) error {
 			return errors.Join(
 				assertExactRepositoryBaselineSource(ctx, session.root, source),

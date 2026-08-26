@@ -33,6 +33,11 @@ func main() {
 				log.Fatalf("legacy public preservation error: %v", err)
 			}
 			return
+		case len(os.Args) == 2 && os.Args[1] == "database:migrate-sealed":
+			if err := runSealedDatabaseMigrationCommand(); err != nil {
+				log.Fatalf("sealed database migration error: %v", err)
+			}
+			return
 		default:
 			log.Fatalf("unsupported core command")
 		}
@@ -138,6 +143,10 @@ func main() {
 				Workspace: worker.WorkspaceSettings{
 					Root:     cfg.WorkspaceRoot,
 					HostRoot: cfg.WorkspaceHostRoot,
+				},
+				Deployment: worker.DeploymentSettings{
+					KeyFile: cfg.DeploymentKeyFile, BindAddress: cfg.DeploymentBindAddress,
+					AdvertisedHost: cfg.DeploymentAdvertisedHost, ProbeHost: cfg.DeploymentProbeHost,
 				},
 				Logger:                  log.Default(),
 				OnJobFinished:           httpServer.OnJobFinishedAsync,

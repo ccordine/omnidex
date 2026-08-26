@@ -35,6 +35,9 @@ func (input ApplicationIntentInput) validate() error {
 	if err := validateApplicationRequest("application intent", input.UserRequest); err != nil {
 		return err
 	}
+	if err := ValidatePathFreeModelContext("application intent request", input.UserRequest); err != nil {
+		return err
+	}
 	if err := input.Context.Validate(); err != nil {
 		return err
 	}
@@ -77,6 +80,15 @@ func (candidate ApplicationIntentCandidate) Validate() error {
 	return nil
 }
 
+func (candidate ApplicationIntentCandidate) ValidatePathFree(
+	provenance ArtifactIdentityProvenance,
+) error {
+	values := append([]string{candidate.ProductContext}, candidate.Requirements...)
+	return ValidatePathFreeModelContextWithProvenance(
+		"application intent candidate", provenance, values...,
+	)
+}
+
 func ResolveApplicationIntent(
 	input ApplicationIntentInput,
 	candidate ApplicationIntentCandidate,
@@ -112,5 +124,5 @@ func validateApplicationIntentText(label, value string, maximum int) error {
 		strings.ContainsRune(value, '\x00') || len(value) > maximum {
 		return fmt.Errorf("application intent %s must be trimmed UTF-8 text of at most %d bytes", label, maximum)
 	}
-	return nil
+	return ValidatePathFreeModelContext("application intent "+label, value)
 }

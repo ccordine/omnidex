@@ -16,15 +16,12 @@ func TestRawCodingPromptAdmittedByRendererCrossesGapAndWireWithoutSmallerRuler(t
 	t.Parallel()
 
 	const signature = "function escapedPatternLength(): number"
-	current := signature + " {\n  const pattern = \"" +
-		strings.Repeat(`\\`, 20*1024) + "\";\n  return 0;\n}"
-	capability := "declare const ExpectedPatternLength: " + strings.Repeat("0 | ", 700) + "number;"
+	current := signature + " {\n  //" + strings.Repeat("\t", 44*1024) +
+		"\n  return 0;\n}"
 	job, err := assemblyline.NewFragmentCorrectionJob(assemblyline.FragmentCorrectionInput{
 		Language: "typescript", Signature: signature,
-		Capabilities: []string{capability}, PermittedSymbols: []string{"ExpectedPatternLength"},
 		CurrentDeclaration: current,
-		RequiredChange:     "Return ExpectedPatternLength.",
-		Diagnostic:         "expected the declared pattern length, received zero",
+		RepairGuidance:     "Return the exact pattern length from the current declaration.",
 	})
 	if err != nil {
 		t.Fatalf("create renderer-admissible raw coding job: %v", err)

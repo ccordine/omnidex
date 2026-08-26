@@ -201,13 +201,26 @@ func (s *directCodingSession) executeWorkspaceMutation(command workspaceFileMuta
 }
 
 func (s *directCodingSession) persistCodeOwnedEvidence(result operation.Result) error {
+	_, err := s.persistCodeOwnedEvidenceIDs(result)
+	return err
+}
+
+func (s *directCodingSession) persistCodeOwnedEvidenceIDs(
+	result operation.Result,
+) ([]int64, error) {
 	if len(result.Evidence) == 0 {
-		return fmt.Errorf("code-owned operation produced no evidence")
+		return nil, fmt.Errorf("code-owned operation produced no evidence")
 	}
+	ids := make([]int64, 0, len(result.Evidence))
 	for _, record := range result.Evidence {
-		if err := s.runtime.writeEvidence(record); err != nil {
-			return err
+		id, err := s.runtime.writeEvidenceReturningID(record)
+		if err != nil {
+			return nil, err
 		}
+		if id <= 0 || len(ids) > 0 && id <= ids[len(ids)-1] {
+			return nil, fmt.Errorf("code-owned evidence identities are not strictly increasing")
+		}
+		ids = append(ids, id)
 	}
-	return nil
+	return ids, nil
 }

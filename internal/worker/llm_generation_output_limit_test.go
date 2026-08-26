@@ -62,11 +62,11 @@ func TestPrepareExactStructuredStationKeepsSchemaWithoutAnOutputCutoff(t *testin
 	gap := queue.StationGapOpening{
 		JobID: 5, Generation: 1, StepID: 9, StepAttempt: 1,
 		WorkerID: "worker-b", GapID: strings.Repeat("d", 64),
-		WorkID: strings.Repeat("d", 64), WorkKind: "application_acceptance_grounding_review",
+		WorkID: strings.Repeat("d", 64), WorkKind: "application_classification",
 		RendererVersion:  "omnidex.render-portable-job.v3",
 		ProjectionSHA256: strings.Repeat("e", 64),
-		Prompt:           "Map each product observation to one frozen criterion.",
-		ResponseSchema:   []byte(`{"additionalProperties":false,"properties":{"decision":{"const":"accept","type":"string"}},"required":["decision"],"type":"object"}`),
+		Prompt:           "Classify the requested delivery surface.",
+		ResponseSchema:   []byte(`{"additionalProperties":false,"properties":{"surface":{"type":"string"}},"required":["surface"],"type":"object"}`),
 		ContextTokens:    32768, MaxOutputTokens: 32768,
 		OutputLimitMode: llm.ExactPreparedOutputLimitNatural,
 	}

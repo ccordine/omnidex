@@ -17,6 +17,7 @@ func TestTargetTreeLeafRequiresOneContentJob(t *testing.T) {
 
 func TestTargetTreeAssemblyPreservesCodeDerivedDirectoryLeafOrder(t *testing.T) {
 	program := directCodingProgram{
+		StackID: genericTypeScriptBrowserAdapter, VersionProfileID: typeScriptBrowserVersionProfileV1,
 		StaticFiles: []directCodingFileTask{
 			{Path: "package.json", Content: "{}\n"},
 			{Path: "src/components/Counter.ts", Content: "export {};\n"},
@@ -50,6 +51,7 @@ func TestTargetTreeAssemblyPreservesCodeDerivedDirectoryLeafOrder(t *testing.T) 
 
 func TestAdapterBaselineFilesBecomeCodeOwnedTreeLeaves(t *testing.T) {
 	program := directCodingProgram{
+		StackID: genericTypeScriptBrowserAdapter, VersionProfileID: typeScriptBrowserVersionProfileV1,
 		StaticFiles: []directCodingFileTask{
 			{Path: "package.json", Content: "{}\n"},
 			{Path: "src/main.tsx", Content: "export {};\n"},
@@ -59,10 +61,10 @@ func TestAdapterBaselineFilesBecomeCodeOwnedTreeLeaves(t *testing.T) {
 			{Kind: assemblyline.TargetTreeCreate, Path: "src/components/Counter.tsx"},
 			{Kind: assemblyline.TargetTreeCreate, Path: "src/components/Counter.test.tsx"},
 		},
-		TypeScript: assemblyline.TypeScriptBlueprint{Documents: []assemblyline.TypeScriptDocument{
-			{ID: "counter", Path: "src/components/Counter.tsx", Header: "export {};"},
-			{ID: "counter_test", Path: "src/components/Counter.test.tsx", Header: "export {};"},
-			{ID: "app", Path: "src/App.tsx", Header: "export {};"},
+		Source: assemblyline.SourceBlueprint{Documents: []assemblyline.SourceDocument{
+			{ID: "counter", Path: "src/components/Counter.tsx", AdapterID: "typescript_react", Blocks: []assemblyline.SourceBlock{{ID: "counter.block", Static: "export {};", API: "module marker"}}},
+			{ID: "counter_test", Path: "src/components/Counter.test.tsx", AdapterID: "typescript_react", Blocks: []assemblyline.SourceBlock{{ID: "counter_test.block", Static: "export {};", API: "test module marker"}}},
+			{ID: "app", Path: "src/App.tsx", AdapterID: "typescript_react", Blocks: []assemblyline.SourceBlock{{ID: "app.block", Static: "export {};", API: "application module marker"}}},
 		}},
 	}
 	assembly, err := directCodingAssemblyFromProgram(program)

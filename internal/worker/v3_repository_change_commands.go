@@ -23,7 +23,6 @@ func (session *directCodingSession) runExistingRepositoryVerification(
 	scope repositoryVerificationScope,
 	commands []testCommand,
 	authority repositoryVerificationEvidenceAuthority,
-	ownership *repositoryGoCorrectionOwnership,
 	assertExact func(context.Context) error,
 ) (resultErr error) {
 	if session == nil || session.runtime == nil || session.runtime.ctx == nil {
@@ -41,14 +40,6 @@ func (session *directCodingSession) runExistingRepositoryVerification(
 	}
 	if authority == nil || !authority.allowsScope(scope) {
 		return fmt.Errorf("repository verification authority does not permit scope %q", scope)
-	}
-	pathlessDesiredStage := scope == repositoryVerificationStaged && ownership == nil &&
-		repositoryVerificationAuthorityOwnsDesiredGraph(authority)
-	if scope == repositoryVerificationStaged && ownership == nil && !pathlessDesiredStage {
-		return fmt.Errorf("staged repository verification requires exact parsed target ownership or desired-state authority")
-	}
-	if scope == repositoryVerificationAuthoritative && ownership != nil {
-		return fmt.Errorf("authoritative repository verification cannot accept correction ownership")
 	}
 	if err := validateRepositoryGoVerificationPlan(scope, commands); err != nil {
 		return err
@@ -126,18 +117,7 @@ func (session *directCodingSession) runExistingRepositoryVerification(
 					"assert exact repository bytes before failure classification: %w", exactErr,
 				))
 			}
-			if scope != repositoryVerificationStaged || pathlessDesiredStage {
-				return failure
-			}
-			owned, classifyErr := classifyRepositoryGoVerificationFailure(
-				command, operationResultText(result.Output, "stdout"), *ownership,
-			)
-			if classifyErr != nil {
-				return errors.Join(failure, fmt.Errorf(
-					"repository staged failure is not model-correctable: %w", classifyErr,
-				))
-			}
-			return owned
+			return failure
 		}
 		if proofErr != nil {
 			return fmt.Errorf("repository verification %q has invalid structured proof: %w", label, proofErr)
@@ -165,16 +145,6 @@ func (session *directCodingSession) runExistingRepositoryVerification(
 		fmt.Sprintf("scope=%s plan=%s", scope, authority.planIdentity()),
 	)
 	return nil
-}
-
-func repositoryVerificationAuthorityOwnsDesiredGraph(
-	authority repositoryVerificationEvidenceAuthority,
-) bool {
-	if authority == nil {
-		return false
-	}
-	owner, ok := authority.metadata()["repository_desired_artifact_graph_id"].(string)
-	return ok && validRepositoryVerificationOpaqueID(owner, "desired_graph_")
 }
 
 func repositoryCommandMetadata(

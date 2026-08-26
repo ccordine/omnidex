@@ -3,7 +3,6 @@ package worker
 import (
 	"fmt"
 	"reflect"
-	"strconv"
 	"strings"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
@@ -14,8 +13,9 @@ type directCodingApplicationTaskLifecycleHooks struct {
 	BuildBlock func(
 		assemblyline.ApplicationTaskContext,
 		*directCodingProgram,
-		assemblyline.TypeScriptBlock,
+		assemblyline.SourceBlockRef,
 	) (string, error)
+	VerifyTask   func(assemblyline.ApplicationTaskContext, *directCodingProgram) error
 	CompleteTask func(assemblyline.ApplicationTaskContext, map[string]string) error
 	FinalStage   func(*directCodingProgram) error
 }
@@ -29,7 +29,7 @@ func runDirectCodingApplicationTaskLifecycle(
 	if program == nil {
 		return fmt.Errorf("application task lifecycle requires one program")
 	}
-	if hooks.BuildBlock == nil || hooks.FinalStage == nil {
+	if hooks.BuildBlock == nil || hooks.VerifyTask == nil || hooks.FinalStage == nil {
 		return fmt.Errorf("application task lifecycle requires generation, verification, and final-stage hooks")
 	}
 	if err := assemblyline.ValidateFrozenApplicationWorkload(input, frozen); err != nil {
@@ -38,7 +38,7 @@ func runDirectCodingApplicationTaskLifecycle(
 	if !reflect.DeepEqual(program.Workload, frozen) {
 		return fmt.Errorf("application task lifecycle program workload differs from frozen authority")
 	}
-	if err := program.TypeScript.Validate(); err != nil {
+	if err := program.Source.Validate(); err != nil {
 		return err
 	}
 	if len(program.Generated) != 0 {
@@ -57,34 +57,38 @@ func runDirectCodingApplicationTaskLifecycle(
 			if projectErr != nil {
 				return projectErr
 			}
-			featureID, acceptanceID, identityErr := applicationTaskBlockIDs(context.Task.TaskID)
-			if identityErr != nil {
-				return identityErr
+			refs, refsErr := directCodingTaskGeneratedBlockRefs(stage.Source, context.Task.TaskID)
+			if refsErr != nil {
+				return refsErr
 			}
-			for _, blockID := range []string{featureID, acceptanceID} {
-				block, exists := directCodingTypeScriptBlueprintBlock(stage.TypeScript, blockID)
-				if !exists || !block.Generated() {
-					return fmt.Errorf("application task %s lacks generated block %s", context.Task.TaskID, blockID)
-				}
-				source, generateErr := hooks.BuildBlock(context, &stage, block)
+			expectedIDs := make([]string, 0, len(refs))
+			for _, ref := range refs {
+				expectedIDs = append(expectedIDs, ref.Block.ID)
+				source, generateErr := hooks.BuildBlock(context, &stage, ref)
 				if generateErr != nil {
-					return fmt.Errorf("generate application task block %s: %w", blockID, generateErr)
+					return fmt.Errorf("generate application task block %s: %w", ref.Block.ID, generateErr)
 				}
 				if strings.TrimSpace(source) == "" {
-					return fmt.Errorf("application task block %s generated empty source", blockID)
+					return fmt.Errorf("application task block %s generated empty source", ref.Block.ID)
 				}
-				stage.Generated[blockID] = source
+				stage.Generated[ref.Block.ID] = source
 			}
-			if validationErr := validateApplicationTaskGeneratedSet(stage.Generated, featureID, acceptanceID); validationErr != nil {
+			if validationErr := validateApplicationTaskGeneratedSet(stage.Generated, expectedIDs...); validationErr != nil {
 				return validationErr
 			}
-			program.Generated[featureID] = stage.Generated[featureID]
-			program.Generated[acceptanceID] = stage.Generated[acceptanceID]
+			if verifyErr := hooks.VerifyTask(context, &stage); verifyErr != nil {
+				return fmt.Errorf("verify application task %s: %w", context.Task.TaskID, verifyErr)
+			}
+			if validationErr := validateApplicationTaskGeneratedSet(stage.Generated, expectedIDs...); validationErr != nil {
+				return validationErr
+			}
+			accepted := make(map[string]string, len(expectedIDs))
+			for _, blockID := range expectedIDs {
+				program.Generated[blockID] = stage.Generated[blockID]
+				accepted[blockID] = stage.Generated[blockID]
+			}
 			if hooks.CompleteTask != nil {
-				if err := hooks.CompleteTask(context, map[string]string{
-					featureID:    stage.Generated[featureID],
-					acceptanceID: stage.Generated[acceptanceID],
-				}); err != nil {
+				if err := hooks.CompleteTask(context, accepted); err != nil {
 					return err
 				}
 			}
@@ -98,16 +102,6 @@ func runDirectCodingApplicationTaskLifecycle(
 		return fmt.Errorf("verify complete application workload: %w", err)
 	}
 	return nil
-}
-
-func applicationTaskBlockIDs(taskID string) (string, string, error) {
-	sequenceText := strings.TrimPrefix(taskID, "task_")
-	sequence, err := strconv.Atoi(sequenceText)
-	if err != nil || sequence < 1 || taskID != fmt.Sprintf("task_%03d", sequence) {
-		return "", "", fmt.Errorf("application task identity %q is not canonical", taskID)
-	}
-	suffix := fmt.Sprintf("%03d", sequence)
-	return "feature." + suffix, "acceptance." + suffix, nil
 }
 
 func validateApplicationTaskGeneratedSet(generated map[string]string, allowed ...string) error {

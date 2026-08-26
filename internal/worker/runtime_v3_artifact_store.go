@@ -26,9 +26,14 @@ func (r *nativeRuntimeV3) complete(contextKey, output, contextValue string) erro
 }
 
 func (r *nativeRuntimeV3) writeEvidence(record evidence.Record) error {
+	_, err := r.writeEvidenceReturningID(record)
+	return err
+}
+
+func (r *nativeRuntimeV3) writeEvidenceReturningID(record evidence.Record) (int64, error) {
 	record.JobID = r.claim.Job.ID
 	record.StepID = r.claim.Step.ID
-	return r.svc.repo.WriteEvidence(r.ctx, r.claim.Authority, record)
+	return r.svc.repo.WriteEvidenceReturningID(r.ctx, r.claim.Authority, record)
 }
 
 func (r *nativeRuntimeV3) completeWithEvidence(

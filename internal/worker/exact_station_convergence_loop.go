@@ -102,9 +102,10 @@ func convergeExactTypeScriptStationWithRuntime(
 			capabilities = nil
 			permittedSymbols = nil
 		}
-		guidanceJob, err := assemblyline.NewTypeScriptRepairGuidanceJob(
-			assemblyline.TypeScriptRepairGuidanceInput{
-				Language: "typescript", Signature: input.Signature,
+		guidanceJob, err := assemblyline.NewFragmentRepairGuidanceJob(
+			assemblyline.FragmentRepairGuidanceInput{
+				Language: "typescript", Dialect: "TypeScript TSX function syntax",
+				Signature:        input.Signature,
 				Capabilities:     capabilities,
 				PermittedSymbols: permittedSymbols,
 				RepairRegion:     currentDiagnostic.RepairRegion,

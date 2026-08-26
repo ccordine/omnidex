@@ -8,13 +8,7 @@ import (
 	"go/parser"
 	"go/scanner"
 	"go/token"
-	"regexp"
-	"strconv"
 	"strings"
-)
-
-var physicalArtifactLiteralPattern = regexp.MustCompile(
-	`(?i)(?:^|[[:space:]])(?:\.\.?/|/)[^[:space:]]+|(?:^|[/[:space:]])[a-z0-9_.-]+\.(?:go|ts|tsx|js|jsx|json|md|yaml|yml|toml|sql|html|css|scss|php|py|rs|java|kt)(?:$|[[:space:]])`,
 )
 
 type Contract struct {
@@ -106,36 +100,10 @@ func ParseNewFunction(signature string, permittedSymbols []string, candidate str
 	if err != nil {
 		return "", err
 	}
-	if err := rejectPhysicalArtifactLiterals(parsed); err != nil {
-		return "", err
-	}
 	if parsed == placeholderCanonical {
 		return "", fmt.Errorf("new Go function candidate retained the code-owned placeholder")
 	}
 	return parsed, nil
-}
-
-func rejectPhysicalArtifactLiterals(candidate string) error {
-	function, err := parseOneFunction(candidate, false)
-	if err != nil {
-		return err
-	}
-	var found string
-	ast.Inspect(function.Body, func(node ast.Node) bool {
-		literal, ok := node.(*ast.BasicLit)
-		if !ok || literal.Kind != token.STRING || found != "" {
-			return true
-		}
-		value, unquoteErr := strconv.Unquote(literal.Value)
-		if unquoteErr == nil && physicalArtifactLiteralPattern.MatchString(value) {
-			found = value
-		}
-		return true
-	})
-	if found != "" {
-		return fmt.Errorf("new Go function candidate contains a path or filename literal")
-	}
-	return nil
 }
 
 // ParseFunction is the sole parser and capability validator for a model-owned

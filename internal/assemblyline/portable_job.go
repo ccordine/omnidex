@@ -29,46 +29,56 @@ const (
 type WorkKind string
 
 const (
-	WorkApplicationContextNeeds              WorkKind = "application_context_needs"
-	WorkApplicationIntent                    WorkKind = "application_intent"
-	WorkApplicationJobSpecification          WorkKind = "application_job_specification"
-	WorkApplicationTargetTree                WorkKind = "application_target_tree"
-	WorkApplicationAcceptanceGroundingReview WorkKind = "application_acceptance_grounding_review"
-	WorkRepositoryRequirements               WorkKind = "repository_requirements"
-	WorkRepositorySearchTerm                 WorkKind = "repository_search_term"
-	WorkRepositoryChangeSurface              WorkKind = "repository_change_surface"
-	WorkRepositoryEvidenceRelevance          WorkKind = "repository_evidence_relevance"
-	WorkRepositoryGroundedReview             WorkKind = "repository_grounded_review"
-	WorkRepositoryGroundedCorrection         WorkKind = "repository_grounded_correction"
-	WorkContextSearchTerms                   WorkKind = "context_search_terms"
-	WorkContextRelevance                     WorkKind = "context_relevance"
-	WorkContextMinification                  WorkKind = "context_minification"
-	WorkConversationObjectiveKind            WorkKind = "conversation_objective_kind"
-	WorkConversationResponse                 WorkKind = "conversation_response"
-	WorkRoleplayGroundedResponse             WorkKind = "roleplay_grounded_response"
-	WorkRoleplayCanonExtraction              WorkKind = "roleplay_canon_extraction"
-	WorkGroundedAnswer                       WorkKind = "grounded_answer"
-	WorkDatabaseSchemaSelection              WorkKind = "database_schema_selection"
-	WorkDatabaseQueryIntent                  WorkKind = "database_query_intent"
-	WorkDatabaseEvidenceGap                  WorkKind = "database_evidence_gap"
-	WorkDatabaseJoinPathSelection            WorkKind = "database_join_path_selection"
-	WorkWebSearchTerms                       WorkKind = "web_search_terms"
-	WorkWebRelevance                         WorkKind = "web_relevance"
-	WorkWebGroundedSynthesis                 WorkKind = "web_grounded_synthesis"
-	WorkWebGroundedSynthesisCorrection       WorkKind = "web_grounded_synthesis_correction"
-	WorkWebClaimEvidenceReview               WorkKind = "web_claim_evidence_review"
-	WorkApplicationClassify                  WorkKind = "application_classification"
-	WorkArtifactHandling                     WorkKind = "artifact_handling"
-	WorkKnownArtifactTruth                   WorkKind = "known_artifact_truth"
-	WorkDeclarationArtifactBoundary          WorkKind = "declaration_artifact_boundary"
-	WorkArtifactCandidateSelection           WorkKind = "artifact_candidate_selection"
-	WorkCapabilityRelation                   WorkKind = "capability_relation"
-	WorkSkillSelection                       WorkKind = "skill_selection"
-	WorkTypeScriptRepairGuidance             WorkKind = "typescript_repair_guidance"
-	WorkFragmentGeneration                   WorkKind = "fragment_generation"
-	WorkFragmentModification                 WorkKind = "fragment_modification"
-	WorkFragmentCorrection                   WorkKind = "fragment_correction"
-	WorkResponseCorrection                   WorkKind = "response_correction"
+	WorkApplicationContextNeeds                 WorkKind = "application_context_needs"
+	WorkApplicationIntent                       WorkKind = "application_intent"
+	WorkApplicationProjectStackConstraint       WorkKind = "application_project_stack_constraint"
+	WorkApplicationServiceDeploymentIntent      WorkKind = "application_service_deployment_intent"
+	WorkApplicationServiceStateLifetime         WorkKind = "application_service_state_lifetime"
+	WorkApplicationServiceStateInterface        WorkKind = "application_service_state_interface"
+	WorkApplicationServiceEndpointRequirement   WorkKind = "application_service_endpoint_requirement"
+	WorkApplicationServiceEndpointExposure      WorkKind = "application_service_endpoint_exposure"
+	WorkApplicationServiceEndpointMethod        WorkKind = "application_service_endpoint_method"
+	WorkApplicationServiceEndpointRouteTemplate WorkKind = "application_service_endpoint_route_template"
+	WorkApplicationServiceEndpointRequestMedia  WorkKind = "application_service_endpoint_request_media"
+	WorkApplicationServiceEndpointResponseMedia WorkKind = "application_service_endpoint_response_media"
+	WorkApplicationServiceEndpointSuccessStatus WorkKind = "application_service_endpoint_success_status"
+	WorkApplicationJobSpecification             WorkKind = "application_job_specification"
+	WorkApplicationTargetTree                   WorkKind = "application_target_tree"
+	WorkRepositoryRequirements                  WorkKind = "repository_requirements"
+	WorkRepositorySearchTerm                    WorkKind = "repository_search_term"
+	WorkRepositoryChangeSurface                 WorkKind = "repository_change_surface"
+	WorkRepositoryEvidenceRelevance             WorkKind = "repository_evidence_relevance"
+	WorkRepositoryGroundedReview                WorkKind = "repository_grounded_review"
+	WorkRepositoryGroundedCorrection            WorkKind = "repository_grounded_correction"
+	WorkContextSearchTerms                      WorkKind = "context_search_terms"
+	WorkContextRelevance                        WorkKind = "context_relevance"
+	WorkContextMinification                     WorkKind = "context_minification"
+	WorkConversationObjectiveKind               WorkKind = "conversation_objective_kind"
+	WorkConversationResponse                    WorkKind = "conversation_response"
+	WorkRoleplayGroundedResponse                WorkKind = "roleplay_grounded_response"
+	WorkRoleplayCanonExtraction                 WorkKind = "roleplay_canon_extraction"
+	WorkGroundedAnswer                          WorkKind = "grounded_answer"
+	WorkDatabaseSchemaSelection                 WorkKind = "database_schema_selection"
+	WorkDatabaseQueryIntent                     WorkKind = "database_query_intent"
+	WorkDatabaseEvidenceGap                     WorkKind = "database_evidence_gap"
+	WorkDatabaseJoinPathSelection               WorkKind = "database_join_path_selection"
+	WorkWebSearchTerms                          WorkKind = "web_search_terms"
+	WorkWebRelevance                            WorkKind = "web_relevance"
+	WorkWebGroundedSynthesis                    WorkKind = "web_grounded_synthesis"
+	WorkWebGroundedSynthesisCorrection          WorkKind = "web_grounded_synthesis_correction"
+	WorkWebClaimEvidenceReview                  WorkKind = "web_claim_evidence_review"
+	WorkApplicationClassify                     WorkKind = "application_classification"
+	WorkArtifactHandling                        WorkKind = "artifact_handling"
+	WorkKnownArtifactTruth                      WorkKind = "known_artifact_truth"
+	WorkDeclarationArtifactBoundary             WorkKind = "declaration_artifact_boundary"
+	WorkArtifactCandidateSelection              WorkKind = "artifact_candidate_selection"
+	WorkCapabilityRelation                      WorkKind = "capability_relation"
+	WorkSkillSelection                          WorkKind = "skill_selection"
+	WorkTypeScriptRepairGuidance                WorkKind = "typescript_repair_guidance"
+	WorkFragmentGeneration                      WorkKind = "fragment_generation"
+	WorkFragmentModification                    WorkKind = "fragment_modification"
+	WorkFragmentCorrection                      WorkKind = "fragment_correction"
+	WorkResponseCorrection                      WorkKind = "response_correction"
 )
 
 type PortableJob struct {
@@ -258,10 +268,20 @@ func decodePortablePayload(payload []byte, target any) error {
 func validWorkKind(kind WorkKind) bool {
 	switch kind {
 	case WorkApplicationContextNeeds, WorkApplicationIntent,
+		WorkApplicationProjectStackConstraint,
+		WorkApplicationServiceDeploymentIntent,
+		WorkApplicationServiceStateLifetime,
+		WorkApplicationServiceStateInterface,
+		WorkApplicationServiceEndpointRequirement,
+		WorkApplicationServiceEndpointExposure,
+		WorkApplicationServiceEndpointMethod,
+		WorkApplicationServiceEndpointRouteTemplate,
+		WorkApplicationServiceEndpointRequestMedia,
+		WorkApplicationServiceEndpointResponseMedia,
+		WorkApplicationServiceEndpointSuccessStatus,
 		WorkApplicationClassify,
 		WorkApplicationJobSpecification,
 		WorkApplicationTargetTree,
-		WorkApplicationAcceptanceGroundingReview,
 		WorkRepositoryRequirements,
 		WorkRepositorySearchTerm, WorkRepositoryChangeSurface, WorkRepositoryEvidenceRelevance,
 		WorkRepositoryGroundedReview, WorkRepositoryGroundedCorrection,
@@ -288,10 +308,20 @@ func validWorkKind(kind WorkKind) bool {
 func AllWorkKinds() []WorkKind {
 	return []WorkKind{
 		WorkApplicationContextNeeds, WorkApplicationIntent,
+		WorkApplicationProjectStackConstraint,
+		WorkApplicationServiceDeploymentIntent,
+		WorkApplicationServiceStateLifetime,
+		WorkApplicationServiceStateInterface,
+		WorkApplicationServiceEndpointRequirement,
+		WorkApplicationServiceEndpointExposure,
+		WorkApplicationServiceEndpointMethod,
+		WorkApplicationServiceEndpointRouteTemplate,
+		WorkApplicationServiceEndpointRequestMedia,
+		WorkApplicationServiceEndpointResponseMedia,
+		WorkApplicationServiceEndpointSuccessStatus,
 		WorkApplicationClassify,
 		WorkApplicationJobSpecification,
 		WorkApplicationTargetTree,
-		WorkApplicationAcceptanceGroundingReview,
 		WorkRepositoryRequirements,
 		WorkRepositorySearchTerm, WorkRepositoryChangeSurface, WorkRepositoryEvidenceRelevance,
 		WorkRepositoryGroundedReview, WorkRepositoryGroundedCorrection,

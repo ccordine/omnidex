@@ -15,6 +15,50 @@ func validatePortableJobPayload(kind WorkKind, payload json.RawMessage) error {
 		return decodeAndValidatePortablePayload[ApplicationIntentInput](
 			payload, ApplicationIntentInput.validate,
 		)
+	case WorkApplicationProjectStackConstraint:
+		return decodeAndValidatePortablePayload[ApplicationProjectStackConstraintInput](
+			payload, ApplicationProjectStackConstraintInput.validate,
+		)
+	case WorkApplicationServiceDeploymentIntent:
+		return decodeAndValidatePortablePayload[ApplicationServiceDeploymentIntentInput](
+			payload, ApplicationServiceDeploymentIntentInput.validate,
+		)
+	case WorkApplicationServiceStateLifetime:
+		return decodeAndValidatePortablePayload[ApplicationServiceStateLifetimeInput](
+			payload, ApplicationServiceStateLifetimeInput.validate,
+		)
+	case WorkApplicationServiceStateInterface:
+		return decodeAndValidatePortablePayload[ApplicationServiceStateInterfaceInput](
+			payload, ApplicationServiceStateInterfaceInput.Validate,
+		)
+	case WorkApplicationServiceEndpointRequirement:
+		return decodeAndValidatePortablePayload[ApplicationServiceEndpointRequirementInput](
+			payload, ApplicationServiceEndpointRequirementInput.validate,
+		)
+	case WorkApplicationServiceEndpointExposure:
+		return decodeAndValidatePortablePayload[ApplicationServiceEndpointExposureInput](
+			payload, ApplicationServiceEndpointExposureInput.validate,
+		)
+	case WorkApplicationServiceEndpointMethod:
+		return decodeAndValidatePortablePayload[ApplicationServiceEndpointMethodInput](
+			payload, ApplicationServiceEndpointMethodInput.validate,
+		)
+	case WorkApplicationServiceEndpointRouteTemplate:
+		return decodeAndValidatePortablePayload[ApplicationServiceEndpointRouteTemplateInput](
+			payload, ApplicationServiceEndpointRouteTemplateInput.validate,
+		)
+	case WorkApplicationServiceEndpointRequestMedia:
+		return decodeAndValidatePortablePayload[ApplicationServiceEndpointRequestMediaInput](
+			payload, ApplicationServiceEndpointRequestMediaInput.validate,
+		)
+	case WorkApplicationServiceEndpointResponseMedia:
+		return decodeAndValidatePortablePayload[ApplicationServiceEndpointResponseMediaInput](
+			payload, ApplicationServiceEndpointResponseMediaInput.validate,
+		)
+	case WorkApplicationServiceEndpointSuccessStatus:
+		return decodeAndValidatePortablePayload[ApplicationServiceEndpointSuccessStatusInput](
+			payload, ApplicationServiceEndpointSuccessStatusInput.validate,
+		)
 	case WorkApplicationClassify:
 		return decodeAndValidatePortablePayload[ApplicationClassificationInput](payload, ApplicationClassificationInput.validate)
 	case WorkApplicationJobSpecification:
@@ -23,10 +67,6 @@ func validatePortableJobPayload(kind WorkKind, payload json.RawMessage) error {
 		)
 	case WorkApplicationTargetTree:
 		return decodeAndValidatePortablePayload[TargetTreeInput](payload, TargetTreeInput.Validate)
-	case WorkApplicationAcceptanceGroundingReview:
-		return decodeAndValidatePortablePayload[ApplicationAcceptanceGroundingReviewInput](
-			payload, ApplicationAcceptanceGroundingReviewInput.validate,
-		)
 	case WorkRepositoryRequirements:
 		return decodeAndValidatePortablePayload[RepositoryRequirementInterpretationInput](
 			payload, RepositoryRequirementInterpretationInput.validate,
@@ -92,8 +132,8 @@ func validatePortableJobPayload(kind WorkKind, payload json.RawMessage) error {
 	case WorkSkillSelection:
 		return decodeAndValidatePortablePayload[SkillSelectionInput](payload, SkillSelectionInput.validate)
 	case WorkTypeScriptRepairGuidance:
-		return decodeAndValidatePortablePayload[TypeScriptRepairGuidanceInput](
-			payload, TypeScriptRepairGuidanceInput.validate,
+		return decodeAndValidatePortablePayload[FragmentRepairGuidanceInput](
+			payload, FragmentRepairGuidanceInput.validate,
 		)
 	case WorkFragmentGeneration:
 		return decodeAndValidatePortablePayload[FragmentGenerationInput](payload, FragmentGenerationInput.validate)

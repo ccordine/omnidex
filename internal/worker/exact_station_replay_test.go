@@ -11,16 +11,17 @@ import (
 	"github.com/gryph/omnidex/internal/queue"
 )
 
-func TestStationReplayRejectsRetiredContextKindsDirectlyAndThroughCorrection(t *testing.T) {
+func TestStationReplayRejectsRetiredKindsDirectlyAndThroughCorrection(t *testing.T) {
 	for _, kind := range []assemblyline.WorkKind{
 		"conversation_context_selection",
 		"memory_context_selection",
 		"roleplay_narrative_continuity",
+		"application_service_endpoint_contract",
 	} {
 		t.Run(string(kind), func(t *testing.T) {
 			retired := assemblyline.PortableJob{Kind: kind}
 			if err := rejectRetiredStationReplayJob(retired); err == nil ||
-				!strings.Contains(err.Error(), "retired context work kind") {
+				!strings.Contains(err.Error(), "retired station work kind") {
 				t.Fatalf("direct retired replay error=%v", err)
 			}
 			payload, err := json.Marshal(assemblyline.ResponseCorrectionInput{Original: retired})
@@ -31,7 +32,7 @@ func TestStationReplayRejectsRetiredContextKindsDirectlyAndThroughCorrection(t *
 				Kind: assemblyline.WorkResponseCorrection, Payload: payload,
 			}
 			if err := rejectRetiredStationReplayJob(nested); err == nil ||
-				!strings.Contains(err.Error(), "retired context work kind") {
+				!strings.Contains(err.Error(), "retired station work kind") {
 				t.Fatalf("nested retired replay error=%v", err)
 			}
 		})
@@ -62,8 +63,7 @@ func TestValidateExactStationReplayPointPreservesFrozenPortableBoundary(t *testi
 	job, err := assemblyline.NewFragmentCorrectionJob(assemblyline.FragmentCorrectionInput{
 		Language: "typescript", Signature: "function Repair(value: string): string",
 		CurrentDeclaration: "function Repair(value: string): string { return value; }",
-		RequiredChange:     "Fix the observed local failure.",
-		Diagnostic:         "[source]: error TS2304: Cannot find name 'value'.",
+		RepairGuidance:     "Return the repaired value.",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -136,8 +136,7 @@ func TestValidateCurrentContractStationReplayPointRetainsJobWithoutRetiredOutput
 	job, err := assemblyline.NewFragmentCorrectionJob(assemblyline.FragmentCorrectionInput{
 		Language: "typescript", Signature: "function Repair(value: string): string",
 		CurrentDeclaration: "function Repair(value: string): string { return value; }",
-		RequiredChange:     "Fix the observed local failure.",
-		Diagnostic:         "[source]: error TS2304: Cannot find name 'value'.",
+		RepairGuidance:     "Return the repaired value.",
 	})
 	if err != nil {
 		t.Fatal(err)

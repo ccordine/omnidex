@@ -19,6 +19,12 @@ func runProgressiveApplicationJobSpecificationDraft(
 	if runtime.Context == nil || runtime.Execute == nil {
 		return zero, fmt.Errorf("application job specification draft requires a portable execution runtime")
 	}
+	if runtime.MaxAttempts < 1 || runtime.MaxAttempts > maxTypedWorkerAttempts {
+		return zero, fmt.Errorf(
+			"application job specification draft attempts must be between 1 and %d",
+			maxTypedWorkerAttempts,
+		)
+	}
 	modelName = strings.TrimSpace(modelName)
 	if modelName == "" {
 		return zero, fmt.Errorf("application job specification draft requires one configured model")
@@ -26,13 +32,16 @@ func runProgressiveApplicationJobSpecificationDraft(
 	if err := original.Validate(); err != nil {
 		return zero, err
 	}
+	if err := authority.ValidatePathFree(runtime.PathProvenance); err != nil {
+		return zero, failDirectCodingSemanticCall(runtime, modelName, subject, 0, err)
+	}
 
 	seenStates := make(map[string]struct{})
 	seenJobs := make(map[string]struct{})
 	retained := ""
 	correctionTarget := ""
 	validationFailure := ""
-	for attempt := 1; ; attempt++ {
+	for attempt := 1; attempt <= runtime.MaxAttempts; attempt++ {
 		if err := runtime.Context.Err(); err != nil {
 			return zero, failDirectCodingSemanticCall(
 				runtime, modelName, subject, attempt-1,
@@ -91,6 +100,11 @@ func runProgressiveApplicationJobSpecificationDraft(
 				runtime, modelName, subject, attempt, job, result, err,
 			)
 		}
+		if err = specification.ValidatePathFree(runtime.PathProvenance); err != nil {
+			return zero, failApplicationJobSpecificationDraftResult(
+				runtime, modelName, subject, attempt, job, result, err,
+			)
+		}
 		canonical, err := json.Marshal(specification)
 		if err != nil {
 			return zero, failApplicationJobSpecificationDraftResult(
@@ -132,6 +146,13 @@ func runProgressiveApplicationJobSpecificationDraft(
 		correctionTarget = target
 		validationFailure = defect.Error()
 	}
+	return zero, failDirectCodingSemanticCall(
+		runtime, modelName, subject, runtime.MaxAttempts,
+		fmt.Errorf(
+			"application job specification failed after %d bounded attempts: %s",
+			runtime.MaxAttempts, validationFailure,
+		),
+	)
 }
 
 func persistApplicationJobSpecificationDraftRejection(

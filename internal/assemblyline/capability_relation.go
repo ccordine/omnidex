@@ -16,7 +16,6 @@ const (
 	CapabilityIndependent    CapabilityRelation = "independent"
 	CapabilityLeftReadsRight CapabilityRelation = "left_reads_right"
 	CapabilityRightReadsLeft CapabilityRelation = "right_reads_left"
-	CapabilityBidirectional  CapabilityRelation = "bidirectional"
 )
 
 type CapabilityRelationInput struct {
@@ -59,7 +58,7 @@ func (decision CapabilityRelationDecision) ValidateFor(input CapabilityRelationI
 	}
 	switch decision.Relation {
 	case CapabilityIndependent, CapabilityLeftReadsRight,
-		CapabilityRightReadsLeft, CapabilityBidirectional:
+		CapabilityRightReadsLeft:
 		return nil
 	default:
 		return fmt.Errorf("capability relation %q is unsupported", decision.Relation)
@@ -86,7 +85,7 @@ func CapabilityRelationResponseSchema() map[string]any {
 			"schema": map[string]any{"type": "string", "const": CapabilityRelationSchemaV1},
 			"relation": enumSchema(
 				CapabilityIndependent, CapabilityLeftReadsRight,
-				CapabilityRightReadsLeft, CapabilityBidirectional,
+				CapabilityRightReadsLeft,
 			),
 		},
 	)

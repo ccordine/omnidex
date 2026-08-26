@@ -1,7 +1,6 @@
 package worker
 
 import (
-	"strings"
 	"testing"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
@@ -58,7 +57,7 @@ func TestLLMResponseContractRejectsUnregisteredScope(t *testing.T) {
 
 func TestEveryRawFragmentCallUsesNaturalCompletionWithoutRegionalSchema(t *testing.T) {
 	generation, err := assemblyline.NewFragmentGenerationJob(assemblyline.FragmentGenerationInput{
-		Language: "typescript", Signature: "function apply(): void",
+		Language: "typescript", Dialect: "TypeScript 5.9.3", Signature: "function apply(): void",
 		Behavior: "Apply the one accepted behavior.",
 	})
 	if err != nil {
@@ -67,15 +66,7 @@ func TestEveryRawFragmentCallUsesNaturalCompletionWithoutRegionalSchema(t *testi
 	correction, err := assemblyline.NewFragmentCorrectionJob(assemblyline.FragmentCorrectionInput{
 		Language: "typescript", Signature: "function apply(): void",
 		CurrentDeclaration: "function apply(): void { broken(); }",
-		RequiredChange:     "Fix the one syntax error.", Diagnostic: "syntax error",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	goCorrection, err := assemblyline.NewFragmentCorrectionJob(assemblyline.FragmentCorrectionInput{
-		Language: "go", Signature: "func apply()",
-		CurrentDeclaration: "func apply() { broken() }",
-		RequiredChange:     "Fix the one syntax error.", Diagnostic: "syntax error",
+		RepairGuidance:     "Fix the one syntax error.",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -86,7 +77,7 @@ func TestEveryRawFragmentCallUsesNaturalCompletionWithoutRegionalSchema(t *testi
 			Kind:      assemblyline.TypeScriptRepairRegionSyntaxWindow,
 			StartLine: 2, EndLine: 2, Source: "  broken();",
 		},
-		RequiredChange: "Fix the one syntax error.", Diagnostic: "syntax error at line 2",
+		RepairGuidance: "Fix the one syntax error.",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -98,7 +89,6 @@ func TestEveryRawFragmentCallUsesNaturalCompletionWithoutRegionalSchema(t *testi
 		{name: "initial", job: generation},
 		{name: "correction", job: correction},
 		{name: "localized correction", job: regionCorrection},
-		{name: "go correction", job: goCorrection},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			_, schema, renderErr := assemblyline.RenderPortableJob(test.job)
@@ -117,7 +107,7 @@ func TestEveryRawFragmentCallUsesNaturalCompletionWithoutRegionalSchema(t *testi
 	}
 }
 
-func TestEveryStructuredPortableSemanticCallUsesNaturalCompletion(t *testing.T) {
+func TestStructuredPortableSemanticCallUsesNaturalCompletion(t *testing.T) {
 	t.Parallel()
 
 	classification, err := assemblyline.NewApplicationClassificationJob(
@@ -126,25 +116,7 @@ func TestEveryStructuredPortableSemanticCallUsesNaturalCompletion(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	groundingInput, err := assemblyline.NewApplicationAcceptanceGroundingReviewInput(
-		assemblyline.ApplicationTaskContext{
-			WorkloadSHA256: strings.Repeat("a", 64),
-			Task: assemblyline.ApplicationTaskContextTask{
-				TaskID: "task_001", AcceptanceCriteria: []string{"The inventory is visible."},
-			},
-		},
-		`function VerifyInventory(): void { expect(screen.getByText("Inventory")).toBeInTheDocument(); }`,
-		true,
-		nil,
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	grounding, err := assemblyline.NewApplicationAcceptanceGroundingReviewJob(groundingInput)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, job := range []assemblyline.PortableJob{classification, grounding} {
+	for _, job := range []assemblyline.PortableJob{classification} {
 		_, schema, err := assemblyline.RenderPortableJob(job)
 		if err != nil {
 			t.Fatal(err)

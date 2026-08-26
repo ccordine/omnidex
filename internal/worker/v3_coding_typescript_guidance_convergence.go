@@ -10,8 +10,9 @@ import (
 )
 
 func (s *directCodingSession) convergeDirectCodingTypeScriptGuidedRepair(
-	target assemblyline.TypeScriptBlock,
+	target assemblyline.SourceBlock,
 	tsx bool,
+	dialect string,
 	available string,
 	current string,
 	repairRegion *assemblyline.TypeScriptFragmentRepairRegion,
@@ -26,10 +27,9 @@ func (s *directCodingSession) convergeDirectCodingTypeScriptGuidedRepair(
 		return "", err
 	}
 	workerRuntime := directCodingWorkerRuntime(s)
-	workerRuntime.CorrectionModel = correctionModel
 	seenGuidance := make(map[string]struct{}, maxTypedWorkerAttempts)
 	var rejectedInstruction string
-	var rejectionKind assemblyline.TypeScriptRepairGuidanceRejectionKind
+	var rejectionKind assemblyline.FragmentRepairGuidanceRejectionKind
 
 	for attempt := 1; attempt <= maxTypedWorkerAttempts; attempt++ {
 		s.runtime.svc.emitStepEvent(
@@ -43,11 +43,11 @@ func (s *directCodingSession) convergeDirectCodingTypeScriptGuidedRepair(
 		var guidance string
 		if rejectedInstruction == "" {
 			guidance, err = runDirectCodingTypeScriptRepairGuidance(
-				workerRuntime, guidanceModel, target, available, current, repairRegion, failure,
+				workerRuntime, guidanceModel, target, dialect, available, current, repairRegion, failure,
 			)
 		} else {
 			guidance, err = runDirectCodingTypeScriptRepairGuidanceAfterRejection(
-				workerRuntime, guidanceModel, target, available, current, repairRegion, failure,
+				workerRuntime, guidanceModel, target, dialect, available, current, repairRegion, failure,
 				rejectedInstruction, rejectionKind,
 			)
 		}
@@ -57,7 +57,7 @@ func (s *directCodingSession) convergeDirectCodingTypeScriptGuidedRepair(
 		guidance = strings.TrimSpace(guidance)
 		if _, repeated := seenGuidance[guidance]; repeated {
 			rejectedInstruction = guidance
-			rejectionKind = assemblyline.TypeScriptRepairGuidanceRepeatedInstruction
+			rejectionKind = assemblyline.FragmentRepairGuidanceRepeatedInstruction
 			s.runtime.svc.emitStepEvent(
 				s.runtime.claim.Authority,
 				"coding_fragment_repair_guidance_rejected",
@@ -87,7 +87,7 @@ func (s *directCodingSession) convergeDirectCodingTypeScriptGuidedRepair(
 			return "", correctionErr
 		}
 		rejectedInstruction = guidance
-		rejectionKind = assemblyline.TypeScriptRepairGuidanceNoSourceChange
+		rejectionKind = assemblyline.FragmentRepairGuidanceNoSourceChange
 		s.runtime.svc.emitStepEvent(
 			s.runtime.claim.Authority,
 			"coding_fragment_repair_guidance_rejected",

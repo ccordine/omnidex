@@ -32,6 +32,16 @@ type WorkspaceSettings struct {
 	HostRoot string
 }
 
+// DeploymentSettings are server authority for a generated service that the
+// accepted objective requires Omnidex to leave running. They are never model
+// context and are validated only when that typed disposition is selected.
+type DeploymentSettings struct {
+	KeyFile        string
+	BindAddress    string
+	AdvertisedHost string
+	ProbeHost      string
+}
+
 // ContextRelevanceExecutor is a provider-level semantic transport. It receives
 // the same station contract regardless of whether execution is local Ollama or
 // browser WebGPU; the cognition workflow does not see provider-specific work.
@@ -53,6 +63,7 @@ type Options struct {
 	EmbeddingModel          string
 	Models                  ModelRouting
 	Workspace               WorkspaceSettings
+	Deployment              DeploymentSettings
 	Logger                  *log.Logger
 	OnJobFinished           func(jobID int64)
 	OnJobOutput             func(jobID int64, delta string)
@@ -76,6 +87,7 @@ type Service struct {
 	repositoryIndex         repositoryIndexRefresher
 	repositoryRetrieval     repositoryEvidenceBuilder
 	workspaceHostRoot       string
+	deployment              DeploymentSettings
 	completeStep            stepCompleteFunc
 	nativeV3Runner          nativeV3StepRunner
 	logger                  *log.Logger
@@ -135,6 +147,7 @@ func New(
 		repositoryIndex:         repositoryIndex,
 		repositoryRetrieval:     repositoryRetrieval,
 		workspaceHostRoot:       opts.Workspace.HostRoot,
+		deployment:              opts.Deployment,
 		completeStep:            completeStep,
 		logger:                  opts.Logger,
 		onJobFinished:           opts.OnJobFinished,

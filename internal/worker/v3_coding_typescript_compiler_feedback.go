@@ -8,14 +8,11 @@ import (
 	"strings"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
+	"github.com/gryph/omnidex/internal/modelcontext"
 )
 
 var directCodingTypeScriptCompilerIssuePattern = regexp.MustCompile(
 	`(?m)(?:^|[ \t])((?:\./)?[A-Za-z0-9_./-]+\.tsx?)(?::([0-9]+):([0-9]+)|\(([0-9]+),([0-9]+)\))(?::)?[ \t]+([^\r\n]+)`,
-)
-
-var directCodingTypeScriptCompilerFileIdentityPattern = regexp.MustCompile(
-	`(?i)(?:^|[^[:alnum:]_])[[:alnum:]_-][[:alnum:]_.-]*\.(?:tsx?|jsx?|mjs|cjs|json|map)(?:$|[^[:alnum:]_.-])`,
 )
 
 type directCodingTypeScriptCompilerIssue struct {
@@ -26,9 +23,17 @@ type directCodingTypeScriptCompilerIssue struct {
 }
 
 func mapDirectCodingTypeScriptStageDiagnostic(
-	documents []assemblyline.ComposedTypeScriptDocument,
+	documents []assemblyline.ComposedSourceDocument,
 	output string,
 ) (*directCodingStageDiagnostic, bool) {
+	paths := make([]string, len(documents))
+	for index, document := range documents {
+		paths[index] = document.Path
+	}
+	provenance, err := modelcontext.NewArtifactIdentityProvenance(paths)
+	if err != nil {
+		return nil, false
+	}
 	searchable := directCodingANSISequencePattern.ReplaceAllString(output, "")
 	for _, issue := range directCodingTypeScriptCompilerIssues(searchable) {
 		diagnostic, mapped := mapDirectCodingTypeScriptDocumentLocation(
@@ -38,7 +43,7 @@ func mapDirectCodingTypeScriptStageDiagnostic(
 			continue
 		}
 		diagnostic.ModelFeedback = directCodingTypeScriptLocatedCompilerFailure(
-			diagnostic.DeclarationLine, diagnostic.DeclarationColumn, issue.message,
+			diagnostic.DeclarationLine, diagnostic.DeclarationColumn, issue.message, provenance,
 		)
 		diagnostic.CompilerIssue = true
 		return diagnostic, true
@@ -69,9 +74,15 @@ func directCodingTypeScriptCompilerIssues(output string) []directCodingTypeScrip
 	return issues
 }
 
-func directCodingTypeScriptLocatedCompilerFailure(line int, column int, message string) string {
-	message = directCodingTypeScriptIdentityPattern.ReplaceAllString(strings.TrimSpace(message), "[source]")
-	if line < 1 || column < 1 || message == "" || directCodingTypeScriptCompilerContainsPathIdentity(message) {
+func directCodingTypeScriptLocatedCompilerFailure(
+	line int,
+	column int,
+	message string,
+	provenance assemblyline.ArtifactIdentityProvenance,
+) string {
+	message = redactDirectCodingPathIdentities(strings.TrimSpace(message), provenance)
+	if line < 1 || column < 1 || message == "" ||
+		modelcontext.ContainsPathIdentityWithProvenance(message, provenance) {
 		return ""
 	}
 	return fmt.Sprintf(
@@ -81,21 +92,5 @@ func directCodingTypeScriptLocatedCompilerFailure(line int, column int, message 
 }
 
 func directCodingTypeScriptCompilerContainsPathIdentity(value string) bool {
-	if directCodingTypeScriptCompilerFileIdentityPattern.MatchString(value) {
-		return true
-	}
-	for _, field := range strings.Fields(value) {
-		token := strings.Trim(field, `"'()[]{}<>,;:`)
-		if token == "" {
-			continue
-		}
-		if strings.HasPrefix(token, "/") || strings.HasPrefix(token, "./") ||
-			strings.HasPrefix(token, "../") || strings.ContainsAny(token, `/\`) {
-			return true
-		}
-		if len(token) >= 3 && token[1] == ':' && (token[2] == '/' || token[2] == '\\') {
-			return true
-		}
-	}
-	return false
+	return modelcontext.ContainsPathIdentity(value)
 }

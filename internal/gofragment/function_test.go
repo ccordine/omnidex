@@ -76,15 +76,14 @@ func TestSelfContainedNewFunctionSignatureRejectsUnresolvedImportBeforeGeneratio
 	}
 }
 
-func TestParseNewFunctionRejectsPhysicalArtifactLiteral(t *testing.T) {
+func TestParseNewFunctionOwnsSyntaxInsteadOfArtifactIdentity(t *testing.T) {
 	t.Parallel()
 	for _, candidate := range []string{
-		`func Added() string { return "added.go" }`,
+		`func Added() string { return "Node.js" }`,
 		`func Added() string { return "./config/value.json" }`,
 	} {
-		_, err := ParseNewFunction("func Added() string", nil, candidate)
-		if err == nil || !strings.Contains(err.Error(), "path or filename") {
-			t.Fatalf("physical artifact literal error=%v", err)
+		if _, err := ParseNewFunction("func Added() string", nil, candidate); err != nil {
+			t.Fatalf("syntax parser applied an artifact-identity policy to %q: %v", candidate, err)
 		}
 	}
 }

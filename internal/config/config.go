@@ -42,6 +42,10 @@ type Config struct {
 	WebSearchTotalBudget      int
 	WorkspaceRoot             string
 	WorkspaceHostRoot         string
+	DeploymentKeyFile         string
+	DeploymentBindAddress     string
+	DeploymentAdvertisedHost  string
+	DeploymentProbeHost       string
 	WorkerCount               int
 	CodingFragmentConcurrency int
 	WorkerPollInterval        time.Duration
@@ -102,6 +106,10 @@ func Load() (Config, error) {
 		WebSearchTotalBudget:      getenvInt("WEB_SEARCH_TOTAL_BUDGET", 6000),
 		WorkspaceRoot:             getenv("WORKSPACE_ROOT", ""),
 		WorkspaceHostRoot:         getenv("HOST_WORKSPACE_PATH", ""),
+		DeploymentKeyFile:         getenv("OMNIDEX_DEPLOYMENT_KEY_FILE", "/var/lib/omnidex-deployment/key"),
+		DeploymentBindAddress:     getenv("OMNIDEX_DEPLOYMENT_BIND_ADDRESS", ""),
+		DeploymentAdvertisedHost:  getenv("OMNIDEX_DEPLOYMENT_ADVERTISED_HOST", ""),
+		DeploymentProbeHost:       getenv("OMNIDEX_DEPLOYMENT_PROBE_HOST", ""),
 		WorkerCount:               getenvInt("WORKER_COUNT", 2),
 		CodingFragmentConcurrency: getenvInt("CODING_FRAGMENT_CONCURRENCY", defaultCodingFragmentConcurrency(provider)),
 		WorkerPollInterval:        getenvDuration("WORKER_POLL_INTERVAL", 2*time.Second),

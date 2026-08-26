@@ -10,21 +10,23 @@ import (
 func runDirectCodingTypeScriptRepairGuidance(
 	runtime typedWorkerRuntime,
 	modelName string,
-	block assemblyline.TypeScriptBlock,
+	block assemblyline.SourceBlock,
+	dialect string,
 	available string,
 	current string,
 	repairRegion *assemblyline.TypeScriptFragmentRepairRegion,
 	diagnostic string,
 ) (string, error) {
 	return runDirectCodingTypeScriptRepairGuidanceWithRejection(
-		runtime, modelName, block, available, current, repairRegion, diagnostic, nil,
+		runtime, modelName, block, dialect, available, current, repairRegion, diagnostic, nil,
 	)
 }
 
 func runDirectCodingTypeScriptRepairGuidanceAfterRejection(
 	runtime typedWorkerRuntime,
 	modelName string,
-	block assemblyline.TypeScriptBlock,
+	block assemblyline.SourceBlock,
+	dialect string,
 	available string,
 	current string,
 	repairRegion *assemblyline.TypeScriptFragmentRepairRegion,
@@ -33,8 +35,8 @@ func runDirectCodingTypeScriptRepairGuidanceAfterRejection(
 	rejectionKind assemblyline.TypeScriptRepairGuidanceRejectionKind,
 ) (string, error) {
 	return runDirectCodingTypeScriptRepairGuidanceWithRejection(
-		runtime, modelName, block, available, current, repairRegion, diagnostic,
-		&assemblyline.TypeScriptRepairGuidanceRejection{
+		runtime, modelName, block, dialect, available, current, repairRegion, diagnostic,
+		&assemblyline.FragmentRepairGuidanceRejection{
 			Instruction: strings.TrimSpace(rejectedInstruction),
 			Failure:     rejectionKind,
 		},
@@ -44,12 +46,13 @@ func runDirectCodingTypeScriptRepairGuidanceAfterRejection(
 func runDirectCodingTypeScriptRepairGuidanceWithRejection(
 	runtime typedWorkerRuntime,
 	modelName string,
-	block assemblyline.TypeScriptBlock,
+	block assemblyline.SourceBlock,
+	dialect string,
 	available string,
 	current string,
 	repairRegion *assemblyline.TypeScriptFragmentRepairRegion,
 	diagnostic string,
-	priorRejection *assemblyline.TypeScriptRepairGuidanceRejection,
+	priorRejection *assemblyline.FragmentRepairGuidanceRejection,
 ) (string, error) {
 	capabilities := make([]string, 0, 1)
 	if declaration := strings.TrimSpace(available); declaration != "" {
@@ -66,9 +69,10 @@ func runDirectCodingTypeScriptRepairGuidanceWithRejection(
 		// unrelated choices to the semantic function.
 		permittedSymbols = nil
 	}
-	job, err := assemblyline.NewTypeScriptRepairGuidanceJob(
-		assemblyline.TypeScriptRepairGuidanceInput{
-			Language: "typescript", Signature: strings.TrimSpace(block.Signature),
+	job, err := assemblyline.NewFragmentRepairGuidanceJob(
+		assemblyline.FragmentRepairGuidanceInput{
+			Language: "typescript", Dialect: strings.TrimSpace(dialect),
+			Signature:    strings.TrimSpace(block.Signature),
 			Capabilities: capabilities, PermittedSymbols: permittedSymbols,
 			CurrentDeclaration: portableCurrent, RepairRegion: repairRegion,
 			Diagnostic:     strings.TrimSpace(diagnostic),
@@ -78,9 +82,9 @@ func runDirectCodingTypeScriptRepairGuidanceWithRejection(
 	if err != nil {
 		return "", fmt.Errorf("construct TypeScript repair-guidance job: %w", err)
 	}
-	guidance, err := runDirectCodingSemanticCall[assemblyline.TypeScriptRepairGuidance](
+	guidance, err := runDirectCodingSemanticCall[assemblyline.FragmentRepairGuidance](
 		runtime, modelName, block.ID+":repair_guidance", job, nil,
-		func(candidate assemblyline.TypeScriptRepairGuidance) error {
+		func(candidate assemblyline.FragmentRepairGuidance) error {
 			return candidate.Validate()
 		},
 	)

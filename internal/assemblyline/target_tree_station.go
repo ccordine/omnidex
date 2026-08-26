@@ -27,7 +27,7 @@ func BuildTargetTreePrompt(input TargetTreeInput) (string, error) {
 		"Return paths only. Omitted existing paths remain untouched.",
 		"ACCEPTED_OBJECTIVE:\n" + input.Objective,
 		"CODE_SELECTED_TECHNICAL_CONTEXT:\n" + input.TechnicalContext,
-		"EXISTING_WORKSPACE_PATHS_JSON:\n" + string(existing),
+		"CURRENT_OR_RESERVED_PATHS_JSON:\n" + string(existing),
 		"EXISTING_WORKSPACE_DIRECTORIES_JSON:\n" + string(directories),
 	}
 	if correction := input.Correction; correction != nil {

@@ -8,11 +8,12 @@ import (
 	"strings"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
+	"github.com/gryph/omnidex/internal/modelcontext"
 )
 
 func mapDirectCodingVitestFailureReceipt(
 	root string,
-	documents []assemblyline.ComposedTypeScriptDocument,
+	documents []assemblyline.ComposedSourceDocument,
 	receipt directCodingVitestFailureReceipt,
 ) (*directCodingStageDiagnostic, bool, error) {
 	for _, failure := range receipt.Failures {
@@ -29,7 +30,7 @@ func mapDirectCodingVitestFailureReceipt(
 
 func mapDirectCodingVitestFailureEvidence(
 	root string,
-	documents []assemblyline.ComposedTypeScriptDocument,
+	documents []assemblyline.ComposedSourceDocument,
 	failure directCodingVitestFailureEvidence,
 ) (*directCodingStageDiagnostic, bool, error) {
 	for _, location := range failure.Locations {
@@ -44,8 +45,14 @@ func mapDirectCodingVitestFailureEvidence(
 			continue
 		}
 		diagnostic.FailureClass = failure.FailureClass
+		provenance, provenanceErr := modelcontext.NewArtifactIdentityProvenance(
+			[]string{diagnostic.DocumentPath},
+		)
+		if provenanceErr != nil {
+			return nil, false, fmt.Errorf("derive Vitest diagnostic artifact provenance: %w", provenanceErr)
+		}
 		feedback, err := directCodingTypeScriptStructuredTestModelFailure(
-			failure, diagnostic.AuthorizedRegexLiterals...,
+			failure, provenance, diagnostic.AuthorizedRegexLiterals...,
 		)
 		if err != nil {
 			return nil, false, fmt.Errorf("map structured Vitest failure: %w", err)
@@ -85,7 +92,7 @@ func directCodingVitestStagePath(root string, raw string) (string, bool) {
 }
 
 func mapDirectCodingTypeScriptDocumentLocation(
-	documents []assemblyline.ComposedTypeScriptDocument,
+	documents []assemblyline.ComposedSourceDocument,
 	path string,
 	line int,
 	column int,

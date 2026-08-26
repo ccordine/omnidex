@@ -73,6 +73,9 @@ func (c *directCodingTaskCognition) planTreeTransitions(
 			return err
 		}
 	}
+	if err := c.planCompletionObligations(); err != nil {
+		return err
+	}
 	return c.promoteReady()
 }
 

@@ -10,12 +10,12 @@ import (
 
 func genericBrowserRuntimeDocument(
 	requirements []assemblyline.Requirement,
-) assemblyline.TypeScriptDocument {
-	return assemblyline.TypeScriptDocument{
+) assemblyline.SourceDocument {
+	return assemblyline.SourceDocument{
 		ID: "application_runtime", Path: "src/runtime.tsx",
-		Header: `import { useCallback, useMemo, useState, useSyncExternalStore } from 'react';
+		Preamble: `import { useCallback, useMemo, useState, useSyncExternalStore } from 'react';
 import type { ReactElement } from 'react';`,
-		Blocks: []assemblyline.TypeScriptBlock{
+		Blocks: []assemblyline.SourceBlock{
 			{
 				ID: "runtime.api", Static: genericBrowserRuntimeSource(requirements),
 				API: genericBrowserRuntimeAPI(requirements),
@@ -53,19 +53,19 @@ func genericBrowserFeatureActionsAPI() string {
 func genericBrowserCapabilityUnion(requirements []assemblyline.Requirement) string {
 	values := make([]string, 0, len(requirements))
 	for index := range requirements {
-		values = append(values, strconv.Quote(genericBrowserCapabilityID(index+1)))
+		values = append(values, strconv.Quote(genericApplicationCapabilityID(index+1)))
 	}
 	return strings.Join(values, " | ")
 }
 
-func genericBrowserCapabilityID(sequence int) string {
+func genericApplicationCapabilityID(sequence int) string {
 	return fmt.Sprintf("capability_%03d", sequence)
 }
 
 func genericBrowserRuntimeSource(requirements []assemblyline.Requirement) string {
 	allowed := make([]string, 0, len(requirements))
 	for index := range requirements {
-		allowed = append(allowed, strconv.Quote(genericBrowserCapabilityID(index+1)))
+		allowed = append(allowed, strconv.Quote(genericApplicationCapabilityID(index+1)))
 	}
 	return fmt.Sprintf(`export type SharedValue = null | boolean | number | string | readonly SharedValue[] | { readonly [key: string]: SharedValue };
 export type WidenShared<T extends SharedValue> = T extends string ? string : T extends number ? number : T extends boolean ? boolean : T;

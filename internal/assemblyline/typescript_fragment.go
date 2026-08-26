@@ -12,7 +12,7 @@ import (
 type TypeScriptFunctionContract struct {
 	Signature string
 	TSX       bool
-	Policy    TypeScriptFunctionPolicy
+	Policy    SourceFunctionPolicy
 }
 
 type TypeScriptFragment struct {
@@ -49,7 +49,7 @@ func ParseTypeScriptFunction(contract TypeScriptFunctionContract, raw string) (T
 	if content == "" {
 		return zero, fmt.Errorf("TypeScript fragment is empty")
 	}
-	if err := validateTypeScriptFunctionPolicy(contract.Policy); err != nil {
+	if err := validateSourceFunctionPolicy(contract.Policy); err != nil {
 		return zero, fmt.Errorf("TypeScript function policy: %w", err)
 	}
 	actual, closeActual, err := parseSingleTypeScriptFunction(content, contract.TSX, true, contract.Policy)
@@ -58,7 +58,7 @@ func ParseTypeScriptFunction(contract TypeScriptFunctionContract, raw string) (T
 	}
 	defer closeActual()
 	expectedSource := signature + " {}"
-	expected, closeExpected, err := parseSingleTypeScriptFunction(expectedSource, contract.TSX, false, TypeScriptFunctionPolicy{})
+	expected, closeExpected, err := parseSingleTypeScriptFunction(expectedSource, contract.TSX, false, SourceFunctionPolicy{})
 	if err != nil {
 		return zero, fmt.Errorf("invalid code-owned TypeScript signature: %w", err)
 	}
@@ -80,7 +80,7 @@ func parseSingleTypeScriptFunction(
 	source string,
 	tsx bool,
 	requireExecutableBodies bool,
-	policy TypeScriptFunctionPolicy,
+	policy SourceFunctionPolicy,
 ) (parsedTypeScriptFunction, func(), error) {
 	parser := treesitter.NewParser()
 	languagePointer := typescript.LanguageTypescript()

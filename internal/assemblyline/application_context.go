@@ -137,6 +137,9 @@ func (context ApplicationContext) Validate() error {
 			len(fact.Value) > MaxApplicationContextFactBytes {
 			return fmt.Errorf("application context fact %q has invalid value", fact.ID)
 		}
+		if err := ValidatePathFreeModelContext("application context fact "+fact.ID, fact.Value); err != nil {
+			return err
+		}
 		if fact.SourceID == "" || fact.SourceID != strings.TrimSpace(fact.SourceID) {
 			return fmt.Errorf("application context fact %q requires one source identity", fact.ID)
 		}
@@ -158,6 +161,9 @@ func (context ApplicationContext) Validate() error {
 
 func (input ApplicationContextNeedInput) validate() error {
 	if err := validateApplicationRequest("application context needs", input.UserRequest); err != nil {
+		return err
+	}
+	if err := ValidatePathFreeModelContext("application context need request", input.UserRequest); err != nil {
 		return err
 	}
 	if err := input.Context.Validate(); err != nil {
@@ -185,12 +191,23 @@ func (decision ApplicationContextNeedDecision) Validate() error {
 			len(question) > maxApplicationEvidenceQuestionBytes {
 			return fmt.Errorf("application context question %d is invalid", index)
 		}
+		if err := ValidatePathFreeModelContext("application context question", question); err != nil {
+			return fmt.Errorf("application context question %d: %w", index, err)
+		}
 		if _, duplicate := seen[question]; duplicate {
 			return fmt.Errorf("application context question %d is duplicated", index)
 		}
 		seen[question] = struct{}{}
 	}
 	return nil
+}
+
+func (decision ApplicationContextNeedDecision) ValidatePathFree(
+	provenance ArtifactIdentityProvenance,
+) error {
+	return ValidatePathFreeModelContextWithProvenance(
+		"application context need decision", provenance, decision.Questions...,
+	)
 }
 
 func validateApplicationWorkspaceState(state ApplicationWorkspaceState) error {

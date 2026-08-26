@@ -13,6 +13,7 @@ func TestRoleplayCanonMigrationPreservesExistingCancellationReceipts(t *testing.
 	if err := repository.EnsureSchema(ctx, loadMigrationBundleThroughPrefix(t, "116")); err != nil {
 		t.Fatal(err)
 	}
+	installEmptyGeneratedDeploymentAuthorityRailForHistoricalRuntimeTest(t, pool)
 	job, err := repository.EnqueueJob(
 		ctx,
 		"roleplay-canon-cancel-upgrade",

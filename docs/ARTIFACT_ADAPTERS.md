@@ -1,56 +1,215 @@
 # Artifact-adapter contract
 
-An artifact adapter is code-owned deterministic support for one file class. It
-is selected from the normalized current file path, never by a model. The
-adapter declares only mechanics code can actually perform for that class:
+An artifact adapter is code-owned deterministic support for one file class.
+Code selects it from a normalized path; models never select adapters, parsers,
+commands, or validation operations.
 
-* `parse`
-* `ast`
-* `scope`
-* `typecheck`
-* `syntax_check`
-* `project_test`
-* `runtime_verify`
+Every adapter registers exactly one executable leaf-validation mechanism:
 
-No capability is implied by a file extension. An adapter that lacks scope or
-type checking must not manufacture those facts for a model. It exposes only its
-real deterministic evidence and leaves the remaining bounded semantic question
-to the relevant station.
+- `parse`: code parses the complete bytes with the adapter's registered
+  grammar or structured-document parser; or
+- `structural_validate`: code proves only the narrower structural properties
+  implemented by the registered validator.
 
-## Registered leaf classes
+These are executable registrations, not capability labels. Omnidex does not
+infer AST, scope, typecheck, syntax-check, project-test, or runtime authority
+from a suffix or from metadata. Those mechanics exist only where a concrete
+language validator, source composer, stack compiler, or exact verification
+command implements them.
 
-| Adapter | Deterministic path class | Declared mechanics |
+After code assembles files in memory, every path is resolved through the
+selected stack and its exact bytes pass the leaf validator. Stack-wide
+cross-file invariants and exact verification commands then run separately. The
+same leaf and assembly checks run again at the authoritative write gate.
+
+## Neutral source nodes and composition
+
+The construction graph uses `SourceBlueprint`, `SourceDocument`, and
+`SourceBlock`. A document owns one normalized path, adapter identity, code-owned
+preamble, and ordered blocks. A block has exactly one static or generated
+authority, one bounded API, explicit direct dependencies, and optional
+code-owned frozen-task ownership and source role.
+
+A generated-source call receives one exact signature, local behavioral
+contract, direct declarations, and permitted symbols. It never receives the
+document path. Code validates the returned node, inserts it into the neutral
+document, composes the complete bytes, records spans, and invokes the selected
+stack's compiler and tests.
+
+Code binds every accepted target, compiled document, and static-file path into
+the exact artifact-identity provenance boundary before the first generated
+source call. The boundary is rebuilt and revalidated mechanically as paths are
+added; it is not reconstructed from model text or filename heuristics.
+
+TypeScript/TSX, Go, JavaScript, Rust, Java, and PHP have focused document
+composers. Parse-only or structural-only leaves cannot enter source composition
+without such a composer. Adding a language requires a real fragment boundary,
+composer, stack compiler, and verification implementation; it does not widen a
+universal coding prompt.
+
+## Registered leaf validation
+
+This block is checked against the executable registry by tests.
+
+<!-- BEGIN ARTIFACT_ADAPTER_REGISTRY -->
+| Adapter | Executable leaf validation |
+| --- | --- |
+| `cargo_toml` | `parse` |
+| `composer_lock` | `parse` |
+| `css_tailwind` | `structural_validate` |
+| `dockerfile` | `parse` |
+| `environment_example` | `parse` |
+| `go` | `parse` |
+| `go_module` | `parse` |
+| `html` | `parse` |
+| `java` | `parse` |
+| `javascript` | `parse` |
+| `nginx` | `parse` |
+| `php` | `parse` |
+| `php_executable` | `parse` |
+| `plain_text` | `structural_validate` |
+| `postgresql_migration` | `structural_validate` |
+| `rust` | `parse` |
+| `structured_json` | `parse` |
+| `structured_yaml` | `parse` |
+| `typescript` | `parse` |
+| `typescript_react` | `parse` |
+<!-- END ARTIFACT_ADAPTER_REGISTRY -->
+
+The corresponding path classes are focused and non-overlapping:
+
+| Adapter | Deterministic path class |
+| --- | --- |
+| `composer_lock` | `composer.lock` |
+| `typescript_react` | `.tsx` and `.test.tsx` |
+| `typescript` | `.ts` and `.test.ts` |
+| `go` | `.go` and `_test.go` |
+| `go_module` | `go.mod` |
+| `php` | `.php`, with `Test.php` recognized as verification |
+| `php_executable` | the code-owned root `artisan` executable |
+| `javascript` | `.js`, `.jsx`, `.mjs`, `.cjs`, including test/spec variants |
+| `css_tailwind` | `.css` |
+| `html` | `.html` and `.test.html` |
+| `java` | `.java`, with `Test.java` recognized as verification |
+| `rust` | `.rs` and `_test.rs` |
+| `cargo_toml` | `Cargo.toml` and `Cargo.lock` |
+| `nginx` | `nginx.conf` and NGINX `.conf` leaves |
+| `dockerfile` | Dockerfiles and Docker Compose YAML |
+| `structured_json` | `.json` |
+| `structured_yaml` | non-Compose `.yaml` and `.yml` |
+| `environment_example` | `.env.example` |
+| `plain_text` | `.gitignore` and `.dockerignore` |
+| `postgresql_migration` | normalized `database/migrations/*.sql` leaves |
+
+CSS/Tailwind validation is intentionally labeled structural: the leaf validator
+checks bounded text structure, while the complete TypeScript and HTML-producing
+PHP stacks run the real CSS toolchain during their locked build. It does not
+claim a standalone CSS grammar it does not possess.
+
+## Registered project stacks
+
+A project stack is the code-owned compiler, source-ownership rules, static
+artifacts, assembly validator, stage executor, and exact verification command
+set for one or more explicitly registered application surfaces. Supported and
+default surfaces are validated sets; stack fields contain executable hooks, not
+duplicated capability claims.
+
+Tool and language versions are separate code-owned project-version profiles.
+Every profile belongs to exactly one stack and binds its source dialect, parser
+qualification, manifest compatibility rule, runtime probes, dependency and lock
+authority, generated static values, and complete-assembly validation. Existing
+manifests may select a profile only when exactly one registered compatibility
+rule matches. For a fresh project, the existing bounded technical-format
+station chooses one opaque code-enumerated stack/profile candidate only when
+the accepted authority explicitly requires it; `UNCONSTRAINED` receives the
+surface's default stack and that stack's explicit default profile. The selected
+profile identity is mapped by code and then retained by the target tree,
+compiled program, task projection, and in-memory assembly; it is never model
+output.
+
+Parser qualifications execute real leaf-parser probes and enumerate the exact
+source-dialect labels they prove. Before any source inference, code also runs
+only the profile's bounded, allowlisted runtime-version probes. Initial source
+stations receive the one selected dialect label; repair execution remains blind
+to it and receives only its already-derived repair instruction and mutable node.
+Manifests, compiler flags, runtime guards, container images, package versions,
+and lock formats are generated from the selected profile rather than from stack
+conditionals.
+
+Version support is deliberately closed and additive. A new compatible version
+is registered as another independently validated profile for the existing
+technical stack. Code projects it into the same bounded opaque technical-format
+candidate set; it does not require another station or a central version switch.
+An unknown, malformed, or ambiguously matching manifest,
+an unqualified parser dialect, a runtime outside the registered constraint, or
+a lock graph without exact integrity evidence fails explicitly. Omnidex does not
+claim that an unobserved future syntax or toolchain is compatible.
+
+This block is also checked against the executable registry by tests.
+
+<!-- BEGIN PROJECT_STACK_REGISTRY -->
+| Stack | Supported surfaces | Default surfaces |
 | --- | --- | --- |
-| `typescript_react` | `.tsx`, `.test.tsx` | parse, AST, scope, typecheck, project test, runtime verify |
-| `typescript` | `.ts`, `.test.ts` | parse, AST, scope, typecheck, project test |
-| `go` | `.go`, `_test.go` | parse, AST, scope, typecheck, project test |
-| `php_laravel` | `.php`, `Test.php` | parse, syntax check, project test |
-| `blade_html` | `.blade.php` | parse, runtime verify |
-| `javascript_stimulus` | `.js`, `.test.js` | parse, AST, syntax check, project test |
-| `css_tailwind` | `.css` | parse, syntax check, runtime verify |
-| `html` | `.html`, `.test.html` | parse, runtime verify |
-| `java` | `.java`, `Test.java` | parse, AST, typecheck, project test |
-| `nginx` | `nginx.conf`, NGINX `.conf` | parse, syntax check, runtime verify |
-| `dockerfile` | `Dockerfile`, Docker Compose YAML | parse, syntax check, runtime verify |
-| `structured_json` | `.json` | parse |
-| `structured_yaml` | `.yaml`, `.yml` not claimed by Compose | parse |
-| `environment_example` | `.env.example` | parse |
+| `go_command_line_capabilities_v1` | `command_line_application` | `command_line_application` |
+| `java_command_line_capabilities_v1` | `command_line_application` | `none` |
+| `javascript_command_line_capabilities_v1` | `command_line_application` | `none` |
+| `laravel_http_service_capabilities_v1` | `browser_application, service_application` | `none` |
+| `php_http_service_capabilities_v1` | `browser_application, service_application` | `service_application` |
+| `rust_command_line_capabilities_v1` | `command_line_application` | `none` |
+| `typescript_browser_capabilities_v3` | `browser_application` | `browser_application` |
+<!-- END PROJECT_STACK_REGISTRY -->
 
-## Project stacks
+<!-- BEGIN PROJECT_VERSION_PROFILE_REGISTRY -->
+| Version profile | Stack | Source dialect | Manifest evidence | Stack default |
+| --- | --- | --- | --- | --- |
+| `go_command_line_versions_v1` | `go_command_line_capabilities_v1` | `Go 1.24.0` | `go.mod` | `yes` |
+| `java_command_line_versions_v1` | `java_command_line_capabilities_v1` | `Java 21 source and class-file API release` | `none` | `yes` |
+| `javascript_command_line_versions_v1` | `javascript_command_line_capabilities_v1` | `ECMAScript 2022 modules on Node.js >=22.0.0` | `package.json` | `yes` |
+| `laravel_http_service_versions_v1` | `laravel_http_service_capabilities_v1` | `PHP 8.3.30 function syntax` | `composer.json, composer.lock` | `yes` |
+| `php_http_service_versions_v1` | `php_http_service_capabilities_v1` | `PHP >=8.2,<9 function syntax` | `composer.json` | `yes` |
+| `rust_command_line_versions_v1` | `rust_command_line_capabilities_v1` | `Rust 2024 edition with rust-version 1.85` | `Cargo.toml` | `yes` |
+| `typescript_browser_versions_v1` | `typescript_browser_capabilities_v3` | `TypeScript 5.9.3 with TSX react-jsx targeting ECMAScript 2022` | `package.json` | `yes` |
+<!-- END PROJECT_VERSION_PROFILE_REGISTRY -->
 
-A project stack is distinct from a leaf adapter. It is the code-owned set of
-artifact adapters plus assembly and verification machinery that can complete a
-whole application surface. The tree station receives one explicitly selected,
-registered stack as technical context and returns paths compatible with it.
+- The TypeScript browser stack supplies React runtime/shell, HTML entrypoint,
+  Tailwind CSS v4 through its pinned Vite plugin and code-owned CSS import,
+  integrity-locked npm dependencies, strict source policy, isolated
+  acceptance/runtime tests, typechecking, and a CSS-producing production build.
+- The Go CLI stack supplies a dependency-free module/runtime/entrypoint and runs
+  focused tests, `go test -count=1 ./...`, `go vet ./...`, and `go build ./...`.
+- The Laravel HTTP stack supplies Laravel 13's application/router lifecycle,
+  server-rendered responses, optional canonical PostgreSQL durable state,
+  NGINX, digest-pinned Docker stages, exact Composer lock authority, and a
+  collision-free configurable host binding. Its application and NGINX health
+  checks traverse the exact reserved Laravel readiness route. Its registered
+  release provenance is the official
+  [`laravel/framework` `v13.29.0`](https://github.com/laravel/framework/releases/tag/v13.29.0)
+  tag and official
+  [`laravel/laravel` `v13.10.1`](https://github.com/laravel/laravel/releases/tag/v13.10.1)
+  tag (both published 2026-08-25); the exact framework lock resolves commit
+  `6e2c363716964d8238cee7097b258119a984f0cf`. Its pinned PostgreSQL 18
+  volume targets `/var/lib/postgresql`, as required by the
+  [Docker Official Image PostgreSQL 18 `PGDATA` contract](https://github.com/docker-library/docs/blob/master/postgres/README.md#pgdata).
+- The JavaScript CLI stack supplies strict ESM runtime/entrypoint and runs Node
+  with exact permissions, strict result normalization, tests, and syntax checks.
+- The Rust CLI stack supplies a dependency-free locked Cargo project and runs
+  focused tests plus locked, offline test/check/build verification.
+- The Java CLI stack supplies runtime, entrypoint, reflection-free test runner,
+  strict `javac`, focused assertions, and an executable application archive.
+- The PHP service stack supplies typed PHP runtime/router, bounded server-rendered
+  HTML leaves where required, conditional Tailwind assets, digest-pinned
+  Node/Composer/NGINX images, an exact Docker context, NGINX configuration, PHP
+  lint/tests, Docker Compose build/config checks, live NGINX/app startup, typed
+  real HTTP verification for every endpoint, and deterministic cleanup. When
+  the accepted lifetime leaf requires cross-request authority, code additionally
+  supplies one PostgreSQL schema, migration runner, task-scoped state facade,
+  persistent volume, and cross-process verification; request-local projects omit
+  those artifacts and services entirely.
 
-An artifact adapter may be useful in an existing mixed-stack project before it
-belongs to a complete greenfield stack. Omnidex must fail explicitly if a
-requested complete build has no registered project stack; it must never prompt
-the tree model to pick an unimplemented runtime or silently substitute another
-stack.
-
-Adding a new PHP/Laravel, Java, Docker, NGINX, or other project stack requires
-the corresponding code-owned assembler, parser/validator integration,
-diagnostic locator, local-context projection, splice logic, and verification
-commands. It does not require changing the target-tree model boundary or
-creating a universal coder prompt.
+Each frozen task receives one focused target-tree resolution under the selected
+stack. A model returns paths only when naming remains semantically unresolved;
+the rigid PHP feature/test grammar is projected mechanically with no inference.
+Code retains task provenance, builds the union and coverage graph, generates all
+task-neutral static files, and rejects any path or artifact class outside that
+stack. An unsupported surface, state lifetime, or technical format fails loudly;
+there is no fallback stack.

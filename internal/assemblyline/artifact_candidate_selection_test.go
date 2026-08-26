@@ -99,10 +99,10 @@ func TestArtifactCandidateSelectionRejectsUnsafeOrUnboundedEvidence(t *testing.T
 			input.Candidates[0].CandidateID = "ARTIFACT_CANDIDATE_2"
 		},
 		"path in quote": func(input *ArtifactCandidateSelectionInput) {
-			input.RequirementQuote = "Remove legacy.go or current.go."
+			input.RequirementQuote = "Remove ./legacy.go or ./current.go."
 		},
 		"path in evidence": func(input *ArtifactCandidateSelectionInput) {
-			input.Candidates[0].Declarations[0] = "function LegacyAdapter in legacy.go"
+			input.Candidates[0].Declarations[0] = "function LegacyAdapter in ./legacy.go"
 		},
 		"too many declarations": func(input *ArtifactCandidateSelectionInput) {
 			input.Candidates[0].Declarations = []string{"A", "B", "C", "D", "E"}

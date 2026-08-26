@@ -135,6 +135,7 @@ func semanticGapTestClaim(t *testing.T, marker string) (*Repository, *pgxpool.Po
 	if err := repository.EnsureSchema(ctx, loadMigrationBundleThroughPrefix(t, "096")); err != nil {
 		t.Fatal(err)
 	}
+	installEmptyGeneratedDeploymentAuthorityRailForHistoricalRuntimeTest(t, pool)
 	job, err := repository.EnqueueJob(ctx, marker, model.PipelineCoding, nil)
 	if err != nil {
 		t.Fatal(err)

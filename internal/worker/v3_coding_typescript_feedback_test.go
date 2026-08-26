@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gryph/omnidex/internal/assemblyline"
 	"github.com/gryph/omnidex/internal/modelcontext"
 )
 
@@ -14,6 +15,7 @@ func TestStructuredTypeScriptTestFailurePreservesExactProblem(t *testing.T) {
 			Name:    "TypeError",
 			Message: "Cannot read properties of undefined (reading 'includes')",
 		},
+		assemblyline.ArtifactIdentityProvenance{},
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -32,6 +34,7 @@ func TestStructuredTypeScriptTestFailureRedactsUnsafeIdentityWithoutDiscardingPr
 			Message: `Unable to find an element with the text matcher from /tmp/stage/src/view.test.tsx:12:3: ` +
 				`(value) => value.includes('\\d+')`,
 		},
+		assemblyline.ArtifactIdentityProvenance{},
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -55,7 +58,9 @@ func TestStructuredTypeScriptTestFailureRequiresExactNameAndMessage(t *testing.T
 		{Message: "observed failure"},
 		{Name: "TypeError"},
 	} {
-		if _, err := directCodingTypeScriptStructuredTestModelFailure(failure); err == nil {
+		if _, err := directCodingTypeScriptStructuredTestModelFailure(
+			failure, assemblyline.ArtifactIdentityProvenance{},
+		); err == nil {
 			t.Fatalf("accepted incomplete structured failure: %+v", failure)
 		}
 	}

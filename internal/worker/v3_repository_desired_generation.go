@@ -38,19 +38,19 @@ func (session *directCodingSession) generateDesiredRepositoryDeclarations(
 	if err != nil {
 		return desiredRepositoryGenerationResult{}, err
 	}
-	correctionModel, err := session.workerModel(station.CodingFragmentCorrection)
-	if err != nil {
-		return desiredRepositoryGenerationResult{}, err
-	}
-	runtime := directCodingWorkerRuntime(session)
-	runtime.CorrectionModel = correctionModel
-	originalExecute := runtime.Execute
 	paths, err := desiredRepositoryTargetPaths(
 		graph, session.repositoryIndex.Snapshot, session.repositoryIndex.Analyses,
 	)
 	if err != nil {
 		return desiredRepositoryGenerationResult{}, err
 	}
+	if err := session.extendPathProvenance(paths...); err != nil {
+		return desiredRepositoryGenerationResult{}, fmt.Errorf(
+			"bind desired repository target provenance: %w", err,
+		)
+	}
+	runtime := directCodingWorkerRuntime(session)
+	originalExecute := runtime.Execute
 	runtime.Execute = func(job assemblyline.PortableJob, model string) (assemblyline.PortableResult, error) {
 		prompt, _, err := assemblyline.RenderPortableJob(job)
 		if err != nil {
@@ -61,7 +61,8 @@ func (session *directCodingSession) generateDesiredRepositoryDeclarations(
 		}
 		return originalExecute(job, model)
 	}
-	candidates := make(map[string]string)
+	profiles := make(map[string]directCodingProjectVersionProfile, len(artifacts))
+	qualifiedProfiles := make(map[string]struct{})
 	for _, artifact := range artifacts {
 		if !artifact.MustExist {
 			continue
@@ -74,14 +75,36 @@ func (session *directCodingSession) generateDesiredRepositoryDeclarations(
 		if len(artifact.ExistingSymbolIDs) != 0 {
 			return desiredRepositoryGenerationResult{}, fmt.Errorf("desired existing artifact %q requires ordinary modification", artifact.ID)
 		}
+		profile, err := desiredRepositoryGoVersionProfile(
+			graph, session.repositoryIndex.Snapshot, session.repositoryIndex.Analyses, artifact,
+		)
+		if err != nil {
+			return desiredRepositoryGenerationResult{}, err
+		}
+		if _, qualified := qualifiedProfiles[profile.ID]; !qualified {
+			if err := validateDirectCodingVersionProfileRuntime(
+				profile, directCodingSessionVersionProbe(session.runtime.ctx, session.root),
+			); err != nil {
+				return desiredRepositoryGenerationResult{}, err
+			}
+			qualifiedProfiles[profile.ID] = struct{}{}
+		}
+		profiles[artifact.ID] = profile
+	}
+	candidates := make(map[string]string)
+	for _, artifact := range artifacts {
+		if !artifact.MustExist {
+			continue
+		}
 		if err := session.requireCurrentRepositoryAuthority("desired declaration generation"); err != nil {
 			return desiredRepositoryGenerationResult{}, err
 		}
+		profile := profiles[artifact.ID]
 		candidate, err := runDirectCodingGoFragmentGenerationWorker(
 			runtime, modelName, directCodingGoGenerationJob{
 				Subject: artifact.ID,
 				Input: assemblyline.FragmentGenerationInput{
-					Language: "go", Signature: artifact.Signature,
+					Language: "go", Dialect: profile.SourceDialect, Signature: artifact.Signature,
 					Behavior:     artifact.RequirementQuote,
 					Capabilities: []string{}, PermittedSymbols: []string{},
 				},

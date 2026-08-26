@@ -3,9 +3,9 @@ package worker
 import (
 	"fmt"
 	"strings"
-
-	"github.com/gryph/omnidex/internal/assemblyline"
 )
+
+const maxDirectCodingTypeScriptStageCorrections = maxTypedWorkerAttempts
 
 type directCodingTypeScriptCorrectionState struct {
 	blockID           string
@@ -15,13 +15,22 @@ type directCodingTypeScriptCorrectionState struct {
 }
 
 type directCodingTypeScriptCorrectionProgress struct {
-	seen map[directCodingTypeScriptCorrectionState]struct{}
+	seen             map[directCodingTypeScriptCorrectionState]struct{}
+	stageCorrections int
 }
 
 func newDirectCodingTypeScriptCorrectionProgress() *directCodingTypeScriptCorrectionProgress {
 	return &directCodingTypeScriptCorrectionProgress{
 		seen: make(map[directCodingTypeScriptCorrectionState]struct{}),
 	}
+}
+
+func (progress *directCodingTypeScriptCorrectionProgress) beginStage() error {
+	if progress == nil || progress.seen == nil {
+		return fmt.Errorf("TypeScript correction progress authority is unavailable")
+	}
+	progress.stageCorrections = 0
+	return nil
 }
 
 func (progress *directCodingTypeScriptCorrectionProgress) observe(
@@ -51,42 +60,13 @@ func (progress *directCodingTypeScriptCorrectionProgress) observe(
 			safeLine(firstDirectCodingDiagnosticLine(state.diagnostic), "unknown"),
 		)
 	}
+	if progress.stageCorrections >= maxDirectCodingTypeScriptStageCorrections {
+		return fmt.Errorf(
+			"TypeScript staged correction exhausted the %d-correction code-owned limit for block %s",
+			maxDirectCodingTypeScriptStageCorrections, state.blockID,
+		)
+	}
 	progress.seen[state] = struct{}{}
+	progress.stageCorrections++
 	return nil
-}
-
-type directCodingTypeScriptSyntaxProgress struct {
-	failure     assemblyline.TypeScriptSyntaxFailure
-	occurrences int
-}
-
-type directCodingTypeScriptSyntaxRepair struct {
-	radius           int
-	wholeDeclaration bool
-}
-
-func (progress *directCodingTypeScriptSyntaxProgress) next(
-	failure assemblyline.TypeScriptSyntaxFailure,
-) directCodingTypeScriptSyntaxRepair {
-	if progress.failure == failure {
-		progress.occurrences++
-	} else {
-		progress.failure = failure
-		progress.occurrences = 1
-	}
-	switch progress.occurrences {
-	case 1:
-		return directCodingTypeScriptSyntaxRepair{radius: 2}
-	case 2:
-		return directCodingTypeScriptSyntaxRepair{radius: 4}
-	default:
-		return directCodingTypeScriptSyntaxRepair{wholeDeclaration: true}
-	}
-}
-
-func (repair directCodingTypeScriptSyntaxRepair) verificationStage() string {
-	if repair.wholeDeclaration {
-		return "fragment_syntax_whole_declaration"
-	}
-	return fmt.Sprintf("fragment_syntax_radius_%d", repair.radius)
 }

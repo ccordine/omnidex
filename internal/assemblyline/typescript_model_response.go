@@ -55,7 +55,7 @@ func ProjectTypeScriptFunctionModelResponse(
 		return zero, fmt.Errorf("TypeScript function contract requires one single-line signature")
 	}
 	expected, closeExpected, err := parseSingleTypeScriptFunction(
-		signature+" {}", contract.TSX, false, TypeScriptFunctionPolicy{},
+		signature+" {}", contract.TSX, false, SourceFunctionPolicy{},
 	)
 	if err != nil {
 		return zero, fmt.Errorf("invalid code-owned TypeScript signature: %w", err)

@@ -1,10 +1,6 @@
 package worker
 
-import (
-	"fmt"
-
-	"github.com/gryph/omnidex/internal/assemblyline"
-)
+import "github.com/gryph/omnidex/internal/assemblyline"
 
 func runDirectCodingApplicationInterpreter(
 	runtime typedWorkerRuntime,
@@ -26,12 +22,6 @@ func runDirectCodingApplicationInterpreter(
 	classification, err := classifyApplicationSurface(runtime, surfaceModel, authority, identities)
 	if err != nil {
 		return zero, err
-	}
-	if classification.Surface != assemblyline.ApplicationSurfaceBrowser {
-		return zero, fmt.Errorf(
-			"generic coding runtime does not yet support application surface %s",
-			classification.Surface,
-		)
 	}
 	resolution, err := resolveDirectCodingApplicationIntent(
 		runtime, intentModel,

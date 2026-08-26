@@ -15,7 +15,9 @@ func directCodingWorkerRuntime(session *directCodingSession) typedWorkerRuntime 
 	if session == nil || session.runtime == nil || session.runtime.svc == nil || session.runtime.claim == nil {
 		return typedWorkerRuntime{}
 	}
-	return portableWorkerRuntime(session.runtime, "coding")
+	runtime := portableWorkerRuntime(session.runtime, "coding")
+	runtime.PathProvenance = session.pathProvenance
+	return runtime
 }
 
 func portableWorkerRuntime(runtime *nativeRuntimeV3, eventNamespace string) typedWorkerRuntime {

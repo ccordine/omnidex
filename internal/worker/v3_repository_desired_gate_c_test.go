@@ -13,14 +13,9 @@ import (
 	"github.com/gryph/omnidex/internal/repository/changeapply"
 )
 
-func TestMalformedDeclarationCorrectionExhaustionLeavesRepositoryUnchanged(t *testing.T) {
+func TestMalformedDeclarationInitialFailureLeavesRepositoryUnchanged(t *testing.T) {
 	t.Parallel()
 	before, _ := existingRepositoryVerificationFixture(t)
-	candidates := []string{
-		`func Added() string { return "wrong" }`,
-		`func Added() int {`,
-		`func Added(value int) int { return value }`,
-	}
 	calls := 0
 	runtime := typedWorkerRuntime{
 		Context: context.Background(), MaxAttempts: 3, CorrectionModel: "corrector",
@@ -28,23 +23,21 @@ func TestMalformedDeclarationCorrectionExhaustionLeavesRepositoryUnchanged(t *te
 			if calls == 0 && (job.Kind != assemblyline.WorkFragmentGeneration || model != "coder") {
 				t.Fatalf("initial generation call=%q/%q", job.Kind, model)
 			}
-			if calls > 0 && (job.Kind != assemblyline.WorkFragmentCorrection || model != "corrector") {
-				t.Fatalf("correction call=%q/%q", job.Kind, model)
-			}
-			candidate := candidates[calls]
 			calls++
-			return assemblyline.PortableResult{JobID: job.ID, Candidate: candidate}, nil
+			return assemblyline.PortableResult{
+				JobID: job.ID, Candidate: `func Added() string { return "wrong" }`,
+			}, nil
 		},
 	}
 	_, err := runDirectCodingGoFragmentGenerationWorker(
 		runtime, "coder", directCodingGoGenerationJob{
 			Subject: "desired_artifact_opaque",
 			Input: assemblyline.FragmentGenerationInput{
-				Language: "go", Signature: "func Added() int", Behavior: "return two",
+				Language: "go", Dialect: "Go 1.24", Signature: "func Added() int", Behavior: "return two",
 			},
 		},
 	)
-	if err == nil || !strings.Contains(err.Error(), "failed after 3 bounded attempts") || calls != 3 {
+	if err == nil || !strings.Contains(err.Error(), "initial candidate rejected") || calls != 1 {
 		t.Fatalf("malformed generation error=%v calls=%d", err, calls)
 	}
 	after, err := repositoryfacts.BuildGitSnapshot(t.Context(), before.Root, repositoryfacts.SnapshotOptions{})

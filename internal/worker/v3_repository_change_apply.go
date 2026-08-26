@@ -83,7 +83,7 @@ func (session *directCodingSession) applyExistingRepositoryChangeContract(
 				}
 				verificationErr := session.runExistingRepositoryVerification(
 					workspace.Root(), repositoryVerificationAuthoritative,
-					exactCommands, authority, nil,
+					exactCommands, authority,
 					func(assertCtx context.Context) error {
 						return errors.Join(
 							workspace.VerifyExact(assertCtx),

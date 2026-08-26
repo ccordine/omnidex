@@ -3,6 +3,7 @@ package worker
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
@@ -69,9 +70,17 @@ func TestDirectCodingTaskCognitionPersistsObjectiveTaskAndVerificationSequence(t
 			t.Fatalf("complete tree %s: %v", transition.Path, err)
 		}
 	}
-	if err := coordinator.CompleteObjective(directCodingVerification{
+	verification := directCodingVerification{
 		Passed: true, TestsPassed: true, Commands: []string{"npm run typecheck", "npm test"},
-	}); err != nil {
+		EvidenceIDs: []int64{21, 22},
+	}
+	if _, err := coordinator.BeginWorkspaceVerification(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := coordinator.CompleteWorkspaceVerification(verification); err != nil {
+		t.Fatal(err)
+	}
+	if err := coordinator.CompleteObjective(verification); err != nil {
 		t.Fatal(err)
 	}
 	ledger = store.ledger.MaterializedState()
@@ -87,6 +96,70 @@ func TestDirectCodingTaskCognitionPersistsObjectiveTaskAndVerificationSequence(t
 	}
 	if !store.set.ScopeClosed(workingset.Scope{Kind: workingset.ScopeObjective, ID: workingset.ScopeID(coordinator.objectiveID)}) {
 		t.Fatal("objective working-set scope was not closed after real verification")
+	}
+}
+
+func TestDirectCodingTaskCognitionRequiresDurableDeploymentReceiptBeforeObjectiveCompletion(t *testing.T) {
+	_, workload, _ := applicationTaskLifecycleFixture(t)
+	store := newDirectCodingTaskCognitionStore(t)
+	coordinator := &directCodingTaskCognition{
+		ctx: context.Background(), store: store, authority: store.authority,
+		instruction: "Build and keep the service running.", objectiveID: "direct-coding-objective",
+		taskIDs: map[string]taskstate.NodeID{}, treeTaskIDs: map[string]taskstate.NodeID{},
+		treeFiles: map[string]assemblyline.TargetTreeTransition{}, treeDirs: map[string]assemblyline.TargetTreeTransition{},
+		verificationTaskID: directCodingVerificationTaskNodeID,
+		deploymentTaskID:   directCodingDeploymentTaskNodeID, deploymentRequired: true,
+	}
+	if err := coordinator.Bootstrap(workload); err != nil {
+		t.Fatal(err)
+	}
+	for _, task := range workload.Tasks {
+		if err := coordinator.Begin(task.ID); err != nil {
+			t.Fatal(err)
+		}
+		if err := coordinator.CompleteTask(task.ID, map[string]string{
+			"feature": "export {};", "acceptance": "test('feature', () => {});",
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	transition := assemblyline.TargetTreeTransition{
+		Kind: assemblyline.TargetTreeCreate, Path: "src/service.ts",
+	}
+	if err := coordinator.PlanTreeTransitions([]assemblyline.TargetTreeTransition{transition}); err != nil {
+		t.Fatal(err)
+	}
+	if err := coordinator.BeginTreeTransition(transition); err != nil {
+		t.Fatal(err)
+	}
+	if err := coordinator.CompleteTreeTransition(transition, "verified source"); err != nil {
+		t.Fatal(err)
+	}
+	verification := directCodingVerification{
+		Passed: true, TestsPassed: true, Commands: []string{"npm test"},
+		EvidenceIDs: []int64{23},
+	}
+	if _, err := coordinator.BeginWorkspaceVerification(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := coordinator.CompleteWorkspaceVerification(verification); err != nil {
+		t.Fatal(err)
+	}
+	if err := coordinator.CompleteObjective(verification); err == nil ||
+		!strings.Contains(err.Error(), "requested deployment is not complete") {
+		t.Fatalf("objective completed without deployment receipt: %v", err)
+	}
+	if _, err := coordinator.BeginDeployment(verification); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := coordinator.CompleteDeployment("operation-1", strings.Repeat("a", 64)); err != nil {
+		t.Fatal(err)
+	}
+	if err := coordinator.CompleteObjective(verification); err != nil {
+		t.Fatal(err)
+	}
+	if got := taskNode(t, store.ledger.MaterializedState(), coordinator.objectiveID).Status; got != taskstate.NodeDone {
+		t.Fatalf("objective status=%s", got)
 	}
 }
 
@@ -128,7 +201,7 @@ func TestDirectCodingTaskCognitionQueuesAdapterBaselineAndTreeLeavesAfterSourceT
 			t.Fatal(err)
 		}
 	}
-	assembly := directCodingAssembly{Files: []directCodingFileTask{
+	assembly := directCodingAssembly{VersionProfileID: typeScriptBrowserVersionProfileV1, Files: []directCodingFileTask{
 		{Path: "package.json", Content: "{}\n"},
 		{Path: "src/main.tsx", Content: "export {};\n"},
 		{Path: "src/runtime.tsx", Content: "export {};\n"},

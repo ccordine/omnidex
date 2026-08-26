@@ -24,7 +24,7 @@ func TestDirectCodingArtifactGraphProjectsVerifiedInterfacesAndRelations(t *test
 	}
 	assertArtifactGraphRelation(t, graph, "src/App.tsx", "src/components/Counter.tsx", assemblyline.ArtifactRelationDependsOn)
 	assertArtifactGraphRelation(t, graph, "src/components/Counter.test.tsx", "src/components/Counter.tsx", assemblyline.ArtifactRelationVerifies)
-	assertArtifactGraphRelation(t, graph, "src/main.tsx", "src/App.tsx", assemblyline.ArtifactRelationComposes)
+	assertArtifactGraphRelation(t, graph, "src/main.tsx", "src/App.tsx", assemblyline.ArtifactRelationDependsOn)
 }
 
 func TestDirectCodingArtifactGraphPersistsAndOrdersFilesystemLeaves(t *testing.T) {
@@ -151,18 +151,24 @@ func TestDirectCodingArtifactGraphRejectsFilesystemDependencyCycle(t *testing.T)
 
 func directCodingArtifactGraphFixture(t *testing.T) (directCodingProgram, directCodingAssembly) {
 	t.Helper()
-	program := directCodingProgram{TypeScript: assemblyline.TypeScriptBlueprint{Documents: []assemblyline.TypeScriptDocument{
-		{ID: "counter", Path: "src/components/Counter.tsx", Blocks: []assemblyline.TypeScriptBlock{{
-			ID: "counter.render", Static: "export function Counter(): null { return null; }", API: "function Counter(): null",
-		}}},
-		{ID: "counter_test", Path: "src/components/Counter.test.tsx", Blocks: []assemblyline.TypeScriptBlock{{
-			ID: "counter.verify", Static: "export function VerifyCounter(): null { return null; }", API: "function VerifyCounter(): null", DependsOn: []string{"counter.render"},
-		}}},
-		{ID: "app", Path: "src/App.tsx", Blocks: []assemblyline.TypeScriptBlock{{
-			ID: "app.render", Static: "export function App(): null { return null; }", API: "function App(): null", DependsOn: []string{"counter.render"},
-		}}},
-	}}}
-	assembly := directCodingAssembly{Files: []directCodingFileTask{
+	program := directCodingProgram{
+		StackID: genericTypeScriptBrowserAdapter, VersionProfileID: typeScriptBrowserVersionProfileV1,
+		Source: assemblyline.SourceBlueprint{Documents: []assemblyline.SourceDocument{
+			{ID: "counter", Path: "src/components/Counter.tsx", Blocks: []assemblyline.SourceBlock{{
+				ID: "counter.render", Static: "export function Counter(): null { return null; }", API: "function Counter(): null",
+			}}},
+			{ID: "counter_test", Path: "src/components/Counter.test.tsx", Blocks: []assemblyline.SourceBlock{{
+				ID: "counter.verify", Static: "export function VerifyCounter(): null { return null; }", API: "function VerifyCounter(): null", DependsOn: []string{"counter.render"},
+			}}},
+			{ID: "app", Path: "src/App.tsx", Blocks: []assemblyline.SourceBlock{{
+				ID: "app.render", Static: "export function App(): null { return null; }", API: "function App(): null", DependsOn: []string{"counter.render"},
+			}}},
+			{ID: "main", Path: "src/main.tsx", Blocks: []assemblyline.SourceBlock{{
+				ID: "app.mount", Static: "export {};", API: "mount application", DependsOn: []string{"app.render"},
+			}}},
+		}},
+	}
+	assembly := directCodingAssembly{VersionProfileID: typeScriptBrowserVersionProfileV1, Files: []directCodingFileTask{
 		{Path: ".gitignore", Content: "dist\n"},
 		{Path: "package.json", Content: "{}\n"},
 		{Path: "src/main.tsx", Content: "export {};\n"},
