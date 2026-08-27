@@ -125,15 +125,20 @@ build_staged_checkout() {
   if ! command_exists go; then
     die "go is required to build Omnidex binaries (install Go or rerun without --skip-deps)"
   fi
+  managed_checkout_export_build_commit "${repository}"
   "${repository}/scripts/build-ui.sh"
   mkdir -p "${repository}/bin"
   (
     cd "${repository}"
+    ldflags="-X github.com/gryph/omnidex/internal/version.Commit=${OMNIDEX_COMMIT}"
     build_dir="$(mktemp -d "${repository}/bin/.omnidex-build.XXXXXX")"
     trap 'rm -f "${build_dir}/agent-core" "${build_dir}/agent-cli" "${build_dir}/omni"; rmdir "${build_dir}" 2>/dev/null || true' EXIT
-    go build -o "${build_dir}/agent-core" ./cmd/core
-    go build -o "${build_dir}/agent-cli" ./cmd/cli
-    go build -o "${build_dir}/omni" ./cmd/omni
+    go build -trimpath -ldflags "${ldflags}" -o "${build_dir}/agent-core" ./cmd/core
+    go build -trimpath -ldflags "${ldflags}" -o "${build_dir}/agent-cli" ./cmd/cli
+    go build -trimpath -ldflags "${ldflags}" -o "${build_dir}/omni" ./cmd/omni
+    managed_checkout_verify_binary_commit "${build_dir}/agent-core" "${OMNIDEX_COMMIT}" core
+    managed_checkout_verify_binary_commit "${build_dir}/agent-cli" "${OMNIDEX_COMMIT}" json
+    managed_checkout_verify_binary_commit "${build_dir}/omni" "${OMNIDEX_COMMIT}" json
     mv -f "${build_dir}/agent-core" bin/agent-core
     mv -f "${build_dir}/agent-cli" bin/agent-cli
     mv -f "${build_dir}/omni" bin/omni

@@ -4,9 +4,15 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/gryph/omnidex/internal/version"
 )
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
+	if _, err := version.BuildCommit(); err != nil {
+		writeError(w, http.StatusInternalServerError, "invalid embedded release identity: "+err.Error())
+		return
+	}
 	coreURL, source, err := s.resolveCoreURL(r)
 	if err != nil {
 		writeError(w, http.StatusServiceUnavailable, err.Error())
@@ -20,6 +26,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		"core_url":        coreURL,
 		"core_url_source": source,
 		"listen_addr":     strings.TrimSpace(s.listenAddr),
+		"release":         version.JSON(),
 		"dependencies":    dependencies,
 	})
 }

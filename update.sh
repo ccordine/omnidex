@@ -9,7 +9,6 @@ source "${SCRIPT_DIR}/scripts/update-runtime-lib.sh"
 PREFIX="${SCRIPT_DIR}"
 BRANCH=""
 COMPOSE_FILE=""
-SERVICE="core"
 NO_PULL=0
 NO_BUILD=0
 NO_RESTART=0
@@ -28,7 +27,6 @@ Options:
   --prefix <path>         Omnidex repo/install path (default: script directory)
   --branch <name>         Git branch to update (default: current branch)
   --compose-file <path>   Compose file to use (default: docker-compose.yml in prefix)
-  --service <name>        Compose service to rebuild/restart (default: core)
   --no-cache              Rebuild Docker image without cache
   --no-pull               Skip git fetch/pull
   --no-build              Skip docker compose build
@@ -41,8 +39,8 @@ What this updater does:
   1) Stages a complete checkout and fast-forwards it to latest
   2) Reproducibly builds the embedded GUI and all host binaries
   3) Restarts the host bridge user service when installed (omni-host-bridge)
-  4) Rebuilds the Docker image for the selected service
-  5) Restarts the selected service with docker compose
+  4) Rebuilds the Docker image for the core service
+  5) Restarts the core service with docker compose
 EOF
 }
 
@@ -104,11 +102,6 @@ parse_args() {
         COMPOSE_FILE="$2"
         shift 2
         ;;
-      --service)
-        (($# >= 2)) || die "--service requires a value"
-        SERVICE="$2"
-        shift 2
-        ;;
       --no-cache)
         NO_CACHE=1
         shift
@@ -153,16 +146,21 @@ build_staged_checkout() {
     die "go is required to build Omnidex binaries"
   fi
 
+  managed_checkout_export_build_commit "${repo_dir}"
   log "building staged GUI and host binaries"
   "${repo_dir}/scripts/build-ui.sh"
   (
     cd "${repo_dir}"
+    ldflags="-X github.com/gryph/omnidex/internal/version.Commit=${OMNIDEX_COMMIT}"
     mkdir -p bin
     build_dir="$(mktemp -d "${repo_dir}/bin/.omnidex-build.XXXXXX")"
     trap 'rm -f "${build_dir}/agent-core" "${build_dir}/agent-cli" "${build_dir}/omni"; rmdir "${build_dir}" 2>/dev/null || true' EXIT
-    go build -o "${build_dir}/agent-core" ./cmd/core
-    go build -o "${build_dir}/agent-cli" ./cmd/cli
-    go build -o "${build_dir}/omni" ./cmd/omni
+    go build -trimpath -ldflags "${ldflags}" -o "${build_dir}/agent-core" ./cmd/core
+    go build -trimpath -ldflags "${ldflags}" -o "${build_dir}/agent-cli" ./cmd/cli
+    go build -trimpath -ldflags "${ldflags}" -o "${build_dir}/omni" ./cmd/omni
+    managed_checkout_verify_binary_commit "${build_dir}/agent-core" "${OMNIDEX_COMMIT}" core
+    managed_checkout_verify_binary_commit "${build_dir}/agent-cli" "${OMNIDEX_COMMIT}" json
+    managed_checkout_verify_binary_commit "${build_dir}/omni" "${OMNIDEX_COMMIT}" json
     mv -f "${build_dir}/agent-core" bin/agent-core
     mv -f "${build_dir}/agent-cli" bin/agent-cli
     mv -f "${build_dir}/omni" bin/omni
@@ -182,16 +180,24 @@ main() {
   update_branch="$(managed_checkout_branch "${PREFIX}" "${BRANCH}")"
   update_origin="$(managed_checkout_origin "${PREFIX}")"
 
-  local compose_cmd="" expected_image=""
+  local compose_cmd="" expected_image="" expected_runtime_user=""
   if needs_compose_work; then
     managed_checkout_require_env_key "${PREFIX}/.env" "DOCKER_CONTEXT"
     managed_checkout_require_env_key "${PREFIX}/.env" "COMPOSE_PROJECT_NAME"
+    managed_checkout_require_env_key "${PREFIX}/.env" "HOST_UID"
+    managed_checkout_require_env_key "${PREFIX}/.env" "HOST_GID"
     DOCKER_CONTEXT_NAME="$(managed_checkout_env_value "${PREFIX}/.env" "DOCKER_CONTEXT")"
     COMPOSE_PROJECT="$(managed_checkout_env_value "${PREFIX}/.env" "COMPOSE_PROJECT_NAME")"
     validate_compose_identity "DOCKER_CONTEXT" "${DOCKER_CONTEXT_NAME}"
     validate_compose_identity "COMPOSE_PROJECT_NAME" "${COMPOSE_PROJECT}"
     [[ -n "${DOCKER_CONTEXT_NAME}" ]] || die "DOCKER_CONTEXT must be explicit and non-empty"
     [[ -n "${COMPOSE_PROJECT}" ]] || die "COMPOSE_PROJECT_NAME must be explicit and non-empty"
+    HOST_UID_VALUE="$(managed_checkout_env_value "${PREFIX}/.env" "HOST_UID")"
+    HOST_GID_VALUE="$(managed_checkout_env_value "${PREFIX}/.env" "HOST_GID")"
+    expected_runtime_user="$(runtime_user_identity "${HOST_UID_VALUE}" "${HOST_GID_VALUE}")"
+    export COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT}"
+    export HOST_UID="${HOST_UID_VALUE}"
+    export HOST_GID="${HOST_GID_VALUE}"
     if [[ -z "${COMPOSE_FILE}" ]]; then
       COMPOSE_FILE="${PREFIX}/docker-compose.yml"
     else
@@ -201,7 +207,6 @@ main() {
       fi
     fi
     [[ -f "${COMPOSE_FILE}" ]] || die "compose file not found: ${COMPOSE_FILE}"
-    [[ -n "${SERVICE}" ]] || die "service cannot be empty"
     compose_cmd="$(resolve_compose_cmd)"
     log "using compose command: ${compose_cmd}"
   else
@@ -226,11 +231,12 @@ main() {
   trap - EXIT
   restart_host_bridge "${PREFIX}"
   if needs_compose_work; then
-    compose_build "${PREFIX}" "${compose_cmd}" "${COMPOSE_FILE}" "${SERVICE}"
-    expected_image="$(compose_image_id "${PREFIX}" "${compose_cmd}" "${COMPOSE_FILE}" "${SERVICE}")"
-    compose_restart "${PREFIX}" "${compose_cmd}" "${COMPOSE_FILE}" "${SERVICE}"
+    compose_build "${PREFIX}" "${compose_cmd}" "${COMPOSE_FILE}" core "${OMNIDEX_COMMIT}"
+    expected_image="$(compose_image_id "${PREFIX}" "${compose_cmd}" "${COMPOSE_FILE}" core "${OMNIDEX_COMMIT}")"
+    compose_require_image_commit "${expected_image}" "${OMNIDEX_COMMIT}" "${expected_runtime_user}"
+    compose_restart "${PREFIX}" "${compose_cmd}" "${COMPOSE_FILE}" core "${OMNIDEX_COMMIT}"
     if ((NO_RESTART == 0)); then
-      compose_require_running_image "${PREFIX}" "${compose_cmd}" "${COMPOSE_FILE}" "${SERVICE}" "${expected_image}"
+      compose_require_running_image "${PREFIX}" "${compose_cmd}" "${COMPOSE_FILE}" core "${expected_image}" "${OMNIDEX_COMMIT}" "${expected_runtime_user}"
     fi
   fi
 

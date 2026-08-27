@@ -322,6 +322,46 @@ func TestDockerRuntimeCopiesOnlyExistingAuthoritativeInputs(t *testing.T) {
 	}
 }
 
+func TestDockerReleaseIdentityContractIsExplicitAndContextBounded(t *testing.T) {
+	root := repoRootFromOmniTest(t)
+	dockerfile := readRepoScript(t, root, "Dockerfile")
+	for _, fragment := range []string{
+		"ARG OMNIDEX_COMMIT",
+		"ARG APP_UID=1000",
+		"ARG APP_GID=1000",
+		`validate_host_id APP_UID "${APP_UID}"`,
+		`validate_host_id APP_GID "${APP_GID}"`,
+		`USER ${APP_UID}:${APP_GID}`,
+		`${#OMNIDEX_COMMIT}`,
+		`*[!0123456789abcdef]*`,
+		"go build -trimpath",
+		"internal/version.Commit=${OMNIDEX_COMMIT}",
+		`LABEL org.opencontainers.image.revision="${OMNIDEX_COMMIT}"`,
+	} {
+		if !strings.Contains(dockerfile, fragment) {
+			t.Fatalf("Dockerfile omits release identity contract %q", fragment)
+		}
+	}
+	compose := readRepoScript(t, root, "docker-compose.yml")
+	if !strings.Contains(compose, `OMNIDEX_COMMIT: ${OMNIDEX_COMMIT:-}`) {
+		t.Fatal("Compose build does not accept an explicit commit with a blank non-build default")
+	}
+	for _, fragment := range []string{
+		`APP_UID: ${HOST_UID:?HOST_UID must match the owner of HOST_WORKSPACE_PATH}`,
+		`APP_GID: ${HOST_GID:?HOST_GID must match the group of HOST_WORKSPACE_PATH}`,
+	} {
+		if !strings.Contains(compose, fragment) {
+			t.Fatalf("Compose omits exact host runtime identity %q", fragment)
+		}
+	}
+	ignore := readRepoScript(t, root, ".dockerignore")
+	for _, entry := range []string{".git", "dist"} {
+		if !strings.Contains("\n"+ignore, "\n"+entry+"\n") {
+			t.Fatalf("Docker build context does not exclude %q", entry)
+		}
+	}
+}
+
 type managedInstallFixture struct {
 	source, prefix, home, fakeBin string
 }
@@ -386,6 +426,10 @@ exit 62
 	writeFixtureFile(t, filepath.Join(fakeBin, "go"), `#!/usr/bin/env bash
 set -euo pipefail
 [[ -z "${OMNI_FIXTURE_GO_FAIL:-}" ]] || { echo "forced go failure" >&2; exit 63; }
+if [[ "${1:-}" == "version" && "${2:-}" == "-m" ]]; then
+  printf '%s: go1.24\n\tpath\tfixture\n\tbuild\t-trimpath=true\n\tbuild\tvcs.revision=%s\n\tbuild\tvcs.modified=false\n' "$3" "${OMNIDEX_COMMIT}"
+  exit 0
+fi
 output=""
 while (($#)); do
   if [[ "$1" == "-o" ]]; then output="$2"; shift 2; continue; fi
@@ -394,11 +438,11 @@ done
 [[ -n "$output" ]] || { echo "missing go output" >&2; exit 64; }
 mkdir -p "$(dirname "$output")"
 if [[ "$output" == */agent-core ]]; then
-  printf '#!/usr/bin/env bash\nset -euo pipefail\nif [[ "${1:-}" == "config:validate-file" ]]; then\n  while IFS= read -r line; do [[ "$line" != APP_ENV=* ]] || exit 65; done < "$2"\nfi\nexit 0\n' > "$output"
+  printf '#!/usr/bin/env bash\nset -euo pipefail\nif [[ "${1:-}" == "release:verify-commit" ]]; then [[ "${2:-}" == "${OMNIDEX_COMMIT}" ]] || exit 68; printf "%%s\\n" "${OMNIDEX_COMMIT}"; exit 0; fi\nif [[ "${1:-}" == "config:validate-file" ]]; then\n  while IFS= read -r line; do [[ "$line" != APP_ENV=* ]] || exit 65; done < "$2"\nfi\nexit 0\n' > "$output"
 elif [[ "$output" == */agent-cli ]]; then
-  printf '#!/usr/bin/env bash\nset -euo pipefail\nif [[ "${1:-}" == "config:validate-file" ]]; then\n  count=0; value=""\n  while IFS= read -r line; do case "$line" in CORE_URL=*) count=$((count + 1)); value="${line#CORE_URL=}" ;; esac; done < "$2"\n  [[ $count -eq 1 && ( "$value" == http://* || "$value" == https://* ) ]] || exit 66\nfi\nexit 0\n' > "$output"
+  printf '#!/usr/bin/env bash\nset -euo pipefail\nif [[ "${1:-}" == "version" && "${2:-}" == "--json" ]]; then printf "{\\n  \\"commit\\": \\"%%s\\"\\n}\\n" "${OMNIDEX_COMMIT}"; exit 0; fi\nif [[ "${1:-}" == "config:validate-file" ]]; then\n  count=0; value=""\n  while IFS= read -r line; do case "$line" in CORE_URL=*) count=$((count + 1)); value="${line#CORE_URL=}" ;; esac; done < "$2"\n  [[ $count -eq 1 && ( "$value" == http://* || "$value" == https://* ) ]] || exit 66\nfi\nexit 0\n' > "$output"
 else
-  printf '#!/usr/bin/env bash\nexit 0\n' > "$output"
+  printf '#!/usr/bin/env bash\nset -euo pipefail\nif [[ "${1:-}" == "version" && "${2:-}" == "--json" ]]; then printf "{\\n  \\"commit\\": \\"%%s\\"\\n}\\n" "${OMNIDEX_COMMIT}"; exit 0; fi\nexit 0\n' > "$output"
 fi
 chmod 0755 "$output"
 `, 0o755)

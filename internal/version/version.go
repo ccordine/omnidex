@@ -49,6 +49,20 @@ func Full() string {
 	return out
 }
 
+// BuildCommit returns the exact Git commit embedded by the authoritative build.
+// Git repositories may use either SHA-1 or SHA-256 object identities.
+func BuildCommit() (string, error) {
+	if len(Commit) != 40 && len(Commit) != 64 {
+		return "", fmt.Errorf("embedded build commit must be exactly 40 or 64 lowercase hexadecimal characters")
+	}
+	for _, character := range Commit {
+		if (character < '0' || character > '9') && (character < 'a' || character > 'f') {
+			return "", fmt.Errorf("embedded build commit must be exactly 40 or 64 lowercase hexadecimal characters")
+		}
+	}
+	return Commit, nil
+}
+
 func JSON() map[string]string {
 	return map[string]string{
 		"version":            strings.TrimSpace(Version),
@@ -56,7 +70,7 @@ func JSON() map[string]string {
 		"release_scheme":     "pride-national-dex",
 		"national_dex_id":    fmt.Sprintf("%d", NationalDexID(Codename)),
 		"next_maturity_name": "Charizard",
-		"commit":             strings.TrimSpace(Commit),
+		"commit":             Commit,
 		"source_sha256":      strings.TrimSpace(SourceSHA256),
 		"migrations_sha256":  strings.TrimSpace(MigrationsSHA256),
 		"date":               strings.TrimSpace(Date),

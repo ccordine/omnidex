@@ -2,7 +2,10 @@ package main
 
 import (
 	"fmt"
+	"io"
+	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/gryph/omnidex/internal/envfile"
@@ -10,10 +13,16 @@ import (
 
 const dockerContextEnvironmentKey = "DOCKER_CONTEXT"
 const composeProjectEnvironmentKey = "COMPOSE_PROJECT_NAME"
+const hostUIDEnvironmentKey = "HOST_UID"
+const hostGIDEnvironmentKey = "HOST_GID"
+
+const maxServiceHostID = uint64(4294967294)
 
 type serviceDeploymentIdentity struct {
 	DockerContext  string
 	ComposeProject string
+	HostUID        string
+	HostGID        string
 }
 
 func readServiceDeploymentIdentity(root string) (serviceDeploymentIdentity, error) {
@@ -22,7 +31,7 @@ func readServiceDeploymentIdentity(root string) (serviceDeploymentIdentity, erro
 		return serviceDeploymentIdentity{}, fmt.Errorf("service deployment root is required")
 	}
 	path := filepath.Join(root, ".env")
-	values, err := envfile.Read(path)
+	values, raw, err := readExactServiceDeploymentEnvironment(path)
 	if err != nil {
 		return serviceDeploymentIdentity{}, fmt.Errorf("read service deployment identity from %s: %w", path, err)
 	}
@@ -40,7 +49,93 @@ func readServiceDeploymentIdentity(root string) (serviceDeploymentIdentity, erro
 	if err := validateServiceDeploymentIdentifier(composeProjectEnvironmentKey, projectName); err != nil {
 		return serviceDeploymentIdentity{}, err
 	}
-	return serviceDeploymentIdentity{DockerContext: contextName, ComposeProject: projectName}, nil
+	hostUID, err := readServiceHostID(values, raw, path, hostUIDEnvironmentKey)
+	if err != nil {
+		return serviceDeploymentIdentity{}, err
+	}
+	hostGID, err := readServiceHostID(values, raw, path, hostGIDEnvironmentKey)
+	if err != nil {
+		return serviceDeploymentIdentity{}, err
+	}
+	return serviceDeploymentIdentity{
+		DockerContext:  contextName,
+		ComposeProject: projectName,
+		HostUID:        hostUID,
+		HostGID:        hostGID,
+	}, nil
+}
+
+func readExactServiceDeploymentEnvironment(path string) (map[string]string, []byte, error) {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return nil, nil, err
+	}
+	if !info.Mode().IsRegular() {
+		return nil, nil, fmt.Errorf("environment file must be a regular file: %s", path)
+	}
+	if info.Size() > envfile.MaxBytes {
+		return nil, nil, fmt.Errorf("environment file exceeds %d bytes", envfile.MaxBytes)
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer file.Close()
+	raw, err := io.ReadAll(io.LimitReader(file, envfile.MaxBytes+1))
+	if err != nil {
+		return nil, nil, err
+	}
+	if len(raw) > envfile.MaxBytes {
+		return nil, nil, fmt.Errorf("environment file exceeds %d bytes", envfile.MaxBytes)
+	}
+	values, err := envfile.Parse(raw)
+	if err != nil {
+		return nil, nil, err
+	}
+	return values, raw, nil
+}
+
+func readServiceHostID(values map[string]string, raw []byte, path, key string) (string, error) {
+	value, found := values[key]
+	if !found {
+		return "", fmt.Errorf("managed environment %s does not define %s", path, key)
+	}
+	exact := ""
+	for _, line := range strings.Split(string(raw), "\n") {
+		if strings.HasPrefix(line, key+"=") {
+			exact = strings.TrimPrefix(line, key+"=")
+			break
+		}
+	}
+	if exact != value {
+		return "", fmt.Errorf("%s must be one exact positive numeric host identity", key)
+	}
+	if err := validateServiceHostID(key, value); err != nil {
+		return "", err
+	}
+	return value, nil
+}
+
+func validateServiceHostID(key, value string) error {
+	parsed, err := strconv.ParseUint(value, 10, 32)
+	if err != nil || parsed == 0 || parsed > maxServiceHostID || strconv.FormatUint(parsed, 10) != value {
+		return fmt.Errorf("%s must be one exact positive numeric host identity", key)
+	}
+	return nil
+}
+
+func validateServiceRuntimeUser(value string) error {
+	uid, gid, found := strings.Cut(value, ":")
+	if !found || strings.Contains(gid, ":") {
+		return fmt.Errorf("service runtime user must be one exact positive numeric UID:GID")
+	}
+	if err := validateServiceHostID(hostUIDEnvironmentKey, uid); err != nil {
+		return fmt.Errorf("service runtime user must be one exact positive numeric UID:GID")
+	}
+	if err := validateServiceHostID(hostGIDEnvironmentKey, gid); err != nil {
+		return fmt.Errorf("service runtime user must be one exact positive numeric UID:GID")
+	}
+	return nil
 }
 
 func validateServiceDeploymentIdentifier(label, value string) error {
@@ -65,4 +160,8 @@ func (identity serviceDeploymentIdentity) composeCommandPrefix() []string {
 
 func (identity serviceDeploymentIdentity) dockerCommandPrefix() []string {
 	return []string{"docker", "--context", identity.DockerContext}
+}
+
+func (identity serviceDeploymentIdentity) runtimeUser() string {
+	return identity.HostUID + ":" + identity.HostGID
 }

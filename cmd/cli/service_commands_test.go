@@ -130,7 +130,7 @@ func TestResolveComposeCommandPrefixRequiresDockerPlugin(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", fakeBin)
-	got, err := resolveComposeCommandPrefix("rootless")
+	got, err := resolveComposeCommandPrefix("rootless", os.Environ(), execServiceProcessRunner{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -147,7 +147,7 @@ func TestResolveComposeCommandPrefixRejectsStandaloneFallback(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", fakeBin)
-	_, err := resolveComposeCommandPrefix("rootless")
+	_, err := resolveComposeCommandPrefix("rootless", os.Environ(), execServiceProcessRunner{})
 	if err == nil || !strings.Contains(err.Error(), "Docker Compose plugin is unavailable in explicit context") {
 		t.Fatalf("standalone Compose error = %v", err)
 	}
@@ -224,7 +224,7 @@ func TestDockerLogsInvocationForServiceRequiresSpecificService(t *testing.T) {
 	_, err := dockerLogsInvocationForService(serviceCommandOptions{
 		Service: "all",
 		Action:  "docker-logs",
-	}, []string{"docker", "--context", "rootless", "compose", "-p", "omni-nxt"}, []string{"docker", "--context", "rootless"}, "/tmp/docker-compose.yml", "/tmp")
+	}, []string{"docker", "--context", "rootless", "compose", "-p", "omni-nxt"}, []string{"docker", "--context", "rootless"}, "/tmp/docker-compose.yml", "/tmp", os.Environ(), execServiceProcessRunner{})
 	if err == nil {
 		t.Fatalf("expected docker-logs all-service invocation to fail")
 	}

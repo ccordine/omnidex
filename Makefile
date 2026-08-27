@@ -15,15 +15,13 @@ core:
 	./scripts/build-core.sh
 
 cli:
-	rm -f bin/agent-cli
-	go build -o bin/agent-cli ./cmd/cli
+	./scripts/build-core.sh --package ./cmd/cli --output bin/agent-cli
 
 omni:
-	rm -f bin/omni
-	go build -o bin/omni ./cmd/omni
+	./scripts/build-core.sh --package ./cmd/omni --output bin/omni
 
-run:
-	go run ./cmd/core
+run: core
+	./bin/agent-core
 
 fmt:
 	gofmt -w ./cmd ./internal

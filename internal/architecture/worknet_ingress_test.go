@@ -52,7 +52,8 @@ func TestDockerRuntimeCanBuildInsideOneExplicitWorkspaceBoundary(t *testing.T) {
 		t.Fatal("core must mount exactly the configured host project root read-write")
 	}
 	for _, required := range []string{
-		`user: "0:0"`,
+		`APP_UID: ${HOST_UID:?HOST_UID must match the owner of HOST_WORKSPACE_PATH}`,
+		`APP_GID: ${HOST_GID:?HOST_GID must match the group of HOST_WORKSPACE_PATH}`,
 		`DOCKER_HOST: unix:///var/run/docker.sock`,
 		"source: ${HOST_WORKSPACE_PATH:?HOST_WORKSPACE_PATH must be set to an absolute project root}\n        target: ${HOST_WORKSPACE_PATH:?HOST_WORKSPACE_PATH must be set to an absolute project root}",
 		"source: ${DOCKER_SOCKET_PATH:?DOCKER_SOCKET_PATH must name the rootless Docker Unix socket}\n        target: /var/run/docker.sock",
@@ -60,6 +61,10 @@ func TestDockerRuntimeCanBuildInsideOneExplicitWorkspaceBoundary(t *testing.T) {
 		if !strings.Contains(raw, required) {
 			t.Fatalf("core Docker execution boundary lacks %q", required)
 		}
+	}
+	coreSection := strings.Split(raw, "  runtime-volume-init:")[0]
+	if strings.Contains(coreSection, `user: "0:0"`) {
+		t.Fatal("rootful core deployment must not mutate the host workspace as root")
 	}
 	if strings.Count(raw, "create_host_path: false") < 3 {
 		t.Fatal("Docker workspace and socket binds must fail instead of creating missing host paths")
@@ -101,8 +106,14 @@ func TestDockerRuntimeCanBuildInsideOneExplicitWorkspaceBoundary(t *testing.T) {
 	if !strings.Contains(image, "build-base") || !strings.Contains(image, "CGO_ENABLED=1") {
 		t.Fatal("runtime core build must compile the authoritative tree-sitter TypeScript parser with CGO")
 	}
-	if !strings.Contains(image, "USER app") {
-		t.Fatal("standalone core image must retain its non-root default identity")
+	for _, required := range []string{
+		`validate_host_id APP_UID "${APP_UID}"`,
+		`validate_host_id APP_GID "${APP_GID}"`,
+		`USER ${APP_UID}:${APP_GID}`,
+	} {
+		if !strings.Contains(image, required) {
+			t.Fatalf("standalone core image lacks exact non-root identity contract %q", required)
+		}
 	}
 	for _, name := range []string{".env.example", "default.env"} {
 		environment, err := os.ReadFile(filepath.Clean(filepath.Join("..", "..", name)))

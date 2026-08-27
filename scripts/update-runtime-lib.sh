@@ -9,6 +9,44 @@ resolve_compose_cmd() {
   die "the Docker Compose plugin is required but was not found"
 }
 
+runtime_validate_build_commit() {
+  local commit="$1"
+  [[ "${commit}" =~ ^[0123456789abcdef]{40}([0123456789abcdef]{24})?$ ]] ||
+    die "OMNIDEX_COMMIT must be exactly 40 or 64 lowercase hexadecimal characters"
+}
+
+runtime_validate_host_id() {
+  local label="$1" value="$2"
+  [[ "${value}" =~ ^[1-9][0-9]{0,9}$ ]] && ((10#${value} <= 4294967294)) ||
+    die "${label} must be one exact positive numeric host identity"
+}
+
+runtime_user_identity() {
+  local uid="$1" gid="$2"
+  runtime_validate_host_id "HOST_UID" "${uid}"
+  runtime_validate_host_id "HOST_GID" "${gid}"
+  printf '%s:%s\n' "${uid}" "${gid}"
+}
+
+runtime_validate_user_identity() {
+  local value="$1" uid gid
+  [[ "${value}" == *:* && "${value}" != *:*:* ]] ||
+    die "runtime user must be one exact positive numeric UID:GID"
+  uid="${value%%:*}"
+  gid="${value#*:}"
+  runtime_validate_host_id "HOST_UID" "${uid}"
+  runtime_validate_host_id "HOST_GID" "${gid}"
+}
+
+runtime_export_compose_identity() {
+  [[ -n "${COMPOSE_PROJECT:-}" ]] || die "COMPOSE_PROJECT_NAME must be explicit and non-empty"
+  validate_compose_identity "COMPOSE_PROJECT_NAME" "${COMPOSE_PROJECT}"
+  runtime_validate_host_id "HOST_UID" "${HOST_UID:-}"
+  runtime_validate_host_id "HOST_GID" "${HOST_GID:-}"
+  export COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT}"
+  export HOST_UID HOST_GID
+}
+
 validate_compose_identity() {
   local label="$1" value="$2"
   [[ -z "${value}" || "${value}" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*$ ]] ||
@@ -18,6 +56,7 @@ validate_compose_identity() {
 compose_docker() {
   [[ -n "${DOCKER_CONTEXT_NAME:-}" ]] || die "DOCKER_CONTEXT must be explicit and non-empty"
   validate_compose_identity "DOCKER_CONTEXT" "${DOCKER_CONTEXT_NAME}"
+  runtime_export_compose_identity
   env "DOCKER_CONTEXT=${DOCKER_CONTEXT_NAME}" docker compose "$@"
 }
 
@@ -42,7 +81,8 @@ needs_compose_work() {
 }
 
 compose_build() {
-  local repo_dir="$1" compose_cmd="$2" compose_file="$3" service="$4"
+  local repo_dir="$1" compose_cmd="$2" compose_file="$3" service="$4" commit="$5"
+  runtime_validate_build_commit "${commit}"
   if ((NO_BUILD)); then
     log "skipping docker compose build (--no-build)"
     return 0
@@ -54,11 +94,17 @@ compose_build() {
   ((NO_CACHE == 0)) || cmd+=(--no-cache)
   cmd+=("${service}")
   log "rebuilding image for service ${service}"
-  (cd "${repo_dir}" && "${cmd[@]}")
+  (
+    cd "${repo_dir}"
+    export OMNIDEX_COMMIT="${commit}"
+    runtime_export_compose_identity
+    "${cmd[@]}"
+  )
 }
 
 compose_restart() {
-  local repo_dir="$1" compose_cmd="$2" compose_file="$3" service="$4"
+  local repo_dir="$1" compose_cmd="$2" compose_file="$3" service="$4" commit="$5"
+  runtime_validate_build_commit "${commit}"
   if ((NO_RESTART)); then
     log "skipping docker compose up (--no-restart)"
     return 0
@@ -68,36 +114,80 @@ compose_restart() {
   [[ -z "${compose_file}" ]] || cmd+=(-f "${compose_file}")
   cmd+=(up -d --remove-orphans --wait --wait-timeout 180 "${service}")
   log "restarting service ${service} and waiting for health"
-  (cd "${repo_dir}" && "${cmd[@]}")
+  (
+    cd "${repo_dir}"
+    export OMNIDEX_COMMIT="${commit}"
+    runtime_export_compose_identity
+    "${cmd[@]}"
+  )
 }
 
 compose_image_id() {
-  local repo_dir="$1" compose_cmd="$2" compose_file="$3" service="$4"
+  local repo_dir="$1" compose_cmd="$2" compose_file="$3" service="$4" commit="$5"
+  runtime_validate_build_commit "${commit}"
   local -a cmd=()
   compose_command_array "${compose_cmd}" cmd
   [[ -z "${compose_file}" ]] || cmd+=(-f "${compose_file}")
   cmd+=(images -q "${service}")
   local image_id
-  image_id="$(cd "${repo_dir}" && "${cmd[@]}")"
+  image_id="$(
+    cd "${repo_dir}"
+    export OMNIDEX_COMMIT="${commit}"
+    runtime_export_compose_identity
+    "${cmd[@]}"
+  )"
   [[ "${image_id}" =~ ^sha256:[0-9a-f]{64}$ ]] ||
     die "compose service ${service} did not resolve to one exact image identity"
   printf '%s\n' "${image_id}"
 }
 
+compose_require_image_commit() {
+  local image_id="$1" expected_commit="$2" expected_user="$3" image_commit image_user
+  runtime_validate_build_commit "${expected_commit}"
+  runtime_validate_user_identity "${expected_user}"
+  [[ "${image_id}" =~ ^sha256:[0-9a-f]{64}$ ]] ||
+    die "release verification requires one exact image identity"
+  image_commit="$(context_docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "${image_id}")"
+  [[ "${image_commit}" == "${expected_commit}" ]] ||
+    die "image ${image_id} has release commit ${image_commit:-<missing>}, expected ${expected_commit}"
+  image_user="$(context_docker image inspect --format '{{.Config.User}}' "${image_id}")"
+  [[ "${image_user}" == "${expected_user}" ]] ||
+    die "image ${image_id} has runtime user ${image_user:-<missing>}, expected ${expected_user}"
+  log "verified image ${image_id} release commit ${image_commit} runtime user ${image_user}"
+}
+
 compose_require_running_image() {
-  local repo_dir="$1" compose_cmd="$2" compose_file="$3" service="$4" expected_image="$5"
+  local repo_dir="$1" compose_cmd="$2" compose_file="$3" service="$4" expected_image="$5" expected_commit="$6" expected_user="$7"
+  runtime_validate_build_commit "${expected_commit}"
+  runtime_validate_user_identity "${expected_user}"
   local -a cmd=()
   compose_command_array "${compose_cmd}" cmd
   [[ -z "${compose_file}" ]] || cmd+=(-f "${compose_file}")
   cmd+=(ps -q "${service}")
-  local container_id running_image
-  container_id="$(cd "${repo_dir}" && "${cmd[@]}")"
+  local container_id running_image running_commit running_user health_commit
+  container_id="$(
+    cd "${repo_dir}"
+    export OMNIDEX_COMMIT="${expected_commit}"
+    runtime_export_compose_identity
+    "${cmd[@]}"
+  )"
   [[ "${container_id}" =~ ^[0-9a-f]{12,64}$ ]] ||
     die "compose service ${service} did not resolve to one running container"
-  running_image="$(context_docker inspect --format '{{.Image}}' "${container_id}")"
+  running_image="$(context_docker inspect --type container --format '{{.Image}}' "${container_id}")"
   [[ "${running_image}" == "${expected_image}" ]] ||
     die "compose service ${service} is running image ${running_image}, expected ${expected_image}"
-  log "verified running service ${service} image ${running_image}"
+  running_commit="$(context_docker inspect --type container --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "${container_id}")"
+  [[ "${running_commit}" == "${expected_commit}" ]] ||
+    die "compose service ${service} is running release commit ${running_commit:-<missing>}, expected ${expected_commit}"
+  running_user="$(context_docker inspect --type container --format '{{.Config.User}}' "${container_id}")"
+  [[ "${running_user}" == "${expected_user}" ]] ||
+    die "compose service ${service} is running as ${running_user:-<missing>}, expected ${expected_user}"
+  if ! health_commit="$(context_docker exec "${container_id}" /usr/local/bin/agent-core release:verify-running-health "${expected_commit}")"; then
+    die "compose service ${service} health release identity is unreachable"
+  fi
+  [[ "${health_commit}" == "${expected_commit}" ]] ||
+    die "compose service ${service} health reports release commit ${health_commit:-<missing>}, expected ${expected_commit}"
+  log "verified running service ${service} image ${running_image} release commit ${running_commit} runtime user ${running_user}"
 }
 
 host_bridge_unit_file() {

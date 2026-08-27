@@ -6,6 +6,56 @@ import (
 	"testing"
 )
 
+func TestBuildCommitAcceptsExactLowercaseGitObjectIdentities(t *testing.T) {
+	original := Commit
+	t.Cleanup(func() { Commit = original })
+
+	for _, candidate := range []string{
+		strings.Repeat("a", 40),
+		strings.Repeat("0123456789abcdef", 4),
+	} {
+		Commit = candidate
+		got, err := BuildCommit()
+		if err != nil {
+			t.Fatalf("BuildCommit(%q): %v", candidate, err)
+		}
+		if got != candidate {
+			t.Fatalf("BuildCommit()=%q want %q", got, candidate)
+		}
+	}
+}
+
+func TestBuildCommitRejectsMissingOrInexactIdentity(t *testing.T) {
+	original := Commit
+	t.Cleanup(func() { Commit = original })
+
+	for _, candidate := range []string{
+		"",
+		strings.Repeat("a", 39),
+		strings.Repeat("a", 41),
+		strings.Repeat("a", 63),
+		strings.Repeat("a", 65),
+		strings.Repeat("A", 40),
+		strings.Repeat("g", 40),
+		" " + strings.Repeat("a", 40),
+		strings.Repeat("a", 40) + "\n",
+	} {
+		Commit = candidate
+		if got, err := BuildCommit(); err == nil {
+			t.Fatalf("BuildCommit(%q)=%q, want validation error", candidate, got)
+		}
+	}
+}
+
+func TestJSONPreservesExactEmbeddedCommitBytes(t *testing.T) {
+	original := Commit
+	t.Cleanup(func() { Commit = original })
+	Commit = " " + strings.Repeat("a", 40) + " "
+	if got := JSON()["commit"]; got != Commit {
+		t.Fatalf("JSON commit=%q want exact embedded bytes %q", got, Commit)
+	}
+}
+
 func TestCurrentReleaseIsCharmeleon(t *testing.T) {
 	if Version != "v0.5.0" || Codename != "Charmeleon" {
 		t.Fatalf("current release=%s %s", Version, Codename)

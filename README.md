@@ -484,6 +484,7 @@ Requirements: Docker with Compose and an Ollama endpoint reachable from the core
 
 ```bash
 cp default.env .env
+# Set DOCKER_CONTEXT, HOST_UID=$(id -u), and HOST_GID=$(id -g) in .env.
 ./up.sh --build
 ```
 
@@ -494,6 +495,10 @@ The default compose topology keeps PostgreSQL and Redis on the internal backend 
 `COMPOSE_PROJECT_NAME` in `.env`; do not run ambient `docker compose` commands,
 which can point at a different Docker engine and create a separate empty
 database.
+The core image runs as the configured `HOST_UID`/`HOST_GID`, so files written
+through the direct workspace bind retain the caller's host ownership. The
+mounted rootless Docker socket is used only for code-owned generated-workload
+verification and deployment; it does not hold or copy the workspace.
 
 For a host build:
 

@@ -18,7 +18,7 @@ usage() {
   cat <<EOF
 Usage: ./install-release.sh [--prefix path] [--env-file path] [--yes]
 
-Installs this native release archive atomically. A fresh install requires an
+Installs this Unix native release archive atomically. A fresh install requires an
 explicit --env-file. An existing managed install preserves its regular .env
 byte-for-byte and rejects --env-file replacement.
 EOF

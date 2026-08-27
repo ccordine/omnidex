@@ -4,11 +4,12 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
 )
+
+const serviceComposeWaitTimeoutSeconds = 180
 
 func normalizeServiceAction(value string) (string, bool) {
 	switch strings.ToLower(strings.TrimSpace(value)) {
@@ -52,14 +53,22 @@ func serviceRunsCoreMigrateFresh(opts serviceCommandOptions) (bool, error) {
 	return true, nil
 }
 
-func resolveComposeCommandPrefix(contextName string) ([]string, error) {
+func resolveComposeCommandPrefix(
+	contextName string,
+	environment []string,
+	runner serviceProcessRunner,
+) ([]string, error) {
 	if err := validateServiceDeploymentIdentifier(dockerContextEnvironmentKey, contextName); err != nil {
 		return nil, err
 	}
-	if _, err := exec.LookPath("docker"); err == nil {
-		if err := exec.Command("docker", "--context", contextName, "compose", "version").Run(); err == nil {
-			return []string{"docker", "--context", contextName, "compose"}, nil
-		}
+	if runner == nil {
+		return nil, errors.New("service process runner is required")
+	}
+	invocation := []string{"docker", "--context", contextName, "compose", "version"}
+	if _, err := runner.Output(serviceProcessRequest{
+		Invocation: invocation, Environment: environment,
+	}); err == nil {
+		return []string{"docker", "--context", contextName, "compose"}, nil
 	}
 	return nil, fmt.Errorf("the Docker Compose plugin is unavailable in explicit context %q", contextName)
 }
@@ -149,7 +158,11 @@ func composeInvocationForService(opts serviceCommandOptions, composeCmd []string
 	invocation = append(invocation, "-f", composeFile)
 	switch action {
 	case "up":
-		invocation = append(invocation, "up", "-d", "--remove-orphans")
+		invocation = append(
+			invocation,
+			"up", "-d", "--remove-orphans", "--wait", "--wait-timeout",
+			strconv.Itoa(serviceComposeWaitTimeoutSeconds),
+		)
 		if opts.Build {
 			invocation = append(invocation, "--build")
 		}

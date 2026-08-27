@@ -28,7 +28,7 @@ func TestManagedUpdateRejectsUntrackedInstallDataWithoutDeletingIt(t *testing.T)
 
 	output, err := runManagedScriptResult(fixture, filepath.Join(fixture.prefix, "update.sh"), []string{"OMNI_FIXTURE_NPM_FAIL=1"},
 		"--host-only", "--no-host-restart", "--no-pull")
-	if err == nil || !strings.Contains(output, "untracked files") {
+	if err == nil || !strings.Contains(output, "source checkout is dirty") {
 		t.Fatalf("untracked install update error=%v output=%s", err, output)
 	}
 	if got := runFixtureGit(t, fixture.prefix, "rev-parse", "HEAD"); got != oldHead {

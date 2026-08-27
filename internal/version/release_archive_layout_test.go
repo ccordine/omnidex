@@ -18,7 +18,8 @@ func TestNativeReleaseArchiveContainsOneRunnableManagedRuntimeLayout(t *testing.
 	}
 	for _, path := range []string{
 		"default.env", "install-release.sh",
-		"scripts/install-shell-lib.sh", "scripts/managed-release-install-lib.sh",
+		"scripts/install-shell-lib.sh", "scripts/release-binary-identity-lib.sh",
+		"scripts/managed-release-install-lib.sh",
 	} {
 		source := filepath.Join(repository, path)
 		target := filepath.Join(targetSource, path)
@@ -53,7 +54,8 @@ func TestNativeReleaseArchiveContainsOneRunnableManagedRuntimeLayout(t *testing.
 
 	for _, path := range []string{
 		"bin/omni", "bin/agent-cli", "bin/agent-core", "bin/acli", "default.env",
-		"install-release.sh", "scripts/install-shell-lib.sh", "scripts/managed-release-install-lib.sh",
+		"install-release.sh", "scripts/install-shell-lib.sh",
+		"scripts/release-binary-identity-lib.sh", "scripts/managed-release-install-lib.sh",
 	} {
 		if _, err := os.Lstat(filepath.Join(targetDir, path)); err != nil {
 			t.Fatalf("native release runtime omits %s: %v", path, err)
@@ -104,29 +106,13 @@ func TestNativeReleaseArchiveContainsOneRunnableManagedRuntimeLayout(t *testing.
 	}
 }
 
-func TestWindowsReleaseArchiveContainsManagedRuntimeAndNativeCLIEntrypoint(t *testing.T) {
+func TestWindowsReleaseArchiveOmitsUnixInstallerAndContainsNativeCLIEntrypoint(t *testing.T) {
 	repository := releaseRepositoryRoot(t)
 	script := filepath.Join(repository, "scripts", "build-release.sh")
 	targetSource := filepath.Join(t.TempDir(), "source")
 	targetDir := filepath.Join(t.TempDir(), "omnidex-v1.2.3-windows-amd64")
-	if err := os.MkdirAll(filepath.Join(targetSource, "scripts"), 0o755); err != nil {
+	if err := os.MkdirAll(targetSource, 0o755); err != nil {
 		t.Fatal(err)
-	}
-	for _, path := range []string{
-		"default.env", "install-release.sh",
-		"scripts/install-shell-lib.sh", "scripts/managed-release-install-lib.sh",
-	} {
-		raw, err := os.ReadFile(filepath.Join(repository, path))
-		if err != nil {
-			t.Fatal(err)
-		}
-		target := filepath.Join(targetSource, path)
-		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(target, raw, 0o700); err != nil {
-			t.Fatal(err)
-		}
 	}
 	if err := os.MkdirAll(filepath.Join(targetDir, "bin"), 0o755); err != nil {
 		t.Fatal(err)
@@ -144,5 +130,20 @@ func TestWindowsReleaseArchiveContainsManagedRuntimeAndNativeCLIEntrypoint(t *te
 	raw, err := os.ReadFile(filepath.Join(targetDir, "bin", "acli.exe"))
 	if err != nil || string(raw) != "binary" {
 		t.Fatalf("Windows acli entrypoint error = %v, content = %q", err, raw)
+	}
+	for _, path := range []string{
+		"default.env", "install-release.sh", "scripts/install-shell-lib.sh",
+		"scripts/release-binary-identity-lib.sh", "scripts/managed-release-install-lib.sh",
+	} {
+		if _, err := os.Lstat(filepath.Join(targetDir, path)); !os.IsNotExist(err) {
+			t.Fatalf("Windows binary archive retained Unix managed installer path %s: %v", path, err)
+		}
+	}
+	buildScript, err := os.ReadFile(script)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(buildScript), "managed installer is included only in Linux and macOS archives") {
+		t.Fatal("release builder does not state the Unix-only managed installer contract")
 	}
 }

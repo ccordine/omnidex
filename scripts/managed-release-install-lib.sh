@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 
+MANAGED_RELEASE_LIBRARY_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${MANAGED_RELEASE_LIBRARY_DIR}/release-binary-identity-lib.sh"
+
 MANAGED_RELEASE_STAGE=""
 MANAGED_RELEASE_TARGET=""
 
@@ -15,6 +18,7 @@ managed_release_root() {
     die "release archive is missing one or more required binaries"
   [[ -f "${root}/default.env" && ! -L "${root}/default.env" ]] ||
     die "release archive is missing default.env"
+  release_identity_read_manifest "${root}" >/dev/null
   [[ ! -e "${root}/.env" && ! -L "${root}/.env" ]] ||
     die "release archive must not contain an active .env"
   printf '%s\n' "${root}"
@@ -22,7 +26,7 @@ managed_release_root() {
 
 managed_release_publish() {
   local source="$1" requested_target="$2" explicit_env="$3"
-  local parent base target backup="" existing_env="" env_source=""
+  local parent base target backup="" existing_env="" env_source="" release_commit
   [[ -d "${source}" && ! -L "${source}" ]] || die "release source must be a real directory"
   source="$(cd "${source}" && pwd -P)"
 
@@ -72,6 +76,8 @@ managed_release_publish() {
   [[ ! -e "${MANAGED_RELEASE_STAGE}/.env" && ! -L "${MANAGED_RELEASE_STAGE}/.env" ]] ||
     die "release payload unexpectedly contains an active .env"
   cp -p "${env_source}" "${MANAGED_RELEASE_STAGE}/.env"
+  release_commit="$(release_identity_read_manifest "${MANAGED_RELEASE_STAGE}")"
+  release_identity_verify_binaries "${MANAGED_RELEASE_STAGE}" "${release_commit}"
   [[ -x "${MANAGED_RELEASE_STAGE}/bin/agent-core" ]] ||
     die "staged release agent-core is not executable"
   [[ -x "${MANAGED_RELEASE_STAGE}/bin/agent-cli" ]] ||

@@ -4,6 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 source "${SCRIPT_DIR}/build-release-lib.sh"
+source "${SCRIPT_DIR}/release-binary-identity-lib.sh"
 
 DIST_DIR="${REPO_ROOT}/dist"
 VERSION="v0.5.0"
@@ -19,6 +20,7 @@ MANAGED_RUNTIME_FILES=(
   "default.env"
   "install-release.sh"
   "scripts/install-shell-lib.sh"
+  "scripts/release-binary-identity-lib.sh"
   "scripts/managed-release-install-lib.sh"
 )
 
@@ -48,6 +50,8 @@ Options:
 Examples:
   scripts/build-release.sh --version v0.5.0 --codename Charmeleon
   scripts/build-release.sh --target darwin/arm64 --target windows/amd64
+
+The Bash managed installer is included only in Linux and macOS archives.
 EOF
 }
 
@@ -181,17 +185,17 @@ copy_managed_runtime_layout() {
   [[ -d "$source" && ! -L "$source" ]] || die "managed release source is unavailable"
   [[ -d "$target/bin" && ! -L "$target/bin" ]] || die "managed release binary directory is unavailable"
 
+  if [[ "$goos" == "windows" ]]; then
+    cp -p "${target}/bin/agent-cli.exe" "${target}/bin/acli.exe"
+    return
+  fi
   for relative in "${MANAGED_RUNTIME_FILES[@]}"; do
     [[ -f "${source}/${relative}" && ! -L "${source}/${relative}" ]] ||
       die "managed release source omits ${relative}"
     mkdir -p "${target}/$(dirname "$relative")"
     cp -p "${source}/${relative}" "${target}/${relative}"
   done
-  if [[ "$goos" == "windows" ]]; then
-    cp -p "${target}/bin/agent-cli.exe" "${target}/bin/acli.exe"
-  else
-    ln -s agent-cli "${target}/bin/acli"
-  fi
+  ln -s agent-cli "${target}/bin/acli"
 }
 
 build_target() {
@@ -237,6 +241,9 @@ build_target() {
     cp -a "${target_source}/CHANGELOG.md" "${target_dir}/CHANGELOG.md"
   fi
   copy_managed_runtime_layout "$target_source" "$target_dir" "$goos"
+  printf '%s\n' "$RELEASE_COMMIT" > "${target_dir}/${RELEASE_COMMIT_MANIFEST}"
+  chmod 0444 "${target_dir}/${RELEASE_COMMIT_MANIFEST}"
+  release_identity_verify_binaries "$target_dir" "$RELEASE_COMMIT" "$ext"
 
   local actual="${SOURCE_STAGE_ROOT}/${target_name}.after.manifest"
   write_source_manifest "$target_source" "$actual"

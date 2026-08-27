@@ -209,13 +209,31 @@ func newManagedReleaseFixture(t *testing.T) managedReleaseFixture {
 			t.Fatal(err)
 		}
 	}
-	for _, path := range []string{"install-release.sh", "scripts/managed-release-install-lib.sh", "scripts/install-shell-lib.sh"} {
+	for _, path := range []string{
+		"install-release.sh",
+		"scripts/managed-release-install-lib.sh",
+		"scripts/release-binary-identity-lib.sh",
+		"scripts/install-shell-lib.sh",
+	} {
 		copyFixtureFile(t, filepath.Join(root, path), filepath.Join(fixture.release, path), 0o700)
 	}
+	commit := strings.Repeat("a", 40)
+	writeFixtureFile(t, filepath.Join(fixture.release, "RELEASE_COMMIT"), commit+"\n", 0o600)
 	writeFixtureFile(t, filepath.Join(fixture.release, "default.env"), "TEMPLATE_ONLY=1\n", 0o600)
-	writeFixtureFile(t, filepath.Join(fixture.release, "bin", "omni"), "#!/usr/bin/env bash\nexit 0\n", 0o700)
+	writeFixtureFile(t, filepath.Join(fixture.release, "bin", "omni"), `#!/usr/bin/env bash
+set -euo pipefail
+if [[ "${1:-}" == "version" && "${2:-}" == "--json" ]]; then
+  printf '{\n  "commit": "%s"\n}\n' '`+commit+`'
+  exit 0
+fi
+exit 64
+`, 0o700)
 	writeFixtureFile(t, filepath.Join(fixture.release, "bin", "agent-cli"), `#!/usr/bin/env bash
 set -euo pipefail
+if [[ "${1:-}" == "version" && "${2:-}" == "--json" ]]; then
+  printf '{\n  "commit": "%s"\n}\n' '`+commit+`'
+  exit 0
+fi
 [[ "${1:-}" == "config:validate-file" && $# -eq 2 ]] || exit 64
 count=0
 value=""
@@ -228,6 +246,10 @@ done < "$2"
 `, 0o700)
 	writeFixtureFile(t, filepath.Join(fixture.release, "bin", "agent-core"), `#!/usr/bin/env bash
 set -euo pipefail
+if [[ "${1:-}" == "release:verify-commit" && "${2:-}" == "`+commit+`" ]]; then
+  printf '%s\n' '`+commit+`'
+  exit 0
+fi
 [[ "${1:-}" == "config:validate-file" && $# -eq 2 ]] || exit 64
 while IFS= read -r line; do
   [[ "$line" != INVALID=* ]] || exit 65

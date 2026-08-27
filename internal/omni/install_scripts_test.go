@@ -13,9 +13,138 @@ func TestInstallAndUpdateScriptsBuildOmniBinary(t *testing.T) {
 
 	for _, scriptName := range []string{"install.sh", "update.sh"} {
 		body := readRepoScript(t, root, scriptName)
-		if !strings.Contains(body, `go build -o "${build_dir}/omni" ./cmd/omni`) {
+		if !strings.Contains(body, `-o "${build_dir}/omni" ./cmd/omni`) {
 			t.Fatalf("%s must build bin/omni from ./cmd/omni", scriptName)
 		}
+		for _, fragment := range []string{"go build -trimpath", "internal/version.Commit=${OMNIDEX_COMMIT}", "managed_checkout_verify_binary_commit"} {
+			if !strings.Contains(body, fragment) {
+				t.Fatalf("%s omits release-bound native build fragment %q", scriptName, fragment)
+			}
+		}
+	}
+}
+
+func TestManagedCheckoutBuildCommitOverwritesAmbientWithCleanHead(t *testing.T) {
+	root := repoRootFromOmniTest(t)
+	repository := t.TempDir()
+	writeFixtureFile(t, filepath.Join(repository, "tracked.txt"), "clean\n", 0o600)
+	runFixtureGit(t, repository, "init", "-b", "main")
+	runFixtureGit(t, repository, "config", "user.email", "identity-test@example.invalid")
+	runFixtureGit(t, repository, "config", "user.name", "Identity Test")
+	runFixtureGit(t, repository, "add", ".")
+	runFixtureGit(t, repository, "commit", "-m", "fixture")
+	expected := runFixtureGit(t, repository, "rev-parse", "HEAD")
+
+	script := `
+set -euo pipefail
+source "$1/scripts/managed-checkout-lib.sh"
+die() { printf '%s\n' "$*" >&2; exit 1; }
+managed_checkout_export_build_commit "$2"
+printf '%s\n' "$OMNIDEX_COMMIT"
+`
+	command := exec.Command("bash", "-c", script, "managed-build-commit", root, repository)
+	command.Env = exactTestEnvironment(os.Environ(), map[string]string{"OMNIDEX_COMMIT": strings.Repeat("f", 40)})
+	output, err := command.CombinedOutput()
+	if err != nil || strings.TrimSpace(string(output)) != expected {
+		t.Fatalf("managed commit output=%q error=%v want %q", output, err, expected)
+	}
+
+	writeFixtureFile(t, filepath.Join(repository, "tracked.txt"), "dirty\n", 0o600)
+	command = exec.Command("bash", "-c", script, "managed-build-commit-dirty", root, repository)
+	command.Env = exactTestEnvironment(os.Environ(), map[string]string{"OMNIDEX_COMMIT": strings.Repeat("f", 40)})
+	output, err = command.CombinedOutput()
+	if err == nil || !strings.Contains(string(output), "source checkout is dirty") {
+		t.Fatalf("dirty checkout commit error=%v output=%q", err, output)
+	}
+}
+
+func TestManagedCheckoutCleanCheckIncludesSubmodules(t *testing.T) {
+	root := repoRootFromOmniTest(t)
+	body := readRepoScript(t, root, "scripts/managed-checkout-lib.sh")
+	for _, fragment := range []string{
+		"status --porcelain=v1",
+		"--untracked-files=normal",
+		"--ignore-submodules=none",
+	} {
+		if !strings.Contains(body, fragment) {
+			t.Fatalf("managed checkout clean-state check omits %q", fragment)
+		}
+	}
+	if strings.Contains(body, "--ignore-submodules --") {
+		t.Fatal("managed checkout still ignores submodule modifications")
+	}
+}
+
+func TestNativeBuildEntrypointsBindAndVerifyOneCleanCommit(t *testing.T) {
+	root := repoRootFromOmniTest(t)
+	for _, scriptName := range []string{"install.sh", "update.sh", "scripts/build-core.sh"} {
+		body := readRepoScript(t, root, scriptName)
+		for _, fragment := range []string{
+			"managed_checkout_export_build_commit",
+			"go build -trimpath",
+			"managed_checkout_verify_binary_commit",
+		} {
+			if !strings.Contains(body, fragment) {
+				t.Fatalf("%s omits native release identity fragment %q", scriptName, fragment)
+			}
+		}
+		if count := strings.Count(body, "internal/version.Commit=${OMNIDEX_COMMIT}"); count != 1 {
+			t.Fatalf("%s has %d release commit linker assignments, want one authoritative assignment", scriptName, count)
+		}
+	}
+}
+
+func TestShellAliasesUseOnlyManagedReleaseBinaries(t *testing.T) {
+	root := repoRootFromOmniTest(t)
+	body := readRepoScript(t, root, "agent_aliases.sh")
+	for _, required := range []string{
+		`${OMNIDEX_DIR}/bin/agent-cli`,
+		`${OMNIDEX_DIR}/bin/omni`,
+		"managed CLI binary is missing",
+		"managed omni binary is missing",
+	} {
+		if !strings.Contains(body, required) {
+			t.Fatalf("agent aliases omit managed-binary authority %q", required)
+		}
+	}
+	for _, forbidden := range []string{"go run", "command agent-cli", "OMNIDEX_USE_SYSTEM_OMNI", "type -P omni"} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("agent aliases retain alternate runtime path %q", forbidden)
+		}
+	}
+}
+
+func TestMakeBuildAndRunUseReleaseBoundBinaries(t *testing.T) {
+	root := repoRootFromOmniTest(t)
+	body := readRepoScript(t, root, "Makefile")
+	for _, fragment := range []string{
+		"./scripts/build-core.sh --package ./cmd/cli --output bin/agent-cli",
+		"./scripts/build-core.sh --package ./cmd/omni --output bin/omni",
+		"run: core",
+		"./bin/agent-core",
+	} {
+		if !strings.Contains(body, fragment) {
+			t.Fatalf("Makefile omits release-bound entrypoint %q", fragment)
+		}
+	}
+	for _, forbidden := range []string{"go build -o bin/agent-cli", "go build -o bin/omni", "go run ./cmd/core"} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("Makefile retains unbound build/run entrypoint %q", forbidden)
+		}
+	}
+}
+
+func TestNativeBinaryBuilderBuildsUIOnlyForCore(t *testing.T) {
+	root := repoRootFromOmniTest(t)
+	body := readRepoScript(t, root, "scripts/build-core.sh")
+	guard := `if [[ "${BUILD_PKG}" == "./cmd/core" ]]; then`
+	guardIndex := strings.Index(body, guard)
+	uiIndex := strings.Index(body, `"${SCRIPT_DIR}/build-ui.sh"`)
+	if guardIndex < 0 || uiIndex < guardIndex {
+		t.Fatal("native binary builder does not gate UI construction to the core package")
+	}
+	if count := strings.Count(body, `"${SCRIPT_DIR}/build-ui.sh"`); count != 1 {
+		t.Fatalf("native binary builder has %d UI build invocations, want one core-only invocation", count)
 	}
 }
 
@@ -98,7 +227,9 @@ func TestUpdateScriptSupportsHostOnlyInstalledUpdate(t *testing.T) {
 		"managed_checkout_fast_forward",
 		"managed_checkout_publish",
 		"restart_host_bridge",
-		`go build -o "${build_dir}/omni" ./cmd/omni`,
+		`-o "${build_dir}/omni" ./cmd/omni`,
+		"managed_checkout_export_build_commit",
+		"managed_checkout_verify_binary_commit",
 	} {
 		if !strings.Contains(combined, want) {
 			t.Fatalf("update.sh missing installed-update fragment %q", want)
@@ -129,6 +260,35 @@ func TestUpdateScriptConsumesExactDockerDeploymentAuthority(t *testing.T) {
 		if !strings.Contains(body, "DOCKER_CONTEXT=") || !strings.Contains(body, "COMPOSE_PROJECT_NAME=omnidex") {
 			t.Fatalf("%s omits explicit Docker deployment identity", profile)
 		}
+	}
+}
+
+func TestUpdateAndQuickstartExposeOnlyReleaseBoundCoreDeployment(t *testing.T) {
+	root := repoRootFromOmniTest(t)
+	update := readRepoScript(t, root, "update.sh")
+	if strings.Contains(update, "--service") || strings.Contains(update, `${SERVICE}`) {
+		t.Fatal("update.sh still exposes an unverified arbitrary Compose service")
+	}
+	for _, fragment := range []string{
+		`compose_build "${PREFIX}" "${compose_cmd}" "${COMPOSE_FILE}" core`,
+		`compose_restart "${PREFIX}" "${compose_cmd}" "${COMPOSE_FILE}" core`,
+	} {
+		if !strings.Contains(update, fragment) {
+			t.Fatalf("update.sh omits core-only release operation %q", fragment)
+		}
+	}
+	defaults := readRepoScript(t, root, "default.env")
+	if !strings.Contains(defaults, "#   ./up.sh --build") ||
+		!strings.Contains(defaults, "Set this to the intended named context") ||
+		!strings.Contains(defaults, "DOCKER_CONTEXT=\n") {
+		t.Fatal("default.env quickstart does not select the release-bound wrapper and require an explicit context")
+	}
+	if strings.Contains(defaults, "#   docker compose up --build") {
+		t.Fatal("default.env still advertises an unbound direct Compose build")
+	}
+	if example := readRepoScript(t, root, ".env.example"); !strings.Contains(example, "Set this to the intended named context") ||
+		!strings.Contains(example, "DOCKER_CONTEXT=\n") {
+		t.Fatal(".env.example does not require the operator to select one explicit Docker context")
 	}
 }
 
@@ -176,10 +336,13 @@ die() { printf '%s\n' "$*" >&2; exit 1; }
 NO_RESTART=0
 DOCKER_CONTEXT_NAME="rootless"
 COMPOSE_PROJECT="omni-nxt"
-compose_restart "$1" "docker compose" "$1/docker-compose.yml" core
+HOST_UID=1000
+HOST_GID=1001
+export HOST_UID HOST_GID
+compose_restart "$1" "docker compose" "$1/docker-compose.yml" core "$2"
 printf '%s\n' 'update complete'
 `
-	command := exec.Command("bash", "-c", script, "update-health-test", root)
+	command := exec.Command("bash", "-c", script, "update-health-test", root, strings.Repeat("a", 40))
 	command.Env = append(os.Environ(), "PATH="+bin+":"+os.Getenv("PATH"))
 	output, err := command.CombinedOutput()
 	if err == nil {

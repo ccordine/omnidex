@@ -1,16 +1,69 @@
 #!/usr/bin/env bash
 
 managed_checkout_require_source() {
-  local repository="$1" untracked
+  local repository="$1" status
   command -v git >/dev/null 2>&1 || die "git is required for the authoritative install/update checkout"
   [[ -d "${repository}/.git" && ! -L "${repository}/.git" ]] ||
     die "source must be a complete Git checkout with a real .git directory: ${repository}"
-  git -C "${repository}" diff --quiet --ignore-submodules -- ||
-    die "source checkout has unstaged tracked changes"
-  git -C "${repository}" diff --cached --quiet --ignore-submodules -- ||
-    die "source checkout has staged tracked changes"
-  untracked="$(git -C "${repository}" ls-files --others --exclude-standard)"
-  [[ -z "${untracked}" ]] || die "source checkout has untracked files"
+  status="$(git -C "${repository}" status --porcelain=v1 --untracked-files=normal --ignore-submodules=none)" ||
+    die "cannot inspect source checkout state: ${repository}"
+  [[ -z "${status}" ]] || die "source checkout is dirty, including tracked, untracked, or submodule changes"
+}
+
+managed_checkout_validate_commit() {
+  local commit="$1"
+  [[ "${commit}" =~ ^[0123456789abcdef]{40}([0123456789abcdef]{24})?$ ]] ||
+    die "build commit must be exactly 40 or 64 lowercase hexadecimal characters"
+}
+
+managed_checkout_head_commit() {
+  local repository="$1" commit
+  managed_checkout_require_source "${repository}"
+  commit="$(git -C "${repository}" rev-parse --verify 'HEAD^{commit}')" ||
+    die "source checkout HEAD is not an exact commit"
+  managed_checkout_validate_commit "${commit}"
+  printf '%s\n' "${commit}"
+}
+
+managed_checkout_export_build_commit() {
+  local repository="$1"
+  OMNIDEX_COMMIT="$(managed_checkout_head_commit "${repository}")"
+  export OMNIDEX_COMMIT
+}
+
+managed_checkout_verify_binary_commit() {
+  local binary="$1" expected_commit="$2" interface="$3"
+  local metadata trimpath_count revision_count modified_count output reported_commit
+  managed_checkout_validate_commit "${expected_commit}"
+  [[ -x "${binary}" ]] || die "built binary is not executable: ${binary}"
+  metadata="$(go version -m "${binary}")" || die "cannot inspect Go build metadata: ${binary}"
+  trimpath_count="$(printf '%s\n' "${metadata}" | awk '$1 == "build" && $2 == "-trimpath=true" { count++ } END { print count + 0 }')"
+  revision_count="$(printf '%s\n' "${metadata}" | awk -v expected="vcs.revision=${expected_commit}" '$1 == "build" && $2 == expected { count++ } END { print count + 0 }')"
+  modified_count="$(printf '%s\n' "${metadata}" | awk '$1 == "build" && $2 == "vcs.modified=false" { count++ } END { print count + 0 }')"
+  [[ "${trimpath_count}" == "1" ]] || die "built binary does not record one exact trimpath setting: ${binary}"
+  [[ "${revision_count}" == "1" ]] || die "built binary does not record the expected Git revision ${expected_commit}: ${binary}"
+  [[ "${modified_count}" == "1" ]] || die "built binary was not produced from one clean Git revision: ${binary}"
+
+  case "${interface}" in
+    core)
+      output="$("${binary}" release:verify-commit "${expected_commit}")" ||
+        die "built core does not contain expected release commit ${expected_commit}"
+      [[ "${output}" == "${expected_commit}" ]] ||
+        die "built core reported release commit ${output:-<missing>}, expected ${expected_commit}"
+      ;;
+    json)
+      output="$("${binary}" version --json)" ||
+        die "built binary cannot report its release identity: ${binary}"
+      reported_commit="$(printf '%s\n' "${output}" | sed -n 's/^[[:space:]]*"commit":[[:space:]]*"\([^"]*\)"[,]*[[:space:]]*$/\1/p')"
+      [[ "${reported_commit}" == "${expected_commit}" ]] ||
+        die "built binary reported release commit ${reported_commit:-<missing>}, expected ${expected_commit}: ${binary}"
+      ;;
+    metadata)
+      ;;
+    *)
+      die "unsupported binary release verification interface: ${interface}"
+      ;;
+  esac
 }
 
 managed_checkout_require_replaceable_target() {

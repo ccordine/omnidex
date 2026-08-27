@@ -1,18 +1,19 @@
 services:
   core:
+    image: ${COMPOSE_PROJECT_NAME:?COMPOSE_PROJECT_NAME must be configured}-core
     build:
       context: .
       dockerfile: Dockerfile
       args:
-        APP_UID: ${HOST_UID:-1000}
-        APP_GID: ${HOST_GID:-1000}
-    # The required daemon is rootless: container UID 0 maps to its unprivileged
-    # host owner. This is the only identity that can access that owner's 0700
-    # workspaces and 0660 Docker socket through rootless user-namespace mapping.
-    user: "0:0"
+        APP_UID: ${HOST_UID:?HOST_UID must match the owner of HOST_WORKSPACE_PATH}
+        APP_GID: ${HOST_GID:?HOST_GID must match the group of HOST_WORKSPACE_PATH}
+        OMNIDEX_COMMIT: ${OMNIDEX_COMMIT:-}
+    # Dockerfile USER app has the exact host UID/GID supplied above. The core
+    # therefore mutates the direct bind as its host owner even though the core
+    # container itself is started by the rootful default Docker context.
     # Bubblewrap creates the unprivileged user namespace that encloses
-    # existing-repository verification. The rootless outer daemon still owns
-    # the host boundary; this only permits the nested namespace syscall.
+    # existing-repository verification. These options permit that nested
+    # namespace syscall without granting the core process root identity.
     security_opt:
       - seccomp=unconfined
       - systempaths=unconfined
@@ -81,6 +82,8 @@ services:
       retries: 24
       start_period: 10s
     depends_on:
+      runtime-volume-init:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       redis:
@@ -112,14 +115,40 @@ services:
       - type: volume
         source: gomodcache
         target: /var/cache/omnidex/gomod
-        volume:
-          nocopy: true
     networks:
       - omnidex-edge
       - omnidex-backend
       # WorkNet Edge publishes omni.worknet through its declared shared app network.
       - dev-net
     restart: unless-stopped
+
+  runtime-volume-init:
+    image: ${COMPOSE_PROJECT_NAME:?COMPOSE_PROJECT_NAME must be configured}-core
+    user: "0:0"
+    command:
+      - /usr/local/bin/initialize-omnidex-volumes
+      - ${HOST_UID:?HOST_UID must match the owner of HOST_WORKSPACE_PATH}
+      - ${HOST_GID:?HOST_GID must match the group of HOST_WORKSPACE_PATH}
+      - /var/lib/omnidex-deployment
+      - /var/cache/omnidex/gomod
+    read_only: true
+    network_mode: none
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - type: volume
+        source: deploymentkeys
+        target: /var/lib/omnidex-deployment
+      - type: volume
+        source: gomodcache
+        target: /var/cache/omnidex/gomod
+    restart: "no"
 
   postgres:
     image: pgvector/pgvector:pg16

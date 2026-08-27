@@ -14,38 +14,23 @@ unset _agent_aliases_script_dir
 _agent_cli_cmd() {
   local caller_cwd="${PWD}"
 
-  if [[ -x "${OMNIDEX_DIR}/bin/agent-cli" ]]; then
-    OMNI_INVOKE_CWD="${caller_cwd}" "${OMNIDEX_DIR}/bin/agent-cli" "$@"
-    return $?
+  if [[ ! -x "${OMNIDEX_DIR}/bin/agent-cli" ]]; then
+    printf '[omnidex][error] managed CLI binary is missing: %s\n' \
+      "${OMNIDEX_DIR}/bin/agent-cli" >&2
+    return 1
   fi
-
-  if command -v agent-cli >/dev/null 2>&1; then
-    OMNI_INVOKE_CWD="${caller_cwd}" command agent-cli "$@"
-    return $?
-  fi
-
-  (cd "${OMNIDEX_DIR}" && OMNI_INVOKE_CWD="${caller_cwd}" go run ./cmd/cli "$@")
+  OMNI_INVOKE_CWD="${caller_cwd}" "${OMNIDEX_DIR}/bin/agent-cli" "$@"
 }
 
 _omni_cmd() {
   local caller_cwd="${PWD}"
 
-  if [[ -x "${OMNIDEX_DIR}/bin/omni" ]]; then
-    OMNI_INVOKE_CWD="${caller_cwd}" "${OMNIDEX_DIR}/bin/omni" "$@"
-    return $?
+  if [[ ! -x "${OMNIDEX_DIR}/bin/omni" ]]; then
+    printf '[omnidex][error] managed omni binary is missing: %s\n' \
+      "${OMNIDEX_DIR}/bin/omni" >&2
+    return 1
   fi
-
-  if [[ "${OMNIDEX_USE_SYSTEM_OMNI:-0}" != "1" ]]; then
-    (cd "${OMNIDEX_DIR}" && OMNI_INVOKE_CWD="${caller_cwd}" go run ./cmd/omni "$@")
-    return $?
-  fi
-
-  if omni_bin="$(type -P omni 2>/dev/null)"; then
-    OMNI_INVOKE_CWD="${caller_cwd}" "${omni_bin}" "$@"
-    return $?
-  fi
-
-  (cd "${OMNIDEX_DIR}" && OMNI_INVOKE_CWD="${caller_cwd}" go run ./cmd/omni "$@")
+  OMNI_INVOKE_CWD="${caller_cwd}" "${OMNIDEX_DIR}/bin/omni" "$@"
 }
 
 # Canonical deterministic Omnidex CLI

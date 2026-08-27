@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"os"
 	"os/signal"
@@ -28,6 +29,20 @@ func main() {
 			}
 			log.Printf("configuration is valid")
 			return
+		case len(os.Args) == 3 && os.Args[1] == "release:verify-commit":
+			commit, err := verifyReleaseCommit(os.Args[2])
+			if err != nil {
+				log.Fatalf("release identity error: %v", err)
+			}
+			fmt.Println(commit)
+			return
+		case len(os.Args) == 3 && os.Args[1] == "release:verify-running-health":
+			commit, err := verifyRunningReleaseHealthCommand(os.Args[2])
+			if err != nil {
+				log.Fatalf("running release health error: %v", err)
+			}
+			fmt.Println(commit)
+			return
 		case len(os.Args) == 2 && os.Args[1] == "database:preserve-legacy-public":
 			if err := runLegacyPublicPreservationCommand(); err != nil {
 				log.Fatalf("legacy public preservation error: %v", err)
@@ -41,6 +56,9 @@ func main() {
 		default:
 			log.Fatalf("unsupported core command")
 		}
+	}
+	if err := validateReleaseIdentity(); err != nil {
+		log.Fatalf("release identity error: %v", err)
 	}
 	cfg, err := config.Load()
 	if err != nil {
@@ -172,6 +190,22 @@ func main() {
 	if err := api.Run(ctx, cfg.ListenAddr, httpServer.Handler()); err != nil {
 		log.Fatalf("server error: %v", err)
 	}
+}
+
+func validateReleaseIdentity() error {
+	_, err := version.BuildCommit()
+	return err
+}
+
+func verifyReleaseCommit(expected string) (string, error) {
+	commit, err := version.BuildCommit()
+	if err != nil {
+		return "", err
+	}
+	if expected != commit {
+		return "", fmt.Errorf("embedded build commit %s does not match expected commit %s", commit, expected)
+	}
+	return commit, nil
 }
 
 func runtimeWebSearchConfig(cfg config.Config, providers []websearch.ProviderID) websearch.Config {
