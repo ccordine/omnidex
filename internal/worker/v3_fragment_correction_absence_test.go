@@ -90,10 +90,19 @@ func TestFragmentCorrectionConstructorAdmitsOnlyGuidanceAndMutableSource(t *test
 			}
 		})
 	}
-	job, err := assemblyline.NewFragmentCorrectionJob(assemblyline.FragmentCorrectionInput{
-		CurrentDeclaration: "function value(): number { return 1; }",
+	if _, err := assemblyline.NewFragmentCorrectionJob(assemblyline.FragmentCorrectionInput{
+		CurrentDeclaration: "function value() { return 1; }",
 		RepairGuidance:     "Replace the returned literal with two.",
-	})
+	}); err == nil {
+		t.Fatal("language-blind correction bypassed the source-projection identity")
+	}
+	job, err := assemblyline.NewSourceProjectedFragmentCorrectionJob(
+		assemblyline.FragmentCorrectionInput{
+			CurrentDeclaration: "function value() { return 1; }",
+			RepairGuidance:     "Replace the returned literal with two.",
+		},
+		"javascript",
+	)
 	if err != nil {
 		t.Fatal(err)
 	}

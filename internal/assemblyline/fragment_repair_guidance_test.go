@@ -48,11 +48,23 @@ func TestFragmentRepairGuidanceSupportsUnrelatedRegisteredLanguages(t *testing.T
 				"SOURCE_LANGUAGE:\n" + fixture.Language,
 				"SOURCE_DIALECT:\n" + fixture.Dialect,
 				"REQUIRED_DECLARATION_SIGNATURE:\n" + fixture.Signature,
+				"DECLARATIONS_AVAILABLE_TO_ANALYZE:",
+				"IDENTIFIERS_ALREADY_IN_SCOPE:",
+				"The two external-authority lists below are exhaustive.",
+				"Do not require imports, package/module declarations, sibling declarations",
 				"EXACT_MUTABLE_DECLARATION_JSON:", "EXACT_VALIDATION_FAILURE:",
 			} {
 				if !strings.Contains(prompt, required) {
 					t.Fatalf("repair guidance omitted %q:\n%s", required, prompt)
 				}
+			}
+			if len(fixture.Capabilities) == 0 &&
+				!strings.Contains(prompt, "DECLARATIONS_AVAILABLE_TO_ANALYZE:\n(none)") {
+				t.Fatalf("repair guidance hid empty capability authority:\n%s", prompt)
+			}
+			if len(fixture.PermittedSymbols) == 0 &&
+				!strings.Contains(prompt, "IDENTIFIERS_ALREADY_IN_SCOPE:\n(none)") {
+				t.Fatalf("repair guidance hid empty symbol authority:\n%s", prompt)
 			}
 			if schema == nil || schema["additionalProperties"] != false {
 				t.Fatalf("repair guidance response schema=%#v", schema)
@@ -65,9 +77,9 @@ func TestFragmentRepairExecutionWireContainsOnlyInstructionAndMutableSource(t *t
 	t.Parallel()
 	const current = "function transform(array $values): array { return $values; }"
 	const instruction = "Return a reversed copy of $values while preserving the exact declaration."
-	job, err := NewFragmentCorrectionJob(FragmentCorrectionInput{
+	job, err := NewSourceProjectedFragmentCorrectionJob(FragmentCorrectionInput{
 		CurrentDeclaration: current, RepairGuidance: instruction,
-	})
+	}, "php")
 	if err != nil {
 		t.Fatal(err)
 	}

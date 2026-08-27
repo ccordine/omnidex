@@ -2,8 +2,6 @@ package assemblyline
 
 import (
 	"fmt"
-	"strings"
-	"unicode/utf8"
 )
 
 // NewSourceDeclarationPortableResultProjection binds one parser-selected
@@ -32,30 +30,4 @@ func NewSourceDeclarationPortableResultProjection(
 		return PortableResultProjection{}, err
 	}
 	return projection, nil
-}
-
-// ProjectTrimmedSourceDeclarationResponse selects the exact non-whitespace
-// response span. A registered language validator must still prove that the
-// selected bytes are exactly one permitted declaration before acceptance.
-func ProjectTrimmedSourceDeclarationResponse(
-	raw string,
-) (PortableResultProjection, error) {
-	if !utf8.ValidString(raw) || strings.ContainsRune(raw, '\x00') {
-		return PortableResultProjection{}, fmt.Errorf(
-			"source declaration response must be valid UTF-8 without NUL bytes",
-		)
-	}
-	source := strings.TrimSpace(raw)
-	if source == "" {
-		return PortableResultProjection{}, fmt.Errorf("source declaration response is empty")
-	}
-	startByte := strings.Index(raw, source)
-	if startByte < 0 {
-		return PortableResultProjection{}, fmt.Errorf(
-			"source declaration is not an exact response span",
-		)
-	}
-	return NewSourceDeclarationPortableResultProjection(
-		raw, source, startByte, startByte+len(source),
-	)
 }

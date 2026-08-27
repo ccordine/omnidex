@@ -17,7 +17,6 @@ func TestGenerateBlockCoreKeepsInitialProjectionFailuresTerminal(t *testing.T) {
 		input       assemblyline.FragmentGenerationInput
 		raw         string
 		failurePart string
-		project     directCodingLanguageFragmentProjector
 		validate    directCodingLanguageFragmentValidator
 	}{
 		{
@@ -28,7 +27,7 @@ func TestGenerateBlockCoreKeepsInitialProjectionFailuresTerminal(t *testing.T) {
 				Behavior:  "Return the sum of all readings.",
 			},
 			raw: `func SumReadings(values []int) int { return`, failurePart: "parse Go fragment",
-			project: projectDirectCodingGoFragment, validate: validateDirectCodingGoFragment,
+			validate: validateDirectCodingGoFragment,
 		},
 		{
 			name: "javascript extra declaration",
@@ -40,7 +39,6 @@ func TestGenerateBlockCoreKeepsInitialProjectionFailuresTerminal(t *testing.T) {
 			raw: `function selectReading(values) { return values[0]; }
 function auditReading(value) { return value; }`,
 			failurePart: "exactly one top-level declaration",
-			project:     assemblyline.ProjectJavaScriptFragment,
 			validate:    validateDirectCodingJavaScriptFragment,
 		},
 	}
@@ -61,12 +59,10 @@ function auditReading(value) { return value; }`,
 				Documents: []assemblyline.SourceDocument{document},
 			}}
 			executor := &directCodingLanguageProjectStageExecutor{
-				config: directCodingLanguageStageConfig{
-					Language: fixture.input.Language, ProjectFragment: fixture.project,
-				},
-				repairAttempts: make(map[string]int),
-				repairGuidance: make(map[string]map[string]struct{}),
-				repairSources:  make(map[string]map[string]struct{}),
+				config:                    directCodingLanguageStageConfig{Language: fixture.input.Language},
+				acceptedRepairTransitions: make(map[string]int),
+				repairGuidance:            make(map[string]map[string]struct{}),
+				repairSources:             make(map[string]map[string]struct{}),
 			}
 			generationCalls := 0
 			validationCalls := 0
@@ -132,12 +128,10 @@ func TestGenerateBlockCoreDoesNotExposeVerificationSourceToRepair(t *testing.T) 
 		Documents: []assemblyline.SourceDocument{document},
 	}}
 	executor := &directCodingLanguageProjectStageExecutor{
-		config: directCodingLanguageStageConfig{
-			ProjectFragment: assemblyline.ProjectJavaScriptFragment,
-		},
-		repairAttempts: make(map[string]int),
-		repairGuidance: make(map[string]map[string]struct{}),
-		repairSources:  make(map[string]map[string]struct{}),
+		config:                    directCodingLanguageStageConfig{Language: "javascript"},
+		acceptedRepairTransitions: make(map[string]int),
+		repairGuidance:            make(map[string]map[string]struct{}),
+		repairSources:             make(map[string]map[string]struct{}),
 	}
 	calls := 0
 	runtime := typedWorkerRuntime{

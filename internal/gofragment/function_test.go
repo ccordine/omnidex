@@ -26,6 +26,22 @@ func TestParseFunctionPreservesSignatureAndCapabilityBoundary(t *testing.T) {
 	}
 }
 
+func TestParseFunctionReportsEveryUndeclaredCapabilityDeterministically(t *testing.T) {
+	t.Parallel()
+	contract := Contract{
+		Signature: "func Value(input string) string",
+		Current:   "func Value(input string) string { return input }",
+	}
+	_, err := ParseFunction(
+		contract,
+		`func Value(input string) string { return omega.Encode(beta.Parse(alpha.Trim(input))) }`,
+	)
+	if err == nil || err.Error() !=
+		`Go fragment references undeclared capabilities ["Encode" "Parse" "Trim" "alpha" "beta" "omega"]` {
+		t.Fatalf("undeclared capabilities error=%v", err)
+	}
+}
+
 func TestParseFunctionDiagnosticsArePathFreeAndCommentsAreForbidden(t *testing.T) {
 	t.Parallel()
 	contract := Contract{Signature: "func Value() int", Current: "func Value() int { return 1 }"}

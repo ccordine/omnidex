@@ -16,7 +16,6 @@ func newDirectCodingRustProjectStageExecutor(
 ) (directCodingProjectStageExecutor, error) {
 	return newDirectCodingLanguageProjectStageExecutor(session, directCodingLanguageStageConfig{
 		Language: "rust", AdapterID: "rust", Timeout: directCodingRustStageTimeout,
-		ProjectFragment:    assemblyline.ProjectRustFragment,
 		ValidateFragment:   validateDirectCodingRustFragment,
 		ValidateAcceptance: validateDirectCodingRustAcceptance,
 		TaskCommands:       rustCommandLineTaskVerificationCommands,

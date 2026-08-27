@@ -84,7 +84,38 @@ func NewFragmentGenerationJob(input FragmentGenerationInput) (PortableJob, error
 }
 
 func NewFragmentCorrectionJob(input FragmentCorrectionInput) (PortableJob, error) {
+	if input.Language != "typescript" {
+		return PortableJob{}, fmt.Errorf(
+			"language-blind fragment correction requires the source-projected constructor",
+		)
+	}
 	return newValidatedPortableJob(WorkFragmentCorrection, input, input.validate)
+}
+
+// NewSourceProjectedFragmentCorrectionJob binds a language-blind correction
+// prompt to one code-owned result decoder. SourceProjection is immutable
+// portable evidence but is never rendered into the model-visible prompt.
+func NewSourceProjectedFragmentCorrectionJob(
+	input FragmentCorrectionInput,
+	sourceProjection string,
+) (PortableJob, error) {
+	if sourceProjection == "" || sourceProjection != strings.TrimSpace(sourceProjection) {
+		return PortableJob{}, fmt.Errorf(
+			"source-projected fragment correction requires one trimmed projection identity",
+		)
+	}
+	job, err := newValidatedPortableJob(WorkFragmentCorrection, input, input.validate)
+	if err != nil {
+		return PortableJob{}, err
+	}
+	job.SourceProjection = sourceProjection
+	job.ID = portableJobProjectionDigest(
+		job.Schema, job.Kind, job.Payload, job.SourceProjection,
+	)
+	if err := job.Validate(); err != nil {
+		return PortableJob{}, err
+	}
+	return job, nil
 }
 
 func NewResponseCorrectionJob(

@@ -8,10 +8,14 @@ import (
 	"github.com/gryph/omnidex/internal/assemblyline"
 )
 
-const maxDirectCodingLanguageCorrections = 2
+const (
+	maxDirectCodingLanguageRepairTransitions = 2
+	maxDirectCodingLanguageExecutorAttempts  = 2
+)
 
 var (
 	errDirectCodingLanguageCorrectionUnchanged = errors.New("repair executor returned byte-identical source")
+	errDirectCodingLanguageCorrectionInvalid   = errors.New("repair executor returned invalid source")
 	errDirectCodingLanguageGuidanceRepeated    = errors.New("repair guidance repeated a rejected instruction")
 )
 
@@ -59,15 +63,16 @@ func runDirectCodingLanguageCorrection(
 	subject string,
 	current string,
 	instruction string,
+	sourceProjection string,
 	validate func(string) (string, error),
 ) (string, error) {
 	if runtime.Context == nil || runtime.Execute == nil || validate == nil {
-		return "", fmt.Errorf("language correction requires execution and parser boundaries")
+		return "", fmt.Errorf("language correction requires execution, projection, and parser boundaries")
 	}
-	job, err := assemblyline.NewFragmentCorrectionJob(assemblyline.FragmentCorrectionInput{
+	job, err := assemblyline.NewSourceProjectedFragmentCorrectionJob(assemblyline.FragmentCorrectionInput{
 		CurrentDeclaration: strings.TrimSpace(current),
 		RepairGuidance:     strings.TrimSpace(instruction),
-	})
+	}, sourceProjection)
 	if err != nil {
 		return "", err
 	}
@@ -88,8 +93,9 @@ func runDirectCodingLanguageCorrection(
 		err = finalizeTypedWorkerResult(runtime, job, result, err)
 		return "", failDirectCodingLanguageCorrection(runtime, modelName, subject, err)
 	}
-	projection, err := assemblyline.ProjectTrimmedSourceDeclarationResponse(result.Candidate)
+	projection, err := projectDirectCodingSourceDeclaration(sourceProjection, result.Candidate)
 	if err != nil {
+		err = fmt.Errorf("%w: %v", errDirectCodingLanguageCorrectionInvalid, err)
 		err = finalizeTypedWorkerResult(runtime, job, result, err)
 		return "", failDirectCodingLanguageCorrection(runtime, modelName, subject, err)
 	}
@@ -109,6 +115,7 @@ func runDirectCodingLanguageCorrection(
 	}
 	validated, err := validate(candidate)
 	if err != nil {
+		err = fmt.Errorf("%w: %v", errDirectCodingLanguageCorrectionInvalid, err)
 		err = finalizeTypedWorkerResult(runtime, job, result, err)
 		return "", failDirectCodingLanguageCorrection(runtime, modelName, subject, err)
 	}

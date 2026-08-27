@@ -18,7 +18,6 @@ func newDirectCodingJavaProjectStageExecutor(
 ) (directCodingProjectStageExecutor, error) {
 	return newDirectCodingLanguageProjectStageExecutor(session, directCodingLanguageStageConfig{
 		Language: "java", AdapterID: "java", Timeout: directCodingJavaStageTimeout,
-		ProjectFragment:    assemblyline.ProjectJavaFragment,
 		ValidateFragment:   validateDirectCodingJavaFragment,
 		ValidateAcceptance: validateDirectCodingJavaAcceptance,
 		TaskCommands:       javaCommandLineTaskCommands,

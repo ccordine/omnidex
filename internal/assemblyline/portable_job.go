@@ -84,10 +84,11 @@ const (
 )
 
 type PortableJob struct {
-	Schema  string          `json:"schema"`
-	ID      string          `json:"id"`
-	Kind    WorkKind        `json:"kind"`
-	Payload json.RawMessage `json:"payload"`
+	Schema           string          `json:"schema"`
+	ID               string          `json:"id"`
+	Kind             WorkKind        `json:"kind"`
+	Payload          json.RawMessage `json:"payload"`
+	SourceProjection string          `json:"source_projection,omitempty"`
 }
 
 type PortableResult struct {
@@ -147,7 +148,12 @@ func (job PortableJob) Validate() error {
 			maxPortablePayloadBytes,
 		)
 	}
-	expectedID := portableJobDigest(job.Schema, job.Kind, job.Payload)
+	if err := validatePortableJobSourceProjection(job); err != nil {
+		return err
+	}
+	expectedID := portableJobProjectionDigest(
+		job.Schema, job.Kind, job.Payload, job.SourceProjection,
+	)
 	if job.ID != expectedID {
 		return fmt.Errorf("portable job id does not match its immutable content")
 	}
@@ -239,12 +245,25 @@ func portableProjectionSHA256(value string) string {
 }
 
 func portableJobDigest(schema string, kind WorkKind, payload []byte) string {
+	return portableJobProjectionDigest(schema, kind, payload, "")
+}
+
+func portableJobProjectionDigest(
+	schema string,
+	kind WorkKind,
+	payload []byte,
+	sourceProjection string,
+) string {
 	hash := sha256.New()
 	_, _ = hash.Write([]byte(schema))
 	_, _ = hash.Write([]byte{0})
 	_, _ = hash.Write([]byte(kind))
 	_, _ = hash.Write([]byte{0})
 	_, _ = hash.Write(payload)
+	if sourceProjection != "" {
+		_, _ = hash.Write([]byte{0})
+		_, _ = hash.Write([]byte(sourceProjection))
+	}
 	return hex.EncodeToString(hash.Sum(nil))
 }
 

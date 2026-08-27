@@ -23,8 +23,8 @@ type TypeScriptRepairGuidanceInput struct {
 }
 
 // TypeScriptRepairGuidanceRejection is code-owned evidence that one previously
-// accepted instruction produced no source transition for the exact current
-// declaration and diagnostic.
+// accepted instruction could not produce a valid source transition for the
+// exact current declaration and diagnostic.
 type TypeScriptRepairGuidanceRejection struct {
 	Instruction string                                `json:"instruction"`
 	Failure     TypeScriptRepairGuidanceRejectionKind `json:"failure"`
@@ -35,6 +35,7 @@ type TypeScriptRepairGuidanceRejectionKind string
 const (
 	TypeScriptRepairGuidanceNoSourceChange      TypeScriptRepairGuidanceRejectionKind = "no_source_change"
 	TypeScriptRepairGuidanceRepeatedInstruction TypeScriptRepairGuidanceRejectionKind = "repeated_instruction"
+	TypeScriptRepairGuidanceInvalidSource       TypeScriptRepairGuidanceRejectionKind = "invalid_source"
 )
 
 // TypeScriptRepairGuidance is one instruction-only semantic leaf. It has no
@@ -54,6 +55,7 @@ type FragmentRepairGuidance = TypeScriptRepairGuidance
 const (
 	FragmentRepairGuidanceNoSourceChange      = TypeScriptRepairGuidanceNoSourceChange
 	FragmentRepairGuidanceRepeatedInstruction = TypeScriptRepairGuidanceRepeatedInstruction
+	FragmentRepairGuidanceInvalidSource       = TypeScriptRepairGuidanceInvalidSource
 )
 
 func NewFragmentRepairGuidanceJob(input FragmentRepairGuidanceInput) (PortableJob, error) {
@@ -194,7 +196,8 @@ func (rejection TypeScriptRepairGuidanceRejection) validate() error {
 		return fmt.Errorf("instruction exceeds %d bytes", maxTypeScriptRepairGuidanceBytes)
 	}
 	if rejection.Failure != TypeScriptRepairGuidanceNoSourceChange &&
-		rejection.Failure != TypeScriptRepairGuidanceRepeatedInstruction {
+		rejection.Failure != TypeScriptRepairGuidanceRepeatedInstruction &&
+		rejection.Failure != TypeScriptRepairGuidanceInvalidSource {
 		return fmt.Errorf("failure %q is unsupported", rejection.Failure)
 	}
 	return nil

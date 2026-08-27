@@ -23,14 +23,19 @@ func loadStationReplayPortableBoundary(
 	if gap.RendererVersion != assemblyline.PortableRendererV3 {
 		return boundary, fmt.Errorf("station replay renderer %q is not current", gap.RendererVersion)
 	}
+	var persistedJob assemblyline.PortableJob
 	if err := exactjson.ValidateObject(
-		[]byte(gap.PortableEnvelope), assemblyline.PortableJob{}, "station replay portable envelope",
+		[]byte(gap.PortableEnvelope), persistedJob, "station replay portable envelope",
 	); err != nil {
 		return boundary, fmt.Errorf("validate station replay portable envelope: %w", err)
 	}
+	if err := json.Unmarshal([]byte(gap.PortableEnvelope), &persistedJob); err != nil {
+		return boundary, fmt.Errorf("decode station replay portable envelope: %w", err)
+	}
 	boundary.Job = assemblyline.PortableJob{
 		Schema: gap.PortableSchema, ID: gap.WorkID, Kind: assemblyline.WorkKind(gap.WorkKind),
-		Payload: append(json.RawMessage(nil), gap.PortablePayload...),
+		Payload:          append(json.RawMessage(nil), gap.PortablePayload...),
+		SourceProjection: persistedJob.SourceProjection,
 	}
 	if err := rejectRetiredStationReplayJob(boundary.Job); err != nil {
 		return boundary, err

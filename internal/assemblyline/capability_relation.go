@@ -71,7 +71,10 @@ func BuildCapabilityRelationPrompt(input CapabilityRelationInput) (string, error
 	}
 	return strings.Join([]string{
 		"Classify only the direct live-state dependency between two local behaviors.",
-		"A side reads the other only when implementing its own behavior requires current data produced by the other. Shared topic, visual proximity, or possible convenience is not a dependency.",
+		"Return independent when neither behavior must consume a result uniquely produced by the other. Shared request or user input, related subject matter, validation overlap, visual proximity, possible reuse, or convenience does not create an edge.",
+		"Return left_reads_right only when LEFT_NEED cannot satisfy its named behavior without consuming a result uniquely produced by RIGHT_NEED.",
+		"Return right_reads_left only when RIGHT_NEED cannot satisfy its named behavior without consuming a result uniquely produced by LEFT_NEED.",
+		"When the two phrases do not establish one necessary unique producer result, return independent.",
 		"LOCAL_CONTEXT:\n" + input.LocalContext,
 		"LEFT_NEED:\n" + input.LeftNeed,
 		"RIGHT_NEED:\n" + input.RightNeed,

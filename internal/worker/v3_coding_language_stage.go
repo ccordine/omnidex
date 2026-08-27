@@ -17,7 +17,6 @@ type directCodingLanguageStageConfig struct {
 	Language           string
 	AdapterID          string
 	Timeout            time.Duration
-	ProjectFragment    directCodingLanguageFragmentProjector
 	ValidateFragment   directCodingLanguageFragmentValidator
 	ValidateAcceptance func(*directCodingProgram, assemblyline.SourceBlockRef, string) error
 	TaskCommands       func(
@@ -30,14 +29,14 @@ type directCodingLanguageStageConfig struct {
 }
 
 type directCodingLanguageProjectStageExecutor struct {
-	session         *directCodingSession
-	root            string
-	removeEmptyRoot string
-	config          directCodingLanguageStageConfig
-	cleanupRequired bool
-	repairAttempts  map[string]int
-	repairGuidance  map[string]map[string]struct{}
-	repairSources   map[string]map[string]struct{}
+	session                   *directCodingSession
+	root                      string
+	removeEmptyRoot           string
+	config                    directCodingLanguageStageConfig
+	cleanupRequired           bool
+	acceptedRepairTransitions map[string]int
+	repairGuidance            map[string]map[string]struct{}
+	repairSources             map[string]map[string]struct{}
 }
 
 func newDirectCodingLanguageProjectStageExecutor(
@@ -56,17 +55,21 @@ func newDirectCodingLanguageProjectStageExecutor(
 	}
 	return &directCodingLanguageProjectStageExecutor{
 		session: session, root: root, removeEmptyRoot: removeEmptyRoot, config: config,
-		repairAttempts: make(map[string]int), repairGuidance: make(map[string]map[string]struct{}),
-		repairSources: make(map[string]map[string]struct{}),
+		acceptedRepairTransitions: make(map[string]int),
+		repairGuidance:            make(map[string]map[string]struct{}),
+		repairSources:             make(map[string]map[string]struct{}),
 	}, nil
 }
 
 func validateDirectCodingLanguageStageConfig(config directCodingLanguageStageConfig) error {
 	if strings.TrimSpace(config.Language) == "" || strings.TrimSpace(config.AdapterID) == "" ||
-		config.Timeout <= 0 || config.ProjectFragment == nil || config.ValidateFragment == nil ||
+		config.Timeout <= 0 || config.ValidateFragment == nil ||
 		config.TaskCommands == nil ||
 		config.FinalCommands == nil {
 		return fmt.Errorf("language stage configuration requires identity, parsers, timeout, and verification commands")
+	}
+	if _, err := directCodingSourceDeclarationProjector(config.Language); err != nil {
+		return fmt.Errorf("language stage configuration source projection: %w", err)
 	}
 	for index, command := range config.CleanupCommands {
 		if err := validateV3Command(command.Name, command.Args); err != nil {
@@ -139,7 +142,10 @@ func (executor *directCodingLanguageProjectStageExecutor) generateBlockWithRunti
 		runtime, modelName,
 		directCodingLanguageGenerationJob{
 			Subject: ref.Block.ID, Input: input,
-			Project: executor.config.ProjectFragment, Validate: validate,
+			Project: func(raw string) (assemblyline.PortableResultProjection, error) {
+				return projectDirectCodingSourceDeclaration(executor.config.Language, raw)
+			},
+			Validate: validate,
 		},
 	)
 	if err != nil {

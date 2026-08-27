@@ -20,16 +20,23 @@ func BuildTypeScriptRepairGuidancePrompt(
 	parts := []string{
 		request,
 		"The instruction must be complete because only it and the exact mutable source will be available when it is applied. Name every required expression change and preservation constraint. Resolve only the observed failure.",
-		"SOURCE_LANGUAGE:\n" + input.Language,
-		"SOURCE_DIALECT:\n" + input.Dialect,
-		"REQUIRED_DECLARATION_SIGNATURE:\n" + input.Signature,
+		"Constrain the instruction to replacing only the exact mutable source. Preserve REQUIRED_DECLARATION_SIGNATURE exactly. Do not require imports, package/module declarations, sibling declarations, or any other change outside that source.",
 	}
-	if len(input.Capabilities) > 0 {
-		parts = append(parts, "DECLARATIONS_AVAILABLE_TO_ANALYZE:\n"+strings.Join(input.Capabilities, "\n"))
+	if input.CurrentDeclaration != "" {
+		parts = append(parts,
+			"Identifiers declared inside the exact mutable source and language-predeclared identifiers remain available. The two external-authority lists below are exhaustive. An external identifier merely referenced by the rejected source is unavailable unless one of those lists declares it.",
+		)
+	} else {
+		parts = append(parts,
+			"BINDINGS_AVAILABLE_AT_FAILURE_JSON, language-predeclared identifiers, and the two external-authority lists below are the exhaustive authority available inside the exact mutable region. A binding listed as unavailable or merely referenced without appearing in that authority cannot be used at the failing location.",
+		)
 	}
-	if len(input.PermittedSymbols) > 0 {
-		parts = append(parts, "IDENTIFIERS_ALREADY_IN_SCOPE:\n"+strings.Join(input.PermittedSymbols, ", "))
-	}
+	parts = append(parts, "SOURCE_LANGUAGE:\n"+input.Language,
+		"SOURCE_DIALECT:\n"+input.Dialect,
+		"REQUIRED_DECLARATION_SIGNATURE:\n"+input.Signature,
+		"DECLARATIONS_AVAILABLE_TO_ANALYZE:\n"+renderFragmentRepairGuidanceList(input.Capabilities, "\n"),
+		"IDENTIFIERS_ALREADY_IN_SCOPE:\n"+renderFragmentRepairGuidanceList(input.PermittedSymbols, ", "),
+	)
 	if input.CurrentDeclaration != "" {
 		encoded, err := marshalUntrustedPromptString(input.CurrentDeclaration)
 		if err != nil {
@@ -56,6 +63,11 @@ func BuildTypeScriptRepairGuidancePrompt(
 				"EXACT_INSTRUCTION_FAILURE:\nThe candidate repeated REJECTED_INSTRUCTION byte-for-byte after that instruction was already proven to make no source change.",
 				"REQUIRED_INSTRUCTION_DELTA:\nReturn a different instruction naming a concrete source change that resolves EXACT_VALIDATION_FAILURE.",
 			)
+		case TypeScriptRepairGuidanceInvalidSource:
+			parts = append(parts,
+				"EXACT_INSTRUCTION_FAILURE:\nThe rejected instruction caused the source executor to return a replacement outside the code-owned declaration, signature, or identifier boundary.",
+				"REQUIRED_INSTRUCTION_DELTA:\nReturn a different instruction whose complete change stays inside the exact mutable source and uses only the exhaustive authority shown above.",
+			)
 		default:
 			return "", fmt.Errorf("render unsupported repair-guidance rejection %q", input.PriorRejection.Failure)
 		}
@@ -66,6 +78,13 @@ func BuildTypeScriptRepairGuidancePrompt(
 		return "", fmt.Errorf("fragment repair guidance prompt exceeds %d bytes", maxPortableResourceBytes)
 	}
 	return prompt, nil
+}
+
+func renderFragmentRepairGuidanceList(values []string, separator string) string {
+	if len(values) == 0 {
+		return "(none)"
+	}
+	return strings.Join(values, separator)
 }
 
 func BuildFragmentRepairGuidancePrompt(input FragmentRepairGuidanceInput) (string, error) {

@@ -22,7 +22,6 @@ func newDirectCodingGoProjectStageExecutor(
 ) (directCodingProjectStageExecutor, error) {
 	return newDirectCodingLanguageProjectStageExecutor(session, directCodingLanguageStageConfig{
 		Language: "go", AdapterID: "go", Timeout: directCodingGoStageTimeout,
-		ProjectFragment:    projectDirectCodingGoFragment,
 		ValidateFragment:   validateDirectCodingGoFragment,
 		ValidateAcceptance: validateDirectCodingGoAcceptance,
 		TaskCommands: func(

@@ -23,19 +23,29 @@ func projectDirectCodingSourceDeclaration(
 	language string,
 	raw string,
 ) (assemblyline.PortableResultProjection, error) {
+	project, err := directCodingSourceDeclarationProjector(language)
+	if err != nil {
+		return assemblyline.PortableResultProjection{}, err
+	}
+	return project(raw)
+}
+
+func directCodingSourceDeclarationProjector(
+	language string,
+) (directCodingLanguageFragmentProjector, error) {
 	switch language {
 	case "go":
-		return projectDirectCodingGoFragment(raw)
+		return projectDirectCodingGoFragment, nil
 	case "javascript":
-		return assemblyline.ProjectJavaScriptFragment(raw)
+		return assemblyline.ProjectJavaScriptFragment, nil
 	case "java":
-		return assemblyline.ProjectJavaFragment(raw)
+		return assemblyline.ProjectJavaFragment, nil
 	case "rust":
-		return assemblyline.ProjectRustFragment(raw)
+		return assemblyline.ProjectRustFragment, nil
 	case "php":
-		return assemblyline.ProjectPHPFragment(raw)
+		return assemblyline.ProjectPHPFragment, nil
 	default:
-		return assemblyline.PortableResultProjection{}, fmt.Errorf(
+		return nil, fmt.Errorf(
 			"source declaration projection does not support language %q", language,
 		)
 	}

@@ -12,7 +12,6 @@ func newDirectCodingLaravelProjectStageExecutor(
 ) (directCodingProjectStageExecutor, error) {
 	return newDirectCodingLanguageProjectStageExecutor(session, directCodingLanguageStageConfig{
 		Language: "php", AdapterID: phpSourceAdapterID, Timeout: directCodingPHPStageTimeout,
-		ProjectFragment:    assemblyline.ProjectPHPFragment,
 		ValidateFragment:   validateDirectCodingPHPFragment,
 		ValidateAcceptance: validateDirectCodingPHPAcceptance,
 		TaskCommands:       laravelTaskVerificationCommands,

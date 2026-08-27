@@ -85,10 +85,10 @@ func TestLanguageGenerationFinalizesAndReturnsExactDeclarationProjection(t *test
 	}
 }
 
-func TestLanguageCorrectionFinalizesAndReturnsExactTrimmedResponseSpan(t *testing.T) {
+func TestLanguageCorrectionFinalizesAndReturnsExactProjectedResponseSpan(t *testing.T) {
 	t.Parallel()
 	const current = "func Value() int { return 1 }"
-	const raw = " \nfunc Value() int { return 2 }\n "
+	const raw = " \n```go\nfunc Value() int { return 2 }\n```\n "
 	const want = "func Value() int { return 2 }"
 	contract := gofragment.Contract{Signature: "func Value() int", Current: current}
 	finalized := false
@@ -107,6 +107,7 @@ func TestLanguageCorrectionFinalizesAndReturnsExactTrimmedResponseSpan(t *testin
 			if validationErr != nil || result.Candidate != raw || result.Projection == nil ||
 				result.Projection.Kind != assemblyline.PortableResultProjectionSourceDeclaration ||
 				result.Projection.Source != want ||
+				result.Projection.DiscardedBytes != len(raw)-len(want) ||
 				result.Projection.Source != raw[result.Projection.StartByte:result.Projection.EndByte] {
 				t.Fatalf("finalized result=%+v validation=%v", result, validationErr)
 			}
@@ -116,6 +117,7 @@ func TestLanguageCorrectionFinalizesAndReturnsExactTrimmedResponseSpan(t *testin
 	}
 	got, err := runDirectCodingLanguageCorrection(
 		runtime, "executor", "opaque-block", current, "Return two.",
+		"go",
 		func(candidate string) (string, error) {
 			return gofragment.ParseFunction(contract, candidate)
 		},
@@ -123,7 +125,7 @@ func TestLanguageCorrectionFinalizesAndReturnsExactTrimmedResponseSpan(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got != want || !finalized || strings.TrimSpace(raw) != got {
+	if got != want || !finalized || !strings.Contains(raw, got) {
 		t.Fatalf("source=%q finalized=%t", got, finalized)
 	}
 }

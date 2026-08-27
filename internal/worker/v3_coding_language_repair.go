@@ -65,13 +65,14 @@ func (executor *directCodingLanguageProjectStageExecutor) repairLanguageBlockWit
 	if ref.Block.Role == assemblyline.SourceBlockTaskVerification {
 		return "", fmt.Errorf("generated verification source is not repair model context")
 	}
-	if executor.repairAttempts == nil || executor.repairGuidance == nil || executor.repairSources == nil {
+	if executor.acceptedRepairTransitions == nil || executor.repairGuidance == nil ||
+		executor.repairSources == nil {
 		return "", fmt.Errorf("language repair state is not initialized")
 	}
-	if executor.repairAttempts[ref.Block.ID] >= maxDirectCodingLanguageCorrections {
+	if executor.acceptedRepairTransitions[ref.Block.ID] >= maxDirectCodingLanguageRepairTransitions {
 		return "", fmt.Errorf(
-			"block %s exhausted its %d code-owned corrections",
-			ref.Block.ID, maxDirectCodingLanguageCorrections,
+			"block %s exhausted its %d accepted code-owned repair transitions",
+			ref.Block.ID, maxDirectCodingLanguageRepairTransitions,
 		)
 	}
 	if strings.TrimSpace(current) == "" {
@@ -85,7 +86,7 @@ func (executor *directCodingLanguageProjectStageExecutor) repairLanguageBlockWit
 		return "", err
 	}
 	var prior *assemblyline.FragmentRepairGuidanceRejection
-	for attempt := 0; attempt < maxDirectCodingLanguageCorrections; attempt++ {
+	for attempt := 0; attempt < maxDirectCodingLanguageExecutorAttempts; attempt++ {
 		input := assemblyline.FragmentRepairGuidanceInput{
 			Language: generation.Language, Dialect: generation.Dialect,
 			Signature:          generation.Signature,
@@ -107,7 +108,7 @@ func (executor *directCodingLanguageProjectStageExecutor) repairLanguageBlockWit
 		}
 		candidate, err := runDirectCodingLanguageCorrection(
 			runtime, correctionModel, ref.Block.ID,
-			current, guidance,
+			current, guidance, generation.Language,
 			func(candidate string) (string, error) {
 				return validator(generation, candidate)
 			},
@@ -116,20 +117,26 @@ func (executor *directCodingLanguageProjectStageExecutor) repairLanguageBlockWit
 			if err := executor.acceptLanguageRepairSource(ref.Block.ID, candidate); err != nil {
 				return "", err
 			}
-			executor.repairAttempts[ref.Block.ID]++
+			executor.acceptedRepairTransitions[ref.Block.ID]++
 			return candidate, nil
 		}
-		if !errors.Is(err, errDirectCodingLanguageCorrectionUnchanged) {
+		var rejectionKind assemblyline.FragmentRepairGuidanceRejectionKind
+		switch {
+		case errors.Is(err, errDirectCodingLanguageCorrectionUnchanged):
+			rejectionKind = assemblyline.FragmentRepairGuidanceNoSourceChange
+		case errors.Is(err, errDirectCodingLanguageCorrectionInvalid):
+			rejectionKind = assemblyline.FragmentRepairGuidanceInvalidSource
+		default:
 			return "", err
 		}
 		prior = &assemblyline.FragmentRepairGuidanceRejection{
 			Instruction: guidance,
-			Failure:     assemblyline.FragmentRepairGuidanceNoSourceChange,
+			Failure:     rejectionKind,
 		}
 	}
 	return "", fmt.Errorf(
-		"block %s repair made no source transition after %d bounded attempts",
-		ref.Block.ID, maxDirectCodingLanguageCorrections,
+		"block %s repair produced no valid source transition after %d bounded attempts",
+		ref.Block.ID, maxDirectCodingLanguageExecutorAttempts,
 	)
 }
 

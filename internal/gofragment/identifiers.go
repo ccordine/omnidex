@@ -5,6 +5,7 @@ import (
 	"go/ast"
 	"go/scanner"
 	"go/token"
+	"sort"
 )
 
 func validateIdentifiers(current, candidate *ast.FuncDecl, permitted []string) error {
@@ -20,21 +21,29 @@ func validateIdentifiers(current, candidate *ast.FuncDecl, permitted []string) e
 	for _, identifier := range scanIdentifiers(predeclaredIdentifiers) {
 		allowed[identifier] = struct{}{}
 	}
-	var rejected string
+	rejected := make(map[string]struct{})
 	ast.Inspect(candidate, func(node ast.Node) bool {
 		identifier, ok := node.(*ast.Ident)
 		if !ok || identifier.Name == "_" {
 			return true
 		}
-		if _, exists := allowed[identifier.Name]; !exists && rejected == "" {
-			rejected = identifier.Name
+		if _, exists := allowed[identifier.Name]; !exists {
+			rejected[identifier.Name] = struct{}{}
 		}
 		return true
 	})
-	if rejected != "" {
-		return fmt.Errorf("Go fragment references undeclared capability %q", rejected)
+	if len(rejected) == 0 {
+		return nil
 	}
-	return nil
+	identifiers := make([]string, 0, len(rejected))
+	for identifier := range rejected {
+		identifiers = append(identifiers, identifier)
+	}
+	sort.Strings(identifiers)
+	if len(identifiers) == 1 {
+		return fmt.Errorf("Go fragment references undeclared capability %q", identifiers[0])
+	}
+	return fmt.Errorf("Go fragment references undeclared capabilities %q", identifiers)
 }
 
 func identifierSet(node ast.Node) map[string]struct{} {

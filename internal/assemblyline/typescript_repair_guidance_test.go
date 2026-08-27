@@ -41,6 +41,7 @@ func TestTypeScriptRepairGuidanceAndExecutionHaveDisjointAuthority(t *testing.T)
 		"EXACT_VALIDATION_FAILURE:",
 		"Cannot find name 'value'", "BINDINGS_AVAILABLE_AT_FAILURE_JSON:",
 		"NESTED_BINDINGS_UNAVAILABLE_AT_FAILURE_JSON:", "interface Actions",
+		"BINDINGS_AVAILABLE_AT_FAILURE_JSON, language-predeclared identifiers",
 	} {
 		if !strings.Contains(prompt, required) {
 			t.Fatalf("analysis prompt omitted %q:\n%s", required, prompt)
@@ -50,6 +51,9 @@ func TestTypeScriptRepairGuidanceAndExecutionHaveDisjointAuthority(t *testing.T)
 		if strings.Contains(prompt, forbidden) {
 			t.Fatalf("analysis prompt retained agent-role language %q:\n%s", forbidden, prompt)
 		}
+	}
+	if strings.Contains(prompt, "The two external-authority lists below are exhaustive.") {
+		t.Fatalf("region guidance contradicted compiler-proven bindings:\n%s", prompt)
 	}
 	if schema == nil || schema["additionalProperties"] != false {
 		t.Fatalf("repair guidance schema is not closed: %#v", schema)

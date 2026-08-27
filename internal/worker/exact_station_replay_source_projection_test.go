@@ -1,10 +1,12 @@
 package worker
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
+	"github.com/gryph/omnidex/internal/queue"
 )
 
 func TestExactStationReplayProjectsRegisteredSourceDeclarationSpan(t *testing.T) {
@@ -72,6 +74,92 @@ func TestExactStationReplayProjectsGoModificationDeclaration(t *testing.T) {
 		artifact.Source != "func Value() int { return 2 }" || !artifact.ChangedFromBase ||
 		!strings.Contains(raw, artifact.Source) {
 		t.Fatalf("artifact=%+v", artifact)
+	}
+}
+
+func TestExactStationReplayUsesPersistedLanguageBlindCorrectionProjection(t *testing.T) {
+	t.Parallel()
+	fixtures := []struct {
+		name       string
+		projection string
+		current    string
+		raw        string
+		want       string
+	}{
+		{"Go", "go", "func Value() int { return 1 }", "```go\nfunc Value() int { return 2 }\n```", "func Value() int { return 2 }"},
+		{"JavaScript", "javascript", "function summarize(values) { return 0; }", " \nfunction summarize(values) { return values.length; }\n ", "function summarize(values) { return values.length; }"},
+		{"Java", "java", "public int summarize(int value) { return 0; }", " \npublic int summarize(int value) { return value; }\n ", "public int summarize(int value) { return value; }"},
+		{"Rust", "rust", "pub fn summarize(value: i32) -> i32 { 0 }", " \npub fn summarize(value: i32) -> i32 { value }\n ", "pub fn summarize(value: i32) -> i32 { value }"},
+		{"PHP", "php", "function summarize(int $value): int { return 0; }", " \nfunction summarize(int $value): int { return $value; }\n ", "function summarize(int $value): int { return $value; }"},
+	}
+	for _, fixture := range fixtures {
+		fixture := fixture
+		t.Run(fixture.name, func(t *testing.T) {
+			t.Parallel()
+			job, err := assemblyline.NewSourceProjectedFragmentCorrectionJob(
+				assemblyline.FragmentCorrectionInput{
+					CurrentDeclaration: fixture.current,
+					RepairGuidance:     "Replace the returned literal with two.",
+				},
+				fixture.projection,
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			artifact, err := replayExactStationArtifact(job, fixture.raw)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if artifact.Kind != string(assemblyline.PortableResultProjectionSourceDeclaration) ||
+				artifact.Source != fixture.want || !artifact.ChangedFromBase ||
+				artifact.Source != fixture.raw[artifact.StartByte:artifact.EndByte] ||
+				artifact.DiscardedBytes != len(fixture.raw)-len(artifact.Source) {
+				t.Fatalf("artifact=%+v", artifact)
+			}
+		})
+	}
+}
+
+func TestStationReplayLoadsPersistedLanguageBlindCorrectionProjection(t *testing.T) {
+	t.Parallel()
+	job, err := assemblyline.NewSourceProjectedFragmentCorrectionJob(
+		assemblyline.FragmentCorrectionInput{
+			CurrentDeclaration: "func Value() int { return missing() }",
+			RepairGuidance:     "Replace the missing call with the integer two.",
+		},
+		"go",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gap := replayTestGap(t, job)
+	loaded, err := validateExactStationReplayPoint(queue.StationCallReplayPoint{
+		Call: replayTestCall(t, gap),
+		Gap:  gap,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Job.ID != job.ID || loaded.Job.SourceProjection != "go" ||
+		string(loaded.Job.Payload) != string(job.Payload) {
+		t.Fatalf("loaded job=%+v, want %+v", loaded.Job, job)
+	}
+}
+
+func TestExactStationReplayRejectsLanguageBlindCorrectionWithoutProjection(t *testing.T) {
+	t.Parallel()
+	payload, err := json.Marshal(assemblyline.FragmentCorrectionInput{
+		CurrentDeclaration: "func Value() int { return missing() }",
+		RepairGuidance:     "Replace the missing call with a local expression.",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = replayExactStationArtifact(assemblyline.PortableJob{
+		Kind: assemblyline.WorkFragmentCorrection, Payload: payload,
+	}, "func Value() int { return 2 }")
+	if err == nil || !strings.Contains(err.Error(), "persisted source projection identity") {
+		t.Fatalf("unbound correction replay error=%v", err)
 	}
 }
 

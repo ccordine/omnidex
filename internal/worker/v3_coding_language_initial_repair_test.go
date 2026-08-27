@@ -27,10 +27,11 @@ func TestGenerateBlockCoreRepairsInitialParserRejectionWithoutStageFailureMapper
 				Signature: "func CanonicalRune(input rune) rune",
 				Behavior:  "Return one canonical rune.",
 			},
-			rawInitial: "```go\nfunc CanonicalRune(input rune) rune { return unicode.ToUpper(input) }\n```",
-			corrected:  `func CanonicalRune(input rune) rune { return input }`,
-			project:    projectDirectCodingGoFragment,
-			validate:   validateDirectCodingGoFragment, failurePart: `undeclared capability "unicode"`,
+			rawInitial:  "```go\nfunc CanonicalRune(input rune) rune { return unicode.ToUpper(input) }\n```",
+			corrected:   `func CanonicalRune(input rune) rune { return input }`,
+			project:     projectDirectCodingGoFragment,
+			validate:    validateDirectCodingGoFragment,
+			failurePart: `undeclared capabilities ["ToUpper" "unicode"]`,
 		},
 		{
 			name: "javascript",
@@ -71,12 +72,10 @@ func TestGenerateBlockCoreRepairsInitialParserRejectionWithoutStageFailureMapper
 				Documents: []assemblyline.SourceDocument{document},
 			}}
 			executor := &directCodingLanguageProjectStageExecutor{
-				config: directCodingLanguageStageConfig{
-					Language: fixture.input.Language, ProjectFragment: fixture.project,
-				},
-				repairAttempts: make(map[string]int),
-				repairGuidance: make(map[string]map[string]struct{}),
-				repairSources:  make(map[string]map[string]struct{}),
+				config:                    directCodingLanguageStageConfig{Language: fixture.input.Language},
+				acceptedRepairTransitions: make(map[string]int),
+				repairGuidance:            make(map[string]map[string]struct{}),
+				repairSources:             make(map[string]map[string]struct{}),
 			}
 			calls := make([]string, 0, 3)
 			guidanceAttempts := 0

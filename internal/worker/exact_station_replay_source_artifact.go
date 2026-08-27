@@ -52,9 +52,17 @@ func replayExactStationSourceArtifact(
 		}
 		signature, language, current, region = correction.Signature, correction.Language,
 			correction.CurrentDeclaration, correction.RepairRegion
+		if language == "" {
+			if job.SourceProjection == "" {
+				return artifact, fmt.Errorf(
+					"replay language-blind fragment correction requires one persisted source projection identity",
+				)
+			}
+			language = job.SourceProjection
+		}
 	}
 	if language != "typescript" {
-		if job.Kind == assemblyline.WorkFragmentCorrection || language == "" {
+		if language == "" {
 			return artifact, nil
 		}
 		projection, err := projectDirectCodingSourceDeclaration(language, raw)
