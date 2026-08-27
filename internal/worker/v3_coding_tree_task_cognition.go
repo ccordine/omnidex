@@ -176,6 +176,10 @@ func (c *directCodingTaskCognition) addTreeTask(transition assemblyline.TargetTr
 	if err != nil {
 		return err
 	}
+	metadata, err := newDirectCodingTreeTaskMetadata(transition)
+	if err != nil {
+		return err
+	}
 	stepID := c.authority.StepID
 	if err := c.apply(func(ledger *taskstate.Ledger) (taskstate.Command, error) {
 		commandID, err := c.commandID("add-tree-task", directCodingDigest(key))
@@ -186,7 +190,7 @@ func (c *directCodingTaskCognition) addTreeTask(transition assemblyline.TargetTr
 			CommandID: commandID, ExpectedVersion: ledger.Version(), Actor: taskstate.AuthorityCode,
 			ID: id, ParentID: c.objectiveID, ObjectiveID: c.objectiveID, Kind: taskstate.NodeTask,
 			InlineExecution: true, Title: title, Priority: 40, CreatedStepID: &stepID,
-			AcceptanceCriteria: []string{criterion}, Metadata: taskstate.EmptyJSONObject(),
+			AcceptanceCriteria: []string{criterion}, Metadata: metadata,
 		}, nil
 	}); err != nil {
 		return err

@@ -114,12 +114,16 @@ func TestPostgresArtifactCandidateSelectionMigrationRejectsChangedPriorFunction(
 }
 
 func TestPostgresArtifactCandidateSelectionMigrationRejectsInvalidHistoricalOpening(t *testing.T) {
-	repository, pool, claim := semanticGapTestClaim(t, "historical-candidate-selection-authority")
+	pool := openIsolatedMigrationPool(t)
+	repository := New(pool)
 	if err := repository.EnsureSchema(
 		t.Context(), loadMigrationBundleThroughPrefix(t, "083"),
 	); err != nil {
 		t.Fatal(err)
 	}
+	claim := seedPreInlineExecutionMigrationClaim(
+		t, t.Context(), pool, "historical-candidate-selection-authority",
+	)
 	var priorDefinition string
 	if err := pool.QueryRow(t.Context(), `
 		SELECT pg_get_functiondef(

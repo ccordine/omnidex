@@ -10,6 +10,14 @@ var exactProviderModelProfiles = []exactProviderModelProfile{
 		requestTemperatureSet: true, requestTemperatureCeiling: 1,
 	},
 	{
+		tokenizerProfile: ExactPreparedTokenizerProfileRoleplaySemantic,
+		// This deterministic profile is selected only for typed roleplay
+		// semantic leaves and never structurally matches the strict registry.
+		architecture: "__roleplay_semantic_policy__",
+		transport:    exactPreparedTransportNativeSystemNoThinking, requestTemperature: 0,
+		requestTemperatureSet: true, requestTemperatureCeiling: 0,
+	},
+	{
 		tokenizerProfile: ExactPreparedTokenizerProfile,
 		architecture:     "qwen35", tokenizerModel: "gpt2", tokenizerPre: "qwen35",
 		capabilities:   []string{"completion", "vision", "tools", "thinking"},

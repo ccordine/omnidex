@@ -68,10 +68,10 @@ func (c *directCodingTaskCognition) BeginWorkspaceVerification() (
 func (c *directCodingTaskCognition) CompleteWorkspaceVerification(
 	verification directCodingVerification,
 ) (directCodingCompletionTaskDisposition, error) {
-	if !verification.Passed || len(verification.Commands) == 0 {
+	if err := verification.validate(); err != nil || !verification.Passed {
 		return "", fmt.Errorf("workspace verification task requires successful real verification")
 	}
-	proof := directCodingVerificationProof(c.authority.JobID, verification.Commands)
+	proof := directCodingVerificationProof(c.authority.JobID, verification)
 	return c.completeCompletionTask(
 		c.verificationTaskID, proof, "real workspace verification passed",
 	)
@@ -83,7 +83,7 @@ func (c *directCodingTaskCognition) BeginDeployment(
 	if !c.deploymentRequired {
 		return "", fmt.Errorf("persistent deployment task was not requested")
 	}
-	if !verification.Passed || len(verification.Commands) == 0 {
+	if err := verification.validate(); err != nil || !verification.Passed {
 		return "", fmt.Errorf("persistent deployment requires successful workspace verification")
 	}
 	return c.beginCompletionTask(c.deploymentTaskID, "persistent deployment")

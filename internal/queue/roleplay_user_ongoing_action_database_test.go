@@ -15,7 +15,7 @@ func TestRoleplayUserOngoingActionPersistsReplaysZeroDeltaAndReentersAIContext(t
 	ctx := t.Context()
 	pool := openIsolatedMigrationPool(t)
 	repository := New(pool)
-	if err := repository.EnsureSchema(ctx, loadMigrationBundleThroughPrefix(t, "152")); err != nil {
+	if err := repository.EnsureSchema(ctx, loadCheckedMigrationBundle(t)); err != nil {
 		t.Fatal(err)
 	}
 	channel, err := repository.CreateRoleplayChannel(ctx, model.Channel{

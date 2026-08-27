@@ -96,13 +96,13 @@ func canonicalGeneratedWorkloadVerification(
 ) (string, string, string, error) {
 	if receipt.Schema != GeneratedWorkloadVerificationReceiptV1 || receipt.JobID <= 0 ||
 		receipt.Generation <= 0 || receipt.StepID <= 0 ||
-		!repositoryMutationHexDigest(receipt.WorkspaceSHA256) || len(receipt.Commands) < 1 ||
+		!validSHA256Digest(receipt.WorkspaceSHA256) || len(receipt.Commands) < 1 ||
 		len(receipt.Commands) > MaxGeneratedWorkloadVerificationEvidence {
 		return "", "", "", fmt.Errorf("workspace verification receipt authority is invalid")
 	}
 	for index, command := range receipt.Commands {
 		if command.Ordinal != index+1 || command.EvidenceID <= 0 ||
-			!repositoryMutationHexDigest(command.CommandSHA256) ||
+			!validSHA256Digest(command.CommandSHA256) ||
 			(command.Kind != evidence.KindCommandOutput && command.Kind != evidence.KindTestResult) ||
 			(index > 0 && command.EvidenceID <= receipt.Commands[index-1].EvidenceID) {
 			return "", "", "", fmt.Errorf("workspace verification command proof %d is invalid", index)

@@ -11,15 +11,15 @@ import (
 	"github.com/gryph/omnidex/internal/exactjson"
 )
 
-// DeriveRoleplayRawContextLimit reads the architecture-owned native context
+// DeriveRoleplayCompletionContextLimit reads the architecture-owned native context
 // field from one exact /api/show body and clamps it to the configured request
 // ceiling. No model output participates in this decision.
-func DeriveRoleplayRawContextLimit(showResponse []byte, requested int) (int, error) {
+func DeriveRoleplayCompletionContextLimit(showResponse []byte, requested int) (int, error) {
 	if err := ValidateInferenceContextTokens(requested); err != nil {
-		return 0, fmt.Errorf("roleplay raw configured context: %w", err)
+		return 0, fmt.Errorf("roleplay completion configured context: %w", err)
 	}
 	if err := exactjson.ValidateCompatibleObject(
-		showResponse, exactIdentityShowResponse{}, "roleplay raw context response",
+		showResponse, exactIdentityShowResponse{}, "roleplay completion context response",
 	); err != nil {
 		return 0, err
 	}
@@ -27,7 +27,7 @@ func DeriveRoleplayRawContextLimit(showResponse []byte, requested int) (int, err
 	if err := json.Unmarshal(showResponse, &response); err != nil {
 		return 0, err
 	}
-	if _, err := deriveRoleplayRawProviderModelProfile(response); err != nil {
+	if err := validateRoleplayCompletionProviderMetadata(response); err != nil {
 		return 0, err
 	}
 	architecture, err := exactTokenizerString(response.ModelInfo, "general.architecture")
@@ -37,14 +37,14 @@ func DeriveRoleplayRawContextLimit(showResponse []byte, requested int) (int, err
 	field := architecture + ".context_length"
 	raw, exists := response.ModelInfo[field]
 	if !exists {
-		return 0, fmt.Errorf("roleplay raw provider model is missing exact context field %q", field)
+		return 0, fmt.Errorf("roleplay completion provider model is missing exact context field %q", field)
 	}
 	native, err := strconv.Atoi(string(raw))
 	if err != nil || strconv.Itoa(native) != string(raw) {
-		return 0, fmt.Errorf("roleplay raw provider context field %q is not an exact integer", field)
+		return 0, fmt.Errorf("roleplay completion provider context field %q is not an exact integer", field)
 	}
-	if err := ValidateRoleplayRawContextTokens(native); err != nil {
-		return 0, fmt.Errorf("roleplay raw provider context field %q: %w", field, err)
+	if err := ValidateRoleplayCompletionContextTokens(native); err != nil {
+		return 0, fmt.Errorf("roleplay completion provider context field %q: %w", field, err)
 	}
 	if native < requested {
 		return native, nil
@@ -187,48 +187,63 @@ func validateExactTokenizerOperation(
 	if err := json.Unmarshal(operation.ResponseCapture, &response); err != nil {
 		return exactProviderModelProfile{}, err
 	}
-	if selection.ProfilePolicy == ProviderIdentityProfileRoleplayRawCompletion {
-		return deriveRoleplayRawProviderModelProfile(response)
+	if selection.ProfilePolicy != "" {
+		return deriveRoleplayCompletionProviderModelProfile(response, selection.ProfilePolicy)
 	}
 	return deriveExactProviderModelProfile(response)
 }
 
-func deriveRoleplayRawProviderModelProfile(
+func deriveRoleplayCompletionProviderModelProfile(
 	response exactIdentityShowResponse,
+	policy ProviderIdentityProfilePolicy,
 ) (exactProviderModelProfile, error) {
+	if err := policy.Validate(); err != nil || policy == "" {
+		return exactProviderModelProfile{}, fmt.Errorf("roleplay completion provider policy is invalid")
+	}
+	if err := validateRoleplayCompletionProviderMetadata(response); err != nil {
+		return exactProviderModelProfile{}, err
+	}
+	profile := ExactPreparedTokenizerProfileRoleplayRaw
+	if policy == ProviderIdentityProfileRoleplaySemanticCompletion {
+		profile = ExactPreparedTokenizerProfileRoleplaySemantic
+	}
+	return exactProviderModelProfileByID(profile)
+}
+
+func validateRoleplayCompletionProviderMetadata(response exactIdentityShowResponse) error {
 	architecture, err := exactTokenizerString(response.ModelInfo, "general.architecture")
 	if err != nil {
-		return exactProviderModelProfile{}, err
+		return err
 	}
 	tokenizerModel, err := exactTokenizerString(response.ModelInfo, "tokenizer.ggml.model")
 	if err != nil {
-		return exactProviderModelProfile{}, err
+		return err
 	}
 	if _, err := exactTokenizerOptionalString(response.ModelInfo, "tokenizer.ggml.pre"); err != nil {
-		return exactProviderModelProfile{}, err
+		return err
 	}
 	if !providerIdentityText(architecture, 256) || !providerIdentityText(tokenizerModel, 256) {
-		return exactProviderModelProfile{}, fmt.Errorf("roleplay raw provider tokenizer identity is not bounded text")
+		return fmt.Errorf("roleplay completion provider tokenizer identity is not bounded text")
 	}
 	seen := make(map[string]struct{}, len(response.Capabilities))
 	hasCompletion := false
 	if len(response.Capabilities) == 0 || len(response.Capabilities) > 32 {
-		return exactProviderModelProfile{}, fmt.Errorf("roleplay raw provider capabilities are outside bounds")
+		return fmt.Errorf("roleplay completion provider capabilities are outside bounds")
 	}
 	for _, capability := range response.Capabilities {
 		if !providerIdentityText(capability, 64) {
-			return exactProviderModelProfile{}, fmt.Errorf("roleplay raw provider capability is not bounded text")
+			return fmt.Errorf("roleplay completion provider capability is not bounded text")
 		}
 		if _, exists := seen[capability]; exists {
-			return exactProviderModelProfile{}, fmt.Errorf("roleplay raw provider capability %q is duplicated", capability)
+			return fmt.Errorf("roleplay completion provider capability %q is duplicated", capability)
 		}
 		seen[capability] = struct{}{}
 		hasCompletion = hasCompletion || capability == "completion"
 	}
 	if !hasCompletion {
-		return exactProviderModelProfile{}, fmt.Errorf("roleplay raw provider does not advertise completion capability")
+		return fmt.Errorf("roleplay completion provider does not advertise completion capability")
 	}
-	return exactProviderModelProfileByID(ExactPreparedTokenizerProfileRoleplayRaw)
+	return nil
 }
 
 func validateExactPreloadOperation(

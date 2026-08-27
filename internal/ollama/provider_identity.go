@@ -14,7 +14,7 @@ import (
 
 const ollamaProviderBackend = "ollama"
 
-func (c *Client) ResolveRoleplayRawContext(
+func (c *Client) ResolveRoleplayCompletionContext(
 	ctx context.Context,
 	model string,
 	requested int,
@@ -37,7 +37,7 @@ func (c *Client) ResolveRoleplayRawContext(
 	if err != nil {
 		return 0, fmt.Errorf("observe roleplay model context: %w", err)
 	}
-	contextTokens, err := llm.DeriveRoleplayRawContextLimit(
+	contextTokens, err := llm.DeriveRoleplayCompletionContextLimit(
 		operation.ResponseCapture, requested,
 	)
 	if err != nil {

@@ -12,13 +12,14 @@ import (
 const (
 	// The protocol fixes the station result shape. The structurally attested
 	// provider profile separately owns raw/native template framing.
-	ExactPreparedProviderBackend             = "ollama"
-	ExactPreparedProviderVersion             = "0.24.0"
-	ExactPreparedTokenizerProfile            = "ollama-0.24.0-qwen35-gpt2-boundary-v1"
-	ExactPreparedTokenizerProfileQwen3Qwen2  = "ollama-0.24.0-qwen3-qwen2-boundary-v1"
-	ExactPreparedTokenizerProfileRoleplayRaw = "ollama-0.24.0-roleplay-raw-completion-v1"
-	ExactPreparedPromptJoiner                = "\n"
-	ExactPreparedCodeStopV1                  = "<|endoftext|>"
+	ExactPreparedProviderBackend                  = "ollama"
+	ExactPreparedProviderVersion                  = "0.24.0"
+	ExactPreparedTokenizerProfile                 = "ollama-0.24.0-qwen35-gpt2-boundary-v1"
+	ExactPreparedTokenizerProfileQwen3Qwen2       = "ollama-0.24.0-qwen3-qwen2-boundary-v1"
+	ExactPreparedTokenizerProfileRoleplayRaw      = "ollama-0.24.0-roleplay-raw-completion-v1"
+	ExactPreparedTokenizerProfileRoleplaySemantic = "ollama-0.24.0-roleplay-semantic-completion-v1"
+	ExactPreparedPromptJoiner                     = "\n"
+	ExactPreparedCodeStopV1                       = "<|endoftext|>"
 	// MaxExactPreparedModelInputBytes is a gross transport/resource ceiling.
 	// It is deliberately not a token estimate; the provider's tokenizer owns
 	// native context admission and reports the actual counts in its receipt.

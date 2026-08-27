@@ -113,12 +113,16 @@ func TestPostgresKnownArtifactTruthMigrationRejectsChangedPriorFunction(t *testi
 }
 
 func TestPostgresKnownArtifactTruthMigrationRejectsInvalidHistoricalOpening(t *testing.T) {
-	repository, pool, claim := semanticGapTestClaim(t, "historical-known-artifact-truth-authority")
+	pool := openIsolatedMigrationPool(t)
+	repository := New(pool)
 	if err := repository.EnsureSchema(
 		t.Context(), loadMigrationBundleThroughPrefix(t, "084"),
 	); err != nil {
 		t.Fatal(err)
 	}
+	claim := seedPreInlineExecutionMigrationClaim(
+		t, t.Context(), pool, "historical-known-artifact-truth-authority",
+	)
 	var priorDefinition string
 	if err := pool.QueryRow(t.Context(), `
 		SELECT pg_get_functiondef(

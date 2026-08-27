@@ -138,7 +138,8 @@ func main() {
 				EmbeddingProvider:      cfg.EmbeddingProvider,
 				EmbeddingModel:         cfg.EmbeddingModel,
 				Models: worker.ModelRouting{
-					Stations: cfg.StationModels,
+					Stations:              cfg.StationModels,
+					RoleplaySemanticModel: cfg.RoleplaySemanticModel,
 				},
 				Workspace: worker.WorkspaceSettings{
 					Root:     cfg.WorkspaceRoot,

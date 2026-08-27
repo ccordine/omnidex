@@ -160,9 +160,12 @@ func TestRoleplayCanonExtractionHasExactlyOneFactSource(t *testing.T) {
 		Parts:            []roleplay.UserTurnPart{{Kind: roleplay.UserTurnPartEvent, Text: "The bronze bell cracks."}},
 		ExactText:        "[Event]\nThe bronze bell cracks.",
 	}
-	userSource, err := ProjectRoleplayUserCanonSource(userTurn)
+	userSource, present, err := ProjectRoleplayUserCanonSource(userTurn)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if !present {
+		t.Fatal("narrated event was not projected as a canon source")
 	}
 	userPrompt, err := BuildRoleplayCanonExtractionPrompt(RoleplayCanonExtractionInput{
 		Source: userSource, Context: ObjectiveContext{Capsules: []ObjectiveContextCapsule{}},

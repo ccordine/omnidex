@@ -7,7 +7,7 @@ import (
 	"github.com/gryph/omnidex/internal/assemblyline"
 )
 
-const maxTypedWorkerAttempts = 3
+const maxTypedWorkerAttempts = assemblyline.MaxSemanticStationAttempts
 
 type typedWorkerKind string
 

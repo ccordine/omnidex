@@ -71,7 +71,7 @@ func TestPostgresRepositoryBaselineRejectsConflictingExistingTestBeforeGeneratio
 
 	var operations, generatedDiffs, calls, acceptances int
 	if err := pool.QueryRow(ctx, `
-		SELECT COUNT(*) FROM repository_mutation_operations WHERE job_id=$1
+		SELECT COUNT(*) FROM workspace_mutation_operations WHERE job_id=$1
 	`, claim.Job.ID).Scan(&operations); err != nil {
 		t.Fatal(err)
 	}
@@ -185,7 +185,7 @@ func TestValue(t *testing.T) {
 	if err := pool.QueryRow(ctx, `SELECT COUNT(*) FROM llm_call_evidence WHERE job_id=$1`, claim.Job.ID).Scan(&calls); err != nil {
 		t.Fatal(err)
 	}
-	if err := pool.QueryRow(ctx, `SELECT COUNT(*) FROM repository_mutation_operations WHERE job_id=$1`, claim.Job.ID).Scan(&operations); err != nil {
+	if err := pool.QueryRow(ctx, `SELECT COUNT(*) FROM workspace_mutation_operations WHERE job_id=$1`, claim.Job.ID).Scan(&operations); err != nil {
 		t.Fatal(err)
 	}
 	if err := pool.QueryRow(ctx, `

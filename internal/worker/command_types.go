@@ -19,4 +19,5 @@ type testCommand struct {
 	Purpose         verificationCommandPurpose
 	Timeout         time.Duration
 	RepositoryProof *repositoryGoTestProof
+	WorkspaceRole   workspaceVerificationCommandRole
 }

@@ -40,7 +40,7 @@ func TestSealedAppliedCognitionRecoveryClosesEveryCrashWindow(t *testing.T) {
 				}
 			}
 			if stage == "objective_done_scope_open" {
-				proof := directCodingVerificationProof(coordinator.authority.JobID, verification.Commands)
+				proof := directCodingVerificationProof(coordinator.authority.JobID, verification)
 				if err := coordinator.transition(
 					coordinator.objectiveID, taskstate.NodeDone, &stepID, []taskstate.Ref{proof},
 				); err != nil {

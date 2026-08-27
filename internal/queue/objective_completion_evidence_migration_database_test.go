@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/gryph/omnidex/internal/evidence"
-	"github.com/gryph/omnidex/internal/model"
 )
 
 func TestPostgresObjectiveCompletionMigrationRejectsUnauthenticatedHistoryAtomically(t *testing.T) {
@@ -16,14 +15,7 @@ func TestPostgresObjectiveCompletionMigrationRejectsUnauthenticatedHistoryAtomic
 	if err := repository.EnsureSchema(ctx, loadMigrationBundleThroughPrefix(t, "079")); err != nil {
 		t.Fatal(err)
 	}
-	job, err := repository.EnqueueJob(ctx, "legacy objective citation", model.PipelineCoding, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	claim, err := repository.ClaimNextStep(ctx, "legacy-objective-worker")
-	if err != nil || claim == nil || claim.Job.ID != job.ID {
-		t.Fatalf("claim=%+v err=%v", claim, err)
-	}
+	claim := seedPreInlineExecutionMigrationClaim(t, ctx, pool, "legacy-objective")
 	record := objectiveCompletionEvidence(claim, "legacy-sidecar")
 	payload, err := json.Marshal(record)
 	if err != nil {

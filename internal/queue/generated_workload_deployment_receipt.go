@@ -50,10 +50,10 @@ func validateGeneratedWorkloadDeploymentReceipt(
 		if service.Service != command.Services[index] {
 			return fmt.Errorf("generated deployment receipt services must match exact sorted command authority")
 		}
-		if !repositoryMutationHexDigest(service.ContainerID) {
+		if !validSHA256Digest(service.ContainerID) {
 			return fmt.Errorf("generated deployment service %q container identity is invalid", service.Service)
 		}
-		if !repositoryMutationOpaqueID(service.ImageDigest, "sha256:") {
+		if !validSHA256ID(service.ImageDigest, "sha256:") {
 			return fmt.Errorf("generated deployment service %q image digest is invalid", service.Service)
 		}
 		switch service.RestartPolicy {
@@ -68,7 +68,7 @@ func validateGeneratedWorkloadDeploymentReceipt(
 			return fmt.Errorf("generated deployment service %q is not running and healthy", service.Service)
 		}
 	}
-	if !repositoryMutationOpaqueID(
+	if !validSHA256ID(
 		receipt.WorkspaceVerificationReceiptID, "generated_workload_verification_",
 	) {
 		return fmt.Errorf("generated deployment workspace verification receipt identity is invalid")

@@ -228,16 +228,11 @@ func insertJobHistoryFixture(
 		t, ctx, pool, jobID, generation, stepID,
 		testStepAttemptWorker("job-history", stepID),
 	)
-	llmCall, err := repository.RecordLLMCallEvidence(ctx, LLMCallEvidenceRecord{
-		Authority: authority, StepID: stepID,
-		Scope: "job_history_fixture", RequestedModel: "fixture-model",
-		Model: "fixture-model", Attempt: 1, SystemPrompt: "Exact fixture system prompt.",
-		UserPrompt: marker, ResponseFormat: "text", ContextTokens: 128,
-		MaxOutputTokens: 32, Response: marker, Status: LLMEvidenceSucceeded,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	evidenceFixture := prepareSuccessfulStationEvidenceFixture(
+		t, repository, authority, newStationEvidenceJobForTest(t, marker),
+		`{"schema":"omnidex.conversation-response.v1","text":"history fixture"}`,
+	)
+	llmCall := persistPreparedStationEvidenceFixture(t, repository, evidenceFixture, "")
 	fixture.llmID = llmCall.ID
 	return fixture
 }
@@ -247,7 +242,7 @@ func historyStepID(t *testing.T, pool *pgxpool.Pool, jobID, generation int64) in
 	var stepID int64
 	if err := pool.QueryRow(t.Context(), `
 		SELECT id FROM job_steps
-		WHERE job_id=$1 AND generation=$2 AND action='objective_resolve'
+		WHERE job_id=$1 AND generation=$2 AND action='v3_coding'
 		ORDER BY id ASC LIMIT 1
 	`, jobID, generation).Scan(&stepID); err != nil {
 		t.Fatal(err)

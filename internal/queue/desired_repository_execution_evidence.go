@@ -55,9 +55,9 @@ func (r *Repository) DesiredRepositoryExecutionEvidence(
 	if err := validateStepAttemptAuthority(authority); err != nil {
 		return proof, err
 	}
-	if !repositoryMutationOpaqueID(graphID, "desired_graph_") ||
-		!repositoryMutationOpaqueID(beforeSnapshotID, "snapshot_") ||
-		!repositoryMutationOpaqueID(afterSnapshotID, "snapshot_") ||
+	if !validSHA256ID(graphID, "desired_graph_") ||
+		!validSHA256ID(beforeSnapshotID, "snapshot_") ||
+		!validSHA256ID(afterSnapshotID, "snapshot_") ||
 		beforeSnapshotID == afterSnapshotID {
 		return proof, fmt.Errorf("desired repository execution evidence identities are invalid")
 	}
@@ -94,27 +94,42 @@ func (r *Repository) DesiredRepositoryExecutionEvidence(
 		return proof, fmt.Errorf("desired repository execution snapshots have different repository authority")
 	}
 
-	var operationID, stageID, patchSHA, sourceSnapshotID string
-	var mutationEvidenceID int64
+	var operationID, stageID, patchSHA, sourceSnapshotID, verifiedSnapshotID string
+	var sourceStateID, expectedStateID string
+	var mutationEvidenceID, verificationEvidenceID int64
+	var plannedVerificationCommands int
 	rows, err := tx.Query(ctx, `
-		SELECT id,stage_id,patch_sha256,source_snapshot_id,evidence_id
-		FROM repository_mutation_operations
-		WHERE job_id=$1 AND generation=$2 AND step_id=$3 AND step_attempt=$4
-		  AND worker_id=$5 AND contract_id=$6 AND status='applied'
+		SELECT id,stage_id,patch_sha256,source_repository_snapshot_id,
+		       verified_repository_snapshot_id,mutation_evidence_id,
+		       source_state_id,expected_state_id,verification_evidence_id,
+		       jsonb_array_length(verification_plan_json::jsonb->'commands')
+		FROM workspace_mutation_operations
+		WHERE job_id=$1 AND generation=$2 AND step_id=$3 AND owner_id=$4
+		  AND status='verified' AND verification_succeeded IS TRUE
 		ORDER BY id
-	`, authority.JobID, authority.Generation, authority.StepID, authority.Attempt,
-		authority.WorkerID, graphID)
+	`, authority.JobID, authority.Generation, authority.StepID, graphID)
 	if err != nil {
 		return proof, fmt.Errorf("load desired repository mutation operation: %w", err)
 	}
 	for rows.Next() {
 		proof.MutationOperations++
 		if proof.MutationOperations == 1 {
-			err = rows.Scan(&operationID, &stageID, &patchSHA, &sourceSnapshotID, &mutationEvidenceID)
+			err = rows.Scan(
+				&operationID, &stageID, &patchSHA, &sourceSnapshotID,
+				&verifiedSnapshotID, &mutationEvidenceID, &sourceStateID,
+				&expectedStateID, &verificationEvidenceID,
+				&plannedVerificationCommands,
+			)
 		} else {
-			var discardID, discardStage, discardPatch, discardSource string
-			var discardEvidence int64
-			err = rows.Scan(&discardID, &discardStage, &discardPatch, &discardSource, &discardEvidence)
+			var discardID, discardStage, discardPatch, discardSource, discardVerified string
+			var discardSourceState, discardExpectedState string
+			var discardMutationEvidence, discardVerificationEvidence int64
+			var discardCommands int
+			err = rows.Scan(
+				&discardID, &discardStage, &discardPatch, &discardSource,
+				&discardVerified, &discardMutationEvidence, &discardSourceState,
+				&discardExpectedState, &discardVerificationEvidence, &discardCommands,
+			)
 		}
 		if err != nil {
 			rows.Close()
@@ -126,37 +141,54 @@ func (r *Repository) DesiredRepositoryExecutionEvidence(
 		return proof, fmt.Errorf("iterate desired repository mutation operations: %w", err)
 	}
 	rows.Close()
-	if proof.MutationOperations != 1 || sourceSnapshotID != beforeSnapshotID || mutationEvidenceID < 1 {
+	if proof.MutationOperations != 1 || sourceSnapshotID != beforeSnapshotID ||
+		verifiedSnapshotID != afterSnapshotID || mutationEvidenceID < 1 ||
+		verificationEvidenceID < 1 || plannedVerificationCommands < 1 {
 		return proof, fmt.Errorf(
 			"desired repository execution requires one applied mutation owned by its exact attempt and source; found %d",
 			proof.MutationOperations,
 		)
 	}
 
+	var sourceMismatches int
 	err = tx.QueryRow(ctx, `
 		SELECT COUNT(*),
 		       COUNT(*) FILTER (WHERE NOT source_present AND expected_present),
 		       COUNT(*) FILTER (WHERE source_present AND NOT expected_present),
 		       COUNT(*) FILTER (WHERE source_present AND expected_present),
+		       COUNT(*) FILTER (WHERE source_present AND NOT EXISTS (
+		         SELECT 1 FROM repository_files AS before_file
+		         WHERE before_file.snapshot_id=$2 AND before_file.path=file.path
+		           AND before_file.entry_kind=file.source_kind
+		           AND before_file.content_sha256=file.source_sha256
+		           AND before_file.size_bytes=file.source_size
+		           AND before_file.mode_bits=file.source_mode
+		           AND COALESCE(before_file.link_target,'')=COALESCE(file.source_link_target,'')
+		       ) OR NOT source_present AND EXISTS (
+		         SELECT 1 FROM repository_files AS before_file
+		         WHERE before_file.snapshot_id=$2 AND before_file.path=file.path
+		       )),
 		       COUNT(*) FILTER (WHERE expected_present AND NOT EXISTS (
 		         SELECT 1 FROM repository_files AS post
-		         WHERE post.snapshot_id=$2 AND post.file_id=file.file_id AND post.path=file.path
-		           AND post.entry_kind='regular' AND post.content_sha256=file.expected_sha256
+		         WHERE post.snapshot_id=$3 AND post.path=file.path
+		           AND post.entry_kind=file.expected_kind
+		           AND post.content_sha256=file.expected_sha256
 		           AND post.size_bytes=file.expected_size AND post.mode_bits=file.expected_mode
+		           AND COALESCE(post.link_target,'')=COALESCE(file.expected_link_target,'')
 		       ) OR NOT expected_present AND EXISTS (
 		         SELECT 1 FROM repository_files AS post
-		         WHERE post.snapshot_id=$2 AND (post.file_id=file.file_id OR post.path=file.path)
+		         WHERE post.snapshot_id=$3 AND post.path=file.path
 		       ))
-		FROM repository_mutation_files AS file WHERE file.operation_id=$1
-	`, operationID, afterSnapshotID).Scan(
+		FROM workspace_mutation_files AS file WHERE file.operation_id=$1
+	`, operationID, beforeSnapshotID, afterSnapshotID).Scan(
 		&proof.FileTransitions, &proof.CreatedFiles, &proof.DeletedFiles,
-		&proof.ModifiedFiles, &postMismatches,
+		&proof.ModifiedFiles, &sourceMismatches, &postMismatches,
 	)
 	if err != nil {
 		return proof, fmt.Errorf("load desired repository file transitions: %w", err)
 	}
 	if proof.FileTransitions < 1 || proof.FileTransitions != proof.CreatedFiles+proof.DeletedFiles+proof.ModifiedFiles ||
-		postMismatches != 0 {
+		sourceMismatches != 0 || postMismatches != 0 {
 		return proof, fmt.Errorf("desired repository mutation files disagree with exact post-state snapshot")
 	}
 	proof.InventoryDelta = proof.AfterInventory - proof.BeforeInventory
@@ -165,13 +197,14 @@ func (r *Repository) DesiredRepositoryExecutionEvidence(
 	}
 	if err := validateDesiredMutationEvidence(
 		ctx, tx, authority, mutationEvidenceID, operationID, stageID, patchSHA,
-		graphID, beforeSnapshotID, proof,
+		sourceStateID, expectedStateID, proof,
 	); err != nil {
 		return proof, err
 	}
 	if err := loadDesiredVerificationEvidence(
 		ctx, tx, authority, graphID, beforeSnapshotID, afterSnapshotID,
-		stageID, patchSHA, &proof,
+		operationID, stageID, patchSHA, sourceStateID, expectedStateID,
+		verificationEvidenceID, plannedVerificationCommands, &proof,
 	); err != nil {
 		return proof, err
 	}
@@ -188,30 +221,33 @@ func (r *Repository) DesiredRepositoryExecutionEvidence(
 
 func validateDesiredMutationEvidence(
 	ctx context.Context, tx pgx.Tx, authority model.StepAttemptAuthority,
-	evidenceID int64, operationID, stageID, patchSHA, graphID, beforeID string,
+	evidenceID int64, operationID, stageID, patchSHA, sourceStateID, expectedStateID string,
 	proof DesiredRepositoryExecutionEvidence,
 ) error {
-	var kind, sourceType, sourceRef, hash, owner, persistedOperation, sourceID string
+	var kind, sourceType, sourceRef, hash, persistedOperation string
+	var persistedSourceState, persistedExpectedState string
 	var created, deleted, modified int
 	err := tx.QueryRow(ctx, `
 		SELECT kind,COALESCE(source_type,''),COALESCE(source_ref,''),
 		       COALESCE(payload_json->>'hash',''),
-		       COALESCE(payload_json->'metadata'->>'repository_change_contract_id',''),
-		       COALESCE(payload_json->'metadata'->>'repository_mutation_operation_id',''),
-		       COALESCE(payload_json->'metadata'->>'source_snapshot_id',''),
+		       COALESCE(payload_json->'metadata'->>'workspace_mutation_operation_id',''),
+		       COALESCE(payload_json->'metadata'->>'source_state_id',''),
+		       COALESCE(payload_json->'metadata'->>'expected_state_id',''),
 		       COALESCE((payload_json->'metadata'->>'created_file_count')::int,-1),
 		       COALESCE((payload_json->'metadata'->>'deleted_file_count')::int,-1),
 		       COALESCE((payload_json->'metadata'->>'modified_file_count')::int,-1)
 		FROM evidence WHERE id=$1 AND job_id=$2 AND step_id=$3
 	`, evidenceID, authority.JobID, authority.StepID).Scan(
-		&kind, &sourceType, &sourceRef, &hash, &owner, &persistedOperation,
-		&sourceID, &created, &deleted, &modified,
+		&kind, &sourceType, &sourceRef, &hash, &persistedOperation,
+		&persistedSourceState, &persistedExpectedState,
+		&created, &deleted, &modified,
 	)
 	if err != nil {
 		return fmt.Errorf("load desired repository mutation evidence: %w", err)
 	}
-	if kind != evidence.KindGeneratedDiff || sourceType != "repository" || sourceRef != stageID ||
-		hash != patchSHA || owner != graphID || persistedOperation != operationID || sourceID != beforeID ||
+	if kind != evidence.KindGeneratedDiff || sourceType != "workspace" || sourceRef != stageID ||
+		hash != patchSHA || persistedOperation != operationID ||
+		persistedSourceState != sourceStateID || persistedExpectedState != expectedStateID ||
 		created != proof.CreatedFiles || deleted != proof.DeletedFiles || modified != proof.ModifiedFiles {
 		return fmt.Errorf("desired repository mutation evidence disagrees with its applied operation")
 	}

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/taskstate"
 	"github.com/jackc/pgx/v5"
 )
@@ -29,9 +30,9 @@ func insertTaskLedgerTestJob(
 	var jobID int64
 	if err := tx.QueryRow(ctx, `
 		INSERT INTO jobs (instruction, pipeline, status, metadata)
-		VALUES ($1, 'assistant', 'pending', jsonb_build_object('telemetry_run_id', $2::text))
+		VALUES ($1, $2, 'pending', jsonb_build_object('telemetry_run_id', $3::text))
 		RETURNING id
-	`, marker, runID).Scan(&jobID); err != nil {
+	`, marker, model.PipelineCoding, runID).Scan(&jobID); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := tx.Exec(ctx, `

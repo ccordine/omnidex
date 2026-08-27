@@ -61,7 +61,24 @@ type roleplayRoundResponseAuthority struct {
 }
 
 type objectiveStationReceipt struct {
-	Calls int
+	Calls  int
+	Reused bool
+}
+
+func validateObjectiveStationReceipt(label string, receipt objectiveStationReceipt) error {
+	if receipt.Reused {
+		if receipt.Calls != 0 {
+			return fmt.Errorf("%s reuse reported %d provider calls", label, receipt.Calls)
+		}
+		return nil
+	}
+	if receipt.Calls < 1 || receipt.Calls > maxTypedWorkerAttempts {
+		return fmt.Errorf(
+			"%s reported %d calls outside the bounded correction budget",
+			label, receipt.Calls,
+		)
+	}
+	return nil
 }
 
 type objectiveKindStation interface {

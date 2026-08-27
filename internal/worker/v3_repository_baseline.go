@@ -5,11 +5,9 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 
 	repositoryfacts "github.com/gryph/omnidex/internal/repository"
-	"github.com/gryph/omnidex/internal/repository/changeapply"
 )
 
 const repositoryBaselineSchemaV1 = "omnidex.repository-verification-baseline.v1"
@@ -138,25 +136,17 @@ func (session *directCodingSession) proveExistingRepositoryBaseline(
 	if err != nil {
 		return nil, err
 	}
-	workspace, err := changeapply.NewSnapshotWorkspace(session.runtime.ctx, source)
+	projection, err := newRepositorySnapshotProjection(source)
 	if err != nil {
 		return nil, fmt.Errorf("construct exact repository baseline projection: %w", err)
 	}
-	verificationErr := session.runExistingRepositoryVerification(
-		workspace.Root(), repositoryVerificationBaseline, commands, authority,
+	if err := session.runExistingRepositoryVerification(
+		projection, repositoryVerificationBaseline, commands, authority,
 		func(ctx context.Context) error {
-			return errors.Join(
-				assertExactRepositoryBaselineSource(ctx, session.root, source),
-				workspace.VerifyExact(ctx),
-			)
+			return projection.VerifyExact(ctx)
 		},
-	)
-	cleanupErr := workspace.Cleanup()
-	if verificationErr != nil || cleanupErr != nil {
-		return nil, errors.Join(
-			wrapRepositoryExecutionError("prove exact repository baseline", verificationErr),
-			cleanupErr,
-		)
+	); err != nil {
+		return nil, wrapRepositoryExecutionError("prove exact repository baseline", err)
 	}
 	return &verifiedRepositoryBaseline{
 		authority: authority, commands: cloneTestCommands(commands),

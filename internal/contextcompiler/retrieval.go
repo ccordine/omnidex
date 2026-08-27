@@ -15,6 +15,7 @@ import (
 func ResolveRetrievalDirective(
 	ctx context.Context,
 	exactInstruction string,
+	scope assemblyline.ContextScope,
 	availability SearchAvailability,
 	station SearchTermsStation,
 ) (RetrievalDirective, int, error) {
@@ -25,7 +26,10 @@ func ResolveRetrievalDirective(
 	if err := ctx.Err(); err != nil {
 		return empty, 0, err
 	}
-	input := assemblyline.ContextSearchTermsInput{ExactInstruction: exactInstruction}
+	input := assemblyline.ContextSearchTermsInput{
+		ExactInstruction: exactInstruction,
+		Scope:            scope,
+	}
 	if _, err := assemblyline.NewContextSearchTermsJob(input); err != nil {
 		return empty, 0, err
 	}

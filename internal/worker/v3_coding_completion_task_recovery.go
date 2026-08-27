@@ -32,9 +32,7 @@ func (c *directCodingTaskCognition) CompleteSealedAppliedRecovery(
 		return fmt.Errorf("sealed applied recovery lacks exact completed workspace verification cognition")
 	}
 	proof := verification.VerificationRefs[0]
-	if proof.URI != fmt.Sprintf("verification://job/%d/workspace", c.authority.JobID) ||
-		proof.Version != "v1" || proof.Relation != taskstate.RefVerifies ||
-		!directCodingRollbackDockerIDPattern.MatchString(proof.Hash) {
+	if !validDirectCodingVerificationProof(c.authority.JobID, proof) {
 		return fmt.Errorf("sealed applied recovery workspace verification proof is invalid")
 	}
 	children := make(map[taskstate.NodeID]taskstate.Node)

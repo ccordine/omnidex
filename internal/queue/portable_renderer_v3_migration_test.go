@@ -63,10 +63,10 @@ func TestPortableRendererV3RejectsHistoricalRowsAtomically(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	historicalV1 := rendererMigrationOpening(t, pool, repository, "renderer-v1-before-v3")
+	historicalV1 := rendererMigrationOpening(t, pool, "renderer-v1-before-v3")
 	historicalV1 = openingWithRenderer(t, historicalV1, assemblyline.PortableRendererV1)
 	historicalV1 = insertRendererMigrationOpening(t, pool, historicalV1, false)
-	historicalV2 := rendererMigrationOpening(t, pool, repository, "renderer-v2-before-v3")
+	historicalV2 := rendererMigrationOpening(t, pool, "renderer-v2-before-v3")
 	historicalV2 = openingWithRenderer(t, historicalV2, assemblyline.PortableRendererV2)
 	historicalV2 = insertRendererMigrationOpening(t, pool, historicalV2, false)
 
@@ -94,7 +94,7 @@ func TestPortableRendererV3FreshSchemaAcceptsCurrentRuntimeOpening(t *testing.T)
 	if err := repository.EnsureSchema(t.Context(), loadMigrationBundleThroughPrefix(t, "093")); err != nil {
 		t.Fatal(err)
 	}
-	current := rendererMigrationOpening(t, pool, repository, "renderer-v3-fresh")
+	current := rendererMigrationOpening(t, pool, "renderer-v3-fresh")
 	current = insertRendererMigrationOpening(t, pool, current, false)
 	var persisted string
 	if err := pool.QueryRow(t.Context(), `

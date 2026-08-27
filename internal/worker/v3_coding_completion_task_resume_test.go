@@ -36,11 +36,17 @@ func TestDirectCodingVerificationTaskResumesAndRequiresExactFreshProof(t *testin
 	if store.ledger.Version() != version {
 		t.Fatal("exact completed verification replay mutated the persisted ledger")
 	}
+	proof := taskNode(t, store.ledger.MaterializedState(), directCodingVerificationTaskNodeID).VerificationRefs
+	if len(proof) != 1 ||
+		proof[0].URI != "verification://job/71/workspace/"+verification.MutationOperationID ||
+		proof[0].Version != "v2" || proof[0].Relation != taskstate.RefVerifies {
+		t.Fatalf("workspace mutation proof=%+v", proof)
+	}
 	changed := verification
-	changed.Commands = []string{"different verification"}
+	changed.MutationReceiptSHA256 = strings.Repeat("f", 64)
 	if _, err := retry.CompleteWorkspaceVerification(changed); err == nil ||
 		!strings.Contains(err.Error(), "proof conflicts") {
-		t.Fatalf("changed verification proof error=%v", err)
+		t.Fatalf("changed workspace receipt proof error=%v", err)
 	}
 }
 
@@ -100,10 +106,10 @@ func TestDirectCodingCompletedObjectiveReplaysWithoutRedoingTasks(t *testing.T) 
 		t.Fatal("completed objective replay mutated persisted task state")
 	}
 	changed := verification
-	changed.Commands = []string{"different verification"}
+	changed.MutationOperationID = "workspace_mutation_" + strings.Repeat("e", 64)
 	if err := retry.CompleteObjective(changed); err == nil ||
 		!strings.Contains(err.Error(), "proof conflicts") {
-		t.Fatalf("changed objective proof error=%v", err)
+		t.Fatalf("changed objective workspace operation proof error=%v", err)
 	}
 }
 
@@ -246,6 +252,8 @@ func directCodingCompletionResumeFixture(
 	}
 	return coordinator, store, directCodingVerification{
 		Passed: true, TestsPassed: true, Commands: []string{"npm test"}, EvidenceIDs: []int64{24},
+		MutationOperationID:   "workspace_mutation_" + strings.Repeat("a", 64),
+		MutationReceiptSHA256: strings.Repeat("b", 64),
 	}
 }
 

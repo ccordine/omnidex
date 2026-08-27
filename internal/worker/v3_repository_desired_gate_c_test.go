@@ -3,7 +3,6 @@ package worker
 import (
 	"context"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -80,10 +79,8 @@ func TestFailedStagedDesiredStateProofLeavesLiveRepositoryUnchanged(t *testing.T
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = stage.Cleanup() })
-	command := exec.CommandContext(t.Context(), "go", "test", "-run", "^$", "./...")
-	command.Dir = stage.Workspace()
-	command.Env = append(os.Environ(), "GOWORK=off")
-	if output, err := command.CombinedOutput(); err == nil || !strings.Contains(string(output), "not an int") {
+	if output, err := desiredStateGoTestProjected(t.Context(), before.Root, stage); err == nil ||
+		!strings.Contains(string(output), "not an int") {
 		t.Fatalf("invalid staged source proof error=%v output=%s", err, output)
 	}
 	after, err := repositoryfacts.BuildGitSnapshot(t.Context(), before.Root, repositoryfacts.SnapshotOptions{})

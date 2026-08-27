@@ -11,7 +11,7 @@ func TestPostgresConversationCutoverRejectsAcceptedIntentAuthorityAtomically(t *
 	ctx, pool, repository := installConversationSchemaThrough065(t)
 	marker := fmt.Sprintf("conversation-cutover-intent-%d", time.Now().UnixNano())
 	jobID, stepID := enqueueConversationCutoverJob(t, ctx, repository, marker)
-	artifactID := seedAcceptedIntentProjection(t, ctx, repository, jobID, stepID, marker)
+	artifactID := seedAcceptedIntentProjection(t, ctx, repository, jobID, stepID)
 
 	err := applyConversationCutover(t, ctx, repository)
 	if err == nil || !strings.Contains(err.Error(), "legacy accepted-intent projection rows") {

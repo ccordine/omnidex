@@ -239,7 +239,7 @@ func scrumChannelPageTestRepository(t *testing.T) (*Repository, *pgxpool.Pool, c
 	t.Helper()
 	pool := openIsolatedMigrationPool(t)
 	repository := New(pool)
-	if err := repository.EnsureSchema(t.Context(), loadMigrationBundleThroughPrefix(t, "089")); err != nil {
+	if err := repository.EnsureSchema(t.Context(), loadCheckedMigrationBundle(t)); err != nil {
 		t.Fatal(err)
 	}
 	return repository, pool, t.Context()

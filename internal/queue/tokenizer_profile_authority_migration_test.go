@@ -4,8 +4,6 @@ import (
 	"os"
 	"strings"
 	"testing"
-
-	"github.com/gryph/omnidex/internal/model"
 )
 
 const tokenizerProfileAuthorityMigration = "100_general_tokenizer_profile_authority.sql"
@@ -94,17 +92,9 @@ func TestTokenizerProfileAuthorityDatabaseConstraintAcceptsOnlyRegisteredProfile
 		}
 	}
 
-	job, err := repository.EnqueueJob(t.Context(), "tokenizer-profile-authority", model.PipelineCoding, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	claim, err := repository.ClaimNextStep(t.Context(), "tokenizer-profile-authority-worker")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if claim == nil || claim.Job.ID != job.ID {
-		t.Fatalf("claim=%+v want job %d", claim, job.ID)
-	}
+	claim := seedPreInlineExecutionMigrationClaim(
+		t, t.Context(), pool, "tokenizer-profile-authority",
+	)
 	gapRecord := stationGapOpenFixture(t, claim.Authority)
 	gapRecord.ContextTokens = 32768
 	gap, err := repository.OpenStationGap(t.Context(), gapRecord)

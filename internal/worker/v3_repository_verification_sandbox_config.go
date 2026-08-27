@@ -2,7 +2,6 @@ package worker
 
 import (
 	"fmt"
-	"go/build"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -12,6 +11,9 @@ import (
 const (
 	repositoryBubblewrapPath = "/usr/bin/bwrap"
 	repositorySandboxRoot    = "/workspace"
+
+	maxRepositoryWorkspaceProjectionArgumentsBytes = 32 * 1024 * 1024
+	maxRepositoryBubblewrapParsedArguments         = 9_000
 )
 
 type repositoryGoSandboxConfig struct {
@@ -75,17 +77,24 @@ func (config repositoryGoSandboxConfig) validateExecution() error {
 			return err
 		}
 	}
+	for _, systemPath := range []string{
+		"/bin", "/lib", "/sbin", "/usr/sbin",
+	} {
+		if err := resolvableRepositorySandboxDirectory(systemPath, "read-only system runtime path"); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
 func existingRepositoryGoModuleCache() (string, error) {
-	candidate := strings.TrimSpace(os.Getenv("GOMODCACHE"))
-	if candidate == "" {
-		goPath := strings.TrimSpace(build.Default.GOPATH)
-		if goPath == "" {
-			return "", fmt.Errorf("existing-repository verification cannot resolve one Go module cache")
-		}
-		candidate = filepath.Join(filepath.SplitList(goPath)[0], "pkg", "mod")
+	raw, configured := os.LookupEnv("GOMODCACHE")
+	candidate := strings.TrimSpace(raw)
+	if !configured || candidate == "" {
+		return "", fmt.Errorf("existing-repository verification requires explicit GOMODCACHE authority")
+	}
+	if candidate != raw {
+		return "", fmt.Errorf("existing Go module cache must be canonical exact text")
 	}
 	if !filepath.IsAbs(candidate) {
 		return "", fmt.Errorf("existing Go module cache must be absolute")
@@ -98,12 +107,20 @@ func existingRepositoryGoModuleCache() (string, error) {
 }
 
 func repositoryGoSandboxArguments(
-	rootFD int,
+	projection repositoryWorkspaceProjection,
+	mountRoots repositoryWorkspaceProjectionMountRoots,
+	baseFD int,
+	deltaFD int,
 	goRootFD int,
 	moduleCacheFD int,
 	infoFD int,
-	goArgs []string,
-) []string {
+) ([]string, error) {
+	if err := projection.validate(); err != nil {
+		return nil, err
+	}
+	if baseFD < 3 {
+		return nil, fmt.Errorf("repository projection requires one inherited source descriptor")
+	}
 	arguments := []string{
 		"--unshare-all", "--unshare-user", "--disable-userns", "--assert-userns-disabled",
 		"--die-with-parent", "--new-session", "--cap-drop", "ALL",
@@ -114,19 +131,55 @@ func repositoryGoSandboxArguments(
 		"--ro-bind", "/usr/include", "/usr/include",
 		"--ro-bind", "/usr/libexec", "/usr/libexec",
 		"--ro-bind", "/usr/share", "/usr/share",
-		"--symlink", "usr/bin", "/bin",
-		"--symlink", "usr/lib", "/lib",
-		"--symlink", "usr/lib", "/lib64",
-		"--symlink", "usr/sbin", "/sbin",
-		"--proc", "/proc", "--dev", "/dev",
-		"--tmpfs", "/tmp", "--tmpfs", "/home",
-		"--dir", "/home/omnidex", "--dir", repositorySandboxRoot,
-		"--dir", "/toolchain", "--dir", "/gomodcache",
-		"--ro-bind-fd", fmt.Sprint(rootFD), repositorySandboxRoot,
-		"--ro-bind-fd", fmt.Sprint(goRootFD), "/toolchain",
-		"--ro-bind-fd", fmt.Sprint(moduleCacheFD), "/gomodcache",
+		"--ro-bind", "/usr/sbin", "/usr/sbin",
+		"--ro-bind", "/bin", "/bin",
+		"--ro-bind", "/lib", "/lib",
+		"--ro-bind", "/sbin", "/sbin",
+		"--ro-bind-try", "/lib64", "/lib64",
+		"--ro-bind-try", "/usr/lib64", "/usr/lib64",
+	}
+	if projection.deltaRoot != "" {
+		if deltaFD < 3 {
+			return nil, fmt.Errorf("staged repository projection requires one inherited delta descriptor")
+		}
+	} else if deltaFD != -1 {
+		return nil, fmt.Errorf("snapshot repository projection received an unexpected delta descriptor")
 	}
 	arguments = append(arguments,
+		"--tmpfs", repositorySandboxRoot,
+	)
+	mounts, err := repositoryWorkspaceProjectionMounts(projection, mountRoots)
+	if err != nil {
+		return nil, err
+	}
+	for _, mount := range mounts {
+		destination := repositorySandboxPath(mount.Path)
+		switch mount.Source {
+		case repositoryWorkspaceProjectionBase:
+			arguments = append(arguments,
+				"--ro-bind", repositorySandboxDescriptorPath(baseFD, mount.Path), destination,
+			)
+		case repositoryWorkspaceProjectionDelta:
+			arguments = append(arguments,
+				"--ro-bind", repositorySandboxDescriptorPath(deltaFD, mount.Path), destination,
+			)
+		case repositoryWorkspaceProjectionSymlink:
+			if mount.Directory {
+				return nil, fmt.Errorf("repository symlink projection cannot bind directory %q", mount.Path)
+			}
+			arguments = append(arguments, "--symlink", mount.LinkTarget, destination)
+		default:
+			return nil, fmt.Errorf("repository workspace projection mount %q has unsupported source %q", mount.Path, mount.Source)
+		}
+	}
+	arguments = append(arguments,
+		"--remount-ro", repositorySandboxRoot,
+		"--proc", "/proc", "--dev", "/dev",
+		"--tmpfs", "/tmp", "--tmpfs", "/home",
+		"--dir", "/home/omnidex",
+		"--dir", "/toolchain", "--dir", "/gomodcache",
+		"--ro-bind-fd", fmt.Sprint(goRootFD), "/toolchain",
+		"--ro-bind-fd", fmt.Sprint(moduleCacheFD), "/gomodcache",
 		"--chdir", repositorySandboxRoot,
 		"--setenv", "HOME", "/home/omnidex",
 		"--setenv", "PATH", "/toolchain/bin:/usr/bin:/bin",
@@ -146,9 +199,67 @@ func repositoryGoSandboxArguments(
 		"--setenv", "LANG", "C.UTF-8",
 		"--setenv", "LC_ALL", "C.UTF-8",
 		"--setenv", "TZ", "UTC",
-		"--info-fd", fmt.Sprint(infoFD), "--", "/toolchain/bin/go",
+		"--info-fd", fmt.Sprint(infoFD),
 	)
-	return append(arguments, goArgs...)
+	if err := validateRepositoryWorkspaceProjectionArguments(arguments); err != nil {
+		return nil, err
+	}
+	return arguments, nil
+}
+
+func repositorySandboxPath(relative string) string {
+	return filepath.Join(repositorySandboxRoot, filepath.FromSlash(relative))
+}
+
+func repositorySandboxDescriptorPath(descriptor int, relative string) string {
+	return filepath.Join("/proc/self/fd", fmt.Sprint(descriptor), filepath.FromSlash(relative))
+}
+
+func validateRepositoryWorkspaceProjectionArguments(arguments []string) error {
+	if len(arguments) > maxRepositoryBubblewrapParsedArguments {
+		return fmt.Errorf(
+			"repository workspace projection requires %d Bubblewrap arguments; hard limit is %d",
+			len(arguments), maxRepositoryBubblewrapParsedArguments,
+		)
+	}
+	total := 0
+	for _, argument := range arguments {
+		if strings.ContainsRune(argument, '\x00') {
+			return fmt.Errorf("repository workspace projection argument contains NUL authority")
+		}
+		if total > maxRepositoryWorkspaceProjectionArgumentsBytes-len(argument)-1 {
+			return fmt.Errorf(
+				"repository workspace projection arguments exceed %d bytes",
+				maxRepositoryWorkspaceProjectionArgumentsBytes,
+			)
+		}
+		total += len(argument) + 1
+	}
+	return nil
+}
+
+func repositoryBubblewrapInvocation(
+	options []string,
+	argumentsFD int,
+	goArgs []string,
+) ([]string, error) {
+	if argumentsFD < 3 {
+		return nil, fmt.Errorf("repository verification requires one inherited Bubblewrap argument descriptor")
+	}
+	invocation := append(
+		[]string{"--args", fmt.Sprint(argumentsFD), "--", "/toolchain/bin/go"},
+		goArgs...,
+	)
+	if len(options)+len(invocation) > maxRepositoryBubblewrapParsedArguments {
+		return nil, fmt.Errorf(
+			"repository verification requires %d total Bubblewrap arguments; hard limit is %d",
+			len(options)+len(invocation), maxRepositoryBubblewrapParsedArguments,
+		)
+	}
+	if err := validateRepositoryWorkspaceProjectionArguments(invocation); err != nil {
+		return nil, err
+	}
+	return invocation, nil
 }
 
 func openRepositorySandboxDirectory(path, label string) (*os.File, error) {
@@ -177,6 +288,21 @@ func exactRepositorySandboxDirectory(path, label string) (os.FileInfo, error) {
 		return nil, fmt.Errorf("%s is absent or not one exact directory", label)
 	}
 	return info, nil
+}
+
+func resolvableRepositorySandboxDirectory(path, label string) error {
+	if path == "" || !filepath.IsAbs(path) || filepath.Clean(path) != path {
+		return fmt.Errorf("%s must be one absolute canonical directory", label)
+	}
+	resolved, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return fmt.Errorf("%s is absent or does not resolve to one directory", label)
+	}
+	info, err := os.Stat(resolved)
+	if err != nil || !info.IsDir() {
+		return fmt.Errorf("%s is absent or does not resolve to one directory", label)
+	}
+	return nil
 }
 
 func exactRepositorySandboxExecutable(path, label string) error {

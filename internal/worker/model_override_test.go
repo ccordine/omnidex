@@ -49,6 +49,39 @@ func TestConcurrentJobStationRoutingIsIsolated(t *testing.T) {
 	}
 }
 
+func TestConcurrentJobRoleplaySemanticRoutingIsIsolated(t *testing.T) {
+	service := &Service{models: ModelRouting{RoleplaySemanticModel: "base-roleplay"}}
+	metadata := []json.RawMessage{
+		json.RawMessage(`{"model_config":{"roleplay_semantic_model":"roleplay-a"}}`),
+		json.RawMessage(`{"model_config":{"roleplay_semantic_model":"roleplay-b"}}`),
+	}
+	errors := make(chan string, 200)
+	var workers sync.WaitGroup
+	for index := 0; index < 200; index++ {
+		workers.Add(1)
+		go func(raw json.RawMessage, want string) {
+			defer workers.Done()
+			routing, err := modelRoutingFromJobMetadata(raw, service.models)
+			if err != nil {
+				errors <- err.Error()
+				return
+			}
+			got, err := service.requiredRoleplaySemanticModel(routing)
+			if err != nil || got != want {
+				errors <- "unexpected roleplay semantic route"
+			}
+		}(metadata[index%2], []string{"roleplay-a", "roleplay-b"}[index%2])
+	}
+	workers.Wait()
+	close(errors)
+	for message := range errors {
+		t.Error(message)
+	}
+	if service.models.RoleplaySemanticModel != "base-roleplay" {
+		t.Fatal("job-local roleplay routing mutated shared service routing")
+	}
+}
+
 func TestModelRoutingFromJobMetadataRejectsMalformedConfig(t *testing.T) {
 	base := ModelRouting{Stations: map[station.ID]string{station.ConversationResponse: "base"}}
 	for _, metadata := range []json.RawMessage{
@@ -73,5 +106,9 @@ func TestRequiredStationModelFailsLoudly(t *testing.T) {
 	}
 	if _, err := stationModel(ModelRouting{}, station.ID("planner_specialist")); err == nil {
 		t.Fatal("unregistered persona-shaped route was accepted")
+	}
+	if _, err := service.requiredRoleplaySemanticModel(ModelRouting{}); err == nil ||
+		!strings.Contains(err.Error(), "not configured") {
+		t.Fatalf("missing roleplay semantic model error=%v", err)
 	}
 }

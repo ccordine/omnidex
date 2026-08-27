@@ -226,8 +226,8 @@ func summarizeChatStepEvent(event parsedChatStepEvent, stepAction string) (chatP
 		return summarizeChatRepositoryChange(event)
 	case "repository_verification_command_passed", "repository_verification_baseline_accepted", "repository_verification_plan_accepted":
 		return summarizeChatRepositoryVerification(event)
-	case "repository_mutation_recovery_started", "repository_mutation_recovered":
-		return summarizeChatRepositoryRecovery(event)
+	case "workspace_mutation_recovery_started", "workspace_mutation_recovered":
+		return summarizeChatWorkspaceRecovery(event)
 	case "coding_repair_selected":
 		fields, err := exactChatEventFields(event.Message, "repair", "path", "command")
 		if err != nil {

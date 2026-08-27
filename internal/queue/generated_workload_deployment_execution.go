@@ -223,7 +223,7 @@ func validateGeneratedDeploymentExecutionCommand(
 		return err
 	}
 	if !registeredGeneratedDeploymentSlot(execution.Slot) ||
-		!repositoryMutationHexDigest(execution.CommandSHA256) ||
+		!validSHA256Digest(execution.CommandSHA256) ||
 		execution.WorkspaceSHA256 != command.WorkspaceSHA256 {
 		return fmt.Errorf("deployment execution command authority is invalid")
 	}

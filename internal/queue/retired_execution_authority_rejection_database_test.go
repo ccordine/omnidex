@@ -25,10 +25,9 @@ func TestPostgresRetiredExecutionAuthorityRejectsContaminationAtomically(t *test
 	); err != nil {
 		t.Fatal(err)
 	}
-	job, err := repository.EnqueueJob(t.Context(), "retirement preflight job", "coding", []byte(`{}`))
-	if err != nil {
-		t.Fatal(err)
-	}
+	fixture := seedPreInlineExecutionMigrationJob(
+		t, t.Context(), pool, "retirement preflight job", "coding", "v3_coding", nil,
+	)
 
 	tests := []struct {
 		name, setup, cleanup, want string
@@ -49,11 +48,11 @@ func TestPostgresRetiredExecutionAuthorityRejectsContaminationAtomically(t *test
 		{"codex API secret", `INSERT INTO workspace_settings(key,value) VALUES('api_secrets','{"codex_api_key":"retired"}')`, `DELETE FROM workspace_settings WHERE key='api_secrets'`, "API secrets"},
 		{"null API secrets", `INSERT INTO workspace_settings(key,value) VALUES('api_secrets','null')`, `DELETE FROM workspace_settings WHERE key='api_secrets'`, "API secrets"},
 		{"array API secrets", `INSERT INTO workspace_settings(key,value) VALUES('api_secrets','[]')`, `DELETE FROM workspace_settings WHERE key='api_secrets'`, "API secrets"},
-		{"job agent metadata", `UPDATE jobs SET metadata=jsonb_set(metadata,'{agent_config}','{"agent_system":"omnidex"}') WHERE id=` + integerSQL(job.ID), `UPDATE jobs SET metadata=metadata-'agent_config' WHERE id=` + integerSQL(job.ID), "execution metadata"},
-		{"job instance metadata", `UPDATE jobs SET metadata=jsonb_set(metadata,'{instance_agent_config}','{}') WHERE id=` + integerSQL(job.ID), `UPDATE jobs SET metadata=metadata-'instance_agent_config' WHERE id=` + integerSQL(job.ID), "execution metadata"},
-		{"job recipe metadata", `UPDATE jobs SET metadata=jsonb_set(metadata,'{recipe}','{}') WHERE id=` + integerSQL(job.ID), `UPDATE jobs SET metadata=metadata-'recipe' WHERE id=` + integerSQL(job.ID), "execution metadata"},
-		{"job malformed metadata", `UPDATE jobs SET metadata='null' WHERE id=` + integerSQL(job.ID), `UPDATE jobs SET metadata='{}' WHERE id=` + integerSQL(job.ID), "execution metadata"},
-		{"external agent step", `UPDATE job_steps SET action='external_agent_execute' WHERE job_id=` + integerSQL(job.ID), `UPDATE job_steps SET action='v3_coding' WHERE job_id=` + integerSQL(job.ID), "external-agent job steps"},
+		{"job agent metadata", `UPDATE jobs SET metadata=jsonb_set(metadata,'{agent_config}','{"agent_system":"omnidex"}') WHERE id=` + integerSQL(fixture.Job.ID), `UPDATE jobs SET metadata=metadata-'agent_config' WHERE id=` + integerSQL(fixture.Job.ID), "execution metadata"},
+		{"job instance metadata", `UPDATE jobs SET metadata=jsonb_set(metadata,'{instance_agent_config}','{}') WHERE id=` + integerSQL(fixture.Job.ID), `UPDATE jobs SET metadata=metadata-'instance_agent_config' WHERE id=` + integerSQL(fixture.Job.ID), "execution metadata"},
+		{"job recipe metadata", `UPDATE jobs SET metadata=jsonb_set(metadata,'{recipe}','{}') WHERE id=` + integerSQL(fixture.Job.ID), `UPDATE jobs SET metadata=metadata-'recipe' WHERE id=` + integerSQL(fixture.Job.ID), "execution metadata"},
+		{"job malformed metadata", `UPDATE jobs SET metadata='null' WHERE id=` + integerSQL(fixture.Job.ID), `UPDATE jobs SET metadata='{}' WHERE id=` + integerSQL(fixture.Job.ID), "execution metadata"},
+		{"external agent step", `UPDATE job_steps SET action='external_agent_execute' WHERE job_id=` + integerSQL(fixture.Job.ID), `UPDATE job_steps SET action='v3_coding' WHERE job_id=` + integerSQL(fixture.Job.ID), "external-agent job steps"},
 		{"telemetry recipe", `UPDATE omni_runs SET recipe_id='retired' WHERE id=(SELECT id FROM omni_runs ORDER BY id LIMIT 1)`, `UPDATE omni_runs SET recipe_id='' WHERE id=(SELECT id FROM omni_runs ORDER BY id LIMIT 1)`, "execution telemetry"},
 		{"telemetry external agent", `UPDATE omni_runs SET external_agents_used=ARRAY['codex'] WHERE id=(SELECT id FROM omni_runs ORDER BY id LIMIT 1)`, `UPDATE omni_runs SET external_agents_used=ARRAY[]::TEXT[] WHERE id=(SELECT id FROM omni_runs ORDER BY id LIMIT 1)`, "execution telemetry"},
 	}

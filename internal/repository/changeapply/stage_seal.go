@@ -21,47 +21,64 @@ func stageAndSealMutations(
 	if plan == nil {
 		return nil, fmt.Errorf("repository change staging requires one exact mutation planner")
 	}
-	workspace, err := stageSnapshot(ctx, snapshot)
+	mutations, err := plan(snapshot.Root)
 	if err != nil {
 		return nil, err
 	}
-	keepWorkspace := false
+	deltaRoot, err := stageMutationTargets(ctx, snapshot, mutations)
+	if err != nil {
+		return nil, err
+	}
+	keepDelta := false
 	defer func() {
-		if !keepWorkspace {
-			err = joinCleanupError(err, os.RemoveAll(workspace))
+		if !keepDelta {
+			err = joinCleanupError(err, os.RemoveAll(deltaRoot))
 		}
 	}()
-	mutations, err := plan(workspace)
-	if err != nil {
-		return nil, err
-	}
 	patch, err := buildUnifiedPatch(mutations)
 	if err != nil {
 		return nil, err
 	}
 	if _, err := omni.ApplyUnifiedPatch(omni.PatchApplyOptions{
-		Context: ctx, Workspace: workspace, Patch: patch, DryRun: true,
+		Context: ctx, Workspace: deltaRoot, Patch: patch, DryRun: true,
 	}); err != nil {
 		return nil, fmt.Errorf("dry-run staged repository patch: %w", err)
 	}
 	if _, err := omni.ApplyUnifiedPatch(omni.PatchApplyOptions{
-		Context: ctx, Workspace: workspace, Patch: patch,
+		Context: ctx, Workspace: deltaRoot, Patch: patch,
 	}); err != nil {
 		return nil, fmt.Errorf("apply staged repository patch: %w", err)
 	}
-	if err := verifyStagedMutations(workspace, mutations); err != nil {
+	if err := verifyStagedMutations(deltaRoot, mutations); err != nil {
 		return nil, err
 	}
 	patchHash := digest([]byte(patch))
 	changedFileIDs, expectedFiles := exactExpectedFileStates(mutations)
 	stage := &StagedChange{
-		id: stageIdentity(snapshot.ID, ownerID, patchHash), workspace: workspace,
+		id: stageIdentity(snapshot.ID, ownerID, patchHash), deltaRoot: deltaRoot,
+		sourceSnapshot:    snapshot,
 		authoritativeRoot: snapshot.Root, expectedSnapshotID: snapshot.ID,
 		patch: patch, patchSHA256: patchHash, changedFileIDs: changedFileIDs,
-		expectedFiles: expectedFiles, stagedFiles: stagedFileAuthorities(snapshot, mutations),
+		expectedFiles: expectedFiles, deltaFiles: deltaFileAuthorities(mutations),
 	}
-	keepWorkspace = true
+	keepDelta = true
 	return stage, nil
+}
+
+func deltaFileAuthorities(mutations []fileMutation) []stagedFileAuthority {
+	files := make([]stagedFileAuthority, 0, len(mutations))
+	for _, mutation := range mutations {
+		if !mutation.desiredPresent {
+			continue
+		}
+		files = append(files, stagedFileAuthority{
+			path: mutation.file.Path, kind: repositoryfacts.EntryRegular,
+			sha256: digest(mutation.next), size: int64(len(mutation.next)),
+			mode: mutation.file.Mode,
+		})
+	}
+	sort.Slice(files, func(left, right int) bool { return files[left].path < files[right].path })
+	return files
 }
 
 func exactExpectedFileStates(mutations []fileMutation) ([]string, []ExpectedFileState) {

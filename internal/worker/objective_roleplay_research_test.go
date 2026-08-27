@@ -46,12 +46,11 @@ func TestResolveObjectiveRoleplayResearchUsesSharedEvidenceSieveAndOneResponseAc
 			candidate, document := objectiveRoleplayResearchDocumentFixture(
 				t, fixture.url, fixture.title, fixture.content,
 			)
-			term := fixture.title + " evidence"
 			acquisition := &scriptedObjectiveRoleplayAcquisition{
-				query: term, candidates: []websearch.Candidate{irrelevantCandidate, candidate},
+				query: fixture.question, candidates: []websearch.Candidate{irrelevantCandidate, candidate},
 				documents: []websearch.Document{irrelevantDocument, document},
 			}
-			terms := &scriptedObjectiveRoleplayTermsStation{term: term}
+			terms := &scriptedObjectiveRoleplayTermsStation{term: fixture.title + " evidence"}
 			relevance := &scriptedObjectiveRoleplayRelevanceStation{selected: []websearch.CandidateID{candidate.ID}}
 			station := &scriptedObjectiveRoleplayGroundedStation{answer: fixture.answer}
 			result, err := resolveObjectiveRoleplayResearch(
@@ -61,13 +60,14 @@ func TestResolveObjectiveRoleplayResearchUsesSharedEvidenceSieveAndOneResponseAc
 			if err != nil {
 				t.Fatal(err)
 			}
-			if acquisition.discoverCalls != 1 || acquisition.fetchCalls != 1 || terms.calls != 1 ||
-				relevance.calls != 1 || station.calls != 1 || result.ModelCalls != objectiveRoleplayResearchModelCalls {
+			if acquisition.discoverCalls != 1 || acquisition.fetchCalls != 1 || terms.calls != 0 ||
+				relevance.calls != 1 || station.calls != 1 ||
+				result.ModelCalls != minimumObjectiveRoleplayResearchModelCalls {
 				t.Fatalf("calls discover=%d fetch=%d terms=%d relevance=%d response=%d result=%d",
 					acquisition.discoverCalls, acquisition.fetchCalls, terms.calls,
 					relevance.calls, station.calls, result.ModelCalls)
 			}
-			if terms.question != fixture.question || relevance.question != fixture.question ||
+			if terms.question != "" || relevance.question != fixture.question ||
 				station.input.ExactQuestion != fixture.question {
 				t.Fatalf(
 					"dedicated research question changed: terms=%q relevance=%q response=%q",

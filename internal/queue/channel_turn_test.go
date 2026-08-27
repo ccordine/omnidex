@@ -69,6 +69,7 @@ func TestChannelTurnMetadataRequiresExactRoleplayViewpoint(t *testing.T) {
 		"story-one", 41, 7, "/srv/workspaces/one", "", "",
 		model.ChannelModeRoleplay, modelconfig.Config{
 			"conversation_response_model": "global-story:latest",
+			"roleplay_semantic_model":     "roleplay-semantic:latest",
 		}, &simulation,
 	)
 	if err != nil {
@@ -80,7 +81,8 @@ func TestChannelTurnMetadataRequiresExactRoleplayViewpoint(t *testing.T) {
 	}
 	if got.ChannelMode != model.ChannelModeRoleplay || got.RoleplayViewpointCharacterID != viewpoint ||
 		got.RoleplayGenerationConfig == nil || *got.RoleplayGenerationConfig != simulation.GenerationConfig ||
-		got.ModelConfig.Get("conversation_response_model") != "story-model:latest" {
+		got.ModelConfig.Get("conversation_response_model") != "story-model:latest" ||
+		got.ModelConfig.Get("roleplay_semantic_model") != "roleplay-semantic:latest" {
 		t.Fatalf("metadata=%+v", got)
 	}
 	if _, err := marshalChannelTurnMetadata(

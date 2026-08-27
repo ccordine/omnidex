@@ -17,7 +17,7 @@ type roleplayContextResolverTestClient struct {
 	requested     int
 }
 
-func (client *roleplayContextResolverTestClient) ResolveRoleplayRawContext(
+func (client *roleplayContextResolverTestClient) ResolveRoleplayCompletionContext(
 	_ context.Context,
 	model string,
 	requested int,
@@ -28,7 +28,7 @@ func (client *roleplayContextResolverTestClient) ResolveRoleplayRawContext(
 	return client.contextTokens, nil
 }
 
-func TestExactStationContextNegotiationRunsOnlyForRoleplayRawProse(t *testing.T) {
+func TestExactStationContextNegotiationRunsForRoleplayCompletionProfiles(t *testing.T) {
 	client := &roleplayContextResolverTestClient{contextTokens: 4096}
 	service := &Service{stationClient: client, inferenceContextTokens: 8192}
 	roleplayJob, err := roleplayResponseProviderPolicyJob()
@@ -42,6 +42,22 @@ func TestExactStationContextNegotiationRunsOnlyForRoleplayRawProse(t *testing.T)
 	if got != 4096 || client.calls != 1 || client.model != "tinydolphin:latest" || client.requested != 8192 {
 		t.Fatalf("context=%d client=%+v", got, client)
 	}
+	semanticJob, err := assemblyline.NewContextSearchTermsJob(
+		assemblyline.ContextSearchTermsInput{
+			ExactInstruction: "Continue.",
+			Scope:            assemblyline.ContextScopeRoleplaySimulation,
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err = service.exactStationContextTokens(t.Context(), semanticJob, "semantic-model:latest")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != 4096 || client.calls != 2 || client.model != "semantic-model:latest" {
+		t.Fatalf("semantic context=%d client=%+v", got, client)
+	}
 
 	assistantJob, err := assemblyline.NewConversationResponseJob(assemblyline.ConversationResponseInput{
 		Kind: assemblyline.ObjectiveKindAnswer, ExactInstruction: "Explain rain.",
@@ -53,7 +69,7 @@ func TestExactStationContextNegotiationRunsOnlyForRoleplayRawProse(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got != 8192 || client.calls != 1 {
+	if got != 8192 || client.calls != 2 {
 		t.Fatalf("ordinary station context=%d resolver_calls=%d", got, client.calls)
 	}
 }

@@ -8,10 +8,12 @@ import (
 
 const ContextSearchTermsSchemaV1 = "omnidex.context-search-terms.v1"
 
-// ContextSearchTermsInput deliberately contains only the current instruction.
-// Code owns every source queried with the returned strings.
+// ContextSearchTermsInput contains the current instruction plus optional
+// code-owned domain scope. Scope selects transport policy and is never part of
+// the model projection. Code owns every source queried with returned strings.
 type ContextSearchTermsInput struct {
-	ExactInstruction string `json:"exact_instruction"`
+	ExactInstruction string       `json:"exact_instruction"`
+	Scope            ContextScope `json:"scope,omitempty"`
 }
 
 type ContextSearchTermsDecision struct {
@@ -24,6 +26,9 @@ func NewContextSearchTermsJob(input ContextSearchTermsInput) (PortableJob, error
 }
 
 func (input ContextSearchTermsInput) validate() error {
+	if err := input.Scope.Validate(); err != nil {
+		return err
+	}
 	return validateContextExactInstruction(input.ExactInstruction)
 }
 
@@ -82,7 +87,9 @@ func BuildContextSearchTermsPrompt(input ContextSearchTermsInput) (string, error
 	if err := input.validate(); err != nil {
 		return "", err
 	}
-	projection, err := json.Marshal(input)
+	projection, err := json.Marshal(struct {
+		ExactInstruction string `json:"exact_instruction"`
+	}{ExactInstruction: input.ExactInstruction})
 	if err != nil {
 		return "", fmt.Errorf("encode context search terms projection: %w", err)
 	}

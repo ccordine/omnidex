@@ -196,9 +196,9 @@ func TestPostgresTaskLedgerCommandsAreAtomicAndIdempotent(t *testing.T) {
 	defer missingRunTx.Rollback(context.Background())
 	if err := missingRunTx.QueryRow(ctx, `
 		INSERT INTO jobs (instruction, pipeline, status, metadata)
-		VALUES ($1, 'agent', 'pending', '{}'::jsonb)
+		VALUES ($1, $2, 'pending', '{}'::jsonb)
 		RETURNING id
-	`, marker+"-missing-run").Scan(&missingRunJobID); err != nil {
+	`, marker+"-missing-run", model.PipelineCoding).Scan(&missingRunJobID); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := missingRunTx.Exec(ctx, `

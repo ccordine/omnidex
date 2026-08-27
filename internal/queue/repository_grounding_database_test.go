@@ -6,7 +6,6 @@ import (
 
 	"github.com/gryph/omnidex/internal/assemblyline"
 	"github.com/gryph/omnidex/internal/llm"
-	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/station"
 )
 
@@ -28,29 +27,21 @@ func TestPostgresRepositoryGroundingStationsUseExactGapAuthority(t *testing.T) {
 			if err := repository.EnsureSchema(t.Context(), loadMigrationBundleThroughPrefix(t, "096")); err != nil {
 				t.Fatal(err)
 			}
-			jobRecord, err := repository.EnqueueJob(t.Context(), "repository grounding station", model.PipelineCoding, nil)
-			if err != nil {
-				t.Fatal(err)
-			}
-			claim, err := repository.ClaimNextStep(t.Context(), "repository-grounding-worker")
-			if err != nil {
-				t.Fatal(err)
-			}
-			if claim == nil || claim.Job.ID != jobRecord.ID {
-				t.Fatalf("claim=%+v want job %d", claim, jobRecord.ID)
-			}
+			claim := seedPreInlineExecutionMigrationClaim(
+				t, t.Context(), pool, "repository-grounding",
+			)
 			job := test.job(t)
 			if _, err := repository.OpenStationGap(t.Context(), StationGapOpenRecord{
 				Authority: claim.Authority, Job: job, Station: station.ConversationObjectiveKind,
-				ContextTokens: 8192, MaxOutputTokens: 512,
-				OutputLimitMode: llm.ExactPreparedOutputLimitExplicit,
+				ContextTokens: 8192, MaxOutputTokens: 8192,
+				OutputLimitMode: llm.ExactPreparedOutputLimitNatural,
 			}); err == nil {
 				t.Fatalf("%s work opened under objective-kind station", test.name)
 			}
 			opening, err := repository.OpenStationGap(t.Context(), StationGapOpenRecord{
 				Authority: claim.Authority, Job: job, Station: test.station,
-				ContextTokens: 8192, MaxOutputTokens: 512,
-				OutputLimitMode: llm.ExactPreparedOutputLimitExplicit,
+				ContextTokens: 8192, MaxOutputTokens: 8192,
+				OutputLimitMode: llm.ExactPreparedOutputLimitNatural,
 			})
 			if err != nil {
 				t.Fatal(err)

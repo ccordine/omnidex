@@ -152,8 +152,8 @@ func loadGeneratedDeploymentNamespaceRequalificationTx(
 		record.ProofSHA256 != bound.SHA256 || record.EvidenceID <= 0 || record.ObservedAt.IsZero() ||
 		record.OperationID == "" || record.JobID <= 0 || record.Generation <= 0 || record.StepID <= 0 ||
 		!generatedDeploymentSlotRequiresNamespaceRequalification(record.Slot) ||
-		!repositoryMutationHexDigest(record.CommandSHA256) ||
-		!repositoryMutationHexDigest(record.WorkspaceSHA256) ||
+		!validSHA256Digest(record.CommandSHA256) ||
+		!validSHA256Digest(record.WorkspaceSHA256) ||
 		record.ComposeProject != bound.ComposeProject || record.StepAttempt <= 0 || record.WorkerID == "" {
 		return GeneratedWorkloadDeploymentNamespaceRequalificationRecord{}, false,
 			fmt.Errorf("durable deployment namespace requalification is invalid")

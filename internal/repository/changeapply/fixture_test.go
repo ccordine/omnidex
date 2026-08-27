@@ -109,9 +109,19 @@ func (fixture *fixture) file(t *testing.T, path string) repositoryfacts.File {
 	return repositoryfacts.File{}
 }
 
-func (fixture *fixture) plan(contract repositoryfacts.ChangeContract, candidates []changeapply.CandidateDeclaration) (*changeapply.StagedChange, error) {
-	return changeapply.Plan(context.Background(), changeapply.Input{
-		Snapshot: fixture.snapshot, Analysis: fixture.analysis, Contract: contract, Candidates: candidates,
+func (fixture *fixture) plan(
+	contract repositoryfacts.ChangeContract,
+	candidates map[string]string,
+) (*changeapply.StagedChange, error) {
+	desired, err := changeapply.AssembleExistingGoFileStates(
+		fixture.snapshot, fixture.analysis, contract, candidates,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return changeapply.PlanFileStateTransitions(context.Background(), changeapply.FileStateInput{
+		Snapshot: fixture.snapshot, Analysis: fixture.analysis, OwnerID: contract.ID,
+		Desired: desired,
 	})
 }
 

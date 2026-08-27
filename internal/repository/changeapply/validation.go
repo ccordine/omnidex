@@ -13,41 +13,53 @@ import (
 	golangadapter "github.com/gryph/omnidex/internal/repository/adapters/golang"
 )
 
-func resolveReplacements(input Input) ([]targetReplacement, error) {
-	if input.Analysis.Adapter.Name != golangadapter.AdapterName {
+// AssembleExistingGoFileStates validates bounded declaration candidates against
+// one exact change contract, then deterministically splices them into complete
+// desired file postimages. It performs no staging or filesystem mutation.
+func AssembleExistingGoFileStates(
+	snapshot repositoryfacts.Snapshot,
+	analysis repositoryfacts.Analysis,
+	contract repositoryfacts.ChangeContract,
+	candidates map[string]string,
+) ([]DesiredFileState, error) {
+	if err := snapshot.Validate(); err != nil {
+		return nil, fmt.Errorf("assemble repository desired states snapshot: %w", err)
+	}
+	if err := analysis.Validate(snapshot); err != nil {
+		return nil, fmt.Errorf("assemble repository desired states analysis: %w", err)
+	}
+	if err := contract.Validate(snapshot, analysis); err != nil {
+		return nil, fmt.Errorf("assemble repository desired states contract: %w", err)
+	}
+	if analysis.Adapter.Name != golangadapter.AdapterName {
 		return nil, fmt.Errorf(
 			"repository change staging has no final declaration validator for adapter %q",
-			input.Analysis.Adapter.Name,
+			analysis.Adapter.Name,
 		)
 	}
-	files := make(map[string]repositoryfacts.File, len(input.Snapshot.Files))
-	for _, file := range input.Snapshot.Files {
+	if len(candidates) != len(contract.Targets) {
+		return nil, fmt.Errorf(
+			"repository change candidates have %d declarations for %d exact targets",
+			len(candidates), len(contract.Targets),
+		)
+	}
+	files := make(map[string]repositoryfacts.File, len(snapshot.Files))
+	for _, file := range snapshot.Files {
 		files[file.ID] = file
 	}
-	symbols := make(map[string]repositoryfacts.Symbol, len(input.Analysis.Symbols))
-	for _, symbol := range input.Analysis.Symbols {
+	symbols := make(map[string]repositoryfacts.Symbol, len(analysis.Symbols))
+	for _, symbol := range analysis.Symbols {
 		symbols[symbol.ID] = symbol
 	}
-	candidates := make(map[string]CandidateDeclaration, len(input.Candidates))
-	for _, candidate := range input.Candidates {
-		if strings.TrimSpace(candidate.SymbolID) == "" {
-			return nil, fmt.Errorf("repository change candidate requires one symbol ID")
-		}
-		if _, duplicate := candidates[candidate.SymbolID]; duplicate {
-			return nil, fmt.Errorf("repository change candidate for symbol %q is duplicated", candidate.SymbolID)
-		}
-		if err := validateCandidate(candidate); err != nil {
-			return nil, err
-		}
-		candidates[candidate.SymbolID] = candidate
-	}
-	replacements := make([]targetReplacement, 0, len(input.Contract.Targets))
-	for _, target := range input.Contract.Targets {
+	replacements := make([]targetReplacement, 0, len(contract.Targets))
+	for _, target := range contract.Targets {
 		candidate, exists := candidates[target.SymbolID]
 		if !exists {
-			return nil, fmt.Errorf("repository change candidate for target %q is missing", target.SymbolID)
+			return nil, fmt.Errorf("repository change target %q has no candidate declaration", target.SymbolID)
 		}
-		delete(candidates, target.SymbolID)
+		if err := validateCandidate(target.SymbolID, candidate); err != nil {
+			return nil, err
+		}
 		file, exists := files[target.FileID]
 		if !exists {
 			return nil, fmt.Errorf("repository change target %q references an unknown file", target.SymbolID)
@@ -60,7 +72,7 @@ func resolveReplacements(input Input) ([]targetReplacement, error) {
 			return nil, fmt.Errorf("repository change target %q disappeared from exact analysis", target.SymbolID)
 		}
 		current, err := repositoryfacts.ReadExactSymbolSpan(
-			input.Snapshot, symbol, maxCandidateDeclarationBytes,
+			snapshot, symbol, maxCandidateDeclarationBytes,
 		)
 		if err != nil {
 			return nil, err
@@ -70,7 +82,7 @@ func resolveReplacements(input Input) ([]targetReplacement, error) {
 			Signature: target.Signature, Current: current.Content,
 			PermittedSymbols: permitted,
 		}
-		declaration, err := gofragment.ParseFunction(fragmentContract, candidate.Declaration)
+		declaration, err := gofragment.ParseFunction(fragmentContract, candidate)
 		if err != nil {
 			return nil, fmt.Errorf(
 				"validate repository change candidate for symbol %q: %w",
@@ -94,45 +106,37 @@ func resolveReplacements(input Input) ([]targetReplacement, error) {
 			symbolID: target.SymbolID, fileID: target.FileID,
 			start: target.StartByte, end: target.EndByte,
 			expected:    target.ExpectedDeclarationSHA256,
-			declaration: []byte(candidate.Declaration),
+			declaration: []byte(candidate),
 		})
-	}
-	if len(candidates) > 0 {
-		ids := make([]string, 0, len(candidates))
-		for id := range candidates {
-			ids = append(ids, id)
-		}
-		sort.Strings(ids)
-		return nil, fmt.Errorf("repository change candidates contain extra symbol %q", ids[0])
 	}
 	if err := rejectOverlappingTargets(replacements); err != nil {
 		return nil, err
 	}
-	return replacements, nil
+	return assembleModifiedFileStates(snapshot, analysis, replacements)
 }
 
-func validateCandidate(candidate CandidateDeclaration) error {
-	raw := []byte(candidate.Declaration)
-	if len(raw) == 0 || strings.TrimSpace(candidate.Declaration) == "" {
-		return fmt.Errorf("repository change candidate for symbol %q must be non-empty", candidate.SymbolID)
+func validateCandidate(symbolID, declaration string) error {
+	raw := []byte(declaration)
+	if len(raw) == 0 || strings.TrimSpace(declaration) == "" {
+		return fmt.Errorf("repository change candidate for symbol %q must be non-empty", symbolID)
 	}
 	if !utf8.Valid(raw) {
-		return fmt.Errorf("repository change candidate for symbol %q must be valid UTF-8", candidate.SymbolID)
+		return fmt.Errorf("repository change candidate for symbol %q must be valid UTF-8", symbolID)
 	}
-	if strings.ContainsRune(candidate.Declaration, '\x00') {
-		return fmt.Errorf("repository change candidate for symbol %q must be NUL-free", candidate.SymbolID)
+	if strings.ContainsRune(declaration, '\x00') {
+		return fmt.Errorf("repository change candidate for symbol %q must be NUL-free", symbolID)
 	}
 	if len(raw) > maxCandidateDeclarationBytes {
 		return fmt.Errorf(
 			"repository change candidate for symbol %q exceeds %d bytes",
-			candidate.SymbolID, maxCandidateDeclarationBytes,
+			symbolID, maxCandidateDeclarationBytes,
 		)
 	}
-	if candidate.Declaration != strings.TrimSpace(candidate.Declaration) {
-		return fmt.Errorf("repository change candidate for symbol %q must be trimmed", candidate.SymbolID)
+	if declaration != strings.TrimSpace(declaration) {
+		return fmt.Errorf("repository change candidate for symbol %q must be trimmed", symbolID)
 	}
-	if strings.ContainsRune(candidate.Declaration, '\r') {
-		return fmt.Errorf("repository change candidate for symbol %q contains unsupported carriage-return bytes", candidate.SymbolID)
+	if strings.ContainsRune(declaration, '\r') {
+		return fmt.Errorf("repository change candidate for symbol %q contains unsupported carriage-return bytes", symbolID)
 	}
 	return nil
 }

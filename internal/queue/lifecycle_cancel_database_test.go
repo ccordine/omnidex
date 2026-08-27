@@ -18,7 +18,9 @@ func TestPostgresCancelRequiresExactReasonAndReplaysWithoutMutation(t *testing.T
 		t.Fatal(err)
 	}
 	operationID := testLifecycleOperationID(t, "cancel-exact-replay", job.ID)
-	for _, invalid := range []string{"   ", "bad\x00reason", "bad" + string([]byte{0xff})} {
+	for _, invalid := range []string{
+		"   ", "  deliberate exact cancellation  ", "bad\x00reason", "bad" + string([]byte{0xff}),
+	} {
 		if _, err := repository.CancelJob(ctx, CancelJobCommand{
 			OperationID: operationID, JobID: job.ID, Reason: invalid,
 		}); err == nil {
@@ -28,7 +30,7 @@ func TestPostgresCancelRequiresExactReasonAndReplaysWithoutMutation(t *testing.T
 
 	reason := "deliberate exact cancellation"
 	command := CancelJobCommand{
-		OperationID: operationID, JobID: job.ID, Reason: "  " + reason + "  ",
+		OperationID: operationID, JobID: job.ID, Reason: reason,
 	}
 	canceled, err := repository.CancelJob(ctx, command)
 	if err != nil {

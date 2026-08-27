@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	"github.com/gryph/omnidex/internal/evidence"
-	"github.com/gryph/omnidex/internal/queue"
 	repositoryindex "github.com/gryph/omnidex/internal/repository/indexing"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -27,10 +26,10 @@ func assertRepositoryMutationWorkflowRecords(
 	var attempts, generatedDiffs, baselineProofs, baselineAcceptances, stagedProofs, authoritativeProofs int
 	var evidenceID *int64
 	err := pool.QueryRow(t.Context(), `
-		SELECT operation.status,operation.attempt_count,operation.evidence_id,
+		SELECT operation.status,operation.apply_attempt_count,operation.mutation_evidence_id,
 		       operation.stage_id,operation.patch_sha256,file.expected_sha256
-		FROM repository_mutation_operations AS operation
-		JOIN repository_mutation_files AS file ON file.operation_id=operation.id
+		FROM workspace_mutation_operations AS operation
+		JOIN workspace_mutation_files AS file ON file.operation_id=operation.id
 		WHERE operation.job_id=$1 AND file.file_id=$2
 	`, jobID, targetFileID).Scan(
 		&status, &attempts, &evidenceID, &stageID, &patchSHA, &expectedSHA,
@@ -40,7 +39,7 @@ func assertRepositoryMutationWorkflowRecords(
 	}
 	if err := pool.QueryRow(t.Context(), `
 		SELECT
-			COUNT(*) FILTER (WHERE kind=$2 AND source_type='repository'),
+			COUNT(*) FILTER (WHERE kind=$2 AND source_type='workspace'),
 			COUNT(*) FILTER (WHERE kind=$3 AND payload_json->'metadata'->>'repository_verification_scope'='baseline'
 			  AND NOT COALESCE((payload_json->'metadata'->>'repository_verification_baseline_accepted')::boolean,false)),
 			COUNT(*) FILTER (WHERE kind=$3 AND COALESCE((payload_json->'metadata'->>'repository_verification_baseline_accepted')::boolean,false)),
@@ -55,7 +54,7 @@ func assertRepositoryMutationWorkflowRecords(
 		t.Fatal(err)
 	}
 	file := exactRepositorySnapshotFile(t, refreshed.Snapshot, targetFileID)
-	if status != "applied" || attempts != 1 || evidenceID == nil || generatedDiffs != 1 ||
+	if status != "verified" || attempts != 1 || evidenceID == nil || generatedDiffs != 1 ||
 		baselineProofs != wantCommands || baselineAcceptances != 1 ||
 		stagedProofs != wantCommands || authoritativeProofs != wantCommands || expectedSHA != file.SHA256 {
 		t.Fatalf(
@@ -149,49 +148,4 @@ func loadRepositoryPlanAcceptances(
 		t.Fatal(err)
 	}
 	return accepted
-}
-
-func loadRepositoryMutationWorkflowCommand(
-	t *testing.T,
-	pool *pgxpool.Pool,
-	jobID int64,
-) queue.RepositoryMutationCommand {
-	t.Helper()
-	var command queue.RepositoryMutationCommand
-	err := pool.QueryRow(t.Context(), `
-		SELECT job_id,step_id,generation,step_attempt,worker_id,contract_id,stage_id,
-		       source_snapshot_id,patch,patch_sha256
-		FROM repository_mutation_operations WHERE job_id=$1
-	`, jobID).Scan(
-		&command.JobID, &command.StepID, &command.Generation, &command.Attempt, &command.WorkerID,
-		&command.ContractID, &command.StageID, &command.SourceSnapshotID,
-		&command.Patch, &command.PatchSHA256,
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	rows, err := pool.Query(t.Context(), `
-		SELECT file_id,path,source_sha256,source_size,expected_sha256,expected_size
-		FROM repository_mutation_files
-		WHERE operation_id=(SELECT id FROM repository_mutation_operations WHERE job_id=$1)
-		ORDER BY ordinal
-	`, jobID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var file queue.RepositoryMutationFile
-		if err := rows.Scan(
-			&file.FileID, &file.Path, &file.SourceSHA256, &file.SourceSize,
-			&file.ExpectedSHA256, &file.ExpectedSize,
-		); err != nil {
-			t.Fatal(err)
-		}
-		command.ChangedFiles = append(command.ChangedFiles, file)
-	}
-	if err := rows.Err(); err != nil {
-		t.Fatal(err)
-	}
-	return command
 }

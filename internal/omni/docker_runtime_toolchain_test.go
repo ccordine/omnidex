@@ -22,3 +22,23 @@ func TestDockerRuntimeUsesTheExactBuilderGoToolchain(t *testing.T) {
 		t.Fatal("Compose must not hide the exact runtime Go toolchain")
 	}
 }
+
+func TestDockerRuntimeInstallsExistingRepositorySandbox(t *testing.T) {
+	root := repoRootFromOmniTest(t)
+	dockerfile := readRepoScript(t, root, "Dockerfile")
+	compose := readRepoScript(t, root, "docker-compose.yml")
+	if !strings.Contains(dockerfile, "apk add --no-cache git nodejs npm bubblewrap build-base") {
+		t.Fatal("Docker runtime must install Bubblewrap and its required Go build paths")
+	}
+	if !strings.Contains(compose, "- seccomp=unconfined") {
+		t.Fatal("Compose must permit Bubblewrap to create its nested user namespace")
+	}
+	if !strings.Contains(compose, "- systempaths=unconfined") {
+		t.Fatal("Compose must permit Bubblewrap to mount its isolated proc filesystem")
+	}
+	if !strings.Contains(compose, "GOMODCACHE: /var/cache/omnidex/gomod") ||
+		!strings.Contains(compose, "source: gomodcache\n        target: /var/cache/omnidex/gomod") ||
+		!strings.Contains(compose, "gomodcache:") {
+		t.Fatal("Compose must provide one explicit persistent code-owned Go module cache")
+	}
+}

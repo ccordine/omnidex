@@ -11,7 +11,7 @@ import (
 	"github.com/gryph/omnidex/internal/llm"
 )
 
-func TestResolveRoleplayRawContextUsesExactShowRequest(t *testing.T) {
+func TestResolveRoleplayCompletionContextUsesExactShowRequest(t *testing.T) {
 	client := New("http://ollama.test", "", "", 0, 8192)
 	seen := 0
 	client.httpClient.Transport = identityRoundTripFunc(func(request *http.Request) (*http.Response, error) {
@@ -41,7 +41,7 @@ func TestResolveRoleplayRawContextUsesExactShowRequest(t *testing.T) {
 		}, nil
 	})
 
-	got, err := client.ResolveRoleplayRawContext(context.Background(), "tinydolphin:latest", 8192)
+	got, err := client.ResolveRoleplayCompletionContext(context.Background(), "tinydolphin:latest", 8192)
 	if err != nil {
 		t.Fatal(err)
 	}

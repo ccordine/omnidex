@@ -241,6 +241,7 @@ func deploymentLifecyclePreparedFixture(hasState bool) directCodingPreparedDeplo
 func deploymentLifecycleVerificationFixture() directCodingVerification {
 	return directCodingVerification{
 		Passed: true, TestsPassed: true, Commands: []string{"verify"}, EvidenceIDs: []int64{31},
+		MutationOperationID: "workspace_mutation_" + strings.Repeat("c", 64), MutationReceiptSHA256: strings.Repeat("d", 64),
 	}
 }
 

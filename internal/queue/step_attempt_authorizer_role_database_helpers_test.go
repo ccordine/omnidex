@@ -29,19 +29,7 @@ func startStepAttemptFenceFixture(t *testing.T, label string) stepAttemptFenceFi
 	if err := repository.EnsureSchema(ctx, loadMigrationBundleThroughPrefix(t, "059")); err != nil {
 		t.Fatal(err)
 	}
-	job, err := repository.EnqueueJob(
-		ctx, label, model.PipelineCoding, []byte(`{}`),
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	claim, err := repository.ClaimNextStep(ctx, label+"-worker")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if claim == nil || claim.Job.ID != job.ID {
-		t.Fatalf("step-attempt fence fixture claim=%+v", claim)
-	}
+	claim := seedPreInlineExecutionMigrationClaim(t, ctx, pool, label)
 	return stepAttemptFenceFixture{
 		Context: ctx, Pool: pool, Repository: repository, Authority: claim.Authority,
 	}

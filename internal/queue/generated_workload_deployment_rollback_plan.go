@@ -19,12 +19,12 @@ func validateGeneratedWorkloadDeploymentRollbackPlan(
 		plan.MaxAttempts != MaxGeneratedWorkloadDeploymentRollbackAttempts ||
 		plan.Execution.Slot != GeneratedDeploymentSlotRollback ||
 		plan.Execution.WorkspaceSHA256 != command.WorkspaceSHA256 ||
-		!repositoryMutationHexDigest(plan.Execution.CommandSHA256) ||
+		!validSHA256Digest(plan.Execution.CommandSHA256) ||
 		plan.ComposeProject != command.ComposeProject ||
 		plan.ResourceObservation != GeneratedWorkloadDeploymentRollbackResourcesV1 ||
 		!plan.RequireContainerAbsence || !plan.RequireNetworkAbsence ||
 		!plan.RequireVolumeAbsence ||
-		plan.StateMarkerSHA256 != "" && !repositoryMutationHexDigest(plan.StateMarkerSHA256) {
+		plan.StateMarkerSHA256 != "" && !validSHA256Digest(plan.StateMarkerSHA256) {
 		return fmt.Errorf("generated deployment rollback plan authority is invalid")
 	}
 	expectedJSON, expectedSHA, err := CanonicalGeneratedWorkloadDeploymentRollbackPostcondition(plan)

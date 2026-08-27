@@ -32,7 +32,7 @@ func (r *Repository) ReserveGeneratedWorkloadProjectDeploymentCandidate(
 	if err := validateGeneratedWorkloadProjectDeploymentExpectation(expectation); err != nil {
 		return GeneratedWorkloadProjectDeploymentReservation{}, err
 	}
-	if secretGeneration <= 0 || !repositoryMutationHexDigest(deploymentKeyFingerprintSHA256) {
+	if secretGeneration <= 0 || !validSHA256Digest(deploymentKeyFingerprintSHA256) {
 		return GeneratedWorkloadProjectDeploymentReservation{}, fmt.Errorf(
 			"reserve project deployment candidate requires exact secret-generation and deployment-key authority",
 		)

@@ -16,12 +16,25 @@ type ProviderIdentitySelection struct {
 
 // ProviderIdentityProfilePolicy is code-owned provider admission authority.
 // The empty value preserves the exact registered-profile policy used by every
-// ordinary semantic and coding station. Fictional prose stations may select
-// the roleplay completion policy because code supplies one bounded system
-// envelope through the locally attested model's native instruction template.
+// ordinary semantic and coding station. Roleplay stations may select one of
+// two bounded completion policies because code supplies one system envelope
+// through the locally attested model's native instruction template.
 type ProviderIdentityProfilePolicy string
 
-const ProviderIdentityProfileRoleplayRawCompletion ProviderIdentityProfilePolicy = "roleplay_raw_completion"
+const (
+	ProviderIdentityProfileRoleplayRawCompletion      ProviderIdentityProfilePolicy = "roleplay_raw_completion"
+	ProviderIdentityProfileRoleplaySemanticCompletion ProviderIdentityProfilePolicy = "roleplay_semantic_completion"
+)
+
+func (policy ProviderIdentityProfilePolicy) Validate() error {
+	switch policy {
+	case "", ProviderIdentityProfileRoleplayRawCompletion,
+		ProviderIdentityProfileRoleplaySemanticCompletion:
+		return nil
+	default:
+		return fmt.Errorf("provider identity profile policy is not registered")
+	}
+}
 
 type ProviderIdentityEvidenceDiscoverer interface {
 	DiscoverProviderIdentityEvidence(
@@ -31,23 +44,22 @@ type ProviderIdentityEvidenceDiscoverer interface {
 	) (ObservedProviderIdentity, error)
 }
 
-// RoleplayRawContextResolver deterministically reads one local model's native
-// context metadata. It is separate from ExactStationClient so providers cannot
-// silently acquire this roleplay-only capability.
-type RoleplayRawContextResolver interface {
-	ResolveRoleplayRawContext(context.Context, string, int) (int, error)
+// RoleplayCompletionContextResolver deterministically reads one local model's
+// native context metadata. It is separate from ExactStationClient so providers
+// cannot silently acquire this roleplay-only capability.
+type RoleplayCompletionContextResolver interface {
+	ResolveRoleplayCompletionContext(context.Context, string, int) (int, error)
 }
 
 func (selection ProviderIdentitySelection) Validate() error {
 	if !providerIdentityText(selection.Model, 256) {
 		return fmt.Errorf("provider identity discovery selection is invalid")
 	}
-	if selection.ProfilePolicy != "" &&
-		selection.ProfilePolicy != ProviderIdentityProfileRoleplayRawCompletion {
-		return fmt.Errorf("provider identity profile policy is not registered")
+	if err := selection.ProfilePolicy.Validate(); err != nil {
+		return err
 	}
-	if selection.ProfilePolicy == ProviderIdentityProfileRoleplayRawCompletion {
-		if err := ValidateRoleplayRawContextTokens(selection.NativeContextLimit); err != nil {
+	if selection.ProfilePolicy != "" {
+		if err := ValidateRoleplayCompletionContextTokens(selection.NativeContextLimit); err != nil {
 			return fmt.Errorf("provider identity discovery selection is invalid: %w", err)
 		}
 		return nil
@@ -80,8 +92,11 @@ func ProviderIdentitySelectionForProfile(
 	selection := ProviderIdentitySelection{
 		Model: model, NativeContextLimit: nativeContextLimit,
 	}
-	if tokenizerProfile == ExactPreparedTokenizerProfileRoleplayRaw {
+	switch tokenizerProfile {
+	case ExactPreparedTokenizerProfileRoleplayRaw:
 		selection.ProfilePolicy = ProviderIdentityProfileRoleplayRawCompletion
+	case ExactPreparedTokenizerProfileRoleplaySemantic:
+		selection.ProfilePolicy = ProviderIdentityProfileRoleplaySemanticCompletion
 	}
 	return selection, selection.Validate()
 }

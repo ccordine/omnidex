@@ -44,7 +44,7 @@ func validateGeneratedWorkloadDeploymentCommand(command GeneratedWorkloadDeploym
 		{name: "structural config", value: command.ConfigSHA256},
 		{name: "secret set", value: command.SecretSetSHA256},
 	} {
-		if !repositoryMutationHexDigest(digest.value) {
+		if !validSHA256Digest(digest.value) {
 			return fmt.Errorf("generated deployment %s SHA-256 is invalid", digest.name)
 		}
 	}
@@ -62,7 +62,7 @@ func validateGeneratedWorkloadDeploymentCommand(command GeneratedWorkloadDeploym
 		!generatedDeploymentVersion.MatchString(command.ProfileVersion) {
 		return fmt.Errorf("generated deployment adapter and profile versions are invalid")
 	}
-	if !repositoryMutationOpaqueID(command.ComposeFileID, "file_") {
+	if !validSHA256ID(command.ComposeFileID, "file_") {
 		return fmt.Errorf("generated deployment Compose file identity is invalid")
 	}
 	if !generatedDeploymentProject.MatchString(command.ComposeProject) {
@@ -101,7 +101,7 @@ func validateGeneratedWorkloadDeploymentCommand(command GeneratedWorkloadDeploym
 		return err
 	}
 	if command.PriorDeploymentID != "" &&
-		!repositoryMutationOpaqueID(command.PriorDeploymentID, "generated_workload_deployment_") {
+		!validSHA256ID(command.PriorDeploymentID, "generated_workload_deployment_") {
 		return fmt.Errorf("generated deployment prior operation identity is invalid")
 	}
 	return nil
@@ -164,7 +164,7 @@ func validateGeneratedWorkloadDeploymentTransition(
 		GeneratedWorkloadDeploymentIndeterminate,
 		GeneratedWorkloadDeploymentRolledBack:
 		if !generatedDeploymentCode.MatchString(transition.Code) ||
-			!repositoryMutationHexDigest(transition.DetailSHA256) {
+			!validSHA256Digest(transition.DetailSHA256) {
 			return fmt.Errorf("generated deployment %s transition requires a typed code and detail SHA-256", transition.State)
 		}
 	default:

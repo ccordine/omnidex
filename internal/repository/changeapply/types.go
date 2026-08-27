@@ -14,23 +14,9 @@ const (
 	maxTargetFileBytes           = 16 * 1024 * 1024
 )
 
-// CandidateDeclaration is the path-free output accepted from one bounded
-// declaration worker. Filesystem authority remains inside repository facts.
-type CandidateDeclaration struct {
-	SymbolID    string `json:"symbol_id"`
-	Declaration string `json:"declaration"`
-}
-
-type Input struct {
-	Snapshot   repositoryfacts.Snapshot
-	Analysis   repositoryfacts.Analysis
-	Contract   repositoryfacts.ChangeContract
-	Candidates []CandidateDeclaration
-}
-
-// ExactSourceFile is the immutable source-side authority for a desired absent
-// state. It is constructed by code from an indexed snapshot and is never part
-// of a model contract.
+// ExactSourceFile is the immutable source-side authority for a desired state
+// whose path is currently present. It is constructed by code from an indexed
+// snapshot and is never part of a model contract.
 type ExactSourceFile struct {
 	FileID string `json:"file_id"`
 	SHA256 string `json:"sha256"`
@@ -101,14 +87,15 @@ type StagedChange struct {
 	mu sync.Mutex
 
 	id                 string
-	workspace          string
+	deltaRoot          string
+	sourceSnapshot     repositoryfacts.Snapshot
 	authoritativeRoot  string
 	expectedSnapshotID string
 	patch              string
 	patchSHA256        string
 	changedFileIDs     []string
 	expectedFiles      []ExpectedFileState
-	stagedFiles        []stagedFileAuthority
+	deltaFiles         []stagedFileAuthority
 	closed             bool
 	applied            bool
 }
@@ -120,11 +107,13 @@ func (stage *StagedChange) ID() string {
 	return stage.id
 }
 
-func (stage *StagedChange) Workspace() string {
+// DeltaRoot is the private, bounded post-image tree for changed files only.
+// It is never a complete workspace and must not be used as command cwd.
+func (stage *StagedChange) DeltaRoot() string {
 	if stage == nil {
 		return ""
 	}
-	return stage.workspace
+	return stage.deltaRoot
 }
 
 func (stage *StagedChange) Patch() string {
@@ -153,6 +142,23 @@ func (stage *StagedChange) ExpectedFiles() []ExpectedFileState {
 		return nil
 	}
 	return append([]ExpectedFileState(nil), stage.expectedFiles...)
+}
+
+// SourceSnapshot returns the immutable repository facts against which the
+// bounded delta was planned. Slice fields are cloned so callers cannot mutate
+// the stage authority.
+func (stage *StagedChange) SourceSnapshot() repositoryfacts.Snapshot {
+	if stage == nil {
+		return repositoryfacts.Snapshot{}
+	}
+	stage.mu.Lock()
+	defer stage.mu.Unlock()
+	snapshot := stage.sourceSnapshot
+	snapshot.Files = make([]repositoryfacts.File, len(stage.sourceSnapshot.Files))
+	copy(snapshot.Files, stage.sourceSnapshot.Files)
+	snapshot.Exclusions = make([]repositoryfacts.Exclusion, len(stage.sourceSnapshot.Exclusions))
+	copy(snapshot.Exclusions, stage.sourceSnapshot.Exclusions)
+	return snapshot
 }
 
 func (stage *StagedChange) ApplyVerified(ctx context.Context) (omni.PatchApplyResult, error) {

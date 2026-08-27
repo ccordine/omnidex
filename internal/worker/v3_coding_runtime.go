@@ -120,15 +120,15 @@ func (r *nativeRuntimeV3) runDirectCodingSession(request directCodingRequest) (s
 	if err != nil {
 		return "", err
 	}
+	if summary, handled, err := r.reconcileCurrentWorkspaceMutation(scope.Root, request); handled || err != nil {
+		return summary, err
+	}
 	hasExistingImplementation, err := directCodingWorkspaceHasImplementation(scope.Root, nil)
 	if err != nil {
 		return "", err
 	}
 	var indexed *repositoryindex.Result
 	if hasExistingImplementation {
-		if err := r.reconcileCurrentRepositoryMutation(scope.Root); err != nil {
-			return "", err
-		}
 		result, indexErr := r.refreshExistingRepositoryIndex(scope.Root)
 		if indexErr != nil {
 			return "", indexErr

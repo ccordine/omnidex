@@ -27,7 +27,10 @@ func Compile(
 	if provider == nil {
 		return result, fmt.Errorf("context compilation requires fixed retrieval authority")
 	}
-	termsInput := assemblyline.ContextSearchTermsInput{ExactInstruction: request.ExactInstruction}
+	termsInput := assemblyline.ContextSearchTermsInput{
+		ExactInstruction: request.ExactInstruction,
+		Scope:            request.Scope,
+	}
 	if _, err := assemblyline.NewContextSearchTermsJob(termsInput); err != nil {
 		return result, err
 	}
@@ -37,7 +40,7 @@ func Compile(
 			return result, fmt.Errorf("inspect fixed context search availability: %w", err)
 		}
 		directive, calls, err := ResolveRetrievalDirective(
-			ctx, request.ExactInstruction, availability, stations.Terms,
+			ctx, request.ExactInstruction, request.Scope, availability, stations.Terms,
 		)
 		if err != nil {
 			return result, err
@@ -69,7 +72,8 @@ func Compile(
 	selected := append([]assemblyline.ContextCandidateAuthority(nil), set.Required...)
 	if len(set.Optional) > 0 {
 		optional, relevanceCalls, err := selectRelevantAuthorities(
-			ctx, request.ExactInstruction, retrievalConcepts, set.Optional, stations.Relevance,
+			ctx, request.ExactInstruction, request.Scope, retrievalConcepts,
+			set.Optional, stations.Relevance,
 		)
 		if err != nil {
 			return result, err
@@ -88,7 +92,7 @@ func Compile(
 		return result, nil
 	}
 	content, minificationCalls, err := reduceSelectedAuthorities(
-		ctx, request.ExactInstruction, selected, stations.Minification,
+		ctx, request.ExactInstruction, request.Scope, selected, stations.Minification,
 	)
 	if err != nil {
 		return result, err
@@ -142,7 +146,13 @@ func canonicalRetrievalConcepts(terms []string) []string {
 }
 
 func validateReceipt(label string, receipt StationReceipt) error {
-	if receipt.Calls < 1 || receipt.Calls > maxStationAttempts {
+	if receipt.Reused {
+		if receipt.Calls != 0 {
+			return fmt.Errorf("%s reuse reported %d provider calls", label, receipt.Calls)
+		}
+		return nil
+	}
+	if receipt.Calls < 1 || receipt.Calls > assemblyline.MaxSemanticStationAttempts {
 		return fmt.Errorf("%s reported %d calls outside the bounded correction budget", label, receipt.Calls)
 	}
 	return nil

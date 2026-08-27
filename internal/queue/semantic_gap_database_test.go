@@ -94,7 +94,7 @@ func TestPostgresCompleteStepRejectsOpenProviderDiscoveryAtomically(t *testing.T
 }
 
 func TestPostgresCompleteStepRejectsOpenSemanticGapAtomically(t *testing.T) {
-	repository, _, claim := semanticGapTestClaim(t, "semantic-gap-completion")
+	repository, pool, claim := semanticGapTestClaim(t, "semantic-gap-completion")
 	opening := stationGapOpenFixture(t, claim.Authority)
 	opened, err := repository.OpenStationGap(t.Context(), opening)
 	if err != nil {
@@ -121,10 +121,7 @@ func TestPostgresCompleteStepRejectsOpenSemanticGapAtomically(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	command.OperationID = testLifecycleOperationID(t, "semantic-gap-closed-completion", claim.Step.ID)
-	if err := repository.CompleteStep(t.Context(), command); err != nil {
-		t.Fatalf("closed gap blocked completion: %v", err)
-	}
+	completePreInlineExecutionMigrationClaim(t, t.Context(), pool, claim)
 }
 
 func semanticGapTestClaim(t *testing.T, marker string) (*Repository, *pgxpool.Pool, *model.ClaimedStep) {
@@ -136,17 +133,7 @@ func semanticGapTestClaim(t *testing.T, marker string) (*Repository, *pgxpool.Po
 		t.Fatal(err)
 	}
 	installEmptyGeneratedDeploymentAuthorityRailForHistoricalRuntimeTest(t, pool)
-	job, err := repository.EnqueueJob(ctx, marker, model.PipelineCoding, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	claim, err := repository.ClaimNextStep(ctx, "station-gap-worker")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if claim == nil || claim.Job.ID != job.ID {
-		t.Fatalf("claim=%+v want job %d", claim, job.ID)
-	}
+	claim := seedPreInlineExecutionMigrationClaim(t, ctx, pool, marker)
 	return repository, pool, claim
 }
 

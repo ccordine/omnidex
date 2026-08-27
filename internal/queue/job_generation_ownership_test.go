@@ -2,7 +2,6 @@ package queue
 
 import (
 	"context"
-	"strings"
 	"testing"
 
 	"github.com/jackc/pgx/v5"
@@ -12,7 +11,7 @@ func assertGenerationDerivedOwnership(
 	t *testing.T,
 	ctx context.Context,
 	tx pgx.Tx,
-	firstJob, secondJob, firstStep, secondStep int64,
+	firstJob, secondJob, firstStep, secondStep, llmID int64,
 ) {
 	t.Helper()
 	if _, err := tx.Exec(ctx, `
@@ -90,19 +89,8 @@ func assertGenerationDerivedOwnership(
 		VALUES ($1, $2, $3, 2, 'Invalid score.')
 	`, firstJob, firstClaimID, evidenceID)
 
-	var llmID int64
-	if err := tx.QueryRow(ctx, `
-		INSERT INTO llm_call_evidence (
-			job_id, job_generation, step_id, scope, requested_model, model, attempt,
-			system_prompt, user_prompt, request_sha256, response_format,
-			context_tokens, max_output_tokens, status, error, latency_ms
-		) VALUES (
-			$1, 1, $2, 'generation-test', 'requested', 'effective', 1,
-			'system', 'user', $3, 'text', 1024, 128,
-			'preparation_failed', 'expected failure', 1
-		) RETURNING id
-	`, firstJob, firstStep, strings.Repeat("a", 64)).Scan(&llmID); err != nil {
-		t.Fatal(err)
+	if llmID < 1 {
+		t.Fatal("historical LLM evidence fixture is missing")
 	}
 	expectGenerationDatabaseFailure(t, ctx, tx, `
 		UPDATE llm_call_evidence SET job_id=$1 WHERE id=$2
@@ -113,42 +101,46 @@ func assertGenerationMemoryCandidateOwnership(
 	t *testing.T,
 	ctx context.Context,
 	tx pgx.Tx,
-	firstJob, secondJob int64,
+	firstJob, secondJob, projectID int64,
+	channelID string,
 ) {
 	t.Helper()
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO memory_candidates (
-			job_id, generation, candidate_kind, content
-		) VALUES ($1, 2, 'episodic', 'current candidate')
-	`, firstJob); err != nil {
+			project_id, channel_id, job_id, generation, candidate_kind, content
+		) VALUES ($1, $2, $3, 2, 'episodic', 'current candidate')
+	`, projectID, channelID, firstJob); err != nil {
 		t.Fatalf("insert generation-bound memory candidate: %v", err)
 	}
 	if _, err := tx.Exec(ctx, `
-		INSERT INTO memory_candidates (candidate_kind, content)
-		VALUES ('global', 'global candidate')
-	`); err != nil {
-		t.Fatalf("insert global memory candidate: %v", err)
+		INSERT INTO memory_candidates (project_id, channel_id, candidate_kind, content)
+		VALUES ($1, $2, 'scope', 'scope candidate')
+	`, projectID, channelID); err != nil {
+		t.Fatalf("insert scope-bound memory candidate: %v", err)
 	}
 	expectGenerationDatabaseFailure(t, ctx, tx, `
-		INSERT INTO memory_candidates (job_id, candidate_kind, content)
-		VALUES ($1, 'missing-generation', 'invalid')
-	`, firstJob)
+		INSERT INTO memory_candidates (
+			project_id, channel_id, job_id, candidate_kind, content
+		) VALUES ($1, $2, $3, 'missing-generation', 'invalid')
+	`, projectID, channelID, firstJob)
 	expectGenerationDatabaseFailure(t, ctx, tx, `
 		INSERT INTO memory_candidates (
-			job_id, generation, candidate_kind, content
-		) VALUES ($1, 2, 'unknown-generation', 'invalid')
-	`, secondJob)
+			project_id, channel_id, job_id, generation, candidate_kind, content
+		) VALUES ($1, $2, $3, 2, 'unknown-generation', 'invalid')
+	`, projectID, channelID, secondJob)
 	expectGenerationDatabaseFailure(t, ctx, tx, `
 		INSERT INTO memory_candidates (
-			generation, candidate_kind, content
-		) VALUES (1, 'orphan-generation', 'invalid')
-	`)
+			project_id, channel_id, generation, candidate_kind, content
+		) VALUES ($1, $2, 1, 'orphan-generation', 'invalid')
+	`, projectID, channelID)
 	expectGenerationDatabaseFailure(t, ctx, tx, `
-		INSERT INTO memory_candidates (candidate_kind, content, status)
-		VALUES ('episodic', 'invalid status', 'unknown')
-	`)
+		INSERT INTO memory_candidates (
+			project_id, channel_id, candidate_kind, content, status
+		) VALUES ($1, $2, 'episodic', 'invalid status', 'unknown')
+	`, projectID, channelID)
 	expectGenerationDatabaseFailure(t, ctx, tx, `
-		INSERT INTO memory_candidates (candidate_kind, content, confidence)
-		VALUES ('episodic', 'invalid confidence', 2)
-	`)
+		INSERT INTO memory_candidates (
+			project_id, channel_id, candidate_kind, content, confidence
+		) VALUES ($1, $2, 'episodic', 'invalid confidence', 2)
+	`, projectID, channelID)
 }

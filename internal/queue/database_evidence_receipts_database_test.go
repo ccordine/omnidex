@@ -56,8 +56,8 @@ func TestDatabaseEvidenceReceiptPersistsOnlyBoundImmutableHashedAuthority(t *tes
 	if err := repository.SaveDataSourceSchemaSnapshot(ctx, otherSnapshot); err != nil {
 		t.Fatal(err)
 	}
-	jobID := seedDatabaseEvidenceBoundJob(t, repository, source.ID)
-	assertDatabaseEvidenceJobBindingCannotChange(t, repository, jobID, other.ID)
+	jobID, bindingProbeJobID := seedDatabaseEvidenceBoundJobs(t, repository, source.ID)
+	assertDatabaseEvidenceJobBindingCannotChange(t, repository, bindingProbeJobID, other.ID)
 	evidence := databaseEvidenceResultFixture(t, source.ID, snapshot.Fingerprint)
 	receipt, err := repository.SaveDatabaseEvidenceReceipt(ctx, jobID, evidence)
 	if err != nil {
@@ -99,7 +99,7 @@ func TestDatabaseEvidenceReceiptPersistsOnlyBoundImmutableHashedAuthority(t *tes
 			}
 		})
 	}
-	assertDatabaseEvidenceJobBindingCannotChange(t, repository, jobID, other.ID)
+	assertDatabaseEvidenceJobBindingCannotChange(t, repository, bindingProbeJobID, other.ID)
 
 	assertDatabaseEvidenceReceiptHasNoExecutionOrCredentialPayload(t, repository, receipt.ID)
 	assertDatabaseCognitionStationOwnership(t, repository)

@@ -48,8 +48,8 @@ func loadGeneratedDeploymentExecutionTx(
 		record.ResultSHA256 = *resultSHA
 	}
 	if !registeredGeneratedDeploymentSlot(record.Slot) ||
-		!repositoryMutationHexDigest(record.CommandSHA256) ||
-		!repositoryMutationHexDigest(record.WorkspaceSHA256) ||
+		!validSHA256Digest(record.CommandSHA256) ||
+		!validSHA256Digest(record.WorkspaceSHA256) ||
 		(record.Status != GeneratedWorkloadDeploymentExecutionStarted &&
 			record.Status != GeneratedWorkloadDeploymentExecutionCompleted) {
 		return GeneratedWorkloadDeploymentExecutionRecord{}, false, fmt.Errorf("durable deployment execution is invalid")

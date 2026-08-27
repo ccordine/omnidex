@@ -6,7 +6,6 @@ import (
 
 	"github.com/gryph/omnidex/internal/assemblyline"
 	"github.com/gryph/omnidex/internal/llm"
-	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/station"
 )
 
@@ -16,17 +15,7 @@ func TestPostgresWebClaimEvidenceReviewStationIsConsumedByExactGapAuthority(t *t
 	if err := repository.EnsureSchema(t.Context(), loadMigrationBundleThroughPrefix(t, "096")); err != nil {
 		t.Fatal(err)
 	}
-	jobRecord, err := repository.EnqueueJob(t.Context(), "review station", model.PipelineCoding, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	claim, err := repository.ClaimNextStep(t.Context(), "review-station-worker")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if claim == nil || claim.Job.ID != jobRecord.ID {
-		t.Fatalf("claim=%+v want job %d", claim, jobRecord.ID)
-	}
+	claim := seedPreInlineExecutionMigrationClaim(t, t.Context(), pool, "review-station")
 	job, err := assemblyline.NewWebClaimEvidenceReviewJob(assemblyline.WebClaimEvidenceReviewInput{
 		ExactQuestion: "Which release is current?",
 		Paragraph: assemblyline.WebReviewParagraph{
@@ -39,8 +28,8 @@ func TestPostgresWebClaimEvidenceReviewStationIsConsumedByExactGapAuthority(t *t
 	}
 	opening, err := repository.OpenStationGap(t.Context(), StationGapOpenRecord{
 		Authority: claim.Authority, Job: job, Station: station.WebClaimEvidenceReview,
-		ContextTokens: 8192, MaxOutputTokens: 1024,
-		OutputLimitMode: llm.ExactPreparedOutputLimitExplicit,
+		ContextTokens: 8192, MaxOutputTokens: 8192,
+		OutputLimitMode: llm.ExactPreparedOutputLimitNatural,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -56,17 +45,7 @@ func TestPostgresWebSynthesisCorrectionStationIsConsumedByExactGapAuthority(t *t
 	if err := repository.EnsureSchema(t.Context(), loadMigrationBundleThroughPrefix(t, "096")); err != nil {
 		t.Fatal(err)
 	}
-	jobRecord, err := repository.EnqueueJob(t.Context(), "correction station", model.PipelineCoding, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	claim, err := repository.ClaimNextStep(t.Context(), "correction-station-worker")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if claim == nil || claim.Job.ID != jobRecord.ID {
-		t.Fatalf("claim=%+v want job %d", claim, jobRecord.ID)
-	}
+	claim := seedPreInlineExecutionMigrationClaim(t, t.Context(), pool, "correction-station")
 	job, err := assemblyline.NewWebGroundedSynthesisCorrectionJob(assemblyline.WebGroundedSynthesisCorrectionInput{
 		ExactQuestion: "Which release is current?",
 		Paragraphs: []assemblyline.WebReviewParagraph{{
@@ -87,8 +66,8 @@ func TestPostgresWebSynthesisCorrectionStationIsConsumedByExactGapAuthority(t *t
 	}
 	opening, err := repository.OpenStationGap(t.Context(), StationGapOpenRecord{
 		Authority: claim.Authority, Job: job, Station: station.WebGroundedSynthesisCorrection,
-		ContextTokens: 8192, MaxOutputTokens: 1024,
-		OutputLimitMode: llm.ExactPreparedOutputLimitExplicit,
+		ContextTokens: 8192, MaxOutputTokens: 8192,
+		OutputLimitMode: llm.ExactPreparedOutputLimitNatural,
 	})
 	if err != nil {
 		t.Fatal(err)

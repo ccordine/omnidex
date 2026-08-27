@@ -41,12 +41,12 @@ func BindGeneratedWorkloadDeploymentRollbackObservation(
 			fmt.Errorf("rollback observation authority is incomplete")
 	}
 	if err := validateGeneratedDeploymentRollbackResources(
-		"container", observation.ContainerIDs, repositoryMutationHexDigest,
+		"container", observation.ContainerIDs, validSHA256Digest,
 	); err != nil {
 		return GeneratedWorkloadDeploymentRollbackObservation{}, "", err
 	}
 	if err := validateGeneratedDeploymentRollbackResources(
-		"network", observation.NetworkIDs, repositoryMutationHexDigest,
+		"network", observation.NetworkIDs, validSHA256Digest,
 	); err != nil {
 		return GeneratedWorkloadDeploymentRollbackObservation{}, "", err
 	}

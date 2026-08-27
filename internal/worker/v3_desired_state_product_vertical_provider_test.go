@@ -48,6 +48,12 @@ func (*desiredStateProductProvider) DiscoverProviderIdentityEvidence(
 	selection llm.ProviderIdentitySelection,
 	challenge string,
 ) (llm.ObservedProviderIdentity, error) {
+	if selection.ProfilePolicy != "" {
+		return llm.ObservedProviderIdentity{}, fmt.Errorf(
+			"ordinary product provider received non-strict profile policy %q",
+			selection.ProfilePolicy,
+		)
+	}
 	return desiredStateProductObservedIdentity(selection, challenge)
 }
 
@@ -76,6 +82,8 @@ func (provider *desiredStateProductProvider) Calls() []desiredStateProductModelC
 func desiredStateProductResponse(prepared llm.PreparedModel) (string, string, error) {
 	schema := desiredStateProductSchemaConst(prepared.ResponseSchema)
 	switch schema {
+	case assemblyline.ApplicationContextNeedSchemaV1:
+		return fmt.Sprintf(`{"schema":%q,"questions":[]}`, schema), schema, nil
 	case assemblyline.ConversationObjectiveKindSchemaV1:
 		return fmt.Sprintf(`{"schema":%q,"kind":"workspace_mutation"}`, schema), schema, nil
 	case assemblyline.RepositoryRequirementInterpretationSchemaV2:
@@ -249,8 +257,22 @@ func desiredStateProductGeneration(
 	prepared llm.PreparedModel,
 	content string,
 ) (llm.PreparedGeneration, error) {
-	selection := llm.ProviderIdentitySelection{
-		Model: prepared.ContextModel, NativeContextLimit: prepared.ContextTokens,
+	if prepared.ProviderIdentityExpectation == nil {
+		return llm.PreparedGeneration{}, fmt.Errorf(
+			"ordinary product generation omitted its exact provider identity",
+		)
+	}
+	selection, err := llm.ProviderIdentitySelectionForExpectation(
+		*prepared.ProviderIdentityExpectation,
+	)
+	if err != nil {
+		return llm.PreparedGeneration{}, err
+	}
+	if selection.ProfilePolicy != "" {
+		return llm.PreparedGeneration{}, fmt.Errorf(
+			"ordinary product generation received non-strict profile policy %q",
+			selection.ProfilePolicy,
+		)
 	}
 	observed, err := desiredStateProductObservedIdentity(
 		selection, prepared.ProviderObservationChallenge,

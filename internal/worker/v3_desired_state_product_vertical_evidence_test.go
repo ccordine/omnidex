@@ -152,11 +152,11 @@ func assertDesiredStateProductMutationEvidence(
 	var sourcePresent, expectedPresent bool
 	var sourceSHA, expectedSHA *string
 	if err := pool.QueryRow(t.Context(), `
-		SELECT operation.status,operation.attempt_count,operation.source_snapshot_id,
+		SELECT operation.status,operation.apply_attempt_count,operation.source_repository_snapshot_id,
 		       file.path,file.source_present,file.expected_present,
 		       file.source_sha256,file.expected_sha256
-		FROM repository_mutation_operations AS operation
-		JOIN repository_mutation_files AS file ON file.operation_id=operation.id
+		FROM workspace_mutation_operations AS operation
+		JOIN workspace_mutation_files AS file ON file.operation_id=operation.id
 		WHERE operation.job_id=$1
 	`, jobID).Scan(
 		&status, &attempts, &sourceSnapshotID, &path, &sourcePresent, &expectedPresent,
@@ -164,7 +164,7 @@ func assertDesiredStateProductMutationEvidence(
 	); err != nil {
 		t.Fatal(err)
 	}
-	if status != "applied" || attempts != 1 || sourceSnapshotID != before.ID ||
+	if status != "verified" || attempts != 1 || sourceSnapshotID != before.ID ||
 		path != test.target || sourcePresent == test.present || expectedPresent != test.present {
 		t.Fatalf(
 			"journal status=%s attempts=%d snapshot=%s path=%s transition=%t->%t",

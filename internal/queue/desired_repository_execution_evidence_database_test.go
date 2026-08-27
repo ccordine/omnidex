@@ -1,9 +1,10 @@
 package queue
 
 import (
-	"context"
 	"strings"
 	"testing"
+
+	workspacefacts "github.com/gryph/omnidex/internal/workspace"
 )
 
 func TestPostgresDesiredRepositoryExecutionEvidenceCountsExactDurableTransitions(t *testing.T) {
@@ -22,7 +23,7 @@ func TestPostgresDesiredRepositoryExecutionEvidenceCountsExactDurableTransitions
 			fixture.recordPostIndex(t)
 			proof, err := fixture.repository.DesiredRepositoryExecutionEvidence(
 				fixture.ctx, fixture.authority, fixture.graphID,
-				fixture.snapshot.ID, fixture.after.ID,
+				fixture.before.ID, fixture.after.ID,
 			)
 			if err != nil {
 				t.Fatal(err)
@@ -43,27 +44,27 @@ func TestPostgresDesiredRepositoryExecutionEvidenceCountsExactDurableTransitions
 func TestPostgresDesiredRepositoryExecutionEvidenceRejectsIncompleteAndDuplicateProof(t *testing.T) {
 	fixture := newDesiredExecutionFixture(t, "proof-closure", "modify")
 	_, err := fixture.repository.DesiredRepositoryExecutionEvidence(
-		fixture.ctx, fixture.authority, fixture.graphID, fixture.snapshot.ID, fixture.after.ID,
+		fixture.ctx, fixture.authority, fixture.graphID, fixture.before.ID, fixture.after.ID,
 	)
 	if err == nil || !strings.Contains(err.Error(), "verification scope") {
 		t.Fatalf("missing verification error=%v", err)
 	}
 	fixture.recordVerification(t)
 	_, err = fixture.repository.DesiredRepositoryExecutionEvidence(
-		fixture.ctx, fixture.authority, fixture.graphID, fixture.snapshot.ID, fixture.after.ID,
+		fixture.ctx, fixture.authority, fixture.graphID, fixture.before.ID, fixture.after.ID,
 	)
 	if err == nil || !strings.Contains(err.Error(), "post-state repository reindex") {
 		t.Fatalf("missing reindex error=%v", err)
 	}
 	fixture.recordPostIndex(t)
 	if _, err := fixture.repository.DesiredRepositoryExecutionEvidence(
-		fixture.ctx, fixture.authority, fixture.graphID, fixture.snapshot.ID, fixture.after.ID,
+		fixture.ctx, fixture.authority, fixture.graphID, fixture.before.ID, fixture.after.ID,
 	); err != nil {
 		t.Fatal(err)
 	}
 	fixture.recordPostIndex(t)
 	_, err = fixture.repository.DesiredRepositoryExecutionEvidence(
-		fixture.ctx, fixture.authority, fixture.graphID, fixture.snapshot.ID, fixture.after.ID,
+		fixture.ctx, fixture.authority, fixture.graphID, fixture.before.ID, fixture.after.ID,
 	)
 	if err == nil || !strings.Contains(err.Error(), "one exact post-state repository reindex") {
 		t.Fatalf("duplicate reindex error=%v", err)
@@ -77,34 +78,32 @@ func TestPostgresDesiredRepositoryExecutionEvidenceRejectsWrongAuthorityAndDupli
 	wrong := fixture.authority
 	wrong.WorkerID += "-stale"
 	if _, err := fixture.repository.DesiredRepositoryExecutionEvidence(
-		fixture.ctx, wrong, fixture.graphID, fixture.snapshot.ID, fixture.after.ID,
+		fixture.ctx, wrong, fixture.graphID, fixture.before.ID, fixture.after.ID,
 	); err == nil {
 		t.Fatal("stale attempt read desired execution evidence")
 	}
-	wrongGraph := "desired_graph_" + repositoryMutationDigest("wrong graph")
+	wrongGraph := "desired_graph_" + queueTestSHA256("wrong graph")
 	_, err := fixture.repository.DesiredRepositoryExecutionEvidence(
-		fixture.ctx, fixture.authority, wrongGraph, fixture.snapshot.ID, fixture.after.ID,
+		fixture.ctx, fixture.authority, wrongGraph, fixture.before.ID, fixture.after.ID,
 	)
 	if err == nil || !strings.Contains(err.Error(), "found 0") {
 		t.Fatalf("wrong graph error=%v", err)
 	}
 
-	duplicate := fixture.command
-	duplicate.Patch += " duplicate"
-	duplicate.PatchSHA256 = repositoryMutationDigest(duplicate.Patch)
-	duplicate.StageID = "repository_change_stage_" + duplicate.PatchSHA256
-	err = fixture.repository.ApplyRepositoryMutation(
-		fixture.ctx, fixture.authority, duplicate,
-		func(context.Context, RepositoryMutationCommand) (RepositoryMutationState, error) {
-			return RepositoryMutationPost, nil
-		},
-		func(context.Context) error { return nil },
+	source, err := workspacefacts.Capture(fixture.ctx, fixture.command.Plan.WorkspaceRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	desired := desiredExecutionState(t, source, "modify", []byte("duplicate-post"))
+	duplicate, err := workspacefacts.PlanMutation(
+		fixture.ctx, source, fixture.graphID, []workspacefacts.DesiredFileState{desired},
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
+	fixture.executeMutation(t, source, duplicate)
 	_, err = fixture.repository.DesiredRepositoryExecutionEvidence(
-		fixture.ctx, fixture.authority, fixture.graphID, fixture.snapshot.ID, fixture.after.ID,
+		fixture.ctx, fixture.authority, fixture.graphID, fixture.before.ID, fixture.after.ID,
 	)
 	if err == nil || !strings.Contains(err.Error(), "found 2") {
 		t.Fatalf("duplicate mutation error=%v", err)

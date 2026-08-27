@@ -23,7 +23,7 @@ func TestLocalModelProfileUsesStableSemanticAndFragmentModels(t *testing.T) {
 		"OMNI_CONTEXT_MINIFICATION_MODEL",
 		"OMNI_CONVERSATION_OBJECTIVE_KIND_MODEL",
 		"OMNI_CONVERSATION_RESPONSE_MODEL",
-		"OMNI_ROLEPLAY_CANON_EXTRACTION_MODEL",
+		"OMNI_ROLEPLAY_SEMANTIC_MODEL",
 		"OMNI_GROUNDED_ANSWER_MODEL",
 		"OMNI_DATABASE_SCHEMA_SELECTION_MODEL",
 		"OMNI_DATABASE_QUERY_INTENT_MODEL",
@@ -95,6 +95,8 @@ func TestLocalModelProfileUsesStableSemanticAndFragmentModels(t *testing.T) {
 			"OMNI_CONVERSATION_CONTEXT_SELECTION_MODEL",
 			"OMNI_MEMORY_CONTEXT_SELECTION_MODEL",
 			"OMNI_ROLEPLAY_NARRATIVE_CONTINUITY_MODEL",
+			"OMNI_ROLEPLAY_CANON_EXTRACTION_MODEL",
+			"OMNI_ROLEPLAY_ONGOING_ACTION_MODEL",
 		} {
 			if _, exists := values[removed]; exists {
 				t.Errorf("%s: removed production route %s remains configured", name, removed)

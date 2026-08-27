@@ -159,6 +159,13 @@ func narratorDirectionTurn(exactText string) roleplay.UserTurnAuthority {
 	}
 }
 
+func narratorNarrationTurn(exactText string) roleplay.UserTurnAuthority {
+	return roleplay.UserTurnAuthority{
+		PersonaKind: roleplay.UserPersonaNarrator, PersonaName: roleplay.NarratorPersonaName,
+		ContributionKind: roleplay.UserContributionNarration, ExactText: exactText,
+	}
+}
+
 func narratorCommandTurn(exactText string) roleplay.UserTurnAuthority {
 	return roleplay.UserTurnAuthority{
 		PersonaKind: roleplay.UserPersonaNarrator, PersonaName: roleplay.NarratorPersonaName,

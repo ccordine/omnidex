@@ -34,6 +34,7 @@ type Config struct {
 	HuggingFaceBaseURL        string
 	HuggingFaceAPIKey         string
 	StationModels             map[station.ID]string
+	RoleplaySemanticModel     string
 	ContextRelevanceProvider  string
 	EmbeddingModel            string
 	WebSearchProviders        []string
@@ -99,6 +100,7 @@ func Load() (Config, error) {
 		HuggingFaceBaseURL:        getenv("HUGGINGFACE_BASE_URL", "https://router.huggingface.co"),
 		HuggingFaceAPIKey:         firstEnv("HUGGINGFACE_API_KEY", "HF_TOKEN"),
 		EmbeddingModel:            embeddingModelForProvider(embeddingProvider),
+		RoleplaySemanticModel:     getenv("OMNI_ROLEPLAY_SEMANTIC_MODEL", ""),
 		ContextRelevanceProvider:  strings.ToLower(getenv("OMNI_CONTEXT_RELEVANCE_PROVIDER", ContextRelevanceProviderServer)),
 		WebSearchProviders:        getenvCSV("WEB_SEARCH_PROVIDERS", []string{"brave", "google", "reddit"}),
 		WebSearchTimeout:          getenvDuration("WEB_SEARCH_TIMEOUT", 15*time.Second),

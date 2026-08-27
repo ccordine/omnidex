@@ -16,7 +16,7 @@ func TestRoleplayOngoingActionsPersistPerCharacterWithoutZeroDeltaRows(t *testin
 	ctx := t.Context()
 	pool := openIsolatedMigrationPool(t)
 	repository := New(pool)
-	if err := repository.EnsureSchema(ctx, loadMigrationBundleThroughPrefix(t, "152")); err != nil {
+	if err := repository.EnsureSchema(ctx, loadCheckedMigrationBundle(t)); err != nil {
 		t.Fatal(err)
 	}
 	channel, err := repository.CreateRoleplayChannel(ctx, model.Channel{
@@ -228,9 +228,6 @@ func completeOngoingActionRound(
 		Authority:   claim.Authority, StepID: claim.Step.ID,
 		Output: strings.Join(outputs, "\n\n"), ContextKey: "objective_result",
 		ContextValue: "ongoing-action-proof", RoleplayResponses: responses,
-		RoleplayUserCanon: &RoleplayUserCanonCompletion{
-			Facts: []string{}, KnowledgeCharacterIDs: []model.RoleplayCharacterID{},
-		},
 	}}
 	if err := repository.CompleteStepWithEvidence(t.Context(), command); err != nil {
 		t.Fatal(err)

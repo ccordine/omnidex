@@ -28,11 +28,12 @@ func (station *scriptedTermsStation) Generate(
 }
 
 type scriptedRelevanceStation struct {
-	ids       []string
-	idsByCall [][]string
-	calls     int
-	input     assemblyline.ContextRelevanceInput
-	inputs    []assemblyline.ContextRelevanceInput
+	ids          []string
+	idsByCall    [][]string
+	receiptCalls int
+	calls        int
+	input        assemblyline.ContextRelevanceInput
+	inputs       []assemblyline.ContextRelevanceInput
 }
 
 func (station *scriptedRelevanceStation) SelectRelevant(
@@ -51,7 +52,11 @@ func (station *scriptedRelevanceStation) SelectRelevant(
 		Schema:                 assemblyline.ContextRelevanceSchemaV1,
 		ReferencedCandidateIDs: append([]string{}, ids...),
 	}
-	return decision, StationReceipt{Calls: 1}, decision.ValidateFor(input)
+	receiptCalls := station.receiptCalls
+	if receiptCalls == 0 {
+		receiptCalls = 1
+	}
+	return decision, StationReceipt{Calls: receiptCalls}, decision.ValidateFor(input)
 }
 
 type scriptedMinificationStation struct {
@@ -200,6 +205,28 @@ func TestRequiredOptionalRelevanceRunsWithEmptySearchConcepts(t *testing.T) {
 		result.ModelCalls != 2 || result.RelevanceCalls != 1 ||
 		len(result.Context.Capsules) != 1 || result.Context.Capsules[0].Content != optional.Content {
 		t.Fatalf("empty-concept relevance result=%#v input=%#v", result, relevance.input)
+	}
+}
+
+func TestContextReceiptAcceptsTheAuthoritativeThirdSemanticAttempt(t *testing.T) {
+	t.Parallel()
+	optional := candidate(t, "fictional_canon", "CTX_1", "The gate remains sealed.")
+	relevance := &scriptedRelevanceStation{
+		ids: []string{"CTX_1"}, receiptCalls: assemblyline.MaxSemanticStationAttempts,
+	}
+	result, err := Compile(t.Context(), Request{
+		ExactInstruction: "Continue from the sealed gate.",
+		Retrieval:        &RetrievalDirective{Concepts: []string{}},
+	}, &scriptedProvider{set: CandidateSet{
+		Optional: []assemblyline.ContextCandidateAuthority{optional},
+	}}, Stations{Relevance: relevance})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.RelevanceCalls != assemblyline.MaxSemanticStationAttempts ||
+		result.ModelCalls != assemblyline.MaxSemanticStationAttempts ||
+		len(result.Context.Capsules) != 1 || result.Context.Capsules[0].Content != optional.Content {
+		t.Fatalf("third-attempt context result=%#v", result)
 	}
 }
 
@@ -424,5 +451,20 @@ func TestReplanAuthorityWithoutRequiredExactCandidateFailsLoudly(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("replan authority bypassed its required exact context candidate")
+	}
+}
+
+func TestContextStationReceiptAcceptsOnlyZeroCallDurableReuse(t *testing.T) {
+	t.Parallel()
+	if err := validateReceipt("context relevance", StationReceipt{Reused: true}); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateReceipt(
+		"context relevance", StationReceipt{Calls: 1, Reused: true},
+	); err == nil {
+		t.Fatal("context reuse fabricated a provider call")
+	}
+	if err := validateReceipt("context relevance", StationReceipt{}); err == nil {
+		t.Fatal("zero-call context station lacked durable reuse provenance")
 	}
 }

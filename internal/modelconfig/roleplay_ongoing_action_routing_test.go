@@ -1,16 +1,12 @@
 package modelconfig
 
-import (
-	"testing"
+import "testing"
 
-	"github.com/gryph/omnidex/internal/station"
-)
-
-func TestApplyRoleplayOngoingActionStationRouting(t *testing.T) {
+func TestApplyRoleplaySemanticRouting(t *testing.T) {
 	applied := Apply(Routing{}, Config{
-		"roleplay_ongoing_action_model": "action-model",
+		"roleplay_semantic_model": "roleplay-model",
 	})
-	if got := applied.Stations[station.RoleplayOngoingAction]; got != "action-model" {
-		t.Fatalf("roleplay ongoing-action model=%q", got)
+	if got := applied.RoleplaySemanticModel; got != "roleplay-model" {
+		t.Fatalf("roleplay semantic model=%q", got)
 	}
 }

@@ -146,6 +146,7 @@ func openRoleplayTestPool(t *testing.T) (*pgxpool.Pool, func(*testing.T) *pgxpoo
 		"151_roleplay_transition_observer_authority.sql",
 		"152_roleplay_user_canon_provenance.sql",
 		"153_roleplay_user_turn_contribution_kind_authority.sql",
+		"157_roleplay_user_canon_modality_authority.sql",
 	})
 }
 

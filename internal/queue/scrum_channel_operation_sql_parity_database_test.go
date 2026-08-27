@@ -99,7 +99,7 @@ func TestPostgresScrumOperationFunctionsIgnorePGTempShadows(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = tx.Rollback(t.Context()) }()
-	job := stageScrumStartAuthorityForShadowTest(t, repository, tx, card, command, descriptor)
+	job := stageScrumStartAuthorityForShadowTest(t, tx, card, command, descriptor)
 	if _, err := tx.Exec(t.Context(), `
 		CREATE TEMP TABLE lifecycle_operation_registry(operation_id text,kind text,command_sha256 text,command_payload jsonb);
 		CREATE TEMP TABLE scrum_cards(project_id bigint,id text);
@@ -132,7 +132,6 @@ func TestPostgresScrumOperationFunctionsIgnorePGTempShadows(t *testing.T) {
 
 func stageScrumStartAuthorityForShadowTest(
 	t *testing.T,
-	repository *Repository,
 	tx pgx.Tx,
 	card DBScrumCard,
 	command ScrumChannelOperationCommand,
@@ -167,10 +166,9 @@ func stageScrumStartAuthorityForShadowTest(
 	if err != nil {
 		t.Fatal(err)
 	}
-	job, err := repository.enqueueScrumJobTx(ctx, tx, command.Request.Message, metadataJSON)
-	if err != nil {
-		t.Fatal(err)
-	}
+	job := seedPreInlineExecutionMigrationJobTx(
+		t, ctx, tx, command.Request.Message, model.PipelineScrum, "v3_coding", metadataJSON,
+	).Job
 	if _, err := tx.Exec(ctx, `
 		UPDATE scrum_cards SET column_name='in_progress',play_state='running',
 		 job_id=$3::text,sync_job_id=$3::text,

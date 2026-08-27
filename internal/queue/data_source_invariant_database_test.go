@@ -66,11 +66,11 @@ func TestRelationalDataSourceDatabaseRejectsMissingAndMutableAuthority(t *testin
 		},
 		"port": {
 			`UPDATE data_sources SET port=0 WHERE id=$1`,
-			"data_sources_port_check",
+			"data_sources_execution_authority_shape_check",
 		},
 		"ssl mode": {
 			`UPDATE data_sources SET ssl_mode='' WHERE id=$1`,
-			"data_sources_ssl_mode_check",
+			"data_sources_execution_authority_shape_check",
 		},
 		"read only": {
 			`UPDATE data_sources SET read_only=FALSE WHERE id=$1`,

@@ -2,11 +2,9 @@ package worker
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	repositoryfacts "github.com/gryph/omnidex/internal/repository"
-	"github.com/gryph/omnidex/internal/repository/changeapply"
 )
 
 type repositoryAuthoritativeVerificationAuthority struct {
@@ -54,16 +52,16 @@ func (authority repositoryAuthoritativeVerificationAuthority) allowsScope(
 	return scope == repositoryVerificationAuthoritative
 }
 
-func newExactAuthoritativeRepositoryVerificationWorkspace(
+func newExactAuthoritativeRepositoryVerificationProjection(
 	ctx context.Context,
 	root string,
 	contractID string,
 	commands []testCommand,
 	prepared *verifiedRepositoryChangeStage,
 	source repositoryfacts.Snapshot,
-) (*changeapply.SnapshotWorkspace, repositoryAuthoritativeVerificationAuthority, error) {
+) (repositoryWorkspaceProjection, repositoryAuthoritativeVerificationAuthority, error) {
 	if prepared == nil {
-		return nil, repositoryAuthoritativeVerificationAuthority{}, fmt.Errorf(
+		return repositoryWorkspaceProjection{}, repositoryAuthoritativeVerificationAuthority{}, fmt.Errorf(
 			"authoritative repository verification requires one verified stage",
 		)
 	}
@@ -71,25 +69,21 @@ func newExactAuthoritativeRepositoryVerificationWorkspace(
 		ctx, root, source, contractID, commands, prepared,
 	)
 	if err != nil {
-		return nil, repositoryAuthoritativeVerificationAuthority{}, err
+		return repositoryWorkspaceProjection{}, repositoryAuthoritativeVerificationAuthority{}, err
 	}
-	workspace, err := changeapply.NewSnapshotWorkspace(ctx, post)
+	projection, err := newRepositorySnapshotProjection(post)
 	if err != nil {
-		return nil, repositoryAuthoritativeVerificationAuthority{}, fmt.Errorf(
+		return repositoryWorkspaceProjection{}, repositoryAuthoritativeVerificationAuthority{}, fmt.Errorf(
 			"construct authoritative repository post projection: %w", err,
 		)
 	}
 	base, err := prepared.verificationAuthority(source.ID, contractID, commands)
 	if err != nil {
-		return nil, repositoryAuthoritativeVerificationAuthority{}, errors.Join(
-			err, workspace.Cleanup(),
-		)
+		return repositoryWorkspaceProjection{}, repositoryAuthoritativeVerificationAuthority{}, err
 	}
 	authority, err := newRepositoryAuthoritativeVerificationAuthority(base, post.ID, commands)
 	if err != nil {
-		return nil, repositoryAuthoritativeVerificationAuthority{}, errors.Join(
-			err, workspace.Cleanup(),
-		)
+		return repositoryWorkspaceProjection{}, repositoryAuthoritativeVerificationAuthority{}, err
 	}
-	return workspace, authority, nil
+	return projection, authority, nil
 }

@@ -47,9 +47,6 @@ func (r *Repository) completeStep(
 	if err != nil {
 		return err
 	}
-	if err := requireRoleplayCompletionJobAuthority(job, command); err != nil {
-		return err
-	}
 	if existing, found, err := loadLifecycleOperationTx(ctx, tx, descriptor, jobID); err != nil {
 		return err
 	} else if found {
@@ -73,6 +70,9 @@ func (r *Repository) completeStep(
 			)
 		}
 		return nil
+	}
+	if err := requireRoleplayCompletionJobAuthority(job, command); err != nil {
+		return err
 	}
 	if err := requireLockedStepAttemptActiveTx(ctx, tx, command.Authority, lockedAttempt); err != nil {
 		return err
@@ -242,6 +242,9 @@ func (r *Repository) FailStep(ctx context.Context, command FailStepCommand) erro
 			"failure writer job status %q step status %q",
 			lockedAttempt.JobStatus, lockedAttempt.StepStatus,
 		), nil)
+	}
+	if err := requireNoOpenStationGapsTx(ctx, tx, command.Authority); err != nil {
+		return err
 	}
 	if err := rejectUnresolvedGeneratedWorkloadDeploymentsTx(
 		ctx, tx, command.Authority.JobID,

@@ -11,6 +11,7 @@ import (
 	"github.com/gryph/omnidex/internal/evidence"
 	"github.com/gryph/omnidex/internal/omni"
 	"github.com/gryph/omnidex/internal/operation"
+	workspacefacts "github.com/gryph/omnidex/internal/workspace"
 )
 
 const (
@@ -96,7 +97,16 @@ func applyWorkspaceFileMutation(ctx context.Context, root string, command worksp
 	}
 
 	operationText := string(fileOperation)
-	patch := fullFileUnifiedPatch(path, operationText, string(original), content)
+	patch, err := workspacefacts.BuildFullFileUnifiedPatch(
+		path,
+		fileOperation != workspaceFileCreate,
+		original,
+		fileOperation != workspaceFileDelete,
+		[]byte(content),
+	)
+	if err != nil {
+		return operation.Result{}, operation.Reject(fmt.Errorf("workspace.write patch construction rejected: %w", err))
+	}
 	diff, diffTruncated := boundedV3DiffPreview(patch)
 	preview, err := omni.ApplyUnifiedPatch(omni.PatchApplyOptions{Context: ctx, Workspace: root, Patch: patch, DryRun: true})
 	if err != nil {
@@ -180,46 +190,6 @@ func validateV3WritePath(path string) error {
 		return fmt.Errorf("workspace.write target %q may contain secrets and is protected", path)
 	}
 	return nil
-}
-
-func fullFileUnifiedPatch(path, operation, original, content string) string {
-	oldPath, newPath := "a/"+path, "b/"+path
-	if operation == "create" {
-		oldPath = "/dev/null"
-	}
-	if operation == "delete" {
-		newPath = "/dev/null"
-	}
-	oldLines := completeFileLines(original)
-	newLines := completeFileLines(content)
-	var b strings.Builder
-	fmt.Fprintf(&b, "diff --git a/%s b/%s\n--- %s\n+++ %s\n@@ -%d,%d +%d,%d @@\n", path, path, oldPath, newPath, patchStart(len(oldLines)), len(oldLines), patchStart(len(newLines)), len(newLines))
-	for _, line := range oldLines {
-		b.WriteByte('-')
-		b.WriteString(line)
-		b.WriteByte('\n')
-	}
-	for _, line := range newLines {
-		b.WriteByte('+')
-		b.WriteString(line)
-		b.WriteByte('\n')
-	}
-	return b.String()
-}
-
-func completeFileLines(content string) []string {
-	content = strings.TrimSuffix(strings.ReplaceAll(content, "\r\n", "\n"), "\n")
-	if content == "" {
-		return nil
-	}
-	return strings.Split(content, "\n")
-}
-
-func patchStart(lineCount int) int {
-	if lineCount == 0 {
-		return 0
-	}
-	return 1
 }
 
 func pastTenseWriteOperation(operation string) string {

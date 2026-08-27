@@ -56,11 +56,8 @@ func extractRoleplayCanonSource(
 	if err != nil {
 		return nil, 0, err
 	}
-	if receipt.Calls < 1 || receipt.Calls > maxTypedWorkerAttempts {
-		return nil, 0, fmt.Errorf(
-			"roleplay canon extraction reported %d calls outside the bounded correction budget",
-			receipt.Calls,
-		)
+	if err := validateObjectiveStationReceipt("roleplay canon extraction", receipt); err != nil {
+		return nil, 0, err
 	}
 	if err := decision.ValidateFor(input); err != nil {
 		return nil, 0, err
@@ -68,18 +65,17 @@ func extractRoleplayCanonSource(
 	return append([]string{}, decision.Facts...), receipt.Calls, nil
 }
 
-func roleplayUserContributionRequiresCanon(authority roleplay.UserTurnAuthority) bool {
-	return authority.ContributionKind != roleplay.UserContributionCommand &&
-		authority.ContributionKind != roleplay.UserContributionLegacy
-}
-
 func newRoleplayUserCanonCompletion(
 	preparation roleplay.SimulationTurnAuthority,
 	facts []string,
 ) (*queue.RoleplayUserCanonCompletion, error) {
-	if !roleplayUserContributionRequiresCanon(preparation.UserTurn) {
+	_, present, err := preparation.UserTurn.CanonContribution()
+	if err != nil {
+		return nil, err
+	}
+	if !present {
 		if len(facts) != 0 {
-			return nil, fmt.Errorf("roleplay command cannot persist user-contribution canon")
+			return nil, fmt.Errorf("non-canonical roleplay contribution cannot persist user canon")
 		}
 		return nil, nil
 	}

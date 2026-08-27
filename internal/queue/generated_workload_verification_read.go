@@ -11,7 +11,7 @@ import (
 func (r *Repository) GeneratedWorkloadVerification(
 	ctx context.Context, id string,
 ) (*GeneratedWorkloadVerificationRecord, error) {
-	if ctx == nil || !repositoryMutationOpaqueID(id, "generated_workload_verification_") {
+	if ctx == nil || !validSHA256ID(id, "generated_workload_verification_") {
 		return nil, fmt.Errorf("load workspace verification requires context and exact receipt identity")
 	}
 	if r == nil || r.pool == nil {

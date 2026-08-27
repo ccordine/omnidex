@@ -14,39 +14,49 @@ import (
 	repositoryfacts "github.com/gryph/omnidex/internal/repository"
 )
 
-func stageSnapshot(ctx context.Context, snapshot repositoryfacts.Snapshot) (string, error) {
+func stageMutationTargets(
+	ctx context.Context,
+	snapshot repositoryfacts.Snapshot,
+	mutations []fileMutation,
+) (string, error) {
 	if err := validateStageInventory(snapshot); err != nil {
 		return "", err
 	}
-	workspace, err := os.MkdirTemp("", "omnidex-repository-change-*")
+	deltaRoot, err := os.MkdirTemp("", "omnidex-repository-delta-*")
 	if err != nil {
-		return "", fmt.Errorf("create repository change staging workspace: %w", err)
+		return "", fmt.Errorf("create repository change delta: %w", err)
 	}
-	if err := createStageDirectories(workspace, snapshot.Files); err != nil {
-		return "", joinCleanupError(err, os.RemoveAll(workspace))
+	files := make([]repositoryfacts.File, len(mutations))
+	for index, mutation := range mutations {
+		files[index] = mutation.file
 	}
-	for _, file := range snapshot.Files {
+	if err := createStageDirectories(deltaRoot, files); err != nil {
+		return "", joinCleanupError(err, os.RemoveAll(deltaRoot))
+	}
+	for _, mutation := range mutations {
 		if err := ctx.Err(); err != nil {
-			return "", joinCleanupError(fmt.Errorf("stage repository snapshot: %w", err), os.RemoveAll(workspace))
+			return "", joinCleanupError(fmt.Errorf("stage repository mutation targets: %w", err), os.RemoveAll(deltaRoot))
 		}
+		if !mutation.sourcePresent {
+			continue
+		}
+		file := mutation.file
 		source := filepath.Join(snapshot.Root, filepath.FromSlash(file.Path))
-		destination := filepath.Join(workspace, filepath.FromSlash(file.Path))
+		destination := filepath.Join(deltaRoot, filepath.FromSlash(file.Path))
 		if err := rejectSourceSymlinkParents(snapshot.Root, file.Path); err != nil {
-			return "", joinCleanupError(err, os.RemoveAll(workspace))
+			return "", joinCleanupError(err, os.RemoveAll(deltaRoot))
 		}
-		switch file.Kind {
-		case repositoryfacts.EntryRegular:
-			err = copyExactRegularFile(ctx, source, destination, file)
-		case repositoryfacts.EntrySymlink:
-			err = copyExactSymlink(source, destination, file)
-		default:
-			err = fmt.Errorf("repository snapshot file %q has unsupported kind %q", file.Path, file.Kind)
+		if file.Kind != repositoryfacts.EntryRegular {
+			return "", joinCleanupError(
+				fmt.Errorf("repository mutation target %q has unsupported kind %q", file.Path, file.Kind),
+				os.RemoveAll(deltaRoot),
+			)
 		}
-		if err != nil {
-			return "", joinCleanupError(err, os.RemoveAll(workspace))
+		if err := copyExactRegularFile(ctx, source, destination, file); err != nil {
+			return "", joinCleanupError(err, os.RemoveAll(deltaRoot))
 		}
 	}
-	return workspace, nil
+	return deltaRoot, nil
 }
 
 func validateStageInventory(snapshot repositoryfacts.Snapshot) error {
@@ -177,31 +187,6 @@ func copyExactRegularFile(ctx context.Context, source, destination string, expec
 	}
 	if actual := hex.EncodeToString(hash.Sum(nil)); actual != expected.SHA256 {
 		return fmt.Errorf("repository file %q hash is stale; refresh the snapshot", expected.Path)
-	}
-	return nil
-}
-
-func copyExactSymlink(source, destination string, expected repositoryfacts.File) error {
-	before, err := os.Lstat(source)
-	if err != nil {
-		return fmt.Errorf("inspect repository symlink %q: %w", expected.Path, err)
-	}
-	if before.Mode()&os.ModeSymlink == 0 || before.Mode().Perm() != os.FileMode(expected.Mode) {
-		return fmt.Errorf("repository symlink %q differs from its exact kind or mode", expected.Path)
-	}
-	target, err := os.Readlink(source)
-	if err != nil {
-		return fmt.Errorf("read repository symlink %q: %w", expected.Path, err)
-	}
-	after, err := os.Lstat(source)
-	if err != nil || before.Size() != after.Size() || !before.ModTime().Equal(after.ModTime()) || before.Mode() != after.Mode() {
-		return fmt.Errorf("repository symlink %q changed while it was staged", expected.Path)
-	}
-	if target != expected.LinkTarget || int64(len(target)) != expected.Size || digest([]byte("symlink\x00"+target)) != expected.SHA256 {
-		return fmt.Errorf("repository symlink %q identity is stale; refresh the snapshot", expected.Path)
-	}
-	if err := os.Symlink(target, destination); err != nil {
-		return fmt.Errorf("create staged repository symlink %q: %w", expected.Path, err)
 	}
 	return nil
 }

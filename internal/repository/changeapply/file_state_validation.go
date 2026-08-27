@@ -59,6 +59,100 @@ func deriveAbsentToSourceMutation(
 	}, nil
 }
 
+func deriveSourceToSourceMutation(
+	ctx context.Context,
+	input FileStateInput,
+	file repositoryfacts.File,
+	desired DesiredFileState,
+) (fileMutation, bool, error) {
+	if exactSourceFileEmpty(desired.Source) || !exactSourceFileMatches(desired.Source, file) {
+		return fileMutation{}, false, fmt.Errorf(
+			"repository desired present path %q already exists but replacement differs from its exact source authority",
+			desired.Path,
+		)
+	}
+	if len(desired.RemovedSymbolIDs) != 0 {
+		return fileMutation{}, false, fmt.Errorf("repository desired present state cannot remove source symbols")
+	}
+	if err := validateDesiredGoPath(desired.Path); err != nil {
+		return fileMutation{}, false, err
+	}
+	if file.Kind != repositoryfacts.EntryRegular || file.Language != "go" ||
+		file.Generated || excludedFileStatePath(file.Path) {
+		return fileMutation{}, false, fmt.Errorf(
+			"repository replacement target %q is generated, protected, vendored, or unsupported",
+			desired.Path,
+		)
+	}
+	if file.Size > maxTargetFileBytes || len(desired.Content) > maxTargetFileBytes {
+		return fileMutation{}, false, fmt.Errorf("repository replacement target file exceeds %d bytes", maxTargetFileBytes)
+	}
+	if desired.Mode != file.Mode {
+		return fileMutation{}, false, fmt.Errorf(
+			"repository replacement for %q cannot change exact source mode %o to %o",
+			desired.Path, file.Mode, desired.Mode,
+		)
+	}
+	if err := validatePatchableSource(file.ID, desired.Content); err != nil {
+		return fileMutation{}, false, err
+	}
+	if desired.PackageArtifactID != "" {
+		packageName, directory, err := exactGoPackagePlacement(
+			input.Snapshot, input.Analysis, desired.PackageArtifactID,
+		)
+		if err != nil {
+			return fileMutation{}, false, err
+		}
+		parsed, err := parser.ParseFile(
+			token.NewFileSet(), desired.Path, desired.Content, parser.PackageClauseOnly,
+		)
+		if err != nil || parsed.Name == nil ||
+			parsed.Name.Name != packageName || path.Dir(desired.Path) != directory {
+			return fileMutation{}, false, fmt.Errorf(
+				"repository replacement source %q differs from its code-owned package placement",
+				desired.Path,
+			)
+		}
+	}
+	if err := rejectIgnoredTarget(ctx, input.Snapshot.Root, desired.Path, true); err != nil {
+		return fileMutation{}, false, err
+	}
+	if int64(len(desired.Content)) == file.Size && digest(desired.Content) == file.SHA256 {
+		return fileMutation{}, false, nil
+	}
+	next := append([]byte(nil), desired.Content...)
+	return fileMutation{
+		file: file, next: next,
+		replacements: []targetReplacement{{
+			fileID: file.ID, start: 0, end: file.Size,
+			expected: file.SHA256, declaration: append([]byte(nil), next...),
+		}},
+		sourcePresent: true, desiredPresent: true,
+	}, true, nil
+}
+
+func validateAlreadyAbsentState(desired DesiredFileState) error {
+	if err := validateDesiredGoPath(desired.Path); err != nil {
+		return err
+	}
+	if !exactSourceFileEmpty(desired.Source) {
+		return fmt.Errorf(
+			"repository desired absent path %q is not indexed but contains stale source authority",
+			desired.Path,
+		)
+	}
+	if len(desired.Content) != 0 || desired.Mode != 0 || desired.PackageArtifactID != "" {
+		return fmt.Errorf("repository desired absent state for %q cannot contain post-state source authority", desired.Path)
+	}
+	if len(desired.RemovedSymbolIDs) != 0 {
+		return fmt.Errorf(
+			"repository desired absent path %q cannot remove symbols without indexed source authority",
+			desired.Path,
+		)
+	}
+	return nil
+}
+
 func validateNewGoSource(input FileStateInput, desired DesiredFileState) error {
 	if err := validateDesiredGoPath(desired.Path); err != nil {
 		return err
@@ -107,8 +201,7 @@ func deriveSourceToAbsentMutation(
 	if !exists {
 		return fileMutation{}, fmt.Errorf("repository desired absent path %q is not an exact indexed source member", desired.Path)
 	}
-	if exactSourceFileEmpty(desired.Source) || desired.Source.FileID != file.ID ||
-		desired.Source.SHA256 != file.SHA256 || desired.Source.Size != file.Size || desired.Source.Mode != file.Mode {
+	if exactSourceFileEmpty(desired.Source) || !exactSourceFileMatches(desired.Source, file) {
 		return fileMutation{}, fmt.Errorf("repository deletion for %q differs from its exact source authority", desired.Path)
 	}
 	if file.Kind != repositoryfacts.EntryRegular || file.Language != "go" || file.Generated || excludedFileStatePath(file.Path) {
@@ -208,6 +301,11 @@ func excludedFileStatePath(value string) bool {
 
 func exactSourceFileEmpty(source ExactSourceFile) bool {
 	return source.FileID == "" && source.SHA256 == "" && source.Size == 0 && source.Mode == 0
+}
+
+func exactSourceFileMatches(source ExactSourceFile, file repositoryfacts.File) bool {
+	return source.FileID == file.ID && source.SHA256 == file.SHA256 &&
+		source.Size == file.Size && source.Mode == file.Mode
 }
 
 func requirePhysicalAbsence(root, relative string) error {

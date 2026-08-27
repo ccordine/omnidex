@@ -7,11 +7,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/gryph/omnidex/internal/repository/changeapply"
 )
 
-func TestPlanStagesCompleteSnapshotAndApplyVerifiedCommitsExactMultiFilePatch(t *testing.T) {
+func TestPlanStagesOnlyChangedPostImagesAndApplyVerifiedCommitsExactMultiFilePatch(t *testing.T) {
 	t.Parallel()
 	fixture := newFixture(t, map[string]fixtureEntry{
 		"go.mod":       {content: "module example.com/changeapply\n\ngo 1.24\n", mode: 0o600},
@@ -24,21 +22,19 @@ func TestPlanStagesCompleteSnapshotAndApplyVerifiedCommitsExactMultiFilePatch(t 
 	}
 	fixture.refresh(t)
 	contract := fixture.contract(t, "First", "Second")
-	candidates := []changeapply.CandidateDeclaration{
-		{SymbolID: fixture.symbol(t, "Second").ID, Declaration: "func Second() int { return 22 }"},
-		{SymbolID: fixture.symbol(t, "First").ID, Declaration: "func First() int { return 11 }"},
+	candidates := map[string]string{
+		fixture.symbol(t, "Second").ID: "func Second() int { return 22 }",
+		fixture.symbol(t, "First").ID:  "func First() int { return 11 }",
 	}
-	stage, err := changeapply.Plan(context.Background(), changeapply.Input{
-		Snapshot: fixture.snapshot, Analysis: fixture.analysis, Contract: contract, Candidates: candidates,
-	})
+	stage, err := fixture.plan(contract, candidates)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = stage.Cleanup() })
 
-	second, err := changeapply.Plan(context.Background(), changeapply.Input{
-		Snapshot: fixture.snapshot, Analysis: fixture.analysis, Contract: contract,
-		Candidates: []changeapply.CandidateDeclaration{candidates[1], candidates[0]},
+	second, err := fixture.plan(contract, map[string]string{
+		fixture.symbol(t, "First").ID:  candidates[fixture.symbol(t, "First").ID],
+		fixture.symbol(t, "Second").ID: candidates[fixture.symbol(t, "Second").ID],
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -56,21 +52,21 @@ func TestPlanStagesCompleteSnapshotAndApplyVerifiedCommitsExactMultiFilePatch(t 
 			t.Fatalf("invalid expected post-patch file=%+v", expected)
 		}
 	}
-	if _, err := os.Stat(filepath.Join(stage.Workspace(), ".git")); !os.IsNotExist(err) {
-		t.Fatalf("staging workspace contains Git state: %v", err)
+	if _, err := os.Stat(filepath.Join(stage.DeltaRoot(), ".git")); !os.IsNotExist(err) {
+		t.Fatalf("delta contains Git state: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(stage.Workspace(), ".omni")); !os.IsNotExist(err) {
-		t.Fatalf("staging workspace contains Omnidex state: %v", err)
+	if _, err := os.Stat(filepath.Join(stage.DeltaRoot(), ".omni")); !os.IsNotExist(err) {
+		t.Fatalf("delta contains Omnidex state: %v", err)
 	}
-	link, err := os.Readlink(filepath.Join(stage.Workspace(), "unchanged-link"))
-	if err != nil || link != "unchanged.md" {
-		t.Fatalf("staged symlink=%q err=%v", link, err)
+	for _, unchanged := range []string{"go.mod", "unchanged-link", "unchanged.md"} {
+		if _, err := os.Lstat(filepath.Join(stage.DeltaRoot(), unchanged)); !os.IsNotExist(err) {
+			t.Fatalf("delta copied unchanged path %q: %v", unchanged, err)
+		}
 	}
-	assertFile(t, filepath.Join(stage.Workspace(), "unchanged.md"), "unchanged bytes\n", 0o644)
-	assertFile(t, filepath.Join(stage.Workspace(), "first.go"), "package changeapply\n\n// retained first\nfunc First() int { return 11 }\n", 0o640)
-	assertFile(t, filepath.Join(stage.Workspace(), "second.go"), "package changeapply\n\nfunc Second() int { return 22 }\n\n// retained second\n", 0o600)
+	assertFile(t, filepath.Join(stage.DeltaRoot(), "first.go"), "package changeapply\n\n// retained first\nfunc First() int { return 11 }\n", 0o640)
+	assertFile(t, filepath.Join(stage.DeltaRoot(), "second.go"), "package changeapply\n\nfunc Second() int { return 22 }\n\n// retained second\n", 0o600)
 
-	raw, err := json.Marshal(candidates[0])
+	raw, err := json.Marshal(candidates)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -96,13 +92,13 @@ func TestCleanupIsExplicitAndIdempotent(t *testing.T) {
 	t.Parallel()
 	fixture := basicFixture(t)
 	contract := fixture.contract(t, "First")
-	stage, err := fixture.plan(contract, []changeapply.CandidateDeclaration{{
-		SymbolID: fixture.symbol(t, "First").ID, Declaration: "func First() int { return 9 }",
-	}})
+	stage, err := fixture.plan(contract, map[string]string{
+		fixture.symbol(t, "First").ID: "func First() int { return 9 }",
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	workspace := stage.Workspace()
+	workspace := stage.DeltaRoot()
 	if err := stage.Cleanup(); err != nil {
 		t.Fatal(err)
 	}

@@ -13,6 +13,7 @@ type ContextRelevanceInput struct {
 	RetrievalConcepts    []string                    `json:"retrieval_concepts"`
 	CandidateAuthorities []ContextCandidateAuthority `json:"candidate_authorities"`
 	MaxSelections        int                         `json:"max_selections"`
+	Scope                ContextScope                `json:"scope,omitempty"`
 }
 
 type ContextRelevanceDecision struct {
@@ -41,6 +42,9 @@ func NewContextRelevanceJob(input ContextRelevanceInput) (PortableJob, error) {
 }
 
 func (input ContextRelevanceInput) validate() error {
+	if err := input.Scope.Validate(); err != nil {
+		return err
+	}
 	if err := validateContextExactInstruction(input.ExactInstruction); err != nil {
 		return err
 	}

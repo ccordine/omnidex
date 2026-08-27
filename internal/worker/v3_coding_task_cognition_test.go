@@ -72,7 +72,8 @@ func TestDirectCodingTaskCognitionPersistsObjectiveTaskAndVerificationSequence(t
 	}
 	verification := directCodingVerification{
 		Passed: true, TestsPassed: true, Commands: []string{"npm run typecheck", "npm test"},
-		EvidenceIDs: []int64{21, 22},
+		EvidenceIDs:         []int64{21, 22},
+		MutationOperationID: "workspace_mutation_" + strings.Repeat("a", 64), MutationReceiptSHA256: strings.Repeat("b", 64),
 	}
 	if _, err := coordinator.BeginWorkspaceVerification(); err != nil {
 		t.Fatal(err)
@@ -137,7 +138,8 @@ func TestDirectCodingTaskCognitionRequiresDurableDeploymentReceiptBeforeObjectiv
 	}
 	verification := directCodingVerification{
 		Passed: true, TestsPassed: true, Commands: []string{"npm test"},
-		EvidenceIDs: []int64{23},
+		EvidenceIDs:         []int64{23},
+		MutationOperationID: "workspace_mutation_" + strings.Repeat("c", 64), MutationReceiptSHA256: strings.Repeat("d", 64),
 	}
 	if _, err := coordinator.BeginWorkspaceVerification(); err != nil {
 		t.Fatal(err)

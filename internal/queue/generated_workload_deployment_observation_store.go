@@ -149,8 +149,8 @@ func validateAndCanonicalizeGeneratedDeploymentObservation(
 	}
 	for index, service := range observation.Services {
 		if service.Service != command.Services[index] ||
-			!repositoryMutationHexDigest(service.ContainerID) ||
-			!repositoryMutationOpaqueID(service.ImageDigest, "sha256:") ||
+			!validSHA256Digest(service.ContainerID) ||
+			!validSHA256ID(service.ImageDigest, "sha256:") ||
 			service.RestartPolicy != "unless-stopped" || service.State != "running" || service.Health != "healthy" {
 			return "", fmt.Errorf("deployment observation service %d is invalid", index)
 		}

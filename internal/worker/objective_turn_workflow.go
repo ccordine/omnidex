@@ -187,7 +187,9 @@ func runObjectiveRoleplayResearchTurn(
 		return result, err
 	}
 	if strings.TrimSpace(answer.Text) == "" || answer.Text != strings.TrimSpace(answer.Text) ||
-		len(answer.Text) > maxObjectiveOutputBytes || answer.ModelCalls != objectiveRoleplayResearchModelCalls ||
+		len(answer.Text) > maxObjectiveOutputBytes ||
+		answer.ModelCalls < minimumObjectiveRoleplayResearchModelCalls ||
+		answer.ModelCalls > maximumObjectiveRoleplayResearchModelCalls ||
 		answer.Rendered == "" || answer.Rendered != strings.TrimSpace(answer.Rendered) ||
 		len(answer.Rendered) > maxObjectiveOutputBytes ||
 		!validObjectiveTextSHA(answer.Rendered, answer.RenderedSHA256) || len(answer.Paragraphs) == 0 {

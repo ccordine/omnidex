@@ -16,20 +16,34 @@ func TestPostgresJobGenerationBoundaryIsExactAndJobOwned(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	pool := openIsolatedMigrationPool(t)
-	if err := New(pool).EnsureSchema(ctx, loadCheckedMigrationBundle(t)); err != nil {
+	repository := New(pool)
+	if err := repository.EnsureSchema(ctx, loadMigrationBundleThroughPrefix(t, "067")); err != nil {
 		t.Fatal(err)
 	}
+
+	seedTx, err := pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer seedTx.Rollback(context.Background())
+	firstJob := insertGenerationTestJob(t, ctx, seedTx, "first")
+	secondJob := insertGenerationTestJob(t, ctx, seedTx, "second")
+	firstStep := insertGenerationTestStep(t, ctx, seedTx, firstJob, 1, "v3_coding")
+	secondStep := insertGenerationTestStep(t, ctx, seedTx, secondJob, 1, "v3_coding")
+	historicalLLMID := insertHistoricalGenerationLLMEvidence(t, ctx, seedTx, firstJob, firstStep)
+	if err := seedTx.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := repository.EnsureSchema(ctx, loadCheckedMigrationBundle(t)); err != nil {
+		t.Fatal(err)
+	}
+	memoryScope := createMemoryScopeForTest(t, repository)
 
 	tx, err := pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer tx.Rollback(context.Background())
-
-	firstJob := insertGenerationTestJob(t, ctx, tx, "first")
-	secondJob := insertGenerationTestJob(t, ctx, tx, "second")
-	firstStep := insertGenerationTestStep(t, ctx, tx, firstJob, 1, "v3_coding")
-	secondStep := insertGenerationTestStep(t, ctx, tx, secondJob, 1, "v3_coding")
 
 	feedback := "Use the accepted user correction."
 	feedbackSHA := generationTestSHA256(feedback)
@@ -95,8 +109,36 @@ func TestPostgresJobGenerationBoundaryIsExactAndJobOwned(t *testing.T) {
 		VALUES ($1, 2, 'v3_coding', 0, 'pending')
 	`, secondJob)
 
-	assertGenerationDerivedOwnership(t, ctx, tx, firstJob, secondJob, firstStep, secondStep)
-	assertGenerationMemoryCandidateOwnership(t, ctx, tx, firstJob, secondJob)
+	assertGenerationDerivedOwnership(
+		t, ctx, tx, firstJob, secondJob, firstStep, secondStep, historicalLLMID,
+	)
+	assertGenerationMemoryCandidateOwnership(
+		t, ctx, tx, firstJob, secondJob, memoryScope.ProjectID, string(memoryScope.ChannelID),
+	)
+}
+
+func insertHistoricalGenerationLLMEvidence(
+	t *testing.T,
+	ctx context.Context,
+	tx pgx.Tx,
+	jobID, stepID int64,
+) int64 {
+	t.Helper()
+	var llmID int64
+	if err := tx.QueryRow(ctx, `
+		INSERT INTO llm_call_evidence (
+			job_id, job_generation, step_id, scope, requested_model, model, attempt,
+			system_prompt, user_prompt, request_sha256, response_format,
+			context_tokens, max_output_tokens, status, error, latency_ms
+		) VALUES (
+			$1, 1, $2, 'generation-test', 'requested', 'effective', 1,
+			'system', 'user', $3, 'text', 1024, 128,
+			'preparation_failed', 'expected historical failure', 1
+		) RETURNING id
+	`, jobID, stepID, strings.Repeat("a", 64)).Scan(&llmID); err != nil {
+		t.Fatal(err)
+	}
+	return llmID
 }
 
 func insertGenerationTestJob(t *testing.T, ctx context.Context, tx pgx.Tx, suffix string) int64 {

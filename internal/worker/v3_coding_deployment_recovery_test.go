@@ -109,6 +109,7 @@ func recoveryVerification() directCodingVerification {
 	return directCodingVerification{
 		Passed: true, TestsPassed: true,
 		Commands: []string{"go test ./..."}, EvidenceIDs: []int64{1},
+		MutationOperationID: "workspace_mutation_" + strings.Repeat("a", 64), MutationReceiptSHA256: strings.Repeat("b", 64),
 	}
 }
 

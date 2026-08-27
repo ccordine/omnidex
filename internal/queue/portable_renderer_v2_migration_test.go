@@ -9,7 +9,6 @@ import (
 	"github.com/gryph/omnidex/internal/assemblyline"
 	"github.com/gryph/omnidex/internal/exactjson"
 	"github.com/gryph/omnidex/internal/llm"
-	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/station"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -51,7 +50,7 @@ func TestPortableRendererV2MigratesHistoricalV1AndRejectsUnknown(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	historical := rendererMigrationOpening(t, pool, repository, "renderer-v1")
+	historical := rendererMigrationOpening(t, pool, "renderer-v1")
 	historical = openingWithRenderer(t, historical, assemblyline.PortableRendererV1)
 	historical = insertRendererMigrationOpening(t, pool, historical, false)
 	if err := repository.EnsureSchema(t.Context(), loadMigrationBundleThroughPrefix(t, "092")); err != nil {
@@ -67,14 +66,14 @@ func TestPortableRendererV2MigratesHistoricalV1AndRejectsUnknown(t *testing.T) {
 		t.Fatalf("historical renderer=%q", retained)
 	}
 
-	current := rendererMigrationOpening(t, pool, repository, "renderer-v2")
+	current := rendererMigrationOpening(t, pool, "renderer-v2")
 	current = openingWithRenderer(t, current, assemblyline.PortableRendererV2)
 	current = insertRendererMigrationOpening(t, pool, current, false)
 	if current.RendererVersion != assemblyline.PortableRendererV2 {
 		t.Fatalf("current renderer=%q", current.RendererVersion)
 	}
 
-	unknown := rendererMigrationOpening(t, pool, repository, "renderer-unknown")
+	unknown := rendererMigrationOpening(t, pool, "renderer-unknown")
 	unknown = openingWithRenderer(t, unknown, "omnidex.render-portable-job.v999")
 	_ = insertRendererMigrationOpening(t, pool, unknown, true)
 }
@@ -85,7 +84,7 @@ func TestPortableRendererV2FreshSchemaAcceptsCurrentRuntimeOpening(t *testing.T)
 	if err := repository.EnsureSchema(t.Context(), loadMigrationBundleThroughPrefix(t, "092")); err != nil {
 		t.Fatal(err)
 	}
-	current := rendererMigrationOpening(t, pool, repository, "renderer-v2-fresh")
+	current := rendererMigrationOpening(t, pool, "renderer-v2-fresh")
 	current = openingWithRenderer(t, current, assemblyline.PortableRendererV2)
 	current = insertRendererMigrationOpening(t, pool, current, false)
 	var persisted string
@@ -102,21 +101,10 @@ func TestPortableRendererV2FreshSchemaAcceptsCurrentRuntimeOpening(t *testing.T)
 func rendererMigrationOpening(
 	t *testing.T,
 	pool *pgxpool.Pool,
-	repository *Repository,
 	marker string,
 ) StationGapOpening {
 	t.Helper()
-	job, err := repository.EnqueueJob(t.Context(), marker, model.PipelineCoding, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	claim, err := repository.ClaimNextStep(t.Context(), marker+"-worker")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if claim == nil || claim.Job.ID != job.ID {
-		t.Fatalf("claim=%+v want job %d", claim, job.ID)
-	}
+	claim := seedPreInlineExecutionMigrationClaim(t, t.Context(), pool, marker)
 	portable, err := assemblyline.NewConversationResponseJob(assemblyline.ConversationResponseInput{
 		Kind: assemblyline.ObjectiveKindAnswer, ExactInstruction: "Exact renderer question.",
 	})
@@ -125,8 +113,8 @@ func rendererMigrationOpening(
 	}
 	opening, err := validateStationGapOpening(StationGapOpenRecord{
 		Authority: claim.Authority, Job: portable, Station: station.ConversationResponse,
-		ContextTokens: 8192, MaxOutputTokens: 1024,
-		OutputLimitMode: llm.ExactPreparedOutputLimitExplicit,
+		ContextTokens: 8192, MaxOutputTokens: 8192,
+		OutputLimitMode: llm.ExactPreparedOutputLimitNatural,
 	})
 	if err != nil {
 		t.Fatal(err)

@@ -183,7 +183,7 @@ func scanGeneratedDeploymentRollbackAttempt(
 		}
 	} else if record.Status == GeneratedWorkloadDeploymentExecutionCompleted {
 		if record.Succeeded == nil || record.EvidenceID <= 0 ||
-			!repositoryMutationHexDigest(record.ResultSHA256) || record.CompletedAt == nil {
+			!validSHA256Digest(record.ResultSHA256) || record.CompletedAt == nil {
 			return GeneratedWorkloadDeploymentRollbackAttemptRecord{}, fmt.Errorf("durable completed rollback attempt is incomplete")
 		}
 	} else {

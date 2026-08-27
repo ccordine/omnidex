@@ -148,3 +148,28 @@ func TestEmptyRoleplaySearchUniverseSkipsTermsButRanksFrozenOptionalAuthority(t 
 		)
 	}
 }
+
+func TestDeterministicRoleplayActionDoesNotManufactureSearchTerms(t *testing.T) {
+	t.Parallel()
+	provider := &roleplayContextProviderProbe{availability: contextcompiler.SearchAvailable}
+	station := &scriptedConversationContextStation{terms: []string{"must not run"}}
+	authority := turnAuthority{
+		JobID: 73, Instruction: `/give "iron key"`, ChannelMode: model.ChannelModeRoleplay,
+		RoleplayInputKind: roleplay.SimulationTurnAction,
+	}
+	directive, calls, err := resolveRoleplayTurnRetrieval(
+		t.Context(), model.Job{ID: 73, Pipeline: model.PipelineChat, Instruction: authority.Instruction},
+		authority, provider, station,
+		roleplay.SimulationTurnAuthority{InputKind: roleplay.SimulationTurnAction},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if calls != 0 || station.termCalls != 0 || provider.availabilityCalls != 0 ||
+		directive.Concepts == nil || len(directive.Concepts) != 0 {
+		t.Fatalf(
+			"calls=%d terms=%d availability=%d directive=%#v",
+			calls, station.termCalls, provider.availabilityCalls, directive,
+		)
+	}
+}

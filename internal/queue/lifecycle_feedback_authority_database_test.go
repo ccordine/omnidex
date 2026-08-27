@@ -13,7 +13,7 @@ const exactLifecycleFeedbackMigration = "088_exact_lifecycle_feedback_authority.
 func TestPostgresScrumChannelReplanPreservesExactMessageBytes(t *testing.T) {
 	pool := openIsolatedMigrationPool(t)
 	repository := New(pool)
-	if err := repository.EnsureSchema(t.Context(), loadMigrationBundleThroughPrefix(t, "090")); err != nil {
+	if err := repository.EnsureSchema(t.Context(), loadCheckedMigrationBundle(t)); err != nil {
 		t.Fatal(err)
 	}
 	project, card := newScrumChannelOperationCard(t, repository, "exact-replan")
@@ -110,10 +110,10 @@ func TestPostgresLifecycleFeedbackMigrationRefusesOversizedHistoryAtomically(t *
 	if err := repository.EnsureSchema(t.Context(), loadMigrationBundleThroughPrefix(t, "087")); err != nil {
 		t.Fatal(err)
 	}
-	job, err := repository.EnqueueJob(t.Context(), "historical feedback audit", model.PipelineCoding, json.RawMessage(`{}`))
-	if err != nil {
-		t.Fatal(err)
-	}
+	fixture := seedPreInlineExecutionMigrationJob(
+		t, t.Context(), pool, "historical feedback audit",
+		model.PipelineCoding, "v3_coding", json.RawMessage(`{}`),
+	)
 	content := strings.Repeat("x", maxReplanFeedbackBytes+1)
 	if _, err := pool.Exec(t.Context(), `
 		INSERT INTO task_entries (
@@ -123,10 +123,10 @@ func TestPostgresLifecycleFeedbackMigrationRefusesOversizedHistoryAtomically(t *
 		SELECT id,$1,'historical-oversized-feedback','feedback','replan','active','user',
 		       $2,encode(digest($2,'sha256'),'hex'),'user','{}'::jsonb,version,version
 		FROM task_ledgers WHERE job_id=$1
-	`, job.ID, content); err != nil {
+	`, fixture.Job.ID, content); err != nil {
 		t.Fatal(err)
 	}
-	err = repository.EnsureSchema(t.Context(), loadMigrationBundleThroughPrefix(t, "088"))
+	err := repository.EnsureSchema(t.Context(), loadMigrationBundleThroughPrefix(t, "088"))
 	if err == nil || !strings.Contains(err.Error(), "historical lifecycle feedback") {
 		t.Fatalf("oversized history migration error=%v", err)
 	}

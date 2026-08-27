@@ -11,6 +11,7 @@ const ContextMinificationSchemaV1 = "omnidex.context-minification.v1"
 type ContextMinificationInput struct {
 	ExactInstruction    string                      `json:"exact_instruction"`
 	SelectedAuthorities []ContextCandidateAuthority `json:"selected_authorities"`
+	Scope               ContextScope                `json:"scope,omitempty"`
 }
 
 type ContextMinificationDecision struct {
@@ -31,6 +32,9 @@ func NewContextMinificationJob(input ContextMinificationInput) (PortableJob, err
 }
 
 func (input ContextMinificationInput) validate() error {
+	if err := input.Scope.Validate(); err != nil {
+		return err
+	}
 	if err := validateContextExactInstruction(input.ExactInstruction); err != nil {
 		return err
 	}

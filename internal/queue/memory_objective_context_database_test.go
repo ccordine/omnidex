@@ -49,8 +49,8 @@ func TestPostgresMemoryRetrievalIsExactScopedAndCapsulesAreImmutable(t *testing.
 	); err != nil {
 		t.Fatal(err)
 	}
-	firstScope := createMemoryScopeForTest(t, repository)
-	secondScope := createMemoryScopeForTest(t, repository)
+	firstScope := createMemoryObjectiveContextScopeForTest(t, repository, "first")
+	secondScope := createMemoryObjectiveContextScopeForTest(t, repository, "second")
 	hasMemory, err := repository.HasScopedMemory(t.Context(), firstScope)
 	if err != nil {
 		t.Fatal(err)
@@ -112,6 +112,32 @@ func TestPostgresMemoryRetrievalIsExactScopedAndCapsulesAreImmutable(t *testing.
 	if !memoryStation || codingStation {
 		t.Fatalf("station authority memory=%t coding=%t", memoryStation, codingStation)
 	}
+}
+
+func createMemoryObjectiveContextScopeForTest(
+	t *testing.T,
+	repository *Repository,
+	marker string,
+) model.MemoryScope {
+	t.Helper()
+	channelID := "memory-objective-context-" + marker
+	workspaceRoot := "/srv/workspaces/" + channelID
+	var projectID int64
+	if err := repository.pool.QueryRow(t.Context(), `
+		INSERT INTO projects (location,name)
+		VALUES ($1,$2)
+		RETURNING id
+	`, workspaceRoot, "Memory objective context "+marker).Scan(&projectID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repository.pool.Exec(t.Context(), `
+		INSERT INTO ai_channels (
+			id,name,tags,scope,project_id,workspace_root
+		) VALUES ($1,$2,ARRAY[]::text[],'user',$3,$4)
+	`, channelID, "Memory objective context "+marker, projectID, workspaceRoot); err != nil {
+		t.Fatal(err)
+	}
+	return model.MemoryScope{ProjectID: projectID, ChannelID: model.ChannelID(channelID)}
 }
 
 func TestPostgresObjectiveContinuityLoadsExactScopeAndCurrentReplan(t *testing.T) {

@@ -55,12 +55,8 @@ func TestPostgresStationAttemptCallEvidenceRequiresAndReturnsExactTerminalChain(
 }
 
 func TestPostgresStationAttemptCallEvidenceRejectsStaleLease(t *testing.T) {
-	repository, _, claim := semanticGapTestClaim(t, "station-attempt-stale-evidence")
-	if _, err := repository.CancelJob(t.Context(), testCancelCommand(
-		t, claim.Job.ID, "cancel-before-evidence-read", "cancel exact attempt",
-	)); err != nil {
-		t.Fatal(err)
-	}
+	repository, pool, claim := semanticGapTestClaim(t, "station-attempt-stale-evidence")
+	cancelPreInlineExecutionMigrationClaimAuthority(t, t.Context(), pool, claim)
 	if _, err := repository.StationAttemptCallEvidence(t.Context(), claim.Authority); err == nil {
 		t.Fatal("stale attempt read immutable station evidence")
 	}

@@ -161,6 +161,48 @@ func (authority UserTurnAuthority) OngoingActionContribution() (string, bool, er
 	return strings.Join(actions, "\n\n"), true, nil
 }
 
+// CanonContribution returns only the typed portion of a user turn that can
+// establish fictional state. Narrator directions are instructions to the
+// response station, not fictional events, so code excludes them without
+// asking a model to rediscover that already-typed distinction.
+func (authority UserTurnAuthority) CanonContribution() (string, bool, error) {
+	if err := authority.Validate(); err != nil {
+		return "", false, err
+	}
+	switch authority.PersonaKind {
+	case UserPersonaCharacter:
+		return authority.ExactText, true, nil
+	case UserPersonaNarrator:
+		if authority.ContributionKind == UserContributionCommand ||
+			authority.ContributionKind == UserContributionDirection {
+			return "", false, nil
+		}
+		if authority.ContributionKind == UserContributionNarration && len(authority.Parts) == 0 {
+			return authority.ExactText, true, nil
+		}
+		sections := make([]string, 0, len(authority.Parts))
+		for _, part := range authority.Parts {
+			switch part.Kind {
+			case UserTurnPartAction:
+				sections = append(sections, "[Action]\n"+part.Text)
+			case UserTurnPartEvent:
+				sections = append(sections, "[Event]\n"+part.Text)
+			}
+		}
+		if len(sections) == 0 {
+			return "", false, nil
+		}
+		return strings.Join(sections, "\n\n"), true, nil
+	case UserPersonaLegacy:
+		return "", false, nil
+	default:
+		return "", false, fmt.Errorf(
+			"roleplay canon contribution has unsupported persona kind %q",
+			authority.PersonaKind,
+		)
+	}
+}
+
 func (authority UserTurnAuthority) Equal(other UserTurnAuthority) bool {
 	return authority.PersonaKind == other.PersonaKind &&
 		authority.CharacterID == other.CharacterID &&

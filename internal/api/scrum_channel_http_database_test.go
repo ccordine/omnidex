@@ -18,7 +18,7 @@ import (
 func TestPostgresScrumChannelHTTPReplayRejectsDeletedLiveCardAndPreservesReceipt(t *testing.T) {
 	pool := openIsolatedAPIMigrationPool(t)
 	repository := queue.New(pool)
-	if err := repository.EnsureSchema(t.Context(), loadAPITestMigrationBundleThroughPrefix(t, "090")); err != nil {
+	if err := repository.EnsureSchema(t.Context(), loadAPITestMigrationBundle(t)); err != nil {
 		t.Fatal(err)
 	}
 	project, err := repository.CreateProject(

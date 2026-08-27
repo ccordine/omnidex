@@ -57,7 +57,9 @@ func TestPostgresLegacyCognitionRetirementRejectsShadowProjectionAtomically(t *t
 		t.Fatal(err)
 	}
 	marker := fmt.Sprintf("legacy-retirement-shadow-%d", time.Now().UnixNano())
-	authority, projection := seedContextProjectionTest(t, ctx, repository, pool, marker)
+	authority, projection := seedPreInlineExecutionContextProjectionTest(
+		t, ctx, repository, pool, marker,
+	)
 	if _, err := repository.StoreContextProjection(ctx, authority, projection); err != nil {
 		t.Fatal(err)
 	}

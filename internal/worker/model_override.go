@@ -34,9 +34,13 @@ func modelRoutingFromJobMetadata(metadata json.RawMessage, base ModelRouting) (M
 	if len(cfg) == 0 {
 		return base, nil
 	}
-	baseRouting := modelconfig.Routing{Stations: base.Stations}
+	baseRouting := modelconfig.Routing{
+		Stations: base.Stations, RoleplaySemanticModel: base.RoleplaySemanticModel,
+	}
 	applied := modelconfig.Apply(baseRouting, cfg)
-	return ModelRouting{Stations: applied.Stations}, nil
+	return ModelRouting{
+		Stations: applied.Stations, RoleplaySemanticModel: applied.RoleplaySemanticModel,
+	}, nil
 }
 
 func rejectRemovedJobModelAliases(payload map[string]any) error {
@@ -75,4 +79,14 @@ func (s *Service) requiredStationModel(routing ModelRouting, id station.ID) (str
 		return "", fmt.Errorf("semantic station %q requires an active worker service", id)
 	}
 	return stationModel(routing, id)
+}
+
+func (s *Service) requiredRoleplaySemanticModel(routing ModelRouting) (string, error) {
+	if s == nil {
+		return "", fmt.Errorf("roleplay semantic stations require an active worker service")
+	}
+	if configured := strings.TrimSpace(routing.RoleplaySemanticModel); configured != "" {
+		return configured, nil
+	}
+	return "", fmt.Errorf("roleplay semantic model is not configured")
 }

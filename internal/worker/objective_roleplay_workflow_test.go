@@ -155,7 +155,7 @@ func TestRoleplayChannelUsesOnlySelectedCharacterScopedKnowledge(t *testing.T) {
 		t.Fatal(err)
 	}
 	if kind.calls != 0 || provider.contextCalls != 1 || projected != 1 ||
-		canon.calls != 2 {
+		canon.calls != 1 {
 		t.Fatalf(
 			"classifier=%d context=%d projections=%d canon=%d",
 			kind.calls, provider.contextCalls,
@@ -202,7 +202,7 @@ func TestRoleplayChannelUsesOnlySelectedCharacterScopedKnowledge(t *testing.T) {
 		t.Fatalf("fixed context retrieval terms=%#v preparation=%#v projection=%#v", provider.terms, provider.preparation, provider.projection)
 	}
 	if contextSieve.termCalls != 1 || contextSieve.relevanceCalls != 1 ||
-		contextSieve.minificationCalls != 0 || result.ModelCalls != 6 {
+		contextSieve.minificationCalls != 0 || result.ModelCalls != 5 {
 		t.Fatalf(
 			"sieve_calls=(%d,%d,%d) total_model_calls=%d",
 			contextSieve.termCalls, contextSieve.relevanceCalls,

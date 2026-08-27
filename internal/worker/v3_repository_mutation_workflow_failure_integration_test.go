@@ -78,7 +78,7 @@ func TestPostgresRepositoryMutationWorkflowRejectsFailedStagedProofBeforeMutatio
 	}
 	var operations, generatedDiffs, acceptances, baselineAcceptances, failedStagedProofs, indexEvidence int
 	if err := pool.QueryRow(t.Context(), `
-		SELECT COUNT(*) FROM repository_mutation_operations WHERE job_id=$1
+		SELECT COUNT(*) FROM workspace_mutation_operations WHERE job_id=$1
 	`, claim.Job.ID).Scan(&operations); err != nil {
 		t.Fatal(err)
 	}

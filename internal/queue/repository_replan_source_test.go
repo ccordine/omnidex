@@ -1,6 +1,9 @@
 package queue
 
 import (
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"os"
 	"regexp"
 	"strings"
@@ -29,6 +32,7 @@ func TestReplanSourceHasOneGenerationPathAndNoResetFallback(t *testing.T) {
 		"output = NULL",
 		"started_at = NULL",
 		"action IN ('v3_coding', 'v3_subtask', 'v3_planning', 'plan')",
+		"rejectUnresolvedRepositoryMutationsTx(",
 	} {
 		if strings.Contains(text, forbidden) {
 			t.Fatalf("replan source contains forbidden reset/fallback path %q", forbidden)
@@ -43,9 +47,45 @@ func TestReplanSourceHasOneGenerationPathAndNoResetFallback(t *testing.T) {
 		"superseded_at_generation",
 		"current_generation",
 		"feedback_sha256",
+		"rejectUnresolvedWorkspaceMutationsTx(",
 	} {
 		if !strings.Contains(text, required) {
 			t.Fatalf("replan source is missing generation authority %q", required)
 		}
+	}
+}
+
+func TestLegacyRepositoryMutationLifecycleChecksHaveNoQueueProductionCallers(t *testing.T) {
+	t.Parallel()
+	entries, err := os.ReadDir(".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		file, err := parser.ParseFile(token.NewFileSet(), name, nil, 0)
+		if err != nil {
+			t.Fatalf("parse %s: %v", name, err)
+		}
+		ast.Inspect(file, func(node ast.Node) bool {
+			call, ok := node.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+			switch function := call.Fun.(type) {
+			case *ast.Ident:
+				if function.Name == "rejectUnresolvedRepositoryMutationsTx" {
+					t.Errorf("queue production source %s calls legacy lifecycle guard %s", name, function.Name)
+				}
+			case *ast.SelectorExpr:
+				if function.Sel.Name == "UnresolvedRepositoryMutation" {
+					t.Errorf("queue production source %s calls legacy unresolved-mutation loader", name)
+				}
+			}
+			return true
+		})
 	}
 }

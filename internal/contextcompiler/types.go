@@ -8,8 +8,6 @@ import (
 )
 
 const (
-	maxStationAttempts = 2
-
 	// MinModelCalls is zero because an explicit code-owned retrieval directive
 	// can prove that no semantic lookup or reduction is required. Each invoked
 	// station retains its own bounded correction budget; the total number of
@@ -28,6 +26,7 @@ type RetrievalDirective struct {
 type Request struct {
 	ExactInstruction string
 	Retrieval        *RetrievalDirective
+	Scope            assemblyline.ContextScope
 }
 
 // OptionalSelectionGroup binds contiguous optional candidate chunks that must
@@ -71,7 +70,8 @@ type CandidateProvider interface {
 }
 
 type StationReceipt struct {
-	Calls int
+	Calls  int
+	Reused bool
 }
 
 type SearchTermsStation interface {

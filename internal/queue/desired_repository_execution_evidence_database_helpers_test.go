@@ -5,117 +5,250 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/gryph/omnidex/internal/evidence"
+	"github.com/gryph/omnidex/internal/model"
 	repositoryfacts "github.com/gryph/omnidex/internal/repository"
+	workspacefacts "github.com/gryph/omnidex/internal/workspace"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type desiredExecutionFixture struct {
-	repositoryMutationDatabaseFixture
-	graphID string
-	after   repositoryfacts.Snapshot
+	repository *Repository
+	pool       *pgxpool.Pool
+	ctx        context.Context
+	projectID  int64
+	job        model.Job
+	stepID     int64
+	authority  model.StepAttemptAuthority
+	graphID    string
+	planID     string
+	command    WorkspaceMutationCommand
+	before     repositoryfacts.Snapshot
+	after      repositoryfacts.Snapshot
 }
 
 func newDesiredExecutionFixture(t *testing.T, label, transition string) desiredExecutionFixture {
 	t.Helper()
-	fixture := newRepositoryMutationDatabaseFixture(t, label)
-	graphID := "desired_graph_" + repositoryMutationDigest("desired-execution-"+label)
-	command := fixture.command
-	command.ContractID = graphID
-	command.Patch = "desired repository state " + transition + " " + label
-	command.PatchSHA256 = repositoryMutationDigest(command.Patch)
-	command.StageID = "repository_change_stage_" + command.PatchSHA256
-	file := fixture.snapshot.Files[0]
-	target := file.Path
-	content := []byte("desired-" + transition + "-post")
-	command.ChangedFiles[0] = RepositoryMutationFile{
-		FileID: file.ID, Path: file.Path,
-		SourcePresent: true, SourceSHA256: file.SHA256,
-		SourceSize: file.Size, SourceMode: file.Mode,
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	t.Cleanup(cancel)
+	pool := openIsolatedMigrationPool(t)
+	repository := New(pool)
+	if err := repository.EnsureSchema(ctx, loadMigrationBundleThroughPrefix(t, "159")); err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	runQueueRepositoryGit(t, root, "init")
+	runQueueRepositoryGit(t, root, "config", "user.email", "desired@example.test")
+	runQueueRepositoryGit(t, root, "config", "user.name", "Desired Test")
+	if err := os.WriteFile(filepath.Join(root, "value.go"), []byte("source-value"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runQueueRepositoryGit(t, root, "add", "value.go")
+	runQueueRepositoryGit(t, root, "commit", "-m", "source")
+	before, err := repositoryfacts.BuildGitSnapshot(ctx, root, repositoryfacts.SnapshotOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	source, err := workspacefacts.Capture(ctx, root)
+	if err != nil || source.Git == nil || source.Git.RepositorySnapshotID != before.ID {
+		t.Fatalf("capture desired workspace source: binding=%+v err=%v", source.Git, err)
+	}
+	project, err := repository.CreateProject(ctx, "desired-"+label, root, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := repository.StoreRepositorySnapshot(ctx, project.ID, before); err != nil {
+		t.Fatal(err)
+	}
+	marker := fmt.Sprintf("desired-%s-%d", label, time.Now().UnixNano())
+	metadata := []byte(fmt.Sprintf(`{"project_id":%d,"client_cwd":%q}`, project.ID, root))
+	job, err := repository.EnqueueJob(ctx, marker, model.PipelineCoding, metadata)
+	if err != nil {
+		t.Fatal(err)
+	}
+	claim, err := repository.ClaimNextStep(ctx, marker+"-worker")
+	if err != nil || claim == nil || claim.Job.ID != job.ID {
+		t.Fatalf("claim desired execution job: claim=%+v err=%v", claim, err)
+	}
+	graphID := "desired_graph_" + queueTestSHA256("desired-execution-"+label)
+	desired := desiredExecutionState(t, source, transition, []byte("desired-"+transition+"-post"))
+	plan, err := workspacefacts.PlanMutation(ctx, source, graphID, []workspacefacts.DesiredFileState{desired})
+	if err != nil {
+		t.Fatal(err)
+	}
+	fixture := desiredExecutionFixture{
+		repository: repository, pool: pool, ctx: ctx, projectID: project.ID,
+		job: job, stepID: claim.Step.ID, authority: claim.Authority,
+		graphID: graphID, planID: queueTestSHA256("one exact verification plan"),
+		before: before,
+	}
+	fixture.command, fixture.after = fixture.executeMutation(t, source, plan)
+	t.Cleanup(func() {
+		_, _ = repository.CancelJob(context.Background(), testCancelCommand(
+			t, job.ID, "desired-execution-cleanup", "close desired execution fixture",
+		))
+	})
+	return fixture
+}
+
+func desiredExecutionState(
+	t *testing.T,
+	source workspacefacts.Snapshot,
+	transition string,
+	content []byte,
+) workspacefacts.DesiredFileState {
+	t.Helper()
+	if len(content) > 0 && content[len(content)-1] != '\n' {
+		content = append(append([]byte(nil), content...), '\n')
+	}
+	if transition == "create" {
+		return workspacefacts.DesiredFileState{
+			Path: "created.go", Present: true, Content: content, Mode: 0o644,
+		}
+	}
+	var entry *workspacefacts.Entry
+	for index := range source.Entries {
+		if source.Entries[index].Path == "value.go" {
+			entry = &source.Entries[index]
+			break
+		}
+	}
+	if entry == nil {
+		t.Fatal("desired execution source lacks value.go")
+	}
+	exact := &workspacefacts.ExactSourceFile{
+		EntryID: entry.ID, SHA256: entry.SHA256, Size: entry.Size, Mode: entry.Mode,
 	}
 	switch transition {
-	case "create":
-		target = "created.go"
-		fileID, err := repositoryfacts.FileIDForAbsentPath(fixture.snapshot, target)
-		if err != nil {
-			t.Fatal(err)
-		}
-		command.ChangedFiles[0] = RepositoryMutationFile{FileID: fileID, Path: target}
-		command.ChangedFiles[0].ExpectedPresent = true
 	case "modify":
-		command.ChangedFiles[0].ExpectedPresent = true
+		return workspacefacts.DesiredFileState{
+			Path: entry.Path, Source: exact, Present: true, Content: content, Mode: entry.Mode,
+		}
 	case "delete":
+		return workspacefacts.DesiredFileState{Path: entry.Path, Source: exact}
 	default:
 		t.Fatalf("unregistered desired execution transition %q", transition)
+		return workspacefacts.DesiredFileState{}
 	}
-	if command.ChangedFiles[0].ExpectedPresent {
-		command.ChangedFiles[0].ExpectedSHA256 = repositoryMutationDigest(string(content))
-		command.ChangedFiles[0].ExpectedSize = int64(len(content))
-		command.ChangedFiles[0].ExpectedMode = 0o644
+}
+
+func (fixture desiredExecutionFixture) executeMutation(
+	t *testing.T,
+	source workspacefacts.Snapshot,
+	plan workspacefacts.MutationPlan,
+) (WorkspaceMutationCommand, repositoryfacts.Snapshot) {
+	t.Helper()
+	stage, err := workspacefacts.StageMutation(fixture.ctx, source, plan)
+	if err != nil {
+		t.Fatal(err)
 	}
-	var state atomic.Value
-	state.Store(RepositoryMutationSource)
-	err := fixture.repository.ApplyRepositoryMutation(
-		fixture.ctx, fixture.authority, command, stateClassifier(&state),
-		func(context.Context) error {
-			var mutateErr error
-			if transition == "delete" {
-				mutateErr = os.Remove(filepath.Join(fixture.snapshot.Root, target))
-			} else {
-				mutateErr = os.WriteFile(filepath.Join(fixture.snapshot.Root, target), content, 0o644)
-			}
-			if mutateErr == nil {
-				state.Store(RepositoryMutationPost)
-			}
-			return mutateErr
+	defer func() {
+		if err := stage.Cleanup(); err != nil {
+			t.Error(err)
+		}
+	}()
+	commandText := "verify desired repository state"
+	verification, err := NewWorkspaceMutationVerificationPlan(
+		[]WorkspaceMutationVerificationIntent{{Kind: evidence.KindTestResult, Command: commandText}},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	command := WorkspaceMutationCommand{
+		JobID: fixture.job.ID, StepID: fixture.stepID,
+		Generation:     fixture.authority.Generation,
+		CreatorAttempt: fixture.authority.Attempt, CreatorWorkerID: fixture.authority.WorkerID,
+		ProjectID: fixture.projectID, Plan: plan, Verification: verification,
+	}
+	var post repositoryfacts.Snapshot
+	result, err := fixture.repository.ExecuteWorkspaceMutation(
+		fixture.ctx, fixture.authority, command,
+		WorkspaceMutationCallbacks{
+			Observe: desiredMutationObserver,
+			Apply: func(ctx context.Context, _ WorkspaceMutationCommand) error {
+				_, applyErr := stage.ApplyVerified(ctx)
+				return applyErr
+			},
+			Verify: func(ctx context.Context, exact WorkspaceMutationCommand) (WorkspaceMutationVerificationResult, error) {
+				var verifyErr error
+				post, verifyErr = repositoryfacts.BuildGitSnapshot(
+					ctx, exact.Plan.WorkspaceRoot, repositoryfacts.SnapshotOptions{},
+				)
+				if verifyErr != nil {
+					return WorkspaceMutationVerificationResult{}, verifyErr
+				}
+				if verifyErr = fixture.repository.StoreRepositorySnapshot(ctx, fixture.projectID, post); verifyErr != nil {
+					return WorkspaceMutationVerificationResult{}, verifyErr
+				}
+				metadata := map[string]any{
+					"repository_verification_scope":        "authoritative",
+					"repository_mutation_owner_id":         fixture.graphID,
+					"repository_desired_artifact_graph_id": fixture.graphID,
+					"repository_source_snapshot_id":        exact.Plan.GitSourceSnapshotID,
+					"workspace_source_snapshot_id":         exact.Plan.GitSourceSnapshotID,
+					"workspace_mutation_stage_id":          exact.Plan.ID,
+					"workspace_mutation_patch_sha256":      exact.Plan.PatchSHA256,
+					"workspace_expected_state_id":          exact.Plan.ExpectedStateID,
+					"repository_verification_plan_id":      fixture.planID,
+					"repository_verification_snapshot_id":  post.ID,
+					"repository_structured_proof_valid":    true,
+					"succeeded":                            true,
+				}
+				return WorkspaceMutationVerificationResult{
+					Succeeded: true, VerifiedRepositorySnapshotID: post.ID,
+					CommandEvidence: []evidence.Record{{
+						JobID: exact.JobID, StepID: exact.StepID, Kind: evidence.KindTestResult,
+						Command: commandText, Confidence: 1, Metadata: metadata,
+					}},
+				}, nil
+			},
 		},
 	)
+	if err != nil || !result.VerificationSucceeded {
+		t.Fatalf("execute desired workspace mutation: result=%+v err=%v", result, err)
+	}
+	return command, post
+}
+
+func desiredMutationObserver(
+	ctx context.Context,
+	exact WorkspaceMutationCommand,
+) (WorkspaceMutationObservation, error) {
+	current, err := workspacefacts.Capture(ctx, exact.Plan.WorkspaceRoot)
 	if err != nil {
-		t.Fatal(err)
+		return "", err
 	}
-	after, err := repositoryfacts.BuildGitSnapshot(
-		fixture.ctx, fixture.snapshot.Root, repositoryfacts.SnapshotOptions{},
-	)
-	if err != nil {
-		t.Fatal(err)
+	if current.ID == exact.Plan.SourceStateID {
+		return WorkspaceMutationSource, nil
 	}
-	projectID, err := fixture.repository.JobProjectID(fixture.ctx, fixture.job.ID)
-	if err != nil {
-		t.Fatal(err)
+	if exact.Plan.VerifyExpected(current) == nil {
+		return WorkspaceMutationPost, nil
 	}
-	if err := fixture.repository.StoreRepositorySnapshot(fixture.ctx, projectID, after); err != nil {
-		t.Fatal(err)
-	}
-	fixture.command = command
-	return desiredExecutionFixture{
-		repositoryMutationDatabaseFixture: fixture, graphID: graphID, after: after,
-	}
+	return WorkspaceMutationIndeterminate, nil
 }
 
 func (fixture desiredExecutionFixture) recordVerification(t *testing.T) {
 	t.Helper()
-	planID := repositoryMutationDigest("one exact verification plan")
-	expectedPostID := repositoryMutationDigest("one exact expected post state")
-	for _, scope := range []string{"baseline", "staged", "authoritative"} {
+	expectedPostID := queueTestSHA256("one exact expected post state")
+	for _, scope := range []string{"baseline", "staged"} {
 		metadata := map[string]any{
 			"repository_verification_scope":        scope,
 			"repository_mutation_owner_id":         fixture.graphID,
 			"repository_desired_artifact_graph_id": fixture.graphID,
-			"repository_source_snapshot_id":        fixture.snapshot.ID,
-			"repository_verification_plan_id":      planID,
+			"repository_source_snapshot_id":        fixture.before.ID,
+			"repository_verification_plan_id":      fixture.planID,
 		}
 		if scope == "baseline" {
 			metadata["repository_verification_baseline_id"] =
-				"repository_baseline_" + repositoryMutationDigest("baseline")
+				"repository_baseline_" + queueTestSHA256("baseline")
 		} else {
-			metadata["repository_change_stage_id"] = fixture.command.StageID
-			metadata["repository_change_patch_sha256"] = fixture.command.PatchSHA256
+			metadata["repository_change_stage_id"] =
+				"repository_change_stage_" + queueTestSHA256("staged")
+			metadata["repository_change_patch_sha256"] = queueTestSHA256("staged-patch")
 			metadata["repository_expected_post_id"] = expectedPostID
-			if scope == "authoritative" {
-				metadata["repository_verification_snapshot_id"] = fixture.after.ID
-			}
 		}
 		commandMetadata := cloneDesiredExecutionMetadata(metadata)
 		commandMetadata["repository_structured_proof_valid"] = true

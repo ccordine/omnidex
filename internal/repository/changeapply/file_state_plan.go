@@ -14,8 +14,8 @@ import (
 const maxExactFileStateTransitions = 8
 
 // PlanFileStateTransitions compares code-owned desired repository truth with
-// one exact source snapshot. It intentionally supports only absence-to-source
-// and source-to-absence; ordinary declaration modification remains Plan.
+// one exact source snapshot and derives the exact create, replace, or delete
+// transition for every desired path.
 func PlanFileStateTransitions(
 	ctx context.Context,
 	input FileStateInput,
@@ -65,24 +65,46 @@ func deriveFileStateMutations(ctx context.Context, input FileStateInput) ([]file
 			return nil, fmt.Errorf("repository desired file state for path %q is duplicated", desired.Path)
 		}
 		seen[desired.Path] = struct{}{}
-		if desired.Present {
-			mutation, err := deriveAbsentToSourceMutation(ctx, input, files, desired)
-			if err != nil {
-				return nil, err
-			}
-			mutations = append(mutations, mutation)
-			continue
-		}
-		mutation, err := deriveSourceToAbsentMutation(ctx, input, files, desired)
+		mutation, changed, err := deriveDesiredFileMutation(ctx, input, files, desired)
 		if err != nil {
 			return nil, err
 		}
-		mutations = append(mutations, mutation)
+		if changed {
+			mutations = append(mutations, mutation)
+		}
+	}
+	if len(mutations) == 0 {
+		return nil, fmt.Errorf("repository desired file states are already exact and require no mutation")
 	}
 	sort.Slice(mutations, func(left, right int) bool {
 		return mutations[left].file.Path < mutations[right].file.Path
 	})
 	return mutations, nil
+}
+
+func deriveDesiredFileMutation(
+	ctx context.Context,
+	input FileStateInput,
+	files map[string]repositoryfacts.File,
+	desired DesiredFileState,
+) (fileMutation, bool, error) {
+	file, sourcePresent := files[desired.Path]
+	if desired.Present {
+		if sourcePresent {
+			mutation, changed, err := deriveSourceToSourceMutation(ctx, input, file, desired)
+			return mutation, changed, err
+		}
+		mutation, err := deriveAbsentToSourceMutation(ctx, input, files, desired)
+		return mutation, err == nil, err
+	}
+	if !sourcePresent {
+		if err := validateAlreadyAbsentState(desired); err != nil {
+			return fileMutation{}, false, err
+		}
+		return fileMutation{}, false, nil
+	}
+	mutation, err := deriveSourceToAbsentMutation(ctx, input, files, desired)
+	return mutation, err == nil, err
 }
 
 func loadExactFileStateSources(workspace string, planned []fileMutation) ([]fileMutation, error) {
@@ -95,14 +117,14 @@ func loadExactFileStateSources(workspace string, planned []fileMutation) ([]file
 		absolute := filepath.Join(workspace, filepath.FromSlash(mutation.file.Path))
 		original, err := os.ReadFile(absolute)
 		if err != nil {
-			return nil, fmt.Errorf("read staged repository deletion source %q: %w", mutation.file.ID, err)
+			return nil, fmt.Errorf("read repository file-state source %q: %w", mutation.file.ID, err)
 		}
 		if int64(len(original)) != mutation.file.Size || digest(original) != mutation.file.SHA256 {
-			return nil, fmt.Errorf("staged repository deletion source %q differs from its exact authority", mutation.file.ID)
+			return nil, fmt.Errorf("repository file-state source %q differs from its exact authority", mutation.file.ID)
 		}
 		if mutation.file.Language == "go" && repositoryfacts.GeneratedGoSource(original) {
 			return nil, fmt.Errorf(
-				"repository deletion target %q is generated and cannot be mutated",
+				"repository file-state target %q is generated and cannot be mutated",
 				mutation.file.ID,
 			)
 		}

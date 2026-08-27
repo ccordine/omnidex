@@ -5,17 +5,17 @@ import (
 	"fmt"
 )
 
-// VerifyExactWorkspace proves that the live, unapplied staging tree still
-// equals the exact post-patch inventory sealed by Plan. It performs no write.
-func (stage *StagedChange) VerifyExactWorkspace(ctx context.Context) error {
+// VerifyExactDelta proves that the live, unapplied changed-file post-image
+// still equals the exact bounded delta sealed by Plan. It performs no write.
+func (stage *StagedChange) VerifyExactDelta(ctx context.Context) error {
 	if ctx == nil {
-		return fmt.Errorf("verify exact repository change workspace requires a context")
+		return fmt.Errorf("verify exact repository change delta requires a context")
 	}
 	if err := ctx.Err(); err != nil {
-		return fmt.Errorf("verify exact repository change workspace: %w", err)
+		return fmt.Errorf("verify exact repository change delta: %w", err)
 	}
 	if stage == nil {
-		return fmt.Errorf("verify exact repository change workspace requires a staged change")
+		return fmt.Errorf("verify exact repository change delta requires a staged change")
 	}
 	stage.mu.Lock()
 	defer stage.mu.Unlock()
@@ -28,11 +28,11 @@ func (stage *StagedChange) VerifyExactWorkspace(ctx context.Context) error {
 	if digest([]byte(stage.patch)) != stage.patchSHA256 {
 		return fmt.Errorf("repository change stage %q patch identity is invalid", stage.id)
 	}
-	if err := verifyStagedWorkspace(stage.workspace, stage.stagedFiles); err != nil {
+	if err := verifyStagedWorkspace(stage.deltaRoot, stage.deltaFiles); err != nil {
 		return err
 	}
 	if err := ctx.Err(); err != nil {
-		return fmt.Errorf("verify exact repository change workspace: %w", err)
+		return fmt.Errorf("verify exact repository change delta: %w", err)
 	}
 	return nil
 }

@@ -30,11 +30,11 @@ func TestPrepareVerifiedRepositoryChangeKeepsOneSuccessfulStage(t *testing.T) {
 			plan: repositoryPreparationPlanner(snapshot, analysis, contract, &stagedRoots),
 			verify: func(stage *changeapply.StagedChange) error {
 				verifications++
-				firstContent, readErr := os.ReadFile(filepath.Join(stage.Workspace(), "first.go"))
+				firstContent, readErr := os.ReadFile(filepath.Join(stage.DeltaRoot(), "first.go"))
 				if readErr != nil {
 					return readErr
 				}
-				secondContent, readErr := os.ReadFile(filepath.Join(stage.Workspace(), "sub", "second.go"))
+				secondContent, readErr := os.ReadFile(filepath.Join(stage.DeltaRoot(), "sub", "second.go"))
 				if readErr != nil {
 					return readErr
 				}
@@ -126,16 +126,40 @@ func repositoryPreparationPlanner(
 	analysis repositoryfacts.Analysis,
 	contract repositoryfacts.ChangeContract,
 	stagedRoots *[]string,
-) func(context.Context, []changeapply.CandidateDeclaration) (*changeapply.StagedChange, error) {
-	return func(ctx context.Context, declarations []changeapply.CandidateDeclaration) (*changeapply.StagedChange, error) {
-		stage, err := changeapply.Plan(ctx, changeapply.Input{
-			Snapshot: snapshot, Analysis: analysis, Contract: contract, Candidates: declarations,
+) func(context.Context, []changeapply.DesiredFileState) (*changeapply.StagedChange, error) {
+	return func(ctx context.Context, desired []changeapply.DesiredFileState) (*changeapply.StagedChange, error) {
+		stage, err := changeapply.PlanFileStateTransitions(ctx, changeapply.FileStateInput{
+			Snapshot: snapshot, Analysis: analysis, OwnerID: contract.ID,
+			Desired: append([]changeapply.DesiredFileState(nil), desired...),
 		})
 		if err == nil {
-			*stagedRoots = append(*stagedRoots, stage.Workspace())
+			*stagedRoots = append(*stagedRoots, stage.DeltaRoot())
 		}
 		return stage, err
 	}
+}
+
+func planExistingRepositoryTestStage(
+	t *testing.T,
+	snapshot repositoryfacts.Snapshot,
+	analysis repositoryfacts.Analysis,
+	contract repositoryfacts.ChangeContract,
+	candidates map[string]string,
+) *changeapply.StagedChange {
+	t.Helper()
+	desired, err := changeapply.AssembleExistingGoFileStates(
+		snapshot, analysis, contract, candidates,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stage, err := changeapply.PlanFileStateTransitions(t.Context(), changeapply.FileStateInput{
+		Snapshot: snapshot, Analysis: analysis, OwnerID: contract.ID, Desired: desired,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return stage
 }
 
 func assertRepositoryPreparationStagesCleaned(t *testing.T, roots []string) {

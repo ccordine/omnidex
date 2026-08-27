@@ -25,15 +25,15 @@ func TestPostgresRetiredExecutionAuthorityCleanCutoverAndFutureGuards(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	job, err := repository.EnqueueJob(t.Context(), "current coding work", model.PipelineCoding, []byte(`{}`))
-	if err != nil {
-		t.Fatal(err)
-	}
+	fixture := seedPreInlineExecutionMigrationJob(
+		t, t.Context(), pool, "current coding work",
+		model.PipelineCoding, "v3_coding", nil,
+	)
 	if err := repository.EnsureSchema(t.Context(), loadMigrationBundleThroughPrefix(t, "091")); err != nil {
 		t.Fatal(err)
 	}
 	var stepCount int
-	if err := pool.QueryRow(t.Context(), `SELECT COUNT(*) FROM job_steps WHERE job_id=$1`, job.ID).Scan(&stepCount); err != nil {
+	if err := pool.QueryRow(t.Context(), `SELECT COUNT(*) FROM job_steps WHERE job_id=$1`, fixture.Job.ID).Scan(&stepCount); err != nil {
 		t.Fatal(err)
 	}
 	if stepCount != 1 {
@@ -82,7 +82,7 @@ func TestPostgresRetiredExecutionAuthorityCleanCutoverAndFutureGuards(t *testing
 		"external_agents_used", "execution_agent", "agent_strict",
 		"scrum_raw_play", "omnidex_no_delegate", "recipe_id", "recipe",
 	} {
-		_, err := pool.Exec(t.Context(), `UPDATE jobs SET metadata=jsonb_build_object($2::text,true) WHERE id=$1`, job.ID, key)
+		_, err := pool.Exec(t.Context(), `UPDATE jobs SET metadata=jsonb_build_object($2::text,true) WHERE id=$1`, fixture.Job.ID, key)
 		if err == nil || !strings.Contains(err.Error(), "jobs_retired_execution_metadata_absent") {
 			t.Errorf("retired metadata key %q update error=%v", key, err)
 		}
@@ -90,20 +90,20 @@ func TestPostgresRetiredExecutionAuthorityCleanCutoverAndFutureGuards(t *testing
 	if tag, err := pool.Exec(t.Context(), `
 		UPDATE jobs SET metadata=jsonb_build_object('channel_id','channel-one','channel_user_message_id',1)
 		WHERE id=$1
-	`, job.ID); err != nil {
+	`, fixture.Job.ID); err != nil {
 		t.Fatalf("legitimate internal channel binding rejected: %v", err)
 	} else if tag.RowsAffected() != 1 {
 		t.Fatalf("legitimate internal channel binding updated %d rows", tag.RowsAffected())
 	}
 	if tag, err := pool.Exec(t.Context(), `
 		UPDATE job_steps SET action='external_agent_execute' WHERE job_id=$1
-	`, job.ID); err == nil || !strings.Contains(err.Error(), "job_steps_retired_external_action_absent") {
+	`, fixture.Job.ID); err == nil || !strings.Contains(err.Error(), "job_steps_retired_external_action_absent") {
 		t.Fatalf("retired job step update rows=%d error=%v", tag.RowsAffected(), err)
 	}
 	if _, err := pool.Exec(t.Context(), `
 		INSERT INTO job_steps(job_id,action,sort_index,status,generation)
 		VALUES($1,'external_agent_execute',99,'pending',1)
-	`, job.ID); err == nil || !strings.Contains(err.Error(), "job_steps_retired_external_action_absent") {
+	`, fixture.Job.ID); err == nil || !strings.Contains(err.Error(), "job_steps_retired_external_action_absent") {
 		t.Fatalf("retired job step insert error=%v", err)
 	}
 	if _, err := pool.Exec(t.Context(), `UPDATE projects SET settings='{"agent_config":{}}'::jsonb WHERE id=$1`, project.ID); err == nil ||

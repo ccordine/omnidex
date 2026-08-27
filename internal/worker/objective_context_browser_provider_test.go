@@ -66,6 +66,40 @@ func TestContextRelevanceRevalidatesBrowserProviderResult(t *testing.T) {
 	}
 }
 
+func TestRoleplayContextRelevanceBypassesBrowserAndUsesSemanticRoute(t *testing.T) {
+	input := browserContextRelevanceInputFixture(t)
+	input.Scope = assemblyline.ContextScopeRoleplaySimulation
+	probe := &contextRelevanceExecutorProbe{value: assemblyline.ContextRelevanceDecision{
+		Schema:                 assemblyline.ContextRelevanceSchemaV1,
+		ReferencedCandidateIDs: []string{"CTX_1"},
+	}}
+	runtime := &nativeRuntimeV3{
+		svc: &Service{browserContextRelevance: probe},
+		routing: ModelRouting{
+			Stations: map[station.ID]string{
+				station.ContextRelevance: "browser-only-model",
+			},
+			RoleplaySemanticModel: "roleplay-semantic-model",
+		},
+	}
+	model, err := objectiveContextStationModel(
+		runtime, input.Scope, station.ContextRelevance,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if model != "roleplay-semantic-model" {
+		t.Fatalf("roleplay context model=%q", model)
+	}
+	adapter := portableObjectiveContextSieveStations{runtime: runtime}
+	if _, _, err := adapter.SelectRelevant(t.Context(), input); err == nil {
+		t.Fatal("roleplay context unexpectedly executed without running-step authority")
+	}
+	if probe.calls != 0 {
+		t.Fatalf("roleplay context dispatched %d browser calls", probe.calls)
+	}
+}
+
 func browserContextRelevanceInputFixture(t *testing.T) assemblyline.ContextRelevanceInput {
 	t.Helper()
 	candidate, err := assemblyline.NewContextCandidateAuthority(

@@ -96,20 +96,20 @@ func (resolver *lazyExactStationResolver) DiscoverProviderIdentityEvidence(
 	)
 }
 
-func (resolver *lazyExactStationResolver) ResolveRoleplayRawContext(
+func (resolver *lazyExactStationResolver) ResolveRoleplayCompletionContext(
 	ctx context.Context,
 	model string,
 	requested int,
 ) (int, error) {
 	client, err := resolver.resolve()
 	if err != nil {
-		return 0, fmt.Errorf("resolve roleplay raw context provider authority: %w", err)
+		return 0, fmt.Errorf("resolve roleplay completion context provider authority: %w", err)
 	}
-	contextResolver, ok := client.(llm.RoleplayRawContextResolver)
+	contextResolver, ok := client.(llm.RoleplayCompletionContextResolver)
 	if !ok {
-		return 0, fmt.Errorf("exact station provider does not implement roleplay raw context resolution")
+		return 0, fmt.Errorf("exact station provider does not implement roleplay completion context resolution")
 	}
-	return contextResolver.ResolveRoleplayRawContext(ctx, model, requested)
+	return contextResolver.ResolveRoleplayCompletionContext(ctx, model, requested)
 }
 
 func (resolver *lazyExactStationResolver) resolve() (llm.ExactStationClient, error) {

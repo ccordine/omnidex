@@ -3,10 +3,10 @@ package llm
 import "fmt"
 
 const (
-	MinRoleplayRawContextTokens   = 4096
-	MinInferenceContextTokens     = 8192
-	DefaultInferenceContextTokens = 8192
-	MaxInferenceContextTokens     = 1048576
+	MinRoleplayCompletionContextTokens = 4096
+	MinInferenceContextTokens          = 8192
+	DefaultInferenceContextTokens      = 8192
+	MaxInferenceContextTokens          = 1048576
 )
 
 func ValidateInferenceContextTokens(value int) error {
@@ -21,14 +21,14 @@ func ValidateInferenceContextTokens(value int) error {
 	return nil
 }
 
-// ValidateRoleplayRawContextTokens is the narrower transport floor available
-// only to code-classified fictional prose stations. Ordinary semantic and
-// coding stations retain ValidateInferenceContextTokens's stricter floor.
-func ValidateRoleplayRawContextTokens(value int) error {
-	if value < MinRoleplayRawContextTokens || value > MaxInferenceContextTokens {
+// ValidateRoleplayCompletionContextTokens is the narrower transport floor
+// available only to code-classified roleplay completion profiles. Ordinary
+// semantic and coding stations retain ValidateInferenceContextTokens's floor.
+func ValidateRoleplayCompletionContextTokens(value int) error {
+	if value < MinRoleplayCompletionContextTokens || value > MaxInferenceContextTokens {
 		return fmt.Errorf(
-			"roleplay raw context tokens must be between %d and %d, received %d",
-			MinRoleplayRawContextTokens,
+			"roleplay completion context tokens must be between %d and %d, received %d",
+			MinRoleplayCompletionContextTokens,
 			MaxInferenceContextTokens,
 			value,
 		)
@@ -37,8 +37,8 @@ func ValidateRoleplayRawContextTokens(value int) error {
 }
 
 // ValidateExactPreparedContextTokens validates the transport-wide range. A
-// caller that owns station policy must separately enforce the ordinary or raw
-// roleplay floor before preparing a request.
+// caller that owns station policy must separately enforce the ordinary or
+// roleplay-completion floor before preparing a request.
 func ValidateExactPreparedContextTokens(value int) error {
-	return ValidateRoleplayRawContextTokens(value)
+	return ValidateRoleplayCompletionContextTokens(value)
 }

@@ -12,7 +12,11 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-func seedDatabaseEvidenceBoundJob(t *testing.T, repository *Repository, sourceID string) int64 {
+func seedDatabaseEvidenceBoundJobs(
+	t *testing.T,
+	repository *Repository,
+	sourceID string,
+) (int64, int64) {
 	t.Helper()
 	ctx := t.Context()
 	project, err := repository.CreateProject(
@@ -31,34 +35,47 @@ func seedDatabaseEvidenceBoundJob(t *testing.T, repository *Repository, sourceID
 			id,scope,name,tags,project_id,workspace_root,data_source_id
 		) VALUES (
 			'database-evidence','user','Database evidence',ARRAY[]::text[],$1,$2,$3
+		), (
+			'database-evidence-binding-probe','user','Database evidence binding probe',
+			ARRAY[]::text[],$1,$2,$3
 		)
 	`, project.ID, project.Location, sourceID); err != nil {
 		t.Fatal(err)
 	}
-	var jobID int64
-	if err := tx.QueryRow(ctx, `
-		INSERT INTO jobs (
-			instruction,pipeline,project_id,status,metadata,current_generation
-		) VALUES (
-			'Count the rows exactly.','chat',$1,'pending',
-			jsonb_build_object(
-				'channel_id','database-evidence','data_source_id',$2::text
-			),1
-		)
-		RETURNING id
-	`, project.ID, sourceID).Scan(&jobID); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := tx.Exec(ctx, `
-		INSERT INTO job_generations (job_id,generation,purpose)
-		VALUES ($1,1,'initial')
-	`, jobID); err != nil {
-		t.Fatal(err)
+	jobIDs := make([]int64, 2)
+	// Keep the receipt's chat binding untouched while a non-chat job exercises
+	// the independent database-evidence binding trigger from migration 116.
+	for index, fixture := range []struct {
+		pipeline  string
+		channelID string
+	}{
+		{pipeline: "chat", channelID: "database-evidence"},
+		{pipeline: "coding", channelID: "database-evidence-binding-probe"},
+	} {
+		if err := tx.QueryRow(ctx, `
+			INSERT INTO jobs (
+				instruction,pipeline,project_id,status,metadata,current_generation
+			) VALUES (
+				'Count the rows exactly.',$3,$1,'pending',
+				jsonb_build_object(
+					'channel_id',$4::text,'data_source_id',$2::text
+				),1
+			)
+			RETURNING id
+		`, project.ID, sourceID, fixture.pipeline, fixture.channelID).Scan(&jobIDs[index]); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO job_generations (job_id,generation,purpose)
+			VALUES ($1,1,'initial')
+		`, jobIDs[index]); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if err := tx.Commit(ctx); err != nil {
 		t.Fatal(err)
 	}
-	return jobID
+	return jobIDs[0], jobIDs[1]
 }
 
 func createDatabaseEvidenceSource(

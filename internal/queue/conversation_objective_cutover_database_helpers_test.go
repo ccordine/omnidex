@@ -7,8 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gryph/omnidex/internal/model"
-	"github.com/gryph/omnidex/internal/taskstate"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -45,28 +43,10 @@ func enqueueConversationCutoverJob(
 	label string,
 ) (int64, int64) {
 	t.Helper()
-	tx, err := repository.pool.BeginTx(ctx, pgx.TxOptions{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer tx.Rollback(ctx)
-	job, err := repository.enqueueJobWithStepsTx(
-		ctx, tx, label, model.PipelineChat, []byte(`{}`), conversationObjectiveSteps(),
+	fixture := seedPreInlineExecutionMigrationJob(
+		t, ctx, repository.pool, label, "chat", "objective_resolve", nil,
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := tx.Commit(ctx); err != nil {
-		t.Fatal(err)
-	}
-	var stepID int64
-	if err := repository.pool.QueryRow(ctx, `
-		SELECT id FROM job_steps
-		WHERE job_id=$1 AND generation=1 AND action='objective_resolve'
-	`, job.ID).Scan(&stepID); err != nil {
-		t.Fatal(err)
-	}
-	return job.ID, stepID
+	return fixture.Job.ID, fixture.Step.ID
 }
 
 func seedAcceptedIntentProjection(
@@ -74,41 +54,38 @@ func seedAcceptedIntentProjection(
 	ctx context.Context,
 	repository *Repository,
 	jobID, stepID int64,
-	marker string,
 ) int64 {
 	t.Helper()
-	commandID, err := taskstate.NewCommandID(marker, "accepted-intent-objective")
-	if err != nil {
-		t.Fatal(err)
-	}
-	const objectiveID taskstate.NodeID = "legacy-accepted-intent-objective"
-	event, err := repository.ApplyTaskCommand(ctx, jobID, 1, taskstate.AddNodeCommand{
-		CommandID: commandID, ExpectedVersion: initialTaskLedgerVersion,
-		Actor: taskstate.AuthorityCode, ID: objectiveID,
-		Kind:  taskstate.NodeObjective,
-		Title: "Legacy accepted intent objective", Priority: 50,
-		CreatedStepID: &stepID, AcceptanceCriteria: []string{},
-		Metadata: taskstate.EmptyJSONObject(),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
 	tx, err := repository.pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer tx.Rollback(context.Background())
-	var artifactID int64
+	const objectiveID = "legacy-accepted-intent-objective"
+	var artifactID, ledgerVersion int64
 	var payloadSHA, ledgerID string
+	if err := tx.QueryRow(ctx, `
+		UPDATE task_ledgers SET version=version+1,updated_at=NOW()
+		WHERE job_id=$1 RETURNING id,version
+	`, jobID).Scan(&ledgerID, &ledgerVersion); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO task_nodes (
+			ledger_id,job_id,id,kind,title,status,priority,created_by,created_step_id,
+			acceptance_criteria,metadata,created_version,updated_version
+		) VALUES (
+			$1,$2,$3,'objective','Legacy accepted intent objective','pending',50,'code',$4,
+			'[]'::jsonb,'{}'::jsonb,$5,$5
+		)
+	`, ledgerID, jobID, objectiveID, stepID, ledgerVersion); err != nil {
+		t.Fatal(err)
+	}
 	if err := tx.QueryRow(ctx, `
 		INSERT INTO artifacts (job_id,step_id,kind,version,payload_json)
 		VALUES ($1,$2,'intent','1',jsonb_build_object('objective','legacy'))
 		RETURNING id, encode(digest(payload_json::text,'sha256'),'hex')
 	`, jobID, stepID).Scan(&artifactID, &payloadSHA); err != nil {
-		t.Fatal(err)
-	}
-	if err := tx.QueryRow(ctx, `SELECT id FROM task_ledgers WHERE job_id=$1`, jobID).Scan(&ledgerID); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := tx.Exec(ctx, `
@@ -119,7 +96,7 @@ func seedAcceptedIntentProjection(
 		) VALUES ($1,$2,$3,1,$4,'intent','1',
 			'omnidex.accepted-intent-projection.v1',$5,$6,$7,$8)
 	`, artifactID, jobID, stepID, ledgerID, payloadSHA, objectiveID,
-		int64(event.Version-1), int64(event.Version)); err != nil {
+		ledgerVersion-1, ledgerVersion); err != nil {
 		t.Fatal(err)
 	}
 	if err := tx.Commit(ctx); err != nil {

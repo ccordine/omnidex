@@ -1,6 +1,7 @@
 package worker
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"unicode"
@@ -54,14 +55,20 @@ func directCodingStaticFileDiagnostic(path, detail string, _ ...string) *directC
 }
 
 type directCodingVerification struct {
-	Passed      bool
-	TestsPassed bool
-	Commands    []string
-	EvidenceIDs []int64
-	Diagnostic  *directCodingDiagnostic
+	Passed                bool
+	TestsPassed           bool
+	Commands              []string
+	EvidenceIDs           []int64
+	MutationOperationID   string
+	MutationReceiptSHA256 string
+	Diagnostic            *directCodingDiagnostic
 }
 
 func (v directCodingVerification) validate() error {
+	if !validRepositoryVerificationOpaqueID(v.MutationOperationID, "workspace_mutation_") ||
+		!validRepositoryVerificationSHA256(v.MutationReceiptSHA256) {
+		return fmt.Errorf("coding verification requires one exact terminal workspace mutation receipt")
+	}
 	if len(v.Commands) != len(v.EvidenceIDs) ||
 		len(v.Commands) > queue.MaxGeneratedWorkloadVerificationEvidence-1 {
 		return fmt.Errorf("coding verification command and evidence identities must be exact")
@@ -89,11 +96,10 @@ func (v directCodingVerification) validate() error {
 type directCodingWorkflowDriver interface {
 	Phase(phase directCodingPhase, detail string)
 	Assemble() (directCodingAssembly, error)
-	EnsureDirectory(path string) (bool, error)
-	Delete(path string) (bool, error)
-	MaterializeTask(task directCodingFileTask) (bool, error)
-	BeginVerification() (directCodingCompletionTaskDisposition, error)
-	Verify() (directCodingVerification, error)
+	PrepareAssembly(directCodingAssembly) (*directCodingPreparedMutation, error)
+	ApplyAndVerify(
+		*directCodingPreparedMutation,
+	) (directCodingVerification, directCodingCompletionTaskDisposition, error)
 	FinalizeVerified(
 		verification directCodingVerification,
 		beginState directCodingCompletionTaskDisposition,
@@ -115,44 +121,26 @@ func runDirectCodingWorkflow(driver directCodingWorkflowDriver, allowExistingWor
 	}
 
 	driver.Phase(directCodingPhaseConstructing, fmt.Sprintf("directories=%d files=%d deletes=%d", len(assembly.Directories), len(assembly.Files), len(assembly.DeletePaths)))
-	mutations := 0
-	for _, path := range assembly.Directories {
-		changed, ensureErr := driver.EnsureDirectory(path)
-		if ensureErr != nil {
-			return failDirectCodingWorkflow(driver, "ensure directory "+path, ensureErr)
-		}
-		if changed {
-			mutations++
-		}
+	prepared, err := driver.PrepareAssembly(assembly)
+	if err != nil {
+		return failDirectCodingWorkflow(driver, "prepare exact workspace mutation", err)
 	}
-	for _, path := range assembly.DeletePaths {
-		changed, deleteErr := driver.Delete(path)
-		if deleteErr != nil {
-			return failDirectCodingWorkflow(driver, "delete "+path, deleteErr)
-		}
-		if changed {
-			mutations++
-		}
+	if prepared == nil {
+		return failDirectCodingWorkflow(driver, "prepare exact workspace mutation", fmt.Errorf("driver returned no prepared mutation"))
 	}
-	for _, task := range assembly.Files {
-		changed, generateErr := driver.MaterializeTask(task)
-		if generateErr != nil {
-			return failDirectCodingWorkflow(driver, "generate "+task.Path, generateErr)
+	mutations := prepared.MutationCount()
+	if mutations == 0 {
+		reason := fmt.Errorf("direct coding requires one journaled workspace mutation")
+		if !allowExistingWorkspace {
+			reason = fmt.Errorf("fresh coding workflow accepted no workspace mutation")
 		}
-		if changed {
-			mutations++
-		}
-	}
-	if mutations == 0 && !allowExistingWorkspace {
-		return failDirectCodingWorkflow(driver, "generate coding files", fmt.Errorf("fresh coding workflow accepted no workspace mutation"))
+		return failDirectCodingWorkflow(
+			driver, "generate coding files", errors.Join(reason, prepared.Cleanup()),
+		)
 	}
 
 	driver.Phase(directCodingPhaseVerifying, "running code-selected verification")
-	verificationBeginState, err := driver.BeginVerification()
-	if err != nil {
-		return failDirectCodingWorkflow(driver, "begin workspace verification", err)
-	}
-	verification, verifyErr := driver.Verify()
+	verification, verificationBeginState, verifyErr := driver.ApplyAndVerify(prepared)
 	if verifyErr != nil {
 		return failDirectCodingWorkflow(driver, "verify accepted workspace", verifyErr)
 	}

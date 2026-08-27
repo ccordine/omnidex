@@ -157,23 +157,6 @@ func summarizeChatRepositoryVerification(event parsedChatStepEvent) (chatProgres
 	return chatProgressVerification, "Accepted the code-owned repository verification plan", nil
 }
 
-func summarizeChatRepositoryRecovery(event parsedChatStepEvent) (chatProgressKind, string, error) {
-	fields, err := exactChatEventFields(event.Message, "stage", "snapshot")
-	if err != nil {
-		return "", "", err
-	}
-	if _, err := requireChatEventText(fields, "stage", 256); err != nil {
-		return "", "", err
-	}
-	if _, err := requireChatEventText(fields, "snapshot", 256); err != nil {
-		return "", "", err
-	}
-	if event.Type == "repository_mutation_recovered" {
-		return chatProgressFile, "Recovered and reconciled the durable repository mutation", nil
-	}
-	return chatProgressReview, "Reconciling a durable repository mutation", nil
-}
-
 func chatPortableEventIdentity(eventType string) (namespace, state string, ok bool) {
 	for _, candidate := range []string{"coding", "objective", "web_research"} {
 		prefix := candidate + "_"

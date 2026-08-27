@@ -41,10 +41,14 @@ func (session *directCodingSession) prepareVerifiedDesiredRepositoryState(
 	if err != nil {
 		return nil, cleanupFailedRepositoryStage(stage, err)
 	}
+	projection, err := newRepositoryStagedProjection(session.runtime.ctx, stage)
+	if err != nil {
+		return nil, cleanupFailedRepositoryStage(stage, err)
+	}
 	if err := session.runExistingRepositoryVerification(
-		stage.Workspace(), repositoryVerificationStaged,
+		projection, repositoryVerificationStaged,
 		commands, authority,
-		func(ctx context.Context) error { return stage.VerifyExactWorkspace(ctx) },
+		func(ctx context.Context) error { return projection.VerifyExact(ctx) },
 	); err != nil {
 		return nil, cleanupFailedRepositoryStage(stage, err)
 	}

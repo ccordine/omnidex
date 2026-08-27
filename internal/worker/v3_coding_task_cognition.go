@@ -196,7 +196,10 @@ func (c *directCodingTaskCognition) CompleteTask(taskID string, generated map[st
 }
 
 func (c *directCodingTaskCognition) CompleteObjective(verification directCodingVerification) error {
-	if c == nil || !verification.Passed || len(verification.Commands) == 0 {
+	if c == nil {
+		return fmt.Errorf("direct coding task cognition requires successful real verification")
+	}
+	if err := verification.validate(); err != nil || !verification.Passed {
 		return fmt.Errorf("direct coding task cognition requires successful real verification")
 	}
 	ledger, err := c.ledger()
@@ -230,7 +233,7 @@ func (c *directCodingTaskCognition) CompleteObjective(verification directCodingV
 		}
 	}
 	stepID := c.authority.StepID
-	proof := directCodingVerificationProof(c.authority.JobID, verification.Commands)
+	proof := directCodingVerificationProof(c.authority.JobID, verification)
 	if objective.Status == taskstate.NodeDone {
 		if !directCodingCompletionProofEqual(objective.VerificationRefs, proof) {
 			return fmt.Errorf("direct coding task cognition objective proof conflicts with persisted completion")
@@ -493,8 +496,29 @@ func directCodingTaskProof(jobID int64, taskID string, generated map[string]stri
 	return taskstate.Ref{URI: fmt.Sprintf("artifact://job/%d/task/%s/generated", jobID, taskID), Version: "v1", Hash: directCodingDigest(strings.Join(parts, "\n")), Relation: taskstate.RefVerifies}
 }
 
-func directCodingVerificationProof(jobID int64, commands []string) taskstate.Ref {
-	return taskstate.Ref{URI: fmt.Sprintf("verification://job/%d/workspace", jobID), Version: "v1", Hash: directCodingDigest(strings.Join(commands, "\n")), Relation: taskstate.RefVerifies}
+func directCodingVerificationProof(jobID int64, verification directCodingVerification) taskstate.Ref {
+	parts := make([]string, 0, len(verification.Commands)+1)
+	parts = append(parts, verification.MutationReceiptSHA256)
+	for index, command := range verification.Commands {
+		parts = append(parts, command+"\x00"+strconv.FormatInt(verification.EvidenceIDs[index], 10))
+	}
+	return taskstate.Ref{
+		URI: fmt.Sprintf(
+			"verification://job/%d/workspace/%s", jobID, verification.MutationOperationID,
+		),
+		Version: "v2", Hash: directCodingDigest(strings.Join(parts, "\n")),
+		Relation: taskstate.RefVerifies,
+	}
+}
+
+func validDirectCodingVerificationProof(jobID int64, proof taskstate.Ref) bool {
+	prefix := fmt.Sprintf("verification://job/%d/workspace/", jobID)
+	operationID := strings.TrimPrefix(proof.URI, prefix)
+	return proof.URI != operationID &&
+		validRepositoryVerificationOpaqueID(operationID, "workspace_mutation_") &&
+		proof.Version == "v2" &&
+		validRepositoryVerificationSHA256(proof.Hash) &&
+		proof.Relation == taskstate.RefVerifies
 }
 
 func directCodingDigest(value string) string {

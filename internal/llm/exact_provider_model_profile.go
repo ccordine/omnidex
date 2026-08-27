@@ -150,7 +150,9 @@ func NextExactPreparedTemperature(
 func (profile exactProviderModelProfile) validatePreparedTemperature(
 	temperature *ExactPreparedTemperature,
 ) error {
-	if profile.requestTemperatureCeiling <= 0 || profile.requestTemperatureCeiling > 2 {
+	if profile.requestTemperatureCeiling < 0 || profile.requestTemperatureCeiling > 2 ||
+		(profile.requestTemperatureCeiling == 0 &&
+			(!profile.requestTemperatureSet || profile.requestTemperature != 0)) {
 		return fmt.Errorf("exact provider model profile has invalid temperature authority")
 	}
 	if temperature == nil {

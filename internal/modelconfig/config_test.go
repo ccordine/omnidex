@@ -60,6 +60,8 @@ func TestFromJSONRejectsMalformedAndUnknownValues(t *testing.T) {
 		json.RawMessage(`{"search_model":"x"}`),
 		json.RawMessage(`{"memory_model":"x"}`),
 		json.RawMessage(`{"objective_advisory_model":"x"}`),
+		json.RawMessage(`{"roleplay_canon_extraction_model":"x"}`),
+		json.RawMessage(`{"roleplay_ongoing_action_model":"x"}`),
 		json.RawMessage(`{"default_model":"x"} {}`),
 	} {
 		if _, err := FromJSON(raw); err == nil {
@@ -102,7 +104,7 @@ func TestApplyExactStationRoutingFields(t *testing.T) {
 	applied := Apply(Routing{}, Config{
 		"conversation_objective_kind_model":       "qwen3:4b-kind",
 		"conversation_response_model":             "qwen3:8b-response",
-		"roleplay_canon_extraction_model":         "qwen3:8b-roleplay-fidelity",
+		"roleplay_semantic_model":                 "qwen3:8b-roleplay-fidelity",
 		"grounded_answer_model":                   "qwen3:8b-grounded",
 		"web_search_terms_model":                  "qwen3:4b-terms",
 		"web_relevance_model":                     "qwen3:4b-relevance",
@@ -125,8 +127,8 @@ func TestApplyExactStationRoutingFields(t *testing.T) {
 	if got := applied.Stations[station.ConversationResponse]; got != "qwen3:8b-response" {
 		t.Fatalf("conversation response model=%q", got)
 	}
-	if got := applied.Stations[station.RoleplayCanonExtraction]; got != "qwen3:8b-roleplay-fidelity" {
-		t.Fatalf("roleplay canon model=%q", got)
+	if got := applied.RoleplaySemanticModel; got != "qwen3:8b-roleplay-fidelity" {
+		t.Fatalf("roleplay semantic model=%q", got)
 	}
 	if got := applied.Stations[station.GroundedAnswer]; got != "qwen3:8b-grounded" {
 		t.Fatalf("grounded answer model=%q", got)

@@ -34,12 +34,12 @@ func validateStationGapOpening(record StationGapOpenRecord) (StationGapOpening, 
 	if strings.TrimSpace(prompt) == "" {
 		return StationGapOpening{}, fmt.Errorf("station gap prompt must contain exact non-empty text")
 	}
-	roleplayRaw, err := PortableJobUsesRoleplayRawCompletion(record.Job)
+	profilePolicy, err := PortableJobProviderIdentityProfilePolicy(record.Job)
 	if err != nil {
 		return StationGapOpening{}, fmt.Errorf("classify station context policy: %w", err)
 	}
 	if err := validateStationOutputLimitAuthority(
-		record.OutputLimitMode, record.ContextTokens, record.MaxOutputTokens, roleplayRaw,
+		record.OutputLimitMode, record.ContextTokens, record.MaxOutputTokens, profilePolicy,
 	); err != nil {
 		return StationGapOpening{}, fmt.Errorf("station gap output authority: %w", err)
 	}
@@ -116,11 +116,14 @@ func validateStationOutputLimitAuthority(
 	mode llm.ExactPreparedOutputLimitMode,
 	contextTokens int,
 	maxOutputTokens int,
-	roleplayRaw bool,
+	profilePolicy llm.ProviderIdentityProfilePolicy,
 ) error {
+	if err := profilePolicy.Validate(); err != nil {
+		return err
+	}
 	contextErr := llm.ValidateInferenceContextTokens(contextTokens)
-	if roleplayRaw {
-		contextErr = llm.ValidateRoleplayRawContextTokens(contextTokens)
+	if profilePolicy != "" {
+		contextErr = llm.ValidateRoleplayCompletionContextTokens(contextTokens)
 	}
 	if contextErr != nil {
 		return contextErr

@@ -97,26 +97,23 @@ func TestPostgresChannelCompletionRejectsCrossJobAuthorityAtomically(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	var job model.Job
-	err = repository.pool.QueryRow(ctx, `
-		INSERT INTO jobs (instruction,pipeline,project_id,status,metadata,current_generation)
-		VALUES ('Different authority.','chat',$3,'pending',
-			jsonb_build_object('channel_id',$1,'session_id','channel:'||$1,
-				'channel_user_message_id',$2,'project_id',$3,'client_cwd',$4,
-				'model_config',jsonb_build_object()),1)
-		RETURNING id,instruction,pipeline,status,metadata,current_generation,created_at,updated_at
-	`, channel.ID, message.ID, channel.ProjectID, channel.WorkspaceRoot).Scan(
-		&job.ID, &job.Instruction, &job.Pipeline, &job.Status, &job.Metadata,
-		&job.CurrentGeneration, &job.CreatedAt, &job.UpdatedAt,
+	metadata, err := marshalChannelTurnMetadata(
+		channel.ID, message.ID, channel.ProjectID, channel.WorkspaceRoot,
+		"", "", channel.Mode, nil, nil,
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := repository.pool.Exec(ctx, `
-		INSERT INTO job_generations(job_id,generation,purpose) VALUES ($1,1,'initial');
-		INSERT INTO job_steps(job_id,action,sort_index,status,generation)
-		VALUES ($1,'objective_resolve',5,'pending',1)
-	`, job.ID); err != nil {
+	seedTx, err := repository.pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer seedTx.Rollback(ctx)
+	job, err := repository.enqueueChannelJobTx(ctx, seedTx, "Different authority.", metadata)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := seedTx.Commit(ctx); err != nil {
 		t.Fatal(err)
 	}
 	claim, err := repository.ClaimNextStep(ctx, "cross-job-worker")

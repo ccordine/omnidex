@@ -38,8 +38,14 @@ func requireRoleplayCompletionJobAuthority(job model.Job, command CompleteStepCo
 		return fmt.Errorf("roleplay user ongoing-action character differs from typed user-turn authority")
 	}
 	if command.RoleplayUserCanon != nil {
-		if binding.RoleplayUserTurn == nil ||
-			!roleplayUserContributionRequiresCanon(*binding.RoleplayUserTurn) {
+		if binding.RoleplayUserTurn == nil {
+			return fmt.Errorf("roleplay user canon differs from typed user-turn authority")
+		}
+		_, expectsUserCanon, err := binding.RoleplayUserTurn.CanonContribution()
+		if err != nil {
+			return fmt.Errorf("roleplay completion user-turn authority: %w", err)
+		}
+		if !expectsUserCanon {
 			return fmt.Errorf("roleplay user canon differs from typed user-turn authority")
 		}
 		expected := expectedRoleplayUserCanonRecipients(binding, len(command.RoleplayUserCanon.Facts) != 0)
@@ -68,7 +74,10 @@ func requireNewRoleplayCompletionPayload(job model.Job, command CompleteStepComm
 	if expectsUserAction != (command.RoleplayUserOngoingAction != nil) {
 		return fmt.Errorf("roleplay completion differs from typed user ongoing-action authority")
 	}
-	expectsUserCanon := roleplayUserContributionRequiresCanon(*binding.RoleplayUserTurn)
+	_, expectsUserCanon, err := binding.RoleplayUserTurn.CanonContribution()
+	if err != nil {
+		return fmt.Errorf("roleplay completion user-turn authority: %w", err)
+	}
 	if expectsUserCanon != (command.RoleplayUserCanon != nil) {
 		return fmt.Errorf("roleplay completion differs from typed user canon authority")
 	}
@@ -78,11 +87,6 @@ func requireNewRoleplayCompletionPayload(job model.Job, command CompleteStepComm
 func hasRoleplayCompletionPayload(command CompleteStepCommand) bool {
 	return len(command.RoleplayResponses) != 0 || command.RoleplayUserCanon != nil ||
 		command.RoleplayUserOngoingAction != nil
-}
-
-func roleplayUserContributionRequiresCanon(authority roleplay.UserTurnAuthority) bool {
-	return authority.ContributionKind != roleplay.UserContributionCommand &&
-		authority.ContributionKind != roleplay.UserContributionLegacy
 }
 
 func expectedRoleplayUserCanonRecipients(

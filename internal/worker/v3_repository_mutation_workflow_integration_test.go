@@ -95,19 +95,36 @@ func TestPostgresRepositoryMutationWorkflowProvesAndFinalizesExactPostOnce(t *te
 		t, pool, claim.Job.ID, len(commands), target.FileID, *session.repositoryIndex,
 	)
 
-	command := loadRepositoryMutationWorkflowCommand(t, pool, claim.Job.ID)
+	mutation, err := repository.CurrentWorkspaceMutation(
+		ctx, claim.Job.ID, claim.Job.CurrentGeneration,
+	)
+	if err != nil || mutation == nil || mutation.Terminal == nil {
+		t.Fatalf("load terminal workspace mutation: mutation=%+v error=%v", mutation, err)
+	}
 	callbackRan := false
-	if err := repository.ApplyRepositoryMutation(
-		ctx, claim.Authority, command, exactRepositoryMutationClassifier(root, before.Snapshot),
-		func(context.Context) error {
-			callbackRan = true
-			return nil
+	result, err := repository.ExecuteWorkspaceMutation(
+		ctx, claim.Authority, mutation.Command,
+		queue.WorkspaceMutationCallbacks{
+			Observe: func(context.Context, queue.WorkspaceMutationCommand) (queue.WorkspaceMutationObservation, error) {
+				callbackRan = true
+				return queue.WorkspaceMutationIndeterminate, nil
+			},
+			Apply: func(context.Context, queue.WorkspaceMutationCommand) error {
+				callbackRan = true
+				return nil
+			},
+			Verify: func(context.Context, queue.WorkspaceMutationCommand) (queue.WorkspaceMutationVerificationResult, error) {
+				callbackRan = true
+				return queue.WorkspaceMutationVerificationResult{}, nil
+			},
 		},
-	); err != nil {
-		t.Fatalf("replay exact applied mutation: %v", err)
+	)
+	if err != nil || result.OperationID != mutation.OperationID ||
+		!result.VerificationSucceeded {
+		t.Fatalf("replay exact verified mutation: result=%+v error=%v", result, err)
 	}
 	if callbackRan {
-		t.Fatal("idempotent exact-post replay invoked the filesystem callback")
+		t.Fatal("idempotent terminal replay invoked a workspace callback")
 	}
 	assertRepositoryMutationWorkflowRecords(
 		t, pool, claim.Job.ID, len(commands), target.FileID, *session.repositoryIndex,

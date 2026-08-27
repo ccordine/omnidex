@@ -17,7 +17,8 @@ import (
 const (
 	maxObjectiveRoleplayResearchParagraphs     = 4
 	maxObjectiveRoleplayResearchParagraphBytes = 2 * 1024
-	objectiveRoleplayResearchModelCalls        = 3
+	minimumObjectiveRoleplayResearchModelCalls = 2
+	maximumObjectiveRoleplayResearchModelCalls = 3
 )
 
 func (r *nativeRuntimeV3) acquireObjectiveRoleplayResearch(
@@ -89,18 +90,17 @@ func resolveObjectiveRoleplayResearch(
 		webresearch.EvidenceRequest{
 			ID:       webresearch.ObjectiveID(objectiveTurnID(authority, assemblyline.ObjectiveKindExternalAnswer)),
 			Question: research.Question, Context: assemblyline.CloneObjectiveContext(authority.Context),
-			// An empty initial query intentionally requires the bounded terms-only
-			// station before code invokes fixed acquisition providers.
-			InitialQuery: "",
+			InitialQuery: research.Question,
 		},
 		objectiveWebEvidenceConfig(), acquisition, terms, relevance,
 	)
 	if err != nil {
 		return objectiveRoleplayResearchAnswer{}, err
 	}
-	if gathered.SearchTermsCalls != 1 || gathered.RelevanceCalls != 1 {
+	if gathered.SearchTermsCalls < 0 || gathered.SearchTermsCalls > 1 ||
+		gathered.RelevanceCalls != 1 {
 		return objectiveRoleplayResearchAnswer{}, fmt.Errorf(
-			"roleplay research evidence sieve requires one search-term and one relevance call; received %d and %d",
+			"roleplay research evidence sieve permits zero or one search-term call and requires one relevance call; received %d and %d",
 			gathered.SearchTermsCalls, gathered.RelevanceCalls,
 		)
 	}

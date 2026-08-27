@@ -4,17 +4,20 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	repositoryfacts "github.com/gryph/omnidex/internal/repository"
 )
 
 func TestRepositoryGoVerificationReportsExactGoCommandNotBubblewrap(t *testing.T) {
 	t.Parallel()
-	root, config, view := repositorySandboxFixture(t, fakeBubblewrapScript(0, "", 0))
+	_, projection, config, view := repositorySandboxFixture(t, fakeBubblewrapScript(0, "", 0))
 	result, err := executeRepositoryGoVerificationWithConfig(
-		context.Background(), root, repositoryGoTestCall(0), config, view,
+		context.Background(), projection, repositoryGoTestCall(0), config, view,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -36,9 +39,9 @@ func TestRepositoryGoVerificationReportsExactGoCommandNotBubblewrap(t *testing.T
 
 func TestRepositoryGoVerificationPreservesFailedGoTestAsEvidence(t *testing.T) {
 	t.Parallel()
-	root, config, view := repositorySandboxFixture(t, fakeBubblewrapScript(1, "", 0))
+	_, projection, config, view := repositorySandboxFixture(t, fakeBubblewrapScript(1, "", 0))
 	result, err := executeRepositoryGoVerificationWithConfig(
-		context.Background(), root, repositoryGoTestCall(0), config, view,
+		context.Background(), projection, repositoryGoTestCall(0), config, view,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -61,9 +64,9 @@ func TestRepositoryGoVerificationRejectsUnregisteredAndSignaledExitSemantics(t *
 		{name: "signaled", script: fakeBubblewrapScript(0, "kill -TERM $$", 0)},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			root, config, view := repositorySandboxFixture(t, test.script)
+			_, projection, config, view := repositorySandboxFixture(t, test.script)
 			result, err := executeRepositoryGoVerificationWithConfig(
-				context.Background(), root, repositoryGoTestCall(0), config, view,
+				context.Background(), projection, repositoryGoTestCall(0), config, view,
 			)
 			if err == nil || !strings.Contains(err.Error(), "unregistered exit semantics") {
 				t.Fatalf("exit result=%#v error=%v", result.Output, err)
@@ -77,10 +80,10 @@ func TestRepositoryGoVerificationRejectsUnregisteredAndSignaledExitSemantics(t *
 
 func TestRepositoryGoVerificationFailsWithoutSandboxAndNeverRunsCommand(t *testing.T) {
 	t.Parallel()
-	root, config, view := repositorySandboxFixture(t, fakeBubblewrapScript(0, "", 0))
+	root, projection, config, view := repositorySandboxFixture(t, fakeBubblewrapScript(0, "", 0))
 	config.BubblewrapPath = filepath.Join(t.TempDir(), "missing-bwrap")
 	if _, err := executeRepositoryGoVerificationWithConfig(
-		context.Background(), root, repositoryGoTestCall(0), config, view,
+		context.Background(), projection, repositoryGoTestCall(0), config, view,
 	); err == nil || !strings.Contains(err.Error(), "bubblewrap") {
 		t.Fatalf("missing sandbox error=%v", err)
 	}
@@ -91,10 +94,10 @@ func TestRepositoryGoVerificationFailsWithoutSandboxAndNeverRunsCommand(t *testi
 
 func TestRepositoryGoVerificationHonorsTimeoutAndContext(t *testing.T) {
 	t.Parallel()
-	root, config, view := repositorySandboxFixture(t, fakeBubblewrapScript(0, "", 5))
+	_, projection, config, view := repositorySandboxFixture(t, fakeBubblewrapScript(0, "", 5))
 	started := time.Now()
 	if _, err := executeRepositoryGoVerificationWithConfig(
-		context.Background(), root, repositoryGoTestCall(1), config, view,
+		context.Background(), projection, repositoryGoTestCall(1), config, view,
 	); err == nil || !strings.Contains(err.Error(), "timed out") {
 		t.Fatalf("timeout error=%v", err)
 	}
@@ -104,7 +107,7 @@ func TestRepositoryGoVerificationHonorsTimeoutAndContext(t *testing.T) {
 	canceled, cancel := context.WithCancel(context.Background())
 	cancel()
 	if _, err := executeRepositoryGoVerificationWithConfig(
-		canceled, root, repositoryGoTestCall(0), config, view,
+		canceled, projection, repositoryGoTestCall(0), config, view,
 	); err == nil || !strings.Contains(err.Error(), "authority ended") {
 		t.Fatalf("canceled context error=%v", err)
 	}
@@ -113,11 +116,11 @@ func TestRepositoryGoVerificationHonorsTimeoutAndContext(t *testing.T) {
 func TestRepositoryGoVerificationRejectsFilesystemDriftAfterCommand(t *testing.T) {
 	t.Parallel()
 	script := fakeBubblewrapScript(0, "printf 'drift\\n' > /proc/self/fd/3/unexpected.txt", 0)
-	root, config, view := repositorySandboxFixture(t, script)
+	_, projection, config, view := repositorySandboxFixture(t, script)
 	result, err := executeRepositoryGoVerificationWithConfig(
-		context.Background(), root, repositoryGoTestCall(0), config, view,
+		context.Background(), projection, repositoryGoTestCall(0), config, view,
 	)
-	if err == nil || !strings.Contains(err.Error(), "unexpected.txt") {
+	if err == nil || !strings.Contains(err.Error(), "source state changed") {
 		t.Fatalf("filesystem drift error=%v", err)
 	}
 	if len(result.Evidence) != 1 || result.Evidence[0].Command != "go test -json -count=1 ./..." {
@@ -127,10 +130,10 @@ func TestRepositoryGoVerificationRejectsFilesystemDriftAfterCommand(t *testing.T
 
 func TestRepositoryGoVerificationRejectsAnyNonGoTestCommand(t *testing.T) {
 	t.Parallel()
-	root, config, view := repositorySandboxFixture(t, fakeBubblewrapScript(0, "", 0))
+	_, projection, config, view := repositorySandboxFixture(t, fakeBubblewrapScript(0, "", 0))
 	request := repositoryGoVerificationRequest{Args: []string{"build", "./..."}}
 	if _, err := executeRepositoryGoVerificationWithConfig(
-		context.Background(), root, request, config, view,
+		context.Background(), projection, request, config, view,
 	); err == nil || !strings.Contains(err.Error(), "only go test") {
 		t.Fatalf("non-test command error=%v", err)
 	}
@@ -148,24 +151,31 @@ func TestRepositoryGoVerificationRequestRejectsNonGoExecutable(t *testing.T) {
 
 func TestRepositoryGoVerificationMountsSourceReadOnly(t *testing.T) {
 	t.Parallel()
-	arguments := repositoryGoSandboxArguments(3, 4, 5, 6, []string{
-		"test", "-json", "-count=1", "./...",
-	})
-	joined := strings.Join(arguments, " ")
-	if !strings.Contains(joined, "--ro-bind-fd 3 "+repositorySandboxRoot) {
-		t.Fatalf("repository source is not read-only: %q", joined)
+	_, projection, _, _ := repositorySandboxFixture(t, fakeBubblewrapScript(0, "", 0))
+	arguments, err := repositoryGoSandboxArguments(
+		projection, repositoryWorkspaceProjectionMountRoots{base: projection.source.Root},
+		3, -1, 4, 5, 6,
+	)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if strings.Contains(joined, "--bind-fd 3 "+repositorySandboxRoot) {
+	joined := strings.Join(arguments, " ")
+	if !strings.Contains(joined, "--ro-bind /proc/self/fd/3/go.mod /workspace/go.mod") ||
+		!strings.Contains(joined, "--remount-ro "+repositorySandboxRoot) {
+		t.Fatalf("repository projection is not read-only: %q", joined)
+	}
+	if strings.Contains(joined, "--bind-fd 3 "+repositorySandboxRoot) ||
+		strings.Contains(joined, "--ro-bind-fd 3 "+repositorySandboxRoot) {
 		t.Fatalf("repository source retains a writable bind: %q", joined)
 	}
 }
 
 func TestRepositoryGoVerificationRejectsUnstructuredGoTestCommand(t *testing.T) {
 	t.Parallel()
-	root, config, view := repositorySandboxFixture(t, fakeBubblewrapScript(0, "", 0))
+	_, projection, config, view := repositorySandboxFixture(t, fakeBubblewrapScript(0, "", 0))
 	request := repositoryGoVerificationRequest{Args: []string{"test", "./..."}}
 	if _, err := executeRepositoryGoVerificationWithConfig(
-		context.Background(), root, request, config, view,
+		context.Background(), projection, request, config, view,
 	); err == nil || !strings.Contains(err.Error(), "structured") {
 		t.Fatalf("unstructured test command error=%v", err)
 	}
@@ -222,10 +232,25 @@ func repositoryGoTestCall(timeout int) repositoryGoVerificationRequest {
 func repositorySandboxFixture(
 	t *testing.T,
 	bubblewrapScript string,
-) (string, repositoryGoSandboxConfig, *repositoryGoModuleView) {
+) (string, repositoryWorkspaceProjection, repositoryGoSandboxConfig, *repositoryGoModuleView) {
 	t.Helper()
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.com/sandbox\n\ngo 1.22\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	repositorySandboxGit(t, root, "init")
+	repositorySandboxGit(t, root, "config", "user.name", "Omnidex Test")
+	repositorySandboxGit(t, root, "config", "user.email", "omnidex@example.invalid")
+	repositorySandboxGit(t, root, "add", "go.mod")
+	repositorySandboxGit(t, root, "commit", "-m", "fixture")
+	snapshot, err := repositoryfacts.BuildGitSnapshot(
+		context.Background(), root, repositoryfacts.SnapshotOptions{},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	projection, err := newRepositorySnapshotProjection(snapshot)
+	if err != nil {
 		t.Fatal(err)
 	}
 	tree := t.TempDir()
@@ -252,7 +277,15 @@ func repositorySandboxFixture(
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = view.Cleanup() })
-	return root, config, view
+	return root, projection, config, view
+}
+
+func repositorySandboxGit(t *testing.T, root string, arguments ...string) {
+	t.Helper()
+	command := exec.Command("git", append([]string{"-C", root}, arguments...)...)
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("git %v: %v\n%s", arguments, err, output)
+	}
 }
 
 func fakeBubblewrapScript(exitCode int, mutation string, delaySeconds int) string {
@@ -260,11 +293,8 @@ func fakeBubblewrapScript(exitCode int, mutation string, delaySeconds int) strin
 		return "#!/bin/sh\nexec sleep " + fmt.Sprint(delaySeconds) + "\n"
 	}
 	return "#!/bin/sh\n" +
-		"info_fd=''\n" +
-		"while [ \"$#\" -gt 0 ]; do\n" +
-		"  if [ \"$1\" = '--info-fd' ]; then info_fd=\"$2\"; shift 2; continue; fi\n" +
-		"  shift\n" +
-		"done\n" +
+		"args_fd=\"$2\"\n" +
+		"info_fd=$(eval \"tr '\\\\000' '\\\\n' <&$args_fd\" | awk 'found { print; exit } $0 == \"--info-fd\" { found=1 }')\n" +
 		"eval \"printf '%s' '{\\\"sandbox\\\":true}' >&$info_fd\"\n" +
 		mutation + "\n" +
 		"printf 'ok\\texample.com/sandbox\\t0.001s\\n'\n" +

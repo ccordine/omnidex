@@ -10,7 +10,7 @@ func validateGeneratedWorkloadProjectDeploymentHead(
 ) error {
 	if head.ProjectID <= 0 || !generatedDeploymentProject.MatchString(head.ComposeProject) ||
 		head.SecretGeneration <= 0 ||
-		!repositoryMutationHexDigest(head.DeploymentKeyFingerprintSHA256) ||
+		!validSHA256Digest(head.DeploymentKeyFingerprintSHA256) ||
 		head.Revision < 0 || head.Fence <= 0 || head.CreatedAt.IsZero() || head.UpdatedAt.IsZero() {
 		return fmt.Errorf("project deployment head authority is invalid")
 	}
@@ -18,7 +18,7 @@ func validateGeneratedWorkloadProjectDeploymentHead(
 		return fmt.Errorf("project deployment head active endpoint authority is incomplete")
 	}
 	if head.ActiveDeploymentID != "" {
-		if !repositoryMutationOpaqueID(head.ActiveDeploymentID, "generated_workload_deployment_") {
+		if !validSHA256ID(head.ActiveDeploymentID, "generated_workload_deployment_") {
 			return fmt.Errorf("project deployment head active deployment identity is invalid")
 		}
 		if err := validateGeneratedDeploymentEndpoint(
@@ -33,7 +33,7 @@ func validateGeneratedWorkloadProjectDeploymentHead(
 	if head.Candidate == nil {
 		return nil
 	}
-	if !repositoryMutationOpaqueID(
+	if !validSHA256ID(
 		head.Candidate.DeploymentID, "generated_workload_deployment_",
 	) || head.Candidate.Authority.ProjectID != head.ProjectID ||
 		head.Candidate.Authority.JobID <= 0 || head.Candidate.Authority.Generation <= 0 ||
@@ -60,7 +60,7 @@ func validateGeneratedWorkloadProjectDeploymentReservation(
 	reservation GeneratedWorkloadProjectDeploymentReservation,
 ) error {
 	if reservation.ProjectID <= 0 ||
-		!repositoryMutationOpaqueID(reservation.DeploymentID, "generated_workload_deployment_") ||
+		!validSHA256ID(reservation.DeploymentID, "generated_workload_deployment_") ||
 		reservation.Revision < 0 || reservation.Fence <= 0 ||
 		reservation.Authority.ProjectID != reservation.ProjectID ||
 		reservation.Authority.JobID <= 0 || reservation.Authority.Generation <= 0 ||

@@ -1,12 +1,10 @@
 package worker
 
 import (
-	"context"
 	"strings"
 	"testing"
 
 	repositoryfacts "github.com/gryph/omnidex/internal/repository"
-	"github.com/gryph/omnidex/internal/repository/changeapply"
 )
 
 func TestVerifiedRepositoryChangeStageBindsContractAndOrderedProofPlan(t *testing.T) {
@@ -25,15 +23,10 @@ func TestVerifiedRepositoryChangeStageBindsContractAndOrderedProofPlan(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	stage, err := changeapply.Plan(context.Background(), changeapply.Input{
-		Snapshot: snapshot, Analysis: analysis, Contract: contract,
-		Candidates: []changeapply.CandidateDeclaration{{
-			SymbolID: first.ID, Declaration: "func First() int { return 2 }",
-		}},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	stage := planExistingRepositoryTestStage(
+		t, snapshot, analysis, contract,
+		map[string]string{first.ID: "func First() int { return 2 }"},
+	)
 	prepared, err := newVerifiedRepositoryChangeStage(contract.ID, commands, stage)
 	if err != nil {
 		t.Fatal(err)

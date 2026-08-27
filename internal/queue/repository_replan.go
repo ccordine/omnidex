@@ -74,7 +74,7 @@ func replanJobTx(
 	); err != nil {
 		return model.Job{}, err
 	}
-	if err := rejectUnresolvedRepositoryMutationsTx(
+	if err := rejectUnresolvedWorkspaceMutationsTx(
 		ctx, tx, command.JobID, job.CurrentGeneration,
 	); err != nil {
 		return model.Job{}, err

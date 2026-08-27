@@ -8,7 +8,7 @@ import (
 )
 
 func TestPostgresStationCallReceiptClassifiesCancellationRacingIdentityPreflight(t *testing.T) {
-	repository, _, claim := semanticGapTestClaim(t, "station-call-cancel-identity-race")
+	repository, pool, claim := semanticGapTestClaim(t, "station-call-cancel-identity-race")
 	gapRecord := stationGapOpenFixture(t, claim.Authority)
 	gapRecord.ContextTokens = 32768
 	gap, err := repository.OpenStationGap(t.Context(), gapRecord)
@@ -23,11 +23,7 @@ func TestPostgresStationCallReceiptClassifiesCancellationRacingIdentityPreflight
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := repository.CancelJob(t.Context(), testCancelCommand(
-		t, claim.Job.ID, "cancel-during-identity-preflight", "cancel raced provider identity preflight",
-	)); err != nil {
-		t.Fatal(err)
-	}
+	cancelPreInlineExecutionMigrationClaimAuthority(t, t.Context(), pool, claim)
 	receipt, err := repository.RecordStationCallReceipt(t.Context(), StationCallReceiptRecord{
 		Authority: claim.Authority, OpeningID: call.ID, GapID: gap.GapID,
 		Result: stationCallIdentityFailure(t, prepared), Error: "fresh identity preflight failed",

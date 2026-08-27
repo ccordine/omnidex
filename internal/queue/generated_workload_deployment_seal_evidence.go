@@ -117,7 +117,7 @@ func lockGeneratedDeploymentVerificationIdentitiesTx(
 ) error {
 	unique := make(map[string]struct{}, len(ids))
 	for _, id := range ids {
-		if !repositoryMutationOpaqueID(id, "generated_workload_verification_") {
+		if !validSHA256ID(id, "generated_workload_verification_") {
 			return fmt.Errorf("deployment cited an invalid workspace verification identity")
 		}
 		unique[id] = struct{}{}

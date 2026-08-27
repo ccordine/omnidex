@@ -1,15 +1,16 @@
 package config
 
-import (
-	"testing"
+import "testing"
 
-	"github.com/gryph/omnidex/internal/station"
-)
-
-func TestLoadRoleplayOngoingActionStationModelFromExactEnvironmentKey(t *testing.T) {
-	t.Setenv("OMNI_ROLEPLAY_ONGOING_ACTION_MODEL", "action-model")
-	models := loadStationModels(Config{})
-	if got := models[station.RoleplayOngoingAction]; got != "action-model" {
-		t.Fatalf("roleplay ongoing-action model=%q", got)
+func TestLoadRoleplaySemanticModelFromExactEnvironmentKey(t *testing.T) {
+	t.Setenv("DATABASE_URL", "")
+	t.Setenv("WRAPPER_ONLY", "true")
+	t.Setenv("OMNI_ROLEPLAY_SEMANTIC_MODEL", "roleplay-model")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.RoleplaySemanticModel != "roleplay-model" {
+		t.Fatalf("roleplay semantic model=%q", cfg.RoleplaySemanticModel)
 	}
 }

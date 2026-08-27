@@ -233,7 +233,7 @@ func validateObjectiveTurnResult(result objectiveTurnResult) error {
 		}
 		exactInstruction := "/research " + strconv.Quote(result.RoleplayResearch.Question)
 		digest := sha256.Sum256([]byte(exactInstruction))
-		minimumCalls := objectiveRoleplayResearchModelCalls
+		minimumCalls := minimumObjectiveRoleplayResearchModelCalls
 		if result.Kind != assemblyline.ObjectiveKindExternalAnswer {
 			return fmt.Errorf("roleplay research result has objective kind %q", result.Kind)
 		}

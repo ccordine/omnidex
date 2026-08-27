@@ -10,6 +10,12 @@ services:
     # host owner. This is the only identity that can access that owner's 0700
     # workspaces and 0660 Docker socket through rootless user-namespace mapping.
     user: "0:0"
+    # Bubblewrap creates the unprivileged user namespace that encloses
+    # existing-repository verification. The rootless outer daemon still owns
+    # the host boundary; this only permits the nested namespace syscall.
+    security_opt:
+      - seccomp=unconfined
+      - systempaths=unconfined
     env_file:
       - .env
     environment:
@@ -46,6 +52,10 @@ services:
       WEB_SEARCH_TOTAL_BUDGET: ${WEB_SEARCH_TOTAL_BUDGET:-6000}
       WORKSPACE_ROOT: ${WORKSPACE_ROOT:-/workspace}
       HOST_WORKSPACE_PATH: ${HOST_WORKSPACE_PATH:-}
+      # Dependency acquisition and offline verification share one durable,
+      # code-owned cache. The verification sandbox receives only its exact
+      # checksum-proven module projection, never this whole volume.
+      GOMODCACHE: /var/cache/omnidex/gomod
       OMNIDEX_DEPLOYMENT_KEY_FILE: /var/lib/omnidex-deployment/key
       OMNIDEX_DEPLOYMENT_BIND_ADDRESS: ${OMNIDEX_DEPLOYMENT_BIND_ADDRESS:-}
       OMNIDEX_DEPLOYMENT_ADVERTISED_HOST: ${OMNIDEX_DEPLOYMENT_ADVERTISED_HOST:-}
@@ -99,6 +109,11 @@ services:
       - type: volume
         source: deploymentkeys
         target: /var/lib/omnidex-deployment
+      - type: volume
+        source: gomodcache
+        target: /var/cache/omnidex/gomod
+        volume:
+          nocopy: true
     networks:
       - omnidex-edge
       - omnidex-backend
@@ -141,6 +156,7 @@ volumes:
   pgdata:
   redisdata:
   deploymentkeys:
+  gomodcache:
 
 networks:
   omnidex-edge:

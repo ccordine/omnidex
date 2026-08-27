@@ -2,20 +2,18 @@ package worker
 
 import (
 	"context"
-	"go/ast"
-	"go/parser"
-	"go/token"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/gryph/omnidex/internal/queue"
 )
 
 const phpExpectedCleanupCommand = "compose down --rmi local --volumes --remove-orphans"
 
-func TestDirectSessionDefersExactPHPCleanupAcrossLiveVerificationResults(t *testing.T) {
+func TestDirectSessionSealsExactPHPCleanupAsTrailingRecoveryAuthority(t *testing.T) {
 	stack, err := directCodingProjectStackByID(genericPHPServiceAdapter)
 	if err != nil {
 		t.Fatal(err)
@@ -25,56 +23,52 @@ func TestDirectSessionDefersExactPHPCleanupAcrossLiveVerificationResults(t *test
 		t.Fatalf("registered PHP cleanup=%+v", stack.CleanupCommands)
 	}
 
+	specification, _, _, _, _ := phpServiceStackFixture(t)
 	program, _ := phpAcceptanceFixture(t)
-	commands, err := phpServiceVerificationCommands(program)
+	primary, commands, err := (&directCodingSession{
+		specification: &specification,
+		program:       &program,
+	}).directCodingJournalCommands()
 	if err != nil {
 		t.Fatal(err)
 	}
-	upIndex := phpCommandIndex(commands, "compose up --detach --wait app nginx")
-	verifierIndex := phpCommandIndex(
-		commands, "compose run --rm --no-deps app php tests/HttpVerifier.php",
-	)
-	if upIndex < 0 || verifierIndex != len(commands)-1 || upIndex >= verifierIndex {
-		t.Fatalf("live PHP verification command order=%+v", commands)
+	if len(primary) == 0 || len(commands) != len(primary)+1 {
+		t.Fatalf("journal command counts primary=%d all=%d", len(primary), len(commands))
 	}
-
-	verify := directCodingVerifyDeclaration(t)
-	deferPosition, loopPosition := token.NoPos, token.NoPos
-	cleanupCall, joinedReturnError := false, false
-	ast.Inspect(verify.Body, func(node ast.Node) bool {
-		switch typed := node.(type) {
-		case *ast.DeferStmt:
-			foundCleanup := false
-			ast.Inspect(typed.Call, func(n ast.Node) bool {
-				if call, ok := n.(*ast.CallExpr); ok && phpCleanupSelectorName(call.Fun) == "executeDirectCodingCleanup" {
-					foundCleanup = true
-				}
-				if assignment, ok := n.(*ast.AssignStmt); ok &&
-					len(assignment.Lhs) == 1 && phpCleanupIdentifierName(assignment.Lhs[0]) == "returnErr" &&
-					len(assignment.Rhs) == 1 {
-					if call, ok := assignment.Rhs[0].(*ast.CallExpr); ok && phpCleanupSelectorName(call.Fun) == "Join" {
-						joinedReturnError = true
-					}
-				}
-				return true
-			})
-			if foundCleanup {
-				deferPosition = typed.Pos()
-				cleanupCall = true
-			}
-		case *ast.RangeStmt:
-			if phpCleanupIdentifierName(typed.X) == "commands" {
-				loopPosition = typed.Pos()
-			}
+	for index, command := range commands {
+		wantRole := workspaceVerificationPrimary
+		if index == len(commands)-1 {
+			wantRole = workspaceVerificationCleanup
 		}
-		return true
-	})
-	if !cleanupCall || !joinedReturnError || deferPosition == token.NoPos ||
-		loopPosition == token.NoPos || deferPosition >= loopPosition {
-		t.Fatalf(
-			"direct Verify cleanup boundary call=%t joined=%t defer=%d loop=%d",
-			cleanupCall, joinedReturnError, deferPosition, loopPosition,
-		)
+		if command.WorkspaceRole != wantRole {
+			t.Fatalf("journal command %d role=%q want=%q", index+1, command.WorkspaceRole, wantRole)
+		}
+	}
+	cleanup := commands[len(commands)-1]
+	if strings.Join(cleanup.Args, " ") != phpExpectedCleanupCommand {
+		t.Fatalf("journal cleanup=%+v", cleanup)
+	}
+	intents := make([]queue.WorkspaceMutationVerificationIntent, len(commands))
+	for index, command := range commands {
+		raw, err := encodeWorkspaceVerificationCommand(command)
+		if err != nil {
+			t.Fatal(err)
+		}
+		intents[index] = queue.WorkspaceMutationVerificationIntent{
+			Kind: workspaceVerificationEvidenceKind(command.Purpose), Command: raw,
+		}
+	}
+	plan, err := queue.NewWorkspaceMutationVerificationPlan(intents)
+	if err != nil {
+		t.Fatal(err)
+	}
+	recovered, err := workspaceVerificationCommandsFromPlan(plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if recovered[len(recovered)-1].WorkspaceRole != workspaceVerificationCleanup ||
+		strings.Join(recovered[len(recovered)-1].Args, " ") != phpExpectedCleanupCommand {
+		t.Fatalf("recovered cleanup=%+v", recovered[len(recovered)-1])
 	}
 }
 
@@ -173,52 +167,6 @@ func phpRecordedDockerCommands(t *testing.T, logPath string) []string {
 		t.Fatal(err)
 	}
 	return strings.Split(strings.TrimSpace(string(content)), "\n")
-}
-
-func directCodingVerifyDeclaration(t *testing.T) *ast.FuncDecl {
-	t.Helper()
-	_, current, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatal("locate PHP cleanup regression source")
-	}
-	path := filepath.Join(filepath.Dir(current), "v3_coding_driver_verification.go")
-	parsed, err := parser.ParseFile(token.NewFileSet(), path, nil, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, declaration := range parsed.Decls {
-		function, ok := declaration.(*ast.FuncDecl)
-		if ok && function.Recv != nil && function.Name.Name == "Verify" {
-			return function
-		}
-	}
-	t.Fatal("direct coding session Verify declaration is missing")
-	return nil
-}
-
-func phpCleanupSelectorName(expression ast.Expr) string {
-	selector, ok := expression.(*ast.SelectorExpr)
-	if !ok {
-		return ""
-	}
-	return selector.Sel.Name
-}
-
-func phpCleanupIdentifierName(expression ast.Expr) string {
-	identifier, ok := expression.(*ast.Ident)
-	if !ok {
-		return ""
-	}
-	return identifier.Name
-}
-
-func phpCommandIndex(commands []testCommand, expected string) int {
-	for index, command := range commands {
-		if strings.Join(command.Args, " ") == expected {
-			return index
-		}
-	}
-	return -1
 }
 
 func phpCleanupStringIndex(values []string, expected string) int {

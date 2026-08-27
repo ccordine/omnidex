@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/gryph/omnidex/internal/model"
 )
 
 func TestLLMCallEvidenceRejectsIncompleteOrFakeSuccess(t *testing.T) {
@@ -139,53 +141,28 @@ func TestPostgresLLMCallEvidenceRoundTripIsExactAndImmutable(t *testing.T) {
 	}
 
 	marker := fmt.Sprintf("immutable LLM evidence test %d", time.Now().UnixNano())
-	var jobID, stepID int64
-	seedTx, err := pool.Begin(ctx)
+	job, err := repository.EnqueueJob(ctx, marker, model.PipelineCoding, []byte(`{}`))
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer seedTx.Rollback(context.Background())
-	if err := seedTx.QueryRow(ctx, `
-		INSERT INTO jobs (instruction, pipeline, status, metadata)
-		VALUES ($1, 'agent', 'pending', '{}'::jsonb)
-		RETURNING id
-	`, marker).Scan(&jobID); err != nil {
+	claim, err := repository.ClaimNextStep(ctx, "llm-evidence-worker")
+	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := seedTx.Exec(ctx, `
-		INSERT INTO job_generations (job_id, generation, purpose) VALUES ($1, 1, 'initial')
-	`, jobID); err != nil {
-		t.Fatal(err)
+	if claim == nil || claim.Job.ID != job.ID {
+		t.Fatalf("claim=%+v want job %d", claim, job.ID)
 	}
-	if err := seedTx.QueryRow(ctx, `
-		INSERT INTO job_steps (job_id, action, sort_index, status, generation)
-		VALUES ($1, 'evidence_contract', 0, 'pending', 1)
-		RETURNING id
-	`, jobID).Scan(&stepID); err != nil {
-		t.Fatal(err)
-	}
-	if err := seedTx.Commit(ctx); err != nil {
-		t.Fatal(err)
-	}
-	authority := activateStepAttemptForTest(
-		t, ctx, pool, jobID, 1, stepID,
-		testStepAttemptWorker("llm-evidence", stepID),
-	)
+	authority, stepID := claim.Authority, claim.Step.ID
 
-	response := "\n  exact raw provider response  \n"
-	created, err := repository.RecordLLMCallEvidence(ctx, LLMCallEvidenceRecord{
-		Authority: authority, StepID: stepID, Scope: "portable_semantic_worker",
-		WorkID: strings.Repeat("b", 64), WorkKind: "application_classification",
-		RequestedModel: "requested-model", Model: "effective-model", Attempt: 1,
-		SystemPrompt: "\nexact system prompt\n", UserPrompt: " exact user prompt ",
-		ResponseFormat: "json", ResponseSchema: map[string]any{"type": "object"},
-		ContextTokens: 8192, MaxOutputTokens: 1024, ThinkingEnabled: true,
-		Response: response, Status: LLMEvidenceSucceeded, LatencyMS: 17,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if created.Response != response || created.SystemPrompt != "\nexact system prompt\n" || created.UserPrompt != " exact user prompt " {
+	response := "\n  " + `{"schema":"omnidex.conversation-response.v1","text":"exact response"}` + "  \n"
+	first := prepareSuccessfulStationEvidenceFixture(
+		t, repository, authority,
+		newStationEvidenceJobForTest(t, marker+"-success"), response,
+	)
+	first.Record.ThinkingEnabled = true
+	created := persistPreparedStationEvidenceFixture(t, repository, first, "")
+	if created.Response != response || created.SystemPrompt != first.Record.SystemPrompt ||
+		created.UserPrompt != first.Record.UserPrompt {
 		t.Fatalf("PostgreSQL changed exact model evidence: %#v", created)
 	}
 	if created.ResponseSHA256 != llmEvidenceSHA256(response) || len(created.RequestSHA256) != 64 {
@@ -198,18 +175,14 @@ func TestPostgresLLMCallEvidenceRoundTripIsExactAndImmutable(t *testing.T) {
 		created.WorkerID != authority.WorkerID || created.ContextProjectionID != "" {
 		t.Fatalf("exact call generation/projection authority=%+v", created)
 	}
-	if _, err := repository.RecordLLMCallEvidence(ctx, LLMCallEvidenceRecord{
-		Authority: authority, StepID: stepID, Scope: "portable_fragment_worker",
-		RequestedModel: "requested-model", Model: "effective-model", Attempt: 1,
-		SystemPrompt: "system", UserPrompt: "user", ResponseFormat: "text",
-		ContextTokens: 4096, MaxOutputTokens: 512,
-		Response: "partial output", Status: LLMEvidenceGenerationFailed,
-		Error: "stream terminated", LatencyMS: 9,
-	}); err != nil {
-		t.Fatal(err)
-	}
+	failed := prepareFailedStationEvidenceFixture(
+		t, repository, authority,
+		newStationEvidenceJobForTest(t, marker+"-failure"),
+		"partial output", "stream terminated",
+	)
+	persistPreparedStationEvidenceFixture(t, repository, failed, "")
 	completeStepAttemptForTest(t, ctx, pool, authority)
-	page, err := repository.ReadJobHistoryPage(ctx, jobID, JobHistoryRequest{
+	page, err := repository.ReadJobHistoryPage(ctx, job.ID, JobHistoryRequest{
 		Stream: JobHistoryLLMCalls, Limit: 10,
 	})
 	if err != nil {

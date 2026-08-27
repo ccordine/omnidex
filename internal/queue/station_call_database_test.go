@@ -11,7 +11,7 @@ import (
 )
 
 func TestPostgresStationCallReceiptClosesProviderBoundaryBeforeGap(t *testing.T) {
-	repository, _, claim := semanticGapTestClaim(t, "station-call-lifecycle")
+	repository, pool, claim := semanticGapTestClaim(t, "station-call-lifecycle")
 	gapRecord := stationGapOpenFixture(t, claim.Authority)
 	gapRecord.ContextTokens = 32768
 	gap, err := repository.OpenStationGap(t.Context(), gapRecord)
@@ -33,6 +33,15 @@ func TestPostgresStationCallReceiptClosesProviderBoundaryBeforeGap(t *testing.T)
 	if err := repository.CompleteStep(t.Context(), command); err == nil || !strings.Contains(err.Error(), "open station call") {
 		t.Fatalf("CompleteStep error=%v, want open-call rejection", err)
 	}
+	failCommand := FailStepCommand{
+		OperationID: testLifecycleOperationID(t, "open-station-call-failure", claim.Step.ID),
+		Authority:   claim.Authority, StepID: claim.Step.ID,
+		Error: "provider boundary persistence failed",
+	}
+	if err := repository.FailStep(t.Context(), failCommand); err == nil ||
+		!strings.Contains(err.Error(), "open station call") {
+		t.Fatalf("FailStep error=%v, want open-call rejection", err)
+	}
 	result := stationCallTransportFailure(t, prepared, call)
 	receipt, err := repository.RecordStationCallReceipt(t.Context(), StationCallReceiptRecord{
 		Authority: claim.Authority, OpeningID: call.ID, GapID: gap.GapID,
@@ -43,6 +52,11 @@ func TestPostgresStationCallReceiptClosesProviderBoundaryBeforeGap(t *testing.T)
 	}
 	if receipt.OpeningID != call.ID || receipt.Status != "failed" || receipt.GenerationSHA256 == "" {
 		t.Fatalf("receipt=%+v", receipt)
+	}
+	failCommand.OperationID = testLifecycleOperationID(t, "open-station-gap-failure", claim.Step.ID)
+	if err := repository.FailStep(t.Context(), failCommand); err == nil ||
+		!strings.Contains(err.Error(), "open semantic gap") {
+		t.Fatalf("FailStep error=%v, want open-gap rejection", err)
 	}
 	if _, err := repository.RecordStationCallReceipt(t.Context(), StationCallReceiptRecord{
 		Authority: claim.Authority, OpeningID: call.ID, GapID: gap.GapID,
@@ -56,14 +70,11 @@ func TestPostgresStationCallReceiptClosesProviderBoundaryBeforeGap(t *testing.T)
 	}); err != nil {
 		t.Fatal(err)
 	}
-	command.OperationID = testLifecycleOperationID(t, "closed-station-call", claim.Step.ID)
-	if err := repository.CompleteStep(t.Context(), command); err != nil {
-		t.Fatal(err)
-	}
+	completePreInlineExecutionMigrationClaim(t, t.Context(), pool, claim)
 }
 
 func TestPostgresStationCallReceiptPersistsAfterExactAttemptCancellation(t *testing.T) {
-	repository, _, claim := semanticGapTestClaim(t, "station-call-cancel")
+	repository, pool, claim := semanticGapTestClaim(t, "station-call-cancel")
 	gapRecord := stationGapOpenFixture(t, claim.Authority)
 	gapRecord.ContextTokens = 32768
 	gap, err := repository.OpenStationGap(t.Context(), gapRecord)
@@ -78,11 +89,7 @@ func TestPostgresStationCallReceiptPersistsAfterExactAttemptCancellation(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := repository.CancelJob(t.Context(), testCancelCommand(
-		t, claim.Job.ID, "cancel-in-flight-station-call", "user canceled after dispatch",
-	)); err != nil {
-		t.Fatal(err)
-	}
+	cancelPreInlineExecutionMigrationClaimAuthority(t, t.Context(), pool, claim)
 	result := stationCallTransportFailure(t, prepared, call)
 	if _, err := repository.RecordStationCallReceipt(t.Context(), StationCallReceiptRecord{
 		Authority: claim.Authority, OpeningID: call.ID, GapID: gap.GapID,
@@ -223,6 +230,12 @@ func TestPostgresResolvedGapRequiresSuccessfulDiscoveryAndCallReceipts(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
+	if err := repository.FailStep(t.Context(), FailStepCommand{
+		OperationID: testLifecycleOperationID(t, "open-station-discovery-failure", claim.Step.ID),
+		Authority:   claim.Authority, StepID: claim.Step.ID, Error: "discovery receipt persistence failed",
+	}); err == nil || !strings.Contains(err.Error(), "open provider discovery") {
+		t.Fatalf("FailStep error=%v, want open-discovery rejection", err)
+	}
 	if _, err := repository.CloseStationGap(t.Context(), StationGapTerminalRecord{
 		Authority: claim.Authority, OpeningID: gap.ID, GapID: gap.GapID,
 		Status: StationGapFailed, Error: "must remain open",
@@ -333,7 +346,7 @@ func TestPostgresStationProductionTransitionsOpenAtomicallyBeforeDispatch(t *tes
 }
 
 func TestPostgresCanceledDiscoveryTransitionClosesWithoutProviderDispatch(t *testing.T) {
-	repository, _, claim := semanticGapTestClaim(t, "station-cancel-before-dispatch")
+	repository, pool, claim := semanticGapTestClaim(t, "station-cancel-before-dispatch")
 	gapRecord := stationGapOpenFixture(t, claim.Authority)
 	gapRecord.ContextTokens = 32768
 	selection := llm.ProviderIdentitySelection{Model: "qwen:9b", NativeContextLimit: 32768}
@@ -357,11 +370,7 @@ func TestPostgresCanceledDiscoveryTransitionClosesWithoutProviderDispatch(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := repository.CancelJob(t.Context(), testCancelCommand(
-		t, claim.Job.ID, "cancel-after-discovery", "canceled before provider dispatch",
-	)); err != nil {
-		t.Fatal(err)
-	}
+	cancelPreInlineExecutionMigrationClaimAuthority(t, t.Context(), pool, claim)
 	transition, err := repository.RecordStationDiscoveryCallOpening(t.Context(), StationDiscoveryCallOpenRecord{
 		Authority: claim.Authority, Gap: opened.Gap, Discovery: opened.Discovery,
 		Observed: observed, Prepared: prepared,

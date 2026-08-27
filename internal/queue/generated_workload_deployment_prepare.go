@@ -212,7 +212,7 @@ func requireGeneratedDeploymentResolvedConfigTx(
 		return fmt.Errorf("deployment resolved config service proof is invalid: %w", err)
 	}
 	for index, service := range services {
-		if service.Service != command.Services[index] || !repositoryMutationHexDigest(service.SHA256) {
+		if service.Service != command.Services[index] || !validSHA256Digest(service.SHA256) {
 			return fmt.Errorf("deployment resolved config service %d differs from command authority", index)
 		}
 	}

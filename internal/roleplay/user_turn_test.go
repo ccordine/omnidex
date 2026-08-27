@@ -160,6 +160,36 @@ func TestUserTurnOngoingActionContributionUsesOnlyTypedActionAuthority(t *testin
 	}
 }
 
+func TestUserTurnCanonContributionExcludesTypedNarratorDirections(t *testing.T) {
+	t.Parallel()
+	direction := UserTurnAuthority{
+		PersonaKind: UserPersonaNarrator, PersonaName: NarratorPersonaName,
+		ContributionKind: UserContributionDirection,
+		Parts:            []UserTurnPart{{Kind: UserTurnPartMessage, Text: "Make the confrontation brutal."}},
+		ExactText:        "[Message]\nMake the confrontation brutal.",
+	}
+	if contribution, present, err := direction.CanonContribution(); err != nil || present || contribution != "" {
+		t.Fatalf("direction canon contribution=%q present=%t error=%v", contribution, present, err)
+	}
+
+	mixed := UserTurnAuthority{
+		PersonaKind: UserPersonaNarrator, PersonaName: NarratorPersonaName,
+		ContributionKind: UserContributionNarrationDirection,
+		Parts: []UserTurnPart{
+			{Kind: UserTurnPartEvent, Text: "The north gate collapses."},
+			{Kind: UserTurnPartMessage, Text: "Continue the violent siege."},
+		},
+		ExactText: "[Event]\nThe north gate collapses.\n\n[Message]\nContinue the violent siege.",
+	}
+	contribution, present, err := mixed.CanonContribution()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !present || contribution != "[Event]\nThe north gate collapses." {
+		t.Fatalf("mixed canon contribution=%q present=%t", contribution, present)
+	}
+}
+
 func exactCharacterUserTurn(
 	kind UserContributionKind,
 	parts []UserTurnPart,

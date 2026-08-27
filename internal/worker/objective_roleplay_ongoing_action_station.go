@@ -15,19 +15,17 @@ func (adapter portableObjectiveRoleplayOngoingActionStation) ResolveOngoingActio
 	ctx context.Context,
 	input assemblyline.RoleplayOngoingActionInput,
 ) (assemblyline.RoleplayOngoingActionDecision, objectiveStationReceipt, error) {
-	model, err := objectiveStationModel(adapter.runtime, station.RoleplayOngoingAction)
-	if err != nil {
-		return assemblyline.RoleplayOngoingActionDecision{}, objectiveStationReceipt{}, err
-	}
 	job, err := assemblyline.NewRoleplayOngoingActionJob(input)
 	if err != nil {
 		return assemblyline.RoleplayOngoingActionDecision{}, objectiveStationReceipt{}, err
 	}
-	decision, calls, err := runObjectivePortableCall[assemblyline.RoleplayOngoingActionDecision](
-		ctx, adapter.runtime, model, "roleplay_ongoing_action", job,
+	decision, receipt, err := runObjectiveReusablePortableCall[assemblyline.RoleplayOngoingActionDecision](
+		ctx, adapter.runtime, "roleplay_ongoing_action", job,
+		station.RoleplayOngoingAction,
+		func() (string, error) { return objectiveRoleplaySemanticModel(adapter.runtime) },
 		func(value assemblyline.RoleplayOngoingActionDecision) error {
 			return value.ValidateFor(input)
 		},
 	)
-	return decision, objectiveStationReceipt{Calls: calls}, err
+	return decision, receipt, err
 }

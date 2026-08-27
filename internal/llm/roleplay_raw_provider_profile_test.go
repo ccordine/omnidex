@@ -47,8 +47,8 @@ func TestRoleplayRawProviderContextPolicyIsNarrowerThanStrictStations(t *testing
 	}
 }
 
-func TestDeriveRoleplayRawContextLimitUsesExactModelMetadata(t *testing.T) {
-	got, err := DeriveRoleplayRawContextLimit([]byte(roleplayRawProviderShow), 8192)
+func TestDeriveRoleplayCompletionContextLimitUsesExactModelMetadata(t *testing.T) {
+	got, err := DeriveRoleplayCompletionContextLimit([]byte(roleplayRawProviderShow), 8192)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,7 +62,7 @@ func TestDeriveRoleplayRawContextLimitUsesExactModelMetadata(t *testing.T) {
 		`"fictional-architecture.context_length":262144`,
 		1,
 	)
-	got, err = DeriveRoleplayRawContextLimit([]byte(large), 8192)
+	got, err = DeriveRoleplayCompletionContextLimit([]byte(large), 8192)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -71,7 +71,7 @@ func TestDeriveRoleplayRawContextLimitUsesExactModelMetadata(t *testing.T) {
 	}
 }
 
-func TestDeriveRoleplayRawContextLimitRejectsInexactOrUnsupportedMetadata(t *testing.T) {
+func TestDeriveRoleplayCompletionContextLimitRejectsInexactOrUnsupportedMetadata(t *testing.T) {
 	for name, show := range map[string]string{
 		"missing": strings.Replace(
 			roleplayRawProviderShow,
@@ -99,7 +99,7 @@ func TestDeriveRoleplayRawContextLimitRejectsInexactOrUnsupportedMetadata(t *tes
 		),
 	} {
 		t.Run(name, func(t *testing.T) {
-			if _, err := DeriveRoleplayRawContextLimit([]byte(show), 8192); err == nil {
+			if _, err := DeriveRoleplayCompletionContextLimit([]byte(show), 8192); err == nil {
 				t.Fatal("unsupported roleplay model context metadata was accepted")
 			}
 		})

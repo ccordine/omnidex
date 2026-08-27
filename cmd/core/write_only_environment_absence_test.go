@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-func TestWriteOnlyRuntimeControlsAndScannerAreAbsent(t *testing.T) {
+func TestWriteOnlyRuntimeControlsAreAbsent(t *testing.T) {
 	t.Parallel()
 	root := coreRepositoryRoot(t)
 	for _, name := range []string{
@@ -23,10 +23,5 @@ func TestWriteOnlyRuntimeControlsAndScannerAreAbsent(t *testing.T) {
 				t.Errorf("%s advertises removed write-only control %s", file, name)
 			}
 		}
-	}
-	if _, err := os.Stat(filepath.Join(root, "internal", "workspace")); err == nil {
-		t.Fatal("unconsumed workspace scanner package remains")
-	} else if !os.IsNotExist(err) {
-		t.Fatal(err)
 	}
 }

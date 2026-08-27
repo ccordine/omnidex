@@ -2,6 +2,7 @@ package worker
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -52,7 +53,7 @@ func TestDesiredRepositoryStateCreatesStagesVerifiesAppliesAndReindexes(t *testi
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = stage.Cleanup() })
-	desiredStateGoTest(t, ctx, stage.Workspace())
+	desiredStateGoTest(t, ctx, snapshot.Root, stage)
 	result, err := stage.ApplyVerified(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -97,7 +98,7 @@ func TestDesiredRepositoryStateDeletesStagesVerifiesAppliesAndReindexes(t *testi
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = stage.Cleanup() })
-	desiredStateGoTest(t, ctx, stage.Workspace())
+	desiredStateGoTest(t, ctx, snapshot.Root, stage)
 	result, err := stage.ApplyVerified(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -195,13 +196,55 @@ func desiredStatePackageID(t *testing.T, analysis repositoryfacts.Analysis, name
 	return ""
 }
 
-func desiredStateGoTest(t *testing.T, ctx context.Context, root string) {
+func desiredStateGoTest(
+	t *testing.T,
+	ctx context.Context,
+	root string,
+	stage *changeapply.StagedChange,
+) {
 	t.Helper()
-	command := exec.CommandContext(ctx, "go", "test", "./...")
-	command.Dir = root
-	if output, err := command.CombinedOutput(); err != nil {
-		t.Fatalf("verify staged desired repository: %v\n%s", err, output)
+	output, err := desiredStateGoTestProjected(ctx, root, stage)
+	if err != nil {
+		t.Fatalf("verify projected desired repository: %v\n%s", err, output)
 	}
+}
+
+func desiredStateGoTestProjected(
+	ctx context.Context,
+	root string,
+	stage *changeapply.StagedChange,
+) ([]byte, error) {
+	replacements := make(map[string]string)
+	for _, state := range stage.ExpectedFiles() {
+		target := filepath.Join(root, filepath.FromSlash(state.Path))
+		if state.Present {
+			replacements[target] = filepath.Join(stage.DeltaRoot(), filepath.FromSlash(state.Path))
+		} else {
+			replacements[target] = ""
+		}
+	}
+	raw, err := json.Marshal(struct {
+		Replace map[string]string `json:"Replace"`
+	}{Replace: replacements})
+	if err != nil {
+		return nil, err
+	}
+	overlay, err := os.CreateTemp("", "omnidex-go-overlay-*.json")
+	if err != nil {
+		return nil, err
+	}
+	overlayPath := overlay.Name()
+	defer os.Remove(overlayPath)
+	if _, err := overlay.Write(raw); err != nil {
+		_ = overlay.Close()
+		return nil, err
+	}
+	if err := overlay.Close(); err != nil {
+		return nil, err
+	}
+	command := exec.CommandContext(ctx, "go", "test", "-overlay", overlayPath, "./...")
+	command.Dir = root
+	return command.CombinedOutput()
 }
 
 func desiredStateReindex(t *testing.T, ctx context.Context, root string) (repositoryfacts.Snapshot, repositoryfacts.Analysis) {

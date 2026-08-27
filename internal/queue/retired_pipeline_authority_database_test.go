@@ -129,21 +129,21 @@ func TestPostgresClaimAndReplanRejectPreCutoverRetiredWork(t *testing.T) {
 	if err := repository.EnsureSchema(t.Context(), loadMigrationBundleThroughPrefix(t, "086")); err != nil {
 		t.Fatal(err)
 	}
-	job, err := repository.EnqueueJob(t.Context(), "retired runtime probe", model.PipelineCoding, []byte(`{}`))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := pool.Exec(t.Context(), `UPDATE jobs SET pipeline='agent' WHERE id=$1`, job.ID); err != nil {
+	fixture := seedPreInlineExecutionMigrationJob(
+		t, t.Context(), pool, "retired runtime probe",
+		model.PipelineCoding, "v3_coding", nil,
+	)
+	if _, err := pool.Exec(t.Context(), `UPDATE jobs SET pipeline='agent' WHERE id=$1`, fixture.Job.ID); err != nil {
 		t.Fatal(err)
 	}
 	if claim, err := repository.ClaimNextStep(t.Context(), "retired-pipeline-probe"); claim != nil || !errors.Is(err, ErrUnsupportedPipeline) {
 		t.Fatalf("retired claim=%+v error=%v", claim, err)
 	}
-	command := testReplanCommand(t, job.ID, "retired-pipeline-replan", "Do not revive retired work.")
+	command := testReplanCommand(t, fixture.Job.ID, "retired-pipeline-replan", "Do not revive retired work.")
 	if _, err := repository.ReplanJob(t.Context(), command); !errors.Is(err, ErrUnsupportedPipeline) {
 		t.Fatalf("retired replan error=%v", err)
 	}
-	if _, err := pool.Exec(t.Context(), `UPDATE jobs SET pipeline='CHAT' WHERE id=$1`, job.ID); err != nil {
+	if _, err := pool.Exec(t.Context(), `UPDATE jobs SET pipeline='CHAT' WHERE id=$1`, fixture.Job.ID); err != nil {
 		t.Fatal(err)
 	}
 	if claim, err := repository.ClaimNextStep(t.Context(), "noncanonical-pipeline-probe"); claim != nil || !errors.Is(err, ErrUnsupportedPipeline) {

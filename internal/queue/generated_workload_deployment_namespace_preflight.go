@@ -33,12 +33,12 @@ func BindGeneratedWorkloadDeploymentNamespacePreflight(
 			fmt.Errorf("deployment namespace preflight authority is invalid")
 	}
 	if err := validateGeneratedDeploymentNamespaceResources(
-		"container", proof.ContainerIDs, repositoryMutationHexDigest,
+		"container", proof.ContainerIDs, validSHA256Digest,
 	); err != nil {
 		return GeneratedWorkloadDeploymentNamespacePreflight{}, "", err
 	}
 	if err := validateGeneratedDeploymentNamespaceResources(
-		"network", proof.NetworkIDs, repositoryMutationHexDigest,
+		"network", proof.NetworkIDs, validSHA256Digest,
 	); err != nil {
 		return GeneratedWorkloadDeploymentNamespacePreflight{}, "", err
 	}

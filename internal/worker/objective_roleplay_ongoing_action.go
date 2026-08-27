@@ -79,11 +79,8 @@ func extractRoleplayOngoingAction(
 	if err != nil {
 		return nil, 0, err
 	}
-	if receipt.Calls < 1 || receipt.Calls > maxTypedWorkerAttempts {
-		return nil, 0, fmt.Errorf(
-			"roleplay ongoing-action station reported %d calls outside the bounded correction budget",
-			receipt.Calls,
-		)
+	if err := validateObjectiveStationReceipt("roleplay ongoing-action station", receipt); err != nil {
+		return nil, 0, err
 	}
 	action, err := decision.ResolveFor(input)
 	if err != nil {

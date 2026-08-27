@@ -33,13 +33,14 @@ func TestPostgresPublicEnqueueRejectsFreeFormTransportsBeforePersistence(t *test
 }
 
 func TestPostgresHistoricalFreeFormJobsRemainReadable(t *testing.T) {
-	repository, pool, ctx := replanTestRepository(t)
-	var historicalID int64
-	if err := pool.QueryRow(ctx, `
-		INSERT INTO jobs(instruction,pipeline,status,metadata,current_generation)
-		VALUES ('historical assistant result','assistant','completed','{}',1)
-		RETURNING id
-	`).Scan(&historicalID); err != nil {
+	ctx := t.Context()
+	pool := openIsolatedMigrationPool(t)
+	repository := New(pool)
+	if err := repository.EnsureSchema(ctx, loadMigrationBundleThroughPrefix(t, "086")); err != nil {
+		t.Fatal(err)
+	}
+	historicalID := seedPipelineHistoryJob(t, pool, "assistant", model.JobStatusCompleted)
+	if err := repository.EnsureSchema(ctx, loadCheckedMigrationBundle(t)); err != nil {
 		t.Fatal(err)
 	}
 	jobs, err := repository.ListJobs(ctx, "", 20, 0)

@@ -77,17 +77,19 @@ func TestWorkerSkillRetrievalOnlyMigrationRejectsEveryHistoricalProcedureOpening
 	}
 	for _, fixture := range fixtures {
 		t.Run(fixture.name, func(t *testing.T) {
-			repository, pool, claim := semanticGapTestClaim(t, "historical-"+fixture.name)
-			opening := insertHistoricalProcedureOpening(
-				t, pool, claim.Authority, fixture.workKind, fixture.payload,
-			)
-			persistStationDiscoveryFailure(t, repository, claim.Authority, opening)
-			if _, err := repository.CloseStationGap(t.Context(), StationGapTerminalRecord{
-				Authority: claim.Authority, OpeningID: opening.ID, GapID: opening.GapID,
-				Status: StationGapFailed, Error: "historical procedure failed",
-			}); err != nil {
+			pool := openIsolatedMigrationPool(t)
+			repository := New(pool)
+			if err := repository.EnsureSchema(
+				t.Context(), loadMigrationBundleThroughPrefix(t, "078"),
+			); err != nil {
 				t.Fatal(err)
 			}
+			claim := seedPreInlineExecutionMigrationClaim(
+				t, t.Context(), pool, "historical-"+fixture.name,
+			)
+			insertHistoricalProcedureOpening(
+				t, pool, claim.Authority, fixture.workKind, fixture.payload,
+			)
 			err := repository.EnsureSchema(t.Context(), loadMigrationBundleThroughPrefix(t, "079"))
 			if err == nil || !strings.Contains(err.Error(),
 				"historical opening violates retrieval-only station authority") {
@@ -190,12 +192,10 @@ func TestWorkerSkillRetrievalOnlyMigrationRejectsUnauthenticatedRows(t *testing.
 	); err != nil {
 		t.Fatal(err)
 	}
-	job, err := repository.EnqueueJob(
-		t.Context(), "unauthenticated worker skill", "coding", []byte(`{}`),
+	fixture := seedPreInlineExecutionMigrationJob(
+		t, t.Context(), pool, "unauthenticated worker skill",
+		"coding", "v3_coding", json.RawMessage(`{}`),
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
 	if _, err := pool.Exec(t.Context(), `
 		INSERT INTO worker_skills (
 			skill_id,version,status,origin,skill_kind,purpose,instructions,
@@ -205,10 +205,10 @@ func TestWorkerSkillRetrievalOnlyMigrationRejectsUnauthenticatedRows(t *testing.
 			'code_procedure','untrusted purpose','untrusted instructions',
 			'{}'::jsonb,'{}'::jsonb,repeat('a',64),$1,'[]'::jsonb
 		)
-	`, job.ID); err != nil {
+	`, fixture.Job.ID); err != nil {
 		t.Fatal(err)
 	}
-	err = repository.EnsureSchema(t.Context(), loadMigrationBundleThroughPrefix(t, "079"))
+	err := repository.EnsureSchema(t.Context(), loadMigrationBundleThroughPrefix(t, "079"))
 	if err == nil || !strings.Contains(err.Error(), "unauthenticated skill authority exists") {
 		t.Fatalf("migration error=%v", err)
 	}

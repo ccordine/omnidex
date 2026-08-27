@@ -55,7 +55,9 @@ func AppendUserTurnCanonTx(
 		WHERE preparation.operation_id=$1 AND preparation.channel_id=$2
 		  AND preparation.user_message_id=$3 AND message.role='user'
 		  AND message.content=user_turn.exact_text
-		  AND user_turn.contribution_kind<>'command'
+		  AND roleplay_user_turn_requires_canon(
+		      user_turn.persona_kind,user_turn.contribution_kind,user_turn.parts
+		  )
 	`, preparationID, channelID, sourceMessageID).Scan(
 		&worldID, &personaKind, &actorCharacterID, &participantJSON,
 	)

@@ -16,7 +16,7 @@ FROM docker:29.5.1-cli@sha256:b40b3737eb3bf588d25bb856d3564dd3f9fdb32ac2fc19ebe8
 ARG APP_UID=1000
 ARG APP_GID=1000
 COPY --from=compose /docker-compose /usr/local/libexec/docker/cli-plugins/docker-compose
-RUN apk add --no-cache git nodejs npm \
+RUN apk add --no-cache git nodejs npm bubblewrap build-base \
     && addgroup -S -g "${APP_GID}" app \
     && adduser -S -D -h /home/app -u "${APP_UID}" -G app app \
     && docker --version | grep -Eq '^Docker version 29\.5\.1,' \

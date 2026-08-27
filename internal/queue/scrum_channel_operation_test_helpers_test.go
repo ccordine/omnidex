@@ -18,7 +18,7 @@ func scrumChannelOperationTestRepository(t *testing.T) (*Repository, *pgxpool.Po
 	t.Cleanup(cancel)
 	pool := openIsolatedMigrationPool(t)
 	repository := New(pool)
-	if err := repository.EnsureSchema(ctx, loadMigrationBundleThroughPrefix(t, "090")); err != nil {
+	if err := repository.EnsureSchema(ctx, loadCheckedMigrationBundle(t)); err != nil {
 		t.Fatal(err)
 	}
 	return repository, pool, ctx

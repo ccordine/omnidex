@@ -1,210 +1,266 @@
 package worker
 
 import (
+	"context"
 	"errors"
 	"fmt"
-	"sort"
 	"strings"
 
-	"github.com/gryph/omnidex/internal/assemblyline"
 	"github.com/gryph/omnidex/internal/evidence"
 	"github.com/gryph/omnidex/internal/operation"
+	"github.com/gryph/omnidex/internal/queue"
+	workspacefacts "github.com/gryph/omnidex/internal/workspace"
 )
 
-func (s *directCodingSession) Verify() (
-	verification directCodingVerification,
-	returnErr error,
-) {
-	if s.specification == nil || s.program == nil {
-		return directCodingVerification{}, fmt.Errorf("coding verification requires accepted typed semantics and a compiled deterministic program")
+func (s *directCodingSession) collectDirectCodingWorkspaceVerification(
+	ctx context.Context,
+	mutation queue.WorkspaceMutationCommand,
+	commands []testCommand,
+	sandbox *directCodingWorkspaceSandbox,
+) (directCodingVerification, queue.WorkspaceMutationVerificationResult, error) {
+	if s == nil || s.runtime == nil || s.runtime.claim == nil ||
+		s.specification == nil || s.program == nil || sandbox == nil {
+		return directCodingVerification{}, queue.WorkspaceMutationVerificationResult{},
+			fmt.Errorf("direct-coding verification requires one complete journal authority")
 	}
-	programDiagnostic, err := directCodingProgramWorkspaceDiagnostic(
-		s.root, *s.program, s.initialPaths,
-	)
+	if err := validateDirectCodingJournalCommands(mutation, commands); err != nil {
+		return directCodingVerification{}, queue.WorkspaceMutationVerificationResult{}, err
+	}
+	if err := requireDirectCodingWorkspacePost(ctx, mutation); err != nil {
+		return directCodingVerification{}, queue.WorkspaceMutationVerificationResult{}, err
+	}
+	diagnostic, err := s.directCodingWorkspaceDiagnostic()
 	if err != nil {
-		return directCodingVerification{}, err
+		return directCodingVerification{}, queue.WorkspaceMutationVerificationResult{}, err
 	}
-	if programDiagnostic != nil {
-		s.runtime.svc.emitStepEvent(s.runtime.claim.Authority, "coding_static_validation_failed", "diagnostic="+safeLine(programDiagnostic.Detail, "unknown"))
-		return directCodingVerification{Diagnostic: programDiagnostic}, nil
-	}
-	targetTreeDiagnostic, err := directCodingTargetTreeWorkspaceDiagnostic(s.root, s.program.TargetTree)
-	if err != nil {
-		return directCodingVerification{}, err
-	}
-	if targetTreeDiagnostic != nil {
-		s.runtime.svc.emitStepEvent(s.runtime.claim.Authority, "coding_target_tree_validation_failed", "diagnostic="+safeLine(targetTreeDiagnostic.Detail, "unknown"))
-		return directCodingVerification{Diagnostic: targetTreeDiagnostic}, nil
-	}
-	commands, err := directCodingProgramVerificationCommands(*s.specification, *s.program)
-	if err != nil {
-		return directCodingVerification{}, err
-	}
-	stack, err := directCodingProjectStackByID(s.program.StackID)
-	if err != nil {
-		return directCodingVerification{}, err
-	}
-	if len(stack.CleanupCommands) != 0 {
-		defer func() {
-			if cleanupErr := s.executeDirectCodingCleanup(stack); cleanupErr != nil {
-				verification = directCodingVerification{}
-				returnErr = errors.Join(returnErr, cleanupErr)
-			}
-		}()
-	}
-	s.runtime.svc.emitStepEvent(s.runtime.claim.Authority, "coding_verification_started", fmt.Sprintf("commands=%d", len(commands)))
-	executed := make([]string, 0, len(commands))
-	evidenceIDs := make([]int64, 0, len(commands))
+	records := make([]evidence.Record, 0, len(commands))
+	primaryFailed := diagnostic != nil
 	testEvidence := false
-	for _, command := range commands {
-		label := directCodingCommandLabel(command)
-		result, evidenceID, err := s.executeDirectCodingCommand(command)
-		if err != nil {
-			return directCodingVerification{}, err
-		}
-		executed = append(executed, label)
-		evidenceIDs = append(evidenceIDs, evidenceID)
-		if !directCodingCommandSucceeded(result) {
-			diagnostic := &directCodingDiagnostic{
-				Stage:   "verify",
-				Command: label,
-				Detail:  directCodingCommandResult(result),
-			}
-			s.runtime.svc.emitStepEvent(s.runtime.claim.Authority, "coding_verification_failed", fmt.Sprintf(
-				"command=%s diagnostic=%s",
-				directCodingEventToken(label, "unknown"),
-				safeLine(diagnostic.Detail, "unknown"),
+	lastTestIndex := -1
+	var infrastructureErr error
+	var cleanupErr error
+	for index, command := range commands {
+		if command.WorkspaceRole == workspaceVerificationPrimary &&
+			(primaryFailed || infrastructureErr != nil) {
+			records = append(records, directCodingSkippedVerificationEvidence(
+				mutation, index, command, directCodingDiagnosticText(diagnostic, infrastructureErr),
 			))
-			return directCodingVerification{Commands: executed, EvidenceIDs: evidenceIDs, Diagnostic: diagnostic}, nil
+			continue
 		}
-		output := operationResultText(result.Output, "stdout") + "\n" + operationResultText(result.Output, "stderr")
-		if command.Purpose == verificationTest && !verificationReportsNoTests(output) {
-			testEvidence = true
+		result, executeErr := sandbox.Execute(ctx, command)
+		if executeErr != nil {
+			infrastructureErr = errors.Join(infrastructureErr, fmt.Errorf(
+				"execute journaled verification command %q: %w",
+				directCodingCommandLabel(command), executeErr,
+			))
+			if command.WorkspaceRole == workspaceVerificationPrimary {
+				primaryFailed = true
+			}
+			continue
 		}
-		s.runtime.svc.emitStepEvent(s.runtime.claim.Authority, "coding_verification_command_passed", "command="+directCodingEventToken(label, "unknown"))
+		record, recordErr := directCodingVerificationEvidence(
+			mutation, index, command, result,
+		)
+		if recordErr != nil {
+			infrastructureErr = errors.Join(infrastructureErr, recordErr)
+			if command.WorkspaceRole == workspaceVerificationPrimary {
+				primaryFailed = true
+			}
+			continue
+		}
+		succeeded := directCodingCommandSucceeded(result)
+		if command.WorkspaceRole == workspaceVerificationPrimary && command.Purpose == verificationTest {
+			lastTestIndex = len(records)
+			output := operationResultText(result.Output, "stdout") + "\n" +
+				operationResultText(result.Output, "stderr")
+			if succeeded && !verificationReportsNoTests(output) {
+				testEvidence = true
+			}
+		}
+		if !succeeded {
+			detail := fmt.Sprintf(
+				"verification command %q failed: %s",
+				directCodingCommandLabel(command),
+				trimForBudget(directCodingCommandResult(result), 1200),
+			)
+			if command.WorkspaceRole == workspaceVerificationCleanup {
+				cleanupErr = errors.Join(cleanupErr, fmt.Errorf("verification cleanup %s", detail))
+				records = append(records, record)
+				continue
+			}
+			if diagnostic == nil {
+				diagnostic = &directCodingDiagnostic{
+					Stage:   string(command.WorkspaceRole),
+					Command: directCodingCommandLabel(command), Detail: detail,
+				}
+			} else {
+				diagnostic.Detail = trimForBudget(diagnostic.Detail+"; "+detail, 64*1024)
+			}
+			if command.WorkspaceRole == workspaceVerificationPrimary {
+				primaryFailed = true
+			}
+		}
+		records = append(records, record)
 	}
-	if s.completion.TestsRequired && !testEvidence {
-		diagnostic := &directCodingDiagnostic{
+	if infrastructureErr != nil || cleanupErr != nil {
+		return directCodingVerification{}, queue.WorkspaceMutationVerificationResult{},
+			errors.Join(infrastructureErr, cleanupErr)
+	}
+	if len(records) != len(commands) {
+		return directCodingVerification{}, queue.WorkspaceMutationVerificationResult{},
+			fmt.Errorf("direct-coding verification evidence differs from its journal plan")
+	}
+	if s.completion.TestsRequired && !testEvidence && diagnostic == nil {
+		diagnostic = &directCodingDiagnostic{
 			Stage:   "verify",
-			Command: strings.Join(executed, " && "),
+			Command: strings.Join(directCodingPrimaryCommandLabels(commands), " && "),
 			Detail:  "Verification commands succeeded but reported no executed tests. Add focused tests for the requested success and failure behavior.",
 		}
-		return directCodingVerification{Commands: executed, EvidenceIDs: evidenceIDs, Diagnostic: diagnostic}, nil
+		if lastTestIndex < 0 || lastTestIndex >= len(records) {
+			return directCodingVerification{}, queue.WorkspaceMutationVerificationResult{},
+				fmt.Errorf("test-required verification journal has no test evidence command")
+		}
+		records[lastTestIndex].Metadata["succeeded"] = false
+		records[lastTestIndex].Warnings = append(
+			records[lastTestIndex].Warnings, diagnostic.Detail,
+		)
 	}
-	if diagnostic := directCodingUnfinishedDiagnostic(s.completion); diagnostic != nil {
-		return directCodingVerification{Commands: executed, EvidenceIDs: evidenceIDs, Diagnostic: diagnostic}, nil
+	if err := requireDirectCodingWorkspacePost(ctx, mutation); err != nil {
+		return directCodingVerification{}, queue.WorkspaceMutationVerificationResult{}, err
 	}
-	sequence := s.nextSequence()
-	s.completion.LatestCheckTurn = sequence
-	if testEvidence {
-		s.completion.LatestTestTurn = sequence
+	current, err := workspacefacts.Capture(ctx, mutation.Plan.WorkspaceRoot)
+	if err != nil {
+		return directCodingVerification{}, queue.WorkspaceMutationVerificationResult{}, err
 	}
-	s.completion.LastTestHadNoTests = s.completion.TestsRequired && !testEvidence
-	s.lastCommands = append([]string(nil), executed...)
-	return directCodingVerification{
-		Passed:      true,
-		TestsPassed: testEvidence,
-		Commands:    executed,
-		EvidenceIDs: evidenceIDs,
+	verifiedRepositoryID := ""
+	if current.Git != nil {
+		verifiedRepositoryID = current.Git.RepositorySnapshotID
+	}
+	passed := diagnostic == nil
+	verification := directCodingVerification{
+		Passed: passed, TestsPassed: testEvidence,
+		Commands: directCodingPrimaryCommandLabels(commands), Diagnostic: diagnostic,
+	}
+	if passed {
+		sequence := s.nextSequence()
+		s.completion.LatestCheckTurn = sequence
+		if testEvidence {
+			s.completion.LatestTestTurn = sequence
+		}
+		s.completion.LastTestHadNoTests = false
+		s.lastCommands = append([]string(nil), verification.Commands...)
+	}
+	failure := ""
+	if diagnostic != nil {
+		failure = diagnostic.Stage + ": " + diagnostic.Detail
+	}
+	return verification, queue.WorkspaceMutationVerificationResult{
+		Succeeded: passed, Failure: failure, CommandEvidence: records,
+		VerifiedRepositorySnapshotID: verifiedRepositoryID,
 	}, nil
 }
 
-func (s *directCodingSession) executeDirectCodingCleanup(stack directCodingProjectStack) error {
-	for _, command := range stack.CleanupCommands {
-		result, _, err := s.executeDirectCodingCommand(command)
-		if err != nil {
-			return fmt.Errorf("execute %s cleanup: %w", stack.ID, err)
-		}
-		if !directCodingCommandSucceeded(result) {
-			return fmt.Errorf(
-				"execute %s cleanup command %s: %s",
-				stack.ID, directCodingCommandLabel(command), directCodingCommandResult(result),
-			)
+func (s *directCodingSession) directCodingWorkspaceDiagnostic() (*directCodingDiagnostic, error) {
+	diagnostic, err := directCodingProgramWorkspaceDiagnostic(s.root, *s.program, s.initialPaths)
+	if err != nil || diagnostic != nil {
+		return diagnostic, err
+	}
+	diagnostic, err = directCodingTargetTreeWorkspaceDiagnostic(s.root, s.program.TargetTree)
+	if diagnostic != nil {
+		s.runtime.svc.emitStepEvent(
+			s.runtime.claim.Authority, "coding_target_tree_validation_failed",
+			"diagnostic="+safeLine(diagnostic.Detail, "unknown"),
+		)
+	}
+	return diagnostic, err
+}
+
+func validateDirectCodingJournalCommands(
+	mutation queue.WorkspaceMutationCommand,
+	commands []testCommand,
+) error {
+	recovered, err := workspaceVerificationCommandsFromPlan(mutation.Verification)
+	if err != nil {
+		return err
+	}
+	if len(commands) != len(recovered) {
+		return fmt.Errorf("direct-coding commands differ from journal authority")
+	}
+	for index, command := range commands {
+		encoded, err := encodeWorkspaceVerificationCommand(command)
+		if err != nil || encoded != mutation.Verification.Commands[index].Command {
+			return fmt.Errorf("direct-coding command %d differs from journal authority", index+1)
 		}
 	}
 	return nil
 }
 
-func (s *directCodingSession) Complete(verification directCodingVerification) (string, error) {
-	if !verification.Passed {
-		return "", fmt.Errorf("cannot complete coding workflow from a failed verification result")
+func directCodingVerificationEvidence(
+	mutation queue.WorkspaceMutationCommand,
+	index int,
+	command testCommand,
+	result operation.Result,
+) (evidence.Record, error) {
+	if len(result.Evidence) != 1 || index < 0 || index >= len(mutation.Verification.Commands) {
+		return evidence.Record{}, fmt.Errorf("verification command %d produced invalid evidence", index+1)
 	}
-	if s.cognition == nil {
-		return "", fmt.Errorf("coding completion requires persisted task cognition")
-	}
-	if err := s.cognition.CompleteObjective(verification); err != nil {
-		return "", err
-	}
-	summary := fmt.Sprintf(
-		"Completed deterministic coding workflow: planned_files=%d planned_deletes=%d accepted_mutations=%d %s verification=%s",
-		s.plannedFiles,
-		s.plannedDeletes,
-		s.completion.MutationCount,
-		renderDirectCodingMutationJournal(s.mutationJournal),
-		strings.Join(verification.Commands, " | "),
-	)
-	if s.deploymentDisposition == assemblyline.ApplicationServiceDeploymentPersistCurrentHost {
-		serviceURL, healthURL, err := directCodingDeploymentURLs(s.deployedEndpoint)
-		if err != nil || s.deploymentOperationID == "" || len(s.deploymentReceiptSHA) != 64 {
-			return "", fmt.Errorf("coding completion requires one canonical persisted deployment outcome")
-		}
-		summary += fmt.Sprintf(
-			" deployment_operation=%s service_url=%s health_url=%s receipt_sha256=%s",
-			s.deploymentOperationID, serviceURL, healthURL, s.deploymentReceiptSHA,
-		)
-	}
-	return summary, nil
+	planned := mutation.Verification.Commands[index]
+	record := result.Evidence[0]
+	record.ID, record.JobID, record.StepID = 0, mutation.JobID, mutation.StepID
+	record.Kind, record.Command = planned.Kind, planned.Command
+	record.SourceType, record.SourceRef = "", ""
+	record.Metadata = cloneDirectCodingEvidenceMetadata(record.Metadata)
+	record.Metadata["succeeded"] = directCodingCommandSucceeded(result)
+	record.Metadata["workspace_verification_role"] = string(command.WorkspaceRole)
+	return record, nil
 }
 
-func renderDirectCodingMutationJournal(entries []directCodingMutationJournalEntry) string {
-	groups := map[workspaceFileOperation][]string{
-		workspaceDirectoryEnsure: {}, workspaceFileCreate: {}, workspaceFileReplace: {}, workspaceFileDelete: {},
+func cloneDirectCodingEvidenceMetadata(source map[string]any) map[string]any {
+	cloned := make(map[string]any, len(source)+2)
+	for key, value := range source {
+		cloned[key] = value
 	}
-	for _, entry := range entries {
-		if _, registered := groups[entry.Operation]; !registered {
-			continue
-		}
-		groups[entry.Operation] = append(groups[entry.Operation], entry.Path)
-	}
-	for operation := range groups {
-		sort.Strings(groups[operation])
-	}
-	return fmt.Sprintf(
-		"directories=[%s] created=[%s] replaced=[%s] deleted=[%s]",
-		strings.Join(groups[workspaceDirectoryEnsure], ","),
-		strings.Join(groups[workspaceFileCreate], ","),
-		strings.Join(groups[workspaceFileReplace], ","),
-		strings.Join(groups[workspaceFileDelete], ","),
-	)
+	return cloned
 }
 
-func (s *directCodingSession) executeDirectCodingCommand(command testCommand) (operation.Result, int64, error) {
-	label := directCodingCommandLabel(command)
-	if err := validateV3Command(command.Name, command.Args); err != nil {
-		return operation.Result{}, 0, fmt.Errorf("server-selected coding command %s is invalid: %w", label, err)
+func directCodingSkippedVerificationEvidence(
+	mutation queue.WorkspaceMutationCommand,
+	index int,
+	command testCommand,
+	detail string,
+) evidence.Record {
+	planned := mutation.Verification.Commands[index]
+	return evidence.Record{
+		JobID: mutation.JobID, StepID: mutation.StepID,
+		Kind: planned.Kind, ToolName: "command.run", Command: planned.Command,
+		Summary:  "verification command not executed after an earlier authoritative failure",
+		Warnings: []string{trimForBudget(detail, 1200)}, Confidence: 1,
+		Metadata: map[string]any{
+			"execution": false, "succeeded": false,
+			"skipped_after_authoritative_failure": true,
+			"workspace_verification_role":         string(command.WorkspaceRole),
+		},
 	}
-	result, err := executeCodeCommandAtRoot(s.runtime.ctx, s.root, codeCommand{
-		Program: command.Name, Args: append([]string(nil), command.Args...), Timeout: command.Timeout,
-	})
-	if err != nil {
-		return operation.Result{}, 0, fmt.Errorf("execute server-selected coding command %s: %w", label, err)
-	}
-	if command.Purpose == verificationTest {
-		for index := range result.Evidence {
-			result.Evidence[index].Kind = evidence.KindTestResult
+}
+
+func directCodingPrimaryCommandLabels(commands []testCommand) []string {
+	labels := make([]string, 0, len(commands))
+	for _, command := range commands {
+		if command.WorkspaceRole == workspaceVerificationPrimary {
+			labels = append(labels, directCodingCommandLabel(command))
 		}
 	}
-	if len(result.Evidence) != 1 {
-		return operation.Result{}, 0, fmt.Errorf("server-selected coding command %s produced %d evidence rows, expected one", label, len(result.Evidence))
+	return labels
+}
+
+func directCodingDiagnosticText(diagnostic *directCodingDiagnostic, err error) string {
+	if diagnostic != nil {
+		return diagnostic.Stage + ": " + diagnostic.Detail
 	}
-	ids, err := s.persistCodeOwnedEvidenceIDs(result)
 	if err != nil {
-		return operation.Result{}, 0, fmt.Errorf("persist server-selected coding command %s: %w", label, err)
+		return err.Error()
 	}
-	if len(ids) != 1 {
-		return operation.Result{}, 0, fmt.Errorf("server-selected coding command %s persisted an invalid evidence set", label)
-	}
-	return result, ids[0], nil
+	return "earlier authoritative verification failure"
 }
 
 func directCodingCommandSucceeded(result operation.Result) bool {

@@ -292,9 +292,6 @@ func TestCanonicalRoleplayTurnAppliesSimulationNarratesCanonAndAdvancesAtomicall
 			Authority:   nextClaim.Authority, StepID: nextClaim.Step.ID,
 			Output:     "Ivo declares that his morale is now ninety-nine.\n\nMara answers without changing the instruments.",
 			ContextKey: "objective_result", ContextValue: "simulation-prose-proof",
-			RoleplayUserCanon: &RoleplayUserCanonCompletion{
-				Facts: []string{}, KnowledgeCharacterIDs: []model.RoleplayCharacterID{},
-			},
 			RoleplayResponses: []RoleplayResponseCompletion{
 				{
 					Position: 0, CharacterID: model.RoleplayCharacterID(ivo.ID),

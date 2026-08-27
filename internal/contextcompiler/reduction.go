@@ -11,6 +11,7 @@ import (
 func selectRelevantAuthorities(
 	ctx context.Context,
 	exactInstruction string,
+	scope assemblyline.ContextScope,
 	retrievalConcepts []string,
 	authorities []assemblyline.ContextCandidateAuthority,
 	station RelevanceStation,
@@ -37,6 +38,7 @@ func selectRelevantAuthorities(
 			RetrievalConcepts:    append([]string{}, retrievalConcepts...),
 			CandidateAuthorities: append([]assemblyline.ContextCandidateAuthority(nil), page...),
 			MaxSelections:        min(assemblyline.MaxContextRelevanceSelections, len(page)),
+			Scope:                scope,
 		}
 		if _, err := assemblyline.NewContextRelevanceJob(input); err != nil {
 			return nil, calls, fmt.Errorf("context relevance page %d: %w", pageIndex+1, err)
@@ -62,6 +64,7 @@ func selectRelevantAuthorities(
 func reduceSelectedAuthorities(
 	ctx context.Context,
 	exactInstruction string,
+	scope assemblyline.ContextScope,
 	selected []assemblyline.ContextCandidateAuthority,
 	station MinificationStation,
 ) (string, int, error) {
@@ -93,6 +96,7 @@ func reduceSelectedAuthorities(
 				input := assemblyline.ContextMinificationInput{
 					ExactInstruction:    exactInstruction,
 					SelectedAuthorities: append([]assemblyline.ContextCandidateAuthority(nil), group...),
+					Scope:               scope,
 				}
 				if _, err := assemblyline.NewContextMinificationJob(input); err != nil {
 					return "", totalCalls, fmt.Errorf("context minification group %d: %w", groupIndex+1, err)

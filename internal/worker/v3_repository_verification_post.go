@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/gryph/omnidex/internal/queue"
 	repositoryfacts "github.com/gryph/omnidex/internal/repository"
 )
 
@@ -49,26 +48,16 @@ func exactAuthoritativeRepositoryPostSnapshot(
 		return repositoryfacts.Snapshot{}, fmt.Errorf("authoritative repository post root differs from its source authority")
 	}
 	expected := prepared.ExpectedFiles()
-	changed, err := repositoryMutationFilesForExpectedState(source, expected)
-	if err != nil {
-		return repositoryfacts.Snapshot{}, fmt.Errorf("authoritative repository post authority: %w", err)
-	}
 	current, err := repositoryfacts.BuildGitSnapshot(
 		ctx, root, repositoryfacts.SnapshotOptions{},
 	)
 	if err != nil {
 		return repositoryfacts.Snapshot{}, fmt.Errorf("snapshot authoritative repository post: %w", err)
 	}
-	state, err := classifyRepositoryMutationSnapshots(
-		source, current, queue.RepositoryMutationCommand{
-			SourceSnapshotID: source.ID, ChangedFiles: changed,
-		},
-	)
-	if err != nil {
-		return repositoryfacts.Snapshot{}, fmt.Errorf("classify authoritative repository post: %w", err)
-	}
-	if state != queue.RepositoryMutationPost {
-		return repositoryfacts.Snapshot{}, fmt.Errorf("authoritative repository root does not match the exact verified post state")
+	if err := validateExactRepositoryPostInventory(source, current, expected); err != nil {
+		return repositoryfacts.Snapshot{}, fmt.Errorf(
+			"authoritative repository root does not match the exact verified post state: %w", err,
+		)
 	}
 	return current, nil
 }

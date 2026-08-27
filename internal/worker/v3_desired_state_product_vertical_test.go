@@ -33,6 +33,7 @@ func TestPostgresOrdinaryChannelDesiredStateContaminatedProductionPlumbing(t *te
 			target:      "omni_added_artifact.go", present: true, wantGenerationCalls: 1,
 			wantKinds: []assemblyline.WorkKind{
 				assemblyline.WorkConversationObjectiveKind,
+				assemblyline.WorkApplicationContextNeeds,
 				assemblyline.WorkRepositoryRequirements,
 				assemblyline.WorkKnownArtifactTruth,
 				assemblyline.WorkDeclarationArtifactBoundary,
@@ -45,6 +46,7 @@ func TestPostgresOrdinaryChannelDesiredStateContaminatedProductionPlumbing(t *te
 			target:      "obsolete.go", present: false, wantGenerationCalls: 0,
 			wantKinds: []assemblyline.WorkKind{
 				assemblyline.WorkConversationObjectiveKind,
+				assemblyline.WorkApplicationContextNeeds,
 				assemblyline.WorkRepositoryRequirements,
 				assemblyline.WorkKnownArtifactTruth,
 				assemblyline.WorkArtifactCandidateSelection,
@@ -67,6 +69,7 @@ func TestPostgresOrdinaryChannelDeletionProductionPlumbingPinsFrontDoorPathVisib
 		target: "obsolete.go", present: false, wantGenerationCalls: 0,
 		wantKinds: []assemblyline.WorkKind{
 			assemblyline.WorkConversationObjectiveKind,
+			assemblyline.WorkApplicationContextNeeds,
 			assemblyline.WorkArtifactHandling,
 			assemblyline.WorkRepositoryRequirements,
 			assemblyline.WorkKnownArtifactTruth,
@@ -112,7 +115,9 @@ func TestPostgresOrdinaryChannelDeletionProductionPlumbingPinsFrontDoorPathVisib
 	calls := provider.Calls()
 	assertDesiredStateProductStationPersistence(t, pool, job.ID, calls, test.wantKinds)
 	assertDesiredStateProductNoModelMutationOps(t, calls)
-	if len(calls) == 0 || !strings.Contains(calls[0].Prompt, test.target) {
+	if len(calls) < 2 || !strings.Contains(calls[0].Prompt, test.target) ||
+		calls[0].Schema != assemblyline.ConversationObjectiveKindSchemaV1 ||
+		calls[1].Schema != assemblyline.ApplicationContextNeedSchemaV1 {
 		t.Fatalf("deletion RED did not reproduce exact front-door path visibility: %+v", calls)
 	}
 	for index, call := range calls[1:] {
@@ -122,7 +127,7 @@ func TestPostgresOrdinaryChannelDeletionProductionPlumbingPinsFrontDoorPathVisib
 	}
 	var mutations int
 	if err := pool.QueryRow(t.Context(), `
-		SELECT COUNT(*) FROM repository_mutation_operations WHERE job_id=$1
+		SELECT COUNT(*) FROM workspace_mutation_operations WHERE job_id=$1
 	`, job.ID).Scan(&mutations); err != nil {
 		t.Fatal(err)
 	}

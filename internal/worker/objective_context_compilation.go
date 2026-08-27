@@ -50,11 +50,16 @@ func compileObjectiveTurnContext(
 	if err != nil {
 		return authority, 0, err
 	}
+	contextScope, err := objectiveContextScope(authority)
+	if err != nil {
+		return authority, 0, err
+	}
 	result, err := contextcompiler.Compile(
 		ctx,
 		contextcompiler.Request{
 			ExactInstruction: contextInstruction,
 			Retrieval:        retrieval,
+			Scope:            contextScope,
 		},
 		boundContextCandidateSource{
 			source: candidateProvider, job: job, authority: authority,
@@ -86,6 +91,9 @@ func resolveRoleplayTurnRetrieval(
 	if err != nil {
 		return contextcompiler.RetrievalDirective{}, 0, err
 	}
+	if preparation.InputKind == roleplay.SimulationTurnAction {
+		return contextcompiler.RetrievalDirective{Concepts: []string{}}, 0, nil
+	}
 	availability := contextcompiler.SearchUnavailable
 	for index, responder := range preparation.Responders {
 		responderAuthority, projection, err := roleplayResponderTurnAuthority(
@@ -116,12 +124,26 @@ func resolveRoleplayTurnRetrieval(
 		}
 	}
 	directive, calls, err := contextcompiler.ResolveRetrievalDirective(
-		ctx, contextInstruction, availability, stationProvider,
+		ctx, contextInstruction, assemblyline.ContextScopeRoleplaySimulation,
+		availability, stationProvider,
 	)
 	if err != nil {
 		return contextcompiler.RetrievalDirective{}, 0, err
 	}
 	return directive, calls, nil
+}
+
+func objectiveContextScope(authority turnAuthority) (assemblyline.ContextScope, error) {
+	switch authority.ChannelMode {
+	case model.ChannelModeAssistant:
+		return "", nil
+	case model.ChannelModeRoleplay:
+		return assemblyline.ContextScopeRoleplaySimulation, nil
+	default:
+		return "", fmt.Errorf(
+			"context compilation has unsupported channel mode %q", authority.ChannelMode,
+		)
+	}
 }
 
 // objectiveContextInstruction separates raw persisted job authority from the

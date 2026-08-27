@@ -33,7 +33,7 @@ func TestPlanFileStateTransitionsCreatesOneCodeOwnedAbsentPath(t *testing.T) {
 	if !strings.Contains(stage.Patch(), "--- /dev/null\n+++ b/added.go") {
 		t.Fatalf("creation patch does not encode exact absence-to-source transition:\n%s", stage.Patch())
 	}
-	assertFile(t, filepath.Join(stage.Workspace(), "added.go"), string(content), 0o644)
+	assertFile(t, filepath.Join(stage.DeltaRoot(), "added.go"), string(content), 0o644)
 	if len(stage.ExpectedFiles()) != 1 || !stage.ExpectedFiles()[0].Present ||
 		stage.ExpectedFiles()[0].Path != "added.go" {
 		t.Fatalf("expected states=%+v", stage.ExpectedFiles())
@@ -76,7 +76,7 @@ func TestPlanFileStateTransitionsDeletesOneExactUnreferencedSourceFile(t *testin
 	if !strings.Contains(stage.Patch(), "--- a/obsolete.go\n+++ /dev/null") {
 		t.Fatalf("deletion patch does not encode exact source-to-absence transition:\n%s", stage.Patch())
 	}
-	if _, err := os.Stat(filepath.Join(stage.Workspace(), "obsolete.go")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(stage.DeltaRoot(), "obsolete.go")); !os.IsNotExist(err) {
 		t.Fatalf("obsolete staged file still exists: %v", err)
 	}
 	states := stage.ExpectedFiles()

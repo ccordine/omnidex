@@ -14,8 +14,6 @@ func loadStationModels(_ Config) map[station.ID]string {
 		station.ContextMinification:                "OMNI_CONTEXT_MINIFICATION_MODEL",
 		station.ConversationObjectiveKind:          "OMNI_CONVERSATION_OBJECTIVE_KIND_MODEL",
 		station.ConversationResponse:               "OMNI_CONVERSATION_RESPONSE_MODEL",
-		station.RoleplayCanonExtraction:            "OMNI_ROLEPLAY_CANON_EXTRACTION_MODEL",
-		station.RoleplayOngoingAction:              "OMNI_ROLEPLAY_ONGOING_ACTION_MODEL",
 		station.GroundedAnswer:                     "OMNI_GROUNDED_ANSWER_MODEL",
 		station.DatabaseSchemaSelection:            "OMNI_DATABASE_SCHEMA_SELECTION_MODEL",
 		station.DatabaseQueryIntent:                "OMNI_DATABASE_QUERY_INTENT_MODEL",

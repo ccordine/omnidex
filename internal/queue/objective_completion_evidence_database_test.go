@@ -14,7 +14,7 @@ import (
 )
 
 func TestPostgresObjectiveCompletionCommitsEvidenceAndStepAtomically(t *testing.T) {
-	repository, pool, claim := semanticGapTestClaim(t, "objective-evidence-atomic")
+	repository, pool, claim := currentObjectiveCompletionTestClaim(t, "objective-evidence-atomic")
 	if _, err := pool.Exec(t.Context(), `
 		CREATE FUNCTION reject_second_objective_evidence() RETURNS TRIGGER AS $$
 		BEGIN
@@ -61,7 +61,7 @@ func TestPostgresObjectiveCompletionCommitsEvidenceAndStepAtomically(t *testing.
 }
 
 func TestPostgresObjectiveCompletionRejectsNonAtomicCitationWrite(t *testing.T) {
-	repository, pool, claim := semanticGapTestClaim(t, "objective-evidence-sidecar")
+	repository, pool, claim := currentObjectiveCompletionTestClaim(t, "objective-evidence-sidecar")
 	record := objectiveCompletionEvidence(claim, "sidecar")
 	if err := repository.WriteEvidence(t.Context(), claim.Authority, record); err == nil ||
 		!strings.Contains(err.Error(), "completion") {
@@ -79,6 +79,30 @@ func TestPostgresObjectiveCompletionRejectsNonAtomicCitationWrite(t *testing.T) 
 		t.Fatal("raw sidecar objective citation was accepted")
 	}
 	assertObjectiveCompletionState(t, pool, claim, model.StepStatusRunning, 0)
+}
+
+func currentObjectiveCompletionTestClaim(
+	t *testing.T,
+	marker string,
+) (*Repository, *pgxpool.Pool, *model.ClaimedStep) {
+	t.Helper()
+	pool := openIsolatedMigrationPool(t)
+	repository := New(pool)
+	if err := repository.EnsureSchema(t.Context(), loadCheckedMigrationBundle(t)); err != nil {
+		t.Fatal(err)
+	}
+	job, err := repository.EnqueueJob(t.Context(), marker, model.PipelineCoding, json.RawMessage(`{}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	claim, err := repository.ClaimNextStep(t.Context(), marker+"-worker")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if claim == nil || claim.Job.ID != job.ID {
+		t.Fatalf("objective completion claim=%+v want job %d", claim, job.ID)
+	}
+	return repository, pool, claim
 }
 
 func assertObjectiveEvidenceImmutability(

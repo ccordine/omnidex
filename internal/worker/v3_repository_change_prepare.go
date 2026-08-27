@@ -10,7 +10,7 @@ import (
 )
 
 type repositoryChangePrepareOperations struct {
-	plan   func(context.Context, []changeapply.CandidateDeclaration) (*changeapply.StagedChange, error)
+	plan   func(context.Context, []changeapply.DesiredFileState) (*changeapply.StagedChange, error)
 	verify func(*changeapply.StagedChange) error
 }
 
@@ -27,11 +27,11 @@ func (session *directCodingSession) prepareVerifiedExistingRepositoryChange(
 	operations := repositoryChangePrepareOperations{
 		plan: func(
 			ctx context.Context,
-			declarations []changeapply.CandidateDeclaration,
+			desired []changeapply.DesiredFileState,
 		) (*changeapply.StagedChange, error) {
-			return changeapply.Plan(ctx, changeapply.Input{
-				Snapshot: snapshot, Analysis: analysis, Contract: contract,
-				Candidates: declarations,
+			return changeapply.PlanFileStateTransitions(ctx, changeapply.FileStateInput{
+				Snapshot: snapshot, Analysis: analysis, OwnerID: contract.ID,
+				Desired: append([]changeapply.DesiredFileState(nil), desired...),
 			})
 		},
 		verify: func(stage *changeapply.StagedChange) error {
@@ -41,9 +41,13 @@ func (session *directCodingSession) prepareVerifiedExistingRepositoryChange(
 			if err != nil {
 				return err
 			}
+			projection, err := newRepositoryStagedProjection(session.runtime.ctx, stage)
+			if err != nil {
+				return err
+			}
 			return session.runExistingRepositoryVerification(
-				stage.Workspace(), repositoryVerificationStaged,
-				commands, authority, stage.VerifyExactWorkspace,
+				projection, repositoryVerificationStaged,
+				commands, authority, projection.VerifyExact,
 			)
 		},
 	}
@@ -73,11 +77,13 @@ func prepareVerifiedRepositoryChangeWithOperations(
 	if _, err := repositoryVerificationPlanID(commands); err != nil {
 		return nil, err
 	}
-	declarations, err := exactRepositoryCandidateDeclarations(contract, candidates)
+	desired, err := changeapply.AssembleExistingGoFileStates(
+		snapshot, analysis, contract, candidates,
+	)
 	if err != nil {
 		return nil, err
 	}
-	stage, err := operations.plan(ctx, declarations)
+	stage, err := operations.plan(ctx, desired)
 	if err != nil {
 		return nil, fmt.Errorf("stage repository change contract: %w", err)
 	}

@@ -9,30 +9,35 @@ import (
 )
 
 type repositoryGoVerificationEnvironment struct {
-	root    string
-	config  repositoryGoSandboxConfig
-	modules *repositoryGoModuleView
+	projectionID string
+	sourceRoot   string
+	config       repositoryGoSandboxConfig
+	modules      *repositoryGoModuleView
 }
 
 func newRepositoryGoVerificationEnvironment(
 	ctx context.Context,
-	root string,
+	projection repositoryWorkspaceProjection,
 ) (*repositoryGoVerificationEnvironment, error) {
 	config, err := discoverRepositoryGoSandbox()
 	if err != nil {
 		return nil, err
 	}
-	return newRepositoryGoVerificationEnvironmentWithConfig(ctx, root, config)
+	return newRepositoryGoVerificationEnvironmentWithConfig(ctx, projection, config)
 }
 
 func newRepositoryGoVerificationEnvironmentWithConfig(
 	ctx context.Context,
-	root string,
+	projection repositoryWorkspaceProjection,
 	config repositoryGoSandboxConfig,
 ) (*repositoryGoVerificationEnvironment, error) {
 	if err := config.Validate(); err != nil {
 		return nil, err
 	}
+	if err := projection.VerifyExact(ctx); err != nil {
+		return nil, err
+	}
+	root := projection.source.Root
 	modules, err := resolveRepositoryGoBuildList(ctx, root, config)
 	if err != nil {
 		return nil, err
@@ -41,22 +46,24 @@ func newRepositoryGoVerificationEnvironmentWithConfig(
 	if err != nil {
 		return nil, err
 	}
-	return &repositoryGoVerificationEnvironment{root: root, config: config, modules: view}, nil
+	return &repositoryGoVerificationEnvironment{
+		projectionID: projection.id, sourceRoot: root, config: config, modules: view,
+	}, nil
 }
 
 func (environment *repositoryGoVerificationEnvironment) executeRepositoryGoVerification(
 	ctx context.Context,
-	root string,
+	projection repositoryWorkspaceProjection,
 	request repositoryGoVerificationRequest,
 ) (operation.Result, error) {
-	if environment == nil || environment.modules == nil || environment.root == "" {
+	if environment == nil || environment.modules == nil || environment.projectionID == "" || environment.sourceRoot == "" {
 		return operation.Result{}, fmt.Errorf("repository Go verification environment is incomplete")
 	}
-	if root != environment.root {
-		return operation.Result{}, fmt.Errorf("repository Go verification environment belongs to a different source")
+	if projection.id != environment.projectionID || projection.source.Root != environment.sourceRoot {
+		return operation.Result{}, fmt.Errorf("repository Go verification environment belongs to a different projection")
 	}
 	return executeRepositoryGoVerificationWithConfig(
-		ctx, root, request, environment.config, environment.modules,
+		ctx, projection, request, environment.config, environment.modules,
 	)
 }
 
@@ -69,10 +76,10 @@ func (environment *repositoryGoVerificationEnvironment) Cleanup() error {
 
 func executeRepositoryGoVerification(
 	ctx context.Context,
-	root string,
+	projection repositoryWorkspaceProjection,
 	request repositoryGoVerificationRequest,
 ) (result operation.Result, resultErr error) {
-	environment, err := newRepositoryGoVerificationEnvironment(ctx, root)
+	environment, err := newRepositoryGoVerificationEnvironment(ctx, projection)
 	if err != nil {
 		return operation.Result{}, err
 	}
@@ -82,5 +89,5 @@ func executeRepositoryGoVerification(
 			resultErr = errors.Join(resultErr, cleanupErr)
 		}
 	}()
-	return environment.executeRepositoryGoVerification(ctx, root, request)
+	return environment.executeRepositoryGoVerification(ctx, projection, request)
 }

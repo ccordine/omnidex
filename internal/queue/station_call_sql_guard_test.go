@@ -58,7 +58,8 @@ func TestPostgresStationCallReceiptRejectsForgedRawCapture(t *testing.T) {
 			status,generation_json,generation_sha256,error
 		) VALUES ($1,$2,$3,$4,$5,$6,$7,'succeeded',$8,encode(digest($8,'sha256'),'hex'),NULL)
 	`, call.ID, call.JobID, call.Generation, call.StepID, call.StepAttempt,
-		call.WorkerID, call.GapID, string(generation)); err == nil || !strings.Contains(err.Error(), "captures") {
+		call.WorkerID, call.GapID, string(generation)); err == nil ||
+		!strings.Contains(err.Error(), "exact typed JSON authority") {
 		t.Fatalf("forged response capture error=%v", err)
 	}
 }
@@ -115,7 +116,8 @@ func TestPostgresStationDiscoveryReceiptRejectsForgedRawCapture(t *testing.T) {
 		) VALUES ($1,$2,$3,$4,$5,$6,$7,'succeeded',$8,encode(digest($8,'sha256'),'hex'),
 			$9,encode(digest($9,'sha256'),'hex'),NULL)
 	`, opening.ID, opening.JobID, opening.Generation, opening.StepID, opening.StepAttempt,
-		opening.WorkerID, opening.GapID, string(observation), string(expectation)); err == nil || !strings.Contains(err.Error(), "captures") {
+		opening.WorkerID, opening.GapID, string(observation), string(expectation)); err == nil ||
+		!strings.Contains(err.Error(), "exact typed JSON authority") {
 		t.Fatalf("forged discovery capture error=%v", err)
 	}
 }

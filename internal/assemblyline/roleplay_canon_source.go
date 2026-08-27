@@ -35,21 +35,22 @@ type RoleplayCanonAntecedent struct {
 
 func ProjectRoleplayUserCanonSource(
 	authority roleplay.UserTurnAuthority,
-) (RoleplayCanonSource, error) {
-	if err := authority.Validate(); err != nil {
-		return RoleplayCanonSource{}, err
+) (RoleplayCanonSource, bool, error) {
+	contribution, present, err := authority.CanonContribution()
+	if err != nil || !present {
+		return RoleplayCanonSource{}, present, err
 	}
 	source := RoleplayCanonSource{
 		Kind:                  RoleplayCanonSourceUserContribution,
 		AttributedPersonaName: authority.PersonaName,
-		ExactContribution:     authority.ExactText,
+		ExactContribution:     contribution,
 		PersonaKind:           authority.PersonaKind,
 		ContributionKind:      authority.ContributionKind,
 	}
 	if err := source.validate(); err != nil {
-		return RoleplayCanonSource{}, err
+		return RoleplayCanonSource{}, false, err
 	}
-	return source, nil
+	return source, true, nil
 }
 
 func ProjectRoleplayCanonAntecedent(
@@ -102,6 +103,9 @@ func (source RoleplayCanonSource) validate() error {
 		}
 		if source.ContributionKind == roleplay.UserContributionCommand {
 			return fmt.Errorf("roleplay command cannot become a fictional canon source")
+		}
+		if source.ContributionKind == roleplay.UserContributionDirection {
+			return fmt.Errorf("roleplay direction cannot become a fictional canon source")
 		}
 	case RoleplayCanonSourceAssistantResponse:
 		maximum = roleplay.MaxNarrativeResponseBytes

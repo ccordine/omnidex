@@ -332,20 +332,14 @@ func completeRoleplayConversationRound(
 		t.Fatal("roleplay round lacks typed user-turn authority")
 	}
 	var userCanon *RoleplayUserCanonCompletion
-	switch metadata.RoleplayUserTurn.ContributionKind {
-	case roleplay.UserContributionCommand, roleplay.UserContributionLegacy:
-	case roleplay.UserContributionDialogue, roleplay.UserContributionAction,
-		roleplay.UserContributionActionDialogue, roleplay.UserContributionStructured,
-		roleplay.UserContributionNarration, roleplay.UserContributionDirection,
-		roleplay.UserContributionNarrationDirection:
+	_, requiresUserCanon, err := metadata.RoleplayUserTurn.CanonContribution()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if requiresUserCanon {
 		userCanon = &RoleplayUserCanonCompletion{
 			Facts: []string{}, KnowledgeCharacterIDs: []model.RoleplayCharacterID{},
 		}
-	default:
-		t.Fatalf(
-			"unsupported typed user contribution %q",
-			metadata.RoleplayUserTurn.ContributionKind,
-		)
 	}
 	if err := repository.CompleteStepWithEvidence(t.Context(), CompleteStepEvidenceCommand{
 		CompleteStepCommand: CompleteStepCommand{

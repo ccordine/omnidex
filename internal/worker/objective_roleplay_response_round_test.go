@@ -61,7 +61,7 @@ func TestOrderedRoleplayResponsesReachLaterActorsOnlyThroughPerItemRelevance(t *
 			NarrativeFingerprint: narrative.Fingerprint,
 		}
 	}
-	userTurn := narratorDirectionTurn("The bell rings once.")
+	userTurn := narratorNarrationTurn("The bell rings once.")
 	preparation := roleplay.SimulationTurnAuthority{
 		PreparationID: preparationID, ChannelID: "round-sieve", UserMessageID: 7,
 		WorldID: worldID, SceneID: sceneID, BaseSceneRevision: 1, SceneRevision: 1,

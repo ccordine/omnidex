@@ -2,7 +2,6 @@ package worker
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -109,52 +108,17 @@ func (session *directCodingSession) executeDesiredRepositoryMutation(
 					session.runtime.claim.Authority, "repository_desired_state_staged",
 					fmt.Sprintf("graph=%s files=%d", graph.ID, len(prepared.ChangedFileIDs())),
 				)
-				mutation, err := repositoryMutationCommand(
-					session.runtime, graph.ID, before.Snapshot, commands, prepared,
+				_, mutationErr := session.executeQueuedRepositoryWorkspaceMutation(
+					ctx, graph.ID, commands, before.Snapshot, prepared,
 				)
-				if err != nil {
-					return err
-				}
-				return session.runtime.svc.repo.ApplyRepositoryMutation(
-					ctx, session.runtime.claim.Authority, mutation,
-					exactRepositoryMutationClassifier(session.root, before.Snapshot),
-					func(applyCtx context.Context) error {
-						applied, applyErr := prepared.ApplyVerified(applyCtx)
-						if applyErr != nil {
-							return applyErr
-						}
-						return validateRepositoryFileStatePatchResult(
-							before.Snapshot, prepared.ExpectedFiles(), applied.Files,
-						)
-					},
-				)
+				return mutationErr
 			},
 			verifyAuthoritative: func(
-				_ context.Context,
-				prepared *verifiedRepositoryChangeStage,
-				exactCommands []testCommand,
+				context.Context,
+				*verifiedRepositoryChangeStage,
+				[]testCommand,
 			) error {
-				workspace, authority, err := newExactAuthoritativeRepositoryVerificationWorkspace(
-					session.runtime.ctx, session.root, graph.ID, exactCommands,
-					prepared, before.Snapshot,
-				)
-				if err != nil {
-					return err
-				}
-				verificationErr := session.runExistingRepositoryVerification(
-					workspace.Root(), repositoryVerificationAuthoritative,
-					exactCommands, authority,
-					func(assertCtx context.Context) error {
-						return errors.Join(
-							workspace.VerifyExact(assertCtx),
-							assertExactAuthoritativeRepositoryPost(
-								assertCtx, session.root, before.Snapshot,
-								graph.ID, exactCommands, prepared,
-							),
-						)
-					},
-				)
-				return errors.Join(verificationErr, workspace.Cleanup())
+				return nil
 			},
 			refresh: func(context.Context) (repositoryindex.Result, error) {
 				return session.runtime.refreshExistingRepositoryIndex(session.root)

@@ -36,7 +36,7 @@ func repositoryGoVerificationRequestFromCommand(
 
 func executeRepositoryGoVerificationWithConfig(
 	ctx context.Context,
-	root string,
+	projection repositoryWorkspaceProjection,
 	request repositoryGoVerificationRequest,
 	config repositoryGoSandboxConfig,
 	moduleView *repositoryGoModuleView,
@@ -56,20 +56,19 @@ func executeRepositoryGoVerificationWithConfig(
 	if err := config.validateExecution(); err != nil {
 		return operation.Result{}, err
 	}
-	if err := moduleView.requireSource(root); err != nil {
+	if err := projection.VerifyExact(ctx); err != nil {
+		return operation.Result{}, err
+	}
+	if err := moduleView.requireSource(projection.source.Root); err != nil {
 		return operation.Result{}, err
 	}
 	if err := moduleView.VerifyExact(ctx); err != nil {
 		return operation.Result{}, err
 	}
-	before, err := captureRepositoryVerificationTreeContext(ctx, root)
-	if err != nil {
-		return operation.Result{}, err
-	}
 	runCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	result, runErr := runRepositoryGoSandbox(runCtx, root, args, config, moduleView)
-	driftErr := assertRepositoryVerificationTreeUnchangedContext(ctx, root, before)
+	result, runErr := runRepositoryGoSandbox(runCtx, projection, args, config, moduleView)
+	driftErr := projection.VerifyExact(ctx)
 	moduleDriftErr := moduleView.VerifyExact(ctx)
 	if driftErr != nil {
 		runErr = errors.Join(runErr, driftErr)
@@ -128,36 +127,77 @@ func registeredRepositoryGoTestArguments(args []string) bool {
 
 func runRepositoryGoSandbox(
 	ctx context.Context,
-	root string,
+	projection repositoryWorkspaceProjection,
 	goArgs []string,
 	config repositoryGoSandboxConfig,
 	moduleView *repositoryGoModuleView,
 ) (operation.Result, error) {
-	rootHandle, err := openRepositorySandboxDirectory(root, "repository root")
+	rootHandle, err := openRepositorySandboxDirectory(projection.source.Root, "repository projection source")
 	if err != nil {
 		return operation.Result{}, err
 	}
 	defer rootHandle.Close()
+	extraFiles := []*os.File{rootHandle}
+	baseFD := 3
+	deltaFD := -1
+	mountRoots := repositoryWorkspaceProjectionMountRoots{
+		base: fmt.Sprintf("/proc/self/fd/%d", rootHandle.Fd()),
+	}
+	if projection.deltaRoot != "" {
+		deltaHandle, openErr := openRepositorySandboxDirectory(
+			projection.deltaRoot, "repository projection delta",
+		)
+		if openErr != nil {
+			return operation.Result{}, openErr
+		}
+		defer deltaHandle.Close()
+		deltaFD = 3 + len(extraFiles)
+		mountRoots.delta = fmt.Sprintf("/proc/self/fd/%d", deltaHandle.Fd())
+		extraFiles = append(extraFiles, deltaHandle)
+	}
 	goRootHandle, err := openRepositorySandboxDirectory(config.GoRoot, "system Go toolchain")
 	if err != nil {
 		return operation.Result{}, err
 	}
 	defer goRootHandle.Close()
+	goRootFD := 3 + len(extraFiles)
+	extraFiles = append(extraFiles, goRootHandle)
 	cacheHandle, err := openRepositorySandboxDirectory(moduleView.Root(), "exact Go module view")
 	if err != nil {
 		return operation.Result{}, err
 	}
 	defer cacheHandle.Close()
+	moduleCacheFD := 3 + len(extraFiles)
+	extraFiles = append(extraFiles, cacheHandle)
 	infoReader, infoWriter, err := os.Pipe()
 	if err != nil {
 		return operation.Result{}, fmt.Errorf("create repository sandbox status pipe: %w", err)
 	}
 	defer infoReader.Close()
-	extraFiles := []*os.File{rootHandle, goRootHandle, cacheHandle}
-	infoFD := 3 + len(extraFiles)
-	extraFiles = append(extraFiles, infoWriter)
-	arguments := repositoryGoSandboxArguments(3, 4, 5, infoFD, goArgs)
-	command := exec.CommandContext(ctx, config.BubblewrapPath, arguments...)
+	defer infoWriter.Close()
+	argumentsFD := 3 + len(extraFiles)
+	infoFD := argumentsFD + 1
+	arguments, err := repositoryGoSandboxArguments(
+		projection, mountRoots, baseFD, deltaFD, goRootFD, moduleCacheFD, infoFD,
+	)
+	if err != nil {
+		return operation.Result{}, err
+	}
+	invocation, err := repositoryBubblewrapInvocation(arguments, argumentsFD, goArgs)
+	if err != nil {
+		return operation.Result{}, err
+	}
+	argumentsFile, err := createRepositoryBubblewrapArgumentsFile(arguments)
+	if err != nil {
+		return operation.Result{}, err
+	}
+	defer argumentsFile.Close()
+	extraFiles = append(extraFiles, argumentsFile, infoWriter)
+	command := exec.CommandContext(
+		ctx,
+		config.BubblewrapPath,
+		invocation...,
+	)
 	command.Env = []string{"PATH=/usr/bin:/bin"}
 	command.ExtraFiles = extraFiles
 	stdout := newExactRepositoryCommandOutput(maxRepositoryGoVerificationStdoutBytes)
@@ -199,7 +239,7 @@ func runRepositoryGoSandbox(
 	if len(bytes.TrimSpace(info)) == 0 || !json.Valid(bytes.TrimSpace(info)) {
 		return operation.Result{}, fmt.Errorf(
 			"repository verification sandbox failed before starting the exact Go command: %s",
-			trimForBudget(stderr.String(), 1200),
+			repositorySandboxStartupDiagnostic(stderr.String()),
 		)
 	}
 	var exitError *exec.ExitError
@@ -214,6 +254,40 @@ func runRepositoryGoSandbox(
 		)
 	}
 	return result, nil
+}
+
+func repositorySandboxStartupDiagnostic(value string) string {
+	const edgeBytes = 1200
+	if len(value) <= edgeBytes*2 {
+		return value
+	}
+	return value[:edgeBytes] + "\n...[middle omitted]...\n" + value[len(value)-edgeBytes:]
+}
+
+func createRepositoryBubblewrapArgumentsFile(arguments []string) (*os.File, error) {
+	if err := validateRepositoryWorkspaceProjectionArguments(arguments); err != nil {
+		return nil, err
+	}
+	file, err := os.CreateTemp("", "omnidex-bwrap-arguments-*")
+	if err != nil {
+		return nil, fmt.Errorf("create repository sandbox argument authority: %w", err)
+	}
+	path := file.Name()
+	if err := os.Remove(path); err != nil {
+		_ = file.Close()
+		return nil, fmt.Errorf("unlink repository sandbox argument authority: %w", err)
+	}
+	for _, argument := range arguments {
+		if _, err := file.Write(append([]byte(argument), 0)); err != nil {
+			_ = file.Close()
+			return nil, fmt.Errorf("write repository sandbox argument authority: %w", err)
+		}
+	}
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		_ = file.Close()
+		return nil, fmt.Errorf("rewind repository sandbox argument authority: %w", err)
+	}
+	return file, nil
 }
 
 func repositoryGoVerificationResult(

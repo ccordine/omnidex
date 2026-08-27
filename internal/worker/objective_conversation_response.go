@@ -62,11 +62,11 @@ func runObjectiveRoleplayTurn(
 	result.ModelCalls += calls
 	result.RoleplayUserOngoingAction = userAction
 	roundFacts := make([]string, 0)
-	if roleplayUserContributionRequiresCanon(preparation.UserTurn) {
-		source, err := assemblyline.ProjectRoleplayUserCanonSource(preparation.UserTurn)
-		if err != nil {
-			return result, fmt.Errorf("project roleplay user canon source: %w", err)
-		}
+	source, userCanonPresent, err := assemblyline.ProjectRoleplayUserCanonSource(preparation.UserTurn)
+	if err != nil {
+		return result, fmt.Errorf("project roleplay user canon source: %w", err)
+	}
+	if userCanonPresent {
 		facts, canonCalls, err := extractRoleplayCanonSource(
 			ctx, canonStation, assemblyline.RoleplayCanonExtractionInput{
 				Source: source,
@@ -322,10 +322,8 @@ func runObjectiveConversationResponse(
 	if err := ctx.Err(); err != nil {
 		return result, err
 	}
-	if receipt.Calls < 1 || receipt.Calls > maxTypedWorkerAttempts {
-		return result, fmt.Errorf(
-			"conversation response station reported %d calls outside the bounded correction budget", receipt.Calls,
-		)
+	if err := validateObjectiveStationReceipt("conversation response station", receipt); err != nil {
+		return result, err
 	}
 	if err := decision.ValidateFor(input); err != nil {
 		return result, err
