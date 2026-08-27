@@ -334,8 +334,8 @@ func TestCheckedMigrationBundleFreezesExactProviderSplitSet(t *testing.T) {
 			generatedWorkloadDeploymentNamespacePreflightCount++
 		}
 	}
-	if len(bundle.entries) != 211 || len(got) != len(want) {
-		t.Fatalf("checked migration counts total/provider=%d/%d want 211/%d",
+	if len(bundle.entries) != 212 || len(got) != len(want) {
+		t.Fatalf("checked migration counts total/provider=%d/%d want 212/%d",
 			len(bundle.entries), len(got), len(want))
 	}
 	for _, name := range want {

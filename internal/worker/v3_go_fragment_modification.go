@@ -65,16 +65,19 @@ func runDirectCodingGoFragmentModificationWorker(
 		err = finalizeTypedWorkerResult(runtime, baseJob, result, err)
 		return "", failDirectCodingGoModification(runtime, modelName, job.Subject, 1, err)
 	}
-	candidate, candidateErr := gofragment.ProjectFunctionModelResponse(strings.TrimSpace(result.Candidate))
+	projection, candidateErr := projectDirectCodingGoFragment(result.Candidate)
+	candidate := projection.Source
+	candidateCanonical := ""
 	if candidateErr == nil {
-		candidate, candidateErr = gofragment.ParseFunction(contract, candidate)
+		result.Projection = &projection
+		candidateCanonical, candidateErr = gofragment.ParseFunction(contract, candidate)
 	}
 	if candidateErr == nil {
 		candidateErr = assemblyline.ValidatePathFreeSourceModelContextWithProvenance(
 			"Go fragment candidate", runtime.PathProvenance, candidate,
 		)
 	}
-	if candidateErr == nil && candidate == currentCanonical {
+	if candidateErr == nil && candidateCanonical == currentCanonical {
 		candidateErr = fmt.Errorf(
 			"unchanged modification rejected; the declaration must satisfy the registered requirement",
 		)

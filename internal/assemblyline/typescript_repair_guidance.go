@@ -102,7 +102,7 @@ func DecodeFragmentRepairGuidanceResult(
 }
 
 func (input TypeScriptRepairGuidanceInput) validate() error {
-	if _, err := boundedSourceLanguageByID(input.Language); err != nil && input.Language != "typescript" {
+	if err := validateFragmentRepairGuidanceLanguage(input.Language); err != nil {
 		return fmt.Errorf("fragment repair guidance: %w", err)
 	}
 	if err := validatePortableFragmentCore(
@@ -174,6 +174,14 @@ func (input TypeScriptRepairGuidanceInput) validate() error {
 		return err
 	}
 	return ValidatePathFreeSourceModelContext("TypeScript repair guidance", sourceValues...)
+}
+
+func validateFragmentRepairGuidanceLanguage(language string) error {
+	if language == "go" || language == "typescript" {
+		return nil
+	}
+	_, err := boundedSourceLanguageByID(language)
+	return err
 }
 
 func (rejection TypeScriptRepairGuidanceRejection) validate() error {

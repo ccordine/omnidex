@@ -106,7 +106,7 @@ func AssembleExistingGoFileStates(
 			symbolID: target.SymbolID, fileID: target.FileID,
 			start: target.StartByte, end: target.EndByte,
 			expected:    target.ExpectedDeclarationSHA256,
-			declaration: []byte(candidate),
+			declaration: []byte(declaration),
 		})
 	}
 	if err := rejectOverlappingTargets(replacements); err != nil {
@@ -134,9 +134,6 @@ func validateCandidate(symbolID, declaration string) error {
 	}
 	if declaration != strings.TrimSpace(declaration) {
 		return fmt.Errorf("repository change candidate for symbol %q must be trimmed", symbolID)
-	}
-	if strings.ContainsRune(declaration, '\r') {
-		return fmt.Errorf("repository change candidate for symbol %q contains unsupported carriage-return bytes", symbolID)
 	}
 	return nil
 }

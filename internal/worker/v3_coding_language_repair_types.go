@@ -20,6 +20,8 @@ type directCodingLanguageRepairConfig struct {
 	MapStageFailure directCodingLanguageStageRepairMapper
 }
 
-func (config directCodingLanguageRepairConfig) enabled() bool {
+type directCodingLanguageRepairModelResolver func() (string, string, error)
+
+func (config directCodingLanguageRepairConfig) stageFailureEnabled() bool {
 	return config.MapStageFailure != nil
 }

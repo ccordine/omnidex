@@ -37,6 +37,88 @@ func TestBoundedSourceFragmentsEnforceExactSignatureAndOneDeclaration(t *testing
 	}
 }
 
+func TestBoundedSourceFragmentProjectorsSelectOneDeclarationWithoutSignatureAuthority(t *testing.T) {
+	tests := []struct {
+		name      string
+		candidate string
+		changed   string
+		extra     string
+		wrapper   string
+		project   func(string) (PortableResultProjection, error)
+	}{
+		{
+			name: "javascript", candidate: "function summarize(values) {\r\n  return values.length;\r\n}",
+			changed: "function recount(values) { return hiddenCount(values); }",
+			extra:   "function summarize(values) { return values.length; }\nfunction audit(value) { return value; }",
+			wrapper: "export function summarize(values) { return values.length; }",
+			project: ProjectJavaScriptFragment,
+		},
+		{
+			name: "java", candidate: "public int summarize(int value) {\r\n  return value;\r\n}",
+			changed: "public int recount(int value) { return hiddenCount(value); }",
+			extra:   "public int summarize(int value) { return value; }\npublic int audit(int value) { return value; }",
+			wrapper: "public class Summary { public int summarize(int value) { return value; } }",
+			project: ProjectJavaFragment,
+		},
+		{
+			name: "rust", candidate: "pub fn summarize(value: i32) -> i32 {\r\n  value\r\n}",
+			changed: "pub fn recount(value: i32) -> i32 { hidden_count(value) }",
+			extra:   "pub fn summarize(value: i32) -> i32 { value }\nfn audit(value: i32) -> i32 { value }",
+			wrapper: "impl Summary { pub fn summarize(value: i32) -> i32 { value } }",
+			project: ProjectRustFragment,
+		},
+		{
+			name: "php", candidate: "function summarize(int $value): int {\r\n  return $value;\r\n}",
+			changed: "function recount(int $value): int { return hidden_count($value); }",
+			extra:   "function summarize(int $value): int { return $value; }\nfunction audit(int $value): int { return $value; }",
+			wrapper: "<?php\nfunction summarize(int $value): int { return $value; }",
+			project: ProjectPHPFragment,
+		},
+	}
+	for _, test := range tests {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			projected, err := test.project(test.candidate)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if projected.Source != test.candidate ||
+				projected.Source != test.candidate[projected.StartByte:projected.EndByte] ||
+				projected.Kind != PortableResultProjectionSourceDeclaration {
+				t.Fatalf("projected declaration=%+v", projected)
+			}
+			if _, err := test.project(test.changed); err != nil {
+				t.Fatalf("projector assumed one required signature: %v", err)
+			}
+			for name, rejected := range map[string]string{
+				"empty": "", "malformed": strings.TrimSuffix(test.candidate, "}"),
+				"extra": test.extra, "wrapper": test.wrapper,
+				"hidden wrapper": "\uFEFF" + test.candidate,
+			} {
+				if _, err := test.project(rejected); err == nil {
+					t.Fatalf("projector accepted %s authority: %q", name, rejected)
+				}
+			}
+		})
+	}
+}
+
+func TestBoundedSourceProjectorPreservesCRLFInsideExactTrimmedSpan(t *testing.T) {
+	t.Parallel()
+	declaration := "function value() {\r\n  return 1;\r\n}"
+	raw := " \r\n\t" + declaration + "\r\n "
+	projection, err := ProjectJavaScriptFragment(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if projection.Source != declaration ||
+		projection.Source != raw[projection.StartByte:projection.EndByte] ||
+		projection.DiscardedBytes != len(raw)-len(declaration) {
+		t.Fatalf("projection=%+v", projection)
+	}
+}
+
 func TestBoundedSourceFragmentsRejectModelAuthoredDocumentWrappers(t *testing.T) {
 	for _, testCase := range []struct {
 		name      string

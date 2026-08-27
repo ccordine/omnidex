@@ -143,7 +143,7 @@ func ParseFunction(contract Contract, candidate string) (string, error) {
 
 func parseOneFunction(source string, allowComments bool) (*ast.FuncDecl, error) {
 	source = strings.TrimSpace(source)
-	if source == "" || strings.Contains(source, "```") {
+	if source == "" {
 		return nil, fmt.Errorf("Go fragment must contain one raw declaration")
 	}
 	if !allowComments && containsComment(source) {

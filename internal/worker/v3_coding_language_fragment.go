@@ -12,9 +12,14 @@ type directCodingLanguageFragmentValidator func(
 	string,
 ) (string, error)
 
+type directCodingLanguageFragmentProjector func(
+	string,
+) (assemblyline.PortableResultProjection, error)
+
 type directCodingLanguageGenerationJob struct {
 	Subject  string
 	Input    assemblyline.FragmentGenerationInput
+	Project  directCodingLanguageFragmentProjector
 	Validate directCodingLanguageFragmentValidator
 }
 
@@ -33,8 +38,11 @@ func runDirectCodingLanguageFragmentWorker(
 		return "", fmt.Errorf("language fragment worker requires exactly one generation attempt")
 	}
 	modelName = strings.TrimSpace(modelName)
-	if modelName == "" || strings.TrimSpace(job.Subject) == "" || job.Validate == nil {
-		return "", fmt.Errorf("language fragment worker requires one model, opaque subject, and parser")
+	if modelName == "" || strings.TrimSpace(job.Subject) == "" ||
+		job.Project == nil || job.Validate == nil {
+		return "", fmt.Errorf(
+			"language fragment worker requires one model, opaque subject, projector, and parser",
+		)
 	}
 	portable, err := assemblyline.NewFragmentGenerationJob(job.Input)
 	if err != nil {
@@ -70,14 +78,21 @@ func runDirectCodingLanguageFragmentWorker(
 		err = finalizeTypedWorkerResult(runtime, portable, result, err)
 		return "", failDirectCodingLanguageGeneration(runtime, modelName, job, err)
 	}
-	candidate := strings.TrimSpace(result.Candidate)
+	rawCandidate := result.Candidate
 	if err := assemblyline.ValidatePathFreeSourceModelContextWithProvenance(
-		"language fragment candidate", runtime.PathProvenance, candidate,
+		"language fragment candidate", runtime.PathProvenance, rawCandidate,
 	); err != nil {
 		err = finalizeTypedWorkerResult(runtime, portable, result, err)
 		return "", failDirectCodingLanguageGeneration(runtime, modelName, job, err)
 	}
-	validated, err := job.Validate(job.Input, candidate)
+	projection, err := job.Project(rawCandidate)
+	if err != nil {
+		err = finalizeTypedWorkerResult(runtime, portable, result, err)
+		return "", failDirectCodingLanguageGeneration(runtime, modelName, job, err)
+	}
+	result.Projection = &projection
+	candidate := projection.Source
+	_, err = job.Validate(job.Input, candidate)
 	if err != nil {
 		rejection := &directCodingLanguageFragmentRejection{
 			Candidate: candidate, Failure: err,
@@ -85,7 +100,6 @@ func runDirectCodingLanguageFragmentWorker(
 		err = finalizeTypedWorkerResult(runtime, portable, result, rejection)
 		return "", failDirectCodingLanguageGeneration(runtime, modelName, job, err)
 	}
-	candidate = validated
 	if err := finalizeTypedWorkerResult(runtime, portable, result, nil); err != nil {
 		return "", failDirectCodingLanguageGeneration(runtime, modelName, job, err)
 	}

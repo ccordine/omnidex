@@ -26,7 +26,7 @@ func TestPlanReplacesMultipleTargetsInOneFileByExactDescendingRanges(t *testing.
 	assertFile(
 		t,
 		filepath.Join(stage.DeltaRoot(), "both.go"),
-		"package samefile\n\nfunc First() int { return 111 }\n\nconst Retained = 7\n\nfunc Second() int {\n\treturn 222\n}\n",
+		"package samefile\n\nfunc First() int {\n\treturn 111\n}\n\nconst Retained = 7\n\nfunc Second() int {\n\treturn 222\n}\n",
 		0o640,
 	)
 	if strings.Count(stage.Patch(), "diff --git") != 1 || strings.Count(stage.Patch(), "@@ ") != 1 {

@@ -26,6 +26,7 @@ func TestLanguageFragmentWorkerRejectsPathBearingEnvelopeBeforeInference(t *test
 				Language: "javascript", Dialect: "ECMAScript 2022", Signature: "function feature001(input, dependencies)",
 				Behavior: "Persist the model-invented value at src/generated.",
 			},
+			Project:  assemblyline.ProjectJavaScriptFragment,
 			Validate: validateDirectCodingJavaScriptFragment,
 		},
 	)
@@ -53,6 +54,7 @@ func TestLanguageFragmentWorkerRejectsKnownBareArtifactInCandidate(t *testing.T)
 				Language: "javascript", Dialect: "ECMAScript 2022", Signature: "function runtimeLabel()",
 				Behavior: "Return one runtime label.",
 			},
+			Project: assemblyline.ProjectJavaScriptFragment,
 			Validate: func(_ assemblyline.FragmentGenerationInput, candidate string) (string, error) {
 				return candidate, nil
 			},
@@ -81,6 +83,7 @@ func TestLanguageFragmentWorkerAcceptsInterpretedControlEscapes(t *testing.T) {
 				Language: "go", Dialect: "Go 1.24", Signature: "func AppendLineBreak(input string) string",
 				Behavior: "Append one line break to a label.",
 			},
+			Project:  projectDirectCodingGoFragment,
 			Validate: validateDirectCodingGoFragment,
 		},
 	)

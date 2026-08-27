@@ -38,6 +38,7 @@ func TestCheckedMigrationBundleFreezesCurrentTail(t *testing.T) {
 		"158_scrum_message_tail_bounded_index.sql":                        0,
 		"159_workspace_mutation_journal_cutover.sql":                      0,
 		"160_application_service_deployment_semantic_split.sql":           0,
+		"161_source_declaration_projection_authority.sql":                 0,
 	}
 	for _, entry := range bundle.entries {
 		if _, tracked := want[entry.name]; tracked {

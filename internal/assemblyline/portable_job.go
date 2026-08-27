@@ -100,6 +100,7 @@ type PortableResultProjectionKind string
 
 const (
 	PortableResultProjectionExactResponse      PortableResultProjectionKind = "exact_response"
+	PortableResultProjectionSourceDeclaration  PortableResultProjectionKind = "source_declaration"
 	PortableResultProjectionTypeScriptFunction PortableResultProjectionKind = "typescript_function"
 )
 
@@ -207,6 +208,7 @@ func (projection TypeScriptFunctionProjection) PortableResultProjection() (Porta
 
 func (projection PortableResultProjection) ValidateFor(raw string) error {
 	if projection.Kind != PortableResultProjectionExactResponse &&
+		projection.Kind != PortableResultProjectionSourceDeclaration &&
 		projection.Kind != PortableResultProjectionTypeScriptFunction {
 		return fmt.Errorf("projection kind %q is not registered", projection.Kind)
 	}

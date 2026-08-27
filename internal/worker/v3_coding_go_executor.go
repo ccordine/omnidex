@@ -22,6 +22,7 @@ func newDirectCodingGoProjectStageExecutor(
 ) (directCodingProjectStageExecutor, error) {
 	return newDirectCodingLanguageProjectStageExecutor(session, directCodingLanguageStageConfig{
 		Language: "go", AdapterID: "go", Timeout: directCodingGoStageTimeout,
+		ProjectFragment:    projectDirectCodingGoFragment,
 		ValidateFragment:   validateDirectCodingGoFragment,
 		ValidateAcceptance: validateDirectCodingGoAcceptance,
 		TaskCommands: func(
@@ -43,11 +44,7 @@ func validateDirectCodingGoFragment(
 	input assemblyline.FragmentGenerationInput,
 	candidate string,
 ) (string, error) {
-	projected, err := gofragment.ProjectFunctionModelResponse(candidate)
-	if err != nil {
-		return "", err
-	}
-	return gofragment.ParseNewFunction(input.Signature, input.PermittedSymbols, projected)
+	return gofragment.ParseNewFunction(input.Signature, input.PermittedSymbols, candidate)
 }
 
 func validateDirectCodingGoAcceptance(

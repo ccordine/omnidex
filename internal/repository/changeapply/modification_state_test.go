@@ -15,7 +15,7 @@ func TestAssembleExistingGoFileStatesReturnsOneCompleteExactPostimage(t *testing
 	file := fixture.file(t, "first.go")
 	symbolID := fixture.symbol(t, "First").ID
 	candidates := map[string]string{
-		symbolID: "func First() int { return 9 }",
+		symbolID: "func First() int {\r\n\treturn 9\r\n}",
 	}
 	desired, err := changeapply.AssembleExistingGoFileStates(
 		fixture.snapshot, fixture.analysis, contract, candidates,
@@ -26,7 +26,7 @@ func TestAssembleExistingGoFileStatesReturnsOneCompleteExactPostimage(t *testing
 	if len(desired) != 1 {
 		t.Fatalf("assembled desired states=%+v", desired)
 	}
-	want := []byte("package changeapply\n\nfunc First() int { return 9 }\n")
+	want := []byte("package changeapply\n\nfunc First() int {\n\treturn 9\n}\n")
 	if desired[0].Path != file.Path || !desired[0].Present ||
 		desired[0].Source.FileID != file.ID || desired[0].Source.SHA256 != file.SHA256 ||
 		desired[0].Source.Size != file.Size || desired[0].Source.Mode != file.Mode ||
@@ -34,7 +34,7 @@ func TestAssembleExistingGoFileStatesReturnsOneCompleteExactPostimage(t *testing
 		!bytes.Equal(desired[0].Content, want) {
 		t.Fatalf("assembled desired state=%+v content=%q", desired, desired[0].Content)
 	}
-	if candidates[symbolID] != "func First() int { return 9 }" {
+	if candidates[symbolID] != "func First() int {\r\n\treturn 9\r\n}" {
 		t.Fatalf("assembler mutated caller-owned candidates: %#v", candidates)
 	}
 	assertFile(

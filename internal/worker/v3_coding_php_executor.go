@@ -15,6 +15,7 @@ func newDirectCodingPHPProjectStageExecutor(
 ) (directCodingProjectStageExecutor, error) {
 	return newDirectCodingLanguageProjectStageExecutor(session, directCodingLanguageStageConfig{
 		Language: "php", AdapterID: "php", Timeout: directCodingPHPStageTimeout,
+		ProjectFragment:    assemblyline.ProjectPHPFragment,
 		ValidateFragment:   validateDirectCodingPHPFragment,
 		ValidateAcceptance: validateDirectCodingPHPAcceptance,
 		TaskCommands:       phpServiceTaskVerificationCommands,

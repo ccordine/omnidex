@@ -137,6 +137,8 @@ func stationGapProjectionKind(
 	switch kind {
 	case assemblyline.PortableResultProjectionExactResponse:
 		return queue.StationGapProjectionExactResponse, nil
+	case assemblyline.PortableResultProjectionSourceDeclaration:
+		return queue.StationGapProjectionSourceDeclaration, nil
 	case assemblyline.PortableResultProjectionTypeScriptFunction:
 		return queue.StationGapProjectionTypeScriptFunction, nil
 	default:

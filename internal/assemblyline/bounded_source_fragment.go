@@ -19,25 +19,13 @@ func validateBoundedSourceFragment(
 		!utf8.ValidString(signature) || len(signature) > 1024 {
 		return "", fmt.Errorf("%s fragment signature must be one trimmed line", language.display)
 	}
-	content := strings.TrimSpace(strings.ReplaceAll(candidate, "\r\n", "\n"))
-	if content == "" {
-		return "", fmt.Errorf("%s fragment is empty", language.display)
-	}
-	if !utf8.ValidString(content) || strings.ContainsRune(content, '\x00') {
-		return "", fmt.Errorf("%s fragment must be valid UTF-8 without NUL bytes", language.display)
-	}
-	if len(content) > maxPortableCandidateBytes {
-		return "", fmt.Errorf(
-			"%s fragment exceeds %d bytes", language.display, maxPortableCandidateBytes,
-		)
+	content, actual, err := projectBoundedSourceDeclaration(language, candidate)
+	if err != nil {
+		return "", err
 	}
 	expected, err := boundedSourceDeclarationShape(language, signature+" {}")
 	if err != nil {
 		return "", fmt.Errorf("invalid code-owned %s signature: %w", language.display, err)
-	}
-	actual, err := boundedSourceDeclarationShape(language, content)
-	if err != nil {
-		return "", err
 	}
 	if actual != expected {
 		return "", fmt.Errorf(
@@ -46,6 +34,48 @@ func validateBoundedSourceFragment(
 		)
 	}
 	return content, nil
+}
+
+func projectBoundedSourceFragment(
+	language boundedSourceLanguage,
+	raw string,
+) (PortableResultProjection, error) {
+	content, _, err := projectBoundedSourceDeclaration(language, raw)
+	if err != nil {
+		return PortableResultProjection{}, err
+	}
+	startByte := strings.Index(raw, content)
+	if startByte < 0 {
+		return PortableResultProjection{}, fmt.Errorf(
+			"%s declaration is not an exact response span", language.display,
+		)
+	}
+	return NewSourceDeclarationPortableResultProjection(
+		raw, content, startByte, startByte+len(content),
+	)
+}
+
+func projectBoundedSourceDeclaration(
+	language boundedSourceLanguage,
+	candidate string,
+) (string, string, error) {
+	content := strings.TrimSpace(candidate)
+	if content == "" {
+		return "", "", fmt.Errorf("%s fragment is empty", language.display)
+	}
+	if !utf8.ValidString(content) || strings.ContainsRune(content, '\x00') {
+		return "", "", fmt.Errorf("%s fragment must be valid UTF-8 without NUL bytes", language.display)
+	}
+	if len(content) > maxPortableCandidateBytes {
+		return "", "", fmt.Errorf(
+			"%s fragment exceeds %d bytes", language.display, maxPortableCandidateBytes,
+		)
+	}
+	actual, err := boundedSourceDeclarationShape(language, content)
+	if err != nil {
+		return "", "", err
+	}
+	return content, actual, nil
 }
 
 func boundedSourceDeclarationShape(
@@ -65,6 +95,11 @@ func boundedSourceDeclarationShape(
 		)
 	}
 	top := root.NamedChild(0)
+	if int(top.StartByte()) != 0 || int(top.EndByte()) != len(source) {
+		return "", fmt.Errorf(
+			"%s fragment must contain only one exact top-level declaration", language.display,
+		)
+	}
 	declaration, err := boundedSourceDeclarationNode(language, top)
 	if err != nil {
 		return "", err

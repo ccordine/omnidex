@@ -70,6 +70,7 @@ func TestPlannedTreeAndProgramPathsReachFragmentCandidateBoundary(t *testing.T) 
 						Language: "javascript", Dialect: "ECMAScript 2022", Signature: "function artifactLabel()",
 						Behavior: "Return one stable semantic label.",
 					},
+					Project: assemblyline.ProjectJavaScriptFragment,
 					Validate: func(_ assemblyline.FragmentGenerationInput, candidate string) (string, error) {
 						return candidate, nil
 					},

@@ -60,9 +60,11 @@ func runDirectCodingGoFragmentGenerationWorker(
 		err = finalizeTypedWorkerResult(runtime, baseJob, result, err)
 		return "", failDirectCodingGoGeneration(runtime, modelName, job.Subject, 1, err)
 	}
-	candidate, candidateErr := gofragment.ProjectFunctionModelResponse(strings.TrimSpace(result.Candidate))
+	projection, candidateErr := projectDirectCodingGoFragment(result.Candidate)
+	candidate := projection.Source
 	if candidateErr == nil {
-		candidate, candidateErr = gofragment.ParseNewFunction(
+		result.Projection = &projection
+		_, candidateErr = gofragment.ParseNewFunction(
 			job.Input.Signature, job.Input.PermittedSymbols, candidate,
 		)
 	}

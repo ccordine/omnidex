@@ -11,13 +11,29 @@ import (
 
 func TestGoFragmentGenerationReturnsOnlyOneSignatureBoundDeclaration(t *testing.T) {
 	t.Parallel()
+	const raw = " \n```go\nfunc Added() int { return 2 }\n```\n"
+	const declaration = "func Added() int { return 2 }"
 	var prompt string
+	finalized := false
 	runtime := typedWorkerRuntime{
 		Context: context.Background(), MaxAttempts: 1,
 		Execute: func(job assemblyline.PortableJob, _ string) (assemblyline.PortableResult, error) {
 			var err error
 			prompt, _, err = assemblyline.RenderPortableJob(job)
-			return assemblyline.PortableResult{JobID: job.ID, Candidate: "func Added() int { return 2 }"}, err
+			return assemblyline.PortableResult{JobID: job.ID, Candidate: raw}, err
+		},
+		Finalize: func(
+			_ assemblyline.PortableJob,
+			result assemblyline.PortableResult,
+			validationErr error,
+		) error {
+			if validationErr != nil || result.Candidate != raw || result.Projection == nil ||
+				result.Projection.Kind != assemblyline.PortableResultProjectionSourceDeclaration ||
+				result.Projection.Source != declaration {
+				t.Fatalf("finalized result=%+v validation=%v", result, validationErr)
+			}
+			finalized = true
+			return nil
 		},
 	}
 	got, err := runDirectCodingGoFragmentGenerationWorker(runtime, "coder", directCodingGoGenerationJob{
@@ -29,7 +45,7 @@ func TestGoFragmentGenerationReturnsOnlyOneSignatureBoundDeclaration(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got != "func Added() int {\n\treturn 2\n}" {
+	if got != declaration || !finalized {
 		t.Fatalf("declaration=%q", got)
 	}
 	for _, forbidden := range []string{"added.go", "/workspace", "create_file", "delete_file"} {

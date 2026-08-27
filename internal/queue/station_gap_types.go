@@ -84,6 +84,7 @@ type StationGapProjectionKind string
 
 const (
 	StationGapProjectionExactResponse      StationGapProjectionKind = "exact_response"
+	StationGapProjectionSourceDeclaration  StationGapProjectionKind = "source_declaration"
 	StationGapProjectionTypeScriptFunction StationGapProjectionKind = "typescript_function"
 )
 

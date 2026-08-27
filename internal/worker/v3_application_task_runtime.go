@@ -23,7 +23,9 @@ func (s *directCodingSession) generateDirectCodingApplicationTaskBlock(
 		return "", err
 	}
 	runtime := directCodingWorkerRuntime(s)
-	return runDirectCodingTypeScriptFragmentWorker(runtime, modelName, job)
+	return generateDirectCodingTypeScriptBlockWithRuntime(
+		runtime, modelName, s.typeScriptRepairModels, s.typeScriptRepairEvents(), job,
+	)
 }
 
 func directCodingApplicationTaskFragmentJob(

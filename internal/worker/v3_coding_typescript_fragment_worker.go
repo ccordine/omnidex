@@ -88,6 +88,7 @@ func runDirectCodingTypeScriptFragmentWorker(
 		return "", failDirectCodingTypeScriptFragmentWorker(runtime, modelName, job.block.ID, 1, err)
 	}
 	candidate := ""
+	initialProjectionAccepted := false
 	if job.repairRegion != nil {
 		var replacement string
 		replacement, err = assemblyline.ProjectTypeScriptFragmentRepairResponse(
@@ -119,14 +120,23 @@ func runDirectCodingTypeScriptFragmentWorker(
 			portableProjection, err = projection.PortableResultProjection()
 			if err == nil {
 				result.Projection = &portableProjection
+				initialProjectionAccepted = !guided
 			}
 		}
 	}
 	candidate = strings.TrimSpace(candidate)
-	if err == nil {
-		err = assemblyline.ValidatePathFreeSourceModelContextWithProvenance(
+	candidatePathFree := false
+	if candidate != "" {
+		pathErr := assemblyline.ValidatePathFreeSourceModelContextWithProvenance(
 			"TypeScript fragment candidate", runtime.PathProvenance, candidate,
 		)
+		if pathErr == nil {
+			candidatePathFree = true
+		} else if err == nil {
+			err = pathErr
+		} else {
+			err = errors.Join(err, pathErr)
+		}
 	}
 	if err == nil && guided && candidate == strings.TrimSpace(job.current) {
 		err = errDirectCodingTypeScriptUnchangedCorrection
@@ -137,7 +147,14 @@ func runDirectCodingTypeScriptFragmentWorker(
 		}, candidate)
 	}
 	if err != nil {
-		rejectionErr := finalizeTypedWorkerResult(runtime, baseJob, result, err)
+		validationErr := err
+		if !guided && initialProjectionAccepted && candidatePathFree {
+			validationErr = &directCodingTypeScriptInitialFragmentRejection{
+				Candidate: candidate,
+				Failure:   err,
+			}
+		}
+		rejectionErr := finalizeTypedWorkerResult(runtime, baseJob, result, validationErr)
 		emitTypedWorker(runtime, typedWorkerEvent{
 			State: typedWorkerRejected, Kind: typedWorkerFragment, Subject: job.block.ID,
 			Model: modelName, Attempt: 1, MaxAttempts: directCodingTypeScriptModelAttempts,

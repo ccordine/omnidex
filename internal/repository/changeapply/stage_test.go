@@ -63,8 +63,8 @@ func TestPlanStagesOnlyChangedPostImagesAndApplyVerifiedCommitsExactMultiFilePat
 			t.Fatalf("delta copied unchanged path %q: %v", unchanged, err)
 		}
 	}
-	assertFile(t, filepath.Join(stage.DeltaRoot(), "first.go"), "package changeapply\n\n// retained first\nfunc First() int { return 11 }\n", 0o640)
-	assertFile(t, filepath.Join(stage.DeltaRoot(), "second.go"), "package changeapply\n\nfunc Second() int { return 22 }\n\n// retained second\n", 0o600)
+	assertFile(t, filepath.Join(stage.DeltaRoot(), "first.go"), "package changeapply\n\n// retained first\nfunc First() int {\n\treturn 11\n}\n", 0o640)
+	assertFile(t, filepath.Join(stage.DeltaRoot(), "second.go"), "package changeapply\n\nfunc Second() int {\n\treturn 22\n}\n\n// retained second\n", 0o600)
 
 	raw, err := json.Marshal(candidates)
 	if err != nil {
@@ -80,8 +80,8 @@ func TestPlanStagesOnlyChangedPostImagesAndApplyVerifiedCommitsExactMultiFilePat
 	if len(result.Files) != 2 {
 		t.Fatalf("applied files=%+v", result.Files)
 	}
-	assertFile(t, filepath.Join(fixture.root, "first.go"), "package changeapply\n\n// retained first\nfunc First() int { return 11 }\n", 0o640)
-	assertFile(t, filepath.Join(fixture.root, "second.go"), "package changeapply\n\nfunc Second() int { return 22 }\n\n// retained second\n", 0o600)
+	assertFile(t, filepath.Join(fixture.root, "first.go"), "package changeapply\n\n// retained first\nfunc First() int {\n\treturn 11\n}\n", 0o640)
+	assertFile(t, filepath.Join(fixture.root, "second.go"), "package changeapply\n\nfunc Second() int {\n\treturn 22\n}\n\n// retained second\n", 0o600)
 	assertFile(t, filepath.Join(fixture.root, "unchanged.md"), "unchanged bytes\n", 0o644)
 	if _, err := stage.ApplyVerified(context.Background()); err == nil || !strings.Contains(err.Error(), "already applied") {
 		t.Fatalf("second authoritative apply error=%v", err)

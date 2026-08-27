@@ -184,6 +184,7 @@ func validateStationGapSourceProjection(
 	responseBytes int,
 ) error {
 	if projection.Kind != StationGapProjectionExactResponse &&
+		projection.Kind != StationGapProjectionSourceDeclaration &&
 		projection.Kind != StationGapProjectionTypeScriptFunction {
 		return fmt.Errorf("kind %q is not registered", projection.Kind)
 	}

@@ -275,62 +275,7 @@ func replayExactStationArtifact(
 		}
 		return artifact, nil
 	}
-	if job.Kind == assemblyline.WorkTypeScriptRepairGuidance {
-		guidance, err := assemblyline.DecodeTypeScriptRepairGuidanceResult(job, raw)
-		artifact.Kind = "typescript_repair_guidance"
-		if err != nil {
-			return artifact, err
-		}
-		artifact.Source = guidance.Instruction
-		artifact.SourceSHA256 = replaySHA256(guidance.Instruction)
-		artifact.StartByte, artifact.EndByte = 0, len(guidance.Instruction)
-		artifact.DiscardedBytes = len(raw) - len(guidance.Instruction)
-		return artifact, nil
-	}
-	if job.Kind != assemblyline.WorkFragmentGeneration && job.Kind != assemblyline.WorkFragmentCorrection {
-		return artifact, nil
-	}
-	var correction assemblyline.FragmentCorrectionInput
-	var signature, language, current string
-	var region *assemblyline.TypeScriptFragmentRepairRegion
-	if job.Kind == assemblyline.WorkFragmentGeneration {
-		var generation assemblyline.FragmentGenerationInput
-		if err := json.Unmarshal(job.Payload, &generation); err != nil {
-			return artifact, fmt.Errorf("decode replay fragment generation input: %w", err)
-		}
-		signature, language = generation.Signature, generation.Language
-	} else {
-		if err := json.Unmarshal(job.Payload, &correction); err != nil {
-			return artifact, fmt.Errorf("decode replay fragment correction input: %w", err)
-		}
-		signature, language, current, region = correction.Signature, correction.Language,
-			correction.CurrentDeclaration, correction.RepairRegion
-	}
-	if language != "typescript" {
-		return artifact, nil
-	}
-	if region != nil {
-		replacement, err := assemblyline.ProjectTypeScriptFragmentRepairResponse(*region, raw)
-		artifact.Kind, artifact.Source = "typescript_repair_region", replacement
-		artifact.SourceSHA256 = replaySHA256(replacement)
-		artifact.StartByte, artifact.EndByte = 0, len(replacement)
-		artifact.DiscardedBytes = len(raw) - len(replacement)
-		artifact.ChangedFromBase = replacement != region.Source
-		if err != nil {
-			return artifact, fmt.Errorf("project replay TypeScript repair region: %w", err)
-		}
-		return artifact, nil
-	}
-	projection, err := assemblyline.ProjectTypeScriptFunctionModelResponse(
-		assemblyline.TypeScriptFunctionContract{Signature: signature, TSX: true}, raw,
-	)
-	artifact.Kind, artifact.Source, artifact.SourceSHA256 = "typescript_function", projection.Source, projection.SourceSHA256
-	artifact.StartByte, artifact.EndByte, artifact.DiscardedBytes = projection.StartByte, projection.EndByte, projection.DiscardedBytes
-	artifact.ChangedFromBase = current != "" && projection.Source != current
-	if err != nil {
-		return artifact, fmt.Errorf("project replay TypeScript function: %w", err)
-	}
-	return artifact, nil
+	return replayExactStationSourceArtifact(job, raw, artifact)
 }
 
 func replaySHA256(value string) string {

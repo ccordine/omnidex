@@ -19,11 +19,54 @@ func (executor *directCodingLanguageProjectStageExecutor) repairLanguageBlock(
 	diagnostic string,
 	validator directCodingLanguageFragmentValidator,
 ) (string, error) {
-	if stage == nil || !executor.config.Repair.enabled() || !ref.Block.Generated() {
-		return "", fmt.Errorf("language repair requires one configured generated block")
+	guidanceModel, correctionModel, err := executor.languageRepairModels()
+	if err != nil {
+		return "", err
+	}
+	return executor.repairLanguageBlockWithRuntime(
+		directCodingWorkerRuntime(executor.session), guidanceModel, correctionModel,
+		stage, ref, generation, current, diagnostic, validator,
+	)
+}
+
+func (executor *directCodingLanguageProjectStageExecutor) languageRepairModels() (
+	string,
+	string,
+	error,
+) {
+	if executor == nil || executor.session == nil {
+		return "", "", fmt.Errorf("language repair requires one active coding session")
+	}
+	guidanceModel, err := executor.session.workerModel(station.CodingFragmentRepairGuidance)
+	if err != nil {
+		return "", "", err
+	}
+	correctionModel, err := executor.session.workerModel(station.CodingFragmentCorrection)
+	if err != nil {
+		return "", "", err
+	}
+	return guidanceModel, correctionModel, nil
+}
+
+func (executor *directCodingLanguageProjectStageExecutor) repairLanguageBlockWithRuntime(
+	runtime typedWorkerRuntime,
+	guidanceModel string,
+	correctionModel string,
+	stage *directCodingProgram,
+	ref assemblyline.SourceBlockRef,
+	generation assemblyline.FragmentGenerationInput,
+	current string,
+	diagnostic string,
+	validator directCodingLanguageFragmentValidator,
+) (string, error) {
+	if executor == nil || stage == nil || !ref.Block.Generated() || validator == nil {
+		return "", fmt.Errorf("language repair requires one generated block and parser")
 	}
 	if ref.Block.Role == assemblyline.SourceBlockTaskVerification {
 		return "", fmt.Errorf("generated verification source is not repair model context")
+	}
+	if executor.repairAttempts == nil || executor.repairGuidance == nil || executor.repairSources == nil {
+		return "", fmt.Errorf("language repair state is not initialized")
 	}
 	if executor.repairAttempts[ref.Block.ID] >= maxDirectCodingLanguageCorrections {
 		return "", fmt.Errorf(
@@ -41,14 +84,6 @@ func (executor *directCodingLanguageProjectStageExecutor) repairLanguageBlock(
 	if err != nil {
 		return "", err
 	}
-	guidanceModel, err := executor.session.workerModel(station.CodingFragmentRepairGuidance)
-	if err != nil {
-		return "", err
-	}
-	correctionModel, err := executor.session.workerModel(station.CodingFragmentCorrection)
-	if err != nil {
-		return "", err
-	}
 	var prior *assemblyline.FragmentRepairGuidanceRejection
 	for attempt := 0; attempt < maxDirectCodingLanguageCorrections; attempt++ {
 		input := assemblyline.FragmentRepairGuidanceInput{
@@ -61,7 +96,7 @@ func (executor *directCodingLanguageProjectStageExecutor) repairLanguageBlock(
 			PriorRejection:     prior,
 		}
 		guidance, err := runDirectCodingLanguageRepairGuidance(
-			directCodingWorkerRuntime(executor.session), guidanceModel, ref.Block.ID, input,
+			runtime, guidanceModel, ref.Block.ID, input,
 		)
 		if err != nil {
 			return "", err
@@ -71,7 +106,7 @@ func (executor *directCodingLanguageProjectStageExecutor) repairLanguageBlock(
 			return "", err
 		}
 		candidate, err := runDirectCodingLanguageCorrection(
-			directCodingWorkerRuntime(executor.session), correctionModel, ref.Block.ID,
+			runtime, correctionModel, ref.Block.ID,
 			current, guidance,
 			func(candidate string) (string, error) {
 				return validator(generation, candidate)
@@ -184,10 +219,10 @@ func applyDirectCodingLanguageRepair(
 }
 
 func directCodingLanguageParserRepairDiagnostic(
-	session *directCodingSession,
+	provenance assemblyline.ArtifactIdentityProvenance,
 	failure error,
 ) (string, error) {
-	if session == nil || failure == nil {
+	if failure == nil {
 		return "", fmt.Errorf("parser repair requires one exact failure")
 	}
 	diagnostic := trimForBudget(
@@ -198,7 +233,7 @@ func directCodingLanguageParserRepairDiagnostic(
 	}
 	if err := assemblyline.ValidatePathFreeModelContextWithProvenance(
 		"language parser repair diagnostic",
-		directCodingWorkerRuntime(session).PathProvenance,
+		provenance,
 		diagnostic,
 	); err != nil {
 		return "", err

@@ -17,6 +17,7 @@ type directCodingLanguageStageConfig struct {
 	Language           string
 	AdapterID          string
 	Timeout            time.Duration
+	ProjectFragment    directCodingLanguageFragmentProjector
 	ValidateFragment   directCodingLanguageFragmentValidator
 	ValidateAcceptance func(*directCodingProgram, assemblyline.SourceBlockRef, string) error
 	TaskCommands       func(
@@ -62,7 +63,8 @@ func newDirectCodingLanguageProjectStageExecutor(
 
 func validateDirectCodingLanguageStageConfig(config directCodingLanguageStageConfig) error {
 	if strings.TrimSpace(config.Language) == "" || strings.TrimSpace(config.AdapterID) == "" ||
-		config.Timeout <= 0 || config.ValidateFragment == nil || config.TaskCommands == nil ||
+		config.Timeout <= 0 || config.ProjectFragment == nil || config.ValidateFragment == nil ||
+		config.TaskCommands == nil ||
 		config.FinalCommands == nil {
 		return fmt.Errorf("language stage configuration requires identity, parsers, timeout, and verification commands")
 	}
@@ -118,24 +120,49 @@ func (executor *directCodingLanguageProjectStageExecutor) GenerateBlock(
 			return source, nil
 		}
 	}
+	return executor.generateBlockWithRuntime(
+		runtime, modelName, executor.languageRepairModels,
+		stage, ref, input, validate,
+	)
+}
+
+func (executor *directCodingLanguageProjectStageExecutor) generateBlockWithRuntime(
+	runtime typedWorkerRuntime,
+	modelName string,
+	repairModels directCodingLanguageRepairModelResolver,
+	stage *directCodingProgram,
+	ref assemblyline.SourceBlockRef,
+	input assemblyline.FragmentGenerationInput,
+	validate directCodingLanguageFragmentValidator,
+) (string, error) {
 	source, err := runDirectCodingLanguageFragmentWorker(
 		runtime, modelName,
 		directCodingLanguageGenerationJob{
-			Subject: ref.Block.ID, Input: input, Validate: validate,
+			Subject: ref.Block.ID, Input: input,
+			Project: executor.config.ProjectFragment, Validate: validate,
 		},
 	)
 	if err != nil {
 		var rejection *directCodingLanguageFragmentRejection
-		if executor.config.Repair.enabled() &&
-			ref.Block.Role != assemblyline.SourceBlockTaskVerification &&
+		if ref.Block.Role != assemblyline.SourceBlockTaskVerification &&
 			errors.As(err, &rejection) {
 			diagnostic, diagnosticErr := directCodingLanguageParserRepairDiagnostic(
-				executor.session, rejection.Failure,
+				runtime.PathProvenance, rejection.Failure,
 			)
 			if diagnosticErr != nil {
 				return "", errors.Join(err, diagnosticErr)
 			}
-			return executor.repairLanguageBlock(
+			if repairModels == nil {
+				return "", fmt.Errorf("initial language fragment repair model routing is unavailable")
+			}
+			guidanceModel, correctionModel, modelErr := repairModels()
+			if modelErr != nil {
+				return "", modelErr
+			}
+			repairRuntime := runtime
+			repairRuntime.MaxAttempts = maxTypedWorkerAttempts
+			return executor.repairLanguageBlockWithRuntime(
+				repairRuntime, guidanceModel, correctionModel,
 				stage, ref, input, rejection.Candidate, diagnostic, validate,
 			)
 		}

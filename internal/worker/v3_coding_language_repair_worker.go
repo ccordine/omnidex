@@ -88,7 +88,13 @@ func runDirectCodingLanguageCorrection(
 		err = finalizeTypedWorkerResult(runtime, job, result, err)
 		return "", failDirectCodingLanguageCorrection(runtime, modelName, subject, err)
 	}
-	candidate := strings.TrimSpace(result.Candidate)
+	projection, err := assemblyline.ProjectTrimmedSourceDeclarationResponse(result.Candidate)
+	if err != nil {
+		err = finalizeTypedWorkerResult(runtime, job, result, err)
+		return "", failDirectCodingLanguageCorrection(runtime, modelName, subject, err)
+	}
+	result.Projection = &projection
+	candidate := projection.Source
 	if err := assemblyline.ValidatePathFreeSourceModelContextWithProvenance(
 		"language correction candidate", runtime.PathProvenance, candidate,
 	); err != nil {
@@ -106,6 +112,13 @@ func runDirectCodingLanguageCorrection(
 		err = finalizeTypedWorkerResult(runtime, job, result, err)
 		return "", failDirectCodingLanguageCorrection(runtime, modelName, subject, err)
 	}
+	if currentValidated, currentErr := validate(current); currentErr == nil &&
+		validated == currentValidated {
+		err = finalizeTypedWorkerResult(
+			runtime, job, result, errDirectCodingLanguageCorrectionUnchanged,
+		)
+		return "", failDirectCodingLanguageCorrection(runtime, modelName, subject, err)
+	}
 	if err := finalizeTypedWorkerResult(runtime, job, result, nil); err != nil {
 		return "", failDirectCodingLanguageCorrection(runtime, modelName, subject, err)
 	}
@@ -113,7 +126,7 @@ func runDirectCodingLanguageCorrection(
 		State: typedWorkerCompleted, Kind: typedWorkerFragment, Subject: subject,
 		Model: modelName, Attempt: 1, MaxAttempts: 1,
 	})
-	return validated, nil
+	return candidate, nil
 }
 
 func failDirectCodingLanguageCorrection(

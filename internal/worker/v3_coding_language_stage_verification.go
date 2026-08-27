@@ -29,7 +29,7 @@ func (executor *directCodingLanguageProjectStageExecutor) verifyLanguageStageCom
 		}
 		output, commandErr := executor.runLanguageStageCommand(command)
 		for commandErr != nil {
-			if !executor.config.Repair.enabled() {
+			if !executor.config.Repair.stageFailureEnabled() {
 				return executor.unrepairableLanguageStageFailure(command, output, commandErr)
 			}
 			mapped, ok, mapErr := executor.config.Repair.MapStageFailure(

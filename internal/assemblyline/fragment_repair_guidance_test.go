@@ -10,6 +10,12 @@ func TestFragmentRepairGuidanceSupportsUnrelatedRegisteredLanguages(t *testing.T
 	t.Parallel()
 	fixtures := []FragmentRepairGuidanceInput{
 		{
+			Language: "go", Dialect: "Go 1.24 function syntax",
+			Signature:          "func canonicalRune(value rune) rune",
+			CurrentDeclaration: `func canonicalRune(value rune) rune { return unicode.ToUpper(value) }`,
+			Diagnostic:         `SOURCE_DIAGNOSTIC: Go fragment references undeclared capability "unicode"`,
+		},
+		{
 			Language: "php", Dialect: "PHP 8.2 function syntax",
 			Signature: "function transform(array $values): array",
 			Capabilities: []string{
