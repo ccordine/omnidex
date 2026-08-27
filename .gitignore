@@ -16,6 +16,7 @@ coverage.out
 *.cover
 *.prof
 .agent-cache/
+.agent-*-cache/
 .codex-ledger-fixture.*/
 .migration-manifest-*/
 .tmp-ledger-cascade.*/

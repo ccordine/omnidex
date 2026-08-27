@@ -1,4 +1,0 @@
-./legacy_public_cutover.go
-./postgres.go
-./legacy_public_cutover_test.go
-./runtime_schema_test.go
