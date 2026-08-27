@@ -63,6 +63,35 @@ func TestLanguageFragmentWorkerRejectsKnownBareArtifactInCandidate(t *testing.T)
 	}
 }
 
+func TestLanguageFragmentWorkerAcceptsInterpretedControlEscapes(t *testing.T) {
+	t.Parallel()
+	candidate := `func AppendLineBreak(input string) string {
+	return input + "\n"
+}`
+	runtime := typedWorkerRuntime{
+		Context: context.Background(), MaxAttempts: 1,
+		Execute: testPortableExecutor(func(_ string, _ string, _ string, _ map[string]any) (string, error) {
+			return candidate, nil
+		}),
+	}
+	got, err := runDirectCodingLanguageFragmentWorker(
+		runtime, "fragment-model", directCodingLanguageGenerationJob{
+			Subject: "opaque-block",
+			Input: assemblyline.FragmentGenerationInput{
+				Language: "go", Dialect: "Go 1.24", Signature: "func AppendLineBreak(input string) string",
+				Behavior: "Append one line break to a label.",
+			},
+			Validate: validateDirectCodingGoFragment,
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(got, `input + "\n"`) {
+		t.Fatalf("validated fragment lost its newline escape: %q", got)
+	}
+}
+
 func TestJavaScriptFragmentScopeRejectsUndeclaredAndDynamicAuthority(t *testing.T) {
 	input := assemblyline.FragmentGenerationInput{
 		Language: "javascript", Dialect: "ECMAScript 2022", Signature: "function feature001(input, dependencies)",

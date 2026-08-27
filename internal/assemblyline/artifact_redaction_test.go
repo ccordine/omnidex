@@ -1,6 +1,7 @@
 package assemblyline
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 
@@ -176,5 +177,16 @@ func TestFragmentSourceBoundaryRejectsPathBearingLiteral(t *testing.T) {
 	)
 	if err == nil || !strings.Contains(err.Error(), "filesystem identity") {
 		t.Fatalf("path-bearing source literal error=%v", err)
+	}
+}
+
+func TestFragmentSourceBoundaryReportsEncodedPathFromRawSource(t *testing.T) {
+	t.Parallel()
+	rawIdentity := `\x2fprivate\x2fvalue`
+	err := ValidatePathFreeSourceModelContext(
+		"parser-proven JavaScript", `function value() { return "`+rawIdentity+`"; }`,
+	)
+	if err == nil || !strings.Contains(err.Error(), strconv.Quote(rawIdentity)) {
+		t.Fatalf("encoded source path did not retain its raw diagnostic span: %v", err)
 	}
 }

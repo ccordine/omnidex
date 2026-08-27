@@ -258,7 +258,9 @@ func appendAdjustedSourceLiteralPathIdentities(
 		})
 		return destination
 	}
-	return appendAdjustedPathIdentities(destination, value, offset, provenance)
+	return appendDecodedSourceLiteralPathIdentities(
+		destination, value, offset, provenance,
+	)
 }
 
 func appendAdjustedSourcePathIdentities(
