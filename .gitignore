@@ -17,6 +17,7 @@ coverage.out
 *.prof
 .agent-cache/
 .agent-*-cache/
+.agent-*-release/
 .codex-ledger-fixture.*/
 .migration-manifest-*/
 .tmp-ledger-cascade.*/
@@ -37,6 +38,7 @@ logs/
 *.sqlite
 *.sqlite3
 tmp/
+/.tmp/
 temp/
 
 # Editor and OS noise
