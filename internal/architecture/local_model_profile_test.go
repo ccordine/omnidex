@@ -9,11 +9,12 @@ import (
 )
 
 const (
-	localSemanticModel       = "qwen3.5:9b-q4_K_M"
-	localPlannerModel        = "llama3.2:3b"
-	localFragmentModel       = "qwen2.5-coder:7b"
-	localRepairGuidanceModel = "qwen3.5:9b-q4_K_M"
-	localReviewModel         = "deepseek-r1:8b"
+	localSemanticModel         = "qwen3.5:9b-q4_K_M"
+	localPlannerModel          = "llama3.2:3b"
+	localDeploymentIntentModel = "phi4:14b"
+	localFragmentModel         = "qwen2.5-coder:7b"
+	localRepairGuidanceModel   = "qwen3.5:9b-q4_K_M"
+	localReviewModel           = "deepseek-r1:8b"
 )
 
 func TestLocalModelProfileUsesStableSemanticAndFragmentModels(t *testing.T) {
@@ -57,6 +58,9 @@ func TestLocalModelProfileUsesStableSemanticAndFragmentModels(t *testing.T) {
 			if got := values[key]; got != localPlannerModel {
 				t.Errorf("%s: %s=%q, want %q", name, key, got, localPlannerModel)
 			}
+		}
+		if got := values["OMNI_CODING_SERVICE_DEPLOYMENT_INTENT_MODEL"]; got != localDeploymentIntentModel {
+			t.Errorf("%s: deployment intent model=%q, want %q", name, got, localDeploymentIntentModel)
 		}
 		if got := values["OMNI_WEB_CLAIM_EVIDENCE_REVIEW_MODEL"]; got != localReviewModel {
 			t.Errorf("%s: independent web review model=%q, want %q", name, got, localReviewModel)

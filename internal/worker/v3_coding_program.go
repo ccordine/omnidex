@@ -96,18 +96,27 @@ func compileDirectCodingProgramWithServiceEndpoints(
 	if err != nil {
 		return directCodingProgram{}, err
 	}
-	if stack.ValidateTargetTree == nil {
-		return directCodingProgram{}, fmt.Errorf(
-			"project stack %s has no target-tree validator", stack.ID,
-		)
-	}
-	if err := stack.ValidateTargetTree(targetTree); err != nil {
+	if err := validateDirectCodingTargetTreeUnion(stack, targetTree); err != nil {
 		return directCodingProgram{}, fmt.Errorf(
 			"validate %s target tree: %w", stack.ID, err,
 		)
 	}
+	if len(workload.Tasks) == 1 {
+		if err := validateDirectCodingFocusedTargetTree(stack, targetTree); err != nil {
+			return directCodingProgram{}, fmt.Errorf(
+				"validate %s target tree: %w", stack.ID, err,
+			)
+		}
+	}
 	if err := coverage.ValidateFor(targetTree, workload); err != nil {
 		return directCodingProgram{}, fmt.Errorf("validate application file coverage: %w", err)
+	}
+	if len(workload.Tasks) > 1 {
+		if err := validateDirectCodingCoveredFocusedTargetTrees(stack, workload, coverage); err != nil {
+			return directCodingProgram{}, fmt.Errorf(
+				"validate %s target tree: %w", stack.ID, err,
+			)
+		}
 	}
 	var blueprint assemblyline.SourceBlueprint
 	var staticFiles []directCodingFileTask

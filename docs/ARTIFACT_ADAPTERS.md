@@ -208,7 +208,9 @@ This block is also checked against the executable registry by tests.
 
 Each frozen task receives one focused target-tree resolution under the selected
 stack. A model returns paths only when naming remains semantically unresolved;
-the rigid PHP feature/test grammar is projected mechanically with no inference.
+the command-line path-pair grammars and rigid PHP feature/test grammar are
+projected mechanically with no inference. TypeScript/React browser component
+placement remains the current inference consumer.
 Code retains task provenance, builds the union and coverage graph, generates all
 task-neutral static files, and rejects any path or artifact class outside that
 stack. An unsupported surface, state lifetime, or technical format fails loudly;

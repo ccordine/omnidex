@@ -113,6 +113,7 @@ func TestApplyExactStationRoutingFields(t *testing.T) {
 		"web_claim_evidence_review_model":         "qwen3:8b-review",
 		"coding_surface_model":                    "qwen3:4b-surface",
 		"coding_requirements_model":               "qwen2.5-coder:7b-requirements",
+		"coding_service_deployment_intent_model":  "phi4:14b-deployment",
 		"coding_workload_model":                   "qwen3.5:27b-workload",
 		"coding_artifact_handling_model":          "qwen2.5:3b-artifact",
 		"coding_capability_relation_model":        "qwen3:4b-relation",
@@ -157,8 +158,11 @@ func TestApplyExactStationRoutingFields(t *testing.T) {
 	if got := applied.Stations[station.CodingProjectStackConstraint]; got != "qwen2.5-coder:7b-requirements" {
 		t.Fatalf("coding project stack constraint model=%q", got)
 	}
-	if got := applied.Stations[station.CodingServiceDeploymentIntent]; got != "qwen2.5-coder:7b-requirements" {
-		t.Fatalf("coding service deployment intent model=%q", got)
+	if got := applied.Stations[station.CodingServiceContinuedAvailability]; got != "phi4:14b-deployment" {
+		t.Fatalf("coding service continued availability model=%q", got)
+	}
+	if got := applied.Stations[station.CodingServicePersistenceDestination]; got != "phi4:14b-deployment" {
+		t.Fatalf("coding service persistence destination model=%q", got)
 	}
 	if got := applied.Stations[station.CodingServiceStateLifetime]; got != "qwen3.5:27b-workload" {
 		t.Fatalf("coding service state lifetime model=%q", got)

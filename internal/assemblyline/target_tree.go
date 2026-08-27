@@ -22,13 +22,36 @@ const (
 	TargetArtifactVerification   TargetArtifactKind = "verification"
 )
 
-// TargetTreeInput is code-owned context for one structural question. ExistingPaths
-// contains the current workspace plus path leaves already reserved by earlier
-// focused tree calls; those paths are evidence, not part of the model's output.
+// TargetTreeConstraints are code-selected structural facts. They constrain
+// model output and code-owned candidates identically; they are not inferred.
+type TargetTreeConstraints struct {
+	ExactPathCount int  `json:"exact_path_count"`
+	RootFilesOnly  bool `json:"root_files_only"`
+}
+
+func (constraints TargetTreeConstraints) Validate() error {
+	if constraints.ExactPathCount < 1 || constraints.ExactPathCount > maxTargetTreePaths {
+		return fmt.Errorf(
+			"target tree exact path count must be between 1 and %d",
+			maxTargetTreePaths,
+		)
+	}
+	return nil
+}
+
+// TargetTreeInput is code-owned context for one structural question.
+// ExistingPaths is the exact filesystem snapshot, ReusablePaths contains leaves
+// accepted for earlier focused tasks that this stack permits another task to
+// share, and ReservedPaths contains leaves code has made unavailable. The sets
+// are intentionally orthogonal; a reserved path remains unavailable even when
+// it also exists in the workspace.
 type TargetTreeInput struct {
 	Objective        string                `json:"objective"`
 	TechnicalContext string                `json:"technical_context"`
+	Constraints      TargetTreeConstraints `json:"constraints"`
 	ExistingPaths    []string              `json:"existing_paths"`
+	ReusablePaths    []string              `json:"reusable_paths"`
+	ReservedPaths    []string              `json:"reserved_paths"`
 	ExistingDirs     []string              `json:"existing_dirs"`
 	Correction       *TargetTreeCorrection `json:"correction,omitempty"`
 }
@@ -58,13 +81,28 @@ func (input TargetTreeInput) Validate() error {
 	if err := validateTargetTreeText("technical context", input.TechnicalContext, maxTargetTreePathBytes); err != nil {
 		return err
 	}
+	if err := input.Constraints.Validate(); err != nil {
+		return err
+	}
 	if input.ExistingPaths == nil {
 		return fmt.Errorf("target tree existing workspace paths must be a non-nil array")
+	}
+	if input.ReusablePaths == nil {
+		return fmt.Errorf("target tree reusable accepted paths must be a non-nil array")
+	}
+	if input.ReservedPaths == nil {
+		return fmt.Errorf("target tree reserved paths must be a non-nil array")
 	}
 	if input.ExistingDirs == nil {
 		return fmt.Errorf("target tree existing workspace directories must be a non-nil array")
 	}
 	if err := validateTargetTreePaths("existing workspace path", input.ExistingPaths); err != nil {
+		return err
+	}
+	if err := validateTargetTreePaths("reusable accepted path", input.ReusablePaths); err != nil {
+		return err
+	}
+	if err := validateTargetTreePaths("reserved path", input.ReservedPaths); err != nil {
 		return err
 	}
 	if err := validateTargetTreePaths("existing workspace directory", input.ExistingDirs); err != nil {
@@ -89,15 +127,79 @@ func (candidate TargetTreeCandidate) ValidateFor(input TargetTreeInput) (TargetT
 	if candidate.Schema != TargetTreeCandidateSchemaV1 {
 		return zero, fmt.Errorf("target tree schema must be %q", TargetTreeCandidateSchemaV1)
 	}
-	if len(candidate.Paths) == 0 || len(candidate.Paths) > maxTargetTreePaths {
-		return zero, fmt.Errorf("target tree requires between 1 and %d paths", maxTargetTreePaths)
-	}
 	if err := validateTargetTreePaths("work path", candidate.Paths); err != nil {
 		return zero, err
 	}
 	paths := append([]string(nil), candidate.Paths...)
 	sort.Strings(paths)
-	return TargetTree{Paths: paths}, nil
+	target := TargetTree{Paths: paths}
+	if err := ValidateTargetTreeConstraints(input.Constraints, target); err != nil {
+		return zero, err
+	}
+	if err := ValidateTargetTreeExistingDirectories(input.ExistingDirs, target); err != nil {
+		return zero, err
+	}
+	if err := ValidateTargetTreeReservedPaths(input.ReservedPaths, target); err != nil {
+		return zero, err
+	}
+	return target, nil
+}
+
+// ValidateTargetTreeConstraints applies the same code-owned structural facts
+// at the decoded-candidate, deterministic projection, and compiler boundaries.
+func ValidateTargetTreeConstraints(constraints TargetTreeConstraints, target TargetTree) error {
+	if err := constraints.Validate(); err != nil {
+		return err
+	}
+	if len(target.Paths) != constraints.ExactPathCount {
+		return fmt.Errorf(
+			"target tree requires exactly %d paths", constraints.ExactPathCount,
+		)
+	}
+	if constraints.RootFilesOnly {
+		for _, artifactPath := range target.Paths {
+			if path.Dir(artifactPath) != "." {
+				return fmt.Errorf(
+					"target-tree path %q must be a file in the workspace root",
+					artifactPath,
+				)
+			}
+		}
+	}
+	return nil
+}
+
+// ValidateTargetTreeExistingDirectories prevents a file leaf from claiming an
+// exact path that the workspace snapshot proves is already a directory.
+func ValidateTargetTreeExistingDirectories(existingDirs []string, target TargetTree) error {
+	directories := make(map[string]struct{}, len(existingDirs))
+	for _, directory := range existingDirs {
+		directories[directory] = struct{}{}
+	}
+	for _, artifactPath := range target.Paths {
+		if _, conflict := directories[artifactPath]; conflict {
+			return fmt.Errorf(
+				"target-tree path %q conflicts with an existing workspace directory",
+				artifactPath,
+			)
+		}
+	}
+	return nil
+}
+
+// ValidateTargetTreeReservedPaths is the single collision check used by both
+// inferred target-tree inputs and code-owned project-stack validation.
+func ValidateTargetTreeReservedPaths(reservedPaths []string, target TargetTree) error {
+	reserved := make(map[string]struct{}, len(reservedPaths))
+	for _, artifactPath := range reservedPaths {
+		reserved[artifactPath] = struct{}{}
+	}
+	for _, artifactPath := range target.Paths {
+		if _, conflict := reserved[artifactPath]; conflict {
+			return fmt.Errorf("target-tree path %q is reserved and cannot be returned", artifactPath)
+		}
+	}
+	return nil
 }
 
 func validateTargetTreePaths(label string, paths []string) error {

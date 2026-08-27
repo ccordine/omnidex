@@ -77,6 +77,12 @@ func TestTargetTreeResolutionUnionsPluralLeavesAndRetainsSharedProvenance(t *tes
 		case strings.Contains(prompt, "Accepted behavior: display a current count"):
 			return `{"schema":"omnidex.target-tree.v1","paths":["src/shared.tsx","tests/display.test.tsx"]}`, nil
 		case strings.Contains(prompt, "Accepted behavior: increment the current count"):
+			if !strings.Contains(
+				prompt,
+				"REUSABLE_ACCEPTED_PATHS_JSON:\n[\"src/shared.tsx\",\"tests/display.test.tsx\"]",
+			) {
+				t.Fatalf("shared-path stack lacks reusable earlier-task authority: %s", prompt)
+			}
 			return `{"schema":"omnidex.target-tree.v1","paths":["src/shared.tsx","tests/increment.test.tsx"]}`, nil
 		default:
 			t.Fatalf("unexpected focused target-tree prompt: %s", prompt)
@@ -165,34 +171,19 @@ func TestTargetTreeResolutionCorrectsUnsupportedLeafBeforeCoverageConstruction(t
 	}
 }
 
-func TestTargetTreeResolutionCorrectsReservedExclusiveTaskPaths(t *testing.T) {
+func TestExclusiveCommandLineTargetTreeProjectsDistinctTaskPairsWithoutInference(t *testing.T) {
 	specification, workload := testApplicationFileCoverageAuthority(
 		t, assemblyline.ApplicationSurfaceCommandLine,
 		"two command behaviors", "return the first value", "return the second value",
 	)
 	calls := 0
-	runtime := typedWorkerRuntime{Context: context.Background(), MaxAttempts: 2, Execute: testPortableExecutor(func(_ string, model, prompt string, _ map[string]any) (string, error) {
-		calls++
-		switch calls {
-		case 1:
-			return `{"schema":"omnidex.target-tree.v1","paths":["src/shared.rs","tests/shared_test.rs"]}`, nil
-		case 2:
-			if !strings.Contains(prompt, "CURRENT_OR_RESERVED_PATHS_JSON") ||
-				!strings.Contains(prompt, "src/shared.rs") {
-				t.Fatalf("second focused tree lacks reserved-path authority: %s", prompt)
-			}
-			return `{"schema":"omnidex.target-tree.v1","paths":["src/shared.rs","tests/shared_test.rs"]}`, nil
-		case 3:
-			if model != "review-model" ||
-				!strings.Contains(prompt, "already owned by a previously accepted task") {
-				t.Fatalf("exclusive collision correction lacks exact failure: %s", prompt)
-			}
-			return `{"schema":"omnidex.target-tree.v1","paths":["src/second.rs","tests/second_test.rs"]}`, nil
-		default:
-			t.Fatalf("unexpected focused target-tree call %d", calls)
-			return "", nil
-		}
-	})}
+	runtime := typedWorkerRuntime{
+		Context: context.Background(), MaxAttempts: 2,
+		Execute: func(assemblyline.PortableJob, string) (assemblyline.PortableResult, error) {
+			calls++
+			return assemblyline.PortableResult{}, fmt.Errorf("forbidden Rust target-tree inference")
+		},
+	}
 	stack, err := directCodingProjectStackByID(genericRustCommandLineAdapter)
 	if err != nil {
 		t.Fatal(err)
@@ -203,8 +194,11 @@ func TestTargetTreeResolutionCorrectsReservedExclusiveTaskPaths(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"src/second.rs", "src/shared.rs", "tests/second_test.rs", "tests/shared_test.rs"}
-	if calls != 3 || !reflect.DeepEqual(tree.Paths, want) {
+	want := []string{
+		"src/feature001.rs", "src/feature002.rs",
+		"tests/feature001_test.rs", "tests/feature002_test.rs",
+	}
+	if calls != 0 || !reflect.DeepEqual(tree.Paths, want) {
 		t.Fatalf("calls=%d paths=%v want=%v", calls, tree.Paths, want)
 	}
 	if err := coverage.ValidateFor(tree, workload); err != nil {

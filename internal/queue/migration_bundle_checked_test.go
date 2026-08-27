@@ -112,6 +112,7 @@ func TestCheckedMigrationBundleFreezesExactProviderSplitSet(t *testing.T) {
 	serviceEndpointLeafStationCount := 0
 	serviceStateLifetimeStationCount := 0
 	serviceDeploymentIntentStationCount := 0
+	serviceDeploymentSemanticSplitCount := 0
 	generatedWorkloadDeploymentJournalCount := 0
 	generatedWorkloadDeploymentEvidenceCount := 0
 	generatedWorkloadProjectDeploymentHeadCount := 0
@@ -311,6 +312,9 @@ func TestCheckedMigrationBundleFreezesExactProviderSplitSet(t *testing.T) {
 		if entry.name == applicationServiceDeploymentIntentMigration {
 			serviceDeploymentIntentStationCount++
 		}
+		if entry.name == applicationServiceDeploymentSemanticSplitMigration {
+			serviceDeploymentSemanticSplitCount++
+		}
 		if entry.name == "140_generated_workload_deployment_journal.sql" {
 			generatedWorkloadDeploymentJournalCount++
 		}
@@ -330,8 +334,8 @@ func TestCheckedMigrationBundleFreezesExactProviderSplitSet(t *testing.T) {
 			generatedWorkloadDeploymentNamespacePreflightCount++
 		}
 	}
-	if len(bundle.entries) != 210 || len(got) != len(want) {
-		t.Fatalf("checked migration counts total/provider=%d/%d want 210/%d",
+	if len(bundle.entries) != 211 || len(got) != len(want) {
+		t.Fatalf("checked migration counts total/provider=%d/%d want 211/%d",
 			len(bundle.entries), len(got), len(want))
 	}
 	for _, name := range want {
@@ -406,6 +410,12 @@ func TestCheckedMigrationBundleFreezesExactProviderSplitSet(t *testing.T) {
 		t.Fatalf(
 			"checked service deployment intent migration count=%d want 1",
 			serviceDeploymentIntentStationCount,
+		)
+	}
+	if serviceDeploymentSemanticSplitCount != 1 {
+		t.Fatalf(
+			"checked service deployment semantic split migration count=%d want 1",
+			serviceDeploymentSemanticSplitCount,
 		)
 	}
 	if generatedWorkloadDeploymentJournalCount != 1 {

@@ -49,3 +49,24 @@ func TestValidateCoreEnvironmentFileRejectsRemovedOrMalformedConfiguration(t *te
 		})
 	}
 }
+
+func TestValidateCoreEnvironmentFileRejectsMissingStationRouteBeforePublish(t *testing.T) {
+	root := filepath.Clean(filepath.Join("..", ".."))
+	raw, err := os.ReadFile(filepath.Join(root, "default.env"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	line := "OMNI_CODING_SERVICE_DEPLOYMENT_INTENT_MODEL=phi4:14b\n"
+	mutated := []byte(strings.Replace(string(raw), line, "", 1))
+	if string(mutated) == string(raw) {
+		t.Fatalf("default.env lacks exact deployment-semantics route fixture")
+	}
+	path := filepath.Join(t.TempDir(), ".env")
+	if err := os.WriteFile(path, mutated, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	err = validateCoreEnvironmentFile(path)
+	if err == nil || !strings.Contains(err.Error(), "coding_service_continued_availability") {
+		t.Fatalf("missing station route error=%v", err)
+	}
+}

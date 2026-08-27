@@ -86,13 +86,13 @@ func TestGoCommandLineTargetTreeRejectsNestedReservedOrUnpairedLeaves(t *testing
 		"unpaired": {"first.go", "second.go"},
 	} {
 		t.Run(name, func(t *testing.T) {
-			err := validateDirectCodingTargetTreeAdapters(stack, assemblyline.TargetTree{Paths: paths})
+			err := validateDirectCodingFocusedTargetTree(stack, assemblyline.TargetTree{Paths: paths})
 			if err == nil {
 				t.Fatalf("accepted invalid Go target paths %v", paths)
 			}
 		})
 	}
-	if err := validateDirectCodingTargetTreeAdapters(
+	if err := validateDirectCodingFocusedTargetTree(
 		stack, assemblyline.TargetTree{Paths: []string{"feature.go", "feature_test.go"}},
 	); err != nil {
 		t.Fatal(err)

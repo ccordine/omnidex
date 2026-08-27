@@ -19,9 +19,13 @@ func validatePortableJobPayload(kind WorkKind, payload json.RawMessage) error {
 		return decodeAndValidatePortablePayload[ApplicationProjectStackConstraintInput](
 			payload, ApplicationProjectStackConstraintInput.validate,
 		)
-	case WorkApplicationServiceDeploymentIntent:
-		return decodeAndValidatePortablePayload[ApplicationServiceDeploymentIntentInput](
-			payload, ApplicationServiceDeploymentIntentInput.validate,
+	case WorkApplicationServiceContinuedAvailability:
+		return decodeAndValidatePortablePayload[ApplicationServiceContinuedAvailabilityInput](
+			payload, ApplicationServiceContinuedAvailabilityInput.validate,
+		)
+	case WorkApplicationServicePersistenceDestination:
+		return decodeAndValidatePortablePayload[ApplicationServicePersistenceDestinationInput](
+			payload, ApplicationServicePersistenceDestinationInput.validate,
 		)
 	case WorkApplicationServiceStateLifetime:
 		return decodeAndValidatePortablePayload[ApplicationServiceStateLifetimeInput](

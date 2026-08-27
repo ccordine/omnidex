@@ -29,14 +29,16 @@ second channel. Framework documents two SODIMM slots and support for up to
 - https://frame.work/products/ddr5-5600?v=FRANRM0003X2
 - https://frame.work/laptop16?slug=laptop16-amd-7040
 
-## Authoritative two-tier profile
+## Authoritative station-routed profile
 
-Use one stable model for authoritative small semantic stations, one independently
-routed reasoning model for repair guidance, and one coding model for raw declaration
-generation and instruction-only repair execution:
+Use one exact configured model per station. The active coding routes are deliberately
+split between bounded semantic extraction, deployment-semantics classification, repair
+guidance, and source-node generation:
 
 ```dotenv
-# Each named semantic station has its own explicit route.
+OMNI_CODING_REQUIREMENTS_MODEL=llama3.2:3b
+OMNI_CODING_SERVICE_DEPLOYMENT_INTENT_MODEL=phi4:14b
+OMNI_CODING_WORKLOAD_MODEL=llama3.2:3b
 OMNI_CODING_FRAGMENT_MODEL=qwen2.5-coder:7b
 OMNI_CODING_FRAGMENT_REPAIR_GUIDANCE_MODEL=qwen3.5:9b-q4_K_M
 OMNI_CODING_FRAGMENT_CORRECTION_MODEL=qwen2.5-coder:7b
@@ -46,14 +48,22 @@ CODING_FRAGMENT_CONCURRENCY=1
 ```
 
 The complete exact station-key list is checked in to `default.env` and `.env.example`.
-The repository and web claim-evidence review routes use `deepseek-r1:8b`.
-Their live provider identity must differ from the Qwen answer, synthesis, and
-correction routes; startup or the named review gap fails loudly if that exact
-independent route is unavailable. Keeping every other authoritative semantic
-route on one stable Qwen model avoids needless reloads between tiny stations.
-Production requirement extraction and splitting use the same schema-bound Qwen
-route; the final-partition reasoning-adviser protocol remains an offline gauntlet
-experiment.
+Most bounded semantic stations use Qwen 3.5 9B. Requirement extraction and frozen
+workload construction use Llama 3.2 3B. The target-tree station consumes that same
+`OMNI_CODING_WORKLOAD_MODEL` route when a stack retains a genuine structural naming
+question; current command-line and PHP stacks project their exact path grammars in
+code, while TypeScript/React browser structure remains its current consumer. There
+is no separate target-tree environment key. The continued-availability and conditional
+persistence-destination stations share the explicit Phi-4 14B deployment-semantics
+route. The established `OMNI_CODING_SERVICE_DEPLOYMENT_INTENT_MODEL` environment key
+and `coding_service_deployment_intent_model` project-setting key are retained for
+persisted configuration compatibility. They select only that shared provider route;
+the two stations retain separate IDs, prompts, schemas, results, and conditional
+dispatch, and the retired ternary deployment-intent station remains unavailable. The
+repository and web claim-evidence review routes use `deepseek-r1:8b`; their live
+provider identity must differ from the Qwen answer, synthesis, and correction routes.
+Startup or the named gap fails loudly when an exact configured route is unavailable.
+No route falls back to another model.
 
 Qwen 3.5 9B is the practical structured repair-analysis choice because its Q4_K_M Ollama image is
 6.6 GB and Qwen publishes strong instruction following, tool-use, and coding
@@ -65,13 +75,75 @@ select repository operations. Qwen3-Coder 30B is a 30.5B-total, 3.3B-active MoE
 trained primarily on code and is non-thinking by design, which fits Omnidex's
 bounded single-node output contract.
 
+### Active local model inventory
+
+File sizes below are the exact active Ollama tag sizes used for deployment capacity
+planning. They are model-file sizes, not runner-allocation or latency measurements.
+
+| Route | Exact model | Model file |
+| --- | --- | ---: |
+| Most semantic stations and repair guidance | `qwen3.5:9b-q4_K_M` | 6.6 GB |
+| Source generation and repair execution | `qwen2.5-coder:7b` | 4.7 GB |
+| Requirements, workload, and inferred TypeScript target tree | `llama3.2:3b` | 2.0 GB |
+| Service deployment semantics | `phi4:14b` | 9.1 GB |
+| Independent repository/web evidence review | `deepseek-r1:8b` | 5.2 GB |
+| Local embeddings | `nomic-embed-text` | 0.27 GB |
+
+The active model files total about 27.9 GB (26.0 GiB). Reserve additional space for
+Ollama runtime files, application workspaces, PostgreSQL, backups, logs, and Docker
+build cache.
+
 Primary model sources:
 
 - https://huggingface.co/Qwen/Qwen3.5-9B
 - https://ollama.com/library/qwen3.5/tags
+- https://huggingface.co/Qwen/Qwen2.5-Coder-7B-Instruct
+- https://ollama.com/library/qwen2.5-coder
+- https://huggingface.co/meta-llama/Llama-3.2-3B-Instruct
+- https://ollama.com/library/llama3.2/tags
+- https://huggingface.co/microsoft/phi-4
+- https://ollama.com/library/phi4/tags
 - https://ollama.com/library/deepseek-r1
+- https://ollama.com/library/nomic-embed-text
 - https://huggingface.co/Qwen/Qwen3-Coder-30B-A3B-Instruct
 - https://ollama.com/library/qwen3-coder
+
+## Live deployment-semantics qualification
+
+On 2026-08-27, the checked-in opt-in qualification sent six unrelated immutable
+requests through the production continued-availability renderer and, only after an
+affirmative result, the separate persistence-destination renderer. The exact
+`phi4:14b` route made six first-stage calls and four second-stage calls with no
+correction. The second-stage portable job binds the accepted affirmative first-stage
+leaf, while its model-visible prompt contains only the destination question and the
+immutable request. A destination that is separate, unstated, or ambiguously named
+remains unresolved and therefore grants no current-host deployment authority.
+
+Provider identity was Ollama 0.24.0, model digest
+`ac896e5b8b34a1f4efa7b14d7520725140d5512484457fab45d2a4ea14c69dba`,
+quantization `Q4_K_M`, and context 8,192 tokens. The complete run passed in
+108.189 seconds.
+
+| Semantic case | Availability / destination | Prompt/output tokens by stage | Provider/wall time by stage |
+| --- | --- | ---: | ---: |
+| command-line behavior only | not required / skipped | 161 / 42 | 8.931 / 9.043 s |
+| browser behavior only | not required / skipped | 160 / 41 | 8.500 / 8.594 s |
+| explicit build-environment persistence | required / build environment | 164 / 40; 178 / 40 | 8.753 / 8.841 s; 8.569 / 8.660 s |
+| explicit separate destination | required / not established | 163 / 47; 177 / 43 | 9.798 / 9.907 s; 9.011 / 9.119 s |
+| persistence with destination unstated | required / not established | 159 / 43; 173 / 44 | 8.957 / 9.042 s; 9.150 / 9.235 s |
+| persistence on ambiguously named server | required / not established | 160 / 39; 174 / 44 | 8.326 / 8.423 s; 9.237 / 9.337 s |
+
+These are station-call measurements, not model prewarm memory measurements. Re-run
+the exact qualification with:
+
+```bash
+OMNIDEX_TEST_OLLAMA_URL=http://127.0.0.1:11434 \
+OMNIDEX_TEST_OLLAMA_CONTEXT=8192 \
+OMNIDEX_TEST_CODING_SERVICE_DEPLOYMENT_INTENT_MODEL=phi4:14b \
+go test ./internal/worker \
+  -run '^TestLiveApplicationServiceDeploymentSemanticSplitQualification$' \
+  -count=1 -v -timeout=15m
+```
 
 ## Live guided-repair qualification
 
@@ -137,10 +209,21 @@ semantic contract, so none was promoted. The results and rerun command are in
 Measurements use the same deterministic request shape now checked in as
 `omni ollama:prewarm`: the fixed minimal prompt, thinking disabled, temperature
 zero, a 64-token output ceiling, and runner inspection through Ollama `/api/ps`.
-The measured 16K row was verified by the command. The 2K comparison rows
-used equivalent direct Ollama requests before the command was added; 2K is
-below Omnidex's current hard inference-context minimum and cannot be selected
-through the new command.
+The current retained 8K baseline was measured on 2026-08-19:
+
+| Model | Runner allocation | RX 7700S allocation | GPU offload | Cold probe | Warm probe | Warm decode |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `qwen3.5:9b-q4_K_M` | 9.3 GiB | 7.0 GiB | 75% | 11.9 s | 2.4 s | 19.1 tok/s |
+| `qwen2.5-coder:7b` | 5.0 GiB | 5.0 GiB | 100% | 14.2 s | 1.9 s | 48.3 tok/s |
+
+No retained 8K prewarm allocation measurement is recorded here for
+`llama3.2:3b`, `phi4:14b`, or `deepseek-r1:8b`. Their model-file sizes above and
+the Phi-4 station-call measurements are not substitutes for runner-memory evidence.
+
+The following historical context-scaling rows were recorded earlier. The measured
+16K rows were verified by the command. The 2K comparison rows used equivalent direct
+Ollama requests before the command was added; 2K is below Omnidex's current hard
+inference-context minimum and cannot be selected through the command.
 
 | Model | Context | Runner allocation | RX 7700S allocation | Warm evaluation |
 | --- | ---: | ---: | ---: | ---: |
@@ -165,10 +248,11 @@ coarse transport and resource-safety bounds.
 Run the same exact load check after any model, context, backend, or memory change:
 
 ```bash
-omni ollama:prewarm --model qwen3-coder:30b --num-ctx 16384 --json
 omni ollama:prewarm --model qwen3.5:9b-q4_K_M --num-ctx 8192 --json
 omni ollama:prewarm --model qwen2.5-coder:7b --num-ctx 8192 --json
-omni ollama:prewarm --model deepseek-r1:8b --num-ctx 16384 --json
+omni ollama:prewarm --model llama3.2:3b --num-ctx 8192 --json
+omni ollama:prewarm --model phi4:14b --num-ctx 8192 --json
+omni ollama:prewarm --model deepseek-r1:8b --num-ctx 8192 --json
 ```
 
 ## Other genuinely viable choices

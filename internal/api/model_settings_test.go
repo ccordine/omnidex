@@ -40,6 +40,7 @@ func TestModelSettingsUsesExactStationCatalog(t *testing.T) {
 	if err := os.WriteFile(path, []byte(strings.Join([]string{
 		"OMNI_CODING_SURFACE_MODEL=qwen3:4b-surface",
 		"OMNI_CODING_REQUIREMENTS_MODEL=qwen2.5-coder:7b-requirements",
+		"OMNI_CODING_SERVICE_DEPLOYMENT_INTENT_MODEL=phi4:14b-deployment",
 		"OMNI_CODING_WORKLOAD_MODEL=qwen3.5:27b-workload",
 		"OMNI_CODING_ARTIFACT_HANDLING_MODEL=qwen2.5:3b-artifact",
 		"OMNI_CODING_CAPABILITY_RELATION_MODEL=qwen3:4b-relation",
@@ -71,6 +72,12 @@ func TestModelSettingsUsesExactStationCatalog(t *testing.T) {
 	}
 	if values["coding_requirements_model"] != "qwen2.5-coder:7b-requirements" {
 		t.Fatalf("coding_requirements_model=%q", values["coding_requirements_model"])
+	}
+	if values["coding_service_deployment_intent_model"] != "phi4:14b-deployment" {
+		t.Fatalf(
+			"coding_service_deployment_intent_model=%q",
+			values["coding_service_deployment_intent_model"],
+		)
 	}
 	if values["coding_workload_model"] != "qwen3.5:27b-workload" {
 		t.Fatalf("coding_workload_model=%q", values["coding_workload_model"])

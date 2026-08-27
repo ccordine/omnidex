@@ -12,7 +12,7 @@ func TestRustCommandLineTargetTreeRequiresMatchingSnakeCasePair(t *testing.T) {
 		"nested implementation": {"src/domain/echo.rs", "tests/echo_test.rs"},
 		"nested verification":   {"src/echo.rs", "tests/domain/echo_test.rs"},
 		"mismatched":            {"src/echo.rs", "tests/print_test.rs"},
-		"reserved":              {"src/runtime.rs", "tests/runtime_test.rs"},
+		"reserved":              {"src/type.rs", "tests/type_test.rs"},
 		"not snake case":        {"src/Echo.rs", "tests/Echo_test.rs"},
 		"source test suffix":    {"src/echo_test.rs", "tests/echo_test_test.rs"},
 		"missing verification":  {"src/echo.rs", "src/print.rs"},

@@ -8,9 +8,10 @@ import (
 	"github.com/gryph/omnidex/internal/assemblyline"
 )
 
-// resolveDirectCodingTargetTree asks exactly one structural question after the
-// semantic workload is frozen. The returned tree is data; all transitions are
-// derived by code before any source worker runs.
+// resolveDirectCodingTargetTree resolves one focused structural result for
+// each frozen task. It invokes the target-tree station only when the selected
+// stack leaves a genuine naming question unresolved. Every returned or
+// projected tree is data; code derives all transitions before source work.
 func resolveDirectCodingTargetTree(
 	runtime typedWorkerRuntime,
 	plannerModel string,
@@ -29,25 +30,27 @@ func resolveDirectCodingTargetTree(
 	union := make(map[string]struct{})
 	taskPaths := make(map[string][]string, len(workload.Tasks))
 	for taskIndex, task := range workload.Tasks {
-		currentPaths := directCodingTargetTreeCurrentPaths(existingPaths, union)
+		earlierPaths := directCodingTargetTreeEarlierPaths(union)
 		input, err := directCodingFocusedTargetTreeInput(
-			specification, task, stack, currentPaths, existingDirs,
+			specification, task, stack, existingPaths, earlierPaths, existingDirs,
 		)
 		if err != nil {
 			return zeroTree, zeroCoverage, err
 		}
 		var focused assemblyline.TargetTree
 		if stack.ProjectFocusedTargetTree != nil {
-			focused, err = stack.ProjectFocusedTargetTree(taskIndex+1, currentPaths)
+			focused, err = stack.ProjectFocusedTargetTree(
+				taskIndex+1, directCodingTargetTreeOccupiedPaths(input),
+			)
 			if err == nil {
-				err = validateDirectCodingTargetTreeAdapters(stack, focused)
+				err = assemblyline.ValidateTargetTreeReservedPaths(input.ReservedPaths, focused)
 			}
 			if err == nil {
-				err = validateDirectCodingFocusedTargetTreeOwnership(stack, focused, union)
+				err = validateDirectCodingFocusedTargetTree(stack, focused)
 			}
 		} else {
 			focused, err = runDirectCodingTargetTreeCall(
-				runtime, plannerModel, correctionModel, input, stack, union,
+				runtime, plannerModel, correctionModel, input, stack,
 			)
 		}
 		if err != nil {
@@ -80,7 +83,6 @@ func runDirectCodingTargetTreeCall(
 	correctionModel string,
 	input assemblyline.TargetTreeInput,
 	stack directCodingProjectStack,
-	reservedPaths map[string]struct{},
 ) (assemblyline.TargetTree, error) {
 	var zero assemblyline.TargetTree
 	if runtime.Context == nil || runtime.Execute == nil {
@@ -129,10 +131,7 @@ func runDirectCodingTargetTreeCall(
 		seen[candidate] = struct{}{}
 		target, validationErr := assemblyline.DecodeTargetTreeCandidate(input, candidate)
 		if validationErr == nil {
-			validationErr = validateDirectCodingTargetTreeAdapters(stack, target)
-		}
-		if validationErr == nil {
-			validationErr = validateDirectCodingFocusedTargetTreeOwnership(stack, target, reservedPaths)
+			validationErr = validateDirectCodingFocusedTargetTree(stack, target)
 		}
 		if validationErr == nil {
 			if err := finalizeTypedWorkerResult(runtime, job, result, nil); err != nil {
@@ -149,58 +148,96 @@ func runDirectCodingTargetTreeCall(
 	return zero, fmt.Errorf("target tree candidate failed %d bounded replacement attempts: %w", runtime.MaxAttempts, lastFailure)
 }
 
-func directCodingTargetTreeCurrentPaths(
-	existingPaths []string,
-	reservedPaths map[string]struct{},
-) []string {
-	current := make(map[string]struct{}, len(existingPaths)+len(reservedPaths))
-	for _, artifactPath := range existingPaths {
-		current[artifactPath] = struct{}{}
-	}
-	for artifactPath := range reservedPaths {
-		current[artifactPath] = struct{}{}
-	}
-	paths := make([]string, 0, len(current))
-	for artifactPath := range current {
+func directCodingTargetTreeEarlierPaths(accepted map[string]struct{}) []string {
+	paths := make([]string, 0, len(accepted))
+	for artifactPath := range accepted {
 		paths = append(paths, artifactPath)
 	}
 	sort.Strings(paths)
 	return paths
 }
 
-func validateDirectCodingFocusedTargetTreeOwnership(
-	stack directCodingProjectStack,
-	target assemblyline.TargetTree,
-	reservedPaths map[string]struct{},
-) error {
-	if !stack.ExclusiveTaskPaths {
-		return nil
-	}
-	for _, artifactPath := range target.Paths {
-		if _, reserved := reservedPaths[artifactPath]; reserved {
-			return fmt.Errorf(
-				"focused target-tree path %q is already owned by a previously accepted task",
-				artifactPath,
-			)
+func directCodingTargetTreeOccupiedPaths(input assemblyline.TargetTreeInput) []string {
+	occupied := make(
+		map[string]struct{},
+		len(input.ExistingPaths)+len(input.ReusablePaths)+len(input.ReservedPaths)+len(input.ExistingDirs),
+	)
+	for _, paths := range [][]string{
+		input.ExistingPaths, input.ReusablePaths, input.ReservedPaths, input.ExistingDirs,
+	} {
+		for _, artifactPath := range paths {
+			occupied[artifactPath] = struct{}{}
 		}
 	}
-	return nil
+	result := make([]string, 0, len(occupied))
+	for artifactPath := range occupied {
+		result = append(result, artifactPath)
+	}
+	sort.Strings(result)
+	return result
 }
 
-// validateDirectCodingTargetTreeAdapters keeps a path-only tree inside the
-// selected code-owned project stack before any per-file semantic work starts.
-// A model never chooses adapters; an incompatible path is an invalid tree
-// declaration and is corrected at the tree boundary.
-func validateDirectCodingTargetTreeAdapters(stack directCodingProjectStack, target assemblyline.TargetTree) error {
-	for _, filePath := range target.Paths {
-		if _, _, err := directCodingArtifactAdapterForTreePath(stack, filePath); err != nil {
-			return err
-		}
+// validateDirectCodingFocusedTargetTree applies constraints that belong to one
+// frozen task's focused result. A model-resolved invalid tree may be corrected
+// at this boundary; a mechanically projected invalid tree fails terminally.
+func validateDirectCodingFocusedTargetTree(
+	stack directCodingProjectStack,
+	target assemblyline.TargetTree,
+) error {
+	if err := assemblyline.ValidateTargetTreeConstraints(stack.TargetTreeConstraints, target); err != nil {
+		return err
+	}
+	if err := validateDirectCodingTargetTreeUnion(stack, target); err != nil {
+		return err
 	}
 	if stack.ValidateTargetTree == nil {
 		return fmt.Errorf("project stack %s has no target-tree validator", stack.ID)
 	}
 	return stack.ValidateTargetTree(target)
+}
+
+// validateDirectCodingTargetTreeUnion applies only invariants that remain true
+// after focused task trees are unioned. Per-task cardinality and pair grammar
+// are already proven before retention and must not be reapplied to the union.
+func validateDirectCodingTargetTreeUnion(
+	stack directCodingProjectStack,
+	target assemblyline.TargetTree,
+) error {
+	if len(target.Paths) == 0 {
+		return fmt.Errorf("project stack %s requires at least one target-tree path", stack.ID)
+	}
+	if err := assemblyline.ValidateTargetTreeReservedPaths(stack.TargetTreeReservedPaths, target); err != nil {
+		return err
+	}
+	for _, filePath := range target.Paths {
+		if _, _, err := directCodingArtifactAdapterForTreePath(stack, filePath); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateDirectCodingCoveredFocusedTargetTrees(
+	stack directCodingProjectStack,
+	workload assemblyline.FrozenApplicationWorkload,
+	coverage assemblyline.ApplicationFileCoveragePlan,
+) error {
+	for _, task := range workload.Tasks {
+		files, err := coverage.FilesForTask(task.ID)
+		if err != nil {
+			return err
+		}
+		paths := make([]string, len(files))
+		for index, file := range files {
+			paths[index] = file.Path
+		}
+		if err := validateDirectCodingFocusedTargetTree(
+			stack, assemblyline.TargetTree{Paths: paths},
+		); err != nil {
+			return fmt.Errorf("focused task %s: %w", task.ID, err)
+		}
+	}
+	return nil
 }
 
 func persistTargetTreeRejection(
@@ -222,6 +259,7 @@ func directCodingTargetTreeInput(
 	specification assemblyline.ApplicationSpecification,
 	stack directCodingProjectStack,
 	existingPaths []string,
+	earlierPaths []string,
 	existingDirs []string,
 ) (assemblyline.TargetTreeInput, error) {
 	if !stack.SupportsSurface(specification.Surface) {
@@ -236,12 +274,26 @@ func directCodingTargetTreeInput(
 	}
 	paths := make([]string, len(existingPaths))
 	copy(paths, existingPaths)
+	reusable := make([]string, 0, len(earlierPaths))
+	reserved := make(
+		[]string, 0, len(stack.TargetTreeReservedPaths)+len(earlierPaths),
+	)
+	reserved = append(reserved, stack.TargetTreeReservedPaths...)
+	if stack.ExclusiveTaskPaths {
+		reserved = append(reserved, earlierPaths...)
+		sort.Strings(reserved)
+	} else {
+		reusable = append(reusable, earlierPaths...)
+	}
 	directories := make([]string, len(existingDirs))
 	copy(directories, existingDirs)
 	return assemblyline.TargetTreeInput{
 		Objective:        specification.ProductQuote,
 		TechnicalContext: technicalContext,
+		Constraints:      stack.TargetTreeConstraints,
 		ExistingPaths:    paths,
+		ReusablePaths:    reusable,
+		ReservedPaths:    reserved,
 		ExistingDirs:     directories,
 	}, nil
 }
@@ -251,9 +303,12 @@ func directCodingFocusedTargetTreeInput(
 	task assemblyline.FrozenApplicationTask,
 	stack directCodingProjectStack,
 	existingPaths []string,
+	earlierPaths []string,
 	existingDirs []string,
 ) (assemblyline.TargetTreeInput, error) {
-	input, err := directCodingTargetTreeInput(specification, stack, existingPaths, existingDirs)
+	input, err := directCodingTargetTreeInput(
+		specification, stack, existingPaths, earlierPaths, existingDirs,
+	)
 	if err != nil {
 		return assemblyline.TargetTreeInput{}, err
 	}

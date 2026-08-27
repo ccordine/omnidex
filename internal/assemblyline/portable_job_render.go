@@ -33,13 +33,20 @@ func RenderPortableJob(job PortableJob) (string, map[string]any, error) {
 		}
 		prompt, err := BuildApplicationProjectStackConstraintPrompt(input)
 		return prompt, ApplicationProjectStackConstraintResponseSchema(input), err
-	case WorkApplicationServiceDeploymentIntent:
-		var input ApplicationServiceDeploymentIntentInput
+	case WorkApplicationServiceContinuedAvailability:
+		var input ApplicationServiceContinuedAvailabilityInput
 		if err := decodePortablePayload(job.Payload, &input); err != nil {
 			return "", nil, err
 		}
-		prompt, err := BuildApplicationServiceDeploymentIntentPrompt(input)
-		return prompt, ApplicationServiceDeploymentIntentResponseSchema(), err
+		prompt, err := BuildApplicationServiceContinuedAvailabilityPrompt(input)
+		return prompt, ApplicationServiceContinuedAvailabilityResponseSchema(), err
+	case WorkApplicationServicePersistenceDestination:
+		var input ApplicationServicePersistenceDestinationInput
+		if err := decodePortablePayload(job.Payload, &input); err != nil {
+			return "", nil, err
+		}
+		prompt, err := BuildApplicationServicePersistenceDestinationPrompt(input)
+		return prompt, ApplicationServicePersistenceDestinationResponseSchema(), err
 	case WorkApplicationServiceStateLifetime:
 		var input ApplicationServiceStateLifetimeInput
 		if err := decodePortablePayload(job.Payload, &input); err != nil {
@@ -135,7 +142,11 @@ func RenderPortableJob(job PortableJob) (string, map[string]any, error) {
 			return "", nil, err
 		}
 		prompt, err := BuildTargetTreePrompt(input)
-		return prompt, TargetTreeResponseSchema(), err
+		if err != nil {
+			return "", nil, err
+		}
+		schema, err := TargetTreeResponseSchema(input)
+		return prompt, schema, err
 	case WorkRepositoryRequirements:
 		var input RepositoryRequirementInterpretationInput
 		if err := decodePortablePayload(job.Payload, &input); err != nil {

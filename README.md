@@ -137,13 +137,14 @@ Repeated polling state is coalesced. Full prompts and context remain available t
 Ollama is the recommended explicit local provider. Omnidex has no implicit model
 provider: deterministic work starts with both provider selections absent, and a
 persisted named semantic or embedding need fails explicitly if its required
-authority is still unconfigured. Bounded station models are independently
+authority is still unconfigured. Bounded station routes are explicitly
 configurable without giving any model control-plane authority:
 
 ```dotenv
 LLM_PROVIDER=ollama
 OMNI_CODING_SURFACE_MODEL=qwen3.5:9b-q4_K_M
 OMNI_CODING_REQUIREMENTS_MODEL=llama3.2:3b
+OMNI_CODING_SERVICE_DEPLOYMENT_INTENT_MODEL=phi4:14b
 OMNI_CODING_WORKLOAD_MODEL=llama3.2:3b
 OMNI_CODING_ARTIFACT_HANDLING_MODEL=qwen3.5:9b-q4_K_M
 OMNI_CODING_CAPABILITY_RELATION_MODEL=qwen3.5:9b-q4_K_M
@@ -159,6 +160,13 @@ INFERENCE_CONTEXT_TOKENS=8192
 CODING_FRAGMENT_CONCURRENCY=1
 ```
 
+The established `OMNI_CODING_SERVICE_DEPLOYMENT_INTENT_MODEL` environment key
+and `coding_service_deployment_intent_model` project-setting key are retained so
+persisted configuration remains readable. They select one shared provider model
+for the independent continued-availability and persistence-destination stations;
+they do not restore the retired ternary deployment-intent station or combine the
+two semantic responsibilities.
+
 The first opt-in browser WebGPU provider executes the existing
 `context_relevance` station in a resident Web Worker while the server retains all
 workflow, state, retrieval, provenance, and validation authority. No tested browser
@@ -171,8 +179,9 @@ command are in [docs/BROWSER_INFERENCE.md](docs/BROWSER_INFERENCE.md).
 The checked-in profile is Qwen-led, but it is not a single-model deployment.
 The active routes use Qwen 3.5 9B for most bounded semantic work, Qwen 2.5
 Coder 7B for source fragments and corrections, Llama 3.2 3B for requirement
-extraction, DeepSeek R1 8B for the independently routed evidence reviews, and
-`nomic-embed-text` for local embeddings. The complete route list is in
+extraction, Phi-4 14B for the two service deployment semantics, DeepSeek R1 8B for the
+independently routed evidence reviews, and `nomic-embed-text` for local embeddings.
+The complete route list is in
 [`default.env`](default.env).
 
 The following values are capacity-planning estimates, not universal performance
@@ -188,10 +197,11 @@ context. Re-run that command on every candidate server before accepting it.
 | Most semantic, database, answer, and repair-guidance stations | `qwen3.5:9b-q4_K_M` | 6.6 GB | Structured semantic result |
 | Fragment generation and correction | `qwen2.5-coder:7b` | 4.7 GB | One bounded source node |
 | Requirement and workload extraction | `llama3.2:3b` | 2.0 GB | Small typed extraction |
+| Service deployment semantics | `phi4:14b` | 9.1 GB | Conditional availability and destination leaves |
 | Independent repository/web evidence review | `deepseek-r1:8b` | 5.2 GB | Separate review identity |
 | Embeddings | `nomic-embed-text` | 0.27 GB | Retrieval vectors |
 
-The exact set occupies about **18.8 GB (17.5 GiB) on disk**. Reserve at least
+The exact set occupies about **27.9 GB (26.0 GiB) on disk**. Reserve at least
 50 GB of fast local storage for the model set and runtime files. A practical
 all-in-one host should have 100 GB free before adding workspace checkouts,
 PostgreSQL growth, backups, logs, or Docker build cache.
@@ -339,17 +349,22 @@ evidence.
 
 #### Deployment acceptance check
 
-Pull the exact configured models, then profile each model on the candidate host:
+Pull the exact configured models, then profile each routed generation model on
+the candidate host:
 
 ```bash
 ollama pull qwen3.5:9b-q4_K_M
 ollama pull qwen2.5-coder:7b
 ollama pull llama3.2:3b
+ollama pull phi4:14b
 ollama pull deepseek-r1:8b
 ollama pull nomic-embed-text
 
 omni ollama:prewarm --model qwen3.5:9b-q4_K_M --num-ctx 8192 --json
 omni ollama:prewarm --model qwen2.5-coder:7b --num-ctx 8192 --json
+omni ollama:prewarm --model llama3.2:3b --num-ctx 8192 --json
+omni ollama:prewarm --model phi4:14b --num-ctx 8192 --json
+omni ollama:prewarm --model deepseek-r1:8b --num-ctx 8192 --json
 ```
 
 Accept a host only after the probe reports the exact 8,192-token context, memory
@@ -364,12 +379,53 @@ Upstream capacity references: the
 [Ollama Qwen 3.5 tags](https://ollama.com/library/qwen3.5/tags),
 [Ollama Qwen 2.5 Coder tags](https://ollama.com/library/qwen2.5-coder/tags),
 [Ollama Llama 3.2 tags](https://ollama.com/library/llama3.2/tags),
+[Microsoft Phi-4 model card](https://huggingface.co/microsoft/phi-4),
+[Ollama Phi-4 tags](https://ollama.com/library/phi4/tags),
 [Ollama DeepSeek R1 tags](https://ollama.com/library/deepseek-r1/tags),
 [Ollama nomic-embed-text](https://ollama.com/library/nomic-embed-text),
 [Ollama concurrency and memory FAQ](https://docs.ollama.com/faq), and
 [Ollama GPU support matrix](https://docs.ollama.com/gpu).
 
-The surface station classifies only browser, command-line, or service delivery. Before intent interpretation, code hashes the immutable request and records exact workspace state plus bounded accepted durable memory as typed facts. A context-sufficiency station can return only zero through three missing evidence questions, never operations or tool calls; registered code-owned providers resolve those questions and formalize selected results into source-backed facts. The currently promoted fresh-workspace vertical requires zero questions and fails loudly otherwise. An intent station then derives one concise product context plus one through ten semantic requirement statements. A separately routed reviewer either accepts the retained candidate or names exactly one defective leaf and finding; a correction call can replace only that dynamically schema-bound leaf, and code rejects no-ops and repeated states before review repeats. Requirements are bound to the immutable request digest; exact substrings, quote intervals, source order, punctuation, disjointness, and overlap are not authority gates. For each accepted requirement, the constructive route sees the reviewed product context, complete accepted requirement set, and focused requirement and returns one objective, one through four required behaviors, and one through four observable acceptance criteria. The corrective route owns review, semantic repair, and repair no-op correction; a repair is never routed back through the constructive model. Review can accept or name exactly one derived field plus one bounded diagnostic finding and one code-enumerated exact current value: the whole objective or one whole current list item owned by that field. Code couples legal evidence values to their fields in the response schema and binds the observed value by SHA-256 before repair; invalid evidence never reaches repair. The repair station receives only focused user authority, the finding, its validated evidence, the named field, and that field's current value. Code applies the one-field replacement to retained state and repeats corrective review while canonical states remain new. A valid but unchanged replacement receives one exact one-field correction whose schema excludes the current value; it is a passive recovery guard, not an extra production challenge. There is no numeric correctness limit: acceptance, an exact repeated state/cycle, lost authority, provider failure, cancellation, or a real resource limit ends the loop. Code assigns task identity and order, freezes the workload hash, and keeps dependencies, scheduling, tools, paths, and completion outside model authority. Artifact handling remains a separate token-blind classification job. Code may bind one independently accepted PostgreSQL skill and may expose only direct pairwise capability APIs. Each frozen task generates one feature declaration and one blind acceptance declaration, passes an isolated current-task test and typecheck before the next task starts, and then participates in one final whole-application test/typecheck/build stage. A mapped source failure is diagnosed by the separately routed repair-guidance model into one self-contained instruction; the correction model sees only that instruction and the exact mutable source block. Code applies and verifies the result, and any new failure starts a new guidance/execution iteration. Every call is an immutable content-addressed work unit; identities, paths, imports, formatting, stitching, scheduling, commands, and completion remain code-owned. Local Ollama station models are selected through environment-backed routing, so structurally qualified local models can be measured against the same unchanged gates without application changes. A missing model, context mismatch, or invalid capacity fails explicitly. The two-fixture live compiler qualification and its exact evidence are documented in [docs/LOCAL_MODEL_PROFILE.md](docs/LOCAL_MODEL_PROFILE.md#live-guided-repair-qualification).
+The surface station classifies only browser, command-line, or service delivery.
+Before intent interpretation, code hashes the immutable request and records exact
+workspace state plus bounded accepted durable memory as typed facts. A
+context-sufficiency station can return only zero through three missing evidence
+questions, never operations or tool calls; registered code-owned providers resolve
+those questions and formalize selected results into source-backed facts. The
+currently promoted fresh-workspace vertical requires zero questions and fails loudly
+otherwise. An intent station then derives one concise product context plus one through
+ten semantic requirement statements. Code validates and retains a complete candidate
+directly. Only one exact deterministic structural defect permits a bounded replacement
+of that defective leaf; there is no model call merely to accept or review a valid
+candidate. Requirements are bound to the immutable request digest; exact substrings,
+quote intervals, source order, punctuation, disjointness, and overlap are not authority
+gates.
+
+For each accepted requirement, one job-specification station receives the typed
+surface, product context, complete accepted requirement set, and focused requirement.
+It returns one objective, one through four required behaviors, and one through four
+observable acceptance criteria. Code validates the complete candidate, assigns task
+identity and source order, and freezes the workload hash. Dependencies, scheduling,
+tools, paths, and completion remain outside model authority. Artifact handling remains
+a separate token-blind classification job. Code may bind one independently accepted
+PostgreSQL skill and may expose only direct pairwise capability APIs. After code selects
+the stack, it projects an exact target tree mechanically when the registered grammar is
+deterministic and invokes the path-only tree station only for a genuine structural
+naming uncertainty. The selected compiler turns the accepted tree and coverage into
+bounded source-block responsibilities. Each source call returns one exact path-blind
+declaration or source node; code owns document construction, imports, formatting,
+stitching, isolated checks, and final verification.
+
+A mapped source failure is diagnosed by the separately routed repair-guidance model
+into one self-contained instruction; the correction model sees only that instruction
+and the exact mutable source block. Code applies and verifies the result, and any new
+failure starts a new guidance/execution iteration. Every call is an immutable
+content-addressed work unit. Local Ollama station models are selected through
+environment-backed routing, so structurally qualified local models can be measured
+against the same unchanged gates without application changes. A missing model, context
+mismatch, or invalid capacity fails explicitly. The guided compiler qualification and
+its exact evidence are documented in
+[docs/LOCAL_MODEL_PROFILE.md](docs/LOCAL_MODEL_PROFILE.md#live-guided-repair-qualification).
 
 Production station inference currently requires Ollama's exact prepared contract.
 OpenAI, Azure AI, Google, Hugging Face, and compatible services appear only when

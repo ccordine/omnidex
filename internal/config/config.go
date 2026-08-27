@@ -160,7 +160,13 @@ func defaultCodingFragmentConcurrency(provider string) int {
 // Validate checks provider-independent runtime structure. Provider authority is
 // deliberately resolved and validated only at the first provider operation.
 func Validate(cfg Config) error {
-	return validateConfigStructure(cfg)
+	if err := validateConfigStructure(cfg); err != nil {
+		return err
+	}
+	if cfg.WrapperOnly {
+		return nil
+	}
+	return validateCompleteStationModelRouting(cfg)
 }
 
 func validateConfigStructure(cfg Config) error {

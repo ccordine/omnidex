@@ -33,9 +33,9 @@ func validateDirectCodingRecoveredCommand(
 		session.deploymentResolution.Disposition !=
 			assemblyline.ApplicationServiceDeploymentPersistCurrentHost ||
 		command.Disposition != queue.GeneratedWorkloadDeploymentPersistCurrentHost ||
-		command.DeploymentIntentJobID != session.deploymentResolution.IntentJobID ||
-		command.DeploymentIntentResponseSHA256 != session.deploymentResolution.ResponseSHA256 {
-		return fmt.Errorf("recovered deployment command differs from deployment intent authority")
+		command.DeploymentIntentJobID != session.deploymentResolution.DispositionJobID ||
+		command.DeploymentIntentResponseSHA256 != session.deploymentResolution.DispositionResponseSHA256 {
+		return fmt.Errorf("recovered deployment command differs from deployment disposition authority")
 	}
 	if command.WorkspaceSHA256 != workspace.WorkspaceSHA256 ||
 		command.SourceSnapshotSHA256 != workspace.WorkspaceSHA256 ||

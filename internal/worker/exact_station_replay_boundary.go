@@ -79,7 +79,8 @@ func rejectRetiredStationReplayJob(job assemblyline.PortableJob) error {
 	case assemblyline.WorkKind("conversation_context_selection"),
 		assemblyline.WorkKind("memory_context_selection"),
 		assemblyline.WorkKind("roleplay_narrative_continuity"),
-		assemblyline.WorkKind("application_service_endpoint_contract"):
+		assemblyline.WorkKind("application_service_endpoint_contract"),
+		assemblyline.WorkKind("application_service_deployment_intent"):
 		return fmt.Errorf("station replay rejects retired station work kind %q", job.Kind)
 	case assemblyline.WorkResponseCorrection:
 		var correction assemblyline.ResponseCorrectionInput

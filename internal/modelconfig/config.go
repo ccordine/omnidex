@@ -40,6 +40,9 @@ var Fields = []Field{
 	{Key: "web_claim_evidence_review_model", Label: "Web claim-evidence review", Description: "Checks one synthesized paragraph against only its cited web evidence", EnvKeys: []string{"OMNI_WEB_CLAIM_EVIDENCE_REVIEW_MODEL"}},
 	{Key: "coding_surface_model", Label: "Coding surface", Description: "Classifies only the requested delivery surface", EnvKeys: []string{"OMNI_CODING_SURFACE_MODEL"}},
 	{Key: "coding_requirements_model", Label: "Coding intent", Description: "Identifies bounded context needs and derives one semantic application intent", EnvKeys: []string{"OMNI_CODING_REQUIREMENTS_MODEL"}},
+	// The key and environment name are retained public configuration. One model
+	// selection routes two separately rendered, executed, and persisted calls.
+	{Key: "coding_service_deployment_intent_model", Label: "Service deployment semantics", Description: "Selects the model for separate continued-availability and persistence-destination semantic calls", EnvKeys: []string{"OMNI_CODING_SERVICE_DEPLOYMENT_INTENT_MODEL"}},
 	{Key: "coding_workload_model", Label: "Coding workload", Description: "Returns one bounded task or service-endpoint semantic leaf from accepted local authority", EnvKeys: []string{"OMNI_CODING_WORKLOAD_MODEL"}},
 	{Key: "coding_artifact_handling_model", Label: "Coding artifact handling", Description: "Classifies explicit artifact truth and resolves bounded path-blind artifact or declaration candidates", EnvKeys: []string{"OMNI_CODING_ARTIFACT_HANDLING_MODEL"}},
 	{Key: "coding_capability_relation_model", Label: "Coding capability relation", Description: "Classifies one direct state dependency between two local needs", EnvKeys: []string{"OMNI_CODING_CAPABILITY_RELATION_MODEL"}},

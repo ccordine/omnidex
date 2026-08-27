@@ -31,6 +31,9 @@ func DiffTargetTree(input TargetTreeInput, target TargetTree) ([]TargetTreeTrans
 	if len(target.Paths) == 0 {
 		return nil, fmt.Errorf("target tree must contain at least one path")
 	}
+	if err := ValidateTargetTreeExistingDirectories(input.ExistingDirs, target); err != nil {
+		return nil, err
+	}
 	existing := make(map[string]struct{}, len(input.ExistingPaths))
 	for _, value := range input.ExistingPaths {
 		existing[value] = struct{}{}

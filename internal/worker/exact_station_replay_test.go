@@ -17,6 +17,7 @@ func TestStationReplayRejectsRetiredKindsDirectlyAndThroughCorrection(t *testing
 		"memory_context_selection",
 		"roleplay_narrative_continuity",
 		"application_service_endpoint_contract",
+		"application_service_deployment_intent",
 	} {
 		t.Run(string(kind), func(t *testing.T) {
 			retired := assemblyline.PortableJob{Kind: kind}

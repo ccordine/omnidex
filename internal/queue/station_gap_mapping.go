@@ -35,8 +35,10 @@ func stationForPortableWorkKind(kind assemblyline.WorkKind) (station.ID, error) 
 		return station.CodingRequirements, nil
 	case assemblyline.WorkApplicationProjectStackConstraint:
 		return station.CodingProjectStackConstraint, nil
-	case assemblyline.WorkApplicationServiceDeploymentIntent:
-		return station.CodingServiceDeploymentIntent, nil
+	case assemblyline.WorkApplicationServiceContinuedAvailability:
+		return station.CodingServiceContinuedAvailability, nil
+	case assemblyline.WorkApplicationServicePersistenceDestination:
+		return station.CodingServicePersistenceDestination, nil
 	case assemblyline.WorkApplicationServiceStateLifetime:
 		return station.CodingServiceStateLifetime, nil
 	case assemblyline.WorkApplicationServiceStateInterface:

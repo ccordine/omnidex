@@ -14,7 +14,10 @@ import (
 	"github.com/gryph/omnidex/internal/ollama"
 )
 
-const liveCodingQualificationModelEnv = "OMNIDEX_TEST_CODING_QUALIFICATION_MODEL"
+const (
+	liveCodingQualificationModelEnv = "OMNIDEX_TEST_CODING_QUALIFICATION_MODEL"
+	liveCodingQualificationScope    = "live-coding-requirements-workload-qualification-v1"
+)
 
 type liveCodingQualificationCase struct {
 	name, request string
@@ -34,7 +37,9 @@ func TestLiveCodingRequirementsAndWorkloadQualification(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Minute)
 	defer cancel()
 	client := ollama.New(baseURL, modelName, "", 10*time.Minute, contextTokens)
-	transport, err := newLiveCodingQualificationTransport(ctx, client, modelName, contextTokens)
+	transport, err := newLiveCodingQualificationTransport(
+		ctx, client, modelName, contextTokens, liveCodingQualificationScope,
+	)
 	if err != nil {
 		t.Fatal(err)
 	}

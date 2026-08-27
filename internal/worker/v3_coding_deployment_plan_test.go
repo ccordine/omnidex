@@ -19,8 +19,9 @@ func TestGeneratedDeploymentCommandContainsOnlyCodeOwnedAuthorityAndSecretNames(
 			EndpointPortAuthority:          queue.GeneratedWorkloadDeploymentPortAllocate,
 		},
 		directCodingServiceDeploymentResolution{
-			Disposition: assemblyline.ApplicationServiceDeploymentPersistCurrentHost,
-			IntentJobID: strings.Repeat("1", 64), ResponseSHA256: strings.Repeat("2", 64),
+			Disposition:               assemblyline.ApplicationServiceDeploymentPersistCurrentHost,
+			DispositionJobID:          strings.Repeat("1", 64),
+			DispositionResponseSHA256: strings.Repeat("2", 64),
 		},
 		program,
 		directCodingDeploymentWorkspaceIdentity{

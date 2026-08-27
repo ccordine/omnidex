@@ -115,7 +115,7 @@ func TestJavaRegisteredTargetTreeRestrictsOneRootUnreservedPair(t *testing.T) {
 	valid := assemblyline.TargetTree{
 		StackID: genericJavaCommandLineAdapter, Paths: []string{"Behavior.java", "BehaviorTest.java"},
 	}
-	if err := validateDirectCodingTargetTreeAdapters(stack, valid); err != nil {
+	if err := validateDirectCodingFocusedTargetTree(stack, valid); err != nil {
 		t.Fatal(err)
 	}
 	for name, paths := range map[string][]string{
@@ -126,7 +126,7 @@ func TestJavaRegisteredTargetTreeRestrictsOneRootUnreservedPair(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			target := assemblyline.TargetTree{StackID: genericJavaCommandLineAdapter, Paths: paths}
-			if err := validateDirectCodingTargetTreeAdapters(stack, target); err == nil {
+			if err := validateDirectCodingFocusedTargetTree(stack, target); err == nil {
 				t.Fatalf("accepted invalid Java focused tree %v", paths)
 			}
 		})

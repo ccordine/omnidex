@@ -58,7 +58,12 @@ type GeneratedWorkloadDeploymentExecutor struct {
 }
 
 type GeneratedWorkloadDeploymentCommand struct {
-	Authority                      GeneratedWorkloadDeploymentAuthority     `json:"authority"`
+	Authority GeneratedWorkloadDeploymentAuthority `json:"authority"`
+	// DeploymentIntentJobID and DeploymentIntentResponseSHA256 retain their
+	// persisted V1 names. Historical commands bind the former combined intent
+	// leaf. Current commands bind the terminal semantic leaf that determines the
+	// disposition; for current-host persistence, that destination job's payload
+	// also commits the prerequisite continued-availability result.
 	DeploymentIntentJobID          string                                   `json:"deployment_intent_job_id"`
 	DeploymentIntentResponseSHA256 string                                   `json:"deployment_intent_response_sha256"`
 	Disposition                    GeneratedWorkloadDeploymentDisposition   `json:"disposition"`

@@ -9,7 +9,6 @@ import (
 )
 
 var rustCommandLineReservedModules = map[string]struct{}{
-	"lib": {}, "main": {}, "runtime": {},
 	"as": {}, "break": {}, "const": {}, "continue": {}, "crate": {},
 	"else": {}, "enum": {}, "extern": {}, "false": {}, "fn": {},
 	"for": {}, "if": {}, "impl": {}, "in": {}, "let": {}, "loop": {},

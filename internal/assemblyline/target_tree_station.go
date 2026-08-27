@@ -18,16 +18,35 @@ func BuildTargetTreePrompt(input TargetTreeInput) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("encode target tree existing paths: %w", err)
 	}
+	reusable, err := json.Marshal(input.ReusablePaths)
+	if err != nil {
+		return "", fmt.Errorf("encode target tree reusable paths: %w", err)
+	}
+	reserved, err := json.Marshal(input.ReservedPaths)
+	if err != nil {
+		return "", fmt.Errorf("encode target tree reserved paths: %w", err)
+	}
+	constraints, err := json.Marshal(input.Constraints)
+	if err != nil {
+		return "", fmt.Errorf("encode target tree constraints: %w", err)
+	}
 	directories, err := json.Marshal(input.ExistingDirs)
 	if err != nil {
 		return "", fmt.Errorf("encode target tree existing directories: %w", err)
 	}
 	sections := []string{
 		"Return the normalized relative file paths needed to solve the accepted objective.",
-		"Return paths only. Omitted existing paths remain untouched.",
+		"Return paths only. Every returned path must be relative to the workspace root and must not start with a slash.",
+		"CODE_SELECTED_PATH_CONSTRAINTS_JSON:\n" + string(constraints),
+		"Every returned path and the complete path set must satisfy CODE_SELECTED_TECHNICAL_CONTEXT exactly.",
+		"Never return a path listed in FORBIDDEN_OUTPUT_PATHS_JSON, including a path also listed as existing or reusable.",
+		"FORBIDDEN_OUTPUT_PATHS_JSON:\n" + string(reserved),
+		"Existing workspace paths may be returned when they need changes; omitted existing paths remain untouched.",
+		"Reusable accepted paths may be returned when this objective shares them.",
 		"ACCEPTED_OBJECTIVE:\n" + input.Objective,
 		"CODE_SELECTED_TECHNICAL_CONTEXT:\n" + input.TechnicalContext,
-		"CURRENT_OR_RESERVED_PATHS_JSON:\n" + string(existing),
+		"EXISTING_WORKSPACE_PATHS_JSON:\n" + string(existing),
+		"REUSABLE_ACCEPTED_PATHS_JSON:\n" + string(reusable),
 		"EXISTING_WORKSPACE_DIRECTORIES_JSON:\n" + string(directories),
 	}
 	if correction := input.Correction; correction != nil {
@@ -44,17 +63,29 @@ func BuildTargetTreePrompt(input TargetTreeInput) (string, error) {
 	return prompt, nil
 }
 
-func TargetTreeResponseSchema() map[string]any {
+func TargetTreeResponseSchema(input TargetTreeInput) (map[string]any, error) {
+	if err := input.Validate(); err != nil {
+		return nil, err
+	}
+	items := map[string]any{
+		"type": "string", "minLength": 1, "maxLength": maxTargetTreePathBytes,
+	}
+	if input.Constraints.RootFilesOnly {
+		// Ollama 0.24.0's schema converter selects pattern instead of
+		// maxLength when both are present. Embed the hard length bound in
+		// the pattern so constrained decoding cannot exhaust the context.
+		items["pattern"] = fmt.Sprintf(`^[^/]{1,%d}$`, maxTargetTreePathBytes)
+	}
 	return objectSchema(
 		[]string{"schema", "paths"},
 		map[string]any{
 			"schema": map[string]any{"type": "string", "const": TargetTreeCandidateSchemaV1},
 			"paths": map[string]any{
-				"type": "array", "minItems": 1, "maxItems": maxTargetTreePaths,
-				"items": map[string]any{"type": "string", "minLength": 1, "maxLength": maxTargetTreePathBytes},
+				"type": "array", "minItems": input.Constraints.ExactPathCount,
+				"maxItems": input.Constraints.ExactPathCount, "items": items,
 			},
 		},
-	)
+	), nil
 }
 
 func DecodeTargetTreeCandidate(input TargetTreeInput, raw string) (TargetTree, error) {

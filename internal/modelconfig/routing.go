@@ -83,7 +83,12 @@ func Apply(base Routing, cfg Config) Routing {
 	if value := cfg.Get("coding_requirements_model"); value != "" {
 		out.Stations[station.CodingRequirements] = value
 		out.Stations[station.CodingProjectStackConstraint] = value
-		out.Stations[station.CodingServiceDeploymentIntent] = value
+	}
+	// The retained setting chooses model identity only. Each station keeps an
+	// independent prompt, result contract, call receipt, and persisted outcome.
+	if value := cfg.Get("coding_service_deployment_intent_model"); value != "" {
+		out.Stations[station.CodingServiceContinuedAvailability] = value
+		out.Stations[station.CodingServicePersistenceDestination] = value
 	}
 	if value := cfg.Get("coding_workload_model"); value != "" {
 		out.Stations[station.CodingWorkload] = value

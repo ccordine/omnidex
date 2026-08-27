@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -36,15 +37,20 @@ func newLiveCodingQualificationTransport(
 	client *ollama.Client,
 	modelName string,
 	contextTokens int,
+	discoveryScope string,
 ) (*liveCodingQualificationTransport, error) {
 	if ctx == nil || client == nil {
 		return nil, fmt.Errorf("live coding qualification requires context and an exact Ollama client")
+	}
+	discoveryScope = strings.TrimSpace(discoveryScope)
+	if discoveryScope == "" {
+		return nil, fmt.Errorf("live coding qualification discovery scope is required")
 	}
 	selection := llm.ProviderIdentitySelection{
 		Model: modelName, NativeContextLimit: contextTokens,
 	}
 	observed, err := llm.RequireDiscoveredProviderIdentityEvidence(
-		ctx, client, selection, "live-coding-requirements-workload-qualification-v1",
+		ctx, client, selection, discoveryScope,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("discover live qualification provider: %w", err)

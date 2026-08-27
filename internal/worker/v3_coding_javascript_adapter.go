@@ -86,8 +86,7 @@ func validateJavaScriptCommandLineTargetTree(target assemblyline.TargetTree) err
 	if err != nil {
 		return err
 	}
-	reserved := map[string]struct{}{"main.mjs": {}, "runtime.mjs": {}}
-	return validateDirectCodingSinglePairTargetTree(stack, target, reserved, true)
+	return validateDirectCodingSinglePairTargetTree(stack, target, true)
 }
 
 func validateJavaScriptCommandLineAssembly(assembly directCodingAssembly) error {

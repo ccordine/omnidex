@@ -1,7 +1,6 @@
 package worker
 
 import (
-	"context"
 	"strings"
 	"testing"
 
@@ -26,21 +25,15 @@ func TestVersionProfileIDPropagatesFromSelectionThroughTaskAssembly(t *testing.T
 		t.Fatalf("selected profile=%s want=%s", selection.VersionProfileID, profile.ID)
 	}
 
-	runtime := typedWorkerRuntime{
-		Context: context.Background(), MaxAttempts: 1,
-		Execute: testPortableExecutor(func(_, _, _ string, _ map[string]any) (string, error) {
-			return `{"schema":"omnidex.target-tree.v1","paths":["feature.go","feature_test.go"]}`, nil
-		}),
-	}
 	target, coverage, err := resolveDirectCodingTargetTree(
-		runtime, "tree-model", "correction-model", specification, workload,
+		typedWorkerRuntime{}, "", "", specification, workload,
 		selection.Stack, nil, nil,
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if target.VersionProfileID != "" {
-		t.Fatalf("path-only model tree selected profile %q", target.VersionProfileID)
+		t.Fatalf("code-owned focused tree selected profile %q", target.VersionProfileID)
 	}
 	target.VersionProfileID = selection.VersionProfileID
 	if _, err := directCodingVersionProfileForTargetTree(target); err != nil {

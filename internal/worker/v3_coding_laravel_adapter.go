@@ -23,6 +23,9 @@ func registeredLaravelProjectStack() directCodingProjectStack {
 			"plain_text", "structured_json",
 		},
 		TargetTreeAdapterIDs: []string{"php"},
+		TargetTreeConstraints: assemblyline.TargetTreeConstraints{
+			ExactPathCount: 2,
+		},
 		TaskStageStaticPaths: []string{
 			".dockerignore", ".env.example", ".gitignore", "Dockerfile", "artisan",
 			"bootstrap/app.php", "bootstrap/providers.php", "composer.json", "composer.lock",

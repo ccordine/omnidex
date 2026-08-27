@@ -12,11 +12,7 @@ func validateTypeScriptBrowserTargetTree(target assemblyline.TargetTree) error {
 	if err != nil {
 		return err
 	}
-	reserved := map[string]struct{}{
-		"src/App.tsx": {}, "src/App.test.tsx": {}, "src/main.tsx": {},
-		"src/runtime.tsx": {}, "src/runtime.test.ts": {},
-	}
-	return validateDirectCodingSinglePairTargetTree(stack, target, reserved, false)
+	return validateDirectCodingSinglePairTargetTree(stack, target, false)
 }
 
 func validateGoCommandLineTargetTree(target assemblyline.TargetTree) error {
@@ -24,14 +20,12 @@ func validateGoCommandLineTargetTree(target assemblyline.TargetTree) error {
 	if err != nil {
 		return err
 	}
-	reserved := map[string]struct{}{"main.go": {}, "runtime.go": {}}
-	return validateDirectCodingSinglePairTargetTree(stack, target, reserved, true)
+	return validateDirectCodingSinglePairTargetTree(stack, target, true)
 }
 
 func validateDirectCodingSinglePairTargetTree(
 	stack directCodingProjectStack,
 	target assemblyline.TargetTree,
-	reserved map[string]struct{},
 	rootOnly bool,
 ) error {
 	if len(target.Paths) != 2 {
@@ -42,9 +36,6 @@ func validateDirectCodingSinglePairTargetTree(
 	}
 	implementations, verifications := 0, 0
 	for _, artifactPath := range target.Paths {
-		if _, conflict := reserved[artifactPath]; conflict {
-			return fmt.Errorf("target-tree path %q conflicts with a code-owned project artifact", artifactPath)
-		}
 		if rootOnly && path.Dir(artifactPath) != "." {
 			return fmt.Errorf("project stack %s requires root package workload leaves", stack.ID)
 		}

@@ -88,13 +88,13 @@ Nothing else.
 
 The tree model does NOT describe file contents, ownership, declarations, implementation, filesystem commands, create/modify/delete operations, or downstream work.
 
-Code parses and diffs the returned tree and creates the filesystem workload.
+Code parses and diffs the returned tree and creates the filesystem workload. It then
+compiles the accepted tree and code-owned coverage into bounded source-block
+responsibilities.
 
-A separate file-content station receives one file and determines what that file needs.
-
-A separate declaration/source station receives one bounded source responsibility and generates that source.
-
-Each of these is a different semantic function even when the same underlying model is used.
+A declaration/source station receives one exact path-blind source responsibility and
+returns one declaration or source node. Each call remains a different semantic
+function even when the same underlying model is used.
 
 # FUNDAMENTAL TEST
 
@@ -303,9 +303,11 @@ station defined in [docs/TARGET_TREE_PLANNING.md](docs/TARGET_TREE_PLANNING.md):
 see the code-built current tree and return only normalized relative file paths.
 It cannot return artifact metadata, filesystem actions, commands, source, declaration
 contracts, a work queue, or completion. Code derives parent-directory work and every
-create/reconcile transition. A separate file-content station answers the next semantic
-question for exactly one returned file leaf; it is not permitted to enlarge the tree
-station's response.
+create/reconcile transition. There is no file-content station. The selected stack
+compiler turns the accepted tree and code-owned coverage into bounded source-block
+responsibilities. Each source call remains path-blind and returns only one exact
+declaration or source node; code parses, validates, stitches, and verifies the complete
+documents.
 
 Artifact support is adapter-based, never language-hard-coded into the tree or
 model prompt. Code selects the registered stack from authoritative project

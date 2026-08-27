@@ -33,6 +33,7 @@ func TestLoadDedicatedCodingAssemblyModels(t *testing.T) {
 	t.Setenv("LLM_PROVIDER", "ollama")
 	t.Setenv("OMNI_CODING_SURFACE_MODEL", "qwen3:4b-thinking")
 	t.Setenv("OMNI_CODING_REQUIREMENTS_MODEL", "qwen2.5-coder:7b-requirements")
+	t.Setenv("OMNI_CODING_SERVICE_DEPLOYMENT_INTENT_MODEL", "phi4:14b-deployment")
 	t.Setenv("OMNI_CODING_WORKLOAD_MODEL", "qwen3.5:27b-workload")
 	t.Setenv("OMNI_CODING_ARTIFACT_HANDLING_MODEL", "qwen2.5:3b-artifact")
 	t.Setenv("OMNI_CODING_CAPABILITY_RELATION_MODEL", "qwen3:4b-relation")
@@ -54,8 +55,11 @@ func TestLoadDedicatedCodingAssemblyModels(t *testing.T) {
 	if got := cfg.StationModels[station.CodingProjectStackConstraint]; got != "qwen2.5-coder:7b-requirements" {
 		t.Fatalf("coding project stack constraint model=%q want requirements override", got)
 	}
-	if got := cfg.StationModels[station.CodingServiceDeploymentIntent]; got != "qwen2.5-coder:7b-requirements" {
-		t.Fatalf("coding service deployment intent model=%q want requirements override", got)
+	if got := cfg.StationModels[station.CodingServiceContinuedAvailability]; got != "phi4:14b-deployment" {
+		t.Fatalf("coding service continued availability model=%q want dedicated override", got)
+	}
+	if got := cfg.StationModels[station.CodingServicePersistenceDestination]; got != "phi4:14b-deployment" {
+		t.Fatalf("coding service persistence destination model=%q want dedicated override", got)
 	}
 	if got := cfg.StationModels[station.CodingServiceStateLifetime]; got != "qwen3.5:27b-workload" {
 		t.Fatalf("coding service state lifetime model=%q want workload override", got)

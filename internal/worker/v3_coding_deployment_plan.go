@@ -64,8 +64,10 @@ func directCodingGeneratedDeploymentCommand(
 			JobID: authority.JobID, Generation: authority.Generation,
 			StepID: authority.StepID, ProjectID: projectAuthority.ProjectID,
 		},
-		DeploymentIntentJobID:          resolution.IntentJobID,
-		DeploymentIntentResponseSHA256: resolution.ResponseSHA256,
+		// Preserve the persisted V1 field names while binding the final
+		// code-consumed disposition authority rather than a retired bundled leaf.
+		DeploymentIntentJobID:          resolution.DispositionJobID,
+		DeploymentIntentResponseSHA256: resolution.DispositionResponseSHA256,
 		Disposition:                    queue.GeneratedWorkloadDeploymentPersistCurrentHost,
 		WorkspaceSHA256:                workspace.WorkspaceSHA256,
 		SourceSnapshotSHA256:           workspace.WorkspaceSHA256,

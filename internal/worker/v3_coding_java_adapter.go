@@ -71,10 +71,7 @@ func validateJavaCommandLineTargetTree(target assemblyline.TargetTree) error {
 	if err != nil {
 		return err
 	}
-	reserved := map[string]struct{}{
-		"Main.java": {}, "Runtime.java": {}, "TestRunner.java": {},
-	}
-	return validateDirectCodingSinglePairTargetTree(stack, target, reserved, true)
+	return validateDirectCodingSinglePairTargetTree(stack, target, true)
 }
 
 func validateJavaCommandLineCoverage(

@@ -192,6 +192,14 @@ func validateDirectCodingArtifactRegistriesFrom(
 			}
 			treeAdapters[adapterID] = struct{}{}
 		}
+		if err := validateDirectCodingTargetTreeReservedPaths(
+			stack, adapterByID, treeAdapters,
+		); err != nil {
+			return err
+		}
+		if err := stack.TargetTreeConstraints.Validate(); err != nil {
+			return fmt.Errorf("project stack %s target-tree constraints: %w", stack.ID, err)
+		}
 	}
 	for _, profile := range profiles {
 		if _, exists := stackIDs[profile.StackID]; !exists {

@@ -50,12 +50,16 @@ func (s *directCodingSession) Assemble() (directCodingAssembly, error) {
 		return directCodingAssembly{}, err
 	}
 	workerRuntime := directCodingWorkerRuntime(s)
-	deploymentModel, err := s.workerModel(station.CodingServiceDeploymentIntent)
+	continuedAvailabilityModel, err := s.workerModel(station.CodingServiceContinuedAvailability)
+	if err != nil {
+		return directCodingAssembly{}, err
+	}
+	persistenceDestinationModel, err := s.workerModel(station.CodingServicePersistenceDestination)
 	if err != nil {
 		return directCodingAssembly{}, err
 	}
 	deploymentResolution, err := resolveDirectCodingServiceDeploymentDisposition(
-		workerRuntime, deploymentModel, redacted, identities,
+		workerRuntime, continuedAvailabilityModel, persistenceDestinationModel, redacted, identities,
 	)
 	if err != nil {
 		return directCodingAssembly{}, err
@@ -141,7 +145,7 @@ func (s *directCodingSession) Assemble() (directCodingAssembly, error) {
 	}
 	workerRuntime.PathProvenance = s.pathProvenance
 	targetTreeInput, err := directCodingTargetTreeInput(
-		specification, selectedStack, existingPaths, existingDirs,
+		specification, selectedStack, existingPaths, nil, existingDirs,
 	)
 	if err != nil {
 		return directCodingAssembly{}, err

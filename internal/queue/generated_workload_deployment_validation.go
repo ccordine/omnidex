@@ -36,8 +36,8 @@ func validateGeneratedWorkloadDeploymentCommand(command GeneratedWorkloadDeploym
 		return fmt.Errorf("generated deployment requires positive stable job, generation, step, and project authority")
 	}
 	for _, digest := range []struct{ name, value string }{
-		{name: "deployment intent job", value: command.DeploymentIntentJobID},
-		{name: "deployment intent response", value: command.DeploymentIntentResponseSHA256},
+		{name: "deployment disposition authority job", value: command.DeploymentIntentJobID},
+		{name: "deployment disposition authority response", value: command.DeploymentIntentResponseSHA256},
 		{name: "workspace", value: command.WorkspaceSHA256},
 		{name: "source snapshot", value: command.SourceSnapshotSHA256},
 		{name: "Compose file", value: command.ComposeFileSHA256},
