@@ -19,6 +19,15 @@ func materializeRoleplayResponseRoundTx(
 	if len(command.RoleplayResponses) != len(binding.RoleplayResponders) {
 		return fmt.Errorf("roleplay completion response count differs from the prepared response round")
 	}
+	if command.RoleplayUserCanon != nil {
+		if _, err := roleplay.AppendUserTurnCanonTx(
+			ctx, tx, string(command.OperationID), binding.RoleplaySimulationPreparationID,
+			binding.ChannelID, binding.UserMessageID, command.RoleplayUserCanon.Facts,
+			roleplayKnowledgeRecipientStrings(command.RoleplayUserCanon.KnowledgeCharacterIDs),
+		); err != nil {
+			return fmt.Errorf("append roleplay user canon: %w", err)
+		}
+	}
 	for index, response := range command.RoleplayResponses {
 		prepared := binding.RoleplayResponders[index]
 		if response.Position != prepared.Position || string(response.CharacterID) != prepared.CharacterID {
@@ -47,6 +56,12 @@ func materializeRoleplayResponseRoundTx(
 			roleplayKnowledgeRecipientStrings(response.KnowledgeCharacterIDs),
 		); err != nil {
 			return fmt.Errorf("append roleplay response %d canon: %w", index, err)
+		}
+		if _, err := roleplay.AppendOngoingActionResolutionTx(
+			ctx, tx, string(command.OperationID), index,
+			response.PreviousOngoingAction, response.OngoingAction,
+		); err != nil {
+			return fmt.Errorf("append roleplay response %d ongoing action: %w", index, err)
 		}
 	}
 	return nil

@@ -1,11 +1,76 @@
 package queue
 
 import (
+	"bytes"
+	"encoding/json"
 	"testing"
 
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/roleplay"
 )
+
+func TestPreOngoingActionRoleplayLifecycleDescriptorRemainsByteIdentical(t *testing.T) {
+	id, err := NewLifecycleOperationID("pre-149-roleplay-replay")
+	if err != nil {
+		t.Fatal(err)
+	}
+	character := model.RoleplayCharacterID("rpc_0123456789abcdef0123456789abcdef")
+	command, err := normalizeCompleteStepCommand(CompleteStepCommand{
+		OperationID: id,
+		Authority: model.StepAttemptAuthority{
+			JobID: 1, Generation: 1, StepID: 1, Attempt: 1, WorkerID: "worker",
+		},
+		StepID: 1, Output: "Legacy response.",
+		ContextKey: "objective_result", ContextValue: "legacy-result",
+		RoleplayResponses: []RoleplayResponseCompletion{{
+			Position: 0, CharacterID: character, Output: "Legacy response.",
+			Facts: []string{}, KnowledgeCharacterIDs: []model.RoleplayCharacterID{},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	descriptor, err := describeLifecycleOperation(id, LifecycleCompleteStep, command)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	type legacyRoleplayResponse struct {
+		Position              int                         `json:"position"`
+		CharacterID           model.RoleplayCharacterID   `json:"character_id"`
+		Output                string                      `json:"output"`
+		Facts                 []string                    `json:"facts"`
+		KnowledgeCharacterIDs []model.RoleplayCharacterID `json:"knowledge_character_ids"`
+	}
+	type legacyCompleteStepCommand struct {
+		OperationID       LifecycleOperationID     `json:"operation_id"`
+		StepID            int64                    `json:"step_id"`
+		Output            string                   `json:"output"`
+		ContextKey        string                   `json:"context_key"`
+		ContextValue      string                   `json:"context_value"`
+		RoleplayResponses []legacyRoleplayResponse `json:"roleplay_responses,omitempty"`
+	}
+	legacyPayload, err := json.Marshal(legacyCompleteStepCommand{
+		OperationID: id, StepID: 1, Output: "Legacy response.",
+		ContextKey: "objective_result", ContextValue: "legacy-result",
+		RoleplayResponses: []legacyRoleplayResponse{{
+			Position: 0, CharacterID: character, Output: "Legacy response.",
+			Facts: []string{}, KnowledgeCharacterIDs: []model.RoleplayCharacterID{},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(descriptor.Payload, legacyPayload) {
+		t.Fatalf("pre-149 lifecycle payload changed\nnew: %s\nold: %s", descriptor.Payload, legacyPayload)
+	}
+	legacySHA := lifecycleIdentityDigest(
+		lifecycleOperationCommandSchema, string(LifecycleCompleteStep), string(legacyPayload),
+	)
+	if descriptor.SHA256 != legacySHA {
+		t.Fatalf("pre-149 lifecycle SHA changed: new=%s old=%s", descriptor.SHA256, legacySHA)
+	}
+}
 
 func TestLifecycleOperationIdentityAndContentAreIndependentAuthorities(t *testing.T) {
 	id, err := NewLifecycleOperationID("test", "job-41", "replan")
@@ -45,7 +110,7 @@ func TestRoleplayCompletionKnowledgeRecipientsAreExactAndBounded(t *testing.T) {
 		ContextKey: "objective_result", ContextValue: "result",
 		RoleplayResponses: []RoleplayResponseCompletion{{
 			Position: 0, CharacterID: character, Output: "response",
-			Facts: []string{"A new fictional fact."},
+			Facts:                 []string{"A new fictional fact."},
 			KnowledgeCharacterIDs: []model.RoleplayCharacterID{character},
 		}},
 	}
@@ -72,6 +137,46 @@ func TestRoleplayCompletionKnowledgeRecipientsAreExactAndBounded(t *testing.T) {
 	overBound.RoleplayResponses = make([]RoleplayResponseCompletion, roleplay.MaxSceneParticipants+1)
 	if _, err := normalizeCompleteStepCommand(overBound); err == nil {
 		t.Fatal("over-bound response round was accepted")
+	}
+}
+
+func TestRoleplayUserCanonCompletionIsExplicitAndSourceDistinct(t *testing.T) {
+	id, err := NewLifecycleOperationID("roleplay-user-canon-validation")
+	if err != nil {
+		t.Fatal(err)
+	}
+	character := model.RoleplayCharacterID("rpc_0123456789abcdef0123456789abcdef")
+	command := CompleteStepCommand{
+		OperationID: id,
+		Authority: model.StepAttemptAuthority{
+			JobID: 1, Generation: 1, StepID: 1, Attempt: 1, WorkerID: "worker",
+		},
+		StepID: 1, Output: "response", ContextKey: "objective_result", ContextValue: "result",
+		RoleplayUserCanon: &RoleplayUserCanonCompletion{
+			Facts:                 []string{"The bell cracked."},
+			KnowledgeCharacterIDs: []model.RoleplayCharacterID{character},
+		},
+		RoleplayResponses: []RoleplayResponseCompletion{{
+			Position: 0, CharacterID: character, Output: "response",
+			Facts: []string{}, KnowledgeCharacterIDs: []model.RoleplayCharacterID{},
+		}},
+	}
+	if _, err := normalizeCompleteStepCommand(command); err != nil {
+		t.Fatalf("valid user canon completion rejected: %v", err)
+	}
+	duplicate := command
+	duplicate.RoleplayResponses = append([]RoleplayResponseCompletion{}, command.RoleplayResponses...)
+	duplicate.RoleplayResponses[0].Facts = []string{"The bell cracked."}
+	duplicate.RoleplayResponses[0].KnowledgeCharacterIDs = []model.RoleplayCharacterID{character}
+	if _, err := normalizeCompleteStepCommand(duplicate); err == nil {
+		t.Fatal("same fact was accepted from user and assistant sources")
+	}
+	emptyWithRecipients := command
+	emptyWithRecipients.RoleplayUserCanon = &RoleplayUserCanonCompletion{
+		Facts: []string{}, KnowledgeCharacterIDs: []model.RoleplayCharacterID{character},
+	}
+	if _, err := normalizeCompleteStepCommand(emptyWithRecipients); err == nil {
+		t.Fatal("empty user canon accepted knowledge recipients")
 	}
 }
 

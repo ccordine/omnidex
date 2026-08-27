@@ -8,6 +8,7 @@ const (
 	MaxProjectionEvents           = 16
 	MaxCanonEventBytes            = 512
 	MaxProjectionContentBytes     = 8 * 1024
+	MaxNarrativeResponseBytes     = 2 * 1024
 	MaxCanonFactsPerTurn          = 8
 	MaxKnowledgeRecipientsPerTurn = 16
 )

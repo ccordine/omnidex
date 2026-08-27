@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"fmt"
 	"html"
 	"strconv"
@@ -96,13 +97,17 @@ func renderChannelTranscriptMessages(
 		if err := validateChannelTranscriptPresentation(message); err != nil {
 			return "", fmt.Errorf("channel message %d: %w", message.ID, err)
 		}
-		output.WriteString(renderChannelTranscriptMessage(message))
+		markup, err := renderChannelTranscriptMessage(message)
+		if err != nil {
+			return "", fmt.Errorf("channel message %d: %w", message.ID, err)
+		}
+		output.WriteString(markup)
 		previousID = message.ID
 	}
 	return output.String(), nil
 }
 
-func renderChannelTranscriptMessage(message model.ChannelMessage) string {
+func renderChannelTranscriptMessage(message model.ChannelMessage) (string, error) {
 	role := string(message.Role)
 	label := "User"
 	if message.Role == model.ChannelMessageRoleAssistant {
@@ -117,7 +122,10 @@ func renderChannelTranscriptMessage(message model.ChannelMessage) string {
 		speakerAttribute = ` data-channel-message-speaker="` + escapedLabel + `"`
 	}
 	timestamp := message.CreatedAt.UTC()
-	failure := renderChannelTurnFailure(message)
+	failure, err := renderChannelTurnFailure(message)
+	if err != nil {
+		return "", err
+	}
 	body := renderChannelMessageBody(message)
 	return fmt.Sprintf(`
 <article class="message-grid message-%s" data-channel-message-id="%d" data-channel-message-role="%s"%s aria-label="%s message">
@@ -133,7 +141,7 @@ func renderChannelTranscriptMessage(message model.ChannelMessage) string {
 		html.EscapeString(role), message.ID, html.EscapeString(role), speakerAttribute, escapedLabel,
 		escapedLabel, html.EscapeString(timestamp.Format(time.RFC3339Nano)),
 		html.EscapeString(timestamp.Format("15:04 UTC")), body, failure,
-	)
+	), nil
 }
 
 func renderChannelMessageBody(message model.ChannelMessage) string {
@@ -244,27 +252,36 @@ func roleplayContributionLabel(kind string) string {
 	}
 }
 
-func renderChannelTurnFailure(message model.ChannelMessage) string {
+func renderChannelTurnFailure(message model.ChannelMessage) (string, error) {
 	if message.Turn == nil ||
 		(message.Turn.Status != model.JobStatusFailed && message.Turn.Status != model.JobStatusCanceled) {
-		return ""
+		return "", nil
 	}
 	statusLabel := "This turn failed."
 	if message.Turn.Status == model.JobStatusCanceled {
 		statusLabel = "This turn was canceled."
 	}
 	roleplayAttributes := ""
-	if message.Roleplay != nil && message.Roleplay.PersonaKind != string(roleplay.UserPersonaLegacy) {
+	if message.Roleplay != nil {
+		parts := message.Roleplay.Parts
+		if parts == nil {
+			parts = []model.ChannelMessageRoleplayPart{}
+		}
+		encodedParts, err := json.Marshal(parts)
+		if err != nil {
+			return "", fmt.Errorf("encode failed roleplay turn parts: %w", err)
+		}
 		roleplayAttributes = ` data-roleplay-persona-kind="` + html.EscapeString(message.Roleplay.PersonaKind) +
 			`" data-roleplay-character-id="` + html.EscapeString(string(message.Roleplay.CharacterID)) +
-			`" data-roleplay-contribution-kind="` + html.EscapeString(message.Roleplay.ContributionKind) + `"`
+			`" data-roleplay-contribution-kind="` + html.EscapeString(message.Roleplay.ContributionKind) +
+			`" data-roleplay-turn-parts="` + html.EscapeString(string(encodedParts)) + `"`
 	}
 	return fmt.Sprintf(`<div role="alert" data-channel-turn-failure data-job-id="%d" class="mt-3 rounded-xl border border-rose-400/30 bg-rose-400/10 p-3 text-sm text-rose-100">
       <p class="font-semibold">%s</p>
       <p class="mt-1 whitespace-pre-wrap break-words text-rose-100/80">%s</p>
       <button type="button" data-action="chat#restoreFailedTurn" data-turn-content="%s"%s class="mt-3 rounded-md border border-rose-200/30 px-3 py-1.5 text-xs font-semibold transition hover:bg-rose-100/10">Restore and retry</button>
 		</div>`, message.Turn.JobID, statusLabel, html.EscapeString(message.Turn.Error),
-		html.EscapeString(message.Content), roleplayAttributes)
+		html.EscapeString(message.Content), roleplayAttributes), nil
 }
 
 func renderChannelTranscriptPagination(page model.ChannelMessagePage) string {

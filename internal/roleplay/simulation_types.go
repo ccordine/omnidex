@@ -3,19 +3,20 @@ package roleplay
 import "time"
 
 const (
-	SimulationAdminProjectionSchemaV1     = "omnidex.roleplay-simulation-admin.v1"
-	NarrativeSimulationProjectionSchemaV1 = "omnidex.roleplay-simulation-narrative.v1"
-	SimulationTransitionSchemaV1          = "omnidex.roleplay-simulation-transition.v1"
-	MaxSceneParticipants                  = 16
-	MaxSimulationMeters                   = 16
-	MaxInteractionCommands                = 32
-	MaxWorldItemTemplates                 = 64
-	MaxInventoryItems                     = 64
-	MaxDefinitionEffects                  = 8
-	MaxTransitionEffects                  = 32
-	MaxSimulationHistory                  = 16
-	MaxPersonaListEntries                 = 16
-	MaxSimulationTextBytes                = 1024
+	SimulationAdminProjectionSchemaV1           = "omnidex.roleplay-simulation-admin.v1"
+	NarrativeSimulationProjectionSchemaV1       = "omnidex.roleplay-simulation-narrative.v1"
+	SimulationTransitionSchemaV1                = "omnidex.roleplay-simulation-transition.v1"
+	MaxSceneParticipants                        = 16
+	MaxSimulationMeters                         = 16
+	MaxInteractionCommands                      = 32
+	MaxWorldItemTemplates                       = 64
+	MaxInventoryItems                           = 64
+	MaxDefinitionEffects                        = 8
+	MaxTransitionEffects                        = 32
+	MaxSimulationHistory                        = 16
+	MaxPersonaListEntries                       = 16
+	MaxSimulationTextBytes                      = 1024
+	MaxSimulationInitiativeValue          int64 = 9_007_199_254_740_991
 )
 
 const AuthorityCharacterMemory AuthorityNamespace = "CHARACTER_MEMORY"
@@ -87,14 +88,21 @@ type SceneSetup struct {
 }
 
 type SceneSheet struct {
-	ID                string    `json:"id"`
-	WorldID           string    `json:"world_id"`
-	Title             string    `json:"title"`
-	Description       string    `json:"description"`
-	Revision          int64     `json:"revision"`
-	ActiveCharacterID string    `json:"active_character_id"`
-	CreatedAt         time.Time `json:"created_at"`
-	UpdatedAt         time.Time `json:"updated_at"`
+	ID                string                    `json:"id"`
+	WorldID           string                    `json:"world_id"`
+	Title             string                    `json:"title"`
+	Description       string                    `json:"description"`
+	Revision          int64                     `json:"revision"`
+	ActiveCharacterID string                    `json:"active_character_id"`
+	Initiative        SimulationInitiativeClock `json:"initiative"`
+	CreatedAt         time.Time                 `json:"created_at"`
+	UpdatedAt         time.Time                 `json:"updated_at"`
+}
+
+type SimulationInitiativeClock struct {
+	Round             int64 `json:"round"`
+	Turn              int64 `json:"turn"`
+	FictionalTimeTick int64 `json:"fictional_time_tick"`
 }
 
 type SceneUpdate struct {

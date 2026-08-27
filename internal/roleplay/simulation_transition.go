@@ -61,7 +61,10 @@ func applySimulationStateTx(
 		Action: resolvedAction, Effects: effects, NarrativeEvents: narrativeEvents,
 		CreatedAt: createdAt,
 	}
-	if err := persistSimulationTransitionTx(ctx, tx, requestHash, exactAction, result); err != nil {
+	observerCharacterIDs := simulationParticipantIDs(locked.Participants)
+	if err := persistSimulationTransitionTx(
+		ctx, tx, requestHash, exactAction, observerCharacterIDs, result,
+	); err != nil {
 		return nil, false, err
 	}
 	return &result, autoUsed, nil

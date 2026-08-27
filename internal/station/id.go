@@ -13,6 +13,7 @@ const (
 	ConversationObjectiveKind          ID = "conversation_objective_kind"
 	ConversationResponse               ID = "conversation_response"
 	RoleplayCanonExtraction            ID = "roleplay_canon_extraction"
+	RoleplayOngoingAction              ID = "roleplay_ongoing_action"
 	GroundedAnswer                     ID = "grounded_answer"
 	DatabaseSchemaSelection            ID = "database_schema_selection"
 	DatabaseQueryIntent                ID = "database_query_intent"
@@ -61,6 +62,7 @@ var registered = [...]ID{
 	ConversationObjectiveKind,
 	ConversationResponse,
 	RoleplayCanonExtraction,
+	RoleplayOngoingAction,
 	GroundedAnswer,
 	DatabaseSchemaSelection,
 	DatabaseQueryIntent,

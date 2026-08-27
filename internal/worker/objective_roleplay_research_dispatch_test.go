@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
+	"github.com/gryph/omnidex/internal/contextcompiler"
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/roleplay"
 	"github.com/gryph/omnidex/internal/webresearch"
@@ -89,8 +90,27 @@ func TestRoleplayResearchDispatchBypassesFictionalResponseAndCanon(t *testing.T)
 	conversation := &scriptedObjectiveConversationStation{}
 	canon := &scriptedRoleplayCanonStation{}
 	kind := answerObjectiveKindStation()
-	provider := &roleplayContextProviderProbe{}
-	contextSieve := emptyContextSieveStation()
+	requiredContext, err := assemblyline.NewContextCandidateAuthority(
+		"scene_state", "CTX_1", strings.Repeat("current scene authority ", 60),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	optionalContext, err := assemblyline.NewContextCandidateAuthority(
+		"conversation_exchange", "CTX_2", strings.Repeat("selected continuity ", 70),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider := &roleplayContextProviderProbe{contextSet: contextcompiler.CandidateSet{
+		Required: []assemblyline.ContextCandidateAuthority{requiredContext},
+		Optional: []assemblyline.ContextCandidateAuthority{optionalContext},
+	}}
+	contextSieve := &scriptedConversationContextStation{
+		terms: []string{"continuity"}, relevantIDs: []string{"CTX_2"},
+		minimalContext: "Selected bounded continuity.",
+	}
+	researchWorkflowCalls := 0
 	result, err := runObjectiveTurn(
 		context.Background(),
 		model.Job{ID: authority.JobID, Pipeline: model.PipelineChat, Instruction: authority.Instruction, Metadata: metadata},
@@ -107,7 +127,14 @@ func TestRoleplayResearchDispatchBypassesFictionalResponseAndCanon(t *testing.T)
 				return preparation, narrative, nil
 			},
 			RoleplayCanon: canon,
-			RoleplayResearch: func(context.Context, turnAuthority) (objectiveRoleplayResearchAnswer, error) {
+			RoleplayResearch: func(_ context.Context, got turnAuthority) (objectiveRoleplayResearchAnswer, error) {
+				researchWorkflowCalls++
+				if got.Instruction != authority.Instruction || research.Question != "How long is a Martian year?" {
+					t.Fatalf(
+						"dedicated research authority changed: instruction=%q question=%q",
+						got.Instruction, research.Question,
+					)
+				}
 				return objectiveRoleplayResearchAnswer{
 					Research: research, Text: "Mars takes about 687 Earth days to orbit the Sun.",
 					Rendered: rendered, RenderedSHA256: hex.EncodeToString(renderedDigest[:]),
@@ -123,19 +150,32 @@ func TestRoleplayResearchDispatchBypassesFictionalResponseAndCanon(t *testing.T)
 	if result.Kind != assemblyline.ObjectiveKindExternalAnswer || !result.Complete ||
 		result.RoleplayResearch == nil || len(result.Citations) != 1 ||
 		len(result.RoleplayResponses) != 0 ||
-		result.ModelCalls != 4 {
+		result.ModelCalls != 6 {
 		t.Fatalf("research result=%#v", result)
 	}
 	if kind.calls != 0 || conversation.calls != 0 || canon.calls != 0 {
 		t.Fatalf("research reached fictional stations: kind=%d response=%d canon=%d", kind.calls, conversation.calls, canon.calls)
 	}
 	if provider.contextCalls != 1 || contextSieve.termCalls != 1 ||
-		contextSieve.relevanceCalls != 0 || contextSieve.minificationCalls != 0 {
+		contextSieve.relevanceCalls != 1 || contextSieve.minificationCalls != 1 ||
+		researchWorkflowCalls != 1 {
 		t.Fatalf(
-			"research context sieve provider=%d stations=(%d,%d,%d)",
+			"research context sieve provider=%d stations=(%d,%d,%d) workflow=%d",
 			provider.contextCalls, contextSieve.termCalls,
-			contextSieve.relevanceCalls, contextSieve.minificationCalls,
+			contextSieve.relevanceCalls, contextSieve.minificationCalls, researchWorkflowCalls,
 		)
+	}
+	modelInputs, err := json.Marshal([]any{
+		contextSieve.termInputs[0], contextSieve.relevanceInputs[0],
+		contextSieve.minificationInputs[0],
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if leaked := string(modelInputs); strings.Contains(leaked, authority.Instruction) ||
+		strings.Contains(leaked, "/research") || !strings.Contains(leaked, research.Question) ||
+		strings.Contains(leaked, "Continue the scene from the supplied grounded result.") {
+		t.Fatalf("research context model inputs crossed the command boundary: %s", leaked)
 	}
 	_, records, err := prepareObjectiveTurnCompletion(result)
 	if err != nil {

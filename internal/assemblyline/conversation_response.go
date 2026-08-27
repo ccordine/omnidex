@@ -10,29 +10,22 @@ import (
 )
 
 const (
-	ConversationResponseSchemaV1             = "omnidex.conversation-response.v1"
-	maxConversationResponseTextBytes         = 8 * 1024
-	maxRoleplayConversationResponseTextBytes = 2 * 1024
+	ConversationResponseSchemaV1     = "omnidex.conversation-response.v1"
+	maxConversationResponseTextBytes = 8 * 1024
 )
 
 type ConversationResponseInput struct {
-	Kind                     ConversationObjectiveKind   `json:"kind"`
-	ExactInstruction         string                      `json:"exact_instruction"`
-	Context                  ObjectiveContext            `json:"objective_context"`
-	RoleplayIdentity         *RoleplayResponseIdentity   `json:"roleplay_identity"`
-	RoleplayUserTurn         *RoleplayUserTurnProjection `json:"roleplay_user_turn"`
-	EarlierRoleplayResponses []RoleplayEarlierResponse   `json:"earlier_roleplay_responses,omitempty"`
+	Kind             ConversationObjectiveKind   `json:"kind"`
+	ExactInstruction string                      `json:"exact_instruction"`
+	Context          ObjectiveContext            `json:"objective_context"`
+	RoleplayIdentity *RoleplayResponseIdentity   `json:"roleplay_identity"`
+	RoleplayUserTurn *RoleplayUserTurnProjection `json:"roleplay_user_turn"`
 }
 
 type RoleplayResponseIdentity struct {
 	CharacterName string `json:"character_name"`
 	Summary       string `json:"summary"`
 	Voice         string `json:"voice"`
-}
-
-type RoleplayEarlierResponse struct {
-	CharacterName string `json:"character_name"`
-	Text          string `json:"text"`
 }
 
 type ConversationResponseDecision struct {
@@ -71,31 +64,8 @@ func (input ConversationResponseInput) validate() error {
 		if err := input.RoleplayUserTurn.validate(); err != nil {
 			return err
 		}
-		if len(input.EarlierRoleplayResponses) >= roleplay.MaxSceneParticipants {
-			return fmt.Errorf("roleplay response has too many earlier responses in its current round")
-		}
-		seenNames := make(map[string]struct{}, len(input.EarlierRoleplayResponses))
-		for index, earlier := range input.EarlierRoleplayResponses {
-			if err := validateContextText(
-				fmt.Sprintf("earlier roleplay response %d character", index), earlier.CharacterName, 256,
-			); err != nil {
-				return err
-			}
-			if _, duplicate := seenNames[earlier.CharacterName]; duplicate {
-				return fmt.Errorf("earlier roleplay response character %q is duplicated", earlier.CharacterName)
-			}
-			seenNames[earlier.CharacterName] = struct{}{}
-			if err := validateGroundedText(
-				fmt.Sprintf("earlier roleplay response %d text", index), earlier.Text,
-				maxRoleplayConversationResponseTextBytes, true,
-			); err != nil {
-				return err
-			}
-		}
 	} else if input.RoleplayUserTurn != nil {
 		return fmt.Errorf("roleplay user turn requires one responding character identity")
-	} else if input.EarlierRoleplayResponses != nil {
-		return fmt.Errorf("earlier roleplay responses require one responding character identity")
 	}
 	return (ConversationObjectiveKindInput{
 		ExactInstruction: input.ExactInstruction,
@@ -112,7 +82,7 @@ func (decision ConversationResponseDecision) ValidateFor(input ConversationRespo
 	}
 	maxBytes := maxConversationResponseTextBytes
 	if input.RoleplayIdentity != nil {
-		maxBytes = maxRoleplayConversationResponseTextBytes
+		maxBytes = roleplay.MaxNarrativeResponseBytes
 	}
 	if err := validateGroundedText("conversation response text", decision.Text, maxBytes, true); err != nil {
 		return err
@@ -168,10 +138,6 @@ func BuildConversationResponsePrompt(input ConversationResponseInput) (string, e
 		}
 		responderName := strconv.Quote(input.RoleplayIdentity.CharacterName)
 		personaName := strconv.Quote(input.RoleplayUserTurn.PersonaName)
-		earlierResponses, err := json.Marshal(input.EarlierRoleplayResponses)
-		if err != nil {
-			return "", fmt.Errorf("encode earlier roleplay responses: %w", err)
-		}
 		sections = []string{
 			"Write one in-character narrative response to exactly one user turn.",
 			"The responding character is " + responderName + "; the user-controlled persona is " + personaName + ". These are distinct narrative identities.",
@@ -180,15 +146,14 @@ func BuildConversationResponsePrompt(input ConversationResponseInput) (string, e
 			"Treat the compact objective context as background constraint only; it must not replace a direct response to the current turn.",
 			"A short user turn permits a short response. Do not invent a different request merely to use background details.",
 			"Keep the prose consistent with the supplied fictional reality and already-applied recent events.",
-			"EARLIER_ROLEPLAY_RESPONSES_JSON contains only responses already generated earlier in this same ordered response round. They happened after the user turn. React after them without changing their words or speaking for those characters.",
+			"When the compact objective context includes an earlier response from this ordered round, it happened after the user turn. React after it without changing its words or speaking for that character.",
 			roleplayContributionInstruction(*input.RoleplayUserTurn, responderName, personaName),
 			fmt.Sprintf(
 				"Keep the response text to one to three short paragraphs and no more than %d UTF-8 bytes. End as soon as the response is complete.",
-				maxRoleplayConversationResponseTextBytes,
+				roleplay.MaxNarrativeResponseBytes,
 			),
 			"ROLEPLAY_IDENTITY_JSON:\n" + string(identity),
 			"ROLEPLAY_USER_TURN_JSON:\n" + string(userTurn),
-			"EARLIER_ROLEPLAY_RESPONSES_JSON:\n" + string(earlierResponses),
 			"COMPILED_OBJECTIVE_CONTEXT_JSON:\n" + string(context),
 		}
 	}

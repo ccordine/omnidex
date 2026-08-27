@@ -37,6 +37,9 @@ func Apply(base Routing, cfg Config) Routing {
 	if value := cfg.Get("roleplay_canon_extraction_model"); value != "" {
 		out.Stations[station.RoleplayCanonExtraction] = value
 	}
+	if value := cfg.Get("roleplay_ongoing_action_model"); value != "" {
+		out.Stations[station.RoleplayOngoingAction] = value
+	}
 	if value := cfg.Get("grounded_answer_model"); value != "" {
 		out.Stations[station.GroundedAnswer] = value
 	}

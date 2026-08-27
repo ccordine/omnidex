@@ -34,7 +34,7 @@ func selectRelevantAuthorities(
 	for pageIndex, page := range pages {
 		input := assemblyline.ContextRelevanceInput{
 			ExactInstruction:     exactInstruction,
-			RetrievalConcepts:    append([]string(nil), retrievalConcepts...),
+			RetrievalConcepts:    append([]string{}, retrievalConcepts...),
 			CandidateAuthorities: append([]assemblyline.ContextCandidateAuthority(nil), page...),
 			MaxSelections:        min(assemblyline.MaxContextRelevanceSelections, len(page)),
 		}

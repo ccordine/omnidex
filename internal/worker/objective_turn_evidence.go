@@ -12,6 +12,7 @@ import (
 
 	"github.com/gryph/omnidex/internal/assemblyline"
 	"github.com/gryph/omnidex/internal/evidence"
+	"github.com/gryph/omnidex/internal/queue"
 	"github.com/gryph/omnidex/internal/roleplay"
 )
 
@@ -202,9 +203,21 @@ func renderObjectiveTurnOutput(result objectiveTurnResult) (string, error) {
 
 func validateObjectiveTurnResult(result objectiveTurnResult) error {
 	if !result.Complete || strings.TrimSpace(result.Output) == "" ||
-		len(result.Output) > maxObjectiveOutputBytes || !utf8.ValidString(result.Output) ||
+		!utf8.ValidString(result.Output) ||
 		strings.ContainsRune(result.Output, '\x00') {
 		return fmt.Errorf("objective result is incomplete or has invalid output")
+	}
+	if len(result.RoleplayResponses) == 0 {
+		if len(result.Output) > maxObjectiveOutputBytes {
+			return fmt.Errorf("objective result is incomplete or has invalid output")
+		}
+	} else {
+		if err := queue.ValidateRoleplayResponseRound(result.RoleplayResponses); err != nil {
+			return fmt.Errorf("objective roleplay response round: %w", err)
+		}
+		if result.Output != queue.RenderRoleplayResponseRound(result.RoleplayResponses) {
+			return fmt.Errorf("objective output differs from its exact ordered roleplay response round")
+		}
 	}
 	if result.ObjectiveID == "" || result.ObjectiveID != strings.TrimSpace(result.ObjectiveID) ||
 		result.RequirementID == "" || result.RequirementID != strings.TrimSpace(result.RequirementID) {
@@ -233,7 +246,8 @@ func validateObjectiveTurnResult(result objectiveTurnResult) error {
 				result.ModelCalls, minimumCalls,
 			)
 		}
-		if len(result.RoleplayResponses) != 0 {
+		if len(result.RoleplayResponses) != 0 || result.RoleplayUserCanon != nil ||
+			result.RoleplayUserOngoingAction != nil {
 			return fmt.Errorf("roleplay research result attempted to persist fictional canon")
 		}
 	}

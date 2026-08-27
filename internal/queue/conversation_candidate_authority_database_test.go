@@ -2,6 +2,7 @@ package queue
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/gryph/omnidex/internal/model"
@@ -55,6 +56,163 @@ func TestPostgresConversationCandidatesBindPriorUserAndAssistantResult(t *testin
 		paired.JobID != firstJob.ID || paired.Content != firstResult {
 		t.Fatalf("paired result=%+v first_user=%+v first_job=%+v", paired, firstUser, firstJob)
 	}
+}
+
+func TestPostgresConversationCandidatesRetainSixCompleteExchangesBeyondFormerRawByteBound(t *testing.T) {
+	ctx, repository := channelTurnTestRepository(t)
+	channel, err := repository.CreateChannel(ctx, model.Channel{
+		ID: "candidate-complete-suffix", Scope: model.ChannelScopeUser,
+		Mode: model.ChannelModeAssistant, Name: "Candidate complete suffix",
+		WorkspaceRoot: "/srv/workspaces/candidate-complete-suffix",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	const formerRawByteBound = 6 * 1024
+	longResponse := strings.Repeat("r", formerRawByteBound+1)
+	wideExchangeUser := strings.Repeat("u", 1024)
+	wideExchangeResponse := strings.Repeat("e", formerRawByteBound-len(wideExchangeUser)+1)
+	if len(longResponse) <= formerRawByteBound || len(wideExchangeResponse) >= formerRawByteBound ||
+		len(wideExchangeUser)+len(wideExchangeResponse) <= formerRawByteBound {
+		t.Fatal("long conversation candidate fixture does not cross the former raw byte bound")
+	}
+	type completedExchange struct {
+		user   model.ChannelMessage
+		job    model.Job
+		output string
+	}
+	fixtures := []struct {
+		instruction string
+		output      string
+	}{
+		{instruction: "This oldest completed exchange must leave the six-exchange suffix.", output: "Oldest result."},
+		{instruction: "Retain the valid long response.", output: longResponse},
+		{instruction: wideExchangeUser, output: wideExchangeResponse},
+		{instruction: "Retain completed exchange four.", output: "Completed result four."},
+		{instruction: "Retain completed exchange five.", output: "Completed result five."},
+		{instruction: "Retain completed exchange six.", output: "Completed result six."},
+		{instruction: "Retain completed exchange seven.", output: "Completed result seven."},
+	}
+	completed := make([]completedExchange, 0, len(fixtures))
+	for _, fixture := range fixtures {
+		user, job := completeConversationCandidateExchange(
+			t, repository, channel.ID, fixture.instruction, fixture.output,
+		)
+		completed = append(completed, completedExchange{user: user, job: job, output: fixture.output})
+	}
+	failedUser, failedJob, err := repository.EnqueueChannelTurn(
+		ctx, channel.ID, "This failed turn must not become an orphan user candidate.",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	claim, err := repository.ClaimNextStep(ctx, "candidate-failed-worker")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if claim == nil || claim.Job.ID != failedJob.ID {
+		t.Fatalf("claim=%+v want failed job %d", claim, failedJob.ID)
+	}
+	if err := repository.FailStep(ctx, FailStepCommand{
+		OperationID: testLifecycleOperationID(t, "candidate-failed", claim.Step.ID),
+		Authority:   claim.Authority, StepID: claim.Step.ID, Error: "expected candidate fixture failure",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	_, currentJob, err := repository.EnqueueChannelTurn(
+		ctx, channel.ID, "Use the retained completed exchanges.",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	set, err := repository.ConversationCandidateAuthorities(ctx, currentJob)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := completed[1:]
+	if len(set.Turns) != len(want)*2 || len(set.AssistantResults) != len(want) {
+		t.Fatalf("candidate turns/results=%d/%d want %d/%d", len(set.Turns), len(set.AssistantResults), len(want)*2, len(want))
+	}
+	for index, exchange := range want {
+		user := set.Turns[index*2]
+		assistant := set.Turns[index*2+1]
+		result := set.AssistantResults[index]
+		if user.MessageID != exchange.user.ID || user.Role != ConversationCandidateUser ||
+			user.Content != exchange.user.Content || user.PairedUserMessageID != 0 {
+			t.Fatalf("candidate user %d=%+v want message %d", index, user, exchange.user.ID)
+		}
+		if assistant.Role != ConversationCandidateAssistant ||
+			assistant.PairedUserMessageID != user.MessageID || assistant.Content != exchange.output {
+			t.Fatalf("candidate assistant %d=%+v user=%+v", index, assistant, user)
+		}
+		if result.UserMessageID != user.MessageID || result.MessageID != assistant.MessageID ||
+			result.JobID != exchange.job.ID || result.Content != exchange.output {
+			t.Fatalf("candidate result %d=%+v exchange=%+v", index, result, exchange)
+		}
+		if user.MessageID == failedUser.ID || assistant.MessageID == failedUser.ID {
+			t.Fatalf("failed user message %d entered complete candidate suffix", failedUser.ID)
+		}
+	}
+	if set.Turns[0].MessageID == completed[0].user.ID {
+		t.Fatalf("seventh-oldest exchange %d entered six-exchange suffix", completed[0].user.ID)
+	}
+}
+
+func TestPostgresConversationCandidatesRejectNonAdjacentAssistantFragment(t *testing.T) {
+	ctx, repository := channelTurnTestRepository(t)
+	channel, err := repository.CreateChannel(ctx, model.Channel{
+		ID: "candidate-orphan-assistant", Scope: model.ChannelScopeUser,
+		Mode: model.ChannelModeAssistant, Name: "Candidate orphan assistant",
+		WorkspaceRoot: "/srv/workspaces/candidate-orphan-assistant",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	completeConversationCandidateExchange(
+		t, repository, channel.ID, "Create one valid exchange.", "Valid assistant result.",
+	)
+	if _, err := repository.pool.Exec(ctx, `
+		INSERT INTO ai_channel_messages(channel_id,role,content)
+		VALUES ($1,'assistant','Unbound assistant fragment.')
+	`, channel.ID); err != nil {
+		t.Fatal(err)
+	}
+	_, currentJob, err := repository.EnqueueChannelTurn(ctx, channel.ID, "Load exact complete history.")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repository.ConversationCandidateAuthorities(ctx, currentJob); err == nil ||
+		!strings.Contains(err.Error(), "not immediately preceded by a user authority") {
+		t.Fatalf("non-adjacent assistant fragment error=%v", err)
+	}
+}
+
+func completeConversationCandidateExchange(
+	t *testing.T,
+	repository *Repository,
+	channelID model.ChannelID,
+	instruction string,
+	output string,
+) (model.ChannelMessage, model.Job) {
+	t.Helper()
+	user, job, err := repository.EnqueueChannelTurn(t.Context(), channelID, instruction)
+	if err != nil {
+		t.Fatal(err)
+	}
+	claim, err := repository.ClaimNextStep(t.Context(), "candidate-complete-worker")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if claim == nil || claim.Job.ID != job.ID {
+		t.Fatalf("claim=%+v want job %d", claim, job.ID)
+	}
+	if err := repository.CompleteStep(t.Context(), CompleteStepCommand{
+		OperationID: testLifecycleOperationID(t, "candidate-complete", claim.Step.ID),
+		Authority:   claim.Authority, StepID: claim.Step.ID, Output: output,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	return user, job
 }
 
 func TestPostgresConversationCandidatesRejectForeignFutureAndMissingCurrentAuthority(t *testing.T) {

@@ -110,7 +110,6 @@ func TestContextRelevanceRejectsInvalidAuthorityIdentityHashAndDuplicates(t *tes
 	}
 	for name, concepts := range map[string][]string{
 		"nil":        nil,
-		"empty":      {},
 		"mixed case": {"Previous action"},
 		"unsorted":   {"zulu", "alpha"},
 		"duplicate":  {"previous action", "previous action"},
@@ -123,6 +122,20 @@ func TestContextRelevanceRejectsInvalidAuthorityIdentityHashAndDuplicates(t *tes
 				t.Fatal("noncanonical retrieval concepts were accepted")
 			}
 		})
+	}
+	emptyConceptInput := base
+	emptyConceptInput.RetrievalConcepts = []string{}
+	emptyConceptJob, err := NewContextRelevanceJob(emptyConceptInput)
+	if err != nil {
+		t.Fatalf("explicit empty retrieval concepts were rejected: %v", err)
+	}
+	emptyConceptPrompt, _, err := RenderPortableJob(emptyConceptJob)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(emptyConceptPrompt, `"retrieval_concepts":[]`) ||
+		strings.Contains(emptyConceptPrompt, `"retrieval_concepts":null`) {
+		t.Fatalf("empty retrieval concepts lost explicit-array authority: %s", emptyConceptPrompt)
 	}
 	tests := map[string]func(*ContextRelevanceInput){
 		"namespace": func(input *ContextRelevanceInput) { input.CandidateAuthorities[0].Namespace = "Conversation History" },

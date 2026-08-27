@@ -134,9 +134,8 @@ describe("ChatChannelCoordinator creation authority", () => {
     const fixture = createHost();
     const coordinator = new ChatChannelCoordinator(fixture.host, () => ({ id: channel.id, name: channel.name }));
 
-    const result = await coordinator.createAndSubmit("retry me");
+    await expect(coordinator.createAndSubmit("retry me")).rejects.toThrow("database unavailable");
 
-    expect(result).toEqual({ kind: "creation_failed" });
     expect(coordinator.selectedID()).toBe("");
     expect(sendChannelMessage).not.toHaveBeenCalled();
     expect(fixture.host.setStatus).toHaveBeenLastCalledWith("database unavailable", "error");
@@ -180,11 +179,14 @@ describe("ChatChannelCoordinator creation authority", () => {
     const fixture = createHost();
     const coordinator = new ChatChannelCoordinator(fixture.host, () => ({ id: channel.id, name: channel.name }));
 
-    await coordinator.createAndSubmit("first");
-    await coordinator.createAndSubmit("second");
+    const pendingMessage = `Conversation ${channel.id} was created but could not be reconciled. ` +
+      `Reload and select it before creating another.`;
+    await expect(coordinator.createAndSubmit("first")).rejects.toThrow(pendingMessage);
+    await expect(coordinator.createAndSubmit("second")).rejects.toThrow(pendingMessage);
 
     expect(createUserChannel).toHaveBeenCalledOnce();
     expect(sendChannelMessage).not.toHaveBeenCalled();
+    expect(fixture.host.setStatus).toHaveBeenLastCalledWith(pendingMessage, "error");
     expect(fixture.host.addEvent).toHaveBeenCalledWith(
       "channel_create_blocked_pending_reconciliation",
       { channel_id: channel.id },

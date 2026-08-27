@@ -57,6 +57,7 @@ const (
 	WorkConversationResponse                    WorkKind = "conversation_response"
 	WorkRoleplayGroundedResponse                WorkKind = "roleplay_grounded_response"
 	WorkRoleplayCanonExtraction                 WorkKind = "roleplay_canon_extraction"
+	WorkRoleplayOngoingAction                   WorkKind = "roleplay_ongoing_action"
 	WorkGroundedAnswer                          WorkKind = "grounded_answer"
 	WorkDatabaseSchemaSelection                 WorkKind = "database_schema_selection"
 	WorkDatabaseQueryIntent                     WorkKind = "database_query_intent"
@@ -287,7 +288,7 @@ func validWorkKind(kind WorkKind) bool {
 		WorkRepositoryGroundedReview, WorkRepositoryGroundedCorrection,
 		WorkContextSearchTerms, WorkContextRelevance, WorkContextMinification,
 		WorkConversationObjectiveKind, WorkConversationResponse, WorkRoleplayGroundedResponse,
-		WorkRoleplayCanonExtraction,
+		WorkRoleplayCanonExtraction, WorkRoleplayOngoingAction,
 		WorkGroundedAnswer,
 		WorkDatabaseSchemaSelection, WorkDatabaseQueryIntent, WorkDatabaseEvidenceGap,
 		WorkDatabaseJoinPathSelection,
@@ -327,7 +328,7 @@ func AllWorkKinds() []WorkKind {
 		WorkRepositoryGroundedReview, WorkRepositoryGroundedCorrection,
 		WorkContextSearchTerms, WorkContextRelevance, WorkContextMinification,
 		WorkConversationObjectiveKind, WorkConversationResponse, WorkRoleplayGroundedResponse,
-		WorkRoleplayCanonExtraction,
+		WorkRoleplayCanonExtraction, WorkRoleplayOngoingAction,
 		WorkGroundedAnswer,
 		WorkDatabaseSchemaSelection, WorkDatabaseQueryIntent, WorkDatabaseEvidenceGap,
 		WorkDatabaseJoinPathSelection,

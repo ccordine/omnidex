@@ -9,15 +9,18 @@ import (
 )
 
 func TestRoleplayCanonExtractionReturnsOnlyNewBoundedFacts(t *testing.T) {
+	antecedent := RoleplayCanonAntecedent{
+		PersonaKind: roleplay.UserPersonaCharacter, PersonaName: "Gryph",
+		ContributionKind:    roleplay.UserContributionDialogue,
+		ContributionContext: "I hand Bob the silver key.",
+	}
 	input := RoleplayCanonExtractionInput{
-		ExactInstruction:        "I hand Bob the silver key and tell him it opens the western archive.",
-		AssistantResponse:       "Rain began over the harbor as Bob closed the west gate.",
-		RespondingCharacterName: "Bob",
-		Context:                 minifiedObjectiveContext("Bob is at the harbor."),
-		UserTurn: RoleplayUserTurnProjection{
-			PersonaKind: roleplay.UserPersonaCharacter, PersonaName: "Gryph",
-			PersonaSummary: "An artificer.", ContributionKind: roleplay.UserContributionActionDialogue,
+		Source: RoleplayCanonSource{
+			Kind: RoleplayCanonSourceAssistantResponse, AttributedPersonaName: "Bob",
+			ExactContribution: "Rain began over the harbor as Bob closed the west gate.",
 		},
+		AntecedentUserTurn: &antecedent,
+		Context:            minifiedObjectiveContext("Bob is at the harbor."),
 	}
 	job, err := NewRoleplayCanonExtractionJob(input)
 	if err != nil {
@@ -27,11 +30,11 @@ func TestRoleplayCanonExtractionReturnsOnlyNewBoundedFacts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(prompt, input.AssistantResponse) ||
-		!strings.Contains(prompt, "complete accepted turn") ||
-		!strings.Contains(prompt, "either exact_instruction or assistant_response") ||
+	if !strings.Contains(prompt, input.Source.ExactContribution) ||
+		!strings.Contains(prompt, "exactly one accepted contribution") ||
+		!strings.Contains(prompt, "use it only to resolve references") ||
 		!strings.Contains(prompt, `"persona_name":"Gryph"`) ||
-		!strings.Contains(prompt, `Attribute the exact user contribution to "Gryph"`) ||
+		!strings.Contains(prompt, `only to "Bob"`) ||
 		!strings.Contains(prompt, "zero to eight") ||
 		!strings.Contains(prompt, "empty fact array") || schema == nil {
 		t.Fatalf("prompt=%q schema=%#v", prompt, schema)
@@ -63,29 +66,28 @@ func TestRoleplayCanonExtractionReturnsOnlyNewBoundedFacts(t *testing.T) {
 	}
 }
 
-func TestRoleplayCanonExtractionDeterministicallyRemovesDuplicateCandidates(t *testing.T) {
-	input := RoleplayCanonExtractionInput{
-		ExactInstruction:        "Hello",
-		AssistantResponse:       "Mara closes the notebook and looks up from the astrolabe.",
-		RespondingCharacterName: "Mara",
-		Context:                 minifiedObjectiveContext("The astrolabe ticks backward."),
-		UserTurn: RoleplayUserTurnProjection{
-			PersonaKind: roleplay.UserPersonaCharacter, PersonaName: "Gryph",
-			PersonaSummary: "An artificer.", ContributionKind: roleplay.UserContributionDialogue,
-		},
+func TestRoleplayCanonExtractionRejectsDuplicateCandidates(t *testing.T) {
+	antecedent := RoleplayCanonAntecedent{
+		PersonaKind: roleplay.UserPersonaCharacter, PersonaName: "Gryph",
+		ContributionKind:    roleplay.UserContributionDialogue,
+		ContributionContext: "Hello.",
 	}
-	decision, err := DecodeRoleplayCanonExtractionDecision(input,
+	input := RoleplayCanonExtractionInput{
+		Source: RoleplayCanonSource{
+			Kind: RoleplayCanonSourceAssistantResponse, AttributedPersonaName: "Mara",
+			ExactContribution: "Mara closes the notebook and looks up from the astrolabe.",
+		},
+		AntecedentUserTurn: &antecedent,
+		Context:            minifiedObjectiveContext("The astrolabe ticks backward."),
+	}
+	_, err := DecodeRoleplayCanonExtractionDecision(input,
 		`{"schema":"omnidex.roleplay-canon-extraction.v1","facts":["Mara closes the notebook.","Mara closes the notebook.","The astrolabe ticks backward."]}`,
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(decision.Facts) != 2 || decision.Facts[0] != "Mara closes the notebook." ||
-		decision.Facts[1] != "The astrolabe ticks backward." {
-		t.Fatalf("duplicate candidates were not reduced deterministically: %#v", decision)
+	if err == nil {
+		t.Fatal("duplicate canon candidates were silently accepted")
 	}
 
-	decision, err = DecodeRoleplayCanonExtractionDecision(input,
+	decision, err := DecodeRoleplayCanonExtractionDecision(input,
 		`{"schema":"omnidex.roleplay-canon-extraction.v1","facts":["Mara closes the notebook.","Mara greets the visitor."]}`,
 	)
 	if err != nil {
@@ -106,15 +108,18 @@ func TestRoleplayCanonExtractionPromptCannotReceiveFullSimulationOrRetrievalInpu
 		"candidate_provider_pgvector",
 	}
 	hiddenSource := strings.Join(forbidden, " | ")
+	antecedent := RoleplayCanonAntecedent{
+		PersonaKind: roleplay.UserPersonaCharacter, PersonaName: "Gryph",
+		ContributionKind:    roleplay.UserContributionAction,
+		ContributionContext: "I greet Bob.",
+	}
 	input := RoleplayCanonExtractionInput{
-		ExactInstruction:        "I greet Bob.",
-		AssistantResponse:       "Bob nods once in reply.",
-		RespondingCharacterName: "Bob",
-		Context:                 minifiedObjectiveContext("Bob is the harbor watchman."),
-		UserTurn: RoleplayUserTurnProjection{
-			PersonaKind: roleplay.UserPersonaCharacter, PersonaName: "Gryph",
-			PersonaSummary: "An artificer.", ContributionKind: roleplay.UserContributionAction,
+		Source: RoleplayCanonSource{
+			Kind: RoleplayCanonSourceAssistantResponse, AttributedPersonaName: "Bob",
+			ExactContribution: "Bob nods once in reply.",
 		},
+		AntecedentUserTurn: &antecedent,
+		Context:            minifiedObjectiveContext("Bob is the harbor watchman."),
 	}
 	input.Context.Capsules[0].Sources[0] = ObjectiveContextSource{
 		Namespace:     "roleplay_canon",
@@ -129,7 +134,10 @@ func TestRoleplayCanonExtractionPromptCannotReceiveFullSimulationOrRetrievalInpu
 		t.Fatalf("minified context missing from canon prompt: %s", prompt)
 	}
 	assertExactJSONFields(t, reflect.TypeOf(input), []string{
-		"exact_instruction", "assistant_response", "responding_character_name", "context", "user_turn",
+		"source", "antecedent_user_turn", "context",
+	})
+	assertExactJSONFields(t, reflect.TypeOf(input.Source), []string{
+		"kind", "attributed_persona_name", "exact_contribution", "persona_kind", "contribution_kind",
 	})
 	for _, value := range forbidden {
 		if strings.Contains(prompt, value) {
@@ -142,5 +150,148 @@ func TestRoleplayCanonExtractionPromptCannotReceiveFullSimulationOrRetrievalInpu
 		if strings.Contains(prompt, value) {
 			t.Fatalf("canon prompt leaked code-only context authority %q: %s", value, prompt)
 		}
+	}
+}
+
+func TestRoleplayCanonExtractionHasExactlyOneFactSource(t *testing.T) {
+	userTurn := roleplay.UserTurnAuthority{
+		PersonaKind: roleplay.UserPersonaNarrator, PersonaName: roleplay.NarratorPersonaName,
+		ContributionKind: roleplay.UserContributionNarration,
+		Parts:            []roleplay.UserTurnPart{{Kind: roleplay.UserTurnPartEvent, Text: "The bronze bell cracks."}},
+		ExactText:        "[Event]\nThe bronze bell cracks.",
+	}
+	userSource, err := ProjectRoleplayUserCanonSource(userTurn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	userPrompt, err := BuildRoleplayCanonExtractionPrompt(RoleplayCanonExtractionInput{
+		Source: userSource, Context: ObjectiveContext{Capsules: []ObjectiveContextCapsule{}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(userPrompt, "The bronze bell cracks.") ||
+		strings.Contains(userPrompt, "ASSISTANT_SOURCE_SENTINEL") ||
+		strings.Contains(userPrompt, `"antecedent_user_turn":`) ||
+		strings.Contains(userPrompt, "persona_summary") ||
+		strings.Contains(userPrompt, `"parts":`) {
+		t.Fatalf("user-source prompt crossed source authority: %s", userPrompt)
+	}
+
+	antecedent, err := ProjectRoleplayCanonAntecedent(userTurn, userTurn.ExactText)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assistantSource, err := NewRoleplayAssistantCanonSource(
+		"Mara", "I agree that the bell is broken.",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assistantPrompt, err := BuildRoleplayCanonExtractionPrompt(RoleplayCanonExtractionInput{
+		Source: assistantSource, AntecedentUserTurn: &antecedent,
+		Context: ObjectiveContext{Capsules: []ObjectiveContextCapsule{}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(assistantPrompt, "I agree that the bell is broken.") ||
+		!strings.Contains(assistantPrompt, "Never extract a fact from the antecedent user turn") ||
+		strings.Contains(assistantPrompt, `"user_turn":{"`) {
+		t.Fatalf("assistant-source prompt crossed source authority: %s", assistantPrompt)
+	}
+	if _, err := NewRoleplayCanonExtractionJob(RoleplayCanonExtractionInput{
+		Source:  assistantSource,
+		Context: ObjectiveContext{Capsules: []ObjectiveContextCapsule{}},
+	}); err == nil {
+		t.Fatal("assistant canon source without typed antecedent was accepted")
+	}
+}
+
+func TestRoleplayCanonExtractionEnforcesSourceSpecificByteBounds(t *testing.T) {
+	emptyContext := ObjectiveContext{Capsules: []ObjectiveContextCapsule{}}
+	validAntecedent := RoleplayCanonAntecedent{
+		PersonaKind: roleplay.UserPersonaNarrator, PersonaName: roleplay.NarratorPersonaName,
+		ContributionKind:    roleplay.UserContributionNarration,
+		ContributionContext: "The bell cracked.",
+	}
+	for _, input := range []RoleplayCanonExtractionInput{
+		{
+			Source: RoleplayCanonSource{
+				Kind:                  RoleplayCanonSourceUserContribution,
+				AttributedPersonaName: roleplay.NarratorPersonaName,
+				ExactContribution:     strings.Repeat("u", roleplay.MaxUserTurnBytes+1),
+				PersonaKind:           roleplay.UserPersonaNarrator,
+				ContributionKind:      roleplay.UserContributionNarration,
+			},
+			Context: emptyContext,
+		},
+		{
+			Source: RoleplayCanonSource{
+				Kind:                  RoleplayCanonSourceAssistantResponse,
+				AttributedPersonaName: "Mara",
+				ExactContribution: strings.Repeat(
+					"a", roleplay.MaxNarrativeResponseBytes+1,
+				),
+			},
+			AntecedentUserTurn: &validAntecedent,
+			Context:            emptyContext,
+		},
+		{
+			Source: RoleplayCanonSource{
+				Kind:                  RoleplayCanonSourceAssistantResponse,
+				AttributedPersonaName: "Mara", ExactContribution: "Mara nods.",
+			},
+			AntecedentUserTurn: &RoleplayCanonAntecedent{
+				PersonaKind:      roleplay.UserPersonaNarrator,
+				PersonaName:      roleplay.NarratorPersonaName,
+				ContributionKind: roleplay.UserContributionNarration,
+				ContributionContext: strings.Repeat(
+					"u", roleplay.MaxUserTurnBytes+1,
+				),
+			},
+			Context: emptyContext,
+		},
+	} {
+		if _, err := NewRoleplayCanonExtractionJob(input); err == nil {
+			t.Fatalf("over-bound roleplay canon envelope accepted: %#v", input)
+		}
+	}
+}
+
+func TestRoleplayUserCanonFinalBoundaryRejectsMislabeledRawCommandBytes(t *testing.T) {
+	input := RoleplayCanonExtractionInput{
+		Source: RoleplayCanonSource{
+			Kind:                  RoleplayCanonSourceUserContribution,
+			AttributedPersonaName: "Mara",
+			ExactContribution:     "/research the private archive",
+			PersonaKind:           roleplay.UserPersonaCharacter,
+			ContributionKind:      roleplay.UserContributionDialogue,
+		},
+		Context: ObjectiveContext{Capsules: []ObjectiveContextCapsule{}},
+	}
+	if _, err := NewRoleplayCanonExtractionJob(input); err == nil ||
+		!strings.Contains(err.Error(), "raw command bytes") {
+		t.Fatalf("mislabeled raw command job error=%v", err)
+	}
+	if prompt, err := BuildRoleplayCanonExtractionPrompt(input); err == nil ||
+		prompt != "" || !strings.Contains(err.Error(), "raw command bytes") {
+		t.Fatalf("mislabeled raw command prompt=%q error=%v", prompt, err)
+	}
+	input = RoleplayCanonExtractionInput{
+		Source: RoleplayCanonSource{
+			Kind:                  RoleplayCanonSourceAssistantResponse,
+			AttributedPersonaName: "Ivo", ExactContribution: "Ivo nods.",
+		},
+		AntecedentUserTurn: &RoleplayCanonAntecedent{
+			PersonaKind: roleplay.UserPersonaCharacter, PersonaName: "Mara",
+			ContributionKind:    roleplay.UserContributionDialogue,
+			ContributionContext: "/research the private archive",
+		},
+		Context: ObjectiveContext{Capsules: []ObjectiveContextCapsule{}},
+	}
+	if prompt, err := BuildRoleplayCanonExtractionPrompt(input); err == nil ||
+		prompt != "" || !strings.Contains(err.Error(), "raw command bytes") {
+		t.Fatalf("mislabeled raw command antecedent prompt=%q error=%v", prompt, err)
 	}
 }

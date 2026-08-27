@@ -79,6 +79,8 @@ func stationForPortableWorkKind(kind assemblyline.WorkKind) (station.ID, error) 
 		return station.ConversationResponse, nil
 	case assemblyline.WorkRoleplayCanonExtraction:
 		return station.RoleplayCanonExtraction, nil
+	case assemblyline.WorkRoleplayOngoingAction:
+		return station.RoleplayOngoingAction, nil
 	case assemblyline.WorkGroundedAnswer:
 		return station.GroundedAnswer, nil
 	case assemblyline.WorkDatabaseSchemaSelection:

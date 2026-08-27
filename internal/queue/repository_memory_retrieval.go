@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"strings"
+	"unicode/utf8"
 
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/jackc/pgx/v5"
@@ -27,6 +29,46 @@ func (r *Repository) HasScopedMemory(ctx context.Context, scope model.MemoryScop
 		)
 	`, scope.ProjectID, scope.ChannelID).Scan(&exists); err != nil {
 		return false, fmt.Errorf("check exact scoped memory candidates: %w", err)
+	}
+	return exists, nil
+}
+
+// HasAdditionalScopedMemory reports whether term-directed retrieval can add
+// exact memory content beyond the mechanically acquired context. Distinct
+// durable identities do not create a semantic question when their bytes would
+// be removed by the context compiler's exact-content deduplication.
+func (r *Repository) HasAdditionalScopedMemory(
+	ctx context.Context,
+	scope model.MemoryScope,
+	representedContents []string,
+) (bool, error) {
+	if ctx == nil {
+		return false, fmt.Errorf("additional scoped memory requires a context")
+	}
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	if err := scope.Validate(); err != nil {
+		return false, err
+	}
+	if r == nil || r.pool == nil {
+		return false, fmt.Errorf("memory retrieval requires PostgreSQL")
+	}
+	for index, content := range representedContents {
+		if strings.TrimSpace(content) == "" || !utf8.ValidString(content) ||
+			strings.ContainsRune(content, '\x00') {
+			return false, fmt.Errorf("represented context content %d is invalid", index)
+		}
+	}
+	var exists bool
+	if err := r.pool.QueryRow(ctx, `
+		SELECT EXISTS(
+			SELECT 1 FROM memory_chunks
+			WHERE project_id=$1 AND channel_id=$2 AND embedding IS NOT NULL
+			  AND NOT (content=ANY($3::text[]))
+		)
+	`, scope.ProjectID, scope.ChannelID, representedContents).Scan(&exists); err != nil {
+		return false, fmt.Errorf("check additional exact scoped memory candidates: %w", err)
 	}
 	return exists, nil
 }

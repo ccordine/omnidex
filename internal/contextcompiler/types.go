@@ -2,6 +2,7 @@ package contextcompiler
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
 )
@@ -29,13 +30,43 @@ type Request struct {
 	Retrieval        *RetrievalDirective
 }
 
+// OptionalSelectionGroup binds contiguous optional candidate chunks that must
+// remain one code-owned selection unit. The relationship is never projected to
+// a semantic station; stations continue to receive only ordinary candidate
+// authorities and return only opaque candidate IDs.
+type OptionalSelectionGroup struct {
+	CandidateIDs []string
+}
+
 type CandidateSet struct {
-	Required []assemblyline.ContextCandidateAuthority
-	Optional []assemblyline.ContextCandidateAuthority
-	Replan   *assemblyline.ObjectiveReplanAuthority
+	Required                []assemblyline.ContextCandidateAuthority
+	Optional                []assemblyline.ContextCandidateAuthority
+	OptionalSelectionGroups []OptionalSelectionGroup
+	Replan                  *assemblyline.ObjectiveReplanAuthority
+}
+
+// SearchAvailability is code-owned authority for whether term-directed
+// retrieval can add candidates beyond the provider's mechanically acquired
+// required and optional candidates. Unknown availability is invalid: callers
+// may not guess whether a semantic search-term question exists.
+type SearchAvailability string
+
+const (
+	SearchUnavailable SearchAvailability = "unavailable"
+	SearchAvailable   SearchAvailability = "available"
+)
+
+func (availability SearchAvailability) Validate() error {
+	switch availability {
+	case SearchUnavailable, SearchAvailable:
+		return nil
+	default:
+		return fmt.Errorf("context search availability %q is invalid", availability)
+	}
 }
 
 type CandidateProvider interface {
+	SearchAvailability(context.Context) (SearchAvailability, error)
 	Retrieve(context.Context, []string) (CandidateSet, error)
 }
 

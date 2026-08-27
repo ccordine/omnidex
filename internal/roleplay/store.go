@@ -115,6 +115,21 @@ func (s *Store) CreateCharacter(ctx context.Context, worldID, name string) (Char
 		return Character{}, err
 	}
 	defer tx.Rollback(context.Background())
+	character, err := createCharacterTx(ctx, tx, id, worldID, libraryID, name)
+	if err != nil {
+		return Character{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return Character{}, err
+	}
+	return character, nil
+}
+
+func createCharacterTx(
+	ctx context.Context,
+	tx pgx.Tx,
+	id, worldID, libraryID, name string,
+) (Character, error) {
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO roleplay_character_library (id,name)
 		VALUES ($1,$2)
@@ -127,9 +142,6 @@ func (s *Store) CreateCharacter(ctx context.Context, worldID, name string) (Char
 		RETURNING id,world_id,library_character_id,name,authority_namespace,created_at
 	`, id, worldID, libraryID, name))
 	if err != nil {
-		return Character{}, err
-	}
-	if err := tx.Commit(ctx); err != nil {
 		return Character{}, err
 	}
 	return character, nil

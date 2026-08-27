@@ -25,11 +25,79 @@ func requireRoleplayCompletionJobAuthority(job model.Job, command CompleteStepCo
 	if !exists || binding.Mode != model.ChannelModeRoleplay {
 		return fmt.Errorf("roleplay responses require an exact roleplay-bound channel")
 	}
+	expectsUserAction := false
+	if binding.RoleplayUserTurn != nil {
+		_, expectsUserAction, err = binding.RoleplayUserTurn.OngoingActionContribution()
+		if err != nil {
+			return fmt.Errorf("roleplay completion user-turn authority: %w", err)
+		}
+	}
+	if command.RoleplayUserOngoingAction != nil && (!expectsUserAction ||
+		string(command.RoleplayUserOngoingAction.CharacterID) !=
+			binding.RoleplayUserTurn.CharacterID) {
+		return fmt.Errorf("roleplay user ongoing-action character differs from typed user-turn authority")
+	}
+	if command.RoleplayUserCanon != nil {
+		if binding.RoleplayUserTurn == nil ||
+			!roleplayUserContributionRequiresCanon(*binding.RoleplayUserTurn) {
+			return fmt.Errorf("roleplay user canon differs from typed user-turn authority")
+		}
+		expected := expectedRoleplayUserCanonRecipients(binding, len(command.RoleplayUserCanon.Facts) != 0)
+		if !slices.Equal(command.RoleplayUserCanon.KnowledgeCharacterIDs, expected) {
+			return fmt.Errorf("roleplay user canon recipients differ from frozen user-turn authority")
+		}
+	}
+	return nil
+}
+
+func requireNewRoleplayCompletionPayload(job model.Job, command CompleteStepCommand) error {
+	if !hasRoleplayCompletionPayload(command) {
+		return nil
+	}
+	binding, exists, err := channelBindingForJob(job)
+	if err != nil {
+		return err
+	}
+	if !exists || binding.Mode != model.ChannelModeRoleplay || binding.RoleplayUserTurn == nil {
+		return nil
+	}
+	_, expectsUserAction, err := binding.RoleplayUserTurn.OngoingActionContribution()
+	if err != nil {
+		return fmt.Errorf("roleplay completion user-turn authority: %w", err)
+	}
+	if expectsUserAction != (command.RoleplayUserOngoingAction != nil) {
+		return fmt.Errorf("roleplay completion differs from typed user ongoing-action authority")
+	}
+	expectsUserCanon := roleplayUserContributionRequiresCanon(*binding.RoleplayUserTurn)
+	if expectsUserCanon != (command.RoleplayUserCanon != nil) {
+		return fmt.Errorf("roleplay completion differs from typed user canon authority")
+	}
 	return nil
 }
 
 func hasRoleplayCompletionPayload(command CompleteStepCommand) bool {
-	return len(command.RoleplayResponses) != 0
+	return len(command.RoleplayResponses) != 0 || command.RoleplayUserCanon != nil ||
+		command.RoleplayUserOngoingAction != nil
+}
+
+func roleplayUserContributionRequiresCanon(authority roleplay.UserTurnAuthority) bool {
+	return authority.ContributionKind != roleplay.UserContributionCommand &&
+		authority.ContributionKind != roleplay.UserContributionLegacy
+}
+
+func expectedRoleplayUserCanonRecipients(
+	binding channelCompletionBinding,
+	hasFacts bool,
+) []model.RoleplayCharacterID {
+	if !hasFacts || binding.RoleplayUserTurn == nil {
+		return []model.RoleplayCharacterID{}
+	}
+	if binding.RoleplayUserTurn.PersonaKind == roleplay.UserPersonaCharacter {
+		return []model.RoleplayCharacterID{
+			model.RoleplayCharacterID(binding.RoleplayUserTurn.CharacterID),
+		}
+	}
+	return append([]model.RoleplayCharacterID{}, binding.RoleplayParticipantCharacterIDs...)
 }
 
 func requireRoleplayCompletionReplayTx(
@@ -66,6 +134,15 @@ func requireRoleplayCompletionReplayTx(
 	}
 	if err := requireQueuedTurnChannelBindingTx(ctx, tx, binding, storedMode, storedViewpointID); err != nil {
 		return lifecycleReplayStateError(record.ID, "roleplay completion channel binding")
+	}
+	if command.RoleplayUserCanon != nil {
+		if err := roleplay.RequireUserTurnCanonReplayTx(
+			ctx, tx, string(command.OperationID), binding.RoleplaySimulationPreparationID,
+			binding.ChannelID, binding.UserMessageID, command.RoleplayUserCanon.Facts,
+			roleplayKnowledgeRecipientStrings(command.RoleplayUserCanon.KnowledgeCharacterIDs),
+		); err != nil {
+			return lifecycleReplayStateError(record.ID, "roleplay user canon receipt")
+		}
 	}
 	rows, err := tx.Query(ctx, `
 		SELECT completion.response_position,completion.world_id,
@@ -111,6 +188,31 @@ func requireRoleplayCompletionReplayTx(
 	for _, receipt := range receipts {
 		if err := requireRoleplayResponseCanonReplayTx(ctx, tx, receipt, record.ID); err != nil {
 			return err
+		}
+		if err := roleplay.RequireOngoingActionResolutionReplayTx(
+			ctx, tx, string(command.OperationID), receipt.response.Position,
+			receipt.response.PreviousOngoingAction, receipt.response.OngoingAction,
+		); err != nil {
+			return lifecycleReplayStateError(record.ID, "roleplay ongoing-action resolution")
+		}
+	}
+	if binding.RoleplayUserTurn != nil {
+		_, expectsUserAction, err := binding.RoleplayUserTurn.OngoingActionContribution()
+		if err != nil {
+			return lifecycleReplayStateError(record.ID, "roleplay user ongoing-action authority")
+		}
+		if expectsUserAction {
+			var previous, current *string
+			if command.RoleplayUserOngoingAction != nil {
+				previous = command.RoleplayUserOngoingAction.PreviousOngoingAction
+				current = command.RoleplayUserOngoingAction.OngoingAction
+			}
+			if err := roleplay.RequireUserOngoingActionResolutionReplayTx(
+				ctx, tx, string(command.OperationID), binding.RoleplayUserTurn.CharacterID,
+				previous, current,
+			); err != nil {
+				return lifecycleReplayStateError(record.ID, "roleplay user ongoing-action resolution")
+			}
 		}
 	}
 	if _, err := roleplay.AdvanceTurnTx(ctx, tx, roleplay.SimulationTurnAdvanceRequest{

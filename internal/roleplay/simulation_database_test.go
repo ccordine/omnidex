@@ -2,8 +2,10 @@ package roleplay
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/jackc/pgx/v5"
@@ -122,7 +124,7 @@ func TestRoleplaySimulationPersistsDeterministicTransitionsAndTurnAuthority(t *t
 	`, world.ChannelID); err != nil {
 		t.Fatal(err)
 	}
-	insertNarratorRoleplayUserMessage(
+	coldTurnText := insertNarratorRoleplayUserMessage(
 		t, pool, 92, world.ChannelID, "The night grows colder.", UserContributionNarration,
 	)
 	event, err := store.AppendCanonEvent(ctx, world.ID, 91, "Ari saw the campfire gutter.")
@@ -135,7 +137,7 @@ func TestRoleplaySimulationPersistsDeterministicTransitionsAndTurnAuthority(t *t
 	if _, err := store.AppendCharacterMemory(ctx, ari.ID, event.ID, "The failing fire made Ari uneasy."); err != nil {
 		t.Fatal(err)
 	}
-	authority := prepareAndBindTestTurn(t, pool, world.ChannelID, 92, 201, "The night grows colder.")
+	authority := prepareAndBindTestTurn(t, pool, world.ChannelID, 92, 201, coldTurnText)
 	if authority.PendingTransition == nil || authority.BaseSceneRevision != tinnitus.AfterRevision ||
 		authority.SceneRevision != tinnitus.AfterRevision+1 {
 		t.Fatalf("prepared authority=%+v", authority)
@@ -152,6 +154,7 @@ func TestRoleplaySimulationPersistsDeterministicTransitionsAndTurnAuthority(t *t
 	if len(content.VisibleFacts) != 1 || len(content.Memories) != 1 || content.RecentEvents[len(content.RecentEvents)-1] != "Used Tonic. A restorative travel tonic." {
 		t.Fatalf("narrative content=%+v", content)
 	}
+	assertDatabaseRejectsPreparedObserverDrift(t, pool, authority)
 	advanceID := mustTransitionID(t)
 	tx, err := pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
@@ -175,11 +178,24 @@ func TestRoleplaySimulationPersistsDeterministicTransitionsAndTurnAuthority(t *t
 	if err := tx.Commit(ctx); err != nil {
 		t.Fatal(err)
 	}
-	var materializedPayload []byte
+	var materializedPayload, observerPayload []byte
 	if err := pool.QueryRow(ctx, `
-		SELECT result FROM roleplay_simulation_transitions WHERE operation_id=$1
-	`, authority.PendingTransition.OperationID).Scan(&materializedPayload); err != nil {
+		SELECT result,observer_character_ids
+		FROM roleplay_simulation_transitions WHERE operation_id=$1
+	`, authority.PendingTransition.OperationID).Scan(
+		&materializedPayload, &observerPayload,
+	); err != nil {
 		t.Fatal(err)
+	}
+	var materializedObserverIDs []string
+	if err := json.Unmarshal(observerPayload, &materializedObserverIDs); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(materializedObserverIDs, authority.ParticipantCharacterIDs) {
+		t.Fatalf(
+			"materialized observers=%v want frozen preparation=%v",
+			materializedObserverIDs, authority.ParticipantCharacterIDs,
+		)
 	}
 	materializedTransition, err := decodeSimulationTransitionResult(materializedPayload)
 	if err != nil {
@@ -207,10 +223,10 @@ func TestRoleplaySimulationPersistsDeterministicTransitionsAndTurnAuthority(t *t
 		replayedAdvance.NarrativeFingerprint != advance.NarrativeFingerprint {
 		t.Fatalf("advance replay=%+v error=%v", replayedAdvance, err)
 	}
-	insertNarratorRoleplayUserMessage(
+	quietTurnText := insertNarratorRoleplayUserMessage(
 		t, pool, 93, world.ChannelID, "Bex listens in silence.", UserContributionNarration,
 	)
-	quiet := prepareAndBindTestTurn(t, pool, world.ChannelID, 93, 202, "Bex listens in silence.")
+	quiet := prepareAndBindTestTurn(t, pool, world.ChannelID, 93, 202, quietTurnText)
 	if quiet.PendingTransition != nil || quiet.BaseSceneRevision != advance.AfterRevision ||
 		quiet.SceneRevision != advance.AfterRevision {
 		t.Fatalf("zero-delta prose authority=%+v", quiet)
@@ -235,6 +251,69 @@ func TestRoleplaySimulationPersistsDeterministicTransitionsAndTurnAuthority(t *t
 	persisted, err := reopenedStore.ProjectCurrentScene(ctx, world.ID)
 	if err != nil || persisted.ActiveCharacterID != bex.ID || persisted.Revision != advance.AfterRevision {
 		t.Fatalf("persisted scene=%+v error=%v", persisted, err)
+	}
+}
+
+func assertDatabaseRejectsPreparedObserverDrift(
+	t *testing.T,
+	pool *pgxpool.Pool,
+	authority SimulationTurnAuthority,
+) {
+	t.Helper()
+	if authority.PendingTransition == nil ||
+		authority.PendingTransition.Action.Kind != SimulationActionAutomatic {
+		t.Fatalf("prepared observer-drift fixture requires an automatic transition: %+v", authority)
+	}
+	forgedObserverIDs := []string{authority.ActiveCharacterID}
+	if reflect.DeepEqual(forgedObserverIDs, authority.ParticipantCharacterIDs) {
+		t.Fatal("prepared observer-drift fixture requires another participant")
+	}
+	transitionPayload, err := json.Marshal(authority.PendingTransition)
+	if err != nil {
+		t.Fatal(err)
+	}
+	observerPayload, err := json.Marshal(forgedObserverIDs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tx, err := pool.BeginTx(t.Context(), pgx.TxOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback(t.Context())
+	if _, err := tx.Exec(t.Context(), `
+		DELETE FROM roleplay_scene_participants
+		WHERE world_id=$1 AND scene_id=$2 AND character_id<>$3
+	`, authority.WorldID, authority.SceneID, authority.ActiveCharacterID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.Exec(t.Context(), `
+		UPDATE roleplay_current_scenes
+		SET revision=$3,updated_at=NOW()
+		WHERE world_id=$1 AND id=$2 AND revision=$4
+	`, authority.WorldID, authority.SceneID, authority.SceneRevision, authority.BaseSceneRevision); err != nil {
+		t.Fatal(err)
+	}
+	var requestHash string
+	if err := tx.QueryRow(t.Context(), `
+		SELECT request_sha256
+		FROM roleplay_simulation_turn_preparations
+		WHERE operation_id=$1
+	`, authority.PreparationID).Scan(&requestHash); err != nil {
+		t.Fatal(err)
+	}
+	transition := authority.PendingTransition
+	_, err = tx.Exec(t.Context(), `
+		INSERT INTO roleplay_simulation_transitions (
+			operation_id,world_id,scene_id,actor_character_id,
+			before_revision,after_revision,exact_action,action_kind,command_key,
+			request_sha256,result,observer_character_ids,created_at
+		) VALUES ($1,$2,$3,$4,$5,$6,'','automatic','',$7,$8::jsonb,$9::jsonb,$10)
+	`, transition.OperationID, transition.WorldID, transition.SceneID,
+		transition.ActorCharacterID, transition.BeforeRevision, transition.AfterRevision,
+		requestHash, transitionPayload, observerPayload, transition.CreatedAt)
+	if err == nil || !strings.Contains(err.Error(), "frozen preparation observer authority") {
+		t.Fatalf("prepared transition accepted changed observer cast: %v", err)
 	}
 }
 

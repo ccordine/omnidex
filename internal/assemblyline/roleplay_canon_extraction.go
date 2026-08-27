@@ -15,11 +15,9 @@ const (
 )
 
 type RoleplayCanonExtractionInput struct {
-	ExactInstruction        string                     `json:"exact_instruction"`
-	AssistantResponse       string                     `json:"assistant_response"`
-	RespondingCharacterName string                     `json:"responding_character_name"`
-	Context                 ObjectiveContext           `json:"context"`
-	UserTurn                RoleplayUserTurnProjection `json:"user_turn"`
+	Source             RoleplayCanonSource      `json:"source"`
+	AntecedentUserTurn *RoleplayCanonAntecedent `json:"antecedent_user_turn,omitempty"`
+	Context            ObjectiveContext         `json:"context"`
 }
 
 type RoleplayCanonExtractionDecision struct {
@@ -32,23 +30,21 @@ func NewRoleplayCanonExtractionJob(input RoleplayCanonExtractionInput) (Portable
 }
 
 func (input RoleplayCanonExtractionInput) validate() error {
-	if err := validateGroundedText(
-		"roleplay exact instruction", input.ExactInstruction, maxConversationInstructionBytes, false,
-	); err != nil {
+	if err := input.Source.validate(); err != nil {
 		return err
 	}
-	if err := validateGroundedText(
-		"roleplay assistant response", input.AssistantResponse, maxConversationResponseTextBytes, true,
-	); err != nil {
-		return err
-	}
-	if err := validateContextText(
-		"roleplay responding character name", input.RespondingCharacterName, 256,
-	); err != nil {
-		return err
-	}
-	if err := input.UserTurn.validate(); err != nil {
-		return err
+	switch input.Source.Kind {
+	case RoleplayCanonSourceUserContribution:
+		if input.AntecedentUserTurn != nil {
+			return fmt.Errorf("roleplay user canon source cannot carry an antecedent user turn")
+		}
+	case RoleplayCanonSourceAssistantResponse:
+		if input.AntecedentUserTurn == nil {
+			return fmt.Errorf("roleplay assistant canon source requires its typed antecedent user turn")
+		}
+		if err := input.AntecedentUserTurn.validate(); err != nil {
+			return err
+		}
 	}
 	return input.Context.Validate()
 }
@@ -106,19 +102,11 @@ func (decision RoleplayCanonExtractionDecision) ResolveFor(
 			MaxRoleplayCanonFactsPerTurn,
 		)
 	}
-	seen := make(map[string]struct{}, len(decision.Facts))
-	resolved := make([]string, 0, len(decision.Facts))
 	for _, fact := range decision.Facts {
 		if err := roleplay.ValidateCanonFact(fact); err != nil {
 			return RoleplayCanonExtractionDecision{}, err
 		}
-		if _, duplicate := seen[fact]; duplicate {
-			continue
-		}
-		seen[fact] = struct{}{}
-		resolved = append(resolved, fact)
 	}
-	decision.Facts = resolved
 	if err := decision.ValidateFor(input); err != nil {
 		return RoleplayCanonExtractionDecision{}, err
 	}
@@ -148,25 +136,24 @@ func BuildRoleplayCanonExtractionPrompt(input RoleplayCanonExtractionInput) (str
 		return "", err
 	}
 	projection, err := json.Marshal(struct {
-		ExactInstruction        string                          `json:"exact_instruction"`
-		AssistantResponse       string                          `json:"assistant_response"`
-		RespondingCharacterName string                          `json:"responding_character_name"`
-		UserTurn                RoleplayUserTurnProjection      `json:"user_turn"`
-		Context                 objectiveContextModelProjection `json:"context"`
+		Source             RoleplayCanonSource             `json:"source"`
+		AntecedentUserTurn *RoleplayCanonAntecedent        `json:"antecedent_user_turn,omitempty"`
+		Context            objectiveContextModelProjection `json:"context"`
 	}{
-		ExactInstruction: input.ExactInstruction, AssistantResponse: input.AssistantResponse,
-		RespondingCharacterName: input.RespondingCharacterName,
-		UserTurn:                input.UserTurn, Context: modelContext,
+		Source: input.Source, AntecedentUserTurn: input.AntecedentUserTurn,
+		Context: modelContext,
 	})
 	if err != nil {
 		return "", fmt.Errorf("encode roleplay canon extraction input: %w", err)
 	}
 	return strings.Join([]string{
-		"Extract up to eight newly established fictional fact candidates from one complete accepted turn, using the exact user turn and final assistant narrative together.",
-		"Facts may come from explicit fictional actions or assertions in either exact_instruction or assistant_response. Questions and requests are not themselves fictional events.",
-		"Attribute the exact user contribution to " + strconv.Quote(input.UserTurn.PersonaName) + " and the assistant response to " + strconv.Quote(input.RespondingCharacterName) + ". Never transfer first-person speech, actions, possessions, or knowledge between them.",
+		"Extract up to eight newly established fictional fact candidates from exactly one accepted contribution.",
+		"Treat only source.exact_contribution as the candidate fact source. Context is established reference material and must never be returned as a newly established fact.",
+		"When antecedent_user_turn is present, use it only to resolve references in the assistant contribution. Never extract a fact from the antecedent user turn.",
+		"Questions, requests, and directions are not themselves fictional events.",
+		"Attribute every first-person statement, action, possession, or item of knowledge in the contribution only to " + strconv.Quote(input.Source.AttributedPersonaName) + ".",
 		"Return zero to eight concise standalone fictional fact strings, excluding implications, restatements of known facts, inferred character visibility, and real-world claims.",
-		"Return an empty fact array when the accepted turn establishes no new durable fictional fact.",
+		"Return an empty fact array when this exact contribution establishes no new durable fictional fact.",
 		"Prefer participant actions, possessions, relationships, promises, explicit knowledge, and scene changes over decorative sensory descriptions when the bound requires selection.",
 		"ROLEPLAY_CANON_EXTRACTION_JSON:\n" + string(projection),
 	}, "\n\n"), nil

@@ -106,12 +106,16 @@ func (s *Store) CreateCurrentScene(ctx context.Context, setup SceneSetup) (Scene
 	if err := requireSimulationParticipantsTx(ctx, tx, setup.WorldID, setup.ParticipantIDs); err != nil {
 		return SceneSheet{}, err
 	}
+	initiative := initialSimulationInitiativeClock()
 	scene, err := scanSceneSheet(tx.QueryRow(ctx, `
 		INSERT INTO roleplay_current_scenes (
-			id,world_id,title,description,current_character_id
-		) VALUES ($1,$2,$3,$4,$5)
-		RETURNING id,world_id,title,description,revision,current_character_id,created_at,updated_at
-	`, setup.ID, setup.WorldID, setup.Title, setup.Description, setup.ParticipantIDs[0]))
+			id,world_id,title,description,current_character_id,
+			initiative_round,initiative_turn,fictional_time_tick
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+		RETURNING id,world_id,title,description,revision,current_character_id,
+		          initiative_round,initiative_turn,fictional_time_tick,created_at,updated_at
+	`, setup.ID, setup.WorldID, setup.Title, setup.Description, setup.ParticipantIDs[0],
+		initiative.Round, initiative.Turn, initiative.FictionalTimeTick))
 	if err != nil {
 		return SceneSheet{}, simulationDefinitionError("current scene", err)
 	}
@@ -155,11 +159,18 @@ func requireSimulationParticipantsTx(
 		if err != nil {
 			return err
 		}
-		if _, duplicate := seenNames[name]; duplicate {
-			return fmt.Errorf("%w: scene participant name %q is ambiguous", ErrSimulationConflict, name)
+		if err := recordDistinctSceneParticipantName(seenNames, name); err != nil {
+			return err
 		}
-		seenNames[name] = struct{}{}
 	}
+	return nil
+}
+
+func recordDistinctSceneParticipantName(seenNames map[string]struct{}, name string) error {
+	if _, duplicate := seenNames[name]; duplicate {
+		return fmt.Errorf("%w: scene participant name %q is ambiguous", ErrSimulationConflict, name)
+	}
+	seenNames[name] = struct{}{}
 	return nil
 }
 
@@ -189,9 +200,14 @@ func scanSceneSheet(row rowScanner) (SceneSheet, error) {
 	var scene SceneSheet
 	if err := row.Scan(
 		&scene.ID, &scene.WorldID, &scene.Title, &scene.Description,
-		&scene.Revision, &scene.ActiveCharacterID, &scene.CreatedAt, &scene.UpdatedAt,
+		&scene.Revision, &scene.ActiveCharacterID,
+		&scene.Initiative.Round, &scene.Initiative.Turn, &scene.Initiative.FictionalTimeTick,
+		&scene.CreatedAt, &scene.UpdatedAt,
 	); err != nil {
 		return SceneSheet{}, err
+	}
+	if err := scene.Initiative.Validate(); err != nil {
+		return SceneSheet{}, fmt.Errorf("persisted scene initiative: %w", err)
 	}
 	return scene, nil
 }

@@ -185,17 +185,25 @@ func presentChannelUserTurn(
 		return fmt.Errorf("roleplay user message %d differs from exact persona authority", message.ID)
 	}
 	message.SpeakerName = authority.PersonaName
-	message.Roleplay = &model.ChannelMessageRoleplayAuthority{
+	message.Roleplay = projectChannelMessageRoleplayAuthority(authority)
+	return nil
+}
+
+func projectChannelMessageRoleplayAuthority(
+	authority roleplay.UserTurnAuthority,
+) *model.ChannelMessageRoleplayAuthority {
+	projected := &model.ChannelMessageRoleplayAuthority{
 		PersonaKind:      string(authority.PersonaKind),
 		CharacterID:      model.RoleplayCharacterID(authority.CharacterID),
 		ContributionKind: string(authority.ContributionKind),
+		Parts:            make([]model.ChannelMessageRoleplayPart, len(authority.Parts)),
 	}
-	for _, part := range authority.Parts {
-		message.Roleplay.Parts = append(message.Roleplay.Parts, model.ChannelMessageRoleplayPart{
+	for index, part := range authority.Parts {
+		projected.Parts[index] = model.ChannelMessageRoleplayPart{
 			Kind: string(part.Kind), Text: part.Text,
-		})
+		}
 	}
-	return nil
+	return projected
 }
 
 func presentChannelTurnState(

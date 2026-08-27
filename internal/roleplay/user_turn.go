@@ -139,6 +139,28 @@ func (authority UserTurnAuthority) IsCharacter() bool {
 	return authority.PersonaKind == UserPersonaCharacter
 }
 
+// OngoingActionContribution returns the exact typed user contribution only
+// when its persisted modality can establish or change that character's
+// current action. Code decides this from typed parts; prose is never scanned.
+func (authority UserTurnAuthority) OngoingActionContribution() (string, bool, error) {
+	if err := authority.Validate(); err != nil {
+		return "", false, err
+	}
+	if !authority.IsCharacter() {
+		return "", false, nil
+	}
+	actions := make([]string, 0, len(authority.Parts))
+	for _, part := range authority.Parts {
+		if part.Kind == UserTurnPartAction {
+			actions = append(actions, "[Action]\n"+part.Text)
+		}
+	}
+	if len(actions) == 0 {
+		return "", false, nil
+	}
+	return strings.Join(actions, "\n\n"), true, nil
+}
+
 func (authority UserTurnAuthority) Equal(other UserTurnAuthority) bool {
 	return authority.PersonaKind == other.PersonaKind &&
 		authority.CharacterID == other.CharacterID &&
@@ -146,6 +168,22 @@ func (authority UserTurnAuthority) Equal(other UserTurnAuthority) bool {
 		authority.PersonaSummary == other.PersonaSummary &&
 		authority.ContributionKind == other.ContributionKind &&
 		authority.ExactText == other.ExactText && slices.Equal(authority.Parts, other.Parts)
+}
+
+func validateUserTurnSceneAuthority(
+	authority UserTurnAuthority,
+	participantIDs []string,
+) error {
+	if !authority.IsCharacter() {
+		return nil
+	}
+	if !slices.Contains(participantIDs, authority.CharacterID) {
+		return fmt.Errorf(
+			"%w: selected user persona must be a current scene participant",
+			ErrSimulationIllegal,
+		)
+	}
+	return nil
 }
 
 func validateUserTurnPair(

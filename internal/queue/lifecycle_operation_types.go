@@ -66,19 +66,34 @@ const (
 )
 
 type CompleteStepCommand struct {
-	OperationID       LifecycleOperationID         `json:"operation_id"`
-	Authority         model.StepAttemptAuthority   `json:"-"`
-	StepID            int64                        `json:"step_id"`
-	Output            string                       `json:"output"`
-	ContextKey        string                       `json:"context_key"`
-	ContextValue      string                       `json:"context_value"`
-	RoleplayResponses []RoleplayResponseCompletion `json:"roleplay_responses,omitempty"`
+	OperationID               LifecycleOperationID                 `json:"operation_id"`
+	Authority                 model.StepAttemptAuthority           `json:"-"`
+	StepID                    int64                                `json:"step_id"`
+	Output                    string                               `json:"output"`
+	ContextKey                string                               `json:"context_key"`
+	ContextValue              string                               `json:"context_value"`
+	RoleplayResponses         []RoleplayResponseCompletion         `json:"roleplay_responses,omitempty"`
+	RoleplayUserCanon         *RoleplayUserCanonCompletion         `json:"roleplay_user_canon,omitempty"`
+	RoleplayUserOngoingAction *RoleplayUserOngoingActionCompletion `json:"roleplay_user_ongoing_action,omitempty"`
 }
 
 type RoleplayResponseCompletion struct {
 	Position              int                         `json:"position"`
 	CharacterID           model.RoleplayCharacterID   `json:"character_id"`
 	Output                string                      `json:"output"`
+	Facts                 []string                    `json:"facts"`
+	KnowledgeCharacterIDs []model.RoleplayCharacterID `json:"knowledge_character_ids"`
+	PreviousOngoingAction *string                     `json:"previous_ongoing_action,omitempty"`
+	OngoingAction         *string                     `json:"ongoing_action,omitempty"`
+}
+
+type RoleplayUserOngoingActionCompletion struct {
+	CharacterID           model.RoleplayCharacterID `json:"character_id"`
+	PreviousOngoingAction *string                   `json:"previous_ongoing_action"`
+	OngoingAction         *string                   `json:"ongoing_action"`
+}
+
+type RoleplayUserCanonCompletion struct {
 	Facts                 []string                    `json:"facts"`
 	KnowledgeCharacterIDs []model.RoleplayCharacterID `json:"knowledge_character_ids"`
 }

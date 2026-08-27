@@ -110,6 +110,13 @@ func (s *Server) loadRoleplaySimulationState(
 		ActiveGeneration:    projection.ActiveGeneration,
 		LastUserTurn:        projection.LastUserTurn,
 	}
+	if projection.Scene != nil {
+		scene := *projection.Scene
+		state.Scene = &scene
+	}
+	if err := validateRequestedRoleplayComposerPersona(state); err != nil {
+		return roleplaySimulationComponentState{}, err
+	}
 	state.InstalledModelNames, err = s.loadInstalledRoleplayModelNames(ctx)
 	if err != nil {
 		return roleplaySimulationComponentState{}, err
@@ -121,11 +128,6 @@ func (s *Server) loadRoleplaySimulationState(
 		}
 		state.Personas = append(state.Personas, roleplayNamedPersona{Name: name, Projection: persona})
 	}
-	if projection.Scene == nil {
-		return state, nil
-	}
-	scene := *projection.Scene
-	state.Scene = &scene
 	return state, nil
 }
 

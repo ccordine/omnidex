@@ -20,7 +20,8 @@ func (s *Store) ProjectCurrentScene(ctx context.Context, worldID string) (SceneS
 		return SceneSheet{}, err
 	}
 	scene, err := scanSceneSheet(s.pool.QueryRow(ctx, `
-		SELECT id,world_id,title,description,revision,current_character_id,created_at,updated_at
+		SELECT id,world_id,title,description,revision,current_character_id,
+		       initiative_round,initiative_turn,fictional_time_tick,created_at,updated_at
 		FROM roleplay_current_scenes WHERE world_id=$1
 	`, worldID))
 	if err == pgx.ErrNoRows {

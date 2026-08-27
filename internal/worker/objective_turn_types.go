@@ -49,7 +49,15 @@ type turnAuthority struct {
 	RoleplayResponders              []roleplay.SimulationResponderRoute
 	RoleplayUserTurn                *roleplay.UserTurnAuthority
 	RoleplayIdentity                *assemblyline.RoleplayResponseIdentity
+	RoleplayEarlierResponses        []roleplayRoundResponseAuthority
 	Context                         assemblyline.ObjectiveContext
+}
+
+type roleplayRoundResponseAuthority struct {
+	Position      int
+	CharacterID   model.RoleplayCharacterID
+	CharacterName string
+	Text          string
 }
 
 type objectiveStationReceipt struct {
@@ -63,6 +71,13 @@ type objectiveKindStation interface {
 }
 
 type objectiveContextCandidateSource interface {
+	ContextSearchAvailability(
+		context.Context,
+		model.Job,
+		turnAuthority,
+		*roleplay.SimulationTurnAuthority,
+		*roleplay.NarrativeSimulationProjection,
+	) (contextcompiler.SearchAvailability, error)
 	ContextCandidates(
 		context.Context,
 		model.Job,
@@ -104,13 +119,15 @@ type objectiveRoleplayGroundedStation interface {
 }
 
 type objectiveWorkflows struct {
-	WorkspaceMutation  func(context.Context, turnAuthority) (string, error)
-	RepositoryRead     func(context.Context, turnAuthority) (objectiveEvidenceAcquisition, error)
-	ExternalAnswer     func(context.Context, turnAuthority) (objectiveExternalAnswer, error)
-	DatabaseRead       func(context.Context, turnAuthority, string) (objectiveEvidenceAcquisition, error)
-	RoleplaySimulation func(context.Context, string, int64) (roleplay.SimulationTurnAuthority, roleplay.NarrativeSimulationProjection, error)
-	RoleplayCanon      objectiveRoleplayCanonStation
-	RoleplayResearch   func(context.Context, turnAuthority) (objectiveRoleplayResearchAnswer, error)
+	WorkspaceMutation     func(context.Context, turnAuthority) (string, error)
+	RepositoryRead        func(context.Context, turnAuthority) (objectiveEvidenceAcquisition, error)
+	ExternalAnswer        func(context.Context, turnAuthority) (objectiveExternalAnswer, error)
+	DatabaseRead          func(context.Context, turnAuthority, string) (objectiveEvidenceAcquisition, error)
+	RoleplaySimulation    func(context.Context, string, int64) (roleplay.SimulationTurnAuthority, roleplay.NarrativeSimulationProjection, error)
+	RoleplayCanon         objectiveRoleplayCanonStation
+	RoleplayCanonDelta    func(context.Context, string, []string) ([]string, error)
+	RoleplayOngoingAction objectiveRoleplayOngoingActionStation
+	RoleplayResearch      func(context.Context, turnAuthority) (objectiveRoleplayResearchAnswer, error)
 }
 
 type objectiveEvidenceAcquisition struct {
@@ -152,17 +169,19 @@ type objectiveEvidence struct {
 }
 
 type objectiveTurnResult struct {
-	ObjectiveID       string
-	RequirementID     string
-	InstructionSHA256 string
-	Kind              assemblyline.ConversationObjectiveKind
-	Citations         []objectiveEvidence
-	Output            string
-	CitationsRendered bool
-	ModelCalls        int
-	RoleplayResponses []queue.RoleplayResponseCompletion
-	RoleplayResearch  *roleplay.ResearchTurnAuthority
-	Complete          bool
+	ObjectiveID               string
+	RequirementID             string
+	InstructionSHA256         string
+	Kind                      assemblyline.ConversationObjectiveKind
+	Citations                 []objectiveEvidence
+	Output                    string
+	CitationsRendered         bool
+	ModelCalls                int
+	RoleplayResponses         []queue.RoleplayResponseCompletion
+	RoleplayUserCanon         *queue.RoleplayUserCanonCompletion
+	RoleplayUserOngoingAction *queue.RoleplayUserOngoingActionCompletion
+	RoleplayResearch          *roleplay.ResearchTurnAuthority
+	Complete                  bool
 }
 
 func newObjectiveEvidence(

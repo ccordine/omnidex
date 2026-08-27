@@ -29,17 +29,42 @@ export interface RoleplayComponentResponse {
   configured: boolean;
   scene_revision?: number;
   scene_draft_revision: number;
-  composer_persona_character_id?: string;
   html: { bundle: string };
 }
 
-export function createRoleplayUserPersona(
+export interface RoleplayUserPersonaCreationReceipt {
+  channel_id: string;
+  character_id: string;
+}
+
+export async function createRoleplayUserPersona(
   channelID: string,
   name: string,
-): Promise<RoleplayComponentResponse> {
-  return mutate(channelID, "/user-personas", jsonRequest({
-    name: requireText(name, "Identity name", 256, true),
-  }), 201);
+): Promise<RoleplayUserPersonaCreationReceipt> {
+  const id = requireID(channelID, "channel", /^[a-z0-9][a-z0-9_.:-]{0,95}$/);
+  const response = await fetch(
+    `/v1/channels/${encodeURIComponent(id)}/roleplay/user-personas`,
+    jsonRequest({ name: requireText(name, "Identity name", 256, true) }),
+  );
+  const decoded = await readJSON<unknown>(response);
+  if (response.status !== 201) {
+    throw new Error(`Roleplay request expected HTTP 201, received HTTP ${response.status}.`);
+  }
+  if (!decoded || typeof decoded !== "object" || Array.isArray(decoded)) {
+    throw new Error("Roleplay identity creation receipt must be an exact object.");
+  }
+  const payload = decoded as Record<string, unknown>;
+  if (Object.keys(payload).sort().join(",") !== "channel_id,character_id") {
+    throw new Error("Roleplay identity creation receipt has inexact fields.");
+  }
+  const receipt: RoleplayUserPersonaCreationReceipt = {
+    channel_id: requireID(payload.channel_id, "receipt channel", /^[a-z0-9][a-z0-9_.:-]{0,95}$/),
+    character_id: roleplayID(payload.character_id, "created character", "rpc"),
+  };
+  if (receipt.channel_id !== id) {
+    throw new Error("Roleplay identity creation receipt changed the requested channel identity.");
+  }
+  return receipt;
 }
 
 export interface PersonaInput {
@@ -133,10 +158,17 @@ export const emptyRoleplayPage: RoleplayPageState = {
 export async function fetchRoleplayComponent(
   channelID: string,
   page: RoleplayPageState = emptyRoleplayPage,
+	composerPersonaCharacterID?: string,
 ): Promise<RoleplayComponentResponse> {
   const id = requireID(channelID, "channel", /^[a-z0-9][a-z0-9_.:-]{0,95}$/);
   const query = new URLSearchParams({ channel_id: id });
   for (const [key, value] of Object.entries(requirePage(page))) query.set(`${key}_offset`, String(value));
+	if (composerPersonaCharacterID !== undefined) {
+		query.set(
+			"composer_persona_character_id",
+			roleplayID(composerPersonaCharacterID, "composer persona character", "rpc"),
+		);
+	}
   return requestRoleplayComponent(`/v1/ui/chat/roleplay?${query}`, undefined, 200, id);
 }
 

@@ -77,6 +77,9 @@ func (r *Repository) completeStep(
 	if err := requireLockedStepAttemptActiveTx(ctx, tx, command.Authority, lockedAttempt); err != nil {
 		return err
 	}
+	if err := requireNewRoleplayCompletionPayload(job, command); err != nil {
+		return err
+	}
 	if lockedAttempt.StepStatus != model.StepStatusRunning || !jobAcceptsStepTerminal(lockedAttempt.JobStatus) {
 		return staleStepAttemptError(command.Authority, fmt.Sprintf(
 			"completion writer job status %q step status %q",

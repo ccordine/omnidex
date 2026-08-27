@@ -16,6 +16,7 @@ func roleplayComponentQuery(r *http.Request) (roleplaySimulationPageState, model
 	if err := validateExactQuery(
 		r, "channel_id", "characters_offset", "personas_offset", "turn_order_offset",
 		"meters_offset", "inventory_offset", "interactions_offset", "item_templates_offset",
+		"composer_persona_character_id",
 	); err != nil {
 		return roleplaySimulationPageState{}, "", err
 	}
@@ -24,6 +25,15 @@ func roleplayComponentQuery(r *http.Request) (roleplaySimulationPageState, model
 		return roleplaySimulationPageState{}, "", err
 	}
 	page := roleplaySimulationPageState{}
+	page.ComposerPersonaCharacter = r.URL.Query().Get("composer_persona_character_id")
+	if page.ComposerPersonaCharacter != "" &&
+		!roleplayCharacterIdentityPattern.MatchString(page.ComposerPersonaCharacter) {
+		return roleplaySimulationPageState{}, "", fmt.Errorf("composer persona character identity is invalid")
+	}
+	if _, present := r.URL.Query()["composer_persona_character_id"]; present &&
+		page.ComposerPersonaCharacter == "" {
+		return roleplaySimulationPageState{}, "", fmt.Errorf("composer persona character identity is required when supplied")
+	}
 	fields := []struct {
 		name  string
 		value *int

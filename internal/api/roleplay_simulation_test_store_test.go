@@ -212,6 +212,14 @@ func (s *roleplaySimulationTestStore) CreateCharacter(
 	})
 	s.worldCharacters = append(s.worldCharacters, s.characters.Items[len(s.characters.Items)-1])
 	s.names[id] = name
+	s.generation[id] = roleplay.CharacterGenerationProjection{
+		CharacterID: id,
+		Config: roleplay.CharacterGenerationConfig{
+			Schema: roleplay.CharacterGenerationConfigSchemaV2, LibraryCharacterID: libraryID,
+			Revision: 1,
+		},
+		UpdatedAt: time.Now().UTC(),
+	}
 	return character, nil
 }
 
@@ -410,7 +418,9 @@ func (s *roleplaySimulationTestStore) CreateCurrentScene(
 	s.lastSceneSetup = setup
 	s.scene = &roleplay.SceneSheet{
 		ID: setup.ID, WorldID: setup.WorldID, Title: setup.Title, Description: setup.Description,
-		Revision: 1, ActiveCharacterID: setup.ParticipantIDs[0], CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC(),
+		Revision: 1, ActiveCharacterID: setup.ParticipantIDs[0],
+		Initiative: roleplay.SimulationInitiativeClock{Round: 1, Turn: 1, FictionalTimeTick: 0},
+		CreatedAt:  time.Now().UTC(), UpdatedAt: time.Now().UTC(),
 	}
 	s.participants.Items = make([]roleplay.SceneParticipantProjection, len(setup.ParticipantIDs))
 	for index, characterID := range setup.ParticipantIDs {

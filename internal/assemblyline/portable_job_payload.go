@@ -99,6 +99,10 @@ func validatePortableJobPayload(kind WorkKind, payload json.RawMessage) error {
 		return decodeAndValidatePortablePayload[RoleplayCanonExtractionInput](
 			payload, RoleplayCanonExtractionInput.validate,
 		)
+	case WorkRoleplayOngoingAction:
+		return decodeAndValidatePortablePayload[RoleplayOngoingActionInput](
+			payload, RoleplayOngoingActionInput.validate,
+		)
 	case WorkGroundedAnswer:
 		return decodeAndValidatePortablePayload[GroundedAnswerInput](payload, GroundedAnswerInput.validate)
 	case WorkDatabaseSchemaSelection:

@@ -2,6 +2,8 @@ package api
 
 import (
 	"bytes"
+	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -42,6 +44,76 @@ func TestRoleplaySceneCreateUsesServerIdentityAndExactSelectedOrder(t *testing.T
 	}
 	if simulation.lastSceneSetup.ParticipantIDs[0] != simulation.scene.ActiveCharacterID {
 		t.Fatalf("active character did not follow exact selected order: %+v", simulation.scene)
+	}
+}
+
+func TestRoleplayInlineIdentityCreationAtomicallyAddsSelectableSceneParticipant(t *testing.T) {
+	t.Parallel()
+	simulation := configuredRoleplayHTTPTestStore()
+	simulation.participants.Items[0].TurnPosition = 0
+	server := newRoleplayHTTPTestServer(t, simulation)
+	modelCatalog := &roleplayModelPageProbe{err: errors.New("component projection unavailable")}
+	server.ollamaModelAuthority = modelCatalog
+	request := httptest.NewRequest(
+		http.MethodPost,
+		"/v1/channels/story-http/roleplay/user-personas",
+		bytes.NewBufferString(`{"name":"Orchid Cartographer"}`),
+	)
+	response := httptest.NewRecorder()
+
+	server.Handler().ServeHTTP(response, request)
+
+	if response.Code != http.StatusCreated {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+	var payload roleplayUserPersonaCreationReceipt
+	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	createdID := payload.CharacterID
+	if createdID != "rpc_cccccccccccccccccccccccccccccccc" ||
+		payload.ChannelID != roleplayHTTPChannelID ||
+		len(simulation.allParticipants) != 2 ||
+		simulation.allParticipants[1].CharacterID != createdID ||
+		simulation.scene.Revision != 10 {
+		t.Fatalf("created=%q scene=%+v participants=%+v", createdID, simulation.scene, simulation.allParticipants)
+	}
+	if response.Body.String() != `{"channel_id":"story-http","character_id":"rpc_cccccccccccccccccccccccccccccccc"}`+"\n" {
+		t.Fatalf("creation receipt was not exact: %s", response.Body.String())
+	}
+	if simulation.snapshotCalls != 0 || len(modelCatalog.offsets) != 0 {
+		t.Fatalf("committed creation invoked fallible projection: snapshots=%d model_offsets=%v",
+			simulation.snapshotCalls, modelCatalog.offsets)
+	}
+	failedProjectionRequest := httptest.NewRequest(
+		http.MethodGet,
+		"/v1/ui/chat/roleplay?channel_id=story-http&composer_persona_character_id="+createdID,
+		nil,
+	)
+	failedProjectionResponse := httptest.NewRecorder()
+	server.Handler().ServeHTTP(failedProjectionResponse, failedProjectionRequest)
+	if failedProjectionResponse.Code != http.StatusBadGateway ||
+		len(simulation.allParticipants) != 2 || simulation.allParticipants[1].CharacterID != createdID {
+		t.Fatalf("post-commit projection failure lost creation authority: status=%d participants=%+v body=%s",
+			failedProjectionResponse.Code, simulation.allParticipants, failedProjectionResponse.Body.String())
+	}
+	server.ollamaModelAuthority = nil
+	projectionRequest := httptest.NewRequest(
+		http.MethodGet,
+		"/v1/ui/chat/roleplay?channel_id=story-http&composer_persona_character_id="+createdID,
+		nil,
+	)
+	projectionResponse := httptest.NewRecorder()
+	server.Handler().ServeHTTP(projectionResponse, projectionRequest)
+	var component roleplaySimulationComponentResponse
+	if err := json.Unmarshal(projectionResponse.Body.Bytes(), &component); err != nil {
+		t.Fatal(err)
+	}
+	selectedOption := `value="` + createdID + `" data-persona-kind="character" selected`
+	if projectionResponse.Code != http.StatusOK ||
+		!strings.Contains(component.HTML.Bundle, selectedOption) {
+		t.Fatalf("committed identity projection status=%d body=%s",
+			projectionResponse.Code, projectionResponse.Body.String())
 	}
 }
 

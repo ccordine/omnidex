@@ -47,9 +47,19 @@ func AdvanceTurnTx(
 	if len(preparation.Responders) == 0 {
 		return SimulationTurnAdvanceResult{}, fmt.Errorf("prepared response round is empty")
 	}
-	nextCharacterID := preparation.Responders[0].CharacterID
-	afterRevision, err := updateSceneRevisionTx(
-		ctx, tx, locked.Sheet.ID, locked.Sheet.Revision, nextCharacterID,
+	excludedCharacterID := ""
+	if preparation.UserTurn.IsCharacter() {
+		excludedCharacterID = preparation.UserTurn.CharacterID
+	}
+	nextCharacterID, nextInitiative, err := advanceSimulationInitiative(
+		locked, excludedCharacterID,
+	)
+	if err != nil {
+		return SimulationTurnAdvanceResult{}, err
+	}
+	afterRevision, err := advanceSceneInitiativeTx(
+		ctx, tx, locked.Sheet.ID, locked.Sheet.Revision,
+		locked.Sheet.Initiative, nextInitiative, nextCharacterID,
 	)
 	if err != nil {
 		return SimulationTurnAdvanceResult{}, err
@@ -63,6 +73,7 @@ func AdvanceTurnTx(
 		WorldID: preparation.WorldID, SceneID: preparation.SceneID,
 		PreviousCharacterID: preparation.ActiveCharacterID, ActiveCharacterID: nextCharacterID,
 		BeforeRevision: locked.Sheet.Revision, AfterRevision: afterRevision,
+		BeforeInitiative: locked.Sheet.Initiative, AfterInitiative: nextInitiative,
 		ParticipantCharacterIDs: append([]string(nil), preparation.ParticipantCharacterIDs...),
 		NarrativeFingerprint:    fingerprint, CreatedAt: time.Now().UTC().Truncate(time.Microsecond),
 	}
@@ -147,11 +158,16 @@ func persistTurnAdvanceTx(
 		INSERT INTO roleplay_simulation_turn_advances (
 			operation_id,preparation_id,job_id,world_id,scene_id,
 			before_revision,after_revision,previous_character_id,active_character_id,
+			before_initiative_round,before_initiative_turn,before_fictional_time_tick,
+			after_initiative_round,after_initiative_turn,after_fictional_time_tick,
 			participant_character_ids,narrative_fingerprint,request_sha256,result,created_at
-		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11,$12,$13::jsonb,$14)
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16::jsonb,$17,$18,$19::jsonb,$20)
 	`, request.OperationID, request.PreparationID, request.JobID,
 		result.WorldID, result.SceneID, result.BeforeRevision, result.AfterRevision,
-		result.PreviousCharacterID, result.ActiveCharacterID, string(participants),
-		result.NarrativeFingerprint, requestHash, string(payload), result.CreatedAt)
+		result.PreviousCharacterID, result.ActiveCharacterID,
+		result.BeforeInitiative.Round, result.BeforeInitiative.Turn,
+		result.BeforeInitiative.FictionalTimeTick, result.AfterInitiative.Round,
+		result.AfterInitiative.Turn, result.AfterInitiative.FictionalTimeTick,
+		string(participants), result.NarrativeFingerprint, requestHash, string(payload), result.CreatedAt)
 	return simulationDefinitionError("simulation turn advance", err)
 }

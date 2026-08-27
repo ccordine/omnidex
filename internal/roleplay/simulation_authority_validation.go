@@ -50,7 +50,15 @@ func (authority SimulationTurnAuthority) Validate() error {
 	if !activeFound {
 		return fmt.Errorf("simulation turn authority active character is not a participant")
 	}
-	expectedResponderIDs := simulationResponderIDs(authority.ParticipantCharacterIDs, authority.UserTurn)
+	if err := validateUserTurnSceneAuthority(authority.UserTurn, authority.ParticipantCharacterIDs); err != nil {
+		return err
+	}
+	expectedResponderIDs, err := simulationResponderIDs(
+		authority.ParticipantCharacterIDs, authority.ActiveCharacterID, authority.UserTurn,
+	)
+	if err != nil {
+		return err
+	}
 	if authority.UserTurn.PersonaKind == UserPersonaLegacy && len(authority.Responders) == 1 {
 		expectedResponderIDs = []string{authority.Responders[0].CharacterID}
 	}
@@ -59,6 +67,10 @@ func (authority SimulationTurnAuthority) Validate() error {
 	}
 	if len(authority.ResponderRoutes) != len(authority.Responders) {
 		return fmt.Errorf("simulation responder routes differ from the frozen response round")
+	}
+	frozenInitiative := authority.NarrativeProjection.Scene.Initiative
+	if err := frozenInitiative.Validate(); err != nil {
+		return fmt.Errorf("simulation response round initiative: %w", err)
 	}
 	for index, responder := range authority.Responders {
 		if responder.Position != index || responder.CharacterID != expectedResponderIDs[index] {
@@ -75,6 +87,9 @@ func (authority SimulationTurnAuthority) Validate() error {
 		}
 		if err := responder.NarrativeProjection.Validate(); err != nil {
 			return fmt.Errorf("simulation responder %d narrative projection: %w", index, err)
+		}
+		if responder.NarrativeProjection.Scene.Initiative != frozenInitiative {
+			return fmt.Errorf("simulation responder %d initiative differs from the frozen response round", index)
 		}
 		narrative := responder.NarrativeAuthority
 		if narrative.WorldID != authority.WorldID || narrative.SceneID != authority.SceneID ||

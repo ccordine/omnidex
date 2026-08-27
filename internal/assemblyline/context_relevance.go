@@ -116,7 +116,7 @@ func BuildContextRelevancePrompt(input ContextRelevanceInput) (string, error) {
 	}
 	modelInput := contextRelevanceModelProjection{
 		ExactInstruction:  input.ExactInstruction,
-		RetrievalConcepts: append([]string(nil), input.RetrievalConcepts...),
+		RetrievalConcepts: append([]string{}, input.RetrievalConcepts...),
 		Candidates:        make([]contextRelevanceModelCandidate, len(input.CandidateAuthorities)),
 		MaxSelections:     input.MaxSelections,
 	}

@@ -71,7 +71,7 @@ describe("ChatChannelTurnCoordinator", () => {
     expect(fixture.host.refreshRoleplay).toHaveBeenCalledOnce();
   });
 
-  it("keeps an accepted turn active when its immediate transcript refresh fails", async () => {
+  it("reconciles an accepted turn and then propagates its immediate transcript refresh failure", async () => {
     const pending = deferred();
     vi.mocked(sendChannelMessage).mockResolvedValueOnce({
       channel: {
@@ -92,22 +92,20 @@ describe("ChatChannelTurnCoordinator", () => {
     const coordinator = new ChatChannelTurnCoordinator(fixture.host);
 
     const receipt = await coordinator.accept("chat-42", "exact");
-    await receipt.acceptedTranscript;
-
     expect(fixture.host.waitForJob).toHaveBeenCalledWith(73);
-    expect(fixture.host.setStatus).toHaveBeenLastCalledWith(
-      "Message accepted as job #73, but its transcript refresh failed: transcript database unavailable",
-      "error",
-    );
+    pending.resolve();
+    const failure = "Message accepted as job #73, but its transcript refresh failed: transcript database unavailable";
+    await expect(coordinator.reconcile(receipt)).rejects.toThrow(failure);
+
+    expect(fixture.host.setStatus).toHaveBeenCalledWith(failure, "error");
     expect(fixture.host.addEvent).toHaveBeenCalledWith("channel_accepted_transcript_failed", {
       channel_id: "chat-42",
       message_id: 91,
       job_id: 73,
       error: "transcript database unavailable",
     });
-    pending.resolve();
-    await coordinator.reconcile(receipt);
     expect(fixture.host.loadTranscript).toHaveBeenLastCalledWith("chat-42");
+    expect(fixture.host.refreshRoleplay).toHaveBeenCalledOnce();
   });
 
   it("does not overwrite another selected conversation when a background turn completes", async () => {

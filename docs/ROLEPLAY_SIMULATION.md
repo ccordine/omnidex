@@ -31,11 +31,14 @@ The roleplay runtime keeps these authorities distinct:
 - user-turn authority: the selected user persona, its exact scene character
   identity when applicable, and whether the exact bytes are dialogue, action,
   action plus dialogue, narrator-established fiction, narrator direction, or
-  an explicit command. The current responding character is a different
-  authority and cannot simultaneously be selected as the user's persona.
+  an explicit command. The initiative cursor is separate authority and may be
+  selected as the user's persona when another scene participant remains to
+  respond; the selected acting character is excluded from that response round.
 - `FICTIONAL_CANON`: events established in one fictional world.
 - `CHARACTER_KNOWLEDGE`: the subset of canon a specific character may know.
 - `CHARACTER_MEMORY`: character-scoped retained subjective information.
+- per-character ongoing-action state: the latest resolved activity for one
+  exact character, with append-only source and replay provenance.
 - simulation state: character and scene sheets, meters, inventories,
   interactions, item rules, participants, and turn order.
 - real-world evidence: separately sourced research evidence that can be
@@ -50,7 +53,7 @@ A model response is not a state transition.
 
 1. Persist the exact user turn together with its selected persona and
    contribution kind. Code validates that a selected character is a current
-   participant distinct from the responding character. Slash input is
+   participant and that at least one AI responder remains. Slash input is
    deterministically recorded as a narrator command.
 2. If the roleplay turn uses the explicit slash-command grammar, code parses it
    exactly and rejects malformed or unknown commands before mutation.
@@ -63,33 +66,72 @@ A model response is not a state transition.
    provenance. Meters, inventory, scene revision, and transition history remain
    unchanged.
 5. Before inference, code re-derives the prepared transition and narrative from
-   current authority. A changed scene, cast, responding character, meter,
+   current authority. A changed scene, cast, initiative cursor, meter,
    inventory, canon fact, memory, or simulation event fails immediately with
    the exact changed category and an explicit restore-and-retry path.
 6. Code deterministically compiles the smallest relevant continuity context.
    Search-term interpretation, relevance, or minification is invoked only when
    one corresponding semantic uncertainty actually remains; context that
    already fits is retained without a minification call.
-7. One response station receives the exact typed user contribution, the
-   distinct responding character's current identity and voice, the prepared
+7. For each code-ordered responder, one response station receives the exact
+   typed user contribution, that responding character's current identity and voice, the prepared
    narrative projection, and only the selected continuity. It returns the
    final visible prose once. There is no post-response voice rewrite,
    preservation review, or narrative restatement chain.
-8. A separate bounded semantic station extracts newly established canon from
-   the final visible prose. Code validates, deduplicates, grants, and persists
-   only that returned semantic leaf.
+8. Separate bounded semantic calls extract newly established canon once from
+   the exact fictional user contribution and once from each final response.
+   Code validates, deduplicates, grants, and persists only each returned
+   source-local semantic leaf.
 9. At terminal completion, code locks the unchanged base revision, reapplies
    the transition, and verifies that its result and narrative fingerprint equal
    the immutable preview.
 10. Code atomically commits the verified transition, assistant message,
     validated semantic leaves, provenance, and the next turn position.
 
+Canon extraction is split by exact source. Code invokes one user-contribution
+canon station exactly once for the typed fictional user turn and invokes one
+assistant-response canon station separately for each accepted response. Each
+station receives one `exact_contribution`; an assistant station may receive the
+typed user turn only as antecedent context for resolving references, never as a
+second fact source. Exact user facts retain the user message as provenance;
+exact response facts retain that responder's assistant message as provenance.
+Explicit commands do not enter user-contribution canon extraction.
+
+Code alone assigns recipients for user-established facts. Character-user facts
+are granted only to the explicit acting character. Narrator facts are granted
+to the exact frozen, ordered participant snapshot for that prepared turn. An
+empty user fact set always has an empty recipient set. Before persistence, code
+filters candidate strings against world-global exact canon without exposing
+hidden world facts to any model; a concurrent database conflict still fails
+loudly.
+
+One submitted user turn is one atomic response round. Code orders its bounded
+responder calls synchronously from the persisted initiative cursor, wraps the
+participant order deterministically, and excludes a selected acting character.
+Every responder in that round receives the same exact pre-advance round, turn,
+and fictional-time tick; later responders may receive only the explicitly
+selected earlier responses from that same code-ordered round. No individual
+model call advances time. Only terminal publication advances the initiative
+cursor, global turn, and fictional-time tick once. The round increments only
+when that cursor crosses the end of the persisted participant order.
+
+Per-character ongoing action is another separate semantic leaf. For a selected
+character turn, code supplies the ongoing-action station only that character's
+exact persisted `[Action]` parts and previous current action. For an assistant
+response, it supplies only that responder's final prose and previous current
+action. The station returns one complete current-action value or its exact
+absence; code validates and appends the result under the exact character and
+source message. Narrator contributions have no unambiguous actor target, and
+typed Event or dialogue parts are not character actions, so those inputs do
+not invoke or mutate per-character ongoing-action state. Their scene
+continuity remains in canon and observer-scoped history.
+
 When a retained character memory is exactly the newly granted visible canon
 fact, code copies those already-validated bytes into `CHARACTER_MEMORY` in the
 same transaction. That exact relationship creates no semantic uncertainty and
 therefore no memory model call. Newly extracted canon is granted
-conservatively to the active viewpoint only; scene participation alone never
-grants knowledge.
+conservatively only to the character whose response established it; scene
+participation alone never grants knowledge.
 
 Failure at any step leaves no partial transition and does not fall back to
 free-form interpretation or a second roleplay runtime.
@@ -98,8 +140,16 @@ free-form interpretation or a second roleplay runtime.
 
 World, scene, cast, persona sheets, responder model selection, and the user's
 selected persona/contribution are server authority. The composer displays the
-current responding character, effective response model, world, scene, and
-revision beside the input.
+current scene, initiative cursor, round, turn, and fictional-time tick beside
+the input. Per-responder models remain server-bound in the immutable turn
+preparation; no singular model label is presented for a multi-responder round.
+
+Inline persona creation commits the new identity and its scene membership in
+one database transaction, then returns only the exact channel/character
+receipt. Component projection is a separate authoritative GET, optionally
+bound to that received character identity. A projection or rendering failure
+after the receipt is reported as a view-refresh failure; it cannot recast the
+committed creation as a retryable mutation or invite a duplicate identity.
 
 Each submitted turn is composed from the latest committed values and snapshots
 them atomically with the exact user message. That snapshot is immutable for the
@@ -112,7 +162,7 @@ the transcript preserves the exact failed turn for explicit retry.
 
 Only completed user/assistant exchanges enter narrative continuity. Each
 exchange preserves explicit labels for the user persona, contribution kind,
-and responding character; unanswered failed turns are visible in the
+and ordered responding characters; unanswered failed turns are visible in the
 transcript but do not become fictional history. A failed or canceled turn
 retains its exact error and can be restored into the composer for an explicit
 new attempt without mutating or silently replaying the original turn.
@@ -178,7 +228,7 @@ The production path must prove:
 - stale prepared narrative authority is rejected before response inference and
   names the changed authority in the recoverable failure;
 - rendered narrative and canon prompts contain no raw slash-command bytes;
-- newly extracted canon reaches only the active viewpoint unless a later,
+- newly extracted canon reaches only its responding character unless a later,
   separately authoritative visibility mechanism grants it;
 - assistant prose cannot mutate authoritative state;
 - replay is idempotent and altered replay fails loudly;

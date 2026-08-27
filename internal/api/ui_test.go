@@ -117,6 +117,9 @@ func TestRoleplayPanelProvidesDedicatedWorldLibraryAndSimulationWorkspace(t *tes
 	}
 	for _, expected := range []string{
 		`data-panel-name="roleplay"`,
+		`class="chat-panel flex h-full min-h-0 flex-col`,
+		`class="chat-content grid min-h-0 flex-1`,
+		`class="flex min-w-0 flex-wrap items-center gap-2"`,
 		`data-chat-target="roleplayPanel"`,
 		`data-chat-target="roleplayLoading"`,
 		`data-chat-target="roleplayWorkspaceLoading"`,
@@ -126,7 +129,11 @@ func TestRoleplayPanelProvidesDedicatedWorldLibraryAndSimulationWorkspace(t *tes
 		`data-roleplay-dialog="worlds"`,
 		`data-roleplay-dialog="characters"`,
 		`data-roleplay-dialog="setup"`,
+		`class="flex h-full min-h-0 min-w-0 flex-col"`,
 		`data-action="chat#openRoleplayWorldBrowser"`,
+		`data-action="chat#openRoleplayWorldSetup"`,
+		`aria-label="Open scene and cast controls"`,
+		`>Scene &amp; cast</button>`,
 		`data-action="chat#openRoleplayCharacterLibrary"`,
 		`data-recyclr-sink="roleplay-simulation"`,
 		`data-recyclr-sink="roleplay-world-list"`,
@@ -159,13 +166,13 @@ func TestRoleplayPanelProvidesDedicatedWorldLibraryAndSimulationWorkspace(t *tes
 		t.Fatalf("roleplay persona authority must render once inside the composer directly before its input: %s", payload.HTML.Bundle)
 	}
 	for _, obsolete := range []string{
-		`data-action="chat#openRoleplayWorldSetup"`,
 		`data-action="chat#continueRoleplayScene"`,
 		`aria-label="Worlds and character library"`,
 		`aria-label="World controls"`,
 		`data-roleplay-collection-dialog=`,
 		`xl:grid-cols-[18rem_minmax(24rem,1fr)_22rem]`,
 		`xl:grid-cols-[minmax(24rem,1fr)_22rem]`,
+		`lg:grid-cols-[minmax(0,1fr)_14rem]`,
 	} {
 		if strings.Contains(payload.HTML.Bundle, obsolete) {
 			t.Fatalf("roleplay panel keeps permanently visible collection UI %q: %s", obsolete, payload.HTML.Bundle)

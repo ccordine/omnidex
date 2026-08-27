@@ -45,20 +45,24 @@ func PersistUserTurnAuthorityTx(
 			FROM ai_channels AS channel
 			JOIN roleplay_worlds AS world ON world.channel_id=channel.id
 			JOIN roleplay_current_scenes AS scene ON scene.world_id=world.id
+			JOIN roleplay_scene_participants AS participant
+			  ON participant.world_id=scene.world_id AND participant.scene_id=scene.id
 			JOIN roleplay_characters AS character
-			  ON character.world_id=world.id
-			LEFT JOIN roleplay_character_profiles AS profile
+			  ON character.world_id=participant.world_id
+			 AND character.id=participant.character_id
+			JOIN roleplay_character_profiles AS profile
 			  ON profile.library_character_id=character.library_character_id
 			JOIN ai_channel_messages AS message
 			  ON message.channel_id=channel.id AND message.id=$2
 			WHERE channel.id=$1 AND channel.mode='roleplay' AND message.role='user'
 			  AND message.content=$3 AND character.id=$4
+			FOR UPDATE OF scene
 		`, channelID, userMessageID, exactText, request.CharacterID).Scan(
 			&worldID, &authority.PersonaName, &authority.PersonaSummary,
 		)
 		if err == pgx.ErrNoRows {
 			return UserTurnAuthority{}, fmt.Errorf(
-				"%w: selected user persona must be a character in the current world",
+				"%w: selected user persona must be a current scene participant",
 				ErrSimulationIllegal,
 			)
 		}

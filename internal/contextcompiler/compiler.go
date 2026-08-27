@@ -31,7 +31,22 @@ func Compile(
 	if _, err := assemblyline.NewContextSearchTermsJob(termsInput); err != nil {
 		return result, err
 	}
-	retrievalConcepts, err := resolveRetrievalConcepts(ctx, request, termsInput, stations.Terms, &result)
+	if request.Retrieval == nil {
+		availability, err := provider.SearchAvailability(ctx)
+		if err != nil {
+			return result, fmt.Errorf("inspect fixed context search availability: %w", err)
+		}
+		directive, calls, err := ResolveRetrievalDirective(
+			ctx, request.ExactInstruction, availability, stations.Terms,
+		)
+		if err != nil {
+			return result, err
+		}
+		request.Retrieval = &directive
+		result.SearchTermsCalls += calls
+		result.ModelCalls += calls
+	}
+	retrievalConcepts, err := resolveRetrievalConcepts(request, termsInput)
 	if err != nil {
 		return result, err
 	}
@@ -46,22 +61,22 @@ func Compile(
 	if err := validateCandidateSet(set); err != nil {
 		return result, err
 	}
-	if len(retrievalConcepts) == 0 && len(set.Optional) != 0 {
-		return result, fmt.Errorf("fixed context provider returned optional candidates for explicit empty search terms")
-	}
 	if set.Replan != nil {
 		copy := *set.Replan
 		result.Context.ReplanAuthority = &copy
 	}
 
 	selected := append([]assemblyline.ContextCandidateAuthority(nil), set.Required...)
-	if len(retrievalConcepts) > 0 && len(set.Optional) > 0 {
+	if len(set.Optional) > 0 {
 		optional, relevanceCalls, err := selectRelevantAuthorities(
 			ctx, request.ExactInstruction, retrievalConcepts, set.Optional, stations.Relevance,
 		)
 		if err != nil {
 			return result, err
 		}
+		optional = expandOptionalSelectionGroups(
+			set.Optional, optional, set.OptionalSelectionGroups,
+		)
 		result.RelevanceCalls += relevanceCalls
 		result.ModelCalls += relevanceCalls
 		selected = append(selected, optional...)
@@ -98,38 +113,20 @@ func Compile(
 }
 
 func resolveRetrievalConcepts(
-	ctx context.Context,
 	request Request,
 	input assemblyline.ContextSearchTermsInput,
-	station SearchTermsStation,
-	result *Result,
 ) ([]string, error) {
-	if request.Retrieval != nil {
-		decision := assemblyline.ContextSearchTermsDecision{
-			Schema: assemblyline.ContextSearchTermsSchemaV1,
-			Terms:  append([]string{}, request.Retrieval.Concepts...),
-		}
-		if err := decision.ValidateFor(input); err != nil {
-			return nil, fmt.Errorf("code-owned retrieval directive: %w", err)
-		}
-		return canonicalRetrievalConcepts(decision.Terms), nil
+	if request.Retrieval == nil {
+		return nil, fmt.Errorf("context retrieval directive was not resolved before acquisition")
 	}
-	if station == nil {
-		return nil, fmt.Errorf("context search terms remain unresolved but the station is unavailable")
+	decision := assemblyline.ContextSearchTermsDecision{
+		Schema: assemblyline.ContextSearchTermsSchemaV1,
+		Terms:  append([]string{}, request.Retrieval.Concepts...),
 	}
-	terms, receipt, err := station.Generate(ctx, input)
-	if err != nil {
-		return nil, fmt.Errorf("context search terms: %w", err)
+	if err := decision.ValidateFor(input); err != nil {
+		return nil, fmt.Errorf("code-owned retrieval directive: %w", err)
 	}
-	if err := validateReceipt("context search terms", receipt); err != nil {
-		return nil, err
-	}
-	if err := terms.ValidateFor(input); err != nil {
-		return nil, err
-	}
-	result.SearchTermsCalls += receipt.Calls
-	result.ModelCalls += receipt.Calls
-	return canonicalRetrievalConcepts(terms.Terms), nil
+	return canonicalRetrievalConcepts(decision.Terms), nil
 }
 
 // canonicalRetrievalConcepts removes model-authored casing and array order
@@ -191,6 +188,9 @@ func validateCandidateSet(set CandidateSet) error {
 	}
 	if set.Replan == nil && replanCandidates != 0 {
 		return fmt.Errorf("objective replan candidate has no exact replan authority")
+	}
+	if err := validateOptionalSelectionGroups(set); err != nil {
+		return err
 	}
 	context := assemblyline.ObjectiveContext{
 		Capsules: []assemblyline.ObjectiveContextCapsule{}, ReplanAuthority: set.Replan,

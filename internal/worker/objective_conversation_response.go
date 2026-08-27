@@ -20,6 +20,8 @@ func runObjectiveRoleplayTurn(
 	conversationStation objectiveConversationStation,
 	preparation roleplay.SimulationTurnAuthority,
 	canonStation objectiveRoleplayCanonStation,
+	canonDelta func(context.Context, string, []string) ([]string, error),
+	ongoingActionStation objectiveRoleplayOngoingActionStation,
 ) (objectiveTurnResult, error) {
 	if authority.RoleplayViewpointCharacterID == "" || authority.RoleplaySimulationPreparationID == "" {
 		return objectiveTurnResult{}, fmt.Errorf("roleplay conversation requires exact prepared simulation authority")
@@ -34,7 +36,9 @@ func runObjectiveRoleplayTurn(
 	if err != nil {
 		return objectiveTurnResult{}, err
 	}
-	userTurn, err := assemblyline.ProjectRoleplayUserTurn(preparation.UserTurn)
+	canonAntecedent, err := assemblyline.ProjectRoleplayCanonAntecedent(
+		preparation.UserTurn, modelInstruction,
+	)
 	if err != nil {
 		return objectiveTurnResult{}, err
 	}
@@ -46,26 +50,67 @@ func runObjectiveRoleplayTurn(
 	if canonStation == nil {
 		return result, fmt.Errorf("roleplay canon extraction station is unavailable")
 	}
-	earlier := make([]assemblyline.RoleplayEarlierResponse, 0, len(preparation.Responders))
-	outputs := make([]string, 0, len(preparation.Responders))
+	if ongoingActionStation == nil {
+		return result, fmt.Errorf("roleplay ongoing-action station is unavailable")
+	}
+	userAction, calls, err := resolveRoleplayUserOngoingAction(
+		ctx, ongoingActionStation, preparation,
+	)
+	if err != nil {
+		return result, err
+	}
+	result.ModelCalls += calls
+	result.RoleplayUserOngoingAction = userAction
 	roundFacts := make([]string, 0)
+	if roleplayUserContributionRequiresCanon(preparation.UserTurn) {
+		source, err := assemblyline.ProjectRoleplayUserCanonSource(preparation.UserTurn)
+		if err != nil {
+			return result, fmt.Errorf("project roleplay user canon source: %w", err)
+		}
+		facts, canonCalls, err := extractRoleplayCanonSource(
+			ctx, canonStation, assemblyline.RoleplayCanonExtractionInput{
+				Source: source,
+				Context: assemblyline.ObjectiveContext{
+					Capsules: []assemblyline.ObjectiveContextCapsule{},
+				},
+			},
+		)
+		if err != nil {
+			return result, fmt.Errorf("extract roleplay user contribution canon: %w", err)
+		}
+		result.ModelCalls += canonCalls
+		facts, err = filterNewRoleplayCanonFacts(
+			ctx, canonDelta, preparation.WorldID, facts,
+		)
+		if err != nil {
+			return result, fmt.Errorf("filter roleplay user contribution canon: %w", err)
+		}
+		result.RoleplayUserCanon, err = newRoleplayUserCanonCompletion(preparation, facts)
+		if err != nil {
+			return result, err
+		}
+		roundFacts = append(roundFacts, facts...)
+	}
+	retrieval, retrievalCalls, err := resolveRoleplayTurnRetrieval(
+		ctx, job, authority, candidateProvider, contextStation, preparation,
+	)
+	if err != nil {
+		return result, fmt.Errorf("resolve roleplay round retrieval: %w", err)
+	}
+	result.ModelCalls += retrievalCalls
+	earlier := make([]roleplayRoundResponseAuthority, 0, len(preparation.Responders))
+	outputs := make([]string, 0, len(preparation.Responders))
 	for index, responder := range preparation.Responders {
-		projection := roleplay.CloneNarrativeSimulationProjection(responder.NarrativeProjection)
-		if err := projection.Validate(); err != nil {
+		responderAuthority, projection, err := roleplayResponderTurnAuthority(
+			authority, responder, earlier,
+		)
+		if err != nil {
 			return result, fmt.Errorf("roleplay responder %d narrative context: %w", index, err)
 		}
-		responderAuthority := authority
-		responderAuthority.RoleplayViewpointCharacterID = model.RoleplayCharacterID(responder.CharacterID)
 		generation := responder.GenerationConfig
-		responderAuthority.RoleplayGenerationConfig = &generation
-		responderAuthority.RoleplayNarrativeFingerprint = responder.NarrativeFingerprint
-		responderAuthority.RoleplayIdentity = &assemblyline.RoleplayResponseIdentity{
-			CharacterName: projection.Viewpoint.Name,
-			Summary:       projection.Viewpoint.Summary,
-			Voice:         projection.Viewpoint.Voice,
-		}
 		responderAuthority, contextCalls, err := compileObjectiveTurnContext(
-			ctx, job, responderAuthority, candidateProvider, contextStation, &preparation, &projection,
+			ctx, job, responderAuthority, candidateProvider, contextStation,
+			&preparation, &projection, &retrieval,
 		)
 		if err != nil {
 			return result, fmt.Errorf("compile roleplay responder %d context: %w", index, err)
@@ -80,36 +125,53 @@ func runObjectiveRoleplayTurn(
 		}
 		responseResult, err = runObjectiveConversationResponse(
 			ctx, modelAuthority, responseResult, conversationStation,
-			generation.NarrativeModel, earlier,
+			generation.NarrativeModel,
 		)
 		if err != nil {
 			return result, fmt.Errorf("generate roleplay responder %d: %w", index, err)
 		}
 		result.ModelCalls += responseResult.ModelCalls
+		previousOngoingAction, err := roleplay.CurrentOngoingActionForCharacter(
+			projection, responder.NarrativeAuthority, responder.CharacterID,
+		)
+		if err != nil {
+			return result, fmt.Errorf(
+				"resolve roleplay responder %d ongoing-action authority: %w", index, err,
+			)
+		}
+		ongoingAction, ongoingActionCalls, err := extractRoleplayOngoingAction(
+			ctx, ongoingActionStation, assemblyline.RoleplayOngoingActionSourceAssistantResponse,
+			projection.Viewpoint.Name, responseResult.Output,
+			previousOngoingAction,
+		)
+		if err != nil {
+			return result, fmt.Errorf("extract roleplay responder %d ongoing action: %w", index, err)
+		}
+		result.ModelCalls += ongoingActionCalls
+		source, err := assemblyline.NewRoleplayAssistantCanonSource(
+			projection.Viewpoint.Name, responseResult.Output,
+		)
+		if err != nil {
+			return result, fmt.Errorf("project roleplay responder %d canon source: %w", index, err)
+		}
 		input := assemblyline.RoleplayCanonExtractionInput{
-			ExactInstruction: modelInstruction, AssistantResponse: responseResult.Output,
-			RespondingCharacterName: projection.Viewpoint.Name, UserTurn: userTurn,
+			Source: source, AntecedentUserTurn: &canonAntecedent,
 			Context: assemblyline.CloneObjectiveContext(responderAuthority.Context),
 		}
-		if _, err := assemblyline.NewRoleplayCanonExtractionJob(input); err != nil {
-			return result, err
-		}
-		decision, receipt, err := canonStation.ExtractCanon(ctx, input)
+		candidates, canonCalls, err := extractRoleplayCanonSource(ctx, canonStation, input)
 		if err != nil {
 			return result, fmt.Errorf("extract roleplay responder %d canon: %w", index, err)
 		}
-		if receipt.Calls < 1 || receipt.Calls > maxTypedWorkerAttempts {
-			return result, fmt.Errorf(
-				"roleplay canon extraction reported %d calls outside the bounded correction budget", receipt.Calls,
-			)
-		}
-		if err := decision.ValidateFor(input); err != nil {
-			return result, err
-		}
-		result.ModelCalls += receipt.Calls
+		result.ModelCalls += canonCalls
 		establishedFacts := append([]string(nil), projection.VisibleFacts...)
 		establishedFacts = append(establishedFacts, roundFacts...)
-		facts := exactNewRoleplayFacts(decision.Facts, establishedFacts)
+		facts := exactNewRoleplayFacts(candidates, establishedFacts)
+		facts, err = filterNewRoleplayCanonFacts(
+			ctx, canonDelta, preparation.WorldID, facts,
+		)
+		if err != nil {
+			return result, fmt.Errorf("filter roleplay responder %d canon: %w", index, err)
+		}
 		roundFacts = append(roundFacts, facts...)
 		knowledge := []model.RoleplayCharacterID(nil)
 		if len(facts) != 0 {
@@ -118,15 +180,42 @@ func runObjectiveRoleplayTurn(
 		result.RoleplayResponses = append(result.RoleplayResponses, queue.RoleplayResponseCompletion{
 			Position: index, CharacterID: model.RoleplayCharacterID(responder.CharacterID),
 			Output: responseResult.Output, Facts: facts, KnowledgeCharacterIDs: knowledge,
+			PreviousOngoingAction: previousOngoingAction, OngoingAction: ongoingAction,
 		})
 		outputs = append(outputs, responseResult.Output)
-		earlier = append(earlier, assemblyline.RoleplayEarlierResponse{
+		earlier = append(earlier, roleplayRoundResponseAuthority{
+			Position: index, CharacterID: model.RoleplayCharacterID(responder.CharacterID),
 			CharacterName: projection.Viewpoint.Name, Text: responseResult.Output,
 		})
 	}
 	result.Output = strings.Join(outputs, "\n\n")
 	result.Complete = true
 	return result, nil
+}
+
+func roleplayResponderTurnAuthority(
+	authority turnAuthority,
+	responder roleplay.SimulationResponderAuthority,
+	earlier []roleplayRoundResponseAuthority,
+) (turnAuthority, roleplay.NarrativeSimulationProjection, error) {
+	projection := roleplay.CloneNarrativeSimulationProjection(responder.NarrativeProjection)
+	if err := projection.Validate(); err != nil {
+		return authority, projection, err
+	}
+	responderAuthority := authority
+	responderAuthority.RoleplayViewpointCharacterID = model.RoleplayCharacterID(responder.CharacterID)
+	generation := responder.GenerationConfig
+	responderAuthority.RoleplayGenerationConfig = &generation
+	responderAuthority.RoleplayNarrativeFingerprint = responder.NarrativeFingerprint
+	responderAuthority.RoleplayIdentity = &assemblyline.RoleplayResponseIdentity{
+		CharacterName: projection.Viewpoint.Name,
+		Summary:       projection.Viewpoint.Summary,
+		Voice:         projection.Viewpoint.Voice,
+	}
+	responderAuthority.RoleplayEarlierResponses = append(
+		[]roleplayRoundResponseAuthority(nil), earlier...,
+	)
+	return responderAuthority, projection, nil
 }
 
 func exactNewRoleplayFacts(candidates []string, established []string) []string {
@@ -204,15 +293,13 @@ func runObjectiveConversationResponse(
 	result objectiveTurnResult,
 	station objectiveConversationStation,
 	requestedModel string,
-	earlierResponses []assemblyline.RoleplayEarlierResponse,
 ) (objectiveTurnResult, error) {
 	if station == nil {
 		return result, fmt.Errorf("conversation response station is unavailable")
 	}
 	input := assemblyline.ConversationResponseInput{
 		Kind: result.Kind, ExactInstruction: authority.Instruction,
-		Context:                  assemblyline.CloneObjectiveContext(authority.Context),
-		EarlierRoleplayResponses: append([]assemblyline.RoleplayEarlierResponse(nil), earlierResponses...),
+		Context: assemblyline.CloneObjectiveContext(authority.Context),
 	}
 	if authority.RoleplayIdentity != nil {
 		identity := *authority.RoleplayIdentity

@@ -28,7 +28,7 @@ function fixture() {
     selectedChannelID: () => selected,
     firstChannelID: () => channelID,
     selectChannelID: vi.fn(async (id) => { selected = id; }),
-    createWorld: vi.fn(async () => true),
+    createWorld: vi.fn(async () => undefined),
     refreshRoleplay: vi.fn(async () => undefined),
     setStatus: vi.fn(),
     addEvent: vi.fn(),

@@ -1,5 +1,6 @@
 import type { OmniPanel } from "../lib/panel_routing";
 import type { ChatChannelTurnReceipt } from "../lib/chat_channel_turn";
+import { toastError } from "../lib/feedback";
 import type { RoleplayTurnInput } from "../lib/roleplay_turn_input";
 import { ChatRoleplayTurnController } from "./chat_roleplay_turn_controller";
 
@@ -136,10 +137,6 @@ export default class ChatController extends ChatRoleplayTurnController {
         : this.submitChannel(prompt, roleplayTurn);
     }
     const result = await this.channel.createAndSubmit(prompt);
-    if (result.kind === "creation_failed") {
-      this.setBusy(false);
-      return null;
-    }
     if (result.kind === "roleplay_setup_required") {
       this.setBusy(false);
       this.setStatus("roleplay setup required", "error");
@@ -166,6 +163,7 @@ export default class ChatController extends ChatRoleplayTurnController {
     const message = error instanceof Error ? error.message : String(error);
     this.addEvent("channel_turn_failed", { channel_id: turn.channelID, job_id: turn.jobID, error: message });
     this.setStatus(message, "error");
+    toastError(message);
   }
 
   private reportSubmitFailure(error: unknown): void {
@@ -173,6 +171,7 @@ export default class ChatController extends ChatRoleplayTurnController {
     this.addEvent("request_failed", { error: message });
     this.setBusy(false);
     this.setStatus(message, "error");
+    toastError(message);
   }
 
   async loadJobs(options: { quiet?: boolean; strict?: boolean } = {}): Promise<void> { await this.jobs.load(options); }

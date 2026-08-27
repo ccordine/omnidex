@@ -12,6 +12,9 @@ func (projection NarrativeSimulationProjection) Validate() error {
 	if err := validateSimulationText("narrative scene description", projection.Scene.Description, MaxSimulationTextBytes, true); err != nil {
 		return err
 	}
+	if err := projection.Scene.Initiative.Validate(); err != nil {
+		return fmt.Errorf("narrative scene initiative: %w", err)
+	}
 	if projection.Participants == nil || len(projection.Participants) < 1 || len(projection.Participants) > MaxSceneParticipants {
 		return fmt.Errorf("narrative participants are outside their bound")
 	}
@@ -33,6 +36,22 @@ func (projection NarrativeSimulationProjection) Validate() error {
 	}
 	if err := validateNarrativePersona(projection.Viewpoint); err != nil {
 		return err
+	}
+	seenOngoingCharacters := make(map[string]struct{}, len(projection.OngoingActions))
+	if len(projection.OngoingActions) > MaxSceneParticipants {
+		return fmt.Errorf("narrative ongoing actions are outside their bound")
+	}
+	for _, action := range projection.OngoingActions {
+		if _, participant := seenParticipants[action.CharacterName]; !participant {
+			return fmt.Errorf("narrative ongoing-action character is not a participant")
+		}
+		if _, duplicate := seenOngoingCharacters[action.CharacterName]; duplicate {
+			return fmt.Errorf("narrative ongoing-action character is duplicated")
+		}
+		seenOngoingCharacters[action.CharacterName] = struct{}{}
+		if err := ValidateOngoingActionText(action.Action); err != nil {
+			return err
+		}
 	}
 	if projection.Meters == nil || len(projection.Meters) > MaxSimulationMeters {
 		return fmt.Errorf("narrative meters are outside their bound")
@@ -95,6 +114,7 @@ func validateNarrativeTextLists(projection NarrativeSimulationProjection) error 
 
 func CloneNarrativeSimulationProjection(value NarrativeSimulationProjection) NarrativeSimulationProjection {
 	value.Participants = cloneSimulationSlice(value.Participants)
+	value.OngoingActions = cloneSimulationSlice(value.OngoingActions)
 	value.Viewpoint.Traits = cloneSimulationSlice(value.Viewpoint.Traits)
 	value.Viewpoint.Goals = cloneSimulationSlice(value.Viewpoint.Goals)
 	value.Meters = cloneSimulationSlice(value.Meters)

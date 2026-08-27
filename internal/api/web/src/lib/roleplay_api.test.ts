@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   configureRoleplayResearch,
+	createRoleplayUserPersona,
 	createRoleplayScene,
   fetchRoleplayComponent,
   placeRoleplayLibraryCharacter,
@@ -15,7 +16,11 @@ const channelID = "story-42";
 const worldID = "rpw_0123456789abcdef0123456789abcdef";
 const characterID = "rpc_0123456789abcdef0123456789abcdef";
 
-function response(configured = true, status = 200): Response {
+function response(
+	configured = true,
+	status = 200,
+	extra: Record<string, unknown> = {},
+): Response {
   return new Response(JSON.stringify({
     channel_id: channelID,
     world_id: worldID,
@@ -23,6 +28,7 @@ function response(configured = true, status = 200): Response {
 		scene_draft_revision: 3,
     ...(configured ? { scene_revision: 7 } : {}),
     html: { bundle: '<template data-recyclr-target="roleplay-simulation">server</template>' },
+		...extra,
   }), { status, headers: { "Content-Type": "application/json" } });
 }
 
@@ -55,7 +61,60 @@ describe("roleplay simulation API", () => {
 		interactions_offset: "0",
 		item_templates_offset: "16",
 	});
-  });
+	});
+
+	it("requests one exact server-owned composer persona projection", async () => {
+		const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => response());
+		vi.stubGlobal("fetch", fetchMock);
+
+		await fetchRoleplayComponent(channelID, {
+			characters: 0,
+			personas: 0,
+			turn_order: 0,
+			meters: 0,
+			inventory: 0,
+			interactions: 0,
+			item_templates: 0,
+		}, characterID);
+
+		const url = new URL(String(fetchMock.mock.calls[0]?.[0]), "https://omni.test");
+		expect(url.searchParams.get("composer_persona_character_id")).toBe(characterID);
+
+		fetchMock.mockResolvedValueOnce(response(true, 200, {
+			composer_persona_character_id: characterID,
+		}));
+		await expect(fetchRoleplayComponent(channelID)).rejects.toThrow(
+			"Roleplay component cannot echo browser composer selection authority.",
+		);
+	});
+
+	it("decodes only the exact durable identity creation receipt", async () => {
+		const createdID = "rpc_abcdef0123456789abcdef0123456789";
+		const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => new Response(JSON.stringify({
+			channel_id: channelID,
+			character_id: createdID,
+		}), { status: 201, headers: { "Content-Type": "application/json" } }));
+		vi.stubGlobal("fetch", fetchMock);
+
+		await expect(createRoleplayUserPersona(
+			channelID, "Orchid Cartographer",
+		)).resolves.toEqual({ channel_id: channelID, character_id: createdID });
+		expect(String(fetchMock.mock.calls[0]?.[0])).toBe(
+			`/v1/channels/${channelID}/roleplay/user-personas`,
+		);
+		expect(JSON.parse(String((fetchMock.mock.calls[0]?.[1] as RequestInit).body))).toEqual({
+			name: "Orchid Cartographer",
+		});
+
+		fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({
+			channel_id: channelID,
+			character_id: createdID,
+			component: {},
+		}), { status: 201, headers: { "Content-Type": "application/json" } }));
+		await expect(createRoleplayUserPersona(
+			channelID, "Second Identity",
+		)).rejects.toThrow("inexact fields");
+	});
 
 	it("submits scene creation from one observed server draft and scene updates from one observed scene revision", async () => {
 		const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) =>

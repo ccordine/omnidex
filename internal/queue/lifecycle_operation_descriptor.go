@@ -67,9 +67,11 @@ func normalizeCompleteStepCommand(command CompleteStepCommand) (CompleteStepComm
 	if command.ContextKey == "" && command.ContextValue != "" {
 		return CompleteStepCommand{}, fmt.Errorf("step context value requires a nonempty context key")
 	}
-	if len(command.RoleplayResponses) != 0 && command.ContextKey != "objective_result" {
+	if (len(command.RoleplayResponses) != 0 || command.RoleplayUserCanon != nil ||
+		command.RoleplayUserOngoingAction != nil) &&
+		command.ContextKey != "objective_result" {
 		return CompleteStepCommand{}, fmt.Errorf(
-			"roleplay responses require terminal objective-result completion authority",
+			"roleplay completion authority requires terminal objective-result completion authority",
 		)
 	}
 	responses, err := normalizeRoleplayResponseCompletions(command.RoleplayResponses)
@@ -77,6 +79,52 @@ func normalizeCompleteStepCommand(command CompleteStepCommand) (CompleteStepComm
 		return CompleteStepCommand{}, err
 	}
 	command.RoleplayResponses = responses
+	userCanon, err := normalizeRoleplayUserCanonCompletion(command.RoleplayUserCanon)
+	if err != nil {
+		return CompleteStepCommand{}, err
+	}
+	command.RoleplayUserCanon = userCanon
+	if userCanon != nil {
+		if len(responses) == 0 {
+			return CompleteStepCommand{}, fmt.Errorf(
+				"roleplay user canon requires an ordered response round",
+			)
+		}
+		responseFacts := make(map[string]struct{})
+		for _, response := range responses {
+			for _, fact := range response.Facts {
+				responseFacts[fact] = struct{}{}
+			}
+		}
+		for _, fact := range userCanon.Facts {
+			if _, duplicate := responseFacts[fact]; duplicate {
+				return CompleteStepCommand{}, fmt.Errorf(
+					"roleplay canon fact %q is duplicated across user and response sources", fact,
+				)
+			}
+		}
+	}
+	userAction, err := normalizeRoleplayUserOngoingActionCompletion(
+		command.RoleplayUserOngoingAction,
+	)
+	if err != nil {
+		return CompleteStepCommand{}, err
+	}
+	command.RoleplayUserOngoingAction = userAction
+	if userAction != nil {
+		if len(responses) == 0 {
+			return CompleteStepCommand{}, fmt.Errorf(
+				"roleplay user ongoing action requires an ordered response round",
+			)
+		}
+		for _, response := range responses {
+			if response.CharacterID == userAction.CharacterID {
+				return CompleteStepCommand{}, fmt.Errorf(
+					"roleplay user ongoing-action character cannot also be a responder",
+				)
+			}
+		}
+	}
 	if len(responses) != 0 && command.Output != RenderRoleplayResponseRound(responses) {
 		return CompleteStepCommand{}, fmt.Errorf("roleplay completion output differs from its ordered response round")
 	}

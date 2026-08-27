@@ -66,7 +66,15 @@ func PrepareSimulationTurnTx(
 		return SimulationTurnAuthority{}, fmt.Errorf("simulation turn input kind is invalid")
 	}
 	participantIDs := simulationParticipantIDs(locked.Participants)
-	responderIDs := simulationResponderIDs(participantIDs, userTurn)
+	if err := validateUserTurnSceneAuthority(userTurn, participantIDs); err != nil {
+		return SimulationTurnAuthority{}, err
+	}
+	responderIDs, err := simulationResponderIDs(
+		participantIDs, locked.Sheet.ActiveCharacterID, userTurn,
+	)
+	if err != nil {
+		return SimulationTurnAuthority{}, err
+	}
 	if len(responderIDs) == 0 {
 		return SimulationTurnAuthority{}, fmt.Errorf("%w: enable at least one character other than the acting persona", ErrSimulationNotConfigured)
 	}
@@ -115,15 +123,49 @@ func PrepareSimulationTurnTx(
 	return authority, nil
 }
 
-func simulationResponderIDs(participantIDs []string, userTurn UserTurnAuthority) []string {
+func simulationResponderIDs(
+	participantIDs []string,
+	activeCharacterID string,
+	userTurn UserTurnAuthority,
+) ([]string, error) {
 	responders := make([]string, 0, len(participantIDs))
-	for _, id := range participantIDs {
+	seen := make(map[string]struct{}, len(participantIDs))
+	activeIndex := -1
+	for index, id := range participantIDs {
+		if validateIdentity(id, characterIdentity) != nil {
+			return nil, fmt.Errorf("simulation response order contains an invalid participant")
+		}
+		if _, duplicate := seen[id]; duplicate {
+			return nil, fmt.Errorf("simulation response order contains a duplicated participant")
+		}
+		seen[id] = struct{}{}
+		if id == activeCharacterID {
+			activeIndex = index
+		}
+	}
+	if activeIndex < 0 {
+		return nil, fmt.Errorf("%w: initiative cursor is not a scene participant", ErrSimulationNotConfigured)
+	}
+	if userTurn.IsCharacter() {
+		if _, present := seen[userTurn.CharacterID]; !present {
+			return nil, fmt.Errorf(
+				"%w: acting character is not a scene participant", ErrSimulationIllegal,
+			)
+		}
+	}
+	for offset := 0; offset < len(participantIDs); offset++ {
+		id := participantIDs[(activeIndex+offset)%len(participantIDs)]
 		if userTurn.IsCharacter() && id == userTurn.CharacterID {
 			continue
 		}
 		responders = append(responders, id)
 	}
-	return responders
+	if len(responders) == 0 {
+		return nil, fmt.Errorf(
+			"%w: no responder remains after excluding the acting character", ErrSimulationNotConfigured,
+		)
+	}
+	return responders, nil
 }
 
 func BindSimulationPreparationJobTx(

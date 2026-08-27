@@ -1,25 +1,9 @@
 package queue
 
 import (
-	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/gryph/omnidex/internal/version"
 )
-
-func loadCheckedMigrationBundle(t testing.TB) MigrationBundle {
-	t.Helper()
-	directory, err := filepath.Abs(filepath.Join("..", "..", "migrations"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	bundle, err := LoadMigrationBundle(directory, version.MigrationsSHA256)
-	if err != nil {
-		t.Fatalf("load checked migration bundle: %v", err)
-	}
-	return bundle
-}
 
 func TestCheckedMigrationBundleFreezesExactProviderSplitSet(t *testing.T) {
 	bundle := loadCheckedMigrationBundle(t)
@@ -346,8 +330,8 @@ func TestCheckedMigrationBundleFreezesExactProviderSplitSet(t *testing.T) {
 			generatedWorkloadDeploymentNamespacePreflightCount++
 		}
 	}
-	if len(bundle.entries) != 196 || len(got) != len(want) {
-		t.Fatalf("checked migration counts total/provider=%d/%d want 196/%d",
+	if len(bundle.entries) != 204 || len(got) != len(want) {
+		t.Fatalf("checked migration counts total/provider=%d/%d want 204/%d",
 			len(bundle.entries), len(got), len(want))
 	}
 	for _, name := range want {

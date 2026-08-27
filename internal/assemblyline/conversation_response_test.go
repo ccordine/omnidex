@@ -30,7 +30,6 @@ func TestConversationResponseIsOneBoundedLeaf(t *testing.T) {
 	}
 	assertExactJSONFields(t, reflect.TypeOf(input), []string{
 		"kind", "exact_instruction", "objective_context", "roleplay_identity", "roleplay_user_turn",
-		"earlier_roleplay_responses",
 	})
 	assertExactJSONFields(t, reflect.TypeOf(ConversationResponseDecision{}), []string{"schema", "text"})
 	for _, forbidden := range []string{"tool", "action", "plan", "memory_write", "completion", "capabilit"} {

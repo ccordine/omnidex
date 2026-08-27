@@ -1,9 +1,11 @@
 import {
   roleplayTurnSubmission,
+  restoredRoleplayTurnParts,
   type RoleplayTurnPart,
   type RoleplayTurnPartKind,
   type RoleplayTurnSubmission,
 } from "../lib/roleplay_turn_input";
+import type { RoleplayUserPersonaCreationResult } from "../lib/chat_roleplay_coordinator";
 import { ChatRoleplayDialogController } from "./chat_roleplay_dialog_controller";
 
 export abstract class ChatRoleplayDraftController extends ChatRoleplayDialogController {
@@ -39,17 +41,36 @@ export abstract class ChatRoleplayDraftController extends ChatRoleplayDialogCont
   async createRoleplayPersona(event: Event): Promise<void> {
     event.preventDefault();
     if (!this.hasRoleplayNewPersonaTarget) throw new Error("The new identity name field is unavailable.");
-    const name = this.roleplayNewPersonaTarget.value.trim();
+    const submittedChannelID = this.channel.selectedID();
+    const submittedDraft = this.roleplayNewPersonaTarget.value;
+    const name = submittedDraft.trim();
     if (!name) {
       this.setStatus("Enter a name for the identity.", "error");
       this.roleplayNewPersonaTarget.focus();
       return;
     }
-    const characterID = await this.roleplay.createUserPersona(name);
-    this.roleplayNewPersonaTarget.value = "";
-    this.hideRoleplayPersonaCreatorView();
-    this.selectRoleplayComposerAuthority(characterID);
-    this.focusComposer();
+    let result: RoleplayUserPersonaCreationResult;
+    try {
+      result = await this.roleplay.createUserPersona(name);
+    } catch {
+      // The roleplay coordinator has already surfaced and recorded the exact
+      // mutation failure. Keep the editor and name intact for an explicit retry.
+      if (this.channel.selectedID() === submittedChannelID) {
+        this.roleplayNewPersonaTarget.focus();
+      }
+      return;
+    }
+    if (result.projection === "invalidated" ||
+        this.channel.selectedID() !== result.channelID) return;
+    const currentDraft = this.roleplayNewPersonaTarget.value;
+    const ownsCurrentDraft = currentDraft === submittedDraft || currentDraft === "";
+    if (ownsCurrentDraft) {
+      this.roleplayNewPersonaTarget.value = "";
+      this.hideRoleplayPersonaCreatorView();
+    }
+    if (result.projection !== "applied") return;
+    this.selectRoleplayComposerAuthority(result.characterID);
+    if (ownsCurrentDraft) this.focusComposer();
   }
 
   addRoleplayDraftPart(event: Event): void {
@@ -109,15 +130,37 @@ export abstract class ChatRoleplayDraftController extends ChatRoleplayDialogCont
       throw new Error("Failed turn recovery has no exact prompt bytes.");
     }
     const personaKind = button.dataset.roleplayPersonaKind;
-    if (personaKind !== undefined) {
-      const personaValue = personaKind === "narrator" ? "narrator" : button.dataset.roleplayCharacterId;
-      if ((personaKind !== "narrator" && personaKind !== "character") || typeof personaValue !== "string") {
-        throw new Error("Failed roleplay turn recovery has contradictory persona authority.");
-      }
-      this.selectRoleplayComposerAuthority(personaValue);
+    if (personaKind === undefined) {
+      this.clearRoleplayDraftParts();
+      this.setComposerText(prompt);
+      this.setStatus("Failed turn restored. Edit it or send again.", "active");
+      this.focusComposer();
+      return;
     }
+    if (personaKind === "legacy_untyped") {
+      const message = "This historical failed turn has no recorded actor or modality, so it cannot be restored safely.";
+      this.setStatus(message, "error");
+      throw new Error(message);
+    }
+    const personaValue = personaKind === "narrator" ? "narrator" : button.dataset.roleplayCharacterId;
+    if ((personaKind !== "narrator" && personaKind !== "character") ||
+        typeof personaValue !== "string" ||
+        (personaKind === "character" && !/^rpc_[0-9a-f]{32}$/.test(personaValue))) {
+      throw new Error("Failed roleplay turn recovery has contradictory persona authority.");
+    }
+    if (!this.roleplayComposerAuthorityExists(personaValue)) {
+      const message = "The failed turn's acting character is no longer eligible in this scene.";
+      this.setStatus(message, "error");
+      throw new Error(message);
+    }
+    const contributionKind = button.dataset.roleplayContributionKind;
+    const encodedParts = button.dataset.roleplayTurnParts;
+    if (typeof contributionKind !== "string" || typeof encodedParts !== "string") {
+      throw new Error("Failed roleplay turn recovery is missing exact contribution authority.");
+    }
+    const parts = restoredRoleplayTurnParts(prompt, personaKind, contributionKind, encodedParts);
+    this.selectRoleplayComposerAuthority(personaValue);
     this.clearRoleplayDraftParts();
-    const parts = parseComposedTurn(prompt);
     if (parts === null) {
       this.setComposerText(prompt);
     } else {
@@ -148,9 +191,15 @@ export abstract class ChatRoleplayDraftController extends ChatRoleplayDialogCont
 
   protected selectRoleplayComposerAuthority(personaValue: string): void {
     if (!this.hasRoleplayPersonaTarget) throw new Error("The acting-as control is unavailable.");
-    const personaExists = [...this.roleplayPersonaTarget.options].some((option) => option.value === personaValue);
-    if (!personaExists) throw new Error("That roleplay identity is no longer in the selected world.");
+    if (!this.roleplayComposerAuthorityExists(personaValue)) {
+      throw new Error("The requested acting-as authority is unavailable.");
+    }
     this.roleplayPersonaTarget.value = personaValue;
+  }
+
+  private roleplayComposerAuthorityExists(personaValue: string): boolean {
+    if (!this.hasRoleplayPersonaTarget) throw new Error("The acting-as control is unavailable.");
+    return [...this.roleplayPersonaTarget.options].some((option) => option.value === personaValue);
   }
 
   private queuedRoleplayParts(): RoleplayTurnPart[] {
@@ -225,15 +274,4 @@ function requireRoleplayPartKind(value: string | undefined): RoleplayTurnPartKin
     throw new Error("Roleplay part type is invalid.");
   }
   return value;
-}
-
-function parseComposedTurn(value: string): RoleplayTurnPart[] | null {
-  const sections = value.split("\n\n");
-  const parts: RoleplayTurnPart[] = [];
-  for (const section of sections) {
-    const match = /^\[(Message|Action|Event)\]\n([\s\S]+)$/.exec(section);
-    if (!match) return null;
-    parts.push({ kind: match[1].toLowerCase() as RoleplayTurnPartKind, text: match[2] });
-  }
-  return parts;
 }

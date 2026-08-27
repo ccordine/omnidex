@@ -7,6 +7,7 @@ export interface RoleplayTurnPart {
 
 type CharacterContribution = "dialogue" | "action" | "action_dialogue" | "structured_turn";
 type NarratorContribution = "narration" | "direction" | "narration_direction";
+type RoleplayPersonaKind = "character" | "narrator";
 
 export type RoleplayTurnInput =
   | {
@@ -52,7 +53,7 @@ export function roleplayTurnSubmission(
   if (parts.length < 1) throw new Error("Add a message, action, or event before sending.");
   if (parts.length > MAX_PARTS) throw new Error(`A roleplay turn can contain at most ${MAX_PARTS} ordered parts.`);
 
-  const prompt = parts.map((part) => `[${partLabel(part.kind)}]\n${part.text}`).join("\n\n");
+  const prompt = composeRoleplayTurn(parts);
   if (new TextEncoder().encode(prompt).byteLength > MAX_PROMPT_BYTES) {
     throw new Error(`The composed roleplay turn exceeds ${MAX_PROMPT_BYTES} UTF-8 bytes.`);
   }
@@ -67,7 +68,7 @@ export function roleplayTurnSubmission(
       turn: {
         persona_kind: "character",
         character_id: persona.value,
-        contribution_kind: characterContribution(parts),
+      contribution_kind: characterContribution(parts),
         parts,
       },
     };
@@ -80,6 +81,50 @@ export function roleplayTurnSubmission(
       parts,
     },
   };
+}
+
+export function restoredRoleplayTurnParts(
+  prompt: string,
+  personaKind: RoleplayPersonaKind,
+  contributionKind: string,
+  encodedParts: string,
+): RoleplayTurnPart[] | null {
+  let candidate: unknown;
+  try {
+    candidate = JSON.parse(encodedParts);
+  } catch (error) {
+    throw new Error("Failed roleplay turn recovery has invalid persisted parts JSON.", { cause: error });
+  }
+  if (!Array.isArray(candidate)) {
+    throw new Error("Failed roleplay turn recovery requires one persisted ordered parts array.");
+  }
+  if (contributionKind === "command") {
+    if (personaKind !== "narrator" || candidate.length !== 0 || !prompt.startsWith("/") || exactPartText(prompt) !== prompt) {
+      throw new Error("Failed roleplay command recovery has contradictory persisted authority.");
+    }
+    return null;
+  }
+  if (candidate.length === 0) {
+    throw new Error("This historical failed turn has no exact ordered parts, so its original modality cannot be restored safely.");
+  }
+  if (candidate.length > MAX_PARTS) {
+    throw new Error(`Failed roleplay turn recovery exceeds ${MAX_PARTS} persisted parts.`);
+  }
+  const parts = candidate.map((part, index) => persistedPart(part, index));
+  if (composeRoleplayTurn(parts) !== prompt) {
+    throw new Error("Failed roleplay turn recovery parts differ from its exact prompt bytes.");
+  }
+  if (roleplayProseContribution(personaKind, parts) !== contributionKind) {
+    throw new Error("Failed roleplay turn recovery has contradictory contribution authority.");
+  }
+  return parts;
+}
+
+function roleplayProseContribution(
+  personaKind: RoleplayPersonaKind,
+  parts: readonly RoleplayTurnPart[],
+): CharacterContribution | NarratorContribution {
+  return personaKind === "character" ? characterContribution(parts) : narratorContribution(parts);
 }
 
 function characterContribution(parts: readonly RoleplayTurnPart[]): CharacterContribution {
@@ -104,6 +149,25 @@ function validatePart(part: RoleplayTurnPart, index: number): RoleplayTurnPart {
   const text = exactPartText(part.text);
   if (!text) throw new Error(`Queued ${part.kind} ${index + 1} is blank.`);
   return { kind: part.kind, text };
+}
+
+function persistedPart(value: unknown, index: number): RoleplayTurnPart {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new Error(`Persisted roleplay part ${index + 1} is not an object.`);
+  }
+  const keys = Object.keys(value);
+  if (keys.length !== 2 || !keys.includes("kind") || !keys.includes("text")) {
+    throw new Error(`Persisted roleplay part ${index + 1} has unknown fields.`);
+  }
+  const part = value as Record<string, unknown>;
+  if (typeof part.kind !== "string" || typeof part.text !== "string") {
+    throw new Error(`Persisted roleplay part ${index + 1} has invalid field types.`);
+  }
+  return validatePart({ kind: part.kind as RoleplayTurnPartKind, text: part.text }, index);
+}
+
+function composeRoleplayTurn(parts: readonly RoleplayTurnPart[]): string {
+  return parts.map((part) => `[${partLabel(part.kind)}]\n${part.text}`).join("\n\n");
 }
 
 function exactPartText(value: string): string {

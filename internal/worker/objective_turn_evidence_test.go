@@ -1,6 +1,7 @@
 package worker
 
 import (
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -8,7 +9,43 @@ import (
 
 	"github.com/gryph/omnidex/internal/assemblyline"
 	"github.com/gryph/omnidex/internal/evidence"
+	"github.com/gryph/omnidex/internal/model"
+	"github.com/gryph/omnidex/internal/queue"
+	"github.com/gryph/omnidex/internal/roleplay"
 )
+
+func TestObjectiveCompletionAllowsExactMaximumOrderedRoleplayRound(t *testing.T) {
+	t.Parallel()
+	responses := make([]queue.RoleplayResponseCompletion, roleplay.MaxSceneParticipants)
+	for index := range responses {
+		responses[index] = queue.RoleplayResponseCompletion{
+			Position: index,
+			CharacterID: model.RoleplayCharacterID(
+				fmt.Sprintf("rpc_%032x", index+1),
+			),
+			Output: strings.Repeat("a", roleplay.MaxNarrativeResponseBytes),
+		}
+	}
+	output := queue.RenderRoleplayResponseRound(responses)
+	if len(output) <= maxObjectiveOutputBytes {
+		t.Fatalf("test aggregate bytes=%d want >%d", len(output), maxObjectiveOutputBytes)
+	}
+	result := objectiveTurnResult{
+		ObjectiveID: "roleplay-round", RequirementID: "roleplay-round-result",
+		InstructionSHA256: strings.Repeat("a", 64),
+		Kind:              assemblyline.ObjectiveKindStory,
+		Output:            output, RoleplayResponses: responses, Complete: true,
+	}
+	prepared, records, err := prepareObjectiveTurnCompletion(result)
+	if err != nil || prepared != output || len(records) != 0 {
+		t.Fatalf("prepared bytes=%d records=%d error=%v", len(prepared), len(records), err)
+	}
+	result.Output += "x"
+	if _, _, err := prepareObjectiveTurnCompletion(result); err == nil ||
+		!strings.Contains(err.Error(), "differs") {
+		t.Fatalf("mismatched aggregate error=%v", err)
+	}
+}
 
 func TestObjectiveCompletionPreparesExactCitationsForAtomicCommit(t *testing.T) {
 	t.Parallel()

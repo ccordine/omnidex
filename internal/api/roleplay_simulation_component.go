@@ -67,13 +67,12 @@ type roleplaySimulationComponentState struct {
 }
 
 type roleplaySimulationComponentResponse struct {
-	ChannelID                  model.ChannelID   `json:"channel_id"`
-	WorldID                    string            `json:"world_id"`
-	Configured                 bool              `json:"configured"`
-	SceneRevision              *int64            `json:"scene_revision,omitempty"`
-	SceneDraftRevision         int64             `json:"scene_draft_revision"`
-	ComposerPersonaCharacterID string            `json:"composer_persona_character_id,omitempty"`
-	HTML                       chatComponentHTML `json:"html"`
+	ChannelID          model.ChannelID   `json:"channel_id"`
+	WorldID            string            `json:"world_id"`
+	Configured         bool              `json:"configured"`
+	SceneRevision      *int64            `json:"scene_revision,omitempty"`
+	SceneDraftRevision int64             `json:"scene_draft_revision"`
+	HTML               chatComponentHTML `json:"html"`
 }
 
 func renderRoleplaySimulationComponent(
@@ -120,9 +119,8 @@ func renderRoleplaySimulationComponent(
 		renderRecyclrTemplateHTML(roleplayCastSidebarTarget, cast, "innerHTML")
 	response := roleplaySimulationComponentResponse{
 		ChannelID: state.Channel.ID, WorldID: state.World.ID, Configured: configured,
-		SceneDraftRevision:         state.SceneDraft.Revision,
-		ComposerPersonaCharacterID: state.Page.ComposerPersonaCharacter,
-		HTML:                       chatComponentHTML{Bundle: bundle},
+		SceneDraftRevision: state.SceneDraft.Revision,
+		HTML:               chatComponentHTML{Bundle: bundle},
 	}
 	if configured {
 		revision := state.Scene.Revision
@@ -184,9 +182,11 @@ func validateRoleplaySimulationComponentState(state roleplaySimulationComponentS
 	if len(state.UserPersonaCharacters) < 1 {
 		return fmt.Errorf("roleplay component requires world character authority")
 	}
+	if err := validateRequestedRoleplayComposerPersona(state); err != nil {
+		return err
+	}
 	seenPersonaCharacters := make(map[string]struct{}, len(state.UserPersonaCharacters))
 	activeCharacterPresent := false
-	selectedCharacterPresent := state.Page.ComposerPersonaCharacter == ""
 	for _, character := range state.UserPersonaCharacters {
 		if character.WorldID != state.World.ID || character.ID == "" || character.Name == "" ||
 			character.Name != strings.TrimSpace(character.Name) {
@@ -205,10 +205,6 @@ func validateRoleplaySimulationComponentState(state roleplaySimulationComponentS
 		}
 		activeCharacterPresent = activeCharacterPresent ||
 			(state.Scene != nil && character.ID == state.Scene.ActiveCharacterID)
-		selectedCharacterPresent = selectedCharacterPresent || character.ID == state.Page.ComposerPersonaCharacter
-	}
-	if !selectedCharacterPresent {
-		return fmt.Errorf("roleplay composer selection is not a world character")
 	}
 	if state.Scene == nil {
 		if state.SceneDraft.SceneRevision != 0 {
@@ -220,7 +216,7 @@ func validateRoleplaySimulationComponentState(state roleplaySimulationComponentS
 		return nil
 	}
 	if !activeCharacterPresent {
-		return fmt.Errorf("roleplay user-persona authority omitted the responding character")
+		return fmt.Errorf("roleplay user-persona authority omitted the initiative character")
 	}
 	if state.Scene.WorldID != state.World.ID || state.Scene.ID == "" || state.Scene.Revision < 1 {
 		return fmt.Errorf("roleplay component scene does not share exact world authority")
@@ -229,11 +225,11 @@ func validateRoleplaySimulationComponentState(state roleplaySimulationComponentS
 		return fmt.Errorf("roleplay component scene draft is not fenced to the configured scene revision")
 	}
 	if state.ActiveCharacterName == "" || state.ActiveCharacterName != strings.TrimSpace(state.ActiveCharacterName) {
-		return fmt.Errorf("roleplay component requires the active character's exact server name")
+		return fmt.Errorf("roleplay component requires the initiative character's exact server name")
 	}
 	if state.ActiveGeneration == nil ||
 		state.ActiveGeneration.CharacterID != state.Scene.ActiveCharacterID {
-		return fmt.Errorf("roleplay component requires the active character's current generation authority")
+		return fmt.Errorf("roleplay component requires the initiative character's current generation authority")
 	}
 	if err := state.ActiveGeneration.Config.Validate(); err != nil {
 		return fmt.Errorf("roleplay active generation: %w", err)
@@ -341,7 +337,7 @@ func renderRoleplayConfiguredSections(state roleplaySimulationComponentState) (s
 		},
 		{
 			Key: "state", Label: "State",
-			Description: "Review and update the active character's meters and inventory.",
+			Description: "Review and update the initiative character's meters and inventory.",
 			Body:        meters + inventory,
 		},
 		{

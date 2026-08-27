@@ -203,18 +203,26 @@ describe("ChatController exact authority", () => {
     expect(controller.busy).toBe(false);
   });
 
-  it("preserves the neutral composer when channel creation cannot complete", async () => {
+  it("preserves the neutral composer and foregrounds a channel creation failure", async () => {
+    document.body.innerHTML = `<div id="omni-toast-root"><div id="omni-toast" hidden></div></div>`;
     const controller = harness("creation failure exact");
     controller.channel.hasSelection.mockReturnValue(false);
-    controller.channel.createAndSubmit.mockResolvedValueOnce({ kind: "creation_failed" });
+    controller.channel.createAndSubmit.mockRejectedValueOnce(new Error("channel database unavailable"));
 
     await submit.call(controller, { preventDefault: vi.fn() });
 
     expect(controller.inputTarget.value).toBe("creation failure exact");
     expect(controller.setBusy).toHaveBeenLastCalledWith(false);
+    expect(controller.addEvent).toHaveBeenCalledWith("request_failed", {
+      error: "channel database unavailable",
+    });
+    expect(controller.setStatus).toHaveBeenLastCalledWith("channel database unavailable", "error");
+    expect(document.getElementById("omni-toast")).toHaveTextContent("channel database unavailable");
+    document.body.replaceChildren();
   });
 
   it("reports a pre-acceptance failure without clearing exact composer bytes", async () => {
+    document.body.innerHTML = `<div id="omni-toast-root"><div id="omni-toast" hidden></div></div>`;
     const controller = harness("retry exact prompt");
     controller.submitChannel.mockRejectedValueOnce(new Error("transition invariant failed"));
 
@@ -225,6 +233,25 @@ describe("ChatController exact authority", () => {
       error: "transition invariant failed",
     });
     expect(controller.setStatus).toHaveBeenLastCalledWith("transition invariant failed", "error");
+    expect(document.getElementById("omni-toast")).toHaveTextContent("transition invariant failed");
+    document.body.replaceChildren();
+  });
+
+  it("surfaces a post-acceptance turn failure in the foreground", async () => {
+    document.body.innerHTML = `<div id="omni-toast-root"><div id="omni-toast" hidden></div></div>`;
+    const controller = harness("accepted before completion failure");
+    controller.channel.reconcileTurn.mockRejectedValueOnce(new Error("response round failed"));
+
+    await submit.call(controller, { preventDefault: vi.fn() });
+
+    await vi.waitFor(() => expect(document.getElementById("omni-toast")).toHaveTextContent("response round failed"));
+    expect(controller.addEvent).toHaveBeenCalledWith("channel_turn_failed", {
+      channel_id: "story-42",
+      job_id: 73,
+      error: "response round failed",
+    });
+    expect(controller.setStatus).toHaveBeenCalledWith("response round failed", "error");
+    document.body.replaceChildren();
   });
 
   it("preserves a roleplay prompt until its simulation is configured", async () => {

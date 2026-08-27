@@ -12,6 +12,7 @@ import {
 	writeRoleplaySceneDraftParticipant,
   type RoleplayComponentResponse,
   type RoleplayPageState,
+  type RoleplayUserPersonaCreationReceipt,
 } from "./roleplay_api";
 import {
   interactionDefinitionInput,
@@ -25,6 +26,7 @@ import {
 	sceneUpdateInput,
 } from "./roleplay_form_input";
 import { HTTPResponseError } from "./api";
+import { ChatRoleplayMutationGate } from "./chat_roleplay_mutation_gate";
 import { pullOllamaModel } from "./ollama_model_api";
 import {
   pageFromRoleplayButton,
@@ -36,12 +38,20 @@ import {
 
 export type { ChatRoleplayHost } from "./chat_roleplay_support";
 
+export interface RoleplayUserPersonaCreationResult {
+	channelID: string;
+	characterID: string;
+	projection: "applied" | "failed" | "invalidated";
+}
+
 export class ChatRoleplayCoordinator {
   private channelID = "";
+	private channelGeneration = 0;
 	private configured = true;
 	private responseGeneration = 0;
 	private pendingRequests = 0;
 	private renderGate: Promise<void> = Promise.resolve();
+	private readonly mutations = new ChatRoleplayMutationGate();
 
   constructor(private readonly host: ChatRoleplayHost) {}
 
@@ -50,6 +60,8 @@ export class ChatRoleplayCoordinator {
   }
 
 	async activate(channelID: string, mode: "assistant" | "roleplay"): Promise<void> {
+		const nextChannelID = mode === "roleplay" ? channelID : "";
+		if (this.channelID !== nextChannelID) this.channelGeneration += 1;
 		this.responseGeneration += 1;
     if (mode === "assistant") {
       this.channelID = "";
@@ -90,96 +102,147 @@ export class ChatRoleplayCoordinator {
     this.host.focusComposer();
   }
 
-  async createUserPersona(name: string): Promise<string> {
+  async createUserPersona(name: string): Promise<RoleplayUserPersonaCreationResult> {
     const requestedChannel = this.requireChannel();
-    const generation = ++this.responseGeneration;
+		const channelGeneration = this.channelGeneration;
+		let committedReceipt: RoleplayUserPersonaCreationReceipt | undefined;
     this.beginRequest();
-    try {
-      const component = await createRoleplayUserPersona(requestedChannel, name);
-      if (!this.isCurrentResponse(requestedChannel, generation)) {
-        throw new Error("The selected world changed while creating the identity.");
-      }
-      const characterID = component.composer_persona_character_id;
-      if (!characterID) throw new Error("Created identity response omitted its character authority.");
-      if (!await this.applyComponent(component, requestedChannel, generation)) {
-        throw new Error("Created identity was not applied to the selected world.");
-      }
-      this.host.setStatus("identity added", "ready");
-      this.host.addEvent("roleplay_user_persona_created", {
-        channel_id: requestedChannel,
-        character_id: characterID,
-      });
-      return characterID;
+		try {
+			return await this.mutations.run(
+				() => this.isCurrentChannel(requestedChannel, channelGeneration), async () => {
+				const generation = ++this.responseGeneration;
+				const receipt = await createRoleplayUserPersona(requestedChannel, name);
+				committedReceipt = receipt;
+				const characterID = receipt.character_id;
+				this.observeCommittedPersona(() => this.host.addEvent(
+					"roleplay_user_persona_created",
+					{ channel_id: requestedChannel, character_id: characterID },
+				));
+				if (!this.isCurrentChannel(requestedChannel, channelGeneration)) {
+					this.reportCommittedPersonaProjectionInvalidated(requestedChannel, characterID);
+					return this.personaCreationResult(requestedChannel, characterID, "invalidated");
+				}
+				try {
+					const component = await fetchRoleplayComponent(
+						requestedChannel, emptyRoleplayPage, characterID,
+					);
+					if (!this.isCurrentChannel(requestedChannel, channelGeneration) ||
+						!await this.applyComponent(
+							component, requestedChannel, generation, channelGeneration,
+						)) {
+						this.reportCommittedPersonaProjectionInvalidated(requestedChannel, characterID);
+						return this.personaCreationResult(requestedChannel, characterID, "invalidated");
+					}
+					this.host.setStatus("identity added", "ready");
+				} catch (error) {
+					if (this.isCurrentChannel(requestedChannel, channelGeneration)) {
+						this.reportCommittedPersonaProjectionFailure(
+							error, requestedChannel, characterID,
+						);
+						return this.personaCreationResult(requestedChannel, characterID, "failed");
+					} else {
+						this.reportCommittedPersonaProjectionInvalidated(requestedChannel, characterID);
+						return this.personaCreationResult(requestedChannel, characterID, "invalidated");
+					}
+				}
+				return this.personaCreationResult(requestedChannel, characterID, "applied");
+				},
+			);
     } catch (error) {
-      this.reportMutationFailure(error);
+			if (committedReceipt !== undefined) {
+				this.reportCommittedPersonaProjectionFailure(
+					error, committedReceipt.channel_id, committedReceipt.character_id,
+				);
+				return this.personaCreationResult(
+					committedReceipt.channel_id, committedReceipt.character_id, "failed",
+				);
+			}
+			if (this.isCurrentChannel(requestedChannel, channelGeneration)) {
+				this.reportMutationFailure(error);
+      }
       throw error;
     } finally {
-      this.endRequest();
+			if (committedReceipt === undefined) {
+				this.endRequest();
+			} else {
+				this.observeCommittedPersona(() => this.endRequest());
+			}
     }
   }
 
   async updateResponders(characterIDs: string[], expectedRevision: number): Promise<void> {
     const requestedChannel = this.requireChannel();
-    const generation = ++this.responseGeneration;
+		const channelGeneration = this.channelGeneration;
     this.beginRequest();
     try {
-      const component = await updateRoleplayResponders(requestedChannel, {
-        expected_revision: expectedRevision,
-        character_ids: characterIDs,
-      });
-      if (!this.isCurrentResponse(requestedChannel, generation)) return;
-      if (!await this.applyComponent(component, requestedChannel, generation)) return;
-      this.host.setStatus("responders updated", "ready");
-      this.host.addEvent("roleplay_responders_updated", {
-        channel_id: requestedChannel,
-        character_ids: characterIDs,
-      });
+			await this.mutations.run(
+				() => this.isCurrentChannel(requestedChannel, channelGeneration), async () => {
+				const generation = ++this.responseGeneration;
+				const component = await updateRoleplayResponders(requestedChannel, {
+					expected_revision: expectedRevision,
+					character_ids: characterIDs,
+				});
+				if (!this.isCurrentChannel(requestedChannel, channelGeneration)) return;
+				if (!await this.applyComponent(
+					component, requestedChannel, generation, channelGeneration,
+				)) return;
+				this.host.setStatus("responders updated", "ready");
+				this.host.addEvent("roleplay_responders_updated", {
+					channel_id: requestedChannel,
+					character_ids: characterIDs,
+				});
+				},
+			);
     } catch (error) {
       if (error instanceof HTTPResponseError && error.status === 409 &&
-          this.isCurrentResponse(requestedChannel, generation)) {
+					this.isCurrentChannel(requestedChannel, channelGeneration)) {
         this.reportMutationFailure(error);
         await this.load(emptyRoleplayPage);
         return;
       }
-      if (this.isCurrentResponse(requestedChannel, generation)) this.reportMutationFailure(error);
+			if (this.isCurrentChannel(requestedChannel, channelGeneration)) this.reportMutationFailure(error);
     } finally {
       this.endRequest();
     }
   }
 
 	async createScene(event: Event): Promise<void> {
-		await this.mutate(event, (form) => createRoleplayScene(this.requireChannel(), sceneCreateInput(form)), "scene_created");
+		await this.mutate(event, (form, channelID) => {
+			const input = sceneCreateInput(form);
+			return () => createRoleplayScene(channelID, input);
+		}, "scene_created");
 	}
 
 	async updateScene(event: Event): Promise<void> {
-		await this.mutate(event, (form) => updateRoleplayScene(
-			this.requireChannel(),
-			requiredDatasetInteger(form, "sceneRevision"),
-			sceneUpdateInput(form),
-		), "scene_updated");
+		await this.mutate(event, (form, channelID) => {
+			const expectedRevision = requiredDatasetInteger(form, "sceneRevision");
+			const input = sceneUpdateInput(form);
+			return () => updateRoleplayScene(channelID, expectedRevision, input);
+		}, "scene_updated");
 	}
 
 	async saveSceneDraftParticipant(event: Event): Promise<void> {
-		await this.mutate(event, (form) => writeRoleplaySceneDraftParticipant(
-			this.requireChannel(),
-			requiredDataset(form, "characterId"),
-			sceneDraftParticipantInput(form),
-		), "scene_draft_saved");
+		await this.mutate(event, (form, channelID) => {
+			const characterID = requiredDataset(form, "characterId");
+			const input = sceneDraftParticipantInput(form);
+			return () => writeRoleplaySceneDraftParticipant(channelID, characterID, input);
+		}, "scene_draft_saved");
   }
 
   async registerMeter(event: Event): Promise<void> {
-    await this.mutate(event, (form) => registerRoleplayMeter(
-      this.requireChannel(), meterDefinitionInput(form),
-    ), "meter_registered");
+		await this.mutate(event, (form, channelID) => {
+			const input = meterDefinitionInput(form);
+			return () => registerRoleplayMeter(channelID, input);
+		}, "meter_registered");
   }
 
   async setMeter(event: Event): Promise<void> {
-    await this.mutate(event, (form) => setRoleplayMeter(
-      this.requireChannel(),
-      requiredDataset(form, "characterId"),
-      requiredDataset(form, "meterKey"),
-      meterValueInput(form),
-    ), "meter_saved");
+		await this.mutate(event, (form, channelID) => {
+			const characterID = requiredDataset(form, "characterId");
+			const meterKey = requiredDataset(form, "meterKey");
+			const input = meterValueInput(form);
+			return () => setRoleplayMeter(channelID, characterID, meterKey, input);
+		}, "meter_saved");
   }
 
   async downloadModel(event: Event): Promise<void> {
@@ -210,15 +273,17 @@ export class ChatRoleplayCoordinator {
   }
 
   async registerInteraction(event: Event): Promise<void> {
-    await this.mutate(event, (form) => registerRoleplayInteraction(
-      this.requireChannel(), interactionDefinitionInput(form),
-    ), "interaction_registered");
+		await this.mutate(event, (form, channelID) => {
+			const input = interactionDefinitionInput(form);
+			return () => registerRoleplayInteraction(channelID, input);
+		}, "interaction_registered");
   }
 
   async registerItem(event: Event): Promise<void> {
-    await this.mutate(event, (form) => registerRoleplayItem(
-      this.requireChannel(), itemDefinitionInput(form),
-    ), "item_registered");
+		await this.mutate(event, (form, channelID) => {
+			const input = itemDefinitionInput(form);
+			return () => registerRoleplayItem(channelID, input);
+		}, "item_registered");
   }
 
 	private async load(page: RoleplayPageState): Promise<void> {
@@ -248,31 +313,41 @@ export class ChatRoleplayCoordinator {
 
   private async mutate(
     event: Event,
-    operation: (form: HTMLFormElement) => Promise<RoleplayComponentResponse>,
+		prepare: (
+			form: HTMLFormElement,
+			channelID: string,
+		) => () => Promise<RoleplayComponentResponse>,
     eventName: string,
   ): Promise<void> {
 		event.preventDefault();
 		const form = event.currentTarget as HTMLFormElement;
 		const requestedChannel = this.requireChannel();
-		const generation = ++this.responseGeneration;
-		let pending: Promise<RoleplayComponentResponse>;
-    try {
-      pending = operation(form);
-    } catch (error) {
-      this.reportMutationFailure(error);
-      return;
-    }
+		const channelGeneration = this.channelGeneration;
+		let operation: () => Promise<RoleplayComponentResponse>;
+		try {
+			operation = prepare(form, requestedChannel);
+		} catch (error) {
+			this.reportMutationFailure(error);
+			return;
+		}
 		await withRoleplayFormFeedback(form, async () => {
 			this.beginRequest();
 			try {
-				const component = await pending;
-				if (!this.isCurrentResponse(requestedChannel, generation)) return;
-				if (!await this.applyComponent(component, requestedChannel, generation)) return;
-				this.host.setStatus(component.configured ? "ready" : "setup required", component.configured ? "ready" : "active");
-				this.host.addEvent(eventName, { channel_id: component.channel_id, scene_revision: component.scene_revision ?? 0 });
-				await this.refreshSlashCommands();
+				await this.mutations.run(
+					() => this.isCurrentChannel(requestedChannel, channelGeneration), async () => {
+					const generation = ++this.responseGeneration;
+					const component = await operation();
+					if (!this.isCurrentChannel(requestedChannel, channelGeneration)) return;
+					if (!await this.applyComponent(
+						component, requestedChannel, generation, channelGeneration,
+					)) return;
+					this.host.setStatus(component.configured ? "ready" : "setup required", component.configured ? "ready" : "active");
+					this.host.addEvent(eventName, { channel_id: component.channel_id, scene_revision: component.scene_revision ?? 0 });
+					await this.refreshSlashCommands();
+					},
+				);
 			} catch (error) {
-				if (!this.isCurrentResponse(requestedChannel, generation)) return;
+				if (!this.isCurrentChannel(requestedChannel, channelGeneration)) return;
 				if (error instanceof HTTPResponseError && error.status === 409) {
 					this.reportMutationFailure(error);
 					await this.load(emptyRoleplayPage);
@@ -294,6 +369,52 @@ export class ChatRoleplayCoordinator {
     this.host.reportError(error);
   }
 
+	private reportCommittedPersonaProjectionFailure(
+		error: unknown,
+		channelID: string,
+		characterID: string,
+	): void {
+		this.observeCommittedPersona(() => this.host.setStatus(
+			"identity added; controls refresh failed", "error",
+		));
+		this.observeCommittedPersona(() => this.host.addEvent(
+			"roleplay_user_persona_projection_failed",
+			{
+				channel_id: channelID,
+				character_id: characterID,
+				committed: true,
+				error: roleplayErrorMessage(error),
+			},
+		));
+		this.observeCommittedPersona(() => this.host.reportError(error));
+	}
+
+	private reportCommittedPersonaProjectionInvalidated(
+		channelID: string,
+		characterID: string,
+	): void {
+		this.observeCommittedPersona(() => this.host.addEvent(
+			"roleplay_user_persona_projection_invalidated",
+			{ channel_id: channelID, character_id: characterID, committed: true },
+		));
+	}
+
+	private observeCommittedPersona(observation: () => void): void {
+		try {
+			observation();
+		} catch (error) {
+			console.error("Committed roleplay identity observation failed", error);
+		}
+	}
+
+	private personaCreationResult(
+		channelID: string,
+		characterID: string,
+		projection: RoleplayUserPersonaCreationResult["projection"],
+	): RoleplayUserPersonaCreationResult {
+		return { channelID, characterID, projection };
+	}
+
 	private async refreshSlashCommands(): Promise<void> {
 		if (!this.configured) return;
 		try {
@@ -309,6 +430,7 @@ export class ChatRoleplayCoordinator {
 		component: RoleplayComponentResponse,
 		requestedChannel: string,
 		generation: number,
+		committedChannelGeneration?: number,
 	): Promise<boolean> {
 		if (component.channel_id !== requestedChannel) {
 			throw new Error("Roleplay component changed the active channel identity.");
@@ -318,9 +440,13 @@ export class ChatRoleplayCoordinator {
 		this.renderGate = new Promise<void>((resolve) => { release = resolve; });
 		await predecessor;
 		try {
-			if (!this.isCurrentResponse(requestedChannel, generation)) return false;
+			const isCurrent = () => committedChannelGeneration === undefined
+				? this.isCurrentResponse(requestedChannel, generation)
+				: this.isCurrentChannel(requestedChannel, committedChannelGeneration);
+			if (!isCurrent()) return false;
 			await this.host.renderComponentBundle(component.html.bundle);
-			if (!this.isCurrentResponse(requestedChannel, generation)) return false;
+			if (!isCurrent()) return false;
+			if (committedChannelGeneration !== undefined) this.responseGeneration += 1;
 			this.configured = component.configured;
 			this.host.setComposerAvailable(component.configured);
 			return true;
@@ -347,6 +473,10 @@ export class ChatRoleplayCoordinator {
 
 	private isCurrentResponse(channelID: string, generation: number): boolean {
 		return this.channelID === channelID && this.responseGeneration === generation;
+	}
+
+	private isCurrentChannel(channelID: string, generation: number): boolean {
+		return this.channelID === channelID && this.channelGeneration === generation;
 	}
 
   private requireChannel(): string {

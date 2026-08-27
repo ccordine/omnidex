@@ -87,3 +87,94 @@ func TestHistoricalUserTurnPreservesSlashInputWithoutInventingCommandMeaning(t *
 		t.Fatal(err)
 	}
 }
+
+func TestUserTurnOngoingActionContributionUsesOnlyTypedActionAuthority(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name              string
+		turn              UserTurnAuthority
+		want              bool
+		exactContribution string
+	}{
+		{
+			name: "character action",
+			turn: exactCharacterUserTurn(UserContributionAction, []UserTurnPart{{
+				Kind: UserTurnPartAction, Text: "I keep hauling the line.",
+			}}),
+			want: true, exactContribution: "[Action]\nI keep hauling the line.",
+		},
+		{
+			name: "character action and dialogue excludes message",
+			turn: exactCharacterUserTurn(UserContributionActionDialogue, []UserTurnPart{
+				{Kind: UserTurnPartAction, Text: "I brace the door."},
+				{Kind: UserTurnPartMessage, Text: "Run now!"},
+			}),
+			want: true, exactContribution: "[Action]\nI brace the door.",
+		},
+		{
+			name: "structured character action",
+			turn: exactCharacterUserTurn(UserContributionStructured, []UserTurnPart{
+				{Kind: UserTurnPartEvent, Text: "The deck tilts."},
+				{Kind: UserTurnPartAction, Text: "I catch the loose crate."},
+			}),
+			want: true, exactContribution: "[Action]\nI catch the loose crate.",
+		},
+		{
+			name: "character dialogue",
+			turn: exactCharacterUserTurn(UserContributionDialogue, []UserTurnPart{{
+				Kind: UserTurnPartMessage, Text: "Hold fast.",
+			}}),
+		},
+		{
+			name: "structured event only",
+			turn: exactCharacterUserTurn(UserContributionStructured, []UserTurnPart{{
+				Kind: UserTurnPartEvent, Text: "The deck tilts.",
+			}}),
+		},
+		{
+			name: "narrator action-shaped narration",
+			turn: UserTurnAuthority{
+				PersonaKind: UserPersonaNarrator, PersonaName: NarratorPersonaName,
+				ContributionKind: UserContributionNarration,
+				Parts:            []UserTurnPart{{Kind: UserTurnPartAction, Text: "The gate opens."}},
+				ExactText:        "[Action]\nThe gate opens.",
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			exact, got, err := test.turn.OngoingActionContribution()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != test.want {
+				t.Fatalf("action contribution=%t want %t", got, test.want)
+			}
+			if got && exact != test.exactContribution {
+				t.Fatalf("exact action contribution=%q want %q", exact, test.exactContribution)
+			}
+			if !got && exact != "" {
+				t.Fatalf("non-action contribution leaked %q", exact)
+			}
+		})
+	}
+}
+
+func exactCharacterUserTurn(
+	kind UserContributionKind,
+	parts []UserTurnPart,
+) UserTurnAuthority {
+	request := UserTurnRequest{
+		PersonaKind: UserPersonaCharacter, CharacterID: testUserTurnCharacterID,
+		ContributionKind: kind, Parts: parts,
+	}
+	exact, err := ComposeUserTurn(request)
+	if err != nil {
+		panic(err)
+	}
+	return UserTurnAuthority{
+		PersonaKind: UserPersonaCharacter, CharacterID: testUserTurnCharacterID,
+		PersonaName: "Gryph", PersonaSummary: "An artificer from afar.",
+		ContributionKind: kind, Parts: append([]UserTurnPart(nil), parts...), ExactText: exact,
+	}
+}

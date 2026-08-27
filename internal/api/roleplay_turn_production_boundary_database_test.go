@@ -72,7 +72,8 @@ func TestTypedRoleplayTurnCompletesAcrossHTTPQueueWorkerAndCanonicalRunner(t *te
 	}
 	if _, err := roleplayStore.CreateCurrentScene(t.Context(), roleplay.SceneSetup{
 		ID: sceneID, WorldID: world.ID, Title: "Quiet Archive",
-		Description: "Mara waits beside a reading table.", ParticipantIDs: []string{maraID},
+		Description:    "Mara waits beside a reading table.",
+		ParticipantIDs: []string{maraID, gryph.ID},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -233,8 +234,6 @@ func (provider *roleplayBoundaryOllama) generate(w http.ResponseWriter, request 
 	schema := roleplayBoundarySchema(payload)
 	candidate := ""
 	switch schema {
-	case assemblyline.ContextSearchTermsSchemaV1:
-		candidate = `{"schema":"omnidex.context-search-terms.v1","terms":[]}`
 	case assemblyline.ConversationResponseSchemaV1:
 		raw, _ := json.Marshal(assemblyline.ConversationResponseDecision{
 			Schema: assemblyline.ConversationResponseSchemaV1, Text: roleplayBoundaryReply,
@@ -242,6 +241,8 @@ func (provider *roleplayBoundaryOllama) generate(w http.ResponseWriter, request 
 		candidate = string(raw)
 	case assemblyline.RoleplayCanonExtractionSchemaV1:
 		candidate = `{"schema":"omnidex.roleplay-canon-extraction.v1","facts":[]}`
+	case assemblyline.RoleplayOngoingStateLeafV1:
+		candidate = `{"schema":"omnidex.roleplay-ongoing-action.v1","ongoing_action":null}`
 	default:
 		provider.recordUnexpected("station schema " + schema)
 		http.Error(w, `{"error":"unexpected station"}`, http.StatusBadRequest)
@@ -273,8 +274,9 @@ func (provider *roleplayBoundaryOllama) assertCompleted(t *testing.T) {
 		t.Fatalf("unexpected provider traffic: %v", provider.unexpected)
 	}
 	wantSchemas := []string{
-		assemblyline.ContextSearchTermsSchemaV1,
+		assemblyline.RoleplayCanonExtractionSchemaV1,
 		assemblyline.ConversationResponseSchemaV1,
+		assemblyline.RoleplayOngoingStateLeafV1,
 		assemblyline.RoleplayCanonExtractionSchemaV1,
 	}
 	if strings.Join(provider.stationSchemas, ",") != strings.Join(wantSchemas, ",") {

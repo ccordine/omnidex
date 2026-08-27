@@ -1,6 +1,6 @@
-<section data-chat-target="panel" data-panel-name="roleplay" class="flex h-full min-h-0 flex-col bg-zinc-950/20">
-  <header class="border-b border-white/10 bg-zinc-950/75 px-3 py-2 backdrop-blur-xl">
-    <div class="flex min-w-0 items-center gap-2">
+<section data-chat-target="panel" data-panel-name="roleplay" class="chat-panel flex h-full min-h-0 flex-col bg-zinc-950/20">
+  <header class="chat-header border-b border-white/10 bg-zinc-950/75 px-3 py-2 backdrop-blur-xl">
+    <div class="flex min-w-0 flex-wrap items-center gap-2">
         <label class="min-w-0 flex-1 max-w-md">
           <span class="sr-only">Active world</span>
           <select data-chat-target="channelSelect" data-recyclr-sink="channel-options" data-action="change->chat#selectChannel" aria-label="Active world" class="w-full truncate rounded-lg border border-white/10 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-none transition focus:border-violet-300/50 focus:ring-2 focus:ring-violet-300/10 disabled:cursor-wait disabled:opacity-60">
@@ -8,6 +8,7 @@
           </select>
         </label>
         <button type="button" data-action="chat#openRoleplayWorldBrowser" aria-haspopup="dialog" aria-controls="roleplay-world-browser-dialog" aria-label="Worlds" title="Worlds" class="grid h-9 w-9 shrink-0 place-items-center rounded-lg border border-white/10 text-lg text-zinc-400 transition hover:border-violet-300/30 hover:text-violet-100">＋</button>
+        <button type="button" data-action="chat#openRoleplayWorldSetup" aria-haspopup="dialog" aria-controls="roleplay-world-setup-dialog" aria-label="Open scene and cast controls" class="h-9 shrink-0 whitespace-nowrap rounded-lg border border-violet-300/25 bg-violet-300/10 px-3 text-xs font-semibold text-violet-100 transition hover:border-violet-300/45 hover:bg-violet-300/15 focus:outline-none focus:ring-2 focus:ring-violet-300/30">Scene &amp; cast</button>
         <button type="button" data-chat-target="liveBadge" data-action="chat#acknowledgeActivityProblems" data-state="ready" class="system-activity-indicator shrink-0" aria-label="System activity: Ready. Omnidex is ready. No reported problems." title="Omnidex is ready. No reported problems.">
           <span data-chat-target="activityDot" class="system-activity-dot" aria-hidden="true"></span>
           <span data-chat-target="activityText">Ready</span>
@@ -90,8 +91,7 @@
   </dialog>
 
   <dialog id="roleplay-world-setup-dialog" data-chat-target="roleplaySetupDialog" data-roleplay-dialog="setup" data-action="click->chat#closeRoleplayWorldSetupBackdrop cancel->chat#closeRoleplayWorldSetup" aria-labelledby="roleplay-world-setup-title" class="m-auto h-[min(52rem,calc(100%-2rem))] max-h-[92vh] w-[calc(100%-2rem)] max-w-6xl overflow-hidden rounded-2xl border border-violet-300/20 bg-zinc-950 p-0 text-zinc-100 shadow-2xl shadow-black/60 backdrop:bg-black/75 backdrop:backdrop-blur-sm">
-    <div class="grid h-full min-h-0 lg:grid-cols-[minmax(0,1fr)_14rem]">
-      <div class="flex min-h-0 min-w-0 flex-col">
+    <div class="flex h-full min-h-0 min-w-0 flex-col">
       <header class="flex flex-wrap items-start justify-between gap-3 border-b border-white/10 px-4 py-4 md:px-5">
         <div class="min-w-0">
           <p class="text-[10px] font-semibold uppercase tracking-[.2em] text-violet-300/80">Selected world</p>
@@ -131,7 +131,7 @@
     </div>
   </dialog>
 
-  <div class="grid min-h-0 flex-1 md:grid-cols-[minmax(0,1fr)_12rem]">
+  <div class="chat-content grid min-h-0 flex-1 md:grid-cols-[minmax(0,1fr)_12rem]">
 
     <div class="flex h-full min-h-0 flex-col">
       <div data-chat-target="messages" id="channel-transcript" aria-live="polite" aria-busy="false" class="scrollbar min-h-0 flex-1 overflow-y-auto px-3 py-6 md:px-6">

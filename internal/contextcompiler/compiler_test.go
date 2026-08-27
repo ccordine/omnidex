@@ -81,10 +81,23 @@ func (station *scriptedMinificationStation) Minify(
 }
 
 type scriptedProvider struct {
-	set      CandidateSet
-	err      error
-	calls    int
-	gotTerms []string
+	set               CandidateSet
+	err               error
+	availability      SearchAvailability
+	availabilityError error
+	availabilityCalls int
+	calls             int
+	gotTerms          []string
+}
+
+func (provider *scriptedProvider) SearchAvailability(
+	_ context.Context,
+) (SearchAvailability, error) {
+	provider.availabilityCalls++
+	if provider.availability == "" {
+		return SearchAvailable, provider.availabilityError
+	}
+	return provider.availability, provider.availabilityError
 }
 
 func (provider *scriptedProvider) Retrieve(
@@ -147,6 +160,9 @@ func TestCodeOwnedEmptyRetrievalDirectivePerformsNoSemanticCall(t *testing.T) {
 	if provider.calls != 1 || provider.gotTerms == nil || len(provider.gotTerms) != 0 {
 		t.Fatalf("provider calls/terms=%d/%#v", provider.calls, provider.gotTerms)
 	}
+	if provider.availabilityCalls != 0 {
+		t.Fatalf("code-owned retrieval unexpectedly rechecked availability %d times", provider.availabilityCalls)
+	}
 }
 
 func TestInvalidCodeOwnedRetrievalDirectiveFailsBeforeAcquisition(t *testing.T) {
@@ -163,24 +179,27 @@ func TestInvalidCodeOwnedRetrievalDirectiveFailsBeforeAcquisition(t *testing.T) 
 	}
 }
 
-func TestExplicitEmptyTermsRejectProviderOptionalCandidates(t *testing.T) {
-	relevance := &scriptedRelevanceStation{ids: []string{}}
-	minifier := &scriptedMinificationStation{text: "must not run"}
-	provider := &scriptedProvider{set: CandidateSet{Optional: []assemblyline.ContextCandidateAuthority{
-		candidate(t, "conversation_assistant", "CTX_1", "The bakery oven was recalibrated yesterday."),
-	}}}
-
-	_, err := Compile(t.Context(), Request{ExactInstruction: "Hello"}, provider, Stations{
+func TestRequiredOptionalRelevanceRunsWithEmptySearchConcepts(t *testing.T) {
+	optional := candidate(t, "simulation_inventory", "CTX_1", "Inventory item cloak: a rain-dark traveling cloak.")
+	relevance := &scriptedRelevanceStation{ids: []string{"CTX_1"}}
+	provider := &scriptedProvider{set: CandidateSet{
+		Optional: []assemblyline.ContextCandidateAuthority{optional},
+	}}
+	result, err := Compile(t.Context(), Request{
+		ExactInstruction: "I pull it tighter around my shoulders.",
+	}, provider, Stations{
 		Terms: &scriptedTermsStation{decision: assemblyline.ContextSearchTermsDecision{
 			Schema: assemblyline.ContextSearchTermsSchemaV1, Terms: []string{},
 		}},
-		Relevance: relevance, Minification: minifier,
+		Relevance: relevance,
 	})
-	if err == nil || !strings.Contains(err.Error(), "optional candidates for explicit empty search terms") {
-		t.Fatalf("error=%v", err)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if provider.calls != 1 || relevance.calls != 0 || minifier.calls != 0 {
-		t.Fatalf("provider/relevance/minification calls=%d/%d/%d", provider.calls, relevance.calls, minifier.calls)
+	if relevance.calls != 1 || len(relevance.input.RetrievalConcepts) != 0 ||
+		result.ModelCalls != 2 || result.RelevanceCalls != 1 ||
+		len(result.Context.Capsules) != 1 || result.Context.Capsules[0].Content != optional.Content {
+		t.Fatalf("empty-concept relevance result=%#v input=%#v", result, relevance.input)
 	}
 }
 

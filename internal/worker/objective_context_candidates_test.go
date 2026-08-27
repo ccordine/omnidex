@@ -12,9 +12,9 @@ import (
 	"github.com/gryph/omnidex/internal/roleplay"
 )
 
-func TestBuildContextCandidateAuthoritiesPreservesEveryRequiredChunk(t *testing.T) {
+func TestBuildContextCandidateSetPreservesEveryRequiredChunk(t *testing.T) {
 	requiredText := strings.Repeat("r", assemblyline.MaxContextCandidateContentBytes+1)
-	required, optional, err := buildContextCandidateAuthorities(
+	set, err := buildContextCandidateSet(
 		[]queue.ContextSearchRecord{{
 			Namespace: "simulation_transition", SourceID: "transition-1", Content: requiredText,
 		}},
@@ -25,11 +25,11 @@ func TestBuildContextCandidateAuthoritiesPreservesEveryRequiredChunk(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(required) != 2 {
-		t.Fatalf("required chunks=%d, want 2", len(required))
+	if len(set.Required) != 2 {
+		t.Fatalf("required chunks=%d, want 2", len(set.Required))
 	}
 	var reconstructed strings.Builder
-	for _, authority := range required {
+	for _, authority := range set.Required {
 		parts := strings.SplitN(authority.Content, "\n", 2)
 		if len(parts) != 2 || !strings.HasPrefix(parts[0], "Segment ") {
 			t.Fatalf("required chunk lacks deterministic framing: %q", authority.Content)
@@ -39,25 +39,64 @@ func TestBuildContextCandidateAuthoritiesPreservesEveryRequiredChunk(t *testing.
 	if reconstructed.String() != requiredText {
 		t.Fatal("required chunks did not preserve the exact source text")
 	}
-	if len(optional) != 1 {
-		t.Fatalf("optional candidates=%d, want 1", len(optional))
+	if len(set.Optional) != 1 {
+		t.Fatalf("optional candidates=%d, want 1", len(set.Optional))
 	}
 }
 
-func TestBuildContextCandidateAuthoritiesPagesOversizedRequiredContextWithoutLoss(t *testing.T) {
+func TestBuildContextCandidateSetGroupsEveryChunkOfOneOptionalExchange(t *testing.T) {
+	longExchange := "user message:\n" +
+		strings.Repeat("u", assemblyline.MaxContextCandidateContentBytes) +
+		"\nassistant response:\n" +
+		strings.Repeat("a", assemblyline.MaxContextCandidateContentBytes)
+	set, err := buildContextCandidateSet(nil, []queue.ContextSearchRecord{
+		{Namespace: "durable_memory", SourceID: "memory-1", Content: "A separate memory."},
+		{Namespace: "conversation_exchange", SourceID: "exchange-1", Content: longExchange},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(set.Required) != 0 || len(set.OptionalSelectionGroups) != 1 {
+		t.Fatalf(
+			"required/groups=%d/%d, want 0/1",
+			len(set.Required), len(set.OptionalSelectionGroups),
+		)
+	}
+	group := set.OptionalSelectionGroups[0]
+	if len(group.CandidateIDs) < 2 || len(group.CandidateIDs) != len(set.Optional)-1 {
+		t.Fatalf("group/optional=%#v/%d", group.CandidateIDs, len(set.Optional))
+	}
+	var reconstructed strings.Builder
+	for index, candidateID := range group.CandidateIDs {
+		authority := set.Optional[index+1]
+		if authority.CandidateID != candidateID || authority.Namespace != "conversation_exchange" {
+			t.Fatalf("group member %d differs from optional authority: %#v", index, authority)
+		}
+		parts := strings.SplitN(authority.Content, "\n", 2)
+		if len(parts) != 2 || !strings.HasPrefix(parts[0], "Segment ") {
+			t.Fatalf("group member lacks deterministic framing: %q", authority.Content)
+		}
+		reconstructed.WriteString(parts[1])
+	}
+	if reconstructed.String() != longExchange {
+		t.Fatal("grouped optional exchange did not preserve its complete exact content")
+	}
+}
+
+func TestBuildContextCandidateSetPagesOversizedRequiredContextWithoutLoss(t *testing.T) {
 	content := strings.Repeat("r", assemblyline.MaxContextCandidateProjectionBytes+1)
-	required, optional, err := buildContextCandidateAuthorities([]queue.ContextSearchRecord{{
+	set, err := buildContextCandidateSet([]queue.ContextSearchRecord{{
 		Namespace: "simulation_transition", SourceID: "transition-1",
 		Content: content,
 	}}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(required) < 4 || len(optional) != 0 {
-		t.Fatalf("required/optional chunks=%d/%d", len(required), len(optional))
+	if len(set.Required) < 4 || len(set.Optional) != 0 {
+		t.Fatalf("required/optional chunks=%d/%d", len(set.Required), len(set.Optional))
 	}
 	var reconstructed strings.Builder
-	for _, authority := range required {
+	for _, authority := range set.Required {
 		parts := strings.SplitN(authority.Content, "\n", 2)
 		if len(parts) != 2 {
 			t.Fatalf("required chunk lacks framing: %q", authority.Content)
@@ -69,7 +108,7 @@ func TestBuildContextCandidateAuthoritiesPagesOversizedRequiredContextWithoutLos
 	}
 }
 
-func TestBuildContextCandidateAuthoritiesPreservesOptionalContextBeyondOneRelevancePage(t *testing.T) {
+func TestBuildContextCandidateSetPreservesOptionalContextBeyondOneRelevancePage(t *testing.T) {
 	records := make([]queue.ContextSearchRecord, assemblyline.MaxContextCandidateAuthorities+1)
 	for index := range records {
 		records[index] = queue.ContextSearchRecord{
@@ -78,31 +117,31 @@ func TestBuildContextCandidateAuthoritiesPreservesOptionalContextBeyondOneReleva
 			Content:   fmt.Sprintf("Distinct optional context %d.", index),
 		}
 	}
-	required, optional, err := buildContextCandidateAuthorities(nil, records)
+	set, err := buildContextCandidateSet(nil, records)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(required) != 0 || len(optional) != len(records) {
-		t.Fatalf("required/optional=%d/%d, want 0/%d", len(required), len(optional), len(records))
+	if len(set.Required) != 0 || len(set.Optional) != len(records) {
+		t.Fatalf("required/optional=%d/%d, want 0/%d", len(set.Required), len(set.Optional), len(records))
 	}
-	for index, authority := range optional {
+	for index, authority := range set.Optional {
 		if authority.CandidateID != fmt.Sprintf("CTX_%d", index+1) {
 			t.Fatalf("optional %d ID=%q", index, authority.CandidateID)
 		}
 	}
 }
 
-func TestBuildContextCandidateAuthoritiesExactDeduplicatesAcrossNamespaces(t *testing.T) {
+func TestBuildContextCandidateSetExactDeduplicatesAcrossNamespaces(t *testing.T) {
 	const duplicate = "The pressure door is sealed."
-	required, optional, err := buildContextCandidateAuthorities(nil, []queue.ContextSearchRecord{
+	set, err := buildContextCandidateSet(nil, []queue.ContextSearchRecord{
 		{Namespace: "fictional_canon", SourceID: "canon-1", Content: duplicate},
 		{Namespace: "character_memory", SourceID: "memory-1", Content: duplicate},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(required) != 0 || len(optional) != 1 {
-		t.Fatalf("required/optional=%d/%d, want 0/1", len(required), len(optional))
+	if len(set.Required) != 0 || len(set.Optional) != 1 {
+		t.Fatalf("required/optional=%d/%d, want 0/1", len(set.Required), len(set.Optional))
 	}
 }
 
@@ -230,14 +269,35 @@ func TestRecentConversationContextRecordsPreservesRoleplaySpeakerAndContribution
 	turns := []queue.ConversationCandidateTurn{
 		{MessageID: 20, Role: queue.ConversationCandidateUser, SpeakerName: "Gryph", RoleplayUserTurn: &userTurn, Content: userTurn.ExactText},
 		{MessageID: 21, Role: queue.ConversationCandidateAssistant, PairedUserMessageID: 20, SpeakerName: "Mara Vey", Content: "Mara closes her hand around the key."},
+		{MessageID: 22, Role: queue.ConversationCandidateAssistant, PairedUserMessageID: 20, SpeakerName: "Ivo", Content: "Ivo marks the key's hiding place on his map."},
 	}
 	records, err := recentConversationContextRecords(turns)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(records) != 1 || !strings.Contains(records[0].Content, "Gryph [action_dialogue] contribution:") ||
-		!strings.Contains(records[0].Content, "Mara Vey response:") {
+		!strings.Contains(records[0].Content, "Mara Vey response:") ||
+		!strings.Contains(records[0].Content, "Ivo response:") ||
+		records[0].SourceID != "channel-message-20-through-22" {
 		t.Fatalf("roleplay exchange=%#v", records)
+	}
+}
+
+func TestRecentRoleplayCommandContextKeepsResponseWithoutOperationSyntax(t *testing.T) {
+	command := narratorCommandTurn(`/give "COMMAND_CONTEXT_SENTINEL"`)
+	records, err := recentConversationContextRecords([]queue.ConversationCandidateTurn{
+		{MessageID: 24, Role: queue.ConversationCandidateUser, SpeakerName: roleplay.NarratorPersonaName,
+			RoleplayUserTurn: &command, Content: command.ExactText},
+		{MessageID: 25, Role: queue.ConversationCandidateAssistant, PairedUserMessageID: 24,
+			SpeakerName: "Mara", Content: "Mara accepts the folded cloak."},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(records) != 1 || !strings.Contains(records[0].Content, "Mara accepts the folded cloak") ||
+		strings.Contains(records[0].Content, command.ExactText) ||
+		strings.Contains(records[0].Content, "COMMAND_CONTEXT_SENTINEL") {
+		t.Fatalf("command continuity context=%#v", records)
 	}
 }
 
@@ -245,17 +305,46 @@ func TestCompletedConversationTurnsExcludeFailedUnansweredContribution(t *testin
 	turns, err := completedConversationCandidateTurns([]queue.ConversationCandidateTurn{
 		{MessageID: 30, Role: queue.ConversationCandidateUser, Content: "This turn failed."},
 		{MessageID: 31, Role: queue.ConversationCandidateUser, Content: "This turn completed."},
-		{MessageID: 32, Role: queue.ConversationCandidateAssistant, PairedUserMessageID: 31, Content: "Completed response."},
+		{MessageID: 32, Role: queue.ConversationCandidateAssistant, PairedUserMessageID: 31, Content: "First completed response."},
+		{MessageID: 33, Role: queue.ConversationCandidateAssistant, PairedUserMessageID: 31, Content: "Second completed response."},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(turns) != 2 || turns[0].MessageID != 31 || turns[1].MessageID != 32 {
+	if len(turns) != 3 || turns[0].MessageID != 31 || turns[1].MessageID != 32 ||
+		turns[2].MessageID != 33 {
 		t.Fatalf("completed turns=%#v", turns)
 	}
 }
 
-func TestEmptyContextTermsAcquireRequiredRoleplayStateWithoutOptionalCanon(t *testing.T) {
+func TestCurrentRoundResponsesBecomeIndividualOptionalContextRecords(t *testing.T) {
+	const (
+		maraID = "rpc_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+		ivoID  = "rpc_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	)
+	preparation := roleplay.SimulationTurnAuthority{Responders: []roleplay.SimulationResponderAuthority{
+		{Position: 0, CharacterID: maraID, NarrativeProjection: roleplay.NarrativeSimulationProjection{
+			Viewpoint: roleplay.NarrativePersona{Name: "Mara"},
+		}},
+		{Position: 1, CharacterID: ivoID, NarrativeProjection: roleplay.NarrativeSimulationProjection{
+			Viewpoint: roleplay.NarrativePersona{Name: "Ivo"},
+		}},
+	}}
+	records, err := currentRoundResponseContextRecords(preparation, []roleplayRoundResponseAuthority{
+		{Position: 0, CharacterID: model.RoleplayCharacterID(maraID), CharacterName: "Mara", Text: "Mara lowers the lantern."},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(records) != 1 || records[0].Namespace != "current_round_response" ||
+		records[0].SourceID != maraID+"-round-response-0" ||
+		!strings.Contains(records[0].Content, "Mara") ||
+		!strings.Contains(records[0].Content, "lowers the lantern") {
+		t.Fatalf("current-round records=%#v", records)
+	}
+}
+
+func TestEmptyContextTermsKeepRoleplayStateOptionalForSemanticRelevance(t *testing.T) {
 	const (
 		preparationID = "rpt_22222222222222222222222222222222"
 		worldID       = "rpw_11111111111111111111111111111111"
@@ -268,6 +357,9 @@ func TestEmptyContextTermsAcquireRequiredRoleplayStateWithoutOptionalCanon(t *te
 		Scene: roleplay.NarrativeScene{
 			Title: "Archive", Description: "A quiet gallery beneath the observatory.",
 			ActiveCharacterName: "Mara",
+			Initiative: roleplay.SimulationInitiativeClock{
+				Round: 1, Turn: 1, FictionalTimeTick: 0,
+			},
 		},
 		Participants: []string{"Mara"},
 		Viewpoint: roleplay.NarrativePersona{
@@ -314,26 +406,34 @@ func TestEmptyContextTermsAcquireRequiredRoleplayStateWithoutOptionalCanon(t *te
 		Content: "IRRELEVANT_PRIOR_RESPONSE_SENTINEL must not replace the current self-contained turn.",
 	}}
 	required, optionalConversation, rankable, err := roleplayContextRecordGroups(
-		preparation, responder, conversation, []string{}, nil,
+		preparation, responder, conversation, nil,
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	set, err := requiredContextCandidateSet(required, nil)
+	set, err := buildContextCandidateSet(
+		required, append(optionalConversation, rankable...),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(optionalConversation) != 0 || len(rankable) != 1 ||
-		len(set.Required) != 3 || len(set.Optional) != 0 || set.Replan != nil ||
-		set.Required[0].Namespace != "simulation_transition" ||
-		set.Required[0].Content != "The west gate opened." ||
-		set.Required[1].Namespace != "scene_state" ||
-		set.Required[2].Namespace != "scene_participants" {
-		t.Fatalf("empty-term roleplay acquisition=%#v", set)
+	requiredAuthorities := set.Required
+	optionalAuthorities := set.Optional
+	if len(optionalConversation) != 1 || len(rankable) != 1 ||
+		len(requiredAuthorities) != 3 || len(optionalAuthorities) != 2 ||
+		requiredAuthorities[0].Namespace != "simulation_transition" ||
+		requiredAuthorities[0].Content != "The west gate opened." ||
+		requiredAuthorities[1].Namespace != "scene_state" ||
+		requiredAuthorities[2].Namespace != "scene_participants" {
+		t.Fatalf("empty-term roleplay acquisition required=%#v optional=%#v", requiredAuthorities, optionalAuthorities)
 	}
-	for _, authority := range set.Required {
+	for _, authority := range requiredAuthorities {
 		if strings.Contains(authority.Content, "SENTINEL") {
-			t.Fatalf("empty-term roleplay acquisition projected unrelated context: %#v", set)
+			t.Fatalf("empty-term roleplay required context projected optional authority: %#v", requiredAuthorities)
 		}
+	}
+	if !strings.Contains(optionalAuthorities[0].Content+optionalAuthorities[1].Content, "IRRELEVANT_PRIOR_RESPONSE_SENTINEL") ||
+		!strings.Contains(optionalAuthorities[0].Content+optionalAuthorities[1].Content, "IRRELEVANT_FROZEN_CANON_SENTINEL") {
+		t.Fatalf("optional relevance candidates lost bounded roleplay authority: %#v", optionalAuthorities)
 	}
 }

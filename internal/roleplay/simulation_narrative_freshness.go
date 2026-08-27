@@ -50,6 +50,13 @@ func simulationNarrativeChanges(
 		!reflect.DeepEqual(expectedProjection.Viewpoint, actualProjection.Viewpoint) {
 		changes = append(changes, "responding character")
 	}
+	if !slices.Equal(
+		expectedAuthority.OngoingActionStateIDs, actualAuthority.OngoingActionStateIDs,
+	) || !slices.Equal(
+		expectedAuthority.OngoingActionCharacterIDs, actualAuthority.OngoingActionCharacterIDs,
+	) || !slices.Equal(expectedProjection.OngoingActions, actualProjection.OngoingActions) {
+		changes = append(changes, "ongoing actions")
+	}
 	if !slices.Equal(expectedAuthority.MeterKeys, actualAuthority.MeterKeys) ||
 		!reflect.DeepEqual(expectedProjection.Meters, actualProjection.Meters) {
 		changes = append(changes, "meters")

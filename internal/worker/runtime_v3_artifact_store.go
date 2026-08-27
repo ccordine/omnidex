@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/gryph/omnidex/internal/evidence"
+	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/queue"
 )
 
@@ -40,6 +41,8 @@ func (r *nativeRuntimeV3) completeWithEvidence(
 	contextKey, output, contextValue string,
 	records []evidence.Record,
 	roleplayResponses []queue.RoleplayResponseCompletion,
+	roleplayUserCanon *queue.RoleplayUserCanonCompletion,
+	roleplayUserOngoingAction *queue.RoleplayUserOngoingActionCompletion,
 ) error {
 	output = strings.TrimSpace(output)
 	contextValue = strings.TrimSpace(contextValue)
@@ -51,6 +54,26 @@ func (r *nativeRuntimeV3) completeWithEvidence(
 		return err
 	}
 	command.RoleplayResponses = append([]queue.RoleplayResponseCompletion(nil), roleplayResponses...)
+	if roleplayUserCanon != nil {
+		command.RoleplayUserCanon = &queue.RoleplayUserCanonCompletion{
+			Facts: append([]string{}, roleplayUserCanon.Facts...),
+			KnowledgeCharacterIDs: append(
+				[]model.RoleplayCharacterID{}, roleplayUserCanon.KnowledgeCharacterIDs...,
+			),
+		}
+	}
+	if roleplayUserOngoingAction != nil {
+		copy := *roleplayUserOngoingAction
+		if copy.PreviousOngoingAction != nil {
+			value := *copy.PreviousOngoingAction
+			copy.PreviousOngoingAction = &value
+		}
+		if copy.OngoingAction != nil {
+			value := *copy.OngoingAction
+			copy.OngoingAction = &value
+		}
+		command.RoleplayUserOngoingAction = &copy
+	}
 	bound := make([]evidence.Record, len(records))
 	for index, record := range records {
 		record.JobID = r.claim.Job.ID

@@ -10,6 +10,11 @@ import (
 	"github.com/gryph/omnidex/internal/roleplay"
 )
 
+type roleplayUserPersonaCreationReceipt struct {
+	ChannelID   model.ChannelID `json:"channel_id"`
+	CharacterID string          `json:"character_id"`
+}
+
 func (s *Server) handleRoleplaySimulationChannel(
 	w http.ResponseWriter,
 	r *http.Request,
@@ -126,13 +131,13 @@ func (s *Server) createRoleplayUserPersona(
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	character, err := s.roleplaySimulation.CreateCharacter(r.Context(), world.ID, request.Name)
+	character, err := s.roleplaySimulation.CreateSceneParticipant(r.Context(), world.ID, request.Name)
 	if err != nil {
 		writeRoleplaySimulationError(w, err)
 		return
 	}
-	s.writeRoleplaySimulationComponent(w, r, http.StatusCreated, channel, world, roleplaySimulationPageState{
-		ComposerPersonaCharacter: character.ID,
+	writeJSON(w, http.StatusCreated, roleplayUserPersonaCreationReceipt{
+		ChannelID: channel.ID, CharacterID: character.ID,
 	})
 }
 

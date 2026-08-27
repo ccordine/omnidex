@@ -80,6 +80,9 @@ func TestOrdinaryRoleplayTurnAtomicallyPersistsCanonForNextProjection(t *testing
 		Authority:   claim.Authority, StepID: claim.Step.ID,
 		Output:     responseText,
 		ContextKey: "objective_result", ContextValue: "roleplay-objective-proof",
+		RoleplayUserCanon: &RoleplayUserCanonCompletion{
+			Facts: []string{}, KnowledgeCharacterIDs: []model.RoleplayCharacterID{},
+		},
 		RoleplayResponses: []RoleplayResponseCompletion{{
 			Position: 0, CharacterID: channel.RoleplayViewpointCharacterID, Output: responseText,
 			Facts:                 []string{fact},
@@ -108,6 +111,9 @@ func TestOrdinaryRoleplayTurnAtomicallyPersistsCanonForNextProjection(t *testing
 		Authority:   claim.Authority, StepID: claim.Step.ID,
 		Output:     responseText,
 		ContextKey: "objective_result", ContextValue: "roleplay-objective-proof",
+		RoleplayUserCanon: &RoleplayUserCanonCompletion{
+			Facts: []string{}, KnowledgeCharacterIDs: []model.RoleplayCharacterID{},
+		},
 		RoleplayResponses: []RoleplayResponseCompletion{{
 			Position: 0, CharacterID: channel.RoleplayViewpointCharacterID, Output: responseText,
 			Facts:                 []string{fact},
@@ -219,6 +225,9 @@ func TestRoleplayFactsRejectNonterminalCompletionWithoutSideEffects(t *testing.T
 		Output:       "A bounded response.",
 		ContextKey:   "objective_result",
 		ContextValue: "nonterminal-proof",
+		RoleplayUserCanon: &RoleplayUserCanonCompletion{
+			Facts: []string{}, KnowledgeCharacterIDs: []model.RoleplayCharacterID{},
+		},
 		RoleplayResponses: []RoleplayResponseCompletion{{
 			Position: 0, CharacterID: channel.RoleplayViewpointCharacterID, Output: "A bounded response.",
 			Facts:                 []string{"A newly established fictional fact."},

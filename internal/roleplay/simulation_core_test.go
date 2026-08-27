@@ -132,8 +132,11 @@ func TestSimulationReservedInteractionAndInertItemRules(t *testing.T) {
 
 func TestSimulationTurnAuthorityValidation(t *testing.T) {
 	projection := NarrativeSimulationProjection{
-		Schema:       NarrativeSimulationProjectionSchemaV1,
-		Scene:        NarrativeScene{Title: "Crossroads", Description: "A quiet road.", ActiveCharacterName: "Ari"},
+		Schema: NarrativeSimulationProjectionSchemaV1,
+		Scene: NarrativeScene{
+			Title: "Crossroads", Description: "A quiet road.", ActiveCharacterName: "Ari",
+			Initiative: initialSimulationInitiativeClock(),
+		},
 		Participants: []string{"Ari", "Bex"},
 		Viewpoint:    NarrativePersona{Name: "Ari", Summary: "A traveler.", Voice: "Measured.", Traits: []string{}, Goals: []string{}},
 		Meters:       []NarrativeMeter{}, Inventory: []NarrativeInventoryItem{},
@@ -169,7 +172,7 @@ func TestSimulationTurnAuthorityValidation(t *testing.T) {
 	}
 	authority.Responders = []SimulationResponderAuthority{{
 		Position: 0, CharacterID: testCharacterID,
-		GenerationConfig: authority.GenerationConfig,
+		GenerationConfig:    authority.GenerationConfig,
 		NarrativeProjection: projection, NarrativeAuthority: narrativeAuthority,
 		NarrativeFingerprint: fingerprint,
 	}}
@@ -179,6 +182,51 @@ func TestSimulationTurnAuthorityValidation(t *testing.T) {
 	}}
 	if err := authority.Validate(); err != nil {
 		t.Fatal(err)
+	}
+	actingResponder := authority
+	actingResponder.ActiveCharacterID = actingResponder.UserTurn.CharacterID
+	if err := actingResponder.Validate(); err != nil {
+		t.Fatalf("initiative character was rejected as acting persona: %v", err)
+	}
+	narratorRound := authority
+	narratorRound.UserTurn = UserTurnAuthority{
+		PersonaKind: UserPersonaNarrator, PersonaName: NarratorPersonaName,
+		ContributionKind: UserContributionDirection, ExactText: "Continue the scene.",
+	}
+	secondProjection := CloneNarrativeSimulationProjection(projection)
+	secondProjection.Viewpoint.Name = "Bex"
+	secondAuthority := narrativeAuthority
+	secondAuthority.ViewpointID = "rpc_eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+	secondFingerprint, err := simulationNarrativeDigest(secondProjection, secondAuthority)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondAuthority.Fingerprint = secondFingerprint
+	narratorRound.Responders = append(narratorRound.Responders, SimulationResponderAuthority{
+		Position: 1, CharacterID: secondAuthority.ViewpointID,
+		GenerationConfig: narratorRound.GenerationConfig, NarrativeProjection: secondProjection,
+		NarrativeAuthority: secondAuthority, NarrativeFingerprint: secondFingerprint,
+	})
+	narratorRound.ResponderRoutes = append(narratorRound.ResponderRoutes, SimulationResponderRoute{
+		Position: 1, CharacterID: secondAuthority.ViewpointID,
+		GenerationConfig: narratorRound.GenerationConfig, NarrativeFingerprint: secondFingerprint,
+	})
+	if err := narratorRound.Validate(); err != nil {
+		t.Fatalf("narrator response round was rejected: %v", err)
+	}
+	narratorRound.Responders[1].NarrativeProjection.Scene.Initiative.Turn++
+	narratorRound.Responders[1].NarrativeProjection.Scene.Initiative.FictionalTimeTick++
+	changedProjection := narratorRound.Responders[1].NarrativeProjection
+	changedAuthority := narratorRound.Responders[1].NarrativeAuthority
+	changedFingerprint, err := simulationNarrativeDigest(changedProjection, changedAuthority)
+	if err != nil {
+		t.Fatal(err)
+	}
+	narratorRound.Responders[1].NarrativeAuthority.Fingerprint = changedFingerprint
+	narratorRound.Responders[1].NarrativeFingerprint = changedFingerprint
+	narratorRound.ResponderRoutes[1].NarrativeFingerprint = changedFingerprint
+	if err := narratorRound.Validate(); err == nil || !strings.Contains(err.Error(), "frozen response round") {
+		t.Fatalf("mixed-clock response round error=%v", err)
 	}
 	authority.ParticipantCharacterIDs = []string{"rpc_eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"}
 	if err := authority.Validate(); err == nil {
@@ -199,22 +247,42 @@ func TestSimulationTurnAdvanceReplayValidationRejectsParticipantTampering(t *tes
 		PreviousCharacterID: testCharacterID,
 		ActiveCharacterID:   "rpc_eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
 		BeforeRevision:      4, AfterRevision: 5,
+		BeforeInitiative:        SimulationInitiativeClock{Round: 2, Turn: 4, FictionalTimeTick: 3},
+		AfterInitiative:         SimulationInitiativeClock{Round: 2, Turn: 5, FictionalTimeTick: 4},
 		ParticipantCharacterIDs: []string{testCharacterID, "rpc_eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"},
 		NarrativeFingerprint:    strings.Repeat("b", 64), CreatedAt: time.Now().UTC(),
 	}
-	if err := validateAdvanceReplayResult(result); err != nil {
+	if err := validateAdvanceReplayResult(result, narratorDirectionTurnForInitiative()); err != nil {
 		t.Fatal(err)
 	}
+	result.AfterInitiative.FictionalTimeTick++
+	if err := validateAdvanceReplayResult(result, narratorDirectionTurnForInitiative()); err == nil {
+		t.Fatal("non-monotonic fictional time unexpectedly validated")
+	}
+	result.AfterInitiative.FictionalTimeTick--
 	result.ParticipantCharacterIDs[1] = testCharacterID
-	if err := validateAdvanceReplayResult(result); err == nil {
+	if err := validateAdvanceReplayResult(result, narratorDirectionTurnForInitiative()); err == nil {
 		t.Fatal("duplicated participant replay unexpectedly validated")
+	}
+	result.ParticipantCharacterIDs = []string{
+		testCharacterID,
+		"rpc_eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+		"rpc_ffffffffffffffffffffffffffffffff",
+	}
+	result.ActiveCharacterID = "rpc_ffffffffffffffffffffffffffffffff"
+	if err := validateAdvanceReplayResult(result, narratorDirectionTurnForInitiative()); err == nil ||
+		!strings.Contains(err.Error(), "exact next eligible participant") {
+		t.Fatalf("skipped-cursor replay error=%v", err)
 	}
 }
 
 func TestNarrativeProjectionIsBoundedValidatedAndDeepCloned(t *testing.T) {
 	projection := NarrativeSimulationProjection{
-		Schema:       NarrativeSimulationProjectionSchemaV1,
-		Scene:        NarrativeScene{Title: "Crossroads", Description: "Two travelers pause.", ActiveCharacterName: "Ari"},
+		Schema: NarrativeSimulationProjectionSchemaV1,
+		Scene: NarrativeScene{
+			Title: "Crossroads", Description: "Two travelers pause.", ActiveCharacterName: "Ari",
+			Initiative: initialSimulationInitiativeClock(),
+		},
 		Participants: []string{"Ari", "Bex"},
 		Viewpoint: NarrativePersona{Name: "Ari", Summary: "A patient traveler.", Voice: "Measured.",
 			Traits: []string{"patient"}, Goals: []string{"reach the coast"}},
@@ -236,5 +304,49 @@ func TestNarrativeProjectionIsBoundedValidatedAndDeepCloned(t *testing.T) {
 	projection.RecentEvents = nil
 	if err := projection.Validate(); err == nil {
 		t.Fatal("nil narrative event array unexpectedly validated")
+	}
+}
+
+func TestNarrativeFingerprintCommitsTheExactInitiativeClock(t *testing.T) {
+	projection := NarrativeSimulationProjection{
+		Schema: NarrativeSimulationProjectionSchemaV1,
+		Scene: NarrativeScene{
+			Title: "Crossroads", Description: "Two travelers pause.", ActiveCharacterName: "Ari",
+			Initiative: initialSimulationInitiativeClock(),
+		},
+		Participants: []string{"Ari", "Bex"},
+		Viewpoint: NarrativePersona{
+			Name: "Ari", Summary: "A patient traveler.", Voice: "Measured.",
+			Traits: []string{}, Goals: []string{},
+		},
+		Meters: []NarrativeMeter{}, Inventory: []NarrativeInventoryItem{},
+		VisibleFacts: []string{}, Memories: []string{}, RecentEvents: []string{},
+	}
+	authority := SimulationNarrativeAuthority{
+		WorldID: testWorldID, SceneID: testSceneID, SceneRevision: 3,
+		ViewpointID:    testCharacterID,
+		ParticipantIDs: []string{testCharacterID, "rpc_eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"},
+		MeterKeys:      []string{}, InventoryItemIDs: []string{}, CanonEventIDs: []string{},
+		MemoryIDs: []string{}, TransitionIDs: []string{},
+	}
+	before, err := simulationNarrativeDigest(projection, authority)
+	if err != nil {
+		t.Fatal(err)
+	}
+	base, err := simulationNarrativeBaseDigest(projection, authority)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if expected := simulationSHA([]byte(base + ":1:1:0")); before != expected {
+		t.Fatalf("clocked narrative fingerprint=%q want %q", before, expected)
+	}
+	projection.Scene.Initiative.Turn++
+	projection.Scene.Initiative.FictionalTimeTick++
+	after, err := simulationNarrativeDigest(projection, authority)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if before == after {
+		t.Fatal("narrative fingerprint did not commit the changed initiative clock")
 	}
 }

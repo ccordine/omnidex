@@ -48,9 +48,19 @@ func persistSimulationTransitionTx(
 	ctx context.Context,
 	tx pgx.Tx,
 	requestHash, exactAction string,
+	observerCharacterIDs []string,
 	result SimulationTransitionResult,
 ) error {
+	if err := validateSimulationTransitionObservers(
+		observerCharacterIDs, result.ActorCharacterID,
+	); err != nil {
+		return err
+	}
 	payload, err := json.Marshal(result)
+	if err != nil {
+		return err
+	}
+	observerPayload, err := json.Marshal(observerCharacterIDs)
 	if err != nil {
 		return err
 	}
@@ -58,12 +68,35 @@ func persistSimulationTransitionTx(
 		INSERT INTO roleplay_simulation_transitions (
 			operation_id,world_id,scene_id,actor_character_id,
 			before_revision,after_revision,exact_action,action_kind,command_key,
-			request_sha256,result,created_at
-		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12)
+			request_sha256,result,observer_character_ids,created_at
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb,$12::jsonb,$13)
 	`, result.OperationID, result.WorldID, result.SceneID, result.ActorCharacterID,
 		result.BeforeRevision, result.AfterRevision, exactAction,
-		result.Action.Kind, result.Action.CommandKey, requestHash, string(payload), result.CreatedAt)
+		result.Action.Kind, result.Action.CommandKey, requestHash, string(payload),
+		string(observerPayload), result.CreatedAt)
 	return simulationDefinitionError("simulation transition", err)
+}
+
+func validateSimulationTransitionObservers(observerCharacterIDs []string, actorCharacterID string) error {
+	if len(observerCharacterIDs) < 1 || len(observerCharacterIDs) > MaxSceneParticipants {
+		return fmt.Errorf("simulation transition observer count is outside its bound")
+	}
+	seen := make(map[string]struct{}, len(observerCharacterIDs))
+	actorFound := false
+	for _, characterID := range observerCharacterIDs {
+		if err := validateIdentity(characterID, characterIdentity); err != nil {
+			return fmt.Errorf("simulation transition observer is invalid")
+		}
+		if _, duplicate := seen[characterID]; duplicate {
+			return fmt.Errorf("simulation transition observer is duplicated")
+		}
+		seen[characterID] = struct{}{}
+		actorFound = actorFound || characterID == actorCharacterID
+	}
+	if !actorFound {
+		return fmt.Errorf("simulation transition actor is not an observer")
+	}
+	return nil
 }
 
 func decodeSimulationTransitionResult(payload []byte) (SimulationTransitionResult, error) {

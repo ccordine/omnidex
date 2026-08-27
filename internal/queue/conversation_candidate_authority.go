@@ -9,10 +9,7 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-const (
-	maxConversationCandidateAuthorities = 8
-	maxConversationCandidateBytes       = 6 * 1024
-)
+const maxConversationCandidateExchanges = 6
 
 type ConversationCandidateRole string
 
@@ -44,7 +41,7 @@ type ConversationCandidateAuthoritySet struct {
 }
 
 // ConversationCandidateAuthorities returns one immutable, bounded suffix of
-// the exact channel transcript preceding this job's bound user message.
+// complete assistant exchanges preceding this job's bound user message.
 // Recency is only this provider's candidate policy; semantic selection and
 // downstream authority remain independent of the retrieval mechanism.
 func (r *Repository) ConversationCandidateAuthorities(
@@ -60,6 +57,11 @@ func (r *Repository) ConversationCandidateAuthorities(
 	}
 	if !exists {
 		return ConversationCandidateAuthoritySet{}, fmt.Errorf("conversation job has no channel message authority")
+	}
+	if binding.Mode != model.ChannelModeAssistant {
+		return ConversationCandidateAuthoritySet{}, fmt.Errorf(
+			"assistant conversation candidates require an assistant channel",
+		)
 	}
 	tx, err := r.pool.BeginTx(ctx, pgx.TxOptions{
 		IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly,
@@ -86,16 +88,15 @@ func (r *Repository) ConversationCandidateAuthorities(
 	rows, err := tx.Query(ctx, `
 		SELECT id, channel_id, role, content, created_at
 		FROM ai_channel_messages
-		WHERE channel_id=$1 AND id<$2
+		WHERE channel_id=$1 AND id<$2 AND role='assistant'
 		ORDER BY id DESC
 		LIMIT $3
-	`, binding.ChannelID, binding.UserMessageID, maxConversationCandidateAuthorities)
+	`, binding.ChannelID, binding.UserMessageID, maxConversationCandidateExchanges)
 	if err != nil {
 		return ConversationCandidateAuthoritySet{}, err
 	}
 	defer rows.Close()
-	descending := make([]model.ChannelMessage, 0, maxConversationCandidateAuthorities)
-	totalBytes := 0
+	descendingAssistants := make([]model.ChannelMessage, 0, maxConversationCandidateExchanges)
 	for rows.Next() {
 		var message model.ChannelMessage
 		if err := rows.Scan(
@@ -106,72 +107,56 @@ func (r *Repository) ConversationCandidateAuthorities(
 		if err := model.ValidateChannelMessage(message.Role, message.Content); err != nil {
 			return ConversationCandidateAuthoritySet{}, fmt.Errorf("invalid stored conversation candidate %d: %w", message.ID, err)
 		}
-		if totalBytes+len(message.Content) > maxConversationCandidateBytes {
-			if len(descending) == 0 {
-				return ConversationCandidateAuthoritySet{}, fmt.Errorf(
-					"nearest conversation candidate exceeds the %d-byte bound",
-					maxConversationCandidateBytes,
-				)
-			}
-			break
+		if message.Role != model.ChannelMessageRoleAssistant {
+			return ConversationCandidateAuthoritySet{}, fmt.Errorf(
+				"conversation candidate %d is not an assistant message", message.ID,
+			)
 		}
-		totalBytes += len(message.Content)
-		descending = append(descending, message)
+		descendingAssistants = append(descendingAssistants, message)
 	}
 	if err := rows.Err(); err != nil {
 		return ConversationCandidateAuthoritySet{}, err
 	}
 	rows.Close()
-	for left, right := 0, len(descending)-1; left < right; left, right = left+1, right-1 {
-		descending[left], descending[right] = descending[right], descending[left]
+	type completeExchange struct {
+		user      model.ChannelMessage
+		assistant model.ChannelMessage
+		result    ConversationAssistantResultAuthority
 	}
-	for len(descending) > 0 && descending[0].Role == model.ChannelMessageRoleAssistant {
-		descending = descending[1:]
-	}
-	set := ConversationCandidateAuthoritySet{
-		Turns: make([]ConversationCandidateTurn, 0, len(descending)),
-	}
-	var pendingUserID int64
-	for _, message := range descending {
-		role := ConversationCandidateUser
-		if message.Role == model.ChannelMessageRoleAssistant {
-			role = ConversationCandidateAssistant
-		}
-		if message.Role == model.ChannelMessageRoleUser {
-			turn := ConversationCandidateTurn{
-				MessageID: message.ID, Role: role, Content: message.Content,
-			}
-			if binding.Mode == model.ChannelModeRoleplay {
-				userTurn, err := loadConversationRoleplayUserTurn(
-					ctx, tx, binding.ChannelID, message.ID, message.Content,
-				)
-				if err != nil {
-					return ConversationCandidateAuthoritySet{}, err
-				}
-				turn.SpeakerName = userTurn.PersonaName
-				turn.RoleplayUserTurn = &userTurn
-			}
-			set.Turns = append(set.Turns, turn)
-			pendingUserID = message.ID
-			continue
-		}
-		if pendingUserID < 1 {
-			return ConversationCandidateAuthoritySet{}, fmt.Errorf(
-				"assistant message %d has no preceding candidate user authority", message.ID,
-			)
-		}
-		result, err := loadExactConversationAssistantResult(
-			ctx, tx, binding.ChannelID, binding.Mode, pendingUserID, message,
+	descendingExchanges := make([]completeExchange, 0, len(descendingAssistants))
+	for _, assistant := range descendingAssistants {
+		user, err := loadImmediatelyPrecedingConversationUser(
+			ctx, tx, binding.ChannelID, assistant.ID,
 		)
 		if err != nil {
 			return ConversationCandidateAuthoritySet{}, err
 		}
-		set.Turns = append(set.Turns, ConversationCandidateTurn{
-			MessageID: message.ID, Role: role, PairedUserMessageID: pendingUserID,
-			SpeakerName: result.SpeakerName, Content: message.Content,
+		result, err := loadExactConversationAssistantResult(
+			ctx, tx, binding.ChannelID, binding.Mode, user, assistant,
+		)
+		if err != nil {
+			return ConversationCandidateAuthoritySet{}, err
+		}
+		descendingExchanges = append(descendingExchanges, completeExchange{
+			user: user, assistant: assistant, result: result,
 		})
-		set.AssistantResults = append(set.AssistantResults, result)
-		pendingUserID = 0
+	}
+	set := ConversationCandidateAuthoritySet{
+		Turns:            make([]ConversationCandidateTurn, 0, len(descendingExchanges)*2),
+		AssistantResults: make([]ConversationAssistantResultAuthority, 0, len(descendingExchanges)),
+	}
+	for index := len(descendingExchanges) - 1; index >= 0; index-- {
+		exchange := descendingExchanges[index]
+		set.Turns = append(set.Turns, ConversationCandidateTurn{
+			MessageID: exchange.user.ID, Role: ConversationCandidateUser,
+			Content: exchange.user.Content,
+		})
+		set.Turns = append(set.Turns, ConversationCandidateTurn{
+			MessageID: exchange.assistant.ID, Role: ConversationCandidateAssistant,
+			PairedUserMessageID: exchange.user.ID,
+			SpeakerName:         exchange.result.SpeakerName, Content: exchange.assistant.Content,
+		})
+		set.AssistantResults = append(set.AssistantResults, exchange.result)
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return ConversationCandidateAuthoritySet{}, err
@@ -179,34 +164,74 @@ func (r *Repository) ConversationCandidateAuthorities(
 	return set, nil
 }
 
+func loadImmediatelyPrecedingConversationUser(
+	ctx context.Context,
+	tx pgx.Tx,
+	channelID string,
+	assistantMessageID int64,
+) (model.ChannelMessage, error) {
+	var user model.ChannelMessage
+	err := tx.QueryRow(ctx, `
+		SELECT id, channel_id, role, content, created_at
+		FROM ai_channel_messages
+		WHERE channel_id=$1 AND id<$2
+		ORDER BY id DESC
+		LIMIT 1
+	`, channelID, assistantMessageID).Scan(
+		&user.ID, &user.ChannelID, &user.Role, &user.Content, &user.CreatedAt,
+	)
+	if err == pgx.ErrNoRows {
+		return model.ChannelMessage{}, fmt.Errorf(
+			"assistant message %d has no immediately preceding user authority",
+			assistantMessageID,
+		)
+	}
+	if err != nil {
+		return model.ChannelMessage{}, err
+	}
+	if err := model.ValidateChannelMessage(user.Role, user.Content); err != nil {
+		return model.ChannelMessage{}, fmt.Errorf(
+			"invalid stored conversation candidate %d: %w", user.ID, err,
+		)
+	}
+	if user.Role != model.ChannelMessageRoleUser {
+		return model.ChannelMessage{}, fmt.Errorf(
+			"assistant message %d is not immediately preceded by a user authority",
+			assistantMessageID,
+		)
+	}
+	return user, nil
+}
+
 func loadExactConversationAssistantResult(
 	ctx context.Context,
 	tx pgx.Tx,
 	channelID string,
 	mode model.ChannelMode,
-	userMessageID int64,
+	user model.ChannelMessage,
 	message model.ChannelMessage,
 ) (ConversationAssistantResultAuthority, error) {
 	rows, err := tx.Query(ctx, `
-		SELECT id, result
-		FROM jobs
-		WHERE pipeline='chat' AND status='completed'
-		  AND metadata->>'channel_id'=$1
-		  AND metadata->>'channel_user_message_id'=($2::bigint)::text
-		ORDER BY id ASC LIMIT 2
-	`, channelID, userMessageID)
+			SELECT id,instruction,result
+			FROM jobs
+			WHERE pipeline='chat' AND status='completed'
+			  AND metadata->>'channel_id'=$1
+			  AND metadata->>'channel_user_message_id'=($2::bigint)::text
+			ORDER BY id ASC LIMIT 2
+		`, channelID, user.ID)
 	if err != nil {
 		return ConversationAssistantResultAuthority{}, err
 	}
 	defer rows.Close()
 	type completion struct {
-		jobID  int64
-		result string
+		jobID       int64
+		instruction string
+		result      string
 	}
 	completions := make([]completion, 0, 2)
 	for rows.Next() {
 		var value completion
-		if err := rows.Scan(&value.jobID, &value.result); err != nil {
+		if err := rows.Scan(&value.jobID, &value.instruction, &value.result); err != nil {
 			return ConversationAssistantResultAuthority{}, err
 		}
 		completions = append(completions, value)
@@ -214,10 +239,11 @@ func loadExactConversationAssistantResult(
 	if err := rows.Err(); err != nil {
 		return ConversationAssistantResultAuthority{}, err
 	}
-	if len(completions) != 1 || completions[0].result != message.Content {
+	if len(completions) != 1 || completions[0].instruction != user.Content ||
+		completions[0].result != message.Content {
 		return ConversationAssistantResultAuthority{}, fmt.Errorf(
 			"assistant message %d is not the unique exact result for user message %d",
-			message.ID, userMessageID,
+			message.ID, user.ID,
 		)
 	}
 	speakerName, err := loadConversationAssistantSpeaker(
@@ -227,7 +253,7 @@ func loadExactConversationAssistantResult(
 		return ConversationAssistantResultAuthority{}, err
 	}
 	return ConversationAssistantResultAuthority{
-		UserMessageID: userMessageID,
+		UserMessageID: user.ID,
 		MessageID:     message.ID,
 		JobID:         completions[0].jobID,
 		SpeakerName:   speakerName,

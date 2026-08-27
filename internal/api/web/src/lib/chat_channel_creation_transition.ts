@@ -28,11 +28,10 @@ export class ChatChannelCreationTransition {
     if (this.pending?.id === id) this.pending = null;
   }
 
-  async create(): Promise<boolean> {
+  async create(): Promise<void> {
     if (this.pending) {
       this.host.restoreSelection(this.host.selectedID());
-      this.reportPending(this.pending.id, "channel_create_blocked_pending_reconciliation");
-      return false;
+      throw this.reportPending(this.pending.id, "channel_create_blocked_pending_reconciliation");
     }
     const previousID = this.host.selectedID();
     const previousMode = previousID ? this.host.selectedMode(previousID) : "assistant";
@@ -51,7 +50,7 @@ export class ChatChannelCreationTransition {
       this.host.commitSelection(created.id);
       this.pending = null;
       this.host.setStatus(t("status.ready"), "ready");
-      return true;
+      return;
     } catch (error) {
       if (created) {
         this.host.clearSelection();
@@ -60,20 +59,21 @@ export class ChatChannelCreationTransition {
           channel_id: created.id,
           error: errorMessage(error),
         });
-        this.reportPending(created.id, "channel_creation_pending_reload");
-        return false;
+        throw this.reportPending(created.id, "channel_creation_pending_reload");
       }
       this.host.restoreSelection(previousID);
       await this.rollbackRoleplay(previousID, previousMode);
       this.host.setStatus(errorMessage(error), "error");
       this.host.addEvent("channel_create_failed", { error: errorMessage(error) });
-      return false;
+      throw error;
     }
   }
 
-  private reportPending(id: string, event: string): void {
-    this.host.setStatus(pendingCreatedMessage(id), "error");
+  private reportPending(id: string, event: string): Error {
+    const message = pendingCreatedMessage(id);
+    this.host.setStatus(message, "error");
     this.host.addEvent(event, { channel_id: id });
+    return new Error(message);
   }
 
   private async resetRoleplay(): Promise<void> {

@@ -8,8 +8,11 @@ import (
 
 func TestPreparedNarrativeFreshnessNamesTheChangedAuthority(t *testing.T) {
 	expectedProjection := NarrativeSimulationProjection{
-		Schema:       NarrativeSimulationProjectionSchemaV1,
-		Scene:        NarrativeScene{Title: "Archive", Description: "Moonlit shelves.", ActiveCharacterName: "Mara"},
+		Schema: NarrativeSimulationProjectionSchemaV1,
+		Scene: NarrativeScene{
+			Title: "Archive", Description: "Moonlit shelves.", ActiveCharacterName: "Mara",
+			Initiative: SimulationInitiativeClock{Round: 2, Turn: 5, FictionalTimeTick: 4},
+		},
 		Participants: []string{"Mara", "Gryph"},
 		Viewpoint: NarrativePersona{
 			Name: "Mara", Summary: "Archivist.", Voice: "Measured.",
@@ -41,6 +44,10 @@ func TestPreparedNarrativeFreshnessNamesTheChangedAuthority(t *testing.T) {
 		mutate     func(*NarrativeSimulationProjection, *SimulationNarrativeAuthority)
 	}{
 		{"scene", "scene", func(p *NarrativeSimulationProjection, _ *SimulationNarrativeAuthority) { p.Scene.Title = "Vault" }},
+		{"initiative", "scene", func(p *NarrativeSimulationProjection, _ *SimulationNarrativeAuthority) {
+			p.Scene.Initiative.Turn++
+			p.Scene.Initiative.FictionalTimeTick++
+		}},
 		{"cast", "cast", func(p *NarrativeSimulationProjection, _ *SimulationNarrativeAuthority) { p.Participants[1] = "Elian" }},
 		{"persona", "responding character", func(p *NarrativeSimulationProjection, _ *SimulationNarrativeAuthority) { p.Viewpoint.Voice = "Wry." }},
 		{"meter", "meters", func(p *NarrativeSimulationProjection, _ *SimulationNarrativeAuthority) { p.Meters[0].Value = 5 }},

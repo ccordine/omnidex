@@ -67,6 +67,13 @@ func TestResolveObjectiveRoleplayResearchUsesSharedEvidenceSieveAndOneResponseAc
 					acquisition.discoverCalls, acquisition.fetchCalls, terms.calls,
 					relevance.calls, station.calls, result.ModelCalls)
 			}
+			if terms.question != fixture.question || relevance.question != fixture.question ||
+				station.input.ExactQuestion != fixture.question {
+				t.Fatalf(
+					"dedicated research question changed: terms=%q relevance=%q response=%q",
+					terms.question, relevance.question, station.input.ExactQuestion,
+				)
+			}
 			if !strings.Contains(result.Rendered, fixture.url) || !strings.Contains(result.Rendered, "[1]") ||
 				result.Text != fixture.answer || result.Research.Question != fixture.question ||
 				len(result.Evidence) != 1 || result.Evidence[0].SourceSHA256 != document.ContentSHA256 {
@@ -203,8 +210,9 @@ func (fixture *scriptedObjectiveRoleplayAcquisition) Fetch(
 }
 
 type scriptedObjectiveRoleplayTermsStation struct {
-	term  string
-	calls int
+	term     string
+	question string
+	calls    int
 }
 
 func (station *scriptedObjectiveRoleplayTermsStation) Resolve(
@@ -212,6 +220,7 @@ func (station *scriptedObjectiveRoleplayTermsStation) Resolve(
 	call webresearch.SearchTermsCall,
 ) (webresearch.SearchTermsDecision, error) {
 	station.calls++
+	station.question = call.Question
 	if call.Question == "" || len(call.AttemptedQueries) != 0 {
 		return webresearch.SearchTermsDecision{}, fmt.Errorf("search terms received invalid authority")
 	}
@@ -220,6 +229,7 @@ func (station *scriptedObjectiveRoleplayTermsStation) Resolve(
 
 type scriptedObjectiveRoleplayRelevanceStation struct {
 	selected []websearch.CandidateID
+	question string
 	calls    int
 }
 
@@ -228,6 +238,7 @@ func (station *scriptedObjectiveRoleplayRelevanceStation) Select(
 	call webresearch.RelevanceCall,
 ) (webresearch.RelevanceDecision, error) {
 	station.calls++
+	station.question = call.Question
 	if call.Question == "" || len(call.Candidates) == 0 {
 		return webresearch.RelevanceDecision{}, fmt.Errorf("relevance received invalid authority")
 	}
@@ -320,6 +331,9 @@ func objectiveRoleplayResearchFixture(
 			Title:               "Observatory kitchen",
 			Description:         "The unrelated crown archive remains locked beneath the northern tower.",
 			ActiveCharacterName: "Ada",
+			Initiative: roleplay.SimulationInitiativeClock{
+				Round: 1, Turn: 1, FictionalTimeTick: 0,
+			},
 		},
 		Participants: []string{"Ada"},
 		Viewpoint: roleplay.NarrativePersona{

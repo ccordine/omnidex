@@ -123,8 +123,10 @@ func TestRoleplayComposerSelectsUserPersonaSeparatelyFromResponder(t *testing.T)
 	for _, required := range []string{
 		`data-chat-target="roleplayPersona"`, `aria-label="Acting as"`,
 		`value="narrator" data-persona-kind="narrator"`,
-		`value="rpc_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" data-persona-kind="character" selected`,
 		`value="rpc_0123456789abcdef0123456789abcdef" data-persona-kind="character"`,
+		`value="rpc_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" data-persona-kind="character" selected`,
+		`data-roleplay-response-authority`, `Scene: <strong`, `Atrium</strong>`,
+		`Initiative: <strong`, `Rin</strong>`,
 		`Gryph &lt;Artificer&gt;`, `aria-label="Create an identity"`, `>Characters</span>`,
 		`aria-label="Toggle Rin as a responder"`, `aria-label="Toggle Gryph &lt;Artificer&gt; as a responder"`,
 	} {
@@ -135,6 +137,7 @@ func TestRoleplayComposerSelectsUserPersonaSeparatelyFromResponder(t *testing.T)
 	for _, obsolete := range []string{
 		`data-chat-target="roleplayContribution"`, `Scene / world`, `Responder / model`,
 		`<strong>Rin</strong> responds`, `Archive · Atrium · revision 7`,
+		`data-roleplay-authority-model`, `Model:`,
 	} {
 		if strings.Contains(component.HTML.Bundle, obsolete) {
 			t.Fatalf("minimal roleplay composer retained obsolete authority slab %q", obsolete)
@@ -296,7 +299,9 @@ func configuredRoleplayComponentFixture(
 	sceneID := "rps_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 	state.Scene = &roleplay.SceneSheet{
 		ID: sceneID, WorldID: state.World.ID, Title: sceneTitle, Description: "Exact persisted scene.",
-		Revision: 7, ActiveCharacterID: viewpointID, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC(),
+		Revision: 7, ActiveCharacterID: viewpointID,
+		Initiative: roleplay.SimulationInitiativeClock{Round: 3, Turn: 8, FictionalTimeTick: 7},
+		CreatedAt:  time.Now().UTC(), UpdatedAt: time.Now().UTC(),
 	}
 	state.ActiveCharacterName = "Rin"
 	state.Participants = []roleplay.SceneParticipantProjection{{CharacterID: viewpointID, Name: "Rin", TurnPosition: 0}}

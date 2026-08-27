@@ -12,6 +12,19 @@ type runtimeConversationCandidateProvider struct {
 	runtime *nativeRuntimeV3
 }
 
+func (provider runtimeConversationCandidateProvider) ContextSearchAvailability(
+	ctx context.Context,
+	job model.Job,
+	authority turnAuthority,
+	preparation *roleplay.SimulationTurnAuthority,
+	projection *roleplay.NarrativeSimulationProjection,
+) (contextcompiler.SearchAvailability, error) {
+	return (boundObjectiveContextProvider{
+		runtime: provider.runtime, job: job, authority: authority,
+		preparation: preparation, projection: projection,
+	}).SearchAvailability(ctx)
+}
+
 func (provider runtimeConversationCandidateProvider) ContextCandidates(
 	ctx context.Context,
 	job model.Job,

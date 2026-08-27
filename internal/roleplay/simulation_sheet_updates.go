@@ -59,7 +59,8 @@ func (s *Store) UpdateCurrentScene(ctx context.Context, update SceneUpdate) (Sce
 		SET title=$3,description=$4,current_character_id=$5,
 		    revision=revision+1,updated_at=NOW()
 		WHERE world_id=$1 AND id=$2 AND revision=$6
-		RETURNING id,world_id,title,description,revision,current_character_id,created_at,updated_at
+		RETURNING id,world_id,title,description,revision,current_character_id,
+		          initiative_round,initiative_turn,fictional_time_tick,created_at,updated_at
 	`, update.WorldID, update.SceneID, update.Title, update.Description, active, update.ExpectedRevision))
 	if err == pgx.ErrNoRows {
 		return SceneSheet{}, fmt.Errorf("%w: scene revision changed", ErrSimulationStaleRevision)

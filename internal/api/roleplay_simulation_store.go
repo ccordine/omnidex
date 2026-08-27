@@ -13,6 +13,7 @@ type RoleplaySimulationStore interface {
 	ProjectSimulationUI(ctx context.Context, worldID string, page roleplay.SimulationUIPageRequest) (roleplay.SimulationUIProjection, error)
 	ProjectSimulationSlashCommands(ctx context.Context, worldID string) (roleplay.SimulationSlashCommandProjection, error)
 	CreateCharacter(ctx context.Context, worldID, name string) (roleplay.Character, error)
+	CreateSceneParticipant(ctx context.Context, worldID, name string) (roleplay.Character, error)
 	CreateLibraryCharacter(ctx context.Context, name string) (roleplay.LibraryCharacterSummary, error)
 	PlaceLibraryCharacter(ctx context.Context, worldID, libraryID string) (roleplay.Character, error)
 	ListLibraryCharactersPage(ctx context.Context, selectedWorldID string, limit, offset int) (roleplay.LibraryCharacterPage, error)

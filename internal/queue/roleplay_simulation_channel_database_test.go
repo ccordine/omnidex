@@ -170,7 +170,7 @@ func TestCanonicalRoleplayTurnAppliesSimulationNarratesCanonAndAdvancesAtomicall
 	`, world.ID).Scan(&activeCharacterID, &sceneRevision); err != nil {
 		t.Fatal(err)
 	}
-	if activeCharacterID != string(channel.RoleplayViewpointCharacterID) || sceneRevision != 3 {
+	if activeCharacterID != ivo.ID || sceneRevision != 3 {
 		t.Fatalf("advanced active=%q revision=%d", activeCharacterID, sceneRevision)
 	}
 	var assistantMessages, transitions, preparations, advances int
@@ -224,6 +224,11 @@ func TestCanonicalRoleplayTurnAppliesSimulationNarratesCanonAndAdvancesAtomicall
 	if err != nil {
 		t.Fatal(err)
 	}
+	assertRoleplayResponseRoundConversationAuthority(
+		t, repository, failedJob,
+		[]model.RoleplayCharacterID{model.RoleplayCharacterID(ivo.ID), channel.RoleplayViewpointCharacterID},
+		[]string{"Mara", "Ivo"}, []string{maraOutput, ivoOutput},
+	)
 	failedClaim, err := repository.ClaimNextStep(ctx, "simulation-proof-worker-failure")
 	if err != nil {
 		t.Fatal(err)
@@ -270,7 +275,7 @@ func TestCanonicalRoleplayTurnAppliesSimulationNarratesCanonAndAdvancesAtomicall
 	if err := json.Unmarshal(nextJob.Metadata, &metadata); err != nil {
 		t.Fatal(err)
 	}
-	if metadata.RoleplayViewpointCharacterID != channel.RoleplayViewpointCharacterID ||
+	if metadata.RoleplayViewpointCharacterID != model.RoleplayCharacterID(ivo.ID) ||
 		metadata.RoleplayInputKind != roleplay.SimulationTurnProse {
 		t.Fatalf("next prepared turn=%+v", metadata)
 	}
@@ -285,16 +290,19 @@ func TestCanonicalRoleplayTurnAppliesSimulationNarratesCanonAndAdvancesAtomicall
 		CompleteStepCommand: CompleteStepCommand{
 			OperationID: testLifecycleOperationID(t, "simulation-prose-complete", nextClaim.Step.ID),
 			Authority:   nextClaim.Authority, StepID: nextClaim.Step.ID,
-			Output:     "Mara answers without changing the instruments.\n\nIvo declares that his morale is now ninety-nine.",
+			Output:     "Ivo declares that his morale is now ninety-nine.\n\nMara answers without changing the instruments.",
 			ContextKey: "objective_result", ContextValue: "simulation-prose-proof",
+			RoleplayUserCanon: &RoleplayUserCanonCompletion{
+				Facts: []string{}, KnowledgeCharacterIDs: []model.RoleplayCharacterID{},
+			},
 			RoleplayResponses: []RoleplayResponseCompletion{
 				{
-					Position: 0, CharacterID: channel.RoleplayViewpointCharacterID,
-					Output: "Mara answers without changing the instruments.",
+					Position: 0, CharacterID: model.RoleplayCharacterID(ivo.ID),
+					Output: "Ivo declares that his morale is now ninety-nine.",
 				},
 				{
-					Position: 1, CharacterID: model.RoleplayCharacterID(ivo.ID),
-					Output: "Ivo declares that his morale is now ninety-nine.",
+					Position: 1, CharacterID: channel.RoleplayViewpointCharacterID,
+					Output: "Mara answers without changing the instruments.",
 				},
 			},
 		},

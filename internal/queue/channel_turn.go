@@ -194,11 +194,7 @@ func (r *Repository) enqueueChannelTurn(
 			return model.ChannelMessage{}, model.Job{}, err
 		}
 		message.SpeakerName = userTurn.PersonaName
-		message.Roleplay = &model.ChannelMessageRoleplayAuthority{
-			PersonaKind:      string(userTurn.PersonaKind),
-			CharacterID:      model.RoleplayCharacterID(userTurn.CharacterID),
-			ContributionKind: string(userTurn.ContributionKind),
-		}
+		message.Roleplay = projectChannelMessageRoleplayAuthority(userTurn)
 		research, matched, prepareErr := PrepareRoleplayResearchTurnTx(
 			ctx, tx, string(channelID), message.ID, instruction,
 		)

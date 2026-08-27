@@ -64,7 +64,7 @@ func renderRoleplaySceneDraftSelection(
 
 func renderRoleplayTurnOrder(state roleplaySimulationComponentState) (string, error) {
 	var body strings.Builder
-	body.WriteString(roleplaySectionStart("Turn order", "The active participant advances only after a verified turn."))
+	body.WriteString(roleplaySectionStart("Turn order", "The initiative cursor advances only after a verified turn."))
 	body.WriteString(`<ol class="space-y-2" start="` + strconv.Itoa(state.Page.TurnOrder+1) + `">`)
 	for _, participant := range state.Participants {
 		active := participant.CharacterID == state.Scene.ActiveCharacterID
@@ -92,7 +92,7 @@ func renderRoleplayTurnOrder(state roleplaySimulationComponentState) (string, er
 
 func renderRoleplayMeters(state roleplaySimulationComponentState) (string, error) {
 	var body strings.Builder
-	body.WriteString(roleplaySectionStart("Meters", "Values shown here belong to the current scene's active character."))
+	body.WriteString(roleplaySectionStart("Meters", "Values shown here belong to the current initiative character."))
 	if len(state.Meters) == 0 {
 		body.WriteString(chatEmptyState("No meters are configured."))
 	}

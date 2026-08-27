@@ -188,9 +188,10 @@ func TestRoleplayResearchCanonicalQueueCompletionReplayAndNoCanon(t *testing.T) 
 		t.Fatal(err)
 	}
 	if len(page.Messages) != 3 || page.Messages[0].Role != model.ChannelMessageRoleUser ||
+		page.Messages[0].SpeakerName != "Narrator" ||
 		page.Messages[1].Role != model.ChannelMessageRoleAssistant ||
 		page.Messages[1].SpeakerName != "Ada" ||
-		page.Messages[2].Role != model.ChannelMessageRoleUser || page.Messages[2].SpeakerName != "" {
+		page.Messages[2].Role != model.ChannelMessageRoleUser || page.Messages[2].SpeakerName != "Narrator" {
 		t.Fatalf("canonical research transcript=%+v", page.Messages)
 	}
 	var deniedAssistant, deniedCanon, deniedAdvance, deniedLifecycle, deniedEvidence int

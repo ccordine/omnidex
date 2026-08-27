@@ -53,7 +53,7 @@ func TestGoAndUnguidedTypeScriptCorrectionEnvelopesAreAbsent(t *testing.T) {
 			t.Fatalf("TypeScript source worker retained unguided correction path %q", forbidden)
 		}
 	}
-	renderer, err := os.ReadFile("../assemblyline/portable_job_render.go")
+	renderer, err := os.ReadFile("../assemblyline/portable_job_source_render.go")
 	if err != nil {
 		t.Fatal(err)
 	}

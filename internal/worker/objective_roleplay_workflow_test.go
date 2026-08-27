@@ -21,8 +21,14 @@ func TestRoleplayChannelUsesOnlySelectedCharacterScopedKnowledge(t *testing.T) {
 	generationConfig := roleplayGenerationFixture("0123456789abcdef0123456789abcdef")
 	userTurn := narratorDirectionTurn("Continue the scene.")
 	projectedNarrative := roleplay.NarrativeSimulationProjection{
-		Schema:       roleplay.NarrativeSimulationProjectionSchemaV1,
-		Scene:        roleplay.NarrativeScene{Title: "Harbor", Description: "FULL_PROJECTION_SENTINEL remains in code-owned state.", ActiveCharacterName: "Bob"},
+		Schema: roleplay.NarrativeSimulationProjectionSchemaV1,
+		Scene: roleplay.NarrativeScene{
+			Title: "Harbor", Description: "FULL_PROJECTION_SENTINEL remains in code-owned state.",
+			ActiveCharacterName: "Bob",
+			Initiative: roleplay.SimulationInitiativeClock{
+				Round: 1, Turn: 1, FictionalTimeTick: 0,
+			},
+		},
 		Participants: []string{"Bob"},
 		Viewpoint:    roleplay.NarrativePersona{Name: "Bob", Summary: "The harbor watchman.", Voice: "Quiet.", Traits: []string{}, Goals: []string{}},
 		Meters:       []roleplay.NarrativeMeter{}, Inventory: []roleplay.NarrativeInventoryItem{},
@@ -66,20 +72,48 @@ func TestRoleplayChannelUsesOnlySelectedCharacterScopedKnowledge(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	cloak, err := assemblyline.NewContextCandidateAuthority(
+		"simulation_inventory", "CTX_3", "Inventory item rain cloak: a dry wool cloak (infinite uses).",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sword, err := assemblyline.NewContextCandidateAuthority(
+		"simulation_inventory", "CTX_4", "UNSELECTED_SWORD_SENTINEL is a ceremonial blade.",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	memory, err := assemblyline.NewContextCandidateAuthority(
+		"character_memory", "CTX_5", "Bob remembers that the rain cloak is fastened at his shoulder.",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	transcript, err := assemblyline.NewContextCandidateAuthority(
+		"conversation_exchange", "CTX_6", "UNSELECTED_TRANSCRIPT_SENTINEL describes an unrelated breakfast.",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
 	provider := &roleplayContextProviderProbe{
 		contextSet: contextcompiler.CandidateSet{
-			Optional: []assemblyline.ContextCandidateAuthority{relevant, unrelated},
+			Optional: []assemblyline.ContextCandidateAuthority{
+				relevant, unrelated, cloak, sword, memory, transcript,
+			},
 		},
 	}
 	contextSieve := &scriptedConversationContextStation{
 		terms:          []string{"harbor rain"},
-		relevantIDs:    []string{"CTX_1"},
+		relevantIDs:    []string{"CTX_3", "CTX_5"},
 		minimalContext: "must not run for fitting selected context",
 	}
 	kind := answerObjectiveKindStation()
 	conversation := &scriptedObjectiveConversationStation{text: "Bob closes the west gate."}
 	projected := 0
 	canon := &scriptedRoleplayCanonStation{facts: []string{"Bob closed the west gate."}}
+	ongoingAction := "Bob is closing the west gate."
+	actions := &scriptedRoleplayOngoingActionStation{actions: []*string{&ongoingAction}}
 	result, err := runObjectiveTurn(context.Background(), model.Job{
 		ID: 911, Pipeline: model.PipelineChat, Instruction: "Continue the scene.", Metadata: metadata,
 	}, provider, contextSieve, kind, conversation, &scriptedObjectiveAnswerStation{}, objectiveWorkflows{
@@ -113,13 +147,15 @@ func TestRoleplayChannelUsesOnlySelectedCharacterScopedKnowledge(t *testing.T) {
 			}
 			return preparation, projectedNarrative, nil
 		},
-		RoleplayCanon: canon,
+		RoleplayCanon:         canon,
+		RoleplayCanonDelta:    acceptAllRoleplayCanonFacts,
+		RoleplayOngoingAction: actions,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if kind.calls != 0 || provider.contextCalls != 1 || projected != 1 ||
-		canon.calls != 1 {
+		canon.calls != 2 {
 		t.Fatalf(
 			"classifier=%d context=%d projections=%d canon=%d",
 			kind.calls, provider.contextCalls,
@@ -136,19 +172,23 @@ func TestRoleplayChannelUsesOnlySelectedCharacterScopedKnowledge(t *testing.T) {
 		t.Fatalf("roleplay identity=%#v", conversation.input.RoleplayIdentity)
 	}
 	if len(conversation.input.Context.Capsules) != 1 ||
-		conversation.input.Context.Capsules[0].Content != relevant.Content ||
-		len(conversation.input.Context.Capsules[0].Sources) != 1 ||
-		conversation.input.Context.Capsules[0].Sources[0].CandidateID != "CTX_1" {
+		conversation.input.Context.Capsules[0].Content != cloak.Content+"\n\n"+memory.Content ||
+		len(conversation.input.Context.Capsules[0].Sources) != 2 ||
+		conversation.input.Context.Capsules[0].Sources[0].CandidateID != "CTX_3" ||
+		conversation.input.Context.Capsules[0].Sources[1].CandidateID != "CTX_5" {
 		t.Fatalf("selected roleplay context=%#v", conversation.input.Context)
 	}
 	if len(result.RoleplayResponses) != 1 ||
 		len(result.RoleplayResponses[0].Facts) != 1 ||
-		result.RoleplayResponses[0].Facts[0] != "Bob closed the west gate." {
+		result.RoleplayResponses[0].Facts[0] != "Bob closed the west gate." ||
+		result.RoleplayResponses[0].OngoingAction == nil ||
+		*result.RoleplayResponses[0].OngoingAction != ongoingAction {
 		t.Fatalf("persistable roleplay responses=%#v", result.RoleplayResponses)
 	}
-	if canon.input.AssistantResponse != "Bob closes the west gate." ||
+	if canon.input.Source.ExactContribution != "Bob closes the west gate." ||
+		canon.input.Source.Kind != assemblyline.RoleplayCanonSourceAssistantResponse ||
 		result.Output != "Bob closes the west gate." {
-		t.Fatalf("canon=%q output=%q", canon.input.AssistantResponse, result.Output)
+		t.Fatalf("canon=%#v output=%q", canon.input.Source, result.Output)
 	}
 	if len(result.RoleplayResponses[0].KnowledgeCharacterIDs) != 1 ||
 		result.RoleplayResponses[0].KnowledgeCharacterIDs[0] != viewpoint {
@@ -162,18 +202,25 @@ func TestRoleplayChannelUsesOnlySelectedCharacterScopedKnowledge(t *testing.T) {
 		t.Fatalf("fixed context retrieval terms=%#v preparation=%#v projection=%#v", provider.terms, provider.preparation, provider.projection)
 	}
 	if contextSieve.termCalls != 1 || contextSieve.relevanceCalls != 1 ||
-		contextSieve.minificationCalls != 0 || result.ModelCalls != 4 {
+		contextSieve.minificationCalls != 0 || result.ModelCalls != 6 {
 		t.Fatalf(
 			"sieve_calls=(%d,%d,%d) total_model_calls=%d",
 			contextSieve.termCalls, contextSieve.relevanceCalls,
 			contextSieve.minificationCalls, result.ModelCalls,
 		)
 	}
+	if len(contextSieve.relevanceInputs) != 1 ||
+		len(contextSieve.relevanceInputs[0].CandidateAuthorities) != 6 {
+		t.Fatalf("per-item relevance input=%#v", contextSieve.relevanceInputs)
+	}
 	raw, err := json.Marshal(conversation.input)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, forbidden := range []string{"UNRELATED_LIGHTHOUSE_SENTINEL", "FULL_PROJECTION_SENTINEL"} {
+	for _, forbidden := range []string{
+		"UNRELATED_LIGHTHOUSE_SENTINEL", "UNSELECTED_SWORD_SENTINEL",
+		"UNSELECTED_TRANSCRIPT_SENTINEL", "FULL_PROJECTION_SENTINEL", relevant.Content,
+	} {
 		if strings.Contains(string(raw), forbidden) {
 			t.Fatalf("irrelevant or character-unknown authority %q leaked into response input: %s", forbidden, raw)
 		}
@@ -198,13 +245,15 @@ func TestRoleplayChannelUsesOnlySelectedCharacterScopedKnowledge(t *testing.T) {
 		"response": conversationPrompt,
 		"canon":    canonPrompt,
 	} {
-		for _, forbidden := range []string{"UNRELATED_LIGHTHOUSE_SENTINEL", "FULL_PROJECTION_SENTINEL"} {
+		for _, forbidden := range []string{
+			"UNRELATED_LIGHTHOUSE_SENTINEL", "UNSELECTED_SWORD_SENTINEL",
+			"UNSELECTED_TRANSCRIPT_SENTINEL", "FULL_PROJECTION_SENTINEL", relevant.Content,
+		} {
 			if strings.Contains(prompt, forbidden) {
 				t.Fatalf("rendered %s prompt leaked %q: %s", promptName, forbidden, prompt)
 			}
 		}
-		if !strings.Contains(prompt, relevant.Content) ||
-			!strings.Contains(prompt, `"capsules":["Rain began over the harbor before Bob's watch."]`) ||
+		if !strings.Contains(prompt, cloak.Content) || !strings.Contains(prompt, memory.Content) ||
 			strings.Contains(prompt, "CTX_") {
 			t.Fatalf("rendered %s prompt lacks the exact compiled selection: %s", promptName, prompt)
 		}
@@ -240,9 +289,19 @@ func TestRoleplaySlashCommandBytesAreAbsentFromRenderedNarrativeAndCanonPrompts(
 			t.Fatal(err)
 		}
 		inputs = append(inputs, conversationJob)
+		canonSource, err := assemblyline.NewRoleplayAssistantCanonSource(
+			"Ari", "Ari acknowledges the settled scene.",
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		canonAntecedent := assemblyline.RoleplayCanonAntecedent{
+			PersonaKind: roleplay.UserPersonaNarrator, PersonaName: roleplay.NarratorPersonaName,
+			ContributionKind:    roleplay.UserContributionCommand,
+			ContributionContext: visible,
+		}
 		canonJob, err := assemblyline.NewRoleplayCanonExtractionJob(assemblyline.RoleplayCanonExtractionInput{
-			ExactInstruction: visible, AssistantResponse: "Ari acknowledges the settled scene.",
-			RespondingCharacterName: "Ari", UserTurn: userTurn,
+			Source: canonSource, AntecedentUserTurn: &canonAntecedent,
 			Context: assemblyline.ObjectiveContext{Capsules: []assemblyline.ObjectiveContextCapsule{}},
 		})
 		if err != nil {

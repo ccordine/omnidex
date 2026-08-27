@@ -125,6 +125,36 @@ func TestRoleplaySimulationUnconfiguredStateDoesNotQueryScenePages(t *testing.T)
 	}
 }
 
+func TestRoleplayComposerPersonaQueryRejectsInexactOrIneligibleAuthority(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name  string
+		query string
+		want  int
+	}{
+		{name: "empty", query: "", want: http.StatusBadRequest},
+		{name: "malformed", query: "rpc_not-an-identity", want: http.StatusBadRequest},
+		{name: "outside scene", query: "rpc_99999999999999999999999999999999", want: http.StatusConflict},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			simulation := configuredRoleplayHTTPTestStore()
+			server := newRoleplayHTTPTestServer(t, simulation)
+			request := httptest.NewRequest(
+				http.MethodGet,
+				"/v1/ui/chat/roleplay?channel_id=story-http&composer_persona_character_id="+test.query,
+				nil,
+			)
+			response := httptest.NewRecorder()
+			server.Handler().ServeHTTP(response, request)
+			if response.Code != test.want {
+				t.Fatalf("status=%d want=%d body=%s", response.Code, test.want, response.Body.String())
+			}
+		})
+	}
+}
+
 func TestWorldLocalCharacterCreationRouteIsRemoved(t *testing.T) {
 	t.Parallel()
 	simulation := newRoleplaySimulationTestStore(roleplayHTTPChannelID)
@@ -193,7 +223,9 @@ func configuredRoleplayHTTPTestStore() *roleplaySimulationTestStore {
 	store.scene = &roleplay.SceneSheet{
 		ID: "rps_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", WorldID: store.world.ID,
 		Title: "Archive Shift", Description: "A task-neutral scene.", Revision: 9,
-		ActiveCharacterID: roleplayHTTPActive, CreatedAt: now, UpdatedAt: now,
+		ActiveCharacterID: roleplayHTTPActive,
+		Initiative:        roleplay.SimulationInitiativeClock{Round: 2, Turn: 9, FictionalTimeTick: 8},
+		CreatedAt:         now, UpdatedAt: now,
 	}
 	store.characters.Items = []roleplay.SimulationCharacterSummary{{
 		ID: roleplayHTTPActive, WorldID: store.world.ID, Name: "Active Archivist", CreatedAt: now,

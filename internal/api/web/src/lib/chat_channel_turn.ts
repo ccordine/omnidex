@@ -51,6 +51,7 @@ export class ChatChannelTurnCoordinator {
 
   async reconcile(receipt: ChatChannelTurnReceipt): Promise<void> {
     const settled = await Promise.allSettled([receipt.acceptedTranscript, receipt.completion]);
+    const acceptedTranscriptFailure = settled[0].status === "rejected" ? settled[0].reason : undefined;
     const completionFailure = settled[1].status === "rejected" ? settled[1].reason : undefined;
     let refreshFailure: unknown;
     if (this.host.isSelected(receipt.channelID)) {
@@ -67,6 +68,7 @@ export class ChatChannelTurnCoordinator {
       }
     }
     if (completionFailure !== undefined) throw completionFailure;
+    if (acceptedTranscriptFailure !== undefined) throw acceptedTranscriptFailure;
     if (refreshFailure !== undefined) throw refreshFailure;
   }
 
@@ -75,13 +77,15 @@ export class ChatChannelTurnCoordinator {
       await this.host.loadTranscript(channelID, messageID);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      this.host.setStatus(`Message accepted as job #${jobID}, but its transcript refresh failed: ${message}`, "error");
+      const failure = `Message accepted as job #${jobID}, but its transcript refresh failed: ${message}`;
+      this.host.setStatus(failure, "error");
       this.host.addEvent("channel_accepted_transcript_failed", {
         channel_id: channelID,
         message_id: messageID,
         job_id: jobID,
         error: message,
       });
+      throw new Error(failure);
     }
   }
 }

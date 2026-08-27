@@ -99,11 +99,8 @@ func materializeChannelCompletionTx(
 		return err
 	}
 	output := command.Output
-	if strings.TrimSpace(output) == "" {
-		return fmt.Errorf("channel completion output is required")
-	}
-	if err := model.ValidateChannelMessage(model.ChannelMessageRoleAssistant, output); err != nil {
-		return fmt.Errorf("channel completion output: %w", err)
+	if err := validateChannelCompletionOutput(command); err != nil {
+		return err
 	}
 	var userContent string
 	var storedMode model.ChannelMode
@@ -139,6 +136,16 @@ func materializeChannelCompletionTx(
 			ChannelID:     binding.ChannelID, UserMessageID: binding.UserMessageID, JobID: job.ID,
 		}); err != nil {
 			return fmt.Errorf("materialize roleplay simulation turn: %w", err)
+		}
+	}
+	if binding.Mode == model.ChannelModeRoleplay && command.RoleplayUserOngoingAction != nil {
+		userAction := command.RoleplayUserOngoingAction
+		if _, err := roleplay.AppendUserOngoingActionResolutionTx(
+			ctx, tx, string(command.OperationID),
+			binding.RoleplaySimulationPreparationID, string(userAction.CharacterID),
+			userAction.PreviousOngoingAction, userAction.OngoingAction,
+		); err != nil {
+			return fmt.Errorf("append roleplay user ongoing action: %w", err)
 		}
 	}
 	if binding.Mode == model.ChannelModeRoleplay && len(command.RoleplayResponses) != 0 {
@@ -179,6 +186,24 @@ func materializeChannelCompletionTx(
 	}
 	_, err = tx.Exec(ctx, `UPDATE ai_channels SET updated_at=NOW() WHERE id=$1`, binding.ChannelID)
 	return err
+}
+
+func validateChannelCompletionOutput(command CompleteStepCommand) error {
+	if strings.TrimSpace(command.Output) == "" {
+		return fmt.Errorf("channel completion output is required")
+	}
+	if len(command.RoleplayResponses) != 0 {
+		if command.Output != RenderRoleplayResponseRound(command.RoleplayResponses) {
+			return fmt.Errorf("channel completion output differs from its ordered roleplay response round")
+		}
+		return nil
+	}
+	if err := model.ValidateChannelMessage(
+		model.ChannelMessageRoleAssistant, command.Output,
+	); err != nil {
+		return fmt.Errorf("channel completion output: %w", err)
+	}
+	return nil
 }
 
 func roleplayTurnAdvanceOperationID(operationID LifecycleOperationID) string {

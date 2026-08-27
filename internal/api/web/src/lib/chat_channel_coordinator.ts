@@ -40,7 +40,6 @@ export interface ChatChannelHost extends ChatChannelCreationFlowHost {
 
 export type NeutralChannelSubmitResult =
   | { kind: "submitted"; turn: ChatChannelTurnReceipt }
-  | { kind: "creation_failed" }
   | { kind: "roleplay_setup_required" };
 
 export class ChatChannelCoordinator {
@@ -276,14 +275,14 @@ export class ChatChannelCoordinator {
   async createAndSubmit(prompt: string): Promise<NeutralChannelSubmitResult> {
     return this.transitions.run(async () => {
       if (this.selectedChannelID) throw new Error("Neutral channel creation requires neutral channel authority.");
-      if (!await this.creation.create()) return { kind: "creation_failed" };
+      await this.creation.create();
       if (!this.host.roleplayConfigured()) return { kind: "roleplay_setup_required" };
       return { kind: "submitted", turn: await this.acceptTurnLocked(prompt) };
     });
   }
 
-  async createConversation(): Promise<boolean> {
-    return this.transitions.run(() => this.creation.create());
+  async createConversation(): Promise<void> {
+    await this.transitions.run(() => this.creation.create());
   }
 
   async submit(prompt: string, roleplayTurn?: RoleplayTurnInput): Promise<ChatChannelTurnReceipt> {

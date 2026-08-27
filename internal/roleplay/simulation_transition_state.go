@@ -18,7 +18,8 @@ func lockSimulationSceneTx(
 	worldID, sceneID string,
 ) (lockedSimulationScene, error) {
 	scene, err := scanSceneSheet(tx.QueryRow(ctx, `
-		SELECT id,world_id,title,description,revision,current_character_id,created_at,updated_at
+		SELECT id,world_id,title,description,revision,current_character_id,
+		       initiative_round,initiative_turn,fictional_time_tick,created_at,updated_at
 		FROM roleplay_current_scenes
 		WHERE world_id=$1 AND id=$2
 		FOR UPDATE
@@ -123,6 +124,39 @@ func updateSceneRevisionTx(
 	`, sceneID, expected, activeCharacterID).Scan(&revision)
 	if err == pgx.ErrNoRows {
 		return 0, fmt.Errorf("%w: scene revision changed", ErrSimulationStaleRevision)
+	}
+	return revision, err
+}
+
+func advanceSceneInitiativeTx(
+	ctx context.Context,
+	tx pgx.Tx,
+	sceneID string,
+	expectedRevision int64,
+	before SimulationInitiativeClock,
+	after SimulationInitiativeClock,
+	activeCharacterID string,
+) (int64, error) {
+	if err := before.Validate(); err != nil {
+		return 0, err
+	}
+	if err := after.Validate(); err != nil {
+		return 0, err
+	}
+	var revision int64
+	err := tx.QueryRow(ctx, `
+		UPDATE roleplay_current_scenes
+		SET revision=revision+1,current_character_id=$7,
+		    initiative_round=$4,initiative_turn=$5,fictional_time_tick=$6,
+		    updated_at=NOW()
+		WHERE id=$1 AND revision=$2
+		  AND initiative_round=$3 AND initiative_turn=$8 AND fictional_time_tick=$9
+		RETURNING revision
+	`, sceneID, expectedRevision, before.Round, after.Round, after.Turn,
+		after.FictionalTimeTick, activeCharacterID, before.Turn, before.FictionalTimeTick,
+	).Scan(&revision)
+	if err == pgx.ErrNoRows {
+		return 0, fmt.Errorf("%w: scene initiative changed", ErrSimulationStaleRevision)
 	}
 	return revision, err
 }

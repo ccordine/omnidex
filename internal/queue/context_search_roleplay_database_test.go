@@ -263,14 +263,22 @@ func appendRoleplaySearchTransition(
 	if err != nil {
 		t.Fatal(err)
 	}
+	var observerPayload []byte
+	if err := repository.pool.QueryRow(t.Context(), `
+		SELECT jsonb_agg(character_id ORDER BY turn_position,character_id)
+		FROM roleplay_scene_participants
+		WHERE world_id=$1 AND scene_id=$2
+	`, worldID, sceneID).Scan(&observerPayload); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := repository.pool.Exec(t.Context(), `
 		INSERT INTO roleplay_simulation_transitions (
 			operation_id,world_id,scene_id,actor_character_id,
 			before_revision,after_revision,exact_action,action_kind,command_key,
-			request_sha256,result,created_at
-		) VALUES ($1,$2,$3,$4,1,2,'','automatic','',$5,$6::jsonb,$7)
+			request_sha256,result,observer_character_ids,created_at
+		) VALUES ($1,$2,$3,$4,1,2,'','automatic','',$5,$6::jsonb,$7::jsonb,$8)
 	`, operationID, worldID, sceneID, actorCharacterID,
-		strings.Repeat("0", 64), payload, createdAt); err != nil {
+		strings.Repeat("0", 64), payload, observerPayload, createdAt); err != nil {
 		t.Fatal(err)
 	}
 }

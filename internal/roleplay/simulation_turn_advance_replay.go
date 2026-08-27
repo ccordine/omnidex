@@ -19,23 +19,38 @@ func loadTurnAdvanceTx(
 		preparationID, worldID, sceneID        string
 		previousCharacterID, activeCharacterID string
 		jobID, beforeRevision, afterRevision   int64
+		beforeInitiative, afterInitiative      SimulationInitiativeClock
 		requestHash                            string
 		participantPayload                     []byte
+		userTurnPayload                        []byte
 		narrativeFingerprint                   string
 		payload                                []byte
 		createdAt                              time.Time
 	}
 	var row advanceRow
 	err := tx.QueryRow(ctx, `
-		SELECT preparation_id,job_id,world_id,scene_id,before_revision,after_revision,
-		       previous_character_id,active_character_id,participant_character_ids,
-		       narrative_fingerprint,request_sha256,result,created_at
-		FROM roleplay_simulation_turn_advances WHERE operation_id=$1
+		SELECT advance.preparation_id,advance.job_id,advance.world_id,advance.scene_id,
+		       advance.before_revision,advance.after_revision,
+		       advance.previous_character_id,advance.active_character_id,
+		       advance.participant_character_ids,
+		       advance.before_initiative_round,advance.before_initiative_turn,
+		       advance.before_fictional_time_tick,advance.after_initiative_round,
+		       advance.after_initiative_turn,advance.after_fictional_time_tick,
+		       advance.narrative_fingerprint,advance.request_sha256,advance.result,
+		       preparation.result->'user_turn',advance.created_at
+		FROM roleplay_simulation_turn_advances AS advance
+		JOIN roleplay_simulation_turn_preparations AS preparation
+		  ON preparation.operation_id=advance.preparation_id
+		WHERE advance.operation_id=$1
 	`, operationID).Scan(
 		&row.preparationID, &row.jobID, &row.worldID, &row.sceneID,
 		&row.beforeRevision, &row.afterRevision, &row.previousCharacterID,
-		&row.activeCharacterID, &row.participantPayload, &row.narrativeFingerprint,
-		&row.requestHash, &row.payload, &row.createdAt,
+		&row.activeCharacterID, &row.participantPayload,
+		&row.beforeInitiative.Round, &row.beforeInitiative.Turn,
+		&row.beforeInitiative.FictionalTimeTick, &row.afterInitiative.Round,
+		&row.afterInitiative.Turn, &row.afterInitiative.FictionalTimeTick,
+		&row.narrativeFingerprint,
+		&row.requestHash, &row.payload, &row.userTurnPayload, &row.createdAt,
 	)
 	if err == pgx.ErrNoRows {
 		return SimulationTurnAdvanceResult{}, false, nil
@@ -54,22 +69,30 @@ func loadTurnAdvanceTx(
 	if err := json.Unmarshal(row.participantPayload, &participantIDs); err != nil {
 		return SimulationTurnAdvanceResult{}, false, fmt.Errorf("decode simulation turn advance participants: %w", err)
 	}
+	var userTurn UserTurnAuthority
+	if err := json.Unmarshal(row.userTurnPayload, &userTurn); err != nil {
+		return SimulationTurnAdvanceResult{}, false, fmt.Errorf("decode simulation turn advance user authority: %w", err)
+	}
+	if err := userTurn.Validate(); err != nil {
+		return SimulationTurnAdvanceResult{}, false, fmt.Errorf("persisted simulation turn advance user authority: %w", err)
+	}
 	if result.OperationID != operationID || result.PreparationID != row.preparationID ||
 		result.WorldID != row.worldID || result.SceneID != row.sceneID ||
 		result.PreviousCharacterID != row.previousCharacterID || result.ActiveCharacterID != row.activeCharacterID ||
 		result.BeforeRevision != row.beforeRevision || result.AfterRevision != row.afterRevision ||
+		result.BeforeInitiative != row.beforeInitiative || result.AfterInitiative != row.afterInitiative ||
 		!slices.Equal(result.ParticipantCharacterIDs, participantIDs) ||
 		result.NarrativeFingerprint != row.narrativeFingerprint ||
 		!result.CreatedAt.Equal(row.createdAt) {
 		return SimulationTurnAdvanceResult{}, false, fmt.Errorf("persisted simulation turn advance does not match its row authority")
 	}
-	if err := validateAdvanceReplayResult(result); err != nil {
+	if err := validateAdvanceReplayResult(result, userTurn); err != nil {
 		return SimulationTurnAdvanceResult{}, false, err
 	}
 	return result, true, nil
 }
 
-func validateAdvanceReplayResult(result SimulationTurnAdvanceResult) error {
+func validateAdvanceReplayResult(result SimulationTurnAdvanceResult, userTurn UserTurnAuthority) error {
 	if validateIdentity(result.OperationID, transitionIdentity) != nil ||
 		validateIdentity(result.PreparationID, transitionIdentity) != nil ||
 		validateIdentity(result.WorldID, worldIdentity) != nil ||
@@ -99,6 +122,17 @@ func validateAdvanceReplayResult(result SimulationTurnAdvanceResult) error {
 	}
 	if !previousFound || !activeFound {
 		return fmt.Errorf("persisted simulation turn advance character is not a participant")
+	}
+	excludedCharacterID := ""
+	if userTurn.IsCharacter() {
+		excludedCharacterID = userTurn.CharacterID
+	}
+	if err := validateSimulationInitiativeAdvance(
+		result.BeforeInitiative, result.AfterInitiative,
+		result.PreviousCharacterID, result.ActiveCharacterID, result.ParticipantCharacterIDs,
+		excludedCharacterID,
+	); err != nil {
+		return fmt.Errorf("persisted simulation turn advance initiative: %w", err)
 	}
 	return nil
 }

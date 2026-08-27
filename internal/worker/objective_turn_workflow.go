@@ -54,7 +54,7 @@ func runObjectiveTurn(
 		if authority.RoleplayInputKind == roleplay.SimulationTurnExternalCommand {
 			authority, contextCalls, err := compileObjectiveTurnContext(
 				ctx, job, authority, candidateProvider, contextStation,
-				&preparation, &projection,
+				&preparation, &projection, nil,
 			)
 			if err != nil {
 				return objectiveTurnResult{}, err
@@ -67,10 +67,12 @@ func runObjectiveTurn(
 			ctx, job, authority, candidateProvider, contextStation, conversationStation,
 			preparation,
 			workflows.RoleplayCanon,
+			workflows.RoleplayCanonDelta,
+			workflows.RoleplayOngoingAction,
 		)
 	}
 	authority, contextCalls, err := compileObjectiveTurnContext(
-		ctx, job, authority, candidateProvider, contextStation, nil, nil,
+		ctx, job, authority, candidateProvider, contextStation, nil, nil, nil,
 	)
 	if err != nil {
 		return objectiveTurnResult{}, err
@@ -111,7 +113,7 @@ func runObjectiveTurn(
 		return runObjectiveWorkspaceMutation(ctx, authority, result, workflows.WorkspaceMutation)
 	}
 	if decision.Kind == assemblyline.ObjectiveKindAnswer || decision.Kind == assemblyline.ObjectiveKindStory {
-		return runObjectiveConversationResponse(ctx, authority, result, conversationStation, "", nil)
+		return runObjectiveConversationResponse(ctx, authority, result, conversationStation, "")
 	}
 	if decision.Kind == assemblyline.ObjectiveKindExternalAnswer {
 		return runObjectiveExternalAnswer(ctx, authority, result, workflows.ExternalAnswer)

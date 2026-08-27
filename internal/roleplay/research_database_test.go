@@ -4,8 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/jackc/pgx/v5"
@@ -214,8 +212,9 @@ func persistResearchDatabaseFixture(
 		"roleplay_input_kind":                preparation.InputKind,
 		"roleplay_participant_character_ids": preparation.ParticipantCharacterIDs,
 		"roleplay_narrative_fingerprint":     preparation.NarrativeFingerprint,
-		"roleplay_viewpoint_character_id":    preparation.ActiveCharacterID,
+		"roleplay_viewpoint_character_id":    preparation.ResponderRoutes[0].CharacterID,
 		"roleplay_generation_config":         preparation.GenerationConfig,
+		"roleplay_responders":                preparation.ResponderRoutes,
 		"roleplay_user_turn":                 preparation.UserTurn,
 	})
 	if err != nil {
@@ -255,27 +254,13 @@ func findResearchPreparationForTest(
 
 func installResearchTestSchema(t *testing.T, pool *pgxpool.Pool) {
 	t.Helper()
-	ctx := context.Background()
-	if _, err := pool.Exec(ctx, `
-		CREATE TABLE evidence (
-			id BIGSERIAL PRIMARY KEY,job_id BIGINT,step_id BIGINT,kind TEXT,
-			source_type TEXT,source_ref TEXT,payload_json JSONB NOT NULL,
-			completion_operation_id TEXT,completion_evidence_index INTEGER
-		);
-		CREATE TABLE step_completion_evidence_sets (
-			operation_id TEXT PRIMARY KEY,job_id BIGINT NOT NULL,
-			evidence_count INTEGER NOT NULL
-		);
-		CREATE FUNCTION objective_completion_evidence_set_is_valid(TEXT)
-		RETURNS BOOLEAN AS 'SELECT TRUE' LANGUAGE SQL;
-	`); err != nil {
+	var installed bool
+	if err := pool.QueryRow(context.Background(), `
+		SELECT to_regclass('roleplay_research_turns') IS NOT NULL
+	`).Scan(&installed); err != nil {
 		t.Fatal(err)
 	}
-	body, err := os.ReadFile(filepath.Join("..", "..", "migrations", "119_roleplay_research_authority.sql"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := pool.Exec(ctx, string(body)); err != nil {
-		t.Fatalf("install research migration: %v", err)
+	if !installed {
+		t.Fatal("latest roleplay test schema omitted research authority")
 	}
 }

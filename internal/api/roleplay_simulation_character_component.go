@@ -71,7 +71,7 @@ func renderRoleplaySceneDraftParticipantForm(
 
 func renderRoleplayInventory(state roleplaySimulationComponentState) (string, error) {
 	var body strings.Builder
-	body.WriteString(roleplaySectionStart("Inventory", "Items held by the current scene's active character."))
+	body.WriteString(roleplaySectionStart("Inventory", "Items held by the current initiative character."))
 	if len(state.Inventory) == 0 {
 		body.WriteString(chatEmptyState("The inventory is empty."))
 	}

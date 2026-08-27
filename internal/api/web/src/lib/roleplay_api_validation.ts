@@ -6,6 +6,9 @@ import type {
 } from "./roleplay_api";
 
 export function requireRoleplayComponent(payload: Record<string, unknown>): RoleplayComponentResponse {
+  if (Object.prototype.hasOwnProperty.call(payload, "composer_persona_character_id")) {
+    throw new Error("Roleplay component cannot echo browser composer selection authority.");
+  }
   const channelID = requireID(payload.channel_id, "response channel", /^[a-z0-9][a-z0-9_.:-]{0,95}$/);
   const worldID = roleplayID(payload.world_id, "response world", "rpw");
   if (typeof payload.configured !== "boolean") throw new Error("Roleplay response configured must be boolean.");
@@ -23,13 +26,6 @@ export function requireRoleplayComponent(payload: Record<string, unknown>): Role
     result.scene_revision = requireInteger(payload.scene_revision, "Scene revision", 1, Number.MAX_SAFE_INTEGER);
   } else if (payload.scene_revision !== undefined) {
     throw new Error("Unconfigured roleplay response cannot carry a scene revision.");
-  }
-  if (payload.composer_persona_character_id !== undefined) {
-    result.composer_persona_character_id = roleplayID(
-      payload.composer_persona_character_id,
-      "Composer persona character",
-      "rpc",
-    );
   }
   return result;
 }

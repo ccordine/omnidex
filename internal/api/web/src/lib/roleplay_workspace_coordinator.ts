@@ -14,7 +14,7 @@ export interface RoleplayWorkspaceHost {
   selectedChannelID(): string;
   firstChannelID(): string;
   selectChannelID(id: string): Promise<void>;
-  createWorld(): Promise<boolean>;
+  createWorld(): Promise<void>;
   refreshRoleplay(): Promise<void>;
   setStatus(text: string, tone: StatusTone): void;
   addEvent(type: string, details?: Record<string, unknown>): void;
@@ -64,7 +64,7 @@ export class RoleplayWorkspaceCoordinator {
     let created = false;
     try {
       await withRoleplayFormFeedback(form, async () => {
-        if (!await this.host.createWorld()) return;
+        await this.host.createWorld();
         form.reset();
         await this.refresh();
         this.host.setStatus("world created", "ready");

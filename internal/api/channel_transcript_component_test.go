@@ -98,7 +98,9 @@ func TestChannelTranscriptComponentShowsTypedUserContributionAndRecoverableFailu
 		`provider failed &lt;loudly&gt;`, `data-action="chat#restoreFailedTurn"`,
 		`data-roleplay-persona-kind="character"`,
 		`data-roleplay-character-id="rpc_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"`,
-		`data-roleplay-contribution-kind="action_dialogue"`, `Restore and retry`,
+		`data-roleplay-contribution-kind="action_dialogue"`,
+		`data-roleplay-turn-parts="[{&#34;kind&#34;:&#34;action&#34;,&#34;text&#34;:&#34;I take Mara&#39;s hand.&#34;},{&#34;kind&#34;:&#34;message&#34;,&#34;text&#34;:&#34;Stay.&#34;}]"`,
+		`Restore and retry`,
 	} {
 		if !strings.Contains(bundle, required) {
 			t.Errorf("failed typed roleplay turn lacks %q: %s", required, bundle)

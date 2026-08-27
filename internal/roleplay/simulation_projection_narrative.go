@@ -93,14 +93,23 @@ func projectSimulationNarrativeTx(
 	if err != nil {
 		return emptyContent, emptyAuthority, err
 	}
-	events, transitionIDs, err := loadNarrativeEventsTx(ctx, tx, worldID, scene.ID)
+	events, transitionIDs, err := loadNarrativeEventsTx(ctx, tx, worldID, scene.ID, viewpointID)
+	if err != nil {
+		return emptyContent, emptyAuthority, err
+	}
+	ongoingActions, ongoingActionStateIDs, ongoingActionCharacterIDs, err :=
+		loadCurrentOngoingActionsTx(ctx, tx, worldID, scene.ID)
 	if err != nil {
 		return emptyContent, emptyAuthority, err
 	}
 	content := NarrativeSimulationProjection{
-		Schema:       NarrativeSimulationProjectionSchemaV1,
-		Scene:        NarrativeScene{Title: scene.Title, Description: scene.Description, ActiveCharacterName: activeName},
-		Participants: participantNames,
+		Schema: NarrativeSimulationProjectionSchemaV1,
+		Scene: NarrativeScene{
+			Title: scene.Title, Description: scene.Description,
+			ActiveCharacterName: activeName, Initiative: scene.Initiative,
+		},
+		Participants:   participantNames,
+		OngoingActions: ongoingActions,
 		Viewpoint: NarrativePersona{Name: viewpointName, Summary: persona.Sheet.Summary,
 			Voice: persona.Sheet.Voice, Traits: persona.Sheet.Traits, Goals: persona.Sheet.Goals},
 		Meters:       narrativeMeters(meters),
@@ -114,7 +123,9 @@ func projectSimulationNarrativeTx(
 		ViewpointID: viewpointID, ParticipantIDs: participantIDs,
 		MeterKeys: meterKeys(meters), InventoryItemIDs: inventoryIDs(inventory),
 		CanonEventIDs: canonIDs(canon), MemoryIDs: memoryIDs(memories),
-		TransitionIDs: transitionIDs,
+		TransitionIDs:             transitionIDs,
+		OngoingActionStateIDs:     ongoingActionStateIDs,
+		OngoingActionCharacterIDs: ongoingActionCharacterIDs,
 	}
 	if err := content.Validate(); err != nil {
 		return emptyContent, emptyAuthority, fmt.Errorf("projected narrative simulation content is invalid: %w", err)
@@ -133,7 +144,8 @@ func simulationNarrativeFingerprintTx(ctx context.Context, tx pgx.Tx, worldID, v
 
 func projectCurrentSceneTx(ctx context.Context, tx pgx.Tx, worldID string) (SceneSheet, error) {
 	scene, err := scanSceneSheet(tx.QueryRow(ctx, `
-		SELECT id,world_id,title,description,revision,current_character_id,created_at,updated_at
+		SELECT id,world_id,title,description,revision,current_character_id,
+		       initiative_round,initiative_turn,fictional_time_tick,created_at,updated_at
 		FROM roleplay_current_scenes WHERE world_id=$1
 	`, worldID))
 	if err == pgx.ErrNoRows {

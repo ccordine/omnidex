@@ -71,9 +71,9 @@ func validateContextExactInstruction(value string) error {
 }
 
 func validateCanonicalContextRetrievalConcepts(concepts []string) error {
-	if len(concepts) < 1 || len(concepts) > MaxContextSearchTerms {
+	if concepts == nil || len(concepts) > MaxContextSearchTerms {
 		return fmt.Errorf(
-			"context relevance requires 1..%d canonical retrieval concepts",
+			"context relevance requires an explicit array of 0..%d canonical retrieval concepts",
 			MaxContextSearchTerms,
 		)
 	}

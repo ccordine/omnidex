@@ -173,8 +173,9 @@ func prepareAndBindTestTurn(
 		"roleplay_scene_revision": authority.SceneRevision, "roleplay_input_kind": authority.InputKind,
 		"roleplay_participant_character_ids": authority.ParticipantCharacterIDs,
 		"roleplay_narrative_fingerprint":     authority.NarrativeFingerprint,
-		"roleplay_viewpoint_character_id":    authority.ActiveCharacterID,
+		"roleplay_viewpoint_character_id":    authority.ResponderRoutes[0].CharacterID,
 		"roleplay_generation_config":         authority.GenerationConfig,
+		"roleplay_responders":                authority.ResponderRoutes,
 		"roleplay_user_turn":                 authority.UserTurn,
 	})
 	if err != nil {
@@ -214,9 +215,26 @@ func insertNarratorRoleplayUserMessage(
 	channelID string,
 	exactText string,
 	contribution UserContributionKind,
-) {
+) string {
 	t.Helper()
 	ctx := context.Background()
+	parts := []UserTurnPart{}
+	storedText := exactText
+	switch contribution {
+	case UserContributionCommand:
+	case UserContributionNarration:
+		parts = append(parts, UserTurnPart{Kind: UserTurnPartEvent, Text: exactText})
+		storedText = "[Event]\n" + exactText
+	case UserContributionDirection:
+		parts = append(parts, UserTurnPart{Kind: UserTurnPartMessage, Text: exactText})
+		storedText = "[Message]\n" + exactText
+	default:
+		t.Fatalf("narrator database fixture contribution %q requires explicit ordered parts", contribution)
+	}
+	partsPayload, err := json.Marshal(parts)
+	if err != nil {
+		t.Fatal(err)
+	}
 	tx, err := pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		t.Fatal(err)
@@ -225,22 +243,23 @@ func insertNarratorRoleplayUserMessage(
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO ai_channel_messages (id,channel_id,role,content)
 		VALUES ($1,$2,'user',$3)
-	`, messageID, channelID, exactText); err != nil {
+	`, messageID, channelID, storedText); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO roleplay_user_turns (
 			user_message_id,channel_id,world_id,persona_kind,persona_name,
-			contribution_kind,exact_text
+			contribution_kind,exact_text,parts
 		)
-		SELECT $1,$2,world.id,'narrator','Narrator',$4,$3
+		SELECT $1,$2,world.id,'narrator','Narrator',$4,$3,$5::jsonb
 		FROM roleplay_worlds AS world WHERE world.channel_id=$2
-	`, messageID, channelID, exactText, contribution); err != nil {
+	`, messageID, channelID, storedText, contribution, string(partsPayload)); err != nil {
 		t.Fatal(err)
 	}
 	if err := tx.Commit(ctx); err != nil {
 		t.Fatal(err)
 	}
+	return storedText
 }
 
 func mustTransitionID(t *testing.T) string {

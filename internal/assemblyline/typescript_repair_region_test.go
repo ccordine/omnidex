@@ -149,6 +149,7 @@ func TestLocalizedTypeScriptRepairHasNoStructuredResponsePath(t *testing.T) {
 		"typescript_repair_region.go",
 		"typescript_prompt.go",
 		"portable_job_render.go",
+		"portable_job_source_render.go",
 		"../worker/llm_response_contract.go",
 		"../worker/v3_coding_typescript_fragment_worker.go",
 	} {

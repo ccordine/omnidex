@@ -65,15 +65,17 @@ type SimulationTurnMaterializationRequest struct {
 }
 
 type SimulationTurnAdvanceResult struct {
-	OperationID             string    `json:"operation_id"`
-	PreparationID           string    `json:"preparation_id"`
-	WorldID                 string    `json:"world_id"`
-	SceneID                 string    `json:"scene_id"`
-	PreviousCharacterID     string    `json:"previous_character_id"`
-	ActiveCharacterID       string    `json:"active_character_id"`
-	BeforeRevision          int64     `json:"before_revision"`
-	AfterRevision           int64     `json:"after_revision"`
-	ParticipantCharacterIDs []string  `json:"participant_character_ids"`
-	NarrativeFingerprint    string    `json:"narrative_fingerprint"`
-	CreatedAt               time.Time `json:"created_at"`
+	OperationID             string                    `json:"operation_id"`
+	PreparationID           string                    `json:"preparation_id"`
+	WorldID                 string                    `json:"world_id"`
+	SceneID                 string                    `json:"scene_id"`
+	PreviousCharacterID     string                    `json:"previous_character_id"`
+	ActiveCharacterID       string                    `json:"active_character_id"`
+	BeforeRevision          int64                     `json:"before_revision"`
+	AfterRevision           int64                     `json:"after_revision"`
+	BeforeInitiative        SimulationInitiativeClock `json:"before_initiative"`
+	AfterInitiative         SimulationInitiativeClock `json:"after_initiative"`
+	ParticipantCharacterIDs []string                  `json:"participant_character_ids"`
+	NarrativeFingerprint    string                    `json:"narrative_fingerprint"`
+	CreatedAt               time.Time                 `json:"created_at"`
 }

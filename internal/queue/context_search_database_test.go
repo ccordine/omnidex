@@ -34,7 +34,7 @@ func TestSearchConversationContextRecordsFindsOlderSameChannelAuthority(t *testi
 	relevantMessage, _ := completeContextSearchTurn(
 		t, repository, channel.ID,
 		"Rotate the cobalt antenna toward Earth.",
-		"The cobalt antenna now points toward Earth.",
+		"Alignment is complete with the aphelion confirmation.",
 	)
 	for index := 0; index < 9; index++ {
 		completeContextSearchTurn(
@@ -47,27 +47,25 @@ func TestSearchConversationContextRecordsFindsOlderSameChannelAuthority(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	records, err := repository.SearchConversationContextRecords(
-		ctx, currentJob, []string{"cobalt antenna"}, 8,
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(records) != 2 {
-		t.Fatalf("searched records=%#v, want the old same-channel exchange only", records)
-	}
-	wantSource := fmt.Sprintf("channel-message-%d", relevantMessage.ID)
-	seenUser := false
-	for _, record := range records {
+	wantSourcePrefix := fmt.Sprintf("channel-message-%d-through-", relevantMessage.ID)
+	for _, terms := range [][]string{{"cobalt antenna"}, {"aphelion confirmation"}} {
+		records, err := repository.SearchConversationContextRecords(ctx, currentJob, terms, 8)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(records) != 1 {
+			t.Fatalf("search %q records=%#v, want the old same-channel exchange only", terms, records)
+		}
+		record := records[0]
 		if strings.Contains(record.Content, "foreign") || strings.Contains(record.Content, "ninety-nine") {
 			t.Fatalf("foreign channel authority leaked into search: %#v", records)
 		}
-		if record.SourceID == wantSource && record.Namespace == "conversation_user" {
-			seenUser = true
+		if !strings.HasPrefix(record.SourceID, wantSourcePrefix) ||
+			record.Namespace != "conversation_exchange" ||
+			record.Content != "user message:\nRotate the cobalt antenna toward Earth.\n"+
+				"assistant response:\nAlignment is complete with the aphelion confirmation." {
+			t.Fatalf("searched exchange lost exact question/answer authority: %#v", record)
 		}
-	}
-	if !seenUser {
-		t.Fatalf("old same-channel message %q was not found: %#v", wantSource, records)
 	}
 }
 
