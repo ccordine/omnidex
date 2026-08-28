@@ -31,7 +31,9 @@ func repositoryGoVerificationRequestFromCommand(
 			command.Name,
 		)
 	}
-	return repositoryGoVerificationRequest{Args: append([]string(nil), command.Args...)}, nil
+	return repositoryGoVerificationRequest{
+		Args: append([]string(nil), command.Args...), Timeout: command.Timeout,
+	}, nil
 }
 
 func executeRepositoryGoVerificationWithConfig(

@@ -164,3 +164,13 @@ func TestNonPlainWorkspaceVerificationRejectsEnvironmentAuthority(t *testing.T) 
 		t.Fatalf("non-plain environment authority error=%v", err)
 	}
 }
+
+func TestWorkspaceVerificationCommandRejectsMissingPurposeExplicitly(t *testing.T) {
+	t.Parallel()
+	_, err := encodeWorkspaceVerificationCommand(testCommand{
+		Family: "go", Name: "go", Args: []string{"test", "./..."},
+	})
+	if err == nil || !strings.Contains(err.Error(), "invalid purpose") {
+		t.Fatalf("missing purpose error=%v", err)
+	}
+}

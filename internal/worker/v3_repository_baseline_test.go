@@ -57,9 +57,12 @@ func TestRepositoryBaselineAcceptanceIsDistinctFromPostChangeAcceptance(t *testi
 		baselineID: "repository_baseline_one", sourceSnapshotID: "snapshot-one",
 		contractID: "contract-one", planID: "plan-one",
 	}
-	record := repositoryVerificationAcceptanceEvidence(
+	record, err := repositoryVerificationAcceptanceEvidence(
 		authority, repositoryVerificationBaseline, []testCommand{{}, {}},
 	)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if record.Metadata["repository_verification_baseline_accepted"] != true ||
 		record.Metadata["repository_verification_scope"] != "baseline" ||
 		record.Metadata["repository_verification_command_count"] != 2 ||

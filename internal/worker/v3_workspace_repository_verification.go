@@ -144,9 +144,48 @@ func (session *directCodingSession) verifyAppliedRepositoryWorkspaceMutation(
 	if err != nil {
 		return queue.WorkspaceMutationVerificationResult{}, err
 	}
+	if session.runtime.svc.repositoryIndex == nil {
+		return queue.WorkspaceMutationVerificationResult{}, fmt.Errorf(
+			"persist authoritative repository snapshot before finalization: repository indexing is unavailable",
+		)
+	}
+	stored, err := session.runtime.svc.repositoryIndex.Capture(
+		ctx, command.ProjectID, command.Plan.WorkspaceRoot,
+	)
+	if err != nil {
+		return queue.WorkspaceMutationVerificationResult{}, fmt.Errorf(
+			"persist authoritative repository snapshot before finalization: %w", err,
+		)
+	}
+	if !stored.Complete {
+		return queue.WorkspaceMutationVerificationResult{}, fmt.Errorf(
+			"persist authoritative repository snapshot before finalization: capture is incomplete",
+		)
+	}
+	if len(stored.Analyses) != 0 {
+		return queue.WorkspaceMutationVerificationResult{}, fmt.Errorf(
+			"persist authoritative repository snapshot before finalization: capture invoked %d analyzers",
+			len(stored.Analyses),
+		)
+	}
+	if stored.Snapshot.ID != current.Git.RepositorySnapshotID {
+		return queue.WorkspaceMutationVerificationResult{}, fmt.Errorf(
+			"persisted repository snapshot %s differs from verified workspace snapshot %s",
+			stored.Snapshot.ID, current.Git.RepositorySnapshotID,
+		)
+	}
+	storedWorkspace, err := workspacefacts.FromRepositorySnapshot(stored.Snapshot)
+	if err != nil {
+		return queue.WorkspaceMutationVerificationResult{}, err
+	}
+	if err := command.Plan.VerifyExpected(storedWorkspace); err != nil {
+		return queue.WorkspaceMutationVerificationResult{}, fmt.Errorf(
+			"persisted repository snapshot differs from complete mutation plan: %w", err,
+		)
+	}
 	return queue.WorkspaceMutationVerificationResult{
 		Succeeded: failure == "", Failure: failure,
 		CommandEvidence:              records,
-		VerifiedRepositorySnapshotID: current.Git.RepositorySnapshotID,
+		VerifiedRepositorySnapshotID: stored.Snapshot.ID,
 	}, nil
 }

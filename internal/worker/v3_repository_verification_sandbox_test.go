@@ -149,6 +149,21 @@ func TestRepositoryGoVerificationRequestRejectsNonGoExecutable(t *testing.T) {
 	}
 }
 
+func TestRepositoryGoVerificationRequestPreservesCommandTimeout(t *testing.T) {
+	t.Parallel()
+	command := testCommand{
+		Name: "go", Args: []string{"test", "-json", "-count=1", "./..."},
+		Timeout: 45 * time.Second,
+	}
+	request, err := repositoryGoVerificationRequestFromCommand(command)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if request.Timeout != command.Timeout {
+		t.Fatalf("request timeout=%s want %s", request.Timeout, command.Timeout)
+	}
+}
+
 func TestRepositoryGoVerificationMountsSourceReadOnly(t *testing.T) {
 	t.Parallel()
 	_, projection, _, _ := repositorySandboxFixture(t, fakeBubblewrapScript(0, "", 0))

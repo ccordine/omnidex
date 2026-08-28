@@ -173,15 +173,34 @@ func (session *directCodingSession) runExistingRepositoryVerificationWithSink(
 	}
 	environment = nil
 	if writeAcceptance {
-		acceptance := repositoryVerificationAcceptanceEvidence(authority, scope, commands)
+		acceptance, err := repositoryVerificationAcceptanceEvidence(
+			authority, scope, commands,
+		)
+		if err != nil {
+			return err
+		}
 		if err := writeEvidence(acceptance); err != nil {
 			return fmt.Errorf("record accepted repository verification plan: %w", err)
 		}
-		session.runtime.svc.emitStepEvent(
-			session.runtime.claim.Authority,
-			repositoryVerificationAcceptanceEvent(scope),
-			fmt.Sprintf("scope=%s plan=%s", scope, authority.planIdentity()),
-		)
+		switch scope {
+		case repositoryVerificationBaseline:
+			session.runtime.svc.emitStepEvent(
+				session.runtime.claim.Authority,
+				"repository_verification_baseline_accepted",
+				fmt.Sprintf("scope=%s plan=%s", scope, authority.planIdentity()),
+			)
+		case repositoryVerificationStaged:
+			session.runtime.svc.emitStepEvent(
+				session.runtime.claim.Authority,
+				"repository_verification_plan_accepted",
+				fmt.Sprintf("scope=%s plan=%s", scope, authority.planIdentity()),
+			)
+		default:
+			return fmt.Errorf(
+				"repository verification scope %q acceptance is owned by the workspace mutation journal",
+				scope,
+			)
+		}
 	}
 	return nil
 }
@@ -340,7 +359,7 @@ func repositoryVerificationAcceptanceEvidence(
 	authority repositoryVerificationEvidenceAuthority,
 	scope repositoryVerificationScope,
 	commands []testCommand,
-) evidence.Record {
+) (evidence.Record, error) {
 	metadata := authority.metadata()
 	metadata["repository_verification_scope"] = string(scope)
 	metadata["repository_verification_command_count"] = len(commands)
@@ -350,21 +369,20 @@ func repositoryVerificationAcceptanceEvidence(
 			Kind: evidence.KindTestResult, SourceType: "command-baseline", SourceRef: "go",
 			ToolName: "command.run", Summary: "exact source repository Go baseline accepted",
 			Confidence: 1, Metadata: metadata,
-		}
+		}, nil
+	}
+	if scope != repositoryVerificationStaged {
+		return evidence.Record{}, fmt.Errorf(
+			"repository verification scope %q acceptance is owned by the workspace mutation journal",
+			scope,
+		)
 	}
 	metadata["repository_verification_plan_accepted"] = true
 	return evidence.Record{
 		Kind: evidence.KindTestResult, SourceType: "command-plan", SourceRef: "go",
 		ToolName: "command.run", Summary: "ordered repository Go verification plan accepted",
 		Confidence: 1, Metadata: metadata,
-	}
-}
-
-func repositoryVerificationAcceptanceEvent(scope repositoryVerificationScope) string {
-	if scope == repositoryVerificationBaseline {
-		return "repository_verification_baseline_accepted"
-	}
-	return "repository_verification_plan_accepted"
+	}, nil
 }
 
 func requireRepositoryGoOrdinaryFailure(result operation.Result) error {

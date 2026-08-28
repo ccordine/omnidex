@@ -46,7 +46,8 @@ func desiredArtifactGraphGoVerificationCommands(
 	for _, packageArgument := range packages {
 		commands = append(commands, testCommand{
 			Family: "go", Name: "go",
-			Args: []string{"test", "-json", "-count=1", "-run", "^$", packageArgument},
+			Args:    []string{"test", "-json", "-count=1", "-run", "^$", packageArgument},
+			Purpose: verificationTest,
 			RepositoryProof: &repositoryGoTestProof{
 				Mode: repositoryGoProofPackage, Package: packageArgument,
 			},
@@ -54,6 +55,7 @@ func desiredArtifactGraphGoVerificationCommands(
 	}
 	commands = append(commands, testCommand{
 		Family: "go", Name: "go", Args: []string{"test", "-json", "-count=1", "./..."},
+		Purpose:         verificationTest,
 		RepositoryProof: &repositoryGoTestProof{Mode: repositoryGoProofBroad, Package: "./..."},
 	})
 	for _, command := range commands {

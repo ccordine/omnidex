@@ -22,17 +22,21 @@ func assertRepositoryMutationWorkflowRecords(
 	refreshed repositoryindex.Result,
 ) {
 	t.Helper()
-	var status, stageID, patchSHA, expectedSHA string
+	var status, stageID, patchSHA, expectedSHA, mutationPath string
+	var sourceSnapshotID, verifiedSnapshotID string
 	var attempts, generatedDiffs, baselineProofs, baselineAcceptances, stagedProofs, authoritativeProofs int
 	var evidenceID *int64
 	err := pool.QueryRow(t.Context(), `
 		SELECT operation.status,operation.apply_attempt_count,operation.mutation_evidence_id,
-		       operation.stage_id,operation.patch_sha256,file.expected_sha256
+		       operation.stage_id,operation.patch_sha256,file.expected_sha256,
+		       operation.source_repository_snapshot_id,operation.verified_repository_snapshot_id,
+		       file.path
 		FROM workspace_mutation_operations AS operation
 		JOIN workspace_mutation_files AS file ON file.operation_id=operation.id
-		WHERE operation.job_id=$1 AND file.file_id=$2
-	`, jobID, targetFileID).Scan(
+		WHERE operation.job_id=$1
+	`, jobID).Scan(
 		&status, &attempts, &evidenceID, &stageID, &patchSHA, &expectedSHA,
+		&sourceSnapshotID, &verifiedSnapshotID, &mutationPath,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -56,34 +60,34 @@ func assertRepositoryMutationWorkflowRecords(
 	file := exactRepositorySnapshotFile(t, refreshed.Snapshot, targetFileID)
 	if status != "verified" || attempts != 1 || evidenceID == nil || generatedDiffs != 1 ||
 		baselineProofs != wantCommands || baselineAcceptances != 1 ||
-		stagedProofs != wantCommands || authoritativeProofs != wantCommands || expectedSHA != file.SHA256 {
+		stagedProofs != wantCommands || authoritativeProofs != wantCommands || expectedSHA != file.SHA256 ||
+		mutationPath != file.Path || sourceSnapshotID == verifiedSnapshotID ||
+		verifiedSnapshotID != refreshed.Snapshot.ID {
 		t.Fatalf(
-			"journal=%s/%d/%v diff=%d proof=%d/%d/%d baseline_acceptance=%d expected=%s actual=%s",
+			"journal=%s/%d/%v diff=%d proof=%d/%d/%d baseline_acceptance=%d expected=%s actual=%s path=%s/%s snapshots=%s/%s/%s",
 			status, attempts, evidenceID, generatedDiffs, baselineProofs, stagedProofs,
 			authoritativeProofs, baselineAcceptances, expectedSHA, file.SHA256,
+			mutationPath, file.Path,
+			sourceSnapshotID, verifiedSnapshotID, refreshed.Snapshot.ID,
 		)
 	}
 	acceptances := loadRepositoryPlanAcceptances(t, pool, jobID)
-	if len(acceptances) != 2 || acceptances[0].scope != "authoritative" ||
-		acceptances[1].scope != "staged" {
+	if len(acceptances) != 1 || acceptances[0].scope != "staged" {
 		t.Fatalf("plan acceptances=%+v", acceptances)
 	}
 	for _, accepted := range acceptances {
-		if accepted.contractID == "" || accepted.sourceSnapshotID == "" ||
-			accepted.stageID != stageID || accepted.patchSHA256 != patchSHA ||
-			accepted.planID == "" || accepted.expectedPostID == "" {
+		if !validRepositoryVerificationOpaqueID(accepted.contractID, "change_contract_") ||
+			!validRepositoryVerificationOpaqueID(accepted.sourceSnapshotID, "snapshot_") ||
+			!validRepositoryVerificationOpaqueID(accepted.stageID, "repository_change_stage_") ||
+			accepted.patchSHA256 != patchSHA || !validRepositoryVerificationSHA256(accepted.planID) ||
+			!validRepositoryVerificationSHA256(accepted.expectedPostID) ||
+			!validRepositoryVerificationOpaqueID(stageID, "workspace_stage_") {
 			t.Fatalf("unbound plan acceptance=%+v journal=%s/%s", accepted, stageID, patchSHA)
 		}
 	}
-	if acceptances[0].verificationSnapshotID == "" ||
-		acceptances[1].verificationSnapshotID != "" {
-		t.Fatalf("verification projection identity is not authoritative-only: %+v", acceptances)
-	}
-	if acceptances[0].contractID != acceptances[1].contractID ||
-		acceptances[0].sourceSnapshotID != acceptances[1].sourceSnapshotID ||
-		acceptances[0].planID != acceptances[1].planID ||
-		acceptances[0].expectedPostID != acceptances[1].expectedPostID {
-		t.Fatalf("staged and authoritative acceptance identities differ: %+v", acceptances)
+	if acceptances[0].verificationSnapshotID != "" ||
+		acceptances[0].sourceSnapshotID != sourceSnapshotID {
+		t.Fatalf("staged plan acceptance has invalid snapshot authority: %+v", acceptances)
 	}
 	for _, canary := range repositoryMutationSecretCanaries {
 		var leaked int

@@ -69,6 +69,12 @@ func validateRepositoryGoTestCommand(command testCommand) error {
 	if command.Family != "go" || command.Name != "go" {
 		return fmt.Errorf("repository Go verification command must use the Go family")
 	}
+	if command.Purpose != verificationTest {
+		return fmt.Errorf("repository Go verification command purpose must be test")
+	}
+	if command.Timeout < 0 || command.Timeout > maxV3CommandLimit {
+		return fmt.Errorf("repository Go verification command timeout is invalid")
+	}
 	proof := *command.RepositoryProof
 	var expectedArgs []string
 	switch proof.Mode {

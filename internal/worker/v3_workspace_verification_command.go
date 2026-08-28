@@ -46,10 +46,14 @@ func encodeWorkspaceVerificationCommand(command testCommand) (string, error) {
 			return "", err
 		}
 	}
-	if !validWorkspaceVerificationPurpose(command.Purpose) ||
-		command.Family != strings.TrimSpace(command.Family) ||
-		strings.ContainsAny(command.Family, "\x00\r\n") || len(command.Family) > 128 ||
-		command.Timeout < 0 || command.Timeout > maxV3CommandLimit {
+	if !validWorkspaceVerificationPurpose(command.Purpose) {
+		return "", fmt.Errorf("workspace verification command has invalid purpose %q", command.Purpose)
+	}
+	if command.Family != strings.TrimSpace(command.Family) ||
+		strings.ContainsAny(command.Family, "\x00\r\n") || len(command.Family) > 128 {
+		return "", fmt.Errorf("workspace verification command has invalid family %q", command.Family)
+	}
+	if command.Timeout < 0 || command.Timeout > maxV3CommandLimit {
 		return "", fmt.Errorf("workspace verification command has invalid timeout")
 	}
 	role := command.WorkspaceRole

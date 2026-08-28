@@ -36,14 +36,17 @@ func TestDesiredArtifactGraphGoVerificationUsesExactPackagesThenBroadProof(t *te
 	want := []testCommand{
 		{
 			Family: "go", Name: "go", Args: []string{"test", "-json", "-count=1", "-run", "^$", "."},
+			Purpose:         verificationTest,
 			RepositoryProof: &repositoryGoTestProof{Mode: repositoryGoProofPackage, Package: "."},
 		},
 		{
 			Family: "go", Name: "go", Args: []string{"test", "-json", "-count=1", "-run", "^$", "./sub"},
+			Purpose:         verificationTest,
 			RepositoryProof: &repositoryGoTestProof{Mode: repositoryGoProofPackage, Package: "./sub"},
 		},
 		{
 			Family: "go", Name: "go", Args: []string{"test", "-json", "-count=1", "./..."},
+			Purpose:         verificationTest,
 			RepositoryProof: &repositoryGoTestProof{Mode: repositoryGoProofBroad, Package: "./..."},
 		},
 	}
@@ -95,7 +98,8 @@ func TestPackageGoVerificationCommandIsRegisteredCompileOnlyProof(t *testing.T) 
 	t.Parallel()
 	valid := testCommand{
 		Family: "go", Name: "go",
-		Args: []string{"test", "-json", "-count=1", "-run", "^$", "./sub"},
+		Args:    []string{"test", "-json", "-count=1", "-run", "^$", "./sub"},
+		Purpose: verificationTest,
 		RepositoryProof: &repositoryGoTestProof{
 			Mode: repositoryGoProofPackage, Package: "./sub",
 		},
