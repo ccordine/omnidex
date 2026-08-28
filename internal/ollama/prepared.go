@@ -30,7 +30,7 @@ func (c *Client) GeneratePreparedExact(
 	if generationErr != nil {
 		return result, generationErr
 	}
-	return result, result.Validate()
+	return result, llm.ValidateExactPreparedGenerationForRequest(prepared, result)
 }
 
 func (c *Client) RequireExactPreparedContract() error {

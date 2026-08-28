@@ -46,7 +46,8 @@ func (c *directCodingTaskCognition) planTreeTransitions(
 		switch transition.Kind {
 		case assemblyline.TargetTreeEnsureDirectory:
 			c.treeDirs[transition.Path] = transition
-		case assemblyline.TargetTreeCreate, assemblyline.TargetTreeReconcile:
+		case assemblyline.TargetTreeCreate, assemblyline.TargetTreeReconcile,
+			assemblyline.TargetTreeDelete:
 			c.treeFiles[transition.Path] = transition
 		}
 		ledger, err := c.ledger()
@@ -256,7 +257,10 @@ func (c *directCodingTaskCognition) addTreeDependency(dependent, prerequisite ta
 }
 
 func directCodingTreeTaskKey(transition assemblyline.TargetTreeTransition) (string, error) {
-	if transition.Kind != assemblyline.TargetTreeEnsureDirectory && transition.Kind != assemblyline.TargetTreeCreate && transition.Kind != assemblyline.TargetTreeReconcile {
+	if transition.Kind != assemblyline.TargetTreeEnsureDirectory &&
+		transition.Kind != assemblyline.TargetTreeCreate &&
+		transition.Kind != assemblyline.TargetTreeReconcile &&
+		transition.Kind != assemblyline.TargetTreeDelete {
 		return "", fmt.Errorf("direct coding tree leaf has unsupported transition %q", transition.Kind)
 	}
 	pathValue, err := normalizeDirectCodingPath(transition.Path)
@@ -282,12 +286,17 @@ func directCodingTreeTaskDescription(transition assemblyline.TargetTreeTransitio
 		return "Create file " + pathValue, "The workspace contains file " + pathValue + ".", nil
 	case assemblyline.TargetTreeReconcile:
 		return "Reconcile file " + pathValue, "The workspace contains the verified file " + pathValue + ".", nil
+	case assemblyline.TargetTreeDelete:
+		return "Delete file " + pathValue, "The workspace does not contain file " + pathValue + ".", nil
 	default:
 		return "", "", fmt.Errorf("direct coding tree leaf has unsupported transition %q", transition.Kind)
 	}
 }
 
 func directCodingTreeParentDirectory(transition assemblyline.TargetTreeTransition) string {
+	if transition.Kind == assemblyline.TargetTreeDelete {
+		return ""
+	}
 	if transition.Kind == assemblyline.TargetTreeEnsureDirectory {
 		parent := path.Dir(transition.Path)
 		if parent == "." {

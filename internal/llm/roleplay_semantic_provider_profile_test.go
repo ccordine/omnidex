@@ -6,53 +6,53 @@ import (
 	"testing"
 )
 
-func TestRoleplaySemanticPolicyAdmitsArbitraryCompletionModelDeterministically(t *testing.T) {
+func TestRoleplaySemanticPolicyRequiresStructurallyAttestedCompletionModel(t *testing.T) {
 	t.Parallel()
 	selection, evidence := exactProviderProfileEvidence(
 		t, "unregistered-semantic-model:latest", roleplayRawProviderShow,
+	)
+	selection.ProfilePolicy = ProviderIdentityProfileRoleplaySemanticCompletion
+	if _, err := DeriveExactProviderIdentityExpectation(evidence, selection); err == nil {
+		t.Fatal("semantic roleplay policy bypassed structural profile attestation")
+	}
+
+	selection, evidence = exactProviderProfileEvidence(
+		t, "registered-semantic-model:latest", exactProviderQwen35Show,
 	)
 	selection.ProfilePolicy = ProviderIdentityProfileRoleplaySemanticCompletion
 	expected, err := DeriveExactProviderIdentityExpectation(evidence, selection)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if expected.TokenizerProfile != ExactPreparedTokenizerProfileRoleplaySemantic {
+	if expected.TokenizerProfile != ExactPreparedTokenizerProfile {
 		t.Fatalf("semantic tokenizer profile=%q", expected.TokenizerProfile)
 	}
 	reconstructed, err := ProviderIdentitySelectionForExpectation(expected)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if reconstructed != selection {
-		t.Fatalf("semantic selection reconstruction=%+v want %+v", reconstructed, selection)
+	if reconstructed.Model != selection.Model ||
+		reconstructed.NativeContextLimit != selection.NativeContextLimit ||
+		reconstructed.ProfilePolicy != "" {
+		t.Fatalf("semantic strict selection reconstruction=%+v", reconstructed)
 	}
 	settings, err := ResolveExactPreparedTransport(expected)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !settings.NativeTemplate || !settings.SeparateSystem || settings.SeparateThinking ||
-		settings.Temperature == nil || *settings.Temperature != 0 {
+	if settings.NativeTemplate || settings.SeparateSystem || settings.SeparateThinking ||
+		!settings.NaturalOutputCeiling || settings.Temperature == nil || *settings.Temperature != 0 {
 		t.Fatalf("semantic transport settings=%+v", settings)
-	}
-	if next, ok, err := NextExactPreparedTemperature(expected, settings.Temperature); err != nil {
-		t.Fatal(err)
-	} else if ok || next != nil {
-		t.Fatalf("deterministic semantic profile advanced to %v", next)
 	}
 
 	prepared := PreparedModel{
-		Protocol:  ExactPreparedProtocolStructuredV1,
+		Protocol:  ExactPreparedProtocolRawTextV2,
 		BaseModel: expected.Model, ContextModel: expected.Model,
 		Prompt: "return one fictional semantic leaf", PromptHint: MinimalGeneratePrompt,
 		ContextTokens: 8192, MaxOutputTokens: 8192,
 		OutputLimitMode: ExactPreparedOutputLimitNatural,
-		ResponseFormat:  ResponseFormatJSON,
-		ResponseSchema: map[string]any{
-			"type": "object", "properties": map[string]any{
-				"leaf": map[string]any{"type": "string"},
-			},
-		},
-		Temperature: settings.Temperature, ProviderIdentityExpectation: &expected,
+		Temperature:     settings.Temperature, RawTextStopSequence: ExactPreparedRawChatEndV1,
+		ProviderIdentityExpectation:  &expected,
 		ProviderObservationChallenge: strings.Repeat("c", 64),
 	}
 	raw, err := ExactPreparedRequestBytes(prepared)
@@ -63,20 +63,21 @@ func TestRoleplaySemanticPolicyAdmitsArbitraryCompletionModelDeterministically(t
 	if err := json.Unmarshal(raw, &request); err != nil {
 		t.Fatal(err)
 	}
-	if request.Raw || request.System != prepared.Prompt || request.Prompt != MinimalGeneratePrompt ||
+	if !request.Raw || request.System != "" ||
+		!strings.HasPrefix(request.Prompt, ExactPreparedRawChatUserPrefixV1) ||
 		request.Think == nil || *request.Think || request.Options.Temperature == nil ||
 		*request.Options.Temperature != 0 {
 		t.Fatalf("semantic prepared request=%s", raw)
 	}
 }
 
-func TestRoleplaySemanticPolicyUsesNarrowCompletionContextFloor(t *testing.T) {
+func TestRoleplaySemanticPolicyRetainsStrictTransportFloor(t *testing.T) {
 	t.Parallel()
 	selection := ProviderIdentitySelection{
 		Model: "small-semantic-model:latest", NativeContextLimit: 4096,
 		ProfilePolicy: ProviderIdentityProfileRoleplaySemanticCompletion,
 	}
-	if err := selection.Validate(); err != nil {
-		t.Fatalf("semantic completion context rejected: %v", err)
+	if err := selection.Validate(); err == nil {
+		t.Fatal("semantic completion policy accepted a context below the exact transport floor")
 	}
 }

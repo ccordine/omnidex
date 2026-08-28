@@ -126,7 +126,7 @@ func (generation PreparedGeneration) Validate() error {
 		!utf8.ValidString(generation.Thinking) || strings.ContainsRune(generation.Thinking, 0) ||
 		len(generation.Thinking) > MaxExactPreparedProviderResponseBytes ||
 		!generation.ProviderDonePresent || !generation.ProviderDone ||
-		(generation.ProviderDoneReason != "stop" && generation.ProviderDoneReason != "length") ||
+		generation.ProviderDoneReason != "stop" ||
 		!generation.UsagePresent {
 		return fmt.Errorf("exact prepared generation content is invalid")
 	}

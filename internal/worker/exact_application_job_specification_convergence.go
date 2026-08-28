@@ -36,10 +36,9 @@ type exactApplicationJobSpecificationReplay func(
 	number int,
 ) (ExactStationReplay, error)
 
-// ConvergeExactApplicationJobSpecification restores the immutable portable
-// authority from one historical specification or repair opening, then renders
-// and executes the checked-in production review/repair contracts. It performs
-// no queue, historical-job, or workspace writes.
+// ConvergeExactApplicationJobSpecification restores the immutable authority
+// from one raw objective-leaf opening, then executes the checked-in leaf
+// sequence. It performs no queue, historical-job, or workspace writes.
 func ConvergeExactApplicationJobSpecification(
 	ctx context.Context,
 	client llm.ExactStationClient,
@@ -92,8 +91,11 @@ func convergeExactApplicationJobSpecificationWithReplay(
 	if err := job.Validate(); err != nil {
 		return result, err
 	}
-	if job.Kind != assemblyline.WorkApplicationJobSpecification {
-		return result, fmt.Errorf("application job specification convergence requires work kind %q", assemblyline.WorkApplicationJobSpecification)
+	if job.Kind != assemblyline.WorkApplicationJobObjective {
+		return result, fmt.Errorf(
+			"application job specification convergence requires work kind %q",
+			assemblyline.WorkApplicationJobObjective,
+		)
 	}
 	var authority assemblyline.ApplicationJobSpecificationInput
 	if err := json.Unmarshal(job.Payload, &authority); err != nil {
@@ -101,7 +103,7 @@ func convergeExactApplicationJobSpecificationWithReplay(
 	}
 
 	runtime := typedWorkerRuntime{
-		Context: ctx, MaxAttempts: 1,
+		Context: ctx, MaxAttempts: assemblyline.MaxSemanticStationAttempts,
 		Execute: func(current assemblyline.PortableJob, model string) (assemblyline.PortableResult, error) {
 			expected, err := exactApplicationJobSpecificationCallModel(
 				current, result.PlannerModel,
@@ -162,12 +164,28 @@ func exactApplicationJobSpecificationCallModel(
 	plannerModel string,
 ) (string, error) {
 	switch job.Kind {
-	case assemblyline.WorkApplicationJobSpecification:
+	case assemblyline.WorkApplicationJobObjective,
+		assemblyline.WorkApplicationBehaviorCoverage,
+		assemblyline.WorkApplicationBehavior,
+		assemblyline.WorkApplicationCriterionCoverage,
+		assemblyline.WorkApplicationCriterion:
 		return plannerModel, nil
 	case assemblyline.WorkResponseCorrection:
 		var correction assemblyline.ResponseCorrectionInput
 		if err := json.Unmarshal(job.Payload, &correction); err != nil {
 			return "", fmt.Errorf("decode application job specification correction routing: %w", err)
+		}
+		switch correction.Original.Kind {
+		case assemblyline.WorkApplicationJobObjective,
+			assemblyline.WorkApplicationBehaviorCoverage,
+			assemblyline.WorkApplicationBehavior,
+			assemblyline.WorkApplicationCriterionCoverage,
+			assemblyline.WorkApplicationCriterion:
+		default:
+			return "", fmt.Errorf(
+				"application job specification correction wraps unsupported work kind %q",
+				correction.Original.Kind,
+			)
 		}
 		return plannerModel, nil
 	default:

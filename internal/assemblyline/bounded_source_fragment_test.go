@@ -104,18 +104,30 @@ func TestBoundedSourceFragmentProjectorsSelectOneDeclarationWithoutSignatureAuth
 	}
 }
 
-func TestBoundedSourceProjectorPreservesCRLFInsideExactTrimmedSpan(t *testing.T) {
+func TestBoundedSourceProjectorRequiresExactOuterBytesAndPreservesInternalCRLF(t *testing.T) {
 	t.Parallel()
 	declaration := "function value() {\r\n  return 1;\r\n}"
-	raw := " \r\n\t" + declaration + "\r\n "
-	projection, err := ProjectJavaScriptFragment(raw)
+	projection, err := ProjectJavaScriptFragment(declaration)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if projection.Source != declaration ||
-		projection.Source != raw[projection.StartByte:projection.EndByte] ||
-		projection.DiscardedBytes != len(raw)-len(declaration) {
+		projection.StartByte != 0 || projection.EndByte != len(declaration) ||
+		projection.DiscardedBytes != 0 {
 		t.Fatalf("projection=%+v", projection)
+	}
+	for name, raw := range map[string]string{
+		"leading whitespace":  " \r\n\t" + declaration,
+		"trailing whitespace": declaration + "\r\n ",
+		"Markdown fence":      "```javascript\n" + declaration + "\n```",
+		"JSON fence":          "```json\n{\"source\":\"value\"}\n```",
+		"leading comment":     "// source\n" + declaration,
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := ProjectJavaScriptFragment(raw); err == nil {
+				t.Fatal("outer response bytes were discarded")
+			}
+		})
 	}
 }
 

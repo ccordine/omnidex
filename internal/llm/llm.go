@@ -4,12 +4,9 @@ import (
 	"context"
 	"fmt"
 	"math"
-	"strings"
 )
 
 const MinimalGeneratePrompt = "Return only the requested output."
-
-const ResponseFormatJSON = "json"
 
 type ExactPreparedOutputLimitMode string
 
@@ -41,8 +38,6 @@ type PreparedModel struct {
 	MaxOutputTokens              int
 	OutputLimitMode              ExactPreparedOutputLimitMode
 	ContextTokens                int
-	ResponseFormat               string
-	ResponseSchema               map[string]any
 	ThinkingEnabled              bool
 	Temperature                  *ExactPreparedTemperature
 	RawTextStopSequence          string
@@ -55,22 +50,6 @@ func ValidateResponseContract(prepared PreparedModel) error {
 		(math.IsNaN(float64(*prepared.Temperature)) || math.IsInf(float64(*prepared.Temperature), 0) ||
 			*prepared.Temperature < 0 || *prepared.Temperature > 2) {
 		return fmt.Errorf("temperature must be between 0 and 2")
-	}
-	if prepared.ThinkingEnabled && (prepared.ResponseFormat != "" || len(prepared.ResponseSchema) > 0) {
-		return fmt.Errorf("native thinking forbids a structured response contract")
-	}
-	if prepared.ResponseFormat != "" && prepared.ResponseFormat != ResponseFormatJSON {
-		return fmt.Errorf("unsupported response format %q", prepared.ResponseFormat)
-	}
-	if len(prepared.ResponseSchema) == 0 {
-		return nil
-	}
-	if prepared.ResponseFormat != ResponseFormatJSON {
-		return fmt.Errorf("response schema requires response format %q", ResponseFormatJSON)
-	}
-	schemaType, ok := prepared.ResponseSchema["type"].(string)
-	if !ok || strings.TrimSpace(schemaType) == "" {
-		return fmt.Errorf("response schema requires a non-empty type")
 	}
 	return nil
 }

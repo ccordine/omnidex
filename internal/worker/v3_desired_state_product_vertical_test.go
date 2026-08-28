@@ -33,8 +33,9 @@ func TestPostgresOrdinaryChannelDesiredStateContaminatedProductionPlumbing(t *te
 			target:      "omni_added_artifact.go", present: true, wantGenerationCalls: 1,
 			wantKinds: []assemblyline.WorkKind{
 				assemblyline.WorkConversationObjectiveKind,
-				assemblyline.WorkApplicationContextNeeds,
-				assemblyline.WorkRepositoryRequirements,
+				assemblyline.WorkApplicationContextNeedCoverage,
+				assemblyline.WorkRepositoryRequirement,
+				assemblyline.WorkRepositoryRequirementCoverage,
 				assemblyline.WorkKnownArtifactTruth,
 				assemblyline.WorkDeclarationArtifactBoundary,
 				assemblyline.WorkFragmentGeneration,
@@ -46,8 +47,9 @@ func TestPostgresOrdinaryChannelDesiredStateContaminatedProductionPlumbing(t *te
 			target:      "obsolete.go", present: false, wantGenerationCalls: 0,
 			wantKinds: []assemblyline.WorkKind{
 				assemblyline.WorkConversationObjectiveKind,
-				assemblyline.WorkApplicationContextNeeds,
-				assemblyline.WorkRepositoryRequirements,
+				assemblyline.WorkApplicationContextNeedCoverage,
+				assemblyline.WorkRepositoryRequirement,
+				assemblyline.WorkRepositoryRequirementCoverage,
 				assemblyline.WorkKnownArtifactTruth,
 				assemblyline.WorkArtifactCandidateSelection,
 			},
@@ -69,9 +71,10 @@ func TestPostgresOrdinaryChannelDeletionProductionPlumbingPinsFrontDoorPathVisib
 		target: "obsolete.go", present: false, wantGenerationCalls: 0,
 		wantKinds: []assemblyline.WorkKind{
 			assemblyline.WorkConversationObjectiveKind,
-			assemblyline.WorkApplicationContextNeeds,
+			assemblyline.WorkApplicationContextNeedCoverage,
 			assemblyline.WorkArtifactHandling,
-			assemblyline.WorkRepositoryRequirements,
+			assemblyline.WorkRepositoryRequirement,
+			assemblyline.WorkRepositoryRequirementCoverage,
 			assemblyline.WorkKnownArtifactTruth,
 		},
 	}
@@ -116,8 +119,8 @@ func TestPostgresOrdinaryChannelDeletionProductionPlumbingPinsFrontDoorPathVisib
 	assertDesiredStateProductStationPersistence(t, pool, job.ID, calls, test.wantKinds)
 	assertDesiredStateProductNoModelMutationOps(t, calls)
 	if len(calls) < 2 || !strings.Contains(calls[0].Prompt, test.target) ||
-		calls[0].Schema != assemblyline.ConversationObjectiveKindSchemaV1 ||
-		calls[1].Schema != assemblyline.ApplicationContextNeedSchemaV1 {
+		calls[0].Kind != assemblyline.WorkConversationObjectiveKind ||
+		calls[1].Kind != assemblyline.WorkApplicationContextNeedCoverage {
 		t.Fatalf("deletion RED did not reproduce exact front-door path visibility: %+v", calls)
 	}
 	for index, call := range calls[1:] {

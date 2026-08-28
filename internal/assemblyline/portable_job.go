@@ -1,87 +1,32 @@
 package assemblyline
 
 import (
-	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"io"
-	"strings"
-	"unicode/utf8"
-
-	"github.com/gryph/omnidex/internal/exactjson"
 )
 
 const (
-	PortableJobSchemaV1      = "omnidex.portable-job.v1"
+	// PortableJobSchemaV2 identifies work whose model result uses only its
+	// registered raw response transport.
+	PortableJobSchemaV2      = "omnidex.portable-job.v2"
 	maxPortableResourceBytes = 128 * 1024
+	// MaxPortableSemanticCandidateBytes is the shared gross ceiling for raw
+	// semantic and bounded-source candidates.
+	MaxPortableSemanticCandidateBytes = maxPortableResourceBytes
 	// Raw provider output is captured and bounded before it becomes a portable
 	// result. This duplicate ceiling protects test and alternate in-process
 	// executors at the same coarse 16 MiB provider-response boundary.
-	maxPortableRawCandidateBytes = 16 * 1024 * 1024
+	MaxPortableRawCandidateBytes = 16 * 1024 * 1024
 	// Portable byte limits are coarse resource ceilings. Station field bounds
 	// and the exact provider token budget remain the semantic/context authority.
-	maxPortablePayloadBytes   = maxPortableResourceBytes
-	maxPortableCandidateBytes = maxPortableResourceBytes
+	maxPortablePayloadBytes      = maxPortableResourceBytes
+	maxPortableCandidateBytes    = MaxPortableSemanticCandidateBytes
+	maxPortableRawCandidateBytes = MaxPortableRawCandidateBytes
 )
 
 type WorkKind string
-
-const (
-	WorkApplicationContextNeeds                  WorkKind = "application_context_needs"
-	WorkApplicationIntent                        WorkKind = "application_intent"
-	WorkApplicationProjectStackConstraint        WorkKind = "application_project_stack_constraint"
-	WorkApplicationServiceContinuedAvailability  WorkKind = "application_service_continued_availability"
-	WorkApplicationServicePersistenceDestination WorkKind = "application_service_persistence_destination"
-	WorkApplicationServiceStateLifetime          WorkKind = "application_service_state_lifetime"
-	WorkApplicationServiceStateInterface         WorkKind = "application_service_state_interface"
-	WorkApplicationServiceEndpointRequirement    WorkKind = "application_service_endpoint_requirement"
-	WorkApplicationServiceEndpointExposure       WorkKind = "application_service_endpoint_exposure"
-	WorkApplicationServiceEndpointMethod         WorkKind = "application_service_endpoint_method"
-	WorkApplicationServiceEndpointRouteTemplate  WorkKind = "application_service_endpoint_route_template"
-	WorkApplicationServiceEndpointRequestMedia   WorkKind = "application_service_endpoint_request_media"
-	WorkApplicationServiceEndpointResponseMedia  WorkKind = "application_service_endpoint_response_media"
-	WorkApplicationServiceEndpointSuccessStatus  WorkKind = "application_service_endpoint_success_status"
-	WorkApplicationJobSpecification              WorkKind = "application_job_specification"
-	WorkApplicationTargetTree                    WorkKind = "application_target_tree"
-	WorkRepositoryRequirements                   WorkKind = "repository_requirements"
-	WorkRepositorySearchTerm                     WorkKind = "repository_search_term"
-	WorkRepositoryChangeSurface                  WorkKind = "repository_change_surface"
-	WorkRepositoryEvidenceRelevance              WorkKind = "repository_evidence_relevance"
-	WorkRepositoryGroundedReview                 WorkKind = "repository_grounded_review"
-	WorkRepositoryGroundedCorrection             WorkKind = "repository_grounded_correction"
-	WorkContextSearchTerms                       WorkKind = "context_search_terms"
-	WorkContextRelevance                         WorkKind = "context_relevance"
-	WorkContextMinification                      WorkKind = "context_minification"
-	WorkConversationObjectiveKind                WorkKind = "conversation_objective_kind"
-	WorkConversationResponse                     WorkKind = "conversation_response"
-	WorkRoleplayGroundedResponse                 WorkKind = "roleplay_grounded_response"
-	WorkRoleplayCanonExtraction                  WorkKind = "roleplay_canon_extraction"
-	WorkRoleplayOngoingAction                    WorkKind = "roleplay_ongoing_action"
-	WorkGroundedAnswer                           WorkKind = "grounded_answer"
-	WorkDatabaseSchemaSelection                  WorkKind = "database_schema_selection"
-	WorkDatabaseQueryIntent                      WorkKind = "database_query_intent"
-	WorkDatabaseEvidenceGap                      WorkKind = "database_evidence_gap"
-	WorkDatabaseJoinPathSelection                WorkKind = "database_join_path_selection"
-	WorkWebSearchTerms                           WorkKind = "web_search_terms"
-	WorkWebRelevance                             WorkKind = "web_relevance"
-	WorkWebGroundedSynthesis                     WorkKind = "web_grounded_synthesis"
-	WorkWebGroundedSynthesisCorrection           WorkKind = "web_grounded_synthesis_correction"
-	WorkWebClaimEvidenceReview                   WorkKind = "web_claim_evidence_review"
-	WorkApplicationClassify                      WorkKind = "application_classification"
-	WorkArtifactHandling                         WorkKind = "artifact_handling"
-	WorkKnownArtifactTruth                       WorkKind = "known_artifact_truth"
-	WorkDeclarationArtifactBoundary              WorkKind = "declaration_artifact_boundary"
-	WorkArtifactCandidateSelection               WorkKind = "artifact_candidate_selection"
-	WorkCapabilityRelation                       WorkKind = "capability_relation"
-	WorkSkillSelection                           WorkKind = "skill_selection"
-	WorkTypeScriptRepairGuidance                 WorkKind = "typescript_repair_guidance"
-	WorkFragmentGeneration                       WorkKind = "fragment_generation"
-	WorkFragmentModification                     WorkKind = "fragment_modification"
-	WorkFragmentCorrection                       WorkKind = "fragment_correction"
-	WorkResponseCorrection                       WorkKind = "response_correction"
-)
 
 type PortableJob struct {
 	Schema           string          `json:"schema"`
@@ -91,40 +36,12 @@ type PortableJob struct {
 	SourceProjection string          `json:"source_projection,omitempty"`
 }
 
-type PortableResult struct {
-	JobID      string                    `json:"job_id"`
-	Candidate  string                    `json:"candidate"`
-	Projection *PortableResultProjection `json:"-"`
-}
-
-type PortableResultProjectionKind string
-
-const (
-	PortableResultProjectionExactResponse      PortableResultProjectionKind = "exact_response"
-	PortableResultProjectionSourceDeclaration  PortableResultProjectionKind = "source_declaration"
-	PortableResultProjectionTypeScriptFunction PortableResultProjectionKind = "typescript_function"
-)
-
-// PortableResultProjection is code-owned metadata binding the accepted leaf
-// to an exact byte span in Candidate. Candidate remains the complete untrusted
-// final response and is preserved separately as call evidence.
-type PortableResultProjection struct {
-	Kind                 PortableResultProjectionKind
-	Source               string
-	SourceResponseSHA256 string
-	SourceSHA256         string
-	StartByte            int
-	EndByte              int
-	RawBytes             int
-	DiscardedBytes       int
-}
-
 func newPortableJob(kind WorkKind, input any) (PortableJob, error) {
 	payload, err := json.Marshal(input)
 	if err != nil {
 		return PortableJob{}, fmt.Errorf("encode portable %s input: %w", kind, err)
 	}
-	job := PortableJob{Schema: PortableJobSchemaV1, Kind: kind, Payload: payload}
+	job := PortableJob{Schema: PortableJobSchemaV2, Kind: kind, Payload: payload}
 	job.ID = portableJobDigest(job.Schema, job.Kind, job.Payload)
 	if err := job.Validate(); err != nil {
 		return PortableJob{}, err
@@ -133,8 +50,8 @@ func newPortableJob(kind WorkKind, input any) (PortableJob, error) {
 }
 
 func (job PortableJob) Validate() error {
-	if job.Schema != PortableJobSchemaV1 {
-		return fmt.Errorf("portable job schema must be %q", PortableJobSchemaV1)
+	if job.Schema != PortableJobSchemaV2 {
+		return fmt.Errorf("portable job schema must be %q", PortableJobSchemaV2)
 	}
 	if !validWorkKind(job.Kind) {
 		return fmt.Errorf("portable job kind %q is unsupported", job.Kind)
@@ -161,89 +78,6 @@ func (job PortableJob) Validate() error {
 	return validatePortableJobPayload(job.Kind, job.Payload)
 }
 
-func (result PortableResult) ValidateFor(job PortableJob) error {
-	if err := job.Validate(); err != nil {
-		return err
-	}
-	if result.JobID != job.ID {
-		return fmt.Errorf("portable result job id does not match the claimed job")
-	}
-	if strings.TrimSpace(result.Candidate) == "" {
-		return fmt.Errorf("portable result candidate is empty")
-	}
-	if len(result.Candidate) > maxPortableRawCandidateBytes {
-		return fmt.Errorf(
-			"portable result candidate exceeds gross resource ceiling of %d bytes",
-			maxPortableRawCandidateBytes,
-		)
-	}
-	if result.Projection != nil {
-		if err := result.Projection.ValidateFor(result.Candidate); err != nil {
-			return fmt.Errorf("portable result projection: %w", err)
-		}
-	}
-	return nil
-}
-
-func NewExactPortableResultProjection(raw string) (PortableResultProjection, error) {
-	projection := PortableResultProjection{
-		Kind: PortableResultProjectionExactResponse, Source: raw,
-		SourceResponseSHA256: portableProjectionSHA256(raw),
-		SourceSHA256:         portableProjectionSHA256(raw),
-		StartByte:            0, EndByte: len(raw), RawBytes: len(raw),
-	}
-	if err := projection.ValidateFor(raw); err != nil {
-		return PortableResultProjection{}, err
-	}
-	return projection, nil
-}
-
-func (projection TypeScriptFunctionProjection) PortableResultProjection() (PortableResultProjection, error) {
-	result := PortableResultProjection{
-		Kind: PortableResultProjectionTypeScriptFunction, Source: projection.Source,
-		SourceResponseSHA256: projection.RawSHA256, SourceSHA256: projection.SourceSHA256,
-		StartByte: projection.StartByte, EndByte: projection.EndByte,
-		RawBytes: projection.RawBytes, DiscardedBytes: projection.DiscardedBytes,
-	}
-	if result.EndByte-result.StartByte != len(result.Source) ||
-		result.RawBytes-result.DiscardedBytes != len(result.Source) {
-		return PortableResultProjection{}, fmt.Errorf("TypeScript projection metadata is internally inconsistent")
-	}
-	return result, nil
-}
-
-func (projection PortableResultProjection) ValidateFor(raw string) error {
-	if projection.Kind != PortableResultProjectionExactResponse &&
-		projection.Kind != PortableResultProjectionSourceDeclaration &&
-		projection.Kind != PortableResultProjectionTypeScriptFunction {
-		return fmt.Errorf("projection kind %q is not registered", projection.Kind)
-	}
-	if projection.RawBytes != len(raw) || projection.SourceResponseSHA256 != portableProjectionSHA256(raw) {
-		return fmt.Errorf("projection raw response identity is invalid")
-	}
-	if projection.StartByte < 0 || projection.EndByte <= projection.StartByte ||
-		projection.EndByte > len(raw) {
-		return fmt.Errorf("projection source span is invalid")
-	}
-	if projection.Source != raw[projection.StartByte:projection.EndByte] ||
-		projection.SourceSHA256 != portableProjectionSHA256(projection.Source) {
-		return fmt.Errorf("projection source differs from its exact response span")
-	}
-	if projection.DiscardedBytes != len(raw)-len(projection.Source) {
-		return fmt.Errorf("projection discarded byte count is invalid")
-	}
-	if projection.Kind == PortableResultProjectionExactResponse &&
-		(projection.StartByte != 0 || projection.EndByte != len(raw) || projection.DiscardedBytes != 0) {
-		return fmt.Errorf("exact response projection is not the complete response")
-	}
-	return nil
-}
-
-func portableProjectionSHA256(value string) string {
-	digest := sha256.Sum256([]byte(value))
-	return hex.EncodeToString(digest[:])
-}
-
 func portableJobDigest(schema string, kind WorkKind, payload []byte) string {
 	return portableJobProjectionDigest(schema, kind, payload, "")
 }
@@ -265,102 +99,4 @@ func portableJobProjectionDigest(
 		_, _ = hash.Write([]byte(sourceProjection))
 	}
 	return hex.EncodeToString(hash.Sum(nil))
-}
-
-func decodePortablePayload(payload []byte, target any) error {
-	if !utf8.Valid(payload) {
-		return fmt.Errorf("decode portable job payload: invalid UTF-8")
-	}
-	if err := exactjson.ValidateObject(payload, target, "portable job payload"); err != nil {
-		return fmt.Errorf("decode portable job payload: %w", err)
-	}
-	decoder := json.NewDecoder(bytes.NewReader(payload))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(target); err != nil {
-		return fmt.Errorf("decode portable job payload: %w", err)
-	}
-	if err := decoder.Decode(&struct{}{}); err != io.EOF {
-		if err == nil {
-			return fmt.Errorf("decode portable job payload: trailing JSON value")
-		}
-		return fmt.Errorf("decode portable job payload: %w", err)
-	}
-	return nil
-}
-
-func validWorkKind(kind WorkKind) bool {
-	switch kind {
-	case WorkApplicationContextNeeds, WorkApplicationIntent,
-		WorkApplicationProjectStackConstraint,
-		WorkApplicationServiceContinuedAvailability,
-		WorkApplicationServicePersistenceDestination,
-		WorkApplicationServiceStateLifetime,
-		WorkApplicationServiceStateInterface,
-		WorkApplicationServiceEndpointRequirement,
-		WorkApplicationServiceEndpointExposure,
-		WorkApplicationServiceEndpointMethod,
-		WorkApplicationServiceEndpointRouteTemplate,
-		WorkApplicationServiceEndpointRequestMedia,
-		WorkApplicationServiceEndpointResponseMedia,
-		WorkApplicationServiceEndpointSuccessStatus,
-		WorkApplicationClassify,
-		WorkApplicationJobSpecification,
-		WorkApplicationTargetTree,
-		WorkRepositoryRequirements,
-		WorkRepositorySearchTerm, WorkRepositoryChangeSurface, WorkRepositoryEvidenceRelevance,
-		WorkRepositoryGroundedReview, WorkRepositoryGroundedCorrection,
-		WorkContextSearchTerms, WorkContextRelevance, WorkContextMinification,
-		WorkConversationObjectiveKind, WorkConversationResponse, WorkRoleplayGroundedResponse,
-		WorkRoleplayCanonExtraction, WorkRoleplayOngoingAction,
-		WorkGroundedAnswer,
-		WorkDatabaseSchemaSelection, WorkDatabaseQueryIntent, WorkDatabaseEvidenceGap,
-		WorkDatabaseJoinPathSelection,
-		WorkWebSearchTerms, WorkWebRelevance, WorkWebGroundedSynthesis,
-		WorkWebGroundedSynthesisCorrection, WorkWebClaimEvidenceReview,
-		WorkArtifactHandling, WorkKnownArtifactTruth,
-		WorkDeclarationArtifactBoundary, WorkArtifactCandidateSelection,
-		WorkCapabilityRelation, WorkSkillSelection, WorkTypeScriptRepairGuidance,
-		WorkFragmentGeneration, WorkFragmentModification, WorkFragmentCorrection, WorkResponseCorrection:
-		return true
-	default:
-		return false
-	}
-}
-
-// AllWorkKinds returns the closed PortableJob kind registry. Callers may use
-// it to prove exhaustive station mappings without inventing string routing.
-func AllWorkKinds() []WorkKind {
-	return []WorkKind{
-		WorkApplicationContextNeeds, WorkApplicationIntent,
-		WorkApplicationProjectStackConstraint,
-		WorkApplicationServiceContinuedAvailability,
-		WorkApplicationServicePersistenceDestination,
-		WorkApplicationServiceStateLifetime,
-		WorkApplicationServiceStateInterface,
-		WorkApplicationServiceEndpointRequirement,
-		WorkApplicationServiceEndpointExposure,
-		WorkApplicationServiceEndpointMethod,
-		WorkApplicationServiceEndpointRouteTemplate,
-		WorkApplicationServiceEndpointRequestMedia,
-		WorkApplicationServiceEndpointResponseMedia,
-		WorkApplicationServiceEndpointSuccessStatus,
-		WorkApplicationClassify,
-		WorkApplicationJobSpecification,
-		WorkApplicationTargetTree,
-		WorkRepositoryRequirements,
-		WorkRepositorySearchTerm, WorkRepositoryChangeSurface, WorkRepositoryEvidenceRelevance,
-		WorkRepositoryGroundedReview, WorkRepositoryGroundedCorrection,
-		WorkContextSearchTerms, WorkContextRelevance, WorkContextMinification,
-		WorkConversationObjectiveKind, WorkConversationResponse, WorkRoleplayGroundedResponse,
-		WorkRoleplayCanonExtraction, WorkRoleplayOngoingAction,
-		WorkGroundedAnswer,
-		WorkDatabaseSchemaSelection, WorkDatabaseQueryIntent, WorkDatabaseEvidenceGap,
-		WorkDatabaseJoinPathSelection,
-		WorkWebSearchTerms, WorkWebRelevance, WorkWebGroundedSynthesis,
-		WorkWebGroundedSynthesisCorrection, WorkWebClaimEvidenceReview,
-		WorkArtifactHandling, WorkKnownArtifactTruth,
-		WorkDeclarationArtifactBoundary, WorkArtifactCandidateSelection,
-		WorkCapabilityRelation, WorkSkillSelection, WorkTypeScriptRepairGuidance,
-		WorkFragmentGeneration, WorkFragmentModification, WorkFragmentCorrection, WorkResponseCorrection,
-	}
 }

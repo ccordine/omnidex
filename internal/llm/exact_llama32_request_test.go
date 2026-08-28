@@ -17,12 +17,11 @@ func TestExactLlama32PreparedRequestUsesDeterministicNaturalCompletion(t *testin
 	}
 	zero := ExactPreparedTemperature(0)
 	prepared := PreparedModel{
-		Protocol: ExactPreparedProtocolRawTextV1, BaseModel: expected.Model,
+		Protocol: ExactPreparedProtocolRawTextV2, BaseModel: expected.Model,
 		ContextModel: expected.Model, Prompt: "return one declaration",
 		PromptHint: MinimalGeneratePrompt, MaxOutputTokens: expected.NativeContextLimit,
 		OutputLimitMode: ExactPreparedOutputLimitNatural,
 		ContextTokens:   expected.NativeContextLimit, Temperature: &zero,
-		RawTextStopSequence:         ExactPreparedCodeStopV1,
 		ProviderIdentityExpectation: &expected, ProviderObservationChallenge: challenge,
 	}
 	wire, err := ExactPreparedRequestBytes(prepared)

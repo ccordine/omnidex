@@ -26,8 +26,8 @@ func TestPortableRendererV2MigrationPreservesOnlyHistoricalAndCurrentVersions(t 
 		"LOCK TABLE station_gap_openings IN ACCESS EXCLUSIVE MODE",
 		"DROP CONSTRAINT station_gap_openings_renderer_version_check",
 		"ADD CONSTRAINT station_gap_openings_renderer_version_check",
-		assemblyline.PortableRendererV1,
-		assemblyline.PortableRendererV2,
+		"omnidex.render-portable-job.v1",
+		"omnidex.render-portable-job.v2",
 	} {
 		if !strings.Contains(source, required) {
 			t.Errorf("renderer migration lacks %q", required)
@@ -38,8 +38,8 @@ func TestPortableRendererV2MigrationPreservesOnlyHistoricalAndCurrentVersions(t 
 			t.Errorf("renderer migration contains forbidden %q", forbidden)
 		}
 	}
-	if strings.Contains(source, assemblyline.PortableRendererV3) {
-		t.Fatalf("historical V2 migration contains future renderer %q", assemblyline.PortableRendererV3)
+	if strings.Contains(source, "omnidex.render-portable-job.v3") {
+		t.Fatalf("historical V2 migration contains future renderer %q", "omnidex.render-portable-job.v3")
 	}
 }
 
@@ -51,7 +51,7 @@ func TestPortableRendererV2MigratesHistoricalV1AndRejectsUnknown(t *testing.T) {
 	}
 
 	historical := rendererMigrationOpening(t, pool, "renderer-v1")
-	historical = openingWithRenderer(t, historical, assemblyline.PortableRendererV1)
+	historical = openingWithRenderer(t, historical, "omnidex.render-portable-job.v1")
 	historical = insertRendererMigrationOpening(t, pool, historical, false)
 	if err := repository.EnsureSchema(t.Context(), loadMigrationBundleThroughPrefix(t, "092")); err != nil {
 		t.Fatal(err)
@@ -62,14 +62,14 @@ func TestPortableRendererV2MigratesHistoricalV1AndRejectsUnknown(t *testing.T) {
 	`, historical.ID).Scan(&retained); err != nil {
 		t.Fatal(err)
 	}
-	if retained != assemblyline.PortableRendererV1 {
+	if retained != "omnidex.render-portable-job.v1" {
 		t.Fatalf("historical renderer=%q", retained)
 	}
 
 	current := rendererMigrationOpening(t, pool, "renderer-v2")
-	current = openingWithRenderer(t, current, assemblyline.PortableRendererV2)
+	current = openingWithRenderer(t, current, "omnidex.render-portable-job.v2")
 	current = insertRendererMigrationOpening(t, pool, current, false)
-	if current.RendererVersion != assemblyline.PortableRendererV2 {
+	if current.RendererVersion != "omnidex.render-portable-job.v2" {
 		t.Fatalf("current renderer=%q", current.RendererVersion)
 	}
 
@@ -85,7 +85,7 @@ func TestPortableRendererV2FreshSchemaAcceptsCurrentRuntimeOpening(t *testing.T)
 		t.Fatal(err)
 	}
 	current := rendererMigrationOpening(t, pool, "renderer-v2-fresh")
-	current = openingWithRenderer(t, current, assemblyline.PortableRendererV2)
+	current = openingWithRenderer(t, current, "omnidex.render-portable-job.v2")
 	current = insertRendererMigrationOpening(t, pool, current, false)
 	var persisted string
 	if err := pool.QueryRow(t.Context(), `
@@ -93,7 +93,7 @@ func TestPortableRendererV2FreshSchemaAcceptsCurrentRuntimeOpening(t *testing.T)
 	`, current.ID).Scan(&persisted); err != nil {
 		t.Fatal(err)
 	}
-	if persisted != assemblyline.PortableRendererV2 {
+	if persisted != "omnidex.render-portable-job.v2" {
 		t.Fatalf("fresh renderer=%q", persisted)
 	}
 }

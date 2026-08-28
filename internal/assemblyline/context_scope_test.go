@@ -17,18 +17,22 @@ func TestRoleplayContextScopeIsPortableButNeverModelVisible(t *testing.T) {
 		{
 			name: "search terms",
 			job: func() (PortableJob, error) {
-				return NewContextSearchTermsJob(ContextSearchTermsInput{
+				return NewContextSearchTermCoverageJob(ContextSearchTermLeafInput{
 					ExactInstruction: "Continue.", Scope: ContextScopeRoleplaySimulation,
+					AcceptedTerms: []string{},
 				})
 			},
 		},
 		{
 			name: "relevance",
 			job: func() (PortableJob, error) {
-				return NewContextRelevanceJob(ContextRelevanceInput{
-					ExactInstruction: "Continue.", RetrievalConcepts: []string{},
-					CandidateAuthorities: []ContextCandidateAuthority{candidate},
-					MaxSelections:        1, Scope: ContextScopeRoleplaySimulation,
+				return NewContextRelevanceSelectionJob(ContextRelevanceSelectionInput{
+					Authority: ContextRelevanceInput{
+						ExactInstruction: "Continue.", RetrievalConcepts: []string{},
+						CandidateAuthorities: []ContextCandidateAuthority{candidate},
+						MaxSelections:        1, Scope: ContextScopeRoleplaySimulation,
+					},
+					AcceptedCandidateIDs: []string{},
 				})
 			},
 		},
@@ -51,7 +55,7 @@ func TestRoleplayContextScopeIsPortableButNeverModelVisible(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			prompt, _, err := RenderPortableJob(job)
+			prompt, err := RenderPortableJob(job)
 			if err != nil {
 				t.Fatal(err)
 			}

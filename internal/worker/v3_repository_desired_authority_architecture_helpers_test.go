@@ -24,8 +24,12 @@ func desiredModelBoundSources(t *testing.T) []architectureSource {
 		modelBound := false
 		ast.Inspect(source.file, func(node ast.Node) bool {
 			identifier, ok := node.(*ast.Ident)
-			if ok && (identifier.Name == "RenderPortableJob" || identifier.Name == "runDirectCodingSemanticCall") {
-				modelBound = true
+			if ok {
+				switch identifier.Name {
+				case "RenderPortableJob", "runDirectCodingSemanticLeafCall",
+					"runObjectiveRawLeafWorkerCall", "runObjectivePortableRawLeafCall":
+					modelBound = true
+				}
 			}
 			return true
 		})
@@ -90,59 +94,6 @@ func parseArchitectureSource(t *testing.T, path string) architectureSource {
 		imports = append(imports, value)
 	}
 	return architectureSource{path: path, file: parsed, imports: imports}
-}
-
-func assertNoPhysicalSchemaAuthority(t *testing.T, label string, value any) {
-	t.Helper()
-	forbiddenProperties := stringSet(
-		"path", "paths", "filepath", "filename", "file", "files", "operation", "operations",
-		"action", "actions", "command", "commands", "shell", "patch", "patches", "content",
-		"contents", "workspace", "tree", "tool", "tools", "arguments", "completion", "plan",
-	)
-	forbiddenValues := stringSet("create", "delete", "write", "remove", "rename", "move",
-		"create_file", "delete_file", "write_file", "rename_file", "move_file")
-	var inspect func(any)
-	inspect = func(node any) {
-		switch typed := node.(type) {
-		case map[string]any:
-			if properties, ok := typed["properties"].(map[string]any); ok {
-				for property := range properties {
-					if _, forbidden := forbiddenProperties[normalizeAuthorityName(property)]; forbidden {
-						t.Errorf("%s response schema exposes physical property %q", label, property)
-					}
-				}
-			}
-			for key, child := range typed {
-				if key == "const" || key == "enum" {
-					assertNoPhysicalSchemaValue(t, label, child, forbiddenValues)
-				}
-				inspect(child)
-			}
-		case []any:
-			for _, child := range typed {
-				inspect(child)
-			}
-		}
-	}
-	inspect(value)
-}
-
-func assertNoPhysicalSchemaValue(t *testing.T, label string, value any, forbidden map[string]struct{}) {
-	t.Helper()
-	switch typed := value.(type) {
-	case string:
-		if _, exists := forbidden[strings.ToLower(typed)]; exists {
-			t.Errorf("%s response schema exposes physical operation value %q", label, typed)
-		}
-	case []string:
-		for _, item := range typed {
-			assertNoPhysicalSchemaValue(t, label, item, forbidden)
-		}
-	case []any:
-		for _, item := range typed {
-			assertNoPhysicalSchemaValue(t, label, item, forbidden)
-		}
-	}
 }
 
 func normalizeAuthorityName(value string) string {

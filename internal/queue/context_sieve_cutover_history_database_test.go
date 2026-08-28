@@ -164,7 +164,7 @@ func insertUnresolvedHistoricalLegacyOpening(
 			RetainedCandidate: "{}",
 		})
 		job = assemblyline.PortableJob{
-			Schema:  assemblyline.PortableJobSchemaV1,
+			Schema:  "omnidex.portable-job.v1",
 			Kind:    assemblyline.WorkResponseCorrection,
 			Payload: payload,
 		}
@@ -241,7 +241,7 @@ func historicalLegacyPortableJob(
 		t.Fatal(err)
 	}
 	job := assemblyline.PortableJob{
-		Schema:  assemblyline.PortableJobSchemaV1,
+		Schema:  "omnidex.portable-job.v1",
 		Kind:    assemblyline.WorkKind(workKind),
 		Payload: payload,
 	}

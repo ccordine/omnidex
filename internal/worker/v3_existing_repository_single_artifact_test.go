@@ -81,7 +81,7 @@ func TestSinglePlainTextTargetIsAbsentFromRenderedSourceEnvelope(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	prompt, _, err := assemblyline.RenderPortableJob(job)
+	prompt, err := assemblyline.RenderPortableJob(job)
 	if err != nil {
 		t.Fatal(err)
 	}

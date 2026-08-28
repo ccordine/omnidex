@@ -2,7 +2,6 @@ package worker
 
 import (
 	"context"
-	"fmt"
 	"strings"
 	"testing"
 
@@ -20,44 +19,32 @@ func TestDeploymentDispositionRunsOnlyRequiredBoundedStations(t *testing.T) {
 		wantError       string
 	}{
 		{
-			name: "availability not required",
-			availabilityRaw: continuedAvailabilityResultJSON(
-				assemblyline.ApplicationServiceAvailabilityNotRequiredCandidate,
-			),
-			wantCalls: 1, wantDisposition: assemblyline.ApplicationServiceDeploymentVerifyOnly,
+			name:            "availability not required",
+			availabilityRaw: string(assemblyline.ApplicationServiceAvailabilityNotRequiredCandidate),
+			wantCalls:       1, wantDisposition: assemblyline.ApplicationServiceDeploymentVerifyOnly,
 		},
 		{
-			name: "build environment is explicit destination",
-			availabilityRaw: continuedAvailabilityResultJSON(
-				assemblyline.ApplicationServiceAvailabilityRequiredCandidate,
-			),
-			destinationRaw: persistenceDestinationResultJSON(
-				assemblyline.ApplicationServiceBuildEnvironmentDestinationCandidate,
-			),
-			wantCalls: 2, wantDisposition: assemblyline.ApplicationServiceDeploymentPersistCurrentHost,
+			name:            "build environment is explicit destination",
+			availabilityRaw: string(assemblyline.ApplicationServiceAvailabilityRequiredCandidate),
+			destinationRaw:  string(assemblyline.ApplicationServiceBuildEnvironmentDestinationCandidate),
+			wantCalls:       2, wantDisposition: assemblyline.ApplicationServiceDeploymentPersistCurrentHost,
 		},
 		{
-			name: "destination is not explicit build environment",
-			availabilityRaw: continuedAvailabilityResultJSON(
-				assemblyline.ApplicationServiceAvailabilityRequiredCandidate,
-			),
-			destinationRaw: persistenceDestinationResultJSON(
-				assemblyline.ApplicationServiceBuildEnvironmentNotEstablishedCandidate,
-			),
-			wantCalls: 2, wantError: "outside the registered current-host authority",
+			name:            "destination is not explicit build environment",
+			availabilityRaw: string(assemblyline.ApplicationServiceAvailabilityRequiredCandidate),
+			destinationRaw:  string(assemblyline.ApplicationServiceBuildEnvironmentNotEstablishedCandidate),
+			wantCalls:       2, wantError: "outside the registered current-host authority",
 		},
 		{
 			name:            "malformed availability",
-			availabilityRaw: `{"schema":"bad","candidate_id":"AVAILABILITY_CANDIDATE_2"}`,
+			availabilityRaw: "AVAILABILITY_CANDIDATE_3",
 			wantCalls:       1, wantError: "resolve service continued availability",
 		},
 		{
-			name: "malformed destination",
-			availabilityRaw: continuedAvailabilityResultJSON(
-				assemblyline.ApplicationServiceAvailabilityRequiredCandidate,
-			),
-			destinationRaw: `{"schema":"bad","candidate_id":"DESTINATION_CANDIDATE_1"}`,
-			wantCalls:      2, wantError: "resolve service persistence destination",
+			name:            "malformed destination",
+			availabilityRaw: string(assemblyline.ApplicationServiceAvailabilityRequiredCandidate),
+			destinationRaw:  "DESTINATION_CANDIDATE_3",
+			wantCalls:       2, wantError: "resolve service persistence destination",
 		},
 	}
 	for _, testCase := range tests {
@@ -87,7 +74,7 @@ func TestDeploymentDispositionRunsOnlyRequiredBoundedStations(t *testing.T) {
 				Context: context.Background(), MaxAttempts: 9, CorrectionModel: "forbidden",
 				Execute: func(job assemblyline.PortableJob, model string) (assemblyline.PortableResult, error) {
 					calls++
-					prompt, schema, renderErr := assemblyline.RenderPortableJob(job)
+					prompt, renderErr := assemblyline.RenderPortableJob(job)
 					if renderErr != nil {
 						return assemblyline.PortableResult{}, renderErr
 					}
@@ -98,7 +85,7 @@ func TestDeploymentDispositionRunsOnlyRequiredBoundedStations(t *testing.T) {
 							t.Fatalf("continued-availability kind=%q", job.Kind)
 						}
 						assertContinuedAvailabilityCall(
-							t, job.ID, model, prompt, schema, availabilityJob.ID,
+							t, job.ID, model, prompt, availabilityJob.ID,
 						)
 						raw = testCase.availabilityRaw
 					case 2:
@@ -106,7 +93,7 @@ func TestDeploymentDispositionRunsOnlyRequiredBoundedStations(t *testing.T) {
 							t.Fatalf("persistence-destination kind=%q", job.Kind)
 						}
 						assertPersistenceDestinationCall(
-							t, job.ID, model, prompt, schema, destinationJob.ID,
+							t, job.ID, model, prompt, destinationJob.ID,
 						)
 						raw = testCase.destinationRaw
 					default:
@@ -139,7 +126,7 @@ func TestDeploymentDispositionRunsOnlyRequiredBoundedStations(t *testing.T) {
 }
 
 func assertContinuedAvailabilityCall(
-	t *testing.T, jobID, model, prompt string, schema map[string]any, wantJobID string,
+	t *testing.T, jobID, model, prompt, wantJobID string,
 ) {
 	t.Helper()
 	if jobID != wantJobID || model != "availability-model" ||
@@ -153,11 +140,10 @@ func assertContinuedAvailabilityCall(
 	if strings.Count(prompt, "Keep the completed service available in this environment.") != 1 {
 		t.Fatalf("continued-availability prompt did not contain immutable request exactly once: %s", prompt)
 	}
-	assertServiceDeploymentSchema(t, schema, assemblyline.ApplicationServiceContinuedAvailabilitySchemaV1)
 }
 
 func assertPersistenceDestinationCall(
-	t *testing.T, jobID, model, prompt string, schema map[string]any, wantJobID string,
+	t *testing.T, jobID, model, prompt, wantJobID string,
 ) {
 	t.Helper()
 	if jobID != wantJobID || model != "destination-model" ||
@@ -170,19 +156,6 @@ func assertPersistenceDestinationCall(
 	}
 	if strings.Count(prompt, "Keep the completed service available in this environment.") != 1 {
 		t.Fatalf("persistence-destination prompt did not contain immutable request exactly once: %s", prompt)
-	}
-	assertServiceDeploymentSchema(t, schema, assemblyline.ApplicationServicePersistenceDestinationSchemaV1)
-}
-
-func assertServiceDeploymentSchema(t *testing.T, schema map[string]any, want string) {
-	t.Helper()
-	properties, ok := schema["properties"].(map[string]any)
-	if !ok {
-		t.Fatalf("schema properties=%#v", schema["properties"])
-	}
-	schemaProperty, ok := properties["schema"].(map[string]any)
-	if !ok || schemaProperty["const"] != want {
-		t.Fatalf("schema const=%#v want=%q", schemaProperty["const"], want)
 	}
 }
 
@@ -209,20 +182,4 @@ func assertDeploymentSemanticAuthority(
 		resolution.PersistenceDestinationResponseSHA256 == resolution.ContinuedAvailabilityResponseSHA256 {
 		t.Fatalf("persistent resolution did not retain both authorities: %+v", resolution)
 	}
-}
-
-func continuedAvailabilityResultJSON(
-	candidate assemblyline.ApplicationServiceContinuedAvailabilityCandidateID,
-) string {
-	return fmt.Sprintf(`{"schema":%q,"candidate_id":%q}`,
-		assemblyline.ApplicationServiceContinuedAvailabilitySchemaV1, candidate,
-	)
-}
-
-func persistenceDestinationResultJSON(
-	candidate assemblyline.ApplicationServicePersistenceDestinationCandidateID,
-) string {
-	return fmt.Sprintf(`{"schema":%q,"candidate_id":%q}`,
-		assemblyline.ApplicationServicePersistenceDestinationSchemaV1, candidate,
-	)
 }

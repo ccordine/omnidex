@@ -2,6 +2,7 @@ package webresearch
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -28,28 +29,73 @@ func testPortableRuntime(execute PortableExecutor) PortableRuntime {
 	}
 }
 
-func TestPortableStationsExecuteFiveExactLeafJobs(t *testing.T) {
-	calls := make([]assemblyline.WorkKind, 0, 5)
+func TestPortableStationsExecuteOneJobPerSemanticLeaf(t *testing.T) {
+	calls := make([]assemblyline.WorkKind, 0, 12)
 	station, err := NewPortableStations(testPortableRuntime(func(
 		_ context.Context,
 		job assemblyline.PortableJob,
 	) (assemblyline.PortableResult, error) {
 		calls = append(calls, job.Kind)
-		if _, _, err := assemblyline.RenderPortableJob(job); err != nil {
+		if _, err := assemblyline.RenderPortableJob(job); err != nil {
 			return assemblyline.PortableResult{}, err
 		}
 		candidate := ""
 		switch job.Kind {
-		case assemblyline.WorkWebSearchTerms:
-			candidate = fmt.Sprintf(`{"schema":%q,"terms":["stable release"]}`, assemblyline.WebSearchTermsSchemaV1)
-		case assemblyline.WorkWebRelevance:
-			candidate = fmt.Sprintf(`{"schema":%q,"candidate_ids":["C31"]}`, assemblyline.WebRelevanceSchemaV1)
-		case assemblyline.WorkWebGroundedSynthesis:
-			candidate = fmt.Sprintf(`{"schema":%q,"paragraphs":[{"text":"Version 2 is current.","evidence_ids":["E31"]}]}`, assemblyline.WebGroundedSynthesisSchemaV1)
+		case assemblyline.WorkWebSearchTermCoverage:
+			var input assemblyline.WebSearchTermLeafInput
+			if err := json.Unmarshal(job.Payload, &input); err != nil {
+				return assemblyline.PortableResult{}, err
+			}
+			candidate = string(assemblyline.WebQueryTermRemains)
+			if len(input.AcceptedTerms) > 0 {
+				candidate = string(assemblyline.WebNoUncoveredQueryTerm)
+			}
+		case assemblyline.WorkWebSearchTerm:
+			candidate = "stable release"
+		case assemblyline.WorkWebRelevanceRelation:
+			var input assemblyline.WebRelevanceRelationInput
+			if err := json.Unmarshal(job.Payload, &input); err != nil {
+				return assemblyline.PortableResult{}, err
+			}
+			candidate = string(assemblyline.WebCandidateNotRelevant)
+			if input.Candidate.CandidateID == "C31" {
+				candidate = string(assemblyline.WebCandidateRelevant)
+			}
+		case assemblyline.WorkWebSynthesisParagraphCoverage:
+			var input assemblyline.WebSynthesisParagraphLeafInput
+			if err := json.Unmarshal(job.Payload, &input); err != nil {
+				return assemblyline.PortableResult{}, err
+			}
+			candidate = string(assemblyline.WebSynthesisParagraphRemains)
+			if len(input.AcceptedParagraphs) > 0 {
+				candidate = string(assemblyline.WebSynthesisNoUncoveredParagraph)
+			}
+		case assemblyline.WorkWebSynthesisParagraph:
+			candidate = "Version 2 is current."
+		case assemblyline.WorkWebSynthesisEvidenceRelation:
+			var input assemblyline.WebSynthesisEvidenceRelationInput
+			if err := json.Unmarshal(job.Payload, &input); err != nil {
+				return assemblyline.PortableResult{}, err
+			}
+			candidate = string(assemblyline.WebEvidenceDoesNotSupport)
+			if input.Evidence.EvidenceID == "E31" {
+				candidate = string(assemblyline.WebEvidenceSupportsParagraph)
+			}
 		case assemblyline.WorkWebGroundedSynthesisCorrection:
-			candidate = `{"text":"Version 2 is current."}`
-		case assemblyline.WorkWebClaimEvidenceReview:
-			candidate = fmt.Sprintf(`{"schema":%q,"outcome":"none"}`, assemblyline.WebClaimEvidenceReviewSchemaV1)
+			candidate = "Version 2 is current."
+		case assemblyline.WorkWebReviewClaimCoverage:
+			var input assemblyline.WebReviewClaimLeafInput
+			if err := json.Unmarshal(job.Payload, &input); err != nil {
+				return assemblyline.PortableResult{}, err
+			}
+			candidate = string(assemblyline.WebReviewClaimRemains)
+			if len(input.AcceptedClaims) > 0 {
+				candidate = string(assemblyline.WebReviewNoUncoveredClaim)
+			}
+		case assemblyline.WorkWebReviewClaim:
+			candidate = "Version 2 is current."
+		case assemblyline.WorkWebReviewClaimVerdict:
+			candidate = string(assemblyline.WebReviewClaimSupported)
 		default:
 			return assemblyline.PortableResult{}, fmt.Errorf("unexpected job %q", job.Kind)
 		}
@@ -106,14 +152,29 @@ func TestPortableStationsExecuteFiveExactLeafJobs(t *testing.T) {
 		t.Fatalf("review=%+v err=%v", review, err)
 	}
 	want := []assemblyline.WorkKind{
-		assemblyline.WorkWebSearchTerms,
-		assemblyline.WorkWebRelevance,
-		assemblyline.WorkWebGroundedSynthesis,
+		assemblyline.WorkWebSearchTerm,
+		assemblyline.WorkWebSearchTermCoverage,
+		assemblyline.WorkWebRelevanceRelation,
+		assemblyline.WorkWebRelevanceRelation,
+		assemblyline.WorkWebSynthesisParagraph,
+		assemblyline.WorkWebSynthesisEvidenceRelation,
+		assemblyline.WorkWebSynthesisEvidenceRelation,
+		assemblyline.WorkWebSynthesisParagraphCoverage,
 		assemblyline.WorkWebGroundedSynthesisCorrection,
-		assemblyline.WorkWebClaimEvidenceReview,
+		assemblyline.WorkWebReviewClaim,
+		assemblyline.WorkWebReviewClaimVerdict,
+		assemblyline.WorkWebReviewClaimCoverage,
 	}
 	if fmt.Sprint(calls) != fmt.Sprint(want) {
 		t.Fatalf("calls=%v want %v", calls, want)
+	}
+	if terms.SemanticCalls != 2 || relevance.SemanticCalls != 2 ||
+		synthesis.SemanticCalls != 4 || correction.SemanticCalls != 1 || review.SemanticCalls != 3 {
+		t.Fatalf(
+			"semantic calls terms=%d relevance=%d synthesis=%d correction=%d review=%d",
+			terms.SemanticCalls, relevance.SemanticCalls, synthesis.SemanticCalls,
+			correction.SemanticCalls, review.SemanticCalls,
+		)
 	}
 }
 
@@ -125,11 +186,8 @@ func TestPortableStationsRejectInvalidResultWithoutFallback(t *testing.T) {
 	) (assemblyline.PortableResult, error) {
 		calls++
 		return assemblyline.PortableResult{
-			JobID: job.ID,
-			Candidate: fmt.Sprintf(
-				`{"schema":%q,"candidate_ids":["C99"]}`,
-				assemblyline.WebRelevanceSchemaV1,
-			),
+			JobID:     job.ID,
+			Candidate: `{"relation":"RELEVANT"}`,
 		}, nil
 	}))
 	if err != nil {
@@ -144,6 +202,57 @@ func TestPortableStationsRejectInvalidResultWithoutFallback(t *testing.T) {
 	}
 	if calls != 1 {
 		t.Fatalf("executor calls=%d; invalid result triggered a fallback", calls)
+	}
+}
+
+func TestPortableReviewAssemblesOneIssueFromFourIndependentLeaves(t *testing.T) {
+	calls := make([]assemblyline.WorkKind, 0, 4)
+	station, err := NewPortableStations(testPortableRuntime(func(
+		_ context.Context,
+		job assemblyline.PortableJob,
+	) (assemblyline.PortableResult, error) {
+		calls = append(calls, job.Kind)
+		candidate := ""
+		switch job.Kind {
+		case assemblyline.WorkWebReviewClaimCoverage:
+			candidate = string(assemblyline.WebReviewClaimRemains)
+		case assemblyline.WorkWebReviewClaim:
+			candidate = "Version 3 is current."
+		case assemblyline.WorkWebReviewClaimVerdict:
+			candidate = string(assemblyline.WebReviewClaimContradicted)
+		case assemblyline.WorkWebReviewIssueEvidenceRelation:
+			candidate = string(assemblyline.WebReviewEvidenceImplicated)
+		case assemblyline.WorkWebReviewIssueDetail:
+			candidate = "The evidence identifies version 2 as current."
+		default:
+			return assemblyline.PortableResult{}, fmt.Errorf("unexpected job %q", job.Kind)
+		}
+		return assemblyline.PortableResult{JobID: job.ID, Candidate: candidate}, nil
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	decision, err := station.Review(t.Context(), ClaimEvidenceReviewCall{
+		Question: "Which release is current?", ParagraphID: "P1",
+		ParagraphText: "Version 3 is current.",
+		Evidence:      []ProjectedEvidence{{EvidenceID: "E31", Content: "Version 2 is current."}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if decision.Outcome != ClaimEvidenceReviewIssue || decision.ParagraphID != "P1" ||
+		len(decision.EvidenceIDs) != 1 || decision.EvidenceIDs[0] != "E31" ||
+		decision.IssueKind != ClaimEvidenceContradictedSupport || decision.SemanticCalls != 4 {
+		t.Fatalf("decision=%+v", decision)
+	}
+	want := []assemblyline.WorkKind{
+		assemblyline.WorkWebReviewClaim,
+		assemblyline.WorkWebReviewClaimVerdict,
+		assemblyline.WorkWebReviewIssueEvidenceRelation,
+		assemblyline.WorkWebReviewIssueDetail,
+	}
+	if fmt.Sprint(calls) != fmt.Sprint(want) {
+		t.Fatalf("calls=%v want %v", calls, want)
 	}
 }
 

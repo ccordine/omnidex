@@ -1,3 +1,50 @@
+# Charmeleon chat and web-search invariants
+
+Status: current raw-leaf execution contract, followed by historical motivation.
+The first-person discussion below is non-normative. Where an illustrative pipeline
+differs from this section, this section and production code control.
+
+## Current raw-leaf execution contract
+
+Code owns retrieval, search execution, candidate identity, bounds, ordering,
+deduplication, evidence, typed result assembly, correction, and semantic-call
+accounting. No web model returns a JSON object, array, tool request, workflow
+decision, or aggregate review.
+
+Search-term resolution is a bounded fixed point. One raw coverage call returns only
+whether another term remains. Only that result permits a separate call returning one
+raw term. Code validates and retains the term, repeats coverage, and assembles the
+typed term set. Its alternatives are the semantic relations `QUERY_TERM_REMAINS` and
+`NO_UNCOVERED_QUERY_TERM`; neither is a workflow instruction. Code alone interprets
+the relation and controls repetition. Code then performs every search.
+
+Relevance is one candidate relation per call. Each raw result classifies only the
+supplied candidate as relevant or irrelevant. Code restores the opaque candidate ID,
+enforces the selection bound, and assembles the typed selection.
+
+Grounded synthesis is another code-owned fixed point. One raw coverage call says
+whether another paragraph remains; a separate call returns one paragraph only when
+needed. For that paragraph, each evidence item receives its own raw support-relation
+call. Its coverage alternatives are `PARAGRAPH_REMAINS` and
+`NO_UNCOVERED_PARAGRAPH`. Code binds the supporting evidence IDs and assembles the
+typed synthesis.
+
+Review never returns an aggregate verdict. Code alternates raw claim coverage with
+one raw claim while coverage remains, asks one raw verdict question for that claim,
+and stops at the first grounded issue. For an issue, each evidence item receives one
+raw implicated/not-implicated relation call, followed by one raw issue-detail call.
+The coverage alternatives are `CLAIM_REMAINS` and `NO_UNCOVERED_CLAIM`. Code alone
+assembles the review decision and owns every stop or repeat transition. Every coverage,
+value, verdict, and relation call is counted exactly in the web-research result's
+semantic-call total.
+
+When one of these leaves fails deterministic validation, correction receives the same
+single semantic question, the complete rejected raw leaf, and one grounded defect. It
+must return one complete replacement leaf in the original raw format; the original
+decoder validates it. Correction never returns a patch or reconstructs accepted state.
+
+## Historical motivation (non-normative)
+
 the next really good application for this could be chatting web searches and stuff, like we can very easily just just a web search tool, this is how I always did it before ( notice that it's not different than what you'd expect )
 
 Normally what I have done is that I will generate search terms, then programmatically perform every web search, and get a large cumulative body of information, often I'd either vectorize this for searching in PG vector, or just pass it all as part of the context, usually I do a context minification loop, where I programmatically loop over all the information, and determine it's relevance to the prompt, and then if it is produce a summary or something about it like a symbol to access it later, then after I have all the relevant information accumulated, I then pass it to an LLM to make sense of it, pull whatever it needs from that context to give me a grounded response, it's also identical to how I handle DB queries for RAGs and memories and stuff. You see, me as a human, I generally do not have to actively remember things, often when something is said, my brain's neural pathways already use symbols to link me to that, so I have that information ready when I am formulating my response, so as a natural part of just responding to chat, I often don't care about the most recent messages, I search the DB through vectors and tags and search terms to find relevant text and memories and stuff, and then put that through the minification tool then it just inherently knows that information without having to waste cycles on "thinking" and "deciding to remember", the LLM just starts with all the information it needs, through this process, I was able to keep my cheap 3rd party LLMs remembering details about me and by job and stuff for well over 6 months in 1 channel
@@ -31,7 +78,7 @@ context minification
       ↓
 compact relevant evidence
       ↓
-FINAL RESPONSE MODEL
+RAW RESPONSE LEAF
       ↓
 answer as though it simply "knows" the relevant state
 
@@ -104,13 +151,13 @@ You need something like:
 
 Prompt
  ↓
+SearchTermCoverageStation
+raw output: TERM_REMAINS
+ ↓
 SearchTermStation
-output:
-[
-  "orbital data center thermal management",
-  "space computing radiator waste heat",
-  "spacecraft heat recovery Rankine"
-]
+raw output: orbital data center thermal management
+ ↓
+code retains one term and repeats coverage
 
 Then CODE does:
 
@@ -168,11 +215,10 @@ CONFLICT:
 S14 estimates X;
 S18 disputes X due to Y.
 
-Now the final model’s entire job is:
-
-Make sense of this evidence and answer the human.
-
-That’s a good use of an LLM.
+In the current implementation, code asks whether another grounded paragraph remains,
+requests at most one raw paragraph, and tests that paragraph against one evidence item
+per raw relation call. Code assembles the grounded response; no model emits this
+evidence capsule set or a structured final-answer aggregate.
 
 ⸻
 
@@ -247,7 +293,7 @@ The same machine works across chat, web, RAG, and memory with only different ret
                        ↓
               context projection
                        ↓
-                  RESPONSE LLM
+             RAW RESPONSE LEAF
 
 Even project-aware coding chat just adds:
 

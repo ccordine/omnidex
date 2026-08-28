@@ -10,7 +10,7 @@ func TestBundledServiceEndpointContractWorkKindIsRetired(t *testing.T) {
 		}
 	}
 	job := PortableJob{
-		Schema:  PortableJobSchemaV1,
+		Schema:  "omnidex.portable-job.v1",
 		Kind:    WorkKind("application_service_endpoint_contract"),
 		Payload: []byte(`{}`),
 	}

@@ -26,7 +26,7 @@ func TestApplicationServicePersistenceDestinationHasOneOpaqueResponsibility(t *t
 		payload["continued_availability"] == nil {
 		t.Fatalf("portable input does not bind the request and affirmative authority: %#v", payload)
 	}
-	prompt, schema, err := RenderPortableJob(job)
+	prompt, err := RenderPortableJob(job)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -38,9 +38,6 @@ func TestApplicationServicePersistenceDestinationHasOneOpaqueResponsibility(t *t
 		strings.Contains(prompt, "whether the immutable request explicitly requires") {
 		t.Fatalf("persistence-destination prompt contains availability responsibility: %s", prompt)
 	}
-	assertBinaryOpaqueServiceSemanticSchema(
-		t, schema, ApplicationServicePersistenceDestinationSchemaV1, `^DESTINATION_CANDIDATE_[12]$`,
-	)
 }
 
 func TestApplicationServicePersistenceDestinationDecodesBothCandidates(t *testing.T) {
@@ -52,8 +49,7 @@ func TestApplicationServicePersistenceDestinationDecodesBothCandidates(t *testin
 		ApplicationServiceBuildEnvironmentDestinationCandidate,
 		ApplicationServiceBuildEnvironmentNotEstablishedCandidate,
 	} {
-		raw := `{"schema":"` + ApplicationServicePersistenceDestinationSchemaV1 +
-			`","candidate_id":"` + string(candidate) + `"}`
+		raw := string(candidate)
 		if _, err := DecodeApplicationServicePersistenceDestinationResult(input, raw); err != nil {
 			t.Fatalf("candidate=%q error=%v", candidate, err)
 		}
@@ -65,14 +61,12 @@ func TestApplicationServicePersistenceDestinationFailsClosed(t *testing.T) {
 		UserRequest:           "Keep the completed service running in this environment.",
 		ContinuedAvailability: requiredContinuedAvailabilityResult(),
 	}
-	valid := `{"schema":"` + ApplicationServicePersistenceDestinationSchemaV1 +
-		`","candidate_id":"` + string(ApplicationServiceBuildEnvironmentDestinationCandidate) + `"}`
 	for name, raw := range map[string]string{
-		"unknown candidate": strings.Replace(valid, "DESTINATION_CANDIDATE_1", "DESTINATION_CANDIDATE_9", 1),
-		"wrong schema":      strings.Replace(valid, ApplicationServicePersistenceDestinationSchemaV1, "omnidex.invalid.v1", 1),
-		"extra field":       strings.TrimSuffix(valid, "}") + `,"availability":"required"}`,
-		"duplicate field":   strings.TrimSuffix(valid, "}") + `,"candidate_id":"DESTINATION_CANDIDATE_2"}`,
-		"trailing value":    valid + `{}`,
+		"unknown candidate": "DESTINATION_CANDIDATE_9",
+		"JSON wrapper":      `{"candidate_id":"DESTINATION_CANDIDATE_1"}`,
+		"quoted":            `"DESTINATION_CANDIDATE_1"`,
+		"label":             "candidate_id: DESTINATION_CANDIDATE_1",
+		"trailing value":    "DESTINATION_CANDIDATE_1 DESTINATION_CANDIDATE_2",
 	} {
 		t.Run(name, func(t *testing.T) {
 			if _, err := DecodeApplicationServicePersistenceDestinationResult(input, raw); err == nil {

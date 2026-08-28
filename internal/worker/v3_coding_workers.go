@@ -146,11 +146,8 @@ func stationGapProjectionKind(
 	}
 }
 
-func portableModelScope(responseSchema map[string]any) string {
-	if responseSchema == nil {
-		return "portable_fragment_worker"
-	}
-	return "portable_semantic_worker"
+func portableModelScope(kind assemblyline.WorkKind) (string, error) {
+	return assemblyline.PortableWorkerScopeForWorkKind(kind)
 }
 
 func (s *directCodingSession) workerModel(id station.ID) (string, error) {

@@ -13,14 +13,57 @@ func generateExistingRepositorySearchTerm(
 	identities []assemblyline.ArtifactIdentity,
 ) (assemblyline.RepositorySearchTermDecision, error) {
 	input := assemblyline.RepositorySearchTermInput{UnresolvedConcept: unresolvedConcept}
-	job, err := assemblyline.NewRepositorySearchTermJob(input)
-	if err != nil {
-		return assemblyline.RepositorySearchTermDecision{}, err
+	anchors := make([]string, 0, assemblyline.MaxRepositorySearchAnchorLeaves)
+	for {
+		leafInput := assemblyline.RepositorySearchAnchorLeafInput{
+			UnresolvedConcept: unresolvedConcept,
+			AcceptedAnchors:   append([]string{}, anchors...),
+		}
+		anchorJob, err := assemblyline.NewRepositorySearchAnchorJob(leafInput)
+		if err != nil {
+			return assemblyline.RepositorySearchTermDecision{}, err
+		}
+		anchor, err := runDirectCodingSemanticLeafCall(
+			runtime, modelName, "repository_search_anchor", anchorJob, identities,
+			func(raw string) (string, error) {
+				return assemblyline.DecodeRepositorySearchAnchorLeaf(leafInput, raw)
+			},
+			func(value string) error {
+				return assemblyline.ValidatePathFreeModelContextWithProvenance(
+					"repository search anchor", runtime.PathProvenance, value,
+				)
+			},
+		)
+		if err != nil {
+			return assemblyline.RepositorySearchTermDecision{}, err
+		}
+		anchors = append(anchors, anchor)
+		leafInput.AcceptedAnchors = append([]string{}, anchors...)
+		coverageJob, err := assemblyline.NewRepositorySearchAnchorCoverageJob(leafInput)
+		if err != nil {
+			return assemblyline.RepositorySearchTermDecision{}, err
+		}
+		coverage, err := runDirectCodingSemanticLeafCall(
+			runtime, modelName, "repository_search_anchor_coverage",
+			coverageJob, identities,
+			func(raw string) (string, error) {
+				return assemblyline.DecodeRepositorySearchAnchorCoverageLeaf(leafInput, raw)
+			},
+			func(string) error { return nil },
+		)
+		if err != nil {
+			return assemblyline.RepositorySearchTermDecision{}, err
+		}
+		if coverage == assemblyline.RepositoryNoUncoveredAnchor {
+			return assemblyline.AssembleRepositorySearchTermDecision(input, anchors)
+		}
+		if len(anchors) == assemblyline.MaxRepositorySearchAnchorLeaves {
+			return assemblyline.RepositorySearchTermDecision{}, fmt.Errorf(
+				"repository search anchor coverage remains incomplete at the code-owned %d-item bound",
+				assemblyline.MaxRepositorySearchAnchorLeaves,
+			)
+		}
 	}
-	return runDirectCodingSemanticCall[assemblyline.RepositorySearchTermDecision](
-		runtime, modelName, "repository_search_term", job, identities,
-		func(value assemblyline.RepositorySearchTermDecision) error { return value.ValidateFor(input) },
-	)
 }
 
 func selectExistingRepositoryChangeSurface(
@@ -35,15 +78,37 @@ func selectExistingRepositoryChangeSurface(
 		Requirements: append([]string(nil), requirementQuotes...),
 		Evidence:     evidence,
 	}
-	job, err := assemblyline.NewRepositoryChangeSurfaceJob(input)
-	if err != nil {
-		return assemblyline.RepositoryChangeSurfaceDecision{}, err
+	decision := assemblyline.RepositoryChangeSurfaceDecision{
+		Schema:  assemblyline.RepositoryChangeSurfaceSchemaV2,
+		Targets: []assemblyline.RepositoryChangeTarget{},
 	}
-	decision, err := runDirectCodingSemanticCall[assemblyline.RepositoryChangeSurfaceDecision](
-		runtime, modelName, "repository_change_surface", job, identities,
-		func(value assemblyline.RepositoryChangeSurfaceDecision) error { return value.ValidateFor(input) },
-	)
-	if err != nil {
+	for index, requirement := range input.Requirements {
+		ownerInput := assemblyline.RepositoryChangeOwnerInput{
+			Authority: input, FocusedRequirement: requirement,
+		}
+		job, err := assemblyline.NewRepositoryChangeOwnerJob(ownerInput)
+		if err != nil {
+			return assemblyline.RepositoryChangeSurfaceDecision{}, err
+		}
+		owner, err := runDirectCodingSemanticLeafCall(
+			runtime, modelName, fmt.Sprintf("repository_change_owner_%03d", index+1),
+			job, identities,
+			func(raw string) (string, error) {
+				return assemblyline.DecodeRepositoryChangeOwnerLeaf(ownerInput, raw)
+			},
+			func(string) error { return nil },
+		)
+		if err != nil {
+			return assemblyline.RepositoryChangeSurfaceDecision{}, err
+		}
+		if owner == assemblyline.RepositoryChangeOwnerNone {
+			continue
+		}
+		decision.Targets = append(decision.Targets, assemblyline.RepositoryChangeTarget{
+			SymbolID: owner, Requirement: requirement,
+		})
+	}
+	if err := decision.ValidateFor(input); err != nil {
 		return assemblyline.RepositoryChangeSurfaceDecision{}, err
 	}
 	return decision, nil

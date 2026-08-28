@@ -118,12 +118,11 @@ func TestExactMinistralPreparedRequestUsesNativeSystemAndNaturalCompletion(t *te
 		t.Fatal(err)
 	}
 	prepared := PreparedModel{
-		Protocol: ExactPreparedProtocolRawTextV1, BaseModel: expected.Model,
+		Protocol: ExactPreparedProtocolRawTextV2, BaseModel: expected.Model,
 		ContextModel: expected.Model, Prompt: "return one declaration",
 		PromptHint: MinimalGeneratePrompt, MaxOutputTokens: 1024,
 		OutputLimitMode:             ExactPreparedOutputLimitNatural,
 		ContextTokens:               expected.NativeContextLimit,
-		RawTextStopSequence:         ExactPreparedCodeStopV1,
 		ProviderIdentityExpectation: &expected, ProviderObservationChallenge: challenge,
 	}
 	wire, err := ExactPreparedRequestBytes(prepared)

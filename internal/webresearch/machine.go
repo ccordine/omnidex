@@ -99,10 +99,14 @@ func (machine *Machine) Run(ctx context.Context) (Result, error) {
 		MaxParagraphs:     machine.config.MaxSynthesisParagraphs,
 		MaxParagraphBytes: machine.config.MaxSynthesisParagraphBytes,
 	})
-	result.SynthesisCalls++
 	if err != nil {
 		return fail(fmt.Errorf("grounded synthesis station: %w", err))
 	}
+	if decision.SemanticCalls < 1 {
+		return fail(fmt.Errorf("%w: grounded synthesis reported no semantic calls", ErrInvalidSynthesis))
+	}
+	result.SynthesisCalls++
+	result.SemanticCalls += decision.SemanticCalls
 	if err := ctx.Err(); err != nil {
 		return fail(err)
 	}

@@ -114,7 +114,7 @@ func TestFragmentCorrectionConstructorAdmitsOnlyGuidanceAndMutableSource(t *test
 		len(input.Capabilities) != 0 || len(input.PermittedSymbols) != 0 {
 		t.Fatalf("repair executor retained analyst authority: %+v", input)
 	}
-	prompt, _, err := assemblyline.RenderPortableJob(job)
+	prompt, err := assemblyline.RenderPortableJob(job)
 	if err != nil {
 		t.Fatal(err)
 	}

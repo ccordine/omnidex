@@ -73,9 +73,13 @@ func openStationEvidenceCallForTest(
 	job assemblyline.PortableJob,
 ) (StationGapOpening, llm.PreparedModel, StationCallOpening) {
 	t.Helper()
+	const contextTokens = 32768
 	gap, err := repository.OpenStationGap(t.Context(), StationGapOpenRecord{
 		Authority: authority, Job: job, Station: station.ConversationResponse,
-		ContextTokens: 32768, MaxOutputTokens: 32768,
+		ContextTokens: contextTokens,
+		MaxOutputTokens: portableStationTestMaxOutputTokens(
+			t, job, contextTokens,
+		),
 		OutputLimitMode: llm.ExactPreparedOutputLimitNatural,
 	})
 	if err != nil {

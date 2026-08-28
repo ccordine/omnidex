@@ -4,8 +4,6 @@ import (
 	"os"
 	"strings"
 	"testing"
-
-	"github.com/gryph/omnidex/internal/assemblyline"
 )
 
 const portableRendererV3Migration = "093_portable_renderer_v3.sql"
@@ -29,15 +27,15 @@ func TestPortableRendererV3MigrationRequiresCleanStartAndAcceptsOnlyCurrent(t *t
 		"WHEN 'application_job_specification_repair' THEN station='coding_workload'",
 		"DROP CONSTRAINT station_gap_openings_renderer_version_check",
 		"ADD CONSTRAINT station_gap_openings_renderer_version_check",
-		assemblyline.PortableRendererV3,
+		"omnidex.render-portable-job.v3",
 	} {
 		if !strings.Contains(source, required) {
 			t.Errorf("renderer migration lacks %q", required)
 		}
 	}
 	for _, forbidden := range []string{
-		assemblyline.PortableRendererV1,
-		assemblyline.PortableRendererV2,
+		"omnidex.render-portable-job.v1",
+		"omnidex.render-portable-job.v2",
 		"WHEN 'application_identity'",
 		"WHEN 'requirement_partition'",
 		"WHEN 'application_workload_draft'",
@@ -64,10 +62,10 @@ func TestPortableRendererV3RejectsHistoricalRowsAtomically(t *testing.T) {
 	}
 
 	historicalV1 := rendererMigrationOpening(t, pool, "renderer-v1-before-v3")
-	historicalV1 = openingWithRenderer(t, historicalV1, assemblyline.PortableRendererV1)
+	historicalV1 = openingWithRenderer(t, historicalV1, "omnidex.render-portable-job.v1")
 	historicalV1 = insertRendererMigrationOpening(t, pool, historicalV1, false)
 	historicalV2 := rendererMigrationOpening(t, pool, "renderer-v2-before-v3")
-	historicalV2 = openingWithRenderer(t, historicalV2, assemblyline.PortableRendererV2)
+	historicalV2 = openingWithRenderer(t, historicalV2, "omnidex.render-portable-job.v2")
 	historicalV2 = insertRendererMigrationOpening(t, pool, historicalV2, false)
 
 	err := repository.EnsureSchema(t.Context(), loadMigrationBundleThroughPrefix(t, "093"))
@@ -102,7 +100,7 @@ func TestPortableRendererV3FreshSchemaAcceptsCurrentRuntimeOpening(t *testing.T)
 	`, current.ID).Scan(&persisted); err != nil {
 		t.Fatal(err)
 	}
-	if persisted != assemblyline.PortableRendererV3 {
+	if persisted != "omnidex.render-portable-job.v3" {
 		t.Fatalf("fresh renderer=%q", persisted)
 	}
 }

@@ -16,7 +16,8 @@ type SearchTermsCall struct {
 }
 
 type SearchTermsDecision struct {
-	Terms []string
+	Terms         []string
+	SemanticCalls int
 }
 
 type SearchTermsStation interface {
@@ -38,8 +39,9 @@ type RelevanceCall struct {
 }
 
 type RelevanceDecision struct {
-	Outcome      RelevanceOutcome
-	CandidateIDs []websearch.CandidateID
+	Outcome       RelevanceOutcome
+	CandidateIDs  []websearch.CandidateID
+	SemanticCalls int
 }
 
 type RelevanceOutcome string
@@ -76,7 +78,8 @@ type GroundedParagraph struct {
 }
 
 type GroundedSynthesisDecision struct {
-	Paragraphs []GroundedParagraph
+	Paragraphs    []GroundedParagraph
+	SemanticCalls int
 }
 
 type GroundedSynthesisStation interface {
@@ -93,7 +96,8 @@ type GroundedSynthesisCorrectionCall struct {
 }
 
 type GroundedSynthesisCorrectionDecision struct {
-	Text string
+	Text          string
+	SemanticCalls int
 }
 
 type GroundedSynthesisCorrectionStation interface {
@@ -122,11 +126,12 @@ type ClaimEvidenceReviewCall struct {
 }
 
 type ClaimEvidenceReviewDecision struct {
-	Outcome     ClaimEvidenceReviewOutcome
-	ParagraphID ParagraphID
-	EvidenceIDs []EvidenceID
-	IssueKind   ClaimEvidenceIssueKind
-	Detail      string
+	Outcome       ClaimEvidenceReviewOutcome
+	ParagraphID   ParagraphID
+	EvidenceIDs   []EvidenceID
+	IssueKind     ClaimEvidenceIssueKind
+	Detail        string
+	SemanticCalls int
 }
 
 type ClaimEvidenceReviewStation interface {

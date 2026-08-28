@@ -3,6 +3,7 @@ package assemblyline
 import (
 	"fmt"
 	"strings"
+	"unicode/utf8"
 )
 
 func validateRequirementQuote(label, quote string) error {
@@ -206,31 +207,24 @@ func (input ResponseCorrectionInput) validate() error {
 	if len(input.ValidationFailure) > 1200 {
 		return fmt.Errorf("response correction validation failure exceeds 1200 bytes")
 	}
-	specializedFieldCorrection := input.Original.Kind == WorkApplicationJobSpecification
-	if specializedFieldCorrection {
-		if input.RetainedCandidate != "" {
-			return fmt.Errorf("%s field correction cannot carry a retained candidate", input.Original.Kind)
-		}
-	} else {
-		if input.RetainedCandidate == "" {
-			return fmt.Errorf("%s response correction requires one exact retained candidate", input.Original.Kind)
-		}
-		if input.RetainedCandidate != strings.TrimSpace(input.RetainedCandidate) ||
-			len(input.RetainedCandidate) > maxPortableCandidateBytes {
-			return fmt.Errorf("retained response correction candidate is invalid or oversized")
-		}
-		if _, err := decodeJSONObject(input.RetainedCandidate, "retained semantic candidate"); err != nil {
-			return err
-		}
+	transport, err := PortableResponseTransportForWorkKind(input.Original.Kind)
+	if err != nil {
+		return err
 	}
-	if specializedFieldCorrection {
-		if input.TargetField == "" || input.TargetField != strings.TrimSpace(input.TargetField) {
-			return fmt.Errorf("%s response correction requires one exact target field", input.Original.Kind)
-		}
-	} else if input.TargetField != "" {
-		return fmt.Errorf("field-scoped response correction is unsupported for %s", input.Original.Kind)
+	if transport != PortableResponseTransportSemanticRaw {
+		return fmt.Errorf(
+			"response correction requires a raw semantic original; %s uses %s",
+			input.Original.Kind, transport,
+		)
 	}
-	_, err := responseCorrectionSchema(input.Original, input.TargetField)
+	if input.RetainedCandidate == "" ||
+		input.RetainedCandidate != strings.TrimSpace(input.RetainedCandidate) ||
+		len(input.RetainedCandidate) > maxPortableCandidateBytes ||
+		!utf8.ValidString(input.RetainedCandidate) ||
+		strings.ContainsRune(input.RetainedCandidate, '\x00') {
+		return fmt.Errorf("response correction requires one exact bounded NUL-free UTF-8 retained leaf")
+	}
+	_, err = RenderPortableJob(input.Original)
 	return err
 }
 

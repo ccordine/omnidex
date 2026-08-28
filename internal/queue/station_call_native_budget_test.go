@@ -17,7 +17,9 @@ func TestStationCallOpeningPersistsDeclaredTokenCeilingWithoutGuessingFromBytes(
 	const measuredModelInputBytes = 6485
 	gap.Prompt = strings.Repeat(
 		"x",
-		measuredModelInputBytes-len(llm.ExactPreparedPromptJoiner)-len(llm.MinimalGeneratePrompt),
+		measuredModelInputBytes-len(llm.ExactPreparedPromptJoiner)-len(llm.MinimalGeneratePrompt)-
+			len(llm.ExactPreparedRawChatUserPrefixV1)-
+			len(llm.ExactPreparedRawChatAssistantBoundaryV1),
 	)
 	prepared := stationCallTestPrepared(t, gap)
 	opening, err := validateStationCallOpening(StationCallOpenRecord{

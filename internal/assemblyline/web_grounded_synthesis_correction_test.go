@@ -35,13 +35,22 @@ func TestWebGroundedSynthesisCorrectionReturnsOneExactBoundParagraph(t *testing.
 	if job.Kind != WorkWebGroundedSynthesisCorrection {
 		t.Fatalf("kind=%q", job.Kind)
 	}
-	prompt, schema, err := RenderPortableJob(job)
+	prompt, err := RenderPortableJob(job)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, exact := range []string{`"paragraph_id":"P1"`, `"paragraph_id":"P2"`, `"detail":"The cited evidence says version 2, not version 3."`} {
+	for _, exact := range []string{
+		`"current_text":"Version 3 is current."`,
+		`"issue_detail":"The cited evidence says version 2, not version 3."`,
+		`"content":"Version 2 is current."`,
+	} {
 		if !strings.Contains(prompt, exact) {
 			t.Fatalf("prompt lost retained correction input %s: %q", exact, prompt)
+		}
+	}
+	for _, forbidden := range []string{"P1", "P2", "E31", "E32", "Version 2 remains supported."} {
+		if strings.Contains(prompt, forbidden) {
+			t.Fatalf("prompt exposed unrelated or code-owned correction authority %q: %q", forbidden, prompt)
 		}
 	}
 	for _, contract := range []string{
@@ -53,18 +62,7 @@ func TestWebGroundedSynthesisCorrectionReturnsOneExactBoundParagraph(t *testing.
 			t.Fatalf("prompt lost zero-delta correction contract %q: %q", contract, prompt)
 		}
 	}
-	if schema["additionalProperties"] != false {
-		t.Fatalf("correction schema is open: %#v", schema)
-	}
-	properties, ok := schema["properties"].(map[string]any)
-	if !ok || len(properties) != 1 || properties["text"] == nil {
-		t.Fatalf("correction output is not one text leaf: %#v", schema)
-	}
-	textSchema := properties["text"].(map[string]any)
-	if _, providerHostileBound := textSchema["maxLength"]; providerHostileBound {
-		t.Fatalf("web synthesis correction schema contains a provider-hostile grammar repetition: %#v", textSchema)
-	}
-	raw := `{"text":"Version 2 is current."}`
+	raw := "Version 2 is current."
 	decision, err := DecodeWebGroundedSynthesisCorrectionDecision(input, raw)
 	if err != nil {
 		t.Fatal(err)
@@ -76,7 +74,7 @@ func TestWebGroundedSynthesisCorrectionReturnsOneExactBoundParagraph(t *testing.
 
 func TestWebGroundedSynthesisCorrectionAcceptsExactZeroDelta(t *testing.T) {
 	input := webGroundedSynthesisCorrectionFixture()
-	decision, err := DecodeWebGroundedSynthesisCorrectionDecision(input, `{"text":"Version 3 is current."}`)
+	decision, err := DecodeWebGroundedSynthesisCorrectionDecision(input, "Version 3 is current.")
 	if err != nil || decision.Text != input.Paragraphs[0].Text {
 		t.Fatalf("zero-delta decision=%+v error=%v", decision, err)
 	}
@@ -112,7 +110,7 @@ func TestWebGroundedSynthesisCorrectionProjectsZeroDeltaContractForUnrelatedFixt
 		if !strings.Contains(prompt, "exact zero delta is a valid semantic result") {
 			t.Fatalf("fixture %d prompt lost zero-delta authority: %q", index, prompt)
 		}
-		decision, err := DecodeWebGroundedSynthesisCorrectionDecision(input, `{"text":"`+fixture.text+`"}`)
+		decision, err := DecodeWebGroundedSynthesisCorrectionDecision(input, fixture.text)
 		if err != nil || decision.Text != fixture.text {
 			t.Fatalf("fixture %d zero delta=%+v error=%v", index, decision, err)
 		}
@@ -122,13 +120,11 @@ func TestWebGroundedSynthesisCorrectionProjectsZeroDeltaContractForUnrelatedFixt
 func TestWebGroundedSynthesisCorrectionRejectsUnboundResults(t *testing.T) {
 	input := webGroundedSynthesisCorrectionFixture()
 	tests := map[string]string{
-		"citation syntax": `{"text":"Version 2 is current. [1]"}`,
-		"embedded ID":     `{"text":"Version 2 is current according to E31."}`,
-		"null text":       `{"text":null}`,
-		"paragraph ID":    `{"text":"Version 2 is current.","paragraph_id":"P1"}`,
-		"evidence IDs":    `{"text":"Version 2 is current.","evidence_ids":["E31"]}`,
-		"schema field":    `{"schema":"omnidex.web-grounded-synthesis-correction.v1","text":"Version 2 is current."}`,
-		"extra authority": `{"text":"Version 2 is current.","complete":true}`,
+		"citation syntax": "Version 2 is current. [1]",
+		"embedded ID":     "Version 2 is current according to E31.",
+		"null JSON":       `null`,
+		"JSON wrapper":    `{"text":"Version 2 is current.","paragraph_id":"P1"}`,
+		"quoted":          `"Version 2 is current."`,
 	}
 	for name, raw := range tests {
 		t.Run(name, func(t *testing.T) {

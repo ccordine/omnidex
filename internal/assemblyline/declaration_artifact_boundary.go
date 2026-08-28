@@ -84,25 +84,31 @@ func BuildDeclarationArtifactBoundaryPrompt(input DeclarationArtifactBoundaryInp
 	return strings.Join([]string{
 		"Classify only the explicit semantic artifact boundary of FOCUSED_DECLARATION in REQUIREMENT_QUOTE.",
 		"Choose independent_artifact when the quote explicitly requires the declaration to be an independently owned artifact, existing_artifact when it explicitly requires the declaration to belong to a previously established artifact, or none when neither relationship is specified.",
+		"Return exactly one raw registered boundary value with no JSON, quotes, label, Markdown, or commentary.",
 		"FOCUSED_DECLARATION: " + input.DeclarationID,
 		"EXACT_GO_SIGNATURE: " + input.GoSignature,
 		"REQUIREMENT_QUOTE:\n" + input.RequirementQuote,
 	}, "\n\n"), nil
 }
 
-func DeclarationArtifactBoundaryResponseSchema(input DeclarationArtifactBoundaryInput) map[string]any {
-	return objectSchema(
-		[]string{"schema", "declaration_id", "boundary"},
-		map[string]any{
-			"schema": map[string]any{
-				"type": "string", "const": DeclarationArtifactBoundarySchemaV1,
-			},
-			"declaration_id": map[string]any{"type": "string", "const": input.DeclarationID},
-			"boundary": enumSchema(
-				DeclarationBoundaryIndependentArtifact,
-				DeclarationBoundaryExistingArtifact,
-				DeclarationBoundaryNone,
-			),
-		},
-	)
+func DecodeDeclarationArtifactBoundaryDecision(
+	input DeclarationArtifactBoundaryInput,
+	raw string,
+) (DeclarationArtifactBoundaryDecision, error) {
+	if err := input.validate(); err != nil {
+		return DeclarationArtifactBoundaryDecision{}, err
+	}
+	leaf, err := decodeRawSemanticLeaf("declaration artifact boundary", raw, 64, false)
+	if err != nil {
+		return DeclarationArtifactBoundaryDecision{}, err
+	}
+	decision := DeclarationArtifactBoundaryDecision{
+		Schema:        DeclarationArtifactBoundarySchemaV1,
+		DeclarationID: input.DeclarationID,
+		Boundary:      DeclarationArtifactBoundary(leaf),
+	}
+	if err := decision.ValidateFor(input); err != nil {
+		return DeclarationArtifactBoundaryDecision{}, err
+	}
+	return decision, nil
 }

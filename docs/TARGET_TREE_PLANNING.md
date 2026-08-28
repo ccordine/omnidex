@@ -1,206 +1,142 @@
-# Target-tree planning contract
+# Target-tree synchronization contract
 
 ## Status
 
-This is the normative structural front-door boundary. It is one narrow
-exception to the path-blind coding-worker rule; it does not make the model a
-planner, filesystem authority, content mapper, or coding worker.
+This is the sole path/tree-visible model boundary in the coding assembly line.
+It answers one structural semantic question and has no filesystem or workflow
+authority. Every source, declaration, repair, verification, and other semantic
+model remains path- and tree-blind.
 
-## One frozen task, one focused structural answer
+## One frozen workload, one complete answer
 
-Target-tree resolution begins only after the application workload is frozen.
-Code resolves one focused path set for each frozen task, in frozen task order.
-It invokes the target-tree station only when the selected stack leaves this
-semantic question unresolved:
+Target-tree resolution starts only after code has frozen and validated the
+complete application workload. When the selected stack leaves a real naming
+uncertainty, code makes one initial target-tree call for the whole workload:
 
-> Which normalized relative workload file paths should exist for this frozen
-> task in the code-selected technical format?
+> What complete managed workload file tree should exist for all accepted goals
+> in the code-selected technical format?
 
-When inference is necessary, its input is code-built and task-local:
+The input contains only:
 
-* the accepted product context, accepted requirement statement, and structural
-  objective for that one frozen task;
-* the one code-selected registered project stack and its exact path-count and
-  root-location constraints required to choose compatible paths; and
-* the real, bounded current workspace tree (file paths and directory paths),
-  the retained path leaves from earlier frozen tasks projected as reusable or
-  unavailable by code, and the exact selected-stack code-owned paths that are
-  reserved for deterministic project artifacts.
+* every accepted goal in frozen order, without task IDs or ownership metadata;
+* the selected stack's exact technical tree grammar and file-count constraints;
+* the current managed workload tree, rendered from code-held normalized
+  relative paths; and
+* the code-reserved tree that workload output cannot claim.
 
-Its complete response remains a path-only tree:
+This is a complete desired workload state, not a per-task fragment or change
+list. There are no earlier-task calls, reusable-path prompts, path-union model
+calls, file-to-task mapper calls, or model-authored operations.
 
-```json
-{"schema":"omnidex.target-tree.v1","paths":["create.go","create_test.go"]}
-```
+The model tree excludes paths code already determines exactly, including
+runtime shells, entrypoints, manifests, generated composition, styles, and
+adapter-owned verification artifacts. Code unions the accepted workload tree
+with those deterministic outputs before constructing the physical desired
+output tree. The model is never asked to repeat deterministic adapter facts.
 
-The tree station returns no task or requirement IDs, artifact IDs, kinds,
-purposes, ownership, source, declarations, commands, filesystem operations,
-move/delete instructions, work items, ordering, dependencies, tests, tools, or
-completion state. Two focused calls may independently return the same path;
-that is a shared leaf, not a duplicate model-authored identity.
+## Exact raw tree grammar
 
-The selected stack is explicit technical context, not an instruction to write
-source. The complete registered greenfield stacks are TypeScript/React for a
-browser application; Go, JavaScript, Rust, and Java for command-line
-applications; and PHP with NGINX and Docker Compose for an HTTP service. A
-returned path is resolved by code through the selected stack's registered leaf
-adapters. Parse-only or structural-only artifact support does not constitute a
-complete project stack. The model never chooses an adapter, command, parser, or
-validation operation.
+The target-tree response is raw text, never JSON:
 
-Inference is forbidden when the stack grammar has one exact mechanical answer.
-The Go, JavaScript, Rust, and Java command-line stacks allocate neutral
-three-digit implementation/verification pairs in their registered package
-layout. The PHP service stacks apply the same rule to `src/FeatureNNN.php` and
-`tests/FeatureNNNTest.php`. A half-existing pair is preserved and skipped rather
-than guessed or overwritten. Every projected pair passes the same adapter,
-stack, ownership, diff, union, and coverage validation as an inferred path-only
-result. A deterministic projection failure is terminal; there is no model
-fallback. The TypeScript/React browser stack retains the target-tree station
-because component placement remains a genuine structural naming question.
+    ROOT
+      D src
+        F counter.tsx
+      D tests
+        F counter.test.tsx
 
-For a fresh workspace, the existing tree is empty. At this contract boundary an
-existing tree can be input evidence, and an omitted existing path means
-untouched; it never implies deletion. The current ordinary runtime still routes
-an implementation-bearing workspace through its separate repository-change
-pipeline before reaching this boundary; target-tree reconciliation alone is not
-evidence of fresh/existing workflow parity.
+ROOT is the exact first line. Each other line uses exactly two spaces per depth
+and is one of:
 
-One narrower existing-workspace case has a complete code-owned projection. If
-lexical parsing and the artifact registry establish exactly one explicitly named,
-absent plain-text path, a bounded semantic station may classify only whether the
-intact request requires exactly that one standalone unstructured document with a
-complete requested body and no other change. Code selects the `plain_text` adapter
-before structural work, freezes one path-blind task bound to the immutable request,
-projects the exact requested path without target-tree inference, supplies the full
-bounded current tree to the ordinary target input, derives a create-only diff and
-task coverage, and invokes the focused plain-text `SourceBlueprint` compiler. A
-collision, ignored path, unsupported adapter, reconcile transition, or workspace
-rejection is terminal; no replacement path is requested from a model.
+    D <single basename>
+    F <single basename>
 
-When inference remains necessary, code projects path authority into three
-separate model-facing facts. The exact
-filesystem snapshot appears in `EXISTING_WORKSPACE_PATHS_JSON`; those paths may
-be returned for reconciliation and omission remains non-destructive. Paths
-accepted for earlier frozen tasks appear in `REUSABLE_ACCEPTED_PATHS_JSON` only
-when the selected stack permits shared ownership. The selected stack's
-code-owned model-addressable paths, plus earlier-task paths when the stack
-requires exclusive ownership, appear in `FORBIDDEN_OUTPUT_PATHS_JSON` and
-cannot be returned. A forbidden output path remains unavailable even when it
-also exists in the workspace. Code derives these sets from the filesystem
-snapshot, retained task union, and one stack registry before dispatch; the
-model does not classify them. Only the exact filesystem snapshot participates
-in create-versus-reconcile transitions. Reusable and forbidden paths never
-become filesystem facts merely because they appeared in a prompt.
+Names are single basenames. They cannot contain a slash, backslash, traversal,
+an absolute or drive identity, leading/trailing whitespace, or control bytes.
+Files cannot have children. Directories cannot be empty. Duplicate siblings,
+file/directory collisions, blank lines, CR line endings, skipped depths, JSON,
+Markdown fences, flat path lists, and prose are invalid.
 
-Candidate validation and every compiler entry consume the same reserved-path
-collision function, while project stacks supply the sole compiler-owned path
-registry. A model cannot claim a deterministic runtime, entrypoint, shell, or
-matching code-owned test as a workload leaf. Prompt-only reservations never
-enter the target union, task coverage, or filesystem transitions.
+The model does not return normalized paths. The parser alone walks the accepted
+tree and constructs the sorted normalized relative file-path set. Code then
+applies the selected file-count, root-location, reserved-leaf, existing
+directory, adapter-recognition, and stack-pair validators.
 
-When inference remains necessary, the selected stack also supplies
-`CODE_SELECTED_PATH_CONSTRAINTS_JSON`. Its
-exact focused path count is applied as the response schema's `minItems` and
-`maxItems`; root-only stacks additionally receive a no-slash item pattern whose
-repetition contains the path-length bound. The bound is part of the pattern
-because the deployed structured-output converter gives `pattern` precedence
-over a sibling `maxLength`; an unbounded repetition would otherwise permit one
-path to consume the model's entire context.
-Candidate decoding and deterministic tree projection apply those same typed
-constraints. At compiler entry, code reconstructs every focused tree from the
-workload-bound coverage plan and applies the constraints again; the complete
-union receives only invariants that remain true after unioning. Cardinality and
-root location are therefore code-owned facts, not prose the model must
-reconstruct from a stack description. Stack-specific validators retain the
-narrower implementation/verification pairing and naming grammar.
+The prompt's current and reserved facts use the same canonical rendering:
+directories first, files second, with each group ordered by basename. An empty
+fact set is exactly ROOT. Physical empty directories are code-only collision
+evidence and do not enter the managed workload tree.
 
-## Code-owned union and coverage provenance
+The response contains no artifact IDs, task IDs, kinds, purposes, ownership,
+source, declarations, commands, operations, dependencies, ordering, tools, or
+completion state.
 
-Code validates each focused result against the selected stack before retaining
-it. It records the already-known frozen task ID beside those paths, then
-computes the sorted set union of every focused result. That union
-is the one authoritative `TargetTree` and is bound by code to the selected stack
-ID and its compatible project-version-profile ID. Neither identity is target-tree
-model output. No model is asked to restate, merge, or infer task ownership.
+## Mechanical stacks
 
-Code resolves each union path to its deterministic implementation or
-verification kind and constructs one workload-hash-bound coverage record for
-it. The coverage plan must prove all of the following:
+Inference is forbidden when a registered stack has one exact structural
+answer. Go, JavaScript, Rust, Java, PHP, and Laravel allocate neutral
+implementation/verification pairs in code. Code performs the per-task
+allocation against current, reserved, and already allocated paths, records the
+exact task-to-pair provenance, and returns one sorted union. These stacks make
+zero target-tree model calls.
 
-* every canonical union path appears exactly once;
-* every path has one registered artifact kind and at least one frozen task as
-  provenance;
-* task provenance contains only known task IDs in frozen order, without
-  duplicates; and
-* every frozen task is covered by at least one union path.
+A mechanical projection failure is terminal. There is no inference fallback.
 
-The neutral coverage plan permits plural files, implementation-only files, and
-files shared by several tasks. A project stack may impose a narrower per-task
-source-role rule at its own compiler boundary. It must not reinterpret the
-global union as one universal implementation/test pair or recover provenance
-from filename semantics.
+## Code-owned coverage provenance
 
-## Code-owned transition
+The TypeScript browser stack permits one implementation/test pair for the whole
+workload. Because that stack requires exactly those two leaves, code binds every
+frozen task to both returned leaves. This all-to-all coverage is mechanically
+forced by the registered stack; it is not model planning or filename inference.
 
-Code derives every parent directory and compares the canonical union with the
-authoritative filesystem snapshot:
+Mechanical stacks retain the task-to-pair mapping code created during
+allocation. In both cases the coverage plan proves:
 
-* a missing parent becomes one `ensure_directory` transition;
-* a returned absent file becomes one `create` transition;
-* a returned existing file becomes one `reconcile` transition; and
-* an omitted existing file receives no transition.
+* every target file appears exactly once;
+* every file has a registered implementation or verification kind;
+* every task is covered in frozen order; and
+* provenance contains only code-owned frozen task IDs.
 
-Directories are derived by code. The model never creates a directory or emits a
-filesystem operation. Transitions are ordered parent directories first, then
-file leaves. A transition is a code-owned ledger item, not a model instruction.
+A future inferred stack is unsupported unless code can derive coverage from an
+equally explicit registered rule. It must not add a mapper model.
 
-## Neutral source-node boundary
+## Code-owned synchronization diff
 
-Coverage provenance is not file content. The selected project-stack compiler
-consumes the frozen workload, capability graph, target-tree union, and coverage
-plan and creates a language-neutral `SourceBlueprint`. Its source nodes are:
+Code derives every filesystem transition from the parsed tree and authoritative
+filesystem facts:
 
-* `SourceDocument`, which owns one path, adapter identity, preamble fragments,
-  and ordered blocks; and
-* `SourceBlock`, which has exactly one static or generated authority, a bounded
-  API, explicit dependency and direct-capability edges, and optional code-owned
-  frozen-task ownership and implementation, verification, or support role.
+* a missing parent yields ensure_directory;
+* an expected absent file yields create;
+* an expected existing file yields reconcile; and
+* an omitted current file yields delete only when code separately supplies
+  that exact file in the deletion-eligible set.
 
-Code validates the neutral dependency graph, task ownership, and project-stack
-constraints. It resolves each document path to an adapter and requires that
-adapter's registered composer. TypeScript/TSX, Go, JavaScript, Rust, Java, PHP,
-and unstructured plain-text source documents have focused composers; an adapter with only a leaf parser
-cannot silently enter this source pipeline.
+The model never sees or returns deletion eligibility. An omission alone has no
+destructive authority. Eligibility must be code-owned, normalized, duplicate
+free, and limited to files proven present in the current managed snapshot.
+Unmanaged and protected paths remain outside this diff.
 
-Before source generation starts, code rebuilds the exact artifact-identity
-provenance boundary from the accepted target union, compiled document paths,
-and task-neutral static-file paths. This is a code-owned validation input only;
-the paths never enter a generated-source envelope. A path literal returned by
-a source model is therefore rejected even when that path was selected during
-the current run rather than present in the initial workspace.
+The target-tree diff supports scoped delete transitions. The coding driver
+mechanically filters the current snapshot through the selected stack's artifact
+adapters to form the managed workload set, then separately grants exactly that
+deterministic set as deletion eligibility. The standalone plain-text creation
+path grants none. Neither path derives eligibility from model output or omission.
 
-There is no whole-file or file-content model call to rediscover code-owned
-coverage. Each generated source call receives only one exact source-block
-signature, its local behavior contract, and its direct declarations and
-symbols. Code assembles static and accepted generated blocks into complete
-documents in memory, records their exact source spans, and runs the selected
-stack's parsers, compiler, and tests.
+## Validation correction
 
-## Validation and correction
+A valid complete tree advances directly after deterministic validation. A
+concrete validation defect may trigger a bounded replacement of that same
+complete raw tree; correction never becomes a per-task call or patch.
 
-Code accepts each structurally valid focused tree directly. There is no
-ceremonial review or model-authored accept/reject control plane. For a
-model-resolved tree, only a concrete schema, path, or selected-stack validation
-error permits a bounded complete replacement of that focused path-only
-candidate. No-op or repeated candidates are explicit validation failures; they
-are never routed as JSON patching or as an instruction for another model to
-invent work. A code-projected tree is validated and either accepted or fails
-loudly; it never creates a replacement inference call.
+When the candidate is structurally safe, code canonicalizes it before including
+it in correction context. When syntax contains an absolute identity, traversal,
+slash-bearing name, or another unsafe shape, code omits the candidate entirely
+and supplies only a bounded grammar defect. Unsafe raw model bytes are never
+echoed into another prompt.
 
-## Completion evidence
+## Completion
 
-Target-tree completion is real only when every path in the canonical union has
-been reconciled and is present in the host workspace, followed by the selected
-stack's deterministic verification. Focused candidates, a coverage plan, or
-in-memory/container-only source is not proof.
+A parsed tree, coverage plan, or transition list is not completion. Completion
+requires code-owned source assembly, deterministic filesystem mutation,
+presence and absence verification for every authorized transition, and the
+selected stack's compiler and test commands against the authoritative
+workspace.

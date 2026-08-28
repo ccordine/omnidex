@@ -33,27 +33,23 @@ func TestExistingRepositorySemanticsUseOnlyStableTypedCalls(t *testing.T) {
 	if err := repositoryretrieval.FinalizeEvidencePack(&pack); err != nil {
 		t.Fatal(err)
 	}
-	calls := make([]assemblyline.WorkKind, 0, 2)
+	calls := make([]assemblyline.WorkKind, 0, 3)
 	runtime := typedWorkerRuntime{
 		Context: context.Background(), MaxAttempts: 2,
 		Execute: func(job assemblyline.PortableJob, _ string) (assemblyline.PortableResult, error) {
 			calls = append(calls, job.Kind)
-			var candidate any
 			switch job.Kind {
-			case assemblyline.WorkRepositorySearchTerm:
-				candidate = assemblyline.RepositorySearchTermDecision{
-					Schema: assemblyline.RepositorySearchTermSchemaV2, Anchors: []string{"Value"},
-				}
-			case assemblyline.WorkRepositoryChangeSurface:
-				candidate = assemblyline.RepositoryChangeSurfaceDecision{
-					Schema:  assemblyline.RepositoryChangeSurfaceSchemaV2,
-					Targets: []assemblyline.RepositoryChangeTarget{{SymbolID: symbolID, Requirement: "return two"}},
-				}
+			case assemblyline.WorkRepositorySearchAnchor:
+				return assemblyline.PortableResult{JobID: job.ID, Candidate: "Value"}, nil
+			case assemblyline.WorkRepositorySearchAnchorCoverage:
+				return assemblyline.PortableResult{
+					JobID: job.ID, Candidate: assemblyline.RepositoryNoUncoveredAnchor,
+				}, nil
+			case assemblyline.WorkRepositoryChangeOwner:
+				return assemblyline.PortableResult{JobID: job.ID, Candidate: symbolID}, nil
 			default:
 				return assemblyline.PortableResult{}, fmt.Errorf("unexpected work kind %s", job.Kind)
 			}
-			raw, _ := json.Marshal(candidate)
-			return assemblyline.PortableResult{JobID: job.ID, Candidate: string(raw)}, nil
 		},
 	}
 	need := "Change Value to return two."
@@ -73,7 +69,10 @@ func TestExistingRepositorySemanticsUseOnlyStableTypedCalls(t *testing.T) {
 	if len(surface.Targets) != 1 || surface.Targets[0].SymbolID != symbolID {
 		t.Fatalf("surface=%#v", surface)
 	}
-	if len(calls) != 2 || calls[0] != assemblyline.WorkRepositorySearchTerm || calls[1] != assemblyline.WorkRepositoryChangeSurface {
+	if len(calls) != 3 ||
+		calls[0] != assemblyline.WorkRepositorySearchAnchor ||
+		calls[1] != assemblyline.WorkRepositorySearchAnchorCoverage ||
+		calls[2] != assemblyline.WorkRepositoryChangeOwner {
 		t.Fatalf("work calls=%v", calls)
 	}
 }
@@ -82,24 +81,19 @@ func TestRepositoryRequirementSurfaceReceivesOnlyItsExactGapProjection(t *testin
 	t.Parallel()
 	pack := repositoryProjectionTestPack(t)
 	requirementQuote := "Change the exact owner."
-	var input assemblyline.RepositoryChangeSurfaceInput
+	var input assemblyline.RepositoryChangeOwnerInput
 	runtime := typedWorkerRuntime{
 		Context: context.Background(), MaxAttempts: 1,
 		Execute: func(job assemblyline.PortableJob, _ string) (assemblyline.PortableResult, error) {
-			if job.Kind != assemblyline.WorkRepositoryChangeSurface {
+			if job.Kind != assemblyline.WorkRepositoryChangeOwner {
 				t.Fatalf("work kind=%q", job.Kind)
 			}
 			if err := json.Unmarshal(job.Payload, &input); err != nil {
 				t.Fatal(err)
 			}
-			candidate := assemblyline.RepositoryChangeSurfaceDecision{
-				Schema: assemblyline.RepositoryChangeSurfaceSchemaV2,
-				Targets: []assemblyline.RepositoryChangeTarget{{
-					SymbolID: pack.Symbols[0].ID, Requirement: requirementQuote,
-				}},
-			}
-			raw, err := json.Marshal(candidate)
-			return assemblyline.PortableResult{JobID: job.ID, Candidate: string(raw)}, err
+			return assemblyline.PortableResult{
+				JobID: job.ID, Candidate: pack.Symbols[0].ID,
+			}, nil
 		},
 	}
 	decision, err := selectExistingRepositoryRequirementSurface(
@@ -112,8 +106,9 @@ func TestRepositoryRequirementSurfaceReceivesOnlyItsExactGapProjection(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	if input.ResearchNeed != requirementQuote ||
-		!reflect.DeepEqual(input.Requirements, []string{requirementQuote}) ||
+	if input.Authority.ResearchNeed != requirementQuote ||
+		!reflect.DeepEqual(input.Authority.Requirements, []string{requirementQuote}) ||
+		input.FocusedRequirement != requirementQuote ||
 		len(decision.Targets) != 1 {
 		t.Fatalf("surface input=%#v decision=%#v", input, decision)
 	}

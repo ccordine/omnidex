@@ -2,34 +2,25 @@ package assemblyline
 
 import "fmt"
 
-func ApplicationClassificationResponseSchema() map[string]any {
-	return objectSchema(
-		[]string{"schema", "surface"},
-		map[string]any{
-			"schema": map[string]any{"type": "string", "const": ApplicationClassificationSchemaV1},
-			"surface": enumSchema(
-				ApplicationSurfaceBrowser, ApplicationSurfaceCommandLine,
-				ApplicationSurfaceService, ApplicationSurfaceUnsupported,
-			),
-		},
-	)
-}
-
-func RepositoryRequirementInterpretationResponseSchema() map[string]any {
-	return objectSchema(
-		[]string{"schema", "requirements"},
-		map[string]any{
-			"schema": map[string]any{
-				"type": "string", "const": RepositoryRequirementInterpretationSchemaV3,
-			},
-			"requirements": map[string]any{
-				"type": "array", "minItems": 1, "maxItems": maxRequirementCount,
-				"items": map[string]any{
-					"type": "string", "minLength": 1, "maxLength": maxRequirementQuoteBytes,
-				},
-			},
-		},
-	)
+func DecodeApplicationClassification(
+	input ApplicationClassificationInput,
+	raw string,
+) (ApplicationClassification, error) {
+	if err := input.validate(); err != nil {
+		return ApplicationClassification{}, err
+	}
+	leaf, err := decodeRawSemanticLeaf("application surface", raw, 64, false)
+	if err != nil {
+		return ApplicationClassification{}, err
+	}
+	classification := ApplicationClassification{
+		Schema:  ApplicationClassificationSchemaV1,
+		Surface: ApplicationSurface(leaf),
+	}
+	if err := classification.Validate(); err != nil {
+		return ApplicationClassification{}, err
+	}
+	return classification, nil
 }
 
 func (decision ArtifactHandlingDecision) Validate(token string) error {
@@ -48,19 +39,24 @@ func (decision ArtifactHandlingDecision) Validate(token string) error {
 	}
 }
 
-func ArtifactHandlingResponseSchema(token string) map[string]any {
-	return objectSchema(
-		[]string{"schema", "token", "handling"},
-		map[string]any{
-			"schema": map[string]any{"type": "string", "const": ArtifactHandlingSchemaV1},
-			"token":  map[string]any{"type": "string", "const": token},
-			"handling": enumSchema(
-				ArtifactPreserveUnchanged,
-				ArtifactMustExist,
-				ArtifactMustBeAbsent,
-				ArtifactPossibleAbsenceCandidate,
-				ArtifactMentionedOnly,
-			),
-		},
-	)
+func DecodeArtifactHandlingDecision(
+	input ArtifactHandlingInput,
+	raw string,
+) (ArtifactHandlingDecision, error) {
+	if err := input.validate(); err != nil {
+		return ArtifactHandlingDecision{}, err
+	}
+	leaf, err := decodeRawSemanticLeaf("artifact handling", raw, 64, false)
+	if err != nil {
+		return ArtifactHandlingDecision{}, err
+	}
+	decision := ArtifactHandlingDecision{
+		Schema:   ArtifactHandlingSchemaV1,
+		Token:    input.Token,
+		Handling: ArtifactHandling(leaf),
+	}
+	if err := decision.Validate(input.Token); err != nil {
+		return ArtifactHandlingDecision{}, err
+	}
+	return decision, nil
 }

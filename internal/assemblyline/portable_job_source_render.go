@@ -5,64 +5,44 @@ import (
 	"strings"
 )
 
-func renderPortableFragmentGeneration(input FragmentGenerationInput) (string, map[string]any, error) {
+func renderPortableFragmentGeneration(input FragmentGenerationInput) (string, error) {
 	switch input.Language {
 	case "go":
-		prompt, err := BuildGoFragmentGenerationPrompt(input)
-		return prompt, nil, err
+		return BuildGoFragmentGenerationPrompt(input)
 	case TextFragmentLanguage:
-		prompt, err := BuildTextFragmentGenerationPrompt(input)
-		return prompt, nil, err
+		return BuildTextFragmentGenerationPrompt(input)
 	case "typescript":
-		prompt, err := BuildTypeScriptFragmentPrompt(TypeScriptFragmentPrompt{
+		return BuildTypeScriptFragmentPrompt(TypeScriptFragmentPrompt{
 			Dialect:   input.Dialect,
 			Signature: input.Signature,
 			Contract:  input.Behavior,
 			Available: strings.Join(input.Capabilities, "\n"),
 			Globals:   input.PermittedSymbols,
 		})
-		return prompt, nil, err
 	case "javascript", "java", "rust", "php":
-		prompt, err := BuildBoundedSourceFragmentGenerationPrompt(input)
-		return prompt, nil, err
+		return BuildBoundedSourceFragmentGenerationPrompt(input)
 	default:
-		return "", nil, fmt.Errorf("no fragment renderer supports language %q", input.Language)
+		return "", fmt.Errorf("no fragment renderer supports language %q", input.Language)
 	}
 }
 
-func renderPortableFragmentCorrection(input FragmentCorrectionInput) (string, map[string]any, error) {
-	prompt, err := BuildFragmentCorrectionPrompt(input)
-	return prompt, nil, err
+func renderPortableFragmentCorrection(input FragmentCorrectionInput) (string, error) {
+	return BuildFragmentCorrectionPrompt(input)
 }
 
-func renderPortableResponseCorrection(input ResponseCorrectionInput) (string, map[string]any, error) {
-	schema, err := responseCorrectionSchema(input.Original, input.TargetField)
+func renderPortableResponseCorrection(input ResponseCorrectionInput) (string, error) {
+	if err := input.validate(); err != nil {
+		return "", err
+	}
+	originalPrompt, err := RenderPortableJob(input.Original)
 	if err != nil {
-		return "", nil, err
+		return "", err
 	}
-	if input.Original.Kind == WorkApplicationJobSpecification {
-		prompt, promptErr := buildApplicationJobSpecificationResponseCorrectionPrompt(input)
-		return prompt, schema, promptErr
-	}
-	if input.RetainedCandidate != "" {
-		originalPrompt, _, promptErr := RenderPortableJob(input.Original)
-		if promptErr != nil {
-			return "", nil, promptErr
-		}
-		properties := schema["properties"].(map[string]any)
-		var target string
-		for field := range properties {
-			target = field
-		}
-		return strings.Join([]string{
-			"Return a JSON merge patch containing only the " + target + " field. Replace that one invalid semantic leaf while preserving every retained field.",
-			"ORIGINAL_SEMANTIC_QUESTION:\n" + originalPrompt,
-			"CURRENT_INVALID_RESPONSE:\n" + input.RetainedCandidate,
-			"EXACT_VALIDATION_DEFECT:\n" + input.ValidationFailure,
-		}, "\n\n"), schema, nil
-	}
-	return "", nil, fmt.Errorf(
-		"%s response correction cannot render without one exact retained candidate",
-		input.Original.Kind,
-	)
+	return strings.Join([]string{
+		"The prior raw semantic leaf failed one exact deterministic validation. Answer the same single semantic question with one complete replacement leaf that resolves only that defect.",
+		"Return only the complete replacement leaf in the original raw format. Do not return a patch, diff, JSON wrapper, quotes, label, Markdown, explanation, or control instruction.",
+		"ORIGINAL_SEMANTIC_QUESTION:\n" + originalPrompt,
+		"CURRENT_REJECTED_LEAF:\n" + input.RetainedCandidate,
+		"EXACT_GROUNDED_DEFECT:\n" + input.ValidationFailure,
+	}, "\n\n"), nil
 }

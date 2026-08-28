@@ -85,7 +85,7 @@ func TestStationGapOpeningRequiresExactOutputLimitAuthority(t *testing.T) {
 	}
 }
 
-func TestStationGapContextFloorIsLowerOnlyForRoleplayRawProse(t *testing.T) {
+func TestStationGapContextFloorIsSharedByRoleplayAndOrdinaryStations(t *testing.T) {
 	t.Parallel()
 	authority := model.StepAttemptAuthority{
 		JobID: 3, Generation: 2, StepID: 7, Attempt: 1, WorkerID: "worker-a",
@@ -117,16 +117,12 @@ func TestStationGapContextFloorIsLowerOnlyForRoleplayRawProse(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	opening, err := validateStationGapOpening(StationGapOpenRecord{
+	if _, err := validateStationGapOpening(StationGapOpenRecord{
 		Authority: authority, Job: roleplayJob, Station: station.ConversationResponse,
-		ContextTokens: 4096, MaxOutputTokens: 4096,
+		ContextTokens: 4096, MaxOutputTokens: 1,
 		OutputLimitMode: llm.ExactPreparedOutputLimitNatural,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if opening.ContextTokens != 4096 {
-		t.Fatalf("roleplay context=%d want 4096", opening.ContextTokens)
+	}); err == nil {
+		t.Fatal("roleplay station accepted a context below the exact transport floor")
 	}
 }
 
@@ -206,12 +202,12 @@ func stationCallNaturalTestAuthority(
 	}
 	temperature := llm.ExactPreparedTemperature(0)
 	prepared := llm.PreparedModel{
-		Protocol:  llm.ExactPreparedProtocolRawTextV1,
+		Protocol:  llm.ExactPreparedProtocolRawTextV2,
 		BaseModel: expected.Model, ContextModel: expected.Model,
 		Prompt: gap.Prompt, PromptHint: llm.MinimalGeneratePrompt,
 		ContextTokens: contextTokens, MaxOutputTokens: contextTokens,
 		OutputLimitMode: llm.ExactPreparedOutputLimitNatural,
-		Temperature:     &temperature, RawTextStopSequence: llm.ExactPreparedCodeStopV1,
+		Temperature:     &temperature, RawTextStopSequence: llm.ExactPreparedRawChatEndV1,
 		ProviderIdentityExpectation: &expected, ProviderObservationChallenge: challenge,
 	}
 	return gap, prepared

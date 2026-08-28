@@ -59,7 +59,7 @@ func TestPlannedTreeAndProgramPathsReachFragmentCandidateBoundary(t *testing.T) 
 			runtime := typedWorkerRuntime{
 				Context: context.Background(), MaxAttempts: 1,
 				PathProvenance: session.pathProvenance,
-				Execute: testPortableExecutor(func(_ string, _ string, _ string, _ map[string]any) (string, error) {
+				Execute: testPortableExecutor(func(_ string, _ string, _ string) (string, error) {
 					return `function artifactLabel() { return "` + artifactName + `"; }`, nil
 				}),
 			}

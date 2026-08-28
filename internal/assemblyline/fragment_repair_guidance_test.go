@@ -40,7 +40,7 @@ func TestFragmentRepairGuidanceSupportsUnrelatedRegisteredLanguages(t *testing.T
 			if err != nil {
 				t.Fatal(err)
 			}
-			prompt, schema, err := RenderPortableJob(job)
+			prompt, err := RenderPortableJob(job)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -66,9 +66,6 @@ func TestFragmentRepairGuidanceSupportsUnrelatedRegisteredLanguages(t *testing.T
 				!strings.Contains(prompt, "IDENTIFIERS_ALREADY_IN_SCOPE:\n(none)") {
 				t.Fatalf("repair guidance hid empty symbol authority:\n%s", prompt)
 			}
-			if schema == nil || schema["additionalProperties"] != false {
-				t.Fatalf("repair guidance response schema=%#v", schema)
-			}
 		})
 	}
 }
@@ -91,12 +88,9 @@ func TestFragmentRepairExecutionWireContainsOnlyInstructionAndMutableSource(t *t
 		payload["repair_guidance"] != instruction {
 		t.Fatalf("repair execution payload=%s", job.Payload)
 	}
-	prompt, schema, err := RenderPortableJob(job)
+	prompt, err := RenderPortableJob(job)
 	if err != nil {
 		t.Fatal(err)
-	}
-	if schema != nil {
-		t.Fatalf("repair execution schema=%#v", schema)
 	}
 	for _, forbidden := range []string{
 		"SOURCE_DIAGNOSTIC", "SOURCE_DIALECT", "EXACT_SIGNATURE", "DIRECT_CAPABILITIES",

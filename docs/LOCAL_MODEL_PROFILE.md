@@ -6,7 +6,7 @@ explicit immutable route and no model is used as a fallback for another.
 
 Parameter count is never a routing rule. Each station retains one stable semantic
 contract, and deployment configuration resolves that station to one exact model only
-after the candidate has demonstrated the required schema fidelity, semantic quality,
+after the candidate has demonstrated the required raw-leaf fidelity, semantic quality,
 latency, and resource use. A smaller candidate that passes is valid; a larger candidate
 that fails is not. Context and output numbers are operating targets and per-call
 resource bounds, not arbitrary global correctness ceilings.
@@ -58,14 +58,14 @@ persistence-destination stations share the explicit Phi-4 14B deployment-semanti
 route. The established `OMNI_CODING_SERVICE_DEPLOYMENT_INTENT_MODEL` environment key
 and `coding_service_deployment_intent_model` project-setting key are retained for
 persisted configuration compatibility. They select only that shared provider route;
-the two stations retain separate IDs, prompts, schemas, results, and conditional
+the two stations retain separate IDs, prompts, raw results, and conditional
 dispatch, and the retired ternary deployment-intent station remains unavailable. The
 repository and web claim-evidence review routes use `deepseek-r1:8b`; their live
 provider identity must differ from the Qwen answer, synthesis, and correction routes.
 Startup or the named gap fails loudly when an exact configured route is unavailable.
 No route falls back to another model.
 
-Qwen 3.5 9B is the practical structured repair-analysis choice because its Q4_K_M Ollama image is
+Qwen 3.5 9B is the practical bounded repair-guidance choice because its Q4_K_M Ollama image is
 6.6 GB and Qwen publishes strong instruction following, tool-use, and coding
 results for the 9B checkpoint. Qwen 2.5 Coder 7B owns raw fragment generation
 and instruction-only repair execution because the live two-fixture compiler
@@ -171,8 +171,8 @@ The synthetic frozen source points in that report were not dispatched; only the
 derived guidance and execution jobs were model calls.
 
 The qualification also rejected two prior routes loudly. `deepseek-r1:8b`
-requires native thinking and cannot accept this station's closed structured
-response contract. The `qwen3.5:9b-q4_K_M` alias could not be attested as the
+requires native thinking and did not match the tested repair-guidance transport.
+The `qwen3.5:9b-q4_K_M` alias could not be attested as the
 active canonical runner, and canonical Qwen 3.5 raw execution then ran for more
 than six minutes without terminating a tiny edit. Neither remains a coding
 repair default.
@@ -262,7 +262,7 @@ omni ollama:prewarm --model deepseek-r1:8b --num-ctx 8192 --json
 | Qwen 3.6 35B-A3B | On-demand only after freeing disk and memory headroom | The official Q4_K_M GGUF is 20.4 GB and the Ollama Q4 image is about 24 GB. It should run with partial offload, but it leaves too little headroom on the current busy 43 GiB host to make it the production default. |
 | Qwen 3.6 27B | Not recommended locally | The Ollama Q4 image is about 17 GB, but all 27B parameters are active. Qwen's coding results are excellent, while dense system-memory inference is the wrong latency tradeoff for this single-DIMM machine. |
 | Qwen3-Coder-Next | Does not fit | Ollama's Q4 image is about 52 GB before context and runtime allocations, which exceeds usable physical memory. |
-| DeepSeek R1 Distill Qwen 14B | Technically viable, not preferred | It has the same dense-memory bottleneck measured on the old 14B model, and a reasoning-first response style is a poor match for tiny exact-schema stations with thinking disabled. |
+| DeepSeek R1 Distill Qwen 14B | Technically viable, not preferred | It has the same dense-memory bottleneck measured on the old 14B model, and a reasoning-first response style is a poor match for tiny exact raw-leaf stations with thinking disabled. |
 
 Sources for the alternatives:
 
@@ -275,7 +275,7 @@ Sources for the alternatives:
 
 If the machine receives a second 48 GB SODIMM, retest Qwen 3.6 35B-A3B at 16K.
 Do not change the production route based on parameter counts or published
-benchmarks alone; compare cold load, warm throughput, exact-schema acceptance,
+benchmarks alone; compare cold load, warm throughput, exact raw-leaf acceptance,
 correction rate, and a fresh uncontaminated Omnidex run.
 
 ## Hosted capability ceiling

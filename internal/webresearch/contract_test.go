@@ -12,13 +12,13 @@ func TestStationContractsContainOnlyTheirTypedSemanticLeaf(t *testing.T) {
 		fields []string
 	}{
 		{name: "search terms call", value: SearchTermsCall{}, fields: []string{"Question", "Context", "AttemptedQueries", "MaxTerms", "MaxTermBytes"}},
-		{name: "search terms decision", value: SearchTermsDecision{}, fields: []string{"Terms"}},
+		{name: "search terms decision", value: SearchTermsDecision{}, fields: []string{"Terms", "SemanticCalls"}},
 		{name: "relevance call", value: RelevanceCall{}, fields: []string{"Question", "Context", "Candidates", "MaxSelections"}},
-		{name: "relevance decision", value: RelevanceDecision{}, fields: []string{"Outcome", "CandidateIDs"}},
+		{name: "relevance decision", value: RelevanceDecision{}, fields: []string{"Outcome", "CandidateIDs", "SemanticCalls"}},
 		{name: "synthesis call", value: GroundedSynthesisCall{}, fields: []string{"Question", "Context", "Evidence", "MaxParagraphs", "MaxParagraphBytes"}},
-		{name: "synthesis decision", value: GroundedSynthesisDecision{}, fields: []string{"Paragraphs"}},
+		{name: "synthesis decision", value: GroundedSynthesisDecision{}, fields: []string{"Paragraphs", "SemanticCalls"}},
 		{name: "claim evidence review call", value: ClaimEvidenceReviewCall{}, fields: []string{"Question", "Context", "ParagraphID", "ParagraphText", "Evidence"}},
-		{name: "claim evidence review decision", value: ClaimEvidenceReviewDecision{}, fields: []string{"Outcome", "ParagraphID", "EvidenceIDs", "IssueKind", "Detail"}},
+		{name: "claim evidence review decision", value: ClaimEvidenceReviewDecision{}, fields: []string{"Outcome", "ParagraphID", "EvidenceIDs", "IssueKind", "Detail", "SemanticCalls"}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

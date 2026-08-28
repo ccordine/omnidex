@@ -35,8 +35,11 @@ func (adapter portableObjectiveDatabaseStations) SelectJoinPath(
 	if err != nil {
 		return assemblyline.DatabaseJoinPathSelectionDecision{}, objectiveStationReceipt{}, err
 	}
-	decision, calls, err := runObjectivePortableCall[assemblyline.DatabaseJoinPathSelectionDecision](
+	decision, calls, err := runObjectivePortableRawLeafCall(
 		ctx, adapter.runtime, modelName, "database_join_path_selection", job,
+		func(raw string) (assemblyline.DatabaseJoinPathSelectionDecision, error) {
+			return assemblyline.DecodeDatabaseJoinPathSelectionDecision(input, raw)
+		},
 		func(value assemblyline.DatabaseJoinPathSelectionDecision) error { return value.ValidateFor(input) },
 	)
 	return decision, objectiveStationReceipt{Calls: calls}, err
@@ -54,13 +57,8 @@ func (adapter portableObjectiveDatabaseStations) SelectSchema(
 	if err != nil {
 		return assemblyline.DatabaseSchemaSelectionDecision{}, objectiveStationReceipt{}, err
 	}
-	job, err := assemblyline.NewDatabaseSchemaSelectionJob(input)
-	if err != nil {
-		return assemblyline.DatabaseSchemaSelectionDecision{}, objectiveStationReceipt{}, err
-	}
-	decision, calls, err := runObjectivePortableCall[assemblyline.DatabaseSchemaSelectionDecision](
-		ctx, adapter.runtime, modelName, "database_schema_selection", job,
-		func(value assemblyline.DatabaseSchemaSelectionDecision) error { return value.ValidateFor(input) },
+	decision, calls, err := resolveObjectiveDatabaseSchemaSelection(
+		ctx, input, adapter.rawLeafCall(modelName),
 	)
 	return decision, objectiveStationReceipt{Calls: calls}, err
 }
@@ -73,13 +71,8 @@ func (adapter portableObjectiveDatabaseStations) BuildIntent(
 	if err != nil {
 		return assemblyline.DatabaseQueryIntentDecision{}, objectiveStationReceipt{}, err
 	}
-	job, err := assemblyline.NewDatabaseQueryIntentJob(input)
-	if err != nil {
-		return assemblyline.DatabaseQueryIntentDecision{}, objectiveStationReceipt{}, err
-	}
-	decision, calls, err := runObjectivePortableCall[assemblyline.DatabaseQueryIntentDecision](
-		ctx, adapter.runtime, modelName, "database_query_intent", job,
-		func(value assemblyline.DatabaseQueryIntentDecision) error { return value.ValidateFor(input) },
+	decision, calls, err := resolveObjectiveDatabaseQueryIntent(
+		ctx, input, adapter.rawLeafCall(modelName),
 	)
 	return decision, objectiveStationReceipt{Calls: calls}, err
 }
@@ -96,15 +89,25 @@ func (adapter portableObjectiveDatabaseStations) FindEvidenceGap(
 	if err != nil {
 		return assemblyline.DatabaseEvidenceGapDecision{}, objectiveStationReceipt{}, err
 	}
-	decision, calls, err := runObjectivePortableCall[assemblyline.DatabaseEvidenceGapDecision](
+	decision, calls, err := runObjectivePortableRawLeafCall(
 		ctx, adapter.runtime, modelName, "database_evidence_gap", job,
+		func(raw string) (assemblyline.DatabaseEvidenceGapDecision, error) {
+			return assemblyline.DecodeDatabaseEvidenceGapDecision(input, raw)
+		},
 		func(value assemblyline.DatabaseEvidenceGapDecision) error { return value.ValidateFor(input) },
 	)
 	return decision, objectiveStationReceipt{Calls: calls}, err
 }
 
 func validateObjectiveDatabaseStationCalls(label string, receipt objectiveStationReceipt) error {
-	if receipt.Calls < 1 || receipt.Calls > maxTypedWorkerAttempts {
+	maximum := maxTypedWorkerAttempts
+	if label == "schema selection" {
+		maximum = maxDatabaseSchemaSelectionModelCalls
+	}
+	if label == "query intent" {
+		maximum = maxObjectiveDatabaseQueryIntentCalls
+	}
+	if receipt.Calls < 1 || receipt.Calls > maximum {
 		return fmt.Errorf("database %s station reported %d calls outside the bounded correction budget", label, receipt.Calls)
 	}
 	return nil

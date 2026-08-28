@@ -17,13 +17,10 @@ func TestGeneratePreparedExactRawTextReturnsTypeScriptWithoutFormat(t *testing.T
 	captured := make(map[string][]byte)
 	typeScript := "export const answer: number = 42;\n"
 	body := strings.Replace(
-		exactRawBody(), `"response":"{}"`, `"response":`+strconv.Quote(typeScript), 1,
+		exactRawBody(), `"response":"semantic leaf"`, `"response":`+strconv.Quote(typeScript), 1,
 	)
 	client := exactPreparedIdentityClient(t, expected, http.StatusOK, body, seen, captured)
 	prepared := exactPreparedRequest(expected)
-	prepared.Protocol = llm.ExactPreparedProtocolRawTextV1
-	prepared.ResponseFormat = ""
-	prepared.ResponseSchema = nil
 	result, err := client.GeneratePreparedExact(context.Background(), prepared)
 	if err != nil {
 		t.Fatal(err)
@@ -32,7 +29,7 @@ func TestGeneratePreparedExactRawTextReturnsTypeScriptWithoutFormat(t *testing.T
 		t.Fatal(err)
 	}
 	request := string(captured["/api/generate"])
-	if result.Protocol != llm.ExactPreparedProtocolRawTextV1 ||
+	if result.Protocol != llm.ExactPreparedProtocolRawTextV2 ||
 		result.Content != typeScript || strings.Contains(request, `"format"`) ||
 		!strings.Contains(request, `"raw":true`) {
 		t.Fatalf("raw result=%+v request=%s", result, request)
@@ -49,9 +46,6 @@ func TestGeneratePreparedExactDispatchesMeasuredCorrectionEnvelopeWithoutByteTok
 		t, expected, http.StatusOK, exactRawBody(), seen, captured,
 	)
 	prepared := exactPreparedRequest(expected)
-	prepared.Protocol = llm.ExactPreparedProtocolRawTextV1
-	prepared.ResponseFormat = ""
-	prepared.ResponseSchema = nil
 	prepared.MaxOutputTokens = 2048
 	const measuredRawInputBytes = 6485
 	promptBytes := measuredRawInputBytes - len(llm.ExactPreparedPromptJoiner) - len(llm.MinimalGeneratePrompt)
@@ -75,7 +69,7 @@ func TestGeneratePreparedExactDispatchesMeasuredCorrectionEnvelopeWithoutByteTok
 	}
 }
 
-func TestGeneratePreparedExactRawTextRejectsSchemaBeforeProviderObservation(t *testing.T) {
+func TestGeneratePreparedExactRawTextRejectsUnknownProtocolBeforeProviderObservation(t *testing.T) {
 	t.Parallel()
 	expected := ollamaIdentityExpectation()
 	seen := make(map[string]int)
@@ -83,9 +77,9 @@ func TestGeneratePreparedExactRawTextRejectsSchemaBeforeProviderObservation(t *t
 		t, expected, http.StatusOK, exactRawBody(), seen, make(map[string][]byte),
 	)
 	prepared := exactPreparedRequest(expected)
-	prepared.Protocol = llm.ExactPreparedProtocolRawTextV1
+	prepared.Protocol = "unknown"
 	if _, err := client.GeneratePreparedExact(context.Background(), prepared); err == nil {
-		t.Fatal("raw-text protocol accepted a structured response schema")
+		t.Fatal("raw-text transport accepted an unknown protocol")
 	}
 	if len(seen) != 0 {
 		t.Fatalf("invalid raw-text request reached provider endpoints: %#v", seen)

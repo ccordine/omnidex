@@ -1,0 +1,65 @@
+package queue
+
+import (
+	"encoding/json"
+	"fmt"
+
+	"github.com/gryph/omnidex/internal/assemblyline"
+	"github.com/gryph/omnidex/internal/llm"
+)
+
+// ExpectedStationCallStopSequence resolves one provider-actionable terminator
+// from code-owned work grammar and the discovered provider transport.
+func ExpectedStationCallStopSequence(
+	gap StationGapOpening,
+	expected llm.ProviderIdentityExpectation,
+) (string, error) {
+	kind := assemblyline.WorkKind(gap.WorkKind)
+	transport, err := assemblyline.PortableResponseTransportForWorkKind(kind)
+	if err != nil {
+		return "", err
+	}
+	framing, err := stationGapResponseFraming(gap, kind)
+	if err != nil {
+		return "", err
+	}
+	settings, err := llm.ResolveExactPreparedTransport(expected)
+	if err != nil {
+		return "", err
+	}
+	switch {
+	case transport == assemblyline.PortableResponseTransportSemanticRaw &&
+		framing == assemblyline.PortableResponseFramingSingleLine:
+		return llm.ExactPreparedLineStopV1, nil
+	case framing == assemblyline.PortableResponseFramingNaturalMultiline &&
+		settings.NativeTemplate:
+		return "", nil
+	case (transport == assemblyline.PortableResponseTransportSemanticRaw ||
+		transport == assemblyline.PortableResponseTransportStructuralRaw ||
+		transport == assemblyline.PortableResponseTransportFragmentRaw) &&
+		framing == assemblyline.PortableResponseFramingNaturalMultiline:
+		return llm.ExactPreparedRawChatEndV1, nil
+	default:
+		return "", fmt.Errorf(
+			"station gap work kind %q has mismatched response transport %q and framing %q",
+			kind, transport, framing,
+		)
+	}
+}
+
+func stationGapResponseFraming(
+	gap StationGapOpening,
+	kind assemblyline.WorkKind,
+) (assemblyline.PortableResponseFraming, error) {
+	if kind != assemblyline.WorkResponseCorrection {
+		return assemblyline.PortableResponseFramingForWorkKind(kind)
+	}
+	job := assemblyline.PortableJob{
+		Schema: gap.PortableSchema, ID: gap.WorkID, Kind: kind,
+		Payload: json.RawMessage(gap.PortablePayload),
+	}
+	if err := job.Validate(); err != nil {
+		return "", fmt.Errorf("validate response correction framing authority: %w", err)
+	}
+	return assemblyline.PortableResponseFramingForJob(job)
+}

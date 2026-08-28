@@ -18,7 +18,7 @@ func TestKnownArtifactTruthCorrectionChangesOnlyTruthLeaf(t *testing.T) {
 	runtime := typedWorkerRuntime{
 		Context: context.Background(), MaxAttempts: 2,
 		Execute: func(job assemblyline.PortableJob, _ string) (assemblyline.PortableResult, error) {
-			prompt, schema, err := assemblyline.RenderPortableJob(job)
+			prompt, err := assemblyline.RenderPortableJob(job)
 			if err != nil {
 				return assemblyline.PortableResult{}, err
 			}
@@ -26,16 +26,11 @@ func TestKnownArtifactTruthCorrectionChangesOnlyTruthLeaf(t *testing.T) {
 			kinds = append(kinds, job.Kind)
 			if len(prompts) == 1 {
 				return assemblyline.PortableResult{
-					JobID:     job.ID,
-					Candidate: `{"schema":"omnidex.known-artifact-truth.v1","truth":"delete_file"}`,
+					JobID: job.ID, Candidate: "delete_file",
 				}, nil
 			}
-			properties := schema["properties"].(map[string]any)
-			if len(properties) != 1 || properties["truth"] == nil {
-				t.Fatalf("correction schema may alter more than truth: %#v", schema)
-			}
 			return assemblyline.PortableResult{
-				JobID: job.ID, Candidate: `{"truth":"known_artifact_must_be_absent"}`,
+				JobID: job.ID, Candidate: string(assemblyline.KnownArtifactMustBeAbsent),
 			}, nil
 		},
 	}
@@ -52,8 +47,8 @@ func TestKnownArtifactTruthCorrectionChangesOnlyTruthLeaf(t *testing.T) {
 	}
 	for _, required := range []string{
 		"ORIGINAL_SEMANTIC_QUESTION:", input.RequirementQuote,
-		"CURRENT_INVALID_RESPONSE:", `"truth":"delete_file"`,
-		"EXACT_VALIDATION_DEFECT:", "unsupported",
+		"CURRENT_REJECTED_LEAF:", "delete_file",
+		"EXACT_GROUNDED_DEFECT:", "unsupported",
 	} {
 		if !strings.Contains(prompts[1], required) {
 			t.Fatalf("correction omitted retained one-leaf authority %q: %s", required, prompts[1])
@@ -98,9 +93,7 @@ func TestKnownArtifactTruthPartitionPreservesOneDecisionPerQuote(t *testing.T) {
 			answer := answers[call]
 			call++
 			return assemblyline.PortableResult{
-				JobID: job.ID,
-				Candidate: `{"schema":"omnidex.known-artifact-truth.v1","truth":"` +
-					string(answer) + `"}`,
+				JobID: job.ID, Candidate: string(answer),
 			}, nil
 		},
 	}

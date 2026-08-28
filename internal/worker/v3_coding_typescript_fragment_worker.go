@@ -10,7 +10,6 @@ import (
 
 const (
 	directCodingTypeScriptDeclarationReviewBytes = 5 * 1024
-	maxTypeScriptOutputReviewBytes               = 128 * 1024
 	directCodingTypeScriptModelAttempts          = 1
 )
 
@@ -60,7 +59,7 @@ func runDirectCodingTypeScriptFragmentWorker(
 	if err := runtime.Context.Err(); err != nil {
 		return "", failDirectCodingTypeScriptFragmentWorker(runtime, modelName, job.block.ID, 0, err)
 	}
-	prompt, _, err := assemblyline.RenderPortableJob(baseJob)
+	prompt, err := assemblyline.RenderPortableJob(baseJob)
 	if err != nil {
 		return "", failDirectCodingTypeScriptFragmentWorker(runtime, modelName, job.block.ID, 0, err)
 	}
@@ -124,7 +123,6 @@ func runDirectCodingTypeScriptFragmentWorker(
 			}
 		}
 	}
-	candidate = strings.TrimSpace(candidate)
 	candidatePathFree := false
 	if candidate != "" {
 		pathErr := assemblyline.ValidatePathFreeSourceModelContextWithProvenance(
@@ -158,11 +156,8 @@ func runDirectCodingTypeScriptFragmentWorker(
 		emitTypedWorker(runtime, typedWorkerEvent{
 			State: typedWorkerRejected, Kind: typedWorkerFragment, Subject: job.block.ID,
 			Model: modelName, Attempt: 1, MaxAttempts: directCodingTypeScriptModelAttempts,
-			Warning: joinTypedWorkerWarnings(
-				directCodingTypeScriptDeclarationSizeWarning(len(candidate)),
-				directCodingTypeScriptProjectionWarning(result.Projection),
-			),
-			Detail: trimForBudget(rejectionErr.Error(), 1200),
+			Warning: directCodingTypeScriptDeclarationSizeWarning(len(candidate)),
+			Detail:  trimForBudget(rejectionErr.Error(), 1200),
 		})
 		return "", failDirectCodingTypeScriptFragmentWorker(
 			runtime, modelName, job.block.ID, 1, rejectionErr,
@@ -174,10 +169,7 @@ func runDirectCodingTypeScriptFragmentWorker(
 	emitTypedWorker(runtime, typedWorkerEvent{
 		State: typedWorkerCompleted, Kind: typedWorkerFragment, Subject: job.block.ID,
 		Model: modelName, Attempt: 1, MaxAttempts: directCodingTypeScriptModelAttempts,
-		Warning: joinTypedWorkerWarnings(
-			directCodingTypeScriptDeclarationSizeWarning(len(candidate)),
-			directCodingTypeScriptProjectionWarning(result.Projection),
-		),
+		Warning: directCodingTypeScriptDeclarationSizeWarning(len(candidate)),
 	})
 	return candidate, nil
 }

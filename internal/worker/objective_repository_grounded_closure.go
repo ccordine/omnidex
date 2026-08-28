@@ -41,7 +41,7 @@ func runObjectiveRepositoryGroundedClosure(
 	if err := ctx.Err(); err != nil {
 		return objectiveRepositoryGroundedResult{}, err
 	}
-	if _, err := assemblyline.NewGroundedAnswerJob(input); err != nil {
+	if err := input.Validate(); err != nil {
 		return objectiveRepositoryGroundedResult{}, err
 	}
 	if preflight, ok := stations.(objectiveRepositoryGroundingPreflight); ok {
@@ -54,7 +54,7 @@ func runObjectiveRepositoryGroundedClosure(
 		return objectiveRepositoryGroundedResult{}, err
 	}
 	result := objectiveRepositoryGroundedResult{ModelCalls: receipt.Calls}
-	if err := validateObjectiveRepositoryStationCalls("answer", receipt.Calls); err != nil {
+	if err := validateObjectiveGroundedAnswerCalls(receipt.Calls, input); err != nil {
 		return result, err
 	}
 	if err := ctx.Err(); err != nil {
@@ -68,7 +68,7 @@ func runObjectiveRepositoryGroundedClosure(
 	if err != nil {
 		return result, err
 	}
-	if _, err := assemblyline.NewRepositoryGroundedReviewJob(reviewInput); err != nil {
+	if err := reviewInput.Validate(); err != nil {
 		return result, err
 	}
 	issue, reviewReceipt, err := stations.Review(ctx, cloneRepositoryReviewInput(reviewInput))
@@ -77,7 +77,7 @@ func runObjectiveRepositoryGroundedClosure(
 	if err != nil {
 		return result, err
 	}
-	if err := validateObjectiveRepositoryStationCalls("review", reviewReceipt.Calls); err != nil {
+	if err := validateObjectiveRepositoryReviewCalls("review", reviewReceipt.Calls); err != nil {
 		return result, err
 	}
 	if err := ctx.Err(); err != nil {
@@ -127,7 +127,7 @@ func runObjectiveRepositoryGroundedClosure(
 	if err != nil {
 		return result, err
 	}
-	if err := validateObjectiveRepositoryStationCalls("second review", secondReceipt.Calls); err != nil {
+	if err := validateObjectiveRepositoryReviewCalls("second review", secondReceipt.Calls); err != nil {
 		return result, err
 	}
 	if err := ctx.Err(); err != nil {
@@ -168,7 +168,7 @@ func objectiveRepositoryReviewInput(
 		AnswerText: answer.Text, EvidenceIDs: append([]string(nil), answer.EvidenceIDs...),
 		Evidence: cited,
 	}
-	if _, err := assemblyline.NewRepositoryGroundedReviewJob(review); err != nil {
+	if err := review.Validate(); err != nil {
 		return assemblyline.RepositoryGroundedReviewInput{}, err
 	}
 	return review, nil
@@ -177,6 +177,34 @@ func objectiveRepositoryReviewInput(
 func validateObjectiveRepositoryStationCalls(label string, calls int) error {
 	if calls < 1 || calls > maxTypedWorkerAttempts {
 		return fmt.Errorf("repository grounded %s station reported %d calls outside the bounded correction budget", label, calls)
+	}
+	return nil
+}
+
+func validateObjectiveRepositoryReviewCalls(label string, calls int) error {
+	maximum := 2 * maxTypedWorkerAttempts
+	if calls < 1 || calls > maximum {
+		return fmt.Errorf(
+			"repository grounded %s reported %d calls outside the two-leaf correction budget",
+			label, calls,
+		)
+	}
+	return nil
+}
+
+func validateObjectiveGroundedAnswerCalls(
+	calls int,
+	input assemblyline.GroundedAnswerInput,
+) error {
+	if err := input.Validate(); err != nil {
+		return err
+	}
+	maximum := (1 + len(input.Evidence)) * maxTypedWorkerAttempts
+	if calls < 1 || calls > maximum {
+		return fmt.Errorf(
+			"repository grounded answer station reported %d calls outside the %d-leaf correction budget",
+			calls, maximum,
+		)
 	}
 	return nil
 }

@@ -27,7 +27,7 @@ func validateStationGapOpening(record StationGapOpenRecord) (StationGapOpening, 
 	if record.Station != expectedStation {
 		return StationGapOpening{}, fmt.Errorf("station gap station %q does not own portable work kind %q", record.Station, record.Job.Kind)
 	}
-	prompt, renderedSchema, err := assemblyline.RenderPortableJob(record.Job)
+	prompt, err := assemblyline.RenderPortableJob(record.Job)
 	if err != nil {
 		return StationGapOpening{}, fmt.Errorf("render exact station gap projection: %w", err)
 	}
@@ -43,6 +43,20 @@ func validateStationGapOpening(record StationGapOpenRecord) (StationGapOpening, 
 	); err != nil {
 		return StationGapOpening{}, fmt.Errorf("station gap output authority: %w", err)
 	}
+	if record.OutputLimitMode == llm.ExactPreparedOutputLimitNatural {
+		expectedMaxOutputTokens, err := ExpectedPortableStationMaxOutputTokens(
+			record.Job, record.ContextTokens,
+		)
+		if err != nil {
+			return StationGapOpening{}, fmt.Errorf("station gap output authority: %w", err)
+		}
+		if record.MaxOutputTokens != expectedMaxOutputTokens {
+			return StationGapOpening{}, fmt.Errorf(
+				"station gap natural output ceiling=%d differs from code-derived ceiling=%d",
+				record.MaxOutputTokens, expectedMaxOutputTokens,
+			)
+		}
+	}
 	modelInput, err := llm.ExactPreparedModelInput(prompt, llm.MinimalGeneratePrompt)
 	if err != nil {
 		return StationGapOpening{}, fmt.Errorf("station gap model input: %w", err)
@@ -50,14 +64,17 @@ func validateStationGapOpening(record StationGapOpenRecord) (StationGapOpening, 
 	if err := validateStationGapModelInputAuthority(record, modelInput); err != nil {
 		return StationGapOpening{}, fmt.Errorf("station gap model input: %w", err)
 	}
-	scope := stationGapScope(renderedSchema)
+	scope, err := stationGapScope(record.Job.Kind)
+	if err != nil {
+		return StationGapOpening{}, err
+	}
 	if record.OutputLimitMode != llm.ExactPreparedOutputLimitNatural {
 		return StationGapOpening{}, fmt.Errorf(
 			"station gap scope %q rejects output-limit mode %q",
 			scope, record.OutputLimitMode,
 		)
 	}
-	schema, err := canonicalStationGapSchema(renderedSchema)
+	schema, err := canonicalStationGapSchema()
 	if err != nil {
 		return StationGapOpening{}, fmt.Errorf("canonicalize station gap response schema: %w", err)
 	}
@@ -75,7 +92,7 @@ func validateStationGapOpening(record StationGapOpenRecord) (StationGapOpening, 
 		Prompt         string          `json:"prompt"`
 		Renderer       string          `json:"renderer"`
 		ResponseSchema json.RawMessage `json:"response_schema"`
-	}{prompt, assemblyline.PortableRendererV3, schema})
+	}{prompt, assemblyline.PortableRendererV4, schema})
 	if err != nil {
 		return StationGapOpening{}, fmt.Errorf("canonicalize station gap projection: %w", err)
 	}
@@ -93,7 +110,7 @@ func validateStationGapOpening(record StationGapOpenRecord) (StationGapOpening, 
 		WorkID: record.Job.ID, WorkKind: string(record.Job.Kind),
 		PortablePayload: string(record.Job.Payload), PortablePayloadSHA256: stationGapSHA256(string(record.Job.Payload)),
 		PortableEnvelope: string(portableEnvelope), PortableEnvelopeSHA256: stationGapSHA256(string(portableEnvelope)),
-		RendererVersion: assemblyline.PortableRendererV3, Prompt: prompt,
+		RendererVersion: assemblyline.PortableRendererV4, Prompt: prompt,
 		ResponseSchema: append(json.RawMessage(nil), schema...), ProjectionEnvelope: string(projection),
 		ProjectionSHA256: stationGapSHA256(string(projection)), ContextTokens: record.ContextTokens,
 		MaxOutputTokens: record.MaxOutputTokens, OutputLimitMode: record.OutputLimitMode,
@@ -137,18 +154,15 @@ func validateStationOutputLimitAuthority(
 			return fmt.Errorf("explicit output ceiling must be within 1..16384 tokens and leave positive input authority")
 		}
 	case llm.ExactPreparedOutputLimitNatural:
-		if maxOutputTokens != contextTokens {
-			return fmt.Errorf("natural output authority must share the full native context")
+		if maxOutputTokens < 1 || maxOutputTokens > contextTokens {
+			return fmt.Errorf("natural output authority must be positive and within the native context")
 		}
 	}
 	return nil
 }
 
-func stationGapScope(schema map[string]any) string {
-	if schema == nil {
-		return "portable_fragment_worker"
-	}
-	return "portable_semantic_worker"
+func stationGapScope(kind assemblyline.WorkKind) (string, error) {
+	return assemblyline.PortableWorkerScopeForWorkKind(kind)
 }
 
 func validateStationGapTerminal(record StationGapTerminalRecord) error {

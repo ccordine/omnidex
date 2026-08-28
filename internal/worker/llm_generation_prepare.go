@@ -3,7 +3,6 @@ package worker
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 
 	"github.com/gryph/omnidex/internal/exactjson"
@@ -13,7 +12,6 @@ import (
 
 func validateExactStationStaticCall(
 	prompt string,
-	schema map[string]any,
 	contract llmResponseContract,
 	selection llm.ProviderIdentitySelection,
 ) error {
@@ -29,15 +27,8 @@ func validateExactStationStaticCall(
 	if contract.OutputLimitMode != llm.ExactPreparedOutputLimitNatural {
 		return fmt.Errorf("portable exact station requires natural output completion")
 	}
-	switch contract.Protocol {
-	case llm.ExactPreparedProtocolStructuredV1:
-		if contract.Format != llm.ResponseFormatJSON || schema == nil {
-			return fmt.Errorf("exact structured station requires one JSON schema")
-		}
-	case llm.ExactPreparedProtocolRawTextV1:
-		if contract.Format != "" || schema != nil {
-			return fmt.Errorf("exact raw-text station forbids a response schema")
-		}
+	if contract.Protocol != llm.ExactPreparedProtocolRawTextV2 {
+		return fmt.Errorf("exact portable station requires raw text")
 	}
 	input, err := llm.ExactPreparedModelInput(prompt, contract.PromptHint)
 	if err != nil {
@@ -62,6 +53,9 @@ func prepareExactStationCall(
 			gap.OutputLimitMode, contract.OutputLimitMode,
 		)
 	}
+	if string(gap.ResponseSchema) != "null" {
+		return llm.PreparedModel{}, fmt.Errorf("durable station gap contains a forbidden structured response schema")
+	}
 	transport, err := llm.ResolveExactPreparedTransport(expected)
 	if err != nil {
 		return llm.PreparedModel{}, err
@@ -69,7 +63,17 @@ func prepareExactStationCall(
 	if temperature == nil {
 		temperature = transport.Temperature
 	}
-	challengeScope, err := stationCallChallengeScope(gap, contract, modelName, temperature)
+	stop, err := queue.ExpectedStationCallStopSequence(gap, expected)
+	if err != nil {
+		return llm.PreparedModel{}, err
+	}
+	responseFramingIdentity, err := llm.ExactPreparedResponseFramingIdentity(expected)
+	if err != nil {
+		return llm.PreparedModel{}, err
+	}
+	challengeScope, err := stationCallChallengeScope(
+		gap, contract, modelName, responseFramingIdentity, stop, temperature,
+	)
 	if err != nil {
 		return llm.PreparedModel{}, err
 	}
@@ -77,19 +81,12 @@ func prepareExactStationCall(
 	if err != nil {
 		return llm.PreparedModel{}, err
 	}
-	var schema map[string]any
-	if string(gap.ResponseSchema) != "null" {
-		if err := json.Unmarshal(gap.ResponseSchema, &schema); err != nil {
-			return llm.PreparedModel{}, fmt.Errorf("decode durable station response schema: %w", err)
-		}
-	}
 	return llm.PreparedModel{
 		Protocol: contract.Protocol, BaseModel: modelName, ContextModel: modelName,
 		Prompt: gap.Prompt, PromptHint: llm.MinimalGeneratePrompt,
 		MaxOutputTokens: gap.MaxOutputTokens, OutputLimitMode: gap.OutputLimitMode,
-		ContextTokens:  gap.ContextTokens,
-		ResponseFormat: contract.Format, ResponseSchema: schema,
-		RawTextStopSequence: contract.RawTextStopSequence,
+		ContextTokens:       gap.ContextTokens,
+		RawTextStopSequence: stop,
 		ThinkingEnabled:     transport.SeparateThinking, Temperature: temperature,
 		ProviderIdentityExpectation: &expected, ProviderObservationChallenge: challenge,
 	}, nil
@@ -99,13 +96,16 @@ func stationCallChallengeScope(
 	gap queue.StationGapOpening,
 	contract llmResponseContract,
 	modelName string,
+	responseFramingIdentity string,
+	rawTextStopSequence string,
 	temperature *llm.ExactPreparedTemperature,
 ) (string, error) {
 	raw, err := exactjson.Canonical(struct {
 		JobID                                                        int64
 		Generation, StepID, StepAttempt                              int64
 		WorkerID, GapID, Station, WorkID, WorkKind, ProjectionSHA256 string
-		RendererVersion, Model, Protocol, RawTextStopSequence        string
+		RendererVersion, Model, Protocol, ResponseFramingIdentity    string
+		RawTextStopSequence                                          string
 		OutputLimitMode                                              llm.ExactPreparedOutputLimitMode
 		Temperature                                                  *llm.ExactPreparedTemperature
 		ContextTokens, MaxOutputTokens                               int
@@ -116,7 +116,8 @@ func stationCallChallengeScope(
 		WorkKind: gap.WorkKind, ProjectionSHA256: gap.ProjectionSHA256,
 		RendererVersion: gap.RendererVersion, Model: modelName,
 		Protocol: string(contract.Protocol), ContextTokens: gap.ContextTokens,
-		MaxOutputTokens: gap.MaxOutputTokens, RawTextStopSequence: contract.RawTextStopSequence,
+		ResponseFramingIdentity: responseFramingIdentity,
+		MaxOutputTokens:         gap.MaxOutputTokens, RawTextStopSequence: rawTextStopSequence,
 		OutputLimitMode: gap.OutputLimitMode,
 		Temperature:     temperature,
 	})

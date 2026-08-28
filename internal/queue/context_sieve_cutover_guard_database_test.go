@@ -158,7 +158,7 @@ func mustRetiredConversationContextJob(t *testing.T) assemblyline.PortableJob {
 			`"max_selected_bytes":6144}`,
 	)
 	job := assemblyline.PortableJob{
-		Schema:  assemblyline.PortableJobSchemaV1,
+		Schema:  "omnidex.portable-job.v1",
 		Kind:    assemblyline.WorkKind("conversation_context_selection"),
 		Payload: payload,
 	}
@@ -173,10 +173,15 @@ func historicalContextSieveOpening(
 	stationID station.ID,
 ) StationGapOpening {
 	t.Helper()
+	const contextTokens = 32768
+	currentJob := mustContextSearchTermsJob(t)
 	opening, err := validateStationGapOpening(StationGapOpenRecord{
 		Authority: claim.Authority,
-		Job:       mustContextSearchTermsJob(t), Station: station.ContextSearchTerms,
-		ContextTokens: 32768, MaxOutputTokens: 32768,
+		Job:       currentJob, Station: station.ContextSearchTerms,
+		ContextTokens: contextTokens,
+		MaxOutputTokens: portableStationTestMaxOutputTokens(
+			t, currentJob, contextTokens,
+		),
 		OutputLimitMode: llm.ExactPreparedOutputLimitNatural,
 	})
 	if err != nil {
@@ -207,7 +212,7 @@ func insertNestedRetiredContextCorrection(
 		RetainedCandidate: "{}",
 	})
 	inner := assemblyline.PortableJob{
-		Schema:  assemblyline.PortableJobSchemaV1,
+		Schema:  "omnidex.portable-job.v1",
 		Kind:    assemblyline.WorkResponseCorrection,
 		Payload: innerPayload,
 	}
@@ -218,7 +223,7 @@ func insertNestedRetiredContextCorrection(
 		RetainedCandidate: "{}",
 	})
 	outer := assemblyline.PortableJob{
-		Schema:  assemblyline.PortableJobSchemaV1,
+		Schema:  "omnidex.portable-job.v1",
 		Kind:    assemblyline.WorkResponseCorrection,
 		Payload: outerPayload,
 	}
@@ -267,16 +272,22 @@ func TestPostgresContextSieveCutoverRejectsInvalidActiveOpening(t *testing.T) {
 	`); err != nil {
 		t.Fatal(err)
 	}
-	portableJob, err := assemblyline.NewContextSearchTermsJob(
-		assemblyline.ContextSearchTermsInput{ExactInstruction: "Repeat the prior action."},
+	portableJob, err := assemblyline.NewContextSearchTermCoverageJob(
+		assemblyline.ContextSearchTermLeafInput{
+			ExactInstruction: "Repeat the prior action.", AcceptedTerms: []string{},
+		},
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
+	const contextTokens = 32768
 	opening, err := validateStationGapOpening(StationGapOpenRecord{
 		Authority: claim.Authority,
 		Job:       portableJob, Station: station.ContextSearchTerms,
-		ContextTokens: 32768, MaxOutputTokens: 32768,
+		ContextTokens: contextTokens,
+		MaxOutputTokens: portableStationTestMaxOutputTokens(
+			t, portableJob, contextTokens,
+		),
 		OutputLimitMode: llm.ExactPreparedOutputLimitNatural,
 	})
 	if err != nil {

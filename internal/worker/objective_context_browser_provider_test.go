@@ -10,16 +10,16 @@ import (
 
 type contextRelevanceExecutorProbe struct {
 	model string
-	input assemblyline.ContextRelevanceInput
-	value assemblyline.ContextRelevanceDecision
+	input assemblyline.ContextRelevanceSelectionInput
+	value assemblyline.ContextRelevanceSelectionDecision
 	calls int
 }
 
 func (probe *contextRelevanceExecutorProbe) ExecuteContextRelevance(
 	_ context.Context,
 	model string,
-	input assemblyline.ContextRelevanceInput,
-) (assemblyline.ContextRelevanceDecision, error) {
+	input assemblyline.ContextRelevanceSelectionInput,
+) (assemblyline.ContextRelevanceSelectionDecision, error) {
 	probe.calls++
 	probe.model = model
 	probe.input = input
@@ -28,9 +28,8 @@ func (probe *contextRelevanceExecutorProbe) ExecuteContextRelevance(
 
 func TestContextRelevanceUsesConfiguredBrowserProviderBelowTheStationContract(t *testing.T) {
 	input := browserContextRelevanceInputFixture(t)
-	probe := &contextRelevanceExecutorProbe{value: assemblyline.ContextRelevanceDecision{
-		Schema:                 assemblyline.ContextRelevanceSchemaV1,
-		ReferencedCandidateIDs: []string{"CTX_1"},
+	probe := &contextRelevanceExecutorProbe{value: assemblyline.ContextRelevanceSelectionDecision{
+		CandidateID: "CTX_1",
 	}}
 	adapter := portableObjectiveContextSieveStations{runtime: &nativeRuntimeV3{
 		svc: &Service{browserContextRelevance: probe},
@@ -43,7 +42,7 @@ func TestContextRelevanceUsesConfiguredBrowserProviderBelowTheStationContract(t 
 		t.Fatal(err)
 	}
 	if probe.calls != 1 || probe.model != "qualified-browser-model" ||
-		probe.input.ExactInstruction != input.ExactInstruction || receipt.Calls != 1 ||
+		probe.input.Authority.ExactInstruction != input.ExactInstruction || receipt.Calls != 1 ||
 		len(decision.ReferencedCandidateIDs) != 1 || decision.ReferencedCandidateIDs[0] != "CTX_1" {
 		t.Fatalf("probe=%#v receipt=%#v decision=%#v", probe, receipt, decision)
 	}
@@ -51,9 +50,8 @@ func TestContextRelevanceUsesConfiguredBrowserProviderBelowTheStationContract(t 
 
 func TestContextRelevanceRevalidatesBrowserProviderResult(t *testing.T) {
 	input := browserContextRelevanceInputFixture(t)
-	probe := &contextRelevanceExecutorProbe{value: assemblyline.ContextRelevanceDecision{
-		Schema:                 assemblyline.ContextRelevanceSchemaV1,
-		ReferencedCandidateIDs: []string{"CTX_99"},
+	probe := &contextRelevanceExecutorProbe{value: assemblyline.ContextRelevanceSelectionDecision{
+		CandidateID: "CTX_99",
 	}}
 	adapter := portableObjectiveContextSieveStations{runtime: &nativeRuntimeV3{
 		svc: &Service{browserContextRelevance: probe},
@@ -69,9 +67,8 @@ func TestContextRelevanceRevalidatesBrowserProviderResult(t *testing.T) {
 func TestRoleplayContextRelevanceBypassesBrowserAndUsesSemanticRoute(t *testing.T) {
 	input := browserContextRelevanceInputFixture(t)
 	input.Scope = assemblyline.ContextScopeRoleplaySimulation
-	probe := &contextRelevanceExecutorProbe{value: assemblyline.ContextRelevanceDecision{
-		Schema:                 assemblyline.ContextRelevanceSchemaV1,
-		ReferencedCandidateIDs: []string{"CTX_1"},
+	probe := &contextRelevanceExecutorProbe{value: assemblyline.ContextRelevanceSelectionDecision{
+		CandidateID: "CTX_1",
 	}}
 	runtime := &nativeRuntimeV3{
 		svc: &Service{browserContextRelevance: probe},

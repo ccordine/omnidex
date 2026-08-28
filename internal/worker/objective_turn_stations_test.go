@@ -2,7 +2,6 @@ package worker
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"testing"
 
@@ -47,14 +46,8 @@ func TestReusableRoleplayPortableCallConsumesAcceptedLeafBeforeModelResolution(t
 	if err != nil {
 		t.Fatal(err)
 	}
-	candidate, err := json.Marshal(assemblyline.ConversationResponseDecision{
-		Schema: assemblyline.ConversationResponseSchemaV1,
-		Text:   "Mara keeps her footing and answers.",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	projection, err := assemblyline.NewExactPortableResultProjection(string(candidate))
+	candidate := "Mara keeps her footing and answers."
+	projection, err := assemblyline.NewExactPortableResultProjection(candidate)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -68,17 +61,20 @@ func TestReusableRoleplayPortableCallConsumesAcceptedLeafBeforeModelResolution(t
 			t.Fatalf("reuse request=%+v", request)
 		}
 		return queue.RoleplayPortableResultReuse{Result: assemblyline.PortableResult{
-			JobID: job.ID, Candidate: string(candidate), Projection: &projection,
+			JobID: job.ID, Candidate: candidate, Projection: &projection,
 		}}, true, nil
 	}}
 	runtime := &nativeRuntimeV3{svc: service, claim: &model.ClaimedStep{}}
 	modelResolved := false
-	decision, receipt, err := runObjectiveReusablePortableCall[assemblyline.ConversationResponseDecision](
+	decision, receipt, err := runObjectiveReusablePortableRawLeafCall(
 		t.Context(), runtime, "conversation_response", job,
 		station.ConversationResponse,
 		func() (string, error) {
 			modelResolved = true
 			return "must-not-resolve", nil
+		},
+		func(raw string) (assemblyline.ConversationResponseDecision, error) {
+			return assemblyline.DecodeConversationResponseDecision(input, raw)
 		},
 		func(value assemblyline.ConversationResponseDecision) error {
 			return value.ValidateFor(input)
@@ -115,8 +111,11 @@ func TestObjectivePortableCallUsesSuppliedAuthorityContext(t *testing.T) {
 	if workerRuntime.Context != ctx {
 		t.Fatal("portable objective worker retained the runtime context instead of supplied authority")
 	}
-	_, calls, err := runObjectivePortableCall[assemblyline.ConversationResponseDecision](
+	_, calls, err := runObjectivePortableRawLeafCall(
 		ctx, runtime, "test-model", "conversation_response", job,
+		func(raw string) (assemblyline.ConversationResponseDecision, error) {
+			return assemblyline.DecodeConversationResponseDecision(input, raw)
+		},
 		func(value assemblyline.ConversationResponseDecision) error { return value.ValidateFor(input) },
 	)
 	if !errors.Is(err, context.Canceled) {

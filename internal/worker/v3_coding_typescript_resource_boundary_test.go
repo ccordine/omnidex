@@ -48,20 +48,17 @@ func TestTypeScriptWholeDeclarationCorrectionCrossesFormerLocalByteCeilings(t *t
 				Context: context.Background(), MaxAttempts: 1,
 				Execute: func(portable assemblyline.PortableJob, _ string) (assemblyline.PortableResult, error) {
 					payloadBytes = len(portable.Payload)
-					prompt, schema, err := assemblyline.RenderPortableJob(portable)
+					prompt, err := assemblyline.RenderPortableJob(portable)
 					if err != nil {
 						return assemblyline.PortableResult{}, err
 					}
-					if schema != nil {
-						t.Fatalf("whole-declaration correction unexpectedly requested a structured response")
-					}
 					promptBytes = len(prompt)
-					contract, err := llmResponseContractForPortableJob(portable, schema)
+					contract, err := llmResponseContractForPortableJob(portable)
 					if err != nil {
 						return assemblyline.PortableResult{}, err
 					}
 					if err := validateExactStationStaticCall(
-						prompt, schema, contract,
+						prompt, contract,
 						llm.ProviderIdentitySelection{Model: "test-model", NativeContextLimit: 8192},
 					); err != nil {
 						return assemblyline.PortableResult{}, err
@@ -84,13 +81,14 @@ func TestTypeScriptWholeDeclarationCorrectionCrossesFormerLocalByteCeilings(t *t
 	}
 }
 
-func TestTypeScriptWorkerProjectsRawOutputBeyondFormerPortableCandidateCeiling(t *testing.T) {
+func TestTypeScriptWorkerAcceptsOnlyExactRawOutputBeyondFormerPortableCandidateCeiling(t *testing.T) {
 	t.Parallel()
 
 	const signature = "function revise(value: number): number"
-	source := "function revise(value: number): number { return value + 1; }"
-	raw := strings.Repeat("Reasoning remains untrusted provider evidence. ", 4*1024) +
-		"\n```typescript\n" + source + "\n```"
+	source := validLargeTypeScriptDeclaration(
+		signature, testPortableGrossResourceBytes+1, "value + 1",
+	)
+	raw := source
 	if len(raw) <= testPortableGrossResourceBytes {
 		t.Fatalf("raw fixture=%dB did not cross former candidate ceiling", len(raw))
 	}
@@ -102,7 +100,7 @@ func TestTypeScriptWorkerProjectsRawOutputBeyondFormerPortableCandidateCeiling(t
 	var events []typedWorkerEvent
 	runtime := typedWorkerRuntime{
 		Context: context.Background(), MaxAttempts: 1,
-		Execute: testPortableExecutor(func(_ string, _ string, _ string, _ map[string]any) (string, error) {
+		Execute: testPortableExecutor(func(_ string, _ string, _ string) (string, error) {
 			executions++
 			return raw, nil
 		}),
@@ -110,7 +108,7 @@ func TestTypeScriptWorkerProjectsRawOutputBeyondFormerPortableCandidateCeiling(t
 	}
 	got, err := runDirectCodingTypeScriptFragmentWorker(runtime, "coder", job)
 	if err != nil {
-		t.Fatalf("project raw output beyond former candidate ceiling: %v", err)
+		t.Fatalf("accept exact raw output beyond former candidate ceiling: %v", err)
 	}
 	if got != source {
 		t.Fatalf("projected source=%q want=%q", got, source)
@@ -118,16 +116,16 @@ func TestTypeScriptWorkerProjectsRawOutputBeyondFormerPortableCandidateCeiling(t
 	if executions != 1 {
 		t.Fatalf("raw model result dispatched %d calls, want 1", executions)
 	}
-	foundProjection := false
+	foundSizeWarning := false
 	for _, event := range events {
 		if event.State == typedWorkerCompleted &&
-			strings.Contains(event.Warning, "output_projection") &&
-			strings.Contains(event.Warning, "discarded_bytes=") {
-			foundProjection = true
+			strings.Contains(event.Warning, "declaration_size_review") &&
+			!strings.Contains(event.Warning, "output_projection") {
+			foundSizeWarning = true
 		}
 	}
-	if !foundProjection {
-		t.Fatalf("completion events omitted discarded-output projection metadata: %+v", events)
+	if !foundSizeWarning {
+		t.Fatalf("completion events omitted exact declaration size metadata: %+v", events)
 	}
 
 	oversized := validLargeTypeScriptDeclaration(
@@ -155,6 +153,9 @@ func TestTypeScriptWorkerStopsRepeatedUnprojectableResponseState(t *testing.T) {
 	}}
 	for name, raw := range map[string]string{
 		"no executable node": "I would implement this after considering the types.",
+		"Markdown fence":     "```typescript\nfunction revise(value: number): number { return value; }\n```",
+		"JSON fence":         "```json\n{\"source\":\"function revise() {}\"}\n```",
+		"outer comment":      "// generated source\nfunction revise(value: number): number { return value; }",
 		"ambiguous node": "function revise(value: number): number { return value; }\n" +
 			"function revise(value: number): number { return value + 1; }",
 	} {
@@ -162,7 +163,7 @@ func TestTypeScriptWorkerStopsRepeatedUnprojectableResponseState(t *testing.T) {
 			executions := 0
 			runtime := typedWorkerRuntime{
 				Context: context.Background(), CorrectionModel: "corrector",
-				Execute: testPortableExecutor(func(_ string, _ string, _ string, _ map[string]any) (string, error) {
+				Execute: testPortableExecutor(func(_ string, _ string, _ string) (string, error) {
 					executions++
 					return raw, nil
 				}),

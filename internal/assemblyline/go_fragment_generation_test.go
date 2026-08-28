@@ -13,12 +13,12 @@ func TestGoFragmentGenerationIsOnePathBlindDeclaration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	prompt, schema, err := RenderPortableJob(job)
+	prompt, err := RenderPortableJob(job)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if schema != nil || !strings.Contains(prompt, "func Added() int") || !strings.Contains(prompt, "return two") {
-		t.Fatalf("prompt=%q schema=%#v", prompt, schema)
+	if !strings.Contains(prompt, "func Added() int") || !strings.Contains(prompt, "return two") {
+		t.Fatalf("prompt=%q", prompt)
 	}
 	for _, forbidden := range []string{"filename", "target path", "create_file", "delete_file", "write_file", "shell command"} {
 		if strings.Contains(strings.ToLower(prompt), forbidden) {

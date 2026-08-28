@@ -14,14 +14,14 @@ func TestObjectiveRepositoryCallLedgerRejectsInventedRoundsAndAttempts(t *testin
 		},
 		"too many relevance attempts": func() error {
 			ledger := objectiveRepositoryAcquisitionCallLedger{}
-			return ledger.recordRelevance(objectiveStationReceipt{Calls: maxTypedWorkerAttempts + 1})
+			return ledger.recordRelevance(objectiveStationReceipt{Calls: maxObjectiveRepositoryRelevanceModelCalls + 1})
 		},
 		"second search round": func() error {
 			ledger := objectiveRepositoryAcquisitionCallLedger{}
-			if err := ledger.recordSearchTerm(objectiveStationReceipt{Calls: 1}); err != nil {
+			if err := ledger.recordSearchTerm(objectiveStationReceipt{Calls: 2}); err != nil {
 				return err
 			}
-			return ledger.recordSearchTerm(objectiveStationReceipt{Calls: 1})
+			return ledger.recordSearchTerm(objectiveStationReceipt{Calls: 2})
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -41,14 +41,14 @@ func TestObjectiveRepositoryCallLedgerRejectsInventedRoundsAndAttempts(t *testin
 func TestObjectiveRepositoryCallLedgerDerivesExactMaximum(t *testing.T) {
 	t.Parallel()
 	ledger := objectiveRepositoryAcquisitionCallLedger{}
-	if err := ledger.recordRelevance(objectiveStationReceipt{Calls: maxTypedWorkerAttempts}); err != nil {
+	if err := ledger.recordRelevance(objectiveStationReceipt{Calls: maxObjectiveRepositoryRelevanceModelCalls}); err != nil {
 		t.Fatal(err)
 	}
-	if err := ledger.recordSearchTerm(objectiveStationReceipt{Calls: maxTypedWorkerAttempts}); err != nil {
+	if err := ledger.recordSearchTerm(objectiveStationReceipt{Calls: maxObjectiveRepositorySearchTermModelCalls}); err != nil {
 		t.Fatal(err)
 	}
 	for round := 1; round < maxObjectiveRepositoryRelevanceRounds; round++ {
-		if err := ledger.recordRelevance(objectiveStationReceipt{Calls: maxTypedWorkerAttempts}); err != nil {
+		if err := ledger.recordRelevance(objectiveStationReceipt{Calls: maxObjectiveRepositoryRelevanceModelCalls}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -56,7 +56,8 @@ func TestObjectiveRepositoryCallLedgerDerivesExactMaximum(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	const wantMax = 15
+	wantMax := maxObjectiveRepositorySearchTermModelCalls +
+		maxObjectiveRepositoryRelevanceRounds*maxObjectiveRepositoryRelevanceModelCalls
 	if maxObjectiveRepositoryEvidenceModelCalls != wantMax {
 		t.Fatalf("derived max=%d want %d", maxObjectiveRepositoryEvidenceModelCalls, wantMax)
 	}

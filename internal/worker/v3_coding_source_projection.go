@@ -14,9 +14,7 @@ func projectDirectCodingGoFragment(
 	if err != nil {
 		return assemblyline.PortableResultProjection{}, err
 	}
-	return assemblyline.NewSourceDeclarationPortableResultProjection(
-		raw, projection.Source, projection.StartByte, projection.EndByte,
-	)
+	return assemblyline.NewExactSourceDeclarationPortableResultProjection(projection.Source)
 }
 
 func projectDirectCodingSourceDeclaration(
@@ -34,6 +32,8 @@ func directCodingSourceDeclarationProjector(
 	language string,
 ) (directCodingLanguageFragmentProjector, error) {
 	switch language {
+	case assemblyline.TextFragmentLanguage:
+		return assemblyline.ProjectTextFragment, nil
 	case "go":
 		return projectDirectCodingGoFragment, nil
 	case "javascript":

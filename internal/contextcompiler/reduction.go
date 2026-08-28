@@ -40,7 +40,11 @@ func selectRelevantAuthorities(
 			MaxSelections:        min(assemblyline.MaxContextRelevanceSelections, len(page)),
 			Scope:                scope,
 		}
-		if _, err := assemblyline.NewContextRelevanceJob(input); err != nil {
+		if _, err := assemblyline.NewContextRelevanceSelectionJob(
+			assemblyline.ContextRelevanceSelectionInput{
+				Authority: input, AcceptedCandidateIDs: []string{},
+			},
+		); err != nil {
 			return nil, calls, fmt.Errorf("context relevance page %d: %w", pageIndex+1, err)
 		}
 		decision, receipt, err := station.SelectRelevant(ctx, input)

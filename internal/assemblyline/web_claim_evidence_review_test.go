@@ -1,7 +1,6 @@
 package assemblyline
 
 import (
-	"fmt"
 	"strings"
 	"testing"
 )
@@ -18,138 +17,127 @@ func webClaimEvidenceReviewFixture() WebClaimEvidenceReviewInput {
 	}
 }
 
-func TestWebClaimEvidenceReviewReturnsOnlyNoneOrOneBoundIssue(t *testing.T) {
-	input := webClaimEvidenceReviewFixture()
-	job, err := NewWebClaimEvidenceReviewJob(input)
-	if err != nil {
-		t.Fatal(err)
+func TestWebReviewLeavesSeparateClaimVerdictEvidenceAndDetail(t *testing.T) {
+	base := webClaimEvidenceReviewFixture()
+	claimInput := WebReviewClaimLeafInput{
+		ExactQuestion: base.ExactQuestion, Context: base.Context,
+		ParagraphText: base.Paragraph.Text, AcceptedClaims: []string{},
 	}
-	prompt, schema, err := RenderPortableJob(job)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(prompt, `"paragraph_id":"P1"`) || schema["type"] != "object" {
-		t.Fatalf("prompt/schema lost closed review authority: %q %#v", prompt, schema)
-	}
-	variants, ok := schema["oneOf"].([]any)
-	if !ok || len(variants) != 2 {
-		t.Fatalf("review schema lacks exact NONE/ISSUE variants: %#v", schema)
-	}
-	noneVariant := variants[0].(map[string]any)
-	noneProperties := noneVariant["properties"].(map[string]any)
-	if noneProperties["outcome"].(map[string]any)["const"] != "none" ||
-		len(noneProperties) != 2 || noneVariant["additionalProperties"] != false {
-		t.Fatalf("NONE schema is not structurally empty: %#v", noneVariant)
-	}
-	none := fmt.Sprintf(
-		`{"schema":%q,"outcome":"none"}`,
-		WebClaimEvidenceReviewSchemaV1,
+	coverage, err := DecodeWebReviewClaimCoverageDecision(
+		claimInput, string(WebReviewClaimRemains),
 	)
-	decision, err := DecodeWebClaimEvidenceReviewDecision(input, none)
+	if err != nil || coverage.Coverage != WebReviewClaimRemains {
+		t.Fatalf("coverage=%+v err=%v", coverage, err)
+	}
+	claim, err := DecodeWebReviewClaimDecision(claimInput, "Version 2 is current.")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if decision.Outcome != WebClaimEvidenceReviewNone || decision.EvidenceIDs != nil {
-		t.Fatalf("decision=%+v", decision)
+	verdictInput := WebReviewClaimVerdictInput{
+		ExactQuestion: base.ExactQuestion, Context: base.Context,
+		ParagraphText: base.Paragraph.Text, Claim: claim.Claim, Evidence: base.Evidence,
 	}
-	issue := fmt.Sprintf(
-		`{"schema":%q,"outcome":"issue","paragraph_id":"P1","evidence_ids":["E31"],"issue_kind":"insufficient_support","detail":"The evidence does not establish that this is the current release."}`,
-		WebClaimEvidenceReviewSchemaV1,
+	verdict, err := DecodeWebReviewClaimVerdictDecision(
+		verdictInput, string(WebReviewClaimInsufficient),
 	)
-	decision, err = DecodeWebClaimEvidenceReviewDecision(input, issue)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if decision.Outcome != WebClaimEvidenceReviewIssue || decision.ParagraphID != "P1" || len(decision.EvidenceIDs) != 1 {
-		t.Fatalf("decision=%+v", decision)
+	issueKind, issue := verdict.IssueKind()
+	if !issue || issueKind != WebClaimEvidenceInsufficientSupport {
+		t.Fatalf("verdict=%+v kind=%q issue=%v", verdict, issueKind, issue)
+	}
+	relationInput := WebReviewIssueEvidenceRelationInput{
+		ExactQuestion: base.ExactQuestion, Context: base.Context,
+		ParagraphText: base.Paragraph.Text, Claim: claim.Claim,
+		IssueKind: issueKind, Evidence: base.Evidence[0],
+	}
+	relation, err := DecodeWebReviewIssueEvidenceRelationDecision(
+		relationInput, string(WebReviewEvidenceImplicated),
+	)
+	if err != nil || relation.Relation != WebReviewEvidenceImplicated {
+		t.Fatalf("relation=%+v err=%v", relation, err)
+	}
+	detailInput := WebReviewIssueDetailInput{
+		ExactQuestion: base.ExactQuestion, Context: base.Context,
+		ParagraphText: base.Paragraph.Text, Claim: claim.Claim,
+		IssueKind: issueKind, Evidence: base.Evidence,
+	}
+	detail, err := DecodeWebReviewIssueDetailDecision(
+		detailInput, "The cited evidence does not establish the claim.",
+	)
+	if err != nil || detail.Detail == "" {
+		t.Fatalf("detail=%+v err=%v", detail, err)
 	}
 }
 
-func TestWebClaimEvidenceReviewTreatsCitedEvidenceAsCollectiveSupport(t *testing.T) {
-	fixtures := []WebClaimEvidenceReviewInput{
-		{
-			ExactQuestion: "How are municipal elections certified?",
-			Paragraph: WebReviewParagraph{
-				ParagraphID: "P7",
-				Text:        "The clerk canvasses returns before the council certifies the result.",
-				EvidenceIDs: []string{"E-municipal-process", "E-council-minutes"},
-			},
-			Evidence: []WebReviewEvidence{
-				{EvidenceID: "E-municipal-process", Title: "Election procedure", Content: "The clerk canvasses returns."},
-				{EvidenceID: "E-council-minutes", Title: "Council record", Content: "The council certifies the result after canvassing."},
-			},
-		},
-		{
-			ExactQuestion: "What conditions help this plant germinate?",
-			Paragraph: WebReviewParagraph{
-				ParagraphID: "P4",
-				Text:        "The seed germinates in moist soil after a period of cold stratification.",
-				EvidenceIDs: []string{"E-moisture-study", "E-stratification-guide"},
-			},
-			Evidence: []WebReviewEvidence{
-				{EvidenceID: "E-moisture-study", Title: "Moisture trial", Content: "Germination requires moist soil."},
-				{EvidenceID: "E-stratification-guide", Title: "Propagation guide", Content: "Cold stratification precedes germination."},
-			},
-		},
+func TestWebReviewPairwisePromptsHideOpaqueEvidenceIDs(t *testing.T) {
+	base := webClaimEvidenceReviewFixture()
+	verdictInput := WebReviewClaimVerdictInput{
+		ExactQuestion: base.ExactQuestion, Context: base.Context,
+		ParagraphText: base.Paragraph.Text, Claim: "Version 2 is current.",
+		Evidence: base.Evidence,
 	}
-	for _, input := range fixtures {
-		prompt, err := BuildWebClaimEvidenceReviewPrompt(input)
-		if err != nil {
-			t.Fatal(err)
+	prompt, err := BuildWebReviewClaimVerdictPrompt(verdictInput)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(prompt, base.Evidence[0].EvidenceID) ||
+		!strings.Contains(prompt, base.Evidence[0].Content) {
+		t.Fatalf("verdict prompt exposed ID or lost evidence content: %q", prompt)
+	}
+	relationInput := WebReviewIssueEvidenceRelationInput{
+		ExactQuestion: base.ExactQuestion, Context: base.Context,
+		ParagraphText: base.Paragraph.Text, Claim: "Version 2 is current.",
+		IssueKind: WebClaimEvidenceContradictedSupport, Evidence: base.Evidence[0],
+	}
+	prompt, err = BuildWebReviewIssueEvidenceRelationPrompt(relationInput)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(prompt, base.Evidence[0].EvidenceID) {
+		t.Fatalf("issue evidence relation prompt exposed code-owned ID: %q", prompt)
+	}
+}
+
+func TestWebReviewLeafDecodersRejectStructuredOrCombinedResults(t *testing.T) {
+	base := webClaimEvidenceReviewFixture()
+	claimInput := WebReviewClaimLeafInput{
+		ExactQuestion: base.ExactQuestion, Context: base.Context,
+		ParagraphText: base.Paragraph.Text, AcceptedClaims: []string{},
+	}
+	for _, raw := range []string{`{"claim":"Version 2 is current."}`, `"Version 2 is current."`, "claim one\nclaim two"} {
+		if _, err := DecodeWebReviewClaimDecision(claimInput, raw); err == nil {
+			t.Fatalf("invalid claim leaf accepted: %q", raw)
 		}
-		for _, required := range []string{
-			"Evaluate the cited evidence collectively.",
-			"every capsule does not need to repeat every claim",
-			"Report insufficient_support only when no cited capsule supports the material claim.",
-			"For NONE return only schema and outcome",
-		} {
-			if !strings.Contains(prompt, required) {
-				t.Fatalf("collective-evidence contract %q missing from prompt: %q", required, prompt)
-			}
-		}
-		for _, evidence := range input.Evidence {
-			if !strings.Contains(prompt, evidence.EvidenceID) || !strings.Contains(prompt, evidence.Content) {
-				t.Fatalf("prompt lost evidence capsule %q: %q", evidence.EvidenceID, prompt)
-			}
+	}
+	verdictInput := WebReviewClaimVerdictInput{
+		ExactQuestion: base.ExactQuestion, Context: base.Context,
+		ParagraphText: base.Paragraph.Text, Claim: "Version 2 is current.",
+		Evidence: base.Evidence,
+	}
+	for _, raw := range []string{`{"verdict":"SUPPORTED"}`, "SUPPORTED\nE31", "none"} {
+		if _, err := DecodeWebReviewClaimVerdictDecision(verdictInput, raw); err == nil {
+			t.Fatalf("invalid verdict leaf accepted: %q", raw)
 		}
 	}
 }
 
-func TestWebClaimEvidenceReviewRejectsAmbiguousOrUnboundResults(t *testing.T) {
+func TestWebReviewDecisionIsAssembledWithCodeOwnedBindings(t *testing.T) {
 	input := webClaimEvidenceReviewFixture()
-	schema := fmt.Sprintf(`"schema":%q`, WebClaimEvidenceReviewSchemaV1)
-	tests := map[string]string{
-		"none with issue":        `{` + schema + `,"outcome":"none","paragraph_id":"P1","evidence_ids":["E31"],"issue_kind":"insufficient_support","detail":"Issue."}`,
-		"issue without detail":   `{` + schema + `,"outcome":"issue","paragraph_id":"P1","evidence_ids":["E31"],"issue_kind":"insufficient_support","detail":""}`,
-		"wrong paragraph":        `{` + schema + `,"outcome":"issue","paragraph_id":"P9","evidence_ids":["E31"],"issue_kind":"contradicted_support","detail":"Contradicted."}`,
-		"unknown evidence":       `{` + schema + `,"outcome":"issue","paragraph_id":"P1","evidence_ids":["E99"],"issue_kind":"contradicted_support","detail":"Contradicted."}`,
-		"duplicate evidence":     `{` + schema + `,"outcome":"issue","paragraph_id":"P1","evidence_ids":["E31","E31"],"issue_kind":"contradicted_support","detail":"Contradicted."}`,
-		"unknown issue kind":     `{` + schema + `,"outcome":"issue","paragraph_id":"P1","evidence_ids":["E31"],"issue_kind":"rewrite","detail":"Rewrite it."}`,
-		"unknown authority":      `{` + schema + `,"outcome":"none","complete":true}`,
-		"null evidence IDs":      `{` + schema + `,"outcome":"none","evidence_ids":null}`,
-		"duplicate root field":   `{` + schema + `,"outcome":"none","outcome":"issue"}`,
-		"trailing JSON":          `{` + schema + `,"outcome":"none"} {}`,
-		"markdown fence":         "```json\n{" + schema + `,"outcome":"none"}` + "\n```",
-		"oversized raw response": strings.Repeat("x", maxPortableCandidateBytes+1),
+	decision := WebClaimEvidenceReviewDecision{
+		Schema:      WebClaimEvidenceReviewSchemaV1,
+		Outcome:     WebClaimEvidenceReviewIssue,
+		ParagraphID: input.Paragraph.ParagraphID,
+		EvidenceIDs: []string{"E31"},
+		IssueKind:   WebClaimEvidenceInsufficientSupport,
+		Detail:      "The cited evidence does not establish the claim.",
 	}
-	for name, raw := range tests {
-		t.Run(name, func(t *testing.T) {
-			if _, err := DecodeWebClaimEvidenceReviewDecision(input, raw); err == nil {
-				t.Fatal("invalid claim-evidence review was accepted")
-			}
-		})
+	if err := decision.ValidateFor(input); err != nil {
+		t.Fatal(err)
 	}
-}
-
-func TestWebClaimEvidenceReviewRejectsUnboundOrOversizedInput(t *testing.T) {
-	input := webClaimEvidenceReviewFixture()
-	input.Paragraph.EvidenceIDs = []string{"E99"}
-	if _, err := NewWebClaimEvidenceReviewJob(input); err == nil {
-		t.Fatal("paragraph citation outside review evidence was accepted")
-	}
-	input = webClaimEvidenceReviewFixture()
-	input.Evidence[0].Content = strings.Repeat("x", maxWebReviewEvidenceProjectionBytes+1)
-	if _, err := NewWebClaimEvidenceReviewJob(input); err == nil {
-		t.Fatal("oversized review evidence was accepted")
+	decision.ParagraphID = "P9"
+	if err := decision.ValidateFor(input); err == nil {
+		t.Fatal("assembled issue accepted a model-invented paragraph identity")
 	}
 }

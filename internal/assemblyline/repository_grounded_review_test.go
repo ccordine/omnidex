@@ -2,68 +2,142 @@ package assemblyline
 
 import (
 	"encoding/json"
-	"fmt"
-	"reflect"
 	"strings"
 	"testing"
 )
 
-func TestRepositoryGroundedReviewReturnsOnlyNoneOrOneIssue(t *testing.T) {
+func TestRepositoryGroundedReviewUsesRawDetailThenRawKind(t *testing.T) {
 	t.Parallel()
 	input := repositoryGroundedReviewFixture()
-	job, err := NewRepositoryGroundedReviewJob(input)
+	detailJob, err := NewRepositoryGroundedIssueDetailJob(input)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if job.Kind != WorkRepositoryGroundedReview {
-		t.Fatalf("kind=%q", job.Kind)
-	}
-	prompt, schema, err := RenderPortableJob(job)
+	prompt, err := RenderPortableJob(detailJob)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(prompt, input.AnswerText) || !strings.Contains(prompt, input.Evidence[0].Text) {
-		t.Fatalf("review prompt lost exact claim or cited evidence: %q", prompt)
+	if detailJob.Kind != WorkRepositoryGroundedIssueDetail {
+		t.Fatalf("detail kind=%q", detailJob.Kind)
 	}
-	if schema["additionalProperties"] != false {
-		t.Fatalf("schema is not closed: %#v", schema)
+	if !strings.Contains(prompt, input.AnswerText) ||
+		!strings.Contains(prompt, input.Evidence[0].Text) ||
+		!strings.Contains(prompt, RepositoryGroundedNoIssue) {
+		t.Fatalf("detail prompt lost exact comparison authority: %s", prompt)
 	}
-	assertExactJSONFields(t, reflect.TypeOf(input), []string{
-		"requirement_id", "exact_requirement", "objective_context",
-		"answer_text", "evidence_ids", "evidence",
-	})
-	none := RepositoryGroundedReviewDecision{
-		Schema: RepositoryGroundedReviewSchemaV1, Outcome: RepositoryGroundedReviewNone,
+	for _, forbidden := range []string{input.RequirementID, input.EvidenceIDs[0], `"outcome"`, `"issue_kind"`} {
+		if strings.Contains(prompt, forbidden) {
+			t.Fatalf("detail prompt exposed code-owned field %q: %s", forbidden, prompt)
+		}
 	}
-	if err := none.ValidateFor(input); err != nil {
+	detail, err := DecodeRepositoryGroundedIssueDetailLeaf(
+		input, "The ownership claim is absent from the cited evidence.",
+	)
+	if err != nil {
 		t.Fatal(err)
 	}
-	issue := RepositoryGroundedReviewDecision{
-		Schema: RepositoryGroundedReviewSchemaV1, Outcome: RepositoryGroundedReviewIssue,
-		IssueKind: RepositoryGroundedUnsupportedClaim, Detail: "The ownership claim is absent from R01.",
-	}
-	if err := issue.ValidateFor(input); err != nil {
+	kindInput := RepositoryGroundedIssueKindLeafInput{Review: input, Detail: detail}
+	kindJob, err := NewRepositoryGroundedIssueKindJob(kindInput)
+	if err != nil {
 		t.Fatal(err)
 	}
-	assertExactJSONFields(t, reflect.TypeOf(RepositoryGroundedReviewDecision{}), []string{"schema", "outcome", "issue_kind", "detail"})
+	kindPrompt, err := RenderPortableJob(kindJob)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if kindJob.Kind != WorkRepositoryGroundedIssueKind ||
+		!strings.Contains(kindPrompt, detail) {
+		t.Fatalf("kind=%q prompt=%s", kindJob.Kind, kindPrompt)
+	}
+	kind, err := DecodeRepositoryGroundedIssueKindLeaf(
+		kindInput, string(RepositoryGroundedUnsupportedClaim),
+	)
+	if err != nil || kind != RepositoryGroundedUnsupportedClaim {
+		t.Fatalf("kind=%q error=%v", kind, err)
+	}
+	decision, err := AssembleRepositoryGroundedReviewDecision(input, detail, kind)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if decision.Outcome != RepositoryGroundedReviewIssue ||
+		decision.Detail != detail || decision.IssueKind != kind {
+		t.Fatalf("assembled review=%#v", decision)
+	}
 }
 
-func TestRepositoryGroundedReviewRequiresExactlyTheCitedEvidence(t *testing.T) {
+func TestRepositoryGroundedNoIssueIsDecodedAndAssembledByCode(t *testing.T) {
 	t.Parallel()
 	input := repositoryGroundedReviewFixture()
-	input.Evidence = append(input.Evidence, GroundedEvidenceCapsule{ID: "R02", Text: "uncited evidence"})
-	if _, err := NewRepositoryGroundedReviewJob(input); err == nil {
-		t.Fatal("uncited evidence was exposed to independent review")
+	detail, err := DecodeRepositoryGroundedIssueDetailLeaf(
+		input, RepositoryGroundedNoIssue,
+	)
+	if err != nil || detail != "" {
+		t.Fatalf("detail=%q error=%v", detail, err)
+	}
+	decision, err := AssembleRepositoryGroundedReviewDecision(input, detail, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if decision.Schema != RepositoryGroundedReviewSchemaV1 ||
+		decision.Outcome != RepositoryGroundedReviewNone ||
+		decision.IssueKind != "" || decision.Detail != "" {
+		t.Fatalf("assembled no-issue review=%#v", decision)
+	}
+}
+
+func TestRepositoryGroundedReviewRawLeavesRejectAggregateAndAmbiguousValues(t *testing.T) {
+	t.Parallel()
+	input := repositoryGroundedReviewFixture()
+	for _, raw := range []string{
+		`{"outcome":"none"}`,
+		"line one\nline two",
+		" detail ",
+	} {
+		if _, err := DecodeRepositoryGroundedIssueDetailLeaf(input, raw); err == nil {
+			t.Fatalf("invalid detail leaf accepted: %q", raw)
+		}
+	}
+	kindInput := RepositoryGroundedIssueKindLeafInput{
+		Review: input,
+		Detail: "The ownership claim is unsupported.",
+	}
+	for _, raw := range []string{
+		RepositoryGroundedNoIssue,
+		`{"issue_kind":"unsupported_claim"}`,
+		"issue",
+		"unsupported_claim\nexplanation",
+	} {
+		if _, err := DecodeRepositoryGroundedIssueKindLeaf(kindInput, raw); err == nil {
+			t.Fatalf("invalid issue-kind leaf accepted: %q", raw)
+		}
+	}
+	if _, err := AssembleRepositoryGroundedReviewDecision(
+		input, "The ownership claim is unsupported.", "",
+	); err == nil {
+		t.Fatal("detail without a registered kind was assembled")
+	}
+}
+
+func TestRepositoryGroundedReviewRequiresExactlyCitedEvidence(t *testing.T) {
+	t.Parallel()
+	input := repositoryGroundedReviewFixture()
+	input.Evidence = append(input.Evidence, GroundedEvidenceCapsule{
+		ID: "R02", Text: "uncited evidence",
+	})
+	if err := input.Validate(); err == nil {
+		t.Fatal("uncited evidence was exposed to grounded review")
 	}
 	input = repositoryGroundedReviewFixture()
 	input.EvidenceIDs = []string{"R02"}
-	if _, err := NewRepositoryGroundedReviewJob(input); err == nil {
+	if err := input.Validate(); err == nil {
 		t.Fatal("unprojected cited evidence was accepted")
 	}
 	input = repositoryGroundedReviewFixture()
 	input.EvidenceIDs = append(input.EvidenceIDs, "R02")
-	input.Evidence = append(input.Evidence, GroundedEvidenceCapsule{ID: "R02", Text: input.Evidence[0].Text})
-	if _, err := NewRepositoryGroundedReviewJob(input); err == nil {
+	input.Evidence = append(input.Evidence, GroundedEvidenceCapsule{
+		ID: "R02", Text: input.Evidence[0].Text,
+	})
+	if err := input.Validate(); err == nil {
 		t.Fatal("duplicate evidence text was accepted under another ID")
 	}
 }
@@ -82,73 +156,15 @@ func TestRepositoryGroundedReviewRejectsRetiredAdvisoryProjection(t *testing.T) 
 	}
 }
 
-func TestRepositoryGroundedReviewRejectsAmbiguousIssueState(t *testing.T) {
-	t.Parallel()
-	input := repositoryGroundedReviewFixture()
-	tests := map[string]RepositoryGroundedReviewDecision{
-		"none with kind": {Schema: RepositoryGroundedReviewSchemaV1, Outcome: RepositoryGroundedReviewNone, IssueKind: RepositoryGroundedUnsupportedClaim},
-		"none detail":    {Schema: RepositoryGroundedReviewSchemaV1, Outcome: RepositoryGroundedReviewNone, Detail: "wrong"},
-		"issue no kind":  {Schema: RepositoryGroundedReviewSchemaV1, Outcome: RepositoryGroundedReviewIssue, Detail: "wrong"},
-		"issue no detail": {Schema: RepositoryGroundedReviewSchemaV1, Outcome: RepositoryGroundedReviewIssue,
-			IssueKind: RepositoryGroundedUnsupportedClaim},
-		"unknown issue": {Schema: RepositoryGroundedReviewSchemaV1, Outcome: RepositoryGroundedReviewIssue,
-			IssueKind: "invented", Detail: "wrong"},
-		"multiline": {Schema: RepositoryGroundedReviewSchemaV1, Outcome: RepositoryGroundedReviewIssue,
-			IssueKind: RepositoryGroundedUnsupportedClaim, Detail: "line one\nline two"},
-	}
-	for name, decision := range tests {
-		decision := decision
-		t.Run(name, func(t *testing.T) {
-			t.Parallel()
-			if err := decision.ValidateFor(input); err == nil {
-				t.Fatalf("accepted %#v", decision)
-			}
-		})
-	}
-}
-
-func TestRepositoryGroundedReviewDecodeRejectsExtraOrDuplicateState(t *testing.T) {
-	t.Parallel()
-	input := repositoryGroundedReviewFixture()
-	valid := fmt.Sprintf(
-		`{"schema":%q,"outcome":"none","issue_kind":"","detail":""}`,
-		RepositoryGroundedReviewSchemaV1,
-	)
-	if _, err := DecodeRepositoryGroundedReviewDecision(input, valid); err != nil {
-		t.Fatal(err)
-	}
-	for _, raw := range []string{
-		strings.TrimSuffix(valid, "}") + `,"extra":true}`,
-		fmt.Sprintf(`{"schema":%q,"schema":%q,"outcome":"none","issue_kind":"","detail":""}`,
-			RepositoryGroundedReviewSchemaV1, RepositoryGroundedReviewSchemaV1),
-	} {
-		if _, err := DecodeRepositoryGroundedReviewDecision(input, raw); err == nil {
-			t.Fatalf("malformed review accepted: %s", raw)
-		}
-	}
-}
-
 func repositoryGroundedReviewFixture() RepositoryGroundedReviewInput {
 	return RepositoryGroundedReviewInput{
-		RequirementID: "requirement-17", ExactRequirement: "Which component owns dispatch?",
-		Context:    minifiedObjectiveContext("The earlier result discussed dispatch ownership."),
-		AnswerText: "ScheduleDispatch owns dispatch.", EvidenceIDs: []string{"R01"},
-		Evidence: []GroundedEvidenceCapsule{{ID: "R01", Text: "func ScheduleDispatch() starts dispatch."}},
-	}
-}
-
-func TestRepositoryGroundedReviewRejectsOversizedCandidate(t *testing.T) {
-	t.Parallel()
-	input := repositoryGroundedReviewFixture()
-	input.AnswerText = strings.Repeat("a", maxGroundedAnswerTextBytes+1)
-	if _, err := NewRepositoryGroundedReviewJob(input); err == nil {
-		t.Fatal("oversized answer was copied into review")
-	}
-	issue := RepositoryGroundedReviewDecision{
-		Schema: RepositoryGroundedReviewSchemaV1, Outcome: RepositoryGroundedReviewIssue,
-		IssueKind: RepositoryGroundedUnsupportedClaim, Detail: strings.Repeat("x", maxRepositoryGroundedReviewDetailBytes+1),
-	}
-	if err := issue.ValidateFor(repositoryGroundedReviewFixture()); err == nil {
-		t.Fatal(fmt.Sprintf("oversized issue accepted: %#v", issue))
+		RequirementID:    "requirement-17",
+		ExactRequirement: "Which component owns dispatch?",
+		Context:          minifiedObjectiveContext("The earlier result discussed dispatch ownership."),
+		AnswerText:       "ScheduleDispatch owns dispatch.",
+		EvidenceIDs:      []string{"R01"},
+		Evidence: []GroundedEvidenceCapsule{{
+			ID: "R01", Text: "func ScheduleDispatch() starts dispatch.",
+		}},
 	}
 }

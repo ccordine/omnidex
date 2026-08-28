@@ -55,8 +55,8 @@ type ContextRelevanceExecutor interface {
 	ExecuteContextRelevance(
 		context.Context,
 		string,
-		assemblyline.ContextRelevanceInput,
-	) (assemblyline.ContextRelevanceDecision, error)
+		assemblyline.ContextRelevanceSelectionInput,
+	) (assemblyline.ContextRelevanceSelectionDecision, error)
 }
 
 type Options struct {

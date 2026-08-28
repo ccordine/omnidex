@@ -1,12 +1,11 @@
 package assemblyline
 
 import (
-	"encoding/json"
 	"strings"
 	"testing"
 )
 
-func TestApplicationServiceStateInterfaceIsOneMechanismBlindSemanticValue(t *testing.T) {
+func TestApplicationServiceStateInterfaceUsesOneRawLeafPerCall(t *testing.T) {
 	t.Parallel()
 	workloadInput, frozen := applicationTaskAuthorityProjectionFixture(t)
 	authority, err := ProjectApplicationTaskRuntimeAuthority(workloadInput, frozen, "task_001")
@@ -20,27 +19,36 @@ func TestApplicationServiceStateInterfaceIsOneMechanismBlindSemanticValue(t *tes
 	input := ApplicationServiceStateInterfaceInput{
 		ProductContext: authority.ProductQuote, Needs: []ApplicationServiceStateInterfaceNeed{need},
 	}
-	job, err := NewApplicationServiceStateInterfaceJob(input)
-	if err != nil {
-		t.Fatal(err)
+	leafInput := ApplicationStateFieldLeafInput{
+		Authority: input, AcceptedFields: []ApplicationServiceStateField{},
 	}
-	if job.Kind != WorkApplicationServiceStateInterface {
-		t.Fatalf("kind=%q", job.Kind)
+	constructors := []func() (PortableJob, error){
+		func() (PortableJob, error) { return NewApplicationStateFieldCoverageJob(leafInput) },
+		func() (PortableJob, error) { return NewApplicationStateFieldNameJob(leafInput) },
+		func() (PortableJob, error) {
+			return NewApplicationStateFieldKindJob(ApplicationStateFieldKindInput{
+				Authority: input, AcceptedFields: []ApplicationServiceStateField{},
+				FocusedName: "measurements",
+			})
+		},
 	}
-	prompt, responseSchema, err := RenderPortableJob(job)
-	if err != nil {
-		t.Fatal(err)
-	}
-	encodedSchema, err := json.Marshal(responseSchema)
-	if err != nil {
-		t.Fatal(err)
+	prompts := ""
+	for _, construct := range constructors {
+		job, err := construct()
+		if err != nil {
+			t.Fatal(err)
+		}
+		prompt, err := RenderPortableJob(job)
+		if err != nil {
+			t.Fatal(err)
+		}
+		prompts += prompt
 	}
 	for _, required := range []string{
 		input.ProductContext, input.Needs[0].RequirementQuote,
-		ApplicationServiceStateInterfaceSchemaV1,
 		string(ApplicationServiceStateRecordList),
 	} {
-		if !strings.Contains(prompt, required) && !strings.Contains(string(encodedSchema), required) {
+		if !strings.Contains(prompts, required) {
 			t.Fatalf("service state interface envelope omitted %q", required)
 		}
 	}
@@ -50,45 +58,84 @@ func TestApplicationServiceStateInterfaceIsOneMechanismBlindSemanticValue(t *tes
 		`"status"`, `"accept"`, `"reject"`, `"apply"`, `"execute"`,
 		strings.ToLower(frozen.Tasks[0].AcceptanceCriteria[0]), `"acceptance_criteria"`,
 	} {
-		if strings.Contains(strings.ToLower(prompt+string(encodedSchema)), forbidden) {
-			t.Fatalf("service state interface envelope exposed %q: %s", forbidden, prompt)
+		if strings.Contains(strings.ToLower(prompts), forbidden) {
+			t.Fatalf("service state interface envelope exposed %q: %s", forbidden, prompts)
 		}
 	}
 }
 
-func TestApplicationServiceStateInterfaceStrictlyBoundsOneSharedShape(t *testing.T) {
+func TestApplicationServiceStateInterfaceCodeStrictlyBoundsAssembledShape(t *testing.T) {
 	t.Parallel()
 	input := serviceStateInterfaceFixture()
-	valid := `{"schema":"` + ApplicationServiceStateInterfaceSchemaV1 +
-		`","fields":[{"name":"entries","kind":"record_list","record_fields":[` +
-		`{"name":"label","kind":"string"},{"name":"rank","kind":"integer"}]}]}`
-	result, err := DecodeApplicationServiceStateInterfaceResult(input, valid)
-	if err != nil {
+	result := ApplicationServiceStateInterfaceResult{
+		Schema: ApplicationServiceStateInterfaceSchemaV1,
+		Fields: []ApplicationServiceStateField{{
+			Name: "entries", Kind: ApplicationServiceStateRecordList,
+			RecordFields: []ApplicationServiceStateRecordField{
+				{Name: "label", Kind: ApplicationServiceStateString},
+				{Name: "rank", Kind: ApplicationServiceStateInteger},
+			},
+		}},
+	}
+	if err := result.ValidateFor(input); err != nil {
 		t.Fatal(err)
 	}
 	if len(result.Fields) != 1 || len(result.Fields[0].RecordFields) != 2 {
-		t.Fatalf("decoded interface=%+v", result)
+		t.Fatalf("assembled interface=%+v", result)
 	}
-	for name, raw := range map[string]string{
-		"unknown root kind": `{"schema":"` + ApplicationServiceStateInterfaceSchemaV1 +
-			`","fields":[{"name":"entries","kind":"object","record_fields":[]}]}`,
-		"nested record list": `{"schema":"` + ApplicationServiceStateInterfaceSchemaV1 +
-			`","fields":[{"name":"entries","kind":"record_list","record_fields":[` +
-			`{"name":"children","kind":"record_list"}]}]}`,
-		"record metadata on scalar": `{"schema":"` + ApplicationServiceStateInterfaceSchemaV1 +
-			`","fields":[{"name":"count","kind":"integer","record_fields":[` +
-			`{"name":"value","kind":"integer"}]}]}`,
-		"duplicate root": `{"schema":"` + ApplicationServiceStateInterfaceSchemaV1 +
-			`","fields":[{"name":"count","kind":"integer","record_fields":[]},` +
-			`{"name":"count","kind":"integer","record_fields":[]}]}`,
-		"control field": `{"schema":"` + ApplicationServiceStateInterfaceSchemaV1 +
-			`","fields":[{"name":"count","kind":"integer","record_fields":[],"action":"apply"}]}`,
+	for name, candidate := range map[string]ApplicationServiceStateInterfaceResult{
+		"unknown root kind": {
+			Schema: ApplicationServiceStateInterfaceSchemaV1,
+			Fields: []ApplicationServiceStateField{{Name: "entries", Kind: "object"}},
+		},
+		"nested record list": {
+			Schema: ApplicationServiceStateInterfaceSchemaV1,
+			Fields: []ApplicationServiceStateField{{
+				Name: "entries", Kind: ApplicationServiceStateRecordList,
+				RecordFields: []ApplicationServiceStateRecordField{{
+					Name: "children", Kind: ApplicationServiceStateRecordList,
+				}},
+			}},
+		},
+		"record metadata on scalar": {
+			Schema: ApplicationServiceStateInterfaceSchemaV1,
+			Fields: []ApplicationServiceStateField{{
+				Name: "count", Kind: ApplicationServiceStateInteger,
+				RecordFields: []ApplicationServiceStateRecordField{{
+					Name: "value", Kind: ApplicationServiceStateInteger,
+				}},
+			}},
+		},
+		"duplicate root": {
+			Schema: ApplicationServiceStateInterfaceSchemaV1,
+			Fields: []ApplicationServiceStateField{
+				{Name: "count", Kind: ApplicationServiceStateInteger},
+				{Name: "count", Kind: ApplicationServiceStateInteger},
+			},
+		},
 	} {
 		t.Run(name, func(t *testing.T) {
-			if _, err := DecodeApplicationServiceStateInterfaceResult(input, raw); err == nil {
+			if err := candidate.ValidateFor(input); err == nil {
 				t.Fatal("accepted invalid state interface")
 			}
 		})
+	}
+}
+
+func TestApplicationServiceStateLeafDecodersRejectStructuredOutput(t *testing.T) {
+	t.Parallel()
+	input := ApplicationStateFieldLeafInput{
+		Authority:      serviceStateInterfaceFixture(),
+		AcceptedFields: []ApplicationServiceStateField{},
+	}
+	for _, candidate := range []string{
+		`{"name":"entries"}`,
+		`"entries"`,
+		`["entries"]`,
+	} {
+		if _, err := DecodeApplicationStateFieldNameLeaf(input, candidate); err == nil {
+			t.Fatalf("structured field name candidate %q was accepted", candidate)
+		}
 	}
 }
 

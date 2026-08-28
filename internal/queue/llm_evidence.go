@@ -190,10 +190,6 @@ func normalizeLLMCallEvidenceRecord(record LLMCallEvidenceRecord) LLMCallEvidenc
 	record.ContextProjectionID = strings.TrimSpace(record.ContextProjectionID)
 	record.RequestedModel = strings.TrimSpace(record.RequestedModel)
 	record.Model = strings.TrimSpace(record.Model)
-	record.ResponseFormat = strings.ToLower(strings.TrimSpace(record.ResponseFormat))
-	if record.ResponseFormat == "" {
-		record.ResponseFormat = "text"
-	}
 	record.Error = strings.TrimSpace(record.Error)
 	return record
 }

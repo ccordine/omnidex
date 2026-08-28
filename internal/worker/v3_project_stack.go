@@ -24,7 +24,6 @@ type directCodingProjectStack struct {
 	TaskStageOptionalStaticPaths []string
 	ProjectTaskStaticFiles       func(directCodingProgram, directCodingProgram) ([]directCodingFileTask, error)
 	ProjectFocusedTargetTree     func(int, []string) (assemblyline.TargetTree, error)
-	ExclusiveTaskPaths           bool
 	CompileSource                directCodingProjectCompiler
 	CompileServiceSource         directCodingServiceProjectCompiler
 	ValidateServiceState         func(
@@ -174,7 +173,6 @@ func registeredDirectCodingProjectStacks() []directCodingProjectStack {
 			},
 			ProjectFocusedTargetTree: projectRustCommandLineFocusedTargetTree,
 			TaskStageStaticPaths:     []string{"Cargo.toml", "Cargo.lock"},
-			ExclusiveTaskPaths:       true,
 			CompileSource:            compileGenericRustCommandLineBlueprint,
 			ValidateTargetTree:       validateRustCommandLineTargetTree,
 			ValidateBlueprint:        assemblyline.ValidateRustSourceBlueprint,
@@ -197,7 +195,6 @@ func registeredDirectCodingProjectStacks() []directCodingProjectStack {
 			TargetTreeReservedPaths:  []string{"Main.java", "Runtime.java", "TestRunner.java"},
 			ProjectFocusedTargetTree: projectJavaCommandLineFocusedTargetTree,
 			TaskStageStaticPaths:     []string{"TestRunner.java", "build/classes/.gitignore"},
-			ExclusiveTaskPaths:       true,
 			CompileSource:            compileGenericJavaCommandLineBlueprint,
 			ValidateTargetTree:       validateJavaCommandLineTargetTree,
 			ValidateBlueprint:        assemblyline.ValidateJavaSourceBlueprint,
@@ -236,7 +233,6 @@ func registeredDirectCodingProjectStacks() []directCodingProjectStack {
 			},
 			ProjectTaskStaticFiles:   projectPHPServiceTaskStaticFiles,
 			ProjectFocusedTargetTree: projectGenericPHPServiceFocusedTargetTree,
-			ExclusiveTaskPaths:       true,
 			CompileServiceSource:     compileGenericPHPServiceBlueprint,
 			ValidateServiceState:     validatePHPServiceStateLifetime,
 			ValidateTargetTree:       validateGenericPHPServiceTargetTree,
@@ -260,7 +256,7 @@ func directCodingTreeTechnicalContext(
 		return "", err
 	}
 	context := "Code-selected project stack: " + stack.TreeDescription +
-		". Return only workload-specific paths in this stack. Code-owned adapters independently supply any runtime, shell, bootstrap, manifests, styles, and their tests."
+		". The expected tree contains only workload-specific file and directory names in this stack. Code-owned adapters independently supply any runtime, shell, bootstrap, manifests, styles, and their tests."
 	return context, nil
 }
 

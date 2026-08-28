@@ -1,19 +1,16 @@
 package gofragment
 
-import (
-	"strings"
-	"testing"
-)
+import "testing"
 
-func TestProjectFunctionModelResponseReturnsOneExactDeclarationSpan(t *testing.T) {
-	raw := " \n```go\nfunc Recount(values []int) int { return len(values) }\n```\n"
+func TestProjectFunctionModelResponseRequiresOneExactDeclaration(t *testing.T) {
+	t.Parallel()
+	raw := "func Recount(values []int) int { return len(values) }"
 	projection, err := ProjectFunctionModelResponseProjection(raw)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := `func Recount(values []int) int { return len(values) }`
-	if strings.Contains(projection.Source, "```") || projection.Source != want ||
-		projection.Source != raw[projection.StartByte:projection.EndByte] {
+	if projection.Source != raw || projection.StartByte != 0 ||
+		projection.EndByte != len(raw) {
 		t.Fatalf("projected declaration=%+v", projection)
 	}
 	if _, err := ProjectFunctionModelResponseProjection(
@@ -21,24 +18,27 @@ func TestProjectFunctionModelResponseReturnsOneExactDeclarationSpan(t *testing.T
 	); err != nil {
 		t.Fatalf("projector assumed one required signature: %v", err)
 	}
-	for name, candidate := range map[string]string{
-		"raw literal":    "func Fence() string { return \"```\" }",
-		"fenced literal": "```go\nfunc Fence() string { return \"```\" }\n```",
-	} {
-		if _, err := ProjectFunctionModelResponseProjection(candidate); err != nil {
-			t.Fatalf("%s rejected: %v", name, err)
-		}
+	if _, err := ProjectFunctionModelResponseProjection(
+		"func Fence() string { return \"```\" }",
+	); err != nil {
+		t.Fatalf("literal fence text inside declaration was rejected: %v", err)
 	}
 }
 
-func TestProjectFunctionModelResponseRejectsInvalidOrExpandedAuthority(t *testing.T) {
+func TestProjectFunctionModelResponseRejectsInvalidOrOuterAuthority(t *testing.T) {
+	t.Parallel()
+	source := `func Recount(values []int) int { return len(values) }`
 	for name, raw := range map[string]string{
-		"empty":       "",
-		"malformed":   `func Recount(values []int) int { return`,
-		"extra":       "func Recount(values []int) int { return len(values) }\nfunc Audit(value int) int { return value }",
-		"executable":  "var host = 1\nfunc Recount(values []int) int { return len(values) }",
-		"prose":       "Here is the declaration:\nfunc Recount(values []int) int { return len(values) }",
-		"wrong fence": "```javascript\nfunction recount(values) { return values.length; }\n```",
+		"empty":            "",
+		"leading space":    " " + source,
+		"trailing newline": source + "\n",
+		"malformed":        `func Recount(values []int) int { return`,
+		"extra":            source + "\nfunc Audit(value int) int { return value }",
+		"executable":       "var host = 1\n" + source,
+		"prose":            "Here is the declaration:\n" + source,
+		"comment":          "// generated source\n" + source,
+		"Go fence":         "```go\n" + source + "\n```",
+		"JSON fence":       "```json\n{\"source\":\"value\"}\n```",
 	} {
 		t.Run(name, func(t *testing.T) {
 			if _, err := ProjectFunctionModelResponseProjection(raw); err == nil {

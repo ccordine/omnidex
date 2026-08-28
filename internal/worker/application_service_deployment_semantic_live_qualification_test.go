@@ -68,7 +68,7 @@ func TestLiveApplicationServiceDeploymentSemanticSplitQualification(t *testing.T
 					if selectedModel != modelName {
 						return assemblyline.PortableResult{}, fmt.Errorf("deployment semantic model authority changed")
 					}
-					prompt, _, renderErr := assemblyline.RenderPortableJob(job)
+					prompt, renderErr := assemblyline.RenderPortableJob(job)
 					if renderErr != nil {
 						return assemblyline.PortableResult{}, renderErr
 					}

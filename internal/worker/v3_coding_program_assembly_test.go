@@ -87,3 +87,55 @@ func TestAdapterBaselineFilesBecomeCodeOwnedTreeLeaves(t *testing.T) {
 		t.Fatalf("file leaves=%q", got)
 	}
 }
+
+func TestTargetTreeDeleteBecomesOneCodeOwnedAssemblyAndFilesystemLeaf(t *testing.T) {
+	program := directCodingProgram{
+		StackID: genericTypeScriptBrowserAdapter, VersionProfileID: typeScriptBrowserVersionProfileV1,
+		StaticFiles: []directCodingFileTask{{Path: "src/current.ts", Content: "export {};\n"}},
+		Generated:   map[string]string{},
+		StructureTransitions: []assemblyline.TargetTreeTransition{
+			{Kind: assemblyline.TargetTreeDelete, Path: "src/obsolete.ts"},
+			{Kind: assemblyline.TargetTreeReconcile, Path: "src/current.ts"},
+		},
+	}
+	assembly, err := directCodingAssemblyFromProgram(program)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(assembly.DeletePaths) != 1 || assembly.DeletePaths[0] != "src/obsolete.ts" {
+		t.Fatalf("delete paths=%v", assembly.DeletePaths)
+	}
+	transitions, err := directCodingAssemblyFilesystemTransitions(
+		[]string{"src/current.ts", "src/obsolete.ts"},
+		[]string{"src"},
+		program.StructureTransitions,
+		assembly,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(transitions) != 2 ||
+		transitions[0] != (assemblyline.TargetTreeTransition{
+			Kind: assemblyline.TargetTreeReconcile, Path: "src/current.ts",
+		}) ||
+		transitions[1] != (assemblyline.TargetTreeTransition{
+			Kind: assemblyline.TargetTreeDelete, Path: "src/obsolete.ts",
+		}) {
+		t.Fatalf("transitions=%+v", transitions)
+	}
+}
+
+func TestTargetTreeDeleteCannotAlsoHaveCompiledSource(t *testing.T) {
+	program := directCodingProgram{
+		StackID: genericTypeScriptBrowserAdapter, VersionProfileID: typeScriptBrowserVersionProfileV1,
+		StaticFiles: []directCodingFileTask{{Path: "src/ambiguous.ts", Content: "export {};\n"}},
+		Generated:   map[string]string{},
+		StructureTransitions: []assemblyline.TargetTreeTransition{{
+			Kind: assemblyline.TargetTreeDelete, Path: "src/ambiguous.ts",
+		}},
+	}
+	if _, err := directCodingAssemblyFromProgram(program); err == nil ||
+		!strings.Contains(err.Error(), "also present in the compiled program") {
+		t.Fatalf("error=%v", err)
+	}
+}

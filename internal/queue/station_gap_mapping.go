@@ -30,8 +30,13 @@ func StationForPortableJob(job assemblyline.PortableJob) (station.ID, error) {
 
 func stationForPortableWorkKind(kind assemblyline.WorkKind) (station.ID, error) {
 	switch kind {
-	case assemblyline.WorkApplicationContextNeeds,
-		assemblyline.WorkApplicationIntent:
+	case assemblyline.WorkApplicationContextNeedCoverage,
+		assemblyline.WorkApplicationContextNeedQuestion,
+		assemblyline.WorkApplicationProductContext,
+		assemblyline.WorkApplicationRequirementCoverage,
+		assemblyline.WorkApplicationRequirement,
+		assemblyline.WorkRepositoryRequirementCoverage,
+		assemblyline.WorkRepositoryRequirement:
 		return station.CodingRequirements, nil
 	case assemblyline.WorkApplicationProjectStackConstraint:
 		return station.CodingProjectStackConstraint, nil
@@ -41,7 +46,12 @@ func stationForPortableWorkKind(kind assemblyline.WorkKind) (station.ID, error) 
 		return station.CodingServicePersistenceDestination, nil
 	case assemblyline.WorkApplicationServiceStateLifetime:
 		return station.CodingServiceStateLifetime, nil
-	case assemblyline.WorkApplicationServiceStateInterface:
+	case assemblyline.WorkApplicationStateFieldCoverage,
+		assemblyline.WorkApplicationStateFieldName,
+		assemblyline.WorkApplicationStateFieldKind,
+		assemblyline.WorkApplicationRecordFieldCoverage,
+		assemblyline.WorkApplicationRecordFieldName,
+		assemblyline.WorkApplicationRecordFieldKind:
 		return station.CodingServiceStateInterface, nil
 	case assemblyline.WorkApplicationServiceEndpointRequirement:
 		return station.CodingServiceEndpointRequirement, nil
@@ -59,55 +69,97 @@ func stationForPortableWorkKind(kind assemblyline.WorkKind) (station.ID, error) 
 		return station.CodingServiceEndpointSuccessStatus, nil
 	case assemblyline.WorkApplicationClassify:
 		return station.CodingSurface, nil
-	case assemblyline.WorkRepositoryRequirements:
-		return station.CodingRequirements, nil
-	case assemblyline.WorkApplicationJobSpecification:
+	case assemblyline.WorkApplicationJobObjective,
+		assemblyline.WorkApplicationBehaviorCoverage,
+		assemblyline.WorkApplicationBehavior,
+		assemblyline.WorkApplicationCriterionCoverage,
+		assemblyline.WorkApplicationCriterion:
 		return station.CodingWorkload, nil
 	case assemblyline.WorkApplicationTargetTree:
 		return station.CodingTargetTree, nil
-	case assemblyline.WorkRepositorySearchTerm:
+	case assemblyline.WorkRepositorySearchAnchorCoverage,
+		assemblyline.WorkRepositorySearchAnchor:
 		return station.CodingRepositorySearchTerm, nil
-	case assemblyline.WorkRepositoryChangeSurface:
+	case assemblyline.WorkRepositoryChangeOwner:
 		return station.CodingRepositoryChange, nil
-	case assemblyline.WorkContextSearchTerms:
+	case assemblyline.WorkContextSearchTermCoverage,
+		assemblyline.WorkContextSearchTerm:
 		return station.ContextSearchTerms, nil
-	case assemblyline.WorkContextRelevance:
+	case assemblyline.WorkContextRelevanceSelection:
 		return station.ContextRelevance, nil
 	case assemblyline.WorkContextMinification:
 		return station.ContextMinification, nil
 	case assemblyline.WorkConversationObjectiveKind:
 		return station.ConversationObjectiveKind, nil
-	case assemblyline.WorkConversationResponse, assemblyline.WorkRoleplayGroundedResponse:
+	case assemblyline.WorkConversationResponse,
+		assemblyline.WorkRoleplayGroundedResponseText,
+		assemblyline.WorkRoleplayGroundedResponseEvidenceRelation:
 		return station.ConversationResponse, nil
-	case assemblyline.WorkRoleplayCanonExtraction:
+	case assemblyline.WorkRoleplayCanonFactCoverage,
+		assemblyline.WorkRoleplayCanonFact:
 		return station.RoleplayCanonExtraction, nil
 	case assemblyline.WorkRoleplayOngoingAction:
 		return station.RoleplayOngoingAction, nil
-	case assemblyline.WorkGroundedAnswer:
+	case assemblyline.WorkGroundedAnswerText,
+		assemblyline.WorkGroundedAnswerEvidenceRelation:
 		return station.GroundedAnswer, nil
-	case assemblyline.WorkDatabaseSchemaSelection:
+	case assemblyline.WorkDatabaseSchemaSelectionCoverage,
+		assemblyline.WorkDatabaseSchemaRelationSelection:
 		return station.DatabaseSchemaSelection, nil
-	case assemblyline.WorkDatabaseQueryIntent:
+	case assemblyline.WorkDatabaseQueryFromRelation,
+		assemblyline.WorkDatabaseQueryShape,
+		assemblyline.WorkDatabaseQueryProjectionCoverage,
+		assemblyline.WorkDatabaseQueryProjectionAggregate,
+		assemblyline.WorkDatabaseQueryProjectionField,
+		assemblyline.WorkDatabaseQueryProjectionTimeBucket,
+		assemblyline.WorkDatabaseQueryFilterCoverage,
+		assemblyline.WorkDatabaseQueryFilterField,
+		assemblyline.WorkDatabaseQueryFilterOperator,
+		assemblyline.WorkDatabaseQueryFilterValueCoverage,
+		assemblyline.WorkDatabaseQueryFilterValue,
+		assemblyline.WorkDatabaseQueryWindowCoverage,
+		assemblyline.WorkDatabaseQueryWindowField,
+		assemblyline.WorkDatabaseQueryWindowUnit,
+		assemblyline.WorkDatabaseQueryWindowAmount,
+		assemblyline.WorkDatabaseQueryExistenceCoverage,
+		assemblyline.WorkDatabaseQueryExistenceRelation,
+		assemblyline.WorkDatabaseQueryExistenceNegated,
+		assemblyline.WorkDatabaseQueryHavingCoverage,
+		assemblyline.WorkDatabaseQueryHavingAggregate,
+		assemblyline.WorkDatabaseQueryHavingField,
+		assemblyline.WorkDatabaseQueryHavingOperator,
+		assemblyline.WorkDatabaseQueryHavingValue,
+		assemblyline.WorkDatabaseQueryOrderCoverage,
+		assemblyline.WorkDatabaseQueryOrderProjection,
+		assemblyline.WorkDatabaseQueryOrderDirection:
 		return station.DatabaseQueryIntent, nil
 	case assemblyline.WorkDatabaseEvidenceGap:
 		return station.DatabaseEvidenceGap, nil
 	case assemblyline.WorkDatabaseJoinPathSelection:
 		return station.DatabaseJoinPathSelection, nil
-	case assemblyline.WorkRepositoryEvidenceRelevance:
+	case assemblyline.WorkRepositoryEvidenceRelevanceLeaf:
 		return station.RepositoryEvidenceRelevance, nil
-	case assemblyline.WorkRepositoryGroundedReview:
+	case assemblyline.WorkRepositoryGroundedIssueDetail,
+		assemblyline.WorkRepositoryGroundedIssueKind:
 		return station.RepositoryGroundedReview, nil
 	case assemblyline.WorkRepositoryGroundedCorrection:
 		return station.RepositoryGroundedCorrection, nil
-	case assemblyline.WorkWebSearchTerms:
+	case assemblyline.WorkWebSearchTermCoverage,
+		assemblyline.WorkWebSearchTerm:
 		return station.WebSearchTerms, nil
-	case assemblyline.WorkWebRelevance:
+	case assemblyline.WorkWebRelevanceRelation:
 		return station.WebRelevance, nil
-	case assemblyline.WorkWebGroundedSynthesis:
+	case assemblyline.WorkWebSynthesisParagraphCoverage,
+		assemblyline.WorkWebSynthesisParagraph,
+		assemblyline.WorkWebSynthesisEvidenceRelation:
 		return station.WebGroundedSynthesis, nil
 	case assemblyline.WorkWebGroundedSynthesisCorrection:
 		return station.WebGroundedSynthesisCorrection, nil
-	case assemblyline.WorkWebClaimEvidenceReview:
+	case assemblyline.WorkWebReviewClaimCoverage,
+		assemblyline.WorkWebReviewClaim,
+		assemblyline.WorkWebReviewClaimVerdict,
+		assemblyline.WorkWebReviewIssueEvidenceRelation,
+		assemblyline.WorkWebReviewIssueDetail:
 		return station.WebClaimEvidenceReview, nil
 	case assemblyline.WorkArtifactHandling:
 		return station.CodingArtifactHandling, nil

@@ -20,7 +20,6 @@ export type BrowserContextJob = {
   model: string;
   prompt: string;
   prompt_hint: string;
-  response_schema: Record<string, unknown>;
   max_output_tokens: number;
 };
 
@@ -50,12 +49,12 @@ export function requireBrowserContextConfig(value: unknown): BrowserContextConfi
 export function requireBrowserContextJob(value: unknown, model: string): BrowserContextJob {
   const record = requireExactObject(value, [
     "schema", "job_id", "station", "model", "prompt", "prompt_hint",
-    "response_schema", "max_output_tokens",
+    "max_output_tokens",
   ], "browser context relevance job");
   if (record.schema !== browserContextJobSchema || record.station !== contextRelevanceStation ||
       record.model !== model || typeof record.job_id !== "string" ||
       !/^bcr_[0-9a-f]{32}$/.test(record.job_id) || !isBoundedText(record.prompt, 128 * 1024) ||
-      !isBoundedText(record.prompt_hint, 1024) || !isRecord(record.response_schema) ||
+      !isBoundedText(record.prompt_hint, 1024) ||
       !Number.isSafeInteger(record.max_output_tokens) ||
       Number(record.max_output_tokens) < 1 || Number(record.max_output_tokens) > 4096) {
     throw new Error("Browser context relevance job is invalid or differs from configured authority.");
@@ -74,10 +73,6 @@ export function browserContextCompletionRequest(
     ],
     temperature: 0,
     max_tokens: job.max_output_tokens,
-    response_format: {
-      type: "json_object",
-      schema: JSON.stringify(job.response_schema),
-    },
     extra_body: { enable_thinking: false },
   };
 }

@@ -2,7 +2,6 @@ package worker
 
 import (
 	"context"
-	"encoding/json"
 	"testing"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
@@ -15,12 +14,9 @@ func TestRepositorySurfaceRetainsExplicitUnresolvedRequirementForDesiredState(t 
 	runtime := typedWorkerRuntime{
 		Context: context.Background(), MaxAttempts: 1,
 		Execute: func(job assemblyline.PortableJob, _ string) (assemblyline.PortableResult, error) {
-			decision := assemblyline.RepositoryChangeSurfaceDecision{
-				Schema:  assemblyline.RepositoryChangeSurfaceSchemaV2,
-				Targets: []assemblyline.RepositoryChangeTarget{},
-			}
-			raw, err := json.Marshal(decision)
-			return assemblyline.PortableResult{JobID: job.ID, Candidate: string(raw)}, err
+			return assemblyline.PortableResult{
+				JobID: job.ID, Candidate: assemblyline.RepositoryChangeOwnerNone,
+			}, nil
 		},
 	}
 	decision, err := selectExistingRepositoryChangeSurface(

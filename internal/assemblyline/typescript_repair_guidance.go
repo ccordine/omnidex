@@ -70,7 +70,7 @@ func NewTypeScriptRepairGuidanceJob(
 	)
 }
 
-// DecodeTypeScriptRepairGuidanceResult applies the same closed JSON and value
+// DecodeTypeScriptRepairGuidanceResult applies the same raw-leaf and value
 // validation used by the production semantic worker to one untrusted guidance
 // response. Replay and qualification callers must not invent a weaker decoder.
 func DecodeTypeScriptRepairGuidanceResult(
@@ -87,9 +87,13 @@ func DecodeTypeScriptRepairGuidanceResult(
 			WorkTypeScriptRepairGuidance,
 		)
 	}
-	if err := decodePortablePayload([]byte(raw), &guidance); err != nil {
-		return guidance, fmt.Errorf("decode TypeScript repair guidance: %w", err)
+	leaf, err := decodeRawSemanticLeaf(
+		"TypeScript repair guidance", raw, maxTypeScriptRepairGuidanceBytes, true,
+	)
+	if err != nil {
+		return guidance, err
 	}
+	guidance = TypeScriptRepairGuidance{Instruction: leaf}
 	if err := guidance.Validate(); err != nil {
 		return guidance, err
 	}
@@ -228,16 +232,4 @@ func (guidance TypeScriptRepairGuidance) ValidatePathFree(
 	return ValidatePathFreeModelContextWithProvenance(
 		"TypeScript repair guidance result", provenance, guidance.Instruction,
 	)
-}
-
-func TypeScriptRepairGuidanceResponseSchema() map[string]any {
-	return objectSchema([]string{"instruction"}, map[string]any{
-		"instruction": map[string]any{
-			"type": "string", "minLength": 1,
-		},
-	})
-}
-
-func FragmentRepairGuidanceResponseSchema() map[string]any {
-	return TypeScriptRepairGuidanceResponseSchema()
 }

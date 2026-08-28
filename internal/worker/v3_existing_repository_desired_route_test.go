@@ -2,7 +2,6 @@ package worker
 
 import (
 	"context"
-	"encoding/json"
 	"strings"
 	"testing"
 
@@ -19,16 +18,13 @@ func TestArtifactAbsenceClassificationReturnsTruthNotFilesystemOperation(t *test
 		Context: context.Background(), MaxAttempts: 1,
 		Execute: func(job assemblyline.PortableJob, _ string) (assemblyline.PortableResult, error) {
 			var err error
-			prompt, _, err = assemblyline.RenderPortableJob(job)
-			decision := assemblyline.ArtifactHandlingDecision{
-				Schema: assemblyline.ArtifactHandlingSchemaV1,
-				Token:  "ARTIFACT_1", Handling: assemblyline.ArtifactMustBeAbsent,
-			}
-			raw, marshalErr := json.Marshal(decision)
+			prompt, err = assemblyline.RenderPortableJob(job)
 			if err != nil {
 				return assemblyline.PortableResult{}, err
 			}
-			return assemblyline.PortableResult{JobID: job.ID, Candidate: string(raw)}, marshalErr
+			return assemblyline.PortableResult{
+				JobID: job.ID, Candidate: string(assemblyline.ArtifactMustBeAbsent),
+			}, nil
 		},
 	}
 	directives, err := classifyArtifactHandling(

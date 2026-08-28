@@ -44,22 +44,14 @@ func projectBoundedSourceFragment(
 	if err != nil {
 		return PortableResultProjection{}, err
 	}
-	startByte := strings.Index(raw, content)
-	if startByte < 0 {
-		return PortableResultProjection{}, fmt.Errorf(
-			"%s declaration is not an exact response span", language.display,
-		)
-	}
-	return NewSourceDeclarationPortableResultProjection(
-		raw, content, startByte, startByte+len(content),
-	)
+	return NewExactSourceDeclarationPortableResultProjection(content)
 }
 
 func projectBoundedSourceDeclaration(
 	language boundedSourceLanguage,
 	candidate string,
 ) (string, string, error) {
-	content := strings.TrimSpace(candidate)
+	content := candidate
 	if content == "" {
 		return "", "", fmt.Errorf("%s fragment is empty", language.display)
 	}

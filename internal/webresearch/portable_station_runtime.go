@@ -56,3 +56,29 @@ func combinePortableStationErrors(primary, finalization error) error {
 	}
 	return fmt.Errorf("%v; finalize exact portable web station: %w", primary, finalization)
 }
+
+func runPortableSemanticLeaf[T any](
+	ctx context.Context,
+	stations *PortableStations,
+	job assemblyline.PortableJob,
+	decode func(string) (T, error),
+) (T, error) {
+	var zero T
+	if decode == nil {
+		return zero, fmt.Errorf("portable web semantic leaf requires one exact decoder")
+	}
+	result, err := stations.run(ctx, job)
+	if err != nil {
+		return zero, err
+	}
+	value, validationErr := decode(result.Candidate)
+	if finalizeErr := stations.finalize(
+		ctx, job, result, validationErr,
+	); finalizeErr != nil {
+		return zero, combinePortableStationErrors(validationErr, finalizeErr)
+	}
+	if validationErr != nil {
+		return zero, validationErr
+	}
+	return value, nil
+}

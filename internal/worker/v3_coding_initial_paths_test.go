@@ -22,7 +22,7 @@ func TestUnexpectedProgramSourcesPreserveOnlyUnchangedInitialLeaves(t *testing.T
 	unexpected := func() []string {
 		t.Helper()
 		paths, err := directCodingUnexpectedProgramSources(
-			root, map[string]string{}, program, initial,
+			root, map[string]string{}, map[string]struct{}{}, program, initial,
 		)
 		if err != nil {
 			t.Fatal(err)
@@ -57,6 +57,19 @@ func TestUnexpectedProgramSourcesPreserveOnlyUnchangedInitialLeaves(t *testing.T
 	}
 	if paths := unexpected(); len(paths) != 1 || paths[0] != "data.json" {
 		t.Fatalf("deleted omitted source paths=%v", paths)
+	}
+	paths, err := directCodingUnexpectedProgramSources(
+		root,
+		map[string]string{},
+		map[string]struct{}{"data.json": {}},
+		program,
+		initial,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(paths) != 0 {
+		t.Fatalf("code-authorized deleted source paths=%v", paths)
 	}
 }
 

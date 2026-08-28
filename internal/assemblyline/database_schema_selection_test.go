@@ -5,46 +5,60 @@ import (
 	"testing"
 )
 
-func TestDatabaseSchemaSelectionReturnsOnlyProjectedOpaqueIDs(t *testing.T) {
-	input := databaseSchemaSelectionFixture()
-	job, err := NewDatabaseSchemaSelectionJob(input)
+func TestDatabaseSchemaSelectionUsesOneRawLeafPerQuestion(t *testing.T) {
+	input := DatabaseSchemaSelectionLeafInput{
+		Authority: databaseSchemaSelectionFixture(), SelectedRelationIDs: []string{},
+	}
+	coverageJob, err := NewDatabaseSchemaSelectionCoverageJob(input)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if job.Kind != WorkDatabaseSchemaSelection {
-		t.Fatalf("kind=%q", job.Kind)
-	}
-	prompt, schema, err := RenderPortableJob(job)
+	prompt, err := RenderPortableJob(coverageJob)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, forbidden := range []string{"password", "dsn", "SELECT ", "execute"} {
-		if strings.Contains(prompt, forbidden) {
-			t.Fatalf("prompt contains forbidden authority %q: %s", forbidden, prompt)
-		}
+	if !strings.Contains(prompt, DatabaseSchemaRelationRemains) {
+		t.Fatalf("coverage prompt omitted registered result tokens: %s", prompt)
 	}
-	items := schema["properties"].(map[string]any)["relation_ids"].(map[string]any)["items"].(map[string]any)
-	if got := items["enum"].([]string); len(got) != 2 || got[0] != "rel_a" || got[1] != "rel_b" {
-		t.Fatalf("relation enum=%v", got)
+	if got, err := DecodeDatabaseSchemaSelectionCoverageLeaf(input, DatabaseSchemaRelationRemains); err != nil || got != DatabaseSchemaRelationRemains {
+		t.Fatalf("coverage=%q err=%v", got, err)
 	}
-	decision, err := DecodeDatabaseSchemaSelectionDecision(input,
-		`{"schema":"omnidex.database-schema-selection.v1","evidence_need_id":"need-1","relation_ids":["rel_b"]}`)
-	if err != nil || len(decision.RelationIDs) != 1 || decision.RelationIDs[0] != "rel_b" {
-		t.Fatalf("decision=%+v err=%v", decision, err)
+	if _, err := DecodeDatabaseSchemaSelectionCoverageLeaf(input, `{"coverage":"RELATION_REMAINS"}`); err == nil {
+		t.Fatal("database schema coverage accepted JSON")
+	}
+
+	relationJob, err := NewDatabaseSchemaRelationSelectionJob(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if relationJob.Kind != WorkDatabaseSchemaRelationSelection {
+		t.Fatalf("kind=%q", relationJob.Kind)
+	}
+	selected, err := DecodeDatabaseSchemaRelationSelectionLeaf(input, "rel_b")
+	if err != nil || selected != "rel_b" {
+		t.Fatalf("selected=%q err=%v", selected, err)
+	}
+	if _, err := DecodeDatabaseSchemaRelationSelectionLeaf(input, `["rel_b"]`); err == nil {
+		t.Fatal("database relation selection accepted JSON")
 	}
 }
 
-func TestDatabaseSchemaSelectionRejectsInventedDuplicateAndImplicitState(t *testing.T) {
+func TestDatabaseSchemaSelectionCodeAssemblesAndValidatesRetainedSet(t *testing.T) {
 	input := databaseSchemaSelectionFixture()
-	for name, raw := range map[string]string{
-		"invented":  `{"schema":"omnidex.database-schema-selection.v1","evidence_need_id":"need-1","relation_ids":["rel_missing"]}`,
-		"duplicate": `{"schema":"omnidex.database-schema-selection.v1","evidence_need_id":"need-1","relation_ids":["rel_a","rel_a"]}`,
-		"implicit":  `{"schema":"omnidex.database-schema-selection.v1","evidence_need_id":"need-1","relation_ids":null}`,
-		"extra":     `{"schema":"omnidex.database-schema-selection.v1","evidence_need_id":"need-1","relation_ids":[],"sql":"SELECT 1"}`,
+	decision, err := AssembleDatabaseSchemaSelectionDecision(input, []string{"rel_b"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if decision.Schema != DatabaseSchemaSelectionV1 || decision.EvidenceNeedID != input.EvidenceNeedID || len(decision.RelationIDs) != 1 || decision.RelationIDs[0] != "rel_b" {
+		t.Fatalf("decision=%+v", decision)
+	}
+	for name, relationIDs := range map[string][]string{
+		"invented":  {"rel_missing"},
+		"duplicate": {"rel_a", "rel_a"},
 	} {
 		t.Run(name, func(t *testing.T) {
-			if _, err := DecodeDatabaseSchemaSelectionDecision(input, raw); err == nil {
-				t.Fatalf("accepted %s", raw)
+			if _, err := AssembleDatabaseSchemaSelectionDecision(input, relationIDs); err == nil {
+				t.Fatalf("accepted relation IDs %#v", relationIDs)
 			}
 		})
 	}

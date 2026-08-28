@@ -72,8 +72,8 @@ func TestApplicationFrontDoorMigrationMatchesCompleteCodeOwnedRouting(t *testing
 
 func applicationFrontDoorWorkKind(kind assemblyline.WorkKind) bool {
 	switch kind {
-	case assemblyline.WorkApplicationContextNeeds,
-		assemblyline.WorkApplicationIntent,
+	case assemblyline.WorkKind("application_context_needs"),
+		assemblyline.WorkKind("application_intent"),
 		assemblyline.WorkApplicationProjectStackConstraint,
 		assemblyline.WorkApplicationServiceEndpointRequirement,
 		assemblyline.WorkApplicationServiceEndpointExposure,

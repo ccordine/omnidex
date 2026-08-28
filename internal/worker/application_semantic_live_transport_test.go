@@ -72,18 +72,18 @@ func (transport *liveCodingQualificationTransport) execute(
 	if transport == nil || transport.client == nil || modelName != transport.selection.Model {
 		return assemblyline.PortableResult{}, fmt.Errorf("live coding qualification transport authority changed")
 	}
-	prompt, schema, err := assemblyline.RenderPortableJob(job)
+	prompt, err := assemblyline.RenderPortableJob(job)
 	if err != nil {
 		return assemblyline.PortableResult{}, err
 	}
-	contract, err := llmResponseContractForScope(portableModelScope(schema))
+	contract, err := llmResponseContractForPortableJob(job)
 	if err != nil {
 		return assemblyline.PortableResult{}, err
 	}
-	if err := validateExactStationStaticCall(prompt, schema, contract, transport.selection); err != nil {
+	if err := validateExactStationStaticCall(prompt, contract, transport.selection); err != nil {
 		return assemblyline.PortableResult{}, err
 	}
-	gap, err := transport.syntheticGap(job, prompt, schema, contract)
+	gap, err := transport.syntheticGap(job, prompt, contract)
 	if err != nil {
 		return assemblyline.PortableResult{}, err
 	}
@@ -124,10 +124,9 @@ func (transport *liveCodingQualificationTransport) execute(
 func (transport *liveCodingQualificationTransport) syntheticGap(
 	job assemblyline.PortableJob,
 	prompt string,
-	schema map[string]any,
 	contract llmResponseContract,
 ) (queue.StationGapOpening, error) {
-	schemaJSON, err := exactjson.Canonical(schema)
+	schemaJSON, err := exactjson.Canonical(nil)
 	if err != nil {
 		return queue.StationGapOpening{}, err
 	}
@@ -135,7 +134,7 @@ func (transport *liveCodingQualificationTransport) syntheticGap(
 		Prompt         string          `json:"prompt"`
 		Renderer       string          `json:"renderer"`
 		ResponseSchema json.RawMessage `json:"response_schema"`
-	}{prompt, assemblyline.PortableRendererV3, schemaJSON})
+	}{prompt, assemblyline.PortableRendererV4, schemaJSON})
 	if err != nil {
 		return queue.StationGapOpening{}, err
 	}
@@ -143,14 +142,24 @@ func (transport *liveCodingQualificationTransport) syntheticGap(
 	if err != nil {
 		return queue.StationGapOpening{}, err
 	}
+	scope, err := portableModelScope(job.Kind)
+	if err != nil {
+		return queue.StationGapOpening{}, err
+	}
+	maxOutputTokens, err := queue.ExpectedPortableStationMaxOutputTokens(
+		job, transport.selection.NativeContextLimit,
+	)
+	if err != nil {
+		return queue.StationGapOpening{}, err
+	}
 	return queue.StationGapOpening{
 		JobID: 1, Generation: 1, StepID: int64(len(transport.calls) + 1), StepAttempt: 1,
 		WorkerID: "live-qualification", GapID: job.ID, Station: stationID,
-		Scope: portableModelScope(schema), PortableSchema: job.Schema,
-		WorkID: job.ID, WorkKind: string(job.Kind), RendererVersion: assemblyline.PortableRendererV3,
+		Scope: scope, PortableSchema: job.Schema,
+		WorkID: job.ID, WorkKind: string(job.Kind), RendererVersion: assemblyline.PortableRendererV4,
 		Prompt: prompt, ResponseSchema: schemaJSON, ProjectionEnvelope: string(projection),
 		ProjectionSHA256: qualificationSHA256(projection), ContextTokens: transport.selection.NativeContextLimit,
-		MaxOutputTokens: transport.selection.NativeContextLimit, OutputLimitMode: contract.OutputLimitMode,
+		MaxOutputTokens: maxOutputTokens, OutputLimitMode: contract.OutputLimitMode,
 	}, nil
 }
 
@@ -162,10 +171,14 @@ func (transport *liveCodingQualificationTransport) callsFrom(start int) []liveCo
 	return append([]liveCodingQualificationCall(nil), transport.calls[start:]...)
 }
 
-func assertLiveCodingQualificationCalls(t *testing.T, calls []liveCodingQualificationCall, featureCount int) {
+func assertLiveCodingQualificationCalls(
+	t *testing.T,
+	calls []liveCodingQualificationCall,
+	frozen assemblyline.FrozenApplicationWorkload,
+) {
 	t.Helper()
 	counts := map[assemblyline.WorkKind]int{}
-	initialTaskJobs := map[string]struct{}{}
+	objectiveJobs := map[string]struct{}{}
 	for _, call := range calls {
 		counts[call.kind]++
 		for _, digest := range []string{call.jobSHA256, call.promptSHA256, call.requestSHA256, call.responseSHA256} {
@@ -173,21 +186,34 @@ func assertLiveCodingQualificationCalls(t *testing.T, calls []liveCodingQualific
 				t.Fatal("live qualification call lacks an exact digest")
 			}
 		}
-		if call.kind == assemblyline.WorkApplicationJobSpecification {
-			if _, duplicate := initialTaskJobs[call.jobSHA256]; duplicate {
-				t.Fatal("live qualification repeated one initial workload leaf")
+		if call.kind == assemblyline.WorkApplicationJobObjective {
+			if _, duplicate := objectiveJobs[call.jobSHA256]; duplicate {
+				t.Fatal("live qualification repeated one objective leaf")
 			}
-			initialTaskJobs[call.jobSHA256] = struct{}{}
+			objectiveJobs[call.jobSHA256] = struct{}{}
 		}
 		if call.promptBytes < 1 || call.promptTokens < 1 || call.outputTokens < 1 ||
 			call.providerDuration <= 0 || call.wallDuration <= 0 {
 			t.Fatal("live qualification call lacks bounded native metrics")
 		}
 	}
-	if counts[assemblyline.WorkApplicationContextNeeds] != 0 ||
-		counts[assemblyline.WorkApplicationIntent] != 1 ||
-		counts[assemblyline.WorkApplicationJobSpecification] != featureCount {
-		t.Fatalf("live qualification call shape differs from one intent and one planning call per feature: %v", counts)
+	featureCount := len(frozen.Tasks)
+	totalBehaviors := 0
+	totalCriteria := 0
+	for _, task := range frozen.Tasks {
+		totalBehaviors += len(task.RequiredBehaviors)
+		totalCriteria += len(task.AcceptanceCriteria)
+	}
+	if counts[assemblyline.WorkApplicationContextNeedCoverage] != 0 ||
+		counts[assemblyline.WorkApplicationProductContext] != 1 ||
+		counts[assemblyline.WorkApplicationRequirement] != featureCount ||
+		counts[assemblyline.WorkApplicationRequirementCoverage] != featureCount ||
+		counts[assemblyline.WorkApplicationJobObjective] != featureCount ||
+		counts[assemblyline.WorkApplicationBehavior] != totalBehaviors ||
+		counts[assemblyline.WorkApplicationBehaviorCoverage] != totalBehaviors ||
+		counts[assemblyline.WorkApplicationCriterion] != totalCriteria ||
+		counts[assemblyline.WorkApplicationCriterionCoverage] != totalCriteria {
+		t.Fatalf("live qualification raw-leaf call shape differs from code-owned fixed points: %v", counts)
 	}
 }
 

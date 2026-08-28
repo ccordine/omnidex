@@ -88,8 +88,11 @@ func selectDirectCodingProjectFromRegistries(
 	if err != nil {
 		return directCodingProjectSelection{}, err
 	}
-	decision, err := runDirectCodingSemanticCall[assemblyline.ApplicationProjectStackConstraintDecision](
+	decision, err := runDirectCodingSemanticLeafCall(
 		runtime, modelName, "application_project_stack_constraint", job, identities,
+		func(raw string) (assemblyline.ApplicationProjectStackConstraintDecision, error) {
+			return assemblyline.DecodeApplicationProjectStackConstraintDecision(input, raw)
+		},
 		func(value assemblyline.ApplicationProjectStackConstraintDecision) error {
 			return value.ValidateFor(input)
 		},

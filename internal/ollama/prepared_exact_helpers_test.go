@@ -17,13 +17,11 @@ func exactPreparedRequest(expected llm.ProviderIdentityExpectation) llm.Prepared
 		panic(err)
 	}
 	return llm.PreparedModel{
-		Protocol:  llm.ExactPreparedProtocolStructuredV1,
+		Protocol:  llm.ExactPreparedProtocolRawTextV2,
 		BaseModel: expected.Model, ContextModel: expected.Model,
-		Prompt: `{"instruction":"select"}`, PromptHint: llm.MinimalGeneratePrompt,
+		Prompt: "Return one exact semantic leaf.", PromptHint: llm.MinimalGeneratePrompt,
 		MaxOutputTokens: 1024, OutputLimitMode: llm.ExactPreparedOutputLimitExplicit,
 		ContextTokens:   expected.NativeContextLimit,
-		ResponseFormat:  llm.ResponseFormatJSON,
-		ResponseSchema:  map[string]any{"type": "object"},
 		ThinkingEnabled: false, Temperature: &zero,
 		ProviderIdentityExpectation:  &expected,
 		ProviderObservationChallenge: challenge,
@@ -88,7 +86,7 @@ func exactChatRequestBytes(t *testing.T, prepared llm.PreparedModel) []byte {
 
 func exactRawBody() string {
 	return `{"model":"qwen3.5:9b-q4_K_M","created_at":"2026-08-09T22:00:00Z",` +
-		`"response":"{}","done":true,"done_reason":"stop",` +
+		`"response":"semantic leaf","done":true,"done_reason":"stop",` +
 		`"total_duration":101,"load_duration":11,"prompt_eval_count":41,` +
 		`"prompt_eval_duration":21,"eval_count":7,"eval_duration":31}`
 }

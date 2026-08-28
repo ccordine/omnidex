@@ -2,7 +2,6 @@ package worker
 
 import (
 	"context"
-	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -19,7 +18,7 @@ func TestServiceStateResolutionClassifiesEveryTaskWithOneAttemptEach(t *testing.
 	calls := 0
 	runtime := typedWorkerRuntime{
 		Context: context.Background(), MaxAttempts: 4, CorrectionModel: "forbidden-correction",
-		Execute: testPortableExecutor(func(_ string, model, prompt string, _ map[string]any) (string, error) {
+		Execute: testPortableExecutor(func(_ string, model, prompt string) (string, error) {
 			calls++
 			if model != "state-model" {
 				t.Fatalf("model=%q", model)
@@ -46,10 +45,7 @@ func TestServiceStateResolutionClassifiesEveryTaskWithOneAttemptEach(t *testing.
 			if calls == 2 {
 				lifetime = assemblyline.ApplicationServiceStateCrossRequestAuthorityRequired
 			}
-			return fmt.Sprintf(
-				`{"schema":%q,"state_lifetime":%q}`,
-				assemblyline.ApplicationServiceStateLifetimeSchemaV1, lifetime,
-			), nil
+			return string(lifetime), nil
 		}),
 	}
 	plan, err := resolveDirectCodingServiceStatePlan(
@@ -74,9 +70,9 @@ func TestServiceStateResolutionDoesNotRetryInvalidLeaf(t *testing.T) {
 	calls := 0
 	runtime := typedWorkerRuntime{
 		Context: context.Background(), MaxAttempts: 9, CorrectionModel: "forbidden-correction",
-		Execute: testPortableExecutor(func(_ string, _ string, _ string, _ map[string]any) (string, error) {
+		Execute: testPortableExecutor(func(_ string, _ string, _ string) (string, error) {
 			calls++
-			return `{"schema":"omnidex.application-service-state-lifetime.v1","state_lifetime":"unknown"}`, nil
+			return "unknown", nil
 		}),
 	}
 	_, err := resolveDirectCodingServiceStatePlan(

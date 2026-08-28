@@ -39,7 +39,6 @@ func registeredLaravelProjectStack() directCodingProjectStack {
 		},
 		ProjectTaskStaticFiles:   projectLaravelTaskStaticFiles,
 		ProjectFocusedTargetTree: projectGenericPHPServiceFocusedTargetTree,
-		ExclusiveTaskPaths:       true,
 		CompileServiceSource:     compileGenericLaravelServiceBlueprint,
 		ValidateServiceState:     validateLaravelServiceStateLifetime,
 		ValidateTargetTree:       validateGenericPHPServiceTargetTree,

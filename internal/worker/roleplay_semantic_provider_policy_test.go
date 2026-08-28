@@ -21,12 +21,13 @@ func TestRoleplaySemanticStationsAndCorrectionsUseSemanticProfile(t *testing.T) 
 		ContributionKind:    roleplay.UserContributionDirection,
 		ContributionContext: "Continue.",
 	}
-	canonJob, err := assemblyline.NewRoleplayCanonExtractionJob(
-		assemblyline.RoleplayCanonExtractionInput{
+	canonJob, err := assemblyline.NewRoleplayCanonFactCoverageJob(
+		assemblyline.RoleplayCanonFactLeafInput{
 			Source: source, AntecedentUserTurn: &antecedent,
 			Context: assemblyline.ObjectiveContext{
 				Capsules: []assemblyline.ObjectiveContextCapsule{},
 			},
+			AcceptedFacts: []string{},
 		},
 	)
 	if err != nil {
@@ -42,10 +43,11 @@ func TestRoleplaySemanticStationsAndCorrectionsUseSemanticProfile(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	contextJob, err := assemblyline.NewContextSearchTermsJob(
-		assemblyline.ContextSearchTermsInput{
+	contextJob, err := assemblyline.NewContextSearchTermCoverageJob(
+		assemblyline.ContextSearchTermLeafInput{
 			ExactInstruction: "Continue.",
 			Scope:            assemblyline.ContextScopeRoleplaySimulation,
+			AcceptedTerms:    []string{},
 		},
 	)
 	if err != nil {
@@ -57,11 +59,14 @@ func TestRoleplaySemanticStationsAndCorrectionsUseSemanticProfile(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	relevanceJob, err := assemblyline.NewContextRelevanceJob(
-		assemblyline.ContextRelevanceInput{
-			ExactInstruction: "Continue.", RetrievalConcepts: []string{},
-			CandidateAuthorities: []assemblyline.ContextCandidateAuthority{candidate},
-			MaxSelections:        1, Scope: assemblyline.ContextScopeRoleplaySimulation,
+	relevanceJob, err := assemblyline.NewContextRelevanceSelectionJob(
+		assemblyline.ContextRelevanceSelectionInput{
+			Authority: assemblyline.ContextRelevanceInput{
+				ExactInstruction: "Continue.", RetrievalConcepts: []string{},
+				CandidateAuthorities: []assemblyline.ContextCandidateAuthority{candidate},
+				MaxSelections:        1, Scope: assemblyline.ContextScopeRoleplaySimulation,
+			},
+			AcceptedCandidateIDs: []string{},
 		},
 	)
 	if err != nil {
@@ -82,13 +87,13 @@ func TestRoleplaySemanticStationsAndCorrectionsUseSemanticProfile(t *testing.T) 
 	}
 	for _, base := range baseJobs {
 		correction, err := assemblyline.NewRetainedResponseCorrectionJob(
-			base, "candidate violates its exact schema", `{}`,
+			base, "candidate violates its exact station contract", "invalid",
 		)
 		if err != nil {
 			t.Fatal(err)
 		}
 		for _, job := range []assemblyline.PortableJob{base, correction} {
-			selection, err := providerSelectionForPortableJob(job, "semantic-model:latest", 4096)
+			selection, err := providerSelectionForPortableJob(job, "semantic-model:latest", 8192)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -102,14 +107,16 @@ func TestRoleplaySemanticStationsAndCorrectionsUseSemanticProfile(t *testing.T) 
 
 func TestAssistantContextAndCorrectionRemainStrict(t *testing.T) {
 	t.Parallel()
-	job, err := assemblyline.NewContextSearchTermsJob(
-		assemblyline.ContextSearchTermsInput{ExactInstruction: "Recall it."},
+	job, err := assemblyline.NewContextSearchTermCoverageJob(
+		assemblyline.ContextSearchTermLeafInput{
+			ExactInstruction: "Recall it.", AcceptedTerms: []string{},
+		},
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
 	correction, err := assemblyline.NewRetainedResponseCorrectionJob(
-		job, "terms must be an explicit array", `{"schema":"omnidex.context-search-terms.v1"}`,
+		job, "coverage value is not registered", "unsupported",
 	)
 	if err != nil {
 		t.Fatal(err)

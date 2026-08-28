@@ -34,14 +34,69 @@ func (adapter *portableObjectiveRepositoryGroundingStation) Answer(
 			"repository grounding answer station requires runtime authority",
 		)
 	}
-	job, err := assemblyline.NewGroundedAnswerJob(input)
+	if err := input.Validate(); err != nil {
+		return assemblyline.GroundedAnswerDecision{}, objectiveStationReceipt{}, err
+	}
+	textInput := assemblyline.GroundedAnswerTextInput{
+		ExactRequirement: input.ExactRequirement,
+		Context:          assemblyline.CloneObjectiveContext(input.Context),
+		Evidence:         append([]assemblyline.GroundedEvidenceCapsule(nil), input.Evidence...),
+	}
+	job, err := assemblyline.NewGroundedAnswerTextJob(textInput)
 	if err != nil {
 		return assemblyline.GroundedAnswerDecision{}, objectiveStationReceipt{}, err
 	}
-	return runRepositoryGroundedStationCall(
-		ctx, adapter, station.GroundedAnswer, "grounded_answer", job,
-		func(value assemblyline.GroundedAnswerDecision) error { return value.ValidateFor(input) },
+	text, receipt, err := runRepositoryGroundedLeafCall(
+		ctx, adapter, station.GroundedAnswer, "grounded_answer_text", job,
+		func(raw string) (assemblyline.GroundedAnswerTextDecision, error) {
+			return assemblyline.DecodeGroundedAnswerTextDecision(textInput, raw)
+		},
+		func(value assemblyline.GroundedAnswerTextDecision) error {
+			return value.ValidateFor(textInput)
+		},
 	)
+	if err != nil {
+		return assemblyline.GroundedAnswerDecision{}, receipt, err
+	}
+	total := receipt.Calls
+	evidenceIDs := make([]string, 0, len(input.Evidence))
+	for _, evidence := range input.Evidence {
+		relationInput := assemblyline.GroundedAnswerEvidenceRelationInput{
+			ExactRequirement: input.ExactRequirement,
+			Context:          assemblyline.CloneObjectiveContext(input.Context),
+			AnswerText:       text.Text, Evidence: evidence,
+		}
+		relationJob, err := assemblyline.NewGroundedAnswerEvidenceRelationJob(relationInput)
+		if err != nil {
+			return assemblyline.GroundedAnswerDecision{}, objectiveStationReceipt{Calls: total}, err
+		}
+		relation, relationReceipt, err := runRepositoryGroundedLeafCall(
+			ctx, adapter, station.GroundedAnswer, "grounded_answer_evidence_relation",
+			relationJob,
+			func(raw string) (assemblyline.GroundedAnswerEvidenceRelationDecision, error) {
+				return assemblyline.DecodeGroundedAnswerEvidenceRelationDecision(relationInput, raw)
+			},
+			func(value assemblyline.GroundedAnswerEvidenceRelationDecision) error {
+				return value.ValidateFor(relationInput)
+			},
+		)
+		total += relationReceipt.Calls
+		if err != nil {
+			return assemblyline.GroundedAnswerDecision{}, objectiveStationReceipt{Calls: total}, err
+		}
+		if relation.Relation == assemblyline.GroundedEvidenceSupportsAnswer {
+			evidenceIDs = append(evidenceIDs, evidence.ID)
+		}
+	}
+	decision := assemblyline.GroundedAnswerDecision{
+		Schema:        assemblyline.GroundedAnswerSchemaV1,
+		RequirementID: input.RequirementID,
+		Text:          text.Text, EvidenceIDs: evidenceIDs,
+	}
+	if err := decision.ValidateFor(input); err != nil {
+		return assemblyline.GroundedAnswerDecision{}, objectiveStationReceipt{Calls: total}, err
+	}
+	return decision, objectiveStationReceipt{Calls: total}, nil
 }
 
 func (adapter *portableObjectiveRepositoryGroundingStation) ValidateRepositoryGrounding() error {
@@ -55,14 +110,52 @@ func (adapter *portableObjectiveRepositoryGroundingStation) Review(
 	ctx context.Context,
 	input assemblyline.RepositoryGroundedReviewInput,
 ) (assemblyline.RepositoryGroundedReviewDecision, objectiveStationReceipt, error) {
-	job, err := assemblyline.NewRepositoryGroundedReviewJob(input)
+	job, err := assemblyline.NewRepositoryGroundedIssueDetailJob(input)
 	if err != nil {
 		return assemblyline.RepositoryGroundedReviewDecision{}, objectiveStationReceipt{}, err
 	}
-	return runRepositoryGroundedStationCall(
-		ctx, adapter, station.RepositoryGroundedReview, "repository_grounded_review", job,
-		func(value assemblyline.RepositoryGroundedReviewDecision) error { return value.ValidateFor(input) },
+	detail, receipt, err := runRepositoryGroundedLeafCall(
+		ctx, adapter, station.RepositoryGroundedReview,
+		"repository_grounded_issue_detail", job,
+		func(raw string) (string, error) {
+			return assemblyline.DecodeRepositoryGroundedIssueDetailLeaf(input, raw)
+		},
+		func(string) error { return nil },
 	)
+	if err != nil {
+		return assemblyline.RepositoryGroundedReviewDecision{}, receipt, err
+	}
+	if detail == "" {
+		decision, err := assemblyline.AssembleRepositoryGroundedReviewDecision(
+			input, "", "",
+		)
+		return decision, receipt, err
+	}
+
+	kindInput := assemblyline.RepositoryGroundedIssueKindLeafInput{
+		Review: input,
+		Detail: detail,
+	}
+	kindJob, err := assemblyline.NewRepositoryGroundedIssueKindJob(kindInput)
+	if err != nil {
+		return assemblyline.RepositoryGroundedReviewDecision{}, receipt, err
+	}
+	kind, kindReceipt, err := runRepositoryGroundedLeafCall(
+		ctx, adapter, station.RepositoryGroundedReview,
+		"repository_grounded_issue_kind", kindJob,
+		func(raw string) (assemblyline.RepositoryGroundedIssueKind, error) {
+			return assemblyline.DecodeRepositoryGroundedIssueKindLeaf(kindInput, raw)
+		},
+		func(assemblyline.RepositoryGroundedIssueKind) error { return nil },
+	)
+	receipt.Calls += kindReceipt.Calls
+	if err != nil {
+		return assemblyline.RepositoryGroundedReviewDecision{}, receipt, err
+	}
+	decision, err := assemblyline.AssembleRepositoryGroundedReviewDecision(
+		input, detail, kind,
+	)
+	return decision, receipt, err
 }
 
 func (adapter *portableObjectiveRepositoryGroundingStation) Correct(
@@ -73,18 +166,22 @@ func (adapter *portableObjectiveRepositoryGroundingStation) Correct(
 	if err != nil {
 		return assemblyline.RepositoryGroundedCorrectionDecision{}, objectiveStationReceipt{}, err
 	}
-	return runRepositoryGroundedStationCall(
+	return runRepositoryGroundedLeafCall(
 		ctx, adapter, station.RepositoryGroundedCorrection, "repository_grounded_correction", job,
+		func(raw string) (assemblyline.RepositoryGroundedCorrectionDecision, error) {
+			return assemblyline.DecodeRepositoryGroundedCorrectionDecision(input, raw)
+		},
 		func(value assemblyline.RepositoryGroundedCorrectionDecision) error { return value.ValidateFor(input) },
 	)
 }
 
-func runRepositoryGroundedStationCall[T any](
+func runRepositoryGroundedLeafCall[T any](
 	ctx context.Context,
 	adapter *portableObjectiveRepositoryGroundingStation,
 	id station.ID,
 	subject string,
 	job assemblyline.PortableJob,
+	decode objectiveRawLeafDecoder[T],
 	validate func(T) error,
 ) (T, objectiveStationReceipt, error) {
 	var zero T
@@ -107,8 +204,8 @@ func runRepositoryGroundedStationCall[T any](
 		calls++
 		return execute(job, model)
 	}
-	value, err := runDirectCodingSemanticCall[T](
-		workerRuntime, modelName, subject, job, nil, validate,
+	value, err := runObjectiveRawLeafWorkerCall(
+		workerRuntime, modelName, subject, job, decode, validate,
 	)
 	return value, objectiveStationReceipt{Calls: calls}, err
 }

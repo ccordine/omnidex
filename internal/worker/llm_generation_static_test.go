@@ -38,7 +38,6 @@ func TestExactStationStaticBudgetDoesNotGuessMeasuredBytesAreTokens(t *testing.T
 	promptBytes := measuredRawInputBytes - len(llm.ExactPreparedPromptJoiner) - len(llm.MinimalGeneratePrompt)
 	err = validateExactStationStaticCall(
 		strings.Repeat("x", promptBytes),
-		nil,
 		contract,
 		llm.ProviderIdentitySelection{Model: "qwen3.5:9b", NativeContextLimit: 8192},
 	)
@@ -54,7 +53,7 @@ func TestExactStationStaticBudgetRejectsRemovedExplicitOutputMode(t *testing.T) 
 	}
 	contract.OutputLimitMode = llm.ExactPreparedOutputLimitExplicit
 	if err := validateExactStationStaticCall(
-		"exact bounded prompt", nil, contract,
+		"exact bounded prompt", contract,
 		llm.ProviderIdentitySelection{Model: "qwen3.5:9b", NativeContextLimit: 8192},
 	); err == nil {
 		t.Fatal("portable station accepted the removed explicit output mode")
@@ -68,7 +67,6 @@ func TestExactStationStaticContractAcceptsBoundedRegisteredEnvelope(t *testing.T
 	}
 	if err := validateExactStationStaticCall(
 		"exact bounded prompt",
-		map[string]any{"type": "object"},
 		contract,
 		llm.ProviderIdentitySelection{Model: "qwen3.5:9b", NativeContextLimit: 8192},
 	); err != nil {

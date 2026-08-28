@@ -29,7 +29,7 @@ func TestConversationObjectiveKindStationHasOneExactSemanticResponsibility(t *te
 		t.Fatalf("instruction changed: got %q want %q", decoded.ExactInstruction, instruction)
 	}
 
-	prompt, schema, err := RenderPortableJob(job)
+	prompt, err := RenderPortableJob(job)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -38,7 +38,6 @@ func TestConversationObjectiveKindStationHasOneExactSemanticResponsibility(t *te
 			t.Fatalf("prompt omitted %q:\n%s", required, prompt)
 		}
 	}
-	assertExactObjectSchemaFields(t, schema, []string{"schema", "kind"})
 	assertExactJSONFields(t, reflect.TypeOf(input), []string{"exact_instruction", "objective_context", "database_evidence_available"})
 	assertExactJSONFields(t, reflect.TypeOf(ConversationObjectiveKindDecision{}), []string{"schema", "kind"})
 
@@ -169,7 +168,7 @@ func TestConversationObjectiveKindDecodeIsExact(t *testing.T) {
 	t.Parallel()
 
 	input := ConversationObjectiveKindInput{ExactInstruction: "Inspect the repository."}
-	valid := `{"schema":"omnidex.conversation-objective-kind.v1","kind":"repository_read"}`
+	valid := "repository_read"
 	decision, err := DecodeConversationObjectiveKindDecision(input, valid)
 	if err != nil {
 		t.Fatal(err)
@@ -178,14 +177,14 @@ func TestConversationObjectiveKindDecodeIsExact(t *testing.T) {
 		t.Fatalf("decision=%#v", decision)
 	}
 	for _, raw := range []string{
-		`{"schema":"omnidex.conversation-objective-kind.v1","kind":"repository_read","tool":"grep"}`,
-		`{"schema":"omnidex.conversation-objective-kind.v1","kind":"repository_read","kind":"answer"}`,
-		`{"Schema":"omnidex.conversation-objective-kind.v1","kind":"repository_read"}`,
-		`{"schema":"omnidex.conversation-objective-kind.v1","kind":"unknown"}`,
-		valid + `{}`,
+		`{"kind":"repository_read","tool":"grep"}`,
+		`"repository_read"`,
+		"kind: repository_read",
+		"unknown",
+		valid + " answer",
 	} {
 		if _, err := DecodeConversationObjectiveKindDecision(input, raw); err == nil {
-			t.Fatalf("invalid decision JSON accepted: %s", raw)
+			t.Fatalf("invalid raw decision accepted: %s", raw)
 		}
 	}
 	if _, err := DecodeConversationObjectiveKindDecision(input, strings.Repeat("x", maxPortableCandidateBytes+1)); err == nil {

@@ -23,11 +23,11 @@ func TestLanguageBlindCorrectionBindsProjectionOutsideModelPayload(t *testing.T)
 	if err := base.Validate(); err != nil {
 		t.Fatal(err)
 	}
-	basePrompt, _, err := RenderPortableJob(base)
+	basePrompt, err := RenderPortableJob(base)
 	if err != nil {
 		t.Fatal(err)
 	}
-	projectedPrompt, _, err := RenderPortableJob(projected)
+	projectedPrompt, err := RenderPortableJob(projected)
 	if err != nil {
 		t.Fatal(err)
 	}

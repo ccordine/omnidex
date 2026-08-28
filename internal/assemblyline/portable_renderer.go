@@ -1,11 +1,5 @@
 package assemblyline
 
-const (
-	// PortableRendererV1 identifies the first historical portable projection.
-	PortableRendererV1 = "omnidex.render-portable-job.v1"
-	// PortableRendererV2 identifies the second historical portable projection.
-	PortableRendererV2 = "omnidex.render-portable-job.v2"
-	// PortableRendererV3 identifies every projection emitted by the current
-	// runtime. Historical evidence retains its original renderer identity.
-	PortableRendererV3 = "omnidex.render-portable-job.v3"
-)
+// PortableRendererV4 identifies the sole supported raw-response portable
+// projection. Historical renderer identities live only in migration fixtures.
+const PortableRendererV4 = "omnidex.render-portable-job.v4"

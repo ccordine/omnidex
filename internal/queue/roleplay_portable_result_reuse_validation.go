@@ -206,12 +206,12 @@ func materializeRoleplayPortableReuseResult(
 		if err := decodePortableGapPayload(source.Payload, &correction); err != nil {
 			return assemblyline.PortableResult{}, err
 		}
-		candidate, err := assemblyline.ApplyResponseCorrection(
-			correction.Original, correction.RetainedCandidate, rawResponse,
+		candidate, err := assemblyline.ValidateResponseCorrectionReplacement(
+			correction, rawResponse,
 		)
 		if err != nil {
 			return assemblyline.PortableResult{}, fmt.Errorf(
-				"apply reused roleplay response correction: %w", err,
+				"validate reused roleplay response correction: %w", err,
 			)
 		}
 		return assemblyline.PortableResult{

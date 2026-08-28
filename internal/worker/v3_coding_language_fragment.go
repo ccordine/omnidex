@@ -61,7 +61,7 @@ func runDirectCodingLanguageFragmentWorker(
 	); err != nil {
 		return "", failDirectCodingLanguageGeneration(runtime, modelName, job, err)
 	}
-	prompt, _, err := assemblyline.RenderPortableJob(portable)
+	prompt, err := assemblyline.RenderPortableJob(portable)
 	if err != nil {
 		return "", failDirectCodingLanguageGeneration(runtime, modelName, job, err)
 	}

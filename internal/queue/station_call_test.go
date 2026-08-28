@@ -1,7 +1,6 @@
 package queue
 
 import (
-	"encoding/json"
 	"strings"
 	"testing"
 
@@ -46,6 +45,61 @@ func TestStationCallOpeningRejectsAnotherGapProjection(t *testing.T) {
 		Authority: authority, Gap: gap, Discovery: stationCallTestDiscovery(t, gap, prepared), Prepared: prepared,
 	}); err == nil {
 		t.Fatal("station call accepted prepared prompt outside its persisted gap")
+	}
+}
+
+func TestStationCallOpeningEnforcesTransportStopAuthority(t *testing.T) {
+	t.Parallel()
+	authority := model.StepAttemptAuthority{
+		JobID: 3, Generation: 2, StepID: 7, Attempt: 1, WorkerID: "worker-a",
+	}
+
+	semanticGap := stationCallTestGap(t, authority)
+	semanticPrepared := stationCallTestPrepared(t, semanticGap)
+	semanticPrepared.RawTextStopSequence = llm.ExactPreparedLineStopV1
+	if _, err := validateStationCallOpening(StationCallOpenRecord{
+		Authority: authority, Gap: semanticGap,
+		Discovery: stationCallTestDiscovery(t, semanticGap, semanticPrepared),
+		Prepared:  semanticPrepared,
+	}); err == nil {
+		t.Fatal("multiline semantic raw transport accepted a line stop sequence")
+	}
+
+	fragmentJob, err := assemblyline.NewFragmentGenerationJob(
+		assemblyline.FragmentGenerationInput{
+			Language: "typescript", Dialect: "TypeScript 5.9.3",
+			Signature: "function value(): number",
+			Behavior:  "Return one exact numeric value.",
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fragmentGap, err := validateStationGapOpening(StationGapOpenRecord{
+		Authority: authority, Job: fragmentJob, Station: station.CodingFragment,
+		ContextTokens: 32768, MaxOutputTokens: 32768,
+		OutputLimitMode: llm.ExactPreparedOutputLimitNatural,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	fragmentGap.ID = 18
+	fragmentPrepared := stationCallTestPrepared(t, fragmentGap)
+	fragmentPrepared.RawTextStopSequence = ""
+	if _, err := validateStationCallOpening(StationCallOpenRecord{
+		Authority: authority, Gap: fragmentGap,
+		Discovery: stationCallTestDiscovery(t, fragmentGap, fragmentPrepared),
+		Prepared:  fragmentPrepared,
+	}); err == nil {
+		t.Fatal("fragment raw transport accepted a missing ChatML stop sequence")
+	}
+	fragmentPrepared.RawTextStopSequence = llm.ExactPreparedRawChatEndV1
+	if _, err := validateStationCallOpening(StationCallOpenRecord{
+		Authority: authority, Gap: fragmentGap,
+		Discovery: stationCallTestDiscovery(t, fragmentGap, fragmentPrepared),
+		Prepared:  fragmentPrepared,
+	}); err != nil {
+		t.Fatalf("fragment raw transport rejected its exact ChatML stop: %v", err)
 	}
 }
 
@@ -185,6 +239,7 @@ func stationCallTestDiscovery(
 
 func stationCallTestGap(t *testing.T, authority model.StepAttemptAuthority) StationGapOpening {
 	t.Helper()
+	const contextTokens = 32768
 	job, err := assemblyline.NewConversationResponseJob(assemblyline.ConversationResponseInput{
 		Kind: assemblyline.ObjectiveKindAnswer, ExactInstruction: "Exact request.",
 	})
@@ -193,7 +248,8 @@ func stationCallTestGap(t *testing.T, authority model.StepAttemptAuthority) Stat
 	}
 	gap, err := validateStationGapOpening(StationGapOpenRecord{
 		Authority: authority, Job: job, Station: station.ConversationResponse,
-		ContextTokens: 32768, MaxOutputTokens: 32768,
+		ContextTokens:   contextTokens,
+		MaxOutputTokens: portableStationTestMaxOutputTokens(t, job, contextTokens),
 		OutputLimitMode: llm.ExactPreparedOutputLimitNatural,
 	})
 	if err != nil {
@@ -214,19 +270,19 @@ func stationCallTestPrepared(t *testing.T, gap StationGapOpening) llm.PreparedMo
 	if err != nil {
 		t.Fatal(err)
 	}
-	var schema map[string]any
-	if err := json.Unmarshal(gap.ResponseSchema, &schema); err != nil {
+	temperature := llm.ExactPreparedTemperature(0)
+	stop, err := ExpectedStationCallStopSequence(gap, expected)
+	if err != nil {
 		t.Fatal(err)
 	}
-	temperature := llm.ExactPreparedTemperature(0)
 	return llm.PreparedModel{
-		Protocol:  llm.ExactPreparedProtocolStructuredV1,
+		Protocol:  llm.ExactPreparedProtocolRawTextV2,
 		BaseModel: expected.Model, ContextModel: expected.Model,
 		Prompt: gap.Prompt, PromptHint: llm.MinimalGeneratePrompt,
 		ContextTokens: gap.ContextTokens, MaxOutputTokens: gap.MaxOutputTokens,
 		OutputLimitMode: gap.OutputLimitMode,
-		ResponseFormat:  llm.ResponseFormatJSON, ResponseSchema: schema,
-		Temperature: &temperature, ProviderIdentityExpectation: &expected,
+		Temperature:     &temperature, RawTextStopSequence: stop,
+		ProviderIdentityExpectation:  &expected,
 		ProviderObservationChallenge: challenge,
 	}
 }

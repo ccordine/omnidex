@@ -2,7 +2,6 @@ package worker
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -126,11 +125,27 @@ func objectiveDatabaseRelationDescriptor(snapshot datasource.SchemaSnapshot, rel
 	if err != nil {
 		return "", err
 	}
-	encoded, err := json.Marshal(projection.Relations[0])
-	if err != nil {
-		return "", fmt.Errorf("encode database relation descriptor: %w", err)
+	relation := projection.Relations[0]
+	var rendered strings.Builder
+	fmt.Fprintf(&rendered, "RELATION label=%s.%s kind=%s\n", relation.SchemaName, relation.Name, relation.Kind)
+	for _, column := range relation.Columns {
+		fmt.Fprintf(
+			&rendered, "FIELD %s label=%s type=%s nullable=%t",
+			column.ID, column.Name, column.TypeCategory, column.Nullable,
+		)
+		if len(column.AllowedValues) > 0 {
+			fmt.Fprintf(&rendered, " allowed=%s", strings.Join(column.AllowedValues, " | "))
+		}
+		rendered.WriteByte('\n')
 	}
-	value := string(encoded)
+	for _, foreignKey := range relation.ForeignKeys {
+		fmt.Fprintf(
+			&rendered, "FOREIGN KEY %s fields=%s references_relation=%s references_fields=%s\n",
+			foreignKey.ID, strings.Join(foreignKey.ColumnIDs, " | "),
+			foreignKey.ReferencedRelationID, strings.Join(foreignKey.ReferencedColumnIDs, " | "),
+		)
+	}
+	value := strings.TrimSpace(rendered.String())
 	if strings.TrimSpace(value) == "" {
 		return "", fmt.Errorf("database relation descriptor is empty")
 	}

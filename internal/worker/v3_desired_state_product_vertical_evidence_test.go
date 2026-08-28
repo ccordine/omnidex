@@ -1,6 +1,7 @@
 package worker
 
 import (
+	"encoding/json"
 	"reflect"
 	"regexp"
 	"strings"
@@ -8,6 +9,7 @@ import (
 
 	"github.com/gryph/omnidex/internal/assemblyline"
 	"github.com/gryph/omnidex/internal/evidence"
+	"github.com/gryph/omnidex/internal/llm"
 	repositoryfacts "github.com/gryph/omnidex/internal/repository"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -57,7 +59,8 @@ func assertDesiredStateProductStationPersistence(
 			t.Fatalf("durable station evidence contains unexpected call %s", kind)
 		}
 		call := calls[index]
-		if call.Prompt != prompt || call.Response != response || string(call.Protocol) != protocol ||
+		if call.Kind != kind || call.Prompt != prompt || call.Response != response ||
+			string(call.Protocol) != protocol ||
 			!strings.Contains(modelInput, prompt) {
 			t.Fatalf("provider and durable exact envelope differ at call %d kind=%s", index, kind)
 		}
@@ -99,6 +102,12 @@ func assertDesiredStateProductModelAuthority(
 	t.Helper()
 	assertDesiredStateProductNoModelMutationOps(t, calls)
 	for index, call := range calls {
+		if call.Protocol != llm.ExactPreparedProtocolRawTextV2 {
+			t.Fatalf("model call %d used non-raw response protocol %q", index, call.Protocol)
+		}
+		if json.Valid([]byte(call.Response)) {
+			t.Fatalf("model call %d returned retired JSON response %q", index, call.Response)
+		}
 		if test.present && strings.Contains(call.Prompt, test.target) {
 			t.Fatalf("model call %d saw code-derived target path %q", index, test.target)
 		}

@@ -97,15 +97,15 @@ func DecodeConversationResponseDecision(
 	input ConversationResponseInput,
 	raw string,
 ) (ConversationResponseDecision, error) {
-	if len(raw) > maxPortableCandidateBytes {
-		return ConversationResponseDecision{}, fmt.Errorf(
-			"conversation response candidate exceeds %d bytes", maxPortableCandidateBytes,
-		)
+	maximum := maxConversationResponseTextBytes
+	if input.RoleplayIdentity != nil {
+		maximum = roleplay.MaxNarrativeResponseBytes
 	}
-	var decision ConversationResponseDecision
-	if err := decodePortablePayload([]byte(raw), &decision); err != nil {
-		return ConversationResponseDecision{}, fmt.Errorf("decode conversation response: %w", err)
+	leaf, err := decodeRawSemanticLeaf("conversation response", raw, maximum, true)
+	if err != nil {
+		return ConversationResponseDecision{}, err
 	}
+	decision := ConversationResponseDecision{Schema: ConversationResponseSchemaV1, Text: leaf}
 	if err := decision.ValidateFor(input); err != nil {
 		return ConversationResponseDecision{}, err
 	}
@@ -126,6 +126,7 @@ func BuildConversationResponsePrompt(input ConversationResponseInput) (string, e
 	}
 	sections := []string{"Answer exactly one user instruction.",
 		"Return one bounded response text leaf that directly satisfies that instruction using only the supplied context.",
+		"Return only the raw response text with no JSON, quotes, label, Markdown wrapper, or commentary outside the response itself.",
 		"OBJECTIVE_CONTEXT_JSON:\n" + string(context)}
 	if input.RoleplayIdentity != nil {
 		identity, err := json.Marshal(input.RoleplayIdentity)
@@ -140,6 +141,7 @@ func BuildConversationResponsePrompt(input ConversationResponseInput) (string, e
 		personaName := strconv.Quote(input.RoleplayUserTurn.PersonaName)
 		sections = []string{
 			"Write one in-character narrative response to exactly one user turn.",
+			"Return only the raw narrative text with no JSON, quotes, label, Markdown wrapper, or commentary outside the narrative.",
 			"The responding character is " + responderName + "; the user-controlled persona is " + personaName + ". These are distinct narrative identities.",
 			"The exact user turn controls the immediate response. Respond to what the user just said or did; background state supports the response and must not replace it with an unrelated continuation.",
 			"Begin with the character's direct reaction or reply to the current user turn before advancing any other scene beat. When the user speaks, answer or acknowledge that speech in character.",
@@ -192,16 +194,4 @@ func roleplayContributionInstruction(
 	default:
 		return ""
 	}
-}
-
-func ConversationResponseSchema() map[string]any {
-	return objectSchema(
-		[]string{"schema", "text"},
-		map[string]any{
-			"schema": map[string]any{"type": "string", "const": ConversationResponseSchemaV1},
-			"text": map[string]any{
-				"type": "string", "minLength": 1,
-			},
-		},
-	)
 }

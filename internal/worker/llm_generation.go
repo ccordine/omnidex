@@ -40,11 +40,11 @@ func (s *Service) executeExactPortableStation(
 	if err != nil {
 		return assemblyline.PortableResult{}, exactStationExecution{}, err
 	}
-	prompt, schema, err := assemblyline.RenderPortableJob(job)
+	prompt, err := assemblyline.RenderPortableJob(job)
 	if err != nil {
 		return assemblyline.PortableResult{}, exactStationExecution{}, err
 	}
-	contract, err := llmResponseContractForPortableJob(job, schema)
+	contract, err := llmResponseContractForPortableJob(job)
 	if err != nil {
 		return assemblyline.PortableResult{}, exactStationExecution{}, err
 	}
@@ -58,13 +58,19 @@ func (s *Service) executeExactPortableStation(
 	if err != nil {
 		return assemblyline.PortableResult{}, exactStationExecution{}, err
 	}
-	if err := validateExactStationStaticCall(prompt, schema, contract, selection); err != nil {
+	maxOutputTokens, err := queue.ExpectedPortableStationMaxOutputTokens(job, contextTokens)
+	if err != nil {
+		return assemblyline.PortableResult{}, exactStationExecution{}, fmt.Errorf(
+			"derive exact station output ceiling: %w", err,
+		)
+	}
+	if err := validateExactStationStaticCall(prompt, contract, selection); err != nil {
 		return assemblyline.PortableResult{}, exactStationExecution{}, err
 	}
 	opening, err := s.repo.OpenStationGapDiscovery(ctx, queue.StationGapDiscoveryOpenRecord{
 		Gap: queue.StationGapOpenRecord{
 			Authority: authority, Job: job, Station: stationID,
-			ContextTokens: contextTokens, MaxOutputTokens: contextTokens,
+			ContextTokens: contextTokens, MaxOutputTokens: maxOutputTokens,
 			OutputLimitMode: contract.OutputLimitMode,
 		},
 		Selection: selection,

@@ -1,7 +1,6 @@
 package assemblyline
 
 import (
-	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -18,20 +17,16 @@ func TestKnownArtifactTruthClassifiesOnlyDesiredTruth(t *testing.T) {
 	if job.Kind != WorkKnownArtifactTruth {
 		t.Fatalf("work kind=%q", job.Kind)
 	}
-	prompt, schema, err := RenderPortableJob(job)
-	if err != nil {
-		t.Fatal(err)
-	}
-	rawSchema, err := json.Marshal(schema)
+	prompt, err := RenderPortableJob(job)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, required := range []string{
 		input.RequirementQuote, string(KnownArtifactMustBeAbsent),
 		string(OnePlainTextArtifactMustExist),
-		string(KnownArtifactTruthNotApplicable), KnownArtifactTruthSchemaV1,
+		string(KnownArtifactTruthNotApplicable),
 	} {
-		if !strings.Contains(prompt+string(rawSchema), required) {
+		if !strings.Contains(prompt, required) {
 			t.Fatalf("known artifact truth envelope omitted %q", required)
 		}
 	}
@@ -39,7 +34,7 @@ func TestKnownArtifactTruthClassifiesOnlyDesiredTruth(t *testing.T) {
 		"create_file", "delete_file", "write_file", "rename_file", "move_file",
 		"filesystem operation", "shell command", "path", "filename",
 	} {
-		if strings.Contains(strings.ToLower(prompt+string(rawSchema)), forbidden) {
+		if strings.Contains(strings.ToLower(prompt), forbidden) {
 			t.Fatalf("known artifact truth envelope exposed forbidden authority %q", forbidden)
 		}
 	}
@@ -56,6 +51,13 @@ func TestKnownArtifactTruthAcceptsOnlyClosedDesiredTruth(t *testing.T) {
 		if err := decision.ValidateFor(input); err != nil {
 			t.Fatalf("truth %q: %v", truth, err)
 		}
+		decoded, err := DecodeKnownArtifactTruthDecision(input, string(truth))
+		if err != nil || decoded != decision {
+			t.Fatalf("decoded=%+v want=%+v err=%v", decoded, decision, err)
+		}
+	}
+	if _, err := DecodeKnownArtifactTruthDecision(input, `{"truth":"not_applicable"}`); err == nil {
+		t.Fatal("accepted JSON wrapper")
 	}
 	for _, decision := range []KnownArtifactTruthDecision{
 		{Schema: "wrong", Truth: KnownArtifactMustBeAbsent},

@@ -88,18 +88,15 @@ func exactConvergenceGap(
 	job assemblyline.PortableJob,
 ) (queue.StationGapOpening, llmResponseContract, error) {
 	var zero queue.StationGapOpening
-	if err := rejectRetiredStationReplayJob(job); err != nil {
-		return zero, llmResponseContract{}, err
-	}
-	prompt, schema, err := assemblyline.RenderPortableJob(job)
+	prompt, err := assemblyline.RenderPortableJob(job)
 	if err != nil {
 		return zero, llmResponseContract{}, err
 	}
-	contract, err := llmResponseContractForPortableJob(job, schema)
+	contract, err := llmResponseContractForPortableJob(job)
 	if err != nil {
 		return zero, llmResponseContract{}, err
 	}
-	schemaRaw, err := exactjson.Canonical(schema)
+	schemaRaw, err := exactjson.Canonical(nil)
 	if err != nil {
 		return zero, llmResponseContract{}, err
 	}
@@ -111,7 +108,7 @@ func exactConvergenceGap(
 		Prompt         string          `json:"prompt"`
 		Renderer       string          `json:"renderer"`
 		ResponseSchema json.RawMessage `json:"response_schema"`
-	}{prompt, assemblyline.PortableRendererV3, schemaRaw})
+	}{prompt, assemblyline.PortableRendererV4, schemaRaw})
 	if err != nil {
 		return zero, llmResponseContract{}, err
 	}
@@ -119,17 +116,27 @@ func exactConvergenceGap(
 	if err != nil {
 		return zero, llmResponseContract{}, err
 	}
+	scope, err := portableModelScope(job.Kind)
+	if err != nil {
+		return zero, llmResponseContract{}, err
+	}
+	maxOutputTokens, err := queue.ExpectedPortableStationMaxOutputTokens(
+		job, point.Gap.ContextTokens,
+	)
+	if err != nil {
+		return zero, llmResponseContract{}, err
+	}
 	gap := queue.StationGapOpening{
 		ID: point.Gap.ID, JobID: point.Gap.JobID, Generation: point.Gap.Generation,
 		StepID: point.Gap.StepID, StepAttempt: point.Gap.StepAttempt, WorkerID: point.Gap.WorkerID,
-		GapID: job.ID, Station: stationID, Scope: portableModelScope(schema),
+		GapID: job.ID, Station: stationID, Scope: scope,
 		PortableSchema: job.Schema, WorkID: job.ID, WorkKind: string(job.Kind),
 		PortablePayload: string(job.Payload), PortablePayloadSHA256: replaySHA256(string(job.Payload)),
 		PortableEnvelope: string(envelope), PortableEnvelopeSHA256: replaySHA256(string(envelope)),
-		RendererVersion: assemblyline.PortableRendererV3, Prompt: prompt,
+		RendererVersion: assemblyline.PortableRendererV4, Prompt: prompt,
 		ResponseSchema: schemaRaw, ProjectionEnvelope: string(projection),
 		ProjectionSHA256: replaySHA256(string(projection)), ContextTokens: point.Gap.ContextTokens,
-		MaxOutputTokens: point.Gap.ContextTokens, OutputLimitMode: contract.OutputLimitMode,
+		MaxOutputTokens: maxOutputTokens, OutputLimitMode: contract.OutputLimitMode,
 	}
 	return gap, contract, nil
 }

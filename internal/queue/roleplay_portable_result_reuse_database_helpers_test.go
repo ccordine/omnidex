@@ -109,13 +109,17 @@ func persistRoleplayPortableReuseLeaf(
 	candidate string,
 ) StationGapOutcome {
 	t.Helper()
+	const contextTokens = 32768
 	owner, err := StationForPortableJob(portable)
 	if err != nil {
 		t.Fatal(err)
 	}
 	gap, err := repository.OpenStationGap(t.Context(), StationGapOpenRecord{
 		Authority: claim.Authority, Job: portable, Station: owner,
-		ContextTokens: 32768, MaxOutputTokens: 32768,
+		ContextTokens: contextTokens,
+		MaxOutputTokens: portableStationTestMaxOutputTokens(
+			t, portable, contextTokens,
+		),
 		OutputLimitMode: llm.ExactPreparedOutputLimitNatural,
 	})
 	if err != nil {
@@ -155,13 +159,17 @@ func persistRejectedRoleplayPortableReuseLeaf(
 	candidate string,
 ) StationGapOutcome {
 	t.Helper()
+	const contextTokens = 32768
 	owner, err := StationForPortableJob(portable)
 	if err != nil {
 		t.Fatal(err)
 	}
 	gap, err := repository.OpenStationGap(t.Context(), StationGapOpenRecord{
 		Authority: claim.Authority, Job: portable, Station: owner,
-		ContextTokens: 32768, MaxOutputTokens: 32768,
+		ContextTokens: contextTokens,
+		MaxOutputTokens: portableStationTestMaxOutputTokens(
+			t, portable, contextTokens,
+		),
 		OutputLimitMode: llm.ExactPreparedOutputLimitNatural,
 	})
 	if err != nil {

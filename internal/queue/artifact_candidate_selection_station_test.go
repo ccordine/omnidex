@@ -30,7 +30,7 @@ func TestArtifactCandidateSelectionHasOneExactStationOwner(t *testing.T) {
 	}
 	correction, err := assemblyline.NewRetainedResponseCorrectionJob(
 		job, "candidate is unavailable",
-		`{"schema":"omnidex.artifact-candidate-selection.v1","candidate_id":"ARTIFACT_CANDIDATE_1"}`,
+		"ARTIFACT_CANDIDATE_1",
 	)
 	if err != nil {
 		t.Fatal(err)

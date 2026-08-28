@@ -39,7 +39,7 @@ func objectiveRepositoryRelevanceInput(
 		ExactRequirement: exactRequirement, Candidates: candidates,
 		MaxSelections: minInt(maxRepositoryGroundedCitations, len(candidates)),
 	}
-	if _, err := assemblyline.NewRepositoryEvidenceRelevanceJob(input); err != nil {
+	if err := input.Validate(); err != nil {
 		return assemblyline.RepositoryEvidenceRelevanceInput{}, err
 	}
 	return input, nil
@@ -84,15 +84,37 @@ func (r *nativeRuntimeV3) resolveObjectiveRepositoryRelevance(
 	if err != nil {
 		return assemblyline.RepositoryEvidenceRelevanceDecision{}, objectiveStationReceipt{}, err
 	}
-	job, err := assemblyline.NewRepositoryEvidenceRelevanceJob(input)
-	if err != nil {
-		return assemblyline.RepositoryEvidenceRelevanceDecision{}, objectiveStationReceipt{}, err
+	selected := make([]string, 0, input.MaxSelections)
+	totalCalls := 0
+	for len(selected) < input.MaxSelections {
+		leafInput := assemblyline.RepositoryEvidenceRelevanceLeafInput{
+			ExactRequirement:    input.ExactRequirement,
+			Candidates:          append([]assemblyline.RepositoryEvidenceCandidate(nil), input.Candidates...),
+			SelectedEvidenceIDs: append([]string{}, selected...),
+			MaxSelections:       input.MaxSelections,
+		}
+		job, err := assemblyline.NewRepositoryEvidenceRelevanceLeafJob(leafInput)
+		if err != nil {
+			return assemblyline.RepositoryEvidenceRelevanceDecision{}, objectiveStationReceipt{Calls: totalCalls}, err
+		}
+		evidenceID, calls, err := runObjectivePortableRawLeafCall(
+			ctx, r, modelName, "repository_evidence_relevance_leaf", job,
+			func(raw string) (string, error) {
+				return assemblyline.DecodeRepositoryEvidenceRelevanceLeaf(leafInput, raw)
+			},
+			func(string) error { return nil },
+		)
+		totalCalls += calls
+		if err != nil {
+			return assemblyline.RepositoryEvidenceRelevanceDecision{}, objectiveStationReceipt{Calls: totalCalls}, err
+		}
+		if evidenceID == assemblyline.RepositoryEvidenceNoRelevantCandidate {
+			break
+		}
+		selected = append(selected, evidenceID)
 	}
-	decision, calls, err := runObjectivePortableCall[assemblyline.RepositoryEvidenceRelevanceDecision](
-		ctx, r, modelName, "repository_evidence_relevance", job,
-		func(value assemblyline.RepositoryEvidenceRelevanceDecision) error { return value.ValidateFor(input) },
-	)
-	return decision, objectiveStationReceipt{Calls: calls}, err
+	decision, err := assemblyline.AssembleRepositoryEvidenceRelevanceDecision(input, selected)
+	return decision, objectiveStationReceipt{Calls: totalCalls}, err
 }
 
 func (r *nativeRuntimeV3) resolveObjectiveRepositorySearchTerm(
@@ -104,13 +126,58 @@ func (r *nativeRuntimeV3) resolveObjectiveRepositorySearchTerm(
 	if err != nil {
 		return assemblyline.RepositorySearchTermDecision{}, objectiveStationReceipt{}, err
 	}
-	job, err := assemblyline.NewRepositorySearchTermJob(input)
-	if err != nil {
-		return assemblyline.RepositorySearchTermDecision{}, objectiveStationReceipt{}, err
+	anchors := make([]string, 0, assemblyline.MaxRepositorySearchAnchorLeaves)
+	totalCalls := 0
+	for {
+		leafInput := assemblyline.RepositorySearchAnchorLeafInput{
+			UnresolvedConcept: exactRequirement,
+			AcceptedAnchors:   append([]string{}, anchors...),
+		}
+		anchorJob, err := assemblyline.NewRepositorySearchAnchorJob(leafInput)
+		if err != nil {
+			return assemblyline.RepositorySearchTermDecision{}, objectiveStationReceipt{Calls: totalCalls}, err
+		}
+		anchor, calls, err := runObjectivePortableRawLeafCall(
+			ctx, r, modelName, "repository_search_anchor", anchorJob,
+			func(raw string) (string, error) {
+				return assemblyline.DecodeRepositorySearchAnchorLeaf(leafInput, raw)
+			},
+			func(value string) error {
+				return assemblyline.ValidatePathFreeModelContext(
+					"repository search anchor", value,
+				)
+			},
+		)
+		totalCalls += calls
+		if err != nil {
+			return assemblyline.RepositorySearchTermDecision{}, objectiveStationReceipt{Calls: totalCalls}, err
+		}
+		anchors = append(anchors, anchor)
+		leafInput.AcceptedAnchors = append([]string{}, anchors...)
+		coverageJob, err := assemblyline.NewRepositorySearchAnchorCoverageJob(leafInput)
+		if err != nil {
+			return assemblyline.RepositorySearchTermDecision{}, objectiveStationReceipt{Calls: totalCalls}, err
+		}
+		coverage, calls, err := runObjectivePortableRawLeafCall(
+			ctx, r, modelName, "repository_search_anchor_coverage", coverageJob,
+			func(raw string) (string, error) {
+				return assemblyline.DecodeRepositorySearchAnchorCoverageLeaf(leafInput, raw)
+			},
+			func(string) error { return nil },
+		)
+		totalCalls += calls
+		if err != nil {
+			return assemblyline.RepositorySearchTermDecision{}, objectiveStationReceipt{Calls: totalCalls}, err
+		}
+		if coverage == assemblyline.RepositoryNoUncoveredAnchor {
+			decision, err := assemblyline.AssembleRepositorySearchTermDecision(input, anchors)
+			return decision, objectiveStationReceipt{Calls: totalCalls}, err
+		}
+		if len(anchors) == assemblyline.MaxRepositorySearchAnchorLeaves {
+			return assemblyline.RepositorySearchTermDecision{}, objectiveStationReceipt{Calls: totalCalls}, fmt.Errorf(
+				"repository search anchor coverage remains incomplete at the code-owned %d-item bound",
+				assemblyline.MaxRepositorySearchAnchorLeaves,
+			)
+		}
 	}
-	decision, calls, err := runObjectivePortableCall[assemblyline.RepositorySearchTermDecision](
-		ctx, r, modelName, "repository_search_term", job,
-		func(value assemblyline.RepositorySearchTermDecision) error { return value.ValidateFor(input) },
-	)
-	return decision, objectiveStationReceipt{Calls: calls}, err
 }

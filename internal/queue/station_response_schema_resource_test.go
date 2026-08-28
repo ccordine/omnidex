@@ -1,7 +1,6 @@
 package queue
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -16,7 +15,7 @@ import (
 	"github.com/gryph/omnidex/internal/station"
 )
 
-func TestStructuredStationSchemasCrossRetiredThirtyTwoKiBRuler(t *testing.T) {
+func TestRawStationPromptsCrossRetiredThirtyTwoKiBRuler(t *testing.T) {
 	t.Parallel()
 
 	fixtures := []struct {
@@ -25,8 +24,8 @@ func TestStructuredStationSchemasCrossRetiredThirtyTwoKiBRuler(t *testing.T) {
 		station station.ID
 	}{
 		{
-			name:    "repository change surface",
-			job:     largeRepositoryChangeSurfaceJob(t),
+			name:    "repository change owner",
+			job:     largeRepositoryChangeOwnerJob(t),
 			station: station.CodingRepositoryChange,
 		},
 	}
@@ -34,29 +33,26 @@ func TestStructuredStationSchemasCrossRetiredThirtyTwoKiBRuler(t *testing.T) {
 		fixture := fixture
 		t.Run(fixture.name, func(t *testing.T) {
 			t.Parallel()
-			_, schema, err := assemblyline.RenderPortableJob(fixture.job)
+			prompt, err := assemblyline.RenderPortableJob(fixture.job)
 			if err != nil {
 				t.Fatal(err)
 			}
-			rawSchema, err := json.Marshal(schema)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if len(rawSchema) <= 32*1024 || len(rawSchema) >= maxStationRequestResourceBytes {
-				t.Fatalf("schema=%dB want between retired and coarse ceilings", len(rawSchema))
+			if len(prompt) <= 32*1024 || len(prompt) >= maxStationRequestResourceBytes {
+				t.Fatalf("prompt=%dB want between retired and coarse ceilings", len(prompt))
 			}
 
 			opening, err := validateStationGapOpening(StationGapOpenRecord{
 				Authority: stationResponseSchemaAuthority(), Job: fixture.job, Station: fixture.station,
-				ContextTokens: 262144, MaxOutputTokens: 262144,
+				ContextTokens:   262144,
+				MaxOutputTokens: portableStationTestMaxOutputTokens(t, fixture.job, 262144),
 				OutputLimitMode: llm.ExactPreparedOutputLimitNatural,
 			})
 			if err != nil {
-				t.Fatalf("station rejected renderer-admitted structured schema: %v", err)
+				t.Fatalf("station rejected raw renderer prompt: %v", err)
 			}
-			if len(opening.ResponseSchema) != len(rawSchema) ||
+			if string(opening.ResponseSchema) != "null" ||
 				len(opening.ProjectionEnvelope) >= maxStationRequestResourceBytes {
-				t.Fatalf("opening lost schema or coarse authority: schema=%d projection=%d", len(opening.ResponseSchema), len(opening.ProjectionEnvelope))
+				t.Fatalf("opening lost raw transport or coarse authority: schema=%s projection=%d", opening.ResponseSchema, len(opening.ProjectionEnvelope))
 			}
 		})
 	}
@@ -83,7 +79,7 @@ func TestStandaloneStationResponseSchemaByteRulerIsAbsent(t *testing.T) {
 	}
 }
 
-func largeRepositoryChangeSurfaceJob(t *testing.T) assemblyline.PortableJob {
+func largeRepositoryChangeOwnerJob(t *testing.T) assemblyline.PortableJob {
 	t.Helper()
 	const query = "select one repository change owner"
 	binding, err := repositoryretrieval.NewQueryBinding(repositoryretrieval.OperationSemanticExcerpts, query)
@@ -93,9 +89,10 @@ func largeRepositoryChangeSurfaceJob(t *testing.T) assemblyline.PortableJob {
 	symbols := make([]repositoryretrieval.EvidenceSymbol, 20)
 	for index := range symbols {
 		symbols[index] = repositoryretrieval.EvidenceSymbol{
-			ID:   fmt.Sprintf("SYMBOL_%02d_%s", index, strings.Repeat("x", 1700)),
+			ID:   fmt.Sprintf("SYMBOL_%02d", index),
 			Kind: "function", Name: fmt.Sprintf("Symbol%02d", index),
-			Signature: fmt.Sprintf("func Symbol%02d()", index),
+			Signature: fmt.Sprintf("func Symbol%02d(%s)", index, strings.Repeat("x", 1700)),
+			Source:    fmt.Sprintf("func Symbol%02d() {}", index),
 		}
 	}
 	pack := repositoryretrieval.EvidencePack{
@@ -109,9 +106,12 @@ func largeRepositoryChangeSurfaceJob(t *testing.T) assemblyline.PortableJob {
 	if err := repositoryretrieval.FinalizeEvidencePack(&pack); err != nil {
 		t.Fatal(err)
 	}
-	job, err := assemblyline.NewRepositoryChangeSurfaceJob(assemblyline.RepositoryChangeSurfaceInput{
-		ResearchNeed: "Update the selected behavior.",
-		Requirements: []string{"selected behavior"}, Evidence: pack,
+	job, err := assemblyline.NewRepositoryChangeOwnerJob(assemblyline.RepositoryChangeOwnerInput{
+		Authority: assemblyline.RepositoryChangeSurfaceInput{
+			ResearchNeed: "Update the selected behavior.",
+			Requirements: []string{"selected behavior"}, Evidence: pack,
+		},
+		FocusedRequirement: "selected behavior",
 	})
 	if err != nil {
 		t.Fatal(err)

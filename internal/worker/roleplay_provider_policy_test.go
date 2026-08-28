@@ -29,8 +29,8 @@ func (client *roleplayContextResolverTestClient) ResolveRoleplayCompletionContex
 }
 
 func TestExactStationContextNegotiationRunsForRoleplayCompletionProfiles(t *testing.T) {
-	client := &roleplayContextResolverTestClient{contextTokens: 4096}
-	service := &Service{stationClient: client, inferenceContextTokens: 8192}
+	client := &roleplayContextResolverTestClient{contextTokens: 8192}
+	service := &Service{stationClient: client, inferenceContextTokens: 16384}
 	roleplayJob, err := roleplayResponseProviderPolicyJob()
 	if err != nil {
 		t.Fatal(err)
@@ -39,13 +39,14 @@ func TestExactStationContextNegotiationRunsForRoleplayCompletionProfiles(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got != 4096 || client.calls != 1 || client.model != "tinydolphin:latest" || client.requested != 8192 {
+	if got != 8192 || client.calls != 1 || client.model != "tinydolphin:latest" || client.requested != 16384 {
 		t.Fatalf("context=%d client=%+v", got, client)
 	}
-	semanticJob, err := assemblyline.NewContextSearchTermsJob(
-		assemblyline.ContextSearchTermsInput{
+	semanticJob, err := assemblyline.NewContextSearchTermCoverageJob(
+		assemblyline.ContextSearchTermLeafInput{
 			ExactInstruction: "Continue.",
 			Scope:            assemblyline.ContextScopeRoleplaySimulation,
+			AcceptedTerms:    []string{},
 		},
 	)
 	if err != nil {
@@ -55,7 +56,7 @@ func TestExactStationContextNegotiationRunsForRoleplayCompletionProfiles(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got != 4096 || client.calls != 2 || client.model != "semantic-model:latest" {
+	if got != 8192 || client.calls != 2 || client.model != "semantic-model:latest" {
 		t.Fatalf("semantic context=%d client=%+v", got, client)
 	}
 
@@ -69,7 +70,7 @@ func TestExactStationContextNegotiationRunsForRoleplayCompletionProfiles(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got != 8192 || client.calls != 2 {
+	if got != 16384 || client.calls != 2 {
 		t.Fatalf("ordinary station context=%d resolver_calls=%d", got, client.calls)
 	}
 }
@@ -132,7 +133,7 @@ func TestRoleplayResponseCorrectionRetainsRawProfilePolicy(t *testing.T) {
 	correction, err := assemblyline.NewRetainedResponseCorrectionJob(
 		roleplayJob,
 		"text must be nonempty",
-		`{"schema":"omnidex.conversation-response.v1","text":""}`,
+		"invalid",
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -143,6 +144,45 @@ func TestRoleplayResponseCorrectionRetainsRawProfilePolicy(t *testing.T) {
 	}
 	if selection.ProfilePolicy != llm.ProviderIdentityProfileRoleplayRawCompletion {
 		t.Fatalf("roleplay correction used policy %q", selection.ProfilePolicy)
+	}
+}
+
+func TestRoleplayEvidenceRelationAndCorrectionUseSemanticProfilePolicy(t *testing.T) {
+	relation, err := assemblyline.NewRoleplayGroundedResponseEvidenceRelationJob(
+		assemblyline.RoleplayGroundedEvidenceRelationInput{
+			ExactQuestion: "When was the harbor opened?",
+			ParagraphText: "The harbor opened in 1902.",
+			Evidence: assemblyline.GroundedEvidenceCapsule{
+				ID: "source-1", Text: "The harbor opened in 1902.",
+			},
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	selection, err := providerSelectionForPortableJob(
+		relation, "semantic-model:latest", 8192,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if selection.ProfilePolicy != llm.ProviderIdentityProfileRoleplaySemanticCompletion {
+		t.Fatalf("roleplay evidence relation used policy %q", selection.ProfilePolicy)
+	}
+	correction, err := assemblyline.NewRetainedResponseCorrectionJob(
+		relation, "relation is not one registered value", "invalid",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	selection, err = providerSelectionForPortableJob(
+		correction, "semantic-model:latest", 8192,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if selection.ProfilePolicy != llm.ProviderIdentityProfileRoleplaySemanticCompletion {
+		t.Fatalf("roleplay evidence relation correction used policy %q", selection.ProfilePolicy)
 	}
 }
 

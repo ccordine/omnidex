@@ -1,33 +1,30 @@
 package assemblyline
 
+import (
+	"fmt"
+	"strconv"
+	"strings"
+)
+
 func BuildApplicationServiceEndpointRequestMediaPrompt(
 	input ApplicationServiceEndpointRequestMediaInput,
 ) (string, error) {
 	if err := input.validate(); err != nil {
 		return "", err
 	}
-	return buildApplicationServiceEndpointLeafPrompt(
-		input,
-		"Determine the one request media type required by this accepted local task and accepted HTTP method.",
-		"The complete response contains the registered schema and exactly one request_media from the registered values.",
-	)
-}
-
-func ApplicationServiceEndpointRequestMediaResponseSchema(
-	input ApplicationServiceEndpointRequestMediaInput,
-) (map[string]any, error) {
 	candidates, err := ApplicationServiceEndpointRequestMediaCandidates(input)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 	values := make([]string, len(candidates))
 	for index, candidate := range candidates {
 		values[index] = string(candidate)
 	}
-	return serviceEndpointLeafSchema(
-		ApplicationServiceEndpointRequestMediaSchemaV1, "request_media",
-		map[string]any{"type": "string", "enum": values},
-	), nil
+	return buildApplicationServiceEndpointLeafPrompt(
+		input,
+		"Determine the one request media type required by this accepted local task and accepted HTTP method.",
+		"Return exactly one raw request media value from this registered set: "+strings.Join(values, ", ")+".",
+	)
 }
 
 func DecodeApplicationServiceEndpointRequestMediaResult(
@@ -37,10 +34,18 @@ func DecodeApplicationServiceEndpointRequestMediaResult(
 	if err := input.validate(); err != nil {
 		return ApplicationServiceEndpointRequestMediaResult{}, err
 	}
-	var result ApplicationServiceEndpointRequestMediaResult
-	return decodeApplicationServiceEndpointLeaf(raw, &result, func(value ApplicationServiceEndpointRequestMediaResult) error {
-		return value.ValidateFor(input)
-	})
+	leaf, err := decodeRawSemanticLeaf("service endpoint request media", raw, 64, false)
+	if err != nil {
+		return ApplicationServiceEndpointRequestMediaResult{}, err
+	}
+	result := ApplicationServiceEndpointRequestMediaResult{
+		Schema:       ApplicationServiceEndpointRequestMediaSchemaV1,
+		RequestMedia: ApplicationServiceEndpointMedia(leaf),
+	}
+	if err := result.ValidateFor(input); err != nil {
+		return ApplicationServiceEndpointRequestMediaResult{}, err
+	}
+	return result, nil
 }
 
 func BuildApplicationServiceEndpointResponseMediaPrompt(
@@ -52,14 +57,8 @@ func BuildApplicationServiceEndpointResponseMediaPrompt(
 	return buildApplicationServiceEndpointLeafPrompt(
 		input,
 		"Determine the one response media type produced by this accepted local task.",
-		"The complete response contains the registered schema and exactly one response_media from the registered values.",
-	)
-}
-
-func ApplicationServiceEndpointResponseMediaResponseSchema() map[string]any {
-	return serviceEndpointLeafSchema(
-		ApplicationServiceEndpointResponseMediaSchemaV1, "response_media",
-		map[string]any{"type": "string", "enum": applicationServiceResponseMediaValues()},
+		"Return exactly one raw response media value from this registered set: "+
+			strings.Join(applicationServiceResponseMediaValues(), ", ")+".",
 	)
 }
 
@@ -70,10 +69,18 @@ func DecodeApplicationServiceEndpointResponseMediaResult(
 	if err := input.validate(); err != nil {
 		return ApplicationServiceEndpointResponseMediaResult{}, err
 	}
-	var result ApplicationServiceEndpointResponseMediaResult
-	return decodeApplicationServiceEndpointLeaf(raw, &result, func(value ApplicationServiceEndpointResponseMediaResult) error {
-		return value.ValidateFor(input)
-	})
+	leaf, err := decodeRawSemanticLeaf("service endpoint response media", raw, 64, false)
+	if err != nil {
+		return ApplicationServiceEndpointResponseMediaResult{}, err
+	}
+	result := ApplicationServiceEndpointResponseMediaResult{
+		Schema:        ApplicationServiceEndpointResponseMediaSchemaV1,
+		ResponseMedia: ApplicationServiceEndpointMedia(leaf),
+	}
+	if err := result.ValidateFor(input); err != nil {
+		return ApplicationServiceEndpointResponseMediaResult{}, err
+	}
+	return result, nil
 }
 
 func BuildApplicationServiceEndpointSuccessStatusPrompt(
@@ -82,24 +89,19 @@ func BuildApplicationServiceEndpointSuccessStatusPrompt(
 	if err := input.validate(); err != nil {
 		return "", err
 	}
+	candidates, err := ApplicationServiceEndpointSuccessStatusCandidates(input)
+	if err != nil {
+		return "", err
+	}
+	values := make([]string, len(candidates))
+	for index, candidate := range candidates {
+		values[index] = strconv.Itoa(candidate)
+	}
 	return buildApplicationServiceEndpointLeafPrompt(
 		input,
 		"Determine the one successful HTTP status compatible with this accepted local task, method, and media types.",
-		"The complete response contains the registered schema and exactly one success_status: 200, 201, 202, or 204.",
+		"Return exactly one raw decimal success status from this registered set: "+strings.Join(values, ", ")+".",
 	)
-}
-
-func ApplicationServiceEndpointSuccessStatusResponseSchema(
-	input ApplicationServiceEndpointSuccessStatusInput,
-) (map[string]any, error) {
-	candidates, err := ApplicationServiceEndpointSuccessStatusCandidates(input)
-	if err != nil {
-		return nil, err
-	}
-	return serviceEndpointLeafSchema(
-		ApplicationServiceEndpointSuccessStatusSchemaV1, "success_status",
-		map[string]any{"type": "integer", "enum": candidates},
-	), nil
 }
 
 func DecodeApplicationServiceEndpointSuccessStatusResult(
@@ -109,8 +111,22 @@ func DecodeApplicationServiceEndpointSuccessStatusResult(
 	if err := input.validate(); err != nil {
 		return ApplicationServiceEndpointSuccessStatusResult{}, err
 	}
-	var result ApplicationServiceEndpointSuccessStatusResult
-	return decodeApplicationServiceEndpointLeaf(raw, &result, func(value ApplicationServiceEndpointSuccessStatusResult) error {
-		return value.ValidateFor(input)
-	})
+	leaf, err := decodeRawSemanticLeaf("service endpoint success status", raw, 3, false)
+	if err != nil {
+		return ApplicationServiceEndpointSuccessStatusResult{}, err
+	}
+	status, err := strconv.Atoi(leaf)
+	if err != nil || strconv.Itoa(status) != leaf {
+		return ApplicationServiceEndpointSuccessStatusResult{}, fmt.Errorf(
+			"service endpoint success status must be one canonical decimal integer",
+		)
+	}
+	result := ApplicationServiceEndpointSuccessStatusResult{
+		Schema:        ApplicationServiceEndpointSuccessStatusSchemaV1,
+		SuccessStatus: status,
+	}
+	if err := result.ValidateFor(input); err != nil {
+		return ApplicationServiceEndpointSuccessStatusResult{}, err
+	}
+	return result, nil
 }

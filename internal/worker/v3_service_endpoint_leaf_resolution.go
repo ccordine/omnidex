@@ -15,8 +15,11 @@ func resolveDirectCodingServiceEndpointContractLeaves(
 	if err != nil {
 		return assemblyline.ApplicationServiceEndpointContract{}, err
 	}
-	exposure, err := runDirectCodingSemanticCall[assemblyline.ApplicationServiceEndpointExposureResult](
+	exposure, err := runDirectCodingSemanticLeafCall(
 		runtime, models.Exposure, string(assemblyline.WorkApplicationServiceEndpointExposure), exposureJob, identities,
+		func(raw string) (assemblyline.ApplicationServiceEndpointExposureResult, error) {
+			return assemblyline.DecodeApplicationServiceEndpointExposureResult(exposureInput, raw)
+		},
 		func(value assemblyline.ApplicationServiceEndpointExposureResult) error {
 			return value.ValidateFor(exposureInput)
 		},
@@ -30,8 +33,11 @@ func resolveDirectCodingServiceEndpointContractLeaves(
 	if err != nil {
 		return assemblyline.ApplicationServiceEndpointContract{}, err
 	}
-	method, err := runDirectCodingSemanticCall[assemblyline.ApplicationServiceEndpointMethodResult](
+	method, err := runDirectCodingSemanticLeafCall(
 		runtime, models.Method, string(assemblyline.WorkApplicationServiceEndpointMethod), methodJob, identities,
+		func(raw string) (assemblyline.ApplicationServiceEndpointMethodResult, error) {
+			return assemblyline.DecodeApplicationServiceEndpointMethodResult(methodInput, raw)
+		},
 		func(value assemblyline.ApplicationServiceEndpointMethodResult) error {
 			return value.ValidateFor(methodInput)
 		},
@@ -45,8 +51,11 @@ func resolveDirectCodingServiceEndpointContractLeaves(
 	if err != nil {
 		return assemblyline.ApplicationServiceEndpointContract{}, err
 	}
-	route, err := runDirectCodingSemanticCall[assemblyline.ApplicationServiceEndpointRouteTemplateResult](
+	route, err := runDirectCodingSemanticLeafCall(
 		runtime, models.Route, string(assemblyline.WorkApplicationServiceEndpointRouteTemplate), routeJob, identities,
+		func(raw string) (assemblyline.ApplicationServiceEndpointRouteTemplateResult, error) {
+			return assemblyline.DecodeApplicationServiceEndpointRouteTemplateResult(routeInput, raw)
+		},
 		func(value assemblyline.ApplicationServiceEndpointRouteTemplateResult) error {
 			return value.ValidateFor(routeInput)
 		},
@@ -72,8 +81,11 @@ func resolveDirectCodingServiceEndpointContractLeaves(
 		if jobErr != nil {
 			return assemblyline.ApplicationServiceEndpointContract{}, jobErr
 		}
-		requestMedia, err = runDirectCodingSemanticCall[assemblyline.ApplicationServiceEndpointRequestMediaResult](
+		requestMedia, err = runDirectCodingSemanticLeafCall(
 			runtime, models.RequestMedia, string(assemblyline.WorkApplicationServiceEndpointRequestMedia), requestJob, identities,
+			func(raw string) (assemblyline.ApplicationServiceEndpointRequestMediaResult, error) {
+				return assemblyline.DecodeApplicationServiceEndpointRequestMediaResult(requestInput, raw)
+			},
 			func(value assemblyline.ApplicationServiceEndpointRequestMediaResult) error {
 				return value.ValidateFor(requestInput)
 			},
@@ -88,8 +100,11 @@ func resolveDirectCodingServiceEndpointContractLeaves(
 	if err != nil {
 		return assemblyline.ApplicationServiceEndpointContract{}, err
 	}
-	responseMedia, err := runDirectCodingSemanticCall[assemblyline.ApplicationServiceEndpointResponseMediaResult](
+	responseMedia, err := runDirectCodingSemanticLeafCall(
 		runtime, models.ResponseMedia, string(assemblyline.WorkApplicationServiceEndpointResponseMedia), responseJob, identities,
+		func(raw string) (assemblyline.ApplicationServiceEndpointResponseMediaResult, error) {
+			return assemblyline.DecodeApplicationServiceEndpointResponseMediaResult(responseInput, raw)
+		},
 		func(value assemblyline.ApplicationServiceEndpointResponseMediaResult) error {
 			return value.ValidateFor(responseInput)
 		},
@@ -116,8 +131,11 @@ func resolveDirectCodingServiceEndpointContractLeaves(
 		if jobErr != nil {
 			return assemblyline.ApplicationServiceEndpointContract{}, jobErr
 		}
-		status, err = runDirectCodingSemanticCall[assemblyline.ApplicationServiceEndpointSuccessStatusResult](
+		status, err = runDirectCodingSemanticLeafCall(
 			runtime, models.SuccessStatus, string(assemblyline.WorkApplicationServiceEndpointSuccessStatus), statusJob, identities,
+			func(raw string) (assemblyline.ApplicationServiceEndpointSuccessStatusResult, error) {
+				return assemblyline.DecodeApplicationServiceEndpointSuccessStatusResult(statusInput, raw)
+			},
 			func(value assemblyline.ApplicationServiceEndpointSuccessStatusResult) error {
 				return value.ValidateFor(statusInput)
 			},

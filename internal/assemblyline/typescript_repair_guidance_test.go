@@ -32,7 +32,7 @@ func TestTypeScriptRepairGuidanceAndExecutionHaveDisjointAuthority(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	prompt, schema, err := RenderPortableJob(analysis)
+	prompt, err := RenderPortableJob(analysis)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,16 +55,15 @@ func TestTypeScriptRepairGuidanceAndExecutionHaveDisjointAuthority(t *testing.T)
 	if strings.Contains(prompt, "The two external-authority lists below are exhaustive.") {
 		t.Fatalf("region guidance contradicted compiler-proven bindings:\n%s", prompt)
 	}
-	if schema == nil || schema["additionalProperties"] != false {
-		t.Fatalf("repair guidance schema is not closed: %#v", schema)
-	}
-	properties, _ := schema["properties"].(map[string]any)
-	instructionSchema, _ := properties["instruction"].(map[string]any)
-	if _, providerHostileBound := instructionSchema["maxLength"]; providerHostileBound {
-		t.Fatalf("repair guidance schema contains a provider-hostile grammar repetition: %#v", schema)
-	}
 
 	const instruction = "Move actions.set(index, value) into the values.forEach callback where value is in lexical scope; preserve the callback and all other statements."
+	guidance, err := DecodeTypeScriptRepairGuidanceResult(analysis, instruction)
+	if err != nil || guidance.Instruction != instruction {
+		t.Fatalf("guidance=%+v err=%v", guidance, err)
+	}
+	if _, err := DecodeTypeScriptRepairGuidanceResult(analysis, `{"instruction":"change it"}`); err == nil {
+		t.Fatal("accepted JSON wrapper")
+	}
 	execution, err := NewFragmentCorrectionJob(FragmentCorrectionInput{
 		Language: "typescript", Signature: "function Apply(index: number, actions: Actions): void",
 		RepairRegion: &region, RepairGuidance: instruction,
@@ -72,12 +71,9 @@ func TestTypeScriptRepairGuidanceAndExecutionHaveDisjointAuthority(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	executionPrompt, executionSchema, err := RenderPortableJob(execution)
+	executionPrompt, err := RenderPortableJob(execution)
 	if err != nil {
 		t.Fatal(err)
-	}
-	if executionSchema != nil {
-		t.Fatalf("repair execution unexpectedly has a structured schema: %#v", executionSchema)
 	}
 	for _, required := range []string{"EXACT_MUTABLE_SOURCE_JSON:", "REQUIRED_SOURCE_TRANSFORMATION:", instruction} {
 		if !strings.Contains(executionPrompt, required) {

@@ -22,21 +22,12 @@ func TestContextMinificationReturnsOneBoundedLeafForAnaphora(t *testing.T) {
 	if job.Kind != WorkContextMinification {
 		t.Fatalf("kind=%q", job.Kind)
 	}
-	prompt, schema, err := RenderPortableJob(job)
+	prompt, err := RenderPortableJob(job)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(prompt, input.ExactInstruction) || !strings.Contains(prompt, "Europa") ||
-		schema["additionalProperties"] != false {
-		t.Fatalf("minification projection/schema=%s %#v", prompt, schema)
-	}
-	properties := schema["properties"].(map[string]any)
-	minimalContextSchema := properties["minimal_context"].(map[string]any)
-	if _, providerHostileBound := minimalContextSchema["maxLength"]; providerHostileBound {
-		t.Fatalf(
-			"context minification schema contains a provider-hostile grammar repetition: %#v",
-			minimalContextSchema,
-		)
+	if !strings.Contains(prompt, input.ExactInstruction) || !strings.Contains(prompt, "Europa") {
+		t.Fatalf("minification projection=%s", prompt)
 	}
 	for _, hidden := range []string{
 		input.SelectedAuthorities[0].Namespace,
@@ -55,10 +46,7 @@ func TestContextMinificationReturnsOneBoundedLeafForAnaphora(t *testing.T) {
 			t.Fatalf("minification received relevance-only field %q", forbidden)
 		}
 	}
-	raw := fmt.Sprintf(
-		`{"schema":%q,"minimal_context":"The prior action set the starship course for Europa, using the required Ganymede gravity assist."}`,
-		ContextMinificationSchemaV1,
-	)
+	raw := "The prior action set the starship course for Europa, using the required Ganymede gravity assist."
 	decision, err := DecodeContextMinificationDecision(input, raw)
 	if err != nil {
 		t.Fatal(err)
@@ -76,14 +64,13 @@ func TestContextMinificationRejectsEmptyOversizedOrExpandedResponse(t *testing.T
 			contextCandidateFixture(t, "conversation", "CTX_2", "The pastry was folded twice and chilled for twenty minutes."),
 		},
 	}
-	schema := fmt.Sprintf(`"schema":%q`, ContextMinificationSchemaV1)
 	for name, raw := range map[string]string{
-		"empty":         `{` + schema + `,"minimal_context":""}`,
-		"untrimmed":     `{` + schema + `,"minimal_context":" folded twice "}`,
-		"oversized":     `{` + schema + `,"minimal_context":"` + strings.Repeat("x", MaxContextMinifiedBytes+1) + `"}`,
-		"invalid UTF-8": "{" + schema + `,"minimal_context":"` + string([]byte{0xff}) + `"}`,
-		"extra answer":  `{` + schema + `,"minimal_context":"Folded twice.","answer":"Done."}`,
-		"trailing":      `{` + schema + `,"minimal_context":"Folded twice."} []`,
+		"empty":         "",
+		"untrimmed":     " folded twice ",
+		"oversized":     strings.Repeat("x", MaxContextMinifiedBytes+1),
+		"invalid UTF-8": string([]byte{0xff}),
+		"JSON wrapper":  `{"minimal_context":"Folded twice."}`,
+		"quoted":        `"Folded twice."`,
 	} {
 		t.Run(name, func(t *testing.T) {
 			if _, err := DecodeContextMinificationDecision(input, raw); err == nil {

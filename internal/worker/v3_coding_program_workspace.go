@@ -41,8 +41,21 @@ func directCodingProgramWorkspaceDiagnostic(
 			return directCodingStaticFileDiagnostic(task.Path, "authoritative source differs from the parser-validated in-memory assembly"), nil
 		}
 	}
+	deleted := make(map[string]struct{}, len(assembly.DeletePaths))
+	for _, deletePath := range assembly.DeletePaths {
+		deleted[deletePath] = struct{}{}
+		_, statErr := os.Lstat(filepath.Join(root, filepath.FromSlash(deletePath)))
+		if statErr == nil {
+			return directCodingStaticFileDiagnostic(
+				deletePath, "code-owned target-tree deletion is still present",
+			), nil
+		}
+		if !os.IsNotExist(statErr) {
+			return nil, fmt.Errorf("inspect deleted source %s: %w", deletePath, statErr)
+		}
+	}
 	unexpected, err := directCodingUnexpectedProgramSources(
-		root, expected, program, initialPaths,
+		root, expected, deleted, program, initialPaths,
 	)
 	if err != nil {
 		return nil, err
@@ -59,6 +72,7 @@ func directCodingProgramWorkspaceDiagnostic(
 func directCodingUnexpectedProgramSources(
 	root string,
 	expected map[string]string,
+	deleted map[string]struct{},
 	program directCodingProgram,
 	initialPaths map[string]directCodingInitialPath,
 ) ([]string, error) {
@@ -111,6 +125,9 @@ func directCodingUnexpectedProgramSources(
 	}
 	for initialPath := range initialPaths {
 		if _, assembled := expected[initialPath]; assembled {
+			continue
+		}
+		if _, intentionallyDeleted := deleted[initialPath]; intentionallyDeleted {
 			continue
 		}
 		sourcePath, err := directCodingProgramSourcePath(initialPath, program)

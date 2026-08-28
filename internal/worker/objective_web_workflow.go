@@ -40,6 +40,7 @@ type objectiveWebResult struct {
 	SynthesisCorrectionCalls      int
 	SynthesisCorrectionZeroDeltas int
 	ClaimEvidenceReviewCalls      int
+	SemanticCalls                 int
 }
 
 func newRoutedWebStations(
@@ -138,6 +139,7 @@ func objectiveExternalAnswerFromWeb(result webresearch.Result) (objectiveExterna
 		SynthesisCorrectionCalls:      result.SynthesisCorrectionCalls,
 		SynthesisCorrectionZeroDeltas: result.SynthesisCorrectionZeroDeltas,
 		ClaimEvidenceReviewCalls:      result.ClaimEvidenceReviewCalls,
+		SemanticCalls:                 result.SemanticCalls,
 	})
 }
 
@@ -214,8 +216,7 @@ func objectiveExternalAnswerFromWebResult(result objectiveWebResult) (objectiveE
 		evidence = append(evidence, projected)
 		ids = append(ids, string(item.ID))
 	}
-	calls := result.SearchTermsCalls + result.RelevanceCalls + result.SynthesisCalls +
-		result.SynthesisCorrectionCalls + result.ClaimEvidenceReviewCalls
+	calls := result.SemanticCalls
 	if calls < 1 {
 		return objectiveExternalAnswer{}, fmt.Errorf("web research completion reported no semantic synthesis call")
 	}
@@ -229,7 +230,9 @@ func objectiveExternalAnswerFromWebResult(result objectiveWebResult) (objectiveE
 func validWebReviewCallLedger(result objectiveWebResult) bool {
 	paragraphs := len(result.Paragraphs)
 	if result.SynthesisCorrectionZeroDeltas < 0 ||
-		result.SynthesisCorrectionZeroDeltas > result.SynthesisCorrectionCalls {
+		result.SynthesisCorrectionZeroDeltas > result.SynthesisCorrectionCalls ||
+		result.SemanticCalls < result.SynthesisCalls+result.SynthesisCorrectionCalls+
+			result.ClaimEvidenceReviewCalls {
 		return false
 	}
 	switch result.SynthesisCorrectionCalls {

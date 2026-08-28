@@ -1,16 +1,36 @@
 package queue
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
 	"github.com/gryph/omnidex/internal/llm"
+	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/station"
 )
 
 func TestPostgresStationOutcomeStoresOnlyExactProjectedTypeScriptSpan(t *testing.T) {
-	repository, _, claim := semanticGapTestClaim(t, "station-output-artifact-projection")
+	pool := openIsolatedMigrationPool(t)
+	repository := New(pool)
+	if err := repository.EnsureSchema(t.Context(), loadCheckedMigrationBundle(t)); err != nil {
+		t.Fatal(err)
+	}
+	queued, err := repository.EnqueueJob(
+		t.Context(), "station-output-artifact-projection", model.PipelineCoding,
+		json.RawMessage(`{}`),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	claim, err := repository.ClaimNextStep(t.Context(), "station-output-artifact-projection-worker")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if claim == nil || claim.Job.ID != queued.ID {
+		t.Fatalf("station output projection claim=%+v want job %d", claim, queued.ID)
+	}
 	job, err := assemblyline.NewFragmentGenerationJob(assemblyline.FragmentGenerationInput{
 		Language: "typescript", Dialect: "TypeScript 5.9.3", Signature: "function ready(): boolean",
 		Behavior: "Return whether the operation is ready.",
@@ -35,11 +55,7 @@ func TestPostgresStationOutcomeStoresOnlyExactProjectedTypeScriptSpan(t *testing
 		t.Fatal(err)
 	}
 	source := "function ready(): boolean { return true; }"
-	rawFinal := strings.Repeat("Untrusted reasoning remains exact call evidence. ", 4*1024) +
-		"\n```typescript\n" + source + "\n```"
-	if len(rawFinal) <= 128*1024 {
-		t.Fatalf("raw fixture=%dB did not cross the retired receipt ceiling", len(rawFinal))
-	}
+	rawFinal := source
 	result := stationCallSuccessWithContent(t, prepared, call, rawFinal)
 	receiptEvidence, err := repository.RecordStationCallReceiptAndEvidence(
 		t.Context(), StationCallReceiptEvidenceRecord{
@@ -57,6 +73,10 @@ func TestPostgresStationOutcomeStoresOnlyExactProjectedTypeScriptSpan(t *testing
 	)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if projected.Source != source || projected.StartByte != 0 ||
+		projected.EndByte != len(source) || projected.DiscardedBytes != 0 {
+		t.Fatalf("raw projection=%+v", projected)
 	}
 	projection := &StationGapSourceProjection{
 		Kind:                 StationGapProjectionTypeScriptFunction,
@@ -106,11 +126,12 @@ func stationOutputProjectionTestPrepared(
 	}
 	temperature := llm.ExactPreparedTemperature(0)
 	return llm.PreparedModel{
-		Protocol:  llm.ExactPreparedProtocolRawTextV1,
+		Protocol:  llm.ExactPreparedProtocolRawTextV2,
 		BaseModel: expected.Model, ContextModel: expected.Model,
 		Prompt: gap.Prompt, PromptHint: llm.MinimalGeneratePrompt,
 		ContextTokens: gap.ContextTokens, MaxOutputTokens: gap.MaxOutputTokens,
 		OutputLimitMode: gap.OutputLimitMode, Temperature: &temperature,
+		RawTextStopSequence:         llm.ExactPreparedRawChatEndV1,
 		ProviderIdentityExpectation: &expected, ProviderObservationChallenge: challenge,
 	}
 }

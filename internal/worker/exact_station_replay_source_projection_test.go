@@ -16,15 +16,28 @@ func TestExactStationReplayProjectsRegisteredSourceDeclarationSpan(t *testing.T)
 		job  assemblyline.PortableJob
 		raw  string
 		want string
+		kind string
 	}{
+		{
+			name: "plain text generation",
+			job: mustReplayFragmentGenerationJob(t, assemblyline.FragmentGenerationInput{
+				Language:  assemblyline.TextFragmentLanguage,
+				Dialect:   assemblyline.TextFragmentDialect,
+				Signature: assemblyline.TextFragmentSignature,
+				Behavior:  "Return one greeting.",
+			}),
+			raw: "Hello from Omnidex.\n", want: "Hello from Omnidex.\n",
+			kind: string(assemblyline.PortableResultProjectionExactResponse),
+		},
 		{
 			name: "Go generation",
 			job: mustReplayFragmentGenerationJob(t, assemblyline.FragmentGenerationInput{
 				Language: "go", Dialect: "Go 1.24", Signature: "func Value() int",
 				Behavior: "Return one value.",
 			}),
-			raw:  "```go\nfunc Value() int { return 1 }\n```",
+			raw:  "func Value() int { return 1 }",
 			want: "func Value() int { return 1 }",
+			kind: string(assemblyline.PortableResultProjectionSourceDeclaration),
 		},
 		{
 			name: "JavaScript generation",
@@ -32,8 +45,9 @@ func TestExactStationReplayProjectsRegisteredSourceDeclarationSpan(t *testing.T)
 				Language: "javascript", Dialect: "ECMAScript 2022",
 				Signature: "function value()", Behavior: "Return one value.",
 			}),
-			raw:  " \r\nfunction value() {\r\n  return 1;\r\n}\r\n ",
+			raw:  "function value() {\r\n  return 1;\r\n}",
 			want: "function value() {\r\n  return 1;\r\n}",
+			kind: string(assemblyline.PortableResultProjectionSourceDeclaration),
 		},
 	}
 	for _, fixture := range jobs {
@@ -44,14 +58,27 @@ func TestExactStationReplayProjectsRegisteredSourceDeclarationSpan(t *testing.T)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if artifact.Kind != string(assemblyline.PortableResultProjectionSourceDeclaration) ||
+			if artifact.Kind != fixture.kind ||
 				artifact.Source != fixture.want ||
-				artifact.Source != fixture.raw[artifact.StartByte:artifact.EndByte] ||
-				artifact.DiscardedBytes != len(fixture.raw)-len(fixture.want) ||
+				artifact.StartByte != 0 || artifact.EndByte != len(fixture.raw) ||
+				artifact.DiscardedBytes != 0 ||
 				artifact.SourceSHA256 != replaySHA256(fixture.want) {
 				t.Fatalf("artifact=%+v", artifact)
 			}
 		})
+	}
+}
+
+func TestExactStationReplayRejectsPlainTextWithoutTerminalLF(t *testing.T) {
+	t.Parallel()
+	job := mustReplayFragmentGenerationJob(t, assemblyline.FragmentGenerationInput{
+		Language:  assemblyline.TextFragmentLanguage,
+		Dialect:   assemblyline.TextFragmentDialect,
+		Signature: assemblyline.TextFragmentSignature,
+		Behavior:  "Return one greeting.",
+	})
+	if _, err := replayExactStationArtifact(job, "Hello from Omnidex."); err == nil {
+		t.Fatal("plain-text replay accepted a response without its terminal LF")
 	}
 }
 
@@ -65,7 +92,7 @@ func TestExactStationReplayProjectsGoModificationDeclaration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	raw := "```go\nfunc Value() int { return 2 }\n```"
+	raw := "func Value() int { return 2 }"
 	artifact, err := replayExactStationArtifact(job, raw)
 	if err != nil {
 		t.Fatal(err)
@@ -86,11 +113,11 @@ func TestExactStationReplayUsesPersistedLanguageBlindCorrectionProjection(t *tes
 		raw        string
 		want       string
 	}{
-		{"Go", "go", "func Value() int { return 1 }", "```go\nfunc Value() int { return 2 }\n```", "func Value() int { return 2 }"},
-		{"JavaScript", "javascript", "function summarize(values) { return 0; }", " \nfunction summarize(values) { return values.length; }\n ", "function summarize(values) { return values.length; }"},
-		{"Java", "java", "public int summarize(int value) { return 0; }", " \npublic int summarize(int value) { return value; }\n ", "public int summarize(int value) { return value; }"},
-		{"Rust", "rust", "pub fn summarize(value: i32) -> i32 { 0 }", " \npub fn summarize(value: i32) -> i32 { value }\n ", "pub fn summarize(value: i32) -> i32 { value }"},
-		{"PHP", "php", "function summarize(int $value): int { return 0; }", " \nfunction summarize(int $value): int { return $value; }\n ", "function summarize(int $value): int { return $value; }"},
+		{"Go", "go", "func Value() int { return 1 }", "func Value() int { return 2 }", "func Value() int { return 2 }"},
+		{"JavaScript", "javascript", "function summarize(values) { return 0; }", "function summarize(values) { return values.length; }", "function summarize(values) { return values.length; }"},
+		{"Java", "java", "public int summarize(int value) { return 0; }", "public int summarize(int value) { return value; }", "public int summarize(int value) { return value; }"},
+		{"Rust", "rust", "pub fn summarize(value: i32) -> i32 { 0 }", "pub fn summarize(value: i32) -> i32 { value }", "pub fn summarize(value: i32) -> i32 { value }"},
+		{"PHP", "php", "function summarize(int $value): int { return 0; }", "function summarize(int $value): int { return $value; }", "function summarize(int $value): int { return $value; }"},
 	}
 	for _, fixture := range fixtures {
 		fixture := fixture
@@ -112,8 +139,8 @@ func TestExactStationReplayUsesPersistedLanguageBlindCorrectionProjection(t *tes
 			}
 			if artifact.Kind != string(assemblyline.PortableResultProjectionSourceDeclaration) ||
 				artifact.Source != fixture.want || !artifact.ChangedFromBase ||
-				artifact.Source != fixture.raw[artifact.StartByte:artifact.EndByte] ||
-				artifact.DiscardedBytes != len(fixture.raw)-len(artifact.Source) {
+				artifact.StartByte != 0 || artifact.EndByte != len(fixture.raw) ||
+				artifact.DiscardedBytes != 0 {
 				t.Fatalf("artifact=%+v", artifact)
 			}
 		})
@@ -170,7 +197,7 @@ func TestExactStationReplayPreservesTypeScriptCodingArtifactKinds(t *testing.T) 
 		Language: "typescript", Dialect: "TypeScript 5",
 		Signature: "function value(): number", Behavior: "Return one value.",
 	})
-	functionRaw := "```typescript\nfunction value(): number { return 1; }\n```"
+	functionRaw := "function value(): number { return 1; }"
 	functionArtifact, err := replayExactStationArtifact(generation, functionRaw)
 	if err != nil {
 		t.Fatal(err)
@@ -193,7 +220,7 @@ func TestExactStationReplayPreservesTypeScriptCodingArtifactKinds(t *testing.T) 
 		t.Fatal(err)
 	}
 	const instruction = "Replace the unresolved identifier with the numeric literal 1."
-	guidanceRaw := `{"instruction":"` + instruction + `"}`
+	guidanceRaw := instruction
 	guidanceArtifact, err := replayExactStationArtifact(guidanceJob, guidanceRaw)
 	if err != nil {
 		t.Fatal(err)
@@ -215,13 +242,15 @@ func TestExactStationReplayPreservesTypeScriptCodingArtifactKinds(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	regionRaw := "```typescript\n  return 1;\n```"
+	regionRaw := "  return 1;"
 	regionArtifact, err := replayExactStationArtifact(correction, regionRaw)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if regionArtifact.Kind != "typescript_repair_region" ||
-		regionArtifact.Source != "  return 1;" || !regionArtifact.ChangedFromBase {
+		regionArtifact.Source != regionRaw || regionArtifact.StartByte != 0 ||
+		regionArtifact.EndByte != len(regionRaw) || regionArtifact.DiscardedBytes != 0 ||
+		!regionArtifact.ChangedFromBase {
 		t.Fatalf("region artifact=%+v", regionArtifact)
 	}
 }

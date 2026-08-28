@@ -8,59 +8,36 @@ import (
 	"github.com/gryph/omnidex/internal/assemblyline"
 )
 
-func TestTargetTreeInputProjectsShareableAndExclusiveEarlierPaths(t *testing.T) {
-	browserSpecification, _ := testApplicationFileCoverageAuthority(
+func TestTargetTreeInputProjectsOneCurrentAndReservedTree(t *testing.T) {
+	browserSpecification, workload := testApplicationFileCoverageAuthority(
 		t, assemblyline.ApplicationSurfaceBrowser,
-		"path authority", "preserve one exact path boundary",
+		"path authority", "preserve one exact path boundary", "add another behavior",
 	)
 	typeScriptStack, err := directCodingProjectStackByID(genericTypeScriptBrowserAdapter)
 	if err != nil {
 		t.Fatal(err)
 	}
-	shareable, err := directCodingTargetTreeInput(
-		browserSpecification, typeScriptStack,
+	input, err := directCodingTargetTreeInput(
+		browserSpecification, workload, typeScriptStack,
 		[]string{"src/App.tsx", "src/existing.tsx"},
-		[]string{"src/feature.tsx"}, []string{"src"},
+		[]string{"src"},
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !reflect.DeepEqual(
-		shareable.ExistingPaths, []string{"src/App.tsx", "src/existing.tsx"},
-	) || !reflect.DeepEqual(shareable.ReusablePaths, []string{"src/feature.tsx"}) ||
-		!reflect.DeepEqual(shareable.ReservedPaths, []string{
-			"src/App.test.tsx", "src/App.tsx", "src/main.tsx",
-			"src/runtime.test.tsx", "src/runtime.tsx",
-		}) {
-		t.Fatalf("shareable path projection=%+v", shareable)
-	}
-
-	commandSpecification, _ := testApplicationFileCoverageAuthority(
-		t, assemblyline.ApplicationSurfaceCommandLine,
-		"path authority", "preserve one exact path boundary",
-	)
-	rustStack, err := directCodingProjectStackByID(genericRustCommandLineAdapter)
-	if err != nil {
-		t.Fatal(err)
-	}
-	exclusive, err := directCodingTargetTreeInput(
-		commandSpecification, rustStack, []string{"src/existing.rs"},
-		[]string{"src/feature.rs", "tests/feature_test.rs"}, []string{"src", "tests"},
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	wantReserved := []string{
-		"src/feature.rs", "src/lib.rs", "src/main.rs", "src/runtime.rs",
-		"tests/feature_test.rs",
-	}
-	if len(exclusive.ReusablePaths) != 0 || !reflect.DeepEqual(exclusive.ReservedPaths, wantReserved) {
-		t.Fatalf("exclusive path projection=%+v want reserved=%v", exclusive, wantReserved)
+		input.ExistingPaths, []string{"src/existing.tsx"},
+	) || !reflect.DeepEqual(input.ReservedPaths, []string{
+		"src/App.test.tsx", "src/App.tsx", "src/main.tsx",
+		"src/runtime.test.tsx", "src/runtime.tsx",
+	}) || !strings.Contains(input.Objective, "Accepted goal 1:") ||
+		!strings.Contains(input.Objective, "Accepted goal 2:") {
+		t.Fatalf("complete path projection=%+v", input)
 	}
 }
 
 func TestMechanicallyProjectedStackGetsNonNilPathAuthority(t *testing.T) {
-	specification, _ := testApplicationFileCoverageAuthority(
+	specification, workload := testApplicationFileCoverageAuthority(
 		t, assemblyline.ApplicationSurfaceService,
 		"record service", "return one record",
 	)
@@ -69,12 +46,12 @@ func TestMechanicallyProjectedStackGetsNonNilPathAuthority(t *testing.T) {
 		t.Fatal(err)
 	}
 	input, err := directCodingTargetTreeInput(
-		specification, stack, []string{}, nil, []string{},
+		specification, workload, stack, []string{}, []string{},
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if input.ExistingPaths == nil || input.ReusablePaths == nil || input.ReservedPaths == nil ||
+	if input.ExistingPaths == nil || input.ReservedPaths == nil ||
 		input.ExistingDirs == nil {
 		t.Fatalf("mechanical stack received nil path authority: %+v", input)
 	}

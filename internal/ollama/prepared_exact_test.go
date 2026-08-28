@@ -27,7 +27,7 @@ func TestGeneratePreparedExactReturnsNativeUsageAndFreshIdentityObservation(t *t
 	if err := result.Validate(); err != nil {
 		t.Fatal(err)
 	}
-	if result.Content != `{}` || result.Usage.PromptEvalCount != 41 ||
+	if result.Content != `semantic leaf` || result.Usage.PromptEvalCount != 41 ||
 		result.Usage.EvalCount != 7 || result.ProviderObservation.AttestationSHA256 == "" ||
 		result.ProviderIdentityEvidence.Ref != result.ProviderObservation.Evidence {
 		t.Fatalf("exact prepared result=%+v", result)
@@ -78,7 +78,7 @@ func TestGeneratePreparedExactRejectsMissingOrNegativeNativeUsage(t *testing.T) 
 			}
 			if partial.ProviderRequestDisposition != llm.ProviderRequestDispatched ||
 				partial.ProviderObservation.ObservationSHA256 == "" ||
-				partial.ProviderResponseSHA256 == "" || partial.Content != `{}` {
+				partial.ProviderResponseSHA256 == "" || partial.Content != `semantic leaf` {
 				t.Fatalf("usage failure lost executed provider evidence: %+v", partial)
 			}
 		})
@@ -156,7 +156,7 @@ func TestGeneratePreparedExactPreservesButDoesNotProjectProviderMetadata(t *test
 	if err != nil {
 		t.Fatalf("provider metadata blocked exact generation: %v", err)
 	}
-	if result.Content != `{}` || result.ProviderResponseModel != expected.Model ||
+	if result.Content != `semantic leaf` || result.ProviderResponseModel != expected.Model ||
 		string(result.ProviderResponseCapture) != body ||
 		result.ProviderResponseCapturedBytes != len(body) {
 		t.Fatalf("provider metadata changed normalized generation or raw capture: %+v", result)
@@ -266,8 +266,10 @@ func TestGeneratePreparedExactRejectsTransformedJSONStringsAndPartialDecode(t *t
 		"invalid UTF-8": string(append(
 			[]byte(`{"response":"`), append([]byte{0xff}, []byte(`","done":true}`)...)...,
 		)),
-		"unpaired surrogate":       strings.Replace(exactRawBody(), `"response":"{}"`, `"response":"\uD800"`, 1),
-		"trailing malformed usage": `{"response":"{}","done":true,"prompt_eval_count":`,
+		"unpaired surrogate": strings.Replace(
+			exactRawBody(), `"response":"semantic leaf"`, `"response":"\uD800"`, 1,
+		),
+		"trailing malformed usage": `{"response":"semantic leaf","done":true,"prompt_eval_count":`,
 	}
 	for name, body := range malformed {
 		name, body := name, body
@@ -286,7 +288,9 @@ func TestGeneratePreparedExactRejectsTransformedJSONStringsAndPartialDecode(t *t
 		})
 	}
 
-	validReplacement := strings.Replace(exactRawBody(), `"response":"{}"`, `"response":"�"`, 1)
+	validReplacement := strings.Replace(
+		exactRawBody(), `"response":"semantic leaf"`, `"response":"�"`, 1,
+	)
 	client := exactPreparedIdentityClient(
 		t, expected, http.StatusOK, validReplacement, make(map[string]int), make(map[string][]byte),
 	)

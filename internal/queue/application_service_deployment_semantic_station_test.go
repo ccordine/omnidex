@@ -37,12 +37,12 @@ func TestApplicationServiceDeploymentSemanticsHaveSeparateExactStationOwners(t *
 		{
 			name: "continued availability", job: availability,
 			station:   station.CodingServiceContinuedAvailability,
-			candidate: `{"schema":"omnidex.application-service-continued-availability.v1","candidate_id":"AVAILABILITY_CANDIDATE_1"}`,
+			candidate: "AVAILABILITY_CANDIDATE_1",
 		},
 		{
 			name: "persistence destination", job: destination,
 			station:   station.CodingServicePersistenceDestination,
-			candidate: `{"schema":"omnidex.application-service-persistence-destination.v1","candidate_id":"DESTINATION_CANDIDATE_1"}`,
+			candidate: "DESTINATION_CANDIDATE_1",
 		},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {

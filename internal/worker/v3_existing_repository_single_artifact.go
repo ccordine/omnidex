@@ -130,7 +130,7 @@ func (session *directCodingSession) runExistingRepositorySingleArtifactCreation(
 	if err != nil {
 		return "", err
 	}
-	transitions, err := assemblyline.DiffTargetTree(targetInput, target)
+	transitions, err := assemblyline.DiffTargetTree(targetInput, target, nil)
 	if err != nil {
 		return "", fmt.Errorf("derive single plain-text target transitions: %w", err)
 	}
@@ -190,8 +190,7 @@ func (session *directCodingSession) projectSinglePlainTextTarget(
 		Objective:        task.Requirement,
 		TechnicalContext: "Code-selected plain_text adapter: exactly one UTF-8 .txt, .gitignore, or .dockerignore implementation document with LF line endings and one terminal LF.",
 		Constraints:      assemblyline.TargetTreeConstraints{ExactPathCount: 1},
-		ExistingPaths:    existingPaths, ReusablePaths: []string{},
-		ReservedPaths: []string{}, ExistingDirs: existingDirs,
+		ExistingPaths:    existingPaths, ReservedPaths: []string{}, ExistingDirs: existingDirs,
 	}
 	if err := input.Validate(); err != nil {
 		return zeroInput, zeroTarget, zeroSource, err

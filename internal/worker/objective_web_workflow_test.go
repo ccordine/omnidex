@@ -84,12 +84,12 @@ func TestObjectiveExternalAnswerConsumesExactWebCompletionAuthority(t *testing.T
 			ObservedAt: item.ObservedAt, Truncated: item.Truncated,
 		}},
 		Rendered: rendered, RenderedSHA256: objectiveTestSHA256(rendered), Evidence: []webresearch.Evidence{item},
-		SynthesisCalls: 1, ClaimEvidenceReviewCalls: 1,
+		SynthesisCalls: 1, ClaimEvidenceReviewCalls: 1, SemanticCalls: 8,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if answer.Text != "Current evidence supports the result." || answer.ModelCalls != 2 ||
+	if answer.Text != "Current evidence supports the result." || answer.ModelCalls != 8 ||
 		len(answer.Evidence) != 1 || len(answer.EvidenceIDs) != 1 ||
 		answer.Evidence[0].SourceRef != item.URL ||
 		answer.Evidence[0].SourceSHA256 != item.ContentSHA256 {
@@ -121,7 +121,7 @@ func TestObjectiveExternalAnswerPropagatesSecondProjectionTruncationAuthority(t 
 		}},
 		Rendered: rendered, RenderedSHA256: objectiveTestSHA256(rendered),
 		Evidence: []webresearch.Evidence{item}, SynthesisCalls: 1,
-		ClaimEvidenceReviewCalls: 1,
+		ClaimEvidenceReviewCalls: 1, SemanticCalls: 8,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -145,13 +145,14 @@ func TestObjectiveExternalAnswerConsumesOneBoundedCorrectionReviewLedger(t *test
 			ObservedAt: item.ObservedAt, Truncated: item.Truncated,
 		}},
 		Rendered: rendered, RenderedSHA256: objectiveTestSHA256(rendered), Evidence: []webresearch.Evidence{item},
-		SynthesisCalls: 1, SynthesisCorrectionCalls: 1, ClaimEvidenceReviewCalls: 2,
+		SynthesisCalls: 1, SynthesisCorrectionCalls: 1,
+		ClaimEvidenceReviewCalls: 2, SemanticCalls: 14,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if answer.ModelCalls != 4 {
-		t.Fatalf("model calls=%d want synthesis+review+correction+review", answer.ModelCalls)
+	if answer.ModelCalls != 14 {
+		t.Fatalf("model calls=%d want exact synthesis/review/correction leaf total", answer.ModelCalls)
 	}
 }
 
@@ -168,12 +169,12 @@ func TestObjectiveExternalAnswerConsumesRecordedZeroDeltaCorrection(t *testing.T
 		}},
 		Rendered: rendered, RenderedSHA256: objectiveTestSHA256(rendered), Evidence: []webresearch.Evidence{item},
 		SynthesisCalls: 1, SynthesisCorrectionCalls: 1,
-		SynthesisCorrectionZeroDeltas: 1, ClaimEvidenceReviewCalls: 1,
+		SynthesisCorrectionZeroDeltas: 1, ClaimEvidenceReviewCalls: 1, SemanticCalls: 10,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if answer.ModelCalls != 3 || answer.Text != "Version 2 is current." {
+	if answer.ModelCalls != 10 || answer.Text != "Version 2 is current." {
 		t.Fatalf("zero-delta answer=%#v", answer)
 	}
 }
@@ -209,7 +210,7 @@ func TestObjectiveExternalAnswerPreservesPerParagraphCitationBinding(t *testing.
 			{Number: 2, EvidenceID: secondID, CandidateID: second.CandidateID, DocumentID: second.DocumentID, Title: second.Title, URL: second.URL, ContentSHA256: second.ContentSHA256, ObservedAt: second.ObservedAt, Truncated: second.Truncated},
 		},
 		Evidence:       []webresearch.Evidence{first, second},
-		SynthesisCalls: 1, ClaimEvidenceReviewCalls: 2,
+		SynthesisCalls: 1, ClaimEvidenceReviewCalls: 2, SemanticCalls: 15,
 	})
 	if err != nil {
 		t.Fatal(err)

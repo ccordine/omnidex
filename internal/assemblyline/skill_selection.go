@@ -90,20 +90,26 @@ func BuildSkillSelectionPrompt(input SkillSelectionInput) (string, error) {
 	for _, candidate := range input.Candidates {
 		lines = append(lines, candidate.Token+": "+candidate.Purpose)
 	}
-	lines = append(lines, "Return exactly one candidate token or none.")
+	lines = append(lines,
+		"Return exactly one raw candidate token or none with no JSON, quotes, label, Markdown, or commentary.",
+	)
 	return strings.Join(lines, "\n"), nil
 }
 
-func SkillSelectionResponseSchema(input SkillSelectionInput) map[string]any {
-	values := []string{SkillSelectionNone}
-	for _, candidate := range input.Candidates {
-		values = append(values, candidate.Token)
+func DecodeSkillSelectionDecision(
+	input SkillSelectionInput,
+	raw string,
+) (SkillSelectionDecision, error) {
+	if err := input.validate(); err != nil {
+		return SkillSelectionDecision{}, err
 	}
-	return objectSchema(
-		[]string{"schema", "selected"},
-		map[string]any{
-			"schema":   map[string]any{"type": "string", "const": SkillSelectionSchemaV1},
-			"selected": map[string]any{"type": "string", "enum": values},
-		},
-	)
+	leaf, err := decodeRawSemanticLeaf("skill selection", raw, 64, false)
+	if err != nil {
+		return SkillSelectionDecision{}, err
+	}
+	decision := SkillSelectionDecision{Schema: SkillSelectionSchemaV1, Selected: leaf}
+	if err := decision.ValidateFor(input); err != nil {
+		return SkillSelectionDecision{}, err
+	}
+	return decision, nil
 }

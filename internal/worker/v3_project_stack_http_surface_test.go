@@ -16,10 +16,10 @@ func TestBrowserClassificationWithExplicitLaravelConstraintCompilesLaravelHTTPPr
 	laravelCandidate := browserLaravelCandidateID(t)
 	runtime := typedWorkerRuntime{
 		Context: context.Background(), MaxAttempts: 1,
-		Execute: testPortableExecutor(func(_ string, model, prompt string, _ map[string]any) (string, error) {
+		Execute: testPortableExecutor(func(_ string, model, prompt string) (string, error) {
 			switch model {
 			case "surface-model":
-				return `{"schema":"omnidex.application-class.v1","surface":"browser_application"}`, nil
+				return string(assemblyline.ApplicationSurfaceBrowser), nil
 			case "constraint-model":
 				for _, required := range []string{
 					"Use Laravel 13 with server-rendered HTML.", "TypeScript with React",
@@ -29,10 +29,7 @@ func TestBrowserClassificationWithExplicitLaravelConstraintCompilesLaravelHTTPPr
 						t.Fatalf("browser format prompt omitted %q: %s", required, prompt)
 					}
 				}
-				return fmt.Sprintf(
-					`{"schema":"%s","candidate_id":%q}`,
-					assemblyline.ApplicationProjectStackConstraintSchemaV1, laravelCandidate,
-				), nil
+				return laravelCandidate, nil
 			default:
 				return "", fmt.Errorf("unexpected model %q", model)
 			}

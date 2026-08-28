@@ -1,7 +1,6 @@
 package assemblyline
 
 import (
-	"encoding/json"
 	"reflect"
 	"strings"
 	"testing"
@@ -19,11 +18,7 @@ func TestDeclarationArtifactBoundaryIsOnePathBlindSemanticLeaf(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	prompt, schema, err := RenderPortableJob(job)
-	if err != nil {
-		t.Fatal(err)
-	}
-	encodedSchema, err := json.Marshal(schema)
+	prompt, err := RenderPortableJob(job)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -32,10 +27,7 @@ func TestDeclarationArtifactBoundaryIsOnePathBlindSemanticLeaf(t *testing.T) {
 			t.Fatalf("boundary prompt omitted exact authority %q:\n%s", required, prompt)
 		}
 	}
-	for label, projection := range map[string]string{
-		"prompt": prompt,
-		"schema": string(encodedSchema),
-	} {
+	for label, projection := range map[string]string{"prompt": prompt} {
 		lower := strings.ToLower(projection)
 		for _, forbidden := range []string{
 			"create_file", "delete_file", "write_file", "rename_file", "move_file",
@@ -48,16 +40,16 @@ func TestDeclarationArtifactBoundaryIsOnePathBlindSemanticLeaf(t *testing.T) {
 			}
 		}
 	}
-	properties := schema["properties"].(map[string]any)
-	if len(properties) != 3 || properties["declaration_id"].(map[string]any)["const"] != input.DeclarationID {
-		t.Fatalf("boundary schema is not closed over one declaration: %#v", schema)
-	}
 	decision := DeclarationArtifactBoundaryDecision{
 		Schema: DeclarationArtifactBoundarySchemaV1, DeclarationID: input.DeclarationID,
 		Boundary: DeclarationBoundaryIndependentArtifact,
 	}
 	if err := decision.ValidateFor(input); err != nil {
 		t.Fatal(err)
+	}
+	decoded, err := DecodeDeclarationArtifactBoundaryDecision(input, string(decision.Boundary))
+	if err != nil || decoded != decision {
+		t.Fatalf("decoded=%+v want=%+v err=%v", decoded, decision, err)
 	}
 	decision.Boundary = DeclarationArtifactBoundary("create_file")
 	if err := decision.ValidateFor(input); err == nil {

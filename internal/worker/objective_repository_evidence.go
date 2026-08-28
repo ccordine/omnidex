@@ -12,10 +12,13 @@ import (
 )
 
 const (
-	maxObjectiveRepositoryRequirementBytes   = 4 * 1024
-	maxObjectiveRepositorySearchTermRounds   = 1
-	maxObjectiveRepositoryRelevanceRounds    = 4
-	maxObjectiveRepositoryEvidenceModelCalls = maxTypedWorkerAttempts * (maxObjectiveRepositorySearchTermRounds + maxObjectiveRepositoryRelevanceRounds)
+	maxObjectiveRepositoryRequirementBytes     = 4 * 1024
+	maxObjectiveRepositorySearchTermRounds     = 1
+	maxObjectiveRepositoryRelevanceRounds      = 4
+	maxObjectiveRepositorySearchTermModelCalls = 2 * assemblyline.MaxRepositorySearchAnchorLeaves * maxTypedWorkerAttempts
+	maxObjectiveRepositoryRelevanceModelCalls  = maxRepositoryGroundedCitations * maxTypedWorkerAttempts
+	maxObjectiveRepositoryEvidenceModelCalls   = maxObjectiveRepositorySearchTermModelCalls +
+		(maxObjectiveRepositoryRelevanceRounds * maxObjectiveRepositoryRelevanceModelCalls)
 )
 
 type objectiveRepositorySearchTermCall func(
@@ -206,8 +209,12 @@ func (ledger *objectiveRepositoryAcquisitionCallLedger) recordSearchTerm(receipt
 	if ledger == nil || ledger.searchTermCalls != 0 {
 		return fmt.Errorf("repository-read acquisition exceeded its one search-term round")
 	}
-	if err := validateObjectiveRepositoryStationCalls("search term", receipt.Calls); err != nil {
-		return err
+	if receipt.Reused || receipt.Calls < 2 ||
+		receipt.Calls > maxObjectiveRepositorySearchTermModelCalls {
+		return fmt.Errorf(
+			"repository grounded search term station reported %d calls outside the bounded fixed-point budget",
+			receipt.Calls,
+		)
 	}
 	ledger.searchTermCalls = receipt.Calls
 	return nil
@@ -217,8 +224,12 @@ func (ledger *objectiveRepositoryAcquisitionCallLedger) recordRelevance(receipt 
 	if ledger == nil || len(ledger.relevanceCalls) >= maxObjectiveRepositoryRelevanceRounds {
 		return fmt.Errorf("repository-read acquisition exceeded its %d relevance rounds", maxObjectiveRepositoryRelevanceRounds)
 	}
-	if err := validateObjectiveRepositoryStationCalls("relevance", receipt.Calls); err != nil {
-		return err
+	if receipt.Reused || receipt.Calls < 1 ||
+		receipt.Calls > maxObjectiveRepositoryRelevanceModelCalls {
+		return fmt.Errorf(
+			"repository grounded relevance station reported %d calls outside the bounded %d-leaf budget",
+			receipt.Calls, maxRepositoryGroundedCitations,
+		)
 	}
 	ledger.relevanceCalls = append(ledger.relevanceCalls, receipt.Calls)
 	return nil

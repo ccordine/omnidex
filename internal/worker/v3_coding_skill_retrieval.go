@@ -115,9 +115,13 @@ func (s *directCodingSession) selectActiveCodingSkill(
 	if err != nil {
 		return nil, err
 	}
-	decision, err := runDirectCodingSemanticCall[assemblyline.SkillSelectionDecision](
+	decision, err := runDirectCodingSemanticLeafCall(
 		directCodingWorkerRuntime(s), modelName, fmt.Sprintf("skill_selection_%03d", index+1),
-		job, nil, func(value assemblyline.SkillSelectionDecision) error { return value.ValidateFor(input) },
+		job, nil,
+		func(raw string) (assemblyline.SkillSelectionDecision, error) {
+			return assemblyline.DecodeSkillSelectionDecision(input, raw)
+		},
+		func(value assemblyline.SkillSelectionDecision) error { return value.ValidateFor(input) },
 	)
 	if err != nil {
 		return nil, err

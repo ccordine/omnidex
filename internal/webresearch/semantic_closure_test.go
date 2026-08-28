@@ -332,5 +332,7 @@ func (station *cancelingClaimEvidenceReviewStation) Review(
 ) (ClaimEvidenceReviewDecision, error) {
 	station.calls++
 	station.cancel()
-	return ClaimEvidenceReviewDecision{Outcome: ClaimEvidenceReviewNone, EvidenceIDs: []EvidenceID{}}, nil
+	return ClaimEvidenceReviewDecision{
+		Outcome: ClaimEvidenceReviewNone, EvidenceIDs: []EvidenceID{}, SemanticCalls: 1,
+	}, nil
 }

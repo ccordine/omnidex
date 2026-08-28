@@ -8,7 +8,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gryph/omnidex/internal/assemblyline"
 	"github.com/gryph/omnidex/internal/exactjson"
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/station"
@@ -107,7 +106,7 @@ func insertHistoricalProcedureOpening(
 	payload json.RawMessage,
 ) StationGapOpening {
 	t.Helper()
-	const schema = assemblyline.PortableJobSchemaV1
+	const schema = "omnidex.portable-job.v1"
 	workID := historicalPortableID(schema, workKind, payload)
 	portableEnvelope := mustCanonical(t, struct {
 		Schema  string          `json:"schema"`
@@ -121,7 +120,7 @@ func insertHistoricalProcedureOpening(
 		Prompt         string          `json:"prompt"`
 		Renderer       string          `json:"renderer"`
 		ResponseSchema json.RawMessage `json:"response_schema"`
-	}{prompt, assemblyline.PortableRendererV1, responseSchema})
+	}{prompt, "omnidex.render-portable-job.v1", responseSchema})
 	opening := StationGapOpening{
 		JobID: authority.JobID, Generation: authority.Generation, StepID: authority.StepID,
 		StepAttempt: authority.Attempt, WorkerID: authority.WorkerID, GapID: workID,
@@ -129,7 +128,7 @@ func insertHistoricalProcedureOpening(
 		PortableSchema: schema, WorkID: workID, WorkKind: workKind,
 		PortablePayload: string(payload), PortablePayloadSHA256: stationGapSHA256(string(payload)),
 		PortableEnvelope: string(portableEnvelope), PortableEnvelopeSHA256: stationGapSHA256(string(portableEnvelope)),
-		RendererVersion: assemblyline.PortableRendererV1, Prompt: prompt,
+		RendererVersion: "omnidex.render-portable-job.v1", Prompt: prompt,
 		ResponseSchema: responseSchema, ProjectionEnvelope: string(projection),
 		ProjectionSHA256: stationGapSHA256(string(projection)), ContextTokens: 32768, MaxOutputTokens: 1024,
 	}

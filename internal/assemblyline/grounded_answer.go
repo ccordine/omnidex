@@ -36,31 +36,41 @@ type GroundedAnswerDecision struct {
 	EvidenceIDs   []string `json:"evidence_ids"`
 }
 
-func NewGroundedAnswerJob(input GroundedAnswerInput) (PortableJob, error) {
-	return newValidatedPortableJob(WorkGroundedAnswer, input, input.validate)
+func (input GroundedAnswerInput) Validate() error {
+	return input.validate()
 }
 
 func (input GroundedAnswerInput) validate() error {
 	if err := validateGroundedID("requirement ID", input.RequirementID, maxGroundedRequirementIDBytes); err != nil {
 		return err
 	}
+	return validateGroundedAnswerAuthority(
+		input.ExactRequirement, input.Context, input.Evidence,
+	)
+}
+
+func validateGroundedAnswerAuthority(
+	exactRequirement string,
+	context ObjectiveContext,
+	evidence []GroundedEvidenceCapsule,
+) error {
 	if err := validateGroundedText(
-		"exact requirement", input.ExactRequirement, maxGroundedRequirementBytes, false,
+		"exact requirement", exactRequirement, maxGroundedRequirementBytes, false,
 	); err != nil {
 		return err
 	}
-	if err := input.Context.Validate(); err != nil {
+	if err := context.Validate(); err != nil {
 		return err
 	}
-	if len(input.Evidence) < 1 || len(input.Evidence) > maxGroundedEvidenceCapsules {
+	if len(evidence) < 1 || len(evidence) > maxGroundedEvidenceCapsules {
 		return fmt.Errorf(
 			"grounded answer requires between 1 and %d evidence capsules", maxGroundedEvidenceCapsules,
 		)
 	}
-	seenIDs := make(map[string]struct{}, len(input.Evidence))
-	seenText := make(map[string]struct{}, len(input.Evidence))
+	seenIDs := make(map[string]struct{}, len(evidence))
+	seenText := make(map[string]struct{}, len(evidence))
 	total := 0
-	for index, capsule := range input.Evidence {
+	for index, capsule := range evidence {
 		if err := validateGroundedID("evidence ID", capsule.ID, maxGroundedEvidenceIDBytes); err != nil {
 			return fmt.Errorf("grounded evidence capsule %d: %w", index, err)
 		}
@@ -122,67 +132,6 @@ func (decision GroundedAnswerDecision) ValidateFor(input GroundedAnswerInput) er
 		}
 	}
 	return nil
-}
-
-func DecodeGroundedAnswerDecision(
-	input GroundedAnswerInput,
-	raw string,
-) (GroundedAnswerDecision, error) {
-	if len(raw) > maxPortableCandidateBytes {
-		return GroundedAnswerDecision{}, fmt.Errorf(
-			"grounded answer candidate exceeds %d bytes", maxPortableCandidateBytes,
-		)
-	}
-	var decision GroundedAnswerDecision
-	if err := decodePortablePayload([]byte(raw), &decision); err != nil {
-		return GroundedAnswerDecision{}, fmt.Errorf("decode grounded answer decision: %w", err)
-	}
-	if err := decision.ValidateFor(input); err != nil {
-		return GroundedAnswerDecision{}, err
-	}
-	return decision, nil
-}
-
-func BuildGroundedAnswerPrompt(input GroundedAnswerInput) (string, error) {
-	if err := input.validate(); err != nil {
-		return "", err
-	}
-	projection, err := marshalObjectiveContextInputForModel(input, input.Context)
-	if err != nil {
-		return "", fmt.Errorf("encode grounded answer projection: %w", err)
-	}
-	return strings.Join([]string{
-		"Answer exactly one requirement using only the supplied evidence capsules.",
-		"Return the answer text and the opaque IDs of every capsule used. Every factual claim must be supported by those capsules.",
-		"GROUNDING_PROJECTION_JSON:\n" + string(projection),
-	}, "\n\n"), nil
-}
-
-func GroundedAnswerResponseSchema(input GroundedAnswerInput) (map[string]any, error) {
-	if err := input.validate(); err != nil {
-		return nil, err
-	}
-	evidenceIDs := make([]string, 0, len(input.Evidence))
-	for _, capsule := range input.Evidence {
-		evidenceIDs = append(evidenceIDs, capsule.ID)
-	}
-	return objectSchema(
-		[]string{"schema", "requirement_id", "text", "evidence_ids"},
-		map[string]any{
-			"schema": map[string]any{"type": "string", "const": GroundedAnswerSchemaV1},
-			"requirement_id": map[string]any{
-				"type": "string", "const": input.RequirementID,
-			},
-			"text": map[string]any{
-				"type": "string", "minLength": 1,
-			},
-			"evidence_ids": map[string]any{
-				"type": "array", "minItems": 1, "maxItems": len(evidenceIDs),
-				"uniqueItems": true,
-				"items":       map[string]any{"type": "string", "enum": evidenceIDs},
-			},
-		},
-	), nil
 }
 
 func validateGroundedID(label, value string, maximum int) error {

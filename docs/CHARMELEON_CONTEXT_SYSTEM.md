@@ -266,34 +266,37 @@ machine passes its executable gates:
    and test providers run under code control; inference can select only among an exact
    bounded semantic remainder.
 5. **Bounded front door and workload compilation** — code first records exact workspace
-   state and bounded accepted durable memory as typed, hashed facts. One context-sufficiency
-   station may return only bounded evidence questions, never operations; code resolves those
-   questions through registered deterministic providers and formalizes selected evidence as
-   compact source-backed facts. One intent station then derives only a product context and
-   semantic requirement statements from the immutable request plus those facts. Code validates the
-   complete candidate directly; a model is not called merely to accept, reject, or restate it.
+   state and bounded accepted durable memory as typed, hashed facts. For an existing workspace,
+   code alternates one raw context-need coverage call with one raw question call only while
+   coverage remains; it resolves each decoded question through a registered deterministic
+   provider and formalizes selected evidence as compact source-backed facts. A separate raw call
+   returns the product context. Code then alternates one raw requirement-coverage call with one
+   raw requirement call only while coverage remains and assembles the typed intent itself. A model
+   is not called merely to emit, accept, reject, or restate the aggregate intent.
    Substring, interval, overlap, source-order, punctuation, and exact-quote allocation are not
-   authority checks. For each accepted requirement, one local station receives the typed surface,
-   product context, complete accepted requirement set, and focused requirement and proposes only a
-   concrete objective, required behaviors, and observable acceptance criteria. Code validates the
-   candidate directly. Only a deterministic invalid-field result creates a correction boundary;
-   code names the field, applies the one-field correction, and proves that exactly one leaf changed.
+   authority checks. For each accepted requirement, one raw call returns the objective. Code then
+   owns separate behavior and acceptance-criterion fixed points: each raw coverage result is a
+   remains/no-uncovered semantic relation, and only a remains relation permits one raw semantic-leaf
+   call. These relation values have no workflow authority. Code validates every leaf and
+   assembles the typed job specification itself. Only a deterministic invalid-leaf result creates
+   a correction boundary; the correction call returns one complete raw replacement in the original
+   format, and code validates it with the original decoder before splicing the typed leaf.
    Code preserves user authority separately from derived build decisions, assigns identity and
    order, freezes only validated state, executes one task at a time with
    the minimum sufficient authoritative task projection, and alone decides completion. A
    static code-owned harness alone renders the exact public feature with its runtime and capability
    identity. The generated acceptance declaration receives no render, JSX, component, runtime, or
    source authority and is source-free inventoried before it executes. Code binds the closed awaited
-   wait mechanic itself; a bounded reviewer sees only direct public product observations and maps
-   them to frozen criteria. Unsupported observations remain acceptance-owned; only a receipt bound
-   to the current acceptance source and the exact failing rooted query or assertion permits a
-   behavior failure to target implementation. Code verifies the grounded artifact before advancing.
+   wait mechanic, observes the returned result, and evaluates the frozen criteria deterministically;
+   there is no acceptance-grounding reviewer. Code verifies the grounded artifact before advancing.
 6. **Charmander handoff** — cognition produces one existing bounded declaration job;
    code parses, stitches, formats, stages, tests, applies, and reconciles it.
 7. **Semantic correction** — a correction call exists only after code identifies one exact
-   structural validation failure. Code creates the one-field correction boundary, retains the new
-   canonical state, and proves exactly one leaf changed. There is no mandatory semantic-review
-   loop and no model-authored acceptance control plane.
+   raw-leaf validation failure. It receives the original semantic question, the rejected complete
+   leaf, and one grounded defect and returns one complete replacement in the original raw format.
+   The original decoder validates the replacement; code alone updates typed state. There is no JSON
+   merge patch, aggregate reconstruction, mandatory semantic-review loop, or model-authored
+   acceptance control plane.
 8. **Incompatible production cutover** — remove the universal model-action path and
    its schemas, recovery consumers, and provider eagerness. There is no fallback or
    feature flag.

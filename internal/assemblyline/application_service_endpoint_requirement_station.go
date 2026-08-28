@@ -19,7 +19,8 @@ func BuildApplicationServiceEndpointRequirementPrompt(
 	prompt := strings.Join([]string{
 		"Classify whether this one accepted local service task's own behavior requires a direct HTTP request and response interaction.",
 		"Choose endpoint_required when an HTTP requester directly invokes or retrieves this task's behavior. Choose support_only when this task's own behavior has no direct HTTP interaction.",
-		"Return the registered schema and exactly one endpoint_requirement value.",
+		"Return exactly one raw endpoint_requirement value: endpoint_required or support_only.",
+		"Return only that registered value with no JSON, quotes, label, Markdown, or commentary.",
 		"ACCEPTED_LOCAL_TASK_AUTHORITY_JSON:\n" + string(authority),
 	}, "\n\n")
 	if len(prompt) > maxPortablePayloadBytes {
@@ -30,23 +31,6 @@ func BuildApplicationServiceEndpointRequirementPrompt(
 	return prompt, nil
 }
 
-func ApplicationServiceEndpointRequirementResponseSchema() map[string]any {
-	return objectSchema(
-		[]string{"schema", "endpoint_requirement"},
-		map[string]any{
-			"schema": map[string]any{
-				"type": "string", "const": ApplicationServiceEndpointRequirementSchemaV1,
-			},
-			"endpoint_requirement": map[string]any{
-				"type": "string", "enum": []string{
-					string(ApplicationServiceEndpointRequired),
-					string(ApplicationServiceSupportOnly),
-				},
-			},
-		},
-	)
-}
-
 func DecodeApplicationServiceEndpointRequirementResult(
 	input ApplicationServiceEndpointRequirementInput,
 	raw string,
@@ -55,13 +39,13 @@ func DecodeApplicationServiceEndpointRequirementResult(
 	if err := input.validate(); err != nil {
 		return result, err
 	}
-	if len(raw) > maxPortableCandidateBytes {
-		return result, fmt.Errorf(
-			"service endpoint requirement result exceeds %d bytes", maxPortableCandidateBytes,
-		)
+	leaf, err := decodeRawSemanticLeaf("service endpoint requirement", raw, 64, false)
+	if err != nil {
+		return result, err
 	}
-	if err := decodePortablePayload([]byte(raw), &result); err != nil {
-		return result, fmt.Errorf("decode service endpoint requirement result: %w", err)
+	result = ApplicationServiceEndpointRequirementResult{
+		Schema:              ApplicationServiceEndpointRequirementSchemaV1,
+		EndpointRequirement: ApplicationServiceEndpointRequirement(leaf),
 	}
 	if err := result.ValidateFor(input); err != nil {
 		return ApplicationServiceEndpointRequirementResult{}, err

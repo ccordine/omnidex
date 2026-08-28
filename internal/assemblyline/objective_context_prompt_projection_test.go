@@ -15,14 +15,17 @@ func TestDownstreamSemanticPromptsHideObjectiveContextProvenance(t *testing.T) {
 		job  func() (PortableJob, error)
 	}{
 		{name: "grounded answer", job: func() (PortableJob, error) {
-			input := groundedAnswerFixture()
-			input.Context = context
-			return NewGroundedAnswerJob(input)
+			base := groundedAnswerFixture()
+			return NewGroundedAnswerTextJob(GroundedAnswerTextInput{
+				ExactRequirement: base.ExactRequirement,
+				Context:          context,
+				Evidence:         base.Evidence,
+			})
 		}},
 		{name: "repository grounded review", job: func() (PortableJob, error) {
 			input := repositoryGroundedReviewFixture()
 			input.Context = context
-			return NewRepositoryGroundedReviewJob(input)
+			return NewRepositoryGroundedIssueDetailJob(input)
 		}},
 		{name: "repository grounded correction", job: func() (PortableJob, error) {
 			input := repositoryGroundedCorrectionFixture()
@@ -32,27 +35,44 @@ func TestDownstreamSemanticPromptsHideObjectiveContextProvenance(t *testing.T) {
 		{name: "roleplay grounded response", job: func() (PortableJob, error) {
 			input := roleplayGroundedFixture()
 			input.Context = context
-			return NewRoleplayGroundedResponseJob(input)
+			return NewRoleplayGroundedResponseTextJob(input)
 		}},
 		{name: "web search terms", job: func() (PortableJob, error) {
 			input := webSearchTermsFixture()
 			input.Context = context
-			return NewWebSearchTermsJob(input)
+			return NewWebSearchTermCoverageJob(WebSearchTermLeafInput{
+				ExactQuestion: input.ExactQuestion, Context: input.Context,
+				AttemptedQueries: input.AttemptedQueries, AcceptedTerms: []string{},
+				MaxTerms: input.MaxTerms, MaxTermBytes: input.MaxTermBytes,
+			})
 		}},
 		{name: "web relevance", job: func() (PortableJob, error) {
 			input := webRelevanceFixture()
 			input.Context = context
-			return NewWebRelevanceJob(input)
+			return NewWebRelevanceRelationJob(WebRelevanceRelationInput{
+				ExactQuestion: input.ExactQuestion, Context: input.Context,
+				Candidate: input.Candidates[0],
+			})
 		}},
 		{name: "web claim evidence review", job: func() (PortableJob, error) {
-			input := webClaimEvidenceReviewFixture()
-			input.Context = context
-			return NewWebClaimEvidenceReviewJob(input)
+			base := webClaimEvidenceReviewFixture()
+			return NewWebReviewClaimCoverageJob(WebReviewClaimLeafInput{
+				ExactQuestion:  base.ExactQuestion,
+				Context:        context,
+				ParagraphText:  base.Paragraph.Text,
+				AcceptedClaims: []string{},
+			})
 		}},
 		{name: "web grounded synthesis", job: func() (PortableJob, error) {
-			input := webSynthesisFixture()
-			input.Context = context
-			return NewWebGroundedSynthesisJob(input)
+			base := webSynthesisFixture()
+			return NewWebSynthesisParagraphCoverageJob(WebSynthesisParagraphLeafInput{
+				ExactQuestion:      base.ExactQuestion,
+				Context:            context,
+				Evidence:           base.Evidence,
+				AcceptedParagraphs: []WebGroundedParagraph{},
+				MaxParagraphs:      base.MaxParagraphs,
+				MaxParagraphBytes:  base.MaxParagraphBytes,
+			})
 		}},
 		{name: "web grounded synthesis correction", job: func() (PortableJob, error) {
 			input := webGroundedSynthesisCorrectionFixture()
@@ -79,12 +99,16 @@ func TestDownstreamSemanticPromptsHideObjectiveContextProvenance(t *testing.T) {
 		{name: "database query intent", job: func() (PortableJob, error) {
 			input := queryIntent
 			input.Context = context
-			return NewDatabaseQueryIntentJob(input)
+			state := NewDatabaseQueryIntentLeafState(input)
+			state.FromRelationID = input.SchemaProjection.Relations[0].ID
+			return NewDatabaseQueryShapeJob(state)
 		}},
 		{name: "database schema selection", job: func() (PortableJob, error) {
 			input := databaseSchemaSelectionFixture()
 			input.Context = context
-			return NewDatabaseSchemaSelectionJob(input)
+			return NewDatabaseSchemaSelectionCoverageJob(DatabaseSchemaSelectionLeafInput{
+				Authority: input, SelectedRelationIDs: []string{},
+			})
 		}},
 	}
 
@@ -94,7 +118,7 @@ func TestDownstreamSemanticPromptsHideObjectiveContextProvenance(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			prompt, _, err := RenderPortableJob(job)
+			prompt, err := RenderPortableJob(job)
 			if err != nil {
 				t.Fatal(err)
 			}

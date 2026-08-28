@@ -180,11 +180,11 @@ func TestProjectStackSelectionCanSelectGoWithoutExposingItsRegistryID(t *testing
 	specification, _ := goCommandLineStackFixture(t)
 	runtime := typedWorkerRuntime{
 		Context: context.Background(), MaxAttempts: 1,
-		Execute: testPortableExecutor(func(_ string, _ string, prompt string, _ map[string]any) (string, error) {
+		Execute: testPortableExecutor(func(_ string, _ string, prompt string) (string, error) {
 			if strings.Contains(prompt, genericGoCommandLineAdapter) || !strings.Contains(prompt, "STACK_CANDIDATE_1") {
 				t.Fatalf("stack constraint leaked or omitted authority: %s", prompt)
 			}
-			return `{"schema":"omnidex.application-project-stack-constraint.v1","candidate_id":"STACK_CANDIDATE_1"}`, nil
+			return "STACK_CANDIDATE_1", nil
 		}),
 	}
 	selection, err := selectDirectCodingProject(

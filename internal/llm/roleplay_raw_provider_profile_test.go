@@ -12,53 +12,48 @@ const roleplayRawProviderShow = `{
   "template":"{{ .System }}\n{{ .Prompt }}",
   "model_info":{
     "general.architecture":"fictional-architecture",
-    "fictional-architecture.context_length":4096,
+    "fictional-architecture.context_length":8192,
     "tokenizer.ggml.model":"fictional-tokenizer",
     "tokenizer.ggml.pre":"fictional-pre"
   }
 }`
 
-func TestRoleplayRawProviderContextPolicyIsNarrowerThanStrictStations(t *testing.T) {
+func TestRoleplayRawProviderContextPolicyRetainsStrictTransportFloor(t *testing.T) {
 	raw := ProviderIdentitySelection{
-		Model: "story-model:latest", NativeContextLimit: 4096,
+		Model: "story-model:latest", NativeContextLimit: 8192,
 		ProfilePolicy: ProviderIdentityProfileRoleplayRawCompletion,
 	}
 	if err := raw.Validate(); err != nil {
-		t.Fatalf("roleplay raw selection rejected native 4096 context: %v", err)
+		t.Fatalf("roleplay raw selection rejected native 8192 context: %v", err)
 	}
-	strict := raw
-	strict.ProfilePolicy = ""
-	if err := strict.Validate(); err == nil {
-		t.Fatal("strict provider selection accepted a context below the strict 8192-token floor")
+	belowFloor := raw
+	belowFloor.NativeContextLimit = 4096
+	if err := belowFloor.Validate(); err == nil {
+		t.Fatal("roleplay provider selection accepted a context below the exact transport floor")
 	}
 
-	rawExpectation := ProviderIdentityExpectation{
+	strictExpectation := ProviderIdentityExpectation{
 		Backend: ExactPreparedProviderBackend, BackendVersion: ExactPreparedProviderVersion,
 		Model: raw.Model, Digest: strings.Repeat("a", 64), Quantization: "Q4_0",
-		NativeContextLimit: 4096, TokenizerProfile: ExactPreparedTokenizerProfileRoleplayRaw,
+		NativeContextLimit: 4096, TokenizerProfile: ExactPreparedTokenizerProfile,
 	}
-	if err := rawExpectation.Validate(); err != nil {
-		t.Fatalf("roleplay raw expectation rejected native 4096 context: %v", err)
-	}
-	strictExpectation := rawExpectation
-	strictExpectation.TokenizerProfile = ExactPreparedTokenizerProfile
 	if err := strictExpectation.Validate(); err == nil {
-		t.Fatal("strict provider expectation accepted a context below the strict floor")
+		t.Fatal("roleplay selection policy bypassed the strict provider expectation floor")
 	}
 }
 
 func TestDeriveRoleplayCompletionContextLimitUsesExactModelMetadata(t *testing.T) {
-	got, err := DeriveRoleplayCompletionContextLimit([]byte(roleplayRawProviderShow), 8192)
+	got, err := DeriveRoleplayCompletionContextLimit([]byte(roleplayRawProviderShow), 16384)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got != 4096 {
-		t.Fatalf("derived context=%d want 4096", got)
+	if got != 8192 {
+		t.Fatalf("derived context=%d want 8192", got)
 	}
 
 	large := strings.Replace(
 		roleplayRawProviderShow,
-		`"fictional-architecture.context_length":4096`,
+		`"fictional-architecture.context_length":8192`,
 		`"fictional-architecture.context_length":262144`,
 		1,
 	)
@@ -75,26 +70,26 @@ func TestDeriveRoleplayCompletionContextLimitRejectsInexactOrUnsupportedMetadata
 	for name, show := range map[string]string{
 		"missing": strings.Replace(
 			roleplayRawProviderShow,
-			`"fictional-architecture.context_length":4096,`,
+			`"fictional-architecture.context_length":8192,`,
 			"",
 			1,
 		),
 		"string": strings.Replace(
 			roleplayRawProviderShow,
-			`"fictional-architecture.context_length":4096`,
-			`"fictional-architecture.context_length":"4096"`,
+			`"fictional-architecture.context_length":8192`,
+			`"fictional-architecture.context_length":"8192"`,
 			1,
 		),
 		"decimal": strings.Replace(
 			roleplayRawProviderShow,
-			`"fictional-architecture.context_length":4096`,
-			`"fictional-architecture.context_length":4096.0`,
+			`"fictional-architecture.context_length":8192`,
+			`"fictional-architecture.context_length":8192.0`,
 			1,
 		),
 		"below roleplay floor": strings.Replace(
 			roleplayRawProviderShow,
+			`"fictional-architecture.context_length":8192`,
 			`"fictional-architecture.context_length":4096`,
-			`"fictional-architecture.context_length":2048`,
 			1,
 		),
 	} {
@@ -106,26 +101,34 @@ func TestDeriveRoleplayCompletionContextLimitRejectsInexactOrUnsupportedMetadata
 	}
 }
 
-func TestRoleplayRawProviderPolicyAcceptsUnregisteredCompletionModel(t *testing.T) {
+func TestRoleplayRawProviderPolicyStillRequiresRegisteredStructuralProfile(t *testing.T) {
 	selection, evidence := exactProviderProfileEvidence(t, "story-model:latest", roleplayRawProviderShow)
 
 	if _, err := DeriveExactProviderIdentityExpectation(evidence, selection); err == nil {
 		t.Fatal("strict provider identity policy accepted an unregistered model profile")
 	}
 	selection.ProfilePolicy = ProviderIdentityProfileRoleplayRawCompletion
+	if _, err := DeriveExactProviderIdentityExpectation(evidence, selection); err == nil {
+		t.Fatal("roleplay policy bypassed structural profile attestation")
+	}
+
+	selection, evidence = exactProviderProfileEvidence(
+		t, "story-model:latest", exactProviderQwen35Show,
+	)
+	selection.ProfilePolicy = ProviderIdentityProfileRoleplayRawCompletion
 	expected, err := DeriveExactProviderIdentityExpectation(evidence, selection)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if expected.TokenizerProfile != ExactPreparedTokenizerProfileRoleplayRaw {
+	if expected.TokenizerProfile != ExactPreparedTokenizerProfile {
 		t.Fatalf("unexpected roleplay tokenizer profile %q", expected.TokenizerProfile)
 	}
 	settings, err := ResolveExactPreparedTransport(expected)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !settings.NativeTemplate || settings.SeparateThinking || !settings.SeparateSystem ||
-		settings.Temperature == nil || *settings.Temperature != 0.8 {
+	if settings.NativeTemplate || settings.SeparateThinking || settings.SeparateSystem ||
+		!settings.NaturalOutputCeiling || settings.Temperature == nil || *settings.Temperature != 0 {
 		t.Fatalf("unexpected roleplay local transport settings: %+v", settings)
 	}
 
@@ -133,32 +136,29 @@ func TestRoleplayRawProviderPolicyAcceptsUnregisteredCompletionModel(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	if reconstructed != selection {
-		t.Fatalf("selection reconstruction changed: got %+v want %+v", reconstructed, selection)
+	if reconstructed.Model != selection.Model ||
+		reconstructed.NativeContextLimit != selection.NativeContextLimit ||
+		reconstructed.ProfilePolicy != "" {
+		t.Fatalf("strict expectation reconstructed invalid selection: %+v", reconstructed)
 	}
 }
 
-func TestRoleplayRawProviderUsesItsNativeSystemTemplate(t *testing.T) {
-	selection, evidence := exactProviderProfileEvidence(t, "story-model:latest", roleplayRawProviderShow)
+func TestRoleplayRawProviderUsesItsStructurallyAttestedTransport(t *testing.T) {
+	selection, evidence := exactProviderProfileEvidence(t, "story-model:latest", exactProviderQwen35Show)
 	selection.ProfilePolicy = ProviderIdentityProfileRoleplayRawCompletion
 	expected, err := DeriveExactProviderIdentityExpectation(evidence, selection)
 	if err != nil {
 		t.Fatal(err)
 	}
-	temperature := ExactPreparedTemperature(0.8)
+	temperature := ExactPreparedTemperature(0)
 	prepared := PreparedModel{
-		Protocol:  ExactPreparedProtocolStructuredV1,
+		Protocol:  ExactPreparedProtocolRawTextV2,
 		BaseModel: expected.Model, ContextModel: expected.Model,
 		Prompt: "write one fictional response", PromptHint: MinimalGeneratePrompt,
 		ContextTokens: 8192, MaxOutputTokens: 8192,
 		OutputLimitMode: ExactPreparedOutputLimitNatural,
-		ResponseFormat:  ResponseFormatJSON,
-		ResponseSchema: map[string]any{
-			"type": "object", "properties": map[string]any{
-				"text": map[string]any{"type": "string"},
-			},
-		},
-		Temperature: &temperature, ProviderIdentityExpectation: &expected,
+		Temperature:     &temperature, RawTextStopSequence: ExactPreparedRawChatEndV1,
+		ProviderIdentityExpectation:  &expected,
 		ProviderObservationChallenge: strings.Repeat("b", 64),
 	}
 	raw, err := ExactPreparedRequestBytes(prepared)
@@ -169,9 +169,10 @@ func TestRoleplayRawProviderUsesItsNativeSystemTemplate(t *testing.T) {
 	if err := json.Unmarshal(raw, &request); err != nil {
 		t.Fatal(err)
 	}
-	if request.Raw || request.System != prepared.Prompt || request.Prompt != MinimalGeneratePrompt ||
-		request.Think == nil || *request.Think {
-		t.Fatalf("roleplay request bypassed its native instruction template: %s", raw)
+	if !request.Raw || request.System != "" ||
+		!strings.HasPrefix(request.Prompt, ExactPreparedRawChatUserPrefixV1) ||
+		request.Think == nil || *request.Think || request.Options.NumPredict != 8192 {
+		t.Fatalf("roleplay request bypassed its attested raw transport: %s", raw)
 	}
 }
 

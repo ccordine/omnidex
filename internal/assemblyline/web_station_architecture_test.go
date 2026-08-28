@@ -9,7 +9,9 @@ import (
 func TestWebStationWireContractsContainNoExecutionAuthority(t *testing.T) {
 	values := []any{
 		WebSearchTermsInput{}, WebSearchTermsDecision{},
+		WebSearchTermLeafInput{}, WebSearchTermCoverageDecision{}, WebSearchTermDecision{},
 		WebRelevanceInput{}, WebRelevanceCandidate{}, WebRelevanceDecision{},
+		WebRelevanceRelationInput{}, WebRelevanceRelationDecision{},
 		WebGroundedSynthesisInput{}, WebGroundedEvidence{},
 		WebGroundedSynthesisDecision{}, WebGroundedParagraph{},
 		WebGroundedSynthesisCorrectionInput{}, WebGroundedSynthesisCorrectionDecision{},

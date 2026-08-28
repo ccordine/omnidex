@@ -26,12 +26,12 @@ func TestRawCodingPromptAdmittedByRendererCrossesGapAndWireWithoutSmallerRuler(t
 	if err != nil {
 		t.Fatalf("create renderer-admissible raw coding job: %v", err)
 	}
-	prompt, schema, err := assemblyline.RenderPortableJob(job)
+	prompt, err := assemblyline.RenderPortableJob(job)
 	if err != nil {
 		t.Fatalf("render raw coding job: %v", err)
 	}
-	if schema != nil || len(prompt) <= 64*1024 || len(prompt) >= llm.MaxExactPreparedModelInputBytes {
-		t.Fatalf("fixture prompt=%dB schema=%v; expected raw input between retired and gross ceilings", len(prompt), schema)
+	if len(prompt) <= 64*1024 || len(prompt) >= llm.MaxExactPreparedModelInputBytes {
+		t.Fatalf("fixture prompt=%dB; expected raw input between retired and gross ceilings", len(prompt))
 	}
 
 	authority := model.StepAttemptAuthority{
@@ -58,12 +58,12 @@ func TestRawCodingPromptAdmittedByRendererCrossesGapAndWireWithoutSmallerRuler(t
 	}
 	temperature := llm.ExactPreparedTemperature(0)
 	prepared := llm.PreparedModel{
-		Protocol:  llm.ExactPreparedProtocolRawTextV1,
+		Protocol:  llm.ExactPreparedProtocolRawTextV2,
 		BaseModel: expected.Model, ContextModel: expected.Model,
 		Prompt: gap.Prompt, PromptHint: llm.MinimalGeneratePrompt,
 		ContextTokens: gap.ContextTokens, MaxOutputTokens: gap.MaxOutputTokens,
 		OutputLimitMode:     llm.ExactPreparedOutputLimitNatural,
-		RawTextStopSequence: llm.ExactPreparedCodeStopV1,
+		RawTextStopSequence: llm.ExactPreparedRawChatEndV1,
 		Temperature:         &temperature, ProviderIdentityExpectation: &expected,
 		ProviderObservationChallenge: challenge,
 	}

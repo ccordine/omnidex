@@ -39,30 +39,43 @@ is empty or existing, bounded accepted durable-memory authorities, and any verif
 repository, runtime, or external evidence already acquired by registered providers.
 It never asks a model what files exist, which command to run, or which provider to use.
 
-Only after deterministic bootstrap may a context-sufficiency station identify zero
-through three unanswered semantic evidence questions. Its output is a question set,
-not an action set. Code maps each question to a registered evidence class, invokes the
-deterministic provider with code-owned arguments, validates the result, and records a
-compact fact with source identity and digest. Provider transcripts and broad search
-results are not planning context. If no provider owns a required question, resolution
-fails loudly. The promoted fresh-workspace vertical accepts only the zero-question
-transition until additional provider mappings are proven in production.
+Only after deterministic bootstrap may code run the bounded context-need fixed point.
+One raw coverage call says whether another unanswered semantic evidence question
+remains. Only that result permits a separate raw call for one question. Code retains
+each decoded question up to the three-question bound, maps it to a registered evidence
+class, invokes the deterministic provider with code-owned arguments, validates the
+result, and records a compact fact with source identity and digest. Provider transcripts
+and broad search results are not planning context. If no provider owns a required
+question, resolution fails loudly. The promoted fresh-workspace vertical resolves
+context mechanically and makes no context-need call.
 
-Intent interpretation occurs only after that closure. The intent candidate contains
-one product context and bounded semantic requirement statements, each ultimately bound
-to the immutable request digest. Authority does not depend on reproducing a contiguous
-substring or allocating non-overlapping text intervals. Code validates and retains a valid
-candidate directly: an independent model is never called merely to accept, reject, or
-cosmetically replace a leaf. Models see no operation catalog, task graph, or completion
-control. The sole path boundary is the typed target-tree declaration station defined in
-[TARGET_TREE_PLANNING.md](TARGET_TREE_PLANNING.md): it receives a bounded code-built
-current tree and returns normalized relative file paths only. Coding, review, repair,
-and test-generation stations remain path-blind.
+Every fixed-point output is a semantic relation, never a control label. The negative
+alternative is named `NO_UNCOVERED_<LEAF>` and the positive alternative is
+`<LEAF>_REMAINS`. Code validates that relation, decides whether another leaf call is
+legal, enforces the bound, and closes or repeats the loop. No model returns completion,
+continuation, acceptance, retry, execution, search, or planning authority.
 
-For job specifications, code validates the complete candidate itself. Only an exact
-deterministic schema failure creates a correction boundary. Code names the one mutable
-field, applies the one-field correction itself, and verifies that exactly one leaf changed.
-This is state grounding without a model-authored control plane.
+Intent interpretation occurs only after that closure. One station returns the raw
+product-context leaf. Code then alternates one raw requirement-coverage call with one
+raw requirement call only while coverage remains. It retains each decoded requirement,
+binds the code-assembled typed intent to the immutable request digest, and never asks a
+model to emit or review the aggregate. Authority does not depend on reproducing a
+contiguous substring or allocating non-overlapping text intervals. Models see no
+operation catalog, task graph, or completion control. The sole tree-visible boundary is
+the target-tree declaration station defined in
+[TARGET_TREE_PLANNING.md](TARGET_TREE_PLANNING.md): when naming remains unresolved, it
+receives the complete frozen workload and a bounded code-built current tree and returns
+one complete raw node hierarchy. Code constructs all normalized relative paths. Coding,
+review, repair, and test-generation stations remain path-blind.
+
+For each job specification, one raw call returns the objective. Code then runs separate
+behavior and acceptance-criterion fixed points; each coverage call is followed by one
+raw semantic leaf only when coverage remains. Code validates each leaf and assembles the
+typed specification itself. Only an exact deterministic leaf-validation failure creates
+a correction boundary: the correction call receives the rejected complete raw leaf and
+one grounded defect and must return one complete replacement in the original raw format.
+The original decoder validates that replacement before code splices the typed leaf. No
+model returns an aggregate specification, JSON wrapper, merge patch, or workflow control.
 
 ## Autonomous substrate and subjective meaning
 

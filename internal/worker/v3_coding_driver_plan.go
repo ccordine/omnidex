@@ -145,12 +145,14 @@ func (s *directCodingSession) Assemble() (directCodingAssembly, error) {
 	}
 	workerRuntime.PathProvenance = s.pathProvenance
 	targetTreeInput, err := directCodingTargetTreeInput(
-		specification, selectedStack, existingPaths, nil, existingDirs,
+		specification, workload, selectedStack, existingPaths, existingDirs,
 	)
 	if err != nil {
 		return directCodingAssembly{}, err
 	}
-	structureTransitions, err := assemblyline.DiffTargetTree(targetTreeInput, targetTree)
+	structureTransitions, err := assemblyline.DiffTargetTree(
+		targetTreeInput, targetTree, targetTreeInput.ExistingPaths,
+	)
 	if err != nil {
 		return directCodingAssembly{}, err
 	}

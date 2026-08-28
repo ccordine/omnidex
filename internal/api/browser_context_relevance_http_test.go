@@ -3,7 +3,6 @@ package api
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -52,7 +51,7 @@ func TestBrowserContextRelevanceWebSocketExecutesOneRealStationPacket(t *testing
 
 	input := apiBrowserContextRelevanceFixture(t)
 	type outcome struct {
-		decision assemblyline.ContextRelevanceDecision
+		decision assemblyline.ContextRelevanceSelectionDecision
 		err      error
 	}
 	completed := make(chan outcome, 1)
@@ -64,19 +63,14 @@ func TestBrowserContextRelevanceWebSocketExecutesOneRealStationPacket(t *testing
 	if err := connection.ReadJSON(&packet); err != nil {
 		t.Fatal(err)
 	}
-	raw := fmt.Sprintf(
-		`{"schema":%q,"referenced_candidate_ids":["CTX_1"]}`,
-		assemblyline.ContextRelevanceSchemaV1,
-	)
 	if err := connection.WriteJSON(browserinference.ContextRelevanceSubmission{
 		Schema: browserinference.ContextRelevanceSubmissionSchemaV1,
-		JobID:  packet.JobID, Model: packet.Model, RawResult: raw,
+		JobID:  packet.JobID, Model: packet.Model, RawResult: "CTX_1",
 	}); err != nil {
 		t.Fatal(err)
 	}
 	result := <-completed
-	if result.err != nil || len(result.decision.ReferencedCandidateIDs) != 1 ||
-		result.decision.ReferencedCandidateIDs[0] != "CTX_1" {
+	if result.err != nil || result.decision.CandidateID != "CTX_1" {
 		t.Fatalf("result=%#v", result)
 	}
 }
@@ -89,7 +83,7 @@ func TestBrowserSubmissionReaderSendHonorsCancellation(t *testing.T) {
 	}
 }
 
-func apiBrowserContextRelevanceFixture(t *testing.T) assemblyline.ContextRelevanceInput {
+func apiBrowserContextRelevanceFixture(t *testing.T) assemblyline.ContextRelevanceSelectionInput {
 	t.Helper()
 	candidate, err := assemblyline.NewContextCandidateAuthority(
 		"conversation_exchange", "CTX_1", "The west gate was closed before dusk.",
@@ -97,9 +91,12 @@ func apiBrowserContextRelevanceFixture(t *testing.T) assemblyline.ContextRelevan
 	if err != nil {
 		t.Fatal(err)
 	}
-	return assemblyline.ContextRelevanceInput{
-		ExactInstruction: "Do that again.", RetrievalConcepts: []string{"previous gate action"},
-		CandidateAuthorities: []assemblyline.ContextCandidateAuthority{candidate},
-		MaxSelections:        1,
+	return assemblyline.ContextRelevanceSelectionInput{
+		Authority: assemblyline.ContextRelevanceInput{
+			ExactInstruction: "Do that again.", RetrievalConcepts: []string{"previous gate action"},
+			CandidateAuthorities: []assemblyline.ContextCandidateAuthority{candidate},
+			MaxSelections:        1,
+		},
+		AcceptedCandidateIDs: []string{},
 	}
 }

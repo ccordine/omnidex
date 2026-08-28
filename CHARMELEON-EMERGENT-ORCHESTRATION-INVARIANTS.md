@@ -68,24 +68,31 @@ repository, memory, web, runtime, or user-evidence workflow. A model may fill
 only a remaining semantic leaf, such as a bounded search phrase or a choice
 between supplied evidence candidates; it never selects or calls a tool.
 
-## 5. Path-only target-tree boundary
+## 5. Raw target-tree boundary
 
-The tree station receives only the objective and necessary structural context.
-It returns exactly one path-only proposed tree. It does not return ownership,
-purpose, requirements, content, declarations, commands, operations, or
-filesystem authority.
+The tree station runs only when naming remains genuinely unresolved after code
+has frozen the complete workload. It receives all accepted goals in frozen
+order, the code-selected technical tree grammar and constraints, and bounded
+code-rendered current managed and reserved trees. It returns exactly one
+complete expected workload tree in the raw `ROOT` node grammar. Each returned
+node contains one directory or file basename; it does not return a normalized
+path, ownership, purpose, requirements, content, declarations, commands,
+operations, or filesystem authority.
 
 Code then:
 
-1. Parses and validates every returned path.
-2. Selects artifact adapters from the path and accepted project stack.
-3. Diffs returned workload paths against the authoritative workspace tree.
+1. Parses every node and constructs and validates every normalized relative path.
+2. Selects artifact adapters from each constructed path and the accepted project stack.
+3. Diffs the complete expected workload paths against the authoritative managed tree.
 4. Derives parent directories and creates one persisted leaf task for each
    directory and file transition.
 5. Preserves the resulting order and requires code-owned filesystem evidence
    before closing each leaf.
 
-Tree omission is non-destructive. It never means deletion.
+Tree omission has no destructive authority by itself. It yields a delete
+transition only when a separate code-owned rule supplies deletion eligibility
+for that exact file and proves that it is present in the current managed tree.
+Without that eligibility, omission yields no deletion.
 
 ## 6. Adapter baseline versus workload tree
 
@@ -95,8 +102,8 @@ baseline artifacts, not missing tree-model output. Code adds them to the same
 persisted filesystem workload as tree leaves, validates their exact bytes, and
 records their creation or reconciliation like every other leaf.
 
-The tree remains the model's entire structural output. Code never asks it to
-restate adapter mechanics it already owns.
+The complete raw node tree remains the model's entire structural output. Code
+never asks it to restate adapter mechanics it already owns.
 
 ## 7. Artifact bindings and cross-artifact coordination
 
@@ -110,7 +117,7 @@ source work depends on it. That task must state the exact unresolved relation,
 the finite candidate artifacts, required verified interface evidence, and its
 completion condition. It may use one path-blind semantic choice over opaque
 artifact handles and code-projected declarations. It may not use a broad
-requirement-to-path mapper, filename heuristics, a whole-tree prompt, or a
+requirement-to-path mapper, filename heuristics, another target-tree prompt, or a
 whole-file worker.
 
 Once an artifact's public declaration is generated and parser-validated, code

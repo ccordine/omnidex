@@ -121,6 +121,12 @@ func parseSingleTypeScriptFunction(
 		closeAll()
 		return parsedTypeScriptFunction{}, func() {}, fmt.Errorf("TypeScript fragment must be one raw function declaration, received %s", kind)
 	}
+	if int(declaration.StartByte()) != 0 || int(declaration.EndByte()) != len(source) {
+		closeAll()
+		return parsedTypeScriptFunction{}, func() {}, fmt.Errorf(
+			"TypeScript fragment must contain only one exact raw function declaration",
+		)
+	}
 	name := declaration.ChildByFieldName("name")
 	body := declaration.ChildByFieldName("body")
 	if name == nil || body == nil {

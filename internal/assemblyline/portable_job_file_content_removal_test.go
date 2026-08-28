@@ -10,7 +10,7 @@ func TestPortableJobRegistryRejectsRemovedFileContentMapper(t *testing.T) {
 		}
 	}
 	job := PortableJob{
-		Schema: PortableJobSchemaV1,
+		Schema: "omnidex.portable-job.v1",
 		ID:     "removed-file-content-mapper",
 		Kind:   removedKind,
 		Payload: []byte(`{

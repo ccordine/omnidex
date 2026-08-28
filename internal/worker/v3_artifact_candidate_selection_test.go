@@ -2,7 +2,6 @@ package worker
 
 import (
 	"context"
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -21,16 +20,13 @@ func TestResolveAmbiguousArtifactDeletionSelectsSemanticCandidateIndependentOfPa
 		Context: context.Background(), MaxAttempts: 1,
 		Execute: func(job assemblyline.PortableJob, _ string) (assemblyline.PortableResult, error) {
 			var err error
-			prompt, _, err = assemblyline.RenderPortableJob(job)
+			prompt, err = assemblyline.RenderPortableJob(job)
 			if err != nil {
 				return assemblyline.PortableResult{}, err
 			}
-			decision := assemblyline.ArtifactCandidateSelectionDecision{
-				Schema:      assemblyline.ArtifactCandidateSelectionSchemaV1,
-				CandidateID: "ARTIFACT_CANDIDATE_2",
-			}
-			raw, marshalErr := json.Marshal(decision)
-			return assemblyline.PortableResult{JobID: job.ID, Candidate: string(raw)}, marshalErr
+			return assemblyline.PortableResult{
+				JobID: job.ID, Candidate: "ARTIFACT_CANDIDATE_2",
+			}, nil
 		},
 	}
 	directives, err := resolveAmbiguousArtifactDeletion(
@@ -94,12 +90,9 @@ func TestResolveAmbiguousArtifactDeletionNoneFailsWithoutMutationFallback(t *tes
 		Context: context.Background(), MaxAttempts: 1,
 		Execute: func(job assemblyline.PortableJob, _ string) (assemblyline.PortableResult, error) {
 			calls++
-			decision := assemblyline.ArtifactCandidateSelectionDecision{
-				Schema:      assemblyline.ArtifactCandidateSelectionSchemaV1,
-				CandidateID: assemblyline.ArtifactCandidateSelectionNone,
-			}
-			raw, err := json.Marshal(decision)
-			return assemblyline.PortableResult{JobID: job.ID, Candidate: string(raw)}, err
+			return assemblyline.PortableResult{
+				JobID: job.ID, Candidate: assemblyline.ArtifactCandidateSelectionNone,
+			}, nil
 		},
 	}
 	_, err := resolveAmbiguousArtifactDeletion(
@@ -180,12 +173,9 @@ func TestArtifactHandlingMapsOnlyPossibleAbsenceTruthToCandidateDisposition(t *t
 	runtime := typedWorkerRuntime{
 		Context: context.Background(), MaxAttempts: 1,
 		Execute: func(job assemblyline.PortableJob, _ string) (assemblyline.PortableResult, error) {
-			decision := assemblyline.ArtifactHandlingDecision{
-				Schema: assemblyline.ArtifactHandlingSchemaV1, Token: "ARTIFACT_1",
-				Handling: assemblyline.ArtifactPossibleAbsenceCandidate,
-			}
-			raw, err := json.Marshal(decision)
-			return assemblyline.PortableResult{JobID: job.ID, Candidate: string(raw)}, err
+			return assemblyline.PortableResult{
+				JobID: job.ID, Candidate: string(assemblyline.ArtifactPossibleAbsenceCandidate),
+			}, nil
 		},
 	}
 	directives, err := classifyArtifactHandling(

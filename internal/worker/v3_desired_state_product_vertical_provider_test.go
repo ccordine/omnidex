@@ -15,8 +15,9 @@ import (
 )
 
 type desiredStateProductModelCall struct {
-	Prompt, Response, Schema string
-	Protocol                 llm.ExactPreparedProtocol
+	Prompt, Response string
+	Kind             assemblyline.WorkKind
+	Protocol         llm.ExactPreparedProtocol
 }
 
 // desiredStateProductProvider is a deterministic, fixture-aware provider used
@@ -61,13 +62,13 @@ func (provider *desiredStateProductProvider) GeneratePreparedExact(
 	_ context.Context,
 	prepared llm.PreparedModel,
 ) (llm.PreparedGeneration, error) {
-	response, schema, err := desiredStateProductResponse(prepared)
+	response, kind, err := desiredStateProductResponse(prepared)
 	if err != nil {
 		return llm.PreparedGeneration{}, err
 	}
 	provider.mu.Lock()
 	provider.calls = append(provider.calls, desiredStateProductModelCall{
-		Prompt: prepared.Prompt, Response: response, Schema: schema, Protocol: prepared.Protocol,
+		Prompt: prepared.Prompt, Response: response, Kind: kind, Protocol: prepared.Protocol,
 	})
 	provider.mu.Unlock()
 	return desiredStateProductGeneration(prepared, response)
@@ -79,74 +80,92 @@ func (provider *desiredStateProductProvider) Calls() []desiredStateProductModelC
 	return append([]desiredStateProductModelCall(nil), provider.calls...)
 }
 
-func desiredStateProductResponse(prepared llm.PreparedModel) (string, string, error) {
-	schema := desiredStateProductSchemaConst(prepared.ResponseSchema)
-	switch schema {
-	case assemblyline.ApplicationContextNeedSchemaV1:
-		return fmt.Sprintf(`{"schema":%q,"questions":[]}`, schema), schema, nil
-	case assemblyline.ConversationObjectiveKindSchemaV1:
-		return fmt.Sprintf(`{"schema":%q,"kind":"workspace_mutation"}`, schema), schema, nil
-	case assemblyline.RepositoryRequirementInterpretationSchemaV3:
-		source, err := desiredStateProductRequirementSource(prepared.Prompt)
+func desiredStateProductResponse(
+	prepared llm.PreparedModel,
+) (string, assemblyline.WorkKind, error) {
+	prompt := prepared.Prompt
+	switch {
+	case strings.Contains(prompt, "Classify one exact user instruction"):
+		return string(assemblyline.ObjectiveKindWorkspaceMutation),
+			assemblyline.WorkConversationObjectiveKind, nil
+	case strings.Contains(prompt, "Answer one semantic coverage relation: is there one necessary missing-fact question"):
+		return assemblyline.ApplicationNoUncoveredContextNeed,
+			assemblyline.WorkApplicationContextNeedCoverage, nil
+	case strings.Contains(prompt, "Answer one semantic relation: does the immutable existing-repository request"):
+		input, err := desiredStateProductRequirementLeafInput(prompt)
 		if err != nil {
-			return "", schema, err
+			return "", assemblyline.WorkRepositoryRequirementCoverage, err
 		}
-		response, err := json.Marshal(assemblyline.RepositoryRequirementInterpretation{
-			Schema: schema, Requirements: []string{source},
-		})
-		return string(response), schema, err
-	case assemblyline.DeclarationArtifactBoundarySchemaV1:
-		return fmt.Sprintf(
-			`{"schema":%q,"declaration_id":"DECLARATION_1","boundary":"independent_artifact"}`,
-			schema,
-		), schema, nil
-	case assemblyline.KnownArtifactTruthSchemaV1:
+		if len(input.AcceptedRequirements) == 0 {
+			return assemblyline.RepositoryRequirementRemains,
+				assemblyline.WorkRepositoryRequirementCoverage, nil
+		}
+		return assemblyline.RepositoryNoUncoveredRequirement,
+			assemblyline.WorkRepositoryRequirementCoverage, nil
+	case strings.Contains(prompt, "Return one explicit workspace-change requirement"):
+		source, err := desiredStateProductRequirementSource(prompt)
+		return source, assemblyline.WorkRepositoryRequirement, err
+	case strings.Contains(prompt, "FOCUSED_DECLARATION"):
+		return string(assemblyline.DeclarationBoundaryIndependentArtifact),
+			assemblyline.WorkDeclarationArtifactBoundary, nil
+	case strings.Contains(prompt, "Classify only the explicit desired truth"):
 		truth := assemblyline.KnownArtifactTruthNotApplicable
-		if strings.Contains(prepared.Prompt, "must no longer exist") {
+		if strings.Contains(prompt, "must no longer exist") {
 			truth = assemblyline.KnownArtifactMustBeAbsent
 		}
-		return fmt.Sprintf(
-			`{"schema":%q,"truth":%q}`,
-			schema, truth,
-		), schema, nil
-	case assemblyline.ArtifactCandidateSelectionSchemaV1:
+		return string(truth), assemblyline.WorkKnownArtifactTruth, nil
+	case strings.Contains(prompt, "BOUNDED_CANDIDATES"):
 		candidateID, err := desiredStateProductSelectDeclarationCandidate(
-			prepared.Prompt, "Obsolete",
+			prompt, "Obsolete",
 		)
 		if err != nil {
-			return "", schema, err
+			return "", assemblyline.WorkArtifactCandidateSelection, err
 		}
-		return fmt.Sprintf(`{"schema":%q,"candidate_id":%q}`, schema, candidateID), schema, nil
-	case assemblyline.ArtifactHandlingSchemaV1:
-		token, err := desiredStateProductPromptLine(prepared.Prompt, "FOCUSED_ARTIFACT: ")
+		return candidateID, assemblyline.WorkArtifactCandidateSelection, nil
+	case strings.Contains(prompt, "FOCUSED_ARTIFACT"):
+		_, err := desiredStateProductPromptLine(prompt, "FOCUSED_ARTIFACT: ")
 		if err != nil {
-			return "", schema, err
+			return "", assemblyline.WorkArtifactHandling, err
 		}
-		return fmt.Sprintf(
-			`{"schema":%q,"token":%q,"handling":"must_be_absent"}`,
-			schema, token,
-		), schema, nil
-	case "":
-		if strings.Contains(prepared.Prompt, "EXACT_SIGNATURE:\nfunc Added() int") {
-			return "func Added() int { return 2 }", schema, nil
-		}
-		return "", schema, fmt.Errorf("unexpected raw product vertical envelope")
+		return string(assemblyline.ArtifactMustBeAbsent), assemblyline.WorkArtifactHandling, nil
+	case strings.Contains(prompt, "EXACT_SIGNATURE:\nfunc Added() int"):
+		return "func Added() int { return 2 }", assemblyline.WorkFragmentGeneration, nil
 	default:
-		return "", schema, fmt.Errorf("unexpected product vertical response schema %q", schema)
+		return "", "", fmt.Errorf("unexpected raw product vertical envelope")
 	}
 }
 
 func desiredStateProductRequirementSource(prompt string) (string, error) {
-	const marker = "CURRENT_REQUEST:\n"
-	index := strings.LastIndex(prompt, marker)
-	if index < 0 {
-		return "", fmt.Errorf("product vertical repository requirements omitted current request")
+	input, err := desiredStateProductRequirementLeafInput(prompt)
+	if err != nil {
+		return "", err
 	}
-	source := strings.TrimSpace(prompt[index+len(marker):])
+	source := strings.TrimSpace(input.Authority.UserRequest)
 	if source == "" {
 		return "", fmt.Errorf("product vertical repository requirement source is empty")
 	}
 	return source, nil
+}
+
+func desiredStateProductRequirementLeafInput(
+	prompt string,
+) (assemblyline.RepositoryRequirementLeafInput, error) {
+	const marker = "REPOSITORY_REQUIREMENT_AUTHORITY:\n"
+	index := strings.LastIndex(prompt, marker)
+	if index < 0 {
+		return assemblyline.RepositoryRequirementLeafInput{}, fmt.Errorf(
+			"product vertical repository requirement omitted raw leaf authority",
+		)
+	}
+	var input assemblyline.RepositoryRequirementLeafInput
+	if err := json.Unmarshal(
+		[]byte(strings.TrimSpace(prompt[index+len(marker):])), &input,
+	); err != nil {
+		return assemblyline.RepositoryRequirementLeafInput{}, fmt.Errorf(
+			"decode product vertical repository requirement authority: %w", err,
+		)
+	}
+	return input, nil
 }
 
 func desiredStateProductSelectDeclarationCandidate(
@@ -178,13 +197,6 @@ func desiredStateProductSelectDeclarationCandidate(
 		return "", fmt.Errorf("product vertical declaration evidence has no semantic match")
 	}
 	return selected, nil
-}
-
-func desiredStateProductSchemaConst(schema map[string]any) string {
-	properties, _ := schema["properties"].(map[string]any)
-	property, _ := properties["schema"].(map[string]any)
-	value, _ := property["const"].(string)
-	return value
 }
 
 func desiredStateProductPromptLine(prompt, prefix string) (string, error) {

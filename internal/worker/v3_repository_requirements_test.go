@@ -9,7 +9,7 @@ import (
 	"github.com/gryph/omnidex/internal/assemblyline"
 )
 
-func TestExistingRepositoryRequirementsUseOneAggregateCall(t *testing.T) {
+func TestExistingRepositoryRequirementsUseCoverageAndOneRawLeafCalls(t *testing.T) {
 	t.Parallel()
 	const request = "Add audit logging and CSV exports to the service."
 	calls := 0
@@ -17,15 +17,31 @@ func TestExistingRepositoryRequirementsUseOneAggregateCall(t *testing.T) {
 		Context: context.Background(), MaxAttempts: 3,
 		Execute: func(job assemblyline.PortableJob, model string) (assemblyline.PortableResult, error) {
 			calls++
-			if model != "qwen-stable" || job.Kind != assemblyline.WorkRepositoryRequirements {
+			if model != "qwen-stable" {
 				t.Fatalf("model=%q kind=%q", model, job.Kind)
 			}
-			candidate := assemblyline.RepositoryRequirementInterpretation{
-				Schema:       assemblyline.RepositoryRequirementInterpretationSchemaV3,
-				Requirements: []string{"audit logging", "CSV exports"},
+			var input assemblyline.RepositoryRequirementLeafInput
+			if err := json.Unmarshal(job.Payload, &input); err != nil {
+				t.Fatal(err)
 			}
-			raw, err := json.Marshal(candidate)
-			return assemblyline.PortableResult{JobID: job.ID, Candidate: string(raw)}, err
+			candidate := ""
+			switch job.Kind {
+			case assemblyline.WorkRepositoryRequirementCoverage:
+				if len(input.AcceptedRequirements) < 2 {
+					candidate = assemblyline.RepositoryRequirementRemains
+				} else {
+					candidate = assemblyline.RepositoryNoUncoveredRequirement
+				}
+			case assemblyline.WorkRepositoryRequirement:
+				if len(input.AcceptedRequirements) == 0 {
+					candidate = "audit logging"
+				} else {
+					candidate = "CSV exports"
+				}
+			default:
+				t.Fatalf("unexpected work kind=%q", job.Kind)
+			}
+			return assemblyline.PortableResult{JobID: job.ID, Candidate: candidate}, nil
 		},
 	}
 	context, err := assemblyline.BootstrapApplicationContext(
@@ -38,7 +54,7 @@ func TestExistingRepositoryRequirementsUseOneAggregateCall(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if calls != 1 {
+	if calls != 4 {
 		t.Fatalf("semantic calls=%d", calls)
 	}
 	if !reflect.DeepEqual(quotes, []string{"audit logging", "CSV exports"}) {
@@ -46,19 +62,31 @@ func TestExistingRepositoryRequirementsUseOneAggregateCall(t *testing.T) {
 	}
 }
 
-func TestInvalidExistingRepositoryRequirementsFailWithoutCorrection(t *testing.T) {
+func TestExistingRepositoryRequirementsExtractFirstLeafBeforeCoverage(t *testing.T) {
 	t.Parallel()
 	calls := 0
 	runtime := typedWorkerRuntime{
 		Context: context.Background(), MaxAttempts: 3,
 		Execute: func(job assemblyline.PortableJob, _ string) (assemblyline.PortableResult, error) {
 			calls++
-			candidate := assemblyline.RepositoryRequirementInterpretation{
-				Schema:       "omnidex.repository-requirements.invalid",
-				Requirements: []string{"invented change"},
+			candidate := ""
+			switch calls {
+			case 1:
+				if job.Kind != assemblyline.WorkRepositoryRequirement {
+					t.Fatalf("first semantic work kind=%q", job.Kind)
+				}
+				candidate = "audit logging"
+			case 2:
+				if job.Kind != assemblyline.WorkRepositoryRequirementCoverage {
+					t.Fatalf("second semantic work kind=%q", job.Kind)
+				}
+				candidate = assemblyline.RepositoryNoUncoveredRequirement
+			default:
+				t.Fatalf("unexpected semantic call %d kind=%q", calls, job.Kind)
 			}
-			raw, err := json.Marshal(candidate)
-			return assemblyline.PortableResult{JobID: job.ID, Candidate: string(raw)}, err
+			return assemblyline.PortableResult{
+				JobID: job.ID, Candidate: candidate,
+			}, nil
 		},
 	}
 	const request = "Add audit logging to the service."
@@ -68,13 +96,13 @@ func TestInvalidExistingRepositoryRequirementsFailWithoutCorrection(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = interpretRepositoryRequirements(
+	requirements, err := interpretRepositoryRequirements(
 		runtime, "qwen-stable", request, context, nil,
 	)
-	if err == nil {
-		t.Fatal("ungrounded repository requirement succeeded")
+	if err != nil {
+		t.Fatal(err)
 	}
-	if calls != 1 {
-		t.Fatalf("invalid aggregate made %d semantic calls", calls)
+	if calls != 2 || !reflect.DeepEqual(requirements, []string{"audit logging"}) {
+		t.Fatalf("calls=%d requirements=%q", calls, requirements)
 	}
 }

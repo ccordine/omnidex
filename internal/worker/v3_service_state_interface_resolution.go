@@ -67,16 +67,9 @@ func resolveDirectCodingServiceStateInterfaces(
 	plan.Interfaces = make([]directCodingServiceStateInterfaceBinding, 0, len(components))
 	plan.InterfaceByTask = make(map[string]string)
 	for _, component := range components {
-		job, err := assemblyline.NewApplicationServiceStateInterfaceJob(component.Input)
-		if err != nil {
-			return directCodingServiceStatePlan{}, err
-		}
-		result, err := runDirectCodingSemanticCall[assemblyline.ApplicationServiceStateInterfaceResult](
+		result, err := resolveDirectCodingServiceStateInterface(
 			runtime, model, "application_service_"+component.ID,
-			job, identities,
-			func(value assemblyline.ApplicationServiceStateInterfaceResult) error {
-				return value.ValidateFor(component.Input)
-			},
+			component.Input, identities,
 		)
 		if err != nil {
 			return directCodingServiceStatePlan{}, fmt.Errorf(
@@ -95,6 +88,197 @@ func resolveDirectCodingServiceStateInterfaces(
 		return directCodingServiceStatePlan{}, err
 	}
 	return plan, nil
+}
+
+func resolveDirectCodingServiceStateInterface(
+	runtime typedWorkerRuntime,
+	model string,
+	subject string,
+	authority assemblyline.ApplicationServiceStateInterfaceInput,
+	identities []assemblyline.ArtifactIdentity,
+) (assemblyline.ApplicationServiceStateInterfaceResult, error) {
+	var zero assemblyline.ApplicationServiceStateInterfaceResult
+	fields := make(
+		[]assemblyline.ApplicationServiceStateField, 0,
+		assemblyline.MaxApplicationServiceStateInterfaceFields,
+	)
+	for {
+		leafInput := assemblyline.ApplicationStateFieldLeafInput{
+			Authority: authority,
+			AcceptedFields: append(
+				[]assemblyline.ApplicationServiceStateField{}, fields...,
+			),
+		}
+		if len(fields) > 0 {
+			coverageJob, err := assemblyline.NewApplicationStateFieldCoverageJob(leafInput)
+			if err != nil {
+				return zero, err
+			}
+			coverage, err := runDirectCodingSemanticLeafCall(
+				runtime, model, subject+"_field_coverage", coverageJob, identities,
+				func(raw string) (string, error) {
+					return assemblyline.DecodeApplicationStateFieldCoverageLeaf(leafInput, raw)
+				},
+				func(string) error { return nil },
+			)
+			if err != nil {
+				return zero, err
+			}
+			if coverage == assemblyline.ApplicationNoUncoveredStateField {
+				break
+			}
+		}
+		if len(fields) == assemblyline.MaxApplicationServiceStateInterfaceFields {
+			return zero, fmt.Errorf(
+				"application service state field coverage remains incomplete at the code-owned %d-field bound",
+				assemblyline.MaxApplicationServiceStateInterfaceFields,
+			)
+		}
+
+		nameJob, err := assemblyline.NewApplicationStateFieldNameJob(leafInput)
+		if err != nil {
+			return zero, err
+		}
+		name, err := runDirectCodingSemanticLeafCall(
+			runtime, model, subject+"_field_name", nameJob, identities,
+			func(raw string) (string, error) {
+				return assemblyline.DecodeApplicationStateFieldNameLeaf(leafInput, raw)
+			},
+			func(string) error { return nil },
+		)
+		if err != nil {
+			return zero, err
+		}
+		kindInput := assemblyline.ApplicationStateFieldKindInput{
+			Authority: authority,
+			AcceptedFields: append(
+				[]assemblyline.ApplicationServiceStateField{}, fields...,
+			),
+			FocusedName: name,
+		}
+		kindJob, err := assemblyline.NewApplicationStateFieldKindJob(kindInput)
+		if err != nil {
+			return zero, err
+		}
+		kind, err := runDirectCodingSemanticLeafCall(
+			runtime, model, subject+"_field_kind", kindJob, identities,
+			func(raw string) (assemblyline.ApplicationServiceStateFieldKind, error) {
+				return assemblyline.DecodeApplicationStateFieldKindLeaf(kindInput, raw)
+			},
+			func(assemblyline.ApplicationServiceStateFieldKind) error { return nil },
+		)
+		if err != nil {
+			return zero, err
+		}
+		field := assemblyline.ApplicationServiceStateField{
+			Name: name, Kind: kind,
+			RecordFields: []assemblyline.ApplicationServiceStateRecordField{},
+		}
+		if kind == assemblyline.ApplicationServiceStateRecordList {
+			recordFields, err := resolveDirectCodingServiceRecordFields(
+				runtime, model, subject+"_"+name, authority, name, identities,
+			)
+			if err != nil {
+				return zero, err
+			}
+			field.RecordFields = recordFields
+		}
+		fields = append(fields, field)
+	}
+	result := assemblyline.ApplicationServiceStateInterfaceResult{
+		Schema: assemblyline.ApplicationServiceStateInterfaceSchemaV1,
+		Fields: fields,
+	}
+	if err := result.ValidateFor(authority); err != nil {
+		return zero, err
+	}
+	return result, nil
+}
+
+func resolveDirectCodingServiceRecordFields(
+	runtime typedWorkerRuntime,
+	model string,
+	subject string,
+	authority assemblyline.ApplicationServiceStateInterfaceInput,
+	parentName string,
+	identities []assemblyline.ArtifactIdentity,
+) ([]assemblyline.ApplicationServiceStateRecordField, error) {
+	fields := make(
+		[]assemblyline.ApplicationServiceStateRecordField, 0,
+		assemblyline.MaxApplicationServiceStateInterfaceFields,
+	)
+	for {
+		leafInput := assemblyline.ApplicationRecordFieldLeafInput{
+			Authority: authority, ParentName: parentName,
+			AcceptedRecordFields: append(
+				[]assemblyline.ApplicationServiceStateRecordField{}, fields...,
+			),
+		}
+		if len(fields) > 0 {
+			coverageJob, err := assemblyline.NewApplicationRecordFieldCoverageJob(leafInput)
+			if err != nil {
+				return nil, err
+			}
+			coverage, err := runDirectCodingSemanticLeafCall(
+				runtime, model, subject+"_record_field_coverage", coverageJob, identities,
+				func(raw string) (string, error) {
+					return assemblyline.DecodeApplicationRecordFieldCoverageLeaf(leafInput, raw)
+				},
+				func(string) error { return nil },
+			)
+			if err != nil {
+				return nil, err
+			}
+			if coverage == assemblyline.ApplicationNoUncoveredRecordField {
+				return fields, nil
+			}
+		}
+		if len(fields) == assemblyline.MaxApplicationServiceStateInterfaceFields {
+			return nil, fmt.Errorf(
+				"application record field coverage remains incomplete at the code-owned %d-field bound",
+				assemblyline.MaxApplicationServiceStateInterfaceFields,
+			)
+		}
+
+		nameJob, err := assemblyline.NewApplicationRecordFieldNameJob(leafInput)
+		if err != nil {
+			return nil, err
+		}
+		name, err := runDirectCodingSemanticLeafCall(
+			runtime, model, subject+"_record_field_name", nameJob, identities,
+			func(raw string) (string, error) {
+				return assemblyline.DecodeApplicationRecordFieldNameLeaf(leafInput, raw)
+			},
+			func(string) error { return nil },
+		)
+		if err != nil {
+			return nil, err
+		}
+		kindInput := assemblyline.ApplicationRecordFieldKindInput{
+			Authority: authority, ParentName: parentName,
+			AcceptedRecordFields: append(
+				[]assemblyline.ApplicationServiceStateRecordField{}, fields...,
+			),
+			FocusedName: name,
+		}
+		kindJob, err := assemblyline.NewApplicationRecordFieldKindJob(kindInput)
+		if err != nil {
+			return nil, err
+		}
+		kind, err := runDirectCodingSemanticLeafCall(
+			runtime, model, subject+"_record_field_kind", kindJob, identities,
+			func(raw string) (assemblyline.ApplicationServiceStateFieldKind, error) {
+				return assemblyline.DecodeApplicationRecordFieldKindLeaf(kindInput, raw)
+			},
+			func(assemblyline.ApplicationServiceStateFieldKind) error { return nil },
+		)
+		if err != nil {
+			return nil, err
+		}
+		fields = append(fields, assemblyline.ApplicationServiceStateRecordField{
+			Name: name, Kind: kind,
+		})
+	}
 }
 
 func directCodingServiceStateComponents(

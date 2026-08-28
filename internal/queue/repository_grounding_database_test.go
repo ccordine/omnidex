@@ -16,15 +16,17 @@ func TestPostgresRepositoryGroundingStationsUseExactGapAuthority(t *testing.T) {
 		job     func(testing.TB) assemblyline.PortableJob
 	}{
 		{name: "relevance", station: station.RepositoryEvidenceRelevance, job: repositoryRelevancePortableJob},
-		{name: "review", station: station.RepositoryGroundedReview, job: repositoryReviewPortableJob},
+		{name: "review detail", station: station.RepositoryGroundedReview, job: repositoryReviewPortableJob},
+		{name: "review kind", station: station.RepositoryGroundedReview, job: repositoryReviewKindPortableJob},
 		{name: "correction", station: station.RepositoryGroundedCorrection, job: repositoryCorrectionPortableJob},
 	}
 	for _, test := range tests {
 		test := test
 		t.Run(test.name, func(t *testing.T) {
+			const contextTokens = 8192
 			pool := openIsolatedMigrationPool(t)
 			repository := New(pool)
-			if err := repository.EnsureSchema(t.Context(), loadMigrationBundleThroughPrefix(t, "096")); err != nil {
+			if err := repository.EnsureSchema(t.Context(), loadMigrationBundleThroughPrefix(t, "163")); err != nil {
 				t.Fatal(err)
 			}
 			claim := seedPreInlineExecutionMigrationClaim(
@@ -40,7 +42,10 @@ func TestPostgresRepositoryGroundingStationsUseExactGapAuthority(t *testing.T) {
 			}
 			opening, err := repository.OpenStationGap(t.Context(), StationGapOpenRecord{
 				Authority: claim.Authority, Job: job, Station: test.station,
-				ContextTokens: 8192, MaxOutputTokens: 8192,
+				ContextTokens: contextTokens,
+				MaxOutputTokens: portableStationTestMaxOutputTokens(
+					t, job, contextTokens,
+				),
 				OutputLimitMode: llm.ExactPreparedOutputLimitNatural,
 			})
 			if err != nil {
@@ -82,10 +87,10 @@ func TestPostgresRepositoryGroundingMigrationRejectsChangedPriorFunction(t *test
 
 func repositoryRelevancePortableJob(t testing.TB) assemblyline.PortableJob {
 	t.Helper()
-	job, err := assemblyline.NewRepositoryEvidenceRelevanceJob(assemblyline.RepositoryEvidenceRelevanceInput{
-		ExactRequirement: "Which component owns dispatch?",
-		Candidates:       []assemblyline.RepositoryEvidenceCandidate{{EvidenceID: "R01", Text: "DispatchOwner owns dispatch."}},
-		MaxSelections:    1,
+	job, err := assemblyline.NewRepositoryEvidenceRelevanceLeafJob(assemblyline.RepositoryEvidenceRelevanceLeafInput{
+		ExactRequirement:    "Which component owns dispatch?",
+		Candidates:          []assemblyline.RepositoryEvidenceCandidate{{EvidenceID: "R01", Text: "DispatchOwner owns dispatch."}},
+		SelectedEvidenceIDs: []string{}, MaxSelections: 1,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -95,11 +100,29 @@ func repositoryRelevancePortableJob(t testing.TB) assemblyline.PortableJob {
 
 func repositoryReviewPortableJob(t testing.TB) assemblyline.PortableJob {
 	t.Helper()
-	job, err := assemblyline.NewRepositoryGroundedReviewJob(assemblyline.RepositoryGroundedReviewInput{
+	job, err := assemblyline.NewRepositoryGroundedIssueDetailJob(assemblyline.RepositoryGroundedReviewInput{
 		RequirementID: "requirement-1", ExactRequirement: "Which component owns dispatch?",
 		AnswerText: "DispatchOwner owns dispatch.", EvidenceIDs: []string{"R01"},
 		Evidence: []assemblyline.GroundedEvidenceCapsule{{ID: "R01", Text: "DispatchOwner owns dispatch."}},
 	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return job
+}
+
+func repositoryReviewKindPortableJob(t testing.TB) assemblyline.PortableJob {
+	t.Helper()
+	detail := repositoryReviewPortableJob(t)
+	var reviewInput assemblyline.RepositoryGroundedReviewInput
+	if err := decodePortableGapPayload(detail.Payload, &reviewInput); err != nil {
+		t.Fatal(err)
+	}
+	job, err := assemblyline.NewRepositoryGroundedIssueKindJob(
+		assemblyline.RepositoryGroundedIssueKindLeafInput{
+			Review: reviewInput, Detail: "The ownership wording is unsupported.",
+		},
+	)
 	if err != nil {
 		t.Fatal(err)
 	}

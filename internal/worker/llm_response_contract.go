@@ -9,11 +9,10 @@ import (
 )
 
 type llmResponseContract struct {
-	Protocol            llm.ExactPreparedProtocol
-	Format              string
-	OutputLimitMode     llm.ExactPreparedOutputLimitMode
-	PromptHint          string
-	RawTextStopSequence string
+	Protocol        llm.ExactPreparedProtocol
+	OutputLimitMode llm.ExactPreparedOutputLimitMode
+	PromptHint      string
+	ResponseFraming assemblyline.PortableResponseFraming
 }
 
 func llmResponseContractForScope(scope string) (llmResponseContract, error) {
@@ -21,18 +20,17 @@ func llmResponseContractForScope(scope string) (llmResponseContract, error) {
 	if scope == "" {
 		return llmResponseContract{}, fmt.Errorf("LLM scope is required")
 	}
-	if scope == "portable_fragment_worker" {
+	if scope == assemblyline.PortableFragmentWorkerScope {
 		return llmResponseContract{
-			Protocol:            llm.ExactPreparedProtocolRawTextV1,
-			OutputLimitMode:     llm.ExactPreparedOutputLimitNatural,
-			PromptHint:          llm.MinimalGeneratePrompt,
-			RawTextStopSequence: llm.ExactPreparedCodeStopV1,
+			Protocol:        llm.ExactPreparedProtocolRawTextV2,
+			OutputLimitMode: llm.ExactPreparedOutputLimitNatural,
+			PromptHint:      llm.MinimalGeneratePrompt,
 		}, nil
 	}
-	if scope == "portable_semantic_worker" {
+	if scope == assemblyline.PortableSemanticWorkerScope ||
+		scope == assemblyline.PortableStructuralWorkerScope {
 		return llmResponseContract{
-			Protocol:        llm.ExactPreparedProtocolStructuredV1,
-			Format:          llm.ResponseFormatJSON,
+			Protocol:        llm.ExactPreparedProtocolRawTextV2,
 			OutputLimitMode: llm.ExactPreparedOutputLimitNatural,
 			PromptHint:      llm.MinimalGeneratePrompt,
 		}, nil
@@ -40,17 +38,35 @@ func llmResponseContractForScope(scope string) (llmResponseContract, error) {
 	return llmResponseContract{}, fmt.Errorf("LLM scope %q is not registered", scope)
 }
 
-func llmResponseContractForPortableJob(
-	job assemblyline.PortableJob,
-	responseSchema map[string]any,
-) (llmResponseContract, error) {
-	contract, err := llmResponseContractForScope(portableModelScope(responseSchema))
+func llmResponseContractForPortableJob(job assemblyline.PortableJob) (llmResponseContract, error) {
+	scope, err := portableModelScope(job.Kind)
 	if err != nil {
 		return llmResponseContract{}, err
 	}
-	if job.Kind == assemblyline.WorkFragmentCorrection &&
-		(responseSchema != nil || contract.Protocol != llm.ExactPreparedProtocolRawTextV1) {
-		return llmResponseContract{}, fmt.Errorf("fragment correction requires the raw-text response contract")
+	contract, err := llmResponseContractForScope(scope)
+	if err != nil {
+		return llmResponseContract{}, err
 	}
+	if contract.Protocol != llm.ExactPreparedProtocolRawTextV2 {
+		return llmResponseContract{}, fmt.Errorf("portable work requires the raw-text response contract")
+	}
+	framing, err := assemblyline.PortableResponseFramingForJob(job)
+	if err != nil {
+		return llmResponseContract{}, err
+	}
+	switch framing {
+	case assemblyline.PortableResponseFramingSingleLine:
+		if scope != assemblyline.PortableSemanticWorkerScope {
+			return llmResponseContract{}, fmt.Errorf(
+				"single-line portable framing requires the unframed semantic transport",
+			)
+		}
+	case assemblyline.PortableResponseFramingNaturalMultiline:
+	default:
+		return llmResponseContract{}, fmt.Errorf(
+			"portable response framing %q is not provider-actionable", framing,
+		)
+	}
+	contract.ResponseFraming = framing
 	return contract, nil
 }

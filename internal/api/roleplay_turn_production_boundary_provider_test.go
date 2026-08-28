@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 	"sync"
@@ -19,12 +20,14 @@ const (
 	roleplayBoundaryReply           = "Mara ducks beneath the blade, blood streaking her sleeve, and drives the attacker back through the shattered archive door."
 	roleplayBoundaryAction          = "Mara is holding the shattered doorway against the remaining attackers."
 	roleplayBoundaryFact            = "Mara survived the first assault at the shattered archive doorway."
+	roleplayBoundarySearchTerm      = "the current fictional ambush"
 )
 
 type roleplayBoundaryOllama struct {
 	mu              sync.Mutex
 	generatedModels []string
-	stationSchemas  []string
+	stationKinds    []assemblyline.WorkKind
+	responses       []string
 	unexpected      []string
 	terminalCanon   chan struct{}
 	release         chan struct{}
@@ -76,32 +79,34 @@ func (provider *roleplayBoundaryOllama) generate(w http.ResponseWriter, request 
 		writeRoleplayBoundaryJSON(w, map[string]any{"done": true})
 		return
 	}
-	schema := roleplayBoundarySchema(payload)
-	candidate := ""
-	switch schema {
-	case assemblyline.ContextRelevanceSchemaV1:
-		candidate = `{"schema":"omnidex.context-relevance.v1","referenced_candidate_ids":["CTX_3","CTX_4","CTX_5","CTX_6"]}`
-	case assemblyline.ContextMinificationSchemaV1:
-		candidate = `{"schema":"omnidex.context-minification.v1","minimal_context":"Mara is defending the archive."}`
-	case assemblyline.ConversationResponseSchemaV1:
-		raw, _ := json.Marshal(assemblyline.ConversationResponseDecision{
-			Schema: assemblyline.ConversationResponseSchemaV1, Text: roleplayBoundaryReply,
-		})
-		candidate = string(raw)
-	case assemblyline.RoleplayCanonExtractionSchemaV1:
-		candidate = `{"schema":"omnidex.roleplay-canon-extraction.v1","facts":["` + roleplayBoundaryFact + `"]}`
-	case assemblyline.RoleplayOngoingStateLeafV1:
-		candidate = `{"schema":"omnidex.roleplay-ongoing-action.v1","ongoing_action":"` + roleplayBoundaryAction + `"}`
-	default:
-		provider.recordUnexpected("station schema " + schema)
+	prompt, ok := payload["prompt"].(string)
+	if !ok || strings.TrimSpace(prompt) == "" {
+		provider.recordUnexpected("generate prompt is not a non-empty string")
+		http.Error(w, `{"error":"invalid raw station prompt"}`, http.StatusBadRequest)
+		return
+	}
+	if raw, _ := payload["raw"].(bool); !raw {
+		provider.recordUnexpected("station request omitted raw=true")
+		http.Error(w, `{"error":"non-raw station request"}`, http.StatusBadRequest)
+		return
+	}
+	if _, structured := payload["format"]; structured {
+		provider.recordUnexpected("station request included structured format")
+		http.Error(w, `{"error":"structured station request"}`, http.StatusBadRequest)
+		return
+	}
+	candidate, kind, terminalCanon, err := roleplayBoundaryRawResponse(prompt)
+	if err != nil {
+		provider.recordUnexpected(err.Error())
 		http.Error(w, `{"error":"unexpected station"}`, http.StatusBadRequest)
 		return
 	}
 	provider.mu.Lock()
 	provider.generatedModels = append(provider.generatedModels, modelName)
-	provider.stationSchemas = append(provider.stationSchemas, schema)
+	provider.stationKinds = append(provider.stationKinds, kind)
+	provider.responses = append(provider.responses, candidate)
 	provider.mu.Unlock()
-	if schema == assemblyline.RoleplayCanonExtractionSchemaV1 {
+	if terminalCanon {
 		provider.terminalOnce.Do(func() { close(provider.terminalCanon) })
 		<-provider.release
 	}
@@ -139,36 +144,113 @@ func (provider *roleplayBoundaryOllama) assertCompleted(t *testing.T) {
 	if len(provider.unexpected) != 0 {
 		t.Fatalf("unexpected provider traffic: %v", provider.unexpected)
 	}
-	wantSchemas := []string{
-		assemblyline.ContextRelevanceSchemaV1,
-		assemblyline.ContextMinificationSchemaV1,
-		assemblyline.ConversationResponseSchemaV1,
-		assemblyline.RoleplayOngoingStateLeafV1,
-		assemblyline.RoleplayCanonExtractionSchemaV1,
+	wantKinds := []assemblyline.WorkKind{
+		assemblyline.WorkContextRelevanceSelection,
+		assemblyline.WorkContextRelevanceSelection,
+		assemblyline.WorkContextRelevanceSelection,
+		assemblyline.WorkContextRelevanceSelection,
+		assemblyline.WorkContextMinification,
+		assemblyline.WorkConversationResponse,
+		assemblyline.WorkRoleplayOngoingAction,
+		assemblyline.WorkRoleplayCanonFactCoverage,
+		assemblyline.WorkRoleplayCanonFact,
+		assemblyline.WorkRoleplayCanonFactCoverage,
 	}
-	if strings.Join(provider.stationSchemas, ",") != strings.Join(wantSchemas, ",") {
-		t.Fatalf("station calls=%v want=%v", provider.stationSchemas, wantSchemas)
+	if len(provider.stationKinds) != len(wantKinds) {
+		t.Fatalf("station calls=%v want=%v", provider.stationKinds, wantKinds)
 	}
-	for index, modelName := range provider.generatedModels {
+	for index, wantKind := range wantKinds {
+		if provider.stationKinds[index] != wantKind {
+			t.Fatalf("station calls=%v want=%v", provider.stationKinds, wantKinds)
+		}
+		if json.Valid([]byte(provider.responses[index])) {
+			t.Fatalf(
+				"station %s returned retired JSON response %q",
+				provider.stationKinds[index], provider.responses[index],
+			)
+		}
 		wantModel := roleplayBoundarySemanticModel
-		if provider.stationSchemas[index] == assemblyline.ConversationResponseSchemaV1 {
+		if provider.stationKinds[index] == assemblyline.WorkConversationResponse {
 			wantModel = roleplayBoundaryNarrativeModel
 		}
+		modelName := provider.generatedModels[index]
 		if modelName != wantModel {
 			t.Fatalf(
 				"station %s used model %q instead of %q",
-				provider.stationSchemas[index], modelName, wantModel,
+				provider.stationKinds[index], modelName, wantModel,
 			)
 		}
 	}
 }
 
-func roleplayBoundarySchema(payload map[string]any) string {
-	format, _ := payload["format"].(map[string]any)
-	properties, _ := format["properties"].(map[string]any)
-	schema, _ := properties["schema"].(map[string]any)
-	value, _ := schema["const"].(string)
-	return value
+func roleplayBoundaryRawResponse(
+	prompt string,
+) (string, assemblyline.WorkKind, bool, error) {
+	switch {
+	case strings.Contains(prompt, "Answer one semantic coverage relation: does the exact current instruction"):
+		if strings.Contains(prompt, "ACCEPTED RETRIEVAL CONCEPTS:\n(none)") {
+			return assemblyline.ContextTermRemains,
+				assemblyline.WorkContextSearchTermCoverage, false, nil
+		}
+		return assemblyline.ContextNoUncoveredTerm,
+			assemblyline.WorkContextSearchTermCoverage, false, nil
+	case strings.Contains(prompt, "Return exactly one concise retrieval concept"):
+		return roleplayBoundarySearchTerm, assemblyline.WorkContextSearchTerm, false, nil
+	case strings.Contains(prompt, "CONTEXT_RELEVANCE_AUTHORITY:\n"):
+		candidateID, err := roleplayBoundaryRelevantCandidate(prompt)
+		return candidateID, assemblyline.WorkContextRelevanceSelection, false, err
+	case strings.Contains(prompt, "CONTEXT_MINIFICATION_JSON:\n"):
+		return "Mara is defending the archive.",
+			assemblyline.WorkContextMinification, false, nil
+	case strings.Contains(prompt, "ROLEPLAY_IDENTITY_JSON:\n"):
+		return roleplayBoundaryReply, assemblyline.WorkConversationResponse, false, nil
+	case strings.Contains(prompt, "ROLEPLAY_ONGOING_ACTION_JSON:\n"):
+		return roleplayBoundaryAction, assemblyline.WorkRoleplayOngoingAction, false, nil
+	case strings.Contains(prompt, "Answer one semantic coverage relation: does the exact current contribution"):
+		if strings.Contains(prompt, "ACCEPTED CURRENT-CONTRIBUTION FACTS:\n(none)") {
+			return assemblyline.RoleplayCanonFactRemains,
+				assemblyline.WorkRoleplayCanonFactCoverage, false, nil
+		}
+		return assemblyline.RoleplayNoUncoveredCanonFact,
+			assemblyline.WorkRoleplayCanonFactCoverage, true, nil
+	case strings.Contains(prompt, "Return exactly one durable fictional fact established by the exact current contribution"):
+		return roleplayBoundaryFact, assemblyline.WorkRoleplayCanonFact, false, nil
+	default:
+		return "", "", false, fmt.Errorf("unexpected raw roleplay station envelope")
+	}
+}
+
+func roleplayBoundaryRelevantCandidate(prompt string) (string, error) {
+	const marker = "CONTEXT_RELEVANCE_AUTHORITY:\n"
+	index := strings.Index(prompt, marker)
+	if index < 0 {
+		return "", fmt.Errorf("raw context relevance prompt omitted authority")
+	}
+	var authority struct {
+		Candidates []struct {
+			CandidateID string `json:"candidate_id"`
+		} `json:"candidates"`
+		AcceptedCandidateIDs []string `json:"accepted_candidate_ids"`
+	}
+	if err := json.NewDecoder(strings.NewReader(prompt[index+len(marker):])).Decode(&authority); err != nil {
+		return "", fmt.Errorf("decode raw context relevance authority: %w", err)
+	}
+	available := make(map[string]struct{}, len(authority.Candidates))
+	for _, candidate := range authority.Candidates {
+		available[candidate.CandidateID] = struct{}{}
+	}
+	accepted := make(map[string]struct{}, len(authority.AcceptedCandidateIDs))
+	for _, candidateID := range authority.AcceptedCandidateIDs {
+		accepted[candidateID] = struct{}{}
+	}
+	for _, candidateID := range []string{"CTX_3", "CTX_4", "CTX_5", "CTX_6"} {
+		_, exists := available[candidateID]
+		_, retained := accepted[candidateID]
+		if exists && !retained {
+			return candidateID, nil
+		}
+	}
+	return assemblyline.ContextRelevanceNoCandidate, nil
 }
 
 func roleplayBoundaryShowResponse() map[string]any {

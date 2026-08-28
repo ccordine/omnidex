@@ -62,7 +62,7 @@ func TestTypeScriptFragmentWorkerFailsAfterOneInvalidInitialCandidate(t *testing
 			Contract: "Return the input plus one.", API: "function apply(value: number): number",
 		}},
 	)
-	if err == nil || !strings.Contains(err.Error(), "wrapped in extra export authority") || calls != 1 {
+	if err == nil || !strings.Contains(err.Error(), "one raw function declaration") || calls != 1 {
 		t.Fatalf("calls=%d error=%v", calls, err)
 	}
 }

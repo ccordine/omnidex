@@ -14,7 +14,6 @@ type exactPreparedRequestOptions struct {
 }
 
 type exactPreparedRequest struct {
-	Format   map[string]any              `json:"format,omitempty"`
 	Model    string                      `json:"model"`
 	Options  exactPreparedRequestOptions `json:"options"`
 	Prompt   string                      `json:"prompt"`
@@ -53,14 +52,21 @@ func (profile exactProviderModelProfile) preparedRequest(
 		Options: exactPreparedRequestOptions{NumCtx: prepared.ContextTokens},
 		Shift:   false, Stream: false, Truncate: false,
 	}
-	if prepared.OutputLimitMode == ExactPreparedOutputLimitExplicit {
+	// LF is the sole cross-transport result boundary. Raw-only multiline and
+	// source stops must never override an attested native template's controls.
+	if prepared.RawTextStopSequence == ExactPreparedLineStopV1 ||
+		(profile.transport == exactPreparedTransportRaw &&
+			prepared.RawTextStopSequence != "") {
+		request.Options.Stop = []string{prepared.RawTextStopSequence}
+	}
+	// Raw profiles have no attested template/EOS liveness guarantee. Always
+	// send their finite code-owned ceiling; natural mode still shares the
+	// remaining native context and validates the provider's measured usage.
+	if prepared.OutputLimitMode == ExactPreparedOutputLimitExplicit ||
+		profile.naturalOutputCeiling {
 		request.Options.NumPredict = prepared.MaxOutputTokens
 	}
 	request.Options.Temperature = prepared.Temperature
-	if prepared.Protocol == ExactPreparedProtocolStructuredV1 {
-		request.Format = prepared.ResponseSchema
-	}
-
 	switch profile.transport {
 	case exactPreparedTransportRaw:
 		return profile.rawPreparedRequest(prepared, request)
@@ -83,7 +89,7 @@ func (profile exactProviderModelProfile) preparedRequest(
 		request.Think = &think
 		return request, nil
 	case exactPreparedTransportNativePrompt:
-		prompt, err := ExactPreparedModelInput(prepared.Prompt, prepared.PromptHint)
+		prompt, err := ExactPreparedRequestModelInput(prepared)
 		if err != nil {
 			return exactPreparedRequest{}, err
 		}
@@ -101,7 +107,7 @@ func (profile exactProviderModelProfile) rawPreparedRequest(
 	prepared PreparedModel,
 	request exactPreparedRequest,
 ) (exactPreparedRequest, error) {
-	prompt, err := ExactPreparedModelInput(prepared.Prompt, prepared.PromptHint)
+	prompt, err := ExactPreparedRequestModelInput(prepared)
 	if err != nil {
 		return exactPreparedRequest{}, err
 	}
@@ -119,7 +125,7 @@ func (profile exactProviderModelProfile) thinkingPreparedRequest(
 	prepared PreparedModel,
 	request exactPreparedRequest,
 ) (exactPreparedRequest, error) {
-	prompt, err := ExactPreparedModelInput(prepared.Prompt, prepared.PromptHint)
+	prompt, err := ExactPreparedRequestModelInput(prepared)
 	if err != nil {
 		return exactPreparedRequest{}, err
 	}

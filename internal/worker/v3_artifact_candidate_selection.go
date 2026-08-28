@@ -15,8 +15,11 @@ func selectArtifactCandidate(
 	if err != nil {
 		return assemblyline.ArtifactCandidateSelectionDecision{}, err
 	}
-	return runDirectCodingSemanticCall[assemblyline.ArtifactCandidateSelectionDecision](
+	return runDirectCodingSemanticLeafCall(
 		runtime, modelName, "artifact_candidate_selection", job, identities,
+		func(raw string) (assemblyline.ArtifactCandidateSelectionDecision, error) {
+			return assemblyline.DecodeArtifactCandidateSelectionDecision(input, raw)
+		},
 		func(value assemblyline.ArtifactCandidateSelectionDecision) error {
 			return value.ValidateFor(input)
 		},

@@ -60,7 +60,7 @@ func TestApplicationServiceEndpointLeavesHaveDistinctExactStationOwners(t *testi
 			t.Fatalf("%s station=%q want=%q", test.name, got, test.want)
 		}
 		correction, err := assemblyline.NewRetainedResponseCorrectionJob(
-			test.job, "the one leaf is invalid", `{}`,
+			test.job, "the one leaf is invalid", "invalid",
 		)
 		if err != nil {
 			t.Fatalf("%s correction: %v", test.name, err)

@@ -16,7 +16,7 @@ func TestServiceEndpointResolutionClassifiesEveryTaskAndContractsOnlyRequiredEnd
 	leafCalls := map[string]int{}
 	runtime := typedWorkerRuntime{
 		Context: context.Background(), MaxAttempts: 3, CorrectionModel: "forbidden-correction",
-		Execute: testPortableExecutor(func(_ string, model, prompt string, _ map[string]any) (string, error) {
+		Execute: testPortableExecutor(func(_ string, model, prompt string) (string, error) {
 			for _, task := range frozen.Tasks {
 				if strings.Contains(prompt, task.ID) {
 					t.Fatalf("service prompt exposed task identity %s: %s", task.ID, prompt)
@@ -34,24 +34,21 @@ func TestServiceEndpointResolutionClassifiesEveryTaskAndContractsOnlyRequiredEnd
 					requirement = assemblyline.ApplicationServiceSupportOnly
 				}
 				requirementCalls++
-				return fmt.Sprintf(
-					`{"schema":"%s","endpoint_requirement":%q}`,
-					assemblyline.ApplicationServiceEndpointRequirementSchemaV1, requirement,
-				), nil
+				return string(requirement), nil
 			case "exposure-model":
 				leafCalls[model]++
-				return `{"schema":"omnidex.application-service-endpoint-exposure.v1","exposure":"public"}`, nil
+				return "public", nil
 			case "method-model":
 				leafCalls[model]++
-				return `{"schema":"omnidex.application-service-endpoint-method.v1","method":"GET"}`, nil
+				return "GET", nil
 			case "route-model":
 				leafCalls[model]++
-				return `{"schema":"omnidex.application-service-endpoint-route-template.v1","route_template":"/records"}`, nil
+				return "/records", nil
 			case "request-media-model":
 				return "", fmt.Errorf("GET request media must be derived without inference")
 			case "response-media-model":
 				leafCalls[model]++
-				return `{"schema":"omnidex.application-service-endpoint-response-media.v1","response_media":"application/json"}`, nil
+				return "application/json", nil
 			case "success-status-model":
 				return "", fmt.Errorf("GET success status must be derived without inference")
 			default:
@@ -113,19 +110,19 @@ func TestServiceEndpointResolutionDerivesNoContentStatusWithoutInference(t *test
 	calls := make(map[string]int)
 	runtime := typedWorkerRuntime{
 		Context: context.Background(), MaxAttempts: 1,
-		Execute: testPortableExecutor(func(_ string, model, _ string, _ map[string]any) (string, error) {
+		Execute: testPortableExecutor(func(_ string, model, _ string) (string, error) {
 			calls[model]++
 			switch model {
 			case "exposure-model":
-				return `{"schema":"omnidex.application-service-endpoint-exposure.v1","exposure":"public"}`, nil
+				return "public", nil
 			case "method-model":
-				return `{"schema":"omnidex.application-service-endpoint-method.v1","method":"POST"}`, nil
+				return "POST", nil
 			case "route-model":
-				return `{"schema":"omnidex.application-service-endpoint-route-template.v1","route_template":"/records"}`, nil
+				return "/records", nil
 			case "request-media-model":
-				return `{"schema":"omnidex.application-service-endpoint-request-media.v1","request_media":"application/json"}`, nil
+				return "application/json", nil
 			case "response-media-model":
-				return `{"schema":"omnidex.application-service-endpoint-response-media.v1","response_media":"none"}`, nil
+				return "none", nil
 			case "success-status-model":
 				return "", fmt.Errorf("no-content status must be derived without inference")
 			default:

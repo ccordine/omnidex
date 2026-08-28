@@ -80,8 +80,10 @@ A model response is not a state transition.
    preservation review, or narrative restatement chain.
 8. Separate bounded semantic calls extract newly established canon once from
    the exact fictional user contribution and once from each final response.
-   Code validates, deduplicates, grants, and persists only each returned
-   source-local semantic leaf.
+   Canon coverage returns only `CANON_FACT_REMAINS` or
+   `NO_UNCOVERED_CANON_FACT`; code alone interprets that relation and decides
+   whether the separate one-fact call runs again. Code validates, deduplicates,
+   grants, and persists only each returned source-local semantic leaf.
 9. At terminal completion, code locks the unchanged base revision, reapplies
    the transition, and verifies that its result and narrative fingerprint equal
    the immutable preview.

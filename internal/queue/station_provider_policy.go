@@ -18,7 +18,7 @@ func PortableJobProviderIdentityProfilePolicy(
 		return "", err
 	}
 	switch job.Kind {
-	case assemblyline.WorkRoleplayGroundedResponse:
+	case assemblyline.WorkRoleplayGroundedResponseText:
 		return llm.ProviderIdentityProfileRoleplayRawCompletion, nil
 	case assemblyline.WorkConversationResponse:
 		var input assemblyline.ConversationResponseInput
@@ -29,21 +29,24 @@ func PortableJobProviderIdentityProfilePolicy(
 			return llm.ProviderIdentityProfileRoleplayRawCompletion, nil
 		}
 		return "", nil
-	case assemblyline.WorkRoleplayCanonExtraction,
+	case assemblyline.WorkRoleplayCanonFactCoverage,
+		assemblyline.WorkRoleplayCanonFact,
+		assemblyline.WorkRoleplayGroundedResponseEvidenceRelation,
 		assemblyline.WorkRoleplayOngoingAction:
 		return llm.ProviderIdentityProfileRoleplaySemanticCompletion, nil
-	case assemblyline.WorkContextSearchTerms:
-		var input assemblyline.ContextSearchTermsInput
+	case assemblyline.WorkContextSearchTermCoverage,
+		assemblyline.WorkContextSearchTerm:
+		var input assemblyline.ContextSearchTermLeafInput
 		if err := json.Unmarshal(job.Payload, &input); err != nil {
 			return "", fmt.Errorf("decode context-search provider policy: %w", err)
 		}
 		return contextProviderIdentityProfilePolicy(input.Scope)
-	case assemblyline.WorkContextRelevance:
-		var input assemblyline.ContextRelevanceInput
+	case assemblyline.WorkContextRelevanceSelection:
+		var input assemblyline.ContextRelevanceSelectionInput
 		if err := json.Unmarshal(job.Payload, &input); err != nil {
 			return "", fmt.Errorf("decode context-relevance provider policy: %w", err)
 		}
-		return contextProviderIdentityProfilePolicy(input.Scope)
+		return contextProviderIdentityProfilePolicy(input.Authority.Scope)
 	case assemblyline.WorkContextMinification:
 		var input assemblyline.ContextMinificationInput
 		if err := json.Unmarshal(job.Payload, &input); err != nil {

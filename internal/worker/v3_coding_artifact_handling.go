@@ -15,8 +15,11 @@ func classifyArtifactHandling(
 		if err != nil {
 			return nil, err
 		}
-		decision, err := runDirectCodingSemanticCall[assemblyline.ArtifactHandlingDecision](
+		decision, err := runDirectCodingSemanticLeafCall(
 			runtime, modelName, "artifact_handling", job, identities,
+			func(raw string) (assemblyline.ArtifactHandlingDecision, error) {
+				return assemblyline.DecodeArtifactHandlingDecision(input, raw)
+			},
 			func(value assemblyline.ArtifactHandlingDecision) error { return value.Validate(identity.Token) },
 		)
 		if err != nil {

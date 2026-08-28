@@ -30,7 +30,7 @@ func (stations *PortableStations) Correct(
 	if err != nil {
 		return GroundedSynthesisCorrectionDecision{}, err
 	}
-	return GroundedSynthesisCorrectionDecision{Text: decision.Text}, nil
+	return GroundedSynthesisCorrectionDecision{Text: decision.Text, SemanticCalls: 1}, nil
 }
 
 func portableSynthesisCorrectionInput(

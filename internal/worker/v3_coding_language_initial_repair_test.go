@@ -27,7 +27,7 @@ func TestGenerateBlockCoreRepairsInitialParserRejectionWithoutStageFailureMapper
 				Signature: "func CanonicalRune(input rune) rune",
 				Behavior:  "Return one canonical rune.",
 			},
-			rawInitial:  "```go\nfunc CanonicalRune(input rune) rune { return unicode.ToUpper(input) }\n```",
+			rawInitial:  "func CanonicalRune(input rune) rune { return unicode.ToUpper(input) }",
 			corrected:   `func CanonicalRune(input rune) rune { return input }`,
 			project:     projectDirectCodingGoFragment,
 			validate:    validateDirectCodingGoFragment,
@@ -87,8 +87,7 @@ func TestGenerateBlockCoreRepairsInitialParserRejectionWithoutStageFailureMapper
 					}
 				},
 				Execute: testPortableExecutor(func(
-					scope string, model string, prompt string, _ map[string]any,
-				) (string, error) {
+					scope string, model string, prompt string) (string, error) {
 					calls = append(calls, scope+":"+model)
 					switch scope {
 					case "portable_semantic_worker":
@@ -101,7 +100,7 @@ func TestGenerateBlockCoreRepairsInitialParserRejectionWithoutStageFailureMapper
 						); current != projected {
 							t.Fatalf("repair guidance current=%q projected=%q raw=%q", current, projected, fixture.rawInitial)
 						}
-						return `{"instruction":"Replace the undeclared external helper with a direct expression using only the declared parameter."}`, nil
+						return "Replace the undeclared external helper with a direct expression using only the declared parameter.", nil
 					case "portable_fragment_worker":
 						if len(calls) == 1 {
 							if model != "initial" || !strings.Contains(prompt, fixture.input.Behavior) {

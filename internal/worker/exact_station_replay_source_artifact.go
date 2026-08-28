@@ -69,7 +69,7 @@ func replayExactStationSourceArtifact(
 		if err != nil {
 			return artifact, fmt.Errorf("project replay source declaration: %w", err)
 		}
-		artifact.Kind = string(assemblyline.PortableResultProjectionSourceDeclaration)
+		artifact.Kind = string(projection.Kind)
 		artifact.Source, artifact.SourceSHA256 = projection.Source, projection.SourceSHA256
 		artifact.StartByte, artifact.EndByte = projection.StartByte, projection.EndByte
 		artifact.DiscardedBytes = projection.DiscardedBytes

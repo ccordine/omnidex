@@ -35,6 +35,10 @@ func (machine *Machine) selectAndProject(
 	if err != nil {
 		return nil, false, fmt.Errorf("relevance station: %w", err)
 	}
+	if decision.SemanticCalls < 1 {
+		return nil, false, fmt.Errorf("%w: relevance reported no semantic calls", ErrInvalidRelevance)
+	}
+	result.SemanticCalls += decision.SemanticCalls
 	if err := ctx.Err(); err != nil {
 		return nil, false, err
 	}

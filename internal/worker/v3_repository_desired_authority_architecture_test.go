@@ -63,8 +63,11 @@ func TestDesiredStateModelSchemasContainNoMutationToolSurface(t *testing.T) {
 		return job
 	}
 	jobs := []assemblyline.PortableJob{
-		must(assemblyline.NewRepositoryRequirementInterpretationJob(assemblyline.RepositoryRequirementInterpretationInput{
-			UserRequest: repositoryRequest, Context: repositoryContext,
+		must(assemblyline.NewRepositoryRequirementCoverageJob(assemblyline.RepositoryRequirementLeafInput{
+			Authority: assemblyline.RepositoryRequirementInterpretationInput{
+				UserRequest: repositoryRequest, Context: repositoryContext,
+			},
+			AcceptedRequirements: []string{},
 		})),
 		must(assemblyline.NewArtifactHandlingJob(assemblyline.ArtifactHandlingInput{
 			UserRequest: "ARTIFACT_1 must no longer exist", Token: "ARTIFACT_1",
@@ -88,14 +91,13 @@ func TestDesiredStateModelSchemasContainNoMutationToolSurface(t *testing.T) {
 		})),
 	}
 	for _, job := range jobs {
-		prompt, schema, err := assemblyline.RenderPortableJob(job)
+		prompt, err := assemblyline.RenderPortableJob(job)
 		if err != nil {
 			t.Fatalf("render %s: %v", job.Kind, err)
 		}
 		if strings.Contains(prompt, "omni_added_artifact.go") {
 			t.Errorf("%s renderer exposed a code-derived target path", job.Kind)
 		}
-		assertNoPhysicalSchemaAuthority(t, string(job.Kind), schema)
 	}
 }
 

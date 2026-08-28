@@ -72,19 +72,16 @@ func TestTypeScriptTargetTreeContractCanReconcileExistingWorkloadPaths(t *testin
 	existing := []string{"src/feature.test.tsx", "src/feature.tsx"}
 	runtime := typedWorkerRuntime{
 		Context: context.Background(), MaxAttempts: 1,
-		Execute: testPortableExecutor(func(_ string, _ string, prompt string, _ map[string]any) (string, error) {
+		Execute: testPortableExecutor(func(_ string, _ string, prompt string) (string, error) {
 			for _, expected := range []string{
-				"EXISTING_WORKSPACE_PATHS_JSON:\n" +
-					`["src/feature.test.tsx","src/feature.tsx"]`,
-				"REUSABLE_ACCEPTED_PATHS_JSON:\n[]",
-				"FORBIDDEN_OUTPUT_PATHS_JSON:\n" +
-					`["src/App.test.tsx","src/App.tsx","src/main.tsx","src/runtime.test.tsx","src/runtime.tsx"]`,
+				"CURRENT_MANAGED_WORKLOAD_TREE:\nROOT\n  D src\n    F feature.test.tsx\n    F feature.tsx",
+				"CODE_RESERVED_TREE:\nROOT\n  D src\n    F App.test.tsx\n    F App.tsx\n    F main.tsx\n    F runtime.test.tsx\n    F runtime.tsx",
 			} {
 				if !strings.Contains(prompt, expected) {
 					t.Fatalf("inferred target-tree prompt lacks %q: %s", expected, prompt)
 				}
 			}
-			return `{"schema":"omnidex.target-tree.v1","paths":["src/feature.tsx","src/feature.test.tsx"]}`, nil
+			return "ROOT\n  D src\n    F feature.tsx\n    F feature.test.tsx", nil
 		}),
 	}
 	stack, err := directCodingProjectStackByID(genericTypeScriptBrowserAdapter)
@@ -105,12 +102,12 @@ func TestTypeScriptTargetTreeContractCanReconcileExistingWorkloadPaths(t *testin
 		t.Fatal(err)
 	}
 	input, err := directCodingTargetTreeInput(
-		specification, stack, existing, nil, []string{"src"},
+		specification, workload, stack, existing, []string{"src"},
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	transitions, err := assemblyline.DiffTargetTree(input, tree)
+	transitions, err := assemblyline.DiffTargetTree(input, tree, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

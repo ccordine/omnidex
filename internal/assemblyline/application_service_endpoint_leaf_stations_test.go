@@ -40,23 +40,12 @@ func TestApplicationServiceEndpointLeafStationsExposeOneSemanticFieldEach(t *tes
 				t.Fatalf("leaf work %s reused persisted identity owned by %s", item.kind, previous)
 			}
 			seenIDs[item.job.ID] = item.kind
-			prompt, schema, err := RenderPortableJob(item.job)
+			prompt, err := RenderPortableJob(item.job)
 			if err != nil {
 				t.Fatal(err)
 			}
 			if item.job.Kind != item.kind || !strings.Contains(prompt, "LOCAL_ACCEPTED_AUTHORITY_JSON") {
 				t.Fatalf("kind=%q prompt=%q", item.job.Kind, prompt)
-			}
-			properties := schema["properties"].(map[string]any)
-			if len(properties) != 2 || properties["schema"] == nil || properties[item.leaf] == nil {
-				t.Fatalf("leaf schema properties=%#v", properties)
-			}
-			for _, other := range []string{
-				"exposure", "method", "route_template", "request_media", "response_media", "success_status",
-			} {
-				if other != item.leaf && properties[other] != nil {
-					t.Fatalf("%s station also exposed %s", item.leaf, other)
-				}
 			}
 		})
 	}
@@ -103,7 +92,7 @@ func TestApplicationServiceEndpointLeafEnvelopesExcludeVerificationAuthority(t *
 	}
 	criterion := frozen.Tasks[0].AcceptanceCriteria[0]
 	for _, job := range jobs {
-		prompt, _, renderErr := RenderPortableJob(job)
+		prompt, renderErr := RenderPortableJob(job)
 		if renderErr != nil {
 			t.Fatal(renderErr)
 		}
@@ -119,7 +108,7 @@ func TestApplicationServiceEndpointLeafDecodersRejectAggregateAndInvalidPrerequi
 	exposureInput := ApplicationServiceEndpointExposureInput{Task: authority}
 	if _, err := DecodeApplicationServiceEndpointExposureResult(
 		exposureInput,
-		`{"schema":"omnidex.application-service-endpoint-exposure.v1","exposure":"public","method":"GET"}`,
+		`{"exposure":"public","method":"GET"}`,
 	); err == nil {
 		t.Fatal("exposure leaf accepted an aggregate field")
 	}
@@ -128,20 +117,20 @@ func TestApplicationServiceEndpointLeafDecodersRejectAggregateAndInvalidPrerequi
 	}
 	if _, err := DecodeApplicationServiceEndpointRequestMediaResult(
 		requestInput,
-		`{"schema":"omnidex.application-service-endpoint-request-media.v1","request_media":"application/json"}`,
+		"application/json",
 	); err == nil {
 		t.Fatal("request-media leaf accepted a GET body")
 	}
 	routeInput := ApplicationServiceEndpointRouteTemplateInput{Task: authority}
 	if result, err := DecodeApplicationServiceEndpointRouteTemplateResult(
 		routeInput,
-		`{"schema":"omnidex.application-service-endpoint-route-template.v1","route_template":"/records/{record_id}"}`,
+		"/records/{record_id}",
 	); err != nil || result.RouteTemplate != "/records/{record_id}" {
 		t.Fatalf("typed route leaf result=%+v error=%v", result, err)
 	}
 	if _, err := DecodeApplicationServiceEndpointRouteTemplateResult(
 		routeInput,
-		`{"schema":"omnidex.application-service-endpoint-route-template.v1","route_template":"/Records"}`,
+		"/Records",
 	); err == nil {
 		t.Fatal("route leaf bypassed the typed HTTP-route validator")
 	}
@@ -151,9 +140,55 @@ func TestApplicationServiceEndpointLeafDecodersRejectAggregateAndInvalidPrerequi
 	}
 	if _, err := DecodeApplicationServiceEndpointSuccessStatusResult(
 		statusInput,
-		`{"schema":"omnidex.application-service-endpoint-success-status.v1","success_status":201}`,
+		"201",
 	); err == nil {
 		t.Fatal("success-status leaf accepted a payload status without response media")
+	}
+}
+
+func TestApplicationServiceEndpointLeafDecodersConstructTypedResultsFromRawLeaves(t *testing.T) {
+	t.Parallel()
+	authority := testServiceEndpointTaskAuthority()
+
+	exposure, err := DecodeApplicationServiceEndpointExposureResult(
+		ApplicationServiceEndpointExposureInput{Task: authority}, "public",
+	)
+	if err != nil || exposure.Schema != ApplicationServiceEndpointExposureSchemaV1 ||
+		exposure.Exposure != ApplicationServiceEndpointPublic {
+		t.Fatalf("exposure=%+v err=%v", exposure, err)
+	}
+	method, err := DecodeApplicationServiceEndpointMethodResult(
+		ApplicationServiceEndpointMethodInput{Task: authority}, "POST",
+	)
+	if err != nil || method.Schema != ApplicationServiceEndpointMethodSchemaV1 ||
+		method.Method != ApplicationServiceEndpointPOST {
+		t.Fatalf("method=%+v err=%v", method, err)
+	}
+	requestMedia, err := DecodeApplicationServiceEndpointRequestMediaResult(
+		ApplicationServiceEndpointRequestMediaInput{Task: authority, Method: ApplicationServiceEndpointPOST},
+		"application/json",
+	)
+	if err != nil || requestMedia.Schema != ApplicationServiceEndpointRequestMediaSchemaV1 ||
+		requestMedia.RequestMedia != ApplicationServiceEndpointJSON {
+		t.Fatalf("request media=%+v err=%v", requestMedia, err)
+	}
+	responseMedia, err := DecodeApplicationServiceEndpointResponseMediaResult(
+		ApplicationServiceEndpointResponseMediaInput{Task: authority}, "application/json",
+	)
+	if err != nil || responseMedia.Schema != ApplicationServiceEndpointResponseMediaSchemaV1 ||
+		responseMedia.ResponseMedia != ApplicationServiceEndpointJSON {
+		t.Fatalf("response media=%+v err=%v", responseMedia, err)
+	}
+	status, err := DecodeApplicationServiceEndpointSuccessStatusResult(
+		ApplicationServiceEndpointSuccessStatusInput{
+			Task: authority, Method: ApplicationServiceEndpointPOST,
+			RequestMedia: ApplicationServiceEndpointJSON, ResponseMedia: ApplicationServiceEndpointJSON,
+		},
+		"201",
+	)
+	if err != nil || status.Schema != ApplicationServiceEndpointSuccessStatusSchemaV1 ||
+		status.SuccessStatus != 201 {
+		t.Fatalf("status=%+v err=%v", status, err)
 	}
 }
 

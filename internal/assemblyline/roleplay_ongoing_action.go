@@ -10,7 +10,10 @@ import (
 	"github.com/gryph/omnidex/internal/roleplay"
 )
 
-const RoleplayOngoingStateLeafV1 = "omnidex.roleplay-ongoing-action.v1"
+const (
+	RoleplayOngoingStateLeafV1 = "omnidex.roleplay-ongoing-action.v1"
+	RoleplayOngoingActionNone  = "NONE"
+)
 
 type RoleplayOngoingActionSource string
 
@@ -27,8 +30,7 @@ type RoleplayOngoingActionInput struct {
 }
 
 // RoleplayOngoingActionDecision carries exactly one nullable semantic leaf.
-// RawMessage preserves the required distinction between an explicit JSON null
-// and an omitted field until code validates the candidate.
+// Code constructs the internal RawMessage after decoding the model's raw leaf.
 type RoleplayOngoingActionDecision struct {
 	Schema        string          `json:"schema"`
 	OngoingAction json.RawMessage `json:"ongoing_action"`
@@ -110,14 +112,25 @@ func DecodeRoleplayOngoingActionDecision(
 	input RoleplayOngoingActionInput,
 	raw string,
 ) (RoleplayOngoingActionDecision, error) {
-	var decision RoleplayOngoingActionDecision
-	if len(raw) > maxPortableCandidateBytes {
-		return decision, fmt.Errorf(
-			"roleplay ongoing-action candidate exceeds %d bytes", maxPortableCandidateBytes,
-		)
+	if err := input.validate(); err != nil {
+		return RoleplayOngoingActionDecision{}, err
 	}
-	if err := decodePortablePayload([]byte(raw), &decision); err != nil {
-		return decision, fmt.Errorf("decode roleplay ongoing action: %w", err)
+	leaf, err := decodeRawSemanticLeaf(
+		"roleplay ongoing action", raw, roleplay.MaxOngoingActionBytes, true,
+	)
+	if err != nil {
+		return RoleplayOngoingActionDecision{}, err
+	}
+	ongoingAction := json.RawMessage("null")
+	if leaf != RoleplayOngoingActionNone {
+		encoded, err := json.Marshal(leaf)
+		if err != nil {
+			return RoleplayOngoingActionDecision{}, fmt.Errorf("encode roleplay ongoing action: %w", err)
+		}
+		ongoingAction = encoded
+	}
+	decision := RoleplayOngoingActionDecision{
+		Schema: RoleplayOngoingStateLeafV1, OngoingAction: ongoingAction,
 	}
 	return decision, decision.ValidateFor(input)
 }
@@ -134,25 +147,9 @@ func BuildRoleplayOngoingActionPrompt(input RoleplayOngoingActionInput) (string,
 		"Determine the single current action, if any, that the named character is still carrying out at the end of this one exact contribution.",
 		"The source identifies whether the exact contribution is the character's assistant response or the user's typed action contribution for that character.",
 		"The previous_ongoing_action value is the exact current state before the contribution. Preserve it byte-for-byte unless the contribution establishes that the character completed it or replaced it with another action.",
-		"Return ongoing_action as one concise standalone present-tense statement naming the character when a replacement action remains underway. Return the exact previous string when it remains underway. Return null only when no action remains underway, including when the contribution establishes completion.",
-		"Do not return intentions that have not begun, completed acts, dialogue topics, feelings, traits, facts, explanations, or additional fields.",
+		"Return one concise standalone present-tense statement naming the character when a replacement action remains underway. Return the exact previous string when it remains underway. Return the registered token NONE only when no action remains underway, including when the contribution establishes completion.",
+		"Return only that raw statement or NONE with no JSON, quotes, label, Markdown, commentary, or additional fields.",
+		"Do not return intentions that have not begun, completed acts, dialogue topics, feelings, traits, facts, or explanations.",
 		"ROLEPLAY_ONGOING_ACTION_JSON:\n" + string(payload),
 	}, "\n\n"), nil
-}
-
-func RoleplayOngoingActionResponseSchema() map[string]any {
-	return objectSchema([]string{"schema", "ongoing_action"}, map[string]any{
-		"schema": map[string]any{
-			"type": "string", "const": RoleplayOngoingStateLeafV1,
-		},
-		"ongoing_action": map[string]any{
-			"oneOf": []any{
-				map[string]any{
-					"type": "string", "minLength": 1,
-					"maxLength": roleplay.MaxOngoingActionBytes,
-				},
-				map[string]any{"type": "null"},
-			},
-		},
-	})
 }

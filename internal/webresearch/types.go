@@ -126,5 +126,6 @@ type Result struct {
 	SynthesisCorrectionCalls      int
 	SynthesisCorrectionZeroDeltas int
 	ClaimEvidenceReviewCalls      int
+	SemanticCalls                 int
 	Complete                      bool
 }

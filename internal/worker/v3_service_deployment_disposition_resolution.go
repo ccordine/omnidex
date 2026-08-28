@@ -37,9 +37,14 @@ func resolveDirectCodingServiceDeploymentDisposition(
 	}
 	runtime.MaxAttempts = 1
 	runtime.CorrectionModel = ""
-	availability, err := runDirectCodingSemanticCall[assemblyline.ApplicationServiceContinuedAvailabilityResult](
+	availability, err := runDirectCodingSemanticLeafCall(
 		runtime, continuedAvailabilityModel, "application_service_continued_availability",
 		availabilityJob, identities,
+		func(raw string) (assemblyline.ApplicationServiceContinuedAvailabilityResult, error) {
+			return assemblyline.DecodeApplicationServiceContinuedAvailabilityResult(
+				availabilityInput, raw,
+			)
+		},
 		func(value assemblyline.ApplicationServiceContinuedAvailabilityResult) error {
 			return value.ValidateFor(availabilityInput)
 		},
@@ -78,9 +83,14 @@ func resolveDirectCodingServiceDeploymentDisposition(
 	if err != nil {
 		return directCodingServiceDeploymentResolution{}, err
 	}
-	destination, err := runDirectCodingSemanticCall[assemblyline.ApplicationServicePersistenceDestinationResult](
+	destination, err := runDirectCodingSemanticLeafCall(
 		runtime, persistenceDestinationModel, "application_service_persistence_destination",
 		destinationJob, identities,
+		func(raw string) (assemblyline.ApplicationServicePersistenceDestinationResult, error) {
+			return assemblyline.DecodeApplicationServicePersistenceDestinationResult(
+				destinationInput, raw,
+			)
+		},
 		func(value assemblyline.ApplicationServicePersistenceDestinationResult) error {
 			return value.ValidateFor(destinationInput)
 		},

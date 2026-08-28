@@ -62,8 +62,7 @@ func TestTypeScriptGenerateBlockCoreRepairsInitialParserRejection(t *testing.T) 
 					}
 				},
 				Execute: testPortableExecutor(func(
-					scope string, model string, prompt string, _ map[string]any,
-				) (string, error) {
+					scope string, model string, prompt string) (string, error) {
 					calls = append(calls, scope+":"+model)
 					switch len(calls) {
 					case 1:
@@ -79,7 +78,7 @@ func TestTypeScriptGenerateBlockCoreRepairsInitialParserRejection(t *testing.T) 
 							!strings.Contains(prompt, "does not match required signature") {
 							t.Fatalf("TypeScript guidance lost exact rejection authority:\n%s", prompt)
 						}
-						return `{"instruction":"` + instruction + `"}`, nil
+						return instruction, nil
 					case 3:
 						for _, forbidden := range []string{
 							"SOURCE_DIAGNOSTIC:", "EXACT_SIGNATURE:",
@@ -135,7 +134,7 @@ func TestTypeScriptInitialProjectionFailureRemainsTerminal(t *testing.T) {
 	calls := 0
 	runtime := typedWorkerRuntime{
 		Context: context.Background(), MaxAttempts: 1,
-		Execute: testPortableExecutor(func(_ string, _ string, _ string, _ map[string]any) (string, error) {
+		Execute: testPortableExecutor(func(_ string, _ string, _ string) (string, error) {
 			calls++
 			return `export function NormalizeToken(input: string): string { return input; }`, nil
 		}),
@@ -147,7 +146,7 @@ func TestTypeScriptInitialProjectionFailureRemainsTerminal(t *testing.T) {
 			return "guidance", "correction", nil
 		}, directCodingTypeScriptRepairEvents{}, job,
 	)
-	if err == nil || !strings.Contains(err.Error(), "wrapped in extra export authority") {
+	if err == nil || !strings.Contains(err.Error(), "one raw function declaration") {
 		t.Fatalf("projection rejection=%v", err)
 	}
 	if calls != 1 || modelResolutions != 0 {
@@ -168,7 +167,7 @@ func TestTypeScriptInitialRepairDoesNotExposeVerificationSource(t *testing.T) {
 	calls := 0
 	runtime := typedWorkerRuntime{
 		Context: context.Background(), MaxAttempts: 1,
-		Execute: testPortableExecutor(func(_ string, _ string, _ string, _ map[string]any) (string, error) {
+		Execute: testPortableExecutor(func(_ string, _ string, _ string) (string, error) {
 			calls++
 			return `function VerifyNormalize(value: string): void { return; }`, nil
 		}),
@@ -202,11 +201,11 @@ func TestTypeScriptInitialRepairKeepsInvalidGuidedOutputTerminal(t *testing.T) {
 	calls := 0
 	runtime := typedWorkerRuntime{
 		Context: context.Background(), MaxAttempts: 1,
-		Execute: testPortableExecutor(func(scope string, _ string, _ string, _ map[string]any) (string, error) {
+		Execute: testPortableExecutor(func(scope string, _ string, _ string) (string, error) {
 			calls++
 			switch scope {
 			case "portable_semantic_worker":
-				return `{"instruction":"Replace the parameter type with string."}`, nil
+				return "Replace the parameter type with string.", nil
 			case "portable_fragment_worker":
 				if calls == 1 {
 					return invalid, nil
@@ -223,7 +222,7 @@ func TestTypeScriptInitialRepairKeepsInvalidGuidedOutputTerminal(t *testing.T) {
 			return "guidance", "correction", nil
 		}, directCodingTypeScriptRepairEvents{}, job,
 	)
-	if err == nil || !strings.Contains(err.Error(), "wrapped in extra export authority") {
+	if err == nil || !strings.Contains(err.Error(), "one raw function declaration") {
 		t.Fatalf("guided rejection=%v", err)
 	}
 	if calls != 3 {

@@ -17,8 +17,10 @@ import (
 const (
 	maxObjectiveRoleplayResearchParagraphs     = 4
 	maxObjectiveRoleplayResearchParagraphBytes = 2 * 1024
-	minimumObjectiveRoleplayResearchModelCalls = 2
-	maximumObjectiveRoleplayResearchModelCalls = 3
+	maxObjectiveRoleplayEvidenceSemanticCalls  = 9
+	minimumObjectiveRoleplayResearchModelCalls = 3
+	maximumObjectiveRoleplayResearchModelCalls = maxObjectiveRoleplayEvidenceSemanticCalls +
+		(1+maxObjectiveRoleplayResearchParagraphs*4)*maxTypedWorkerAttempts
 )
 
 func (r *nativeRuntimeV3) acquireObjectiveRoleplayResearch(
@@ -98,10 +100,12 @@ func resolveObjectiveRoleplayResearch(
 		return objectiveRoleplayResearchAnswer{}, err
 	}
 	if gathered.SearchTermsCalls < 0 || gathered.SearchTermsCalls > 1 ||
-		gathered.RelevanceCalls != 1 {
+		gathered.RelevanceCalls != 1 || gathered.SemanticCalls < 1 ||
+		gathered.SemanticCalls > maxObjectiveRoleplayEvidenceSemanticCalls {
 		return objectiveRoleplayResearchAnswer{}, fmt.Errorf(
-			"roleplay research evidence sieve permits zero or one search-term call and requires one relevance call; received %d and %d",
-			gathered.SearchTermsCalls, gathered.RelevanceCalls,
+			"roleplay research evidence sieve permits zero or one search-term call, requires one relevance call, and permits 1..%d raw semantic calls; received %d, %d, and %d",
+			maxObjectiveRoleplayEvidenceSemanticCalls,
+			gathered.SearchTermsCalls, gathered.RelevanceCalls, gathered.SemanticCalls,
 		)
 	}
 	projected, err := projectObjectiveRoleplayResearchEvidence(gathered.Evidence, gathered.Projected)
@@ -130,9 +134,14 @@ func resolveObjectiveRoleplayResearch(
 	if err != nil {
 		return objectiveRoleplayResearchAnswer{}, err
 	}
-	if receipt.Calls != 1 {
+	minimumResponseCalls := 1 + len(capsules)
+	maximumResponseCalls := (1 + maxObjectiveRoleplayResearchParagraphs*len(capsules)) *
+		maxTypedWorkerAttempts
+	if receipt.Reused || receipt.Calls < minimumResponseCalls ||
+		receipt.Calls > maximumResponseCalls {
 		return objectiveRoleplayResearchAnswer{}, fmt.Errorf(
-			"roleplay research response requires exactly one semantic call; received %d", receipt.Calls,
+			"roleplay research response reported %d calls outside the raw text and pairwise evidence budget %d..%d",
+			receipt.Calls, minimumResponseCalls, maximumResponseCalls,
 		)
 	}
 	paragraphs := make([]webresearch.GroundedParagraph, len(decision.Paragraphs))
@@ -166,7 +175,7 @@ func resolveObjectiveRoleplayResearch(
 		Rendered: artifact.Rendered, RenderedSHA256: artifact.SHA256,
 		Paragraphs: cloneWebParagraphs(artifact.Paragraphs), Evidence: selected,
 		EvidenceIDs: ids,
-		ModelCalls:  gathered.SearchTermsCalls + gathered.RelevanceCalls + receipt.Calls,
+		ModelCalls:  gathered.SemanticCalls + receipt.Calls,
 	}, nil
 }
 

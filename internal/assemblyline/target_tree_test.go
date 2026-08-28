@@ -6,189 +6,228 @@ import (
 	"testing"
 )
 
-func TestTargetTreeIsPathOnlyAndOmissionIsUntouched(t *testing.T) {
-	input := TargetTreeInput{
-		Objective: "Build a counter.", TechnicalContext: "TypeScript React browser project.",
-		Constraints:   TargetTreeConstraints{ExactPathCount: 2},
-		ExistingPaths: []string{"src/old.ts", "src/counter.ts"}, ReusablePaths: []string{},
-		ReservedPaths: []string{"src/runtime.ts"}, ExistingDirs: []string{"src"},
-	}
-	target, err := DecodeTargetTreeCandidate(input, `{"schema":"omnidex.target-tree.v1","paths":["tests/counter.test.ts","src/counter.ts"]}`)
+func TestRawTargetTreeParserBuildsOnlyNormalizedFilePaths(t *testing.T) {
+	t.Parallel()
+	target, err := ParseTargetTree(strings.Join([]string{
+		"ROOT",
+		"  D tests",
+		"    F counter.test.tsx",
+		"  D src",
+		"    D components",
+		"      F counter.tsx",
+	}, "\n"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	transitions, err := DiffTargetTree(input, target)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(transitions) != 3 || transitions[0] != (TargetTreeTransition{Kind: TargetTreeEnsureDirectory, Path: "tests"}) || transitions[1] != (TargetTreeTransition{Kind: TargetTreeReconcile, Path: "src/counter.ts"}) || transitions[2] != (TargetTreeTransition{Kind: TargetTreeCreate, Path: "tests/counter.test.ts"}) {
-		t.Fatalf("transitions=%+v", transitions)
+	want := []string{"src/components/counter.tsx", "tests/counter.test.tsx"}
+	if !reflect.DeepEqual(target.Paths, want) {
+		t.Fatalf("paths=%v want=%v", target.Paths, want)
 	}
 }
 
-func TestTargetTreePromptContainsNoContentResponsibility(t *testing.T) {
-	prompt, _, err := RenderPortableJob(mustTargetTreeJob(t, TargetTreeInput{
-		Objective: "Build a counter.", TechnicalContext: "TypeScript React browser project.",
-		Constraints:   TargetTreeConstraints{ExactPathCount: 2},
-		ExistingPaths: []string{"src/old.tsx"}, ReusablePaths: []string{"src/shared.tsx"},
-		ReservedPaths: []string{"src/App.tsx"}, ExistingDirs: []string{"src"},
-	}))
-	if err != nil {
-		t.Fatal(err)
+func TestRawTargetTreeParserRejectsNonTreeAndUnsafeShapes(t *testing.T) {
+	t.Parallel()
+	tests := map[string]string{
+		"json":           "{\"paths\":[\"src/app.tsx\"]}",
+		"flat path":      "ROOT\nsrc/app.tsx",
+		"blank line":     "ROOT\n\n  F app.tsx",
+		"fence":          "~~~text\nROOT\n~~~",
+		"prose":          "Here is the tree:\nROOT",
+		"slash name":     "ROOT\n  F src/app.tsx",
+		"backslash":      "ROOT\n  F src\\app.tsx",
+		"traversal":      "ROOT\n  D ..\n    F app.tsx",
+		"absolute":       "ROOT\n  F /tmp",
+		"drive":          "ROOT\n  F C:",
+		"drive relative": "ROOT\n  F C:secret.tsx",
+		"carriage":       "ROOT\r\n  F app.tsx",
+		"duplicate":      "ROOT\n  F app.tsx\n  F app.tsx",
+		"collision":      "ROOT\n  D app\n    F child.ts\n  F app",
+		"file children":  "ROOT\n  F app.tsx\n    F child.tsx",
+		"empty dir":      "ROOT\n  D src",
+		"odd indent":     "ROOT\n F app.tsx",
+		"depth skip":     "ROOT\n    F app.tsx",
 	}
-	for _, forbidden := range []string{"requirement", "purpose", "ownership", "declaration", "command", "operation"} {
-		if strings.Contains(strings.ToLower(prompt), forbidden) {
-			t.Fatalf("tree prompt leaks %q: %s", forbidden, prompt)
+	for name, raw := range tests {
+		name, raw := name, raw
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			if _, err := ParseTargetTree(raw); err == nil {
+				t.Fatalf("unsafe raw tree was accepted: %q", raw)
+			}
+		})
+	}
+}
+
+func TestTargetTreeDepthLimitIsSharedByRawAndPathValidation(t *testing.T) {
+	t.Parallel()
+	parts := make([]string, MaxTargetTreeDepth+1)
+	lines := []string{targetTreeRootLine}
+	for index := range parts {
+		parts[index] = "d"
+		kind := "D"
+		if index == len(parts)-1 {
+			kind = "F"
 		}
+		lines = append(lines, strings.Repeat("  ", index+1)+kind+" d")
+	}
+	if _, err := ParseTargetTree(strings.Join(lines, "\n")); err == nil {
+		t.Fatalf("raw tree deeper than %d was accepted", MaxTargetTreeDepth)
+	}
+	if _, err := RenderTargetTree([]string{strings.Join(parts, "/")}); err == nil {
+		t.Fatalf("path deeper than %d was rendered", MaxTargetTreeDepth)
 	}
 }
 
-func TestTargetTreePromptSeparatesExistingReusableAndReservedPaths(t *testing.T) {
-	input := TargetTreeInput{
-		Objective: "Build a counter.", TechnicalContext: "TypeScript React browser project.",
-		Constraints:   TargetTreeConstraints{ExactPathCount: 2},
-		ExistingPaths: []string{"src/existing.tsx"}, ReusablePaths: []string{"src/shared.tsx"},
-		ReservedPaths: []string{"src/runtime.tsx"}, ExistingDirs: []string{"src"},
+func TestRenderTargetTreeIsCanonical(t *testing.T) {
+	t.Parallel()
+	rendered, err := RenderTargetTree([]string{
+		"z.txt", "src/z.ts", "src/a.ts", "tests/unit/a.test.ts",
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
-	prompt, err := BuildTargetTreePrompt(input)
+	want := strings.Join([]string{
+		"ROOT",
+		"  D src",
+		"    F a.ts",
+		"    F z.ts",
+		"  D tests",
+		"    D unit",
+		"      F a.test.ts",
+		"  F z.txt",
+	}, "\n")
+	if rendered != want {
+		t.Fatalf("rendered tree:\n%s\nwant:\n%s", rendered, want)
+	}
+	if _, err := RenderTargetTree([]string{"src", "src/app.tsx"}); err == nil {
+		t.Fatal("file/directory collision was accepted")
+	}
+}
+
+func TestTargetTreePromptUsesRawCurrentAndReservedTrees(t *testing.T) {
+	t.Parallel()
+	input := targetTreeTestInput()
+	input.ExistingPaths = []string{"src/existing.tsx"}
+	input.ReservedPaths = []string{"src/App.tsx", "src/runtime.tsx"}
+	prompt, err := RenderPortableJob(mustTargetTreeJob(t, input))
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, expected := range []string{
-		"EXISTING_WORKSPACE_PATHS_JSON:\n[\"src/existing.tsx\"]",
-		"REUSABLE_ACCEPTED_PATHS_JSON:\n[\"src/shared.tsx\"]",
-		"FORBIDDEN_OUTPUT_PATHS_JSON:\n[\"src/runtime.tsx\"]",
-		"Every returned path must be relative to the workspace root and must not start with a slash.",
-		"Every returned path and the complete path set must satisfy CODE_SELECTED_TECHNICAL_CONTEXT exactly.",
-		"Never return a path listed in FORBIDDEN_OUTPUT_PATHS_JSON",
-		"CODE_SELECTED_PATH_CONSTRAINTS_JSON:\n{\"exact_path_count\":2,\"root_files_only\":false}",
+		"ACCEPTED_GOALS:\nProduct context: counter\nAccepted goal 1: display a count",
+		"CURRENT_MANAGED_WORKLOAD_TREE:\nROOT\n  D src\n    F existing.tsx",
+		"CODE_RESERVED_TREE:\nROOT\n  D src\n    F App.tsx\n    F runtime.tsx",
+		"RAW_TREE_GRAMMAR:\nROOT\n  D <single basename>",
+		"complete expected workload tree, not a delta",
 	} {
 		if !strings.Contains(prompt, expected) {
-			t.Fatalf("target-tree prompt lacks %q: %s", expected, prompt)
+			t.Fatalf("target-tree prompt lacks %q:\n%s", expected, prompt)
 		}
 	}
-	if strings.Contains(prompt, "CURRENT_OR_RESERVED_PATHS_JSON") {
-		t.Fatalf("target-tree prompt retains ambiguous path authority: %s", prompt)
+	if strings.Contains(prompt, "_JSON") {
+		t.Fatalf("raw target-tree renderer returned JSON authority: prompt=%s", prompt)
 	}
 }
 
-func TestTargetTreeRejectsReservedPathEvenWhenItExists(t *testing.T) {
-	input := TargetTreeInput{
-		Objective: "Build a counter.", TechnicalContext: "TypeScript React browser project.",
-		Constraints:   TargetTreeConstraints{ExactPathCount: 2},
-		ExistingPaths: []string{"src/runtime.tsx"}, ReusablePaths: []string{},
-		ReservedPaths: []string{"src/runtime.tsx"}, ExistingDirs: []string{"src"},
+func TestTargetTreeDecodeAppliesCodeSelectedConstraints(t *testing.T) {
+	t.Parallel()
+	input := targetTreeTestInput()
+	input.ReservedPaths = []string{"src/runtime.tsx"}
+	input.ExistingDirs = []string{"tests/counter.test.tsx"}
+	for name, raw := range map[string]string{
+		"too few":   "ROOT\n  D src\n    F counter.tsx",
+		"reserved":  "ROOT\n  D src\n    F counter.tsx\n    F runtime.tsx",
+		"directory": "ROOT\n  D src\n    F counter.tsx\n  D tests\n    F counter.test.tsx",
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := DecodeTargetTreeCandidate(input, raw); err == nil {
+				t.Fatalf("invalid candidate accepted: %s", raw)
+			}
+		})
 	}
-	_, err := DecodeTargetTreeCandidate(
-		input,
-		`{"schema":"omnidex.target-tree.v1","paths":["src/feature.tsx","src/runtime.tsx"]}`,
-	)
-	if err == nil || !strings.Contains(err.Error(), "reserved") {
-		t.Fatalf("reserved target-tree path error=%v", err)
-	}
-}
-
-func TestTargetTreeRejectsFileLeafEqualToExistingDirectory(t *testing.T) {
-	input := TargetTreeInput{
-		Objective: "Build a formatter.", TechnicalContext: "Root Go package.",
-		Constraints:   TargetTreeConstraints{ExactPathCount: 2, RootFilesOnly: true},
-		ExistingPaths: []string{}, ReusablePaths: []string{}, ReservedPaths: []string{},
-		ExistingDirs: []string{"feature.go"},
-	}
-	candidate := `{"schema":"omnidex.target-tree.v1","paths":["feature.go","feature_test.go"]}`
-	if _, err := DecodeTargetTreeCandidate(input, candidate); err == nil ||
-		!strings.Contains(err.Error(), "existing workspace directory") {
-		t.Fatalf("existing-directory candidate error=%v", err)
-	}
-	if _, err := DiffTargetTree(
-		input, TargetTree{Paths: []string{"feature.go", "feature_test.go"}},
-	); err == nil || !strings.Contains(err.Error(), "existing workspace directory") {
-		t.Fatalf("existing-directory transition error=%v", err)
+	rootOnly := input
+	rootOnly.Constraints = TargetTreeConstraints{ExactPathCount: 2, RootFilesOnly: true}
+	if _, err := DecodeTargetTreeCandidate(
+		rootOnly, "ROOT\n  D src\n    F counter.tsx\n  F counter.test.tsx",
+	); err == nil {
+		t.Fatal("nested tree passed root-files-only constraint")
 	}
 }
 
-func TestTargetTreeDiffUsesOnlyFilesystemPathsForReconciliation(t *testing.T) {
-	input := TargetTreeInput{
-		Objective: "Build a counter.", TechnicalContext: "TypeScript React browser project.",
-		Constraints:   TargetTreeConstraints{ExactPathCount: 3},
-		ExistingPaths: []string{"existing.ts"}, ReusablePaths: []string{"shared.ts"},
-		ReservedPaths: []string{"runtime.ts"}, ExistingDirs: []string{},
-	}
-	target, err := DecodeTargetTreeCandidate(
-		input,
-		`{"schema":"omnidex.target-tree.v1","paths":["existing.ts","shared.ts","new.ts"]}`,
-	)
+func TestTargetTreeDiffRequiresExplicitDeletionEligibility(t *testing.T) {
+	t.Parallel()
+	input := targetTreeTestInput()
+	input.ExistingPaths = []string{"src/counter.tsx", "src/old.tsx"}
+	input.ExistingDirs = []string{"src"}
+	target, err := DecodeTargetTreeCandidate(input, strings.Join([]string{
+		"ROOT",
+		"  D src",
+		"    F counter.tsx",
+		"  D tests",
+		"    F counter.test.tsx",
+	}, "\n"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	transitions, err := DiffTargetTree(input, target)
+	withoutDelete, err := DiffTargetTree(input, target, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, transition := range withoutDelete {
+		if transition.Kind == TargetTreeDelete {
+			t.Fatalf("unscoped omission produced deletion: %+v", withoutDelete)
+		}
+	}
+	withDelete, err := DiffTargetTree(input, target, []string{"src/old.tsx"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	want := []TargetTreeTransition{
-		{Kind: TargetTreeReconcile, Path: "existing.ts"},
-		{Kind: TargetTreeCreate, Path: "new.ts"},
-		{Kind: TargetTreeCreate, Path: "shared.ts"},
+		{Kind: TargetTreeDelete, Path: "src/old.tsx"},
+		{Kind: TargetTreeEnsureDirectory, Path: "tests"},
+		{Kind: TargetTreeReconcile, Path: "src/counter.tsx"},
+		{Kind: TargetTreeCreate, Path: "tests/counter.test.tsx"},
 	}
-	if !reflect.DeepEqual(transitions, want) {
-		t.Fatalf("transitions=%+v want=%+v", transitions, want)
+	if !reflect.DeepEqual(withDelete, want) {
+		t.Fatalf("transitions=%+v want=%+v", withDelete, want)
+	}
+	if _, err := DiffTargetTree(input, target, []string{"src/missing.tsx"}); err == nil {
+		t.Fatal("non-current deletion eligibility was accepted")
 	}
 }
 
-func TestTargetTreeInputRejectsMissingPathAuthority(t *testing.T) {
-	valid := TargetTreeInput{
-		Objective: "Build a counter.", TechnicalContext: "TypeScript React browser project.",
-		Constraints:   TargetTreeConstraints{ExactPathCount: 2},
-		ExistingPaths: []string{}, ReusablePaths: []string{}, ReservedPaths: []string{},
-		ExistingDirs: []string{},
-	}
+func TestTargetTreeInputRequiresCompletePathAuthority(t *testing.T) {
+	t.Parallel()
+	valid := targetTreeTestInput()
 	for _, testCase := range []struct {
 		name   string
 		mutate func(*TargetTreeInput)
-		want   string
 	}{
-		{name: "existing", mutate: func(input *TargetTreeInput) { input.ExistingPaths = nil }, want: "existing workspace paths"},
-		{name: "reusable", mutate: func(input *TargetTreeInput) { input.ReusablePaths = nil }, want: "reusable accepted paths"},
-		{name: "reserved", mutate: func(input *TargetTreeInput) { input.ReservedPaths = nil }, want: "reserved paths"},
-		{name: "directories", mutate: func(input *TargetTreeInput) { input.ExistingDirs = nil }, want: "existing workspace directories"},
+		{name: "existing", mutate: func(input *TargetTreeInput) { input.ExistingPaths = nil }},
+		{name: "reserved", mutate: func(input *TargetTreeInput) { input.ReservedPaths = nil }},
+		{name: "directories", mutate: func(input *TargetTreeInput) { input.ExistingDirs = nil }},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			input := valid
 			testCase.mutate(&input)
-			err := input.Validate()
-			if err == nil || !strings.Contains(err.Error(), testCase.want) {
-				t.Fatalf("missing %s authority error=%v", testCase.name, err)
+			if err := input.Validate(); err == nil {
+				t.Fatalf("missing %s authority was accepted", testCase.name)
 			}
 		})
+	}
+	pathBearing := valid
+	pathBearing.Objective = "Read /private/workspace/secret.tsx."
+	if err := pathBearing.Validate(); err == nil || !strings.Contains(err.Error(), "filesystem identity") {
+		t.Fatalf("absolute accepted-goal identity error=%v", err)
 	}
 }
 
-func TestTargetTreeConstraintsOwnCardinalityAndRootLocation(t *testing.T) {
-	input := TargetTreeInput{
-		Objective: "Build a formatter.", TechnicalContext: "Root JavaScript modules.",
-		Constraints:   TargetTreeConstraints{ExactPathCount: 2, RootFilesOnly: true},
-		ExistingPaths: []string{}, ReusablePaths: []string{}, ReservedPaths: []string{},
-		ExistingDirs: []string{},
-	}
-	for name, candidate := range map[string]string{
-		"too few": `{"schema":"omnidex.target-tree.v1","paths":["format.mjs"]}`,
-		"nested":  `{"schema":"omnidex.target-tree.v1","paths":["src/format.mjs","format.test.mjs"]}`,
-	} {
-		t.Run(name, func(t *testing.T) {
-			if _, err := DecodeTargetTreeCandidate(input, candidate); err == nil {
-				t.Fatalf("target-tree constraints accepted %s", candidate)
-			}
-		})
-	}
-	schema, err := TargetTreeResponseSchema(input)
-	if err != nil {
-		t.Fatal(err)
-	}
-	properties := schema["properties"].(map[string]any)
-	paths := properties["paths"].(map[string]any)
-	items := paths["items"].(map[string]any)
-	if paths["minItems"] != 2 || paths["maxItems"] != 2 || items["pattern"] != `^[^/]{1,512}$` {
-		t.Fatalf("target-tree response schema lacks exact constraints: %+v", paths)
+func targetTreeTestInput() TargetTreeInput {
+	return TargetTreeInput{
+		Objective:        "Product context: counter\nAccepted goal 1: display a count",
+		TechnicalContext: "TypeScript React browser project.",
+		Constraints:      TargetTreeConstraints{ExactPathCount: 2},
+		ExistingPaths:    []string{}, ReservedPaths: []string{}, ExistingDirs: []string{},
 	}
 }
 

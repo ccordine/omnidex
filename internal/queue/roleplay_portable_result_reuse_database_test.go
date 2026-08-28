@@ -282,9 +282,13 @@ func TestPostgresRoleplayPortableResultReuseExcludesCurrentAttemptAndFailedOutco
 
 	failedRoot := roleplayPortableReuseRootJob(t, "failed outcome leaf")
 	failedStation := roleplayPortableReuseStation(t, failedRoot)
+	const contextTokens = 32768
 	failedGap, err := fixture.Repository.OpenStationGap(t.Context(), StationGapOpenRecord{
 		Authority: sourceClaim.Authority, Job: failedRoot, Station: failedStation,
-		ContextTokens: 32768, MaxOutputTokens: 32768,
+		ContextTokens: contextTokens,
+		MaxOutputTokens: portableStationTestMaxOutputTokens(
+			t, failedRoot, contextTokens,
+		),
 		OutputLimitMode: llm.ExactPreparedOutputLimitNatural,
 	})
 	if err != nil {

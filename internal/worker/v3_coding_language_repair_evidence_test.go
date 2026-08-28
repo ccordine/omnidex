@@ -12,8 +12,8 @@ import (
 func TestLanguageCorrectionPersistsProjectedValidatorRejection(t *testing.T) {
 	t.Parallel()
 	const current = "func Value() int { return 1 }"
-	const raw = " \n```go\nfunc Value() int { return hidden() }\n```\n "
-	const projected = "func Value() int { return hidden() }"
+	const raw = "func Value() int { return hidden() }"
+	const projected = raw
 	contract := gofragment.Contract{Signature: "func Value() int", Current: current}
 	finalized := false
 	runtime := typedWorkerRuntime{
@@ -49,10 +49,10 @@ func TestLanguageCorrectionPersistsProjectedValidatorRejection(t *testing.T) {
 	}
 }
 
-func TestLanguageCorrectionDetectsFencedByteIdenticalSourceAfterProjection(t *testing.T) {
+func TestLanguageCorrectionDetectsExactByteIdenticalSourceAfterProjection(t *testing.T) {
 	t.Parallel()
 	const current = "func Value() int { return 1 }"
-	const raw = "```go\nfunc Value() int { return 1 }\n```"
+	const raw = current
 	finalized := false
 	runtime := typedWorkerRuntime{
 		Context: t.Context(),

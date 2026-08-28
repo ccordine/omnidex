@@ -60,6 +60,10 @@ func (machine *Machine) resolveSearchTerms(
 	if err != nil {
 		return nil, fmt.Errorf("search terms station: %w", err)
 	}
+	if decision.SemanticCalls < 1 {
+		return nil, fmt.Errorf("%w: search terms reported no semantic calls", ErrInvalidSearchTerms)
+	}
+	result.SemanticCalls += decision.SemanticCalls
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}

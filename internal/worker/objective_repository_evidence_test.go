@@ -28,7 +28,7 @@ func TestObjectiveRepositoryEvidenceDerivesNoneAndSelectionFromEvidenceIDs(t *te
 			}
 			return assemblyline.RepositorySearchTermDecision{
 				Schema: assemblyline.RepositorySearchTermSchemaV2, Anchors: []string{"Owner"},
-			}, objectiveStationReceipt{Calls: 1}, nil
+			}, objectiveStationReceipt{Calls: 3}, nil
 		},
 		func(exactRequirement string, evidence []objectiveEvidence) (
 			assemblyline.RepositoryEvidenceRelevanceDecision, objectiveStationReceipt, error,
@@ -50,9 +50,9 @@ func TestObjectiveRepositoryEvidenceDerivesNoneAndSelectionFromEvidenceIDs(t *te
 		t.Fatal(err)
 	}
 	if len(queries) != 2 || queries[0] != requirement || queries[1] != `"owner"` ||
-		searchTermCalls != 1 || relevanceCalls != 2 || result.ModelCalls != 3 ||
+		searchTermCalls != 1 || relevanceCalls != 2 || result.ModelCalls != 5 ||
 		len(result.Evidence) != 1 || result.Evidence[0].Capsule.ID != "R01" ||
-		result.RepositoryCallLedger.searchTermCalls != 1 ||
+		result.RepositoryCallLedger.searchTermCalls != 3 ||
 		!reflect.DeepEqual(result.RepositoryCallLedger.relevanceCalls, []int{1, 1}) {
 		t.Fatalf(
 			"queries=%v search_term_calls=%d relevance_calls=%d result=%#v",

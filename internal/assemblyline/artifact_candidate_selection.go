@@ -113,24 +113,28 @@ func BuildArtifactCandidateSelectionPrompt(input ArtifactCandidateSelectionInput
 	return strings.Join([]string{
 		"Select the one opaque candidate whose bounded declaration evidence resolves which known semantic artifact the exact requirement explicitly identifies as required to be absent.",
 		"Return its opaque candidate ID, or NONE when the supplied evidence cannot distinguish exactly one.",
+		"Return only that raw candidate ID or NONE with no JSON, quotes, label, Markdown, or commentary.",
 		"EXACT_REQUIREMENT:\n" + input.RequirementQuote,
 		"BOUNDED_CANDIDATES:\n" + string(evidence),
 	}, "\n\n"), nil
 }
 
-func ArtifactCandidateSelectionResponseSchema(input ArtifactCandidateSelectionInput) map[string]any {
-	values := make([]string, 0, len(input.Candidates)+1)
-	for _, candidate := range input.Candidates {
-		values = append(values, candidate.CandidateID)
+func DecodeArtifactCandidateSelectionDecision(
+	input ArtifactCandidateSelectionInput,
+	raw string,
+) (ArtifactCandidateSelectionDecision, error) {
+	if err := input.validate(); err != nil {
+		return ArtifactCandidateSelectionDecision{}, err
 	}
-	values = append(values, ArtifactCandidateSelectionNone)
-	return objectSchema(
-		[]string{"schema", "candidate_id"},
-		map[string]any{
-			"schema": map[string]any{
-				"type": "string", "const": ArtifactCandidateSelectionSchemaV1,
-			},
-			"candidate_id": map[string]any{"type": "string", "enum": values},
-		},
-	)
+	leaf, err := decodeRawSemanticLeaf("artifact candidate selection", raw, 64, false)
+	if err != nil {
+		return ArtifactCandidateSelectionDecision{}, err
+	}
+	decision := ArtifactCandidateSelectionDecision{
+		Schema: ArtifactCandidateSelectionSchemaV1, CandidateID: leaf,
+	}
+	if err := decision.ValidateFor(input); err != nil {
+		return ArtifactCandidateSelectionDecision{}, err
+	}
+	return decision, nil
 }

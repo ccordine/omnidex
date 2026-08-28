@@ -11,15 +11,15 @@ import (
 
 func TestGoFragmentGenerationReturnsOnlyOneSignatureBoundDeclaration(t *testing.T) {
 	t.Parallel()
-	const raw = " \n```go\nfunc Added() int { return 2 }\n```\n"
-	const declaration = "func Added() int { return 2 }"
+	const raw = "func Added() int { return 2 }"
+	const declaration = raw
 	var prompt string
 	finalized := false
 	runtime := typedWorkerRuntime{
 		Context: context.Background(), MaxAttempts: 1,
 		Execute: func(job assemblyline.PortableJob, _ string) (assemblyline.PortableResult, error) {
 			var err error
-			prompt, _, err = assemblyline.RenderPortableJob(job)
+			prompt, err = assemblyline.RenderPortableJob(job)
 			return assemblyline.PortableResult{JobID: job.ID, Candidate: raw}, err
 		},
 		Finalize: func(
@@ -29,7 +29,8 @@ func TestGoFragmentGenerationReturnsOnlyOneSignatureBoundDeclaration(t *testing.
 		) error {
 			if validationErr != nil || result.Candidate != raw || result.Projection == nil ||
 				result.Projection.Kind != assemblyline.PortableResultProjectionSourceDeclaration ||
-				result.Projection.Source != declaration {
+				result.Projection.Source != declaration || result.Projection.StartByte != 0 ||
+				result.Projection.EndByte != len(raw) || result.Projection.DiscardedBytes != 0 {
 				t.Fatalf("finalized result=%+v validation=%v", result, validationErr)
 			}
 			finalized = true

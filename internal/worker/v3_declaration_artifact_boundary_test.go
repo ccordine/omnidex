@@ -21,7 +21,7 @@ func TestDeclarationArtifactBoundaryCorrectionChangesOnlyBoundaryLeaf(t *testing
 	runtime := typedWorkerRuntime{
 		Context: context.Background(), MaxAttempts: 2,
 		Execute: func(job assemblyline.PortableJob, _ string) (assemblyline.PortableResult, error) {
-			prompt, schema, err := assemblyline.RenderPortableJob(job)
+			prompt, err := assemblyline.RenderPortableJob(job)
 			if err != nil {
 				return assemblyline.PortableResult{}, err
 			}
@@ -29,16 +29,11 @@ func TestDeclarationArtifactBoundaryCorrectionChangesOnlyBoundaryLeaf(t *testing
 			kinds = append(kinds, job.Kind)
 			if len(prompts) == 1 {
 				return assemblyline.PortableResult{
-					JobID:     job.ID,
-					Candidate: `{"schema":"omnidex.declaration-artifact-boundary.v1","declaration_id":"DECLARATION_1","boundary":"unsupported"}`,
+					JobID: job.ID, Candidate: "unsupported",
 				}, nil
 			}
-			properties := schema["properties"].(map[string]any)
-			if len(properties) != 1 || properties["boundary"] == nil {
-				t.Fatalf("correction schema may alter more than boundary: %#v", schema)
-			}
 			return assemblyline.PortableResult{
-				JobID: job.ID, Candidate: `{"boundary":"independent_artifact"}`,
+				JobID: job.ID, Candidate: string(assemblyline.DeclarationBoundaryIndependentArtifact),
 			}, nil
 		},
 	}
@@ -55,7 +50,7 @@ func TestDeclarationArtifactBoundaryCorrectionChangesOnlyBoundaryLeaf(t *testing
 	}
 	for _, required := range []string{
 		"ORIGINAL_SEMANTIC_QUESTION:", input.RequirementQuote, input.GoSignature, input.DeclarationID,
-		"CURRENT_INVALID_RESPONSE:", `"boundary":"unsupported"`, "EXACT_VALIDATION_DEFECT:",
+		"CURRENT_REJECTED_LEAF:", "unsupported", "EXACT_GROUNDED_DEFECT:",
 	} {
 		if !strings.Contains(prompts[1], required) {
 			t.Fatalf("correction omitted retained one-leaf authority %q: %s", required, prompts[1])

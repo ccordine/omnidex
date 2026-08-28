@@ -57,7 +57,8 @@ func (guard *repositoryGroundingModelIdentityGuard) validate(
 		return err
 	}
 	switch kind {
-	case assemblyline.WorkGroundedAnswer:
+	case assemblyline.WorkGroundedAnswerText,
+		assemblyline.WorkGroundedAnswerEvidenceRelation:
 		owned := identity
 		guard.generation = &owned
 		guard.review = nil
@@ -69,7 +70,8 @@ func (guard *repositoryGroundingModelIdentityGuard) validate(
 		owned := identity
 		guard.generation = &owned
 		return nil
-	case assemblyline.WorkRepositoryGroundedReview:
+	case assemblyline.WorkRepositoryGroundedIssueDetail,
+		assemblyline.WorkRepositoryGroundedIssueKind:
 		if guard.generation == nil {
 			return fmt.Errorf("repository grounded review ran before repository answer generation identity was proven")
 		}

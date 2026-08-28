@@ -52,7 +52,7 @@ func (session *directCodingSession) generateDesiredRepositoryDeclarations(
 	runtime := directCodingWorkerRuntime(session)
 	originalExecute := runtime.Execute
 	runtime.Execute = func(job assemblyline.PortableJob, model string) (assemblyline.PortableResult, error) {
-		prompt, _, err := assemblyline.RenderPortableJob(job)
+		prompt, err := assemblyline.RenderPortableJob(job)
 		if err != nil {
 			return assemblyline.PortableResult{}, err
 		}

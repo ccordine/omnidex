@@ -99,13 +99,13 @@ func TestPreparedGenerationRequiresExactUsageAndProviderObservation(t *testing.T
 		t.Fatal(err)
 	}
 	providerBody := []byte(`{"model":"qwen:9b","created_at":"2026-08-09T22:00:00Z",` +
-		`"response":"{}","done":true,"done_reason":"stop","total_duration":100,` +
+		`"response":"semantic leaf","done":true,"done_reason":"stop","total_duration":100,` +
 		`"load_duration":10,"prompt_eval_count":12,"prompt_eval_duration":20,` +
 		`"eval_count":3,"eval_duration":30}`)
 	result := PreparedGeneration{
 		Schema:                     PreparedGenerationSchemaV1,
-		Protocol:                   ExactPreparedProtocolStructuredV1,
-		ProviderRequestDisposition: ProviderRequestDispatched, Content: `{}`,
+		Protocol:                   ExactPreparedProtocolRawTextV2,
+		ProviderRequestDisposition: ProviderRequestDispatched, Content: "semantic leaf",
 		ProviderRequestSHA256: strings.Repeat("b", 64), ProviderHTTPStatus: 200,
 		ProviderResponseDisposition: ProviderResponseSucceeded,
 		ProviderResponseComplete:    true, ProviderResponseBytesKnown: true,
@@ -126,6 +126,25 @@ func TestPreparedGenerationRequiresExactUsageAndProviderObservation(t *testing.T
 	result.ProviderResponseCaptureSHA256 = result.ProviderResponseSHA256
 	if err := result.Validate(); err != nil {
 		t.Fatal(err)
+	}
+	length := result
+	length.ProviderDoneReason = "length"
+	lengthBody := bytes.Replace(
+		providerBody,
+		[]byte(`"done_reason":"stop"`),
+		[]byte(`"done_reason":"length"`),
+		1,
+	)
+	length.ProviderResponseCapture = lengthBody
+	length.ProviderResponseCapturedBytes = len(lengthBody)
+	length.ProviderResponseBytes = int64(len(lengthBody))
+	length.ProviderResponseSHA256 = providerBodySHA256(lengthBody)
+	length.ProviderResponseCaptureSHA256 = length.ProviderResponseSHA256
+	if err := length.ValidateInvocationEvidence(); err != nil {
+		t.Fatalf("length-limited provider receipt lost its exact failure evidence: %v", err)
+	}
+	if err := length.Validate(); err == nil {
+		t.Fatal("length-limited generation was accepted as a complete semantic result")
 	}
 	result.Usage.PromptEvalCount = -1
 	if err := result.Validate(); err == nil {

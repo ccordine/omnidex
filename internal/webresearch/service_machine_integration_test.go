@@ -96,6 +96,7 @@ func (*selectFirstCandidateStation) Select(
 	}
 	return RelevanceDecision{
 		Outcome: RelevanceSelected, CandidateIDs: []websearch.CandidateID{call.Candidates[0].CandidateID},
+		SemanticCalls: 1,
 	}, nil
 }
 
@@ -110,5 +111,5 @@ func (*synthesizeFirstEvidenceStation) Synthesize(
 	}
 	return GroundedSynthesisDecision{Paragraphs: []GroundedParagraph{{
 		Text: "The bounded evidence establishes the result.", EvidenceIDs: []EvidenceID{call.Evidence[0].EvidenceID},
-	}}}, nil
+	}}, SemanticCalls: 1}, nil
 }

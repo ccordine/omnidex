@@ -276,7 +276,7 @@ func TestAnaphoricTurnUsesSelectedAuthorityVerbatimWhenItFits(t *testing.T) {
 		t.Fatal(err)
 	}
 	for label, job := range map[string]assemblyline.PortableJob{"final response": responseJob} {
-		prompt, _, err := assemblyline.RenderPortableJob(job)
+		prompt, err := assemblyline.RenderPortableJob(job)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -427,7 +427,7 @@ func TestReplanFeedbackIsPreservedVerbatimWhenItFits(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	prompt, _, err := assemblyline.RenderPortableJob(projection)
+	prompt, err := assemblyline.RenderPortableJob(projection)
 	if err != nil {
 		t.Fatal(err)
 	}

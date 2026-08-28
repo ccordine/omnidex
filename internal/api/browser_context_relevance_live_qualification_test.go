@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gryph/omnidex/internal/assemblyline"
 	"github.com/gryph/omnidex/internal/browserinference"
 	"github.com/gryph/omnidex/internal/station"
 )
@@ -121,13 +122,15 @@ func runBrowserContextQualification(
 		input := buildBrowserContextQualificationInput(t, testCase)
 		started := time.Now()
 		caseContext, cancel := context.WithTimeout(ctx, 2*time.Minute)
-		decision, err := broker.ExecuteContextRelevance(caseContext, model, input)
+		selected, err := executeBrowserContextRelevanceSelection(
+			caseContext, broker, model, input,
+		)
 		cancel()
 		latency := time.Since(started).Milliseconds()
 		result := browserContextQualificationCaseResult{
 			Name: testCase.Name, LatencyMS: latency,
 			ExpectedCandidateIDs: append([]string{}, testCase.ExpectedCandidateIDs...),
-			ActualCandidateIDs:   append([]string{}, decision.ReferencedCandidateIDs...),
+			ActualCandidateIDs:   append([]string{}, selected...),
 		}
 		if err != nil {
 			result.Error = err.Error()
@@ -138,8 +141,8 @@ func runBrowserContextQualification(
 			break
 		}
 		latencies = append(latencies, latency)
-		result.Passed = sameOpaqueIDSet(testCase.ExpectedCandidateIDs, decision.ReferencedCandidateIDs)
-		tp, fp, fn := selectionCounts(testCase.ExpectedCandidateIDs, decision.ReferencedCandidateIDs)
+		result.Passed = sameOpaqueIDSet(testCase.ExpectedCandidateIDs, selected)
+		tp, fp, fn := selectionCounts(testCase.ExpectedCandidateIDs, selected)
 		truePositive += tp
 		falsePositive += fp
 		falseNegative += fn
@@ -161,6 +164,33 @@ func runBrowserContextQualification(
 		report.MeasuredQuality.PassedCases == len(corpus.Cases)
 	report.Qualified = report.Passed && report.MeasuredLatencyMS.Median <= medianTarget
 	return report
+}
+
+func executeBrowserContextRelevanceSelection(
+	ctx context.Context,
+	broker *browserinference.ContextRelevanceBroker,
+	model string,
+	authority assemblyline.ContextRelevanceInput,
+) ([]string, error) {
+	selected := make([]string, 0, authority.MaxSelections)
+	for len(selected) < authority.MaxSelections {
+		decision, err := broker.ExecuteContextRelevance(
+			ctx,
+			model,
+			assemblyline.ContextRelevanceSelectionInput{
+				Authority:            authority,
+				AcceptedCandidateIDs: append([]string{}, selected...),
+			},
+		)
+		if err != nil {
+			return nil, err
+		}
+		if decision.CandidateID == assemblyline.ContextRelevanceNoCandidate {
+			break
+		}
+		selected = append(selected, decision.CandidateID)
+	}
+	return selected, nil
 }
 
 func waitForQualificationBrowser(

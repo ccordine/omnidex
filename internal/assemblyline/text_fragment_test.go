@@ -18,7 +18,7 @@ func TestTextFragmentJobRendersOneBoundedRawTextNode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	prompt, schema, err := RenderPortableJob(job)
+	prompt, err := RenderPortableJob(job)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -38,9 +38,6 @@ func TestTextFragmentJobRendersOneBoundedRawTextNode(t *testing.T) {
 		if strings.Contains(strings.ToLower(prompt), forbidden) {
 			t.Fatalf("text fragment prompt exposed %q:\n%s", forbidden, prompt)
 		}
-	}
-	if schema != nil {
-		t.Fatalf("raw text fragment unexpectedly has a response schema: %#v", schema)
 	}
 }
 

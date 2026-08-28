@@ -2,6 +2,7 @@ package webresearch
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"testing"
 
@@ -13,9 +14,19 @@ func TestPortableStationsFinalizeOnlyAfterTypedLeafValidation(t *testing.T) {
 	var finalizedErr error
 	station, err := NewPortableStations(PortableRuntime{
 		Execute: func(_ context.Context, job assemblyline.PortableJob) (assemblyline.PortableResult, error) {
+			candidate := "bounded term"
+			if job.Kind == assemblyline.WorkWebSearchTermCoverage {
+				var input assemblyline.WebSearchTermLeafInput
+				if err := json.Unmarshal(job.Payload, &input); err != nil {
+					return assemblyline.PortableResult{}, err
+				}
+				candidate = string(assemblyline.WebQueryTermRemains)
+				if len(input.AcceptedTerms) > 0 {
+					candidate = string(assemblyline.WebNoUncoveredQueryTerm)
+				}
+			}
 			return assemblyline.PortableResult{
-				JobID:     job.ID,
-				Candidate: fmt.Sprintf(`{"schema":%q,"terms":["bounded term"]}`, assemblyline.WebSearchTermsSchemaV1),
+				JobID: job.ID, Candidate: candidate,
 			}, nil
 		},
 		Finalize: func(_ context.Context, _ assemblyline.PortableJob, _ assemblyline.PortableResult, validationErr error) error {
@@ -33,7 +44,7 @@ func TestPortableStationsFinalizeOnlyAfterTypedLeafValidation(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if finalized != 1 || finalizedErr != nil {
+	if finalized != 2 || finalizedErr != nil {
 		t.Fatalf("finalized=%d validation_error=%v", finalized, finalizedErr)
 	}
 }
@@ -43,9 +54,12 @@ func TestPortableStationsFinalizeTypedLeafRejection(t *testing.T) {
 	var finalizedErr error
 	station, err := NewPortableStations(PortableRuntime{
 		Execute: func(_ context.Context, job assemblyline.PortableJob) (assemblyline.PortableResult, error) {
+			candidate := `{"term":"bounded term"}`
+			if job.Kind == assemblyline.WorkWebSearchTermCoverage {
+				candidate = string(assemblyline.WebQueryTermRemains)
+			}
 			return assemblyline.PortableResult{
-				JobID:     job.ID,
-				Candidate: fmt.Sprintf(`{"schema":%q,"terms":[]}`, assemblyline.WebSearchTermsSchemaV1),
+				JobID: job.ID, Candidate: candidate,
 			}, nil
 		},
 		Finalize: func(_ context.Context, _ assemblyline.PortableJob, _ assemblyline.PortableResult, validationErr error) error {
@@ -68,17 +82,22 @@ func TestPortableStationsFinalizeTypedLeafRejection(t *testing.T) {
 	}
 }
 
-func TestPortableClaimEvidenceReviewFinalizesExactlyOnceAfterTypedValidation(t *testing.T) {
+func TestPortableClaimEvidenceReviewFinalizesEverySemanticLeafExactlyOnce(t *testing.T) {
 	finalized := 0
 	station, err := NewPortableStations(PortableRuntime{
 		Execute: func(_ context.Context, job assemblyline.PortableJob) (assemblyline.PortableResult, error) {
-			return assemblyline.PortableResult{
-				JobID: job.ID,
-				Candidate: fmt.Sprintf(
-					`{"schema":%q,"outcome":"none"}`,
-					assemblyline.WebClaimEvidenceReviewSchemaV1,
-				),
-			}, nil
+			candidate := ""
+			switch job.Kind {
+			case assemblyline.WorkWebReviewClaimCoverage:
+				candidate = string(assemblyline.WebReviewNoUncoveredClaim)
+			case assemblyline.WorkWebReviewClaim:
+				candidate = "Version 2 is current."
+			case assemblyline.WorkWebReviewClaimVerdict:
+				candidate = string(assemblyline.WebReviewClaimSupported)
+			default:
+				return assemblyline.PortableResult{}, fmt.Errorf("unexpected review work kind %q", job.Kind)
+			}
+			return assemblyline.PortableResult{JobID: job.ID, Candidate: candidate}, nil
 		},
 		Finalize: func(_ context.Context, _ assemblyline.PortableJob, _ assemblyline.PortableResult, validationErr error) error {
 			finalized++
@@ -98,7 +117,7 @@ func TestPortableClaimEvidenceReviewFinalizesExactlyOnceAfterTypedValidation(t *
 	if err != nil {
 		t.Fatal(err)
 	}
-	if finalized != 1 || decision.Outcome != ClaimEvidenceReviewNone {
+	if finalized != 3 || decision.Outcome != ClaimEvidenceReviewNone || decision.SemanticCalls != 3 {
 		t.Fatalf("finalized=%d decision=%+v", finalized, decision)
 	}
 }
@@ -109,7 +128,7 @@ func TestPortableSynthesisCorrectionFinalizesExactlyOnceAfterTypedValidation(t *
 		Execute: func(_ context.Context, job assemblyline.PortableJob) (assemblyline.PortableResult, error) {
 			return assemblyline.PortableResult{
 				JobID:     job.ID,
-				Candidate: `{"text":"Version 2 is current."}`,
+				Candidate: "Version 2 is current.",
 			}, nil
 		},
 		Finalize: func(_ context.Context, _ assemblyline.PortableJob, _ assemblyline.PortableResult, validationErr error) error {

@@ -75,21 +75,29 @@ func BuildCapabilityRelationPrompt(input CapabilityRelationInput) (string, error
 		"Return left_reads_right only when LEFT_NEED cannot satisfy its named behavior without consuming a result uniquely produced by RIGHT_NEED.",
 		"Return right_reads_left only when RIGHT_NEED cannot satisfy its named behavior without consuming a result uniquely produced by LEFT_NEED.",
 		"When the two phrases do not establish one necessary unique producer result, return independent.",
+		"Return exactly one raw registered relation value with no JSON, quotes, label, Markdown, or commentary.",
 		"LOCAL_CONTEXT:\n" + input.LocalContext,
 		"LEFT_NEED:\n" + input.LeftNeed,
 		"RIGHT_NEED:\n" + input.RightNeed,
 	}, "\n\n"), nil
 }
 
-func CapabilityRelationResponseSchema() map[string]any {
-	return objectSchema(
-		[]string{"schema", "relation"},
-		map[string]any{
-			"schema": map[string]any{"type": "string", "const": CapabilityRelationSchemaV1},
-			"relation": enumSchema(
-				CapabilityIndependent, CapabilityLeftReadsRight,
-				CapabilityRightReadsLeft,
-			),
-		},
-	)
+func DecodeCapabilityRelationDecision(
+	input CapabilityRelationInput,
+	raw string,
+) (CapabilityRelationDecision, error) {
+	if err := input.validate(); err != nil {
+		return CapabilityRelationDecision{}, err
+	}
+	leaf, err := decodeRawSemanticLeaf("capability relation", raw, 64, false)
+	if err != nil {
+		return CapabilityRelationDecision{}, err
+	}
+	decision := CapabilityRelationDecision{
+		Schema: CapabilityRelationSchemaV1, Relation: CapabilityRelation(leaf),
+	}
+	if err := decision.ValidateFor(input); err != nil {
+		return CapabilityRelationDecision{}, err
+	}
+	return decision, nil
 }

@@ -43,7 +43,10 @@ type ExactPreparedTransportSettings struct {
 	NativeTemplate   bool
 	SeparateThinking bool
 	SeparateSystem   bool
-	Temperature      *ExactPreparedTemperature
+	// NaturalOutputCeiling is true only when natural-mode requests send the
+	// persisted MaxOutputTokens value to the provider as num_predict.
+	NaturalOutputCeiling bool
+	Temperature          *ExactPreparedTemperature
 }
 
 type exactProviderModelProfile struct {
@@ -62,6 +65,7 @@ type exactProviderModelProfile struct {
 	requestTemperature        ExactPreparedTemperature
 	requestTemperatureSet     bool
 	requestTemperatureCeiling ExactPreparedTemperature
+	naturalOutputCeiling      bool
 }
 
 func ResolveExactPreparedTransport(
@@ -78,7 +82,9 @@ func ResolveExactPreparedTransport(
 }
 
 func (profile exactProviderModelProfile) transportSettings() ExactPreparedTransportSettings {
-	settings := ExactPreparedTransportSettings{}
+	settings := ExactPreparedTransportSettings{
+		NaturalOutputCeiling: profile.naturalOutputCeiling,
+	}
 	if profile.requestTemperatureSet {
 		temperature := profile.requestTemperature
 		settings.Temperature = &temperature

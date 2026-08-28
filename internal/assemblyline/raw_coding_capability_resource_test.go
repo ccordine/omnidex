@@ -54,12 +54,9 @@ func TestRawCodingPromptsAdmitExactDirectCapabilitiesBeyondLegacyTwoKiB(t *testi
 			if err != nil {
 				t.Fatalf("exact direct capability was rejected: %v", err)
 			}
-			prompt, schema, err := RenderPortableJob(job)
+			prompt, err := RenderPortableJob(job)
 			if err != nil {
 				t.Fatalf("render raw coding prompt: %v", err)
-			}
-			if schema != nil {
-				t.Fatal("raw coding prompt unexpectedly requested structured output")
 			}
 			if strings.Count(prompt, fixture.capability) != 1 {
 				t.Fatal("prompt did not preserve the exact direct capability once")

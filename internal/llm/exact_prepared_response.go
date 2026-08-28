@@ -44,14 +44,13 @@ type exactPreparedResponseWire struct {
 // provider-contract failure so callers can journal the evidence durably.
 func DecodeExactPreparedResponse(status int, body []byte) (ExactPreparedResponse, error) {
 	return DecodeExactPreparedResponseForProtocol(
-		ExactPreparedProtocolStructuredV1, status, body,
+		ExactPreparedProtocolRawTextV2, status, body,
 	)
 }
 
-// DecodeExactPreparedResponseForProtocol derives one protocol-specific result
-// from the exact provider wrapper. Both protocols preserve the provider's
-// exact JSON-string value; RawTextV1 permits that value to be source text
-// because its request carries no structured-output format.
+// DecodeExactPreparedResponseForProtocol derives the raw model result from the
+// exact provider wrapper. It preserves the exact JSON-string value carried by
+// Ollama; the model-authored content itself is never interpreted as JSON here.
 func DecodeExactPreparedResponseForProtocol(
 	protocol ExactPreparedProtocol,
 	status int,

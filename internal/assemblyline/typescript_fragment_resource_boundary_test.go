@@ -26,12 +26,9 @@ func TestTypeScriptCorrectionAdmitsLegitimateDeclarationBeyondLegacyByteCeilings
 	if err != nil {
 		t.Fatalf("create correction for legitimate large declaration: %v", err)
 	}
-	prompt, schema, err := RenderPortableJob(job)
+	prompt, err := RenderPortableJob(job)
 	if err != nil {
 		t.Fatalf("render correction for legitimate large declaration: %v", err)
-	}
-	if schema != nil {
-		t.Fatal("whole-declaration correction unexpectedly requested structured output")
 	}
 	if !strings.Contains(prompt, "EXACT_MUTABLE_SOURCE_JSON:") ||
 		!strings.Contains(prompt, "return payload.length;") {

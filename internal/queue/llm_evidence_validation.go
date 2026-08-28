@@ -12,39 +12,29 @@ func validateAndHashLLMCallEvidenceRecord(record LLMCallEvidenceRecord) (any, st
 	if err := validateLLMCallEvidenceRecord(record); err != nil {
 		return nil, "", err
 	}
-	var schema any
-	var schemaJSON json.RawMessage
-	if record.ResponseSchema != nil {
-		raw, err := json.Marshal(record.ResponseSchema)
-		if err != nil {
-			return nil, "", fmt.Errorf("encode LLM evidence response schema: %w", err)
-		}
-		schema, schemaJSON = string(raw), raw
-	}
 	digestInput := struct {
-		ContextProjectionID string          `json:"context_projection_id,omitempty"`
-		RequestedModel      string          `json:"requested_model"`
-		Model               string          `json:"model"`
-		SystemPrompt        string          `json:"system_prompt"`
-		UserPrompt          string          `json:"user_prompt"`
-		ResponseFormat      string          `json:"response_format"`
-		ResponseSchema      json.RawMessage `json:"response_schema,omitempty"`
-		ContextTokens       int             `json:"context_tokens"`
-		MaxOutputTokens     int             `json:"max_output_tokens"`
-		ThinkingEnabled     bool            `json:"thinking_enabled"`
+		ContextProjectionID string `json:"context_projection_id,omitempty"`
+		RequestedModel      string `json:"requested_model"`
+		Model               string `json:"model"`
+		SystemPrompt        string `json:"system_prompt"`
+		UserPrompt          string `json:"user_prompt"`
+		ResponseFormat      string `json:"response_format"`
+		ContextTokens       int    `json:"context_tokens"`
+		MaxOutputTokens     int    `json:"max_output_tokens"`
+		ThinkingEnabled     bool   `json:"thinking_enabled"`
 	}{
 		ContextProjectionID: record.ContextProjectionID,
 		RequestedModel:      record.RequestedModel, Model: record.Model,
 		SystemPrompt: record.SystemPrompt, UserPrompt: record.UserPrompt,
-		ResponseFormat: record.ResponseFormat, ResponseSchema: schemaJSON,
-		ContextTokens: record.ContextTokens, MaxOutputTokens: record.MaxOutputTokens,
+		ResponseFormat: record.ResponseFormat,
+		ContextTokens:  record.ContextTokens, MaxOutputTokens: record.MaxOutputTokens,
 		ThinkingEnabled: record.ThinkingEnabled,
 	}
 	raw, err := json.Marshal(digestInput)
 	if err != nil {
 		return nil, "", fmt.Errorf("hash exact LLM request: %w", err)
 	}
-	return schema, llmEvidenceSHA256(string(raw)), nil
+	return nil, llmEvidenceSHA256(string(raw)), nil
 }
 
 func validateLLMCallEvidenceRecord(record LLMCallEvidenceRecord) error {
@@ -71,14 +61,15 @@ func validateLLMCallEvidenceRecord(record LLMCallEvidenceRecord) error {
 			return fmt.Errorf("LLM call evidence projection requires exact work and projection identities")
 		}
 	}
-	if record.ResponseFormat != "text" && record.ResponseFormat != "json" {
-		return fmt.Errorf("LLM call evidence response format %q is unsupported", record.ResponseFormat)
+	if record.ResponseFormat != "text" {
+		return fmt.Errorf("LLM call evidence requires raw text response format")
 	}
-	if record.ResponseSchema != nil && record.ResponseFormat != "json" {
-		return fmt.Errorf("LLM call evidence schema requires JSON response format")
+	if record.ResponseSchema != nil {
+		return fmt.Errorf("LLM call evidence forbids a response schema")
 	}
-	if record.ContextTokens < 1 || record.MaxOutputTokens < 1 || record.LatencyMS < 0 {
-		return fmt.Errorf("LLM call evidence requires positive inference limits and non-negative latency")
+	if record.ContextTokens < 1 || record.MaxOutputTokens < 1 ||
+		record.MaxOutputTokens > record.ContextTokens || record.LatencyMS < 0 {
+		return fmt.Errorf("LLM call evidence requires bounded inference limits and non-negative latency")
 	}
 	switch record.Status {
 	case LLMEvidenceSucceeded:

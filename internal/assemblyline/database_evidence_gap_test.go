@@ -18,12 +18,12 @@ func TestDatabaseEvidenceGapReturnsOnlyOneMissingSemanticLeaf(t *testing.T) {
 		t.Fatalf("kind=%q", job.Kind)
 	}
 	missing, err := DecodeDatabaseEvidenceGapDecision(input,
-		`{"schema":"omnidex.database-evidence-gap.v1","requirement_id":"requirement-1","missing_information":"The next-visit miss rate for the control cohort."}`)
+		"The next-visit miss rate for the control cohort.")
 	if err != nil || missing.Missing() == "" {
 		t.Fatalf("missing=%+v err=%v", missing, err)
 	}
 	complete, err := DecodeDatabaseEvidenceGapDecision(input,
-		`{"schema":"omnidex.database-evidence-gap.v1","requirement_id":"requirement-1","missing_information":""}`)
+		DatabaseEvidenceGapNone)
 	if err != nil || complete.Missing() != "" {
 		t.Fatalf("complete=%+v err=%v", complete, err)
 	}
@@ -35,11 +35,10 @@ func TestDatabaseEvidenceGapRejectsControlAndImplicitFields(t *testing.T) {
 		Evidence: []GroundedEvidenceCapsule{{ID: "E1", Text: "Record count: 4."}},
 	}
 	for name, raw := range map[string]string{
-		"control": `{"schema":"omnidex.database-evidence-gap.v1","requirement_id":"requirement-1","missing_information":"","continue":false}`,
-		"null":    `{"schema":"omnidex.database-evidence-gap.v1","requirement_id":"requirement-1","missing_information":null}`,
-		"padded":  `{"schema":"omnidex.database-evidence-gap.v1","requirement_id":"requirement-1","missing_information":" more "}`,
-		"oversized": `{"schema":"omnidex.database-evidence-gap.v1","requirement_id":"requirement-1","missing_information":"` +
-			strings.Repeat("x", maxDatabaseEvidenceGapBytes+1) + `"}`,
+		"control JSON": `{"missing_information":"","continue":false}`,
+		"null JSON":    `null`,
+		"quoted":       `"more"`,
+		"oversized":    strings.Repeat("x", maxDatabaseEvidenceGapBytes+1),
 	} {
 		t.Run(name, func(t *testing.T) {
 			if _, err := DecodeDatabaseEvidenceGapDecision(input, raw); err == nil {
@@ -49,18 +48,17 @@ func TestDatabaseEvidenceGapRejectsControlAndImplicitFields(t *testing.T) {
 	}
 }
 
-func TestDatabaseEvidenceGapResponseSchemaLeavesByteCeilingToCode(t *testing.T) {
+func TestDatabaseEvidenceGapPortableJobHasNoResponseSchema(t *testing.T) {
 	input := DatabaseEvidenceGapInput{
 		RequirementID: "requirement-1", ExactRequirement: "How many records exist?",
 		Evidence: []GroundedEvidenceCapsule{{ID: "E1", Text: "Record count: 4."}},
 	}
-	schema, err := DatabaseEvidenceGapResponseSchema(input)
+	job, err := NewDatabaseEvidenceGapJob(input)
 	if err != nil {
 		t.Fatal(err)
 	}
-	properties := schema["properties"].(map[string]any)
-	missing := properties["missing_information"].(map[string]any)
-	if _, finiteGrammarBound := missing["maxLength"]; finiteGrammarBound {
-		t.Fatalf("database evidence-gap schema encodes the code-owned byte ceiling: %#v", missing)
+	_, err = RenderPortableJob(job)
+	if err != nil {
+		t.Fatalf("render database evidence gap: %v", err)
 	}
 }

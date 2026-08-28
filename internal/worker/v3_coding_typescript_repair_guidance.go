@@ -82,8 +82,11 @@ func runDirectCodingTypeScriptRepairGuidanceWithRejection(
 	if err != nil {
 		return "", fmt.Errorf("construct TypeScript repair-guidance job: %w", err)
 	}
-	guidance, err := runDirectCodingSemanticCall[assemblyline.FragmentRepairGuidance](
+	guidance, err := runDirectCodingSemanticLeafCall(
 		runtime, modelName, block.ID+":repair_guidance", job, nil,
+		func(raw string) (assemblyline.FragmentRepairGuidance, error) {
+			return assemblyline.DecodeFragmentRepairGuidanceResult(job, raw)
+		},
 		func(candidate assemblyline.FragmentRepairGuidance) error {
 			return candidate.Validate()
 		},

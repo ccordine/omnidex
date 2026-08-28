@@ -51,17 +51,10 @@ func ProjectTypeScriptFragmentRepairResponse(
 	if err := region.validate(); err != nil {
 		return "", fmt.Errorf("TypeScript fragment repair response: %w", err)
 	}
-	projected, err := projectTypeScriptRepairRegionText(raw)
-	if err != nil {
+	if err := validateExactTypeScriptRepairReplacement(raw); err != nil {
 		return "", err
 	}
-	replacement := strings.Trim(strings.ReplaceAll(projected, "\r\n", "\n"), "\n")
-	if !utf8.ValidString(replacement) || strings.Contains(replacement, "\r") {
-		return "", fmt.Errorf("TypeScript fragment repair response must be normalized UTF-8 without carriage returns")
-	}
-	if strings.TrimSpace(replacement) == "" {
-		return "", fmt.Errorf("TypeScript fragment repair response is empty")
-	}
+	replacement := raw
 	if region.Kind == TypeScriptRepairRegionSyntaxWindow && len(replacement) > maxTypeScriptRepairRegionBytes {
 		return "", fmt.Errorf("TypeScript fragment repair replacement exceeds %d bytes", maxTypeScriptRepairRegionBytes)
 	}
@@ -84,20 +77,23 @@ func ProjectTypeScriptFragmentRepairResponse(
 	return replacement, nil
 }
 
-func projectTypeScriptRepairRegionText(raw string) (string, error) {
-	if raw == "" || strings.TrimSpace(raw) == "" || !utf8.ValidString(raw) || strings.ContainsRune(raw, 0) {
-		return "", fmt.Errorf("TypeScript fragment repair response must be non-empty valid UTF-8 without NUL bytes")
+func validateExactTypeScriptRepairReplacement(raw string) error {
+	if raw == "" || !utf8.ValidString(raw) || strings.ContainsRune(raw, 0) {
+		return fmt.Errorf("TypeScript fragment repair response must be non-empty valid UTF-8 without NUL bytes")
 	}
-	segments := typeScriptResponseSegments(raw, true)
-	if len(segments) == 1 && segments[0].fenced {
-		return raw[segments[0].startByte:segments[0].endByte], nil
+	if strings.ContainsRune(raw, '\r') {
+		return fmt.Errorf("TypeScript fragment repair response must use exact LF source bytes")
 	}
-	for _, segment := range segments {
-		if segment.fenced {
-			return "", fmt.Errorf("TypeScript fragment repair response mixes fenced source with other content")
+	if strings.TrimSpace(raw) == "" || strings.HasPrefix(raw, "\n") ||
+		strings.HasSuffix(raw, "\n") || strings.TrimRight(raw, " \t") != raw {
+		return fmt.Errorf("TypeScript fragment repair response must contain only the exact replacement source bytes")
+	}
+	for _, line := range strings.Split(raw, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "```") {
+			return fmt.Errorf("TypeScript fragment repair response must not contain a Markdown fence")
 		}
 	}
-	return raw, nil
+	return nil
 }
 
 func (region TypeScriptFragmentRepairRegion) validate() error {
@@ -230,9 +226,8 @@ func ApplyTypeScriptFragmentRepairRegion(
 	if got := strings.Join(lines[region.StartLine-1:region.EndLine], "\n"); got != region.Source {
 		return "", fmt.Errorf("TypeScript repair region no longer matches the current declaration")
 	}
-	replacement = strings.Trim(strings.ReplaceAll(replacement, "\r\n", "\n"), "\r\n")
-	if strings.TrimSpace(replacement) == "" || !utf8.ValidString(replacement) {
-		return "", fmt.Errorf("TypeScript repair replacement is empty or invalid UTF-8")
+	if err := validateExactTypeScriptRepairReplacement(replacement); err != nil {
+		return "", err
 	}
 	if region.Kind == TypeScriptRepairRegionSyntaxWindow && len(replacement) > maxTypeScriptRepairRegionBytes {
 		return "", fmt.Errorf("TypeScript repair replacement exceeds %d bytes", maxTypeScriptRepairRegionBytes)

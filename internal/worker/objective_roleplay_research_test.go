@@ -88,11 +88,11 @@ func TestResolveObjectiveRoleplayResearchUsesSharedEvidenceSieveAndOneResponseAc
 				!reflect.DeepEqual(station.input.Context, authority.Context) {
 				t.Fatalf("final roleplay research projection is not minimal and selected: %#v", station.input)
 			}
-			job, err := assemblyline.NewRoleplayGroundedResponseJob(station.input)
+			job, err := assemblyline.NewRoleplayGroundedResponseTextJob(station.input)
 			if err != nil {
 				t.Fatal(err)
 			}
-			renderedPrompt, _, err := assemblyline.RenderPortableJob(job)
+			renderedPrompt, err := assemblyline.RenderPortableJob(job)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -224,7 +224,9 @@ func (station *scriptedObjectiveRoleplayTermsStation) Resolve(
 	if call.Question == "" || len(call.AttemptedQueries) != 0 {
 		return webresearch.SearchTermsDecision{}, fmt.Errorf("search terms received invalid authority")
 	}
-	return webresearch.SearchTermsDecision{Terms: []string{station.term}}, nil
+	return webresearch.SearchTermsDecision{
+		Terms: []string{station.term}, SemanticCalls: 1,
+	}, nil
 }
 
 type scriptedObjectiveRoleplayRelevanceStation struct {
@@ -243,8 +245,9 @@ func (station *scriptedObjectiveRoleplayRelevanceStation) Select(
 		return webresearch.RelevanceDecision{}, fmt.Errorf("relevance received invalid authority")
 	}
 	return webresearch.RelevanceDecision{
-		Outcome:      webresearch.RelevanceSelected,
-		CandidateIDs: append([]websearch.CandidateID(nil), station.selected...),
+		Outcome:       webresearch.RelevanceSelected,
+		CandidateIDs:  append([]websearch.CandidateID(nil), station.selected...),
+		SemanticCalls: 1,
 	}, nil
 }
 
@@ -268,7 +271,7 @@ func (station *scriptedObjectiveRoleplayGroundedStation) RespondGrounded(
 		Paragraphs: []assemblyline.RoleplayGroundedParagraph{{
 			Text: station.answer, EvidenceIDs: []string{input.RealWorldEvidence[0].ID},
 		}},
-	}, objectiveStationReceipt{Calls: 1}, nil
+	}, objectiveStationReceipt{Calls: 2}, nil
 }
 
 func objectiveRoleplayResearchFixture(

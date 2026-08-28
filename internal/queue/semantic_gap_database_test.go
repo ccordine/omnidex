@@ -19,7 +19,7 @@ func TestPostgresSemanticGapLifecycleIsExactImmutableAndSingular(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	prompt, _, renderErr := assemblyline.RenderPortableJob(opening.Job)
+	prompt, renderErr := assemblyline.RenderPortableJob(opening.Job)
 	if renderErr != nil {
 		t.Fatal(renderErr)
 	}
@@ -145,9 +145,13 @@ func stationGapOpenFixture(t *testing.T, authority model.StepAttemptAuthority) S
 	if err != nil {
 		t.Fatal(err)
 	}
+	const contextTokens = 32768
 	return StationGapOpenRecord{
 		Authority: authority, Job: job, Station: station.ConversationResponse,
-		ContextTokens: 32768, MaxOutputTokens: 32768,
+		ContextTokens: contextTokens,
+		MaxOutputTokens: portableStationTestMaxOutputTokens(
+			t, job, contextTokens,
+		),
 		OutputLimitMode: llm.ExactPreparedOutputLimitNatural,
 	}
 }

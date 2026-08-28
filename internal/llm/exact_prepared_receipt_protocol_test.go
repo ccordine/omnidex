@@ -29,7 +29,7 @@ func preparedGenerationProtocolReceiptFixture(t *testing.T) PreparedGeneration {
 	t.Helper()
 	body := exactProtocolResponseBody(t, `{}`)
 	return PreparedGeneration{
-		Schema: PreparedGenerationSchemaV1, Protocol: ExactPreparedProtocolStructuredV1,
+		Schema: PreparedGenerationSchemaV1, Protocol: ExactPreparedProtocolRawTextV2,
 		ProviderRequestDisposition:    ProviderRequestDispatched,
 		ProviderRequestSHA256:         strings.Repeat("a", 64),
 		ProviderHTTPStatus:            200,

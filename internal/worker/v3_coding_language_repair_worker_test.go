@@ -35,7 +35,7 @@ func TestLanguageRepairExecutorRejectsUnchangedSource(t *testing.T) {
 func TestLanguageRepairExecutorRejectsProjectedSourceOutsideOneDeclaration(t *testing.T) {
 	t.Parallel()
 	const current = "func Value() int { return hidden() }"
-	const raw = "```go\nimport \"example.invalid/value\"\n\nfunc Value() int { return 2 }\n```"
+	const raw = "import \"example.invalid/value\"\n\nfunc Value() int { return 2 }"
 	finalized := false
 	runtime := typedWorkerRuntime{
 		Context: t.Context(),
@@ -103,8 +103,8 @@ func TestLanguageRepairRetriesInvalidCorrectionWithinBoundedAuthority(t *testing
 			name: "go import plus function", language: "go", dialect: "Go 1.24 function syntax",
 			signature: "func Normalize(value int) int",
 			current:   "func Normalize(value int) int { return hidden(value) }",
-			invalid: "```go\nimport \"example.invalid/hidden\"\n\n" +
-				"func Normalize(value int) int { return value }\n```",
+			invalid: "import \"example.invalid/hidden\"\n\n" +
+				"func Normalize(value int) int { return value }",
 			corrected:  "func Normalize(value int) int { return value }",
 			validate:   validateDirectCodingGoFragment,
 			diagnostic: `SOURCE_DIAGNOSTIC: Go fragment references undeclared capability "hidden"`,
@@ -151,8 +151,7 @@ func TestLanguageRepairRetriesInvalidCorrectionWithinBoundedAuthority(t *testing
 			runtime := typedWorkerRuntime{
 				Context: t.Context(), MaxAttempts: maxTypedWorkerAttempts,
 				Execute: testPortableExecutor(func(
-					scope string, model string, prompt string, _ map[string]any,
-				) (string, error) {
+					scope string, model string, prompt string) (string, error) {
 					switch scope {
 					case "portable_semantic_worker":
 						guidanceCalls++
@@ -164,8 +163,8 @@ func TestLanguageRepairRetriesInvalidCorrectionWithinBoundedAuthority(t *testing
 								!strings.Contains(prompt, "REJECTED_INSTRUCTION_JSON:")) {
 							t.Fatalf("second guidance omitted invalid-source evidence:\n%s", prompt)
 						}
-						return `{"instruction":"Change the exact mutable declaration using only its local parameter, attempt ` +
-							string(rune('0'+guidanceCalls)) + `."}`, nil
+						return "Change the exact mutable declaration using only its local parameter, attempt " +
+							string(rune('0'+guidanceCalls)) + ".", nil
 					case "portable_fragment_worker":
 						correctionCalls++
 						if model != "executor" {

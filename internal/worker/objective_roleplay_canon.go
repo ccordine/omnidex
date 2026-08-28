@@ -49,20 +49,44 @@ func extractRoleplayCanonSource(
 	station objectiveRoleplayCanonStation,
 	input assemblyline.RoleplayCanonExtractionInput,
 ) ([]string, int, error) {
-	if _, err := assemblyline.NewRoleplayCanonExtractionJob(input); err != nil {
+	if _, err := assemblyline.NewRoleplayCanonFactCoverageJob(
+		assemblyline.RoleplayCanonFactLeafInput{
+			Source: input.Source, AntecedentUserTurn: input.AntecedentUserTurn,
+			Context: input.Context, AcceptedFacts: []string{},
+		},
+	); err != nil {
 		return nil, 0, err
 	}
 	decision, receipt, err := station.ExtractCanon(ctx, input)
 	if err != nil {
 		return nil, 0, err
 	}
-	if err := validateObjectiveStationReceipt("roleplay canon extraction", receipt); err != nil {
+	if err := validateRoleplayCanonExtractionReceipt(receipt); err != nil {
 		return nil, 0, err
 	}
 	if err := decision.ValidateFor(input); err != nil {
 		return nil, 0, err
 	}
 	return append([]string{}, decision.Facts...), receipt.Calls, nil
+}
+
+func validateRoleplayCanonExtractionReceipt(receipt objectiveStationReceipt) error {
+	if receipt.Reused {
+		if receipt.Calls != 0 {
+			return fmt.Errorf(
+				"roleplay canon extraction reuse reported %d provider calls", receipt.Calls,
+			)
+		}
+		return nil
+	}
+	maximum := (2*assemblyline.MaxRoleplayCanonFactsPerTurn + 1) * maxTypedWorkerAttempts
+	if receipt.Calls < 1 || receipt.Calls > maximum {
+		return fmt.Errorf(
+			"roleplay canon extraction reported %d calls outside the bounded fixed-point budget",
+			receipt.Calls,
+		)
+	}
+	return nil
 }
 
 func newRoleplayUserCanonCompletion(

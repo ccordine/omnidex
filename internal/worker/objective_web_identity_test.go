@@ -37,20 +37,20 @@ func TestWebReviewExactIdentityMustDifferFromSynthesis(t *testing.T) {
 	identity := webIdentityFixture("synthesis", strings.Repeat("a", 64))
 	guard := &webModelIdentityGuard{}
 	if err := guard.validate(
-		assemblyline.PortableJob{Kind: assemblyline.WorkWebGroundedSynthesis},
+		assemblyline.PortableJob{Kind: assemblyline.WorkWebSynthesisParagraph},
 		exactStationExecution{ProviderIdentity: identity},
 	); err != nil {
 		t.Fatal(err)
 	}
 	if err := guard.validate(
-		assemblyline.PortableJob{Kind: assemblyline.WorkWebClaimEvidenceReview},
+		assemblyline.PortableJob{Kind: assemblyline.WorkWebReviewClaimVerdict},
 		exactStationExecution{ProviderIdentity: identity},
 	); err == nil || !strings.Contains(err.Error(), "synthesis generation model identity") {
 		t.Fatalf("identical live review identity error=%v", err)
 	}
 	distinct := webIdentityFixture("review", strings.Repeat("b", 64))
 	if err := guard.validate(
-		assemblyline.PortableJob{Kind: assemblyline.WorkWebClaimEvidenceReview},
+		assemblyline.PortableJob{Kind: assemblyline.WorkWebReviewClaimVerdict},
 		exactStationExecution{ProviderIdentity: distinct},
 	); err != nil {
 		t.Fatal(err)
@@ -61,13 +61,13 @@ func TestWebReviewRejectsDifferentAliasForSameProviderDigest(t *testing.T) {
 	guard := &webModelIdentityGuard{}
 	digest := strings.Repeat("a", 64)
 	if err := guard.validate(
-		assemblyline.PortableJob{Kind: assemblyline.WorkWebGroundedSynthesis},
+		assemblyline.PortableJob{Kind: assemblyline.WorkWebSynthesisParagraph},
 		exactStationExecution{ProviderIdentity: webIdentityFixture("synthesis-alias", digest)},
 	); err != nil {
 		t.Fatal(err)
 	}
 	err := guard.validate(
-		assemblyline.PortableJob{Kind: assemblyline.WorkWebClaimEvidenceReview},
+		assemblyline.PortableJob{Kind: assemblyline.WorkWebReviewClaimVerdict},
 		exactStationExecution{ProviderIdentity: webIdentityFixture("review-alias", digest)},
 	)
 	if err == nil {
@@ -79,14 +79,14 @@ func TestWebReReviewIdentityMustDifferFromCorrectionGenerator(t *testing.T) {
 	guard := &webModelIdentityGuard{}
 	initial := webIdentityFixture("synthesis", strings.Repeat("a", 64))
 	correction := webIdentityFixture("correction", strings.Repeat("c", 64))
-	if err := guard.validate(assemblyline.PortableJob{Kind: assemblyline.WorkWebGroundedSynthesis}, exactStationExecution{ProviderIdentity: initial}); err != nil {
+	if err := guard.validate(assemblyline.PortableJob{Kind: assemblyline.WorkWebSynthesisParagraph}, exactStationExecution{ProviderIdentity: initial}); err != nil {
 		t.Fatal(err)
 	}
 	if err := guard.validate(assemblyline.PortableJob{Kind: assemblyline.WorkWebGroundedSynthesisCorrection}, exactStationExecution{ProviderIdentity: correction}); err != nil {
 		t.Fatal(err)
 	}
 	err := guard.validate(
-		assemblyline.PortableJob{Kind: assemblyline.WorkWebClaimEvidenceReview},
+		assemblyline.PortableJob{Kind: assemblyline.WorkWebReviewClaimVerdict},
 		exactStationExecution{ProviderIdentity: correction},
 	)
 	if err == nil || !strings.Contains(err.Error(), "synthesis generation model identity") {
@@ -97,7 +97,7 @@ func TestWebReReviewIdentityMustDifferFromCorrectionGenerator(t *testing.T) {
 func TestWebReviewIdentityCannotRunBeforeSynthesisProof(t *testing.T) {
 	guard := &webModelIdentityGuard{}
 	err := guard.validate(
-		assemblyline.PortableJob{Kind: assemblyline.WorkWebClaimEvidenceReview},
+		assemblyline.PortableJob{Kind: assemblyline.WorkWebReviewClaimVerdict},
 		exactStationExecution{ProviderIdentity: webIdentityFixture("review", strings.Repeat("b", 64))},
 	)
 	if err == nil || !strings.Contains(err.Error(), "before grounded synthesis identity") {

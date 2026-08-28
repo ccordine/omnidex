@@ -19,12 +19,12 @@ func TestReplayArtifactValidatesServiceEndpointRequirement(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	valid := `{"schema":"omnidex.application-service-endpoint-requirement.v1","endpoint_requirement":"support_only"}`
+	valid := string(assemblyline.ApplicationServiceSupportOnly)
 	artifact, err := replayExactStationArtifact(job, valid)
 	if err != nil || artifact.Kind != "application_service_endpoint_requirement" {
 		t.Fatalf("endpoint requirement artifact=%+v error=%v", artifact, err)
 	}
-	invalid := `{"schema":"omnidex.application-service-endpoint-requirement.v1","endpoint_requirement":"route_later"}`
+	invalid := "route_later"
 	if _, err := replayExactStationArtifact(job, invalid); err == nil {
 		t.Fatal("replay accepted unregistered endpoint requirement")
 	}

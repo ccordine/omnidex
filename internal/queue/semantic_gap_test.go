@@ -10,7 +10,7 @@ import (
 	"github.com/gryph/omnidex/internal/station"
 )
 
-func TestStationGapOpeningPreservesClosedPortableJobAndCanonicalProjection(t *testing.T) {
+func TestStationGapOpeningPreservesRawPortableJobAndCanonicalProjection(t *testing.T) {
 	t.Parallel()
 
 	job, err := assemblyline.NewConversationResponseJob(assemblyline.ConversationResponseInput{
@@ -29,14 +29,17 @@ func TestStationGapOpeningPreservesClosedPortableJobAndCanonicalProjection(t *te
 	if err != nil {
 		t.Fatal(err)
 	}
-	prompt, _, err := assemblyline.RenderPortableJob(job)
+	prompt, err := assemblyline.RenderPortableJob(job)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if validated.Prompt != prompt || validated.PortablePayload != string(job.Payload) {
 		t.Fatalf("opening changed exact prompt or payload: %+v", validated)
 	}
-	if !strings.Contains(validated.ProjectionEnvelope, `"renderer":"omnidex.render-portable-job.v3"`) ||
+	if !strings.Contains(validated.ProjectionEnvelope, `"renderer":"omnidex.render-portable-job.v4"`) ||
+		!strings.Contains(validated.ProjectionEnvelope, `"response_schema":null`) ||
+		validated.PortableSchema != assemblyline.PortableJobSchemaV2 ||
+		validated.Scope != assemblyline.PortableSemanticWorkerScope ||
 		len(validated.ProjectionSHA256) != 64 || len(validated.PortableEnvelopeSHA256) != 64 {
 		t.Fatalf("projection envelope=%q sha=%q", validated.ProjectionEnvelope, validated.ProjectionSHA256)
 	}

@@ -13,7 +13,7 @@ func TestLanguageFragmentWorkerRejectsPathBearingEnvelopeBeforeInference(t *test
 	called := false
 	runtime := typedWorkerRuntime{
 		Context: context.Background(), MaxAttempts: 1,
-		Execute: testPortableExecutor(func(_ string, _ string, _ string, _ map[string]any) (string, error) {
+		Execute: testPortableExecutor(func(_ string, _ string, _ string) (string, error) {
 			called = true
 			return "", nil
 		}),
@@ -43,7 +43,7 @@ func TestLanguageFragmentWorkerRejectsKnownBareArtifactInCandidate(t *testing.T)
 	}
 	runtime := typedWorkerRuntime{
 		Context: context.Background(), MaxAttempts: 1, PathProvenance: provenance,
-		Execute: testPortableExecutor(func(_ string, _ string, _ string, _ map[string]any) (string, error) {
+		Execute: testPortableExecutor(func(_ string, _ string, _ string) (string, error) {
 			return `function runtimeLabel() { return "transport.go"; }`, nil
 		}),
 	}
@@ -72,7 +72,7 @@ func TestLanguageFragmentWorkerAcceptsInterpretedControlEscapes(t *testing.T) {
 }`
 	runtime := typedWorkerRuntime{
 		Context: context.Background(), MaxAttempts: 1,
-		Execute: testPortableExecutor(func(_ string, _ string, _ string, _ map[string]any) (string, error) {
+		Execute: testPortableExecutor(func(_ string, _ string, _ string) (string, error) {
 			return candidate, nil
 		}),
 	}

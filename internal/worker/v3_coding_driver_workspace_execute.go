@@ -147,6 +147,13 @@ func (s *directCodingSession) completePreparedTreeCognition(
 			return err
 		}
 	}
+	for _, path := range prepared.assembly.DeletePaths {
+		evidence := "file=" + path + " absent=true workspace_state=" +
+			prepared.command.Plan.ExpectedStateID
+		if err := s.completePreparedTreeLeaf(path, false, evidence); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 

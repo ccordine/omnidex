@@ -34,13 +34,13 @@ func TestDecodeExactPreparedResponseIgnoresProviderMetadataOutsideProjection(t *
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			want, err := DecodeExactPreparedResponseForProtocol(
-				ExactPreparedProtocolRawTextV1, 200, test.baseline,
+				ExactPreparedProtocolRawTextV2, 200, test.baseline,
 			)
 			if err != nil {
 				t.Fatal(err)
 			}
 			got, err := DecodeExactPreparedResponseForProtocol(
-				ExactPreparedProtocolRawTextV1, 200, test.withMeta,
+				ExactPreparedProtocolRawTextV2, 200, test.withMeta,
 			)
 			if err != nil {
 				t.Fatalf("provider metadata blocked required response projection: %v", err)
@@ -59,7 +59,7 @@ func TestDecodeExactPreparedResponseRejectsDuplicateProviderMetadataKeys(t *test
 		`"metadata":{"opaque":1,"opaque":2}`,
 	)
 	if _, err := DecodeExactPreparedResponseForProtocol(
-		ExactPreparedProtocolRawTextV1, 200, body,
+		ExactPreparedProtocolRawTextV2, 200, body,
 	); err == nil {
 		t.Fatal("duplicate provider metadata keys were accepted")
 	}
@@ -68,11 +68,11 @@ func TestDecodeExactPreparedResponseRejectsDuplicateProviderMetadataKeys(t *test
 func TestDecodeExactPreparedResponseKeepsQwenRequiredProjectionFrozen(t *testing.T) {
 	t.Parallel()
 	body := []byte(`{"model":"qwen:9b","created_at":"2026-08-09T22:00:00Z",` +
-		`"response":"{}","done":true,"done_reason":"stop",` +
+		`"response":"semantic leaf","done":true,"done_reason":"stop",` +
 		`"total_duration":101,"load_duration":11,"prompt_eval_count":41,` +
 		`"prompt_eval_duration":21,"eval_count":7,"eval_duration":31}`)
 	got, err := DecodeExactPreparedResponseForProtocol(
-		ExactPreparedProtocolStructuredV1, 200, body,
+		ExactPreparedProtocolRawTextV2, 200, body,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -80,7 +80,7 @@ func TestDecodeExactPreparedResponseKeepsQwenRequiredProjectionFrozen(t *testing
 	want := ExactPreparedResponse{
 		Disposition:  ProviderResponseSucceeded,
 		Model:        "qwen:9b",
-		Content:      `{}`,
+		Content:      "semantic leaf",
 		DonePresent:  true,
 		Done:         true,
 		DoneReason:   "stop",

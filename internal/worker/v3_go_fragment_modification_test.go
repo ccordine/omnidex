@@ -57,8 +57,8 @@ func TestGoFragmentModificationRejectsUnchangedCandidate(t *testing.T) {
 
 func TestGoFragmentModificationFinalizesExactDeclarationProjection(t *testing.T) {
 	t.Parallel()
-	const raw = "```go\nfunc Value() int { return 2 }\n```"
-	const declaration = "func Value() int { return 2 }"
+	const raw = "func Value() int { return 2 }"
+	const declaration = raw
 	input := assemblyline.FragmentModificationInput{
 		Language: "go", Dialect: "Go 1.24", Signature: "func Value() int",
 		CurrentDeclaration: "func Value() int { return 1 }",
@@ -77,7 +77,8 @@ func TestGoFragmentModificationFinalizesExactDeclarationProjection(t *testing.T)
 		) error {
 			if validationErr != nil || result.Candidate != raw || result.Projection == nil ||
 				result.Projection.Kind != assemblyline.PortableResultProjectionSourceDeclaration ||
-				result.Projection.Source != declaration {
+				result.Projection.Source != declaration || result.Projection.StartByte != 0 ||
+				result.Projection.EndByte != len(raw) || result.Projection.DiscardedBytes != 0 {
 				t.Fatalf("finalized result=%+v validation=%v", result, validationErr)
 			}
 			finalized = true

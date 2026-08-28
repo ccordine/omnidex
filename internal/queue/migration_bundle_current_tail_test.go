@@ -40,6 +40,9 @@ func TestCheckedMigrationBundleFreezesCurrentTail(t *testing.T) {
 		"160_application_service_deployment_semantic_split.sql":           0,
 		"161_source_declaration_projection_authority.sql":                 0,
 		"162_source_projection_identity.sql":                              0,
+		"163_raw_portable_response_transport.sql":                         0,
+		"164_qwen35_chatml_raw_transport_v2.sql":                          0,
+		"165_portable_response_output_ceiling.sql":                        0,
 	}
 	for _, entry := range bundle.entries {
 		if _, tracked := want[entry.name]; tracked {

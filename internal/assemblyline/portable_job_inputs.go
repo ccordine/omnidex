@@ -38,33 +38,11 @@ type FragmentCorrectionInput struct {
 type ResponseCorrectionInput struct {
 	Original          PortableJob `json:"original"`
 	ValidationFailure string      `json:"validation_failure"`
-	TargetField       string      `json:"target_field,omitempty"`
-	RetainedCandidate string      `json:"retained_candidate,omitempty"`
-}
-
-func NewApplicationContextNeedJob(input ApplicationContextNeedInput) (PortableJob, error) {
-	return newValidatedPortableJob(WorkApplicationContextNeeds, input, input.validate)
-}
-
-func NewApplicationIntentJob(input ApplicationIntentInput) (PortableJob, error) {
-	return newValidatedPortableJob(WorkApplicationIntent, input, input.validate)
+	RetainedCandidate string      `json:"retained_candidate"`
 }
 
 func NewApplicationClassificationJob(input ApplicationClassificationInput) (PortableJob, error) {
 	return newValidatedPortableJob(WorkApplicationClassify, input, input.validate)
-}
-
-func NewApplicationJobSpecificationJob(input ApplicationJobSpecificationInput) (PortableJob, error) {
-	return newValidatedPortableJob(
-		WorkApplicationJobSpecification, input,
-		func() error { return validateApplicationJobSpecificationInput(input) },
-	)
-}
-
-func NewRepositoryRequirementInterpretationJob(
-	input RepositoryRequirementInterpretationInput,
-) (PortableJob, error) {
-	return newValidatedPortableJob(WorkRepositoryRequirements, input, input.validate)
 }
 
 func NewArtifactHandlingJob(input ArtifactHandlingInput) (PortableJob, error) {
@@ -118,15 +96,6 @@ func NewSourceProjectedFragmentCorrectionJob(
 	return job, nil
 }
 
-func NewResponseCorrectionJob(
-	original PortableJob,
-	validationFailure string,
-) (PortableJob, error) {
-	return PortableJob{}, fmt.Errorf(
-		"response correction requires the exact retained candidate; use NewRetainedResponseCorrectionJob",
-	)
-}
-
 func NewRetainedResponseCorrectionJob(
 	original PortableJob,
 	validationFailure string,
@@ -135,18 +104,6 @@ func NewRetainedResponseCorrectionJob(
 	input := ResponseCorrectionInput{
 		Original: original, ValidationFailure: strings.TrimSpace(validationFailure),
 		RetainedCandidate: strings.TrimSpace(retainedCandidate),
-	}
-	return newValidatedPortableJob(WorkResponseCorrection, input, input.validate)
-}
-
-func NewResponseCorrectionJobForField(
-	original PortableJob,
-	validationFailure string,
-	targetField string,
-) (PortableJob, error) {
-	input := ResponseCorrectionInput{
-		Original: original, ValidationFailure: strings.TrimSpace(validationFailure),
-		TargetField: targetField,
 	}
 	return newValidatedPortableJob(WorkResponseCorrection, input, input.validate)
 }

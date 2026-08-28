@@ -39,10 +39,16 @@ func TestDatabaseSemanticStationJSONBoundariesContainNoExecutionAuthority(t *tes
 func TestDatabaseSemanticPromptsContainNoConnectionOrRawQueryBytes(t *testing.T) {
 	t.Parallel()
 	queryInput, _, _ := databaseQueryIntentFixture(t)
+	queryState := NewDatabaseQueryIntentLeafState(queryInput)
+	queryState.FromRelationID = queryInput.SchemaProjection.Relations[0].ID
 	jobs := []PortableJob{}
 	for _, build := range []func() (PortableJob, error){
-		func() (PortableJob, error) { return NewDatabaseSchemaSelectionJob(databaseSchemaSelectionFixture()) },
-		func() (PortableJob, error) { return NewDatabaseQueryIntentJob(queryInput) },
+		func() (PortableJob, error) {
+			return NewDatabaseSchemaSelectionCoverageJob(DatabaseSchemaSelectionLeafInput{
+				Authority: databaseSchemaSelectionFixture(), SelectedRelationIDs: []string{},
+			})
+		},
+		func() (PortableJob, error) { return NewDatabaseQueryShapeJob(queryState) },
 		func() (PortableJob, error) {
 			return NewDatabaseEvidenceGapJob(DatabaseEvidenceGapInput{
 				RequirementID: "requirement-1", ExactRequirement: "Count the exact records.",
@@ -67,7 +73,7 @@ func TestDatabaseSemanticPromptsContainNoConnectionOrRawQueryBytes(t *testing.T)
 		jobs = append(jobs, job)
 	}
 	for _, job := range jobs {
-		prompt, _, err := RenderPortableJob(job)
+		prompt, err := RenderPortableJob(job)
 		if err != nil {
 			t.Fatal(err)
 		}

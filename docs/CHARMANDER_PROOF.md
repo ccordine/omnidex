@@ -15,7 +15,7 @@ The dependent simulation integration proves a narrow API integration and determi
 
 The following checks establish framework primitives only:
 
-* Go tests pass for portable jobs, one-field semantic correction, AST parsing, context budgets, capability graph projection, worker routing, skill lifecycle, and workspace reconciliation.
+* Go tests pass for portable jobs, complete raw-leaf semantic correction, AST parsing, context budgets, capability graph projection, worker routing, skill lifecycle, and workspace reconciliation.
 * The generated generic browser substrate passes its real pinned Node install, Vitest suite, TypeScript type check, and Vite production build.
 * That Node test caught and then guarded a real runtime defect where action status changed but state was never published.
 * Migrations `023_worker_skills.sql` and `024_llm_evidence.sql` are applied through normal core startup.
@@ -85,7 +85,7 @@ Before a run starts, record:
 During the run, append immutable evidence for:
 
 * every portable job ID and kind;
-* exact rendered prompt bytes and response schema;
+* exact rendered prompt bytes and raw response contract;
 * exact response bytes;
 * every rejection and direct correction;
 * every accepted AST declaration and content hash;

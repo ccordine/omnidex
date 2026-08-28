@@ -51,11 +51,18 @@ func (guard *webModelIdentityGuard) validate(
 	guard.mu.Lock()
 	defer guard.mu.Unlock()
 	switch job.Kind {
-	case assemblyline.WorkWebGroundedSynthesis, assemblyline.WorkWebGroundedSynthesisCorrection:
+	case assemblyline.WorkWebSynthesisParagraphCoverage,
+		assemblyline.WorkWebSynthesisParagraph,
+		assemblyline.WorkWebSynthesisEvidenceRelation,
+		assemblyline.WorkWebGroundedSynthesisCorrection:
 		owned := identity
 		guard.generation = &owned
 		return nil
-	case assemblyline.WorkWebClaimEvidenceReview:
+	case assemblyline.WorkWebReviewClaimCoverage,
+		assemblyline.WorkWebReviewClaim,
+		assemblyline.WorkWebReviewClaimVerdict,
+		assemblyline.WorkWebReviewIssueEvidenceRelation,
+		assemblyline.WorkWebReviewIssueDetail:
 		if guard.generation == nil {
 			return fmt.Errorf("web claim-evidence review ran before grounded synthesis identity was proven")
 		}

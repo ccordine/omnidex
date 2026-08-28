@@ -18,16 +18,23 @@ func TestLLMCallEvidenceRejectsIncompleteOrFakeSuccess(t *testing.T) {
 		StepID: 1, Scope: "portable", RequestedModel: "requested", Model: "effective", Attempt: 1,
 		StationCallOpeningID: 1,
 		SystemPrompt:         "exact system prompt", UserPrompt: "exact user prompt",
-		ResponseFormat: "json", ResponseSchema: map[string]any{"type": "object"},
-		ContextTokens: 4096, MaxOutputTokens: 512,
+		ResponseFormat: "text",
+		ContextTokens:  4096, MaxOutputTokens: 512,
 		Status: LLMEvidenceSucceeded, Response: "exact response",
 	}
 	for name, mutate := range map[string]func(*LLMCallEvidenceRecord){
-		"missing prompt":   func(record *LLMCallEvidenceRecord) { record.SystemPrompt = "" },
-		"fake success":     func(record *LLMCallEvidenceRecord) { record.Response = "" },
-		"partial work":     func(record *LLMCallEvidenceRecord) { record.WorkID = strings.Repeat("a", 64) },
-		"unbounded call":   func(record *LLMCallEvidenceRecord) { record.ContextTokens = 0 },
-		"schema with text": func(record *LLMCallEvidenceRecord) { record.ResponseFormat = "text" },
+		"missing prompt": func(record *LLMCallEvidenceRecord) { record.SystemPrompt = "" },
+		"fake success":   func(record *LLMCallEvidenceRecord) { record.Response = "" },
+		"partial work":   func(record *LLMCallEvidenceRecord) { record.WorkID = strings.Repeat("a", 64) },
+		"unbounded call": func(record *LLMCallEvidenceRecord) { record.ContextTokens = 0 },
+		"JSON format":    func(record *LLMCallEvidenceRecord) { record.ResponseFormat = "json" },
+		"empty format":   func(record *LLMCallEvidenceRecord) { record.ResponseFormat = "" },
+		"normalized format": func(record *LLMCallEvidenceRecord) {
+			record.ResponseFormat = " TEXT "
+		},
+		"response schema": func(record *LLMCallEvidenceRecord) {
+			record.ResponseSchema = map[string]any{"type": "object"}
+		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			record := base
@@ -45,7 +52,7 @@ func TestLLMCallEvidencePreservesExactPromptsAndRawResponse(t *testing.T) {
 	record := normalizeLLMCallEvidenceRecord(LLMCallEvidenceRecord{
 		Scope: " portable ", RequestedModel: " requested ", Model: " effective ",
 		SystemPrompt: "\nexact system prompt\n", UserPrompt: " exact user prompt ",
-		Response: "\n  exact raw response  \n", ResponseFormat: " JSON ",
+		Response: "\n  exact raw response  \n", ResponseFormat: " TEXT ",
 	})
 	if record.SystemPrompt != "\nexact system prompt\n" || record.UserPrompt != " exact user prompt " {
 		t.Fatalf("prompt content was normalized: system=%q user=%q", record.SystemPrompt, record.UserPrompt)
@@ -53,8 +60,40 @@ func TestLLMCallEvidencePreservesExactPromptsAndRawResponse(t *testing.T) {
 	if record.Response != "\n  exact raw response  \n" {
 		t.Fatalf("response content was normalized: %q", record.Response)
 	}
-	if record.Scope != "portable" || record.RequestedModel != "requested" || record.Model != "effective" || record.ResponseFormat != "json" {
+	if record.Scope != "portable" || record.RequestedModel != "requested" || record.Model != "effective" {
 		t.Fatalf("routing metadata was not normalized: %#v", record)
+	}
+	if record.ResponseFormat != " TEXT " {
+		t.Fatalf("response format authority was normalized or defaulted: %q", record.ResponseFormat)
+	}
+}
+
+func TestLLMCallEvidenceRejectsStructuredResponseAuthority(t *testing.T) {
+	base := LLMCallEvidenceRecord{
+		StepID: 1, Scope: "portable_semantic_worker",
+		RequestedModel: "requested", Model: "effective", Attempt: 1,
+		StationCallOpeningID: 1,
+		SystemPrompt:         "system", UserPrompt: "user", ResponseFormat: "text",
+		ContextTokens: 4096, MaxOutputTokens: 4096,
+		Status: LLMEvidenceSucceeded, Response: "exact raw leaf",
+	}
+	if err := validateLLMCallEvidenceRecord(base); err != nil {
+		t.Fatal(err)
+	}
+	withFormat := base
+	withFormat.ResponseFormat = "json"
+	if err := validateLLMCallEvidenceRecord(withFormat); err == nil {
+		t.Fatal("LLM evidence accepted JSON response authority")
+	}
+	withSchema := base
+	withSchema.ResponseSchema = map[string]any{"type": "object"}
+	if err := validateLLMCallEvidenceRecord(withSchema); err == nil {
+		t.Fatal("LLM evidence accepted a response schema")
+	}
+	if schema, _, err := validateAndHashLLMCallEvidenceRecord(base); err != nil {
+		t.Fatal(err)
+	} else if schema != nil {
+		t.Fatalf("raw LLM evidence persisted response schema %#v", schema)
 	}
 }
 
@@ -64,7 +103,7 @@ func TestLLMCallEvidenceHashIncludesNativeThinkingMode(t *testing.T) {
 		StationCallOpeningID: 1,
 		SystemPrompt:         "system", UserPrompt: "user", ResponseFormat: "text",
 		ContextTokens: 4096, MaxOutputTokens: 512,
-		Status: LLMEvidenceSucceeded, Response: `{"thinking":"trace","content":"memo"}`,
+		Status: LLMEvidenceSucceeded, Response: "exact memo",
 	})
 	_, directHash, err := validateAndHashLLMCallEvidenceRecord(base)
 	if err != nil {
@@ -154,7 +193,7 @@ func TestPostgresLLMCallEvidenceRoundTripIsExactAndImmutable(t *testing.T) {
 	}
 	authority, stepID := claim.Authority, claim.Step.ID
 
-	response := "\n  " + `{"schema":"omnidex.conversation-response.v1","text":"exact response"}` + "  \n"
+	response := "\n  exact response  \n"
 	first := prepareSuccessfulStationEvidenceFixture(
 		t, repository, authority,
 		newStationEvidenceJobForTest(t, marker+"-success"), response,

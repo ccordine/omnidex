@@ -8,11 +8,16 @@ import (
 )
 
 func TestRoleplayCanonExtractionHasOneExactStationOwner(t *testing.T) {
-	got, err := stationForPortableWorkKind(assemblyline.WorkRoleplayCanonExtraction)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got != station.RoleplayCanonExtraction {
-		t.Fatalf("station=%q", got)
+	for _, kind := range []assemblyline.WorkKind{
+		assemblyline.WorkRoleplayCanonFactCoverage,
+		assemblyline.WorkRoleplayCanonFact,
+	} {
+		got, err := stationForPortableWorkKind(kind)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got != station.RoleplayCanonExtraction {
+			t.Fatalf("kind=%q station=%q", kind, got)
+		}
 	}
 }

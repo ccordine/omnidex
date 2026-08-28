@@ -7,7 +7,6 @@ import (
 
 	"github.com/gryph/omnidex/internal/assemblyline"
 	"github.com/gryph/omnidex/internal/llm"
-	"github.com/gryph/omnidex/internal/queue"
 	"github.com/gryph/omnidex/internal/station"
 )
 
@@ -34,9 +33,15 @@ func (adapter portableObjectiveKindStation) Classify(
 	if err != nil {
 		return assemblyline.ConversationObjectiveKindDecision{}, objectiveStationReceipt{}, err
 	}
-	decision, calls, err := runObjectivePortableCall[assemblyline.ConversationObjectiveKindDecision](ctx, adapter.runtime, model, "conversation_objective_kind", job, func(value assemblyline.ConversationObjectiveKindDecision) error {
-		return value.ValidateFor(input)
-	})
+	decision, calls, err := runObjectivePortableRawLeafCall(
+		ctx, adapter.runtime, model, "conversation_objective_kind", job,
+		func(raw string) (assemblyline.ConversationObjectiveKindDecision, error) {
+			return assemblyline.DecodeConversationObjectiveKindDecision(input, raw)
+		},
+		func(value assemblyline.ConversationObjectiveKindDecision) error {
+			return value.ValidateFor(input)
+		},
+	)
 	return decision, objectiveStationReceipt{Calls: calls}, err
 }
 
@@ -52,25 +57,64 @@ func (adapter portableObjectiveRoleplayCanonStation) ExtractCanon(
 	ctx context.Context,
 	input assemblyline.RoleplayCanonExtractionInput,
 ) (assemblyline.RoleplayCanonExtractionDecision, objectiveStationReceipt, error) {
-	job, err := assemblyline.NewRoleplayCanonExtractionJob(input)
-	if err != nil {
-		return assemblyline.RoleplayCanonExtractionDecision{}, objectiveStationReceipt{}, err
+	resolveModel := func() (string, error) {
+		return objectiveRoleplaySemanticModel(adapter.runtime)
 	}
-	var resolved assemblyline.RoleplayCanonExtractionDecision
-	decision, receipt, err := runObjectiveReusablePortableCall[assemblyline.RoleplayCanonExtractionDecision](
-		ctx, adapter.runtime, "roleplay_canon_extraction", job,
-		station.RoleplayCanonExtraction,
-		func() (string, error) { return objectiveRoleplaySemanticModel(adapter.runtime) },
-		func(value assemblyline.RoleplayCanonExtractionDecision) error {
-			var resolveErr error
-			resolved, resolveErr = value.ResolveFor(input)
-			return resolveErr
-		},
-	)
-	if err == nil {
-		decision = resolved
+	facts := make([]string, 0, assemblyline.MaxRoleplayCanonFactsPerTurn)
+	totalCalls, allReused := 0, true
+	for {
+		leafInput := assemblyline.RoleplayCanonFactLeafInput{
+			Source: input.Source, AntecedentUserTurn: input.AntecedentUserTurn,
+			Context: input.Context, AcceptedFacts: append([]string{}, facts...),
+		}
+		coverageJob, err := assemblyline.NewRoleplayCanonFactCoverageJob(leafInput)
+		if err != nil {
+			return assemblyline.RoleplayCanonExtractionDecision{}, objectiveStationReceipt{Calls: totalCalls}, err
+		}
+		coverage, receipt, err := runObjectiveReusablePortableRawLeafCall(
+			ctx, adapter.runtime, "roleplay_canon_fact_coverage", coverageJob,
+			station.RoleplayCanonExtraction, resolveModel,
+			func(raw string) (string, error) {
+				return assemblyline.DecodeRoleplayCanonFactCoverageLeaf(leafInput, raw)
+			},
+			func(string) error { return nil },
+		)
+		totalCalls += receipt.Calls
+		allReused = allReused && receipt.Reused
+		if err != nil {
+			return assemblyline.RoleplayCanonExtractionDecision{}, objectiveStationReceipt{Calls: totalCalls}, err
+		}
+		if coverage == assemblyline.RoleplayNoUncoveredCanonFact {
+			decision, err := assemblyline.AssembleRoleplayCanonExtractionDecision(input, facts)
+			return decision, objectiveStationReceipt{
+				Calls: totalCalls, Reused: allReused,
+			}, err
+		}
+		if len(facts) == assemblyline.MaxRoleplayCanonFactsPerTurn {
+			return assemblyline.RoleplayCanonExtractionDecision{}, objectiveStationReceipt{Calls: totalCalls}, fmt.Errorf(
+				"roleplay canon fact coverage remains incomplete at the code-owned %d-item bound",
+				assemblyline.MaxRoleplayCanonFactsPerTurn,
+			)
+		}
+		factJob, err := assemblyline.NewRoleplayCanonFactJob(leafInput)
+		if err != nil {
+			return assemblyline.RoleplayCanonExtractionDecision{}, objectiveStationReceipt{Calls: totalCalls}, err
+		}
+		fact, receipt, err := runObjectiveReusablePortableRawLeafCall(
+			ctx, adapter.runtime, "roleplay_canon_fact", factJob,
+			station.RoleplayCanonExtraction, resolveModel,
+			func(raw string) (string, error) {
+				return assemblyline.DecodeRoleplayCanonFactLeaf(leafInput, raw)
+			},
+			func(string) error { return nil },
+		)
+		totalCalls += receipt.Calls
+		allReused = allReused && receipt.Reused
+		if err != nil {
+			return assemblyline.RoleplayCanonExtractionDecision{}, objectiveStationReceipt{Calls: totalCalls}, err
+		}
+		facts = append(facts, fact)
 	}
-	return decision, receipt, err
 }
 
 func (adapter portableObjectiveConversationStation) Respond(
@@ -89,9 +133,12 @@ func (adapter portableObjectiveConversationStation) Respond(
 		return objectiveStationModel(adapter.runtime, station.ConversationResponse)
 	}
 	if input.RoleplayIdentity != nil {
-		decision, receipt, err := runObjectiveReusablePortableCall[assemblyline.ConversationResponseDecision](
+		decision, receipt, err := runObjectiveReusablePortableRawLeafCall(
 			ctx, adapter.runtime, "conversation_response", job,
 			station.ConversationResponse, resolveModel,
+			func(raw string) (assemblyline.ConversationResponseDecision, error) {
+				return assemblyline.DecodeConversationResponseDecision(input, raw)
+			},
 			func(value assemblyline.ConversationResponseDecision) error {
 				if err := value.ValidateFor(input); err != nil {
 					return err
@@ -105,8 +152,11 @@ func (adapter portableObjectiveConversationStation) Respond(
 	if err != nil {
 		return assemblyline.ConversationResponseDecision{}, objectiveStationReceipt{}, err
 	}
-	decision, calls, err := runObjectivePortableCall[assemblyline.ConversationResponseDecision](
+	decision, calls, err := runObjectivePortableRawLeafCall(
 		ctx, adapter.runtime, model, "conversation_response", job,
+		func(raw string) (assemblyline.ConversationResponseDecision, error) {
+			return assemblyline.DecodeConversationResponseDecision(input, raw)
+		},
 		func(value assemblyline.ConversationResponseDecision) error {
 			if err := value.ValidateFor(input); err != nil {
 				return err
@@ -129,91 +179,4 @@ func objectiveRoleplaySemanticModel(runtime *nativeRuntimeV3) (string, error) {
 		return "", fmt.Errorf("roleplay semantic stations require runtime authority")
 	}
 	return runtime.svc.requiredRoleplaySemanticModel(runtime.routing)
-}
-
-func runObjectivePortableCall[T any](
-	ctx context.Context,
-	runtime *nativeRuntimeV3,
-	modelName, subject string,
-	job assemblyline.PortableJob,
-	validate func(T) error,
-) (T, int, error) {
-	var zero T
-	if ctx == nil || runtime == nil || runtime.svc == nil || runtime.claim == nil {
-		return zero, 0, fmt.Errorf("objective station requires exact running step authority")
-	}
-	if err := ctx.Err(); err != nil {
-		return zero, 0, err
-	}
-	modelName = strings.TrimSpace(modelName)
-	if modelName == "" {
-		return zero, 0, fmt.Errorf("objective station %s model is not configured", subject)
-	}
-	workerRuntime := portableWorkerRuntimeWithContext(runtime, "objective", ctx)
-	calls := 0
-	execute := workerRuntime.Execute
-	workerRuntime.Execute = func(job assemblyline.PortableJob, model string) (assemblyline.PortableResult, error) {
-		calls++
-		return execute(job, model)
-	}
-	value, err := runDirectCodingSemanticCall[T](
-		workerRuntime, modelName, subject, job, nil, validate,
-	)
-	return value, calls, err
-}
-
-func runObjectiveReusablePortableCall[T any](
-	ctx context.Context,
-	runtime *nativeRuntimeV3,
-	subject string,
-	job assemblyline.PortableJob,
-	owner station.ID,
-	resolveModel func() (string, error),
-	validate func(T) error,
-) (T, objectiveStationReceipt, error) {
-	var zero T
-	if ctx == nil || runtime == nil || runtime.svc == nil || runtime.claim == nil ||
-		runtime.svc.reuseRoleplayResult == nil || resolveModel == nil || validate == nil {
-		return zero, objectiveStationReceipt{}, fmt.Errorf(
-			"reusable roleplay station requires exact running step authority",
-		)
-	}
-	if err := ctx.Err(); err != nil {
-		return zero, objectiveStationReceipt{}, err
-	}
-	reuse, found, err := runtime.svc.reuseRoleplayResult(
-		ctx, queue.RoleplayPortableResultReuseRequest{
-			Authority: runtime.claim.Authority, Job: job, Station: owner,
-		},
-	)
-	if err != nil {
-		return zero, objectiveStationReceipt{}, fmt.Errorf(
-			"reuse accepted %s leaf: %w", subject, err,
-		)
-	}
-	if found {
-		if err := reuse.Result.ValidateFor(job); err != nil {
-			return zero, objectiveStationReceipt{}, fmt.Errorf(
-				"validate reused %s result: %w", subject, err,
-			)
-		}
-		value, err := decodeDirectCodingSemanticJSON[T](reuse.Result.Candidate)
-		if err == nil {
-			err = validate(value)
-		}
-		if err != nil {
-			return zero, objectiveStationReceipt{}, fmt.Errorf(
-				"validate reused %s leaf: %w", subject, err,
-			)
-		}
-		return value, objectiveStationReceipt{Reused: true}, nil
-	}
-	model, err := resolveModel()
-	if err != nil {
-		return zero, objectiveStationReceipt{}, err
-	}
-	value, calls, err := runObjectivePortableCall[T](
-		ctx, runtime, model, subject, job, validate,
-	)
-	return value, objectiveStationReceipt{Calls: calls}, err
 }

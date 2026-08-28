@@ -28,15 +28,31 @@ func TestRoleplayOngoingActionReturnsOneCompleteNullableLeaf(t *testing.T) {
 	}
 
 	if _, err := DecodeRoleplayOngoingActionDecision(
-		input, `{"schema":"omnidex.roleplay-ongoing-action.v1"}`,
-	); err == nil || !strings.Contains(err.Error(), "ongoing_action") {
+		input, `{"ongoing_action":"Mara keeps turning the wheel."}`,
+	); err == nil {
 		t.Fatalf("missing explicit nullable leaf error=%v", err)
 	}
+	active, err := DecodeRoleplayOngoingActionDecision(input, action)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolved, err := active.ResolveFor(input)
+	if err != nil || resolved == nil || *resolved != action {
+		t.Fatalf("active=%+v resolved=%v err=%v", active, resolved, err)
+	}
+	cleared, err := DecodeRoleplayOngoingActionDecision(input, RoleplayOngoingActionNone)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved, err := cleared.ResolveFor(input); err != nil || resolved != nil {
+		t.Fatalf("cleared resolved=%v err=%v", resolved, err)
+	}
 	for _, raw := range []string{
-		`{"schema":"omnidex.roleplay-ongoing-action.v1","ongoing_action":""}`,
-		`{"schema":"omnidex.roleplay-ongoing-action.v1","ongoing_action":" padded "}`,
-		`{"schema":"omnidex.roleplay-ongoing-action.v1","ongoing_action":42}`,
-		`{"schema":"omnidex.roleplay-ongoing-action.v1","ongoing_action":null,"status":"clear"}`,
+		"",
+		" padded ",
+		`"Mara keeps turning the wheel."`,
+		`null`,
+		`{"ongoing_action":null,"status":"clear"}`,
 	} {
 		if _, err := DecodeRoleplayOngoingActionDecision(input, raw); err == nil {
 			t.Fatalf("invalid candidate was accepted: %s", raw)
@@ -52,7 +68,11 @@ func TestRoleplayOngoingActionPromptHasOnlyTheNecessarySemanticAuthority(t *test
 		ExactContribution:     "Ivo finishes tying the last knot and steps away.",
 		PreviousOngoingAction: roleplayOngoingActionPointer("Ivo is tying the last knot."),
 	}
-	prompt, err := BuildRoleplayOngoingActionPrompt(input)
+	job, err := NewRoleplayOngoingActionJob(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prompt, err := RenderPortableJob(job)
 	if err != nil {
 		t.Fatal(err)
 	}

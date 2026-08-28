@@ -16,8 +16,11 @@ func classifyKnownArtifactTruth(
 	if err != nil {
 		return assemblyline.KnownArtifactTruthDecision{}, err
 	}
-	return runDirectCodingSemanticCall[assemblyline.KnownArtifactTruthDecision](
+	return runDirectCodingSemanticLeafCall(
 		runtime, modelName, "known_artifact_truth", job, identities,
+		func(raw string) (assemblyline.KnownArtifactTruthDecision, error) {
+			return assemblyline.DecodeKnownArtifactTruthDecision(input, raw)
+		},
 		func(value assemblyline.KnownArtifactTruthDecision) error {
 			if err := value.ValidateFor(input); err != nil {
 				return fmt.Errorf("validate known artifact truth: %w", err)

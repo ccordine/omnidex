@@ -64,8 +64,11 @@ func classifyApplicationSurface(
 	if err != nil {
 		return assemblyline.ApplicationClassification{}, err
 	}
-	return runDirectCodingSemanticCall[assemblyline.ApplicationClassification](
+	return runDirectCodingSemanticLeafCall(
 		runtime, modelName, "application_surface", job, identities,
+		func(raw string) (assemblyline.ApplicationClassification, error) {
+			return assemblyline.DecodeApplicationClassification(jobInput, raw)
+		},
 		func(value assemblyline.ApplicationClassification) error { return value.Validate() },
 	)
 }

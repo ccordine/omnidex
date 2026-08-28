@@ -26,14 +26,58 @@ func resolveDirectCodingApplicationContext(
 		return context, nil
 	}
 	input := assemblyline.ApplicationContextNeedInput{UserRequest: authority, Context: context}
-	job, err := assemblyline.NewApplicationContextNeedJob(input)
-	if err != nil {
-		return assemblyline.ApplicationContext{}, err
+	questions := make([]string, 0, assemblyline.MaxApplicationEvidenceNeeds)
+	for {
+		leafInput := assemblyline.ApplicationContextNeedLeafInput{
+			UserRequest: authority, Context: context,
+			AcceptedQuestions: append([]string{}, questions...),
+		}
+		coverageJob, err := assemblyline.NewApplicationContextNeedCoverageJob(leafInput)
+		if err != nil {
+			return assemblyline.ApplicationContext{}, err
+		}
+		coverage, err := runDirectCodingSemanticLeafCall(
+			runtime, modelName, "application_context_need_coverage",
+			coverageJob, identities,
+			func(raw string) (string, error) {
+				return assemblyline.DecodeApplicationContextNeedCoverageLeaf(leafInput, raw)
+			},
+			func(string) error { return nil },
+		)
+		if err != nil {
+			return assemblyline.ApplicationContext{}, err
+		}
+		if coverage == assemblyline.ApplicationNoUncoveredContextNeed {
+			break
+		}
+		if len(questions) == assemblyline.MaxApplicationEvidenceNeeds {
+			return assemblyline.ApplicationContext{}, fmt.Errorf(
+				"application context need coverage remains incomplete at the code-owned %d-item bound",
+				assemblyline.MaxApplicationEvidenceNeeds,
+			)
+		}
+		questionJob, err := assemblyline.NewApplicationContextNeedQuestionJob(leafInput)
+		if err != nil {
+			return assemblyline.ApplicationContext{}, err
+		}
+		question, err := runDirectCodingSemanticLeafCall(
+			runtime, modelName, "application_context_need_question",
+			questionJob, identities,
+			func(raw string) (string, error) {
+				return assemblyline.DecodeApplicationContextNeedQuestionLeaf(leafInput, raw)
+			},
+			func(value string) error {
+				return assemblyline.ValidatePathFreeModelContextWithProvenance(
+					"application context need question", runtime.PathProvenance, value,
+				)
+			},
+		)
+		if err != nil {
+			return assemblyline.ApplicationContext{}, err
+		}
+		questions = append(questions, question)
 	}
-	decision, err := runDirectCodingSemanticCall[assemblyline.ApplicationContextNeedDecision](
-		runtime, modelName, "application_context_needs", job, identities,
-		func(value assemblyline.ApplicationContextNeedDecision) error { return value.Validate() },
-	)
+	decision, err := assemblyline.AssembleApplicationContextNeedDecision(input, questions)
 	if err != nil {
 		return assemblyline.ApplicationContext{}, err
 	}

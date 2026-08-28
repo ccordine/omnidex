@@ -233,7 +233,7 @@ func TestTypeScriptCompilerCorrectionReceivesAndReplacesOnlyASTOwner(t *testing.
 		Execute: func(portable assemblyline.PortableJob, model string) (assemblyline.PortableResult, error) {
 			calls++
 			models = append(models, model)
-			prompt, _, err := assemblyline.RenderPortableJob(portable)
+			prompt, err := assemblyline.RenderPortableJob(portable)
 			if err != nil {
 				return assemblyline.PortableResult{}, err
 			}
@@ -252,7 +252,7 @@ func TestTypeScriptCompilerCorrectionReceivesAndReplacesOnlyASTOwner(t *testing.
 					t.Fatalf("repair analyst lost declarations or symbols: %+v", analysis)
 				}
 				return assemblyline.PortableResult{
-					JobID: portable.ID, Candidate: `{"instruction":"` + instruction + `"}`,
+					JobID: portable.ID, Candidate: instruction,
 				}, nil
 			case assemblyline.WorkFragmentCorrection:
 				var correction assemblyline.FragmentCorrectionInput

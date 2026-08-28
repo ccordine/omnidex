@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"strings"
 	"testing"
 
@@ -21,7 +20,7 @@ func TestContextRelevanceBrokerSendsOneExactPacketAndValidatesRawResult(t *testi
 	defer session.Close(nil)
 	input := contextRelevanceBrokerFixture(t)
 	type outcome struct {
-		decision assemblyline.ContextRelevanceDecision
+		decision assemblyline.ContextRelevanceSelectionDecision
 		err      error
 	}
 	completed := make(chan outcome, 1)
@@ -37,24 +36,19 @@ func TestContextRelevanceBrokerSendsOneExactPacketAndValidatesRawResult(t *testi
 	if packet.Schema != ContextRelevanceJobSchemaV1 ||
 		packet.Station != station.ContextRelevance ||
 		packet.Model != "exact-browser-model" || packet.PromptHint == "" ||
-		!strings.Contains(packet.Prompt, input.CandidateAuthorities[0].Content) ||
-		strings.Contains(packet.Prompt, input.CandidateAuthorities[0].Namespace) ||
-		strings.Contains(packet.Prompt, input.CandidateAuthorities[0].ContentSHA256) {
+		!strings.Contains(packet.Prompt, input.Authority.CandidateAuthorities[0].Content) ||
+		strings.Contains(packet.Prompt, input.Authority.CandidateAuthorities[0].Namespace) ||
+		strings.Contains(packet.Prompt, input.Authority.CandidateAuthorities[0].ContentSHA256) {
 		t.Fatalf("packet=%#v", packet)
 	}
-	raw := fmt.Sprintf(
-		`{"schema":%q,"referenced_candidate_ids":["CTX_1"]}`,
-		assemblyline.ContextRelevanceSchemaV1,
-	)
 	if err := session.Submit(ContextRelevanceSubmission{
 		Schema: ContextRelevanceSubmissionSchemaV1,
-		JobID:  packet.JobID, Model: packet.Model, RawResult: raw,
+		JobID:  packet.JobID, Model: packet.Model, RawResult: "CTX_1",
 	}); err != nil {
 		t.Fatal(err)
 	}
 	result := <-completed
-	if result.err != nil || len(result.decision.ReferencedCandidateIDs) != 1 ||
-		result.decision.ReferencedCandidateIDs[0] != "CTX_1" {
+	if result.err != nil || result.decision.CandidateID != "CTX_1" {
 		t.Fatalf("result=%#v", result)
 	}
 }
@@ -87,13 +81,9 @@ func TestContextRelevanceBrokerRejectsInvalidBrowserResultWithoutFallback(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
-	invalid := fmt.Sprintf(
-		`{"schema":%q,"referenced_candidate_ids":["CTX_99"]}`,
-		assemblyline.ContextRelevanceSchemaV1,
-	)
 	submitErr := session.Submit(ContextRelevanceSubmission{
 		Schema: ContextRelevanceSubmissionSchemaV1,
-		JobID:  packet.JobID, Model: packet.Model, RawResult: invalid,
+		JobID:  packet.JobID, Model: packet.Model, RawResult: "CTX_99",
 	})
 	if submitErr == nil || !strings.Contains(submitErr.Error(), "unknown candidate") {
 		t.Fatalf("submit error=%v", submitErr)
@@ -168,7 +158,7 @@ func TestContextRelevanceSubmissionFrameAllowsEscapedBoundedRawResult(t *testing
 	}
 }
 
-func contextRelevanceBrokerFixture(t *testing.T) assemblyline.ContextRelevanceInput {
+func contextRelevanceBrokerFixture(t *testing.T) assemblyline.ContextRelevanceSelectionInput {
 	t.Helper()
 	candidate, err := assemblyline.NewContextCandidateAuthority(
 		"conversation_exchange", "CTX_1", "The west gate was closed before dusk.",
@@ -176,9 +166,12 @@ func contextRelevanceBrokerFixture(t *testing.T) assemblyline.ContextRelevanceIn
 	if err != nil {
 		t.Fatal(err)
 	}
-	return assemblyline.ContextRelevanceInput{
-		ExactInstruction: "Do that again.", RetrievalConcepts: []string{"previous gate action"},
-		CandidateAuthorities: []assemblyline.ContextCandidateAuthority{candidate},
-		MaxSelections:        1,
+	return assemblyline.ContextRelevanceSelectionInput{
+		Authority: assemblyline.ContextRelevanceInput{
+			ExactInstruction: "Do that again.", RetrievalConcepts: []string{"previous gate action"},
+			CandidateAuthorities: []assemblyline.ContextCandidateAuthority{candidate},
+			MaxSelections:        1,
+		},
+		AcceptedCandidateIDs: []string{},
 	}
 }

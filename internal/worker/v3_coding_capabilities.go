@@ -100,9 +100,12 @@ func runDirectCodingCapabilityPairs(
 			results[index] = directCodingCapabilityResult{Pair: pair, Err: err}
 			return
 		}
-		decision, err := runDirectCodingSemanticCall[assemblyline.CapabilityRelationDecision](
+		decision, err := runDirectCodingSemanticLeafCall(
 			runtime, modelName, fmt.Sprintf("capability_relation_%03d_%03d", pair.LeftIndex+1, pair.RightIndex+1),
 			job, nil,
+			func(raw string) (assemblyline.CapabilityRelationDecision, error) {
+				return assemblyline.DecodeCapabilityRelationDecision(pair.Input, raw)
+			},
 			func(value assemblyline.CapabilityRelationDecision) error { return value.ValidateFor(pair.Input) },
 		)
 		results[index] = directCodingCapabilityResult{Pair: pair, Decision: decision, Err: err}

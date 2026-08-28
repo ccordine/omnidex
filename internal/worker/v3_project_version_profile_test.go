@@ -97,7 +97,7 @@ func TestExistingManifestsRejectAmbiguousAndUnknownProfilesBeforeInference(t *te
 	}
 	calls := 0
 	resolverCalls := 0
-	runtime := typedWorkerRuntime{Execute: testPortableExecutor(func(_, _, _ string, _ map[string]any) (string, error) {
+	runtime := typedWorkerRuntime{Execute: testPortableExecutor(func(_, _, _ string) (string, error) {
 		calls++
 		return "", fmt.Errorf("semantic inference must not run")
 	})}

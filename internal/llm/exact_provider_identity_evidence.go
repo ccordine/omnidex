@@ -188,12 +188,14 @@ func validateExactTokenizerOperation(
 		return exactProviderModelProfile{}, err
 	}
 	if selection.ProfilePolicy != "" {
-		return deriveRoleplayCompletionProviderModelProfile(response, selection.ProfilePolicy)
+		return deriveStructurallyAttestedRoleplayProviderModelProfile(
+			response, selection.ProfilePolicy,
+		)
 	}
 	return deriveExactProviderModelProfile(response)
 }
 
-func deriveRoleplayCompletionProviderModelProfile(
+func deriveStructurallyAttestedRoleplayProviderModelProfile(
 	response exactIdentityShowResponse,
 	policy ProviderIdentityProfilePolicy,
 ) (exactProviderModelProfile, error) {
@@ -203,11 +205,14 @@ func deriveRoleplayCompletionProviderModelProfile(
 	if err := validateRoleplayCompletionProviderMetadata(response); err != nil {
 		return exactProviderModelProfile{}, err
 	}
-	profile := ExactPreparedTokenizerProfileRoleplayRaw
-	if policy == ProviderIdentityProfileRoleplaySemanticCompletion {
-		profile = ExactPreparedTokenizerProfileRoleplaySemantic
+	profile, err := deriveExactProviderModelProfile(response)
+	if err != nil {
+		return exactProviderModelProfile{}, fmt.Errorf(
+			"roleplay completion provider lacks a structurally attested exact profile: %w",
+			err,
+		)
 	}
-	return exactProviderModelProfileByID(profile)
+	return profile, nil
 }
 
 func validateRoleplayCompletionProviderMetadata(response exactIdentityShowResponse) error {

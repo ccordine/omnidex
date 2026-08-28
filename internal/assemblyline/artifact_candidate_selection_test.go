@@ -1,7 +1,6 @@
 package assemblyline
 
 import (
-	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -28,7 +27,7 @@ func TestArtifactCandidateSelectionIsBoundedAndPathBlind(t *testing.T) {
 	if job.Kind != WorkArtifactCandidateSelection {
 		t.Fatalf("work kind=%q", job.Kind)
 	}
-	prompt, schema, err := RenderPortableJob(job)
+	prompt, err := RenderPortableJob(job)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -40,23 +39,11 @@ func TestArtifactCandidateSelectionIsBoundedAndPathBlind(t *testing.T) {
 			t.Fatalf("prompt omitted %q: %s", required, prompt)
 		}
 	}
-	rawSchema, err := json.Marshal(schema)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, required := range []string{
-		ArtifactCandidateSelectionSchemaV1, "candidate_id",
-		"ARTIFACT_CANDIDATE_1", "ARTIFACT_CANDIDATE_2", ArtifactCandidateSelectionNone,
-	} {
-		if !strings.Contains(string(rawSchema), required) {
-			t.Fatalf("schema omitted %q: %s", required, rawSchema)
-		}
-	}
 	for _, forbidden := range []string{
 		"legacy.go", "current.go", "path", "filename", "create_file", "delete_file",
 		"write_file", "rename_file", "move_file", "shell command",
 	} {
-		if strings.Contains(strings.ToLower(prompt+string(rawSchema)), forbidden) {
+		if strings.Contains(strings.ToLower(prompt), forbidden) {
 			t.Fatalf("model envelope exposed forbidden repository authority %q", forbidden)
 		}
 	}
@@ -72,6 +59,15 @@ func TestArtifactCandidateSelectionAcceptsOnlyOneAvailableIDOrNone(t *testing.T)
 		if err := decision.ValidateFor(input); err != nil {
 			t.Fatalf("candidate %q: %v", candidateID, err)
 		}
+		decoded, err := DecodeArtifactCandidateSelectionDecision(input, candidateID)
+		if err != nil || decoded != decision {
+			t.Fatalf("decoded=%+v want=%+v err=%v", decoded, decision, err)
+		}
+	}
+	if _, err := DecodeArtifactCandidateSelectionDecision(
+		input, `{"candidate_id":"ARTIFACT_CANDIDATE_1"}`,
+	); err == nil {
+		t.Fatal("accepted JSON wrapper")
 	}
 	for name, decision := range map[string]ArtifactCandidateSelectionDecision{
 		"wrong schema": {Schema: "wrong", CandidateID: "ARTIFACT_CANDIDATE_1"},

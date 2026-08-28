@@ -23,7 +23,7 @@ func TestProjectStackSelectionUsesBoundedConstraintAndCodeOwnedDefault(t *testin
 			calls := 0
 			runtime := typedWorkerRuntime{
 				Context: context.Background(), MaxAttempts: 1,
-				Execute: testPortableExecutor(func(_ string, model, prompt string, _ map[string]any) (string, error) {
+				Execute: testPortableExecutor(func(_ string, model, prompt string) (string, error) {
 					calls++
 					if model != "constraint-model" {
 						t.Fatalf("model=%q", model)
@@ -31,7 +31,7 @@ func TestProjectStackSelectionUsesBoundedConstraintAndCodeOwnedDefault(t *testin
 					if strings.Contains(prompt, genericTypeScriptBrowserAdapter) || strings.Contains(prompt, "package.json") {
 						t.Fatalf("constraint prompt exposed code-owned stack identity: %s", prompt)
 					}
-					return `{"schema":"omnidex.application-project-stack-constraint.v1","candidate_id":"` + testCase.selection + `"}`, nil
+					return testCase.selection, nil
 				}),
 			}
 			selection, err := selectDirectCodingProject(
@@ -70,12 +70,12 @@ func TestProjectStackSelectionUsesRegisteredPHPServiceStack(t *testing.T) {
 	specification := testProjectStackSpecification(assemblyline.ApplicationSurfaceService)
 	runtime := typedWorkerRuntime{
 		Context: context.Background(), MaxAttempts: 1,
-		Execute: testPortableExecutor(func(_ string, _ string, prompt string, _ map[string]any) (string, error) {
+		Execute: testPortableExecutor(func(_ string, _ string, prompt string) (string, error) {
 			if strings.Contains(prompt, genericPHPServiceAdapter) ||
 				!strings.Contains(prompt, "PHP with NGINX") {
 				t.Fatalf("service stack prompt leaked identity or omitted technical candidate: %s", prompt)
 			}
-			return `{"schema":"omnidex.application-project-stack-constraint.v1","candidate_id":"STACK_CANDIDATE_1"}`, nil
+			return "STACK_CANDIDATE_1", nil
 		}),
 	}
 	selection, err := selectDirectCodingProject(
@@ -113,7 +113,7 @@ func TestGreenfieldProjectStackSelectionUsesExplicitRegisteredNondefaultVersionP
 	calls := 0
 	runtime := typedWorkerRuntime{
 		Context: context.Background(), MaxAttempts: 1,
-		Execute: testPortableExecutor(func(_ string, _ string, prompt string, _ map[string]any) (string, error) {
+		Execute: testPortableExecutor(func(_ string, _ string, prompt string) (string, error) {
 			calls++
 			for _, required := range []string{"Go 1.24.0", "Go 1.25.0", "go manifest", "1.26.0"} {
 				if !strings.Contains(prompt, required) {
@@ -127,7 +127,7 @@ func TestGreenfieldProjectStackSelectionUsesExplicitRegisteredNondefaultVersionP
 					t.Fatalf("constraint prompt exposed internal identity or path %q: %s", forbidden, prompt)
 				}
 			}
-			return `{"schema":"omnidex.application-project-stack-constraint.v1","candidate_id":"STACK_CANDIDATE_2"}`, nil
+			return "STACK_CANDIDATE_2", nil
 		}),
 	}
 	selection, err := selectDirectCodingProjectFromRegistries(
@@ -148,12 +148,12 @@ func TestGreenfieldProjectStackSelectionUnconstrainedUsesCodeOwnedDefaultProfile
 	calls := 0
 	runtime := typedWorkerRuntime{
 		Context: context.Background(), MaxAttempts: 1,
-		Execute: testPortableExecutor(func(_ string, _ string, prompt string, _ map[string]any) (string, error) {
+		Execute: testPortableExecutor(func(_ string, _ string, prompt string) (string, error) {
 			calls++
 			if !strings.Contains(prompt, "Go 1.25.0") {
 				t.Fatalf("constraint prompt omitted registered nondefault profile: %s", prompt)
 			}
-			return `{"schema":"omnidex.application-project-stack-constraint.v1","candidate_id":"UNCONSTRAINED"}`, nil
+			return assemblyline.ApplicationProjectStackUnconstrained, nil
 		}),
 	}
 	selection, err := selectDirectCodingProjectFromRegistries(

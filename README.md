@@ -113,7 +113,7 @@ documented in [docs/CHARMELEON_CONTEXT_SYSTEM.md](docs/CHARMELEON_CONTEXT_SYSTEM
 - No rollback of valid file work because a later file fails.
 - No deletion unless the current instruction authorizes deletion.
 - No modification of protected instruction files.
-- Tiny typed JSON only for semantic classification and label extraction; one raw AST declaration only for a coding transform.
+- One raw semantic leaf per classification, relation, label, coverage, or value question; code alone assembles typed state. Coding transforms return one raw AST declaration.
 - Bounded fragment retries and node corrections; unchanged output and repeated failure stop loudly.
 - Verification commands are selected from the accepted typed program, never inferred from prose or workspace guesses.
 - Direct, exact diagnostic feedback reaches the next worker immediately.
@@ -194,9 +194,9 @@ context. Re-run that command on every candidate server before accepting it.
 
 | Route | Current model | Local model file | Runtime role |
 | --- | --- | ---: | --- |
-| Most semantic, database, answer, and repair-guidance stations | `qwen3.5:9b-q4_K_M` | 6.6 GB | Structured semantic result |
+| Most semantic, database, answer, and repair-guidance stations | `qwen3.5:9b-q4_K_M` | 6.6 GB | One raw semantic result |
 | Fragment generation and correction | `qwen2.5-coder:7b` | 4.7 GB | One bounded source node |
-| Requirement and workload extraction | `llama3.2:3b` | 2.0 GB | Small typed extraction |
+| Requirement and workload extraction | `llama3.2:3b` | 2.0 GB | Raw semantic-leaf fixed points |
 | Service deployment semantics | `phi4:14b` | 9.1 GB | Conditional availability and destination leaves |
 | Independent repository/web evidence review | `deepseek-r1:8b` | 5.2 GB | Separate review identity |
 | Embeddings | `nomic-embed-text` | 0.27 GB | Retrieval vectors |
@@ -289,7 +289,7 @@ turn time ≈ cold model loads + prompt evaluation + output tokens / decode rate
 On the measured 8 GB GPU, 100 output tokens take roughly 5 seconds of Qwen 3.5
 decode or 2 seconds of Qwen 2.5 Coder decode after prompt evaluation. A cold or
 swapped model adds roughly 12–14 seconds in the current profile. Larger prompts,
-JSON-constrained retries, and validation repairs add time even when their output
+raw-contract retries and validation repairs add time even when their output
 is short.
 
 These ranges are deployment-planning estimates for one active inference stream:
@@ -389,30 +389,33 @@ Upstream capacity references: the
 The surface station classifies only browser, command-line, or service delivery.
 Before intent interpretation, code hashes the immutable request and records exact
 workspace state plus bounded accepted durable memory as typed facts. A
-context-sufficiency station can return only zero through three missing evidence
-questions, never operations or tool calls; registered code-owned providers resolve
-those questions and formalize selected results into source-backed facts. The
-currently promoted fresh-workspace vertical requires zero questions and fails loudly
-otherwise. An intent station then derives one concise product context plus one through
-ten semantic requirement statements. Code validates and retains a complete candidate
-directly. Only one exact deterministic structural defect permits a bounded replacement
-of that defective leaf; there is no model call merely to accept or review a valid
-candidate. Requirements are bound to the immutable request digest; exact substrings,
+code-owned context-need fixed point alternates one raw coverage call with one raw
+question call only while another question remains; registered providers resolve each
+decoded question and formalize selected results into source-backed facts. The promoted
+fresh-workspace vertical resolves context mechanically and makes no context-need call.
+A separate raw station returns one product context. Code then alternates requirement
+coverage with one raw requirement call only while another requirement remains and
+assembles the typed intent itself. A valid leaf advances directly; only one exact
+deterministic defect permits a bounded complete raw replacement of that same leaf.
+There is no aggregate model response or call merely to accept or review valid state.
+Requirements are bound to the immutable request digest; exact substrings,
 quote intervals, source order, punctuation, disjointness, and overlap are not authority
 gates.
 
-For each accepted requirement, one job-specification station receives the typed
-surface, product context, complete accepted requirement set, and focused requirement.
-It returns one objective, one through four required behaviors, and one through four
-observable acceptance criteria. Code validates the complete candidate, assigns task
-identity and source order, and freezes the workload hash. Dependencies, scheduling,
-tools, paths, and completion remain outside model authority. Artifact handling remains
-a separate token-blind classification job. Code may bind one independently accepted
+For each accepted requirement, one raw call returns the objective. Code then owns
+separate behavior and acceptance-criterion fixed points: a coverage call permits one
+raw value call only while another leaf remains. Code validates every leaf, assembles
+the typed job specification, assigns task identity and source order, and freezes the
+workload hash. Dependencies, scheduling, tools, paths, and completion remain outside
+model authority. Artifact handling remains a separate token-blind classification job.
+Code may bind one independently accepted
 PostgreSQL skill and may expose only direct pairwise capability APIs. After code selects
 the stack, it projects an exact target tree mechanically when the registered grammar is
-deterministic and invokes the path-only tree station only for a genuine structural
-naming uncertainty. The selected compiler turns the accepted tree and coverage into
-bounded source-block responsibilities. Each source call returns one exact path-blind
+deterministic and invokes the target-tree station only for a genuine structural naming
+uncertainty. That one call covers the complete frozen workload and returns the raw
+`ROOT` node grammar; code constructs and validates all normalized relative paths. The
+selected compiler turns the accepted tree and coverage into bounded source-block
+responsibilities. Each source call returns one exact path-blind
 declaration or source node; code owns document construction, imports, formatting,
 stitching, isolated checks, and final verification.
 

@@ -194,11 +194,11 @@ func TestProjectStackSelectionCanSelectJavaScriptWithoutRegistryIdentity(t *test
 	specification, _ := javaScriptCommandLineStackFixture(t)
 	runtime := typedWorkerRuntime{
 		Context: context.Background(), MaxAttempts: 1,
-		Execute: testPortableExecutor(func(_ string, _ string, prompt string, _ map[string]any) (string, error) {
+		Execute: testPortableExecutor(func(_ string, _ string, prompt string) (string, error) {
 			if strings.Contains(prompt, genericJavaScriptCommandLineAdapter) || !strings.Contains(prompt, "STACK_CANDIDATE_2") {
 				t.Fatalf("stack constraint leaked or omitted JavaScript authority: %s", prompt)
 			}
-			return `{"schema":"omnidex.application-project-stack-constraint.v1","candidate_id":"STACK_CANDIDATE_2"}`, nil
+			return "STACK_CANDIDATE_2", nil
 		}),
 	}
 	selection, err := selectDirectCodingProject(

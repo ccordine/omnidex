@@ -9,18 +9,7 @@ func BuildApplicationServiceEndpointExposurePrompt(
 	return buildApplicationServiceEndpointLeafPrompt(
 		input,
 		"Determine who may reach the one HTTP endpoint that exposes this accepted local task.",
-		"The complete response contains the registered schema and exactly one exposure: public, authenticated, or internal.",
-	)
-}
-
-func ApplicationServiceEndpointExposureResponseSchema() map[string]any {
-	return serviceEndpointLeafSchema(
-		ApplicationServiceEndpointExposureSchemaV1, "exposure",
-		map[string]any{"type": "string", "enum": []string{
-			string(ApplicationServiceEndpointPublic),
-			string(ApplicationServiceEndpointAuthenticated),
-			string(ApplicationServiceEndpointInternal),
-		}},
+		"Return exactly one raw exposure value: public, authenticated, or internal.",
 	)
 }
 
@@ -31,10 +20,18 @@ func DecodeApplicationServiceEndpointExposureResult(
 	if err := input.validate(); err != nil {
 		return ApplicationServiceEndpointExposureResult{}, err
 	}
-	var result ApplicationServiceEndpointExposureResult
-	return decodeApplicationServiceEndpointLeaf(raw, &result, func(value ApplicationServiceEndpointExposureResult) error {
-		return value.ValidateFor(input)
-	})
+	leaf, err := decodeRawSemanticLeaf("service endpoint exposure", raw, 64, false)
+	if err != nil {
+		return ApplicationServiceEndpointExposureResult{}, err
+	}
+	result := ApplicationServiceEndpointExposureResult{
+		Schema:   ApplicationServiceEndpointExposureSchemaV1,
+		Exposure: ApplicationServiceEndpointExposure(leaf),
+	}
+	if err := result.ValidateFor(input); err != nil {
+		return ApplicationServiceEndpointExposureResult{}, err
+	}
+	return result, nil
 }
 
 func BuildApplicationServiceEndpointMethodPrompt(
@@ -46,18 +43,7 @@ func BuildApplicationServiceEndpointMethodPrompt(
 	return buildApplicationServiceEndpointLeafPrompt(
 		input,
 		"Determine the one HTTP method whose semantics match this accepted local task.",
-		"The complete response contains the registered schema and exactly one method: GET, POST, PUT, PATCH, or DELETE.",
-	)
-}
-
-func ApplicationServiceEndpointMethodResponseSchema() map[string]any {
-	return serviceEndpointLeafSchema(
-		ApplicationServiceEndpointMethodSchemaV1, "method",
-		map[string]any{"type": "string", "enum": []string{
-			string(ApplicationServiceEndpointGET), string(ApplicationServiceEndpointPOST),
-			string(ApplicationServiceEndpointPUT), string(ApplicationServiceEndpointPATCH),
-			string(ApplicationServiceEndpointDELETE),
-		}},
+		"Return exactly one raw method value: GET, POST, PUT, PATCH, or DELETE.",
 	)
 }
 
@@ -68,10 +54,18 @@ func DecodeApplicationServiceEndpointMethodResult(
 	if err := input.validate(); err != nil {
 		return ApplicationServiceEndpointMethodResult{}, err
 	}
-	var result ApplicationServiceEndpointMethodResult
-	return decodeApplicationServiceEndpointLeaf(raw, &result, func(value ApplicationServiceEndpointMethodResult) error {
-		return value.ValidateFor(input)
-	})
+	leaf, err := decodeRawSemanticLeaf("service endpoint method", raw, 16, false)
+	if err != nil {
+		return ApplicationServiceEndpointMethodResult{}, err
+	}
+	result := ApplicationServiceEndpointMethodResult{
+		Schema: ApplicationServiceEndpointMethodSchemaV1,
+		Method: ApplicationServiceEndpointMethod(leaf),
+	}
+	if err := result.ValidateFor(input); err != nil {
+		return ApplicationServiceEndpointMethodResult{}, err
+	}
+	return result, nil
 }
 
 func BuildApplicationServiceEndpointRouteTemplatePrompt(
@@ -83,14 +77,7 @@ func BuildApplicationServiceEndpointRouteTemplatePrompt(
 	return buildApplicationServiceEndpointLeafPrompt(
 		input,
 		"Determine the one normalized HTTP route template that names this accepted local task.",
-		"The complete response contains the registered schema and exactly one normalized route_template using lowercase literal segments or {lower_snake_case} parameter segments.",
-	)
-}
-
-func ApplicationServiceEndpointRouteTemplateResponseSchema() map[string]any {
-	return serviceEndpointLeafSchema(
-		ApplicationServiceEndpointRouteTemplateSchemaV1, "route_template",
-		map[string]any{"type": "string", "minLength": 1, "maxLength": maxApplicationServiceRouteBytes},
+		"Return exactly one raw normalized route template using lowercase literal segments or {lower_snake_case} parameter segments.",
 	)
 }
 
@@ -101,8 +88,18 @@ func DecodeApplicationServiceEndpointRouteTemplateResult(
 	if err := input.validate(); err != nil {
 		return ApplicationServiceEndpointRouteTemplateResult{}, err
 	}
-	var result ApplicationServiceEndpointRouteTemplateResult
-	return decodeApplicationServiceEndpointLeaf(raw, &result, func(value ApplicationServiceEndpointRouteTemplateResult) error {
-		return value.ValidateFor(input)
-	})
+	leaf, err := decodeRawSemanticLeaf(
+		"service endpoint route template", raw, maxApplicationServiceRouteBytes, false,
+	)
+	if err != nil {
+		return ApplicationServiceEndpointRouteTemplateResult{}, err
+	}
+	result := ApplicationServiceEndpointRouteTemplateResult{
+		Schema:        ApplicationServiceEndpointRouteTemplateSchemaV1,
+		RouteTemplate: leaf,
+	}
+	if err := result.ValidateFor(input); err != nil {
+		return ApplicationServiceEndpointRouteTemplateResult{}, err
+	}
+	return result, nil
 }

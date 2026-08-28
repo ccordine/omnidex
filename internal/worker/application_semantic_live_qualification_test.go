@@ -60,7 +60,7 @@ func TestLiveCodingRequirementsAndWorkloadQualification(t *testing.T) {
 					if selectedModel != modelName {
 						return assemblyline.PortableResult{}, fmt.Errorf("selected model changed")
 					}
-					prompt, _, renderErr := assemblyline.RenderPortableJob(job)
+					prompt, renderErr := assemblyline.RenderPortableJob(job)
 					if renderErr != nil {
 						return assemblyline.PortableResult{}, renderErr
 					}
@@ -121,7 +121,7 @@ func TestLiveCodingRequirementsAndWorkloadQualification(t *testing.T) {
 				t.Fatalf("frozen tasks=%d outside front-door bounds", len(frozen.Tasks))
 			}
 			calls := transport.callsFrom(start)
-			assertLiveCodingQualificationCalls(t, calls, len(frozen.Tasks))
+			assertLiveCodingQualificationCalls(t, calls, frozen)
 			logLiveCodingQualification(t, testCase.name, modelName, frozen.SHA256, calls)
 		})
 	}
@@ -170,49 +170,83 @@ func validateLiveCodingQualificationProjection(
 	resolvedFeatures []string,
 ) error {
 	switch job.Kind {
-	case assemblyline.WorkApplicationIntent:
-		var input assemblyline.ApplicationIntentInput
+	case assemblyline.WorkApplicationProductContext:
+		var input assemblyline.ApplicationProductContextInput
 		if err := json.Unmarshal(job.Payload, &input); err != nil {
 			return err
 		}
 		if input.UserRequest != testCase.request || strings.Count(prompt, testCase.request) != 1 {
-			return fmt.Errorf("intent station did not receive one intact request")
+			return fmt.Errorf("product-context station did not receive one intact request")
 		}
 		return nil
-	case assemblyline.WorkApplicationJobSpecification:
+	case assemblyline.WorkApplicationRequirementCoverage,
+		assemblyline.WorkApplicationRequirement:
+		var input assemblyline.ApplicationRequirementLeafInput
+		if err := json.Unmarshal(job.Payload, &input); err != nil {
+			return err
+		}
+		if input.UserRequest != testCase.request || input.ProductContext == "" ||
+			strings.Count(prompt, testCase.request) != 1 {
+			return fmt.Errorf("requirement leaf did not receive one intact request and product context")
+		}
+		return nil
+	case assemblyline.WorkApplicationJobObjective:
 		var input assemblyline.ApplicationJobSpecificationInput
 		if err := json.Unmarshal(job.Payload, &input); err != nil {
 			return err
 		}
-		if input.Surface != assemblyline.ApplicationSurfaceBrowser ||
-			input.ProductQuote != resolvedProduct ||
-			!containsExactString(resolvedFeatures, input.FocusedRequirement.SourceQuote) {
-			return fmt.Errorf("job-specification authority differs from the focused accepted requirement")
+		return validateLiveCodingWorkloadLeafProjection(
+			testCase, input, prompt, resolvedProduct, resolvedFeatures,
+		)
+	case assemblyline.WorkApplicationBehaviorCoverage,
+		assemblyline.WorkApplicationBehavior:
+		var input assemblyline.ApplicationJobBehaviorLeafInput
+		if err := json.Unmarshal(job.Payload, &input); err != nil {
+			return err
 		}
-		if len(input.AcceptedRequirements) != len(resolvedFeatures) {
-			return fmt.Errorf("job-specification authority omitted accepted requirements")
+		return validateLiveCodingWorkloadLeafProjection(
+			testCase, input.Authority, prompt, resolvedProduct, resolvedFeatures,
+		)
+	case assemblyline.WorkApplicationCriterionCoverage,
+		assemblyline.WorkApplicationCriterion:
+		var input assemblyline.ApplicationJobCriterionLeafInput
+		if err := json.Unmarshal(job.Payload, &input); err != nil {
+			return err
 		}
-		if strings.Contains(prompt, testCase.request) ||
-			!strings.Contains(prompt, string(assemblyline.ApplicationSurfaceBrowser)) ||
-			!strings.Contains(prompt, resolvedProduct) {
-			return fmt.Errorf("job-specification station did not receive authoritative surface and product")
-		}
-		for _, feature := range resolvedFeatures {
-			if !strings.Contains(prompt, feature) {
-				return fmt.Errorf("job-specification station omitted accepted requirement %q", feature)
-			}
-		}
-		for _, forbidden := range []string{
-			"requirement_id", "task_id", "depends_on", "file_path", "workspace_path", "completion_state",
-		} {
-			if strings.Contains(prompt, forbidden) {
-				return fmt.Errorf("job-specification station received forbidden %s authority", forbidden)
-			}
-		}
-		return nil
+		return validateLiveCodingWorkloadLeafProjection(
+			testCase, input.Authority, prompt, resolvedProduct, resolvedFeatures,
+		)
 	default:
 		return fmt.Errorf("qualification dispatched unexpected work kind %q", job.Kind)
 	}
+}
+
+func validateLiveCodingWorkloadLeafProjection(
+	testCase liveCodingQualificationCase,
+	input assemblyline.ApplicationJobSpecificationInput,
+	prompt string,
+	resolvedProduct string,
+	resolvedFeatures []string,
+) error {
+	if input.Surface != assemblyline.ApplicationSurfaceBrowser ||
+		input.ProductQuote != resolvedProduct ||
+		!containsExactString(resolvedFeatures, input.FocusedRequirement.SourceQuote) {
+		return fmt.Errorf("workload leaf authority differs from its focused accepted requirement")
+	}
+	if strings.Contains(prompt, testCase.request) ||
+		!strings.Contains(prompt, string(assemblyline.ApplicationSurfaceBrowser)) ||
+		!strings.Contains(prompt, resolvedProduct) ||
+		!strings.Contains(prompt, input.FocusedRequirement.SourceQuote) {
+		return fmt.Errorf("workload leaf omitted its minimal surface, product, or focused requirement authority")
+	}
+	for _, forbidden := range []string{
+		"requirement_id", "task_id", "depends_on", "file_path", "workspace_path", "completion_state",
+	} {
+		if strings.Contains(prompt, forbidden) {
+			return fmt.Errorf("workload leaf received forbidden %s authority", forbidden)
+		}
+	}
+	return nil
 }
 
 func containsExactString(values []string, target string) bool {

@@ -2,119 +2,119 @@ package assemblyline
 
 import (
 	"fmt"
-	"reflect"
 	"strings"
 	"testing"
 )
 
-func TestRepositoryEvidenceRelevanceReturnsOnlySelectedIDsOrExplicitEmptyIDs(t *testing.T) {
+func TestRepositoryEvidenceRelevanceUsesOneRawOpaqueIDLeaf(t *testing.T) {
 	t.Parallel()
-	input := repositoryEvidenceRelevanceFixture()
-	job, err := NewRepositoryEvidenceRelevanceJob(input)
+	base := repositoryEvidenceRelevanceFixture()
+	input := RepositoryEvidenceRelevanceLeafInput{
+		ExactRequirement:    base.ExactRequirement,
+		Candidates:          append([]RepositoryEvidenceCandidate(nil), base.Candidates...),
+		SelectedEvidenceIDs: []string{},
+		MaxSelections:       base.MaxSelections,
+	}
+	job, err := NewRepositoryEvidenceRelevanceLeafJob(input)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if job.Kind != WorkRepositoryEvidenceRelevance {
+	if job.Kind != WorkRepositoryEvidenceRelevanceLeaf {
 		t.Fatalf("kind=%q", job.Kind)
 	}
-	prompt, schema, err := RenderPortableJob(job)
+	prompt, err := RenderPortableJob(job)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(prompt, input.ExactRequirement) || !strings.Contains(prompt, input.Candidates[0].Text) {
-		t.Fatalf("prompt lost exact bounded projection: %q", prompt)
+	if !strings.Contains(prompt, base.ExactRequirement) ||
+		!strings.Contains(prompt, base.Candidates[0].Text) ||
+		!strings.Contains(prompt, RepositoryEvidenceNoRelevantCandidate) {
+		t.Fatalf("prompt lost bounded relevance authority: %q", prompt)
 	}
-	if schema["additionalProperties"] != false {
-		t.Fatalf("schema is not closed: %#v", schema)
+	for _, forbidden := range []string{"evidence_ids array", `"schema"`, "outcome"} {
+		if strings.Contains(prompt, forbidden) {
+			t.Fatalf("raw relevance prompt exposes aggregate field %q: %s", forbidden, prompt)
+		}
 	}
-
-	selected := RepositoryEvidenceRelevanceDecision{
-		Schema:      RepositoryEvidenceRelevanceSchemaV1,
-		EvidenceIDs: []string{"R02"},
+	if got, err := DecodeRepositoryEvidenceRelevanceLeaf(input, "R02"); err != nil || got != "R02" {
+		t.Fatalf("selected=%q error=%v", got, err)
 	}
-	if err := selected.ValidateFor(input); err != nil {
-		t.Fatal(err)
-	}
-	none := RepositoryEvidenceRelevanceDecision{
-		Schema:      RepositoryEvidenceRelevanceSchemaV1,
-		EvidenceIDs: []string{},
-	}
-	if err := none.ValidateFor(input); err != nil {
-		t.Fatal(err)
-	}
-	assertExactJSONFields(t, reflect.TypeOf(RepositoryEvidenceRelevanceDecision{}), []string{"schema", "evidence_ids"})
-	properties := schema["properties"].(map[string]any)
-	if len(properties) != 2 || properties["outcome"] != nil {
-		t.Fatalf("repository relevance schema exposes a redundant control outcome: %#v", schema)
-	}
-	evidenceIDs := properties["evidence_ids"].(map[string]any)
-	if evidenceIDs["minItems"] != 0 || evidenceIDs["maxItems"] != input.MaxSelections {
-		t.Fatalf("repository evidence ID bounds=%#v", evidenceIDs)
+	if got, err := DecodeRepositoryEvidenceRelevanceLeaf(
+		input, RepositoryEvidenceNoRelevantCandidate,
+	); err != nil || got != RepositoryEvidenceNoRelevantCandidate {
+		t.Fatalf("none=%q error=%v", got, err)
 	}
 }
 
-func TestRepositoryEvidenceRelevanceRejectsAmbiguousOrUnboundSelections(t *testing.T) {
+func TestRepositoryEvidenceRelevanceLeafRejectsWrappersAndRetainedIDs(t *testing.T) {
 	t.Parallel()
-	input := repositoryEvidenceRelevanceFixture()
-	tests := map[string]RepositoryEvidenceRelevanceDecision{
-		"nil IDs":      {Schema: RepositoryEvidenceRelevanceSchemaV1},
-		"unknown ID":   {Schema: RepositoryEvidenceRelevanceSchemaV1, EvidenceIDs: []string{"R99"}},
-		"duplicate ID": {Schema: RepositoryEvidenceRelevanceSchemaV1, EvidenceIDs: []string{"R01", "R01"}},
-		"too many":     {Schema: RepositoryEvidenceRelevanceSchemaV1, EvidenceIDs: []string{"R01", "R02"}},
+	base := repositoryEvidenceRelevanceFixture()
+	base.MaxSelections = 2
+	input := RepositoryEvidenceRelevanceLeafInput{
+		ExactRequirement:    base.ExactRequirement,
+		Candidates:          append([]RepositoryEvidenceCandidate(nil), base.Candidates...),
+		SelectedEvidenceIDs: []string{"R01"},
+		MaxSelections:       base.MaxSelections,
 	}
-	for name, decision := range tests {
-		decision := decision
-		t.Run(name, func(t *testing.T) {
-			t.Parallel()
-			if err := decision.ValidateFor(input); err == nil {
-				t.Fatalf("accepted %#v", decision)
-			}
-		})
-	}
-}
-
-func TestRepositoryEvidenceRelevanceDecodeRejectsExtraOrDuplicateState(t *testing.T) {
-	t.Parallel()
-	input := repositoryEvidenceRelevanceFixture()
-	valid := fmt.Sprintf(
-		`{"schema":%q,"evidence_ids":["R01"]}`,
-		RepositoryEvidenceRelevanceSchemaV1,
-	)
-	if _, err := DecodeRepositoryEvidenceRelevanceDecision(input, valid); err != nil {
+	prompt, err := BuildRepositoryEvidenceRelevanceLeafPrompt(input)
+	if err != nil {
 		t.Fatal(err)
+	}
+	if strings.Contains(prompt, base.Candidates[0].Text) || !strings.Contains(prompt, base.Candidates[1].Text) {
+		t.Fatalf("prompt did not project only remaining candidates: %s", prompt)
 	}
 	for _, raw := range []string{
-		strings.TrimSuffix(valid, "}") + `,"extra":true}`,
-		fmt.Sprintf(`{"schema":%q,"schema":%q,"evidence_ids":[]}`,
-			RepositoryEvidenceRelevanceSchemaV1, RepositoryEvidenceRelevanceSchemaV1),
-		fmt.Sprintf(`{"schema":%q,"outcome":"none","evidence_ids":[]}`,
-			RepositoryEvidenceRelevanceSchemaV1),
+		"R01", "R99", `{"evidence_id":"R02"}`, `"R02"`, " R02 ",
 	} {
-		if _, err := DecodeRepositoryEvidenceRelevanceDecision(input, raw); err == nil {
-			t.Fatalf("malformed decision accepted: %s", raw)
+		if _, err := DecodeRepositoryEvidenceRelevanceLeaf(input, raw); err == nil {
+			t.Fatalf("invalid raw relevance leaf accepted: %q", raw)
 		}
 	}
 }
 
-func TestRepositoryEvidenceRelevanceRejectsUnboundedProjectionBeforeRendering(t *testing.T) {
+func TestRepositoryEvidenceRelevanceAssemblyIsCodeOwned(t *testing.T) {
 	t.Parallel()
 	input := repositoryEvidenceRelevanceFixture()
-	input.ExactRequirement = strings.Repeat("q", maxGroundedRequirementBytes+1)
-	if _, err := NewRepositoryEvidenceRelevanceJob(input); err == nil {
+	selected, err := AssembleRepositoryEvidenceRelevanceDecision(input, []string{"R02"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if selected.Schema != RepositoryEvidenceRelevanceSchemaV1 ||
+		len(selected.EvidenceIDs) != 1 || selected.EvidenceIDs[0] != "R02" {
+		t.Fatalf("selected=%#v", selected)
+	}
+	none, err := AssembleRepositoryEvidenceRelevanceDecision(input, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if none.EvidenceIDs == nil || len(none.EvidenceIDs) != 0 {
+		t.Fatalf("empty code-owned selection=%#v", none)
+	}
+	if _, err := AssembleRepositoryEvidenceRelevanceDecision(input, []string{"R99"}); err == nil {
+		t.Fatal("unprojected evidence ID was assembled")
+	}
+}
+
+func TestRepositoryEvidenceRelevanceRejectsUnboundedLeafAuthority(t *testing.T) {
+	t.Parallel()
+	base := repositoryEvidenceRelevanceFixture()
+	base.ExactRequirement = strings.Repeat("q", maxGroundedRequirementBytes+1)
+	if err := base.Validate(); err == nil {
 		t.Fatal("oversized exact requirement accepted")
 	}
-	input = repositoryEvidenceRelevanceFixture()
-	input.Candidates[0].Text = strings.Repeat("e", maxGroundedEvidenceTextBytes+1)
-	if _, err := NewRepositoryEvidenceRelevanceJob(input); err == nil {
+	base = repositoryEvidenceRelevanceFixture()
+	base.Candidates[0].Text = strings.Repeat("e", maxGroundedEvidenceTextBytes+1)
+	if err := base.Validate(); err == nil {
 		t.Fatal("oversized evidence candidate accepted")
 	}
-	input = repositoryEvidenceRelevanceFixture()
+	base = repositoryEvidenceRelevanceFixture()
 	for index := 0; index < maxRepositoryRelevanceCandidates; index++ {
-		input.Candidates = append(input.Candidates, RepositoryEvidenceCandidate{
-			EvidenceID: fmt.Sprintf("E%d", index), Text: "bounded unique evidence " + fmt.Sprint(index),
+		base.Candidates = append(base.Candidates, RepositoryEvidenceCandidate{
+			EvidenceID: fmt.Sprintf("E%d", index),
+			Text:       "bounded unique evidence " + fmt.Sprint(index),
 		})
 	}
-	if _, err := NewRepositoryEvidenceRelevanceJob(input); err == nil {
+	if err := base.Validate(); err == nil {
 		t.Fatal("unbounded candidate count accepted")
 	}
 }

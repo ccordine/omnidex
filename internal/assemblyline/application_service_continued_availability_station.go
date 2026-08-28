@@ -24,6 +24,7 @@ func BuildApplicationServiceContinuedAvailabilityPrompt(
 	prompt := strings.Join([]string{
 		"Determine exactly one semantic fact: whether the immutable request explicitly requires the completed software to remain available after build and verification.",
 		"Select exactly one opaque candidate ID. A description of how software runs or what it produces does not by itself require continued availability.",
+		"Return exactly the raw candidate ID and nothing else: no JSON, quotes, label, Markdown, or commentary.",
 		"CODE_OWNED_CANDIDATES_JSON:\n" + string(candidates),
 		"IMMUTABLE_USER_REQUEST:\n" + input.UserRequest,
 	}, "\n\n")
@@ -49,39 +50,20 @@ func applicationServiceContinuedAvailabilityPromptCandidates() []applicationServ
 	}
 }
 
-func ApplicationServiceContinuedAvailabilityResponseSchema() map[string]any {
-	return objectSchema(
-		[]string{"schema", "candidate_id"},
-		map[string]any{
-			"schema": map[string]any{
-				"type": "string", "const": ApplicationServiceContinuedAvailabilitySchemaV1,
-			},
-			"candidate_id": map[string]any{
-				"type": "string", "enum": []string{
-					string(ApplicationServiceAvailabilityNotRequiredCandidate),
-					string(ApplicationServiceAvailabilityRequiredCandidate),
-				},
-			},
-		},
-	)
-}
-
 func DecodeApplicationServiceContinuedAvailabilityResult(
 	input ApplicationServiceContinuedAvailabilityInput,
 	raw string,
 ) (ApplicationServiceContinuedAvailabilityResult, error) {
-	var result ApplicationServiceContinuedAvailabilityResult
 	if err := input.validate(); err != nil {
-		return result, err
+		return ApplicationServiceContinuedAvailabilityResult{}, err
 	}
-	if len(raw) > maxPortableCandidateBytes {
-		return result, fmt.Errorf(
-			"application service continued availability result exceeds %d bytes",
-			maxPortableCandidateBytes,
-		)
+	leaf, err := decodeRawSemanticLeaf("application service continued availability", raw, 64, false)
+	if err != nil {
+		return ApplicationServiceContinuedAvailabilityResult{}, err
 	}
-	if err := decodePortablePayload([]byte(raw), &result); err != nil {
-		return result, fmt.Errorf("decode application service continued availability result: %w", err)
+	result := ApplicationServiceContinuedAvailabilityResult{
+		Schema:      ApplicationServiceContinuedAvailabilitySchemaV1,
+		CandidateID: ApplicationServiceContinuedAvailabilityCandidateID(leaf),
 	}
 	if err := result.ValidateFor(input); err != nil {
 		return ApplicationServiceContinuedAvailabilityResult{}, err

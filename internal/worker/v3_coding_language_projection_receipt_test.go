@@ -20,8 +20,8 @@ func TestLanguageGenerationFinalizesAndReturnsExactDeclarationProjection(t *test
 		validate directCodingLanguageFragmentValidator
 	}{
 		{
-			name: "go fenced response",
-			raw:  " \n```go\nfunc Value() int { return 2 }\n```\n",
+			name: "go exact response",
+			raw:  "func Value() int { return 2 }",
 			want: "func Value() int { return 2 }",
 			input: assemblyline.FragmentGenerationInput{
 				Language: "go", Dialect: "Go 1.24", Signature: "func Value() int",
@@ -30,8 +30,8 @@ func TestLanguageGenerationFinalizesAndReturnsExactDeclarationProjection(t *test
 			project: projectDirectCodingGoFragment, validate: validateDirectCodingGoFragment,
 		},
 		{
-			name: "javascript CRLF response",
-			raw:  " \r\nfunction value() {\r\n  return 2;\r\n}\r\n ",
+			name: "javascript exact CRLF response",
+			raw:  "function value() {\r\n  return 2;\r\n}",
 			want: "function value() {\r\n  return 2;\r\n}",
 			input: assemblyline.FragmentGenerationInput{
 				Language: "javascript", Dialect: "ECMAScript 2022",
@@ -49,8 +49,7 @@ func TestLanguageGenerationFinalizesAndReturnsExactDeclarationProjection(t *test
 			runtime := typedWorkerRuntime{
 				Context: context.Background(), MaxAttempts: 1,
 				Execute: testPortableExecutor(func(
-					_ string, _ string, _ string, _ map[string]any,
-				) (string, error) {
+					_ string, _ string, _ string) (string, error) {
 					return fixture.raw, nil
 				}),
 				Finalize: func(
@@ -62,7 +61,9 @@ func TestLanguageGenerationFinalizesAndReturnsExactDeclarationProjection(t *test
 						result.Projection == nil ||
 						result.Projection.Kind != assemblyline.PortableResultProjectionSourceDeclaration ||
 						result.Projection.Source != fixture.want ||
-						result.Projection.Source != fixture.raw[result.Projection.StartByte:result.Projection.EndByte] {
+						result.Projection.StartByte != 0 ||
+						result.Projection.EndByte != len(fixture.raw) ||
+						result.Projection.DiscardedBytes != 0 {
 						t.Fatalf("finalized result=%+v validation=%v", result, validationErr)
 					}
 					finalized = true
@@ -85,18 +86,17 @@ func TestLanguageGenerationFinalizesAndReturnsExactDeclarationProjection(t *test
 	}
 }
 
-func TestLanguageCorrectionFinalizesAndReturnsExactProjectedResponseSpan(t *testing.T) {
+func TestLanguageCorrectionFinalizesAndReturnsCompleteExactResponse(t *testing.T) {
 	t.Parallel()
 	const current = "func Value() int { return 1 }"
-	const raw = " \n```go\nfunc Value() int { return 2 }\n```\n "
-	const want = "func Value() int { return 2 }"
+	const raw = "func Value() int { return 2 }"
+	const want = raw
 	contract := gofragment.Contract{Signature: "func Value() int", Current: current}
 	finalized := false
 	runtime := typedWorkerRuntime{
 		Context: context.Background(), MaxAttempts: 1,
 		Execute: testPortableExecutor(func(
-			_ string, _ string, _ string, _ map[string]any,
-		) (string, error) {
+			_ string, _ string, _ string) (string, error) {
 			return raw, nil
 		}),
 		Finalize: func(
@@ -107,8 +107,9 @@ func TestLanguageCorrectionFinalizesAndReturnsExactProjectedResponseSpan(t *test
 			if validationErr != nil || result.Candidate != raw || result.Projection == nil ||
 				result.Projection.Kind != assemblyline.PortableResultProjectionSourceDeclaration ||
 				result.Projection.Source != want ||
-				result.Projection.DiscardedBytes != len(raw)-len(want) ||
-				result.Projection.Source != raw[result.Projection.StartByte:result.Projection.EndByte] {
+				result.Projection.StartByte != 0 ||
+				result.Projection.EndByte != len(raw) ||
+				result.Projection.DiscardedBytes != 0 {
 				t.Fatalf("finalized result=%+v validation=%v", result, validationErr)
 			}
 			finalized = true

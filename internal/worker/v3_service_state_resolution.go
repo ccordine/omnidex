@@ -86,8 +86,11 @@ func resolveDirectCodingServiceStatePlan(
 		if err != nil {
 			return directCodingServiceStatePlan{}, err
 		}
-		result, err := runDirectCodingSemanticCall[assemblyline.ApplicationServiceStateLifetimeResult](
+		result, err := runDirectCodingSemanticLeafCall(
 			runtime, model, "application_service_state_lifetime", job, identities,
+			func(raw string) (assemblyline.ApplicationServiceStateLifetimeResult, error) {
+				return assemblyline.DecodeApplicationServiceStateLifetimeResult(input, raw)
+			},
 			func(value assemblyline.ApplicationServiceStateLifetimeResult) error {
 				return value.ValidateFor(input)
 			},

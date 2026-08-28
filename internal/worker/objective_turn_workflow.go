@@ -243,15 +243,15 @@ func runObjectiveDatabaseRead(
 		RequirementID: result.RequirementID, ExactRequirement: authority.Instruction,
 		Context: assemblyline.CloneObjectiveContext(authority.Context), Evidence: modelEvidence,
 	}
-	if _, err := assemblyline.NewGroundedAnswerJob(input); err != nil {
+	if err := input.Validate(); err != nil {
 		return result, err
 	}
 	answer, receipt, err := answerStation.Answer(ctx, input)
 	if err != nil {
 		return result, err
 	}
-	if receipt.Calls < 1 || receipt.Calls > maxTypedWorkerAttempts {
-		return result, fmt.Errorf("database grounded answer reported %d calls outside the bounded correction budget", receipt.Calls)
+	if err := validateObjectiveGroundedAnswerCalls(receipt.Calls, input); err != nil {
+		return result, fmt.Errorf("database grounded answer: %w", err)
 	}
 	if err := answer.ValidateFor(input); err != nil {
 		return result, err

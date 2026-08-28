@@ -7,8 +7,9 @@ import (
 )
 
 // buildDirectCodingApplicationFileCoveragePlan consumes only code-retained
-// provenance from focused path-only tree calls. It does not infer meaning from
-// filenames and does not invoke a model to restate code-owned task identity.
+// provenance. Inferred single-pair trees cover every frozen task; mechanical
+// stacks retain their exact task-to-pair allocation. No model maps files to
+// tasks or restates code-owned task identity.
 func buildDirectCodingApplicationFileCoveragePlan(
 	stack directCodingProjectStack,
 	workload assemblyline.FrozenApplicationWorkload,
@@ -30,7 +31,7 @@ func buildDirectCodingApplicationFileCoveragePlan(
 		paths, exists := taskPaths[task.ID]
 		if !exists || len(paths) == 0 {
 			return assemblyline.ApplicationFileCoveragePlan{}, fmt.Errorf(
-				"focused target-tree provenance omits task %s", task.ID,
+				"target-tree provenance omits task %s", task.ID,
 			)
 		}
 		seen := make(map[string]struct{}, len(paths))

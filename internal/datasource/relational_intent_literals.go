@@ -58,7 +58,7 @@ func validateLiteral(literal IntentLiteral) error {
 			return fmt.Errorf("integer literal is outside signed 64-bit range")
 		}
 	case LiteralDecimal:
-		if len(literal.Value) > 128 || !intentDecimalPattern.MatchString(literal.Value) {
+		if len(literal.Value) > MaxIntentDecimalLiteralBytes || !intentDecimalPattern.MatchString(literal.Value) {
 			return fmt.Errorf("decimal literal %q is invalid", literal.Value)
 		}
 	case LiteralBoolean:

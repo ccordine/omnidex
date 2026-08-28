@@ -3,16 +3,18 @@ package assemblyline
 import (
 	"fmt"
 	"path"
-	"sort"
 	"strings"
 	"unicode/utf8"
 )
 
 const (
-	TargetTreeCandidateSchemaV1 = "omnidex.target-tree.v1"
-	maxTargetTreePaths          = 128
-	maxTargetTreePathBytes      = 512
-	maxTargetTreeObjectiveBytes = 4096
+	maxTargetTreePaths = 128
+	// MaxTargetTreePathBytes and MaxTargetTreeDepth are shared by target-tree
+	// input validation, raw parsing/rendering, and response-bound derivation.
+	MaxTargetTreePathBytes      = 512
+	MaxTargetTreeDepth          = 16
+	maxTargetTreePathBytes      = MaxTargetTreePathBytes
+	maxTargetTreeObjectiveBytes = 64 * 1024
 )
 
 type TargetArtifactKind string
@@ -39,33 +41,23 @@ func (constraints TargetTreeConstraints) Validate() error {
 	return nil
 }
 
-// TargetTreeInput is code-owned context for one structural question.
-// ExistingPaths is always the exact bounded filesystem snapshot. ReusablePaths
-// contains leaves accepted for earlier focused tasks that this stack permits
-// another task to share, and ReservedPaths contains leaves code has made
-// unavailable. The sets are intentionally orthogonal; a reserved path remains
-// unavailable even when it also exists in the workspace.
+// TargetTreeInput is code-owned context for one complete workload-tree
+// question. ExistingPaths is the current managed workload tree. ReservedPaths
+// contains code-owned leaves that cannot enter the workload tree. ExistingDirs
+// is code-only collision evidence and is not model-visible.
 type TargetTreeInput struct {
 	Objective        string                `json:"objective"`
 	TechnicalContext string                `json:"technical_context"`
 	Constraints      TargetTreeConstraints `json:"constraints"`
 	ExistingPaths    []string              `json:"existing_paths"`
-	ReusablePaths    []string              `json:"reusable_paths"`
 	ReservedPaths    []string              `json:"reserved_paths"`
 	ExistingDirs     []string              `json:"existing_dirs"`
 	Correction       *TargetTreeCorrection `json:"correction,omitempty"`
 }
 
 type TargetTreeCorrection struct {
-	CandidateJSON string `json:"candidate_json"`
+	CandidateTree string `json:"candidate_tree,omitempty"`
 	Failure       string `json:"failure"`
-}
-
-// TargetTreeCandidate is the whole model boundary: a path-only work tree.
-// Path meaning, content, ownership, and operations are intentionally absent.
-type TargetTreeCandidate struct {
-	Schema string   `json:"schema"`
-	Paths  []string `json:"paths"`
 }
 
 type TargetTree struct {
@@ -78,6 +70,9 @@ func (input TargetTreeInput) Validate() error {
 	if err := validateTargetTreeText("objective", input.Objective, maxTargetTreeObjectiveBytes); err != nil {
 		return err
 	}
+	if err := ValidatePathFreeModelContext("target tree accepted goals", input.Objective); err != nil {
+		return err
+	}
 	if err := validateTargetTreeText("technical context", input.TechnicalContext, maxTargetTreePathBytes); err != nil {
 		return err
 	}
@@ -86,9 +81,6 @@ func (input TargetTreeInput) Validate() error {
 	}
 	if input.ExistingPaths == nil {
 		return fmt.Errorf("target tree existing workspace paths must be a non-nil array")
-	}
-	if input.ReusablePaths == nil {
-		return fmt.Errorf("target tree reusable accepted paths must be a non-nil array")
 	}
 	if input.ReservedPaths == nil {
 		return fmt.Errorf("target tree reserved paths must be a non-nil array")
@@ -99,9 +91,6 @@ func (input TargetTreeInput) Validate() error {
 	if err := validateTargetTreePaths("existing workspace path", input.ExistingPaths); err != nil {
 		return err
 	}
-	if err := validateTargetTreePaths("reusable accepted path", input.ReusablePaths); err != nil {
-		return err
-	}
 	if err := validateTargetTreePaths("reserved path", input.ReservedPaths); err != nil {
 		return err
 	}
@@ -109,40 +98,16 @@ func (input TargetTreeInput) Validate() error {
 		return err
 	}
 	if correction := input.Correction; correction != nil {
-		if err := validateTargetTreeText("correction candidate", correction.CandidateJSON, maxPortableCandidateBytes); err != nil {
-			return err
+		if correction.CandidateTree != "" {
+			if _, err := ParseTargetTree(correction.CandidateTree); err != nil {
+				return fmt.Errorf("target tree correction candidate is not a safe raw tree: %w", err)
+			}
 		}
 		if err := validateTargetTreeText("correction failure", correction.Failure, 1200); err != nil {
 			return err
 		}
 	}
 	return nil
-}
-
-func (candidate TargetTreeCandidate) ValidateFor(input TargetTreeInput) (TargetTree, error) {
-	var zero TargetTree
-	if err := input.Validate(); err != nil {
-		return zero, err
-	}
-	if candidate.Schema != TargetTreeCandidateSchemaV1 {
-		return zero, fmt.Errorf("target tree schema must be %q", TargetTreeCandidateSchemaV1)
-	}
-	if err := validateTargetTreePaths("work path", candidate.Paths); err != nil {
-		return zero, err
-	}
-	paths := append([]string(nil), candidate.Paths...)
-	sort.Strings(paths)
-	target := TargetTree{Paths: paths}
-	if err := ValidateTargetTreeConstraints(input.Constraints, target); err != nil {
-		return zero, err
-	}
-	if err := ValidateTargetTreeExistingDirectories(input.ExistingDirs, target); err != nil {
-		return zero, err
-	}
-	if err := ValidateTargetTreeReservedPaths(input.ReservedPaths, target); err != nil {
-		return zero, err
-	}
-	return target, nil
 }
 
 // ValidateTargetTreeConstraints applies the same code-owned structural facts
@@ -203,6 +168,9 @@ func ValidateTargetTreeReservedPaths(reservedPaths []string, target TargetTree) 
 }
 
 func validateTargetTreePaths(label string, paths []string) error {
+	if len(paths) > maxTargetTreePaths {
+		return fmt.Errorf("target tree %s set exceeds %d paths", label, maxTargetTreePaths)
+	}
 	seen := make(map[string]struct{}, len(paths))
 	for index, value := range paths {
 		if err := validateTargetTreePath(value); err != nil {
@@ -221,6 +189,15 @@ func validateTargetTreePath(value string) error {
 		strings.HasPrefix(value, "/") || value == "." || strings.HasPrefix(value, "../") ||
 		strings.Contains(value, "\\") {
 		return fmt.Errorf("path must be one normalized relative slash path")
+	}
+	names := strings.Split(value, "/")
+	if len(names) > MaxTargetTreeDepth {
+		return fmt.Errorf("path exceeds the target-tree depth limit of %d", MaxTargetTreeDepth)
+	}
+	for _, name := range names {
+		if err := validateTargetTreeBasename(name); err != nil {
+			return err
+		}
 	}
 	return nil
 }

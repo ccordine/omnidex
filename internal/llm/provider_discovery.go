@@ -16,9 +16,9 @@ type ProviderIdentitySelection struct {
 
 // ProviderIdentityProfilePolicy is code-owned provider admission authority.
 // The empty value preserves the exact registered-profile policy used by every
-// ordinary semantic and coding station. Roleplay stations may select one of
-// two bounded completion policies because code supplies one system envelope
-// through the locally attested model's native instruction template.
+// ordinary semantic and coding station. Roleplay policies narrow model use
+// and context negotiation, but never bypass structural profile attestation or
+// select a provider transport.
 type ProviderIdentityProfilePolicy string
 
 const (
@@ -91,12 +91,6 @@ func ProviderIdentitySelectionForProfile(
 	}
 	selection := ProviderIdentitySelection{
 		Model: model, NativeContextLimit: nativeContextLimit,
-	}
-	switch tokenizerProfile {
-	case ExactPreparedTokenizerProfileRoleplayRaw:
-		selection.ProfilePolicy = ProviderIdentityProfileRoleplayRawCompletion
-	case ExactPreparedTokenizerProfileRoleplaySemantic:
-		selection.ProfilePolicy = ProviderIdentityProfileRoleplaySemanticCompletion
 	}
 	return selection, selection.Validate()
 }

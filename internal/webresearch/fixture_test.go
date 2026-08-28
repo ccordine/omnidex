@@ -85,7 +85,11 @@ func (station *recordingTermsStation) Resolve(_ context.Context, call SearchTerm
 	station.calls++
 	station.last = call
 	station.events = append(station.events, "terms")
-	return station.decision, station.err
+	decision := station.decision
+	if decision.SemanticCalls == 0 {
+		decision.SemanticCalls = 1
+	}
+	return decision, station.err
 }
 
 type recordingRelevanceStation struct {
@@ -106,9 +110,17 @@ func (station *recordingRelevanceStation) Select(_ context.Context, call Relevan
 		if index >= len(station.decisions) {
 			index = len(station.decisions) - 1
 		}
-		return station.decisions[index], station.err
+		decision := station.decisions[index]
+		if decision.SemanticCalls == 0 {
+			decision.SemanticCalls = 1
+		}
+		return decision, station.err
 	}
-	return station.decision, station.err
+	decision := station.decision
+	if decision.SemanticCalls == 0 {
+		decision.SemanticCalls = 1
+	}
+	return decision, station.err
 }
 
 type recordingSynthesisStation struct {
@@ -134,14 +146,22 @@ func (station *recordingSynthesisCorrectionStation) Correct(
 	station.calls++
 	station.last = call
 	station.events = append(station.events, "synthesis_correction")
-	return station.decision, station.err
+	decision := station.decision
+	if decision.SemanticCalls == 0 {
+		decision.SemanticCalls = 1
+	}
+	return decision, station.err
 }
 
 func (station *recordingSynthesisStation) Synthesize(_ context.Context, call GroundedSynthesisCall) (GroundedSynthesisDecision, error) {
 	station.calls++
 	station.last = call
 	station.events = append(station.events, "synthesis")
-	return station.decision, station.err
+	decision := station.decision
+	if decision.SemanticCalls == 0 {
+		decision.SemanticCalls = 1
+	}
+	return decision, station.err
 }
 
 type recordingClaimEvidenceReviewStation struct {
@@ -161,13 +181,19 @@ func (station *recordingClaimEvidenceReviewStation) Review(
 		return ClaimEvidenceReviewDecision{}, station.err
 	}
 	if len(station.decisions) == 0 {
-		return ClaimEvidenceReviewDecision{Outcome: ClaimEvidenceReviewNone, EvidenceIDs: []EvidenceID{}}, nil
+		return ClaimEvidenceReviewDecision{
+			Outcome: ClaimEvidenceReviewNone, EvidenceIDs: []EvidenceID{}, SemanticCalls: 1,
+		}, nil
 	}
 	index := station.calls - 1
 	if index >= len(station.decisions) {
 		index = len(station.decisions) - 1
 	}
-	return station.decisions[index], nil
+	decision := station.decisions[index]
+	if decision.SemanticCalls == 0 {
+		decision.SemanticCalls = 1
+	}
+	return decision, nil
 }
 
 func newFixtureMachine(

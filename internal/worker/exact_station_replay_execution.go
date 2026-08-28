@@ -28,7 +28,7 @@ func executeExactStationReplayPrepared(
 	if generationErr != nil {
 		return result, fmt.Errorf("generate station replay: %w", generationErr)
 	}
-	if err := owned.Validate(); err != nil {
+	if err := llm.ValidateExactPreparedGenerationForRequest(prepared, owned); err != nil {
 		return result, fmt.Errorf("validate station replay generation: %w", err)
 	}
 	if owned.ProviderRequestSHA256 != result.PreparedRequestSHA256 || owned.ProviderResponseModel != result.Model {

@@ -6,7 +6,7 @@ import (
 	"github.com/gryph/omnidex/internal/assemblyline"
 )
 
-func TestReplayArtifactUsesProductionPlannerDecoders(t *testing.T) {
+func TestReplayArtifactUsesProductionSemanticLeafDecoders(t *testing.T) {
 	t.Parallel()
 
 	request := "Build a schedule board with filters."
@@ -16,25 +16,21 @@ func TestReplayArtifactUsesProductionPlannerDecoders(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	intent, err := assemblyline.NewApplicationIntentJob(
-		assemblyline.ApplicationIntentInput{UserRequest: request, Context: applicationContext},
+	productContext, err := assemblyline.NewApplicationProductContextJob(
+		assemblyline.ApplicationProductContextInput{UserRequest: request, Context: applicationContext},
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if artifact, err := replayExactStationArtifact(intent, `{
-		"schema":"omnidex.application-intent.v1",
-		"product_context":"A schedule board",
-		"requirements":["Allow users to filter the schedule."]
-	}`); err != nil || artifact.Kind != "application_intent" {
-		t.Fatalf("intent artifact=%+v error=%v", artifact, err)
+	if artifact, err := replayExactStationArtifact(productContext, "A schedule board"); err != nil ||
+		artifact.Kind != string(assemblyline.WorkApplicationProductContext) {
+		t.Fatalf("product-context artifact=%+v error=%v", artifact, err)
 	}
-	if _, err := replayExactStationArtifact(intent, `{
-		"schema":"omnidex.application-intent.v1",
-		"product_context":"A schedule board",
-		"requirements":[]
-	}`); err == nil {
-		t.Fatal("replay accepted structurally invalid semantic intent")
+	if _, err := replayExactStationArtifact(
+		productContext,
+		`{"product_context":"A schedule board"}`,
+	); err == nil {
+		t.Fatal("replay accepted a structured wrapper around the product-context leaf")
 	}
 }
 
@@ -51,29 +47,29 @@ func TestReplayArtifactValidatesEachServiceEndpointLeaf(t *testing.T) {
 		job  assemblyline.PortableJob
 		raw  string
 	}{
-		replayLeafFixture(t, "application_service_endpoint_exposure", `{"schema":"omnidex.application-service-endpoint-exposure.v1","exposure":"public"}`,
+		replayLeafFixture(t, "application_service_endpoint_exposure", "public",
 			mustReplayLeafJob(assemblyline.NewApplicationServiceEndpointExposureJob(
 				assemblyline.ApplicationServiceEndpointExposureInput{Task: authority},
 			))),
-		replayLeafFixture(t, "application_service_endpoint_method", `{"schema":"omnidex.application-service-endpoint-method.v1","method":"GET"}`,
+		replayLeafFixture(t, "application_service_endpoint_method", "GET",
 			mustReplayLeafJob(assemblyline.NewApplicationServiceEndpointMethodJob(
 				assemblyline.ApplicationServiceEndpointMethodInput{Task: authority},
 			))),
-		replayLeafFixture(t, "application_service_endpoint_route_template", `{"schema":"omnidex.application-service-endpoint-route-template.v1","route_template":"/inventory/{record_id}"}`,
+		replayLeafFixture(t, "application_service_endpoint_route_template", "/inventory/{record_id}",
 			mustReplayLeafJob(assemblyline.NewApplicationServiceEndpointRouteTemplateJob(
 				assemblyline.ApplicationServiceEndpointRouteTemplateInput{Task: authority},
 			))),
-		replayLeafFixture(t, "application_service_endpoint_request_media", `{"schema":"omnidex.application-service-endpoint-request-media.v1","request_media":"none"}`,
+		replayLeafFixture(t, "application_service_endpoint_request_media", "none",
 			mustReplayLeafJob(assemblyline.NewApplicationServiceEndpointRequestMediaJob(
 				assemblyline.ApplicationServiceEndpointRequestMediaInput{
 					Task: authority, Method: assemblyline.ApplicationServiceEndpointGET,
 				},
 			))),
-		replayLeafFixture(t, "application_service_endpoint_response_media", `{"schema":"omnidex.application-service-endpoint-response-media.v1","response_media":"application/json"}`,
+		replayLeafFixture(t, "application_service_endpoint_response_media", "application/json",
 			mustReplayLeafJob(assemblyline.NewApplicationServiceEndpointResponseMediaJob(
 				assemblyline.ApplicationServiceEndpointResponseMediaInput{Task: authority},
 			))),
-		replayLeafFixture(t, "application_service_endpoint_success_status", `{"schema":"omnidex.application-service-endpoint-success-status.v1","success_status":200}`,
+		replayLeafFixture(t, "application_service_endpoint_success_status", "200",
 			mustReplayLeafJob(assemblyline.NewApplicationServiceEndpointSuccessStatusJob(
 				assemblyline.ApplicationServiceEndpointSuccessStatusInput{
 					Task: authority, Method: assemblyline.ApplicationServiceEndpointGET,

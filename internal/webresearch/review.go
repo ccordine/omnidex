@@ -44,10 +44,14 @@ func (machine *Machine) reviewSynthesis(
 			}
 		}
 		decision, err := machine.review.Review(ctx, cloneClaimEvidenceReviewCall(call))
-		result.ClaimEvidenceReviewCalls++
 		if err != nil {
 			return nil, fmt.Errorf("claim-evidence review station: %w", err)
 		}
+		if decision.SemanticCalls < 1 {
+			return nil, fmt.Errorf("%w: review reported no semantic calls", ErrInvalidClaimEvidenceReview)
+		}
+		result.ClaimEvidenceReviewCalls++
+		result.SemanticCalls += decision.SemanticCalls
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
@@ -83,6 +87,9 @@ func validateClaimEvidenceReviewDecision(
 	decision ClaimEvidenceReviewDecision,
 	call ClaimEvidenceReviewCall,
 ) error {
+	if decision.SemanticCalls < 1 {
+		return fmt.Errorf("%w: semantic call count must be positive", ErrInvalidClaimEvidenceReview)
+	}
 	if decision.EvidenceIDs == nil {
 		return fmt.Errorf("%w: evidence IDs must be an explicit array", ErrInvalidClaimEvidenceReview)
 	}

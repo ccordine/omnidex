@@ -88,16 +88,13 @@ func DecodeConversationObjectiveKindDecision(
 	input ConversationObjectiveKindInput,
 	raw string,
 ) (ConversationObjectiveKindDecision, error) {
-	if len(raw) > maxPortableCandidateBytes {
-		return ConversationObjectiveKindDecision{}, fmt.Errorf(
-			"conversation objective kind candidate exceeds %d bytes", maxPortableCandidateBytes,
-		)
+	leaf, err := decodeRawSemanticLeaf("conversation objective kind", raw, 64, false)
+	if err != nil {
+		return ConversationObjectiveKindDecision{}, err
 	}
-	var decision ConversationObjectiveKindDecision
-	if err := decodePortablePayload([]byte(raw), &decision); err != nil {
-		return ConversationObjectiveKindDecision{}, fmt.Errorf(
-			"decode conversation objective kind decision: %w", err,
-		)
+	decision := ConversationObjectiveKindDecision{
+		Schema: ConversationObjectiveKindSchemaV1,
+		Kind:   ConversationObjectiveKind(leaf),
 	}
 	if err := decision.ValidateFor(input); err != nil {
 		return ConversationObjectiveKindDecision{}, err
@@ -131,30 +128,9 @@ func BuildConversationObjectiveKindPrompt(input ConversationObjectiveKindInput) 
 	}
 	lines = append(lines,
 		"Return the one registered semantic objective kind that exactly describes this instruction.",
+		"Return only that raw registered kind with no JSON, quotes, label, Markdown, or commentary.",
 		"OBJECTIVE_CONTEXT_JSON:\n"+string(context),
 		"EXACT_INSTRUCTION:\n"+input.ExactInstruction,
 	)
 	return strings.Join(lines, "\n\n"), nil
-}
-
-func ConversationObjectiveKindResponseSchema(input ConversationObjectiveKindInput) map[string]any {
-	kinds := []ConversationObjectiveKind{
-		ObjectiveKindAnswer,
-		ObjectiveKindRepositoryRead,
-		ObjectiveKindWorkspaceMutation,
-		ObjectiveKindExternalAnswer,
-		ObjectiveKindStory,
-	}
-	if input.DatabaseEvidenceAvailable {
-		kinds = append(kinds, ObjectiveKindDatabaseRead)
-	}
-	return objectSchema(
-		[]string{"schema", "kind"},
-		map[string]any{
-			"schema": map[string]any{
-				"type": "string", "const": ConversationObjectiveKindSchemaV1,
-			},
-			"kind": enumSchema(kinds...),
-		},
-	)
 }

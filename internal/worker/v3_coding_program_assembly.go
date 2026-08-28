@@ -25,6 +25,7 @@ func directCodingAssemblyFromProgram(program directCodingProgram) (directCodingA
 		}
 		byPath[file.Path] = file
 	}
+	deletePaths := make([]string, 0)
 	for _, transition := range program.StructureTransitions {
 		switch transition.Kind {
 		case assemblyline.TargetTreeEnsureDirectory:
@@ -36,6 +37,14 @@ func directCodingAssemblyFromProgram(program directCodingProgram) (directCodingA
 				}
 				return directCodingAssembly{}, fmt.Errorf("target-tree source path %q disappeared from compiled program", transition.Path)
 			}
+		case assemblyline.TargetTreeDelete:
+			if _, replaced := byPath[transition.Path]; replaced {
+				return directCodingAssembly{}, fmt.Errorf(
+					"target-tree delete path %q is also present in the compiled program",
+					transition.Path,
+				)
+			}
+			deletePaths = append(deletePaths, transition.Path)
 		default:
 			return directCodingAssembly{}, fmt.Errorf("unsupported target-tree transition %q for path %q", transition.Kind, transition.Path)
 		}
@@ -43,7 +52,11 @@ func directCodingAssemblyFromProgram(program directCodingProgram) (directCodingA
 	// The path-only tree declares workload artifacts only. Runtime shells,
 	// manifests, generated application composition, and adapter tests are
 	// deterministic adapter output, not omissions from the model tree.
-	assembly := directCodingAssembly{VersionProfileID: program.VersionProfileID, Files: files}
+	assembly := directCodingAssembly{
+		VersionProfileID: program.VersionProfileID,
+		Files:            files,
+		DeletePaths:      deletePaths,
+	}
 	if err := assembly.normalize(); err != nil {
 		return directCodingAssembly{}, err
 	}
@@ -83,6 +96,13 @@ func directCodingAssemblyFilesystemTransitions(
 	for _, file := range assembly.Files {
 		files[file.Path] = struct{}{}
 	}
+	deletes := make(map[string]struct{}, len(assembly.DeletePaths))
+	for _, deletePath := range assembly.DeletePaths {
+		deletes[deletePath] = struct{}{}
+		if _, exists := presentFiles[deletePath]; !exists {
+			return nil, fmt.Errorf("target-tree delete path %q is not a current file", deletePath)
+		}
+	}
 	for _, transition := range targetTransitions {
 		switch transition.Kind {
 		case assemblyline.TargetTreeEnsureDirectory:
@@ -90,6 +110,10 @@ func directCodingAssemblyFilesystemTransitions(
 		case assemblyline.TargetTreeCreate, assemblyline.TargetTreeReconcile:
 			if _, exists := files[transition.Path]; !exists {
 				return nil, fmt.Errorf("target-tree path %q has no code-owned source job", transition.Path)
+			}
+		case assemblyline.TargetTreeDelete:
+			if _, exists := deletes[transition.Path]; !exists {
+				return nil, fmt.Errorf("target-tree delete path %q has no code-owned deletion job", transition.Path)
 			}
 		default:
 			return nil, fmt.Errorf("unsupported target-tree transition %q for path %q", transition.Kind, transition.Path)
@@ -115,7 +139,11 @@ func directCodingAssemblyFilesystemTransitions(
 		}
 		return directories[left] < directories[right]
 	})
-	transitions := make([]assemblyline.TargetTreeTransition, 0, len(directories)+len(assembly.Files))
+	transitions := make(
+		[]assemblyline.TargetTreeTransition,
+		0,
+		len(directories)+len(assembly.Files)+len(assembly.DeletePaths),
+	)
 	for _, directory := range directories {
 		transitions = append(transitions, assemblyline.TargetTreeTransition{Kind: assemblyline.TargetTreeEnsureDirectory, Path: directory})
 	}
@@ -125,6 +153,12 @@ func directCodingAssemblyFilesystemTransitions(
 			kind = assemblyline.TargetTreeReconcile
 		}
 		transitions = append(transitions, assemblyline.TargetTreeTransition{Kind: kind, Path: file.Path})
+	}
+	for _, deletePath := range assembly.DeletePaths {
+		transitions = append(transitions, assemblyline.TargetTreeTransition{
+			Kind: assemblyline.TargetTreeDelete,
+			Path: deletePath,
+		})
 	}
 	return transitions, nil
 }

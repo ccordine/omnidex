@@ -1,8 +1,6 @@
 package assemblyline
 
 import (
-	"encoding/json"
-	"reflect"
 	"strings"
 	"testing"
 )
@@ -28,15 +26,11 @@ func TestApplicationServiceEndpointRequirementIsOneTaskLocalBlindEnum(t *testing
 	if job.Kind != WorkApplicationServiceEndpointRequirement {
 		t.Fatalf("work kind=%q", job.Kind)
 	}
-	prompt, schema, err := RenderPortableJob(job)
+	prompt, err := RenderPortableJob(job)
 	if err != nil {
 		t.Fatal(err)
 	}
-	schemaJSON, err := json.Marshal(schema)
-	if err != nil {
-		t.Fatal(err)
-	}
-	envelope := prompt + string(schemaJSON)
+	envelope := prompt
 	for _, required := range []string{
 		workloadInput.ProductQuote, task.RequirementQuote, task.Objective,
 		string(ApplicationServiceEndpointRequired), string(ApplicationServiceSupportOnly),
@@ -63,15 +57,11 @@ func TestApplicationServiceEndpointRequirementIsOneTaskLocalBlindEnum(t *testing
 			Schema:              ApplicationServiceEndpointRequirementSchemaV1,
 			EndpointRequirement: requirement,
 		}
-		raw, err := json.Marshal(want)
-		if err != nil {
-			t.Fatal(err)
-		}
-		got, err := DecodeApplicationServiceEndpointRequirementResult(input, string(raw))
+		got, err := DecodeApplicationServiceEndpointRequirementResult(input, string(requirement))
 		if err != nil {
 			t.Fatalf("decode %q: %v", requirement, err)
 		}
-		if !reflect.DeepEqual(got, want) {
+		if got != want {
 			t.Fatalf("decoded result=%+v want=%+v", got, want)
 		}
 	}
@@ -106,12 +96,11 @@ func TestApplicationServiceEndpointRequirementRejectsInvalidAuthorityAndWire(t *
 	}
 
 	for name, raw := range map[string]string{
-		"bad schema":        `{"schema":"v2","endpoint_requirement":"support_only"}`,
-		"unregistered enum": `{"schema":"omnidex.application-service-endpoint-requirement.v1","endpoint_requirement":"endpoint_optional"}`,
-		"control field":     `{"schema":"omnidex.application-service-endpoint-requirement.v1","endpoint_requirement":"support_only","execute":true}`,
-		"missing enum":      `{"schema":"omnidex.application-service-endpoint-requirement.v1"}`,
-		"trailing object":   `{"schema":"omnidex.application-service-endpoint-requirement.v1","endpoint_requirement":"support_only"} {}`,
-		"non-object":        `"endpoint_required"`,
+		"unregistered enum": "endpoint_optional",
+		"JSON wrapper":      `{"endpoint_requirement":"support_only"}`,
+		"quoted":            `"endpoint_required"`,
+		"label":             "endpoint_requirement: support_only",
+		"trailing value":    "support_only endpoint_required",
 	} {
 		t.Run(name, func(t *testing.T) {
 			if _, err := DecodeApplicationServiceEndpointRequirementResult(validInput, raw); err == nil {

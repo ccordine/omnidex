@@ -122,11 +122,8 @@ func stationGapSHA256(value string) string {
 	return hex.EncodeToString(digest[:])
 }
 
-func canonicalStationGapSchema(schema map[string]any) ([]byte, error) {
-	if schema == nil {
-		return exactjson.Canonical(nil)
-	}
-	return exactjson.Canonical(schema)
+func canonicalStationGapSchema() ([]byte, error) {
+	return exactjson.Canonical(nil)
 }
 
 func validateStationGapToken(subject, value string) error {

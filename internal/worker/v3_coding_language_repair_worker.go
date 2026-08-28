@@ -42,8 +42,11 @@ func runDirectCodingLanguageRepairGuidance(
 	if err != nil {
 		return "", fmt.Errorf("construct fragment repair-guidance job: %w", err)
 	}
-	guidance, err := runDirectCodingSemanticCall[assemblyline.FragmentRepairGuidance](
+	guidance, err := runDirectCodingSemanticLeafCall(
 		runtime, modelName, subject+":repair_guidance", job, nil,
+		func(raw string) (assemblyline.FragmentRepairGuidance, error) {
+			return assemblyline.DecodeFragmentRepairGuidanceResult(job, raw)
+		},
 		func(candidate assemblyline.FragmentRepairGuidance) error {
 			if err := candidate.Validate(); err != nil {
 				return err
@@ -76,7 +79,7 @@ func runDirectCodingLanguageCorrection(
 	if err != nil {
 		return "", err
 	}
-	prompt, _, err := assemblyline.RenderPortableJob(job)
+	prompt, err := assemblyline.RenderPortableJob(job)
 	if err != nil {
 		return "", err
 	}

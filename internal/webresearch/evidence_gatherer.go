@@ -29,7 +29,8 @@ type EvidenceConfig struct {
 
 // EvidenceResult contains only exact selected evidence and its bounded
 // model-visible projection. Acquisition mechanics and ordering remain code
-// owned; semantic stations contribute search terms and candidate IDs only.
+// owned. Semantic stations return only raw term/relevance leaves; code builds
+// the retained query list and candidate-ID selection.
 type EvidenceResult struct {
 	Evidence            []Evidence
 	Projected           []ProjectedEvidence
@@ -38,6 +39,7 @@ type EvidenceResult struct {
 	FetchAttempts       int
 	SearchTermsCalls    int
 	RelevanceCalls      int
+	SemanticCalls       int
 }
 
 // GatherRelevantEvidence runs the shared deterministic web evidence sieve.
@@ -115,6 +117,7 @@ func evidenceResultFromRun(result Result, selected []Evidence) EvidenceResult {
 		AcquisitionAttempts: result.AcquisitionAttempts,
 		DiscoveryAttempts:   result.DiscoveryAttempts, FetchAttempts: result.FetchAttempts,
 		SearchTermsCalls: result.SearchTermsCalls, RelevanceCalls: result.RelevanceCalls,
+		SemanticCalls: result.SemanticCalls,
 	}
 }
 

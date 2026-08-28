@@ -9,11 +9,16 @@ import (
 
 func TestRoleplayGroundedResponseUsesTheBoundedResponseStation(t *testing.T) {
 	t.Parallel()
-	got, err := stationForPortableWorkKind(assemblyline.WorkRoleplayGroundedResponse)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got != station.ConversationResponse {
-		t.Fatalf("station=%q want %q", got, station.ConversationResponse)
+	for _, kind := range []assemblyline.WorkKind{
+		assemblyline.WorkRoleplayGroundedResponseText,
+		assemblyline.WorkRoleplayGroundedResponseEvidenceRelation,
+	} {
+		got, err := stationForPortableWorkKind(kind)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got != station.ConversationResponse {
+			t.Fatalf("kind=%q station=%q want %q", kind, got, station.ConversationResponse)
+		}
 	}
 }

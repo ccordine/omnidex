@@ -25,10 +25,14 @@ func (machine *Machine) correctSynthesis(
 		MaxParagraphBytes: machine.config.MaxSynthesisParagraphBytes,
 	}
 	decision, err := machine.correction.Correct(ctx, cloneGroundedSynthesisCorrectionCall(call))
-	result.SynthesisCorrectionCalls++
 	if err != nil {
 		return nil, false, fmt.Errorf("grounded synthesis correction station: %w", err)
 	}
+	if decision.SemanticCalls < 1 {
+		return nil, false, fmt.Errorf("%w: correction reported no semantic calls", ErrInvalidSynthesisCorrection)
+	}
+	result.SynthesisCorrectionCalls++
+	result.SemanticCalls += decision.SemanticCalls
 	if err := ctx.Err(); err != nil {
 		return nil, false, err
 	}
@@ -53,6 +57,9 @@ func validateGroundedSynthesisCorrectionDecision(
 	decision GroundedSynthesisCorrectionDecision,
 	call GroundedSynthesisCorrectionCall,
 ) error {
+	if decision.SemanticCalls < 1 {
+		return fmt.Errorf("%w: semantic call count must be positive", ErrInvalidSynthesisCorrection)
+	}
 	input, err := portableSynthesisCorrectionInput(call)
 	if err != nil {
 		return fmt.Errorf("%w: %v", ErrInvalidSynthesisCorrection, err)

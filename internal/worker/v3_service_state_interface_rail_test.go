@@ -92,27 +92,44 @@ func TestSharedStateInterfaceBindsReaderAsLoadOnlyAndRejectsSaveCapability(t *te
 	}
 }
 
-func TestSharedStateInterfaceCallsOncePerConnectedDurableComponent(t *testing.T) {
+func TestSharedStateInterfaceResolvesOneRawLeafWithinEachDurableComponent(t *testing.T) {
 	t.Parallel()
 	workload, capabilities, plan := unrelatedServiceStateComponentsFixture(t)
 	calls := 0
 	prompts := make([]string, 0, 2)
 	runtime := typedWorkerRuntime{
 		Context: context.Background(), MaxAttempts: 7, CorrectionModel: "forbidden-correction",
-		Execute: testPortableExecutor(func(_ string, model, prompt string, _ map[string]any) (string, error) {
+		Execute: testPortableExecutor(func(_ string, model, prompt string) (string, error) {
 			calls++
 			prompts = append(prompts, prompt)
 			if model != "state-interface-model" {
 				return "", fmt.Errorf("unexpected model %q", model)
 			}
-			field := "items"
-			if strings.Contains(prompt, "clinic") {
-				field = "reservations"
+			switch {
+			case strings.Contains(prompt, "does the directly related behavior authority require any durable root state field"):
+				if strings.Contains(prompt, `"accepted_fields":[]`) {
+					return "", fmt.Errorf("state field coverage received an empty accepted set")
+				}
+				return assemblyline.ApplicationNoUncoveredStateField, nil
+			case strings.Contains(prompt, "canonical lowercase snake-case name for the earliest necessary durable root state field"):
+				if strings.Contains(prompt, "clinic") {
+					return "reservations", nil
+				}
+				return "items", nil
+			case strings.Contains(prompt, "what registered data kind must the focused durable root state field use"):
+				return string(assemblyline.ApplicationServiceStateRecordList), nil
+			case strings.Contains(prompt, "does the focused record-list field require any scalar record member"):
+				if strings.Contains(prompt, `"accepted_record_fields":[]`) {
+					return "", fmt.Errorf("record field coverage received an empty accepted set")
+				}
+				return assemblyline.ApplicationNoUncoveredRecordField, nil
+			case strings.Contains(prompt, "canonical lowercase snake-case name for the earliest necessary scalar member"):
+				return "identifier", nil
+			case strings.Contains(prompt, "what registered scalar data kind must the focused record member use"):
+				return string(assemblyline.ApplicationServiceStateString), nil
+			default:
+				return "", fmt.Errorf("unexpected state-interface leaf prompt: %s", prompt)
 			}
-			return fmt.Sprintf(
-				`{"schema":%q,"fields":[{"name":%q,"kind":"record_list","record_fields":[{"name":"identifier","kind":"string"}]}]}`,
-				assemblyline.ApplicationServiceStateInterfaceSchemaV1, field,
-			), nil
 		}),
 	}
 	resolved, err := resolveDirectCodingServiceStateInterfaces(
@@ -121,11 +138,13 @@ func TestSharedStateInterfaceCallsOncePerConnectedDurableComponent(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if calls != 2 || len(resolved.Interfaces) != 2 {
+	if calls != 12 || len(resolved.Interfaces) != 2 {
 		t.Fatalf("semantic calls=%d interfaces=%+v", calls, resolved.Interfaces)
 	}
-	if strings.Contains(prompts[0], "clinic") || strings.Contains(prompts[1], "warehouse") {
-		t.Fatalf("state component prompt crossed unrelated behavior boundaries: %q / %q", prompts[0], prompts[1])
+	for _, prompt := range prompts {
+		if strings.Contains(prompt, "clinic") && strings.Contains(prompt, "warehouse") {
+			t.Fatalf("state component prompt crossed unrelated behavior boundaries: %q", prompt)
+		}
 	}
 	for _, task := range workload.Tasks {
 		for _, prompt := range prompts {

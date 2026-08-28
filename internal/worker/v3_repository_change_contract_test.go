@@ -167,6 +167,7 @@ func repositoryProjectionTestPack(t *testing.T) repositoryretrieval.EvidencePack
 		Symbols: []repositoryretrieval.EvidenceSymbol{{
 			ID: "symbol_" + strings.Repeat("3", 64), Kind: "function", Name: "Owner",
 			Signature: "func Owner()", SourceSHA256: strings.Repeat("4", 64),
+			Source: "func Owner() {}",
 		}},
 		Relations: []repositoryretrieval.EvidenceRelation{}, SourceOmissions: []repositoryretrieval.SourceOmission{},
 		OmittedSymbolIDs: []string{}, MaxBytes: 9 * 1024,

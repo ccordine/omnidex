@@ -10,6 +10,7 @@ const ApplicationServiceStateInterfaceSchemaV1 = "omnidex.application-service-st
 const (
 	maxApplicationServiceStateInterfaceNeeds  = 10
 	maxApplicationServiceStateInterfaceFields = 8
+	MaxApplicationServiceStateFieldNameBytes  = 48
 )
 
 type ApplicationServiceStateFieldKind string
@@ -66,13 +67,9 @@ type ApplicationServiceStateInterfaceResult struct {
 	Fields []ApplicationServiceStateField `json:"fields"`
 }
 
-var applicationServiceStateFieldName = regexp.MustCompile(`^[a-z][a-z0-9_]{0,47}$`)
-
-func NewApplicationServiceStateInterfaceJob(
-	input ApplicationServiceStateInterfaceInput,
-) (PortableJob, error) {
-	return newValidatedPortableJob(WorkApplicationServiceStateInterface, input, input.Validate)
-}
+var applicationServiceStateFieldName = regexp.MustCompile(fmt.Sprintf(
+	`^[a-z][a-z0-9_]{0,%d}$`, MaxApplicationServiceStateFieldNameBytes-1,
+))
 
 func (input ApplicationServiceStateInterfaceInput) Validate() error {
 	if err := validateApplicationProductQuote(

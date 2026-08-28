@@ -206,10 +206,14 @@ func assertContextSieveNewStationsOpen(t *testing.T, repository *Repository) {
 		{station: station.CodingWorkload, job: mustApplicationJobSpecificationCorrection(t)},
 	}
 	for _, fixture := range jobs {
+		const contextTokens = 32768
 		if _, err := repository.OpenStationGap(t.Context(), StationGapOpenRecord{
 			Authority: claim.Authority,
 			Job:       fixture.job, Station: fixture.station,
-			ContextTokens: 32768, MaxOutputTokens: 32768,
+			ContextTokens: contextTokens,
+			MaxOutputTokens: portableStationTestMaxOutputTokens(
+				t, fixture.job, contextTokens,
+			),
 			OutputLimitMode: llm.ExactPreparedOutputLimitNatural,
 		}); err != nil {
 			t.Fatalf("open new context station %s: %v", fixture.station, err)
@@ -222,7 +226,7 @@ func mustApplicationJobSpecificationCorrection(t *testing.T) assemblyline.Portab
 	requirement := assemblyline.Requirement{
 		ID: "requirement_001", SourceQuote: "filter inventory",
 	}
-	original, err := assemblyline.NewApplicationJobSpecificationJob(
+	original, err := assemblyline.NewApplicationJobObjectiveJob(
 		assemblyline.ApplicationJobSpecificationInput{
 			Surface:              assemblyline.ApplicationSurfaceBrowser,
 			ProductQuote:         "inventory console",
@@ -233,8 +237,8 @@ func mustApplicationJobSpecificationCorrection(t *testing.T) assemblyline.Portab
 	if err != nil {
 		t.Fatal(err)
 	}
-	correction, err := assemblyline.NewResponseCorrectionJobForField(
-		original, "the objective leaf is missing", "objective",
+	correction, err := assemblyline.NewRetainedResponseCorrectionJob(
+		original, "the objective leaf is missing", "missing",
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -244,8 +248,10 @@ func mustApplicationJobSpecificationCorrection(t *testing.T) assemblyline.Portab
 
 func mustContextSearchTermsJob(t *testing.T) assemblyline.PortableJob {
 	t.Helper()
-	job, err := assemblyline.NewContextSearchTermsJob(
-		assemblyline.ContextSearchTermsInput{ExactInstruction: "Do it again."},
+	job, err := assemblyline.NewContextSearchTermCoverageJob(
+		assemblyline.ContextSearchTermLeafInput{
+			ExactInstruction: "Do it again.", AcceptedTerms: []string{},
+		},
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -258,11 +264,16 @@ func mustContextRelevanceJob(
 	candidate assemblyline.ContextCandidateAuthority,
 ) assemblyline.PortableJob {
 	t.Helper()
-	job, err := assemblyline.NewContextRelevanceJob(assemblyline.ContextRelevanceInput{
-		ExactInstruction: "Do it again.", RetrievalConcepts: []string{"previous action"},
-		CandidateAuthorities: []assemblyline.ContextCandidateAuthority{candidate},
-		MaxSelections:        1,
-	})
+	job, err := assemblyline.NewContextRelevanceSelectionJob(
+		assemblyline.ContextRelevanceSelectionInput{
+			Authority: assemblyline.ContextRelevanceInput{
+				ExactInstruction: "Do it again.", RetrievalConcepts: []string{"previous action"},
+				CandidateAuthorities: []assemblyline.ContextCandidateAuthority{candidate},
+				MaxSelections:        1,
+			},
+			AcceptedCandidateIDs: []string{},
+		},
+	)
 	if err != nil {
 		t.Fatal(err)
 	}

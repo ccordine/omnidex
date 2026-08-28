@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
+	"github.com/gryph/omnidex/internal/exactjson"
 	"github.com/gryph/omnidex/internal/llm"
 	"github.com/gryph/omnidex/internal/queue"
 )
@@ -47,7 +48,6 @@ type ExactStationReplayArtifact struct {
 type exactStationReplayBoundary struct {
 	Job      assemblyline.PortableJob
 	Prompt   string
-	Schema   map[string]any
 	Contract llmResponseContract
 }
 
@@ -123,14 +123,24 @@ func validateExactStationReplayPoint(
 	}
 	call, gap := point.Call, point.Gap
 	contract := boundary.Contract
-	if gap.Scope != portableModelScope(boundary.Schema) || gap.OutputLimitMode != contract.OutputLimitMode ||
-		gap.ContextTokens != gap.MaxOutputTokens ||
+	expectedScope, err := portableModelScope(boundary.Job.Kind)
+	if err != nil {
+		return boundary, err
+	}
+	expectedMaxOutputTokens, err := queue.ExpectedPortableStationMaxOutputTokens(
+		boundary.Job, gap.ContextTokens,
+	)
+	if err != nil {
+		return boundary, err
+	}
+	if gap.Scope != expectedScope || gap.OutputLimitMode != contract.OutputLimitMode ||
+		gap.MaxOutputTokens != expectedMaxOutputTokens ||
 		call.ContextTokens != gap.ContextTokens || call.MaxOutputTokens != gap.MaxOutputTokens ||
 		call.OutputLimitMode != gap.OutputLimitMode || call.MaxInputTokens != call.ContextTokens ||
 		call.ModelInputTokenCeiling != call.ContextTokens || call.Protocol != string(contract.Protocol) {
 		return boundary, fmt.Errorf("station replay call limits differ from its frozen natural-output authority")
 	}
-	modelInput, err := llm.ExactPreparedModelInput(boundary.Prompt, contract.PromptHint)
+	modelInput, err := exactStationReplayStoredModelInput(boundary, gap, call)
 	if err != nil || call.ModelInput != modelInput || call.ModelInputBytes != len(modelInput) ||
 		replaySHA256(modelInput) != call.ModelInputSHA256 {
 		return boundary, fmt.Errorf("station replay model input differs from its stored identity")
@@ -139,10 +149,47 @@ func validateExactStationReplayPoint(
 	if err != nil {
 		return boundary, err
 	}
-	if err := validateExactStationStaticCall(boundary.Prompt, boundary.Schema, contract, selection); err != nil {
+	if err := validateExactStationStaticCall(boundary.Prompt, contract, selection); err != nil {
 		return boundary, fmt.Errorf("validate frozen station replay boundary: %w", err)
 	}
 	return boundary, nil
+}
+
+func exactStationReplayStoredModelInput(
+	boundary exactStationReplayBoundary,
+	gap queue.StationGapOpening,
+	call queue.StationCallOpening,
+) (string, error) {
+	var expected llm.ProviderIdentityExpectation
+	if err := exactjson.ValidateObject(
+		call.Expectation, expected, "station replay provider expectation",
+	); err != nil {
+		return "", err
+	}
+	if err := json.Unmarshal(call.Expectation, &expected); err != nil {
+		return "", fmt.Errorf("decode station replay provider expectation: %w", err)
+	}
+	canonical, err := exactjson.Canonical(expected)
+	if err != nil {
+		return "", err
+	}
+	if string(canonical) != string(call.Expectation) ||
+		replaySHA256(string(canonical)) != call.ExpectationSHA256 ||
+		expected.Model != call.Model || expected.TokenizerProfile != call.TokenizerProfile ||
+		expected.NativeContextLimit != call.ContextTokens {
+		return "", fmt.Errorf("station replay provider expectation differs from its stored identity")
+	}
+	stop, err := queue.ExpectedStationCallStopSequence(gap, expected)
+	if err != nil {
+		return "", err
+	}
+	return llm.ExactPreparedRequestModelInput(llm.PreparedModel{
+		BaseModel: call.Model, ContextModel: call.Model,
+		Prompt: boundary.Prompt, PromptHint: boundary.Contract.PromptHint,
+		ContextTokens:               call.ContextTokens,
+		RawTextStopSequence:         stop,
+		ProviderIdentityExpectation: &expected,
+	})
 }
 
 func replayExactStationArtifact(
@@ -154,116 +201,6 @@ func replayExactStationArtifact(
 		StartByte: 0, EndByte: len(raw),
 	}
 	switch job.Kind {
-	case assemblyline.WorkApplicationContextNeeds:
-		artifact.Kind = "application_context_needs"
-		var input assemblyline.ApplicationContextNeedInput
-		if err := json.Unmarshal(job.Payload, &input); err != nil {
-			return artifact, fmt.Errorf("decode replay application context authority: %w", err)
-		}
-		if _, err := assemblyline.DecodeApplicationContextNeedDecision(input, raw); err != nil {
-			return artifact, fmt.Errorf("decode replay application context needs: %w", err)
-		}
-		return artifact, nil
-	case assemblyline.WorkApplicationIntent:
-		artifact.Kind = "application_intent"
-		var input assemblyline.ApplicationIntentInput
-		if err := json.Unmarshal(job.Payload, &input); err != nil {
-			return artifact, fmt.Errorf("decode replay application intent authority: %w", err)
-		}
-		if _, err := assemblyline.DecodeApplicationIntentCandidate(input, raw); err != nil {
-			return artifact, fmt.Errorf("decode replay application intent: %w", err)
-		}
-		return artifact, nil
-	case assemblyline.WorkApplicationProjectStackConstraint:
-		artifact.Kind = "application_project_stack_constraint"
-		var input assemblyline.ApplicationProjectStackConstraintInput
-		if err := json.Unmarshal(job.Payload, &input); err != nil {
-			return artifact, fmt.Errorf("decode replay project stack constraint authority: %w", err)
-		}
-		decision, err := decodeDirectCodingSemanticJSON[assemblyline.ApplicationProjectStackConstraintDecision](raw)
-		if err != nil {
-			return artifact, fmt.Errorf("decode replay project stack constraint: %w", err)
-		}
-		if err := decision.ValidateFor(input); err != nil {
-			return artifact, fmt.Errorf("validate replay project stack constraint: %w", err)
-		}
-		return artifact, nil
-	case assemblyline.WorkApplicationServiceEndpointRequirement:
-		artifact.Kind = "application_service_endpoint_requirement"
-		var input assemblyline.ApplicationServiceEndpointRequirementInput
-		if err := json.Unmarshal(job.Payload, &input); err != nil {
-			return artifact, fmt.Errorf("decode replay service endpoint requirement authority: %w", err)
-		}
-		if _, err := assemblyline.DecodeApplicationServiceEndpointRequirementResult(input, raw); err != nil {
-			return artifact, fmt.Errorf("decode replay service endpoint requirement: %w", err)
-		}
-		return artifact, nil
-	case assemblyline.WorkApplicationServiceEndpointExposure:
-		artifact.Kind = "application_service_endpoint_exposure"
-		var input assemblyline.ApplicationServiceEndpointExposureInput
-		if err := json.Unmarshal(job.Payload, &input); err != nil {
-			return artifact, fmt.Errorf("decode replay service endpoint exposure authority: %w", err)
-		}
-		if _, err := assemblyline.DecodeApplicationServiceEndpointExposureResult(input, raw); err != nil {
-			return artifact, fmt.Errorf("decode replay service endpoint exposure: %w", err)
-		}
-		return artifact, nil
-	case assemblyline.WorkApplicationServiceEndpointMethod:
-		artifact.Kind = "application_service_endpoint_method"
-		var input assemblyline.ApplicationServiceEndpointMethodInput
-		if err := json.Unmarshal(job.Payload, &input); err != nil {
-			return artifact, fmt.Errorf("decode replay service endpoint method authority: %w", err)
-		}
-		if _, err := assemblyline.DecodeApplicationServiceEndpointMethodResult(input, raw); err != nil {
-			return artifact, fmt.Errorf("decode replay service endpoint method: %w", err)
-		}
-		return artifact, nil
-	case assemblyline.WorkApplicationServiceEndpointRouteTemplate:
-		artifact.Kind = "application_service_endpoint_route_template"
-		var input assemblyline.ApplicationServiceEndpointRouteTemplateInput
-		if err := json.Unmarshal(job.Payload, &input); err != nil {
-			return artifact, fmt.Errorf("decode replay service endpoint route authority: %w", err)
-		}
-		if _, err := assemblyline.DecodeApplicationServiceEndpointRouteTemplateResult(input, raw); err != nil {
-			return artifact, fmt.Errorf("decode replay service endpoint route: %w", err)
-		}
-		return artifact, nil
-	case assemblyline.WorkApplicationServiceEndpointRequestMedia:
-		artifact.Kind = "application_service_endpoint_request_media"
-		var input assemblyline.ApplicationServiceEndpointRequestMediaInput
-		if err := json.Unmarshal(job.Payload, &input); err != nil {
-			return artifact, fmt.Errorf("decode replay service endpoint request-media authority: %w", err)
-		}
-		if _, err := assemblyline.DecodeApplicationServiceEndpointRequestMediaResult(input, raw); err != nil {
-			return artifact, fmt.Errorf("decode replay service endpoint request media: %w", err)
-		}
-		return artifact, nil
-	case assemblyline.WorkApplicationServiceEndpointResponseMedia:
-		artifact.Kind = "application_service_endpoint_response_media"
-		var input assemblyline.ApplicationServiceEndpointResponseMediaInput
-		if err := json.Unmarshal(job.Payload, &input); err != nil {
-			return artifact, fmt.Errorf("decode replay service endpoint response-media authority: %w", err)
-		}
-		if _, err := assemblyline.DecodeApplicationServiceEndpointResponseMediaResult(input, raw); err != nil {
-			return artifact, fmt.Errorf("decode replay service endpoint response media: %w", err)
-		}
-		return artifact, nil
-	case assemblyline.WorkApplicationServiceEndpointSuccessStatus:
-		artifact.Kind = "application_service_endpoint_success_status"
-		var input assemblyline.ApplicationServiceEndpointSuccessStatusInput
-		if err := json.Unmarshal(job.Payload, &input); err != nil {
-			return artifact, fmt.Errorf("decode replay service endpoint success-status authority: %w", err)
-		}
-		if _, err := assemblyline.DecodeApplicationServiceEndpointSuccessStatusResult(input, raw); err != nil {
-			return artifact, fmt.Errorf("decode replay service endpoint success status: %w", err)
-		}
-		return artifact, nil
-	case assemblyline.WorkApplicationJobSpecification:
-		artifact.Kind = "application_job_specification"
-		if _, err := assemblyline.DecodeApplicationJobSpecificationResult(job, raw); err != nil {
-			return artifact, fmt.Errorf("decode replay application job specification: %w", err)
-		}
-		return artifact, nil
 	case assemblyline.WorkApplicationTargetTree:
 		artifact.Kind = "application_target_tree"
 		var input assemblyline.TargetTreeInput
@@ -274,6 +211,9 @@ func replayExactStationArtifact(
 			return artifact, fmt.Errorf("decode replay target tree: %w", err)
 		}
 		return artifact, nil
+	}
+	if semanticArtifact, handled, err := replayExactStationSemanticArtifact(job, raw, artifact); handled {
+		return semanticArtifact, err
 	}
 	return replayExactStationSourceArtifact(job, raw, artifact)
 }

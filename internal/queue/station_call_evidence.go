@@ -31,13 +31,9 @@ func llmEvidenceForStationCall(
 	if err := json.Unmarshal(receipt.GenerationJSON, &generation); err != nil {
 		return LLMCallEvidenceRecord{}, fmt.Errorf("decode durable station call receipt: %w", err)
 	}
-	var schema map[string]any
-	format := "text"
-	if string(gap.ResponseSchema) != "null" {
-		if err := json.Unmarshal(gap.ResponseSchema, &schema); err != nil {
-			return LLMCallEvidenceRecord{}, fmt.Errorf("decode station call response schema: %w", err)
-		}
-		format = "json"
+	if string(gap.ResponseSchema) != "null" ||
+		opening.Protocol != string(llm.ExactPreparedProtocolRawTextV2) {
+		return LLMCallEvidenceRecord{}, fmt.Errorf("LLM evidence rejects structured station output authority")
 	}
 	status := LLMEvidenceSucceeded
 	if receipt.Status != "succeeded" {
@@ -48,8 +44,8 @@ func llmEvidenceForStationCall(
 		WorkID: opening.GapID, WorkKind: gap.WorkKind, StationCallOpeningID: opening.ID,
 		RequestedModel: requestedModel, Model: opening.Model, Attempt: attempt,
 		SystemPrompt: gap.Prompt, UserPrompt: llm.MinimalGeneratePrompt,
-		ResponseFormat: format, ResponseSchema: schema,
-		ContextTokens: opening.ContextTokens, MaxOutputTokens: opening.MaxOutputTokens,
+		ResponseFormat: "text",
+		ContextTokens:  opening.ContextTokens, MaxOutputTokens: opening.MaxOutputTokens,
 		Response: generation.Content, Status: status, Error: receipt.Error, LatencyMS: latencyMS,
 	}, nil
 }

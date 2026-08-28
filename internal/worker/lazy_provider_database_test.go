@@ -48,8 +48,10 @@ func TestPostgresNamedGapResolvesLazyAbsentProviderAfterPersistence(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	portable, err := assemblyline.NewRepositorySearchTermJob(
-		assemblyline.RepositorySearchTermInput{UnresolvedConcept: "registered owner"},
+	portable, err := assemblyline.NewRepositorySearchAnchorCoverageJob(
+		assemblyline.RepositorySearchAnchorLeafInput{
+			UnresolvedConcept: "registered owner", AcceptedAnchors: []string{},
+		},
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -105,8 +107,10 @@ func TestPostgresExactContractRejectionOccursAfterPersistedGap(t *testing.T) {
 	if err != nil {
 		t.Fatalf("worker construction validated provider early: %v", err)
 	}
-	portable, err := assemblyline.NewRepositorySearchTermJob(
-		assemblyline.RepositorySearchTermInput{UnresolvedConcept: "registered owner"},
+	portable, err := assemblyline.NewRepositorySearchAnchorCoverageJob(
+		assemblyline.RepositorySearchAnchorLeafInput{
+			UnresolvedConcept: "registered owner", AcceptedAnchors: []string{},
+		},
 	)
 	if err != nil {
 		t.Fatal(err)

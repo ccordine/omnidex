@@ -1,7 +1,6 @@
 package assemblyline
 
 import (
-	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -19,11 +18,7 @@ func TestApplicationProjectStackConstraintIsOneOpaqueBoundedChoice(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	prompt, schema, err := RenderPortableJob(job)
-	if err != nil {
-		t.Fatal(err)
-	}
-	schemaJSON, err := json.Marshal(schema)
+	prompt, err := RenderPortableJob(job)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -31,7 +26,7 @@ func TestApplicationProjectStackConstraintIsOneOpaqueBoundedChoice(t *testing.T)
 		"STACK_CANDIDATE_1", "STACK_CANDIDATE_2", "UNCONSTRAINED", "UNSUPPORTED",
 		"Use TypeScript and React",
 	} {
-		if !strings.Contains(prompt, required) && !strings.Contains(string(schemaJSON), required) {
+		if !strings.Contains(prompt, required) {
 			t.Fatalf("portable stack constraint omitted %q", required)
 		}
 	}
@@ -47,6 +42,15 @@ func TestApplicationProjectStackConstraintIsOneOpaqueBoundedChoice(t *testing.T)
 		if err := decision.ValidateFor(input); err != nil {
 			t.Fatalf("decision %q: %v", selected, err)
 		}
+		decoded, err := DecodeApplicationProjectStackConstraintDecision(input, selected)
+		if err != nil || decoded != decision {
+			t.Fatalf("decoded=%+v want=%+v err=%v", decoded, decision, err)
+		}
+	}
+	if _, err := DecodeApplicationProjectStackConstraintDecision(
+		input, `{"candidate_id":"STACK_CANDIDATE_1"}`,
+	); err == nil {
+		t.Fatal("accepted JSON wrapper")
 	}
 }
 

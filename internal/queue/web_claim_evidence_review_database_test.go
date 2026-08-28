@@ -12,23 +12,26 @@ import (
 func TestPostgresWebClaimEvidenceReviewStationIsConsumedByExactGapAuthority(t *testing.T) {
 	pool := openIsolatedMigrationPool(t)
 	repository := New(pool)
-	if err := repository.EnsureSchema(t.Context(), loadMigrationBundleThroughPrefix(t, "096")); err != nil {
+	if err := repository.EnsureSchema(t.Context(), loadMigrationBundleThroughPrefix(t, "163")); err != nil {
 		t.Fatal(err)
 	}
 	claim := seedPreInlineExecutionMigrationClaim(t, t.Context(), pool, "review-station")
-	job, err := assemblyline.NewWebClaimEvidenceReviewJob(assemblyline.WebClaimEvidenceReviewInput{
-		ExactQuestion: "Which release is current?",
-		Paragraph: assemblyline.WebReviewParagraph{
-			ParagraphID: "P1", Text: "Version 2 is current.", EvidenceIDs: []string{"E31"},
-		},
-		Evidence: []assemblyline.WebReviewEvidence{{EvidenceID: "E31", Content: "Version 2 is current."}},
+	job, err := assemblyline.NewWebReviewClaimCoverageJob(assemblyline.WebReviewClaimLeafInput{
+		ExactQuestion:  "Which release is current?",
+		Context:        assemblyline.ObjectiveContext{},
+		ParagraphText:  "Version 2 is current.",
+		AcceptedClaims: []string{},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
+	const contextTokens = 8192
 	opening, err := repository.OpenStationGap(t.Context(), StationGapOpenRecord{
 		Authority: claim.Authority, Job: job, Station: station.WebClaimEvidenceReview,
-		ContextTokens: 8192, MaxOutputTokens: 8192,
+		ContextTokens: contextTokens,
+		MaxOutputTokens: portableStationTestMaxOutputTokens(
+			t, job, contextTokens,
+		),
 		OutputLimitMode: llm.ExactPreparedOutputLimitNatural,
 	})
 	if err != nil {
@@ -64,9 +67,13 @@ func TestPostgresWebSynthesisCorrectionStationIsConsumedByExactGapAuthority(t *t
 	if err != nil {
 		t.Fatal(err)
 	}
+	const contextTokens = 8192
 	opening, err := repository.OpenStationGap(t.Context(), StationGapOpenRecord{
 		Authority: claim.Authority, Job: job, Station: station.WebGroundedSynthesisCorrection,
-		ContextTokens: 8192, MaxOutputTokens: 8192,
+		ContextTokens: contextTokens,
+		MaxOutputTokens: portableStationTestMaxOutputTokens(
+			t, job, contextTokens,
+		),
 		OutputLimitMode: llm.ExactPreparedOutputLimitNatural,
 	})
 	if err != nil {

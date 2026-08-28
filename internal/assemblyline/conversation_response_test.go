@@ -15,18 +15,12 @@ func TestConversationResponseIsOneBoundedLeaf(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	prompt, schema, err := RenderPortableJob(job)
+	prompt, err := RenderPortableJob(job)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if job.Kind != WorkConversationResponse || !strings.Contains(prompt, exact) {
 		t.Fatalf("job=%#v prompt=%q", job, prompt)
-	}
-	assertExactObjectSchemaFields(t, schema, []string{"schema", "text"})
-	properties := schema["properties"].(map[string]any)
-	textSchema := properties["text"].(map[string]any)
-	if _, providerHostileBound := textSchema["maxLength"]; providerHostileBound {
-		t.Fatalf("conversation response schema contains a provider-hostile grammar repetition: %#v", textSchema)
 	}
 	assertExactJSONFields(t, reflect.TypeOf(input), []string{
 		"kind", "exact_instruction", "objective_context", "roleplay_identity", "roleplay_user_turn",
@@ -189,11 +183,14 @@ func TestConversationResponseRejectsUnsupportedKindAndInexactJSON(t *testing.T) 
 		t.Fatal("external answer bypassed grounded evidence workflow")
 	}
 	input := ConversationResponseInput{Kind: ObjectiveKindAnswer, ExactInstruction: "Hello"}
+	decision, err := DecodeConversationResponseDecision(input, "Hi there.")
+	if err != nil || decision.Text != "Hi there." || decision.Schema != ConversationResponseSchemaV1 {
+		t.Fatalf("raw response decision=%+v err=%v", decision, err)
+	}
 	for _, raw := range []string{
-		`{"schema":"omnidex.conversation-response.v1","text":"Hi","action":"reply"}`,
-		`{"schema":"omnidex.conversation-response.v1","text":"Hi","text":"Again"}`,
-		`{"Schema":"omnidex.conversation-response.v1","text":"Hi"}`,
-		`{"schema":"omnidex.conversation-response.v1","text":" Hi "}`,
+		`{"text":"Hi","action":"reply"}`,
+		`"Hi"`,
+		" Hi ",
 		strings.Repeat("x", maxPortableCandidateBytes+1),
 	} {
 		if _, err := DecodeConversationResponseDecision(input, raw); err == nil {

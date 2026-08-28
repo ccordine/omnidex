@@ -85,10 +85,10 @@ func TestLegacyCoderPreparedRequestsKeepExactTaskBytes(t *testing.T) {
 			}
 			zero := ExactPreparedTemperature(0)
 			wire, err := ExactPreparedRequestBytes(PreparedModel{
-				Protocol: ExactPreparedProtocolRawTextV1, BaseModel: expected.Model, ContextModel: expected.Model,
+				Protocol: ExactPreparedProtocolRawTextV2, BaseModel: expected.Model, ContextModel: expected.Model,
 				Prompt: "return one declaration", PromptHint: MinimalGeneratePrompt,
 				MaxOutputTokens: 8192, OutputLimitMode: ExactPreparedOutputLimitNatural,
-				ContextTokens: 8192, Temperature: &zero, RawTextStopSequence: ExactPreparedCodeStopV1,
+				ContextTokens: 8192, Temperature: &zero,
 				ProviderIdentityExpectation: &expected, ProviderObservationChallenge: challenge,
 			})
 			if err != nil {

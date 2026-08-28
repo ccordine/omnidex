@@ -53,7 +53,7 @@ func TestProviderIdentityObservationRejectsYearZero(t *testing.T) {
 
 func exactTimestampResponse(timestamp string) []byte {
 	return []byte(fmt.Sprintf(
-		`{"model":"model:test","created_at":%q,"response":"{}","done":true,`+
+		`{"model":"model:test","created_at":%q,"response":"semantic leaf","done":true,`+
 			`"done_reason":"stop","total_duration":100,"load_duration":10,`+
 			`"prompt_eval_count":12,"prompt_eval_duration":20,"eval_count":3,`+
 			`"eval_duration":30}`,

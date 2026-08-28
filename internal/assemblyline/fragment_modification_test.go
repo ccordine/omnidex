@@ -16,12 +16,12 @@ func TestGoFragmentModificationCarriesOnePathBlindDeclaration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	prompt, schema, err := RenderPortableJob(job)
+	prompt, err := RenderPortableJob(job)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if schema != nil || !strings.Contains(prompt, "CURRENT_DECLARATION") || !strings.Contains(prompt, "return two") {
-		t.Fatalf("prompt=%q schema=%#v", prompt, schema)
+	if !strings.Contains(prompt, "CURRENT_DECLARATION") || !strings.Contains(prompt, "return two") {
+		t.Fatalf("prompt=%q", prompt)
 	}
 	if !strings.Contains(prompt, "SOURCE_DIALECT:\nGo 1.24") {
 		t.Fatalf("prompt omits source dialect: %q", prompt)

@@ -32,14 +32,13 @@ var (
 )
 
 type ContextRelevanceJob struct {
-	Schema          string         `json:"schema"`
-	JobID           string         `json:"job_id"`
-	Station         station.ID     `json:"station"`
-	Model           string         `json:"model"`
-	Prompt          string         `json:"prompt"`
-	PromptHint      string         `json:"prompt_hint"`
-	ResponseSchema  map[string]any `json:"response_schema"`
-	MaxOutputTokens int            `json:"max_output_tokens"`
+	Schema          string     `json:"schema"`
+	JobID           string     `json:"job_id"`
+	Station         station.ID `json:"station"`
+	Model           string     `json:"model"`
+	Prompt          string     `json:"prompt"`
+	PromptHint      string     `json:"prompt_hint"`
+	MaxOutputTokens int        `json:"max_output_tokens"`
 }
 
 type ContextRelevanceSubmission struct {
@@ -51,13 +50,13 @@ type ContextRelevanceSubmission struct {
 }
 
 type contextRelevanceOutcome struct {
-	decision assemblyline.ContextRelevanceDecision
+	decision assemblyline.ContextRelevanceSelectionDecision
 	err      error
 }
 
 type contextRelevanceRequest struct {
 	packet    ContextRelevanceJob
-	input     assemblyline.ContextRelevanceInput
+	input     assemblyline.ContextRelevanceSelectionInput
 	session   *ContextRelevanceSession
 	result    chan contextRelevanceOutcome
 	delivered bool
@@ -98,43 +97,43 @@ func (broker *ContextRelevanceBroker) Connect() (*ContextRelevanceSession, error
 func (broker *ContextRelevanceBroker) ExecuteContextRelevance(
 	ctx context.Context,
 	model string,
-	input assemblyline.ContextRelevanceInput,
-) (assemblyline.ContextRelevanceDecision, error) {
+	input assemblyline.ContextRelevanceSelectionInput,
+) (assemblyline.ContextRelevanceSelectionDecision, error) {
 	if ctx == nil {
-		return assemblyline.ContextRelevanceDecision{}, fmt.Errorf("browser context relevance requires a context")
+		return assemblyline.ContextRelevanceSelectionDecision{}, fmt.Errorf("browser context relevance requires a context")
 	}
 	if err := ctx.Err(); err != nil {
-		return assemblyline.ContextRelevanceDecision{}, err
+		return assemblyline.ContextRelevanceSelectionDecision{}, err
 	}
 	if err := validateBrowserModel(model); err != nil {
-		return assemblyline.ContextRelevanceDecision{}, err
+		return assemblyline.ContextRelevanceSelectionDecision{}, err
 	}
-	job, err := assemblyline.NewContextRelevanceJob(input)
+	job, err := assemblyline.NewContextRelevanceSelectionJob(input)
 	if err != nil {
-		return assemblyline.ContextRelevanceDecision{}, err
+		return assemblyline.ContextRelevanceSelectionDecision{}, err
 	}
-	prompt, responseSchema, err := assemblyline.RenderPortableJob(job)
+	prompt, err := assemblyline.RenderPortableJob(job)
 	if err != nil {
-		return assemblyline.ContextRelevanceDecision{}, err
+		return assemblyline.ContextRelevanceSelectionDecision{}, err
 	}
 	jobID, err := newContextRelevanceJobID()
 	if err != nil {
-		return assemblyline.ContextRelevanceDecision{}, err
+		return assemblyline.ContextRelevanceSelectionDecision{}, err
 	}
 	request := &contextRelevanceRequest{
 		packet: ContextRelevanceJob{
 			Schema: ContextRelevanceJobSchemaV1, JobID: jobID,
 			Station: station.ContextRelevance, Model: model,
 			Prompt: prompt, PromptHint: llm.MinimalGeneratePrompt,
-			ResponseSchema: responseSchema, MaxOutputTokens: ContextRelevanceMaxOutputTokens,
+			MaxOutputTokens: ContextRelevanceMaxOutputTokens,
 		},
-		input: cloneContextRelevanceInput(input), result: make(chan contextRelevanceOutcome, 1),
+		input: cloneContextRelevanceSelectionInput(input), result: make(chan contextRelevanceOutcome, 1),
 	}
 
 	broker.mu.Lock()
 	if broker.active == nil {
 		broker.mu.Unlock()
-		return assemblyline.ContextRelevanceDecision{}, ErrNoBrowserWorker
+		return assemblyline.ContextRelevanceSelectionDecision{}, ErrNoBrowserWorker
 	}
 	request.session = broker.active
 	broker.pending[jobID] = request
@@ -144,13 +143,13 @@ func (broker *ContextRelevanceBroker) ExecuteContextRelevance(
 	select {
 	case broker.jobs <- request:
 	case <-ctx.Done():
-		return assemblyline.ContextRelevanceDecision{}, ctx.Err()
+		return assemblyline.ContextRelevanceSelectionDecision{}, ctx.Err()
 	}
 	select {
 	case outcome := <-request.result:
 		return outcome.decision, outcome.err
 	case <-ctx.Done():
-		return assemblyline.ContextRelevanceDecision{}, ctx.Err()
+		return assemblyline.ContextRelevanceSelectionDecision{}, ctx.Err()
 	}
 }
 
@@ -190,9 +189,9 @@ func (session *ContextRelevanceSession) Submit(submission ContextRelevanceSubmis
 		return ErrUnknownBrowserJob
 	}
 	validationErr := validateContextRelevanceSubmission(submission, request.packet)
-	var decision assemblyline.ContextRelevanceDecision
+	var decision assemblyline.ContextRelevanceSelectionDecision
 	if validationErr == nil && submission.Error == "" {
-		decision, validationErr = assemblyline.DecodeContextRelevanceDecision(
+		decision, validationErr = assemblyline.DecodeContextRelevanceSelectionDecision(
 			request.input, submission.RawResult,
 		)
 	}
@@ -270,13 +269,16 @@ func validateContextRelevanceSubmission(
 	return nil
 }
 
-func cloneContextRelevanceInput(
-	input assemblyline.ContextRelevanceInput,
-) assemblyline.ContextRelevanceInput {
-	input.RetrievalConcepts = append([]string(nil), input.RetrievalConcepts...)
-	input.CandidateAuthorities = append(
-		[]assemblyline.ContextCandidateAuthority(nil), input.CandidateAuthorities...,
+func cloneContextRelevanceSelectionInput(
+	input assemblyline.ContextRelevanceSelectionInput,
+) assemblyline.ContextRelevanceSelectionInput {
+	input.Authority.RetrievalConcepts = append(
+		[]string(nil), input.Authority.RetrievalConcepts...,
 	)
+	input.Authority.CandidateAuthorities = append(
+		[]assemblyline.ContextCandidateAuthority(nil), input.Authority.CandidateAuthorities...,
+	)
+	input.AcceptedCandidateIDs = append([]string{}, input.AcceptedCandidateIDs...)
 	return input
 }
 

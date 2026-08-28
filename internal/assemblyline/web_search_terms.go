@@ -20,10 +20,6 @@ type WebSearchTermsDecision struct {
 	Terms  []string `json:"terms"`
 }
 
-func NewWebSearchTermsJob(input WebSearchTermsInput) (PortableJob, error) {
-	return newValidatedPortableJob(WorkWebSearchTerms, input, input.validate)
-}
-
 func (input WebSearchTermsInput) validate() error {
 	if err := validateExactWebQuestion(input.ExactQuestion); err != nil {
 		return err
@@ -79,49 +75,4 @@ func (decision WebSearchTermsDecision) ValidateFor(input WebSearchTermsInput) er
 		seen[identity] = struct{}{}
 	}
 	return nil
-}
-
-func DecodeWebSearchTermsDecision(input WebSearchTermsInput, raw string) (WebSearchTermsDecision, error) {
-	decision, err := decodeWebStationDecision[WebSearchTermsDecision]("web search terms", raw)
-	if err != nil {
-		return WebSearchTermsDecision{}, err
-	}
-	if err := decision.ValidateFor(input); err != nil {
-		return WebSearchTermsDecision{}, err
-	}
-	return decision, nil
-}
-
-func BuildWebSearchTermsPrompt(input WebSearchTermsInput) (string, error) {
-	if err := input.validate(); err != nil {
-		return "", err
-	}
-	projection, err := marshalObjectiveContextInputForModel(input, input.Context)
-	if err != nil {
-		return "", fmt.Errorf("encode web search terms projection: %w", err)
-	}
-	return strings.Join([]string{
-		"Resolve one named web search-term uncertainty.",
-		"Return only bounded alternate query terms that do not repeat an attempted query.",
-		"WEB_SEARCH_TERM_GAP_JSON:\n" + string(projection),
-	}, "\n\n"), nil
-}
-
-func WebSearchTermsResponseSchema(input WebSearchTermsInput) (map[string]any, error) {
-	if err := input.validate(); err != nil {
-		return nil, err
-	}
-	return objectSchema(
-		[]string{"schema", "terms"},
-		map[string]any{
-			"schema": map[string]any{"type": "string", "const": WebSearchTermsSchemaV1},
-			"terms": map[string]any{
-				"type": "array", "minItems": 1, "maxItems": input.MaxTerms,
-				"uniqueItems": true,
-				"items": map[string]any{
-					"type": "string", "minLength": 1, "maxLength": input.MaxTermBytes,
-				},
-			},
-		},
-	), nil
 }

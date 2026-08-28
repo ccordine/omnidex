@@ -1,8 +1,8 @@
 package assemblyline
 
 import (
-	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -14,48 +14,35 @@ func BuildTargetTreePrompt(input TargetTreeInput) (string, error) {
 	if err := input.Validate(); err != nil {
 		return "", err
 	}
-	existing, err := json.Marshal(input.ExistingPaths)
+	currentTree, err := RenderTargetTree(input.ExistingPaths)
 	if err != nil {
-		return "", fmt.Errorf("encode target tree existing paths: %w", err)
+		return "", fmt.Errorf("render current managed workload tree: %w", err)
 	}
-	reusable, err := json.Marshal(input.ReusablePaths)
+	reservedTree, err := RenderTargetTree(input.ReservedPaths)
 	if err != nil {
-		return "", fmt.Errorf("encode target tree reusable paths: %w", err)
-	}
-	reserved, err := json.Marshal(input.ReservedPaths)
-	if err != nil {
-		return "", fmt.Errorf("encode target tree reserved paths: %w", err)
-	}
-	constraints, err := json.Marshal(input.Constraints)
-	if err != nil {
-		return "", fmt.Errorf("encode target tree constraints: %w", err)
-	}
-	directories, err := json.Marshal(input.ExistingDirs)
-	if err != nil {
-		return "", fmt.Errorf("encode target tree existing directories: %w", err)
+		return "", fmt.Errorf("render code-reserved tree: %w", err)
 	}
 	sections := []string{
-		"Return the normalized relative file paths needed to solve the accepted objective.",
-		"Return paths only. Every returned path must be relative to the workspace root and must not start with a slash.",
-		"CODE_SELECTED_PATH_CONSTRAINTS_JSON:\n" + string(constraints),
-		"Every returned path and the complete path set must satisfy CODE_SELECTED_TECHNICAL_CONTEXT exactly.",
-		"ACCEPTED_OBJECTIVE:\n" + input.Objective,
+		"Determine the complete expected managed workload file tree for all accepted goals under the code-selected technical context.",
+		"Return exactly one raw tree and nothing else. The response is the complete expected workload tree, not a delta.",
+		"RAW_TREE_GRAMMAR:\nROOT\n  D <single basename>\n    F <single basename>\n  F <single basename>",
+		"ROOT must be the exact first line. Every other line uses exactly two spaces per depth followed by D or F, one space, and one basename. A basename never contains a slash or backslash. Every D node contains at least one child and ultimately one F node. An F node has no children.",
+		"Do not return JSON, Markdown, code fences, a flat path list, prose, artifact metadata, filesystem operations, file contents, source, declarations, commands, ownership, dependencies, or completion state.",
+		"CODE_SELECTED_FILE_COUNT:\n" + strconv.Itoa(input.Constraints.ExactPathCount),
+		"CODE_SELECTED_ROOT_FILES_ONLY:\n" + strconv.FormatBool(input.Constraints.RootFilesOnly),
+		"The response contains exactly CODE_SELECTED_FILE_COUNT F nodes. When CODE_SELECTED_ROOT_FILES_ONLY is true, it contains no D nodes. Every file leaf and the complete tree must satisfy CODE_SELECTED_TECHNICAL_CONTEXT exactly. A node present in CODE_RESERVED_TREE cannot appear in the response.",
+		"ACCEPTED_GOALS:\n" + input.Objective,
 		"CODE_SELECTED_TECHNICAL_CONTEXT:\n" + input.TechnicalContext,
+		"CURRENT_MANAGED_WORKLOAD_TREE:\n" + currentTree,
+		"CODE_RESERVED_TREE:\n" + reservedTree,
 	}
-	sections = append(sections,
-		"Never return a path listed in FORBIDDEN_OUTPUT_PATHS_JSON, including a path also listed as existing or reusable.",
-		"FORBIDDEN_OUTPUT_PATHS_JSON:\n"+string(reserved),
-		"Existing workspace paths may be returned when they need changes; omitted existing paths remain untouched.",
-		"Reusable accepted paths may be returned when this objective shares them.",
-		"EXISTING_WORKSPACE_PATHS_JSON:\n"+string(existing),
-		"REUSABLE_ACCEPTED_PATHS_JSON:\n"+string(reusable),
-		"EXISTING_WORKSPACE_DIRECTORIES_JSON:\n"+string(directories),
-	)
 	if correction := input.Correction; correction != nil {
+		if correction.CandidateTree != "" {
+			sections = append(sections, "CURRENT_SAFE_TREE_CANDIDATE:\n"+correction.CandidateTree)
+		}
 		sections = append(sections,
-			"CURRENT_TARGET_TREE_CANDIDATE_JSON:\n"+correction.CandidateJSON,
 			"VALIDATION_FAILURE:\n"+correction.Failure,
-			"Return one complete replacement target-tree declaration that resolves the validation failure.",
+			"Return one complete replacement raw tree that resolves this exact validation failure.",
 		)
 	}
 	prompt := strings.Join(sections, "\n\n")
@@ -65,45 +52,22 @@ func BuildTargetTreePrompt(input TargetTreeInput) (string, error) {
 	return prompt, nil
 }
 
-func TargetTreeResponseSchema(input TargetTreeInput) (map[string]any, error) {
-	if err := input.Validate(); err != nil {
-		return nil, err
-	}
-	items := map[string]any{
-		"type": "string", "minLength": 1, "maxLength": maxTargetTreePathBytes,
-	}
-	if input.Constraints.RootFilesOnly {
-		// Ollama 0.24.0's schema converter selects pattern instead of
-		// maxLength when both are present. Embed the hard length bound in
-		// the pattern so constrained decoding cannot exhaust the context.
-		items["pattern"] = fmt.Sprintf(`^[^/]{1,%d}$`, maxTargetTreePathBytes)
-	}
-	return objectSchema(
-		[]string{"schema", "paths"},
-		map[string]any{
-			"schema": map[string]any{"type": "string", "const": TargetTreeCandidateSchemaV1},
-			"paths": map[string]any{
-				"type": "array", "minItems": input.Constraints.ExactPathCount,
-				"maxItems": input.Constraints.ExactPathCount, "items": items,
-			},
-		},
-	), nil
-}
-
 func DecodeTargetTreeCandidate(input TargetTreeInput, raw string) (TargetTree, error) {
 	var zero TargetTree
 	if err := input.Validate(); err != nil {
 		return zero, err
 	}
-	if len(raw) > maxPortableCandidateBytes {
-		return zero, fmt.Errorf("target tree candidate exceeds %d bytes", maxPortableCandidateBytes)
-	}
-	var candidate TargetTreeCandidate
-	if err := decodePortablePayload([]byte(raw), &candidate); err != nil {
-		return zero, fmt.Errorf("decode target tree candidate: %w", err)
-	}
-	target, err := candidate.ValidateFor(input)
+	target, err := ParseTargetTree(raw)
 	if err != nil {
+		return zero, fmt.Errorf("decode raw target tree: %w", err)
+	}
+	if err := ValidateTargetTreeConstraints(input.Constraints, target); err != nil {
+		return zero, err
+	}
+	if err := ValidateTargetTreeExistingDirectories(input.ExistingDirs, target); err != nil {
+		return zero, err
+	}
+	if err := ValidateTargetTreeReservedPaths(input.ReservedPaths, target); err != nil {
 		return zero, err
 	}
 	return target, nil

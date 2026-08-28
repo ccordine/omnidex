@@ -23,9 +23,12 @@ func TestGatherRelevantEvidenceUsesTermsCodeOwnedAcquisitionAndIDOnlyRelevance(t
 			relevant.ID:   relevantDocument,
 		},
 	}
-	terms := &recordingTermsStation{decision: SearchTermsDecision{Terms: []string{"Mars orbital period"}}}
+	terms := &recordingTermsStation{decision: SearchTermsDecision{
+		Terms: []string{"Mars orbital period"}, SemanticCalls: 3,
+	}}
 	relevance := &recordingRelevanceStation{decision: RelevanceDecision{
 		Outcome: RelevanceSelected, CandidateIDs: []websearch.CandidateID{relevant.ID},
+		SemanticCalls: 2,
 	}}
 
 	result, err := GatherRelevantEvidence(
@@ -41,10 +44,11 @@ func TestGatherRelevantEvidenceUsesTermsCodeOwnedAcquisitionAndIDOnlyRelevance(t
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.SearchTermsCalls != 1 || result.RelevanceCalls != 1 ||
+	if result.SearchTermsCalls != 1 || result.RelevanceCalls != 1 || result.SemanticCalls != 5 ||
 		terms.calls != 1 || relevance.calls != 1 {
-		t.Fatalf("semantic calls terms=%d/%d relevance=%d/%d",
-			result.SearchTermsCalls, terms.calls, result.RelevanceCalls, relevance.calls)
+		t.Fatalf("semantic calls terms=%d/%d relevance=%d/%d raw=%d",
+			result.SearchTermsCalls, terms.calls, result.RelevanceCalls, relevance.calls,
+			result.SemanticCalls)
 	}
 	if !reflect.DeepEqual(acquisition.events, []string{"discover:Mars orbital period", "fetch:2"}) {
 		t.Fatalf("code-owned acquisition events=%v", acquisition.events)

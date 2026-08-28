@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/gryph/omnidex/internal/assemblyline"
 	"github.com/gryph/omnidex/internal/exactjson"
 	"github.com/gryph/omnidex/internal/llm"
 	"github.com/gryph/omnidex/internal/model"
@@ -46,14 +47,27 @@ func validateStationCallOpening(record StationCallOpenRecord) (StationCallOpenin
 			maxStationRequestResourceBytes,
 		)
 	}
+	expectedScope, err := stationGapScope(assemblyline.WorkKind(record.Gap.WorkKind))
+	if err != nil {
+		return StationCallOpening{}, err
+	}
 	if prepared.Prompt != record.Gap.Prompt || prepared.ContextTokens != record.Gap.ContextTokens ||
 		prepared.MaxOutputTokens != record.Gap.MaxOutputTokens ||
 		prepared.OutputLimitMode != record.Gap.OutputLimitMode ||
-		stationGapScope(prepared.ResponseSchema) != record.Gap.Scope {
+		prepared.Protocol != llm.ExactPreparedProtocolRawTextV2 ||
+		expectedScope != record.Gap.Scope {
 		return StationCallOpening{}, fmt.Errorf("station call prepared authority differs from its gap projection")
 	}
-	preparedSchema, err := canonicalStationGapSchema(prepared.ResponseSchema)
-	if err != nil || !bytes.Equal(preparedSchema, record.Gap.ResponseSchema) {
+	expectedStop, err := ExpectedStationCallStopSequence(
+		record.Gap, *prepared.ProviderIdentityExpectation,
+	)
+	if err != nil {
+		return StationCallOpening{}, err
+	}
+	if prepared.RawTextStopSequence != expectedStop {
+		return StationCallOpening{}, fmt.Errorf("station call stop sequence differs from its raw response transport")
+	}
+	if string(record.Gap.ResponseSchema) != "null" {
 		return StationCallOpening{}, fmt.Errorf("station call response schema differs from its gap projection")
 	}
 	expectation, err := exactjson.Canonical(*prepared.ProviderIdentityExpectation)
@@ -63,7 +77,7 @@ func validateStationCallOpening(record StationCallOpenRecord) (StationCallOpenin
 	if !bytes.Equal(record.Discovery.Expectation, expectation) {
 		return StationCallOpening{}, fmt.Errorf("station call expectation differs from its discovery receipt")
 	}
-	modelInput, err := llm.ExactPreparedModelInput(prepared.Prompt, prepared.PromptHint)
+	modelInput, err := llm.ExactPreparedRequestModelInput(prepared)
 	if err != nil {
 		return StationCallOpening{}, err
 	}
@@ -219,6 +233,19 @@ func ValidateStationCallNativeUsage(
 			result.Usage,
 		)
 	case llm.ExactPreparedOutputLimitNatural:
+		var expected llm.ProviderIdentityExpectation
+		if err := json.Unmarshal(opening.Expectation, &expected); err != nil {
+			return fmt.Errorf("decode station call natural-output expectation: %w", err)
+		}
+		settings, err := llm.ResolveExactPreparedTransport(expected)
+		if err != nil {
+			return err
+		}
+		if settings.NaturalOutputCeiling {
+			return llm.ValidateExactPreparedNaturalUsageWithOutputCeiling(
+				opening.ContextTokens, opening.MaxOutputTokens, result.Usage,
+			)
+		}
 		return llm.ValidateExactPreparedNaturalUsage(opening.ContextTokens, result.Usage)
 	default:
 		return fmt.Errorf("station call output-limit mode %q is not registered", opening.OutputLimitMode)

@@ -16,20 +16,12 @@ func TestRepositoryGroundedCorrectionReturnsOneChangedTextLeaf(t *testing.T) {
 	if job.Kind != WorkRepositoryGroundedCorrection {
 		t.Fatalf("kind=%q", job.Kind)
 	}
-	prompt, schema, err := RenderPortableJob(job)
+	prompt, err := RenderPortableJob(job)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(prompt, input.CurrentText) || !strings.Contains(prompt, input.Evidence[0].Text) {
 		t.Fatalf("correction prompt lost retained candidate or evidence: %q", prompt)
-	}
-	if schema["additionalProperties"] != false {
-		t.Fatalf("schema is not closed: %#v", schema)
-	}
-	properties := schema["properties"].(map[string]any)
-	textSchema := properties["text"].(map[string]any)
-	if _, finiteGrammarBound := textSchema["maxLength"]; finiteGrammarBound {
-		t.Fatalf("repository correction schema encodes the code-owned byte ceiling: %#v", textSchema)
 	}
 	assertExactJSONFields(t, reflect.TypeOf(input), []string{
 		"requirement_id", "exact_requirement", "objective_context",
@@ -38,6 +30,10 @@ func TestRepositoryGroundedCorrectionReturnsOneChangedTextLeaf(t *testing.T) {
 	decision := RepositoryGroundedCorrectionDecision{Text: "ScheduleDispatch starts the dispatch timer."}
 	if err := decision.ValidateFor(input); err != nil {
 		t.Fatal(err)
+	}
+	decoded, err := DecodeRepositoryGroundedCorrectionDecision(input, decision.Text)
+	if err != nil || decoded != decision {
+		t.Fatalf("decoded=%+v want=%+v err=%v", decoded, decision, err)
 	}
 	assertExactJSONFields(t, reflect.TypeOf(RepositoryGroundedCorrectionDecision{}), []string{"text"})
 }
@@ -69,10 +65,10 @@ func TestRepositoryGroundedCorrectionRejectsExtraOrOversizedLeaf(t *testing.T) {
 	if _, err := DecodeRepositoryGroundedCorrectionDecision(input, raw); err == nil {
 		t.Fatal("correction changed more than the text leaf")
 	}
-	if _, err := DecodeRepositoryGroundedCorrectionDecision(input, `{"text":"changed","text":"changed again"}`); err == nil {
+	if _, err := DecodeRepositoryGroundedCorrectionDecision(input, `"changed"`); err == nil {
 		t.Fatal("correction repeated the only mutable leaf")
 	}
-	if _, err := DecodeRepositoryGroundedCorrectionDecision(input, `{"text":"`+strings.Repeat("x", maxGroundedAnswerTextBytes+1)+`"}`); err == nil {
+	if _, err := DecodeRepositoryGroundedCorrectionDecision(input, strings.Repeat("x", maxGroundedAnswerTextBytes+1)); err == nil {
 		t.Fatal("oversized correction leaf accepted")
 	}
 }

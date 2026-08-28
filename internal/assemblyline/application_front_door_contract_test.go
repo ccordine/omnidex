@@ -42,13 +42,14 @@ func TestApplicationContextNeedStationReturnsQuestionsNotTools(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	job, err := NewApplicationContextNeedJob(ApplicationContextNeedInput{
-		UserRequest: request, Context: context,
-	})
+	leafInput := ApplicationContextNeedLeafInput{
+		UserRequest: request, Context: context, AcceptedQuestions: []string{},
+	}
+	job, err := NewApplicationContextNeedCoverageJob(leafInput)
 	if err != nil {
 		t.Fatal(err)
 	}
-	prompt, schema, err := RenderPortableJob(job)
+	prompt, err := RenderPortableJob(job)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -60,17 +61,30 @@ func TestApplicationContextNeedStationReturnsQuestionsNotTools(t *testing.T) {
 			t.Fatalf("context-need prompt exposes tool surface %q: %s", forbidden, prompt)
 		}
 	}
-	properties := schema["properties"].(map[string]any)
-	questions := properties["questions"].(map[string]any)
-	if questions["minItems"] != 0 || questions["maxItems"] != MaxApplicationEvidenceNeeds {
-		t.Fatalf("questions schema=%#v", questions)
-	}
-	decision, err := DecodeApplicationContextNeedDecision(
-		ApplicationContextNeedInput{UserRequest: request, Context: context},
-		`{"schema":"omnidex.application-context-needs.v1","questions":[]}`,
+	coverage, err := DecodeApplicationContextNeedCoverageLeaf(
+		leafInput, ApplicationNoUncoveredContextNeed,
 	)
+	if err != nil || coverage != ApplicationNoUncoveredContextNeed {
+		t.Fatalf("coverage=%q err=%v", coverage, err)
+	}
+	decision, err := AssembleApplicationContextNeedDecision(ApplicationContextNeedInput{
+		UserRequest: request, Context: context,
+	}, []string{})
 	if err != nil || len(decision.Questions) != 0 {
 		t.Fatalf("zero-need decision=%+v err=%v", decision, err)
+	}
+	questionJob, err := NewApplicationContextNeedQuestionJob(ApplicationContextNeedLeafInput{
+		UserRequest: request, Context: context, AcceptedQuestions: []string{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	questionPrompt, err := RenderPortableJob(questionJob)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Count(questionPrompt, request) != 1 {
+		t.Fatalf("question prompt=%q", questionPrompt)
 	}
 }
 

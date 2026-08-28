@@ -3,10 +3,9 @@ package llm
 import "fmt"
 
 const (
-	MinRoleplayCompletionContextTokens = 4096
-	MinInferenceContextTokens          = 8192
-	DefaultInferenceContextTokens      = 8192
-	MaxInferenceContextTokens          = 1048576
+	MinInferenceContextTokens     = 8192
+	DefaultInferenceContextTokens = 8192
+	MaxInferenceContextTokens     = 1048576
 )
 
 func ValidateInferenceContextTokens(value int) error {
@@ -21,14 +20,13 @@ func ValidateInferenceContextTokens(value int) error {
 	return nil
 }
 
-// ValidateRoleplayCompletionContextTokens is the narrower transport floor
-// available only to code-classified roleplay completion profiles. Ordinary
-// semantic and coding stations retain ValidateInferenceContextTokens's floor.
+// ValidateRoleplayCompletionContextTokens preserves roleplay-specific context
+// negotiation without weakening the exact transport's authoritative range.
 func ValidateRoleplayCompletionContextTokens(value int) error {
-	if value < MinRoleplayCompletionContextTokens || value > MaxInferenceContextTokens {
+	if value < MinInferenceContextTokens || value > MaxInferenceContextTokens {
 		return fmt.Errorf(
 			"roleplay completion context tokens must be between %d and %d, received %d",
-			MinRoleplayCompletionContextTokens,
+			MinInferenceContextTokens,
 			MaxInferenceContextTokens,
 			value,
 		)
@@ -36,9 +34,7 @@ func ValidateRoleplayCompletionContextTokens(value int) error {
 	return nil
 }
 
-// ValidateExactPreparedContextTokens validates the transport-wide range. A
-// caller that owns station policy must separately enforce the ordinary or
-// roleplay-completion floor before preparing a request.
+// ValidateExactPreparedContextTokens validates the sole transport-wide range.
 func ValidateExactPreparedContextTokens(value int) error {
-	return ValidateRoleplayCompletionContextTokens(value)
+	return ValidateInferenceContextTokens(value)
 }

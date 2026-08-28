@@ -183,7 +183,7 @@ func historicalBundledServiceEndpointJob(t *testing.T) assemblyline.PortableJob 
 		t.Fatal(err)
 	}
 	job := assemblyline.PortableJob{
-		Schema:  assemblyline.PortableJobSchemaV1,
+		Schema:  "omnidex.portable-job.v1",
 		Kind:    assemblyline.WorkKind("application_service_endpoint_contract"),
 		Payload: payload,
 	}

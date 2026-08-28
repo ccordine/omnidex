@@ -186,14 +186,3 @@ func validateOptionalContextText(label, value string, maximum int) error {
 	}
 	return nil
 }
-
-func decodeContextSieveDecision[T any](label, raw string) (T, error) {
-	var decision T
-	if len(raw) > maxPortableCandidateBytes {
-		return decision, fmt.Errorf("%s candidate exceeds %d bytes", label, maxPortableCandidateBytes)
-	}
-	if err := decodePortablePayload([]byte(raw), &decision); err != nil {
-		return decision, fmt.Errorf("decode %s decision: %w", label, err)
-	}
-	return decision, nil
-}

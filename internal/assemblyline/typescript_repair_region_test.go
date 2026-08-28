@@ -189,25 +189,28 @@ func TestTypeScriptRepairRegionProjectsOneBoundedRawReplacementSource(t *testing
 	if replacement != "  return (\n    <section>Ready</section>\n  );" {
 		t.Fatalf("replacement=%q", replacement)
 	}
-	normalized, err := ProjectTypeScriptFragmentRepairResponse(
-		region,
-		"\n  return (\r\n    <section>Ready</section>\r\n  );\n",
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if normalized != replacement {
-		t.Fatalf("normalized replacement=%q want=%q", normalized, replacement)
+	for name, wrapped := range map[string]string{
+		"outer newlines":     "\n" + replacement + "\n",
+		"CRLF normalization": "  return (\r\n    <section>Ready</section>\r\n  );",
+		"trailing spaces":    replacement + " ",
+		"Markdown fence":     "```tsx\n" + replacement + "\n```",
+		"JSON fence":         "```json\n{\"source\":\"replacement\"}\n```",
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := ProjectTypeScriptFragmentRepairResponse(region, wrapped); err == nil {
+				t.Fatal("repair projector discarded or normalized outer response bytes")
+			}
+		})
 	}
 }
 
-func TestTypeScriptCompilerRepairRegionProjectsOneExactFencedReplacement(t *testing.T) {
+func TestTypeScriptCompilerRepairRegionRequiresOneExactRawReplacement(t *testing.T) {
 	t.Parallel()
 	for _, fixture := range []struct {
-		name, language, replacement string
+		name, replacement string
 	}{
-		{name: "TypeScript callback", language: "typescript", replacement: "  actions.set(index, !values[index]);"},
-		{name: "TSX expression", language: "tsx", replacement: "      {String(value)}"},
+		{name: "TypeScript callback", replacement: "  actions.set(index, !values[index]);"},
+		{name: "TSX expression", replacement: "      {String(value)}"},
 	} {
 		t.Run(fixture.name, func(t *testing.T) {
 			region := TypeScriptFragmentRepairRegion{
@@ -215,13 +218,12 @@ func TestTypeScriptCompilerRepairRegionProjectsOneExactFencedReplacement(t *test
 				StartLine: 4, EndLine: 4, Source: "      {value}",
 				Bindings: typeScriptCompilerRepairTestBindings(),
 			}
-			raw := "```" + fixture.language + "\n" + fixture.replacement + "\n```"
-			projected, err := ProjectTypeScriptFragmentRepairResponse(region, raw)
+			projected, err := ProjectTypeScriptFragmentRepairResponse(region, fixture.replacement)
 			if err != nil {
 				t.Fatal(err)
 			}
 			if projected != fixture.replacement {
-				t.Fatalf("projected=%q want exact fenced bytes %q", projected, fixture.replacement)
+				t.Fatalf("projected=%q want exact response bytes %q", projected, fixture.replacement)
 			}
 		})
 	}
@@ -232,9 +234,9 @@ func TestTypeScriptCompilerRepairRegionProjectsOneExactFencedReplacement(t *test
 		Bindings: typeScriptCompilerRepairTestBindings(),
 	}
 	if _, err := ProjectTypeScriptFragmentRepairResponse(
-		region, "explanation\n```typescript\n  return String(value);\n```",
-	); err == nil || !strings.Contains(err.Error(), "mixes fenced source") {
-		t.Fatalf("mixed prose/fence response was accepted: %v", err)
+		region, "```typescript\n  return String(value);\n```",
+	); err == nil || !strings.Contains(err.Error(), "Markdown fence") {
+		t.Fatalf("fenced response was accepted: %v", err)
 	}
 }
 

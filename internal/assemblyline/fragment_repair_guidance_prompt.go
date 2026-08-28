@@ -19,6 +19,7 @@ func BuildTypeScriptRepairGuidancePrompt(
 	}
 	parts := []string{
 		request,
+		"Return only the raw imperative instruction with no JSON, quotes, label, Markdown wrapper, or commentary.",
 		"The instruction must be complete because only it and the exact mutable source will be available when it is applied. Name every required expression change and preservation constraint. Resolve only the observed failure.",
 		"Constrain the instruction to replacing only the exact mutable source. Preserve REQUIRED_DECLARATION_SIGNATURE exactly. Do not require imports, package/module declarations, sibling declarations, or any other change outside that source.",
 	}

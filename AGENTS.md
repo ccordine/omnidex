@@ -300,10 +300,14 @@ Whole-file generation, model-owned execution planning, model-owned repair routin
 path-bearing coding/repair/test prompts are forbidden regressions and require
 source-level absence tests. The sole exception is the typed target-tree declaration
 station defined in [docs/TARGET_TREE_PLANNING.md](docs/TARGET_TREE_PLANNING.md): it may
-see the code-built current tree and return only normalized relative file paths.
+see the code-built current managed tree and return only one complete raw hierarchy of
+directory and file basenames. Code parses that hierarchy and constructs the normalized
+relative file paths; the model never emits a path or a flat path list.
 It cannot return artifact metadata, filesystem actions, commands, source, declaration
 contracts, a work queue, or completion. Code derives parent-directory work and every
-create/reconcile transition. There is no file-content station. The selected stack
+create/reconcile/delete transition. Omission has no deletion authority unless code
+separately proves that exact current managed file is eligible. There is no file-content
+station. The selected stack
 compiler turns the accepted tree and code-owned coverage into bounded source-block
 responsibilities. Each source call remains path-blind and returns only one exact
 declaration or source node; code parses, validates, stitches, and verifies the complete
@@ -311,7 +315,7 @@ documents.
 
 Artifact support is adapter-based, never language-hard-coded into the tree or
 model prompt. Code selects the registered stack from authoritative project
-facts and supplies that exact stack only as technical tree context. A returned
+facts and supplies that exact stack only as technical tree context. A code-constructed
 path is then recognized, parsed, scoped, validated, repaired, and verified by
 its code-owned artifact adapter. New PHP, Java, NGINX, Dockerfile, Blade, CSS,
 JSON, YAML, or other support is added as a focused adapter with explicit

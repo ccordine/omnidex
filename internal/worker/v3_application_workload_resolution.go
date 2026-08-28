@@ -54,9 +54,139 @@ func resolveDirectCodingApplicationJobSpecification(
 	authority assemblyline.ApplicationJobSpecificationInput,
 ) (assemblyline.ApplicationJobSpecification, error) {
 	var zero assemblyline.ApplicationJobSpecification
-	job, err := assemblyline.NewApplicationJobSpecificationJob(authority)
+	objectiveJob, err := assemblyline.NewApplicationJobObjectiveJob(authority)
 	if err != nil {
 		return zero, err
 	}
-	return runProgressiveApplicationJobSpecificationDraft(runtime, plannerModel, subject, job, authority)
+	objective, err := runDirectCodingSemanticLeafCall(
+		runtime, plannerModel, subject+"_objective", objectiveJob, nil,
+		func(raw string) (string, error) {
+			return assemblyline.DecodeApplicationJobObjectiveLeaf(authority, raw)
+		},
+		func(value string) error {
+			return assemblyline.ValidatePathFreeModelContextWithProvenance(
+				"application job objective", runtime.PathProvenance, value,
+			)
+		},
+	)
+	if err != nil {
+		return zero, err
+	}
+
+	behaviors := make([]string, 0, assemblyline.MaxApplicationRequiredBehaviorLeaves)
+	for {
+		leafInput := assemblyline.ApplicationJobBehaviorLeafInput{
+			Authority: authority, Objective: objective,
+			AcceptedBehaviors: append([]string{}, behaviors...),
+		}
+		if len(behaviors) > 0 {
+			coverageJob, err := assemblyline.NewApplicationBehaviorCoverageJob(leafInput)
+			if err != nil {
+				return zero, err
+			}
+			coverage, err := runDirectCodingSemanticLeafCall(
+				runtime, plannerModel, subject+"_behavior_coverage", coverageJob, nil,
+				func(raw string) (string, error) {
+					return assemblyline.DecodeApplicationBehaviorCoverageLeaf(leafInput, raw)
+				},
+				func(string) error { return nil },
+			)
+			if err != nil {
+				return zero, err
+			}
+			if coverage == assemblyline.ApplicationNoUncoveredBehavior {
+				break
+			}
+		}
+		if len(behaviors) == assemblyline.MaxApplicationRequiredBehaviorLeaves {
+			return zero, fmt.Errorf(
+				"application behavior coverage remains incomplete at the code-owned %d-item bound",
+				assemblyline.MaxApplicationRequiredBehaviorLeaves,
+			)
+		}
+		behaviorJob, err := assemblyline.NewApplicationBehaviorJob(leafInput)
+		if err != nil {
+			return zero, err
+		}
+		behavior, err := runDirectCodingSemanticLeafCall(
+			runtime, plannerModel, subject+"_behavior", behaviorJob, nil,
+			func(raw string) (string, error) {
+				return assemblyline.DecodeApplicationBehaviorLeaf(leafInput, raw)
+			},
+			func(value string) error {
+				return assemblyline.ValidatePathFreeModelContextWithProvenance(
+					"application behavior", runtime.PathProvenance, value,
+				)
+			},
+		)
+		if err != nil {
+			return zero, err
+		}
+		behaviors = append(behaviors, behavior)
+	}
+
+	criteria := make([]string, 0, assemblyline.MaxApplicationAcceptanceCriterionLeaves)
+	for {
+		leafInput := assemblyline.ApplicationJobCriterionLeafInput{
+			Authority: authority, Objective: objective,
+			RequiredBehaviors: append([]string(nil), behaviors...),
+			AcceptedCriteria:  append([]string{}, criteria...),
+		}
+		if len(criteria) > 0 {
+			coverageJob, err := assemblyline.NewApplicationCriterionCoverageJob(leafInput)
+			if err != nil {
+				return zero, err
+			}
+			coverage, err := runDirectCodingSemanticLeafCall(
+				runtime, plannerModel, subject+"_criterion_coverage", coverageJob, nil,
+				func(raw string) (string, error) {
+					return assemblyline.DecodeApplicationCriterionCoverageLeaf(leafInput, raw)
+				},
+				func(string) error { return nil },
+			)
+			if err != nil {
+				return zero, err
+			}
+			if coverage == assemblyline.ApplicationNoUncoveredCriterion {
+				break
+			}
+		}
+		if len(criteria) == assemblyline.MaxApplicationAcceptanceCriterionLeaves {
+			return zero, fmt.Errorf(
+				"application criterion coverage remains incomplete at the code-owned %d-item bound",
+				assemblyline.MaxApplicationAcceptanceCriterionLeaves,
+			)
+		}
+		criterionJob, err := assemblyline.NewApplicationCriterionJob(leafInput)
+		if err != nil {
+			return zero, err
+		}
+		criterion, err := runDirectCodingSemanticLeafCall(
+			runtime, plannerModel, subject+"_criterion", criterionJob, nil,
+			func(raw string) (string, error) {
+				return assemblyline.DecodeApplicationCriterionLeaf(leafInput, raw)
+			},
+			func(value string) error {
+				return assemblyline.ValidatePathFreeModelContextWithProvenance(
+					"application acceptance criterion", runtime.PathProvenance, value,
+				)
+			},
+		)
+		if err != nil {
+			return zero, err
+		}
+		criteria = append(criteria, criterion)
+	}
+
+	specification := assemblyline.ApplicationJobSpecification{
+		Objective: objective, RequiredBehaviors: behaviors,
+		AcceptanceCriteria: criteria,
+	}
+	if err := assemblyline.ValidateApplicationJobSpecification(specification); err != nil {
+		return zero, err
+	}
+	if err := specification.ValidatePathFree(runtime.PathProvenance); err != nil {
+		return zero, err
+	}
+	return specification, nil
 }

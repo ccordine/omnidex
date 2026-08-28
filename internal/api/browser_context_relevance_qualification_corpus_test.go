@@ -53,7 +53,11 @@ func TestBrowserContextRelevanceQualificationCorpusIsValid(t *testing.T) {
 		}
 		seen[testCase.Name] = struct{}{}
 		input := buildBrowserContextQualificationInput(t, testCase)
-		if _, err := assemblyline.NewContextRelevanceJob(input); err != nil {
+		if _, err := assemblyline.NewContextRelevanceSelectionJob(
+			assemblyline.ContextRelevanceSelectionInput{
+				Authority: input, AcceptedCandidateIDs: []string{},
+			},
+		); err != nil {
 			t.Fatalf("case %q does not satisfy the production station contract: %v", testCase.Name, err)
 		}
 		expected := assemblyline.ContextRelevanceDecision{

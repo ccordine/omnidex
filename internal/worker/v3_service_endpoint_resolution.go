@@ -57,8 +57,11 @@ func resolveDirectCodingServiceEndpointPlan(
 		if err != nil {
 			return directCodingServiceEndpointPlan{}, err
 		}
-		requirement, err := runDirectCodingSemanticCall[assemblyline.ApplicationServiceEndpointRequirementResult](
+		requirement, err := runDirectCodingSemanticLeafCall(
 			runtime, requirementModel, "application_service_endpoint_requirement", requirementJob, identities,
+			func(raw string) (assemblyline.ApplicationServiceEndpointRequirementResult, error) {
+				return assemblyline.DecodeApplicationServiceEndpointRequirementResult(requirementInput, raw)
+			},
 			func(value assemblyline.ApplicationServiceEndpointRequirementResult) error {
 				return value.ValidateFor(requirementInput)
 			},

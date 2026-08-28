@@ -229,15 +229,20 @@ func TestRoleplayChannelUsesOnlySelectedCharacterScopedKnowledge(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	conversationPrompt, _, err := assemblyline.RenderPortableJob(conversationJob)
+	conversationPrompt, err := assemblyline.RenderPortableJob(conversationJob)
 	if err != nil {
 		t.Fatal(err)
 	}
-	canonJob, err := assemblyline.NewRoleplayCanonExtractionJob(canon.input)
+	canonJob, err := assemblyline.NewRoleplayCanonFactCoverageJob(
+		assemblyline.RoleplayCanonFactLeafInput{
+			Source: canon.input.Source, AntecedentUserTurn: canon.input.AntecedentUserTurn,
+			Context: canon.input.Context, AcceptedFacts: []string{},
+		},
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	canonPrompt, _, err := assemblyline.RenderPortableJob(canonJob)
+	canonPrompt, err := assemblyline.RenderPortableJob(canonJob)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -300,16 +305,19 @@ func TestRoleplaySlashCommandBytesAreAbsentFromRenderedNarrativeAndCanonPrompts(
 			ContributionKind:    roleplay.UserContributionCommand,
 			ContributionContext: visible,
 		}
-		canonJob, err := assemblyline.NewRoleplayCanonExtractionJob(assemblyline.RoleplayCanonExtractionInput{
-			Source: canonSource, AntecedentUserTurn: &canonAntecedent,
-			Context: assemblyline.ObjectiveContext{Capsules: []assemblyline.ObjectiveContextCapsule{}},
-		})
+		canonJob, err := assemblyline.NewRoleplayCanonFactCoverageJob(
+			assemblyline.RoleplayCanonFactLeafInput{
+				Source: canonSource, AntecedentUserTurn: &canonAntecedent,
+				Context:       assemblyline.ObjectiveContext{Capsules: []assemblyline.ObjectiveContextCapsule{}},
+				AcceptedFacts: []string{},
+			},
+		)
 		if err != nil {
 			t.Fatal(err)
 		}
 		inputs = append(inputs, canonJob)
 		for _, job := range inputs {
-			prompt, _, err := assemblyline.RenderPortableJob(job)
+			prompt, err := assemblyline.RenderPortableJob(job)
 			if err != nil {
 				t.Fatal(err)
 			}

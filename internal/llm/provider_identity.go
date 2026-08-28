@@ -62,12 +62,7 @@ func (expected ProviderIdentityExpectation) Validate() error {
 	if !providerIdentityDigest.MatchString(expected.Digest) {
 		return fmt.Errorf("provider identity digest must be lowercase SHA-256")
 	}
-	contextErr := ValidateInferenceContextTokens(expected.NativeContextLimit)
-	if expected.TokenizerProfile == ExactPreparedTokenizerProfileRoleplayRaw ||
-		expected.TokenizerProfile == ExactPreparedTokenizerProfileRoleplaySemantic {
-		contextErr = ValidateRoleplayCompletionContextTokens(expected.NativeContextLimit)
-	}
-	if contextErr != nil {
+	if err := ValidateInferenceContextTokens(expected.NativeContextLimit); err != nil {
 		return fmt.Errorf("provider identity native context is outside registered bounds")
 	}
 	return nil

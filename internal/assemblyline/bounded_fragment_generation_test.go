@@ -27,12 +27,9 @@ func TestBoundedSourceFragmentGenerationRendersOnePathBlindDeclaration(t *testin
 			if err != nil {
 				t.Fatal(err)
 			}
-			prompt, schema, err := RenderPortableJob(job)
+			prompt, err := RenderPortableJob(job)
 			if err != nil {
 				t.Fatal(err)
-			}
-			if schema != nil {
-				t.Fatalf("fragment prompt requested schema=%#v", schema)
 			}
 			for _, exact := range []string{
 				testCase.signature, input.Behavior, input.Capabilities[0], input.PermittedSymbols[0],

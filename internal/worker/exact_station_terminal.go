@@ -75,6 +75,9 @@ func (s *Service) dispatchExactStationCall(
 			"own bounded exact station result: %w", ownershipErr,
 		)
 	}
+	if callErr == nil {
+		callErr = llm.ValidateExactPreparedGenerationForRequest(prepared, owned)
+	}
 	return s.persistExactStationCallResult(
 		ctx, authority, gap, call, requestedModel, owned, callErr,
 		time.Since(started).Milliseconds(),

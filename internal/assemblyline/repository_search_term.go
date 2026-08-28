@@ -22,10 +22,6 @@ type RepositorySearchTermDecision struct {
 	Anchors []string `json:"anchors"`
 }
 
-func NewRepositorySearchTermJob(input RepositorySearchTermInput) (PortableJob, error) {
-	return newValidatedPortableJob(WorkRepositorySearchTerm, input, input.validate)
-}
-
 func (input RepositorySearchTermInput) validate() error {
 	if strings.TrimSpace(input.UnresolvedConcept) == "" {
 		return fmt.Errorf("repository search unresolved concept is blank")
@@ -77,34 +73,6 @@ func (decision RepositorySearchTermDecision) ValidatePathFree(
 ) error {
 	return ValidatePathFreeModelContextWithProvenance(
 		"repository search decision", provenance, decision.Anchors...,
-	)
-}
-
-func BuildRepositorySearchTermPrompt(input RepositorySearchTermInput) (string, error) {
-	if err := input.validate(); err != nil {
-		return "", err
-	}
-	return strings.Join([]string{
-		"Form one to three concise lexical anchors for locating the existing declaration that could answer the unresolved concept.",
-		"Each anchor should be a likely declaration name, symbol fragment, domain noun, or short phrase that could occur in an existing declaration name or signature. Return the most discriminating anchor first.",
-		"UNRESOLVED_CONCEPT:\n" + input.UnresolvedConcept,
-	}, "\n\n"), nil
-}
-
-func RepositorySearchTermResponseSchema() map[string]any {
-	return objectSchema(
-		[]string{"schema", "anchors"},
-		map[string]any{
-			"schema": map[string]any{
-				"type": "string", "const": RepositorySearchTermSchemaV2,
-			},
-			"anchors": map[string]any{
-				"type": "array", "minItems": 1, "maxItems": maxRepositorySearchAnchors,
-				"items": map[string]any{
-					"type": "string", "minLength": 1, "maxLength": maxRepositorySearchTermBytes,
-				},
-			},
-		},
 	)
 }
 

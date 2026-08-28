@@ -70,7 +70,7 @@ function auditReading(value) { return value; }`,
 			var finalizedFailure error
 			runtime := typedWorkerRuntime{
 				Context: context.Background(), MaxAttempts: 1,
-				Execute: testPortableExecutor(func(_ string, _ string, _ string, _ map[string]any) (string, error) {
+				Execute: testPortableExecutor(func(_ string, _ string, _ string) (string, error) {
 					generationCalls++
 					return fixture.raw, nil
 				}),
@@ -136,7 +136,7 @@ func TestGenerateBlockCoreDoesNotExposeVerificationSourceToRepair(t *testing.T) 
 	calls := 0
 	runtime := typedWorkerRuntime{
 		Context: context.Background(), MaxAttempts: 1,
-		Execute: testPortableExecutor(func(_ string, _ string, _ string, _ map[string]any) (string, error) {
+		Execute: testPortableExecutor(func(_ string, _ string, _ string) (string, error) {
 			calls++
 			return `function verifyToken(input, dependencies) { return hiddenVerify(input); }`, nil
 		}),

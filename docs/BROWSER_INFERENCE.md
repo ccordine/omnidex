@@ -20,8 +20,8 @@ server-owned objective, state, retrieval, provenance, and station
           server-owned decode and validation
 ```
 
-The browser receives the existing `context_relevance` prompt, response schema,
-opaque job identity, exact configured model, and output limit. It receives no
+The browser receives the existing `context_relevance` prompt, code-owned raw
+response transport, opaque job identity, exact configured model, and output limit. It receives no
 tools, database authority, memory store, workflow, queue, objective state, or
 provenance fields. It cannot update authoritative state. The same server decoder
 that validates a server-provider result validates the browser result again.
@@ -62,8 +62,8 @@ station call. Only one browser session can register with the current broker.
 
 WebLLM seeds one exact empty `<think>` block when thinking is disabled. The
 browser adapter removes only that documented provider envelope before sending
-semantic bytes to the server. Non-empty reasoning, prose, malformed tags, and
-invalid JSON are not repaired or hidden; server validation rejects them.
+semantic bytes to the server. Non-empty reasoning, malformed tags, and invalid
+raw semantic leaves are not repaired or hidden; server validation rejects them.
 
 ## Qualification
 

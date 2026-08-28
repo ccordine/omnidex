@@ -21,28 +21,31 @@ func TestSemanticStationInputsRejectQualifiedPathsBeforeInference(t *testing.T) 
 		t.Fatal(err)
 	}
 	for name, build := range map[string]func() error{
-		"application intent": func() error {
-			_, err := NewApplicationIntentJob(ApplicationIntentInput{
+		"application product context": func() error {
+			_, err := NewApplicationProductContextJob(ApplicationProductContextInput{
 				UserRequest: qualified, Context: emptyContext,
 			})
 			return err
 		},
 		"application context need": func() error {
-			_, err := NewApplicationContextNeedJob(ApplicationContextNeedInput{
-				UserRequest: qualified, Context: existingContext,
+			_, err := NewApplicationContextNeedCoverageJob(ApplicationContextNeedLeafInput{
+				UserRequest: qualified, Context: existingContext, AcceptedQuestions: []string{},
 			})
 			return err
 		},
 		"repository search term": func() error {
-			_, err := NewRepositorySearchTermJob(RepositorySearchTermInput{
-				UnresolvedConcept: qualified,
+			_, err := NewRepositorySearchAnchorCoverageJob(RepositorySearchAnchorLeafInput{
+				UnresolvedConcept: qualified, AcceptedAnchors: []string{},
 			})
 			return err
 		},
 		"repository requirements": func() error {
-			_, err := NewRepositoryRequirementInterpretationJob(
-				RepositoryRequirementInterpretationInput{
-					UserRequest: qualified, Context: existingContext,
+			_, err := NewRepositoryRequirementCoverageJob(
+				RepositoryRequirementLeafInput{
+					Authority: RepositoryRequirementInterpretationInput{
+						UserRequest: qualified, Context: existingContext,
+					},
+					AcceptedRequirements: []string{},
 				},
 			)
 			return err

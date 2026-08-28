@@ -22,11 +22,6 @@ function jobFixture() {
     model,
     prompt: "Return only the relevant opaque candidate IDs.",
     prompt_hint: "Return only the requested output.",
-    response_schema: {
-      type: "object",
-      additionalProperties: false,
-      required: ["schema", "referenced_candidate_ids"],
-    },
     max_output_tokens: 256,
   };
 }
@@ -57,25 +52,25 @@ describe("browser context relevance protocol", () => {
     ]);
     expect(request.temperature).toBe(0);
     expect(request.max_tokens).toBe(256);
-    expect(request.response_format).toEqual({
-      type: "json_object",
-      schema: JSON.stringify(job.response_schema),
-    });
+    expect(request).not.toHaveProperty("response_format");
     expect(request).not.toHaveProperty("tools");
   });
 
   it("rejects station and configured-model mismatches", () => {
     expect(() => requireBrowserContextJob({ ...jobFixture(), station: "browser_context_relevance" }, model)).toThrow();
     expect(() => requireBrowserContextJob(jobFixture(), "different-model")).toThrow();
+    expect(() => requireBrowserContextJob({
+      ...jobFixture(), response_schema: { type: "object" },
+    }, model)).toThrow(/unknown field response_schema/);
   });
 
   it("returns only raw semantic bytes or one bounded failure", () => {
     const job = requireBrowserContextJob(jobFixture(), model);
-    expect(browserContextSuccess(job, '{"schema":"result"}')).toEqual({
+    expect(browserContextSuccess(job, "candidate_1")).toEqual({
       schema: browserContextResultSchema,
       job_id: job.job_id,
       model,
-      raw_result: '{"schema":"result"}',
+      raw_result: "candidate_1",
     });
     const failure = browserContextFailure(job, new Error("🔥".repeat(2_000)));
     expect(failure.raw_result).toBeUndefined();
@@ -83,7 +78,7 @@ describe("browser context relevance protocol", () => {
   });
 
   it("removes only WebLLM's exact empty thinking envelope", () => {
-    const result = `{"schema":"omnidex.context-relevance.v1","referenced_candidate_ids":[]}`;
+    const result = "candidate_1";
     expect(browserContextProviderResult(`<think>\n\n</think>\n\n${result}`)).toBe(result);
     expect(browserContextProviderResult(`<think>reasoning</think>${result}`)).toBe(
       `<think>reasoning</think>${result}`,

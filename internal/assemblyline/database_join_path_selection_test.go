@@ -18,14 +18,19 @@ func TestDatabaseJoinPathSelectionBindsOnlyOneCurrentOpaquePath(t *testing.T) {
 	if job.Kind != WorkDatabaseJoinPathSelection {
 		t.Fatalf("kind=%q", job.Kind)
 	}
+	_, err = RenderPortableJob(job)
+	if err != nil {
+		t.Fatalf("render raw join-path station: %v", err)
+	}
 	decision, err := DecodeDatabaseJoinPathSelectionDecision(input,
-		`{"schema":"omnidex.database-join-path-selection.v1","evidence_need_id":"need-join","path_id":"path_recipient"}`)
+		"path_recipient")
 	if err != nil || decision.PathID != "path_recipient" {
 		t.Fatalf("decision=%+v err=%v", decision, err)
 	}
 	for _, raw := range []string{
-		`{"schema":"omnidex.database-join-path-selection.v1","evidence_need_id":"need-join","path_id":"path_missing"}`,
-		`{"schema":"omnidex.database-join-path-selection.v1","evidence_need_id":"need-join","path_id":"path_sender","sql":"SELECT 1"}`,
+		"path_missing",
+		`{"path_id":"path_sender","sql":"SELECT 1"}`,
+		`"path_sender"`,
 	} {
 		if _, err := DecodeDatabaseJoinPathSelectionDecision(input, raw); err == nil {
 			t.Fatalf("accepted invalid selection: %s", raw)

@@ -1,7 +1,6 @@
 package assemblyline
 
 import (
-	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -21,17 +20,25 @@ func TestArtifactHandlingCanStateRequiredAbsenceWithoutOperationAuthority(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
-	schema, err := json.Marshal(ArtifactHandlingResponseSchema(input.Token))
+	job, err := NewArtifactHandlingJob(input)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(prompt, "must_be_absent") || !strings.Contains(string(schema), "must_be_absent") {
-		t.Fatalf("required-absence semantic leaf is missing: prompt=%q schema=%s", prompt, schema)
+	_, err = RenderPortableJob(job)
+	if err != nil {
+		t.Fatalf("render raw artifact station: %v", err)
+	}
+	if !strings.Contains(prompt, "must_be_absent") {
+		t.Fatalf("required-absence semantic leaf is missing: prompt=%q", prompt)
 	}
 	for _, forbidden := range []string{"create_file", "delete_file", "write_file", "rename_file", "filesystem operation enum"} {
-		if strings.Contains(prompt, forbidden) || strings.Contains(string(schema), forbidden) {
+		if strings.Contains(prompt, forbidden) {
 			t.Fatalf("artifact boundary exposed forbidden operation %q", forbidden)
 		}
+	}
+	decoded, err := DecodeArtifactHandlingDecision(input, string(ArtifactMustBeAbsent))
+	if err != nil || decoded != decision {
+		t.Fatalf("decoded=%+v want=%+v err=%v", decoded, decision, err)
 	}
 }
 
@@ -52,20 +59,18 @@ func TestArtifactHandlingCanStateUnresolvedAbsenceMembershipWithoutMutationAutho
 	if err != nil {
 		t.Fatal(err)
 	}
-	schema, err := json.Marshal(ArtifactHandlingResponseSchema(input.Token))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(prompt, string(ArtifactPossibleAbsenceCandidate)) ||
-		!strings.Contains(string(schema), string(ArtifactPossibleAbsenceCandidate)) {
-		t.Fatalf("possible absence truth is absent from prompt/schema: %s\n%s", prompt, schema)
+	if !strings.Contains(prompt, string(ArtifactPossibleAbsenceCandidate)) {
+		t.Fatalf("possible absence truth is absent from prompt: %s", prompt)
 	}
 	for _, forbidden := range []string{
 		"create_file", "delete_file", "write_file", "rename_file", "move_file",
 	} {
-		if strings.Contains(prompt+string(schema), forbidden) {
+		if strings.Contains(prompt, forbidden) {
 			t.Fatalf("truth leaf exposed mutation authority %q", forbidden)
 		}
+	}
+	if _, err := DecodeArtifactHandlingDecision(input, `{"handling":"possible_absence_candidate"}`); err == nil {
+		t.Fatal("accepted JSON wrapper")
 	}
 }
 

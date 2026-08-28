@@ -61,19 +61,27 @@ func BuildKnownArtifactTruthPrompt(input KnownArtifactTruthInput) (string, error
 	return strings.Join([]string{
 		"Classify only the explicit desired truth of the exact requirement.",
 		"Choose known_artifact_must_be_absent only when the quote explicitly requires one semantic artifact already established by repository authority, including all behavior it owns, to be absent. Choose one_plain_text_artifact_must_exist only when the complete quote is one cohesive objective that explicitly requires exactly one new unstructured plain-text document, supplies that document's complete literal or natural-language content, and requires no source code, configuration, structured data, software behavior, or other workspace change. Choose not_applicable for modification, advice, partial behavior removal, plural or ambiguous creation, source code, configuration, structured data, software behavior, an unspecified document body, or when neither exact truth is explicit.",
+		"Return exactly one raw registered truth value with no JSON, quotes, label, Markdown, or commentary.",
 		"EXACT_REQUIREMENT:\n" + input.RequirementQuote,
 	}, "\n\n"), nil
 }
 
-func KnownArtifactTruthResponseSchema() map[string]any {
-	return objectSchema(
-		[]string{"schema", "truth"},
-		map[string]any{
-			"schema": map[string]any{"type": "string", "const": KnownArtifactTruthSchemaV1},
-			"truth": enumSchema(
-				KnownArtifactMustBeAbsent, OnePlainTextArtifactMustExist,
-				KnownArtifactTruthNotApplicable,
-			),
-		},
-	)
+func DecodeKnownArtifactTruthDecision(
+	input KnownArtifactTruthInput,
+	raw string,
+) (KnownArtifactTruthDecision, error) {
+	if err := input.validate(); err != nil {
+		return KnownArtifactTruthDecision{}, err
+	}
+	leaf, err := decodeRawSemanticLeaf("known artifact truth", raw, 64, false)
+	if err != nil {
+		return KnownArtifactTruthDecision{}, err
+	}
+	decision := KnownArtifactTruthDecision{
+		Schema: KnownArtifactTruthSchemaV1, Truth: KnownArtifactTruth(leaf),
+	}
+	if err := decision.ValidateFor(input); err != nil {
+		return KnownArtifactTruthDecision{}, err
+	}
+	return decision, nil
 }

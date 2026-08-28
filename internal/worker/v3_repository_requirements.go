@@ -1,6 +1,10 @@
 package worker
 
-import "github.com/gryph/omnidex/internal/assemblyline"
+import (
+	"fmt"
+
+	"github.com/gryph/omnidex/internal/assemblyline"
+)
 
 func interpretRepositoryRequirements(
 	runtime typedWorkerRuntime,
@@ -12,20 +16,60 @@ func interpretRepositoryRequirements(
 	input := assemblyline.RepositoryRequirementInterpretationInput{
 		UserRequest: authority, Context: context,
 	}
-	job, err := assemblyline.NewRepositoryRequirementInterpretationJob(input)
-	if err != nil {
-		return nil, err
+	requirements := make([]string, 0, assemblyline.MaxRepositoryRequirementLeaves)
+	for {
+		leafInput := assemblyline.RepositoryRequirementLeafInput{
+			Authority:            input,
+			AcceptedRequirements: append([]string{}, requirements...),
+		}
+		if len(requirements) > 0 {
+			coverageJob, err := assemblyline.NewRepositoryRequirementCoverageJob(leafInput)
+			if err != nil {
+				return nil, err
+			}
+			coverage, err := runDirectCodingSemanticLeafCall(
+				runtime, modelName, "repository_requirement_coverage", coverageJob, identities,
+				func(raw string) (string, error) {
+					return assemblyline.DecodeRepositoryRequirementCoverageLeaf(leafInput, raw)
+				},
+				func(string) error { return nil },
+			)
+			if err != nil {
+				return nil, err
+			}
+			if coverage == assemblyline.RepositoryNoUncoveredRequirement {
+				break
+			}
+		}
+		if len(requirements) == assemblyline.MaxRepositoryRequirementLeaves {
+			return nil, fmt.Errorf(
+				"repository requirement coverage remains incomplete at the code-owned %d-item bound",
+				assemblyline.MaxRepositoryRequirementLeaves,
+			)
+		}
+		requirementJob, err := assemblyline.NewRepositoryRequirementJob(leafInput)
+		if err != nil {
+			return nil, err
+		}
+		requirement, err := runDirectCodingSemanticLeafCall(
+			runtime, modelName, "repository_requirement", requirementJob, identities,
+			func(raw string) (string, error) {
+				return assemblyline.DecodeRepositoryRequirementLeaf(leafInput, raw)
+			},
+			func(value string) error {
+				return assemblyline.ValidatePathFreeModelContextWithProvenance(
+					"repository requirement", runtime.PathProvenance, value,
+				)
+			},
+		)
+		if err != nil {
+			return nil, err
+		}
+		requirements = append(requirements, requirement)
 	}
-	oneCallRuntime := runtime
-	oneCallRuntime.MaxAttempts = 1
-	interpretation, err := runDirectCodingSemanticCall[assemblyline.RepositoryRequirementInterpretation](
-		oneCallRuntime, modelName, "repository_requirements", job, identities,
-		func(value assemblyline.RepositoryRequirementInterpretation) error {
-			return value.ValidateFor(input)
-		},
-	)
-	if err != nil {
-		return nil, err
+	interpretation := assemblyline.RepositoryRequirementInterpretation{
+		Schema:       assemblyline.RepositoryRequirementInterpretationSchemaV3,
+		Requirements: requirements,
 	}
 	return assemblyline.ResolveRepositoryRequirements(input, interpretation)
 }

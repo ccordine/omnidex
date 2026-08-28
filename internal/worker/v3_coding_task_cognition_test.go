@@ -245,6 +245,31 @@ func TestDirectCodingTaskCognitionQueuesAdapterBaselineAndTreeLeavesAfterSourceT
 	}
 }
 
+func TestDirectCodingTaskCognitionAcceptsCodeOwnedDeleteLeaf(t *testing.T) {
+	transition := assemblyline.TargetTreeTransition{
+		Kind: assemblyline.TargetTreeDelete,
+		Path: "src/obsolete.ts",
+	}
+	key, err := directCodingTreeTaskKey(transition)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if key != string(assemblyline.TargetTreeDelete)+"\x00src/obsolete.ts" {
+		t.Fatalf("key=%q", key)
+	}
+	title, criterion, err := directCodingTreeTaskDescription(transition)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if title != "Delete file src/obsolete.ts" ||
+		criterion != "The workspace does not contain file src/obsolete.ts." {
+		t.Fatalf("title=%q criterion=%q", title, criterion)
+	}
+	if parent := directCodingTreeParentDirectory(transition); parent != "" {
+		t.Fatalf("delete parent dependency=%q", parent)
+	}
+}
+
 type directCodingTaskCognitionTestStore struct {
 	ledger    *taskstate.Ledger
 	set       *workingset.Set

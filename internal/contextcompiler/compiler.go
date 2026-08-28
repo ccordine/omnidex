@@ -31,7 +31,12 @@ func Compile(
 		ExactInstruction: request.ExactInstruction,
 		Scope:            request.Scope,
 	}
-	if _, err := assemblyline.NewContextSearchTermsJob(termsInput); err != nil {
+	if _, err := assemblyline.NewContextSearchTermCoverageJob(
+		assemblyline.ContextSearchTermLeafInput{
+			ExactInstruction: termsInput.ExactInstruction, Scope: termsInput.Scope,
+			AcceptedTerms: []string{},
+		},
+	); err != nil {
 		return result, err
 	}
 	if request.Retrieval == nil {

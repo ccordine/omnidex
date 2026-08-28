@@ -38,19 +38,19 @@ func TestRepositoryReviewIdentityMustDifferFromAnswerAndCorrection(t *testing.T)
 	review := webIdentityFixture("review", strings.Repeat("b", 64))
 	correction := webIdentityFixture("correction", strings.Repeat("c", 64))
 	guard := &repositoryGroundingModelIdentityGuard{}
-	if err := guard.validate(assemblyline.PortableJob{Kind: assemblyline.WorkGroundedAnswer}, exactStationExecution{ProviderIdentity: answer}); err != nil {
+	if err := guard.validate(assemblyline.PortableJob{Kind: assemblyline.WorkGroundedAnswerText}, exactStationExecution{ProviderIdentity: answer}); err != nil {
 		t.Fatal(err)
 	}
-	if err := guard.validate(assemblyline.PortableJob{Kind: assemblyline.WorkRepositoryGroundedReview}, exactStationExecution{ProviderIdentity: answer}); err == nil {
+	if err := guard.validate(assemblyline.PortableJob{Kind: assemblyline.WorkRepositoryGroundedIssueDetail}, exactStationExecution{ProviderIdentity: answer}); err == nil {
 		t.Fatal("answer model reviewed its own answer")
 	}
-	if err := guard.validate(assemblyline.PortableJob{Kind: assemblyline.WorkRepositoryGroundedReview}, exactStationExecution{ProviderIdentity: review}); err != nil {
+	if err := guard.validate(assemblyline.PortableJob{Kind: assemblyline.WorkRepositoryGroundedIssueDetail}, exactStationExecution{ProviderIdentity: review}); err != nil {
 		t.Fatal(err)
 	}
 	if err := guard.validate(assemblyline.PortableJob{Kind: assemblyline.WorkRepositoryGroundedCorrection}, exactStationExecution{ProviderIdentity: correction}); err != nil {
 		t.Fatal(err)
 	}
-	if err := guard.validate(assemblyline.PortableJob{Kind: assemblyline.WorkRepositoryGroundedReview}, exactStationExecution{ProviderIdentity: correction}); err == nil {
+	if err := guard.validate(assemblyline.PortableJob{Kind: assemblyline.WorkRepositoryGroundedIssueKind}, exactStationExecution{ProviderIdentity: correction}); err == nil {
 		t.Fatal("correction model reviewed its own correction")
 	}
 }
@@ -60,13 +60,13 @@ func TestRepositoryReviewRejectsAliasForSameExactDigest(t *testing.T) {
 	guard := &repositoryGroundingModelIdentityGuard{}
 	digest := strings.Repeat("a", 64)
 	if err := guard.validate(
-		assemblyline.PortableJob{Kind: assemblyline.WorkGroundedAnswer},
+		assemblyline.PortableJob{Kind: assemblyline.WorkGroundedAnswerText},
 		exactStationExecution{ProviderIdentity: webIdentityFixture("answer-alias", digest)},
 	); err != nil {
 		t.Fatal(err)
 	}
 	if err := guard.validate(
-		assemblyline.PortableJob{Kind: assemblyline.WorkRepositoryGroundedReview},
+		assemblyline.PortableJob{Kind: assemblyline.WorkRepositoryGroundedIssueDetail},
 		exactStationExecution{ProviderIdentity: webIdentityFixture("review-alias", digest)},
 	); err == nil {
 		t.Fatal("different model route names resolved to the same exact provider identity")
@@ -77,14 +77,14 @@ func TestRepositoryCorrectionCannotAliasItsIndependentReviewer(t *testing.T) {
 	t.Parallel()
 	guard := &repositoryGroundingModelIdentityGuard{}
 	if err := guard.validate(
-		assemblyline.PortableJob{Kind: assemblyline.WorkGroundedAnswer},
+		assemblyline.PortableJob{Kind: assemblyline.WorkGroundedAnswerText},
 		exactStationExecution{ProviderIdentity: webIdentityFixture("answer", strings.Repeat("a", 64))},
 	); err != nil {
 		t.Fatal(err)
 	}
 	digest := strings.Repeat("b", 64)
 	if err := guard.validate(
-		assemblyline.PortableJob{Kind: assemblyline.WorkRepositoryGroundedReview},
+		assemblyline.PortableJob{Kind: assemblyline.WorkRepositoryGroundedIssueDetail},
 		exactStationExecution{ProviderIdentity: webIdentityFixture("review", digest)},
 	); err != nil {
 		t.Fatal(err)
@@ -102,7 +102,7 @@ func TestRepositoryReviewIdentityCannotRunBeforeGenerationProof(t *testing.T) {
 	t.Parallel()
 	guard := &repositoryGroundingModelIdentityGuard{}
 	err := guard.validate(
-		assemblyline.PortableJob{Kind: assemblyline.WorkRepositoryGroundedReview},
+		assemblyline.PortableJob{Kind: assemblyline.WorkRepositoryGroundedIssueDetail},
 		exactStationExecution{ProviderIdentity: webIdentityFixture("review", strings.Repeat("b", 64))},
 	)
 	if err == nil || !strings.Contains(err.Error(), "before repository answer generation") {
@@ -115,7 +115,7 @@ func TestRepositoryReviewValidationRetryRetainsIndependentIdentityGuard(t *testi
 	guard := &repositoryGroundingModelIdentityGuard{}
 	answerIdentity := webIdentityFixture("answer", strings.Repeat("a", 64))
 	if err := guard.validate(
-		assemblyline.PortableJob{Kind: assemblyline.WorkGroundedAnswer},
+		assemblyline.PortableJob{Kind: assemblyline.WorkGroundedAnswerText},
 		exactStationExecution{ProviderIdentity: answerIdentity},
 	); err != nil {
 		t.Fatal(err)
@@ -125,14 +125,18 @@ func TestRepositoryReviewValidationRetryRetainsIndependentIdentityGuard(t *testi
 		AnswerText: "DispatchOwner owns dispatch.", EvidenceIDs: []string{"R01"},
 		Evidence: []assemblyline.GroundedEvidenceCapsule{{ID: "R01", Text: "DispatchOwner owns dispatch."}},
 	}
-	reviewJob, err := assemblyline.NewRepositoryGroundedReviewJob(reviewInput)
+	reviewJob, err := assemblyline.NewRepositoryGroundedIssueDetailJob(reviewInput)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := assemblyline.NewRetainedResponseCorrectionJob(
-		reviewJob, "outcome is invalid",
-		`{"schema":"omnidex.repository-grounded-review.v1","outcome":"invalid","issue_kind":"","detail":""}`,
-	); err == nil || !strings.Contains(err.Error(), "exactly one code-owned mutable semantic field") {
-		t.Fatalf("multi-leaf repository review correction was accepted: %v", err)
+	retry, err := assemblyline.NewRetainedResponseCorrectionJob(
+		reviewJob, "detail is not one trimmed line", "Unsupported ownership claim.",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reviewIdentity := webIdentityFixture("review", strings.Repeat("b", 64))
+	if err := guard.validate(retry, exactStationExecution{ProviderIdentity: reviewIdentity}); err != nil {
+		t.Fatalf("raw review leaf retry lost independent identity guard: %v", err)
 	}
 }

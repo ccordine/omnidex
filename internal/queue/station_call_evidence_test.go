@@ -38,7 +38,8 @@ func TestStationCallEvidenceIsDerivedFromDurableCallAuthority(t *testing.T) {
 		t.Fatal(err)
 	}
 	if evidence.StationCallOpeningID != opening.ID || evidence.SystemPrompt != gap.Prompt ||
-		evidence.Response != result.Content || evidence.WorkID != opening.GapID {
+		evidence.Response != result.Content || evidence.WorkID != opening.GapID ||
+		evidence.ResponseFormat != "text" || evidence.ResponseSchema != nil {
 		t.Fatalf("derived evidence=%+v", evidence)
 	}
 }

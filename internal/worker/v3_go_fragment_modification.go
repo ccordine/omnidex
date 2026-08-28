@@ -47,7 +47,7 @@ func runDirectCodingGoFragmentModificationWorker(
 	if err := runtime.Context.Err(); err != nil {
 		return "", failDirectCodingGoModification(runtime, modelName, job.Subject, 0, err)
 	}
-	prompt, _, err := assemblyline.RenderPortableJob(baseJob)
+	prompt, err := assemblyline.RenderPortableJob(baseJob)
 	if err != nil {
 		return "", failDirectCodingGoModification(runtime, modelName, job.Subject, 0, err)
 	}

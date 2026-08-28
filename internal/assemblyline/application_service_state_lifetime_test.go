@@ -1,7 +1,6 @@
 package assemblyline
 
 import (
-	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -23,21 +22,16 @@ func TestApplicationServiceStateLifetimeIsOneTaskLocalMechanismBlindLeaf(t *test
 	if job.Kind != WorkApplicationServiceStateLifetime {
 		t.Fatalf("kind=%q", job.Kind)
 	}
-	prompt, schema, err := RenderPortableJob(job)
-	if err != nil {
-		t.Fatal(err)
-	}
-	schemaJSON, err := json.Marshal(schema)
+	prompt, err := RenderPortableJob(job)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, required := range []string{
-		ApplicationServiceStateLifetimeSchemaV1,
 		string(ApplicationServiceStateRequestLocalOnly),
 		string(ApplicationServiceStateCrossRequestAuthorityRequired),
 		input.RequirementQuote,
 	} {
-		if !strings.Contains(prompt, required) && !strings.Contains(string(schemaJSON), required) {
+		if !strings.Contains(prompt, required) {
 			t.Fatalf("service state lifetime envelope omitted %q", required)
 		}
 	}
@@ -58,8 +52,7 @@ func TestApplicationServiceStateLifetimeStrictlyDecodesRegisteredLeaf(t *testing
 		ApplicationServiceStateRequestLocalOnly,
 		ApplicationServiceStateCrossRequestAuthorityRequired,
 	} {
-		raw := `{"schema":"` + ApplicationServiceStateLifetimeSchemaV1 +
-			`","state_lifetime":"` + string(lifetime) + `"}`
+		raw := string(lifetime)
 		result, err := DecodeApplicationServiceStateLifetimeResult(input, raw)
 		if err != nil {
 			t.Fatalf("lifetime %q: %v", lifetime, err)
@@ -69,10 +62,9 @@ func TestApplicationServiceStateLifetimeStrictlyDecodesRegisteredLeaf(t *testing
 		}
 	}
 	for name, raw := range map[string]string{
-		"unknown": `{"schema":"` + ApplicationServiceStateLifetimeSchemaV1 +
-			`","state_lifetime":"durable"}`,
-		"extra": `{"schema":"` + ApplicationServiceStateLifetimeSchemaV1 +
-			`","state_lifetime":"request_local_only","mechanism":"database"}`,
+		"unknown":      "durable",
+		"JSON wrapper": `{"state_lifetime":"request_local_only"}`,
+		"quoted":       `"request_local_only"`,
 	} {
 		t.Run(name, func(t *testing.T) {
 			if _, err := DecodeApplicationServiceStateLifetimeResult(input, raw); err == nil {

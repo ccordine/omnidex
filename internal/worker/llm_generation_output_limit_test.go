@@ -4,12 +4,21 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gryph/omnidex/internal/assemblyline"
 	"github.com/gryph/omnidex/internal/llm"
 	"github.com/gryph/omnidex/internal/queue"
 )
 
 func TestPrepareExactStationCallCarriesNaturalOutputAndNativeThinkingAuthority(t *testing.T) {
 	t.Parallel()
+	job, err := assemblyline.NewFragmentCorrectionJob(assemblyline.FragmentCorrectionInput{
+		Language: "typescript", Signature: "function repair(): string",
+		CurrentDeclaration: "function repair(): string { return 'old'; }",
+		RepairGuidance:     "Return the repaired declaration.",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	contract, err := llmResponseContractForScope("portable_fragment_worker")
 	if err != nil {
 		t.Fatal(err)
@@ -17,11 +26,12 @@ func TestPrepareExactStationCallCarriesNaturalOutputAndNativeThinkingAuthority(t
 	gap := queue.StationGapOpening{
 		JobID: 3, Generation: 2, StepID: 7, StepAttempt: 1,
 		WorkerID: "worker-a", GapID: strings.Repeat("b", 64),
-		WorkID: strings.Repeat("b", 64), WorkKind: "fragment_correction",
-		RendererVersion:  "omnidex.render-portable-job.v3",
+		WorkID: job.ID, WorkKind: string(job.Kind),
+		RendererVersion:  assemblyline.PortableRendererV4,
 		ProjectionSHA256: strings.Repeat("c", 64),
 		Prompt:           "Repair the exact code-owned declaration.", ResponseSchema: []byte("null"),
-		ContextTokens: 32768, MaxOutputTokens: 32768,
+		ContextTokens:   32768,
+		MaxOutputTokens: portableWorkerTestMaxOutputTokens(t, job, 32768),
 		OutputLimitMode: llm.ExactPreparedOutputLimitNatural,
 	}
 	expected := llm.ProviderIdentityExpectation{
@@ -53,8 +63,14 @@ func TestPrepareExactStationCallCarriesNaturalOutputAndNativeThinkingAuthority(t
 	}
 }
 
-func TestPrepareExactStructuredStationKeepsSchemaWithoutAnOutputCutoff(t *testing.T) {
+func TestPrepareExactSemanticStationKeepsRawTransportWithFinitePredictionCeiling(t *testing.T) {
 	t.Parallel()
+	job, err := assemblyline.NewApplicationClassificationJob(
+		assemblyline.ApplicationClassificationInput{UserRequest: "Build a command-line report."},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
 	contract, err := llmResponseContractForScope("portable_semantic_worker")
 	if err != nil {
 		t.Fatal(err)
@@ -62,13 +78,14 @@ func TestPrepareExactStructuredStationKeepsSchemaWithoutAnOutputCutoff(t *testin
 	gap := queue.StationGapOpening{
 		JobID: 5, Generation: 1, StepID: 9, StepAttempt: 1,
 		WorkerID: "worker-b", GapID: strings.Repeat("d", 64),
-		WorkID: strings.Repeat("d", 64), WorkKind: "application_classification",
-		RendererVersion:  "omnidex.render-portable-job.v3",
+		WorkID: job.ID, WorkKind: string(job.Kind),
+		RendererVersion:  assemblyline.PortableRendererV4,
 		ProjectionSHA256: strings.Repeat("e", 64),
 		Prompt:           "Classify the requested delivery surface.",
-		ResponseSchema:   []byte(`{"additionalProperties":false,"properties":{"surface":{"type":"string"}},"required":["surface"],"type":"object"}`),
-		ContextTokens:    32768, MaxOutputTokens: 32768,
-		OutputLimitMode: llm.ExactPreparedOutputLimitNatural,
+		ResponseSchema:   []byte("null"),
+		ContextTokens:    32768,
+		MaxOutputTokens:  portableWorkerTestMaxOutputTokens(t, job, 32768),
+		OutputLimitMode:  llm.ExactPreparedOutputLimitNatural,
 	}
 	expected := llm.ProviderIdentityExpectation{
 		Backend: llm.ExactPreparedProviderBackend, BackendVersion: llm.ExactPreparedProviderVersion,
@@ -84,10 +101,10 @@ func TestPrepareExactStructuredStationKeepsSchemaWithoutAnOutputCutoff(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(wire), `"format":{`) ||
-		strings.Contains(string(wire), `"num_predict"`) ||
+	if strings.Contains(string(wire), `"format"`) ||
+		!strings.Contains(string(wire), `"num_predict":25`) ||
 		prepared.OutputLimitMode != llm.ExactPreparedOutputLimitNatural ||
-		prepared.MaxOutputTokens != prepared.ContextTokens {
-		t.Fatalf("structured natural request has wrong authority: prepared=%+v wire=%s", prepared, wire)
+		prepared.MaxOutputTokens != 25 {
+		t.Fatalf("raw semantic request has wrong authority: prepared=%+v wire=%s", prepared, wire)
 	}
 }

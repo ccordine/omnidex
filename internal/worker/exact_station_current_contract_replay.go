@@ -11,8 +11,8 @@ import (
 )
 
 // ReplayStationWithCurrentContract preserves the immutable portable job and
-// model-visible station prompt/schema from one historical opening while using
-// the checked-in transport contract. It refuses renderer drift and performs no
+// model-visible station prompt from one raw opening while using the checked-in
+// transport contract. It refuses renderer drift and performs no
 // queue, historical-job, or workspace writes.
 func ReplayStationWithCurrentContract(
 	ctx context.Context,
@@ -49,22 +49,19 @@ func replayCurrentPortableStation(
 	if err := ctx.Err(); err != nil {
 		return result, err
 	}
-	if err := rejectRetiredStationReplayJob(job); err != nil {
-		return result, err
-	}
 	gap, contract, err := exactConvergenceGap(point, job)
 	if err != nil {
 		return result, err
 	}
-	_, schema, err := assemblyline.RenderPortableJob(job)
+	_, err = assemblyline.RenderPortableJob(job)
 	if err != nil {
-		return result, fmt.Errorf("render current-contract station schema: %w", err)
+		return result, fmt.Errorf("render current-contract station transport: %w", err)
 	}
 	selection, err := providerSelectionForPortableJob(job, result.Model, gap.ContextTokens)
 	if err != nil {
 		return result, err
 	}
-	if err := validateExactStationStaticCall(gap.Prompt, schema, contract, selection); err != nil {
+	if err := validateExactStationStaticCall(gap.Prompt, contract, selection); err != nil {
 		return result, err
 	}
 	if err := client.RequireExactPreparedContract(); err != nil {

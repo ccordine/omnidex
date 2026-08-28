@@ -24,7 +24,7 @@ func TestApplicationProjectStackConstraintHasOneExactStationOwner(t *testing.T) 
 	assertProjectStackConstraintOwner(t, job)
 	correction, err := assemblyline.NewRetainedResponseCorrectionJob(
 		job, "candidate is unavailable",
-		`{"schema":"omnidex.application-project-stack-constraint.v1","candidate_id":"STACK_CANDIDATE_1"}`,
+		"STACK_CANDIDATE_1",
 	)
 	if err != nil {
 		t.Fatal(err)

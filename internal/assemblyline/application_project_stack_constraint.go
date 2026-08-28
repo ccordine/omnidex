@@ -130,26 +130,25 @@ func BuildApplicationProjectStackConstraintPrompt(
 	return strings.Join([]string{
 		"Determine which one registered technical format, if any, is explicitly required by the accepted application authority.",
 		"Return one opaque candidate ID when exactly that format is required. Return UNCONSTRAINED when no technical format is explicit. Return UNSUPPORTED when an explicit or contradictory technical constraint cannot be satisfied by exactly one candidate.",
+		"Return exactly that raw ID token and nothing else: no JSON, quotes, label, Markdown, or commentary.",
 		"ACCEPTED_APPLICATION_AUTHORITY:\n" + string(authority),
 		"REGISTERED_TECHNICAL_FORMATS:\n" + string(candidates),
 	}, "\n\n"), nil
 }
 
-func ApplicationProjectStackConstraintResponseSchema(
+func DecodeApplicationProjectStackConstraintDecision(
 	input ApplicationProjectStackConstraintInput,
-) map[string]any {
-	values := make([]string, 0, len(input.Candidates)+2)
-	for _, candidate := range input.Candidates {
-		values = append(values, candidate.CandidateID)
+	raw string,
+) (ApplicationProjectStackConstraintDecision, error) {
+	leaf, err := decodeRawSemanticLeaf("project stack candidate", raw, 64, false)
+	if err != nil {
+		return ApplicationProjectStackConstraintDecision{}, err
 	}
-	values = append(values, ApplicationProjectStackUnconstrained, ApplicationProjectStackUnsupported)
-	return objectSchema(
-		[]string{"schema", "candidate_id"},
-		map[string]any{
-			"schema": map[string]any{
-				"type": "string", "const": ApplicationProjectStackConstraintSchemaV1,
-			},
-			"candidate_id": map[string]any{"type": "string", "enum": values},
-		},
-	)
+	decision := ApplicationProjectStackConstraintDecision{
+		Schema: ApplicationProjectStackConstraintSchemaV1, CandidateID: leaf,
+	}
+	if err := decision.ValidateFor(input); err != nil {
+		return ApplicationProjectStackConstraintDecision{}, err
+	}
+	return decision, nil
 }
