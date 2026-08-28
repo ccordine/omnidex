@@ -141,7 +141,11 @@ func (sandbox *directCodingWorkspaceSandbox) invocation(
 		"--info-fd", fmt.Sprint(infoFD),
 		"--", command.Name,
 	)
-	arguments = append(arguments, command.Args...)
+	executionArgs := command.Args
+	if command.Name == "docker" {
+		executionArgs = v3DockerCLIArguments(command.Args)
+	}
+	arguments = append(arguments, executionArgs...)
 	if err := validateDirectCodingSandboxInvocation(arguments); err != nil {
 		return fail(err)
 	}

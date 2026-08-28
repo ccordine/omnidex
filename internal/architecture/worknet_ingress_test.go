@@ -55,10 +55,10 @@ func TestDockerRuntimeCanBuildInsideOneExplicitWorkspaceBoundary(t *testing.T) {
 		`APP_UID: ${HOST_UID:?HOST_UID must match the owner of HOST_WORKSPACE_PATH}`,
 		`APP_GID: ${HOST_GID:?HOST_GID must match the group of HOST_WORKSPACE_PATH}`,
 		`group_add:
-      - ${DOCKER_GID:?DOCKER_GID must match the numeric group owner of DOCKER_SOCKET_PATH}`,
+      - ${DOCKER_GID:?DOCKER_GID must match the numeric group owner of /var/run/docker.sock}`,
 		`DOCKER_HOST: unix:///var/run/docker.sock`,
 		"source: ${HOST_WORKSPACE_PATH:?HOST_WORKSPACE_PATH must be set to an absolute project root}\n        target: ${HOST_WORKSPACE_PATH:?HOST_WORKSPACE_PATH must be set to an absolute project root}",
-		"source: ${DOCKER_SOCKET_PATH:?DOCKER_SOCKET_PATH must name the default Docker Unix socket}\n        target: /var/run/docker.sock",
+		"source: /var/run/docker.sock\n        target: /var/run/docker.sock",
 	} {
 		if !strings.Contains(raw, required) {
 			t.Fatalf("core Docker execution boundary lacks %q", required)
@@ -124,7 +124,7 @@ func TestDockerRuntimeCanBuildInsideOneExplicitWorkspaceBoundary(t *testing.T) {
 		}
 		for _, required := range []string{
 			"DOCKER_CONTEXT=default", "HOST_UID=1000", "HOST_GID=1000",
-			"DOCKER_SOCKET_PATH=/var/run/docker.sock", "DOCKER_GID=",
+			"DOCKER_GID=",
 		} {
 			if !strings.Contains(string(environment), required) {
 				t.Fatalf("%s lacks default Docker identity authority %q", name, required)

@@ -1,12 +1,58 @@
 #!/usr/bin/env bash
 
 resolve_compose_cmd() {
-  [[ -n "${DOCKER_CONTEXT_NAME:-}" ]] || die "DOCKER_CONTEXT must be explicit and non-empty"
-  if command_exists docker && compose_docker version >/dev/null 2>&1; then
+  runtime_require_rootful_docker_context
+  command_exists docker || die "the Docker Compose plugin is required but was not found"
+  runtime_require_rootful_docker_daemon
+  if compose_docker version >/dev/null 2>&1; then
     printf '%s\n' "docker compose"
     return
   fi
   die "the Docker Compose plugin is required but was not found"
+}
+
+runtime_require_rootful_docker_context() {
+  [[ "${DOCKER_CONTEXT_NAME:-}" == "default" ]] ||
+    die "DOCKER_CONTEXT must be default; rootless Docker is unsupported"
+}
+
+runtime_reject_managed_docker_routing_keys() {
+  local file="$1" key
+  [[ -f "${file}" && ! -L "${file}" ]] || die "managed .env must be a regular file"
+  for key in \
+    DOCKER_SOCKET_PATH DOCKER_HOST DOCKER_CONFIG DOCKER_CERT_PATH \
+    DOCKER_TLS DOCKER_TLS_VERIFY BUILDKIT_HOST BUILDKIT_TLS_SERVER_NAME \
+    BUILDKIT_TLS_CACERT BUILDKIT_TLS_CERT BUILDKIT_TLS_KEY \
+    BUILDX_BUILDER BUILDX_CONFIG; do
+    if awk -v wanted="${key}" '
+      index($0, wanted "=") == 1 { found=1 }
+      END { exit found ? 0 : 1 }
+    ' "${file}"; then
+      die "managed .env must not define ${key}; Docker authority is invariant"
+    fi
+  done
+}
+
+runtime_rootful_docker() {
+  env -u DOCKER_HOST -u DOCKER_CONFIG -u DOCKER_CERT_PATH -u DOCKER_TLS \
+    -u DOCKER_TLS_VERIFY -u BUILDKIT_HOST -u BUILDKIT_TLS_SERVER_NAME \
+    -u BUILDKIT_TLS_CACERT -u BUILDKIT_TLS_CERT -u BUILDKIT_TLS_KEY \
+    -u BUILDX_BUILDER -u BUILDX_CONFIG DOCKER_CONTEXT=default docker "$@"
+}
+
+runtime_require_rootful_docker_daemon() {
+  runtime_require_rootful_docker_context
+  local endpoint security_options
+  endpoint="$(runtime_rootful_docker context inspect default --format '{{(index .Endpoints "docker").Host}}')" ||
+    die "Docker's default rootful context is unavailable"
+  [[ "${endpoint}" == "unix:///var/run/docker.sock" ]] ||
+    die "Docker's default context must resolve to unix:///var/run/docker.sock"
+  security_options="$(runtime_rootful_docker info --format '{{json .SecurityOptions}}')" ||
+    die "the default rootful Docker daemon is unavailable"
+  [[ "${security_options}" == \[*\] ]] ||
+    die "the default Docker daemon returned invalid security authority"
+  [[ "${security_options}" != *name=rootless* ]] ||
+    die "the default Docker daemon reported rootless execution authority"
 }
 
 runtime_validate_build_commit() {
@@ -54,16 +100,14 @@ validate_compose_identity() {
 }
 
 compose_docker() {
-  [[ -n "${DOCKER_CONTEXT_NAME:-}" ]] || die "DOCKER_CONTEXT must be explicit and non-empty"
-  validate_compose_identity "DOCKER_CONTEXT" "${DOCKER_CONTEXT_NAME}"
+  runtime_require_rootful_docker_context
   runtime_export_compose_identity
-  env "DOCKER_CONTEXT=${DOCKER_CONTEXT_NAME}" docker compose "$@"
+  runtime_rootful_docker compose "$@"
 }
 
 context_docker() {
-  [[ -n "${DOCKER_CONTEXT_NAME:-}" ]] || die "DOCKER_CONTEXT must be explicit and non-empty"
-  validate_compose_identity "DOCKER_CONTEXT" "${DOCKER_CONTEXT_NAME}"
-  env "DOCKER_CONTEXT=${DOCKER_CONTEXT_NAME}" docker "$@"
+  runtime_require_rootful_docker_context
+  runtime_rootful_docker "$@"
 }
 
 compose_command_array() {

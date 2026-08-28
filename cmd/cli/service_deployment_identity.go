@@ -12,6 +12,8 @@ import (
 )
 
 const dockerContextEnvironmentKey = "DOCKER_CONTEXT"
+const rootfulDockerContextName = "default"
+const rootfulDockerSocketURL = "unix:///var/run/docker.sock"
 const composeProjectEnvironmentKey = "COMPOSE_PROJECT_NAME"
 const hostUIDEnvironmentKey = "HOST_UID"
 const hostGIDEnvironmentKey = "HOST_GID"
@@ -35,6 +37,9 @@ func readServiceDeploymentIdentity(root string) (serviceDeploymentIdentity, erro
 	if err != nil {
 		return serviceDeploymentIdentity{}, fmt.Errorf("read service deployment identity from %s: %w", path, err)
 	}
+	if err := rejectManagedDockerRoutingEnvironment(values); err != nil {
+		return serviceDeploymentIdentity{}, err
+	}
 	contextName, found := values[dockerContextEnvironmentKey]
 	if !found {
 		return serviceDeploymentIdentity{}, fmt.Errorf("managed environment %s does not define %s", path, dockerContextEnvironmentKey)
@@ -43,7 +48,7 @@ func readServiceDeploymentIdentity(root string) (serviceDeploymentIdentity, erro
 	if !found {
 		return serviceDeploymentIdentity{}, fmt.Errorf("managed environment %s does not define %s", path, composeProjectEnvironmentKey)
 	}
-	if err := validateServiceDeploymentIdentifier(dockerContextEnvironmentKey, contextName); err != nil {
+	if err := validateServiceRootfulDockerContext(contextName); err != nil {
 		return serviceDeploymentIdentity{}, err
 	}
 	if err := validateServiceDeploymentIdentifier(composeProjectEnvironmentKey, projectName); err != nil {
@@ -63,6 +68,33 @@ func readServiceDeploymentIdentity(root string) (serviceDeploymentIdentity, erro
 		HostUID:        hostUID,
 		HostGID:        hostGID,
 	}, nil
+}
+
+func rejectManagedDockerRoutingEnvironment(values map[string]string) error {
+	for _, key := range []string{
+		"DOCKER_SOCKET_PATH", "DOCKER_HOST", "DOCKER_CONFIG", "DOCKER_CERT_PATH",
+		"DOCKER_TLS", "DOCKER_TLS_VERIFY", "BUILDKIT_HOST",
+		"BUILDKIT_TLS_SERVER_NAME", "BUILDKIT_TLS_CACERT", "BUILDKIT_TLS_CERT",
+		"BUILDKIT_TLS_KEY", "BUILDX_BUILDER", "BUILDX_CONFIG",
+	} {
+		if _, found := values[key]; found {
+			return fmt.Errorf(
+				"managed environment must not define %s; Docker authority is invariant",
+				key,
+			)
+		}
+	}
+	return nil
+}
+
+func validateServiceRootfulDockerContext(value string) error {
+	if value != rootfulDockerContextName {
+		return fmt.Errorf(
+			"%s must be %q; rootless Docker is unsupported",
+			dockerContextEnvironmentKey, rootfulDockerContextName,
+		)
+	}
+	return nil
 }
 
 func readExactServiceDeploymentEnvironment(path string) (map[string]string, []byte, error) {

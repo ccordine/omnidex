@@ -79,6 +79,8 @@ func TestComposeDeploymentWrapperUsesConfiguredDockerContextAndProject(t *testin
 set -euo pipefail
 printf '%s|%s|%s|%s|%s|%s\n' "${OMNIDEX_COMMIT:-}" "$DOCKER_CONTEXT" "${COMPOSE_PROJECT_NAME:-}" "${HOST_UID:-}" "${HOST_GID:-}" "$*" >>"$FAKE_DOCKER_LOG"
 case "$*" in
+  'context inspect default --format {{(index .Endpoints "docker").Host}}') printf '%s\n' 'unix:///var/run/docker.sock' ;;
+  'info --format {{json .SecurityOptions}}') printf '%s\n' '["name=seccomp,profile=builtin"]' ;;
   "compose version") exit 0 ;;
   *" build --pull core"|*" up -d --remove-orphans --wait --wait-timeout 180 core") exit 0 ;;
   *" images -q core") printf '%s\n' "$FAKE_EXPECTED_IMAGE" ;;
@@ -172,6 +174,8 @@ func TestComposeDeploymentDownDoesNotRequireBuildCheckoutIdentity(t *testing.T) 
 set -euo pipefail
 printf '%s|%s|%s|%s|%s\n' "${DOCKER_CONTEXT:-}" "${COMPOSE_PROJECT_NAME:-}" "${HOST_UID:-}" "${HOST_GID:-}" "$*" >>"$FAKE_DOCKER_LOG"
 case "$*" in
+  'context inspect default --format {{(index .Endpoints "docker").Host}}') printf '%s\n' 'unix:///var/run/docker.sock' ;;
+  'info --format {{json .SecurityOptions}}') printf '%s\n' '["name=seccomp,profile=builtin"]' ;;
   "compose version"|*" down --remove-orphans") exit 0 ;;
   *) exit 72 ;;
 esac

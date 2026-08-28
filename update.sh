@@ -182,15 +182,15 @@ main() {
 
   local compose_cmd="" expected_image="" expected_runtime_user=""
   if needs_compose_work; then
+    runtime_reject_managed_docker_routing_keys "${PREFIX}/.env"
     managed_checkout_require_env_key "${PREFIX}/.env" "DOCKER_CONTEXT"
     managed_checkout_require_env_key "${PREFIX}/.env" "COMPOSE_PROJECT_NAME"
     managed_checkout_require_env_key "${PREFIX}/.env" "HOST_UID"
     managed_checkout_require_env_key "${PREFIX}/.env" "HOST_GID"
     DOCKER_CONTEXT_NAME="$(managed_checkout_env_value "${PREFIX}/.env" "DOCKER_CONTEXT")"
     COMPOSE_PROJECT="$(managed_checkout_env_value "${PREFIX}/.env" "COMPOSE_PROJECT_NAME")"
-    validate_compose_identity "DOCKER_CONTEXT" "${DOCKER_CONTEXT_NAME}"
     validate_compose_identity "COMPOSE_PROJECT_NAME" "${COMPOSE_PROJECT}"
-    [[ -n "${DOCKER_CONTEXT_NAME}" ]] || die "DOCKER_CONTEXT must be explicit and non-empty"
+    runtime_require_rootful_docker_context
     [[ -n "${COMPOSE_PROJECT}" ]] || die "COMPOSE_PROJECT_NAME must be explicit and non-empty"
     HOST_UID_VALUE="$(managed_checkout_env_value "${PREFIX}/.env" "HOST_UID")"
     HOST_GID_VALUE="$(managed_checkout_env_value "${PREFIX}/.env" "HOST_GID")"

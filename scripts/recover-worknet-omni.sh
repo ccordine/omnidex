@@ -18,7 +18,22 @@ done
 
 sudo -v
 
-system_docker=(sudo env -u DOCKER_CONFIG -u DOCKER_CONTEXT -u DOCKER_HOST docker)
+system_docker=(sudo env -u DOCKER_CONFIG -u DOCKER_CONTEXT -u DOCKER_HOST \
+  -u DOCKER_CERT_PATH -u DOCKER_TLS -u DOCKER_TLS_VERIFY \
+  -u BUILDKIT_HOST -u BUILDKIT_TLS_SERVER_NAME -u BUILDKIT_TLS_CACERT \
+  -u BUILDKIT_TLS_CERT -u BUILDKIT_TLS_KEY -u BUILDX_BUILDER -u BUILDX_CONFIG \
+  docker --context default)
+
+docker_endpoint="$("${system_docker[@]}" context inspect default --format '{{(index .Endpoints "docker").Host}}')"
+[[ "${docker_endpoint}" == "unix:///var/run/docker.sock" ]] || {
+  printf 'default Docker context is not the required rootful /var/run/docker.sock authority\n' >&2
+  exit 1
+}
+docker_security="$("${system_docker[@]}" info --format '{{json .SecurityOptions}}')"
+[[ "${docker_security}" == \[*\] && "${docker_security}" != *name=rootless* ]] || {
+  printf 'default Docker daemon is not qualified rootful authority\n' >&2
+  exit 1
+}
 
 if ! "${system_docker[@]}" network inspect dev-net >/dev/null 2>&1; then
   "${system_docker[@]}" network create --driver bridge dev-net

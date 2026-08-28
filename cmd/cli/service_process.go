@@ -10,6 +10,7 @@ import (
 )
 
 const serviceReleaseCommitEnvironmentKey = "OMNIDEX_COMMIT"
+const dockerHostEnvironmentKey = "DOCKER_HOST"
 
 type serviceProcessRequest struct {
 	Invocation  []string
@@ -108,7 +109,8 @@ func serviceDeploymentChildEnvironment(
 	bound := make([]string, 0, len(environment)+2)
 	for _, entry := range environment {
 		key, _, found := strings.Cut(entry, "=")
-		if found && (key == composeProjectEnvironmentKey || key == hostUIDEnvironmentKey || key == hostGIDEnvironmentKey) {
+		if found && (key == composeProjectEnvironmentKey || key == hostUIDEnvironmentKey ||
+			key == hostGIDEnvironmentKey || serviceDockerRoutingEnvironment(key)) {
 			continue
 		}
 		bound = append(bound, entry)
@@ -120,6 +122,18 @@ func serviceDeploymentChildEnvironment(
 		hostGIDEnvironmentKey+"="+hostGID,
 	)
 	return bound, nil
+}
+
+func serviceDockerRoutingEnvironment(key string) bool {
+	switch key {
+	case dockerContextEnvironmentKey, dockerHostEnvironmentKey, "DOCKER_CONFIG",
+		"DOCKER_CERT_PATH", "DOCKER_TLS", "DOCKER_TLS_VERIFY",
+		"BUILDKIT_HOST", "BUILDKIT_TLS_SERVER_NAME", "BUILDKIT_TLS_CACERT",
+		"BUILDKIT_TLS_CERT", "BUILDKIT_TLS_KEY", "BUILDX_BUILDER", "BUILDX_CONFIG":
+		return true
+	default:
+		return false
+	}
 }
 
 func exitServiceProcessError(err error) {

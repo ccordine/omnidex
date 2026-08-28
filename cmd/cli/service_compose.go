@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -58,11 +59,14 @@ func resolveComposeCommandPrefix(
 	environment []string,
 	runner serviceProcessRunner,
 ) ([]string, error) {
-	if err := validateServiceDeploymentIdentifier(dockerContextEnvironmentKey, contextName); err != nil {
+	if err := validateServiceRootfulDockerContext(contextName); err != nil {
 		return nil, err
 	}
 	if runner == nil {
 		return nil, errors.New("service process runner is required")
+	}
+	if err := requireServiceRootfulDockerDaemon(environment, runner); err != nil {
+		return nil, err
 	}
 	invocation := []string{"docker", "--context", contextName, "compose", "version"}
 	if _, err := runner.Output(serviceProcessRequest{
@@ -71,6 +75,48 @@ func resolveComposeCommandPrefix(
 		return []string{"docker", "--context", contextName, "compose"}, nil
 	}
 	return nil, fmt.Errorf("the Docker Compose plugin is unavailable in explicit context %q", contextName)
+}
+
+func requireServiceRootfulDockerDaemon(
+	environment []string,
+	runner serviceProcessRunner,
+) error {
+	endpoint, err := runner.Output(serviceProcessRequest{
+		Invocation: []string{
+			"docker", "context", "inspect", rootfulDockerContextName,
+			"--format", `{{(index .Endpoints "docker").Host}}`,
+		},
+		Environment: environment,
+	})
+	if err != nil {
+		return fmt.Errorf("qualify default rootful Docker context: %w", err)
+	}
+	if strings.TrimSpace(endpoint) != rootfulDockerSocketURL {
+		return fmt.Errorf(
+			"default Docker context must resolve to %s; rootless Docker is unsupported",
+			rootfulDockerSocketURL,
+		)
+	}
+	securityRaw, err := runner.Output(serviceProcessRequest{
+		Invocation: []string{
+			"docker", "--context", rootfulDockerContextName,
+			"info", "--format", `{{json .SecurityOptions}}`,
+		},
+		Environment: environment,
+	})
+	if err != nil {
+		return fmt.Errorf("qualify default rootful Docker daemon: %w", err)
+	}
+	var securityOptions []string
+	if err := json.Unmarshal([]byte(strings.TrimSpace(securityRaw)), &securityOptions); err != nil || securityOptions == nil {
+		return fmt.Errorf("default Docker daemon returned invalid security authority")
+	}
+	for _, option := range securityOptions {
+		if option == "name=rootless" || strings.HasPrefix(option, "name=rootless,") {
+			return fmt.Errorf("default Docker daemon reported rootless execution authority")
+		}
+	}
+	return nil
 }
 
 func resolveServiceComposeTarget(prefix, composeFile string) (string, string, error) {

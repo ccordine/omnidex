@@ -24,8 +24,8 @@ usage() {
   cat <<EOF
 Usage: ./scripts/compose-deployment.sh <up|down> [--build]
 
-Uses the exact DOCKER_CONTEXT and COMPOSE_PROJECT_NAME from .env. It never
-removes PostgreSQL or Redis volumes.
+Uses only the built-in default rootful Docker context and the exact
+COMPOSE_PROJECT_NAME from .env. It never removes PostgreSQL or Redis volumes.
 EOF
 }
 
@@ -44,6 +44,7 @@ case "${action}" in
 esac
 
 ENV_FILE="${REPO_DIR}/.env"
+runtime_reject_managed_docker_routing_keys "${ENV_FILE}"
 managed_checkout_require_env_key "${ENV_FILE}" "DOCKER_CONTEXT"
 managed_checkout_require_env_key "${ENV_FILE}" "COMPOSE_PROJECT_NAME"
 managed_checkout_require_env_key "${ENV_FILE}" "HOST_UID"
@@ -52,9 +53,8 @@ DOCKER_CONTEXT_NAME="$(managed_checkout_env_value "${ENV_FILE}" "DOCKER_CONTEXT"
 COMPOSE_PROJECT="$(managed_checkout_env_value "${ENV_FILE}" "COMPOSE_PROJECT_NAME")"
 HOST_UID_VALUE="$(managed_checkout_env_value "${ENV_FILE}" "HOST_UID")"
 HOST_GID_VALUE="$(managed_checkout_env_value "${ENV_FILE}" "HOST_GID")"
-validate_compose_identity "DOCKER_CONTEXT" "${DOCKER_CONTEXT_NAME}"
 validate_compose_identity "COMPOSE_PROJECT_NAME" "${COMPOSE_PROJECT}"
-[[ -n "${DOCKER_CONTEXT_NAME}" ]] || die "DOCKER_CONTEXT must be explicit and non-empty"
+runtime_require_rootful_docker_context
 [[ -n "${COMPOSE_PROJECT}" ]] || die "COMPOSE_PROJECT_NAME must be explicit and non-empty"
 EXPECTED_RUNTIME_USER="$(runtime_user_identity "${HOST_UID_VALUE}" "${HOST_GID_VALUE}")"
 export COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT}"

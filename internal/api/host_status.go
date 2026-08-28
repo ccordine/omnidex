@@ -135,7 +135,7 @@ func hostBridgeSuggestions(configured, reachable bool, url string) []string {
 	}
 	out = append(out,
 		"If HOST_AGENT_TOKEN is set on core, pass the same token to omni host serve --token …",
-		"For a manual container probe, use the exact DOCKER_CONTEXT and COMPOSE_PROJECT_NAME recorded in the Omnidex install .env",
+		"For a manual container probe, use Docker's default rootful context and the exact COMPOSE_PROJECT_NAME recorded in the Omnidex install .env",
 		"Arch Linux + UFW: if probes time out (not refused), run scripts/ufw-docker-host.sh on the host",
 	)
 	return out

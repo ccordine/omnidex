@@ -143,21 +143,25 @@ func TestSinglePlainTextCreationCannotDelegateAdapterPathOrRetryAuthority(t *tes
 	}
 }
 
-func TestDockerTransportPinsOneExplicitDaemonEnvironment(t *testing.T) {
+func TestDockerTransportStripsAmbientDockerRoutingEnvironment(t *testing.T) {
 	got := directCodingDockerProcessEnvironment([]string{
-		"PATH=/usr/bin", "DOCKER_HOST=unix:///old.sock", "DOCKER_HOST=unix:///other.sock",
-	}, "unix:///exact.sock")
-	count := 0
-	for _, value := range got {
-		if strings.HasPrefix(value, "DOCKER_HOST=") {
-			count++
-			if value != "DOCKER_HOST=unix:///exact.sock" {
-				t.Fatalf("Docker authority=%q", value)
-			}
-		}
+		"PATH=/usr/bin",
+		"DOCKER_CONTEXT=rootless", "DOCKER_HOST=unix:///run/user/1000/docker.sock",
+		"DOCKER_CONFIG=/tmp/rootless-docker", "DOCKER_CERT_PATH=/tmp/certs",
+		"DOCKER_TLS=1", "DOCKER_TLS_VERIFY=1",
+		"BUILDKIT_HOST=tcp://127.0.0.1:1234", "BUILDKIT_TLS_SERVER_NAME=rootless",
+		"BUILDKIT_TLS_CACERT=/tmp/ca", "BUILDKIT_TLS_CERT=/tmp/cert",
+		"BUILDKIT_TLS_KEY=/tmp/key", "BUILDX_BUILDER=rootless",
+		"BUILDX_CONFIG=/tmp/buildx",
+	})
+	if len(got) != 1 || got[0] != "PATH=/usr/bin" {
+		t.Fatalf("sanitized Docker environment=%q", got)
 	}
-	if count != 1 {
-		t.Fatalf("Docker authority count=%d environment=%q", count, got)
+	for _, value := range got {
+		name, _, _ := strings.Cut(value, "=")
+		if directCodingDockerRoutingEnvironment(name) {
+			t.Fatalf("Docker routing authority survived sanitization: %q", value)
+		}
 	}
 }
 
@@ -169,6 +173,9 @@ func TestDockerTransportExecutesOnlyLiteralDocker(t *testing.T) {
 	source := string(raw)
 	if !strings.Contains(source, `exec.CommandContext(ctx, "docker"`) {
 		t.Fatal("Docker transport does not bind execution to the literal Docker CLI")
+	}
+	if !strings.Contains(source, `v3DockerCLIArguments(args)`) {
+		t.Fatal("Docker transport does not project the fixed rootful --host authority")
 	}
 	for _, hostTool := range []string{`"go"`, `"node"`, `"npm"`, `"cargo"`, `"rustc"`, `"java"`, `"javac"`, `"php"`, `"composer"`} {
 		if strings.Contains(source, "exec.CommandContext(ctx, "+hostTool) {

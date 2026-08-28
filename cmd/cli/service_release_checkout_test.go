@@ -178,10 +178,33 @@ func TestServiceDeploymentChildEnvironmentOverwritesAmbientHostIdentity(t *testi
 		"HOST_GID=9001",
 		"COMPOSE_PROJECT_NAME=ambient-project",
 		"COMPOSE_PROJECT_NAME=second-ambient-project",
+		"DOCKER_CONTEXT=rootless",
+		"DOCKER_HOST=unix:///run/user/1000/docker.sock",
+		"DOCKER_CONFIG=/tmp/alternate-docker-config",
+		"DOCKER_TLS_VERIFY=1",
+		"DOCKER_TLS=1",
+		"DOCKER_CERT_PATH=/tmp/alternate-docker-certs",
+		"BUILDX_BUILDER=alternate-builder",
+		"BUILDX_CONFIG=/tmp/alternate-buildx-config",
+		"BUILDKIT_HOST=tcp://127.0.0.1:1234",
+		"BUILDKIT_TLS_SERVER_NAME=alternate",
+		"BUILDKIT_TLS_CACERT=/tmp/alternate-buildkit-ca",
+		"BUILDKIT_TLS_CERT=/tmp/alternate-buildkit-cert",
+		"BUILDKIT_TLS_KEY=/tmp/alternate-buildkit-key",
 	}
 	bound, err := serviceDeploymentChildEnvironment(base, commit, "omnidex", "1000", "1001")
 	if err != nil {
 		t.Fatal(err)
+	}
+	for _, key := range []string{
+		dockerContextEnvironmentKey, dockerHostEnvironmentKey, "DOCKER_CONFIG",
+		"DOCKER_CERT_PATH", "DOCKER_TLS", "DOCKER_TLS_VERIFY",
+		"BUILDKIT_HOST", "BUILDKIT_TLS_SERVER_NAME", "BUILDKIT_TLS_CACERT",
+		"BUILDKIT_TLS_CERT", "BUILDKIT_TLS_KEY", "BUILDX_BUILDER", "BUILDX_CONFIG",
+	} {
+		if values := serviceEnvironmentValues(bound, key); len(values) != 0 {
+			t.Fatalf("bound environment retained ambient %s values = %v", key, values)
+		}
 	}
 	for key, expected := range map[string]string{
 		serviceReleaseCommitEnvironmentKey: commit,

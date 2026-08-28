@@ -31,7 +31,7 @@ func TestComposeInitializesOnlyPrivateRuntimeVolumesBeforeNonRootCore(t *testing
 	initSection := strings.SplitN(compose, "\n  runtime-volume-init:\n", 2)[1]
 	initSection = strings.SplitN(initSection, "\n  postgres:\n", 2)[0]
 	for _, forbidden := range []string{
-		"source: ${HOST_WORKSPACE_PATH", "source: ${DOCKER_SOCKET_PATH", "target: /workspace",
+		"source: ${HOST_WORKSPACE_PATH", "source: /var/run/docker.sock", "target: /workspace",
 	} {
 		if strings.Contains(initSection, forbidden) {
 			t.Fatalf("root volume initializer receives forbidden host authority %q", forbidden)

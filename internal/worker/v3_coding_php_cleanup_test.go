@@ -86,11 +86,9 @@ func TestStagedPHPVerificationAttemptsCleanupAfterSuccessAndFailure(t *testing.T
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			workspaceRoot := t.TempDir()
-			socketPath, closeSocket := openV3DockerTestSocket(t)
-			defer closeSocket()
 			t.Setenv("WORKSPACE_ROOT", workspaceRoot)
 			t.Setenv("HOST_WORKSPACE_PATH", workspaceRoot)
-			t.Setenv("DOCKER_HOST", "unix://"+socketPath)
+			t.Setenv("DOCKER_HOST", v3RootfulDockerHost)
 			logPath := installPHPDockerRecorder(t, testCase.failingCommand)
 			program := phpCleanupVerificationProgram(t)
 			created, err := newDirectCodingPHPProjectStageExecutor(
@@ -148,7 +146,10 @@ func installPHPDockerRecorder(t *testing.T, failingCommand string) string {
 	t.Helper()
 	directory := t.TempDir()
 	logPath := filepath.Join(directory, "commands.log")
-	script := "#!/bin/sh\nprintf '%s\\n' \"$*\" >> " + strconv.Quote(logPath) + "\n"
+	script := "#!/bin/sh\n" +
+		"if [ \"$1\" != \"--host\" ] || [ \"$2\" != \"" + v3RootfulDockerHost + "\" ]; then exit 91; fi\n" +
+		"shift 2\n" +
+		"printf '%s\\n' \"$*\" >> " + strconv.Quote(logPath) + "\n"
 	if failingCommand != "" {
 		script += "if [ \"$*\" = " + strconv.Quote(failingCommand) + " ]; then exit 29; fi\n"
 	}

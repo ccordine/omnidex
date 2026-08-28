@@ -290,14 +290,11 @@ func invokeDirectCodingDocker(
 	if ctx == nil {
 		return zero, fmt.Errorf("Docker CLI invocation requires a context")
 	}
-	dockerHost, socketPath, err := resolveV3DockerHost(os.Getenv("DOCKER_HOST"))
+	_, _, err := resolveV3DockerHost(os.Getenv("DOCKER_HOST"))
 	if err != nil {
 		return zero, err
 	}
-	if err := validateV3DockerSocket(socketPath); err != nil {
-		return zero, err
-	}
-	if err := validateV3DockerDaemon(ctx, socketPath); err != nil {
+	if err := requireV3RootfulDockerAuthority(ctx); err != nil {
 		return zero, err
 	}
 	stdout, err := newBoundedCommandOutput(maxV3CommandOutput)
@@ -309,8 +306,8 @@ func invokeDirectCodingDocker(
 		return zero, err
 	}
 	started := time.Now()
-	process := exec.CommandContext(ctx, "docker", append([]string(nil), args...)...)
-	process.Env = directCodingDockerProcessEnvironment(os.Environ(), dockerHost)
+	process := exec.CommandContext(ctx, "docker", v3DockerCLIArguments(args)...)
+	process.Env = directCodingDockerProcessEnvironment(os.Environ())
 	if stdin != nil {
 		process.Stdin = bytes.NewReader(stdin)
 	}
@@ -330,13 +327,27 @@ func invokeDirectCodingDocker(
 	return result, nil
 }
 
-func directCodingDockerProcessEnvironment(current []string, dockerHost string) []string {
-	environment := make([]string, 0, len(current)+1)
+func directCodingDockerProcessEnvironment(current []string) []string {
+	environment := make([]string, 0, len(current))
 	for _, value := range current {
-		if strings.HasPrefix(value, "DOCKER_HOST=") {
+		name, _, found := strings.Cut(value, "=")
+		if found && directCodingDockerRoutingEnvironment(name) {
 			continue
 		}
 		environment = append(environment, value)
 	}
-	return append(environment, "DOCKER_HOST="+dockerHost)
+	return environment
+}
+
+func directCodingDockerRoutingEnvironment(name string) bool {
+	switch name {
+	case "DOCKER_CONTEXT", "DOCKER_HOST", "DOCKER_CONFIG",
+		"DOCKER_CERT_PATH", "DOCKER_TLS", "DOCKER_TLS_VERIFY",
+		"BUILDKIT_HOST", "BUILDKIT_TLS_SERVER_NAME", "BUILDKIT_TLS_CACERT",
+		"BUILDKIT_TLS_CERT", "BUILDKIT_TLS_KEY",
+		"BUILDX_BUILDER", "BUILDX_CONFIG":
+		return true
+	default:
+		return false
+	}
 }

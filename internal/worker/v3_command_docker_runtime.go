@@ -3,10 +3,14 @@ package worker
 import (
 	"context"
 	"fmt"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
+)
+
+const (
+	v3RootfulDockerHost       = "unix:///var/run/docker.sock"
+	v3RootfulDockerSocketPath = "/var/run/docker.sock"
 )
 
 func resolveV3CommandExecution(
@@ -22,17 +26,27 @@ func resolveV3CommandExecution(
 	if err != nil {
 		return "", nil, err
 	}
-	dockerHost, socketPath, err := resolveV3DockerHost(os.Getenv("DOCKER_HOST"))
+	_, _, err = resolveV3DockerHost(os.Getenv("DOCKER_HOST"))
 	if err != nil {
 		return "", nil, err
 	}
-	if err := validateV3DockerSocket(socketPath); err != nil {
+	if err := requireV3RootfulDockerAuthority(ctx); err != nil {
 		return "", nil, err
 	}
-	if err := validateV3DockerDaemon(ctx, socketPath); err != nil {
-		return "", nil, err
+	return executionRoot, nil, nil
+}
+
+func requireV3RootfulDockerAuthority(ctx context.Context) error {
+	if err := validateV3DockerSocket(v3RootfulDockerSocketPath); err != nil {
+		return err
 	}
-	return executionRoot, []string{"DOCKER_HOST=" + dockerHost}, nil
+	return validateV3DockerDaemon(ctx, v3RootfulDockerSocketPath)
+}
+
+func v3DockerCLIArguments(args []string) []string {
+	arguments := make([]string, 0, len(args)+2)
+	arguments = append(arguments, "--host", v3RootfulDockerHost)
+	return append(arguments, args...)
 }
 
 func resolveV3DockerCommandRoot(commandRoot, runtimeRoot, hostRoot string) (string, error) {
@@ -84,23 +98,26 @@ func resolveV3DockerCommandRoot(commandRoot, runtimeRoot, hostRoot string) (stri
 }
 
 func resolveV3DockerHost(raw string) (string, string, error) {
-	if raw == "" || strings.TrimSpace(raw) != raw {
-		return "", "", fmt.Errorf("Docker command execution requires an explicit Unix DOCKER_HOST")
+	if raw != v3RootfulDockerHost {
+		return "", "", fmt.Errorf(
+			"Docker command execution requires DOCKER_HOST=%s; every other Docker authority is unsupported",
+			v3RootfulDockerHost,
+		)
 	}
-	parsed, err := url.Parse(raw)
-	if err != nil || parsed.Scheme != "unix" || parsed.Host != "" || parsed.Opaque != "" ||
-		parsed.RawPath != "" || parsed.RawQuery != "" || parsed.Fragment != "" {
-		return "", "", fmt.Errorf("Docker command execution requires DOCKER_HOST=unix:///absolute/socket")
-	}
-	socketPath := parsed.Path
-	if socketPath == "" || !filepath.IsAbs(socketPath) || filepath.Clean(socketPath) != socketPath ||
-		strings.ContainsAny(socketPath, "\x00\r\n") || raw != "unix://"+socketPath {
-		return "", "", fmt.Errorf("Docker command execution requires DOCKER_HOST=unix:///absolute/socket")
-	}
-	return raw, socketPath, nil
+	return v3RootfulDockerHost, v3RootfulDockerSocketPath, nil
 }
 
 func validateV3DockerSocket(path string) error {
+	if path != v3RootfulDockerSocketPath {
+		return fmt.Errorf(
+			"Docker command execution supports only the rootful Unix socket at %s",
+			v3RootfulDockerSocketPath,
+		)
+	}
+	return validateV3UnixSocket(path)
+}
+
+func validateV3UnixSocket(path string) error {
 	info, err := os.Lstat(path)
 	if err != nil {
 		return fmt.Errorf("Docker Unix socket %s is unavailable: %w", path, err)

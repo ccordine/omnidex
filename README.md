@@ -492,10 +492,12 @@ cp default.env .env
 Open `http://localhost:8090`.
 
 The default compose topology keeps PostgreSQL and Redis on the internal backend network. The core API is the normal host-facing service.
-`up.sh` and `down.sh` use the exact `DOCKER_CONTEXT` and
-`COMPOSE_PROJECT_NAME` in `.env`; do not run ambient `docker compose` commands,
-which can point at a different Docker engine and create a separate empty
-database.
+`up.sh` and `down.sh` require `DOCKER_CONTEXT=default`, clear ambient Docker
+endpoint overrides, and use the exact `COMPOSE_PROJECT_NAME` in `.env`. Rootless
+Docker is forbidden because its UID translation breaks host-authoritative bind
+ownership. See [docs/ROOTFUL_DOCKER.md](docs/ROOTFUL_DOCKER.md). Do not run
+ambient `docker compose` commands, which can point at a different Docker engine
+and create a separate empty database.
 The core image runs as the configured `HOST_UID`/`HOST_GID`, so files written
 through the direct workspace bind retain the caller's host ownership. Compose
 adds only the exact numeric `DOCKER_GID` as a supplementary group, allowing the

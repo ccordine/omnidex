@@ -1,9 +1,9 @@
 services:
   core:
     image: ${COMPOSE_PROJECT_NAME:?COMPOSE_PROJECT_NAME must be configured}-core
-    # The configured Docker daemon maps the host workspace owner to container
-    # root. The core must use that exact identity to mutate the direct bind.
-    user: "0:0"
+    # The rootful daemon exposes the bind with host ownership unchanged. Pin
+    # the core process to that exact owner so host mutations remain user-owned.
+    user: "${HOST_UID:?HOST_UID must match the owner of HOST_WORKSPACE_PATH}:${HOST_GID:?HOST_GID must match the group of HOST_WORKSPACE_PATH}"
     build:
       context: .
       dockerfile: Dockerfile
@@ -11,14 +11,14 @@ services:
         APP_UID: ${HOST_UID:?HOST_UID must match the owner of HOST_WORKSPACE_PATH}
         APP_GID: ${HOST_GID:?HOST_GID must match the group of HOST_WORKSPACE_PATH}
         OMNIDEX_COMMIT: ${OMNIDEX_COMMIT:-}
-    # APP_UID/APP_GID retain the image's non-root account for isolated child
-    # environments; the core identity above owns the host-authoritative bind.
+    # APP_UID/APP_GID keep the image account aligned with the explicit runtime
+    # identity above and with the host-authoritative workspace bind.
     # Bubblewrap creates the unprivileged user namespace that encloses
     # existing-repository verification. These options permit that nested
     # namespace syscall without granting the core process root identity.
     # The Docker socket group remains supplementary authority for the daemon.
     group_add:
-      - ${DOCKER_GID:?DOCKER_GID must match the numeric group owner of DOCKER_SOCKET_PATH}
+      - ${DOCKER_GID:?DOCKER_GID must match the numeric group owner of /var/run/docker.sock}
     security_opt:
       - seccomp=unconfined
       - systempaths=unconfined
@@ -110,7 +110,7 @@ services:
         bind:
           create_host_path: false
       - type: bind
-        source: ${DOCKER_SOCKET_PATH:?DOCKER_SOCKET_PATH must name the default Docker Unix socket}
+        source: /var/run/docker.sock
         target: /var/run/docker.sock
         bind:
           create_host_path: false

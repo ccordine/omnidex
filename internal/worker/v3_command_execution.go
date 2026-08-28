@@ -85,7 +85,11 @@ func runValidatedV3Command(
 	runCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	started := time.Now()
-	process := exec.CommandContext(runCtx, program, args...)
+	executionArgs := args
+	if program == "docker" {
+		executionArgs = v3DockerCLIArguments(args)
+	}
+	process := exec.CommandContext(runCtx, program, executionArgs...)
 	process.Dir = executionRoot
 	process.Env = environment
 	process.Stdout = stdout

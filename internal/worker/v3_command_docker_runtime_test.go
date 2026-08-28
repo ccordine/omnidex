@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-func TestResolveV3DockerCommandExecutionUsesOnlyIdenticalMirrorAndUnixSocket(t *testing.T) {
+func TestResolveV3DockerCommandRootUsesOnlyIdenticalMirror(t *testing.T) {
 	runtimeRoot := t.TempDir()
 	hostRoot := runtimeRoot
 	relative := filepath.Join("group", "fixture")
@@ -19,23 +19,14 @@ func TestResolveV3DockerCommandExecutionUsesOnlyIdenticalMirrorAndUnixSocket(t *
 			t.Fatal(err)
 		}
 	}
-	socketPath, closeSocket := openV3DockerTestSocket(t)
-	defer closeSocket()
-	t.Setenv("WORKSPACE_ROOT", runtimeRoot)
-	t.Setenv("HOST_WORKSPACE_PATH", hostRoot)
-	t.Setenv("DOCKER_HOST", "unix://"+socketPath)
-
-	executionRoot, environment, err := resolveV3CommandExecution(
-		context.Background(), runtimeCommandRoot, "docker",
+	executionRoot, err := resolveV3DockerCommandRoot(
+		runtimeCommandRoot, runtimeRoot, hostRoot,
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if executionRoot != hostCommandRoot {
 		t.Fatalf("Docker execution root=%q want host mirror %q", executionRoot, hostCommandRoot)
-	}
-	if len(environment) != 1 || environment[0] != "DOCKER_HOST=unix://"+socketPath {
-		t.Fatalf("Docker execution environment=%v", environment)
 	}
 }
 
@@ -54,7 +45,7 @@ func TestResolveV3CommandExecutionLeavesNonDockerRootAndEnvironmentUntouched(t *
 	}
 }
 
-func TestResolveV3DockerCommandExecutionFailsWithoutEveryPhysicalAuthority(t *testing.T) {
+func TestResolveV3DockerCommandRootFailsWithoutEveryPhysicalAuthority(t *testing.T) {
 	runtimeRoot := t.TempDir()
 	hostRoot := runtimeRoot
 	missingMirrorRoot := t.TempDir()
@@ -62,27 +53,18 @@ func TestResolveV3DockerCommandExecutionFailsWithoutEveryPhysicalAuthority(t *te
 	if err := os.Mkdir(commandRoot, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	socketPath, closeSocket := openV3DockerTestSocket(t)
-	defer closeSocket()
 
 	tests := []struct {
-		name, runtime, host, dockerHost, want string
+		name, runtime, host, want string
 	}{
-		{name: "runtime boundary", host: hostRoot, dockerHost: "unix://" + socketPath, want: "WORKSPACE_ROOT"},
-		{name: "host boundary", runtime: runtimeRoot, dockerHost: "unix://" + socketPath, want: "HOST_WORKSPACE_PATH"},
-		{name: "unnormalized runtime boundary", runtime: runtimeRoot + string(filepath.Separator), host: hostRoot, dockerHost: "unix://" + socketPath, want: "normalized absolute path"},
-		{name: "host mirror", runtime: runtimeRoot, host: missingMirrorRoot, dockerHost: "unix://" + socketPath, want: "mirror is unavailable"},
-		{name: "Docker host", runtime: runtimeRoot, host: hostRoot, want: "explicit Unix DOCKER_HOST"},
-		{name: "whitespace Docker host", runtime: runtimeRoot, host: hostRoot, dockerHost: " unix://" + socketPath, want: "explicit Unix DOCKER_HOST"},
-		{name: "TCP Docker host", runtime: runtimeRoot, host: hostRoot, dockerHost: "tcp://127.0.0.1:2375", want: "unix:///absolute/socket"},
-		{name: "missing socket", runtime: runtimeRoot, host: hostRoot, dockerHost: "unix:///missing/docker.sock", want: "is unavailable"},
+		{name: "runtime boundary", host: hostRoot, want: "WORKSPACE_ROOT"},
+		{name: "host boundary", runtime: runtimeRoot, want: "HOST_WORKSPACE_PATH"},
+		{name: "unnormalized runtime boundary", runtime: runtimeRoot + string(filepath.Separator), host: hostRoot, want: "normalized absolute path"},
+		{name: "host mirror", runtime: runtimeRoot, host: missingMirrorRoot, want: "mirror is unavailable"},
 	}
 	for _, testCase := range tests {
 		t.Run(testCase.name, func(t *testing.T) {
-			t.Setenv("WORKSPACE_ROOT", testCase.runtime)
-			t.Setenv("HOST_WORKSPACE_PATH", testCase.host)
-			t.Setenv("DOCKER_HOST", testCase.dockerHost)
-			_, _, err := resolveV3CommandExecution(context.Background(), commandRoot, "docker")
+			_, err := resolveV3DockerCommandRoot(commandRoot, testCase.runtime, testCase.host)
 			if err == nil || !strings.Contains(err.Error(), testCase.want) {
 				t.Fatalf("resolve error=%v want %q", err, testCase.want)
 			}
@@ -90,7 +72,7 @@ func TestResolveV3DockerCommandExecutionFailsWithoutEveryPhysicalAuthority(t *te
 	}
 }
 
-func TestResolveV3DockerCommandExecutionRejectsDifferentMirrorDirectory(t *testing.T) {
+func TestResolveV3DockerCommandRootRejectsDifferentMirrorDirectory(t *testing.T) {
 	runtimeRoot := t.TempDir()
 	hostRoot := t.TempDir()
 	for _, root := range []string{runtimeRoot, hostRoot} {
@@ -98,30 +80,44 @@ func TestResolveV3DockerCommandExecutionRejectsDifferentMirrorDirectory(t *testi
 			t.Fatal(err)
 		}
 	}
-	socketPath, closeSocket := openV3DockerTestSocket(t)
-	defer closeSocket()
-	t.Setenv("WORKSPACE_ROOT", runtimeRoot)
-	t.Setenv("HOST_WORKSPACE_PATH", hostRoot)
-	t.Setenv("DOCKER_HOST", "unix://"+socketPath)
-
-	_, _, err := resolveV3CommandExecution(
-		context.Background(), filepath.Join(runtimeRoot, "fixture"), "docker",
+	_, err := resolveV3DockerCommandRoot(
+		filepath.Join(runtimeRoot, "fixture"), runtimeRoot, hostRoot,
 	)
 	if err == nil || !strings.Contains(err.Error(), "same mounted directory") {
 		t.Fatalf("misconfigured Docker workspace mirror error=%v", err)
 	}
 }
 
-func TestResolveV3DockerCommandExecutionAcceptsHealthyDefaultDaemon(t *testing.T) {
-	root := t.TempDir()
-	socketPath, closeSocket := openV3DockerTestSocket(t)
-	defer closeSocket()
-	t.Setenv("WORKSPACE_ROOT", root)
-	t.Setenv("HOST_WORKSPACE_PATH", root)
-	t.Setenv("DOCKER_HOST", "unix://"+socketPath)
-
-	if _, _, err := resolveV3CommandExecution(context.Background(), root, "docker"); err != nil {
+func TestResolveV3DockerHostAcceptsOnlyRootfulSystemSocket(t *testing.T) {
+	host, socket, err := resolveV3DockerHost(v3RootfulDockerHost)
+	if err != nil {
 		t.Fatal(err)
+	}
+	if host != v3RootfulDockerHost || socket != v3RootfulDockerSocketPath {
+		t.Fatalf("Docker authority=%q/%q", host, socket)
+	}
+	for _, candidate := range []string{
+		"", " " + v3RootfulDockerHost, v3RootfulDockerHost + " ",
+		"unix:///run/user/1000/docker.sock", "unix:///missing/docker.sock",
+		"tcp://127.0.0.1:2375",
+	} {
+		if _, _, err := resolveV3DockerHost(candidate); err == nil ||
+			!strings.Contains(err.Error(), v3RootfulDockerHost) {
+			t.Fatalf("Docker host %q error=%v", candidate, err)
+		}
+	}
+}
+
+func TestV3DockerCLIArgumentsPinRootfulSystemSocket(t *testing.T) {
+	input := []string{"compose", "config", "--quiet"}
+	got := v3DockerCLIArguments(input)
+	want := []string{"--host", v3RootfulDockerHost, "compose", "config", "--quiet"}
+	if strings.Join(got, "\x00") != strings.Join(want, "\x00") {
+		t.Fatalf("Docker CLI arguments=%q want=%q", got, want)
+	}
+	got[2] = "changed"
+	if input[0] != "compose" {
+		t.Fatalf("Docker CLI argument projection mutated its input: %q", input)
 	}
 }
 
@@ -138,19 +134,24 @@ func TestValidateV3DockerSocketRejectsRegularFileAndSymlink(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, path := range []string{regular, alias} {
-		if err := validateV3DockerSocket(path); err == nil {
+		if err := validateV3UnixSocket(path); err == nil {
 			t.Fatalf("accepted non-exact Docker socket %s", path)
 		}
+	}
+}
+
+func TestValidateV3DockerSocketRejectsAlternateUnixSocket(t *testing.T) {
+	socketPath, closeSocket := openV3DockerTestSocket(t)
+	defer closeSocket()
+	if err := validateV3DockerSocket(socketPath); err == nil ||
+		!strings.Contains(err.Error(), v3RootfulDockerSocketPath) {
+		t.Fatalf("alternate Docker socket error=%v", err)
 	}
 }
 
 func TestDockerComposeConfigRunsFromTwoUnrelatedMappedFixtures(t *testing.T) {
 	if os.Getenv("OMNIDEX_RUN_DOCKER_MIRROR_TEST") != "1" {
 		t.Skip("set OMNIDEX_RUN_DOCKER_MIRROR_TEST=1 to run real Docker Compose config fixtures")
-	}
-	dockerHost := strings.TrimSpace(os.Getenv("OMNIDEX_TEST_DOCKER_HOST"))
-	if dockerHost == "" {
-		t.Fatal("OMNIDEX_TEST_DOCKER_HOST must name one exact Unix socket")
 	}
 	runtimeWorkspace := strings.TrimSpace(os.Getenv("OMNIDEX_TEST_RUNTIME_WORKSPACE_ROOT"))
 	hostWorkspace := strings.TrimSpace(os.Getenv("OMNIDEX_TEST_HOST_WORKSPACE_ROOT"))
@@ -186,7 +187,7 @@ func TestDockerComposeConfigRunsFromTwoUnrelatedMappedFixtures(t *testing.T) {
 			hostCommandRoot := filepath.Join(hostWorkspace, relative)
 			t.Setenv("WORKSPACE_ROOT", runtimeWorkspace)
 			t.Setenv("HOST_WORKSPACE_PATH", hostWorkspace)
-			t.Setenv("DOCKER_HOST", dockerHost)
+			t.Setenv("DOCKER_HOST", v3RootfulDockerHost)
 			execution, err := runValidatedV3Command(context.Background(), runtimeCommandRoot, codeCommand{
 				Program: "docker", Args: []string{"compose", "config", "--format", "json"},
 			})

@@ -14,8 +14,8 @@ func TestDirectCodingDockerProjectEnvironmentIntegration(t *testing.T) {
 	if os.Getenv("OMNIDEX_PROJECT_ENVIRONMENT_DOCKER_INTEGRATION") != "1" {
 		t.Skip("set OMNIDEX_PROJECT_ENVIRONMENT_DOCKER_INTEGRATION=1 to build and run the pinned development image")
 	}
-	if os.Getenv("DOCKER_HOST") == "" {
-		t.Fatal("opt-in Docker integration requires one explicit Unix DOCKER_HOST")
+	if os.Getenv("DOCKER_HOST") != v3RootfulDockerHost {
+		t.Fatalf("opt-in Docker integration requires DOCKER_HOST=%s", v3RootfulDockerHost)
 	}
 	root := t.TempDir()
 	uid, gid := uint32(os.Getuid()), uint32(os.Getgid())
