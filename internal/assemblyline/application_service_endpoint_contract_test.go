@@ -84,10 +84,9 @@ func TestApplicationServiceEndpointContractRejectsInvalidAggregateCompatibility(
 
 func testServiceEndpointTaskAuthority() ApplicationServiceEndpointTaskAuthority {
 	return ApplicationServiceEndpointTaskAuthority{
-		ProductContext:     "inventory service",
-		RequirementQuote:   "Clients can retrieve an inventory record.",
-		Objective:          "Expose retrieval of one inventory record.",
-		RequiredBehaviors:  []string{"Return the requested record."},
-		AcceptanceCriteria: []string{"A known identity returns its record."},
+		ProductContext:    "inventory service",
+		RequirementQuote:  "Clients can retrieve an inventory record.",
+		Objective:         "Expose retrieval of one inventory record.",
+		RequiredBehaviors: []string{"Return the requested record."},
 	}
 }

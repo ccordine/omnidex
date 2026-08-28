@@ -27,7 +27,7 @@ func observeDirectCodingAppliedDeployment(
 	if err := validateV3DockerSocket(socketPath); err != nil {
 		return directCodingDeploymentObservation{}, err
 	}
-	if err := validateV3RootlessDockerDaemon(parent, socketPath); err != nil {
+	if err := validateV3DockerDaemon(parent, socketPath); err != nil {
 		return directCodingDeploymentObservation{}, err
 	}
 	ctx, cancel := context.WithTimeout(parent, directCodingDockerObserveTimeout)

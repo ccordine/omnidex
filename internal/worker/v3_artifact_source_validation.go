@@ -260,8 +260,8 @@ func validEnvironmentKey(value string) bool {
 	return value != ""
 }
 
-func validatePlainTextArtifactSource(_ string, _ []byte) error {
-	return nil
+func validatePlainTextArtifactSource(_ string, source []byte) error {
+	return assemblyline.ValidateTextFragment(string(source))
 }
 
 func validateTypeScriptBrowserAssembly(assembly directCodingAssembly) error {

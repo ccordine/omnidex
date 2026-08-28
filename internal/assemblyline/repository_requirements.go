@@ -6,7 +6,7 @@ import (
 	"unicode/utf8"
 )
 
-const RepositoryRequirementInterpretationSchemaV2 = "omnidex.repository-requirements.v2"
+const RepositoryRequirementInterpretationSchemaV3 = "omnidex.repository-requirements.v3"
 
 type RepositoryRequirementInterpretationInput struct {
 	UserRequest string             `json:"user_request"`
@@ -47,7 +47,15 @@ func ResolveRepositoryRequirements(
 	if err := interpretation.ValidateFor(input); err != nil {
 		return nil, err
 	}
-	return append([]string(nil), interpretation.Requirements...), nil
+	graph, err := BuildRequirementGraph(input.UserRequest, interpretation.Requirements)
+	if err != nil {
+		return nil, fmt.Errorf("ground repository requirements in immutable request: %w", err)
+	}
+	resolved := make([]string, len(graph.Requirements))
+	for index := range graph.Requirements {
+		resolved[index] = graph.Requirements[index].SourceQuote
+	}
+	return resolved, nil
 }
 
 func (interpretation RepositoryRequirementInterpretation) ValidateFor(
@@ -56,10 +64,10 @@ func (interpretation RepositoryRequirementInterpretation) ValidateFor(
 	if err := input.validate(); err != nil {
 		return err
 	}
-	if interpretation.Schema != RepositoryRequirementInterpretationSchemaV2 {
+	if interpretation.Schema != RepositoryRequirementInterpretationSchemaV3 {
 		return fmt.Errorf(
 			"repository requirement schema must be %q",
-			RepositoryRequirementInterpretationSchemaV2,
+			RepositoryRequirementInterpretationSchemaV3,
 		)
 	}
 	if interpretation.Requirements == nil {

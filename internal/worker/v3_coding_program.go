@@ -129,7 +129,9 @@ func compileDirectCodingProgramWithServiceEndpoints(
 		if err := stack.ValidateServiceState(workload, state); err != nil {
 			return directCodingProgram{}, fmt.Errorf("validate service state plan: %w", err)
 		}
-		if err := endpoints.ValidateForCapabilities(workload, capabilities); err != nil {
+		if err := endpoints.ValidateForCapabilities(
+			applicationWorkloadInput(specification), workload, capabilities,
+		); err != nil {
 			return directCodingProgram{}, fmt.Errorf("validate service endpoint plan: %w", err)
 		}
 		blueprint, staticFiles, err = stack.CompileServiceSource(

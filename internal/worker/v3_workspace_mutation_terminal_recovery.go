@@ -40,6 +40,28 @@ func (runtime *nativeRuntimeV3) recoverTerminalWorkspaceMutation(
 		)
 	}
 	if snapshot.Command.Plan.GitSourceSnapshotID != "" {
+		if current.Git == nil || terminal.Result.VerifiedRepositorySnapshotID == "" ||
+			current.Git.RepositorySnapshotID != terminal.Result.VerifiedRepositorySnapshotID {
+			return "", true, fmt.Errorf(
+				"terminal workspace mutation verified repository snapshot differs from host reality",
+			)
+		}
+	}
+	if singlePlainTextVerificationFamily(commands) {
+		artifactPath, _, err := singlePlainTextMutationAuthority(snapshot.Command, commands)
+		if err != nil {
+			return "", true, err
+		}
+		runtime.svc.emitStepEvent(
+			runtime.claim.Authority, "workspace_mutation_recovered",
+			fmt.Sprintf("operation=%s expected=%s", snapshot.OperationID, snapshot.Command.Plan.ExpectedStateID),
+		)
+		return fmt.Sprintf(
+			"Recovered verified host-authoritative artifact %s: operation=%s receipt_sha256=%s",
+			artifactPath, snapshot.OperationID, terminal.ReceiptSHA256,
+		), true, nil
+	}
+	if snapshot.Command.Plan.GitSourceSnapshotID != "" {
 		runtime.svc.emitStepEvent(
 			runtime.claim.Authority, "workspace_mutation_recovered",
 			fmt.Sprintf("operation=%s expected=%s", snapshot.OperationID, snapshot.Command.Plan.ExpectedStateID),

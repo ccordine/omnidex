@@ -1,27 +1,24 @@
 package assemblyline
 
 type ApplicationServiceEndpointTaskAuthority struct {
-	ProductContext     string   `json:"product_context"`
-	RequirementQuote   string   `json:"requirement_quote"`
-	Objective          string   `json:"objective"`
-	RequiredBehaviors  []string `json:"required_behaviors"`
-	AcceptanceCriteria []string `json:"acceptance_criteria"`
+	ProductContext    string   `json:"product_context"`
+	RequirementQuote  string   `json:"requirement_quote"`
+	Objective         string   `json:"objective"`
+	RequiredBehaviors []string `json:"required_behaviors"`
 }
 
 func ProjectApplicationServiceEndpointTaskAuthority(
-	productContext string,
-	task FrozenApplicationTask,
+	authority ApplicationTaskRuntimeAuthority,
 ) (ApplicationServiceEndpointTaskAuthority, error) {
-	authority := ApplicationServiceEndpointTaskAuthority{
-		ProductContext: productContext, RequirementQuote: task.RequirementQuote,
-		Objective:          task.Objective,
-		RequiredBehaviors:  append([]string(nil), task.RequiredBehaviors...),
-		AcceptanceCriteria: append([]string(nil), task.AcceptanceCriteria...),
+	projected := ApplicationServiceEndpointTaskAuthority{
+		ProductContext: authority.ProductQuote, RequirementQuote: authority.RequirementQuote,
+		Objective:         authority.Objective,
+		RequiredBehaviors: append([]string(nil), authority.RequiredBehaviors...),
 	}
-	if err := authority.validate(); err != nil {
+	if err := projected.validate(); err != nil {
 		return ApplicationServiceEndpointTaskAuthority{}, err
 	}
-	return authority, nil
+	return projected, nil
 }
 
 func (authority ApplicationServiceEndpointTaskAuthority) validate() error {
@@ -46,8 +43,5 @@ func (authority ApplicationServiceEndpointTaskAuthority) validate() error {
 	); err != nil {
 		return err
 	}
-	return validateApplicationJobSpecificationList(
-		"service endpoint acceptance criterion", authority.AcceptanceCriteria,
-		maxApplicationAcceptanceCriteria, maxApplicationCriterionRunes,
-	)
+	return nil
 }

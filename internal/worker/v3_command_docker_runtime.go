@@ -29,7 +29,7 @@ func resolveV3CommandExecution(
 	if err := validateV3DockerSocket(socketPath); err != nil {
 		return "", nil, err
 	}
-	if err := validateV3RootlessDockerDaemon(ctx, socketPath); err != nil {
+	if err := validateV3DockerDaemon(ctx, socketPath); err != nil {
 		return "", nil, err
 	}
 	return executionRoot, []string{"DOCKER_HOST=" + dockerHost}, nil

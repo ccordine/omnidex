@@ -10,11 +10,10 @@ import (
 func TestApplicationServiceEndpointLeavesHaveDistinctExactStationOwners(t *testing.T) {
 	t.Parallel()
 	authority := assemblyline.ApplicationServiceEndpointTaskAuthority{
-		ProductContext:     "inventory service",
-		RequirementQuote:   "Clients can retrieve inventory records.",
-		Objective:          "Expose retrieval of inventory records.",
-		RequiredBehaviors:  []string{"Return the requested record."},
-		AcceptanceCriteria: []string{"A known identity returns its record."},
+		ProductContext:    "inventory service",
+		RequirementQuote:  "Clients can retrieve inventory records.",
+		Objective:         "Expose retrieval of inventory records.",
+		RequiredBehaviors: []string{"Return the requested record."},
 	}
 	tests := []struct {
 		name string

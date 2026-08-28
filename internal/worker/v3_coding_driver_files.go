@@ -236,6 +236,7 @@ func cloneWorkspaceRoleCommands(
 	for index, command := range commands {
 		command.Args = append([]string(nil), command.Args...)
 		command.RepositoryProof = cloneRepositoryGoTestProof(command.RepositoryProof)
+		command.Environment = cloneDirectCodingDockerEnvironmentAuthority(command.Environment)
 		command.WorkspaceRole = role
 		cloned[index] = command
 	}

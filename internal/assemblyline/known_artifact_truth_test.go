@@ -28,6 +28,7 @@ func TestKnownArtifactTruthClassifiesOnlyDesiredTruth(t *testing.T) {
 	}
 	for _, required := range []string{
 		input.RequirementQuote, string(KnownArtifactMustBeAbsent),
+		string(OnePlainTextArtifactMustExist),
 		string(KnownArtifactTruthNotApplicable), KnownArtifactTruthSchemaV1,
 	} {
 		if !strings.Contains(prompt+string(rawSchema), required) {
@@ -48,7 +49,8 @@ func TestKnownArtifactTruthAcceptsOnlyClosedDesiredTruth(t *testing.T) {
 	t.Parallel()
 	input := KnownArtifactTruthInput{RequirementQuote: "An obsolete semantic artifact must no longer exist."}
 	for _, truth := range []KnownArtifactTruth{
-		KnownArtifactMustBeAbsent, KnownArtifactTruthNotApplicable,
+		KnownArtifactMustBeAbsent, OnePlainTextArtifactMustExist,
+		KnownArtifactTruthNotApplicable,
 	} {
 		decision := KnownArtifactTruthDecision{Schema: KnownArtifactTruthSchemaV1, Truth: truth}
 		if err := decision.ValidateFor(input); err != nil {

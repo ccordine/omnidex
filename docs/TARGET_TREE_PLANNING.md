@@ -66,6 +66,18 @@ an implementation-bearing workspace through its separate repository-change
 pipeline before reaching this boundary; target-tree reconciliation alone is not
 evidence of fresh/existing workflow parity.
 
+One narrower existing-workspace case has a complete code-owned projection. If
+lexical parsing and the artifact registry establish exactly one explicitly named,
+absent plain-text path, a bounded semantic station may classify only whether the
+intact request requires exactly that one standalone unstructured document with a
+complete requested body and no other change. Code selects the `plain_text` adapter
+before structural work, freezes one path-blind task bound to the immutable request,
+projects the exact requested path without target-tree inference, supplies the full
+bounded current tree to the ordinary target input, derives a create-only diff and
+task coverage, and invokes the focused plain-text `SourceBlueprint` compiler. A
+collision, ignored path, unsupported adapter, reconcile transition, or workspace
+rejection is terminal; no replacement path is requested from a model.
+
 When inference remains necessary, code projects path authority into three
 separate model-facing facts. The exact
 filesystem snapshot appears in `EXISTING_WORKSPACE_PATHS_JSON`; those paths may
@@ -157,8 +169,8 @@ plan and creates a language-neutral `SourceBlueprint`. Its source nodes are:
 
 Code validates the neutral dependency graph, task ownership, and project-stack
 constraints. It resolves each document path to an adapter and requires that
-adapter's registered composer. TypeScript/TSX, Go, JavaScript, Rust, Java, and
-PHP source documents have focused composers; an adapter with only a leaf parser
+adapter's registered composer. TypeScript/TSX, Go, JavaScript, Rust, Java, PHP,
+and unstructured plain-text source documents have focused composers; an adapter with only a leaf parser
 cannot silently enter this source pipeline.
 
 Before source generation starts, code rebuilds the exact artifact-identity

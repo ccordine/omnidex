@@ -20,4 +20,5 @@ type testCommand struct {
 	Timeout         time.Duration
 	RepositoryProof *repositoryGoTestProof
 	WorkspaceRole   workspaceVerificationCommandRole
+	Environment     *directCodingDockerEnvironmentAuthority
 }

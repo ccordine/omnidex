@@ -87,7 +87,11 @@ func laravelVerificationCommands(program directCodingProgram) ([]testCommand, er
 	if err := validateLaravelServiceStateLifetime(program.Workload, program.ServiceState); err != nil {
 		return nil, fmt.Errorf("validate Laravel state authority: %w", err)
 	}
-	if err := program.ServiceEndpoints.ValidateFor(program.Workload); err != nil {
+	workloadInput, err := applicationWorkloadInputFromFrozen(program.Workload)
+	if err != nil {
+		return nil, err
+	}
+	if err := program.ServiceEndpoints.ValidateFor(workloadInput, program.Workload); err != nil {
 		return nil, fmt.Errorf("validate Laravel endpoint authority: %w", err)
 	}
 	hasState, err := laravelProgramRequiresPostgreSQL(program)

@@ -126,7 +126,8 @@ func loadWorkspaceMutationByStageTx(
 ) (workspaceMutationOperationRecord, bool, error) {
 	record, err := scanWorkspaceMutationOperation(tx.QueryRow(ctx, `
 		SELECT id,command_sha256,status,indeterminate_phase,mutation_evidence_id,
-		       verification_succeeded,verification_receipt_json,verification_evidence_id
+		       verification_succeeded,verification_receipt_json,verification_evidence_id,
+		       verified_repository_snapshot_id
 		FROM workspace_mutation_operations
 		WHERE job_id=$1 AND stage_id=$2
 		FOR UPDATE
@@ -147,7 +148,8 @@ func lockWorkspaceMutationOperationTx(
 ) (workspaceMutationOperationRecord, error) {
 	record, err := scanWorkspaceMutationOperation(tx.QueryRow(ctx, `
 		SELECT id,command_sha256,status,indeterminate_phase,mutation_evidence_id,
-		       verification_succeeded,verification_receipt_json,verification_evidence_id
+		       verification_succeeded,verification_receipt_json,verification_evidence_id,
+		       verified_repository_snapshot_id
 		FROM workspace_mutation_operations WHERE id=$1 FOR UPDATE
 	`, operationID))
 	if err != nil {
@@ -162,6 +164,7 @@ func scanWorkspaceMutationOperation(row pgx.Row) (workspaceMutationOperationReco
 		&record.ID, &record.CommandSHA256, &record.Status, &record.IndeterminatePhase,
 		&record.MutationEvidenceID, &record.VerificationSucceeded,
 		&record.VerificationReceipt, &record.VerificationEvidenceID,
+		&record.VerifiedRepositorySnapshotID,
 	)
 	return record, err
 }

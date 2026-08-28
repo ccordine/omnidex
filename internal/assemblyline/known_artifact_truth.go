@@ -11,6 +11,7 @@ type KnownArtifactTruth string
 
 const (
 	KnownArtifactMustBeAbsent       KnownArtifactTruth = "known_artifact_must_be_absent"
+	OnePlainTextArtifactMustExist   KnownArtifactTruth = "one_plain_text_artifact_must_exist"
 	KnownArtifactTruthNotApplicable KnownArtifactTruth = "not_applicable"
 )
 
@@ -45,7 +46,8 @@ func (decision KnownArtifactTruthDecision) ValidateFor(input KnownArtifactTruthI
 		return fmt.Errorf("known artifact truth schema must be %q", KnownArtifactTruthSchemaV1)
 	}
 	switch decision.Truth {
-	case KnownArtifactMustBeAbsent, KnownArtifactTruthNotApplicable:
+	case KnownArtifactMustBeAbsent, OnePlainTextArtifactMustExist,
+		KnownArtifactTruthNotApplicable:
 		return nil
 	default:
 		return fmt.Errorf("known artifact truth %q is unsupported", decision.Truth)
@@ -58,7 +60,7 @@ func BuildKnownArtifactTruthPrompt(input KnownArtifactTruthInput) (string, error
 	}
 	return strings.Join([]string{
 		"Classify only the explicit desired truth of the exact requirement.",
-		"Choose known_artifact_must_be_absent only when the quote explicitly requires one semantic artifact already established by repository authority, including all behavior it owns, to be absent. Choose not_applicable for addition, modification, advice, partial behavior removal, or when that complete absence is not explicit.",
+		"Choose known_artifact_must_be_absent only when the quote explicitly requires one semantic artifact already established by repository authority, including all behavior it owns, to be absent. Choose one_plain_text_artifact_must_exist only when the complete quote is one cohesive objective that explicitly requires exactly one new unstructured plain-text document, supplies that document's complete literal or natural-language content, and requires no source code, configuration, structured data, software behavior, or other workspace change. Choose not_applicable for modification, advice, partial behavior removal, plural or ambiguous creation, source code, configuration, structured data, software behavior, an unspecified document body, or when neither exact truth is explicit.",
 		"EXACT_REQUIREMENT:\n" + input.RequirementQuote,
 	}, "\n\n"), nil
 }
@@ -68,7 +70,10 @@ func KnownArtifactTruthResponseSchema() map[string]any {
 		[]string{"schema", "truth"},
 		map[string]any{
 			"schema": map[string]any{"type": "string", "const": KnownArtifactTruthSchemaV1},
-			"truth":  enumSchema(KnownArtifactMustBeAbsent, KnownArtifactTruthNotApplicable),
+			"truth": enumSchema(
+				KnownArtifactMustBeAbsent, OnePlainTextArtifactMustExist,
+				KnownArtifactTruthNotApplicable,
+			),
 		},
 	)
 }

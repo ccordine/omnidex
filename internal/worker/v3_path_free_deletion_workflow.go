@@ -8,27 +8,27 @@ import (
 	"github.com/gryph/omnidex/internal/station"
 )
 
-func (session *directCodingSession) classifyPathFreeArtifactAbsence(
+func (session *directCodingSession) classifyPathFreeArtifactTruth(
 	featureQuotes []string,
 	directives []assemblyline.ArtifactDirective,
 	identities []assemblyline.ArtifactIdentity,
-) ([]string, error) {
+) (knownArtifactTruthPartition, error) {
 	modelName, err := session.workerModel(station.CodingKnownArtifactTruth)
 	if err != nil {
-		return nil, err
+		return knownArtifactTruthPartition{}, err
 	}
-	absenceQuotes, err := classifyKnownArtifactTruthQuotes(
+	partition, err := classifyKnownArtifactTruthQuotes(
 		directCodingWorkerRuntime(session), modelName, featureQuotes, identities,
 	)
 	if err != nil {
-		return nil, err
+		return knownArtifactTruthPartition{}, err
 	}
 	if err := validateDirectArtifactAbsenceTruth(
-		featureQuotes, directives, absenceQuotes,
+		featureQuotes, directives, partition.MustBeAbsent,
 	); err != nil {
-		return nil, err
+		return knownArtifactTruthPartition{}, err
 	}
-	return absenceQuotes, nil
+	return partition, nil
 }
 
 func (session *directCodingSession) runPathFreeArtifactDeletion(

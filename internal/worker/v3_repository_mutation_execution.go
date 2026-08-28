@@ -98,6 +98,7 @@ func cloneTestCommands(commands []testCommand) []testCommand {
 	for index, command := range commands {
 		cloned[index] = command
 		cloned[index].Args = append([]string(nil), command.Args...)
+		cloned[index].Environment = cloneDirectCodingDockerEnvironmentAuthority(command.Environment)
 		if command.RepositoryProof != nil {
 			proof := *command.RepositoryProof
 			proof.Expected = append([]repositoryGoExpectedTest(nil), command.RepositoryProof.Expected...)

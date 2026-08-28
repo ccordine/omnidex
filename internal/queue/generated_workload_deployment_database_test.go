@@ -147,8 +147,8 @@ func TestGeneratedWorkloadDeploymentPrepareAndTransitionShareAuthorityFirstLockO
 	errors := make(chan error, 2)
 	go func() {
 		<-start
-			_, err := fixture.repository.PrepareGeneratedWorkloadDeployment(
-				ctx, fixture.authority, fixture.command, fixture.verification.ID, fixture.manifest, fixture.rollback,
+		_, err := fixture.repository.PrepareGeneratedWorkloadDeployment(
+			ctx, fixture.authority, fixture.command, fixture.verification.ID, fixture.manifest, fixture.rollback,
 		)
 		errors <- err
 	}()

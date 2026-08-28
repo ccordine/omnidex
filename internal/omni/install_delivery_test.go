@@ -349,6 +349,8 @@ func TestDockerReleaseIdentityContractIsExplicitAndContextBounded(t *testing.T) 
 	for _, fragment := range []string{
 		`APP_UID: ${HOST_UID:?HOST_UID must match the owner of HOST_WORKSPACE_PATH}`,
 		`APP_GID: ${HOST_GID:?HOST_GID must match the group of HOST_WORKSPACE_PATH}`,
+		`group_add:`,
+		`${DOCKER_GID:?DOCKER_GID must match the numeric group owner of DOCKER_SOCKET_PATH}`,
 	} {
 		if !strings.Contains(compose, fragment) {
 			t.Fatalf("Compose omits exact host runtime identity %q", fragment)

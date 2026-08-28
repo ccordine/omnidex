@@ -72,7 +72,7 @@ func TestServiceEndpointResolutionClassifiesEveryTaskAndContractsOnlyRequiredEnd
 			Exposure: "exposure-model", Method: "method-model", Route: "route-model",
 			RequestMedia: "request-media-model", ResponseMedia: "response-media-model",
 			SuccessStatus: "success-status-model",
-		}, input.ProductQuote, frozen, capabilities, nil,
+		}, input, frozen, capabilities, nil,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -98,8 +98,14 @@ func TestServiceEndpointResolutionClassifiesEveryTaskAndContractsOnlyRequiredEnd
 func TestServiceEndpointResolutionDerivesNoContentStatusWithoutInference(t *testing.T) {
 	t.Parallel()
 	input, frozen, _ := applicationTaskLifecycleFixture(t)
+	runtimeAuthority, err := assemblyline.ProjectApplicationTaskRuntimeAuthority(
+		input, frozen, frozen.Tasks[0].ID,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
 	authority, err := assemblyline.ProjectApplicationServiceEndpointTaskAuthority(
-		input.ProductQuote, frozen.Tasks[0],
+		runtimeAuthority,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -159,7 +165,7 @@ func TestServiceEndpointPlanRequiresOneNonOverlappingContractPerFrozenTask(t *te
 			frozen.Tasks[1].ID: testServiceEndpointContract("/groups/{group_id}"),
 		},
 	}
-	if err := plan.ValidateFor(frozen); err != nil {
+	if err := plan.ValidateFor(input, frozen); err != nil {
 		t.Fatal(err)
 	}
 	capabilities := directCodingCapabilityGraph{
@@ -169,7 +175,7 @@ func TestServiceEndpointPlanRequiresOneNonOverlappingContractPerFrozenTask(t *te
 		}},
 		frozen.Tasks[1].RequirementID: nil,
 	}
-	if err := plan.ValidateForCapabilities(frozen, capabilities); err != nil {
+	if err := plan.ValidateForCapabilities(input, frozen, capabilities); err != nil {
 		t.Fatal(err)
 	}
 	projected, err := plan.projectTask(frozen.Tasks[1].ID)
@@ -185,14 +191,14 @@ func TestServiceEndpointPlanRequiresOneNonOverlappingContractPerFrozenTask(t *te
 		frozen.Tasks[0].ID: testServiceEndpointContract("/records/{record_id}"),
 		frozen.Tasks[1].ID: testServiceEndpointContract("/records/{different_name}"),
 	}
-	if err := overlap.ValidateFor(frozen); err == nil || !strings.Contains(err.Error(), "overlapping") {
+	if err := overlap.ValidateFor(input, frozen); err == nil || !strings.Contains(err.Error(), "overlapping") {
 		t.Fatalf("overlapping route validation error=%v", err)
 	}
 	overlap.ByTask = map[string]assemblyline.ApplicationServiceEndpointContract{
 		frozen.Tasks[0].ID: testServiceEndpointContract("/records/{record_id}"),
 		frozen.Tasks[1].ID: testServiceEndpointContract("/{collection}/active"),
 	}
-	if err := overlap.ValidateFor(frozen); err == nil || !strings.Contains(err.Error(), "overlapping") {
+	if err := overlap.ValidateFor(input, frozen); err == nil || !strings.Contains(err.Error(), "overlapping") {
 		t.Fatalf("intersecting literal/parameter route validation error=%v", err)
 	}
 }
@@ -211,10 +217,10 @@ func TestServiceEndpointPlanProjectsSupportOnlyTaskWithoutInventingRoute(t *test
 			frozen.Tasks[0].ID: testServiceEndpointContract("/records"),
 		},
 	}
-	if err := plan.ValidateFor(frozen); err != nil {
+	if err := plan.ValidateFor(input, frozen); err != nil {
 		t.Fatal(err)
 	}
-	if err := plan.ValidateForCapabilities(frozen, directCodingCapabilityGraph{
+	if err := plan.ValidateForCapabilities(input, frozen, directCodingCapabilityGraph{
 		frozen.Tasks[0].RequirementID: {{
 			RequirementID: frozen.Tasks[1].RequirementID,
 			CapabilityID:  genericApplicationCapabilityID(2),
@@ -232,11 +238,11 @@ func TestServiceEndpointPlanProjectsSupportOnlyTaskWithoutInventingRoute(t *test
 		t.Fatalf("support-only projection=%+v", projected)
 	}
 	plan.ByTask[frozen.Tasks[1].ID] = testServiceEndpointContract("/invented")
-	if err := plan.ValidateFor(frozen); err == nil || !strings.Contains(err.Error(), "support-only") {
+	if err := plan.ValidateFor(input, frozen); err == nil || !strings.Contains(err.Error(), "support-only") {
 		t.Fatalf("support-only route validation error=%v", err)
 	}
 	delete(plan.ByTask, frozen.Tasks[1].ID)
-	if err := plan.ValidateForCapabilities(frozen, directCodingCapabilityGraph{
+	if err := plan.ValidateForCapabilities(input, frozen, directCodingCapabilityGraph{
 		frozen.Tasks[0].RequirementID: nil,
 		frozen.Tasks[1].RequirementID: nil,
 	}); err == nil || !strings.Contains(err.Error(), "no code-derived capability consumer") {
@@ -259,7 +265,7 @@ func TestServiceEndpointPlanRejectsMissingAndUnknownTaskAuthority(t *testing.T) 
 			"task_unknown":     testServiceEndpointContract("/unknown"),
 		},
 	}
-	if err := plan.ValidateFor(frozen); err == nil {
+	if err := plan.ValidateFor(input, frozen); err == nil {
 		t.Fatal("service endpoint plan accepted missing and unknown task authority")
 	}
 }

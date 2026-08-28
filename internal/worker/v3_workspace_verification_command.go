@@ -12,7 +12,7 @@ import (
 	"github.com/gryph/omnidex/internal/queue"
 )
 
-const workspaceVerificationCommandSchemaV1 = "omnidex.workspace-verification-command.v1"
+const workspaceVerificationCommandSchemaV2 = "omnidex.workspace-verification-command.v2"
 
 type workspaceVerificationCommandRole string
 
@@ -22,19 +22,29 @@ const (
 )
 
 type workspaceVerificationCommandAuthority struct {
-	Schema             string                 `json:"schema"`
-	Family             string                 `json:"family"`
-	Program            string                 `json:"program"`
-	Arguments          []string               `json:"arguments"`
-	Purpose            string                 `json:"purpose"`
-	Role               string                 `json:"role"`
-	TimeoutNanoseconds int64                  `json:"timeout_nanoseconds"`
-	RepositoryProof    *repositoryGoTestProof `json:"repository_proof,omitempty"`
+	Schema             string                                  `json:"schema"`
+	Family             string                                  `json:"family"`
+	Program            string                                  `json:"program"`
+	Arguments          []string                                `json:"arguments"`
+	Purpose            string                                  `json:"purpose"`
+	Role               string                                  `json:"role"`
+	TimeoutNanoseconds int64                                   `json:"timeout_nanoseconds"`
+	RepositoryProof    *repositoryGoTestProof                  `json:"repository_proof,omitempty"`
+	Environment        *directCodingDockerEnvironmentAuthority `json:"environment,omitempty"`
 }
 
 func encodeWorkspaceVerificationCommand(command testCommand) (string, error) {
-	if err := validateV3Command(command.Name, command.Args); err != nil {
-		return "", err
+	if command.Family == plainTextWorkspaceVerificationFamily {
+		if err := validatePlainTextWorkspaceVerificationCommand(command); err != nil {
+			return "", err
+		}
+	} else {
+		if command.Environment != nil {
+			return "", fmt.Errorf("non-plain workspace verification command cannot carry project environment authority")
+		}
+		if err := validateV3Command(command.Name, command.Args); err != nil {
+			return "", err
+		}
 	}
 	if !validWorkspaceVerificationPurpose(command.Purpose) ||
 		command.Family != strings.TrimSpace(command.Family) ||
@@ -50,12 +60,13 @@ func encodeWorkspaceVerificationCommand(command testCommand) (string, error) {
 		return "", fmt.Errorf("workspace verification command has invalid role %q", role)
 	}
 	authority := workspaceVerificationCommandAuthority{
-		Schema: workspaceVerificationCommandSchemaV1,
+		Schema: workspaceVerificationCommandSchemaV2,
 		Family: command.Family, Program: command.Name,
 		Arguments: append([]string(nil), command.Args...),
 		Purpose:   string(command.Purpose), Role: string(role),
 		TimeoutNanoseconds: int64(command.Timeout),
 		RepositoryProof:    cloneRepositoryGoTestProof(command.RepositoryProof),
+		Environment:        cloneDirectCodingDockerEnvironmentAuthority(command.Environment),
 	}
 	raw, err := json.Marshal(authority)
 	if err != nil {
@@ -74,7 +85,7 @@ func decodeWorkspaceVerificationCommand(raw string) (testCommand, error) {
 	if err := decoder.Decode(&struct{}{}); err != io.EOF {
 		return testCommand{}, fmt.Errorf("workspace verification command contains trailing data")
 	}
-	if authority.Schema != workspaceVerificationCommandSchemaV1 ||
+	if authority.Schema != workspaceVerificationCommandSchemaV2 ||
 		authority.TimeoutNanoseconds < 0 ||
 		authority.TimeoutNanoseconds > int64(maxV3CommandLimit) {
 		return testCommand{}, fmt.Errorf("workspace verification command authority is invalid")
@@ -86,6 +97,7 @@ func decodeWorkspaceVerificationCommand(raw string) (testCommand, error) {
 		Timeout:         time.Duration(authority.TimeoutNanoseconds),
 		RepositoryProof: cloneRepositoryGoTestProof(authority.RepositoryProof),
 		WorkspaceRole:   workspaceVerificationCommandRole(authority.Role),
+		Environment:     cloneDirectCodingDockerEnvironmentAuthority(authority.Environment),
 	}
 	canonical, err := encodeWorkspaceVerificationCommand(command)
 	if err != nil {

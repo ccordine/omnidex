@@ -75,3 +75,45 @@ func TestDirectArtifactAbsenceTruthDisagreementFailsLoudly(t *testing.T) {
 		t.Fatalf("truth disagreement error=%v", err)
 	}
 }
+
+func TestKnownArtifactTruthPartitionPreservesOneDecisionPerQuote(t *testing.T) {
+	t.Parallel()
+	quotes := []string{
+		"One new release note artifact must exist.",
+		"The obsolete semantic artifact must no longer exist.",
+		"The retained behavior must be updated.",
+	}
+	answers := []assemblyline.KnownArtifactTruth{
+		assemblyline.OnePlainTextArtifactMustExist,
+		assemblyline.KnownArtifactMustBeAbsent,
+		assemblyline.KnownArtifactTruthNotApplicable,
+	}
+	call := 0
+	runtime := typedWorkerRuntime{
+		Context: context.Background(), MaxAttempts: 1,
+		Execute: func(job assemblyline.PortableJob, _ string) (assemblyline.PortableResult, error) {
+			if job.Kind != assemblyline.WorkKnownArtifactTruth || call >= len(answers) {
+				t.Fatalf("unexpected semantic call %d kind=%q", call, job.Kind)
+			}
+			answer := answers[call]
+			call++
+			return assemblyline.PortableResult{
+				JobID: job.ID,
+				Candidate: `{"schema":"omnidex.known-artifact-truth.v1","truth":"` +
+					string(answer) + `"}`,
+			}, nil
+		},
+	}
+	partition, err := classifyKnownArtifactTruthQuotes(
+		runtime, "semantic", quotes, nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if call != len(quotes) || len(partition.MustExist) != 1 ||
+		partition.MustExist[0] != quotes[0] || len(partition.MustBeAbsent) != 1 ||
+		partition.MustBeAbsent[0] != quotes[1] || len(partition.NotApplicable) != 1 ||
+		partition.NotApplicable[0] != quotes[2] {
+		t.Fatalf("partition=%+v calls=%d", partition, call)
+	}
+}

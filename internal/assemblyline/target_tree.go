@@ -40,11 +40,11 @@ func (constraints TargetTreeConstraints) Validate() error {
 }
 
 // TargetTreeInput is code-owned context for one structural question.
-// ExistingPaths is the exact filesystem snapshot, ReusablePaths contains leaves
-// accepted for earlier focused tasks that this stack permits another task to
-// share, and ReservedPaths contains leaves code has made unavailable. The sets
-// are intentionally orthogonal; a reserved path remains unavailable even when
-// it also exists in the workspace.
+// ExistingPaths is always the exact bounded filesystem snapshot. ReusablePaths
+// contains leaves accepted for earlier focused tasks that this stack permits
+// another task to share, and ReservedPaths contains leaves code has made
+// unavailable. The sets are intentionally orthogonal; a reserved path remains
+// unavailable even when it also exists in the workspace.
 type TargetTreeInput struct {
 	Objective        string                `json:"objective"`
 	TechnicalContext string                `json:"technical_context"`

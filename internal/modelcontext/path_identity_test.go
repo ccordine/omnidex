@@ -1,6 +1,9 @@
 package modelcontext
 
-import "testing"
+import (
+	"reflect"
+	"testing"
+)
 
 func TestQualifiedPathLexerRejectsCrossPlatformIdentities(t *testing.T) {
 	t.Parallel()
@@ -41,6 +44,26 @@ func TestPathIdentityProvenanceMatchesKnownPathsContainingSpaces(t *testing.T) {
 	identities := PathIdentities("Preserve My Files/a.js exactly.", provenance)
 	if len(identities) != 1 || identities[0].Value != "My Files/a.js" {
 		t.Fatalf("spaced path identities=%+v", identities)
+	}
+}
+
+func TestLexicalPathTokensGrantNoIdentityButPreserveExactTokenBytes(t *testing.T) {
+	t.Parallel()
+	input := `Create "Docs/Proof Record.TXT" and mention Node.js.`
+	tokens := LexicalPathTokens(input)
+	values := make([]string, len(tokens))
+	for index := range tokens {
+		values[index] = tokens[index].Value
+		if input[tokens[index].Start:tokens[index].End] != tokens[index].Value {
+			t.Fatalf("token %d lost exact byte provenance", index)
+		}
+	}
+	want := []string{"Create", "Docs/Proof Record.TXT", "and", "mention", "Node.js"}
+	if !reflect.DeepEqual(values, want) {
+		t.Fatalf("tokens=%q want=%q", values, want)
+	}
+	if len(PathIdentities(input, ArtifactIdentityProvenance{})) != 1 {
+		t.Fatal("lexical tokenization changed path-identity authority")
 	}
 }
 

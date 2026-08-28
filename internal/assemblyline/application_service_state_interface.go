@@ -27,15 +27,27 @@ const (
 )
 
 type ApplicationServiceStateInterfaceNeed struct {
-	RequirementQuote   string   `json:"requirement_quote"`
-	Objective          string   `json:"objective"`
-	RequiredBehaviors  []string `json:"required_behaviors"`
-	AcceptanceCriteria []string `json:"acceptance_criteria"`
+	RequirementQuote  string   `json:"requirement_quote"`
+	Objective         string   `json:"objective"`
+	RequiredBehaviors []string `json:"required_behaviors"`
 }
 
 type ApplicationServiceStateInterfaceInput struct {
 	ProductContext string                                 `json:"product_context"`
 	Needs          []ApplicationServiceStateInterfaceNeed `json:"needs"`
+}
+
+func ProjectApplicationServiceStateInterfaceNeed(
+	authority ApplicationTaskRuntimeAuthority,
+) (ApplicationServiceStateInterfaceNeed, error) {
+	need := ApplicationServiceStateInterfaceNeed{
+		RequirementQuote: authority.RequirementQuote, Objective: authority.Objective,
+		RequiredBehaviors: append([]string(nil), authority.RequiredBehaviors...),
+	}
+	if err := need.validate(); err != nil {
+		return ApplicationServiceStateInterfaceNeed{}, err
+	}
+	return need, nil
 }
 
 type ApplicationServiceStateRecordField struct {
@@ -75,30 +87,28 @@ func (input ApplicationServiceStateInterfaceInput) Validate() error {
 		)
 	}
 	for index, need := range input.Needs {
-		if err := validateApplicationIntentText(
-			"service state interface requirement", need.RequirementQuote, maxRequirementQuoteBytes,
-		); err != nil {
-			return fmt.Errorf("service state interface need %d: %w", index+1, err)
-		}
-		if err := validateApplicationWorkloadLine(
-			"service state interface objective", need.Objective, maxApplicationObjectiveRunes,
-		); err != nil {
-			return fmt.Errorf("service state interface need %d: %w", index+1, err)
-		}
-		if err := validateApplicationJobSpecificationList(
-			"service state interface behavior", need.RequiredBehaviors,
-			maxApplicationRequiredBehaviors, maxApplicationBehaviorRunes,
-		); err != nil {
-			return fmt.Errorf("service state interface need %d: %w", index+1, err)
-		}
-		if err := validateApplicationJobSpecificationList(
-			"service state interface criterion", need.AcceptanceCriteria,
-			maxApplicationAcceptanceCriteria, maxApplicationCriterionRunes,
-		); err != nil {
+		if err := need.validate(); err != nil {
 			return fmt.Errorf("service state interface need %d: %w", index+1, err)
 		}
 	}
 	return nil
+}
+
+func (need ApplicationServiceStateInterfaceNeed) validate() error {
+	if err := validateApplicationIntentText(
+		"service state interface requirement", need.RequirementQuote, maxRequirementQuoteBytes,
+	); err != nil {
+		return err
+	}
+	if err := validateApplicationWorkloadLine(
+		"service state interface objective", need.Objective, maxApplicationObjectiveRunes,
+	); err != nil {
+		return err
+	}
+	return validateApplicationJobSpecificationList(
+		"service state interface behavior", need.RequiredBehaviors,
+		maxApplicationRequiredBehaviors, maxApplicationBehaviorRunes,
+	)
 }
 
 func (result ApplicationServiceStateInterfaceResult) ValidateFor(

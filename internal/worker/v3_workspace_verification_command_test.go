@@ -114,3 +114,53 @@ func TestWorkspaceVerificationCommandRejectsEvidenceKindOutsidePurpose(t *testin
 		t.Fatalf("mismatched kind error=%v", err)
 	}
 }
+
+func TestPlainWorkspaceVerificationCommandPersistsExactEnvironmentAuthority(t *testing.T) {
+	authority := testDirectCodingDockerEnvironmentAuthority(t)
+	command := plainTextWorkspaceVerificationCommand("proof.txt", authority)
+	raw, err := encodeWorkspaceVerificationCommand(command)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(raw, `"schema":"`+workspaceVerificationCommandSchemaV2+`"`) ||
+		!strings.Contains(raw, `"workspace_read_only":true`) ||
+		!strings.Contains(raw, `"image_id":"`+testProjectEnvironmentBuiltImageID+`"`) {
+		t.Fatalf("persisted environment authority is incomplete: %s", raw)
+	}
+	recovered, err := decodeWorkspaceVerificationCommand(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(recovered, command) {
+		t.Fatalf("recovered plain command=%+v want=%+v", recovered, command)
+	}
+
+	legacy := strings.Replace(
+		raw, workspaceVerificationCommandSchemaV2,
+		"omnidex.workspace-verification-command.v1", 1,
+	)
+	if _, err := decodeWorkspaceVerificationCommand(legacy); err == nil ||
+		!strings.Contains(err.Error(), "authority is invalid") {
+		t.Fatalf("legacy command authority error=%v", err)
+	}
+
+	tampered := command
+	tampered.Environment = cloneDirectCodingDockerEnvironmentAuthority(command.Environment)
+	tampered.Environment.Dockerfile += "# changed after persistence\n"
+	if _, err := encodeWorkspaceVerificationCommand(tampered); err == nil ||
+		!strings.Contains(err.Error(), "digest differs") {
+		t.Fatalf("tampered environment authority error=%v", err)
+	}
+}
+
+func TestNonPlainWorkspaceVerificationRejectsEnvironmentAuthority(t *testing.T) {
+	command := testCommand{
+		Family: "go", Name: "go", Args: []string{"test", "./..."},
+		Purpose: verificationTest, Timeout: time.Minute,
+		Environment: testDirectCodingDockerEnvironmentAuthority(t),
+	}
+	if _, err := encodeWorkspaceVerificationCommand(command); err == nil ||
+		!strings.Contains(err.Error(), "cannot carry project environment authority") {
+		t.Fatalf("non-plain environment authority error=%v", err)
+	}
+}

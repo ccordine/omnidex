@@ -105,6 +105,10 @@ func directCodingServiceStateComponents(
 	if err := plan.ValidateFor(workload); err != nil {
 		return nil, err
 	}
+	workloadInput, err := applicationWorkloadInputFromFrozen(workload)
+	if err != nil {
+		return nil, err
+	}
 	requirements := make([]assemblyline.Requirement, 0, len(workload.Tasks))
 	indexByRequirement := make(map[string]int, len(workload.Tasks))
 	for index, task := range workload.Tasks {
@@ -164,14 +168,18 @@ func directCodingServiceStateComponents(
 		}
 		for _, index := range indices {
 			task := workload.Tasks[index]
-			component.TaskIDs = append(component.TaskIDs, task.ID)
-			component.Input.Needs = append(component.Input.Needs,
-				assemblyline.ApplicationServiceStateInterfaceNeed{
-					RequirementQuote: task.RequirementQuote, Objective: task.Objective,
-					RequiredBehaviors:  append([]string(nil), task.RequiredBehaviors...),
-					AcceptanceCriteria: append([]string(nil), task.AcceptanceCriteria...),
-				},
+			authority, err := assemblyline.ProjectApplicationTaskRuntimeAuthority(
+				workloadInput, workload, task.ID,
 			)
+			if err != nil {
+				return nil, err
+			}
+			need, err := assemblyline.ProjectApplicationServiceStateInterfaceNeed(authority)
+			if err != nil {
+				return nil, err
+			}
+			component.TaskIDs = append(component.TaskIDs, task.ID)
+			component.Input.Needs = append(component.Input.Needs, need)
 		}
 		if err := component.Input.Validate(); err != nil {
 			return nil, err

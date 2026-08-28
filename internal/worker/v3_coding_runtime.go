@@ -129,7 +129,7 @@ func (r *nativeRuntimeV3) runDirectCodingSession(request directCodingRequest) (s
 	}
 	var indexed *repositoryindex.Result
 	if hasExistingImplementation {
-		result, indexErr := r.refreshExistingRepositoryIndex(scope.Root)
+		result, indexErr := r.captureExistingRepositoryIndex(scope.Root)
 		if indexErr != nil {
 			return "", indexErr
 		}

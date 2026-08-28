@@ -84,6 +84,23 @@ func runDirectCodingTargetTreeCall(
 	input assemblyline.TargetTreeInput,
 	stack directCodingProjectStack,
 ) (assemblyline.TargetTree, error) {
+	return runDirectCodingTargetTreeCallWithValidator(
+		runtime, plannerModel, correctionModel, input,
+		func(target assemblyline.TargetTree) error {
+			return validateDirectCodingFocusedTargetTree(stack, target)
+		},
+	)
+}
+
+type directCodingTargetTreeCandidateValidator func(assemblyline.TargetTree) error
+
+func runDirectCodingTargetTreeCallWithValidator(
+	runtime typedWorkerRuntime,
+	plannerModel string,
+	correctionModel string,
+	input assemblyline.TargetTreeInput,
+	validateCandidate directCodingTargetTreeCandidateValidator,
+) (assemblyline.TargetTree, error) {
 	var zero assemblyline.TargetTree
 	if runtime.Context == nil || runtime.Execute == nil {
 		return zero, fmt.Errorf("target tree requires a portable execution runtime")
@@ -95,6 +112,9 @@ func runDirectCodingTargetTreeCall(
 	correctionModel = strings.TrimSpace(correctionModel)
 	if plannerModel == "" || correctionModel == "" {
 		return zero, fmt.Errorf("target tree requires configured planner and correction models")
+	}
+	if validateCandidate == nil {
+		return zero, fmt.Errorf("target tree requires one code-owned candidate validator")
 	}
 	var lastCandidate string
 	var lastFailure error
@@ -131,7 +151,7 @@ func runDirectCodingTargetTreeCall(
 		seen[candidate] = struct{}{}
 		target, validationErr := assemblyline.DecodeTargetTreeCandidate(input, candidate)
 		if validationErr == nil {
-			validationErr = validateDirectCodingFocusedTargetTree(stack, target)
+			validationErr = validateCandidate(target)
 		}
 		if validationErr == nil {
 			if err := finalizeTypedWorkerResult(runtime, job, result, nil); err != nil {

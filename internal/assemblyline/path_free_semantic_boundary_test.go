@@ -90,7 +90,7 @@ func TestSemanticStationCandidatesRejectQualifiedPathsAtAcceptance(t *testing.T)
 		},
 		"repository requirements": func() error {
 			return (RepositoryRequirementInterpretation{
-				Schema:       RepositoryRequirementInterpretationSchemaV2,
+				Schema:       RepositoryRequirementInterpretationSchemaV3,
 				Requirements: []string{"Update ../private"},
 			}).ValidateFor(requirementInput)
 		},

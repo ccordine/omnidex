@@ -12,11 +12,10 @@ const (
 )
 
 type ApplicationServiceEndpointRequirementInput struct {
-	ProductContext     string   `json:"product_context"`
-	RequirementQuote   string   `json:"requirement_quote"`
-	Objective          string   `json:"objective"`
-	RequiredBehaviors  []string `json:"required_behaviors"`
-	AcceptanceCriteria []string `json:"acceptance_criteria"`
+	ProductContext    string   `json:"product_context"`
+	RequirementQuote  string   `json:"requirement_quote"`
+	Objective         string   `json:"objective"`
+	RequiredBehaviors []string `json:"required_behaviors"`
 }
 
 type ApplicationServiceEndpointRequirementResult struct {
@@ -25,14 +24,12 @@ type ApplicationServiceEndpointRequirementResult struct {
 }
 
 func ProjectApplicationServiceEndpointRequirementInput(
-	productContext string,
-	task FrozenApplicationTask,
+	authority ApplicationTaskRuntimeAuthority,
 ) (ApplicationServiceEndpointRequirementInput, error) {
 	input := ApplicationServiceEndpointRequirementInput{
-		ProductContext: productContext, RequirementQuote: task.RequirementQuote,
-		Objective:          task.Objective,
-		RequiredBehaviors:  append([]string(nil), task.RequiredBehaviors...),
-		AcceptanceCriteria: append([]string(nil), task.AcceptanceCriteria...),
+		ProductContext: authority.ProductQuote, RequirementQuote: authority.RequirementQuote,
+		Objective:         authority.Objective,
+		RequiredBehaviors: append([]string(nil), authority.RequiredBehaviors...),
 	}
 	if err := input.validate(); err != nil {
 		return ApplicationServiceEndpointRequirementInput{}, err
@@ -68,10 +65,7 @@ func (input ApplicationServiceEndpointRequirementInput) validate() error {
 	); err != nil {
 		return err
 	}
-	return validateApplicationJobSpecificationList(
-		"service endpoint requirement criterion", input.AcceptanceCriteria,
-		maxApplicationAcceptanceCriteria, maxApplicationCriterionRunes,
-	)
+	return nil
 }
 
 func (result ApplicationServiceEndpointRequirementResult) ValidateFor(

@@ -20,7 +20,8 @@ func TestPostgresWorkspaceMutationAPIAppliesVerifiesAndReplaysTerminal(t *testin
 	if result.Status != workspaceMutationVerified || !result.VerificationSucceeded ||
 		result.MutationEvidenceID <= 0 || len(result.CommandEvidenceIDs) != 1 ||
 		result.CommandEvidenceIDs[0] <= result.MutationEvidenceID ||
-		result.VerificationEvidenceID <= result.CommandEvidenceIDs[0] {
+		result.VerificationEvidenceID <= result.CommandEvidenceIDs[0] ||
+		result.VerifiedRepositorySnapshotID != "" {
 		t.Fatalf("verified workspace mutation result=%+v", result)
 	}
 	if calls != (workspaceMutationCallbackCounts{observe: 4, apply: 1, verify: 1}) {
@@ -63,7 +64,7 @@ func TestPostgresWorkspaceMutationAPIPersistsAuthoritativeVerificationFailure(t 
 	}
 	if result.Status != workspaceMutationVerificationFailed || result.VerificationSucceeded ||
 		result.MutationEvidenceID <= 0 || len(result.CommandEvidenceIDs) != 1 ||
-		result.VerificationEvidenceID <= 0 {
+		result.VerificationEvidenceID <= 0 || result.VerifiedRepositorySnapshotID != "" {
 		t.Fatalf("failed workspace verification result=%+v", result)
 	}
 	if calls != (workspaceMutationCallbackCounts{observe: 4, apply: 1, verify: 1}) {

@@ -2,8 +2,6 @@ package worker
 
 import (
 	"context"
-	"net"
-	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -114,17 +112,16 @@ func TestResolveV3DockerCommandExecutionRejectsDifferentMirrorDirectory(t *testi
 	}
 }
 
-func TestResolveV3DockerCommandExecutionRejectsNonRootlessDaemon(t *testing.T) {
+func TestResolveV3DockerCommandExecutionAcceptsHealthyDefaultDaemon(t *testing.T) {
 	root := t.TempDir()
-	socketPath, closeSocket := openV3DockerTestDaemon(t, false)
+	socketPath, closeSocket := openV3DockerTestSocket(t)
 	defer closeSocket()
 	t.Setenv("WORKSPACE_ROOT", root)
 	t.Setenv("HOST_WORKSPACE_PATH", root)
 	t.Setenv("DOCKER_HOST", "unix://"+socketPath)
 
-	_, _, err := resolveV3CommandExecution(context.Background(), root, "docker")
-	if err == nil || !strings.Contains(err.Error(), "do not declare rootless mode") {
-		t.Fatalf("non-rootless Docker daemon error=%v", err)
+	if _, _, err := resolveV3CommandExecution(context.Background(), root, "docker"); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -207,36 +204,5 @@ func TestDockerComposeConfigRunsFromTwoUnrelatedMappedFixtures(t *testing.T) {
 				)
 			}
 		})
-	}
-}
-
-func openV3DockerTestSocket(t *testing.T) (string, func()) {
-	return openV3DockerTestDaemon(t, true)
-}
-
-func openV3DockerTestDaemon(t *testing.T, rootless bool) (string, func()) {
-	t.Helper()
-	path := filepath.Join(t.TempDir(), "docker.sock")
-	listener, err := net.Listen("unix", path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	securityOptions := `[]`
-	if rootless {
-		securityOptions = `["name=seccomp,profile=builtin","name=rootless"]`
-	}
-	server := &http.Server{Handler: http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		if request.Method != http.MethodGet || request.URL.Path != "/info" {
-			http.NotFound(writer, request)
-			return
-		}
-		writer.Header().Set("Content-Type", "application/json")
-		_, _ = writer.Write([]byte(`{"SecurityOptions":` + securityOptions + `}`))
-	})}
-	go func() { _ = server.Serve(listener) }()
-	return path, func() {
-		_ = server.Close()
-		_ = listener.Close()
-		_ = os.Remove(path)
 	}
 }

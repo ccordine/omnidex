@@ -20,7 +20,7 @@ func RepositoryRequirementInterpretationResponseSchema() map[string]any {
 		[]string{"schema", "requirements"},
 		map[string]any{
 			"schema": map[string]any{
-				"type": "string", "const": RepositoryRequirementInterpretationSchemaV2,
+				"type": "string", "const": RepositoryRequirementInterpretationSchemaV3,
 			},
 			"requirements": map[string]any{
 				"type": "array", "minItems": 1, "maxItems": maxRequirementCount,

@@ -62,6 +62,57 @@ func TestApplicationServiceEndpointLeafStationsExposeOneSemanticFieldEach(t *tes
 	}
 }
 
+func TestApplicationServiceEndpointLeafEnvelopesExcludeVerificationAuthority(t *testing.T) {
+	t.Parallel()
+	workloadInput, frozen := applicationTaskAuthorityProjectionFixture(t)
+	runtimeAuthority, err := ProjectApplicationTaskRuntimeAuthority(
+		workloadInput, frozen, "task_001",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	authority, err := ProjectApplicationServiceEndpointTaskAuthority(runtimeAuthority)
+	if err != nil {
+		t.Fatal(err)
+	}
+	jobs := []PortableJob{
+		mustEndpointLeafJob(NewApplicationServiceEndpointExposureJob(
+			ApplicationServiceEndpointExposureInput{Task: authority},
+		)),
+		mustEndpointLeafJob(NewApplicationServiceEndpointMethodJob(
+			ApplicationServiceEndpointMethodInput{Task: authority},
+		)),
+		mustEndpointLeafJob(NewApplicationServiceEndpointRouteTemplateJob(
+			ApplicationServiceEndpointRouteTemplateInput{Task: authority},
+		)),
+		mustEndpointLeafJob(NewApplicationServiceEndpointRequestMediaJob(
+			ApplicationServiceEndpointRequestMediaInput{
+				Task: authority, Method: ApplicationServiceEndpointPOST,
+			},
+		)),
+		mustEndpointLeafJob(NewApplicationServiceEndpointResponseMediaJob(
+			ApplicationServiceEndpointResponseMediaInput{Task: authority},
+		)),
+		mustEndpointLeafJob(NewApplicationServiceEndpointSuccessStatusJob(
+			ApplicationServiceEndpointSuccessStatusInput{
+				Task: authority, Method: ApplicationServiceEndpointPOST,
+				RequestMedia:  ApplicationServiceEndpointJSON,
+				ResponseMedia: ApplicationServiceEndpointJSON,
+			},
+		)),
+	}
+	criterion := frozen.Tasks[0].AcceptanceCriteria[0]
+	for _, job := range jobs {
+		prompt, _, renderErr := RenderPortableJob(job)
+		if renderErr != nil {
+			t.Fatal(renderErr)
+		}
+		if strings.Contains(prompt, criterion) || strings.Contains(prompt, `"acceptance_criteria"`) {
+			t.Fatalf("endpoint leaf %s exposed verification authority: %s", job.Kind, prompt)
+		}
+	}
+}
+
 func TestApplicationServiceEndpointLeafDecodersRejectAggregateAndInvalidPrerequisites(t *testing.T) {
 	t.Parallel()
 	authority := testServiceEndpointTaskAuthority()

@@ -42,7 +42,7 @@ func (s *directCodingSession) resolveEndpointsForHTTPStack(
 		}
 	}
 	return resolveDirectCodingServiceEndpointPlan(
-		runtime, requirementModel, models, specification.ProductQuote,
+		runtime, requirementModel, models, applicationWorkloadInput(specification),
 		workload, capabilities, identities,
 	)
 }

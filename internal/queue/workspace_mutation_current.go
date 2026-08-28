@@ -11,17 +11,18 @@ import (
 )
 
 type currentWorkspaceMutationRecord struct {
-	operationID            string
-	commandSHA256          string
-	status                 string
-	verificationJSON       string
-	verificationSHA256     string
-	mutationEvidenceID     *int64
-	verificationSucceeded  *bool
-	verificationReceipt    *string
-	verificationReceiptSHA *string
-	verificationEvidenceID *int64
-	lastError              *string
+	operationID                  string
+	commandSHA256                string
+	status                       string
+	verificationJSON             string
+	verificationSHA256           string
+	mutationEvidenceID           *int64
+	verificationSucceeded        *bool
+	verificationReceipt          *string
+	verificationReceiptSHA       *string
+	verificationEvidenceID       *int64
+	verifiedRepositorySnapshotID *string
+	lastError                    *string
 }
 
 // CurrentWorkspaceMutation returns the one exact workspace mutation operation
@@ -154,7 +155,8 @@ func loadCurrentWorkspaceMutationTx(
 		       COALESCE(snapshot.repository_id,''),COALESCE(snapshot.head_commit,''),
 		       operation.mutation_evidence_id,operation.verification_succeeded,
 		       operation.verification_receipt_json,operation.verification_receipt_sha256,
-		       operation.verification_evidence_id,operation.last_error
+		       operation.verification_evidence_id,operation.verified_repository_snapshot_id,
+		       operation.last_error
 		FROM workspace_mutation_operations AS operation
 		LEFT JOIN repository_snapshots AS snapshot
 		  ON snapshot.project_id=operation.project_id AND
@@ -171,7 +173,8 @@ func loadCurrentWorkspaceMutationTx(
 		&record.verificationSHA256, &gitRepositoryID, &gitHeadCommit,
 		&record.mutationEvidenceID, &record.verificationSucceeded,
 		&record.verificationReceipt, &record.verificationReceiptSHA,
-		&record.verificationEvidenceID, &record.lastError,
+		&record.verificationEvidenceID, &record.verifiedRepositorySnapshotID,
+		&record.lastError,
 	)
 	if err != nil {
 		return WorkspaceMutationCommand{}, currentWorkspaceMutationRecord{},

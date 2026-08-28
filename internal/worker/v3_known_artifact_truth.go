@@ -27,24 +27,43 @@ func classifyKnownArtifactTruth(
 	)
 }
 
+type knownArtifactTruthPartition struct {
+	MustBeAbsent  []string
+	MustExist     []string
+	NotApplicable []string
+}
+
 func classifyKnownArtifactTruthQuotes(
 	runtime typedWorkerRuntime,
 	modelName string,
 	quotes []string,
 	identities []assemblyline.ArtifactIdentity,
-) ([]string, error) {
-	absent := make([]string, 0, len(quotes))
+) (knownArtifactTruthPartition, error) {
+	partition := knownArtifactTruthPartition{
+		MustBeAbsent:  make([]string, 0, len(quotes)),
+		MustExist:     make([]string, 0, len(quotes)),
+		NotApplicable: make([]string, 0, len(quotes)),
+	}
 	for _, quote := range quotes {
 		decision, err := classifyKnownArtifactTruth(
 			runtime, modelName,
 			assemblyline.KnownArtifactTruthInput{RequirementQuote: quote}, identities,
 		)
 		if err != nil {
-			return nil, err
+			return knownArtifactTruthPartition{}, err
 		}
-		if decision.Truth == assemblyline.KnownArtifactMustBeAbsent {
-			absent = append(absent, quote)
+		switch decision.Truth {
+		case assemblyline.KnownArtifactMustBeAbsent:
+			partition.MustBeAbsent = append(partition.MustBeAbsent, quote)
+		case assemblyline.OnePlainTextArtifactMustExist:
+			partition.MustExist = append(partition.MustExist, quote)
+		case assemblyline.KnownArtifactTruthNotApplicable:
+			partition.NotApplicable = append(partition.NotApplicable, quote)
+		default:
+			return knownArtifactTruthPartition{}, fmt.Errorf(
+				"known artifact truth %q escaped validated authority", decision.Truth,
+			)
 		}
 	}
-	return absent, nil
+	return partition, nil
 }

@@ -10,6 +10,9 @@ func renderPortableFragmentGeneration(input FragmentGenerationInput) (string, ma
 	case "go":
 		prompt, err := BuildGoFragmentGenerationPrompt(input)
 		return prompt, nil, err
+	case TextFragmentLanguage:
+		prompt, err := BuildTextFragmentGenerationPrompt(input)
+		return prompt, nil, err
 	case "typescript":
 		prompt, err := BuildTypeScriptFragmentPrompt(TypeScriptFragmentPrompt{
 			Dialect:   input.Dialect,

@@ -26,7 +26,7 @@ func proveDirectCodingDeploymentNamespaceVacant(
 	if err := validateV3DockerSocket(socketPath); err != nil {
 		return queue.GeneratedWorkloadDeploymentNamespacePreflight{}, err
 	}
-	if err := validateV3RootlessDockerDaemon(parent, socketPath); err != nil {
+	if err := validateV3DockerDaemon(parent, socketPath); err != nil {
 		return queue.GeneratedWorkloadDeploymentNamespacePreflight{}, err
 	}
 	ctx, cancel := context.WithTimeout(parent, directCodingDockerObserveTimeout)

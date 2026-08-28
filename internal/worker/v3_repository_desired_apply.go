@@ -8,6 +8,7 @@ import (
 
 	"github.com/gryph/omnidex/internal/queue"
 	repositoryfacts "github.com/gryph/omnidex/internal/repository"
+	goadapter "github.com/gryph/omnidex/internal/repository/adapters/golang"
 	repositoryindex "github.com/gryph/omnidex/internal/repository/indexing"
 )
 
@@ -121,7 +122,9 @@ func (session *directCodingSession) executeDesiredRepositoryMutation(
 				return nil
 			},
 			refresh: func(context.Context) (repositoryindex.Result, error) {
-				return session.runtime.refreshExistingRepositoryIndex(session.root)
+				return session.runtime.captureExistingRepositoryIndexWithAnalysis(
+					session.root, goadapter.AdapterName,
+				)
 			},
 		},
 	)

@@ -17,6 +17,27 @@ func applicationWorkloadInput(
 	}
 }
 
+func applicationWorkloadInputFromFrozen(
+	workload assemblyline.FrozenApplicationWorkload,
+) (assemblyline.ApplicationWorkloadDraftInput, error) {
+	requirements := make([]assemblyline.Requirement, len(workload.Tasks))
+	for index, task := range workload.Tasks {
+		requirements[index] = assemblyline.Requirement{
+			ID: task.RequirementID, SourceQuote: task.RequirementQuote,
+		}
+	}
+	input := assemblyline.ApplicationWorkloadDraftInput{
+		Surface: workload.Surface, ProductQuote: workload.ProductQuote,
+		Requirements: requirements,
+	}
+	if err := assemblyline.ValidateFrozenApplicationWorkload(input, workload); err != nil {
+		return assemblyline.ApplicationWorkloadDraftInput{}, fmt.Errorf(
+			"project application workload input from frozen authority: %w", err,
+		)
+	}
+	return input, nil
+}
+
 func directCodingApplicationTaskContexts(
 	input assemblyline.ApplicationWorkloadDraftInput,
 	frozen assemblyline.FrozenApplicationWorkload,

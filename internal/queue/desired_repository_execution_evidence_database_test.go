@@ -1,11 +1,42 @@
 package queue
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 
 	workspacefacts "github.com/gryph/omnidex/internal/workspace"
 )
+
+func TestPostgresGitWorkspaceMutationReturnsVerifiedSnapshotAcrossCurrentAndReplay(t *testing.T) {
+	fixture := newDesiredExecutionFixture(t, "snapshot-result-authority", "modify")
+	snapshot, err := fixture.repository.CurrentWorkspaceMutation(
+		fixture.ctx, fixture.command.JobID, fixture.command.Generation,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snapshot == nil || snapshot.Terminal == nil ||
+		snapshot.Terminal.Result.VerifiedRepositorySnapshotID != fixture.after.ID {
+		t.Fatalf("current Git workspace mutation snapshot authority=%+v want %q", snapshot, fixture.after.ID)
+	}
+
+	var calls workspaceMutationCallbackCounts
+	replayed, err := fixture.repository.ExecuteWorkspaceMutation(
+		fixture.ctx, fixture.authority, fixture.command,
+		workspaceMutationForbiddenReplayCallbacks(&calls),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(replayed, snapshot.Terminal.Result) ||
+		replayed.VerifiedRepositorySnapshotID != fixture.after.ID {
+		t.Fatalf("replayed Git workspace mutation=%+v want %+v", replayed, snapshot.Terminal.Result)
+	}
+	if calls != (workspaceMutationCallbackCounts{}) {
+		t.Fatalf("terminal Git replay ran callbacks=%+v", calls)
+	}
+}
 
 func TestPostgresDesiredRepositoryExecutionEvidenceCountsExactDurableTransitions(t *testing.T) {
 	for _, test := range []struct {

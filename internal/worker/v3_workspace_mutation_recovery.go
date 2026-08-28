@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/queue"
@@ -46,6 +47,43 @@ func (runtime *nativeRuntimeV3) reconcileCurrentWorkspaceMutation(
 	if snapshot.Terminal != nil {
 		return runtime.recoverTerminalWorkspaceMutation(root, request, snapshot, commands)
 	}
+	var plainTextEnvironment *directCodingDockerProjectEnvironment
+	plainTextPath, plainTextHash := "", ""
+	if singlePlainTextVerificationFamily(commands) {
+		plainTextPath, plainTextHash, err = singlePlainTextMutationAuthority(command, commands)
+		if err != nil {
+			return "", true, err
+		}
+		plainTextEnvironment, err = newPlainTextProjectEnvironment(
+			runtime, root, commands[0].Environment.spec(),
+		)
+		if err != nil {
+			return "", true, err
+		}
+		defer func() {
+			resultErr = errors.Join(
+				resultErr, plainTextEnvironment.Close(context.Background()),
+			)
+		}()
+		if err := plainTextEnvironment.Build(runtime.ctx); err != nil {
+			return "", true, fmt.Errorf("rebuild plain-text project environment for recovery: %w", err)
+		}
+		if err := plainTextEnvironment.RequireAuthority(commands[0].Environment); err != nil {
+			return "", true, fmt.Errorf("validate rebuilt plain-text project environment authority: %w", err)
+		}
+		observation, err := observeWorkspaceMutation(runtime.ctx, command)
+		if err != nil {
+			return "", true, err
+		}
+		if observation == queue.WorkspaceMutationSource {
+			if _, err := plainTextEnvironment.Run(runtime.ctx, directCodingProjectEnvironmentCommand{
+				Program: "test", Args: []string{"!", "-e", plainTextPath},
+				Timeout: 30 * time.Second,
+			}); err != nil {
+				return "", true, fmt.Errorf("verify recovered plain-text target remains absent: %w", err)
+			}
+		}
+	}
 	runtime.svc.emitStepEvent(
 		runtime.claim.Authority, "workspace_mutation_recovery_started",
 		fmt.Sprintf("stage=%s source=%s", command.Plan.ID, command.Plan.SourceStateID),
@@ -79,6 +117,12 @@ func (runtime *nativeRuntimeV3) reconcileCurrentWorkspaceMutation(
 				ctx context.Context,
 				exact queue.WorkspaceMutationCommand,
 			) (queue.WorkspaceMutationVerificationResult, error) {
+				if plainTextEnvironment != nil {
+					return session.verifySinglePlainTextWorkspaceMutation(
+						ctx, exact, commands, plainTextEnvironment,
+						plainTextPath, plainTextHash,
+					)
+				}
 				if exact.Plan.GitSourceSnapshotID != "" {
 					if err := validateRepositoryGoVerificationPlan(
 						repositoryVerificationAuthoritative, commands,

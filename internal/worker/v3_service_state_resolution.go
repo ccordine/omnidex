@@ -34,7 +34,7 @@ func (s *directCodingSession) resolveServiceStateBeforeTargetTree(
 		return directCodingServiceStatePlan{}, err
 	}
 	plan, err := resolveDirectCodingServiceStatePlan(
-		runtime, model, specification.ProductQuote, workload, identities,
+		runtime, model, applicationWorkloadInput(specification), workload, identities,
 	)
 	if err != nil {
 		return directCodingServiceStatePlan{}, err
@@ -51,11 +51,11 @@ func (s *directCodingSession) resolveServiceStateBeforeTargetTree(
 func resolveDirectCodingServiceStatePlan(
 	runtime typedWorkerRuntime,
 	model string,
-	productContext string,
+	workloadInput assemblyline.ApplicationWorkloadDraftInput,
 	workload assemblyline.FrozenApplicationWorkload,
 	identities []assemblyline.ArtifactIdentity,
 ) (directCodingServiceStatePlan, error) {
-	if productContext == "" || productContext != workload.ProductQuote {
+	if workloadInput.ProductQuote == "" || workloadInput.ProductQuote != workload.ProductQuote {
 		return directCodingServiceStatePlan{}, fmt.Errorf(
 			"service state resolution requires the frozen HTTP product authority",
 		)
@@ -70,8 +70,14 @@ func resolveDirectCodingServiceStatePlan(
 		),
 	}
 	for _, task := range workload.Tasks {
+		authority, err := assemblyline.ProjectApplicationTaskRuntimeAuthority(
+			workloadInput, workload, task.ID,
+		)
+		if err != nil {
+			return directCodingServiceStatePlan{}, err
+		}
 		input, err := assemblyline.ProjectApplicationServiceStateLifetimeInput(
-			productContext, task,
+			authority,
 		)
 		if err != nil {
 			return directCodingServiceStatePlan{}, err

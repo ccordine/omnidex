@@ -32,10 +32,7 @@ func TestPostgresRepositoryBaselineRejectsConflictingExistingTestBeforeGeneratio
 	if err != nil {
 		t.Fatal(err)
 	}
-	before, err := indexer.Refresh(ctx, project.ID, root)
-	if err != nil {
-		t.Fatal(err)
-	}
+	before := captureGoRepositoryIndexForTest(t, ctx, indexer, project.ID, root)
 	analysis := before.Analyses[0]
 	target := existingRepositoryVerificationSymbol(t, analysis, "Value")
 	contract, err := repositoryfacts.BuildChangeContract(
@@ -134,10 +131,7 @@ func TestValue(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	before, err := indexer.Refresh(ctx, project.ID, root)
-	if err != nil {
-		t.Fatal(err)
-	}
+	before := captureGoRepositoryIndexForTest(t, ctx, indexer, project.ID, root)
 	analysis := before.Analyses[0]
 	target := existingRepositoryVerificationSymbol(t, analysis, "Value")
 	contract, err := repositoryfacts.BuildChangeContract(

@@ -12,11 +12,10 @@ const (
 )
 
 type ApplicationServiceStateLifetimeInput struct {
-	ProductContext     string   `json:"product_context"`
-	RequirementQuote   string   `json:"requirement_quote"`
-	Objective          string   `json:"objective"`
-	RequiredBehaviors  []string `json:"required_behaviors"`
-	AcceptanceCriteria []string `json:"acceptance_criteria"`
+	ProductContext    string   `json:"product_context"`
+	RequirementQuote  string   `json:"requirement_quote"`
+	Objective         string   `json:"objective"`
+	RequiredBehaviors []string `json:"required_behaviors"`
 }
 
 type ApplicationServiceStateLifetimeResult struct {
@@ -25,14 +24,12 @@ type ApplicationServiceStateLifetimeResult struct {
 }
 
 func ProjectApplicationServiceStateLifetimeInput(
-	productContext string,
-	task FrozenApplicationTask,
+	authority ApplicationTaskRuntimeAuthority,
 ) (ApplicationServiceStateLifetimeInput, error) {
 	input := ApplicationServiceStateLifetimeInput{
-		ProductContext: productContext, RequirementQuote: task.RequirementQuote,
-		Objective:          task.Objective,
-		RequiredBehaviors:  append([]string(nil), task.RequiredBehaviors...),
-		AcceptanceCriteria: append([]string(nil), task.AcceptanceCriteria...),
+		ProductContext: authority.ProductQuote, RequirementQuote: authority.RequirementQuote,
+		Objective:         authority.Objective,
+		RequiredBehaviors: append([]string(nil), authority.RequiredBehaviors...),
 	}
 	if err := input.validate(); err != nil {
 		return ApplicationServiceStateLifetimeInput{}, err
@@ -68,10 +65,7 @@ func (input ApplicationServiceStateLifetimeInput) validate() error {
 	); err != nil {
 		return err
 	}
-	return validateApplicationJobSpecificationList(
-		"service state lifetime criterion", input.AcceptanceCriteria,
-		maxApplicationAcceptanceCriteria, maxApplicationCriterionRunes,
-	)
+	return nil
 }
 
 func (result ApplicationServiceStateLifetimeResult) ValidateFor(

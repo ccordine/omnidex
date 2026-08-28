@@ -181,7 +181,7 @@ func TestPHPHTTPSupportOnlyTaskBuildsAndTestsWithoutInventingARoute(t *testing.T
 		},
 		ByTask: map[string]assemblyline.ApplicationServiceEndpointContract{workload.Tasks[1].ID: endpoint},
 	}
-	if err := endpoints.ValidateFor(workload); err != nil {
+	if err := endpoints.ValidateFor(applicationWorkloadInput(specification), workload); err != nil {
 		t.Fatal(err)
 	}
 	blueprint, _, err := compileGenericPHPServiceBlueprint(

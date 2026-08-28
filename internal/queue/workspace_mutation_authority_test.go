@@ -3,6 +3,7 @@ package queue
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/gryph/omnidex/internal/evidence"
@@ -78,6 +79,31 @@ func TestWorkspaceMutationVerificationResultRequiresExactUnpersistedEvidence(t *
 	result.CommandEvidence[0].Command = "go test ./other"
 	if err := validateWorkspaceMutationVerificationResult(command, operationID, result); err == nil {
 		t.Fatal("workspace mutation accepted foreign verification evidence")
+	}
+}
+
+func TestWorkspaceMutationVerifiedSnapshotAuthorityMatchesGitPresence(t *testing.T) {
+	command, operationID := workspaceMutationValidationFixture(t)
+	if snapshotID, err := workspaceMutationVerifiedSnapshotID(command, operationID, nil); err != nil || snapshotID != "" {
+		t.Fatalf("plain workspace snapshot authority=%q err=%v", snapshotID, err)
+	}
+	unexpected := "snapshot_" + strings.Repeat("1", 64)
+	if _, err := workspaceMutationVerifiedSnapshotID(command, operationID, &unexpected); err == nil {
+		t.Fatal("plain workspace mutation accepted unexpected repository snapshot authority")
+	}
+
+	command.Plan.GitSourceSnapshotID = "snapshot_" + strings.Repeat("2", 64)
+	if _, err := workspaceMutationVerifiedSnapshotID(command, operationID, nil); err == nil {
+		t.Fatal("Git workspace mutation accepted missing verified repository snapshot authority")
+	}
+	malformed := "snapshot_invalid"
+	if _, err := workspaceMutationVerifiedSnapshotID(command, operationID, &malformed); err == nil {
+		t.Fatal("Git workspace mutation accepted malformed verified repository snapshot authority")
+	}
+	want := "snapshot_" + strings.Repeat("3", 64)
+	got, err := workspaceMutationVerifiedSnapshotID(command, operationID, &want)
+	if err != nil || got != want {
+		t.Fatalf("Git workspace snapshot authority=%q err=%v want %q", got, err, want)
 	}
 }
 

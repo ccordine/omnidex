@@ -41,7 +41,7 @@ the exact artifact-identity provenance boundary before the first generated
 source call. The boundary is rebuilt and revalidated mechanically as paths are
 added; it is not reconstructed from model text or filename heuristics.
 
-TypeScript/TSX, Go, JavaScript, Rust, Java, and PHP have focused document
+TypeScript/TSX, Go, JavaScript, Rust, Java, PHP, and unstructured plain text have focused document
 composers. Parse-only or structural-only leaves cannot enter source composition
 without such a composer. Adding a language requires a real fragment boundary,
 composer, stack compiler, and verification implementation; it does not widen a
@@ -98,7 +98,7 @@ The corresponding path classes are focused and non-overlapping:
 | `structured_json` | `.json` |
 | `structured_yaml` | non-Compose `.yaml` and `.yml` |
 | `environment_example` | `.env.example` |
-| `plain_text` | `.gitignore` and `.dockerignore` |
+| `plain_text` | `.txt` (case-insensitive extension), `.gitignore`, and `.dockerignore` |
 | `postgresql_migration` | normalized `database/migrations/*.sql` leaves |
 
 CSS/Tailwind validation is intentionally labeled structural: the leaf validator

@@ -28,6 +28,11 @@ func TestServiceStateResolutionClassifiesEveryTaskWithOneAttemptEach(t *testing.
 				if strings.Contains(prompt, task.ID) {
 					t.Fatalf("state prompt exposed task identity %s: %s", task.ID, prompt)
 				}
+				for _, criterion := range task.AcceptanceCriteria {
+					if strings.Contains(prompt, criterion) {
+						t.Fatalf("state prompt exposed acceptance criterion %q: %s", criterion, prompt)
+					}
+				}
 			}
 			for _, forbidden := range []string{
 				".php", "workspace", "filename", "tool", "command", "endpoint",
@@ -48,7 +53,7 @@ func TestServiceStateResolutionClassifiesEveryTaskWithOneAttemptEach(t *testing.
 		}),
 	}
 	plan, err := resolveDirectCodingServiceStatePlan(
-		runtime, "state-model", input.ProductQuote, workload, nil,
+		runtime, "state-model", input, workload, nil,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -75,7 +80,7 @@ func TestServiceStateResolutionDoesNotRetryInvalidLeaf(t *testing.T) {
 		}),
 	}
 	_, err := resolveDirectCodingServiceStatePlan(
-		runtime, "state-model", input.ProductQuote, workload, nil,
+		runtime, "state-model", input, workload, nil,
 	)
 	if err == nil || calls != 1 {
 		t.Fatalf("invalid lifetime error=%v calls=%d", err, calls)

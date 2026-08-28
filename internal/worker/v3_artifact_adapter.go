@@ -61,7 +61,10 @@ func registeredDirectCodingArtifactAdapters() []directCodingArtifactAdapter {
 		parsedArtifactAdapter("structured_json", suffixArtifactRecognizer(".json", ""), validateJSONArtifactSource),
 		parsedArtifactAdapter("structured_yaml", yamlArtifactRecognizer, validateYAMLArtifactSource),
 		parsedArtifactAdapter("environment_example", environmentArtifactRecognizer, validateEnvironmentArtifactSource),
-		structuralArtifactAdapter("plain_text", plainTextArtifactRecognizer, validatePlainTextArtifactSource),
+		structuralArtifactAdapter(
+			assemblyline.PlainTextAdapterID, plainTextArtifactRecognizer,
+			validatePlainTextArtifactSource, assemblyline.ComposePlainTextDocument,
+		),
 	}
 }
 
@@ -130,12 +133,13 @@ func structuralArtifactAdapter(
 	id string,
 	recognize func(path string) (assemblyline.TargetArtifactKind, bool),
 	validateStructure func(path string, source []byte) error,
+	composeDocument ...func(assemblyline.SourceDocument, assemblyline.SourceComposition) (assemblyline.ComposedSourceDocument, error),
 ) directCodingArtifactAdapter {
 	return executableArtifactAdapter(
 		id, directCodingArtifactValidation{
 			Kind: directCodingArtifactStructural, Execute: validateStructure,
 		},
-		recognize,
+		recognize, composeDocument...,
 	)
 }
 
@@ -192,14 +196,21 @@ func environmentArtifactRecognizer(value string) (assemblyline.TargetArtifactKin
 	return assemblyline.TargetArtifactImplementation, base == ".env.example" || strings.HasSuffix(base, ".env.example")
 }
 
-// plainTextArtifactRecognizer covers code-owned textual project metadata that
-// still belongs in the task-local artifact graph even though it has no richer
-// language parser. It deliberately recognizes only stable text artifacts;
-// an unknown workload path remains a loud adapter-selection failure.
+// plainTextArtifactRecognizer covers normalized plain-text leaves that have no
+// richer registered parser. Unknown or non-normalized paths remain loud
+// adapter-selection failures.
 func plainTextArtifactRecognizer(value string) (assemblyline.TargetArtifactKind, bool) {
+	normalized, err := normalizeDirectCodingPath(value)
+	if err != nil || normalized != value {
+		return "", false
+	}
 	base := path.Base(value)
-	return assemblyline.TargetArtifactImplementation,
-		base == ".gitignore" || base == ".dockerignore"
+	stableText := base == ".gitignore" || base == ".dockerignore" ||
+		strings.EqualFold(path.Ext(base), ".txt") && !strings.EqualFold(base, ".txt")
+	if !stableText {
+		return "", false
+	}
+	return assemblyline.TargetArtifactImplementation, true
 }
 
 func directCodingArtifactAdapterByID(id string) (directCodingArtifactAdapter, error) {

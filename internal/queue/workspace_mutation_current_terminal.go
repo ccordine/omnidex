@@ -27,7 +27,8 @@ func validateCurrentWorkspaceMutationTx(
 			return nil, fmt.Errorf("current workspace mutation %s has invalid status %q", record.operationID, record.status)
 		}
 		if record.verificationSucceeded != nil || record.verificationReceipt != nil ||
-			record.verificationReceiptSHA != nil || record.verificationEvidenceID != nil {
+			record.verificationReceiptSHA != nil || record.verificationEvidenceID != nil ||
+			record.verifiedRepositorySnapshotID != nil {
 			return nil, fmt.Errorf("nonterminal workspace mutation %s contains terminal authority", record.operationID)
 		}
 		return snapshot, nil
@@ -47,6 +48,12 @@ func validateCurrentWorkspaceMutationTx(
 	}
 	if digestWorkspaceMutationText(*record.verificationReceipt) != *record.verificationReceiptSHA {
 		return nil, fmt.Errorf("terminal workspace mutation %s receipt digest differs", record.operationID)
+	}
+	verifiedRepositorySnapshotID, err := workspaceMutationVerifiedSnapshotID(
+		command, record.operationID, record.verifiedRepositorySnapshotID,
+	)
+	if err != nil {
+		return nil, err
 	}
 
 	receipt, err := decodeCurrentWorkspaceMutationReceipt(
@@ -76,18 +83,42 @@ func validateCurrentWorkspaceMutationTx(
 		failure = *record.lastError
 	}
 	result := WorkspaceMutationResult{
-		OperationID:            record.operationID,
-		Status:                 record.status,
-		MutationEvidenceID:     *record.mutationEvidenceID,
-		CommandEvidenceIDs:     append([]int64(nil), receipt.CommandEvidenceIDs...),
-		VerificationEvidenceID: *record.verificationEvidenceID,
-		VerificationSucceeded:  *record.verificationSucceeded,
+		OperationID:                  record.operationID,
+		Status:                       record.status,
+		MutationEvidenceID:           *record.mutationEvidenceID,
+		CommandEvidenceIDs:           append([]int64(nil), receipt.CommandEvidenceIDs...),
+		VerificationEvidenceID:       *record.verificationEvidenceID,
+		VerificationSucceeded:        *record.verificationSucceeded,
+		VerifiedRepositorySnapshotID: verifiedRepositorySnapshotID,
 	}
 	snapshot.Terminal = &WorkspaceMutationTerminal{
 		Result: result, Failure: failure,
 		ReceiptJSON: *record.verificationReceipt, ReceiptSHA256: *record.verificationReceiptSHA,
 	}
 	return snapshot, nil
+}
+
+func workspaceMutationVerifiedSnapshotID(
+	command WorkspaceMutationCommand,
+	operationID string,
+	persisted *string,
+) (string, error) {
+	if command.Plan.GitSourceSnapshotID == "" {
+		if persisted != nil {
+			return "", fmt.Errorf(
+				"terminal workspace mutation %s contains unexpected verified repository snapshot authority",
+				operationID,
+			)
+		}
+		return "", nil
+	}
+	if persisted == nil || !validSHA256ID(*persisted, "snapshot_") {
+		return "", fmt.Errorf(
+			"terminal workspace mutation %s lacks exact verified repository snapshot authority",
+			operationID,
+		)
+	}
+	return *persisted, nil
 }
 
 func validNonterminalWorkspaceMutationStatus(status string) bool {

@@ -11,11 +11,10 @@ func TestApplicationServiceEndpointRequirementHasOneExactStationOwner(t *testing
 	t.Parallel()
 	job, err := assemblyline.NewApplicationServiceEndpointRequirementJob(
 		assemblyline.ApplicationServiceEndpointRequirementInput{
-			ProductContext:     "inventory service",
-			RequirementQuote:   "Records are normalized before storage.",
-			Objective:          "Normalize accepted record values.",
-			RequiredBehaviors:  []string{"Normalize each accepted record value."},
-			AcceptanceCriteria: []string{"Equivalent values have one normalized representation."},
+			ProductContext:    "inventory service",
+			RequirementQuote:  "Records are normalized before storage.",
+			Objective:         "Normalize accepted record values.",
+			RequiredBehaviors: []string{"Normalize each accepted record value."},
 		},
 	)
 	if err != nil {

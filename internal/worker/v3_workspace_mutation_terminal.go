@@ -41,6 +41,7 @@ func equalWorkspaceMutationResults(
 		left.MutationEvidenceID != right.MutationEvidenceID ||
 		left.VerificationEvidenceID != right.VerificationEvidenceID ||
 		left.VerificationSucceeded != right.VerificationSucceeded ||
+		left.VerifiedRepositorySnapshotID != right.VerifiedRepositorySnapshotID ||
 		len(left.CommandEvidenceIDs) != len(right.CommandEvidenceIDs) {
 		return false
 	}

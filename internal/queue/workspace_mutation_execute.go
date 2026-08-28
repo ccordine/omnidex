@@ -179,5 +179,5 @@ func (r *Repository) replayWorkspaceMutationTerminal(
 	if record.Status != workspaceMutationVerified && record.Status != workspaceMutationVerificationFailed {
 		return WorkspaceMutationResult{}, fmt.Errorf("workspace mutation %s is not terminal", identity.ID)
 	}
-	return workspaceMutationTerminalResult(ctx, tx, record)
+	return workspaceMutationTerminalResult(ctx, tx, command, record)
 }

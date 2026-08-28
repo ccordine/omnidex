@@ -28,8 +28,8 @@ func BuildRepositoryRequirementInterpretationPrompt(
 		return "", fmt.Errorf("encode repository requirement context: %w", err)
 	}
 	return strings.Join([]string{
-		"Translate one intact existing-repository request into the smallest complete ordered set of explicit change requirements.",
-		"Each requirement is one concise semantic statement of requested behavior or constraint. Faithfully paraphrase the request without inventing implementation details or additional obligations.",
+		"Split one intact existing-repository request into the smallest complete ordered set of explicit change requirements.",
+		"Each requirement must be one byte-exact, uniquely occurring, non-overlapping span copied from CURRENT_REQUEST in source order. Do not paraphrase, normalize, restate, merge non-contiguous text, invent implementation details, or add obligations.",
 		"The context contains verified current source facts that may clarify the requested change.",
 		"APPLICATION_CONTEXT_JSON:\n" + string(contextJSON),
 		"CURRENT_REQUEST:\n" + input.UserRequest,

@@ -1,6 +1,9 @@
 services:
   core:
     image: ${COMPOSE_PROJECT_NAME:?COMPOSE_PROJECT_NAME must be configured}-core
+    # The configured Docker daemon maps the host workspace owner to container
+    # root. The core must use that exact identity to mutate the direct bind.
+    user: "0:0"
     build:
       context: .
       dockerfile: Dockerfile
@@ -8,12 +11,14 @@ services:
         APP_UID: ${HOST_UID:?HOST_UID must match the owner of HOST_WORKSPACE_PATH}
         APP_GID: ${HOST_GID:?HOST_GID must match the group of HOST_WORKSPACE_PATH}
         OMNIDEX_COMMIT: ${OMNIDEX_COMMIT:-}
-    # Dockerfile USER app has the exact host UID/GID supplied above. The core
-    # therefore mutates the direct bind as its host owner even though the core
-    # container itself is started by the rootful default Docker context.
+    # APP_UID/APP_GID retain the image's non-root account for isolated child
+    # environments; the core identity above owns the host-authoritative bind.
     # Bubblewrap creates the unprivileged user namespace that encloses
     # existing-repository verification. These options permit that nested
     # namespace syscall without granting the core process root identity.
+    # The Docker socket group remains supplementary authority for the daemon.
+    group_add:
+      - ${DOCKER_GID:?DOCKER_GID must match the numeric group owner of DOCKER_SOCKET_PATH}
     security_opt:
       - seccomp=unconfined
       - systempaths=unconfined
@@ -69,7 +74,7 @@ services:
       HOST_AGENT_TOKEN: ${HOST_AGENT_TOKEN:-}
       HOST_BRIDGE_PUBLIC_WS_URL: ${HOST_BRIDGE_PUBLIC_WS_URL:-}
       # Generated Docker verification is still code-owned. The client may use
-      # only this mounted rootless Unix socket; TCP Docker endpoints are rejected.
+      # only this mounted default Unix socket; TCP Docker endpoints are rejected.
       DOCKER_HOST: unix:///var/run/docker.sock
       INFERENCE_CONTEXT_TOKENS: ${INFERENCE_CONTEXT_TOKENS:?INFERENCE_CONTEXT_TOKENS must be configured}
       MIGRATE_ON_STARTUP: ${MIGRATE_ON_STARTUP:-true}
@@ -105,7 +110,7 @@ services:
         bind:
           create_host_path: false
       - type: bind
-        source: ${DOCKER_SOCKET_PATH:?DOCKER_SOCKET_PATH must name the rootless Docker Unix socket}
+        source: ${DOCKER_SOCKET_PATH:?DOCKER_SOCKET_PATH must name the default Docker Unix socket}
         target: /var/run/docker.sock
         bind:
           create_host_path: false

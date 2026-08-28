@@ -120,7 +120,6 @@ func TestTypedEndpointFieldsOwnRouteAndMediaExemptions(t *testing.T) {
 	authority := ApplicationServiceEndpointTaskAuthority{
 		ProductContext: "Inventory service", RequirementQuote: "Return one record",
 		Objective: "Return one record", RequiredBehaviors: []string{"Read one record"},
-		AcceptanceCriteria: []string{"The requested record is returned"},
 	}
 	contract := ApplicationServiceEndpointContract{
 		Schema:   ApplicationServiceEndpointContractSchemaV1,

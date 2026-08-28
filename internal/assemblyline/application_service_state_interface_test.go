@@ -8,7 +8,18 @@ import (
 
 func TestApplicationServiceStateInterfaceIsOneMechanismBlindSemanticValue(t *testing.T) {
 	t.Parallel()
-	input := serviceStateInterfaceFixture()
+	workloadInput, frozen := applicationTaskAuthorityProjectionFixture(t)
+	authority, err := ProjectApplicationTaskRuntimeAuthority(workloadInput, frozen, "task_001")
+	if err != nil {
+		t.Fatal(err)
+	}
+	need, err := ProjectApplicationServiceStateInterfaceNeed(authority)
+	if err != nil {
+		t.Fatal(err)
+	}
+	input := ApplicationServiceStateInterfaceInput{
+		ProductContext: authority.ProductQuote, Needs: []ApplicationServiceStateInterfaceNeed{need},
+	}
 	job, err := NewApplicationServiceStateInterfaceJob(input)
 	if err != nil {
 		t.Fatal(err)
@@ -37,6 +48,7 @@ func TestApplicationServiceStateInterfaceIsOneMechanismBlindSemanticValue(t *tes
 		"task_id", "workspace", "filename", "filesystem", " path", "tool", "command",
 		"route", "orchestrat", "workflow", "completion", `"action"`, `"decision"`,
 		`"status"`, `"accept"`, `"reject"`, `"apply"`, `"execute"`,
+		strings.ToLower(frozen.Tasks[0].AcceptanceCriteria[0]), `"acceptance_criteria"`,
 	} {
 		if strings.Contains(strings.ToLower(prompt+string(encodedSchema)), forbidden) {
 			t.Fatalf("service state interface envelope exposed %q: %s", forbidden, prompt)
@@ -89,9 +101,6 @@ func serviceStateInterfaceFixture() ApplicationServiceStateInterfaceInput {
 				Objective:        "Preserve shipment measurements between requests.",
 				RequiredBehaviors: []string{
 					"Retain each measurement with its stable identifier.",
-				},
-				AcceptanceCriteria: []string{
-					"A later lookup returns the recorded measurement.",
 				},
 			},
 		},

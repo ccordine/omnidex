@@ -48,7 +48,7 @@ func (r *nativeRuntimeV3) acquireObjectiveRepositoryEvidence(
 	if err != nil {
 		return objectiveEvidenceAcquisition{}, err
 	}
-	indexed, err := r.refreshExistingRepositoryIndex(scope.Root)
+	indexed, err := r.captureExistingRepositoryIndex(scope.Root)
 	if err != nil {
 		return objectiveEvidenceAcquisition{}, err
 	}

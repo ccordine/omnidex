@@ -8,6 +8,7 @@ import (
 
 	"github.com/gryph/omnidex/internal/assemblyline"
 	"github.com/gryph/omnidex/internal/evidence"
+	goadapter "github.com/gryph/omnidex/internal/repository/adapters/golang"
 	repositoryretrieval "github.com/gryph/omnidex/internal/repository/retrieval"
 	"github.com/gryph/omnidex/internal/station"
 )
@@ -21,11 +22,23 @@ func (session *directCodingSession) runExistingRepositoryChangeWorkflow() (strin
 		return "", fmt.Errorf("existing repository change workflow requires an immutable index")
 	}
 	authority := existingRepositoryAuthority(session.request)
+	explicitPlainTextPaths, err := explicitPlainTextArtifactPaths(authority)
+	if err != nil {
+		return "", err
+	}
+	if err := session.extendPathProvenance(explicitPlainTextPaths...); err != nil {
+		return "", fmt.Errorf("bind explicit plain-text artifact provenance: %w", err)
+	}
 	redacted, identities, err := assemblyline.RedactArtifactIdentities(
 		authority, session.pathProvenance,
 	)
 	if err != nil {
 		return "", err
+	}
+	if summary, handled, routeErr := session.tryExistingRepositorySinglePlainTextCreation(
+		authority, redacted, identities, explicitPlainTextPaths,
+	); handled {
+		return summary, routeErr
 	}
 	partitionModel, err := session.workerModel(station.CodingRequirements)
 	if err != nil {
@@ -56,18 +69,28 @@ func (session *directCodingSession) runExistingRepositoryChangeWorkflow() (strin
 	if err != nil {
 		return "", err
 	}
-	analysis, err := exactExistingRepositoryGoAnalysis(
-		session.repositoryIndex.Snapshot, session.repositoryIndex.Analyses,
-	)
-	if err != nil {
-		return "", err
-	}
-	absenceQuotes, err := session.classifyPathFreeArtifactAbsence(
+	truth, err := session.classifyPathFreeArtifactTruth(
 		featureQuotes, directives, identities,
 	)
 	if err != nil {
 		return "", err
 	}
+	if len(truth.MustExist) != 0 {
+		return "", fmt.Errorf(
+			"plain-text artifact creation requires one exact code-owned absent path before repository interpretation",
+		)
+	}
+	analysis, err := session.requireExistingRepositoryAnalysis(goadapter.AdapterName)
+	if err != nil {
+		return "", err
+	}
+	analysis, err = exactExistingRepositoryGoAnalysis(
+		session.repositoryIndex.Snapshot, session.repositoryIndex.Analyses,
+	)
+	if err != nil {
+		return "", err
+	}
+	absenceQuotes := truth.MustBeAbsent
 	if containsArtifactAbsenceCandidate(directives) {
 		directives, err = session.resolveNamedArtifactDeletionCandidates(
 			featureQuotes, directives, identities, analysis,

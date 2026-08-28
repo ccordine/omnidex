@@ -74,12 +74,13 @@ type WorkspaceMutationCallbacks struct {
 }
 
 type WorkspaceMutationResult struct {
-	OperationID            string
-	Status                 string
-	MutationEvidenceID     int64
-	CommandEvidenceIDs     []int64
-	VerificationEvidenceID int64
-	VerificationSucceeded  bool
+	OperationID                  string
+	Status                       string
+	MutationEvidenceID           int64
+	CommandEvidenceIDs           []int64
+	VerificationEvidenceID       int64
+	VerificationSucceeded        bool
+	VerifiedRepositorySnapshotID string
 }
 
 // WorkspaceMutationTerminal is the immutable terminal authority sealed by one
@@ -109,14 +110,15 @@ type workspaceMutationOperationIdentity struct {
 }
 
 type workspaceMutationOperationRecord struct {
-	ID                     string
-	CommandSHA256          string
-	Status                 string
-	IndeterminatePhase     *string
-	MutationEvidenceID     *int64
-	VerificationSucceeded  *bool
-	VerificationReceipt    *string
-	VerificationEvidenceID *int64
+	ID                           string
+	CommandSHA256                string
+	Status                       string
+	IndeterminatePhase           *string
+	MutationEvidenceID           *int64
+	VerificationSucceeded        *bool
+	VerificationReceipt          *string
+	VerificationEvidenceID       *int64
+	VerifiedRepositorySnapshotID *string
 }
 
 const (

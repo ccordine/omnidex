@@ -11,6 +11,30 @@ type PathIdentity struct {
 	Value string
 }
 
+// LexicalPathToken is one uninterpreted path-grammar token. It grants no
+// artifact identity: callers must validate the complete token through one
+// code-owned artifact adapter before it can become authority.
+type LexicalPathToken struct {
+	Start int
+	End   int
+	Value string
+}
+
+// LexicalPathTokens exposes the same deterministic tokenization used by the
+// path-identity boundary without inferring that a dotted atom is a file. This
+// lets an adapter registry recognize an explicitly written new artifact before
+// that artifact exists in repository provenance.
+func LexicalPathTokens(value string) []LexicalPathToken {
+	spans := lexPathTokens(value)
+	tokens := make([]LexicalPathToken, 0, len(spans))
+	for _, span := range spans {
+		tokens = append(tokens, LexicalPathToken{
+			Start: span.start, End: span.end, Value: value[span.start:span.end],
+		})
+	}
+	return tokens
+}
+
 // PathIdentities lexes cross-platform qualified paths and exact bare artifact
 // names established by provenance. It does not infer file identity from a
 // suffix, capitalization, repository convention, or product vocabulary.

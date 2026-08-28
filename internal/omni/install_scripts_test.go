@@ -257,7 +257,10 @@ func TestUpdateScriptConsumesExactDockerDeploymentAuthority(t *testing.T) {
 	}
 	for _, profile := range []string{"default.env", ".env.example"} {
 		body := readRepoScript(t, root, profile)
-		if !strings.Contains(body, "DOCKER_CONTEXT=") || !strings.Contains(body, "COMPOSE_PROJECT_NAME=omnidex") {
+		if !strings.Contains(body, "DOCKER_CONTEXT=default\n") ||
+			!strings.Contains(body, "COMPOSE_PROJECT_NAME=omnidex") ||
+			!strings.Contains(body, "DOCKER_SOCKET_PATH=/var/run/docker.sock\n") ||
+			!strings.Contains(body, "DOCKER_GID=\n") {
 			t.Fatalf("%s omits explicit Docker deployment identity", profile)
 		}
 	}
@@ -279,16 +282,18 @@ func TestUpdateAndQuickstartExposeOnlyReleaseBoundCoreDeployment(t *testing.T) {
 	}
 	defaults := readRepoScript(t, root, "default.env")
 	if !strings.Contains(defaults, "#   ./up.sh --build") ||
-		!strings.Contains(defaults, "Set this to the intended named context") ||
-		!strings.Contains(defaults, "DOCKER_CONTEXT=\n") {
-		t.Fatal("default.env quickstart does not select the release-bound wrapper and require an explicit context")
+		!strings.Contains(defaults, "DOCKER_CONTEXT=default\n") ||
+		!strings.Contains(defaults, "DOCKER_SOCKET_PATH=/var/run/docker.sock\n") ||
+		!strings.Contains(defaults, "DOCKER_GID=\n") {
+		t.Fatal("default.env quickstart does not select the release-bound default Docker authority")
 	}
 	if strings.Contains(defaults, "#   docker compose up --build") {
 		t.Fatal("default.env still advertises an unbound direct Compose build")
 	}
-	if example := readRepoScript(t, root, ".env.example"); !strings.Contains(example, "Set this to the intended named context") ||
-		!strings.Contains(example, "DOCKER_CONTEXT=\n") {
-		t.Fatal(".env.example does not require the operator to select one explicit Docker context")
+	if example := readRepoScript(t, root, ".env.example"); !strings.Contains(example, "DOCKER_CONTEXT=default\n") ||
+		!strings.Contains(example, "DOCKER_SOCKET_PATH=/var/run/docker.sock\n") ||
+		!strings.Contains(example, "DOCKER_GID=\n") {
+		t.Fatal(".env.example does not declare the default Docker authority and required socket group")
 	}
 }
 

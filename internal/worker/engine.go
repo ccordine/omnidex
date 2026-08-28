@@ -90,7 +90,7 @@ type Service struct {
 	embeddingModel          string
 	models                  ModelRouting
 	workspaceRoot           string
-	repositoryIndex         repositoryIndexRefresher
+	repositoryIndex         repositoryIndexService
 	repositoryRetrieval     repositoryEvidenceBuilder
 	workspaceHostRoot       string
 	deployment              DeploymentSettings

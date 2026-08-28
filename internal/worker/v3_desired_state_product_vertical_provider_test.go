@@ -86,7 +86,7 @@ func desiredStateProductResponse(prepared llm.PreparedModel) (string, string, er
 		return fmt.Sprintf(`{"schema":%q,"questions":[]}`, schema), schema, nil
 	case assemblyline.ConversationObjectiveKindSchemaV1:
 		return fmt.Sprintf(`{"schema":%q,"kind":"workspace_mutation"}`, schema), schema, nil
-	case assemblyline.RepositoryRequirementInterpretationSchemaV2:
+	case assemblyline.RepositoryRequirementInterpretationSchemaV3:
 		source, err := desiredStateProductRequirementSource(prepared.Prompt)
 		if err != nil {
 			return "", schema, err

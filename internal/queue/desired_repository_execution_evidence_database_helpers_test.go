@@ -207,7 +207,8 @@ func (fixture desiredExecutionFixture) executeMutation(
 			},
 		},
 	)
-	if err != nil || !result.VerificationSucceeded {
+	if err != nil || !result.VerificationSucceeded ||
+		result.VerifiedRepositorySnapshotID != post.ID {
 		t.Fatalf("execute desired workspace mutation: result=%+v err=%v", result, err)
 	}
 	return command, post

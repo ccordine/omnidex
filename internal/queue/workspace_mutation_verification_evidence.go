@@ -46,7 +46,7 @@ func (r *Repository) finalizeWorkspaceMutationVerification(
 		return WorkspaceMutationResult{}, err
 	}
 	if record.Status == workspaceMutationVerified || record.Status == workspaceMutationVerificationFailed {
-		return workspaceMutationTerminalResult(ctx, tx, record)
+		return workspaceMutationTerminalResult(ctx, tx, command, record)
 	}
 	if record.Status != workspaceMutationVerifying || record.MutationEvidenceID == nil {
 		return WorkspaceMutationResult{}, fmt.Errorf("workspace mutation %s is not ready for terminal verification", identity.ID)
@@ -147,10 +147,11 @@ func (r *Repository) finalizeWorkspaceMutationVerification(
 	}
 	return WorkspaceMutationResult{
 		OperationID: identity.ID, Status: status,
-		MutationEvidenceID:     *record.MutationEvidenceID,
-		CommandEvidenceIDs:     append([]int64(nil), commandEvidenceIDs...),
-		VerificationEvidenceID: receiptEvidenceID,
-		VerificationSucceeded:  verification.Succeeded,
+		MutationEvidenceID:           *record.MutationEvidenceID,
+		CommandEvidenceIDs:           append([]int64(nil), commandEvidenceIDs...),
+		VerificationEvidenceID:       receiptEvidenceID,
+		VerificationSucceeded:        verification.Succeeded,
+		VerifiedRepositorySnapshotID: verification.VerifiedRepositorySnapshotID,
 	}, nil
 }
 
@@ -165,6 +166,7 @@ func cloneWorkspaceMutationMetadata(source map[string]any) map[string]any {
 func workspaceMutationTerminalResult(
 	ctx context.Context,
 	tx pgx.Tx,
+	command WorkspaceMutationCommand,
 	record workspaceMutationOperationRecord,
 ) (WorkspaceMutationResult, error) {
 	if record.MutationEvidenceID == nil || record.VerificationSucceeded == nil ||
@@ -178,14 +180,21 @@ func workspaceMutationTerminalResult(
 	if receipt.OperationID != record.ID || receipt.Succeeded != *record.VerificationSucceeded {
 		return WorkspaceMutationResult{}, fmt.Errorf("terminal workspace mutation %s receipt disagrees with state", record.ID)
 	}
+	verifiedRepositorySnapshotID, err := workspaceMutationVerifiedSnapshotID(
+		command, record.ID, record.VerifiedRepositorySnapshotID,
+	)
+	if err != nil {
+		return WorkspaceMutationResult{}, err
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return WorkspaceMutationResult{}, fmt.Errorf("commit terminal workspace mutation replay: %w", err)
 	}
 	return WorkspaceMutationResult{
 		OperationID: record.ID, Status: record.Status,
-		MutationEvidenceID:     *record.MutationEvidenceID,
-		CommandEvidenceIDs:     append([]int64(nil), receipt.CommandEvidenceIDs...),
-		VerificationEvidenceID: *record.VerificationEvidenceID,
-		VerificationSucceeded:  *record.VerificationSucceeded,
+		MutationEvidenceID:           *record.MutationEvidenceID,
+		CommandEvidenceIDs:           append([]int64(nil), receipt.CommandEvidenceIDs...),
+		VerificationEvidenceID:       *record.VerificationEvidenceID,
+		VerificationSucceeded:        *record.VerificationSucceeded,
+		VerifiedRepositorySnapshotID: verifiedRepositorySnapshotID,
 	}, nil
 }

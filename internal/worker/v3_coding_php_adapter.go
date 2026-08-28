@@ -70,7 +70,7 @@ func compileGenericPHPServiceBlueprint(
 			"PHP HTTP endpoint product context differs from accepted specification",
 		)
 	}
-	if err := endpoints.ValidateFor(workload); err != nil {
+	if err := endpoints.ValidateFor(applicationWorkloadInput(specification), workload); err != nil {
 		return assemblyline.SourceBlueprint{}, nil, fmt.Errorf("validate PHP HTTP endpoints: %w", err)
 	}
 	if err := validatePHPServiceEndpointSupport(endpoints); err != nil {

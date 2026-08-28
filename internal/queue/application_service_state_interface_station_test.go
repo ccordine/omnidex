@@ -13,10 +13,9 @@ func TestApplicationServiceStateInterfaceHasOneExactStationOwner(t *testing.T) {
 		assemblyline.ApplicationServiceStateInterfaceInput{
 			ProductContext: "shipment registry",
 			Needs: []assemblyline.ApplicationServiceStateInterfaceNeed{{
-				RequirementQuote:   "Store a shipment measurement for later retrieval.",
-				Objective:          "Preserve shipment measurements between requests.",
-				RequiredBehaviors:  []string{"Retain each measurement with its stable identifier."},
-				AcceptanceCriteria: []string{"A later lookup returns the recorded measurement."},
+				RequirementQuote:  "Store a shipment measurement for later retrieval.",
+				Objective:         "Preserve shipment measurements between requests.",
+				RequiredBehaviors: []string{"Retain each measurement with its stable identifier."},
 			}},
 		},
 	)

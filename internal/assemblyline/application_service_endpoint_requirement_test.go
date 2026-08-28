@@ -9,19 +9,15 @@ import (
 
 func TestApplicationServiceEndpointRequirementIsOneTaskLocalBlindEnum(t *testing.T) {
 	t.Parallel()
-	task := FrozenApplicationTask{
-		ID:               "/private/source/task.rs",
-		RequirementID:    "tool-command-workflow-identity",
-		RequirementQuote: "Clients can retrieve an inventory record.",
-		Objective:        "Make one inventory record available to clients.",
-		RequiredBehaviors: []string{
-			"Accept one record identity and return the matching record.",
-		},
-		AcceptanceCriteria: []string{
-			"A known record identity returns that record.",
-		},
+	workloadInput, frozen := applicationTaskAuthorityProjectionFixture(t)
+	task := frozen.Tasks[0]
+	authority, err := ProjectApplicationTaskRuntimeAuthority(
+		workloadInput, frozen, task.ID,
+	)
+	if err != nil {
+		t.Fatal(err)
 	}
-	input, err := ProjectApplicationServiceEndpointRequirementInput("inventory service", task)
+	input, err := ProjectApplicationServiceEndpointRequirementInput(authority)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -42,7 +38,7 @@ func TestApplicationServiceEndpointRequirementIsOneTaskLocalBlindEnum(t *testing
 	}
 	envelope := prompt + string(schemaJSON)
 	for _, required := range []string{
-		"inventory service", task.RequirementQuote, task.Objective,
+		workloadInput.ProductQuote, task.RequirementQuote, task.Objective,
 		string(ApplicationServiceEndpointRequired), string(ApplicationServiceSupportOnly),
 	} {
 		if !strings.Contains(envelope, required) {
@@ -51,6 +47,7 @@ func TestApplicationServiceEndpointRequirementIsOneTaskLocalBlindEnum(t *testing
 	}
 	for _, forbidden := range []string{
 		task.ID, task.RequirementID, `"task_id"`, `"requirement_id"`,
+		task.AcceptanceCriteria[0], `"acceptance_criteria"`,
 		`"path"`, `"file"`, `"command"`, `"tool"`, `"workflow"`,
 		`"route_template"`, `"method"`, `"handler"`, `"source"`,
 	} {
@@ -83,11 +80,10 @@ func TestApplicationServiceEndpointRequirementIsOneTaskLocalBlindEnum(t *testing
 func TestApplicationServiceEndpointRequirementRejectsInvalidAuthorityAndWire(t *testing.T) {
 	t.Parallel()
 	validInput := ApplicationServiceEndpointRequirementInput{
-		ProductContext:     "inventory service",
-		RequirementQuote:   "Records are normalized before storage.",
-		Objective:          "Normalize accepted record values.",
-		RequiredBehaviors:  []string{"Normalize each accepted record value."},
-		AcceptanceCriteria: []string{"Equivalent values have one normalized representation."},
+		ProductContext:    "inventory service",
+		RequirementQuote:  "Records are normalized before storage.",
+		Objective:         "Normalize accepted record values.",
+		RequiredBehaviors: []string{"Normalize each accepted record value."},
 	}
 	for name, mutate := range map[string]func(*ApplicationServiceEndpointRequirementInput){
 		"blank product": func(input *ApplicationServiceEndpointRequirementInput) {
@@ -98,9 +94,6 @@ func TestApplicationServiceEndpointRequirementRejectsInvalidAuthorityAndWire(t *
 		},
 		"missing behavior": func(input *ApplicationServiceEndpointRequirementInput) {
 			input.RequiredBehaviors = nil
-		},
-		"missing criterion": func(input *ApplicationServiceEndpointRequirementInput) {
-			input.AcceptanceCriteria = nil
 		},
 	} {
 		t.Run(name, func(t *testing.T) {

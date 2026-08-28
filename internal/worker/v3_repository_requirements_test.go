@@ -21,8 +21,8 @@ func TestExistingRepositoryRequirementsUseOneAggregateCall(t *testing.T) {
 				t.Fatalf("model=%q kind=%q", model, job.Kind)
 			}
 			candidate := assemblyline.RepositoryRequirementInterpretation{
-				Schema:       assemblyline.RepositoryRequirementInterpretationSchemaV2,
-				Requirements: []string{"CSV exports", "audit logging"},
+				Schema:       assemblyline.RepositoryRequirementInterpretationSchemaV3,
+				Requirements: []string{"audit logging", "CSV exports"},
 			}
 			raw, err := json.Marshal(candidate)
 			return assemblyline.PortableResult{JobID: job.ID, Candidate: string(raw)}, err
@@ -41,7 +41,7 @@ func TestExistingRepositoryRequirementsUseOneAggregateCall(t *testing.T) {
 	if calls != 1 {
 		t.Fatalf("semantic calls=%d", calls)
 	}
-	if !reflect.DeepEqual(quotes, []string{"CSV exports", "audit logging"}) {
+	if !reflect.DeepEqual(quotes, []string{"audit logging", "CSV exports"}) {
 		t.Fatalf("requirements=%q", quotes)
 	}
 }
