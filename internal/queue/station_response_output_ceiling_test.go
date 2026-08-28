@@ -63,12 +63,12 @@ func TestExpectedPortableStationMaxOutputTokensNeverExceedsContext(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err := ExpectedPortableStationMaxOutputTokens(job, 4096)
+	got, err := ExpectedPortableStationMaxOutputTokens(job, 8192)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got != 4096 {
-		t.Fatalf("context-clamped output ceiling=%d want 4096", got)
+	if got != 8192 {
+		t.Fatalf("context-clamped output ceiling=%d want 8192", got)
 	}
 }
 

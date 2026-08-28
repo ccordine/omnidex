@@ -21,6 +21,7 @@ func TestGeneratePreparedExactRawTextReturnsTypeScriptWithoutFormat(t *testing.T
 	)
 	client := exactPreparedIdentityClient(t, expected, http.StatusOK, body, seen, captured)
 	prepared := exactPreparedRequest(expected)
+	prepared.RawTextStopSequence = llm.ExactPreparedRawChatEndV1
 	result, err := client.GeneratePreparedExact(context.Background(), prepared)
 	if err != nil {
 		t.Fatal(err)

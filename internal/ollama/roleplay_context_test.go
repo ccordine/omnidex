@@ -34,7 +34,7 @@ func TestResolveRoleplayCompletionContextUsesExactShowRequest(t *testing.T) {
 		if !bytes.Equal(got, want) {
 			t.Fatalf("show request=%s want %s", got, want)
 		}
-		show := `{"capabilities":["completion"],"parameters":"temperature 0.7","template":"{{ .Prompt }}","model_info":{"general.architecture":"llama","llama.context_length":4096,"tokenizer.ggml.model":"llama"}}`
+		show := `{"capabilities":["completion"],"parameters":"temperature 0.7","template":"{{ .Prompt }}","model_info":{"general.architecture":"llama","llama.context_length":16384,"tokenizer.ggml.model":"llama"}}`
 		return &http.Response{
 			StatusCode: http.StatusOK, Header: make(http.Header), Request: request,
 			Body: io.NopCloser(strings.NewReader(show)),
@@ -45,7 +45,7 @@ func TestResolveRoleplayCompletionContextUsesExactShowRequest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got != 4096 || seen != 1 {
+	if got != 8192 || seen != 1 {
 		t.Fatalf("resolved context=%d requests=%d", got, seen)
 	}
 }
