@@ -156,24 +156,29 @@ func assertDesiredStateProductMutationEvidence(
 	test desiredStateProductCase,
 ) {
 	t.Helper()
-	var status, sourceSnapshotID, path string
+	var operationID, status, sourceSnapshotID, stageID, patchSHA, path string
 	var attempts int
+	var mutationEvidenceID int64
 	var sourcePresent, expectedPresent bool
 	var sourceSHA, expectedSHA *string
 	if err := pool.QueryRow(t.Context(), `
-		SELECT operation.status,operation.apply_attempt_count,operation.source_repository_snapshot_id,
+		SELECT operation.id,operation.status,operation.apply_attempt_count,
+		       operation.mutation_evidence_id,operation.source_repository_snapshot_id,
+		       operation.stage_id,operation.patch_sha256,
 		       file.path,file.source_present,file.expected_present,
 		       file.source_sha256,file.expected_sha256
 		FROM workspace_mutation_operations AS operation
 		JOIN workspace_mutation_files AS file ON file.operation_id=operation.id
 		WHERE operation.job_id=$1
 	`, jobID).Scan(
-		&status, &attempts, &sourceSnapshotID, &path, &sourcePresent, &expectedPresent,
+		&operationID, &status, &attempts, &mutationEvidenceID, &sourceSnapshotID,
+		&stageID, &patchSHA, &path, &sourcePresent, &expectedPresent,
 		&sourceSHA, &expectedSHA,
 	); err != nil {
 		t.Fatal(err)
 	}
-	if status != "verified" || attempts != 1 || sourceSnapshotID != before.ID ||
+	if status != "verified" || attempts != 1 || mutationEvidenceID < 1 ||
+		sourceSnapshotID != before.ID ||
 		path != test.target || sourcePresent == test.present || expectedPresent != test.present {
 		t.Fatalf(
 			"journal status=%s attempts=%d snapshot=%s path=%s transition=%t->%t",
@@ -192,7 +197,8 @@ func assertDesiredStateProductMutationEvidence(
 		}
 	}
 
-	var snapshots, currentTarget, graphEvidence, indexEvidence int
+	var snapshots, currentTarget, graphEvidence int
+	var snapshotIndexEvidence, analysisIndexEvidence int
 	if err := pool.QueryRow(t.Context(), `
 		SELECT COUNT(*) FROM repository_snapshots
 		WHERE project_id=$1 AND id IN ($2,$3)
@@ -207,10 +213,16 @@ func assertDesiredStateProductMutationEvidence(
 	if err := pool.QueryRow(t.Context(), `
 		SELECT
 			COUNT(*) FILTER (WHERE kind=$2),
-			COUNT(*) FILTER (WHERE kind=$3)
+			COUNT(*) FILTER (
+				WHERE kind=$3 AND payload_json->'metadata' ? 'snapshot_id'
+				  AND NOT payload_json->'metadata' ? 'analysis_id'
+			),
+			COUNT(*) FILTER (
+				WHERE kind=$3 AND payload_json->'metadata' ? 'analysis_id'
+			)
 		FROM evidence WHERE job_id=$1
 	`, jobID, evidence.KindRepositoryDesiredGraph, evidence.KindRepositoryIndex).Scan(
-		&graphEvidence, &indexEvidence,
+		&graphEvidence, &snapshotIndexEvidence, &analysisIndexEvidence,
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -218,17 +230,23 @@ func assertDesiredStateProductMutationEvidence(
 	if test.present {
 		wantTarget = 1
 	}
-	if snapshots != 2 || currentTarget != wantTarget || graphEvidence != 1 || indexEvidence != 2 {
+	if snapshots != 2 || currentTarget != wantTarget || graphEvidence != 1 ||
+		snapshotIndexEvidence != 2 || analysisIndexEvidence != 2 {
 		t.Fatalf(
-			"reindex evidence snapshots=%d target=%d graph=%d index=%d",
-			snapshots, currentTarget, graphEvidence, indexEvidence,
+			"reindex evidence snapshots=%d target=%d graph=%d snapshot_index=%d analysis_index=%d",
+			snapshots, currentTarget, graphEvidence,
+			snapshotIndexEvidence, analysisIndexEvidence,
 		)
 	}
 
 	var generatedDiffs, baselineProofs, baselineAcceptances, stagedProofs, authoritativeProofs int
 	if err := pool.QueryRow(t.Context(), `
 		SELECT
-			COUNT(*) FILTER (WHERE kind=$2 AND source_type='repository'),
+			COUNT(*) FILTER (
+				WHERE kind=$2 AND source_type='workspace' AND id=$4
+				  AND source_ref=$5 AND payload_json->>'hash'=$6
+				  AND payload_json->'metadata'->>'workspace_mutation_operation_id'=$7
+			),
 			COUNT(*) FILTER (WHERE kind=$3 AND payload_json->'metadata'->>'repository_verification_scope'='baseline'
 			  AND NOT COALESCE((payload_json->'metadata'->>'repository_verification_baseline_accepted')::boolean,false)),
 			COUNT(*) FILTER (WHERE kind=$3 AND COALESCE((payload_json->'metadata'->>'repository_verification_baseline_accepted')::boolean,false)),
@@ -237,7 +255,8 @@ func assertDesiredStateProductMutationEvidence(
 			COUNT(*) FILTER (WHERE kind=$3 AND payload_json->'metadata'->>'repository_verification_scope'='authoritative'
 			  AND NOT COALESCE((payload_json->'metadata'->>'repository_verification_plan_accepted')::boolean,false))
 		FROM evidence WHERE job_id=$1
-	`, jobID, evidence.KindGeneratedDiff, evidence.KindTestResult).Scan(
+	`, jobID, evidence.KindGeneratedDiff, evidence.KindTestResult,
+		mutationEvidenceID, stageID, patchSHA, operationID).Scan(
 		&generatedDiffs, &baselineProofs, &baselineAcceptances, &stagedProofs, &authoritativeProofs,
 	); err != nil {
 		t.Fatal(err)

@@ -8,7 +8,6 @@ import (
 
 	"github.com/gryph/omnidex/internal/assemblyline"
 	"github.com/gryph/omnidex/internal/exactjson"
-	"github.com/gryph/omnidex/internal/llm"
 	"github.com/gryph/omnidex/internal/station"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -105,21 +104,49 @@ func rendererMigrationOpening(
 ) StationGapOpening {
 	t.Helper()
 	claim := seedPreInlineExecutionMigrationClaim(t, t.Context(), pool, marker)
-	portable, err := assemblyline.NewConversationResponseJob(assemblyline.ConversationResponseInput{
-		Kind: assemblyline.ObjectiveKindAnswer, ExactInstruction: "Exact renderer question.",
-	})
+	payload := json.RawMessage(
+		`{"exact_instruction":"Exact renderer question.","kind":"answer"}`,
+	)
+	portable := assemblyline.PortableJob{
+		Schema:  "omnidex.portable-job.v1",
+		Kind:    assemblyline.WorkConversationResponse,
+		Payload: payload,
+	}
+	portable.ID = historicalPortableID(
+		portable.Schema, string(portable.Kind), portable.Payload,
+	)
+	portableEnvelope, err := exactjson.Canonical(portable)
 	if err != nil {
 		t.Fatal(err)
 	}
-	opening, err := validateStationGapOpening(StationGapOpenRecord{
-		Authority: claim.Authority, Job: portable, Station: station.ConversationResponse,
-		ContextTokens: 8192, MaxOutputTokens: 8192,
-		OutputLimitMode: llm.ExactPreparedOutputLimitNatural,
-	})
+	const (
+		prompt   = "Exact historical renderer question."
+		renderer = "omnidex.render-portable-job.v3"
+	)
+	responseSchema := json.RawMessage(`{}`)
+	projection, err := exactjson.Canonical(struct {
+		Prompt         string          `json:"prompt"`
+		Renderer       string          `json:"renderer"`
+		ResponseSchema json.RawMessage `json:"response_schema"`
+	}{prompt, renderer, responseSchema})
 	if err != nil {
 		t.Fatal(err)
 	}
-	return opening
+	return StationGapOpening{
+		JobID: claim.Authority.JobID, Generation: claim.Authority.Generation,
+		StepID: claim.Authority.StepID, StepAttempt: claim.Authority.Attempt,
+		WorkerID: claim.Authority.WorkerID, GapID: portable.ID,
+		Station: station.ConversationResponse, Scope: "portable_semantic_worker",
+		PortableSchema: portable.Schema, WorkID: portable.ID,
+		WorkKind: string(portable.Kind), PortablePayload: string(portable.Payload),
+		PortablePayloadSHA256:  stationGapSHA256(string(portable.Payload)),
+		PortableEnvelope:       string(portableEnvelope),
+		PortableEnvelopeSHA256: stationGapSHA256(string(portableEnvelope)),
+		RendererVersion:        renderer, Prompt: prompt,
+		ResponseSchema: responseSchema, ProjectionEnvelope: string(projection),
+		ProjectionSHA256: stationGapSHA256(string(projection)),
+		ContextTokens:    8192, MaxOutputTokens: 8192,
+	}
 }
 
 func openingWithRenderer(t *testing.T, opening StationGapOpening, renderer string) StationGapOpening {

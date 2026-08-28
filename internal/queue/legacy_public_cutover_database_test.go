@@ -42,7 +42,7 @@ func TestPostgresLegacyPublicCutoverPreservesRowsSequencesOIDsAndRetriesExactly(
 		t.Fatalf("cutover receipt=%+v", receipt)
 	}
 	assertPreservedLegacyData(
-		t, cutoverPool, projectsOID, jobsProjectFKOID, jobStepsJobFKOID, fixture.Bundle,
+		t, cutoverPool, projectsOID, jobsProjectFKOID, jobStepsJobFKOID, receipt,
 	)
 
 	retried, err := PreserveLegacyPublic(
@@ -85,7 +85,7 @@ func assertPreservedLegacyData(
 	projectsOID uint32,
 	jobsProjectFKOID uint32,
 	jobStepsJobFKOID uint32,
-	bundle MigrationBundle,
+	receipt LegacyPublicCutoverReceipt,
 ) {
 	t.Helper()
 	var projectCount, jobCount, stepCount, retiredHistoryCount int
@@ -96,8 +96,11 @@ func assertPreservedLegacyData(
 		SELECT
 		 (SELECT COUNT(*) FROM omnidex_runtime.projects WHERE id=41 AND
 		   location='/tmp/preserved-project'),
-		 (SELECT COUNT(*) FROM omnidex_runtime.jobs WHERE id=51 AND project_id=41),
-		 (SELECT COUNT(*) FROM omnidex_runtime.job_steps WHERE id=61 AND job_id=51),
+		 (SELECT COUNT(*) FROM omnidex_runtime.jobs WHERE id=51 AND project_id=41 AND
+		   status='completed' AND result='preserved exact result' AND completed_at IS NOT NULL),
+		 (SELECT COUNT(*) FROM omnidex_runtime.job_steps WHERE id=61 AND job_id=51 AND
+		   status='completed' AND output='preserved exact output' AND
+		   started_at IS NOT NULL AND finished_at IS NOT NULL),
 		 (SELECT COUNT(*) FROM omnidex_runtime.jobs WHERE
 		  (id,pipeline,status) IN (
 		    (52,'assistant','completed'),
@@ -157,10 +160,10 @@ func assertPreservedLegacyData(
 	if err := pool.QueryRow(t.Context(), `
 		SELECT COUNT(*) FROM omnidex_runtime.schema_migrations
 		WHERE manifest_sha256=$1
-	`, bundle.ManifestSHA256()).Scan(&migrationCount); err != nil {
+	`, receipt.MigrationManifestSHA256).Scan(&migrationCount); err != nil {
 		t.Fatal(err)
 	}
-	if migrationCount != len(bundle.entries) {
-		t.Fatalf("migration count=%d want %d", migrationCount, len(bundle.entries))
+	if migrationCount != receipt.MigrationCount {
+		t.Fatalf("migration count=%d want receipt count %d", migrationCount, receipt.MigrationCount)
 	}
 }

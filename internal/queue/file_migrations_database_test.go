@@ -42,6 +42,44 @@ func TestFileMigrationSQLAndLedgerRecordCommitAtomically(t *testing.T) {
 	assertAppliedMigrationCount(t, pool, "002_rejected_record.sql", 0)
 }
 
+func TestFileMigrationEnforcesStandardConformingStringsBeforeParsingBody(t *testing.T) {
+	pool := openIsolatedMigrationPool(t)
+	if _, err := pool.Exec(t.Context(), schemaMigrationsTableSQL); err != nil {
+		t.Fatal(err)
+	}
+	conn, err := pool.Acquire(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Release()
+	if _, err := conn.Exec(t.Context(), "SET SESSION standard_conforming_strings TO off"); err != nil {
+		t.Fatal(err)
+	}
+	var configured string
+	if err := conn.QueryRow(t.Context(), "SHOW standard_conforming_strings").Scan(&configured); err != nil {
+		t.Fatal(err)
+	}
+	if configured != "off" {
+		t.Fatalf("test connection standard_conforming_strings=%q, want off", configured)
+	}
+
+	body := "CREATE TABLE escaped_string_commit_probe (id BIGINT);\n" +
+		"SELECT 'a\\'b'; COMMIT; SELECT 'c\\'d';\n"
+	entry := migrationBundleEntry{
+		name: "001_escaped_string_commit.sql", body: []byte(body),
+	}
+	entry.sha256 = digestMigrationBytes(entry.body)
+	if _, err := entry.transactionalBody(); err != nil {
+		t.Fatalf("static lexer did not expose its standard-conforming mode contract: %v", err)
+	}
+	err = applyFileMigration(t.Context(), conn, entry, strings.Repeat("a", 64))
+	if err == nil || !strings.Contains(err.Error(), "apply migration 001_escaped_string_commit.sql") {
+		t.Fatalf("ambiguous string migration error=%v", err)
+	}
+	assertMigrationRelationExists(t, pool, "escaped_string_commit_probe", false)
+	assertAppliedMigrationCount(t, pool, entry.name, 0)
+}
+
 func TestConcurrentFileMigrationRunnersAreSerialized(t *testing.T) {
 	pool := openIsolatedMigrationPool(t)
 	dir := t.TempDir()

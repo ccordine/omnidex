@@ -3,6 +3,7 @@ package queue
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/gryph/omnidex/internal/db"
 	"github.com/jackc/pgx/v5"
@@ -27,19 +28,28 @@ func PreserveLegacyPublic(
 	if err := db.ValidateRuntimeSchemaName(runtimeSchema); err != nil {
 		return LegacyPublicCutoverReceipt{}, err
 	}
-	if err := validateLegacyCutoverBundle(bundle); err != nil {
+	sourceBundle := bundle
+	frozenBundle, err := deriveLegacyCutoverBundle(sourceBundle)
+	if err != nil {
 		return LegacyPublicCutoverReceipt{}, err
 	}
+	bundle = frozenBundle
 	conn, err := pool.Acquire(ctx)
 	if err != nil {
 		return LegacyPublicCutoverReceipt{}, fmt.Errorf("acquire legacy public cutover connection: %w", err)
 	}
 	defer conn.Release()
+	if err := enforceMigrationSessionSQLMode(ctx, conn); err != nil {
+		return LegacyPublicCutoverReceipt{}, err
+	}
 	tx, err := conn.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.Serializable})
 	if err != nil {
 		return LegacyPublicCutoverReceipt{}, fmt.Errorf("begin serializable legacy public cutover: %w", err)
 	}
 	defer tx.Rollback(context.Background())
+	if err := enforceMigrationTransactionSQLMode(ctx, tx); err != nil {
+		return LegacyPublicCutoverReceipt{}, err
+	}
 	if err := acquireLegacyCutoverLocks(ctx, tx); err != nil {
 		return LegacyPublicCutoverReceipt{}, err
 	}
@@ -52,6 +62,11 @@ func PreserveLegacyPublic(
 			ctx, tx, runtimeSchema, bundle, legacyExists, runtimeExists,
 		)
 		if err != nil {
+			return LegacyPublicCutoverReceipt{}, err
+		}
+		if err := proveLegacyCutoverTailApplicability(
+			ctx, tx, runtimeSchema, sourceBundle,
+		); err != nil {
 			return LegacyPublicCutoverReceipt{}, err
 		}
 		if err := tx.Commit(ctx); err != nil {
@@ -111,6 +126,11 @@ func PreserveLegacyPublic(
 	if err := installLegacyCutoverReceipt(ctx, tx, runtimeSchema, receipt); err != nil {
 		return LegacyPublicCutoverReceipt{}, err
 	}
+	if err := proveLegacyCutoverTailApplicability(
+		ctx, tx, runtimeSchema, sourceBundle,
+	); err != nil {
+		return LegacyPublicCutoverReceipt{}, err
+	}
 	if err := verifyFinalLegacyCutoverState(ctx, tx, runtimeSchema, bundle, receipt); err != nil {
 		return LegacyPublicCutoverReceipt{}, err
 	}
@@ -120,21 +140,59 @@ func PreserveLegacyPublic(
 	return receipt, nil
 }
 
-func validateLegacyCutoverBundle(bundle MigrationBundle) error {
+// deriveLegacyCutoverBundle projects one verified release bundle onto the sole
+// frozen migration authority consumed by the one-time preservation transition.
+func deriveLegacyCutoverBundle(source MigrationBundle) (MigrationBundle, error) {
+	if err := source.validate(); err != nil {
+		return MigrationBundle{}, err
+	}
+	entries := make([]migrationBundleEntry, 0, len(source.entries))
+	var manifest strings.Builder
+	hasCurrentTail := false
+	for _, entry := range source.entries {
+		prefix, err := migrationNumericPrefix(entry.name)
+		if err != nil {
+			return MigrationBundle{}, err
+		}
+		if prefix > legacyCutoverFinalMigrationPrefix {
+			hasCurrentTail = true
+			break
+		}
+		entries = append(entries, migrationBundleEntry{
+			name: entry.name, sha256: entry.sha256, body: append([]byte{}, entry.body...),
+		})
+		fmt.Fprintf(&manifest, "%s  %s\n", entry.sha256, entry.name)
+	}
+	if len(entries) == 0 {
+		return MigrationBundle{}, fmt.Errorf("legacy cutover requires the exact sealed 001..158 migration prefix")
+	}
+	if !hasCurrentTail {
+		return MigrationBundle{}, fmt.Errorf(
+			"legacy cutover source bundle must contain verified migrations after frozen prefix 158",
+		)
+	}
+	lastPrefix, err := migrationNumericPrefix(entries[len(entries)-1].name)
+	if err != nil || lastPrefix != legacyCutoverFinalMigrationPrefix {
+		return MigrationBundle{}, fmt.Errorf(
+			"legacy cutover requires the exact sealed 001..158 migration bundle",
+		)
+	}
+	bundle := MigrationBundle{
+		manifest: []byte(manifest.String()), entries: entries,
+	}
+	bundle.manifestSHA256 = digestMigrationBytes(bundle.manifest)
 	if err := bundle.validate(); err != nil {
-		return err
+		return MigrationBundle{}, err
 	}
 	if _, err := legacyMigrationEntries(bundle); err != nil {
-		return err
+		return MigrationBundle{}, err
 	}
 	if bundle.manifestSHA256 != legacyExpectedMigrationManifestSHA256 {
-		return fmt.Errorf("legacy cutover release migration manifest differs from its frozen authority")
+		return MigrationBundle{}, fmt.Errorf(
+			"legacy cutover release migration manifest differs from its frozen authority",
+		)
 	}
-	lastPrefix, err := migrationNumericPrefix(bundle.entries[len(bundle.entries)-1].name)
-	if err != nil || lastPrefix != legacyCutoverFinalMigrationPrefix {
-		return fmt.Errorf("legacy cutover requires the exact sealed 001..158 migration bundle")
-	}
-	return nil
+	return bundle, nil
 }
 
 func acquireLegacyCutoverLocks(ctx context.Context, tx pgx.Tx) error {

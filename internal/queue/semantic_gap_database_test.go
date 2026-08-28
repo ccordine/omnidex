@@ -1,7 +1,6 @@
 package queue
 
 import (
-	"context"
 	"strings"
 	"testing"
 
@@ -94,7 +93,7 @@ func TestPostgresCompleteStepRejectsOpenProviderDiscoveryAtomically(t *testing.T
 }
 
 func TestPostgresCompleteStepRejectsOpenSemanticGapAtomically(t *testing.T) {
-	repository, pool, claim := semanticGapTestClaim(t, "semantic-gap-completion")
+	repository, _, claim := semanticGapTestClaim(t, "semantic-gap-completion")
 	opening := stationGapOpenFixture(t, claim.Authority)
 	opened, err := repository.OpenStationGap(t.Context(), opening)
 	if err != nil {
@@ -121,20 +120,54 @@ func TestPostgresCompleteStepRejectsOpenSemanticGapAtomically(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	completePreInlineExecutionMigrationClaim(t, t.Context(), pool, claim)
+	if err := repository.CompleteStep(t.Context(), command); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func semanticGapTestClaim(t *testing.T, marker string) (*Repository, *pgxpool.Pool, *model.ClaimedStep) {
 	t.Helper()
-	ctx := context.Background()
 	pool := openIsolatedMigrationPool(t)
 	repository := New(pool)
-	if err := repository.EnsureSchema(ctx, loadMigrationBundleThroughPrefix(t, "096")); err != nil {
+	if err := repository.EnsureSchema(t.Context(), loadCheckedMigrationBundle(t)); err != nil {
 		t.Fatal(err)
 	}
-	installEmptyGeneratedDeploymentAuthorityRailForHistoricalRuntimeTest(t, pool)
-	claim := seedPreInlineExecutionMigrationClaim(t, ctx, pool, marker)
+	claim := claimStationTestJob(t, repository, marker)
 	return repository, pool, claim
+}
+
+func claimStationTestJob(
+	t *testing.T,
+	repository *Repository,
+	marker string,
+) *model.ClaimedStep {
+	t.Helper()
+	job, err := repository.EnqueueJob(t.Context(), marker, model.PipelineCoding, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	claim, err := repository.ClaimNextStep(t.Context(), marker+"-worker")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if claim == nil || claim.Job.ID != job.ID {
+		t.Fatalf("station claim=%+v, want job %d", claim, job.ID)
+	}
+	return claim
+}
+
+func cancelStationTestClaim(
+	t *testing.T,
+	repository *Repository,
+	claim *model.ClaimedStep,
+	marker string,
+) {
+	t.Helper()
+	if _, err := repository.CancelJob(t.Context(), testCancelCommand(
+		t, claim.Job.ID, marker, "cancel exact station test authority",
+	)); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func stationGapOpenFixture(t *testing.T, authority model.StepAttemptAuthority) StationGapOpenRecord {

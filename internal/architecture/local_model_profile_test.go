@@ -10,7 +10,6 @@ import (
 
 const (
 	localSemanticModel         = "qwen3.5:9b-q4_K_M"
-	localPlannerModel          = "llama3.2:3b"
 	localDeploymentIntentModel = "phi4:14b"
 	localFragmentModel         = "qwen2.5-coder:7b"
 	localRepairGuidanceModel   = "qwen3.5:9b-q4_K_M"
@@ -55,8 +54,8 @@ func TestLocalModelProfileUsesStableSemanticAndFragmentModels(t *testing.T) {
 			"OMNI_CODING_REQUIREMENTS_MODEL",
 			"OMNI_CODING_WORKLOAD_MODEL",
 		} {
-			if got := values[key]; got != localPlannerModel {
-				t.Errorf("%s: %s=%q, want %q", name, key, got, localPlannerModel)
+			if got := values[key]; got != localSemanticModel {
+				t.Errorf("%s: %s=%q, want %q", name, key, got, localSemanticModel)
 			}
 		}
 		if got := values["OMNI_CODING_SERVICE_DEPLOYMENT_INTENT_MODEL"]; got != localDeploymentIntentModel {
@@ -141,6 +140,18 @@ func TestReadmeCannotAdvertiseStaleOrFabricatedCognitionConfiguration(t *testing
 	}
 	if !strings.Contains(contents, "\nINFERENCE_CONTEXT_TOKENS=8192\n") {
 		t.Fatal("README omits the model-call context bound")
+	}
+	for _, key := range []string{
+		"OMNI_CODING_REQUIREMENTS_MODEL",
+		"OMNI_CODING_WORKLOAD_MODEL",
+	} {
+		authority := key + "=" + localSemanticModel
+		if strings.Count(contents, authority) != 1 {
+			t.Fatalf("README exact route %q count=%d, want 1", authority, strings.Count(contents, authority))
+		}
+	}
+	if strings.Contains(contents, "llama3.2:3b") {
+		t.Fatal("README advertises the removed Llama requirement/workload route")
 	}
 	for _, removed := range []string{
 		"COGNITION_MODEL_SHA256=",

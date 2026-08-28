@@ -143,9 +143,9 @@ configurable without giving any model control-plane authority:
 ```dotenv
 LLM_PROVIDER=ollama
 OMNI_CODING_SURFACE_MODEL=qwen3.5:9b-q4_K_M
-OMNI_CODING_REQUIREMENTS_MODEL=llama3.2:3b
+OMNI_CODING_REQUIREMENTS_MODEL=qwen3.5:9b-q4_K_M
 OMNI_CODING_SERVICE_DEPLOYMENT_INTENT_MODEL=phi4:14b
-OMNI_CODING_WORKLOAD_MODEL=llama3.2:3b
+OMNI_CODING_WORKLOAD_MODEL=qwen3.5:9b-q4_K_M
 OMNI_CODING_ARTIFACT_HANDLING_MODEL=qwen3.5:9b-q4_K_M
 OMNI_CODING_CAPABILITY_RELATION_MODEL=qwen3.5:9b-q4_K_M
 OMNI_CODING_SKILL_SELECTION_MODEL=qwen3.5:9b-q4_K_M
@@ -177,10 +177,10 @@ command are in [docs/BROWSER_INFERENCE.md](docs/BROWSER_INFERENCE.md).
 ### Deployment sizing
 
 The checked-in profile is Qwen-led, but it is not a single-model deployment.
-The active routes use Qwen 3.5 9B for most bounded semantic work, Qwen 2.5
-Coder 7B for source fragments and corrections, Llama 3.2 3B for requirement
-extraction, Phi-4 14B for the two service deployment semantics, DeepSeek R1 8B for the
-independently routed evidence reviews, and `nomic-embed-text` for local embeddings.
+The active routes use Qwen 3.5 9B for bounded semantic work including requirement
+extraction and workload construction, Qwen 2.5 Coder 7B for source fragments and
+corrections, Phi-4 14B for the two service deployment semantics, DeepSeek R1 8B for
+the independently routed evidence reviews, and `nomic-embed-text` for local embeddings.
 The complete route list is in
 [`default.env`](default.env).
 
@@ -194,14 +194,13 @@ context. Re-run that command on every candidate server before accepting it.
 
 | Route | Current model | Local model file | Runtime role |
 | --- | --- | ---: | --- |
-| Most semantic, database, answer, and repair-guidance stations | `qwen3.5:9b-q4_K_M` | 6.6 GB | One raw semantic result |
+| Semantic, requirement, workload, database, answer, and repair-guidance stations | `qwen3.5:9b-q4_K_M` | 6.6 GB | One raw semantic result |
 | Fragment generation and correction | `qwen2.5-coder:7b` | 4.7 GB | One bounded source node |
-| Requirement and workload extraction | `llama3.2:3b` | 2.0 GB | Raw semantic-leaf fixed points |
 | Service deployment semantics | `phi4:14b` | 9.1 GB | Conditional availability and destination leaves |
 | Independent repository/web evidence review | `deepseek-r1:8b` | 5.2 GB | Separate review identity |
 | Embeddings | `nomic-embed-text` | 0.27 GB | Retrieval vectors |
 
-The exact set occupies about **27.9 GB (26.0 GiB) on disk**. Reserve at least
+The exact set occupies about **25.9 GB (24.1 GiB) on disk**. Reserve at least
 50 GB of fast local storage for the model set and runtime files. A practical
 all-in-one host should have 100 GB free before adding workspace checkouts,
 PostgreSQL growth, backups, logs, or Docker build cache.
@@ -355,14 +354,12 @@ the candidate host:
 ```bash
 ollama pull qwen3.5:9b-q4_K_M
 ollama pull qwen2.5-coder:7b
-ollama pull llama3.2:3b
 ollama pull phi4:14b
 ollama pull deepseek-r1:8b
 ollama pull nomic-embed-text
 
 omni ollama:prewarm --model qwen3.5:9b-q4_K_M --num-ctx 8192 --json
 omni ollama:prewarm --model qwen2.5-coder:7b --num-ctx 8192 --json
-omni ollama:prewarm --model llama3.2:3b --num-ctx 8192 --json
 omni ollama:prewarm --model phi4:14b --num-ctx 8192 --json
 omni ollama:prewarm --model deepseek-r1:8b --num-ctx 8192 --json
 ```

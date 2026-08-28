@@ -22,6 +22,9 @@ func loadCheckedMigrationBundle(t testing.TB) MigrationBundle {
 
 func TestCheckedMigrationBundleFreezesCurrentTail(t *testing.T) {
 	bundle := loadCheckedMigrationBundle(t)
+	if tail := bundle.entries[len(bundle.entries)-1].name; tail != jobExecutionIdentityImmutabilityMigration {
+		t.Fatalf("checked migration tail=%q want %q", tail, jobExecutionIdentityImmutabilityMigration)
+	}
 	want := map[string]int{
 		"146_generated_workload_deployment_namespace_requalification.sql": 0,
 		"147_generated_workload_deployment_authority_hardening.sql":       0,
@@ -43,6 +46,10 @@ func TestCheckedMigrationBundleFreezesCurrentTail(t *testing.T) {
 		"163_raw_portable_response_transport.sql":                         0,
 		"164_qwen35_chatml_raw_transport_v2.sql":                          0,
 		"165_portable_response_output_ceiling.sql":                        0,
+		"166_roleplay_portable_result_reuse_v2.sql":                       0,
+		"167_station_gap_opening_portable_envelope_v2.sql":                0,
+		"168_workspace_mutation_pipeline_action_authority.sql":            0,
+		"169_job_execution_identity_immutability.sql":                     0,
 	}
 	for _, entry := range bundle.entries {
 		if _, tracked := want[entry.name]; tracked {

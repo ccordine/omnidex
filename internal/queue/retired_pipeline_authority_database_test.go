@@ -26,9 +26,7 @@ func TestPostgresExecutablePipelineCutoverPreservesTerminalHistoryAndGuardsWrite
 	if err := repository.EnsureSchema(t.Context(), loadMigrationBundleThroughPrefix(t, "087")); err != nil {
 		t.Fatal(err)
 	}
-	if err := repository.ValidateRuntimeAuthority(t.Context()); err != nil {
-		t.Fatalf("validate installed executable pipeline authority: %v", err)
-	}
+	assertExecutablePipelineSourceSHA256(t, pool, jobPipelineAuthorityPriorSHA256)
 	jobs, err := repository.ListJobs(t.Context(), "", 50, 0)
 	if err != nil {
 		t.Fatal(err)
@@ -157,7 +155,7 @@ func TestPostgresClaimAndReplanRejectPreCutoverRetiredWork(t *testing.T) {
 func TestPostgresStartupRechecksExecutablePipelineRows(t *testing.T) {
 	pool := openIsolatedMigrationPool(t)
 	repository := New(pool)
-	if err := repository.EnsureSchema(t.Context(), loadMigrationBundleThroughPrefix(t, "087")); err != nil {
+	if err := repository.EnsureSchema(t.Context(), loadCheckedMigrationBundle(t)); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := pool.Exec(t.Context(), `
@@ -176,7 +174,7 @@ func TestPostgresStartupRechecksExecutablePipelineRows(t *testing.T) {
 func TestPostgresStartupRejectsTamperedExecutablePipelineAuthorityWithoutRows(t *testing.T) {
 	pool := openIsolatedMigrationPool(t)
 	repository := New(pool)
-	if err := repository.EnsureSchema(t.Context(), loadMigrationBundleThroughPrefix(t, "087")); err != nil {
+	if err := repository.EnsureSchema(t.Context(), loadCheckedMigrationBundle(t)); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := pool.Exec(t.Context(), `ALTER TABLE jobs DISABLE TRIGGER jobs_executable_pipeline_authority`); err != nil {
@@ -197,6 +195,25 @@ func TestPostgresStartupRejectsTamperedExecutablePipelineAuthorityWithoutRows(t 
 	}
 	if err := repository.ValidateRuntimeAuthority(t.Context()); err == nil || !strings.Contains(err.Error(), "database authority differs") {
 		t.Fatalf("conditional trigger startup validation error=%v", err)
+	}
+}
+
+func assertExecutablePipelineSourceSHA256(
+	t *testing.T,
+	pool *pgxpool.Pool,
+	want string,
+) {
+	t.Helper()
+	var digest string
+	if err := pool.QueryRow(t.Context(), `
+		SELECT encode(digest(convert_to(prosrc,'UTF8'),'sha256'),'hex')
+		FROM pg_proc
+		WHERE oid='enforce_jobs_executable_pipeline_authority()'::regprocedure
+	`).Scan(&digest); err != nil {
+		t.Fatal(err)
+	}
+	if digest != want {
+		t.Fatalf("executable pipeline source=%s want %s", digest, want)
 	}
 }
 

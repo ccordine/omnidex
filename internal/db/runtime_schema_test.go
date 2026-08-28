@@ -19,6 +19,19 @@ func TestRuntimeSchemaNameRequiresDedicatedIdentifier(t *testing.T) {
 	}
 }
 
+func TestRuntimeSearchPathHasOneExactAuthority(t *testing.T) {
+	got, err := RuntimeSearchPath(DefaultRuntimeSchema)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "omnidex_runtime,public" {
+		t.Fatalf("runtime search_path=%q", got)
+	}
+	if _, err := RuntimeSearchPath("public"); err == nil {
+		t.Fatal("public schema produced a runtime search_path")
+	}
+}
+
 func TestRuntimeConnectionRejectsURLSearchPathAuthority(t *testing.T) {
 	for _, databaseURL := range []string{
 		"postgres://user:password@127.0.0.1/database?search_path=other",

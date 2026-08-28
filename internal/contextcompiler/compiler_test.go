@@ -230,6 +230,61 @@ func TestContextReceiptAcceptsTheAuthoritativeThirdSemanticAttempt(t *testing.T)
 	}
 }
 
+func TestContextRelevanceReceiptAcceptsMultipleBoundedLeaves(t *testing.T) {
+	t.Parallel()
+	optional := []assemblyline.ContextCandidateAuthority{
+		candidate(t, "fictional_canon", "CTX_1", "The gate remains sealed."),
+		candidate(t, "fictional_canon", "CTX_2", "The warning bell is ringing."),
+		candidate(t, "fictional_canon", "CTX_3", "The eastern path is flooded."),
+		candidate(t, "fictional_canon", "CTX_4", "The keeper carries the brass key."),
+	}
+	relevance := &scriptedRelevanceStation{
+		ids: []string{"CTX_1", "CTX_2", "CTX_3", "CTX_4"}, receiptCalls: 4,
+	}
+	result, err := Compile(t.Context(), Request{
+		ExactInstruction: "Continue from the established scene.",
+		Retrieval:        &RetrievalDirective{Concepts: []string{}},
+	}, &scriptedProvider{set: CandidateSet{Optional: optional}}, Stations{
+		Relevance: relevance,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.RelevanceCalls != 4 || result.ModelCalls != 4 ||
+		len(result.Context.Capsules) != 1 ||
+		len(result.Context.Capsules[0].Sources) != len(optional) {
+		t.Fatalf("multi-leaf context result=%#v", result)
+	}
+}
+
+func TestContextRelevanceReceiptEnforcesFixedPointLeafBudget(t *testing.T) {
+	t.Parallel()
+	input := assemblyline.ContextRelevanceInput{MaxSelections: 4}
+	maximum := input.MaxSelections * assemblyline.MaxSemanticStationAttempts
+	tests := []struct {
+		name    string
+		receipt StationReceipt
+		wantErr bool
+	}{
+		{name: "multiple leaves", receipt: StationReceipt{Calls: 4}},
+		{name: "exact boundary", receipt: StationReceipt{Calls: maximum}},
+		{name: "over boundary", receipt: StationReceipt{Calls: maximum + 1}, wantErr: true},
+		{name: "zero without reuse", receipt: StationReceipt{}, wantErr: true},
+		{name: "durable reuse", receipt: StationReceipt{Reused: true}},
+		{name: "reuse with provider call", receipt: StationReceipt{Calls: 1, Reused: true}, wantErr: true},
+	}
+	for _, test := range tests {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			err := validateContextRelevanceReceipt(input, test.receipt)
+			if (err != nil) != test.wantErr {
+				t.Fatalf("receipt=%#v error=%v want_error=%t", test.receipt, err, test.wantErr)
+			}
+		})
+	}
+}
+
 func TestAnaphoricTurnUsesSelectedAuthorityVerbatimWhenItFits(t *testing.T) {
 	terms := &scriptedTermsStation{decision: assemblyline.ContextSearchTermsDecision{
 		Schema: assemblyline.ContextSearchTermsSchemaV1,

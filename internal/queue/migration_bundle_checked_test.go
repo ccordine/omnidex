@@ -119,6 +119,10 @@ func TestCheckedMigrationBundleFreezesExactProviderSplitSet(t *testing.T) {
 	generatedWorkloadDeploymentRecoveryCount := 0
 	generatedWorkloadDeploymentNamespacePreflightCount := 0
 	serviceStateInterfaceStationCount := 0
+	roleplayPortableResultReuseV2Count := 0
+	stationGapOpeningPortableEnvelopeV2Count := 0
+	workspaceMutationPipelineActionAuthorityCount := 0
+	jobExecutionIdentityImmutabilityCount := 0
 	for _, entry := range bundle.entries {
 		if strings.HasPrefix(entry.name, "060_") {
 			got[entry.name]++
@@ -333,9 +337,21 @@ func TestCheckedMigrationBundleFreezesExactProviderSplitSet(t *testing.T) {
 		if entry.name == "145_generated_workload_deployment_namespace_preflight.sql" {
 			generatedWorkloadDeploymentNamespacePreflightCount++
 		}
+		if entry.name == roleplayPortableResultReuseV2Migration {
+			roleplayPortableResultReuseV2Count++
+		}
+		if entry.name == stationGapOpeningPortableEnvelopeV2Migration {
+			stationGapOpeningPortableEnvelopeV2Count++
+		}
+		if entry.name == workspaceMutationPipelineActionAuthorityMigration {
+			workspaceMutationPipelineActionAuthorityCount++
+		}
+		if entry.name == jobExecutionIdentityImmutabilityMigration {
+			jobExecutionIdentityImmutabilityCount++
+		}
 	}
-	if len(bundle.entries) != 216 || len(got) != len(want) {
-		t.Fatalf("checked migration counts total/provider=%d/%d want 216/%d",
+	if len(bundle.entries) != 220 || len(got) != len(want) {
+		t.Fatalf("checked migration counts total/provider=%d/%d want 220/%d",
 			len(bundle.entries), len(got), len(want))
 	}
 	for _, name := range want {
@@ -352,6 +368,30 @@ func TestCheckedMigrationBundleFreezesExactProviderSplitSet(t *testing.T) {
 	}
 	if dataSourceRelationalAuthorityCount != 1 {
 		t.Fatalf("checked relational data-source authority migration count=%d want 1", dataSourceRelationalAuthorityCount)
+	}
+	if roleplayPortableResultReuseV2Count != 1 {
+		t.Fatalf(
+			"checked roleplay portable-result-reuse V2 migration count=%d want 1",
+			roleplayPortableResultReuseV2Count,
+		)
+	}
+	if stationGapOpeningPortableEnvelopeV2Count != 1 {
+		t.Fatalf(
+			"checked station-gap portable-envelope V2 migration count=%d want 1",
+			stationGapOpeningPortableEnvelopeV2Count,
+		)
+	}
+	if workspaceMutationPipelineActionAuthorityCount != 1 {
+		t.Fatalf(
+			"checked workspace-mutation pipeline/action authority migration count=%d want 1",
+			workspaceMutationPipelineActionAuthorityCount,
+		)
+	}
+	if jobExecutionIdentityImmutabilityCount != 1 {
+		t.Fatalf(
+			"checked job execution identity immutability migration count=%d want 1",
+			jobExecutionIdentityImmutabilityCount,
+		)
 	}
 	if databaseCognitionAuthorityCount != 1 || roleplayCanonAuthorityCount != 1 ||
 		roleplaySimulationAuthorityCount != 1 || roleplayResearchAuthorityCount != 1 ||

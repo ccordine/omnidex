@@ -52,7 +52,10 @@ func (r *Repository) EnsureSchema(ctx context.Context, bundle MigrationBundle) e
 // ValidateRuntimeAuthority checks post-migration invariants that must hold
 // before the production API or worker loops are allowed to start.
 func (r *Repository) ValidateRuntimeAuthority(ctx context.Context) error {
-	return r.validateExecutablePipelineState(ctx)
+	if err := r.validateExecutablePipelineState(ctx); err != nil {
+		return err
+	}
+	return r.validateJobStepExecutionIdentityAuthority(ctx)
 }
 
 func (r *Repository) EnqueueJob(ctx context.Context, instruction, pipeline string, metadataJSON []byte) (model.Job, error) {

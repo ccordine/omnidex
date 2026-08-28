@@ -14,11 +14,11 @@ func TestPostgresRoleplayPortableResultReuseRejectsDivergentExactResults(t *test
 	instruction := "Keep the gate closed."
 	seedRoleplayPortableReuseAcceptedSource(
 		t, fixture, "divergent-first", instruction, root,
-		`{"schema":"omnidex.conversation-response.v1","text":"The first accepted result."}`,
+		"The first accepted result.",
 	)
 	seedRoleplayPortableReuseAcceptedSource(
 		t, fixture, "divergent-second", instruction, root,
-		`{"schema":"omnidex.conversation-response.v1","text":"The divergent accepted result."}`,
+		"The divergent accepted result.",
 	)
 
 	request, targetJob := claimRoleplayPortableReuseTarget(
@@ -47,10 +47,10 @@ func TestPostgresRoleplayPortableResultReuseAllowsIdenticalExactResults(t *testi
 	root := roleplayPortableReuseRootJob(t, "resolve one duplicate leaf")
 	instruction := "Watch the eastern road."
 	first := seedRoleplayPortableReuseAcceptedSource(
-		t, fixture, "identical-first", instruction, root, roleplayPortableReuseCandidateJSON,
+		t, fixture, "identical-first", instruction, root, roleplayPortableReuseExactCandidate,
 	)
 	second := seedRoleplayPortableReuseAcceptedSource(
-		t, fixture, "identical-second", instruction, root, roleplayPortableReuseCandidateJSON,
+		t, fixture, "identical-second", instruction, root, roleplayPortableReuseExactCandidate,
 	)
 	request, targetJob := claimRoleplayPortableReuseTarget(
 		t, fixture, "identical-target", instruction, root,
@@ -60,7 +60,7 @@ func TestPostgresRoleplayPortableResultReuseAllowsIdenticalExactResults(t *testi
 	if err != nil || !found {
 		t.Fatalf("identical reuse=%+v found=%t err=%v", reused, found, err)
 	}
-	if reused.Result.Candidate != roleplayPortableReuseCandidateJSON ||
+	if reused.Result.Candidate != roleplayPortableReuseExactCandidate ||
 		reused.Receipt.SourceGapOutcomeID != second.Outcome.ID ||
 		reused.Receipt.SourceAuthority.JobID != second.Job.ID {
 		t.Fatalf("identical reuse did not retain deterministic newest provenance: %+v", reused)
@@ -91,7 +91,7 @@ func TestPostgresRoleplayPortableResultReuseAllowsIdenticalDirectAndCorrectedRes
 	instruction := "Guard the western stair."
 	direct := seedRoleplayPortableReuseAcceptedSource(
 		t, fixture, "identical-paths-direct", instruction, root,
-		roleplayPortableReuseCandidateJSON,
+		roleplayPortableReuseExactCandidate,
 	)
 
 	_, correctionJob, err := enqueueNarratorRoleplayTurn(
@@ -106,7 +106,7 @@ func TestPostgresRoleplayPortableResultReuseAllowsIdenticalDirectAndCorrectedRes
 	if err != nil || correctionClaim == nil || correctionClaim.Job.ID != correctionJob.ID {
 		t.Fatalf("correction source claim=%+v err=%v", correctionClaim, err)
 	}
-	retained := `{"schema":"omnidex.conversation-response.v1","text":"The rejected retained first responder leaf."}`
+	retained := "The rejected retained first responder leaf."
 	correction, err := assemblyline.NewRetainedResponseCorrectionJob(
 		root, "text was not grounded", retained,
 	)
@@ -115,7 +115,7 @@ func TestPostgresRoleplayPortableResultReuseAllowsIdenticalDirectAndCorrectedRes
 	}
 	correctionOutcome := persistRoleplayPortableReuseLeaf(
 		t, fixture.Repository, correctionClaim, correction,
-		`{"text":"The accepted first responder leaf."}`,
+		roleplayPortableReuseExactCandidate,
 	)
 	failRoleplayPortableReuseJob(
 		t, fixture.Repository, correctionClaim, "identical-paths-correction-failure",
@@ -128,7 +128,7 @@ func TestPostgresRoleplayPortableResultReuseAllowsIdenticalDirectAndCorrectedRes
 	if err != nil || !found {
 		t.Fatalf("identical path reuse=%+v found=%t err=%v", reused, found, err)
 	}
-	if reused.Result.Candidate != roleplayPortableReuseCandidateJSON ||
+	if reused.Result.Candidate != roleplayPortableReuseExactCandidate ||
 		reused.Result.Projection != nil ||
 		reused.Receipt.SourceGapOutcomeID != correctionOutcome.ID ||
 		reused.Receipt.SourceAuthority.JobID != correctionJob.ID ||

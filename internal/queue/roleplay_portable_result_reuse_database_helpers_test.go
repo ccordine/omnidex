@@ -29,7 +29,7 @@ func newRoleplayPortableReuseDatabaseFixture(
 	t.Helper()
 	pool := openIsolatedMigrationPool(t)
 	repository := New(pool)
-	if err := repository.EnsureSchema(t.Context(), loadMigrationBundleThroughPrefix(t, "153")); err != nil {
+	if err := repository.EnsureSchema(t.Context(), loadCheckedMigrationBundle(t)); err != nil {
 		t.Fatal(err)
 	}
 	installRoleplayPortableReuseMigrationsForTest(t, pool)

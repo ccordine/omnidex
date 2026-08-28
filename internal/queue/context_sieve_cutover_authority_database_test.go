@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
-	"github.com/gryph/omnidex/internal/llm"
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/station"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -97,7 +96,7 @@ func TestPostgresContextSieveCutoverOwnsOnlyExactNewStationsAndIndexes(t *testin
 			historicalReviewWorkload, historicalReviewStation,
 		)
 	}
-	assertContextSieveNewStationsOpen(t, repository)
+	assertContextSieveNewStationsOpen(t, repository, pool)
 	assertRetiredContextOpeningsRejected(t, pool)
 	var sieveGuardSHA256 string
 	if err := pool.QueryRow(t.Context(), `
@@ -163,7 +162,11 @@ func TestPostgresContextSieveCutoverOwnsOnlyExactNewStationsAndIndexes(t *testin
 	}
 }
 
-func assertContextSieveNewStationsOpen(t *testing.T, repository *Repository) {
+func assertContextSieveNewStationsOpen(
+	t *testing.T,
+	repository *Repository,
+	pool *pgxpool.Pool,
+) {
 	t.Helper()
 	jobAuthority, err := repository.EnqueueJob(
 		t.Context(), "context-sieve-new-openings", model.PipelineCoding, nil,
@@ -178,23 +181,14 @@ func assertContextSieveNewStationsOpen(t *testing.T, repository *Repository) {
 	if claim == nil || claim.Job.ID != jobAuthority.ID {
 		t.Fatalf("claim=%+v want job %d", claim, jobAuthority.ID)
 	}
-	candidate, err := assemblyline.NewContextCandidateAuthority(
-		"conversation_user", "CTX_1", "The prior action adjusted the antenna.",
+	termsJob := historicalContextSievePortableJob(t, "context_search_terms", 1)
+	relevanceJob := historicalContextSievePortableJob(t, "context_relevance", 2)
+	minificationJob := historicalContextSievePortableJob(t, "context_minification", 3)
+	retainedCorrection := historicalContextSieveCorrectionJob(t, termsJob)
+	applicationJob := historicalContextSievePortableJob(
+		t, "application_job_specification", 4,
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	termsJob := mustContextSearchTermsJob(t)
-	relevanceJob := mustContextRelevanceJob(t, candidate)
-	minificationJob := mustContextMinificationJob(t, candidate)
-	retainedCorrection, err := assemblyline.NewRetainedResponseCorrectionJob(
-		termsJob,
-		"one generated search term is not sufficiently specific",
-		`{"schema":"omnidex.context-search-terms.v1","terms":["prior action"]}`,
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
+	applicationCorrection := historicalContextSieveCorrectionJob(t, applicationJob)
 	jobs := []struct {
 		station station.ID
 		job     assemblyline.PortableJob
@@ -203,94 +197,54 @@ func assertContextSieveNewStationsOpen(t *testing.T, repository *Repository) {
 		{station: station.ContextRelevance, job: relevanceJob},
 		{station: station.ContextMinification, job: minificationJob},
 		{station: station.ContextSearchTerms, job: retainedCorrection},
-		{station: station.CodingWorkload, job: mustApplicationJobSpecificationCorrection(t)},
+		{station: station.CodingWorkload, job: applicationCorrection},
 	}
 	for _, fixture := range jobs {
-		const contextTokens = 32768
-		if _, err := repository.OpenStationGap(t.Context(), StationGapOpenRecord{
-			Authority: claim.Authority,
-			Job:       fixture.job, Station: fixture.station,
-			ContextTokens: contextTokens,
-			MaxOutputTokens: portableStationTestMaxOutputTokens(
-				t, fixture.job, contextTokens,
-			),
-			OutputLimitMode: llm.ExactPreparedOutputLimitNatural,
-		}); err != nil {
-			t.Fatalf("open new context station %s: %v", fixture.station, err)
-		}
+		opening := historicalContextSieveOpening(
+			t, claim, fixture.job, fixture.station,
+		)
+		insertContextSieveMigrationOpening(t, pool, &opening)
 	}
 }
 
-func mustApplicationJobSpecificationCorrection(t *testing.T) assemblyline.PortableJob {
+func historicalContextSievePortableJob(
+	t *testing.T,
+	kind string,
+	marker int,
+) assemblyline.PortableJob {
 	t.Helper()
-	requirement := assemblyline.Requirement{
-		ID: "requirement_001", SourceQuote: "filter inventory",
+	payload := mustCanonical(t, struct {
+		HistoricalMarker int `json:"historical_marker"`
+	}{HistoricalMarker: marker})
+	job := assemblyline.PortableJob{
+		Schema:  "omnidex.portable-job.v1",
+		Kind:    assemblyline.WorkKind(kind),
+		Payload: payload,
 	}
-	original, err := assemblyline.NewApplicationJobObjectiveJob(
-		assemblyline.ApplicationJobSpecificationInput{
-			Surface:              assemblyline.ApplicationSurfaceBrowser,
-			ProductQuote:         "inventory console",
-			AcceptedRequirements: []assemblyline.Requirement{requirement},
-			FocusedRequirement:   requirement,
-		},
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	correction, err := assemblyline.NewRetainedResponseCorrectionJob(
-		original, "the objective leaf is missing", "missing",
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return correction
-}
-
-func mustContextSearchTermsJob(t *testing.T) assemblyline.PortableJob {
-	t.Helper()
-	job, err := assemblyline.NewContextSearchTermCoverageJob(
-		assemblyline.ContextSearchTermLeafInput{
-			ExactInstruction: "Do it again.", AcceptedTerms: []string{},
-		},
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
+	job.ID = historicalPortableID(job.Schema, string(job.Kind), job.Payload)
 	return job
 }
 
-func mustContextRelevanceJob(
+func historicalContextSieveCorrectionJob(
 	t *testing.T,
-	candidate assemblyline.ContextCandidateAuthority,
+	original assemblyline.PortableJob,
 ) assemblyline.PortableJob {
 	t.Helper()
-	job, err := assemblyline.NewContextRelevanceSelectionJob(
-		assemblyline.ContextRelevanceSelectionInput{
-			Authority: assemblyline.ContextRelevanceInput{
-				ExactInstruction: "Do it again.", RetrievalConcepts: []string{"previous action"},
-				CandidateAuthorities: []assemblyline.ContextCandidateAuthority{candidate},
-				MaxSelections:        1,
-			},
-			AcceptedCandidateIDs: []string{},
-		},
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return job
-}
-
-func mustContextMinificationJob(
-	t *testing.T,
-	candidate assemblyline.ContextCandidateAuthority,
-) assemblyline.PortableJob {
-	t.Helper()
-	job, err := assemblyline.NewContextMinificationJob(assemblyline.ContextMinificationInput{
-		ExactInstruction: "Do it again.", SelectedAuthorities: []assemblyline.ContextCandidateAuthority{candidate},
+	payload := mustCanonical(t, struct {
+		Original          assemblyline.PortableJob `json:"original"`
+		ValidationFailure string                   `json:"validation_failure"`
+		RetainedCandidate string                   `json:"retained_candidate"`
+	}{
+		Original:          original,
+		ValidationFailure: "historical candidate requires one correction",
+		RetainedCandidate: "historical retained candidate",
 	})
-	if err != nil {
-		t.Fatal(err)
+	job := assemblyline.PortableJob{
+		Schema:  "omnidex.portable-job.v1",
+		Kind:    assemblyline.WorkResponseCorrection,
+		Payload: payload,
 	}
+	job.ID = historicalPortableID(job.Schema, string(job.Kind), job.Payload)
 	return job
 }
 

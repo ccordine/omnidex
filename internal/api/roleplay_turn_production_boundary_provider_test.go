@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
+	"github.com/gryph/omnidex/internal/model"
+	"github.com/gryph/omnidex/internal/queue"
 )
 
 const (
@@ -118,12 +120,36 @@ func (provider *roleplayBoundaryOllama) generate(w http.ResponseWriter, request 
 	})
 }
 
-func (provider *roleplayBoundaryOllama) waitForTerminalCanon(t *testing.T) {
+func (provider *roleplayBoundaryOllama) waitForTerminalCanon(
+	t *testing.T,
+	repository *queue.Repository,
+	jobID int64,
+) {
 	t.Helper()
-	select {
-	case <-provider.terminalCanon:
-	case <-time.After(15 * time.Second):
-		t.Fatal("roleplay workflow did not reach the terminal canon boundary")
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+	timer := time.NewTimer(15 * time.Second)
+	defer timer.Stop()
+	for {
+		select {
+		case <-provider.terminalCanon:
+			return
+		case <-ticker.C:
+			details, err := repository.CurrentJobDetails(t.Context(), jobID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			switch details.Job.Status {
+			case model.JobStatusFailed:
+				t.Fatalf("roleplay job failed before terminal canon: %s", details.Job.Error)
+			case model.JobStatusCanceled:
+				t.Fatalf("roleplay job was canceled before terminal canon: %s", details.Job.Error)
+			case model.JobStatusCompleted:
+				t.Fatal("roleplay job completed without reaching the terminal canon boundary")
+			}
+		case <-timer.C:
+			t.Fatal("roleplay workflow did not reach the terminal canon boundary")
+		}
 	}
 }
 

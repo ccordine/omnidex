@@ -21,11 +21,14 @@ type legacyPublicFixture struct {
 
 func openLegacyPublicFixture(t *testing.T) legacyPublicFixture {
 	t.Helper()
-	baseURL := strings.TrimSpace(os.Getenv("OMNI_TEST_DATABASE_URL"))
-	databaseURL := freshRuntimeDatabaseURL(t, baseURL)
-	if databaseURL == "" {
-		t.Skip("set OMNI_TEST_DATABASE_URL to run legacy public cutover tests")
+	baseURL, configured := os.LookupEnv("OMNI_LEGACY_TEST_DATABASE_URL")
+	if !configured || baseURL == "" {
+		t.Skip("set OMNI_LEGACY_TEST_DATABASE_URL to run legacy public cutover tests against PostgreSQL with vector 0.8.2")
 	}
+	if baseURL != strings.TrimSpace(baseURL) {
+		t.Fatal("OMNI_LEGACY_TEST_DATABASE_URL must not contain surrounding whitespace")
+	}
+	databaseURL := freshRuntimeDatabaseURL(t, baseURL)
 	pool, err := pgxpool.New(t.Context(), databaseURL)
 	if err != nil {
 		t.Fatal(err)
@@ -93,15 +96,23 @@ func seedLegacyPublicRows(t *testing.T, pool *pgxpool.Pool) {
 		SELECT setval('public.projects_id_seq',91,true);
 		INSERT INTO public.project_planning_configs(project_id,model,reasoning_mode)
 		 VALUES (41,'','instant');
-		INSERT INTO public.jobs(id,instruction,pipeline,project_id,status)
-		 VALUES (51,'preserve exact row','coding',41,'pending');
+		INSERT INTO public.jobs(
+			id,instruction,pipeline,project_id,status,result,completed_at
+		) VALUES (
+			51,'preserve exact row','coding',41,'completed',
+			'preserved exact result',clock_timestamp()
+		);
 		INSERT INTO public.jobs(id,instruction,pipeline,project_id,status) VALUES
 		 (52,'preserve assistant history','assistant',41,'completed'),
 		 (53,'preserve story history','story',41,'failed'),
 		 (54,'preserve agent history','agent',41,'canceled');
 		SELECT setval('public.jobs_id_seq',101,true);
-		INSERT INTO public.job_steps(id,job_id,action,sort_index,status)
-		 VALUES (61,51,'implementation',0,'pending');
+		INSERT INTO public.job_steps(
+			id,job_id,action,sort_index,status,output,started_at,finished_at
+		) VALUES (
+			61,51,'implementation',0,'completed','preserved exact output',
+			clock_timestamp(),clock_timestamp()
+		);
 		SELECT setval('public.job_steps_id_seq',111,true);
 		INSERT INTO public.llm_call_evidence(
 		 job_id,step_id,scope,requested_model,model,attempt,
@@ -139,10 +150,23 @@ func assertLegacyRollbackState(t *testing.T, databaseURL string) {
 	}
 }
 
-func rejectedFinalMigrationBundle(t *testing.T, bundle MigrationBundle) MigrationBundle {
+func rejectedFrozenPrefixMigrationBundle(t *testing.T, bundle MigrationBundle) MigrationBundle {
 	t.Helper()
 	copyBundle := MigrationBundle{entries: append([]migrationBundleEntry{}, bundle.entries...)}
-	index := len(copyBundle.entries) - 1
+	index := -1
+	for candidate, entry := range copyBundle.entries {
+		prefix, err := migrationNumericPrefix(entry.name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if prefix == legacyCutoverFinalMigrationPrefix {
+			index = candidate
+			break
+		}
+	}
+	if index < 0 {
+		t.Fatalf("bundle lacks frozen migration prefix %03d", legacyCutoverFinalMigrationPrefix)
+	}
 	copyBundle.entries[index].body = []byte("SELECT missing_cutover_test_function();\n")
 	copyBundle.entries[index].sha256 = digestMigrationBytes(copyBundle.entries[index].body)
 	var manifest strings.Builder

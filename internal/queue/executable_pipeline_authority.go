@@ -112,6 +112,9 @@ BEGIN
     IF TG_OP='INSERT' AND NEW.pipeline NOT IN ('chat','coding','scrum') THEN
         RAISE EXCEPTION 'new job pipeline % is retired or unregistered', NEW.pipeline;
     END IF;
+    IF TG_OP='UPDATE' AND OLD.pipeline IS DISTINCT FROM NEW.pipeline THEN
+        RAISE EXCEPTION 'job pipeline identity is immutable';
+    END IF;
     IF TG_OP='UPDATE'
        AND OLD.pipeline NOT IN ('chat','coding','scrum')
        AND NEW IS DISTINCT FROM OLD THEN

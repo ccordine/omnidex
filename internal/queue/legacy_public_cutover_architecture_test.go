@@ -13,6 +13,8 @@ func TestLegacyPublicCutoverHasNoResetCopyOrFallbackPath(t *testing.T) {
 		"legacy_public_preflight.go",
 		"legacy_public_object_authority.go",
 		"legacy_public_upgrade.go",
+		"legacy_public_tail_proof.go",
+		"legacy_public_tail_sequences.go",
 		"legacy_public_receipt.go",
 	}
 	var source strings.Builder

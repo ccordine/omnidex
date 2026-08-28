@@ -36,9 +36,9 @@ split between bounded semantic extraction, deployment-semantics classification, 
 guidance, and source-node generation:
 
 ```dotenv
-OMNI_CODING_REQUIREMENTS_MODEL=llama3.2:3b
+OMNI_CODING_REQUIREMENTS_MODEL=qwen3.5:9b-q4_K_M
 OMNI_CODING_SERVICE_DEPLOYMENT_INTENT_MODEL=phi4:14b
-OMNI_CODING_WORKLOAD_MODEL=llama3.2:3b
+OMNI_CODING_WORKLOAD_MODEL=qwen3.5:9b-q4_K_M
 OMNI_CODING_FRAGMENT_MODEL=qwen2.5-coder:7b
 OMNI_CODING_FRAGMENT_REPAIR_GUIDANCE_MODEL=qwen3.5:9b-q4_K_M
 OMNI_CODING_FRAGMENT_CORRECTION_MODEL=qwen2.5-coder:7b
@@ -48,8 +48,8 @@ CODING_FRAGMENT_CONCURRENCY=1
 ```
 
 The complete exact station-key list is checked in to `default.env` and `.env.example`.
-Most bounded semantic stations use Qwen 3.5 9B. Requirement extraction and frozen
-workload construction use Llama 3.2 3B. The target-tree station consumes that same
+Bounded semantic stations, including requirement extraction and frozen workload
+construction, use Qwen 3.5 9B. The target-tree station consumes that same
 `OMNI_CODING_WORKLOAD_MODEL` route when a stack retains a genuine structural naming
 question; current command-line and PHP stacks project their exact path grammars in
 code, while TypeScript/React browser structure remains its current consumer. There
@@ -65,9 +65,10 @@ provider identity must differ from the Qwen answer, synthesis, and correction ro
 Startup or the named gap fails loudly when an exact configured route is unavailable.
 No route falls back to another model.
 
-Qwen 3.5 9B is the practical bounded repair-guidance choice because its Q4_K_M Ollama image is
-6.6 GB and Qwen publishes strong instruction following, tool-use, and coding
-results for the 9B checkpoint. Qwen 2.5 Coder 7B owns raw fragment generation
+Qwen 3.5 9B is the practical bounded semantic and repair-guidance choice because its
+Q4_K_M Ollama image is 6.6 GB, its live requirement/workload qualification converged,
+and Qwen publishes strong instruction following, tool-use, and coding results for the
+9B checkpoint. Qwen 2.5 Coder 7B owns raw fragment generation
 and instruction-only repair execution because the live two-fixture compiler
 qualification terminated promptly and compiled both guided edits. DeepSeek R1 8B is restricted to the two
 independent evidence-review stations; it does not plan, synthesize, correct, or
@@ -82,14 +83,13 @@ planning. They are model-file sizes, not runner-allocation or latency measuremen
 
 | Route | Exact model | Model file |
 | --- | --- | ---: |
-| Most semantic stations and repair guidance | `qwen3.5:9b-q4_K_M` | 6.6 GB |
+| Semantic stations, requirements, workload, target tree, and repair guidance | `qwen3.5:9b-q4_K_M` | 6.6 GB |
 | Source generation and repair execution | `qwen2.5-coder:7b` | 4.7 GB |
-| Requirements, workload, and inferred TypeScript target tree | `llama3.2:3b` | 2.0 GB |
 | Service deployment semantics | `phi4:14b` | 9.1 GB |
 | Independent repository/web evidence review | `deepseek-r1:8b` | 5.2 GB |
 | Local embeddings | `nomic-embed-text` | 0.27 GB |
 
-The active model files total about 27.9 GB (26.0 GiB). Reserve additional space for
+The active model files total about 25.9 GB (24.1 GiB). Reserve additional space for
 Ollama runtime files, application workspaces, PostgreSQL, backups, logs, and Docker
 build cache.
 
@@ -99,14 +99,29 @@ Primary model sources:
 - https://ollama.com/library/qwen3.5/tags
 - https://huggingface.co/Qwen/Qwen2.5-Coder-7B-Instruct
 - https://ollama.com/library/qwen2.5-coder
-- https://huggingface.co/meta-llama/Llama-3.2-3B-Instruct
-- https://ollama.com/library/llama3.2/tags
 - https://huggingface.co/microsoft/phi-4
 - https://ollama.com/library/phi4/tags
 - https://ollama.com/library/deepseek-r1
 - https://ollama.com/library/nomic-embed-text
 - https://huggingface.co/Qwen/Qwen3-Coder-30B-A3B-Instruct
 - https://ollama.com/library/qwen3-coder
+
+## Live requirements and workload qualification
+
+On 2026-08-28, the checked-in
+`TestLiveCodingRequirementsAndWorkloadQualification` exercised three unrelated
+immutable requests through the production raw-leaf renderers: a music studio, a
+catalog, and an appointment scheduler. Qwen 3.5 9B completed every requirement
+fixed point and every objective, behavior, and criterion leaf in 38 calls without a
+correction call. All three frozen workloads passed their code-owned validation.
+
+Provider identity was Ollama 0.24.0, model digest
+`6488c96fa5faab64bb65cbd30d4289e20e6130ef535a93ef9a49f42eda893ea7`,
+quantization `Q4_K_M`, with an 8192-token context. The complete qualification took
+91.55 seconds. This is route qualification for task-neutral station contracts, not
+application-specific framework behavior. The checked-in test proves bounded transport,
+fixed-point termination, call shape, and frozen-workload validation; it does not use
+keyword matching to pretend that code can score the semantic coverage of each fixture.
 
 ## Live deployment-semantics qualification
 
@@ -217,7 +232,7 @@ The current retained 8K baseline was measured on 2026-08-19:
 | `qwen2.5-coder:7b` | 5.0 GiB | 5.0 GiB | 100% | 14.2 s | 1.9 s | 48.3 tok/s |
 
 No retained 8K prewarm allocation measurement is recorded here for
-`llama3.2:3b`, `phi4:14b`, or `deepseek-r1:8b`. Their model-file sizes above and
+`phi4:14b` or `deepseek-r1:8b`. Their model-file sizes above and
 the Phi-4 station-call measurements are not substitutes for runner-memory evidence.
 
 The following historical context-scaling rows were recorded earlier. The measured
@@ -250,7 +265,6 @@ Run the same exact load check after any model, context, backend, or memory chang
 ```bash
 omni ollama:prewarm --model qwen3.5:9b-q4_K_M --num-ctx 8192 --json
 omni ollama:prewarm --model qwen2.5-coder:7b --num-ctx 8192 --json
-omni ollama:prewarm --model llama3.2:3b --num-ctx 8192 --json
 omni ollama:prewarm --model phi4:14b --num-ctx 8192 --json
 omni ollama:prewarm --model deepseek-r1:8b --num-ctx 8192 --json
 ```

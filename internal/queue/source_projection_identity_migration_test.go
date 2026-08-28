@@ -3,14 +3,16 @@ package queue
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"os"
 	"strings"
 	"testing"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
-	"github.com/gryph/omnidex/internal/llm"
+	"github.com/gryph/omnidex/internal/exactjson"
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/station"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 const sourceProjectionIdentityMigration = "162_source_projection_identity.sql"
@@ -69,14 +71,14 @@ func TestPostgresSourceProjectionIdentityPersistsBoundDecoderAndRejectsOldNewPat
 	}
 
 	projected := sourceProjectionCorrectionJob(t)
-	if _, err := repository.OpenStationGap(
-		t.Context(), sourceProjectionGapRecord(claim.Authority, projected),
+	if _, err := persistSourceProjectionMigrationOpening(
+		t, pool, sourceProjectionMigrationOpening(t, claim.Authority, projected),
 	); err == nil {
 		t.Fatal("pre-cutover database accepted a projection-bound work identity")
 	}
 	historical := withoutSourceProjection(projected)
-	historicalOpening, err := repository.OpenStationGap(
-		t.Context(), sourceProjectionGapRecord(claim.Authority, historical),
+	historicalOpening, err := persistSourceProjectionMigrationOpening(
+		t, pool, sourceProjectionMigrationOpening(t, claim.Authority, historical),
 	)
 	if err != nil {
 		t.Fatalf("open historical unbound correction before cutover: %v", err)
@@ -90,8 +92,8 @@ func TestPostgresSourceProjectionIdentityPersistsBoundDecoderAndRejectsOldNewPat
 	); err != nil {
 		t.Fatal(err)
 	}
-	opened, err := repository.OpenStationGap(
-		t.Context(), sourceProjectionGapRecord(claim.Authority, projected),
+	opened, err := persistSourceProjectionMigrationOpening(
+		t, pool, sourceProjectionMigrationOpening(t, claim.Authority, projected),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -101,14 +103,11 @@ func TestPostgresSourceProjectionIdentityPersistsBoundDecoderAndRejectsOldNewPat
 		t.Fatalf("opening=%+v", opened)
 	}
 
-	unbound := withoutSourceProjection(sourceProjectionCorrectionJobForCurrent(
+	unbound := withoutSourceProjection(sourceProjectionMigrationJobForDeclaration(
 		t, "func OtherValue() int { return missing() }",
 	))
-	if err := unbound.Validate(); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := repository.OpenStationGap(
-		t.Context(), sourceProjectionGapRecord(claim.Authority, unbound),
+	if _, err := persistSourceProjectionMigrationOpening(
+		t, pool, sourceProjectionMigrationOpening(t, claim.Authority, unbound),
 	); err == nil || !strings.Contains(err.Error(), "source_projection_authority") {
 		t.Fatalf("unbound new correction error=%v", err)
 	}
@@ -139,47 +138,109 @@ func TestPostgresSourceProjectionIdentityPersistsBoundDecoderAndRejectsOldNewPat
 
 func withoutSourceProjection(job assemblyline.PortableJob) assemblyline.PortableJob {
 	job.SourceProjection = ""
+	job.ID = sourceProjectionMigrationID(job)
+	return job
+}
+
+func sourceProjectionMigrationID(job assemblyline.PortableJob) string {
 	digest := sha256.New()
 	_, _ = digest.Write([]byte(job.Schema))
 	_, _ = digest.Write([]byte{0})
 	_, _ = digest.Write([]byte(job.Kind))
 	_, _ = digest.Write([]byte{0})
 	_, _ = digest.Write(job.Payload)
-	job.ID = hex.EncodeToString(digest.Sum(nil))
-	return job
+	if job.SourceProjection != "" {
+		_, _ = digest.Write([]byte{0})
+		_, _ = digest.Write([]byte(job.SourceProjection))
+	}
+	return hex.EncodeToString(digest.Sum(nil))
 }
 
 func sourceProjectionCorrectionJob(t *testing.T) assemblyline.PortableJob {
-	return sourceProjectionCorrectionJobForCurrent(
+	return sourceProjectionMigrationJobForDeclaration(
 		t, "func Value() int { return missing() }",
 	)
 }
 
-func sourceProjectionCorrectionJobForCurrent(
+func sourceProjectionMigrationJobForDeclaration(
 	t *testing.T,
 	current string,
 ) assemblyline.PortableJob {
 	t.Helper()
-	job, err := assemblyline.NewSourceProjectedFragmentCorrectionJob(
-		assemblyline.FragmentCorrectionInput{
-			CurrentDeclaration: current,
-			RepairGuidance:     "Replace the missing call with a local expression.",
-		},
-		"go",
-	)
-	if err != nil {
-		t.Fatal(err)
+	payload := mustCanonical(t, struct {
+		CurrentDeclaration string `json:"current_declaration"`
+		RepairGuidance     string `json:"repair_guidance"`
+	}{
+		CurrentDeclaration: current,
+		RepairGuidance:     "Replace the missing call with a local expression.",
+	})
+	job := assemblyline.PortableJob{
+		Schema:           "omnidex.portable-job.v1",
+		Kind:             assemblyline.WorkFragmentCorrection,
+		Payload:          payload,
+		SourceProjection: "go",
 	}
+	job.ID = sourceProjectionMigrationID(job)
 	return job
 }
 
-func sourceProjectionGapRecord(
+func sourceProjectionMigrationOpening(
+	t *testing.T,
 	authority model.StepAttemptAuthority,
 	job assemblyline.PortableJob,
-) StationGapOpenRecord {
-	return StationGapOpenRecord{
-		Authority: authority, Job: job, Station: station.CodingFragmentCorrection,
-		ContextTokens: 8192, MaxOutputTokens: 8192,
-		OutputLimitMode: llm.ExactPreparedOutputLimitNatural,
+) StationGapOpening {
+	t.Helper()
+	portableEnvelope, err := exactjson.Canonical(job)
+	if err != nil {
+		t.Fatal(err)
 	}
+	const (
+		prompt   = "Correct one historical source declaration."
+		renderer = "omnidex.render-portable-job.v3"
+	)
+	responseSchema := json.RawMessage(`{}`)
+	projectionEnvelope, err := exactjson.Canonical(struct {
+		Prompt         string          `json:"prompt"`
+		Renderer       string          `json:"renderer"`
+		ResponseSchema json.RawMessage `json:"response_schema"`
+	}{prompt, renderer, responseSchema})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return StationGapOpening{
+		JobID: authority.JobID, Generation: authority.Generation,
+		StepID: authority.StepID, StepAttempt: authority.Attempt,
+		WorkerID: authority.WorkerID, GapID: job.ID,
+		Station: station.CodingFragmentCorrection, Scope: "portable_fragment_worker",
+		PortableSchema: job.Schema, WorkID: job.ID, WorkKind: string(job.Kind),
+		PortablePayload:        string(job.Payload),
+		PortablePayloadSHA256:  stationGapSHA256(string(job.Payload)),
+		PortableEnvelope:       string(portableEnvelope),
+		PortableEnvelopeSHA256: stationGapSHA256(string(portableEnvelope)),
+		RendererVersion:        renderer, Prompt: prompt,
+		ResponseSchema: responseSchema, ProjectionEnvelope: string(projectionEnvelope),
+		ProjectionSHA256: stationGapSHA256(string(projectionEnvelope)),
+		ContextTokens:    8192, MaxOutputTokens: 8192,
+		OutputLimitMode: "natural",
+	}
+}
+
+func persistSourceProjectionMigrationOpening(
+	t *testing.T,
+	pool *pgxpool.Pool,
+	opening StationGapOpening,
+) (StationGapOpening, error) {
+	t.Helper()
+	tx, err := pool.Begin(t.Context())
+	if err != nil {
+		return StationGapOpening{}, err
+	}
+	defer tx.Rollback(t.Context())
+	if err := insertStationGapOpeningTx(t.Context(), tx, &opening); err != nil {
+		return StationGapOpening{}, err
+	}
+	if err := tx.Commit(t.Context()); err != nil {
+		return StationGapOpening{}, err
+	}
+	return opening, nil
 }

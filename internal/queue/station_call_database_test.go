@@ -11,7 +11,7 @@ import (
 )
 
 func TestPostgresStationCallReceiptClosesProviderBoundaryBeforeGap(t *testing.T) {
-	repository, pool, claim := semanticGapTestClaim(t, "station-call-lifecycle")
+	repository, _, claim := semanticGapTestClaim(t, "station-call-lifecycle")
 	gapRecord := stationGapOpenFixture(t, claim.Authority)
 	gapRecord.ContextTokens = 32768
 	gap, err := repository.OpenStationGap(t.Context(), gapRecord)
@@ -70,11 +70,13 @@ func TestPostgresStationCallReceiptClosesProviderBoundaryBeforeGap(t *testing.T)
 	}); err != nil {
 		t.Fatal(err)
 	}
-	completePreInlineExecutionMigrationClaim(t, t.Context(), pool, claim)
+	if err := repository.CompleteStep(t.Context(), command); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestPostgresStationCallReceiptPersistsAfterExactAttemptCancellation(t *testing.T) {
-	repository, pool, claim := semanticGapTestClaim(t, "station-call-cancel")
+	repository, _, claim := semanticGapTestClaim(t, "station-call-cancel")
 	gapRecord := stationGapOpenFixture(t, claim.Authority)
 	gapRecord.ContextTokens = 32768
 	gap, err := repository.OpenStationGap(t.Context(), gapRecord)
@@ -89,7 +91,7 @@ func TestPostgresStationCallReceiptPersistsAfterExactAttemptCancellation(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	cancelPreInlineExecutionMigrationClaimAuthority(t, t.Context(), pool, claim)
+	cancelStationTestClaim(t, repository, claim, "station-call-cancel")
 	result := stationCallTransportFailure(t, prepared, call)
 	if _, err := repository.RecordStationCallReceipt(t.Context(), StationCallReceiptRecord{
 		Authority: claim.Authority, OpeningID: call.ID, GapID: gap.GapID,
@@ -346,7 +348,7 @@ func TestPostgresStationProductionTransitionsOpenAtomicallyBeforeDispatch(t *tes
 }
 
 func TestPostgresCanceledDiscoveryTransitionClosesWithoutProviderDispatch(t *testing.T) {
-	repository, pool, claim := semanticGapTestClaim(t, "station-cancel-before-dispatch")
+	repository, _, claim := semanticGapTestClaim(t, "station-cancel-before-dispatch")
 	gapRecord := stationGapOpenFixture(t, claim.Authority)
 	gapRecord.ContextTokens = 32768
 	selection := llm.ProviderIdentitySelection{Model: "qwen:9b", NativeContextLimit: 32768}
@@ -370,7 +372,7 @@ func TestPostgresCanceledDiscoveryTransitionClosesWithoutProviderDispatch(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
-	cancelPreInlineExecutionMigrationClaimAuthority(t, t.Context(), pool, claim)
+	cancelStationTestClaim(t, repository, claim, "station-cancel-before-dispatch")
 	transition, err := repository.RecordStationDiscoveryCallOpening(t.Context(), StationDiscoveryCallOpenRecord{
 		Authority: claim.Authority, Gap: opened.Gap, Discovery: opened.Discovery,
 		Observed: observed, Prepared: prepared,

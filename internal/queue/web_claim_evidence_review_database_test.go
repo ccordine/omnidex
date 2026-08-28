@@ -12,10 +12,10 @@ import (
 func TestPostgresWebClaimEvidenceReviewStationIsConsumedByExactGapAuthority(t *testing.T) {
 	pool := openIsolatedMigrationPool(t)
 	repository := New(pool)
-	if err := repository.EnsureSchema(t.Context(), loadMigrationBundleThroughPrefix(t, "163")); err != nil {
+	if err := repository.EnsureSchema(t.Context(), loadCheckedMigrationBundle(t)); err != nil {
 		t.Fatal(err)
 	}
-	claim := seedPreInlineExecutionMigrationClaim(t, t.Context(), pool, "review-station")
+	claim := claimStationTestJob(t, repository, "review-station")
 	job, err := assemblyline.NewWebReviewClaimCoverageJob(assemblyline.WebReviewClaimLeafInput{
 		ExactQuestion:  "Which release is current?",
 		Context:        assemblyline.ObjectiveContext{},
@@ -45,10 +45,10 @@ func TestPostgresWebClaimEvidenceReviewStationIsConsumedByExactGapAuthority(t *t
 func TestPostgresWebSynthesisCorrectionStationIsConsumedByExactGapAuthority(t *testing.T) {
 	pool := openIsolatedMigrationPool(t)
 	repository := New(pool)
-	if err := repository.EnsureSchema(t.Context(), loadMigrationBundleThroughPrefix(t, "096")); err != nil {
+	if err := repository.EnsureSchema(t.Context(), loadCheckedMigrationBundle(t)); err != nil {
 		t.Fatal(err)
 	}
-	claim := seedPreInlineExecutionMigrationClaim(t, t.Context(), pool, "correction-station")
+	claim := claimStationTestJob(t, repository, "correction-station")
 	job, err := assemblyline.NewWebGroundedSynthesisCorrectionJob(assemblyline.WebGroundedSynthesisCorrectionInput{
 		ExactQuestion: "Which release is current?",
 		Paragraphs: []assemblyline.WebReviewParagraph{{

@@ -47,7 +47,7 @@ func TestPostgresContextSieveCutoverPreservesCompletedLegacyStationOpenings(t *t
 	}
 
 	for _, opening := range openings {
-		persistStationDiscoveryFailure(t, repository, claim.Authority, opening)
+		persistHistoricalStationDiscoveryFailure(t, repository, claim.Authority, opening)
 		if _, err := repository.CloseStationGap(t.Context(), StationGapTerminalRecord{
 			Authority: claim.Authority,
 			OpeningID: opening.ID,
@@ -186,7 +186,7 @@ func closeHistoricalLegacyOpening(
 	opening StationGapOpening,
 ) {
 	t.Helper()
-	persistStationDiscoveryFailure(t, repository, claim.Authority, opening)
+	persistHistoricalStationDiscoveryFailure(t, repository, claim.Authority, opening)
 	if _, err := repository.CloseStationGap(t.Context(), StationGapTerminalRecord{
 		Authority: claim.Authority,
 		OpeningID: opening.ID,

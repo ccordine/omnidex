@@ -92,64 +92,22 @@ func TestTokenizerProfileAuthorityDatabaseConstraintAcceptsOnlyRegisteredProfile
 		}
 	}
 
-	claim := seedPreInlineExecutionMigrationClaim(
-		t, t.Context(), pool, "tokenizer-profile-authority",
-	)
-	gapRecord := stationGapOpenFixture(t, claim.Authority)
-	gapRecord.ContextTokens = 32768
-	gap, err := repository.OpenStationGap(t.Context(), gapRecord)
-	if err != nil {
-		t.Fatal(err)
-	}
-	prepared := stationCallTestPrepared(t, gap)
-	discovery := persistStationDiscoverySuccess(t, repository, claim.Authority, gap, prepared)
-	call, err := repository.OpenStationCall(t.Context(), StationCallOpenRecord{
-		Authority: claim.Authority,
-		Gap:       gap,
-		Discovery: discovery,
-		Prepared:  prepared,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if call.TokenizerProfile != qwen35TokenizerProfile {
-		t.Fatalf("persisted baseline tokenizer profile=%q", call.TokenizerProfile)
-	}
-
 	if _, err := pool.Exec(t.Context(), `
-		CREATE TEMP TABLE tokenizer_profile_constraint_probe
-		(LIKE station_call_openings INCLUDING CONSTRAINTS)
+		CREATE TEMP TABLE tokenizer_profile_constraint_probe (
+			tokenizer_profile TEXT NOT NULL `+definition+`
+		)
 	`); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := pool.Exec(t.Context(), `
-		INSERT INTO tokenizer_profile_constraint_probe
-		SELECT * FROM station_call_openings WHERE id=$1
-	`, call.ID); err != nil {
-		t.Fatal(err)
-	}
-	setProbeProfile := func(profile string) error {
+	insertProbeProfile := func(profile string) error {
 		_, err := pool.Exec(t.Context(), `
-			WITH replacement AS (
-				SELECT jsonb_set(
-					expectation::jsonb,
-					'{tokenizer_profile}',
-					to_jsonb($1::text),
-					false
-				)::text AS expectation
-				FROM tokenizer_profile_constraint_probe
-				WHERE id=$2
-			)
-			UPDATE tokenizer_profile_constraint_probe AS probe
-			SET tokenizer_profile=$1,
-				expectation=replacement.expectation,
-				expectation_sha256=encode(digest(replacement.expectation,'sha256'),'hex')
-			FROM replacement
-			WHERE probe.id=$2
-		`, profile, call.ID)
+			INSERT INTO tokenizer_profile_constraint_probe(tokenizer_profile)
+			VALUES ($1)
+		`, profile)
 		return err
 	}
 	for _, profile := range []string{
+		qwen35TokenizerProfile,
 		qwen3TokenizerProfile,
 		qwen2BOSTokenizerProfile,
 		mistral3TokenizerProfile,
@@ -158,11 +116,11 @@ func TestTokenizerProfileAuthorityDatabaseConstraintAcceptsOnlyRegisteredProfile
 		gemma3TokenizerProfile,
 		llama32TokenizerProfile,
 	} {
-		if err := setProbeProfile(profile); err != nil {
+		if err := insertProbeProfile(profile); err != nil {
 			t.Fatalf("registered tokenizer profile %q was rejected: %v", profile, err)
 		}
 	}
-	if err := setProbeProfile("ollama-0.24.0-unregistered-boundary-v1"); err == nil ||
+	if err := insertProbeProfile("ollama-0.24.0-unregistered-boundary-v1"); err == nil ||
 		!strings.Contains(err.Error(), "tokenizer_profile") {
 		t.Fatalf("unregistered tokenizer profile error=%v, want database constraint rejection", err)
 	}

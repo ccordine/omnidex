@@ -48,6 +48,9 @@ func applyMigrationBundleOnLockedConnection(
 	conn *pgxpool.Conn,
 	bundle MigrationBundle,
 ) error {
+	if err := enforceMigrationSessionSQLMode(ctx, conn); err != nil {
+		return err
+	}
 	if err := prepareFileMigrationLedger(ctx, conn, bundle); err != nil {
 		return err
 	}
@@ -82,6 +85,9 @@ func prepareFileMigrationLedger(
 		return fmt.Errorf("begin file migration ledger transaction: %w", err)
 	}
 	defer tx.Rollback(context.Background())
+	if err := enforceMigrationTransactionSQLMode(ctx, tx); err != nil {
+		return err
+	}
 
 	if _, err := tx.Exec(ctx, schemaMigrationsTableSQL); err != nil {
 		return fmt.Errorf("ensure schema_migrations table: %w", err)
@@ -267,6 +273,9 @@ func applyFileMigration(
 		return fmt.Errorf("begin migration %s: %w", entry.name, err)
 	}
 	defer tx.Rollback(context.Background())
+	if err := enforceMigrationTransactionSQLMode(ctx, tx); err != nil {
+		return fmt.Errorf("prepare migration %s SQL lexical mode: %w", entry.name, err)
+	}
 
 	if _, err := tx.Exec(ctx, string(body)); err != nil {
 		return fmt.Errorf("apply migration %s: %w", entry.name, err)

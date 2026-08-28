@@ -49,6 +49,10 @@ func TestPostgresLegacyPublicCatalogMatchesFrozenShape(t *testing.T) {
 
 func TestPostgresLegacyPublicRuntimeCatalogMatchesFrozenAttestation(t *testing.T) {
 	fixture := openLegacyPublicFixture(t)
+	frozenBundle, err := deriveLegacyCutoverBundle(fixture.Bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
 	fixture.Pool.Close()
 	pool := openLegacyCutoverPool(t, fixture.DatabaseURL)
 	tx, err := pool.BeginTx(t.Context(), pgx.TxOptions{IsoLevel: pgx.Serializable})
@@ -60,7 +64,7 @@ func TestPostgresLegacyPublicRuntimeCatalogMatchesFrozenAttestation(t *testing.T
 		t.Fatal(err)
 	}
 	legacy, extensions, err := validateLegacyCutoverPreconditions(
-		t.Context(), tx, db.DefaultRuntimeSchema, fixture.Bundle,
+		t.Context(), tx, db.DefaultRuntimeSchema, frozenBundle,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -75,10 +79,10 @@ func TestPostgresLegacyPublicRuntimeCatalogMatchesFrozenAttestation(t *testing.T
 	); err != nil {
 		t.Fatal(err)
 	}
-	if err := bindLegacyMigrationAuthority(t.Context(), tx, fixture.Bundle); err != nil {
+	if err := bindLegacyMigrationAuthority(t.Context(), tx, frozenBundle); err != nil {
 		t.Fatal(err)
 	}
-	if err := applyPostLegacyMigrations(t.Context(), tx, fixture.Bundle); err != nil {
+	if err := applyPostLegacyMigrations(t.Context(), tx, frozenBundle); err != nil {
 		t.Fatal(err)
 	}
 	snapshot, err := loadLegacyCatalogSnapshot(t.Context(), tx, db.DefaultRuntimeSchema)

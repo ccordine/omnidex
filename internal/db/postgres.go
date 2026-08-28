@@ -25,6 +25,15 @@ func ValidateRuntimeSchemaName(name string) error {
 	return nil
 }
 
+// RuntimeSearchPath returns the sole search-path projection used by runtime
+// connections and migration applicability proofs.
+func RuntimeSearchPath(runtimeSchema string) (string, error) {
+	if err := ValidateRuntimeSchemaName(runtimeSchema); err != nil {
+		return "", err
+	}
+	return runtimeSchema + ",public", nil
+}
+
 func ConnectRuntime(
 	ctx context.Context,
 	databaseURL string,
@@ -33,7 +42,8 @@ func ConnectRuntime(
 	if ctx == nil {
 		return nil, fmt.Errorf("runtime database connection requires context")
 	}
-	if err := ValidateRuntimeSchemaName(runtimeSchema); err != nil {
+	runtimeSearchPath, err := RuntimeSearchPath(runtimeSchema)
+	if err != nil {
 		return nil, err
 	}
 	cfg, err := pgxpool.ParseConfig(databaseURL)
@@ -56,7 +66,7 @@ func ConnectRuntime(
 	}
 	bootstrap.Close()
 
-	cfg.ConnConfig.RuntimeParams["search_path"] = runtimeSchema + ",public"
+	cfg.ConnConfig.RuntimeParams["search_path"] = runtimeSearchPath
 	pool, err := pgxpool.NewWithConfig(ctx, cfg)
 	if err != nil {
 		return nil, err
@@ -85,7 +95,8 @@ func ConnectRuntimeReadOnly(
 	if ctx == nil {
 		return nil, fmt.Errorf("read-only runtime database connection requires context")
 	}
-	if err := ValidateRuntimeSchemaName(runtimeSchema); err != nil {
+	runtimeSearchPath, err := RuntimeSearchPath(runtimeSchema)
+	if err != nil {
 		return nil, err
 	}
 	cfg, err := pgxpool.ParseConfig(databaseURL)
@@ -98,7 +109,7 @@ func ConnectRuntimeReadOnly(
 		return nil, fmt.Errorf("DATABASE_URL search_path is forbidden; use DATABASE_SCHEMA")
 	}
 	configurePool(cfg)
-	cfg.ConnConfig.RuntimeParams["search_path"] = runtimeSchema + ",public"
+	cfg.ConnConfig.RuntimeParams["search_path"] = runtimeSearchPath
 	pool, err := pgxpool.NewWithConfig(ctx, cfg)
 	if err != nil {
 		return nil, err

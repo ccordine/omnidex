@@ -145,7 +145,7 @@ func TestTypedViolentNarratorDirectionCompletesAtomicallyWithoutUserCanon(t *tes
 	if err := json.Unmarshal(response.Body.Bytes(), &submitted); err != nil {
 		t.Fatal(err)
 	}
-	provider.waitForTerminalCanon(t)
+	provider.waitForTerminalCanon(t, repository, submitted.Job.ID)
 
 	runningPage, err := repository.ListChannelMessages(t.Context(), channel.ID, 10, nil)
 	if err != nil {

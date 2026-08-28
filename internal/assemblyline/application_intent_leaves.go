@@ -229,7 +229,7 @@ func applicationRequirementLeafAuthority(
 	}{
 		UserRequest: input.UserRequest, Context: input.Context,
 		ProductContext:       input.ProductContext,
-		AcceptedRequirements: append([]string(nil), input.AcceptedRequirements...),
+		AcceptedRequirements: append([]string{}, input.AcceptedRequirements...),
 	})
 	if err != nil {
 		return "", fmt.Errorf("encode application requirement authority: %w", err)

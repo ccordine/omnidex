@@ -45,13 +45,13 @@ func TestPostgresLegacyCutoverRejectsLedgerDriftWithoutMutation(t *testing.T) {
 	assertLegacyRollbackState(t, fixture.DatabaseURL)
 }
 
-func TestPostgresLegacyCutoverRejectsChangedReleaseBundleWithoutMutation(t *testing.T) {
+func TestPostgresLegacyCutoverRejectsChangedFrozenPrefixAuthorityWithoutMutation(t *testing.T) {
 	fixture := openLegacyPublicFixture(t)
 	fixture.Pool.Close()
 	pool := openLegacyCutoverPool(t, fixture.DatabaseURL)
 	_, err := PreserveLegacyPublic(
 		t.Context(), pool, db.DefaultRuntimeSchema,
-		rejectedFinalMigrationBundle(t, fixture.Bundle),
+		rejectedFrozenPrefixMigrationBundle(t, fixture.Bundle),
 	)
 	if err == nil || !strings.Contains(err.Error(), "release migration manifest differs") {
 		t.Fatalf("PreserveLegacyPublic error=%v, want changed release bundle rejection", err)
@@ -75,6 +75,29 @@ func TestPostgresLegacyCutoverRejectsNonterminalRetiredPipelineWithoutMutation(t
 	)
 	if err == nil || !strings.Contains(err.Error(), "nonterminal retired or unregistered pipeline") {
 		t.Fatalf("PreserveLegacyPublic error=%v, want retired-pipeline rejection", err)
+	}
+	pool.Close()
+	assertLegacyRollbackState(t, fixture.DatabaseURL)
+}
+
+func TestPostgresLegacyCutoverRejectsActiveCodingBeforeCommit(t *testing.T) {
+	fixture := openLegacyPublicFixture(t)
+	if _, err := fixture.Pool.Exec(t.Context(), `
+		INSERT INTO public.jobs(instruction,pipeline,status)
+		VALUES ('active coding blocks current tail','coding','pending')
+	`); err != nil {
+		t.Fatal(err)
+	}
+	fixture.Pool.Close()
+	pool := openLegacyCutoverPool(t, fixture.DatabaseURL)
+	_, err := PreserveLegacyPublic(
+		t.Context(), pool, db.DefaultRuntimeSchema, fixture.Bundle,
+	)
+	if err == nil || !strings.Contains(
+		err.Error(),
+		"current-tail applicability failed at migration 160_application_service_deployment_semantic_split.sql",
+	) || !strings.Contains(err.Error(), "coding job is active") {
+		t.Fatalf("PreserveLegacyPublic active coding error=%v", err)
 	}
 	pool.Close()
 	assertLegacyRollbackState(t, fixture.DatabaseURL)

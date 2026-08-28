@@ -51,7 +51,7 @@ func selectRelevantAuthorities(
 		if err != nil {
 			return nil, calls, fmt.Errorf("context relevance page %d: %w", pageIndex+1, err)
 		}
-		if err := validateReceipt("context relevance", receipt); err != nil {
+		if err := validateContextRelevanceReceipt(input, receipt); err != nil {
 			return nil, calls, err
 		}
 		calls += receipt.Calls
@@ -63,6 +63,28 @@ func selectRelevantAuthorities(
 		)...)
 	}
 	return selected, calls, nil
+}
+
+func validateContextRelevanceReceipt(
+	input assemblyline.ContextRelevanceInput,
+	receipt StationReceipt,
+) error {
+	if receipt.Reused {
+		if receipt.Calls != 0 {
+			return fmt.Errorf(
+				"context relevance reuse reported %d provider calls", receipt.Calls,
+			)
+		}
+		return nil
+	}
+	maximum := input.MaxSelections * assemblyline.MaxSemanticStationAttempts
+	if receipt.Calls < 1 || receipt.Calls > maximum {
+		return fmt.Errorf(
+			"context relevance reported %d calls outside the bounded fixed-point budget",
+			receipt.Calls,
+		)
+	}
+	return nil
 }
 
 func reduceSelectedAuthorities(

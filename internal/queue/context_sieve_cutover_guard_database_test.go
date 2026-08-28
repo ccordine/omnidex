@@ -85,7 +85,7 @@ func TestPostgresContextSieveCutoverPreservesCompletedRetiredOpening(t *testing.
 	}
 	claim := contextSieveMigrationClaim(t, repository, "completed-direct-retired")
 	opening := openRetiredConversationContextGap(t, pool, claim)
-	persistStationDiscoveryFailure(t, repository, claim.Authority, opening)
+	persistHistoricalStationDiscoveryFailure(t, repository, claim.Authority, opening)
 	if _, err := repository.CloseStationGap(t.Context(), StationGapTerminalRecord{
 		Authority: claim.Authority,
 		OpeningID: opening.ID,
@@ -173,30 +173,80 @@ func historicalContextSieveOpening(
 	stationID station.ID,
 ) StationGapOpening {
 	t.Helper()
-	const contextTokens = 32768
-	currentJob := mustContextSearchTermsJob(t)
-	opening, err := validateStationGapOpening(StationGapOpenRecord{
-		Authority: claim.Authority,
-		Job:       currentJob, Station: station.ContextSearchTerms,
-		ContextTokens: contextTokens,
-		MaxOutputTokens: portableStationTestMaxOutputTokens(
-			t, currentJob, contextTokens,
-		),
-		OutputLimitMode: llm.ExactPreparedOutputLimitNatural,
+	const (
+		historicalSchema   = "omnidex.portable-job.v1"
+		historicalRenderer = "omnidex.render-portable-job.v3"
+		historicalPrompt   = "historical context sieve projection"
+		contextTokens      = 32768
+	)
+	if job.Schema != historicalSchema {
+		t.Fatalf("historical context sieve schema=%q, want %q", job.Schema, historicalSchema)
+	}
+	wantID := historicalPortableID(job.Schema, string(job.Kind), job.Payload)
+	if job.ID != wantID {
+		t.Fatalf("historical context sieve work id=%q, want %q", job.ID, wantID)
+	}
+	envelope := mustCanonical(t, job)
+	responseSchema := json.RawMessage(`{}`)
+	projection := mustCanonical(t, struct {
+		Prompt         string          `json:"prompt"`
+		Renderer       string          `json:"renderer"`
+		ResponseSchema json.RawMessage `json:"response_schema"`
+	}{historicalPrompt, historicalRenderer, responseSchema})
+	return StationGapOpening{
+		JobID: claim.Authority.JobID, Generation: claim.Authority.Generation,
+		StepID: claim.Authority.StepID, StepAttempt: claim.Authority.Attempt,
+		WorkerID: claim.Authority.WorkerID, GapID: job.ID, Station: stationID,
+		Scope: "portable_semantic_worker", PortableSchema: job.Schema,
+		WorkID: job.ID, WorkKind: string(job.Kind), PortablePayload: string(job.Payload),
+		PortablePayloadSHA256:  stationGapSHA256(string(job.Payload)),
+		PortableEnvelope:       string(envelope),
+		PortableEnvelopeSHA256: stationGapSHA256(string(envelope)),
+		RendererVersion:        historicalRenderer,
+		Prompt:                 historicalPrompt,
+		ResponseSchema:         responseSchema,
+		ProjectionEnvelope:     string(projection),
+		ProjectionSHA256:       stationGapSHA256(string(projection)),
+		ContextTokens:          contextTokens,
+		MaxOutputTokens:        contextTokens,
+		OutputLimitMode:        llm.ExactPreparedOutputLimitNatural,
+	}
+}
+
+func persistHistoricalStationDiscoveryFailure(
+	t *testing.T,
+	repository *Repository,
+	authority model.StepAttemptAuthority,
+	gap StationGapOpening,
+) StationDiscoveryReceipt {
+	t.Helper()
+	selection := llm.ProviderIdentitySelection{
+		Model: "qwen:9b", NativeContextLimit: gap.ContextTokens,
+	}
+	opening, err := repository.OpenStationDiscovery(t.Context(), StationDiscoveryOpenRecord{
+		Authority: authority, Gap: gap, Selection: selection,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	envelope := mustCanonical(t, job)
-	opening.GapID = job.ID
-	opening.Station = stationID
-	opening.WorkID = job.ID
-	opening.WorkKind = string(job.Kind)
-	opening.PortablePayload = string(job.Payload)
-	opening.PortablePayloadSHA256 = stationGapSHA256(opening.PortablePayload)
-	opening.PortableEnvelope = string(envelope)
-	opening.PortableEnvelopeSHA256 = stationGapSHA256(opening.PortableEnvelope)
-	return opening
+	failure := stationCallIdentityFailure(t, llm.PreparedModel{
+		ContextModel: selection.Model, ContextTokens: selection.NativeContextLimit,
+	})
+	receipt, err := repository.RecordStationDiscoveryReceipt(
+		t.Context(),
+		StationDiscoveryReceiptRecord{
+			Authority: authority, OpeningID: opening.ID, GapID: gap.GapID,
+			Observed: llm.ObservedProviderIdentity{
+				Evidence: failure.ProviderIdentityEvidence,
+			},
+			FailureReason: StationDiscoveryFailureEvidenceRejected,
+			Error:         "historical exact provider discovery failed",
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return receipt
 }
 
 func insertNestedRetiredContextCorrection(
@@ -272,27 +322,10 @@ func TestPostgresContextSieveCutoverRejectsInvalidActiveOpening(t *testing.T) {
 	`); err != nil {
 		t.Fatal(err)
 	}
-	portableJob, err := assemblyline.NewContextSearchTermCoverageJob(
-		assemblyline.ContextSearchTermLeafInput{
-			ExactInstruction: "Repeat the prior action.", AcceptedTerms: []string{},
-		},
+	portableJob := historicalContextSievePortableJob(t, "context_search_terms", 5)
+	opening := historicalContextSieveOpening(
+		t, claim, portableJob, station.ContextSearchTerms,
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	const contextTokens = 32768
-	opening, err := validateStationGapOpening(StationGapOpenRecord{
-		Authority: claim.Authority,
-		Job:       portableJob, Station: station.ContextSearchTerms,
-		ContextTokens: contextTokens,
-		MaxOutputTokens: portableStationTestMaxOutputTokens(
-			t, portableJob, contextTokens,
-		),
-		OutputLimitMode: llm.ExactPreparedOutputLimitNatural,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
 	opening.Station = station.ConversationResponse
 	insertContextSieveMigrationOpening(t, pool, &opening)
 	if _, err := pool.Exec(t.Context(), priorDefinition); err != nil {

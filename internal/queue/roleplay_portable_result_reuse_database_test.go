@@ -10,7 +10,7 @@ import (
 	"github.com/gryph/omnidex/internal/roleplay"
 )
 
-const roleplayPortableReuseCandidateJSON = `{"schema":"omnidex.conversation-response.v1","text":"The accepted first responder leaf."}`
+const roleplayPortableReuseExactCandidate = "The accepted first responder leaf."
 
 func TestPostgresRoleplayPortableResultReusePreservesFailedAcceptedLeaf(t *testing.T) {
 	fixture := newRoleplayPortableReuseDatabaseFixture(t, "roleplay-reuse-failed")
@@ -29,7 +29,7 @@ func TestPostgresRoleplayPortableResultReusePreservesFailedAcceptedLeaf(t *testi
 	}
 	root := roleplayPortableReuseRootJob(t, "resolve the bounded roleplay leaf")
 	sourceOutcome := persistRoleplayPortableReuseLeaf(
-		t, fixture.Repository, sourceClaim, root, roleplayPortableReuseCandidateJSON,
+		t, fixture.Repository, sourceClaim, root, roleplayPortableReuseExactCandidate,
 	)
 	failRoleplayPortableReuseJob(t, fixture.Repository, sourceClaim, "roleplay-reuse-source-fail")
 
@@ -68,7 +68,7 @@ func TestPostgresRoleplayPortableResultReusePreservesFailedAcceptedLeaf(t *testi
 	if err != nil || !found {
 		t.Fatalf("reuse found=%t err=%v", found, err)
 	}
-	if reused.Result.JobID != root.ID || reused.Result.Candidate != roleplayPortableReuseCandidateJSON ||
+	if reused.Result.JobID != root.ID || reused.Result.Candidate != roleplayPortableReuseExactCandidate ||
 		reused.Receipt.SourceAuthority.JobID != sourceJob.ID ||
 		reused.Receipt.SourceGapOutcomeID != sourceOutcome.ID ||
 		reused.Receipt.SourceResponseSHA256 != sourceOutcome.ResponseSHA256 {
@@ -117,8 +117,8 @@ func TestPostgresRoleplayPortableResultReuseMapsCorrectionToRoot(t *testing.T) {
 		t.Fatalf("source claim=%+v err=%v", sourceClaim, err)
 	}
 	root := roleplayPortableReuseRootJob(t, "resolve corrected leaf")
-	retained := `{"schema":"omnidex.conversation-response.v1","text":"The rejected retained first responder leaf."}`
-	patch := `{"text":"The accepted first responder leaf."}`
+	retained := "The rejected retained first responder leaf."
+	replacement := roleplayPortableReuseExactCandidate
 	correction, err := assemblyline.NewRetainedResponseCorrectionJob(
 		root, "text was not grounded", retained,
 	)
@@ -126,7 +126,7 @@ func TestPostgresRoleplayPortableResultReuseMapsCorrectionToRoot(t *testing.T) {
 		t.Fatal(err)
 	}
 	persistRoleplayPortableReuseLeaf(
-		t, fixture.Repository, sourceClaim, correction, patch,
+		t, fixture.Repository, sourceClaim, correction, replacement,
 	)
 	failRoleplayPortableReuseJob(t, fixture.Repository, sourceClaim, "roleplay-correction-fail")
 	_, targetJob, err := enqueueNarratorRoleplayTurn(
@@ -148,9 +148,9 @@ func TestPostgresRoleplayPortableResultReuseMapsCorrectionToRoot(t *testing.T) {
 		t.Fatalf("correction reuse found=%t err=%v", found, err)
 	}
 	if reused.Receipt.SourceWorkID != correction.ID || reused.Result.JobID != root.ID ||
-		reused.Result.Candidate != roleplayPortableReuseCandidateJSON ||
+		reused.Result.Candidate != roleplayPortableReuseExactCandidate ||
 		reused.Result.Projection != nil || reused.Receipt.SourceAuthority.JobID != sourceJob.ID ||
-		reused.Receipt.SourceResponseSHA256 != stationGapSHA256(patch) {
+		reused.Receipt.SourceResponseSHA256 != stationGapSHA256(replacement) {
 		t.Fatalf("correction reuse=%+v", reused)
 	}
 	var input assemblyline.ConversationResponseInput
@@ -217,7 +217,7 @@ func TestPostgresRoleplayPortableResultReuseExcludesCompletedTurn(t *testing.T) 
 	}
 	root := roleplayPortableReuseRootJob(t, "completed source leaf")
 	persistRoleplayPortableReuseLeaf(
-		t, fixture.Repository, sourceClaim, root, roleplayPortableReuseCandidateJSON,
+		t, fixture.Repository, sourceClaim, root, roleplayPortableReuseExactCandidate,
 	)
 	completeRoleplayPortableReuseJob(t, fixture.Repository, sourceClaim, "completed-reuse-source-done")
 
@@ -270,7 +270,7 @@ func TestPostgresRoleplayPortableResultReuseExcludesCurrentAttemptAndFailedOutco
 	}
 	resolvedRoot := roleplayPortableReuseRootJob(t, "current attempt leaf")
 	persistRoleplayPortableReuseLeaf(
-		t, fixture.Repository, sourceClaim, resolvedRoot, roleplayPortableReuseCandidateJSON,
+		t, fixture.Repository, sourceClaim, resolvedRoot, roleplayPortableReuseExactCandidate,
 	)
 	if _, found, err := fixture.Repository.ReuseRoleplayPortableResult(t.Context(),
 		RoleplayPortableResultReuseRequest{
@@ -352,7 +352,7 @@ func seedFailedRoleplayPortableReuseSource(
 		t.Fatalf("source claim=%+v err=%v", claim, err)
 	}
 	persistRoleplayPortableReuseLeaf(
-		t, fixture.Repository, claim, root, roleplayPortableReuseCandidateJSON,
+		t, fixture.Repository, claim, root, roleplayPortableReuseExactCandidate,
 	)
 	failRoleplayPortableReuseJob(t, fixture.Repository, claim, "authority-drift-source-fail")
 }

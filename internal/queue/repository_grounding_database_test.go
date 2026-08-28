@@ -26,16 +26,17 @@ func TestPostgresRepositoryGroundingStationsUseExactGapAuthority(t *testing.T) {
 			const contextTokens = 8192
 			pool := openIsolatedMigrationPool(t)
 			repository := New(pool)
-			if err := repository.EnsureSchema(t.Context(), loadMigrationBundleThroughPrefix(t, "163")); err != nil {
+			if err := repository.EnsureSchema(t.Context(), loadCheckedMigrationBundle(t)); err != nil {
 				t.Fatal(err)
 			}
-			claim := seedPreInlineExecutionMigrationClaim(
-				t, t.Context(), pool, "repository-grounding",
-			)
+			claim := claimStationTestJob(t, repository, "repository-grounding")
 			job := test.job(t)
 			if _, err := repository.OpenStationGap(t.Context(), StationGapOpenRecord{
 				Authority: claim.Authority, Job: job, Station: station.ConversationObjectiveKind,
-				ContextTokens: 8192, MaxOutputTokens: 8192,
+				ContextTokens: contextTokens,
+				MaxOutputTokens: portableStationTestMaxOutputTokens(
+					t, job, contextTokens,
+				),
 				OutputLimitMode: llm.ExactPreparedOutputLimitNatural,
 			}); err == nil {
 				t.Fatalf("%s work opened under objective-kind station", test.name)

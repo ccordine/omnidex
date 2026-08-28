@@ -76,6 +76,9 @@ func applyPostLegacyMigrations(
 		if err != nil {
 			return err
 		}
+		if err := enforceMigrationTransactionSQLMode(ctx, tx); err != nil {
+			return fmt.Errorf("prepare preserved-state migration %s SQL lexical mode: %w", entry.name, err)
+		}
 		if _, err := tx.Exec(ctx, qualifiedSearchPath+"\n"+string(body)); err != nil {
 			return fmt.Errorf("apply preserved-state migration %s: %w", entry.name, err)
 		}

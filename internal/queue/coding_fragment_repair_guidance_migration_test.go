@@ -39,7 +39,7 @@ func TestCodingFragmentRepairGuidanceMigrationAddsOneExplicitOwner(t *testing.T)
 func TestCodingFragmentRepairGuidanceMigrationMatchesCodeOwnedRouting(t *testing.T) {
 	pool := openIsolatedMigrationPool(t)
 	repository := New(pool)
-	if err := repository.EnsureSchema(t.Context(), loadMigrationBundleThroughPrefix(t, "160")); err != nil {
+	if err := repository.EnsureSchema(t.Context(), loadCheckedMigrationBundle(t)); err != nil {
 		t.Fatal(err)
 	}
 	assertAppliedMigrationCount(t, pool, codingFragmentRepairGuidanceMigration, 1)

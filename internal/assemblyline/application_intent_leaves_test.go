@@ -52,6 +52,10 @@ func TestApplicationRequirementLeavesSeparateCoverageFromGeneration(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
+	if !strings.Contains(coveragePrompt, `"accepted_requirements":[]`) ||
+		!strings.Contains(requirementPrompt, `"accepted_requirements":[]`) {
+		t.Fatalf("empty accepted requirement authority was not preserved as an array")
+	}
 	if strings.Contains(coveragePrompt, "Return only the requirement as raw prose") ||
 		strings.Contains(requirementPrompt, "NO_UNCOVERED_REQUIREMENT") {
 		t.Fatalf("coverage and generation responsibilities were combined")

@@ -16,7 +16,7 @@ type semanticCandidateExhaustedError struct {
 
 func (err *semanticCandidateExhaustedError) Error() string {
 	return fmt.Sprintf(
-		"%s candidate failed %d bounded corrections: %v",
+		"%s candidate failed after %d bounded attempts: %v",
 		err.Subject, err.Attempts, err.Err,
 	)
 }
