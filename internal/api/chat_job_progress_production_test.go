@@ -44,9 +44,12 @@ func TestProductionStepEventFormsHaveTypedGUIProjections(t *testing.T) {
 		"application_evidence_need_opened need=evidence_001 source=repository stop=one exact fact",
 		"application_evidence_need_resolved need=evidence_001 facts=2 stop=one exact fact",
 		"coding_skill_bound requirement=requirement_001 skill=skill-1 version=2 source=registry status=active",
-		"repository_index_started authority=server",
-		"repository_index_failed exact indexing failure",
-		"repository_index_ready snapshot=sha256:abc files=7 analyses=2",
+		"repository_snapshot_started authority=server",
+		"repository_snapshot_failed exact snapshot failure",
+		"repository_snapshot_ready snapshot=sha256:abc files=7",
+		"repository_analysis_started snapshot=sha256:abc adapter=golang_v1",
+		"repository_analysis_failed exact analysis failure",
+		"repository_analysis_ready snapshot=sha256:abc adapter=golang_v1 analysis=sha256:def",
 		"repository_change_staged contract=contract-1 files=2",
 		"repository_change_completed contract=contract-1 files=2 snapshot=sha256:def",
 		"repository_desired_state_staged graph=desired-1 files=1",
@@ -92,6 +95,20 @@ func TestChatProgressRejectsRemovedFixedCorrectionCounts(t *testing.T) {
 	} {
 		if _, _, err := summarizeChatStepEvent(event, "v3_coding"); err == nil {
 			t.Fatalf("obsolete fixed-count event was accepted: %#v", event)
+		}
+	}
+}
+
+func TestChatProgressRejectsRemovedAggregateRepositoryIndexEvents(t *testing.T) {
+	t.Parallel()
+
+	for _, event := range []parsedChatStepEvent{
+		{Type: "repository_index_started", Message: "authority=server"},
+		{Type: "repository_index_failed", Message: "exact indexing failure"},
+		{Type: "repository_index_ready", Message: "snapshot=sha256:abc files=7 analyses=2"},
+	} {
+		if _, _, err := summarizeChatStepEvent(event, "v3_coding"); err == nil {
+			t.Fatalf("obsolete aggregate repository event was accepted: %#v", event)
 		}
 	}
 }

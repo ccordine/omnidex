@@ -77,19 +77,19 @@ func summarizeChatSkillBinding(message string) (chatProgressKind, string, error)
 	return chatProgressRetrieval, fmt.Sprintf("Bound skill %s v%d to %s", skill, version, requirement), nil
 }
 
-func summarizeChatRepositoryIndex(event parsedChatStepEvent) (chatProgressKind, string, error) {
+func summarizeChatRepositoryIntelligence(event parsedChatStepEvent) (chatProgressKind, string, error) {
 	switch event.Type {
-	case "repository_index_started":
+	case "repository_snapshot_started":
 		fields, err := exactChatEventFields(event.Message, "authority")
 		if err != nil || fields["authority"] != "server" {
-			return "", "", firstChatProgressError(err, fmt.Errorf("repository index authority must be server"))
+			return "", "", firstChatProgressError(err, fmt.Errorf("repository snapshot authority must be server"))
 		}
-		return chatProgressRetrieval, "Indexing the authoritative repository state", nil
-	case "repository_index_failed":
+		return chatProgressRetrieval, "Capturing the authoritative repository snapshot", nil
+	case "repository_snapshot_failed":
 		message, err := requireChatProgressMessage(event.Message)
-		return chatProgressDiagnostic, "Repository indexing failed: " + message, err
-	case "repository_index_ready":
-		fields, err := exactChatEventFields(event.Message, "snapshot", "files", "analyses")
+		return chatProgressDiagnostic, "Repository snapshot failed: " + message, err
+	case "repository_snapshot_ready":
+		fields, err := exactChatEventFields(event.Message, "snapshot", "files")
 		if err != nil {
 			return "", "", err
 		}
@@ -97,13 +97,38 @@ func summarizeChatRepositoryIndex(event parsedChatStepEvent) (chatProgressKind, 
 			return "", "", err
 		}
 		files, err := requireChatEventInteger(fields, "files", true)
+		return chatProgressRetrieval, fmt.Sprintf("Repository snapshot ready: %d files", files), err
+	case "repository_analysis_started":
+		fields, err := exactChatEventFields(event.Message, "snapshot", "adapter")
 		if err != nil {
 			return "", "", err
 		}
-		analyses, err := requireChatEventInteger(fields, "analyses", true)
-		return chatProgressRetrieval, fmt.Sprintf("Repository index ready: %d files, %d analyses", files, analyses), err
+		if _, err := requireChatEventText(fields, "snapshot", 256); err != nil {
+			return "", "", err
+		}
+		adapter, err := requireChatEventToken(fields, "adapter", 128)
+		return chatProgressRetrieval, "Analyzing the repository with " + displayChatProgressToken(adapter), err
+	case "repository_analysis_failed":
+		message, err := requireChatProgressMessage(event.Message)
+		return chatProgressDiagnostic, "Repository analysis failed: " + message, err
+	case "repository_analysis_ready":
+		fields, err := exactChatEventFields(event.Message, "snapshot", "adapter", "analysis")
+		if err != nil {
+			return "", "", err
+		}
+		if _, err := requireChatEventText(fields, "snapshot", 256); err != nil {
+			return "", "", err
+		}
+		adapter, err := requireChatEventToken(fields, "adapter", 128)
+		if err != nil {
+			return "", "", err
+		}
+		if _, err := requireChatEventText(fields, "analysis", 256); err != nil {
+			return "", "", err
+		}
+		return chatProgressRetrieval, "Repository analysis ready for " + displayChatProgressToken(adapter), nil
 	}
-	return "", "", fmt.Errorf("repository index event %q is not registered", event.Type)
+	return "", "", fmt.Errorf("repository intelligence event %q is not registered", event.Type)
 }
 
 func summarizeChatRepositoryChange(event parsedChatStepEvent) (chatProgressKind, string, error) {

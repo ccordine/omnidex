@@ -62,7 +62,7 @@ func TestChatJobStateResponseExposesOnlyBoundedAuthorityAndServerMarkup(t *testi
 	t.Parallel()
 	now := time.Now().UTC().Truncate(time.Second)
 	presentation := chatProgressPresentationFixture(now, []string{
-		"event=repository_index_ready snapshot=sha256:abc files=7 analyses=2",
+		"event=repository_snapshot_ready snapshot=sha256:abc files=7",
 	})
 	response, err := newChatJobStateResponse(presentation)
 	if err != nil {
@@ -73,7 +73,7 @@ func TestChatJobStateResponseExposesOnlyBoundedAuthorityAndServerMarkup(t *testi
 		t.Fatal(err)
 	}
 	encoded := string(raw)
-	for _, expected := range []string{`"current_generation":1`, `"latest_context_id":1`, `"count":1`, `Repository index ready`} {
+	for _, expected := range []string{`"current_generation":1`, `"latest_context_id":1`, `"count":1`, `Repository snapshot ready`} {
 		if !strings.Contains(encoded, expected) {
 			t.Errorf("job state response lacks %q: %s", expected, encoded)
 		}

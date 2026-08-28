@@ -219,8 +219,9 @@ func summarizeChatStepEvent(event parsedChatStepEvent, stepAction string) (chatP
 		return summarizeChatCodingCorrection(event.Message)
 	case "coding_skill_bound":
 		return summarizeChatSkillBinding(event.Message)
-	case "repository_index_started", "repository_index_ready", "repository_index_failed":
-		return summarizeChatRepositoryIndex(event)
+	case "repository_snapshot_started", "repository_snapshot_ready", "repository_snapshot_failed",
+		"repository_analysis_started", "repository_analysis_ready", "repository_analysis_failed":
+		return summarizeChatRepositoryIntelligence(event)
 	case "repository_change_staged", "repository_change_completed",
 		"repository_desired_state_staged", "repository_desired_state_verified":
 		return summarizeChatRepositoryChange(event)
