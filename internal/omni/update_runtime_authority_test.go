@@ -74,7 +74,10 @@ compose_require_running_image "$1" "$compose_cmd" "$1/docker-compose.yml" core "
 	ordered := []string{
 		"docker compose version",
 		"docker compose -p system-project -f " + root + "/docker-compose.yml build --pull core",
-		"docker compose -p system-project -f " + root + "/docker-compose.yml images -q core",
+		"docker compose -p system-project -f " + root + "/docker-compose.yml config --images core",
+		"docker image inspect --format {{.Id}} system-project-core",
+		"docker image inspect --format {{ index .Config.Labels \"com.docker.compose.project\" }} " + expectedImage,
+		"docker image inspect --format {{ index .Config.Labels \"com.docker.compose.service\" }} " + expectedImage,
 		"docker image inspect --format {{ index .Config.Labels \"org.opencontainers.image.revision\" }} " + expectedImage,
 		"docker image inspect --format {{.Config.User}} " + expectedImage,
 		"docker compose -p system-project -f " + root + "/docker-compose.yml up -d --remove-orphans --wait --wait-timeout 180 core",
@@ -424,11 +427,15 @@ func writeFakeComposePlugin(t *testing.T) (string, string) {
 	contents := `#!/usr/bin/env bash
 set -euo pipefail
 printf '%s|%s|%s|%s|docker %s\n' "${DOCKER_CONTEXT:-}" "${COMPOSE_PROJECT_NAME:-}" "${HOST_UID:-}" "${HOST_GID:-}" "$*" >> "${OMNI_TEST_DOCKER_LOG}"
+configured_image="${COMPOSE_PROJECT_NAME:-system-project}-core"
 case "$*" in
   'context inspect default --format {{(index .Endpoints "docker").Host}}') printf '%s\n' 'unix:///var/run/docker.sock' ;;
   'info --format {{json .SecurityOptions}}') printf '%s\n' '["name=seccomp,profile=builtin"]' ;;
   "compose version") exit 0 ;;
-  *" images -q core") printf '%s\n' "${OMNI_TEST_EXPECTED_IMAGE}" ;;
+  *" config --images core") printf '%s\n' "${configured_image}" ;;
+  "image inspect --format {{.Id}} ${configured_image}") printf '%s\n' "${OMNI_TEST_EXPECTED_IMAGE}" ;;
+	  "image inspect --format {{ index .Config.Labels \"com.docker.compose.project\" }} "*) printf '%s\n' 'system-project' ;;
+	  "image inspect --format {{ index .Config.Labels \"com.docker.compose.service\" }} "*) printf '%s\n' 'core' ;;
   *" ps -q core") printf '%s\n' "${OMNI_TEST_RUNNING_CONTAINER}" ;;
 	  "image inspect --format {{ index .Config.Labels \"org.opencontainers.image.revision\" }} "*) printf '%s\n' "${OMNI_TEST_IMAGE_COMMIT}" ;;
 	  "image inspect --format {{.Config.User}} "*) printf '%s\n' "${OMNI_TEST_IMAGE_USER}" ;;

@@ -78,12 +78,16 @@ func TestComposeDeploymentWrapperUsesConfiguredDockerContextAndProject(t *testin
 	fakeDockerBody := `#!/usr/bin/env bash
 set -euo pipefail
 printf '%s|%s|%s|%s|%s|%s\n' "${OMNIDEX_COMMIT:-}" "$DOCKER_CONTEXT" "${COMPOSE_PROJECT_NAME:-}" "${HOST_UID:-}" "${HOST_GID:-}" "$*" >>"$FAKE_DOCKER_LOG"
+configured_image="${COMPOSE_PROJECT_NAME:-exact-project}-core"
 case "$*" in
   'context inspect default --format {{(index .Endpoints "docker").Host}}') printf '%s\n' 'unix:///var/run/docker.sock' ;;
   'info --format {{json .SecurityOptions}}') printf '%s\n' '["name=seccomp,profile=builtin"]' ;;
   "compose version") exit 0 ;;
   *" build --pull core"|*" up -d --remove-orphans --wait --wait-timeout 180 core") exit 0 ;;
-  *" images -q core") printf '%s\n' "$FAKE_EXPECTED_IMAGE" ;;
+  *" config --images core") printf '%s\n' "${configured_image}" ;;
+  "image inspect --format {{.Id}} ${configured_image}") printf '%s\n' "$FAKE_EXPECTED_IMAGE" ;;
+	  "image inspect --format {{ index .Config.Labels \"com.docker.compose.project\" }} "*) printf '%s\n' 'exact-project' ;;
+	  "image inspect --format {{ index .Config.Labels \"com.docker.compose.service\" }} "*) printf '%s\n' 'core' ;;
   *" ps -q core") printf '%s\n' "$FAKE_CONTAINER_ID" ;;
 	  "image inspect --format {{ index .Config.Labels \"org.opencontainers.image.revision\" }} "*) printf '%s\n' "$FAKE_EXPECTED_COMMIT" ;;
 	  "image inspect --format {{.Config.User}} "*) printf '%s\n' "$FAKE_EXPECTED_USER" ;;
@@ -130,7 +134,10 @@ esac
 	ordered := []string{
 		"compose version",
 		"compose -p exact-project -f " + filepath.Join(stage, "docker-compose.yml") + " build --pull core",
-		"compose -p exact-project -f " + filepath.Join(stage, "docker-compose.yml") + " images -q core",
+		"compose -p exact-project -f " + filepath.Join(stage, "docker-compose.yml") + " config --images core",
+		"image inspect --format {{.Id}} exact-project-core",
+		"image inspect --format {{ index .Config.Labels \"com.docker.compose.project\" }} " + expectedImage,
+		"image inspect --format {{ index .Config.Labels \"com.docker.compose.service\" }} " + expectedImage,
 		"image inspect --format {{ index .Config.Labels \"org.opencontainers.image.revision\" }} " + expectedImage,
 		"image inspect --format {{.Config.User}} " + expectedImage,
 		"compose -p exact-project -f " + filepath.Join(stage, "docker-compose.yml") + " up -d --remove-orphans --wait --wait-timeout 180 core",

@@ -169,20 +169,60 @@ compose_restart() {
 compose_image_id() {
   local repo_dir="$1" compose_cmd="$2" compose_file="$3" service="$4" commit="$5"
   runtime_validate_build_commit "${commit}"
+  [[ "${service}" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*$ ]] ||
+    die "compose service name is invalid: ${service}"
   local -a cmd=()
   compose_command_array "${compose_cmd}" cmd
   [[ -z "${compose_file}" ]] || cmd+=(-f "${compose_file}")
-  cmd+=(images -q "${service}")
-  local image_id
-  image_id="$(
+  cmd+=(config --images "${service}")
+  local image_refs_raw image_ref image_id image_project image_service known_ref duplicate_ref
+  image_refs_raw="$(
     cd "${repo_dir}"
     export OMNIDEX_COMMIT="${commit}"
     runtime_export_compose_identity
     "${cmd[@]}"
-  )"
-  [[ "${image_id}" =~ ^sha256:[0-9a-f]{64}$ ]] ||
-    die "compose service ${service} did not resolve to one exact image identity"
-  printf '%s\n' "${image_id}"
+  )" || die "compose service ${service} configured image references are unavailable"
+  [[ -n "${image_refs_raw}" ]] ||
+    die "compose service ${service} returned no configured image references"
+
+  local -a image_refs=() seen_refs=()
+  local -A matching_ids=()
+  mapfile -t image_refs <<< "${image_refs_raw}"
+  for image_ref in "${image_refs[@]}"; do
+    [[ -n "${image_ref}" && ${#image_ref} -le 1024 && "${image_ref}" != -* && ! "${image_ref}" =~ [[:space:]] ]] ||
+      die "compose service ${service} returned an invalid configured image reference"
+    duplicate_ref=0
+    for known_ref in "${seen_refs[@]}"; do
+      if [[ "${known_ref}" == "${image_ref}" ]]; then
+        duplicate_ref=1
+        break
+      fi
+    done
+    ((duplicate_ref == 0)) || continue
+    seen_refs+=("${image_ref}")
+
+    # The selected service can depend on images that have not been pulled yet.
+    # Only currently present configured references can identify the selected
+    # service image; container state is intentionally irrelevant.
+    if ! image_id="$(context_docker image inspect --format '{{.Id}}' "${image_ref}" 2>/dev/null)"; then
+      continue
+    fi
+    [[ "${image_id}" =~ ^sha256:[0-9a-f]{64}$ ]] ||
+      die "configured image ${image_ref} returned an invalid image identity"
+    image_project="$(context_docker image inspect --format '{{ index .Config.Labels "com.docker.compose.project" }}' "${image_id}")" ||
+      die "configured image ${image_ref} project identity is unavailable"
+    image_service="$(context_docker image inspect --format '{{ index .Config.Labels "com.docker.compose.service" }}' "${image_id}")" ||
+      die "configured image ${image_ref} service identity is unavailable"
+    if [[ "${image_project}" == "${COMPOSE_PROJECT}" && "${image_service}" == "${service}" ]]; then
+      matching_ids["${image_id}"]=1
+    fi
+  done
+
+  (( ${#matching_ids[@]} == 1 )) ||
+    die "compose service ${service} resolved ${#matching_ids[@]} current configured image identities for project ${COMPOSE_PROJECT}; expected exactly one"
+  for image_id in "${!matching_ids[@]}"; do
+    printf '%s\n' "${image_id}"
+  done
 }
 
 compose_require_image_commit() {
