@@ -33,8 +33,10 @@ func TestPortableRendererV8RequirementCoverageAuthorityMigrationIsExactAndNonMut
 		"work_kind='application_requirement' THEN '.v3'",
 		"'application_requirement_coverage'",
 		"'application_requirement_candidate_cardinality'",
+		"'application_requirement_candidate_kind'",
 		"'application_requirement_candidate_split'",
 		"'application_requirement_candidate_split_correction'",
+		"'application_requirement_candidate_duplicate_replacement'",
 		"OR renderer_version='omnidex.render-portable-job.v8'",
 		"'application_project_stack_constraint'",
 		"THEN '.v2' ELSE '.v1'",
@@ -62,18 +64,44 @@ func TestPortableRendererV8RequirementCoverageAuthorityMigrationIsExactAndNonMut
 	}
 }
 
-func TestPostgresPortableRendererV8PreservesV7HistoryAndOpensV8(t *testing.T) {
+func TestPostgresPortableRendererV8PreservesV5V6V7HistoryAndOpensV8(t *testing.T) {
 	pool := openIsolatedMigrationPool(t)
 	repository := New(pool)
+	if err := repository.EnsureSchema(
+		t.Context(), loadMigrationBundleThroughPrefix(t, "184"),
+	); err != nil {
+		t.Fatal(err)
+	}
+	v5 := persistTerminalHistoricalIntentGap(
+		t, repository, assemblyline.HistoricalPortableRendererV5,
+		"renderer-v5-stack-history", applicationProjectStackConstraintGapRecord,
+	)
+	if err := repository.EnsureSchema(
+		t.Context(), loadMigrationBundleThroughPrefix(t, "185"),
+	); err != nil {
+		t.Fatal(err)
+	}
+	v6 := persistTerminalHistoricalIntentGap(
+		t, repository, assemblyline.HistoricalPortableRendererV6,
+		"renderer-v6-stack-history", applicationProjectStackConstraintGapRecord,
+	)
+	if err := repository.EnsureSchema(
+		t.Context(), loadMigrationBundleThroughPrefix(t, "186"),
+	); err != nil {
+		t.Fatal(err)
+	}
 	if err := repository.EnsureSchema(
 		t.Context(), loadMigrationBundleThroughPrefix(t, "187"),
 	); err != nil {
 		t.Fatal(err)
 	}
-
-	historical := persistTerminalHistoricalIntentGap(
+	v7 := persistTerminalHistoricalIntentGap(
 		t, repository, assemblyline.HistoricalPortableRendererV7,
 		"renderer-v7-stack-history", applicationProjectStackConstraintGapRecord,
+	)
+	v7Coverage := persistTerminalHistoricalIntentGap(
+		t, repository, assemblyline.HistoricalPortableRendererV7,
+		"renderer-v7-coverage-history", applicationRequirementGapRecord,
 	)
 	if err := repository.EnsureSchema(
 		t.Context(), loadMigrationBundleThroughPrefix(t, "188"),
@@ -84,26 +112,39 @@ func TestPostgresPortableRendererV8PreservesV7HistoryAndOpensV8(t *testing.T) {
 		t, pool, portableRendererV8RequirementCoverageAuthorityMigration, 1,
 	)
 
-	var renderer, payload, envelope, prompt, projection, contractID string
-	if err := pool.QueryRow(t.Context(), `
-		SELECT renderer_version,portable_payload,portable_envelope,prompt,
-		       projection_envelope,semantic_uncertainty_contract->>'id'
-		FROM station_gap_openings WHERE id=$1
-	`, historical.ID).Scan(
-		&renderer, &payload, &envelope, &prompt, &projection, &contractID,
-	); err != nil {
-		t.Fatal(err)
-	}
-	if renderer != assemblyline.HistoricalPortableRendererV7 ||
-		payload != historical.PortablePayload || envelope != historical.PortableEnvelope ||
-		prompt != historical.Prompt || projection != historical.ProjectionEnvelope ||
-		!strings.HasSuffix(contractID, ".v2") {
-		t.Fatalf(
-			"frozen V7 history drifted: renderer=%q contract=%q payload=%t envelope=%t prompt=%t projection=%t",
-			renderer, contractID, payload == historical.PortablePayload,
-			envelope == historical.PortableEnvelope, prompt == historical.Prompt,
-			projection == historical.ProjectionEnvelope,
-		)
+	for _, expected := range []struct {
+		opening        StationGapOpening
+		contractSuffix string
+	}{
+		{opening: v5, contractSuffix: ".v1"},
+		{opening: v6, contractSuffix: ".v1"},
+		{opening: v7, contractSuffix: ".v2"},
+		{opening: v7Coverage, contractSuffix: ".v2"},
+	} {
+		var renderer, payload, envelope, prompt, projection, contractID string
+		if err := pool.QueryRow(t.Context(), `
+			SELECT renderer_version,portable_payload,portable_envelope,prompt,
+			       projection_envelope,semantic_uncertainty_contract->>'id'
+			FROM station_gap_openings WHERE id=$1
+		`, expected.opening.ID).Scan(
+			&renderer, &payload, &envelope, &prompt, &projection, &contractID,
+		); err != nil {
+			t.Fatal(err)
+		}
+		if renderer != expected.opening.RendererVersion ||
+			payload != expected.opening.PortablePayload ||
+			envelope != expected.opening.PortableEnvelope ||
+			prompt != expected.opening.Prompt ||
+			projection != expected.opening.ProjectionEnvelope ||
+			!strings.HasSuffix(contractID, expected.contractSuffix) {
+			t.Fatalf(
+				"frozen history drifted: renderer=%q contract=%q payload=%t envelope=%t prompt=%t projection=%t",
+				renderer, contractID, payload == expected.opening.PortablePayload,
+				envelope == expected.opening.PortableEnvelope,
+				prompt == expected.opening.Prompt,
+				projection == expected.opening.ProjectionEnvelope,
+			)
+		}
 	}
 
 	claim := claimStationTestJob(t, repository, "renderer-v8-current-stack")
@@ -121,44 +162,7 @@ func TestPostgresPortableRendererV8PreservesV7HistoryAndOpensV8(t *testing.T) {
 		)
 	}
 
-	cardinalityInput := assemblyline.ApplicationRequirementCandidateCardinalityInput{
-		Candidate: "Play drum pads and a keyboard.",
-	}
-	cardinality, err := assemblyline.DecodeApplicationRequirementCandidateCardinalityResult(
-		cardinalityInput, assemblyline.ApplicationRequirementMultipleRuntimeOutcomes,
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	cardinalityJob, err := assemblyline.NewApplicationRequirementCandidateCardinalityJob(
-		cardinalityInput,
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	splitJob, err := assemblyline.NewApplicationRequirementCandidateSplitJob(
-		assemblyline.ApplicationRequirementCandidateSplitInput{
-			Candidate: cardinalityInput.Candidate, Cardinality: cardinality,
-		},
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	correctionJob, err := assemblyline.NewApplicationRequirementCandidateSplitCorrectionJob(
-		assemblyline.ApplicationRequirementCandidateSplitCorrectionInput{
-			CurrentCandidate: cardinalityInput.Candidate,
-			Cardinality:      cardinality,
-			Defect:           assemblyline.ApplicationRequirementUnchangedSplitDefect,
-		},
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for marker, job := range map[string]assemblyline.PortableJob{
-		"renderer-v8-cardinality": cardinalityJob,
-		"renderer-v8-split":       splitJob,
-		"renderer-v8-correction":  correctionJob,
-	} {
+	for marker, job := range portableRendererV8RequirementCandidateJobs(t) {
 		claim := claimStationTestJob(t, repository, marker)
 		const contextTokens = 32768
 		opening, err := repository.OpenStationGap(t.Context(), StationGapOpenRecord{
@@ -176,6 +180,32 @@ func TestPostgresPortableRendererV8PreservesV7HistoryAndOpensV8(t *testing.T) {
 			!strings.HasSuffix(opening.SemanticUncertaintyContract.ID, ".v1") {
 			t.Fatalf(
 				"current refinement %s renderer/contract=%q/%q",
+				job.Kind, opening.RendererVersion,
+				opening.SemanticUncertaintyContract.ID,
+			)
+		}
+	}
+	for marker, expected := range portableRendererV8CurrentRequirementJobs(t) {
+		job := expected.Job
+		claim := claimStationTestJob(t, repository, marker)
+		const contextTokens = 32768
+		opening, err := repository.OpenStationGap(t.Context(), StationGapOpenRecord{
+			Authority: claim.Authority, Job: job, Station: station.CodingRequirements,
+			ContextTokens: contextTokens,
+			MaxOutputTokens: portableStationTestMaxOutputTokens(
+				t, job, contextTokens,
+			),
+			OutputLimitMode: llm.ExactPreparedOutputLimitNatural,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if opening.RendererVersion != assemblyline.PortableRendererV8 ||
+			!strings.HasSuffix(
+				opening.SemanticUncertaintyContract.ID, expected.ContractSuffix,
+			) {
+			t.Fatalf(
+				"current requirement %s renderer/contract=%q/%q",
 				job.Kind, opening.RendererVersion,
 				opening.SemanticUncertaintyContract.ID,
 			)

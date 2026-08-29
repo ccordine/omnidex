@@ -52,6 +52,9 @@ func TestApplicationFrontDoorSkipsCeremonialReviewForEmptyWorkspace(t *testing.T
 				if input.AcceptedRequirements == nil {
 					return assemblyline.PortableResult{}, fmt.Errorf("application requirement coverage received a nil accepted set")
 				}
+				if input.ExcludedCandidates == nil {
+					return assemblyline.PortableResult{}, fmt.Errorf("application requirement coverage received a nil excluded set")
+				}
 				if len(input.AcceptedRequirements) < 4 {
 					candidate = assemblyline.ApplicationRequirementRemains
 				} else {
@@ -75,6 +78,15 @@ func TestApplicationFrontDoorSkipsCeremonialReviewForEmptyWorkspace(t *testing.T
 					"Decrement the current count.",
 					"Reset the current count.",
 				}[counts[job.Kind]-1]
+			case assemblyline.WorkApplicationRequirementCandidateKind:
+				var input assemblyline.ApplicationRequirementCandidateKindInput
+				if err := json.Unmarshal(job.Payload, &input); err != nil {
+					return assemblyline.PortableResult{}, err
+				}
+				if strings.TrimSpace(input.Candidate) == "" {
+					return assemblyline.PortableResult{}, fmt.Errorf("application requirement kind received an empty candidate")
+				}
+				candidate = assemblyline.ApplicationRequirementCandidateTaskLocal
 			case assemblyline.WorkApplicationRequirementCandidateCardinality:
 				var input assemblyline.ApplicationRequirementCandidateCardinalityInput
 				if err := json.Unmarshal(job.Payload, &input); err != nil {
@@ -103,9 +115,11 @@ func TestApplicationFrontDoorSkipsCeremonialReviewForEmptyWorkspace(t *testing.T
 		counts[assemblyline.WorkApplicationProductContext] != 1 ||
 		counts[assemblyline.WorkApplicationRequirementCoverage] != 5 ||
 		counts[assemblyline.WorkApplicationRequirement] != 4 ||
+		counts[assemblyline.WorkApplicationRequirementCandidateKind] != 4 ||
 		counts[assemblyline.WorkApplicationRequirementCandidateCardinality] != 4 ||
 		counts[assemblyline.WorkApplicationRequirementCandidateSplit] != 0 ||
 		counts[assemblyline.WorkApplicationRequirementCandidateSplitCorrection] != 0 ||
+		counts[assemblyline.WorkApplicationRequirementCandidateDuplicateReplacement] != 0 ||
 		counts[assemblyline.WorkApplicationClassify] != 1 {
 		t.Fatalf("front-door calls=%v", counts)
 	}

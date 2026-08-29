@@ -18,7 +18,6 @@ import (
 type Server struct {
 	lifecycleContext           context.Context
 	repo                       *queue.Repository
-	migrationBundle            queue.MigrationBundle
 	channelStore               channelStore
 	roleplaySimulation         RoleplaySimulationStore
 	enqueueChannelTurn         enqueueChannelTurnFunc
@@ -70,7 +69,6 @@ type Server struct {
 
 type ServerOptions struct {
 	LifecycleContext     context.Context
-	MigrationBundle      queue.MigrationBundle
 	ProviderConfig       config.Config
 	RequestTimeout       time.Duration
 	WebSearchProviders   []string
@@ -169,7 +167,6 @@ func NewServerWithOptions(repo *queue.Repository, embeddingClient llm.EmbeddingC
 	s := &Server{
 		lifecycleContext:           lifecycleContext,
 		repo:                       repo,
-		migrationBundle:            options.MigrationBundle,
 		channelStore:               channels,
 		roleplaySimulation:         options.RoleplaySimulation,
 		enqueueChannelTurn:         enqueueChannelTurn,
@@ -292,7 +289,6 @@ func (s *Server) routes() {
 		s.mux.HandleFunc("/v1/ollama/downloads", s.handleOllamaDownloads)
 		s.mux.HandleFunc("/v1/memory-candidates", s.handleMemoryCandidates)
 		s.mux.HandleFunc("/v1/memory-candidates/", s.handleMemoryCandidateByID)
-		s.mux.HandleFunc("/v1/admin/migrate-fresh", s.handleAdminMigrateFresh)
 		s.mux.HandleFunc("/v1/metrics/live", s.handleMetricsLive)
 		s.mux.HandleFunc("/v1/metrics/runs", s.handleMetricsRuns)
 		s.mux.HandleFunc("/v1/metrics/runs/", s.handleMetricsRunByID)

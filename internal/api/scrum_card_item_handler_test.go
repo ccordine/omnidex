@@ -76,9 +76,9 @@ func TestScrumCardItemRejectsInexactProjectQueryBeforeRepositoryAccess(t *testin
 }
 
 func TestPostgresScrumChecklistMutationOwnsIdentityAndRevision(t *testing.T) {
-	pool := openIsolatedAPIMigrationPool(t)
+	pool := openIsolatedAPIDatabasePool(t)
 	repository := queue.New(pool)
-	if err := repository.EnsureSchema(t.Context(), loadAPITestMigrationBundle(t)); err != nil {
+	if err := repository.ResetDatabase(t.Context(), loadAPITestDatabaseSetup(t)); err != nil {
 		t.Fatal(err)
 	}
 	project, err := repository.CreateProject(t.Context(), fmt.Sprintf("scrum-items-%d", time.Now().UnixNano()), t.TempDir(), "")

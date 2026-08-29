@@ -8,7 +8,7 @@ type portableJobRenderer func(PortableJob) (string, bool, error)
 // model-visible raw context. Schedulers may choose a model or machine, but
 // cannot add workspace state, instructions, or a structured response channel.
 func RenderPortableJob(job PortableJob) (string, error) {
-	if err := ValidatePortableJobForRenderer(job, PortableRendererV8); err != nil {
+	if err := ValidatePortableJobForRenderer(job, PortableRendererV1); err != nil {
 		return "", err
 	}
 	renderers := [...]portableJobRenderer{

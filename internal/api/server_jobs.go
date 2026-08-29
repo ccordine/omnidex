@@ -386,22 +386,6 @@ func (s *Server) rejectMemoryCandidate(w http.ResponseWriter, r *http.Request, c
 	})
 }
 
-func (s *Server) handleAdminMigrateFresh(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	if err := s.repo.MigrateFresh(r.Context(), s.migrationBundle); err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-
-	writeJSON(w, http.StatusOK, map[string]any{
-		"status": "ok",
-	})
-}
-
 func parseInt(v string, fallback int) int {
 	if strings.TrimSpace(v) == "" {
 		return fallback

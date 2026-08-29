@@ -94,49 +94,6 @@ func TestParseServiceCommandArgsBuildAction(t *testing.T) {
 	}
 }
 
-func TestParseServiceCommandArgsMigrateFreshAction(t *testing.T) {
-	opts, showHelp, err := parseServiceCommandArgs([]string{"--service", "core", "migrate:fresh", "--yes"}, "")
-	if err != nil {
-		t.Fatalf("parseServiceCommandArgs returned error: %v", err)
-	}
-	if showHelp {
-		t.Fatalf("did not expect help flag")
-	}
-	if opts.Service != "core" || opts.Action != "migrate:fresh" || !opts.AssumeYes {
-		t.Fatalf("unexpected parse result: %+v", opts)
-	}
-}
-
-func TestParseServiceCommandArgsYesFlagInvalidWithoutMigrateFresh(t *testing.T) {
-	_, _, err := parseServiceCommandArgs([]string{"--service", "core", "up", "--yes"}, "")
-	if err == nil {
-		t.Fatalf("expected --yes with non-migrate action to fail parsing")
-	}
-}
-
-func TestServiceRunsCoreMigrateFresh(t *testing.T) {
-	run, err := serviceRunsCoreMigrateFresh(serviceCommandOptions{
-		Service: "core",
-		Action:  "migrate:fresh",
-	})
-	if err != nil {
-		t.Fatalf("serviceRunsCoreMigrateFresh returned error: %v", err)
-	}
-	if !run {
-		t.Fatalf("expected core migrate:fresh action to run via CLI migrate flow")
-	}
-}
-
-func TestServiceRunsCoreMigrateFreshRejectsNonCore(t *testing.T) {
-	_, err := serviceRunsCoreMigrateFresh(serviceCommandOptions{
-		Service: "postgres",
-		Action:  "migrate:fresh",
-	})
-	if err == nil {
-		t.Fatalf("expected non-core migrate:fresh action to fail")
-	}
-}
-
 func TestResolveComposeCommandPrefixRequiresDockerPlugin(t *testing.T) {
 	fakeBin := t.TempDir()
 	fakeDocker := `#!/bin/sh

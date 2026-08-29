@@ -79,7 +79,6 @@ services:
       # only this mounted default Unix socket; TCP Docker endpoints are rejected.
       DOCKER_HOST: unix:///var/run/docker.sock
       INFERENCE_CONTEXT_TOKENS: ${INFERENCE_CONTEXT_TOKENS:?INFERENCE_CONTEXT_TOKENS must be configured}
-      MIGRATE_ON_STARTUP: ${MIGRATE_ON_STARTUP:-true}
     expose:
       - "8090"
     healthcheck:

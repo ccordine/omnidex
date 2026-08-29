@@ -9,12 +9,10 @@ import (
 )
 
 const (
-	ApplicationProjectStackConstraintSchemaV1 = "omnidex.application-project-stack-constraint.v1"
 	ApplicationProjectStackConstraintSchemaV2 = "omnidex.application-project-stack-constraint.v2"
 	ApplicationProjectStackUnconstrained      = "UNCONSTRAINED"
 	ApplicationProjectStackUnsupported        = "UNSUPPORTED"
 	maxApplicationProjectStackCandidates      = 8
-	maxApplicationProjectStackSummaryBytesV1  = 1024
 	maxApplicationProjectStackSummaryBytesV2  = 2048
 )
 
@@ -33,19 +31,6 @@ type ApplicationProjectStackConstraintInput struct {
 	Candidates  []ApplicationProjectStackCandidate `json:"candidates"`
 }
 
-type applicationProjectStackConstraintInputV1 struct {
-	ProductContext       string                             `json:"product_context"`
-	AcceptedRequirements []string                           `json:"accepted_requirements"`
-	Candidates           []ApplicationProjectStackCandidate `json:"candidates"`
-}
-
-type applicationProjectStackConstraintVersionedInput struct {
-	UserRequest          string                             `json:"user_request,omitempty"`
-	ProductContext       string                             `json:"product_context,omitempty"`
-	AcceptedRequirements []string                           `json:"accepted_requirements,omitempty"`
-	Candidates           []ApplicationProjectStackCandidate `json:"candidates"`
-}
-
 type ApplicationProjectStackConstraintDecision struct {
 	Schema      string `json:"schema"`
 	CandidateID string `json:"candidate_id"`
@@ -55,34 +40,11 @@ func NewApplicationProjectStackConstraintJob(
 	input ApplicationProjectStackConstraintInput,
 ) (PortableJob, error) {
 	return newValidatedPortableJob(
-		WorkApplicationProjectStackConstraint, input, input.validateV2,
+		WorkApplicationProjectStackConstraint, input, input.validate,
 	)
 }
 
 func (input ApplicationProjectStackConstraintInput) validate() error {
-	return input.validateV2()
-}
-
-func (input applicationProjectStackConstraintInputV1) validate() error {
-	if err := validateApplicationProductQuote("project stack constraint", input.ProductContext); err != nil {
-		return err
-	}
-	if len(input.AcceptedRequirements) < 1 || len(input.AcceptedRequirements) > maxRequirementCount {
-		return fmt.Errorf("project stack constraint requires 1..%d accepted requirements", maxRequirementCount)
-	}
-	for index, requirement := range input.AcceptedRequirements {
-		if err := validateApplicationIntentText(
-			"project stack requirement", requirement, maxRequirementQuoteBytes,
-		); err != nil {
-			return fmt.Errorf("project stack constraint requirement %d: %w", index, err)
-		}
-	}
-	return validateApplicationProjectStackCandidates(
-		input.Candidates, maxApplicationProjectStackSummaryBytesV1,
-	)
-}
-
-func (input ApplicationProjectStackConstraintInput) validateV2() error {
 	if err := validateApplicationRequest("project stack constraint", input.UserRequest); err != nil {
 		return err
 	}
@@ -138,7 +100,7 @@ func validateApplicationProjectStackCandidates(
 func (decision ApplicationProjectStackConstraintDecision) ValidateFor(
 	input ApplicationProjectStackConstraintInput,
 ) error {
-	if err := input.validateV2(); err != nil {
+	if err := input.validate(); err != nil {
 		return err
 	}
 	if decision.Schema != ApplicationProjectStackConstraintSchemaV2 {
@@ -171,7 +133,7 @@ func validateApplicationProjectStackDecisionCandidates(
 func BuildApplicationProjectStackConstraintPrompt(
 	input ApplicationProjectStackConstraintInput,
 ) (string, error) {
-	if err := input.validateV2(); err != nil {
+	if err := input.validate(); err != nil {
 		return "", err
 	}
 	authority, err := json.Marshal(struct {
@@ -211,63 +173,20 @@ func DecodeApplicationProjectStackConstraintDecision(
 }
 
 // DecodeApplicationProjectStackConstraintDecisionForPortableRenderer validates
-// one raw replay result against the exact input schema owned by its frozen
-// renderer. It never reconstructs a historical prompt.
+// one raw replay result against the sole current portable renderer.
 func DecodeApplicationProjectStackConstraintDecisionForPortableRenderer(
 	payload []byte,
 	renderer string,
 	raw string,
 ) (ApplicationProjectStackConstraintDecision, error) {
-	switch renderer {
-	case PortableRendererV8, HistoricalPortableRendererV7:
-		var input ApplicationProjectStackConstraintInput
-		if err := decodePortablePayload(payload, &input); err != nil {
-			return ApplicationProjectStackConstraintDecision{}, err
-		}
-		return DecodeApplicationProjectStackConstraintDecision(input, raw)
-	case HistoricalPortableRendererV6, HistoricalPortableRendererV5:
-		var input applicationProjectStackConstraintInputV1
-		if err := decodePortablePayload(payload, &input); err != nil {
-			return ApplicationProjectStackConstraintDecision{}, err
-		}
-		if err := input.validate(); err != nil {
-			return ApplicationProjectStackConstraintDecision{}, err
-		}
-		leaf, err := decodeRawSemanticLeaf("project stack candidate", raw, 64, false)
-		if err != nil {
-			return ApplicationProjectStackConstraintDecision{}, err
-		}
-		if err := validateApplicationProjectStackDecisionCandidates(
-			leaf, input.Candidates,
-		); err != nil {
-			return ApplicationProjectStackConstraintDecision{}, err
-		}
-		return ApplicationProjectStackConstraintDecision{
-			Schema: ApplicationProjectStackConstraintSchemaV1, CandidateID: leaf,
-		}, nil
-	default:
+	if renderer != PortableRendererV1 {
 		return ApplicationProjectStackConstraintDecision{}, fmt.Errorf(
 			"portable renderer %q is not registered", renderer,
 		)
 	}
-}
-
-func validateApplicationProjectStackConstraintVersionedInput(
-	input applicationProjectStackConstraintVersionedInput,
-) error {
-	if input.UserRequest != "" {
-		if input.ProductContext != "" || input.AcceptedRequirements != nil {
-			return fmt.Errorf(
-				"current project stack constraint cannot contain historical authority",
-			)
-		}
-		return (ApplicationProjectStackConstraintInput{
-			UserRequest: input.UserRequest, Candidates: input.Candidates,
-		}).validateV2()
+	var input ApplicationProjectStackConstraintInput
+	if err := decodePortablePayload(payload, &input); err != nil {
+		return ApplicationProjectStackConstraintDecision{}, err
 	}
-	return (applicationProjectStackConstraintInputV1{
-		ProductContext:       input.ProductContext,
-		AcceptedRequirements: input.AcceptedRequirements,
-		Candidates:           input.Candidates,
-	}).validate()
+	return DecodeApplicationProjectStackConstraintDecision(input, raw)
 }

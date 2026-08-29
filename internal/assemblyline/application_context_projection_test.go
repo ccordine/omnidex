@@ -25,6 +25,7 @@ func TestApplicationIntentEnvelopesKeepFullAuthorityOutsideModelProjection(t *te
 		UserRequest:          request,
 		Context:              context,
 		AcceptedRequirements: []string{accepted},
+		ExcludedCandidates:   []string{},
 	}
 	coverageJob, err := NewApplicationRequirementCoverageJob(coverageInput)
 	if err != nil {

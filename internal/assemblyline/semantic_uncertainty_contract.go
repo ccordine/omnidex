@@ -44,9 +44,10 @@ func SemanticUncertaintyContractForWorkKind(
 
 // SemanticUncertaintyContractForPortableRenderer resolves the exact immutable
 // uncertainty contract admitted by one current or historical renderer. Four
-// application-intent contracts changed at renderer V7. V8 changes only
-// the requirement-generation contract to bind its code-established coverage
-// authority. Every other work kind retains its prior contract.
+// application-intent contracts changed at renderer V7. V8 changes generation
+// to bind its code-established coverage receipt and owns its
+// requirement-candidate refinement kinds. Every other work kind retains its
+// prior contract.
 func SemanticUncertaintyContractForPortableRenderer(
 	renderer string,
 	kind WorkKind,
@@ -94,8 +95,10 @@ func SemanticUncertaintyContractForPortableRenderer(
 
 func isRendererV8OnlyApplicationRequirementKind(kind WorkKind) bool {
 	return kind == WorkApplicationRequirementCandidateCardinality ||
+		kind == WorkApplicationRequirementCandidateKind ||
 		kind == WorkApplicationRequirementCandidateSplit ||
-		kind == WorkApplicationRequirementCandidateSplitCorrection
+		kind == WorkApplicationRequirementCandidateSplitCorrection ||
+		kind == WorkApplicationRequirementCandidateDuplicateReplacement
 }
 
 func registeredSemanticUncertaintyContract(

@@ -185,20 +185,6 @@ func (c *Client) RejectMemoryCandidate(ctx context.Context, id int64) (model.Mem
 	return resp.MemoryCandidate, nil
 }
 
-func (c *Client) MigrateFresh(ctx context.Context) error {
-	var resp struct {
-		Status string `json:"status"`
-		Error  string `json:"error"`
-	}
-	if err := c.doJSON(ctx, http.MethodPost, "/v1/admin/migrate-fresh", map[string]any{}, &resp); err != nil {
-		return err
-	}
-	if resp.Error != "" {
-		return errors.New(resp.Error)
-	}
-	return nil
-}
-
 func (c *Client) MetricsRaw(ctx context.Context, path string) (json.RawMessage, error) {
 	path = strings.TrimSpace(path)
 	if path == "" {

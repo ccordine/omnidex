@@ -20,42 +20,18 @@ sha256_file() {
   fi
 }
 
-verify_migration_manifest() {
-  local source_dir="$1"
-  local manifest="${source_dir}/SHA256SUMS"
-  local migration filename digest prefix number previous="" previous_number=0
-  local migrations=()
-  [[ -d "$source_dir" && ! -L "$source_dir" ]] || die "migration source must be a real directory"
-  while IFS= read -r -d '' migration; do
-    filename="${migration##*/}"
-    [[ -f "$migration" && ! -L "$migration" ]] || die "unregistered migration directory entry: $filename"
-    if [[ "$filename" == "SHA256SUMS" ]]; then
-      [[ "$migration" == "$manifest" ]] || die "migration manifest path is inconsistent"
-      continue
-    fi
-    [[ "$filename" =~ ^[0-9]{3}_[A-Za-z0-9_]+\.sql$ ]] || die "invalid migration filename: $filename"
-    migrations+=("$migration")
-  done < <(find "$source_dir" -mindepth 1 -maxdepth 1 -print0 | LC_ALL=C sort -z)
-  ((${#migrations[@]} > 0)) || die "release migration set is empty"
-  [[ -f "$manifest" && ! -L "$manifest" ]] || die "checked migration SHA256SUMS is required"
-  cmp -s "$manifest" <(
-    for migration in "${migrations[@]}"; do
-      filename="${migration##*/}"
-      [[ -z "$previous" || "$filename" > "$previous" ]] || die "migration filenames are not strictly ordered"
-      prefix="${filename:0:3}"
-      number=$((10#$prefix))
-      if ((number < 1)) ||
-        ((previous_number == 0 && number != 1)) ||
-        ((previous_number > 0 && number != previous_number && number != previous_number + 1)); then
-        die "migration manifest has a missing numeric migration prefix"
-      fi
-      digest="$(sha256_file "$migration")"
-      [[ "$digest" =~ ^[0-9a-f]{64}$ ]] || die "migration digest is invalid: $filename"
-      printf '%s  %s\n' "$digest" "$filename"
-      previous="$filename"
-      previous_number="$number"
-    done
-  ) || die "checked migration SHA256SUMS differs from the exact SQL set"
+copy_database_setup() {
+  local source_tree="$1" target_dir="$2"
+  local source_setup="${source_tree}/database/setup.sql"
+  local target_database="${target_dir}/database"
+
+  [[ -f "$source_setup" && ! -L "$source_setup" ]] ||
+    die "authoritative database setup must be a regular non-symlink file"
+  [[ -s "$source_setup" ]] || die "authoritative database setup is empty"
+  mkdir -p "$target_database"
+  [[ -d "$target_database" && ! -L "$target_database" ]] ||
+    die "release database directory must be a real directory"
+  cp -p -- "$source_setup" "${target_database}/setup.sql"
 }
 
 validate_release_inputs() {

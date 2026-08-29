@@ -405,6 +405,7 @@ func applicationRequirementGapRecord(
 		assemblyline.ApplicationRequirementCoverageInput{
 			UserRequest: request, Context: context,
 			AcceptedRequirements: []string{"Display the current count."},
+			ExcludedCandidates:   []string{},
 		},
 	)
 	if err != nil {

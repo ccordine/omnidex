@@ -62,6 +62,7 @@ func TestLiveQwenRawMultilinePromptBoundaryQualification(t *testing.T) {
 	coverageInput := assemblyline.ApplicationRequirementCoverageInput{
 		UserRequest: request, Context: applicationContext,
 		AcceptedRequirements: []string{},
+		ExcludedCandidates:   []string{},
 	}
 	coverage, err := assemblyline.DecodeApplicationRequirementCoverageLeaf(
 		coverageInput, assemblyline.ApplicationRequirementRemains,

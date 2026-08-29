@@ -43,6 +43,7 @@ func TestApplicationRequirementLeavesSeparateCoverageFromGeneration(t *testing.T
 	coverageInput := ApplicationRequirementCoverageInput{
 		UserRequest: authority.UserRequest, Context: authority.Context,
 		AcceptedRequirements: []string{},
+		ExcludedCandidates:   []string{},
 	}
 	coveragePrompt, err := BuildApplicationRequirementCoveragePrompt(coverageInput)
 	if err != nil {
@@ -107,9 +108,9 @@ func TestApplicationRequirementLeavesSeparateCoverageFromGeneration(t *testing.T
 	}
 	coverageInput.AcceptedRequirements = []string{requirement}
 	candidateInput = applicationRequirementCandidateFixture(t, coverageInput)
-	if _, err := DecodeApplicationRequirementLeaf(candidateInput, requirement); err == nil ||
-		!strings.Contains(err.Error(), "duplicates") {
-		t.Fatalf("duplicate requirement error=%v", err)
+	duplicate, err := DecodeApplicationRequirementLeaf(candidateInput, requirement)
+	if err != nil || duplicate != requirement {
+		t.Fatalf("current duplicate must remain available as grounded evidence: leaf=%q error=%v", duplicate, err)
 	}
 }
 
@@ -119,6 +120,7 @@ func TestApplicationRequirementCandidateRequiresExactBoundCoverageAuthority(t *t
 	coverageInput := ApplicationRequirementCoverageInput{
 		UserRequest: authority.UserRequest, Context: authority.Context,
 		AcceptedRequirements: []string{},
+		ExcludedCandidates:   []string{},
 	}
 	remains, err := DecodeApplicationRequirementCoverageLeaf(
 		coverageInput, ApplicationRequirementRemains,
@@ -143,6 +145,9 @@ func TestApplicationRequirementCandidateRequiresExactBoundCoverageAuthority(t *t
 		"accepted set": func(input *ApplicationRequirementCandidateInput) {
 			input.Authority.AcceptedRequirements = []string{"Display the current count."}
 		},
+		"excluded set": func(input *ApplicationRequirementCandidateInput) {
+			input.Authority.ExcludedCandidates = []string{"Use one source file."}
+		},
 		"unregistered relation": func(input *ApplicationRequirementCandidateInput) {
 			input.Coverage.Relation = "UNKNOWN"
 		},
@@ -153,6 +158,9 @@ func TestApplicationRequirementCandidateRequiresExactBoundCoverageAuthority(t *t
 			candidate := valid
 			candidate.Authority.AcceptedRequirements = append(
 				[]string(nil), valid.Authority.AcceptedRequirements...,
+			)
+			candidate.Authority.ExcludedCandidates = append(
+				[]string(nil), valid.Authority.ExcludedCandidates...,
 			)
 			mutate(&candidate)
 			if _, err := NewApplicationRequirementJob(candidate); err == nil {
@@ -174,12 +182,123 @@ func TestApplicationRequirementCandidateRequiresExactBoundCoverageAuthority(t *t
 	}
 }
 
+func TestApplicationRequirementExcludedCandidatesAreBoundAndGenerationProjected(t *testing.T) {
+	t.Parallel()
+	authority := applicationIntentLeafFixture(t)
+	input := ApplicationRequirementCoverageInput{
+		UserRequest:          authority.UserRequest,
+		Context:              authority.Context,
+		AcceptedRequirements: []string{"The current count is displayed."},
+		ExcludedCandidates:   []string{"Use one source file."},
+	}
+	coveragePrompt, err := BuildApplicationRequirementCoveragePrompt(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	candidateInput := applicationRequirementCandidateFixture(t, input)
+	generationPrompt, err := BuildApplicationRequirementPrompt(candidateInput)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, required := range []string{
+		"EXCLUDED NON-RUNTIME CANDIDATE 1:\nUse one source file.",
+		"excluded non-runtime candidate",
+	} {
+		if !strings.Contains(generationPrompt, required) {
+			t.Fatalf("generation prompt omitted excluded authority %q:\n%s", required, generationPrompt)
+		}
+	}
+	if strings.Contains(coveragePrompt, "EXCLUDED NON-RUNTIME") ||
+		strings.Contains(coveragePrompt, input.ExcludedCandidates[0]) {
+		t.Fatalf("coverage prompt received irrelevant excluded candidates:\n%s", coveragePrompt)
+	}
+
+	withoutExcluded := input
+	withoutExcluded.ExcludedCandidates = []string{}
+	withoutResult, err := DecodeApplicationRequirementCoverageLeaf(
+		withoutExcluded, ApplicationRequirementRemains,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if withoutResult.AuthoritySHA256 == candidateInput.Coverage.AuthoritySHA256 {
+		t.Fatal("excluded candidate set was not bound into the coverage receipt")
+	}
+
+	nilExcluded := input
+	nilExcluded.ExcludedCandidates = nil
+	if _, err := NewApplicationRequirementCoverageJob(nilExcluded); err == nil {
+		t.Fatal("nil excluded candidate authority was accepted")
+	}
+	overlap := input
+	overlap.ExcludedCandidates = []string{input.AcceptedRequirements[0]}
+	if _, err := NewApplicationRequirementCoverageJob(overlap); err == nil {
+		t.Fatal("candidate duplicated across accepted and excluded authority")
+	}
+}
+
+func TestApplicationRequirementDuplicateReplayIsCurrentEvidenceOnly(t *testing.T) {
+	t.Parallel()
+	authority := applicationIntentLeafFixture(t)
+	const duplicate = "The current count is displayed."
+	currentInput := ApplicationRequirementCoverageInput{
+		UserRequest:          authority.UserRequest,
+		Context:              authority.Context,
+		AcceptedRequirements: []string{duplicate},
+		ExcludedCandidates:   []string{},
+	}
+	currentJob, err := NewApplicationRequirementJob(
+		applicationRequirementCandidateFixture(t, currentInput),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	leaf, err := DecodeApplicationRequirementLeafForPortableRenderer(
+		currentJob.Payload, PortableRendererV8, duplicate,
+	)
+	if err != nil || leaf != duplicate {
+		t.Fatalf("V8 duplicate evidence=%q error=%v", leaf, err)
+	}
+
+	v7Input := applicationRequirementLeafInputV2{
+		UserRequest:          authority.UserRequest,
+		Context:              authority.Context,
+		ProductContext:       "A browser counter.",
+		AcceptedRequirements: []string{duplicate},
+	}
+	v7Job, err := newPortableJob(WorkApplicationRequirement, v7Input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := DecodeApplicationRequirementLeafForPortableRenderer(
+		v7Job.Payload, HistoricalPortableRendererV7, duplicate,
+	); err == nil || !strings.Contains(err.Error(), "duplicates") {
+		t.Fatalf("V7 duplicate replay behavior changed: %v", err)
+	}
+
+	v1Input := applicationRequirementLeafInputV1(v7Input)
+	v1Job, err := newPortableJob(WorkApplicationRequirement, v1Input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, renderer := range []string{
+		HistoricalPortableRendererV6, HistoricalPortableRendererV5,
+	} {
+		if _, err := DecodeApplicationRequirementLeafForPortableRenderer(
+			v1Job.Payload, renderer, duplicate,
+		); err == nil || !strings.Contains(err.Error(), "duplicates") {
+			t.Fatalf("%s duplicate replay behavior changed: %v", renderer, err)
+		}
+	}
+}
+
 func TestApplicationRequirementPayloadSchemasAreRendererExact(t *testing.T) {
 	t.Parallel()
 	authority := applicationIntentLeafFixture(t)
 	coverageInput := ApplicationRequirementCoverageInput{
 		UserRequest: authority.UserRequest, Context: authority.Context,
 		AcceptedRequirements: []string{},
+		ExcludedCandidates:   []string{},
 	}
 	currentCoverage, err := NewApplicationRequirementCoverageJob(coverageInput)
 	if err != nil {
@@ -244,6 +363,7 @@ func TestApplicationRequirementFixedPointExcludesGlobalConstraintsButKeepsRuntim
 	coverageInput := ApplicationRequirementCoverageInput{
 		UserRequest: request, Context: context,
 		AcceptedRequirements: []string{"Export reports as CSV."},
+		ExcludedCandidates:   []string{},
 	}
 	candidateInput := applicationRequirementCandidateFixture(t, coverageInput)
 	prompts := map[string]struct {
@@ -309,6 +429,7 @@ func TestApplicationRequirementPromptsDoNotLetUmbrellaContextHideDistinctRequire
 			coverageInput := ApplicationRequirementCoverageInput{
 				UserRequest: fixture.request, Context: context,
 				AcceptedRequirements: []string{fixture.accepted},
+				ExcludedCandidates:   []string{},
 			}
 			coverage, err := BuildApplicationRequirementCoveragePrompt(coverageInput)
 			if err != nil {

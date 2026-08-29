@@ -231,6 +231,22 @@ func replayExactStationArtifactForRenderer(
 			return artifact, fmt.Errorf("decode replay application requirement: %w", err)
 		}
 		return artifact, nil
+	case assemblyline.WorkApplicationRequirementCandidateKind:
+		artifact.Kind = string(job.Kind)
+		if _, err := assemblyline.DecodeApplicationRequirementCandidateKindResultForPortableRenderer(
+			job.Payload, renderer, raw,
+		); err != nil {
+			return artifact, fmt.Errorf("decode replay application requirement candidate kind: %w", err)
+		}
+		return artifact, nil
+	case assemblyline.WorkApplicationRequirementCandidateDuplicateReplacement:
+		artifact.Kind = string(job.Kind)
+		if _, err := assemblyline.DecodeApplicationRequirementCandidateDuplicateReplacementLeafForPortableRenderer(
+			job.Payload, renderer, raw,
+		); err != nil {
+			return artifact, fmt.Errorf("decode replay application requirement duplicate replacement: %w", err)
+		}
+		return artifact, nil
 	case assemblyline.WorkApplicationProjectStackConstraint:
 		artifact.Kind = string(job.Kind)
 		if _, err := assemblyline.DecodeApplicationProjectStackConstraintDecisionForPortableRenderer(

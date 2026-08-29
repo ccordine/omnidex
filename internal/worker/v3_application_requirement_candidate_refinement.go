@@ -10,7 +10,7 @@ func refineDirectCodingApplicationRequirementCandidate(
 	runtime typedWorkerRuntime,
 	intentModel string,
 	candidate string,
-	accepted []string,
+	retainedAuthority assemblyline.ApplicationRequirementCoverageInput,
 	identities []assemblyline.ArtifactIdentity,
 ) (string, error) {
 	seen := map[string]struct{}{candidate: {}}
@@ -41,13 +41,6 @@ func refineDirectCodingApplicationRequirementCandidate(
 			return "", err
 		}
 		if cardinality.Relation == assemblyline.ApplicationRequirementOneRuntimeOutcome {
-			for _, retained := range accepted {
-				if candidate == retained {
-					return "", fmt.Errorf(
-						"application requirement candidate duplicates an accepted statement after bounded splitting",
-					)
-				}
-			}
 			return candidate, nil
 		}
 		if splitCount == assemblyline.MaxApplicationRequirementCandidateSplitDepth {
@@ -114,6 +107,11 @@ func refineDirectCodingApplicationRequirementCandidate(
 				return "", err
 			}
 			correctionUsed = true
+		}
+		if _, duplicate := directCodingApplicationRequirementDuplicate(
+			retainedAuthority, split,
+		); duplicate {
+			return split, nil
 		}
 		if _, repeated := seen[split]; repeated {
 			return "", fmt.Errorf("application requirement candidate split entered a repeated cycle")

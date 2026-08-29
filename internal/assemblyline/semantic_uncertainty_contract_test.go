@@ -92,6 +92,10 @@ func TestApplicationIntentSemanticUncertaintyVersionsAreExact(t *testing.T) {
 				t.Fatalf("current %s contract is not source-task-local: %+v", kind, current)
 			}
 			if kind == WorkApplicationRequirement &&
+				!strings.Contains(current.RequiredInformation, "excluded non-runtime candidates") {
+				t.Fatalf("current %s contract lacks excluded candidate authority: %+v", kind, current)
+			}
+			if kind == WorkApplicationRequirement &&
 				!strings.Contains(current.RequiredInformation, ApplicationRequirementRemains) {
 				t.Fatalf("current requirement contract lacks bound coverage authority: %+v", current)
 			}
@@ -113,6 +117,12 @@ func TestApplicationIntentSemanticUncertaintyVersionsAreExact(t *testing.T) {
 					historical.RequiredInformation, ApplicationRequirementRemains,
 				) {
 					t.Fatalf("historical %s requirement contract was reinterpreted: %+v", renderer, historical)
+				}
+			} else if kind == WorkApplicationRequirementCoverage {
+				if historical != current || strings.Contains(
+					historical.RequiredInformation, "excluded non-runtime candidates",
+				) {
+					t.Fatalf("historical %s coverage contract was reinterpreted: %+v", renderer, historical)
 				}
 			} else if historical != current {
 				t.Fatalf("historical %s/%s contract drifted from V2: %+v", renderer, kind, historical)
@@ -140,7 +150,7 @@ func TestApplicationIntentSemanticUncertaintyVersionsAreExact(t *testing.T) {
 				t.Fatalf("historical %s/%s contract lost product context: %+v", renderer, kind, historical)
 			}
 			if historical == current {
-				t.Fatalf("historical %s contract equals current V2 contract", kind)
+				t.Fatalf("historical %s contract equals current contract", kind)
 			}
 			if _, err := historical.Digest(); err != nil {
 				t.Fatalf("digest historical %s/%s contract: %v", renderer, kind, err)
@@ -164,8 +174,10 @@ func TestRendererV8OnlyRequirementRefinementContractsRejectHistoricalRenderers(
 	t.Parallel()
 	for _, kind := range []WorkKind{
 		WorkApplicationRequirementCandidateCardinality,
+		WorkApplicationRequirementCandidateKind,
 		WorkApplicationRequirementCandidateSplit,
 		WorkApplicationRequirementCandidateSplitCorrection,
+		WorkApplicationRequirementCandidateDuplicateReplacement,
 	} {
 		current, err := SemanticUncertaintyContractForPortableRenderer(
 			PortableRendererV8, kind,
@@ -285,7 +297,7 @@ func TestSemanticUncertaintyRegistryDigestIsStable(t *testing.T) {
 		_, _ = hash.Write([]byte{0})
 	}
 	got := hex.EncodeToString(hash.Sum(nil))
-	const want = "cc703c7c88c1d39945cc3a3a539bc0661e76f01cf1dd9b11e9d615dbaeaf1a45"
+	const want = "28da6569863dc4bd602079199310cc2d97322e085451548c71019acaa178fa72"
 	if got != want {
 		t.Fatalf("semantic uncertainty registry digest changed: got %s want %s", got, want)
 	}

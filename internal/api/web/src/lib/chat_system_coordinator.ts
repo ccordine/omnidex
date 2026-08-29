@@ -1,6 +1,6 @@
 import { readJSON } from "./api";
 import { requireServerComponentBundle } from "./chat_component_api";
-import { errorMessage, toastError, toastFromError, toastOk } from "./feedback";
+import { errorMessage } from "./feedback";
 
 export interface ChatSystemHost {
   queueEnabled(): boolean;
@@ -94,23 +94,6 @@ export class ChatSystemCoordinator {
       this.setText(target, `Metrics unavailable: ${message}`);
       this.host.addEvent("metrics_failed", { error: message });
       if (options.strict) throw error;
-    }
-  }
-
-  async migrateFresh(): Promise<void> {
-    if (!this.host.queueEnabled()) {
-      toastError("Migrate fresh requires repository mode");
-      this.host.addEvent("admin_unavailable", { reason: "repository disabled" });
-      return;
-    }
-    if (!window.confirm("This will reset repository data. Continue?")) return;
-    try {
-      await readJSON(await fetch("/v1/admin/migrate-fresh", { method: "POST" }));
-      this.host.addEvent("admin_migrate_fresh", { status: "ok" });
-      toastOk("Database migrated fresh");
-      await this.loadStatus();
-    } catch (error) {
-      toastFromError(error);
     }
   }
 

@@ -215,8 +215,6 @@ export default class ChatController extends ChatRoleplayTurnController {
 
   async loadMetrics(options: { strict?: boolean } = {}): Promise<void> { await this.system.loadMetrics(options); }
 
-  async migrateFresh(): Promise<void> { await this.system.migrateFresh(); }
-
   async newThread(): Promise<void> {
     if (this.busy) return;
     if (!this.panels.isCurrent("chat") || !this.hasMessagesTarget) {

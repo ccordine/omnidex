@@ -23,7 +23,6 @@ var integerEnvironmentKeys = []string{
 var booleanEnvironmentKeys = []string{
 	"WRAPPER_ONLY",
 	"UI_REDIS_REQUIRED",
-	"MIGRATE_ON_STARTUP",
 }
 
 var durationEnvironmentKeys = []string{
@@ -46,6 +45,7 @@ func buildRemovedEnvironmentKeys() []string {
 		"WORKSPACE_MAX_FILES",
 		"WORKSPACE_CONTEXT_BUDGET",
 		"MIGRATIONS_DIR",
+		"MIGRATE_ON_STARTUP",
 		"OMNIDEX_V3_ENABLED",
 		"STOP_ON_SUFFICIENT_CONTEXT",
 		"SUFFICIENT_CONTEXT_CHARS",

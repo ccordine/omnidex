@@ -13,7 +13,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-func openIsolatedAPIMigrationPool(t *testing.T) *pgxpool.Pool {
+func openIsolatedAPIDatabasePool(t *testing.T) *pgxpool.Pool {
 	t.Helper()
 	databaseURL := strings.TrimSpace(os.Getenv("OMNI_TEST_DATABASE_URL"))
 	if databaseURL == "" {
@@ -48,12 +48,12 @@ func openIsolatedAPIMigrationPool(t *testing.T) *pgxpool.Pool {
 		if _, err := admin.Exec(cleanupCtx,
 			"DROP SCHEMA IF EXISTS "+pgx.Identifier{authoritySchema}.Sanitize()+" CASCADE",
 		); err != nil {
-			t.Errorf("drop API migration authority schema: %v", err)
+			t.Errorf("drop API database authority schema: %v", err)
 		}
 		if _, err := admin.Exec(cleanupCtx,
 			"DROP SCHEMA IF EXISTS "+pgx.Identifier{schema}.Sanitize()+" CASCADE",
 		); err != nil {
-			t.Errorf("drop API migration test schema: %v", err)
+			t.Errorf("drop API database test schema: %v", err)
 		}
 		admin.Close()
 	})

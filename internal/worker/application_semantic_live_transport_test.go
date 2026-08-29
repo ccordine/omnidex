@@ -203,16 +203,36 @@ func assertLiveCodingQualificationCalls(
 	}
 	featureCount := len(frozen.Tasks)
 	generationCount := counts[assemblyline.WorkApplicationRequirement]
+	kindCount := counts[assemblyline.WorkApplicationRequirementCandidateKind]
 	cardinalityCount := counts[assemblyline.WorkApplicationRequirementCandidateCardinality]
 	splitCount := counts[assemblyline.WorkApplicationRequirementCandidateSplit]
 	correctionCount := counts[assemblyline.WorkApplicationRequirementCandidateSplitCorrection]
+	duplicateReplacementCount := counts[assemblyline.WorkApplicationRequirementCandidateDuplicateReplacement]
+	nonRuntimeCount := 0
+	taskLocalCount := 0
+	for _, call := range calls {
+		if call.kind != assemblyline.WorkApplicationRequirementCandidateKind {
+			continue
+		}
+		switch call.candidate {
+		case assemblyline.ApplicationRequirementCandidateNonRuntime:
+			nonRuntimeCount++
+		case assemblyline.ApplicationRequirementCandidateTaskLocal:
+			taskLocalCount++
+		default:
+			t.Fatalf("live qualification candidate-kind result=%q", call.candidate)
+		}
+	}
 	if counts[assemblyline.WorkApplicationContextNeedCoverage] != 0 ||
 		counts[assemblyline.WorkApplicationProductContext] != 1 ||
-		generationCount != featureCount ||
-		counts[assemblyline.WorkApplicationRequirementCoverage] != featureCount+1 ||
-		cardinalityCount != generationCount+splitCount ||
-		splitCount > generationCount*assemblyline.MaxApplicationRequirementCandidateSplitDepth ||
-		correctionCount > splitCount {
+		generationCount != featureCount+nonRuntimeCount ||
+		counts[assemblyline.WorkApplicationRequirementCoverage] !=
+			generationCount-nonRuntimeCount+1 ||
+		kindCount != nonRuntimeCount+taskLocalCount ||
+		kindCount < generationCount || kindCount > generationCount+duplicateReplacementCount ||
+		cardinalityCount != taskLocalCount+splitCount ||
+		splitCount > taskLocalCount*assemblyline.MaxApplicationRequirementCandidateSplitDepth ||
+		correctionCount > splitCount || duplicateReplacementCount > generationCount {
 		t.Fatalf("live qualification raw-leaf call shape differs from code-owned fixed points: %v", counts)
 	}
 }

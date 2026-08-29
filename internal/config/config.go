@@ -58,7 +58,6 @@ type Config struct {
 	UIRedisRequired           bool
 	UISessionTTL              time.Duration
 	InferenceContextTokens    int
-	MigrateOnStartup          bool
 }
 
 // Load parses the environment and validates provider-independent runtime
@@ -122,7 +121,6 @@ func Load() (Config, error) {
 		UIRedisRequired:           getenvBool("UI_REDIS_REQUIRED", false),
 		UISessionTTL:              getenvDuration("UI_SESSION_TTL", 30*time.Minute),
 		InferenceContextTokens:    getenvInt("INFERENCE_CONTEXT_TOKENS", llm.DefaultInferenceContextTokens),
-		MigrateOnStartup:          getenvBool("MIGRATE_ON_STARTUP", true),
 	}
 
 	if err := validateConfigStructure(cfg); err != nil {

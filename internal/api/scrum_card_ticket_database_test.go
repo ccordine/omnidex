@@ -15,9 +15,9 @@ import (
 )
 
 func TestPostgresScrumCardTicketActionsAreDeterministicAndRevisionBound(t *testing.T) {
-	pool := openIsolatedAPIMigrationPool(t)
+	pool := openIsolatedAPIDatabasePool(t)
 	repository := queue.New(pool)
-	if err := repository.EnsureSchema(t.Context(), loadAPITestMigrationBundle(t)); err != nil {
+	if err := repository.ResetDatabase(t.Context(), loadAPITestDatabaseSetup(t)); err != nil {
 		t.Fatal(err)
 	}
 	project, err := repository.CreateProject(

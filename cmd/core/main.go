@@ -43,16 +43,6 @@ func main() {
 			}
 			fmt.Println(commit)
 			return
-		case len(os.Args) == 2 && os.Args[1] == "database:preserve-legacy-public":
-			if err := runLegacyPublicPreservationCommand(); err != nil {
-				log.Fatalf("legacy public preservation error: %v", err)
-			}
-			return
-		case len(os.Args) == 2 && os.Args[1] == "database:migrate-sealed":
-			if err := runSealedDatabaseMigrationCommand(); err != nil {
-				log.Fatalf("sealed database migration error: %v", err)
-			}
-			return
 		default:
 			log.Fatalf("unsupported core command")
 		}
@@ -71,11 +61,10 @@ func main() {
 
 	var repo *queue.Repository
 	var roleplaySimulation *roleplay.Store
-	var migrationBundle queue.MigrationBundle
 	if !cfg.WrapperOnly {
-		migrationBundle, err = loadCoreMigrationBundle()
+		databaseSetup, err := loadCoreDatabaseSetup()
 		if err != nil {
-			log.Fatalf("migration authority error: %v", err)
+			log.Fatalf("database setup error: %v", err)
 		}
 		pool, err := db.ConnectRuntime(ctx, cfg.DatabaseURL, cfg.DatabaseSchema)
 		if err != nil {
@@ -84,17 +73,15 @@ func main() {
 		defer pool.Close()
 
 		repo = queue.New(pool)
-		roleplaySimulation, err = roleplay.NewStore(pool)
-		if err != nil {
-			log.Fatalf("roleplay simulation store error: %v", err)
-		}
-		if cfg.MigrateOnStartup {
-			if err := repo.EnsureSchema(ctx, migrationBundle); err != nil {
-				log.Fatalf("schema migration error: %v", err)
-			}
+		if err := repo.ResetDatabase(ctx, databaseSetup); err != nil {
+			log.Fatalf("database reset error: %v", err)
 		}
 		if err := repo.ValidateRuntimeAuthority(ctx); err != nil {
 			log.Fatalf("runtime authority error: %v", err)
+		}
+		roleplaySimulation, err = roleplay.NewStore(pool)
+		if err != nil {
+			log.Fatalf("roleplay simulation store error: %v", err)
 		}
 		secretResolver := secrets.NewResolver(repo)
 		secrets.SetGlobal(secretResolver)
@@ -116,7 +103,6 @@ func main() {
 	}
 	httpServer := api.NewServerWithOptions(repo, llmTransports.Embeddings, api.ServerOptions{
 		LifecycleContext:     ctx,
-		MigrationBundle:      migrationBundle,
 		ProviderConfig:       cfg,
 		RequestTimeout:       cfg.RequestTimeout,
 		WebSearchProviders:   cfg.WebSearchProviders,

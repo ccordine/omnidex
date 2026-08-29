@@ -49,12 +49,12 @@ func main() {
 	timeout := getenvDuration("CLI_TIMEOUT", 30*time.Second)
 	apiClient := client.New(baseURL, timeout)
 
-	if tryRunServiceShortcut(os.Args[1:], baseURL) {
+	if tryRunServiceShortcut(os.Args[1:]) {
 		return
 	}
 
 	if strings.HasPrefix(cmd, "service:") {
-		runServiceWithPreset(strings.TrimPrefix(cmd, "service:"), os.Args[2:], baseURL)
+		runServiceWithPreset(strings.TrimPrefix(cmd, "service:"), os.Args[2:])
 		return
 	}
 
@@ -103,8 +103,6 @@ func main() {
 		runStash(os.Args[2:])
 	case "uninstall":
 		runUninstall(os.Args[2:])
-	case "migrate:fresh":
-		runMigrateFresh(apiClient, os.Args[2:], baseURL)
 	case "status":
 		runStatus(apiClient, os.Args[2:], baseURL)
 	case "metrics":
@@ -120,7 +118,7 @@ func main() {
 	case "web:status":
 		runWebStatus(os.Args[2:])
 	case "service":
-		runService(os.Args[2:], baseURL)
+		runService(os.Args[2:])
 	case "config":
 		runConfig(os.Args[2:])
 	case "host":

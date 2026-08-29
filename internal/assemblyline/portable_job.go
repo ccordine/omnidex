@@ -56,12 +56,9 @@ func (job PortableJob) Validate() error {
 	return validatePortableJobPayload(job.Kind, job.Payload)
 }
 
-// ValidatePortableJobForRenderer binds payload shape to the renderer that
-// owns it. Current code cannot reinterpret a frozen historical input through
-// a newer prompt contract, and historical replay cannot accept a current-only
-// input as if those bytes had existed under an older renderer.
+// ValidatePortableJobForRenderer binds a payload to the sole current renderer.
 func ValidatePortableJobForRenderer(job PortableJob, renderer string) error {
-	if !IsReplayablePortableRenderer(renderer) {
+	if renderer != PortableRendererV1 {
 		return fmt.Errorf("portable renderer %q is not registered", renderer)
 	}
 	if err := job.validateIdentity(); err != nil {

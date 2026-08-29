@@ -8,6 +8,37 @@ import (
 	"testing"
 )
 
+func TestReleaseArchiveCopiesOnlyAuthoritativeDatabaseSetup(t *testing.T) {
+	repository := releaseRepositoryRoot(t)
+	script := filepath.Join(repository, "scripts", "build-release.sh")
+	targetSource := filepath.Join(t.TempDir(), "source")
+	targetDir := filepath.Join(t.TempDir(), "omnidex-v1.2.3-linux-amd64")
+	if err := os.MkdirAll(filepath.Join(targetSource, "database"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeReleaseTestFile(t, filepath.Join(targetSource, "database", "setup.sql"), "SELECT 'current schema';\n")
+	writeReleaseTestFile(t, filepath.Join(targetSource, "database", "not-packaged.sql"), "SELECT 'not authoritative';\n")
+
+	command := exec.Command(
+		"bash", "-c", `source "$1"; copy_database_setup "$2" "$3"`,
+		"release-database-layout", script, targetSource, targetDir,
+	)
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("copy database setup: %v: %s", err, output)
+	}
+	raw, err := os.ReadFile(filepath.Join(targetDir, "database", "setup.sql"))
+	if err != nil || string(raw) != "SELECT 'current schema';\n" {
+		t.Fatalf("packaged setup error=%v content=%q", err, raw)
+	}
+	entries, err := os.ReadDir(filepath.Join(targetDir, "database"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].Name() != "setup.sql" {
+		t.Fatalf("packaged database entries=%v, want only setup.sql", entries)
+	}
+}
+
 func TestNativeReleaseArchiveContainsOneRunnableManagedRuntimeLayout(t *testing.T) {
 	repository := releaseRepositoryRoot(t)
 	script := filepath.Join(repository, "scripts", "build-release.sh")

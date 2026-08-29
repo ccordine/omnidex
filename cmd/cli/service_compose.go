@@ -32,26 +32,9 @@ func normalizeServiceAction(value string) (string, bool) {
 		return "stop", true
 	case "build":
 		return "build", true
-	case "migrate:fresh", "migrate-fresh":
-		return "migrate:fresh", true
 	default:
 		return "", false
 	}
-}
-
-func serviceRunsCoreMigrateFresh(opts serviceCommandOptions) (bool, error) {
-	if strings.TrimSpace(opts.Action) != "migrate:fresh" {
-		return false, nil
-	}
-
-	serviceName := normalizeServiceName(opts.Service)
-	if serviceTargetsAll(serviceName) {
-		return false, errors.New("migrate:fresh requires --service core")
-	}
-	if serviceName != "core" {
-		return false, fmt.Errorf("migrate:fresh is only supported for service core (got %q)", serviceName)
-	}
-	return true, nil
 }
 
 func resolveComposeCommandPrefix(

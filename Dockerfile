@@ -46,7 +46,7 @@ USER ${APP_UID}:${APP_GID}
 WORKDIR /app
 
 COPY --from=build /out/agent-core /usr/local/bin/agent-core
-COPY --from=build /src/migrations /usr/local/migrations
+COPY --from=build /src/database/setup.sql /usr/local/share/omnidex/database/setup.sql
 COPY --from=build /usr/local/go /usr/local/go
 
 ENV LISTEN_ADDR=:8090

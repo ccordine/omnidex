@@ -14,10 +14,10 @@ import (
 )
 
 func TestStructuredRoleplayHTTP202ReceiptPreservesClientParts(t *testing.T) {
-	pool := openIsolatedAPIMigrationPool(t)
+	pool := openIsolatedAPIDatabasePool(t)
 	repository := queue.New(pool)
-	if err := repository.EnsureSchema(
-		t.Context(), loadAPITestMigrationBundleThroughPrefix(t, "153"),
+	if err := repository.ResetDatabase(
+		t.Context(), loadAPITestDatabaseSetup(t),
 	); err != nil {
 		t.Fatal(err)
 	}

@@ -51,7 +51,8 @@ func TestDirectCodingRequirementCandidateRefinementSplitsBeforeRetention(t *test
 		},
 	}
 	got, err := refineDirectCodingApplicationRequirementCandidate(
-		runtime, "intent-model", compound, nil, nil,
+		runtime, "intent-model", compound,
+		assemblyline.ApplicationRequirementCoverageInput{}, nil,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -90,7 +91,8 @@ func TestDirectCodingRequirementCandidateRefinementFailsAtSplitBound(t *testing.
 		},
 	}
 	_, err := refineDirectCodingApplicationRequirementCandidate(
-		runtime, "intent-model", "Retain a first outcome and a second outcome.", nil, nil,
+		runtime, "intent-model", "Retain a first outcome and a second outcome.",
+		assemblyline.ApplicationRequirementCoverageInput{}, nil,
 	)
 	if err == nil || !strings.Contains(err.Error(), "split bound") {
 		t.Fatalf("split-bound error=%v", err)
@@ -141,7 +143,8 @@ func TestDirectCodingRequirementCandidateRefinementCorrectsOneExactUnchangedSpli
 		},
 	}
 	got, err := refineDirectCodingApplicationRequirementCandidate(
-		runtime, "intent-model", compound, nil, nil,
+		runtime, "intent-model", compound,
+		assemblyline.ApplicationRequirementCoverageInput{}, nil,
 	)
 	if err != nil {
 		t.Fatal(err)

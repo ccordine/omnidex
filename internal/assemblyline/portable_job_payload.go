@@ -12,12 +12,20 @@ func validatePortableJobPayload(kind WorkKind, payload json.RawMessage) error {
 			payload, ApplicationProductContextInput.validate,
 		)
 	case WorkApplicationRequirementCoverage:
-		return validateApplicationRequirementCoverageVersionedPayload(payload)
+		return decodeAndValidatePortablePayload[ApplicationRequirementCoverageInput](
+			payload, ApplicationRequirementCoverageInput.validate,
+		)
 	case WorkApplicationRequirement:
-		return validateApplicationRequirementCandidateVersionedPayload(payload)
+		return decodeAndValidatePortablePayload[ApplicationRequirementCandidateInput](
+			payload, ApplicationRequirementCandidateInput.validate,
+		)
 	case WorkApplicationRequirementCandidateCardinality:
 		return decodeAndValidatePortablePayload[ApplicationRequirementCandidateCardinalityInput](
 			payload, ApplicationRequirementCandidateCardinalityInput.validate,
+		)
+	case WorkApplicationRequirementCandidateKind:
+		return decodeAndValidatePortablePayload[ApplicationRequirementCandidateKindInput](
+			payload, ApplicationRequirementCandidateKindInput.validate,
 		)
 	case WorkApplicationRequirementCandidateSplit:
 		return decodeAndValidatePortablePayload[ApplicationRequirementCandidateSplitInput](
@@ -27,13 +35,17 @@ func validatePortableJobPayload(kind WorkKind, payload json.RawMessage) error {
 		return decodeAndValidatePortablePayload[ApplicationRequirementCandidateSplitCorrectionInput](
 			payload, ApplicationRequirementCandidateSplitCorrectionInput.validate,
 		)
+	case WorkApplicationRequirementCandidateDuplicateReplacement:
+		return decodeAndValidatePortablePayload[ApplicationRequirementCandidateDuplicateReplacementInput](
+			payload, ApplicationRequirementCandidateDuplicateReplacementInput.validate,
+		)
 	case WorkApplicationContextNeedCoverage, WorkApplicationContextNeedQuestion:
 		return decodeAndValidatePortablePayload[ApplicationContextNeedLeafInput](
 			payload, ApplicationContextNeedLeafInput.validate,
 		)
 	case WorkApplicationProjectStackConstraint:
-		return decodeAndValidatePortablePayload[applicationProjectStackConstraintVersionedInput](
-			payload, validateApplicationProjectStackConstraintVersionedInput,
+		return decodeAndValidatePortablePayload[ApplicationProjectStackConstraintInput](
+			payload, ApplicationProjectStackConstraintInput.validate,
 		)
 	case WorkApplicationServiceContinuedAvailability:
 		return decodeAndValidatePortablePayload[ApplicationServiceContinuedAvailabilityInput](
@@ -277,118 +289,6 @@ func validatePortableJobPayload(kind WorkKind, payload json.RawMessage) error {
 		return decodeAndValidatePortablePayload[FragmentCorrectionInput](payload, FragmentCorrectionInput.validate)
 	default:
 		return fmt.Errorf("portable job kind %q has no payload validator", kind)
-	}
-}
-
-func validatePortableJobPayloadForRenderer(
-	kind WorkKind,
-	payload json.RawMessage,
-	renderer string,
-) error {
-	switch kind {
-	case WorkApplicationRequirementCoverage:
-		switch renderer {
-		case PortableRendererV8:
-			return decodeAndValidatePortablePayload[ApplicationRequirementCoverageInput](
-				payload, ApplicationRequirementCoverageInput.validate,
-			)
-		case HistoricalPortableRendererV7:
-			return decodeAndValidatePortablePayload[applicationRequirementLeafInputV2](
-				payload, applicationRequirementLeafInputV2.validate,
-			)
-		case HistoricalPortableRendererV6, HistoricalPortableRendererV5:
-			return decodeAndValidatePortablePayload[applicationRequirementLeafInputV1](
-				payload, applicationRequirementLeafInputV1.validate,
-			)
-		default:
-			return fmt.Errorf("portable renderer %q is not registered", renderer)
-		}
-	case WorkApplicationRequirement:
-		switch renderer {
-		case PortableRendererV8:
-			return decodeAndValidatePortablePayload[ApplicationRequirementCandidateInput](
-				payload, ApplicationRequirementCandidateInput.validate,
-			)
-		case HistoricalPortableRendererV7:
-			return decodeAndValidatePortablePayload[applicationRequirementLeafInputV2](
-				payload, applicationRequirementLeafInputV2.validate,
-			)
-		case HistoricalPortableRendererV6, HistoricalPortableRendererV5:
-			return decodeAndValidatePortablePayload[applicationRequirementLeafInputV1](
-				payload, applicationRequirementLeafInputV1.validate,
-			)
-		default:
-			return fmt.Errorf("portable renderer %q is not registered", renderer)
-		}
-	case WorkApplicationRequirementCandidateCardinality,
-		WorkApplicationRequirementCandidateSplit,
-		WorkApplicationRequirementCandidateSplitCorrection:
-		if renderer != PortableRendererV8 {
-			return fmt.Errorf(
-				"portable work kind %q requires renderer %q",
-				kind, PortableRendererV8,
-			)
-		}
-		return validatePortableJobPayload(kind, payload)
-	case WorkApplicationProjectStackConstraint:
-		switch renderer {
-		case PortableRendererV8, HistoricalPortableRendererV7:
-			return decodeAndValidatePortablePayload[ApplicationProjectStackConstraintInput](
-				payload, ApplicationProjectStackConstraintInput.validateV2,
-			)
-		case HistoricalPortableRendererV6, HistoricalPortableRendererV5:
-			return decodeAndValidatePortablePayload[applicationProjectStackConstraintInputV1](
-				payload, applicationProjectStackConstraintInputV1.validate,
-			)
-		default:
-			return fmt.Errorf("portable renderer %q is not registered", renderer)
-		}
-	default:
-		return validatePortableJobPayload(kind, payload)
-	}
-}
-
-func validateApplicationRequirementCoverageVersionedPayload(payload json.RawMessage) error {
-	currentErr := decodeAndValidatePortablePayload[ApplicationRequirementCoverageInput](
-		payload, ApplicationRequirementCoverageInput.validate,
-	)
-	historicalErr := decodeAndValidatePortablePayload[applicationRequirementLeafInputV1](
-		payload, applicationRequirementLeafInputV1.validate,
-	)
-	return validateExactPortablePayloadUnion(
-		"application requirement coverage", currentErr, historicalErr,
-	)
-}
-
-func validateApplicationRequirementCandidateVersionedPayload(payload json.RawMessage) error {
-	currentErr := decodeAndValidatePortablePayload[ApplicationRequirementCandidateInput](
-		payload, ApplicationRequirementCandidateInput.validate,
-	)
-	historicalErr := decodeAndValidatePortablePayload[applicationRequirementLeafInputV1](
-		payload, applicationRequirementLeafInputV1.validate,
-	)
-	return validateExactPortablePayloadUnion(
-		"application requirement candidate", currentErr, historicalErr,
-	)
-}
-
-func validateExactPortablePayloadUnion(
-	label string,
-	firstErr error,
-	secondErr error,
-) error {
-	switch {
-	case firstErr == nil && secondErr != nil:
-		return nil
-	case firstErr != nil && secondErr == nil:
-		return nil
-	case firstErr == nil && secondErr == nil:
-		return fmt.Errorf("portable %s payload matches multiple versioned schemas", label)
-	default:
-		return fmt.Errorf(
-			"portable %s payload matches no versioned schema: current: %v; historical: %v",
-			label, firstErr, secondErr,
-		)
 	}
 }
 

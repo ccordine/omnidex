@@ -16,7 +16,8 @@ func TestExpectedPortableStationMaxOutputTokensIncludesExactStopReserve(t *testi
 		t.Fatal(err)
 	}
 	coverageInput := assemblyline.ApplicationRequirementCoverageInput{
-		UserRequest: request, Context: context, AcceptedRequirements: []string{},
+		UserRequest: request, Context: context,
+		AcceptedRequirements: []string{}, ExcludedCandidates: []string{},
 	}
 	coverage, err := assemblyline.DecodeApplicationRequirementCoverageLeaf(
 		coverageInput, assemblyline.ApplicationRequirementRemains,

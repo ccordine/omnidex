@@ -96,7 +96,6 @@ func TestLiveCodingRequirementsAndWorkloadQualification(t *testing.T) {
 				t.Fatal(err)
 			}
 			calls := transport.callsFrom(start)
-			logLiveCodingQualification(t, testCase.name, modelName, "pre-freeze", calls)
 			assertLiveCodingRequirementResolution(t, testCase, resolution)
 			compiledRequirements := make([]assemblyline.Requirement, len(resolution.Requirements))
 			for index, requirement := range resolution.Requirements {
@@ -197,6 +196,9 @@ func validateLiveCodingQualificationProjection(
 			strings.Count(prompt, testCase.request) != 1 {
 			return fmt.Errorf("requirement leaf did not retain its intact request authority")
 		}
+		if input.AcceptedRequirements == nil || input.ExcludedCandidates == nil {
+			return fmt.Errorf("requirement coverage lacks exact retained and excluded sets")
+		}
 		if strings.Contains(prompt, "PRODUCT CONTEXT:") {
 			return fmt.Errorf("requirement leaf received redundant derived product context")
 		}
@@ -219,6 +221,18 @@ func validateLiveCodingQualificationProjection(
 			"CODE-ESTABLISHED UNCOVERED RELATION:\n"+assemblyline.ApplicationRequirementRemains,
 		) != 1 || strings.Contains(prompt, "PRODUCT CONTEXT:") {
 			return fmt.Errorf("requirement candidate projection differs from bound coverage authority")
+		}
+		return nil
+	case assemblyline.WorkApplicationRequirementCandidateKind:
+		var input assemblyline.ApplicationRequirementCandidateKindInput
+		if err := json.Unmarshal(job.Payload, &input); err != nil {
+			return err
+		}
+		if strings.Count(prompt, input.Candidate) != 1 ||
+			strings.Contains(prompt, testCase.request) ||
+			strings.Contains(prompt, "ACCEPTED REQUIREMENT") ||
+			strings.Contains(prompt, "EXCLUDED CANDIDATE") {
+			return fmt.Errorf("candidate kind received authority beyond one exact candidate")
 		}
 		return nil
 	case assemblyline.WorkApplicationRequirementCandidateCardinality:
@@ -275,6 +289,35 @@ func validateLiveCodingQualificationProjection(
 			) != 1 || strings.Contains(prompt, testCase.request) ||
 			strings.Contains(prompt, "ACCEPTED REQUIREMENT") {
 			return fmt.Errorf("candidate split correction exceeded its exact mutable leaf")
+		}
+		return nil
+	case assemblyline.WorkApplicationRequirementCandidateDuplicateReplacement:
+		var input assemblyline.ApplicationRequirementCandidateDuplicateReplacementInput
+		if err := json.Unmarshal(job.Payload, &input); err != nil {
+			return err
+		}
+		if err := input.GenerationAuthority.Coverage.ValidateFor(
+			input.GenerationAuthority.Authority,
+		); err != nil ||
+			input.GenerationAuthority.Coverage.Relation != assemblyline.ApplicationRequirementRemains ||
+			input.Defect != assemblyline.ApplicationRequirementDuplicateCandidateDefect {
+			return fmt.Errorf("duplicate replacement lacks exact generation authority: %v", err)
+		}
+		var retained []string
+		switch input.Duplicate.Set {
+		case assemblyline.ApplicationRequirementDuplicateAcceptedRequirement:
+			retained = input.GenerationAuthority.Authority.AcceptedRequirements
+		case assemblyline.ApplicationRequirementDuplicateExcludedNonRuntimeCandidate:
+			retained = input.GenerationAuthority.Authority.ExcludedCandidates
+		default:
+			return fmt.Errorf("duplicate replacement set=%q", input.Duplicate.Set)
+		}
+		if input.Duplicate.Index < 0 || input.Duplicate.Index >= len(retained) ||
+			retained[input.Duplicate.Index] != input.CurrentCandidate ||
+			strings.Count(prompt, testCase.request) != 1 ||
+			strings.Count(prompt, input.CurrentCandidate) < 2 ||
+			strings.Contains(prompt, "PRODUCT CONTEXT:") {
+			return fmt.Errorf("duplicate replacement projection differs from its bounded candidate state")
 		}
 		return nil
 	default:

@@ -37,7 +37,7 @@ func applicationSemanticUncertaintyContract(
 		contract = semanticUncertaintyContractV3(kind,
 			"What is the earliest task-local runtime implementation requirement not covered by the retained requirements?",
 			"Faithful extraction of one source-owning runtime obligation from unconstrained human phrasing cannot be performed by a parser.",
-			"The immutable request, established facts, retained requirement statements, and the exact code-established REQUIREMENT_REMAINS coverage authority bound to them.",
+			"The immutable request, established facts, accepted requirement statements, excluded non-runtime candidates, and the exact code-established REQUIREMENT_REMAINS coverage receipt bound to that authority.",
 			"One task-local runtime implementation-requirement text leaf.",
 			"DecodeApplicationRequirementLeaf validates the leaf before code appends it to the bounded retained set.")
 	case WorkApplicationRequirementCandidateCardinality:
@@ -47,6 +47,13 @@ func applicationSemanticUncertaintyContract(
 			"One exact requirement candidate and the registered one-or-multiple outcome vocabulary.",
 			"One registered requirement-candidate cardinality relation.",
 			"DecodeApplicationRequirementCandidateCardinalityResult validates the relation before code appends the candidate or opens bounded splitting.")
+	case WorkApplicationRequirementCandidateKind:
+		contract = semanticUncertaintyContract(kind,
+			"Does the exact requirement candidate contain only task-local runtime-outcome content or express a non-runtime constraint?",
+			"Whether natural-language prose requires application source is a semantic distinction that byte and syntax validation cannot establish.",
+			"One exact requirement candidate and the registered task-local-or-non-runtime vocabulary.",
+			"One registered requirement-candidate kind relation.",
+			"DecodeApplicationRequirementCandidateKindResult validates the candidate-bound relation before code retains the runtime candidate or records the non-runtime candidate as excluded.")
 	case WorkApplicationRequirementCandidateSplit:
 		contract = semanticUncertaintyContract(kind,
 			"What is the earliest single runtime outcome contained in the exact multi-outcome requirement candidate?",
@@ -61,6 +68,13 @@ func applicationSemanticUncertaintyContract(
 			"The exact current candidate, its code-bound MULTIPLE_RUNTIME_OUTCOMES relation, and the exact byte-identity defect.",
 			"One complete byte-different single-outcome requirement text leaf.",
 			"DecodeApplicationRequirementCandidateSplitCorrectionLeaf validates the replacement before code repeats ordinary cardinality validation.")
+	case WorkApplicationRequirementCandidateDuplicateReplacement:
+		contract = semanticUncertaintyContract(kind,
+			"What complete requirement replaces the exact candidate that duplicates one indexed retained value?",
+			"Selecting a different earliest uncovered semantic outcome from the immutable request cannot be performed by byte comparison.",
+			"The exact generation authority and REQUIREMENT_REMAINS receipt, exact duplicate candidate, its code-validated retained-set identity, and the exact duplicate defect.",
+			"One complete byte-different requirement text leaf.",
+			"DecodeApplicationRequirementCandidateDuplicateReplacementLeaf validates the replacement before code reruns ordinary candidate classification and cardinality checks.")
 	case WorkApplicationProjectStackConstraint:
 		contract = semanticUncertaintyContractV2(kind,
 			"Which registered technical format and packaging shape, if any, is explicitly established by the immutable software request?",
@@ -242,17 +256,26 @@ func historicalApplicationIntentSemanticUncertaintyContract(
 func rendererV7ApplicationIntentSemanticUncertaintyContract(
 	kind WorkKind,
 ) (SemanticUncertaintyContract, bool) {
-	if kind != WorkApplicationRequirement {
+	switch kind {
+	case WorkApplicationRequirementCoverage:
+		return semanticUncertaintyContractV2(kind,
+			"Does one task-local runtime implementation requirement remain uncovered by the retained requirements?",
+			"Semantic equivalence and whether free-form behavior requires task-local application source cannot be computed by byte or syntax comparison.",
+			"The immutable request, established facts, and retained requirement statements.",
+			"One registered task-local application-requirement coverage relation.",
+			"DecodeApplicationRequirementCoverageLeaf validates the relation before code continues or closes the bounded fixed point."), true
+	case WorkApplicationRequirement:
+		return semanticUncertaintyContractV2(kind,
+			"What is the earliest task-local runtime implementation requirement not covered by the retained requirements?",
+			"Faithful extraction of one source-owning runtime obligation from unconstrained human phrasing cannot be performed by a parser.",
+			"The immutable request, established facts, and retained requirement statements.",
+			"One task-local runtime implementation-requirement text leaf.",
+			"DecodeApplicationRequirementLeaf validates the leaf before code appends it to the bounded retained set."), true
+	default:
 		contract, ok := applicationSemanticUncertaintyContract(kind)
 		if !ok || contract.ID != semanticUncertaintyContractIDPrefix+string(kind)+".v2" {
 			return SemanticUncertaintyContract{}, false
 		}
 		return contract, true
 	}
-	return semanticUncertaintyContractV2(kind,
-		"What is the earliest task-local runtime implementation requirement not covered by the retained requirements?",
-		"Faithful extraction of one source-owning runtime obligation from unconstrained human phrasing cannot be performed by a parser.",
-		"The immutable request, established facts, and retained requirement statements.",
-		"One task-local runtime implementation-requirement text leaf.",
-		"DecodeApplicationRequirementLeaf validates the leaf before code appends it to the bounded retained set."), true
 }

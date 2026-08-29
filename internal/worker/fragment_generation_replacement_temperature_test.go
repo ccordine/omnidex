@@ -129,6 +129,74 @@ func TestRequirementSplitCorrectionAdvancesRegisteredTemperature(t *testing.T) {
 	}
 }
 
+func TestRequirementDuplicateReplacementAdvancesRegisteredTemperature(t *testing.T) {
+	t.Parallel()
+	request := "Create a browser status board that displays one current status."
+	applicationContext, err := assemblyline.BootstrapApplicationContext(
+		request, assemblyline.ApplicationWorkspaceEmpty,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	coverageInput := assemblyline.ApplicationRequirementCoverageInput{
+		UserRequest: request, Context: applicationContext,
+		AcceptedRequirements: []string{"Display the current status."},
+		ExcludedCandidates:   []string{},
+	}
+	coverage, err := assemblyline.DecodeApplicationRequirementCoverageLeaf(
+		coverageInput, assemblyline.ApplicationRequirementRemains,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	job, err := assemblyline.NewApplicationRequirementCandidateDuplicateReplacementJob(
+		assemblyline.ApplicationRequirementCandidateDuplicateReplacementInput{
+			GenerationAuthority: assemblyline.ApplicationRequirementCandidateInput{
+				Authority: coverageInput, Coverage: coverage,
+			},
+			CurrentCandidate: coverageInput.AcceptedRequirements[0],
+			Duplicate: assemblyline.ApplicationRequirementCandidateDuplicateIdentity{
+				Set:   assemblyline.ApplicationRequirementDuplicateAcceptedRequirement,
+				Index: 0,
+			},
+			Defect: assemblyline.ApplicationRequirementDuplicateCandidateDefect,
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prepared := prepareReplacementTemperatureTestCall(
+		t, job, replacementTemperatureTestExpectation(),
+	)
+	if prepared.Temperature == nil || *prepared.Temperature != 0.2 {
+		t.Fatalf("duplicate replacement temperature=%v, want 0.2", prepared.Temperature)
+	}
+	if got := preparedRequestTemperature(t, prepared); got != 0.2 {
+		t.Fatalf("duplicate replacement wire temperature=%v, want 0.2", got)
+	}
+}
+
+func TestRequirementCandidateKindKeepsRegisteredTemperatureBaseline(t *testing.T) {
+	t.Parallel()
+	job, err := assemblyline.NewApplicationRequirementCandidateKindJob(
+		assemblyline.ApplicationRequirementCandidateKindInput{
+			Candidate: "Display the current status.",
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prepared := prepareReplacementTemperatureTestCall(
+		t, job, replacementTemperatureTestExpectation(),
+	)
+	if prepared.Temperature == nil || *prepared.Temperature != 0 {
+		t.Fatalf("candidate-kind temperature=%v, want registered baseline 0", prepared.Temperature)
+	}
+	if got := preparedRequestTemperature(t, prepared); got != 0 {
+		t.Fatalf("candidate-kind wire temperature=%v, want 0", got)
+	}
+}
+
 func TestHistoricalFragmentGenerationReplacementKeepsRegisteredTemperatureBaseline(t *testing.T) {
 	t.Parallel()
 	input := assemblyline.FragmentGenerationInput{

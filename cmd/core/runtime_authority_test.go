@@ -13,11 +13,11 @@ func TestCoreValidatesRuntimeAuthorityBeforeServerAndWorkerConstruction(t *testi
 	}
 	source := string(raw)
 	validation := strings.Index(source, "repo.ValidateRuntimeAuthority(ctx)")
-	migrations := strings.Index(source, "repo.EnsureSchema(ctx, migrationBundle)")
+	reset := strings.Index(source, "repo.ResetDatabase(ctx, databaseSetup)")
 	server := strings.Index(source, "api.NewServerWithOptions")
 	worker := strings.Index(source, "worker.New(")
-	if validation < 0 || migrations < 0 || server < 0 || worker < 0 ||
-		validation < migrations || validation > server || validation > worker {
-		t.Fatalf("runtime authority validation order is invalid: migrations=%d validation=%d server=%d worker=%d", migrations, validation, server, worker)
+	if validation < 0 || reset < 0 || server < 0 || worker < 0 ||
+		validation < reset || validation > server || validation > worker {
+		t.Fatalf("runtime authority validation order is invalid: reset=%d validation=%d server=%d worker=%d", reset, validation, server, worker)
 	}
 }

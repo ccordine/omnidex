@@ -5,9 +5,6 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-	"time"
-
-	"github.com/gryph/omnidex/internal/client"
 )
 
 const defaultServiceName = "core"
@@ -20,27 +17,26 @@ type serviceCommandOptions struct {
 	ComposeFile string
 	Follow      bool
 	Build       bool
-	AssumeYes   bool
 	Tail        int
 }
 
-func tryRunServiceShortcut(args []string, coreURL string) bool {
+func tryRunServiceShortcut(args []string) bool {
 	if len(args) == 0 {
 		return false
 	}
 	first := strings.TrimSpace(args[0])
 	if first == "--service" || first == "-s" || strings.HasPrefix(first, "--service=") {
-		runServiceWithPreset("", args, coreURL)
+		runServiceWithPreset("", args)
 		return true
 	}
 	return false
 }
 
-func runService(args []string, coreURL string) {
-	runServiceWithPreset("", args, coreURL)
+func runService(args []string) {
+	runServiceWithPreset("", args)
 }
 
-func runServiceWithPreset(presetService string, args []string, coreURL string) {
+func runServiceWithPreset(presetService string, args []string) {
 	opts, showHelp, err := parseServiceCommandArgs(args, presetService)
 	if showHelp {
 		printServiceCommandUsage()
@@ -50,29 +46,14 @@ func runServiceWithPreset(presetService string, args []string, coreURL string) {
 		die(err.Error())
 	}
 
-	shouldRunFresh, err := serviceRunsCoreMigrateFresh(opts)
-	if err != nil {
-		die(err.Error())
-	}
-	if shouldRunFresh {
-		timeout := getenvDuration("CLI_TIMEOUT", 30*time.Second)
-		c := client.New(coreURL, timeout)
-		freshArgs := []string{}
-		if opts.AssumeYes {
-			freshArgs = append(freshArgs, "--yes")
-		}
-		runMigrateFresh(c, freshArgs, coreURL)
-		return
-	}
-
 	exitServiceProcessError(executeResolvedServiceCommand(opts))
 }
 
 func printServiceCommandUsage() {
 	fmt.Println("usage:")
-	fmt.Println("  omni service [--service name] <up|down|restart|status|logs|docker-logs|start|stop|build|migrate:fresh> [options]")
-	fmt.Println("  omni service:<name> <up|down|restart|status|logs|docker-logs|start|stop|build|migrate:fresh> [options]")
-	fmt.Println("  omni --service <name> <up|down|restart|status|logs|docker-logs|start|stop|build|migrate:fresh> [options]")
+	fmt.Println("  omni service [--service name] <up|down|restart|status|logs|docker-logs|start|stop|build> [options]")
+	fmt.Println("  omni service:<name> <up|down|restart|status|logs|docker-logs|start|stop|build> [options]")
+	fmt.Println("  omni --service <name> <up|down|restart|status|logs|docker-logs|start|stop|build> [options]")
 	fmt.Println("")
 	fmt.Println("options:")
 	fmt.Println("  --service, -s <name>      target service (default: core)")
@@ -84,7 +65,6 @@ func printServiceCommandUsage() {
 	fmt.Println("  --follow, -f              follow logs when action is logs")
 	fmt.Println("  --tail <N>                logs tail line count (default: 120)")
 	fmt.Println("  docker-logs               resolve container id and run `docker logs` for the service")
-	fmt.Println("  --yes, -y                 skip confirmation prompt for migrate:fresh")
 	fmt.Println("  -h, --help                show this help")
 }
 
@@ -108,10 +88,6 @@ func parseServiceCommandArgs(args []string, presetService string) (serviceComman
 		}
 		if arg == "--build" {
 			opts.Build = true
-			continue
-		}
-		if arg == "-y" || arg == "--yes" {
-			opts.AssumeYes = true
 			continue
 		}
 		if arg == "-f" || arg == "--follow" {
@@ -217,7 +193,7 @@ func parseServiceCommandArgs(args []string, presetService string) (serviceComman
 			}
 			action, ok := normalizeServiceAction(arg)
 			if !ok {
-				return opts, false, fmt.Errorf("invalid service action %q (use up|down|restart|status|logs|docker-logs|start|stop|build|migrate:fresh)", arg)
+				return opts, false, fmt.Errorf("invalid service action %q (use up|down|restart|status|logs|docker-logs|start|stop|build)", arg)
 			}
 			opts.Action = action
 			continue
@@ -227,13 +203,10 @@ func parseServiceCommandArgs(args []string, presetService string) (serviceComman
 	}
 
 	if opts.Action == "" {
-		return opts, false, errors.New("service action is required (use up|down|restart|status|logs|docker-logs|start|stop|build|migrate:fresh)")
+		return opts, false, errors.New("service action is required (use up|down|restart|status|logs|docker-logs|start|stop|build)")
 	}
 	if strings.TrimSpace(opts.Service) == "" {
 		opts.Service = defaultServiceName
-	}
-	if opts.AssumeYes && opts.Action != "migrate:fresh" {
-		return opts, false, errors.New("--yes is only valid with migrate:fresh")
 	}
 	return opts, false, nil
 }

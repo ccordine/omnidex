@@ -17,6 +17,10 @@ func replayApplicationSemanticLeaf(
 		return true, decodeReplaySemanticLeaf(job, raw, assemblyline.DecodeApplicationRequirementCoverageLeaf)
 	case assemblyline.WorkApplicationRequirement:
 		return true, decodeReplaySemanticLeaf(job, raw, assemblyline.DecodeApplicationRequirementLeaf)
+	case assemblyline.WorkApplicationRequirementCandidateKind:
+		return true, decodeReplaySemanticLeaf(
+			job, raw, assemblyline.DecodeApplicationRequirementCandidateKindResult,
+		)
 	case assemblyline.WorkApplicationRequirementCandidateCardinality:
 		return true, decodeReplaySemanticLeaf(
 			job, raw, assemblyline.DecodeApplicationRequirementCandidateCardinalityResult,
@@ -28,6 +32,10 @@ func replayApplicationSemanticLeaf(
 	case assemblyline.WorkApplicationRequirementCandidateSplitCorrection:
 		return true, decodeReplaySemanticLeaf(
 			job, raw, assemblyline.DecodeApplicationRequirementCandidateSplitCorrectionLeaf,
+		)
+	case assemblyline.WorkApplicationRequirementCandidateDuplicateReplacement:
+		return true, decodeReplaySemanticLeaf(
+			job, raw, assemblyline.DecodeApplicationRequirementCandidateDuplicateReplacementLeaf,
 		)
 	case assemblyline.WorkApplicationProjectStackConstraint:
 		return true, decodeReplaySemanticLeaf(job, raw, assemblyline.DecodeApplicationProjectStackConstraintDecision)
