@@ -28,6 +28,7 @@ func TestProductionStepEventFormsHaveTypedGUIProjections(t *testing.T) {
 		"coding_fragment_repair_guidance_started block=feature.render exact_failure=one exact failure",
 		"coding_fragment_correction_started block=feature.render guidance_bytes=128",
 		"coding_compiler_repair_applied block=feature.render mechanism=deterministic_primitive_nullish_narrowing",
+		"coding_compiler_repair_applied block=feature.render mechanism=deterministic_primitive_reference_narrowing",
 		"coding_target_tree_validation_failed diagnostic=one exact tree failure",
 		"application_evidence_need_opened need=evidence_001 source=repository stop=one exact fact",
 		"application_evidence_need_resolved need=evidence_001 facts=2 stop=one exact fact",
@@ -71,6 +72,17 @@ func TestProductionStepEventFormsHaveTypedGUIProjections(t *testing.T) {
 		}); err != nil {
 			t.Errorf("production event %q has no valid projection: %v", form, err)
 		}
+	}
+}
+
+func TestChatProgressRejectsUnregisteredCompilerRepairMechanism(t *testing.T) {
+	t.Parallel()
+	event := parsedChatStepEvent{
+		Type:    "coding_compiler_repair_applied",
+		Message: "block=feature.render mechanism=deterministic_unknown_narrowing",
+	}
+	if _, _, err := summarizeChatStepEvent(event, "v3_coding"); err == nil {
+		t.Fatal("unregistered deterministic compiler repair mechanism was accepted")
 	}
 }
 

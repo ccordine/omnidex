@@ -120,6 +120,26 @@ func TestTypeScriptCompilerScopeReceiptRejectsInexactOrMissingAuthority(t *testi
 	}
 }
 
+func TestTypeScriptCompilerScopeReceiptRequiresExactDeterministicMechanism(t *testing.T) {
+	t.Parallel()
+	valid := `{"schema":"omnidex.typescript-lexical-scope.v4","bindings":[{"name":"value","type":"Value"}],"unavailable_bindings":[],"expression_evidence":[{"source":"value.current ?? 0","inferred_type":"number | string","contextual_type":"number","incompatible_types":["string"],"referenced_bindings":["value"]}],"deterministic_repairs":[{"mechanism":"deterministic_primitive_nullish_narrowing","evidence_index":0,"source":"value.current ?? 0","replacement":"typeof value.current === 'number' ? value.current : 0","start_byte":0,"end_byte":18,"normalization_start_byte":0}]}`
+	if _, err := decodeDirectCodingTypeScriptScopeReceipt([]byte(valid)); err != nil {
+		t.Fatalf("valid deterministic mechanism rejected: %v", err)
+	}
+	for name, raw := range map[string]string{
+		"missing": strings.Replace(valid,
+			`"mechanism":"deterministic_primitive_nullish_narrowing",`, "", 1),
+		"unknown": strings.Replace(valid,
+			"deterministic_primitive_nullish_narrowing", "deterministic_unknown_narrowing", 1),
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := decodeDirectCodingTypeScriptScopeReceipt([]byte(raw)); err == nil {
+				t.Fatalf("accepted %s deterministic mechanism", name)
+			}
+		})
+	}
+}
+
 func TestTypeScriptCompilerCorrectionCannotUseTestSummaryTruncation(t *testing.T) {
 	t.Parallel()
 	for _, path := range []string{

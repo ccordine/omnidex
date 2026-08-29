@@ -48,15 +48,15 @@ func TestApplicationTaskStageProjectionExcludesOtherTasksAndApplicationEntrypoin
 	if _, err := directCodingTypeScriptCorrectionBlock(stage.Source, "feature.002"); err == nil {
 		t.Fatal("task stage allowed correction of another task block")
 	}
-	routed, err := routeDirectCodingAcceptanceFailure(
+	_, err = routeDirectCodingAcceptanceFailure(
 		stage,
 		&directCodingStageDiagnostic{
 			BlockID: "acceptance.001", Message: "current acceptance failed",
 			FailureClass: directCodingStageFailureVitestBehavior,
 		},
 	)
-	if err != nil || routed.BlockID != "feature.001" {
-		t.Fatalf("current acceptance routing=%+v error=%v", routed, err)
+	if err == nil || !strings.Contains(err.Error(), "cannot authorize implementation mutation") {
+		t.Fatalf("current generated verification routing error=%v", err)
 	}
 }
 

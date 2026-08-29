@@ -12,7 +12,7 @@ import (
 	"github.com/gryph/omnidex/internal/modelcontext"
 )
 
-func TestRealVitestBehaviorFailureRoutesToImplementationOwner(t *testing.T) {
+func TestRealVitestBehaviorFailureRemainsTerminalGeneratedVerification(t *testing.T) {
 	if os.Getenv("OMNIDEX_NODE_INTEGRATION") != "1" {
 		t.Skip("set OMNIDEX_NODE_INTEGRATION=1 to install the pinned Vitest toolchain")
 	}
@@ -40,6 +40,7 @@ import { Feature } from './feature';
 					ID: "feature.acceptance", Signature: "async function Verify(): Promise<void>",
 					Contract: "Verify the observable value.", API: "async function Verify(): Promise<void>",
 					DependsOn: []string{"feature.render"}, Globals: []string{"screen", "expect"},
+					Role: assemblyline.SourceBlockTaskVerification, TaskID: "application_task_001",
 				},
 				{
 					ID: "acceptance.harness", Static: `async function RunAcceptance(): Promise<void> {
@@ -104,15 +105,15 @@ import { Feature } from './feature';
 	if err != nil {
 		t.Fatalf("install pinned Vitest toolchain: %v\n%s", err, output)
 	}
-	diagnostic, err := verifyDirectCodingTypeScriptStageCommands(
+	diagnostic, stageErr := verifyDirectCodingTypeScriptStageCommands(
 		context.Background(), root, program,
 		[][]string{directCodingStructuredVitestCommand("src/feature.test.tsx")},
 	)
-	if err != nil {
-		t.Fatal(err)
+	if stageErr == nil || !strings.Contains(stageErr.Error(), "cannot authorize implementation mutation") {
+		t.Fatalf("real generated verification stage error=%v", stageErr)
 	}
-	if diagnostic == nil {
-		t.Fatal("real mixed Vitest failure did not produce one mapped diagnostic")
+	if diagnostic != nil {
+		t.Fatalf("terminal generated verification returned a repair diagnostic: %+v", diagnostic)
 	}
 	receipt, err := readDirectCodingVitestFailureReceipt(root)
 	if err != nil {
@@ -131,8 +132,16 @@ import { Feature } from './feature';
 		observation.ElementCount != 1 || !reflect.DeepEqual(observation.Names, []string{"actual"}) {
 		t.Fatalf("real behavior failure observation=%#v", observation)
 	}
-	if diagnostic.BlockID != "feature.render" {
-		t.Fatalf("real behavior failure targeted %s", diagnostic.BlockID)
+	documents, err := composeDirectCodingSourceProgram(program)
+	if err != nil {
+		t.Fatal(err)
+	}
+	diagnostic, mapped, err := mapDirectCodingVitestFailureReceipt(root, documents, receipt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !mapped || diagnostic.BlockID != "feature.acceptance" {
+		t.Fatalf("real behavior failure origin=%+v mapped=%t", diagnostic, mapped)
 	}
 	if !strings.HasPrefix(diagnostic.ModelFeedback, "TestingLibraryElementError: Unable to find") {
 		t.Fatalf("real behavior failure lost its exact structured problem: %q", diagnostic.ModelFeedback)
@@ -143,19 +152,10 @@ import { Feature } from './feature';
 		modelcontext.ContainsPathIdentity(diagnostic.ModelFeedback) {
 		t.Fatalf("real behavior failure retained an unsafe regex matcher: %q", diagnostic.ModelFeedback)
 	}
-	failure, err := directCodingTypeScriptStageModelFeedback(diagnostic)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := assemblyline.NewFragmentRepairGuidanceJob(
-		assemblyline.FragmentRepairGuidanceInput{
-			Language: "typescript", Dialect: "TypeScript function syntax",
-			Signature:          "function Feature(): ReactElement",
-			CurrentDeclaration: program.Generated["feature.render"],
-			Diagnostic:         failure,
-		},
-	); err != nil {
-		t.Fatalf("real Vitest regex diagnostic did not reach repair guidance: %v", err)
+	if _, err := directCodingTypeScriptCorrectionBlock(
+		program.Source, diagnostic.BlockID,
+	); err == nil || !strings.Contains(err.Error(), "cannot become repair model context") {
+		t.Fatalf("real generated verification reached repair guidance: %v", err)
 	}
 }
 

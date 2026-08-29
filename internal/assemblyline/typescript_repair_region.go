@@ -71,6 +71,9 @@ func ProjectTypeScriptFragmentRepairResponse(
 			return "", fmt.Errorf("TypeScript fragment repair response line %d exceeds %d bytes", index+1, maxTypeScriptRepairLineBytes)
 		}
 	}
+	if err := validateTypeScriptCompilerRepairReplacementShape(region, replacement); err != nil {
+		return "", err
+	}
 	if replacement == region.Source {
 		return "", ErrTypeScriptFragmentRepairNoChange
 	}
@@ -236,6 +239,9 @@ func ApplyTypeScriptFragmentRepairRegion(
 	regionLines := region.EndLine - region.StartLine + 1
 	if region.Kind == TypeScriptRepairRegionSyntaxWindow && len(replacementLines) > regionLines+maxTypeScriptRepairAddedLines {
 		return "", fmt.Errorf("TypeScript repair replacement expands beyond its local line authority")
+	}
+	if err := validateTypeScriptCompilerRepairReplacementShape(region, replacement); err != nil {
+		return "", err
 	}
 	result := make([]string, 0, len(lines)-regionLines+len(replacementLines))
 	result = append(result, lines[:region.StartLine-1]...)

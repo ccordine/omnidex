@@ -110,27 +110,13 @@ func routeDirectCodingAcceptanceFailure(
 	if !exists {
 		return nil, fmt.Errorf("route acceptance failure: unknown originating block %s", diagnostic.BlockID)
 	}
-	if diagnostic.FailureClass != directCodingStageFailureVitestBehavior {
-		return diagnostic, nil
-	}
-	owners := make([]string, 0, len(origin.DependsOn))
-	for _, dependencyID := range origin.DependsOn {
-		dependency, found := directCodingSourceBlueprintBlock(program.Source, dependencyID)
-		if found && dependency.Generated() {
-			owners = append(owners, dependencyID)
-		}
-	}
-	if len(owners) != 1 {
+	if origin.Role == assemblyline.SourceBlockTaskVerification {
 		return nil, fmt.Errorf(
-			"route acceptance behavior failure from %s requires exactly one generated direct owner, found %d",
-			diagnostic.BlockID, len(owners),
+			"generated verification block %s failed staged execution and cannot authorize implementation mutation from dependency edges: %s",
+			diagnostic.BlockID,
+			safeLine(firstDirectCodingDiagnosticLine(diagnostic.Message), "unknown verification failure"),
 		)
 	}
-	// A behavior assertion is immutable verification evidence. Its exact
-	// generated implementation dependency owns the observed mismatch; changing
-	// the assertion would only rewrite the oracle. Code performs this graph
-	// transition without a semantic routing call.
-	diagnostic.BlockID = owners[0]
 	return diagnostic, nil
 }
 
@@ -199,6 +185,12 @@ func directCodingTypeScriptCorrectionBlock(
 	if !block.Generated() {
 		return assemblyline.SourceBlock{}, fmt.Errorf(
 			"code-owned browser adapter block %s failed validation and cannot be delegated",
+			block.ID,
+		)
+	}
+	if block.Role == assemblyline.SourceBlockTaskVerification {
+		return assemblyline.SourceBlock{}, fmt.Errorf(
+			"generated verification block %s is terminal staged evidence and cannot become repair model context",
 			block.ID,
 		)
 	}

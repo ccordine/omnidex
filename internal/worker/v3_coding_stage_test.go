@@ -45,21 +45,19 @@ func TestTypeScriptStageMapsCompilerLocationsToOneGeneratedBlock(t *testing.T) {
 	}
 }
 
-func TestStructuredVitestFramesMapExactlyWithoutInventingFailureRouting(t *testing.T) {
+func TestStructuredVitestFramesMapExactlyAndGeneratedVerificationStops(t *testing.T) {
 	root := t.TempDir()
 	for _, testCase := range []struct {
-		name, path, errorName, wantBlock string
-		failureClass                     directCodingStageFailureClass
+		name, path, errorName string
+		failureClass          directCodingStageFailureClass
 	}{
 		{
-			name: "tsx behavior assertion routes to its generated owner", path: "src/panels/Grouping.test.tsx",
+			name: "tsx behavior assertion remains generated verification", path: "src/panels/Grouping.test.tsx",
 			errorName: "AssertionError", failureClass: directCodingStageFailureVitestBehavior,
-			wantBlock: "feature.grouping",
 		},
 		{
-			name: "ts runtime exception targets acceptance declaration", path: "src/rules/Normalization.test.ts",
+			name: "ts runtime exception remains generated verification", path: "src/rules/Normalization.test.ts",
 			errorName: "ReferenceError", failureClass: directCodingStageFailureUnclassified,
-			wantBlock: "acceptance.normalization",
 		},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
@@ -75,7 +73,8 @@ func TestStructuredVitestFramesMapExactlyWithoutInventingFailureRouting(t *testi
 				Blocks: []assemblyline.SourceBlock{{
 					ID: acceptanceID, Signature: "function Verify(): void",
 					Contract: "Verify one observable result.", API: "function Verify(): void",
-					DependsOn: []string{featureID},
+					DependsOn: []string{featureID}, Role: assemblyline.SourceBlockTaskVerification,
+					TaskID: "application_task_001",
 				}},
 			}
 			composed, err := assemblyline.ComposeTypeScriptDocument(document, assemblyline.SourceComposition{
@@ -112,18 +111,16 @@ func TestStructuredVitestFramesMapExactlyWithoutInventingFailureRouting(t *testi
 					ID: featureID, Signature: "function Feature(): void", Contract: "Implement one result.", API: "function Feature(): void",
 				}}},
 			}}
-			routed, err := routeDirectCodingAcceptanceFailure(directCodingProgram{Source: blueprint}, diagnostic)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if routed.BlockID != testCase.wantBlock {
-				t.Fatalf("routed block=%s want=%s", routed.BlockID, testCase.wantBlock)
+			if _, err := routeDirectCodingAcceptanceFailure(
+				directCodingProgram{Source: blueprint}, diagnostic,
+			); err == nil || !strings.Contains(err.Error(), "cannot authorize implementation mutation") {
+				t.Fatalf("generated verification routing error=%v", err)
 			}
 		})
 	}
 }
 
-func TestStructuredVitestRegexProjectionIsBlockLocalAndRepairGuidanceReady(t *testing.T) {
+func TestStructuredVitestRegexProjectionIsBlockLocalAndNeverRepairGuidance(t *testing.T) {
 	t.Parallel()
 	fixtures := []struct {
 		name               string
@@ -148,6 +145,7 @@ func TestStructuredVitestRegexProjectionIsBlockLocalAndRepairGuidanceReady(t *te
 						ID: acceptanceID, Signature: "function Verify(): void",
 						Contract: "Verify one observable result.", API: "function Verify(): void",
 						DependsOn: []string{fixture.featureID}, Globals: []string{"expect"},
+						Role: assemblyline.SourceBlockTaskVerification, TaskID: "application_task_001",
 					},
 					{
 						ID:     "sibling." + fixture.name,
@@ -205,37 +203,11 @@ func TestStructuredVitestRegexProjectionIsBlockLocalAndRepairGuidanceReady(t *te
 				document,
 				{ID: fixture.name + ".feature", Path: "src/" + fixture.name + ".ts", Blocks: []assemblyline.SourceBlock{feature}},
 			}}
-			diagnostic, err = routeDirectCodingAcceptanceFailure(
+			_, err = routeDirectCodingAcceptanceFailure(
 				directCodingProgram{Source: blueprint}, diagnostic,
 			)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if diagnostic.BlockID != fixture.featureID {
-				t.Fatalf("behavior failure routed to %s", diagnostic.BlockID)
-			}
-			failure, err := directCodingTypeScriptStageModelFeedback(diagnostic)
-			if err != nil {
-				t.Fatal(err)
-			}
-			job, err := assemblyline.NewFragmentRepairGuidanceJob(
-				assemblyline.FragmentRepairGuidanceInput{
-					Language: "typescript", Dialect: "TypeScript function syntax",
-					Signature:          feature.Signature,
-					CurrentDeclaration: "function Feature(): string { return 'observed'; }",
-					Diagnostic:         failure,
-				},
-			)
-			if err != nil {
-				t.Fatal(err)
-			}
-			prompt, err := assemblyline.RenderPortableJob(job)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if !strings.Contains(prompt, fixture.expectedProjection) ||
-				strings.Contains(prompt, fixture.literal) || strings.Contains(prompt, "regex_literals") {
-				t.Fatalf("repair prompt has invalid regex projection:\n%s", prompt)
+			if err == nil || !strings.Contains(err.Error(), "cannot authorize implementation mutation") {
+				t.Fatalf("generated verification routing error=%v", err)
 			}
 		})
 	}
@@ -261,6 +233,11 @@ func TestTypeScriptStageNeverDelegatesCodeOwnedFailures(t *testing.T) {
 				ID: "capability.render", Signature: "function Capability(): ReactElement",
 				Contract: "Render one usable capability.", API: "function Capability(): ReactElement",
 			},
+			{
+				ID: "capability.acceptance", Signature: "function VerifyCapability(): void",
+				Contract: "Verify the capability.", API: "function VerifyCapability(): void",
+				Role: assemblyline.SourceBlockTaskVerification,
+			},
 			{ID: "application.render", Static: "function App(): ReactElement { return <Capability />; }", API: "function App(): ReactElement"},
 		},
 	}}}
@@ -271,12 +248,16 @@ func TestTypeScriptStageNeverDelegatesCodeOwnedFailures(t *testing.T) {
 	if _, err := directCodingTypeScriptCorrectionBlock(blueprint, "application.render"); err == nil || !strings.Contains(err.Error(), "code-owned") {
 		t.Fatalf("static adapter defect was delegated: %v", err)
 	}
+	if _, err := directCodingTypeScriptCorrectionBlock(blueprint, "capability.acceptance"); err == nil ||
+		!strings.Contains(err.Error(), "cannot become repair model context") {
+		t.Fatalf("generated verification defect was delegated: %v", err)
+	}
 	if _, err := directCodingTypeScriptCorrectionBlock(blueprint, "missing"); err == nil || !strings.Contains(err.Error(), "unknown") {
 		t.Fatalf("unknown block was accepted: %v", err)
 	}
 }
 
-func TestRuntimeAcceptanceBehaviorFailureRoutesToExactGeneratedOwner(t *testing.T) {
+func TestRuntimeAcceptanceBehaviorFailureCannotAuthorizeGeneratedOwnerMutation(t *testing.T) {
 	blueprint := assemblyline.SourceBlueprint{Documents: []assemblyline.SourceDocument{
 		{ID: "feature", Path: "src/feature.tsx", Blocks: []assemblyline.SourceBlock{{
 			ID: "feature.render", Signature: "function Feature(): ReactElement",
@@ -285,22 +266,19 @@ func TestRuntimeAcceptanceBehaviorFailureRoutesToExactGeneratedOwner(t *testing.
 		{ID: "acceptance", Path: "src/feature.test.tsx", Blocks: []assemblyline.SourceBlock{{
 			ID: "feature.acceptance", Signature: "async function Verify(): Promise<void>",
 			Contract: "Verify observable feature behavior.", API: "async function Verify(): Promise<void>",
-			DependsOn: []string{"feature.render"},
+			DependsOn: []string{"feature.render"}, Role: assemblyline.SourceBlockTaskVerification,
 		}}},
 	}}
-	diagnostic, err := routeDirectCodingAcceptanceFailure(directCodingProgram{Source: blueprint}, &directCodingStageDiagnostic{
+	_, err := routeDirectCodingAcceptanceFailure(directCodingProgram{Source: blueprint}, &directCodingStageDiagnostic{
 		BlockID: "feature.acceptance", Message: "expected working, received idle", Output: "failure",
 		FailureClass: directCodingStageFailureVitestBehavior,
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if diagnostic.BlockID != "feature.render" {
-		t.Fatalf("runtime acceptance failure targeted %s", diagnostic.BlockID)
+	if err == nil || !strings.Contains(err.Error(), "cannot authorize implementation mutation") {
+		t.Fatalf("generated verification routing error=%v", err)
 	}
 }
 
-func TestRuntimeAcceptanceBehaviorFailureRequiresOneExactGeneratedOwner(t *testing.T) {
+func TestRuntimeAcceptanceBehaviorFailureNeverUsesDependencyCountAsAuthority(t *testing.T) {
 	t.Parallel()
 	blueprint := assemblyline.SourceBlueprint{Documents: []assemblyline.SourceDocument{
 		{ID: "first", Path: "src/first.tsx", Blocks: []assemblyline.SourceBlock{{
@@ -314,19 +292,19 @@ func TestRuntimeAcceptanceBehaviorFailureRequiresOneExactGeneratedOwner(t *testi
 		{ID: "acceptance", Path: "src/feature.test.tsx", Blocks: []assemblyline.SourceBlock{{
 			ID: "feature.acceptance", Signature: "async function Verify(): Promise<void>",
 			Contract: "Verify observable behavior.", API: "async function Verify(): Promise<void>",
-			DependsOn: []string{"feature.first", "feature.second"},
+			DependsOn: []string{"feature.first", "feature.second"}, Role: assemblyline.SourceBlockTaskVerification,
 		}}},
 	}}
 	_, err := routeDirectCodingAcceptanceFailure(directCodingProgram{Source: blueprint}, &directCodingStageDiagnostic{
 		BlockID: "feature.acceptance", Message: "expected working, received idle",
 		FailureClass: directCodingStageFailureVitestBehavior,
 	})
-	if err == nil || !strings.Contains(err.Error(), "exactly one generated direct owner") {
-		t.Fatalf("ambiguous behavior owner error=%v", err)
+	if err == nil || !strings.Contains(err.Error(), "cannot authorize implementation mutation") {
+		t.Fatalf("generated verification routing error=%v", err)
 	}
 }
 
-func TestUnclassifiedAcceptanceFailureStaysWithAcceptanceBlock(t *testing.T) {
+func TestUnclassifiedGeneratedVerificationFailureIsTerminal(t *testing.T) {
 	blueprint := assemblyline.SourceBlueprint{Documents: []assemblyline.SourceDocument{
 		{ID: "feature", Path: "src/feature.tsx", Blocks: []assemblyline.SourceBlock{{
 			ID: "feature.render", Signature: "function Feature(): ReactElement",
@@ -335,16 +313,13 @@ func TestUnclassifiedAcceptanceFailureStaysWithAcceptanceBlock(t *testing.T) {
 		{ID: "acceptance", Path: "src/feature.test.tsx", Blocks: []assemblyline.SourceBlock{{
 			ID: "feature.acceptance", Signature: "async function Verify(): Promise<void>",
 			Contract: "Verify observable feature behavior.", API: "async function Verify(): Promise<void>",
-			DependsOn: []string{"feature.render"},
+			DependsOn: []string{"feature.render"}, Role: assemblyline.SourceBlockTaskVerification,
 		}}},
 	}}
-	diagnostic, err := routeDirectCodingAcceptanceFailure(directCodingProgram{Source: blueprint}, &directCodingStageDiagnostic{
+	_, err := routeDirectCodingAcceptanceFailure(directCodingProgram{Source: blueprint}, &directCodingStageDiagnostic{
 		BlockID: "feature.acceptance", Message: "acceptance declaration failed", Output: "failure",
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if diagnostic.BlockID != "feature.acceptance" {
-		t.Fatalf("unclassified acceptance failure targeted %s", diagnostic.BlockID)
+	if err == nil || !strings.Contains(err.Error(), "cannot authorize implementation mutation") {
+		t.Fatalf("generated verification routing error=%v", err)
 	}
 }

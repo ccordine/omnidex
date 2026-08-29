@@ -3,7 +3,7 @@ package worker
 const directCodingTypeScriptScopeInspectorSource = `import path from 'node:path';
 import ts from 'typescript';
 
-const schema = 'omnidex.typescript-lexical-scope.v3';
+const schema = 'omnidex.typescript-lexical-scope.v4';
 const [relativePath, lineRaw, columnRaw, blockStartRaw, blockEndRaw] = process.argv.slice(2);
 const line = Number(lineRaw);
 const column = Number(columnRaw);
@@ -229,6 +229,83 @@ function isStableReferenceExpression(node) {
   }
   return false;
 }
+function sameStableReferenceExpression(left, right) {
+  if (ts.isParenthesizedExpression(left)) return sameStableReferenceExpression(left.expression, right);
+  if (ts.isParenthesizedExpression(right)) return sameStableReferenceExpression(left, right.expression);
+  if (ts.isIdentifier(left) && ts.isIdentifier(right)) {
+    const leftSymbol = checker.getSymbolAtLocation(left);
+    const rightSymbol = checker.getSymbolAtLocation(right);
+    return Boolean(leftSymbol) && leftSymbol === rightSymbol;
+  }
+  if (ts.isPropertyAccessExpression(left) && ts.isPropertyAccessExpression(right)) {
+    return left.name.text === right.name.text &&
+      sameStableReferenceExpression(left.expression, right.expression);
+  }
+  if (ts.isElementAccessExpression(left) && ts.isElementAccessExpression(right)) {
+    const leftArgument = left.argumentExpression;
+    const rightArgument = right.argumentExpression;
+    const sameArgument = ts.isStringLiteral(leftArgument) && ts.isStringLiteral(rightArgument)
+      ? leftArgument.text === rightArgument.text
+      : ts.isNumericLiteral(leftArgument) && ts.isNumericLiteral(rightArgument) &&
+        leftArgument.text === rightArgument.text;
+    return sameArgument && sameStableReferenceExpression(left.expression, right.expression);
+  }
+  return false;
+}
+function hasExactPrimitiveUnionMismatch(inferred, contextual, primitive) {
+  const constituents = inferred.isUnion() ? inferred.types : [inferred];
+  let hasCompatible = false;
+  let hasIncompatibleNonNullish = false;
+  for (const constituent of constituents) {
+    if (checker.isTypeAssignableTo(constituent, contextual)) {
+      if (exactTypeofPrimitive(constituent) !== primitive) return false;
+      hasCompatible = true;
+      continue;
+    }
+    if ((constituent.flags & (ts.TypeFlags.Null | ts.TypeFlags.Undefined)) === 0) {
+      hasIncompatibleNonNullish = true;
+    }
+  }
+  return hasCompatible && hasIncompatibleNonNullish;
+}
+function exactPrimitiveLiteral(node, primitive) {
+  if (primitive === 'string') return ts.isStringLiteral(node);
+  if (primitive === 'number') return ts.isNumericLiteral(node);
+  if (primitive === 'boolean') {
+    return node.kind === ts.SyntaxKind.TrueKeyword || node.kind === ts.SyntaxKind.FalseKeyword;
+  }
+  return false;
+}
+function priorPrimitiveNarrowing(reference, contextual, before) {
+  const narrowings = new Map();
+  function collect(node) {
+    const start = node.getStart(sourceFile);
+    const end = node.getEnd();
+    if (start >= blockStart && end <= blockEnd && end <= before && ts.isConditionalExpression(node)) {
+      const condition = node.condition;
+      if (ts.isBinaryExpression(condition) &&
+          condition.operatorToken.kind === ts.SyntaxKind.EqualsEqualsEqualsToken &&
+          ts.isTypeOfExpression(condition.left) && ts.isStringLiteral(condition.right) &&
+          sameStableReferenceExpression(condition.left.expression, reference) &&
+          sameStableReferenceExpression(node.whenTrue, reference) &&
+          exactPrimitiveLiteral(node.whenFalse, condition.right.text)) {
+        const primitive = condition.right.text;
+        const narrowedType = checker.getTypeAtLocation(node);
+        if (exactTypeofPrimitive(narrowedType) === primitive &&
+            checker.isTypeAssignableTo(narrowedType, contextual)) {
+          const source = node.getText(sourceFile).trim();
+          if (!/[\r\n]/.test(source) && source.length <= 2048) {
+            const startByte = Buffer.byteLength(sourceFile.text.slice(blockStart, start), 'utf8');
+            narrowings.set(source + '\u0000' + startByte, { primitive, source, startByte });
+          }
+        }
+      }
+    }
+    node.forEachChild(collect);
+  }
+  sourceFile.forEachChild(collect);
+  return narrowings.size === 1 ? [...narrowings.values()][0] : null;
+}
 function deterministicPrimitiveNullishRepair(
   candidate, evidenceIndex, inferred, contextual, incompatibleTypes,
 ) {
@@ -242,29 +319,37 @@ function deterministicPrimitiveNullishRepair(
   if (!checker.isTypeAssignableTo(fallbackType, contextual) ||
       exactTypeofPrimitive(fallbackType) !== primitive) return null;
   const leftType = checker.getTypeAtLocation(node.left);
-  const constituents = leftType.isUnion() ? leftType.types : [leftType];
-  let hasCompatible = false;
-  let hasIncompatibleNonNullish = false;
-  for (const constituent of constituents) {
-    if (checker.isTypeAssignableTo(constituent, contextual)) {
-      if (exactTypeofPrimitive(constituent) !== primitive) return null;
-      hasCompatible = true;
-      continue;
-    }
-    if ((constituent.flags & (ts.TypeFlags.Null | ts.TypeFlags.Undefined)) === 0) {
-      hasIncompatibleNonNullish = true;
-    }
-  }
-  if (!hasCompatible || !hasIncompatibleNonNullish) return null;
+  if (!hasExactPrimitiveUnionMismatch(leftType, contextual, primitive)) return null;
   const left = node.left.getText(sourceFile).trim();
   const fallback = node.right.getText(sourceFile).trim();
   const replacement = 'typeof ' + left + " === '" + primitive + "' ? " + left + ' : ' + fallback;
+  const startByte = Buffer.byteLength(sourceFile.text.slice(blockStart, candidate.start), 'utf8');
   return {
+    mechanism: 'deterministic_primitive_nullish_narrowing',
     evidence_index: evidenceIndex,
     source: candidate.source,
     replacement,
+    start_byte: startByte,
+    end_byte: Buffer.byteLength(sourceFile.text.slice(blockStart, candidate.end), 'utf8'),
+    normalization_start_byte: startByte,
+  };
+}
+function deterministicPrimitiveReferenceRepair(
+  candidate, evidenceIndex, inferred, contextual, incompatibleTypes,
+) {
+  const node = candidate.node;
+  if (!contextual || incompatibleTypes.length === 0 || !isStableReferenceExpression(node)) return null;
+  const narrowing = priorPrimitiveNarrowing(node, contextual, candidate.start);
+  if (!narrowing ||
+      !hasExactPrimitiveUnionMismatch(inferred, contextual, narrowing.primitive)) return null;
+  return {
+    mechanism: 'deterministic_primitive_reference_narrowing',
+    evidence_index: evidenceIndex,
+    source: candidate.source,
+    replacement: narrowing.source,
     start_byte: Buffer.byteLength(sourceFile.text.slice(blockStart, candidate.start), 'utf8'),
     end_byte: Buffer.byteLength(sourceFile.text.slice(blockStart, candidate.end), 'utf8'),
+    normalization_start_byte: narrowing.startByte,
   };
 }
 for (const candidate of expressionCandidates) {
@@ -297,6 +382,8 @@ for (const candidate of expressionCandidates) {
   const referencedBindings = referencedLocalBindings(candidate.node);
   const evidenceIndex = expressionEvidence.length;
   const deterministicRepair = deterministicPrimitiveNullishRepair(
+    candidate, evidenceIndex, inferred, contextual, incompatibleTypes,
+  ) ?? deterministicPrimitiveReferenceRepair(
     candidate, evidenceIndex, inferred, contextual, incompatibleTypes,
   );
   if (deterministicRepair) deterministicRepairs.push(deterministicRepair);

@@ -45,11 +45,21 @@ func summarizeChatDeterministicCognitionEvent(event parsedChatStepEvent) (chatPr
 			return "", "", true, err
 		}
 		block, err := requireChatEventToken(fields, "block", 256)
-		if err != nil || fields["mechanism"] != "deterministic_primitive_nullish_narrowing" {
+		if err != nil || !registeredChatCompilerRepairMechanism(fields["mechanism"]) {
 			return "", "", true, firstChatProgressError(err, fmt.Errorf("compiler repair mechanism is not registered"))
 		}
 		return chatProgressDiagnostic, "Applied deterministic compiler repair to " + block, true, nil
 	default:
 		return "", "", false, nil
+	}
+}
+
+func registeredChatCompilerRepairMechanism(mechanism string) bool {
+	switch mechanism {
+	case "deterministic_primitive_nullish_narrowing",
+		"deterministic_primitive_reference_narrowing":
+		return true
+	default:
+		return false
 	}
 }

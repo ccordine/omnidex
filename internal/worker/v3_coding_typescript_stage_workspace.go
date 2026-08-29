@@ -182,7 +182,19 @@ func (s *directCodingSession) correctDirectCodingTypeScriptStage(
 		if bindingErr != nil {
 			return fmt.Errorf("derive staged TypeScript compiler scope for block %s: %w", target.ID, bindingErr)
 		}
-		candidate, repaired, deterministicErr := applyDirectCodingTypeScriptDeterministicRepair(current, scope)
+		deterministicScope := scope
+		if len(scope.DeterministicRepairs) > 0 {
+			authorized, authorityErr := progress.authorizeDeterministicRepair(
+				target.ID, scope.DeterministicRepairs[0],
+			)
+			if authorityErr != nil {
+				return authorityErr
+			}
+			if !authorized {
+				deterministicScope.DeterministicRepairs = nil
+			}
+		}
+		candidate, repaired, deterministicErr := applyDirectCodingTypeScriptDeterministicRepair(current, deterministicScope)
 		if deterministicErr != nil {
 			return fmt.Errorf(
 				"apply deterministic TypeScript compiler repair for block %s: %w",
@@ -206,11 +218,16 @@ func (s *directCodingSession) correctDirectCodingTypeScriptStage(
 			); err != nil {
 				return err
 			}
+			if err := progress.recordDeterministicRepair(
+				target.ID, scope.DeterministicRepairs[0],
+			); err != nil {
+				return err
+			}
 			program.Generated[target.ID] = candidate
 			s.runtime.svc.emitStepEvent(
 				s.runtime.claim.Authority,
 				"coding_compiler_repair_applied",
-				fmt.Sprintf("block=%s mechanism=deterministic_primitive_nullish_narrowing", target.ID),
+				fmt.Sprintf("block=%s mechanism=%s", target.ID, scope.DeterministicRepairs[0].Mechanism),
 			)
 			return nil
 		}
@@ -259,6 +276,7 @@ func (s *directCodingSession) correctDirectCodingTypeScriptStage(
 	if strings.TrimSpace(source) == strings.TrimSpace(current) {
 		return fmt.Errorf("block %s returned an unchanged declaration for staged failure: %s", target.ID, diagnostic.Message)
 	}
+	progress.invalidatePrimitiveNormalizations(target.ID)
 	program.Generated[target.ID] = source
 	return nil
 }

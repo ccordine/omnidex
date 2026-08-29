@@ -128,9 +128,11 @@ func TestApplyTypeScriptDeterministicRepairRequiresExactByteAuthority(t *testing
 	current := "function Read(value: Value): number {\n  return value.current ?? 0;\n}"
 	source := "value.current ?? 0"
 	start := strings.Index(current, source)
+	normalizationStart := start
 	scope := directCodingTypeScriptScope{DeterministicRepairs: []directCodingTypeScriptDeterministicRepair{{
-		Source: source, Replacement: "typeof value.current === 'number' ? value.current : 0",
-		StartByte: start, EndByte: start + len(source),
+		Mechanism: directCodingTypeScriptPrimitiveNullishNarrowing,
+		Source:    source, Replacement: "typeof value.current === 'number' ? value.current : 0",
+		StartByte: start, EndByte: start + len(source), NormalizationStartByte: &normalizationStart,
 	}}}
 	candidate, repaired, err := applyDirectCodingTypeScriptDeterministicRepair(current, scope)
 	if err != nil {
@@ -145,6 +147,33 @@ func TestApplyTypeScriptDeterministicRepairRequiresExactByteAuthority(t *testing
 	if _, _, err := applyDirectCodingTypeScriptDeterministicRepair(current, stale); err == nil ||
 		!strings.Contains(err.Error(), "no longer matches") {
 		t.Fatalf("stale deterministic repair error=%v", err)
+	}
+}
+
+func TestApplyTypeScriptReferenceRepairRequiresPriorOccurrenceBytes(t *testing.T) {
+	t.Parallel()
+	normalization := "typeof state.value === 'string' ? state.value : ''"
+	current := "function Apply(state: State): void {\n  const value = " + normalization + ";\n  record(state.value);\n}"
+	normalizationStart := strings.Index(current, normalization)
+	targetStart := strings.LastIndex(current, "state.value")
+	repair := directCodingTypeScriptDeterministicRepair{
+		Mechanism: directCodingTypeScriptPrimitiveReferenceNarrowing,
+		Source:    "state.value", Replacement: normalization,
+		StartByte: targetStart, EndByte: targetStart + len("state.value"),
+		NormalizationStartByte: &normalizationStart,
+	}
+	candidate, repaired, err := applyDirectCodingTypeScriptDeterministicRepair(
+		current, directCodingTypeScriptScope{DeterministicRepairs: []directCodingTypeScriptDeterministicRepair{repair}},
+	)
+	if err != nil || !repaired || strings.Count(candidate, normalization) != 2 {
+		t.Fatalf("exact occurrence candidate=%q repaired=%t error=%v", candidate, repaired, err)
+	}
+	outOfAuthority := int(^uint(0) >> 1)
+	repair.NormalizationStartByte = &outOfAuthority
+	if _, _, err := applyDirectCodingTypeScriptDeterministicRepair(
+		current, directCodingTypeScriptScope{DeterministicRepairs: []directCodingTypeScriptDeterministicRepair{repair}},
+	); err == nil || !strings.Contains(err.Error(), "outside its prior authority") {
+		t.Fatalf("out-of-authority normalization error=%v", err)
 	}
 }
 

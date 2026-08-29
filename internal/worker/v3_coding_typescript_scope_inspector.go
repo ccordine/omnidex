@@ -18,8 +18,15 @@ import (
 
 const (
 	directCodingTypeScriptScopeInspectorFile      = ".omnidex-typescript-scope.mjs"
-	directCodingTypeScriptScopeInspectorSchema    = "omnidex.typescript-lexical-scope.v3"
+	directCodingTypeScriptScopeInspectorSchema    = "omnidex.typescript-lexical-scope.v4"
 	maxDirectCodingTypeScriptDeterministicRepairs = 8
+)
+
+type directCodingTypeScriptDeterministicRepairMechanism string
+
+const (
+	directCodingTypeScriptPrimitiveNullishNarrowing   directCodingTypeScriptDeterministicRepairMechanism = "deterministic_primitive_nullish_narrowing"
+	directCodingTypeScriptPrimitiveReferenceNarrowing directCodingTypeScriptDeterministicRepairMechanism = "deterministic_primitive_reference_narrowing"
 )
 
 type directCodingTypeScriptScopeReceipt struct {
@@ -31,11 +38,13 @@ type directCodingTypeScriptScopeReceipt struct {
 }
 
 type directCodingTypeScriptDeterministicRepair struct {
-	EvidenceIndex int    `json:"evidence_index"`
-	Source        string `json:"source"`
-	Replacement   string `json:"replacement"`
-	StartByte     int    `json:"start_byte"`
-	EndByte       int    `json:"end_byte"`
+	Mechanism              directCodingTypeScriptDeterministicRepairMechanism `json:"mechanism"`
+	EvidenceIndex          int                                                `json:"evidence_index"`
+	Source                 string                                             `json:"source"`
+	Replacement            string                                             `json:"replacement"`
+	StartByte              int                                                `json:"start_byte"`
+	EndByte                int                                                `json:"end_byte"`
+	NormalizationStartByte *int                                               `json:"normalization_start_byte"`
 }
 
 type directCodingTypeScriptScope struct {
@@ -204,11 +213,32 @@ func applyDirectCodingTypeScriptDeterministicRepair(
 		)
 	}
 	repair := scope.DeterministicRepairs[0]
+	if !validDirectCodingTypeScriptDeterministicRepairMechanism(repair.Mechanism) {
+		return "", false, fmt.Errorf("TypeScript deterministic repair mechanism %q is invalid", repair.Mechanism)
+	}
 	if repair.StartByte < 0 || repair.EndByte <= repair.StartByte || repair.EndByte > len(current) {
 		return "", false, fmt.Errorf("TypeScript deterministic repair byte range is outside the current declaration")
 	}
 	if current[repair.StartByte:repair.EndByte] != repair.Source {
 		return "", false, fmt.Errorf("TypeScript deterministic repair source no longer matches the current declaration")
+	}
+	if repair.NormalizationStartByte == nil {
+		return "", false, fmt.Errorf("TypeScript deterministic repair lacks exact normalization occurrence authority")
+	}
+	normalizationStart := *repair.NormalizationStartByte
+	if repair.Mechanism == directCodingTypeScriptPrimitiveNullishNarrowing {
+		if normalizationStart != repair.StartByte {
+			return "", false, fmt.Errorf("TypeScript nullish repair normalization occurrence does not match its target")
+		}
+	} else {
+		if normalizationStart < 0 || len(repair.Replacement) > repair.StartByte ||
+			normalizationStart > repair.StartByte-len(repair.Replacement) {
+			return "", false, fmt.Errorf("TypeScript reference repair normalization occurrence is outside its prior authority")
+		}
+		normalizationEnd := normalizationStart + len(repair.Replacement)
+		if current[normalizationStart:normalizationEnd] != repair.Replacement {
+			return "", false, fmt.Errorf("TypeScript reference repair normalization occurrence no longer matches the current declaration")
+		}
 	}
 	candidate := current[:repair.StartByte] + repair.Replacement + current[repair.EndByte:]
 	if candidate == current {
@@ -357,7 +387,9 @@ func decodeDirectCodingTypeScriptScopeReceipt(raw []byte) (directCodingTypeScrip
 	}
 	seenRepairEvidence := make(map[int]struct{}, len(deterministicRepairs))
 	for index, repair := range deterministicRepairs {
-		if repair.Source == "" || repair.Replacement == "" ||
+		if !validDirectCodingTypeScriptDeterministicRepairMechanism(repair.Mechanism) ||
+			repair.NormalizationStartByte == nil ||
+			repair.Source == "" || repair.Replacement == "" ||
 			!utf8.ValidString(repair.Source) || !utf8.ValidString(repair.Replacement) ||
 			strings.ContainsAny(repair.Source, "\r\n") || strings.ContainsAny(repair.Replacement, "\r\n") ||
 			repair.EvidenceIndex < 0 || repair.EvidenceIndex >= len(expressionEvidence) ||
@@ -365,6 +397,14 @@ func decodeDirectCodingTypeScriptScopeReceipt(raw []byte) (directCodingTypeScrip
 			expressionEvidence[repair.EvidenceIndex].Source != repair.Source {
 			return directCodingTypeScriptScope{}, fmt.Errorf(
 				"TypeScript compiler deterministic repair %d is invalid", index+1,
+			)
+		}
+		normalizationStart := *repair.NormalizationStartByte
+		if normalizationStart < 0 ||
+			(repair.Mechanism == directCodingTypeScriptPrimitiveNullishNarrowing && normalizationStart != repair.StartByte) ||
+			(repair.Mechanism == directCodingTypeScriptPrimitiveReferenceNarrowing && normalizationStart >= repair.StartByte) {
+			return directCodingTypeScriptScope{}, fmt.Errorf(
+				"TypeScript compiler deterministic repair %d has invalid normalization occurrence authority", index+1,
 			)
 		}
 		if _, duplicate := seenRepairEvidence[repair.EvidenceIndex]; duplicate {
@@ -379,4 +419,16 @@ func decodeDirectCodingTypeScriptScopeReceipt(raw []byte) (directCodingTypeScrip
 		Bindings: bindings, UnavailableBindings: unavailable,
 		ExpressionEvidence: expressionEvidence, DeterministicRepairs: deterministicRepairs,
 	}, nil
+}
+
+func validDirectCodingTypeScriptDeterministicRepairMechanism(
+	mechanism directCodingTypeScriptDeterministicRepairMechanism,
+) bool {
+	switch mechanism {
+	case directCodingTypeScriptPrimitiveNullishNarrowing,
+		directCodingTypeScriptPrimitiveReferenceNarrowing:
+		return true
+	default:
+		return false
+	}
 }

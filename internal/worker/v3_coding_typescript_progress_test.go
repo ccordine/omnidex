@@ -137,3 +137,56 @@ func TestTypeScriptCorrectionProgressKeepsDeterministicClosureIndependentPerBloc
 		t.Fatalf("one block consumed another block's deterministic budget: %v", err)
 	}
 }
+
+func TestTypeScriptReferenceNarrowingRequiresExactPriorCodeOwnedNormalization(t *testing.T) {
+	t.Parallel()
+	progress := newDirectCodingTypeScriptCorrectionProgress()
+	if err := progress.beginStage(); err != nil {
+		t.Fatal(err)
+	}
+	normalization := "typeof state.value === 'string' ? state.value : ''"
+	normalizationStart := 24
+	reference := directCodingTypeScriptDeterministicRepair{
+		Mechanism:              directCodingTypeScriptPrimitiveReferenceNarrowing,
+		Replacement:            normalization,
+		NormalizationStartByte: &normalizationStart,
+	}
+	if authorized, err := progress.authorizeDeterministicRepair("profile.form", reference); err != nil || authorized {
+		t.Fatalf("unrecorded reference authorization=%t error=%v", authorized, err)
+	}
+	prior := directCodingTypeScriptDeterministicRepair{
+		Mechanism:              directCodingTypeScriptPrimitiveNullishNarrowing,
+		Replacement:            normalization,
+		StartByte:              normalizationStart,
+		NormalizationStartByte: &normalizationStart,
+	}
+	if authorized, err := progress.authorizeDeterministicRepair("profile.form", prior); err != nil || !authorized {
+		t.Fatalf("nullish repair authorization=%t error=%v", authorized, err)
+	}
+	if err := progress.recordDeterministicRepair("profile.form", prior); err != nil {
+		t.Fatal(err)
+	}
+	if authorized, err := progress.authorizeDeterministicRepair("profile.form", reference); err != nil || !authorized {
+		t.Fatalf("exact recorded normalization authorization=%t error=%v", authorized, err)
+	}
+	for _, testCase := range []struct {
+		name, blockID, replacement string
+	}{
+		{name: "different block", blockID: "profile.preview", replacement: normalization},
+		{name: "different replacement", blockID: "profile.form", replacement: "typeof state.value === 'string' ? state.value : 'unknown'"},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			candidate := reference
+			candidate.Replacement = testCase.replacement
+			if authorized, err := progress.authorizeDeterministicRepair(testCase.blockID, candidate); err != nil || authorized {
+				t.Fatalf("inexact normalization authorization=%t error=%v", authorized, err)
+			}
+		})
+	}
+	shadowedOccurrenceStart := 96
+	shadowed := reference
+	shadowed.NormalizationStartByte = &shadowedOccurrenceStart
+	if authorized, err := progress.authorizeDeterministicRepair("profile.form", shadowed); err != nil || authorized {
+		t.Fatalf("same bytes at a different compiler occurrence authorization=%t error=%v", authorized, err)
+	}
+}
