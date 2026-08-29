@@ -3009,14 +3009,6 @@ BEGIN
         RETURN NULL;
     END IF;
     participant_count := jsonb_array_length(participants);
-    IF result_value->'user_turn'->>'persona_kind'='legacy_untyped' THEN
-        IF jsonb_typeof(result_value->'responder_routes')<>'array' OR
-           jsonb_array_length(result_value->'responder_routes')<>1 OR
-           NOT (participants ? (result_value->'responder_routes'->0->>'character_id')) THEN
-            RETURN NULL;
-        END IF;
-        RETURN jsonb_build_array(result_value->'responder_routes'->0->>'character_id');
-    END IF;
     IF (SELECT COUNT(*)<>COUNT(DISTINCT item.value #>> '{}')
         FROM jsonb_array_elements(participants) AS item(value)) OR
        EXISTS (
@@ -3779,16 +3771,24 @@ $_$;
 CREATE FUNCTION roleplay_user_turn_authority(persona_kind_value text, persona_character_id_value text, persona_name_value text, persona_summary_value text, contribution_kind_value text, exact_text_value text, parts_value jsonb) RETURNS jsonb
     LANGUAGE sql IMMUTABLE
     AS $$
-    SELECT jsonb_strip_nulls(jsonb_build_object(
-        'persona_kind',persona_kind_value,
-        'character_id',persona_character_id_value,
-        'persona_name',persona_name_value,
-        'persona_summary',CASE WHEN persona_kind_value='character'
-            THEN persona_summary_value ELSE NULL END,
-        'contribution_kind',contribution_kind_value,
-        'parts',parts_value,
-        'exact_text',exact_text_value
-    ));
+    SELECT CASE WHEN
+        (persona_kind_value='character' AND contribution_kind_value IN (
+            'dialogue','action','action_dialogue','structured_turn'
+        )) OR
+        (persona_kind_value='narrator' AND contribution_kind_value IN (
+            'narration','direction','narration_direction','command'
+        ))
+    THEN jsonb_strip_nulls(jsonb_build_object(
+            'persona_kind',persona_kind_value,
+            'character_id',persona_character_id_value,
+            'persona_name',persona_name_value,
+            'persona_summary',CASE WHEN persona_kind_value='character'
+                THEN persona_summary_value ELSE NULL END,
+            'contribution_kind',contribution_kind_value,
+            'parts',parts_value,
+            'exact_text',exact_text_value
+        ))
+    ELSE NULL END;
 $$;
 
 
@@ -3812,12 +3812,14 @@ BEGIN
     END IF;
     part_count := jsonb_array_length(parts_value);
     IF part_count=0 THEN
-        RETURN contribution_kind_value IN (
-            'dialogue','action','action_dialogue','narration','direction',
-            'command','legacy_untyped'
-        );
+        RETURN (persona_kind_value='character' AND contribution_kind_value IN (
+                    'dialogue','action','action_dialogue'
+                )) OR
+               (persona_kind_value='narrator' AND contribution_kind_value IN (
+                    'narration','direction','command'
+                ));
     END IF;
-    IF part_count>16 OR contribution_kind_value IN ('command','legacy_untyped') THEN
+    IF part_count>16 OR contribution_kind_value='command' THEN
         RETURN FALSE;
     END IF;
     FOR part IN
@@ -3894,8 +3896,6 @@ CREATE FUNCTION roleplay_user_turn_requires_canon(persona_kind_value text, contr
             )
         WHEN persona_kind_value='narrator' AND
              contribution_kind_value IN ('direction','command') THEN FALSE
-        WHEN persona_kind_value='legacy_untyped' AND
-             contribution_kind_value='legacy_untyped' THEN FALSE
         ELSE FALSE
     END;
 $$;
@@ -6263,9 +6263,7 @@ BEGIN
     IF current_scene_id IS NULL THEN
         RAISE EXCEPTION 'roleplay user turn requires a current scene';
     END IF;
-    IF NEW.persona_kind='legacy_untyped' THEN
-        RAISE EXCEPTION 'new roleplay turns require explicit persona and contribution authority';
-    ELSIF NEW.persona_kind='character' AND NOT EXISTS (
+    IF NEW.persona_kind='character' AND NOT EXISTS (
             SELECT 1
             FROM roleplay_scene_participants AS participant
             JOIN roleplay_characters AS character
@@ -9598,12 +9596,12 @@ CREATE TABLE roleplay_user_turns (
     parts jsonb DEFAULT '[]'::jsonb NOT NULL,
     authority jsonb GENERATED ALWAYS AS (roleplay_user_turn_authority(persona_kind, persona_character_id, persona_name, persona_summary, contribution_kind, exact_text, parts)) STORED,
     CONSTRAINT roleplay_user_turns_authority_check CHECK (((jsonb_typeof(authority) = 'object'::text) AND (octet_length((authority)::text) <= 16384) AND (authority ?& ARRAY['persona_kind'::text, 'persona_name'::text, 'contribution_kind'::text, 'parts'::text, 'exact_text'::text]))),
-    CONSTRAINT roleplay_user_turns_command_text_check CHECK ((((contribution_kind = 'command'::text) AND ("left"(exact_text, 1) = '/'::text)) OR ((contribution_kind <> 'command'::text) AND ((contribution_kind = 'legacy_untyped'::text) OR ("left"(exact_text, 1) <> '/'::text))))),
-    CONSTRAINT roleplay_user_turns_contribution_kind_authority_check CHECK ((contribution_kind = ANY (ARRAY['dialogue'::text, 'action'::text, 'action_dialogue'::text, 'structured_turn'::text, 'narration'::text, 'direction'::text, 'narration_direction'::text, 'command'::text, 'legacy_untyped'::text]))),
+    CONSTRAINT roleplay_user_turns_command_text_check CHECK ((((contribution_kind = 'command'::text) AND ("left"(exact_text, 1) = '/'::text)) OR ((contribution_kind <> 'command'::text) AND ("left"(exact_text, 1) <> '/'::text)))),
+    CONSTRAINT roleplay_user_turns_contribution_kind_authority_check CHECK ((contribution_kind = ANY (ARRAY['dialogue'::text, 'action'::text, 'action_dialogue'::text, 'structured_turn'::text, 'narration'::text, 'direction'::text, 'narration_direction'::text, 'command'::text]))),
     CONSTRAINT roleplay_user_turns_exact_text_check CHECK ((((octet_length(exact_text) >= 1) AND (octet_length(exact_text) <= 4096)) AND (btrim(exact_text) <> ''::text))),
     CONSTRAINT roleplay_user_turns_parts_check CHECK (roleplay_user_turn_parts_valid(parts, persona_kind, contribution_kind, exact_text)),
-    CONSTRAINT roleplay_user_turns_persona_contribution_check CHECK ((((persona_kind = 'character'::text) AND (persona_character_id IS NOT NULL) AND (persona_name <> ALL (ARRAY['Narrator'::text, 'Unattributed user'::text])) AND (contribution_kind = ANY (ARRAY['dialogue'::text, 'action'::text, 'action_dialogue'::text, 'structured_turn'::text]))) OR ((persona_kind = 'narrator'::text) AND (persona_character_id IS NULL) AND (persona_name = 'Narrator'::text) AND (persona_summary = ''::text) AND (contribution_kind = ANY (ARRAY['narration'::text, 'direction'::text, 'narration_direction'::text, 'command'::text]))) OR ((persona_kind = 'legacy_untyped'::text) AND (persona_character_id IS NULL) AND (persona_name = 'Unattributed user'::text) AND (persona_summary = ''::text) AND (contribution_kind = 'legacy_untyped'::text)))),
-    CONSTRAINT roleplay_user_turns_persona_kind_check CHECK ((persona_kind = ANY (ARRAY['character'::text, 'narrator'::text, 'legacy_untyped'::text]))),
+    CONSTRAINT roleplay_user_turns_persona_contribution_check CHECK ((((persona_kind = 'character'::text) AND (persona_character_id IS NOT NULL) AND (persona_name <> 'Narrator'::text) AND (contribution_kind = ANY (ARRAY['dialogue'::text, 'action'::text, 'action_dialogue'::text, 'structured_turn'::text]))) OR ((persona_kind = 'narrator'::text) AND (persona_character_id IS NULL) AND (persona_name = 'Narrator'::text) AND (persona_summary = ''::text) AND (contribution_kind = ANY (ARRAY['narration'::text, 'direction'::text, 'narration_direction'::text, 'command'::text]))))),
+    CONSTRAINT roleplay_user_turns_persona_kind_check CHECK ((persona_kind = ANY (ARRAY['character'::text, 'narrator'::text]))),
     CONSTRAINT roleplay_user_turns_persona_name_check CHECK ((((octet_length(persona_name) >= 1) AND (octet_length(persona_name) <= 256)) AND (persona_name = btrim(persona_name)))),
     CONSTRAINT roleplay_user_turns_persona_summary_check CHECK (((octet_length(persona_summary) <= 1024) AND (persona_summary = btrim(persona_summary))))
 );

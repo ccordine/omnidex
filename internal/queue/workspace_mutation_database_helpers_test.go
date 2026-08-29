@@ -93,7 +93,7 @@ func newWorkspaceMutationDatabaseFixture(
 	command := WorkspaceMutationCommand{
 		JobID: job.ID, StepID: claim.Step.ID, Generation: claim.Step.Generation,
 		CreatorAttempt: claim.Authority.Attempt, CreatorWorkerID: claim.Authority.WorkerID,
-		ProjectID: project.ID, Plan: plan, Verification: verification,
+		ProjectID: project.ID, ProjectLocation: root, Plan: plan, Verification: verification,
 	}
 	return workspaceMutationDatabaseFixture{
 		repository: repository, pool: pool, ctx: ctx, root: root,

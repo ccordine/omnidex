@@ -152,6 +152,35 @@ func prepareAndBindTestTurn(
 	instruction string,
 ) SimulationTurnAuthority {
 	t.Helper()
+	return prepareAndBindTestTurnWithCompletion(
+		t, pool, channelID, messageID, jobID, instruction, true,
+	)
+}
+
+func prepareAndBindUncompletedTestTurn(
+	t *testing.T,
+	pool *pgxpool.Pool,
+	channelID string,
+	messageID int64,
+	jobID int64,
+	instruction string,
+) SimulationTurnAuthority {
+	t.Helper()
+	return prepareAndBindTestTurnWithCompletion(
+		t, pool, channelID, messageID, jobID, instruction, false,
+	)
+}
+
+func prepareAndBindTestTurnWithCompletion(
+	t *testing.T,
+	pool *pgxpool.Pool,
+	channelID string,
+	messageID int64,
+	jobID int64,
+	instruction string,
+	complete bool,
+) SimulationTurnAuthority {
+	t.Helper()
 	ctx := context.Background()
 	operationID := mustTransitionID(t)
 	tx, err := pool.BeginTx(ctx, pgx.TxOptions{})
@@ -187,8 +216,25 @@ func prepareAndBindTestTurn(
 	`, jobID, instruction, string(metadata)); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO job_generations (job_id,generation,purpose)
+		VALUES ($1,1,'initial')
+	`, jobID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO job_steps (id,job_id,action,sort_index,status,generation,current_attempt)
+		VALUES ($1,$1,'conversation_respond',1,'pending',1,0)
+	`, jobID); err != nil {
+		t.Fatal(err)
+	}
 	if err := BindSimulationPreparationJobTx(ctx, tx, authority.PreparationID, jobID); err != nil {
 		t.Fatal(err)
+	}
+	if complete {
+		if err := completePreparedRoleplayTestJobTx(ctx, tx, authority, jobID); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if err := tx.Commit(ctx); err != nil {
 		t.Fatal(err)

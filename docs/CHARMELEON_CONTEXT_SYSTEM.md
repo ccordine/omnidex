@@ -22,12 +22,14 @@ The context system has five separate authorities:
 | Task Ledger | Goals, constraints, execution graph, decisions, questions, failures, and checkpoints | One job initially | Typed and provenance-labelled |
 | Working Set | References currently resident for one scope | Call, step, task, objective, or job | Code managed |
 | Context Projection | Exact immutable material rendered for one inference | One model call | Code selected and immutable |
-| Durable Memory | Explicitly promoted cross-job preferences, references, and lessons | Cross-job | Reference only |
+| Durable Memory (historical name) | Explicitly promoted cross-job preferences, references, and lessons | Later jobs in the current service/database lifecycle | Reference only |
 
 These layers must not share tables merely because all of them can be called memory.
-Durable memory is historical reference. Repository intelligence is disposable,
-hash-bound derived state. The task ledger is current execution state. A working set is
-attention. A context projection is evidence of one call.
+The historically named durable memory is reference material only for the current
+service/database lifecycle. Repository intelligence is disposable, hash-bound
+derived state. The task ledger is current execution state. A working set is
+attention. A context projection is evidence of one call. No internal layer survives
+the next Omnidex startup.
 
 ## Authority flow
 
@@ -50,7 +52,9 @@ user authority ─────────┘
                   Code coordinator
 ```
 
-The model may forget everything after every call. Omnidex must not.
+The model may forget everything after every call. Within the current running service,
+Omnidex must not. A service startup intentionally begins a new empty internal state
+lifecycle.
 
 The domain-neutral coordinator that consumes these authorities is specified in
 [`CHARMELEON_COGNITION_RUNTIME.md`](CHARMELEON_COGNITION_RUNTIME.md), with its
@@ -78,9 +82,10 @@ Inline execution exists solely for bounded child work that is deterministically
 executed inside its already-authorized outer step. Both forms use the same
 Task Ledger, verification requirements, and loud failure behavior.
 
-PostgreSQL is canonical. One transaction updates normalized current state, appends one
-audit event, and increments the ledger version. Optimistic version conflicts fail
-explicitly. Pure event replay is an audit and recovery proof, not the normal read path.
+PostgreSQL is canonical during the current running service. One transaction updates
+normalized current state, appends one audit event, and increments the ledger version.
+Optimistic version conflicts fail explicitly. Event reduction may verify the audit
+log within that database lifecycle; it is not a startup recovery path.
 
 The first supported owner is one job. Card- and project-scoped ledgers remain disabled
 until job continuity is proven. Job enqueue creates the authoritative telemetry run,
@@ -137,7 +142,8 @@ before a plan can become mutable current authority without surviving its generat
 
 ## Working Set
 
-The ledger records what must survive during the job. A working set records what is
+The ledger records what must remain available during the job in the current running
+service. A working set records what is
 currently resident. Items have a stable reference, role, retention scope, priority,
 freshness identity, byte cost, acquisition provenance, and use counters.
 
@@ -233,13 +239,15 @@ model. Context relevance has no browser inference provider or alternate result p
 
 ## Human-readable projections
 
-PostgreSQL remains authoritative. For terminal jobs, an explicit server-authorized
+PostgreSQL remains authoritative until the service stops. For terminal jobs, an explicit server-authorized
 operation may atomically generate disposable, read-only inspection files under
 `.omni/runs/<job-id>/`, including a manifest, task-ledger state, and bounded artifact,
 evidence, and call indexes.
 
 These files are an inspection ABI for humans and external tools. Models do not edit
-them, workers do not read them as authority, and deleting them does not delete state.
+them, workers do not read them as authority, and deleting them does not delete state
+during the current database lifecycle. Conversely, retaining them across startup
+does not restore or reconstruct discarded internal state.
 Default exports omit prompts, responses, native thinking, source excerpts, web bodies,
 memory, diffs, command output, job metadata, and private benchmark evaluation. The
 repository inventory and Git-state identity exclude `.omni/**` before counting and
@@ -247,9 +255,9 @@ hashing, so an inspection export cannot invalidate repository truth.
 
 ## Behavior-first implementation sequence
 
-Context persistence mirrors proven cognition behavior; it must not define that
-behavior. New Task Ledger, Working Set, projection, restart, replay, and provenance
-work for the replacement cognition path is blocked until the in-memory objective
+Context recording mirrors proven cognition behavior; it must not define that
+behavior. New Task Ledger, Working Set, projection, same-runtime transaction, and
+provenance work for the replacement cognition path is blocked until the in-memory objective
 machine passes its executable gates:
 
 1. **Deterministic closure** — a missing prerequisite is acquired through registered
@@ -301,14 +309,16 @@ machine passes its executable gates:
 8. **Incompatible production cutover** — remove the universal model-action path and
    its schemas, recovery consumers, and provider eagerness. There is no fallback or
    feature flag.
-9. **Durability** — only after the preceding behavior survives the production path do
-   PostgreSQL Task Ledger state, accepted facts, gap records, artifacts, Working Set,
-   projections, restart, replay, and provenance become promotion work.
+9. **Current-runtime state** — only after the preceding behavior survives the
+   production path do PostgreSQL Task Ledger state, accepted facts, gap records,
+   artifacts, Working Set, projections, same-runtime transaction integrity,
+   provenance, and fresh-start reset evidence become promotion work.
 
 Existing ledger and context primitives remain useful foundations, but their existence
-is not evidence that the replacement cognition behavior works. Persistence may add
-authority and recovery; it may not add a planner, alternate transition rule, or other
-behavioral semantics. There is one implementation of each promoted primitive.
+is not evidence that the replacement cognition behavior works. Current-runtime
+recording may add authority and transactional integrity; it may not add startup
+recovery, a planner, an alternate transition rule, or other behavioral semantics.
+There is one implementation of each promoted primitive.
 
 ## Existing-repository proof boundary
 
@@ -343,69 +353,56 @@ or held-out evaluator, unavailable to the builder until the run stops, proves th
 requested behavior without model-authored self-tests or benchmark-specific framework
 logic. A passing regression suite alone is not a requirement-completion claim.
 
-## Current process-restart boundary
+## Startup reset boundary
 
-Repository mutations use a durable prepared/applying/applied/indeterminate journal.
-The journal binds the exact job generation, step, worker, source snapshot, contract,
-stage, full patch, and source/post file states. A retry classifies the complete current
+`database/setup.sql` is the one authoritative definition of Omnidex's internal
+PostgreSQL schema. Every Omnidex process/service startup drops and recreates the
+configured dedicated schema from that file. Previous jobs, ledger events and
+materializations, Working Sets, projections, memory, evidence, attempts, leases, and
+repository-mutation journal rows are intentionally discarded.
+
+There is no internal database migration sequence, restart continuation, phase
+takeover, PostgreSQL replay, or in-place upgrade contract. Filesystem mutations from
+a stopped process may still exist as ordinary repository reality, but neither those
+files nor exported `.omni` projections restore the previous job or its authority. A
+subsequent request starts with new internal identity and proves the current repository
+state normally.
+
+During one running service, repository mutations may use a
+prepared/applying/applied/indeterminate journal. The journal binds the exact job
+generation, step, worker, source snapshot, contract, stage, full patch, and
+source/post file states. A same-runtime retry classifies the complete current
 repository inventory: exact source permits the same patch, exact post permits atomic
-generated-diff evidence finalization, and any other state fails as indeterminate. An
-unresolved command can be loaded before repository indexing, but that read does not
-claim or transfer its running step.
+generated-diff evidence finalization, and any other state fails as indeterminate.
+This journal provides transaction and retry safety only within the current database
+lifecycle.
 
-The journal currently ends at exact patch application. Its `applied` state is not a
-durable acceptance of the subsequent authoritative verification plan, refreshed
-repository index, or completed task. An interruption after exact-post finalization and
-before those later phases cannot resume at the missing proof boundary; the current
-runtime may begin semantic routing and change generation again from the post-patch
-repository. Therefore the mutation journal must not be cited as crash-safe end-to-end
-existing-repository execution. Promotion requires a code-owned phase checkpoint that
-binds and resumes the baseline, staged proof, mutation, authoritative proof, refresh,
-and completion sequence without rerunning an already applied request.
-
-The cross-cutting step-attempt lease cutover is implemented. Every worker-originated
-durable write is bound to one monotonically increasing attempt, an expired attempt is
-reclaimed only as a later attempt, and the stale worker is fenced from subsequent
-writes and completion. The former lease-required error and its unfenced writer path
-are removed and must not return.
-
-The implemented lease authority:
-
-- add a monotonic attempt identity and one expiring active lease to each claimed step;
-- carry the exact job, generation, step, attempt, and worker identity through every
-  worker-originated durable write, model-call record, lifecycle operation, working-set
-  mutation, memory decision, tool result, and domain side effect;
-- use one job-then-step-then-attempt lock order before any ledger or working-set lock;
-- reject every stale attempt through one typed error and remove every old writer
-  signature rather than retaining compatibility overloads;
-- allow repository-journal recovery under a later attempt only through an explicit
-  actor-attempt field while preserving the immutable attempt that prepared the patch;
-- prove expiry and reclaim with two workers, including rejection of the old worker's
-  writes and completion, safe waiting-for-feedback behavior, and post-state mutation
-  finalization after a real repository-process restart.
-
-This lease authority does not by itself promote end-to-end repository-process restart.
-That claim remains blocked by the missing phase checkpoint described above: the
-baseline, staged proof, mutation, authoritative proof, refreshed index, and completion
-sequence must resume from PostgreSQL without rerunning an already accepted phase.
-Omnidex fails loudly at that boundary instead of treating attempt fencing as proof of
-phase-level continuity or inventing a repository-only takeover path.
+The cross-cutting step-attempt lease authority is likewise current-runtime only. Each
+worker-originated write is bound to one monotonically increasing attempt; an expired
+attempt may be reclaimed as a later attempt while the service remains running, and
+the stale worker is fenced from subsequent writes and completion. Tests may prove
+expiry, reclaim, same-runtime journal finalization, and stale-write rejection with
+concurrent workers. They must not claim continuation after stopping and starting the
+Omnidex service.
 
 ## Proof gates
 
-The first proof is continuity, not a large-repository edit:
+The first proof is current-runtime continuity plus an exact startup reset, not a
+large-repository edit:
 
-- kill a worker after every completed step;
-- clear all model conversation state;
-- restart from PostgreSQL alone;
-- select the same next runnable task;
+- clear all model conversation state after every completed step while the service
+  remains running;
+- select the same next runnable task from code-owned current state;
 - preserve active constraints, accepted decisions, unresolved failures, and completed
-  work;
-- never reuse rejected hypotheses or repeat completed work.
+  work during that database lifecycle;
+- never reuse rejected hypotheses or repeat completed work;
+- stop and start the Omnidex service, then prove the schema was recreated from
+  `database/setup.sql` and contains none of the prior internal rows.
 
-Required promotion invariants are 100% state validity and forced-restart recovery, zero
-authority violations, zero stale references admitted to model context, no end-to-end
-correctness regression, and a material reduction in context and duplicate acquisition.
+Required promotion invariants are 100% same-runtime state validity, 100% fresh-start
+reset, zero prior internal rows after startup, zero authority violations, zero stale
+references admitted to model context, no end-to-end correctness regression, and a
+material reduction in context and duplicate acquisition.
 
 Repository scaling is measured with the same relevant module surrounded by increasing
 amounts of unrelated source. Index and storage cost may grow. Model-visible context and

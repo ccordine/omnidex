@@ -77,13 +77,6 @@ func (s DatabaseSetup) validate() error {
 	if !strings.Contains(raw, databaseSetupRuntimeSchemaSlot) {
 		return fmt.Errorf("database setup lacks its runtime schema slot")
 	}
-	for _, forbidden := range []string{
-		"schema_migrations", "schema_migration_bundle_authority",
-	} {
-		if strings.Contains(strings.ToLower(raw), forbidden) {
-			return fmt.Errorf("database setup contains retired incremental state %q", forbidden)
-		}
-	}
 	return nil
 }
 

@@ -113,8 +113,7 @@ func ReplayExactStation(
 	result.ExpectedIdentity = expected
 	result.Temperature = prepared.Temperature
 	return executeExactStationReplayPrepared(
-		ctx, client, result, boundary.Job, point.Gap.RendererVersion,
-		point.Gap.ContextTokens, prepared,
+		ctx, client, result, boundary.Job, point.Gap.ContextTokens, prepared,
 	)
 }
 
@@ -200,21 +199,11 @@ func replayExactStationArtifact(
 	job assemblyline.PortableJob,
 	raw string,
 ) (ExactStationReplayArtifact, error) {
-	return replayExactStationArtifactForRenderer(
-		job, assemblyline.PortableRendererV1, raw,
-	)
-}
-
-func replayExactStationArtifactForRenderer(
-	job assemblyline.PortableJob,
-	renderer string,
-	raw string,
-) (ExactStationReplayArtifact, error) {
 	artifact := ExactStationReplayArtifact{
 		Kind: "exact_final_response", Source: raw, SourceSHA256: replaySHA256(raw),
 		StartByte: 0, EndByte: len(raw),
 	}
-	if err := assemblyline.ValidatePortableJobForRenderer(job, renderer); err != nil {
+	if err := job.Validate(); err != nil {
 		return artifact, fmt.Errorf("validate replay portable job: %w", err)
 	}
 	switch job.Kind {

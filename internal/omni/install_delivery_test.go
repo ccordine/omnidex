@@ -307,14 +307,11 @@ func TestDockerBuilderInstallsBuildScriptInterpreter(t *testing.T) {
 	}
 }
 
-func TestDockerRuntimeCopiesOnlyExistingAuthoritativeInputs(t *testing.T) {
+func TestDockerRuntimeCopiesAuthoritativeDatabaseSetup(t *testing.T) {
 	root := repoRootFromOmniTest(t)
 	dockerfile := readRepoScript(t, root, "Dockerfile")
 	if !strings.Contains(dockerfile, "COPY --from=build /src/database/setup.sql /usr/local/database/setup.sql") {
 		t.Fatal("Docker runtime must retain the authoritative database setup")
-	}
-	if strings.Contains(dockerfile, "COPY --from=build /src/migrations") {
-		t.Fatal("Docker runtime retains a numbered database history")
 	}
 	if info, err := os.Stat(filepath.Join(root, "database", "setup.sql")); err != nil || !info.Mode().IsRegular() {
 		t.Fatalf("Docker runtime setup must be one existing regular file: %v", err)

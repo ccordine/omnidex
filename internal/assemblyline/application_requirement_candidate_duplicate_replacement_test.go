@@ -14,7 +14,7 @@ func TestApplicationRequirementCandidateDuplicateReplacementBindsExactDefect(
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := ValidatePortableJobForRenderer(job, PortableRendererV1); err != nil {
+	if err := job.Validate(); err != nil {
 		t.Fatal(err)
 	}
 	prompt, err := RenderPortableJob(job)

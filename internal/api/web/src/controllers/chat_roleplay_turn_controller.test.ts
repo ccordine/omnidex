@@ -119,23 +119,20 @@ describe("ChatRoleplayTurnController failed-turn recovery", () => {
     expect(controller.focusComposer).not.toHaveBeenCalled();
   });
 
-  it("rejects a legacy roleplay turn whose actor and modality were never recorded", () => {
+  it("rejects failed turns with unsupported persona authority", () => {
     const controller = recoveryHarness();
     controller.inputTarget.value = "Keep this newer draft.";
     const button = document.createElement("button");
-    button.dataset.turnContent = "Unattributed historical prose.";
-    button.dataset.roleplayPersonaKind = "legacy_untyped";
-    button.dataset.roleplayContributionKind = "legacy_untyped";
-    button.dataset.roleplayTurnParts = "[]";
+    button.dataset.turnContent = "Unsupported turn.";
+    button.dataset.roleplayPersonaKind = "retired";
+    button.dataset.roleplayCharacterId = "rpc_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    button.dataset.roleplayContributionKind = "action";
+    button.dataset.roleplayTurnParts = JSON.stringify([{ kind: "action", text: "Unsupported turn." }]);
 
     expect(() => controller.restoreFailedTurn(eventFor(button))).toThrow(
-      "This historical failed turn has no recorded actor or modality, so it cannot be restored safely.",
+      "Failed roleplay turn recovery has contradictory persona authority.",
     );
     expect(controller.inputTarget.value).toBe("Keep this newer draft.");
-    expect(controller.setStatus).toHaveBeenCalledWith(
-      "This historical failed turn has no recorded actor or modality, so it cannot be restored safely.",
-      "error",
-    );
     expect(controller.focusComposer).not.toHaveBeenCalled();
   });
 

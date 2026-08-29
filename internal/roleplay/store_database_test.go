@@ -181,7 +181,27 @@ func openRoleplayTestPool(t *testing.T) (*pgxpool.Pool, func(*testing.T) *pgxpoo
 	setup = []byte(strings.ReplaceAll(
 		string(setup), "__OMNIDEX_RUNTIME_SCHEMA__", schema,
 	))
-	if _, err := pool.Exec(ctx, string(setup)); err != nil {
+	tx, err := pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		pool.Close()
+		admin.Close()
+		t.Fatal(err)
+	}
+	defer tx.Rollback(context.Background())
+	if _, err := tx.Exec(ctx, `
+		SET LOCAL standard_conforming_strings TO on;
+		SET LOCAL check_function_bodies TO false;
+	`); err != nil {
+		pool.Close()
+		admin.Close()
+		t.Fatal(err)
+	}
+	if _, err := tx.Exec(ctx, string(setup)); err != nil {
+		pool.Close()
+		admin.Close()
+		t.Fatal(err)
+	}
+	if err := tx.Commit(ctx); err != nil {
 		pool.Close()
 		admin.Close()
 		t.Fatal(err)
@@ -224,10 +244,21 @@ func bootstrapRoleplayChannel(
 	if err != nil {
 		t.Fatal(err)
 	}
+	workspaceRoot := filepath.Join(os.TempDir(), "omnidex-roleplay-"+channelID)
+	var projectID int64
+	if err := tx.QueryRow(ctx, `
+		INSERT INTO projects (location,name)
+		VALUES ($1,$2)
+		RETURNING id
+	`, workspaceRoot, "Roleplay "+worldName).Scan(&projectID); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := tx.Exec(ctx, `
-		INSERT INTO ai_channels (id,mode,roleplay_viewpoint_character_id)
-		VALUES ($1,'roleplay',$2)
-	`, channelID, viewpointID); err != nil {
+		INSERT INTO ai_channels (
+			id,scope,name,tags,project_id,workspace_root,mode,roleplay_viewpoint_character_id
+		)
+		VALUES ($1,'user',$2,ARRAY[]::text[],$3,$4,'roleplay',$5)
+	`, channelID, worldName, projectID, workspaceRoot, viewpointID); err != nil {
 		t.Fatal(err)
 	}
 	world, viewpoint, err := BootstrapWorldTx(

@@ -43,11 +43,6 @@ func generatedDeploymentQualifyAndCompleteProtected(
 	execution GeneratedWorkloadDeploymentExecutionCommand,
 ) {
 	t.Helper()
-	proof := generatedDeploymentVacantNamespaceProof(t, fixture.command.ComposeProject)
-	if _, created, err := fixture.repository.RecordGeneratedWorkloadDeploymentNamespaceRequalification(
-		fixture.ctx, fixture.authority, fixture.command, execution, proof,
-	); err != nil || !created {
-		t.Fatalf("qualify %s namespace: created=%t err=%v", execution.Slot.Name, created, err)
-	}
+	generatedDeploymentQualifyProtectedExecution(t, fixture, fixture.authority, execution)
 	generatedDeploymentCompleteExecution(t, fixture, execution)
 }

@@ -60,11 +60,6 @@ func ProjectRoleplayCanonAntecedent(
 	if err := authority.Validate(); err != nil {
 		return RoleplayCanonAntecedent{}, err
 	}
-	if authority.PersonaKind == roleplay.UserPersonaLegacy {
-		return RoleplayCanonAntecedent{}, fmt.Errorf(
-			"historical untyped user turn cannot become current canon antecedent",
-		)
-	}
 	antecedent := RoleplayCanonAntecedent{
 		PersonaKind: authority.PersonaKind, PersonaName: authority.PersonaName,
 		ContributionKind:    authority.ContributionKind,

@@ -134,7 +134,7 @@ func TestApplicationRequirementCandidateRefinementRejectsUnboundState(t *testing
 	}
 }
 
-func TestApplicationRequirementRefinementKindsUseSoleRenderer(t *testing.T) {
+func TestApplicationRequirementRefinementKindsProduceValidPortableJobs(t *testing.T) {
 	t.Parallel()
 	input := ApplicationRequirementCandidateCardinalityInput{
 		Candidate: "Provide interactive drum pads and a playable keyboard.",
@@ -143,12 +143,7 @@ func TestApplicationRequirementRefinementKindsUseSoleRenderer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := ValidatePortableJobForRenderer(job, PortableRendererV1); err != nil {
+	if err := job.Validate(); err != nil {
 		t.Fatal(err)
-	}
-	if err := ValidatePortableJobForRenderer(
-		job, "unsupported-renderer",
-	); err == nil {
-		t.Fatal("requirement refinement accepted a non-current renderer")
 	}
 }

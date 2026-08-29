@@ -40,9 +40,7 @@ func loadStationReplayPortableBoundary(
 		Payload:          append(json.RawMessage(nil), gap.PortablePayload...),
 		SourceProjection: persistedJob.SourceProjection,
 	}
-	if err := assemblyline.ValidatePortableJobForRenderer(
-		boundary.Job, gap.RendererVersion,
-	); err != nil {
+	if err := boundary.Job.Validate(); err != nil {
 		return boundary, fmt.Errorf("validate station replay portable job: %w", err)
 	}
 	if boundary.Job.Kind == assemblyline.WorkFragmentGenerationReplacement {

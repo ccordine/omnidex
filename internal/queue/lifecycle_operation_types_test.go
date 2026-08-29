@@ -1,76 +1,11 @@
 package queue
 
 import (
-	"bytes"
-	"encoding/json"
 	"testing"
 
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/roleplay"
 )
-
-func TestPreOngoingActionRoleplayLifecycleDescriptorRemainsByteIdentical(t *testing.T) {
-	id, err := NewLifecycleOperationID("pre-149-roleplay-replay")
-	if err != nil {
-		t.Fatal(err)
-	}
-	character := model.RoleplayCharacterID("rpc_0123456789abcdef0123456789abcdef")
-	command, err := normalizeCompleteStepCommand(CompleteStepCommand{
-		OperationID: id,
-		Authority: model.StepAttemptAuthority{
-			JobID: 1, Generation: 1, StepID: 1, Attempt: 1, WorkerID: "worker",
-		},
-		StepID: 1, Output: "Legacy response.",
-		ContextKey: "objective_result", ContextValue: "legacy-result",
-		RoleplayResponses: []RoleplayResponseCompletion{{
-			Position: 0, CharacterID: character, Output: "Legacy response.",
-			Facts: []string{}, KnowledgeCharacterIDs: []model.RoleplayCharacterID{},
-		}},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	descriptor, err := describeLifecycleOperation(id, LifecycleCompleteStep, command)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	type legacyRoleplayResponse struct {
-		Position              int                         `json:"position"`
-		CharacterID           model.RoleplayCharacterID   `json:"character_id"`
-		Output                string                      `json:"output"`
-		Facts                 []string                    `json:"facts"`
-		KnowledgeCharacterIDs []model.RoleplayCharacterID `json:"knowledge_character_ids"`
-	}
-	type legacyCompleteStepCommand struct {
-		OperationID       LifecycleOperationID     `json:"operation_id"`
-		StepID            int64                    `json:"step_id"`
-		Output            string                   `json:"output"`
-		ContextKey        string                   `json:"context_key"`
-		ContextValue      string                   `json:"context_value"`
-		RoleplayResponses []legacyRoleplayResponse `json:"roleplay_responses,omitempty"`
-	}
-	legacyPayload, err := json.Marshal(legacyCompleteStepCommand{
-		OperationID: id, StepID: 1, Output: "Legacy response.",
-		ContextKey: "objective_result", ContextValue: "legacy-result",
-		RoleplayResponses: []legacyRoleplayResponse{{
-			Position: 0, CharacterID: character, Output: "Legacy response.",
-			Facts: []string{}, KnowledgeCharacterIDs: []model.RoleplayCharacterID{},
-		}},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !bytes.Equal(descriptor.Payload, legacyPayload) {
-		t.Fatalf("pre-149 lifecycle payload changed\nnew: %s\nold: %s", descriptor.Payload, legacyPayload)
-	}
-	legacySHA := lifecycleIdentityDigest(
-		lifecycleOperationCommandSchema, string(LifecycleCompleteStep), string(legacyPayload),
-	)
-	if descriptor.SHA256 != legacySHA {
-		t.Fatalf("pre-149 lifecycle SHA changed: new=%s old=%s", descriptor.SHA256, legacySHA)
-	}
-}
 
 func TestLifecycleOperationIdentityAndContentAreIndependentAuthorities(t *testing.T) {
 	id, err := NewLifecycleOperationID("test", "job-41", "replan")

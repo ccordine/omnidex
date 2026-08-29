@@ -38,7 +38,7 @@ func TestRoleplayUserCanonDirectionHasNoReceiptAuthority(t *testing.T) {
 		t, pool, messageID, world.ChannelID, "Continue toward the archway.",
 		UserContributionDirection,
 	)
-	preparation := prepareAndBindTestTurn(
+	preparation := prepareAndBindUncompletedTestTurn(
 		t, pool, world.ChannelID, messageID, jobID, exact,
 	)
 
@@ -82,7 +82,7 @@ func TestRoleplayUserCanonModalityPredicateMatrix(t *testing.T) {
 			('direction', 'narrator','direction',
 			 '[{"kind":"message","text":"Continue."}]'::jsonb,FALSE),
 			('command', 'narrator','command','[]'::jsonb,FALSE),
-			('legacy', 'legacy_untyped','legacy_untyped','[]'::jsonb,FALSE),
+			('unsupported', 'retired','retired','[]'::jsonb,FALSE),
 			('message only', 'narrator','narration_direction',
 			 '[{"kind":"message","text":"Only direction."}]'::jsonb,FALSE)
 		) AS fixture(label,persona,contribution,parts,want)

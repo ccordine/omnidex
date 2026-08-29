@@ -13,6 +13,9 @@ import (
 func TestDeploymentRecoveryParentLockSerializesTerminalAndExecution(t *testing.T) {
 	t.Run("terminal wins", func(t *testing.T) {
 		fixture := generatedDeploymentApplyingFixture(t, "race-terminal-first")
+		generatedDeploymentQualifyProtectedExecution(
+			t, fixture, fixture.authority, fixture.manifest.Commands[0],
+		)
 		winner := beginGeneratedDeploymentRaceTx(t, fixture)
 		defer winner.Rollback(fixture.ctx)
 		if err := failGeneratedDeploymentAndReleaseTx(fixture.ctx, winner, fixture); err != nil {
@@ -23,7 +26,9 @@ func TestDeploymentRecoveryParentLockSerializesTerminalAndExecution(t *testing.T
 		err := blockedGeneratedDeploymentMutation(t, fixture, loser, func() error {
 			return insertGeneratedDeploymentExecutionTx(fixture.ctx, loser, fixture)
 		}, func() error { return winner.Commit(fixture.ctx) })
-		if err == nil || !strings.Contains(err.Error(), "execution start authority is invalid") {
+		if err == nil || !strings.Contains(
+			err.Error(), "protected deployment execution lacks exact current-attempt namespace requalification",
+		) {
 			t.Fatalf("execution loser error=%v", err)
 		}
 		assertGeneratedDeploymentRaceState(t, fixture, GeneratedWorkloadDeploymentFailed, 0, 0, false)
@@ -31,6 +36,9 @@ func TestDeploymentRecoveryParentLockSerializesTerminalAndExecution(t *testing.T
 
 	t.Run("execution wins", func(t *testing.T) {
 		fixture := generatedDeploymentApplyingFixture(t, "race-execution-first")
+		generatedDeploymentQualifyProtectedExecution(
+			t, fixture, fixture.authority, fixture.manifest.Commands[0],
+		)
 		winner := beginGeneratedDeploymentRaceTx(t, fixture)
 		defer winner.Rollback(fixture.ctx)
 		if err := insertGeneratedDeploymentExecutionTx(fixture.ctx, winner, fixture); err != nil {

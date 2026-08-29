@@ -19,16 +19,15 @@ func TestResetDatabaseAlwaysReplacesTheExactRuntimeSchema(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var jobs, discarded, ledger *string
+	var jobs, discarded *string
 	if err := pool.QueryRow(t.Context(), `
 		SELECT to_regclass(current_schema() || '.jobs')::text,
-		       to_regclass(current_schema() || '.discarded_startup_state')::text,
-		       to_regclass(current_schema() || '.schema_migrations')::text
-	`).Scan(&jobs, &discarded, &ledger); err != nil {
+		       to_regclass(current_schema() || '.discarded_startup_state')::text
+	`).Scan(&jobs, &discarded); err != nil {
 		t.Fatal(err)
 	}
-	if jobs == nil || discarded != nil || ledger != nil {
-		t.Fatalf("fresh setup relations jobs=%v discarded=%v ledger=%v", jobs, discarded, ledger)
+	if jobs == nil || discarded != nil {
+		t.Fatalf("fresh setup relations jobs=%v discarded=%v", jobs, discarded)
 	}
 
 	var candidateKind, duplicateReplacement bool

@@ -26,8 +26,14 @@ func stationGapSemanticUncertainty(
 // uncertainty that justified this opening. It is durable operational evidence,
 // never model context.
 func ValidateStationGapSemanticUncertainty(opening StationGapOpening) error {
-	expected, err := assemblyline.SemanticUncertaintyContractForPortableRenderer(
-		opening.RendererVersion, assemblyline.WorkKind(opening.WorkKind),
+	if opening.RendererVersion != assemblyline.PortableRendererV1 {
+		return fmt.Errorf(
+			"station gap renderer %q is not the current portable renderer",
+			opening.RendererVersion,
+		)
+	}
+	expected, err := assemblyline.SemanticUncertaintyContractForWorkKind(
+		assemblyline.WorkKind(opening.WorkKind),
 	)
 	if err != nil {
 		return fmt.Errorf("resolve station gap semantic uncertainty: %w", err)

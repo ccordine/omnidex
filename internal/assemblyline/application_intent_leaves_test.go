@@ -237,7 +237,7 @@ func TestApplicationRequirementExcludedCandidatesAreBoundAndGenerationProjected(
 	}
 }
 
-func TestApplicationRequirementPayloadSchemasUseSoleRenderer(t *testing.T) {
+func TestApplicationRequirementPayloadSchemasAreCurrent(t *testing.T) {
 	t.Parallel()
 	authority := applicationIntentLeafFixture(t)
 	coverageInput := ApplicationRequirementCoverageInput{
@@ -256,13 +256,8 @@ func TestApplicationRequirementPayloadSchemasUseSoleRenderer(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, job := range []PortableJob{currentCoverage, currentGeneration} {
-		if err := ValidatePortableJobForRenderer(job, PortableRendererV1); err != nil {
+		if err := job.Validate(); err != nil {
 			t.Fatal(err)
-		}
-		if err := ValidatePortableJobForRenderer(
-			job, "unsupported-renderer",
-		); err == nil {
-			t.Fatalf("%s payload accepted a non-current renderer", job.Kind)
 		}
 	}
 }

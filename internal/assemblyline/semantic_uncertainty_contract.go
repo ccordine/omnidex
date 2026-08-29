@@ -42,21 +42,6 @@ func SemanticUncertaintyContractForWorkKind(
 	return contract, nil
 }
 
-// SemanticUncertaintyContractForPortableRenderer resolves the exact immutable
-// uncertainty contract admitted by the sole current renderer.
-func SemanticUncertaintyContractForPortableRenderer(
-	renderer string,
-	kind WorkKind,
-) (SemanticUncertaintyContract, error) {
-	if renderer != PortableRendererV1 {
-		return SemanticUncertaintyContract{}, fmt.Errorf(
-			"portable renderer %q has no registered semantic uncertainty contracts",
-			renderer,
-		)
-	}
-	return SemanticUncertaintyContractForWorkKind(kind)
-}
-
 func registeredSemanticUncertaintyContract(
 	kind WorkKind,
 ) (SemanticUncertaintyContract, bool) {

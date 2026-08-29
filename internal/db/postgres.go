@@ -84,7 +84,7 @@ func ConnectRuntime(
 }
 
 // ConnectRuntimeReadOnly selects an existing dedicated runtime schema without
-// bootstrap, migration, or schema mutation. It is for immutable evidence
+// bootstrap or schema mutation. It is for immutable evidence
 // inspection such as station replay; callers must still use read-only
 // transactions for every query.
 func ConnectRuntimeReadOnly(

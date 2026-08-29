@@ -44,7 +44,7 @@ func seedDatabaseEvidenceBoundJobs(
 	}
 	jobIDs := make([]int64, 2)
 	// Keep the receipt's chat binding untouched while a non-chat job exercises
-	// the independent database-evidence binding trigger from migration 116.
+	// the independent database-evidence binding trigger.
 	for index, fixture := range []struct {
 		pipeline  string
 		channelID string

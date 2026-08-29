@@ -59,9 +59,6 @@ func (authority SimulationTurnAuthority) Validate() error {
 	if err != nil {
 		return err
 	}
-	if authority.UserTurn.PersonaKind == UserPersonaLegacy && len(authority.Responders) == 1 {
-		expectedResponderIDs = []string{authority.Responders[0].CharacterID}
-	}
 	if len(expectedResponderIDs) < 1 || len(authority.Responders) != len(expectedResponderIDs) {
 		return fmt.Errorf("simulation response round differs from its enabled participant authority")
 	}

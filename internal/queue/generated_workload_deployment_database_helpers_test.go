@@ -251,6 +251,9 @@ func (fixture generatedDeploymentDatabaseFixture) executeSuccessfulRail(
 	receipt := fixture.receipt
 	var executionIDs, observationIDs []int64
 	for _, execution := range fixture.manifest.Commands {
+		if generatedDeploymentSlotRequiresNamespaceRequalification(execution.Slot) {
+			generatedDeploymentQualifyProtectedExecution(t, fixture, authority, execution)
+		}
 		if _, created, err := fixture.repository.BeginGeneratedWorkloadDeploymentExecution(
 			fixture.ctx, authority, fixture.command, execution,
 		); err != nil || !created {
@@ -284,6 +287,21 @@ func (fixture generatedDeploymentDatabaseFixture) executeSuccessfulRail(
 	sort.Slice(observationIDs, func(i, j int) bool { return observationIDs[i] < observationIDs[j] })
 	receipt.ExecutionEvidenceIDs, receipt.ObservationEvidenceIDs = executionIDs, observationIDs
 	return receipt
+}
+
+func generatedDeploymentQualifyProtectedExecution(
+	t *testing.T,
+	fixture generatedDeploymentDatabaseFixture,
+	authority model.StepAttemptAuthority,
+	execution GeneratedWorkloadDeploymentExecutionCommand,
+) {
+	t.Helper()
+	proof := generatedDeploymentVacantNamespaceProof(t, fixture.command.ComposeProject)
+	if _, created, err := fixture.repository.RecordGeneratedWorkloadDeploymentNamespaceRequalification(
+		fixture.ctx, authority, fixture.command, execution, proof,
+	); err != nil || !created {
+		t.Fatalf("qualify %s namespace: created=%t err=%v", execution.Slot.Name, created, err)
+	}
 }
 
 func (fixture generatedDeploymentDatabaseFixture) observation(t *testing.T) GeneratedWorkloadDeploymentObservation {

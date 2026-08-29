@@ -232,7 +232,7 @@ Domain Skills Are Learned Data, Not Repository Features
 
 Omnidex must not accumulate product-domain abilities in Go source, checked-in prompts, static skill folders, or adapter branches. Audio production, drawing, simulation, accounting, calendars, and every other workload domain belong outside the Omnidex implementation.
 
-When Omnidex needs a reusable ability that is not already available, it must be able to synthesize a narrowly scoped skill through bounded model jobs, validate that skill with code, and persist the accepted skill in PostgreSQL. Later jobs may retrieve the smallest relevant accepted skills from that registry. Natural-language skill matching is a narrow semantic-model job; it must not be replaced with keyword or phrase heuristics.
+When Omnidex needs a reusable ability that is not already available, it must be able to synthesize a narrowly scoped skill through bounded model jobs, validate that skill with code, and persist the accepted skill in PostgreSQL for the current service/database lifecycle. Later jobs in that same lifecycle may retrieve the smallest relevant accepted skills from the registry; the next service startup discards it with all other internal state. Natural-language skill matching is a narrow semantic-model job; it must not be replaced with keyword or phrase heuristics.
 
 Code owns skill identity, schemas, version numbers, lifecycle state, tool permissions, dependency edges, validation, test evidence, activation, retrieval limits, and database writes. Models may propose only the small semantic or instructional fields that code cannot derive. A proposed skill is unavailable until its schema, boundaries, and executable checks pass. Rejected skill candidates remain rejected; there is no silent fallback to a checked-in domain skill or general-purpose agent.
 
@@ -350,11 +350,11 @@ The frontend does not invent application state that conflicts with the server.
 
 Use:
 
-* PostgreSQL for durable state.
+* PostgreSQL for server-authoritative state during the current running build.
 * Redis for temporary/cache/session/realtime coordination state.
 * Server-side singletons where appropriate for application-level orchestration.
 * Middleware for request lifecycle behavior.
-* Migrations for schema changes.
+* `database/setup.sql` as the sole authoritative definition of Omnidex's internal database schema.
 * Components for UI rendering.
 * RecyclrJS for realtime/event bridge behavior.
 * Stimulus for interaction wiring only.
@@ -522,25 +522,34 @@ Do not duplicate lifecycle checks in controllers.
 
 ⸻
 
-12. Use Migrations
+12. Use One Fresh Omnidex Database Setup
 
-Any database schema change must use a migration.
+`database/setup.sql` is the sole authoritative definition of Omnidex's internal
+PostgreSQL schema. Every build carries that one current setup file, and every
+Omnidex service startup drops and recreates the configured dedicated schema from
+it. Any previous internal schema and rows are intentionally discarded.
 
-Do not assume columns exist.
+Do not add internal migration directories, numbered migration files, migration
+ledgers, manifests, digests, hashes, reversible upgrades, or in-place upgrade
+paths. Do not manually patch the internal schema or hide schema requirements
+inside runtime code. Change `database/setup.sql` directly and update the tests
+that prove a fresh setup.
 
-Do not manually patch schema.
-
-Do not hide schema requirements inside runtime code.
-
-Migrations should be reversible when practical.
+Generated workloads are a separate database boundary. A registered artifact
+adapter may generate workload-owned migrations when the workload contract and
+selected stack require them. Those workload artifacts must never become an
+Omnidex internal migration mechanism.
 
 ⸻
 
 State and Data Rules
 
-13. PostgreSQL for Durable State
+13. PostgreSQL for Current Server-Authoritative State
 
-Use PostgreSQL for durable application state.
+Use PostgreSQL as the authoritative store while the current Omnidex service is
+running. Omnidex makes no promise that its internal rows survive a process or
+service startup: startup recreates the dedicated schema from
+`database/setup.sql` and begins empty.
 
 Schema should be explicit.
 
@@ -571,7 +580,7 @@ Good Redis use cases:
 * Job status.
 * UI operation status.
 
-Redis should not become the durable source of truth unless explicitly designed that way.
+Redis should not become the server-authoritative source of truth unless explicitly designed that way.
 
 ⸻
 
@@ -702,13 +711,13 @@ Preferred flow:
 1. User triggers interaction.
 2. UI shows loading state.
 3. Server validates and performs mutation.
-4. Server updates durable/ephemeral state.
+4. Server updates authoritative/ephemeral state.
 5. Server returns updated component or emits Recyclr event.
 6. UI reflects server-confirmed state.
 7. UI clears loading state.
 8. Failures show explicit error state.
 
-Do not optimistically fake durable state unless specifically approved.
+Do not optimistically fake server-authoritative state unless specifically approved.
 
 ⸻
 
@@ -848,7 +857,8 @@ Prefer existing project patterns:
 * Server-side components.
 * Middleware.
 * Traits.
-* Migrations.
+* `database/setup.sql` for Omnidex's internal schema.
+* Workload-owned migrations only through registered workload artifact adapters.
 * PostgreSQL.
 * Redis.
 * Tailwind CSS.
@@ -887,7 +897,7 @@ Do not mix:
 * Rendering and persistence.
 * Validation and transport.
 * JavaScript interaction and server rendering.
-* Durable state and ephemeral state.
+* Server-authoritative database state and ephemeral state.
 * Query building and UI formatting.
 * Authorization and business logic.
 
@@ -953,9 +963,11 @@ Before reporting completion, verify:
 * Stimulus is only used for interactions/bridges.
 * RecyclrJS is used appropriately for realtime/page bridge behavior.
 * RecyclrJS singleton remains body-scoped for full-page behavior.
-* PostgreSQL is used for durable state.
+* PostgreSQL is authoritative for the current running service, without a cross-start preservation claim.
 * Redis is used only for appropriate ephemeral/realtime state.
-* Migrations exist for schema changes.
+* `database/setup.sql` is the sole Omnidex internal schema source and a fresh startup discards previous internal state.
+* Internal migrations, manifests, hashes, and in-place upgrade paths were not added.
+* Any generated workload migration remains workload-owned and adapter-produced.
 * Middleware is used for lifecycle concerns.
 * Traits are used for focused shared behavior where appropriate.
 * Components are server-rendered.

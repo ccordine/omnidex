@@ -227,6 +227,12 @@ func persistResearchDatabaseFixture(
 	`, jobID, exact, string(metadata)); err != nil {
 		return ResearchTurnAuthority{}, err
 	}
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO job_generations (job_id,generation,purpose)
+		VALUES ($1,1,'initial')
+	`, jobID); err != nil {
+		return ResearchTurnAuthority{}, err
+	}
 	if err := BindSimulationPreparationJobTx(ctx, tx, preparation.PreparationID, jobID); err != nil {
 		return ResearchTurnAuthority{}, err
 	}

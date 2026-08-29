@@ -54,9 +54,6 @@ func TestJSONPreservesExactEmbeddedCommitBytes(t *testing.T) {
 	if got := JSON()["commit"]; got != Commit {
 		t.Fatalf("JSON commit=%q want exact embedded bytes %q", got, Commit)
 	}
-	if _, exists := JSON()["migrations_sha256"]; exists {
-		t.Fatal("version metadata retained database migration identity")
-	}
 }
 
 func TestCurrentReleaseIsCharmeleon(t *testing.T) {
@@ -103,8 +100,6 @@ func TestReleaseBuilderDefaultsToCharmeleon(t *testing.T) {
 	for _, forbidden := range []string{
 		`cd "$REPO_ROOT"` + "\n" + `      CGO_ENABLED`,
 		`cp -a "${REPO_ROOT}/README.md"`,
-		`MigrationsSHA256`, `RELEASE_MIGRATIONS_SHA256`, `migrations/SHA256SUMS`,
-		`verify_migration_manifest`, `target_source}/migrations`, `write_migration_manifest`,
 	} {
 		if strings.Contains(script, forbidden) {
 			t.Fatalf("release builder still consumes live source: %s", forbidden)

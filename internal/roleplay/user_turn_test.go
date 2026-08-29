@@ -35,6 +35,7 @@ func TestUserTurnRequestRequiresOneCompatiblePersonaAndContribution(t *testing.T
 		{PersonaKind: UserPersonaNarrator, CharacterID: testUserTurnCharacterID, ContributionKind: UserContributionDirection},
 		{PersonaKind: UserPersonaNarrator, ContributionKind: UserContributionDialogue},
 		{PersonaKind: UserPersonaNarrator, ContributionKind: UserContributionCommand},
+		{PersonaKind: UserPersonaKind("retired"), ContributionKind: UserContributionKind("retired")},
 	}
 	for index, request := range invalid {
 		text := "Continue the scene."
@@ -63,28 +64,12 @@ func TestUserTurnAuthorityKeepsExactSpeakerModalityAndBytes(t *testing.T) {
 		authority.ExactText != "I place the signet down. \"Keep this safe,\" I tell Mara." {
 		t.Fatalf("authority changed exact turn: %+v", authority)
 	}
-
-	legacy := UserTurnAuthority{
-		PersonaKind: UserPersonaLegacy, PersonaName: LegacyUserPersonaName,
-		ContributionKind: UserContributionLegacy, ExactText: "historical turn",
+	unsupported := UserTurnAuthority{
+		PersonaKind: UserPersonaKind("retired"), PersonaName: "No current persona",
+		ContributionKind: UserContributionKind("retired"), ExactText: "Unsupported turn.",
 	}
-	if err := legacy.Validate(); err != nil {
-		t.Fatalf("explicit historical provenance marker rejected: %v", err)
-	}
-	if err := (UserTurnRequest{PersonaKind: UserPersonaLegacy, ContributionKind: UserContributionLegacy}).
-		ValidateForExactText("new turn"); err == nil {
-		t.Fatal("public request accepted the historical-only provenance marker")
-	}
-}
-
-func TestHistoricalUserTurnPreservesSlashInputWithoutInventingCommandMeaning(t *testing.T) {
-	t.Parallel()
-	authority := UserTurnAuthority{
-		PersonaKind: UserPersonaLegacy, PersonaName: LegacyUserPersonaName,
-		ContributionKind: UserContributionLegacy, ExactText: `/research "old request"`,
-	}
-	if err := authority.Validate(); err != nil {
-		t.Fatal(err)
+	if err := unsupported.Validate(); err == nil {
+		t.Fatal("roleplay user-turn authority accepted unsupported persona and contribution kinds")
 	}
 }
 

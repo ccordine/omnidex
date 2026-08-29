@@ -40,7 +40,7 @@ func TestRoleplayUserCanonDeferredReceiptRejectsMissingAndPartialMaterialization
 		t, pool, messageID, "user-canon-deferred", "The bronze bell cracked.",
 		UserContributionNarration,
 	)
-	preparation := prepareAndBindTestTurn(
+	preparation := prepareAndBindUncompletedTestTurn(
 		t, pool, "user-canon-deferred", messageID, jobID, exact,
 	)
 	t.Run("event outside receipt", func(t *testing.T) {
@@ -135,8 +135,8 @@ func TestRoleplayUserCanonDeferredReceiptRejectsMissingAndPartialMaterialization
 				}
 			}
 			payload, err := json.Marshal(map[string]any{
-				"operation_id": operationID, "step_id": 1, "output": "response",
-				"context_key": "objective_result", "context_value": "deferred-proof",
+				"operation_id": operationID, "step_id": jobID, "output": "response",
+				"context_key": "", "context_value": "",
 				"roleplay_responses": []any{},
 				"roleplay_user_canon": map[string]any{
 					"facts": []string{fact}, "knowledge_character_ids": []string{viewpoint.ID},
@@ -146,10 +146,22 @@ func TestRoleplayUserCanonDeferredReceiptRejectsMissingAndPartialMaterialization
 				t.Fatal(err)
 			}
 			if _, err := tx.Exec(ctx, `
+				INSERT INTO lifecycle_operation_registry (
+					operation_id,kind,command_sha256,command_payload
+				) VALUES ($1,'complete_step',repeat('f',64),$2::jsonb)
+			`, operationID, string(payload)); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := tx.Exec(ctx, `
 				INSERT INTO job_lifecycle_operations (
-					operation_id,job_id,kind,command_payload,
-					result_job_status,result_step_status
-				) VALUES ($1,$2,'complete_step',$3::jsonb,'completed','completed')
+					operation_id,job_id,observed_generation,result_generation,step_id,
+					kind,command_sha256,command_payload,
+					result_job_status,result_step_status,result_job
+				) VALUES (
+					$1,$2,1,1,$2,'complete_step',repeat('f',64),$3::jsonb,
+					'completed','completed',
+					jsonb_build_object('id',$2::bigint,'current_generation',1,'status','completed')
+				)
 			`, operationID, jobID, string(payload)); err != nil {
 				t.Fatal(err)
 			}

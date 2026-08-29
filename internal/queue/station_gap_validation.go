@@ -10,9 +10,7 @@ import (
 )
 
 func validateStationGapOpening(record StationGapOpenRecord) (StationGapOpening, error) {
-	if err := assemblyline.ValidatePortableJobForRenderer(
-		record.Job, assemblyline.PortableRendererV1,
-	); err != nil {
+	if err := record.Job.Validate(); err != nil {
 		return StationGapOpening{}, fmt.Errorf("station gap requires one validated PortableJob: %w", err)
 	}
 	semanticUncertainty, semanticUncertaintySHA256, err := stationGapSemanticUncertainty(

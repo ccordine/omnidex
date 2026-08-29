@@ -137,11 +137,6 @@ export abstract class ChatRoleplayDraftController extends ChatRoleplayDialogCont
       this.focusComposer();
       return;
     }
-    if (personaKind === "legacy_untyped") {
-      const message = "This historical failed turn has no recorded actor or modality, so it cannot be restored safely.";
-      this.setStatus(message, "error");
-      throw new Error(message);
-    }
     const personaValue = personaKind === "narrator" ? "narrator" : button.dataset.roleplayCharacterId;
     if ((personaKind !== "narrator" && personaKind !== "character") ||
         typeof personaValue !== "string" ||

@@ -10,6 +10,7 @@ import (
 func TestDeploymentRecoveryPersistsObservationBeforeStartedForwardFence(t *testing.T) {
 	fixture := generatedDeploymentApplyingFixture(t, "started-observe-first")
 	build := fixture.manifest.Commands[0]
+	generatedDeploymentQualifyProtectedExecution(t, fixture, fixture.authority, build)
 	if _, created, err := fixture.repository.BeginGeneratedWorkloadDeploymentExecution(
 		fixture.ctx, fixture.authority, fixture.command, build,
 	); err != nil || !created {
@@ -113,6 +114,7 @@ func TestDeploymentExecutionOrderingAndTakeoverSealAreFenced(t *testing.T) {
 	); err == nil {
 		t.Fatal("later manifest slot started before first absent command")
 	}
+	generatedDeploymentQualifyProtectedExecution(t, fixture, fixture.authority, first)
 	if _, created, err := fixture.repository.BeginGeneratedWorkloadDeploymentExecution(
 		fixture.ctx, fixture.authority, fixture.command, first,
 	); err != nil || !created {
@@ -124,6 +126,7 @@ func TestDeploymentExecutionOrderingAndTakeoverSealAreFenced(t *testing.T) {
 		t.Fatal("later manifest slot started after uncompleted predecessor")
 	}
 	generatedDeploymentCompleteStartedExecution(t, fixture, first)
+	generatedDeploymentQualifyProtectedExecution(t, fixture, fixture.authority, second)
 	if _, created, err := fixture.repository.BeginGeneratedWorkloadDeploymentExecution(
 		fixture.ctx, fixture.authority, fixture.command, second,
 	); err != nil || !created {

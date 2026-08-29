@@ -56,14 +56,6 @@ func (job PortableJob) Validate() error {
 	return validatePortableJobPayload(job.Kind, job.Payload)
 }
 
-// ValidatePortableJobForRenderer binds a payload to the sole current renderer.
-func ValidatePortableJobForRenderer(job PortableJob, renderer string) error {
-	if renderer != PortableRendererV1 {
-		return fmt.Errorf("portable renderer %q is not registered", renderer)
-	}
-	return job.Validate()
-}
-
 func (job PortableJob) validateIdentity() error {
 	if job.Schema != PortableJobSchemaV2 {
 		return fmt.Errorf("portable job schema must be %q", PortableJobSchemaV2)

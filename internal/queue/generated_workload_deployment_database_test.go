@@ -179,6 +179,7 @@ func TestGeneratedWorkloadDeploymentReclaimReusesSemanticVerificationAndKeepsSta
 		t.Fatal(err)
 	}
 	build := fixture.manifest.Commands[0]
+	generatedDeploymentQualifyProtectedExecution(t, fixture, fixture.authority, build)
 	started, created, err := fixture.repository.BeginGeneratedWorkloadDeploymentExecution(
 		fixture.ctx, fixture.authority, fixture.command, build,
 	)

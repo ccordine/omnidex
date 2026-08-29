@@ -66,9 +66,7 @@ func TestApplicationIntentSemanticUncertaintyVersionsAreExact(t *testing.T) {
 		WorkApplicationRequirementCoverage,
 		WorkApplicationRequirement,
 	} {
-		current, err := SemanticUncertaintyContractForPortableRenderer(
-			PortableRendererV1, kind,
-		)
+		current, err := SemanticUncertaintyContractForWorkKind(kind)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -103,16 +101,7 @@ func TestApplicationIntentSemanticUncertaintyVersionsAreExact(t *testing.T) {
 	}
 }
 
-func TestSemanticUncertaintyRendererLookupRejectsNonCurrentRenderer(t *testing.T) {
-	t.Parallel()
-	if _, err := SemanticUncertaintyContractForPortableRenderer(
-		"unsupported-renderer", WorkApplicationRequirement,
-	); err == nil {
-		t.Fatal("unregistered renderer resolved semantic uncertainty authority")
-	}
-}
-
-func TestRendererV1OwnsRequirementRefinementContracts(
+func TestRequirementRefinementSemanticUncertaintyContractsAreV1(
 	t *testing.T,
 ) {
 	t.Parallel()
@@ -123,9 +112,7 @@ func TestRendererV1OwnsRequirementRefinementContracts(
 		WorkApplicationRequirementCandidateSplitCorrection,
 		WorkApplicationRequirementCandidateDuplicateReplacement,
 	} {
-		current, err := SemanticUncertaintyContractForPortableRenderer(
-			PortableRendererV1, kind,
-		)
+		current, err := SemanticUncertaintyContractForWorkKind(kind)
 		if err != nil || !strings.HasSuffix(current.ID, ".v1") {
 			t.Fatalf("current %s contract=%+v error=%v", kind, current, err)
 		}

@@ -1,10 +1,27 @@
-The best implementation is a software-defined context system
+# Historical, Superseded Planning Material
+
+This document records an earlier context-system proposal. It is not an
+authoritative implementation plan. In particular, its former internal database
+migration and process-restart continuity proposals are superseded.
+
+Omnidex now has one authoritative internal schema source:
+`database/setup.sql`. Every build carries that current setup, and every service
+startup drops and recreates the configured dedicated schema from it. All prior
+internal task, context, memory, evidence, and job rows are intentionally
+discarded. Do not add internal migrations, migration metadata, in-place upgrade
+logic, or tests that require a previous service process to resume from
+PostgreSQL. Continuity discussed below is limited to one running service and one
+database lifecycle.
+
+## Earlier software-defined context-system proposal
+
+The proposed implementation was a software-defined context system.
 
 After looking through reasoning-overhaul, I would not implement this as “better RAG,” a giant memory document, or an agent-maintained notebook.
 
 I would build three new, distinct primitives:
 
-1. Task Ledger — durable continuity: goals, current work, completed work, decisions, questions, failures, and checkpoints.
+1. Task Ledger — current-runtime continuity: goals, current work, completed work, decisions, questions, failures, and checkpoints.
 
 
 2. Working Set — the small collection of references currently worth keeping in attention.
@@ -18,7 +35,7 @@ Those sit beside—not inside—two other systems:
 
 Repository Intelligence — what is currently true about the codebase.
 
-Durable Memory — what future jobs may want to recall.
+Durable Memory (historical name) — what later jobs in the same database lifecycle may want to recall.
 
 
 Repository Intelligence       Durable Memory
@@ -52,7 +69,11 @@ Repository Intelligence       Durable Memory
 
 That is basically virtual memory for model context.
 
-The model’s native context is the fast, tiny cache. PostgreSQL, repository indexes, artifacts, and evidence are the backing store. Omnidex pages information in and out according to the task graph rather than hoping cosine similarity or a giant conversation summary gets lucky.
+The model’s native context is the fast, tiny cache. During one running service,
+PostgreSQL, repository indexes, artifacts, and evidence are the backing store.
+Omnidex pages information in and out according to the task graph rather than
+hoping cosine similarity or a giant conversation summary gets lucky. PostgreSQL
+content is not retained across the next service startup.
 
 This fits Charmander’s actual philosophy. The current architecture explicitly keeps memory out of the coding semantic path, gives models bounded responsibilities, and leaves tools, mutation, verification, and completion under code authority. The branch already has typed artifacts, but PlanArtifact is still essentially a static goal/constraints/subtask structure, while step completion also puts an untyped string into the runtime context map. The missing layer is typed, evolving, job-scoped state, not more prompt text. 
 
@@ -64,7 +85,7 @@ Repository Intelligence	Files, symbols, relationships, tests, routes, config, ha
 Task Ledger	Goals, constraints, decisions, questions, failures, progress	Job or card	Mixed, provenance-labelled
 Working Set	Active references selected for current scope	Call, step, objective, or job	Code-managed
 Context Projection	Exact content given to one inference	One model call	Immutable
-Durable Memory	Cross-job preferences, references, established lessons	Long-term	Reference-only unless explicitly promoted
+Durable Memory (historical name)	Cross-job preferences, references, established lessons	Current database lifecycle only	Reference-only unless explicitly promoted
 
 
 The existing memory_chunks system is already designed around cross-job retrieval, embeddings, tags, categories, trust ordering, and semantic correction. V3 then projects those chunks under the explicit authority historical_reference_only. That is exactly why task working memory should not be jammed into the same tables: it has a completely different lifetime and authority model. 
@@ -87,7 +108,10 @@ The working set should not care whether an item came from rg, PostgreSQL, pgvect
 
 1. PostgreSQL should be canonical; files should be projections
 
-I would make PostgreSQL authoritative for task state because Omnidex already has durable jobs, steps, artifacts, evidence, and multiple workers. Redis remains appropriate for locks, progress, cache, pub/sub, and realtime fanout. 
+Within a running service, PostgreSQL can be authoritative for task state while
+Redis remains appropriate for locks, progress, cache, pub/sub, and realtime
+fanout. This authority ends when the service stops; the next startup begins from
+an empty schema produced by `database/setup.sql`.
 
 But the literal-file idea is still good.
 
@@ -151,7 +175,7 @@ concurrent workers;
 
 retries;
 
-step recovery;
+same-runtime step retry;
 
 task transitions;
 
@@ -163,7 +187,7 @@ optimistic locking;
 
 UI updates;
 
-crash recovery.
+transactional consistency while the service remains running.
 
 
 You do not want to reinvent transactional integrity with flock, temporary JSON files, and prayers to a filesystem god who has already stopped listening.
@@ -795,7 +819,7 @@ At subtask execution
 
 When runSubtask begins:
 
-1. Open or resume the task node.
+1. Open the current task node within the running service.
 
 
 2. Create an objective/task-scoped working set.
@@ -861,7 +885,7 @@ active → done
 
 At memory review
 
-After clean completion, explicitly select which entries—if any—deserve promotion into durable memory.
+After clean completion, explicitly select which entries—if any—deserve promotion into the historically named durable-memory table for reuse before the next service startup.
 
 Possible promotions:
 
@@ -878,7 +902,9 @@ working-set selections
 superseded decisions
 task-local notes
 
-The ledger expires as job authority when the job closes. Future jobs see only deliberately promoted durable memory.
+The ledger expires as job authority when the job closes. Later jobs in the same
+service/database lifecycle see only deliberately promoted memory. The next
+service startup discards that memory with all other internal rows.
 
 9. Package boundaries
 
@@ -932,9 +958,11 @@ I would avoid calling the whole package memory. You already have memory, and it 
 
 10. Build it in narrow PRs
 
-PR 1 — Task Ledger kernel
+PR 1 — Task Ledger kernel (historical proposal)
 
-Add migrations, commands, transitions, append-only events, materialized state, and read-only exports.
+Add the current table definitions directly to `database/setup.sql`, together
+with commands, transitions, append-only events, materialized state, and
+read-only exports. Do not add an internal migration or upgrade mechanism.
 
 No model behavior changes.
 
@@ -948,7 +976,7 @@ invalid state transitions rejected;
 
 generated status.txt and JSONL;
 
-clean restart;
+fresh startup recreates an empty, valid ledger and exposes no prior rows;
 
 no prompts changed.
 
@@ -1032,9 +1060,9 @@ Your R1 experiment already established the correct rule: additional machinery ha
 
 You need to prove three separate claims:
 
-Claim A: It preserves continuity
+Claim A: It preserves continuity within one running service
 
-> Omnidex can resume a long task without relying on transcript memory.
+> Omnidex can continue a long task in one service process without relying on transcript memory.
 
 
 
@@ -1054,7 +1082,7 @@ rejected hypotheses;
 
 failures followed by corrections;
 
-forced process restarts at randomized boundaries;
+randomized task interruptions that do not stop the service;
 
 model conversation state cleared between calls.
 
@@ -1067,15 +1095,12 @@ constraints preserved
 rejected hypothesis not reused
 latest unresolved failure selected
 completed work not repeated
-restart produces same next runnable task
+same-runtime interruption produces the same next runnable task
 
-The strongest invariant:
-
-Kill the worker after every completed step.
-Restart it.
-It must select the same next operation from PostgreSQL alone.
-
-That proves external continuity rather than lucky model memory.
+The strongest invariant is that clearing model conversation state after every
+completed step does not change the next operation selected by code while the
+same service remains running. Stopping the service intentionally ends this
+continuity; the next startup begins with no prior internal task state.
 
 Claim B: It reduces context waste
 
@@ -1155,7 +1180,7 @@ model calls
 context tokens
 model time
 wall time
-resume success
+same-runtime continuation success
 
 The binary result should be analyzed as paired outcomes, just like your requirement experiment:
 
@@ -1258,8 +1283,8 @@ I would require all of these before replacing current context behavior:
 State validity:
     100%
 
-Forced restart recovery:
-    100%
+Fresh-start reset:
+    100% of prior internal rows absent
 
 Authority violations:
     0
@@ -1300,7 +1325,10 @@ The first impressive demonstration is not yet “Omnidex edits a million-line re
 
 It is:
 
-> Omnidex starts a 15-step maintenance task, is killed after random steps, resumes without conversation history, never loses the original constraints or accepted decisions, never repeats completed work, and keeps each model call under a fixed context budget.
+> Omnidex starts a 15-step maintenance task, clears model conversation state
+> after random steps, continues within the same running service without losing
+> the original constraints or accepted decisions, never repeats completed work,
+> and keeps each model call under a fixed context budget.
 
 
 
@@ -1315,10 +1343,10 @@ That proves the architecture in layers.
 The core idea is:
 
 Repository Intelligence = external knowledge
-Task Ledger            = continuity
+Task Ledger            = current-runtime continuity
 Working Set            = attention
 Context Projection     = one call's prompt
-Durable Memory         = selected cross-job history
+Durable Memory         = selected same-database-lifecycle cross-job history
 
 The planner does not need to be a giant model carrying the whole plan.
 
@@ -1330,4 +1358,5 @@ Code owns continuity. Code owns attention. Code owns lifecycle.
 
 The model may forget everything after every invocation.
 
-Omnidex does not.
+Within one running service, Omnidex does not. A service startup intentionally
+starts a new internal database lifecycle with no retained state.
