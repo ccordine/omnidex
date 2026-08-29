@@ -36,7 +36,7 @@ func TestStationGapOpeningPreservesRawPortableJobAndCanonicalProjection(t *testi
 	if validated.Prompt != prompt || validated.PortablePayload != string(job.Payload) {
 		t.Fatalf("opening changed exact prompt or payload: %+v", validated)
 	}
-	if !strings.Contains(validated.ProjectionEnvelope, `"renderer":"omnidex.render-portable-job.v8"`) ||
+	if !strings.Contains(validated.ProjectionEnvelope, `"renderer":"omnidex.render-portable-job.v1"`) ||
 		strings.Contains(validated.ProjectionEnvelope, `"response_schema"`) ||
 		validated.PortableSchema != assemblyline.PortableJobSchemaV2 ||
 		validated.Scope != assemblyline.PortableSemanticWorkerScope ||

@@ -53,12 +53,6 @@ func TestSourceModelResponsesHaveNoDiscardedWrapperCompatibility(t *testing.T) {
 			"source projection must be the exact full response",
 			"projection.SourceResponseSHA256 != stationGapSHA256(response)",
 		},
-		"migrations/178_exact_source_response_authority.sql": {
-			"source_response_sha256=response_sha256",
-			"source_start_byte=0 AND source_end_byte=octet_length(response)",
-			"NEW.response IS DISTINCT FROM call_response",
-			"VALIDATE CONSTRAINT station_gap_outcomes_exact_source_response",
-		},
 	}
 	for relative, required := range checks {
 		raw, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(relative)))

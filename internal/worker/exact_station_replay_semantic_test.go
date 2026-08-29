@@ -80,6 +80,64 @@ func TestExactStationReplayUsesSemanticDecoderInsteadOfRawFallback(t *testing.T)
 	}
 }
 
+func TestExactStationReplayPreservesCurrentRequirementRefinementKinds(t *testing.T) {
+	t.Parallel()
+	kindJob, err := assemblyline.NewApplicationRequirementCandidateKindJob(
+		assemblyline.ApplicationRequirementCandidateKindInput{
+			Candidate: "Display the current status.",
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	kindArtifact, err := replayExactStationArtifact(
+		kindJob, assemblyline.ApplicationRequirementCandidateTaskLocal,
+	)
+	if err != nil || kindArtifact.Kind != string(kindJob.Kind) {
+		t.Fatalf("candidate-kind artifact=%+v error=%v", kindArtifact, err)
+	}
+
+	request := "Create a browser status board that displays one current status and offers refresh."
+	applicationContext, err := assemblyline.BootstrapApplicationContext(
+		request, assemblyline.ApplicationWorkspaceEmpty,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	coverageInput := assemblyline.ApplicationRequirementCoverageInput{
+		UserRequest: request, Context: applicationContext,
+		AcceptedRequirements: []string{"Display the current status."},
+		ExcludedCandidates:   []string{},
+	}
+	coverage, err := assemblyline.DecodeApplicationRequirementCoverageLeaf(
+		coverageInput, assemblyline.ApplicationRequirementRemains,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	duplicateJob, err := assemblyline.NewApplicationRequirementCandidateDuplicateReplacementJob(
+		assemblyline.ApplicationRequirementCandidateDuplicateReplacementInput{
+			GenerationAuthority: assemblyline.ApplicationRequirementCandidateInput{
+				Authority: coverageInput, Coverage: coverage,
+			},
+			CurrentCandidate: coverageInput.AcceptedRequirements[0],
+			Duplicate: assemblyline.ApplicationRequirementCandidateDuplicateIdentity{
+				Set: assemblyline.ApplicationRequirementDuplicateAcceptedRequirement, Index: 0,
+			},
+			Defect: assemblyline.ApplicationRequirementDuplicateCandidateDefect,
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	duplicateArtifact, err := replayExactStationArtifact(
+		duplicateJob, "Offer a refresh control.",
+	)
+	if err != nil || duplicateArtifact.Kind != string(duplicateJob.Kind) {
+		t.Fatalf("duplicate-replacement artifact=%+v error=%v", duplicateArtifact, err)
+	}
+}
+
 func exactStationReplayUsesSpecializedProjection(kind assemblyline.WorkKind) bool {
 	switch kind {
 	case assemblyline.WorkApplicationTargetTree,

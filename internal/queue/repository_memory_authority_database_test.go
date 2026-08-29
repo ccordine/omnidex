@@ -8,9 +8,9 @@ import (
 )
 
 func TestPostgresMemoryBatchRollsBackEveryChunkOnLaterFailure(t *testing.T) {
-	pool := openIsolatedMigrationPool(t)
+	pool := openIsolatedDatabasePool(t)
 	repository := New(pool)
-	if err := repository.EnsureSchema(t.Context(), loadCheckedMigrationBundle(t)); err != nil {
+	if err := repository.ResetDatabase(t.Context(), loadCurrentDatabaseSetup(t)); err != nil {
 		t.Fatal(err)
 	}
 	scope := createMemoryScopeForTest(t, repository)
@@ -47,9 +47,9 @@ func TestPostgresMemoryBatchRollsBackEveryChunkOnLaterFailure(t *testing.T) {
 }
 
 func TestPostgresNearVectorNeverOverwritesMemoryAuthority(t *testing.T) {
-	pool := openIsolatedMigrationPool(t)
+	pool := openIsolatedDatabasePool(t)
 	repository := New(pool)
-	if err := repository.EnsureSchema(t.Context(), loadCheckedMigrationBundle(t)); err != nil {
+	if err := repository.ResetDatabase(t.Context(), loadCurrentDatabaseSetup(t)); err != nil {
 		t.Fatal(err)
 	}
 	scope := createMemoryScopeForTest(t, repository)
@@ -84,9 +84,9 @@ func TestPostgresNearVectorNeverOverwritesMemoryAuthority(t *testing.T) {
 }
 
 func TestPostgresExactDuplicateContentKeepsDistinctSourceAuthority(t *testing.T) {
-	pool := openIsolatedMigrationPool(t)
+	pool := openIsolatedDatabasePool(t)
 	repository := New(pool)
-	if err := repository.EnsureSchema(t.Context(), loadCheckedMigrationBundle(t)); err != nil {
+	if err := repository.ResetDatabase(t.Context(), loadCurrentDatabaseSetup(t)); err != nil {
 		t.Fatal(err)
 	}
 	scope := createMemoryScopeForTest(t, repository)
@@ -107,9 +107,9 @@ func TestPostgresExactDuplicateContentKeepsDistinctSourceAuthority(t *testing.T)
 }
 
 func TestPostgresMemoryCandidateBatchRollsBackOnLaterFailure(t *testing.T) {
-	pool := openIsolatedMigrationPool(t)
+	pool := openIsolatedDatabasePool(t)
 	repository := New(pool)
-	if err := repository.EnsureSchema(t.Context(), loadCheckedMigrationBundle(t)); err != nil {
+	if err := repository.ResetDatabase(t.Context(), loadCurrentDatabaseSetup(t)); err != nil {
 		t.Fatal(err)
 	}
 	scope := createMemoryScopeForTest(t, repository)

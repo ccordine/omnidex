@@ -87,12 +87,6 @@ func TestApplicationRequirementCandidateDuplicateReplacementBindsExactDefect(
 		t.Fatalf("duplicate-replacement response framing=%q", framing)
 	}
 
-	replayed, err := DecodeApplicationRequirementCandidateDuplicateReplacementLeafForPortableRenderer(
-		job.Payload, PortableRendererV1, replacement,
-	)
-	if err != nil || replayed != replacement {
-		t.Fatalf("duplicate-replacement replay=%q error=%v", replayed, err)
-	}
 }
 
 func TestApplicationRequirementCandidateDuplicateReplacementRejectsUngroundedIdentity(

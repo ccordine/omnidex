@@ -2,7 +2,6 @@ package queue
 
 import (
 	"encoding/json"
-	"os"
 	"strings"
 	"testing"
 
@@ -83,18 +82,5 @@ func TestRoleplayCompletionRejectsOutputBeyondNarrativeBound(t *testing.T) {
 	}
 	if err := model.ValidateChannelMessage(model.ChannelMessageRoleAssistant, response.Output); err != nil {
 		t.Fatalf("generic assistant bound was narrowed: %v", err)
-	}
-}
-
-func TestRoleplayOngoingActionMigrationSerializesEveryCharacterChainWrite(t *testing.T) {
-	t.Parallel()
-	raw, err := os.ReadFile("../../migrations/149_roleplay_ongoing_action_authority.sql")
-	if err != nil {
-		t.Fatal(err)
-	}
-	source := strings.Join(strings.Fields(string(raw)), " ")
-	lock := "FROM roleplay_characters AS character WHERE character.world_id=NEW.world_id AND character.id=NEW.character_id FOR UPDATE;"
-	if count := strings.Count(source, lock); count != 2 {
-		t.Fatalf("ongoing-action character serialization locks=%d want 2", count)
 	}
 }

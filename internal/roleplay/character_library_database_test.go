@@ -3,69 +3,10 @@ package roleplay
 import (
 	"context"
 	"errors"
-	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/jackc/pgx/v5"
 )
-
-func TestCharacterLibraryMigrationBackfillsAnExistingPopulatedWorld(t *testing.T) {
-	pool, _ := openRoleplayTestPoolWithMigrations(t, []string{
-		"117_roleplay_canon_authority.sql",
-		"118_roleplay_simulation_authority.sql",
-	})
-	ctx := context.Background()
-	tx, err := pool.BeginTx(ctx, pgx.TxOptions{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer tx.Rollback(ctx)
-	const (
-		worldID     = "rpw_11111111111111111111111111111111"
-		characterID = "rpc_22222222222222222222222222222222"
-	)
-	for _, statement := range []string{
-		`INSERT INTO ai_channels (id,mode,roleplay_viewpoint_character_id)
-		 VALUES ('existing-world','roleplay','` + characterID + `')`,
-		`INSERT INTO roleplay_worlds (id,channel_id,name)
-		 VALUES ('` + worldID + `','existing-world','Existing World')`,
-		`INSERT INTO roleplay_characters (id,world_id,name)
-		 VALUES ('` + characterID + `','` + worldID + `','Mira')`,
-		`INSERT INTO roleplay_character_personas (world_id,character_id,summary,voice,traits,goals)
-		 VALUES ('` + worldID + `','` + characterID + `','An existing traveler.','Quiet.','["patient"]','["remember"]')`,
-	} {
-		if _, err := tx.Exec(ctx, statement); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if err := tx.Commit(ctx); err != nil {
-		t.Fatal(err)
-	}
-	migration, err := os.ReadFile(filepath.Join("..", "..", "migrations", "122_roleplay_character_library.sql"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := pool.Exec(ctx, string(migration)); err != nil {
-		t.Fatalf("upgrade populated roleplay schema: %v", err)
-	}
-	var libraryID, profileSummary string
-	if err := pool.QueryRow(ctx, `
-		SELECT character.library_character_id,profile.summary
-		FROM roleplay_characters AS character
-		JOIN roleplay_character_profiles AS profile
-		  ON profile.library_character_id=character.library_character_id
-		WHERE character.id=$1
-	`, characterID).Scan(&libraryID, &profileSummary); err != nil {
-		t.Fatal(err)
-	}
-	if libraryID != "rpl_b657698b565585c3c432121b2905953b" || profileSummary != "An existing traveler." {
-		t.Fatalf("backfill library=%q profile=%q", libraryID, profileSummary)
-	}
-	if _, err := pool.Exec(ctx, `UPDATE roleplay_characters SET name='Changed' WHERE id=$1`, characterID); err == nil {
-		t.Fatal("post-upgrade character binding accepted an inexact library name")
-	}
-}
 
 func TestCharacterLibraryCarriesProfileAndMemoriesAcrossIsolatedWorldPlacements(t *testing.T) {
 	pool, _ := openRoleplayTestPool(t)

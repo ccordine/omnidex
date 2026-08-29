@@ -61,7 +61,7 @@ func TestAppRunSendsOneCompleteInstructionToCoreAgentCLI(t *testing.T) {
 
 func TestAppRejectsRemovedLocalAgentCommands(t *testing.T) {
 	for _, command := range []string{
-		"ledger", "bench", "run:trace", "fastpath", "ollama", "migrate",
+		"ledger", "bench", "run:trace", "fastpath", "ollama",
 	} {
 		t.Run(command, func(t *testing.T) {
 			app := NewApp(strings.NewReader(""), io.Discard, io.Discard)
@@ -72,9 +72,6 @@ func TestAppRejectsRemovedLocalAgentCommands(t *testing.T) {
 			err := app.Run([]string{command})
 			if err == nil || !strings.Contains(err.Error(), "removed") {
 				t.Fatalf("Run(%q) error=%v", command, err)
-			}
-			if command == "migrate" && !strings.Contains(err.Error(), "sealed release migration bundle") {
-				t.Fatalf("Run(%q) error=%v, want sole installer direction", command, err)
 			}
 		})
 	}

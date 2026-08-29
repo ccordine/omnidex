@@ -2,7 +2,6 @@ package queue
 
 import (
 	"encoding/json"
-	"os"
 	"testing"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
@@ -27,12 +26,11 @@ func newRoleplayPortableReuseDatabaseFixture(
 	marker string,
 ) roleplayPortableReuseDatabaseFixture {
 	t.Helper()
-	pool := openIsolatedMigrationPool(t)
+	pool := openIsolatedDatabasePool(t)
 	repository := New(pool)
-	if err := repository.EnsureSchema(t.Context(), loadCheckedMigrationBundle(t)); err != nil {
+	if err := repository.ResetDatabase(t.Context(), loadCurrentDatabaseSetup(t)); err != nil {
 		t.Fatal(err)
 	}
-	installRoleplayPortableReuseMigrationsForTest(t, pool)
 	channel, err := repository.CreateRoleplayChannel(t.Context(), model.Channel{
 		ID: model.ChannelID(marker), Scope: model.ChannelScopeUser, Name: "Portable reuse story",
 		WorkspaceRoot: "/srv/workspaces/" + marker, Mode: model.ChannelModeRoleplay,
@@ -57,36 +55,6 @@ func newRoleplayPortableReuseDatabaseFixture(
 	return roleplayPortableReuseDatabaseFixture{
 		Repository: repository, Pool: pool, Channel: channel, Store: store,
 		WorldID: world.ID, CharacterIDs: characters,
-	}
-}
-
-func installRoleplayPortableReuseMigrationsForTest(t *testing.T, pool *pgxpool.Pool) {
-	t.Helper()
-	for _, migration := range []struct {
-		name      string
-		installed string
-	}{
-		{roleplayPortableResultReuseMigration,
-			"to_regclass('roleplay_portable_result_reuses') IS NOT NULL"},
-		{"157_roleplay_user_canon_modality_authority.sql",
-			"to_regprocedure('roleplay_user_turn_requires_canon(text,text,jsonb)') IS NOT NULL"},
-	} {
-		var installed bool
-		if err := pool.QueryRow(
-			t.Context(), "SELECT "+migration.installed,
-		).Scan(&installed); err != nil {
-			t.Fatal(err)
-		}
-		if installed {
-			continue
-		}
-		raw, err := os.ReadFile("../../migrations/" + migration.name)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if _, err := pool.Exec(t.Context(), string(raw)); err != nil {
-			t.Fatalf("apply roleplay reuse migration %s: %v", migration.name, err)
-		}
 	}
 }
 

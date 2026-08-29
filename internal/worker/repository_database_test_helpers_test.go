@@ -60,7 +60,7 @@ func openRepositoryTestDatabase(
 		admin.Close()
 	})
 	repository := queue.New(pool)
-	if err := repository.EnsureSchema(ctx, loadWorkerTestMigrationBundle(t)); err != nil {
+	if err := repository.ResetDatabase(ctx, loadWorkerDatabaseSetup(t)); err != nil {
 		t.Fatal(err)
 	}
 	return ctx, repository, pool

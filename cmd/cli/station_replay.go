@@ -19,15 +19,14 @@ import (
 )
 
 type stationReplayOptions struct {
-	OpeningID       int64
-	JobID           int64
-	WorkKind        string
-	Models          []string
-	Report          string
-	Config          string
-	OllamaURL       string
-	Timeout         time.Duration
-	CurrentContract bool
+	OpeningID int64
+	JobID     int64
+	WorkKind  string
+	Models    []string
+	Report    string
+	Config    string
+	OllamaURL string
+	Timeout   time.Duration
 }
 
 type stationReplayModels []string
@@ -83,12 +82,8 @@ func runStationReplay(args []string) {
 	}
 	encoder := newStationReplayReportEncoder(report)
 	encoder.SetEscapeHTML(false)
-	reportSchema := stationReplayReportSchema
-	if options.CurrentContract {
-		reportSchema = stationCurrentContractReplayReportSchema
-	}
 	header := stationReplayReportHeader{
-		Type: "header", Schema: reportSchema, CreatedAt: time.Now().UTC(),
+		Type: "header", Schema: stationReplayReportSchema, CreatedAt: time.Now().UTC(),
 		SourceCallOpening:           point.Call,
 		SourceCallWireRequestBase64: stationReplayBase64(point.Call.WireRequest),
 		SourceGapOpening:            point.Gap, Models: append([]string(nil), options.Models...),
@@ -104,13 +99,7 @@ func runStationReplay(args []string) {
 	for _, modelName := range options.Models {
 		started := time.Now().UTC()
 		callCtx, cancel := stationReplayContext(options.Timeout)
-		var replay worker.ExactStationReplay
-		var replayErr error
-		if options.CurrentContract {
-			replay, replayErr = worker.ReplayStationWithCurrentContract(callCtx, client, point, modelName)
-		} else {
-			replay, replayErr = worker.ReplayExactStation(callCtx, client, point, modelName)
-		}
+		replay, replayErr := worker.ReplayExactStation(callCtx, client, point, modelName)
 		cancel()
 		finished := time.Now().UTC()
 		run := stationReplayReportRun{
@@ -150,7 +139,6 @@ func parseStationReplayOptions(args []string) (stationReplayOptions, error) {
 	fs.StringVar(&options.Config, "config", "", "read-only Omnidex environment file")
 	fs.StringVar(&options.OllamaURL, "ollama-url", "", "Ollama URL override")
 	fs.DurationVar(&options.Timeout, "timeout", 0, "per-model timeout; 0 waits for provider completion")
-	fs.BoolVar(&options.CurrentContract, "current-contract", false, "preserve the frozen portable packet while using the checked-in transport contract")
 	if err := fs.Parse(args); err != nil {
 		return options, err
 	}

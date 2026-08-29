@@ -37,6 +37,10 @@ What this installer does:
   2) Reproducibly builds the embedded GUI and all host binaries
   3) Installs host dependencies via scripts/setup-host-deps.sh (unless --skip-deps)
   4) Adds a managed shell-init block so aliases are loaded automatically
+
+Database contract:
+  The installed core has no schema or data upgrade path. Every startup rebuilds
+  DATABASE_SCHEMA from database/setup.sql and discards its previous Omnidex rows.
 EOF
 }
 

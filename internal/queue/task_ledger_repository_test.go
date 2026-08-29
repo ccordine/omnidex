@@ -36,9 +36,9 @@ func TestTaskLedgerRepositoryRejectsMissingAuthority(t *testing.T) {
 func TestPostgresTaskLedgerCommandsAreAtomicAndIdempotent(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
-	pool := openIsolatedMigrationPool(t)
+	pool := openIsolatedDatabasePool(t)
 	repository := New(pool)
-	if err := repository.EnsureSchema(ctx, loadCheckedMigrationBundle(t)); err != nil {
+	if err := repository.ResetDatabase(ctx, loadCurrentDatabaseSetup(t)); err != nil {
 		t.Fatal(err)
 	}
 

@@ -18,8 +18,10 @@ The following checks establish framework primitives only:
 * Go tests pass for portable jobs, complete raw-leaf semantic correction, AST parsing, context budgets, capability graph projection, worker routing, skill lifecycle, and workspace reconciliation.
 * The generated generic browser substrate passes its real pinned Node install, Vitest suite, TypeScript type check, and Vite production build.
 * That Node test caught and then guarded a real runtime defect where action status changed but state was never published.
-* Migrations `023_worker_skills.sql` and `024_llm_evidence.sql` are applied through normal core startup.
-* The live core starts with PostgreSQL as registry authority and reports the exact active/bootstrap counts.
+* A historical live-core run established its then-current PostgreSQL registry and
+  reported the exact active/bootstrap counts. That bootstrap path has since been
+  replaced by the single destructive fresh-database setup and is not a current
+  startup contract.
 * Live PostgreSQL integration tests prove immutable bootstrap versioning, required learned-skill checks, immutable embeddings, activation, exact reuse, and bounded semantic retrieval.
 * A live PostgreSQL integration test proves exact prompt and raw-response preservation, request/response hashing, partial failed-output preservation, bounded evidence pagination, and rejection of evidence updates or deletes.
 * The running core, PostgreSQL, and Redis containers remain healthy after those checks.
@@ -76,7 +78,8 @@ Do not count:
 Before a run starts, record:
 
 * immutable source revision or tree digest;
-* migration state;
+* successful execution of the authoritative fresh-database setup against an empty
+  runtime schema;
 * exact model routing and embedding identity;
 * fresh workspace identity and initial inventory;
 * exact user request digest;

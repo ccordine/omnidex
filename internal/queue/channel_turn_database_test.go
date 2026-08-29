@@ -150,9 +150,9 @@ func TestPostgresChannelCompletionRejectsCrossJobAuthorityAtomically(t *testing.
 func channelTurnTestRepository(t *testing.T) (context.Context, *Repository) {
 	t.Helper()
 	ctx := t.Context()
-	pool := openIsolatedMigrationPool(t)
+	pool := openIsolatedDatabasePool(t)
 	repository := New(pool)
-	if err := repository.EnsureSchema(ctx, loadCheckedMigrationBundle(t)); err != nil {
+	if err := repository.ResetDatabase(ctx, loadCurrentDatabaseSetup(t)); err != nil {
 		t.Fatal(err)
 	}
 	return ctx, repository

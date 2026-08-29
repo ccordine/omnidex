@@ -71,12 +71,6 @@ func TestApplicationRequirementCandidateKindReturnsCandidateBoundRelation(t *tes
 		t.Fatalf("candidate-kind response framing=%q", framing)
 	}
 
-	replayed, err := DecodeApplicationRequirementCandidateKindResultForPortableRenderer(
-		job.Payload, PortableRendererV1, ApplicationRequirementCandidateTaskLocal,
-	)
-	if err != nil || replayed.Relation != ApplicationRequirementCandidateTaskLocal {
-		t.Fatalf("candidate-kind replay result=%+v error=%v", replayed, err)
-	}
 }
 
 func TestApplicationRequirementCandidateKindReceiptRejectsUnboundState(t *testing.T) {

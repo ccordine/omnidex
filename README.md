@@ -465,7 +465,10 @@ The server owns the selected locale. `Accept-Language` seeds the first visit; `?
 
 ## State and UI boundaries
 
-- PostgreSQL owns durable jobs, steps, projects, cards, messages, and memories.
+- PostgreSQL owns jobs, steps, projects, cards, messages, and memories while the
+  current core is running. Development startup deliberately discards that state:
+  the core drops and recreates the exact configured runtime schema from
+  `database/setup.sql` every time it starts.
 - Redis owns ephemeral coordination, progress, pub/sub, locks, and realtime fanout.
 - The server owns lifecycle and mutation truth.
 - RecyclrJS is the page-scoped realtime bridge.
@@ -498,6 +501,13 @@ cp default.env .env
 ```
 
 Open `http://localhost:8090`.
+
+Omnidex currently has no internal database migration or data-upgrade path. Every
+core startup drops and recreates the exact non-public schema named by
+`DATABASE_SCHEMA` from [database/setup.sql](database/setup.sql). All existing
+Omnidex rows in that schema are intentionally discarded. Use a dedicated schema
+whose contents may be destroyed; never point Omnidex at a schema whose data must
+survive.
 
 The default compose topology keeps PostgreSQL and Redis on the internal backend network. The core API is the normal host-facing service.
 `up.sh` and `down.sh` require `DOCKER_CONTEXT=default`, clear ambient Docker
@@ -537,8 +547,9 @@ The installer stages a complete checkout, builds the GUI and all host binaries,
 validates the explicit deployment environment, then swaps the finished checkout
 into `~/.omnidex`. `default.env` is a template and is never silently promoted to
 active authority. An existing install's regular `.env` is preserved byte-for-byte;
-supplying `--env-file` during replacement is rejected. PostgreSQL and Redis data
-remain in their Docker named volumes.
+supplying `--env-file` during replacement is rejected. This environment-file rule
+does not preserve database state: when the installed core next starts, it rebuilds
+the configured Omnidex schema from `database/setup.sql` and discards its old rows.
 
 From any directory, update the installed host checkout and binaries with:
 
@@ -591,7 +602,7 @@ CORE_URL=http://localhost:8090 /path/to/omnidex/bin/agent-cli feedback JOB_ID \
 
 Start with [default.env](default.env) or [.env.example](.env.example). Important groups are:
 
-- database, Redis, listener, and migration settings;
+- fresh-database setup, Redis, and listener settings;
 - generation and embedding provider selection;
 - per-role model routing;
 - worker count, polling interval, and request timeout;

@@ -47,8 +47,6 @@ func (a *App) Run(args []string) error {
 		return nil
 	case "update":
 		return a.runUpdate(args[1:])
-	case "migrate":
-		return fmt.Errorf("omni migrate was removed; agent-core installs only its sealed release migration bundle")
 	case "host":
 		return a.runHost(args[1:])
 	case "chat":

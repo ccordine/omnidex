@@ -164,20 +164,6 @@ func seedContextProjectionTest(
 	return authority, projection, stationJob
 }
 
-func seedPreInlineExecutionContextProjectionTest(
-	t *testing.T,
-	ctx context.Context,
-	repository *Repository,
-	pool *pgxpool.Pool,
-	marker string,
-) (ContextProjectionAuthority, contextbuilder.Projection) {
-	t.Helper()
-	claim := seedPreInlineExecutionMigrationClaim(t, ctx, pool, marker)
-	return seedContextProjectionForAuthority(
-		t, ctx, repository, claim.Job.ID, claim.Authority, marker,
-	)
-}
-
 func seedContextProjectionForAuthority(
 	t *testing.T,
 	ctx context.Context,

@@ -1,7 +1,6 @@
 package queue
 
 import (
-	"os"
 	"reflect"
 	"strings"
 	"testing"
@@ -78,28 +77,5 @@ func TestGeneratedWorkloadProjectDeploymentHeadTypesContainFingerprintsNotSecret
 				}
 			}
 		}
-	}
-}
-
-func TestGeneratedWorkloadProjectDeploymentHeadMigrationOwnsProjectLineage(t *testing.T) {
-	raw, err := os.ReadFile("../../migrations/142_generated_workload_project_deployment_head.sql")
-	if err != nil {
-		t.Fatal(err)
-	}
-	source := string(raw)
-	for _, required := range []string{
-		"project_id BIGINT PRIMARY KEY",
-		"deployment_key_fingerprint_sha256",
-		"generated_workload_project_deployment_head_history",
-		"head.active_deployment_id=NEW.prior_deployment_id",
-		"project deployment head history is immutable",
-		"DROP CONSTRAINT generated_workload_deployments_compose_project_key",
-	} {
-		if !strings.Contains(source, required) {
-			t.Fatalf("migration omits %q", required)
-		}
-	}
-	if strings.Contains(source, "prior.job_id=NEW.job_id") {
-		t.Fatal("migration retained the superseded same-job predecessor rule")
 	}
 }

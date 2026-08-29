@@ -173,7 +173,7 @@ func TestStationReplayLoadsPersistedLanguageBlindCorrectionProjection(t *testing
 	}
 }
 
-func TestExactStationReplayRejectsLanguageBlindCorrectionWithoutProjection(t *testing.T) {
+func TestExactStationReplayRejectsUnidentifiedLanguageBlindCorrection(t *testing.T) {
 	t.Parallel()
 	payload, err := json.Marshal(assemblyline.FragmentCorrectionInput{
 		CurrentDeclaration: "func Value() int { return missing() }",
@@ -183,9 +183,11 @@ func TestExactStationReplayRejectsLanguageBlindCorrectionWithoutProjection(t *te
 		t.Fatal(err)
 	}
 	_, err = replayExactStationArtifact(assemblyline.PortableJob{
-		Kind: assemblyline.WorkFragmentCorrection, Payload: payload,
+		Schema:  assemblyline.PortableJobSchemaV2,
+		Kind:    assemblyline.WorkFragmentCorrection,
+		Payload: payload,
 	}, "func Value() int { return 2 }")
-	if err == nil || !strings.Contains(err.Error(), "persisted source projection identity") {
+	if err == nil || !strings.Contains(err.Error(), "id does not match") {
 		t.Fatalf("unbound correction replay error=%v", err)
 	}
 }
@@ -255,19 +257,14 @@ func TestExactStationReplayPreservesTypeScriptCodingArtifactKinds(t *testing.T) 
 	}
 }
 
-func TestExactStationReplayUnknownKindPreservesExactRawFallback(t *testing.T) {
+func TestExactStationReplayRejectsUnknownKind(t *testing.T) {
 	t.Parallel()
-	const raw = " \r\nopaque response\r\n "
-	artifact, err := replayExactStationArtifact(assemblyline.PortableJob{
-		Kind: assemblyline.WorkKind("future_station_kind"),
-	}, raw)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if artifact.Kind != "exact_final_response" || artifact.Source != raw ||
-		artifact.SourceSHA256 != replaySHA256(raw) || artifact.StartByte != 0 ||
-		artifact.EndByte != len(raw) || artifact.DiscardedBytes != 0 || artifact.ChangedFromBase {
-		t.Fatalf("artifact=%+v", artifact)
+	_, err := replayExactStationArtifact(assemblyline.PortableJob{
+		Schema: assemblyline.PortableJobSchemaV2,
+		Kind:   assemblyline.WorkKind("future_station_kind"),
+	}, "opaque response")
+	if err == nil || !strings.Contains(err.Error(), "unsupported") {
+		t.Fatalf("unknown-kind replay error=%v", err)
 	}
 }
 

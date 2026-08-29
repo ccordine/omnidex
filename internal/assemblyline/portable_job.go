@@ -61,10 +61,7 @@ func ValidatePortableJobForRenderer(job PortableJob, renderer string) error {
 	if renderer != PortableRendererV1 {
 		return fmt.Errorf("portable renderer %q is not registered", renderer)
 	}
-	if err := job.validateIdentity(); err != nil {
-		return err
-	}
-	return validatePortableJobPayloadForRenderer(job.Kind, job.Payload, renderer)
+	return job.Validate()
 }
 
 func (job PortableJob) validateIdentity() error {

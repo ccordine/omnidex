@@ -3,18 +3,11 @@ package queue
 import "testing"
 
 func TestPostgresFragmentGenerationOutputLimitReplacementAuthority(t *testing.T) {
-	pool := openIsolatedMigrationPool(t)
+	pool := openIsolatedDatabasePool(t)
 	repository := New(pool)
-	if err := repository.EnsureSchema(t.Context(), loadCheckedMigrationBundle(t)); err != nil {
+	if err := repository.ResetDatabase(t.Context(), loadCurrentDatabaseSetup(t)); err != nil {
 		t.Fatal(err)
 	}
-	assertAppliedMigrationCount(
-		t, pool, fragmentGenerationOutputLimitReplacementMigration, 1,
-	)
-	assertAppliedMigrationCount(
-		t, pool, fragmentGenerationOutputLimitReplacementAuthorityMigration, 1,
-	)
-
 	var transportHash, receiptHash, lineageAuthorityHash string
 	var stationLanguage, stationVolatility, receiptLanguage, receiptVolatility string
 	var lineageLanguage, lineageVolatility string

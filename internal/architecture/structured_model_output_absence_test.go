@@ -187,7 +187,6 @@ func TestCurrentStationTransportHasNoResponseSchemaAuthority(t *testing.T) {
 		walkProductionSource(t, filepath.Join(root, relative), func(path, source string) {
 			for _, forbidden := range []string{
 				"ResponseSchema", "response_schema", "canonicalStationGapSchema",
-				"PortableRendererV4", "render-portable-job.v4",
 			} {
 				if strings.Contains(source, forbidden) {
 					t.Errorf("current station source %s retains retired authority %q", path, forbidden)

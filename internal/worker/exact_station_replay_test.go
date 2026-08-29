@@ -86,6 +86,20 @@ func TestValidateExactStationReplayPointPreservesPortableBoundary(t *testing.T) 
 		loaded.Prompt != gap.Prompt {
 		t.Fatalf("replay boundary=%#v job=%#v", loaded, job)
 	}
+	stale := queue.StationCallReplayPoint{Call: call, Gap: gap}
+	stale.Gap.Prompt = "stale renderer output"
+	projection, err := replayProjectionEnvelope(
+		stale.Gap.Prompt, stale.Gap.RendererVersion,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stale.Gap.ProjectionEnvelope = string(projection)
+	stale.Gap.ProjectionSHA256 = replaySHA256(string(projection))
+	if _, err := validateExactStationReplayPoint(stale); err == nil ||
+		!strings.Contains(err.Error(), "differs from the current portable renderer") {
+		t.Fatalf("stale renderer replay error=%v", err)
+	}
 
 	for name, mutate := range map[string]func(*queue.StationCallReplayPoint){
 		"non-current renderer": func(point *queue.StationCallReplayPoint) {
@@ -150,46 +164,6 @@ func TestValidateExactStationReplayPointBindsRawSingleLineChatMLBoundary(t *test
 		Call: call, Gap: gap,
 	}); err == nil {
 		t.Fatal("raw single-line replay accepted an input without its code-owned ChatML boundary")
-	}
-}
-
-func TestValidateCurrentContractStationReplayPointRequiresDerivedOutputCeiling(t *testing.T) {
-	job, err := assemblyline.NewFragmentCorrectionJob(assemblyline.FragmentCorrectionInput{
-		Language: "typescript", Signature: "function Repair(value: string): string",
-		CurrentDeclaration: "function Repair(value: string): string { return value; }",
-		RepairGuidance:     "Return the repaired value.",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	gap := replayTestGap(t, job)
-	call := replayTestCall(t, gap)
-	point := queue.StationCallReplayPoint{Call: call, Gap: gap}
-	loaded, err := validateCurrentContractStationReplayPoint(point)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if loaded.Job.ID != job.ID || loaded.Prompt != gap.Prompt || loaded.Contract.OutputLimitMode != llm.ExactPreparedOutputLimitNatural {
-		t.Fatalf("current-contract replay boundary=%+v", loaded)
-	}
-
-	gap.OutputLimitMode = llm.ExactPreparedOutputLimitExplicit
-	gap.MaxOutputTokens = 1024
-	call.OutputLimitMode = llm.ExactPreparedOutputLimitExplicit
-	call.MaxOutputTokens = 1024
-	point = queue.StationCallReplayPoint{Call: call, Gap: gap}
-	if _, err := validateExactStationReplayPoint(point); err == nil {
-		t.Fatal("exact replay silently changed retired output authority")
-	}
-	if _, err := validateCurrentContractStationReplayPoint(point); err == nil {
-		t.Fatal("current-contract replay accepted retired output authority")
-	}
-
-	point = queue.StationCallReplayPoint{Call: replayTestCall(t, replayTestGap(t, job)), Gap: replayTestGap(t, job)}
-	point.Call.GapOpeningID = point.Gap.ID
-	point.Gap.Prompt += "\nchanged"
-	if _, err := validateCurrentContractStationReplayPoint(point); err == nil {
-		t.Fatal("current-contract replay accepted a prompt different from the current renderer")
 	}
 }
 

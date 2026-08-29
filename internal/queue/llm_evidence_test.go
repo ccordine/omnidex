@@ -3,7 +3,6 @@ package queue
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -94,32 +93,12 @@ func TestLLMCallEvidenceAllowsPartialOutputOnlyForGenerationFailure(t *testing.T
 	}
 }
 
-func TestLLMEvidenceMigrationIsImmutableAndExact(t *testing.T) {
-	t.Parallel()
-
-	raw, err := os.ReadFile("../../migrations/024_llm_evidence.sql")
-	if err != nil {
-		t.Fatal(err)
-	}
-	source := string(raw)
-	for _, required := range []string{
-		"CREATE TABLE IF NOT EXISTS llm_call_evidence",
-		"system_prompt", "user_prompt", "request_sha256", "response_sha256", "response_schema",
-		"requested_model", "context_tokens", "max_output_tokens",
-		"prevent_llm_call_evidence_mutation", "BEFORE UPDATE OR DELETE",
-	} {
-		if !strings.Contains(source, required) {
-			t.Fatalf("LLM evidence migration omitted %q", required)
-		}
-	}
-}
-
 func TestPostgresLLMCallEvidenceRoundTripIsExactAndImmutable(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	pool := openIsolatedMigrationPool(t)
+	pool := openIsolatedDatabasePool(t)
 	repository := New(pool)
-	if err := repository.EnsureSchema(ctx, loadCheckedMigrationBundle(t)); err != nil {
+	if err := repository.ResetDatabase(ctx, loadCurrentDatabaseSetup(t)); err != nil {
 		t.Fatal(err)
 	}
 

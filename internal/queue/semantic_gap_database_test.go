@@ -144,9 +144,9 @@ func TestPostgresCompleteStepRejectsOpenSemanticGapAtomically(t *testing.T) {
 
 func semanticGapTestClaim(t *testing.T, marker string) (*Repository, *pgxpool.Pool, *model.ClaimedStep) {
 	t.Helper()
-	pool := openIsolatedMigrationPool(t)
+	pool := openIsolatedDatabasePool(t)
 	repository := New(pool)
-	if err := repository.EnsureSchema(t.Context(), loadCheckedMigrationBundle(t)); err != nil {
+	if err := repository.ResetDatabase(t.Context(), loadCurrentDatabaseSetup(t)); err != nil {
 		t.Fatal(err)
 	}
 	claim := claimStationTestJob(t, repository, marker)

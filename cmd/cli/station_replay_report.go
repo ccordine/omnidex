@@ -16,7 +16,6 @@ import (
 )
 
 const stationReplayReportSchema = "omnidex.station-replay-report.v2"
-const stationCurrentContractReplayReportSchema = "omnidex.station-current-contract-replay-report.v2"
 
 type stationReplayReportHeader struct {
 	Type                        string                   `json:"type"`

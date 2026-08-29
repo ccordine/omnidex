@@ -171,22 +171,3 @@ func DecodeApplicationProjectStackConstraintDecision(
 	}
 	return decision, nil
 }
-
-// DecodeApplicationProjectStackConstraintDecisionForPortableRenderer validates
-// one raw replay result against the sole current portable renderer.
-func DecodeApplicationProjectStackConstraintDecisionForPortableRenderer(
-	payload []byte,
-	renderer string,
-	raw string,
-) (ApplicationProjectStackConstraintDecision, error) {
-	if renderer != PortableRendererV1 {
-		return ApplicationProjectStackConstraintDecision{}, fmt.Errorf(
-			"portable renderer %q is not registered", renderer,
-		)
-	}
-	var input ApplicationProjectStackConstraintInput
-	if err := decodePortablePayload(payload, &input); err != nil {
-		return ApplicationProjectStackConstraintDecision{}, err
-	}
-	return DecodeApplicationProjectStackConstraintDecision(input, raw)
-}

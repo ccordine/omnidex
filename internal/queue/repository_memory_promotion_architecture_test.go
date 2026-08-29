@@ -6,27 +6,6 @@ import (
 	"testing"
 )
 
-func TestMemoryPromotionSchemaBindsCandidateAndMemoryAtomically(t *testing.T) {
-	raw, err := os.ReadFile("../../migrations/029_atomic_memory_candidate_promotion.sql")
-	if err != nil {
-		t.Fatal(err)
-	}
-	source := string(raw)
-	for _, required := range []string{
-		"promoted_memory_id BIGINT",
-		"memory_candidates_promoted_memory_id_fkey",
-		"ON DELETE RESTRICT",
-		"UNIQUE (promoted_memory_id)",
-		"memory_candidates_promotion_shape",
-		"status IN ('approved', 'durable') AND promoted_memory_id IS NOT NULL",
-		"cannot bind previously split promotions",
-	} {
-		if !strings.Contains(source, required) {
-			t.Errorf("atomic promotion migration missing %q", required)
-		}
-	}
-}
-
 func TestMemoryPromotionCallersContainNoSplitPublishThenStatusPath(t *testing.T) {
 	api := readFunctionSource(t, "../api/server_jobs.go", "func (s *Server) promoteMemoryCandidate", "func (s *Server) rejectMemoryCandidate")
 	for _, forbidden := range []string{"AddMemoryChunk(", "UpdateCurrentMemoryCandidateStatus("} {

@@ -35,7 +35,7 @@ func usage() {
 	fmt.Println("  stash [stash flags]                 git stash helper for Omnidex repo")
 	fmt.Println("  uninstall [uninstall.sh flags]      run uninstall.sh")
 	fmt.Println("  metrics <live|runs|models|export>  query durable runtime metrics")
-	fmt.Println("  bench:replay (--opening id | --job id [--work-kind kind]) --model name [--model name...] --report path [--timeout 0] [--current-contract]")
+	fmt.Println("  bench:replay (--opening id | --job id [--work-kind kind]) --model name [--model name...] --report path [--timeout 0]")
 	fmt.Println("  status [--timeout 5s] [--queue-limit N] [--web-probe]  combined service status")
 	fmt.Println("  core:status [--timeout 5s] [--core-url url]            core API health")
 	fmt.Println("  queue:status [--timeout 5s] [--limit N] [--core-url url] queue sample counts")

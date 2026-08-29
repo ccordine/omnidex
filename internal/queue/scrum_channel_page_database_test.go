@@ -237,9 +237,9 @@ func assertScrumMessageTailPlanIsBounded(t *testing.T, raw []byte, limit float64
 
 func scrumChannelPageTestRepository(t *testing.T) (*Repository, *pgxpool.Pool, context.Context) {
 	t.Helper()
-	pool := openIsolatedMigrationPool(t)
+	pool := openIsolatedDatabasePool(t)
 	repository := New(pool)
-	if err := repository.EnsureSchema(t.Context(), loadCheckedMigrationBundle(t)); err != nil {
+	if err := repository.ResetDatabase(t.Context(), loadCurrentDatabaseSetup(t)); err != nil {
 		t.Fatal(err)
 	}
 	return repository, pool, t.Context()

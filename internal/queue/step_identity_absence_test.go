@@ -32,12 +32,12 @@ func TestRunningStepIdentityHasNoRequeueFallback(t *testing.T) {
 			t.Fatalf("step authority contains forbidden identity-reuse path %q", forbidden)
 		}
 	}
-	migration, err := os.ReadFile("../../migrations/037_step_attempt_leases.sql")
+	setup, err := os.ReadFile("../../database/setup.sql")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(migration), "step attempt identity is immutable") ||
-		!strings.Contains(string(migration), "step attempt must increase monotonically by one") {
+	if !strings.Contains(string(setup), "step attempt identity is immutable") ||
+		!strings.Contains(string(setup), "step attempt must increase monotonically by one") {
 		t.Fatal("PostgreSQL does not enforce monotonic immutable step attempts")
 	}
 }

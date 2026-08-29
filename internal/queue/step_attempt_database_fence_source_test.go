@@ -18,26 +18,26 @@ func TestTransactionalStepAttemptFenceHasOneDatabaseAuthorityPath(t *testing.T) 
 		t.Fatal("exported transactional authorizer retains a raw-table authority path")
 	}
 
-	migration, err := os.ReadFile(filepath.Join(
-		"..", "..", "migrations", "059_step_attempt_transaction_fence.sql",
+	setup, err := os.ReadFile(filepath.Join(
+		"..", "..", "database", "setup.sql",
 	))
 	if err != nil {
 		t.Fatal(err)
 	}
-	migrationSource := string(migration)
+	setupSource := string(setup)
 	for _, required := range []string{
 		"SECURITY DEFINER", "SET search_path TO pg_catalog, %I",
 		"REVOKE ALL ON FUNCTION", "FROM PUBLIC", "FOR UPDATE",
 	} {
-		if !strings.Contains(migrationSource, required) {
-			t.Fatalf("transactional fence migration lacks %q", required)
+		if !strings.Contains(setupSource, required) {
+			t.Fatalf("transactional fence setup lacks %q", required)
 		}
 	}
 }
 
 func TestNewProductionFilesRemainFocused(t *testing.T) {
 	files := []string{
-		"migration_bundle.go", "file_migrations.go", "file_migration_authority.go",
+		"database_setup.go", "database_setup_lock.go", "database_reset.go",
 		"step_attempt_database_fence.go", "step_attempt_authorizer_provision.go",
 		"step_attempt_authorizer_role.go",
 	}

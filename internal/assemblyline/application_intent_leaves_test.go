@@ -237,30 +237,6 @@ func TestApplicationRequirementExcludedCandidatesAreBoundAndGenerationProjected(
 	}
 }
 
-func TestApplicationRequirementDuplicateReplayPreservesCurrentEvidence(t *testing.T) {
-	t.Parallel()
-	authority := applicationIntentLeafFixture(t)
-	const duplicate = "The current count is displayed."
-	currentInput := ApplicationRequirementCoverageInput{
-		UserRequest:          authority.UserRequest,
-		Context:              authority.Context,
-		AcceptedRequirements: []string{duplicate},
-		ExcludedCandidates:   []string{},
-	}
-	currentJob, err := NewApplicationRequirementJob(
-		applicationRequirementCandidateFixture(t, currentInput),
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	leaf, err := DecodeApplicationRequirementLeafForPortableRenderer(
-		currentJob.Payload, PortableRendererV1, duplicate,
-	)
-	if err != nil || leaf != duplicate {
-		t.Fatalf("duplicate evidence=%q error=%v", leaf, err)
-	}
-}
-
 func TestApplicationRequirementPayloadSchemasUseSoleRenderer(t *testing.T) {
 	t.Parallel()
 	authority := applicationIntentLeafFixture(t)

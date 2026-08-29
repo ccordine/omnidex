@@ -94,10 +94,10 @@ func TestProjectNameFromLocation(t *testing.T) {
 func TestEnqueueJobPreservesCustomProjectName(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
-	pool := openIsolatedMigrationPool(t)
+	pool := openIsolatedDatabasePool(t)
 
 	repo := New(pool)
-	if err := repo.EnsureSchema(ctx, loadCheckedMigrationBundle(t)); err != nil {
+	if err := repo.ResetDatabase(ctx, loadCurrentDatabaseSetup(t)); err != nil {
 		t.Fatal(err)
 	}
 

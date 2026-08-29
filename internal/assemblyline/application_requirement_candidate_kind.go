@@ -108,24 +108,3 @@ func DecodeApplicationRequirementCandidateKindResult(
 	}
 	return result, nil
 }
-
-// DecodeApplicationRequirementCandidateKindResultForPortableRenderer validates
-// one replay response against the sole renderer that owns this work kind.
-func DecodeApplicationRequirementCandidateKindResultForPortableRenderer(
-	payload []byte,
-	renderer string,
-	raw string,
-) (ApplicationRequirementCandidateKindResult, error) {
-	var zero ApplicationRequirementCandidateKindResult
-	if renderer != PortableRendererV1 {
-		return zero, fmt.Errorf(
-			"portable work kind %q requires renderer %q",
-			WorkApplicationRequirementCandidateKind, PortableRendererV1,
-		)
-	}
-	var input ApplicationRequirementCandidateKindInput
-	if err := decodePortablePayload(payload, &input); err != nil {
-		return zero, err
-	}
-	return DecodeApplicationRequirementCandidateKindResult(input, raw)
-}

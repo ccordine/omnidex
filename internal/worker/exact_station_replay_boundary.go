@@ -69,6 +69,13 @@ func loadStationReplayPortableBoundary(
 	if strings.TrimSpace(gap.Prompt) == "" {
 		return boundary, fmt.Errorf("station replay stored prompt is empty")
 	}
+	currentPrompt, err := assemblyline.RenderPortableJob(boundary.Job)
+	if err != nil {
+		return boundary, fmt.Errorf("render station replay portable job: %w", err)
+	}
+	if gap.Prompt != currentPrompt {
+		return boundary, fmt.Errorf("station replay prompt differs from the current portable renderer")
+	}
 	projection, err := replayProjectionEnvelope(gap.Prompt, gap.RendererVersion)
 	if err != nil || string(projection) != gap.ProjectionEnvelope ||
 		replaySHA256(string(projection)) != gap.ProjectionSHA256 {
@@ -79,42 +86,6 @@ func loadStationReplayPortableBoundary(
 		return boundary, err
 	}
 	boundary.Prompt, boundary.Contract = gap.Prompt, contract
-	return boundary, nil
-}
-
-func validateCurrentContractStationReplayPoint(
-	point queue.StationCallReplayPoint,
-) (exactStationReplayBoundary, error) {
-	boundary, err := loadStationReplayPortableBoundary(point)
-	if err != nil {
-		return boundary, err
-	}
-	if point.Gap.RendererVersion != assemblyline.PortableRendererV1 {
-		return boundary, fmt.Errorf(
-			"current-contract replay requires renderer %q, received %q",
-			assemblyline.PortableRendererV1, point.Gap.RendererVersion,
-		)
-	}
-	prompt, err := assemblyline.RenderPortableJob(boundary.Job)
-	if err != nil {
-		return boundary, fmt.Errorf("render current station replay contract: %w", err)
-	}
-	if prompt != point.Gap.Prompt {
-		return boundary, fmt.Errorf("current station renderer differs from the frozen model-visible packet")
-	}
-	call, gap := point.Call, point.Gap
-	expectedMaxOutputTokens, err := queue.ExpectedPortableStationMaxOutputTokens(
-		boundary.Job, gap.ContextTokens,
-	)
-	if err != nil {
-		return boundary, err
-	}
-	if call.ContextTokens != gap.ContextTokens || call.MaxOutputTokens != gap.MaxOutputTokens ||
-		gap.MaxOutputTokens != expectedMaxOutputTokens ||
-		call.OutputLimitMode != gap.OutputLimitMode || call.ModelInputBytes != len(call.ModelInput) ||
-		replaySHA256(call.ModelInput) != call.ModelInputSHA256 {
-		return boundary, fmt.Errorf("stored station call differs from its transport authority")
-	}
 	return boundary, nil
 }
 

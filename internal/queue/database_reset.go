@@ -76,7 +76,10 @@ func executeDatabaseSetup(ctx context.Context, conn *pgxpool.Conn, body []byte) 
 		return fmt.Errorf("begin database setup transaction: %w", err)
 	}
 	defer tx.Rollback(context.Background())
-	if _, err := tx.Exec(ctx, `SET LOCAL standard_conforming_strings TO on`); err != nil {
+	if _, err := tx.Exec(ctx, `
+		SET LOCAL standard_conforming_strings TO on;
+		SET LOCAL check_function_bodies TO false;
+	`); err != nil {
 		return fmt.Errorf("set database setup SQL mode: %w", err)
 	}
 	if _, err := tx.Exec(ctx, string(body)); err != nil {

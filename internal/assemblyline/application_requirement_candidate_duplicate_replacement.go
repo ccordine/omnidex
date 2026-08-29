@@ -143,24 +143,3 @@ func DecodeApplicationRequirementCandidateDuplicateReplacementLeaf(
 	}
 	return leaf, nil
 }
-
-// DecodeApplicationRequirementCandidateDuplicateReplacementLeafForPortableRenderer
-// validates one replay response against the sole renderer that owns this kind.
-func DecodeApplicationRequirementCandidateDuplicateReplacementLeafForPortableRenderer(
-	payload []byte,
-	renderer string,
-	raw string,
-) (string, error) {
-	if renderer != PortableRendererV1 {
-		return "", fmt.Errorf(
-			"portable work kind %q requires renderer %q",
-			WorkApplicationRequirementCandidateDuplicateReplacement,
-			PortableRendererV1,
-		)
-	}
-	var input ApplicationRequirementCandidateDuplicateReplacementInput
-	if err := decodePortablePayload(payload, &input); err != nil {
-		return "", err
-	}
-	return DecodeApplicationRequirementCandidateDuplicateReplacementLeaf(input, raw)
-}

@@ -269,14 +269,13 @@ func TestReleaseInputsContainNoTrackedGeneratedArtifacts(t *testing.T) {
 		if path == "core" || path == "go.mod.orig" ||
 			strings.HasPrefix(path, ".tmp-go-audit-cache/") ||
 			strings.HasPrefix(path, ".tmp-ledger-cascade.") ||
-			strings.HasPrefix(path, ".codex-ledger-fixture.") ||
-			strings.HasPrefix(path, ".migration-manifest-") {
+			strings.HasPrefix(path, ".codex-ledger-fixture.") {
 			t.Fatalf("generated release input remains tracked: %s", path)
 		}
 	}
 	ignore := readRepoScript(t, root, ".gitignore")
 	for _, rule := range []string{
-		"/.tmp-go-audit-cache/", ".tmp-ledger-cascade.*/", ".codex-ledger-fixture.*/", ".migration-manifest-*/", "/core", "/go.mod.orig",
+		"/.tmp-go-audit-cache/", ".tmp-ledger-cascade.*/", ".codex-ledger-fixture.*/", "/core", "/go.mod.orig",
 	} {
 		if !strings.Contains(ignore, rule) {
 			t.Fatalf(".gitignore missing generated-artifact rule %q", rule)
@@ -311,14 +310,14 @@ func TestDockerBuilderInstallsBuildScriptInterpreter(t *testing.T) {
 func TestDockerRuntimeCopiesOnlyExistingAuthoritativeInputs(t *testing.T) {
 	root := repoRootFromOmniTest(t)
 	dockerfile := readRepoScript(t, root, "Dockerfile")
-	if !strings.Contains(dockerfile, "COPY --from=build /src/migrations /usr/local/migrations") {
-		t.Fatal("Docker runtime must retain the authoritative migration bundle")
+	if !strings.Contains(dockerfile, "COPY --from=build /src/database/setup.sql /usr/local/database/setup.sql") {
+		t.Fatal("Docker runtime must retain the authoritative database setup")
 	}
-	if strings.Contains(dockerfile, "COPY --from=build /src/database") {
-		t.Fatal("Docker runtime retains the removed database-directory copy path")
+	if strings.Contains(dockerfile, "COPY --from=build /src/migrations") {
+		t.Fatal("Docker runtime retains a numbered database history")
 	}
-	if _, err := os.Stat(filepath.Join(root, "database")); !os.IsNotExist(err) {
-		t.Fatalf("Docker runtime input must be an existing authoritative directory: %v", err)
+	if info, err := os.Stat(filepath.Join(root, "database", "setup.sql")); err != nil || !info.Mode().IsRegular() {
+		t.Fatalf("Docker runtime setup must be one existing regular file: %v", err)
 	}
 }
 

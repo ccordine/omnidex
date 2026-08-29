@@ -10,9 +10,9 @@ import (
 
 func TestRoleplayCanonDeltaFiltersHiddenWorldFactWithoutProjectingIt(t *testing.T) {
 	ctx := t.Context()
-	pool := openIsolatedMigrationPool(t)
+	pool := openIsolatedDatabasePool(t)
 	repository := New(pool)
-	if err := repository.EnsureSchema(ctx, loadCheckedMigrationBundle(t)); err != nil {
+	if err := repository.ResetDatabase(ctx, loadCurrentDatabaseSetup(t)); err != nil {
 		t.Fatal(err)
 	}
 	channel, err := repository.CreateRoleplayChannel(ctx, model.Channel{

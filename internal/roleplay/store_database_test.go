@@ -130,30 +130,6 @@ func TestRoleplayCanonPersistsAndCharacterProjectionCannotSeeUnknownFacts(t *tes
 }
 
 func openRoleplayTestPool(t *testing.T) (*pgxpool.Pool, func(*testing.T) *pgxpool.Pool) {
-	return openRoleplayTestPoolWithMigrations(t, []string{
-		"117_roleplay_canon_authority.sql",
-		"118_roleplay_simulation_authority.sql",
-		"119_roleplay_research_authority.sql",
-		"122_roleplay_character_library.sql",
-		"124_roleplay_character_generation_authority.sql",
-		"128_roleplay_user_turn_authority.sql",
-		"130_roleplay_structured_user_turns.sql",
-		"131_roleplay_ordered_response_round.sql",
-		"132_roleplay_response_round_publication.sql",
-		"148_roleplay_initiative_time_authority.sql",
-		"149_roleplay_ongoing_action_authority.sql",
-		"150_roleplay_user_persona_scene_authority.sql",
-		"151_roleplay_transition_observer_authority.sql",
-		"152_roleplay_user_canon_provenance.sql",
-		"153_roleplay_user_turn_contribution_kind_authority.sql",
-		"157_roleplay_user_canon_modality_authority.sql",
-	})
-}
-
-func openRoleplayTestPoolWithMigrations(
-	t *testing.T,
-	migrationNames []string,
-) (*pgxpool.Pool, func(*testing.T) *pgxpool.Pool) {
 	t.Helper()
 	databaseURL := strings.TrimSpace(os.Getenv("OMNI_TEST_DATABASE_URL"))
 	if databaseURL == "" {
@@ -170,6 +146,13 @@ func openRoleplayTestPoolWithMigrations(
 		admin.Close()
 		t.Fatal(err)
 	}
+	var authoritySchema string
+	if err := admin.QueryRow(ctx, `SELECT 'omnidex_host_authority_' || md5($1)`, schema).Scan(
+		&authoritySchema,
+	); err != nil {
+		admin.Close()
+		t.Fatal(err)
+	}
 	newPool := func(t *testing.T) *pgxpool.Pool {
 		config, err := pgxpool.ParseConfig(databaseURL)
 		if err != nil {
@@ -183,78 +166,35 @@ func openRoleplayTestPoolWithMigrations(
 		return pool
 	}
 	pool := newPool(t)
-	if _, err := pool.Exec(ctx, `
-		CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA public;
-		CREATE TABLE ai_channels (id TEXT PRIMARY KEY, data_source_id TEXT);
-		CREATE TABLE ai_channel_messages (
-			id BIGINT PRIMARY KEY,
-			channel_id TEXT NOT NULL REFERENCES ai_channels(id) ON DELETE CASCADE,
-			role TEXT NOT NULL,
-			content TEXT NOT NULL,
-			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-		);
-		CREATE TABLE jobs (
-			id BIGINT PRIMARY KEY,
-			instruction TEXT NOT NULL DEFAULT '',
-			pipeline TEXT NOT NULL,
-			metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
-			status TEXT NOT NULL DEFAULT 'pending',
-			result TEXT
-		);
-		CREATE TABLE job_lifecycle_operations (
-			operation_id TEXT PRIMARY KEY,
-			job_id BIGINT,
-			kind TEXT NOT NULL,
-			command_payload JSONB NOT NULL,
-			result_job_status TEXT,
-			result_step_status TEXT
-		);
-		CREATE TABLE station_call_openings (
-			id BIGINT PRIMARY KEY,
-			tokenizer_profile TEXT NOT NULL,
-			CONSTRAINT station_call_openings_tokenizer_profile_check CHECK (
-				tokenizer_profile='ollama-0.24.0-qwen3-qwen2-boundary-v1'
-			)
-		);
-		CREATE TABLE station_gap_openings (
-			id BIGINT PRIMARY KEY,
-			station TEXT,
-			work_kind TEXT,
-			portable_payload JSONB
-		);
-		CREATE TABLE evidence (
-			id BIGSERIAL PRIMARY KEY,job_id BIGINT,step_id BIGINT,kind TEXT,
-			source_type TEXT,source_ref TEXT,payload_json JSONB NOT NULL,
-			completion_operation_id TEXT,completion_evidence_index INTEGER
-		);
-		CREATE TABLE step_completion_evidence_sets (
-			operation_id TEXT PRIMARY KEY,job_id BIGINT NOT NULL,
-			evidence_count INTEGER NOT NULL
-		);
-		CREATE FUNCTION objective_completion_evidence_set_is_valid(TEXT)
-		RETURNS BOOLEAN AS 'SELECT TRUE' LANGUAGE SQL;
-	`); err != nil {
+	setupPath, err := filepath.Abs(filepath.Join("..", "..", "database", "setup.sql"))
+	if err != nil {
 		pool.Close()
 		admin.Close()
 		t.Fatal(err)
 	}
-	for _, name := range migrationNames {
-		migration, err := os.ReadFile(filepath.Join("..", "..", "migrations", name))
-		if err != nil {
-			pool.Close()
-			admin.Close()
-			t.Fatal(err)
-		}
-		if _, err := pool.Exec(ctx, string(migration)); err != nil {
-			pool.Close()
-			admin.Close()
-			t.Fatalf("install roleplay migration %s: %v", name, err)
-		}
+	setup, err := os.ReadFile(setupPath)
+	if err != nil {
+		pool.Close()
+		admin.Close()
+		t.Fatal(err)
+	}
+	setup = []byte(strings.ReplaceAll(
+		string(setup), "__OMNIDEX_RUNTIME_SCHEMA__", schema,
+	))
+	if _, err := pool.Exec(ctx, string(setup)); err != nil {
+		pool.Close()
+		admin.Close()
+		t.Fatal(err)
 	}
 	t.Cleanup(func() {
 		pool.Close()
 		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cleanupCancel()
+		if _, err := admin.Exec(cleanupCtx,
+			"DROP SCHEMA IF EXISTS "+pgx.Identifier{authoritySchema}.Sanitize()+" CASCADE",
+		); err != nil {
+			t.Errorf("drop roleplay authority schema: %v", err)
+		}
 		if _, err := admin.Exec(cleanupCtx, "DROP SCHEMA "+pgx.Identifier{schema}.Sanitize()+" CASCADE"); err != nil {
 			t.Errorf("drop roleplay test schema: %v", err)
 		}

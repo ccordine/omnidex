@@ -25,7 +25,8 @@ usage() {
 Usage: ./scripts/compose-deployment.sh <up|down> [--build]
 
 Uses only the built-in default rootful Docker context and the exact
-COMPOSE_PROJECT_NAME from .env. It never removes PostgreSQL or Redis volumes.
+COMPOSE_PROJECT_NAME from .env. Docker volumes are not a database upgrade path:
+agent-core drops and recreates DATABASE_SCHEMA from database/setup.sql at startup.
 EOF
 }
 
