@@ -201,7 +201,7 @@ func (s *directCodingSession) correctDirectCodingTypeScriptStage(
 					target.ID, parseErr,
 				)
 			}
-			if err := progress.observe(
+			if err := progress.observeDeterministic(
 				target.ID, diagnostic.VerificationStage, failure,
 			); err != nil {
 				return err
@@ -223,7 +223,7 @@ func (s *directCodingSession) correctDirectCodingTypeScriptStage(
 		}
 		repairRegion = &localized
 	}
-	if err := progress.observe(
+	if err := progress.observeSemantic(
 		target.ID, diagnostic.VerificationStage, failure,
 	); err != nil {
 		return err
