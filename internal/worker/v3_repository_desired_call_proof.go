@@ -70,12 +70,9 @@ func compileDesiredRepositoryCallProof(
 		kind := call.WorkKind
 		proof.TotalModelCalls++
 		switch kind {
-		case assemblyline.WorkFragmentGeneration:
-			if call.WorkKind != assemblyline.WorkFragmentGeneration {
-				proof.DeclarationCorrectionCalls++
-			} else {
-				proof.DeclarationGenerationCalls++
-			}
+		case assemblyline.WorkFragmentGeneration,
+			assemblyline.WorkFragmentGenerationReplacement:
+			proof.DeclarationGenerationCalls++
 		case assemblyline.WorkFragmentCorrection:
 			proof.DeclarationCorrectionCalls++
 		default:

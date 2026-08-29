@@ -37,34 +37,38 @@ func resolveDirectCodingApplicationIntent(
 	}
 	requirements := make([]string, 0, assemblyline.MaxApplicationRequirementLeaves)
 	for {
-		leafInput := assemblyline.ApplicationRequirementLeafInput{
+		coverageInput := assemblyline.ApplicationRequirementCoverageInput{
 			UserRequest: authority.UserRequest, Context: authority.Context,
-			ProductContext:       productContext,
 			AcceptedRequirements: append([]string{}, requirements...),
 		}
-		if len(requirements) > 0 {
-			coverageJob, err := assemblyline.NewApplicationRequirementCoverageJob(leafInput)
-			if err != nil {
-				return zero, err
+		coverageJob, err := assemblyline.NewApplicationRequirementCoverageJob(coverageInput)
+		if err != nil {
+			return zero, err
+		}
+		coverage, err := runDirectCodingSemanticLeafCall(
+			runtime, intentModel, "application_requirement_coverage", coverageJob, identities,
+			func(raw string) (assemblyline.ApplicationRequirementCoverageResult, error) {
+				return assemblyline.DecodeApplicationRequirementCoverageLeaf(coverageInput, raw)
+			},
+			func(value assemblyline.ApplicationRequirementCoverageResult) error {
+				return value.ValidateFor(coverageInput)
+			},
+		)
+		if err != nil {
+			return zero, err
+		}
+		if coverage.Relation == assemblyline.ApplicationNoUncoveredRequirement {
+			if len(requirements) == 0 {
+				return zero, fmt.Errorf(
+					"application requirement coverage found no task-local runtime implementation requirement",
+				)
 			}
-			coverage, err := runDirectCodingSemanticLeafCall(
-				runtime, intentModel, "application_requirement_coverage", coverageJob, identities,
-				func(raw string) (string, error) {
-					return assemblyline.DecodeApplicationRequirementCoverageLeaf(leafInput, raw)
-				},
-				func(string) error { return nil },
-			)
-			if err != nil {
-				return zero, err
+			candidate := assemblyline.ApplicationIntentCandidate{
+				Schema:         assemblyline.ApplicationIntentCandidateSchemaV1,
+				ProductContext: productContext,
+				Requirements:   append([]string(nil), requirements...),
 			}
-			if coverage == assemblyline.ApplicationNoUncoveredRequirement {
-				candidate := assemblyline.ApplicationIntentCandidate{
-					Schema:         assemblyline.ApplicationIntentCandidateSchemaV1,
-					ProductContext: productContext,
-					Requirements:   append([]string(nil), requirements...),
-				}
-				return assemblyline.ResolveApplicationIntent(authority, candidate)
-			}
+			return assemblyline.ResolveApplicationIntent(authority, candidate)
 		}
 		if len(requirements) == assemblyline.MaxApplicationRequirementLeaves {
 			return zero, fmt.Errorf(
@@ -72,20 +76,30 @@ func resolveDirectCodingApplicationIntent(
 				assemblyline.MaxApplicationRequirementLeaves,
 			)
 		}
-		requirementJob, err := assemblyline.NewApplicationRequirementJob(leafInput)
+		candidateInput := assemblyline.ApplicationRequirementCandidateInput{
+			Authority: coverageInput,
+			Coverage:  coverage,
+		}
+		requirementJob, err := assemblyline.NewApplicationRequirementJob(candidateInput)
 		if err != nil {
 			return zero, err
 		}
 		requirement, err := runDirectCodingSemanticLeafCall(
 			runtime, intentModel, "application_requirement", requirementJob, identities,
 			func(raw string) (string, error) {
-				return assemblyline.DecodeApplicationRequirementLeaf(leafInput, raw)
+				return assemblyline.DecodeApplicationRequirementLeaf(candidateInput, raw)
 			},
 			func(value string) error {
 				return assemblyline.ValidatePathFreeModelContextWithProvenance(
 					"application requirement", runtime.PathProvenance, value,
 				)
 			},
+		)
+		if err != nil {
+			return zero, err
+		}
+		requirement, err = refineDirectCodingApplicationRequirementCandidate(
+			runtime, intentModel, requirement, requirements, identities,
 		)
 		if err != nil {
 			return zero, err

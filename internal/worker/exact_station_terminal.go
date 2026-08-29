@@ -75,8 +75,23 @@ func (s *Service) dispatchExactStationCall(
 			"own bounded exact station result: %w", ownershipErr,
 		)
 	}
-	if callErr == nil {
-		callErr = llm.ValidateExactPreparedGenerationForRequest(prepared, owned)
+	validationErr := llm.ValidateExactPreparedGenerationForRequest(prepared, owned)
+	var validatedLimit *llm.ExactPreparedOutputLimitReachedError
+	if errors.As(validationErr, &validatedLimit) {
+		callErr = errors.Join(validationErr, callErr)
+	} else if callErr == nil {
+		callErr = validationErr
+	} else {
+		// A provider client cannot create output-limit routing authority merely
+		// by returning an error of the registered type. Only independently
+		// validated owned response evidence may preserve that classification.
+		var unvalidatedLimit *llm.ExactPreparedOutputLimitReachedError
+		if errors.As(callErr, &unvalidatedLimit) {
+			callErr = fmt.Errorf(
+				"provider claimed output-limit completion without validated response evidence: %v",
+				callErr,
+			)
+		}
 	}
 	return s.persistExactStationCallResult(
 		ctx, authority, gap, call, requestedModel, owned, callErr,
@@ -112,6 +127,15 @@ func (s *Service) persistExactStationCallResult(
 		)
 	}
 	if callErr != nil {
+		var outputLimit *llm.ExactPreparedOutputLimitReachedError
+		if gap.WorkKind == string(assemblyline.WorkFragmentGeneration) &&
+			errors.As(callErr, &outputLimit) {
+			return assemblyline.PortableResult{}, exactStationExecution{},
+				s.persistFragmentGenerationOutputLimitFailure(
+					ctx, authority, gap, receiptEvidence.Receipt,
+					outputLimit, fmt.Errorf("exact station provider call: %w", callErr),
+				)
+		}
 		return assemblyline.PortableResult{}, exactStationExecution{}, s.failStationGap(
 			ctx, authority, gap, fmt.Errorf("exact station provider call: %w", callErr),
 		)
@@ -175,7 +199,24 @@ func (s *Service) failStationGap(
 		Authority: authority, OpeningID: gap.ID, GapID: gap.GapID,
 		Status: queue.StationGapFailed, Error: stationFailureText(cause),
 	})
-	return errors.Join(cause, closeErr)
+	return persistedStationGapFailure(cause, closeErr)
+}
+
+// persistedStationGapFailure preserves typed failure routing authority only
+// after the terminal gap outcome was durably recorded. A persistence failure
+// still reports the original cause as text, but it must not unwrap to that
+// cause: downstream code cannot open replacement work from unmatched state.
+func persistedStationGapFailure(cause, persistenceErr error) error {
+	if cause == nil {
+		return fmt.Errorf("station gap failure requires one exact cause")
+	}
+	if persistenceErr == nil {
+		return cause
+	}
+	return fmt.Errorf(
+		"station gap failed with %v; persist terminal station gap outcome: %w",
+		cause, persistenceErr,
+	)
 }
 
 func stationPersistenceContext(ctx context.Context) (context.Context, context.CancelFunc) {

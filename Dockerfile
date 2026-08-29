@@ -51,6 +51,10 @@ COPY --from=build /usr/local/go /usr/local/go
 
 ENV LISTEN_ADDR=:8090
 ENV DOCKER_COMPOSE_VERSION=5.1.4
+# The core binary is built with -trimpath, so go/importer cannot recover the
+# copied toolchain root from its build metadata. Keep the runtime toolchain
+# location explicit for deterministic standard-library type checking.
+ENV GOROOT=/usr/local/go
 # docker compose loads .env via env_file; a host PATH (e.g. for mise/node on the
 # bridge) must not replace this — agent-core lives in /usr/local/bin.
 ENV PATH=/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin

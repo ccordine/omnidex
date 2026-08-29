@@ -54,7 +54,7 @@ func TestRawStationPromptsCrossRetiredThirtyTwoKiBRuler(t *testing.T) {
 			expectedProjection, err := exactjson.Canonical(struct {
 				Prompt   string `json:"prompt"`
 				Renderer string `json:"renderer"`
-			}{prompt, assemblyline.PortableRendererV5})
+			}{prompt, assemblyline.PortableRendererV8})
 			if err != nil {
 				t.Fatal(err)
 			}

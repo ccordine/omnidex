@@ -73,12 +73,13 @@ contiguous substring or allocating non-overlapping text intervals. Models see no
 operation catalog, task graph, or completion control. The sole tree-visible boundary is
 the target-tree declaration station defined in
 [TARGET_TREE_PLANNING.md](TARGET_TREE_PLANNING.md): when naming remains unresolved, it
-receives the complete frozen workload and a bounded code-built current tree and returns
-one complete raw node hierarchy. Code constructs all normalized relative paths.
+receives the exact immutable request, selected technical tree context, and a bounded
+code-built current tree and returns one complete raw node hierarchy. Code constructs all
+normalized relative paths, and the request is not forwarded into source generation.
 Source-generation, repair-guidance, repair-execution, and test-generation stations
 remain path-blind.
 
-Code projects each accepted requirement into exactly one frozen task in source order.
+Code projects each accepted task-local runtime implementation requirement into exactly one frozen task in source order.
 That task contains only its code-owned task identity, requirement identity, and exact
 accepted requirement. No cognition gap, correction boundary, or model call elaborates
 the requirement into an objective, behavior list, acceptance contract, dependency, or

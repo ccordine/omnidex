@@ -15,6 +15,7 @@ func resolveDirectCodingTargetTree(
 	runtime typedWorkerRuntime,
 	initialModel string,
 	replacementModel string,
+	request string,
 	specification assemblyline.ApplicationSpecification,
 	workload assemblyline.FrozenApplicationWorkload,
 	stack directCodingProjectStack,
@@ -27,7 +28,7 @@ func resolveDirectCodingTargetTree(
 		return zeroTree, zeroCoverage, err
 	}
 	input, err := directCodingTargetTreeInput(
-		specification, workload, stack, existingPaths, existingDirs,
+		request, specification, workload, stack, existingPaths, existingDirs,
 	)
 	if err != nil {
 		return zeroTree, zeroCoverage, err

@@ -54,6 +54,13 @@ func codingSemanticUncertaintyContract(
 			"The bounded local context, one local need, and code-enumerated opaque skill-purpose candidates.",
 			"One opaque learned-skill candidate token.",
 			"DecodeSkillSelectionDecision validates the token before code binds the accepted skill version.")
+	case WorkRuntimeCapabilitySelection:
+		contract = semanticUncertaintyContract(kind,
+			"Which one remaining registered runtime behavior is strictly necessary for the focused local need?",
+			"Natural-language behavior cannot be matched exactly to a minimal technical runtime boundary by parsing or keyword rules.",
+			"The bounded local context including direct-dependency purpose summaries, one local need, selected source dialect, already accepted semantic purposes, and code-enumerated opaque candidate purposes.",
+			"One opaque runtime-capability candidate ID or NONE.",
+			"DecodeRuntimeCapabilitySelectionDecision validates the ID before code binds its registered source block only to the owning implementation.")
 	case WorkTypeScriptRepairGuidance:
 		contract = semanticUncertaintyContract(kind,
 			"What single source transformation resolves the exact compiler-proven failure in the mutable source?",
@@ -66,6 +73,13 @@ func codingSemanticUncertaintyContract(
 			"What single declaration body fulfills the exact local behavioral contract?",
 			"Parsing and type rules validate source but cannot synthesize the semantically intended implementation bytes.",
 			"The source language, exact signature, local behavior, source dialect, direct capabilities, and permitted symbols.",
+			"One exact parseable source declaration.",
+			"The registered fragment projector parses and validates the declaration before code stitches it into the in-memory document.")
+	case WorkFragmentGenerationReplacement:
+		contract = semanticUncertaintyContract(kind,
+			"What complete non-redundant declaration fulfills the unchanged exact local behavioral contract after the prior response exhausted its provider output boundary?",
+			"Code can prove that the prior response ended before completion but cannot synthesize the semantically intended implementation bytes.",
+			"The unchanged source language, signature, local behavior, dialect, direct capabilities, permitted symbols, and exact bounded output-limit fact.",
 			"One exact parseable source declaration.",
 			"The registered fragment projector parses and validates the declaration before code stitches it into the in-memory document.")
 	case WorkFragmentModification:

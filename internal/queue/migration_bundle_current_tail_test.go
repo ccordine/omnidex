@@ -22,7 +22,7 @@ func loadCheckedMigrationBundle(t testing.TB) MigrationBundle {
 
 func TestCheckedMigrationBundleFreezesCurrentTail(t *testing.T) {
 	bundle := loadCheckedMigrationBundle(t)
-	const currentTail = "183_llm_evidence_transport_identity_cutover.sql"
+	const currentTail = "188_portable_renderer_v8_requirement_coverage_authority.sql"
 	if tail := bundle.entries[len(bundle.entries)-1].name; tail != currentTail {
 		t.Fatalf("checked migration tail=%q want %q", tail, currentTail)
 	}
@@ -64,6 +64,11 @@ func TestCheckedMigrationBundleFreezesCurrentTail(t *testing.T) {
 		"180_artifact_semantic_relation_split.sql":                        0,
 		"181_response_schema_authority_retirement.sql":                    0,
 		"182_semantic_uncertainty_contract_authority.sql":                 0,
+		"183_llm_evidence_transport_identity_cutover.sql":                 0,
+		"184_fragment_generation_output_limit_replacement.sql":            0,
+		"185_portable_renderer_v6.sql":                                    0,
+		"186_runtime_capability_selection_station.sql":                    0,
+		"187_portable_renderer_v7_application_intent_uncertainty_v2.sql":  0,
 		currentTail: 0,
 	}
 	for _, entry := range bundle.entries {

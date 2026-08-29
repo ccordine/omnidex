@@ -8,6 +8,9 @@ import (
 	"log"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -30,12 +33,27 @@ func TestTypedViolentNarratorDirectionCompletesAtomicallyWithoutUserCanon(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
+	workspaceRoot := t.TempDir()
+	channelWorkspace := filepath.Join(workspaceRoot, "roleplay-production-boundary")
+	if err := os.Mkdir(channelWorkspace, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(channelWorkspace, "README.md"), []byte("# Fixture\n"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	runRoleplayBoundaryGit(t, channelWorkspace, "init")
+	runRoleplayBoundaryGit(t, channelWorkspace, "add", ".")
+	runRoleplayBoundaryGit(
+		t, channelWorkspace,
+		"-c", "user.name=Omnidex Test", "-c", "user.email=omnidex@example.test",
+		"commit", "-m", "fixture",
+	)
 
 	channel, err := repository.CreateRoleplayChannel(t.Context(), model.Channel{
 		ID:            "roleplay-production-boundary",
 		Scope:         model.ChannelScopeUser,
 		Name:          "Roleplay production boundary",
-		WorkspaceRoot: "/srv/workspaces/roleplay-production-boundary",
+		WorkspaceRoot: channelWorkspace,
 		Mode:          model.ChannelModeRoleplay,
 	}, "Boundary World", "Mara")
 	if err != nil {
@@ -92,7 +110,9 @@ func TestTypedViolentNarratorDirectionCompletesAtomicallyWithoutUserCanon(t *tes
 		EmbeddingProvider: "ollama", EmbeddingModel: "nomic-embed-text",
 		Models: worker.ModelRouting{
 			Stations: routes, RoleplaySemanticModel: roleplayBoundarySemanticModel,
-		}, Logger: log.New(io.Discard, "", 0),
+		},
+		Workspace: worker.WorkspaceSettings{Root: workspaceRoot, HostRoot: workspaceRoot},
+		Logger:    log.New(io.Discard, "", 0),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -214,6 +234,14 @@ func TestTypedViolentNarratorDirectionCompletesAtomicallyWithoutUserCanon(t *tes
 		)
 	}
 	provider.assertCompleted(t)
+}
+
+func runRoleplayBoundaryGit(t *testing.T, root string, arguments ...string) {
+	t.Helper()
+	command := exec.Command("git", append([]string{"-C", root}, arguments...)...)
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("git %s: %v: %s", strings.Join(arguments, " "), err, strings.TrimSpace(string(output)))
+	}
 }
 
 func waitForRoleplayBoundaryJob(t *testing.T, repository *queue.Repository, jobID int64) {

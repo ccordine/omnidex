@@ -68,6 +68,33 @@ func TestJavaScriptCommandLineStackCompilesComposesAndExecutesFocusedTests(t *te
 	}
 }
 
+func TestJavaScriptCommandLineStackHasCodeOwnedProductionBuild(t *testing.T) {
+	t.Parallel()
+	profile := requireDirectCodingVersionProfile(t, javaScriptCommandLineVersionProfileV1)
+	files, err := genericJavaScriptCommandLineStaticFiles(profile, "javascript-build-fixture")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var manifest string
+	for _, file := range files {
+		if file.Path == "package.json" {
+			manifest = file.Content
+		}
+	}
+	if manifest == "" || !strings.Contains(manifest, `"build": "node --permission --allow-fs-read=. --disable-proto=throw --check main.mjs"`) {
+		t.Fatalf("JavaScript command-line manifest lacks the code-owned build: %s", manifest)
+	}
+	commands := javaScriptCommandLineVerificationCommandSet()
+	if len(commands) != 2 || commands[1].Name != "npm" ||
+		!slicesEqualStrings(commands[1].Args, []string{"run", "build"}) ||
+		commands[1].Purpose != verificationBuild {
+		t.Fatalf("JavaScript command-line verification commands=%+v", commands)
+	}
+	if err := validateV3Command(commands[1].Name, commands[1].Args); err != nil {
+		t.Fatalf("code-owned JavaScript build command rejected: %v", err)
+	}
+}
+
 func TestJavaScriptRuntimeRejectsMissingCoercedAndAsynchronousResults(t *testing.T) {
 	root := t.TempDir()
 	runtimeDocument, err := javaScriptCommandLineRuntimeDocument(
@@ -190,7 +217,8 @@ func TestProjectStackSelectionCanSelectJavaScriptWithoutRegistryIdentity(t *test
 		}),
 	}
 	selection, err := selectDirectCodingProject(
-		runtime, func() (string, error) { return "constraint", nil }, specification, nil, nil,
+		runtime, func() (string, error) { return "constraint", nil },
+		"Build a JavaScript command-line application.", specification, nil, nil,
 	)
 	if err != nil || selection.Stack.ID != genericJavaScriptCommandLineAdapter ||
 		selection.VersionProfileID != javaScriptCommandLineVersionProfileV1 {

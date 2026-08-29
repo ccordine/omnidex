@@ -86,7 +86,7 @@ func (s *directCodingSession) Assemble() (directCodingAssembly, error) {
 	selection, err := selectDirectCodingProject(
 		workerRuntime, func() (string, error) {
 			return s.workerModel(station.CodingProjectStackConstraint)
-		}, specification, existingManifests, identities,
+		}, redacted, specification, existingManifests, identities,
 	)
 	if err != nil {
 		return directCodingAssembly{}, err
@@ -124,14 +124,16 @@ func (s *directCodingSession) Assemble() (directCodingAssembly, error) {
 		targetTreeCorrectionModel = targetTreeModel
 	}
 	targetTree, coverage, err := resolveDirectCodingTargetTree(
-		workerRuntime, targetTreeModel, targetTreeCorrectionModel, specification, workload, selectedStack,
+		workerRuntime, targetTreeModel, targetTreeCorrectionModel, redacted,
+		specification, workload, selectedStack,
 		existingPaths, existingDirs,
 	)
 	if err != nil {
 		return directCodingAssembly{}, err
 	}
 	targetTree.VersionProfileID = selection.VersionProfileID
-	if _, err := directCodingVersionProfileForTargetTree(targetTree); err != nil {
+	selectedVersionProfile, err := directCodingVersionProfileForTargetTree(targetTree)
+	if err != nil {
 		return directCodingAssembly{}, err
 	}
 	if err := s.bindDirectCodingTargetTreePathProvenance(targetTree); err != nil {
@@ -139,7 +141,7 @@ func (s *directCodingSession) Assemble() (directCodingAssembly, error) {
 	}
 	workerRuntime.PathProvenance = s.pathProvenance
 	targetTreeInput, err := directCodingTargetTreeInput(
-		specification, workload, selectedStack, existingPaths, existingDirs,
+		redacted, specification, workload, selectedStack, existingPaths, existingDirs,
 	)
 	if err != nil {
 		return directCodingAssembly{}, err
@@ -159,6 +161,13 @@ func (s *directCodingSession) Assemble() (directCodingAssembly, error) {
 	}
 	capabilities, err := s.deriveRequirementCapabilities(
 		specification.ProductQuote, specification.Requirements,
+	)
+	if err != nil {
+		return directCodingAssembly{}, err
+	}
+	runtimeCapabilities, err := s.selectRequirementRuntimeCapabilities(
+		selectedStack, specification.ProductQuote, selectedVersionProfile.SourceDialect,
+		specification.Requirements, capabilities,
 	)
 	if err != nil {
 		return directCodingAssembly{}, err
@@ -189,6 +198,12 @@ func (s *directCodingSession) Assemble() (directCodingAssembly, error) {
 			targetTree, coverage,
 		)
 	}
+	if err != nil {
+		return directCodingAssembly{}, err
+	}
+	program, err = bindDirectCodingRuntimeCapabilities(
+		selectedStack, program, runtimeCapabilities,
+	)
 	if err != nil {
 		return directCodingAssembly{}, err
 	}

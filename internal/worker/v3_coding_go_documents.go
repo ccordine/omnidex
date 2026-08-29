@@ -15,6 +15,10 @@ func genericGoCommandLineDocuments(
 	capabilities directCodingCapabilityGraph,
 	coverage assemblyline.ApplicationFileCoveragePlan,
 ) ([]assemblyline.SourceDocument, error) {
+	runtimeDocument, err := goCommandLineRuntimeDocument(nil)
+	if err != nil {
+		return nil, err
+	}
 	implementations := make([]assemblyline.SourceDocument, 0, len(specification.Requirements))
 	verifications := make([]assemblyline.SourceDocument, 0, len(specification.Requirements))
 	implementationByPath := make(map[string]int, len(specification.Requirements))
@@ -84,8 +88,7 @@ func genericGoCommandLineDocuments(
 				DependsOn: dependencies, Capabilities: append([]string(nil), dependencies...),
 				TaskID: context.Task.TaskID, Role: assemblyline.SourceBlockTaskImplementation,
 			})
-		acceptanceDependencies := append([]string(nil), dependencies...)
-		acceptanceDependencies = append(acceptanceDependencies, featureID)
+		acceptanceDependencies := []string{"runtime.api", featureID}
 		verifications[verificationIndex].Blocks = append(
 			verifications[verificationIndex].Blocks, assemblyline.SourceBlock{
 				ID:           fmt.Sprintf("acceptance.%03d", sequence),
@@ -103,7 +106,7 @@ func genericGoCommandLineDocuments(
 	if err != nil {
 		return nil, err
 	}
-	documents := []assemblyline.SourceDocument{goCommandLineRuntimeDocument()}
+	documents := []assemblyline.SourceDocument{runtimeDocument}
 	documents = append(documents, implementations...)
 	documents = append(documents, verifications...)
 	documents = append(documents, goCommandLineApplicationDocument(

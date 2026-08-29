@@ -180,7 +180,8 @@ func TestProjectStackSelectionCanSelectGoWithoutExposingItsRegistryID(t *testing
 		}),
 	}
 	selection, err := selectDirectCodingProject(
-		runtime, func() (string, error) { return "constraint", nil }, specification, nil, nil,
+		runtime, func() (string, error) { return "constraint", nil },
+		"Build a Go command-line application.", specification, nil, nil,
 	)
 	if err != nil || selection.Stack.ID != genericGoCommandLineAdapter ||
 		selection.VersionProfileID != goCommandLineVersionProfileV1 {

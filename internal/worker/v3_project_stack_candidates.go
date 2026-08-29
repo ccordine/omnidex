@@ -79,7 +79,13 @@ func directCodingProjectVersionTechnicalFormat(
 		}
 		versions[index] = name + " " + version
 	}
+	packagingShape := strings.TrimSpace(stack.TreeDescription)
+	if packagingShape == "" || stack.TreeDescription != packagingShape ||
+		strings.ContainsAny(packagingShape, "\x00\r\n") {
+		return "", fmt.Errorf("project stack %s has an invalid packaging shape", stack.ID)
+	}
 	format := strings.TrimSpace(stack.ConstraintDescription) +
+		"; packaging shape: " + packagingShape +
 		"; source dialect: " + strings.TrimSpace(profile.SourceDialect)
 	if len(versions) > 0 {
 		format += "; qualified versions: " + strings.Join(versions, ", ")
@@ -99,13 +105,9 @@ func directCodingProjectVersionTechnicalFormat(
 }
 
 func directCodingProjectStackConstraintInput(
-	specification assemblyline.ApplicationSpecification,
+	redactedRequest string,
 	formats []directCodingProjectFormatCandidate,
 ) (assemblyline.ApplicationProjectStackConstraintInput, error) {
-	requirements := make([]string, len(specification.Requirements))
-	for index, requirement := range specification.Requirements {
-		requirements[index] = requirement.SourceQuote
-	}
 	candidates := make([]assemblyline.ApplicationProjectStackCandidate, len(formats))
 	for index, format := range formats {
 		candidates[index] = assemblyline.ApplicationProjectStackCandidate{
@@ -114,8 +116,7 @@ func directCodingProjectStackConstraintInput(
 		}
 	}
 	input := assemblyline.ApplicationProjectStackConstraintInput{
-		ProductContext: specification.ProductQuote, AcceptedRequirements: requirements,
-		Candidates: candidates,
+		UserRequest: redactedRequest, Candidates: candidates,
 	}
 	if _, err := assemblyline.NewApplicationProjectStackConstraintJob(input); err != nil {
 		return assemblyline.ApplicationProjectStackConstraintInput{}, err
@@ -146,6 +147,7 @@ func resolveDirectCodingProjectFormatDecision(
 	formats []directCodingProjectFormatCandidate,
 	input assemblyline.ApplicationProjectStackConstraintInput,
 	decision assemblyline.ApplicationProjectStackConstraintDecision,
+	manifestSelection *directCodingProjectSelection,
 ) (directCodingProjectSelection, error) {
 	if err := decision.ValidateFor(input); err != nil {
 		return directCodingProjectSelection{}, err
@@ -157,6 +159,9 @@ func resolveDirectCodingProjectFormatDecision(
 			surface,
 		)
 	case assemblyline.ApplicationProjectStackUnconstrained:
+		if manifestSelection != nil {
+			return *manifestSelection, nil
+		}
 		return directCodingDefaultProjectSelection(surface, stacks, profiles)
 	default:
 		for index, candidate := range input.Candidates {
@@ -166,9 +171,18 @@ func resolveDirectCodingProjectFormatDecision(
 						"project format candidate %q lost its code-owned mapping", candidate.CandidateID,
 					)
 				}
-				return directCodingProjectSelection{
+				selection := directCodingProjectSelection{
 					Stack: formats[index].Stack, VersionProfileID: formats[index].Profile.ID,
-				}, nil
+				}
+				if manifestSelection != nil &&
+					(selection.Stack.ID != manifestSelection.Stack.ID ||
+						selection.VersionProfileID != manifestSelection.VersionProfileID) {
+					return directCodingProjectSelection{}, fmt.Errorf(
+						"project format candidate %q conflicts with the compatible workspace manifest",
+						candidate.CandidateID,
+					)
+				}
+				return selection, nil
 			}
 		}
 		return directCodingProjectSelection{}, fmt.Errorf(

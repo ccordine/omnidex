@@ -28,18 +28,29 @@ func TestPostgresRoleplayPortableResultReuseV2RejectsDirtyStateAtomically(t *tes
 	if err != nil || claim == nil || claim.Job.ID != job.ID {
 		t.Fatalf("dirty-state claim=%+v err=%v", claim, err)
 	}
-	gap, err := repository.OpenStationGap(
-		t.Context(), stationGapOpenFixture(t, claim.Authority),
-	)
+	gap, err := validateStationGapOpening(stationGapOpenFixture(t, claim.Authority))
 	if err != nil {
 		t.Fatal(err)
 	}
-	persistStationDiscoveryFailure(t, repository, claim.Authority, gap)
-	outcome, err := repository.CloseStationGap(t.Context(), StationGapTerminalRecord{
-		Authority: claim.Authority, OpeningID: gap.ID, GapID: gap.GapID,
-		Status: StationGapFailed, Error: "injected migration guard source failure",
-	})
+	gap = freezeHistoricalRawStationGapV4(t, gap)
+	tx, err := pool.Begin(t.Context())
 	if err != nil {
+		t.Fatal(err)
+	}
+	if err := insertHistoricalStationGapOpeningTx(t.Context(), tx, &gap); err != nil {
+		_ = tx.Rollback(t.Context())
+		t.Fatal(err)
+	}
+	if err := tx.Commit(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	completeHistoricalStationGapWithDiscoveryFailure(
+		t, pool, claim.Authority, gap, "injected migration guard source failure",
+	)
+	var outcomeID int64
+	if err := pool.QueryRow(t.Context(), `
+		SELECT id FROM station_gap_outcomes WHERE opening_id=$1
+	`, gap.ID).Scan(&outcomeID); err != nil {
 		t.Fatal(err)
 	}
 
@@ -75,7 +86,7 @@ func TestPostgresRoleplayPortableResultReuseV2RejectsDirtyStateAtomically(t *tes
 		claim.Authority.JobID, claim.Authority.Generation, claim.Authority.StepID,
 		claim.Authority.Attempt, claim.Authority.WorkerID, gap.Station, legacy.ID,
 		legacy.Kind, string(legacy.Payload), stationGapSHA256(string(legacy.Payload)),
-		string(envelope), stationGapSHA256(string(envelope)), gap.ID, outcome.ID,
+		string(envelope), stationGapSHA256(string(envelope)), gap.ID, outcomeID,
 		gap.WorkID, gap.PortableEnvelopeSHA256, strings.Repeat("c", 64),
 		strings.Repeat("d", 64), `{}`, stationGapSHA256(`{}`))
 	_, enableErr := pool.Exec(t.Context(), `

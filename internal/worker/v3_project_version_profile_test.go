@@ -106,7 +106,7 @@ func TestExistingManifestsRejectAmbiguousAndUnknownProfilesBeforeInference(t *te
 		return "unused", nil
 	}
 
-	_, err = selectDirectCodingProject(runtime, resolveModel, specification, map[string]string{
+	_, err = selectDirectCodingProject(runtime, resolveModel, "Build a command-line application.", specification, map[string]string{
 		"go.mod":       directCodingTestFileContent(t, goFiles, "go.mod"),
 		"package.json": directCodingTestFileContent(t, jsFiles, "package.json"),
 	}, nil)
@@ -114,7 +114,7 @@ func TestExistingManifestsRejectAmbiguousAndUnknownProfilesBeforeInference(t *te
 		t.Fatalf("ambiguous profile error=%v", err)
 	}
 
-	_, err = selectDirectCodingProject(runtime, resolveModel, specification, map[string]string{
+	_, err = selectDirectCodingProject(runtime, resolveModel, "Build a command-line application.", specification, map[string]string{
 		"go.mod": "module example.invalid/unknown\n\ngo 1.26.0\n",
 	}, nil)
 	if err == nil || !strings.Contains(err.Error(), "no compatible registered version profile") {

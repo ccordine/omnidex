@@ -2,8 +2,11 @@ package assemblyline
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 )
+
+var portableWorkDigestPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
 func validateRequirementQuote(label, quote string) error {
 	if quote == "" || quote != strings.TrimSpace(quote) {
@@ -114,6 +117,13 @@ func (input FragmentGenerationInput) ValidatePathFree(
 	)
 }
 
+func (input FragmentGenerationReplacementInput) validate() error {
+	if err := input.Original.validate(); err != nil {
+		return fmt.Errorf("fragment generation replacement original: %w", err)
+	}
+	return nil
+}
+
 func (input FragmentCorrectionInput) validate() error {
 	if (input.Language == "") != (input.Signature == "") {
 		return fmt.Errorf("fragment correction language and signature metadata must be both present or both absent")
@@ -165,12 +175,12 @@ func (input FragmentCorrectionInput) validate() error {
 }
 
 // ValidatePathFree preserves source grammar in declaration and repair-region
-// fields while keeping diagnostic and instruction prose on the strict prose
-// boundary.
+// fields, keeps diagnostics on the strict prose boundary, and preserves the
+// already validated repair instruction's mixed prose/source-literal grammar.
 func (input FragmentCorrectionInput) ValidatePathFree(
 	provenance ArtifactIdentityProvenance,
 ) error {
-	proseValues := []string{input.RequiredChange, input.Diagnostic, input.RepairGuidance}
+	proseValues := []string{input.RequiredChange, input.Diagnostic}
 	sourceValues := []string{input.Signature, input.CurrentDeclaration}
 	sourceValues = append(sourceValues, input.Capabilities...)
 	sourceValues = append(sourceValues, input.PermittedSymbols...)
@@ -192,6 +202,11 @@ func (input FragmentCorrectionInput) ValidatePathFree(
 	}
 	if err := ValidatePathFreeModelContextWithProvenance(
 		"fragment correction", provenance, proseValues...,
+	); err != nil {
+		return err
+	}
+	if err := ValidatePathFreeRepairInstructionModelContextWithProvenance(
+		"fragment correction repair guidance", provenance, input.RepairGuidance,
 	); err != nil {
 		return err
 	}

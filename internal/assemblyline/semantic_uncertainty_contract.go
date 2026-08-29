@@ -42,6 +42,62 @@ func SemanticUncertaintyContractForWorkKind(
 	return contract, nil
 }
 
+// SemanticUncertaintyContractForPortableRenderer resolves the exact immutable
+// uncertainty contract admitted by one current or historical renderer. Four
+// application-intent contracts changed at renderer V7. V8 changes only
+// the requirement-generation contract to bind its code-established coverage
+// authority. Every other work kind retains its prior contract.
+func SemanticUncertaintyContractForPortableRenderer(
+	renderer string,
+	kind WorkKind,
+) (SemanticUncertaintyContract, error) {
+	switch renderer {
+	case PortableRendererV8:
+		return SemanticUncertaintyContractForWorkKind(kind)
+	case HistoricalPortableRendererV7:
+		if isRendererV8OnlyApplicationRequirementKind(kind) {
+			return SemanticUncertaintyContract{}, fmt.Errorf(
+				"work kind %q has no historical V7 semantic uncertainty contract", kind,
+			)
+		}
+		if contract, ok := rendererV7ApplicationIntentSemanticUncertaintyContract(kind); ok {
+			if err := contract.Validate(); err != nil {
+				return SemanticUncertaintyContract{}, fmt.Errorf(
+					"historical V7 semantic uncertainty contract for %q: %w", kind, err,
+				)
+			}
+			return contract, nil
+		}
+		return SemanticUncertaintyContractForWorkKind(kind)
+	case HistoricalPortableRendererV6, HistoricalPortableRendererV5:
+		if isRendererV8OnlyApplicationRequirementKind(kind) {
+			return SemanticUncertaintyContract{}, fmt.Errorf(
+				"work kind %q has no historical semantic uncertainty contract", kind,
+			)
+		}
+		if contract, ok := historicalApplicationIntentSemanticUncertaintyContract(kind); ok {
+			if err := contract.Validate(); err != nil {
+				return SemanticUncertaintyContract{}, fmt.Errorf(
+					"historical semantic uncertainty contract for %q: %w", kind, err,
+				)
+			}
+			return contract, nil
+		}
+		return SemanticUncertaintyContractForWorkKind(kind)
+	default:
+		return SemanticUncertaintyContract{}, fmt.Errorf(
+			"portable renderer %q has no registered semantic uncertainty contracts",
+			renderer,
+		)
+	}
+}
+
+func isRendererV8OnlyApplicationRequirementKind(kind WorkKind) bool {
+	return kind == WorkApplicationRequirementCandidateCardinality ||
+		kind == WorkApplicationRequirementCandidateSplit ||
+		kind == WorkApplicationRequirementCandidateSplitCorrection
+}
+
 func registeredSemanticUncertaintyContract(
 	kind WorkKind,
 ) (SemanticUncertaintyContract, bool) {
@@ -68,8 +124,48 @@ func semanticUncertaintyContract(
 	singleResult string,
 	consumer string,
 ) SemanticUncertaintyContract {
+	return semanticUncertaintyContractVersion(
+		kind, "v1", question, limitation, requiredInformation, singleResult, consumer,
+	)
+}
+
+func semanticUncertaintyContractV2(
+	kind WorkKind,
+	question string,
+	limitation string,
+	requiredInformation string,
+	singleResult string,
+	consumer string,
+) SemanticUncertaintyContract {
+	return semanticUncertaintyContractVersion(
+		kind, "v2", question, limitation, requiredInformation, singleResult, consumer,
+	)
+}
+
+func semanticUncertaintyContractV3(
+	kind WorkKind,
+	question string,
+	limitation string,
+	requiredInformation string,
+	singleResult string,
+	consumer string,
+) SemanticUncertaintyContract {
+	return semanticUncertaintyContractVersion(
+		kind, "v3", question, limitation, requiredInformation, singleResult, consumer,
+	)
+}
+
+func semanticUncertaintyContractVersion(
+	kind WorkKind,
+	version string,
+	question string,
+	limitation string,
+	requiredInformation string,
+	singleResult string,
+	consumer string,
+) SemanticUncertaintyContract {
 	return SemanticUncertaintyContract{
-		ID:       semanticUncertaintyContractIDPrefix + string(kind) + ".v1",
+		ID:       semanticUncertaintyContractIDPrefix + string(kind) + "." + version,
 		WorkKind: kind, ExactQuestion: question,
 		DeterministicLimitation: limitation,
 		RequiredInformation:     requiredInformation,
@@ -81,10 +177,6 @@ func semanticUncertaintyContract(
 func (contract SemanticUncertaintyContract) Validate() error {
 	if !validWorkKind(contract.WorkKind) {
 		return fmt.Errorf("work kind %q is unsupported", contract.WorkKind)
-	}
-	expectedID := semanticUncertaintyContractIDPrefix + string(contract.WorkKind) + ".v1"
-	if contract.ID != expectedID {
-		return fmt.Errorf("ID must be %q", expectedID)
 	}
 	fields := []struct {
 		name  string
@@ -119,14 +211,37 @@ func (contract SemanticUncertaintyContract) Validate() error {
 			return fmt.Errorf("contract contains forbidden general authority language %q", term)
 		}
 	}
-	registered, ok := registeredSemanticUncertaintyContract(contract.WorkKind)
+	registered, ok := registeredSemanticUncertaintyContractByID(
+		contract.WorkKind, contract.ID,
+	)
 	if !ok {
-		return fmt.Errorf("work kind %q has no registered contract", contract.WorkKind)
+		return fmt.Errorf(
+			"work kind %q has no registered contract ID %q",
+			contract.WorkKind, contract.ID,
+		)
 	}
 	if contract != registered {
 		return fmt.Errorf("contract differs from the exact code-owned registry value")
 	}
 	return nil
+}
+
+func registeredSemanticUncertaintyContractByID(
+	kind WorkKind,
+	id string,
+) (SemanticUncertaintyContract, bool) {
+	if current, ok := registeredSemanticUncertaintyContract(kind); ok && current.ID == id {
+		return current, true
+	}
+	if historical, ok := rendererV7ApplicationIntentSemanticUncertaintyContract(kind); ok &&
+		historical.ID == id {
+		return historical, true
+	}
+	if historical, ok := historicalApplicationIntentSemanticUncertaintyContract(kind); ok &&
+		historical.ID == id {
+		return historical, true
+	}
+	return SemanticUncertaintyContract{}, false
 }
 
 func validateSemanticUncertaintyContractField(name, value string) error {

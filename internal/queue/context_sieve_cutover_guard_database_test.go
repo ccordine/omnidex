@@ -85,16 +85,10 @@ func TestPostgresContextSieveCutoverPreservesCompletedRetiredOpening(t *testing.
 	}
 	claim := contextSieveMigrationClaim(t, repository, "completed-direct-retired")
 	opening := openRetiredConversationContextGap(t, pool, claim)
-	persistHistoricalStationDiscoveryFailure(t, repository, claim.Authority, opening)
-	if _, err := repository.CloseStationGap(t.Context(), StationGapTerminalRecord{
-		Authority: claim.Authority,
-		OpeningID: opening.ID,
-		GapID:     opening.GapID,
-		Status:    StationGapFailed,
-		Error:     "historical context selection failed before cutover",
-	}); err != nil {
-		t.Fatal(err)
-	}
+	completeHistoricalStationGapWithDiscoveryFailure(
+		t, pool, claim.Authority, opening,
+		"historical context selection failed before cutover",
+	)
 	if err := repository.EnsureSchema(
 		t.Context(), loadMigrationBundleThroughPrefix(t, "127"),
 	); err != nil {
@@ -210,42 +204,6 @@ func historicalContextSieveOpening(
 		MaxOutputTokens:        contextTokens,
 		OutputLimitMode:        llm.ExactPreparedOutputLimitNatural,
 	}
-}
-
-func persistHistoricalStationDiscoveryFailure(
-	t *testing.T,
-	repository *Repository,
-	authority model.StepAttemptAuthority,
-	gap StationGapOpening,
-) StationDiscoveryReceipt {
-	t.Helper()
-	selection := llm.ProviderIdentitySelection{
-		Model: "qwen:9b", NativeContextLimit: gap.ContextTokens,
-	}
-	opening, err := repository.OpenStationDiscovery(t.Context(), StationDiscoveryOpenRecord{
-		Authority: authority, Gap: gap, Selection: selection,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	failure := stationCallIdentityFailure(t, llm.PreparedModel{
-		ContextModel: selection.Model, ContextTokens: selection.NativeContextLimit,
-	})
-	receipt, err := repository.RecordStationDiscoveryReceipt(
-		t.Context(),
-		StationDiscoveryReceiptRecord{
-			Authority: authority, OpeningID: opening.ID, GapID: gap.GapID,
-			Observed: llm.ObservedProviderIdentity{
-				Evidence: failure.ProviderIdentityEvidence,
-			},
-			FailureReason: StationDiscoveryFailureEvidenceRejected,
-			Error:         "historical exact provider discovery failed",
-		},
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return receipt
 }
 
 func insertNestedRetiredContextCorrection(

@@ -25,6 +25,10 @@ func replayGeneralSemanticLeaf(
 		return true, decodeReplaySemanticLeaf(job, raw, assemblyline.DecodeCapabilityRelationDecision)
 	case assemblyline.WorkSkillSelection:
 		return true, decodeReplaySemanticLeaf(job, raw, assemblyline.DecodeSkillSelectionDecision)
+	case assemblyline.WorkRuntimeCapabilitySelection:
+		return true, decodeReplaySemanticLeaf(
+			job, raw, assemblyline.DecodeRuntimeCapabilitySelectionDecision,
+		)
 	default:
 		return false, nil
 	}

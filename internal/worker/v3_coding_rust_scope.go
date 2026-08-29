@@ -32,7 +32,9 @@ func validateRustFragmentAuthority(
 		return err
 	}
 	defer closeTree()
-	permitted, err := rustPermittedDeclarationNames(input.PermittedSymbols)
+	authority := append([]string(nil), input.Capabilities...)
+	authority = append(authority, input.PermittedSymbols...)
+	permitted, err := rustPermittedDeclarationNames(authority)
 	if err != nil {
 		return err
 	}

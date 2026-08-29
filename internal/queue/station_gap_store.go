@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/gryph/omnidex/internal/assemblyline"
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/jackc/pgx/v5"
 )
@@ -12,6 +13,11 @@ func (r *Repository) OpenStationGap(
 	ctx context.Context,
 	record StationGapOpenRecord,
 ) (StationGapOpening, error) {
+	if record.Job.Kind == assemblyline.WorkFragmentGenerationReplacement {
+		return StationGapOpening{}, fmt.Errorf(
+			"fragment generation replacement requires atomic station gap and provider discovery opening",
+		)
+	}
 	opening, err := validateStationGapOpening(record)
 	if err != nil {
 		return StationGapOpening{}, err
@@ -52,16 +58,18 @@ func insertStationGapOpeningTx(
 			portable_envelope,portable_envelope_sha256,renderer_version,prompt,
 			projection_envelope,projection_sha256,semantic_uncertainty_contract,
 			semantic_uncertainty_contract_sha256,context_tokens,max_output_tokens,
-			output_limit_mode
+			output_limit_mode,origin_gap_opening_id,origin_call_receipt_id
 		) VALUES (
-			$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24
+			$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,
+			NULLIF($25,0),NULLIF($26,0)
 		)
 		RETURNING id,job_id,generation,step_id,step_attempt,worker_id,gap_id,station,scope,
 			portable_schema,work_id,work_kind,portable_payload,portable_payload_sha256,
 			portable_envelope,portable_envelope_sha256,renderer_version,prompt,
 			projection_envelope,projection_sha256,semantic_uncertainty_contract,
 			semantic_uncertainty_contract_sha256,context_tokens,max_output_tokens,
-			output_limit_mode,created_at
+			output_limit_mode,COALESCE(origin_gap_opening_id,0),
+			COALESCE(origin_call_receipt_id,0),created_at
 	`, opening.JobID, opening.Generation, opening.StepID, opening.StepAttempt,
 		opening.WorkerID, opening.GapID, opening.Station, opening.Scope, opening.PortableSchema,
 		opening.WorkID, opening.WorkKind, opening.PortablePayload, opening.PortablePayloadSHA256,
@@ -69,7 +77,8 @@ func insertStationGapOpeningTx(
 		opening.Prompt, opening.ProjectionEnvelope,
 		opening.ProjectionSHA256, semanticUncertainty,
 		opening.SemanticUncertaintyContractSHA256, opening.ContextTokens, opening.MaxOutputTokens,
-		opening.OutputLimitMode), opening)
+		opening.OutputLimitMode, opening.OriginGapOpeningID,
+		opening.OriginCallReceiptID), opening)
 	if err != nil {
 		return fmt.Errorf("persist exact station gap opening: %w", err)
 	}

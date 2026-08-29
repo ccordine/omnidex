@@ -28,6 +28,9 @@ func stationForPortableWorkKind(kind assemblyline.WorkKind) (station.ID, error) 
 		assemblyline.WorkApplicationProductContext,
 		assemblyline.WorkApplicationRequirementCoverage,
 		assemblyline.WorkApplicationRequirement,
+		assemblyline.WorkApplicationRequirementCandidateCardinality,
+		assemblyline.WorkApplicationRequirementCandidateSplit,
+		assemblyline.WorkApplicationRequirementCandidateSplitCorrection,
 		assemblyline.WorkRepositoryRequirementCoverage,
 		assemblyline.WorkRepositoryRequirement:
 		return station.CodingRequirements, nil
@@ -145,9 +148,13 @@ func stationForPortableWorkKind(kind assemblyline.WorkKind) (station.ID, error) 
 		return station.CodingCapabilityRelation, nil
 	case assemblyline.WorkSkillSelection:
 		return station.CodingSkillSelection, nil
+	case assemblyline.WorkRuntimeCapabilitySelection:
+		return station.CodingRuntimeCapabilitySelection, nil
 	case assemblyline.WorkTypeScriptRepairGuidance:
 		return station.CodingFragmentRepairGuidance, nil
-	case assemblyline.WorkFragmentGeneration, assemblyline.WorkFragmentModification:
+	case assemblyline.WorkFragmentGeneration,
+		assemblyline.WorkFragmentGenerationReplacement,
+		assemblyline.WorkFragmentModification:
 		return station.CodingFragment, nil
 	case assemblyline.WorkFragmentCorrection:
 		return station.CodingFragmentCorrection, nil

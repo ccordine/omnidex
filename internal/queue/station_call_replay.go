@@ -107,8 +107,13 @@ func loadStationCallReplayPointTx(
 	if call.GapOpeningID != gap.ID || call.JobID != gap.JobID ||
 		call.Generation != gap.Generation || call.StepID != gap.StepID ||
 		call.StepAttempt != gap.StepAttempt || call.WorkerID != gap.WorkerID ||
-		call.GapID != gap.GapID {
+		call.GapID != gap.GapID || call.ContextTokens != gap.ContextTokens ||
+		call.MaxOutputTokens != gap.MaxOutputTokens ||
+		call.OutputLimitMode != gap.OutputLimitMode {
 		return StationCallReplayPoint{}, fmt.Errorf("station replay opening differs from its durable gap authority")
+	}
+	if err := validateStationCallReplayReplacementOriginTx(ctx, tx, gap, call); err != nil {
+		return StationCallReplayPoint{}, err
 	}
 	return StationCallReplayPoint{Call: call, Gap: gap}, nil
 }
@@ -143,7 +148,8 @@ func loadStationCallReplayGapTx(
 			portable_envelope,portable_envelope_sha256,renderer_version,prompt,
 			projection_envelope,projection_sha256,semantic_uncertainty_contract,
 			semantic_uncertainty_contract_sha256,context_tokens,max_output_tokens,
-			output_limit_mode,created_at
+			output_limit_mode,COALESCE(origin_gap_opening_id,0),
+			COALESCE(origin_call_receipt_id,0),created_at
 		FROM station_gap_openings WHERE id=$1
 	`, openingID), &opening)
 	return opening, err

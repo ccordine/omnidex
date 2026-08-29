@@ -489,7 +489,33 @@ func stationCallSuccessWithContent(
 	call StationCallOpening,
 	content string,
 ) llm.PreparedGeneration {
+	return stationCallResponseWithContent(
+		t, prepared, call, content, "stop",
+	)
+}
+
+func stationCallOutputLimitWithContent(
+	t *testing.T,
+	prepared llm.PreparedModel,
+	call StationCallOpening,
+	content string,
+) llm.PreparedGeneration {
+	return stationCallResponseWithContent(
+		t, prepared, call, content, "length",
+	)
+}
+
+func stationCallResponseWithContent(
+	t *testing.T,
+	prepared llm.PreparedModel,
+	call StationCallOpening,
+	content string,
+	doneReason string,
+) llm.PreparedGeneration {
 	t.Helper()
+	if doneReason != "stop" && doneReason != "length" {
+		t.Fatalf("unregistered station call test done reason %q", doneReason)
+	}
 	expected := *prepared.ProviderIdentityExpectation
 	evidence := stationCallIdentityEvidence(t, expected)
 	attestation, err := llm.NewProviderIdentityAttestation(
@@ -506,8 +532,8 @@ func stationCallSuccessWithContent(
 		t.Fatal(err)
 	}
 	body := []byte(fmt.Sprintf(
-		`{"model":%q,"created_at":"2026-08-09T22:00:00Z","response":%q,"done":true,"done_reason":"stop","total_duration":101,"load_duration":11,"prompt_eval_count":41,"prompt_eval_duration":21,"eval_count":7,"eval_duration":31}`,
-		expected.Model, content,
+		`{"model":%q,"created_at":"2026-08-09T22:00:00Z","response":%q,"done":true,"done_reason":%q,"total_duration":101,"load_duration":11,"prompt_eval_count":41,"prompt_eval_duration":21,"eval_count":7,"eval_duration":31}`,
+		expected.Model, content, doneReason,
 	))
 	decoded, err := llm.DecodeExactPreparedResponseForProtocol(prepared.Protocol, 200, body)
 	if err != nil {

@@ -52,35 +52,41 @@ func TestJavaRuntimeAuthorityIsExactForFeatureAndAcceptanceGeneration(t *testing
 		t.Fatal(err)
 	}
 
-	wantFeature := append([]string{
-		javaCommandLineRuntimeFeatureResultAPI(),
-	}, javaCommandLineFragmentGlobals()...)
-	if !reflect.DeepEqual(featureInput.PermittedSymbols, wantFeature) {
-		t.Fatalf("Java feature permitted symbols=%q want=%q", featureInput.PermittedSymbols, wantFeature)
+	wantFeatureCapabilities := []string{javaCommandLineRuntimeFeatureResultAPI()}
+	if !reflect.DeepEqual(featureInput.Capabilities, wantFeatureCapabilities) {
+		t.Fatalf("Java feature capabilities=%q want=%q", featureInput.Capabilities, wantFeatureCapabilities)
 	}
-	wantAcceptance := append([]string{
+	wantAcceptanceCapabilities := []string{
 		javaCommandLineRuntimeAcceptanceAssertAPI(), feature.Block.API,
-	}, javaCommandLineFragmentGlobals()...)
-	if !reflect.DeepEqual(acceptanceInput.PermittedSymbols, wantAcceptance) {
+	}
+	if !reflect.DeepEqual(acceptanceInput.Capabilities, wantAcceptanceCapabilities) {
 		t.Fatalf(
-			"Java acceptance permitted symbols=%q want=%q",
-			acceptanceInput.PermittedSymbols, wantAcceptance,
+			"Java acceptance capabilities=%q want=%q",
+			acceptanceInput.Capabilities, wantAcceptanceCapabilities,
+		)
+	}
+	wantGlobals := javaCommandLineFragmentGlobals()
+	if !reflect.DeepEqual(featureInput.PermittedSymbols, wantGlobals) ||
+		!reflect.DeepEqual(acceptanceInput.PermittedSymbols, wantGlobals) {
+		t.Fatalf(
+			"Java globals feature/acceptance=%q/%q want=%q",
+			featureInput.PermittedSymbols, acceptanceInput.PermittedSymbols, wantGlobals,
 		)
 	}
 	for _, projection := range append(
-		append([]string(nil), featureInput.PermittedSymbols...),
-		acceptanceInput.PermittedSymbols...,
+		append([]string(nil), featureInput.Capabilities...),
+		acceptanceInput.Capabilities...,
 	) {
 		if strings.Contains(projection, ") {") {
 			t.Fatalf("Java generation received an API method body: %s", projection)
 		}
 	}
 
-	featureVisible := strings.Join(featureInput.PermittedSymbols, "\n")
+	featureVisible := strings.Join(featureInput.Capabilities, "\n")
 	if strings.Contains(featureVisible, "requireResult") || strings.Contains(featureVisible, "require(") {
 		t.Fatalf("Java feature received assertion-only runtime authority: %s", featureVisible)
 	}
-	acceptanceVisible := strings.Join(acceptanceInput.PermittedSymbols, "\n")
+	acceptanceVisible := strings.Join(acceptanceInput.Capabilities, "\n")
 	for _, unavailable := range []string{
 		" result(", " dependency(", " output(", " error(", " exitCode(", " state(",
 	} {

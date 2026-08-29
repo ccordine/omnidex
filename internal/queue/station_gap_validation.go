@@ -10,7 +10,9 @@ import (
 )
 
 func validateStationGapOpening(record StationGapOpenRecord) (StationGapOpening, error) {
-	if err := record.Job.Validate(); err != nil {
+	if err := assemblyline.ValidatePortableJobForRenderer(
+		record.Job, assemblyline.PortableRendererV8,
+	); err != nil {
 		return StationGapOpening{}, fmt.Errorf("station gap requires one validated PortableJob: %w", err)
 	}
 	semanticUncertainty, semanticUncertaintySHA256, err := stationGapSemanticUncertainty(
@@ -31,6 +33,11 @@ func validateStationGapOpening(record StationGapOpenRecord) (StationGapOpening, 
 	}
 	if record.Station != expectedStation {
 		return StationGapOpening{}, fmt.Errorf("station gap station %q does not own portable work kind %q", record.Station, record.Job.Kind)
+	}
+	if err := validateStationGapReplacementOrigin(
+		record.Job.Kind, record.ReplacementOrigin,
+	); err != nil {
+		return StationGapOpening{}, err
 	}
 	prompt, err := assemblyline.RenderPortableJob(record.Job)
 	if err != nil {
@@ -92,7 +99,7 @@ func validateStationGapOpening(record StationGapOpenRecord) (StationGapOpening, 
 	projection, err := exactjson.Canonical(struct {
 		Prompt   string `json:"prompt"`
 		Renderer string `json:"renderer"`
-	}{prompt, assemblyline.PortableRendererV5})
+	}{prompt, assemblyline.PortableRendererV8})
 	if err != nil {
 		return StationGapOpening{}, fmt.Errorf("canonicalize station gap projection: %w", err)
 	}
@@ -102,7 +109,7 @@ func validateStationGapOpening(record StationGapOpenRecord) (StationGapOpening, 
 			maxStationRequestResourceBytes,
 		)
 	}
-	return StationGapOpening{
+	opening := StationGapOpening{
 		JobID: record.Authority.JobID, Generation: record.Authority.Generation,
 		StepID: record.Authority.StepID, StepAttempt: record.Authority.Attempt,
 		WorkerID: record.Authority.WorkerID, GapID: record.Job.ID,
@@ -110,14 +117,40 @@ func validateStationGapOpening(record StationGapOpenRecord) (StationGapOpening, 
 		WorkID: record.Job.ID, WorkKind: string(record.Job.Kind),
 		PortablePayload: string(record.Job.Payload), PortablePayloadSHA256: stationGapSHA256(string(record.Job.Payload)),
 		PortableEnvelope: string(portableEnvelope), PortableEnvelopeSHA256: stationGapSHA256(string(portableEnvelope)),
-		RendererVersion: assemblyline.PortableRendererV5, Prompt: prompt,
+		RendererVersion: assemblyline.PortableRendererV8, Prompt: prompt,
 		ProjectionEnvelope:                string(projection),
 		ProjectionSHA256:                  stationGapSHA256(string(projection)),
 		SemanticUncertaintyContract:       semanticUncertainty,
 		SemanticUncertaintyContractSHA256: semanticUncertaintySHA256,
 		ContextTokens:                     record.ContextTokens,
 		MaxOutputTokens:                   record.MaxOutputTokens, OutputLimitMode: record.OutputLimitMode,
-	}, nil
+	}
+	if record.ReplacementOrigin != nil {
+		opening.OriginGapOpeningID = record.ReplacementOrigin.GapOpeningID
+		opening.OriginCallReceiptID = record.ReplacementOrigin.CallReceiptID
+	}
+	return opening, nil
+}
+
+func validateStationGapReplacementOrigin(
+	kind assemblyline.WorkKind,
+	origin *StationGapReplacementOrigin,
+) error {
+	if kind == assemblyline.WorkFragmentGenerationReplacement {
+		if origin == nil || origin.GapOpeningID < 1 || origin.CallReceiptID < 1 {
+			return fmt.Errorf(
+				"fragment generation replacement requires exact persisted origin gap and call receipt identities",
+			)
+		}
+		return nil
+	}
+	if origin != nil {
+		return fmt.Errorf(
+			"portable work kind %q cannot claim fragment generation replacement origin authority",
+			kind,
+		)
+	}
+	return nil
 }
 
 func validateStationGapModelInputAuthority(record StationGapOpenRecord, modelInput string) error {

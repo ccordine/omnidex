@@ -15,9 +15,9 @@ conversation
     ↓
 delivery surface                         one semantic leaf
     ↓
-product context + requirement fixed point one semantic leaf per call
+product identity + task-local requirement fixed point one semantic leaf per call
     ↓
-one frozen task per accepted requirement code-owned
+one frozen task per accepted task-local requirement code-owned
     ↓
 stack, target tree, coverage + block graph code-owned
     ↓
@@ -48,7 +48,7 @@ guidance instruction → one replacement node model(s)
 The runtime has deliberately unequal stations:
 
 1. **Semantic front door (models, one leaf at a time)** — returns one delivery surface, one product-context value, one requirement-coverage relation, or one requirement. No call emits an aggregate application contract, plan, workflow decision, or completion state.
-2. **Intent and workload compiler (code)** — validates each leaf, assembles the typed intent, and projects every accepted requirement directly into one frozen task in source order. There is no workload-planning model.
+2. **Intent and workload compiler (code)** — validates each leaf, assembles the typed intent, and projects every accepted task-local runtime implementation requirement directly into one frozen task in source order. Global surface, technical/structural, test/build, and deployment constraints remain with their narrow owners. There is no workload-planning model.
 3. **Stack, tree, and graph compilers (code, with one narrow tree exception)** — select a registered stack, derive every mechanical target, parse the optional target-tree station's complete raw basename hierarchy, construct all paths, and compile exact block ownership and direct capabilities.
 4. **Source transformer (model, only when required)** — returns exactly one parser-qualified declaration or source node with an immutable signature. It never sees a path, document, project, job, plan, or filesystem operation.
 5. **Stager and repair controller (code)** — stitch and format complete documents, run isolated verification, and map one exact compiler-proven diagnostic to one generated owner. One guidance call returns only an instruction; one executor call returns only the replacement node. A later pair requires a distinct diagnostic after a validated source transition.
@@ -390,11 +390,19 @@ coverage with one raw requirement call only while another requirement remains an
 assembles the typed intent itself. A valid leaf advances directly; an invalid semantic
 leaf fails at its owning station. There is no generic response-correction station,
 aggregate model response, or call merely to accept or review valid state.
+Product context is limited to product/domain identity and remains outside the model-visible
+requirement fixed point and each task-local source contract. Those boundaries receive the
+immutable request or one exact accepted requirement respectively, never a derived aggregate
+summary that can supply sibling requirements.
+The requirement fixed point retains only task-local runtime implementation obligations that
+become source tasks. Delivery surface, technical and structural format, generic tests/builds,
+and deployment are resolved or verified by their narrow code-owned owners from the immutable
+request and never become fake application features.
 Requirements are bound to the immutable request digest; exact substrings,
 quote intervals, source order, punctuation, disjointness, and overlap are not authority
 gates.
 
-For each accepted requirement, code creates exactly one frozen task containing the
+For each accepted task-local runtime implementation requirement, code creates exactly one frozen task containing the
 code-owned task identity, requirement identity, and unchanged accepted requirement.
 Code assigns source order and freezes the workload hash. There are no model-authored
 objectives, behaviors, acceptance criteria, dependencies, schedules, tools, paths, or
@@ -404,7 +412,10 @@ PostgreSQL skill and may expose only direct pairwise capability APIs. After code
 the stack, it projects an exact target tree mechanically when the registered grammar is
 deterministic and invokes the target-tree station only for a genuine structural naming
 uncertainty. That one call covers the complete frozen workload and returns the raw
-`ROOT` node grammar; code constructs and validates all normalized relative paths. The
+objective by receiving the exact immutable request, while selected technical context
+remains a separate code-owned projection. It returns the raw `ROOT` node grammar; code
+constructs and validates all normalized relative paths. The raw request stops at this
+structural boundary and is never forwarded to a source call. The
 selected compiler turns the accepted tree and coverage into bounded source-block
 responsibilities. Each source call returns one exact path-blind
 declaration or source node; code owns document construction, imports, formatting,

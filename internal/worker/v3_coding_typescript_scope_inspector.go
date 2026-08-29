@@ -13,6 +13,7 @@ import (
 
 	"github.com/gryph/omnidex/internal/assemblyline"
 	"github.com/gryph/omnidex/internal/exactjson"
+	"github.com/gryph/omnidex/internal/modelcontext"
 )
 
 const (
@@ -94,10 +95,7 @@ func inspectDirectCodingTypeScriptScope(
 	if err != nil {
 		return directCodingTypeScriptScope{}, err
 	}
-	if err := validateDirectCodingTypeScriptCompilerScopeModelProjection(scope); err != nil {
-		return directCodingTypeScriptScope{}, err
-	}
-	projected, err := projectDirectCodingTypeScriptCompilerScope(scope)
+	projected, err := projectDirectCodingTypeScriptCompilerScopeForModel(scope)
 	if err != nil {
 		return directCodingTypeScriptScope{}, err
 	}
@@ -179,6 +177,19 @@ func projectDirectCodingTypeScriptCompilerScope(
 	}, nil
 }
 
+func projectDirectCodingTypeScriptCompilerScopeForModel(
+	scope directCodingTypeScriptScope,
+) (directCodingTypeScriptScope, error) {
+	projected, err := projectDirectCodingTypeScriptCompilerScope(scope)
+	if err != nil {
+		return directCodingTypeScriptScope{}, err
+	}
+	if err := validateDirectCodingTypeScriptCompilerScopeModelProjection(projected); err != nil {
+		return directCodingTypeScriptScope{}, err
+	}
+	return projected, nil
+}
+
 func applyDirectCodingTypeScriptDeterministicRepair(
 	current string,
 	scope directCodingTypeScriptScope,
@@ -222,7 +233,9 @@ func directCodingTypeScriptRepairRegionHasExactIncompatibility(
 // repair region already carries as source authority. It is code, not a file
 // identity: it can legitimately contain regular-expression escapes or URL
 // literals. Compiler-rendered type information and binding metadata, however,
-// are new model-visible projections and must remain path-free.
+// are new model-visible projections and must remain path-free. Binding names
+// retain the strict prose boundary; type, signature, and member fields use
+// source grammar so ordinary parameter labels are not mistaken for drives.
 func validateDirectCodingTypeScriptCompilerScopeModelProjection(
 	scope directCodingTypeScriptScope,
 ) error {
@@ -231,10 +244,13 @@ func validateDirectCodingTypeScriptCompilerScopeModelProjection(
 		scope.UnavailableBindings...,
 	)
 	for _, binding := range allBindings {
-		values := append([]string{binding.Name, binding.Type}, binding.CallableSignatures...)
+		if directCodingTypeScriptCompilerContainsPathIdentity(binding.Name) {
+			return fmt.Errorf("TypeScript compiler scope binding %s contains path identity", binding.Name)
+		}
+		values := append([]string{binding.Type}, binding.CallableSignatures...)
 		values = append(values, binding.Members...)
 		for _, value := range values {
-			if directCodingTypeScriptCompilerContainsPathIdentity(value) {
+			if directCodingTypeScriptCompilerSyntaxContainsPathIdentity(value) {
 				return fmt.Errorf("TypeScript compiler scope binding %s contains path identity", binding.Name)
 			}
 		}
@@ -242,7 +258,7 @@ func validateDirectCodingTypeScriptCompilerScopeModelProjection(
 	for index, item := range scope.ExpressionEvidence {
 		values := append([]string{item.InferredType, item.ContextualType}, item.IncompatibleTypes...)
 		for _, value := range values {
-			if value != "" && directCodingTypeScriptCompilerContainsPathIdentity(value) {
+			if value != "" && directCodingTypeScriptCompilerSyntaxContainsPathIdentity(value) {
 				return fmt.Errorf(
 					"TypeScript compiler expression evidence %d contains path identity", index+1,
 				)
@@ -250,6 +266,12 @@ func validateDirectCodingTypeScriptCompilerScopeModelProjection(
 		}
 	}
 	return nil
+}
+
+func directCodingTypeScriptCompilerSyntaxContainsPathIdentity(value string) bool {
+	return len(modelcontext.SourcePathIdentities(
+		value, modelcontext.ArtifactIdentityProvenance{},
+	)) > 0
 }
 
 func decodeDirectCodingTypeScriptScopeReceipt(raw []byte) (directCodingTypeScriptScope, error) {

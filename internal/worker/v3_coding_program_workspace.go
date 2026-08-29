@@ -197,6 +197,7 @@ func directCodingProgramVerificationCommands(
 		)
 	}
 	tests := 0
+	builds := 0
 	for index, command := range commands {
 		if err := validateV3Command(command.Name, command.Args); err != nil {
 			return nil, fmt.Errorf(
@@ -221,9 +222,15 @@ func directCodingProgramVerificationCommands(
 		if command.Purpose == verificationTest {
 			tests++
 		}
+		if command.Purpose == verificationBuild {
+			builds++
+		}
 	}
 	if tests == 0 {
 		return nil, fmt.Errorf("project stack %s returned no test command", stack.ID)
+	}
+	if builds == 0 {
+		return nil, fmt.Errorf("project stack %s returned no production-build command", stack.ID)
 	}
 	return commands, nil
 }

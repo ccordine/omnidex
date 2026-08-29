@@ -59,13 +59,30 @@ func TestLiveQwenRawMultilinePromptBoundaryQualification(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	requirementInput := assemblyline.ApplicationRequirementLeafInput{
+	coverageInput := assemblyline.ApplicationRequirementCoverageInput{
 		UserRequest: request, Context: applicationContext,
-		ProductContext: "A browser weather board.", AcceptedRequirements: []string{},
+		AcceptedRequirements: []string{},
+	}
+	coverage, err := assemblyline.DecodeApplicationRequirementCoverageLeaf(
+		coverageInput, assemblyline.ApplicationRequirementRemains,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	requirementInput := assemblyline.ApplicationRequirementCandidateInput{
+		Authority: coverageInput, Coverage: coverage,
 	}
 	requirementJob, err := assemblyline.NewApplicationRequirementJob(requirementInput)
 	if err != nil {
 		t.Fatal(err)
+	}
+	requirementPrompt, err := assemblyline.RenderPortableJob(requirementJob)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(requirementPrompt, "A browser weather board.") ||
+		strings.Contains(requirementPrompt, "PRODUCT CONTEXT:") {
+		t.Fatalf("raw multiline requirement received redundant product context:\n%s", requirementPrompt)
 	}
 	treeInput := assemblyline.TargetTreeInput{
 		Objective:        "Create one root-level plain-text artifact that displays a greeting.",

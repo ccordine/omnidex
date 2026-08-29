@@ -103,6 +103,10 @@ func isQualifiedPath(value string) bool {
 	if value[0] == '~' {
 		return true
 	}
+	// A bare drive designator is already a valid drive-relative filesystem
+	// identity on Windows. Parser-proven source syntax must use
+	// SourcePathIdentities instead of weakening this prose boundary for typed
+	// parameter labels.
 	if len(value) >= 2 && isASCIIAlpha(value[0]) && value[1] == ':' {
 		return true
 	}

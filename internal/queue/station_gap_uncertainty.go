@@ -26,11 +26,15 @@ func stationGapSemanticUncertainty(
 // uncertainty that justified this opening. It is durable operational evidence,
 // never model context.
 func ValidateStationGapSemanticUncertainty(opening StationGapOpening) error {
-	expected, digest, err := stationGapSemanticUncertainty(
-		assemblyline.WorkKind(opening.WorkKind),
+	expected, err := assemblyline.SemanticUncertaintyContractForPortableRenderer(
+		opening.RendererVersion, assemblyline.WorkKind(opening.WorkKind),
 	)
 	if err != nil {
 		return fmt.Errorf("resolve station gap semantic uncertainty: %w", err)
+	}
+	digest, err := expected.Digest()
+	if err != nil {
+		return fmt.Errorf("digest station gap semantic uncertainty: %w", err)
 	}
 	if opening.SemanticUncertaintyContract != expected {
 		return fmt.Errorf(
@@ -54,6 +58,7 @@ func canonicalStationGapSemanticUncertainty(opening StationGapOpening) ([]byte, 
 func decodeStationGapSemanticUncertainty(
 	raw []byte,
 	digest string,
+	renderer string,
 	workKind string,
 ) (assemblyline.SemanticUncertaintyContract, error) {
 	var contract assemblyline.SemanticUncertaintyContract
@@ -64,7 +69,8 @@ func decodeStationGapSemanticUncertainty(
 		return contract, fmt.Errorf("decode station gap semantic uncertainty: %w", err)
 	}
 	opening := StationGapOpening{
-		WorkKind: workKind, SemanticUncertaintyContract: contract,
+		RendererVersion: renderer, WorkKind: workKind,
+		SemanticUncertaintyContract:       contract,
 		SemanticUncertaintyContractSHA256: digest,
 	}
 	if err := ValidateStationGapSemanticUncertainty(opening); err != nil {

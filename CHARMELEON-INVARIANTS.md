@@ -236,7 +236,7 @@ Station: requirement coverage
 Input:
 
 Exact user instruction
-Product context
+Established source-backed facts
 Already retained requirements
 
 Output:
@@ -249,7 +249,15 @@ R1: Invitation dispatch timing is configurable per client without changing the
 existing default.
 
 Code validates and retains the leaf, repeats the fixed point within its hard bound,
-and projects each accepted requirement directly into one frozen task in source order.
+and projects each accepted task-local runtime implementation requirement directly into
+one frozen task in source order. Product identity, delivery surface, technical and
+structural format, generic test/build/verification, and deployment constraints are outside
+this fixed point; their existing narrow code-owned consumers receive the immutable request
+directly, and unconditional stack verification supplies test and build evidence.
+The separately accepted product/domain identity is retained in code-owned workload
+authority but is not projected into requirement coverage, requirement extraction, or
+task-local source generation; those calls receive no aggregate paraphrase of sibling
+requirements.
 The model does not emit a requirement array, objective graph, behavior list,
 acceptance contract, dependency, schedule, or plan. Text-span heuristics are not an
 authority substitute for semantic validation.
@@ -678,7 +686,7 @@ No source mutation.
 Gate 5 — bounded semantic intake and code-owned workload compilation
 
 Take a vague request through one-leaf semantic fixed points. Code must project each
-accepted requirement into exactly one frozen task and work that deterministic graph
+accepted task-local runtime implementation requirement into exactly one frozen task and work that deterministic graph
 to completion without a planner call.
 
 Gate 6 — Charmander generation handoff

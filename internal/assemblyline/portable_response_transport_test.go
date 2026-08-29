@@ -25,7 +25,8 @@ func TestPortableResponseTransportRegistryIsExhaustiveAndRaw(t *testing.T) {
 		case WorkApplicationTargetTree:
 			wantTransport = PortableResponseTransportStructuralRaw
 			wantScope = PortableStructuralWorkerScope
-		case WorkFragmentGeneration, WorkFragmentModification, WorkFragmentCorrection:
+		case WorkFragmentGeneration, WorkFragmentGenerationReplacement,
+			WorkFragmentModification, WorkFragmentCorrection:
 			wantTransport = PortableResponseTransportFragmentRaw
 			wantScope = PortableFragmentWorkerScope
 		}
@@ -103,6 +104,9 @@ func TestPortableSemanticLeafKindsAreRegistered(t *testing.T) {
 		WorkApplicationProductContext,
 		WorkApplicationRequirementCoverage,
 		WorkApplicationRequirement,
+		WorkApplicationRequirementCandidateCardinality,
+		WorkApplicationRequirementCandidateSplit,
+		WorkApplicationRequirementCandidateSplitCorrection,
 		WorkApplicationServiceEndpointExposure,
 		WorkApplicationServiceEndpointMethod,
 		WorkApplicationServiceEndpointRouteTemplate,

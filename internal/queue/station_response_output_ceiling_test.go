@@ -15,10 +15,18 @@ func TestExpectedPortableStationMaxOutputTokensIncludesExactStopReserve(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
+	coverageInput := assemblyline.ApplicationRequirementCoverageInput{
+		UserRequest: request, Context: context, AcceptedRequirements: []string{},
+	}
+	coverage, err := assemblyline.DecodeApplicationRequirementCoverageLeaf(
+		coverageInput, assemblyline.ApplicationRequirementRemains,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
 	requirement, err := assemblyline.NewApplicationRequirementJob(
-		assemblyline.ApplicationRequirementLeafInput{
-			UserRequest: request, Context: context, ProductContext: "A browser tool.",
-			AcceptedRequirements: []string{},
+		assemblyline.ApplicationRequirementCandidateInput{
+			Authority: coverageInput, Coverage: coverage,
 		},
 	)
 	if err != nil {

@@ -16,7 +16,8 @@ func TestStationGapSemanticUncertaintyRoundTripIsExactAndNotModelVisible(t *test
 		t.Fatal(err)
 	}
 	decoded, err := decodeStationGapSemanticUncertainty(
-		raw, opening.SemanticUncertaintyContractSHA256, opening.WorkKind,
+		raw, opening.SemanticUncertaintyContractSHA256,
+		opening.RendererVersion, opening.WorkKind,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -64,6 +65,78 @@ func TestStationGapSemanticUncertaintyRejectsEveryAuthorityMismatch(t *testing.T
 	}
 }
 
+func TestStationGapSemanticUncertaintyUsesRendererVersionedApplicationIntentAuthority(t *testing.T) {
+	t.Parallel()
+	for _, kind := range []assemblyline.WorkKind{
+		assemblyline.WorkApplicationProductContext,
+		assemblyline.WorkApplicationRequirementCoverage,
+		assemblyline.WorkApplicationRequirement,
+		assemblyline.WorkApplicationProjectStackConstraint,
+	} {
+		current := StationGapOpening{
+			RendererVersion: assemblyline.PortableRendererV8,
+			WorkKind:        string(kind),
+		}
+		contract, err := assemblyline.SemanticUncertaintyContractForPortableRenderer(
+			current.RendererVersion, kind,
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		digest, err := contract.Digest()
+		if err != nil {
+			t.Fatal(err)
+		}
+		current.SemanticUncertaintyContract = contract
+		current.SemanticUncertaintyContractSHA256 = digest
+		if err := ValidateStationGapSemanticUncertainty(current); err != nil {
+			t.Fatalf("current %s contract: %v", kind, err)
+		}
+		v7 := current
+		v7.RendererVersion = assemblyline.HistoricalPortableRendererV7
+		v7.SemanticUncertaintyContract, err =
+			assemblyline.SemanticUncertaintyContractForPortableRenderer(
+				v7.RendererVersion, kind,
+			)
+		if err != nil {
+			t.Fatal(err)
+		}
+		v7.SemanticUncertaintyContractSHA256, err = v7.SemanticUncertaintyContract.Digest()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := ValidateStationGapSemanticUncertainty(v7); err != nil {
+			t.Fatalf("historical V7 %s contract: %v", kind, err)
+		}
+
+		for _, renderer := range []string{
+			assemblyline.HistoricalPortableRendererV5,
+			assemblyline.HistoricalPortableRendererV6,
+		} {
+			historical := current
+			historical.RendererVersion = renderer
+			historical.SemanticUncertaintyContract, err =
+				assemblyline.SemanticUncertaintyContractForPortableRenderer(renderer, kind)
+			if err != nil {
+				t.Fatal(err)
+			}
+			historical.SemanticUncertaintyContractSHA256, err =
+				historical.SemanticUncertaintyContract.Digest()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := ValidateStationGapSemanticUncertainty(historical); err != nil {
+				t.Fatalf("historical %s/%s contract: %v", renderer, kind, err)
+			}
+			historical.SemanticUncertaintyContract = current.SemanticUncertaintyContract
+			historical.SemanticUncertaintyContractSHA256 = current.SemanticUncertaintyContractSHA256
+			if err := ValidateStationGapSemanticUncertainty(historical); err == nil {
+				t.Fatalf("historical %s/%s accepted current V2 authority", renderer, kind)
+			}
+		}
+	}
+}
+
 func TestStationGapSemanticUncertaintyDecodeRejectsUnknownJSONField(t *testing.T) {
 	t.Parallel()
 	opening := validatedStationGapUncertaintyFixture(t)
@@ -73,7 +146,8 @@ func TestStationGapSemanticUncertaintyDecodeRejectsUnknownJSONField(t *testing.T
 	}
 	raw = append(append([]byte{}, raw[:len(raw)-1]...), []byte(`,"extra":"forbidden"}`)...)
 	if _, err := decodeStationGapSemanticUncertainty(
-		raw, opening.SemanticUncertaintyContractSHA256, opening.WorkKind,
+		raw, opening.SemanticUncertaintyContractSHA256,
+		opening.RendererVersion, opening.WorkKind,
 	); err == nil {
 		t.Fatal("semantic uncertainty decoder accepted an unknown JSON field")
 	}

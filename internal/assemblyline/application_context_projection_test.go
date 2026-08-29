@@ -21,17 +21,18 @@ func TestApplicationIntentEnvelopesKeepFullAuthorityOutsideModelProjection(t *te
 	if err != nil {
 		t.Fatal(err)
 	}
-	requirementInput := ApplicationRequirementLeafInput{
+	coverageInput := ApplicationRequirementCoverageInput{
 		UserRequest:          request,
 		Context:              context,
-		ProductContext:       productContext,
 		AcceptedRequirements: []string{accepted},
 	}
-	coverageJob, err := NewApplicationRequirementCoverageJob(requirementInput)
+	coverageJob, err := NewApplicationRequirementCoverageJob(coverageInput)
 	if err != nil {
 		t.Fatal(err)
 	}
-	requirementJob, err := NewApplicationRequirementJob(requirementInput)
+	requirementJob, err := NewApplicationRequirementJob(
+		applicationRequirementCandidateFixture(t, coverageInput),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -44,11 +45,11 @@ func TestApplicationIntentEnvelopesKeepFullAuthorityOutsideModelProjection(t *te
 		{name: "product context", job: productJob},
 		{
 			name: "requirement coverage", job: coverageJob,
-			expectedLeafValues: []string{productContext, accepted},
+			expectedLeafValues: []string{accepted},
 		},
 		{
 			name: "requirement", job: requirementJob,
-			expectedLeafValues: []string{productContext, accepted},
+			expectedLeafValues: []string{accepted},
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -62,6 +63,11 @@ func TestApplicationIntentEnvelopesKeepFullAuthorityOutsideModelProjection(t *te
 				if !strings.Contains(prompt, value) {
 					t.Fatalf("model projection omitted accepted semantic leaf %q:\n%s", value, prompt)
 				}
+			}
+			if test.job.Kind != WorkApplicationProductContext &&
+				(strings.Contains(prompt, productContext) ||
+					strings.Contains(prompt, "PRODUCT CONTEXT:")) {
+				t.Fatalf("requirement station received redundant product context:\n%s", prompt)
 			}
 		})
 	}

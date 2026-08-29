@@ -48,34 +48,55 @@ func portableWorkerRuntimeWithIdentityGuard(
 	}
 	eventNamespace = safeEventToken(eventNamespace, "portable")
 	pending := &sync.Map{}
+	execute := func(
+		job assemblyline.PortableJob,
+		model string,
+		replacementOrigin *queue.StationGapReplacementOrigin,
+	) (assemblyline.PortableResult, error) {
+		runtime.svc.emitStepEvent(
+			runtime.claim.Authority,
+			eventNamespace+"_portable_dispatched",
+			fmt.Sprintf("kind=%s work=%s payload=%dB model=%s", job.Kind, job.ID[:12], len(job.Payload), safeEventToken(model, "unknown")),
+		)
+		result, execution, err := runtime.svc.executeExactPortableStationWithReplacementOrigin(
+			executionContext, runtime.claim.Authority, job, model,
+			replacementOrigin,
+		)
+		if err != nil {
+			return assemblyline.PortableResult{}, err
+		}
+		if identityGuard != nil {
+			if guardErr := identityGuard(job, execution); guardErr != nil {
+				return assemblyline.PortableResult{}, runtime.svc.failStationGap(
+					executionContext, runtime.claim.Authority, execution.Gap, guardErr,
+				)
+			}
+		}
+		if _, loaded := pending.LoadOrStore(job.ID, execution); loaded {
+			return assemblyline.PortableResult{}, fmt.Errorf("portable work %s already has an unvalidated exact result", job.ID)
+		}
+		return result, nil
+	}
 	return typedWorkerRuntime{
 		Context:        executionContext,
 		MaxAttempts:    exactSemanticLeafCalls,
 		MaxConcurrency: runtime.svc.fragmentConcurrency,
 		PathProvenance: runtime.objectivePathProvenance,
 		Execute: func(job assemblyline.PortableJob, model string) (assemblyline.PortableResult, error) {
-			runtime.svc.emitStepEvent(
-				runtime.claim.Authority,
-				eventNamespace+"_portable_dispatched",
-				fmt.Sprintf("kind=%s work=%s payload=%dB model=%s", job.Kind, job.ID[:12], len(job.Payload), safeEventToken(model, "unknown")),
-			)
-			result, execution, err := runtime.svc.executeExactPortableStation(
-				executionContext, runtime.claim.Authority, job, model,
-			)
-			if err != nil {
-				return assemblyline.PortableResult{}, err
+			return execute(job, model, nil)
+		},
+		ExecuteFragmentGenerationReplacement: func(
+			job assemblyline.PortableJob,
+			model string,
+			origin queue.StationGapReplacementOrigin,
+		) (assemblyline.PortableResult, error) {
+			if job.Kind != assemblyline.WorkFragmentGenerationReplacement {
+				return assemblyline.PortableResult{}, fmt.Errorf(
+					"replacement execution authority cannot open portable work kind %q",
+					job.Kind,
+				)
 			}
-			if identityGuard != nil {
-				if guardErr := identityGuard(job, execution); guardErr != nil {
-					return assemblyline.PortableResult{}, runtime.svc.failStationGap(
-						executionContext, runtime.claim.Authority, execution.Gap, guardErr,
-					)
-				}
-			}
-			if _, loaded := pending.LoadOrStore(job.ID, execution); loaded {
-				return assemblyline.PortableResult{}, fmt.Errorf("portable work %s already has an unvalidated exact result", job.ID)
-			}
-			return result, nil
+			return execute(job, model, &origin)
 		},
 		Finalize: func(job assemblyline.PortableJob, result assemblyline.PortableResult, validationErr error) error {
 			stored, exists := pending.LoadAndDelete(job.ID)

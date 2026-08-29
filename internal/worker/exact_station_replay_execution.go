@@ -14,6 +14,7 @@ func executeExactStationReplayPrepared(
 	client llm.ExactStationClient,
 	result ExactStationReplay,
 	job assemblyline.PortableJob,
+	renderer string,
 	contextTokens int,
 	prepared llm.PreparedModel,
 ) (ExactStationReplay, error) {
@@ -56,7 +57,7 @@ func executeExactStationReplayPrepared(
 	}).ValidateFor(job); err != nil {
 		return result, fmt.Errorf("validate station replay portable response: %w", err)
 	}
-	artifact, err := replayExactStationArtifact(job, owned.Content)
+	artifact, err := replayExactStationArtifactForRenderer(job, renderer, owned.Content)
 	result.Artifact = artifact
 	if err != nil {
 		return result, &ExactStationReplayArtifactError{Cause: err}

@@ -20,12 +20,15 @@ func scanStationGapOpening(scanner stationGapScanner, opening *StationGapOpening
 		&opening.PortableEnvelopeSHA256, &opening.RendererVersion, &opening.Prompt,
 		&opening.ProjectionEnvelope, &opening.ProjectionSHA256, &semanticUncertainty,
 		&opening.SemanticUncertaintyContractSHA256, &opening.ContextTokens,
-		&opening.MaxOutputTokens, &opening.OutputLimitMode, &opening.CreatedAt,
+		&opening.MaxOutputTokens, &opening.OutputLimitMode,
+		&opening.OriginGapOpeningID, &opening.OriginCallReceiptID,
+		&opening.CreatedAt,
 	); err != nil {
 		return err
 	}
 	contract, err := decodeStationGapSemanticUncertainty(
-		semanticUncertainty, opening.SemanticUncertaintyContractSHA256, opening.WorkKind,
+		semanticUncertainty, opening.SemanticUncertaintyContractSHA256,
+		opening.RendererVersion, opening.WorkKind,
 	)
 	if err != nil {
 		return err
@@ -72,7 +75,8 @@ func loadStationGapOpeningTx(
 			portable_envelope,portable_envelope_sha256,renderer_version,prompt,
 			projection_envelope,projection_sha256,semantic_uncertainty_contract,
 			semantic_uncertainty_contract_sha256,context_tokens,max_output_tokens,
-			output_limit_mode,created_at
+			output_limit_mode,COALESCE(origin_gap_opening_id,0),
+			COALESCE(origin_call_receipt_id,0),created_at
 		FROM station_gap_openings WHERE id=$1 FOR SHARE
 	`, openingID), &opening)
 	return opening, err

@@ -18,8 +18,17 @@ func portableApplicationResponseMaximum(job PortableJob) (int, bool, error) {
 		), true, nil
 	case WorkApplicationRequirement:
 		return maxRequirementQuoteBytes, true, nil
+	case WorkApplicationRequirementCandidateCardinality:
+		return maximumStringBytes(
+			ApplicationRequirementOneRuntimeOutcome,
+			ApplicationRequirementMultipleRuntimeOutcomes,
+		), true, nil
+	case WorkApplicationRequirementCandidateSplit:
+		return maxRequirementQuoteBytes, true, nil
+	case WorkApplicationRequirementCandidateSplitCorrection:
+		return maxRequirementQuoteBytes, true, nil
 	case WorkApplicationProjectStackConstraint:
-		var input ApplicationProjectStackConstraintInput
+		var input applicationProjectStackConstraintVersionedInput
 		if err := decodePortablePayload(job.Payload, &input); err != nil {
 			return 0, true, err
 		}

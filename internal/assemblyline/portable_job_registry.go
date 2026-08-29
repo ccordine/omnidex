@@ -27,8 +27,10 @@ const (
 	WorkArtifactCandidateSelection               WorkKind = "artifact_candidate_selection"
 	WorkCapabilityRelation                       WorkKind = "capability_relation"
 	WorkSkillSelection                           WorkKind = "skill_selection"
+	WorkRuntimeCapabilitySelection               WorkKind = "runtime_capability_selection"
 	WorkTypeScriptRepairGuidance                 WorkKind = "typescript_repair_guidance"
 	WorkFragmentGeneration                       WorkKind = "fragment_generation"
+	WorkFragmentGenerationReplacement            WorkKind = "fragment_generation_replacement"
 	WorkFragmentModification                     WorkKind = "fragment_modification"
 	WorkFragmentCorrection                       WorkKind = "fragment_correction"
 )
@@ -40,6 +42,9 @@ func validWorkKind(kind WorkKind) bool {
 		WorkApplicationProductContext,
 		WorkApplicationRequirementCoverage,
 		WorkApplicationRequirement,
+		WorkApplicationRequirementCandidateCardinality,
+		WorkApplicationRequirementCandidateSplit,
+		WorkApplicationRequirementCandidateSplitCorrection,
 		WorkApplicationProjectStackConstraint,
 		WorkApplicationServiceContinuedAvailability,
 		WorkApplicationServicePersistenceDestination,
@@ -90,8 +95,10 @@ func validWorkKind(kind WorkKind) bool {
 		WorkArtifactHandling, WorkRepositoryArtifactAbsence,
 		WorkPlainTextArtifactCreation,
 		WorkDeclarationArtifactBoundary, WorkArtifactCandidateSelection,
-		WorkCapabilityRelation, WorkSkillSelection, WorkTypeScriptRepairGuidance,
-		WorkFragmentGeneration, WorkFragmentModification, WorkFragmentCorrection:
+		WorkCapabilityRelation, WorkSkillSelection, WorkRuntimeCapabilitySelection,
+		WorkTypeScriptRepairGuidance,
+		WorkFragmentGeneration, WorkFragmentGenerationReplacement,
+		WorkFragmentModification, WorkFragmentCorrection:
 		return true
 	default:
 		return false
@@ -107,6 +114,9 @@ func AllWorkKinds() []WorkKind {
 		WorkApplicationProductContext,
 		WorkApplicationRequirementCoverage,
 		WorkApplicationRequirement,
+		WorkApplicationRequirementCandidateCardinality,
+		WorkApplicationRequirementCandidateSplit,
+		WorkApplicationRequirementCandidateSplitCorrection,
 		WorkApplicationProjectStackConstraint,
 		WorkApplicationServiceContinuedAvailability,
 		WorkApplicationServicePersistenceDestination,
@@ -157,7 +167,9 @@ func AllWorkKinds() []WorkKind {
 		WorkArtifactHandling, WorkRepositoryArtifactAbsence,
 		WorkPlainTextArtifactCreation,
 		WorkDeclarationArtifactBoundary, WorkArtifactCandidateSelection,
-		WorkCapabilityRelation, WorkSkillSelection, WorkTypeScriptRepairGuidance,
-		WorkFragmentGeneration, WorkFragmentModification, WorkFragmentCorrection,
+		WorkCapabilityRelation, WorkSkillSelection, WorkRuntimeCapabilitySelection,
+		WorkTypeScriptRepairGuidance,
+		WorkFragmentGeneration, WorkFragmentGenerationReplacement,
+		WorkFragmentModification, WorkFragmentCorrection,
 	}
 }

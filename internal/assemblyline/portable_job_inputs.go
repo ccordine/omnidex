@@ -23,6 +23,13 @@ type FragmentGenerationInput struct {
 	PermittedSymbols []string `json:"permitted_symbols"`
 }
 
+// FragmentGenerationReplacementInput preserves only the unresolved source
+// responsibility. Code-owned relational journal state proves why the bounded
+// replacement is legal and deliberately remains outside portable identity.
+type FragmentGenerationReplacementInput struct {
+	Original FragmentGenerationInput `json:"original"`
+}
+
 type FragmentCorrectionInput struct {
 	Language           string                          `json:"language,omitempty"`
 	Signature          string                          `json:"signature,omitempty"`
@@ -51,8 +58,24 @@ func NewSkillSelectionJob(input SkillSelectionInput) (PortableJob, error) {
 	return newValidatedPortableJob(WorkSkillSelection, input, input.validate)
 }
 
+func NewRuntimeCapabilitySelectionJob(
+	input RuntimeCapabilitySelectionInput,
+) (PortableJob, error) {
+	return newValidatedPortableJob(
+		WorkRuntimeCapabilitySelection, input, input.validate,
+	)
+}
+
 func NewFragmentGenerationJob(input FragmentGenerationInput) (PortableJob, error) {
 	return newValidatedPortableJob(WorkFragmentGeneration, input, input.validate)
+}
+
+func NewFragmentGenerationReplacementJob(
+	input FragmentGenerationReplacementInput,
+) (PortableJob, error) {
+	return newValidatedPortableJob(
+		WorkFragmentGenerationReplacement, input, input.validate,
+	)
 }
 
 func NewFragmentCorrectionJob(input FragmentCorrectionInput) (PortableJob, error) {

@@ -116,6 +116,20 @@ func (usage ProviderGenerationUsage) Validate() error {
 }
 
 func (generation PreparedGeneration) Validate() error {
+	if err := generation.validateSuccessfulContentEvidence(); err != nil {
+		return err
+	}
+	if generation.ProviderDoneReason != "stop" {
+		return fmt.Errorf("exact prepared generation content is invalid")
+	}
+	return nil
+}
+
+// validateSuccessfulContentEvidence validates a complete, successful provider
+// response without treating its registered stop disposition as semantic
+// completion. Request-bound validation classifies an exact `length` receipt
+// only after it has also proven the response belongs to the frozen request.
+func (generation PreparedGeneration) validateSuccessfulContentEvidence() error {
 	if err := generation.ValidateInvocationEvidence(); err != nil {
 		return err
 	}
@@ -123,7 +137,7 @@ func (generation PreparedGeneration) Validate() error {
 		strings.TrimSpace(generation.Content) == "" ||
 		!utf8.ValidString(generation.Content) || strings.ContainsRune(generation.Content, 0) ||
 		!generation.ProviderDonePresent || !generation.ProviderDone ||
-		generation.ProviderDoneReason != "stop" ||
+		(generation.ProviderDoneReason != "stop" && generation.ProviderDoneReason != "length") ||
 		!generation.UsagePresent {
 		return fmt.Errorf("exact prepared generation content is invalid")
 	}

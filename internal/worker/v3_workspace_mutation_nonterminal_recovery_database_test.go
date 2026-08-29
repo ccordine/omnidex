@@ -45,7 +45,9 @@ func TestPostgresPreparedPlainWorkspaceRecoveryAppliesAndVerifiesDirectlyOnHost(
 	if err != nil || claim == nil || claim.Job.ID != job.ID {
 		t.Fatalf("claim=%+v error=%v", claim, err)
 	}
-	service := &Service{repo: repository, logger: log.New(io.Discard, "", 0)}
+	service := &Service{
+		repo: repository, logger: log.New(io.Discard, "", 0), workspaceRoot: root,
+	}
 	runtime := &nativeRuntimeV3{svc: service, ctx: ctx, claim: claim, action: "v3_coding"}
 	request := directCodingRequest{Instruction: claim.Job.Instruction}
 	session := &directCodingSession{

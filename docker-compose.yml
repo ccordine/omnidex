@@ -27,6 +27,8 @@ services:
     environment:
       # Host .env sometimes sets PATH for the bridge; never let that override the container PATH.
       PATH: /usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+      # A trimpath-built core cannot infer the copied toolchain root for go/importer.
+      GOROOT: /usr/local/go
       LISTEN_ADDR: ${LISTEN_ADDR:-0.0.0.0:8090}
       CORE_URL: ${CORE_URL:?CORE_URL must be configured}
       WRAPPER_ONLY: ${WRAPPER_ONLY:-false}

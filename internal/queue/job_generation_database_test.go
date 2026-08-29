@@ -34,7 +34,7 @@ func TestPostgresJobGenerationBoundaryIsExactAndJobOwned(t *testing.T) {
 	if err := seedTx.Commit(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if err := repository.EnsureSchema(ctx, loadCheckedMigrationBundle(t)); err != nil {
+	if err := repository.EnsureSchema(ctx, loadMigrationBundleThroughPrefix(t, "180")); err != nil {
 		t.Fatal(err)
 	}
 	memoryScope := createMemoryScopeForTest(t, repository)

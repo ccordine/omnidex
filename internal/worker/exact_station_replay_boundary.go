@@ -20,8 +20,8 @@ func loadStationReplayPortableBoundary(
 		call.StepAttempt != gap.StepAttempt || call.WorkerID != gap.WorkerID || call.GapID != gap.GapID {
 		return boundary, fmt.Errorf("station replay point does not preserve one exact call and gap authority")
 	}
-	if gap.RendererVersion != assemblyline.PortableRendererV5 {
-		return boundary, fmt.Errorf("station replay renderer %q is not current", gap.RendererVersion)
+	if !assemblyline.IsReplayablePortableRenderer(gap.RendererVersion) {
+		return boundary, fmt.Errorf("station replay renderer %q is not registered historical evidence", gap.RendererVersion)
 	}
 	if err := queue.ValidateStationGapSemanticUncertainty(gap); err != nil {
 		return boundary, fmt.Errorf("station replay semantic uncertainty: %w", err)
@@ -40,8 +40,21 @@ func loadStationReplayPortableBoundary(
 		Payload:          append(json.RawMessage(nil), gap.PortablePayload...),
 		SourceProjection: persistedJob.SourceProjection,
 	}
-	if err := boundary.Job.Validate(); err != nil {
+	if err := assemblyline.ValidatePortableJobForRenderer(
+		boundary.Job, gap.RendererVersion,
+	); err != nil {
 		return boundary, fmt.Errorf("validate station replay portable job: %w", err)
+	}
+	if boundary.Job.Kind == assemblyline.WorkFragmentGenerationReplacement {
+		if gap.OriginGapOpeningID < 1 || gap.OriginCallReceiptID < 1 {
+			return boundary, fmt.Errorf(
+				"station replay fragment generation replacement lacks exact persisted origin authority",
+			)
+		}
+	} else if gap.OriginGapOpeningID != 0 || gap.OriginCallReceiptID != 0 {
+		return boundary, fmt.Errorf(
+			"station replay non-replacement work claims fragment generation origin authority",
+		)
 	}
 	envelope, err := exactjson.Canonical(boundary.Job)
 	if err != nil || string(envelope) != gap.PortableEnvelope ||
@@ -56,7 +69,7 @@ func loadStationReplayPortableBoundary(
 	if strings.TrimSpace(gap.Prompt) == "" {
 		return boundary, fmt.Errorf("station replay stored prompt is empty")
 	}
-	projection, err := replayProjectionEnvelope(gap.Prompt)
+	projection, err := replayProjectionEnvelope(gap.Prompt, gap.RendererVersion)
 	if err != nil || string(projection) != gap.ProjectionEnvelope ||
 		replaySHA256(string(projection)) != gap.ProjectionSHA256 {
 		return boundary, fmt.Errorf("station replay projection differs from its stored identity")
@@ -75,6 +88,12 @@ func validateCurrentContractStationReplayPoint(
 	boundary, err := loadStationReplayPortableBoundary(point)
 	if err != nil {
 		return boundary, err
+	}
+	if point.Gap.RendererVersion != assemblyline.PortableRendererV8 {
+		return boundary, fmt.Errorf(
+			"current-contract replay requires renderer %q, received frozen historical renderer %q",
+			assemblyline.PortableRendererV8, point.Gap.RendererVersion,
+		)
 	}
 	prompt, err := assemblyline.RenderPortableJob(boundary.Job)
 	if err != nil {
@@ -99,9 +118,9 @@ func validateCurrentContractStationReplayPoint(
 	return boundary, nil
 }
 
-func replayProjectionEnvelope(prompt string) ([]byte, error) {
+func replayProjectionEnvelope(prompt, renderer string) ([]byte, error) {
 	return exactjson.Canonical(struct {
 		Prompt   string `json:"prompt"`
 		Renderer string `json:"renderer"`
-	}{prompt, assemblyline.PortableRendererV5})
+	}{prompt, renderer})
 }

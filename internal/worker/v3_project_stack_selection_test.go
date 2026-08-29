@@ -10,6 +10,7 @@ import (
 
 func TestProjectStackSelectionUsesBoundedConstraintAndCodeOwnedDefault(t *testing.T) {
 	specification := testProjectStackSpecification(assemblyline.ApplicationSurfaceBrowser)
+	request := "Build a browser inventory application that shows current inventory."
 	for _, testCase := range []struct {
 		name      string
 		selection string
@@ -35,7 +36,8 @@ func TestProjectStackSelectionUsesBoundedConstraintAndCodeOwnedDefault(t *testin
 				}),
 			}
 			selection, err := selectDirectCodingProject(
-				runtime, func() (string, error) { return "constraint-model", nil }, specification, nil, nil,
+				runtime, func() (string, error) { return "constraint-model", nil },
+				request, specification, nil, nil,
 			)
 			stack := selection.Stack
 			if testCase.wantError != "" {
@@ -51,18 +53,75 @@ func TestProjectStackSelectionUsesBoundedConstraintAndCodeOwnedDefault(t *testin
 	}
 }
 
-func TestProjectStackSelectionUsesExistingManifestWithoutInference(t *testing.T) {
-	specification := testProjectStackSpecification(assemblyline.ApplicationSurfaceBrowser)
+func TestProjectStackConstraintPromptUsesOnlyRequestAndTechnicalCandidates(t *testing.T) {
+	const request = "Build a compact command-line utility using Go."
+	specification := testProjectStackSpecification(assemblyline.ApplicationSurfaceCommandLine)
+	specification.ProductQuote = "PRODUCT_CONTEXT_MUST_NOT_REACH_STACK_SELECTION"
+	specification.Requirements[0].SourceQuote = "REQUIREMENT_PROJECTION_MUST_NOT_REACH_STACK_SELECTION"
+	runtime := typedWorkerRuntime{
+		Context: context.Background(), MaxAttempts: 1,
+		Execute: testPortableExecutor(func(_, _, prompt string) (string, error) {
+			for _, required := range []string{request, "packaging shape", "STACK_CANDIDATE_1"} {
+				if !strings.Contains(prompt, required) {
+					t.Fatalf("stack prompt omitted %q: %s", required, prompt)
+				}
+			}
+			for _, forbidden := range []string{
+				specification.ProductQuote,
+				specification.Requirements[0].SourceQuote,
+				"product_context", "accepted_requirements",
+			} {
+				if strings.Contains(prompt, forbidden) {
+					t.Fatalf("stack prompt contained forbidden projection %q: %s", forbidden, prompt)
+				}
+			}
+			return "STACK_CANDIDATE_1", nil
+		}),
+	}
 	selection, err := selectDirectCodingProject(
-		typedWorkerRuntime{}, func() (string, error) {
-			t.Fatal("deterministic manifest selection resolved an unused model")
-			return "", nil
-		}, specification,
-		map[string]string{"package.json": typeScriptVersionProfileManifestFixture(t)}, nil,
+		runtime, func() (string, error) { return "constraint-model", nil },
+		request, specification, nil, nil,
+	)
+	if err != nil || selection.Stack.ID != genericGoCommandLineAdapter {
+		t.Fatalf("selection=%+v error=%v", selection, err)
+	}
+}
+
+func TestProjectStackSelectionChecksExistingManifestAgainstImmutableRequest(t *testing.T) {
+	specification := testProjectStackSpecification(assemblyline.ApplicationSurfaceBrowser)
+	manifest := map[string]string{"package.json": typeScriptVersionProfileManifestFixture(t)}
+	calls := 0
+	selection, err := selectDirectCodingProject(
+		typedWorkerRuntime{
+			Context: context.Background(), MaxAttempts: 1,
+			Execute: testPortableExecutor(func(_, _, prompt string) (string, error) {
+				calls++
+				if strings.Count(prompt, "STACK_CANDIDATE_") != 1 ||
+					!strings.Contains(prompt, "Build a browser inventory application") {
+					t.Fatalf("manifest constraint prompt lost its one compatible candidate or request: %s", prompt)
+				}
+				return assemblyline.ApplicationProjectStackUnconstrained, nil
+			}),
+		}, func() (string, error) { return "constraint-model", nil },
+		"Build a browser inventory application.", specification, manifest, nil,
 	)
 	if err != nil || selection.Stack.ID != genericTypeScriptBrowserAdapter ||
-		selection.VersionProfileID != typeScriptBrowserVersionProfileV1 {
-		t.Fatalf("selection=%+v error=%v", selection, err)
+		selection.VersionProfileID != typeScriptBrowserVersionProfileV1 || calls != 1 {
+		t.Fatalf("selection=%+v calls=%d error=%v", selection, calls, err)
+	}
+
+	_, err = selectDirectCodingProject(
+		typedWorkerRuntime{
+			Context: context.Background(), MaxAttempts: 1,
+			Execute: testPortableExecutor(func(_, _, _ string) (string, error) {
+				return assemblyline.ApplicationProjectStackUnsupported, nil
+			}),
+		}, func() (string, error) { return "constraint-model", nil },
+		"Build the browser application using an incompatible technical format.",
+		specification, manifest, nil,
+	)
+	if err == nil || !strings.Contains(err.Error(), "unsupported or contradictory") {
+		t.Fatalf("manifest conflict error=%v", err)
 	}
 }
 
@@ -79,7 +138,8 @@ func TestProjectStackSelectionUsesRegisteredPHPServiceStack(t *testing.T) {
 		}),
 	}
 	selection, err := selectDirectCodingProject(
-		runtime, func() (string, error) { return "constraint-model", nil }, specification, nil, nil,
+		runtime, func() (string, error) { return "constraint-model", nil },
+		"Build a PHP service.", specification, nil, nil,
 	)
 	if err != nil || selection.Stack.ID != genericPHPServiceAdapter ||
 		selection.VersionProfileID != phpServiceVersionProfileV1 {
@@ -132,6 +192,7 @@ func TestGreenfieldProjectStackSelectionUsesExplicitRegisteredNondefaultVersionP
 	}
 	selection, err := selectDirectCodingProjectFromRegistries(
 		runtime, func() (string, error) { return "constraint-model", nil },
+		"Build the command-line application using Go 1.25.0.",
 		specification, nil, nil, registeredDirectCodingProjectStacks(), profiles,
 	)
 	if err != nil || calls != 1 || selection.Stack.ID != genericGoCommandLineAdapter ||
@@ -158,6 +219,7 @@ func TestGreenfieldProjectStackSelectionUnconstrainedUsesCodeOwnedDefaultProfile
 	}
 	selection, err := selectDirectCodingProjectFromRegistries(
 		runtime, func() (string, error) { return "constraint-model", nil },
+		"Build a command-line application.",
 		specification, nil, nil, registeredDirectCodingProjectStacks(), profiles,
 	)
 	if err != nil || calls != 1 || selection.Stack.ID != genericGoCommandLineAdapter ||

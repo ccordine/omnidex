@@ -3,12 +3,12 @@ package worker
 import (
 	"fmt"
 	"sort"
-	"strings"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
 )
 
 func directCodingTargetTreeInput(
+	request string,
 	specification assemblyline.ApplicationSpecification,
 	workload assemblyline.FrozenApplicationWorkload,
 	stack directCodingProjectStack,
@@ -46,7 +46,7 @@ func directCodingTargetTreeInput(
 	}
 	sort.Strings(managedPaths)
 	input := assemblyline.TargetTreeInput{
-		Objective:        directCodingCompleteTargetTreeObjective(specification, workload),
+		Objective:        request,
 		TechnicalContext: technicalContext,
 		Constraints:      stack.TargetTreeConstraints,
 		ExistingPaths:    managedPaths,
@@ -66,18 +66,4 @@ func directCodingTargetTreeInput(
 		return assemblyline.TargetTreeInput{}, err
 	}
 	return input, nil
-}
-
-func directCodingCompleteTargetTreeObjective(
-	specification assemblyline.ApplicationSpecification,
-	workload assemblyline.FrozenApplicationWorkload,
-) string {
-	sections := []string{"Product context: " + specification.ProductQuote}
-	for index, task := range workload.Tasks {
-		sections = append(sections, fmt.Sprintf(
-			"Accepted goal %d: %s",
-			index+1, task.RequirementQuote,
-		))
-	}
-	return strings.Join(sections, "\n")
 }

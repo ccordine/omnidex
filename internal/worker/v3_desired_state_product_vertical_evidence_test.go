@@ -230,8 +230,10 @@ func assertDesiredStateProductMutationEvidence(
 	if test.present {
 		wantTarget = 1
 	}
+	// The ordinary front door, coding baseline, and verified post-state each
+	// persist snapshot evidence; identical snapshot identities remain deduplicated.
 	if snapshots != 2 || currentTarget != wantTarget || graphEvidence != 1 ||
-		snapshotIndexEvidence != 2 || analysisIndexEvidence != 2 {
+		snapshotIndexEvidence != 3 || analysisIndexEvidence != 2 {
 		t.Fatalf(
 			"reindex evidence snapshots=%d target=%d graph=%d snapshot_index=%d analysis_index=%d",
 			snapshots, currentTarget, graphEvidence,

@@ -81,8 +81,8 @@ func TestPostgresSemanticUncertaintyContractAuthorityIsExact(t *testing.T) {
 	}
 
 	want := map[string]string{
-		"station_gap_openings_semantic_uncertainty_shape":  "ab24dce607eb8b487a5428124003ff8d1936cfb4119613741a79436952cc9583",
-		"station_gap_openings_semantic_uncertainty_digest": "e2a7b97bdf12e8edfc0f9625a528d2ec0b00d3fd846405c01a8c37274bced6ea",
+		"station_gap_openings_semantic_uncertainty_shape_v2": "d1362ee39bc6a61eb5c3b204e20215f8b3f1da5544f76fb423b0f588c2cf68c0",
+		"station_gap_openings_semantic_uncertainty_digest":   "e2a7b97bdf12e8edfc0f9625a528d2ec0b00d3fd846405c01a8c37274bced6ea",
 	}
 	got := stationGapOpeningConstraintHashes(t, pool, stationGapOpeningMapKeys(want))
 	for name, digest := range want {
@@ -136,6 +136,7 @@ func TestPostgresSemanticUncertaintyAuthorityRejectsImmutableHistory(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
+	opening = freezeHistoricalRawStationGapV5(t, opening)
 	if _, err := pool.Exec(t.Context(), `
 		INSERT INTO station_gap_openings (
 			job_id,generation,step_id,step_attempt,worker_id,gap_id,station,scope,

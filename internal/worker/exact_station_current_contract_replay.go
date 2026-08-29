@@ -92,5 +92,8 @@ func replayCurrentPortableStation(
 	result.Temperature = prepared.Temperature
 	result.PreparedRequest = string(request)
 	result.PreparedRequestSHA256 = replaySHA256(result.PreparedRequest)
-	return executeExactStationReplayPrepared(ctx, client, result, job, gap.ContextTokens, prepared)
+	return executeExactStationReplayPrepared(
+		ctx, client, result, job, assemblyline.PortableRendererV8,
+		gap.ContextTokens, prepared,
+	)
 }

@@ -64,12 +64,15 @@ func TestDirectCodingTaskBehaviorContainsNoPlannerExpansion(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, required := range []string{
-		string(specification.Surface), specification.ProductQuote,
-		specification.Requirements[0].SourceQuote,
+		string(specification.Surface), specification.Requirements[0].SourceQuote,
 	} {
 		if !strings.Contains(behavior, required) {
 			t.Fatalf("task behavior omitted exact authority %q: %s", required, behavior)
 		}
+	}
+	if strings.Contains(behavior, specification.ProductQuote) ||
+		strings.Contains(behavior, "Authoritative product context:") {
+		t.Fatalf("task behavior received aggregate product context: %s", behavior)
 	}
 	for _, forbidden := range []string{
 		"Derived implementation objective", "Derived build decision",
@@ -78,5 +81,46 @@ func TestDirectCodingTaskBehaviorContainsNoPlannerExpansion(t *testing.T) {
 		if strings.Contains(behavior, forbidden) {
 			t.Fatalf("task behavior contains planner expansion %q: %s", forbidden, behavior)
 		}
+	}
+}
+
+func TestDirectCodingTaskBehaviorIsolatesRequirementsAcrossSurfaces(t *testing.T) {
+	t.Parallel()
+	for _, surface := range []assemblyline.ApplicationSurface{
+		assemblyline.ApplicationSurfaceBrowser,
+		assemblyline.ApplicationSurfaceCommandLine,
+	} {
+		surface := surface
+		t.Run(string(surface), func(t *testing.T) {
+			t.Parallel()
+			specification := assemblyline.ApplicationSpecification{
+				Surface: surface, ProductQuote: "aggregate product context sentinel",
+				Requirements: []assemblyline.Requirement{
+					{ID: "requirement_001", SourceQuote: "Display the current reading."},
+					{ID: "requirement_002", SourceQuote: "Export the retained history."},
+				},
+			}
+			workload, err := assemblyline.FreezeApplicationWorkload(specification)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for index, task := range workload.Tasks {
+				context, err := assemblyline.ProjectApplicationTaskContext(workload, task.ID)
+				if err != nil {
+					t.Fatal(err)
+				}
+				behavior, err := compileDirectCodingApplicationTaskBehavior(context, nil)
+				if err != nil {
+					t.Fatal(err)
+				}
+				own := specification.Requirements[index].SourceQuote
+				sibling := specification.Requirements[1-index].SourceQuote
+				if !strings.Contains(behavior, own) ||
+					strings.Contains(behavior, sibling) ||
+					strings.Contains(behavior, specification.ProductQuote) {
+					t.Fatalf("task %s projection is not isolated: %s", task.ID, behavior)
+				}
+			}
+		})
 	}
 }

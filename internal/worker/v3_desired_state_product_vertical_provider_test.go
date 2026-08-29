@@ -105,7 +105,7 @@ func desiredStateProductResponse(
 	case strings.Contains(prompt, "Return one explicit workspace-change requirement"):
 		source, err := desiredStateProductRequirementSource(prompt)
 		return source, assemblyline.WorkRepositoryRequirement, err
-	case strings.Contains(prompt, "FOCUSED_DECLARATION"):
+	case strings.Contains(prompt, "EXACT_GO_SIGNATURE:"):
 		return string(assemblyline.DeclarationBoundaryIndependentArtifact),
 			assemblyline.WorkDeclarationArtifactBoundary, nil
 	case strings.Contains(prompt, "does the exact requirement explicitly require one semantic artifact established by repository authority"):

@@ -116,6 +116,21 @@ func validateDirectCodingArtifactRegistriesFrom(
 				stack.ID,
 			)
 		}
+		if (stack.RuntimeCapabilities != nil) != (stack.BindRuntimeCapabilities != nil) {
+			return fmt.Errorf(
+				"project stack %s must bind runtime capability registry and source projection together",
+				stack.ID,
+			)
+		}
+		if stack.RuntimeCapabilities != nil {
+			capabilities, err := stack.RuntimeCapabilities()
+			if err != nil {
+				return fmt.Errorf("project stack %s runtime capability registry: %w", stack.ID, err)
+			}
+			if err := validateDirectCodingRuntimeCapabilityRegistry(capabilities); err != nil {
+				return fmt.Errorf("project stack %s runtime capability registry: %w", stack.ID, err)
+			}
+		}
 		if stack.Deployment != nil {
 			if stack.CompileServiceSource == nil {
 				return fmt.Errorf("project stack %s cannot deploy without an HTTP compiler", stack.ID)

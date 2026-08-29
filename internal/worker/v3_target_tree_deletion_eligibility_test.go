@@ -18,6 +18,7 @@ func TestCodingDriverGrantsDeletionOnlyToAdapterRecognizedManagedFiles(t *testin
 		t.Fatal(err)
 	}
 	input, err := directCodingTargetTreeInput(
+		"inventory request",
 		specification,
 		workload,
 		stack,

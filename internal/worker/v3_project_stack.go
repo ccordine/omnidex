@@ -22,12 +22,17 @@ type directCodingProjectStack struct {
 	TargetTreeReservedPaths      []string
 	TaskStageStaticPaths         []string
 	TaskStageOptionalStaticPaths []string
-	ProjectTaskStaticFiles       func(directCodingProgram, directCodingProgram) ([]directCodingFileTask, error)
-	ProjectCompleteTargetTree    func(directCodingTargetTreeOccupation) (assemblyline.TargetTree, error)
-	ProjectFocusedTargetTree     func(int, directCodingTargetTreeOccupation) (assemblyline.TargetTree, error)
-	CompileSource                directCodingProjectCompiler
-	CompileServiceSource         directCodingServiceProjectCompiler
-	ValidateServiceState         func(
+	RuntimeCapabilities          func() ([]directCodingRuntimeCapability, error)
+	BindRuntimeCapabilities      func(
+		directCodingProgram,
+		directCodingRuntimeCapabilityGraph,
+	) (directCodingProgram, error)
+	ProjectTaskStaticFiles    func(directCodingProgram, directCodingProgram) ([]directCodingFileTask, error)
+	ProjectCompleteTargetTree func(directCodingTargetTreeOccupation) (assemblyline.TargetTree, error)
+	ProjectFocusedTargetTree  func(int, directCodingTargetTreeOccupation) (assemblyline.TargetTree, error)
+	CompileSource             directCodingProjectCompiler
+	CompileServiceSource      directCodingServiceProjectCompiler
+	ValidateServiceState      func(
 		assemblyline.FrozenApplicationWorkload,
 		directCodingServiceStatePlan,
 	) error
@@ -129,6 +134,8 @@ func registeredDirectCodingProjectStacks() []directCodingProjectStack {
 			TargetTreeReservedPaths:  []string{"main.go", "runtime.go"},
 			ProjectFocusedTargetTree: projectGoCommandLineFocusedTargetTree,
 			TaskStageStaticPaths:     []string{"go.mod"},
+			RuntimeCapabilities:      directCodingGoRuntimeCapabilities,
+			BindRuntimeCapabilities:  bindDirectCodingGoRuntimeCapabilities,
 			CompileSource:            compileGenericGoCommandLineBlueprint,
 			ValidateTargetTree:       validateGoCommandLineTargetTree,
 			ValidateBlueprint:        assemblyline.ValidateGoSourceBlueprint,

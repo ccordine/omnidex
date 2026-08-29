@@ -147,6 +147,38 @@ func TestDirectCodingSemanticLeafKeepsTypedHTTPValuesOutsideFilesystemGrammar(t 
 	}
 }
 
+func TestDirectCodingSemanticLeafUsesQuotedSourceGrammarOnlyForRepairGuidance(t *testing.T) {
+	t.Parallel()
+	for _, candidate := range []string{
+		`Set the placard to "Gallery [temporary]\nHours:\n  09:00-17:00".`,
+		`Replace the displayed literal with "Ready\nWaiting".`,
+	} {
+		if err := validateDirectCodingSemanticCandidatePathBoundary(
+			assemblyline.WorkTypeScriptRepairGuidance, candidate,
+			assemblyline.ArtifactIdentityProvenance{},
+		); err != nil {
+			t.Fatalf("repair guidance %q error=%v", candidate, err)
+		}
+		if err := validateDirectCodingSemanticCandidatePathBoundary(
+			assemblyline.WorkApplicationProductContext, candidate,
+			assemblyline.ArtifactIdentityProvenance{},
+		); err == nil {
+			t.Fatalf("ordinary semantic result %q received repair-source grammar", candidate)
+		}
+	}
+	for _, candidate := range []string{
+		`Set the returned string to "../private/value".`,
+		`Set the returned string to "C:\\private\\value".`,
+	} {
+		if err := validateDirectCodingSemanticCandidatePathBoundary(
+			assemblyline.WorkTypeScriptRepairGuidance, candidate,
+			assemblyline.ArtifactIdentityProvenance{},
+		); err == nil {
+			t.Fatalf("repair guidance accepted path %q", candidate)
+		}
+	}
+}
+
 func mustApplicationContextForSemanticLeafTest(
 	t *testing.T,
 	request string,

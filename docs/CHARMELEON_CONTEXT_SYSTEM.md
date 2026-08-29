@@ -268,11 +268,14 @@ machine passes its executable gates:
    code alternates one raw context-need coverage call with one raw question call only while
    coverage remains; it resolves each decoded question through a registered deterministic
    provider and formalizes selected evidence as compact source-backed facts. A separate raw call
-   returns the product context. Code then alternates one raw requirement-coverage call with one
-   raw requirement call only while coverage remains and assembles the typed intent itself. A model
+   returns only the product/domain identity. Code retains that identity outside the model-visible
+   task-local runtime requirement fixed point, then alternates one raw requirement-coverage call
+   with one raw requirement call only while source-owning runtime behavior remains and assembles
+   the typed intent itself. Surface, technical/structural format, generic test/build, and deployment
+   constraints stay outside this fixed point and are consumed by their narrow code-owned owners. A model
    is not called merely to emit, accept, reject, or restate the aggregate intent.
    Substring, interval, overlap, source-order, punctuation, and exact-quote allocation are not
-   authority checks. Code projects each accepted requirement directly into one frozen task in
+   authority checks. Code projects each accepted task-local runtime implementation requirement directly into one frozen task in
    accepted source order. The task contains only its code-owned task identity, requirement identity,
    and exact accepted requirement; there are no objective, behavior, acceptance-criterion,
    dependency, schedule, or completion model calls. Code validates every leaf and assembles the
@@ -281,6 +284,8 @@ machine passes its executable gates:
    Code preserves user authority separately from derived build decisions, assigns identity and
    order, freezes only validated state, executes one task at a time with
    the minimum sufficient authoritative task projection, and alone decides completion. A
+   task-local source projection contains its exact accepted requirement and direct declared
+   capabilities, but no aggregate product summary or sibling requirement. A
    static code-owned harness alone renders the exact public feature with its runtime and capability
    identity. The generated acceptance declaration receives no render, JSX, component, runtime, or
    source authority and is source-free inventoried before it executes. Code binds the closed awaited

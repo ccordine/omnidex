@@ -85,6 +85,7 @@ func exactStationReplayUsesSpecializedProjection(kind assemblyline.WorkKind) boo
 	case assemblyline.WorkApplicationTargetTree,
 		assemblyline.WorkTypeScriptRepairGuidance,
 		assemblyline.WorkFragmentGeneration,
+		assemblyline.WorkFragmentGenerationReplacement,
 		assemblyline.WorkFragmentModification,
 		assemblyline.WorkFragmentCorrection:
 		return true

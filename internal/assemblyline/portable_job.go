@@ -50,6 +50,27 @@ func newPortableJob(kind WorkKind, input any) (PortableJob, error) {
 }
 
 func (job PortableJob) Validate() error {
+	if err := job.validateIdentity(); err != nil {
+		return err
+	}
+	return validatePortableJobPayload(job.Kind, job.Payload)
+}
+
+// ValidatePortableJobForRenderer binds payload shape to the renderer that
+// owns it. Current code cannot reinterpret a frozen historical input through
+// a newer prompt contract, and historical replay cannot accept a current-only
+// input as if those bytes had existed under an older renderer.
+func ValidatePortableJobForRenderer(job PortableJob, renderer string) error {
+	if !IsReplayablePortableRenderer(renderer) {
+		return fmt.Errorf("portable renderer %q is not registered", renderer)
+	}
+	if err := job.validateIdentity(); err != nil {
+		return err
+	}
+	return validatePortableJobPayloadForRenderer(job.Kind, job.Payload, renderer)
+}
+
+func (job PortableJob) validateIdentity() error {
 	if job.Schema != PortableJobSchemaV2 {
 		return fmt.Errorf("portable job schema must be %q", PortableJobSchemaV2)
 	}
@@ -75,7 +96,7 @@ func (job PortableJob) Validate() error {
 		return fmt.Errorf("portable job id does not match its immutable content")
 	}
 
-	return validatePortableJobPayload(job.Kind, job.Payload)
+	return nil
 }
 
 func portableJobDigest(schema string, kind WorkKind, payload []byte) string {

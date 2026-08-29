@@ -72,6 +72,13 @@ func DecodeTypeScriptRepairGuidanceResult(
 	if err := guidance.Validate(); err != nil {
 		return guidance, err
 	}
+	var input FragmentRepairGuidanceInput
+	if err := decodePortablePayload(job.Payload, &input); err != nil {
+		return guidance, err
+	}
+	if err := validateFragmentRepairGuidanceInstruction(input, guidance.Instruction); err != nil {
+		return guidance, err
+	}
 	return guidance, nil
 }
 
@@ -168,7 +175,7 @@ func (guidance TypeScriptRepairGuidance) Validate() error {
 			maxTypeScriptRepairGuidanceBytes,
 		)
 	}
-	if err := ValidatePathFreeModelContext(
+	if err := ValidatePathFreeRepairInstructionModelContext(
 		"TypeScript repair guidance result", guidance.Instruction,
 	); err != nil {
 		return err
@@ -179,7 +186,7 @@ func (guidance TypeScriptRepairGuidance) Validate() error {
 func (guidance TypeScriptRepairGuidance) ValidatePathFree(
 	provenance ArtifactIdentityProvenance,
 ) error {
-	return ValidatePathFreeModelContextWithProvenance(
+	return ValidatePathFreeRepairInstructionModelContextWithProvenance(
 		"TypeScript repair guidance result", provenance, guidance.Instruction,
 	)
 }

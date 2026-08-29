@@ -45,7 +45,7 @@ func TestPostgresTerminalPlainWorkspaceRecoveryReturnsBeforeReclassification(t *
 		t.Fatalf("claim=%+v error=%v", claim, err)
 	}
 	service := &Service{
-		repo: repository, logger: log.New(io.Discard, "", 0),
+		repo: repository, logger: log.New(io.Discard, "", 0), workspaceRoot: root,
 	}
 	runtime := &nativeRuntimeV3{
 		svc: service, ctx: ctx, claim: claim, action: "v3_coding",

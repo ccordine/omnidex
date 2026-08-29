@@ -90,7 +90,7 @@ func TestPostgresStationOutcomeStoresOnlyExactProjectedTypeScriptSpan(t *testing
 	if _, err := repository.CloseStationGap(t.Context(), StationGapTerminalRecord{
 		Authority: claim.Authority, OpeningID: gap.ID, GapID: gap.GapID,
 		Status: StationGapResolved, Response: source, Projection: &forged,
-	}); err == nil || !strings.Contains(err.Error(), "projection differs") {
+	}); err == nil || !strings.Contains(err.Error(), "exact full response") {
 		t.Fatalf("forged projected span error=%v", err)
 	}
 	outcome, err := repository.CloseStationGap(t.Context(), StationGapTerminalRecord{

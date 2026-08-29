@@ -50,6 +50,7 @@ func loadStationModels(_ Config) map[station.ID]string {
 		station.CodingArtifactCandidateSelection:     "OMNI_CODING_ARTIFACT_HANDLING_MODEL",
 		station.CodingCapabilityRelation:             "OMNI_CODING_CAPABILITY_RELATION_MODEL",
 		station.CodingSkillSelection:                 "OMNI_CODING_SKILL_SELECTION_MODEL",
+		station.CodingRuntimeCapabilitySelection:     "OMNI_CODING_CAPABILITY_RELATION_MODEL",
 		station.CodingFragment:                       "OMNI_CODING_FRAGMENT_MODEL",
 		station.CodingFragmentRepairGuidance:         "OMNI_CODING_FRAGMENT_REPAIR_GUIDANCE_MODEL",
 		station.CodingFragmentCorrection:             "OMNI_CODING_FRAGMENT_CORRECTION_MODEL",

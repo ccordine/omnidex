@@ -113,7 +113,8 @@ func ReplayExactStation(
 	result.ExpectedIdentity = expected
 	result.Temperature = prepared.Temperature
 	return executeExactStationReplayPrepared(
-		ctx, client, result, boundary.Job, point.Gap.ContextTokens, prepared,
+		ctx, client, result, boundary.Job, point.Gap.RendererVersion,
+		point.Gap.ContextTokens, prepared,
 	)
 }
 
@@ -199,11 +200,45 @@ func replayExactStationArtifact(
 	job assemblyline.PortableJob,
 	raw string,
 ) (ExactStationReplayArtifact, error) {
+	return replayExactStationArtifactForRenderer(
+		job, assemblyline.PortableRendererV8, raw,
+	)
+}
+
+func replayExactStationArtifactForRenderer(
+	job assemblyline.PortableJob,
+	renderer string,
+	raw string,
+) (ExactStationReplayArtifact, error) {
 	artifact := ExactStationReplayArtifact{
 		Kind: "exact_final_response", Source: raw, SourceSHA256: replaySHA256(raw),
 		StartByte: 0, EndByte: len(raw),
 	}
 	switch job.Kind {
+	case assemblyline.WorkApplicationRequirementCoverage:
+		artifact.Kind = string(job.Kind)
+		if _, err := assemblyline.DecodeApplicationRequirementCoverageLeafForPortableRenderer(
+			job.Payload, renderer, raw,
+		); err != nil {
+			return artifact, fmt.Errorf("decode replay application requirement coverage: %w", err)
+		}
+		return artifact, nil
+	case assemblyline.WorkApplicationRequirement:
+		artifact.Kind = string(job.Kind)
+		if _, err := assemblyline.DecodeApplicationRequirementLeafForPortableRenderer(
+			job.Payload, renderer, raw,
+		); err != nil {
+			return artifact, fmt.Errorf("decode replay application requirement: %w", err)
+		}
+		return artifact, nil
+	case assemblyline.WorkApplicationProjectStackConstraint:
+		artifact.Kind = string(job.Kind)
+		if _, err := assemblyline.DecodeApplicationProjectStackConstraintDecisionForPortableRenderer(
+			job.Payload, renderer, raw,
+		); err != nil {
+			return artifact, fmt.Errorf("decode replay project stack constraint: %w", err)
+		}
+		return artifact, nil
 	case assemblyline.WorkApplicationTargetTree:
 		artifact.Kind = "application_target_tree"
 		var input assemblyline.TargetTreeInput

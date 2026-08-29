@@ -52,7 +52,9 @@ func runDirectCodingGoFragmentGenerationWorker(
 		Model: modelName, Attempt: 1, MaxAttempts: directCodingGoModelAttempts,
 		PromptBytes: len(prompt), CapabilityBytes: goGenerationCapabilityBytes(job.Input),
 	})
-	result, err := runtime.Execute(baseJob, modelName)
+	baseJob, result, err := executeInitialFragmentGenerationWithReplacement(
+		runtime, baseJob, job.Input, modelName,
+	)
 	if err != nil {
 		return "", failDirectCodingGoGeneration(runtime, modelName, job.Subject, 1, err)
 	}
@@ -64,9 +66,9 @@ func runDirectCodingGoFragmentGenerationWorker(
 	candidate := projection.Source
 	if candidateErr == nil {
 		result.Projection = &projection
-		_, candidateErr = gofragment.ParseNewFunction(
-			job.Input.Signature, job.Input.PermittedSymbols, candidate,
-		)
+		permitted := append([]string(nil), job.Input.Capabilities...)
+		permitted = append(permitted, job.Input.PermittedSymbols...)
+		_, candidateErr = gofragment.ParseNewFunction(job.Input.Signature, permitted, candidate)
 	}
 	if candidateErr == nil {
 		candidateErr = assemblyline.ValidatePathFreeSourceModelContextWithProvenance(

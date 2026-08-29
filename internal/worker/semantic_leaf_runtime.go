@@ -39,6 +39,7 @@ func validateDirectCodingSemanticCandidatePathBoundary(
 	switch kind {
 	case assemblyline.WorkApplicationTargetTree,
 		assemblyline.WorkFragmentGeneration,
+		assemblyline.WorkFragmentGenerationReplacement,
 		assemblyline.WorkFragmentModification,
 		assemblyline.WorkFragmentCorrection:
 		return fmt.Errorf(
@@ -58,6 +59,10 @@ func validateDirectCodingSemanticCandidatePathBoundary(
 			)
 		}
 		return nil
+	case assemblyline.WorkTypeScriptRepairGuidance:
+		return assemblyline.ValidatePathFreeRepairInstructionModelContextWithProvenance(
+			"coding semantic result", provenance, candidate,
+		)
 	default:
 		return assemblyline.ValidatePathFreeModelContextWithProvenance(
 			"coding semantic result", provenance, candidate,

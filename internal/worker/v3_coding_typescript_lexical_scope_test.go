@@ -326,7 +326,17 @@ func TestTypeScriptScopeInspectorRequiresExactCodeOwnedSource(t *testing.T) {
 func TestTypeScriptCompilerScopeProjectionKeepsCodeSyntaxAndRejectsCompilerPaths(t *testing.T) {
 	t.Parallel()
 	valid := directCodingTypeScriptScope{
-		Bindings: []assemblyline.TypeScriptRepairBinding{{Name: "value", Type: "string"}},
+		Bindings: []assemblyline.TypeScriptRepairBinding{
+			{Name: "value", Type: "string"},
+			{
+				Name: "handleInput", Type: "(e: React.ChangeEvent<HTMLInputElement>) => void",
+				CallableSignatures: []string{"(e: React.ChangeEvent<HTMLInputElement>) => void"},
+			},
+			{
+				Name: "handlePointer", Type: "(x: PointerEvent) => boolean",
+				CallableSignatures: []string{"(x: PointerEvent) => boolean"},
+			},
+		},
 		ExpressionEvidence: []assemblyline.TypeScriptRepairExpressionEvidence{{
 			Source:       `element.textContent.includes('\\d+')`,
 			InferredType: "boolean",
@@ -343,6 +353,73 @@ func TestTypeScriptCompilerScopeProjectionKeepsCodeSyntaxAndRejectsCompilerPaths
 	}}
 	if err := validateDirectCodingTypeScriptCompilerScopeModelProjection(pathBearingType); err == nil {
 		t.Fatal("path-bearing compiler type was accepted")
+	}
+
+	pathBearingBinding := valid
+	pathBearingBinding.Bindings = []assemblyline.TypeScriptRepairBinding{{
+		Name: "load", Type: `typeof import("/private/staged/source").load`,
+	}}
+	if err := validateDirectCodingTypeScriptCompilerScopeModelProjection(pathBearingBinding); err == nil {
+		t.Fatal("path-bearing compiler binding type was accepted")
+	}
+}
+
+func TestTypeScriptCompilerScopeProjectsBeforeModelVisibleValidation(t *testing.T) {
+	t.Parallel()
+	for _, testCase := range []struct {
+		name          string
+		referenced    assemblyline.TypeScriptRepairBinding
+		unrelatedPath assemblyline.TypeScriptRepairBinding
+		evidence      assemblyline.TypeScriptRepairExpressionEvidence
+	}{
+		{
+			name:          "telemetry reading",
+			referenced:    assemblyline.TypeScriptRepairBinding{Name: "metric", Type: "MetricState"},
+			unrelatedPath: assemblyline.TypeScriptRepairBinding{Name: "loadArchive", Type: `typeof import("/private/staged/archive").loadArchive`},
+			evidence: assemblyline.TypeScriptRepairExpressionEvidence{
+				Source: "metric.reading ?? 0", InferredType: "number | string",
+				ContextualType: "number", IncompatibleTypes: []string{"string"},
+				ReferencedBindings: []string{"metric"},
+			},
+		},
+		{
+			name:          "catalog label",
+			referenced:    assemblyline.TypeScriptRepairBinding{Name: "entry", Type: "CatalogEntry"},
+			unrelatedPath: assemblyline.TypeScriptRepairBinding{Name: "hydrate", Type: `typeof import("C:\\private\\catalog").hydrate`},
+			evidence: assemblyline.TypeScriptRepairExpressionEvidence{
+				Source: "entry.label ?? ''", InferredType: "number | string",
+				ContextualType: "string", IncompatibleTypes: []string{"number"},
+				ReferencedBindings: []string{"entry"},
+			},
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			projected, err := projectDirectCodingTypeScriptCompilerScopeForModel(
+				directCodingTypeScriptScope{
+					Bindings:           []assemblyline.TypeScriptRepairBinding{testCase.referenced, testCase.unrelatedPath},
+					ExpressionEvidence: []assemblyline.TypeScriptRepairExpressionEvidence{testCase.evidence},
+				},
+			)
+			if err != nil {
+				t.Fatalf("unrelated compiler path was validated before projection: %v", err)
+			}
+			if len(projected.Bindings) != 1 || projected.Bindings[0].Name != testCase.referenced.Name {
+				t.Fatalf("projected bindings=%+v", projected.Bindings)
+			}
+		})
+	}
+
+	selectedPath := directCodingTypeScriptScope{
+		Bindings: []assemblyline.TypeScriptRepairBinding{{
+			Name: "entry", Type: `import("/private/staged/catalog").Entry`,
+		}},
+		ExpressionEvidence: []assemblyline.TypeScriptRepairExpressionEvidence{{
+			Source: "entry.label", InferredType: "number | string", ContextualType: "string",
+			IncompatibleTypes: []string{"number"}, ReferencedBindings: []string{"entry"},
+		}},
+	}
+	if _, err := projectDirectCodingTypeScriptCompilerScopeForModel(selectedPath); err == nil {
+		t.Fatal("path-bearing selected compiler binding was accepted")
 	}
 }
 

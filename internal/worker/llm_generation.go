@@ -26,6 +26,18 @@ func (s *Service) executeExactPortableStation(
 	job assemblyline.PortableJob,
 	modelName string,
 ) (assemblyline.PortableResult, exactStationExecution, error) {
+	return s.executeExactPortableStationWithReplacementOrigin(
+		ctx, authority, job, modelName, nil,
+	)
+}
+
+func (s *Service) executeExactPortableStationWithReplacementOrigin(
+	ctx context.Context,
+	authority model.StepAttemptAuthority,
+	job assemblyline.PortableJob,
+	modelName string,
+	replacementOrigin *queue.StationGapReplacementOrigin,
+) (assemblyline.PortableResult, exactStationExecution, error) {
 	if ctx == nil || s == nil || s.repo == nil {
 		return assemblyline.PortableResult{}, exactStationExecution{}, fmt.Errorf("exact station requires context, worker, and PostgreSQL authority")
 	}
@@ -71,7 +83,8 @@ func (s *Service) executeExactPortableStation(
 		Gap: queue.StationGapOpenRecord{
 			Authority: authority, Job: job, Station: stationID,
 			ContextTokens: contextTokens, MaxOutputTokens: maxOutputTokens,
-			OutputLimitMode: contract.OutputLimitMode,
+			OutputLimitMode:   contract.OutputLimitMode,
+			ReplacementOrigin: replacementOrigin,
 		},
 		Selection: selection,
 	})

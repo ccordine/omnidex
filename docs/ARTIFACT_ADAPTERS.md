@@ -207,9 +207,11 @@ This block is also checked against the executable registry by tests.
   those artifacts and services entirely.
 
 One complete target-tree resolution covers the frozen workload under the
-selected stack. When naming remains semantically unresolved, the model returns
+selected stack. When naming remains semantically unresolved, it receives the
+exact immutable request plus separately code-selected technical tree context and returns
 only one raw hierarchy of directory and file basenames; code alone constructs
-normalized relative paths from that hierarchy. No current stack needs that
+normalized relative paths from that hierarchy. The request is not forwarded to
+source generation. No current stack needs that
 call. TypeScript/React allocates one neutral numbered TSX source/test pair for
 the whole workload; the command-line and PHP stacks allocate their registered
 per-task pairs. Each allocator treats the pair atomically, checks regular-file

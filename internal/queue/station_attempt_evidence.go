@@ -23,11 +23,13 @@ type StationAttemptCallEvidence struct {
 }
 
 // StationAttemptCallEvidence loads every completed provider call for one exact
-// running attempt. Partial gaps, missing receipts, provider failures, and
-// missing llm_call_evidence fail loudly so callers cannot manufacture
-// completion counters from local events. A stored response has no transition
-// authority. Only a separately established code-proven defect may authorize the
-// specifically bounded target-tree replacement or staged compiler repair.
+// running attempt. Partial gaps, missing receipts, unconsumed provider
+// failures, and missing llm_call_evidence fail loudly so callers cannot
+// manufacture completion counters from local events. The sole failed receipt
+// admitted here is an exact length-ended initial fragment consumed by one
+// persisted replacement; its rejected response bytes are withheld. A stored
+// response has no transition authority. Only a separately established
+// code-proven defect may authorize a bounded replacement or staged repair.
 func (r *Repository) StationAttemptCallEvidence(
 	ctx context.Context,
 	authority model.StepAttemptAuthority,
@@ -79,14 +81,20 @@ func (r *Repository) StationAttemptCallEvidence(
 	}
 
 	rows, err := tx.Query(ctx, `
-		SELECT call.id,gap.work_kind,gap.portable_payload,gap.prompt,
+		SELECT call.id,gap.id,receipt.id,gap.work_kind,gap.portable_payload,gap.prompt,
 		       outcome.response,outcome.error,exact.system_prompt,exact.response,
-		       outcome.status,receipt.status,exact.status
+		       outcome.status,receipt.status,exact.status,
+		       receipt.generation_json::jsonb->>'provider_done_reason',
+		       COALESCE(gap.origin_gap_opening_id,0),
+		       COALESCE(gap.origin_call_receipt_id,0),replacement.id
 		FROM station_gap_openings AS gap
 		JOIN station_gap_outcomes AS outcome ON outcome.opening_id=gap.id
 		JOIN station_call_openings AS call ON call.gap_opening_id=gap.id
 		JOIN station_call_receipts AS receipt ON receipt.opening_id=call.id
 		JOIN llm_call_evidence AS exact ON exact.station_call_opening_id=call.id
+		LEFT JOIN station_gap_openings AS replacement
+		  ON replacement.origin_gap_opening_id=gap.id
+		 AND replacement.origin_call_receipt_id=receipt.id
 		WHERE gap.job_id=$1 AND gap.generation=$2 AND gap.step_id=$3
 		  AND gap.step_attempt=$4 AND gap.worker_id=$5
 		ORDER BY gap.id
@@ -101,31 +109,64 @@ func (r *Repository) StationAttemptCallEvidence(
 	for rows.Next() {
 		var item StationAttemptCallEvidence
 		var outcomeResponse, outcomeError, exactResponse *string
-		var exactPrompt, outcomeStatus, receiptStatus, evidenceStatus string
+		var exactPrompt, outcomeStatus, receiptStatus, evidenceStatus, doneReason string
+		var gapOpeningID, callReceiptID, originGapOpeningID, originCallReceiptID int64
+		var replacementOpeningID *int64
 		if err := rows.Scan(
-			&item.OpeningID, &item.WorkKind, &item.Payload, &item.Prompt,
+			&item.OpeningID, &gapOpeningID, &callReceiptID,
+			&item.WorkKind, &item.Payload, &item.Prompt,
 			&outcomeResponse, &outcomeError, &exactPrompt, &exactResponse,
-			&outcomeStatus, &receiptStatus, &evidenceStatus,
+			&outcomeStatus, &receiptStatus, &evidenceStatus, &doneReason,
+			&originGapOpeningID, &originCallReceiptID, &replacementOpeningID,
 		); err != nil {
 			return nil, fmt.Errorf("scan exact station attempt evidence: %w", err)
 		}
-		if receiptStatus != "succeeded" || evidenceStatus != string(LLMEvidenceSucceeded) ||
-			exactResponse == nil || exactPrompt != item.Prompt {
-			return nil, fmt.Errorf("station call %d lacks one successful exact terminal evidence chain", item.OpeningID)
+		if exactPrompt != item.Prompt {
+			return nil, fmt.Errorf(
+				"station call %d prompt differs from its exact terminal evidence chain",
+				item.OpeningID,
+			)
 		}
 		switch StationGapStatus(outcomeStatus) {
 		case StationGapResolved:
-			if outcomeResponse == nil || *outcomeResponse != *exactResponse || outcomeError != nil {
+			if receiptStatus != "succeeded" ||
+				evidenceStatus != string(LLMEvidenceSucceeded) ||
+				exactResponse == nil || outcomeResponse == nil ||
+				*outcomeResponse != *exactResponse || outcomeError != nil {
 				return nil, fmt.Errorf("station call %d resolved outcome differs from its exact response", item.OpeningID)
 			}
+			if item.WorkKind == assemblyline.WorkFragmentGenerationReplacement {
+				if originGapOpeningID < 1 || originCallReceiptID < 1 {
+					return nil, fmt.Errorf(
+						"station call %d replacement lacks exact persisted origin authority",
+						item.OpeningID,
+					)
+				}
+			} else if originGapOpeningID != 0 || originCallReceiptID != 0 {
+				return nil, fmt.Errorf(
+					"station call %d non-replacement claims origin authority",
+					item.OpeningID,
+				)
+			}
+			item.Response = *exactResponse
 		case StationGapFailed:
-			if outcomeResponse != nil || outcomeError == nil || *outcomeError == "" {
+			if outcomeResponse != nil || outcomeError == nil || *outcomeError == "" ||
+				receiptStatus != "failed" ||
+				evidenceStatus != string(LLMEvidenceGenerationFailed) ||
+				exactResponse == nil ||
+				item.WorkKind != assemblyline.WorkFragmentGeneration ||
+				doneReason != "length" || originGapOpeningID != 0 ||
+				originCallReceiptID != 0 || replacementOpeningID == nil ||
+				gapOpeningID < 1 || callReceiptID < 1 {
 				return nil, fmt.Errorf("station call %d rejected outcome lacks exact failure authority", item.OpeningID)
 			}
+			// The rejected prefix remains immutable audit evidence. Completion
+			// accounting counts the call but never exposes those bytes as an
+			// accepted response or downstream source candidate.
+			item.Response = ""
 		default:
 			return nil, fmt.Errorf("station call %d has unregistered gap status %q", item.OpeningID, outcomeStatus)
 		}
-		item.Response = *exactResponse
 		result = append(result, item)
 	}
 	if err := rows.Err(); err != nil {

@@ -18,7 +18,7 @@ func TestTargetTreeInputProjectsOneCurrentAndReservedTree(t *testing.T) {
 		t.Fatal(err)
 	}
 	input, err := directCodingTargetTreeInput(
-		browserSpecification, workload, typeScriptStack,
+		"path authority request", browserSpecification, workload, typeScriptStack,
 		[]string{"src/App.tsx", "src/existing.tsx"},
 		[]string{"src"},
 	)
@@ -30,8 +30,7 @@ func TestTargetTreeInputProjectsOneCurrentAndReservedTree(t *testing.T) {
 	) || !reflect.DeepEqual(input.ReservedPaths, []string{
 		"src/App.test.tsx", "src/App.tsx", "src/main.tsx",
 		"src/runtime.test.tsx", "src/runtime.tsx",
-	}) || !strings.Contains(input.Objective, "Accepted goal 1:") ||
-		!strings.Contains(input.Objective, "Accepted goal 2:") {
+	}) || input.Objective != "path authority request" {
 		t.Fatalf("complete path projection=%+v", input)
 	}
 }
@@ -46,7 +45,7 @@ func TestMechanicallyProjectedStackGetsNonNilPathAuthority(t *testing.T) {
 		t.Fatal(err)
 	}
 	input, err := directCodingTargetTreeInput(
-		specification, workload, stack, []string{}, []string{},
+		"record service request", specification, workload, stack, []string{}, []string{},
 	)
 	if err != nil {
 		t.Fatal(err)

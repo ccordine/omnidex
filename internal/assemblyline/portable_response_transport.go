@@ -28,7 +28,8 @@ func PortableResponseTransportForWorkKind(
 	switch kind {
 	case WorkApplicationTargetTree:
 		return PortableResponseTransportStructuralRaw, nil
-	case WorkFragmentGeneration, WorkFragmentModification, WorkFragmentCorrection:
+	case WorkFragmentGeneration, WorkFragmentGenerationReplacement,
+		WorkFragmentModification, WorkFragmentCorrection:
 		return PortableResponseTransportFragmentRaw, nil
 	default:
 		return PortableResponseTransportSemanticRaw, nil

@@ -5,14 +5,17 @@ import "testing"
 func TestPortableResponseFramingRegistryIsExhaustive(t *testing.T) {
 	natural := map[WorkKind]struct{}{
 		WorkApplicationProductContext: {}, WorkApplicationRequirement: {},
-		WorkApplicationTargetTree: {}, WorkRepositoryRequirement: {},
+		WorkApplicationRequirementCandidateSplit:           {},
+		WorkApplicationRequirementCandidateSplitCorrection: {},
+		WorkApplicationTargetTree:                          {}, WorkRepositoryRequirement: {},
 		WorkContextMinification:  {},
 		WorkConversationResponse: {}, WorkRoleplayGroundedResponseText: {},
 		WorkRoleplayOngoingAction: {}, WorkGroundedAnswerText: {},
 		WorkDatabaseEvidenceGap: {}, WorkWebSynthesisParagraph: {},
 		WorkTypeScriptRepairGuidance: {},
-		WorkFragmentGeneration:       {}, WorkFragmentModification: {},
-		WorkFragmentCorrection: {},
+		WorkFragmentGeneration:       {}, WorkFragmentGenerationReplacement: {},
+		WorkFragmentModification: {},
+		WorkFragmentCorrection:   {},
 	}
 	seen := make(map[WorkKind]struct{}, len(AllWorkKinds()))
 	for _, kind := range AllWorkKinds() {

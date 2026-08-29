@@ -18,8 +18,14 @@ func TestDockerRuntimeUsesTheExactBuilderGoToolchain(t *testing.T) {
 	if !strings.Contains(dockerfile, "ENV PATH=/usr/local/go/bin:") {
 		t.Fatal("Docker runtime PATH does not select the exact builder Go toolchain")
 	}
+	if !strings.Contains(dockerfile, "ENV GOROOT=/usr/local/go") {
+		t.Fatal("Docker runtime must expose the copied toolchain root to trimpath-built binaries")
+	}
 	if !strings.Contains(compose, "PATH: /usr/local/go/bin:") {
 		t.Fatal("Compose must not hide the exact runtime Go toolchain")
+	}
+	if !strings.Contains(compose, "GOROOT: /usr/local/go") {
+		t.Fatal("Compose must preserve the exact runtime Go toolchain root")
 	}
 }
 

@@ -16,6 +16,7 @@ func BuildTypeScriptRepairGuidancePrompt(
 	parts := []string{
 		"Return one self-contained imperative source-transformation instruction that resolves EXACT_VALIDATION_FAILURE in the exact mutable source shown below.",
 		"Return only the raw imperative instruction with no JSON, quotes, label, Markdown wrapper, or commentary.",
+		"Describe the required transformation only; do not provide a complete replacement declaration or source block.",
 		"The instruction must be complete because only it and the exact mutable source will be available when it is applied. Name every required expression change and preservation constraint. Resolve only the observed failure.",
 		"Name at least one concrete source-byte change whose replacement bytes differ from the bytes being replaced. Never prescribe existing source bytes as their own replacement or describe a byte-identical before/after transformation.",
 		"Constrain the instruction to replacing only the exact mutable source. Preserve REQUIRED_DECLARATION_SIGNATURE exactly. Do not require imports, package/module declarations, sibling declarations, or any other change outside that source.",

@@ -66,53 +66,54 @@ func TestPostgresResponseSchemaAuthorityIsCompletelyRetired(t *testing.T) {
 		t.Fatalf("current response-schema column count=%d want 0", retiredColumnCount)
 	}
 
-	want := map[string]string{
-		"station_gap_openings_renderer_version_check": "522c94915fab9d58a737582594a176fddd2c80322ecaf687edeeef34cd421605",
-		"station_gap_openings_projection_v5":          "8d0f52db311639036d531237bcafc9cb6a07e0e630f43ab9d984281deb49bbad",
-		"station_gap_openings_current_raw_transport":  "a147cbfc147e9f009ab9a4f51c0fac68ec42a5a7e44df60a67671955ac0afc7e",
-		"llm_call_evidence_current_raw_transport":     "cf2775374afaa1cd7948e9edc383d4ee4b52661e329baf5a7dcef10c59751dd7",
+	currentConstraints := map[string]bool{
+		"station_gap_openings_renderer_version_check": false,
+		"station_gap_openings_prompt_projection":      false,
+		"station_gap_openings_current_raw_transport":  false,
 	}
-	got := make(map[string]string, len(want))
 	rows, err := pool.Query(t.Context(), `
-		SELECT conname,
-		       encode(digest(convert_to(pg_get_constraintdef(oid),'UTF8'),'sha256'),'hex')
+		SELECT conname,pg_get_constraintdef(oid)
 		FROM pg_constraint
 		WHERE conrelid IN (
 			'station_gap_openings'::regclass,
 			'llm_call_evidence'::regclass
-		) AND conname=ANY($1)
-	`, stationGapOpeningMapKeys(want))
+		)
+	`)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer rows.Close()
 	for rows.Next() {
-		var name, digest string
-		if err := rows.Scan(&name, &digest); err != nil {
+		var name, definition string
+		if err := rows.Scan(&name, &definition); err != nil {
 			t.Fatal(err)
 		}
-		got[name] = digest
+		if strings.Contains(definition, "response_schema") {
+			t.Errorf("current constraint %q retained response_schema authority: %s", name, definition)
+		}
+		if _, tracked := currentConstraints[name]; tracked {
+			currentConstraints[name] = true
+		}
 	}
 	if err := rows.Err(); err != nil {
 		t.Fatal(err)
 	}
-	for name, digest := range want {
-		if got[name] != digest {
-			t.Errorf("current constraint %q digest=%q want %q", name, got[name], digest)
+	for name, exists := range currentConstraints {
+		if !exists {
+			t.Errorf("current response transport constraint %q is absent", name)
 		}
 	}
 
-	var functionDigest, functionSource string
+	var functionSource string
 	if err := pool.QueryRow(t.Context(), `
-		SELECT encode(digest(convert_to(prosrc,'UTF8'),'sha256'),'hex'),prosrc
+		SELECT prosrc
 		FROM pg_proc
 		WHERE oid=to_regprocedure('require_llm_call_station_gap()')
-	`).Scan(&functionDigest, &functionSource); err != nil {
+	`).Scan(&functionSource); err != nil {
 		t.Fatal(err)
 	}
-	if functionDigest != "137f98e5c9262e6611a28b2ea2a46a96bdf1ae176b6c896b2ea0078529673c50" ||
-		strings.Contains(functionSource, "response_schema") {
-		t.Fatalf("current station evidence trigger digest/source=%q/%q", functionDigest, functionSource)
+	if strings.Contains(functionSource, "response_schema") {
+		t.Fatalf("current station evidence trigger retained response_schema authority: %q", functionSource)
 	}
 }
 

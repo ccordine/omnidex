@@ -127,6 +127,9 @@ func TestCheckedMigrationBundleFreezesExactProviderSplitSet(t *testing.T) {
 	responseSchemaAuthorityRetirementCount := 0
 	semanticUncertaintyContractAuthorityCount := 0
 	llmEvidenceTransportIdentityCutoverCount := 0
+	runtimeCapabilitySelectionCount := 0
+	portableRendererV7ApplicationIntentUncertaintyCount := 0
+	portableRendererV8RequirementCoverageAuthorityCount := 0
 	for _, entry := range bundle.entries {
 		if strings.HasPrefix(entry.name, "060_") {
 			got[entry.name]++
@@ -365,9 +368,18 @@ func TestCheckedMigrationBundleFreezesExactProviderSplitSet(t *testing.T) {
 		if entry.name == "183_llm_evidence_transport_identity_cutover.sql" {
 			llmEvidenceTransportIdentityCutoverCount++
 		}
+		if entry.name == runtimeCapabilitySelectionMigration {
+			runtimeCapabilitySelectionCount++
+		}
+		if entry.name == portableRendererV7ApplicationIntentUncertaintyMigration {
+			portableRendererV7ApplicationIntentUncertaintyCount++
+		}
+		if entry.name == portableRendererV8RequirementCoverageAuthorityMigration {
+			portableRendererV8RequirementCoverageAuthorityCount++
+		}
 	}
-	if len(bundle.entries) != 234 || len(got) != len(want) {
-		t.Fatalf("checked migration counts total/provider=%d/%d want 234/%d",
+	if len(bundle.entries) != 240 || len(got) != len(want) {
+		t.Fatalf("checked migration counts total/provider=%d/%d want 240/%d",
 			len(bundle.entries), len(got), len(want))
 	}
 	for _, name := range want {
@@ -502,6 +514,24 @@ func TestCheckedMigrationBundleFreezesExactProviderSplitSet(t *testing.T) {
 		t.Fatalf(
 			"checked generated workload deployment journal migration count=%d want 1",
 			generatedWorkloadDeploymentJournalCount,
+		)
+	}
+	if runtimeCapabilitySelectionCount != 1 {
+		t.Fatalf(
+			"checked runtime capability selection migration count=%d want 1",
+			runtimeCapabilitySelectionCount,
+		)
+	}
+	if portableRendererV7ApplicationIntentUncertaintyCount != 1 {
+		t.Fatalf(
+			"checked renderer V7 application-intent uncertainty migration count=%d want 1",
+			portableRendererV7ApplicationIntentUncertaintyCount,
+		)
+	}
+	if portableRendererV8RequirementCoverageAuthorityCount != 1 {
+		t.Fatalf(
+			"checked renderer V8 requirement coverage authority migration count=%d want 1",
+			portableRendererV8RequirementCoverageAuthorityCount,
 		)
 	}
 	if generatedWorkloadDeploymentEvidenceCount != 1 ||

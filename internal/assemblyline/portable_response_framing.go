@@ -19,6 +19,8 @@ func PortableResponseFramingForWorkKind(
 	switch kind {
 	case WorkApplicationProductContext,
 		WorkApplicationRequirement,
+		WorkApplicationRequirementCandidateSplit,
+		WorkApplicationRequirementCandidateSplitCorrection,
 		WorkApplicationTargetTree,
 		WorkRepositoryRequirement,
 		WorkContextMinification,
@@ -30,12 +32,14 @@ func PortableResponseFramingForWorkKind(
 		WorkWebSynthesisParagraph,
 		WorkTypeScriptRepairGuidance,
 		WorkFragmentGeneration,
+		WorkFragmentGenerationReplacement,
 		WorkFragmentModification,
 		WorkFragmentCorrection:
 		return PortableResponseFramingNaturalMultiline, nil
 	case WorkApplicationContextNeedCoverage,
 		WorkApplicationContextNeedQuestion,
 		WorkApplicationRequirementCoverage,
+		WorkApplicationRequirementCandidateCardinality,
 		WorkApplicationProjectStackConstraint,
 		WorkApplicationServiceContinuedAvailability,
 		WorkApplicationServicePersistenceDestination,
@@ -101,7 +105,8 @@ func PortableResponseFramingForWorkKind(
 		WorkDeclarationArtifactBoundary,
 		WorkArtifactCandidateSelection,
 		WorkCapabilityRelation,
-		WorkSkillSelection:
+		WorkSkillSelection,
+		WorkRuntimeCapabilitySelection:
 		return PortableResponseFramingSingleLine, nil
 	default:
 		return "", fmt.Errorf("portable work kind %q has no registered response framing", kind)

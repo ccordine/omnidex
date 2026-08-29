@@ -68,7 +68,7 @@ func genericJavaScriptCommandLineStaticFiles(
 		"engines": map[string]string{"node": node},
 		"scripts": map[string]string{
 			"test":  "node " + strings.Join(javaScriptNodeTestArgs(), " "),
-			"check": "node " + strings.Join(javaScriptNodeCheckArgs("main.mjs"), " "),
+			"build": "node " + strings.Join(javaScriptNodeCheckArgs("main.mjs"), " "),
 		},
 	}
 	encoded, err := json.MarshalIndent(manifest, "", "  ")
@@ -125,6 +125,6 @@ func javaScriptCommandLineVerificationCommands(
 func javaScriptCommandLineVerificationCommandSet() []testCommand {
 	return []testCommand{
 		{Family: "node", Name: "node", Args: javaScriptNodeTestArgs(), Purpose: verificationTest},
-		{Family: "node", Name: "node", Args: javaScriptNodeCheckArgs("main.mjs"), Purpose: verificationSyntax},
+		{Family: "node", Name: "npm", Args: []string{"run", "build"}, Purpose: verificationBuild},
 	}
 }

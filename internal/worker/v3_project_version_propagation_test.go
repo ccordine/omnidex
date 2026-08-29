@@ -1,6 +1,7 @@
 package worker
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -15,7 +16,13 @@ func TestVersionProfileIDPropagatesFromSelectionThroughTaskAssembly(t *testing.T
 		t.Fatal(err)
 	}
 	selection, err := selectDirectCodingProject(
-		typedWorkerRuntime{}, nil, specification,
+		typedWorkerRuntime{
+			Context: context.Background(), MaxAttempts: 1,
+			Execute: testPortableExecutor(func(_, _, _ string) (string, error) {
+				return assemblyline.ApplicationProjectStackUnconstrained, nil
+			}),
+		}, func() (string, error) { return "constraint-model", nil },
+		"Build a Go command-line application.", specification,
 		map[string]string{"go.mod": directCodingTestFileContent(t, static, "go.mod")}, nil,
 	)
 	if err != nil {
@@ -26,7 +33,7 @@ func TestVersionProfileIDPropagatesFromSelectionThroughTaskAssembly(t *testing.T
 	}
 
 	target, coverage, err := resolveDirectCodingTargetTree(
-		typedWorkerRuntime{}, "", "", specification, workload,
+		typedWorkerRuntime{}, "", "", specification.ProductQuote, specification, workload,
 		selection.Stack, nil, nil,
 	)
 	if err != nil {

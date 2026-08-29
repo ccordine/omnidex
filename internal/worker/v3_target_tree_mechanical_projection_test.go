@@ -125,7 +125,8 @@ func TestCommandLineTargetTreeResolutionPerformsNoInference(t *testing.T) {
 				},
 			}
 			target, coverage, err := resolveDirectCodingTargetTree(
-				runtime, "", "", specification, workload, stack, nil, nil,
+				runtime, "", "", specification.ProductQuote,
+				specification, workload, stack, nil, nil,
 			)
 			if err != nil {
 				t.Fatal(err)
@@ -180,7 +181,7 @@ func TestMechanicalTargetTreeResolutionSkipsExistingDirectoryLeaf(t *testing.T) 
 		},
 	}
 	target, coverage, err := resolveDirectCodingTargetTree(
-		runtime, "", "", specification, workload, stack, nil,
+		runtime, "", "", specification.ProductQuote, specification, workload, stack, nil,
 		[]string{"feature001.go"},
 	)
 	if err != nil {
@@ -216,7 +217,7 @@ func TestMechanicalMultiTaskCommandLineTreeCompilesItsUnion(t *testing.T) {
 			)
 			target, coverage, err := resolveDirectCodingTargetTree(
 				typedWorkerRuntime{Context: context.Background(), MaxAttempts: 1},
-				"", "", specification, workload, stack, nil, nil,
+				"", "", specification.ProductQuote, specification, workload, stack, nil, nil,
 			)
 			if err != nil {
 				t.Fatal(err)

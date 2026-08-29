@@ -12,8 +12,7 @@ import (
 
 func TestUnrelatedSingleLineStationsBindExactProviderLFAndKeepExactDecoders(t *testing.T) {
 	stackInput := assemblyline.ApplicationProjectStackConstraintInput{
-		ProductContext:       "A local command-line data transformer.",
-		AcceptedRequirements: []string{"Transform one supplied record."},
+		UserRequest: "Build a local command-line data transformer that transforms one supplied record.",
 		Candidates: []assemblyline.ApplicationProjectStackCandidate{
 			{CandidateID: "STACK_CANDIDATE_1", TechnicalFormat: "Go command-line application"},
 			{CandidateID: "STACK_CANDIDATE_2", TechnicalFormat: "Rust command-line application"},
@@ -133,7 +132,7 @@ func singleLineFramingGap(
 	gap := queue.StationGapOpening{
 		JobID: 1, Generation: 1, StepID: stepID, StepAttempt: 1,
 		WorkerID: "framing-test", GapID: job.ID, WorkID: job.ID,
-		WorkKind: string(job.Kind), RendererVersion: assemblyline.PortableRendererV5,
+		WorkKind: string(job.Kind), RendererVersion: assemblyline.PortableRendererV8,
 		ProjectionSHA256: strings.Repeat("b", 64), Prompt: prompt,
 		ContextTokens:   contextTokens,
 		MaxOutputTokens: portableWorkerTestMaxOutputTokens(t, job, contextTokens),

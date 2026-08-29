@@ -22,8 +22,8 @@ func TestBrowserClassificationWithExplicitLaravelConstraintCompilesLaravelHTTPPr
 				return string(assemblyline.ApplicationSurfaceBrowser), nil
 			case "constraint-model":
 				for _, required := range []string{
-					"Use Laravel 13 with server-rendered HTML.", "TypeScript with React",
-					"PHP with NGINX", "Laravel 13 with server rendering",
+					authority, "TypeScript with React", "PHP with NGINX",
+					"Laravel 13 with server rendering", "packaging shape",
 				} {
 					if !strings.Contains(prompt, required) {
 						t.Fatalf("browser format prompt omitted %q: %s", required, prompt)
@@ -50,7 +50,7 @@ func TestBrowserClassificationWithExplicitLaravelConstraintCompilesLaravelHTTPPr
 	}
 	selection, err := selectDirectCodingProject(
 		runtime, func() (string, error) { return "constraint-model", nil },
-		specification, nil, nil,
+		authority, specification, nil, nil,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -62,7 +62,8 @@ func TestBrowserClassificationWithExplicitLaravelConstraintCompilesLaravelHTTPPr
 
 	workload := browserHTTPWorkload(t, specification)
 	target, coverage, err := resolveDirectCodingTargetTree(
-		typedWorkerRuntime{}, "", "", specification, workload, selection.Stack, nil, nil,
+		typedWorkerRuntime{}, "", "", specification.ProductQuote,
+		specification, workload, selection.Stack, nil, nil,
 	)
 	if err != nil {
 		t.Fatal(err)

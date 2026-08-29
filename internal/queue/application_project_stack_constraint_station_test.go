@@ -11,8 +11,7 @@ func TestApplicationProjectStackConstraintHasOneExactStationOwner(t *testing.T) 
 	t.Parallel()
 	job, err := assemblyline.NewApplicationProjectStackConstraintJob(
 		assemblyline.ApplicationProjectStackConstraintInput{
-			ProductContext:       "browser inventory console",
-			AcceptedRequirements: []string{"Show current inventory"},
+			UserRequest: "Build a browser inventory console that shows current inventory.",
 			Candidates: []assemblyline.ApplicationProjectStackCandidate{{
 				CandidateID: "STACK_CANDIDATE_1", TechnicalFormat: "TypeScript with React for a browser application",
 			}},

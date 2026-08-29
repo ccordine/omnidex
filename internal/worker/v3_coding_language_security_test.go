@@ -216,9 +216,12 @@ func TestJavaScriptFragmentProjectionExposesDeclarationWithoutRuntimeImplementat
 	if err != nil {
 		t.Fatal(err)
 	}
-	visible := strings.Join(input.PermittedSymbols, "\n")
+	visible := strings.Join(input.Capabilities, "\n")
 	if visible != "export function normalizeTaskResult(value)" {
 		t.Fatalf("JavaScript model-visible runtime authority=%q", visible)
+	}
+	if len(input.PermittedSymbols) != 0 {
+		t.Fatalf("JavaScript runtime declarations leaked into globals=%q", input.PermittedSymbols)
 	}
 	for _, leakedImplementation := range []string{"throw new", "Number.isInteger", "return {"} {
 		if strings.Contains(visible, leakedImplementation) {

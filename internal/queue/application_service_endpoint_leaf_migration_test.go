@@ -121,13 +121,10 @@ func TestApplicationServiceEndpointLeafMigrationPreservesCompletedBundledHistory
 		t, claim, job, station.ID("coding_service_endpoint_contract"),
 	)
 	insertContextSieveMigrationOpening(t, pool, &opening)
-	persistHistoricalStationDiscoveryFailure(t, repository, claim.Authority, opening)
-	if _, err := repository.CloseStationGap(t.Context(), StationGapTerminalRecord{
-		Authority: claim.Authority, OpeningID: opening.ID, GapID: opening.GapID,
-		Status: StationGapFailed, Error: "historical bundled endpoint failed before leaf cutover",
-	}); err != nil {
-		t.Fatal(err)
-	}
+	completeHistoricalStationGapWithDiscoveryFailure(
+		t, pool, claim.Authority, opening,
+		"historical bundled endpoint failed before leaf cutover",
+	)
 
 	if err := repository.EnsureSchema(t.Context(), loadMigrationBundleThroughPrefix(t, "137")); err != nil {
 		t.Fatalf("completed bundled endpoint history blocked leaf cutover: %v", err)

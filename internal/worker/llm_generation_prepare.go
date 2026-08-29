@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 
+	"github.com/gryph/omnidex/internal/assemblyline"
 	"github.com/gryph/omnidex/internal/exactjson"
 	"github.com/gryph/omnidex/internal/llm"
 	"github.com/gryph/omnidex/internal/queue"
@@ -62,6 +63,26 @@ func prepareExactStationCall(
 	}
 	if temperature == nil {
 		temperature = transport.Temperature
+		if gap.RendererVersion == assemblyline.PortableRendererV8 &&
+			(gap.WorkKind == string(assemblyline.WorkFragmentGenerationReplacement) ||
+				gap.WorkKind == string(assemblyline.WorkApplicationRequirementCandidateSplitCorrection)) {
+			next, ok, progressionErr := llm.NextExactPreparedTemperature(
+				expected, temperature,
+			)
+			if progressionErr != nil {
+				return llm.PreparedModel{}, fmt.Errorf(
+					"derive %s exploration temperature: %w",
+					gap.WorkKind, progressionErr,
+				)
+			}
+			if !ok {
+				return llm.PreparedModel{}, fmt.Errorf(
+					"%s has no registered temperature above its provider baseline",
+					gap.WorkKind,
+				)
+			}
+			temperature = next
+		}
 	}
 	stop, err := queue.ExpectedStationCallStopSequence(gap, expected)
 	if err != nil {

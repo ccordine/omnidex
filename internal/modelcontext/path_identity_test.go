@@ -35,6 +35,25 @@ func TestQualifiedPathLexerRetainsBareSemanticDottedNames(t *testing.T) {
 	}
 }
 
+func TestSourcePathLexerRetainsOneLetterTypedParameterLabels(t *testing.T) {
+	t.Parallel()
+	for _, value := range []string{
+		"(e: React.ChangeEvent<HTMLInputElement>) => void",
+		"(x: PointerEvent) => boolean",
+	} {
+		if identities := SourcePathIdentities(
+			value, ArtifactIdentityProvenance{},
+		); len(identities) != 0 {
+			t.Fatalf("typed source label %q produced filesystem identities %+v", value, identities)
+		}
+	}
+	for _, value := range []string{"C:", "C:relative", `C:\work\value`, "C:/work/value"} {
+		if !ContainsPathIdentity(value) {
+			t.Fatalf("drive-qualified path %q was accepted", value)
+		}
+	}
+}
+
 func TestPathIdentityProvenanceMatchesKnownPathsContainingSpaces(t *testing.T) {
 	t.Parallel()
 	provenance, err := NewArtifactIdentityProvenance([]string{"My Files/a.js"})

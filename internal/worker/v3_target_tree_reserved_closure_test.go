@@ -84,7 +84,8 @@ func TestTypeScriptCompleteTargetTreeReusesValidExistingWorkloadPair(t *testing.
 		t.Fatal(err)
 	}
 	tree, coverage, err := resolveDirectCodingTargetTree(
-		runtime, "tree-model", "tree-model", specification, workload, stack,
+		runtime, "tree-model", "tree-model", specification.ProductQuote,
+		specification, workload, stack,
 		existing, []string{"src"},
 	)
 	if err != nil {
@@ -100,7 +101,7 @@ func TestTypeScriptCompleteTargetTreeReusesValidExistingWorkloadPair(t *testing.
 		t.Fatal(err)
 	}
 	input, err := directCodingTargetTreeInput(
-		specification, workload, stack, existing, []string{"src"},
+		specification.ProductQuote, specification, workload, stack, existing, []string{"src"},
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -143,7 +144,7 @@ func TestTypeScriptCompleteTargetTreeRejectsAmbiguousManagedStateWithoutInferenc
 				return assemblyline.PortableResult{}, fmt.Errorf("forbidden target-tree inference")
 			},
 		},
-		"", "", specification, workload, stack,
+		"", "", specification.ProductQuote, specification, workload, stack,
 		[]string{"src/alpha.test.tsx", "src/alpha.tsx", "src/beta.tsx"},
 		[]string{"src"},
 	)
@@ -173,7 +174,7 @@ func TestTypeScriptCompleteTargetTreeRejectsExistingFileAncestorWithoutInference
 				return assemblyline.PortableResult{}, fmt.Errorf("forbidden target-tree inference")
 			},
 		},
-		"", "", specification, workload, stack,
+		"", "", specification.ProductQuote, specification, workload, stack,
 		[]string{"src"}, nil,
 	)
 	if err == nil || !strings.Contains(err.Error(), "cannot reserve a free three-digit workload pair") {

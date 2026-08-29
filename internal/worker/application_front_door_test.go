@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
@@ -13,6 +14,7 @@ import (
 func TestApplicationFrontDoorSkipsCeremonialReviewForEmptyWorkspace(t *testing.T) {
 	t.Parallel()
 	const request = "Build a browser counter that shows the count and can increment, decrement, and reset it."
+	const productContext = "Resolved counter product identity."
 	applicationContext, err := assemblyline.BootstrapApplicationContext(
 		request, assemblyline.ApplicationWorkspaceEmpty,
 	)
@@ -23,9 +25,17 @@ func TestApplicationFrontDoorSkipsCeremonialReviewForEmptyWorkspace(t *testing.T
 	runtime := typedWorkerRuntime{
 		Context: context.Background(), MaxAttempts: 3,
 		Execute: func(job assemblyline.PortableJob, modelName string) (assemblyline.PortableResult, error) {
-			_, err := assemblyline.RenderPortableJob(job)
+			prompt, err := assemblyline.RenderPortableJob(job)
 			if err != nil {
 				return assemblyline.PortableResult{}, err
+			}
+			if (job.Kind == assemblyline.WorkApplicationRequirementCoverage ||
+				job.Kind == assemblyline.WorkApplicationRequirement) &&
+				(strings.Contains(prompt, productContext) ||
+					strings.Contains(prompt, "PRODUCT CONTEXT:")) {
+				return assemblyline.PortableResult{}, fmt.Errorf(
+					"requirement station received redundant product context",
+				)
 			}
 			counts[job.Kind]++
 			var candidate string
@@ -33,35 +43,49 @@ func TestApplicationFrontDoorSkipsCeremonialReviewForEmptyWorkspace(t *testing.T
 			case assemblyline.WorkApplicationClassify:
 				candidate = string(assemblyline.ApplicationSurfaceBrowser)
 			case assemblyline.WorkApplicationProductContext:
-				candidate = "A browser counter"
+				candidate = productContext
 			case assemblyline.WorkApplicationRequirementCoverage:
-				var input assemblyline.ApplicationRequirementLeafInput
+				var input assemblyline.ApplicationRequirementCoverageInput
 				if err := json.Unmarshal(job.Payload, &input); err != nil {
 					return assemblyline.PortableResult{}, err
 				}
 				if input.AcceptedRequirements == nil {
 					return assemblyline.PortableResult{}, fmt.Errorf("application requirement coverage received a nil accepted set")
 				}
-				if len(input.AcceptedRequirements) == 0 {
-					return assemblyline.PortableResult{}, fmt.Errorf("application requirement coverage received an empty accepted set")
-				}
-				if len(input.AcceptedRequirements) < 2 {
+				if len(input.AcceptedRequirements) < 4 {
 					candidate = assemblyline.ApplicationRequirementRemains
 				} else {
 					candidate = assemblyline.ApplicationNoUncoveredRequirement
 				}
 			case assemblyline.WorkApplicationRequirement:
-				var input assemblyline.ApplicationRequirementLeafInput
+				var input assemblyline.ApplicationRequirementCandidateInput
 				if err := json.Unmarshal(job.Payload, &input); err != nil {
 					return assemblyline.PortableResult{}, err
 				}
-				if input.AcceptedRequirements == nil {
+				if input.Authority.AcceptedRequirements == nil {
 					return assemblyline.PortableResult{}, fmt.Errorf("application requirement received a nil accepted set")
+				}
+				if err := input.Coverage.ValidateFor(input.Authority); err != nil ||
+					input.Coverage.Relation != assemblyline.ApplicationRequirementRemains {
+					return assemblyline.PortableResult{}, fmt.Errorf("application requirement received invalid coverage authority: %v", err)
 				}
 				candidate = []string{
 					"Show the current count.",
-					"Provide controls that increment and reset the count.",
+					"Increment the current count.",
+					"Decrement the current count.",
+					"Reset the current count.",
 				}[counts[job.Kind]-1]
+			case assemblyline.WorkApplicationRequirementCandidateCardinality:
+				var input assemblyline.ApplicationRequirementCandidateCardinalityInput
+				if err := json.Unmarshal(job.Payload, &input); err != nil {
+					return assemblyline.PortableResult{}, err
+				}
+				if strings.TrimSpace(input.Candidate) == "" {
+					return assemblyline.PortableResult{}, fmt.Errorf("application requirement cardinality received an empty candidate")
+				}
+				candidate = assemblyline.ApplicationRequirementOneRuntimeOutcome
+			case assemblyline.WorkApplicationRequirementCandidateSplit:
+				return assemblyline.PortableResult{}, fmt.Errorf("atomic fixture unexpectedly requested candidate splitting")
 			default:
 				return assemblyline.PortableResult{}, fmt.Errorf("unexpected semantic work kind %q", job.Kind)
 			}
@@ -77,16 +101,21 @@ func TestApplicationFrontDoorSkipsCeremonialReviewForEmptyWorkspace(t *testing.T
 	}
 	if counts[assemblyline.WorkApplicationContextNeedCoverage] != 0 ||
 		counts[assemblyline.WorkApplicationProductContext] != 1 ||
-		counts[assemblyline.WorkApplicationRequirementCoverage] != 2 ||
-		counts[assemblyline.WorkApplicationRequirement] != 2 ||
+		counts[assemblyline.WorkApplicationRequirementCoverage] != 5 ||
+		counts[assemblyline.WorkApplicationRequirement] != 4 ||
+		counts[assemblyline.WorkApplicationRequirementCandidateCardinality] != 4 ||
+		counts[assemblyline.WorkApplicationRequirementCandidateSplit] != 0 ||
+		counts[assemblyline.WorkApplicationRequirementCandidateSplitCorrection] != 0 ||
 		counts[assemblyline.WorkApplicationClassify] != 1 {
 		t.Fatalf("front-door calls=%v", counts)
 	}
 	want := []assemblyline.Requirement{
 		{ID: "requirement_001", SourceQuote: "Show the current count."},
-		{ID: "requirement_002", SourceQuote: "Provide controls that increment and reset the count."},
+		{ID: "requirement_002", SourceQuote: "Increment the current count."},
+		{ID: "requirement_003", SourceQuote: "Decrement the current count."},
+		{ID: "requirement_004", SourceQuote: "Reset the current count."},
 	}
-	if specification.ProductQuote != "A browser counter" ||
+	if specification.ProductQuote != productContext ||
 		!reflect.DeepEqual(specification.Requirements, want) {
 		t.Fatalf("specification=%+v", specification)
 	}

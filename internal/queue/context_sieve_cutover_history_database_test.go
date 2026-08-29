@@ -47,16 +47,10 @@ func TestPostgresContextSieveCutoverPreservesCompletedLegacyStationOpenings(t *t
 	}
 
 	for _, opening := range openings {
-		persistHistoricalStationDiscoveryFailure(t, repository, claim.Authority, opening)
-		if _, err := repository.CloseStationGap(t.Context(), StationGapTerminalRecord{
-			Authority: claim.Authority,
-			OpeningID: opening.ID,
-			GapID:     opening.GapID,
-			Status:    StationGapFailed,
-			Error:     "legacy station stopped before its retirement",
-		}); err != nil {
-			t.Fatal(err)
-		}
+		completeHistoricalStationGapWithDiscoveryFailure(
+			t, pool, claim.Authority, opening,
+			"legacy station stopped before its retirement",
+		)
 	}
 
 	if err := repository.EnsureSchema(
@@ -123,7 +117,7 @@ func TestPostgresContextSieveCutoverRejectsEveryUnresolvedLegacyStationChain(t *
 				)
 			}
 			assertContextSieveCutoverNotInstalled(t, pool)
-			closeHistoricalLegacyOpening(t, repository, claim, opening)
+			closeHistoricalLegacyOpening(t, pool, claim, opening)
 			completed = append(completed, opening)
 		}
 	}
@@ -181,21 +175,15 @@ func insertUnresolvedHistoricalLegacyOpening(
 
 func closeHistoricalLegacyOpening(
 	t *testing.T,
-	repository *Repository,
+	pool *pgxpool.Pool,
 	claim *model.ClaimedStep,
 	opening StationGapOpening,
 ) {
 	t.Helper()
-	persistHistoricalStationDiscoveryFailure(t, repository, claim.Authority, opening)
-	if _, err := repository.CloseStationGap(t.Context(), StationGapTerminalRecord{
-		Authority: claim.Authority,
-		OpeningID: opening.ID,
-		GapID:     opening.GapID,
-		Status:    StationGapFailed,
-		Error:     fmt.Sprintf("legacy station %s stopped before retirement", opening.WorkKind),
-	}); err != nil {
-		t.Fatal(err)
-	}
+	completeHistoricalStationGapWithDiscoveryFailure(
+		t, pool, claim.Authority, opening,
+		fmt.Sprintf("legacy station %s stopped before retirement", opening.WorkKind),
+	)
 }
 
 func historicalOpeningIDs(openings []StationGapOpening) []int64 {

@@ -26,7 +26,7 @@ func exactCurrentContractGap(
 	projection, err := exactjson.Canonical(struct {
 		Prompt   string `json:"prompt"`
 		Renderer string `json:"renderer"`
-	}{prompt, assemblyline.PortableRendererV5})
+	}{prompt, assemblyline.PortableRendererV8})
 	if err != nil {
 		return zero, llmResponseContract{}, err
 	}
@@ -59,7 +59,7 @@ func exactCurrentContractGap(
 		PortableSchema: job.Schema, WorkID: job.ID, WorkKind: string(job.Kind),
 		PortablePayload: string(job.Payload), PortablePayloadSHA256: replaySHA256(string(job.Payload)),
 		PortableEnvelope: string(envelope), PortableEnvelopeSHA256: replaySHA256(string(envelope)),
-		RendererVersion: assemblyline.PortableRendererV5, Prompt: prompt,
+		RendererVersion: assemblyline.PortableRendererV8, Prompt: prompt,
 		ProjectionEnvelope:                string(projection),
 		ProjectionSHA256:                  replaySHA256(string(projection)),
 		SemanticUncertaintyContract:       semanticUncertainty,

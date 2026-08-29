@@ -20,6 +20,7 @@ type liveCodingQualificationCall struct {
 	kind                                        assemblyline.WorkKind
 	jobSHA256, candidateSHA256                  string
 	promptSHA256, requestSHA256, responseSHA256 string
+	candidate                                   string
 	promptBytes, promptTokens, outputTokens     int
 	providerDuration, wallDuration              time.Duration
 }
@@ -114,6 +115,7 @@ func (transport *liveCodingQualificationTransport) execute(
 		kind: job.Kind, jobSHA256: job.ID, promptSHA256: qualificationSHA256([]byte(prompt)),
 		requestSHA256: requestSHA256, responseSHA256: generation.ProviderResponseSHA256,
 		candidateSHA256: qualificationSHA256([]byte(generation.Content)),
+		candidate:       generation.Content,
 		promptBytes:     len(prompt), promptTokens: generation.Usage.PromptEvalCount,
 		outputTokens:     generation.Usage.EvalCount,
 		providerDuration: time.Duration(generation.Usage.TotalDurationNanos), wallDuration: wallDuration,
@@ -129,7 +131,7 @@ func (transport *liveCodingQualificationTransport) syntheticGap(
 	projection, err := exactjson.Canonical(struct {
 		Prompt   string `json:"prompt"`
 		Renderer string `json:"renderer"`
-	}{prompt, assemblyline.PortableRendererV5})
+	}{prompt, assemblyline.PortableRendererV8})
 	if err != nil {
 		return queue.StationGapOpening{}, err
 	}
@@ -159,7 +161,7 @@ func (transport *liveCodingQualificationTransport) syntheticGap(
 		JobID: 1, Generation: 1, StepID: int64(len(transport.calls) + 1), StepAttempt: 1,
 		WorkerID: "live-qualification", GapID: job.ID, Station: stationID,
 		Scope: scope, PortableSchema: job.Schema,
-		WorkID: job.ID, WorkKind: string(job.Kind), RendererVersion: assemblyline.PortableRendererV5,
+		WorkID: job.ID, WorkKind: string(job.Kind), RendererVersion: assemblyline.PortableRendererV8,
 		Prompt: prompt, ProjectionEnvelope: string(projection),
 		ProjectionSHA256:                  qualificationSHA256(projection),
 		SemanticUncertaintyContract:       semanticUncertainty,
@@ -200,10 +202,17 @@ func assertLiveCodingQualificationCalls(
 		}
 	}
 	featureCount := len(frozen.Tasks)
+	generationCount := counts[assemblyline.WorkApplicationRequirement]
+	cardinalityCount := counts[assemblyline.WorkApplicationRequirementCandidateCardinality]
+	splitCount := counts[assemblyline.WorkApplicationRequirementCandidateSplit]
+	correctionCount := counts[assemblyline.WorkApplicationRequirementCandidateSplitCorrection]
 	if counts[assemblyline.WorkApplicationContextNeedCoverage] != 0 ||
 		counts[assemblyline.WorkApplicationProductContext] != 1 ||
-		counts[assemblyline.WorkApplicationRequirement] != featureCount ||
-		counts[assemblyline.WorkApplicationRequirementCoverage] != featureCount {
+		generationCount != featureCount ||
+		counts[assemblyline.WorkApplicationRequirementCoverage] != featureCount+1 ||
+		cardinalityCount != generationCount+splitCount ||
+		splitCount > generationCount*assemblyline.MaxApplicationRequirementCandidateSplitDepth ||
+		correctionCount > splitCount {
 		t.Fatalf("live qualification raw-leaf call shape differs from code-owned fixed points: %v", counts)
 	}
 }
@@ -216,9 +225,9 @@ func logLiveCodingQualification(
 	t.Helper()
 	for index, call := range calls {
 		t.Logf(
-			"live_coding_qualification case=%s model=%s call=%d kind=%s job_sha256=%s prompt_sha256=%s request_sha256=%s response_sha256=%s candidate_sha256=%s frozen_sha256=%s prompt_bytes=%d prompt_tokens=%d output_tokens=%d provider_ms=%d wall_ms=%d",
+			"live_coding_qualification case=%s model=%s call=%d kind=%s job_sha256=%s prompt_sha256=%s request_sha256=%s response_sha256=%s candidate_sha256=%s candidate=%q frozen_sha256=%s prompt_bytes=%d prompt_tokens=%d output_tokens=%d provider_ms=%d wall_ms=%d",
 			caseName, modelName, index+1, call.kind, call.jobSHA256, call.promptSHA256, call.requestSHA256,
-			call.responseSHA256, call.candidateSHA256, frozenSHA256,
+			call.responseSHA256, call.candidateSHA256, call.candidate, frozenSHA256,
 			call.promptBytes, call.promptTokens, call.outputTokens,
 			call.providerDuration.Milliseconds(), call.wallDuration.Milliseconds(),
 		)

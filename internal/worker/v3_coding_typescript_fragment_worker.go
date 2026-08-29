@@ -1,6 +1,7 @@
 package worker
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -78,7 +79,24 @@ func runDirectCodingTypeScriptFragmentWorker(
 		CurrentBytes: currentBytes, CorrectionBytes: correctionBytes,
 		Warning: directCodingTypeScriptDeclarationSizeWarning(currentBytes),
 	})
-	result, err := runtime.Execute(baseJob, modelName)
+	var result assemblyline.PortableResult
+	if baseJob.Kind == assemblyline.WorkFragmentGeneration {
+		var generationInput assemblyline.FragmentGenerationInput
+		if err = json.Unmarshal(baseJob.Payload, &generationInput); err != nil {
+			return "", failDirectCodingTypeScriptFragmentWorker(
+				runtime, modelName, job.block.ID, 0,
+				fmt.Errorf("decode validated TypeScript fragment generation input: %w", err),
+			)
+		}
+		baseJob, result, err = executeInitialFragmentGenerationWithReplacement(
+			runtime,
+			baseJob,
+			generationInput,
+			modelName,
+		)
+	} else {
+		result, err = runtime.Execute(baseJob, modelName)
+	}
 	if err != nil {
 		return "", failDirectCodingTypeScriptFragmentWorker(runtime, modelName, job.block.ID, 1, err)
 	}

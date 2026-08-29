@@ -48,6 +48,7 @@ func TestFragmentRepairGuidanceSupportsUnrelatedRegisteredLanguages(t *testing.T
 				"SOURCE_LANGUAGE:\n" + fixture.Language,
 				"SOURCE_DIALECT:\n" + fixture.Dialect,
 				"REQUIRED_DECLARATION_SIGNATURE:\n" + fixture.Signature,
+				"do not provide a complete replacement declaration or source block",
 				"DECLARATIONS_AVAILABLE_TO_ANALYZE:",
 				"IDENTIFIERS_ALREADY_IN_SCOPE:",
 				"The two external-authority lists below are exhaustive.",
@@ -67,6 +68,92 @@ func TestFragmentRepairGuidanceSupportsUnrelatedRegisteredLanguages(t *testing.T
 				t.Fatalf("repair guidance hid empty symbol authority:\n%s", prompt)
 			}
 		})
+	}
+}
+
+func TestFragmentRepairGuidanceAcceptsQuotedUserVisibleSourceEscapes(t *testing.T) {
+	t.Parallel()
+	fixtures := []struct {
+		name        string
+		input       FragmentRepairGuidanceInput
+		instruction string
+	}{
+		{
+			name: "shipping receipt",
+			input: FragmentRepairGuidanceInput{
+				Language: "go", Dialect: "Go 1.24 function syntax",
+				Signature:          "func receiptText() string",
+				CurrentDeclaration: `func receiptText() string { return "" }`,
+				Diagnostic:         "SOURCE_DIAGNOSTIC: the returned receipt text is incomplete",
+			},
+			instruction: `Set the returned string to "Order [pending]\nDispatch:\n  09:30" while preserving the declaration.`,
+		},
+		{
+			name: "status presentation",
+			input: FragmentRepairGuidanceInput{
+				Language: "javascript", Dialect: "ECMAScript 2022 function syntax",
+				Signature:          "function statusText()",
+				CurrentDeclaration: `function statusText() { return "Ready"; }`,
+				Diagnostic:         "SOURCE_DIAGNOSTIC: the displayed status omits its second line",
+			},
+			instruction: `Replace the returned literal with "Ready\nWaiting" and preserve all other source.`,
+		},
+	}
+	for _, fixture := range fixtures {
+		fixture := fixture
+		t.Run(fixture.name, func(t *testing.T) {
+			t.Parallel()
+			job, err := NewFragmentRepairGuidanceJob(fixture.input)
+			if err != nil {
+				t.Fatal(err)
+			}
+			guidance, err := DecodeFragmentRepairGuidanceResult(job, fixture.instruction)
+			if err != nil {
+				t.Fatalf("quoted source escape was rejected: %v", err)
+			}
+			if guidance.Instruction != fixture.instruction {
+				t.Fatalf("guidance instruction=%q", guidance.Instruction)
+			}
+			execution, err := NewSourceProjectedFragmentCorrectionJob(
+				FragmentCorrectionInput{
+					CurrentDeclaration: fixture.input.CurrentDeclaration,
+					RepairGuidance:     guidance.Instruction,
+				},
+				fixture.input.Language,
+			)
+			if err != nil {
+				t.Fatalf("accepted guidance did not reach its correction envelope: %v", err)
+			}
+			executionPrompt, err := RenderPortableJob(execution)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(executionPrompt, guidance.Instruction) {
+				t.Fatalf("correction prompt lost exact guidance:\n%s", executionPrompt)
+			}
+		})
+	}
+}
+
+func TestFragmentRepairGuidanceRejectsPathsInsideQuotedSource(t *testing.T) {
+	t.Parallel()
+	job, err := NewFragmentRepairGuidanceJob(FragmentRepairGuidanceInput{
+		Language: "go", Dialect: "Go 1.24 function syntax",
+		Signature:          "func destination() string",
+		CurrentDeclaration: `func destination() string { return "" }`,
+		Diagnostic:         "SOURCE_DIAGNOSTIC: the returned destination is invalid",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, instruction := range []string{
+		`Set the returned string to "../private/value".`,
+		`Set the returned string to "C:\\ProgramData\\private\\value".`,
+	} {
+		if _, err := DecodeFragmentRepairGuidanceResult(job, instruction); err == nil ||
+			!strings.Contains(err.Error(), "filesystem identity") {
+			t.Fatalf("quoted path %q error=%v", instruction, err)
+		}
 	}
 }
 

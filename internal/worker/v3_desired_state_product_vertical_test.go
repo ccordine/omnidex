@@ -1,10 +1,7 @@
 package worker
 
 import (
-	"os"
 	"os/exec"
-	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
@@ -26,6 +23,7 @@ func TestPostgresOrdinaryChannelDesiredStateContaminatedProductionPlumbing(t *te
 	if _, err := exec.LookPath("bwrap"); err != nil {
 		t.Skip("bubblewrap is required for the production desired-state product vertical")
 	}
+	t.Setenv("GOMODCACHE", t.TempDir())
 	cases := []desiredStateProductCase{
 		{
 			name:        "create",
@@ -62,10 +60,11 @@ func TestPostgresOrdinaryChannelDesiredStateContaminatedProductionPlumbing(t *te
 	}
 }
 
-func TestPostgresOrdinaryChannelDeletionProductionPlumbingPinsFrontDoorPathVisibility(t *testing.T) {
+func TestPostgresOrdinaryChannelDeletionProductionPlumbingKeepsTargetPathModelBlind(t *testing.T) {
 	if _, err := exec.LookPath("bwrap"); err != nil {
 		t.Skip("bubblewrap is required for the production desired-state product vertical")
 	}
+	t.Setenv("GOMODCACHE", t.TempDir())
 	test := desiredStateProductCase{
 		name: "delete-red", instruction: "obsolete.go must no longer exist.",
 		target: "obsolete.go", present: false, wantGenerationCalls: 0,
@@ -77,66 +76,9 @@ func TestPostgresOrdinaryChannelDeletionProductionPlumbingPinsFrontDoorPathVisib
 			assemblyline.WorkRepositoryRequirementCoverage,
 		},
 	}
-	root := desiredStateProductRepository(t, true)
-	before, err := repositoryfacts.BuildGitSnapshot(t.Context(), root, repositoryfacts.SnapshotOptions{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	ctx, repository, pool := openRepositoryTestDatabase(t)
-	channel, err := repository.CreateChannel(ctx, model.Channel{
-		ID: "desired-state-product-delete-red", Scope: model.ChannelScopeUser, Mode: model.ChannelModeAssistant,
-		Name: "Desired state product delete RED", WorkspaceRoot: root,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, job, err := repository.EnqueueChannelTurn(ctx, channel.ID, test.instruction)
-	if err != nil {
-		t.Fatal(err)
-	}
-	claim, err := repository.ClaimNextStep(ctx, "desired-state-product-delete-red-worker")
-	if err != nil {
-		t.Fatal(err)
-	}
-	provider := &desiredStateProductProvider{}
-	service := desiredStateProductService(t, repository, provider, root)
-	processErr := service.processStep(ctx, claim)
-	if processErr == nil || !strings.Contains(processErr.Error(), "model-visible target path") {
-		t.Fatalf("named deletion escaped zero-path authority guard: %v", processErr)
-	}
-	after, err := repositoryfacts.BuildGitSnapshot(ctx, root, repositoryfacts.SnapshotOptions{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if after.ID != before.ID {
-		t.Fatalf("rejected named deletion changed authoritative repository: before=%s after=%s", before.ID, after.ID)
-	}
-	if _, err := os.Stat(filepath.Join(root, test.target)); err != nil {
-		t.Fatalf("rejected named deletion removed its target: %v", err)
-	}
-	calls := provider.Calls()
-	assertDesiredStateProductStationPersistence(t, pool, job.ID, calls, test.wantKinds)
-	assertDesiredStateProductNoModelMutationOps(t, calls)
-	if len(calls) < 2 || !strings.Contains(calls[0].Prompt, test.target) ||
-		calls[0].Kind != assemblyline.WorkConversationObjectiveKind ||
-		calls[1].Kind != assemblyline.WorkApplicationContextNeedCoverage {
-		t.Fatalf("deletion RED did not reproduce exact front-door path visibility: %+v", calls)
-	}
-	for index, call := range calls[1:] {
-		if strings.Contains(call.Prompt, test.target) || strings.Contains(call.Response, test.target) {
-			t.Fatalf("downstream deletion leaf %d leaked or selected target path", index+1)
-		}
-	}
-	var mutations int
-	if err := pool.QueryRow(t.Context(), `
-		SELECT COUNT(*) FROM workspace_mutation_operations WHERE job_id=$1
-	`, job.ID).Scan(&mutations); err != nil {
-		t.Fatal(err)
-	}
-	if mutations != 0 {
-		t.Fatalf("rejected named deletion persisted %d mutation operations", mutations)
-	}
-	t.Log("EXPECTED REJECTION: exact ordinary free-form classification exposed the user-supplied deletion filename before any mutation")
+	// The physical filename is redacted before every semantic boundary and is
+	// restored only by code when compiling the verified repository transition.
+	runDesiredStateProductVertical(t, test)
 }
 
 func runDesiredStateProductVertical(t *testing.T, test desiredStateProductCase) {

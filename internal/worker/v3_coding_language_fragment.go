@@ -70,7 +70,9 @@ func runDirectCodingLanguageFragmentWorker(
 		Model: modelName, Attempt: 1, MaxAttempts: 1, PromptBytes: len(prompt),
 		CapabilityBytes: languageGenerationCapabilityBytes(job.Input),
 	})
-	result, err := runtime.Execute(portable, modelName)
+	portable, result, err := executeInitialFragmentGenerationWithReplacement(
+		runtime, portable, job.Input, modelName,
+	)
 	if err != nil {
 		return "", failDirectCodingLanguageGeneration(runtime, modelName, job, err)
 	}
@@ -173,7 +175,7 @@ func directCodingLanguageFragmentInput(
 			"%s block %s is absent from isolated stage", language, ref.Block.ID,
 		)
 	}
-	permitted := make([]string, 0, len(ref.Block.Capabilities)+len(ref.Block.Globals))
+	capabilities := make([]string, 0, len(ref.Block.Capabilities))
 	for _, capabilityID := range ref.Block.Capabilities {
 		capability, exists := blocks[capabilityID]
 		if !exists {
@@ -186,11 +188,11 @@ func directCodingLanguageFragmentInput(
 				"%s capability %s has no accepted declaration", language, capabilityID,
 			)
 		}
-		permitted = append(permitted, capability.API)
+		capabilities = append(capabilities, capability.API)
 	}
-	permitted = append(permitted, ref.Block.Globals...)
 	return assemblyline.FragmentGenerationInput{
 		Language: language, Dialect: profile.SourceDialect, Signature: ref.Block.Signature,
-		Behavior: ref.Block.Contract, PermittedSymbols: permitted,
+		Behavior: ref.Block.Contract, Capabilities: capabilities,
+		PermittedSymbols: append([]string(nil), ref.Block.Globals...),
 	}, nil
 }

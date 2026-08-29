@@ -48,6 +48,7 @@ const (
 	CodingArtifactCandidateSelection     ID = "coding_artifact_candidate_selection"
 	CodingCapabilityRelation             ID = "coding_capability_relation"
 	CodingSkillSelection                 ID = "coding_skill_selection"
+	CodingRuntimeCapabilitySelection     ID = "coding_runtime_capability_selection"
 	CodingFragment                       ID = "coding_fragment"
 	CodingFragmentRepairGuidance         ID = "coding_fragment_repair_guidance"
 	CodingFragmentCorrection             ID = "coding_fragment_correction"
@@ -96,6 +97,7 @@ var registered = [...]ID{
 	CodingArtifactCandidateSelection,
 	CodingCapabilityRelation,
 	CodingSkillSelection,
+	CodingRuntimeCapabilitySelection,
 	CodingFragment,
 	CodingFragmentRepairGuidance,
 	CodingFragmentCorrection,

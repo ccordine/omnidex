@@ -75,3 +75,31 @@ func TestGoFragmentGenerationRejectsOperationShapedResponse(t *testing.T) {
 		t.Fatalf("operation-shaped response error=%v", err)
 	}
 }
+
+func TestGoFragmentGenerationValidatesCapabilityAndGlobalChannelsTogether(t *testing.T) {
+	t.Parallel()
+	const raw = `func Added() int { return CapabilityValue() + globalValue }`
+	runtime := typedWorkerRuntime{
+		Context: context.Background(), MaxAttempts: 1,
+		Execute: func(job assemblyline.PortableJob, _ string) (assemblyline.PortableResult, error) {
+			return assemblyline.PortableResult{JobID: job.ID, Candidate: raw}, nil
+		},
+	}
+	got, err := runDirectCodingGoFragmentGenerationWorker(
+		runtime, "coder", directCodingGoGenerationJob{
+			Subject: "channel_union_opaque",
+			Input: assemblyline.FragmentGenerationInput{
+				Language: "go", Dialect: "Go 1.24", Signature: "func Added() int",
+				Behavior:         "Return the sum of the direct capability and the in-scope global.",
+				Capabilities:     []string{"func CapabilityValue() int"},
+				PermittedSymbols: []string{"globalValue"},
+			},
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != raw {
+		t.Fatalf("channel-union declaration=%q want %q", got, raw)
+	}
+}

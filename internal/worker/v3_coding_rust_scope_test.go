@@ -64,6 +64,24 @@ func TestRustFeatureFragmentRejectsLocalImportsAndNestedDeclarations(t *testing.
 	}
 }
 
+func TestRustFeatureFragmentUnionsCapabilitiesAndPermittedSymbols(t *testing.T) {
+	input := rustFeatureFragmentTestInput()
+	input.Capabilities = []string{"pub fn normalize_runtime_value(input: &str) -> String"}
+	candidate := `pub fn feature_001(input: &TaskInput, dependencies: &CapabilityResults) -> TaskResult {
+    let mut result = TaskResult::default();
+    result.output = normalize_runtime_value(&input.standard_input);
+    result
+}`
+	if _, err := validateDirectCodingRustFragment(input, candidate); err != nil {
+		t.Fatal(err)
+	}
+	input.Capabilities = nil
+	if _, err := validateDirectCodingRustFragment(input, candidate); err == nil ||
+		!strings.Contains(err.Error(), "normalize_runtime_value") {
+		t.Fatalf("Rust fragment capability-channel rejection=%v", err)
+	}
+}
+
 func TestRustVerificationFragmentMayCallOnlyItsPermittedFeature(t *testing.T) {
 	runtimeAPI := rustCommandLineRuntimeDocument().Blocks[0].API
 	input := assemblyline.FragmentGenerationInput{

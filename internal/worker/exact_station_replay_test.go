@@ -87,36 +87,49 @@ func TestValidateExactStationReplayPointPreservesFrozenPortableBoundary(t *testi
 		t.Fatalf("replay boundary=%#v job=%#v", loaded, job)
 	}
 
-	t.Run("historical renderer drift retains the stored projection", func(t *testing.T) {
-		point := queue.StationCallReplayPoint{Call: call, Gap: gap}
-		point.Gap.Prompt = "FROZEN_STATION_PROMPT_V1"
-		projection, err := replayTestProjection(point.Gap.Prompt)
-		if err != nil {
-			t.Fatal(err)
-		}
-		point.Gap.ProjectionEnvelope = string(projection)
-		point.Gap.ProjectionSHA256 = replaySHA256(string(projection))
-		contract, err := llmResponseContractForPortableJob(job)
-		if err != nil {
-			t.Fatal(err)
-		}
-		input, err := exactStationReplayStoredModelInput(exactStationReplayBoundary{
-			Job: job, Prompt: point.Gap.Prompt, Contract: contract,
-		}, point.Gap, point.Call)
-		if err != nil {
-			t.Fatal(err)
-		}
-		point.Call.ModelInput, point.Call.ModelInputBytes = input, len(input)
-		point.Call.ModelInputSHA256 = replaySHA256(input)
+	for name, renderer := range map[string]string{
+		"completed V5 history replays only from stored prompt bytes": assemblyline.HistoricalPortableRendererV5,
+		"completed V6 history replays only from stored prompt bytes": assemblyline.HistoricalPortableRendererV6,
+		"completed V7 history replays only from stored prompt bytes": assemblyline.HistoricalPortableRendererV7,
+	} {
+		t.Run(name, func(t *testing.T) {
+			point := queue.StationCallReplayPoint{Call: call, Gap: gap}
+			point.Gap.RendererVersion = renderer
+			point.Gap.Prompt = "FROZEN_STATION_PROMPT_" + strings.ToUpper(strings.TrimPrefix(renderer, "omnidex.render-portable-job."))
+			projection, err := replayProjectionEnvelope(
+				point.Gap.Prompt, point.Gap.RendererVersion,
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			point.Gap.ProjectionEnvelope = string(projection)
+			point.Gap.ProjectionSHA256 = replaySHA256(string(projection))
+			contract, err := llmResponseContractForPortableJob(job)
+			if err != nil {
+				t.Fatal(err)
+			}
+			input, err := exactStationReplayStoredModelInput(exactStationReplayBoundary{
+				Job: job, Prompt: point.Gap.Prompt, Contract: contract,
+			}, point.Gap, point.Call)
+			if err != nil {
+				t.Fatal(err)
+			}
+			point.Call.ModelInput, point.Call.ModelInputBytes = input, len(input)
+			point.Call.ModelInputSHA256 = replaySHA256(input)
 
-		loaded, err := validateExactStationReplayPoint(point)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if loaded.Prompt != point.Gap.Prompt {
-			t.Fatalf("replay prompt=%q, want stored frozen prompt %q", loaded.Prompt, point.Gap.Prompt)
-		}
-	})
+			loaded, err := validateExactStationReplayPoint(point)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if loaded.Prompt != point.Gap.Prompt {
+				t.Fatalf("replay prompt=%q, want stored frozen prompt %q", loaded.Prompt, point.Gap.Prompt)
+			}
+			if _, err := validateCurrentContractStationReplayPoint(point); err == nil ||
+				!strings.Contains(err.Error(), "current-contract replay requires renderer") {
+				t.Fatalf("current renderer reconstructed %s history: %v", renderer, err)
+			}
+		})
+	}
 
 	for name, mutate := range map[string]func(*queue.StationCallReplayPoint){
 		"historical renderer": func(point *queue.StationCallReplayPoint) {
@@ -256,7 +269,7 @@ func replayTestGap(t *testing.T, job assemblyline.PortableJob) queue.StationGapO
 		PortableSchema: job.Schema, WorkID: job.ID, WorkKind: string(job.Kind),
 		PortablePayload: string(job.Payload), PortablePayloadSHA256: replaySHA256(string(job.Payload)),
 		PortableEnvelope: string(envelope), PortableEnvelopeSHA256: replaySHA256(string(envelope)),
-		RendererVersion: assemblyline.PortableRendererV5, Prompt: prompt,
+		RendererVersion: assemblyline.PortableRendererV8, Prompt: prompt,
 		ProjectionEnvelope: string(projection), ProjectionSHA256: replaySHA256(string(projection)),
 		ContextTokens: 8192, MaxOutputTokens: maxOutputTokens,
 		OutputLimitMode: llm.ExactPreparedOutputLimitNatural,
@@ -269,7 +282,7 @@ func replayTestProjection(prompt string) ([]byte, error) {
 	return exactjson.Canonical(struct {
 		Prompt   string `json:"prompt"`
 		Renderer string `json:"renderer"`
-	}{prompt, assemblyline.PortableRendererV5})
+	}{prompt, assemblyline.PortableRendererV8})
 }
 
 func replayTestCall(t *testing.T, gap queue.StationGapOpening) queue.StationCallOpening {

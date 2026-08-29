@@ -47,10 +47,23 @@ func portableCodingResponseMaximum(job PortableJob) (int, bool, error) {
 			maximum = max(maximum, len(candidate.Token))
 		}
 		return maximum, true, nil
+	case WorkRuntimeCapabilitySelection:
+		var input RuntimeCapabilitySelectionInput
+		if err := decodePortablePayload(job.Payload, &input); err != nil {
+			return 0, true, err
+		}
+		maximum := len(RuntimeCapabilitySelectionNone)
+		for _, candidate := range input.Candidates {
+			maximum = max(maximum, len(candidate.CandidateID))
+		}
+		return maximum, true, nil
 	case WorkTypeScriptRepairGuidance:
 		return maxTypeScriptRepairGuidanceBytes, true, nil
 	case WorkFragmentGeneration:
 		maximum, err := fragmentGenerationResponseMaximum(job)
+		return maximum, true, err
+	case WorkFragmentGenerationReplacement:
+		maximum, err := fragmentGenerationReplacementResponseMaximum(job)
 		return maximum, true, err
 	case WorkFragmentModification:
 		return MaxPortableRawCandidateBytes, true, nil
@@ -60,6 +73,18 @@ func portableCodingResponseMaximum(job PortableJob) (int, bool, error) {
 	default:
 		return 0, false, nil
 	}
+}
+
+func fragmentGenerationReplacementResponseMaximum(job PortableJob) (int, error) {
+	var input FragmentGenerationReplacementInput
+	if err := decodePortablePayload(job.Payload, &input); err != nil {
+		return 0, err
+	}
+	origin, err := NewFragmentGenerationJob(input.Original)
+	if err != nil {
+		return 0, err
+	}
+	return fragmentGenerationResponseMaximum(origin)
 }
 
 func fragmentGenerationResponseMaximum(job PortableJob) (int, error) {

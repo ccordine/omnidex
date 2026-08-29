@@ -20,31 +20,52 @@ func applicationSemanticUncertaintyContract(
 			"One necessary missing-fact question.",
 			"DecodeApplicationContextNeedQuestionLeaf validates the question before code appends it to the bounded retained set.")
 	case WorkApplicationProductContext:
-		contract = semanticUncertaintyContract(kind,
-			"What concise product context is explicitly established by the software request?",
-			"Product meaning expressed in natural language has no mechanically exact structural representation.",
-			"The immutable user request and established application facts.",
-			"One concise product-context text leaf.",
+		contract = semanticUncertaintyContractV2(kind,
+			"What concise product or domain identity is explicitly established by the immutable software request and established facts, excluding its requirements?",
+			"Product or domain identity expressed in natural language has no mechanically exact structural representation.",
+			"The immutable user request and established application facts needed to identify only the product, domain, audience, setting, or purpose.",
+			"One concise product-or-domain identity phrase that excludes software requirements.",
 			"DecodeApplicationProductContextLeaf validates the leaf before code binds it as accepted application authority.")
 	case WorkApplicationRequirementCoverage:
-		contract = semanticUncertaintyContract(kind,
-			"Does one explicit software requirement remain uncovered by the retained requirements?",
-			"Semantic equivalence between free-form requirements cannot be computed by byte or syntax comparison.",
-			"The immutable request, product context, established facts, and retained requirement statements.",
-			"One registered application-requirement coverage relation.",
+		contract = semanticUncertaintyContractV2(kind,
+			"Does one task-local runtime implementation requirement remain uncovered by the retained requirements?",
+			"Semantic equivalence and whether free-form behavior requires task-local application source cannot be computed by byte or syntax comparison.",
+			"The immutable request, established facts, and retained requirement statements.",
+			"One registered task-local application-requirement coverage relation.",
 			"DecodeApplicationRequirementCoverageLeaf validates the relation before code continues or closes the bounded fixed point.")
 	case WorkApplicationRequirement:
-		contract = semanticUncertaintyContract(kind,
-			"What is the earliest explicit software requirement not covered by the retained requirements?",
-			"Faithful semantic extraction from unconstrained human phrasing cannot be performed by a parser.",
-			"The immutable request, product context, established facts, and retained requirement statements.",
-			"One explicit software-requirement text leaf.",
+		contract = semanticUncertaintyContractV3(kind,
+			"What is the earliest task-local runtime implementation requirement not covered by the retained requirements?",
+			"Faithful extraction of one source-owning runtime obligation from unconstrained human phrasing cannot be performed by a parser.",
+			"The immutable request, established facts, retained requirement statements, and the exact code-established REQUIREMENT_REMAINS coverage authority bound to them.",
+			"One task-local runtime implementation-requirement text leaf.",
 			"DecodeApplicationRequirementLeaf validates the leaf before code appends it to the bounded retained set.")
-	case WorkApplicationProjectStackConstraint:
+	case WorkApplicationRequirementCandidateCardinality:
 		contract = semanticUncertaintyContract(kind,
-			"Which registered technical format constraint is explicitly established by accepted application authority?",
+			"How many independently testable runtime outcomes does the exact requirement candidate contain?",
+			"Semantic outcome multiplicity in natural-language prose cannot be established by byte or syntax validation.",
+			"One exact requirement candidate and the registered one-or-multiple outcome vocabulary.",
+			"One registered requirement-candidate cardinality relation.",
+			"DecodeApplicationRequirementCandidateCardinalityResult validates the relation before code appends the candidate or opens bounded splitting.")
+	case WorkApplicationRequirementCandidateSplit:
+		contract = semanticUncertaintyContract(kind,
+			"What is the earliest single runtime outcome contained in the exact multi-outcome requirement candidate?",
+			"The earliest semantic outcome inside compound natural-language prose cannot be extracted by a parser.",
+			"One exact requirement candidate and its code-bound MULTIPLE_RUNTIME_OUTCOMES relation.",
+			"One single-outcome requirement text leaf.",
+			"DecodeApplicationRequirementCandidateSplitLeaf validates a changed leaf before code repeats the bounded cardinality check.")
+	case WorkApplicationRequirementCandidateSplitCorrection:
+		contract = semanticUncertaintyContract(kind,
+			"What complete replacement corrects the exact byte-identical multi-outcome split candidate?",
+			"Selecting the earliest semantic outcome inside the preserved defective prose cannot be performed by byte comparison.",
+			"The exact current candidate, its code-bound MULTIPLE_RUNTIME_OUTCOMES relation, and the exact byte-identity defect.",
+			"One complete byte-different single-outcome requirement text leaf.",
+			"DecodeApplicationRequirementCandidateSplitCorrectionLeaf validates the replacement before code repeats ordinary cardinality validation.")
+	case WorkApplicationProjectStackConstraint:
+		contract = semanticUncertaintyContractV2(kind,
+			"Which registered technical format and packaging shape, if any, is explicitly established by the immutable software request?",
 			"Natural-language technical constraints cannot be mapped exactly to a registered candidate by syntax alone.",
-			"The accepted product context, retained requirements, and code-enumerated technical-format candidates.",
+			"The immutable user request and code-enumerated technical-format and packaging-shape candidates.",
 			"One opaque technical-format candidate ID.",
 			"DecodeApplicationProjectStackConstraintDecision validates the ID before code selects the registered stack adapter.")
 	case WorkApplicationServiceContinuedAvailability:
@@ -177,4 +198,61 @@ func applicationSemanticUncertaintyContract(
 		return SemanticUncertaintyContract{}, false
 	}
 	return contract, true
+}
+
+func historicalApplicationIntentSemanticUncertaintyContract(
+	kind WorkKind,
+) (SemanticUncertaintyContract, bool) {
+	var contract SemanticUncertaintyContract
+	switch kind {
+	case WorkApplicationProductContext:
+		contract = semanticUncertaintyContract(kind,
+			"What concise product context is explicitly established by the software request?",
+			"Product meaning expressed in natural language has no mechanically exact structural representation.",
+			"The immutable user request and established application facts.",
+			"One concise product-context text leaf.",
+			"DecodeApplicationProductContextLeaf validates the leaf before code binds it as accepted application authority.")
+	case WorkApplicationRequirementCoverage:
+		contract = semanticUncertaintyContract(kind,
+			"Does one explicit software requirement remain uncovered by the retained requirements?",
+			"Semantic equivalence between free-form requirements cannot be computed by byte or syntax comparison.",
+			"The immutable request, product context, established facts, and retained requirement statements.",
+			"One registered application-requirement coverage relation.",
+			"DecodeApplicationRequirementCoverageLeaf validates the relation before code continues or closes the bounded fixed point.")
+	case WorkApplicationRequirement:
+		contract = semanticUncertaintyContract(kind,
+			"What is the earliest explicit software requirement not covered by the retained requirements?",
+			"Faithful semantic extraction from unconstrained human phrasing cannot be performed by a parser.",
+			"The immutable request, product context, established facts, and retained requirement statements.",
+			"One explicit software-requirement text leaf.",
+			"DecodeApplicationRequirementLeaf validates the leaf before code appends it to the bounded retained set.")
+	case WorkApplicationProjectStackConstraint:
+		contract = semanticUncertaintyContract(kind,
+			"Which registered technical format constraint is explicitly established by accepted application authority?",
+			"Natural-language technical constraints cannot be mapped exactly to a registered candidate by syntax alone.",
+			"The accepted product context, retained requirements, and code-enumerated technical-format candidates.",
+			"One opaque technical-format candidate ID.",
+			"DecodeApplicationProjectStackConstraintDecision validates the ID before code selects the registered stack adapter.")
+	default:
+		return SemanticUncertaintyContract{}, false
+	}
+	return contract, true
+}
+
+func rendererV7ApplicationIntentSemanticUncertaintyContract(
+	kind WorkKind,
+) (SemanticUncertaintyContract, bool) {
+	if kind != WorkApplicationRequirement {
+		contract, ok := applicationSemanticUncertaintyContract(kind)
+		if !ok || contract.ID != semanticUncertaintyContractIDPrefix+string(kind)+".v2" {
+			return SemanticUncertaintyContract{}, false
+		}
+		return contract, true
+	}
+	return semanticUncertaintyContractV2(kind,
+		"What is the earliest task-local runtime implementation requirement not covered by the retained requirements?",
+		"Faithful extraction of one source-owning runtime obligation from unconstrained human phrasing cannot be performed by a parser.",
+		"The immutable request, established facts, and retained requirement statements.",
+		"One task-local runtime implementation-requirement text leaf.",
+		"DecodeApplicationRequirementLeaf validates the leaf before code appends it to the bounded retained set."), true
 }

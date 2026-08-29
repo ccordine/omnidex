@@ -25,6 +25,7 @@ func replayExactStationSourceArtifact(
 		return artifact, nil
 	}
 	if job.Kind != assemblyline.WorkFragmentGeneration &&
+		job.Kind != assemblyline.WorkFragmentGenerationReplacement &&
 		job.Kind != assemblyline.WorkFragmentModification &&
 		job.Kind != assemblyline.WorkFragmentCorrection {
 		return artifact, nil
@@ -40,6 +41,15 @@ func replayExactStationSourceArtifact(
 			return artifact, fmt.Errorf("decode replay fragment generation input: %w", err)
 		}
 		signature, language = generation.Signature, generation.Language
+	case assemblyline.WorkFragmentGenerationReplacement:
+		var replacement assemblyline.FragmentGenerationReplacementInput
+		if err := json.Unmarshal(job.Payload, &replacement); err != nil {
+			return artifact, fmt.Errorf(
+				"decode replay fragment generation replacement input: %w", err,
+			)
+		}
+		signature, language = replacement.Original.Signature,
+			replacement.Original.Language
 	case assemblyline.WorkFragmentModification:
 		if err := json.Unmarshal(job.Payload, &modification); err != nil {
 			return artifact, fmt.Errorf("decode replay fragment modification input: %w", err)

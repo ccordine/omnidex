@@ -98,6 +98,7 @@ func Apply(base Routing, cfg Config) Routing {
 	}
 	if value := cfg.Get("coding_capability_relation_model"); value != "" {
 		out.Stations[station.CodingCapabilityRelation] = value
+		out.Stations[station.CodingRuntimeCapabilitySelection] = value
 	}
 	if value := cfg.Get("coding_skill_selection_model"); value != "" {
 		out.Stations[station.CodingSkillSelection] = value

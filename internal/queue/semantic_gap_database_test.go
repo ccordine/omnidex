@@ -37,7 +37,7 @@ func TestPostgresSemanticGapLifecycleIsExactImmutableAndSingular(t *testing.T) {
 		t.Fatal(err)
 	}
 	decoded, err := decodeStationGapSemanticUncertainty(
-		persistedContract, persistedDigest, opened.WorkKind,
+		persistedContract, persistedDigest, opened.RendererVersion, opened.WorkKind,
 	)
 	if err != nil || decoded != opened.SemanticUncertaintyContract {
 		t.Fatalf("persisted semantic uncertainty=%+v err=%v", decoded, err)

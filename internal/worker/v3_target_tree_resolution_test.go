@@ -52,7 +52,8 @@ func TestTypeScriptCompleteTargetTreeIsTaskNeutralAndCompiles(t *testing.T) {
 				t.Fatal(err)
 			}
 			tree, coverage, err := resolveDirectCodingTargetTree(
-				runtime, "", "", specification, workload, stack,
+				runtime, "", "", specification.ProductQuote,
+				specification, workload, stack,
 				[]string{}, []string{},
 			)
 			if err != nil {
@@ -135,7 +136,8 @@ func TestTargetTreeCorrectionReplacesTheSameCompleteSafeTree(t *testing.T) {
 	}
 	stack := inferredTypeScriptTargetTreeFixture(t)
 	tree, _, err := resolveDirectCodingTargetTree(
-		runtime, "tree-model", "repair-model", specification, workload, stack,
+		runtime, "tree-model", "repair-model", specification.ProductQuote,
+		specification, workload, stack,
 		[]string{}, []string{},
 	)
 	if err != nil {
@@ -178,7 +180,8 @@ func TestTargetTreeCorrectionNeverExposesConstructedPaths(t *testing.T) {
 	}
 	stack := inferredTypeScriptTargetTreeFixture(t)
 	if _, _, err := resolveDirectCodingTargetTree(
-		runtime, "tree-model", "repair-model", specification, workload, stack,
+		runtime, "tree-model", "repair-model", specification.ProductQuote,
+		specification, workload, stack,
 		[]string{}, []string{},
 	); err != nil {
 		t.Fatal(err)
@@ -213,7 +216,8 @@ func TestTargetTreeCorrectionDoesNotEchoUnsafeCandidate(t *testing.T) {
 	}
 	stack := inferredTypeScriptTargetTreeFixture(t)
 	if _, _, err := resolveDirectCodingTargetTree(
-		runtime, "tree-model", "repair-model", specification, workload, stack,
+		runtime, "tree-model", "repair-model", specification.ProductQuote,
+		specification, workload, stack,
 		[]string{}, []string{},
 	); err != nil {
 		t.Fatal(err)
@@ -257,7 +261,8 @@ func TestInferredTargetTreeValidatesExistingFileClosureBeforeAcceptance(t *testi
 	}
 	stack := inferredTypeScriptTargetTreeFixture(t)
 	target, _, err := resolveDirectCodingTargetTree(
-		runtime, "tree-model", "repair-model", specification, workload, stack,
+		runtime, "tree-model", "repair-model", specification.ProductQuote,
+		specification, workload, stack,
 		[]string{"src"}, nil,
 	)
 	if err != nil {
@@ -300,7 +305,8 @@ func TestExclusiveCommandLineTreeProjectsTaskPairsWithoutInference(t *testing.T)
 		t.Fatal(err)
 	}
 	tree, coverage, err := resolveDirectCodingTargetTree(
-		runtime, "", "", specification, workload, stack, nil, nil,
+		runtime, "", "", specification.ProductQuote,
+		specification, workload, stack, nil, nil,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -334,7 +340,7 @@ func TestPHPCompleteTreeIsMechanicallyProjectedWithoutInference(t *testing.T) {
 	}
 	tree, coverage, err := resolveDirectCodingTargetTree(
 		typedWorkerRuntime{Context: context.Background(), MaxAttempts: 1},
-		"", "", specification, workload, stack,
+		"", "", specification.ProductQuote, specification, workload, stack,
 		[]string{"composer.json", "src/Feature001.php", "tests/Feature003Test.php"},
 		[]string{"src", "tests"},
 	)
