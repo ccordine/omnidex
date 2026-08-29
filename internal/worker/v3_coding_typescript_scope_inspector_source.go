@@ -190,10 +190,34 @@ function containsAnyType(type, visited = new Set()) {
 }
 function exactTypeofPrimitive(type) {
   if (!type) return '';
-  if ((type.flags & ts.TypeFlags.Number) !== 0) return 'number';
-  if ((type.flags & ts.TypeFlags.String) !== 0) return 'string';
-  if ((type.flags & ts.TypeFlags.Boolean) !== 0) return 'boolean';
+  if ((type.flags & ts.TypeFlags.NumberLike) !== 0) return 'number';
+  if ((type.flags & ts.TypeFlags.StringLike) !== 0) return 'string';
+  if ((type.flags & ts.TypeFlags.BooleanLike) !== 0) return 'boolean';
   return '';
+}
+function exactContextualTypeofPrimitive(type) {
+  const direct = exactTypeofPrimitive(type);
+  if (direct || !type || !type.isUnion()) return direct;
+  let primitive = '';
+  let hasDirectPrimitive = false;
+  for (const constituent of type.types) {
+    const constituentPrimitive = exactTypeofPrimitive(constituent);
+    if (constituentPrimitive) {
+      if (primitive && primitive !== constituentPrimitive) return '';
+      primitive = constituentPrimitive;
+      hasDirectPrimitive = true;
+      continue;
+    }
+    const signatures = checker.getSignaturesOfType(constituent, ts.SignatureKind.Call);
+    if (signatures.length === 0) return '';
+    for (const signature of signatures) {
+      if (signature.parameters.length !== 0) return '';
+      const returnedPrimitive = exactTypeofPrimitive(checker.getReturnTypeOfSignature(signature));
+      if (!returnedPrimitive || (primitive && primitive !== returnedPrimitive)) return '';
+      primitive = returnedPrimitive;
+    }
+  }
+  return hasDirectPrimitive ? primitive : '';
 }
 function isStableReferenceExpression(node) {
   if (ts.isIdentifier(node)) return true;
@@ -212,16 +236,18 @@ function deterministicPrimitiveNullishRepair(
   if (!contextual || incompatibleTypes.length === 0 || !ts.isBinaryExpression(node) ||
       node.operatorToken.kind !== ts.SyntaxKind.QuestionQuestionToken ||
       !isStableReferenceExpression(node.left)) return null;
-  const primitive = exactTypeofPrimitive(contextual);
+  const primitive = exactContextualTypeofPrimitive(contextual);
   if (!primitive) return null;
   const fallbackType = checker.getTypeAtLocation(node.right);
-  if (!checker.isTypeAssignableTo(fallbackType, contextual)) return null;
+  if (!checker.isTypeAssignableTo(fallbackType, contextual) ||
+      exactTypeofPrimitive(fallbackType) !== primitive) return null;
   const leftType = checker.getTypeAtLocation(node.left);
   const constituents = leftType.isUnion() ? leftType.types : [leftType];
   let hasCompatible = false;
   let hasIncompatibleNonNullish = false;
   for (const constituent of constituents) {
     if (checker.isTypeAssignableTo(constituent, contextual)) {
+      if (exactTypeofPrimitive(constituent) !== primitive) return null;
       hasCompatible = true;
       continue;
     }
