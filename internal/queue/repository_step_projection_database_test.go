@@ -14,7 +14,7 @@ func TestPostgresStepClaimRollsBackWhenContextProjectionExceedsBudget(t *testing
 	repository, pool, ctx := replanTestRepository(t)
 	marker := fmt.Sprintf("context-projection-budget-%d", time.Now().UnixNano())
 
-	itemJob, err := repository.EnqueueJob(ctx, marker+"-items", model.PipelineAssistant, []byte(`{}`))
+	itemJob, err := repository.EnqueueJob(ctx, marker+"-items", model.PipelineCoding, []byte(`{}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -36,7 +36,7 @@ func TestPostgresStepClaimRollsBackWhenContextProjectionExceedsBudget(t *testing
 		t.Fatal(err)
 	}
 
-	byteJob, err := repository.EnqueueJob(ctx, marker+"-bytes", model.PipelineAssistant, []byte(`{}`))
+	byteJob, err := repository.EnqueueJob(ctx, marker+"-bytes", model.PipelineCoding, []byte(`{}`))
 	if err != nil {
 		t.Fatal(err)
 	}

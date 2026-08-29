@@ -24,23 +24,23 @@ type serviceCommandOptions struct {
 	Tail        int
 }
 
-func tryRunServiceShortcut(args []string) bool {
+func tryRunServiceShortcut(args []string, coreURL string) bool {
 	if len(args) == 0 {
 		return false
 	}
 	first := strings.TrimSpace(args[0])
 	if first == "--service" || first == "-s" || strings.HasPrefix(first, "--service=") {
-		runServiceWithPreset("", args)
+		runServiceWithPreset("", args, coreURL)
 		return true
 	}
 	return false
 }
 
-func runService(args []string) {
-	runServiceWithPreset("", args)
+func runService(args []string, coreURL string) {
+	runServiceWithPreset("", args, coreURL)
 }
 
-func runServiceWithPreset(presetService string, args []string) {
+func runServiceWithPreset(presetService string, args []string, coreURL string) {
 	opts, showHelp, err := parseServiceCommandArgs(args, presetService)
 	if showHelp {
 		printServiceCommandUsage()
@@ -55,39 +55,17 @@ func runServiceWithPreset(presetService string, args []string) {
 		die(err.Error())
 	}
 	if shouldRunFresh {
-		baseURL := getenv("CORE_URL", "http://localhost:8090")
 		timeout := getenvDuration("CLI_TIMEOUT", 30*time.Second)
-		c := client.New(baseURL, timeout)
+		c := client.New(coreURL, timeout)
 		freshArgs := []string{}
 		if opts.AssumeYes {
 			freshArgs = append(freshArgs, "--yes")
 		}
-		runMigrateFresh(c, freshArgs)
+		runMigrateFresh(c, freshArgs, coreURL)
 		return
 	}
 
-	root, composeFile, err := resolveServiceComposeTarget(opts.Prefix, opts.ComposeFile)
-	if err != nil {
-		die(err.Error())
-	}
-	composeCmd, err := resolveComposeCommandPrefix()
-	if err != nil {
-		die(err.Error())
-	}
-	if strings.EqualFold(strings.TrimSpace(opts.Action), "docker-logs") {
-		invocation, err := dockerLogsInvocationForService(opts, composeCmd, composeFile, root)
-		if err != nil {
-			die(err.Error())
-		}
-		runServiceInvocationOrExit(invocation, root)
-		return
-	}
-	invocation, err := composeInvocationForService(opts, composeCmd, composeFile)
-	if err != nil {
-		die(err.Error())
-	}
-
-	runServiceInvocationOrExit(invocation, root)
+	exitServiceProcessError(executeResolvedServiceCommand(opts))
 }
 
 func printServiceCommandUsage() {

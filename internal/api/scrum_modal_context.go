@@ -1,26 +1,10 @@
 package api
 
 import (
-	"encoding/json"
 	"fmt"
-	"io/fs"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strings"
-
-	"github.com/gryph/omnidex/internal/agentconfig"
-	"github.com/gryph/omnidex/internal/modelconfig"
-	"github.com/gryph/omnidex/internal/omni"
 )
-
-type scrumConfigField struct {
-	Key         string   `json:"key"`
-	Label       string   `json:"label"`
-	Description string   `json:"description,omitempty"`
-	Options     []string `json:"options,omitempty"`
-	Value       string   `json:"value,omitempty"`
-}
 
 type scrumModalRenderContext struct {
 	Card                ScrumCard
@@ -29,17 +13,15 @@ type scrumModalRenderContext struct {
 	Tab                 string
 	Files               []string
 	Dirs                []string
+	FilePath            string
+	FileParent          string
+	FileHasParent       bool
+	FileOffset          int
+	FileHasPrevious     bool
+	FilePreviousOffset  int
+	FileHasMore         bool
+	FileNextOffset      int
 	PlayQueue           map[string]any
-	ModelFields         []scrumConfigField
-	ModelSource         string
-	ModelOverrides      map[string]string
-	AgentFields         []scrumConfigField
-	AgentSource         string
-	AgentSystem         string
-	AgentOverrides      map[string]string
-	Recipes             []omni.Recipe
-	ProjectRecipeID     string
-	ProjectRecipe       map[string]any
 	PilotPending        bool
 	ChannelBeforeCursor string
 	ChannelHasMore      bool
@@ -57,242 +39,66 @@ func scrumPlayControlUnlocked(card ScrumCard) bool {
 	}
 }
 
-func (s *Server) buildScrumModalContext(r *http.Request, cardID, tab string) (*scrumModalRenderContext, error) {
+func (s *Server) buildScrumModalContext(
+	r *http.Request,
+	cardID string,
+	query scrumModalQuery,
+) (*scrumModalRenderContext, error) {
 	cardID = strings.TrimSpace(cardID)
 	if cardID == "" {
 		return nil, fmt.Errorf("card id is required")
 	}
-	board, projectID, err := s.loadScrumContext(r)
+	if s.repo == nil {
+		return nil, fmt.Errorf("postgres repository is required for Scrum")
+	}
+	board, err := s.scrumBoardMetadataFromProject(r.Context(), query.ProjectID)
 	if err != nil {
 		return nil, err
 	}
-	board, err = s.refreshScrumPlayQueue(r, projectID, board)
+	stored, err := s.repo.GetScrumCard(r.Context(), query.ProjectID, cardID)
 	if err != nil {
 		return nil, err
 	}
-	board, err = s.refreshScrumCardLlmJobs(r.Context(), projectID, board)
+	card, err := dbScrumCardToAPI(stored)
 	if err != nil {
 		return nil, err
 	}
-	cardPtr := findScrumCard(board, cardID)
-	if cardPtr == nil {
-		return nil, fmt.Errorf("card not found")
-	}
-	card := *cardPtr
-	coachConfig, err := s.scrumCoachConfig(card.CoachConfig)
+	playQueue, err := s.scrumPlayQueuePayload(r.Context(), query.ProjectID)
 	if err != nil {
 		return nil, err
 	}
-	card.CoachConfig, err = coachConfigToRaw(coachConfig)
-	if err != nil {
-		return nil, err
-	}
-	playQueue := scrumPlayQueueSummary(board)
-	channelPage, err := scrumChannelMessagePageFor(card, scrumChannelDefaultPageSize, "")
-	if err != nil {
-		return nil, err
-	}
-	card.Chat = channelPage.Messages
-	card.ChatCount = channelPage.Total
-	card.ConsoleLog = ""
 	board.Cards = []ScrumCard{}
 	ctx := &scrumModalRenderContext{
-		Card:                card,
-		Board:               board,
-		ProjectID:           projectID,
-		Tab:                 normalizeScrumModalTab(tab),
-		PlayQueue:           playQueue,
-		ChannelBeforeCursor: channelPage.BeforeCursor,
-		ChannelHasMore:      channelPage.HasMore,
+		Card: card, Board: board, ProjectID: query.ProjectID,
+		Tab: string(query.Tab), PlayQueue: playQueue,
 	}
-	if ctx.Tab == "" {
-		ctx.Tab = "card"
-	}
-	if root := strings.TrimSpace(board.ProjectDirectory); root != "" {
-		abs, err := filepath.Abs(root)
-		if err != nil {
-			return nil, fmt.Errorf("resolve project directory %q: %w", root, err)
-		}
-		ctx.Files, ctx.Dirs, err = scrumListProjectFiles(abs)
-		if err != nil {
+	switch ctx.Tab {
+	case "files":
+		if err := s.populateScrumModalFileContext(
+			r, board.ProjectDirectory, query.FilePath, query.FileOffset, ctx,
+		); err != nil {
 			return nil, err
 		}
-	}
-	modelResolved, modelErr := s.resolvedModelsForProjectCard(r.Context(), projectID, card)
-	if modelErr != nil {
-		return nil, modelErr
-	}
-	ctx.ModelFields, err = scrumConfigFieldsFromList(modelResolved["fields"])
-	if err != nil {
-		return nil, fmt.Errorf("decode resolved model fields: %w", err)
-	}
-	ctx.ModelSource = scrumConfigString(modelResolved, "source")
-	ctx.ModelOverrides, err = modelConfigStringMap(card.ModelConfig)
-	if err != nil {
-		return nil, err
-	}
-	agentResolved, agentErr := s.resolvedAgentsForProjectCard(r.Context(), projectID, card)
-	if agentErr != nil {
-		return nil, agentErr
-	}
-	ctx.AgentFields, err = scrumConfigFieldsFromList(agentResolved["fields"])
-	if err != nil {
-		return nil, fmt.Errorf("decode resolved agent fields: %w", err)
-	}
-	ctx.AgentSource = scrumConfigString(agentResolved, "source")
-	ctx.AgentSystem = scrumConfigString(agentResolved, "system")
-	if ctx.AgentSystem == "" {
-		return nil, fmt.Errorf("resolved agent system is empty")
-	}
-	ctx.AgentOverrides, err = agentConfigStringMap(card.AgentConfig)
-	if err != nil {
-		return nil, err
-	}
-	ctx.Recipes, err = omni.LoadRecipes(s.recipeRoot())
-	if err != nil {
-		return nil, fmt.Errorf("load Scrum recipes: %w", err)
-	}
-	if s.repo == nil || projectID <= 0 {
-		return nil, fmt.Errorf("PostgreSQL project repository is required for Scrum modal context")
-	}
-	project, err := s.repo.GetProject(r.Context(), projectID)
-	if err != nil {
-		return nil, fmt.Errorf("load Scrum project %d: %w", projectID, err)
-	}
-	ctx.ProjectRecipeID = strings.TrimSpace(project.RecipeID)
-	ctx.ProjectRecipe, err = jsonRawObjectMap(project.Recipe)
-	if err != nil {
-		return nil, fmt.Errorf("decode project recipe: %w", err)
+	case "channel":
+		if err := s.populateScrumModalChannelContext(r, ctx); err != nil {
+			return nil, err
+		}
 	}
 	return ctx, nil
 }
 
-func normalizeScrumModalTab(tab string) string {
-	tab = strings.TrimSpace(strings.ToLower(tab))
-	switch tab {
-	case "card", "files", "tests", "config", "recipe", "channel":
-		return tab
-	default:
-		return ""
-	}
-}
-
-func scrumConfigFieldsFromList(raw any) ([]scrumConfigField, error) {
-	items, ok := raw.([]map[string]any)
-	if !ok {
-		return nil, fmt.Errorf("fields must be []map[string]any, received %T", raw)
-	}
-	fields := make([]scrumConfigField, 0, len(items))
-	for index, item := range items {
-		field := scrumConfigField{
-			Key:         scrumConfigString(item, "key"),
-			Label:       scrumConfigString(item, "label"),
-			Description: scrumConfigString(item, "description"),
-			Value:       scrumConfigString(item, "value"),
-		}
-		switch opts := item["options"].(type) {
-		case []string:
-			field.Options = append([]string(nil), opts...)
-		case []any:
-			for _, option := range opts {
-				text, ok := option.(string)
-				if !ok || strings.TrimSpace(text) == "" {
-					return nil, fmt.Errorf("field %d option must be a non-empty string", index)
-				}
-				field.Options = append(field.Options, text)
-			}
-		case nil:
-		default:
-			return nil, fmt.Errorf("field %d options must be a string array, received %T", index, opts)
-		}
-		if field.Key == "" || field.Label == "" {
-			return nil, fmt.Errorf("field %d requires key and label", index)
-		}
-		fields = append(fields, field)
-	}
-	return fields, nil
-}
-
-func scrumConfigString(payload any, key string) string {
-	switch typed := payload.(type) {
-	case map[string]any:
-		value, _ := typed[key].(string)
-		return strings.TrimSpace(value)
-	default:
-		return ""
-	}
-}
-
-func modelConfigStringMap(raw json.RawMessage) (map[string]string, error) {
-	cfg, err := modelconfig.FromJSON(raw)
+func (s *Server) populateScrumModalChannelContext(r *http.Request, ctx *scrumModalRenderContext) error {
+	channelPage, _, err := s.scrumChannelPage(
+		r.Context(), ctx.ProjectID, ctx.Card.ID, scrumChannelDefaultPageSize, "",
+	)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	if len(cfg) == 0 {
-		return map[string]string{}, nil
-	}
-	return cfg.ToMap(), nil
-}
-
-func agentConfigStringMap(raw json.RawMessage) (map[string]string, error) {
-	cfg, err := agentconfig.FromJSON(raw)
-	if err != nil {
-		return nil, fmt.Errorf("parse card agent configuration: %w", err)
-	}
-	if len(cfg) == 0 {
-		return map[string]string{}, nil
-	}
-	return cfg.ToMap(), nil
-}
-
-func jsonRawObjectMap(raw json.RawMessage) (map[string]any, error) {
-	if len(raw) <= 2 {
-		return map[string]any{}, nil
-	}
-	var out map[string]any
-	if err := json.Unmarshal(raw, &out); err != nil {
-		return nil, err
-	}
-	if out == nil {
-		return nil, fmt.Errorf("expected JSON object, received null")
-	}
-	return out, nil
-}
-
-func scrumListProjectFiles(root string) (files, dirs []string, err error) {
-	root = strings.TrimSpace(root)
-	if root == "" {
-		return nil, nil, fmt.Errorf("project root is required")
-	}
-	err = filepath.WalkDir(root, func(path string, d fs.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		if path == root {
-			return nil
-		}
-		rel, err := filepath.Rel(root, path)
-		if err != nil {
-			return err
-		}
-		if d.IsDir() {
-			if strings.Count(rel, string(os.PathSeparator)) > 2 {
-				return filepath.SkipDir
-			}
-			dirs = append(dirs, filepath.ToSlash(rel))
-			return nil
-		}
-		if strings.Count(rel, string(os.PathSeparator)) > 3 {
-			return nil
-		}
-		files = append(files, filepath.ToSlash(rel))
-		if len(files) >= 200 {
-			return fs.SkipAll
-		}
-		return nil
-	})
-	if err != nil {
-		return nil, nil, fmt.Errorf("list project files under %q: %w", root, err)
-	}
-	return files, dirs, nil
+	ctx.Card.Chat = channelPage.Messages
+	ctx.Card.ChatCount = channelPage.Total
+	ctx.Card.ChannelBeforeCursor = channelPage.BeforeCursor
+	ctx.Card.ChannelHasMore = channelPage.HasMore
+	ctx.ChannelBeforeCursor = channelPage.BeforeCursor
+	ctx.ChannelHasMore = channelPage.HasMore
+	return nil
 }

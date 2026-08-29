@@ -3,12 +3,9 @@ package api
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 	"strings"
 
-	"github.com/gryph/omnidex/internal/datasource"
-	"github.com/gryph/omnidex/internal/model"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -21,12 +18,20 @@ func (s *Server) handlePublicDataSources(w http.ResponseWriter, r *http.Request)
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	items, err := s.repo.ListDataSources(r.Context())
+	request, err := dataSourcePageRequest(r, dataSourceAPIPageSize)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	page, err := s.repo.ListDataSourcesPage(r.Context(), request)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"sources": dataSourcesPublicList(items)})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"sources": dataSourcesPublicList(page.Items), "offset": page.Offset, "has_more": page.HasMore,
+		"next_offset": dataSourceNextOffset(page.Offset, len(page.Items), page.HasMore),
+	})
 }
 
 func (s *Server) handlePublicDataSourceByID(w http.ResponseWriter, r *http.Request) {
@@ -94,12 +99,20 @@ func (s *Server) handleDataSourceChannels(w http.ResponseWriter, r *http.Request
 	}
 	switch r.Method {
 	case http.MethodGet:
-		channels, err := s.repo.ListDataSourceChannels(r.Context(), sourceID)
+		request, err := dataSourcePageRequest(r, dataSourceAPIPageSize)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		page, err := s.repo.ListDataSourceChannelsPage(r.Context(), sourceID, request)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"channels": channels})
+		writeJSON(w, http.StatusOK, map[string]any{
+			"channels": page.Items, "offset": page.Offset, "has_more": page.HasMore,
+			"next_offset": dataSourceNextOffset(page.Offset, len(page.Items), page.HasMore),
+		})
 	case http.MethodPost:
 		var req struct {
 			Name string `json:"name"`
@@ -158,13 +171,20 @@ func (s *Server) handleDataSourceChannelMessages(w http.ResponseWriter, r *http.
 	}
 	switch r.Method {
 	case http.MethodGet:
-		limit := parseInt(r.URL.Query().Get("limit"), 80)
-		messages, err := s.repo.ListDataSourceChannelMessages(r.Context(), channelID, limit)
+		request, err := dataSourcePageRequest(r, dataSourceAPIPageSize)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		page, err := s.repo.ListDataSourceChannelMessagePage(r.Context(), channelID, request)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"messages": messages})
+		writeJSON(w, http.StatusOK, map[string]any{
+			"messages": page.Items, "offset": page.Offset, "has_more": page.HasMore,
+			"next_offset": dataSourceNextOffset(page.Offset, len(page.Items), page.HasMore),
+		})
 	case http.MethodPost:
 		s.postDataSourceChannelMessage(w, r, sourceID, channelID)
 	default:
@@ -173,43 +193,7 @@ func (s *Server) handleDataSourceChannelMessages(w http.ResponseWriter, r *http.
 }
 
 func (s *Server) postDataSourceChannelMessage(w http.ResponseWriter, r *http.Request, sourceID, channelID string) {
-	var req struct {
-		Prompt string `json:"prompt"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid json body")
-		return
-	}
-	prompt := strings.TrimSpace(req.Prompt)
-	if prompt == "" {
-		writeError(w, http.StatusBadRequest, "prompt is required")
-		return
-	}
-	record, err := s.repo.GetDataSource(r.Context(), sourceID)
-	if err != nil {
-		writeDataSourceError(w, err)
-		return
-	}
-	userMessage, err := s.repo.AddDataSourceChannelMessage(r.Context(), channelID, "user", prompt, json.RawMessage(`{}`), nil)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	metadata, err := datasource.JobMetadata(record.ID, record.Name, prompt, channelID)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	job, err := s.repo.EnqueueJob(r.Context(), prompt, model.PipelineDataQuery, metadata)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	writeJSON(w, http.StatusAccepted, map[string]any{
-		"user_message": userMessage,
-		"job":          job,
-		"message":      fmt.Sprintf("Queued data query job #%d", job.ID),
-	})
+	writeRemovedInferenceAction(w, "data-source channel inference")
 }
 
 func (s *Server) handlePublicDataSourceAsk(w http.ResponseWriter, r *http.Request, id string) {
@@ -217,36 +201,5 @@ func (s *Server) handlePublicDataSourceAsk(w http.ResponseWriter, r *http.Reques
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	var req struct {
-		Question string `json:"question"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid json body")
-		return
-	}
-	question := strings.TrimSpace(req.Question)
-	if question == "" {
-		writeError(w, http.StatusBadRequest, "question is required")
-		return
-	}
-	record, err := s.repo.GetDataSource(r.Context(), id)
-	if err != nil {
-		writeDataSourceError(w, err)
-		return
-	}
-	metadata, err := datasource.JobMetadata(record.ID, record.Name, question, "")
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	job, err := s.repo.EnqueueJob(r.Context(), question, model.PipelineDataQuery, metadata)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	writeJSON(w, http.StatusAccepted, map[string]any{
-		"job":      job,
-		"question": question,
-		"message":  fmt.Sprintf("Queued data query job #%d", job.ID),
-	})
+	writeRemovedInferenceAction(w, "public data-source natural-language query")
 }

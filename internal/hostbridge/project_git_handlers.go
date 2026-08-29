@@ -35,7 +35,11 @@ func (s *Server) handleProjectGit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if rawPath != "" && rawPath != workspace {
-		payload["requested_location"] = rawPath
+		payload.RequestedLocation = rawPath
+	}
+	if err := payload.Validate(); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 	writeJSON(w, http.StatusOK, payload)
 }

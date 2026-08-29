@@ -16,7 +16,7 @@ import (
 
 const (
 	AdapterName    = "go"
-	AdapterVersion = "go-packages-v1"
+	AdapterVersion = "go-packages-v2"
 )
 
 var adapterIdentity = repositoryfacts.AdapterIdentity{Name: AdapterName, Version: AdapterVersion}
@@ -40,9 +40,10 @@ func Analyze(ctx context.Context, snapshot repositoryfacts.Snapshot) (repository
 		Context: ctx,
 		Mode: packages.NeedName | packages.NeedFiles | packages.NeedCompiledGoFiles |
 			packages.NeedImports | packages.NeedDeps | packages.NeedSyntax |
-			packages.NeedTypes | packages.NeedTypesInfo | packages.NeedModule,
+			packages.NeedTypes | packages.NeedTypesInfo | packages.NeedModule |
+			packages.NeedEmbedFiles | packages.NeedEmbedPatterns,
 		Dir: snapshot.Root, Fset: fileSet, Tests: true,
-		Env: goAnalysisEnvironment(os.Environ()),
+		Env: goAnalysisEnvironment(os.Environ(), snapshot.Root, exactGoWork(snapshot)),
 	}, "./...")
 	if err != nil {
 		return repositoryfacts.Analysis{}, fmt.Errorf("load Go repository packages: %w", err)
@@ -73,27 +74,35 @@ func Analyze(ctx context.Context, snapshot repositoryfacts.Snapshot) (repository
 }
 
 type analysisState struct {
-	snapshot            repositoryfacts.Snapshot
-	filesByAbsolute     map[string]repositoryfacts.File
-	symbols             map[string]repositoryfacts.Symbol
-	symbolIDByQualified map[string]string
-	symbolKindByID      map[string]string
-	artifacts           map[string]repositoryfacts.Artifact
-	packageArtifactIDs  map[string]string
-	edges               map[string]repositoryfacts.Edge
-	diagnostics         map[string]repositoryfacts.AnalysisDiagnostic
-	relevantPackages    map[string]struct{}
-	coveredFileIDs      map[string]struct{}
+	snapshot                       repositoryfacts.Snapshot
+	filesByAbsolute                map[string]repositoryfacts.File
+	allFilesByAbsolute             map[string]repositoryfacts.File
+	symbols                        map[string]repositoryfacts.Symbol
+	symbolIDByQualified            map[string]string
+	symbolKindByID                 map[string]string
+	artifacts                      map[string]repositoryfacts.Artifact
+	packageArtifactIDs             map[string]string
+	fileArtifactIDs                map[string]string
+	initializationSourcesByPackage map[string]map[string]struct{}
+	edges                          map[string]repositoryfacts.Edge
+	diagnostics                    map[string]repositoryfacts.AnalysisDiagnostic
+	relevantPackages               map[string]struct{}
+	coveredFileIDs                 map[string]struct{}
 }
 
 func newAnalysisState(snapshot repositoryfacts.Snapshot) (*analysisState, error) {
 	files := make(map[string]repositoryfacts.File)
+	allFiles := make(map[string]repositoryfacts.File)
 	goFiles := 0
 	for _, file := range snapshot.Files {
-		if file.Kind != repositoryfacts.EntryRegular || file.Language != "go" {
+		if file.Kind != repositoryfacts.EntryRegular {
 			continue
 		}
 		absolute := filepath.Clean(filepath.Join(snapshot.Root, filepath.FromSlash(file.Path)))
+		allFiles[absolute] = file
+		if file.Language != "go" {
+			continue
+		}
 		files[absolute] = file
 		goFiles++
 	}
@@ -101,10 +110,11 @@ func newAnalysisState(snapshot repositoryfacts.Snapshot) (*analysisState, error)
 		return nil, fmt.Errorf("Go repository analysis requires at least one indexed Go source file")
 	}
 	return &analysisState{
-		snapshot: snapshot, filesByAbsolute: files,
+		snapshot: snapshot, filesByAbsolute: files, allFilesByAbsolute: allFiles,
 		symbols:             make(map[string]repositoryfacts.Symbol),
 		symbolIDByQualified: make(map[string]string), symbolKindByID: make(map[string]string),
 		artifacts: make(map[string]repositoryfacts.Artifact), packageArtifactIDs: make(map[string]string),
+		fileArtifactIDs: make(map[string]string), initializationSourcesByPackage: make(map[string]map[string]struct{}),
 		edges:            make(map[string]repositoryfacts.Edge),
 		diagnostics:      make(map[string]repositoryfacts.AnalysisDiagnostic),
 		relevantPackages: make(map[string]struct{}),
@@ -176,16 +186,28 @@ func flattenPackages(roots []*packages.Package) []*packages.Package {
 	return items
 }
 
-func goAnalysisEnvironment(current []string) []string {
-	out := make([]string, 0, len(current)+3)
+func exactGoWork(snapshot repositoryfacts.Snapshot) string {
+	for _, file := range snapshot.Files {
+		if file.Path == "go.work" && file.Kind == repositoryfacts.EntryRegular {
+			return filepath.Join(snapshot.Root, "go.work")
+		}
+	}
+	return "off"
+}
+
+func goAnalysisEnvironment(current []string, root, goWork string) []string {
+	out := make([]string, 0, len(current)+9)
 	for _, item := range current {
 		key, _, _ := strings.Cut(item, "=")
 		switch key {
-		case "GOPROXY", "GOSUMDB", "GOTOOLCHAIN":
+		case "GO111MODULE", "GOENV", "GOFLAGS", "GOWORK", "GOPROXY", "GOSUMDB", "GOTOOLCHAIN", "GOVCS", "PWD":
 			continue
 		default:
 			out = append(out, item)
 		}
 	}
-	return append(out, "GOPROXY=off", "GOSUMDB=off", "GOTOOLCHAIN=local")
+	return append(
+		out, "GO111MODULE=on", "GOENV=off", "GOFLAGS=-mod=readonly", "GOWORK="+goWork,
+		"GOPROXY=off", "GOSUMDB=off", "GOTOOLCHAIN=local", "GOVCS=off", "PWD="+root,
+	)
 }

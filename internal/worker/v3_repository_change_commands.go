@@ -7,7 +7,7 @@ import (
 	"sort"
 
 	"github.com/gryph/omnidex/internal/evidence"
-	toolruntime "github.com/gryph/omnidex/internal/tools"
+	"github.com/gryph/omnidex/internal/operation"
 )
 
 type repositoryVerificationScope string
@@ -19,12 +19,37 @@ const (
 )
 
 func (session *directCodingSession) runExistingRepositoryVerification(
-	root string,
+	projection repositoryWorkspaceProjection,
 	scope repositoryVerificationScope,
 	commands []testCommand,
 	authority repositoryVerificationEvidenceAuthority,
-	ownership *repositoryGoCorrectionOwnership,
 	assertExact func(context.Context) error,
+) (resultErr error) {
+	return session.runExistingRepositoryVerificationWithSink(
+		projection, scope, commands, authority, assertExact,
+		func(record evidence.Record) error {
+			return session.runtime.writeEvidence(record)
+		},
+		true,
+	)
+}
+
+type repositoryVerificationFailure struct {
+	detail string
+}
+
+func (failure *repositoryVerificationFailure) Error() string {
+	return failure.detail
+}
+
+func (session *directCodingSession) runExistingRepositoryVerificationWithSink(
+	projection repositoryWorkspaceProjection,
+	scope repositoryVerificationScope,
+	commands []testCommand,
+	authority repositoryVerificationEvidenceAuthority,
+	assertExact func(context.Context) error,
+	writeEvidence func(evidence.Record) error,
+	writeAcceptance bool,
 ) (resultErr error) {
 	if session == nil || session.runtime == nil || session.runtime.ctx == nil {
 		return fmt.Errorf("repository verification requires one active coding runtime")
@@ -39,14 +64,11 @@ func (session *directCodingSession) runExistingRepositoryVerification(
 	if assertExact == nil {
 		return fmt.Errorf("repository verification requires one exact final-state assertion")
 	}
+	if writeEvidence == nil {
+		return fmt.Errorf("repository verification requires one exact evidence sink")
+	}
 	if authority == nil || !authority.allowsScope(scope) {
 		return fmt.Errorf("repository verification authority does not permit scope %q", scope)
-	}
-	if scope == repositoryVerificationStaged && ownership == nil {
-		return fmt.Errorf("staged repository verification requires exact parsed target ownership")
-	}
-	if scope == repositoryVerificationAuthoritative && ownership != nil {
-		return fmt.Errorf("authoritative repository verification cannot accept correction ownership")
 	}
 	if err := validateRepositoryGoVerificationPlan(scope, commands); err != nil {
 		return err
@@ -54,7 +76,10 @@ func (session *directCodingSession) runExistingRepositoryVerification(
 	if err := authority.validate(commands); err != nil {
 		return err
 	}
-	environment, err := newRepositoryGoVerificationEnvironment(session.runtime.ctx, root)
+	if err := projection.VerifyExact(session.runtime.ctx); err != nil {
+		return fmt.Errorf("verify exact repository workspace projection: %w", err)
+	}
+	environment, err := newRepositoryGoVerificationEnvironment(session.runtime.ctx, projection)
 	if err != nil {
 		return fmt.Errorf("construct exact repository Go verification environment: %w", err)
 	}
@@ -70,21 +95,21 @@ func (session *directCodingSession) runExistingRepositoryVerification(
 				"assert exact repository bytes before verification %q: %w", label, err,
 			)
 		}
-		result, executionErr := environment.executeRepositoryGoVerification(session.runtime.ctx, root, toolruntime.Call{
-			Name: "command.run",
-			Input: map[string]any{
-				"program": command.Name,
-				"args":    append([]string(nil), command.Args...),
-			},
-		})
-		if len(result.Evidence) == 0 && executionErr == nil {
-			return fmt.Errorf("repository verification %q returned no exact command evidence", label)
+		request, err := repositoryGoVerificationRequestFromCommand(command)
+		if err != nil {
+			return fmt.Errorf("construct repository verification request %q: %w", label, err)
+		}
+		result, executionErr := environment.executeRepositoryGoVerification(
+			session.runtime.ctx, projection, request,
+		)
+		if len(result.Evidence) != 1 && executionErr == nil {
+			return fmt.Errorf("repository verification %q returned %d evidence records; expected one", label, len(result.Evidence))
 		}
 		commandSucceeded := executionErr == nil && directCodingCommandSucceeded(result)
 		var proofErr error
 		if commandSucceeded {
 			proofErr = validateRepositoryGoTestProof(
-				*command.RepositoryProof, toolResultText(result.Output, "stdout"),
+				*command.RepositoryProof, operationResultText(result.Output, "stdout"),
 			)
 		}
 		proofValid := commandSucceeded && proofErr == nil
@@ -94,14 +119,15 @@ func (session *directCodingSession) runExistingRepositoryVerification(
 			record.Metadata = repositoryCommandMetadata(
 				record.Metadata, authority, scope, command, proofValid,
 			)
-			if err := session.runtime.writeEvidence(record); err != nil {
+			record.Metadata["succeeded"] = proofValid
+			if err := writeEvidence(record); err != nil {
 				evidenceErr = errors.Join(evidenceErr, fmt.Errorf("record repository verification %q: %w", label, err))
 			}
 		}
 		if executionErr != nil {
 			if len(result.Evidence) == 0 {
 				failure := repositoryCommandFailureEvidence(authority, scope, command, executionErr)
-				if writeErr := session.runtime.writeEvidence(failure); writeErr != nil {
+				if writeErr := writeEvidence(failure); writeErr != nil {
 					evidenceErr = errors.Join(evidenceErr, fmt.Errorf("record repository verification failure: %w", writeErr))
 				}
 			}
@@ -126,21 +152,12 @@ func (session *directCodingSession) runExistingRepositoryVerification(
 					"assert exact repository bytes before failure classification: %w", exactErr,
 				))
 			}
-			if scope != repositoryVerificationStaged {
-				return failure
-			}
-			owned, classifyErr := classifyRepositoryGoVerificationFailure(
-				command, toolResultText(result.Output, "stdout"), *ownership,
-			)
-			if classifyErr != nil {
-				return errors.Join(failure, fmt.Errorf(
-					"repository staged failure is not model-correctable: %w", classifyErr,
-				))
-			}
-			return owned
+			return &repositoryVerificationFailure{detail: failure.Error()}
 		}
 		if proofErr != nil {
-			return fmt.Errorf("repository verification %q has invalid structured proof: %w", label, proofErr)
+			return &repositoryVerificationFailure{detail: fmt.Sprintf(
+				"repository verification %q has invalid structured proof: %v", label, proofErr,
+			)}
 		}
 		session.runtime.svc.emitStepEvent(
 			session.runtime.claim.Authority,
@@ -155,16 +172,116 @@ func (session *directCodingSession) runExistingRepositoryVerification(
 		return fmt.Errorf("clean exact repository Go verification environment before acceptance: %w", err)
 	}
 	environment = nil
-	acceptance := repositoryVerificationAcceptanceEvidence(authority, scope, commands)
-	if err := session.runtime.writeEvidence(acceptance); err != nil {
-		return fmt.Errorf("record accepted repository verification plan: %w", err)
+	if writeAcceptance {
+		acceptance, err := repositoryVerificationAcceptanceEvidence(
+			authority, scope, commands,
+		)
+		if err != nil {
+			return err
+		}
+		if err := writeEvidence(acceptance); err != nil {
+			return fmt.Errorf("record accepted repository verification plan: %w", err)
+		}
+		switch scope {
+		case repositoryVerificationBaseline:
+			session.runtime.svc.emitStepEvent(
+				session.runtime.claim.Authority,
+				"repository_verification_baseline_accepted",
+				fmt.Sprintf("scope=%s plan=%s", scope, authority.planIdentity()),
+			)
+		case repositoryVerificationStaged:
+			session.runtime.svc.emitStepEvent(
+				session.runtime.claim.Authority,
+				"repository_verification_plan_accepted",
+				fmt.Sprintf("scope=%s plan=%s", scope, authority.planIdentity()),
+			)
+		default:
+			return fmt.Errorf(
+				"repository verification scope %q acceptance is owned by the workspace mutation journal",
+				scope,
+			)
+		}
 	}
-	session.runtime.svc.emitStepEvent(
-		session.runtime.claim.Authority,
-		repositoryVerificationAcceptanceEvent(scope),
-		fmt.Sprintf("scope=%s plan=%s", scope, authority.planIdentity()),
-	)
 	return nil
+}
+
+func (session *directCodingSession) collectExistingRepositoryVerification(
+	projection repositoryWorkspaceProjection,
+	scope repositoryVerificationScope,
+	commands []testCommand,
+	authority repositoryVerificationEvidenceAuthority,
+	assertExact func(context.Context) error,
+) ([]evidence.Record, string, error) {
+	if session == nil || session.runtime == nil || session.runtime.claim == nil {
+		return nil, "", fmt.Errorf("collect repository verification requires one active claim")
+	}
+	records := make([]evidence.Record, 0, len(commands))
+	sink := func(record evidence.Record) error {
+		if len(records) >= len(commands) {
+			return fmt.Errorf("repository verification produced evidence outside its exact command plan")
+		}
+		commandAuthority, err := encodeWorkspaceVerificationCommand(commands[len(records)])
+		if err != nil {
+			return err
+		}
+		record.JobID = session.runtime.claim.Job.ID
+		record.StepID = session.runtime.claim.Step.ID
+		record.Command = commandAuthority
+		record.SourceType = ""
+		record.SourceRef = ""
+		record.ID = 0
+		record.CreatedAt = record.CreatedAt.UTC()
+		records = append(records, record)
+		return nil
+	}
+	err := session.runExistingRepositoryVerificationWithSink(
+		projection, scope, commands, authority, assertExact, sink, false,
+	)
+	var failure *repositoryVerificationFailure
+	if !errors.As(err, &failure) {
+		if err != nil {
+			return nil, "", err
+		}
+		if len(records) != len(commands) {
+			return nil, "", fmt.Errorf("repository verification evidence count differs from its exact plan")
+		}
+		return records, "", nil
+	}
+	for index := len(records); index < len(commands); index++ {
+		record := repositorySkippedCommandEvidence(
+			authority, scope, commands[index], failure.Error(),
+		)
+		if err := sink(record); err != nil {
+			return nil, "", err
+		}
+	}
+	if len(records) != len(commands) {
+		return nil, "", fmt.Errorf("failed repository verification evidence count differs from its exact plan")
+	}
+	return records, failure.Error(), nil
+}
+
+func repositorySkippedCommandEvidence(
+	authority repositoryVerificationEvidenceAuthority,
+	scope repositoryVerificationScope,
+	command testCommand,
+	priorFailure string,
+) evidence.Record {
+	metadata := repositoryCommandMetadata(
+		map[string]any{
+			"execution": false, "succeeded": false,
+			"skipped_after_authoritative_failure": true,
+		},
+		authority, scope, command, false,
+	)
+	metadata["succeeded"] = false
+	return evidence.Record{
+		Kind: evidence.KindTestResult, ToolName: "command.run",
+		Command:    directCodingCommandLabel(command),
+		Summary:    "verification command not executed after an earlier authoritative failure",
+		Warnings:   []string{trimForBudget(priorFailure, 1200)},
+		Confidence: 1, Metadata: metadata,
+	}
 }
 
 func repositoryCommandMetadata(
@@ -242,7 +359,7 @@ func repositoryVerificationAcceptanceEvidence(
 	authority repositoryVerificationEvidenceAuthority,
 	scope repositoryVerificationScope,
 	commands []testCommand,
-) evidence.Record {
+) (evidence.Record, error) {
 	metadata := authority.metadata()
 	metadata["repository_verification_scope"] = string(scope)
 	metadata["repository_verification_command_count"] = len(commands)
@@ -252,24 +369,23 @@ func repositoryVerificationAcceptanceEvidence(
 			Kind: evidence.KindTestResult, SourceType: "command-baseline", SourceRef: "go",
 			ToolName: "command.run", Summary: "exact source repository Go baseline accepted",
 			Confidence: 1, Metadata: metadata,
-		}
+		}, nil
+	}
+	if scope != repositoryVerificationStaged {
+		return evidence.Record{}, fmt.Errorf(
+			"repository verification scope %q acceptance is owned by the workspace mutation journal",
+			scope,
+		)
 	}
 	metadata["repository_verification_plan_accepted"] = true
 	return evidence.Record{
 		Kind: evidence.KindTestResult, SourceType: "command-plan", SourceRef: "go",
 		ToolName: "command.run", Summary: "ordered repository Go verification plan accepted",
 		Confidence: 1, Metadata: metadata,
-	}
+	}, nil
 }
 
-func repositoryVerificationAcceptanceEvent(scope repositoryVerificationScope) string {
-	if scope == repositoryVerificationBaseline {
-		return "repository_verification_baseline_accepted"
-	}
-	return "repository_verification_plan_accepted"
-}
-
-func requireRepositoryGoOrdinaryFailure(result toolruntime.Result) error {
+func requireRepositoryGoOrdinaryFailure(result operation.Result) error {
 	succeeded, succeededOK := result.Output["succeeded"].(bool)
 	exitCode, exitOK := result.Output["exit_code"].(int)
 	if !succeededOK || succeeded || !exitOK || exitCode != 1 {

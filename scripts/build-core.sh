@@ -4,7 +4,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
-OUTPUT="${REPO_ROOT}/bin/agent-core"
+OUTPUT=""
+OUTPUT_SET=0
 BUILD_PKG="./cmd/core"
 WITH_RACE=0
 VERBOSE=0
@@ -19,7 +20,8 @@ Usage:
   scripts/build-core.sh [options]
 
 Options:
-  -o, --output <path>   Output binary path (default: ./bin/agent-core)
+  -o, --output <path>   Output binary path (default: package-specific under ./bin)
+  -p, --package <path>  Build package: ./cmd/core, ./cmd/cli, or ./cmd/omni
   --race                Build with Go race detector
   --goos <value>        Override GOOS for cross-compilation
   --goarch <value>      Override GOARCH for cross-compilation
@@ -39,12 +41,20 @@ die() {
   exit 1
 }
 
+source "${SCRIPT_DIR}/managed-checkout-lib.sh"
+
 parse_args() {
   while (($# > 0)); do
     case "$1" in
       -o|--output)
         (($# >= 2)) || die "$1 requires a value"
         OUTPUT="$2"
+        OUTPUT_SET=1
+        shift 2
+        ;;
+      -p|--package)
+        (($# >= 2)) || die "$1 requires a value"
+        BUILD_PKG="$2"
         shift 2
         ;;
       --race)
@@ -88,12 +98,29 @@ parse_args() {
 
 parse_args "$@"
 
+case "${BUILD_PKG}" in
+  ./cmd/core|./cmd/cli|./cmd/omni) ;;
+  *) die "unsupported Omnidex binary package: ${BUILD_PKG}" ;;
+esac
+
+if ((OUTPUT_SET)) && [[ -z "${OUTPUT}" ]]; then
+  die "output path cannot be empty"
+fi
+if ((OUTPUT_SET == 0)); then
+  case "${BUILD_PKG}" in
+    ./cmd/core) OUTPUT="${REPO_ROOT}/bin/agent-core" ;;
+    ./cmd/cli) OUTPUT="${REPO_ROOT}/bin/agent-cli" ;;
+    ./cmd/omni) OUTPUT="${REPO_ROOT}/bin/omni" ;;
+  esac
+fi
+
 if ! command -v go >/dev/null 2>&1; then
   die "go is required but was not found in PATH"
 fi
 
-if [[ -z "${OUTPUT}" ]]; then
-  die "output path cannot be empty"
+managed_checkout_export_build_commit "${REPO_ROOT}"
+if [[ "${BUILD_PKG}" == "./cmd/core" ]]; then
+  "${SCRIPT_DIR}/build-ui.sh"
 fi
 
 if [[ "${OUTPUT}" != /* ]]; then
@@ -103,15 +130,17 @@ fi
 mkdir -p "$(dirname "${OUTPUT}")"
 rm -f "${OUTPUT}"
 
-build_cmd=(go build -o "${OUTPUT}")
+required_ld_flags="-X github.com/gryph/omnidex/internal/version.Commit=${OMNIDEX_COMMIT}"
+if [[ -n "${LD_FLAGS}" ]]; then
+  required_ld_flags="${LD_FLAGS} ${required_ld_flags}"
+fi
+
+build_cmd=(go build -trimpath -ldflags "${required_ld_flags}" -o "${OUTPUT}")
 if ((WITH_RACE)); then
   build_cmd+=(-race)
 fi
 if [[ -n "${BUILD_TAGS}" ]]; then
   build_cmd+=(-tags "${BUILD_TAGS}")
-fi
-if [[ -n "${LD_FLAGS}" ]]; then
-  build_cmd+=(-ldflags "${LD_FLAGS}")
 fi
 build_cmd+=("${BUILD_PKG}")
 
@@ -139,5 +168,18 @@ fi
     "${build_cmd[@]}"
   fi
 )
+
+host_goos="$(go env GOOS)"
+host_goarch="$(go env GOARCH)"
+target_goos="${GOOS_VALUE:-${host_goos}}"
+target_goarch="${GOARCH_VALUE:-${host_goarch}}"
+verification_interface="metadata"
+if [[ "${target_goos}" == "${host_goos}" && "${target_goarch}" == "${host_goarch}" ]]; then
+  case "${BUILD_PKG}" in
+    ./cmd/core) verification_interface="core" ;;
+    ./cmd/cli|./cmd/omni) verification_interface="json" ;;
+  esac
+fi
+managed_checkout_verify_binary_commit "${OUTPUT}" "${OMNIDEX_COMMIT}" "${verification_interface}"
 
 log "built ${OUTPUT}"

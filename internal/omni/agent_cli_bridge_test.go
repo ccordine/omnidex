@@ -14,10 +14,18 @@ func TestAgentModeArgsDefaultsToChat(t *testing.T) {
 }
 
 func TestAgentModeArgsTreatsFlagsAsChatFlags(t *testing.T) {
-	got := agentModeArgs([]string{"--agent", "codex"})
-	want := []string{"chat", "--agent", "codex"}
+	got := agentModeArgs([]string{"--session", "conversation"})
+	want := []string{"chat", "--session", "conversation"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("agentModeArgs()=%v want %v", got, want)
+	}
+}
+
+func TestRemovedGenericEnqueueAndSuccessorContinueAreNotPassthroughCommands(t *testing.T) {
+	for _, command := range []string{"enqueue", "continue"} {
+		if isAgentCLIPassthroughCommand(command) {
+			t.Fatalf("removed generic command %q remains a passthrough", command)
+		}
 	}
 }
 

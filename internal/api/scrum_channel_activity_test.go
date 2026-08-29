@@ -7,25 +7,32 @@ import (
 )
 
 func TestSyncRunningJobStepContexts(t *testing.T) {
-	card := ScrumCard{Chat: []ScrumChatMessage{{Role: "system", Content: "Job queued"}}}
 	job := model.JobDetails{
+		Job: model.Job{ID: 2, Status: model.JobStatusRunning},
 		Contexts: []model.StepContext{
-			{ID: 1, Key: "event", Value: "time=2026-05-29T10:00:00Z event=structured_patch_apply_started Applying structured patch artifact"},
-			{ID: 2, Key: "event", Value: "time=2026-05-29T10:00:01Z event=structured_patch_apply_finished files=2"},
+			{ID: 1, Key: "event", Value: "time=2026-05-29T10:00:00Z event=repository_snapshot_started authority=server"},
+			{ID: 2, Key: "event", Value: "time=2026-05-29T10:00:01Z event=repository_snapshot_ready snapshot=sha256:abc files=2"},
 		},
 	}
-	updated, ok := syncRunningJobStepContexts(card, job)
+	card := scrumSyncTestCard(job.Job.ID, ScrumCard{Chat: []ScrumChatMessage{{Role: "system", Content: "Job queued"}}})
+	updated, ok, err := syncRunningJobStepContexts(card, job)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if !ok {
 		t.Fatal("expected context sync")
 	}
 	toolCount := 0
-	for _, msg := range updated.Chat {
+	for _, msg := range updated.PendingChannelMessages {
 		if msg.Role == "tool" {
 			toolCount++
 		}
 	}
-	if toolCount < 2 {
-		t.Fatalf("chat=%+v", updated.Chat)
+	if toolCount != 2 {
+		t.Fatalf("pending messages=%+v", updated.PendingChannelMessages)
+	}
+	if updated.StepContextCursor != 2 {
+		t.Fatalf("typed context cursor=%d want 2", updated.StepContextCursor)
 	}
 }
 
@@ -44,69 +51,11 @@ func TestStepContextCommandOutput(t *testing.T) {
 	}
 }
 
-func TestRemovedWebSearchDegradedEventIsNotSilentlyHidden(t *testing.T) {
-	if isNoisyStepEvent("web_search_degraded") {
-		t.Fatal("removed web_search_degraded event must not remain a hidden compatibility path")
+func TestOnlyCurrentRedundantEventsAreHidden(t *testing.T) {
+	if !isNoisyStepEvent("coding_portable_dispatched") {
+		t.Fatal("current redundant dispatch event should be hidden")
 	}
-}
-
-func TestCommandActivityUsesConciseTitleAndKeepsFullCommandInDetails(t *testing.T) {
-	command := "go test ./...\nGOCACHE=/tmp/omni-cache another very long command segment that should not fill the activity screen"
-	message := commandActivity(command, "running", "")
-	activity, ok := parseChannelActivity(message.Content)
-	if !ok {
-		t.Fatalf("activity not encoded: %s", message.Content)
-	}
-	if activity.Command != command {
-		t.Fatalf("command details were lost: %q", activity.Command)
-	}
-	if len(activity.Title) > 96 || activity.Title == command {
-		t.Fatalf("title is not concise: %q", activity.Title)
-	}
-}
-
-func TestCollapseScrumChannelDisplayMessagesReplacesRunningToolWithCompletion(t *testing.T) {
-	running := commandActivity("go test ./internal/api", "running", "starting")
-	running.CreatedAt = "2026-07-26T12:00:00Z"
-	completed := commandActivity("go test ./internal/api", "completed", "all tests passed")
-	completed.CreatedAt = "2026-07-26T12:00:01Z"
-
-	collapsed := collapseScrumChannelDisplayMessages([]ScrumChatMessage{running, completed})
-	if len(collapsed) != 1 {
-		t.Fatalf("messages=%+v want one lifecycle row", collapsed)
-	}
-	activity, ok := parseChannelActivity(collapsed[0].Content)
-	if !ok || activity.Status != "completed" || activity.Detail != "all tests passed" {
-		t.Fatalf("activity=%+v", activity)
-	}
-}
-
-func TestCollapseScrumChannelDisplayMessagesMergesToolLifecycleSuffixes(t *testing.T) {
-	running := toolCallActivity("tool_call_started", "", "running", "starting")
-	running.CreatedAt = "2026-07-26T12:00:00Z"
-	completed := toolCallActivity("tool_call_finished", "", "completed", "finished")
-	completed.CreatedAt = "2026-07-26T12:00:01Z"
-
-	collapsed := collapseScrumChannelDisplayMessages([]ScrumChatMessage{running, completed})
-	if len(collapsed) != 1 {
-		t.Fatalf("messages=%+v want one tool lifecycle row", collapsed)
-	}
-	activity, ok := parseChannelActivity(collapsed[0].Content)
-	if !ok || activity.Status != "completed" || activity.Detail != "finished" {
-		t.Fatalf("activity=%+v", activity)
-	}
-}
-
-func TestCollapseScrumChannelDisplayMessagesCombinesConsecutiveOutput(t *testing.T) {
-	first := outputActivity("stdout", "first line")
-	second := outputActivity("stdout", "second line")
-
-	collapsed := collapseScrumChannelDisplayMessages([]ScrumChatMessage{first, second})
-	if len(collapsed) != 1 {
-		t.Fatalf("messages=%+v want one output row", collapsed)
-	}
-	activity, ok := parseChannelActivity(collapsed[0].Content)
-	if !ok || activity.Detail != "first line\nsecond line" {
-		t.Fatalf("activity=%+v", activity)
+	if isNoisyStepEvent("plan_begin") {
+		t.Fatal("removed plan event must not remain a hidden compatibility path")
 	}
 }

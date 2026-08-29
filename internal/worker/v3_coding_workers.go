@@ -1,91 +1,165 @@
 package worker
 
 import (
+	"context"
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
+	"github.com/gryph/omnidex/internal/queue"
+	"github.com/gryph/omnidex/internal/station"
 )
 
 func directCodingWorkerRuntime(session *directCodingSession) typedWorkerRuntime {
 	if session == nil || session.runtime == nil || session.runtime.svc == nil || session.runtime.claim == nil {
 		return typedWorkerRuntime{}
 	}
+	runtime := portableWorkerRuntime(session.runtime, "coding")
+	runtime.PathProvenance = session.pathProvenance
+	return runtime
+}
+
+func portableWorkerRuntime(runtime *nativeRuntimeV3, eventNamespace string) typedWorkerRuntime {
+	if runtime == nil {
+		return typedWorkerRuntime{}
+	}
+	return portableWorkerRuntimeWithContext(runtime, eventNamespace, runtime.ctx)
+}
+
+func portableWorkerRuntimeWithContext(
+	runtime *nativeRuntimeV3,
+	eventNamespace string,
+	executionContext context.Context,
+) typedWorkerRuntime {
+	return portableWorkerRuntimeWithIdentityGuard(runtime, eventNamespace, executionContext, nil)
+}
+
+type portableIdentityGuard func(assemblyline.PortableJob, exactStationExecution) error
+
+func portableWorkerRuntimeWithIdentityGuard(
+	runtime *nativeRuntimeV3,
+	eventNamespace string,
+	executionContext context.Context,
+	identityGuard portableIdentityGuard,
+) typedWorkerRuntime {
+	if runtime == nil || runtime.svc == nil || runtime.claim == nil {
+		return typedWorkerRuntime{}
+	}
+	eventNamespace = safeEventToken(eventNamespace, "portable")
+	pending := &sync.Map{}
 	return typedWorkerRuntime{
-		Context:        session.runtime.ctx,
-		MaxAttempts:    maxTypedWorkerAttempts,
-		MaxConcurrency: session.runtime.svc.fragmentConcurrency,
+		Context:        executionContext,
+		MaxAttempts:    exactSemanticLeafCalls,
+		MaxConcurrency: runtime.svc.fragmentConcurrency,
+		PathProvenance: runtime.objectivePathProvenance,
 		Execute: func(job assemblyline.PortableJob, model string) (assemblyline.PortableResult, error) {
-			if err := rejectOfflineExperimentJob(job.Kind); err != nil {
-				return assemblyline.PortableResult{}, err
-			}
-			prompt, responseSchema, err := assemblyline.RenderPortableJob(job)
-			if err != nil {
-				return assemblyline.PortableResult{}, err
-			}
-			contextProjectionID, err := prepareRepositoryShadowContext(session, job)
-			if err != nil {
-				return assemblyline.PortableResult{}, err
-			}
-			session.runtime.svc.emitStepEvent(
-				session.runtime.claim.Authority,
-				"coding_portable_dispatched",
+			runtime.svc.emitStepEvent(
+				runtime.claim.Authority,
+				eventNamespace+"_portable_dispatched",
 				fmt.Sprintf("kind=%s work=%s payload=%dB model=%s", job.Kind, job.ID[:12], len(job.Payload), safeEventToken(model, "unknown")),
 			)
-			raw, err := session.runtime.svc.llmGeneratePortableWithSchemaTrace(
-				session.runtime.ctx,
-				session.runtime.claim.Authority,
-				job,
-				portableModelScope(responseSchema),
-				model,
-				prompt,
-				responseSchema,
-				contextProjectionID,
+			result, execution, err := runtime.svc.executeExactPortableStation(
+				executionContext, runtime.claim.Authority, job, model,
 			)
 			if err != nil {
 				return assemblyline.PortableResult{}, err
 			}
-			return assemblyline.PortableResult{JobID: job.ID, Candidate: raw}, nil
+			if identityGuard != nil {
+				if guardErr := identityGuard(job, execution); guardErr != nil {
+					return assemblyline.PortableResult{}, runtime.svc.failStationGap(
+						executionContext, runtime.claim.Authority, execution.Gap, guardErr,
+					)
+				}
+			}
+			if _, loaded := pending.LoadOrStore(job.ID, execution); loaded {
+				return assemblyline.PortableResult{}, fmt.Errorf("portable work %s already has an unvalidated exact result", job.ID)
+			}
+			return result, nil
+		},
+		Finalize: func(job assemblyline.PortableJob, result assemblyline.PortableResult, validationErr error) error {
+			stored, exists := pending.LoadAndDelete(job.ID)
+			if !exists {
+				return fmt.Errorf("portable work %s has no pending exact station result", job.ID)
+			}
+			execution, ok := stored.(exactStationExecution)
+			if !ok || execution.Gap.GapID != job.ID || result.JobID != job.ID ||
+				execution.Candidate != result.Candidate {
+				return fmt.Errorf("portable work %s result differs from its exact station receipt", job.ID)
+			}
+			if err := result.ValidateFor(job); err != nil {
+				return fmt.Errorf("portable work %s result projection is invalid: %w", job.ID, err)
+			}
+			status := queue.StationGapResolved
+			terminal := queue.StationGapTerminalRecord{
+				Authority: runtime.claim.Authority, OpeningID: execution.Gap.ID,
+				GapID: execution.Gap.GapID, Status: status,
+			}
+			if validationErr != nil {
+				terminal.Status = queue.StationGapFailed
+				terminal.Error = stationFailureText(validationErr)
+			} else {
+				if result.Projection == nil {
+					return fmt.Errorf("portable work %s accepted result lacks an exact source projection", job.ID)
+				}
+				projectionKind, err := stationGapProjectionKind(result.Projection.Kind)
+				if err != nil {
+					return fmt.Errorf("portable work %s: %w", job.ID, err)
+				}
+				if result.Projection.SourceResponseSHA256 != execution.CandidateResponseSHA256 ||
+					execution.CallReceiptSHA256 == "" {
+					return fmt.Errorf("portable work %s projection differs from its exact call receipt", job.ID)
+				}
+				terminal.Response = result.Projection.Source
+				terminal.Projection = &queue.StationGapSourceProjection{
+					Kind: projectionKind, CallReceiptSHA256: execution.CallReceiptSHA256,
+					SourceResponseSHA256: result.Projection.SourceResponseSHA256,
+					StartByte:            result.Projection.StartByte, EndByte: result.Projection.EndByte,
+				}
+			}
+			persistCtx, cancel := stationPersistenceContext(executionContext)
+			defer cancel()
+			_, err := runtime.svc.repo.CloseStationGap(persistCtx, terminal)
+			return err
 		},
 		Emit: func(event typedWorkerEvent) {
-			session.runtime.svc.emitStepEvent(
-				session.runtime.claim.Authority,
-				"coding_worker_"+string(event.State),
+			runtime.svc.emitStepEvent(
+				runtime.claim.Authority,
+				eventNamespace+"_worker_"+string(event.State),
 				renderDirectCodingWorkerEvent(event),
 			)
 		},
 	}
 }
 
-func rejectOfflineExperimentJob(kind assemblyline.WorkKind) error {
+func stationGapProjectionKind(
+	kind assemblyline.PortableResultProjectionKind,
+) (queue.StationGapProjectionKind, error) {
 	switch kind {
-	case assemblyline.WorkRequirementBriefing,
-		assemblyline.WorkRequirementAdvisory,
-		assemblyline.WorkRequirementSynthesis,
-		assemblyline.WorkRequirementFinalAdvisory,
-		assemblyline.WorkRequirementFinalSynthesis,
-		assemblyline.WorkRetrievalBriefing,
-		assemblyline.WorkRetrievalAdvisory,
-		assemblyline.WorkRetrievalSynthesis:
-		return fmt.Errorf("work kind %q belongs to an offline advisory experiment and is forbidden in production", kind)
+	case assemblyline.PortableResultProjectionExactResponse:
+		return queue.StationGapProjectionExactResponse, nil
+	case assemblyline.PortableResultProjectionSourceDeclaration:
+		return queue.StationGapProjectionSourceDeclaration, nil
+	case assemblyline.PortableResultProjectionTypeScriptFunction:
+		return queue.StationGapProjectionTypeScriptFunction, nil
 	default:
-		return nil
+		return "", fmt.Errorf("portable result projection kind %q is not registered", kind)
 	}
 }
 
-func portableModelScope(responseSchema map[string]any) string {
-	if responseSchema == nil {
-		return "portable_fragment_worker"
-	}
-	return "portable_semantic_worker"
+func portableModelScope(kind assemblyline.WorkKind) (string, error) {
+	return assemblyline.PortableWorkerScopeForWorkKind(kind)
 }
 
-func (s *directCodingSession) workerModel(skillID, roleID string) (string, error) {
+func (s *directCodingSession) workerModel(id station.ID) (string, error) {
 	if s == nil || s.runtime == nil || s.runtime.svc == nil || s.runtime.claim == nil {
 		return "", fmt.Errorf("direct coding worker model routing is unavailable")
 	}
-	modelName := s.runtime.svc.v3SpecialistModel(s.runtime.claim.Job, s.runtime.routing, skillID, roleID, "")
-	return requireDirectCodingModel(roleID, modelName)
+	modelName, err := stationModel(s.runtime.routing, id)
+	if err != nil {
+		return "", err
+	}
+	return requireDirectCodingModel(id, modelName)
 }
 
 func renderDirectCodingWorkerEvent(event typedWorkerEvent) string {
@@ -94,8 +168,10 @@ func renderDirectCodingWorkerEvent(event typedWorkerEvent) string {
 		"subject=" + safeEventToken(event.Subject, "unknown"),
 		"model=" + safeEventToken(event.Model, "unknown"),
 	}
-	if event.Attempt > 0 || event.MaxAttempts > 0 {
+	if event.MaxAttempts > 0 {
 		parts = append(parts, fmt.Sprintf("attempt=%d/%d", event.Attempt, event.MaxAttempts))
+	} else if event.Attempt > 0 {
+		parts = append(parts, fmt.Sprintf("attempt=%d", event.Attempt))
 	}
 	if event.PromptBytes > 0 {
 		parts = append(parts, fmt.Sprintf(
@@ -105,6 +181,9 @@ func renderDirectCodingWorkerEvent(event typedWorkerEvent) string {
 	}
 	if detail := strings.TrimSpace(event.Detail); detail != "" {
 		parts = append(parts, "error="+safeLine(detail, "unknown"))
+	}
+	if warning := strings.TrimSpace(event.Warning); warning != "" {
+		parts = append(parts, "warning="+safeLine(warning, "unknown"))
 	}
 	return strings.Join(parts, " ")
 }

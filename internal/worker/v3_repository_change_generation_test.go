@@ -19,15 +19,16 @@ func TestExistingRepositoryGoModificationInputProjectsOnlyDirectCapabilities(t *
 		ExpectedDeclarationSHA256: hex.EncodeToString(digest[:]), RequirementQuote: "return two",
 		DirectCapabilities: []repositoryfacts.DirectCapability{{
 			SymbolID: "symbol-helper", Name: "Helper", Signature: "func Helper() int",
-			SourceSHA256: strings.Repeat("a", 64),
+			SourceSHA256: strings.Repeat("a", 64), PermittedSymbols: []string{"Helper"},
 		}},
 	}
-	input, err := existingRepositoryGoModificationInput(target, current)
+	input, err := existingRepositoryGoModificationInput(target, current, "Go 1.24")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(input.Capabilities) != 1 || input.Capabilities[0] != "func Helper() int" ||
-		len(input.PermittedSymbols) != 1 || input.PermittedSymbols[0] != "Helper" {
+		len(input.PermittedSymbols) != 1 || input.PermittedSymbols[0] != "Helper" ||
+		input.Dialect != "Go 1.24" {
 		t.Fatalf("fragment input=%+v", input)
 	}
 	raw, err := json.Marshal(input)
@@ -47,7 +48,9 @@ func TestExistingRepositoryGoModificationInputRejectsStaleDeclaration(t *testing
 		SymbolID: "symbol-opaque", Signature: "func Value() int",
 		ExpectedDeclarationSHA256: strings.Repeat("a", 64), RequirementQuote: "return two",
 	}
-	if _, err := existingRepositoryGoModificationInput(target, "func Value() int { return 1 }"); err == nil ||
+	if _, err := existingRepositoryGoModificationInput(
+		target, "func Value() int { return 1 }", "Go 1.24",
+	); err == nil ||
 		!strings.Contains(err.Error(), "declaration hash is stale") {
 		t.Fatalf("stale declaration error=%v", err)
 	}

@@ -46,12 +46,5 @@ func collectContextValuesByKey(contexts []model.StepContext, keys ...string) []s
 }
 
 func pipelinePhaseForAction(action string) string {
-	switch strings.TrimPrefix(strings.ToLower(strings.TrimSpace(action)), "v3_") {
-	case "intent_parse", "capability_audit", "planning", "workspace_research", "memory_retrieval", "external_research":
-		return "planning"
-	case "verification", "memory_review", "finalize":
-		return "review"
-	default:
-		return "execution"
-	}
+	return "execution"
 }

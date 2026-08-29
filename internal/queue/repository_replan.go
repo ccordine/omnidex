@@ -52,6 +52,9 @@ func replanJobTx(
 	if err != nil {
 		return model.Job{}, err
 	}
+	if _, err := validatePipeline(job.Pipeline); err != nil {
+		return model.Job{}, fmt.Errorf("replan job %d: %w", job.ID, err)
+	}
 	if err := lockLifecycleOperationIdentityTx(ctx, tx, command.OperationID); err != nil {
 		return model.Job{}, err
 	}
@@ -61,17 +64,17 @@ func replanJobTx(
 		if err := requireReplanReplayTx(ctx, tx, existing, command, feedbackSHA); err != nil {
 			return model.Job{}, err
 		}
-		if err := requireCognitionLifecycleSealSetReplayTx(
-			ctx, tx, descriptor, existing.JobID, existing.ObservedGeneration,
-		); err != nil {
-			return model.Job{}, err
-		}
 		return existing.ResultJob, nil
 	}
 	if terminalJobStatus(job.Status) {
 		return model.Job{}, fmt.Errorf("job is already %s", job.Status)
 	}
-	if err := rejectUnresolvedRepositoryMutationsTx(
+	if err := rejectUnresolvedGeneratedWorkloadDeploymentsTx(
+		ctx, tx, command.JobID,
+	); err != nil {
+		return model.Job{}, err
+	}
+	if err := rejectUnresolvedWorkspaceMutationsTx(
 		ctx, tx, command.JobID, job.CurrentGeneration,
 	); err != nil {
 		return model.Job{}, err
@@ -86,7 +89,7 @@ func replanJobTx(
 	if err := lockGenerationRecordTx(ctx, tx, command.JobID, currentGeneration); err != nil {
 		return model.Job{}, err
 	}
-	seeds, err := stepsForJob(job.Pipeline, job.Instruction, job.Metadata)
+	seeds, err := canonicalReplanStepsTx(ctx, tx, job)
 	if err != nil {
 		return model.Job{}, fmt.Errorf("recompute canonical steps for job %d: %w", command.JobID, err)
 	}
@@ -114,11 +117,6 @@ func replanJobTx(
 	if err := rejectAssignedRetiringStepsTx(ctx, tx, command.JobID, retiringIDs); err != nil {
 		return model.Job{}, err
 	}
-	if _, err := retireCognitionEpisodesForLifecycleTx(
-		ctx, tx, descriptor, command.JobID, currentGeneration, retiringIDs,
-	); err != nil {
-		return model.Job{}, err
-	}
 	if err := terminalizeStepAttemptsForAuthorityChangeTx(
 		ctx, tx, command.JobID, currentGeneration, retiringIDs, model.StepAttemptSuperseded,
 	); err != nil {
@@ -127,15 +125,6 @@ func replanJobTx(
 	newGeneration := currentGeneration + 1
 	if err := createReplanGenerationTx(
 		ctx, tx, command, feedbackSHA, currentGeneration, newGeneration, boundary,
-	); err != nil {
-		return model.Job{}, err
-	}
-	header, err = loadTaskLedgerHeaderTx(ctx, tx, command.JobID, true)
-	if err != nil {
-		return model.Job{}, err
-	}
-	if err := supersedeCurrentCognitionObligationsTx(
-		ctx, tx, header, currentGeneration, newGeneration,
 	); err != nil {
 		return model.Job{}, err
 	}
@@ -169,8 +158,7 @@ func validateLifecycleFeedback(feedback, subject string) (string, string, error)
 	if !utf8.ValidString(feedback) {
 		return "", "", fmt.Errorf("%s must be valid UTF-8", subject)
 	}
-	feedback = strings.TrimSpace(feedback)
-	if feedback == "" {
+	if strings.TrimSpace(feedback) == "" {
 		return "", "", fmt.Errorf("feedback is required")
 	}
 	if strings.ContainsRune(feedback, '\x00') {

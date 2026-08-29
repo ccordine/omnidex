@@ -320,23 +320,6 @@ func DiscoverEpisodes(root string, limit int) ([]Episode, error) {
 	return out, nil
 }
 
-func EpisodeTags(ep Episode) []string {
-	out := []string{"media", "subtitle", "episode"}
-	if ep.ShowSlug != "" {
-		out = append(out, "show_"+ep.ShowSlug)
-	}
-	if ep.Season > 0 {
-		out = append(out, fmt.Sprintf("season_%02d", ep.Season))
-	}
-	if ep.Episode > 0 {
-		out = append(out, fmt.Sprintf("episode_%02d", ep.Episode))
-	}
-	if ep.Season > 0 && ep.Episode > 0 {
-		out = append(out, fmt.Sprintf("s%02de%02d", ep.Season, ep.Episode))
-	}
-	return dedupe(out)
-}
-
 func SearchSubtitleLines(root, query string, contextWindow, limit int) ([]SubtitleMatch, error) {
 	query = strings.ToLower(strings.TrimSpace(query))
 	if query == "" {

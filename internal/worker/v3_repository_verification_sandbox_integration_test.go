@@ -3,12 +3,15 @@ package worker
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
+
+	repositoryfacts "github.com/gryph/omnidex/internal/repository"
 )
 
 func TestRepositoryGoVerificationBubblewrapIntegration(t *testing.T) {
@@ -53,6 +56,36 @@ func TestRepositoryGoVerificationBubblewrapIntegration(t *testing.T) {
 	if err := os.Symlink(external, filepath.Join(root, "host-escape")); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(
+		filepath.Join(root, ".gitignore"),
+		[]byte("host-escape\nlarge/private.env\n"),
+		0o600,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "large", "clean"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for index := 0; index < 3_100; index++ {
+		path := filepath.Join(root, "large", "clean", fmt.Sprintf("file-%04d.txt", index))
+		if err := os.WriteFile(path, []byte("large exact projection\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(
+		filepath.Join(root, "large", "private.env"), []byte("LARGE_SECRET=forbidden\n"), 0o600,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, ".env"), []byte("PROJECTION_SECRET=forbidden\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(root, ".omni"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, ".omni", "secret"), []byte("forbidden\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	testSource := `package isolation
 
 import (
@@ -66,6 +99,9 @@ import (
 )
 
 func TestSandboxAuthority(t *testing.T) {
+	if cgoProbe() != 7 {
+		t.Fatal("cgo probe returned the wrong value")
+	}
 	if os.Getenv("OMNIDEX_SANDBOX_HOST_SECRET") != "" {
 		t.Fatal("host environment entered verification")
 	}
@@ -90,6 +126,14 @@ func TestSandboxAuthority(t *testing.T) {
 	if _, err := os.ReadFile("host-escape"); err == nil {
 		t.Fatal("repository symlink escaped the sandbox")
 	}
+	if content, err := os.ReadFile("large/clean/file-3099.txt"); err != nil || string(content) != "large exact projection\n" {
+		t.Fatalf("large compacted projection content=%q error=%v", content, err)
+	}
+	for _, excluded := range []string{".git", ".omni", ".env", "large/private.env", "/projection-base/go.mod"} {
+		if _, err := os.Stat(excluded); err == nil {
+			t.Fatalf("excluded projection authority %q entered verification", excluded)
+		}
+	}
 	if connection, err := net.DialTimeout("tcp4", "__HOST_LISTENER__", 200*time.Millisecond); err == nil {
 		_ = connection.Close()
 		t.Fatal("verification sandbox reached a host network listener")
@@ -108,6 +152,7 @@ func TestSandboxAuthority(t *testing.T) {
 		t.Fatalf("PATH=%q", path)
 	}
 }
+
 `
 	testSource = strings.ReplaceAll(testSource, "__HOST_LISTENER__", hostListener.Addr().String())
 	testSource = strings.ReplaceAll(
@@ -118,8 +163,35 @@ func TestSandboxAuthority(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "isolation_test.go"), []byte(testSource), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	cgoSource := `package isolation
+
+/*
+static int omnidex_cgo_probe(void) { return 7; }
+*/
+import "C"
+
+func cgoProbe() int { return int(C.omnidex_cgo_probe()) }
+`
+	if err := os.WriteFile(filepath.Join(root, "cgo_probe.go"), []byte(cgoSource), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	repositorySandboxGit(t, root, "init")
+	repositorySandboxGit(t, root, "config", "user.name", "Omnidex Test")
+	repositorySandboxGit(t, root, "config", "user.email", "omnidex@example.invalid")
+	repositorySandboxGit(t, root, "add", "go.mod", ".gitignore", "isolation_test.go", "cgo_probe.go", "large/clean")
+	repositorySandboxGit(t, root, "commit", "-m", "sandbox fixture")
+	snapshot, err := repositoryfacts.BuildGitSnapshot(
+		context.Background(), root, repositoryfacts.SnapshotOptions{},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	projection, err := newRepositorySnapshotProjection(snapshot)
+	if err != nil {
+		t.Fatal(err)
+	}
 	result, err := executeRepositoryGoVerification(
-		context.Background(), root, repositoryGoTestCall(30),
+		context.Background(), projection, repositoryGoTestCall(30),
 	)
 	if err != nil {
 		t.Fatal(err)

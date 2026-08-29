@@ -1,99 +1,117 @@
 package worker
 
 import (
+	"fmt"
 	"regexp"
 	"strings"
 
+	"github.com/gryph/omnidex/internal/assemblyline"
 	"github.com/gryph/omnidex/internal/modelcontext"
 )
 
-const maxDirectCodingModelFailureLines = 4
+const maxDirectCodingStructuredTestDiagnosticBytes = 900
 
 var (
-	directCodingANSISequencePattern       = regexp.MustCompile(`\x1b\[[0-9;?]*[ -/]*[@-~]`)
-	directCodingTypeScriptIdentityPattern = regexp.MustCompile(
-		`(?:[A-Za-z]:)?(?:\.{0,2}/|/)?(?:[A-Za-z0-9_.-]+/)*[A-Za-z0-9_.-]+\.tsx?(?:(?::[0-9]+){1,2}|\([0-9]+,[0-9]+\))?`,
-	)
-	directCodingTypeScriptSourceFramePattern = regexp.MustCompile(`^[0-9]+\s*\|`)
+	directCodingANSISequencePattern = regexp.MustCompile(`\x1b\[[0-9;?]*[ -/]*[@-~]`)
 )
 
-func directCodingTypeScriptModelFailure(raw string) string {
-	clean := directCodingANSISequencePattern.ReplaceAllString(strings.ReplaceAll(raw, "\r", ""), "")
-	clean = directCodingTypeScriptIdentityPattern.ReplaceAllString(clean, "[source]")
-	selected := make([]string, 0, maxDirectCodingModelFailureLines)
-	seen := make(map[string]struct{})
-	focusedFailure := false
-	for _, rawLine := range strings.Split(clean, "\n") {
-		line := strings.TrimSpace(rawLine)
-		if line == "" || strings.HasPrefix(line, "× ") || directCodingTypeScriptSourceFramePattern.MatchString(line) {
-			continue
-		}
-		if modelcontext.ContainsPathIdentity(line) {
-			continue
-		}
-		if marker := strings.Index(line, "[source] > "); marker >= 0 {
-			if focusedFailure {
-				break
-			}
-			// A concrete test header is more precise than any suite-level text that
-			// preceded it. Start a fresh envelope and stop at the next test.
-			focusedFailure = true
-			selected = selected[:0]
-			seen = make(map[string]struct{})
-			line = "FAILED_CHECK: " + strings.TrimSpace(line[marker+len("[source] > "):])
-		} else if !strings.HasPrefix(line, "CORRECTION_REJECTION:") &&
-			(directCodingTypeScriptFailureNoise(line) || !directCodingTypeScriptFailureSignal(line)) {
-			continue
-		}
-		if _, duplicate := seen[line]; duplicate {
-			continue
-		}
-		seen[line] = struct{}{}
-		selected = append(selected, line)
-		if len(selected) == maxDirectCodingModelFailureLines {
-			break
+func directCodingTypeScriptStructuredTestModelFailure(
+	failure directCodingVitestFailureEvidence,
+	provenance assemblyline.ArtifactIdentityProvenance,
+	authorizedRegexLiterals ...string,
+) (string, error) {
+	name := strings.TrimSpace(failure.Name)
+	message := strings.TrimSpace(failure.Message)
+	if name == "" || message == "" {
+		return "", fmt.Errorf("structured Vitest failure requires one exact error name and message")
+	}
+	message = directCodingTypeScriptPrimaryTestFailure(name, message)
+	message = directCodingANSISequencePattern.ReplaceAllString(message, "")
+	observation, err := directCodingTestingLibraryRoleObservationProjection(
+		name, message, failure.AccessibilityObservation,
+	)
+	if err != nil {
+		return "", fmt.Errorf("project Testing Library role observation: %w", err)
+	}
+	clean := directCodingANSISequencePattern.ReplaceAllString(name+": "+message, "")
+	clean, err = canonicalizeDirectCodingTypeScriptDiagnosticRegularExpressions(
+		clean, authorizedRegexLiterals,
+	)
+	if err != nil {
+		return "", fmt.Errorf("canonicalize structured Vitest regular expressions: %w", err)
+	}
+	if observation != "" {
+		clean += " " + observation
+	}
+	clean = strings.ReplaceAll(strings.ReplaceAll(clean, "\r", " "), "\n", " ")
+	fields := strings.Fields(clean)
+	for index, field := range fields {
+		if modelcontext.ContainsPathIdentityWithProvenance(field, provenance) {
+			fields[index] = "[source]"
 		}
 	}
-	if len(selected) == 0 {
-		return "Validation failed without a concise function-owned diagnostic."
+	clean = trimForBudget(
+		strings.Join(fields, " "), maxDirectCodingStructuredTestDiagnosticBytes,
+	)
+	if clean == "" {
+		return "", fmt.Errorf("structured Vitest failure became empty after path redaction")
 	}
-	return trimForBudget(strings.Join(selected, "\n"), 360)
+	if modelcontext.ContainsPathIdentityWithProvenance(clean, provenance) {
+		return "", fmt.Errorf("structured Vitest failure retained path identity after redaction")
+	}
+	return clean, nil
 }
 
-func directCodingTypeScriptFragmentFailure(original string, rejection error) string {
-	parts := make([]string, 0, 2)
-	if original = strings.TrimSpace(original); original != "" {
-		parts = append(parts, trimForBudget(original, 700))
+// Testing Library appends provider prose and serialized DOM after the primary
+// error paragraph. Code captures the requested role's computed accessible
+// names separately as typed data before reducing that prose. Other error types
+// and messages without the provider paragraph boundary remain unchanged.
+func directCodingTypeScriptPrimaryTestFailure(name string, message string) string {
+	if name != "TestingLibraryElementError" {
+		return message
 	}
-	if rejection != nil {
-		parts = append(parts, "CORRECTION_REJECTION: "+trimForBudget(rejection.Error(), 250))
-	}
-	return strings.Join(parts, "\n")
-}
-
-func directCodingTypeScriptFailureNoise(line string) bool {
-	lower := strings.ToLower(line)
-	return strings.Contains(lower, "node_modules") ||
-		lower == "- expected:" || lower == "+ received:" ||
-		(strings.HasPrefix(line, "❯") && !directCodingTypeScriptFailureSignal(line)) ||
-		strings.HasPrefix(line, "> ") ||
-		strings.HasPrefix(lower, "test files") ||
-		strings.HasPrefix(lower, "tests ") ||
-		strings.HasPrefix(lower, "start at") ||
-		strings.HasPrefix(lower, "duration") ||
-		strings.Contains(lower, "npm error")
-}
-
-func directCodingTypeScriptFailureSignal(line string) bool {
-	lower := strings.ToLower(line)
-	for _, signal := range []string{
-		"error ts", "assertionerror", "typeerror", "referenceerror", "rangeerror",
-		"testinglibraryelementerror", "unable to find", "found multiple", "unable to fire",
-		"expected", "received", "toequal", "tobe", "tohave",
-	} {
-		if strings.Contains(lower, signal) {
-			return true
+	normalized := strings.ReplaceAll(message, "\r\n", "\n")
+	if boundary := strings.Index(normalized, "\n\n"); boundary >= 0 {
+		primary := strings.TrimSpace(normalized[:boundary])
+		if primary != "" {
+			return primary
 		}
 	}
-	return false
+	return message
+}
+
+func redactDirectCodingPathIdentities(
+	value string,
+	provenance assemblyline.ArtifactIdentityProvenance,
+) string {
+	identities := modelcontext.PathIdentities(value, provenance)
+	if len(identities) == 0 {
+		return value
+	}
+	var redacted strings.Builder
+	previous := 0
+	for _, identity := range identities {
+		redacted.WriteString(value[previous:identity.Start])
+		redacted.WriteString("[source]")
+		previous = identity.End
+	}
+	redacted.WriteString(value[previous:])
+	return redacted.String()
+}
+
+func directCodingTypeScriptStageModelFeedback(diagnostic *directCodingStageDiagnostic) (string, error) {
+	if diagnostic == nil {
+		return "", fmt.Errorf("TypeScript stage model feedback requires one diagnostic")
+	}
+	feedback := strings.TrimSpace(diagnostic.ModelFeedback)
+	if feedback == "" {
+		return "", fmt.Errorf(
+			"TypeScript stage diagnostic for block %s lacks one exact path-free model failure",
+			diagnostic.BlockID,
+		)
+	}
+	if directCodingTypeScriptCompilerContainsPathIdentity(feedback) {
+		return "", fmt.Errorf("TypeScript stage diagnostic for block %s contains path identity", diagnostic.BlockID)
+	}
+	return feedback, nil
 }

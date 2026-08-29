@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"strings"
 
 	"github.com/gryph/omnidex/internal/secrets"
 	"github.com/jackc/pgx/v5"
@@ -33,15 +32,10 @@ func (r *Repository) GetAPISecrets(ctx context.Context) (map[string]string, erro
 	if err := json.Unmarshal(raw, &out); err != nil {
 		return nil, err
 	}
-	clean := map[string]string{}
-	for key, value := range out {
-		key = strings.TrimSpace(key)
-		value = strings.TrimSpace(value)
-		if key != "" && value != "" {
-			clean[key] = value
-		}
+	if err := secrets.ValidateStored(out); err != nil {
+		return nil, err
 	}
-	return clean, nil
+	return out, nil
 }
 
 func (r *Repository) SetAPISecrets(ctx context.Context, updates map[string]string, clearKeys []string) (map[string]string, error) {
@@ -52,7 +46,10 @@ func (r *Repository) SetAPISecrets(ctx context.Context, updates map[string]strin
 	if err != nil {
 		return nil, err
 	}
-	merged := secrets.MergeStored(current, updates, clearKeys)
+	merged, err := secrets.MergeStored(current, updates, clearKeys)
+	if err != nil {
+		return nil, err
+	}
 	payload, err := json.Marshal(merged)
 	if err != nil {
 		return nil, err

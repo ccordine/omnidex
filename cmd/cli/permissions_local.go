@@ -20,7 +20,6 @@ const (
 	permissionKeyBrowserConsole  = "local.browser.console"
 	permissionKeyScreenCapture   = "local.screen.capture"
 	permissionKeyScreenOCR       = "local.screen.ocr"
-	permissionKeyScreenVision    = "local.screen.vision"
 	permissionKeyShellExec       = "local.shell.exec"
 	permissionKeyShellSudo       = "local.shell.sudo"
 	permissionKeyAudioMic        = "local.audio.mic"
@@ -84,7 +83,6 @@ var knownPermissionDescriptions = map[string]string{
 	permissionKeyBrowserConsole:  "Read JavaScript console events from browser DevTools endpoints.",
 	permissionKeyScreenCapture:   "Capture a screenshot of the active display.",
 	permissionKeyScreenOCR:       "Run OCR on captured screenshots to extract visible text.",
-	permissionKeyScreenVision:    "Send captured screenshots to local Ollama vision model for interpretation.",
 	permissionKeyShellExec:       "Execute local shell commands and file operations from chat automation.",
 	permissionKeyShellSudo:       "Allow elevated local shell commands via sudo after interactive authentication.",
 	permissionKeyAudioMic:        "Capture microphone audio for long-running notes.",

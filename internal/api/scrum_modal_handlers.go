@@ -1,8 +1,10 @@
 package api
 
 import (
+	"errors"
 	"net/http"
-	"strings"
+
+	"github.com/gryph/omnidex/internal/queue"
 )
 
 func (s *Server) handleScrumCardModal(w http.ResponseWriter, r *http.Request, cardID string) {
@@ -10,9 +12,14 @@ func (s *Server) handleScrumCardModal(w http.ResponseWriter, r *http.Request, ca
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	ctx, err := s.buildScrumModalContext(r, cardID, r.URL.Query().Get("tab"))
+	query, err := decodeScrumModalQuery(r)
 	if err != nil {
-		if strings.Contains(strings.ToLower(err.Error()), "not found") {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	ctx, err := s.buildScrumModalContext(r, cardID, query)
+	if err != nil {
+		if errors.Is(err, queue.ErrScrumCardNotFound) {
 			writeError(w, http.StatusNotFound, err.Error())
 			return
 		}
@@ -28,19 +35,17 @@ func scrumModalPayload(ctx *scrumModalRenderContext) map[string]any {
 		"board":                 ctx.Board,
 		"tab":                   ctx.Tab,
 		"project_id":            ctx.ProjectID,
-		"files":                 ctx.Files,
-		"dirs":                  ctx.Dirs,
+		"files":                 append([]string{}, ctx.Files...),
+		"dirs":                  append([]string{}, ctx.Dirs...),
+		"file_path":             ctx.FilePath,
+		"file_parent":           ctx.FileParent,
+		"file_has_parent":       ctx.FileHasParent,
+		"file_offset":           ctx.FileOffset,
+		"file_has_previous":     ctx.FileHasPrevious,
+		"file_previous_offset":  ctx.FilePreviousOffset,
+		"file_has_more":         ctx.FileHasMore,
+		"file_next_offset":      ctx.FileNextOffset,
 		"play_queue":            ctx.PlayQueue,
-		"model_fields":          ctx.ModelFields,
-		"model_source":          ctx.ModelSource,
-		"model_overrides":       ctx.ModelOverrides,
-		"agent_fields":          ctx.AgentFields,
-		"agent_source":          ctx.AgentSource,
-		"agent_system":          ctx.AgentSystem,
-		"agent_overrides":       ctx.AgentOverrides,
-		"recipes":               ctx.Recipes,
-		"project_recipe_id":     ctx.ProjectRecipeID,
-		"project_recipe":        ctx.ProjectRecipe,
 		"pilot_pending":         ctx.PilotPending,
 		"channel_before_cursor": ctx.ChannelBeforeCursor,
 		"channel_has_more":      ctx.ChannelHasMore,

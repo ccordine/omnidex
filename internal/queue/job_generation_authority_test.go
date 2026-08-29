@@ -38,12 +38,7 @@ func TestGenerationSensitiveWritersRequireCurrentAuthority(t *testing.T) {
 			"currentAttempt != authority.Attempt",
 			"attemptWorker != authority.WorkerID",
 		},
-		"repository_claim_writes.go": {
-			"requireActiveStepAttemptTx",
-			"claim_steps.generation = jobs.current_generation",
-			"evidence_steps.superseded_at_generation IS NULL",
-		},
-		"repository_claims.go": {
+		"repository_job_reads.go": {
 			"IsoLevel: pgx.RepeatableRead",
 			"AccessMode: pgx.ReadOnly",
 		},
@@ -106,7 +101,7 @@ func TestQueueExposesNoAmbiguousGenerationReadNames(t *testing.T) {
 	}
 	for _, name := range []string{
 		"GetJobDetails", "LatestArtifact", "ListArtifactsByJob", "ListEvidenceByJob",
-		"ListClaimsByJob", "ListClaimSupportByJob", "ListMemoryCandidates",
+		"ListMemoryCandidates",
 	} {
 		pattern := regexp.MustCompile(`func\s+\([^)]*\)\s+` + name + `\s*\(`)
 		if pattern.MatchString(source.String()) {
@@ -116,7 +111,10 @@ func TestQueueExposesNoAmbiguousGenerationReadNames(t *testing.T) {
 }
 
 func TestJobMemoryCandidateRequiresObservedGeneration(t *testing.T) {
-	candidate := model.MemoryCandidate{JobID: 9, CandidateKind: "reference", Content: "bounded"}
+	candidate := model.MemoryCandidate{
+		Scope: model.MemoryScope{ProjectID: 1, ChannelID: "channel-one"},
+		JobID: 9, CandidateKind: "reference", Content: "bounded",
+	}
 	if _, err := (&Repository{}).WriteMemoryCandidate(context.Background(), candidate); err == nil ||
 		!strings.Contains(err.Error(), "observed positive generation") {
 		t.Fatalf("missing generation error=%v", err)

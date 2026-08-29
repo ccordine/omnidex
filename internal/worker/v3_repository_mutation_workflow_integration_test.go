@@ -30,11 +30,11 @@ func TestPostgresRepositoryMutationWorkflowProvesAndFinalizesExactPostOnce(t *te
 	if os.Getenv("OMNIDEX_REQUIRE_BWRAP_INTEGRATION") != "1" {
 		t.Skip("set OMNIDEX_REQUIRE_BWRAP_INTEGRATION=1 for the real queue, PostgreSQL, filesystem, and bubblewrap proof")
 	}
-	ctx, repository, pool := openRepositoryShadowDatabase(t)
+	ctx, repository, pool := openRepositoryTestDatabase(t)
 	root := repositoryMutationWorkflowRoot(t)
 	project, err := repository.CreateProject(
-		ctx, fmt.Sprintf("mutation-workflow-%d", time.Now().UnixNano()), root, "", "", nil,
-	)
+		ctx, fmt.Sprintf("mutation-workflow-%d", time.Now().UnixNano()), root, "")
+
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -42,10 +42,7 @@ func TestPostgresRepositoryMutationWorkflowProvesAndFinalizesExactPostOnce(t *te
 	if err != nil {
 		t.Fatal(err)
 	}
-	before, err := indexer.Refresh(ctx, project.ID, root)
-	if err != nil {
-		t.Fatal(err)
-	}
+	before := captureGoRepositoryIndexForTest(t, ctx, indexer, project.ID, root)
 	analysis := before.Analyses[0]
 	target := existingRepositoryVerificationSymbol(t, analysis, "Value")
 	contract, err := repositoryfacts.BuildChangeContract(
@@ -83,6 +80,7 @@ func TestPostgresRepositoryMutationWorkflowProvesAndFinalizesExactPostOnce(t *te
 		t.Fatal(err)
 	}
 	if !strings.Contains(summary, "Completed bounded existing-repository change") ||
+		!strings.Contains(summary, "files=[value.go]") ||
 		session.repositoryIndex == nil || session.repositoryIndex.Snapshot.ID == before.Snapshot.ID {
 		t.Fatalf("workflow summary=%q result=%+v", summary, session.repositoryIndex)
 	}
@@ -94,19 +92,36 @@ func TestPostgresRepositoryMutationWorkflowProvesAndFinalizesExactPostOnce(t *te
 		t, pool, claim.Job.ID, len(commands), target.FileID, *session.repositoryIndex,
 	)
 
-	command := loadRepositoryMutationWorkflowCommand(t, pool, claim.Job.ID)
+	mutation, err := repository.CurrentWorkspaceMutation(
+		ctx, claim.Job.ID, claim.Job.CurrentGeneration,
+	)
+	if err != nil || mutation == nil || mutation.Terminal == nil {
+		t.Fatalf("load terminal workspace mutation: mutation=%+v error=%v", mutation, err)
+	}
 	callbackRan := false
-	if err := repository.ApplyRepositoryMutation(
-		ctx, claim.Authority, command, exactRepositoryMutationClassifier(root, before.Snapshot),
-		func(context.Context) error {
-			callbackRan = true
-			return nil
+	result, err := repository.ExecuteWorkspaceMutation(
+		ctx, claim.Authority, mutation.Command,
+		queue.WorkspaceMutationCallbacks{
+			Observe: func(context.Context, queue.WorkspaceMutationCommand) (queue.WorkspaceMutationObservation, error) {
+				callbackRan = true
+				return queue.WorkspaceMutationIndeterminate, nil
+			},
+			Apply: func(context.Context, queue.WorkspaceMutationCommand) error {
+				callbackRan = true
+				return nil
+			},
+			Verify: func(context.Context, queue.WorkspaceMutationCommand) (queue.WorkspaceMutationVerificationResult, error) {
+				callbackRan = true
+				return queue.WorkspaceMutationVerificationResult{}, nil
+			},
 		},
-	); err != nil {
-		t.Fatalf("replay exact applied mutation: %v", err)
+	)
+	if err != nil || result.OperationID != mutation.OperationID ||
+		!result.VerificationSucceeded {
+		t.Fatalf("replay exact verified mutation: result=%+v error=%v", result, err)
 	}
 	if callbackRan {
-		t.Fatal("idempotent exact-post replay invoked the filesystem callback")
+		t.Fatal("idempotent terminal replay invoked a workspace callback")
 	}
 	assertRepositoryMutationWorkflowRecords(
 		t, pool, claim.Job.ID, len(commands), target.FileID, *session.repositoryIndex,

@@ -2,12 +2,9 @@ package queue
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"strconv"
 
-	"github.com/gryph/omnidex/internal/model"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -26,11 +23,16 @@ func (r *Repository) LoadScrumChannelOperation(
 	if err != nil {
 		return ScrumChannelOperationResult{}, false, err
 	}
-	found, err := requireRegisteredScrumChannelIdentity(ctx, r.pool, descriptor)
+	tx, err := r.pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return ScrumChannelOperationResult{}, false, fmt.Errorf("begin Scrum channel replay: %w", err)
+	}
+	defer rollbackTx(ctx, tx, "Scrum channel replay")
+	found, err := requireRegisteredScrumChannelIdentity(ctx, tx, descriptor)
 	if err != nil || !found {
 		return ScrumChannelOperationResult{}, false, err
 	}
-	result, found, err := loadScrumChannelOperation(ctx, r.pool, descriptor)
+	result, found, err := loadScrumChannelOperation(ctx, tx, descriptor)
 	if err != nil {
 		return ScrumChannelOperationResult{}, false, err
 	}
@@ -40,12 +42,15 @@ func (r *Repository) LoadScrumChannelOperation(
 			descriptor.Request.OperationID,
 		)
 	}
+	if err := tx.Commit(ctx); err != nil {
+		return ScrumChannelOperationResult{}, false, fmt.Errorf("commit Scrum channel replay read: %w", err)
+	}
 	return result, true, nil
 }
 
 func requireRegisteredScrumChannelIdentity(
 	ctx context.Context,
-	query scrumChannelQueryRower,
+	query scrumChannelOperationQueryer,
 	descriptor scrumChannelOperationDescriptor,
 ) (bool, error) {
 	var kind LifecycleOperationKind
@@ -74,19 +79,17 @@ func requireRegisteredScrumChannelIdentity(
 
 func loadScrumChannelOperation(
 	ctx context.Context,
-	query scrumChannelQueryRower,
+	tx pgx.Tx,
 	descriptor scrumChannelOperationDescriptor,
 ) (ScrumChannelOperationResult, bool, error) {
-	var action, agent string
-	var jobJSON, cardJSON []byte
+	var action string
 	var jobID int64
-	err := query.QueryRow(ctx, `
-		SELECT job_id, result_action, result_agent, result_job, result_card
+	err := tx.QueryRow(ctx, `
+		SELECT job_id,result_action
 		FROM scrum_channel_operations
-		WHERE operation_id=$1 AND kind=$2 AND command_sha256=$3
-		  AND command_payload=$4::jsonb
-	`, descriptor.Request.OperationID, LifecycleScrumChannel, descriptor.SHA256, string(descriptor.Payload)).Scan(
-		&jobID, &action, &agent, &jobJSON, &cardJSON,
+		WHERE operation_id=$1
+	`, descriptor.Request.OperationID).Scan(
+		&jobID, &action,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ScrumChannelOperationResult{}, false, nil
@@ -94,25 +97,34 @@ func loadScrumChannelOperation(
 	if err != nil {
 		return ScrumChannelOperationResult{}, false, fmt.Errorf("read Scrum channel operation result: %w", err)
 	}
-	var job model.Job
-	var card DBScrumCard
-	if err := json.Unmarshal(jobJSON, &job); err != nil {
-		return ScrumChannelOperationResult{}, false, fmt.Errorf("decode Scrum channel result job: %w", err)
+	card, err := lockScrumCardTx(ctx, tx, descriptor.Request.ProjectID, descriptor.Request.CardID)
+	if err != nil {
+		return ScrumChannelOperationResult{}, false, fmt.Errorf("load live Scrum channel replay target: %w", err)
 	}
-	if err := json.Unmarshal(cardJSON, &card); err != nil {
-		return ScrumChannelOperationResult{}, false, fmt.Errorf("decode Scrum channel result card: %w", err)
+	job, err := scanJob(tx.QueryRow(ctx, `
+		SELECT id,instruction,pipeline,status,result,error,metadata,current_generation,
+		       created_at,updated_at,completed_at
+		FROM jobs WHERE id=$1 AND project_id=$2
+	`, jobID, descriptor.Request.ProjectID))
+	if err != nil {
+		return ScrumChannelOperationResult{}, false, fmt.Errorf("load current Scrum operation job: %w", err)
 	}
-	sanitizeScrumCardFields(&card)
-	if job.ID != jobID || card.ID != descriptor.Request.CardID ||
-		card.ProjectID != descriptor.Request.ProjectID || card.JobID != strconv.FormatInt(jobID, 10) {
-		return ScrumChannelOperationResult{}, false, fmt.Errorf(
-			"Scrum channel operation %q contains inconsistent result authority",
-			descriptor.Request.OperationID,
-		)
+	messages, messageStart, err := loadScrumCardMessageTail(
+		ctx, tx, card.ProjectID, card.ID, card.ChannelMessageCount, 50, MaxScrumChannelPageBytes,
+	)
+	if err != nil {
+		return ScrumChannelOperationResult{}, false, err
 	}
 	return ScrumChannelOperationResult{
-		Card: card, Job: job, Action: action, Agent: agent,
+		OperationID: descriptor.Request.OperationID,
+		Card:        card, Messages: messages, MessageStart: messageStart, MessageTotal: card.ChannelMessageCount,
+		Job: job, Action: action,
 	}, true, nil
+}
+
+type scrumChannelOperationQueryer interface {
+	scrumChannelQueryRower
+	Query(context.Context, string, ...any) (pgx.Rows, error)
 }
 
 func insertScrumChannelOperationTx(
@@ -122,22 +134,20 @@ func insertScrumChannelOperationTx(
 	command ScrumChannelOperationCommand,
 	result ScrumChannelOperationResult,
 ) error {
-	jobJSON, err := json.Marshal(result.Job)
-	if err != nil {
-		return fmt.Errorf("encode Scrum channel result job: %w", err)
-	}
-	cardJSON, err := json.Marshal(result.Card)
-	if err != nil {
-		return fmt.Errorf("encode Scrum channel result card: %w", err)
+	effectOperationID := descriptor.Request.OperationID
+	if command.Effect.Kind != ScrumChannelStartJob {
+		var err error
+		effectOperationID, err = scrumChannelEffectOperationID(command)
+		if err != nil {
+			return err
+		}
 	}
 	tag, err := tx.Exec(ctx, `
 		INSERT INTO scrum_channel_operations (
-			operation_id, project_id, card_id, kind, command_sha256, command_payload,
-			effect_kind, job_id, result_action, result_agent, result_job, result_card
-		) VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7,$8,$9,$10,$11::jsonb,$12::jsonb)
+			operation_id,project_id,card_id,effect_kind,effect_operation_id,job_id,result_action
+		) VALUES ($1,$2,$3,$4,$5,$6,$7)
 	`, descriptor.Request.OperationID, descriptor.Request.ProjectID, descriptor.Request.CardID,
-		LifecycleScrumChannel, descriptor.SHA256, string(descriptor.Payload), command.Effect.Kind,
-		result.Job.ID, result.Action, result.Agent, string(jobJSON), string(cardJSON))
+		command.Effect.Kind, effectOperationID, result.Job.ID, result.Action)
 	if err != nil {
 		return fmt.Errorf("record Scrum channel operation %q: %w", descriptor.Request.OperationID, err)
 	}

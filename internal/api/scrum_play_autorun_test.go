@@ -28,12 +28,8 @@ func TestParseScrumJobReference(t *testing.T) {
 		"scrum_card_id": "card-2",
 		"action":        "tags_suggest",
 	})
-	ref, err = parseScrumJobReference(llmMeta)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !ref.IsScrum || ref.ProjectID != 2 || ref.CardID != "card-2" {
-		t.Fatalf("unexpected Scrum LLM reference: %#v", ref)
+	if _, err = parseScrumJobReference(llmMeta); err == nil {
+		t.Fatal("removed Scrum LLM metadata was silently ignored")
 	}
 	otherMeta, _ := json.Marshal(map[string]any{"source": "chat"})
 	ref, err = parseScrumJobReference(otherMeta)
@@ -47,6 +43,13 @@ func TestParseScrumJobReference(t *testing.T) {
 		[]byte(`{`),
 		[]byte(`{"source":42}`),
 		[]byte(`{"source":"omni-scrum","project_id":"1","scrum_card_id":"card-1"}`),
+		[]byte(`{"source":"omni-scrum","source":"chat","project_id":1,"scrum_card_id":"card-1"}`),
+		[]byte(`{"Source":"omni-scrum","project_id":1,"scrum_card_id":"card-1"}`),
+		[]byte(`{"source":"OMNI-SCRUM","project_id":1,"scrum_card_id":"card-1"}`),
+		[]byte(`{"source":" omni-scrum ","project_id":1,"scrum_card_id":"card-1"}`),
+		[]byte(`{"source":"omni-scrum","project_id":1,"scrum_card_id":" card-1"}`),
+		[]byte(`{"source":"omni-scrum","project_id":1,"scrum_card_id":"card-1 ","action":"tags_suggest"}`),
+		[]byte(`{"source":"omni-scrum","project_id":1,"scrum_card_id":"card-1","scrum_raw_play":true}`),
 	} {
 		if _, err := parseScrumJobReference(raw); err == nil {
 			t.Fatalf("metadata %q must fail loudly", raw)

@@ -85,11 +85,6 @@ func requireCanonicalRootTransitionEventTx(
 	to taskstate.NodeStatus,
 	proofContent, reason string,
 ) error {
-	if err := requireAcceptedIntentObjectiveTerminalEventTx(
-		ctx, tx, header, generation, stepID, to, proofContent, reason,
-	); err != nil {
-		return err
-	}
 	operation := "root-" + string(to)
 	if to == taskstate.NodeActive {
 		operation = "activate-root"

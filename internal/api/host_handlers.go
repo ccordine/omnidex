@@ -29,7 +29,14 @@ func (s *Server) handleHostBridgeStatus(w http.ResponseWriter, r *http.Request) 
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 4*time.Second)
 	defer cancel()
-	writeJSON(w, http.StatusOK, s.collectHostBridgeStatus(ctx))
+	status := s.collectHostBridgeStatus(ctx)
+	bundle, err := renderChatHostBridgeStatusBundle(status)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	status.HTML.Bundle = bundle
+	writeJSON(w, http.StatusOK, status)
 }
 
 func (s *Server) handleHostPickDirectory(w http.ResponseWriter, r *http.Request) {

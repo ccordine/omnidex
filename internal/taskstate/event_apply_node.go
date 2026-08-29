@@ -113,7 +113,7 @@ func (ledger *Ledger) validateNewEntryProjection(event Event, entry Entry) error
 		entry.DispositionReason != "" || entry.DispositionBy != "" {
 		return fmt.Errorf("new entry projection has invalid status, authority, content digest, or versions")
 	}
-	if err := requireExactText(entry.Content, "entry content"); err != nil {
+	if err := requireEntryContent(entry.Content, entry.Kind); err != nil {
 		return err
 	}
 	if entry.Confidence != nil && (*entry.Confidence < 0 || *entry.Confidence > 1) {

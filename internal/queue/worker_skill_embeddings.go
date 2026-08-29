@@ -2,8 +2,6 @@ package queue
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"math"
@@ -35,76 +33,76 @@ func (r *Repository) ActiveLearnedSkill(
 	if r == nil || r.pool == nil {
 		return specialists.SkillVersion{}, false, fmt.Errorf("active learned skill requires PostgreSQL")
 	}
-	version, err := scanWorkerSkill(r.pool.QueryRow(ctx, workerSkillSelectSQL+`
-		WHERE skill_id=$1 AND status='active' AND origin='learned' AND skill_kind='code_procedure'
-	`, skillID))
+	var embeddingCount int64
+	version, err := scanWorkerSkill(r.pool.QueryRow(ctx, `
+		SELECT skills.*, (
+			SELECT COUNT(*) FROM worker_skill_embeddings AS embeddings
+			WHERE embeddings.skill_id=skills.skill_id
+			  AND embeddings.skill_version=skills.version
+		) AS embedding_count
+		FROM (`+workerSkillSelectSQL+`) AS skills
+		WHERE skills.skill_id=$1 AND skills.status='active'
+		  AND skills.origin='learned' AND skills.skill_kind='code_procedure'
+	`, skillID), &embeddingCount)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return specialists.SkillVersion{}, false, nil
 	}
 	if err != nil {
 		return specialists.SkillVersion{}, false, err
 	}
+	if err := requireFrozenActiveSkillEmbedding(version, embeddingCount); err != nil {
+		return specialists.SkillVersion{}, false, err
+	}
 	return version, true, nil
 }
 
-func (r *Repository) StoreWorkerSkillEmbedding(
+func (r *Repository) HasActiveWorkerSkillEmbeddings(
 	ctx context.Context,
-	skillID string,
-	version int,
 	provider string,
 	modelName string,
-	embedding []float64,
-) error {
-	skillID, provider, modelName, literal, digest, err := validatedWorkerSkillEmbedding(
-		skillID, provider, modelName, embedding,
-	)
-	if err != nil {
-		return err
+) (bool, error) {
+	provider = strings.TrimSpace(provider)
+	modelName = strings.TrimSpace(modelName)
+	if provider == "" || modelName == "" {
+		return false, fmt.Errorf("active worker skill lookup requires provider and model")
 	}
-	if version < 1 {
-		return fmt.Errorf("worker skill embedding version must be positive")
+	if len(provider) > 128 || len(modelName) > 256 {
+		return false, fmt.Errorf("active worker skill embedding identity exceeds its hard limit")
 	}
 	if r == nil || r.pool == nil {
-		return fmt.Errorf("worker skill embedding requires PostgreSQL")
+		return false, fmt.Errorf("active worker skill lookup requires PostgreSQL")
 	}
-	tag, err := r.pool.Exec(ctx, `
-		INSERT INTO worker_skill_embeddings (
-			skill_id, skill_version, embedding_provider, embedding_model,
-			embedding, embedding_sha256
+	var invalid, exists bool
+	err := r.pool.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1
+			FROM worker_skills AS skills
+			LEFT JOIN worker_skill_embeddings AS embeddings
+			  ON embeddings.skill_id=skills.skill_id
+			 AND embeddings.skill_version=skills.version
+			WHERE skills.status='active' AND skills.origin='learned'
+			  AND skills.skill_kind='code_procedure'
+			GROUP BY skills.skill_id,skills.version
+			HAVING COUNT(embeddings.skill_id)<>1
+		), EXISTS (
+			SELECT 1
+			FROM worker_skills AS skills
+			JOIN worker_skill_embeddings AS embeddings
+			  ON embeddings.skill_id=skills.skill_id
+			 AND embeddings.skill_version=skills.version
+			WHERE skills.status='active' AND skills.origin='learned'
+			  AND skills.skill_kind='code_procedure'
+			  AND embeddings.embedding_provider=$1
+			  AND embeddings.embedding_model=$2
 		)
-		SELECT skill_id, version, $3, $4, $5::vector, $6
-		FROM worker_skills
-		WHERE skill_id=$1 AND version=$2
-		  AND origin='learned' AND skill_kind='code_procedure'
-		  AND status IN ('candidate', 'validating', 'active')
-		ON CONFLICT DO NOTHING
-	`, skillID, version, provider, modelName, literal, digest)
+	`, provider, modelName).Scan(&invalid, &exists)
 	if err != nil {
-		return fmt.Errorf("store worker skill %s version %d embedding: %w", skillID, version, err)
+		return false, fmt.Errorf("check active worker skill embeddings: %w", err)
 	}
-	if tag.RowsAffected() == 1 {
-		return nil
+	if invalid {
+		return false, fmt.Errorf("active worker skill registry contains a version without exactly one frozen embedding identity")
 	}
-	var storedHash string
-	err = r.pool.QueryRow(ctx, `
-		SELECT embedding_sha256
-		FROM worker_skill_embeddings
-		WHERE skill_id=$1 AND skill_version=$2
-		  AND embedding_provider=$3 AND embedding_model=$4
-	`, skillID, version, provider, modelName).Scan(&storedHash)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return fmt.Errorf("worker skill %s version %d is missing or cannot receive an embedding", skillID, version)
-	}
-	if err != nil {
-		return err
-	}
-	if storedHash != digest {
-		return fmt.Errorf(
-			"worker skill %s version %d already has a different immutable embedding for %s/%s",
-			skillID, version, provider, modelName,
-		)
-	}
-	return nil
+	return exists, nil
 }
 
 func (r *Repository) FindActiveWorkerSkillMatches(
@@ -117,17 +115,26 @@ func (r *Repository) FindActiveWorkerSkillMatches(
 	if limit < 1 || limit > maxWorkerSkillMatches {
 		return nil, fmt.Errorf("worker skill match limit must be between 1 and %d", maxWorkerSkillMatches)
 	}
-	_, provider, modelName, literal, _, err := validatedWorkerSkillEmbedding(
-		"query", provider, modelName, embedding,
-	)
+	provider, modelName, literal, err := validatedWorkerSkillQuery(provider, modelName, embedding)
 	if err != nil {
 		return nil, err
 	}
 	if r == nil || r.pool == nil {
 		return nil, fmt.Errorf("worker skill matching requires PostgreSQL")
 	}
+	hasActive, err := r.HasActiveWorkerSkillEmbeddings(ctx, provider, modelName)
+	if err != nil {
+		return nil, err
+	}
+	if !hasActive {
+		return []WorkerSkillMatch{}, nil
+	}
 	rows, err := r.pool.Query(ctx, `
-		SELECT skills.*, embeddings.embedding <=> $3::vector AS distance
+		SELECT skills.*, embeddings.embedding <=> $3::vector AS distance, (
+			SELECT COUNT(*) FROM worker_skill_embeddings AS frozen
+			WHERE frozen.skill_id=skills.skill_id
+			  AND frozen.skill_version=skills.version
+		) AS embedding_count
 		FROM (`+workerSkillSelectSQL+`) AS skills
 		JOIN worker_skill_embeddings AS embeddings
 		  ON embeddings.skill_id=skills.skill_id AND embeddings.skill_version=skills.version
@@ -144,8 +151,12 @@ func (r *Repository) FindActiveWorkerSkillMatches(
 	matches := make([]WorkerSkillMatch, 0, limit)
 	for rows.Next() {
 		var distance float64
-		version, err := scanWorkerSkill(rows, &distance)
+		var embeddingCount int64
+		version, err := scanWorkerSkill(rows, &distance, &embeddingCount)
 		if err != nil {
+			return nil, err
+		}
+		if err := requireFrozenActiveSkillEmbedding(version, embeddingCount); err != nil {
 			return nil, err
 		}
 		if math.IsNaN(distance) || math.IsInf(distance, 0) || distance < 0 {
@@ -159,34 +170,31 @@ func (r *Repository) FindActiveWorkerSkillMatches(
 	return matches, nil
 }
 
-func validatedWorkerSkillEmbedding(
-	skillID string,
+func validatedWorkerSkillQuery(
 	provider string,
 	modelName string,
 	embedding []float64,
-) (string, string, string, string, string, error) {
-	skillID = strings.TrimSpace(skillID)
+) (string, string, string, error) {
 	provider = strings.TrimSpace(provider)
 	modelName = strings.TrimSpace(modelName)
-	if skillID == "" || provider == "" || modelName == "" {
-		return "", "", "", "", "", fmt.Errorf("worker skill embedding requires id, provider, and model")
+	if provider == "" || modelName == "" {
+		return "", "", "", fmt.Errorf("worker skill query requires provider and model")
 	}
 	if len(provider) > 128 || len(modelName) > 256 {
-		return "", "", "", "", "", fmt.Errorf("worker skill embedding identity exceeds its hard limit")
+		return "", "", "", fmt.Errorf("worker skill embedding identity exceeds its hard limit")
 	}
 	if len(embedding) < 1 || len(embedding) > maxWorkerSkillVectorItems {
-		return "", "", "", "", "", fmt.Errorf(
+		return "", "", "", fmt.Errorf(
 			"worker skill embedding dimensions must be between 1 and %d", maxWorkerSkillVectorItems,
 		)
 	}
 	parts := make([]string, len(embedding))
 	for index, value := range embedding {
 		if math.IsNaN(value) || math.IsInf(value, 0) {
-			return "", "", "", "", "", fmt.Errorf("worker skill embedding contains a non-finite value at %d", index)
+			return "", "", "", fmt.Errorf("worker skill embedding contains a non-finite value at %d", index)
 		}
 		parts[index] = strconv.FormatFloat(value, 'g', -1, 64)
 	}
 	literal := "[" + strings.Join(parts, ",") + "]"
-	hash := sha256.Sum256([]byte(literal))
-	return skillID, provider, modelName, literal, hex.EncodeToString(hash[:]), nil
+	return provider, modelName, literal, nil
 }

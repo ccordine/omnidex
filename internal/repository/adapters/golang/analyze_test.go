@@ -160,6 +160,59 @@ func TestGoAdapterSourceDoesNotUseRegexSymbolDiscovery(t *testing.T) {
 	}
 }
 
+func TestGoAnalysisEnvironmentRejectsAmbientRoutingAndUsesSnapshotRoot(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "exact-root")
+	environment := goAnalysisEnvironment([]string{
+		"HOME=/controlled-home", "GOENV=/attacker/goenv", "GOFLAGS=-tags=attacker",
+		"GOWORK=/attacker/go.work", "GOPROXY=https://attacker.invalid",
+		"GOSUMDB=attacker.invalid", "GOTOOLCHAIN=attacker", "PWD=/attacker/root",
+	}, root, "off")
+	want := map[string]string{
+		"HOME": "/controlled-home", "GO111MODULE": "on", "GOENV": "off",
+		"GOFLAGS": "-mod=readonly", "GOWORK": "off", "GOPROXY": "off",
+		"GOSUMDB": "off", "GOTOOLCHAIN": "local", "GOVCS": "off", "PWD": root,
+	}
+	seen := make(map[string]string, len(environment))
+	for _, item := range environment {
+		key, value, found := strings.Cut(item, "=")
+		if !found {
+			t.Fatalf("environment entry has no value: %q", item)
+		}
+		if _, duplicate := seen[key]; duplicate {
+			t.Fatalf("environment key %q is duplicated: %v", key, environment)
+		}
+		seen[key] = value
+	}
+	for key, value := range want {
+		if seen[key] != value {
+			t.Fatalf("%s=%q, want %q in %v", key, seen[key], value, environment)
+		}
+	}
+	if seen["GOFLAGS"] == "-tags=attacker" || seen["GOWORK"] == "/attacker/go.work" {
+		t.Fatalf("hostile ambient Go routing survived: %v", environment)
+	}
+}
+
+func TestExactGoWorkComesOnlyFromSnapshotAuthority(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "projection")
+	snapshot := repositoryfacts.Snapshot{Root: root, Files: []repositoryfacts.File{{
+		Path: "go.mod", Kind: repositoryfacts.EntryRegular,
+	}}}
+	if got := exactGoWork(snapshot); got != "off" {
+		t.Fatalf("snapshot without go.work selected %q", got)
+	}
+	snapshot.Files = append(snapshot.Files, repositoryfacts.File{
+		Path: "go.work", Kind: repositoryfacts.EntryRegular,
+	})
+	if got, want := exactGoWork(snapshot), filepath.Join(root, "go.work"); got != want {
+		t.Fatalf("exactGoWork=%q, want %q", got, want)
+	}
+	snapshot.Files[1].Kind = repositoryfacts.EntrySymlink
+	if got := exactGoWork(snapshot); got != "off" {
+		t.Fatalf("symlink go.work selected as authority: %q", got)
+	}
+}
+
 func newGoAnalysisRepository(t *testing.T) string {
 	t.Helper()
 	if _, err := exec.LookPath("git"); err != nil {

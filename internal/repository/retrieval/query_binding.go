@@ -7,6 +7,8 @@ import (
 	"strings"
 )
 
+const maxRetrievalQueryBytes = 4 * 1024
+
 // NewQueryBinding returns an opaque, operation-bound identity for one exact
 // retrieval query. The plaintext query remains code authority and is never a
 // field of EvidencePack.
@@ -25,8 +27,11 @@ func NewQueryBinding(operation Operation, query string) (string, error) {
 }
 
 func validateRetrievalQuery(query string) error {
-	if query == "" || query != strings.TrimSpace(query) || len([]byte(query)) > 512 {
-		return fmt.Errorf("repository evidence retrieval query requires 1-512 trimmed bytes")
+	if query == "" || query != strings.TrimSpace(query) || len([]byte(query)) > maxRetrievalQueryBytes {
+		return fmt.Errorf(
+			"repository evidence retrieval query requires 1-%d trimmed bytes",
+			maxRetrievalQueryBytes,
+		)
 	}
 	return nil
 }

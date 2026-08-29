@@ -60,7 +60,7 @@ func TestJobControlClientCarriesExactLifecycleOperationIdentity(t *testing.T) {
 					return &http.Response{
 						StatusCode: http.StatusOK,
 						Header:     http.Header{"Content-Type": []string{"application/json"}},
-						Body:       io.NopCloser(strings.NewReader(`{"job":{"id":41,"current_generation":1}}`)),
+						Body:       io.NopCloser(strings.NewReader(`{"job_id":41,"operation_id":"` + string(id) + `","status":"running"}`)),
 					}, nil
 				})},
 			}

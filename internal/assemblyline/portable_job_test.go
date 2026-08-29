@@ -10,14 +10,12 @@ import (
 func TestPortableJobIdentityDependsOnlyOnImmutableSmallInput(t *testing.T) {
 	t.Parallel()
 
-	input := RequirementPartitionInput{
-		SourceText: "Build a compact browser catalog.", Mode: RequirementExtractFeatures,
-	}
-	first, err := NewRequirementPartitionJob(input)
+	input := portableApplicationProductContextInput(t, "Build a compact browser catalog with grouped records.")
+	first, err := NewApplicationProductContextJob(input)
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := NewRequirementPartitionJob(input)
+	second, err := NewApplicationProductContextJob(input)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -30,11 +28,28 @@ func TestPortableJobIdentityDependsOnlyOnImmutableSmallInput(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, forbidden := range []string{
-		"workspace", "path", "filename", "document", "queue", "lease", "attempt", "worker", "model",
+		"path", "filename", "document", "queue", "lease", "attempt", "worker", "model",
 	} {
 		if strings.Contains(strings.ToLower(string(encoded)), forbidden) {
 			t.Fatalf("portable model job leaked %q: %s", forbidden, encoded)
 		}
+	}
+}
+
+func TestProductContextPortableJobIdentityChangesWithIntactRequest(t *testing.T) {
+	t.Parallel()
+	base := portableApplicationProductContextInput(t, "Build a browser catalog with grouped records.")
+	first, err := NewApplicationProductContextJob(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	base = portableApplicationProductContextInput(t, "Build a browser catalog with grouped records and saved filters.")
+	second, err := NewApplicationProductContextJob(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.ID == second.ID || reflect.DeepEqual(first.Payload, second.Payload) {
+		t.Fatalf("request did not change immutable job identity: %s", second.ID)
 	}
 }
 
@@ -44,10 +59,8 @@ func TestPortableJobIdentityChangesWhenLocalWorkChanges(t *testing.T) {
 	first, err := NewFragmentCorrectionJob(FragmentCorrectionInput{
 		Language:           "typescript",
 		Signature:          "function clamp(value: number): number",
-		Capabilities:       []string{"const MIN = 0;", "const MAX = 1;"},
 		CurrentDeclaration: "function clamp(value: number): number { return value; }",
-		RequiredChange:     "Return a value bounded by MIN and MAX.",
-		Diagnostic:         "expected 1, received 2",
+		RepairGuidance:     "Clamp the returned value to the accepted range.",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -55,10 +68,8 @@ func TestPortableJobIdentityChangesWhenLocalWorkChanges(t *testing.T) {
 	second, err := NewFragmentCorrectionJob(FragmentCorrectionInput{
 		Language:           "typescript",
 		Signature:          "function clamp(value: number): number",
-		Capabilities:       []string{"const MIN = 0;", "const MAX = 1;"},
 		CurrentDeclaration: "function clamp(value: number): number { return Math.min(value, MAX); }",
-		RequiredChange:     "Return a value bounded by MIN and MAX.",
-		Diagnostic:         "expected 0, received -1",
+		RepairGuidance:     "Clamp the returned value to the accepted range.",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -75,8 +86,7 @@ func TestFragmentCorrectionWirePayloadCannotCarryInitialBehavior(t *testing.T) {
 		Language:           "typescript",
 		Signature:          "function render(): null",
 		CurrentDeclaration: "function render(): null { return null; }",
-		RequiredChange:     "Remove the rejected construct.",
-		Diagnostic:         "comment nodes are forbidden",
+		RepairGuidance:     "Remove the rejected construct.",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -95,9 +105,9 @@ func TestFragmentCorrectionWirePayloadCannotCarryInitialBehavior(t *testing.T) {
 func TestPortableResultMustAnswerTheExactClaimedJob(t *testing.T) {
 	t.Parallel()
 
-	job, err := NewRequirementPartitionJob(RequirementPartitionInput{
-		SourceText: "Build a small tool.", Mode: RequirementExtractFeatures,
-	})
+	job, err := NewApplicationProductContextJob(
+		portableApplicationProductContextInput(t, "Build a small tool with status output."),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -109,6 +119,19 @@ func TestPortableResultMustAnswerTheExactClaimedJob(t *testing.T) {
 	result.JobID = job.ID
 	if err := result.ValidateFor(job); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestPortableApplicationProductContextRejectsRetiredPartitionPayload(t *testing.T) {
+	t.Parallel()
+	payload := json.RawMessage(`{"source_text":"Enable grouped records.","mode":"extract_features"}`)
+	job := PortableJob{Schema: PortableJobSchemaV2, Kind: WorkApplicationProductContext, Payload: payload}
+	job.ID = portableJobDigest(job.Schema, job.Kind, job.Payload)
+	if err := job.Validate(); err == nil || !strings.Contains(err.Error(), "unknown field") {
+		t.Fatalf("retired requirement payload error=%v", err)
+	}
+	if validWorkKind(WorkKind("application_intent")) {
+		t.Fatal("retired aggregate application-intent work kind remains registered")
 	}
 }
 
@@ -129,13 +152,33 @@ func TestPortableJobRejectsRemovedFeaturePresencePath(t *testing.T) {
 	}
 }
 
+func TestPortableJobRejectsRetiredStationKinds(t *testing.T) {
+	t.Parallel()
+
+	for _, retired := range []WorkKind{
+		"conversation_context_selection",
+		"memory_context_selection",
+		"roleplay_narrative_continuity",
+		"application_acceptance_grounding_review",
+		"known_artifact_truth",
+	} {
+		if validWorkKind(retired) {
+			t.Fatalf("retired context work kind %q remains registered", retired)
+		}
+		if _, err := newPortableJob(retired, map[string]string{"value": "x"}); err == nil ||
+			!strings.Contains(err.Error(), "unsupported") {
+			t.Fatalf("retired context work kind %q error=%v", retired, err)
+		}
+	}
+}
+
 func TestPortableJobRejectsUnknownWirePayloadFields(t *testing.T) {
 	t.Parallel()
 
 	payload := json.RawMessage(`{"user_request":"Build a tool.","accepted":[],"workspace":"/secret"}`)
 	job := PortableJob{
-		Schema:  PortableJobSchemaV1,
-		Kind:    WorkRequirementPartition,
+		Schema:  PortableJobSchemaV2,
+		Kind:    WorkApplicationProductContext,
 		Payload: payload,
 	}
 	job.ID = portableJobDigest(job.Schema, job.Kind, job.Payload)
@@ -144,71 +187,14 @@ func TestPortableJobRejectsUnknownWirePayloadFields(t *testing.T) {
 	}
 }
 
-func TestPortableResponseCorrectionExposesOnlyOneFieldPatchAndDirectFailure(t *testing.T) {
-	t.Parallel()
-
-	original, err := NewApplicationClassificationJob(ApplicationClassificationInput{
-		UserRequest: "Build a small browser tool.",
-	})
+func portableApplicationProductContextInput(
+	t *testing.T,
+	request string,
+) ApplicationProductContextInput {
+	t.Helper()
+	context, err := BootstrapApplicationContext(request, ApplicationWorkspaceEmpty)
 	if err != nil {
 		t.Fatal(err)
 	}
-	correction, err := NewResponseCorrectionJob(original, "application surface is unsupported")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if correction.ID == original.ID || correction.Kind != WorkResponseCorrection {
-		t.Fatalf("correction=%#v original=%#v", correction, original)
-	}
-	prompt, schema, err := RenderPortableJob(correction)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if schema == nil || schema["minProperties"] != 1 || schema["maxProperties"] != 1 {
-		t.Fatalf("semantic correction omitted its one-field response schema: %#v", schema)
-	}
-	for _, required := range []string{"JSON merge patch", "application surface is unsupported"} {
-		if !strings.Contains(prompt, required) {
-			t.Fatalf("correction prompt omitted %q:\n%s", required, prompt)
-		}
-	}
-	for _, forbidden := range []string{
-		"Build a small browser tool.", "omnidex.application-class.v1",
-		"workspace", "filename", "dependency graph", "agent",
-	} {
-		if strings.Contains(strings.ToLower(prompt), strings.ToLower(forbidden)) {
-			t.Fatalf("correction prompt leaked %q:\n%s", forbidden, prompt)
-		}
-	}
-	if _, err := NewResponseCorrectionJob(correction, "another failure"); err == nil {
-		t.Fatal("nested correction chain was accepted")
-	}
-}
-
-func TestSemanticResponseCorrectionChangesExactlyOneRetainedLeaf(t *testing.T) {
-	t.Parallel()
-
-	original, err := NewApplicationClassificationJob(ApplicationClassificationInput{
-		UserRequest: "Build a small browser tool.",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	retained := `{"schema":"omnidex.application-class.v1","surface":"unsupported"}`
-	corrected, err := ApplyResponseCorrection(original, retained, `{"surface":"browser_application"}`)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(corrected, `"surface":"browser_application"`) {
-		t.Fatalf("corrected=%s", corrected)
-	}
-	for _, invalid := range []string{
-		`{"surface":"unsupported"}`,
-		`{"schema":"omnidex.application-class.v1"}`,
-		`{"surface":"browser_application","extra":true}`,
-	} {
-		if _, err := ApplyResponseCorrection(original, retained, invalid); err == nil {
-			t.Fatalf("accepted invalid one-field correction %s", invalid)
-		}
-	}
+	return ApplicationProductContextInput{UserRequest: request, Context: context}
 }

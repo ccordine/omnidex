@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/gryph/omnidex/internal/client"
-	"github.com/gryph/omnidex/internal/model"
 )
 
 func runAudioNotesStart(args []string) {
@@ -149,13 +148,21 @@ func runAudioNotesStop(c *client.Client, args []string) {
 	modelValue := fs.String("model", "", "transcriber model (whisper: model name, whisper-cli: model path)")
 	language := fs.String("language", "en", "transcription language hint")
 	storeMemory := fs.Bool("store-memory", true, "store transcript notes into long-term memory")
-	sourcePrefix := fs.String("source", "audio-notes", "memory source prefix")
-	kind := fs.String("kind", model.MemoryKindReference, "memory kind")
+	projectID := fs.Int64("project-id", 0, "required exact memory project id")
+	channelID := fs.String("channel-id", "", "required exact memory channel id")
+	sourcePrefix := fs.String("source", "", "required memory source prefix")
+	kind := fs.String("kind", "", "required memory kind")
 	tags := fs.String("tags", "", "extra tags")
 	chunkSize := fs.Int("chunk-size", 1800, "memory chunk size")
 	overlap := fs.Int("overlap", 220, "memory chunk overlap")
 	maxChunks := fs.Int("max-chunks", 40, "max memory chunks to store")
 	_ = fs.Parse(args)
+	memoryScope, memoryTags, err := validateAudioNotesMemoryOptions(
+		*storeMemory, *projectID, *channelID, *sourcePrefix, *kind, *tags,
+	)
+	if err != nil {
+		die(err.Error())
+	}
 
 	absRoot, err := filepath.Abs(strings.TrimSpace(*root))
 	if err != nil {
@@ -258,22 +265,14 @@ func runAudioNotesStop(c *client.Client, args []string) {
 		}
 	}
 
-	if *storeMemory && strings.TrimSpace(session.NotesFile) != "" {
-		notesData, err := os.ReadFile(session.NotesFile)
-		if err != nil {
-			transcriptionWarnings = append(transcriptionWarnings, "memory read notes: "+err.Error())
-		} else {
-			stored, tagsUsed, err := storeAudioNotesMemory(c, session, string(notesData), strings.TrimSpace(*sourcePrefix), *kind, splitTags(*tags), *chunkSize, *overlap, *maxChunks)
-			if err != nil {
-				transcriptionWarnings = append(transcriptionWarnings, "memory store: "+err.Error())
-			} else {
-				session.Memory = audioMemoryState{
-					StoredChunks: stored,
-					SourcePrefix: strings.TrimSpace(*sourcePrefix),
-					Tags:         tagsUsed,
-					StoredAt:     now.Format(time.RFC3339),
-				}
-			}
+	var memoryStoreErr error
+	if *storeMemory {
+		session.Memory, memoryStoreErr = storeAudioNotesSessionMemory(
+			c, session, memoryScope, *sourcePrefix, *kind, memoryTags,
+			*chunkSize, *overlap, *maxChunks, now,
+		)
+		if memoryStoreErr != nil {
+			session.Memory = audioMemoryState{}
 		}
 	}
 
@@ -288,21 +287,9 @@ func runAudioNotesStop(c *client.Client, args []string) {
 		die(err.Error())
 	}
 	clearActiveAudioSession(absRoot, session.ID)
+	if memoryStoreErr != nil {
+		die("audio-notes memory ingest failed: " + memoryStoreErr.Error())
+	}
 
-	fmt.Printf("audio-notes stopped session=%s status=%s\n", session.ID, session.Status)
-	if session.SegmentsFile != "" {
-		fmt.Printf("segments=%s count=%d\n", session.SegmentsFile, session.Transcript.SegmentCount)
-	}
-	if session.NotesFile != "" {
-		fmt.Printf("notes=%s\n", session.NotesFile)
-	}
-	if session.Memory.StoredChunks > 0 {
-		fmt.Printf("memory_stored=%d source=%s\n", session.Memory.StoredChunks, session.Memory.SourcePrefix)
-	}
-	if len(transcriptionWarnings) > 0 {
-		fmt.Println("warnings:")
-		for _, warning := range transcriptionWarnings {
-			fmt.Println("- " + warning)
-		}
-	}
+	printAudioNotesStopResult(session, transcriptionWarnings)
 }

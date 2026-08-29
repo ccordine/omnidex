@@ -5,13 +5,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gryph/omnidex/internal/artifacts"
 	"github.com/gryph/omnidex/internal/model"
-	toolruntime "github.com/gryph/omnidex/internal/tools"
+	"github.com/gryph/omnidex/internal/operation"
 )
 
 func TestDirectCodingCommandDiagnosticExcludesVolatileExecutionSummary(t *testing.T) {
-	detail := directCodingCommandResult(toolruntime.Result{
+	detail := directCodingCommandResult(operation.Result{
 		Summary: "Command failed duration_ms=928",
 		Output: map[string]any{
 			"exit_code": 1,
@@ -25,6 +24,18 @@ func TestDirectCodingCommandDiagnosticExcludesVolatileExecutionSummary(t *testin
 		if !strings.Contains(detail, required) {
 			t.Fatalf("diagnostic omitted %q: %q", required, detail)
 		}
+	}
+}
+
+func TestDirectCodingMutationSummaryReportsActualOperationsAndPaths(t *testing.T) {
+	summary := renderDirectCodingMutationJournal([]directCodingMutationJournalEntry{
+		{Path: "z.ts", Operation: workspaceFileDelete},
+		{Path: "b.ts", Operation: workspaceFileCreate},
+		{Path: "a.ts", Operation: workspaceFileCreate},
+		{Path: "main.ts", Operation: workspaceFileReplace},
+	})
+	if summary != "directories=[] created=[a.ts,b.ts] replaced=[main.ts] deleted=[z.ts]" {
+		t.Fatalf("summary=%q", summary)
 	}
 }
 
@@ -107,20 +118,6 @@ func TestDirectCodingVerificationRejectsInspectionCommands(t *testing.T) {
 	}
 }
 
-func TestMutationObjectiveRoutesToDirectCoding(t *testing.T) {
-	objective := artifacts.Objective{
-		RequiresAction:       true,
-		RequiredCapabilities: []string{capabilityWorkspaceWrite, capabilityCommandExecute},
-	}
-	if !requiresDirectCoding(objective) {
-		t.Fatal("mutation objective did not route to direct coding")
-	}
-	objective.RequiredCapabilities = []string{capabilityWorkspaceWrite}
-	if requiresDirectCoding(objective) {
-		t.Fatal("direct coding accepted an objective without command verification authority")
-	}
-}
-
 func TestDirectCodingReceivesOrderedFeedbackOnTheSameJob(t *testing.T) {
 	runtime := &nativeRuntimeV3{claim: &model.ClaimedStep{
 		Job: model.Job{ID: 41, Instruction: "Build the task application"},
@@ -144,11 +141,17 @@ func TestDirectCodingReceivesOrderedFeedbackOnTheSameJob(t *testing.T) {
 func TestDirectScrumCodingUsesCardInsteadOfSyntheticInstruction(t *testing.T) {
 	runtime := &nativeRuntimeV3{claim: &model.ClaimedStep{Job: model.Job{
 		Instruction: "Execute the authoritative Scrum card task.",
+		Pipeline:    model.PipelineScrum,
 		Metadata: json.RawMessage(`{
 			"source":"omni-scrum",
+			"project_id":7,
 			"scrum_card_id":"card-7",
 			"scrum_card_title":"Build the real Blade screen",
-			"scrum_card_description":"Render tasks and validation errors"
+			"scrum_card_description":"Render tasks and validation errors",
+			"scrum_checklist":"","scrum_test_criteria":"",
+			"scrum_return_column":"assigned","scrum_channel_origin":false,
+			"scrum_channel_operation_id":"","model_config":{},
+			"telemetry_run_id":"00000000-0000-4000-8000-000000000001"
 		}`),
 	}}}
 	request, err := runtime.directCodingRequest()
@@ -165,25 +168,32 @@ func TestDirectScrumCodingUsesCardInsteadOfSyntheticInstruction(t *testing.T) {
 	}
 }
 
-func TestDirectScrumChannelCodingUsesOnlyCurrentInstructionAsAuthority(t *testing.T) {
+func TestDirectScrumChannelCodingCompilesOneCurrentJobAuthority(t *testing.T) {
 	runtime := &nativeRuntimeV3{claim: &model.ClaimedStep{Job: model.Job{
 		Instruction: "Fix only the routing defect",
+		Pipeline:    model.PipelineScrum,
 		Metadata: json.RawMessage(`{
 			"source":"omni-scrum",
-			"scrum_channel_origin":true,
+			"project_id":8,
 			"scrum_card_id":"card-8",
 			"scrum_card_title":"Repair agent routing",
-			"scrum_card_description":"Preserve the current API"
+			"scrum_card_description":"Preserve the current API",
+			"scrum_checklist":"","scrum_test_criteria":"",
+			"scrum_return_column":"assigned","scrum_channel_origin":true,
+			"scrum_channel_operation_id":"lifecycle_operation_0000000000000000000000000000000000000000000000000000000000000000",
+			"model_config":{},
+			"telemetry_run_id":"00000000-0000-4000-8000-000000000001"
 		}`),
 	}}}
 	request, err := runtime.directCodingRequest()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if request.Instruction != "Fix only the routing defect" {
-		t.Fatalf("instruction=%q", request.Instruction)
-	}
-	if !strings.Contains(strings.Join(request.AdditionalAuthority, "\n"), "Preserve the current API") {
-		t.Fatalf("authoritative card scope missing: %#v", request.AdditionalAuthority)
+	for _, currentJobAuthority := range []string{
+		"Fix only the routing defect", "Repair agent routing", "Preserve the current API",
+	} {
+		if !strings.Contains(request.Instruction, currentJobAuthority) {
+			t.Fatalf("current Scrum authority omitted %q: %s", currentJobAuthority, request.Instruction)
+		}
 	}
 }

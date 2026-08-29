@@ -1,6 +1,16 @@
+# Release identity is supplied explicitly as OMNIDEX_COMMIT; Git metadata never
+# enters the image build context.
 .git
 .omni
+.cache
+.agent-cache
+.agent-legacy087-cache
+.agent-legacy087-release
+.tmp
+.tmp-*
+tmp
 autonomy-proof
+dist
 bin
 test-projects
 internal/api/web/node_modules

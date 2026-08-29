@@ -1,10 +1,6 @@
 package llmprovider
 
 import (
-	"context"
-	"encoding/json"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
@@ -13,31 +9,51 @@ import (
 	"github.com/gryph/omnidex/internal/config"
 	"github.com/gryph/omnidex/internal/llm"
 	"github.com/gryph/omnidex/internal/llmprovider/catalog"
+	"github.com/gryph/omnidex/internal/ollama"
+	"github.com/gryph/omnidex/internal/openai"
 )
 
-func TestNewFromConfigRoutesAnthropicGenerationToOllamaEmbeddings(t *testing.T) {
+func TestLazyResolversRouteExactOllamaStationsToHostedEmbeddingsAtUse(t *testing.T) {
 	cfg := config.Config{
-		LLMProvider:        "anthropic",
-		EmbeddingProvider:  "ollama",
-		DefaultModel:       "claude-test",
-		EmbeddingModel:     "nomic-test",
-		AnthropicAPIKey:    "anthropic-key",
-		AnthropicBaseURL:   "https://api.anthropic.com/v1",
-		AnthropicVersion:   "2023-06-01",
-		AnthropicMaxTokens: 1024,
-		OllamaBaseURL:      "http://localhost:11434",
+		LLMProvider:            "ollama",
+		EmbeddingProvider:      "qwen",
+		EmbeddingModel:         "text-embedding-v4",
+		OllamaBaseURL:          "http://localhost:11434",
+		RequestTimeout:         time.Second,
+		InferenceContextTokens: llm.DefaultInferenceContextTokens,
+		CompatibleProviders: map[string]config.CompatibleProviderConfig{
+			"qwen": {BaseURL: "https://dashscope.aliyuncs.com/compatible-mode/v1", APIKey: "qwen-key"},
+		},
 	}
 
-	client, err := NewFromConfig(cfg)
+	transports := NewLazyFromConfig(cfg)
+	stationResolver := transports.Stations.(*lazyExactStationResolver)
+	stations, err := stationResolver.resolve()
 	if err != nil {
-		t.Fatalf("NewFromConfig() error: %v", err)
+		t.Fatalf("resolve stations: %v", err)
 	}
-	if _, ok := client.(*llm.RoutedClient); !ok {
-		t.Fatalf("client type=%T want *llm.RoutedClient", client)
+	if _, ok := stations.(*ollama.Client); !ok {
+		t.Fatalf("station transport type=%T want *ollama.Client", stations)
+	}
+	embeddingResolver := transports.Embeddings.(*lazyEmbeddingResolver)
+	embeddings, err := embeddingResolver.resolve()
+	if err != nil {
+		t.Fatalf("resolve embeddings: %v", err)
+	}
+	if _, ok := embeddings.(*openai.Client); !ok {
+		t.Fatalf("embedding transport type=%T want *openai.Client", embeddings)
 	}
 }
 
-func TestNewProviderSupportsConfiguredRemoteProviders(t *testing.T) {
+func TestLazyResolverRejectsGenericHostedGenerationAtUse(t *testing.T) {
+	transports := NewLazyFromConfig(config.Config{LLMProvider: "anthropic"})
+	_, err := transports.Stations.(*lazyExactStationResolver).resolve()
+	if err == nil || !strings.Contains(err.Error(), "exact prepared station contract") {
+		t.Fatalf("resolve() error=%v, want exact station rejection", err)
+	}
+}
+
+func TestNewEmbeddingProviderSupportsConfiguredRemoteProviders(t *testing.T) {
 	tests := []struct {
 		name     string
 		provider string
@@ -53,31 +69,12 @@ func TestNewProviderSupportsConfiguredRemoteProviders(t *testing.T) {
 			},
 		},
 		{
-			name:     "anthropic",
-			provider: "anthropic",
-			cfg: config.Config{
-				AnthropicAPIKey:    "anthropic-key",
-				AnthropicBaseURL:   "https://api.anthropic.com/v1",
-				AnthropicVersion:   "2023-06-01",
-				AnthropicMaxTokens: 1024,
-			},
-		},
-		{
 			name:     "huggingface",
 			provider: "huggingface",
 			cfg: config.Config{
 				HuggingFaceAPIKey:  "hf-token",
 				HuggingFaceBaseURL: "https://router.huggingface.co",
 				EmbeddingModel:     "sentence-transformers/all-mpnet-base-v2",
-			},
-		},
-		{
-			name:     "xai",
-			provider: "grok",
-			cfg: config.Config{
-				CompatibleProviders: map[string]config.CompatibleProviderConfig{
-					"xai": {APIKey: "xai-key", BaseURL: "https://api.x.ai/v1"},
-				},
 			},
 		},
 		{
@@ -93,10 +90,13 @@ func TestNewProviderSupportsConfiguredRemoteProviders(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			tc.cfg.DefaultModel = "test-model"
-			client, err := NewProvider(tc.cfg, Options{Provider: tc.provider, Model: "test-model"})
+			definition, ok := catalog.Lookup(tc.provider)
+			if !ok {
+				t.Fatalf("missing catalog definition for %s", tc.provider)
+			}
+			client, err := newEmbeddingProvider(tc.cfg, definition, "test-embedding", time.Second)
 			if err != nil {
-				t.Fatalf("NewProvider() error: %v", err)
+				t.Fatalf("newEmbeddingProvider() error: %v", err)
 			}
 			if client == nil {
 				t.Fatalf("client is nil")
@@ -105,9 +105,9 @@ func TestNewProviderSupportsConfiguredRemoteProviders(t *testing.T) {
 	}
 }
 
-func TestNewProviderConstructsEveryOpenAICompatibleCatalogProvider(t *testing.T) {
-	for _, definition := range catalog.Definitions() {
-		if definition.Protocol != catalog.ProtocolOpenAICompatible {
+func TestNewEmbeddingProviderConstructsEveryOpenAICompatibleProvider(t *testing.T) {
+	for _, definition := range catalog.ProductionDefinitions() {
+		if definition.Protocol != catalog.ProtocolOpenAICompatible || !definition.SupportsEmbeddings {
 			continue
 		}
 		t.Run(definition.ID, func(t *testing.T) {
@@ -120,9 +120,9 @@ func TestNewProviderConstructsEveryOpenAICompatibleCatalogProvider(t *testing.T)
 					},
 				},
 			}
-			client, err := NewProvider(cfg, Options{Provider: definition.ID, Model: "provider-model"})
+			client, err := newEmbeddingProvider(cfg, definition, "provider-embedding", time.Second)
 			if err != nil {
-				t.Fatalf("NewProvider() error: %v", err)
+				t.Fatalf("newEmbeddingProvider() error: %v", err)
 			}
 			if client == nil {
 				t.Fatal("client is nil")
@@ -131,64 +131,24 @@ func TestNewProviderConstructsEveryOpenAICompatibleCatalogProvider(t *testing.T)
 	}
 }
 
-func TestNewProviderChineseCompatibleRequestContract(t *testing.T) {
-	var requestPath string
-	var authorization string
-	var requestedModel string
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		requestPath = r.URL.Path
-		authorization = r.Header.Get("Authorization")
-		var body struct {
-			Model string `json:"model"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			t.Errorf("decode request: %v", err)
-		}
-		requestedModel = body.Model
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"provider response"}}]}`))
-	}))
-	defer server.Close()
-
-	cfg := config.Config{
-		RequestTimeout: time.Second,
-		CompatibleProviders: map[string]config.CompatibleProviderConfig{
-			"qwen": {
-				BaseURL: server.URL + "/compatible-mode/v1",
-				APIKey:  "qwen-key",
-			},
-		},
-		ProviderModels: map[string]config.ProviderModelConfig{"qwen": {Default: "qwen-current"}},
+func TestNewExactStationProviderRejectsHostedProvider(t *testing.T) {
+	definition, ok := catalog.Lookup("qwen")
+	if !ok {
+		t.Fatal("qwen provider definition is missing")
 	}
-	client, err := NewProvider(cfg, Options{Provider: "dashscope"})
-	if err != nil {
-		t.Fatalf("NewProvider() error: %v", err)
-	}
-	output, err := client.Generate(context.Background(), "", "contract prompt")
-	if err != nil {
-		t.Fatalf("Generate() error: %v", err)
-	}
-	if output != "provider response" {
-		t.Fatalf("Generate()=%q", output)
-	}
-	if requestPath != "/compatible-mode/v1/chat/completions" {
-		t.Fatalf("path=%q", requestPath)
-	}
-	if authorization != "Bearer qwen-key" {
-		t.Fatalf("Authorization=%q", authorization)
-	}
-	if requestedModel != "qwen-current" {
-		t.Fatalf("model=%q", requestedModel)
+	client, err := newExactStationProvider(config.Config{}, definition, time.Second)
+	if err == nil || !strings.Contains(err.Error(), "exact prepared station contract") {
+		t.Fatalf("newExactStationProvider() client=%T error=%v, want exact station rejection", client, err)
 	}
 }
 
-func TestNewProviderRejectsUnknownProviderWithoutOllamaFallback(t *testing.T) {
-	client, err := NewProvider(config.Config{OllamaBaseURL: "http://localhost:11434"}, Options{Provider: "not-real", Model: "llama3.2"})
-	if err == nil || !strings.Contains(err.Error(), "unsupported LLM provider") {
-		t.Fatalf("NewProvider() client=%T error=%v", client, err)
-	}
-	if client != nil {
-		t.Fatalf("unknown provider returned client %T", client)
+func TestLazyResolverRejectsUnknownProviderWithoutOllamaFallbackAtUse(t *testing.T) {
+	transports := NewLazyFromConfig(config.Config{
+		LLMProvider: "not-real", EmbeddingProvider: "ollama",
+	})
+	_, err := transports.Stations.(*lazyExactStationResolver).resolve()
+	if err == nil || !strings.Contains(err.Error(), "does not implement the exact prepared station contract") {
+		t.Fatalf("resolve() error=%v", err)
 	}
 }
 
@@ -197,7 +157,9 @@ func TestFactorySourceContainsNoUnknownProviderFallback(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read factory source: %v", err)
 	}
-	for _, forbidden := range []string{"func normalizeProvider", `return "ollama"`} {
+	for _, forbidden := range []string{
+		"func normalizeProvider", `return "ollama"`, "NewRoutedClient", "llm.Client",
+	} {
 		if strings.Contains(string(source), forbidden) {
 			t.Errorf("factory contains forbidden provider fallback %q", forbidden)
 		}

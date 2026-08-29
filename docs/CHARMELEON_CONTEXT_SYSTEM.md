@@ -46,19 +46,37 @@ user authority ─────────┘
                 Context Projection
                          ↓
                        Model
-                         ↓ bounded proposals/requests
+                         ↓ one station-specific typed leaf
                   Code coordinator
 ```
 
 The model may forget everything after every call. Omnidex must not.
 
 The domain-neutral coordinator that consumes these authorities is specified in
-[`CHARMELEON_COGNITION_RUNTIME.md`](CHARMELEON_COGNITION_RUNTIME.md). Its first
-procedural proof environment is the separately isolated offline laboratory defined in
-[`LABYRINTH_GAUNTLET.md`](LABYRINTH_GAUNTLET.md). Neither benchmark mechanics nor
-private evaluation authority may enter this context substrate.
+[`CHARMELEON_COGNITION_RUNTIME.md`](CHARMELEON_COGNITION_RUNTIME.md), with its
+code-owned prerequisite and named-uncertainty boundary in
+[`CHARMELEON_COGNITION_RESOLUTION.md`](CHARMELEON_COGNITION_RESOLUTION.md). The
+the sole production assembly-line and queue implementation owns the executable
+contract. The former parallel in-memory reference tree has been retired; fixture
+mechanics and private evaluation authority may not enter this context substrate.
 
 ## Task Ledger
+
+### Nested direct-coding execution
+
+The queue-owned job root remains the outer lifecycle authority. Once code has
+accepted a bounded workload, it records a child objective and explicit child
+tasks in that same ledger. A direct-coding task may be marked
+`inline_execution` only when it is a `task` node created by the currently
+running queue step. It is not a second queue, an agent, or a model-owned
+transition: code activates it only after persisted dependencies are done,
+records code-validated generated artifacts as its evidence, and marks the
+objective done only after real workspace verification succeeds.
+
+Ordinary queued tasks continue to require their own assigned queue step.
+Inline execution exists solely for bounded child work that is deterministically
+executed inside its already-authorized outer step. Both forms use the same
+Task Ledger, verification requirements, and loud failure behavior.
 
 PostgreSQL is canonical. One transaction updates normalized current state, appends one
 audit event, and increments the ledger version. Optimistic version conflicts fail
@@ -83,11 +101,12 @@ proposal, or accepted model decision.
 Rules:
 
 - A fact has at least one valid evidence reference.
-- A model may propose hypotheses, questions, and decision candidates. It cannot create
-  user, code, or tool authority.
-- A model cannot accept its own decision, transition execution state, or declare work
-  complete.
-- Code records the policy and evidence that accept a model-originated decision.
+- A model may emit one hypothesis, question, or opaque candidate only through a
+  registered station for a persisted named uncertainty. It cannot create user, code,
+  or tool authority.
+- A model cannot choose an environment operation, accept its own station result,
+  transition execution state, or declare work complete.
+- Code records the station policy and evidence that accept a model-originated value.
 - Rejected, resolved, and superseded entries remain in history and are omitted from
   normal active projections.
 - Stable references identify repository facts, artifacts, evidence, memory, web
@@ -132,9 +151,11 @@ primarily semantic:
 - superseded decisions and resolved failures leave normal contexts but remain history;
 - least-recently-used eviction is permitted only within the same retention class.
 
-A model may request retention or release only through a bounded role-specific schema.
-Code validates scope, kind, budget, freshness, duplication, and reference existence.
-Release never deletes task history.
+Normal station outputs cannot request retention or release. If later evidence proves
+that deterministic retention is insufficient, one exceptional attention-advice role
+may be introduced through a bounded role-specific schema. Code validates scope, kind,
+budget, freshness, duplication, and reference existence. Release never deletes task
+history.
 
 ## Context Projection
 
@@ -159,10 +180,12 @@ version, renderer/spec versions, byte and token estimates, and the exact rendere
 The projection identity is bound to immutable LLM call evidence. If a required selector
 cannot fit or resolve, context construction fails; it does not silently drop authority.
 
-Fragment models retain the strictest contract. They receive only their immutable
-signature, exact local behavior, direct allowed declarations/symbols, accepted local
-invariants, and at most one current path-free diagnostic. They do not gain a ledger,
-repository browser, or free-form attention interface.
+Source models retain the strictest contract. Initial fragment generation receives only
+its immutable signature, exact local behavior, direct allowed declarations/symbols, and
+accepted local invariants. Repair guidance separately receives one exact mutable block,
+the minimum diagnostic-analysis evidence, and at most one current path-free diagnostic.
+Repair execution receives only the resulting instruction and exact mutable block. None
+of these stations gains a ledger, repository browser, or free-form attention interface.
 
 ## Acquisition providers
 
@@ -179,6 +202,35 @@ RAG is one provider, not the architecture. Typed providers may acquire candidate
 The working-set contract is independent of how a reference was acquired. It validates
 identity, authority, scope, provenance, freshness, and cost.
 
+### Need-driven context compilation
+
+Context compilation does not call a model merely because a context station exists.
+Code checks whether the fixed provider has searchable authority. When it does, the
+exact authoritative instruction is the sole retrieval query; when it does not,
+retrieval receives an explicit empty query set. A model never formulates or rewrites
+that environment-operation argument. Database queries, ranking, filtering, authority
+checks, deduplication, ordering, hashing, provenance binding, and result combination
+remain deterministic.
+
+After code has acquired and validated candidates, `context_relevance` receives only
+bounded pages of candidate text and may return only opaque supplied IDs. Code restores
+the selected authorities in authoritative order. Per-call count and byte budgets
+partition work; they are not global correctness ceilings.
+
+Selected content that fits the target projection budget is used verbatim with zero
+minification calls. Content beyond the target first exhausts the available lossless
+code-owned filtering and deduplication. Only then does one unresolved semantic
+question exist—what smaller text preserves the selected authority for the current
+instruction—and the `context_minification` station may run. Oversized sets are reduced
+hierarchically in bounded groups. Each round must make measurable progress; an invalid
+result or a no-progress round fails explicitly. One extra byte never creates an
+artificial terminal failure, while a real per-call or provider resource limit still
+fails loudly.
+
+Model routes are qualified station profiles, not parameter-count classes. The station
+contract stays stable while deployment configuration resolves it to one exact server
+model. Context relevance has no browser inference provider or alternate result path.
+
 ## Human-readable projections
 
 PostgreSQL remains authoritative. For terminal jobs, an explicit server-authorized
@@ -193,34 +245,65 @@ memory, diffs, command output, job metadata, and private benchmark evaluation. T
 repository inventory and Git-state identity exclude `.omni/**` before counting and
 hashing, so an inspection export cannot invalidate repository truth.
 
-## Implementation sequence
+## Behavior-first implementation sequence
 
-1. **Task Ledger kernel** — typed commands and transitions, normalized current state,
-   append-only events, optimistic concurrency, restart/replay tests, and read-only
-   exports. No prompt changes.
-2. **Transactional lifecycle** — create the ledger with the job, then bind claim,
-   completion, failure, and cancellation to task transitions inside the queue's
-   existing transactions.
-3. **Atomic authority cutovers** — migrate artifact/evidence writes, accepted intent,
-   accepted plan and assigned steps, typed feedback, verification, and direct-coding
-   specifications one authority class at a time. Writers and readers switch together;
-   no model-authored autobiography and no context-map fallback remain for a promoted
-   class.
-4. **Working Set lifecycle** — acquire, attach, retain, release, scope completion,
-   stale-hash invalidation, reference sharing, hard budgets, and metrics. Run in
-   shadow mode first.
-5. **Context Projection evidence** — build and persist proposed immutable projections
-   beside current prompts without sending them to models. Compare omissions and size.
-6. **First live consumer** — repository investigation, after shadow selectors prove
-   complete. Greenfield fragment generation remains unchanged.
-7. **Typed attention requests** — selected coordinator roles may request bounded
-   acquisition, retention, and release. Code remains the authority.
-8. **Semantic retrieval** — promote vectors only after measured exact, structural,
-   full-text, and trigram baselines.
+Context persistence mirrors proven cognition behavior; it must not define that
+behavior. New Task Ledger, Working Set, projection, restart, replay, and provenance
+work for the replacement cognition path is blocked until the in-memory objective
+machine passes its executable gates:
 
-There is one implementation of each primitive. Shadow mode records a proposed
-projection but does not create a fallback context path. Promotion replaces the prior
-consumer after its gates pass.
+1. **Deterministic closure** — a missing prerequisite is acquired through registered
+   producers and the objective completes with zero model calls and no provider
+   configured.
+2. **One named semantic gap** — deterministic closure stops at one genuine ambiguity;
+   one station returns one opaque candidate ID; code incorporates the typed fact and
+   completes.
+3. **Procedural transfer** — the same control rule drives a bounded world whose
+   mechanics, legal transitions, backtracking, and completion remain code-owned.
+4. **Read-only repository work** — exact snapshot, index, parser, symbol, reference,
+   and test providers run under code control; inference can select only among an exact
+   bounded semantic remainder.
+5. **Bounded front door and workload compilation** — code first records exact workspace
+   state as a typed, hashed fact. For an existing workspace,
+   code alternates one raw context-need coverage call with one raw question call only while
+   coverage remains; it resolves each decoded question through a registered deterministic
+   provider and formalizes selected evidence as compact source-backed facts. A separate raw call
+   returns the product context. Code then alternates one raw requirement-coverage call with one
+   raw requirement call only while coverage remains and assembles the typed intent itself. A model
+   is not called merely to emit, accept, reject, or restate the aggregate intent.
+   Substring, interval, overlap, source-order, punctuation, and exact-quote allocation are not
+   authority checks. Code projects each accepted requirement directly into one frozen task in
+   accepted source order. The task contains only its code-owned task identity, requirement identity,
+   and exact accepted requirement; there are no objective, behavior, acceptance-criterion,
+   dependency, schedule, or completion model calls. Code validates every leaf and assembles the
+   typed job specification itself. Invalid semantic leaves fail at their owning station; there is
+   no generic response-correction station or retry path.
+   Code preserves user authority separately from derived build decisions, assigns identity and
+   order, freezes only validated state, executes one task at a time with
+   the minimum sufficient authoritative task projection, and alone decides completion. A
+   static code-owned harness alone renders the exact public feature with its runtime and capability
+   identity. The generated acceptance declaration receives no render, JSX, component, runtime, or
+   source authority and is source-free inventoried before it executes. Code binds the closed awaited
+   wait mechanic, observes the returned result, and evaluates the frozen criteria deterministically;
+   there is no acceptance-grounding reviewer. Code verifies the grounded artifact before advancing.
+6. **Charmander handoff** — cognition produces one existing bounded declaration job;
+   code parses, stitches, formats, stages, tests, applies, and reconciles it.
+7. **Failure-specific replacement** — ordinary invalid semantic leaves fail explicitly and cannot
+   dispatch a generic correction job. The target-tree station alone may replace its complete raw
+   hierarchy once after one exact code-proven tree defect. Source repair remains the separate
+   guidance-instruction then executor-node boundary. Neither path can reconstruct aggregate state,
+   review valid output, return a merge patch, or author an acceptance control plane.
+8. **Incompatible production cutover** — remove the universal model-action path and
+   its schemas, recovery consumers, and provider eagerness. There is no fallback or
+   feature flag.
+9. **Durability** — only after the preceding behavior survives the production path do
+   PostgreSQL Task Ledger state, accepted facts, gap records, artifacts, Working Set,
+   projections, restart, replay, and provenance become promotion work.
+
+Existing ledger and context primitives remain useful foundations, but their existence
+is not evidence that the replacement cognition behavior works. Persistence may add
+authority and recovery; it may not add a planner, alternate transition rule, or other
+behavioral semantics. There is one implementation of each promoted primitive.
 
 ## Existing-repository proof boundary
 

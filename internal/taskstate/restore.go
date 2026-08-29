@@ -109,6 +109,9 @@ func validateRestoredNode(node Node, ledgerVersion uint64) error {
 	if err := validateNodeKind(node.Kind); err != nil {
 		return err
 	}
+	if node.InlineExecution && node.Kind != NodeTask {
+		return fmt.Errorf("%w: inline execution is valid only for task node %q", ErrInvalidState, node.ID)
+	}
 	if err := requireExactText(node.Title, "node title"); err != nil {
 		return err
 	}
@@ -153,7 +156,14 @@ func validateRestoredNode(node Node, ledgerVersion uint64) error {
 	} else if len(node.VerificationRefs) != 0 {
 		return fmt.Errorf("%w: non-done node %q cannot carry verification references", ErrInvalidState, node.ID)
 	}
-	if executableNode(node.Kind) {
+	if node.InlineExecution {
+		if node.CreatedStepID == nil || node.AssignedStepID != nil {
+			return fmt.Errorf("%w: inline task %q has invalid owning-step authority", ErrInvalidState, node.ID)
+		}
+		if node.Status == NodeDone && (node.CompletedStepID == nil || *node.CompletedStepID != *node.CreatedStepID) {
+			return fmt.Errorf("%w: completed inline task %q has inconsistent queue-step authority", ErrInvalidState, node.ID)
+		}
+	} else if executableNode(node.Kind) {
 		if (node.Status == NodeActive || node.Status == NodeBlocked || node.Status == NodeFailed || node.Status == NodeDone) &&
 			node.AssignedStepID == nil {
 			return fmt.Errorf("%w: executable node %q in status %q is unassigned", ErrInvalidState, node.ID, node.Status)

@@ -17,62 +17,44 @@ import (
 	"github.com/gryph/omnidex/internal/ollama"
 )
 
-const ollamaPrewarmOutputTokens = 64
-
 type ollamaPrewarmOptions struct {
 	Model     string
 	KeepAlive string
 	NumCtx    int
 }
 
-type ollamaPrewarmMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
-}
-
-type ollamaPrewarmInferenceOptions struct {
-	NumPredict  int     `json:"num_predict"`
-	NumCtx      int     `json:"num_ctx"`
-	Temperature float64 `json:"temperature"`
+type ollamaPrewarmLoadOptions struct {
+	NumCtx int `json:"num_ctx"`
 }
 
 type ollamaPrewarmRequest struct {
-	Model     string                        `json:"model"`
-	Messages  []ollamaPrewarmMessage        `json:"messages"`
-	Stream    bool                          `json:"stream"`
-	Think     bool                          `json:"think"`
-	KeepAlive string                        `json:"keep_alive"`
-	Options   ollamaPrewarmInferenceOptions `json:"options"`
+	Model     string                   `json:"model"`
+	Stream    bool                     `json:"stream"`
+	KeepAlive string                   `json:"keep_alive"`
+	Options   ollamaPrewarmLoadOptions `json:"options"`
 }
 
 type ollamaPrewarmReport struct {
-	Model                 string  `json:"model"`
-	BaseURL               string  `json:"base_url"`
-	KeepAlive             string  `json:"keep_alive"`
-	ContextTokens         int     `json:"context_tokens"`
-	TotalDurationMS       int64   `json:"total_duration_ms"`
-	LoadDurationMS        int64   `json:"load_duration_ms"`
-	PromptTokens          int     `json:"prompt_tokens"`
-	PromptTokensPerSecond float64 `json:"prompt_tokens_per_second"`
-	EvalTokens            int     `json:"eval_tokens"`
-	EvalTokensPerSecond   float64 `json:"eval_tokens_per_second"`
-	AllocatedBytes        int64   `json:"allocated_bytes"`
-	VRAMBytes             int64   `json:"vram_bytes"`
-	OffloadPercent        float64 `json:"offload_percent"`
+	Model           string  `json:"model"`
+	BaseURL         string  `json:"base_url"`
+	KeepAlive       string  `json:"keep_alive"`
+	ContextTokens   int     `json:"context_tokens"`
+	TotalDurationMS int64   `json:"total_duration_ms"`
+	LoadDurationMS  int64   `json:"load_duration_ms"`
+	AllocatedBytes  int64   `json:"allocated_bytes"`
+	VRAMBytes       int64   `json:"vram_bytes"`
+	OffloadPercent  float64 `json:"offload_percent"`
 }
 
 type ollamaPrewarmResponse struct {
-	Model   string `json:"model"`
-	Message struct {
-		Content string `json:"content"`
-	} `json:"message"`
-	Done               bool  `json:"done"`
-	TotalDuration      int64 `json:"total_duration"`
-	LoadDuration       int64 `json:"load_duration"`
-	PromptEvalCount    int   `json:"prompt_eval_count"`
-	PromptEvalDuration int64 `json:"prompt_eval_duration"`
-	EvalCount          int   `json:"eval_count"`
-	EvalDuration       int64 `json:"eval_duration"`
+	Model           string `json:"model"`
+	Response        string `json:"response"`
+	Thinking        string `json:"thinking"`
+	Done            bool   `json:"done"`
+	TotalDuration   int64  `json:"total_duration"`
+	LoadDuration    int64  `json:"load_duration"`
+	PromptEvalCount int    `json:"prompt_eval_count"`
+	EvalCount       int    `json:"eval_count"`
 }
 
 type ollamaRunningModels struct {
@@ -93,7 +75,7 @@ func runOllamaPrewarm(args []string) {
 	modelName := fs.String("model", ollamaPrewarmDefaultModel(), "exact installed Ollama model")
 	keepAlive := fs.String("keep-alive", "10m", "positive Ollama model retention duration")
 	numCtx := fs.Int("num-ctx", defaultContext, "inference context tokens")
-	timeout := fs.Duration("timeout", 10*time.Minute, "complete load and inference timeout")
+	timeout := fs.Duration("timeout", 10*time.Minute, "complete model-load timeout")
 	baseURL := fs.String("base-url", defaultOllamaBaseURL(), "Ollama base URL")
 	asJSON := fs.Bool("json", false, "print JSON report")
 	_ = fs.Parse(args)
@@ -138,24 +120,20 @@ func probeOllamaModel(ctx context.Context, baseURL string, options ollamaPrewarm
 	}
 	baseURL = normalizeStatusURL(baseURL, defaultOllamaBaseURL())
 	request := ollamaPrewarmRequest{
-		Model: options.Model,
-		Messages: []ollamaPrewarmMessage{{
-			Role: "user", Content: llm.MinimalGeneratePrompt,
-		}},
+		Model:     options.Model,
 		KeepAlive: strings.TrimSpace(options.KeepAlive),
-		Options: ollamaPrewarmInferenceOptions{
-			NumPredict: ollamaPrewarmOutputTokens, NumCtx: options.NumCtx,
-		},
+		Options:   ollamaPrewarmLoadOptions{NumCtx: options.NumCtx},
 	}
 	var response ollamaPrewarmResponse
-	if err := ollamaPrewarmJSON(ctx, http.MethodPost, baseURL+"/api/chat", request, &response); err != nil {
-		return report, fmt.Errorf("ollama prewarm chat: %w", err)
+	if err := ollamaPrewarmJSON(ctx, http.MethodPost, baseURL+"/api/generate", request, &response); err != nil {
+		return report, fmt.Errorf("ollama prewarm load: %w", err)
 	}
 	if !response.Done {
 		return report, fmt.Errorf("ollama prewarm response did not complete")
 	}
-	if strings.TrimSpace(response.Message.Content) == "" {
-		return report, fmt.Errorf("ollama prewarm response returned empty content")
+	if response.Response != "" || response.Thinking != "" ||
+		response.PromptEvalCount != 0 || response.EvalCount != 0 {
+		return report, fmt.Errorf("ollama prewarm unexpectedly performed model inference")
 	}
 
 	var running ollamaRunningModels
@@ -175,13 +153,9 @@ func probeOllamaModel(ctx context.Context, baseURL string, options ollamaPrewarm
 		report = ollamaPrewarmReport{
 			Model: strings.TrimSpace(response.Model), BaseURL: baseURL,
 			KeepAlive: strings.TrimSpace(options.KeepAlive), ContextTokens: candidate.ContextLength,
-			TotalDurationMS:       response.TotalDuration / int64(time.Millisecond),
-			LoadDurationMS:        response.LoadDuration / int64(time.Millisecond),
-			PromptTokens:          response.PromptEvalCount,
-			PromptTokensPerSecond: ollamaTokenRate(response.PromptEvalCount, response.PromptEvalDuration),
-			EvalTokens:            response.EvalCount,
-			EvalTokensPerSecond:   ollamaTokenRate(response.EvalCount, response.EvalDuration),
-			AllocatedBytes:        candidate.Size, VRAMBytes: candidate.SizeVRAM,
+			TotalDurationMS: response.TotalDuration / int64(time.Millisecond),
+			LoadDurationMS:  response.LoadDuration / int64(time.Millisecond),
+			AllocatedBytes:  candidate.Size, VRAMBytes: candidate.SizeVRAM,
 		}
 		if report.Model == "" {
 			report.Model = options.Model
@@ -228,20 +202,8 @@ func ollamaPrewarmJSON(ctx context.Context, method, endpoint string, input, outp
 	return nil
 }
 
-func ollamaTokenRate(tokens int, durationNS int64) float64 {
-	if tokens <= 0 || durationNS <= 0 {
-		return 0
-	}
-	return float64(tokens) / (float64(durationNS) / float64(time.Second))
-}
-
 func ollamaPrewarmDefaultModel() string {
-	for _, key := range []string{"OLLAMA_MODEL_SPECIALIST_CODING_FRAGMENT", "OLLAMA_MODEL"} {
-		if value := strings.TrimSpace(os.Getenv(key)); value != "" {
-			return value
-		}
-	}
-	return ""
+	return strings.TrimSpace(os.Getenv("OMNI_CODING_FRAGMENT_MODEL"))
 }
 
 func ollamaPrewarmDefaultContext() (int, error) {
@@ -261,13 +223,11 @@ func ollamaPrewarmDefaultContext() (int, error) {
 
 func printOllamaPrewarmReport(report ollamaPrewarmReport) {
 	fmt.Printf(
-		"ollama prewarm: ok model=%s context=%d load_ms=%d total_ms=%d prompt_tps=%.2f eval_tps=%.2f allocated_gib=%.2f vram_gib=%.2f offload=%.1f%% keep_alive=%s\n",
+		"ollama prewarm: ok model=%s context=%d load_ms=%d total_ms=%d allocated_gib=%.2f vram_gib=%.2f offload=%.1f%% keep_alive=%s\n",
 		report.Model,
 		report.ContextTokens,
 		report.LoadDurationMS,
 		report.TotalDurationMS,
-		report.PromptTokensPerSecond,
-		report.EvalTokensPerSecond,
 		float64(report.AllocatedBytes)/(1024*1024*1024),
 		float64(report.VRAMBytes)/(1024*1024*1024),
 		report.OffloadPercent,

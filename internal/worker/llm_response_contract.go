@@ -4,13 +4,15 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/gryph/omnidex/internal/assemblyline"
 	"github.com/gryph/omnidex/internal/llm"
 )
 
 type llmResponseContract struct {
-	Format     string
-	MaxTokens  int
-	PromptHint string
+	Protocol        llm.ExactPreparedProtocol
+	OutputLimitMode llm.ExactPreparedOutputLimitMode
+	PromptHint      string
+	ResponseFraming assemblyline.PortableResponseFraming
 }
 
 func llmResponseContractForScope(scope string) (llmResponseContract, error) {
@@ -18,37 +20,53 @@ func llmResponseContractForScope(scope string) (llmResponseContract, error) {
 	if scope == "" {
 		return llmResponseContract{}, fmt.Errorf("LLM scope is required")
 	}
-	if scope == "portable_fragment_worker" {
+	if scope == assemblyline.PortableFragmentWorkerScope {
 		return llmResponseContract{
-			MaxTokens:  4096,
-			PromptHint: "Return only the raw TypeScript function required by the supplied contract. No JSON, Markdown, import, export, path, or commentary.",
+			Protocol:        llm.ExactPreparedProtocolRawTextV2,
+			OutputLimitMode: llm.ExactPreparedOutputLimitNatural,
+			PromptHint:      llm.MinimalGeneratePrompt,
 		}, nil
 	}
-	if scope == "portable_semantic_worker" {
+	if scope == assemblyline.PortableSemanticWorkerScope ||
+		scope == assemblyline.PortableStructuralWorkerScope {
 		return llmResponseContract{
-			Format:     llm.ResponseFormatJSON,
-			MaxTokens:  1024,
-			PromptHint: "Return only one JSON object that satisfies the supplied response contract.",
+			Protocol:        llm.ExactPreparedProtocolRawTextV2,
+			OutputLimitMode: llm.ExactPreparedOutputLimitNatural,
+			PromptHint:      llm.MinimalGeneratePrompt,
 		}, nil
 	}
-	maxTokens := 0
-	switch {
-	case strings.HasPrefix(scope, "v3_subtask_tool_"):
-		maxTokens = 4096
-	case strings.HasPrefix(scope, "v3_intent_parse"),
-		strings.HasPrefix(scope, "v3_planning"),
-		strings.HasPrefix(scope, "v3_independent_verification"),
-		strings.HasPrefix(scope, "v3_verification"):
-		maxTokens = 2048
-	case strings.HasPrefix(scope, "v3_analysis"),
-		strings.HasPrefix(scope, "v3_response_draft"):
-		maxTokens = 1024
+	return llmResponseContract{}, fmt.Errorf("LLM scope %q is not registered", scope)
+}
+
+func llmResponseContractForPortableJob(job assemblyline.PortableJob) (llmResponseContract, error) {
+	scope, err := portableModelScope(job.Kind)
+	if err != nil {
+		return llmResponseContract{}, err
+	}
+	contract, err := llmResponseContractForScope(scope)
+	if err != nil {
+		return llmResponseContract{}, err
+	}
+	if contract.Protocol != llm.ExactPreparedProtocolRawTextV2 {
+		return llmResponseContract{}, fmt.Errorf("portable work requires the raw-text response contract")
+	}
+	framing, err := assemblyline.PortableResponseFramingForJob(job)
+	if err != nil {
+		return llmResponseContract{}, err
+	}
+	switch framing {
+	case assemblyline.PortableResponseFramingSingleLine:
+		if scope != assemblyline.PortableSemanticWorkerScope {
+			return llmResponseContract{}, fmt.Errorf(
+				"single-line portable framing requires the unframed semantic transport",
+			)
+		}
+	case assemblyline.PortableResponseFramingNaturalMultiline:
 	default:
-		return llmResponseContract{}, fmt.Errorf("LLM scope %q is not registered", scope)
+		return llmResponseContract{}, fmt.Errorf(
+			"portable response framing %q is not provider-actionable", framing,
+		)
 	}
-	return llmResponseContract{
-		Format:     llm.ResponseFormatJSON,
-		MaxTokens:  maxTokens,
-		PromptHint: "Return only one JSON object that satisfies the supplied response contract.",
-	}, nil
+	contract.ResponseFraming = framing
+	return contract, nil
 }

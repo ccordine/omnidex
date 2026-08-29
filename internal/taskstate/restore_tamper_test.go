@@ -57,17 +57,6 @@ func TestRestoreRejectsMixedParentObjectiveCycle(t *testing.T) {
 	assertRestoreInvalid(t, state)
 }
 
-func TestRestoreRejectsDecisionProvenanceOnOrdinaryEntry(t *testing.T) {
-	ledger := newTestLedger(t)
-	applyTestCommand(t, ledger, AddEntryCommand{
-		ExpectedVersion: 0, Actor: AuthorityCode, ID: "note", Kind: EntryNote,
-		Content: "Note.", Metadata: EmptyJSONObject(),
-	})
-	state := ledger.MaterializedState()
-	state.Entries[0].Provenance.AcceptancePolicy = "forged-policy"
-	assertRestoreInvalid(t, state)
-}
-
 func ledgerWithOneRestorableNode(t *testing.T) *Ledger {
 	t.Helper()
 	ledger := newTestLedger(t)

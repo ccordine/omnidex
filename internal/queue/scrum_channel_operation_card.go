@@ -19,22 +19,36 @@ func updateScrumChannelCardTx(
 	if err := validateScrumChannelCardUpdate(request, job, &update); err != nil {
 		return DBScrumCard{}, err
 	}
-	card, err := scanDBScrumCard(tx.QueryRow(ctx, `
+	tag, err := tx.Exec(ctx, `
 		UPDATE scrum_cards
-		SET chat=$3::jsonb, column_name=$4, job_id=$5, console_log=$6,
-		    play_state=$7, queue_order=$8, updated_at=NOW()
+		SET column_name=$3,job_id=$4,play_state=$5,queue_order=$6,
+		 sync_job_id=$7,step_context_cursor=$8,
+		 updated_at=GREATEST(clock_timestamp(),updated_at+interval '1 microsecond')
 		WHERE project_id=$1 AND id=$2 AND updated_at=$9
-		RETURNING id, project_id, title, description, column_name, checklist, ref_files, chat,
-		          model_config, agent_config, card_ticket, card_prompt, recipe_id, recipe,
-		          tags, planning_chat, coach_config, test_criteria, flow_metrics,
-		          job_id, tags_job_id, ticket_job_id, console_log, play_state, queue_order,
-		          board_order, created_at, updated_at
-	`, current.ProjectID, current.ID, string(update.Chat), update.Column, update.JobID,
-		update.ConsoleLog, update.PlayState, update.QueueOrder, current.UpdatedAt))
+	`, current.ProjectID, current.ID, update.Column, update.JobID, update.PlayState,
+		update.QueueOrder, update.SyncJobID, update.StepContextCursor, current.UpdatedAt)
 	if err != nil {
 		return DBScrumCard{}, fmt.Errorf("apply Scrum channel card mutation: %w", err)
 	}
-	tag, err := tx.Exec(ctx, `
+	if tag.RowsAffected() != 1 {
+		return DBScrumCard{}, fmt.Errorf("Scrum channel card changed before exact mutation apply")
+	}
+	for _, message := range update.Messages {
+		if _, err := insertScrumCardMessageTx(ctx, tx, current.ProjectID, current.ID, message); err != nil {
+			return DBScrumCard{}, err
+		}
+	}
+	next := current
+	next.Column, next.JobID, next.PlayState, next.QueueOrder = update.Column, update.JobID, update.PlayState, update.QueueOrder
+	next.SyncJobID, next.StepContextCursor = update.SyncJobID, update.StepContextCursor
+	if err := applyScrumCardStateMetricsTx(ctx, tx, current, next, ""); err != nil {
+		return DBScrumCard{}, err
+	}
+	card, err := scanDBScrumCard(tx.QueryRow(ctx, scrumCardSelectSQL, current.ProjectID, current.ID))
+	if err != nil {
+		return DBScrumCard{}, err
+	}
+	tag, err = tx.Exec(ctx, `
 		UPDATE projects SET last_seen_at=NOW(), updated_at=NOW() WHERE id=$1
 	`, current.ProjectID)
 	if err != nil {

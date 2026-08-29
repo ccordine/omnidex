@@ -2,12 +2,13 @@ package api
 
 import (
 	"context"
-	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/gryph/omnidex/internal/ollama"
+	"github.com/gryph/omnidex/internal/queue"
 )
 
 func (s *Server) ollamaClient() *ollama.Client {
@@ -38,7 +39,11 @@ func (s *Server) handleOllamaModelByName(w http.ResponseWriter, r *http.Request)
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Minute)
 	defer cancel()
-	if err := s.ollamaClient().DeleteModel(ctx, name); err != nil {
+	if err := s.requireOllamaModelUnused(ctx, name); err != nil {
+		writeError(w, http.StatusConflict, err.Error())
+		return
+	}
+	if err := s.ollamaLifecycleClient().DeleteModel(ctx, name); err != nil {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
 	}
@@ -46,10 +51,19 @@ func (s *Server) handleOllamaModelByName(w http.ResponseWriter, r *http.Request)
 }
 
 func (s *Server) listOllamaModels(w http.ResponseWriter, r *http.Request) {
+	limit, err := exactChannelQueryInteger(r, "limit", 50, 1, ollama.MaxModelPageSize)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	offset, err := exactChannelQueryInteger(r, "offset", 0, 0, 1<<30)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
-	client := s.ollamaClient()
-	models, err := client.ListModels(ctx)
+	page, err := s.listInstalledOllamaModels(ctx, limit, offset)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
@@ -65,7 +79,10 @@ func (s *Server) listOllamaModels(w http.ResponseWriter, r *http.Request) {
 	}
 	providerConfig := s.providerConfiguration()
 	if providerConfig.EmbeddingProvider == "ollama" {
-		embeddingModel := configuredProviderModel(providerConfig, "ollama", true)
+		embeddingModel := strings.TrimSpace(providerConfig.EmbeddingModel)
+		if embeddingModel == "" {
+			embeddingModel = strings.TrimSpace(providerConfig.ProviderModels["ollama"].Embedding)
+		}
 		if embeddingModel != "" {
 			configured = append(configured, embeddingModel)
 		}
@@ -80,44 +97,56 @@ func (s *Server) listOllamaModels(w http.ResponseWriter, r *http.Request) {
 		uniqueConfigured = append(uniqueConfigured, name)
 	}
 	configured = uniqueConfigured
-	items := make([]map[string]any, 0, len(models))
-	for _, model := range models {
+	items := make([]map[string]any, 0, len(page.Models))
+	for _, model := range page.Models {
 		_, inUse := configuredSet[model.Name]
 		items = append(items, map[string]any{
-			"name":        model.Name,
-			"size":        model.Size,
-			"modified_at": model.ModifiedAt,
-			"configured":  inUse,
+			"name":           model.Name,
+			"size":           model.Size,
+			"modified_at":    model.ModifiedAt,
+			"configured":     inUse,
+			"family":         model.Details.Family,
+			"parameter_size": model.Details.ParameterSize,
+			"quantization":   model.Details.QuantizationLevel,
 		})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"endpoint":          s.ollamaEndpoint(),
 		"models":            items,
 		"configured_models": configured,
+		"offset":            page.Offset,
+		"has_more":          page.HasMore,
+		"next_offset":       dataSourceNextOffset(page.Offset, len(page.Models), page.HasMore),
 	})
 }
 
 func (s *Server) pullOllamaModel(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		Model string `json:"model"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid json body")
+	req, err := decodeOllamaPullRequest(w, r)
+	if err != nil {
+		writeError(w, exactSettingsErrorStatus(err), err.Error())
 		return
 	}
-	model := strings.TrimSpace(req.Model)
-	if model == "" {
-		writeError(w, http.StatusBadRequest, "model is required")
+	if s.ollamaDownloads == nil {
+		writeError(w, http.StatusServiceUnavailable, "Ollama downloads require PostgreSQL")
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Minute)
-	defer cancel()
-	if err := s.ollamaClient().PullModel(ctx, model); err != nil {
-		writeError(w, http.StatusBadGateway, err.Error())
+	download, err := s.ollamaDownloads.CreateOllamaModelDownload(r.Context(), req.Model)
+	if err != nil {
+		if errors.Is(err, queue.ErrOllamaModelDownloadActive) {
+			writeJSON(w, http.StatusConflict, map[string]any{
+				"error": err.Error(), "download": download,
+			})
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
-		"model":   model,
-		"message": "model pulled",
+	if err := download.Validate(); err != nil {
+		writeError(w, http.StatusInternalServerError, "invalid durable Ollama download: "+err.Error())
+		return
+	}
+	s.launchOllamaModelDownload(download)
+	writeJSON(w, http.StatusAccepted, map[string]any{
+		"model": req.Model, "download": download,
 	})
 }

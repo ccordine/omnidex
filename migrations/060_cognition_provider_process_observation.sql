@@ -2,6 +2,8 @@ CREATE TABLE cognition_provider_process_observations (
     observation_id TEXT PRIMARY KEY CHECK (
         observation_id~'^provider_process_observation_[0-9a-f]{64}$'
     ),
+    evidence_id TEXT NOT NULL REFERENCES cognition_provider_identity_evidence(evidence_id)
+        ON DELETE RESTRICT,
     episode_id TEXT NOT NULL,
     job_id BIGINT NOT NULL,
     generation BIGINT NOT NULL CHECK (generation>0),
@@ -51,10 +53,15 @@ CREATE TABLE cognition_provider_process_observations (
     UNIQUE (episode_id,observation_id)
 );
 
+CREATE INDEX cognition_provider_process_identity_by_evidence
+ON cognition_provider_process_observations(evidence_id,episode_id,sequence);
+
 CREATE TABLE cognition_provider_postseal_observations (
     observation_id TEXT PRIMARY KEY CHECK (
         observation_id~'^provider_process_observation_[0-9a-f]{64}$'
     ),
+    evidence_id TEXT NOT NULL REFERENCES cognition_provider_identity_evidence(evidence_id)
+        ON DELETE RESTRICT,
     episode_id TEXT NOT NULL,
     job_id BIGINT NOT NULL,
     generation BIGINT NOT NULL CHECK (generation>0),
@@ -107,6 +114,9 @@ CREATE TABLE cognition_provider_postseal_observations (
     UNIQUE (episode_id,sequence),
     UNIQUE (episode_id,observation_id)
 );
+
+CREATE INDEX cognition_provider_postseal_identity_by_evidence
+ON cognition_provider_postseal_observations(evidence_id,episode_id,sequence);
 
 CREATE TRIGGER cognition_provider_process_observations_immutable
 BEFORE UPDATE OR DELETE ON cognition_provider_process_observations

@@ -1,206 +1,39 @@
 package assemblyline
 
-import (
-	"fmt"
-	"strings"
-)
+import "fmt"
+
+type portableJobRenderer func(PortableJob) (string, bool, error)
 
 // RenderPortableJob is the sole mapping from an immutable work envelope to
-// model-visible context. Schedulers may choose a model or machine, but cannot
-// add workspace state or instructions to the job.
-func RenderPortableJob(job PortableJob) (string, map[string]any, error) {
+// model-visible raw context. Schedulers may choose a model or machine, but
+// cannot add workspace state, instructions, or a structured response channel.
+func RenderPortableJob(job PortableJob) (string, error) {
 	if err := job.Validate(); err != nil {
-		return "", nil, err
+		return "", err
 	}
-	switch job.Kind {
-	case WorkApplicationClassify:
-		var input ApplicationClassificationInput
-		if err := decodePortablePayload(job.Payload, &input); err != nil {
-			return "", nil, err
-		}
-		prompt, err := BuildApplicationClassificationPrompt(input)
-		return prompt, ApplicationClassificationResponseSchema(), err
-	case WorkApplicationIdentity:
-		var input ApplicationIdentityInput
-		if err := decodePortablePayload(job.Payload, &input); err != nil {
-			return "", nil, err
-		}
-		prompt, err := BuildApplicationIdentityPrompt(input)
-		return prompt, ApplicationIdentityResponseSchema(), err
-	case WorkRequirementPartition:
-		var input RequirementPartitionInput
-		if err := decodePortablePayload(job.Payload, &input); err != nil {
-			return "", nil, err
-		}
-		prompt, err := BuildRequirementPartitionPrompt(input)
-		return prompt, RequirementPartitionResponseSchema(), err
-	case WorkRequirementBriefing:
-		var input RequirementPartitionInput
-		if err := decodePortablePayload(job.Payload, &input); err != nil {
-			return "", nil, err
-		}
-		prompt, err := BuildRequirementPartitionBriefingPrompt(input)
-		return prompt, RequirementPartitionBriefingResponseSchema(), err
-	case WorkRequirementAdvisory:
-		var input RequirementPartitionAdvisoryInput
-		if err := decodePortablePayload(job.Payload, &input); err != nil {
-			return "", nil, err
-		}
-		prompt, err := BuildRequirementPartitionAdvisoryPrompt(input)
-		return prompt, nil, err
-	case WorkRequirementSynthesis:
-		var input RequirementPartitionSynthesisInput
-		if err := decodePortablePayload(job.Payload, &input); err != nil {
-			return "", nil, err
-		}
-		prompt, err := BuildRequirementPartitionSynthesisPrompt(input)
-		return prompt, RequirementPartitionResponseSchema(), err
-	case WorkRequirementFinalAdvisory:
-		var input RequirementFinalAdvisoryInput
-		if err := decodePortablePayload(job.Payload, &input); err != nil {
-			return "", nil, err
-		}
-		prompt, err := BuildRequirementFinalAdvisoryPrompt(input)
-		return prompt, nil, err
-	case WorkRequirementFinalSynthesis:
-		var input RequirementFinalSynthesisInput
-		if err := decodePortablePayload(job.Payload, &input); err != nil {
-			return "", nil, err
-		}
-		prompt, err := BuildRequirementFinalSynthesisPrompt(input)
-		return prompt, RequirementPartitionResponseSchema(), err
-	case WorkRepositoryRetrieval:
-		var input RepositoryRetrievalInput
-		if err := decodePortablePayload(job.Payload, &input); err != nil {
-			return "", nil, err
-		}
-		prompt, err := BuildRepositoryRetrievalPrompt(input)
-		return prompt, RepositoryRetrievalResponseSchema(), err
-	case WorkRepositoryChangeSurface:
-		var input RepositoryChangeSurfaceInput
-		if err := decodePortablePayload(job.Payload, &input); err != nil {
-			return "", nil, err
-		}
-		prompt, err := BuildRepositoryChangeSurfacePrompt(input)
-		return prompt, RepositoryChangeSurfaceResponseSchema(input), err
-	case WorkRetrievalBriefing:
-		var input RepositoryRetrievalInput
-		if err := decodePortablePayload(job.Payload, &input); err != nil {
-			return "", nil, err
-		}
-		prompt, err := BuildRepositoryRetrievalBriefingPrompt(input)
-		return prompt, RepositoryRetrievalBriefingResponseSchema(), err
-	case WorkRetrievalAdvisory:
-		var input RepositoryRetrievalAdvisoryInput
-		if err := decodePortablePayload(job.Payload, &input); err != nil {
-			return "", nil, err
-		}
-		prompt, err := BuildRepositoryRetrievalAdvisoryPrompt(input)
-		return prompt, nil, err
-	case WorkRetrievalSynthesis:
-		var input RepositoryRetrievalSynthesisInput
-		if err := decodePortablePayload(job.Payload, &input); err != nil {
-			return "", nil, err
-		}
-		prompt, err := BuildRepositoryRetrievalSynthesisPrompt(input)
-		return prompt, RepositoryRetrievalResponseSchema(), err
-	case WorkArtifactHandling:
-		var input ArtifactHandlingInput
-		if err := decodePortablePayload(job.Payload, &input); err != nil {
-			return "", nil, err
-		}
-		prompt, err := BuildArtifactHandlingPrompt(input)
-		return prompt, ArtifactHandlingResponseSchema(input.Token), err
-	case WorkCapabilityRelation:
-		var input CapabilityRelationInput
-		if err := decodePortablePayload(job.Payload, &input); err != nil {
-			return "", nil, err
-		}
-		prompt, err := BuildCapabilityRelationPrompt(input)
-		return prompt, CapabilityRelationResponseSchema(), err
-	case WorkSkillProcedure:
-		var input SkillProcedureInput
-		if err := decodePortablePayload(job.Payload, &input); err != nil {
-			return "", nil, err
-		}
-		prompt, err := BuildSkillProcedurePrompt(input)
-		return prompt, SkillProcedureResponseSchema(), err
-	case WorkSkillSelection:
-		var input SkillSelectionInput
-		if err := decodePortablePayload(job.Payload, &input); err != nil {
-			return "", nil, err
-		}
-		prompt, err := BuildSkillSelectionPrompt(input)
-		return prompt, SkillSelectionResponseSchema(input), err
-	case WorkFragmentGeneration:
-		var input FragmentGenerationInput
-		if err := decodePortablePayload(job.Payload, &input); err != nil {
-			return "", nil, err
-		}
-		return renderPortableFragmentGeneration(input)
-	case WorkFragmentModification:
-		var input FragmentModificationInput
-		if err := decodePortablePayload(job.Payload, &input); err != nil {
-			return "", nil, err
-		}
-		prompt, err := BuildGoFragmentModificationPrompt(input)
-		return prompt, nil, err
-	case WorkFragmentCorrection:
-		var input FragmentCorrectionInput
-		if err := decodePortablePayload(job.Payload, &input); err != nil {
-			return "", nil, err
-		}
-		return renderPortableFragmentCorrection(input)
-	case WorkResponseCorrection:
-		var input ResponseCorrectionInput
-		if err := decodePortablePayload(job.Payload, &input); err != nil {
-			return "", nil, err
-		}
-		return renderPortableResponseCorrection(input)
-	default:
-		return "", nil, fmt.Errorf("portable job kind %q has no renderer", job.Kind)
+	renderers := [...]portableJobRenderer{
+		renderPortableApplicationJob,
+		renderPortableRepositoryContextJob,
+		renderPortableConversationRoleplayJob,
+		renderPortableDatabaseWebJob,
+		renderPortableCodingJob,
 	}
+	for _, render := range renderers {
+		if prompt, handled, err := render(job); handled {
+			return prompt, err
+		}
+	}
+	return "", fmt.Errorf("portable job kind %q has no renderer", job.Kind)
 }
 
-func renderPortableFragmentGeneration(input FragmentGenerationInput) (string, map[string]any, error) {
-	if input.Language != "typescript" {
-		return "", nil, fmt.Errorf("no fragment renderer supports language %q", input.Language)
+func renderDecodedPortableInput[T any](job PortableJob, build func(T) (string, error)) (string, error) {
+	var input T
+	if err := decodePortablePayload(job.Payload, &input); err != nil {
+		return "", err
 	}
-	prompt, err := BuildTypeScriptFragmentPrompt(TypeScriptFragmentPrompt{
-		Signature: input.Signature,
-		Contract:  input.Behavior,
-		Available: strings.Join(input.Capabilities, "\n"),
-		Globals:   input.PermittedSymbols,
-	})
-	return prompt, nil, err
+	return build(input)
 }
 
-func renderPortableFragmentCorrection(input FragmentCorrectionInput) (string, map[string]any, error) {
-	switch input.Language {
-	case "go":
-		prompt, err := BuildGoFragmentCorrectionPrompt(input)
-		return prompt, nil, err
-	case "typescript":
-		prompt, err := BuildTypeScriptFragmentPrompt(TypeScriptFragmentPrompt{
-			Signature:      input.Signature,
-			Available:      strings.Join(input.Capabilities, "\n"),
-			Globals:        input.PermittedSymbols,
-			Current:        input.CurrentDeclaration,
-			RequiredChange: input.RequiredChange,
-			Diagnostic:     input.Diagnostic,
-		})
-		return prompt, nil, err
-	default:
-		return "", nil, fmt.Errorf("no fragment renderer supports language %q", input.Language)
-	}
-}
-
-func renderPortableResponseCorrection(input ResponseCorrectionInput) (string, map[string]any, error) {
-	schema, err := responseCorrectionSchema(input.Original)
-	if err != nil {
-		return "", nil, err
-	}
-	return "Return a JSON merge patch containing exactly one top-level field and changing exactly one invalid leaf. " +
-		"The retained response and its accepted fields are code-owned and unavailable. Resolve only this failure:\n" +
-		input.ValidationFailure, schema, nil
+func handledPortableRender(prompt string, err error) (string, bool, error) {
+	return prompt, true, err
 }

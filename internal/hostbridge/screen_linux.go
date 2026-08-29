@@ -5,13 +5,11 @@ package hostbridge
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"os/exec"
-	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -20,26 +18,12 @@ import (
 
 const screenMJPEGBoundary = "omniscreen"
 
-func listScreenMonitors() ([]ScreenMonitor, string, error) {
-	if monitors, err := listHyprlandMonitors(); err == nil && len(monitors) > 0 {
-		return monitors, "hyprland-grim", nil
-	}
-	if monitors, err := listXRandRMonitors(); err == nil && len(monitors) > 0 {
-		return monitors, "x11", nil
-	}
-	return nil, "", fmt.Errorf("no monitors found; on Hyprland install grim and hyprctl, on X11 install xrandr, and ensure ffmpeg is installed")
-}
-
 func streamScreenMJPEG(ctx context.Context, w http.ResponseWriter, monitorID string, fps, quality, scalePct int) error {
 	if _, err := exec.LookPath("ffmpeg"); err != nil {
 		return fmt.Errorf("ffmpeg is required for screen streaming")
 	}
 
-	monitors, backend, err := listScreenMonitors()
-	if err != nil {
-		return err
-	}
-	monitor, err := pickScreenMonitor(monitors, monitorID)
+	monitor, backend, err := findScreenMonitor(monitorID)
 	if err != nil {
 		return err
 	}
@@ -50,89 +34,6 @@ func streamScreenMJPEG(ctx context.Context, w http.ResponseWriter, monitorID str
 	default:
 		return streamGrimMJPEG(ctx, w, monitor, fps, quality, scalePct)
 	}
-}
-
-func listHyprlandMonitors() ([]ScreenMonitor, error) {
-	if _, err := exec.LookPath("hyprctl"); err != nil {
-		return nil, err
-	}
-	if _, err := exec.LookPath("grim"); err != nil {
-		return nil, err
-	}
-	out, err := exec.Command("hyprctl", "monitors", "-j").Output()
-	if err != nil {
-		return nil, err
-	}
-	var payload []struct {
-		ID      int     `json:"id"`
-		Name    string  `json:"name"`
-		Width   int     `json:"width"`
-		Height  int     `json:"height"`
-		X       int     `json:"x"`
-		Y       int     `json:"y"`
-		Scale   float64 `json:"scale"`
-		Focused bool    `json:"focused"`
-	}
-	if err := json.Unmarshal(out, &payload); err != nil {
-		return nil, err
-	}
-	monitors := make([]ScreenMonitor, 0, len(payload))
-	for _, item := range payload {
-		name := strings.TrimSpace(item.Name)
-		if name == "" {
-			continue
-		}
-		monitors = append(monitors, ScreenMonitor{
-			ID:      name,
-			Name:    name,
-			Width:   item.Width,
-			Height:  item.Height,
-			X:       item.X,
-			Y:       item.Y,
-			Primary: item.Focused,
-		})
-	}
-	if len(monitors) == 0 {
-		return nil, fmt.Errorf("hyprctl returned no monitors")
-	}
-	return monitors, nil
-}
-
-var xrandrMonitorLine = regexp.MustCompile(`^\s*\d+:\s+([+\*]*)([\w-]+)\s+(\d+)/\d+x(\d+)/\d+\+(\d+)\+(\d+)`)
-
-func listXRandRMonitors() ([]ScreenMonitor, error) {
-	if _, err := exec.LookPath("xrandr"); err != nil {
-		return nil, err
-	}
-	out, err := exec.Command("xrandr", "--listmonitors").Output()
-	if err != nil {
-		return nil, err
-	}
-	monitors := make([]ScreenMonitor, 0, 4)
-	for _, line := range strings.Split(string(out), "\n") {
-		match := xrandrMonitorLine.FindStringSubmatch(line)
-		if match == nil {
-			continue
-		}
-		width, _ := strconv.Atoi(match[3])
-		height, _ := strconv.Atoi(match[4])
-		x, _ := strconv.Atoi(match[5])
-		y, _ := strconv.Atoi(match[6])
-		name := strings.TrimSpace(match[2])
-		monitors = append(monitors, ScreenMonitor{
-			ID:      name,
-			Name:    name,
-			Width:   width,
-			Height:  height,
-			X:       x,
-			Y:       y,
-			Primary: strings.Contains(match[1], "*"),
-		})
-	}
-	if len(monitors) == 0 {
-		return nil, fmt.Errorf("xrandr returned no monitors")
-	}
-	return monitors, nil
 }
 
 func streamX11MJPEG(ctx context.Context, w http.ResponseWriter, monitor ScreenMonitor, fps, quality, scalePct int) error {

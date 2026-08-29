@@ -5,6 +5,22 @@ import (
 	"strings"
 )
 
+const DriverPostgres = "postgres"
+
+type ExecutionMode string
+
+const (
+	ExecutionModeDirect    ExecutionMode = "direct"
+	ExecutionModeDelegated ExecutionMode = "delegated"
+)
+
+func (mode ExecutionMode) Validate() error {
+	if mode != ExecutionModeDirect && mode != ExecutionModeDelegated {
+		return fmt.Errorf("data source execution mode %q is unsupported", mode)
+	}
+	return nil
+}
+
 type Connection struct {
 	Driver       string
 	Host         string
@@ -32,17 +48,18 @@ func BuildPostgresDSN(conn Connection) (string, error) {
 	if host == "" || db == "" || user == "" {
 		return "", fmt.Errorf("host, database_name, and username are required")
 	}
-	port := conn.Port
-	if port <= 0 {
-		port = 5432
+	if conn.Port < 1 || conn.Port > 65535 {
+		return "", fmt.Errorf("port must be between 1 and 65535")
 	}
 	sslMode := strings.TrimSpace(conn.SSLMode)
-	if sslMode == "" {
-		sslMode = "prefer"
+	switch sslMode {
+	case "disable", "allow", "prefer", "require", "verify-ca", "verify-full":
+	default:
+		return "", fmt.Errorf("unsupported sslmode %q", sslMode)
 	}
 	parts := []string{
 		fmt.Sprintf("host=%s", host),
-		fmt.Sprintf("port=%d", port),
+		fmt.Sprintf("port=%d", conn.Port),
 		fmt.Sprintf("dbname=%s", db),
 		fmt.Sprintf("user=%s", user),
 		fmt.Sprintf("sslmode=%s", sslMode),

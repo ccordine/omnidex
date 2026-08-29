@@ -69,3 +69,40 @@ func TestCapabilityGraphRejectsWorkloadsBeyondItsBoundedAssembly(t *testing.T) {
 		t.Fatalf("oversized requirement error=%v", err)
 	}
 }
+
+func TestCapabilityGraphMapsEveryRegisteredDirectionWithoutInversion(t *testing.T) {
+	t.Parallel()
+	requirements := []assemblyline.Requirement{
+		{ID: "requirement_001", SourceQuote: "maintain the selected document"},
+		{ID: "requirement_002", SourceQuote: "show a summary of the selected document"},
+	}
+	pair := directCodingCapabilityPairs("document workspace", requirements)[0]
+	fixtures := []struct {
+		relation  assemblyline.CapabilityRelation
+		leftDeps  int
+		rightDeps int
+	}{
+		{relation: assemblyline.CapabilityIndependent},
+		{relation: assemblyline.CapabilityLeftReadsRight, leftDeps: 1},
+		{relation: assemblyline.CapabilityRightReadsLeft, rightDeps: 1},
+	}
+	for _, fixture := range fixtures {
+		graph, err := assembleDirectCodingCapabilityGraph(
+			requirements,
+			[]directCodingCapabilityResult{{
+				Pair: pair,
+				Decision: assemblyline.CapabilityRelationDecision{
+					Schema:   assemblyline.CapabilityRelationSchemaV1,
+					Relation: fixture.relation,
+				},
+			}},
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(graph[requirements[0].ID]) != fixture.leftDeps ||
+			len(graph[requirements[1].ID]) != fixture.rightDeps {
+			t.Fatalf("relation=%s graph=%#v", fixture.relation, graph)
+		}
+	}
+}

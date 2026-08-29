@@ -4,44 +4,44 @@ var providerDefinitions = []Definition{
 	{
 		ID: "ollama", DisplayName: "Ollama", Aliases: []string{"local"}, Protocol: ProtocolOllama,
 		EnvironmentPrefixes:           []string{"OLLAMA", "OMNI"},
-		ModelEnvironmentKeys:          []string{"OLLAMA_MODEL", "OMNI_MODEL", "OMNI_CONVERSATION_MODEL"},
+		BaseURLEnvironmentKeys:        []string{"OLLAMA_BASE_URL"},
 		EmbeddingModelEnvironmentKeys: []string{"OLLAMA_EMBEDDING_MODEL"},
-		DefaultBaseURL:                "http://host.docker.internal:11434", DefaultModel: "llama3.2", DefaultEmbeddingModel: "nomic-embed-text",
-		SupportsGeneration: true, SupportsEmbeddings: true,
+		DefaultEmbeddingModel:         "nomic-embed-text",
+		SupportsExactPreparedStations: true, SupportsEmbeddings: true,
 	},
 	{
 		ID: "openai", DisplayName: "OpenAI", Aliases: []string{"chatgpt", "chat-gpt"}, Protocol: ProtocolOpenAICompatible,
 		EnvironmentPrefixes: []string{"OPENAI"}, APIKeyEnvironmentKeys: []string{"OPENAI_API_KEY"}, BaseURLEnvironmentKeys: []string{"OPENAI_BASE_URL"},
-		DefaultBaseURL: "https://api.openai.com/v1", DefaultModel: "gpt-4.1-mini", DefaultEmbeddingModel: "text-embedding-3-small",
-		SupportsGeneration: true, SupportsEmbeddings: true,
+		DefaultBaseURL: "https://api.openai.com/v1", DefaultEmbeddingModel: "text-embedding-3-small",
+		SupportsEmbeddings: true,
 	},
 	{
 		ID: "azure", DisplayName: "Microsoft Azure AI", Aliases: []string{"azureai", "azure-ai", "azure-openai", "azure_openai", "microsoft", "msai", "windows", "windowsai", "windows-ai"}, Protocol: ProtocolAzure,
 		EnvironmentPrefixes: []string{"AZURE_AI", "AZURE_OPENAI"}, APIKeyEnvironmentKeys: []string{"AZURE_AI_API_KEY", "AZURE_OPENAI_API_KEY"}, BaseURLEnvironmentKeys: []string{"AZURE_AI_BASE_URL", "AZURE_OPENAI_ENDPOINT", "AZURE_OPENAI_BASE_URL"},
-		ModelEnvironmentKeys: []string{"AZURE_AI_MODEL", "AZURE_OPENAI_MODEL", "AZURE_OPENAI_DEPLOYMENT"}, EmbeddingModelEnvironmentKeys: []string{"AZURE_AI_EMBEDDING_MODEL", "AZURE_OPENAI_EMBEDDING_DEPLOYMENT"},
-		SupportsGeneration: true, SupportsEmbeddings: true, RequiresBaseURL: true,
+		EmbeddingModelEnvironmentKeys: []string{"AZURE_AI_EMBEDDING_MODEL", "AZURE_OPENAI_EMBEDDING_DEPLOYMENT"},
+		SupportsEmbeddings:            true, RequiresBaseURL: true,
 	},
 	{
 		ID: "xai", DisplayName: "xAI", Aliases: []string{"x-ai", "grok", "grock"}, Protocol: ProtocolOpenAICompatible,
 		EnvironmentPrefixes: []string{"XAI", "GROK", "GROCK"}, APIKeyEnvironmentKeys: []string{"XAI_API_KEY", "GROK_API_KEY"}, BaseURLEnvironmentKeys: []string{"XAI_BASE_URL", "GROK_BASE_URL"},
-		DefaultBaseURL: "https://api.x.ai/v1", DefaultModel: "grok-4.3", SupportsGeneration: true,
+		DefaultBaseURL: "https://api.x.ai/v1",
 	},
 	{
 		ID: "google", DisplayName: "Google Gemini", Aliases: []string{"gemini", "googleai", "google-ai"}, Protocol: ProtocolGoogle,
 		EnvironmentPrefixes: []string{"GOOGLE", "GEMINI"}, APIKeyEnvironmentKeys: []string{"GOOGLE_API_KEY", "GEMINI_API_KEY"}, BaseURLEnvironmentKeys: []string{"GOOGLE_BASE_URL"},
-		DefaultBaseURL: "https://generativelanguage.googleapis.com/v1beta", DefaultModel: "gemini-2.0-flash", DefaultEmbeddingModel: "text-embedding-004",
-		SupportsGeneration: true, SupportsEmbeddings: true,
+		DefaultBaseURL: "https://generativelanguage.googleapis.com/v1beta", DefaultEmbeddingModel: "text-embedding-004",
+		SupportsEmbeddings: true,
 	},
 	{
 		ID: "anthropic", DisplayName: "Anthropic", Aliases: []string{"claude"}, Protocol: ProtocolAnthropic,
 		EnvironmentPrefixes: []string{"ANTHROPIC", "CLAUDE"}, APIKeyEnvironmentKeys: []string{"ANTHROPIC_API_KEY"}, BaseURLEnvironmentKeys: []string{"ANTHROPIC_BASE_URL"},
-		DefaultBaseURL: "https://api.anthropic.com/v1", DefaultModel: "claude-sonnet-4-20250514", SupportsGeneration: true,
+		DefaultBaseURL: "https://api.anthropic.com/v1",
 	},
 	{
 		ID: "huggingface", DisplayName: "Hugging Face", Aliases: []string{"hugging-face", "hf"}, Protocol: ProtocolHuggingFace,
 		EnvironmentPrefixes: []string{"HUGGINGFACE", "HF"}, APIKeyEnvironmentKeys: []string{"HUGGINGFACE_API_KEY", "HF_TOKEN"}, BaseURLEnvironmentKeys: []string{"HUGGINGFACE_BASE_URL"},
-		DefaultBaseURL: "https://router.huggingface.co", DefaultModel: "openai/gpt-oss-20b:fastest", DefaultEmbeddingModel: "sentence-transformers/all-mpnet-base-v2",
-		SupportsGeneration: true, SupportsEmbeddings: true,
+		DefaultBaseURL: "https://router.huggingface.co", DefaultEmbeddingModel: "sentence-transformers/all-mpnet-base-v2",
+		SupportsEmbeddings: true,
 	},
 	compatibleDefinition("deepseek", "DeepSeek", []string{"deep-seek"}, []string{"DEEPSEEK"}, "https://api.deepseek.com", false),
 	compatibleDefinition("qwen", "Alibaba Qwen / Model Studio", []string{"dashscope", "tongyi", "alibaba", "alibaba-qwen"}, []string{"QWEN", "DASHSCOPE"}, "https://dashscope.aliyuncs.com/compatible-mode/v1", true),
@@ -66,7 +66,7 @@ var providerDefinitions = []Definition{
 	{
 		ID: "compatible", DisplayName: "Custom OpenAI-compatible", Aliases: []string{"custom", "custom-openai", "openai-compatible"}, Protocol: ProtocolOpenAICompatible,
 		EnvironmentPrefixes: []string{"COMPATIBLE"}, APIKeyEnvironmentKeys: []string{"COMPATIBLE_API_KEY"}, BaseURLEnvironmentKeys: []string{"COMPATIBLE_BASE_URL"},
-		SupportsGeneration: true, SupportsEmbeddings: true, RequiresBaseURL: true,
+		SupportsEmbeddings: true, RequiresBaseURL: true,
 	},
 }
 
@@ -80,6 +80,6 @@ func compatibleDefinition(id, displayName string, aliases, prefixes []string, ba
 	return Definition{
 		ID: id, DisplayName: displayName, Aliases: aliases, Protocol: ProtocolOpenAICompatible,
 		EnvironmentPrefixes: prefixes, APIKeyEnvironmentKeys: apiKeys, BaseURLEnvironmentKeys: baseURLs,
-		DefaultBaseURL: baseURL, SupportsGeneration: true, SupportsEmbeddings: supportsEmbeddings, ChineseService: true,
+		DefaultBaseURL: baseURL, SupportsEmbeddings: supportsEmbeddings, ChineseService: true,
 	}
 }

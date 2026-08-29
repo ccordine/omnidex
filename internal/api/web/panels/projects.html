@@ -3,7 +3,7 @@
           <div>
             <p class="text-xs uppercase tracking-[.20em] text-cyan-200/80" data-i18n="panel.projects.brand">Omnidex</p>
             <h2 class="text-xl font-semibold tracking-tight" data-i18n="panel.projects.title">Projects</h2>
-            <p class="mt-1 text-xs text-zinc-500" data-i18n="panel.projects.subtitle">Open a project for its scrum board, settings, codebase map, and recipe.</p>
+            <p class="mt-1 text-xs text-zinc-500" data-i18n="panel.projects.subtitle">Open a project for its scrum board, settings, and codebase map.</p>
           </div>
           <div class="flex flex-wrap items-center gap-2">
             <span data-projects-target="status" class="text-xs text-zinc-400" data-i18n="panel.projects.openToLoad">Open to load</span>
@@ -13,7 +13,7 @@
         </header>
 
         <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
-          <div data-projects-target="list" class="scrollbar min-h-0 flex-1 space-y-3 overflow-y-auto p-4 md:p-6"></div>
-          <div data-projects-target="detail" class="hidden min-h-0 flex-1 flex-col overflow-hidden p-4 md:p-6"></div>
+          <div data-projects-target="list" data-recyclr-sink="projects-list" class="scrollbar min-h-0 flex-1 space-y-3 overflow-y-auto p-4 md:p-6"></div>
+          <div data-projects-target="detail" data-recyclr-sink="project-detail" class="hidden min-h-0 flex-1 flex-col overflow-hidden p-4 md:p-6"></div>
         </div>
       </section>

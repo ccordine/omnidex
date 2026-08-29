@@ -5,61 +5,6 @@ import (
 	"testing"
 )
 
-func TestRestoreKeepsCandidateAndGenericDecisionLineageSeparate(t *testing.T) {
-	state := decisionReplacementState(t)
-	restored, err := RestoreLedger(state)
-	if err != nil {
-		t.Fatal(err)
-	}
-	candidateOne, _ := restored.Entry("candidate-1")
-	acceptedOne, _ := restored.Entry("accepted-1")
-	candidateTwo, _ := restored.Entry("candidate-2")
-	acceptedTwo, _ := restored.Entry("accepted-2")
-	if candidateOne.SupersededBy != acceptedOne.ID || candidateTwo.SupersededBy != acceptedTwo.ID {
-		t.Fatalf("candidate lineage was not derived: first=%+v second=%+v", candidateOne, candidateTwo)
-	}
-	if acceptedOne.SupersededBy != acceptedTwo.ID || acceptedTwo.SupersedesID != acceptedOne.ID ||
-		acceptedTwo.Provenance.SourceEntryID != candidateTwo.ID {
-		t.Fatalf("generic and candidate lineage were conflated: first=%+v second=%+v", acceptedOne, acceptedTwo)
-	}
-}
-
-func TestRestoreRejectsAcceptedDecisionTampering(t *testing.T) {
-	tests := []struct {
-		name   string
-		tamper func(*Entry)
-	}{
-		{name: "content", tamper: func(entry *Entry) {
-			entry.Content = "Changed after acceptance."
-			entry.ContentSHA256 = contentDigest(entry.Content)
-		}},
-		{name: "scope", tamper: func(entry *Entry) { entry.ScopeNodeID = "scope-b" }},
-		{name: "confidence", tamper: func(entry *Entry) {
-			changed := 0.2
-			entry.Confidence = &changed
-		}},
-		{name: "candidate stored as generic supersession", tamper: func(entry *Entry) {
-			entry.SupersedesID = entry.Provenance.SourceEntryID
-		}},
-		{name: "acceptance evidence removed", tamper: func(entry *Entry) { entry.Refs = []Ref{} }},
-		{name: "acceptance policy changed", tamper: func(entry *Entry) {
-			entry.Provenance.AcceptancePolicy = "changed-policy"
-		}},
-		{name: "candidate and acceptance share creation version", tamper: func(entry *Entry) {
-			entry.CreatedVersion--
-		}},
-	}
-	for _, test := range tests {
-		test := test
-		t.Run(test.name, func(t *testing.T) {
-			state := decisionReplacementState(t)
-			entry := stateEntry(t, &state, "accepted-1")
-			test.tamper(entry)
-			assertRestoreInvalid(t, state)
-		})
-	}
-}
-
 func TestRestoreRejectsInvalidGenericSupersessionAuthorityAndKind(t *testing.T) {
 	t.Run("authority downgrade", func(t *testing.T) {
 		ledger := newTestLedger(t)
@@ -115,45 +60,6 @@ func TestRestoreRejectsUnreachableResolvedEntry(t *testing.T) {
 		state.Entries[0].Kind = EntryConstraint
 		assertRestoreInvalid(t, state)
 	})
-}
-
-func decisionReplacementState(t *testing.T) MaterializedState {
-	t.Helper()
-	ledger := newTestLedger(t)
-	for index, id := range []NodeID{"scope-a", "scope-b"} {
-		applyTestCommand(t, ledger, AddNodeCommand{
-			ExpectedVersion: uint64(index), Actor: AuthorityCode, ID: id,
-			Kind: NodeObjective, Title: string(id), Priority: 1,
-			Metadata: EmptyJSONObject(),
-		})
-	}
-	confidence := 0.7
-	for index := 1; index <= 2; index++ {
-		candidateID := EntryID("candidate-" + string(rune('0'+index)))
-		acceptedID := EntryID("accepted-" + string(rune('0'+index)))
-		applyTestCommand(t, ledger, AddEntryCommand{
-			ExpectedVersion: ledger.Version(), Actor: AuthorityModelProposal,
-			ID: candidateID, ScopeNodeID: "scope-a", Kind: EntryDecisionCandidate,
-			Content:    "Use bounded option " + string(rune('A'-1+index)) + ".",
-			Confidence: &confidence, Metadata: EmptyJSONObject(),
-		})
-		applyTestCommand(t, ledger, AcceptDecisionCommand{
-			ExpectedVersion: ledger.Version(), Actor: AuthorityCode,
-			CandidateID: candidateID, AcceptedEntryID: acceptedID,
-			AcceptancePolicy: "verified-policy", AcceptanceRefs: testVerificationRefs(),
-			Metadata: EmptyJSONObject(),
-		})
-	}
-	applyTestCommand(t, ledger, SupersedeEntryCommand{
-		ExpectedVersion: ledger.Version(), Actor: AuthorityCode,
-		EntryID: "accepted-1", ReplacementID: "accepted-2",
-		Reason: "The later accepted decision supersedes the earlier one.",
-	})
-	state := ledger.MaterializedState()
-	for index := range state.Entries {
-		state.Entries[index].SupersededBy = ""
-	}
-	return state
 }
 
 func supersededNotesLedger(t *testing.T) *Ledger {

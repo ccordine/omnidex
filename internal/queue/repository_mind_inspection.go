@@ -28,7 +28,8 @@ func (r *Repository) listMemoryCandidates(ctx context.Context, jobID int64, stat
 		limit = 500
 	}
 	query := `
-		SELECT candidates.id, candidates.job_id, candidates.generation,
+		SELECT candidates.id, candidates.project_id, candidates.channel_id,
+		       candidates.job_id, candidates.generation,
 		       candidates.source_memory_id, candidates.candidate_kind, candidates.content,
 		       candidates.provenance, candidates.confidence, candidates.status,
 		       candidates.created_at, candidates.updated_at
@@ -51,7 +52,8 @@ func (r *Repository) listMemoryCandidates(ctx context.Context, jobID int64, stat
 	for rows.Next() {
 		var item model.MemoryCandidate
 		var jobIDValue *int64
-		if err := rows.Scan(&item.ID, &jobIDValue, &item.Generation, &item.SourceMemoryID,
+		if err := rows.Scan(&item.ID, &item.Scope.ProjectID, &item.Scope.ChannelID,
+			&jobIDValue, &item.Generation, &item.SourceMemoryID,
 			&item.CandidateKind, &item.Content, &item.Provenance, &item.Confidence,
 			&item.Status, &item.CreatedAt, &item.UpdatedAt); err != nil {
 			return nil, err
@@ -74,11 +76,12 @@ func (r *Repository) GetMemoryCandidate(ctx context.Context, id int64) (model.Me
 	var item model.MemoryCandidate
 	var jobID *int64
 	err := r.pool.QueryRow(ctx, `
-		SELECT id, job_id, generation, source_memory_id, candidate_kind, content,
+		SELECT id, project_id, channel_id, job_id, generation, source_memory_id, candidate_kind, content,
 		       provenance, confidence, status, created_at, updated_at
 		FROM memory_candidates
 		WHERE id = $1
-	`, id).Scan(&item.ID, &jobID, &item.Generation, &item.SourceMemoryID,
+	`, id).Scan(&item.ID, &item.Scope.ProjectID, &item.Scope.ChannelID,
+		&jobID, &item.Generation, &item.SourceMemoryID,
 		&item.CandidateKind, &item.Content, &item.Provenance, &item.Confidence,
 		&item.Status, &item.CreatedAt, &item.UpdatedAt)
 	if jobID != nil {

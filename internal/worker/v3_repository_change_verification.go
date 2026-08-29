@@ -22,6 +22,7 @@ type repositoryGoProofMode string
 
 const (
 	repositoryGoProofFocused repositoryGoProofMode = "focused"
+	repositoryGoProofPackage repositoryGoProofMode = "package"
 	repositoryGoProofBroad   repositoryGoProofMode = "broad"
 )
 
@@ -132,6 +133,7 @@ func existingRepositoryGoVerificationCommands(
 	}
 	commands = append(commands, testCommand{
 		Family: "go", Name: "go", Args: []string{"test", "-json", "-count=1", "./..."},
+		Purpose:         verificationTest,
 		RepositoryProof: &repositoryGoTestProof{Mode: repositoryGoProofBroad, Package: "./..."},
 	})
 	for _, command := range commands {
@@ -165,7 +167,8 @@ func focusedRepositoryGoVerificationCommand(group *repositoryGoTestGroup) (testC
 	}
 	return testCommand{
 		Family: "go", Name: "go",
-		Args: []string{"test", "-json", "-count=1", "-run", selector, group.packageArgument},
+		Args:    []string{"test", "-json", "-count=1", "-run", selector, group.packageArgument},
+		Purpose: verificationTest,
 		RepositoryProof: &repositoryGoTestProof{
 			Mode: repositoryGoProofFocused, Package: group.packageArgument, Expected: expected,
 		},

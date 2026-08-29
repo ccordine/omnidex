@@ -49,6 +49,13 @@ func TestHandleProjectGitRepo(t *testing.T) {
 func TestClientProjectGitStatus(t *testing.T) {
 	dir := t.TempDir()
 	runGit(t, dir, "init")
+	runGit(t, dir, "config", "user.email", "test@example.com")
+	runGit(t, dir, "config", "user.name", "Test User")
+	if err := os.WriteFile(filepath.Join(dir, "README.md"), []byte("hello\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, dir, "add", "README.md")
+	runGit(t, dir, "commit", "-m", "Initial commit")
 
 	server := &Server{}
 	httpServer := httptest.NewServer(server.Handler())
@@ -59,8 +66,8 @@ func TestClientProjectGitStatus(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ProjectGitStatus: %v", err)
 	}
-	if payload["source"] != "host-bridge" {
-		t.Fatalf("source=%#v want host-bridge", payload["source"])
+	if payload.Source != "host-bridge" {
+		t.Fatalf("source=%#v want host-bridge", payload.Source)
 	}
 }
 

@@ -98,6 +98,7 @@ func cloneTestCommands(commands []testCommand) []testCommand {
 	for index, command := range commands {
 		cloned[index] = command
 		cloned[index].Args = append([]string(nil), command.Args...)
+		cloned[index].Environment = cloneDirectCodingDockerEnvironmentAuthority(command.Environment)
 		if command.RepositoryProof != nil {
 			proof := *command.RepositoryProof
 			proof.Expected = append([]repositoryGoExpectedTest(nil), command.RepositoryProof.Expected...)
@@ -132,17 +133,8 @@ func validateVerifiedRepositoryChangeStage(prepared *verifiedRepositoryChangeSta
 	if len(changed) == 0 || len(changed) != len(expected) {
 		return fmt.Errorf("verified repository change stage has incomplete changed-file authority")
 	}
-	seen := make(map[string]struct{}, len(changed))
-	for index := range changed {
-		decoded, decodeErr := hex.DecodeString(expected[index].SHA256)
-		if changed[index] == "" || expected[index].FileID != changed[index] ||
-			decodeErr != nil || len(decoded) != sha256.Size || expected[index].Size < 0 {
-			return fmt.Errorf("verified repository change stage has invalid exact post-file authority")
-		}
-		if _, duplicate := seen[changed[index]]; duplicate {
-			return fmt.Errorf("verified repository change stage has duplicated post-file authority")
-		}
-		seen[changed[index]] = struct{}{}
+	if _, err := canonicalExpectedRepositoryFileStates(changed, expected); err != nil {
+		return fmt.Errorf("verified repository change stage has invalid exact post-file authority: %w", err)
 	}
 	return nil
 }

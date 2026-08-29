@@ -62,7 +62,7 @@ func TestProjectionBindsExactSelectedSourceLineage(t *testing.T) {
 	t.Parallel()
 	set := testWorkingSet(t, workingset.Budget{MaxItems: 2, MaxBytes: 2048})
 	item := acquireContextItem(t, set, "fact", workingset.RoleFact, 90, "a")
-	material := contextMaterial(item, taskstate.AuthorityAcceptedModelDecision, "accepted compact fact")
+	material := contextMaterial(item, taskstate.AuthorityCode, "code-owned compact fact")
 	source := taskstate.Ref{
 		URI: "cognition:episode/e1/observation/o1", Version: "3",
 		Hash: strings.Repeat("a", 64), Relation: taskstate.RefEvidence,

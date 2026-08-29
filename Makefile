@@ -4,26 +4,24 @@ tidy:
 	go mod tidy
 
 ui:
-	cd internal/api/web && npm install && npm run build
+	./scripts/build-ui.sh
 
 ui-dev:
 	cd internal/api/web && npm install && npm run dev
 
-build: ui core cli omni
+build: core cli omni
 
 core:
 	./scripts/build-core.sh
 
 cli:
-	rm -f bin/agent-cli
-	go build -o bin/agent-cli ./cmd/cli
+	./scripts/build-core.sh --package ./cmd/cli --output bin/agent-cli
 
 omni:
-	rm -f bin/omni
-	go build -o bin/omni ./cmd/omni
+	./scripts/build-core.sh --package ./cmd/omni --output bin/omni
 
-run:
-	go run ./cmd/core
+run: core
+	./bin/agent-core
 
 fmt:
 	gofmt -w ./cmd ./internal

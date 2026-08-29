@@ -1,7 +1,6 @@
 package worker
 
 import (
-	"context"
 	"strconv"
 	"testing"
 
@@ -139,14 +138,8 @@ func repositoryVerificationAuthorityStage(
 	value int,
 ) *changeapply.StagedChange {
 	t.Helper()
-	stage, err := changeapply.Plan(context.Background(), changeapply.Input{
-		Snapshot: snapshot, Analysis: analysis, Contract: contract,
-		Candidates: []changeapply.CandidateDeclaration{{
-			SymbolID: targetID, Declaration: "func First() int { return " + strconv.Itoa(value) + " }",
-		}},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	return stage
+	return planExistingRepositoryTestStage(
+		t, snapshot, analysis, contract,
+		map[string]string{targetID: "func First() int { return " + strconv.Itoa(value) + " }"},
+	)
 }

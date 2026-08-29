@@ -1,44 +1,32 @@
 import { Controller } from "@hotwired/stimulus";
-import {
-  createDataSourceChannel,
-  fetchDataSourceChannelMessages,
-  fetchDataSourceChannels,
-  fetchDataSourcesPublic,
-  fetchJobRecord,
-  sendDataSourceChannelMessage,
-  type JobRecord,
-} from "../lib/data_api";
-import { mountDataCharts } from "../lib/data_chart";
-import { emptyDataPanelState, renderDataPanel, type DataPanelState } from "../lib/data_render";
+import { createDataSourceChannel } from "../lib/data_api";
+import { fetchDataComponent } from "../lib/operational_component_api";
+import { renderServerBundle } from "../lib/server_component_api";
 import { panelHref, parseDataChannelFromLocation, parseDataSourceFromLocation } from "../lib/panel_routing";
 import type RecyclrController from "./recyclr_controller";
-import { observeRealtimeJob, type RealtimeJobObservation } from "../lib/realtime_job_observer";
+import { setGlobalLoading } from "../lib/loading";
+import { showToast } from "../lib/toast";
 
 export default class DataController extends Controller {
-  static targets = ["panel"];
-
-  declare readonly panelTarget: HTMLElement;
-
-  private state: DataPanelState = emptyDataPanelState();
+  private selectedSourceID = "";
+  private selectedChannelID = "";
+  private sourceOffset = 0;
+  private channelOffset = 0;
+	private messageOffset = 0;
   private panelShownHandler: ((event: Event) => void) | null = null;
-  private jobObservation: RealtimeJobObservation<{ job: JobRecord }> | null = null;
 
-  connect() {
-    const sourceID = parseDataSourceFromLocation();
-    const channelID = parseDataChannelFromLocation();
-    if (sourceID) this.state.selectedSourceId = sourceID;
-    if (channelID) this.state.selectedChannelId = channelID;
-    this.panelShownHandler = (event: Event) => {
-      const detail = (event as CustomEvent<{ panel?: string }>).detail;
-      if (detail?.panel === "data") void this.load();
+  connect(): void {
+    this.selectedSourceID = parseDataSourceFromLocation() ?? "";
+    this.selectedChannelID = parseDataChannelFromLocation() ?? "";
+    this.panelShownHandler = (event) => {
+      if ((event as CustomEvent<{ panel?: string }>).detail?.panel === "data") void this.load();
     };
     document.addEventListener("omni:panel-shown", this.panelShownHandler);
     void this.load();
   }
 
-  disconnect() {
+  disconnect(): void {
     if (this.panelShownHandler) document.removeEventListener("omni:panel-shown", this.panelShownHandler);
-    this.stopJobObservation("Data controller disconnected.");
   }
 
   private recyclrController(): RecyclrController {
@@ -47,199 +35,98 @@ export default class DataController extends Controller {
     return controller;
   }
 
-  private pushRoute() {
-    this.recyclrController().pushRoute(
-      panelHref("data", window.location, {
-        data_source: this.state.selectedSourceId || "",
-        data_channel: this.state.selectedChannelId || "",
-      }),
-    );
+  private pushRoute(): void {
+    this.recyclrController().pushRoute(panelHref("data", window.location, {
+      data_source: this.selectedSourceID,
+      data_channel: this.selectedChannelID,
+    }));
   }
 
-  private preservePrompt(): string {
-    return (this.element.querySelector("[data-data-target='promptInput']") as HTMLInputElement | null)?.value ?? "";
-  }
-
-  private restorePrompt(value: string) {
-    const input = this.element.querySelector("[data-data-target='promptInput']") as HTMLInputElement | null;
-    if (input) input.value = value;
-  }
-
-  private render(scrollMessages = false) {
-    const prompt = this.preservePrompt();
-    this.panelTarget.innerHTML = renderDataPanel(this.state);
-    this.restorePrompt(prompt);
-    mountDataCharts(this.panelTarget);
-    if (scrollMessages) {
-      const list = this.element.querySelector("[data-data-target='messageList']");
-      if (list) list.scrollTop = list.scrollHeight;
-    }
-  }
-
-  async load() {
-    this.state.status = "Loading databases…";
-    this.render();
+  async load(): Promise<void> {
     try {
-      const sources = await fetchDataSourcesPublic();
-      this.state.sources = sources;
-      if (!this.state.selectedSourceId || !sources.some((s) => s.id === this.state.selectedSourceId)) {
-        this.state.selectedSourceId = sources[0]?.id ?? null;
-      }
-      await this.loadChannels(false);
-      this.state.status = "Ready";
-      this.render(true);
+		const payload = await fetchDataComponent(this.selectedSourceID, this.selectedChannelID, this.sourceOffset, this.channelOffset, this.messageOffset);
+      this.selectedSourceID = payload.selected_source_id ?? "";
+      this.selectedChannelID = payload.selected_channel_id ?? "";
+      this.sourceOffset = payload.source_offset ?? 0;
+      this.channelOffset = payload.channel_offset ?? 0;
+		this.messageOffset = payload.message_offset ?? 0;
+      await renderServerBundle(this.recyclrController(), payload, "Data component");
+      const messages = this.element.querySelector("[data-data-target='messageList']");
+      if (messages) messages.scrollTop = messages.scrollHeight;
     } catch (error) {
-      this.state.status = error instanceof Error ? error.message : String(error);
-      this.render();
+      const message = error instanceof Error ? error.message : String(error);
+      console.error("Server data component failed", error);
+      showToast(message, "error");
     }
   }
 
-  async loadChannels(renderPanel = true) {
-    const sourceID = this.state.selectedSourceId;
-    if (!sourceID) {
-      this.state.channels = [];
-      this.state.selectedChannelId = null;
-      this.state.messages = [];
-      if (renderPanel) this.render();
-      return;
-    }
-    this.state.channels = await fetchDataSourceChannels(sourceID);
-    if (!this.state.selectedChannelId || !this.state.channels.some((c) => c.id === this.state.selectedChannelId)) {
-      this.state.selectedChannelId = this.state.channels[0]?.id ?? null;
-    }
-    await this.loadMessages(false);
-    if (renderPanel) this.render(true);
-  }
-
-  async loadMessages(renderPanel = true) {
-    const sourceID = this.state.selectedSourceId;
-    const channelID = this.state.selectedChannelId;
-    if (!sourceID || !channelID) {
-      this.state.messages = [];
-      if (renderPanel) this.render();
-      return;
-    }
-    this.state.messages = await fetchDataSourceChannelMessages(sourceID, channelID);
-    if (renderPanel) this.render(true);
-  }
-
-  selectSource(event: Event) {
+  selectSource(event: Event): void {
     event.preventDefault();
-    const id = (event.currentTarget as HTMLElement).dataset.sourceId || "";
-    if (!id || id === this.state.selectedSourceId) return;
-    this.state.selectedSourceId = id;
-    this.state.selectedChannelId = null;
-    this.state.messages = [];
-    this.state.pendingJobId = null;
-    this.stopJobObservation("Data source changed.");
+    const id = (event.currentTarget as HTMLElement).dataset.sourceId?.trim() ?? "";
+    if (!id || id === this.selectedSourceID) return;
+    this.selectedSourceID = id;
+    this.selectedChannelID = "";
+    this.channelOffset = 0;
+		this.messageOffset = 0;
     this.pushRoute();
-    void this.loadChannels();
+    void this.load();
   }
 
-  selectChannel(event: Event) {
+  loadDataPage(event: Event): void {
     event.preventDefault();
-    const id = (event.currentTarget as HTMLElement).dataset.channelId || "";
-    if (!id || id === this.state.selectedChannelId) return;
-    this.state.selectedChannelId = id;
-    this.state.pendingJobId = null;
-    this.stopJobObservation("Data channel changed.");
+    const node = event.currentTarget as HTMLElement;
+    const offset = Number(node.dataset.pageOffset ?? -1);
+    const kind = node.dataset.pageKind;
+		if (!Number.isSafeInteger(offset) || offset < 0 || (kind !== "source" && kind !== "channel" && kind !== "message")) {
+      throw new Error("Data page control is invalid.");
+    }
+    if (kind === "source") {
+      this.sourceOffset = offset;
+      this.channelOffset = 0;
+      this.selectedSourceID = "";
+      this.selectedChannelID = "";
+			this.messageOffset = 0;
+    } else {
+			if (kind === "channel") {
+				this.channelOffset = offset;
+				this.selectedChannelID = "";
+				this.messageOffset = 0;
+			} else {
+				this.messageOffset = offset;
+			}
+    }
+    void this.load();
+  }
+
+  selectChannel(event: Event): void {
+    event.preventDefault();
+    const id = (event.currentTarget as HTMLElement).dataset.channelId?.trim() ?? "";
+    if (!id || id === this.selectedChannelID) return;
+    this.selectedChannelID = id;
+		this.messageOffset = 0;
     this.pushRoute();
-    void this.loadMessages();
+    void this.load();
   }
 
-  async createChannel(event: Event) {
+  async createChannel(event: Event): Promise<void> {
     event.preventDefault();
-    const sourceID = this.state.selectedSourceId;
-    if (!sourceID) return;
+    if (!this.selectedSourceID) return;
     const name = window.prompt("Channel name", "New analysis")?.trim();
     if (!name) return;
-    this.state.status = "Creating channel…";
-    this.render();
+    setGlobalLoading(true);
     try {
-      const channel = await createDataSourceChannel(sourceID, name);
-      await this.loadChannels(false);
-      this.state.selectedChannelId = channel.id;
-      this.state.status = "Ready";
+      const channel = await createDataSourceChannel(this.selectedSourceID, name);
+      this.selectedChannelID = channel.id;
+      this.channelOffset = 0;
+			this.messageOffset = 0;
       this.pushRoute();
-      this.render(true);
+      await this.load();
     } catch (error) {
-      this.state.status = error instanceof Error ? error.message : String(error);
-      this.render();
+      const message = error instanceof Error ? error.message : String(error);
+      console.error("Create data channel failed", error);
+      showToast(message, "error");
+    } finally {
+      setGlobalLoading(false);
     }
-  }
-
-  async sendMessage(event: Event) {
-    event.preventDefault();
-    const sourceID = this.state.selectedSourceId;
-    const channelID = this.state.selectedChannelId;
-    const prompt = this.preservePrompt().trim();
-    if (!sourceID || !channelID) {
-      this.state.status = "Select a data source and channel first.";
-      this.render();
-      return;
-    }
-    if (!prompt) {
-      this.state.status = "Enter a question first.";
-      this.render();
-      return;
-    }
-    this.state.status = "Sending…";
-    this.render();
-    try {
-      const result = await sendDataSourceChannelMessage(sourceID, channelID, prompt);
-      this.state.pendingJobId = result.job.id;
-      this.state.status = `Running job #${result.job.id}…`;
-      this.restorePrompt("");
-      await this.loadMessages(false);
-      this.render(true);
-      this.observeJob(result.job.id);
-    } catch (error) {
-      this.state.status = error instanceof Error ? error.message : String(error);
-      this.render();
-    }
-  }
-
-  private observeJob(jobID: number) {
-    this.stopJobObservation("A newer data job replaced this observation.");
-    const observation = observeRealtimeJob({
-      jobID,
-      load: async () => {
-        const details = await fetchJobRecord(jobID);
-        if (!details.job || details.job.id !== jobID) {
-          throw new Error(`Authoritative job response did not include job #${jobID}.`);
-        }
-        return { status: details.job.status, error: details.job.error, data: details };
-      },
-      onUpdate: async ({ status }) => {
-        if (this.jobObservation !== observation) return;
-        this.state.status = status === "completed" ? "Finalizing results…" : `Running job #${jobID} · ${status}…`;
-        await this.loadMessages(false);
-        this.render(true);
-      },
-    });
-    this.jobObservation = observation;
-    void observation.completion
-      .then(async () => {
-        if (this.jobObservation !== observation) return;
-        this.state.pendingJobId = null;
-        this.state.status = "Ready";
-        await this.loadMessages(false);
-        this.render(true);
-      })
-      .catch((error) => {
-        if (this.jobObservation !== observation) return;
-        this.state.pendingJobId = null;
-        this.state.status = error instanceof Error ? error.message : String(error);
-        this.render();
-      })
-      .finally(() => {
-        if (this.jobObservation === observation) this.jobObservation = null;
-      });
-  }
-
-  private stopJobObservation(reason: string) {
-    const observation = this.jobObservation;
-    this.jobObservation = null;
-    observation?.cancel(reason);
   }
 }

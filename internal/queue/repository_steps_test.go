@@ -8,23 +8,16 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gryph/omnidex/internal/datasource"
 	"github.com/gryph/omnidex/internal/model"
 )
 
 func TestValidatePipelinePreservesEverySupportedPipeline(t *testing.T) {
 	for _, pipeline := range []string{
-		model.PipelineAssistant,
 		model.PipelineChat,
 		model.PipelineCoding,
-		model.PipelineStory,
-		model.PipelineDataQuery,
-		model.PipelineDataExplore,
-		model.PipelineProjectDebugger,
-		model.PipelineScrumCardLLM,
 		model.PipelineScrum,
 	} {
-		got, err := validatePipeline("  " + pipeline + "  ")
+		got, err := validatePipeline(pipeline)
 		if err != nil {
 			t.Fatalf("validatePipeline(%q): %v", pipeline, err)
 		}
@@ -32,33 +25,49 @@ func TestValidatePipelinePreservesEverySupportedPipeline(t *testing.T) {
 			t.Fatalf("validatePipeline(%q)=%q", pipeline, got)
 		}
 	}
+	for _, pipeline := range []string{" CHAT", "chat ", "CODING", "Scrum"} {
+		if _, err := validatePipeline(pipeline); !errors.Is(err, ErrUnsupportedPipeline) {
+			t.Fatalf("noncanonical pipeline %q error=%v", pipeline, err)
+		}
+	}
+}
+
+func TestPublicEnqueueAcceptsOnlyExplicitCodingTransport(t *testing.T) {
+	got, err := validatePublicEnqueuePipeline(model.PipelineCoding)
+	if err != nil || got != model.PipelineCoding {
+		t.Fatalf("public pipeline %q got=%q err=%v", model.PipelineCoding, got, err)
+	}
+	for _, pipeline := range []string{model.PipelineChat, model.PipelineScrum} {
+		if _, err := validatePublicEnqueuePipeline(pipeline); !errors.Is(err, ErrChannelTransportRequired) {
+			t.Fatalf("public pipeline %q error=%v must require its typed transport", pipeline, err)
+		}
+	}
+	for _, pipeline := range []string{"assistant", "story", "agent"} {
+		if _, err := validatePublicEnqueuePipeline(pipeline); !errors.Is(err, ErrUnsupportedPipeline) {
+			t.Fatalf("retired pipeline %q error=%v", pipeline, err)
+		}
+	}
 }
 
 func TestValidatePipelineRejectsUnknownInsteadOfFallingBack(t *testing.T) {
-	_, err := validatePipeline("mystery")
-	if err == nil {
-		t.Fatal("unknown pipeline must fail loudly")
-	}
-	if !errors.Is(err, ErrUnsupportedPipeline) {
-		t.Fatalf("error=%v must wrap ErrUnsupportedPipeline", err)
-	}
-	if got := stepsForPipeline("mystery"); len(got) != 0 {
-		t.Fatalf("unknown pipeline produced fallback steps: %#v", got)
+	for _, pipeline := range []string{"mystery", "data_query", "data_explore", "project_debugger", "scrum_card_llm"} {
+		_, err := validatePipeline(pipeline)
+		if err == nil || !errors.Is(err, ErrUnsupportedPipeline) {
+			t.Fatalf("pipeline %q error=%v must wrap ErrUnsupportedPipeline", pipeline, err)
+		}
+		if got := stepsForPipeline(pipeline); len(got) != 0 {
+			t.Fatalf("pipeline %q produced fallback steps: %#v", pipeline, got)
+		}
 	}
 }
 
 func TestStandardPipelinesUseOneAuthoritativeRuntime(t *testing.T) {
-	authoritative := stepActions(v3ConversationSteps())
+	authoritative := []string{"objective_resolve"}
 	tests := []struct {
 		name     string
 		pipeline string
 		want     []string
 	}{
-		{
-			name:     "assistant",
-			pipeline: model.PipelineAssistant,
-			want:     authoritative,
-		},
 		{
 			name:     "chat",
 			pipeline: model.PipelineChat,
@@ -70,11 +79,6 @@ func TestStandardPipelinesUseOneAuthoritativeRuntime(t *testing.T) {
 			want: []string{
 				"v3_coding",
 			},
-		},
-		{
-			name:     "story",
-			pipeline: model.PipelineStory,
-			want:     authoritative,
 		},
 	}
 
@@ -101,7 +105,7 @@ func TestCodingPipelineIsOnlyDirectCoding(t *testing.T) {
 }
 
 func TestChatTransportDoesNotRouteByInstructionPhrasing(t *testing.T) {
-	want := v3ConversationSteps()
+	want := []stepSeed{{action: "objective_resolve", sortIndex: 5}}
 	for _, instruction := range []string{
 		"hello",
 		"Fix the broken authentication middleware and add regression tests",
@@ -137,7 +141,7 @@ func TestQueueSourceHasNoPhraseBasedChatRouter(t *testing.T) {
 
 func TestTelemetryTaskKindUsesTypedStateNotInstructionWording(t *testing.T) {
 	for _, instruction := range []string{"research this", "build this", "tell me a story", "glorbnicate this"} {
-		if got := inferTelemetryTaskKind(model.PipelineAssistant, nil); got != model.PipelineAssistant {
+		if got := inferTelemetryTaskKind(model.PipelineChat, nil); got != model.PipelineChat {
 			t.Fatalf("instruction %q changed typed telemetry kind to %q", instruction, got)
 		}
 	}
@@ -146,29 +150,26 @@ func TestTelemetryTaskKindUsesTypedStateNotInstructionWording(t *testing.T) {
 	}
 }
 
-func TestV3AuthoritativeStepsResearchBeforePlanningAndVerifyBeforeFinalize(t *testing.T) {
-	got, err := stepsForJob(model.PipelineAssistant, "Research the current API and explain the evidence", nil)
+func TestConversationTransportUsesOneCodeOwnedObjectiveWorkflow(t *testing.T) {
+	got, err := stepsForJob(model.PipelineChat, "Research the current API and explain the evidence", nil)
 	if err != nil {
 		t.Fatalf("stepsForJob: %v", err)
 	}
-	want := []string{
-		"v3_intent_parse",
-		"v3_capability_audit",
-		"v3_workspace_research",
-		"v3_memory_retrieval",
-		"v3_external_research",
-		"v3_planning",
-		"v3_analysis",
-		"v3_response_draft",
-		"v3_verification",
-		"v3_memory_review",
-		"v3_finalize",
-	}
+	want := []string{"objective_resolve"}
 	if actions := stepActions(got); !reflect.DeepEqual(actions, want) {
 		t.Fatalf("stepsForJob(v3)=%#v want %#v", actions, want)
 	}
 	if !strictlyIncreasingSortIndex(got) {
 		t.Fatalf("v3 sort indexes must increase: %+v", got)
+	}
+}
+
+func TestFreeFormTransportRejectsRetiredExternalAgentMetadata(t *testing.T) {
+	for _, pipeline := range []string{model.PipelineChat, model.PipelineScrum, model.PipelineCoding} {
+		_, err := stepsForJob(pipeline, "Exact authority.", []byte(`{"agent_config":{"agent_system":"codex"}}`))
+		if err == nil || !strings.Contains(err.Error(), "agent_config was removed") {
+			t.Fatalf("pipeline %q retired agent metadata error=%v", pipeline, err)
+		}
 	}
 }
 
@@ -201,9 +202,16 @@ func TestRemovedRuntimeSelectorFailsLoudly(t *testing.T) {
 }
 
 func TestLegacyRuntimeActionsAreAbsent(t *testing.T) {
-	for _, pipeline := range []string{model.PipelineAssistant, model.PipelineChat, model.PipelineStory} {
+	for _, pipeline := range []string{model.PipelineChat} {
 		actions := stepActions(stepsForPipeline(pipeline))
-		for _, legacy := range []string{"tooling", "workspace_scan", "tag", "retrieve", "plan", "web_search", "analyze", "assist", "roleplay", "narrate", "verify"} {
+		for _, legacy := range []string{
+			"v3_intent_parse", "v3_capability_audit", "v3_workspace_research",
+			"v3_memory_retrieval", "v3_external_research", "v3_planning",
+			"v3_subtask", "v3_analysis", "v3_response_draft", "v3_verification",
+			"v3_memory_review", "v3_finalize", "tooling", "workspace_scan",
+			"tag", "retrieve", "plan", "web_search", "analyze", "assist",
+			"roleplay", "narrate", "verify",
+		} {
 			if containsAction(actions, legacy) {
 				t.Fatalf("pipeline %q retained legacy action %q: %v", pipeline, legacy, actions)
 			}
@@ -218,57 +226,6 @@ func containsAction(actions []string, target string) bool {
 		}
 	}
 	return false
-}
-
-func TestScrumExternalJobUsesSingleExternalStep(t *testing.T) {
-	meta := []byte(`{"source":"omni-scrum","agent_config":{"agent_system":"codex"}}`)
-	got, err := stepsForJob("scrum", "implement card", meta)
-	if err != nil {
-		t.Fatalf("stepsForJob: %v", err)
-	}
-	want := []stepSeed{{action: "external_agent_execute", sortIndex: 1}}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("stepsForJob(scrum external)=%+v want %+v", got, want)
-	}
-}
-
-func TestDataSourceQueryJobUsesSingleQueryStep(t *testing.T) {
-	meta, err := datasource.JobMetadata("ds-abc", "Hospital DB", "How many patients checked in today?", "dsc-1")
-	if err != nil {
-		t.Fatal(err)
-	}
-	got, err := stepsForJob(model.PipelineDataQuery, "How many patients checked in today?", meta)
-	if err != nil {
-		t.Fatalf("stepsForJob: %v", err)
-	}
-	want := []stepSeed{{action: "data_source_query", sortIndex: 1}}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("stepsForJob(data_query)=%+v want %+v", got, want)
-	}
-}
-
-func TestScrumOmnidexPlayUsesOnlyDirectCoding(t *testing.T) {
-	meta := []byte(`{"source":"omni-scrum","agent_config":{"agent_system":"omnidex"}}`)
-	steps, err := stepsForJob("scrum", "implement card", meta)
-	if err != nil {
-		t.Fatalf("stepsForJob: %v", err)
-	}
-	got := stepActions(steps)
-	want := []string{"v3_coding"}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("stepsForJob(scrum omnidex)=%#v want %#v", got, want)
-	}
-}
-
-func TestScrumChannelKeepsConversationPipeline(t *testing.T) {
-	meta := []byte(`{"source":"omni-scrum","scrum_channel_origin":true,"agent_config":{"agent_system":"omnidex"}}`)
-	steps, err := stepsForJob("scrum", "answer the channel", meta)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := stepActions(steps); len(got) == 1 && got[0] == "v3_coding" {
-		t.Fatalf("Scrum conversation was incorrectly forced into coding: %#v", got)
-	}
 }
 
 func TestStepsForJobRejectsRemovedExecutionAgentMetadata(t *testing.T) {

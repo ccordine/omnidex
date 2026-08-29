@@ -78,6 +78,21 @@ validate_release_inputs() {
   done
 }
 
+validate_release_cgo_targets() {
+  local host_goos host_goarch host_target cc target
+  host_goos="$(go env GOOS)"
+  host_goarch="$(go env GOARCH)"
+  host_target="${host_goos}/${host_goarch}"
+  [[ "$host_target" =~ ^[a-z0-9]+/[a-z0-9]+$ ]] || die "native Go release target is invalid"
+  cc="$(go env CC)"
+  [[ -n "$cc" && "$cc" != *[[:space:]]* ]] || die "native CGO compiler is invalid: $cc"
+  command -v "$cc" >/dev/null 2>&1 || die "native CGO compiler is unavailable: $cc"
+  for target in "$@"; do
+    [[ "$target" == "$host_target" ]] ||
+      die "CGO release cross-compilation is unsupported: target $target requires a native $target release host"
+  done
+}
+
 validate_dist_dir() {
   [[ -n "$DIST_DIR" && "$DIST_DIR" != "/" ]] || die "distribution directory must be explicit and non-root"
   if [[ "$DIST_DIR" != /* ]]; then
@@ -107,6 +122,35 @@ validate_dist_dir() {
     [[ -z "$(git -C "$REPO_ROOT" ls-files -- "$prefix")" ]] ||
       die "distribution path enters tracked source: $prefix"
   done
+}
+
+validate_tracked_release_sources() {
+  local repository="$1" path base magic
+  git -C "$repository" rev-parse --is-inside-work-tree >/dev/null 2>&1 ||
+    die "release source repository is unavailable"
+  while IFS= read -r -d '' path; do
+    [[ -n "$path" && "$path" != *$'\n'* && "$path" != *$'\r'* ]] ||
+      die "tracked release source path is invalid"
+    case "/${path}/" in
+      */.agent-cache/* | */.cache/* | */__pycache__/* | */.pytest_cache/* | */.mypy_cache/* | */.ruff_cache/* | */node_modules/* | */build/* | */dist/* | */target/* | */bin/*)
+        die "tracked generated artifact is forbidden in release source: $path"
+        ;;
+    esac
+    base="${path##*/}"
+    case "$base" in
+      core | core.[0-9]* | *.orig | *.rej | *~ | *.bak | *.tmp | *.swp | *.swo | *.o | *.obj | *.a | *.so | *.dylib | *.dll | *.exe | *.class | *.pyc | *.pyo)
+        die "tracked generated artifact is forbidden in release source: $path"
+        ;;
+    esac
+    if [[ -f "$repository/$path" && ! -L "$repository/$path" ]]; then
+      magic="$(LC_ALL=C od -An -tx1 -N8 "$repository/$path" | tr -d '[:space:]')"
+      case "$magic" in
+        7f454c46* | 4d5a* | feedface* | feedfacf* | cefaedfe* | cffaedfe* | cafebabe* | bebafeca* | cafebabf* | bfbafeca* | 0061736d* | 213c617263683e0a*)
+          die "tracked generated artifact is forbidden in release source: $path"
+          ;;
+      esac
+    fi
+  done < <(git -C "$repository" ls-files -z)
 }
 
 create_dist_dir() {
@@ -158,4 +202,24 @@ write_source_manifest() {
       die "release source contains an unsupported entry: $relative"
     fi
   done < <(find "$source_dir" -mindepth 1 -print0 | LC_ALL=C sort -z)
+}
+
+verify_archive_tree_content() {
+  local archive="$1" source_tree="$2" scratch_root="$3"
+  local comparison actual expected
+  comparison="$(mktemp -d "${scratch_root}/archive-content.XXXXXXXX")"
+  actual="${comparison}/actual.manifest"
+  expected="${comparison}/expected.manifest"
+  mkdir -p "${comparison}/expected"
+
+  if ! (
+    tar -xf "$archive" -C "${comparison}/expected"
+    write_source_manifest "$source_tree" "$actual"
+    write_source_manifest "${comparison}/expected" "$expected"
+    cmp -s "$actual" "$expected"
+  ); then
+    rm -rf -- "$comparison"
+    return 1
+  fi
+  rm -rf -- "$comparison"
 }

@@ -3,8 +3,11 @@ set -euo pipefail
 
 SCRIPT_NAME="$(basename "$0")"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/scripts/managed-checkout-lib.sh"
+source "${SCRIPT_DIR}/scripts/install-shell-lib.sh"
 
 PREFIX="${HOME}/.omnidex"
+ENV_FILE=""
 DEPS_PROFILE="all"
 WITH_WHISPER=0
 SKIP_DEPS=0
@@ -21,6 +24,7 @@ Usage:
 
 Options:
   --prefix <path>          Install path (default: ${HOME}/.omnidex)
+  --env-file <path>        Required deployment environment for a fresh install
   --deps-profile <value>   Dependency profile: core|local|all (default: all)
   --with-whisper           Also install whisper CLI via dependency bootstrap
   --skip-deps              Skip host dependency bootstrap step
@@ -29,8 +33,8 @@ Options:
   -h, --help               Show this help
 
 What this installer does:
-  1) Copies Omnidex runtime files into --prefix
-  2) Builds binaries (bin/omni, bin/agent-core, bin/agent-cli, bin/acli)
+  1) Stages a complete, updateable checkout of the exact source HEAD
+  2) Reproducibly builds the embedded GUI and all host binaries
   3) Installs host dependencies via scripts/setup-host-deps.sh (unless --skip-deps)
   4) Adds a managed shell-init block so aliases are loaded automatically
 EOF
@@ -38,10 +42,6 @@ EOF
 
 log() {
   printf '[install] %s\n' "$*"
-}
-
-warn() {
-  printf '[install][warn] %s\n' "$*" >&2
 }
 
 die() {
@@ -68,13 +68,18 @@ expand_home_path() {
   esac
 }
 
-absolute_existing_path() {
+absolute_target_path() {
   local raw="$1"
-  mkdir -p "$raw"
-  (
-    cd "$raw"
-    pwd -P
-  )
+  if [[ "${raw}" != /* ]]; then
+    raw="${PWD}/${raw#./}"
+  fi
+  local parent name
+  parent="$(dirname "${raw}")"
+  name="$(basename "${raw}")"
+  [[ "${name}" != "." && "${name}" != ".." ]] || die "install target name is unsafe"
+  mkdir -p "${parent}"
+  parent="$(cd "${parent}" && pwd -P)"
+  printf '%s/%s\n' "${parent}" "${name}"
 }
 
 confirm() {
@@ -94,141 +99,13 @@ confirm() {
   esac
 }
 
-remove_managed_block_file() {
-  local file="$1"
-  [[ -f "$file" ]] || return 0
-
-  local tmp
-  tmp="$(mktemp)"
-  awk -v start="$MANAGED_BLOCK_START" -v end="$MANAGED_BLOCK_END" '
-    index($0, start) { skipping=1; next }
-    index($0, end) { skipping=0; next }
-    !skipping { print }
-  ' "$file" >"$tmp"
-  mv "$tmp" "$file"
-}
-
-append_managed_block_file() {
-  local file="$1"
-  remove_managed_block_file "$file"
-
-  cat >>"$file" <<EOF
-
-${MANAGED_BLOCK_START}
-export OMNIDEX_DIR="${PREFIX}"
-if [ -d "\$OMNIDEX_DIR/bin" ]; then
-  case ":\$PATH:" in
-    *":\$OMNIDEX_DIR/bin:"*) ;;
-    *) export PATH="\$OMNIDEX_DIR/bin:\$PATH" ;;
-  esac
-fi
-if [ -f "\$OMNIDEX_DIR/agent_aliases.sh" ]; then
-  . "\$OMNIDEX_DIR/agent_aliases.sh"
-fi
-${MANAGED_BLOCK_END}
-EOF
-}
-
-collect_shell_init_files() {
-  local -a found=()
-  local file
-  for file in "$HOME/.bashrc" "$HOME/.bash_profile" "$HOME/.profile" "$HOME/.zshrc"; do
-    if [[ -f "$file" ]]; then
-      found+=("$file")
-    fi
-  done
-
-  if ((${#found[@]} == 0)); then
-    local fallback="$HOME/.bashrc"
-    if [[ "$(basename "${SHELL:-bash}")" == "zsh" ]]; then
-      fallback="$HOME/.zshrc"
-    fi
-    touch "$fallback"
-    found+=("$fallback")
-  fi
-
-  printf '%s\n' "${found[@]}"
-}
-
-integrate_shell_init() {
-  local file
-  local count=0
-  while IFS= read -r file; do
-    [[ -n "$file" ]] || continue
-    append_managed_block_file "$file"
-    log "updated shell init: $file"
-    count=$((count + 1))
-  done < <(collect_shell_init_files)
-
-  if ((count == 0)); then
-    warn "no shell init files were updated"
-  fi
-}
-
-copy_runtime_payload() {
-  local -a payload_items=(
-    install.sh
-    update.sh
-    uninstall.sh
-    agent_aliases.sh
-    cmd
-    internal
-    migrations
-    recipes
-    benchmarks
-    docs
-    scripts
-    .git
-    go.mod
-    go.sum
-    README.md
-    SECURITY.md
-    LICENSE
-    Makefile
-    default.env
-    .env.example
-    docker-compose.yml
-    Dockerfile
-    up.sh
-    down.sh
-  )
-
-  mkdir -p "$PREFIX"
-  local item
-  for item in "${payload_items[@]}"; do
-    if [[ ! -e "${SCRIPT_DIR}/${item}" ]]; then
-      warn "missing source payload item: ${item}"
-      continue
-    fi
-    if [[ -d "${SCRIPT_DIR}/${item}" ]]; then
-      rm -rf "${PREFIX:?}/${item}"
-    fi
-    cp -a "${SCRIPT_DIR}/${item}" "${PREFIX}/${item}"
-  done
-
-  chmod +x "${PREFIX}/agent_aliases.sh"
-  chmod +x "${PREFIX}/install.sh"
-  chmod +x "${PREFIX}/update.sh"
-  chmod +x "${PREFIX}/uninstall.sh"
-  chmod +x "${PREFIX}/scripts/setup-host-deps.sh"
-  [[ -f "${PREFIX}/scripts/build-release.sh" ]] && chmod +x "${PREFIX}/scripts/build-release.sh"
-  [[ -f "${PREFIX}/scripts/setup-host-deps.ps1" ]] && chmod +x "${PREFIX}/scripts/setup-host-deps.ps1"
-  [[ -f "${PREFIX}/up.sh" ]] && chmod +x "${PREFIX}/up.sh"
-  [[ -f "${PREFIX}/down.sh" ]] && chmod +x "${PREFIX}/down.sh"
-
-  if [[ ! -f "${PREFIX}/.env" && -f "${PREFIX}/default.env" ]]; then
-    cp -a "${PREFIX}/default.env" "${PREFIX}/.env"
-    log "created ${PREFIX}/.env from default.env"
-  fi
-}
-
 run_dependency_bootstrap() {
   if ((SKIP_DEPS)); then
     log "skipping dependency bootstrap (--skip-deps)"
     return 0
   fi
 
-  local -a cmd=("${PREFIX}/scripts/setup-host-deps.sh" "--profile" "${DEPS_PROFILE}")
+  local -a cmd=("${SCRIPT_DIR}/scripts/setup-host-deps.sh" "--profile" "${DEPS_PROFILE}")
   if ((WITH_WHISPER)); then
     cmd+=("--with-whisper")
   fi
@@ -243,20 +120,31 @@ run_dependency_bootstrap() {
   "${cmd[@]}"
 }
 
-build_binaries() {
+build_staged_checkout() {
+  local repository="$1"
   if ! command_exists go; then
     die "go is required to build Omnidex binaries (install Go or rerun without --skip-deps)"
   fi
-  mkdir -p "${PREFIX}/bin"
+  managed_checkout_export_build_commit "${repository}"
+  "${repository}/scripts/build-ui.sh"
+  mkdir -p "${repository}/bin"
   (
-    cd "${PREFIX}"
-    rm -f bin/agent-core bin/agent-cli bin/omni
-    go build -o bin/agent-core ./cmd/core
-    go build -o bin/agent-cli ./cmd/cli
-    go build -o bin/omni ./cmd/omni
+    cd "${repository}"
+    ldflags="-X github.com/gryph/omnidex/internal/version.Commit=${OMNIDEX_COMMIT}"
+    build_dir="$(mktemp -d "${repository}/bin/.omnidex-build.XXXXXX")"
+    trap 'rm -f "${build_dir}/agent-core" "${build_dir}/agent-cli" "${build_dir}/omni"; rmdir "${build_dir}" 2>/dev/null || true' EXIT
+    go build -trimpath -ldflags "${ldflags}" -o "${build_dir}/agent-core" ./cmd/core
+    go build -trimpath -ldflags "${ldflags}" -o "${build_dir}/agent-cli" ./cmd/cli
+    go build -trimpath -ldflags "${ldflags}" -o "${build_dir}/omni" ./cmd/omni
+    managed_checkout_verify_binary_commit "${build_dir}/agent-core" "${OMNIDEX_COMMIT}" core
+    managed_checkout_verify_binary_commit "${build_dir}/agent-cli" "${OMNIDEX_COMMIT}" json
+    managed_checkout_verify_binary_commit "${build_dir}/omni" "${OMNIDEX_COMMIT}" json
+    mv -f "${build_dir}/agent-core" bin/agent-core
+    mv -f "${build_dir}/agent-cli" bin/agent-cli
+    mv -f "${build_dir}/omni" bin/omni
   )
-  ln -sfn agent-cli "${PREFIX}/bin/acli"
-  log "built binaries in ${PREFIX}/bin"
+  ln -sfn agent-cli "${repository}/bin/acli"
+  log "built staged GUI and binaries"
 }
 
 parse_args() {
@@ -270,6 +158,11 @@ parse_args() {
       --deps-profile)
         (($# >= 2)) || die "--deps-profile requires a value"
         DEPS_PROFILE="$2"
+        shift 2
+        ;;
+      --env-file)
+        (($# >= 2)) || die "--env-file requires a value"
+        ENV_FILE="$2"
         shift 2
         ;;
       --with-whisper)
@@ -311,23 +204,53 @@ main() {
   parse_args "$@"
 
   PREFIX="$(expand_home_path "${PREFIX}")"
-  PREFIX="$(absolute_existing_path "${PREFIX}")"
+  PREFIX="$(absolute_target_path "${PREFIX}")"
+  if [[ -n "${ENV_FILE}" ]]; then
+    ENV_FILE="$(expand_home_path "${ENV_FILE}")"
+    if [[ "${ENV_FILE}" != /* ]]; then
+      ENV_FILE="${PWD}/${ENV_FILE#./}"
+    fi
+  fi
   case "$PREFIX" in
     ""|"/"|"$HOME")
       die "refusing to install into unsafe prefix: ${PREFIX}"
       ;;
   esac
+  [[ ! -L "${PREFIX}" ]] || die "refusing to replace a symlink install target: ${PREFIX}"
+  case "${PREFIX}/" in
+    "${SCRIPT_DIR}/"|"${SCRIPT_DIR}/"*) die "install target must not overlap the source checkout" ;;
+  esac
+  case "${SCRIPT_DIR}/" in
+    "${PREFIX}/"*) die "install target must not contain the source checkout" ;;
+  esac
 
-  if [[ -f "${PREFIX}/agent_aliases.sh" || -d "${PREFIX}/cmd" ]]; then
+  managed_checkout_require_source "${SCRIPT_DIR}"
+  local source_branch source_origin stage=""
+  source_branch="$(managed_checkout_branch "${SCRIPT_DIR}" "")"
+  source_origin="$(managed_checkout_origin "${SCRIPT_DIR}")"
+
+  if [[ -e "${PREFIX}" ]]; then
+    [[ -d "${PREFIX}" ]] || die "install target exists and is not a directory: ${PREFIX}"
+    if [[ -n "$(find "${PREFIX}" -mindepth 1 -maxdepth 1 -print -quit)" && ! -d "${PREFIX}/.git" ]]; then
+      die "existing non-empty target is not a managed Omnidex checkout: ${PREFIX}"
+    fi
+    managed_checkout_require_replaceable_target "${PREFIX}"
     if ! confirm "Update existing Omnidex install at ${PREFIX}?"; then
       die "installation canceled"
     fi
   fi
 
   log "install target: ${PREFIX}"
-  copy_runtime_payload
   run_dependency_bootstrap
-  build_binaries
+  stage="$(managed_checkout_new_stage "${PREFIX}" "install")"
+  trap '[[ -z "${stage:-}" ]] || rm -rf -- "${stage}"' EXIT
+  managed_checkout_clone_exact "${SCRIPT_DIR}" "${stage}" "${source_branch}" "${source_origin}"
+  managed_checkout_stage_env "${PREFIX}" "${stage}" "${ENV_FILE}"
+  build_staged_checkout "${stage}"
+  managed_checkout_validate_env "${stage}"
+  managed_checkout_publish "${stage}" "${PREFIX}"
+  stage=""
+  trap - EXIT
   integrate_shell_init
 
   cat <<EOF

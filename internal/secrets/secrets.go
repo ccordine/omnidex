@@ -1,6 +1,7 @@
 package secrets
 
 import (
+	"fmt"
 	"os"
 	"strings"
 
@@ -20,7 +21,7 @@ var Fields = buildFields()
 
 func ProviderSecretKey(provider string) (string, bool) {
 	definition, ok := catalog.Lookup(provider)
-	if !ok || len(definition.APIKeyEnvironmentKeys) == 0 {
+	if !ok || (!definition.SupportsExactPreparedStations && !definition.SupportsEmbeddings) || len(definition.APIKeyEnvironmentKeys) == 0 {
 		return "", false
 	}
 	if definition.ID == "azure" {
@@ -30,18 +31,15 @@ func ProviderSecretKey(provider string) (string, bool) {
 }
 
 func buildFields() []Field {
-	fields := []Field{
-		{Key: "cursor_api_key", Label: "Cursor API key", Description: "Cursor SDK architect delegation.", EnvKeys: []string{"CURSOR_API_KEY"}},
-		{Key: "codex_api_key", Label: "Codex API key", Description: "Codex SDK architect delegation. Falls back to OpenAI key when unset.", EnvKeys: []string{"CODEX_API_KEY"}},
-	}
-	for _, definition := range catalog.Definitions() {
+	fields := make([]Field, 0)
+	for _, definition := range catalog.ProductionDefinitions() {
 		key, ok := ProviderSecretKey(definition.ID)
 		if !ok {
 			continue
 		}
 		description := definition.DisplayName + " model API access."
 		if definition.ID == "openai" {
-			description = "OpenAI API access. Also used by Codex when no dedicated Codex key is set."
+			description = "OpenAI model API access."
 		}
 		fields = append(fields, Field{
 			Key:         key,
@@ -62,25 +60,57 @@ func LookupEnv(keys []string) string {
 	return ""
 }
 
-func MergeStored(stored map[string]string, updates map[string]string, clearKeys []string) map[string]string {
+func ValidateStored(stored map[string]string) error {
+	allowed := fieldKeys()
+	for key, value := range stored {
+		if _, ok := allowed[key]; !ok {
+			return fmt.Errorf("stored API secret field %q is unsupported or retired", key)
+		}
+		if value == "" || value != strings.TrimSpace(value) || strings.ContainsRune(value, '\x00') {
+			return fmt.Errorf("stored API secret field %q is not canonical", key)
+		}
+	}
+	return nil
+}
+
+func MergeStored(stored map[string]string, updates map[string]string, clearKeys []string) (map[string]string, error) {
+	if err := ValidateStored(stored); err != nil {
+		return nil, err
+	}
+	if err := ValidateStored(updates); err != nil {
+		return nil, err
+	}
+	allowed := fieldKeys()
 	out := map[string]string{}
 	for key, value := range stored {
-		if strings.TrimSpace(value) != "" {
-			out[key] = strings.TrimSpace(value)
-		}
-	}
-	for _, key := range clearKeys {
-		delete(out, strings.TrimSpace(key))
-	}
-	for key, value := range updates {
-		key = strings.TrimSpace(key)
-		value = strings.TrimSpace(value)
-		if key == "" || value == "" {
-			continue
-		}
 		out[key] = value
 	}
-	return out
+	seenClear := make(map[string]struct{}, len(clearKeys))
+	for _, key := range clearKeys {
+		if _, ok := allowed[key]; !ok {
+			return nil, fmt.Errorf("API secret clear key %q is unsupported or retired", key)
+		}
+		if _, duplicate := seenClear[key]; duplicate {
+			return nil, fmt.Errorf("API secret clear key %q is duplicated", key)
+		}
+		seenClear[key] = struct{}{}
+		if _, conflict := updates[key]; conflict {
+			return nil, fmt.Errorf("API secret field %q cannot be set and cleared together", key)
+		}
+		delete(out, key)
+	}
+	for key, value := range updates {
+		out[key] = value
+	}
+	return out, nil
+}
+
+func fieldKeys() map[string]struct{} {
+	allowed := make(map[string]struct{}, len(Fields))
+	for _, field := range Fields {
+		allowed[field.Key] = struct{}{}
+	}
+	return allowed
 }
 
 func MaskHint(value string) string {

@@ -1,141 +1,116 @@
 package api
 
 import (
+	"crypto/rand"
+	"os"
 	"strings"
+	"sync"
 	"testing"
-	"time"
 
 	"github.com/gryph/omnidex/internal/model"
+	"github.com/gryph/omnidex/internal/queue"
 )
 
-func TestDisplayScrumChannelMessagesDropsCompletionNoise(t *testing.T) {
-	card := ScrumCard{
-		Chat: []ScrumChatMessage{
-			{Role: "user", Content: "fix it", CreatedAt: "2026-05-29T10:00:00Z"},
-			{Role: "assistant", Content: "Here is the fix.", CreatedAt: "2026-05-29T10:00:01Z"},
-			{Role: "assistant", Content: "External agent session completed", CreatedAt: "2026-05-29T10:00:02Z"},
-			{Role: "system", Content: "Agent finished", CreatedAt: "2026-05-29T10:00:03Z"},
-		},
-	}
-	messages := displayScrumChannelMessages(card)
-	if len(messages) != 2 {
-		t.Fatalf("expected user+assistant only, got %+v", messages)
-	}
-}
-
-func TestDisplayScrumChannelMessagesShowsToolActivity(t *testing.T) {
-	card := ScrumCard{
-		Chat: []ScrumChatMessage{
-			{Role: "user", Content: "fix auth", CreatedAt: "2026-05-29T10:00:00Z"},
-			{Role: "tool", Content: formatChannelActivity(ChannelActivity{Activity: "command", Title: "npm test", Command: "npm test", Status: "running"}), CreatedAt: "2026-05-29T10:00:01Z"},
-			{Role: "status", Content: "Agent running…", CreatedAt: "2026-05-29T10:00:02Z"},
-			{Role: "thinking", Content: "checking middleware", CreatedAt: "2026-05-29T10:00:03Z"},
-			{Role: "tool", Content: formatChannelActivity(ChannelActivity{Activity: "file_change", Title: "src/auth.go", Files: []string{"src/auth.go"}, Status: "completed"}), CreatedAt: "2026-05-29T10:00:04Z"},
-			{Role: "assistant", Content: "Auth middleware wired.", CreatedAt: "2026-05-29T10:00:05Z"},
-		},
-	}
-	messages := displayScrumChannelMessages(card)
-	if len(messages) != 5 {
-		t.Fatalf("expected user/thinking/2 tool/assistant, got %+v", messages)
-	}
-}
-
-func TestDisplayScrumChannelMessagesSortedByTime(t *testing.T) {
-	card := ScrumCard{
-		Chat: []ScrumChatMessage{
-			{Role: "assistant", Content: "second", CreatedAt: "2026-05-29T12:00:00Z"},
-			{Role: "thinking", Content: "first thought", CreatedAt: "2026-05-29T11:00:00Z"},
-			{Role: "user", Content: "zeroth", CreatedAt: "2026-05-29T10:00:00Z"},
-		},
-	}
-	messages := displayScrumChannelMessages(card)
-	if len(messages) != 3 {
-		t.Fatalf("messages=%v", messages)
-	}
-	if messages[0].Content != "zeroth" || messages[1].Content != "first thought" || messages[2].Content != "second" {
-		t.Fatalf("messages out of order: %+v", messages)
-	}
-}
-
-func TestSortScrumChatChronologicalPreservesIndexWhenTimesMissing(t *testing.T) {
-	chat := []ScrumChatMessage{
-		{Role: "user", Content: "b"},
-		{Role: "assistant", Content: "a"},
-	}
-	sorted := sortScrumChatChronological(chat)
-	if sorted[0].Content != "b" || sorted[1].Content != "a" {
-		t.Fatalf("sorted=%v", sorted)
-	}
-}
-
-func TestSortScrumChatChronologicalParsesNanoTimestamps(t *testing.T) {
-	chat := []ScrumChatMessage{
-		{Role: "assistant", Content: "later", CreatedAt: time.Date(2026, 5, 29, 12, 0, 0, 500, time.UTC).Format(time.RFC3339Nano)},
-		{Role: "user", Content: "earlier", CreatedAt: time.Date(2026, 5, 29, 12, 0, 0, 100, time.UTC).Format(time.RFC3339Nano)},
-	}
-	sorted := sortScrumChatChronological(chat)
-	if sorted[0].Content != "earlier" {
-		t.Fatalf("sorted=%v", sorted)
-	}
-}
-
-func TestSyncRunningJobChannelChatIncremental(t *testing.T) {
-	card := ScrumCard{Chat: []ScrumChatMessage{{Role: "system", Content: "Job #1 queued"}}}
+func TestSyncRunningJobChannelChatUsesOnlyTypedStepContexts(t *testing.T) {
 	job := model.JobDetails{
-		Steps: []model.Step{{Output: "line one\nline two"}},
+		Job: model.Job{ID: 3, Status: model.JobStatusRunning},
+		Contexts: []model.StepContext{
+			{ID: 1, Key: "event", Value: "event=repository_snapshot_started authority=server"},
+			{ID: 2, Key: "event", Value: "event=repository_snapshot_ready snapshot=sha256:abc files=2"},
+		},
 	}
+	card := scrumSyncTestCard(job.Job.ID, ScrumCard{})
 
-	updated, ok := syncRunningJobChannelChat(card, job)
+	updated, ok, err := syncRunningJobChannelChat(card, job)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if !ok {
 		t.Fatal("expected first sync")
 	}
-	if len(updated.Chat) < 2 {
-		t.Fatalf("chat len=%d", len(updated.Chat))
-	}
-	if !strings.Contains(updated.Chat[1].Content, "line one") {
-		t.Fatalf("assistant=%q", updated.Chat[1].Content)
+	if len(updated.PendingChannelMessages) != 2 || updated.StepContextCursor != 2 {
+		t.Fatalf("typed channel projection=%+v cursor=%d", updated.PendingChannelMessages, updated.StepContextCursor)
 	}
 
-	updated2, ok := syncRunningJobChannelChat(updated, job)
+	updated2, ok, err := syncRunningJobChannelChat(updated, job)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if ok {
 		t.Fatal("expected no duplicate sync")
 	}
-	foundLineTwo := false
-	for _, msg := range updated2.Chat {
-		if strings.Contains(msg.Content, "line two") {
-			foundLineTwo = true
-		}
-	}
-	if !foundLineTwo {
-		t.Fatalf("chat=%v", updated2.Chat)
+	if len(updated2.PendingChannelMessages) != 2 {
+		t.Fatalf("typed step contexts were duplicated: %+v", updated2.PendingChannelMessages)
 	}
 }
 
-func TestDisplayScrumChannelMessagesHydratesLegacyConsole(t *testing.T) {
-	card := ScrumCard{
-		ConsoleLog: "queued for play\nagent stream:\nhello world",
+func TestScrumMessageIDsAreCryptographicUniqueAndNeverClockDerived(t *testing.T) {
+	t.Parallel()
+	const count = 512
+	ids := make(chan string, count)
+	errors := make(chan error, count)
+	var group sync.WaitGroup
+	for index := 0; index < count; index++ {
+		group.Add(1)
+		go func() {
+			defer group.Done()
+			id, err := queue.NewScrumMessageID(rand.Reader)
+			if err != nil {
+				errors <- err
+				return
+			}
+			ids <- id
+		}()
 	}
-	messages := displayScrumChannelMessages(card)
-	if len(messages) == 0 {
-		t.Fatal("expected hydrated messages")
+	group.Wait()
+	close(ids)
+	close(errors)
+	for err := range errors {
+		t.Fatal(err)
 	}
-	found := false
-	for _, msg := range messages {
-		if strings.Contains(msg.Content, "hello world") {
-			found = true
+	seen := make(map[string]struct{}, count)
+	for id := range ids {
+		if len(id) != len("chatmsg_")+32 || !strings.HasPrefix(id, "chatmsg_") {
+			t.Fatalf("cryptographic message ID=%q", id)
 		}
+		if _, duplicate := seen[id]; duplicate {
+			t.Fatalf("duplicate cryptographic message ID=%q", id)
+		}
+		seen[id] = struct{}{}
 	}
-	if !found {
-		t.Fatalf("messages=%v", messages)
+	if len(seen) != count {
+		t.Fatalf("unique IDs=%d want=%d", len(seen), count)
+	}
+	raw, err := os.ReadFile("scrum_channel_chat.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, forbidden := range []string{"crypto/sha1", "UnixNano", "newScrumChatMessageID"} {
+		if strings.Contains(string(raw), forbidden) {
+			t.Fatalf("Scrum channel message identity retains clock/hash derivation %q", forbidden)
+		}
 	}
 }
 
-func TestAppendScrumChannelEventWritesChatAndConsole(t *testing.T) {
-	card := appendScrumChannelEvent(ScrumCard{}, "system", "Queued for play")
-	if len(card.Chat) != 1 || card.Chat[0].Role != "system" {
-		t.Fatalf("chat=%v", card.Chat)
+func TestScrumMessageAppendRejectsMissingServerIdentity(t *testing.T) {
+	t.Parallel()
+	if _, err := scrumChannelMessageAppends([]ScrumChatMessage{{
+		Role: "assistant", Content: "same content",
+	}}); err == nil || !strings.Contains(err.Error(), "server-owned identity") {
+		t.Fatalf("missing server identity error=%v", err)
 	}
-	if !strings.Contains(card.ConsoleLog, "Queued for play") {
-		t.Fatalf("console=%q", card.ConsoleLog)
+}
+
+func TestAppendScrumChannelEventStagesDurableMessageAppend(t *testing.T) {
+	card, err := appendScrumChannelEvent(ScrumCard{}, "system", "Queued for play")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(card.PendingChannelMessages) != 1 || card.PendingChannelMessages[0].Role != "system" ||
+		card.PendingChannelMessages[0].Content != "Queued for play" {
+		t.Fatalf("pending messages=%v", card.PendingChannelMessages)
+	}
+	if len(card.Chat) != 0 {
+		t.Fatalf("event bypassed durable message append: %+v", card.Chat)
 	}
 }

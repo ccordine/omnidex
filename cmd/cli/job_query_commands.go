@@ -38,7 +38,7 @@ func runList(c *client.Client, args []string) {
 
 func runShow(c *client.Client, args []string) {
 	fs := flag.NewFlagSet("show", flag.ExitOnError)
-	history := fs.String("history", "", "show one history stream: generations|steps|artifacts|evidence|claims|llm_calls")
+	history := fs.String("history", "", "show one history stream: generations|steps|artifacts|evidence|llm_calls")
 	historyLimit := fs.Int("history-limit", 50, "history page size")
 	historyCursor := fs.String("history-cursor", "", "opaque history cursor")
 	_ = fs.Parse(args)
@@ -152,7 +152,7 @@ func runWatch(c *client.Client, args []string) {
 			}
 			fmt.Printf("provide feedback with: omni feedback %d \"...\"\n", id)
 			fmt.Printf("inject extra context with: omni interrupt %d \"...\"\n", id)
-			fmt.Printf("replan from scratch with: omni replan %d \"...\"\n", id)
+			fmt.Printf("start a new generation on the same job with: omni replan %d \"...\"\n", id)
 			fmt.Printf("cancel immediately with: omni cancel %d \"...\"\n", id)
 			return
 		}

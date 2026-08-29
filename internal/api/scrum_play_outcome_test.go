@@ -9,17 +9,12 @@ import (
 	"github.com/gryph/omnidex/internal/model"
 )
 
-func TestResolveScrumPlayOutcomeForCardUsesChannelSuccess(t *testing.T) {
+func TestResolveScrumPlayOutcomeForCardIgnoresChannelStatusText(t *testing.T) {
 	s := &Server{}
 	job := model.JobDetails{
-		Job: model.Job{
-			Status:   model.JobStatusCompleted,
-			Metadata: json.RawMessage(`{"source":"omni-scrum","agent_config":{"agent_system":"cursor"},"scrum_raw_play":true}`),
-		},
-		Steps: []model.Step{{
-			Output: `{"agent":"cursor","type":"started","message":"Cursor external implementation session started"}
-{"agent":"cursor","type":"completed","message":"Cursor external implementation session completed"}`,
-		}},
+		Job: model.Job{Status: model.JobStatusCompleted,
+			Metadata: json.RawMessage(`{"source":"omni-scrum","project_id":1,"scrum_card_id":"card-1"}`)},
+		Steps: []model.Step{{Output: "typed coding output"}},
 	}
 	card := ScrumCard{
 		Column:    "in_progress",
@@ -29,9 +24,12 @@ func TestResolveScrumPlayOutcomeForCardUsesChannelSuccess(t *testing.T) {
 			Content: "Implemented the fix.\nSCRUM_STATUS: success",
 		}},
 	}
-	outcome, _ := s.resolveScrumPlayOutcomeForCard(t.Context(), job, card)
+	outcome, err := s.resolveScrumPlayOutcomeForCard(t.Context(), job, card)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if outcome != ScrumOutcomeSuccess {
-		t.Fatalf("outcome=%q want success when SCRUM_STATUS is in synced channel", outcome)
+		t.Fatalf("outcome=%q want typed completed lifecycle", outcome)
 	}
 	transition := scrumColumnForOutcome(outcome)
 	if transition.Column != "review" {
@@ -42,17 +40,16 @@ func TestResolveScrumPlayOutcomeForCardUsesChannelSuccess(t *testing.T) {
 func TestResolveScrumPlayOutcomeCompletedWithoutStatusMovesToSuccess(t *testing.T) {
 	s := &Server{}
 	job := model.JobDetails{
-		Job: model.Job{
-			Status:   model.JobStatusCompleted,
-			Metadata: json.RawMessage(`{"source":"omni-scrum","agent_config":{"agent_system":"cursor"},"scrum_raw_play":true}`),
-		},
-		Steps: []model.Step{{
-			Output: `{"agent":"cursor","type":"completed","message":"Cursor external implementation session completed"}`,
-		}},
+		Job: model.Job{Status: model.JobStatusCompleted,
+			Metadata: json.RawMessage(`{"source":"omni-scrum","project_id":1,"scrum_card_id":"card-1"}`)},
+		Steps: []model.Step{{Output: "typed coding output"}},
 	}
-	outcome, note := s.resolveScrumPlayOutcomeForCard(t.Context(), job, ScrumCard{})
-	if outcome != ScrumOutcomeSuccess || note != "" {
-		t.Fatalf("outcome=%q note=%q want success without scan note", outcome, note)
+	outcome, err := s.resolveScrumPlayOutcomeForCard(t.Context(), job, ScrumCard{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if outcome != ScrumOutcomeSuccess {
+		t.Fatalf("outcome=%q want success", outcome)
 	}
 	transition := scrumColumnForOutcome(outcome)
 	if transition.Column != "review" || transition.PlayState != "" {
@@ -60,18 +57,19 @@ func TestResolveScrumPlayOutcomeCompletedWithoutStatusMovesToSuccess(t *testing.
 	}
 }
 
-func TestResolveScrumPlayOutcomeCompletedInProgressStatusIsProgrammatic(t *testing.T) {
+func TestResolveScrumPlayOutcomeCompletedIgnoresInProgressProse(t *testing.T) {
 	s := &Server{}
 	job := model.JobDetails{
-		Job: model.Job{
-			Status:   model.JobStatusCompleted,
-			Metadata: json.RawMessage(`{"source":"omni-scrum","agent_config":{"agent_system":"cursor"},"scrum_raw_play":true}`),
-		},
+		Job: model.Job{Status: model.JobStatusCompleted,
+			Metadata: json.RawMessage(`{"source":"omni-scrum","project_id":1,"scrum_card_id":"card-1"}`)},
 		Steps: []model.Step{{Output: "SCRUM_STATUS: in_progress"}},
 	}
-	outcome, _ := s.resolveScrumPlayOutcomeForCard(t.Context(), job, ScrumCard{})
-	if outcome != ScrumOutcomeInProgress {
-		t.Fatalf("outcome=%q want in_progress", outcome)
+	outcome, err := s.resolveScrumPlayOutcomeForCard(t.Context(), job, ScrumCard{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if outcome != ScrumOutcomeSuccess {
+		t.Fatalf("outcome=%q want typed completed lifecycle", outcome)
 	}
 }
 

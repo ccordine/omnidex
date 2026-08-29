@@ -14,25 +14,26 @@ import (
 func TestLifecycleControlEndpointsRequireExplicitOperationIdentity(t *testing.T) {
 	server := &Server{}
 	cases := []struct {
-		name string
-		run  func(http.ResponseWriter, *http.Request)
+		name  string
+		field string
+		run   func(http.ResponseWriter, *http.Request)
 	}{
-		{name: "feedback", run: func(writer http.ResponseWriter, request *http.Request) {
+		{name: "feedback", field: "feedback", run: func(writer http.ResponseWriter, request *http.Request) {
 			server.submitJobFeedback(writer, request, 41)
 		}},
-		{name: "interrupt", run: func(writer http.ResponseWriter, request *http.Request) {
+		{name: "interrupt", field: "feedback", run: func(writer http.ResponseWriter, request *http.Request) {
 			server.interruptJob(writer, request, 41)
 		}},
-		{name: "replan", run: func(writer http.ResponseWriter, request *http.Request) {
+		{name: "replan", field: "feedback", run: func(writer http.ResponseWriter, request *http.Request) {
 			server.replanJob(writer, request, 41)
 		}},
-		{name: "cancel", run: func(writer http.ResponseWriter, request *http.Request) {
+		{name: "cancel", field: "reason", run: func(writer http.ResponseWriter, request *http.Request) {
 			server.cancelJob(writer, request, 41)
 		}},
 	}
 	for _, testCase := range cases {
 		t.Run(testCase.name, func(t *testing.T) {
-			request := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"feedback":"Continue."}`))
+			request := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"`+testCase.field+`":"Continue."}`))
 			response := httptest.NewRecorder()
 			testCase.run(response, request)
 			if response.Code != http.StatusBadRequest ||

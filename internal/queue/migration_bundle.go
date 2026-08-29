@@ -59,7 +59,7 @@ func (b MigrationBundle) validate() error {
 			return fmt.Errorf("migration bundle entry %d is invalid", index)
 		}
 	}
-	return nil
+	return validateMigrationTransactionControl(b.entries)
 }
 
 // LoadMigrationBundle reads one exact directory into memory once and verifies

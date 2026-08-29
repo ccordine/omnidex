@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/gryph/omnidex/internal/model"
+	"github.com/gryph/omnidex/internal/scrum"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -59,7 +60,7 @@ func (r *Repository) ExecuteScrumChannelOperation(
 		)
 	}
 
-	current, err := lockScrumChannelCardTx(ctx, tx, command.Request.ProjectID, command.Request.CardID)
+	current, err := lockScrumCardTx(ctx, tx, command.Request.ProjectID, command.Request.CardID)
 	if err != nil {
 		return ScrumChannelOperationResult{}, err
 	}
@@ -69,7 +70,21 @@ func (r *Repository) ExecuteScrumChannelOperation(
 			current.ID,
 		)
 	}
-	job, err := r.executeScrumChannelEffectTx(ctx, tx, command, current)
+	var lockedMetadata scrum.JobMetadata
+	if command.Effect.Kind == ScrumChannelStartJob {
+		lockedMetadata, _, err = scrumPlayAuthorityTx(ctx, tx, current)
+		if err != nil {
+			return ScrumChannelOperationResult{}, err
+		}
+		lockedMetadata.ChannelOrigin = true
+		lockedMetadata.ChannelOperationID = string(command.Request.OperationID)
+		column, err := ParseScrumCardColumn(current.Column)
+		if err != nil {
+			return ScrumChannelOperationResult{}, err
+		}
+		lockedMetadata.ReturnColumn = string(column)
+	}
+	job, err := r.executeScrumChannelEffectTx(ctx, tx, command, current, lockedMetadata)
 	if err != nil {
 		return ScrumChannelOperationResult{}, err
 	}
@@ -81,9 +96,17 @@ func (r *Repository) ExecuteScrumChannelOperation(
 	if err != nil {
 		return ScrumChannelOperationResult{}, err
 	}
+	messages, messageStart, err := loadScrumCardMessageTail(
+		ctx, tx, card.ProjectID, card.ID, card.ChannelMessageCount, 50, MaxScrumChannelPageBytes,
+	)
+	if err != nil {
+		return ScrumChannelOperationResult{}, err
+	}
 	result := ScrumChannelOperationResult{
-		Card: card, PreviousCard: current, Job: job,
-		Action: command.ResultAction, Agent: command.ResultAgent, Applied: true,
+		OperationID: descriptor.Request.OperationID,
+		Card:        card, Messages: messages, MessageStart: messageStart,
+		MessageTotal: card.ChannelMessageCount, PreviousCard: current, Job: job,
+		Action: command.ResultAction, Applied: true,
 	}
 	if err := insertScrumChannelOperationTx(ctx, tx, descriptor, command, result); err != nil {
 		return ScrumChannelOperationResult{}, err
@@ -99,10 +122,14 @@ func (r *Repository) executeScrumChannelEffectTx(
 	tx pgx.Tx,
 	command ScrumChannelOperationCommand,
 	card DBScrumCard,
+	lockedMetadata scrum.JobMetadata,
 ) (model.Job, error) {
 	effect := command.Effect
 	if effect.Kind != ScrumChannelStartJob {
-		linkedJobID, err := strconv.ParseInt(strings.TrimSpace(card.JobID), 10, 64)
+		if card.JobID != strings.TrimSpace(card.JobID) {
+			return model.Job{}, fmt.Errorf("Scrum card %q has noncanonical job authority %q", card.ID, card.JobID)
+		}
+		linkedJobID, err := strconv.ParseInt(card.JobID, 10, 64)
 		if err != nil || linkedJobID <= 0 || linkedJobID != effect.JobID {
 			return model.Job{}, fmt.Errorf(
 				"Scrum card %q job authority %q does not match requested job %d",
@@ -116,10 +143,17 @@ func (r *Repository) executeScrumChannelEffectTx(
 	var err error
 	switch effect.Kind {
 	case ScrumChannelStartJob:
-		if card.PlayState == "running" || card.PlayState == "queued" || card.PlayState == "reviewing" {
+		if card.PlayState == "running" || card.PlayState == "queued" {
 			return model.Job{}, fmt.Errorf("Scrum card %q already has active play state %q", card.ID, card.PlayState)
 		}
-		job, err = r.enqueueJobTx(ctx, tx, effect.Instruction, effect.Pipeline, effect.Metadata)
+		if err := lockedMetadata.Validate(); err != nil {
+			return model.Job{}, fmt.Errorf("validate locked Scrum channel metadata: %w", err)
+		}
+		metadataJSON, marshalErr := json.Marshal(lockedMetadata)
+		if marshalErr != nil {
+			return model.Job{}, fmt.Errorf("encode locked Scrum channel metadata: %w", marshalErr)
+		}
+		job, err = r.enqueueScrumJobTx(ctx, tx, effect.Instruction, metadataJSON)
 	case ScrumChannelReplanJob:
 		job, err = executeScrumChannelReplanTx(ctx, tx, command)
 	case ScrumChannelSubmitFeedback:
@@ -204,21 +238,14 @@ func validateScrumChannelCardUpdate(
 	job model.Job,
 	update *ScrumChannelCardUpdate,
 ) error {
-	update.Chat = SanitizeUTF8Bytes(update.Chat)
-	if len(update.Chat) == 0 || len(update.Chat) > maxLifecycleOutputBytes || !json.Valid(update.Chat) {
-		return fmt.Errorf("Scrum channel card update requires bounded valid chat JSON")
-	}
-	var messages []struct {
-		Role        string               `json:"role"`
-		Content     string               `json:"content"`
-		OperationID LifecycleOperationID `json:"operation_id"`
-	}
-	if err := json.Unmarshal(update.Chat, &messages); err != nil {
-		return fmt.Errorf("decode Scrum channel card chat update: %w", err)
-	}
 	boundMessages := 0
-	for _, message := range messages {
-		if message.OperationID == request.OperationID {
+	for index := range update.Messages {
+		message, err := normalizeScrumCardMessageAppend(update.Messages[index])
+		if err != nil {
+			return err
+		}
+		update.Messages[index] = message
+		if message.OperationID == string(request.OperationID) {
 			boundMessages++
 			if message.Role != "user" || message.Content != request.Message {
 				return fmt.Errorf("Scrum channel operation message does not match its authoritative request")
@@ -228,29 +255,24 @@ func validateScrumChannelCardUpdate(
 	if boundMessages != 1 {
 		return fmt.Errorf("Scrum channel operation requires exactly one operation-bound user message, received %d", boundMessages)
 	}
-	update.Column = strings.TrimSpace(update.Column)
-	update.JobID = strings.TrimSpace(update.JobID)
-	update.PlayState = strings.TrimSpace(update.PlayState)
-	update.ConsoleLog = SanitizeUTF8Text(update.ConsoleLog)
+	if update.Column != strings.TrimSpace(update.Column) ||
+		update.JobID != strings.TrimSpace(update.JobID) ||
+		update.PlayState != strings.TrimSpace(update.PlayState) ||
+		update.SyncJobID != strings.TrimSpace(update.SyncJobID) {
+		return fmt.Errorf("Scrum channel card update has noncanonical authority text")
+	}
 	if update.Column != "in_progress" || update.PlayState != "running" || update.QueueOrder != 0 ||
-		update.JobID != strconv.FormatInt(job.ID, 10) {
+		update.JobID != strconv.FormatInt(job.ID, 10) || update.SyncJobID != update.JobID ||
+		update.StepContextCursor != 0 {
 		return fmt.Errorf("Scrum channel card update has invalid job, column, play-state, or queue authority")
 	}
 	return nil
 }
 
-func lockScrumChannelCardTx(ctx context.Context, tx pgx.Tx, projectID int64, cardID string) (DBScrumCard, error) {
-	card, err := scanDBScrumCard(tx.QueryRow(ctx, scrumChannelCardSelectSQL+` FOR UPDATE`, projectID, cardID))
+func lockScrumCardTx(ctx context.Context, tx pgx.Tx, projectID int64, cardID string) (DBScrumCard, error) {
+	card, err := scanDBScrumCard(tx.QueryRow(ctx, scrumCardSelectSQL+` FOR UPDATE`, projectID, cardID))
 	if errors.Is(err, pgx.ErrNoRows) {
-		return DBScrumCard{}, fmt.Errorf("Scrum card %q was not found in project %d", cardID, projectID)
+		return DBScrumCard{}, fmt.Errorf("%w: Scrum card %q was not found in project %d", ErrScrumCardNotFound, cardID, projectID)
 	}
 	return card, err
 }
-
-const scrumChannelCardSelectSQL = `
-	SELECT id, project_id, title, description, column_name, checklist, ref_files, chat,
-	       model_config, agent_config, card_ticket, card_prompt, recipe_id, recipe,
-	       tags, planning_chat, coach_config, test_criteria, flow_metrics,
-	       job_id, tags_job_id, ticket_job_id, console_log, play_state, queue_order,
-	       board_order, created_at, updated_at
-	FROM scrum_cards WHERE project_id=$1 AND id=$2`

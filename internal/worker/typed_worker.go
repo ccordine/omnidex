@@ -7,7 +7,7 @@ import (
 	"github.com/gryph/omnidex/internal/assemblyline"
 )
 
-const maxTypedWorkerAttempts = 3
+const exactSemanticLeafCalls = assemblyline.ExactSemanticLeafCalls
 
 type typedWorkerKind string
 
@@ -45,6 +45,7 @@ type typedWorkerEvent struct {
 	CapabilityBytes int
 	CurrentBytes    int
 	CorrectionBytes int
+	Warning         string
 	Detail          string
 }
 
@@ -53,8 +54,29 @@ type typedWorkerRuntime struct {
 	MaxAttempts     int
 	MaxConcurrency  int
 	CorrectionModel string
+	PathProvenance  assemblyline.ArtifactIdentityProvenance
 	Execute         func(job assemblyline.PortableJob, model string) (assemblyline.PortableResult, error)
+	Finalize        func(job assemblyline.PortableJob, result assemblyline.PortableResult, validationErr error) error
 	Emit            func(event typedWorkerEvent)
+}
+
+func finalizeTypedWorkerResult(
+	runtime typedWorkerRuntime,
+	job assemblyline.PortableJob,
+	result assemblyline.PortableResult,
+	validationErr error,
+) error {
+	if runtime.Finalize == nil {
+		return validationErr
+	}
+	finalizeErr := runtime.Finalize(job, result, validationErr)
+	if validationErr != nil {
+		if finalizeErr != nil {
+			return fmt.Errorf("%v; persist station rejection: %w", validationErr, finalizeErr)
+		}
+		return validationErr
+	}
+	return finalizeErr
 }
 
 func emitTypedWorker(runtime typedWorkerRuntime, event typedWorkerEvent) {

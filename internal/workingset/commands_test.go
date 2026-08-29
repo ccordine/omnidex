@@ -109,7 +109,7 @@ func TestWorkingSetCommandsRejectNonCodeAuthorityAndNoOpInvalidation(t *testing.
 	)
 	invalid := AcquireCommand{
 		CommandID: workingCommandID(t, "model"), ExpectedVersion: 0,
-		Actor: taskstate.AuthorityModelProposal, Request: request,
+		Actor: taskstate.AuthorityToolEvidence, Request: request,
 	}
 	if _, err := set.Apply(invalid); !errors.Is(err, ErrInvalidCommand) {
 		t.Fatalf("model mutation error=%v, want ErrInvalidCommand", err)

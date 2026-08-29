@@ -50,14 +50,9 @@ func cancelJobTx(ctx context.Context, tx pgx.Tx, command CancelJobCommand) (mode
 		if err := requireCancelJobReplayTx(ctx, tx, record, command, job); err != nil {
 			return model.Job{}, err
 		}
-		if err := requireCognitionLifecycleSealSetReplayTx(
-			ctx, tx, descriptor, record.JobID, record.ObservedGeneration,
-		); err != nil {
-			return model.Job{}, err
-		}
 		return record.ResultJob, nil
 	}
-	job, err = applyJobCancellationTx(ctx, tx, command, job, descriptor)
+	job, err = applyJobCancellationTx(ctx, tx, command, job)
 	if err != nil {
 		return model.Job{}, err
 	}
@@ -77,7 +72,6 @@ func applyJobCancellationTx(
 	tx pgx.Tx,
 	command CancelJobCommand,
 	job model.Job,
-	descriptor lifecycleOperationDescriptor,
 ) (model.Job, error) {
 	switch job.Status {
 	case model.JobStatusCompleted, model.JobStatusFailed:
@@ -88,13 +82,13 @@ func applyJobCancellationTx(
 			ErrStepNotWritable, job.ID,
 		)
 	}
-	stepIDs, err := lockCurrentNonterminalStepIDsTx(ctx, tx, command.JobID, job.CurrentGeneration)
-	if err != nil {
+	if err := rejectUnresolvedGeneratedWorkloadDeploymentsTx(
+		ctx, tx, command.JobID,
+	); err != nil {
 		return model.Job{}, err
 	}
-	if _, err := retireCognitionEpisodesForLifecycleTx(
-		ctx, tx, descriptor, command.JobID, job.CurrentGeneration, stepIDs,
-	); err != nil {
+	stepIDs, err := lockCurrentNonterminalStepIDsTx(ctx, tx, command.JobID, job.CurrentGeneration)
+	if err != nil {
 		return model.Job{}, err
 	}
 	if len(stepIDs) > 0 {

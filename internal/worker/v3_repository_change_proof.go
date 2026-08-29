@@ -44,8 +44,8 @@ func validateRepositoryGoVerificationPlan(
 			if mode != repositoryGoProofBroad {
 				return fmt.Errorf("repository verification plan must end with one broad proof")
 			}
-		} else if mode != repositoryGoProofFocused {
-			return fmt.Errorf("repository verification plan contains a non-terminal broad proof")
+		} else if mode != repositoryGoProofFocused && mode != repositoryGoProofPackage {
+			return fmt.Errorf("repository verification plan contains an unsupported non-terminal proof")
 		}
 	}
 	switch scope {
@@ -69,6 +69,12 @@ func validateRepositoryGoTestCommand(command testCommand) error {
 	if command.Family != "go" || command.Name != "go" {
 		return fmt.Errorf("repository Go verification command must use the Go family")
 	}
+	if command.Purpose != verificationTest {
+		return fmt.Errorf("repository Go verification command purpose must be test")
+	}
+	if command.Timeout < 0 || command.Timeout > maxV3CommandLimit {
+		return fmt.Errorf("repository Go verification command timeout is invalid")
+	}
 	proof := *command.RepositoryProof
 	var expectedArgs []string
 	switch proof.Mode {
@@ -81,6 +87,11 @@ func validateRepositoryGoTestCommand(command testCommand) error {
 			return err
 		}
 		expectedArgs = []string{"test", "-json", "-count=1", "-run", selector, proof.Package}
+	case repositoryGoProofPackage:
+		if proof.Package == "" || proof.Package == "./..." || len(proof.Expected) != 0 {
+			return fmt.Errorf("package repository Go proof requires one exact package and no test claims")
+		}
+		expectedArgs = []string{"test", "-json", "-count=1", "-run", "^$", proof.Package}
 	case repositoryGoProofBroad:
 		if proof.Package != "./..." || len(proof.Expected) != 0 {
 			return fmt.Errorf("broad repository Go proof must bind only ./...")
@@ -152,7 +163,8 @@ func validateRepositoryGoTestProof(proof repositoryGoTestProof, output string) e
 			maxRepositoryGoVerificationStdoutBytes,
 		)
 	}
-	if proof.Mode != repositoryGoProofFocused && proof.Mode != repositoryGoProofBroad {
+	if proof.Mode != repositoryGoProofFocused && proof.Mode != repositoryGoProofPackage &&
+		proof.Mode != repositoryGoProofBroad {
 		return fmt.Errorf("repository Go proof mode %q is not registered", proof.Mode)
 	}
 	expected := make(map[string]*goExpectedTestState, len(proof.Expected))
@@ -167,6 +179,9 @@ func validateRepositoryGoTestProof(proof repositoryGoTestProof, output string) e
 	}
 	if proof.Mode == repositoryGoProofBroad && len(expected) != 0 {
 		return fmt.Errorf("broad repository Go proof cannot claim focused tests")
+	}
+	if proof.Mode == repositoryGoProofPackage && len(expected) != 0 {
+		return fmt.Errorf("package repository Go proof cannot claim exact tests")
 	}
 	packages := make(map[string]*goPackageProofState)
 	lines := strings.Split(strings.ReplaceAll(output, "\r\n", "\n"), "\n")
@@ -186,6 +201,9 @@ func validateRepositoryGoTestProof(proof repositoryGoTestProof, output string) e
 	}
 	if eventCount == 0 || len(packages) == 0 {
 		return fmt.Errorf("repository Go proof contains no structured package events")
+	}
+	if proof.Mode != repositoryGoProofBroad && len(packages) != 1 {
+		return fmt.Errorf("exact repository Go proof contains %d package authorities; require one", len(packages))
 	}
 	for packageName, state := range packages {
 		if !state.started || !state.passed && (proof.Mode != repositoryGoProofBroad || !state.skipped) {
@@ -230,7 +248,7 @@ func consumeRepositoryGoTestEvent(
 	if event.Test == "" {
 		return consumeRepositoryGoPackageEvent(mode, state, event)
 	}
-	if mode == repositoryGoProofBroad {
+	if mode == repositoryGoProofBroad || mode == repositoryGoProofPackage {
 		if event.Action == "fail" {
 			return fmt.Errorf("broad test %q failed despite successful command authority", event.Test)
 		}

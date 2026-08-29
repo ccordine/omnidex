@@ -9,7 +9,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"strconv"
 	"strings"
 
 	"github.com/ledongthuc/pdf"
@@ -351,54 +350,12 @@ func normalizeWhitespace(value string) string {
 	return strings.TrimSpace(value)
 }
 
-func InferTagsFromPath(path, format string) []string {
-	base := filepath.Base(path)
-	ext := strings.TrimPrefix(strings.ToLower(filepath.Ext(base)), ".")
-	base = strings.TrimSuffix(base, filepath.Ext(base))
-	base = strings.ToLower(base)
-
-	parts := strings.FieldsFunc(base, func(r rune) bool {
-		return !(r >= 'a' && r <= 'z') && !(r >= '0' && r <= '9')
-	})
-
-	out := make([]string, 0, len(parts)+4)
-	seen := map[string]struct{}{
-		"reference": {},
+func DocumentFormatTag(format string) (string, error) {
+	switch format {
+	case "txt", "md", "markdown", "log", "json", "yaml", "yml", "csv",
+		"srt", "vtt", "docx", "pdf", "subtitle":
+		return "document-format:" + format, nil
+	default:
+		return "", fmt.Errorf("document format %q is not registered exact text", format)
 	}
-	out = append(out, "reference")
-
-	if format != "" {
-		tag := strings.ToLower(strings.TrimSpace(format))
-		if _, ok := seen[tag]; !ok {
-			seen[tag] = struct{}{}
-			out = append(out, tag)
-		}
-	}
-	if ext != "" {
-		tag := "ext_" + ext
-		if _, ok := seen[tag]; !ok {
-			seen[tag] = struct{}{}
-			out = append(out, tag)
-		}
-	}
-
-	for _, token := range parts {
-		token = strings.TrimSpace(token)
-		if token == "" {
-			continue
-		}
-		if _, err := strconv.Atoi(token); err == nil {
-			continue
-		}
-		if len(token) < 3 {
-			continue
-		}
-		if _, ok := seen[token]; ok {
-			continue
-		}
-		seen[token] = struct{}{}
-		out = append(out, token)
-	}
-
-	return out
 }

@@ -5,41 +5,45 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"os"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func TestPostgresJobGenerationBoundaryIsExactAndJobOwned(t *testing.T) {
-	databaseURL := strings.TrimSpace(os.Getenv("OMNI_TEST_DATABASE_URL"))
-	if databaseURL == "" {
-		t.Skip("set OMNI_TEST_DATABASE_URL to run PostgreSQL job generation tests")
-	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	pool, err := pgxpool.New(ctx, databaseURL)
+	pool := openIsolatedMigrationPool(t)
+	repository := New(pool)
+	if err := repository.EnsureSchema(ctx, loadMigrationBundleThroughPrefix(t, "067")); err != nil {
+		t.Fatal(err)
+	}
+
+	seedTx, err := pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer pool.Close()
-	if err := New(pool).EnsureSchema(ctx, loadCheckedMigrationBundle(t)); err != nil {
+	defer seedTx.Rollback(context.Background())
+	firstJob := insertGenerationTestJob(t, ctx, seedTx, "first")
+	secondJob := insertGenerationTestJob(t, ctx, seedTx, "second")
+	firstStep := insertGenerationTestStep(t, ctx, seedTx, firstJob, 1, "v3_coding")
+	secondStep := insertGenerationTestStep(t, ctx, seedTx, secondJob, 1, "v3_coding")
+	historicalLLMID := insertHistoricalGenerationLLMEvidence(t, ctx, seedTx, firstJob, firstStep)
+	if err := seedTx.Commit(ctx); err != nil {
 		t.Fatal(err)
 	}
+	if err := repository.EnsureSchema(ctx, loadCheckedMigrationBundle(t)); err != nil {
+		t.Fatal(err)
+	}
+	memoryScope := createMemoryScopeForTest(t, repository)
 
 	tx, err := pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer tx.Rollback(context.Background())
-
-	firstJob := insertGenerationTestJob(t, ctx, tx, "first")
-	secondJob := insertGenerationTestJob(t, ctx, tx, "second")
-	firstStep := insertGenerationTestStep(t, ctx, tx, firstJob, 1, "v3_coding")
-	secondStep := insertGenerationTestStep(t, ctx, tx, secondJob, 1, "v3_coding")
 
 	feedback := "Use the accepted user correction."
 	feedbackSHA := generationTestSHA256(feedback)
@@ -75,7 +79,7 @@ func TestPostgresJobGenerationBoundaryIsExactAndJobOwned(t *testing.T) {
 		INSERT INTO job_generations (
 			job_id, generation, purpose, predecessor_generation,
 			boundary_action, feedback, feedback_sha256
-		) VALUES ($1, 3, 'replan', 2, 'v3_subtask', $2, $3)
+		) VALUES ($1, 3, 'replan', 2, 'unregistered', $2, $3)
 	`, firstJob, feedback, feedbackSHA)
 	expectGenerationDatabaseFailure(t, ctx, tx, `
 		UPDATE job_generations SET feedback='Changed', feedback_sha256=$2
@@ -105,8 +109,36 @@ func TestPostgresJobGenerationBoundaryIsExactAndJobOwned(t *testing.T) {
 		VALUES ($1, 2, 'v3_coding', 0, 'pending')
 	`, secondJob)
 
-	assertGenerationDerivedOwnership(t, ctx, tx, firstJob, secondJob, firstStep, secondStep)
-	assertGenerationMemoryCandidateOwnership(t, ctx, tx, firstJob, secondJob)
+	assertGenerationDerivedOwnership(
+		t, ctx, tx, firstJob, secondJob, secondStep, historicalLLMID,
+	)
+	assertGenerationMemoryCandidateOwnership(
+		t, ctx, tx, firstJob, secondJob, memoryScope.ProjectID, string(memoryScope.ChannelID),
+	)
+}
+
+func insertHistoricalGenerationLLMEvidence(
+	t *testing.T,
+	ctx context.Context,
+	tx pgx.Tx,
+	jobID, stepID int64,
+) int64 {
+	t.Helper()
+	var llmID int64
+	if err := tx.QueryRow(ctx, `
+		INSERT INTO llm_call_evidence (
+			job_id, job_generation, step_id, scope, requested_model, model, attempt,
+			system_prompt, user_prompt, request_sha256, response_format,
+			context_tokens, max_output_tokens, status, error, latency_ms
+		) VALUES (
+			$1, 1, $2, 'generation-test', 'requested', 'effective', 1,
+			'system', 'user', $3, 'text', 1024, 128,
+			'preparation_failed', 'expected historical failure', 1
+		) RETURNING id
+	`, jobID, stepID, strings.Repeat("a", 64)).Scan(&llmID); err != nil {
+		t.Fatal(err)
+	}
+	return llmID
 }
 
 func insertGenerationTestJob(t *testing.T, ctx context.Context, tx pgx.Tx, suffix string) int64 {
@@ -114,7 +146,7 @@ func insertGenerationTestJob(t *testing.T, ctx context.Context, tx pgx.Tx, suffi
 	var jobID int64
 	if err := tx.QueryRow(ctx, `
 		INSERT INTO jobs (instruction, pipeline, status, metadata)
-		VALUES ($1, 'assistant', 'pending', '{}'::jsonb)
+		VALUES ($1, 'chat', 'pending', '{}'::jsonb)
 		RETURNING id
 	`, fmt.Sprintf("generation-%s-%d", suffix, time.Now().UnixNano())).Scan(&jobID); err != nil {
 		t.Fatal(err)

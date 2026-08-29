@@ -1,16 +1,15 @@
 import { useState } from "react";
-import { patchScrumCard } from "../../lib/scrum_api";
-import type { ScrumTestCriterion } from "../../lib/scrum_types";
+import { mutateScrumCardItem } from "../../lib/scrum_api";
 import { ActionButton, EmptyState, Panel, submitForm, TextInput } from "./common";
 import type { CardModalChildProps } from "./types";
 
-export function TestsTab({ context, projectID, runMutation, onCardUpdated }: CardModalChildProps) {
+export function TestsTab({ context, projectID, mutationBusy, runMutation, onCardUpdated }: CardModalChildProps) {
   const card = context.card;
-  const tests = card.test_criteria ?? [];
+  const tests = card.test_criteria;
   const [text, setText] = useState("");
 
-  async function patchTests(nextTests: ScrumTestCriterion[]) {
-    const updated = await runMutation("Updating tests", () => patchScrumCard(card.id, { test_criteria: nextTests }, projectID));
+	async function mutateTests(mutation: Parameters<typeof mutateScrumCardItem>[2]) {
+		const updated = await runMutation("Updating tests", () => mutateScrumCardItem(card.id, "test-criteria", mutation, projectID));
     if (updated) onCardUpdated(updated);
   }
 
@@ -25,11 +24,12 @@ export function TestsTab({ context, projectID, runMutation, onCardUpdated }: Car
               <input
                 type="checkbox"
                 checked={item.done}
-                onChange={(event) => void patchTests(tests.map((entry) => (entry.id === item.id ? { ...entry, done: event.target.checked } : entry)))}
+				disabled={mutationBusy}
+				onChange={(event) => void mutateTests({ action: "toggle", expected_updated_at: card.updated_at, item_id: item.id, done: event.target.checked })}
                 className="mt-1 rounded border-white/20 bg-zinc-900 text-emerald-300"
               />
               <span className={item.done ? "line-through decoration-zinc-500" : ""}>{item.text}</span>
-              <button type="button" onClick={() => void patchTests(tests.filter((entry) => entry.id !== item.id))} className="ml-auto text-xs text-zinc-500 hover:text-rose-200">
+			  <button type="button" disabled={mutationBusy} onClick={() => void mutateTests({ action: "remove", expected_updated_at: card.updated_at, item_id: item.id })} className="ml-auto text-xs text-zinc-500 hover:text-rose-200 disabled:cursor-not-allowed disabled:opacity-50">
                 Remove
               </button>
             </label>
@@ -38,13 +38,13 @@ export function TestsTab({ context, projectID, runMutation, onCardUpdated }: Car
         <form
           onSubmit={submitForm(() => {
             if (!text.trim()) return;
-            void patchTests([...tests, { id: `test_${Date.now()}`, text: text.trim(), done: false }]);
+			void mutateTests({ action: "add", expected_updated_at: card.updated_at, text });
             setText("");
           })}
           className="flex gap-2"
         >
           <TextInput value={text} onChange={(event) => setText(event.target.value)} placeholder="e.g. go test ./internal/api passes" className="min-w-0 flex-1" />
-          <ActionButton type="submit">Add</ActionButton>
+          <ActionButton type="submit" disabled={mutationBusy}>Add</ActionButton>
         </form>
       </div>
     </Panel>

@@ -1,6 +1,0 @@
-./edge_test.go
-./failure_test.go
-./fixture_test.go
-./snapshot_workspace_test.go
-./stage_test.go
-./verify_test.go

@@ -8,14 +8,14 @@ import (
 
 	"github.com/gryph/omnidex/internal/assemblyline"
 	repositoryfacts "github.com/gryph/omnidex/internal/repository"
-	"github.com/gryph/omnidex/internal/specialist"
+	"github.com/gryph/omnidex/internal/station"
 )
 
 func (session *directCodingSession) generateExistingRepositoryChangeCandidates(
 	contract repositoryfacts.ChangeContract,
 	baseline *verifiedRepositoryBaseline,
 ) (map[string]string, error) {
-	if session == nil || session.repositoryIndex == nil {
+	if session == nil || session.runtime == nil || session.repositoryIndex == nil {
 		return nil, fmt.Errorf("repository change generation requires one immutable index")
 	}
 	analysis, err := exactRepositoryChangeAnalysis(session.repositoryIndex.Analyses, contract.AnalysisID)
@@ -36,40 +36,60 @@ func (session *directCodingSession) generateExistingRepositoryChangeCandidates(
 	); err != nil {
 		return nil, fmt.Errorf("authorize repository generation from clean baseline: %w", err)
 	}
-	modelName, err := session.workerModel("coding_fragment", specialist.RoleCodingFragmentStation)
-	if err != nil {
-		return nil, err
-	}
-	correctionModel, err := session.workerModel(
-		"coding_fragment_correction", specialist.RoleCodingFragmentCorrectionStation,
-	)
+	modelName, err := session.workerModel(station.CodingFragment)
 	if err != nil {
 		return nil, err
 	}
 	runtime := directCodingWorkerRuntime(session)
-	runtime.CorrectionModel = correctionModel
 	symbols := make(map[string]repositoryfacts.Symbol, len(analysis.Symbols))
 	for _, symbol := range analysis.Symbols {
 		symbols[symbol.ID] = symbol
 	}
 	targets := append([]repositoryfacts.ChangeTarget(nil), contract.Targets...)
 	sort.Slice(targets, func(left, right int) bool { return targets[left].SymbolID < targets[right].SymbolID })
+	profiles := make(map[string]directCodingProjectVersionProfile, len(targets))
+	qualifiedProfiles := make(map[string]struct{})
+	for _, target := range targets {
+		symbol, exists := symbols[target.SymbolID]
+		if !exists {
+			return nil, fmt.Errorf("repository change target %q disappeared from exact analysis", target.SymbolID)
+		}
+		targetPath, err := repositorySnapshotFilePath(
+			session.repositoryIndex.Snapshot, symbol.FileID,
+		)
+		if err != nil {
+			return nil, err
+		}
+		profile, err := repositoryGoVersionProfile(session.repositoryIndex.Snapshot, targetPath)
+		if err != nil {
+			return nil, err
+		}
+		if _, qualified := qualifiedProfiles[profile.ID]; !qualified {
+			if err := validateDirectCodingVersionProfileRuntime(
+				profile, directCodingSessionVersionProbe(session.runtime.ctx, session.root),
+			); err != nil {
+				return nil, err
+			}
+			qualifiedProfiles[profile.ID] = struct{}{}
+		}
+		profiles[target.SymbolID] = profile
+	}
 	candidates := make(map[string]string, len(targets))
 	for _, target := range targets {
 		if err := session.requireCurrentRepositoryAuthority("fragment projection"); err != nil {
 			return nil, err
 		}
-		symbol, exists := symbols[target.SymbolID]
-		if !exists {
-			return nil, fmt.Errorf("repository change target %q disappeared from exact analysis", target.SymbolID)
-		}
+		symbol := symbols[target.SymbolID]
+		profile := profiles[target.SymbolID]
 		span, err := repositoryfacts.ReadExactSymbolSpan(
 			session.repositoryIndex.Snapshot, symbol, int(target.EndByte-target.StartByte),
 		)
 		if err != nil {
 			return nil, err
 		}
-		input, err := existingRepositoryGoModificationInput(target, span.Content)
+		input, err := existingRepositoryGoModificationInput(
+			target, span.Content, profile.SourceDialect,
+		)
 		if err != nil {
 			return nil, err
 		}
@@ -87,6 +107,7 @@ func (session *directCodingSession) generateExistingRepositoryChangeCandidates(
 func existingRepositoryGoModificationInput(
 	target repositoryfacts.ChangeTarget,
 	current string,
+	dialect string,
 ) (assemblyline.FragmentModificationInput, error) {
 	digest := sha256.Sum256([]byte(current))
 	if hex.EncodeToString(digest[:]) != target.ExpectedDeclarationSHA256 {
@@ -95,13 +116,12 @@ func existingRepositoryGoModificationInput(
 		)
 	}
 	capabilities := make([]string, len(target.DirectCapabilities))
-	permitted := make([]string, len(target.DirectCapabilities))
 	for index, capability := range target.DirectCapabilities {
 		capabilities[index] = capability.Signature
-		permitted[index] = capability.Name
 	}
+	permitted := target.PermittedCapabilitySymbols()
 	input := assemblyline.FragmentModificationInput{
-		Language: "go", Signature: target.Signature,
+		Language: "go", Dialect: dialect, Signature: target.Signature,
 		CurrentDeclaration: current, RequirementQuote: target.RequirementQuote,
 		Capabilities: capabilities, PermittedSymbols: permitted,
 	}

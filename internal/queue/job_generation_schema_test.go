@@ -52,17 +52,10 @@ func TestJobGenerationMigrationBindsDerivedRecordsToTheirJob(t *testing.T) {
 	for _, required := range []string{
 		"artifacts_job_step_fkey",
 		"evidence_job_step_fkey",
-		"claims_job_step_fkey",
 		"llm_call_evidence_job_step_fkey",
-		"claim_support_job_claim_fkey",
-		"claim_support_job_evidence_fkey",
 		"memory_candidates_job_generation_fkey",
 		"memory_candidates_job_id_fkey",
 		"job step generation history is immutable",
-		"claims_status_registered",
-		"claims_confidence_bounded",
-		"claim_support_score_bounded",
-		"claim_support_rationale_exact",
 		"memory_candidates_status_registered",
 		"memory_candidates_confidence_bounded",
 		"ON DELETE RESTRICT",
@@ -88,9 +81,7 @@ func TestJobGenerationMigrationRejectsAmbiguousLegacyStateBeforeBackfill(t *test
 		"nonterminal legacy-replanned job",
 		"cross-job or orphan artifact",
 		"cross-job or orphan evidence",
-		"cross-job or orphan claim",
 		"cross-job LLM call evidence",
-		"cross-job claim support",
 	} {
 		if !strings.Contains(schema, required) {
 			t.Fatalf("job generation preflight omitted %q", required)

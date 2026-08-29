@@ -34,9 +34,6 @@ func withTestCommandID(t *testing.T, command Command) Command {
 	case SupersedeEntryCommand:
 		value.CommandID = id
 		return value
-	case AcceptDecisionCommand:
-		value.CommandID = id
-		return value
 	case PromoteReadyNodesCommand:
 		value.CommandID = id
 		return value

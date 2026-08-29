@@ -61,7 +61,11 @@ function Test-Dependency {
         "docker" { return Test-CommandAvailable "docker" }
         "docker_compose" {
             if (-not (Test-CommandAvailable "docker")) { return $false }
-            docker compose version *> $null
+            $endpoint = (docker --context default context inspect default --format '{{(index .Endpoints "docker").Host}}' | Out-String).Trim()
+            if ($LASTEXITCODE -ne 0 -or $endpoint -ne "unix:///var/run/docker.sock") { return $false }
+            $security = (docker --context default info --format '{{json .SecurityOptions}}' | Out-String).Trim()
+            if ($LASTEXITCODE -ne 0 -or $security -notmatch '^\[.*\]$' -or $security -match 'name=rootless') { return $false }
+            docker --context default compose version *> $null
             return ($LASTEXITCODE -eq 0)
         }
         "npm" { return Test-CommandAvailable "npm" }

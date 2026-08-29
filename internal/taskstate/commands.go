@@ -17,6 +17,7 @@ type AddNodeCommand struct {
 	ParentID           NodeID     `json:"parent_id,omitempty"`
 	ObjectiveID        NodeID     `json:"objective_id,omitempty"`
 	Kind               NodeKind   `json:"kind"`
+	InlineExecution    bool       `json:"inline_execution"`
 	Title              string     `json:"title"`
 	Priority           int        `json:"priority"`
 	CreatedStepID      *int64     `json:"created_step_id,omitempty"`
@@ -74,18 +75,6 @@ type SupersedeEntryCommand struct {
 	EntryID         EntryID   `json:"entry_id"`
 	ReplacementID   EntryID   `json:"replacement_id"`
 	Reason          string    `json:"reason"`
-}
-
-type AcceptDecisionCommand struct {
-	CommandID        CommandID  `json:"command_id"`
-	ExpectedVersion  uint64     `json:"expected_version"`
-	Actor            Authority  `json:"actor"`
-	CandidateID      EntryID    `json:"candidate_id"`
-	AcceptedEntryID  EntryID    `json:"accepted_entry_id"`
-	AcceptancePolicy string     `json:"acceptance_policy"`
-	AcceptanceRefs   []Ref      `json:"acceptance_refs"`
-	CreatedStepID    *int64     `json:"created_step_id,omitempty"`
-	Metadata         JSONObject `json:"metadata"`
 }
 
 type PromoteReadyNodesCommand struct {
@@ -150,7 +139,6 @@ func (AddEntryCommand) taskStateCommand()                {}
 func (RejectEntryCommand) taskStateCommand()             {}
 func (ResolveEntryCommand) taskStateCommand()            {}
 func (SupersedeEntryCommand) taskStateCommand()          {}
-func (AcceptDecisionCommand) taskStateCommand()          {}
 func (PromoteReadyNodesCommand) taskStateCommand()       {}
 func (AssignNodeStepCommand) taskStateCommand()          {}
 func (TransitionNodeCommand) taskStateCommand()          {}
@@ -164,7 +152,6 @@ func (c AddEntryCommand) commandID() CommandID                { return c.Command
 func (c RejectEntryCommand) commandID() CommandID             { return c.CommandID }
 func (c ResolveEntryCommand) commandID() CommandID            { return c.CommandID }
 func (c SupersedeEntryCommand) commandID() CommandID          { return c.CommandID }
-func (c AcceptDecisionCommand) commandID() CommandID          { return c.CommandID }
 func (c PromoteReadyNodesCommand) commandID() CommandID       { return c.CommandID }
 func (c AssignNodeStepCommand) commandID() CommandID          { return c.CommandID }
 func (c TransitionNodeCommand) commandID() CommandID          { return c.CommandID }
@@ -178,7 +165,6 @@ func (c AddEntryCommand) expectedVersion() uint64                { return c.Expe
 func (c RejectEntryCommand) expectedVersion() uint64             { return c.ExpectedVersion }
 func (c ResolveEntryCommand) expectedVersion() uint64            { return c.ExpectedVersion }
 func (c SupersedeEntryCommand) expectedVersion() uint64          { return c.ExpectedVersion }
-func (c AcceptDecisionCommand) expectedVersion() uint64          { return c.ExpectedVersion }
 func (c PromoteReadyNodesCommand) expectedVersion() uint64       { return c.ExpectedVersion }
 func (c AssignNodeStepCommand) expectedVersion() uint64          { return c.ExpectedVersion }
 func (c TransitionNodeCommand) expectedVersion() uint64          { return c.ExpectedVersion }
@@ -192,7 +178,6 @@ func (c AddEntryCommand) actor() Authority                { return c.Actor }
 func (c RejectEntryCommand) actor() Authority             { return c.Actor }
 func (c ResolveEntryCommand) actor() Authority            { return c.Actor }
 func (c SupersedeEntryCommand) actor() Authority          { return c.Actor }
-func (c AcceptDecisionCommand) actor() Authority          { return c.Actor }
 func (c PromoteReadyNodesCommand) actor() Authority       { return c.Actor }
 func (c AssignNodeStepCommand) actor() Authority          { return c.Actor }
 func (c TransitionNodeCommand) actor() Authority          { return c.Actor }
@@ -206,7 +191,6 @@ func (AddEntryCommand) kind() CommandKind                { return CommandAddEntr
 func (RejectEntryCommand) kind() CommandKind             { return CommandRejectEntry }
 func (ResolveEntryCommand) kind() CommandKind            { return CommandResolveEntry }
 func (SupersedeEntryCommand) kind() CommandKind          { return CommandSupersedeEntry }
-func (AcceptDecisionCommand) kind() CommandKind          { return CommandAcceptDecision }
 func (PromoteReadyNodesCommand) kind() CommandKind       { return CommandPromoteReady }
 func (AssignNodeStepCommand) kind() CommandKind          { return CommandAssignStep }
 func (TransitionNodeCommand) kind() CommandKind          { return CommandTransitionNode }

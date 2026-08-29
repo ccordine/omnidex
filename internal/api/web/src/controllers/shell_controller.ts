@@ -2,16 +2,13 @@ import { Controller } from "@hotwired/stimulus";
 import { readJSON, jsonRequest } from "../lib/api";
 import { errorMessage, reportError, toastError, toastOk } from "../lib/feedback";
 import { getLocale, isLocaleCode, t, tf } from "../lib/i18n";
-
-type AIControlPayload = {
-  paused: boolean;
-  canceled_jobs?: number;
-  counts?: Record<string, number>;
-  realtime_published?: boolean;
-  realtime_error?: string;
-  operation_error?: string;
-  updated_at: string;
-};
+import {
+  aiControlDegradedMessage,
+  validateAIControlMutationPayload,
+  validateAIControlStatePayload,
+  type AIControlMutationPayload,
+  type AIControlStatePayload,
+} from "../lib/ai_control_feedback";
 
 type UISessionLocalePayload = {
   locale: string;
@@ -134,22 +131,27 @@ export default class ShellController extends Controller {
     event.preventDefault();
     if (this.aiControlBusy) return;
     this.aiControlBusy = true;
+    if (this.hasAiControlButtonTarget) this.aiControlButtonTarget.setAttribute("aria-busy", "true");
     this.renderAIControl(this.aiPaused, t("status.working"));
-    const action = this.aiPaused ? "resume" : "pause";
+	const action: "pause" | "resume" = this.aiPaused ? "resume" : "pause";
     let failure = "";
     try {
-      const payload = await readJSON<AIControlPayload>(await fetch("/v1/ai/control", jsonRequest({ action })));
+      const payload = validateAIControlMutationPayload(await readJSON<unknown>(await fetch("/v1/ai/control", jsonRequest({ action }))));
       this.applyAIControlPayload(payload);
-      const canceled = Number(payload.canceled_jobs || 0);
-      toastOk(this.aiPaused ? (canceled ? tf("ai.actionPausedCanceled", { count: canceled }) : t("ai.actionPaused")) : t("ai.actionResumed"));
-      const degraded = String(payload.operation_error || payload.realtime_error || "").trim();
-      if (degraded) toastError(tf("ai.stateSavedDegraded", { error: degraded }));
+      const canceled = payload.canceled_jobs;
+		const degraded = aiControlDegradedMessage(payload);
+		if (payload.commit_state === "committed_degraded" || degraded) {
+			toastError(tf("ai.stateSavedDegraded", { error: degraded || "post-commit reconciliation failed" }));
+		} else {
+			toastOk(this.aiPaused ? (canceled ? tf("ai.actionPausedCanceled", { count: canceled }) : t("ai.actionPaused")) : t("ai.actionResumed"));
+		}
     } catch (error) {
       failure = errorMessage(error);
       reportError((message) => this.renderAIControl(this.aiPaused, message), error);
     } finally {
       this.aiControlBusy = false;
-      this.renderAIControl(this.aiPaused, failure || undefined);
+      if (this.hasAiControlButtonTarget) this.aiControlButtonTarget.setAttribute("aria-busy", "false");
+      this.renderAIControl(this.aiPaused, failure || t("status.checking"));
       if (this.aiControlReloadPending) {
         this.aiControlReloadPending = false;
         void this.loadAIControl();
@@ -168,7 +170,7 @@ export default class ShellController extends Controller {
     }
     this.aiControlLoad = (async () => {
       try {
-        const payload = await readJSON<AIControlPayload>(await fetch("/v1/ai/control"));
+        const payload = validateAIControlStatePayload(await readJSON<unknown>(await fetch("/v1/ai/control")));
         this.applyAIControlPayload(payload);
       } catch (error) {
         console.error("AI control synchronization failed", error);
@@ -189,7 +191,7 @@ export default class ShellController extends Controller {
       const detail = (event as CustomEvent<Record<string, unknown>>).detail;
       const state = detail?.aiControl;
       if (!state || typeof state !== "object") throw new Error("AI control realtime event is missing state.");
-      this.applyAIControlPayload(state as AIControlPayload);
+      this.applyAIControlPayload(validateAIControlStatePayload(state));
     } catch (error) {
       console.error("AI control realtime update failed", error);
       this.renderAIControl(this.aiPaused, t("ai.syncFailed"));
@@ -208,7 +210,7 @@ export default class ShellController extends Controller {
     if (detail?.state === "live") void this.loadAIControl();
   }
 
-  private applyAIControlPayload(payload: AIControlPayload): void {
+  private applyAIControlPayload(payload: AIControlStatePayload | AIControlMutationPayload): void {
     if (typeof payload.paused !== "boolean") throw new Error("AI control payload.paused must be boolean.");
     const updatedAt = Date.parse(String(payload.updated_at ?? ""));
     if (!Number.isFinite(updatedAt)) throw new Error("AI control payload.updated_at must be a valid timestamp.");
@@ -236,14 +238,17 @@ export default class ShellController extends Controller {
         : "grid h-9 w-9 place-items-center rounded-md border border-amber-300/30 bg-amber-300/10 text-sm font-semibold text-amber-100 transition hover:bg-amber-300/20 disabled:opacity-60";
     }
     if (!this.hasAiControlStatusTarget) return;
-    const running = Number(counts?.running || 0);
-    const pending = Number(counts?.pending || 0);
-    const waiting = Number(counts?.waiting_input || 0);
+    if (counts === undefined && status === undefined) {
+      throw new Error("AI control presentation requires authoritative counts or an explicit status.");
+    }
+    const running = counts?.running;
+    const pending = counts?.pending;
+    const waiting = counts?.waiting_input;
     this.aiControlStatusTarget.textContent = status || (paused
-      ? tf("ai.pausedQueued", { pending })
-      : waiting
-        ? tf("ai.liveRunningWaiting", { running, waiting })
-        : tf("ai.liveRunning", { running }));
+      ? tf("ai.pausedQueued", { pending: pending as number })
+      : (waiting as number) > 0
+        ? tf("ai.liveRunningWaiting", { running: running as number, waiting: waiting as number })
+        : tf("ai.liveRunning", { running: running as number }));
     this.aiControlStatusTarget.className = paused ? "text-xs text-amber-200" : "text-xs text-emerald-200";
   }
 }

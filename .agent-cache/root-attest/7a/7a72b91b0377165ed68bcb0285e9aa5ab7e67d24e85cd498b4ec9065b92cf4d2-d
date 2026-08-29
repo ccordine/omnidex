@@ -1,7 +1,0 @@
-./builder.go
-./errors.go
-./priority.go
-./render.go
-./source_refs.go
-./types.go
-./validation.go

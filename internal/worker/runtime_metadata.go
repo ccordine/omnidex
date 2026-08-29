@@ -34,28 +34,6 @@ func metadataString(metadata json.RawMessage, key string) string {
 	return strings.TrimSpace(text)
 }
 
-func metadataModel(job model.Job, key, fallback string) string {
-	if configured := metadataString(job.Metadata, key); configured != "" {
-		return configured
-	}
-	return strings.TrimSpace(fallback)
-}
-
-func specialistRoleForJob(job model.Job, defaultRoleID string) string {
-	if configured := metadataString(job.Metadata, "specialist_role_id"); configured != "" {
-		return configured
-	}
-	return strings.TrimSpace(defaultRoleID)
-}
-
-func specialistModel(job model.Job, defaultRoleID, fallback string, routing ModelRouting) string {
-	roleID := specialistRoleForJob(job, defaultRoleID)
-	if configured := strings.TrimSpace(routing.Specialist[roleID]); configured != "" {
-		return configured
-	}
-	return strings.TrimSpace(fallback)
-}
-
 func clientCWDForJob(job model.Job) string {
 	return metadataString(job.Metadata, "client_cwd")
 }

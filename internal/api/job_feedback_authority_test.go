@@ -1,11 +1,13 @@
 package api
 
 import (
+	"encoding/json"
 	"os"
 	"strings"
 	"testing"
 
 	"github.com/gryph/omnidex/internal/model"
+	"github.com/gryph/omnidex/internal/queue"
 )
 
 func TestFeedbackAuthorityRejectsMismatchedJob(t *testing.T) {
@@ -18,8 +20,30 @@ func TestFeedbackAuthorityRejectsMismatchedJob(t *testing.T) {
 	}
 }
 
+func TestLifecycleControlReceiptIsBoundedToSameJobAndOperation(t *testing.T) {
+	operationID, err := queue.NewLifecycleOperationID("receipt-test", "41")
+	if err != nil {
+		t.Fatal(err)
+	}
+	receipt, err := newLifecycleControlReceipt(41, operationID, model.Job{ID: 41, Status: model.JobStatusRunning})
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := json.Marshal(receipt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `{"job_id":41,"operation_id":"` + string(operationID) + `","status":"running"}`
+	if string(raw) != want {
+		t.Fatalf("receipt=%s want=%s", raw, want)
+	}
+	if _, err := newLifecycleControlReceipt(41, operationID, model.Job{ID: 42, Status: model.JobStatusRunning}); err == nil {
+		t.Fatal("mismatched job unexpectedly produced a success receipt")
+	}
+}
+
 func TestFeedbackHTTPHasNoSuccessorJobFallback(t *testing.T) {
-	for _, path := range []string{"server_llm.go", "server_jobs.go", "scrum_channel_agent.go"} {
+	for _, path := range []string{"server_llm.go", "server_jobs.go", "scrum_channel_operation.go"} {
 		raw, err := os.ReadFile(path)
 		if err != nil {
 			t.Fatal(err)

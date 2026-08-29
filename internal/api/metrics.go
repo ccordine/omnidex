@@ -72,32 +72,6 @@ func (s *Server) handleMetricsModels(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"models": items})
 }
 
-func (s *Server) handleMetricsPlaybooks(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
-		return
-	}
-	items, err := s.repo.TelemetryPlaybookSummaries(r.Context())
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"playbooks": items})
-}
-
-func (s *Server) handleMetricsBenchmarks(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
-		return
-	}
-	items, err := s.repo.TelemetryBenchmarkSummaries(r.Context())
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"benchmarks": items})
-}
-
 func (s *Server) handleMetricsContextShrink(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")

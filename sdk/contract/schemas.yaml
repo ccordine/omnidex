@@ -1,0 +1,187 @@
+components:
+  schemas:
+    DataSourceRequest:
+      type: object
+      additionalProperties: false
+      required: [name, driver, execution_mode, host, port, database_name, username, password, ssl_mode, use_dsn, dsn, authority_url, credential_env]
+      properties:
+        name: {type: string, minLength: 1}
+        driver: {const: postgres}
+        execution_mode: {enum: [direct, delegated]}
+        host: {type: string}
+        port: {type: integer, minimum: 0, maximum: 65535}
+        database_name: {type: string}
+        username: {type: string}
+        password: {type: string}
+        ssl_mode: {type: string}
+        use_dsn: {type: boolean}
+        dsn: {type: string}
+        authority_url: {type: string}
+        credential_env: {type: string, pattern: "^(|OMNIDEX_DELEGATED_AUTHORITY_[A-Z][A-Z0-9_]{0,93}_TOKEN)$"}
+    CreateChannelRequest:
+      type: object
+      additionalProperties: false
+      required: [id, name, tags, workspace_root, data_source_id, mode]
+      properties:
+        id: {$ref: "#/components/schemas/ChannelID"}
+        name: {type: string, minLength: 1}
+        tags:
+          type: array
+          maxItems: 32
+          uniqueItems: true
+          items: {type: string, minLength: 1, maxLength: 64}
+        workspace_root: {type: string, minLength: 1}
+        data_source_id: {type: string, pattern: "^[a-z0-9][a-z0-9_.:-]{0,127}$"}
+        mode: {const: assistant}
+    SendMessageRequest:
+      type: object
+      additionalProperties: false
+      required: [prompt]
+      properties:
+        prompt: {type: string, minLength: 1, maxLength: 4096}
+        delegated_data_authority_id:
+          type: string
+          pattern: "^dba_[0-9a-f]{64}$"
+    DataSourceEnvelope:
+      type: object
+      additionalProperties: false
+      required: [source]
+      properties:
+        source: {$ref: "#/components/schemas/DataSource"}
+    ChannelEnvelope:
+      type: object
+      additionalProperties: false
+      required: [channel]
+      properties:
+        channel: {$ref: "#/components/schemas/Channel"}
+    SendMessageEnvelope:
+      type: object
+      additionalProperties: false
+      required: [channel, user_message, job]
+      properties:
+        channel: {$ref: "#/components/schemas/Channel"}
+        user_message: {$ref: "#/components/schemas/ChannelMessage"}
+        job: {$ref: "#/components/schemas/Job"}
+    DataSource:
+      type: object
+      additionalProperties: false
+      required: [id, name, driver, execution_mode, host, port, database_name, username, ssl_mode, use_dsn, authority_url, credential_env, read_only, password_set, password_hint, last_test_status, last_test_message, created_at, updated_at]
+      properties:
+        id: {type: string, minLength: 1}
+        name: {type: string, minLength: 1}
+        driver: {const: postgres}
+        execution_mode: {enum: [direct, delegated]}
+        host: {type: string}
+        port: {type: integer}
+        database_name: {type: string}
+        username: {type: string}
+        ssl_mode: {type: string}
+        use_dsn: {type: boolean}
+        authority_url: {type: string}
+        credential_env: {type: string}
+        read_only: {const: true}
+        password_set: {type: boolean}
+        password_hint: {type: string}
+        last_test_status: {type: string}
+        last_test_message: {type: string}
+        last_test_at: {type: string, format: date-time}
+        catalog_updated_at: {type: string, format: date-time}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+    Channel:
+      type: object
+      additionalProperties: false
+      required: [id, scope, name, tags, project_id, workspace_root, data_source_id, mode, created_at, updated_at]
+      properties:
+        id: {$ref: "#/components/schemas/ChannelID"}
+        scope: {const: user}
+        name: {type: string}
+        tags: {type: array, items: {type: string}}
+        project_id: {type: integer}
+        workspace_root: {type: string}
+        data_source_id: {type: string}
+        mode: {const: assistant}
+        roleplay_viewpoint_character_id: {type: string}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+    ChannelMessage:
+      type: object
+      additionalProperties: false
+      required: [id, channel_id, role, content, created_at]
+      properties:
+        id: {type: integer, minimum: 1}
+        channel_id: {$ref: "#/components/schemas/ChannelID"}
+        role: {enum: [user, assistant]}
+        content: {type: string}
+        created_at: {type: string, format: date-time}
+    MessagePage:
+      type: object
+      additionalProperties: false
+      required: [channel_id, messages, next_before_id, has_more]
+      properties:
+        channel_id: {$ref: "#/components/schemas/ChannelID"}
+        messages: {type: array, items: {$ref: "#/components/schemas/ChannelMessage"}}
+        next_before_id: {type: [integer, "null"], minimum: 1}
+        has_more: {type: boolean}
+    Job:
+      type: object
+      additionalProperties: false
+      required: [id, instruction, pipeline, status, current_generation, created_at, updated_at]
+      properties:
+        id: {type: integer, minimum: 1}
+        instruction: {type: string}
+        pipeline: {type: string, minLength: 1}
+        status: {type: string}
+        result: {type: string}
+        error: {type: string}
+        metadata: {}
+        current_generation: {type: integer, minimum: 0}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+        completed_at: {type: string, format: date-time}
+    JobStep:
+      type: object
+      additionalProperties: false
+      required: [id, job_id, action, sort_index, status, generation, created_at, updated_at]
+      properties:
+        id: {type: integer, minimum: 1}
+        job_id: {type: integer, minimum: 1}
+        action: {type: string}
+        sort_index: {type: integer}
+        status: {type: string}
+        generation: {type: integer}
+        superseded_at_generation: {type: integer}
+        worker_id: {type: string}
+        output: {type: string}
+        error: {type: string}
+        started_at: {type: string, format: date-time}
+        finished_at: {type: string, format: date-time}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+    JobContext:
+      type: object
+      additionalProperties: false
+      required: [id, step_id, key, value, created_at]
+      properties:
+        id: {type: integer, minimum: 1}
+        step_id: {type: integer, minimum: 1}
+        key: {type: string}
+        value: {type: string}
+        created_at: {type: string, format: date-time}
+    JobDetails:
+      type: object
+      additionalProperties: false
+      required: [job, steps, contexts]
+      properties:
+        job: {$ref: "#/components/schemas/Job"}
+        steps: {type: array, items: {$ref: "#/components/schemas/JobStep"}}
+        contexts: {type: array, items: {$ref: "#/components/schemas/JobContext"}}
+    Error:
+      type: object
+      additionalProperties: false
+      required: [error]
+      properties:
+        error: {type: string, minLength: 1}
+    ChannelID:
+      type: string
+      pattern: "^[a-z0-9][a-z0-9_.:-]{0,95}$"

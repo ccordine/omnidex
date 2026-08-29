@@ -2,10 +2,10 @@ import { Controller } from "@hotwired/stimulus";
 
 export abstract class ChatTargetsController extends Controller {
   static targets = [
-    "messages", "timeline", "input", "send", "status", "transport", "networkUrl", "job", "liveBadge", "eventCount", "panel",
+    "messages", "timeline", "input", "send", "status", "transport", "networkUrl", "job", "liveBadge", "activityDot", "activityText", "activityProblems", "eventCount", "panel",
     "jobFilter", "jobsList", "jobDetails", "memoryCandidates", "memoryList", "memoryKind", "memoryKindFilter", "memoryTags", "memoryContent",
-    "personaMode", "personaModel", "personaSystem", "personaPrompt", "personaOutput", "statusOutput", "researchStatusOutput", "hostBridgeStatusOutput",
-    "metricsOutput", "progress", "progressState", "spinner", "modal", "modalPanel", "channelSelect",
+    "statusOutput", "researchStatusOutput", "hostBridgeStatusOutput",
+    "metricsOutput", "progress", "progressState", "progressLoading", "spinner", "modal", "modalPanel", "channelSelect", "newChannelDataSourceSelect", "newChannelModeSelect", "newChannelRoleplayFields", "newChannelRoleplayWorldName", "newChannelRoleplayViewpointName", "transcriptLoading", "typingIndicator", "roleplayPanel", "roleplayLoading", "roleplayWorkspaceLoading", "roleplayWorldDialog", "roleplayCharacterDialog", "roleplaySetupDialog", "roleplayCharacterEditorDialog", "roleplayPersona", "roleplayPersonaCreator", "roleplayNewPersona", "roleplayDraftParts", "roleplayDraftPartPool", "roleplayDraftPart", "slashPalette", "slashOptions",
   ];
 
   declare readonly messagesTarget: HTMLElement;
@@ -14,9 +14,12 @@ export abstract class ChatTargetsController extends Controller {
   declare readonly sendTarget: HTMLButtonElement;
   declare readonly statusTarget: HTMLElement;
   declare readonly transportTarget: HTMLElement;
-  declare readonly networkUrlTarget: HTMLElement;
+  declare readonly networkUrlTarget: HTMLAnchorElement;
   declare readonly jobTarget: HTMLElement;
-  declare readonly liveBadgeTarget: HTMLElement;
+  declare readonly liveBadgeTarget: HTMLButtonElement;
+  declare readonly activityDotTarget: HTMLElement;
+  declare readonly activityTextTarget: HTMLElement;
+  declare readonly activityProblemsTarget: HTMLElement;
   declare readonly eventCountTarget: HTMLElement;
   declare readonly panelTargets: HTMLElement[];
   declare readonly jobFilterTarget: HTMLSelectElement;
@@ -28,17 +31,13 @@ export abstract class ChatTargetsController extends Controller {
   declare readonly memoryKindFilterTarget: HTMLSelectElement;
   declare readonly memoryTagsTarget: HTMLInputElement;
   declare readonly memoryContentTarget: HTMLTextAreaElement;
-  declare readonly personaModeTarget: HTMLSelectElement;
-  declare readonly personaModelTarget: HTMLInputElement;
-  declare readonly personaSystemTarget: HTMLTextAreaElement;
-  declare readonly personaPromptTarget: HTMLTextAreaElement;
-  declare readonly personaOutputTarget: HTMLElement;
   declare readonly statusOutputTarget: HTMLElement;
   declare readonly researchStatusOutputTarget: HTMLElement;
   declare readonly hostBridgeStatusOutputTarget: HTMLElement;
   declare readonly metricsOutputTarget: HTMLElement;
   declare readonly progressTarget: HTMLElement;
   declare readonly progressStateTarget: HTMLElement;
+  declare readonly progressLoadingTarget: HTMLElement;
   declare readonly spinnerTarget: HTMLElement;
   declare readonly modalTarget: HTMLElement;
   declare readonly modalPanelTarget: HTMLElement;
@@ -48,6 +47,7 @@ export abstract class ChatTargetsController extends Controller {
   declare readonly hasHostBridgeStatusOutputTarget: boolean;
   declare readonly hasMetricsOutputTarget: boolean;
   declare readonly hasProgressStateTarget: boolean;
+  declare readonly hasProgressLoadingTarget: boolean;
   declare readonly hasModalTarget: boolean;
   declare readonly hasSpinnerTarget: boolean;
   declare readonly hasNetworkUrlTarget: boolean;
@@ -63,4 +63,41 @@ export abstract class ChatTargetsController extends Controller {
   declare readonly hasJobTarget: boolean;
   declare readonly hasEventCountTarget: boolean;
   declare readonly channelSelectTarget: HTMLSelectElement;
+  declare readonly newChannelDataSourceSelectTarget: HTMLSelectElement;
+  declare readonly hasNewChannelDataSourceSelectTarget: boolean;
+  declare readonly newChannelModeSelectTarget: HTMLSelectElement;
+  declare readonly hasNewChannelModeSelectTarget: boolean;
+  declare readonly newChannelRoleplayFieldsTarget: HTMLElement;
+  declare readonly hasNewChannelRoleplayFieldsTarget: boolean;
+  declare readonly newChannelRoleplayWorldNameTarget: HTMLInputElement;
+  declare readonly hasNewChannelRoleplayWorldNameTarget: boolean;
+  declare readonly newChannelRoleplayViewpointNameTarget: HTMLInputElement;
+  declare readonly hasNewChannelRoleplayViewpointNameTarget: boolean;
+  declare readonly transcriptLoadingTarget: HTMLElement;
+  declare readonly hasTranscriptLoadingTarget: boolean;
+  declare readonly typingIndicatorTarget: HTMLElement;
+  declare readonly hasTypingIndicatorTarget: boolean;
+  declare readonly roleplayPanelTarget: HTMLElement;
+  declare readonly hasRoleplayPanelTarget: boolean;
+  declare readonly roleplayLoadingTarget: HTMLElement;
+  declare readonly hasRoleplayLoadingTarget: boolean;
+  declare readonly roleplayWorkspaceLoadingTarget: HTMLElement;
+  declare readonly hasRoleplayWorkspaceLoadingTarget: boolean;
+  declare readonly roleplayWorldDialogTarget: HTMLDialogElement;
+  declare readonly roleplayCharacterDialogTarget: HTMLDialogElement;
+  declare readonly roleplaySetupDialogTarget: HTMLDialogElement;
+  declare readonly roleplayCharacterEditorDialogTarget: HTMLDialogElement;
+  declare readonly roleplayPersonaTarget: HTMLSelectElement;
+  declare readonly hasRoleplayPersonaTarget: boolean;
+  declare readonly roleplayPersonaCreatorTarget: HTMLElement;
+  declare readonly hasRoleplayPersonaCreatorTarget: boolean;
+  declare readonly roleplayNewPersonaTarget: HTMLInputElement;
+  declare readonly hasRoleplayNewPersonaTarget: boolean;
+  declare readonly roleplayDraftPartsTarget: HTMLOListElement;
+  declare readonly hasRoleplayDraftPartsTarget: boolean;
+  declare readonly roleplayDraftPartPoolTarget: HTMLElement;
+  declare readonly hasRoleplayDraftPartPoolTarget: boolean;
+  declare readonly roleplayDraftPartTargets: HTMLElement[];
+  declare readonly slashPaletteTarget: HTMLElement;
+  declare readonly slashOptionsTarget: HTMLElement;
 }

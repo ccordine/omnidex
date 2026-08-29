@@ -16,6 +16,14 @@ coverage.out
 *.cover
 *.prof
 .agent-cache/
+.agent-*-cache/
+.agent-*-release/
+.codex-ledger-fixture.*/
+.migration-manifest-*/
+.tmp-ledger-cascade.*/
+/.tmp-go-audit-cache/
+/core
+/go.mod.orig
 
 # Runtime state and logs
 .omni/
@@ -23,12 +31,14 @@ runs/
 logs/
 *.log
 *.jsonl
+!docs/evidence/2026-08-15-guided-typescript-repair-iterative-live.jsonl
 
 # Local databases and scratch data
 *.db
 *.sqlite
 *.sqlite3
 tmp/
+/.tmp/
 temp/
 
 # Editor and OS noise

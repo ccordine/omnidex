@@ -6,8 +6,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/gryph/omnidex/internal/repository/changeapply"
 )
 
 func TestPlanReplacesMultipleTargetsInOneFileByExactDescendingRanges(t *testing.T) {
@@ -17,9 +15,9 @@ func TestPlanReplacesMultipleTargetsInOneFileByExactDescendingRanges(t *testing.
 		"both.go": {content: "package samefile\n\nfunc First() int { return 1 }\n\nconst Retained = 7\n\nfunc Second() int { return 2 }\n", mode: 0o640},
 	})
 	contract := fixture.contract(t, "First", "Second")
-	stage, err := fixture.plan(contract, []changeapply.CandidateDeclaration{
-		{SymbolID: fixture.symbol(t, "Second").ID, Declaration: "func Second() int {\n\treturn 222\n}"},
-		{SymbolID: fixture.symbol(t, "First").ID, Declaration: "func First() int { return 111 }"},
+	stage, err := fixture.plan(contract, map[string]string{
+		fixture.symbol(t, "Second").ID: "func Second() int {\n\treturn 222\n}",
+		fixture.symbol(t, "First").ID:  "func First() int { return 111 }",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -27,12 +25,12 @@ func TestPlanReplacesMultipleTargetsInOneFileByExactDescendingRanges(t *testing.
 	t.Cleanup(func() { _ = stage.Cleanup() })
 	assertFile(
 		t,
-		filepath.Join(stage.Workspace(), "both.go"),
-		"package samefile\n\nfunc First() int { return 111 }\n\nconst Retained = 7\n\nfunc Second() int {\n\treturn 222\n}\n",
+		filepath.Join(stage.DeltaRoot(), "both.go"),
+		"package samefile\n\nfunc First() int {\n\treturn 111\n}\n\nconst Retained = 7\n\nfunc Second() int {\n\treturn 222\n}\n",
 		0o640,
 	)
-	if strings.Count(stage.Patch(), "diff --git") != 1 || strings.Count(stage.Patch(), "@@ ") != 2 {
-		t.Fatalf("same-file patch did not contain one file and two bounded hunks:\n%s", stage.Patch())
+	if strings.Count(stage.Patch(), "diff --git") != 1 || strings.Count(stage.Patch(), "@@ ") != 1 {
+		t.Fatalf("same-file desired transition did not contain one exact file replacement:\n%s", stage.Patch())
 	}
 }
 
@@ -40,15 +38,15 @@ func TestApplyVerifiedRejectsTamperedStagingWorkspace(t *testing.T) {
 	t.Parallel()
 	fixture := basicFixture(t)
 	contract := fixture.contract(t, "First")
-	stage, err := fixture.plan(contract, []changeapply.CandidateDeclaration{{
-		SymbolID: fixture.symbol(t, "First").ID, Declaration: "func First() int { return 9 }",
-	}})
+	stage, err := fixture.plan(contract, map[string]string{
+		fixture.symbol(t, "First").ID: "func First() int { return 9 }",
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = stage.Cleanup() })
 	if err := os.WriteFile(
-		filepath.Join(stage.Workspace(), "first.go"),
+		filepath.Join(stage.DeltaRoot(), "first.go"),
 		[]byte("package changeapply\n\nfunc First() int { return 900 }\n"),
 		0o600,
 	); err != nil {
@@ -64,18 +62,18 @@ func TestApplyVerifiedRejectsUnexpectedStagingInventory(t *testing.T) {
 	t.Parallel()
 	fixture := basicFixture(t)
 	contract := fixture.contract(t, "First")
-	stage, err := fixture.plan(contract, []changeapply.CandidateDeclaration{{
-		SymbolID: fixture.symbol(t, "First").ID, Declaration: "func First() int { return 9 }",
-	}})
+	stage, err := fixture.plan(contract, map[string]string{
+		fixture.symbol(t, "First").ID: "func First() int { return 9 }",
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = stage.Cleanup() })
-	if err := os.Mkdir(filepath.Join(stage.Workspace(), "unexpected"), 0o700); err != nil {
+	if err := os.Mkdir(filepath.Join(stage.DeltaRoot(), "unexpected"), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(
-		filepath.Join(stage.Workspace(), "unexpected", "generated.go"),
+		filepath.Join(stage.DeltaRoot(), "unexpected", "generated.go"),
 		[]byte("package unexpected\n"), 0o600,
 	); err != nil {
 		t.Fatal(err)
@@ -104,9 +102,9 @@ func TestPlanRejectsSourceLayoutsTheTransactionalPatchEngineCannotPreserve(t *te
 				"value.go": {content: test.source, mode: 0o600},
 			})
 			contract := fixture.contract(t, "Value")
-			_, err := fixture.plan(contract, []changeapply.CandidateDeclaration{{
-				SymbolID: fixture.symbol(t, "Value").ID, Declaration: "func Value() int { return 2 }",
-			}})
+			_, err := fixture.plan(contract, map[string]string{
+				fixture.symbol(t, "Value").ID: "func Value() int { return 2 }",
+			})
 			if err == nil || !strings.Contains(err.Error(), test.contains) {
 				t.Fatalf("unsupported layout error=%v want %q", err, test.contains)
 			}
@@ -122,9 +120,9 @@ func TestPlanRejectsSymlinkThatEscapesIsolatedStaging(t *testing.T) {
 	}
 	fixture.refresh(t)
 	contract := fixture.contract(t, "First")
-	_, err := fixture.plan(contract, []changeapply.CandidateDeclaration{{
-		SymbolID: fixture.symbol(t, "First").ID, Declaration: "func First() int { return 9 }",
-	}})
+	_, err := fixture.plan(contract, map[string]string{
+		fixture.symbol(t, "First").ID: "func First() int { return 9 }",
+	})
 	if err == nil || !strings.Contains(err.Error(), "absolute target") {
 		t.Fatalf("escaping symlink error=%v", err)
 	}

@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"strings"
 	"testing"
 )
 
@@ -15,6 +16,19 @@ func TestRuntimeSchemaNameRequiresDedicatedIdentifier(t *testing.T) {
 	}
 	if err := ValidateRuntimeSchemaName(DefaultRuntimeSchema); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestRuntimeSearchPathHasOneExactAuthority(t *testing.T) {
+	got, err := RuntimeSearchPath(DefaultRuntimeSchema)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "omnidex_runtime,public" {
+		t.Fatalf("runtime search_path=%q", got)
+	}
+	if _, err := RuntimeSearchPath("public"); err == nil {
+		t.Fatal("public schema produced a runtime search_path")
 	}
 }
 
@@ -37,5 +51,12 @@ func TestRuntimeSchemaBootstrapRejectsLegacyPublicState(t *testing.T) {
 	}
 	if err := rejectPublicOmnidexState(true); err == nil {
 		t.Fatal("legacy public Omnidex state was accepted beside a new runtime schema")
+	}
+}
+
+func TestConnectRuntimeReadOnlyRejectsInvalidSchemaBeforeOpeningConnection(t *testing.T) {
+	_, err := ConnectRuntimeReadOnly(context.Background(), "postgres://127.0.0.1:1/omnidex", "public")
+	if err == nil || !strings.Contains(err.Error(), "runtime database schema") {
+		t.Fatalf("error=%v, want invalid runtime schema", err)
 	}
 }

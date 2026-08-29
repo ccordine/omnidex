@@ -13,8 +13,7 @@ func TestRegisteredMigrationsOwnBaseSchemaAndOperationalIndexes(t *testing.T) {
 		"CREATE TABLE IF NOT EXISTS jobs", "CREATE TABLE IF NOT EXISTS job_steps",
 		"CREATE TABLE IF NOT EXISTS ai_channels", "CREATE TABLE IF NOT EXISTS ai_channel_messages")
 	requireMigrationContains(t, "002_v3_artifacts_evidence.sql",
-		"CREATE TABLE IF NOT EXISTS memory_candidates",
-		"CREATE TABLE IF NOT EXISTS claims", "CREATE TABLE IF NOT EXISTS claim_support")
+		"CREATE TABLE IF NOT EXISTS memory_candidates")
 	requireMigrationContains(t, "003_memory_vector_indexes.sql",
 		"CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA public",
 		"CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public",

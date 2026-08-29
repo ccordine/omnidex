@@ -16,7 +16,7 @@ func TestProviderIdentityObservationBindsEveryFreshResponseBody(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	observedAt := time.Date(2026, 8, 9, 20, 0, 0, 1, time.UTC)
+	observedAt := time.Date(2026, 8, 9, 20, 0, 0, 1_000, time.UTC)
 	challenge, err := DeriveProviderIdentityObservationChallenge("test-observation", expected)
 	if err != nil {
 		t.Fatal(err)
@@ -56,6 +56,28 @@ func TestProviderIdentityObservationBindsEveryFreshResponseBody(t *testing.T) {
 	}
 }
 
+func TestProviderIdentityObservationRejectsSubMicrosecondTime(t *testing.T) {
+	expected := providerIdentityTestExpectation()
+	attestation, err := NewProviderIdentityAttestation(
+		expected, "test:/version", "test:/installed", "test:/runner",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	evidence := providerIdentityTestEvidence(t, expected)
+	challenge, err := DeriveProviderIdentityObservationChallenge("time-bound", expected)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = NewObservedProviderIdentity(
+		time.Date(2026, 8, 9, 20, 0, 0, 1, time.UTC),
+		attestation, evidence, challenge,
+	)
+	if err == nil {
+		t.Fatal("provider observation accepted precision PostgreSQL cannot preserve")
+	}
+}
+
 func TestPreparedGenerationRequiresExactUsageAndProviderObservation(t *testing.T) {
 	t.Parallel()
 	expected := providerIdentityTestExpectation()
@@ -70,17 +92,20 @@ func TestPreparedGenerationRequiresExactUsageAndProviderObservation(t *testing.T
 		t.Fatal(err)
 	}
 	observed, err := NewObservedProviderIdentity(
-		time.Now().UTC(), attestation, providerIdentityTestEvidence(t, expected), challenge,
+		time.Now().UTC().Truncate(time.Microsecond),
+		attestation, providerIdentityTestEvidence(t, expected), challenge,
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
 	providerBody := []byte(`{"model":"qwen:9b","created_at":"2026-08-09T22:00:00Z",` +
-		`"response":"{}","done":true,"done_reason":"stop","total_duration":100,` +
+		`"response":"semantic leaf","done":true,"done_reason":"stop","total_duration":100,` +
 		`"load_duration":10,"prompt_eval_count":12,"prompt_eval_duration":20,` +
 		`"eval_count":3,"eval_duration":30}`)
 	result := PreparedGeneration{
-		Schema: PreparedGenerationSchemaV1, ProviderRequestDispatched: true, Content: `{}`,
+		Schema:                     PreparedGenerationSchemaV1,
+		Protocol:                   ExactPreparedProtocolRawTextV2,
+		ProviderRequestDisposition: ProviderRequestDispatched, Content: "semantic leaf",
 		ProviderRequestSHA256: strings.Repeat("b", 64), ProviderHTTPStatus: 200,
 		ProviderResponseDisposition: ProviderResponseSucceeded,
 		ProviderResponseComplete:    true, ProviderResponseBytesKnown: true,
@@ -101,6 +126,25 @@ func TestPreparedGenerationRequiresExactUsageAndProviderObservation(t *testing.T
 	result.ProviderResponseCaptureSHA256 = result.ProviderResponseSHA256
 	if err := result.Validate(); err != nil {
 		t.Fatal(err)
+	}
+	length := result
+	length.ProviderDoneReason = "length"
+	lengthBody := bytes.Replace(
+		providerBody,
+		[]byte(`"done_reason":"stop"`),
+		[]byte(`"done_reason":"length"`),
+		1,
+	)
+	length.ProviderResponseCapture = lengthBody
+	length.ProviderResponseCapturedBytes = len(lengthBody)
+	length.ProviderResponseBytes = int64(len(lengthBody))
+	length.ProviderResponseSHA256 = providerBodySHA256(lengthBody)
+	length.ProviderResponseCaptureSHA256 = length.ProviderResponseSHA256
+	if err := length.ValidateInvocationEvidence(); err != nil {
+		t.Fatalf("length-limited provider receipt lost its exact failure evidence: %v", err)
+	}
+	if err := length.Validate(); err == nil {
+		t.Fatal("length-limited generation was accepted as a complete semantic result")
 	}
 	result.Usage.PromptEvalCount = -1
 	if err := result.Validate(); err == nil {

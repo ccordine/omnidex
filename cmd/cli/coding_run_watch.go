@@ -23,7 +23,6 @@ func awaitCodingRun(c *client.Client, jobID int64, interval time.Duration, progr
 	lastStatus := ""
 	lastStepStatus := map[int64]string{}
 	lastStepDetails := map[int64]string{}
-	lastExternalOutputOffsets := map[int64]int{}
 	seenContextIDs := map[int64]struct{}{}
 	for {
 		details, err := c.Show(context.Background(), jobID)
@@ -37,9 +36,6 @@ func awaitCodingRun(c *client.Client, jobID int64, interval time.Duration, progr
 		printed := false
 		if progress || verbose {
 			printed = printStepStatusUpdates(details.Steps, lastStepStatus) || printed
-		}
-		if progress && !verbose {
-			printed = printExternalAgentStreamUpdatesWithUI(details.Steps, lastExternalOutputOffsets, nil, maxChars) || printed
 		}
 		if verbose {
 			printed = printStepDetailUpdates(details.Steps, lastStepDetails, maxChars) || printed

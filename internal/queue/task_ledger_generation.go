@@ -64,13 +64,6 @@ func taskCommandStepTarget(command taskstate.Command) (*int64, error) {
 			return nil, fmt.Errorf("%w: nil add-entry command", taskstate.ErrInvalidCommand)
 		}
 		return typed.CreatedStepID, nil
-	case taskstate.AcceptDecisionCommand:
-		return typed.CreatedStepID, nil
-	case *taskstate.AcceptDecisionCommand:
-		if typed == nil {
-			return nil, fmt.Errorf("%w: nil accept-decision command", taskstate.ErrInvalidCommand)
-		}
-		return typed.CreatedStepID, nil
 	case taskstate.AssignNodeStepCommand:
 		return &typed.StepID, nil
 	case *taskstate.AssignNodeStepCommand:

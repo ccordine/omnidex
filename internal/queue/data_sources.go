@@ -4,128 +4,40 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/gryph/omnidex/internal/datasource"
+	"github.com/gryph/omnidex/internal/model"
 	"github.com/jackc/pgx/v5"
 )
 
-func (r DataSourceRecord) Connection() datasource.Connection {
-	return datasource.Connection{
-		Driver:       r.Driver,
-		Host:         r.Host,
-		Port:         r.Port,
-		DatabaseName: r.DatabaseName,
-		Username:     r.Username,
-		Password:     r.Password,
-		SSLMode:      r.SSLMode,
-		UseDSN:       r.UseDSN,
-		DSN:          r.DSN,
-		ReadOnly:     r.ReadOnly,
-	}
-}
-
-func (r DataSourceRecord) Profile() datasource.Profile {
-	return datasource.NormalizeProfile(datasource.Profile{
-		Driver:        r.Driver,
-		Domain:        r.Domain,
-		ContextPrompt: r.ContextPrompt,
-		PrivacyMode:   r.PrivacyMode,
-	})
-}
-
-func BuildPostgresDSN(record DataSourceRecord) (string, error) {
-	return datasource.BuildPostgresDSN(record.Connection())
-}
-
-const DataSourcesWorkspaceKey = "data_sources"
-
-type DataSourceRecord struct {
-	ID               string     `json:"id"`
-	Name             string     `json:"name"`
-	Driver           string     `json:"driver"`
-	Domain           string     `json:"domain"`
-	ContextPrompt    string     `json:"context_prompt"`
-	PrivacyMode      string     `json:"privacy_mode"`
-	Host             string     `json:"host"`
-	Port             int        `json:"port"`
-	DatabaseName     string     `json:"database_name"`
-	Username         string     `json:"username"`
-	Password         string     `json:"password,omitempty"`
-	SSLMode          string     `json:"ssl_mode"`
-	UseDSN           bool       `json:"use_dsn"`
-	DSN              string     `json:"dsn,omitempty"`
-	ReadOnly         bool       `json:"read_only"`
-	LastTestStatus   string     `json:"last_test_status"`
-	LastTestMessage  string     `json:"last_test_message"`
-	LastTestAt       *time.Time `json:"last_test_at,omitempty"`
-	CatalogUpdatedAt *time.Time `json:"catalog_updated_at,omitempty"`
-	CreatedAt        time.Time  `json:"created_at"`
-	UpdatedAt        time.Time  `json:"updated_at"`
-}
-
-type DataSourceUpsert struct {
-	Name          string
-	Driver        string
-	Domain        string
-	ContextPrompt string
-	PrivacyMode   string
-	Host          string
-	Port          int
-	DatabaseName  string
-	Username      string
-	Password      string
-	SSLMode       string
-	UseDSN        bool
-	DSN           string
-	ReadOnly      bool
-}
-
-func (r *Repository) ListDataSources(ctx context.Context) ([]DataSourceRecord, error) {
-	raw, err := r.getWorkspaceJSON(ctx, DataSourcesWorkspaceKey)
-	if err != nil {
-		return nil, err
-	}
-	var items []DataSourceRecord
-	if len(raw) == 0 {
-		return []DataSourceRecord{}, nil
-	}
-	if err := json.Unmarshal(raw, &items); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 func (r *Repository) GetDataSource(ctx context.Context, id string) (DataSourceRecord, error) {
-	id = strings.TrimSpace(id)
-	items, err := r.ListDataSources(ctx)
-	if err != nil {
+	if err := validateDataSourceID(id); err != nil {
 		return DataSourceRecord{}, err
 	}
-	for _, item := range items {
-		if item.ID == id {
-			return item, nil
-		}
-	}
-	return DataSourceRecord{}, pgx.ErrNoRows
+	return scanDataSource(r.pool.QueryRow(ctx, `
+		SELECT `+dataSourceSelectColumns+`
+		FROM data_sources
+		WHERE id=$1
+	`, id))
 }
 
-func (r *Repository) CreateDataSource(ctx context.Context, input DataSourceUpsert) (DataSourceRecord, error) {
-	items, err := r.ListDataSources(ctx)
+func (r *Repository) CreateDataSource(
+	ctx context.Context,
+	input DataSourceUpsert,
+) (DataSourceRecord, error) {
+	id, err := newDataSourceID()
 	if err != nil {
 		return DataSourceRecord{}, err
 	}
 	now := time.Now().UTC()
-	record := normalizeDataSourceRecord(DataSourceRecord{
-		ID:            newDataSourceID(),
+	record := canonicalizeDataSourceRecord(DataSourceRecord{
+		ID:            string(id),
 		Name:          input.Name,
 		Driver:        input.Driver,
-		Domain:        input.Domain,
-		ContextPrompt: input.ContextPrompt,
-		PrivacyMode:   input.PrivacyMode,
+		ExecutionMode: input.ExecutionMode,
 		Host:          input.Host,
 		Port:          input.Port,
 		DatabaseName:  input.DatabaseName,
@@ -134,209 +46,148 @@ func (r *Repository) CreateDataSource(ctx context.Context, input DataSourceUpser
 		SSLMode:       input.SSLMode,
 		UseDSN:        input.UseDSN,
 		DSN:           input.DSN,
-		ReadOnly:      input.ReadOnly,
+		AuthorityURL:  input.AuthorityURL,
+		CredentialEnv: input.CredentialEnv,
+		ReadOnly:      true,
 		CreatedAt:     now,
 		UpdatedAt:     now,
 	})
-	items = append(items, record)
-	if err := r.saveDataSources(ctx, items); err != nil {
+	if err := validateDataSourceRecord(record); err != nil {
 		return DataSourceRecord{}, err
 	}
-	return record, nil
+	return scanDataSource(r.pool.QueryRow(ctx, `
+		INSERT INTO data_sources (
+			id,name,driver,execution_mode,host,port,
+			database_name,username,password,ssl_mode,use_dsn,dsn,read_only,
+			authority_url,credential_env,
+			last_test_status,last_test_message,last_test_at,catalog_updated_at,
+			created_at,updated_at
+		) VALUES (
+			$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,
+			$14,$15,$16,$17,$18,$19,$20,$21
+		)
+		RETURNING `+dataSourceSelectColumns,
+		record.ID, record.Name, record.Driver, record.ExecutionMode, record.Host, record.Port, record.DatabaseName,
+		record.Username, record.Password, record.SSLMode, record.UseDSN, record.DSN,
+		record.ReadOnly, record.AuthorityURL, record.CredentialEnv,
+		record.LastTestStatus, record.LastTestMessage,
+		record.LastTestAt, record.CatalogUpdatedAt, record.CreatedAt, record.UpdatedAt,
+	))
 }
 
-func (r *Repository) UpdateDataSource(ctx context.Context, id string, input DataSourceUpsert) (DataSourceRecord, error) {
-	id = strings.TrimSpace(id)
-	items, err := r.ListDataSources(ctx)
+func (r *Repository) UpdateDataSource(
+	ctx context.Context,
+	id string,
+	input DataSourceUpsert,
+) (DataSourceRecord, error) {
+	if err := validateDataSourceID(id); err != nil {
+		return DataSourceRecord{}, err
+	}
+	current, err := r.GetDataSource(ctx, id)
 	if err != nil {
 		return DataSourceRecord{}, err
 	}
-	found := false
-	var updated DataSourceRecord
-	for i, item := range items {
-		if item.ID != id {
-			continue
-		}
-		found = true
-		next := item
-		next.Name = input.Name
-		next.Driver = input.Driver
-		next.Domain = input.Domain
-		next.ContextPrompt = input.ContextPrompt
-		next.PrivacyMode = input.PrivacyMode
-		next.Host = input.Host
-		next.Port = input.Port
-		next.DatabaseName = input.DatabaseName
-		next.Username = input.Username
-		if strings.TrimSpace(input.Password) != "" {
-			next.Password = input.Password
-		}
-		next.SSLMode = input.SSLMode
-		next.UseDSN = input.UseDSN
-		if strings.TrimSpace(input.DSN) != "" {
-			next.DSN = input.DSN
-		}
-		next.ReadOnly = input.ReadOnly
-		next.UpdatedAt = time.Now().UTC()
-		next = normalizeDataSourceRecord(next)
-		items[i] = next
-		updated = next
-		break
+	password := input.Password
+	if current.ExecutionMode == datasource.ExecutionModeDirect &&
+		input.ExecutionMode == datasource.ExecutionModeDirect && strings.TrimSpace(password) == "" {
+		password = current.Password
 	}
-	if !found {
-		return DataSourceRecord{}, pgx.ErrNoRows
+	dsnInput := strings.TrimSpace(input.DSN)
+	dsn := dsnInput
+	if current.ExecutionMode == datasource.ExecutionModeDirect &&
+		input.ExecutionMode == datasource.ExecutionModeDirect && dsn == "" {
+		dsn = current.DSN
 	}
-	if err := r.saveDataSources(ctx, items); err != nil {
+	next := canonicalizeDataSourceRecord(DataSourceRecord{
+		ID:            id,
+		Name:          input.Name,
+		Driver:        input.Driver,
+		ExecutionMode: input.ExecutionMode,
+		Host:          input.Host,
+		Port:          input.Port,
+		DatabaseName:  input.DatabaseName,
+		Username:      input.Username,
+		Password:      password,
+		SSLMode:       input.SSLMode,
+		UseDSN:        input.UseDSN,
+		DSN:           dsn,
+		AuthorityURL:  input.AuthorityURL,
+		CredentialEnv: input.CredentialEnv,
+		ReadOnly:      true,
+		CreatedAt:     current.CreatedAt,
+		UpdatedAt:     time.Now().UTC(),
+	})
+	if err := validateDataSourceRecord(next); err != nil {
 		return DataSourceRecord{}, err
 	}
-	return updated, nil
+	return scanDataSource(r.pool.QueryRow(ctx, `
+		UPDATE data_sources
+		SET name=$2, driver=$3, execution_mode=$4, host=$5, port=$6, database_name=$7, username=$8,
+		    password=$9, ssl_mode=$10, use_dsn=$11, dsn=$12,
+		    authority_url=$13, credential_env=$14,
+		    schema_catalog=CASE WHEN $4='delegated' THEN NULL ELSE schema_catalog END,
+		    catalog_updated_at=CASE WHEN $4='delegated' THEN NULL ELSE catalog_updated_at END,
+		    updated_at=NOW()
+		WHERE id=$1
+		RETURNING `+dataSourceSelectColumns,
+		id, next.Name, next.Driver, next.ExecutionMode, next.Host, next.Port, next.DatabaseName,
+		next.Username, password, next.SSLMode, next.UseDSN, dsn,
+		next.AuthorityURL, next.CredentialEnv,
+	))
 }
 
 func (r *Repository) DeleteDataSource(ctx context.Context, id string) error {
-	id = strings.TrimSpace(id)
-	items, err := r.ListDataSources(ctx)
+	if err := validateDataSourceID(id); err != nil {
+		return err
+	}
+	command, err := r.pool.Exec(ctx, `DELETE FROM data_sources WHERE id=$1`, id)
 	if err != nil {
 		return err
 	}
-	next := make([]DataSourceRecord, 0, len(items))
-	found := false
-	for _, item := range items {
-		if item.ID == id {
-			found = true
-			continue
-		}
-		next = append(next, item)
-	}
-	if !found {
+	if command.RowsAffected() != 1 {
 		return pgx.ErrNoRows
 	}
-	if err := r.saveDataSources(ctx, next); err != nil {
-		return err
-	}
-	_ = r.DeleteDataSourceCatalog(ctx, id)
 	return nil
 }
 
-func (r *Repository) UpdateDataSourceTestResult(ctx context.Context, id, status, message string) (DataSourceRecord, error) {
-	id = strings.TrimSpace(id)
-	items, err := r.ListDataSources(ctx)
-	if err != nil {
+func (r *Repository) UpdateDataSourceTestResult(
+	ctx context.Context,
+	id, status, message string,
+) (DataSourceRecord, error) {
+	if err := validateDataSourceID(id); err != nil {
 		return DataSourceRecord{}, err
 	}
-	found := false
-	var updated DataSourceRecord
-	now := time.Now().UTC()
-	for i, item := range items {
-		if item.ID != id {
-			continue
-		}
-		found = true
-		item.LastTestStatus = strings.TrimSpace(status)
-		item.LastTestMessage = strings.TrimSpace(message)
-		item.LastTestAt = &now
-		item.UpdatedAt = now
-		items[i] = item
-		updated = item
-		break
-	}
-	if !found {
-		return DataSourceRecord{}, pgx.ErrNoRows
-	}
-	if err := r.saveDataSources(ctx, items); err != nil {
-		return DataSourceRecord{}, err
-	}
-	return updated, nil
+	return scanDataSource(r.pool.QueryRow(ctx, `
+		UPDATE data_sources
+		SET last_test_status=$2, last_test_message=$3, last_test_at=NOW(), updated_at=NOW()
+		WHERE id=$1
+		RETURNING `+dataSourceSelectColumns,
+		id, strings.TrimSpace(status), strings.TrimSpace(message),
+	))
 }
 
-func (r *Repository) saveDataSources(ctx context.Context, items []DataSourceRecord) error {
-	payload, err := json.Marshal(items)
-	if err != nil {
-		return err
-	}
-	_, err = r.pool.Exec(ctx, `
-		INSERT INTO workspace_settings (key, value, updated_at)
-		VALUES ($1, $2::jsonb, NOW())
-		ON CONFLICT (key) DO UPDATE
-		SET value = EXCLUDED.value,
-		    updated_at = NOW()
-	`, DataSourcesWorkspaceKey, string(payload))
-	return err
-}
-
-func (r *Repository) getWorkspaceJSON(ctx context.Context, key string) (json.RawMessage, error) {
-	var raw []byte
-	err := r.pool.QueryRow(ctx, `SELECT value FROM workspace_settings WHERE key = $1`, key).Scan(&raw)
-	if err != nil {
-		if err == pgx.ErrNoRows {
-			return nil, nil
-		}
-		return nil, err
-	}
-	return json.RawMessage(raw), nil
-}
-
-func newDataSourceID() string {
+func newDataSourceID() (model.DataSourceID, error) {
 	buf := make([]byte, 16)
 	if _, err := rand.Read(buf); err != nil {
-		return fmt.Sprintf("ds-%d", time.Now().UTC().UnixNano())
+		return "", fmt.Errorf("generate data source identity: %w", err)
 	}
-	return hex.EncodeToString(buf)
+	id := model.DataSourceID(hex.EncodeToString(buf))
+	if err := id.Validate(); err != nil {
+		return "", err
+	}
+	return id, nil
 }
 
-func (r *Repository) UpdateDataSourceCatalogTimestamp(ctx context.Context, id string, at time.Time) error {
-	id = strings.TrimSpace(id)
-	items, err := r.ListDataSources(ctx)
-	if err != nil {
-		return err
-	}
-	found := false
-	for i, item := range items {
-		if item.ID != id {
-			continue
-		}
-		found = true
-		ts := at.UTC()
-		items[i].CatalogUpdatedAt = &ts
-		items[i].UpdatedAt = time.Now().UTC()
-		break
-	}
-	if !found {
-		return pgx.ErrNoRows
-	}
-	return r.saveDataSources(ctx, items)
-}
-
-func normalizeDataSourceRecord(record DataSourceRecord) DataSourceRecord {
+func canonicalizeDataSourceRecord(record DataSourceRecord) DataSourceRecord {
 	record.Name = strings.TrimSpace(record.Name)
 	record.Driver = strings.ToLower(strings.TrimSpace(record.Driver))
-	if record.Driver == "" {
-		record.Driver = "postgres"
-	}
-	profile := datasource.NormalizeProfile(datasource.Profile{
-		Driver:        record.Driver,
-		Domain:        record.Domain,
-		ContextPrompt: record.ContextPrompt,
-		PrivacyMode:   record.PrivacyMode,
-	})
-	record.Domain = profile.Domain
-	record.ContextPrompt = profile.ContextPrompt
-	record.PrivacyMode = profile.PrivacyMode
+	record.ExecutionMode = datasource.ExecutionMode(strings.ToLower(strings.TrimSpace(string(record.ExecutionMode))))
 	record.Host = strings.TrimSpace(record.Host)
-	if record.Port <= 0 {
-		record.Port = 5432
-	}
 	record.DatabaseName = strings.TrimSpace(record.DatabaseName)
 	record.Username = strings.TrimSpace(record.Username)
-	record.SSLMode = strings.TrimSpace(record.SSLMode)
-	if record.SSLMode == "" {
-		record.SSLMode = "prefer"
-	}
+	record.SSLMode = strings.ToLower(strings.TrimSpace(record.SSLMode))
 	record.DSN = strings.TrimSpace(record.DSN)
-	if !record.ReadOnly {
-		record.ReadOnly = true
-	}
-	if record.Name == "" {
-		record.Name = "Untitled source"
-	}
+	record.AuthorityURL = strings.TrimSpace(record.AuthorityURL)
+	record.CredentialEnv = strings.TrimSpace(record.CredentialEnv)
 	return record
 }

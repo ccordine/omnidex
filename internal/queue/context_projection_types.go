@@ -23,15 +23,7 @@ var (
 type ContextProjectionAuthority struct {
 	model.StepAttemptAuthority
 	WorkKind string
-	Mode     ContextProjectionMode
 }
-
-type ContextProjectionMode string
-
-const (
-	ContextProjectionModeShadow ContextProjectionMode = "shadow"
-	ContextProjectionModeLive   ContextProjectionMode = "live"
-)
 
 type ContextProjectionRecord struct {
 	RecordID   int64

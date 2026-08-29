@@ -11,7 +11,6 @@ import (
 
 	repositoryfacts "github.com/gryph/omnidex/internal/repository"
 	golangadapter "github.com/gryph/omnidex/internal/repository/adapters/golang"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func TestRepositorySnapshotStoreRejectsMissingAuthority(t *testing.T) {
@@ -37,20 +36,12 @@ func TestRepositorySnapshotStoreRejectsMissingAuthority(t *testing.T) {
 }
 
 func TestPostgresRepositorySnapshotsAreExactAndImmutable(t *testing.T) {
-	databaseURL := strings.TrimSpace(os.Getenv("OMNI_TEST_DATABASE_URL"))
-	if databaseURL == "" {
-		t.Skip("set OMNI_TEST_DATABASE_URL to run PostgreSQL repository intelligence tests")
-	}
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git is required for repository intelligence tests")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	pool, err := pgxpool.New(ctx, databaseURL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer pool.Close()
+	pool := openIsolatedMigrationPool(t)
 	repository := New(pool)
 	if err := repository.EnsureSchema(ctx, loadCheckedMigrationBundle(t)); err != nil {
 		t.Fatal(err)
@@ -66,7 +57,15 @@ func TestPostgresRepositorySnapshotsAreExactAndImmutable(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.test/repository\n\ngo 1.22\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	runQueueRepositoryGit(t, root, "add", "main.go", "go.mod")
+	for _, name := range []string{
+		"Zebra.txt", "alpha.txt", // regular files
+		"Zebra.key", "alpha.key", // sensitive exclusions
+	} {
+		if err := os.WriteFile(filepath.Join(root, name), []byte(name+"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	runQueueRepositoryGit(t, root, "add", "main.go", "go.mod", "Zebra.txt", "alpha.txt", "Zebra.key", "alpha.key")
 	runQueueRepositoryGit(t, root, "commit", "-m", "initial")
 	snapshot, err := repositoryfacts.BuildGitSnapshot(ctx, root, repositoryfacts.SnapshotOptions{})
 	if err != nil {
@@ -79,7 +78,7 @@ func TestPostgresRepositorySnapshotsAreExactAndImmutable(t *testing.T) {
 	if !analysis.Complete || len(analysis.Symbols) == 0 {
 		t.Fatalf("analysis did not produce complete compiler facts: %#v", analysis)
 	}
-	project, err := repository.CreateProject(ctx, "repository-intelligence-test", root, "", "", nil)
+	project, err := repository.CreateProject(ctx, "repository-intelligence-test", root, "")
 	if err != nil {
 		t.Fatal(err)
 	}

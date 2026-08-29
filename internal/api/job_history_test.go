@@ -15,6 +15,7 @@ func TestJobHistoryEndpointRejectsUnknownStreamAndUnboundedLimit(t *testing.T) {
 	server := &Server{}
 	for _, target := range []string{
 		"/v1/jobs/7/history?stream=unknown&limit=1",
+		"/v1/jobs/7/history?stream=claims&limit=1",
 		"/v1/jobs/7/history?stream=steps&limit=0",
 		"/v1/jobs/7/history?stream=steps&limit=" + strings.Repeat("9", 20),
 		"/v1/jobs/7/history?stream=steps&limit=1&cursor=not-a-cursor",

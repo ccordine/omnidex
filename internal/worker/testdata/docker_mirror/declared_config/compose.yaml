@@ -1,0 +1,10 @@
+services:
+  inspector:
+    image: busybox:1.36
+    configs:
+      - source: fixture_data
+        target: /etc/fixture-data
+
+configs:
+  fixture_data:
+    file: ./fixture.txt

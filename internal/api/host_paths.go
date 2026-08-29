@@ -98,7 +98,7 @@ func resolveHostBridgeProjectPath(ctx context.Context, client *hostbridge.Client
 	var attempts []string
 	var lastErr error
 	for _, candidate := range candidates {
-		result, err := client.Browse(ctx, candidate)
+		result, err := client.Browse(ctx, candidate, hostbridge.BrowseOptions{Limit: 1})
 		if err == nil && result != nil && strings.TrimSpace(result.Path) != "" {
 			return filepath.Clean(result.Path), nil
 		}

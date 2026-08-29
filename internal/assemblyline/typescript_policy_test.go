@@ -8,16 +8,16 @@ import (
 func TestTypeScriptFunctionPolicyRailsGeneratedCode(t *testing.T) {
 	contract := TypeScriptFunctionContract{
 		Signature: "function Capability(): ReactElement", TSX: true,
-		Policy: TypeScriptFunctionPolicy{
-			RequiredCalls: []TypeScriptCallRequirement{{
+		Policy: SourceFunctionPolicy{
+			RequiredCalls: []SourceCallRequirement{{
 				Callees:        []string{"writeChannel"},
 				StringArgument: "capability_001", StringArgumentIndex: 1,
 			}},
-			RestrictedCalls: []TypeScriptCallRestriction{{
+			RestrictedCalls: []SourceCallRestriction{{
 				Callees: []string{"writeChannel"}, StringArgumentIndex: 1,
 				AllowedStringArguments: []string{"capability_001"},
 			}},
-			RequiredJSXElements:  []string{"section"},
+			RequiredElementNames: []string{"section"},
 			ForbiddenIdentifiers: []string{"ForbiddenHostAPI", "fetch"},
 			TopLevelCalls:        []string{"useTopLevelResource"},
 		},

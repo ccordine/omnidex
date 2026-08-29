@@ -1,25 +1,24 @@
 package worker
 
 import (
-	"fmt"
 	"time"
 )
 
-const (
-	maxDirectCodingStageCorrections         = 12
-	maxDirectCodingStageRepeatedCorrections = 3
-	directCodingStageTimeout                = 60 * time.Second
-)
+const directCodingStageTimeout = 60 * time.Second
 
 type directCodingStageDiagnostic struct {
-	BlockID string
-	Message string
-	Output  string
-}
-
-func (s *directCodingSession) stageProgram(program *directCodingProgram) error {
-	if program == nil {
-		return fmt.Errorf("stage deterministic browser program: program is nil")
-	}
-	return s.stageTypeScriptProgram(program)
+	BlockID                string
+	Message                string
+	Output                 string
+	ModelFeedback          string
+	VerificationStage      string
+	FailureClass           directCodingStageFailureClass
+	DeclarationLine        int
+	DeclarationColumn      int
+	CompilerIssue          bool
+	DocumentPath           string
+	DocumentLine           int
+	DocumentColumn         int
+	DocumentBlockStartLine int
+	DocumentBlockEndLine   int
 }

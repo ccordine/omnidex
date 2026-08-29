@@ -25,6 +25,15 @@ func ValidateRuntimeSchemaName(name string) error {
 	return nil
 }
 
+// RuntimeSearchPath returns the sole search-path projection used by runtime
+// connections and migration applicability proofs.
+func RuntimeSearchPath(runtimeSchema string) (string, error) {
+	if err := ValidateRuntimeSchemaName(runtimeSchema); err != nil {
+		return "", err
+	}
+	return runtimeSchema + ",public", nil
+}
+
 func ConnectRuntime(
 	ctx context.Context,
 	databaseURL string,
@@ -33,7 +42,8 @@ func ConnectRuntime(
 	if ctx == nil {
 		return nil, fmt.Errorf("runtime database connection requires context")
 	}
-	if err := ValidateRuntimeSchemaName(runtimeSchema); err != nil {
+	runtimeSearchPath, err := RuntimeSearchPath(runtimeSchema)
+	if err != nil {
 		return nil, err
 	}
 	cfg, err := pgxpool.ParseConfig(databaseURL)
@@ -56,7 +66,50 @@ func ConnectRuntime(
 	}
 	bootstrap.Close()
 
-	cfg.ConnConfig.RuntimeParams["search_path"] = runtimeSchema + ",public"
+	cfg.ConnConfig.RuntimeParams["search_path"] = runtimeSearchPath
+	pool, err := pgxpool.NewWithConfig(ctx, cfg)
+	if err != nil {
+		return nil, err
+	}
+	var selected string
+	if err := pool.QueryRow(ctx, `SELECT current_schema()`).Scan(&selected); err != nil {
+		pool.Close()
+		return nil, err
+	}
+	if selected != runtimeSchema {
+		pool.Close()
+		return nil, fmt.Errorf("runtime database did not select its exact schema")
+	}
+	return pool, nil
+}
+
+// ConnectRuntimeReadOnly selects an existing dedicated runtime schema without
+// bootstrap, migration, or schema mutation. It is for immutable evidence
+// inspection such as station replay; callers must still use read-only
+// transactions for every query.
+func ConnectRuntimeReadOnly(
+	ctx context.Context,
+	databaseURL string,
+	runtimeSchema string,
+) (*pgxpool.Pool, error) {
+	if ctx == nil {
+		return nil, fmt.Errorf("read-only runtime database connection requires context")
+	}
+	runtimeSearchPath, err := RuntimeSearchPath(runtimeSchema)
+	if err != nil {
+		return nil, err
+	}
+	cfg, err := pgxpool.ParseConfig(databaseURL)
+	if err != nil {
+		return nil, err
+	}
+	_, directSearchPath := cfg.ConnConfig.RuntimeParams["search_path"]
+	options := cfg.ConnConfig.RuntimeParams["options"]
+	if directSearchPath || strings.Contains(strings.ToLower(options), "search_path") {
+		return nil, fmt.Errorf("DATABASE_URL search_path is forbidden; use DATABASE_SCHEMA")
+	}
+	configurePool(cfg)
+	cfg.ConnConfig.RuntimeParams["search_path"] = runtimeSearchPath
 	pool, err := pgxpool.NewWithConfig(ctx, cfg)
 	if err != nil {
 		return nil, err
@@ -161,7 +214,10 @@ func publicOmnidexSchemaExists(ctx context.Context, tx pgx.Tx) (bool, error) {
 			SELECT 1 FROM pg_class relations
 			JOIN pg_namespace namespaces ON namespaces.oid=relations.relnamespace
 			WHERE namespaces.nspname='public' AND relations.relkind IN ('r','p') AND (
-				relations.relname IN ('schema_migrations','omni_runs','task_ledgers') OR
+				relations.relname IN (
+					'schema_migrations','omni_migrations','omni_runs','task_ledgers',
+					'memory_chunks','memory_chunk_tags'
+				) OR
 				relations.relname='jobs' AND EXISTS (
 					SELECT 1 FROM pg_class steps
 					JOIN pg_namespace step_namespaces ON step_namespaces.oid=steps.relnamespace

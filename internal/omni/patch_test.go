@@ -216,6 +216,25 @@ func TestApplyUnifiedPatchCreatesFile(t *testing.T) {
 	}
 }
 
+func TestCreatedPatchCommitCannotReplaceTargetAppearingAfterValidation(t *testing.T) {
+	workspace := t.TempDir()
+	staged := filepath.Join(workspace, ".omnidex-patch-stage-race")
+	target := filepath.Join(workspace, "new.txt")
+	if err := os.WriteFile(staged, []byte("staged\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// This write represents another actor publishing the target after the
+	// ordinary absence check but immediately before the atomic commit.
+	if err := os.WriteFile(target, []byte("concurrent\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := commitCreatedPatchFile(staged, target); err == nil {
+		t.Fatal("atomic create replaced a target that appeared after validation")
+	}
+	assertPatchFile(t, target, "concurrent\n", 0o600)
+	assertPatchFile(t, staged, "staged\n", 0o644)
+}
+
 func TestApplyUnifiedPatchDeleteDryRunValidatesContext(t *testing.T) {
 	workspace := t.TempDir()
 	if err := os.WriteFile(filepath.Join(workspace, "old.txt"), []byte("keep\n"), 0o644); err != nil {

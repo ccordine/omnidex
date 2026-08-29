@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gryph/omnidex/internal/operation"
 	repositoryfacts "github.com/gryph/omnidex/internal/repository"
-	toolruntime "github.com/gryph/omnidex/internal/tools"
 )
 
 func TestRepositoryGoVerificationCommandRejectsTamperedProofBinding(t *testing.T) {
@@ -22,6 +22,7 @@ func TestRepositoryGoVerificationCommandRejectsTamperedProofBinding(t *testing.T
 	valid := testCommand{
 		Family: "go", Name: "go",
 		Args:            []string{"test", "-json", "-count=1", "-run", "^TestOne$", "."},
+		Purpose:         verificationTest,
 		RepositoryProof: proof,
 	}
 	if err := validateRepositoryGoTestCommand(valid); err != nil {
@@ -42,7 +43,8 @@ func TestRepositoryGoVerificationPlanSeparatesFocusedAndBroadAuthority(t *testin
 	t.Parallel()
 	focused := testCommand{
 		Family: "go", Name: "go",
-		Args: []string{"test", "-json", "-count=1", "-run", "^TestOne$", "."},
+		Args:    []string{"test", "-json", "-count=1", "-run", "^TestOne$", "."},
+		Purpose: verificationTest,
 		RepositoryProof: &repositoryGoTestProof{
 			Mode: repositoryGoProofFocused, Package: ".",
 			Expected: []repositoryGoExpectedTest{{
@@ -52,6 +54,7 @@ func TestRepositoryGoVerificationPlanSeparatesFocusedAndBroadAuthority(t *testin
 	}
 	broad := testCommand{
 		Family: "go", Name: "go", Args: []string{"test", "-json", "-count=1", "./..."},
+		Purpose:         verificationTest,
 		RepositoryProof: &repositoryGoTestProof{Mode: repositoryGoProofBroad, Package: "./..."},
 	}
 	if err := validateRepositoryGoVerificationPlan(
@@ -132,23 +135,35 @@ func TestRepositoryCommandMetadataBindsExactExpectedTestAuthority(t *testing.T) 
 	}
 }
 
-func TestRepositoryVerificationAcceptanceIsPlanLevelAndExitOneIsTheOnlyCorrectableResult(t *testing.T) {
+func TestRepositoryVerificationStagedAcceptanceIsPlanLevel(t *testing.T) {
 	t.Parallel()
 	authority := repositoryVerificationAuthority{
 		contractID: "contract-one", sourceSnapshotID: "snapshot-one",
 		stageID: "stage-one", patchSHA256: "patch-one",
 		planID: "plan-one", expectedPostID: "post-one",
 	}
-	record := repositoryVerificationAcceptanceEvidence(
-		authority, repositoryVerificationAuthoritative, []testCommand{{}, {}, {}},
+	record, err := repositoryVerificationAcceptanceEvidence(
+		authority, repositoryVerificationStaged, []testCommand{{}, {}, {}},
 	)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if record.Metadata["repository_verification_plan_accepted"] != true ||
 		record.Metadata["repository_verification_command_count"] != 3 ||
-		record.Metadata["repository_verification_scope"] != "authoritative" ||
+		record.Metadata["repository_verification_scope"] != "staged" ||
 		record.Metadata["repository_change_stage_id"] != "stage-one" ||
 		record.Metadata["repository_expected_post_id"] != "post-one" {
 		t.Fatalf("plan acceptance evidence=%#v", record.Metadata)
 	}
+	if _, err := repositoryVerificationAcceptanceEvidence(
+		authority, repositoryVerificationAuthoritative, []testCommand{{}},
+	); err == nil {
+		t.Fatal("authoritative verification fabricated a non-journal acceptance record")
+	}
+}
+
+func TestRepositoryVerificationExitOneIsTheOnlyCorrectableResult(t *testing.T) {
+	t.Parallel()
 	for _, test := range []struct {
 		output  map[string]any
 		accepts bool
@@ -159,7 +174,7 @@ func TestRepositoryVerificationAcceptanceIsPlanLevelAndExitOneIsTheOnlyCorrectab
 		{output: map[string]any{"succeeded": false, "exit_code": float64(1)}},
 		{output: map[string]any{"succeeded": true, "exit_code": 1}},
 	} {
-		err := requireRepositoryGoOrdinaryFailure(toolruntime.Result{Output: test.output})
+		err := requireRepositoryGoOrdinaryFailure(operation.Result{Output: test.output})
 		if (err == nil) != test.accepts {
 			t.Fatalf("output=%#v accepts=%t error=%v", test.output, test.accepts, err)
 		}

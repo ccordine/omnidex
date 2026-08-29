@@ -10,9 +10,6 @@ import (
 	"strings"
 	"syscall"
 	"time"
-
-	"github.com/gryph/omnidex/internal/codexrunner"
-	"github.com/gryph/omnidex/internal/cursorrunner"
 )
 
 // ServeOptions configures the host bridge HTTP server.
@@ -46,8 +43,6 @@ func RunServe(opts ServeOptions) error {
 	}()
 
 	log.Printf("omni host bridge listening on http://%s (browse, terminal, screen stream)", addr)
-	logHostBridgeCursorPreflight()
-	logHostBridgeCodexPreflight()
 	if strings.HasPrefix(addr, "127.0.0.1") || strings.HasPrefix(addr, "localhost") {
 		log.Printf("docker tip: run with --listen 0.0.0.0:8091 and set HOST_AGENT_URL=http://host.docker.internal:8091 in core")
 	}
@@ -55,26 +50,4 @@ func RunServe(opts ServeOptions) error {
 		return err
 	}
 	return nil
-}
-
-func logHostBridgeCursorPreflight() {
-	if issues := cursorrunner.Preflight(); len(issues) > 0 {
-		parts := make([]string, 0, len(issues))
-		for _, issue := range issues {
-			parts = append(parts, issue.Tool+" missing ("+issue.Hint+")")
-		}
-		log.Printf("cursor sdk preflight warning: %s", strings.Join(parts, "; "))
-		log.Printf("cursor tip: start the bridge from a login shell or set OMNI_CURSOR_NODE_BIN / OMNI_CURSOR_NPM_BIN in ~/.config/omni/host-bridge.env")
-	}
-}
-
-func logHostBridgeCodexPreflight() {
-	if issues := codexrunner.Preflight(); len(issues) > 0 {
-		parts := make([]string, 0, len(issues))
-		for _, issue := range issues {
-			parts = append(parts, issue.Tool+" missing ("+issue.Hint+")")
-		}
-		log.Printf("codex sdk preflight warning: %s", strings.Join(parts, "; "))
-		log.Printf("codex tip: start the bridge from a login shell or set OMNI_CODEX_NODE_BIN / OMNI_CODEX_NPM_BIN / OMNI_CODEX_BIN in ~/.config/omni/host-bridge.env")
-	}
 }

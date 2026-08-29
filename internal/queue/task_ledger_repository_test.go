@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -35,28 +34,20 @@ func TestTaskLedgerRepositoryRejectsMissingAuthority(t *testing.T) {
 }
 
 func TestPostgresTaskLedgerCommandsAreAtomicAndIdempotent(t *testing.T) {
-	databaseURL := strings.TrimSpace(os.Getenv("OMNI_TEST_DATABASE_URL"))
-	if databaseURL == "" {
-		t.Skip("set OMNI_TEST_DATABASE_URL to run PostgreSQL task ledger repository tests")
-	}
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
-	pool, err := pgxpool.New(ctx, databaseURL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer pool.Close()
+	pool := openIsolatedMigrationPool(t)
 	repository := New(pool)
 	if err := repository.EnsureSchema(ctx, loadCheckedMigrationBundle(t)); err != nil {
 		t.Fatal(err)
 	}
 
 	marker := fmt.Sprintf("task-ledger-repository-%d", time.Now().UnixNano())
-	job, err := repository.EnqueueJob(ctx, marker+"-one", model.PipelineAssistant, []byte(`{}`))
+	job, err := repository.EnqueueJob(ctx, marker+"-one", model.PipelineCoding, []byte(`{}`))
 	if err != nil {
 		t.Fatal(err)
 	}
-	otherJob, err := repository.EnqueueJob(ctx, marker+"-two", model.PipelineAssistant, []byte(`{}`))
+	otherJob, err := repository.EnqueueJob(ctx, marker+"-two", model.PipelineCoding, []byte(`{}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -205,9 +196,9 @@ func TestPostgresTaskLedgerCommandsAreAtomicAndIdempotent(t *testing.T) {
 	defer missingRunTx.Rollback(context.Background())
 	if err := missingRunTx.QueryRow(ctx, `
 		INSERT INTO jobs (instruction, pipeline, status, metadata)
-		VALUES ($1, 'agent', 'pending', '{}'::jsonb)
+		VALUES ($1, $2, 'pending', '{}'::jsonb)
 		RETURNING id
-	`, marker+"-missing-run").Scan(&missingRunJobID); err != nil {
+	`, marker+"-missing-run", model.PipelineCoding).Scan(&missingRunJobID); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := missingRunTx.Exec(ctx, `

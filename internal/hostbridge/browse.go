@@ -2,10 +2,17 @@ package hostbridge
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
+)
+
+const (
+	DefaultBrowsePageSize = 50
+	MaxBrowsePageSize     = 100
+	MaxBrowseOffset       = 10_000
+	browseReadChunkSize   = 64
 )
 
 type Entry struct {
@@ -15,13 +22,24 @@ type Entry struct {
 }
 
 type BrowseResult struct {
-	Path    string  `json:"path"`
-	Parent  string  `json:"parent,omitempty"`
-	Entries []Entry `json:"entries"`
+	Path           string  `json:"path"`
+	Parent         string  `json:"parent,omitempty"`
+	Entries        []Entry `json:"entries"`
+	Limit          int     `json:"limit"`
+	Offset         int     `json:"offset"`
+	HasPrevious    bool    `json:"has_previous"`
+	PreviousOffset int     `json:"previous_offset"`
+	HasMore        bool    `json:"has_more"`
+	NextOffset     int     `json:"next_offset,omitempty"`
+	RequiredRoot   string  `json:"required_root,omitempty"`
 }
 
 type BrowseOptions struct {
-	ExtraRoots []string
+	ExtraRoots      []string
+	RequiredRoot    string
+	Limit           int
+	Offset          int
+	DirectoriesOnly bool
 }
 
 func DefaultBrowseRoot() (string, error) {
@@ -33,6 +51,9 @@ func DefaultBrowseRoot() (string, error) {
 }
 
 func ListDirectory(target string, opts BrowseOptions) (*BrowseResult, error) {
+	if err := validateBrowseBounds(opts); err != nil {
+		return nil, err
+	}
 	if strings.TrimSpace(target) == "" {
 		root, err := DefaultBrowseRoot()
 		if err != nil {
@@ -45,8 +66,24 @@ func ListDirectory(target string, opts BrowseOptions) (*BrowseResult, error) {
 		return nil, err
 	}
 	abs = filepath.Clean(abs)
+	canonical, err := filepath.EvalSymlinks(abs)
+	if err != nil {
+		return nil, fmt.Errorf("resolve browse path: %w", err)
+	}
+	abs = filepath.Clean(canonical)
 	if err := ensureBrowseAllowed(abs, opts); err != nil {
 		return nil, err
+	}
+	requiredRoot := ""
+	if root := strings.TrimSpace(opts.RequiredRoot); root != "" {
+		canonicalRoot, rootErr := canonicalBrowseRoot(root)
+		if rootErr != nil {
+			return nil, fmt.Errorf("resolve required browse root: %w", rootErr)
+		}
+		if !underRoot(abs, canonicalRoot) {
+			return nil, fmt.Errorf("path outside required browse root")
+		}
+		requiredRoot = canonicalRoot
 	}
 	stat, err := os.Stat(abs)
 	if err != nil {
@@ -55,41 +92,95 @@ func ListDirectory(target string, opts BrowseOptions) (*BrowseResult, error) {
 	if !stat.IsDir() {
 		return nil, fmt.Errorf("path must be a directory")
 	}
-	entries, err := os.ReadDir(abs)
+	items, hasMore, err := readDirectoryPage(abs, opts)
 	if err != nil {
 		return nil, err
 	}
-	items := make([]Entry, 0, len(entries))
-	for _, entry := range entries {
-		if strings.HasPrefix(entry.Name(), ".") {
-			continue
-		}
-		full := filepath.Join(abs, entry.Name())
-		info, err := entry.Info()
-		if err != nil {
-			continue
-		}
-		items = append(items, Entry{
-			Name:  entry.Name(),
-			Path:  full,
-			IsDir: info.IsDir(),
-		})
-	}
-	sort.Slice(items, func(i, j int) bool {
-		if items[i].IsDir != items[j].IsDir {
-			return items[i].IsDir
-		}
-		return strings.ToLower(items[i].Name) < strings.ToLower(items[j].Name)
-	})
 	parent := ""
 	if parentPath := filepath.Dir(abs); parentPath != abs {
 		parent = parentPath
 	}
 	return &BrowseResult{
-		Path:    abs,
-		Parent:  parent,
-		Entries: items,
+		Path:        abs,
+		Parent:      parent,
+		Entries:     items,
+		Limit:       opts.Limit,
+		Offset:      opts.Offset,
+		HasPrevious: opts.Offset > 0,
+		PreviousOffset: func() int {
+			previous := opts.Offset - opts.Limit
+			if previous < 0 {
+				return 0
+			}
+			return previous
+		}(),
+		HasMore: hasMore,
+		NextOffset: func() int {
+			if !hasMore {
+				return 0
+			}
+			return opts.Offset + len(items)
+		}(),
+		RequiredRoot: requiredRoot,
 	}, nil
+}
+
+func validateBrowseBounds(opts BrowseOptions) error {
+	if opts.Limit < 1 || opts.Limit > MaxBrowsePageSize {
+		return fmt.Errorf("browse limit must be between 1 and %d", MaxBrowsePageSize)
+	}
+	if opts.Offset < 0 {
+		return fmt.Errorf("browse offset must be non-negative")
+	}
+	if opts.Offset > MaxBrowseOffset {
+		return fmt.Errorf("browse offset must not exceed %d", MaxBrowseOffset)
+	}
+	return nil
+}
+
+func readDirectoryPage(path string, opts BrowseOptions) ([]Entry, bool, error) {
+	directory, err := os.Open(path)
+	if err != nil {
+		return nil, false, err
+	}
+	defer directory.Close()
+
+	items := make([]Entry, 0, opts.Limit+1)
+	matched := 0
+	for len(items) <= opts.Limit {
+		batch, readErr := directory.ReadDir(browseReadChunkSize)
+		for _, entry := range batch {
+			if strings.HasPrefix(entry.Name(), ".") || (opts.DirectoriesOnly && !entry.IsDir()) {
+				continue
+			}
+			if matched < opts.Offset {
+				matched++
+				continue
+			}
+			items = append(items, Entry{
+				Name:  entry.Name(),
+				Path:  filepath.Join(path, entry.Name()),
+				IsDir: entry.IsDir(),
+			})
+			if len(items) > opts.Limit {
+				break
+			}
+		}
+		if len(items) > opts.Limit {
+			break
+		}
+		if readErr != nil && readErr != io.EOF {
+			return nil, false, fmt.Errorf("read directory page: %w", readErr)
+		}
+		if readErr == io.EOF || len(batch) == 0 {
+			break
+		}
+	}
+	hasMore := len(items) > opts.Limit
+	if hasMore {
+		items = items[:opts.Limit]
+	}
+	return items, hasMore, nil
 }
 
 func NonEmptyEntries(entries []Entry) []Entry {
@@ -117,11 +208,27 @@ func ensureBrowseAllowed(abs string, opts BrowseOptions) error {
 		}
 	}
 	for _, root := range roots {
-		if underRoot(abs, root) || underRoot(root, abs) {
+		canonicalRoot, err := canonicalBrowseRoot(root)
+		if err != nil {
+			continue
+		}
+		if underRoot(abs, canonicalRoot) || underRoot(canonicalRoot, abs) {
 			return nil
 		}
 	}
 	return fmt.Errorf("path outside allowed browse roots")
+}
+
+func canonicalBrowseRoot(root string) (string, error) {
+	abs, err := filepath.Abs(strings.TrimSpace(root))
+	if err != nil || strings.TrimSpace(root) == "" {
+		return "", fmt.Errorf("browse root is invalid")
+	}
+	resolved, err := filepath.EvalSymlinks(filepath.Clean(abs))
+	if err != nil {
+		return "", err
+	}
+	return filepath.Clean(resolved), nil
 }
 
 func underRoot(path, root string) bool {

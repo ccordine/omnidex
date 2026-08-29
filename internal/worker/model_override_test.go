@@ -2,67 +2,95 @@ package worker
 
 import (
 	"encoding/json"
-	"fmt"
+	"strings"
 	"sync"
 	"testing"
 
-	"github.com/gryph/omnidex/internal/model"
-	"github.com/gryph/omnidex/internal/specialist"
-	"github.com/gryph/omnidex/internal/specialists"
+	"github.com/gryph/omnidex/internal/station"
 )
 
-func TestConcurrentJobModelRoutingIsIsolated(t *testing.T) {
-	service := &Service{
-		models: ModelRouting{Tagging: "base-tagger", Fast: "base-fast"},
-		v3Registry: &specialists.Registry{Specs: map[string]specialists.Spec{
-			"prompt_interpreter": {ID: "prompt_interpreter", PreferredModel: []string{"fast"}},
-		}},
+func TestConcurrentJobStationRoutingIsIsolated(t *testing.T) {
+	service := &Service{models: ModelRouting{
+		Stations: map[station.ID]string{
+			station.ConversationObjectiveKind: "base-kind",
+		},
+	}}
+	metadata := []json.RawMessage{
+		json.RawMessage(`{"model_config":{"conversation_objective_kind_model":"job-a"}}`),
+		json.RawMessage(`{"model_config":{"conversation_objective_kind_model":"job-b"}}`),
 	}
-	type routeCase struct {
-		job  model.Job
-		want string
-	}
-	cases := []routeCase{
-		{job: model.Job{Metadata: json.RawMessage(`{"model_tagger":"job-a"}`)}, want: "job-a"},
-		{job: model.Job{Metadata: json.RawMessage(`{"model_config":{"fast_model":"job-b"}}`)}, want: "job-b"},
-	}
-
-	errors := make(chan error, 200)
+	errors := make(chan string, 200)
 	var workers sync.WaitGroup
 	for index := 0; index < 200; index++ {
 		workers.Add(1)
-		go func(test routeCase) {
+		go func(raw json.RawMessage, want string) {
 			defer workers.Done()
-			routing, err := modelRoutingFromJobMetadata(test.job.Metadata, service.models)
+			routing, err := modelRoutingFromJobMetadata(raw, service.models)
 			if err != nil {
-				errors <- err
+				errors <- err.Error()
 				return
 			}
-			got := service.v3SpecialistModel(test.job, routing, "prompt_interpreter", specialist.RoleIntentTaggingSpecialist, routing.Tagging)
-			if got != test.want {
-				errors <- fmt.Errorf("model=%q want %q", got, test.want)
+			got, err := service.requiredStationModel(routing, station.ConversationObjectiveKind)
+			if err != nil || got != want {
+				errors <- "unexpected station route"
 			}
-		}(cases[index%len(cases)])
+		}(
+			metadata[index%2],
+			[]string{"job-a", "job-b"}[index%2],
+		)
 	}
 	workers.Wait()
 	close(errors)
-	for err := range errors {
-		t.Error(err)
+	for message := range errors {
+		t.Error(message)
 	}
-	if service.models.Tagging != "base-tagger" || service.models.Fast != "base-fast" {
-		t.Fatalf("shared routing mutated: %+v", service.models)
+	if service.models.Stations[station.ConversationObjectiveKind] != "base-kind" {
+		t.Fatal("job-local station routing mutated shared service routing")
+	}
+}
+
+func TestConcurrentJobRoleplaySemanticRoutingIsIsolated(t *testing.T) {
+	service := &Service{models: ModelRouting{RoleplaySemanticModel: "base-roleplay"}}
+	metadata := []json.RawMessage{
+		json.RawMessage(`{"model_config":{"roleplay_semantic_model":"roleplay-a"}}`),
+		json.RawMessage(`{"model_config":{"roleplay_semantic_model":"roleplay-b"}}`),
+	}
+	errors := make(chan string, 200)
+	var workers sync.WaitGroup
+	for index := 0; index < 200; index++ {
+		workers.Add(1)
+		go func(raw json.RawMessage, want string) {
+			defer workers.Done()
+			routing, err := modelRoutingFromJobMetadata(raw, service.models)
+			if err != nil {
+				errors <- err.Error()
+				return
+			}
+			got, err := service.requiredRoleplaySemanticModel(routing)
+			if err != nil || got != want {
+				errors <- "unexpected roleplay semantic route"
+			}
+		}(metadata[index%2], []string{"roleplay-a", "roleplay-b"}[index%2])
+	}
+	workers.Wait()
+	close(errors)
+	for message := range errors {
+		t.Error(message)
+	}
+	if service.models.RoleplaySemanticModel != "base-roleplay" {
+		t.Fatal("job-local roleplay routing mutated shared service routing")
 	}
 }
 
 func TestModelRoutingFromJobMetadataRejectsMalformedConfig(t *testing.T) {
-	base := ModelRouting{Default: "base"}
+	base := ModelRouting{Stations: map[station.ID]string{station.ConversationResponse: "base"}}
 	for _, metadata := range []json.RawMessage{
 		json.RawMessage(`{`),
 		json.RawMessage(`{"model_config":{"unknown_model":"x"}}`),
 		json.RawMessage(`{"model_config":{"default_model":42}}`),
 		json.RawMessage(`{"model_plan":42}`),
 		json.RawMessage(`{"model_plan":" "}`),
-		json.RawMessage(`{"model_execute":42}`),
+		json.RawMessage(`{"model_execute":"coder"}`),
 	} {
 		if _, err := modelRoutingFromJobMetadata(metadata, base); err == nil {
 			t.Fatalf("metadata %s must fail", metadata)
@@ -70,83 +98,17 @@ func TestModelRoutingFromJobMetadataRejectsMalformedConfig(t *testing.T) {
 	}
 }
 
-func TestV3SubtaskExecutorUsesDedicatedModel(t *testing.T) {
-	service := &Service{
-		models: ModelRouting{
-			Fast:    "qwen2.5-coder:7b",
-			Analyze: "qwen2.5-coder:14b",
-			Specialist: map[string]string{
-				specialist.RoleSubtaskExecutorSpecialist: "qwen3-coder:30b",
-			},
-		},
-		v3Registry: &specialists.Registry{Specs: map[string]specialists.Spec{
-			"subtask_executor": {
-				ID:             "subtask_executor",
-				Purpose:        "execute",
-				PreferredModel: []string{"subtask_executor"},
-			},
-		}},
+func TestRequiredStationModelFailsLoudly(t *testing.T) {
+	service := &Service{}
+	if _, err := service.requiredStationModel(ModelRouting{}, station.GroundedAnswer); err == nil ||
+		!strings.Contains(err.Error(), "has no configured model") {
+		t.Fatalf("missing station model error=%v", err)
 	}
-
-	job := model.Job{Metadata: json.RawMessage(`{}`)}
-	got := service.v3SpecialistModel(
-		job,
-		service.models,
-		"subtask_executor",
-		specialist.RoleSubtaskExecutorSpecialist,
-		service.models.Analyze,
-	)
-	if got != "qwen3-coder:30b" {
-		t.Fatalf("subtask executor model=%q, want dedicated execution model", got)
+	if _, err := stationModel(ModelRouting{}, station.ID("planner_specialist")); err == nil {
+		t.Fatal("unregistered persona-shaped route was accepted")
 	}
-
-	job.Metadata = json.RawMessage(`{"model_execute":"deepseek-v4-pro"}`)
-	got = service.v3SpecialistModel(
-		job,
-		service.models,
-		"subtask_executor",
-		specialist.RoleSubtaskExecutorSpecialist,
-		service.models.Analyze,
-	)
-	if got != "deepseek-v4-pro" {
-		t.Fatalf("subtask executor model=%q, want explicit execution override", got)
-	}
-}
-
-func TestV3ExplicitJobModelWinsProfileAndSkillPreference(t *testing.T) {
-	service := &Service{
-		models: ModelRouting{
-			Fast:    "profile-fast",
-			Tagging: "profile-tagger",
-			Plan:    "profile-plan",
-			Analyze: "profile-reasoning",
-		},
-		v3Registry: &specialists.Registry{Specs: map[string]specialists.Spec{
-			"prompt_interpreter": {ID: "prompt_interpreter", Purpose: "interpret", PreferredModel: []string{"fast"}},
-			"verifier":           {ID: "verifier", Purpose: "verify", PreferredModel: []string{"reasoning", "analyzer"}},
-		}},
-	}
-	job := model.Job{Metadata: json.RawMessage(`{
-		"model_tagger":"qwen2.5-coder:7b",
-		"model_plan":"qwen2.5-coder:14b",
-		"model_verify":"qwen2.5-coder:14b"
-	}`)}
-
-	if got := service.v3SpecialistModel(job, service.models, "prompt_interpreter", specialist.RoleIntentTaggingSpecialist, service.models.Tagging); got != "qwen2.5-coder:7b" {
-		t.Fatalf("prompt interpreter model=%q, want explicit job tagger model", got)
-	}
-	if got := service.v3SpecialistModel(job, service.models, "verifier", specialist.RoleReviewVerificationSpecialist, service.models.Analyze); got != "qwen2.5-coder:14b" {
-		t.Fatalf("verifier model=%q, want explicit job verifier model", got)
-	}
-}
-
-func TestModelRoutingFromJobMetadataAppliesTypedConfig(t *testing.T) {
-	base := ModelRouting{Default: "base", Plan: "base-plan"}
-	routing, err := modelRoutingFromJobMetadata(json.RawMessage(`{"model_config":{"default_model":"job-default","planner_model":"job-plan"}}`), base)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if routing.Default != "job-default" || routing.Plan != "job-plan" {
-		t.Fatalf("routing=%+v", routing)
+	if _, err := service.requiredRoleplaySemanticModel(ModelRouting{}); err == nil ||
+		!strings.Contains(err.Error(), "not configured") {
+		t.Fatalf("missing roleplay semantic model error=%v", err)
 	}
 }

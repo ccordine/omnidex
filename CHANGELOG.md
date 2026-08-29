@@ -4,7 +4,7 @@ Release codenames follow Omnidex pride versioning based on National Dex order: B
 
 ## v0.5.0 - Charmeleon (in development)
 
-Charmeleon is the **repository-intelligence and software-defined context release**. It keeps the bounded assembly-line authority split while moving repository knowledge, job continuity, attention, and exact per-call context into separate code-owned primitives. Implementation is in progress; existing-repository mutation and large-codebase autonomy remain explicitly unclaimed until the published promotion gates pass.
+Charmeleon is the **repository-intelligence and software-defined context release**. It keeps the bounded assembly-line authority split while moving repository knowledge, job continuity, attention, and exact per-call context into separate code-owned primitives. Implementation is in progress; existing-repository mutation and large-codebase autonomy remain explicitly unclaimed until production vertical evidence passes.
 
 ### Context and repository control plane
 
@@ -14,12 +14,12 @@ Charmeleon is the **repository-intelligence and software-defined context release
   generation-safe replanning, lifecycle operation identity, accepted-intent projection,
   and cursor-paginated history.
 - Added generation-bound Working Sets with explicit budgets and immutable Context
-  Projections. The first repository consumer remains shadow-only and proves that model
-  prompt bytes are unchanged while exact selected/omitted references are recorded.
-- Defined the domain-neutral Cognition Runtime and the separately isolated Labyrinth
-  cognition laboratory, including registered environment actions, public/oracle
-  separation, obligation and evidence authority, restart fencing, sealed traces,
-  independent capability suites, and pre-registered scale and transfer gates.
+  Projections. A model-visible projection is valid only when the production station
+  consumes it to resolve its named semantic gap.
+- Replaced the rejected universal cognition runtime and its model-driven procedural
+  gauntlet with an isolated in-memory reference objective machine. The reference proves
+  deterministic closure, one-leaf semantic gaps, repository discovery, bounded source
+  generation handoff, and recursive semantic correction before durable cutover.
 - Made memory-candidate promotion atomic and generation-aware so a retired job
   generation cannot publish durable memory.
 - Added typed repository retrieval operations, complete requirement/change-surface
@@ -29,7 +29,7 @@ Charmeleon is the **repository-intelligence and software-defined context release
 - Added a durable prepared/applying/applied/indeterminate repository mutation journal
   with immutable sealed file authority, exact source/post recovery, atomic generated
   diff evidence, and real PostgreSQL plus bubblewrap workflow tests.
-- Removed the production R1 requirement-adviser and separate split-model routes; greenfield and existing-repository requests now share one code-owned fixed-point partition loop over the stable Qwen station, while advisory protocols remain offline gauntlet experiments.
+- Removed the production R1 requirement adviser, product-identity call, recursive residual partition, synthetic candidate choices, and `none` loop. Greenfield intake now uses one grounded aggregate over the intact request; each accepted requirement receives one local objective/criterion leaf, then code freezes and verifies the workload task by task. Existing-repository intake uses one separate grounded change aggregate.
 
 ## v0.4.0 - Charmander
 
@@ -53,7 +53,7 @@ Charmander is the **AI assembly-line release**. It replaces broad coding-agent l
 - Added exact workspace reconciliation, protected opaque artifacts, fixed typed-program verification commands, reviewable diffs, and server-authoritative completion.
 - Made per-job model routing immutable so concurrent swarm workers cannot overwrite or restore one another's model selections.
 - Enforced same-job feedback, interruption, and replanning at both server and browser boundaries and deleted unreachable successor-job compatibility responses.
-- Removed the CLI's write-only architect profile and planning, persistence, review, missing-tool, generic reasoning, autonomy, approval, verification, web, and workspace controls. Stale top-level metadata now fails explicitly; only runtime-backed model, external-agent, and research-query settings remain.
+- Removed the CLI's write-only architect profile and planning, persistence, review, missing-tool, generic reasoning, autonomy, approval, verification, web, workspace, and external-agent controls. Stale top-level metadata now fails explicitly; only runtime-backed model and consumed research-query settings remain.
 - Registered raw-function response mode for fragment stations; unknown model-call scopes now fail explicitly instead of inheriting a guessed format.
 - Completed a fresh current-build set of three clean-workspace Go CLI proof runs in 53.812 seconds total with eight compact semantic calls, zero fragment-model calls, independently passing tests, and unchanged protected request artifacts. See `docs/CHARMANDER_PROOF.md` for the measured comparison, discarded regression run, and limitations.
 
@@ -86,7 +86,7 @@ Venusaur is the **augmented planner release**: research and architect at project
 
 ### Docs
 
-- [docs/SCRUM_PLANNER.md](docs/SCRUM_PLANNER.md) — planner loop, modes, API, example sessions.
+- The historical planner loop and its direct-inference API were retired by the Charmeleon authority cutover.
 
 ## v0.2.0 - Ivysaur
 

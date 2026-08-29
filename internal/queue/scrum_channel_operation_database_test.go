@@ -1,18 +1,17 @@
 package queue
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
+	"strings"
 	"testing"
-	"time"
 
 	"github.com/gryph/omnidex/internal/model"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func TestPostgresScrumChannelOperationStartsOnceAndReplaysExactly(t *testing.T) {
-	repository, pool, ctx := replanTestRepository(t)
+	repository, pool, ctx := scrumChannelOperationTestRepository(t)
 	project, card := newScrumChannelOperationCard(t, repository, "start")
 	request := ScrumChannelOperationRequest{
 		OperationID: testLifecycleOperationID(t, "scrum-channel-start", project.ID),
@@ -26,11 +25,8 @@ func TestPostgresScrumChannelOperationStartsOnceAndReplaysExactly(t *testing.T) 
 		Effect: ScrumChannelEffect{
 			Kind:        ScrumChannelStartJob,
 			Instruction: request.Message,
-			Pipeline:    model.PipelineAssistant,
-			Metadata:    json.RawMessage(fmt.Sprintf(`{"project_id":%d}`, project.ID)),
 		},
 		ResultAction: "started",
-		ResultAgent:  "omnidex",
 	}
 	builderCalls := 0
 	builder := func(current DBScrumCard, job model.Job) (ScrumChannelCardUpdate, error) {
@@ -49,11 +45,33 @@ func TestPostgresScrumChannelOperationStartsOnceAndReplaysExactly(t *testing.T) 
 	if !first.Applied || second.Applied || builderCalls != 1 {
 		t.Fatalf("applied first=%t second=%t builder_calls=%d", first.Applied, second.Applied, builderCalls)
 	}
-	if first.Job.ID != second.Job.ID || first.Card.ID != second.Card.ID ||
-		!first.Card.UpdatedAt.Equal(second.Card.UpdatedAt) || string(first.Card.Chat) != string(second.Card.Chat) {
+	if first.OperationID != request.OperationID || second.OperationID != request.OperationID ||
+		first.Job.ID != second.Job.ID || first.Card.ID != second.Card.ID ||
+		!first.Card.UpdatedAt.Equal(second.Card.UpdatedAt) || !reflect.DeepEqual(first.Messages, second.Messages) {
 		t.Fatalf("replay mismatch first=%+v second=%+v", first, second)
 	}
 	assertScrumChannelOperationCounts(t, pool, project.ID, card.ID, 1, 1, 1)
+	var dbOwnedCreatedAt bool
+	if err := pool.QueryRow(ctx, `
+		SELECT isfinite(created_at) AND created_at=date_trunc('microseconds',created_at)
+		FROM scrum_channel_operations WHERE operation_id=$1
+	`, request.OperationID).Scan(&dbOwnedCreatedAt); err != nil {
+		t.Fatal(err)
+	}
+	if !dbOwnedCreatedAt {
+		t.Fatal("runtime Scrum operation lacks a DB-owned microsecond timestamp")
+	}
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO scrum_channel_operations(
+		 operation_id,project_id,card_id,effect_kind,effect_operation_id,
+		 job_id,result_action,created_at
+		)
+		SELECT operation_id,project_id,card_id,effect_kind,effect_operation_id,
+		 job_id,result_action,TIMESTAMPTZ '2020-01-01T00:00:00Z'
+		FROM scrum_channel_operations WHERE operation_id=$1
+	`, request.OperationID); err == nil || !strings.Contains(err.Error(), "caller-supplied created_at") {
+		t.Fatalf("forged operation timestamp error=%v", err)
+	}
 	if _, err := repository.ReplanJob(ctx, ReplanJobCommand{
 		OperationID: request.OperationID, JobID: first.Job.ID,
 		Feedback: "Attempt to reuse the submitted card identity as a direct replan.",
@@ -63,6 +81,7 @@ func TestPostgresScrumChannelOperationStartsOnceAndReplaysExactly(t *testing.T) 
 
 	changed := command
 	changed.Request.Message = "Changed content under the same identity."
+	changed.Effect.Instruction = changed.Request.Message
 	if _, err := repository.ExecuteScrumChannelOperation(ctx, changed, builder); !errors.Is(err, ErrLifecycleOperationConflict) {
 		t.Fatalf("changed replay error=%v", err)
 	}
@@ -75,23 +94,10 @@ func TestPostgresScrumChannelOperationStartsOnceAndReplaysExactly(t *testing.T) 
 }
 
 func TestPostgresScrumChannelOperationReplansSameJobOnce(t *testing.T) {
-	repository, pool, ctx := replanTestRepository(t)
+	repository, pool, ctx := scrumChannelOperationTestRepository(t)
 	project, card := newScrumChannelOperationCard(t, repository, "replan")
-	job, err := repository.EnqueueJob(
-		ctx,
-		"Initial Scrum channel job.",
-		model.PipelineAssistant,
-		[]byte(fmt.Sprintf(`{"project_id":%d}`, project.ID)),
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	card, err = repository.UpdateScrumCard(ctx, project.ID, card.ID, map[string]any{
-		"job_id": fmt.Sprintf("%d", job.ID), "play_state": "running", "column": "in_progress",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	job := enqueueScrumChannelJobForTest(t, repository, card, "Initial Scrum channel job.")
+	card = setScrumCardRunningForTest(t, pool, project.ID, card.ID, job.ID)
 	request := ScrumChannelOperationRequest{
 		OperationID: testLifecycleOperationID(t, "scrum-channel-replan", job.ID),
 		ProjectID:   project.ID,
@@ -102,8 +108,7 @@ func TestPostgresScrumChannelOperationReplansSameJobOnce(t *testing.T) {
 		Request:               request,
 		ExpectedCardUpdatedAt: card.UpdatedAt,
 		Effect:                ScrumChannelEffect{Kind: ScrumChannelReplanJob, JobID: job.ID},
-		ResultAction:          "revised",
-		ResultAgent:           "omnidex",
+		ResultAction:          "replanned",
 	}
 	builder := func(current DBScrumCard, resultJob model.Job) (ScrumChannelCardUpdate, error) {
 		return scrumChannelTestUpdate(t, current, request, resultJob), nil
@@ -132,17 +137,9 @@ func TestPostgresScrumChannelOperationReplansSameJobOnce(t *testing.T) {
 }
 
 func TestPostgresScrumChannelOperationSubmitsFeedbackOnce(t *testing.T) {
-	repository, pool, ctx := replanTestRepository(t)
+	repository, pool, ctx := scrumChannelOperationTestRepository(t)
 	project, card := newScrumChannelOperationCard(t, repository, "feedback")
-	job, err := repository.EnqueueJob(
-		ctx,
-		"Initial waiting Scrum channel job.",
-		model.PipelineAssistant,
-		[]byte(fmt.Sprintf(`{"project_id":%d}`, project.ID)),
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
+	job := enqueueScrumChannelJobForTest(t, repository, card, "Initial waiting Scrum channel job.")
 	claim, err := repository.ClaimNextStep(ctx, fmt.Sprintf("scrum-channel-feedback-%d", job.ID))
 	if err != nil {
 		t.Fatal(err)
@@ -153,12 +150,7 @@ func TestPostgresScrumChannelOperationSubmitsFeedbackOnce(t *testing.T) {
 	if err := repository.PauseStepForInput(ctx, claim.Authority, "waiting", "Continue?", nil); err != nil {
 		t.Fatal(err)
 	}
-	card, err = repository.UpdateScrumCard(ctx, project.ID, card.ID, map[string]any{
-		"job_id": fmt.Sprintf("%d", job.ID), "play_state": "running", "column": "in_progress",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	card = setScrumCardRunningForTest(t, pool, project.ID, card.ID, job.ID)
 	request := ScrumChannelOperationRequest{
 		OperationID: testLifecycleOperationID(t, "scrum-channel-feedback", job.ID),
 		ProjectID:   project.ID, CardID: card.ID, Message: "Continue exactly once.",
@@ -166,7 +158,7 @@ func TestPostgresScrumChannelOperationSubmitsFeedbackOnce(t *testing.T) {
 	command := ScrumChannelOperationCommand{
 		Request: request, ExpectedCardUpdatedAt: card.UpdatedAt,
 		Effect:       ScrumChannelEffect{Kind: ScrumChannelSubmitFeedback, JobID: job.ID},
-		ResultAction: "feedback", ResultAgent: "omnidex",
+		ResultAction: "feedback",
 	}
 	builder := func(current DBScrumCard, resultJob model.Job) (ScrumChannelCardUpdate, error) {
 		return scrumChannelTestUpdate(t, current, request, resultJob), nil
@@ -179,7 +171,7 @@ func TestPostgresScrumChannelOperationSubmitsFeedbackOnce(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !first.Applied || second.Applied || first.Job.Status != model.JobStatusRunning || second.Job.Status != first.Job.Status {
+	if !first.Applied || second.Applied || second.Job.Status != first.Job.Status {
 		t.Fatalf("feedback results first=%+v second=%+v", first, second)
 	}
 	assertScrumChannelOperationCounts(t, pool, project.ID, card.ID, 1, 1, 1)
@@ -194,67 +186,48 @@ func TestPostgresScrumChannelOperationSubmitsFeedbackOnce(t *testing.T) {
 	}
 }
 
-func newScrumChannelOperationCard(t *testing.T, repository *Repository, label string) (model.Project, DBScrumCard) {
-	t.Helper()
-	project, err := repository.CreateProject(
-		t.Context(), fmt.Sprintf("scrum-channel-%s-%d", label, time.Now().UnixNano()), t.TempDir(), "", "", nil,
-	)
-	if err != nil {
-		t.Fatal(err)
+func TestPostgresScrumChannelReplayReturnsCurrentTruthAfterBoundMessageLeavesTail(t *testing.T) {
+	repository, _, ctx := scrumChannelOperationTestRepository(t)
+	project, card := newScrumChannelOperationCard(t, repository, "current-truth")
+	request := ScrumChannelOperationRequest{
+		OperationID: testLifecycleOperationID(t, "scrum-channel-current-truth", project.ID),
+		ProjectID:   project.ID, CardID: card.ID, Message: "Start before the card changes.",
 	}
-	card, err := repository.CreateScrumCard(
-		t.Context(), project.ID, "", "Channel operation", "", "assigned", nil, nil, nil,
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return project, card
-}
-
-func scrumChannelTestUpdate(
-	t *testing.T,
-	current DBScrumCard,
-	request ScrumChannelOperationRequest,
-	job model.Job,
-) ScrumChannelCardUpdate {
-	t.Helper()
-	var chat []map[string]any
-	if err := json.Unmarshal(current.Chat, &chat); err != nil {
-		t.Fatal(err)
-	}
-	chat = append(chat, map[string]any{
-		"id": "message-" + string(request.OperationID), "role": "user",
-		"content": request.Message, "created_at": "2026-08-09T00:00:00Z",
-		"operation_id": request.OperationID,
+	first, err := repository.ExecuteScrumChannelOperation(ctx, ScrumChannelOperationCommand{
+		Request: request, ExpectedCardUpdatedAt: card.UpdatedAt,
+		Effect:       ScrumChannelEffect{Kind: ScrumChannelStartJob, Instruction: request.Message},
+		ResultAction: "started",
+	}, func(current DBScrumCard, job model.Job) (ScrumChannelCardUpdate, error) {
+		return scrumChannelTestUpdate(t, current, request, job), nil
 	})
-	raw, err := json.Marshal(chat)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return ScrumChannelCardUpdate{
-		Chat: raw, Column: "in_progress", JobID: fmt.Sprintf("%d", job.ID),
-		PlayState: "running", QueueOrder: 0,
+	later := make([]ScrumCardMessageAppend, 55)
+	for index := range later {
+		later[index] = ScrumCardMessageAppend{
+			ID: fmt.Sprintf("current-truth-later-%02d", index), Role: "assistant",
+			Content: fmt.Sprintf("later authoritative message %02d", index),
+		}
 	}
-}
-
-func assertScrumChannelOperationCounts(
-	t *testing.T,
-	pool *pgxpool.Pool,
-	projectID int64,
-	cardID string,
-	wantOperations, wantMessages, wantJobs int,
-) {
-	t.Helper()
-	var operations, messages, jobs int
-	if err := pool.QueryRow(t.Context(), `
-		SELECT
-			(SELECT COUNT(*) FROM scrum_channel_operations WHERE project_id=$1 AND card_id=$2),
-			(SELECT jsonb_array_length(chat) FROM scrum_cards WHERE project_id=$1 AND id=$2),
-			(SELECT COUNT(*) FROM jobs WHERE project_id=$1)
-	`, projectID, cardID).Scan(&operations, &messages, &jobs); err != nil {
+	latest := appendScrumMessagesForTest(t, repository, project.ID, card.ID, later)
+	paused, err := repository.PauseScrumCardPlayAtRevision(ctx, project.ID, card.ID, latest.UpdatedAt)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if operations != wantOperations || messages != wantMessages || jobs != wantJobs {
-		t.Fatalf("counts operations=%d messages=%d jobs=%d", operations, messages, jobs)
+	replay, found, err := repository.LoadScrumChannelOperation(ctx, request)
+	if err != nil || !found {
+		t.Fatalf("current-truth replay found=%t error=%v", found, err)
+	}
+	for _, message := range replay.Messages {
+		if message.OperationID == string(request.OperationID) {
+			t.Fatal("current 50-row tail unexpectedly retained the original bound command")
+		}
+	}
+	if replay.Applied || replay.OperationID != request.OperationID || replay.Action != "started" ||
+		replay.Card.PlayState != "paused" || !replay.Card.UpdatedAt.Equal(paused.UpdatedAt) ||
+		replay.Job.ID != first.Job.ID || replay.Job.Status != model.JobStatusCanceled ||
+		len(replay.Messages) != 50 {
+		t.Fatalf("current-truth replay=%+v messages=%d", replay, len(replay.Messages))
 	}
 }

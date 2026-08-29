@@ -12,25 +12,21 @@ import (
 	"github.com/gryph/omnidex/internal/repository/changeapply"
 )
 
-func TestPlanRejectsMissingExtraAndDuplicateCandidates(t *testing.T) {
+func TestDesiredStateAssemblyRejectsMissingAndExtraCandidates(t *testing.T) {
 	t.Parallel()
 	fixture := basicFixture(t)
 	contract := fixture.contract(t, "First")
-	first := fixture.symbol(t, "First")
+	firstID := fixture.symbol(t, "First").ID
 	cases := []struct {
 		name       string
-		candidates []changeapply.CandidateDeclaration
+		candidates map[string]string
 		contains   string
 	}{
-		{name: "missing", contains: "missing"},
-		{name: "extra", candidates: []changeapply.CandidateDeclaration{
-			{SymbolID: first.ID, Declaration: "func First() int { return 9 }"},
-			{SymbolID: "symbol_" + strings.Repeat("a", 64), Declaration: "func Extra() int { return 1 }"},
-		}, contains: "extra"},
-		{name: "duplicate", candidates: []changeapply.CandidateDeclaration{
-			{SymbolID: first.ID, Declaration: "func First() int { return 9 }"},
-			{SymbolID: first.ID, Declaration: "func First() int { return 10 }"},
-		}, contains: "duplicated"},
+		{name: "missing", contains: "0 declarations for 1"},
+		{name: "extra", candidates: map[string]string{
+			firstID:                             "func First() int { return 9 }",
+			"symbol_" + strings.Repeat("a", 64): "func Extra() int { return 1 }",
+		}, contains: "2 declarations for 1"},
 	}
 	for _, test := range cases {
 		test := test
@@ -41,9 +37,22 @@ func TestPlanRejectsMissingExtraAndDuplicateCandidates(t *testing.T) {
 			}
 		})
 	}
+	secondFixture := newFixture(t, map[string]fixtureEntry{
+		"go.mod":    {content: "module example.com/missing\n\ngo 1.24\n", mode: 0o600},
+		"first.go":  {content: "package missing\n\nfunc First() int { return 1 }\n", mode: 0o600},
+		"second.go": {content: "package missing\n\nfunc Second() int { return 2 }\n", mode: 0o600},
+	})
+	multiContract := secondFixture.contract(t, "First", "Second")
+	_, err := secondFixture.plan(multiContract, map[string]string{
+		secondFixture.symbol(t, "First").ID: "func First() int { return 9 }",
+		"symbol_" + strings.Repeat("b", 64): "func Extra() int { return 3 }",
+	})
+	if err == nil || !strings.Contains(err.Error(), "has no candidate declaration") {
+		t.Fatalf("equal-count missing target error=%v", err)
+	}
 }
 
-func TestPlanRejectsInvalidOversizedAndUnchangedCandidates(t *testing.T) {
+func TestDesiredStateAssemblyRejectsInvalidOversizedAndUnchangedCandidates(t *testing.T) {
 	t.Parallel()
 	fixture := basicFixture(t)
 	contract := fixture.contract(t, "First")
@@ -67,7 +76,7 @@ func TestPlanRejectsInvalidOversizedAndUnchangedCandidates(t *testing.T) {
 		test := test
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
-			_, err := fixture.plan(contract, []changeapply.CandidateDeclaration{{SymbolID: first.ID, Declaration: test.declaration}})
+			_, err := fixture.plan(contract, map[string]string{first.ID: test.declaration})
 			if err == nil || !strings.Contains(err.Error(), test.contains) {
 				t.Fatalf("error=%v want %q", err, test.contains)
 			}
@@ -75,7 +84,7 @@ func TestPlanRejectsInvalidOversizedAndUnchangedCandidates(t *testing.T) {
 	}
 }
 
-func TestPlanRejectsStaleAndTamperedAuthority(t *testing.T) {
+func TestDesiredStateAssemblyRejectsStaleAndTamperedAuthority(t *testing.T) {
 	t.Parallel()
 	fixture := basicFixture(t)
 	contract := fixture.contract(t, "First")
@@ -83,22 +92,22 @@ func TestPlanRejectsStaleAndTamperedAuthority(t *testing.T) {
 	tampered := contract
 	tampered.Targets = append([]repositoryfacts.ChangeTarget(nil), contract.Targets...)
 	tampered.Targets[0].ExpectedDeclarationSHA256 = strings.Repeat("0", 64)
-	if _, err := fixture.plan(tampered, []changeapply.CandidateDeclaration{{
-		SymbolID: first.ID, Declaration: "func First() int { return 9 }",
-	}}); err == nil || !strings.Contains(err.Error(), "differs") {
+	if _, err := fixture.plan(tampered, map[string]string{
+		first.ID: "func First() int { return 9 }",
+	}); err == nil || !strings.Contains(err.Error(), "differs") {
 		t.Fatalf("tampered contract error=%v", err)
 	}
 	if err := os.WriteFile(filepath.Join(fixture.root, "first.go"), []byte("package changeapply\n\nfunc First() int { return 8 }\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := fixture.plan(contract, []changeapply.CandidateDeclaration{{
-		SymbolID: first.ID, Declaration: "func First() int { return 9 }",
-	}}); err == nil || !strings.Contains(err.Error(), "stale") {
+	if _, err := fixture.plan(contract, map[string]string{
+		first.ID: "func First() int { return 9 }",
+	}); err == nil || !strings.Contains(err.Error(), "stale") {
 		t.Fatalf("stale source error=%v", err)
 	}
 }
 
-func TestPlanRejectsOverlappingAndProtectedTargets(t *testing.T) {
+func TestDesiredStateAssemblyRejectsOverlappingAndProtectedTargets(t *testing.T) {
 	t.Parallel()
 	overlap := newFixture(t, map[string]fixtureEntry{
 		"go.mod":  {content: "module example.com/overlap\n\ngo 1.24\n", mode: 0o600},
@@ -130,13 +139,12 @@ func TestPlanRejectsOverlappingAndProtectedTargets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = changeapply.Plan(context.Background(), changeapply.Input{
-		Snapshot: overlap.snapshot, Analysis: analysis, Contract: contract,
-		Candidates: []changeapply.CandidateDeclaration{
-			{SymbolID: analysis.Symbols[0].ID, Declaration: "func Alpha() int { return 2 }"},
-			{SymbolID: analysis.Symbols[1].ID, Declaration: "func Alias() int { return 2 }"},
+	_, err = changeapply.AssembleExistingGoFileStates(
+		overlap.snapshot, analysis, contract, map[string]string{
+			analysis.Symbols[0].ID: "func Alpha() int { return 2 }",
+			analysis.Symbols[1].ID: "func Alias() int { return 2 }",
 		},
-	})
+	)
 	if err == nil || (!strings.Contains(err.Error(), "overlap") && !strings.Contains(err.Error(), "duplicate range")) {
 		t.Fatalf("overlap error=%v", err)
 	}
@@ -146,9 +154,9 @@ func TestPlanRejectsOverlappingAndProtectedTargets(t *testing.T) {
 		"value.generated.go": {content: "package protected\n\nfunc Generated() int { return 1 }\n", mode: 0o600},
 	})
 	protectedContract := protected.contract(t, "Generated")
-	_, err = protected.plan(protectedContract, []changeapply.CandidateDeclaration{{
-		SymbolID: protected.symbol(t, "Generated").ID, Declaration: "func Generated() int { return 2 }",
-	}})
+	_, err = protected.plan(protectedContract, map[string]string{
+		protected.symbol(t, "Generated").ID: "func Generated() int { return 2 }",
+	})
 	if err == nil || !strings.Contains(err.Error(), "protected") {
 		t.Fatalf("protected target error=%v", err)
 	}
@@ -162,9 +170,9 @@ func TestApplyVerifiedRejectsWorkspaceDriftWithoutPartialApply(t *testing.T) {
 		"second.go": {content: "package rollback\n\nfunc Second() int { return 2 }\n", mode: 0o600},
 	})
 	contract := fixture.contract(t, "First", "Second")
-	stage, err := fixture.plan(contract, []changeapply.CandidateDeclaration{
-		{SymbolID: fixture.symbol(t, "First").ID, Declaration: "func First() int { return 11 }"},
-		{SymbolID: fixture.symbol(t, "Second").ID, Declaration: "func Second() int { return 22 }"},
+	stage, err := fixture.plan(contract, map[string]string{
+		fixture.symbol(t, "First").ID:  "func First() int { return 11 }",
+		fixture.symbol(t, "Second").ID: "func Second() int { return 22 }",
 	})
 	if err != nil {
 		t.Fatal(err)

@@ -10,7 +10,6 @@ import (
 	"testing"
 
 	repositoryfacts "github.com/gryph/omnidex/internal/repository"
-	"github.com/gryph/omnidex/internal/repository/changeapply"
 	repositoryindex "github.com/gryph/omnidex/internal/repository/indexing"
 )
 
@@ -224,15 +223,10 @@ func repositoryMutationExecutionFixture(
 	if err != nil {
 		t.Fatal(err)
 	}
-	stage, err := changeapply.Plan(t.Context(), changeapply.Input{
-		Snapshot: snapshot, Analysis: analysis, Contract: contract,
-		Candidates: []changeapply.CandidateDeclaration{{
-			SymbolID: target.ID, Declaration: "func First() int { return 1 + 0 }",
-		}},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	stage := planExistingRepositoryTestStage(
+		t, snapshot, analysis, contract,
+		map[string]string{target.ID: "func First() int { return 1 + 0 }"},
+	)
 	prepared, err := newVerifiedRepositoryChangeStage(contract.ID, commands, stage)
 	if err != nil {
 		_ = stage.Cleanup()

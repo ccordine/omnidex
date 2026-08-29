@@ -1,46 +1,28 @@
 package llm
 
 import (
-	"strings"
+	"math"
 	"testing"
 )
 
-func TestValidateResponseContractRequiresJSONForSchema(t *testing.T) {
-	err := ValidateResponseContract(PreparedModel{
-		ResponseSchema: map[string]any{"type": "object"},
-	})
-	if err == nil || !strings.Contains(err.Error(), `requires response format "json"`) {
-		t.Fatalf("error=%v", err)
-	}
-}
-
-func TestValidateResponseContractRequiresTypedSchema(t *testing.T) {
-	err := ValidateResponseContract(PreparedModel{
-		ResponseFormat: ResponseFormatJSON,
-		ResponseSchema: map[string]any{"properties": map[string]any{}},
-	})
-	if err == nil || !strings.Contains(err.Error(), "requires a non-empty type") {
-		t.Fatalf("error=%v", err)
-	}
-}
-
-func TestValidateResponseContractAcceptsTypedJSONSchema(t *testing.T) {
-	err := ValidateResponseContract(PreparedModel{
-		ResponseFormat: ResponseFormatJSON,
-		ResponseSchema: map[string]any{"type": "object"},
-	})
-	if err != nil {
+func TestValidateResponseContractAcceptsRawTransportSampling(t *testing.T) {
+	zero := ExactPreparedTemperature(0)
+	if err := ValidateResponseContract(PreparedModel{Temperature: &zero}); err != nil {
 		t.Fatal(err)
 	}
 }
 
-func TestValidateResponseContractRejectsStructuredNativeThinking(t *testing.T) {
-	for _, prepared := range []PreparedModel{
-		{ThinkingEnabled: true, ResponseFormat: ResponseFormatJSON},
-		{ThinkingEnabled: true, ResponseSchema: map[string]any{"type": "object"}},
+func TestValidateResponseContractRejectsInvalidSampling(t *testing.T) {
+	for name, value := range map[string]ExactPreparedTemperature{
+		"negative":      -0.1,
+		"above maximum": 2.1,
+		"not a number":  ExactPreparedTemperature(math.NaN()),
+		"infinity":      ExactPreparedTemperature(math.Inf(1)),
 	} {
-		if err := ValidateResponseContract(prepared); err == nil || !strings.Contains(err.Error(), "native thinking forbids") {
-			t.Fatalf("ValidateResponseContract(%#v) error=%v", prepared, err)
-		}
+		t.Run(name, func(t *testing.T) {
+			if err := ValidateResponseContract(PreparedModel{Temperature: &value}); err == nil {
+				t.Fatal("invalid sampling authority was accepted")
+			}
+		})
 	}
 }

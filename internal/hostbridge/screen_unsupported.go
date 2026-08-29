@@ -8,8 +8,8 @@ import (
 	"net/http"
 )
 
-func listScreenMonitors() ([]ScreenMonitor, string, error) {
-	return nil, "", fmt.Errorf("screen streaming is only supported on Linux hosts")
+func listScreenMonitorPage(ScreenMonitorPageRequest) (ScreenMonitorPage, error) {
+	return ScreenMonitorPage{}, fmt.Errorf("screen streaming is only supported on Linux hosts")
 }
 
 func streamScreenMJPEG(ctx context.Context, w http.ResponseWriter, monitorID string, fps, quality, scalePct int) error {

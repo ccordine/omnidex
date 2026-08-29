@@ -70,8 +70,8 @@ func TestUIPanelReturnsServerLocalizedChineseFragment(t *testing.T) {
 		t.Fatalf("Content-Language=%q", got)
 	}
 	for _, want := range []string{"数据库分析", "数据", "正在加载数据"} {
-		if !strings.Contains(payload.HTML, want) {
-			t.Errorf("Chinese data panel missing %q: %s", want, payload.HTML)
+		if !strings.Contains(payload.HTML.Bundle, want) {
+			t.Errorf("Chinese data panel missing %q: %s", want, payload.HTML.Bundle)
 		}
 	}
 }

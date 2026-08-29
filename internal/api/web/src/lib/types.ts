@@ -1,10 +1,4 @@
-export type ChatRole = "user" | "assistant" | "system" | "error";
-
-export interface ChatMessage {
-  role: ChatRole;
-  content: string;
-  at: string;
-}
+export type StatusTone = "error" | "active" | "ready";
 
 export interface TimelineEvent {
   id: string;
@@ -65,20 +59,51 @@ export interface MemoryCandidate {
 
 export interface UserChannel {
   id: string;
-  name?: string;
-  persona?: string;
-  system?: string;
-  provider?: string;
-  model?: string;
-  tags?: string[];
-  created_at?: string;
-  updated_at?: string;
+  scope: "user";
+  name: string;
+  tags: string[];
+  project_id: number;
+  workspace_root: string;
+  data_source_id?: string;
+  mode: "assistant" | "roleplay";
+  roleplay_viewpoint_character_id?: string;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface ChannelMessage {
-  id?: number | string;
-  channel_id?: string;
-  role: string;
+  id: number;
+  channel_id: string;
+  role: "user" | "assistant";
+  speaker_name?: string;
+  roleplay?: {
+    persona_kind: "character" | "narrator";
+    character_id?: string;
+    contribution_kind: "dialogue" | "action" | "action_dialogue" | "structured_turn" | "narration" | "direction" | "narration_direction" | "command";
+    parts?: Array<{ kind: "message" | "action" | "event"; text: string }>;
+  };
   content: string;
-  created_at?: string;
+  created_at: string;
+}
+
+export interface ChannelTranscriptPage {
+  channel_id: string;
+  next_before_id?: number;
+  has_more: boolean;
+  html: { bundle: string };
+}
+
+export type ChannelJobStatus = "pending" | "running" | "waiting_input" | "completed" | "failed" | "canceled";
+
+export interface ChannelTurnJob {
+  id: number;
+  instruction: string;
+  pipeline: "chat";
+  status: ChannelJobStatus;
+}
+
+export interface ChannelTurnAccepted {
+  channel: UserChannel;
+  user_message: ChannelMessage;
+  job: ChannelTurnJob;
 }

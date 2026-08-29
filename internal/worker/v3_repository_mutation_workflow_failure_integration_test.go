@@ -19,11 +19,11 @@ func TestPostgresRepositoryMutationWorkflowRejectsFailedStagedProofBeforeMutatio
 	if os.Getenv("OMNIDEX_REQUIRE_BWRAP_INTEGRATION") != "1" {
 		t.Skip("set OMNIDEX_REQUIRE_BWRAP_INTEGRATION=1 for the real failed staged proof")
 	}
-	ctx, repository, pool := openRepositoryShadowDatabase(t)
+	ctx, repository, pool := openRepositoryTestDatabase(t)
 	root := repositoryMutationWorkflowRoot(t)
 	project, err := repository.CreateProject(
-		ctx, fmt.Sprintf("mutation-workflow-failure-%d", time.Now().UnixNano()), root, "", "", nil,
-	)
+		ctx, fmt.Sprintf("mutation-workflow-failure-%d", time.Now().UnixNano()), root, "")
+
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -31,10 +31,7 @@ func TestPostgresRepositoryMutationWorkflowRejectsFailedStagedProofBeforeMutatio
 	if err != nil {
 		t.Fatal(err)
 	}
-	before, err := indexer.Refresh(ctx, project.ID, root)
-	if err != nil {
-		t.Fatal(err)
-	}
+	before := captureGoRepositoryIndexForTest(t, ctx, indexer, project.ID, root)
 	analysis := before.Analyses[0]
 	target := existingRepositoryVerificationSymbol(t, analysis, "Value")
 	contract, err := repositoryfacts.BuildChangeContract(
@@ -78,7 +75,7 @@ func TestPostgresRepositoryMutationWorkflowRejectsFailedStagedProofBeforeMutatio
 	}
 	var operations, generatedDiffs, acceptances, baselineAcceptances, failedStagedProofs, indexEvidence int
 	if err := pool.QueryRow(t.Context(), `
-		SELECT COUNT(*) FROM repository_mutation_operations WHERE job_id=$1
+		SELECT COUNT(*) FROM workspace_mutation_operations WHERE job_id=$1
 	`, claim.Job.ID).Scan(&operations); err != nil {
 		t.Fatal(err)
 	}

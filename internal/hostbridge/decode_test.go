@@ -8,13 +8,15 @@ import (
 	"testing"
 )
 
-func TestDecodeResponseJSONIgnoresTrailingGarbage(t *testing.T) {
-	payload, err := decodeResponseJSON([]byte(`{"path":"/tmp/New-project"}permission denied`))
-	if err != nil {
-		t.Fatalf("decodeResponseJSON() error=%v", err)
+func TestDecodeResponseJSONRejectsTrailingGarbage(t *testing.T) {
+	if _, err := decodeResponseJSON([]byte(`{"path":"/tmp/New-project"}permission denied`)); err == nil {
+		t.Fatal("trailing host bridge bytes were accepted")
 	}
-	if got := stringField(payload, "path"); got != "/tmp/New-project" {
-		t.Fatalf("path=%q", got)
+}
+
+func TestDecodeResponseJSONRejectsDuplicateKeys(t *testing.T) {
+	if _, err := decodeResponseJSON([]byte(`{"path":"/first","path":"/second"}`)); err == nil {
+		t.Fatal("duplicate host bridge response field was accepted")
 	}
 }
 
@@ -38,7 +40,7 @@ func TestDecodeResponseBodyStillReportsInvalidSuccessJSON(t *testing.T) {
 	}
 }
 
-func TestClientMkdirIgnoresTrailingGarbage(t *testing.T) {
+func TestClientMkdirRejectsTrailingGarbage(t *testing.T) {
 	agent := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/mkdir" {
 			http.NotFound(w, r)
@@ -50,11 +52,13 @@ func TestClientMkdirIgnoresTrailingGarbage(t *testing.T) {
 	defer agent.Close()
 
 	client := NewClient(agent.URL, "", 0)
-	path, err := client.Mkdir(t.Context(), "/tmp", "New-project")
-	if err != nil {
-		t.Fatalf("Mkdir() error=%v", err)
+	if _, err := client.Mkdir(t.Context(), "/tmp", "New-project"); err == nil {
+		t.Fatal("Mkdir accepted trailing host bridge bytes")
 	}
-	if path != "/tmp/New-project" {
-		t.Fatalf("path=%q", path)
+}
+
+func TestReadResponseBodyRejectsOversizedPayload(t *testing.T) {
+	if _, err := readResponseBody(strings.NewReader(strings.Repeat("x", maxResponseBodyBytes+1))); err == nil {
+		t.Fatal("oversized host bridge response was accepted")
 	}
 }

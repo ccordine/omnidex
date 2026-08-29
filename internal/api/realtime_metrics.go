@@ -63,8 +63,12 @@ func telemetryJobProgress(payload telemetryNotifyPayload) (realtimeJobPhase, str
 		return "", "", false
 	}
 	switch payload.EventType {
-	case "run_completed", "run_failed", "run_cancelled":
-		return "", "", false
+	case "run_completed":
+		return realtimeJobFinished, "Job completed", true
+	case "run_failed":
+		return realtimeJobFinished, "Job failed", true
+	case "run_cancelled":
+		return realtimeJobFinished, "Job canceled", true
 	}
 	if message := strings.TrimSpace(payload.Message); message != "" {
 		return realtimeJobChanged, queue.TruncateUTF8Text(message, 180, "…"), true

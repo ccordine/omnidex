@@ -56,10 +56,6 @@ func authorityRank(authority taskstate.Authority) int {
 		return 2
 	case taskstate.AuthorityToolEvidence:
 		return 3
-	case taskstate.AuthorityAcceptedModelDecision:
-		return 4
-	case taskstate.AuthorityModelProposal:
-		return 5
 	default:
 		return 0
 	}

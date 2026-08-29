@@ -46,11 +46,13 @@ func reservedTaskCommandMutation(command taskstate.Command) bool {
 	case *taskstate.SupersedeNodeGenerationCommand:
 		return typed != nil
 	case taskstate.AddNodeCommand:
-		return reservedTaskNodeID(typed.ID) || reservedTaskNodeID(typed.ParentID) ||
-			reservedTaskNodeID(typed.ObjectiveID)
+		// A code-owned objective must be able to attach beneath the canonical
+		// queue-owned root. Referencing that root as a parent does not mutate
+		// it; only manufacturing a reserved node identity or claiming one as an
+		// objective remains queue-lifecycle authority.
+		return reservedTaskNodeID(typed.ID) || reservedTaskNodeID(typed.ObjectiveID)
 	case *taskstate.AddNodeCommand:
-		return typed != nil && (reservedTaskNodeID(typed.ID) ||
-			reservedTaskNodeID(typed.ParentID) || reservedTaskNodeID(typed.ObjectiveID))
+		return typed != nil && (reservedTaskNodeID(typed.ID) || reservedTaskNodeID(typed.ObjectiveID))
 	case taskstate.AddEdgeCommand:
 		return reservedTaskEdgeID(typed.ID) || reservedTaskNodeID(typed.From) || reservedTaskNodeID(typed.To)
 	case *taskstate.AddEdgeCommand:
@@ -80,10 +82,6 @@ func reservedTaskCommandMutation(command taskstate.Command) bool {
 		return reservedTaskEntryID(typed.EntryID) || reservedTaskEntryID(typed.ReplacementID)
 	case *taskstate.SupersedeEntryCommand:
 		return typed != nil && (reservedTaskEntryID(typed.EntryID) || reservedTaskEntryID(typed.ReplacementID))
-	case taskstate.AcceptDecisionCommand:
-		return reservedTaskEntryID(typed.CandidateID) || reservedTaskEntryID(typed.AcceptedEntryID)
-	case *taskstate.AcceptDecisionCommand:
-		return typed != nil && (reservedTaskEntryID(typed.CandidateID) || reservedTaskEntryID(typed.AcceptedEntryID))
 	default:
 		return false
 	}
@@ -92,16 +90,14 @@ func reservedTaskCommandMutation(command taskstate.Command) bool {
 func reservedTaskEntryID(id taskstate.EntryID) bool {
 	return id == initialUserInstructionEntryID ||
 		strings.HasPrefix(string(id), replanFeedbackEntryPrefix) ||
-		strings.HasPrefix(string(id), acceptedIntentEntryPrefix) ||
-		strings.HasPrefix(string(id), cognitionEntryPrefix)
+		strings.HasPrefix(string(id), retiredCognitionEntryPrefix)
 }
 
 func reservedTaskNodeID(id taskstate.NodeID) bool {
-	return id == initialTaskRootNodeID || strings.HasPrefix(string(id), acceptedIntentObjectivePrefix) ||
-		strings.HasPrefix(string(id), cognitionObligationNodePrefix)
+	return id == initialTaskRootNodeID ||
+		strings.HasPrefix(string(id), retiredCognitionObligationNodePrefix)
 }
 
 func reservedTaskEdgeID(id taskstate.EdgeID) bool {
-	return strings.HasPrefix(string(id), acceptedIntentEdgePrefix) ||
-		strings.HasPrefix(string(id), cognitionObligationEdgePrefix)
+	return strings.HasPrefix(string(id), retiredCognitionObligationEdgePrefix)
 }

@@ -30,8 +30,11 @@ func validateNodeTransition(node Node, command TransitionNodeCommand) error {
 	}
 	switch {
 	case node.Status == NodeReady && command.To == NodeActive:
-		if executableNode(node.Kind) && node.AssignedStepID == nil {
+		if executableNode(node.Kind) && !node.InlineExecution && node.AssignedStepID == nil {
 			return fmt.Errorf("%w: executable node must have an assigned step before activation", ErrInvalidState)
+		}
+		if node.InlineExecution && (node.Kind != NodeTask || node.CreatedStepID == nil || node.AssignedStepID != nil) {
+			return fmt.Errorf("%w: inline task has invalid queue-step authority", ErrInvalidState)
 		}
 		if command.Reason != "" {
 			return fmt.Errorf("%w: ready-to-active transition does not accept a reason", ErrInvalidCommand)
@@ -41,7 +44,11 @@ func validateNodeTransition(node Node, command TransitionNodeCommand) error {
 		if command.CompletedStepID == nil || *command.CompletedStepID <= 0 {
 			return fmt.Errorf("%w: completion requires a positive completed step ID", ErrInvalidCommand)
 		}
-		if executableNode(node.Kind) {
+		if node.InlineExecution {
+			if node.Kind != NodeTask || node.CreatedStepID == nil || *node.CreatedStepID != *command.CompletedStepID || node.AssignedStepID != nil {
+				return fmt.Errorf("%w: inline task completion must use its owning queue step", ErrInvalidState)
+			}
+		} else if executableNode(node.Kind) {
 			if node.AssignedStepID == nil || *node.AssignedStepID != *command.CompletedStepID {
 				return fmt.Errorf("%w: completed step must match the assigned step", ErrInvalidState)
 			}

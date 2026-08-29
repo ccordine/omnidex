@@ -17,7 +17,7 @@ func TestCapabilityRelationSeesExactlyTwoLocalNeeds(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	prompt, schema, err := RenderPortableJob(job)
+	prompt, err := RenderPortableJob(job)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -26,13 +26,24 @@ func TestCapabilityRelationSeesExactlyTwoLocalNeeds(t *testing.T) {
 			t.Fatalf("relation prompt omitted %q:\n%s", required, prompt)
 		}
 	}
+	for _, required := range []string{
+		"independent when neither behavior must consume a result uniquely produced by the other",
+		"left_reads_right only when LEFT_NEED cannot satisfy",
+		"right_reads_left only when RIGHT_NEED cannot satisfy",
+		"Shared request or user input", "return independent",
+	} {
+		if !strings.Contains(prompt, required) {
+			t.Fatalf("relation prompt omitted direction authority %q:\n%s", required, prompt)
+		}
+	}
 	for _, forbidden := range []string{"workspace", "filename", "project tree", "document", "agent"} {
 		if strings.Contains(strings.ToLower(prompt), forbidden) {
 			t.Fatalf("relation prompt leaked %q:\n%s", forbidden, prompt)
 		}
 	}
-	if schema == nil {
-		t.Fatal("capability relation omitted its response schema")
+	decision, err := DecodeCapabilityRelationDecision(input, string(CapabilityIndependent))
+	if err != nil || decision.Relation != CapabilityIndependent || decision.Schema != CapabilityRelationSchemaV1 {
+		t.Fatalf("decision=%+v err=%v", decision, err)
 	}
 }
 
@@ -44,10 +55,15 @@ func TestCapabilityRelationRejectsUnknownDirection(t *testing.T) {
 		LeftNeed:     "filter visible records",
 		RightNeed:    "show a selected record summary",
 	}
-	err := (CapabilityRelationDecision{
-		Schema: CapabilityRelationSchemaV1, Relation: "similar",
-	}).ValidateFor(input)
-	if err == nil {
-		t.Fatal("capability relation accepted a model-invented direction")
+	for _, relation := range []CapabilityRelation{"similar", "bidirectional"} {
+		err := (CapabilityRelationDecision{
+			Schema: CapabilityRelationSchemaV1, Relation: relation,
+		}).ValidateFor(input)
+		if err == nil {
+			t.Fatalf("capability relation accepted unsupported direction %q", relation)
+		}
+	}
+	if _, err := DecodeCapabilityRelationDecision(input, `{"relation":"independent"}`); err == nil {
+		t.Fatal("accepted JSON wrapper")
 	}
 }

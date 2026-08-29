@@ -7,7 +7,6 @@ import (
 )
 
 type providerDiscoveryTestClient struct {
-	Client
 	observed ObservedProviderIdentity
 }
 
@@ -58,7 +57,7 @@ func TestRequireDiscoveredProviderIdentityEvidenceRejectsUnsupportedOrChangedSel
 		Model: expected.Model, NativeContextLimit: expected.NativeContextLimit,
 	}
 	if _, err := RequireDiscoveredProviderIdentityEvidence(
-		context.Background(), struct{ Client }{}, selection, "provider-discovery-test",
+		context.Background(), nil, selection, "provider-discovery-test",
 	); err == nil {
 		t.Fatal("provider without raw discovery authority was accepted")
 	}

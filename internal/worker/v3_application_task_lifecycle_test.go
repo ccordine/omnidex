@@ -1,0 +1,130 @@
+package worker
+
+import (
+	"errors"
+	"fmt"
+	"reflect"
+	"strings"
+	"testing"
+
+	"github.com/gryph/omnidex/internal/assemblyline"
+)
+
+func TestApplicationTaskLifecycleGeneratesAllBlocksBeforeFinalStage(t *testing.T) {
+	t.Parallel()
+
+	_, frozen, program := applicationTaskLifecycleFixture(t)
+	var events []string
+	finalCalls := 0
+	hooks := directCodingApplicationTaskLifecycleHooks{
+		BuildBlock: func(
+			context assemblyline.ApplicationTaskContext,
+			stage *directCodingProgram,
+			ref assemblyline.SourceBlockRef,
+		) (string, error) {
+			events = append(events, "generate:"+ref.Block.ID)
+			assertTaskStageOwnsOnly(t, *stage, context.Task.TaskID)
+			return ref.Block.Signature + " { return 1; }", nil
+		},
+		VerifyTask: func(context assemblyline.ApplicationTaskContext, _ *directCodingProgram) error {
+			events = append(events, "verify:"+context.Task.TaskID)
+			return nil
+		},
+		FinalStage: func(complete *directCodingProgram) error {
+			finalCalls++
+			events = append(events, "final")
+			if len(complete.Generated) != 4 {
+				return fmt.Errorf("final generated=%d want 4", len(complete.Generated))
+			}
+			return nil
+		},
+	}
+	if err := runDirectCodingApplicationTaskLifecycle(frozen, &program, hooks); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		"generate:feature.001", "generate:acceptance.001", "verify:task_001",
+		"generate:feature.002", "generate:acceptance.002", "verify:task_002",
+		"final",
+	}
+	if !reflect.DeepEqual(events, want) || finalCalls != 1 {
+		t.Fatalf("events=%v final_calls=%d want=%v/1", events, finalCalls, want)
+	}
+}
+
+func TestApplicationTaskLifecycleGenerationFailureStartsNoLaterTaskOrFinalStage(t *testing.T) {
+	t.Parallel()
+
+	_, frozen, program := applicationTaskLifecycleFixture(t)
+	var events []string
+	err := runDirectCodingApplicationTaskLifecycle(
+		frozen, &program,
+		directCodingApplicationTaskLifecycleHooks{
+			BuildBlock: func(
+				_ assemblyline.ApplicationTaskContext,
+				_ *directCodingProgram,
+				ref assemblyline.SourceBlockRef,
+			) (string, error) {
+				events = append(events, "generate:"+ref.Block.ID)
+				if ref.Block.ID == "acceptance.001" {
+					return "", errors.New("current task generation failed")
+				}
+				return ref.Block.Signature + " { return 1; }", nil
+			},
+			VerifyTask: func(assemblyline.ApplicationTaskContext, *directCodingProgram) error { return nil },
+			FinalStage: func(*directCodingProgram) error {
+				events = append(events, "final")
+				return nil
+			},
+		},
+	)
+	want := []string{"generate:feature.001", "generate:acceptance.001"}
+	if err == nil || !strings.Contains(err.Error(), "task_001") || !reflect.DeepEqual(events, want) {
+		t.Fatalf("error=%v events=%v want=%v", err, events, want)
+	}
+	if len(program.Generated) != 0 {
+		t.Fatalf("failed task was merged into accepted program: %v", program.Generated)
+	}
+}
+
+func TestApplicationTaskLifecycleWrapsEveryGeneratedTaskInCodeOwnedCognitionTransitions(t *testing.T) {
+	t.Parallel()
+	_, frozen, program := applicationTaskLifecycleFixture(t)
+	var events []string
+	err := runDirectCodingApplicationTaskLifecycle(frozen, &program, directCodingApplicationTaskLifecycleHooks{
+		BeginTask: func(context assemblyline.ApplicationTaskContext) error {
+			events = append(events, "begin:"+context.Task.TaskID)
+			return nil
+		},
+		BuildBlock: func(_ assemblyline.ApplicationTaskContext, _ *directCodingProgram, ref assemblyline.SourceBlockRef) (string, error) {
+			events = append(events, "generate:"+ref.Block.ID)
+			return ref.Block.Signature + " { return 1; }", nil
+		},
+		VerifyTask: func(context assemblyline.ApplicationTaskContext, _ *directCodingProgram) error {
+			events = append(events, "verify:"+context.Task.TaskID)
+			return nil
+		},
+		CompleteTask: func(context assemblyline.ApplicationTaskContext, generated map[string]string) error {
+			events = append(events, "complete:"+context.Task.TaskID)
+			if len(generated) != 2 {
+				t.Fatalf("task %s generated=%v", context.Task.TaskID, generated)
+			}
+			return nil
+		},
+		FinalStage: func(*directCodingProgram) error {
+			events = append(events, "final")
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		"begin:task_001", "generate:feature.001", "generate:acceptance.001", "verify:task_001", "complete:task_001",
+		"begin:task_002", "generate:feature.002", "generate:acceptance.002", "verify:task_002", "complete:task_002",
+		"final",
+	}
+	if !reflect.DeepEqual(events, want) {
+		t.Fatalf("events=%v want=%v", events, want)
+	}
+}

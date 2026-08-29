@@ -22,6 +22,7 @@ func TestUIServesChatShell(t *testing.T) {
 	body := rec.Body.String()
 	for _, want := range []string{
 		"Omni Chat",
+		`<link rel="icon" href="data:image/svg+xml,`,
 		`data-controller="shell recyclr chat projects scrum"`,
 		`data-recyclr-scope-value="page"`,
 		`data-recyclr-target="status"`,
@@ -42,8 +43,143 @@ func TestUIServesChatShell(t *testing.T) {
 	if strings.Contains(body, `data-controller="shell gx`) {
 		t.Fatal("legacy gx controller remains on the page")
 	}
+	if strings.Contains(body, "browser-inference") {
+		t.Fatal("retired browser inference controller remains on the page")
+	}
 	if strings.Contains(body, `href="/ui/styles.css"`) {
 		t.Fatal("legacy unbundled stylesheet remains in the page shell")
+	}
+}
+
+func TestChatPanelOffersFrictionlessNeutralComposerAndOptionalCreationSettings(t *testing.T) {
+	server := NewServer(nil, &fakeLLMClient{})
+	request := httptest.NewRequest(http.MethodGet, "/v1/ui/panel?panel=chat", nil)
+	response := httptest.NewRecorder()
+
+	server.Handler().ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+	var payload struct {
+		HTML chatComponentHTML `json:"html"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	for _, expected := range []string{
+		`data-action="chat#newThread"`,
+		`New chat`,
+		`>Options</summary>`,
+		`data-chat-target="newChannelModeSelect"`,
+		`<option value="assistant" selected>Assistant</option>`,
+		`data-chat-target="newChannelDataSourceSelect"`,
+		`data-recyclr-sink="new-channel-data-source-options"`,
+		`>Data connection</span>`,
+		`<option value="" selected>No data</option>`,
+		`<option value="" disabled selected>New conversation</option>`,
+		`Sending your first message creates and selects a new conversation automatically.`,
+		`data-chat-target="typingIndicator"`,
+		`aria-hidden="true"`,
+		`Omni is responding`,
+		`chat-typing-dot`,
+		`data-action="input->chat#composerInput keydown->chat#slashCommandKeydown keydown->chat#composerKeydown"`,
+		`Enter to send · Shift+Enter for a new line`,
+	} {
+		if !strings.Contains(payload.HTML.Bundle, expected) {
+			t.Errorf("chat panel lacks %q: %s", expected, payload.HTML.Bundle)
+		}
+	}
+	for _, forbidden := range []string{
+		`channel-options-pagination`, `new-channel-data-source-pagination`,
+		`Load more channels`, `New conversation evidence source`, `data-action="chat#createChannel"`,
+		`<option value="roleplay">`, `data-chat-target="newChannelRoleplayFields"`,
+		`data-recyclr-sink="roleplay-simulation"`,
+	} {
+		if strings.Contains(payload.HTML.Bundle, forbidden) {
+			t.Errorf("chat panel retains obsolete bulky control %q: %s", forbidden, payload.HTML.Bundle)
+		}
+	}
+}
+
+func TestRoleplayPanelProvidesDedicatedWorldLibraryAndSimulationWorkspace(t *testing.T) {
+	server := NewServer(nil, &fakeLLMClient{})
+	request := httptest.NewRequest(http.MethodGet, "/v1/ui/panel?panel=roleplay", nil)
+	response := httptest.NewRecorder()
+
+	server.Handler().ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+	var payload struct {
+		HTML chatComponentHTML `json:"html"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	for _, expected := range []string{
+		`data-panel-name="roleplay"`,
+		`class="chat-panel flex h-full min-h-0 flex-col`,
+		`class="chat-content grid min-h-0 flex-1`,
+		`class="flex min-w-0 flex-wrap items-center gap-2"`,
+		`data-chat-target="roleplayPanel"`,
+		`data-chat-target="roleplayLoading"`,
+		`data-chat-target="roleplayWorkspaceLoading"`,
+		`data-chat-target="roleplayWorldDialog"`,
+		`data-chat-target="roleplayCharacterDialog"`,
+		`data-chat-target="roleplaySetupDialog"`,
+		`data-roleplay-dialog="worlds"`,
+		`data-roleplay-dialog="characters"`,
+		`data-roleplay-dialog="setup"`,
+		`class="flex h-full min-h-0 min-w-0 flex-col"`,
+		`data-action="chat#openRoleplayWorldBrowser"`,
+		`data-action="chat#openRoleplayWorldSetup"`,
+		`aria-label="Open scene and cast controls"`,
+		`>Scene &amp; cast</button>`,
+		`data-action="chat#openRoleplayCharacterLibrary"`,
+		`data-recyclr-sink="roleplay-simulation"`,
+		`data-recyclr-sink="roleplay-world-list"`,
+		`data-recyclr-sink="roleplay-library-list"`,
+		`data-action="submit->chat#createRoleplayWorld"`,
+		`data-action="submit->chat#createRoleplayLibraryCharacter"`,
+		`data-recyclr-sink="roleplay-composer-authority"`,
+		`data-chat-target="roleplayDraftParts"`,
+		`data-chat-target="roleplayDraftPartPool"`,
+		`data-action="chat#addRoleplayDraftPart"`,
+		`data-recyclr-sink="roleplay-cast-sidebar"`,
+		`aria-label="Active world"`,
+		`>+ Message</button>`,
+		`>+ Action</button>`,
+		`>+ Event</button>`,
+		`aria-labelledby="roleplay-world-setup-title"`,
+	} {
+		if !strings.Contains(payload.HTML.Bundle, expected) {
+			t.Errorf("roleplay panel lacks workspace host %q: %s", expected, payload.HTML.Bundle)
+		}
+	}
+	if strings.Count(payload.HTML.Bundle, `data-recyclr-sink="roleplay-simulation"`) != 1 {
+		t.Fatalf("roleplay panel must contain one roleplay simulation sink: %s", payload.HTML.Bundle)
+	}
+	composer := strings.Index(payload.HTML.Bundle, `class="chat-composer `)
+	authority := strings.Index(payload.HTML.Bundle, `data-recyclr-sink="roleplay-composer-authority"`)
+	input := strings.Index(payload.HTML.Bundle, `aria-label="Story message"`)
+	if composer < 0 || authority <= composer || input <= authority ||
+		strings.Count(payload.HTML.Bundle, `data-recyclr-sink="roleplay-composer-authority"`) != 1 {
+		t.Fatalf("roleplay persona authority must render once inside the composer directly before its input: %s", payload.HTML.Bundle)
+	}
+	for _, obsolete := range []string{
+		`data-action="chat#continueRoleplayScene"`,
+		`aria-label="Worlds and character library"`,
+		`aria-label="World controls"`,
+		`data-roleplay-collection-dialog=`,
+		`xl:grid-cols-[18rem_minmax(24rem,1fr)_22rem]`,
+		`xl:grid-cols-[minmax(24rem,1fr)_22rem]`,
+		`lg:grid-cols-[minmax(0,1fr)_14rem]`,
+	} {
+		if strings.Contains(payload.HTML.Bundle, obsolete) {
+			t.Fatalf("roleplay panel keeps permanently visible collection UI %q: %s", obsolete, payload.HTML.Bundle)
+		}
 	}
 }
 
@@ -77,12 +213,15 @@ func TestAdminPanelOwnsItsDeferredController(t *testing.T) {
 		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
 	}
 	var payload struct {
-		HTML string `json:"html"`
+		HTML chatComponentHTML `json:"html"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
 		t.Fatalf("invalid JSON: %v", err)
 	}
-	if !strings.Contains(payload.HTML, `data-controller="admin"`) {
+	if strings.Contains(rec.Body.String(), `"component"`) {
+		t.Fatalf("duplicate legacy panel component field remains: %s", rec.Body.String())
+	}
+	if !strings.Contains(payload.HTML.Bundle, `data-controller="admin"`) {
 		t.Fatal("admin panel must own its deferred controller")
 	}
 }
@@ -174,21 +313,21 @@ func TestUIPanelReturnsSingleServerFragment(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
 	}
-	var payload struct {
-		Panel string `json:"panel"`
-		HTML  string `json:"html"`
-	}
+	var payload uiPanelResponse
 	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
 		t.Fatalf("invalid JSON: %v", err)
 	}
 	if payload.Panel != "jobs" {
 		t.Fatalf("panel=%q want jobs", payload.Panel)
 	}
-	if !strings.Contains(payload.HTML, `data-panel-name="jobs"`) {
-		t.Fatalf("jobs fragment missing panel marker: %s", payload.HTML)
+	if !strings.Contains(payload.HTML.Bundle, `data-panel-name="jobs"`) {
+		t.Fatalf("jobs fragment missing panel marker: %s", payload.HTML.Bundle)
 	}
-	if strings.Contains(payload.HTML, `data-panel-name="chat"`) || strings.Contains(payload.HTML, `data-panel-name="memory"`) {
+	if strings.Contains(payload.HTML.Bundle, `data-panel-name="chat"`) || strings.Contains(payload.HTML.Bundle, `data-panel-name="memory"`) {
 		t.Fatalf("fragment should only contain requested panel")
+	}
+	if !strings.Contains(payload.HTML.Bundle, `data-recyclr-target="app-panel"`) {
+		t.Fatalf("panel response lacks its server-rendered component bundle: %s", payload.HTML.Bundle)
 	}
 	if rec.Result().Cookies()[0].Name != uiSessionCookieName {
 		t.Fatalf("ui session cookie missing")
@@ -260,13 +399,23 @@ func TestUIServesBuiltBundle(t *testing.T) {
 	bundle := rec.Body.String()
 	for _, want := range []string{
 		"Omni UI is ready",
-		"chat#openTimelineItem",
-		"renderProgress",
-		"loadGlobalActivity",
-		"evt_",
+		"/v1/ui/chat/channels",
+		"/v1/ui/chat/data-sources",
+		"/v1/ui/chat/jobs",
+		"/v1/ui/chat/memory",
+		"/v1/ui/chat/metrics",
+		"/v1/ui/chat/roleplay",
+		"/v1/ui/chat/timeline",
+		"/web-research",
+		"/messages?",
 	} {
 		if !strings.Contains(bundle, want) {
 			t.Fatalf("bundle missing %q", want)
+		}
+	}
+	for _, forbidden := range []string{"renderChatMessages", "renderJobsPanel", "renderMetricsDashboard", "chat#openTimelineItem"} {
+		if strings.Contains(bundle, forbidden) {
+			t.Fatalf("built bundle retains browser component authority %q", forbidden)
 		}
 	}
 }

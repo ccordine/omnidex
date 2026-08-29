@@ -22,10 +22,12 @@
             <section>
               <h3 class="mb-3 text-xs font-semibold uppercase tracking-[.18em] text-zinc-500" data-i18n="panel.memory.durable">Durable memory</h3>
               <div data-chat-target="memoryList" data-recyclr-sink="memory-list" class="space-y-3"></div>
+              <div data-recyclr-sink="memory-pagination" class="mt-3 flex justify-center"></div>
             </section>
             <section>
               <h3 class="mb-3 text-xs font-semibold uppercase tracking-[.18em] text-zinc-500" data-i18n="panel.memory.candidates">Candidates</h3>
               <div data-chat-target="memoryCandidates" data-recyclr-sink="memory-candidates" class="space-y-3"></div>
+              <div data-recyclr-sink="memory-candidates-pagination" class="mt-3 flex justify-center"></div>
             </section>
           </div>
           <form data-action="submit->chat#addMemory" class="rounded-lg border border-white/10 bg-zinc-950/50 p-4">

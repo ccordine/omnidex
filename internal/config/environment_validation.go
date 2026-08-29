@@ -7,27 +7,21 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gryph/omnidex/internal/llmprovider/catalog"
 	"github.com/gryph/omnidex/internal/modelconfig"
 )
 
 var integerEnvironmentKeys = []string{
-	"ANTHROPIC_MAX_TOKENS",
 	"WEB_SEARCH_PER_SOURCE_BUDGET",
 	"WEB_SEARCH_TOTAL_BUDGET",
-	"WORKSPACE_MAX_FILES",
-	"WORKSPACE_CONTEXT_BUDGET",
 	"WORKER_COUNT",
 	"CODING_FRAGMENT_CONCURRENCY",
 	"REALTIME_MAX_CLIENTS",
-	"RETRIEVAL_LIMIT",
-	"CONTEXT_CHAR_BUDGET",
 	"INFERENCE_CONTEXT_TOKENS",
 }
 
 var booleanEnvironmentKeys = []string{
 	"WRAPPER_ONLY",
-	"WEB_SEARCH_ENABLED",
-	"WORKSPACE_SCAN_ENABLED",
 	"UI_REDIS_REQUIRED",
 	"MIGRATE_ON_STARTUP",
 }
@@ -42,22 +36,53 @@ var durationEnvironmentKeys = []string{
 	"UI_SESSION_TTL",
 }
 
-var removedEnvironmentKeys = append([]string{
-	"MIGRATIONS_DIR",
-	"OMNIDEX_V3_ENABLED",
-	"STOP_ON_SUFFICIENT_CONTEXT",
-	"SUFFICIENT_CONTEXT_CHARS",
-	"MEMORY_INFERENCE_ENABLED",
-	"MEMORY_INFERENCE_MAX_ITEMS",
-	"TOURNAMENT_ENABLED",
-	"TOURNAMENT_CHUNK_CHARS",
-	"TOURNAMENT_SUMMARY_CHARS",
-	"TOURNAMENT_MAX_ROUNDS",
-	"TOURNAMENT_VERIFY_RELEVANCE",
-	"HALLUCINATION_RETRY_LIMIT",
-	"OLLAMA_RESTART_COMMAND",
-	"OLLAMA_RESTART_TIMEOUT",
-}, modelconfig.RemovedEnvironmentKeys()...)
+var removedEnvironmentKeys = buildRemovedEnvironmentKeys()
+
+func buildRemovedEnvironmentKeys() []string {
+	keys := append([]string{
+		"APP_ENV",
+		"RETRIEVAL_LIMIT",
+		"CONTEXT_CHAR_BUDGET",
+		"WORKSPACE_MAX_FILES",
+		"WORKSPACE_CONTEXT_BUDGET",
+		"MIGRATIONS_DIR",
+		"OMNIDEX_V3_ENABLED",
+		"STOP_ON_SUFFICIENT_CONTEXT",
+		"SUFFICIENT_CONTEXT_CHARS",
+		"MEMORY_INFERENCE_ENABLED",
+		"MEMORY_INFERENCE_MAX_ITEMS",
+		"TOURNAMENT_ENABLED",
+		"TOURNAMENT_CHUNK_CHARS",
+		"TOURNAMENT_SUMMARY_CHARS",
+		"TOURNAMENT_MAX_ROUNDS",
+		"TOURNAMENT_VERIFY_RELEVANCE",
+		"HALLUCINATION_RETRY_LIMIT",
+		"OLLAMA_RESTART_COMMAND",
+		"OLLAMA_RESTART_TIMEOUT",
+		"COGNITION_MODEL_SHA256",
+		"COGNITION_MODEL_QUANTIZATION",
+		"COGNITION_BACKEND_VERSION",
+		"COGNITION_HARDWARE",
+		"COGNITION_CONTEXT_CEILING_BYTES",
+		"COGNITION_MAX_OUTPUT_TOKENS",
+		"WEB_SEARCH_ENABLED",
+		"WORKSPACE_SCAN_ENABLED",
+		"ANTHROPIC_VERSION",
+		"ANTHROPIC_MAX_TOKENS",
+		"OMNI_TICKET_CONTEXT_DEADLINE",
+		"OMNI_OBJECTIVE_ADVISORY_MODE",
+		"OMNI_CONTEXT_RELEVANCE_PROVIDER",
+	}, modelconfig.RemovedEnvironmentKeys()...)
+	for _, definition := range catalog.Definitions() {
+		if definition.SupportsExactPreparedStations || definition.SupportsEmbeddings {
+			continue
+		}
+		keys = append(keys, definition.APIKeyEnvironmentKeys...)
+		keys = append(keys, definition.BaseURLEnvironmentKeys...)
+		keys = append(keys, definition.EnvironmentKeys("EMBEDDING_MODEL")...)
+	}
+	return keys
+}
 
 func validateTypedEnvironment() error {
 	for _, key := range removedEnvironmentKeys {

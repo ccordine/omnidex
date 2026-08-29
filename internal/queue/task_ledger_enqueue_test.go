@@ -3,7 +3,6 @@ package queue
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -15,24 +14,16 @@ import (
 )
 
 func TestPostgresJobEnqueueCreatesInitialTaskAuthorityAtomically(t *testing.T) {
-	databaseURL := strings.TrimSpace(os.Getenv("OMNI_TEST_DATABASE_URL"))
-	if databaseURL == "" {
-		t.Skip("set OMNI_TEST_DATABASE_URL to run PostgreSQL task ledger enqueue tests")
-	}
 	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
 	defer cancel()
-	pool, err := pgxpool.New(ctx, databaseURL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(pool.Close)
+	pool := openIsolatedMigrationPool(t)
 	repository := New(pool)
 	if err := repository.EnsureSchema(ctx, loadCheckedMigrationBundle(t)); err != nil {
 		t.Fatal(err)
 	}
 
 	marker := fmt.Sprintf("task-ledger-enqueue-%d", time.Now().UnixNano())
-	job, err := repository.EnqueueJob(ctx, marker+"-public", model.PipelineAssistant, []byte(`{}`))
+	job, err := repository.EnqueueJob(ctx, marker+"-public", model.PipelineCoding, []byte(`{}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -45,7 +36,7 @@ func TestPostgresJobEnqueueCreatesInitialTaskAuthorityAtomically(t *testing.T) {
 	}
 	defer tx.Rollback(context.Background())
 	nestedJob, err := repository.enqueueJobTx(
-		ctx, tx, marker+"-nested", model.PipelineAssistant, []byte(`{}`),
+		ctx, tx, marker+"-nested", model.PipelineCoding, []byte(`{}`),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -58,7 +49,7 @@ func TestPostgresJobEnqueueCreatesInitialTaskAuthorityAtomically(t *testing.T) {
 
 	failureMarker := marker + "-forced-ledger-failure"
 	installTaskLedgerFailureTrigger(t, ctx, pool, failureMarker)
-	if _, err := repository.EnqueueJob(ctx, failureMarker, model.PipelineAssistant, []byte(`{}`)); err == nil ||
+	if _, err := repository.EnqueueJob(ctx, failureMarker, model.PipelineCoding, []byte(`{}`)); err == nil ||
 		!strings.Contains(err.Error(), "create task ledger") {
 		t.Fatalf("forced task ledger failure error=%v", err)
 	}

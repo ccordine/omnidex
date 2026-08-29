@@ -1,0 +1,273 @@
+<section data-chat-target="panel" data-panel-name="roleplay" class="chat-panel flex h-full min-h-0 flex-col bg-zinc-950/20">
+  <header class="chat-header border-b border-white/10 bg-zinc-950/75 px-3 py-2 backdrop-blur-xl">
+    <div class="flex min-w-0 flex-wrap items-center gap-2">
+        <label class="min-w-0 flex-1 max-w-md">
+          <span class="sr-only">Active world</span>
+          <select data-chat-target="channelSelect" data-recyclr-sink="channel-options" data-action="change->chat#selectChannel" aria-label="Active world" class="w-full truncate rounded-lg border border-white/10 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-none transition focus:border-violet-300/50 focus:ring-2 focus:ring-violet-300/10 disabled:cursor-wait disabled:opacity-60">
+            <option value="" disabled selected>Select a world</option>
+          </select>
+        </label>
+        <button type="button" data-action="chat#openRoleplayWorldBrowser" aria-haspopup="dialog" aria-controls="roleplay-world-browser-dialog" aria-label="Worlds" title="Worlds" class="grid h-9 w-9 shrink-0 place-items-center rounded-lg border border-white/10 text-lg text-zinc-400 transition hover:border-violet-300/30 hover:text-violet-100">＋</button>
+        <button type="button" data-action="chat#openRoleplayWorldSetup" aria-haspopup="dialog" aria-controls="roleplay-world-setup-dialog" aria-label="Open scene and cast controls" class="h-9 shrink-0 whitespace-nowrap rounded-lg border border-violet-300/25 bg-violet-300/10 px-3 text-xs font-semibold text-violet-100 transition hover:border-violet-300/45 hover:bg-violet-300/15 focus:outline-none focus:ring-2 focus:ring-violet-300/30">Scene &amp; cast</button>
+        <button type="button" data-chat-target="liveBadge" data-action="chat#acknowledgeActivityProblems" data-state="ready" class="system-activity-indicator shrink-0" aria-label="System activity: Ready. Omnidex is ready. No reported problems." title="Omnidex is ready. No reported problems.">
+          <span data-chat-target="activityDot" class="system-activity-dot" aria-hidden="true"></span>
+          <span data-chat-target="activityText">Ready</span>
+          <span data-chat-target="activityProblems" class="system-activity-problems hidden">0</span>
+        </button>
+    </div>
+  </header>
+
+  <div data-chat-target="roleplayWorkspaceLoading" role="status" aria-live="polite" class="hidden border-b border-violet-300/15 bg-violet-300/[.05] px-4 py-2 text-xs font-medium text-violet-100">
+    <span class="mr-2 inline-block h-2 w-2 animate-pulse rounded-full bg-violet-300" aria-hidden="true"></span>
+    Loading story studio…
+  </div>
+
+  <dialog id="roleplay-world-browser-dialog" data-chat-target="roleplayWorldDialog" data-roleplay-dialog="worlds" data-action="click->chat#closeRoleplayWorldBrowserBackdrop cancel->chat#closeRoleplayWorldBrowser" aria-labelledby="roleplay-world-browser-title" class="m-auto max-h-[88vh] w-[calc(100%-2rem)] max-w-4xl overflow-hidden rounded-2xl border border-violet-300/20 bg-zinc-950 p-0 text-zinc-100 shadow-2xl shadow-black/60 backdrop:bg-black/75 backdrop:backdrop-blur-sm">
+    <div class="flex max-h-[88vh] flex-col">
+      <header class="flex items-start justify-between gap-4 border-b border-white/10 px-4 py-4 md:px-5">
+        <div>
+          <p class="text-[10px] font-semibold uppercase tracking-[.2em] text-violet-300/80">Story studio</p>
+          <h2 id="roleplay-world-browser-title" class="mt-1 text-xl font-semibold tracking-tight">Worlds</h2>
+          <p class="mt-1 text-sm text-zinc-500">Choose an existing world or start a new one.</p>
+        </div>
+        <button type="button" data-action="chat#closeRoleplayWorldBrowser" aria-label="Close world browser" class="rounded-lg border border-white/10 px-3 py-2 text-xs font-semibold text-zinc-300 transition hover:border-violet-300/30 hover:text-white">Close</button>
+      </header>
+      <div class="scrollbar grid min-h-0 overflow-y-auto md:grid-cols-[20rem_minmax(0,1fr)]">
+        <section aria-labelledby="roleplay-create-world-title" class="border-b border-white/10 bg-violet-300/[.035] p-4 md:border-b-0 md:border-r md:p-5">
+          <h3 id="roleplay-create-world-title" class="text-sm font-semibold text-violet-100">Create a world</h3>
+          <p class="mt-1 text-xs leading-5 text-zinc-500">Name the setting and its first viewpoint character.</p>
+          <form data-action="submit->chat#createRoleplayWorld" class="mt-4 grid gap-3">
+            <select data-chat-target="newChannelModeSelect" class="hidden" aria-hidden="true" tabindex="-1">
+              <option value="roleplay" selected>Roleplay</option>
+            </select>
+            <div data-chat-target="newChannelRoleplayFields" class="grid gap-3">
+              <label class="grid gap-1.5 text-xs text-zinc-400">
+                <span>World name</span>
+                <input data-chat-target="newChannelRoleplayWorldName" name="world_name" type="text" maxlength="256" required placeholder="Clockwork Harbor" class="rounded-lg border border-white/10 bg-zinc-900 px-3 py-2.5 text-sm text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-violet-300/40 disabled:opacity-60">
+              </label>
+              <label class="grid gap-1.5 text-xs text-zinc-400">
+                <span>First character</span>
+                <input data-chat-target="newChannelRoleplayViewpointName" name="viewpoint_name" type="text" maxlength="256" required placeholder="Mira" class="rounded-lg border border-white/10 bg-zinc-900 px-3 py-2.5 text-sm text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-violet-300/40 disabled:opacity-60">
+              </label>
+            </div>
+            <button type="submit" class="rounded-lg bg-violet-300 px-3 py-2.5 text-xs font-semibold text-zinc-950 transition hover:bg-violet-200 disabled:cursor-wait disabled:bg-zinc-700">Create and enter world</button>
+          </form>
+        </section>
+        <section aria-labelledby="roleplay-existing-worlds-title" class="min-h-0 p-4 md:p-5">
+          <h3 id="roleplay-existing-worlds-title" class="text-sm font-semibold text-zinc-100">Your worlds</h3>
+          <div data-recyclr-sink="roleplay-world-list" class="mt-3 grid gap-2 sm:grid-cols-2">
+            <p role="status" class="text-xs text-zinc-500">Loading worlds…</p>
+          </div>
+          <div data-recyclr-sink="roleplay-world-pagination" class="mt-3"></div>
+        </section>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog id="roleplay-character-library-dialog" data-chat-target="roleplayCharacterDialog" data-roleplay-dialog="characters" data-action="click->chat#closeRoleplayCharacterLibraryBackdrop cancel->chat#closeRoleplayCharacterLibrary" aria-labelledby="roleplay-character-library-title" class="m-auto max-h-[88vh] w-[calc(100%-2rem)] max-w-4xl overflow-hidden rounded-2xl border border-violet-300/20 bg-zinc-950 p-0 text-zinc-100 shadow-2xl shadow-black/60 backdrop:bg-black/75 backdrop:backdrop-blur-sm">
+    <div class="flex max-h-[88vh] flex-col">
+      <header class="flex items-start justify-between gap-4 border-b border-white/10 px-4 py-4 md:px-5">
+        <div>
+          <p class="text-[10px] font-semibold uppercase tracking-[.2em] text-violet-300/80">Portable cast</p>
+          <h2 id="roleplay-character-library-title" class="mt-1 text-xl font-semibold tracking-tight">Character library</h2>
+          <p class="mt-1 text-sm text-zinc-500">Profiles, settings, and memories stay with characters across worlds.</p>
+        </div>
+        <button type="button" data-action="chat#closeRoleplayCharacterLibrary" aria-label="Close character library" class="rounded-lg border border-white/10 px-3 py-2 text-xs font-semibold text-zinc-300 transition hover:border-violet-300/30 hover:text-white">Close</button>
+      </header>
+      <div class="scrollbar min-h-0 overflow-y-auto p-4 md:p-5">
+        <form data-action="submit->chat#createRoleplayLibraryCharacter" class="flex flex-col gap-2 rounded-xl border border-white/10 bg-white/[.025] p-3 sm:flex-row">
+          <label class="min-w-0 flex-1">
+            <span class="sr-only">New character name</span>
+            <input name="name" type="text" maxlength="256" required placeholder="New character" class="w-full rounded-lg border border-white/10 bg-zinc-900 px-3 py-2.5 text-sm text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-violet-300/40 disabled:opacity-60">
+          </label>
+          <button type="submit" class="rounded-lg border border-violet-300/30 bg-violet-300/10 px-4 py-2.5 text-xs font-semibold text-violet-100 transition hover:bg-violet-300/20 disabled:cursor-wait disabled:opacity-50">Create character</button>
+        </form>
+        <div data-recyclr-sink="roleplay-library-list" class="mt-4 grid gap-3 sm:grid-cols-2">
+          <p role="status" class="text-xs text-zinc-500">Loading characters…</p>
+        </div>
+        <div data-recyclr-sink="roleplay-library-pagination" class="mt-3"></div>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog id="roleplay-world-setup-dialog" data-chat-target="roleplaySetupDialog" data-roleplay-dialog="setup" data-action="click->chat#closeRoleplayWorldSetupBackdrop cancel->chat#closeRoleplayWorldSetup" aria-labelledby="roleplay-world-setup-title" class="m-auto h-[min(52rem,calc(100%-2rem))] max-h-[92vh] w-[calc(100%-2rem)] max-w-6xl overflow-hidden rounded-2xl border border-violet-300/20 bg-zinc-950 p-0 text-zinc-100 shadow-2xl shadow-black/60 backdrop:bg-black/75 backdrop:backdrop-blur-sm">
+    <div class="flex h-full min-h-0 min-w-0 flex-col">
+      <header class="flex flex-wrap items-start justify-between gap-3 border-b border-white/10 px-4 py-4 md:px-5">
+        <div class="min-w-0">
+          <p class="text-[10px] font-semibold uppercase tracking-[.2em] text-violet-300/80">Selected world</p>
+          <h2 id="roleplay-world-setup-title" class="mt-1 text-xl font-semibold tracking-tight">World setup</h2>
+          <p class="mt-1 text-sm text-zinc-500">Organize the scene, cast, simulation state, and available actions.</p>
+        </div>
+        <div class="flex flex-wrap items-center gap-2">
+          <button type="button" data-action="chat#openRoleplayWorldBrowser" class="rounded-lg border border-white/10 px-3 py-2 text-xs font-semibold text-zinc-300 transition hover:border-violet-300/30 hover:text-white">Switch world</button>
+          <button type="button" data-action="chat#openRoleplayCharacterLibrary" class="rounded-lg border border-white/10 px-3 py-2 text-xs font-semibold text-zinc-300 transition hover:border-violet-300/30 hover:text-white">Add character</button>
+          <button type="button" data-action="chat#closeRoleplayWorldSetup" aria-label="Close world setup" class="rounded-lg border border-violet-300/25 bg-violet-300/10 px-3 py-2 text-xs font-semibold text-violet-100 transition hover:bg-violet-300/20">Done</button>
+        </div>
+      </header>
+      <div data-chat-target="roleplayPanel" class="relative hidden min-h-0 flex-1">
+        <div data-chat-target="roleplayLoading" role="status" aria-live="polite" class="absolute inset-x-4 top-3 z-20 hidden rounded-lg border border-violet-300/20 bg-zinc-950/95 px-3 py-2 text-xs font-medium text-violet-100 shadow-lg">
+          <span class="mr-2 inline-block h-2 w-2 animate-pulse rounded-full bg-violet-300" aria-hidden="true"></span>
+          Refreshing world…
+        </div>
+        <div data-recyclr-sink="roleplay-simulation" class="h-full min-h-0">
+          <p role="status" class="m-4 rounded-lg border border-dashed border-white/10 px-4 py-8 text-center text-sm text-zinc-500">Select a world to load its scene and character controls.</p>
+        </div>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog id="roleplay-character-editor-dialog" data-chat-target="roleplayCharacterEditorDialog" data-roleplay-dialog="character-editor" data-action="click->chat#closeRoleplayCharacterEditorBackdrop cancel->chat#closeRoleplayCharacterEditor" aria-labelledby="roleplay-character-editor-title" class="m-auto max-h-[88vh] w-[calc(100%-2rem)] max-w-xl overflow-hidden rounded-2xl border border-violet-300/20 bg-zinc-950 p-0 text-zinc-100 shadow-2xl shadow-black/60 backdrop:bg-black/75 backdrop:backdrop-blur-sm">
+    <div class="flex max-h-[88vh] flex-col">
+      <header class="flex items-start justify-between gap-4 border-b border-white/10 px-4 py-4 md:px-5">
+        <div class="min-w-0">
+          <p class="text-[10px] font-semibold uppercase tracking-[.2em] text-violet-300/80">Selected character</p>
+          <h2 id="roleplay-character-editor-title" class="mt-1 text-xl font-semibold tracking-tight">Edit character</h2>
+        </div>
+        <button type="button" data-action="chat#closeRoleplayCharacterEditor" aria-label="Close character editor" class="rounded-lg border border-violet-300/25 bg-violet-300/10 px-3 py-2 text-xs font-semibold text-violet-100 transition hover:bg-violet-300/20">Done</button>
+      </header>
+      <div data-recyclr-sink="roleplay-character-editor" class="scrollbar min-h-0 overflow-y-auto p-4 md:p-5">
+        <p role="status" class="rounded-lg border border-dashed border-white/10 px-4 py-8 text-center text-sm text-zinc-500">Choose a character from the cast.</p>
+      </div>
+    </div>
+  </dialog>
+
+  <div class="chat-content grid min-h-0 flex-1 md:grid-cols-[minmax(0,1fr)_12rem]">
+
+    <div class="flex h-full min-h-0 flex-col">
+      <div data-chat-target="messages" id="channel-transcript" aria-live="polite" aria-busy="false" class="scrollbar min-h-0 flex-1 overflow-y-auto px-3 py-6 md:px-6">
+        <div class="mx-auto max-w-3xl">
+          <div data-recyclr-sink="channel-transcript-pagination" class="mb-4 flex justify-center"></div>
+          <div id="channel-transcript-messages" data-recyclr-sink="channel-transcript-messages" class="space-y-5">
+            <div role="status" class="mx-auto max-w-xl rounded-2xl border border-dashed border-white/10 bg-white/[.02] px-6 py-10 text-center">
+              <p class="text-base font-semibold text-zinc-200">Choose a world</p>
+              <p class="mt-2 text-sm leading-6 text-zinc-400">Open Worlds above, choose a setting, configure its scene, then start the story.</p>
+            </div>
+          </div>
+          <div data-chat-target="typingIndicator" role="status" aria-live="polite" aria-hidden="true" class="chat-typing-indicator hidden py-4">
+            <span class="sr-only">A character is responding</span>
+            <span class="chat-typing-bubble" aria-hidden="true">
+              <span class="chat-typing-dot"></span><span class="chat-typing-dot"></span><span class="chat-typing-dot"></span>
+            </span>
+          </div>
+          <div data-chat-target="transcriptLoading" role="status" aria-live="polite" class="hidden py-4 text-center text-xs font-medium text-violet-200">
+            <span class="mr-2 inline-block h-2 w-2 animate-pulse rounded-full bg-violet-300" aria-hidden="true"></span>
+            Syncing story…
+          </div>
+        </div>
+      </div>
+
+      <form data-action="submit->chat#submit" class="border-t border-white/10 bg-zinc-950/80 px-3 py-3 backdrop-blur-xl md:px-6 md:py-4">
+        <div class="mx-auto max-w-3xl">
+          <div class="chat-composer relative rounded-2xl border border-violet-300/15 bg-zinc-900/95 p-2 shadow-2xl shadow-black/20 transition focus-within:border-violet-300/40 focus-within:ring-2 focus-within:ring-violet-300/10">
+            <div data-recyclr-sink="roleplay-composer-authority" class="mb-2">
+              <div role="status" class="rounded-xl border border-white/10 px-3 py-2 text-xs text-zinc-500">Select a configured world to choose who you control.</div>
+            </div>
+            <ol data-chat-target="roleplayDraftParts" aria-label="Ordered roleplay turn" class="mb-1 grid gap-1.5"></ol>
+            <div data-chat-target="roleplayDraftPartPool" class="hidden" aria-hidden="true">
+              <div data-chat-target="roleplayDraftPart" data-roleplay-part-kind="message" class="flex items-start gap-1.5 rounded-xl border border-white/10 bg-black/15 p-1.5">
+                <span data-roleplay-part-label class="mt-1.5 w-14 shrink-0 text-center text-[10px] font-semibold uppercase tracking-wide text-violet-200">Message</span>
+                <textarea data-roleplay-part-text rows="1" maxlength="4096" aria-label="Message" data-action="input->chat#roleplayDraftPartInput" class="scrollbar min-h-8 min-w-0 flex-1 resize-none bg-transparent px-1 py-1 text-sm leading-5 text-zinc-100 outline-none"></textarea>
+                <span class="flex shrink-0 gap-0.5"><button type="button" data-action="chat#moveRoleplayDraftPartUp" aria-label="Move up" class="rounded px-1.5 py-1 text-xs text-zinc-500 hover:text-zinc-100">↑</button><button type="button" data-action="chat#moveRoleplayDraftPartDown" aria-label="Move down" class="rounded px-1.5 py-1 text-xs text-zinc-500 hover:text-zinc-100">↓</button><button type="button" data-action="chat#removeRoleplayDraftPart" aria-label="Delete" class="rounded px-1.5 py-1 text-xs text-zinc-500 hover:text-rose-300">×</button></span>
+              </div>
+              <div data-chat-target="roleplayDraftPart" data-roleplay-part-kind="message" class="flex items-start gap-1.5 rounded-xl border border-white/10 bg-black/15 p-1.5">
+                <span data-roleplay-part-label class="mt-1.5 w-14 shrink-0 text-center text-[10px] font-semibold uppercase tracking-wide text-violet-200">Message</span>
+                <textarea data-roleplay-part-text rows="1" maxlength="4096" aria-label="Message" data-action="input->chat#roleplayDraftPartInput" class="scrollbar min-h-8 min-w-0 flex-1 resize-none bg-transparent px-1 py-1 text-sm leading-5 text-zinc-100 outline-none"></textarea>
+                <span class="flex shrink-0 gap-0.5"><button type="button" data-action="chat#moveRoleplayDraftPartUp" aria-label="Move up" class="rounded px-1.5 py-1 text-xs text-zinc-500 hover:text-zinc-100">↑</button><button type="button" data-action="chat#moveRoleplayDraftPartDown" aria-label="Move down" class="rounded px-1.5 py-1 text-xs text-zinc-500 hover:text-zinc-100">↓</button><button type="button" data-action="chat#removeRoleplayDraftPart" aria-label="Delete" class="rounded px-1.5 py-1 text-xs text-zinc-500 hover:text-rose-300">×</button></span>
+              </div>
+              <div data-chat-target="roleplayDraftPart" data-roleplay-part-kind="message" class="flex items-start gap-1.5 rounded-xl border border-white/10 bg-black/15 p-1.5">
+                <span data-roleplay-part-label class="mt-1.5 w-14 shrink-0 text-center text-[10px] font-semibold uppercase tracking-wide text-violet-200">Message</span>
+                <textarea data-roleplay-part-text rows="1" maxlength="4096" aria-label="Message" data-action="input->chat#roleplayDraftPartInput" class="scrollbar min-h-8 min-w-0 flex-1 resize-none bg-transparent px-1 py-1 text-sm leading-5 text-zinc-100 outline-none"></textarea>
+                <span class="flex shrink-0 gap-0.5"><button type="button" data-action="chat#moveRoleplayDraftPartUp" aria-label="Move up" class="rounded px-1.5 py-1 text-xs text-zinc-500 hover:text-zinc-100">↑</button><button type="button" data-action="chat#moveRoleplayDraftPartDown" aria-label="Move down" class="rounded px-1.5 py-1 text-xs text-zinc-500 hover:text-zinc-100">↓</button><button type="button" data-action="chat#removeRoleplayDraftPart" aria-label="Delete" class="rounded px-1.5 py-1 text-xs text-zinc-500 hover:text-rose-300">×</button></span>
+              </div>
+              <div data-chat-target="roleplayDraftPart" data-roleplay-part-kind="message" class="flex items-start gap-1.5 rounded-xl border border-white/10 bg-black/15 p-1.5">
+                <span data-roleplay-part-label class="mt-1.5 w-14 shrink-0 text-center text-[10px] font-semibold uppercase tracking-wide text-violet-200">Message</span>
+                <textarea data-roleplay-part-text rows="1" maxlength="4096" aria-label="Message" data-action="input->chat#roleplayDraftPartInput" class="scrollbar min-h-8 min-w-0 flex-1 resize-none bg-transparent px-1 py-1 text-sm leading-5 text-zinc-100 outline-none"></textarea>
+                <span class="flex shrink-0 gap-0.5"><button type="button" data-action="chat#moveRoleplayDraftPartUp" aria-label="Move up" class="rounded px-1.5 py-1 text-xs text-zinc-500 hover:text-zinc-100">↑</button><button type="button" data-action="chat#moveRoleplayDraftPartDown" aria-label="Move down" class="rounded px-1.5 py-1 text-xs text-zinc-500 hover:text-zinc-100">↓</button><button type="button" data-action="chat#removeRoleplayDraftPart" aria-label="Delete" class="rounded px-1.5 py-1 text-xs text-zinc-500 hover:text-rose-300">×</button></span>
+              </div>
+              <div data-chat-target="roleplayDraftPart" data-roleplay-part-kind="message" class="flex items-start gap-1.5 rounded-xl border border-white/10 bg-black/15 p-1.5">
+                <span data-roleplay-part-label class="mt-1.5 w-14 shrink-0 text-center text-[10px] font-semibold uppercase tracking-wide text-violet-200">Message</span>
+                <textarea data-roleplay-part-text rows="1" maxlength="4096" aria-label="Message" data-action="input->chat#roleplayDraftPartInput" class="scrollbar min-h-8 min-w-0 flex-1 resize-none bg-transparent px-1 py-1 text-sm leading-5 text-zinc-100 outline-none"></textarea>
+                <span class="flex shrink-0 gap-0.5"><button type="button" data-action="chat#moveRoleplayDraftPartUp" aria-label="Move up" class="rounded px-1.5 py-1 text-xs text-zinc-500 hover:text-zinc-100">↑</button><button type="button" data-action="chat#moveRoleplayDraftPartDown" aria-label="Move down" class="rounded px-1.5 py-1 text-xs text-zinc-500 hover:text-zinc-100">↓</button><button type="button" data-action="chat#removeRoleplayDraftPart" aria-label="Delete" class="rounded px-1.5 py-1 text-xs text-zinc-500 hover:text-rose-300">×</button></span>
+              </div>
+              <div data-chat-target="roleplayDraftPart" data-roleplay-part-kind="message" class="flex items-start gap-1.5 rounded-xl border border-white/10 bg-black/15 p-1.5">
+                <span data-roleplay-part-label class="mt-1.5 w-14 shrink-0 text-center text-[10px] font-semibold uppercase tracking-wide text-violet-200">Message</span>
+                <textarea data-roleplay-part-text rows="1" maxlength="4096" aria-label="Message" data-action="input->chat#roleplayDraftPartInput" class="scrollbar min-h-8 min-w-0 flex-1 resize-none bg-transparent px-1 py-1 text-sm leading-5 text-zinc-100 outline-none"></textarea>
+                <span class="flex shrink-0 gap-0.5"><button type="button" data-action="chat#moveRoleplayDraftPartUp" aria-label="Move up" class="rounded px-1.5 py-1 text-xs text-zinc-500 hover:text-zinc-100">↑</button><button type="button" data-action="chat#moveRoleplayDraftPartDown" aria-label="Move down" class="rounded px-1.5 py-1 text-xs text-zinc-500 hover:text-zinc-100">↓</button><button type="button" data-action="chat#removeRoleplayDraftPart" aria-label="Delete" class="rounded px-1.5 py-1 text-xs text-zinc-500 hover:text-rose-300">×</button></span>
+              </div>
+              <div data-chat-target="roleplayDraftPart" data-roleplay-part-kind="message" class="flex items-start gap-1.5 rounded-xl border border-white/10 bg-black/15 p-1.5">
+                <span data-roleplay-part-label class="mt-1.5 w-14 shrink-0 text-center text-[10px] font-semibold uppercase tracking-wide text-violet-200">Message</span>
+                <textarea data-roleplay-part-text rows="1" maxlength="4096" aria-label="Message" data-action="input->chat#roleplayDraftPartInput" class="scrollbar min-h-8 min-w-0 flex-1 resize-none bg-transparent px-1 py-1 text-sm leading-5 text-zinc-100 outline-none"></textarea>
+                <span class="flex shrink-0 gap-0.5"><button type="button" data-action="chat#moveRoleplayDraftPartUp" aria-label="Move up" class="rounded px-1.5 py-1 text-xs text-zinc-500 hover:text-zinc-100">↑</button><button type="button" data-action="chat#moveRoleplayDraftPartDown" aria-label="Move down" class="rounded px-1.5 py-1 text-xs text-zinc-500 hover:text-zinc-100">↓</button><button type="button" data-action="chat#removeRoleplayDraftPart" aria-label="Delete" class="rounded px-1.5 py-1 text-xs text-zinc-500 hover:text-rose-300">×</button></span>
+              </div>
+              <div data-chat-target="roleplayDraftPart" data-roleplay-part-kind="message" class="flex items-start gap-1.5 rounded-xl border border-white/10 bg-black/15 p-1.5">
+                <span data-roleplay-part-label class="mt-1.5 w-14 shrink-0 text-center text-[10px] font-semibold uppercase tracking-wide text-violet-200">Message</span>
+                <textarea data-roleplay-part-text rows="1" maxlength="4096" aria-label="Message" data-action="input->chat#roleplayDraftPartInput" class="scrollbar min-h-8 min-w-0 flex-1 resize-none bg-transparent px-1 py-1 text-sm leading-5 text-zinc-100 outline-none"></textarea>
+                <span class="flex shrink-0 gap-0.5"><button type="button" data-action="chat#moveRoleplayDraftPartUp" aria-label="Move up" class="rounded px-1.5 py-1 text-xs text-zinc-500 hover:text-zinc-100">↑</button><button type="button" data-action="chat#moveRoleplayDraftPartDown" aria-label="Move down" class="rounded px-1.5 py-1 text-xs text-zinc-500 hover:text-zinc-100">↓</button><button type="button" data-action="chat#removeRoleplayDraftPart" aria-label="Delete" class="rounded px-1.5 py-1 text-xs text-zinc-500 hover:text-rose-300">×</button></span>
+              </div>
+              <div data-chat-target="roleplayDraftPart" data-roleplay-part-kind="message" class="flex items-start gap-1.5 rounded-xl border border-white/10 bg-black/15 p-1.5">
+                <span data-roleplay-part-label class="mt-1.5 w-14 shrink-0 text-center text-[10px] font-semibold uppercase tracking-wide text-violet-200">Message</span>
+                <textarea data-roleplay-part-text rows="1" maxlength="4096" aria-label="Message" data-action="input->chat#roleplayDraftPartInput" class="scrollbar min-h-8 min-w-0 flex-1 resize-none bg-transparent px-1 py-1 text-sm leading-5 text-zinc-100 outline-none"></textarea>
+                <span class="flex shrink-0 gap-0.5"><button type="button" data-action="chat#moveRoleplayDraftPartUp" aria-label="Move up" class="rounded px-1.5 py-1 text-xs text-zinc-500 hover:text-zinc-100">↑</button><button type="button" data-action="chat#moveRoleplayDraftPartDown" aria-label="Move down" class="rounded px-1.5 py-1 text-xs text-zinc-500 hover:text-zinc-100">↓</button><button type="button" data-action="chat#removeRoleplayDraftPart" aria-label="Delete" class="rounded px-1.5 py-1 text-xs text-zinc-500 hover:text-rose-300">×</button></span>
+              </div>
+              <div data-chat-target="roleplayDraftPart" data-roleplay-part-kind="message" class="flex items-start gap-1.5 rounded-xl border border-white/10 bg-black/15 p-1.5">
+                <span data-roleplay-part-label class="mt-1.5 w-14 shrink-0 text-center text-[10px] font-semibold uppercase tracking-wide text-violet-200">Message</span>
+                <textarea data-roleplay-part-text rows="1" maxlength="4096" aria-label="Message" data-action="input->chat#roleplayDraftPartInput" class="scrollbar min-h-8 min-w-0 flex-1 resize-none bg-transparent px-1 py-1 text-sm leading-5 text-zinc-100 outline-none"></textarea>
+                <span class="flex shrink-0 gap-0.5"><button type="button" data-action="chat#moveRoleplayDraftPartUp" aria-label="Move up" class="rounded px-1.5 py-1 text-xs text-zinc-500 hover:text-zinc-100">↑</button><button type="button" data-action="chat#moveRoleplayDraftPartDown" aria-label="Move down" class="rounded px-1.5 py-1 text-xs text-zinc-500 hover:text-zinc-100">↓</button><button type="button" data-action="chat#removeRoleplayDraftPart" aria-label="Delete" class="rounded px-1.5 py-1 text-xs text-zinc-500 hover:text-rose-300">×</button></span>
+              </div>
+              <div data-chat-target="roleplayDraftPart" data-roleplay-part-kind="message" class="flex items-start gap-1.5 rounded-xl border border-white/10 bg-black/15 p-1.5">
+                <span data-roleplay-part-label class="mt-1.5 w-14 shrink-0 text-center text-[10px] font-semibold uppercase tracking-wide text-violet-200">Message</span>
+                <textarea data-roleplay-part-text rows="1" maxlength="4096" aria-label="Message" data-action="input->chat#roleplayDraftPartInput" class="scrollbar min-h-8 min-w-0 flex-1 resize-none bg-transparent px-1 py-1 text-sm leading-5 text-zinc-100 outline-none"></textarea>
+                <span class="flex shrink-0 gap-0.5"><button type="button" data-action="chat#moveRoleplayDraftPartUp" aria-label="Move up" class="rounded px-1.5 py-1 text-xs text-zinc-500 hover:text-zinc-100">↑</button><button type="button" data-action="chat#moveRoleplayDraftPartDown" aria-label="Move down" class="rounded px-1.5 py-1 text-xs text-zinc-500 hover:text-zinc-100">↓</button><button type="button" data-action="chat#removeRoleplayDraftPart" aria-label="Delete" class="rounded px-1.5 py-1 text-xs text-zinc-500 hover:text-rose-300">×</button></span>
+              </div>
+              <div data-chat-target="roleplayDraftPart" data-roleplay-part-kind="message" class="flex items-start gap-1.5 rounded-xl border border-white/10 bg-black/15 p-1.5">
+                <span data-roleplay-part-label class="mt-1.5 w-14 shrink-0 text-center text-[10px] font-semibold uppercase tracking-wide text-violet-200">Message</span>
+                <textarea data-roleplay-part-text rows="1" maxlength="4096" aria-label="Message" data-action="input->chat#roleplayDraftPartInput" class="scrollbar min-h-8 min-w-0 flex-1 resize-none bg-transparent px-1 py-1 text-sm leading-5 text-zinc-100 outline-none"></textarea>
+                <span class="flex shrink-0 gap-0.5"><button type="button" data-action="chat#moveRoleplayDraftPartUp" aria-label="Move up" class="rounded px-1.5 py-1 text-xs text-zinc-500 hover:text-zinc-100">↑</button><button type="button" data-action="chat#moveRoleplayDraftPartDown" aria-label="Move down" class="rounded px-1.5 py-1 text-xs text-zinc-500 hover:text-zinc-100">↓</button><button type="button" data-action="chat#removeRoleplayDraftPart" aria-label="Delete" class="rounded px-1.5 py-1 text-xs text-zinc-500 hover:text-rose-300">×</button></span>
+              </div>
+              <div data-chat-target="roleplayDraftPart" data-roleplay-part-kind="message" class="flex items-start gap-1.5 rounded-xl border border-white/10 bg-black/15 p-1.5">
+                <span data-roleplay-part-label class="mt-1.5 w-14 shrink-0 text-center text-[10px] font-semibold uppercase tracking-wide text-violet-200">Message</span>
+                <textarea data-roleplay-part-text rows="1" maxlength="4096" aria-label="Message" data-action="input->chat#roleplayDraftPartInput" class="scrollbar min-h-8 min-w-0 flex-1 resize-none bg-transparent px-1 py-1 text-sm leading-5 text-zinc-100 outline-none"></textarea>
+                <span class="flex shrink-0 gap-0.5"><button type="button" data-action="chat#moveRoleplayDraftPartUp" aria-label="Move up" class="rounded px-1.5 py-1 text-xs text-zinc-500 hover:text-zinc-100">↑</button><button type="button" data-action="chat#moveRoleplayDraftPartDown" aria-label="Move down" class="rounded px-1.5 py-1 text-xs text-zinc-500 hover:text-zinc-100">↓</button><button type="button" data-action="chat#removeRoleplayDraftPart" aria-label="Delete" class="rounded px-1.5 py-1 text-xs text-zinc-500 hover:text-rose-300">×</button></span>
+              </div>
+              <div data-chat-target="roleplayDraftPart" data-roleplay-part-kind="message" class="flex items-start gap-1.5 rounded-xl border border-white/10 bg-black/15 p-1.5">
+                <span data-roleplay-part-label class="mt-1.5 w-14 shrink-0 text-center text-[10px] font-semibold uppercase tracking-wide text-violet-200">Message</span>
+                <textarea data-roleplay-part-text rows="1" maxlength="4096" aria-label="Message" data-action="input->chat#roleplayDraftPartInput" class="scrollbar min-h-8 min-w-0 flex-1 resize-none bg-transparent px-1 py-1 text-sm leading-5 text-zinc-100 outline-none"></textarea>
+                <span class="flex shrink-0 gap-0.5"><button type="button" data-action="chat#moveRoleplayDraftPartUp" aria-label="Move up" class="rounded px-1.5 py-1 text-xs text-zinc-500 hover:text-zinc-100">↑</button><button type="button" data-action="chat#moveRoleplayDraftPartDown" aria-label="Move down" class="rounded px-1.5 py-1 text-xs text-zinc-500 hover:text-zinc-100">↓</button><button type="button" data-action="chat#removeRoleplayDraftPart" aria-label="Delete" class="rounded px-1.5 py-1 text-xs text-zinc-500 hover:text-rose-300">×</button></span>
+              </div>
+              <div data-chat-target="roleplayDraftPart" data-roleplay-part-kind="message" class="flex items-start gap-1.5 rounded-xl border border-white/10 bg-black/15 p-1.5">
+                <span data-roleplay-part-label class="mt-1.5 w-14 shrink-0 text-center text-[10px] font-semibold uppercase tracking-wide text-violet-200">Message</span>
+                <textarea data-roleplay-part-text rows="1" maxlength="4096" aria-label="Message" data-action="input->chat#roleplayDraftPartInput" class="scrollbar min-h-8 min-w-0 flex-1 resize-none bg-transparent px-1 py-1 text-sm leading-5 text-zinc-100 outline-none"></textarea>
+                <span class="flex shrink-0 gap-0.5"><button type="button" data-action="chat#moveRoleplayDraftPartUp" aria-label="Move up" class="rounded px-1.5 py-1 text-xs text-zinc-500 hover:text-zinc-100">↑</button><button type="button" data-action="chat#moveRoleplayDraftPartDown" aria-label="Move down" class="rounded px-1.5 py-1 text-xs text-zinc-500 hover:text-zinc-100">↓</button><button type="button" data-action="chat#removeRoleplayDraftPart" aria-label="Delete" class="rounded px-1.5 py-1 text-xs text-zinc-500 hover:text-rose-300">×</button></span>
+              </div>
+              <div data-chat-target="roleplayDraftPart" data-roleplay-part-kind="message" class="flex items-start gap-1.5 rounded-xl border border-white/10 bg-black/15 p-1.5">
+                <span data-roleplay-part-label class="mt-1.5 w-14 shrink-0 text-center text-[10px] font-semibold uppercase tracking-wide text-violet-200">Message</span>
+                <textarea data-roleplay-part-text rows="1" maxlength="4096" aria-label="Message" data-action="input->chat#roleplayDraftPartInput" class="scrollbar min-h-8 min-w-0 flex-1 resize-none bg-transparent px-1 py-1 text-sm leading-5 text-zinc-100 outline-none"></textarea>
+                <span class="flex shrink-0 gap-0.5"><button type="button" data-action="chat#moveRoleplayDraftPartUp" aria-label="Move up" class="rounded px-1.5 py-1 text-xs text-zinc-500 hover:text-zinc-100">↑</button><button type="button" data-action="chat#moveRoleplayDraftPartDown" aria-label="Move down" class="rounded px-1.5 py-1 text-xs text-zinc-500 hover:text-zinc-100">↓</button><button type="button" data-action="chat#removeRoleplayDraftPart" aria-label="Delete" class="rounded px-1.5 py-1 text-xs text-zinc-500 hover:text-rose-300">×</button></span>
+              </div>
+            </div>
+            <div data-chat-target="slashPalette" class="absolute bottom-[calc(100%+.5rem)] left-0 right-0 z-30 hidden max-h-72 overflow-y-auto rounded-xl border border-white/10 bg-zinc-950/95 p-1 shadow-2xl shadow-black/50 backdrop-blur-xl">
+              <div id="slash-command-options" data-chat-target="slashOptions" data-recyclr-sink="slash-command-options"></div>
+            </div>
+            <textarea data-chat-target="input" rows="1" role="combobox" aria-label="Story message" aria-autocomplete="list" aria-haspopup="listbox" aria-controls="slash-command-list" aria-expanded="false" data-action="input->chat#composerInput keydown->chat#slashCommandKeydown keydown->chat#composerKeydown" placeholder="Speak, act, or guide the scene…" class="chat-composer-input scrollbar max-h-48 min-h-[3rem] w-full resize-none bg-transparent px-2 py-2 text-[15px] leading-6 text-zinc-100 outline-none placeholder:text-zinc-600 disabled:cursor-wait disabled:opacity-60"></textarea>
+            <div class="flex flex-wrap items-center justify-between gap-2 border-t border-white/10 px-1 pt-2">
+              <div class="flex items-center gap-1">
+                <button type="button" data-roleplay-part-kind="message" data-action="chat#addRoleplayDraftPart" class="rounded-lg border border-white/10 px-2.5 py-1.5 text-[11px] font-semibold text-zinc-400 transition hover:border-violet-300/30 hover:text-violet-100">+ Message</button>
+                <button type="button" data-roleplay-part-kind="action" data-action="chat#addRoleplayDraftPart" class="rounded-lg border border-white/10 px-2.5 py-1.5 text-[11px] font-semibold text-zinc-400 transition hover:border-violet-300/30 hover:text-violet-100">+ Action</button>
+                <button type="button" data-roleplay-part-kind="event" data-action="chat#addRoleplayDraftPart" class="rounded-lg border border-white/10 px-2.5 py-1.5 text-[11px] font-semibold text-zinc-400 transition hover:border-violet-300/30 hover:text-violet-100">+ Event</button>
+              </div>
+              <div class="flex items-center gap-3">
+                <p class="hidden text-[11px] text-zinc-600 sm:block">Enter to send · Shift+Enter for a new line</p>
+                <button data-chat-target="send" type="submit" class="rounded-xl bg-violet-300 px-4 py-2 text-xs font-semibold text-zinc-950 transition hover:bg-violet-200 focus:outline-none focus:ring-2 focus:ring-violet-100/60 disabled:cursor-not-allowed disabled:bg-zinc-700 disabled:text-zinc-400">Send</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </form>
+      </div>
+      <aside data-recyclr-sink="roleplay-cast-sidebar" aria-label="Scene responders" class="hidden min-h-0 border-l border-white/10 bg-zinc-950/35 md:block">
+        <div class="p-3 text-xs text-zinc-500">Select a configured world to choose responders.</div>
+      </aside>
+    </div>
+
+  </div>
+</section>

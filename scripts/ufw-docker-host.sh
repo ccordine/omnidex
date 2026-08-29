@@ -23,8 +23,8 @@ Options:
   -h, --help          Show this help
 
 After running, restart core and verify:
-  docker compose exec core wget -qO- --timeout=5 http://host.docker.internal:${OLLAMA_PORT}/api/tags
-  docker compose exec core wget -qO- --timeout=5 http://host.docker.internal:${BRIDGE_PORT}/healthz
+  omni service --service core up
+  Then use Omnidex Host Integration status; do not use ambient docker compose.
 EOF
 }
 

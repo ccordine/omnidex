@@ -20,9 +20,24 @@ func TestPostgresWorkerWriteFenceRejectsTerminalAttemptBeforeMutation(t *testing
 	if claim == nil || claim.Job.ID != job.ID {
 		t.Fatalf("claim=%+v want job %d", claim, job.ID)
 	}
+	workspaceRoot := "/tmp/" + marker
+	var projectID int64
+	if err := pool.QueryRow(ctx, `
+		INSERT INTO projects(location,name) VALUES ($1,$2) RETURNING id
+	`, workspaceRoot, marker).Scan(&projectID); err != nil {
+		t.Fatal(err)
+	}
+	channelID := model.ChannelID(marker)
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO ai_channels(id,scope,name,tags,project_id,workspace_root)
+		VALUES ($1,'user',$2,ARRAY[]::text[],$3,$4)
+	`, channelID, marker, projectID, workspaceRoot); err != nil {
+		t.Fatal(err)
+	}
+	scope := model.MemoryScope{ProjectID: projectID, ChannelID: channelID}
 	accepted := marker + "-accepted"
 	chunk, err := repository.AddMemoryChunkByStepAttempt(
-		ctx, claim.Authority, marker, model.MemoryKindReference, accepted, nil, nil,
+		ctx, claim.Authority, scope, marker, model.MemoryKindReference, accepted, nil, nil,
 	)
 	if err != nil || chunk.ID <= 0 {
 		t.Fatalf("accepted worker memory=%+v error=%v", chunk, err)
@@ -34,7 +49,7 @@ func TestPostgresWorkerWriteFenceRejectsTerminalAttemptBeforeMutation(t *testing
 	}
 	rejected := marker + "-rejected"
 	if _, err := repository.AddMemoryChunkByStepAttempt(
-		ctx, claim.Authority, marker, model.MemoryKindReference, rejected, nil, nil,
+		ctx, claim.Authority, scope, marker, model.MemoryKindReference, rejected, nil, nil,
 	); !errors.Is(err, ErrStaleStepAttempt) {
 		t.Fatalf("terminal worker write error=%v want ErrStaleStepAttempt", err)
 	}

@@ -1,13 +1,7 @@
 import { Controller } from "@hotwired/stimulus";
-import { escapeHTML } from "../lib/dom";
-
-type ScreenMonitor = {
-  id: string;
-  name: string;
-  width: number;
-  height: number;
-  primary?: boolean;
-};
+import { fetchScreenMonitorsComponent } from "../lib/operational_component_api";
+import { renderServerBundle } from "../lib/server_component_api";
+import type RecyclrController from "./recyclr_controller";
 
 export default class ScreenController extends Controller {
   static targets = ["frame", "stream", "placeholder", "status", "monitorSelect", "fpsSelect", "scaleSelect", "streamUrl", "fullscreenButton"];
@@ -24,7 +18,8 @@ export default class ScreenController extends Controller {
 
   private projectID: number | null = null;
   private activeTab = "";
-  private monitors: ScreenMonitor[] = [];
+  private monitorsLoaded = false;
+  private monitorOffset = 0;
   private streamNonce = 0;
   private onProjectOpened = (event: Event) => this.handleProjectOpened(event);
   private onProjectClosed = () => this.handleProjectClosed();
@@ -60,6 +55,25 @@ export default class ScreenController extends Controller {
   changeQuality(event: Event) {
     event.preventDefault();
     void this.startStream(true);
+  }
+
+  async loadMonitorPage(event: Event) {
+    event.preventDefault();
+    const offset = Number((event.currentTarget as HTMLElement).dataset.pageOffset ?? -1);
+    if (!Number.isSafeInteger(offset) || offset < 0) {
+      throw new Error("Monitor page offset is invalid.");
+    }
+    this.monitorOffset = offset;
+    this.monitorsLoaded = false;
+    this.stopStream();
+    this.setStatus("Loading monitors…", "busy");
+    try {
+      await this.loadMonitors();
+      await this.startStream(true);
+    } catch (error) {
+      this.stopStream();
+      this.setStatus(error instanceof Error ? error.message : "Monitor page unavailable", "error");
+    }
   }
 
   toggleFullscreen(event: Event) {
@@ -154,6 +168,10 @@ export default class ScreenController extends Controller {
 
   private handleProjectOpened(event: Event) {
     const detail = (event as CustomEvent<{ project_id?: number }>).detail;
+    if (detail?.project_id !== this.projectID) {
+      this.monitorOffset = 0;
+      this.monitorsLoaded = false;
+    }
     this.projectID = detail?.project_id ?? null;
     if (this.activeTab === "screen") {
       void this.prepareScreen(false);
@@ -162,9 +180,9 @@ export default class ScreenController extends Controller {
 
   private handleProjectClosed() {
     this.projectID = null;
-    this.monitors = [];
+    this.monitorsLoaded = false;
+    this.monitorOffset = 0;
     this.stopStream();
-    this.resetMonitorSelect();
     this.setStatus("Idle", "idle");
   }
 
@@ -185,7 +203,7 @@ export default class ScreenController extends Controller {
     if (!this.projectID) return;
     this.setStatus("Loading monitors…", "busy");
     try {
-      if (force || this.monitors.length === 0) {
+      if (force || !this.monitorsLoaded) {
         await this.loadMonitors();
       }
       await this.startStream(force);
@@ -197,46 +215,18 @@ export default class ScreenController extends Controller {
 
   private async loadMonitors() {
     if (!this.projectID) return;
-    const response = await fetch(`/v1/host/screen/monitors?project_id=${this.projectID}`);
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      throw new Error(typeof payload.error === "string" ? payload.error : "Failed to load monitors");
+    const payload = await fetchScreenMonitorsComponent(this.projectID, this.monitorOffset);
+    await renderServerBundle(this.recyclrController(), payload, "Screen monitors");
+    if (!Number.isSafeInteger(payload.offset) || payload.offset < 0 || payload.offset !== this.monitorOffset) {
+      throw new Error("Monitor component returned an invalid authoritative offset.");
     }
-    const monitors = Array.isArray(payload.monitors) ? payload.monitors : [];
-    this.monitors = monitors.map((item: Record<string, unknown>) => ({
-      id: String(item.id ?? item.name ?? ""),
-      name: String(item.name ?? item.id ?? "Monitor"),
-      width: Number(item.width ?? 0),
-      height: Number(item.height ?? 0),
-      primary: Boolean(item.primary),
-    }));
-    this.renderMonitorOptions();
-  }
-
-  private renderMonitorOptions() {
-    const select = this.monitorSelectTarget;
-    if (!this.monitors.length) {
-      select.innerHTML = `<option value="">No monitors found</option>`;
-      return;
-    }
-    select.innerHTML = this.monitors
-      .map((monitor) => {
-        const suffix = monitor.primary ? " · primary" : "";
-        const size = monitor.width && monitor.height ? ` (${monitor.width}×${monitor.height})` : "";
-        return `<option value="${escapeHTML(monitor.id)}">${escapeHTML(`${monitor.name}${size}${suffix}`)}</option>`;
-      })
-      .join("");
-    const primary = this.monitors.find((monitor) => monitor.primary);
-    select.value = primary?.id ?? this.monitors[0]?.id ?? "";
-  }
-
-  private resetMonitorSelect() {
-    this.monitorSelectTarget.innerHTML = `<option value="">Loading…</option>`;
+    this.monitorOffset = payload.offset;
+    this.monitorsLoaded = Boolean(payload.monitor_id);
   }
 
   private async startStream(force: boolean) {
     if (!this.projectID) return;
-    if (!this.monitors.length) {
+    if (!this.monitorsLoaded) {
       throw new Error("No monitors available on the host");
     }
     const monitor = this.monitorSelectTarget.value.trim();
@@ -263,6 +253,12 @@ export default class ScreenController extends Controller {
     };
     this.placeholderTarget.classList.add("hidden");
     this.setStatus("Streaming", "ok");
+  }
+
+  private recyclrController(): RecyclrController {
+    const controller = this.application.getControllerForElementAndIdentifier(document.body, "recyclr") as RecyclrController | null;
+    if (!controller) throw new Error("The page-scoped Recyclr controller is unavailable.");
+    return controller;
   }
 
   private stopStream() {

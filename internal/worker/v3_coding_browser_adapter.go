@@ -21,50 +21,82 @@ func compileGenericTypeScriptBrowserBlueprint(
 	packageName string,
 	specification assemblyline.ApplicationSpecification,
 	skills map[string]directCodingSkillBinding,
+	workload assemblyline.FrozenApplicationWorkload,
 	capabilities directCodingCapabilityGraph,
-) (string, assemblyline.TypeScriptBlueprint, []directCodingFileTask, error) {
+	target assemblyline.TargetTree,
+	coverage assemblyline.ApplicationFileCoveragePlan,
+) (assemblyline.SourceBlueprint, []directCodingFileTask, error) {
 	if err := specification.Validate(); err != nil {
-		return "", assemblyline.TypeScriptBlueprint{}, nil, err
+		return assemblyline.SourceBlueprint{}, nil, err
 	}
 	if specification.Surface != assemblyline.ApplicationSurfaceBrowser {
-		return "", assemblyline.TypeScriptBlueprint{}, nil, fmt.Errorf(
+		return assemblyline.SourceBlueprint{}, nil, fmt.Errorf(
 			"generic TypeScript browser adapter does not support surface %s",
 			specification.Surface,
 		)
 	}
+	profile, err := directCodingVersionProfileForTargetTree(target)
+	if err != nil {
+		return assemblyline.SourceBlueprint{}, nil, err
+	}
 	if err := validateDirectCodingSkillBindings(specification.Requirements, skills); err != nil {
-		return "", assemblyline.TypeScriptBlueprint{}, nil, err
+		return assemblyline.SourceBlueprint{}, nil, err
 	}
 	if err := validateDirectCodingCapabilityGraph(specification.Requirements, capabilities); err != nil {
-		return "", assemblyline.TypeScriptBlueprint{}, nil, err
+		return assemblyline.SourceBlueprint{}, nil, err
 	}
-	documents := []assemblyline.TypeScriptDocument{genericBrowserRuntimeDocument(specification.Requirements)}
-	documents = append(documents, genericBrowserFeatureDocuments(specification, skills, capabilities)...)
-	documents = append(documents, genericBrowserAcceptanceDocuments(specification)...)
-	documents = append(documents, genericBrowserAppDocument(specification))
+	contexts, err := directCodingApplicationTaskContexts(workload)
+	if err != nil {
+		return assemblyline.SourceBlueprint{}, nil, err
+	}
+	documents := []assemblyline.SourceDocument{genericBrowserRuntimeDocument(specification.Requirements)}
+	featureDocuments, err := genericBrowserFeatureDocuments(specification, skills, contexts, capabilities, coverage)
+	if err != nil {
+		return assemblyline.SourceBlueprint{}, nil, err
+	}
+	documents = append(documents, featureDocuments...)
+	acceptanceDocuments, err := genericBrowserAcceptanceDocuments(specification, contexts, capabilities, coverage)
+	if err != nil {
+		return assemblyline.SourceBlueprint{}, nil, err
+	}
+	documents = append(documents, acceptanceDocuments...)
+	appDocument, err := genericBrowserAppDocument(specification, contexts, coverage)
+	if err != nil {
+		return assemblyline.SourceBlueprint{}, nil, err
+	}
+	documents = append(documents, appDocument)
+	documents = append(documents, genericBrowserEntrypointDocument())
 	documents = append(documents, genericBrowserSmokeTestDocument(specification))
 	documents = append(documents, genericBrowserRuntimeTestDocument(specification.Requirements))
-	blueprint := assemblyline.TypeScriptBlueprint{Documents: documents}
-	if err := blueprint.Validate(); err != nil {
-		return "", assemblyline.TypeScriptBlueprint{}, nil, fmt.Errorf("validate generic browser blueprint: %w", err)
-	}
-	staticFiles := typeScriptBrowserStaticFiles(
+	blueprint := assemblyline.SourceBlueprint{Documents: documents}
+	staticFiles, err := typeScriptBrowserStaticFiles(
+		profile,
 		packageName,
 		specification.ProductQuote,
 		genericBrowserStylesSource(),
 	)
-	return genericTypeScriptBrowserAdapter, blueprint, staticFiles, nil
+	if err != nil {
+		return assemblyline.SourceBlueprint{}, nil, err
+	}
+	return blueprint, staticFiles, nil
 }
 
 func genericBrowserFeatureDocuments(
 	specification assemblyline.ApplicationSpecification,
 	skills map[string]directCodingSkillBinding,
+	contexts map[string]assemblyline.ApplicationTaskContext,
 	capabilities directCodingCapabilityGraph,
-) []assemblyline.TypeScriptDocument {
-	documents := make([]assemblyline.TypeScriptDocument, 0, len(specification.Requirements))
+	coverage assemblyline.ApplicationFileCoveragePlan,
+) ([]assemblyline.SourceDocument, error) {
+	documents := make([]assemblyline.SourceDocument, 0, len(specification.Requirements))
+	documentByPath := make(map[string]int, len(specification.Requirements))
 	for index, requirement := range specification.Requirements {
 		sequence := index + 1
-		skill := skills[requirement.ID]
+		skill, hasSkill := skills[requirement.ID]
+		var activeSkill *directCodingSkillBinding
+		if hasSkill {
+			activeSkill = &skill
+		}
 		functionName := fmt.Sprintf("Feature%03d", sequence)
 		viewName := functionName + "View"
 		viewPropsName := functionName + "ViewProps"
@@ -72,71 +104,87 @@ func genericBrowserFeatureDocuments(
 		contextID := fmt.Sprintf("feature.context.%03d", sequence)
 		wrapperID := fmt.Sprintf("feature.wrapper.%03d", sequence)
 		dependencies := capabilities[requirement.ID]
-		documents = append(documents, assemblyline.TypeScriptDocument{
-			ID:   fmt.Sprintf("feature_%03d", sequence),
-			Path: fmt.Sprintf("src/features/%s.tsx", functionName),
-			Header: `import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+		taskContext, exists := contexts[requirement.ID]
+		if !exists {
+			return nil, fmt.Errorf("application workload omits requirement %s", requirement.ID)
+		}
+		files, err := directCodingTaskSinglePair(coverage, taskContext.Task.TaskID)
+		if err != nil {
+			return nil, err
+		}
+		behavior, err := compileDirectCodingApplicationTaskBehavior(taskContext, dependencies)
+		if err != nil {
+			return nil, err
+		}
+		documentIndex, exists := documentByPath[files.ImplementationPath]
+		if !exists {
+			documentIndex = len(documents)
+			documentByPath[files.ImplementationPath] = documentIndex
+			documents = append(documents, assemblyline.SourceDocument{
+				ID:   fmt.Sprintf("feature_%03d", sequence),
+				Path: files.ImplementationPath,
+				Preamble: fmt.Sprintf(`import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactElement } from 'react';
-import { FeatureBoundary } from '../runtime';
-import type { CapabilitySnapshot, FeatureProps, FeatureViewProps } from '../runtime';`,
-			Blocks: []assemblyline.TypeScriptBlock{
-				{
-					ID: contextID, Static: genericBrowserFeatureProjectionSource(viewPropsName, dependencies),
-					API:       genericBrowserFeatureProjectionAPI(viewPropsName, dependencies),
-					DependsOn: []string{"runtime.api"},
-				},
-				{
-					ID: blockID,
-					Signature: fmt.Sprintf(
-						"function %s({ state, capabilities, actions }: %s): ReactElement", viewName, viewPropsName,
-					),
-					Contract: genericBrowserFeatureContract(requirement, skill, dependencies, specification),
-					API: fmt.Sprintf(
-						"function %s({ state, capabilities, actions }: %s): ReactElement", viewName, viewPropsName,
-					),
-					DependsOn: []string{contextID}, Capabilities: []string{contextID},
-					Globals: []string{
-						"ReactElement", "useCallback", "useEffect", "useMemo", "useRef", "useState",
-					},
-					Policy: genericBrowserFeaturePolicy(),
-				},
-				{
-					ID: wrapperID, Static: fmt.Sprintf(
-						"export function %s({ runtime }: FeatureProps): ReactElement { return <FeatureBoundary runtime={runtime} view={%s} />; }",
-						functionName, viewName,
-					),
-					API:       fmt.Sprintf("function %s({ runtime }: FeatureProps): ReactElement", functionName),
-					DependsOn: []string{"runtime.api", blockID},
-				},
+import { FeatureBoundary } from '%s';
+import type { CapabilitySnapshot, FeatureActions, FeatureProps, FeatureState, FeatureViewProps, SharedValue } from '%s';`,
+					typeScriptRelativeModule(files.ImplementationPath, "src/runtime.tsx"),
+					typeScriptRelativeModule(files.ImplementationPath, "src/runtime.tsx")),
+			})
+		}
+		taskID := taskContext.Task.TaskID
+		documents[documentIndex].Blocks = append(documents[documentIndex].Blocks,
+			assemblyline.SourceBlock{
+				ID: contextID, Static: genericBrowserFeatureProjectionSource(viewPropsName, dependencies),
+				API:       genericBrowserFeatureProjectionAPI(viewPropsName, dependencies),
+				DependsOn: []string{"runtime.api"},
+				TaskID:    taskID, Role: assemblyline.SourceBlockTaskSupport,
 			},
-		})
+			assemblyline.SourceBlock{
+				ID: blockID,
+				Signature: fmt.Sprintf(
+					"function %s({ state, capabilities, actions }: %s): ReactElement", viewName, viewPropsName,
+				),
+				Contract: genericBrowserFeatureContract(behavior, activeSkill),
+				API: fmt.Sprintf(
+					"function %s({ state, capabilities, actions }: %s): ReactElement", viewName, viewPropsName,
+				),
+				DependsOn: []string{contextID}, Capabilities: []string{contextID},
+				Globals: []string{
+					"ReactElement", "useCallback", "useEffect", "useMemo", "useRef", "useState",
+				},
+				Policy: genericBrowserFeaturePolicy(),
+				TaskID: taskID, Role: assemblyline.SourceBlockTaskImplementation,
+			},
+			assemblyline.SourceBlock{
+				ID: wrapperID, Static: fmt.Sprintf(
+					"export function %s({ runtime }: FeatureProps): ReactElement { return <FeatureBoundary runtime={runtime} view={%s} />; }",
+					functionName, viewName,
+				),
+				API:       fmt.Sprintf("function %s({ runtime }: FeatureProps): ReactElement", functionName),
+				DependsOn: []string{"runtime.api", blockID},
+				TaskID:    taskID, Role: assemblyline.SourceBlockTaskSupport,
+			},
+		)
 	}
-	return documents
+	return documents, nil
 }
 
 func genericBrowserFeatureContract(
-	requirement assemblyline.Requirement,
-	skill directCodingSkillBinding,
-	dependencies []directCodingCapabilityBinding,
-	specification assemblyline.ApplicationSpecification,
+	behavior string,
+	skill *directCodingSkillBinding,
 ) string {
-	parts := []string{
-		"Product: " + specification.ProductQuote,
-		"Exact feature: " + requirement.SourceQuote,
-		"Validated procedure: " + skill.Procedure,
+	parts := []string{behavior}
+	if skill != nil {
+		parts = append(parts, "Validated procedure: "+skill.Procedure)
+	}
+	parts = append(parts,
 		"Return a complete accessible interactive React view. No placeholder, TODO, invented endpoint, import, or extra declaration.",
-		"The task-neutral code-owned boundary supplies state, read-only capability snapshots, mutations, live working status, and visible errors.",
-		"All shared state changes go through actions inside user interaction handlers. Use state for this feature and capabilities only when another feature materially affects this view.",
-		"React hooks and standard browser APIs are available when the requested behavior needs them. Implement workload-specific behavior here; do not assume Omnidex provides a domain service.",
-		"READABLE_CAPABILITY_CHANNELS:",
-	}
-	for _, dependency := range dependencies {
-		parts = append(parts, fmt.Sprintf("- %s: %s", dependency.CapabilityID, dependency.Purpose))
-	}
-	if len(dependencies) == 0 {
-		parts = append(parts, "(none)")
-	}
-	parts = append(parts, "Use only listed capability identifiers; do not invent identifiers.")
+		"Tailwind CSS utility classes are available in className. Use complete static utility names; do not construct class names from fragments.",
+		"State, read-only capability snapshots, mutations, live working status, and visible errors are available through the declared inputs.",
+		"Route shared state changes through actions inside user interaction handlers. Read state for this behavior and capabilities only when another required behavior materially affects this view.",
+		"React hooks and standard browser APIs are available when the required behavior needs them. Implement that behavior using only the declared inputs.",
+	)
+	parts = append(parts, "Every referenced capability identifier must be one of the listed capability identifiers.")
 	return strings.Join(parts, "\n")
 }
 
@@ -171,7 +219,7 @@ func genericBrowserFeatureProjectionAPI(
 	return strings.Join([]string{
 		"type SharedValue = null | boolean | number | string | readonly SharedValue[] | { readonly [key: string]: SharedValue }",
 		"type FeatureState = { readonly [key: string]: SharedValue }",
-		"interface FeatureActions { set(key: string, value: SharedValue): void; toggle(key: string): void; increment(key: string, delta: number, min: number, max: number): void; append(key: string, value: SharedValue): void; removeAt(key: string, index: number): void }",
+		genericBrowserFeatureActionsAPI(),
 		fmt.Sprintf(
 			"interface %s { readonly state: FeatureState; readonly capabilities: { %s }; readonly actions: FeatureActions }",
 			name, strings.Join(capabilityFields, "; "),
@@ -179,6 +227,6 @@ func genericBrowserFeatureProjectionAPI(
 	}, "\n")
 }
 
-func genericBrowserFeaturePolicy() assemblyline.TypeScriptFunctionPolicy {
-	return assemblyline.TypeScriptFunctionPolicy{}
+func genericBrowserFeaturePolicy() assemblyline.SourceFunctionPolicy {
+	return assemblyline.SourceFunctionPolicy{}
 }

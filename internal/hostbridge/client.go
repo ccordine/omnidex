@@ -9,6 +9,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/gryph/omnidex/internal/projectgit"
 )
 
 type Client struct {
@@ -32,36 +34,6 @@ func NewClient(baseURL, token string, timeout time.Duration) *Client {
 
 func (c *Client) Health(ctx context.Context) (map[string]any, error) {
 	return c.getJSON(ctx, "/healthz")
-}
-
-func (c *Client) Browse(ctx context.Context, path string) (*BrowseResult, error) {
-	query := url.Values{}
-	if strings.TrimSpace(path) != "" {
-		query.Set("path", strings.TrimSpace(path))
-	}
-	payload, err := c.getJSON(ctx, "/v1/browse?"+query.Encode())
-	if err != nil {
-		return nil, err
-	}
-	result := &BrowseResult{
-		Path:    stringField(payload, "path"),
-		Parent:  stringField(payload, "parent"),
-		Entries: []Entry{},
-	}
-	if rawEntries, ok := payload["entries"].([]any); ok {
-		for _, item := range rawEntries {
-			entryMap, ok := item.(map[string]any)
-			if !ok {
-				continue
-			}
-			result.Entries = append(result.Entries, Entry{
-				Name:  stringField(entryMap, "name"),
-				Path:  stringField(entryMap, "path"),
-				IsDir: boolField(entryMap, "is_dir"),
-			})
-		}
-	}
-	return result, nil
 }
 
 func (c *Client) Mkdir(ctx context.Context, parent, name string) (string, error) {
@@ -152,10 +124,14 @@ func (c *Client) ScanProjectTree(ctx context.Context, path string, maxFiles int)
 	return decodeProjectWalkResult(payload["walk"])
 }
 
-func (c *Client) ProjectGitStatus(ctx context.Context, path string) (map[string]any, error) {
+func (c *Client) ProjectGitStatus(ctx context.Context, path string) (projectgit.Status, error) {
 	query := url.Values{}
 	query.Set("path", strings.TrimSpace(path))
-	return c.getJSON(ctx, "/v1/project/git?"+query.Encode())
+	payload, err := c.getJSON(ctx, "/v1/project/git?"+query.Encode())
+	if err != nil {
+		return projectgit.Status{}, err
+	}
+	return projectgit.DecodeStatusPayload(payload)
 }
 
 func decodeProjectWalkResult(raw any) (ProjectWalkResult, error) {
@@ -215,25 +191,4 @@ func (c *Client) applyAuth(req *http.Request) {
 		return
 	}
 	req.Header.Set("Authorization", "Bearer "+c.Token)
-}
-
-func stringField(payload map[string]any, key string) string {
-	raw, ok := payload[key]
-	if !ok || raw == nil {
-		return ""
-	}
-	return strings.TrimSpace(fmt.Sprint(raw))
-}
-
-func boolField(payload map[string]any, key string) bool {
-	raw, ok := payload[key]
-	if !ok || raw == nil {
-		return false
-	}
-	switch value := raw.(type) {
-	case bool:
-		return value
-	default:
-		return strings.EqualFold(strings.TrimSpace(fmt.Sprint(value)), "true")
-	}
 }

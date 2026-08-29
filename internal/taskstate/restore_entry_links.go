@@ -19,18 +19,6 @@ func (ledger *Ledger) validateRestoredEntryLinks() error {
 			return err
 		}
 	}
-	for _, accepted := range ledger.entries {
-		if accepted.Kind != EntryAcceptedDecision {
-			continue
-		}
-		candidate, err := ledger.validateAcceptedCandidate(accepted)
-		if err != nil {
-			return err
-		}
-		if err := ledger.deriveReplacement(derived, candidate, accepted); err != nil {
-			return err
-		}
-	}
 	for _, entry := range ledger.entries {
 		replacementID, hasReplacement := derived[entry.ID]
 		if entry.Status == EntrySuperseded && !hasReplacement {
@@ -64,33 +52,6 @@ func validateGenericReplacement(old, replacement Entry) error {
 		return fmt.Errorf("%w: replacement %q has impossible supersession versions", ErrInvalidState, replacement.ID)
 	}
 	return nil
-}
-
-func (ledger *Ledger) validateAcceptedCandidate(accepted Entry) (Entry, error) {
-	candidate, exists := ledger.entries[accepted.Provenance.SourceEntryID]
-	if !exists || candidate.ID == accepted.ID || candidate.Kind != EntryDecisionCandidate ||
-		candidate.Authority != AuthorityModelProposal || candidate.CreatedBy != AuthorityModelProposal ||
-		candidate.Status != EntrySuperseded {
-		return Entry{}, fmt.Errorf("%w: accepted decision %q lacks its source model candidate", ErrInvalidState, accepted.ID)
-	}
-	if accepted.SupersedesID == candidate.ID {
-		return Entry{}, fmt.Errorf("%w: accepted decision %q conflates candidate provenance with generic supersession", ErrInvalidState, accepted.ID)
-	}
-	if accepted.ScopeNodeID != candidate.ScopeNodeID || accepted.Content != candidate.Content ||
-		accepted.ContentSHA256 != candidate.ContentSHA256 ||
-		!equalFloat64Pointers(accepted.Confidence, candidate.Confidence) {
-		return Entry{}, fmt.Errorf("%w: accepted decision %q does not exactly preserve its candidate", ErrInvalidState, accepted.ID)
-	}
-	if candidate.CreatedVersion >= accepted.CreatedVersion ||
-		candidate.UpdatedVersion != accepted.CreatedVersion ||
-		candidate.DispositionReason != accepted.Provenance.AcceptancePolicy ||
-		candidate.DispositionBy != accepted.Provenance.AcceptedBy {
-		return Entry{}, fmt.Errorf("%w: accepted decision %q has inconsistent candidate lineage", ErrInvalidState, accepted.ID)
-	}
-	if !hasEvidenceRef(accepted.Refs) {
-		return Entry{}, fmt.Errorf("%w: %w: accepted decision %q lacks acceptance evidence", ErrInvalidState, ErrEvidenceRequired, accepted.ID)
-	}
-	return candidate, nil
 }
 
 func (ledger *Ledger) deriveReplacement(

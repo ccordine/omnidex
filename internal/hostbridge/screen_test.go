@@ -1,32 +1,41 @@
 package hostbridge
 
-import "testing"
+import (
+	"net/http/httptest"
+	"testing"
+)
 
-func TestPickScreenMonitor(t *testing.T) {
+func TestScreenMonitorPageRequestRejectsInvalidBounds(t *testing.T) {
+	for _, raw := range []string{
+		"?limit=0", "?limit=101", "?limit=01", "?offset=-1", "?offset=1.0", "?offset=1&offset=2",
+	} {
+		r := httptest.NewRequest("GET", "/v1/screen/monitors"+raw, nil)
+		if _, err := screenMonitorPageRequest(r); err == nil {
+			t.Fatalf("expected %q to fail", raw)
+		}
+	}
+}
+
+func TestCollectScreenMonitorPageRetainsOnlyLimitPlusOne(t *testing.T) {
 	monitors := []ScreenMonitor{
-		{ID: "DP-1", Name: "DP-1", Primary: false},
-		{ID: "HDMI-A-1", Name: "HDMI-A-1", Primary: true},
+		{ID: "one", Name: "one"}, {ID: "two", Name: "two"}, {ID: "three", Name: "three"},
+		{ID: "four", Name: "four"}, {ID: "five", Name: "five"},
 	}
-
-	got, err := pickScreenMonitor(monitors, "")
+	visited := 0
+	page, found, err := collectScreenMonitorPage(ScreenMonitorPageRequest{Limit: 2, Offset: 2}, "test", func(visit func(ScreenMonitor) bool) (bool, int, error) {
+		for index, monitor := range monitors {
+			visited++
+			if !visit(monitor) {
+				return false, index + 1, nil
+			}
+		}
+		return true, len(monitors), nil
+	})
 	if err != nil {
-		t.Fatalf("pick primary: %v", err)
+		t.Fatal(err)
 	}
-	if got.Name != "HDMI-A-1" {
-		t.Fatalf("primary=%q", got.Name)
-	}
-
-	got, err = pickScreenMonitor(monitors, "DP-1")
-	if err != nil {
-		t.Fatalf("pick by id: %v", err)
-	}
-	if got.Name != "DP-1" {
-		t.Fatalf("picked=%q", got.Name)
-	}
-
-	_, err = pickScreenMonitor(monitors, "missing")
-	if err == nil {
-		t.Fatal("expected missing monitor error")
+	if !found || visited != 5 || len(page.Monitors) != 2 || page.Monitors[0].ID != "three" || !page.HasMore || page.NextOffset != 4 || !page.HasPrevious || page.PreviousOffset != 0 {
+		t.Fatalf("page=%+v found=%t visited=%d", page, found, visited)
 	}
 }
 

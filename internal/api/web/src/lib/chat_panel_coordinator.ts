@@ -1,4 +1,5 @@
 import { readJSON } from "./api";
+import { requireServerComponentBundle } from "./chat_component_api";
 import { errorMessage } from "./feedback";
 import {
   isOmniPanel,
@@ -17,7 +18,7 @@ export interface ChatPanelHost {
   root(): Element;
   locale(): string;
   renderPanel(html: string): Promise<void>;
-  loadPanelData(panel: OmniPanel): void;
+  loadPanelData(panel: OmniPanel): Promise<void>;
   pushRoute(path: string): void;
   addEvent(type: string, details?: Record<string, unknown>, full?: unknown): void;
   reportError(error: unknown): void;
@@ -52,7 +53,7 @@ export class ChatPanelCoordinator {
 
     try {
       const payload = await this.fetchPanel(panel);
-      await this.host.renderPanel(payload.html);
+      await this.host.renderPanel(payload.bundle);
     } catch (error) {
       this.host.addEvent("ui_panel_error", { panel, error: errorMessage(error) });
       this.host.reportError(error);
@@ -62,7 +63,13 @@ export class ChatPanelCoordinator {
     this.activePanel = panel;
     this.updateNavigation(panel);
     document.dispatchEvent(new CustomEvent("omni:panel-shown", { detail: { panel } }));
-    this.host.loadPanelData(panel);
+    try {
+      await this.host.loadPanelData(panel);
+    } catch (error) {
+      this.host.addEvent("ui_panel_data_error", { panel, error: errorMessage(error) });
+      this.host.reportError(error);
+      throw error;
+    }
 
     if (options.pushHistory) {
       const extra = panel === "admin" ? { admin_tab: parseAdminTabFromLocation() } : {};
@@ -70,7 +77,7 @@ export class ChatPanelCoordinator {
     }
   }
 
-  private async fetchPanel(panel: OmniPanel): Promise<{ html: string }> {
+  private async fetchPanel(panel: OmniPanel): Promise<{ bundle: string }> {
     const params = new URLSearchParams(window.location.search);
     if (panel === "chat") params.delete("panel");
     else params.set("panel", panel);
@@ -84,10 +91,7 @@ export class ChatPanelCoordinator {
     if (payload.locale !== locale) {
       throw new Error(`Server returned panel locale ${JSON.stringify(payload.locale)} while the shell locale is ${JSON.stringify(locale)}.`);
     }
-    if (typeof payload.html !== "string" || !payload.html.trim()) {
-      throw new Error(`Server response for panel ${JSON.stringify(panel)} did not include required HTML.`);
-    }
-    return { html: payload.html };
+    return { bundle: requireServerComponentBundle(payload, `Panel ${panel}`) };
   }
 
   private updateNavigation(panel: OmniPanel): void {

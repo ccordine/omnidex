@@ -21,29 +21,6 @@ func newDataSourceChannelID() string {
 	return "dsc-" + hex.EncodeToString(buf)
 }
 
-func (r *Repository) ListDataSourceChannels(ctx context.Context, dataSourceID string) ([]model.DataSourceChannel, error) {
-	dataSourceID = strings.TrimSpace(dataSourceID)
-	rows, err := r.pool.Query(ctx, `
-		SELECT id, data_source_id, name, created_at, updated_at
-		FROM data_source_channels
-		WHERE data_source_id = $1
-		ORDER BY updated_at DESC, id ASC
-	`, dataSourceID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []model.DataSourceChannel{}
-	for rows.Next() {
-		var item model.DataSourceChannel
-		if err := rows.Scan(&item.ID, &item.DataSourceID, &item.Name, &item.CreatedAt, &item.UpdatedAt); err != nil {
-			return nil, err
-		}
-		items = append(items, item)
-	}
-	return items, rows.Err()
-}
-
 func (r *Repository) GetDataSourceChannel(ctx context.Context, dataSourceID, channelID string) (model.DataSourceChannel, error) {
 	var item model.DataSourceChannel
 	err := r.pool.QueryRow(ctx, `
@@ -98,37 +75,6 @@ func (r *Repository) DeleteDataSourceChannel(ctx context.Context, dataSourceID, 
 		return pgx.ErrNoRows
 	}
 	return nil
-}
-
-func (r *Repository) ListDataSourceChannelMessages(ctx context.Context, channelID string, limit int) ([]model.DataSourceChannelMessage, error) {
-	if limit <= 0 || limit > 200 {
-		limit = 80
-	}
-	channelID = strings.TrimSpace(channelID)
-	rows, err := r.pool.Query(ctx, `
-		SELECT id, channel_id, role, content, payload, job_id, created_at
-		FROM (
-			SELECT id, channel_id, role, content, payload, job_id, created_at
-			FROM data_source_channel_messages
-			WHERE channel_id = $1
-			ORDER BY created_at DESC, id DESC
-			LIMIT $2
-		) recent
-		ORDER BY created_at ASC, id ASC
-	`, channelID, limit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []model.DataSourceChannelMessage{}
-	for rows.Next() {
-		var item model.DataSourceChannelMessage
-		if err := rows.Scan(&item.ID, &item.ChannelID, &item.Role, &item.Content, &item.Payload, &item.JobID, &item.CreatedAt); err != nil {
-			return nil, err
-		}
-		items = append(items, item)
-	}
-	return items, rows.Err()
 }
 
 func (r *Repository) AddDataSourceChannelMessage(ctx context.Context, channelID, role, content string, payload json.RawMessage, jobID *int64) (model.DataSourceChannelMessage, error) {

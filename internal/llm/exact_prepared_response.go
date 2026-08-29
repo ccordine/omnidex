@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
-	"time"
 	"unicode/utf8"
 
 	"github.com/gryph/omnidex/internal/exactjson"
@@ -25,23 +24,44 @@ type ExactPreparedResponse struct {
 }
 
 type exactPreparedResponseWire struct {
-	Model              string `json:"model"`
-	CreatedAt          string `json:"created_at"`
-	Response           string `json:"response"`
-	Done               *bool  `json:"done,omitempty"`
-	DoneReason         string `json:"done_reason,omitempty"`
-	TotalDuration      *int64 `json:"total_duration,omitempty"`
-	LoadDuration       *int64 `json:"load_duration,omitempty"`
-	PromptEvalCount    *int   `json:"prompt_eval_count,omitempty"`
-	PromptEvalDuration *int64 `json:"prompt_eval_duration,omitempty"`
-	EvalCount          *int   `json:"eval_count,omitempty"`
-	EvalDuration       *int64 `json:"eval_duration,omitempty"`
+	Model              string  `json:"model"`
+	CreatedAt          string  `json:"created_at"`
+	Response           string  `json:"response"`
+	Thinking           *string `json:"thinking,omitempty"`
+	Done               *bool   `json:"done,omitempty"`
+	DoneReason         string  `json:"done_reason,omitempty"`
+	TotalDuration      *int64  `json:"total_duration,omitempty"`
+	LoadDuration       *int64  `json:"load_duration,omitempty"`
+	PromptEvalCount    *int    `json:"prompt_eval_count,omitempty"`
+	PromptEvalDuration *int64  `json:"prompt_eval_duration,omitempty"`
+	EvalCount          *int    `json:"eval_count,omitempty"`
+	EvalDuration       *int64  `json:"eval_duration,omitempty"`
 }
 
 // DecodeExactPreparedResponse derives every normalized response field from the
 // exact captured bytes. It returns the derived partial receipt alongside any
 // provider-contract failure so callers can journal the evidence durably.
 func DecodeExactPreparedResponse(status int, body []byte) (ExactPreparedResponse, error) {
+	return DecodeExactPreparedResponseForProtocol(
+		ExactPreparedProtocolRawTextV2, status, body,
+	)
+}
+
+// DecodeExactPreparedResponseForProtocol derives the raw model result from the
+// exact provider wrapper. It preserves the exact JSON-string value carried by
+// Ollama; the model-authored content itself is never interpreted as JSON here.
+func DecodeExactPreparedResponseForProtocol(
+	protocol ExactPreparedProtocol,
+	status int,
+	body []byte,
+) (ExactPreparedResponse, error) {
+	if err := protocol.Validate(); err != nil {
+		return ExactPreparedResponse{}, err
+	}
+	return decodeExactPreparedResponse(status, body)
+}
+
+func decodeExactPreparedResponse(status int, body []byte) (ExactPreparedResponse, error) {
 	if status < 100 || status > 599 {
 		return ExactPreparedResponse{}, fmt.Errorf("exact provider HTTP status is invalid")
 	}
@@ -55,7 +75,7 @@ func DecodeExactPreparedResponse(status int, body []byte) (ExactPreparedResponse
 	if !utf8.Valid(body) {
 		return invalid, fmt.Errorf("exact provider response is not valid UTF-8")
 	}
-	if err := exactjson.ValidateObject(
+	if err := exactjson.ValidateCompatibleObject(
 		body, exactPreparedResponseWire{}, "exact raw generation response",
 	); err != nil {
 		return invalid, err
@@ -64,14 +84,28 @@ func DecodeExactPreparedResponse(status int, body []byte) (ExactPreparedResponse
 	if err := json.Unmarshal(body, &wire); err != nil {
 		return invalid, err
 	}
-	createdAt, err := time.Parse(time.RFC3339Nano, wire.CreatedAt)
-	if err != nil || createdAt.Location() != time.UTC ||
-		createdAt.Format(time.RFC3339Nano) != wire.CreatedAt {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(body, &fields); err != nil {
+		return invalid, err
+	}
+	if _, err := parseExactProviderTimestamp(wire.CreatedAt, 9); err != nil {
 		return invalid, fmt.Errorf("exact provider response created_at is not canonical UTC")
 	}
 	content, err := strictExactJSONObjectString(body, "response")
 	if err != nil {
 		return invalid, err
+	}
+	thinking := ""
+	if _, present := fields["thinking"]; present {
+		thinking, err = strictExactJSONObjectString(body, "thinking")
+		if err != nil {
+			return invalid, err
+		}
+		if thinking != "" {
+			return invalid, fmt.Errorf(
+				"exact provider response contains forbidden separate thinking content",
+			)
+		}
 	}
 	response := ExactPreparedResponse{
 		Disposition: ProviderResponseSucceeded,
@@ -106,7 +140,8 @@ func ValidateExactPreparedResponseProjection(generation PreparedGeneration) erro
 		generation.ProviderResponseDisposition == ProviderResponseBodyReadError {
 		return nil
 	}
-	derived, _ := DecodeExactPreparedResponse(
+	derived, _ := DecodeExactPreparedResponseForProtocol(
+		generation.Protocol,
 		generation.ProviderHTTPStatus, generation.ProviderResponseCapture,
 	)
 	if derived.Disposition != generation.ProviderResponseDisposition ||

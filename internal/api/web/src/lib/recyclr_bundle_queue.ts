@@ -23,16 +23,21 @@ const validLocations = new Set<RecyclrRenderEvent["location"]>([
   "beforeend",
   "afterend",
 ]);
+const validTarget = /^[a-z][a-z0-9-]{0,63}$/;
 
 export function parseRecyclrBundle(html: string): RecyclrRenderEvent[] {
   const documentFragment = new DOMParser().parseFromString(html, "text/html");
-  const targets = [...documentFragment.querySelectorAll<HTMLElement>("[data-recyclr-target]")];
+  const children = [...documentFragment.head.children, ...documentFragment.body.children];
+  if (children.some((node) => node.tagName !== "TEMPLATE" || !node.hasAttribute("data-recyclr-target"))) {
+    throw new Error("Server bundle may contain only top-level Recyclr templates.");
+  }
+  const targets = children as HTMLTemplateElement[];
   if (targets.length === 0) {
     throw new Error("Server bundle does not contain a Recyclr target.");
   }
   return targets.map((node) => {
     const target = node.dataset.recyclrTarget?.trim() ?? "";
-    if (!target) throw new Error("Server bundle contains an empty Recyclr target.");
+    if (!validTarget.test(target)) throw new Error(`Server bundle contains invalid Recyclr target ${JSON.stringify(target)}.`);
     const location = (node.dataset.recyclrLocation?.trim() || "innerHTML") as RecyclrRenderEvent["location"];
     if (!validLocations.has(location)) {
       throw new Error(`Server bundle contains unsupported Recyclr location ${JSON.stringify(location)}.`);

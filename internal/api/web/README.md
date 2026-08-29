@@ -1,16 +1,13 @@
 # Omni Web UI
 
-TypeScript frontend for the Omni cockpit. Most existing cockpit surfaces still use [Hotwired Stimulus](https://stimulus.hotwired.dev/); Scrum card modals are React SPA surfaces mounted by a Stimulus controller.
+TypeScript interaction layer for the server-rendered Omni cockpit. [Hotwired Stimulus](https://stimulus.hotwired.dev/) coordinates user input and RecyclrJS applies bounded server component bundles. Scrum card modals are the sole React SPA surface and are mounted by a Stimulus controller.
 
 **Platform release:** Charmeleon (`v0.5.0`, in development) — software-defined context, repository intelligence, and durable task continuity built on the deterministic assembly-line authority established in Charmander. Promotion remains gated by the repository and restart proofs documented in [`docs/CHARMELEON_CONTEXT_SYSTEM.md`](../../../docs/CHARMELEON_CONTEXT_SYSTEM.md).
 
 Primary surfaces:
 
 - **Projects** — project list, settings, codebase map, model config
-- **Project Chat** — planner/research (`project_chat_controller.ts`)
-- **Scrum** — kanban board, card modal, channel, coach, play queue (`scrum_controller.ts`)
-
-Planner docs: [../../docs/SCRUM_PLANNER.md](../../docs/SCRUM_PLANNER.md)
+- **Scrum** — kanban board, typed card modal, channel, and explicit play queue (`scrum_controller.ts`)
 
 ## Layout
 
@@ -24,20 +21,15 @@ internal/api/web/
       card_modal_spa_controller.tsx
       recyclr_controller.ts
       chat_controller.ts
-      project_chat_controller.ts
       scrum_controller.ts
       projects_controller.ts
     react/
       card-modal/     # React card modal SPA
     lib/
-      project_chat_api.ts
-      project_chat_render.ts
       scrum_api.ts
-      scrum_render.ts
-      dom.ts          # HTML/formatting utilities
-      recyclr.ts      # Legacy partial updates for unmigrated surfaces
-      render.ts       # View render helpers
-      transcript_store.ts
+      server_component_api.ts
+      recyclr.ts      # Page-scoped Recyclr transport initialization
+      scrum_api.ts
       types.ts
   dist/               # Vite build output (embedded into agent-core)
 ```
@@ -46,7 +38,7 @@ internal/api/web/
 
 ```bash
 cd internal/api/web
-npm install
+npm ci
 npm run dev      # Vite dev server with API proxy to :8090
 npm run build    # Production bundle → dist/
 npm test
@@ -56,12 +48,12 @@ npm run typecheck
 From repo root:
 
 ```bash
-make ui          # install + build
+make ui          # reproducible install + build
 make ui-dev      # dev server
 make build       # ui + core + cli + omni
 ```
 
-The Go core embeds `web/dist/*` and serves it at `/` and `/ui/`.
+The Go core owns component markup, embeds `web/dist/*`, and serves the application at `/` and `/ui/`.
 
 ## Adding controllers
 
@@ -73,6 +65,6 @@ Do not add inline JavaScript to `index.html` beyond Tailwind config.
 
 ## Card modal SPA
 
-Scrum card modals are mounted through `card_modal_spa_controller.tsx`. The existing Scrum controller only inserts a hard-coded React mount wrapper for card modals; React owns the modal tabs, loading/error states, and typed JSON updates from `/v1/scrum/cards/{id}/modal`.
+Scrum card modals are mounted through `card_modal_spa_controller.tsx`. The server owns the typed mount boundary; React owns the modal tabs, loading/error states, and typed JSON updates from `/v1/scrum/cards/{id}/modal`.
 
 Do not add Recyclr HTML bundle fallbacks to the card modal path. New card-modal behavior should update server state through the existing JSON APIs and reconcile from the returned card/context payload.

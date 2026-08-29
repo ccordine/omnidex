@@ -1,11 +1,9 @@
 package main
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -28,41 +26,37 @@ func serviceTargetsAll(service string) bool {
 	}
 }
 
-func runServiceInvocationOrExit(invocation []string, workdir string) {
-	if len(invocation) == 0 {
-		die("service invocation is empty")
-	}
-
-	cmd := exec.Command(invocation[0], invocation[1:]...)
-	cmd.Dir = strings.TrimSpace(workdir)
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
-	if err := cmd.Run(); err != nil {
-		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) {
-			os.Exit(exitErr.ExitCode())
-		}
-		die(fmt.Sprintf("service command failed: %v", err))
-	}
-}
-
-func dockerLogsInvocationForService(opts serviceCommandOptions, composeCmd []string, composeFile string, workdir string) ([]string, error) {
+func dockerLogsInvocationForService(
+	opts serviceCommandOptions,
+	composeCmd, dockerCmd []string,
+	composeFile string,
+	workdir string,
+	environment []string,
+	runner serviceProcessRunner,
+) ([]string, error) {
 	serviceName := normalizeServiceName(opts.Service)
 	if serviceTargetsAll(serviceName) {
 		return nil, errors.New("docker-logs requires a specific service (example: --service core)")
 	}
 
-	containerID, err := resolveComposeServiceContainerID(composeCmd, composeFile, serviceName, workdir)
+	containerID, err := resolveComposeServiceContainerID(
+		composeCmd, composeFile, serviceName, workdir, environment, runner,
+	)
 	if err != nil {
 		return nil, err
 	}
 
-	return buildDockerLogsInvocation(containerID, opts.Tail, opts.Follow)
+	return buildDockerLogsInvocation(dockerCmd, containerID, opts.Tail, opts.Follow)
 }
 
-func resolveComposeServiceContainerID(composeCmd []string, composeFile string, serviceName string, workdir string) (string, error) {
+func resolveComposeServiceContainerID(
+	composeCmd []string,
+	composeFile string,
+	serviceName string,
+	workdir string,
+	environment []string,
+	runner serviceProcessRunner,
+) (string, error) {
 	if len(composeCmd) == 0 {
 		return "", errors.New("compose command prefix is required")
 	}
@@ -74,41 +68,37 @@ func resolveComposeServiceContainerID(composeCmd []string, composeFile string, s
 	if serviceName == "" || serviceTargetsAll(serviceName) {
 		return "", errors.New("service name is required for docker-logs")
 	}
+	if runner == nil {
+		return "", errors.New("service process runner is required")
+	}
 
 	invocation := append([]string{}, composeCmd...)
 	invocation = append(invocation, "-f", composeFile, "ps", "-q", serviceName)
-	cmd := exec.Command(invocation[0], invocation[1:]...)
-	cmd.Dir = strings.TrimSpace(workdir)
-	var stdout bytes.Buffer
-	var stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		reason := strings.TrimSpace(stderr.String())
-		if reason == "" {
-			reason = err.Error()
-		}
-		return "", fmt.Errorf("failed resolving container for service %q: %s", serviceName, reason)
+	stdout, err := runner.Output(serviceProcessRequest{
+		Invocation: invocation, Workdir: workdir, Environment: environment,
+	})
+	if err != nil {
+		return "", fmt.Errorf("failed resolving container for service %q: %w", serviceName, err)
 	}
 
-	containerID := firstNonEmptyLine(stdout.String())
+	containerID := firstNonEmptyLine(stdout)
 	if containerID == "" {
 		return "", fmt.Errorf("no running container found for service %q", serviceName)
 	}
 	return containerID, nil
 }
 
-func buildDockerLogsInvocation(containerID string, tail int, follow bool) ([]string, error) {
+func buildDockerLogsInvocation(dockerCmd []string, containerID string, tail int, follow bool) ([]string, error) {
+	if len(dockerCmd) == 0 {
+		return nil, errors.New("docker command prefix is required")
+	}
 	containerID = strings.TrimSpace(containerID)
 	if containerID == "" {
 		return nil, errors.New("container id is required for docker logs")
 	}
-	dockerBin, err := exec.LookPath("docker")
-	if err != nil {
-		return nil, errors.New("docker is required for docker-logs action")
-	}
 
-	invocation := []string{dockerBin, "logs", "--tail", strconv.Itoa(maxInt(tail, 0))}
+	invocation := append([]string{}, dockerCmd...)
+	invocation = append(invocation, "logs", "--tail", strconv.Itoa(maxInt(tail, 0)))
 	if follow {
 		invocation = append(invocation, "-f")
 	}

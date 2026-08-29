@@ -5,11 +5,9 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 
 	repositoryfacts "github.com/gryph/omnidex/internal/repository"
-	"github.com/gryph/omnidex/internal/repository/changeapply"
 )
 
 const repositoryBaselineSchemaV1 = "omnidex.repository-verification-baseline.v1"
@@ -59,7 +57,7 @@ func newRepositoryBaselineVerificationAuthority(
 func (authority repositoryBaselineVerificationAuthority) validate(commands []testCommand) error {
 	if !validRepositoryVerificationOpaqueID(authority.baselineID, "repository_baseline_") ||
 		!validRepositoryVerificationOpaqueID(authority.sourceSnapshotID, "snapshot_") ||
-		!validRepositoryVerificationOpaqueID(authority.contractID, "change_contract_") ||
+		!validRepositoryVerificationOwnerID(authority.contractID) ||
 		!validRepositoryVerificationSHA256(authority.planID) {
 		return fmt.Errorf("repository baseline authority contains a malformed identity")
 	}
@@ -83,12 +81,14 @@ func (authority repositoryBaselineVerificationAuthority) validate(commands []tes
 }
 
 func (authority repositoryBaselineVerificationAuthority) metadata() map[string]any {
-	return map[string]any{
+	metadata := map[string]any{
 		"repository_verification_baseline_id": authority.baselineID,
 		"repository_source_snapshot_id":       authority.sourceSnapshotID,
-		"repository_change_contract_id":       authority.contractID,
+		"repository_mutation_owner_id":        authority.contractID,
 		"repository_verification_plan_id":     authority.planID,
 	}
+	setRepositoryOwnerMetadata(metadata, authority.contractID)
+	return metadata
 }
 
 func (authority repositoryBaselineVerificationAuthority) planIdentity() string {
@@ -101,7 +101,7 @@ func (authority repositoryBaselineVerificationAuthority) allowsScope(scope repos
 
 func repositoryBaselineID(sourceSnapshotID, contractID, planID string) (string, error) {
 	if !validRepositoryVerificationOpaqueID(sourceSnapshotID, "snapshot_") ||
-		!validRepositoryVerificationOpaqueID(contractID, "change_contract_") ||
+		!validRepositoryVerificationOwnerID(contractID) ||
 		!validRepositoryVerificationSHA256(planID) {
 		return "", fmt.Errorf("repository baseline identity is incomplete")
 	}
@@ -136,25 +136,17 @@ func (session *directCodingSession) proveExistingRepositoryBaseline(
 	if err != nil {
 		return nil, err
 	}
-	workspace, err := changeapply.NewSnapshotWorkspace(session.runtime.ctx, source)
+	projection, err := newRepositorySnapshotProjection(source)
 	if err != nil {
 		return nil, fmt.Errorf("construct exact repository baseline projection: %w", err)
 	}
-	verificationErr := session.runExistingRepositoryVerification(
-		workspace.Root(), repositoryVerificationBaseline, commands, authority, nil,
+	if err := session.runExistingRepositoryVerification(
+		projection, repositoryVerificationBaseline, commands, authority,
 		func(ctx context.Context) error {
-			return errors.Join(
-				assertExactRepositoryBaselineSource(ctx, session.root, source),
-				workspace.VerifyExact(ctx),
-			)
+			return projection.VerifyExact(ctx)
 		},
-	)
-	cleanupErr := workspace.Cleanup()
-	if verificationErr != nil || cleanupErr != nil {
-		return nil, errors.Join(
-			wrapRepositoryExecutionError("prove exact repository baseline", verificationErr),
-			cleanupErr,
-		)
+	); err != nil {
+		return nil, wrapRepositoryExecutionError("prove exact repository baseline", err)
 	}
 	return &verifiedRepositoryBaseline{
 		authority: authority, commands: cloneTestCommands(commands),

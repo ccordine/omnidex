@@ -4,6 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title data-i18n="app.pageTitle">Omni Chat</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%2367e8f9'/%3E%3Ctext x='32' y='44' text-anchor='middle' font-size='38' font-family='sans-serif' font-weight='700' fill='%2309090b'%3EO%3C/text%3E%3C/svg%3E" />
     <script type="module" src="/src/main.ts"></script>
   </head>
   <body data-controller="shell recyclr chat projects scrum" data-recyclr-scope-value="page" class="h-full overflow-hidden bg-[radial-gradient(circle_at_20%_10%,rgba(6,182,212,.20),transparent_30%),radial-gradient(circle_at_80%_15%,rgba(244,63,94,.12),transparent_28%),linear-gradient(135deg,#09090b_0%,#111827_45%,#18181b_100%)] text-zinc-100">
@@ -21,18 +22,22 @@
           <div class="grid h-10 w-10 place-items-center rounded-lg bg-cyan-400 text-sm font-black text-zinc-950 shadow-glow">O</div>
           <div>
             <h1 class="text-lg font-semibold tracking-tight" data-i18n="app.title">Omni Chat</h1>
-            <p class="text-xs text-zinc-400" data-i18n="app.subtitle">local agent cockpit</p>
+            <p class="text-xs text-zinc-400" data-i18n="app.subtitle">local Omnidex console</p>
           </div>
         </div>
 
         <nav class="mt-6 grid gap-2 text-sm" data-i18n-aria="nav.sections" aria-label="Omni sections">
           <button data-action="chat#newThread" class="flex items-center justify-between rounded-md border border-white/10 bg-white/[.06] px-3 py-2 text-left text-zinc-100 transition hover:border-cyan-300/40 hover:bg-cyan-300/10">
             <span data-i18n="nav.newThread">New thread</span>
-            <span class="text-cyan-300">⌘N</span>
+            <span class="text-cyan-300">＋</span>
           </button>
           <a href="/chat" data-action="click->chat#showPanel" data-panel="chat" class="nav-button is-active flex items-center justify-between rounded-md border border-white/10 bg-white/[.06] px-3 py-2 text-left text-zinc-100 transition hover:border-cyan-300/40 hover:bg-cyan-300/10">
             <span data-i18n="nav.chat">Chat</span>
             <span class="text-cyan-300">01</span>
+          </a>
+          <a href="?panel=roleplay" data-action="click->chat#showPanel" data-panel="roleplay" class="nav-button flex items-center justify-between rounded-md border border-white/10 px-3 py-2 text-left text-zinc-300 transition hover:border-violet-300/40 hover:bg-violet-300/10">
+            <span data-i18n="nav.roleplay">Roleplay</span>
+            <span class="text-violet-300">RP</span>
           </a>
           <a href="?panel=projects" data-action="click->chat#showPanel" data-panel="projects" class="nav-button flex items-center justify-between rounded-md border border-white/10 px-3 py-2 text-left text-zinc-300 transition hover:border-cyan-300/40 hover:bg-cyan-300/10">
             <span data-i18n="nav.projects">Projects</span>
@@ -60,13 +65,6 @@
           </a>
         </nav>
 
-        <div class="mt-5 grid gap-2 text-sm">
-          <button data-action="chat#clearTranscript" class="flex items-center justify-between rounded-md border border-white/10 px-3 py-2 text-left text-zinc-300 transition hover:border-rose-300/40 hover:bg-rose-400/10">
-            <span data-i18n="nav.clearLog">Clear local log</span>
-            <span class="text-rose-300">⌫</span>
-          </button>
-        </div>
-
         <section class="mt-8">
           <h2 class="text-xs font-semibold uppercase tracking-[.18em] text-zinc-500" data-i18n="session.title">Session</h2>
           <dl class="mt-3 grid gap-3 text-sm">
@@ -88,11 +86,13 @@
             </div>
             <div class="rounded-md border border-white/10 bg-white/[.04] p-3">
               <dt class="text-zinc-500" data-i18n="session.lanUrl">LAN URL</dt>
-              <dd data-chat-target="networkUrl" class="mt-1 truncate font-mono text-xs text-cyan-200">
+              <dd class="mt-1 truncate font-mono text-xs text-cyan-200">
+                <a data-chat-target="networkUrl" class="text-cyan-200 hover:text-cyan-100">
                 <span class="inline-flex items-center gap-1.5 text-zinc-400" role="status" aria-live="polite">
                   <span class="inline-block h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-cyan-300/25 border-t-cyan-200" aria-hidden="true"></span>
                   <span data-i18n="session.loading">loading…</span>
                 </span>
+                </a>
               </dd>
             </div>
             <div class="rounded-md border border-white/10 bg-white/[.04] p-3">
@@ -159,18 +159,20 @@
         <section class="mb-5 rounded-lg border border-white/10 bg-zinc-950/60 p-4">
           <div class="flex items-center justify-between gap-3">
             <h2 class="text-sm font-semibold uppercase tracking-[.18em] text-zinc-400" data-i18n="drawer.progress">Progress</h2>
-            <span data-chat-target="progressState" class="rounded bg-zinc-800 px-2 py-1 font-mono text-[11px] text-zinc-400" data-i18n="status.idle">idle</span>
+            <span data-chat-target="progressState" data-recyclr-sink="progress-state" class="rounded bg-zinc-800 px-2 py-1 font-mono text-[11px] text-zinc-400" data-i18n="status.idle">idle</span>
           </div>
           <div data-chat-target="progress" data-recyclr-sink="progress" class="mt-3 text-sm text-zinc-500">
             <span data-i18n="drawer.noActiveJob">No active job.</span>
+            <p data-chat-target="progressLoading" class="hidden text-sm text-cyan-100" role="status"></p>
           </div>
         </section>
 
         <div class="flex items-center justify-between">
           <h2 class="text-sm font-semibold uppercase tracking-[.18em] text-zinc-400" data-i18n="drawer.timeline">Timeline</h2>
-          <span data-chat-target="eventCount" class="font-mono text-xs text-zinc-500" data-i18n="drawer.zeroEvents">0 events</span>
+          <span data-chat-target="eventCount" data-recyclr-sink="event-count" class="font-mono text-xs text-zinc-500" data-i18n="drawer.zeroEvents">0 events</span>
         </div>
         <div data-chat-target="timeline" data-recyclr-sink="timeline" class="scrollbar mt-4 min-h-0 flex-1 space-y-3 overflow-y-auto"></div>
+        <div data-recyclr-sink="timeline-pagination" class="mt-3 flex justify-center"></div>
           </div>
         </aside>
         <button type="button" data-action="shell#toggleRight" class="slide-drawer-rail slide-drawer-rail-right" data-i18n-aria="nav.showTimeline" aria-label="Show timeline">

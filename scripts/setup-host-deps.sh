@@ -364,11 +364,23 @@ install_first_available() {
   return 1
 }
 
+setup_rootful_docker() {
+  env -u DOCKER_HOST -u DOCKER_CONFIG -u DOCKER_CERT_PATH -u DOCKER_TLS \
+    -u DOCKER_TLS_VERIFY -u BUILDKIT_HOST -u BUILDKIT_TLS_SERVER_NAME \
+    -u BUILDKIT_TLS_CACERT -u BUILDKIT_TLS_CERT -u BUILDKIT_TLS_KEY \
+    -u BUILDX_BUILDER -u BUILDX_CONFIG DOCKER_CONTEXT=default docker "$@"
+}
+
 have_docker_compose() {
+  local endpoint security_options
   if ! command -v docker >/dev/null 2>&1; then
     return 1
   fi
-  docker compose version >/dev/null 2>&1
+  endpoint="$(setup_rootful_docker context inspect default --format '{{(index .Endpoints "docker").Host}}' 2>/dev/null)" || return 1
+  [[ "${endpoint}" == "unix:///var/run/docker.sock" ]] || return 1
+  security_options="$(setup_rootful_docker info --format '{{json .SecurityOptions}}' 2>/dev/null)" || return 1
+  [[ "${security_options}" == \[*\] && "${security_options}" != *name=rootless* ]] || return 1
+  setup_rootful_docker compose version >/dev/null 2>&1
 }
 
 have_screenshot_tool() {

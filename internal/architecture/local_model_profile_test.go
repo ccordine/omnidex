@@ -9,43 +9,32 @@ import (
 )
 
 const (
-	localSemanticModel = "qwen3.5:9b-q4_K_M"
-	localFragmentModel = "qwen3-coder:30b"
+	localSemanticModel         = "qwen3.5:9b-q4_K_M"
+	localDeploymentIntentModel = "phi4:14b"
+	localFragmentModel         = "qwen3.5:9b-q4_K_M"
+	localRepairGuidanceModel   = "qwen3.5:9b-q4_K_M"
 )
 
 func TestLocalModelProfileUsesStableSemanticAndFragmentModels(t *testing.T) {
 	semanticKeys := []string{
-		"OLLAMA_MODEL",
-		"OLLAMA_MODEL_FAST",
-		"OLLAMA_MODEL_GLUE",
-		"OLLAMA_MODEL_REASONING",
-		"OLLAMA_MODEL_TAGGER",
-		"OLLAMA_MODEL_PLANNER",
-		"OLLAMA_MODEL_ANALYZER",
-		"OLLAMA_MODEL_RESPONDER",
-		"OLLAMA_MODEL_SEARCH",
-		"OLLAMA_MODEL_MEMORY",
-		"OLLAMA_MODEL_SPECIALIST_PLANNER",
-		"OLLAMA_MODEL_SPECIALIST_TOOLING",
-		"OLLAMA_MODEL_SPECIALIST_FILESYSTEM_RESEARCH",
-		"OLLAMA_MODEL_SPECIALIST_INTENT_TAGGING",
-		"OLLAMA_MODEL_SPECIALIST_MEMORY_RETRIEVAL",
-		"OLLAMA_MODEL_SPECIALIST_WEB_RESEARCH",
-		"OLLAMA_MODEL_SPECIALIST_ANALYSIS",
-		"OLLAMA_MODEL_SPECIALIST_RESPONSE",
-		"OLLAMA_MODEL_SPECIALIST_REVIEW_VERIFICATION",
-		"OLLAMA_MODEL_SPECIALIST_MEDIA_CONTROL",
-		"OLLAMA_MODEL_SPECIALIST_BROWSER_INSPECTION",
-		"OLLAMA_MODEL_SPECIALIST_SCREEN_VISION",
-		"OLLAMA_MODEL_SPECIALIST_SHELL_EXECUTION",
-		"OLLAMA_MODEL_SPECIALIST_AUDIO_NOTES",
-		"OLLAMA_MODEL_SPECIALIST_CODING_SURFACE",
-		"OLLAMA_MODEL_SPECIALIST_CODING_PRODUCT_IDENTITY",
-		"OLLAMA_MODEL_SPECIALIST_CODING_REQUIREMENT_PARTITION",
-		"OLLAMA_MODEL_SPECIALIST_CODING_ARTIFACT_HANDLING",
-		"OLLAMA_MODEL_SPECIALIST_CODING_CAPABILITY_RELATION",
-		"OLLAMA_MODEL_SPECIALIST_CODING_SKILL_SELECTION",
-		"OLLAMA_MODEL_SPECIALIST_CODING_SKILL_PROCEDURE",
+		"OMNI_CONTEXT_RELEVANCE_MODEL",
+		"OMNI_CONTEXT_MINIFICATION_MODEL",
+		"OMNI_CONVERSATION_OBJECTIVE_KIND_MODEL",
+		"OMNI_CONVERSATION_RESPONSE_MODEL",
+		"OMNI_ROLEPLAY_SEMANTIC_MODEL",
+		"OMNI_GROUNDED_ANSWER_MODEL",
+		"OMNI_DATABASE_SCHEMA_SELECTION_MODEL",
+		"OMNI_DATABASE_QUERY_INTENT_MODEL",
+		"OMNI_DATABASE_EVIDENCE_GAP_MODEL",
+		"OMNI_DATABASE_JOIN_PATH_SELECTION_MODEL",
+		"OMNI_REPOSITORY_EVIDENCE_RELEVANCE_MODEL",
+		"OMNI_WEB_RELEVANCE_MODEL",
+		"OMNI_WEB_GROUNDED_SYNTHESIS_MODEL",
+		"OMNI_CODING_SURFACE_MODEL",
+		"OMNI_CODING_ARTIFACT_HANDLING_MODEL",
+		"OMNI_CODING_CAPABILITY_RELATION_MODEL",
+		"OMNI_CODING_SKILL_SELECTION_MODEL",
+		"OMNI_CODING_REPOSITORY_CHANGE_SURFACE_MODEL",
 	}
 
 	for _, name := range []string{"default.env", ".env.example"} {
@@ -56,27 +45,79 @@ func TestLocalModelProfileUsesStableSemanticAndFragmentModels(t *testing.T) {
 			}
 		}
 		for _, key := range []string{
-			"OLLAMA_MODEL_SPECIALIST_CODING_FRAGMENT",
-			"OLLAMA_MODEL_SPECIALIST_CODING_FRAGMENT_CORRECTION",
+			"OMNI_CODING_REQUIREMENTS_MODEL",
+			"OMNI_CODING_WORKLOAD_MODEL",
+		} {
+			if got := values[key]; got != localSemanticModel {
+				t.Errorf("%s: %s=%q, want %q", name, key, got, localSemanticModel)
+			}
+		}
+		if got := values["OMNI_CODING_SERVICE_DEPLOYMENT_INTENT_MODEL"]; got != localDeploymentIntentModel {
+			t.Errorf("%s: deployment intent model=%q, want %q", name, got, localDeploymentIntentModel)
+		}
+		for _, key := range []string{
+			"OMNI_CODING_FRAGMENT_MODEL",
+			"OMNI_CODING_FRAGMENT_CORRECTION_MODEL",
 		} {
 			if got := values[key]; got != localFragmentModel {
 				t.Errorf("%s: %s=%q, want %q", name, key, got, localFragmentModel)
 			}
 		}
+		if got := values["OMNI_CODING_FRAGMENT_REPAIR_GUIDANCE_MODEL"]; got != localRepairGuidanceModel {
+			t.Errorf("%s: repair guidance model=%q, want %q", name, got, localRepairGuidanceModel)
+		}
 		for _, removed := range []string{
+			"OLLAMA_MODEL_FAST",
+			"OLLAMA_MODEL_GLUE",
+			"OLLAMA_MODEL_REASONING",
+			"OLLAMA_MODEL_TAGGER",
+			"OLLAMA_MODEL_PLANNER",
+			"OLLAMA_MODEL_ANALYZER",
+			"OLLAMA_MODEL_RESPONDER",
+			"OLLAMA_MODEL_SEARCH",
+			"OLLAMA_MODEL_MEMORY",
+			"OLLAMA_MODEL_SPECIALIST_PLANNER",
+			"OLLAMA_MODEL_SPECIALIST_CODING_FRAGMENT",
 			"OLLAMA_MODEL_SPECIALIST_CODING_REQUIREMENT_ADVISER",
 			"OLLAMA_MODEL_SPECIALIST_CODING_REQUIREMENT_SPLIT",
+			"OMNI_CODING_PRODUCT_IDENTITY_MODEL",
+			"OMNI_CODING_REQUIREMENT_PARTITION_MODEL",
+			"OMNI_CODING_WORKLOAD_REVIEW_MODEL",
+			"OMNI_CONVERSATION_CONTEXT_SELECTION_MODEL",
+			"OMNI_MEMORY_CONTEXT_SELECTION_MODEL",
+			"OMNI_ROLEPLAY_NARRATIVE_CONTINUITY_MODEL",
+			"OMNI_ROLEPLAY_CANON_EXTRACTION_MODEL",
+			"OMNI_ROLEPLAY_ONGOING_ACTION_MODEL",
+			"OMNI_REPOSITORY_GROUNDED_REVIEW_MODEL",
+			"OMNI_REPOSITORY_GROUNDED_CORRECTION_MODEL",
+			"OMNI_CONTEXT_SEARCH_TERMS_MODEL",
+			"OMNI_CODING_REPOSITORY_SEARCH_TERM_MODEL",
+			"OMNI_WEB_SEARCH_TERMS_MODEL",
+			"OMNI_WEB_GROUNDED_SYNTHESIS_CORRECTION_MODEL",
+			"OMNI_WEB_CLAIM_EVIDENCE_REVIEW_MODEL",
 		} {
 			if _, exists := values[removed]; exists {
 				t.Errorf("%s: removed production route %s remains configured", name, removed)
 			}
 		}
-		if got := values["INFERENCE_CONTEXT_TOKENS"]; got != "32768" {
-			t.Errorf("%s: INFERENCE_CONTEXT_TOKENS=%q, want 32768", name, got)
+		if got := values["INFERENCE_CONTEXT_TOKENS"]; got != "8192" {
+			t.Errorf("%s: INFERENCE_CONTEXT_TOKENS=%q, want 8192", name, got)
 		}
 		if got := values["CODING_FRAGMENT_CONCURRENCY"]; got != "1" {
 			t.Errorf("%s: CODING_FRAGMENT_CONCURRENCY=%q, want 1", name, got)
 		}
+	}
+}
+
+func TestEnvironmentProfilesHaveOneAuthorityPerKey(t *testing.T) {
+	for _, name := range []string{".env.example", "default.env"} {
+		readEnvTemplate(t, name)
+	}
+	active := filepath.Clean(filepath.Join("..", "..", ".env"))
+	if _, err := os.Stat(active); err == nil {
+		readEnvTemplate(t, ".env")
+	} else if !os.IsNotExist(err) {
+		t.Fatalf("inspect .env: %v", err)
 	}
 }
 
@@ -86,24 +127,46 @@ func TestReadmeCannotAdvertiseStaleOrFabricatedCognitionConfiguration(t *testing
 		t.Fatal(err)
 	}
 	contents := string(raw)
-	if strings.Contains(contents, "INFERENCE_CONTEXT_TOKENS=16384") {
-		t.Fatal("README advertises a native context too small for the required cognition station")
+	if strings.Contains(contents, "INFERENCE_CONTEXT_TOKENS=4096") {
+		t.Fatal("README advertises a context below the exact minimum")
 	}
-	if !strings.Contains(contents, "Production cognition is currently Ollama-only") {
-		t.Fatal("README does not disclose the exact prepared-provider cognition boundary")
+	if !strings.Contains(contents, "there is no process-wide cognition brain or universal cognition policy") {
+		t.Fatal("README does not disclose the station-owned inference boundary")
 	}
-	required := []string{
-		"INFERENCE_CONTEXT_TOKENS=32768",
+	if !strings.Contains(contents, "\nINFERENCE_CONTEXT_TOKENS=8192\n") {
+		t.Fatal("README omits the model-call context bound")
+	}
+	for _, key := range []string{
+		"OMNI_CODING_REQUIREMENTS_MODEL",
+		"OMNI_CODING_WORKLOAD_MODEL",
+	} {
+		authority := key + "=" + localSemanticModel
+		if strings.Count(contents, authority) != 1 {
+			t.Fatalf("README exact route %q count=%d, want 1", authority, strings.Count(contents, authority))
+		}
+	}
+	for _, key := range []string{
+		"OMNI_CODING_FRAGMENT_MODEL",
+		"OMNI_CODING_FRAGMENT_CORRECTION_MODEL",
+	} {
+		authority := key + "=" + localFragmentModel
+		if strings.Count(contents, authority) != 1 {
+			t.Fatalf("README exact route %q count=%d, want 1", authority, strings.Count(contents, authority))
+		}
+	}
+	if strings.Contains(contents, "llama3.2:3b") {
+		t.Fatal("README advertises the removed Llama requirement/workload route")
+	}
+	for _, removed := range []string{
 		"COGNITION_MODEL_SHA256=",
 		"COGNITION_MODEL_QUANTIZATION=",
 		"COGNITION_BACKEND_VERSION=",
 		"COGNITION_HARDWARE=",
 		"COGNITION_CONTEXT_CEILING_BYTES=",
 		"COGNITION_MAX_OUTPUT_TOKENS=",
-	}
-	for _, line := range required {
-		if !strings.Contains(contents, "\n"+line+"\n") {
-			t.Fatalf("README omits truthful cognition configuration line %q", line)
+	} {
+		if strings.Contains(contents, removed) {
+			t.Fatalf("README advertises removed universal cognition setting %q", removed)
 		}
 	}
 }
@@ -126,7 +189,11 @@ func readEnvTemplate(t *testing.T, name string) map[string]string {
 		}
 		key, value, ok := strings.Cut(line, "=")
 		if ok {
-			values[strings.TrimSpace(key)] = strings.TrimSpace(value)
+			key = strings.TrimSpace(key)
+			if _, exists := values[key]; exists {
+				t.Fatalf("%s contains duplicate environment key %s", name, key)
+			}
+			values[key] = strings.TrimSpace(value)
 		}
 	}
 	if err := scanner.Err(); err != nil {

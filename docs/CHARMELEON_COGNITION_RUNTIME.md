@@ -11,7 +11,7 @@ rules in [`CHARMANDER_ASSEMBLY_LINE.md`](CHARMANDER_ASSEMBLY_LINE.md) remain in 
 
 ## Purpose
 
-The Cognition Runtime coordinates bounded model decisions across tasks whose relevant
+The Cognition Runtime coordinates code-owned progress across tasks whose relevant
 state is larger or longer-lived than one model context. Production vocabulary is
 limited to:
 
@@ -31,59 +31,42 @@ benchmark mechanics. Those concepts may exist in an injected environment adapter
 Repository investigation, research, project coordination, and infrastructure
 inspection must use the same runtime contract rather than workload-specific branches.
 
-The runtime is not a planner persona or a transcript manager. Code owns identity,
-state transitions, budgets, evidence, action validation, side effects, retries, and
-completion. A replaceable model policy chooses one bounded action and may submit typed
-proposals.
+The runtime is not a planner persona, transcript manager, or tool-calling agent. Code
+owns the cognition loop. It restores authoritative state, evaluates completion,
+resolves prerequisites, acquires deterministically available evidence, grounds
+operation inputs, selects supporting evidence, executes transitions, and repeats.
+
+Inference is an interrupt, not the loop. A model call is invalid unless code has first
+exhausted registered deterministic work and persisted one precisely named semantic
+uncertainty that it cannot resolve. The model crosses only that uncertainty and
+returns one station-specific typed leaf. It never chooses an environment operation,
+constructs an operation input, cites action evidence, predicts an effect, manages the
+Working Set, proposes a plan while acting, or declares completion.
 
 ## Package boundary
 
-The intended package boundary is:
+The rejected universal cognition runtime, its tool-calling policy, replay/store/
+transport sidecars, and its bespoke procedural gauntlet have been deleted. They are
+not compatibility surfaces and must not return.
 
-```text
-internal/cognition/                 production, domain-neutral contracts and loop
-    environment/                   Environment Contract and registered action types
-    obligation/                    bounded graph commands and validation
-    policy/                        model decision schema and immutable renderer
+The former in-memory cognition reference tree has been deleted after its task-neutral
+contracts were cut into the authoritative assembly-line, repository, queue, and
+worker packages. Keeping it would create a second objective runtime and an
+archaeological fallback. Architecture tests now require that parallel tree to remain
+absent.
 
-internal/taskstate/                durable goals, entries, generations, and events
-internal/workingset/                code-owned attention lifecycle
-internal/contextbuilder/            immutable per-call projection construction
-internal/evidence/                  exact call and transition evidence
-
-internal/labyrinth/                 benchmark-only world, adapters, and oracle handling
-internal/cognitiongauntlet/         offline benchmark runner and evaluators only
-gauntlets/labyrinth/                versioned public cases and private labels/oracles
-```
-
-These are target boundaries, not a statement that the packages exist today. The
-production runtime may depend on the existing task-state, working-set,
-context-builder, evidence, model, and queue contracts. Labyrinth may implement the
-production Environment Contract; the offline cognition gauntlet may depend on both.
-
-The reverse directions are forbidden:
-
-```text
-internal/cognition        -> internal/cognitiongauntlet
-internal/cognition        -> internal/labyrinth
-internal/worker           -> internal/cognitiongauntlet
-internal/worker           -> internal/labyrinth
-internal/api              -> internal/cognitiongauntlet
-internal/api              -> internal/labyrinth
-internal/omni             -> internal/cognitiongauntlet
-internal/omni             -> internal/labyrinth
-other production core     -> either benchmark package
-```
-
-Only an offline benchmark entrypoint may construct a Labyrinth adapter. Before any
-benchmark source is added, a source-level architecture test must reject every
-forbidden import. No production binary may gain a hidden benchmark route, oracle
-loader, score reader, or workload-specific prompt.
+Production continues to use the existing task-state, Working Set, context-builder,
+evidence, assembly-line, model, and queue contracts only where their behavior matches
+this document. The incompatible production cutover must consume the proven behavior
+directly; no production binary may gain a hidden benchmark route, oracle loader,
+score reader, or workload-specific prompt.
 
 ## Environment Contract
 
 An environment exposes registered operations, not a raw shell and not its complete
-state. The target protocol is equivalent to:
+state. Every operation has both an execution schema and a public causal contract that
+code can reason over. Hidden guards and latent world state remain private to the
+environment. The target protocol is equivalent to:
 
 ```go
 type Environment interface {
@@ -140,8 +123,10 @@ type Observation struct {
 `ScenarioRef` contains only the public scenario identity and public artifact hash. It
 cannot carry a seed, oracle identity, private storage locator, hidden label, or score.
 Action specifications, inputs, and environment outputs are bounded, versioned types.
-An adapter registers each action schema before an episode; the model cannot create a
-kind, alter a schema, or expand the action catalog.
+The required public requirements, causal edges, argument bindings, typed knowledge,
+and observation reducers are defined by
+[`CHARMELEON_COGNITION_RESOLUTION.md`](CHARMELEON_COGNITION_RESOLUTION.md). They expose
+no private oracle state and are never inferred from workload prose.
 
 Identity and transition rules are absolute:
 
@@ -166,13 +151,17 @@ Identity and transition rules are absolute:
   revision or cross-episode revision fails without an effect.
 - Preconditions, authorization, input validation, state mutation, transition
   persistence, and the new revision commit atomically.
+- Before dispatch, code may prepare an action only from one registered public
+  operation contract whose public requirements are satisfied. Every argument and
+  evidence reference is derived from accepted typed knowledge or a registered fixed
+  binding. Missing, conflicting, stale, or ambiguous grounding fails before dispatch.
 - Invalid actions and failed preconditions do not mutate environment state.
 - Pre- and post-revision hashes, the action request hash, observations, cost, and
   outcome are durable evidence.
 
 Adapters may implement macro-actions. Code may perform deterministic low-level
-transitions inside a registered macro, but reports model decisions, environment
-actions, and low-level transitions separately.
+transitions inside a registered macro, but reports station results, code-prepared
+environment actions, and low-level transitions separately.
 
 ## Durable transition protocol
 
@@ -199,37 +188,18 @@ changes, failures, and completion. Lease expiry invalidates an in-flight model r
 An old worker may not write evidence, mutate attention, execute an action, or complete
 the goal after a replacement attempt exists.
 
-## One bounded model decision
+## Deterministic closure and named cognitive gaps
 
-The model-visible contract is equivalent to:
+The coordinator must exhaust deterministic prerequisite resolution before inference.
+It either prepares one fully grounded operation, persists one registered named
+semantic uncertainty, or fails explicitly. The sole resolver, typed public causal
+surface, station boundary, recovery rules, forbidden model outputs, and removal of
+the rejected universal decision path are normative in
+[`CHARMELEON_COGNITION_RESOLUTION.md`](CHARMELEON_COGNITION_RESOLUTION.md).
 
-```go
-type CognitionDecision struct {
-    ObligationID   ObligationID
-    Action         ActionRequest
-    EvidenceRefs   []EvidenceRef
-    ExpectedEffect string
-    Proposals      []LedgerProposal
-    Attention      []AttentionRequest
-}
-```
-
-`ExpectedEffect` is a short bounded prediction, not chain-of-thought and not evidence
-that an effect occurred. The decision must reference the active obligation and enough
-currently projected evidence to authorize the chosen action. Code rejects missing,
-stale, out-of-scope, duplicate, oversized, or unsupported references.
-
-The model may propose an observation claim, hypothesis, question, decision candidate,
-candidate obligation, or bounded retain/release request. A proposed observation is
-stored with `model_proposal` authority and never becomes an environment observation
-merely because it uses the observation entry kind. The model may not assign durable
-IDs, create authoritative observations or facts, mutate the Task Ledger or Working
-Set, change a budget, bypass the environment, or declare completion.
-
-The first policy uses one configured model. Planner/actor committees, advisers, and
-model-authored reviews are separate experiments, not assumed production features.
-Each additional call or role must beat the single-policy baseline without weakening
-validity, authority, or budgets.
+The model never decides what operation to invoke. It may return only the one typed
+leaf permitted by the station for the persisted uncertainty. Code records that value
+and reruns deterministic closure.
 
 ## Obligation graph
 
@@ -238,24 +208,35 @@ plan. Each obligation has one code-assigned identity, generation, parent, desire
 predicate, status, dependencies, supporting references, and registered completion
 check.
 
-Code owns graph acyclicity, depth and node ceilings, ready/blocked transitions,
-supersession, generation changes, and completion checks. A model may propose a new
-obligation after observing a blocker. Code validates and materializes it or records an
-explicit rejection. Replanning creates a new generation; it never rewrites accepted
-history.
+Code owns graph construction, prerequisite expansion, acyclicity, depth and node
+ceilings, ready/blocked transitions, supersession, generation changes, and completion
+checks. If a genuine semantic ambiguity prevents graph expansion, a dedicated station
+may select one code-issued candidate predicate or interpretation. The model does not
+invent an obligation graph while executing an operation. Replanning creates a new
+generation; it never rewrites accepted history.
 
 ## Production cognition loop
 
 ```text
 code establishes root goal and active obligation
         ↓
-Working Set applies deterministic retention policy
+code restores typed authoritative state and applies deterministic retention
         ↓
-Context Builder seals one immutable projection
+code evaluates completion and runs prerequisite closure
         ↓
-model returns one bounded CognitionDecision
+unique grounded operation? ── yes ──→ code prepares and dispatches it
+        │
+        no
         ↓
-code validates identity, evidence, budget, and action schema
+one registered named semantic uncertainty?
+        ├─ no ──→ fail loudly
+        └─ yes
+              ↓
+        Context Builder seals one station-specific projection
+              ↓
+        model returns one typed leaf
+              ↓
+        code validates and records it, then reruns closure
         ↓
 environment commits one transition or one explicit failure
         ↓
@@ -268,19 +249,25 @@ There is no full-transcript fallback. A required projection item that cannot be
 resolved or fit is a hard context-construction failure. Confusion does not increase
 the configured context or action budget.
 
-Every call is bound to the exact active attempt, episode revision, obligation
-generation, action-catalog version, Working Set version, Context Projection identity,
-renderer version, and hard input/output/tool budgets. The accepted response and any
-subsequent action bind that same projection hash. An unbound call or a response that
-arrives after any bound authority becomes stale is rejected.
+Every call is bound to the exact named uncertainty, active attempt, episode revision,
+obligation generation, public-causal-catalog version, candidate-set digest, Working
+Set version, Context Projection identity, station kind and version, renderer version,
+and hard input/output budgets. The accepted typed leaf binds that same projection and
+uncertainty. A later operation is derived anew by code; it is not copied from the
+model response. An unbound call or a response that arrives after any bound authority
+becomes stale is rejected.
 
 ### Every model call gets a clean desk
 
 The context window is reusable compute space, not accumulated memory. PostgreSQL,
-the Task Ledger, the Working Set, and immutable evidence hold long-lived state. For
-each bounded station, code compiles a new disposable Context Projection from that
-state and loads it by exact projection identity immediately before inference. The
-policy retains no prior prompt, response, transcript tail, or message buffer after
+the Task Ledger, the Working Set, and immutable evidence hold long-lived state. Only
+after deterministic closure yields a named uncertainty does code compile a new
+disposable station Context Projection and load it by exact projection identity
+immediately before inference. Deterministic operations create no fake model work and
+require no model provider. Provider discovery, attestation, and process activation
+are also deferred until that uncertainty exists. A fully deterministic episode starts
+and seals without provider bootstrap, activation, projection, or call evidence. A
+station retains no prior prompt, response, transcript tail, or message buffer after
 the call.
 
 Two budgets remain distinct:
@@ -288,12 +275,14 @@ Two budgets remain distinct:
 - the episode budget limits how many model calls and environment actions the whole
   run may consume;
 - the registered station budget independently limits input bytes/tokens, output
-  bytes/tokens, evidence references, and typed decision fields for every call.
+  bytes/tokens, evidence references, and typed output fields for every call.
 
 Consuming one episode call decrements only the remaining-call allowance. It does not
-shrink the next station's input or output capacity. Planning, one execution step, one
-declaration, and one correction may therefore each use their complete registered
-workspace while seeing different exact projections.
+shrink the next station's input or output capacity. Candidate selection, semantic
+classification, one declaration, one repair-guidance instruction, and one
+repair-executor source node may therefore each use their complete registered budget
+while seeing different exact projections. Environment execution is not itself a model
+station.
 
 Conversation history is never selected by `last N`. The current direct instruction,
 active accepted constraints, authority referenced by the active obligation, and
@@ -321,13 +310,15 @@ World truth, exposed observations, and Omnidex belief state are distinct:
 - Completion is the result of a registered code-owned predicate against an
   authoritative transition. Model completion claims are invalid.
 
-Default attention policy is deterministic. The root goal, current obligation, active
+Attention policy is deterministic. The root goal, current obligation, active
 constraints, current revision summary, ready blockers, and latest unresolved failure
 remain resident. Evidence remains while it causally supports an active obligation.
 Raw evidence may release after a compact evidence-bound fact is accepted; completed,
 rejected, superseded, resolved, or stale material leaves normal projections while its
-history remains durable. A model retention request is advisory and subject to scope,
-freshness, pin, item, and byte ceilings.
+history remains durable. Normal station outputs cannot retain, release, pin, or select
+Working Set entries. A future exceptional attention-advice experiment requires its
+own role-specific contract and evidence that deterministic policy cannot perform the
+job; it cannot be added to every station response.
 
 ## Public and private evaluation authority
 
@@ -353,16 +344,19 @@ optimization.
 
 Recovery reconstructs an episode from PostgreSQL and the environment's durable
 revision, never from a conversation transcript, generated inspection file, Redis
-cache, or model recollection. Before the first post-restart model call, the following
-must match an uninterrupted execution at the same boundary:
+cache, or model recollection. Before the first post-restart deterministic resolution
+or station call, the following must match an uninterrupted execution at the same
+boundary:
 
-- environment revision and registered action catalog;
+- environment revision, registered action catalog, and public causal catalog;
 - Task Ledger materialized state and replay hash;
 - Working Set contents, scopes, freshness, and version;
 - active obligation, dependencies, generation, and status;
-- exact rendered model-visible projection bytes and an attempt-normalized semantic
-  digest over goal, world revision, graph, ledger, Working Set, active obligation,
-  catalog, evidence refs, and non-actor budget/policy fields;
+- exact deterministic resolution state and, when present, exact rendered
+  station-visible projection bytes plus an attempt-normalized semantic digest over
+  goal, world revision, graph, ledger, Working Set, active obligation, public causal
+  catalog, named uncertainty, candidate IDs, evidence refs, and non-actor budget and
+  station fields;
 - completed action receipts and remaining budgets.
 
 The replacement Context Projection and snapshot identities are not equal to the old
@@ -370,50 +364,63 @@ worker's identities: those immutable authorities deliberately bind attempt and w
 They must differ and the old identities must remain fenced. Continuity requires equal
 rendered content and semantic state after removing only the actor authority fields.
 
-The next stochastic model choice need not be byte-identical. The deterministic state
-presented before that choice must be identical. Interruption tests cover no kill, one
-random kill, five random kills, a kill after every model decision, lease expiry during
-inference, and an old worker waking after takeover. The stale worker must fail every
-ledger, Working Set, call-evidence, environment-action, and completion write.
+The next stochastic station result need not be byte-identical. The deterministic
+state and named uncertainty presented before that call must be identical. Interruption
+tests cover no kill, one random kill, five random kills, a kill after every station
+result, lease expiry during inference, and an old worker waking after takeover. The
+stale worker must fail every ledger, Working Set, call-evidence, environment-action,
+and completion write.
 
 ## Environment transfer and coding boundary
 
 Environment adapters may change surface vocabulary and deterministic mechanics; they
-may not change cognition state, model decision schemas, retention policy, projection
-rules, or completion authority. A transfer claim requires at least two held-out
-surfaces using identical production cognition code and renderer versions.
+may not change cognition state, resolver semantics, station schemas, retention policy,
+projection rules, or completion authority. A transfer claim requires at least two
+held-out surfaces using identical production cognition code and station renderer
+versions.
 
 Repository intelligence is a future environment consumer, not a relaxation of the
-coding assembly line. A cognition policy may request registered, bounded repository
-search, symbol inspection, and reference traversal. It cannot give a coding model a
+coding assembly line. Code requests registered, bounded repository search, symbol
+inspection, and reference traversal whenever authoritative state and prerequisites
+determine that they are needed. A model may resolve one semantic ambiguity among
+code-issued opaque candidates; it cannot choose whether to read or search, receive a
 path, workspace, plan, or whole-file responsibility. Repository mutation must still
 flow through the existing parser-, capability-, stage-, and proof-owned coding
-boundary. The first repository consumer is investigation-only shadow execution; no
-mutation is authorized by Labyrinth success alone.
+boundary. A procedural reference proof alone authorizes no repository mutation. The rejected
+output-blind repository cognition shadow has been removed. A production repository
+consumer must return exact authority, such as a change contract, that the downstream
+workflow actually consumes; a sidecar whose result is discarded is forbidden.
 
 ## Ordered implementation and promotion
 
-0. **PR 0:** Freeze these contracts and enforce the production-to-gauntlet import
-   prohibition.
-1. **PR 1:** Build and property-test the deterministic Labyrinth kernel and sealed
-   oracle split.
-2. **PR 2:** Add solution-first generation and prove every case with an optimal or witness
-   oracle.
-3. **PR 3:** Add the isolated filesystem adapter and bounded registered actions.
-4. **PR 4:** Add the minimal single-policy coordinator with durable transition ingestion.
-5. **PR 5:** Integrate Task Ledger recording in shadow without changing prompts.
-6. **PR 6:** Measure deterministic Working Set retention and release in shadow.
-7. **PR 7:** Promote immutable Context Projection for one isolated suite and remove its prior
-   transcript consumer.
-8. **PR 8:** Add the obligation graph, generation-safe replanning, and contradiction handling.
-9. **PR 9:** Add real process death, monotonic attempt takeover, replay, and stale-writer
-    rejection.
-10. **PR 10:** Prove scale and transfer on frozen held-out cases.
-11. **PR 11:** Run the combined long-horizon Rogue Suite.
-12. **PR 12:** Add a repository-investigation shadow consumer without mutation.
+The replacement runtime is developed brittle-first. Its behavior must be cheap to
+change or delete until the claimed control loop works vertically. The mandatory order
+is:
 
-No later stage supplies evidence for an earlier missing gate. Shadow execution is
-never a fallback path, and a promoted consumer has one authoritative implementation.
+1. prove in memory that registered prerequisite producers complete an objective with
+   zero inference;
+2. prove in memory that one genuine named uncertainty causes exactly one minimal
+   station call and that ordinary deterministic closure resumes afterward;
+3. transfer that rule to procedural mechanics, then to read-only repository
+   investigation, without exposing operations or hidden authority to the model;
+4. compile unchanged ordinary text into a recursive code-owned objective graph and
+   work that graph to code-owned completion;
+5. hand one exact source leaf to the existing Charmander generation contract and keep
+   parsing, formatting, testing, mutation, and completion in code;
+6. prove deterministic verification routes one real failure to the smallest owning
+   objective or source block; inference remains forbidden unless that route exposes a
+   separate named semantic uncertainty;
+7. replace the production universal decision loop incompatibly and prove that a
+   deterministic production workload can run without provider configuration or
+   contact; and only then
+8. persist the proven objectives, facts, operation receipts, named gaps, accepted
+   semantic leaves, artifacts, and verification results; add restart, replay,
+   provenance, scale, transfer, and promotion evidence in that order.
+
+A vertical failure stops the sequence. Persistence design does not continue around a
+failed behavior gate. No later stage supplies evidence for an earlier missing gate.
+Shadow execution is never a fallback path, and a promoted consumer has one
+authoritative implementation.
 
 ## Conformance status
 
@@ -421,13 +428,21 @@ Only checked items may be cited as implemented. A checkbox may be changed only i
 same reviewed change that adds the production code, success/failure/forbidden-path
 tests, and exact evidence proving it.
 
-- [x] Production packages exist and forbidden gauntlet imports fail architecture tests.
+- [x] The rejected universal runtime, model-driven gauntlet, and alternate sidecars
+  are absent, and source-level architecture tests forbid their return.
 - [ ] Environment actions are schema-validated, revision-fenced, transactional, and
   idempotent solely by `ActionID`.
 - [ ] Cognition transitions, obligations, and terminal state survive PostgreSQL-only
   recovery.
 - [ ] Monotonic attempts fence every worker-originated read and write.
-- [ ] One bounded model decision is projection-bound and cannot mutate authority.
+- [ ] Public operation contracts, typed knowledge reducers, grounding, and evidence
+  lineage are versioned and contain no private oracle state.
+- [ ] A unique prerequisite producer or goal-achieving operation executes with zero
+  model calls, including after PostgreSQL-only recovery.
+- [ ] Every model call is caused by one persisted named uncertainty and returns only
+  its station-specific typed leaf.
+- [ ] Universal model-owned action, argument, evidence, expected-effect, proposal,
+  attention, and completion fields are absent from production source and schemas.
 - [ ] Task Ledger integration has one authoritative writer and exact replay.
 - [ ] Deterministic Working Set lifecycle is live without a transcript fallback.
 - [ ] Context Projection is live for a promoted consumer and every call is bound.
@@ -435,8 +450,6 @@ tests, and exact evidence proving it.
 - [ ] Restart state is identical and every stale-worker write is rejected.
 - [ ] Two held-out environment surfaces pass without production changes.
 - [ ] Repository investigation passes in shadow without weakening coding boundaries.
-- [ ] Every applicable promotion gate in
-  [`LABYRINTH_GAUNTLET.md`](LABYRINTH_GAUNTLET.md) has sealed evidence.
 
 Checked items above correspond only to the implementation and exact tests in this
 change. Existing Task Ledger, Working Set, Context Projection, and

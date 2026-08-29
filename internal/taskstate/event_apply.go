@@ -29,8 +29,6 @@ func (ledger *Ledger) applyEvent(event Event) error {
 		err = ledger.applyEntryStatus(event, EntryResolved)
 	case EventEntrySuperseded:
 		err = ledger.applyEntrySuperseded(event)
-	case EventDecisionAccepted:
-		err = ledger.applyDecisionAccepted(event)
 	case EventNodesReadied:
 		err = ledger.applyNodesReadied(event)
 	case EventNodeStepAssigned:
@@ -236,51 +234,6 @@ func (ledger *Ledger) applyEntrySuperseded(event Event) error {
 	entry.DispositionBy = event.Authority
 	replacement.SupersedesID, replacement.UpdatedVersion = entry.ID, event.Version
 	ledger.entries[entry.ID], ledger.entries[replacement.ID] = entry, replacement
-	return nil
-}
-
-func (ledger *Ledger) applyDecisionAccepted(event Event) error {
-	if event.Authority != AuthorityCode && event.Authority != AuthorityUser || event.Entry == nil {
-		return fmt.Errorf("decision acceptance has invalid authority or projection")
-	}
-	candidate, exists := ledger.entries[event.EntryID]
-	accepted := cloneEntry(*event.Entry)
-	if !exists || candidate.Status != EntryActive || candidate.Kind != EntryDecisionCandidate ||
-		candidate.Authority != AuthorityModelProposal || accepted.ID != event.ReplacementID {
-		return fmt.Errorf("decision acceptance source is not an active model candidate")
-	}
-	if _, exists := ledger.entries[accepted.ID]; exists {
-		return fmt.Errorf("accepted entry %q already exists", accepted.ID)
-	}
-	if accepted.Kind != EntryAcceptedDecision || accepted.Status != EntryActive ||
-		accepted.Authority != AuthorityAcceptedModelDecision || accepted.CreatedBy != event.Authority ||
-		accepted.SupersedesID != "" || accepted.Provenance.SourceEntryID != candidate.ID ||
-		accepted.Provenance.AcceptedBy != event.Authority || accepted.Provenance.AcceptancePolicy != event.Reason ||
-		accepted.CreatedVersion != event.Version || accepted.UpdatedVersion != event.Version {
-		return fmt.Errorf("accepted decision projection is inconsistent")
-	}
-	if accepted.ScopeNodeID != candidate.ScopeNodeID || accepted.Content != candidate.Content ||
-		accepted.ContentSHA256 != candidate.ContentSHA256 ||
-		!equalFloat64Pointers(accepted.Confidence, candidate.Confidence) {
-		return fmt.Errorf("accepted decision does not exactly preserve its candidate")
-	}
-	if err := requireExactText(event.Reason, "acceptance policy"); err != nil {
-		return err
-	}
-	if err := accepted.Metadata.Validate(); err != nil {
-		return err
-	}
-	if err := validateRefs(accepted.Refs); err != nil {
-		return err
-	}
-	if !hasEvidenceRef(accepted.Refs) {
-		return fmt.Errorf("accepted decision requires acceptance evidence")
-	}
-	candidate.Status, candidate.SupersededBy = EntrySuperseded, accepted.ID
-	candidate.DispositionReason, candidate.UpdatedVersion = event.Reason, event.Version
-	candidate.DispositionBy = event.Authority
-	ledger.entries[candidate.ID], ledger.entries[accepted.ID] = candidate, accepted
-	ledger.entryRefCount += len(accepted.Refs)
 	return nil
 }
 

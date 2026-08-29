@@ -135,6 +135,23 @@ func TestLoadMigrationBundleRejectsMissingNumericPrefix(t *testing.T) {
 	}
 }
 
+func TestLoadMigrationBundleRejectsNestedTransactionControl(t *testing.T) {
+	for _, body := range []string{
+		"SELECT 1;\nCOMMIT;\n",
+		"BEGIN;\nSELECT 1;\nCOMMIT;\nCOMMIT;\n",
+		"ROLLBACK;\n",
+	} {
+		directory := t.TempDir()
+		digest := writeTestMigrationManifest(t, directory, map[string]string{
+			"001_probe.sql": body,
+		})
+		if _, err := LoadMigrationBundle(directory, digest); err == nil ||
+			!strings.Contains(err.Error(), "unsupported nested transaction control") {
+			t.Fatalf("LoadMigrationBundle body=%q error=%v", body, err)
+		}
+	}
+}
+
 func writeTestMigrationManifest(
 	t *testing.T,
 	directory string,

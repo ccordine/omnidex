@@ -37,8 +37,8 @@ func TestChineseProviderCatalogCoversNamedCompatibleServices(t *testing.T) {
 		if !ok {
 			t.Fatalf("Lookup(%q) missing", providerID)
 		}
-		if !definition.SupportsGeneration {
-			t.Errorf("provider %q does not advertise generation", providerID)
+		if definition.SupportsExactPreparedStations {
+			t.Errorf("provider %q falsely advertises exact station inference", providerID)
 		}
 		if definition.Protocol != ProtocolOpenAICompatible {
 			t.Errorf("provider %q protocol=%q want %q", providerID, definition.Protocol, ProtocolOpenAICompatible)
@@ -93,6 +93,14 @@ func TestLookupCanonicalizesProviderAliasesWithoutGuessing(t *testing.T) {
 }
 
 func TestProviderCapabilitiesAndEnvironmentKeysAreAuthoritative(t *testing.T) {
+	ollama, ok := Lookup("ollama")
+	if !ok {
+		t.Fatal("ollama missing")
+	}
+	if ollama.DefaultBaseURL != "" || !reflect.DeepEqual(ollama.BaseURLEnvironmentKeys, []string{"OLLAMA_BASE_URL"}) {
+		t.Fatalf("ollama endpoint authority=%#v", ollama)
+	}
+
 	qwen, ok := Lookup("qwen")
 	if !ok {
 		t.Fatal("qwen missing")
@@ -131,17 +139,45 @@ func TestProviderCapabilitiesAndEnvironmentKeysAreAuthoritative(t *testing.T) {
 }
 
 func TestSupportedProviderListsAreSortedAndCapabilityFiltered(t *testing.T) {
-	generation := GenerationProviderIDs()
 	embeddings := EmbeddingProviderIDs()
-	if !contains(generation, "deepseek") || !contains(generation, "modelscope") {
-		t.Fatalf("generation providers missing Chinese services: %v", generation)
-	}
 	if contains(embeddings, "deepseek") {
 		t.Fatalf("generation-only provider appeared in embedding providers: %v", embeddings)
 	}
 	for _, providerID := range []string{"baichuan", "qwen", "zhipu", "qianfan", "hunyuan", "siliconflow", "compatible"} {
 		if !contains(embeddings, providerID) {
 			t.Errorf("embedding providers missing %q: %v", providerID, embeddings)
+		}
+	}
+}
+
+func TestProductionDefinitionsExcludeUnconsumedGenerationOnlyTransports(t *testing.T) {
+	production := map[string]bool{}
+	for _, definition := range ProductionDefinitions() {
+		production[definition.ID] = true
+	}
+	for _, providerID := range []string{"anthropic", "deepseek", "xai", "moonshot"} {
+		if production[providerID] {
+			t.Errorf("unconsumed provider %q remains in the production catalog", providerID)
+		}
+	}
+	for _, providerID := range []string{"ollama", "openai", "google", "qwen"} {
+		if !production[providerID] {
+			t.Errorf("consumed exact/embedding provider %q missing from production catalog", providerID)
+		}
+	}
+}
+
+func TestExactStationProviderListExcludesGenericHostedGeneration(t *testing.T) {
+	if got := ExactStationProviderIDs(); !reflect.DeepEqual(got, []string{"ollama"}) {
+		t.Fatalf("ExactStationProviderIDs()=%v want [ollama]", got)
+	}
+	for _, providerID := range []string{"openai", "qwen", "anthropic", "google"} {
+		definition, ok := Lookup(providerID)
+		if !ok {
+			t.Fatalf("Lookup(%q) missing", providerID)
+		}
+		if definition.SupportsExactPreparedStations {
+			t.Errorf("hosted provider %q claims exact prepared station support", providerID)
 		}
 	}
 }

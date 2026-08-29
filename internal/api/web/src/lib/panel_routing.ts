@@ -1,4 +1,4 @@
-export const OMNI_PANELS = ["chat", "data", "projects", "jobs", "memory", "metrics", "admin"] as const;
+export const OMNI_PANELS = ["chat", "roleplay", "data", "projects", "jobs", "memory", "metrics", "admin"] as const;
 
 export type OmniPanel = (typeof OMNI_PANELS)[number];
 
@@ -15,9 +15,9 @@ export function parseAdminTabFromLocation(loc: Pick<Location, "search"> = window
   return new URLSearchParams(loc.search).get("admin_tab")?.trim() || "overview";
 }
 
-export type ScrumCardTab = "card" | "files" | "tests" | "config" | "recipe" | "channel";
+export type ScrumCardTab = "card" | "files" | "tests" | "channel";
 
-const SCRUM_CARD_TABS: ScrumCardTab[] = ["card", "files", "tests", "config", "recipe", "channel"];
+const SCRUM_CARD_TABS: ScrumCardTab[] = ["card", "files", "tests", "channel"];
 
 export function isScrumCardTab(value: string | null | undefined): value is ScrumCardTab {
   return Boolean(value && SCRUM_CARD_TABS.includes(value as ScrumCardTab));
@@ -28,8 +28,12 @@ export function parseScrumCardFromLocation(loc: Pick<Location, "search"> = windo
 }
 
 export function parseScrumTabFromLocation(loc: Pick<Location, "search"> = window.location): ScrumCardTab {
-  const param = new URLSearchParams(loc.search).get("scrum_tab");
-  return isScrumCardTab(param) ? param : "card";
+	const params = new URLSearchParams(loc.search).getAll("scrum_tab");
+	if (params.length === 0) return "card";
+	if (params.length !== 1 || !isScrumCardTab(params[0])) {
+		throw new Error("Scrum card modal tab must be one exact registered value.");
+	}
+	return params[0];
 }
 
 export function parseDataSourceFromLocation(loc: Pick<Location, "search"> = window.location): string {

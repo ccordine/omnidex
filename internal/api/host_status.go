@@ -10,17 +10,18 @@ import (
 )
 
 type hostBridgeStatusResponse struct {
-	Configured   bool     `json:"configured"`
-	Reachable    bool     `json:"reachable"`
-	URL          string   `json:"url,omitempty"`
-	Error        string   `json:"error,omitempty"`
-	Message      string   `json:"message,omitempty"`
-	NativePicker bool     `json:"native_picker,omitempty"`
-	Service      string   `json:"service,omitempty"`
-	Terminal     bool     `json:"terminal,omitempty"`
-	Screen       bool     `json:"screen,omitempty"`
-	PickerReady  bool     `json:"picker_ready"`
-	Suggestions  []string `json:"suggestions,omitempty"`
+	Configured   bool              `json:"configured"`
+	Reachable    bool              `json:"reachable"`
+	URL          string            `json:"url,omitempty"`
+	Error        string            `json:"error,omitempty"`
+	Message      string            `json:"message,omitempty"`
+	NativePicker bool              `json:"native_picker,omitempty"`
+	Service      string            `json:"service,omitempty"`
+	Terminal     bool              `json:"terminal,omitempty"`
+	Screen       bool              `json:"screen,omitempty"`
+	PickerReady  bool              `json:"picker_ready"`
+	Suggestions  []string          `json:"suggestions,omitempty"`
+	HTML         chatComponentHTML `json:"html"`
 }
 
 func (s *Server) collectHostBridgeStatus(ctx context.Context) hostBridgeStatusResponse {
@@ -118,7 +119,7 @@ func hostBridgeSuggestions(configured, reachable bool, url string) []string {
 			"On the host machine, install the bridge as a service: omni host service install",
 			"Or run manually: omni host serve --listen 0.0.0.0:8091",
 			"In core .env set HOST_AGENT_URL=http://host.docker.internal:8091 (or http://127.0.0.1:8091 when core runs on the host)",
-			"Rebuild/restart core: docker compose up --build -d core",
+			"Rebuild/restart core through its managed deployment identity: omni service --service core up --build",
 		)
 		return out
 	}
@@ -134,7 +135,7 @@ func hostBridgeSuggestions(configured, reachable bool, url string) []string {
 	}
 	out = append(out,
 		"If HOST_AGENT_TOKEN is set on core, pass the same token to omni host serve --token …",
-		"From inside core: docker compose exec core wget -qO- --timeout=5 http://host.docker.internal:8091/healthz",
+		"For a manual container probe, use Docker's default rootful context and the exact COMPOSE_PROJECT_NAME recorded in the Omnidex install .env",
 		"Arch Linux + UFW: if probes time out (not refused), run scripts/ufw-docker-host.sh on the host",
 	)
 	return out

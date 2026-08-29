@@ -138,10 +138,10 @@ func stepStatusIsActive(status string) bool {
 
 func phaseForStepAction(action string) string {
 	switch strings.ToLower(strings.TrimSpace(action)) {
-	case "plan", "tooling", "workspace_scan", "tag", "retrieve":
-		return "planning"
-	case "verify":
-		return "review"
+	case "v3_coding":
+		return "coding"
+	case "objective_resolve":
+		return "objective"
 	default:
 		return "execution"
 	}

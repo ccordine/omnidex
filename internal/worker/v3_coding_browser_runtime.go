@@ -10,12 +10,12 @@ import (
 
 func genericBrowserRuntimeDocument(
 	requirements []assemblyline.Requirement,
-) assemblyline.TypeScriptDocument {
-	return assemblyline.TypeScriptDocument{
+) assemblyline.SourceDocument {
+	return assemblyline.SourceDocument{
 		ID: "application_runtime", Path: "src/runtime.tsx",
-		Header: `import { useCallback, useMemo, useState, useSyncExternalStore } from 'react';
+		Preamble: `import { useCallback, useMemo, useState, useSyncExternalStore } from 'react';
 import type { ReactElement } from 'react';`,
-		Blocks: []assemblyline.TypeScriptBlock{
+		Blocks: []assemblyline.SourceBlock{
 			{
 				ID: "runtime.api", Static: genericBrowserRuntimeSource(requirements),
 				API: genericBrowserRuntimeAPI(requirements),
@@ -34,27 +34,38 @@ func genericBrowserRuntimeAPI(requirements []assemblyline.Requirement) string {
 		"type FeatureState = { readonly [key: string]: SharedValue }",
 		"type CapabilityID = " + genericBrowserCapabilityUnion(requirements),
 		"type CapabilitySnapshot = Readonly<Record<CapabilityID, SharedValue>>",
-		"interface FeatureActions { set(key: string, value: SharedValue): void; toggle(key: string): void; increment(key: string, delta: number, min: number, max: number): void; append(key: string, value: SharedValue): void; removeAt(key: string, index: number): void }",
+		genericBrowserFeatureActionsAPI(),
 		"interface FeatureViewProps { state: FeatureState; capabilities: CapabilitySnapshot; actions: FeatureActions }",
 	}, "\n")
+}
+
+func genericBrowserFeatureActionsAPI() string {
+	return `interface FeatureActions {
+  set(key: string, value: SharedValue): void;
+  toggle(key: string): void;
+  /** Adds delta, then clamps the numeric result to [min, max]. A missing value starts at finite min, otherwise finite max, otherwise zero. */
+  increment(key: string, delta: number, min: number, max: number): void;
+  append(key: string, value: SharedValue): void;
+  removeAt(key: string, index: number): void;
+}`
 }
 
 func genericBrowserCapabilityUnion(requirements []assemblyline.Requirement) string {
 	values := make([]string, 0, len(requirements))
 	for index := range requirements {
-		values = append(values, strconv.Quote(genericBrowserCapabilityID(index+1)))
+		values = append(values, strconv.Quote(genericApplicationCapabilityID(index+1)))
 	}
 	return strings.Join(values, " | ")
 }
 
-func genericBrowserCapabilityID(sequence int) string {
+func genericApplicationCapabilityID(sequence int) string {
 	return fmt.Sprintf("capability_%03d", sequence)
 }
 
 func genericBrowserRuntimeSource(requirements []assemblyline.Requirement) string {
 	allowed := make([]string, 0, len(requirements))
 	for index := range requirements {
-		allowed = append(allowed, strconv.Quote(genericBrowserCapabilityID(index+1)))
+		allowed = append(allowed, strconv.Quote(genericApplicationCapabilityID(index+1)))
 	}
 	return fmt.Sprintf(`export type SharedValue = null | boolean | number | string | readonly SharedValue[] | { readonly [key: string]: SharedValue };
 export type WidenShared<T extends SharedValue> = T extends string ? string : T extends number ? number : T extends boolean ? boolean : T;
@@ -216,9 +227,10 @@ function useFeatureActions(
 			increment(key, delta, min, max) {
 				commit('Adjusted.', () => {
 					assertFeatureStateKey(key);
-					if (![delta, min, max].every(Number.isFinite) || min > max) throw new Error('Invalid numeric action bounds.');
+					if (!Number.isFinite(delta) || Number.isNaN(min) || Number.isNaN(max) || min > max) throw new Error('Invalid numeric action bounds.');
 					const existing = current()[key];
-					const value = typeof existing === 'number' ? existing : min;
+					const baseline = Number.isFinite(min) ? min : Number.isFinite(max) ? max : 0;
+					const value = typeof existing === 'number' && Number.isFinite(existing) ? existing : baseline;
 					return { ...current(), [key]: Math.min(max, Math.max(min, value + delta)) };
 				});
 			},

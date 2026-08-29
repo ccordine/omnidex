@@ -17,6 +17,95 @@ type Contract struct {
 	PermittedSymbols []string
 }
 
+type NewFunctionSignature struct {
+	Canonical string
+	Name      string
+	Source    string
+	StartByte int
+	EndByte   int
+}
+
+// RequireSelfContainedNewFunctionSignature rejects declaration shapes whose
+// surrounding import/type authority cannot be mechanically assembled yet.
+// The rejection happens before inference; a future import contract can widen
+// this without exposing a filename or whole-file responsibility to a model.
+func RequireSelfContainedNewFunctionSignature(signature string) error {
+	compiled, err := CompileNewFunctionSignature(signature)
+	if err != nil {
+		return err
+	}
+	function, err := parseOneFunction(
+		compiled.Canonical+` { panic("omnidex code-owned placeholder") }`, true,
+	)
+	if err != nil {
+		return err
+	}
+	qualified := ""
+	ast.Inspect(function.Type, func(node ast.Node) bool {
+		selector, ok := node.(*ast.SelectorExpr)
+		if ok && qualified == "" {
+			qualified = selector.Sel.Name
+		}
+		return true
+	})
+	if qualified != "" {
+		return fmt.Errorf(
+			"new Go function signature requires unresolved import/type authority for %q", qualified,
+		)
+	}
+	return nil
+}
+
+// CompileNewFunctionSignature parses code-owned or exact user-authored Go
+// syntax without granting a model authority to invent the declaration shape.
+// New methods are deliberately unsupported until receiver placement has its
+// own exact identity contract.
+func CompileNewFunctionSignature(signature string) (NewFunctionSignature, error) {
+	signature = strings.TrimSpace(signature)
+	if signature == "" || strings.ContainsAny(signature, "\r\n") {
+		return NewFunctionSignature{}, fmt.Errorf("new Go function signature must be one line")
+	}
+	function, err := parseOneFunction(signature+` { panic("omnidex code-owned placeholder") }`, true)
+	if err != nil {
+		return NewFunctionSignature{}, fmt.Errorf("parse new Go function signature: %w", err)
+	}
+	if function.Recv != nil {
+		return NewFunctionSignature{}, fmt.Errorf("new Go method signatures are unsupported without receiver placement authority")
+	}
+	canonical, err := functionSignature(function)
+	if err != nil {
+		return NewFunctionSignature{}, err
+	}
+	return NewFunctionSignature{Canonical: canonical, Name: function.Name.Name}, nil
+}
+
+// ParseNewFunction validates one newly required declaration under a signature
+// already compiled by code. Unlike ParseFunction, it has no current model-owned
+// declaration and therefore cannot infer mutation or placement authority.
+func ParseNewFunction(signature string, permittedSymbols []string, candidate string) (string, error) {
+	compiled, err := CompileNewFunctionSignature(signature)
+	if err != nil {
+		return "", err
+	}
+	placeholder := compiled.Canonical + ` { panic("omnidex code-owned placeholder") }`
+	contract := Contract{
+		Signature: compiled.Canonical, Current: placeholder,
+		PermittedSymbols: append([]string(nil), permittedSymbols...),
+	}
+	placeholderCanonical, err := ParseFunction(contract, placeholder)
+	if err != nil {
+		return "", fmt.Errorf("compile new Go function placeholder: %w", err)
+	}
+	parsed, err := ParseFunction(contract, candidate)
+	if err != nil {
+		return "", err
+	}
+	if parsed == placeholderCanonical {
+		return "", fmt.Errorf("new Go function candidate retained the code-owned placeholder")
+	}
+	return parsed, nil
+}
+
 // ParseFunction is the sole parser and capability validator for a model-owned
 // Go function or method block. Candidate comments are forbidden before the Go
 // parser runs so //line and //go directives cannot affect diagnostics or code.
@@ -54,7 +143,7 @@ func ParseFunction(contract Contract, candidate string) (string, error) {
 
 func parseOneFunction(source string, allowComments bool) (*ast.FuncDecl, error) {
 	source = strings.TrimSpace(source)
-	if source == "" || strings.Contains(source, "```") {
+	if source == "" {
 		return nil, fmt.Errorf("Go fragment must contain one raw declaration")
 	}
 	if !allowComments && containsComment(source) {

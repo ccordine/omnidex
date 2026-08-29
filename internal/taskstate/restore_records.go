@@ -63,7 +63,7 @@ func (ledger *Ledger) validateRestoredEntry(entry Entry, ledgerVersion uint64) e
 	if entry.CreatedVersion == 0 || entry.CreatedVersion > entry.UpdatedVersion || entry.UpdatedVersion > ledgerVersion {
 		return fmt.Errorf("%w: entry %q has invalid materialization versions", ErrInvalidState, entry.ID)
 	}
-	if err := requireExactText(entry.Content, "entry content"); err != nil {
+	if err := requireEntryContent(entry.Content, entry.Kind); err != nil {
 		return err
 	}
 	if entry.ContentSHA256 != contentDigest(entry.Content) {
@@ -91,29 +91,11 @@ func (ledger *Ledger) validateRestoredEntry(entry Entry, ledgerVersion uint64) e
 	if entry.Kind == EntryFact && !hasEvidenceRef(entry.Refs) {
 		return fmt.Errorf("%w: %w: restored fact lacks evidence", ErrInvalidState, ErrEvidenceRequired)
 	}
-	if entry.Kind == EntryAcceptedDecision {
-		if entry.Authority != AuthorityAcceptedModelDecision ||
-			(entry.CreatedBy != AuthorityCode && entry.CreatedBy != AuthorityUser) ||
-			entry.Provenance.SourceEntryID == "" || entry.Provenance.AcceptancePolicy == "" ||
-			entry.Provenance.AcceptedBy != entry.CreatedBy {
-			return fmt.Errorf("%w: accepted decision %q has invalid provenance", ErrInvalidState, entry.ID)
-		}
-		if err := requireExactText(entry.Provenance.AcceptancePolicy, "acceptance policy"); err != nil {
-			return fmt.Errorf("%w: accepted decision %q has invalid policy: %v", ErrInvalidState, entry.ID, err)
-		}
-		if !hasEvidenceRef(entry.Refs) {
-			return fmt.Errorf("%w: %w: accepted decision %q lacks acceptance evidence", ErrInvalidState, ErrEvidenceRequired, entry.ID)
-		}
-	} else {
-		if err := validateNewEntryAuthority(entry.Authority, entry.Kind); err != nil {
-			return fmt.Errorf("%w: restored entry authority: %v", ErrInvalidState, err)
-		}
-		if entry.Provenance != (EntryProvenance{}) {
-			return fmt.Errorf("%w: non-accepted entry %q cannot carry decision provenance", ErrInvalidState, entry.ID)
-		}
-		if entry.CreatedBy != entry.Authority {
-			return fmt.Errorf("%w: entry %q creator and authority differ", ErrInvalidState, entry.ID)
-		}
+	if err := validateNewEntryAuthority(entry.Authority, entry.Kind); err != nil {
+		return fmt.Errorf("%w: restored entry authority: %v", ErrInvalidState, err)
+	}
+	if entry.CreatedBy != entry.Authority {
+		return fmt.Errorf("%w: entry %q creator and authority differ", ErrInvalidState, entry.ID)
 	}
 	if entry.SupersedesID == entry.ID || entry.SupersededBy == entry.ID {
 		return fmt.Errorf("%w: entry %q cannot supersede itself", ErrInvalidState, entry.ID)

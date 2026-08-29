@@ -5,38 +5,6 @@ import (
 	"strings"
 )
 
-func (input RequirementPartitionInput) validate() error {
-	switch input.Mode {
-	case RequirementExtractFeatures:
-		return validateResidualText("requirement feature extraction", input.SourceText)
-	case RequirementSplitFeature:
-		return validateRequirementQuote("requirement feature split", input.SourceText)
-	default:
-		return fmt.Errorf("requirement partition mode %q is unsupported", input.Mode)
-	}
-}
-
-func (input RequirementPartitionAdvisoryInput) validate() error {
-	if err := input.Original.validate(); err != nil {
-		return fmt.Errorf("requirement partition advisory original: %w", err)
-	}
-	_, err := requirementPartitionLensInstruction(input.Lens)
-	return err
-}
-
-func (input RequirementPartitionSynthesisInput) validate() error {
-	if err := input.Original.validate(); err != nil {
-		return fmt.Errorf("requirement partition synthesis original: %w", err)
-	}
-	if strings.TrimSpace(input.AdvisoryMemo) == "" {
-		return fmt.Errorf("requirement partition synthesis requires a non-empty advisory memo")
-	}
-	if len(input.AdvisoryMemo) > maxRequirementAdvisoryMemoBytes {
-		return fmt.Errorf("requirement partition advisory memo exceeds %d bytes", maxRequirementAdvisoryMemoBytes)
-	}
-	return nil
-}
-
 func validateRequirementQuote(label, quote string) error {
 	if quote == "" || quote != strings.TrimSpace(quote) {
 		return fmt.Errorf("%s requires one trimmed source quote", label)
@@ -44,31 +12,19 @@ func validateRequirementQuote(label, quote string) error {
 	if len(quote) > maxRequirementQuoteBytes {
 		return fmt.Errorf("%s source quote exceeds %d bytes", label, maxRequirementQuoteBytes)
 	}
-	return nil
-}
-
-func validateResidualText(label, residual string) error {
-	if strings.TrimSpace(residual) == "" {
-		return fmt.Errorf("%s requires unresolved source text", label)
-	}
-	if len(residual) > maxPortablePayloadBytes/2 {
-		return fmt.Errorf("%s residual text exceeds %d bytes", label, maxPortablePayloadBytes/2)
+	if err := ValidatePathFreeModelContext(label, quote); err != nil {
+		return err
 	}
 	return nil
 }
 
 func (input ApplicationClassificationInput) validate() error {
-	if input.UserRequest == "" || input.UserRequest != strings.TrimSpace(input.UserRequest) {
-		return fmt.Errorf("application classification requires one trimmed user request")
+	if err := validateApplicationRequest("application classification", input.UserRequest); err != nil {
+		return err
 	}
-	return nil
-}
-
-func (input ApplicationIdentityInput) validate() error {
-	if input.UserRequest == "" || input.UserRequest != strings.TrimSpace(input.UserRequest) {
-		return fmt.Errorf("application identity requires one trimmed user request")
-	}
-	return nil
+	return ValidatePathFreeModelContext(
+		"application classification request", input.UserRequest,
+	)
 }
 
 func (input ArtifactHandlingInput) validate() error {
@@ -81,7 +37,9 @@ func (input ArtifactHandlingInput) validate() error {
 	if !strings.Contains(input.UserRequest, input.Token) {
 		return fmt.Errorf("artifact handling token %s is absent from the user request", input.Token)
 	}
-	return nil
+	return ValidatePathFreeModelContext(
+		"artifact handling request", input.UserRequest,
+	)
 }
 
 func validateGroundedQuoteCollection(label, source string, quotes []string) error {
@@ -100,8 +58,12 @@ func validateGroundedQuoteCollection(label, source string, quotes []string) erro
 }
 
 func validateQuoteCollection(label string, quotes []string) error {
-	if len(quotes) > maxRequirementCount {
-		return fmt.Errorf("%s quotes exceed %d items", label, maxRequirementCount)
+	return validateBoundedQuoteCollection(label, quotes, maxRequirementCount)
+}
+
+func validateBoundedQuoteCollection(label string, quotes []string, limit int) error {
+	if len(quotes) > limit {
+		return fmt.Errorf("%s quotes exceed %d items", label, limit)
 	}
 	seen := make(map[string]struct{}, len(quotes))
 	for index, quote := range quotes {
@@ -123,52 +85,119 @@ func (input FragmentGenerationInput) validate() error {
 	if input.Behavior == "" || input.Behavior != strings.TrimSpace(input.Behavior) {
 		return fmt.Errorf("fragment generation behavior is required and must be trimmed")
 	}
+	if input.Dialect == "" || input.Dialect != strings.TrimSpace(input.Dialect) ||
+		strings.ContainsAny(input.Dialect, "\x00\r\n") || len(input.Dialect) > 256 {
+		return fmt.Errorf("fragment generation dialect is required as one bounded label")
+	}
 	if len(input.Behavior) > maxLocalBehaviorBytes {
 		return fmt.Errorf("fragment generation behavior exceeds %d bytes", maxLocalBehaviorBytes)
 	}
-	return nil
+	return input.ValidatePathFree(ArtifactIdentityProvenance{})
+}
+
+// ValidatePathFree applies the field-scoped path boundary to the exact
+// fragment envelope. Behavior is prose; signatures and capability projections
+// are parser-proven source syntax.
+func (input FragmentGenerationInput) ValidatePathFree(
+	provenance ArtifactIdentityProvenance,
+) error {
+	if err := ValidatePathFreeModelContextWithProvenance(
+		"fragment generation behavior", provenance, input.Dialect, input.Behavior,
+	); err != nil {
+		return err
+	}
+	sourceValues := []string{input.Signature}
+	sourceValues = append(sourceValues, input.Capabilities...)
+	sourceValues = append(sourceValues, input.PermittedSymbols...)
+	return ValidatePathFreeSourceModelContextWithProvenance(
+		"fragment generation", provenance, sourceValues...,
+	)
 }
 
 func (input FragmentCorrectionInput) validate() error {
-	if err := validatePortableFragmentCore(input.Language, input.Signature, input.Capabilities, input.PermittedSymbols); err != nil {
-		return err
+	if (input.Language == "") != (input.Signature == "") {
+		return fmt.Errorf("fragment correction language and signature metadata must be both present or both absent")
 	}
-	for label, value := range map[string]string{
-		"current declaration": input.CurrentDeclaration,
-		"required change":     input.RequiredChange,
-		"diagnostic":          input.Diagnostic,
-	} {
-		if value == "" || value != strings.TrimSpace(value) {
-			return fmt.Errorf("fragment correction %s is required and must be trimmed", label)
+	if input.Language != "" {
+		if err := validatePortableFragmentCore(
+			input.Language, input.Signature, input.Capabilities, input.PermittedSymbols,
+		); err != nil {
+			return err
 		}
 	}
-	if len(input.CurrentDeclaration) > maxTypeScriptCurrentDeclarationBytes {
-		return fmt.Errorf("fragment correction current declaration exceeds %d bytes", maxTypeScriptCurrentDeclarationBytes)
+	if input.RepairGuidance == "" || input.RepairGuidance != strings.TrimSpace(input.RepairGuidance) {
+		return fmt.Errorf("fragment correction requires one trimmed repair guidance instruction")
 	}
-	if len(input.RequiredChange) > maxTypeScriptRequiredChangeBytes {
-		return fmt.Errorf("fragment correction required change exceeds %d bytes", maxTypeScriptRequiredChangeBytes)
+	if len(input.RepairGuidance) > maxTypeScriptRepairGuidanceBytes {
+		return fmt.Errorf(
+			"fragment correction repair guidance exceeds %d bytes",
+			maxTypeScriptRepairGuidanceBytes,
+		)
 	}
-	if len(input.Diagnostic) > maxTypeScriptDiagnosticBytes {
-		return fmt.Errorf("fragment correction diagnostic exceeds %d bytes", maxTypeScriptDiagnosticBytes)
+	if input.RequiredChange != "" || input.Diagnostic != "" {
+		return fmt.Errorf(
+			"fragment correction executor cannot receive a raw diagnostic or required change",
+		)
 	}
-	return nil
+	if len(input.Capabilities) != 0 || len(input.PermittedSymbols) != 0 {
+		return fmt.Errorf(
+			"fragment correction executor cannot receive diagnostic-analysis context",
+		)
+	}
+	current := input.CurrentDeclaration
+	if (current == "") == (input.RepairRegion == nil) {
+		return fmt.Errorf("fragment correction requires exactly one current declaration or repair region")
+	}
+	if current != "" {
+		if current != strings.TrimSpace(current) {
+			return fmt.Errorf("fragment correction current declaration must be trimmed")
+		}
+	}
+	if input.RepairRegion != nil {
+		if input.Language != "typescript" || input.Signature == "" {
+			return fmt.Errorf("fragment correction repair regions require TypeScript")
+		}
+		if err := input.RepairRegion.validate(); err != nil {
+			return fmt.Errorf("fragment correction repair region: %w", err)
+		}
+	}
+	return input.ValidatePathFree(ArtifactIdentityProvenance{})
 }
 
-func (input ResponseCorrectionInput) validate() error {
-	if err := input.Original.Validate(); err != nil {
-		return fmt.Errorf("response correction original job: %w", err)
+// ValidatePathFree preserves source grammar in declaration and repair-region
+// fields while keeping diagnostic and instruction prose on the strict prose
+// boundary.
+func (input FragmentCorrectionInput) ValidatePathFree(
+	provenance ArtifactIdentityProvenance,
+) error {
+	proseValues := []string{input.RequiredChange, input.Diagnostic, input.RepairGuidance}
+	sourceValues := []string{input.Signature, input.CurrentDeclaration}
+	sourceValues = append(sourceValues, input.Capabilities...)
+	sourceValues = append(sourceValues, input.PermittedSymbols...)
+	if input.RepairRegion != nil {
+		sourceValues = append(sourceValues, input.RepairRegion.Source)
+		for _, binding := range append(
+			append([]TypeScriptRepairBinding(nil), input.RepairRegion.Bindings...),
+			input.RepairRegion.UnavailableBindings...,
+		) {
+			sourceValues = append(sourceValues, binding.Name, binding.Type)
+			sourceValues = append(sourceValues, binding.CallableSignatures...)
+			sourceValues = append(sourceValues, binding.Members...)
+		}
+		for _, evidence := range input.RepairRegion.ExpressionEvidence {
+			sourceValues = append(sourceValues, evidence.Source, evidence.InferredType, evidence.ContextualType)
+			sourceValues = append(sourceValues, evidence.IncompatibleTypes...)
+			sourceValues = append(sourceValues, evidence.ReferencedBindings...)
+		}
 	}
-	if input.Original.Kind == WorkResponseCorrection {
-		return fmt.Errorf("response correction cannot wrap another response correction")
+	if err := ValidatePathFreeModelContextWithProvenance(
+		"fragment correction", provenance, proseValues...,
+	); err != nil {
+		return err
 	}
-	if input.ValidationFailure == "" || input.ValidationFailure != strings.TrimSpace(input.ValidationFailure) {
-		return fmt.Errorf("response correction requires one trimmed validation failure")
-	}
-	if len(input.ValidationFailure) > 1200 {
-		return fmt.Errorf("response correction validation failure exceeds 1200 bytes")
-	}
-	_, err := responseCorrectionSchema(input.Original)
-	return err
+	return ValidatePathFreeSourceModelContextWithProvenance(
+		"fragment correction", provenance, sourceValues...,
+	)
 }
 
 func validatePortableFragmentCore(language, signature string, capabilities, symbols []string) error {
@@ -181,15 +210,14 @@ func validatePortableFragmentCore(language, signature string, capabilities, symb
 	if len(signature) > 1024 {
 		return fmt.Errorf("fragment signature exceeds 1024 bytes")
 	}
-	if err := validatePortableStringSet("capability", capabilities, 2048); err != nil {
+	if err := validatePortableStringSet("capability", capabilities); err != nil {
 		return err
 	}
-	return validatePortableStringSet("permitted symbol", symbols, 1024)
+	return validateBoundedPortableStringSet("permitted symbol", symbols, 1024)
 }
 
-func validatePortableStringSet(label string, values []string, byteLimit int) error {
+func validatePortableStringSet(label string, values []string) error {
 	seen := make(map[string]struct{}, len(values))
-	total := 0
 	for index, value := range values {
 		if value == "" || value != strings.TrimSpace(value) {
 			return fmt.Errorf("%s %d is empty or untrimmed", label, index)
@@ -198,6 +226,16 @@ func validatePortableStringSet(label string, values []string, byteLimit int) err
 			return fmt.Errorf("%s %q is duplicated", label, value)
 		}
 		seen[value] = struct{}{}
+	}
+	return nil
+}
+
+func validateBoundedPortableStringSet(label string, values []string, byteLimit int) error {
+	if err := validatePortableStringSet(label, values); err != nil {
+		return err
+	}
+	total := 0
+	for _, value := range values {
 		total += len(value)
 	}
 	if total > byteLimit {

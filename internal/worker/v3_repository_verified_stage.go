@@ -91,10 +91,6 @@ func (prepared *verifiedRepositoryChangeStage) Cleanup() error {
 	return prepared.stage.Cleanup()
 }
 
-func (prepared *verifiedRepositoryChangeStage) workspace() string {
-	return prepared.stage.Workspace()
-}
-
 func (prepared *verifiedRepositoryChangeStage) verificationAuthority(
 	sourceSnapshotID string,
 	contractID string,

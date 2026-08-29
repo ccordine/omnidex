@@ -1,110 +1,118 @@
 package modelconfig
 
 import (
-	"github.com/gryph/omnidex/internal/specialist"
+	"github.com/gryph/omnidex/internal/station"
 )
 
 type Routing struct {
-	Default    string
-	Fast       string
-	Glue       string
-	Reasoning  string
-	Tagging    string
-	Plan       string
-	Analyze    string
-	Response   string
-	Search     string
-	Memory     string
-	Specialist map[string]string
+	Stations              map[station.ID]string
+	RoleplaySemanticModel string
 }
 
 func Apply(base Routing, cfg Config) Routing {
 	out := base
-	if out.Specialist == nil {
-		out.Specialist = map[string]string{}
+	if out.Stations == nil {
+		out.Stations = map[station.ID]string{}
 	} else {
-		clone := map[string]string{}
-		for key, value := range out.Specialist {
+		clone := map[station.ID]string{}
+		for key, value := range out.Stations {
 			clone[key] = value
 		}
-		out.Specialist = clone
+		out.Stations = clone
 	}
-	if value := cfg.Get("default_model"); value != "" {
-		out.Default = value
-		if out.Response == base.Response || out.Response == "" {
-			out.Response = value
-		}
-		if out.Fast == base.Fast || out.Fast == "" {
-			out.Fast = value
-		}
+	if value := cfg.Get("context_relevance_model"); value != "" {
+		out.Stations[station.ContextRelevance] = value
 	}
-	if value := cfg.Get("fast_model"); value != "" {
-		out.Fast = value
+	if value := cfg.Get("context_minification_model"); value != "" {
+		out.Stations[station.ContextMinification] = value
 	}
-	if value := cfg.Get("glue_model"); value != "" {
-		out.Glue = value
+	if value := cfg.Get("conversation_objective_kind_model"); value != "" {
+		out.Stations[station.ConversationObjectiveKind] = value
 	}
-	if value := cfg.Get("reasoning_model"); value != "" {
-		out.Reasoning = value
+	if value := cfg.Get("conversation_response_model"); value != "" {
+		out.Stations[station.ConversationResponse] = value
 	}
-	if value := cfg.Get("planner_model"); value != "" {
-		out.Plan = value
+	if value := cfg.Get("roleplay_semantic_model"); value != "" {
+		out.RoleplaySemanticModel = value
 	}
-	if value := cfg.Get("analyzer_model"); value != "" {
-		out.Analyze = value
+	if value := cfg.Get("grounded_answer_model"); value != "" {
+		out.Stations[station.GroundedAnswer] = value
 	}
-	if value := cfg.Get("responder_model"); value != "" {
-		out.Response = value
+	if value := cfg.Get("database_schema_selection_model"); value != "" {
+		out.Stations[station.DatabaseSchemaSelection] = value
 	}
-	if value := cfg.Get("tagger_model"); value != "" {
-		out.Tagging = value
+	if value := cfg.Get("database_query_intent_model"); value != "" {
+		out.Stations[station.DatabaseQueryIntent] = value
 	}
-	if value := cfg.Get("search_model"); value != "" {
-		out.Search = value
+	if value := cfg.Get("database_evidence_gap_model"); value != "" {
+		out.Stations[station.DatabaseEvidenceGap] = value
 	}
-	if value := cfg.Get("memory_model"); value != "" {
-		out.Memory = value
+	if value := cfg.Get("database_join_path_selection_model"); value != "" {
+		out.Stations[station.DatabaseJoinPathSelection] = value
 	}
-	if value := cfg.Get("executor_model"); value != "" {
-		out.Specialist[specialist.RoleSubtaskExecutorSpecialist] = value
+	if value := cfg.Get("repository_evidence_relevance_model"); value != "" {
+		out.Stations[station.RepositoryEvidenceRelevance] = value
+	}
+	if value := cfg.Get("web_relevance_model"); value != "" {
+		out.Stations[station.WebRelevance] = value
+	}
+	if value := cfg.Get("web_grounded_synthesis_model"); value != "" {
+		out.Stations[station.WebGroundedSynthesis] = value
 	}
 	if value := cfg.Get("coding_surface_model"); value != "" {
-		out.Specialist[specialist.RoleCodingSurfaceStation] = value
+		out.Stations[station.CodingSurface] = value
 	}
-	if value := cfg.Get("coding_product_identity_model"); value != "" {
-		out.Specialist[specialist.RoleCodingProductIdentityStation] = value
+	if value := cfg.Get("coding_requirements_model"); value != "" {
+		out.Stations[station.CodingRequirements] = value
+		out.Stations[station.CodingProjectStackConstraint] = value
 	}
-	if value := cfg.Get("coding_requirement_partition_model"); value != "" {
-		out.Specialist[specialist.RoleCodingRequirementPartitionStation] = value
+	// The retained setting chooses model identity only. Each station keeps an
+	// independent prompt, result contract, call receipt, and persisted outcome.
+	if value := cfg.Get("coding_service_deployment_intent_model"); value != "" {
+		out.Stations[station.CodingServiceContinuedAvailability] = value
+		out.Stations[station.CodingServicePersistenceDestination] = value
+	}
+	if value := cfg.Get("coding_workload_model"); value != "" {
+		out.Stations[station.CodingTargetTree] = value
+		out.Stations[station.CodingServiceStateLifetime] = value
+		out.Stations[station.CodingApplicationStateFieldCoverage] = value
+		out.Stations[station.CodingApplicationStateFieldPurpose] = value
+		out.Stations[station.CodingApplicationStateFieldKind] = value
+		out.Stations[station.CodingApplicationRecordFieldCoverage] = value
+		out.Stations[station.CodingApplicationRecordFieldPurpose] = value
+		out.Stations[station.CodingApplicationRecordFieldKind] = value
+		out.Stations[station.CodingServiceEndpointRequirement] = value
+		out.Stations[station.CodingServiceEndpointExposure] = value
+		out.Stations[station.CodingServiceEndpointMethod] = value
+		out.Stations[station.CodingServiceEndpointRouteTemplate] = value
+		out.Stations[station.CodingServiceEndpointRequestMedia] = value
+		out.Stations[station.CodingServiceEndpointResponseMedia] = value
+		out.Stations[station.CodingServiceEndpointSuccessStatus] = value
 	}
 	if value := cfg.Get("coding_artifact_handling_model"); value != "" {
-		out.Specialist[specialist.RoleCodingArtifactHandlingStation] = value
+		out.Stations[station.CodingArtifactHandling] = value
+		out.Stations[station.CodingRepositoryArtifactAbsence] = value
+		out.Stations[station.CodingPlainTextArtifactCreation] = value
+		out.Stations[station.CodingDeclarationArtifactBoundary] = value
+		out.Stations[station.CodingArtifactCandidateSelection] = value
 	}
 	if value := cfg.Get("coding_capability_relation_model"); value != "" {
-		out.Specialist[specialist.RoleCodingCapabilityRelationStation] = value
+		out.Stations[station.CodingCapabilityRelation] = value
 	}
 	if value := cfg.Get("coding_skill_selection_model"); value != "" {
-		out.Specialist[specialist.RoleCodingSkillSelectionStation] = value
-	}
-	if value := cfg.Get("coding_skill_procedure_model"); value != "" {
-		out.Specialist[specialist.RoleCodingSkillProcedureStation] = value
+		out.Stations[station.CodingSkillSelection] = value
 	}
 	if value := cfg.Get("coding_fragment_model"); value != "" {
-		out.Specialist[specialist.RoleCodingFragmentStation] = value
+		out.Stations[station.CodingFragment] = value
+	}
+	if value := cfg.Get("coding_fragment_repair_guidance_model"); value != "" {
+		out.Stations[station.CodingFragmentRepairGuidance] = value
 	}
 	if value := cfg.Get("coding_fragment_correction_model"); value != "" {
-		out.Specialist[specialist.RoleCodingFragmentCorrectionStation] = value
+		out.Stations[station.CodingFragmentCorrection] = value
 	}
-	if value := cfg.Get("shell_specialist_model"); value != "" {
-		out.Specialist[specialist.RoleShellExecutionSpecialist] = value
+	if value := cfg.Get("coding_repository_change_surface_model"); value != "" {
+		out.Stations[station.CodingRepositoryChange] = value
 	}
 	return out
-}
-
-func Resolve(base Routing, env Config, project Config, card Config) Config {
-	return Merge(env, project, card)
-}
-
-func ResolveRouting(base Routing, env Config, project Config, card Config) Routing {
-	return Apply(base, Resolve(base, env, project, card))
 }

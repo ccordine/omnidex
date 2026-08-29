@@ -53,8 +53,7 @@ func (s *Service) recordWorkerLLMCall(
 		ErrorClass:        errorClass,
 		LatencyMS:         latency.Milliseconds(),
 		Metadata: map[string]any{
-			"worker_context_budget": s.contextBudget,
-			"context_tokens":        s.inferenceContextTokens,
+			"context_tokens": s.inferenceContextTokens,
 		},
 	})
 	if runID == "" {

@@ -14,10 +14,22 @@ func (r *Repository) CompleteStep(ctx context.Context, command CompleteStepComma
 	if err != nil {
 		return err
 	}
+	if command.ContextKey == "objective_result" {
+		return fmt.Errorf("objective completion requires one atomic evidence-bound completion")
+	}
 	descriptor, err := describeLifecycleOperation(command.OperationID, LifecycleCompleteStep, command)
 	if err != nil {
 		return err
 	}
+	return r.completeStep(ctx, command, descriptor, nil)
+}
+
+func (r *Repository) completeStep(
+	ctx context.Context,
+	command CompleteStepCommand,
+	descriptor lifecycleOperationDescriptor,
+	objectiveEvidencePayloads [][]byte,
+) error {
 	tx, err := r.pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return err
@@ -38,9 +50,34 @@ func (r *Repository) CompleteStep(ctx context.Context, command CompleteStepComma
 	if existing, found, err := loadLifecycleOperationTx(ctx, tx, descriptor, jobID); err != nil {
 		return err
 	} else if found {
-		return requireCompleteStepReplayTx(ctx, tx, existing, command)
+		if err := requireCompleteStepReplayTx(ctx, tx, existing, command); err != nil {
+			return err
+		}
+		researchHandled, err := requireRoleplayResearchCompletionReplayTx(
+			ctx, tx, job, existing, command,
+		)
+		if err != nil {
+			return err
+		}
+		if !researchHandled {
+			if err := requireRoleplayCompletionReplayTx(ctx, tx, job, existing, command); err != nil {
+				return err
+			}
+		}
+		if objectiveEvidencePayloads != nil {
+			return requireObjectiveCompletionEvidenceReplayTx(
+				ctx, tx, command.OperationID, objectiveEvidencePayloads,
+			)
+		}
+		return nil
+	}
+	if err := requireRoleplayCompletionJobAuthority(job, command); err != nil {
+		return err
 	}
 	if err := requireLockedStepAttemptActiveTx(ctx, tx, command.Authority, lockedAttempt); err != nil {
+		return err
+	}
+	if err := requireNewRoleplayCompletionPayload(job, command); err != nil {
 		return err
 	}
 	if lockedAttempt.StepStatus != model.StepStatusRunning || !jobAcceptsStepTerminal(lockedAttempt.JobStatus) {
@@ -48,6 +85,19 @@ func (r *Repository) CompleteStep(ctx context.Context, command CompleteStepComma
 			"completion writer job status %q step status %q",
 			lockedAttempt.JobStatus, lockedAttempt.StepStatus,
 		), nil)
+	}
+	if err := requireNoOpenStationGapsTx(ctx, tx, command.Authority); err != nil {
+		return err
+	}
+	if err := rejectUnresolvedGeneratedWorkloadDeploymentsTx(
+		ctx, tx, command.Authority.JobID,
+	); err != nil {
+		return err
+	}
+	if objectiveEvidencePayloads != nil {
+		if err := insertObjectiveCompletionEvidenceTx(ctx, tx, command, objectiveEvidencePayloads); err != nil {
+			return err
+		}
 	}
 	generation := command.Authority.Generation
 	if err := terminalizeStepAttemptTx(ctx, tx, command.Authority, model.StepAttemptCompleted); err != nil {
@@ -93,6 +143,9 @@ func (r *Repository) CompleteStep(ctx context.Context, command CompleteStepComma
 	}
 
 	if openSteps == 0 {
+		if err := materializeChannelCompletionTx(ctx, tx, job, command); err != nil {
+			return err
+		}
 		if err := transitionInitialTaskRootTx(
 			ctx, tx, jobID, generation, command.StepID, taskstate.NodeDone, command.Output, "",
 		); err != nil {
@@ -122,6 +175,9 @@ func (r *Repository) CompleteStep(ctx context.Context, command CompleteStepComma
 			return err
 		}
 	} else {
+		if hasRoleplayCompletionPayload(command) {
+			return fmt.Errorf("roleplay facts require the terminal current-generation step")
+		}
 		if _, err := tx.Exec(ctx, `
 			UPDATE jobs
 			SET updated_at = NOW()
@@ -186,6 +242,14 @@ func (r *Repository) FailStep(ctx context.Context, command FailStepCommand) erro
 			"failure writer job status %q step status %q",
 			lockedAttempt.JobStatus, lockedAttempt.StepStatus,
 		), nil)
+	}
+	if err := requireNoOpenStationGapsTx(ctx, tx, command.Authority); err != nil {
+		return err
+	}
+	if err := rejectUnresolvedGeneratedWorkloadDeploymentsTx(
+		ctx, tx, command.Authority.JobID,
+	); err != nil {
+		return err
 	}
 	generation := command.Authority.Generation
 	if err := terminalizeStepAttemptTx(ctx, tx, command.Authority, model.StepAttemptFailed); err != nil {

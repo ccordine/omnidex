@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	"github.com/gryph/omnidex/internal/evidence"
-	"github.com/gryph/omnidex/internal/queue"
 	repositoryindex "github.com/gryph/omnidex/internal/repository/indexing"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -23,24 +22,28 @@ func assertRepositoryMutationWorkflowRecords(
 	refreshed repositoryindex.Result,
 ) {
 	t.Helper()
-	var status, stageID, patchSHA, expectedSHA string
+	var status, stageID, patchSHA, expectedSHA, mutationPath string
+	var sourceSnapshotID, verifiedSnapshotID string
 	var attempts, generatedDiffs, baselineProofs, baselineAcceptances, stagedProofs, authoritativeProofs int
 	var evidenceID *int64
 	err := pool.QueryRow(t.Context(), `
-		SELECT operation.status,operation.attempt_count,operation.evidence_id,
-		       operation.stage_id,operation.patch_sha256,file.expected_sha256
-		FROM repository_mutation_operations AS operation
-		JOIN repository_mutation_files AS file ON file.operation_id=operation.id
-		WHERE operation.job_id=$1 AND file.file_id=$2
-	`, jobID, targetFileID).Scan(
+		SELECT operation.status,operation.apply_attempt_count,operation.mutation_evidence_id,
+		       operation.stage_id,operation.patch_sha256,file.expected_sha256,
+		       operation.source_repository_snapshot_id,operation.verified_repository_snapshot_id,
+		       file.path
+		FROM workspace_mutation_operations AS operation
+		JOIN workspace_mutation_files AS file ON file.operation_id=operation.id
+		WHERE operation.job_id=$1
+	`, jobID).Scan(
 		&status, &attempts, &evidenceID, &stageID, &patchSHA, &expectedSHA,
+		&sourceSnapshotID, &verifiedSnapshotID, &mutationPath,
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := pool.QueryRow(t.Context(), `
 		SELECT
-			COUNT(*) FILTER (WHERE kind=$2 AND source_type='repository'),
+			COUNT(*) FILTER (WHERE kind=$2 AND source_type='workspace'),
 			COUNT(*) FILTER (WHERE kind=$3 AND payload_json->'metadata'->>'repository_verification_scope'='baseline'
 			  AND NOT COALESCE((payload_json->'metadata'->>'repository_verification_baseline_accepted')::boolean,false)),
 			COUNT(*) FILTER (WHERE kind=$3 AND COALESCE((payload_json->'metadata'->>'repository_verification_baseline_accepted')::boolean,false)),
@@ -55,36 +58,36 @@ func assertRepositoryMutationWorkflowRecords(
 		t.Fatal(err)
 	}
 	file := exactRepositorySnapshotFile(t, refreshed.Snapshot, targetFileID)
-	if status != "applied" || attempts != 1 || evidenceID == nil || generatedDiffs != 1 ||
+	if status != "verified" || attempts != 1 || evidenceID == nil || generatedDiffs != 1 ||
 		baselineProofs != wantCommands || baselineAcceptances != 1 ||
-		stagedProofs != wantCommands || authoritativeProofs != wantCommands || expectedSHA != file.SHA256 {
+		stagedProofs != wantCommands || authoritativeProofs != wantCommands || expectedSHA != file.SHA256 ||
+		mutationPath != file.Path || sourceSnapshotID == verifiedSnapshotID ||
+		verifiedSnapshotID != refreshed.Snapshot.ID {
 		t.Fatalf(
-			"journal=%s/%d/%v diff=%d proof=%d/%d/%d baseline_acceptance=%d expected=%s actual=%s",
+			"journal=%s/%d/%v diff=%d proof=%d/%d/%d baseline_acceptance=%d expected=%s actual=%s path=%s/%s snapshots=%s/%s/%s",
 			status, attempts, evidenceID, generatedDiffs, baselineProofs, stagedProofs,
 			authoritativeProofs, baselineAcceptances, expectedSHA, file.SHA256,
+			mutationPath, file.Path,
+			sourceSnapshotID, verifiedSnapshotID, refreshed.Snapshot.ID,
 		)
 	}
 	acceptances := loadRepositoryPlanAcceptances(t, pool, jobID)
-	if len(acceptances) != 2 || acceptances[0].scope != "authoritative" ||
-		acceptances[1].scope != "staged" {
+	if len(acceptances) != 1 || acceptances[0].scope != "staged" {
 		t.Fatalf("plan acceptances=%+v", acceptances)
 	}
 	for _, accepted := range acceptances {
-		if accepted.contractID == "" || accepted.sourceSnapshotID == "" ||
-			accepted.stageID != stageID || accepted.patchSHA256 != patchSHA ||
-			accepted.planID == "" || accepted.expectedPostID == "" {
+		if !validRepositoryVerificationOpaqueID(accepted.contractID, "change_contract_") ||
+			!validRepositoryVerificationOpaqueID(accepted.sourceSnapshotID, "snapshot_") ||
+			!validRepositoryVerificationOpaqueID(accepted.stageID, "repository_change_stage_") ||
+			accepted.patchSHA256 != patchSHA || !validRepositoryVerificationSHA256(accepted.planID) ||
+			!validRepositoryVerificationSHA256(accepted.expectedPostID) ||
+			!validRepositoryVerificationOpaqueID(stageID, "workspace_stage_") {
 			t.Fatalf("unbound plan acceptance=%+v journal=%s/%s", accepted, stageID, patchSHA)
 		}
 	}
-	if acceptances[0].verificationSnapshotID == "" ||
-		acceptances[1].verificationSnapshotID != "" {
-		t.Fatalf("verification projection identity is not authoritative-only: %+v", acceptances)
-	}
-	if acceptances[0].contractID != acceptances[1].contractID ||
-		acceptances[0].sourceSnapshotID != acceptances[1].sourceSnapshotID ||
-		acceptances[0].planID != acceptances[1].planID ||
-		acceptances[0].expectedPostID != acceptances[1].expectedPostID {
-		t.Fatalf("staged and authoritative acceptance identities differ: %+v", acceptances)
+	if acceptances[0].verificationSnapshotID != "" ||
+		acceptances[0].sourceSnapshotID != sourceSnapshotID {
+		t.Fatalf("staged plan acceptance has invalid snapshot authority: %+v", acceptances)
 	}
 	for _, canary := range repositoryMutationSecretCanaries {
 		var leaked int
@@ -149,49 +152,4 @@ func loadRepositoryPlanAcceptances(
 		t.Fatal(err)
 	}
 	return accepted
-}
-
-func loadRepositoryMutationWorkflowCommand(
-	t *testing.T,
-	pool *pgxpool.Pool,
-	jobID int64,
-) queue.RepositoryMutationCommand {
-	t.Helper()
-	var command queue.RepositoryMutationCommand
-	err := pool.QueryRow(t.Context(), `
-		SELECT job_id,step_id,generation,step_attempt,worker_id,contract_id,stage_id,
-		       source_snapshot_id,patch,patch_sha256
-		FROM repository_mutation_operations WHERE job_id=$1
-	`, jobID).Scan(
-		&command.JobID, &command.StepID, &command.Generation, &command.Attempt, &command.WorkerID,
-		&command.ContractID, &command.StageID, &command.SourceSnapshotID,
-		&command.Patch, &command.PatchSHA256,
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	rows, err := pool.Query(t.Context(), `
-		SELECT file_id,path,source_sha256,source_size,expected_sha256,expected_size
-		FROM repository_mutation_files
-		WHERE operation_id=(SELECT id FROM repository_mutation_operations WHERE job_id=$1)
-		ORDER BY ordinal
-	`, jobID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var file queue.RepositoryMutationFile
-		if err := rows.Scan(
-			&file.FileID, &file.Path, &file.SourceSHA256, &file.SourceSize,
-			&file.ExpectedSHA256, &file.ExpectedSize,
-		); err != nil {
-			t.Fatal(err)
-		}
-		command.ChangedFiles = append(command.ChangedFiles, file)
-	}
-	if err := rows.Err(); err != nil {
-		t.Fatal(err)
-	}
-	return command
 }

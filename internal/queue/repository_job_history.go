@@ -54,10 +54,6 @@ func (r *Repository) ReadJobHistoryPage(
 		page.Evidence, page.NextCursor, err = readHistoricalEvidencePage(
 			ctx, tx, jobID, position, request.Limit,
 		)
-	case JobHistoryClaims:
-		page.Claims, page.NextCursor, err = readHistoricalClaimPage(
-			ctx, tx, jobID, position, request.Limit,
-		)
 	case JobHistoryLLMCalls:
 		page.LLMCalls, page.NextCursor, err = readHistoricalLLMCallPage(
 			ctx, tx, jobID, position, request.Limit,

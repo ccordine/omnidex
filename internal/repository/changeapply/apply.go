@@ -32,7 +32,7 @@ func (stage *StagedChange) applyVerified(ctx context.Context) (omni.PatchApplyRe
 	if digest([]byte(stage.patch)) != stage.patchSHA256 {
 		return omni.PatchApplyResult{}, fmt.Errorf("repository change stage %q patch identity is invalid", stage.id)
 	}
-	if err := verifyStagedWorkspace(stage.workspace, stage.stagedFiles); err != nil {
+	if err := verifyStagedWorkspace(stage.deltaRoot, stage.deltaFiles); err != nil {
 		return omni.PatchApplyResult{}, err
 	}
 	if err := verifyAuthoritativeSnapshot(ctx, stage.authoritativeRoot, stage.expectedSnapshotID); err != nil {
@@ -57,31 +57,11 @@ func (stage *StagedChange) Cleanup() error {
 	if stage.closed {
 		return nil
 	}
-	if err := os.RemoveAll(stage.workspace); err != nil {
+	if err := os.RemoveAll(stage.deltaRoot); err != nil {
 		return fmt.Errorf("clean repository change stage %q: %w", stage.id, err)
 	}
 	stage.closed = true
 	return nil
-}
-
-func stagedFileAuthorities(snapshot repositoryfacts.Snapshot, mutations []fileMutation) []stagedFileAuthority {
-	changed := make(map[string]fileMutation, len(mutations))
-	for _, mutation := range mutations {
-		changed[mutation.file.ID] = mutation
-	}
-	authorities := make([]stagedFileAuthority, 0, len(snapshot.Files))
-	for _, file := range snapshot.Files {
-		authority := stagedFileAuthority{
-			path: file.Path, kind: file.Kind, sha256: file.SHA256,
-			size: file.Size, mode: file.Mode, linkTarget: file.LinkTarget,
-		}
-		if mutation, exists := changed[file.ID]; exists {
-			authority.sha256 = digest(mutation.next)
-			authority.size = int64(len(mutation.next))
-		}
-		authorities = append(authorities, authority)
-	}
-	return authorities
 }
 
 func verifyStagedWorkspace(root string, files []stagedFileAuthority) error {

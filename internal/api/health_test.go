@@ -4,10 +4,47 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/gryph/omnidex/internal/queue"
+	"github.com/gryph/omnidex/internal/version"
 )
+
+func TestHealthIncludesEmbeddedReleaseIdentity(t *testing.T) {
+	original := version.Commit
+	t.Cleanup(func() { version.Commit = original })
+	version.Commit = strings.Repeat("d", 40)
+
+	payload := requestHealthPayload(t, NewServer(nil, &fakeLLMClient{}))
+	release, ok := payload["release"].(map[string]any)
+	if !ok {
+		t.Fatalf("release=%#v want object", payload["release"])
+	}
+	if release["commit"] != version.Commit {
+		t.Fatalf("release.commit=%#v want %q", release["commit"], version.Commit)
+	}
+	if release["version"] != version.Version || release["codename"] != version.Codename {
+		t.Fatalf("release=%#v does not match embedded version metadata", release)
+	}
+}
+
+func TestHealthFailsForInvalidEmbeddedReleaseIdentity(t *testing.T) {
+	original := version.Commit
+	t.Cleanup(func() { version.Commit = original })
+	version.Commit = ""
+
+	server := NewServer(nil, &fakeLLMClient{})
+	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "invalid embedded release identity") {
+		t.Fatalf("body=%q omits release identity failure", rec.Body.String())
+	}
+}
 
 func TestHealthIncludesDependencyStatus(t *testing.T) {
 	server := NewServer(nil, &fakeLLMClient{})
@@ -63,8 +100,40 @@ func TestHealthDegradedForPostgresPingFailure(t *testing.T) {
 	}
 }
 
+func TestReadinessFailsWhenRequiredDependencyIsUnreachable(t *testing.T) {
+	server := NewServer(queue.New(nil), &fakeLLMClient{})
+	req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload["status"] != "degraded" {
+		t.Fatalf("status=%#v want degraded", payload["status"])
+	}
+}
+
+func TestReadinessSucceedsWithNoRequiredDependencies(t *testing.T) {
+	server := NewServer(nil, &fakeLLMClient{})
+	req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
 func requestHealthPayload(t *testing.T, server *Server) map[string]any {
 	t.Helper()
+	if _, err := version.BuildCommit(); err != nil {
+		original := version.Commit
+		version.Commit = strings.Repeat("a", 40)
+		t.Cleanup(func() { version.Commit = original })
+	}
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 	rec := httptest.NewRecorder()
 	server.Handler().ServeHTTP(rec, req)

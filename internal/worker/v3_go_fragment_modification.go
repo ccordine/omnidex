@@ -8,8 +8,6 @@ import (
 	"github.com/gryph/omnidex/internal/gofragment"
 )
 
-const directCodingGoRequiredChange = "Fix only the observed local validation failure in the current declaration. Preserve all unrelated executable behavior."
-
 type directCodingGoModificationJob struct {
 	Subject string
 	Input   assemblyline.FragmentModificationInput
@@ -23,8 +21,8 @@ func runDirectCodingGoFragmentModificationWorker(
 	if runtime.Context == nil || runtime.Execute == nil {
 		return "", fmt.Errorf("Go fragment modification worker requires a portable execution runtime")
 	}
-	if runtime.MaxAttempts < 1 || runtime.MaxAttempts > maxTypedWorkerAttempts {
-		return "", fmt.Errorf("Go fragment modification attempts must be between 1 and %d", maxTypedWorkerAttempts)
+	if runtime.MaxAttempts != exactSemanticLeafCalls {
+		return "", fmt.Errorf("Go fragment modification requires exactly %d model call", exactSemanticLeafCalls)
 	}
 	modelName = strings.TrimSpace(modelName)
 	if modelName == "" || strings.TrimSpace(job.Subject) == "" {
@@ -32,6 +30,9 @@ func runDirectCodingGoFragmentModificationWorker(
 	}
 	baseJob, err := assemblyline.NewFragmentModificationJob(job.Input)
 	if err != nil {
+		return "", failDirectCodingGoModification(runtime, modelName, job.Subject, 0, err)
+	}
+	if err := job.Input.ValidatePathFree(runtime.PathProvenance); err != nil {
 		return "", failDirectCodingGoModification(runtime, modelName, job.Subject, 0, err)
 	}
 	contract := gofragment.Contract{
@@ -43,94 +44,64 @@ func runDirectCodingGoFragmentModificationWorker(
 		return "", failDirectCodingGoModification(runtime, modelName, job.Subject, 0,
 			fmt.Errorf("validate current Go declaration: %w", err))
 	}
-	seen := make(map[string]struct{})
-	var lastCandidate string
-	var lastErr error
-	for attempt := 1; attempt <= runtime.MaxAttempts; attempt++ {
-		if err := runtime.Context.Err(); err != nil {
-			return "", failDirectCodingGoModification(runtime, modelName, job.Subject, attempt-1, err)
-		}
-		attemptJob := baseJob
-		attemptModel := modelName
-		if lastErr != nil {
-			attemptModel = strings.TrimSpace(runtime.CorrectionModel)
-			if attemptModel == "" {
-				return "", failDirectCodingGoModification(runtime, modelName, job.Subject, attempt-1,
-					fmt.Errorf("Go fragment correction requires one configured correction model"))
-			}
-			attemptJob, err = newDirectCodingGoCorrectionJob(job.Input, lastCandidate, lastErr)
-			if err != nil {
-				return "", failDirectCodingGoModification(runtime, attemptModel, job.Subject, attempt-1, err)
-			}
-		}
-		prompt, _, err := assemblyline.RenderPortableJob(attemptJob)
-		if err != nil {
-			return "", failDirectCodingGoModification(runtime, attemptModel, job.Subject, attempt-1, err)
-		}
-		currentBytes := len([]byte(job.Input.CurrentDeclaration))
-		correctionBytes := 0
-		if lastErr != nil {
-			currentBytes = len([]byte(lastCandidate))
-			correctionBytes = len([]byte(strings.TrimSpace(lastErr.Error())))
-		}
-		emitTypedWorker(runtime, typedWorkerEvent{
-			State: typedWorkerStarted, Kind: typedWorkerFragment, Subject: job.Subject,
-			Model: attemptModel, Attempt: attempt, MaxAttempts: runtime.MaxAttempts,
-			PromptBytes: len(prompt), CurrentBytes: currentBytes, CorrectionBytes: correctionBytes,
-			CapabilityBytes: goModificationCapabilityBytes(job.Input),
-		})
-		result, err := runtime.Execute(attemptJob, attemptModel)
-		if err != nil {
-			return "", failDirectCodingGoModification(runtime, attemptModel, job.Subject, attempt, err)
-		}
-		if err := result.ValidateFor(attemptJob); err != nil {
-			return "", failDirectCodingGoModification(runtime, attemptModel, job.Subject, attempt, err)
-		}
-		lastCandidate = strings.TrimSpace(result.Candidate)
-		if _, duplicate := seen[lastCandidate]; duplicate {
-			lastErr = fmt.Errorf("repeated identical candidate rejected; the correction made no progress")
-		} else {
-			seen[lastCandidate] = struct{}{}
-			var parsed string
-			parsed, lastErr = gofragment.ParseFunction(contract, lastCandidate)
-			if lastErr == nil {
-				if parsed == currentCanonical {
-					lastErr = fmt.Errorf("unchanged modification rejected; the declaration must satisfy the registered requirement")
-				} else {
-					emitTypedWorker(runtime, typedWorkerEvent{
-						State: typedWorkerCompleted, Kind: typedWorkerFragment, Subject: job.Subject,
-						Model: attemptModel, Attempt: attempt, MaxAttempts: runtime.MaxAttempts,
-					})
-					return parsed, nil
-				}
-			}
-		}
+	if err := runtime.Context.Err(); err != nil {
+		return "", failDirectCodingGoModification(runtime, modelName, job.Subject, 0, err)
+	}
+	prompt, err := assemblyline.RenderPortableJob(baseJob)
+	if err != nil {
+		return "", failDirectCodingGoModification(runtime, modelName, job.Subject, 0, err)
+	}
+	emitTypedWorker(runtime, typedWorkerEvent{
+		State: typedWorkerStarted, Kind: typedWorkerFragment, Subject: job.Subject,
+		Model: modelName, Attempt: 1, MaxAttempts: directCodingGoModelAttempts,
+		PromptBytes: len(prompt), CurrentBytes: len([]byte(job.Input.CurrentDeclaration)),
+		CapabilityBytes: goModificationCapabilityBytes(job.Input),
+	})
+	result, err := runtime.Execute(baseJob, modelName)
+	if err != nil {
+		return "", failDirectCodingGoModification(runtime, modelName, job.Subject, 1, err)
+	}
+	if err := result.ValidateFor(baseJob); err != nil {
+		err = finalizeTypedWorkerResult(runtime, baseJob, result, err)
+		return "", failDirectCodingGoModification(runtime, modelName, job.Subject, 1, err)
+	}
+	projection, candidateErr := projectDirectCodingGoFragment(result.Candidate)
+	candidate := projection.Source
+	candidateCanonical := ""
+	if candidateErr == nil {
+		result.Projection = &projection
+		candidateCanonical, candidateErr = gofragment.ParseFunction(contract, candidate)
+	}
+	if candidateErr == nil {
+		candidateErr = assemblyline.ValidatePathFreeSourceModelContextWithProvenance(
+			"Go fragment candidate", runtime.PathProvenance, candidate,
+		)
+	}
+	if candidateErr == nil && candidateCanonical == currentCanonical {
+		candidateErr = fmt.Errorf(
+			"unchanged modification rejected; the declaration must satisfy the registered requirement",
+		)
+	}
+	if candidateErr != nil {
+		candidateErr = finalizeTypedWorkerResult(runtime, baseJob, result, candidateErr)
 		emitTypedWorker(runtime, typedWorkerEvent{
 			State: typedWorkerRejected, Kind: typedWorkerFragment, Subject: job.Subject,
-			Model: attemptModel, Attempt: attempt, MaxAttempts: runtime.MaxAttempts,
-			Detail: trimForBudget(lastErr.Error(), 1200),
+			Model: modelName, Attempt: 1, MaxAttempts: directCodingGoModelAttempts,
+			Detail: trimForBudget(candidateErr.Error(), 1200),
 		})
-		if strings.Contains(lastErr.Error(), "repeated identical candidate") {
-			break
-		}
+		return "", failDirectCodingGoModification(
+			runtime, modelName, job.Subject, 1,
+			fmt.Errorf("initial candidate rejected: %w", candidateErr),
+		)
 	}
-	return "", failDirectCodingGoModification(runtime, modelName, job.Subject, runtime.MaxAttempts,
-		fmt.Errorf("failed after %d bounded attempts: %w", runtime.MaxAttempts, lastErr))
-}
-
-func newDirectCodingGoCorrectionJob(
-	input assemblyline.FragmentModificationInput,
-	current string,
-	failure error,
-) (assemblyline.PortableJob, error) {
-	return assemblyline.NewFragmentCorrectionJob(assemblyline.FragmentCorrectionInput{
-		Language: "go", Signature: input.Signature,
-		Capabilities:       append([]string(nil), input.Capabilities...),
-		PermittedSymbols:   append([]string(nil), input.PermittedSymbols...),
-		CurrentDeclaration: strings.TrimSpace(current),
-		RequiredChange:     directCodingGoRequiredChange,
-		Diagnostic:         trimForBudget(strings.TrimSpace(failure.Error()), 1200),
+	if err = finalizeTypedWorkerResult(runtime, baseJob, result, nil); err != nil {
+		return "", failDirectCodingGoModification(runtime, modelName, job.Subject, 1, err)
+	}
+	emitTypedWorker(runtime, typedWorkerEvent{
+		State: typedWorkerCompleted, Kind: typedWorkerFragment, Subject: job.Subject,
+		Model: modelName, Attempt: 1, MaxAttempts: directCodingGoModelAttempts,
 	})
+	return candidate, nil
 }
 
 func goModificationCapabilityBytes(input assemblyline.FragmentModificationInput) int {
@@ -145,7 +116,7 @@ func failDirectCodingGoModification(
 ) error {
 	emitTypedWorker(runtime, typedWorkerEvent{
 		State: typedWorkerFailed, Kind: typedWorkerFragment, Subject: subject,
-		Model: modelName, Attempt: attempt, MaxAttempts: runtime.MaxAttempts,
+		Model: modelName, Attempt: attempt, MaxAttempts: directCodingGoModelAttempts,
 		Detail: trimForBudget(err.Error(), 1200),
 	})
 	return fmt.Errorf("Go fragment modification worker failed: %w", err)

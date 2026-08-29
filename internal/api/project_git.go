@@ -34,7 +34,7 @@ func (s *Server) handleProjectGit(w http.ResponseWriter, r *http.Request, id int
 	writeJSON(w, http.StatusOK, payload)
 }
 
-func (s *Server) loadProjectGitStatus(ctx context.Context, project model.Project, location string) (map[string]any, error) {
+func (s *Server) loadProjectGitStatus(ctx context.Context, project model.Project, location string) (projectgit.Status, error) {
 	runCtx, cancel := context.WithTimeout(ctx, 12*time.Second)
 	defer cancel()
 
@@ -44,5 +44,5 @@ func (s *Server) loadProjectGitStatus(ctx context.Context, project model.Project
 	if client := s.hostBridgeClient(); client != nil {
 		return s.loadProjectGitStatusViaBridge(runCtx, location)
 	}
-	return nil, fmt.Errorf("project directory is not accessible locally")
+	return projectgit.Status{}, fmt.Errorf("project directory is not accessible locally")
 }

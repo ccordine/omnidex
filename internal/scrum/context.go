@@ -1,17 +1,170 @@
 package scrum
 
 import (
+	"bytes"
 	"encoding/json"
+	"fmt"
 	"strings"
+	"unicode/utf8"
+
+	"github.com/gryph/omnidex/internal/exactjson"
+	"github.com/gryph/omnidex/internal/modelconfig"
 )
 
-const AgentStatusFooter = `When you finish (or must stop), include exactly one status line in your final output:
-SCRUM_STATUS: success|failed|blocked|in_progress
+const JobMetadataSource = "omni-scrum"
 
-- success: work is complete and ready for human review
-- failed: could not complete; explain what blocked you
-- blocked: waiting on an external dependency or decision
-- in_progress: meaningful partial progress; more work remains`
+type JobMetadata struct {
+	Source             string             `json:"source"`
+	ProjectID          int64              `json:"project_id"`
+	CardID             string             `json:"scrum_card_id"`
+	CardTitle          string             `json:"scrum_card_title"`
+	CardDescription    string             `json:"scrum_card_description"`
+	Checklist          string             `json:"scrum_checklist"`
+	TestCriteria       string             `json:"scrum_test_criteria"`
+	ReturnColumn       string             `json:"scrum_return_column"`
+	ChannelOrigin      bool               `json:"scrum_channel_origin"`
+	ChannelOperationID string             `json:"scrum_channel_operation_id"`
+	ModelConfig        modelconfig.Config `json:"model_config"`
+}
+
+func (metadata JobMetadata) Validate() error {
+	if metadata.Source != JobMetadataSource {
+		return fmt.Errorf("Scrum job source must be exactly %q", JobMetadataSource)
+	}
+	if metadata.ProjectID <= 0 {
+		return fmt.Errorf("Scrum job requires a positive project_id")
+	}
+	for name, value := range map[string]string{
+		"scrum_card_id": metadata.CardID, "scrum_card_title": metadata.CardTitle,
+		"scrum_card_description": metadata.CardDescription, "scrum_checklist": metadata.Checklist,
+		"scrum_test_criteria": metadata.TestCriteria, "scrum_return_column": metadata.ReturnColumn,
+	} {
+		if !utf8.ValidString(value) || strings.ContainsRune(value, '\x00') || len(value) > 1<<20 {
+			return fmt.Errorf("Scrum job metadata %s is outside the exact text bound", name)
+		}
+	}
+	if metadata.CardID == "" || metadata.CardID != strings.TrimSpace(metadata.CardID) {
+		return fmt.Errorf("Scrum job requires one canonical card ID")
+	}
+	if strings.TrimSpace(metadata.CardTitle) == "" {
+		return fmt.Errorf("Scrum job requires a nonblank card title")
+	}
+	if metadata.ReturnColumn != "" {
+		switch metadata.ReturnColumn {
+		case "backlog", "ready", "assigned", "in_progress", "review", "blocked", "error", "done":
+		default:
+			return fmt.Errorf("Scrum return column %q is not registered", metadata.ReturnColumn)
+		}
+	}
+	if metadata.ChannelOrigin {
+		if !canonicalLifecycleOperationID(metadata.ChannelOperationID) {
+			return fmt.Errorf("Scrum channel operation ID is required for channel-origin jobs")
+		}
+	} else if metadata.ChannelOperationID != "" {
+		return fmt.Errorf("ordinary Scrum jobs forbid a channel operation ID")
+	}
+	encodedConfig, err := json.Marshal(metadata.ModelConfig)
+	if err != nil {
+		return fmt.Errorf("encode Scrum job model routing snapshot: %w", err)
+	}
+	validatedConfig, err := modelconfig.FromJSON(encodedConfig)
+	if err != nil {
+		return fmt.Errorf("Scrum job model routing snapshot: %w", err)
+	}
+	if len(validatedConfig) != len(metadata.ModelConfig) {
+		return fmt.Errorf("Scrum job model routing snapshot is not canonical")
+	}
+	return nil
+}
+
+func DecodeJobMetadata(raw json.RawMessage) (JobMetadata, error) {
+	if err := exactjson.ValidateObject(raw, JobMetadata{}, "Scrum job metadata"); err != nil {
+		return JobMetadata{}, err
+	}
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	var metadata JobMetadata
+	if err := decoder.Decode(&metadata); err != nil {
+		return JobMetadata{}, fmt.Errorf("decode Scrum job metadata: %w", err)
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		return JobMetadata{}, fmt.Errorf("decode Scrum job metadata fields: %w", err)
+	}
+	for _, key := range []string{
+		"source", "project_id", "scrum_card_id", "scrum_card_title",
+		"scrum_card_description", "scrum_checklist", "scrum_test_criteria",
+		"scrum_return_column", "scrum_channel_origin", "model_config",
+		"scrum_channel_operation_id",
+	} {
+		if _, present := fields[key]; !present {
+			return JobMetadata{}, fmt.Errorf("Scrum job metadata requires exact field %s", key)
+		}
+	}
+	if err := metadata.Validate(); err != nil {
+		return JobMetadata{}, err
+	}
+	return metadata, nil
+}
+
+func canonicalLifecycleOperationID(value string) bool {
+	const prefix = "lifecycle_operation_"
+	if len(value) != len(prefix)+64 || !strings.HasPrefix(value, prefix) {
+		return false
+	}
+	for _, character := range value[len(prefix):] {
+		if (character < '0' || character > '9') && (character < 'a' || character > 'f') {
+			return false
+		}
+	}
+	return true
+}
+
+// DecodeStoredJobMetadata accepts the one code-owned telemetry binding added
+// during the job transaction, then decodes the remaining Scrum authority with
+// the same closed schema used at enqueue.
+func DecodeStoredJobMetadata(raw json.RawMessage) (JobMetadata, error) {
+	if err := exactjson.ValidateUniqueObject(raw, "stored Scrum job metadata"); err != nil {
+		return JobMetadata{}, err
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		return JobMetadata{}, fmt.Errorf("decode stored Scrum job metadata fields: %w", err)
+	}
+	rawRunID, present := fields["telemetry_run_id"]
+	if !present {
+		return JobMetadata{}, fmt.Errorf("stored Scrum job metadata requires telemetry_run_id")
+	}
+	var runID string
+	if err := json.Unmarshal(rawRunID, &runID); err != nil || !canonicalTelemetryRunID(runID) {
+		return JobMetadata{}, fmt.Errorf("stored Scrum job metadata telemetry_run_id is not canonical")
+	}
+	delete(fields, "telemetry_run_id")
+	semantic, err := json.Marshal(fields)
+	if err != nil {
+		return JobMetadata{}, fmt.Errorf("encode stored Scrum semantic metadata: %w", err)
+	}
+	return DecodeJobMetadata(semantic)
+}
+
+func canonicalTelemetryRunID(value string) bool {
+	if len(value) != 36 {
+		return false
+	}
+	for index := range value {
+		if index == 8 || index == 13 || index == 18 || index == 23 {
+			if value[index] != '-' {
+				return false
+			}
+			continue
+		}
+		if !((value[index] >= '0' && value[index] <= '9') ||
+			(value[index] >= 'a' && value[index] <= 'f')) {
+			return false
+		}
+	}
+	return true
+}
 
 type ChecklistItem struct {
 	ID   string `json:"id"`
@@ -23,20 +176,25 @@ type CardContext struct {
 	ID           string
 	Title        string
 	Description  string
-	CardTicket   string
 	Checklist    []ChecklistItem
 	TestCriteria []ChecklistItem
-	Tags         []string
-	RefFiles     []string
-	RecipeID     string
-	RecipeJSON   string
 }
 
-func FormatChecklist(items []ChecklistItem) string {
+func FormatChecklist(items []ChecklistItem) (string, error) {
 	lines := make([]string, 0, len(items))
-	for _, item := range items {
-		if strings.TrimSpace(item.Text) == "" {
-			continue
+	seen := make(map[string]struct{}, len(items))
+	for index, item := range items {
+		if !utf8.ValidString(item.ID) || strings.ContainsRune(item.ID, '\x00') ||
+			item.ID == "" || item.ID != strings.TrimSpace(item.ID) || len(item.ID) > 256 {
+			return "", fmt.Errorf("Scrum checklist item %d has a noncanonical ID", index+1)
+		}
+		if _, exists := seen[item.ID]; exists {
+			return "", fmt.Errorf("Scrum checklist item ID %q is duplicated", item.ID)
+		}
+		seen[item.ID] = struct{}{}
+		if !utf8.ValidString(item.Text) || strings.ContainsRune(item.Text, '\x00') ||
+			strings.TrimSpace(item.Text) == "" || len(item.Text) > 1<<20 {
+			return "", fmt.Errorf("Scrum checklist item %q has invalid text", item.ID)
 		}
 		state := "[ ]"
 		if item.Done {
@@ -44,121 +202,44 @@ func FormatChecklist(items []ChecklistItem) string {
 		}
 		lines = append(lines, state+" "+item.Text)
 	}
-	return strings.Join(lines, "\n")
+	return strings.Join(lines, "\n"), nil
 }
 
-func AppendCardContextLines(lines []string, card CardContext) []string {
+func AppendCardContextLines(lines []string, card CardContext) ([]string, error) {
 	if strings.TrimSpace(card.Description) != "" {
 		lines = append(lines, "Description:", card.Description)
 	}
-	if strings.TrimSpace(card.CardTicket) != "" {
-		lines = append(lines, "Card ticket draft:", card.CardTicket)
+	checklist, err := FormatChecklist(card.Checklist)
+	if err != nil {
+		return nil, err
 	}
-	if checklist := FormatChecklist(card.Checklist); checklist != "" {
+	if checklist != "" {
 		lines = append(lines, "Checklist:", checklist)
 	}
-	if tests := FormatChecklist(card.TestCriteria); tests != "" {
+	tests, err := FormatChecklist(card.TestCriteria)
+	if err != nil {
+		return nil, err
+	}
+	if tests != "" {
 		lines = append(lines, "Test criteria (must pass before done):", tests)
 	}
-	if len(card.Tags) > 0 {
-		lines = append(lines, "Tags: "+strings.Join(card.Tags, ", "))
-	}
-	if len(card.RefFiles) > 0 {
-		lines = append(lines, "Reference files:", strings.Join(card.RefFiles, "\n"))
-	}
-	if strings.TrimSpace(card.RecipeID) != "" {
-		lines = append(lines, "Recipe ID: "+strings.TrimSpace(card.RecipeID))
-	}
-	if strings.TrimSpace(card.RecipeJSON) != "" {
-		lines = append(lines, "Recipe JSON:", card.RecipeJSON)
-	}
-	return lines
+	return lines, nil
 }
 
-func ContextLinesFromMetadata(raw json.RawMessage) []string {
-	lines := []string{}
-	if title := metadataString(raw, "scrum_card_title"); title != "" {
-		lines = append(lines, "Scrum card: "+title)
+func ContextLinesFromMetadata(raw json.RawMessage) ([]string, error) {
+	metadata, err := DecodeStoredJobMetadata(raw)
+	if err != nil {
+		return nil, err
 	}
-	if cardID := metadataString(raw, "scrum_card_id"); cardID != "" {
-		lines = append(lines, "Card ID: "+cardID)
+	lines := []string{"Scrum card: " + metadata.CardTitle}
+	if metadata.CardDescription != "" {
+		lines = append(lines, "Description:", metadata.CardDescription)
 	}
-	if dir := metadataString(raw, "project_directory"); dir != "" {
-		lines = append(lines, "Project directory: "+dir)
+	if metadata.Checklist != "" {
+		lines = append(lines, "Checklist:", metadata.Checklist)
 	}
-	if desc := metadataString(raw, "scrum_card_description"); desc != "" {
-		lines = append(lines, "Description:", desc)
+	if metadata.TestCriteria != "" {
+		lines = append(lines, "Test criteria (must pass before done):", metadata.TestCriteria)
 	}
-	if ticket := metadataString(raw, "scrum_card_ticket"); ticket != "" {
-		lines = append(lines, "Card ticket draft:", ticket)
-	}
-	if checklist := metadataString(raw, "scrum_checklist"); checklist != "" {
-		lines = append(lines, "Checklist:", checklist)
-	}
-	if tests := metadataString(raw, "scrum_test_criteria"); tests != "" {
-		lines = append(lines, "Test criteria (must pass before done):", tests)
-	}
-	if tags := metadataStringSlice(raw, "scrum_card_tags"); len(tags) > 0 {
-		lines = append(lines, "Tags: "+strings.Join(tags, ", "))
-	}
-	if refs := metadataStringSlice(raw, "ref_files"); len(refs) > 0 {
-		lines = append(lines, "Reference files:", strings.Join(refs, "\n"))
-	}
-	if recipeID := metadataString(raw, "recipe_id"); recipeID != "" {
-		lines = append(lines, "Recipe ID: "+recipeID)
-	}
-	return lines
-}
-
-func metadataString(raw json.RawMessage, key string) string {
-	if len(raw) == 0 {
-		return ""
-	}
-	var payload map[string]any
-	if err := json.Unmarshal(raw, &payload); err != nil {
-		return ""
-	}
-	value, ok := payload[key]
-	if !ok || value == nil {
-		return ""
-	}
-	switch typed := value.(type) {
-	case string:
-		return strings.TrimSpace(typed)
-	default:
-		out, _ := json.Marshal(typed)
-		return strings.TrimSpace(strings.Trim(string(out), `"`))
-	}
-}
-
-func metadataStringSlice(raw json.RawMessage, key string) []string {
-	if len(raw) == 0 {
-		return nil
-	}
-	var payload map[string]any
-	if err := json.Unmarshal(raw, &payload); err != nil {
-		return nil
-	}
-	value, ok := payload[key]
-	if !ok || value == nil {
-		return nil
-	}
-	switch typed := value.(type) {
-	case []any:
-		out := make([]string, 0, len(typed))
-		for _, item := range typed {
-			if text, ok := item.(string); ok && strings.TrimSpace(text) != "" {
-				out = append(out, strings.TrimSpace(text))
-			}
-		}
-		return out
-	case []string:
-		return typed
-	default:
-		return nil
-	}
-}
-
-func IsScrumJob(raw json.RawMessage) bool {
-	return metadataString(raw, "source") == "omni-scrum"
+	return lines, nil
 }

@@ -18,16 +18,12 @@ func TestContextProjectionStoreRejectsInvalidAuthorityBeforePostgreSQL(t *testin
 	base := ContextProjectionAuthority{
 		StepAttemptAuthority: model.StepAttemptAuthority{JobID: 1, Generation: 1, StepID: 1, Attempt: 1, WorkerID: "worker"},
 		WorkKind:             "repository_investigation",
-		Mode:                 ContextProjectionModeShadow,
 	}
 	for name, mutate := range map[string]func(*ContextProjectionAuthority, *contextbuilder.Projection){
 		"missing job":        func(a *ContextProjectionAuthority, _ *contextbuilder.Projection) { a.JobID = 0 },
 		"missing generation": func(a *ContextProjectionAuthority, _ *contextbuilder.Projection) { a.Generation = 0 },
 		"missing step":       func(a *ContextProjectionAuthority, _ *contextbuilder.Projection) { a.StepID = 0 },
 		"bad work kind":      func(a *ContextProjectionAuthority, _ *contextbuilder.Projection) { a.WorkKind = " bad kind " },
-		"missing mode":       func(a *ContextProjectionAuthority, _ *contextbuilder.Projection) { a.Mode = "" },
-		"bad mode":           func(a *ContextProjectionAuthority, _ *contextbuilder.Projection) { a.Mode = "fallback" },
-		"applied mode":       func(a *ContextProjectionAuthority, _ *contextbuilder.Projection) { a.Mode = "applied" },
 		"bad work id":        func(_ *ContextProjectionAuthority, p *contextbuilder.Projection) { p.WorkID = "work-1" },
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -60,39 +56,34 @@ func TestContextProjectionReadsRequireHardPagination(t *testing.T) {
 	}
 }
 
-func TestContextProjectionRegistersShadowAndLiveWithoutAppliedFallback(t *testing.T) {
+func TestContextProjectionDurableUsageRequiresExactLiveValue(t *testing.T) {
 	t.Parallel()
-	if !validContextProjectionMode(ContextProjectionModeShadow) ||
-		!validContextProjectionMode(ContextProjectionModeLive) {
-		t.Fatal("registered context projection modes were rejected")
+	if err := requireLiveContextProjectionUsageMode("live"); err != nil {
+		t.Fatalf("live usage mode was rejected: %v", err)
 	}
-	for _, invalid := range []ContextProjectionMode{"", "applied", "fallback", "transcript"} {
-		if validContextProjectionMode(invalid) {
-			t.Fatalf("unregistered context projection mode %q was accepted", invalid)
+	for _, invalid := range []string{"", "shadow", "applied", "fallback", "transcript", " live"} {
+		if err := requireLiveContextProjectionUsageMode(invalid); !errors.Is(err, ErrInvalidContextProjection) {
+			t.Fatalf("durable usage mode %q error=%v, want ErrInvalidContextProjection", invalid, err)
 		}
 	}
 }
 
-func TestLLMCallEvidenceProjectionIdentityIsValidatedAndHashed(t *testing.T) {
+func TestLLMCallEvidenceProjectionIdentityIsValidated(t *testing.T) {
 	t.Parallel()
 	base := normalizeLLMCallEvidenceRecord(LLMCallEvidenceRecord{
 		StepID: 1, Scope: "portable", WorkID: strings.Repeat("a", 64), WorkKind: "test_work",
-		RequestedModel: "requested", Model: "effective", Attempt: 1,
-		SystemPrompt: "system", UserPrompt: "user", ResponseFormat: "text",
+		StationCallOpeningID: 1,
+		RequestedModel:       "requested", Model: "effective", Attempt: 1,
+		SystemPrompt: "system", UserPrompt: "user",
 		ContextTokens: 4096, MaxOutputTokens: 512,
 		Status: LLMEvidenceSucceeded, Response: "response",
 	})
-	_, directHash, err := validateAndHashLLMCallEvidenceRecord(base)
-	if err != nil {
+	if err := validateLLMCallEvidenceRecord(base); err != nil {
 		t.Fatal(err)
 	}
 	base.ContextProjectionID = "context_projection_" + strings.Repeat("b", 64)
-	_, projectedHash, err := validateAndHashLLMCallEvidenceRecord(base)
-	if err != nil {
+	if err := validateLLMCallEvidenceRecord(base); err != nil {
 		t.Fatal(err)
-	}
-	if directHash == projectedHash {
-		t.Fatal("bound and legacy-null calls shared a request identity")
 	}
 	base.ContextProjectionID = "projection-bad"
 	if err := validateLLMCallEvidenceRecord(base); err == nil {

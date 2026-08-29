@@ -1,127 +1,50 @@
 import { Controller } from "@hotwired/stimulus";
 import {
-  askDataSource as askDataSourceAPI,
   createDataSource,
   deleteDataSource as deleteDataSourceAPI,
-  exploreDataSource as exploreDataSourceAPI,
-  fetchDataSourceCatalog,
-  fetchDataSourceSchema,
-  fetchDataSources,
-  fetchJobDetails,
-  runDataSourceQuery as runDataSourceQueryAPI,
   testDataSource as testDataSourceAPI,
   updateDataSource,
-  type JobRecord,
 } from "../lib/admin_api";
-import { parseDataSourceJobResult } from "../lib/data_source_job_result";
 import {
-  emptyDataSourcesViewState,
-  renderDataSourcesPanel,
-  renderSourceForm,
-  type DataSourcesViewState,
-} from "../lib/data_sources_render";
-import { escapeHTML } from "../lib/dom";
+  fetchAdminDataSourcesComponent,
+} from "../lib/operational_component_api";
+import { fetchServerComponent, renderServerBundle } from "../lib/server_component_api";
+import type RecyclrController from "./recyclr_controller";
+import { jsonRequest } from "../lib/api";
 import { reportError, reportErrorMessage, reportOk } from "../lib/feedback";
-import { observeRealtimeJob, type RealtimeJobObservation } from "../lib/realtime_job_observer";
+import { setGlobalLoading } from "../lib/loading";
 
 type StatusTone = "idle" | "busy" | "error" | "ok";
 
-type DataSourceForm = {
-  id: string;
-  name: string;
-  driver: string;
-  domain: string;
-  context_prompt: string;
-  privacy_mode: string;
-  use_dsn: boolean;
-  dsn: string;
-  host: string;
-  port: number;
-  database_name: string;
-  username: string;
-  password: string;
-  ssl_mode: string;
-};
-
 export default class AdminDataSourcesController extends Controller<HTMLElement> {
-  private state: DataSourcesViewState = emptyDataSourcesViewState();
-  private readonly jobObservations = new Map<number, RealtimeJobObservation<{ job: JobRecord }>>();
+  private selectedID = "";
+  private editingID = "";
+  private offset = 0;
 
   connect(): void {
-    void this.loadDataSources();
+    void this.refresh();
   }
 
-  disconnect(): void {
-    for (const observation of this.jobObservations.values()) {
-      observation.cancel("Admin data-source controller disconnected.");
-    }
-    this.jobObservations.clear();
+  private recyclrController(): RecyclrController {
+    const controller = this.application.getControllerForElementAndIdentifier(document.body, "recyclr") as RecyclrController | null;
+    if (!controller) throw new Error("The page-scoped Recyclr controller is unavailable.");
+    return controller;
   }
 
   private setStatus(message: string, tone: StatusTone): void {
     this.dispatch("status", { detail: { message, tone } });
   }
 
-  private actionOk(message: string): void {
-    reportOk(this.setStatus.bind(this), message);
-  }
-
-  private actionFail(error: unknown): void {
-    reportError(this.setStatus.bind(this), error);
-  }
-
-  private actionFailMessage(message: string): void {
-    reportErrorMessage(this.setStatus.bind(this), message);
-  }
-
-  private preserveQueryForms(): { sql: string; question: string } {
-    const sql = (this.element.querySelector("[data-ds-field='sql']") as HTMLTextAreaElement | null)?.value ?? "";
-    const question = (this.element.querySelector("[data-ds-field='question']") as HTMLInputElement | null)?.value ?? "";
-    return { sql, question };
-  }
-
-  private restoreQueryForms(values: { sql: string; question: string }): void {
-    const sql = this.element.querySelector("[data-ds-field='sql']") as HTMLTextAreaElement | null;
-    const question = this.element.querySelector("[data-ds-field='question']") as HTMLInputElement | null;
-    if (sql) sql.value = values.sql;
-    if (question) question.value = values.question;
-  }
-
-  private render(preserveForms = false): void {
-    const preserved = preserveForms ? this.preserveQueryForms() : { sql: "", question: "" };
-    this.element.innerHTML = renderDataSourcesPanel(this.state);
-    if (preserveForms) this.restoreQueryForms(preserved);
-  }
-
-  toggleDataSourceDSNPanel(): void {
-    const useDSN = (this.element.querySelector("[data-ds-field='use_dsn']") as HTMLInputElement | null)?.checked;
-    if (useDSN === undefined) throw new Error("Data-source DSN toggle is unavailable.");
-    const form = this.element.querySelector("[data-ds-source-form]");
-    if (!form) throw new Error("Data-source form is unavailable.");
-    const current = this.readForm();
-    current.use_dsn = useDSN;
-    form.outerHTML = renderSourceForm(current, current.id || this.state.editingId);
-  }
-
-  async loadDataSources(): Promise<void> {
-    try {
-      const sources = await fetchDataSources();
-      const selectedId = this.state.selectedId && sources.some((source) => source.id === this.state.selectedId)
-        ? this.state.selectedId
-        : sources[0]?.id ?? null;
-      this.state = { ...this.state, sources, selectedId };
-      this.render(true);
-      this.setStatus("Data sources ready", "idle");
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      this.element.innerHTML = `<p class="text-sm text-rose-300">${escapeHTML(message)}</p>`;
-      this.actionFail(error);
-    }
+  private async refresh(): Promise<void> {
+    const payload = await fetchAdminDataSourcesComponent(this.editingID, this.selectedID, this.offset);
+    this.selectedID = payload.selected_source_id ?? "";
+    this.offset = payload.offset ?? 0;
+    await renderServerBundle(this.recyclrController(), payload, "Admin data sources");
   }
 
   private value(field: string): string {
-    const input = this.element.querySelector(`[data-ds-field='${field}']`) as HTMLInputElement | HTMLSelectElement | null;
-    if (!input) throw new Error(`Data-source form field ${JSON.stringify(field)} is unavailable.`);
+    const input = this.element.querySelector(`[data-ds-field='${field}']`) as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement | null;
+    if (!input) throw new Error(`Data-source field ${JSON.stringify(field)} is unavailable.`);
     return input.value.trim();
   }
 
@@ -129,261 +52,146 @@ export default class AdminDataSourcesController extends Controller<HTMLElement> 
     return (this.element.querySelector(`[data-ds-field='${field}']`) as HTMLInputElement | HTMLSelectElement | null)?.value.trim() ?? "";
   }
 
-  private readForm(): DataSourceForm {
-    const context = this.element.querySelector("[data-ds-field='context_prompt']") as HTMLTextAreaElement | null;
+  toggleDataSourceDSNPanel(): void {
     const useDSN = this.element.querySelector("[data-ds-field='use_dsn']") as HTMLInputElement | null;
-    if (!context || !useDSN) throw new Error("Data-source form is incomplete.");
-    const port = Number.parseInt(this.optionalValue("port") || "5432", 10);
-    if (!Number.isSafeInteger(port) || port <= 0) throw new Error("Data-source port must be a positive integer.");
-    return {
-      id: this.value("id"),
-      name: this.value("name"),
-      driver: this.value("driver"),
-      domain: this.value("domain"),
-      context_prompt: context.value.trim(),
-      privacy_mode: this.value("privacy_mode"),
-      use_dsn: useDSN.checked,
-      dsn: this.optionalValue("dsn"),
-      host: this.optionalValue("host"),
-      port,
-      database_name: this.optionalValue("database_name"),
-      username: this.optionalValue("username"),
-      password: this.optionalValue("password"),
-      ssl_mode: this.optionalValue("ssl_mode") || "prefer",
-    };
+    const fields = this.element.querySelector("[data-ds-connection-fields]");
+    if (!useDSN || !fields) throw new Error("Data-source connection fields are unavailable.");
+    fields.querySelectorAll("[data-ds-field='dsn']").forEach((node) => node.classList.toggle("ring-1", useDSN.checked));
+  }
+
+  toggleDataSourceExecutionPanel(): void {
+    const mode = this.value("execution_mode");
+    const direct = this.element.querySelector("[data-ds-direct-fields]");
+    const delegated = this.element.querySelector("[data-ds-delegated-fields]");
+    if (!direct || !delegated) throw new Error("Data-source execution fields are unavailable.");
+    direct.classList.toggle("hidden", mode !== "direct");
+    delegated.classList.toggle("hidden", mode !== "delegated");
   }
 
   async saveDataSource(event: Event): Promise<void> {
     event.preventDefault();
-    try {
-      const form = this.readForm();
-      if (!form.name) throw new Error("Data-source name is required.");
-      if (form.use_dsn && !form.dsn && !form.id) throw new Error("Data-source DSN is required.");
-      if (!form.use_dsn && (!form.host || !form.database_name || !form.username)) {
-        throw new Error("Data-source host, database, and username are required.");
-      }
-      this.setStatus(form.id ? "Saving data source…" : "Adding data source…", "busy");
-      const payload = { ...form, read_only: true };
-      const source = form.id ? await updateDataSource(form.id, payload) : await createDataSource(payload);
-      this.state.editingId = null;
-      this.state.selectedId = source.id;
-      await this.loadDataSources();
-      this.actionOk(form.id ? "Data source saved" : "Data source added");
-    } catch (error) {
-      this.actionFail(error);
-    }
+    const executionMode = this.value("execution_mode") as "direct" | "delegated";
+    const useDSN = executionMode === "direct" && ((this.element.querySelector("[data-ds-field='use_dsn']") as HTMLInputElement | null)?.checked ?? false);
+    const port = executionMode === "direct" ? Number.parseInt(this.optionalValue("port"), 10) : 0;
+    if (executionMode === "direct" && (!Number.isSafeInteger(port) || port < 1)) return reportErrorMessage(this.setStatus.bind(this), "Port must be a positive integer.");
+    const input = {
+      name: this.value("name"), driver: this.value("driver"), execution_mode: executionMode, use_dsn: useDSN,
+      dsn: executionMode === "direct" ? this.optionalValue("dsn") : "",
+      host: executionMode === "direct" ? this.optionalValue("host") : "", port,
+      database_name: executionMode === "direct" ? this.optionalValue("database_name") : "",
+      username: executionMode === "direct" ? this.optionalValue("username") : "",
+      password: executionMode === "direct" ? this.optionalValue("password") : "",
+      ssl_mode: executionMode === "direct" ? this.optionalValue("ssl_mode") : "",
+      authority_url: executionMode === "delegated" ? this.optionalValue("authority_url") : "",
+      credential_env: executionMode === "delegated" ? this.optionalValue("credential_env") : "",
+    };
+    if (!input.name) return reportErrorMessage(this.setStatus.bind(this), "Data-source name is required.");
+    await this.mutate(this.editingID ? "Saving data source…" : "Adding data source…", async () => {
+      const source = this.editingID ? await updateDataSource(this.editingID, input) : await createDataSource(input);
+      this.selectedID = source.id;
+      this.editingID = "";
+    });
   }
 
   editDataSource(event: Event): void {
     event.preventDefault();
-    const id = (event.currentTarget as HTMLElement).dataset.sourceId?.trim();
-    if (!id) throw new Error("Edit data-source action requires a source id.");
-    this.state.editingId = id;
-    this.state.selectedId = id;
-    this.render(true);
+    const id = (event.currentTarget as HTMLElement).dataset.sourceId?.trim() ?? "";
+    if (!id) throw new Error("Edit requires a data-source id.");
+    this.editingID = id;
+    this.selectedID = id;
+    void this.refresh();
   }
 
   cancelEditDataSource(event: Event): void {
     event.preventDefault();
-    this.state.editingId = null;
-    this.render(true);
+    this.editingID = "";
+    void this.refresh();
   }
 
   selectDataSource(event: Event): void {
     event.preventDefault();
-    const id = (event.currentTarget as HTMLElement).dataset.sourceId?.trim();
-    if (!id) throw new Error("Select data-source action requires a source id.");
-    this.state.selectedId = id;
-    this.state.schema = null;
-    this.state.catalog = null;
-    this.state.catalogReady = false;
-    this.state.queryResult = null;
-    this.render(true);
+    const id = (event.currentTarget as HTMLElement).dataset.sourceId?.trim() ?? "";
+    if (!id) throw new Error("Select requires a data-source id.");
+    this.selectedID = id;
+    void this.refresh();
+  }
+
+  loadDataSourcePage(event: Event): void {
+    event.preventDefault();
+    const offset = Number((event.currentTarget as HTMLElement).dataset.pageOffset ?? -1);
+    if (!Number.isSafeInteger(offset) || offset < 0) throw new Error("Data-source page offset is invalid.");
+    this.offset = offset;
+    this.selectedID = "";
+    this.editingID = "";
+    void this.refresh();
   }
 
   async deleteDataSource(event: Event): Promise<void> {
     event.preventDefault();
-    const id = (event.currentTarget as HTMLElement).dataset.sourceId?.trim();
-    const source = this.state.sources.find((item) => item.id === id);
-    if (!id) throw new Error("Delete data-source action requires a source id.");
-    if (!window.confirm(`Remove data source ${source?.name || id}?`)) return;
-    this.setStatus("Removing data source…", "busy");
-    try {
+    const id = (event.currentTarget as HTMLElement).dataset.sourceId?.trim() ?? "";
+    if (!id || !window.confirm(`Remove data source ${id}?`)) return;
+    await this.mutate("Removing data source…", async () => {
       await deleteDataSourceAPI(id);
-      if (this.state.selectedId === id) {
-        this.state.selectedId = null;
-        this.state.schema = null;
-        this.state.queryResult = null;
-      }
-      if (this.state.editingId === id) this.state.editingId = null;
-      await this.loadDataSources();
-      this.actionOk("Data source removed");
-    } catch (error) {
-      this.actionFail(error);
-    }
+      if (this.selectedID === id) this.selectedID = "";
+      if (this.editingID === id) this.editingID = "";
+    });
   }
 
   async testDataSource(event: Event): Promise<void> {
     event.preventDefault();
-    const id = (event.currentTarget as HTMLElement).dataset.sourceId?.trim();
-    if (!id) throw new Error("Test data-source action requires a source id.");
-    this.setStatus("Testing connection…", "busy");
-    try {
-      const result = await testDataSourceAPI(id);
-      this.state.selectedId = id;
-      await this.loadDataSources();
-      this.actionOk(result.message || `Connection ${result.status}`);
-    } catch (error) {
-      this.actionFail(error);
-    }
+    const id = (event.currentTarget as HTMLElement).dataset.sourceId?.trim() ?? "";
+    if (!id) throw new Error("Test requires a data-source id.");
+    await this.mutate("Testing connection…", () => testDataSourceAPI(id));
   }
 
   async loadDataSourceSchema(event: Event): Promise<void> {
     event.preventDefault();
-    const id = (event.currentTarget as HTMLElement).dataset.sourceId || this.state.selectedId;
-    if (!id) throw new Error("Load schema action requires a selected data source.");
-    this.setStatus("Loading schema…", "busy");
+    const id = (event.currentTarget as HTMLElement).dataset.sourceId?.trim() || this.selectedID;
+    if (!id) throw new Error("Load schema requires a selected data source.");
     try {
-      const schema = await fetchDataSourceSchema(id);
-      this.state.selectedId = id;
-      this.state.schema = schema;
-      this.render(true);
-      this.actionOk(`Loaded ${schema.length} tables`);
+      const payload = await fetchServerComponent(`/v1/ui/admin/data-sources/schema?id=${encodeURIComponent(id)}`);
+      await renderServerBundle(this.recyclrController(), payload, "Data-source schema");
+      reportOk(this.setStatus.bind(this), "Schema loaded");
     } catch (error) {
-      this.actionFail(error);
-    }
-  }
-
-  async loadDataSourceCatalog(event: Event): Promise<void> {
-    event.preventDefault();
-    const id = (event.currentTarget as HTMLElement).dataset.sourceId || this.state.selectedId;
-    if (!id) throw new Error("Load schema map action requires a selected data source.");
-    this.setStatus("Loading schema map…", "busy");
-    try {
-      const { catalog, ready } = await fetchDataSourceCatalog(id);
-      this.state.selectedId = id;
-      this.state.catalog = catalog;
-      this.state.catalogReady = ready;
-      this.render(true);
-      this.actionOk(ready ? `Schema map ready (${catalog.tables.length} tables)` : "No schema map yet — run Explore first");
-    } catch (error) {
-      this.actionFail(error);
-    }
-  }
-
-  async exploreDataSource(event: Event): Promise<void> {
-    event.preventDefault();
-    const id = (event.currentTarget as HTMLElement).dataset.sourceId || this.state.selectedId;
-    if (!id) throw new Error("Explore action requires a selected data source.");
-    this.setStatus("Queueing schema exploration…", "busy");
-    try {
-      const queued = await exploreDataSourceAPI(id);
-      const jobID = queued.job?.id;
-      if (!jobID) throw new Error("Explore job was not created.");
-      this.setStatus(`Exploring schema (job #${jobID})…`, "busy");
-      await this.waitForJob(jobID);
-      const { catalog, ready } = await fetchDataSourceCatalog(id);
-      this.state.catalog = catalog;
-      this.state.catalogReady = ready;
-      await this.loadDataSources();
-      this.render(true);
-      this.actionOk(ready ? `Schema map built (${catalog.tables.length} tables)` : "Exploration finished");
-    } catch (error) {
-      this.actionFail(error);
+      reportError(this.setStatus.bind(this), error);
     }
   }
 
   insertSchemaQuery(event: Event): void {
     event.preventDefault();
-    const table = (event.currentTarget as HTMLElement).dataset.tableName?.trim();
-    if (!table) throw new Error("Insert schema query action requires a table name.");
-    const field = this.element.querySelector("[data-ds-field='sql']") as HTMLTextAreaElement | null;
-    if (!field) throw new Error("Data-source SQL editor is unavailable.");
-    field.value = `SELECT * FROM ${table} LIMIT 20`;
-    field.focus();
+    const table = (event.currentTarget as HTMLElement).dataset.tableName?.trim() ?? "";
+    const editor = this.element.querySelector("[data-ds-field='sql']") as HTMLTextAreaElement | null;
+    if (!table || !editor) throw new Error("Schema query insertion target is unavailable.");
+    editor.value = `SELECT * FROM ${table} LIMIT 20`;
+    editor.focus();
   }
 
   async runDataSourceQuery(event: Event): Promise<void> {
     event.preventDefault();
-    const id = (event.currentTarget as HTMLElement).dataset.sourceId || this.state.selectedId;
-    const sql = (this.element.querySelector("[data-ds-field='sql']") as HTMLTextAreaElement | null)?.value.trim();
-    if (!id || !sql) {
-      this.actionFailMessage("Select a source and enter a SQL query first.");
-      return;
-    }
+    const id = (event.currentTarget as HTMLElement).dataset.sourceId?.trim() || this.selectedID;
+    const sql = this.optionalValue("sql");
+    if (!id || !sql) return reportErrorMessage(this.setStatus.bind(this), "Select a source and enter SQL.");
     this.setStatus("Running query…", "busy");
     try {
-      const result = await runDataSourceQueryAPI(id, sql);
-      this.applyQueryResult(result);
-      this.actionOk(`${result.count} row${result.count === 1 ? "" : "s"} returned`);
+      const payload = await fetchServerComponent(`/v1/ui/admin/data-sources/query?id=${encodeURIComponent(id)}`, jsonRequest({ sql }));
+      await renderServerBundle(this.recyclrController(), payload, "Data-source query result");
+      reportOk(this.setStatus.bind(this), "Query completed");
     } catch (error) {
-      this.actionFail(error);
+      reportError(this.setStatus.bind(this), error);
     }
   }
 
-  async askDataSource(event: Event): Promise<void> {
-    event.preventDefault();
-    const id = this.state.selectedId;
-    const question = (this.element.querySelector("[data-ds-field='question']") as HTMLInputElement | null)?.value.trim();
-    if (!id || !question) {
-      this.actionFailMessage("Select a source and enter a question.");
-      return;
-    }
-    this.setStatus("Queueing data query job…", "busy");
+  private async mutate(message: string, action: () => Promise<unknown>): Promise<void> {
+    this.setStatus(message, "busy");
+    setGlobalLoading(true);
     try {
-      const queued = await askDataSourceAPI(id, question);
-      const jobID = queued.job?.id;
-      if (!jobID) throw new Error("Data query job was not created.");
-      const job = await this.waitForJob(jobID);
-      const result = parseDataSourceJobResult(job.result || "");
-      this.applyQueryResult(result);
-      this.actionOk(result.answer || `Job #${jobID} completed`);
+      await action();
+      await this.refresh();
+      reportOk(this.setStatus.bind(this), "Data sources ready");
     } catch (error) {
-      this.actionFail(error);
-    }
-  }
-
-  updateDataSourceChart(): void {
-    const label = (this.element.querySelector("[data-ds-field='chart_label']") as HTMLSelectElement | null)?.value;
-    const value = (this.element.querySelector("[data-ds-field='chart_value']") as HTMLSelectElement | null)?.value;
-    if (label === undefined || value === undefined) throw new Error("Data-source chart controls are unavailable.");
-    this.state.chartLabelCol = label;
-    this.state.chartValueCol = value;
-    this.render(true);
-  }
-
-  private applyQueryResult(result: DataSourcesViewState["queryResult"]): void {
-    if (!result) throw new Error("Data-source query result is required.");
-    this.state.queryResult = result;
-    this.state.chartLabelCol = result.columns[0] || "";
-    this.state.chartValueCol = result.columns.find((column) =>
-      result.rows.some((row) => typeof row[column] === "number" ||
-        (typeof row[column] === "string" && row[column] !== "" && Number.isFinite(Number(row[column])))),
-    ) || "";
-    this.render(true);
-  }
-
-  private async waitForJob(jobID: number): Promise<JobRecord> {
-    if (this.jobObservations.has(jobID)) throw new Error(`Data source job #${jobID} is already being observed.`);
-    const observation = observeRealtimeJob({
-      jobID,
-      load: async () => {
-        const details = await fetchJobDetails(jobID);
-        if (!details.job || details.job.id !== jobID) {
-          throw new Error(`Authoritative job response did not include job #${jobID}.`);
-        }
-        return { status: details.job.status, error: details.job.error, data: { job: details.job } };
-      },
-      onUpdate: ({ status }) => {
-        const label = status === "completed" ? "finalizing results" : status;
-        this.setStatus(`Running job #${jobID} · ${label}…`, "busy");
-      },
-    });
-    this.jobObservations.set(jobID, observation);
-    try {
-      return (await observation.completion).data.job;
+      reportError(this.setStatus.bind(this), error);
     } finally {
-      this.jobObservations.delete(jobID);
+      setGlobalLoading(false);
     }
   }
 }

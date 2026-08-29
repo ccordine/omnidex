@@ -6,16 +6,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gryph/omnidex/internal/cognitionpolicy"
 	"github.com/gryph/omnidex/internal/llm"
 )
 
-const maxConfiguredRetrievalLimit = 64
-
 func validateRuntimeConfig(cfg Config) error {
-	if cfg.AnthropicMaxTokens < 1 {
-		return fmt.Errorf("ANTHROPIC_MAX_TOKENS must be positive, received %d", cfg.AnthropicMaxTokens)
-	}
 	if cfg.WorkerCount < 1 {
 		return fmt.Errorf("WORKER_COUNT must be at least 1, received %d", cfg.WorkerCount)
 	}
@@ -28,23 +22,8 @@ func validateRuntimeConfig(cfg Config) error {
 	if cfg.RequestTimeout <= 0 {
 		return fmt.Errorf("REQUEST_TIMEOUT must be positive, received %s", cfg.RequestTimeout)
 	}
-	if cfg.RetrievalLimit < 1 || cfg.RetrievalLimit > maxConfiguredRetrievalLimit {
-		return fmt.Errorf("RETRIEVAL_LIMIT must be between 1 and %d, received %d", maxConfiguredRetrievalLimit, cfg.RetrievalLimit)
-	}
-	if cfg.ContextCharBudget < 1 {
-		return fmt.Errorf("CONTEXT_CHAR_BUDGET must be positive, received %d", cfg.ContextCharBudget)
-	}
 	if err := llm.ValidateInferenceContextTokens(cfg.InferenceContextTokens); err != nil {
 		return fmt.Errorf("INFERENCE_CONTEXT_TOKENS is invalid: %w", err)
-	}
-	if err := validateCognitionBrainConfig(cfg); err != nil {
-		return err
-	}
-	if cfg.WorkspaceMaxFiles < 1 {
-		return fmt.Errorf("WORKSPACE_MAX_FILES must be positive, received %d", cfg.WorkspaceMaxFiles)
-	}
-	if cfg.WorkspaceContextBudget < 1 {
-		return fmt.Errorf("WORKSPACE_CONTEXT_BUDGET must be positive, received %d", cfg.WorkspaceContextBudget)
 	}
 	if root := strings.TrimSpace(cfg.WorkspaceHostRoot); root != "" && !filepath.IsAbs(root) {
 		return fmt.Errorf("HOST_WORKSPACE_PATH must be absolute when configured, received %q", root)
@@ -79,59 +58,12 @@ func validateRuntimeConfig(cfg Config) error {
 	if err := validateWebSearchProviders(cfg.WebSearchProviders); err != nil {
 		return err
 	}
-	if strings.TrimSpace(cfg.DefaultModel) == "" {
-		return fmt.Errorf("default model is required for LLM_PROVIDER=%s", cfg.LLMProvider)
-	}
-	if strings.TrimSpace(cfg.EmbeddingModel) == "" {
-		return fmt.Errorf("embedding model is required for EMBEDDING_PROVIDER=%s", cfg.EmbeddingProvider)
-	}
-	if strings.TrimSpace(cfg.SkillsRoot) == "" {
-		return fmt.Errorf("OMNIDEX_SKILLS_ROOT is required")
-	}
-	return nil
-}
-
-func validateCognitionBrainConfig(cfg Config) error {
-	for _, field := range []struct {
-		name  string
-		value string
-	}{
-		{"COGNITION_MODEL_SHA256", cfg.CognitionModelDigest},
-		{"COGNITION_MODEL_QUANTIZATION", cfg.CognitionModelQuantization},
-		{"COGNITION_BACKEND_VERSION", cfg.CognitionBackendVersion},
-		{"COGNITION_HARDWARE", cfg.CognitionHardware},
-	} {
-		if strings.TrimSpace(field.value) == "" {
-			return fmt.Errorf("%s is required", field.name)
-		}
-		if field.value != strings.TrimSpace(field.value) {
-			return fmt.Errorf("%s must be one exact value", field.name)
-		}
-	}
-	sampling, err := cognitionpolicy.NewSamplingIdentity(
-		cfg.InferenceContextTokens,
-		cfg.CognitionContextCeilingBytes,
-		cfg.CognitionMaxOutputTokens,
-	)
-	if err != nil {
-		return fmt.Errorf("cognition sampling configuration: %w", err)
-	}
-	if _, err := cognitionpolicy.NewBrainRef(
-		"configured-cognition-model",
-		cfg.CognitionModelDigest,
-		cfg.CognitionModelQuantization,
-		cfg.LLMProvider,
-		cfg.CognitionBackendVersion,
-		cfg.CognitionHardware,
-		sampling,
-	); err != nil {
-		return fmt.Errorf("COGNITION_MODEL_SHA256 or cognition brain identity is invalid: %w", err)
-	}
 	return nil
 }
 
 func validateWebSearchProviders(providers []string) error {
 	known := map[string]struct{}{
+		"brave":      {},
 		"duckduckgo": {},
 		"google":     {},
 		"reddit":     {},

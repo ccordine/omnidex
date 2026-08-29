@@ -13,10 +13,11 @@ import (
 )
 
 type MemoryCandidatePromotion struct {
-	Candidate model.MemoryCandidate
-	Tier      string
-	Tags      []string
-	Embedding []float64
+	Candidate  model.MemoryCandidate
+	Tier       string
+	Tags       []string
+	Categories []model.MemoryCategory
+	Embedding  []float64
 }
 
 type memoryPromotionAuthority string
@@ -106,7 +107,8 @@ func (r *Repository) promoteMemoryCandidate(
 			return model.MemoryCandidatePromotionResult{}, err
 		}
 		expectedSource := memoryPromotionSource(persisted, request.Tier, authority)
-		if chunk.Source != expectedSource || chunk.Kind != persisted.CandidateKind || chunk.Content != persisted.Content {
+		if chunk.Scope != persisted.Scope || chunk.Source != expectedSource ||
+			chunk.Kind != persisted.CandidateKind || chunk.Content != persisted.Content {
 			return model.MemoryCandidatePromotionResult{}, fmt.Errorf(
 				"memory candidate %d promotion authority does not match its bound memory", persisted.ID,
 			)
@@ -154,14 +156,6 @@ func validateMemoryCandidatePromotion(request MemoryCandidatePromotion, authorit
 	if request.Tier != model.MemoryCandidateStatusApproved && request.Tier != model.MemoryCandidateStatusDurable {
 		return fmt.Errorf("memory promotion tier %q is not registered exact text", request.Tier)
 	}
-	if len(request.Embedding) == 0 {
-		return fmt.Errorf("memory promotion requires an already-computed embedding")
-	}
-	for _, value := range request.Embedding {
-		if math.IsNaN(value) || math.IsInf(value, 0) {
-			return fmt.Errorf("memory promotion embedding values must be finite")
-		}
-	}
 	switch authority {
 	case promotionCurrent, promotionHistorical:
 		if request.Candidate.JobID <= 0 || request.Candidate.Generation == nil || *request.Candidate.Generation <= 0 {
@@ -174,11 +168,29 @@ func validateMemoryCandidatePromotion(request MemoryCandidatePromotion, authorit
 	default:
 		return fmt.Errorf("memory promotion authority %q is not registered", authority)
 	}
+	if len(request.Embedding) != model.MemoryEmbeddingDimensions {
+		return fmt.Errorf(
+			"memory promotion embedding must contain exactly %d values",
+			model.MemoryEmbeddingDimensions,
+		)
+	}
+	for _, value := range request.Embedding {
+		if math.IsNaN(value) || math.IsInf(value, 0) {
+			return fmt.Errorf("memory promotion embedding values must be finite")
+		}
+	}
+	if err := model.ValidateMemoryInputTags(request.Tags); err != nil {
+		return err
+	}
+	if err := model.ValidateMemoryCategories(request.Categories); err != nil {
+		return err
+	}
 	return nil
 }
 
 func validateObservedMemoryCandidate(observed, persisted model.MemoryCandidate) error {
-	if !sameMemoryCandidateOwner(observed, optionalInt64(persisted.JobID), persisted.Generation) ||
+	if observed.Scope != persisted.Scope ||
+		!sameMemoryCandidateOwner(observed, optionalInt64(persisted.JobID), persisted.Generation) ||
 		observed.CandidateKind != persisted.CandidateKind || observed.Content != persisted.Content ||
 		!bytes.Equal(observed.Provenance, persisted.Provenance) || observed.Confidence != persisted.Confidence ||
 		!sameOptionalInt64(observed.SourceMemoryID, persisted.SourceMemoryID) {
@@ -188,6 +200,9 @@ func validateObservedMemoryCandidate(observed, persisted model.MemoryCandidate) 
 }
 
 func validatePersistedMemoryCandidate(candidate model.MemoryCandidate) error {
+	if err := candidate.Scope.Validate(); err != nil {
+		return err
+	}
 	validated := candidate
 	validated.Status = model.MemoryCandidateStatusCandidate
 	if _, err := validateNewMemoryCandidate(validated); err != nil {
@@ -207,12 +222,16 @@ func sameOptionalInt64(left, right *int64) bool {
 	return (left == nil && right == nil) || (left != nil && right != nil && *left == *right)
 }
 
-func memoryPromotionSource(candidate model.MemoryCandidate, tier string, authority memoryPromotionAuthority) string {
+func memoryPromotionSource(
+	candidate model.MemoryCandidate,
+	tier string,
+	authority memoryPromotionAuthority,
+) model.MemorySource {
 	if authority == promotionGlobal {
-		return fmt.Sprintf("global:reviewed:%s", tier)
+		return model.MemorySource(fmt.Sprintf("global:reviewed:%s", tier))
 	}
-	return fmt.Sprintf(
+	return model.MemorySource(fmt.Sprintf(
 		"job:%d:generation:%d:%s:reviewed:%s",
 		candidate.JobID, *candidate.Generation, strings.ReplaceAll(string(authority), "_", "-"), tier,
-	)
+	))
 }

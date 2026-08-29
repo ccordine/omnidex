@@ -25,14 +25,11 @@ func TestCanonicalReplanTailUsesOnlyRegisteredBoundaries(t *testing.T) {
 			tail:     []string{"v3_coding"},
 		},
 		{
-			name:     "conversation planning",
-			seeds:    v3ConversationSteps(),
-			boundary: "v3_planning",
-			sort:     40,
-			tail: []string{
-				"v3_planning", "v3_analysis", "v3_response_draft", "v3_verification",
-				"v3_memory_review", "v3_finalize",
-			},
+			name:     "conversation objective",
+			seeds:    conversationObjectiveSteps(),
+			boundary: "objective_resolve",
+			sort:     5,
+			tail:     []string{"objective_resolve"},
 		},
 	}
 	for _, test := range tests {
@@ -55,7 +52,7 @@ func TestCanonicalReplanTailRejectsMissingOrDuplicateBoundary(t *testing.T) {
 	invalid := [][]stepSeed{
 		{{action: "plan", sortIndex: 40}},
 		{{action: "v3_analysis", sortIndex: 80}},
-		{{action: "v3_planning", sortIndex: 40}, {action: "v3_planning", sortIndex: 45}},
+		{{action: "objective_resolve", sortIndex: 1}, {action: "objective_resolve", sortIndex: 2}},
 		{{action: "v3_coding", sortIndex: 5}, {action: "v3_coding", sortIndex: 10}},
 	}
 	for _, seeds := range invalid {
@@ -65,61 +62,44 @@ func TestCanonicalReplanTailRejectsMissingOrDuplicateBoundary(t *testing.T) {
 	}
 }
 
-func TestValidateCurrentReplanTailAcceptsDelegatedShift(t *testing.T) {
-	canonical, err := canonicalReplanTail(v3ConversationSteps())
+func TestValidateCurrentReplanTailAcceptsObjectiveBoundary(t *testing.T) {
+	canonical, err := canonicalReplanTail(conversationObjectiveSteps())
 	if err != nil {
 		t.Fatal(err)
 	}
 	rows := []replanStepRecord{
-		{ID: 11, Action: "v3_planning", SortIndex: 40, Status: model.StepStatusCompleted, Generation: 3},
-		{ID: 12, Action: "v3_subtask", SortIndex: 45, Status: model.StepStatusCompleted, Generation: 3},
-		{ID: 13, Action: "v3_subtask", SortIndex: 50, Status: model.StepStatusRunning, Generation: 3},
-		{ID: 14, Action: "v3_analysis", SortIndex: 90, Status: model.StepStatusPending, Generation: 3},
-		{ID: 15, Action: "v3_response_draft", SortIndex: 100, Status: model.StepStatusPending, Generation: 3},
-		{ID: 16, Action: "v3_verification", SortIndex: 110, Status: model.StepStatusPending, Generation: 3},
-		{ID: 17, Action: "v3_memory_review", SortIndex: 120, Status: model.StepStatusPending, Generation: 3},
-		{ID: 18, Action: "v3_finalize", SortIndex: 130, Status: model.StepStatusPending, Generation: 3},
+		{ID: 11, Action: "objective_resolve", SortIndex: 5, Status: model.StepStatusRunning, Generation: 3},
 	}
 	ids, err := validateCurrentReplanTail(3, canonical, rows)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(ids) != len(rows) || ids[0] != 11 || ids[len(ids)-1] != 18 {
+	if len(ids) != 1 || ids[0] != 11 {
 		t.Fatalf("retiring ids=%v", ids)
 	}
 }
 
 func TestValidateCurrentReplanTailRejectsCorruption(t *testing.T) {
 	canonical, err := canonicalReplanTail([]stepSeed{
-		{action: "v3_planning", sortIndex: 40},
-		{action: "v3_analysis", sortIndex: 80},
-		{action: "v3_finalize", sortIndex: 120},
+		{action: "objective_resolve", sortIndex: 5},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	valid := []replanStepRecord{
-		{ID: 1, Action: "v3_planning", SortIndex: 40, Status: model.StepStatusCompleted, Generation: 2},
-		{ID: 2, Action: "v3_analysis", SortIndex: 80, Status: model.StepStatusCompleted, Generation: 2},
-		{ID: 3, Action: "v3_finalize", SortIndex: 120, Status: model.StepStatusWaiting, Generation: 2},
+		{ID: 1, Action: "objective_resolve", SortIndex: 5, Status: model.StepStatusCompleted, Generation: 2},
 	}
 	tests := map[string][]replanStepRecord{
 		"wrong generation": {
-			valid[0], {ID: 2, Action: "v3_analysis", SortIndex: 80, Status: model.StepStatusCompleted, Generation: 1}, valid[2],
+			{ID: 1, Action: "objective_resolve", SortIndex: 5, Status: model.StepStatusCompleted, Generation: 1},
 		},
 		"wrong boundary sort": {
-			{ID: 1, Action: "v3_planning", SortIndex: 41, Status: model.StepStatusCompleted, Generation: 2}, valid[1], valid[2],
+			{ID: 1, Action: "objective_resolve", SortIndex: 6, Status: model.StepStatusCompleted, Generation: 2},
 		},
 		"unknown action": {
-			valid[0], {ID: 2, Action: "unregistered", SortIndex: 80, Status: model.StepStatusCompleted, Generation: 2}, valid[2],
+			{ID: 1, Action: "unregistered", SortIndex: 5, Status: model.StepStatusCompleted, Generation: 2},
 		},
-		"missing canonical seed": {valid[0], valid[2]},
-		"duplicate canonical seed": {
-			valid[0], valid[1], {ID: 3, Action: "v3_analysis", SortIndex: 120, Status: model.StepStatusWaiting, Generation: 2},
-		},
-		"delegated before boundary": {
-			{ID: 1, Action: "v3_subtask", SortIndex: 40, Status: model.StepStatusCompleted, Generation: 2}, valid[1], valid[2],
-		},
+		"duplicate canonical seed": {valid[0], {ID: 2, Action: "objective_resolve", SortIndex: 6, Status: model.StepStatusWaiting, Generation: 2}},
 	}
 	for name, rows := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -131,11 +111,12 @@ func TestValidateCurrentReplanTailRejectsCorruption(t *testing.T) {
 }
 
 func TestValidateReplanFeedbackProducesExactBoundedDigest(t *testing.T) {
-	feedback, digest, err := validateReplanFeedback("  Keep the accepted invariant.  \n")
+	exact := "  Keep the accepted invariant.  \n"
+	feedback, digest, err := validateReplanFeedback(exact)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if feedback != "Keep the accepted invariant." {
+	if feedback != exact {
 		t.Fatalf("feedback=%q", feedback)
 	}
 	want := sha256.Sum256([]byte(feedback))

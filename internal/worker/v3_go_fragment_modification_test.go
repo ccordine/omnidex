@@ -2,63 +2,42 @@ package worker
 
 import (
 	"context"
-	"encoding/json"
 	"strings"
 	"testing"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
 )
 
-func TestGoFragmentModificationUsesNarrowCorrectionEnvelope(t *testing.T) {
+func TestGoFragmentModificationFailsAfterOneInitialCandidate(t *testing.T) {
 	t.Parallel()
 	input := assemblyline.FragmentModificationInput{
-		Language: "go", Signature: "func Value() int",
+		Language: "go", Dialect: "Go 1.24", Signature: "func Value() int",
 		CurrentDeclaration: "func Value() int { return 1 }",
 		RequirementQuote:   "return two",
 	}
 	calls := 0
 	runtime := typedWorkerRuntime{
-		Context: context.Background(), MaxAttempts: 2, CorrectionModel: "corrector",
+		Context: context.Background(), MaxAttempts: 1,
 		Execute: func(job assemblyline.PortableJob, model string) (assemblyline.PortableResult, error) {
 			calls++
-			if calls == 1 {
-				if job.Kind != assemblyline.WorkFragmentModification || model != "coder" {
-					t.Fatalf("initial call kind=%q model=%q", job.Kind, model)
-				}
-				return assemblyline.PortableResult{JobID: job.ID, Candidate: "func Value() string { return \"two\" }"}, nil
+			if job.Kind != assemblyline.WorkFragmentModification || model != "coder" {
+				t.Fatalf("initial call kind=%q model=%q", job.Kind, model)
 			}
-			if job.Kind != assemblyline.WorkFragmentCorrection || model != "corrector" {
-				t.Fatalf("correction call kind=%q model=%q", job.Kind, model)
-			}
-			var correction assemblyline.FragmentCorrectionInput
-			if err := json.Unmarshal(job.Payload, &correction); err != nil {
-				t.Fatal(err)
-			}
-			encoded := string(job.Payload)
-			if strings.Contains(encoded, input.RequirementQuote) {
-				t.Fatalf("correction replayed the original requirement: %s", encoded)
-			}
-			if correction.Diagnostic == "" || correction.CurrentDeclaration == input.CurrentDeclaration {
-				t.Fatalf("correction did not retain the rejected candidate and exact failure: %+v", correction)
-			}
-			return assemblyline.PortableResult{JobID: job.ID, Candidate: "func Value() int { return 2 }"}, nil
+			return assemblyline.PortableResult{JobID: job.ID, Candidate: "func Value() string { return \"two\" }"}, nil
 		},
 	}
-	got, err := runDirectCodingGoFragmentModificationWorker(runtime, "coder", directCodingGoModificationJob{
+	_, err := runDirectCodingGoFragmentModificationWorker(runtime, "coder", directCodingGoModificationJob{
 		Subject: "symbol-1", Input: input,
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(got, "return 2") || calls != 2 {
-		t.Fatalf("result=%q calls=%d", got, calls)
+	if err == nil || !strings.Contains(err.Error(), "changed its exact signature") || calls != 1 {
+		t.Fatalf("error=%v calls=%d", err, calls)
 	}
 }
 
 func TestGoFragmentModificationRejectsUnchangedCandidate(t *testing.T) {
 	t.Parallel()
 	input := assemblyline.FragmentModificationInput{
-		Language: "go", Signature: "func Value() int",
+		Language: "go", Dialect: "Go 1.24", Signature: "func Value() int",
 		CurrentDeclaration: "func Value() int { return 1 }",
 		RequirementQuote:   "return two",
 	}
@@ -73,5 +52,46 @@ func TestGoFragmentModificationRejectsUnchangedCandidate(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "unchanged modification rejected") {
 		t.Fatalf("unchanged candidate error=%v", err)
+	}
+}
+
+func TestGoFragmentModificationFinalizesExactDeclarationProjection(t *testing.T) {
+	t.Parallel()
+	const raw = "func Value() int { return 2 }"
+	const declaration = raw
+	input := assemblyline.FragmentModificationInput{
+		Language: "go", Dialect: "Go 1.24", Signature: "func Value() int",
+		CurrentDeclaration: "func Value() int { return 1 }",
+		RequirementQuote:   "return two",
+	}
+	finalized := false
+	runtime := typedWorkerRuntime{
+		Context: context.Background(), MaxAttempts: 1,
+		Execute: func(job assemblyline.PortableJob, _ string) (assemblyline.PortableResult, error) {
+			return assemblyline.PortableResult{JobID: job.ID, Candidate: raw}, nil
+		},
+		Finalize: func(
+			_ assemblyline.PortableJob,
+			result assemblyline.PortableResult,
+			validationErr error,
+		) error {
+			if validationErr != nil || result.Candidate != raw || result.Projection == nil ||
+				result.Projection.Kind != assemblyline.PortableResultProjectionSourceDeclaration ||
+				result.Projection.Source != declaration || result.Projection.StartByte != 0 ||
+				result.Projection.EndByte != len(raw) || result.Projection.DiscardedBytes != 0 {
+				t.Fatalf("finalized result=%+v validation=%v", result, validationErr)
+			}
+			finalized = true
+			return nil
+		},
+	}
+	got, err := runDirectCodingGoFragmentModificationWorker(
+		runtime, "coder", directCodingGoModificationJob{Subject: "symbol-1", Input: input},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != declaration || !finalized {
+		t.Fatalf("source=%q finalized=%t", got, finalized)
 	}
 }

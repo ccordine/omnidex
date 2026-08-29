@@ -1,0 +1,23 @@
+package api
+
+import (
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+)
+
+func writeRemovedInferenceAction(w http.ResponseWriter, action string) {
+	writeError(w, http.StatusGone, action+" was removed because it bypassed the authoritative objective workflow")
+}
+
+func requireJSONEOF(decoder *json.Decoder, label string) error {
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		if err == nil {
+			return fmt.Errorf("%s contains trailing JSON", label)
+		}
+		return fmt.Errorf("%s trailing data: %w", label, err)
+	}
+	return nil
+}

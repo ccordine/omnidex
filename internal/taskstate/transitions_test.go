@@ -85,7 +85,7 @@ func TestInvalidCompletionAuthorityLeavesStateUnchanged(t *testing.T) {
 	beforeVersion := ledger.Version()
 	completionStep := int64(7)
 	_, err := ledger.Apply(withTestCommandID(t, TransitionNodeCommand{
-		ExpectedVersion: beforeVersion, Actor: AuthorityModelProposal,
+		ExpectedVersion: beforeVersion, Actor: AuthorityToolEvidence,
 		NodeID: "task", To: NodeDone, CompletedStepID: &completionStep,
 		VerificationRefs: testVerificationRefs(),
 	}))
@@ -97,13 +97,45 @@ func TestInvalidCompletionAuthorityLeavesStateUnchanged(t *testing.T) {
 	}
 	assertNodeStatus(t, ledger, "task", NodeActive)
 
-	_, err = ledger.Apply(withTestCommandID(t, TransitionNodeCommand{
-		ExpectedVersion: beforeVersion, Actor: AuthorityAcceptedModelDecision,
-		NodeID: "task", To: NodeDone, CompletedStepID: &completionStep,
-		VerificationRefs: testVerificationRefs(),
-	}))
-	if !errors.Is(err, ErrAuthorityDenied) {
-		t.Fatalf("accepted model decision completed node: %v", err)
+}
+
+func TestInlineTaskUsesItsCreatingStepWithoutASecondQueueAssignment(t *testing.T) {
+	ledger := newTestLedger(t)
+	stepID := int64(71)
+	applyTestCommand(t, ledger, AddNodeCommand{
+		ExpectedVersion: 0, Actor: AuthorityCode,
+		ID: "inline-task", Kind: NodeTask, InlineExecution: true,
+		Title: "Generate one bounded source block", Priority: 10,
+		CreatedStepID: &stepID, Metadata: EmptyJSONObject(),
+	})
+	applyTestCommand(t, ledger, PromoteReadyNodesCommand{ExpectedVersion: 1, Actor: AuthorityCode})
+	applyTestCommand(t, ledger, TransitionNodeCommand{
+		ExpectedVersion: 2, Actor: AuthorityCode, NodeID: "inline-task", To: NodeActive,
+	})
+	applyTestCommand(t, ledger, TransitionNodeCommand{
+		ExpectedVersion: 3, Actor: AuthorityCode, NodeID: "inline-task", To: NodeDone,
+		CompletedStepID: &stepID, VerificationRefs: testVerificationRefs(),
+	})
+	node, ok := ledger.Node("inline-task")
+	if !ok || node.AssignedStepID != nil || node.CompletedStepID == nil || *node.CompletedStepID != stepID {
+		t.Fatalf("inline task authority=%+v", node)
+	}
+	if _, err := ledger.Apply(withTestCommandID(t, AssignNodeStepCommand{
+		ExpectedVersion: ledger.Version(), Actor: AuthorityCode, NodeID: "inline-task", StepID: 72,
+	})); !errors.Is(err, ErrInvalidState) {
+		t.Fatalf("inline task accepted a separate queue assignment: %v", err)
+	}
+}
+
+func TestInlineExecutionRejectsNonTaskAndMissingOwner(t *testing.T) {
+	ledger := newTestLedger(t)
+	for _, command := range []AddNodeCommand{
+		{ExpectedVersion: 0, Actor: AuthorityCode, ID: "objective", Kind: NodeObjective, InlineExecution: true, Title: "Objective", Priority: 1, Metadata: EmptyJSONObject()},
+		{ExpectedVersion: 0, Actor: AuthorityCode, ID: "task", Kind: NodeTask, InlineExecution: true, Title: "Task", Priority: 1, Metadata: EmptyJSONObject()},
+	} {
+		if _, err := ledger.Apply(withTestCommandID(t, command)); !errors.Is(err, ErrInvalidCommand) {
+			t.Fatalf("command %+v error=%v, want invalid command", command, err)
+		}
 	}
 }
 

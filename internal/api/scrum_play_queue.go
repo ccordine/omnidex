@@ -1,15 +1,11 @@
 package api
 
 import (
-	"encoding/json"
+	"errors"
 	"fmt"
-	"io"
 	"net/http"
-	"sort"
-	"strconv"
 	"strings"
 
-	"github.com/gryph/omnidex/internal/agentconfig"
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/queue"
 )
@@ -20,58 +16,45 @@ const (
 	scrumPlayPaused  = "paused"
 )
 
-type scrumPlayRequest struct {
-	Pivot       bool            `json:"pivot"`
-	AgentConfig json.RawMessage `json:"agent_config,omitempty"`
-}
-
 func (s *Server) handleScrumCardPlay(w http.ResponseWriter, r *http.Request, cardID string) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	var req scrumPlayRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err != io.EOF {
-		writeError(w, http.StatusBadRequest, "invalid json body")
-		return
-	}
-	instance := agentconfig.Config{}
-	if len(req.AgentConfig) > 0 {
-		var err error
-		instance, err = agentconfig.FromJSON(req.AgentConfig)
-		if err != nil {
-			writeError(w, http.StatusBadRequest, err.Error())
-			return
-		}
-	}
-
-	card, board, projectID, err := s.scrumGetCard(r, cardID)
+	req, err := decodeScrumPlayRequest(w, r)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "card not found")
+		writeScrumCardStateBodyError(w, err)
 		return
 	}
-	if nextPlayColumn(card.Column) == "" && card.PlayState != scrumPlayQueued {
-		writeError(w, http.StatusBadRequest, "card must be in ready, assigned, or in_progress to play")
-		return
-	}
-
-	var updated ScrumCard
-	var message string
-	if req.Pivot {
-		updated, message, err = s.pivotScrumCardPlay(r, board, projectID, cardID, instance)
-	} else {
-		updated, message, err = s.enqueueOrStartScrumPlay(r, board, projectID, card, instance)
-	}
+	projectID, err := decodeScrumCardActionProjectID(r, "Scrum card play")
 	if err != nil {
-		writeError(w, http.StatusBadGateway, err.Error())
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
-		"card":    updated,
-		"job_id":  updated.JobID,
-		"column":  updated.Column,
-		"message": message,
+	result, err := s.repo.ApplyScrumCardPlay(r.Context(), queue.ScrumCardPlayCommand{
+		ProjectID: projectID, CardID: cardID,
+		ExpectedUpdatedAt: req.ExpectedUpdatedAt.Value, Pivot: req.Pivot,
 	})
+	if err != nil {
+		writeError(w, scrumPlayTransitionStatus(err), err.Error())
+		return
+	}
+	updated, err := dbScrumCardToAPI(result.Card)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	responseCard, err := scrumCardActionProjection(updated)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	response, err := newScrumCardPlayResponse(projectID, cardID, result.Action, responseCard)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, response)
 }
 
 func (s *Server) handleScrumCardPause(w http.ResponseWriter, r *http.Request, cardID string) {
@@ -79,141 +62,109 @@ func (s *Server) handleScrumCardPause(w http.ResponseWriter, r *http.Request, ca
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	updated, err := s.pauseScrumCardPlay(r, cardID)
+	req, err := decodeScrumPauseRequest(w, r)
+	if err != nil {
+		writeScrumCardStateBodyError(w, err)
+		return
+	}
+	projectID, err := decodeScrumCardActionProjectID(r, "Scrum card pause")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"card": updated, "message": "play paused"})
+	stored, err := s.repo.PauseScrumCardPlayAtRevision(
+		r.Context(), projectID, cardID, req.ExpectedUpdatedAt.Value,
+	)
+	if err != nil {
+		writeError(w, scrumPlayTransitionStatus(err), err.Error())
+		return
+	}
+	updated, err := dbScrumCardToAPI(stored)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	responseCard, err := scrumCardActionProjection(updated)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	response, err := newScrumCardPauseResponse(projectID, cardID, responseCard)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, response)
 }
 
-func (s *Server) enqueueOrStartScrumPlay(r *http.Request, board ScrumBoard, projectID int64, card ScrumCard, instance agentconfig.Config) (ScrumCard, string, error) {
-	if running := s.findRunningScrumCard(board); running != nil && running.ID != card.ID {
-		queued, err := s.queueScrumCardForPlay(r, projectID, card.ID, board)
-		if err != nil {
-			return ScrumCard{}, "", err
-		}
-		position := s.queuePosition(board, card.ID)
-		msg := fmt.Sprintf("queued for play (#%d in assigned column)", position)
-		return queued, msg, nil
-	}
-	if card.PlayState == scrumPlayQueued {
-		return card, "already queued for play", nil
-	}
-	started, err := s.startScrumCardPlay(r, board, projectID, card.ID, instance)
-	if err != nil {
-		return ScrumCard{}, "", err
-	}
-	return started, "scrum play started", nil
+type scrumCardPlayAction string
+
+const (
+	scrumCardPlayStarted        scrumCardPlayAction = "started"
+	scrumCardPlayQueued         scrumCardPlayAction = "queued"
+	scrumCardPlayAlreadyRunning scrumCardPlayAction = "already_running"
+	scrumCardPlayAlreadyQueued  scrumCardPlayAction = "already_queued"
+	scrumCardPlayPaused         scrumCardPlayAction = "paused"
+)
+
+type scrumCardPlayResponse struct {
+	ProjectID  int64               `json:"project_id"`
+	CardID     string              `json:"card_id"`
+	Action     scrumCardPlayAction `json:"action"`
+	JobID      string              `json:"job_id"`
+	QueueOrder int                 `json:"queue_order"`
+	Card       ScrumCard           `json:"card"`
 }
 
-func (s *Server) pivotScrumCardPlay(r *http.Request, board ScrumBoard, projectID int64, cardID string, instance agentconfig.Config) (ScrumCard, string, error) {
-	if running := s.findRunningScrumCard(board); running != nil {
-		if _, err := s.pauseScrumCardPlay(r, running.ID); err != nil {
-			return ScrumCard{}, "", err
+func newScrumCardPlayResponse(projectID int64, cardID, rawAction string, card ScrumCard) (scrumCardPlayResponse, error) {
+	response := scrumCardPlayResponse{
+		ProjectID: projectID, CardID: cardID, Action: scrumCardPlayAction(rawAction),
+		JobID: card.JobID, QueueOrder: card.QueueOrder, Card: card,
+	}
+	if projectID <= 0 || cardID == "" || card.ID != cardID {
+		return scrumCardPlayResponse{}, fmt.Errorf("Scrum play response does not match its project/card authority")
+	}
+	switch response.Action {
+	case scrumCardPlayStarted, scrumCardPlayAlreadyRunning:
+		jobID, err := parseJobID(response.JobID)
+		if err != nil || jobID <= 0 || card.PlayState != scrumPlayRunning || card.Column != "in_progress" || response.QueueOrder != 0 {
+			return scrumCardPlayResponse{}, fmt.Errorf("Scrum play response has contradictory running job authority")
 		}
+	case scrumCardPlayQueued, scrumCardPlayAlreadyQueued:
+		if response.JobID != "" || card.PlayState != scrumPlayQueued || card.Column != "assigned" {
+			return scrumCardPlayResponse{}, fmt.Errorf("Scrum play response has contradictory queue authority")
+		}
+		if response.QueueOrder <= 0 {
+			return scrumCardPlayResponse{}, fmt.Errorf("Scrum play response has contradictory queue position authority")
+		}
+	default:
+		return scrumCardPlayResponse{}, fmt.Errorf("Scrum play response action %q is not registered", rawAction)
 	}
-	card, board, projectID, err := s.scrumGetCard(r, cardID)
-	if err != nil {
-		return ScrumCard{}, "", err
-	}
-	if card.PlayState == scrumPlayQueued {
-		card.PlayState = ""
-		card.QueueOrder = 0
-	}
-	started, err := s.startScrumCardPlay(r, board, projectID, card.ID, instance)
-	if err != nil {
-		return ScrumCard{}, "", err
-	}
-	return started, "pivoted to this card", nil
+	return response, nil
 }
 
-func (s *Server) queueScrumCardForPlay(r *http.Request, projectID int64, cardID string, board ScrumBoard) (ScrumCard, error) {
-	card, _, _, err := s.scrumGetCard(r, cardID)
-	if err != nil {
-		return ScrumCard{}, err
+func newScrumCardPauseResponse(projectID int64, cardID string, card ScrumCard) (scrumCardPlayResponse, error) {
+	response := scrumCardPlayResponse{
+		ProjectID: projectID, CardID: cardID, Action: scrumCardPlayPaused,
+		JobID: card.JobID, QueueOrder: card.QueueOrder, Card: card,
 	}
-	nextOrder := maxQueueOrder(board) + 1
-	card.Column = "assigned"
-	card.PlayState = scrumPlayQueued
-	card.QueueOrder = nextOrder
-	card = appendScrumChannelEvent(card, "system", fmt.Sprintf("Queued for play (#%d in assigned column)", nextOrder))
-	return s.persistScrumCard(r, projectID, card)
+	if projectID <= 0 || cardID == "" || card.ID != cardID || card.PlayState != scrumPlayPaused ||
+		card.Column != "assigned" || response.JobID != "" || response.QueueOrder != 0 {
+		return scrumCardPlayResponse{}, fmt.Errorf("Scrum pause response contradicts its authoritative card state")
+	}
+	return response, nil
 }
 
-func (s *Server) startScrumCardPlay(r *http.Request, board ScrumBoard, projectID int64, cardID string, instance agentconfig.Config) (ScrumCard, error) {
-	if r == nil {
-		if s.lifecycleContext == nil {
-			return ScrumCard{}, ErrRealtimeLifecycleUnavailable
-		}
-		r = scrumRequestForProject(s.lifecycleContext, projectID)
+func scrumPlayTransitionStatus(err error) int {
+	if errors.Is(err, queue.ErrScrumCardVersionConflict) {
+		return http.StatusConflict
 	}
-	if s.repo == nil || projectID <= 0 {
-		return ScrumCard{}, fmt.Errorf("postgres repository and project are required to play a Scrum card")
-	}
-	refreshed, err := s.scrumBoardFromProject(r.Context(), projectID)
-	if err != nil {
-		return ScrumCard{}, err
-	}
-	board = refreshed
-	card, ok := scrumCardFromBoard(board, cardID)
-	if !ok {
-		return ScrumCard{}, fmt.Errorf("card not found")
-	}
-	instruction := buildScrumPlayInstruction(board, card)
-	return s.enqueueScrumCardAgentRun(r, board, projectID, card, instance, instruction)
-}
-
-func scrumCardFromBoard(board ScrumBoard, cardID string) (ScrumCard, bool) {
-	for _, card := range board.Cards {
-		if card.ID == cardID {
-			return card, true
-		}
-	}
-	return ScrumCard{}, false
-}
-
-func (s *Server) pauseScrumCardPlay(r *http.Request, cardID string) (ScrumCard, error) {
-	card, _, projectID, err := s.scrumGetCard(r, cardID)
-	if err != nil {
-		return ScrumCard{}, err
-	}
-	if card.PlayState != scrumPlayRunning && card.PlayState != scrumPlayReviewing && card.PlayState != scrumPlayQueued {
-		return ScrumCard{}, fmt.Errorf("only active cards can be paused")
-	}
-	if s.repo == nil {
-		return ScrumCard{}, fmt.Errorf("postgres repository is required to pause Scrum play")
-	}
-	if strings.TrimSpace(card.JobID) != "" {
-		jobID, err := parseJobID(card.JobID)
-		if err != nil {
-			return ScrumCard{}, fmt.Errorf("parse job id for Scrum card %q: %w", card.ID, err)
-		}
-		operationID, err := queue.NewLifecycleOperationID(
-			"scrum-card-pause-v1", strconv.FormatInt(projectID, 10),
-			card.ID, strconv.FormatInt(jobID, 10),
-		)
-		if err != nil {
-			return ScrumCard{}, fmt.Errorf("build cancellation identity for Scrum card %q: %w", card.ID, err)
-		}
-		if _, err := s.repo.CancelJob(r.Context(), queue.CancelJobCommand{
-			OperationID: operationID, JobID: jobID, Reason: "paused from scrum board",
-		}); err != nil {
-			return ScrumCard{}, err
-		}
-	} else if card.PlayState == scrumPlayRunning || card.PlayState == scrumPlayReviewing {
-		return ScrumCard{}, fmt.Errorf("active Scrum card %q has no job id", card.ID)
-	}
-	card.Column = "assigned"
-	card.PlayState = scrumPlayPaused
-	card.QueueOrder = 0
-	card = appendScrumChannelEvent(card, "system", "Play paused")
-	return s.persistScrumCard(r, projectID, card)
+	return http.StatusBadRequest
 }
 
 func scrumManagerAutoAdvance(outcome ScrumManagerOutcome) bool {
 	switch outcome {
-	case ScrumOutcomeSuccess, ScrumOutcomeFailed, ScrumOutcomeBlocked:
+	case ScrumOutcomeSuccess, ScrumOutcomeFailed:
 		return true
 	default:
 		return false
@@ -227,36 +178,33 @@ func (s *Server) refreshScrumPlayQueue(r *http.Request, projectID int64, board S
 	if r == nil {
 		return board, fmt.Errorf("request is required to refresh Scrum play")
 	}
-	for i, card := range board.Cards {
-		reconciled, changed, err := s.reconcileScrumCardLlmJobs(r.Context(), projectID, card)
+	running, err := s.runningScrumCard(r.Context(), projectID)
+	if err != nil {
+		return board, err
+	}
+	active := []ScrumCard{}
+	if running != nil {
+		active = append(active, *running)
+	}
+	for _, card := range active {
+		reconciled, changed, outcome, err := s.reconcileScrumCardJobState(r.Context(), projectID, card)
 		if err != nil {
 			return board, err
 		}
 		if changed {
-			saved, err := s.persistScrumCardFromContext(r.Context(), projectID, reconciled)
+			saved, err := s.persistScrumCardTransition(
+				r.Context(), projectID, card, reconciled, queue.ScrumReconcileJobTerminal, outcome,
+			)
 			if err != nil {
 				return board, err
 			}
-			board.Cards[i] = saved
-			card = saved
-		}
-		reconciled, changed, err = s.reconcileScrumCardJobState(r.Context(), projectID, card)
-		if err != nil {
-			return board, err
-		}
-		if changed {
-			saved, err := s.persistScrumCardFromContext(r.Context(), projectID, reconciled)
-			if err != nil {
-				return board, err
-			}
-			board.Cards[i] = saved
-			card = saved
+			s.publishScrumCardUpdate(r.Context(), projectID, saved, "job resolved")
+			continue
 		}
 		if strings.TrimSpace(card.JobID) == "" {
 			continue
 		}
-		autoReviewJob := card.PlayState == scrumPlayReviewing
-		watching := card.PlayState == scrumPlayRunning || card.PlayState == scrumPlayReviewing || normalizeScrumColumn(card.Column) == "in_progress"
+		watching := card.PlayState == scrumPlayRunning || normalizeScrumColumn(card.Column) == "in_progress"
 		if !watching {
 			continue
 		}
@@ -268,198 +216,38 @@ func (s *Server) refreshScrumPlayQueue(r *http.Request, projectID int64, board S
 		if err != nil {
 			return board, fmt.Errorf("load job %d for Scrum card %q: %w", jobID, card.ID, err)
 		}
-		if autoReviewJob && !isScrumAutoReviewJob(job.Job.Metadata) {
-			autoReviewJob = false
-		}
 		updated := card
-		cardChanged := false
-		fromColumn := card.Column
 		switch job.Job.Status {
 		case model.JobStatusCompleted, model.JobStatusFailed, model.JobStatusCanceled:
-			if autoReviewJob {
-				finished, ok, err := s.finishScrumAutoReview(r, projectID, updated, job)
-				if err != nil {
-					return board, err
-				}
-				if ok {
-					updated = finished
-					cardChanged = true
-				}
-			} else {
-				updated = scrumSyncTerminalPlayOutput(updated, job)
-				outcome, scanNote := s.resolveScrumPlayOutcomeForCard(r.Context(), job, updated)
-				transition := scrumColumnForOutcome(outcome)
-				transition = applyScrumReturnColumn(transition, outcome, job.Job.Metadata)
-				if scanNote != "" {
-					transition.ConsoleNote = transition.ConsoleNote + " · " + scanNote
-				}
-				if agentOutput := strings.TrimSpace(collectScrumAgentOutput(job)); agentOutput != "" {
-					summary := agentOutput
-					if len(summary) > 4000 {
-						summary = summary[len(summary)-4000:]
-					}
-					if len(summary) > 0 && !strings.Contains(updated.ConsoleLog, summary[:min(120, len(summary))]) {
-						updated = appendScrumChannelEvent(updated, "assistant", summary)
-					}
-					if note := scrumAgentConfigErrorNote(agentOutput); note != "" {
-						transition.ConsoleNote = note
-					}
-				}
-				fromColumn = card.Column
-				updated.Column = transition.Column
-				updated.PlayState = transition.PlayState
-				updated.QueueOrder = 0
-				updated = appendScrumChannelEvent(updated, "system", transition.ConsoleNote)
-				cardChanged = true
-				payload, err := json.Marshal(map[string]any{
-					"outcome": string(outcome),
-					"job_id":  strings.TrimSpace(card.JobID),
-				})
-				if err != nil {
-					return board, fmt.Errorf("encode play outcome for Scrum card %q: %w", card.ID, err)
-				}
-				if err := s.repo.RecordScrumFlowEvent(
-					r.Context(), projectID, card.ID, scrumFlowEventPlayFinished,
-					card.Column, transition.Column, card.PlayState, transition.PlayState, payload,
-				); err != nil {
-					return board, fmt.Errorf("record play outcome for Scrum card %q: %w", card.ID, err)
-				}
-			}
+			return board, fmt.Errorf("terminal job %d bypassed typed Scrum reconciliation", jobID)
 		case model.JobStatusPending, model.JobStatusRunning, model.JobStatusWaiting:
-			if synced, ok := syncRunningJobConsoleLog(updated, job); ok {
+			if synced, ok, err := syncRunningJobChannelChat(updated, job); err != nil {
+				return board, err
+			} else if ok {
 				updated = synced
 			}
 			statusLine := fmt.Sprintf("Job status: %s", job.Job.Status)
-			if !strings.Contains(updated.ConsoleLog, statusLine) {
-				updated = appendScrumChannelEvent(updated, "system", statusLine)
+			if !pendingScrumMessageContains(updated.PendingChannelMessages, statusLine) {
+				updated, err = appendScrumChannelEvent(updated, "system", statusLine)
+				if err != nil {
+					return board, err
+				}
 			}
 		default:
 			return board, fmt.Errorf("job %d for Scrum card %q has unsupported status %q", jobID, card.ID, job.Job.Status)
 		}
-		if cardChanged {
-			saved, err := s.persistScrumCard(r, projectID, updated)
+		if scrumCardChannelChanged(card, updated) {
+			saved, err := s.persistScrumCardTransition(
+				r.Context(), projectID, card, updated, queue.ScrumReconcileJobProgress, "",
+			)
 			if err != nil {
 				return board, err
 			}
-			board.Cards[i] = saved
-			s.publishScrumCardUpdate(r.Context(), projectID, saved, "job resolved")
-			if normalizeScrumColumn(saved.Column) == "review" && normalizeScrumColumn(fromColumn) != "review" {
-				reviewed, err := s.maybeStartScrumAutoReview(r, projectID, board, saved, fromColumn)
-				if err != nil {
-					return board, err
-				}
-				board.Cards[i] = reviewed
-				s.publishScrumCardUpdate(r.Context(), projectID, reviewed, "auto-review started")
-			}
-		} else if scrumCardChannelChanged(card, updated) {
-			saved, err := s.persistScrumCard(r, projectID, updated)
-			if err != nil {
-				return board, err
-			}
-			board.Cards[i] = saved
 			s.publishScrumCardUpdate(r.Context(), projectID, saved, "job updated")
 		}
 	}
 
 	return s.kickoffAutoWorkAfterReconcile(r, projectID, board)
-}
-
-func (s *Server) persistScrumCard(r *http.Request, projectID int64, card ScrumCard) (ScrumCard, error) {
-	if r == nil {
-		return ScrumCard{}, fmt.Errorf("request is required for Scrum persistence")
-	}
-	return s.persistScrumCardFromContext(r.Context(), projectID, card)
-}
-
-func (s *Server) findRunningScrumCard(board ScrumBoard) *ScrumCard {
-	for i, card := range board.Cards {
-		if card.PlayState == scrumPlayRunning || card.PlayState == scrumPlayReviewing {
-			return &board.Cards[i]
-		}
-	}
-	return nil
-}
-
-func (s *Server) nextQueuedScrumCard(board ScrumBoard) *ScrumCard {
-	queued := make([]ScrumCard, 0)
-	for _, card := range board.Cards {
-		if card.PlayState == scrumPlayQueued {
-			queued = append(queued, card)
-		}
-	}
-	if len(queued) == 0 {
-		return nil
-	}
-	sortQueuedScrumCards(queued)
-	return &queued[0]
-}
-
-func sortQueuedScrumCards(cards []ScrumCard) {
-	sort.Slice(cards, func(i, j int) bool {
-		if cards[i].QueueOrder == cards[j].QueueOrder {
-			return cards[i].UpdatedAt < cards[j].UpdatedAt
-		}
-		return cards[i].QueueOrder < cards[j].QueueOrder
-	})
-}
-
-func maxQueueOrder(board ScrumBoard) int {
-	max := 0
-	for _, card := range board.Cards {
-		if card.PlayState == scrumPlayQueued && card.QueueOrder > max {
-			max = card.QueueOrder
-		}
-	}
-	return max
-}
-
-func (s *Server) queuePosition(board ScrumBoard, cardID string) int {
-	queued := make([]ScrumCard, 0)
-	for _, card := range board.Cards {
-		if card.PlayState == scrumPlayQueued {
-			queued = append(queued, card)
-		}
-	}
-	sort.Slice(queued, func(i, j int) bool {
-		if queued[i].QueueOrder == queued[j].QueueOrder {
-			return queued[i].UpdatedAt < queued[j].UpdatedAt
-		}
-		return queued[i].QueueOrder < queued[j].QueueOrder
-	})
-	for i, card := range queued {
-		if card.ID == cardID {
-			return i + 1
-		}
-	}
-	return len(queued)
-}
-
-func scrumPlayQueueSummary(board ScrumBoard) map[string]any {
-	runningID := ""
-	queuedIDs := []string{}
-	for _, card := range board.Cards {
-		switch card.PlayState {
-		case scrumPlayRunning:
-			runningID = card.ID
-		case scrumPlayQueued:
-			queuedIDs = append(queuedIDs, card.ID)
-		}
-	}
-	sort.Slice(queuedIDs, func(i, j int) bool {
-		a, b := findScrumCard(board, queuedIDs[i]), findScrumCard(board, queuedIDs[j])
-		if a == nil || b == nil {
-			return queuedIDs[i] < queuedIDs[j]
-		}
-		if a.QueueOrder == b.QueueOrder {
-			return a.UpdatedAt < b.UpdatedAt
-		}
-		return a.QueueOrder < b.QueueOrder
-	})
-	return map[string]any{
-		"running_card_id": runningID,
-		"queued_count":    len(queuedIDs),
-		"queued_card_ids": queuedIDs,
-	}
 }
 
 func findScrumCard(board ScrumBoard, cardID string) *ScrumCard {
@@ -469,58 +257,4 @@ func findScrumCard(board ScrumBoard, cardID string) *ScrumCard {
 		}
 	}
 	return nil
-}
-
-func appendScrumConsole(existing, line string) string {
-	existing = strings.TrimRight(existing, "\n")
-	if existing == "" {
-		return strings.TrimSpace(line)
-	}
-	if strings.TrimSpace(line) == "" {
-		return existing
-	}
-	return existing + "\n" + line
-}
-
-func sortCardsForColumn(column string, cards []ScrumCard) {
-	switch column {
-	case "assigned":
-		sort.SliceStable(cards, func(i, j int) bool {
-			aQueued := cards[i].PlayState == scrumPlayQueued
-			bQueued := cards[j].PlayState == scrumPlayQueued
-			if aQueued != bQueued {
-				return !aQueued
-			}
-			if aQueued && bQueued {
-				if cards[i].QueueOrder != cards[j].QueueOrder {
-					return cards[i].QueueOrder < cards[j].QueueOrder
-				}
-				return cards[i].BoardOrder < cards[j].BoardOrder
-			}
-			if cards[i].BoardOrder != cards[j].BoardOrder {
-				return cards[i].BoardOrder < cards[j].BoardOrder
-			}
-			return cards[i].UpdatedAt > cards[j].UpdatedAt
-		})
-	case "in_progress":
-		sort.SliceStable(cards, func(i, j int) bool {
-			if cards[i].PlayState == scrumPlayRunning {
-				return true
-			}
-			if cards[j].PlayState == scrumPlayRunning {
-				return false
-			}
-			if cards[i].BoardOrder != cards[j].BoardOrder {
-				return cards[i].BoardOrder < cards[j].BoardOrder
-			}
-			return cards[i].UpdatedAt > cards[j].UpdatedAt
-		})
-	default:
-		sort.SliceStable(cards, func(i, j int) bool {
-			if cards[i].BoardOrder != cards[j].BoardOrder {
-				return cards[i].BoardOrder < cards[j].BoardOrder
-			}
-			return cards[i].UpdatedAt > cards[j].UpdatedAt
-		})
-	}
 }

@@ -10,14 +10,14 @@ import (
 func validateTypeScriptFunctionPolicyNode(
 	declaration *treesitter.Node,
 	source []byte,
-	policy TypeScriptFunctionPolicy,
+	policy SourceFunctionPolicy,
 ) error {
 	for _, identifier := range policy.ForbiddenIdentifiers {
 		if containsTypeScriptIdentifier(declaration, source, identifier) {
 			return fmt.Errorf("TypeScript fragment uses forbidden direct identifier %s", identifier)
 		}
 	}
-	for _, element := range policy.RequiredJSXElements {
+	for _, element := range policy.RequiredElementNames {
 		if !containsTypeScriptJSXElement(declaration, source, element) {
 			return fmt.Errorf("TypeScript fragment requires a %s JSX element", element)
 		}
@@ -95,7 +95,7 @@ func isDirectTypeScriptFunctionBodyCall(call, body *treesitter.Node) bool {
 func validateTypeScriptCallRestriction(
 	node *treesitter.Node,
 	source []byte,
-	restriction TypeScriptCallRestriction,
+	restriction SourceCallRestriction,
 ) error {
 	if node == nil {
 		return nil
@@ -163,7 +163,7 @@ func containsTypeScriptJSXElement(node *treesitter.Node, source []byte, expected
 func containsTypeScriptCall(
 	node *treesitter.Node,
 	source []byte,
-	requirement TypeScriptCallRequirement,
+	requirement SourceCallRequirement,
 ) bool {
 	if node == nil {
 		return false

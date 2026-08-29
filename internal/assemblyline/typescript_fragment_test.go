@@ -26,24 +26,38 @@ func TestParseTypeScriptFunctionAcceptsOneExactRawTSXDeclaration(t *testing.T) {
 	}
 }
 
-func TestTypeScriptViolationProvidesTypedCommentCorrectionWithoutPhraseMatching(t *testing.T) {
+func TestParseTypeScriptFunctionPreservesOrdinaryCommentInExecutableDeclaration(t *testing.T) {
 	t.Parallel()
 
-	contract := TypeScriptFunctionContract{Signature: "function render(): null"}
-	_, err := ParseTypeScriptFunction(contract, "function render(): null { /* later */ return null; }")
-	if err == nil {
-		t.Fatal("comment was accepted")
+	contract := TypeScriptFunctionContract{Signature: "function calculate(value: number): number"}
+	raw := "function calculate(value: number): number {\n  // Preserve the original input.\n  return value + 1;\n}"
+	fragment, err := ParseTypeScriptFunction(contract, raw)
+	if err != nil {
+		t.Fatal(err)
 	}
-	instruction, ok := TypeScriptFragmentCorrectionInstruction(err)
-	if !ok || !strings.Contains(instruction, "Delete every comment node") || !strings.Contains(instruction, "Change nothing unrelated") {
-		t.Fatalf("instruction=%q ok=%v error=%v", instruction, ok, err)
-	}
-	if _, ok := TypeScriptFragmentCorrectionInstruction(errors.New(err.Error())); ok {
-		t.Fatal("plain text resembling a typed violation selected a correction instruction")
+	if fragment.Source != raw+"\n" {
+		t.Fatalf("comment-bearing source drifted:\nwant=%q\n got=%q", raw+"\n", fragment.Source)
 	}
 }
 
-func TestTypeScriptViolationProvidesTypedEmptyBodyCorrection(t *testing.T) {
+func TestParseTypeScriptFunctionPreservesOrdinaryJSXCommentWithExecutableResult(t *testing.T) {
+	t.Parallel()
+
+	contract := TypeScriptFunctionContract{
+		Signature: "function Status(): ReactElement",
+		TSX:       true,
+	}
+	raw := "function Status(): ReactElement {\n  return <section>{/* Explain the live region. */}<span>Ready</span></section>;\n}"
+	fragment, err := ParseTypeScriptFunction(contract, raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fragment.Source != raw+"\n" {
+		t.Fatalf("comment-bearing TSX source drifted:\nwant=%q\n got=%q", raw+"\n", fragment.Source)
+	}
+}
+
+func TestTypeScriptViolationProvidesTypedEmptyBodyFailure(t *testing.T) {
 	t.Parallel()
 
 	contract := TypeScriptFunctionContract{Signature: "function calculate(): number"}
@@ -51,23 +65,23 @@ func TestTypeScriptViolationProvidesTypedEmptyBodyCorrection(t *testing.T) {
 	if err == nil {
 		t.Fatal("empty callback body was accepted")
 	}
-	instruction, ok := TypeScriptFragmentCorrectionInstruction(err)
-	if !ok || !strings.Contains(instruction, "empty function or callback body") {
-		t.Fatalf("instruction=%q ok=%v error=%v", instruction, ok, err)
+	var violation *TypeScriptFragmentViolation
+	if !errors.As(err, &violation) || violation.Code != TypeScriptViolationEmptyBody {
+		t.Fatalf("violation=%#v error=%v", violation, err)
 	}
 }
 
 func TestParseTypeScriptFunctionRejectsNonRawOrExpandedAuthority(t *testing.T) {
 	contract := TypeScriptFunctionContract{Signature: "function clamp(value: number): number"}
 	for name, raw := range map[string]string{
-		"markdown":       "```ts\nfunction clamp(value: number): number { return value; }\n```",
-		"import":         "import { x } from './x';\nfunction clamp(value: number): number { return x(value); }",
-		"export":         "export function clamp(value: number): number { return value; }",
-		"extra":          "function clamp(value: number): number { return value; }\nconst other = 1;",
-		"wrong":          "function clamp(value: string): number { return Number(value); }",
-		"broken":         "function clamp(value: number): number { return ;",
-		"comment":        "function clamp(value: number): number { /* later */ return value; }",
-		"empty callback": "function clamp(value: number): number { const ignored = () => {}; return value; }",
+		"markdown":              "```ts\nfunction clamp(value: number): number { return value; }\n```",
+		"import":                "import { x } from './x';\nfunction clamp(value: number): number { return x(value); }",
+		"export":                "export function clamp(value: number): number { return value; }",
+		"extra":                 "function clamp(value: number): number { return value; }\nconst other = 1;",
+		"wrong":                 "function clamp(value: string): number { return Number(value); }",
+		"broken":                "function clamp(value: number): number { return ;",
+		"empty callback":        "function clamp(value: number): number { const ignored = () => {}; return value; }",
+		"comment-only callback": "function clamp(value: number): number { const ignored = () => { /* no executable body */ }; return value; }",
 	} {
 		t.Run(name, func(t *testing.T) {
 			if _, err := ParseTypeScriptFunction(contract, raw); err == nil {
@@ -78,16 +92,16 @@ func TestParseTypeScriptFunctionRejectsNonRawOrExpandedAuthority(t *testing.T) {
 }
 
 func TestTypeScriptBlueprintBuildsDependencyWavesWithoutExposingPaths(t *testing.T) {
-	blueprint := TypeScriptBlueprint{Documents: []TypeScriptDocument{
+	blueprint := SourceBlueprint{Documents: []SourceDocument{
 		{
 			ID: "domain", Path: "src/domain.ts",
-			Blocks: []TypeScriptBlock{{
+			Blocks: []SourceBlock{{
 				ID: "domain.types", Static: "interface Item { id: number }", API: "interface Item { id: number }",
 			}},
 		},
 		{
-			ID: "view", Path: "src/View.tsx", Header: "import type { Item } from './domain';",
-			Blocks: []TypeScriptBlock{{
+			ID: "view", Path: "src/View.tsx", Preamble: "import type { Item } from './domain';",
+			Blocks: []SourceBlock{{
 				ID: "view.render", Signature: "function View(props: { item: Item }): JSX.Element",
 				Contract: "Render the supplied item identifier in a real output element.", API: "function View(props: { item: Item }): JSX.Element",
 				DependsOn: []string{"domain.types"}, Capabilities: []string{"domain.types"},
@@ -104,13 +118,13 @@ func TestTypeScriptBlueprintBuildsDependencyWavesWithoutExposingPaths(t *testing
 }
 
 func TestTypeScriptBlueprintRejectsHalfDefinedGeneratedAuthority(t *testing.T) {
-	for name, block := range map[string]TypeScriptBlock{
+	for name, block := range map[string]SourceBlock{
 		"signature only": {ID: "view.render", Signature: "function View(): null", API: "function View(): null"},
 		"contract only":  {ID: "view.render", Contract: "Return null.", API: "function View(): null"},
 	} {
 		t.Run(name, func(t *testing.T) {
-			blueprint := TypeScriptBlueprint{Documents: []TypeScriptDocument{{
-				ID: "view", Path: "src/View.tsx", Blocks: []TypeScriptBlock{block},
+			blueprint := SourceBlueprint{Documents: []SourceDocument{{
+				ID: "view", Path: "src/View.tsx", Blocks: []SourceBlock{block},
 			}}}
 			if err := blueprint.Validate(); err == nil || !strings.Contains(err.Error(), "requires both") {
 				t.Fatalf("validation error=%v", err)
@@ -120,7 +134,7 @@ func TestTypeScriptBlueprintRejectsHalfDefinedGeneratedAuthority(t *testing.T) {
 }
 
 func TestTypeScriptBlueprintRejectsUnscopedModelCapabilities(t *testing.T) {
-	for name, block := range map[string]TypeScriptBlock{
+	for name, block := range map[string]SourceBlock{
 		"not a dependency": {
 			ID: "view.render", Signature: "function View(): null", Contract: "Return null.",
 			API: "function View(): null", Capabilities: []string{"domain.secret"},
@@ -131,8 +145,8 @@ func TestTypeScriptBlueprintRejectsUnscopedModelCapabilities(t *testing.T) {
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
-			blueprint := TypeScriptBlueprint{Documents: []TypeScriptDocument{{
-				ID: "domain", Path: "src/domain.ts", Blocks: []TypeScriptBlock{
+			blueprint := SourceBlueprint{Documents: []SourceDocument{{
+				ID: "domain", Path: "src/domain.ts", Blocks: []SourceBlock{
 					{ID: "domain.secret", Static: "export const secret = 1;", API: "const secret: 1"},
 					block,
 				},

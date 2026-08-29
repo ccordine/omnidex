@@ -21,31 +21,22 @@ func TestValidateEventProjectionAcceptsGeneratedEvents(t *testing.T) {
 			Kind: EdgeDependsOn, From: "check", To: "task",
 		}),
 		applyTestCommand(t, ledger, AddEntryCommand{
-			ExpectedVersion: 3, Actor: AuthorityModelProposal, ID: "question",
+			ExpectedVersion: 3, Actor: AuthorityCode, ID: "question",
 			Kind: EntryQuestion, Content: "Is the proof available?", Metadata: EmptyJSONObject(),
 		}),
 		applyTestCommand(t, ledger, ResolveEntryCommand{
 			ExpectedVersion: 4, Actor: AuthorityCode, EntryID: "question",
 			Reason: "The verifier produced exact evidence.", Refs: testVerificationRefs(),
 		}),
-		applyTestCommand(t, ledger, AddEntryCommand{
-			ExpectedVersion: 5, Actor: AuthorityModelProposal, ID: "candidate",
-			Kind: EntryDecisionCandidate, Content: "Use the bounded change.", Metadata: EmptyJSONObject(),
-		}),
-		applyTestCommand(t, ledger, AcceptDecisionCommand{
-			ExpectedVersion: 6, Actor: AuthorityCode, CandidateID: "candidate",
-			AcceptedEntryID: "decision", AcceptancePolicy: "verified_policy_v1",
-			AcceptanceRefs: testVerificationRefs(), Metadata: EmptyJSONObject(),
-		}),
-		applyTestCommand(t, ledger, PromoteReadyNodesCommand{ExpectedVersion: 7, Actor: AuthorityCode}),
+		applyTestCommand(t, ledger, PromoteReadyNodesCommand{ExpectedVersion: 5, Actor: AuthorityCode}),
 		applyTestCommand(t, ledger, AssignNodeStepCommand{
-			ExpectedVersion: 8, Actor: AuthorityCode, NodeID: "task", StepID: 81,
+			ExpectedVersion: 6, Actor: AuthorityCode, NodeID: "task", StepID: 81,
 		}),
 		applyTestCommand(t, ledger, TransitionNodeCommand{
-			ExpectedVersion: 9, Actor: AuthorityCode, NodeID: "task", To: NodeActive,
+			ExpectedVersion: 7, Actor: AuthorityCode, NodeID: "task", To: NodeActive,
 		}),
 		applyTestCommand(t, ledger, TransitionNodeCommand{
-			ExpectedVersion: 10, Actor: AuthorityCode, NodeID: "task", To: NodeFailed,
+			ExpectedVersion: 8, Actor: AuthorityCode, NodeID: "task", To: NodeFailed,
 			Reason: "The authoritative verification command failed.",
 		}),
 	}

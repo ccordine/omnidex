@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"flag"
-	"fmt"
 	"net/url"
 	"os"
 	"strings"
@@ -53,7 +52,7 @@ type webStatusReport struct {
 	Probes    []webProbeReport
 }
 
-func runStatus(apiClient *client.Client, args []string) {
+func runStatus(apiClient *client.Client, args []string, configuredCoreURL string) {
 	fs := flag.NewFlagSet("status", flag.ExitOnError)
 	timeout := fs.Duration("timeout", defaultStatusTimeout, "per-service status timeout")
 	coreURLFlag := fs.String("core-url", "", "core URL override")
@@ -62,7 +61,7 @@ func runStatus(apiClient *client.Client, args []string) {
 	providersFlag := fs.String("providers", "", "override web providers csv")
 	_ = fs.Parse(args)
 
-	coreURL := resolveCoreStatusURL(*coreURLFlag)
+	coreURL := resolveCoreStatusURL(*coreURLFlag, configuredCoreURL)
 	if *queueLimit < 1 {
 		*queueLimit = defaultQueueStatusSampleLimit
 	}
@@ -76,11 +75,7 @@ func runStatus(apiClient *client.Client, args []string) {
 
 	printCoreStatusLine(coreReport)
 	printQueueStatusLine(queueReport)
-	if providerErr != nil {
-		fmt.Printf("llm: invalid error=%s\n", providerErr)
-	} else {
-		fmt.Printf("llm: configured provider=%s\n", llmProvider)
-	}
+	printLLMStatusLine(llmProvider, providerErr)
 	printOllamaStatusLine(ollamaReport)
 	printWebStatusLine(webReport, true)
 
@@ -105,20 +100,20 @@ func runStatus(apiClient *client.Client, args []string) {
 	}
 }
 
-func runCoreStatus(args []string) {
+func runCoreStatus(args []string, configuredCoreURL string) {
 	fs := flag.NewFlagSet("core:status", flag.ExitOnError)
 	timeout := fs.Duration("timeout", defaultStatusTimeout, "status timeout")
 	coreURLFlag := fs.String("core-url", "", "core URL override")
 	_ = fs.Parse(args)
 
-	report := collectCoreStatus(resolveCoreStatusURL(*coreURLFlag), *timeout)
+	report := collectCoreStatus(resolveCoreStatusURL(*coreURLFlag, configuredCoreURL), *timeout)
 	printCoreStatusLine(report)
 	if strings.TrimSpace(report.Error) != "" {
 		os.Exit(1)
 	}
 }
 
-func runQueueStatus(_ *client.Client, args []string) {
+func runQueueStatus(_ *client.Client, args []string, configuredCoreURL string) {
 	fs := flag.NewFlagSet("queue:status", flag.ExitOnError)
 	timeout := fs.Duration("timeout", defaultStatusTimeout, "status timeout")
 	limit := fs.Int("limit", defaultQueueStatusSampleLimit, "queue sample size")
@@ -128,7 +123,7 @@ func runQueueStatus(_ *client.Client, args []string) {
 	if *limit < 1 {
 		*limit = defaultQueueStatusSampleLimit
 	}
-	coreURL := resolveCoreStatusURL(*coreURLFlag)
+	coreURL := resolveCoreStatusURL(*coreURLFlag, configuredCoreURL)
 	statusClient := client.New(coreURL, *timeout)
 
 	report := collectQueueStatus(statusClient, *limit, *timeout)
@@ -236,12 +231,12 @@ func collectOllamaStatus(baseURL string, timeout time.Duration, enabled bool) ol
 
 func collectWebStatus(providers []string, probe bool, timeout time.Duration) webStatusReport {
 	report := webStatusReport{
-		Enabled:   statusEnvBool("WEB_SEARCH_ENABLED", true),
+		Enabled:   true,
 		Providers: providers,
 		Probe:     probe,
 	}
 
-	if !report.Enabled || !probe {
+	if !probe {
 		return report
 	}
 
@@ -273,8 +268,8 @@ func collectWebStatus(providers []string, probe bool, timeout time.Duration) web
 	return report
 }
 
-func resolveCoreStatusURL(raw string) string {
-	return normalizeStatusURL(raw, getenv("CORE_URL", "http://localhost:8090"))
+func resolveCoreStatusURL(raw string, configuredCoreURL string) string {
+	return normalizeStatusURL(raw, configuredCoreURL)
 }
 
 func normalizeStatusURL(raw string, fallback string) string {

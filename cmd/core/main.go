@@ -2,19 +2,18 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
-	"time"
 
 	"github.com/gryph/omnidex/internal/api"
 	"github.com/gryph/omnidex/internal/config"
 	"github.com/gryph/omnidex/internal/db"
 	"github.com/gryph/omnidex/internal/llmprovider"
-	"github.com/gryph/omnidex/internal/ollama"
 	"github.com/gryph/omnidex/internal/queue"
+	"github.com/gryph/omnidex/internal/roleplay"
 	"github.com/gryph/omnidex/internal/secrets"
 	"github.com/gryph/omnidex/internal/version"
 	"github.com/gryph/omnidex/internal/websearch"
@@ -22,6 +21,45 @@ import (
 )
 
 func main() {
+	if len(os.Args) > 1 {
+		switch {
+		case len(os.Args) == 3 && os.Args[1] == "config:validate-file":
+			if err := validateCoreEnvironmentFile(os.Args[2]); err != nil {
+				log.Fatalf("config validation error: %v", err)
+			}
+			log.Printf("configuration is valid")
+			return
+		case len(os.Args) == 3 && os.Args[1] == "release:verify-commit":
+			commit, err := verifyReleaseCommit(os.Args[2])
+			if err != nil {
+				log.Fatalf("release identity error: %v", err)
+			}
+			fmt.Println(commit)
+			return
+		case len(os.Args) == 3 && os.Args[1] == "release:verify-running-health":
+			commit, err := verifyRunningReleaseHealthCommand(os.Args[2])
+			if err != nil {
+				log.Fatalf("running release health error: %v", err)
+			}
+			fmt.Println(commit)
+			return
+		case len(os.Args) == 2 && os.Args[1] == "database:preserve-legacy-public":
+			if err := runLegacyPublicPreservationCommand(); err != nil {
+				log.Fatalf("legacy public preservation error: %v", err)
+			}
+			return
+		case len(os.Args) == 2 && os.Args[1] == "database:migrate-sealed":
+			if err := runSealedDatabaseMigrationCommand(); err != nil {
+				log.Fatalf("sealed database migration error: %v", err)
+			}
+			return
+		default:
+			log.Fatalf("unsupported core command")
+		}
+	}
+	if err := validateReleaseIdentity(); err != nil {
+		log.Fatalf("release identity error: %v", err)
+	}
 	cfg, err := config.Load()
 	if err != nil {
 		log.Fatalf("config error: %v", err)
@@ -32,6 +70,7 @@ func main() {
 	defer cancel()
 
 	var repo *queue.Repository
+	var roleplaySimulation *roleplay.Store
 	var migrationBundle queue.MigrationBundle
 	if !cfg.WrapperOnly {
 		migrationBundle, err = loadCoreMigrationBundle()
@@ -45,10 +84,17 @@ func main() {
 		defer pool.Close()
 
 		repo = queue.New(pool)
+		roleplaySimulation, err = roleplay.NewStore(pool)
+		if err != nil {
+			log.Fatalf("roleplay simulation store error: %v", err)
+		}
 		if cfg.MigrateOnStartup {
 			if err := repo.EnsureSchema(ctx, migrationBundle); err != nil {
 				log.Fatalf("schema migration error: %v", err)
 			}
+		}
+		if err := repo.ValidateRuntimeAuthority(ctx); err != nil {
+			log.Fatalf("runtime authority error: %v", err)
 		}
 		secretResolver := secrets.NewResolver(repo)
 		secrets.SetGlobal(secretResolver)
@@ -58,46 +104,27 @@ func main() {
 		log.Fatalf("config validation error: %v", err)
 	}
 
-	if shouldResolveOllamaEndpoint(cfg) {
-		resolveCtx, cancel := context.WithTimeout(ctx, 25*time.Second)
-		resolved, err := ollama.ResolveReachableBaseURL(resolveCtx, cfg.OllamaBaseURL, 4*time.Second)
-		cancel()
-		if err != nil {
-			log.Printf("ollama startup probe failed (jobs may fail until OLLAMA_BASE_URL is reachable): %v", err)
-		} else if resolved != strings.TrimSpace(cfg.OllamaBaseURL) {
-			log.Printf("ollama endpoint resolved %s -> %s", cfg.OllamaBaseURL, resolved)
-			cfg.OllamaBaseURL = resolved
-		} else {
-			log.Printf("ollama endpoint reachable at %s", resolved)
-		}
-	}
-
-	llmClient, err := llmprovider.NewFromConfig(cfg)
-	if err != nil {
-		log.Fatalf("llm provider error: %v", err)
-	}
+	llmTransports := llmprovider.NewLazyFromConfig(cfg)
 	var webSearchService *websearch.Service
-	if cfg.WebSearchEnabled {
-		webSearchService = websearch.New(
-			cfg.WebSearchProviders,
-			cfg.WebSearchTimeout,
-			cfg.WebSearchPerSourceBudget,
-			cfg.WebSearchTotalBudget,
-		)
+	providers := make([]websearch.ProviderID, len(cfg.WebSearchProviders))
+	for index, provider := range cfg.WebSearchProviders {
+		providers[index] = websearch.ProviderID(provider)
 	}
-
-	httpServer := api.NewServerWithOptions(repo, llmClient, api.ServerOptions{
+	webSearchService, err = websearch.New(runtimeWebSearchConfig(cfg, providers))
+	if err != nil {
+		log.Fatalf("web search configuration error: %v", err)
+	}
+	httpServer := api.NewServerWithOptions(repo, llmTransports.Embeddings, api.ServerOptions{
 		LifecycleContext:     ctx,
 		MigrationBundle:      migrationBundle,
 		ProviderConfig:       cfg,
 		RequestTimeout:       cfg.RequestTimeout,
-		WebSearchEnabled:     cfg.WebSearchEnabled,
 		WebSearchProviders:   cfg.WebSearchProviders,
-		WebSearchTimeout:     cfg.WebSearchTimeout,
 		CoreURL:              cfg.CoreURL,
 		ListenAddr:           cfg.ListenAddr,
 		HostAgentURL:         cfg.HostAgentURL,
 		HostAgentToken:       cfg.HostAgentToken,
+		IntegrationAPIToken:  cfg.IntegrationAPIToken,
 		RealtimeMaxClients:   cfg.RealtimeMaxClients,
 		RealtimeStreamMaxAge: cfg.RealtimeStreamMaxAge,
 		RealtimeHeartbeat:    cfg.RealtimeHeartbeat,
@@ -105,47 +132,34 @@ func main() {
 		RedisURL:             cfg.RedisURL,
 		UIRedisRequired:      cfg.UIRedisRequired,
 		UISessionTTL:         cfg.UISessionTTL,
+		RoleplaySimulation:   roleplaySimulation,
 	})
 	if !cfg.WrapperOnly {
-		cognitionBrain, err := cognitionBrainFromConfig(cfg)
-		if err != nil {
-			log.Fatalf("configure cognition brain: %v", err)
-		}
 		workerService, err := worker.New(
 			repo,
-			llmClient,
+			llmTransports.Stations,
+			llmTransports.Embeddings,
 			webSearchService,
 			worker.Options{
 				WorkerCount:            cfg.WorkerCount,
 				FragmentConcurrency:    cfg.CodingFragmentConcurrency,
 				PollInterval:           cfg.WorkerPollInterval,
-				RetrievalLimit:         cfg.RetrievalLimit,
-				ContextBudget:          cfg.ContextCharBudget,
 				InferenceContextTokens: cfg.InferenceContextTokens,
+				InferenceProvider:      cfg.LLMProvider,
 				EmbeddingProvider:      cfg.EmbeddingProvider,
 				EmbeddingModel:         cfg.EmbeddingModel,
 				Models: worker.ModelRouting{
-					Default:    cfg.DefaultModel,
-					Fast:       cfg.FastModel,
-					Glue:       cfg.GlueModel,
-					Reasoning:  cfg.ReasoningModel,
-					Tagging:    cfg.TaggingModel,
-					Plan:       cfg.PlanModel,
-					Analyze:    cfg.AnalyzeModel,
-					Response:   cfg.ResponseModel,
-					Search:     cfg.SearchModel,
-					Memory:     cfg.MemoryModel,
-					Specialist: cfg.SpecialistModels,
+					Stations:              cfg.StationModels,
+					RoleplaySemanticModel: cfg.RoleplaySemanticModel,
 				},
-				CognitionBrain: cognitionBrain,
 				Workspace: worker.WorkspaceSettings{
-					Enabled:       cfg.WorkspaceScanEnabled,
-					Root:          cfg.WorkspaceRoot,
-					HostRoot:      cfg.WorkspaceHostRoot,
-					MaxFiles:      cfg.WorkspaceMaxFiles,
-					ContextBudget: cfg.WorkspaceContextBudget,
+					Root:     cfg.WorkspaceRoot,
+					HostRoot: cfg.WorkspaceHostRoot,
 				},
-				SkillsRoot:    cfg.SkillsRoot,
+				Deployment: worker.DeploymentSettings{
+					KeyFile: cfg.DeploymentKeyFile, BindAddress: cfg.DeploymentBindAddress,
+					AdvertisedHost: cfg.DeploymentAdvertisedHost, ProbeHost: cfg.DeploymentProbeHost,
+				},
 				Logger:        log.Default(),
 				OnJobFinished: httpServer.OnJobFinishedAsync,
 				OnJobOutput:   httpServer.OnJobOutputAsync,
@@ -170,8 +184,31 @@ func main() {
 	}
 }
 
-func shouldResolveOllamaEndpoint(cfg config.Config) bool {
-	provider := strings.ToLower(strings.TrimSpace(cfg.LLMProvider))
-	embedding := strings.ToLower(strings.TrimSpace(cfg.EmbeddingProvider))
-	return provider == "ollama" || embedding == "ollama"
+func validateReleaseIdentity() error {
+	_, err := version.BuildCommit()
+	return err
+}
+
+func verifyReleaseCommit(expected string) (string, error) {
+	commit, err := version.BuildCommit()
+	if err != nil {
+		return "", err
+	}
+	if expected != commit {
+		return "", fmt.Errorf("embedded build commit %s does not match expected commit %s", commit, expected)
+	}
+	return commit, nil
+}
+
+func runtimeWebSearchConfig(cfg config.Config, providers []websearch.ProviderID) websearch.Config {
+	return websearch.Config{
+		Providers:                append([]websearch.ProviderID(nil), providers...),
+		Timeout:                  cfg.WebSearchTimeout,
+		PerDocumentBytes:         cfg.WebSearchPerSourceBudget,
+		TotalDocumentBytes:       cfg.WebSearchTotalBudget,
+		MaxCandidatesPerProvider: 8,
+		MaxCandidates:            16,
+		MaxDocuments:             2,
+		MaxResponseBytes:         1 << 20,
+	}
 }

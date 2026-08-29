@@ -7,6 +7,7 @@ import (
 
 func TestTypeScriptFragmentPromptContainsOnlyLocalAPIContext(t *testing.T) {
 	prompt, err := BuildTypeScriptFragmentPrompt(TypeScriptFragmentPrompt{
+		Dialect:   "TypeScript 5.9.3 with TSX",
 		Signature: "function double(value: Value): Value",
 		Contract:  "Return a new value whose amount is twice the supplied amount.",
 		Available: "interface Value { amount: number }",
@@ -25,103 +26,66 @@ func TestTypeScriptFragmentPromptContainsOnlyLocalAPIContext(t *testing.T) {
 	}
 }
 
-func TestTypeScriptFragmentPromptRejectsOversizedEnvelopeSections(t *testing.T) {
-	base := TypeScriptFragmentPrompt{
-		Signature: "function apply(): void",
-		Contract:  "Do the one supplied operation.",
-	}
-	for name, mutate := range map[string]func(*TypeScriptFragmentPrompt){
-		"capabilities": func(input *TypeScriptFragmentPrompt) {
-			input.Available = strings.Repeat("x", maxTypeScriptCapabilityBytes+1)
-		},
-		"current declaration": func(input *TypeScriptFragmentPrompt) {
-			input.Contract = ""
-			input.Current = strings.Repeat("x", maxTypeScriptCurrentDeclarationBytes+1)
-		},
-		"required change": func(input *TypeScriptFragmentPrompt) {
-			input.Contract = ""
-			input.Current = "function apply(): void { run(); }"
-			input.RequiredChange = strings.Repeat("x", maxTypeScriptRequiredChangeBytes+1)
-			input.Diagnostic = "rejected"
-		},
-		"diagnostic": func(input *TypeScriptFragmentPrompt) {
-			input.Contract = ""
-			input.Current = "function apply(): void { run(); }"
-			input.RequiredChange = "Fix the rejected statement."
-			input.Diagnostic = strings.Repeat("x", maxTypeScriptDiagnosticBytes+1)
-		},
-	} {
-		t.Run(name, func(t *testing.T) {
-			input := base
-			mutate(&input)
-			if _, err := BuildTypeScriptFragmentPrompt(input); err == nil || !strings.Contains(err.Error(), name) {
-				t.Fatalf("error=%v", err)
-			}
-		})
-	}
-}
-
 func TestTypeScriptFragmentPromptRejectsBloatedInitialEnvelope(t *testing.T) {
 	_, err := BuildTypeScriptFragmentPrompt(TypeScriptFragmentPrompt{
-		Signature: "function apply(): void",
-		Contract:  strings.Repeat("c", 1500),
-		Available: strings.Repeat("a", 1500),
+		Dialect:   "TypeScript 5.9.3 with TSX",
+		Signature: "function " + strings.Repeat("a", maxTypeScriptInitialEnvelopeBytes) + "(): void",
+		Contract:  "Do the one supplied operation.",
 	})
 	if err == nil || !strings.Contains(err.Error(), "initial envelope") {
 		t.Fatalf("error=%v", err)
 	}
 }
 
-func TestTypeScriptCorrectionPromptOmitsSupersededBehaviorAndKeepsExactLocalFailure(t *testing.T) {
+func TestGuidedTypeScriptCorrectionPromptHasOnlyInstructionAndMutableSource(t *testing.T) {
+	t.Parallel()
+	current := "function render(): ReactElement { return <div />; }"
+	instruction := "Replace the returned div with a button element."
 	prompt, err := BuildTypeScriptFragmentPrompt(TypeScriptFragmentPrompt{
-		Signature:      "function render(value: Value): ReactElement",
-		Available:      "interface Value { label: string }",
-		Current:        "function render(value: Value): ReactElement { return <old-tag>{value.label}</old-tag>; }",
-		RequiredChange: "Replace old-tag with a div whose className is label.",
-		Diagnostic:     "expected undefined to be label",
+		Signature: "function render(): ReactElement", Current: current,
+		RepairGuidance: instruction,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, required := range []string{
-		"CURRENT_DECLARATION:", "REQUIRED_CHANGE:", "OBSERVED_FAILURE:", "interface Value",
-	} {
+	for _, required := range []string{"EXACT_MUTABLE_SOURCE_JSON:", current, "REQUIRED_SOURCE_TRANSFORMATION:", instruction} {
 		if !strings.Contains(prompt, required) {
-			t.Fatalf("correction prompt omitted %q:\n%s", required, prompt)
+			t.Fatalf("guided prompt omitted %q:\n%s", required, prompt)
 		}
 	}
-	for _, forbidden := range []string{"LOCAL_BEHAVIOR:", "Render the value label", "workspace", "filename", "dependency graph"} {
+	for _, forbidden := range []string{
+		"LOCAL_BEHAVIOR:", "OBSERVED_FAILURE:", "REQUIRED_CHANGE:",
+		"ONLY_AVAILABLE_DECLARATIONS:", "ALREADY_IN_SCOPE_IDENTIFIERS:",
+	} {
 		if strings.Contains(prompt, forbidden) {
-			t.Fatalf("correction prompt leaked %q:\n%s", forbidden, prompt)
+			t.Fatalf("guided prompt retained analysis context %q:\n%s", forbidden, prompt)
 		}
 	}
 }
 
-func TestTypeScriptCorrectionPromptRejectsReplayedInitialBehavior(t *testing.T) {
+func TestTypeScriptCorrectionPromptRejectsUnguidedAndMixedAuthority(t *testing.T) {
 	t.Parallel()
-
-	_, err := BuildTypeScriptFragmentPrompt(TypeScriptFragmentPrompt{
-		Signature:      "function render(): ReactElement",
-		Contract:       "Render the original product behavior.",
-		Current:        "function render(): ReactElement { return <div />; }",
-		RequiredChange: "Remove one invalid construct.",
-		Diagnostic:     "invalid construct",
-	})
-	if err == nil || !strings.Contains(err.Error(), "cannot replay") {
-		t.Fatalf("error=%v", err)
+	base := TypeScriptFragmentPrompt{
+		Signature: "function render(): ReactElement",
+		Current:   "function render(): ReactElement { return <div />; }",
 	}
-}
-
-func TestTypeScriptGenerationPromptRejectsCorrectionFieldsWithoutCurrentDeclaration(t *testing.T) {
-	t.Parallel()
-
-	_, err := BuildTypeScriptFragmentPrompt(TypeScriptFragmentPrompt{
-		Signature:      "function render(): ReactElement",
-		Contract:       "Render one control.",
-		RequiredChange: "Change the control.",
-		Diagnostic:     "control rejected",
-	})
-	if err == nil || !strings.Contains(err.Error(), "cannot carry correction") {
-		t.Fatalf("error=%v", err)
+	for name, mutate := range map[string]func(*TypeScriptFragmentPrompt){
+		"raw diagnostic": func(input *TypeScriptFragmentPrompt) {
+			input.RequiredChange = "Replace the returned element."
+			input.Diagnostic = "expected a button"
+		},
+		"missing guidance": func(*TypeScriptFragmentPrompt) {},
+		"analysis context": func(input *TypeScriptFragmentPrompt) {
+			input.RepairGuidance = "Replace the returned element."
+			input.Available = "interface HiddenAnalysis {}"
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			input := base
+			mutate(&input)
+			if _, err := BuildTypeScriptFragmentPrompt(input); err == nil {
+				t.Fatalf("accepted %s authority", name)
+			}
+		})
 	}
 }

@@ -23,10 +23,12 @@ func (c *Client) generatePreparedRaw(
 	}
 	digest := sha256.Sum256(payload)
 	result := llm.PreparedGeneration{
-		Schema:                   llm.PreparedGenerationSchemaV1,
-		ProviderRequestSHA256:    hex.EncodeToString(digest[:]),
-		ProviderObservation:      observed.Observation,
-		ProviderIdentityEvidence: observed.Evidence,
+		Schema:                     llm.PreparedGenerationSchemaV1,
+		Protocol:                   prepared.Protocol,
+		ProviderRequestDisposition: llm.ProviderRequestNotDispatched,
+		ProviderRequestSHA256:      hex.EncodeToString(digest[:]),
+		ProviderObservation:        observed.Observation,
+		ProviderIdentityEvidence:   observed.Evidence,
 	}
 	request, err := http.NewRequestWithContext(
 		ctx, http.MethodPost, c.baseURL+"/api/generate", bytes.NewReader(payload),
@@ -35,8 +37,8 @@ func (c *Client) generatePreparedRaw(
 		return result, err
 	}
 	request.Header.Set("Content-Type", "application/json")
-	result.ProviderRequestDispatched = true
-	response, err := c.doExactProviderRequest(request)
+	response, disposition, err := c.doExactProviderRequest(request)
+	result.ProviderRequestDisposition = disposition
 	if err != nil {
 		result.ProviderResponseDisposition = llm.ProviderResponseTransportError
 		return result, c.wrapConnectivityError(err, "/api/generate")
@@ -74,7 +76,9 @@ func (c *Client) generatePreparedRaw(
 			result.ProviderContentEncoding.SHA256, result.ProviderContentEncoding.Uncompressed,
 		)
 	}
-	decoded, decodeErr := llm.DecodeExactPreparedResponse(response.StatusCode, body)
+	decoded, decodeErr := llm.DecodeExactPreparedResponseForProtocol(
+		prepared.Protocol, response.StatusCode, body,
+	)
 	result.ProviderResponseDisposition = decoded.Disposition
 	result.ProviderResponseModel = decoded.Model
 	result.Content = decoded.Content

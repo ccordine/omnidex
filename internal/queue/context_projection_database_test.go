@@ -9,7 +9,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gryph/omnidex/internal/assemblyline"
 	"github.com/gryph/omnidex/internal/contextbuilder"
+	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/taskstate"
 	"github.com/gryph/omnidex/internal/workingset"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -18,7 +20,7 @@ import (
 func TestPostgresContextProjectionRoundTripBindingAndImmutability(t *testing.T) {
 	ctx, repository, pool := openWorkingSetDatabase(t)
 	marker := fmt.Sprintf("context-projection-%d", time.Now().UnixNano())
-	authority, projection := seedContextProjectionTest(t, ctx, repository, pool, marker)
+	authority, projection, stationJob := seedContextProjectionTest(t, ctx, repository, pool, marker)
 
 	created, err := repository.StoreContextProjection(ctx, authority, projection)
 	if err != nil {
@@ -33,11 +35,6 @@ func TestPostgresContextProjectionRoundTripBindingAndImmutability(t *testing.T) 
 	if _, err := repository.StoreContextProjection(ctx, changed, projection); !errors.Is(err, ErrContextProjectionConflict) {
 		t.Fatalf("changed identity error=%v, want conflict", err)
 	}
-	changed = authority
-	changed.Mode = ContextProjectionMode("applied")
-	if _, err := repository.StoreContextProjection(ctx, changed, projection); !errors.Is(err, ErrInvalidContextProjection) {
-		t.Fatalf("unsupported usage mode error=%v, want invalid projection", err)
-	}
 	loaded, err := repository.GetContextProjection(ctx, projection.ID)
 	if err != nil || !reflect.DeepEqual(loaded, created) {
 		t.Fatalf("loaded=%+v error=%v, want %+v", loaded, err, created)
@@ -47,65 +44,72 @@ func TestPostgresContextProjectionRoundTripBindingAndImmutability(t *testing.T) 
 		t.Fatalf("projection page=%+v error=%v", page, err)
 	}
 
-	bound := contextProjectionLLMRecord(authority, projection)
-	bound.ContextProjectionID = projection.ID
-	call, err := repository.RecordLLMCallEvidence(ctx, bound)
-	if err != nil {
-		t.Fatal(err)
-	}
+	bound := prepareSuccessfulStationEvidenceFixture(
+		t, repository, authority.StepAttemptAuthority, stationJob,
+		`{"schema":"omnidex.conversation-response.v1","text":"bound context"}`,
+	)
+	call := persistPreparedStationEvidenceFixture(t, repository, bound, projection.ID)
 	if call.ContextProjectionID != projection.ID || call.JobGeneration != authority.Generation {
 		t.Fatalf("bound call lost exact projection authority: %+v", call)
 	}
-	legacy := contextProjectionLLMRecord(authority, projection)
-	legacy.Attempt = 2
-	legacyCall, err := repository.RecordLLMCallEvidence(ctx, legacy)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if legacyCall.ContextProjectionID != "" {
-		t.Fatalf("shadow-era null projection was synthesized: %+v", legacyCall)
+	unbound := prepareSuccessfulStationEvidenceFixture(
+		t, repository, authority.StepAttemptAuthority,
+		newStationEvidenceJobForTest(t, marker+"-unbound"),
+		`{"schema":"omnidex.conversation-response.v1","text":"unbound context"}`,
+	)
+	unboundCall := persistPreparedStationEvidenceFixture(t, repository, unbound, "")
+	if unboundCall.ContextProjectionID != "" {
+		t.Fatalf("unbound call received a synthesized projection: %+v", unboundCall)
 	}
 	assertContextProjectionDatabaseValidation(t, ctx, pool, created)
 	assertContextProjectionImmutable(t, ctx, pool, projection.ID)
 }
 
-func TestPostgresContextProjectionStoresExplicitLiveMode(t *testing.T) {
+func TestPostgresContextProjectionStoresCodeOwnedLiveUsage(t *testing.T) {
 	ctx, repository, pool := openWorkingSetDatabase(t)
 	marker := fmt.Sprintf("context-projection-live-%d", time.Now().UnixNano())
-	authority, projection := seedContextProjectionTest(t, ctx, repository, pool, marker)
-	authority.Mode = ContextProjectionModeLive
-	authority.WorkKind = "cognition_action_decision"
+	authority, projection, _ := seedContextProjectionTest(t, ctx, repository, pool, marker)
 	created, err := repository.StoreContextProjection(ctx, authority, projection)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if created.Authority.Mode != ContextProjectionModeLive {
-		t.Fatalf("stored context mode=%q want live", created.Authority.Mode)
+	var usageMode string
+	if err := pool.QueryRow(ctx, `
+		SELECT usage_mode FROM context_projections WHERE projection_id=$1
+	`, projection.ID).Scan(&usageMode); err != nil {
+		t.Fatal(err)
+	}
+	if usageMode != "live" {
+		t.Fatalf("stored context usage mode=%q want live", usageMode)
 	}
 	loaded, err := repository.GetContextProjection(ctx, projection.ID)
-	if err != nil || loaded.Authority != authority {
-		t.Fatalf("loaded live projection=%+v error=%v", loaded, err)
+	if err != nil || !reflect.DeepEqual(loaded, created) {
+		t.Fatalf("loaded live projection=%+v error=%v want=%+v", loaded, err, created)
 	}
 }
 
 func TestPostgresContextProjectionBindingRejectsEveryAuthorityMismatch(t *testing.T) {
 	ctx, repository, pool := openWorkingSetDatabase(t)
 	marker := fmt.Sprintf("context-projection-authority-%d", time.Now().UnixNano())
-	authority, projection := seedContextProjectionTest(t, ctx, repository, pool, marker)
+	authority, projection, stationJob := seedContextProjectionTest(t, ctx, repository, pool, marker)
 	if _, err := repository.StoreContextProjection(ctx, authority, projection); err != nil {
 		t.Fatal(err)
 	}
+	fixture := prepareSuccessfulStationEvidenceFixture(
+		t, repository, authority.StepAttemptAuthority, stationJob,
+		`{"schema":"omnidex.conversation-response.v1","text":"authority binding"}`,
+	)
 
-	wrongWork := contextProjectionLLMRecord(authority, projection)
+	wrongWork := fixture.Record
 	wrongWork.ContextProjectionID = projection.ID
 	wrongWork.WorkID = strings.Repeat("f", 64)
-	if _, err := repository.RecordLLMCallEvidence(ctx, wrongWork); err == nil {
+	if _, err := insertLLMCallEvidenceForTest(ctx, repository, wrongWork); err == nil {
 		t.Fatal("cross-work projection binding succeeded")
 	}
-	wrongKind := contextProjectionLLMRecord(authority, projection)
+	wrongKind := fixture.Record
 	wrongKind.ContextProjectionID = projection.ID
 	wrongKind.WorkKind = "other_work"
-	if _, err := repository.RecordLLMCallEvidence(ctx, wrongKind); err == nil {
+	if _, err := insertLLMCallEvidenceForTest(ctx, repository, wrongKind); err == nil {
 		t.Fatal("cross-work-kind projection binding succeeded")
 	}
 
@@ -116,24 +120,25 @@ func TestPostgresContextProjectionBindingRejectsEveryAuthorityMismatch(t *testin
 	`, authority.JobID).Scan(&secondStep); err != nil {
 		t.Fatal(err)
 	}
-	wrongStep := contextProjectionLLMRecord(authority, projection)
+	wrongStep := fixture.Record
 	wrongStep.ContextProjectionID, wrongStep.StepID = projection.ID, secondStep
-	if _, err := repository.RecordLLMCallEvidence(ctx, wrongStep); err == nil {
+	if _, err := insertLLMCallEvidenceForTest(ctx, repository, wrongStep); err == nil {
 		t.Fatal("cross-step projection binding succeeded")
 	}
 
 	other := enqueueWorkingSetTestJob(t, ctx, repository, marker+"-other")
 	otherAuthority := claimWorkingSetTestJob(t, ctx, repository, other)
-	wrongJob := contextProjectionLLMRecord(authority, projection)
+	wrongJob := fixture.Record
 	wrongJob.ContextProjectionID, wrongJob.StepID = projection.ID, otherAuthority.StepID
-	if _, err := repository.RecordLLMCallEvidence(ctx, wrongJob); err == nil {
+	if _, err := insertLLMCallEvidenceForTest(ctx, repository, wrongJob); err == nil {
 		t.Fatal("cross-job projection binding succeeded")
 	}
 
+	persistPreparedStationEvidenceFixture(t, repository, fixture, projection.ID)
 	secondGenerationStep := advanceContextProjectionGeneration(t, ctx, pool, authority.JobID)
-	wrongGeneration := contextProjectionLLMRecord(authority, projection)
+	wrongGeneration := fixture.Record
 	wrongGeneration.ContextProjectionID, wrongGeneration.StepID = projection.ID, secondGenerationStep
-	if _, err := repository.RecordLLMCallEvidence(ctx, wrongGeneration); err == nil {
+	if _, err := insertLLMCallEvidenceForTest(ctx, repository, wrongGeneration); err == nil {
 		t.Fatal("cross-generation projection binding succeeded")
 	}
 	if replay, err := repository.StoreContextProjection(ctx, authority, projection); err != nil || replay.Projection.ID != projection.ID {
@@ -147,10 +152,58 @@ func seedContextProjectionTest(
 	repository *Repository,
 	pool *pgxpool.Pool,
 	marker string,
-) (ContextProjectionAuthority, contextbuilder.Projection) {
+) (ContextProjectionAuthority, contextbuilder.Projection, assemblyline.PortableJob) {
 	t.Helper()
 	job := enqueueWorkingSetTestJob(t, ctx, repository, marker)
 	attemptAuthority := claimWorkingSetTestJob(t, ctx, repository, job)
+	stationJob := newStationEvidenceJobForTest(t, marker+"-bound")
+	authority, projection := seedContextProjectionForAuthorityWithWork(
+		t, ctx, repository, job.ID, attemptAuthority, marker,
+		stationJob.ID, string(stationJob.Kind),
+	)
+	return authority, projection, stationJob
+}
+
+func seedPreInlineExecutionContextProjectionTest(
+	t *testing.T,
+	ctx context.Context,
+	repository *Repository,
+	pool *pgxpool.Pool,
+	marker string,
+) (ContextProjectionAuthority, contextbuilder.Projection) {
+	t.Helper()
+	claim := seedPreInlineExecutionMigrationClaim(t, ctx, pool, marker)
+	return seedContextProjectionForAuthority(
+		t, ctx, repository, claim.Job.ID, claim.Authority, marker,
+	)
+}
+
+func seedContextProjectionForAuthority(
+	t *testing.T,
+	ctx context.Context,
+	repository *Repository,
+	jobID int64,
+	attemptAuthority model.StepAttemptAuthority,
+	marker string,
+) (ContextProjectionAuthority, contextbuilder.Projection) {
+	t.Helper()
+	return seedContextProjectionForAuthorityWithWork(
+		t, ctx, repository, jobID, attemptAuthority, marker,
+		llmEvidenceSHA256(marker), "repository_investigation",
+	)
+}
+
+func seedContextProjectionForAuthorityWithWork(
+	t *testing.T,
+	ctx context.Context,
+	repository *Repository,
+	jobID int64,
+	attemptAuthority model.StepAttemptAuthority,
+	marker string,
+	workID string,
+	workKind string,
+) (ContextProjectionAuthority, contextbuilder.Projection) {
+	t.Helper()
 	budget := workingset.Budget{MaxItems: 2, MaxBytes: 4096}
 	created, err := repository.CreateCurrentWorkingSet(ctx, attemptAuthority, budget)
 	if err != nil {
@@ -163,7 +216,7 @@ func seedContextProjectionTest(
 	}); err != nil {
 		t.Fatal(err)
 	}
-	snapshot, err := repository.CurrentWorkingSet(ctx, job.ID)
+	snapshot, err := repository.CurrentWorkingSet(ctx, jobID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -175,13 +228,12 @@ func seedContextProjectionTest(
 	if !exists {
 		t.Fatal("acquired projection item is missing")
 	}
-	workID := llmEvidenceSHA256(marker)
 	projection, err := contextbuilder.Build(contextbuilder.BuildInput{
 		WorkID: workID,
 		Spec: contextbuilder.ContextSpec{
 			Name: "repository-investigation", Version: "v1",
 			ScopeRef: taskstate.Ref{
-				URI: fmt.Sprintf("task:job/%d/node/investigation", job.ID), Version: "v1",
+				URI: fmt.Sprintf("task:job/%d/node/investigation", jobID), Version: "v1",
 				Hash: strings.Repeat("d", 64), Relation: taskstate.RefConcerns,
 			},
 			Required: []contextbuilder.Selector{{
@@ -201,21 +253,6 @@ func seedContextProjectionTest(
 		t.Fatal(err)
 	}
 	return ContextProjectionAuthority{
-		StepAttemptAuthority: attemptAuthority, WorkKind: "repository_investigation",
-		Mode: ContextProjectionModeShadow,
+		StepAttemptAuthority: attemptAuthority, WorkKind: workKind,
 	}, projection
-}
-
-func contextProjectionLLMRecord(
-	authority ContextProjectionAuthority,
-	projection contextbuilder.Projection,
-) LLMCallEvidenceRecord {
-	return LLMCallEvidenceRecord{
-		Authority: authority.StepAttemptAuthority, StepID: authority.StepID, Scope: "context_projection_shadow",
-		WorkID: projection.WorkID, WorkKind: authority.WorkKind,
-		RequestedModel: "requested", Model: "effective", Attempt: 1,
-		SystemPrompt: "exact system", UserPrompt: "exact user", ResponseFormat: "text",
-		ContextTokens: 4096, MaxOutputTokens: 512,
-		Status: LLMEvidenceSucceeded, Response: "exact response", LatencyMS: 1,
-	}
 }

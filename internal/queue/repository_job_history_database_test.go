@@ -19,14 +19,13 @@ type jobHistoryFixture struct {
 	stepID     int64
 	artifactID int64
 	evidenceID int64
-	claimID    int64
 	llmID      int64
 }
 
 func TestPostgresJobHistoryIsCursorPagedAndStepResolved(t *testing.T) {
 	repository, pool, ctx := replanTestRepository(t)
 	marker := fmt.Sprintf("job-history-%d", time.Now().UnixNano())
-	job, err := repository.EnqueueJob(ctx, marker, model.PipelineAssistant, []byte(`{}`))
+	job, err := repository.EnqueueJob(ctx, marker, model.PipelineCoding, []byte(`{}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -142,9 +141,6 @@ func assertRecordHistoryPages(
 		{JobHistoryEvidence, old.evidenceID, current.evidenceID,
 			func(page JobHistoryPage) HistoricalStepReference { return page.Evidence[0].Step },
 			func(page JobHistoryPage) int64 { return page.Evidence[0].Evidence.ID }},
-		{JobHistoryClaims, old.claimID, current.claimID,
-			func(page JobHistoryPage) HistoricalStepReference { return page.Claims[0].Step },
-			func(page JobHistoryPage) int64 { return page.Claims[0].Claim.ID }},
 		{JobHistoryLLMCalls, old.llmID, current.llmID,
 			func(page JobHistoryPage) HistoricalStepReference { return page.LLMCalls[0].Step },
 			func(page JobHistoryPage) int64 { return page.LLMCalls[0].Call.ID }},
@@ -211,13 +207,6 @@ func insertJobHistoryFixture(
 	`, jobID, stepID, record.Kind, record.SourceType, record.SourceRef, payload).Scan(&fixture.evidenceID); err != nil {
 		t.Fatal(err)
 	}
-	if err := pool.QueryRow(ctx, `
-		INSERT INTO claims (job_id, step_id, text, normalized_text, status, confidence)
-		VALUES ($1, $2, $3, $4, 'supported', 1)
-		RETURNING id
-	`, jobID, stepID, marker, marker).Scan(&fixture.claimID); err != nil {
-		t.Fatal(err)
-	}
 	var generation int64
 	if err := pool.QueryRow(ctx, `
 		SELECT generation FROM job_steps WHERE job_id=$1 AND id=$2
@@ -228,16 +217,11 @@ func insertJobHistoryFixture(
 		t, ctx, pool, jobID, generation, stepID,
 		testStepAttemptWorker("job-history", stepID),
 	)
-	llmCall, err := repository.RecordLLMCallEvidence(ctx, LLMCallEvidenceRecord{
-		Authority: authority, StepID: stepID,
-		Scope: "job_history_fixture", RequestedModel: "fixture-model",
-		Model: "fixture-model", Attempt: 1, SystemPrompt: "Exact fixture system prompt.",
-		UserPrompt: marker, ResponseFormat: "text", ContextTokens: 128,
-		MaxOutputTokens: 32, Response: marker, Status: LLMEvidenceSucceeded,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	evidenceFixture := prepareSuccessfulStationEvidenceFixture(
+		t, repository, authority, newStationEvidenceJobForTest(t, marker),
+		`{"schema":"omnidex.conversation-response.v1","text":"history fixture"}`,
+	)
+	llmCall := persistPreparedStationEvidenceFixture(t, repository, evidenceFixture, "")
 	fixture.llmID = llmCall.ID
 	return fixture
 }
@@ -247,7 +231,7 @@ func historyStepID(t *testing.T, pool *pgxpool.Pool, jobID, generation int64) in
 	var stepID int64
 	if err := pool.QueryRow(t.Context(), `
 		SELECT id FROM job_steps
-		WHERE job_id=$1 AND generation=$2 AND action='v3_planning'
+		WHERE job_id=$1 AND generation=$2 AND action='v3_coding'
 		ORDER BY id ASC LIMIT 1
 	`, jobID, generation).Scan(&stepID); err != nil {
 		t.Fatal(err)

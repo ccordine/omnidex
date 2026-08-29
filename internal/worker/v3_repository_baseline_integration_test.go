@@ -20,11 +20,11 @@ func TestPostgresRepositoryBaselineRejectsConflictingExistingTestBeforeGeneratio
 	if os.Getenv("OMNIDEX_REQUIRE_BWRAP_INTEGRATION") != "1" {
 		t.Skip("set OMNIDEX_REQUIRE_BWRAP_INTEGRATION=1 for the real dirty-baseline proof")
 	}
-	ctx, repository, pool := openRepositoryShadowDatabase(t)
+	ctx, repository, pool := openRepositoryTestDatabase(t)
 	root := repositoryConflictingBaselineRoot(t)
 	project, err := repository.CreateProject(
-		ctx, fmt.Sprintf("mutation-baseline-failure-%d", time.Now().UnixNano()), root, "", "", nil,
-	)
+		ctx, fmt.Sprintf("mutation-baseline-failure-%d", time.Now().UnixNano()), root, "")
+
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -32,10 +32,7 @@ func TestPostgresRepositoryBaselineRejectsConflictingExistingTestBeforeGeneratio
 	if err != nil {
 		t.Fatal(err)
 	}
-	before, err := indexer.Refresh(ctx, project.ID, root)
-	if err != nil {
-		t.Fatal(err)
-	}
+	before := captureGoRepositoryIndexForTest(t, ctx, indexer, project.ID, root)
 	analysis := before.Analyses[0]
 	target := existingRepositoryVerificationSymbol(t, analysis, "Value")
 	contract, err := repositoryfacts.BuildChangeContract(
@@ -71,7 +68,7 @@ func TestPostgresRepositoryBaselineRejectsConflictingExistingTestBeforeGeneratio
 
 	var operations, generatedDiffs, calls, acceptances int
 	if err := pool.QueryRow(ctx, `
-		SELECT COUNT(*) FROM repository_mutation_operations WHERE job_id=$1
+		SELECT COUNT(*) FROM workspace_mutation_operations WHERE job_id=$1
 	`, claim.Job.ID).Scan(&operations); err != nil {
 		t.Fatal(err)
 	}
@@ -104,7 +101,7 @@ func TestPostgresRepositoryBaselineFailsLoudlyWhenTestRequiresIgnoredSecretState
 	if os.Getenv("OMNIDEX_REQUIRE_BWRAP_INTEGRATION") != "1" {
 		t.Skip("set OMNIDEX_REQUIRE_BWRAP_INTEGRATION=1 for the real excluded-state proof")
 	}
-	ctx, repository, pool := openRepositoryShadowDatabase(t)
+	ctx, repository, pool := openRepositoryTestDatabase(t)
 	root := repositoryMutationWorkflowRoot(t)
 	requiresSecret := `package mutationworkflow
 
@@ -125,8 +122,8 @@ func TestValue(t *testing.T) {
 		t.Fatal(err)
 	}
 	project, err := repository.CreateProject(
-		ctx, fmt.Sprintf("mutation-excluded-state-%d", time.Now().UnixNano()), root, "", "", nil,
-	)
+		ctx, fmt.Sprintf("mutation-excluded-state-%d", time.Now().UnixNano()), root, "")
+
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -134,10 +131,7 @@ func TestValue(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	before, err := indexer.Refresh(ctx, project.ID, root)
-	if err != nil {
-		t.Fatal(err)
-	}
+	before := captureGoRepositoryIndexForTest(t, ctx, indexer, project.ID, root)
 	analysis := before.Analyses[0]
 	target := existingRepositoryVerificationSymbol(t, analysis, "Value")
 	contract, err := repositoryfacts.BuildChangeContract(
@@ -185,7 +179,7 @@ func TestValue(t *testing.T) {
 	if err := pool.QueryRow(ctx, `SELECT COUNT(*) FROM llm_call_evidence WHERE job_id=$1`, claim.Job.ID).Scan(&calls); err != nil {
 		t.Fatal(err)
 	}
-	if err := pool.QueryRow(ctx, `SELECT COUNT(*) FROM repository_mutation_operations WHERE job_id=$1`, claim.Job.ID).Scan(&operations); err != nil {
+	if err := pool.QueryRow(ctx, `SELECT COUNT(*) FROM workspace_mutation_operations WHERE job_id=$1`, claim.Job.ID).Scan(&operations); err != nil {
 		t.Fatal(err)
 	}
 	if err := pool.QueryRow(ctx, `

@@ -33,4 +33,13 @@ describe("ScrumCardModalHost", () => {
     const host = new ScrumCardModalHost(() => 7, () => false);
     expect(() => host.open("missing")).toThrow('Scrum card "missing" is not present in server board state.');
   });
+
+  it("rejects an invalid project before changing modal state", () => {
+    const host = new ScrumCardModalHost(() => null, () => true);
+
+    expect(() => host.open("card_1")).toThrow("one open server-authoritative project");
+    expect(host.activeCardID()).toBeNull();
+    expect(document.querySelector("[data-card-modal-spa-card-id-value]")).toBeNull();
+    expect(document.querySelector("[data-chat-target='modal']")?.classList.contains("hidden")).toBe(true);
+  });
 });

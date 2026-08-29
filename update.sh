@@ -3,17 +3,20 @@ set -euo pipefail
 
 SCRIPT_NAME="$(basename "$0")"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "${SCRIPT_DIR}/scripts/managed-checkout-lib.sh"
+source "${SCRIPT_DIR}/scripts/update-runtime-lib.sh"
 
 PREFIX="${SCRIPT_DIR}"
 BRANCH=""
 COMPOSE_FILE=""
-SERVICE="core"
 NO_PULL=0
 NO_BUILD=0
 NO_RESTART=0
 NO_CACHE=0
 HOST_ONLY=0
 NO_HOST_RESTART=0
+DOCKER_CONTEXT_NAME=""
+COMPOSE_PROJECT=""
 
 usage() {
   cat <<EOF
@@ -24,7 +27,6 @@ Options:
   --prefix <path>         Omnidex repo/install path (default: script directory)
   --branch <name>         Git branch to update (default: current branch)
   --compose-file <path>   Compose file to use (default: docker-compose.yml in prefix)
-  --service <name>        Compose service to rebuild/restart (default: core)
   --no-cache              Rebuild Docker image without cache
   --no-pull               Skip git fetch/pull
   --no-build              Skip docker compose build
@@ -34,11 +36,11 @@ Options:
   -h, --help              Show this help
 
 What this updater does:
-  1) Fetches latest git refs and fast-forward pulls to latest
-  2) Rebuilds host binaries, including bin/omni
+  1) Stages a complete checkout and fast-forwards it to latest
+  2) Reproducibly builds the embedded GUI and all host binaries
   3) Restarts the host bridge user service when installed (omni-host-bridge)
-  4) Rebuilds the Docker image for the selected service
-  5) Restarts the selected service with docker compose
+  4) Rebuilds the Docker image for the core service
+  5) Restarts the core service with docker compose
 EOF
 }
 
@@ -57,34 +59,6 @@ die() {
 
 command_exists() {
   command -v "$1" >/dev/null 2>&1
-}
-
-has_blocking_git_changes() {
-  local repo_dir="$1"
-  local line status path
-  while IFS= read -r line; do
-    [[ -n "${line}" ]] || continue
-    status="${line:0:2}"
-    path="${line:3}"
-    path="${path#\"}"
-    path="${path%\"}"
-    if [[ "${path}" == *" -> "* ]]; then
-      path="${path##* -> }"
-      path="${path#\"}"
-      path="${path%\"}"
-    fi
-
-    # Installer/runtime-generated binaries should not block updates.
-    if [[ "${path}" == bin/* ]]; then
-      continue
-    fi
-    # Untracked files are often local artifacts/config and should not block pull.
-    if [[ "${status}" == "??" ]]; then
-      continue
-    fi
-    return 0
-  done < <(git -C "${repo_dir}" status --porcelain=1 --untracked-files=all)
-  return 1
 }
 
 expand_home_path() {
@@ -110,18 +84,6 @@ absolute_existing_path() {
   )
 }
 
-resolve_compose_cmd() {
-  if command_exists docker && docker compose version >/dev/null 2>&1; then
-    printf '%s\n' "docker compose"
-    return
-  fi
-  if command_exists docker-compose; then
-    printf '%s\n' "docker-compose"
-    return
-  fi
-  die "docker compose is required but was not found"
-}
-
 parse_args() {
   while (($# > 0)); do
     case "$1" in
@@ -138,11 +100,6 @@ parse_args() {
       --compose-file)
         (($# >= 2)) || die "--compose-file requires a value"
         COMPOSE_FILE="$2"
-        shift 2
-        ;;
-      --service)
-        (($# >= 2)) || die "--service requires a value"
-        SERVICE="$2"
         shift 2
         ;;
       --no-cache)
@@ -182,250 +139,65 @@ parse_args() {
   done
 }
 
-needs_compose_work() {
-  if ((HOST_ONLY)); then
-    return 1
-  fi
-  if ((NO_BUILD && NO_RESTART)); then
-    return 1
-  fi
-  return 0
-}
-
-git_update_repo() {
-  local repo_dir="$1"
-  local branch="$2"
-
-  if ((NO_PULL)); then
-    log "skipping git pull (--no-pull)"
-    return 0
-  fi
-
-  command_exists git || die "git is required but was not found in PATH"
-  [[ -d "${repo_dir}/.git" ]] || die "no .git directory at ${repo_dir}; cannot pull latest"
-
-  if [[ -z "${branch}" ]]; then
-    branch="$(git -C "${repo_dir}" rev-parse --abbrev-ref HEAD)"
-  fi
-  [[ -n "${branch}" ]] || die "unable to resolve git branch"
-
-  if has_blocking_git_changes "${repo_dir}"; then
-    die "working tree has tracked changes outside generated bin artifacts; commit/stash before update"
-  fi
-
-  log "fetching latest refs"
-  git -C "${repo_dir}" fetch --all --prune
-
-  log "checking out branch ${branch}"
-  git -C "${repo_dir}" checkout "${branch}"
-
-  log "pulling latest origin/${branch}"
-  git -C "${repo_dir}" pull --ff-only origin "${branch}"
-}
-
-compose_build() {
-  local repo_dir="$1"
-  local compose_cmd="$2"
-  local compose_file="$3"
-  local service="$4"
-
-  if ((NO_BUILD)); then
-    log "skipping docker compose build (--no-build)"
-    return 0
-  fi
-
-  local -a cmd=()
-  read -r -a cmd <<<"${compose_cmd}"
-  if [[ -n "${compose_file}" ]]; then
-    cmd+=(-f "${compose_file}")
-  fi
-  cmd+=(build --pull)
-  if ((NO_CACHE)); then
-    cmd+=(--no-cache)
-  fi
-  cmd+=("${service}")
-
-  log "rebuilding image for service ${service}"
-  (
-    cd "${repo_dir}"
-    "${cmd[@]}"
-  )
-}
-
-compose_restart() {
-  local repo_dir="$1"
-  local compose_cmd="$2"
-  local compose_file="$3"
-  local service="$4"
-
-  if ((NO_RESTART)); then
-    log "skipping docker compose up (--no-restart)"
-    return 0
-  fi
-
-  local -a cmd=()
-  read -r -a cmd <<<"${compose_cmd}"
-  if [[ -n "${compose_file}" ]]; then
-    cmd+=(-f "${compose_file}")
-  fi
-  cmd+=(up -d --remove-orphans "${service}")
-
-  log "restarting service ${service}"
-  (
-    cd "${repo_dir}"
-    "${cmd[@]}"
-  )
-}
-
-rebuild_host_binaries() {
+build_staged_checkout() {
   local repo_dir="$1"
 
   if ! command_exists go; then
-    warn "go not found; skipping host binary rebuild (omni/agent-cli may remain stale)"
-    return 0
+    die "go is required to build Omnidex binaries"
   fi
 
-  log "rebuilding host binaries"
+  managed_checkout_export_build_commit "${repo_dir}"
+  log "building staged GUI and host binaries"
+  "${repo_dir}/scripts/build-ui.sh"
   (
     cd "${repo_dir}"
+    ldflags="-X github.com/gryph/omnidex/internal/version.Commit=${OMNIDEX_COMMIT}"
     mkdir -p bin
-    rm -f bin/agent-core bin/agent-cli bin/omni
-    go build -o bin/agent-core ./cmd/core
-    go build -o bin/agent-cli ./cmd/cli
-    go build -o bin/omni ./cmd/omni
+    build_dir="$(mktemp -d "${repo_dir}/bin/.omnidex-build.XXXXXX")"
+    trap 'rm -f "${build_dir}/agent-core" "${build_dir}/agent-cli" "${build_dir}/omni"; rmdir "${build_dir}" 2>/dev/null || true' EXIT
+    go build -trimpath -ldflags "${ldflags}" -o "${build_dir}/agent-core" ./cmd/core
+    go build -trimpath -ldflags "${ldflags}" -o "${build_dir}/agent-cli" ./cmd/cli
+    go build -trimpath -ldflags "${ldflags}" -o "${build_dir}/omni" ./cmd/omni
+    managed_checkout_verify_binary_commit "${build_dir}/agent-core" "${OMNIDEX_COMMIT}" core
+    managed_checkout_verify_binary_commit "${build_dir}/agent-cli" "${OMNIDEX_COMMIT}" json
+    managed_checkout_verify_binary_commit "${build_dir}/omni" "${OMNIDEX_COMMIT}" json
+    mv -f "${build_dir}/agent-core" bin/agent-core
+    mv -f "${build_dir}/agent-cli" bin/agent-cli
+    mv -f "${build_dir}/omni" bin/omni
     ln -sfn agent-cli bin/acli
   )
-}
-
-host_bridge_unit_file() {
-  printf '%s\n' "${HOME}/.config/systemd/user/omni-host-bridge.service"
-}
-
-host_bridge_exec_start() {
-  local unit="$1"
-  sed -n 's/^ExecStart=//p' "${unit}" | head -n 1
-}
-
-host_bridge_omni_from_exec_start() {
-  local exec_start="$1"
-  case "${exec_start}" in
-    *" host serve")
-      printf '%s\n' "${exec_start% host serve}"
-      ;;
-    *)
-      printf '%s\n' ""
-      ;;
-  esac
-}
-
-refresh_host_bridge_binary_for_unit() {
-  local repo_dir="$1"
-  local unit="$2"
-  local built_omni="${repo_dir}/bin/omni"
-  local exec_start service_omni service_dir tmp
-
-  exec_start="$(host_bridge_exec_start "${unit}")"
-  service_omni="$(host_bridge_omni_from_exec_start "${exec_start}")"
-  if [[ -z "${service_omni}" ]]; then
-    warn "could not parse host bridge ExecStart: ${exec_start}"
-    return 0
-  fi
-  if [[ "${service_omni}" == "${built_omni}" ]]; then
-    return 0
-  fi
-
-  warn "host bridge unit uses a different binary: ${exec_start}"
-  case "${service_omni}" in
-    "${HOME}"/*)
-      ;;
-    *)
-      warn "not refreshing ${service_omni}; it is outside ${HOME}"
-      warn "reinstall the bridge with: ${built_omni} host service install --omni ${built_omni}"
-      return 0
-      ;;
-  esac
-
-  service_dir="$(dirname "${service_omni}")"
-  mkdir -p "${service_dir}"
-  log "refreshing host bridge binary at ${service_omni}"
-
-  tmp="${service_omni}.new.$$"
-  install -m 0755 "${built_omni}" "${tmp}"
-  mv -f "${tmp}" "${service_omni}"
-
-  if [[ -x "${repo_dir}/bin/agent-core" ]]; then
-    tmp="${service_dir}/agent-core.new.$$"
-    install -m 0755 "${repo_dir}/bin/agent-core" "${tmp}"
-    mv -f "${tmp}" "${service_dir}/agent-core"
-  fi
-  if [[ -x "${repo_dir}/bin/agent-cli" ]]; then
-    tmp="${service_dir}/agent-cli.new.$$"
-    install -m 0755 "${repo_dir}/bin/agent-cli" "${tmp}"
-    mv -f "${tmp}" "${service_dir}/agent-cli"
-    ln -sfn agent-cli "${service_dir}/acli"
-  fi
-}
-
-restart_host_bridge() {
-  local repo_dir="$1"
-  local omni="${repo_dir}/bin/omni"
-  local unit
-
-  if ((NO_HOST_RESTART)); then
-    log "skipping host bridge restart (--no-host-restart)"
-    return 0
-  fi
-
-  if [[ ! -x "${omni}" ]]; then
-    warn "bin/omni not found; skipping host bridge restart"
-    return 0
-  fi
-
-  unit="$(host_bridge_unit_file)"
-  if [[ ! -f "${unit}" ]]; then
-    log "host bridge service not installed; skipping restart (run: ${omni} host service install)"
-    return 0
-  fi
-
-  refresh_host_bridge_binary_for_unit "${repo_dir}" "${unit}"
-
-  log "restarting host bridge (omni-host-bridge)"
-  if "${omni}" host service restart; then
-    log "host bridge restarted"
-    return 0
-  fi
-
-  warn "host bridge restart failed; check: ${omni} host service status"
-  return 0
-}
-
-refresh_installed_payload_permissions() {
-  local repo_dir="$1"
-
-  for path in \
-    "${repo_dir}/agent_aliases.sh" \
-    "${repo_dir}/install.sh" \
-    "${repo_dir}/update.sh" \
-    "${repo_dir}/uninstall.sh" \
-    "${repo_dir}/scripts/build-release.sh" \
-    "${repo_dir}/scripts/setup-host-deps.sh" \
-    "${repo_dir}/scripts/setup-host-deps.ps1" \
-    "${repo_dir}/up.sh" \
-    "${repo_dir}/down.sh"; do
-    [[ -f "${path}" ]] || continue
-    chmod +x "${path}"
-  done
 }
 
 main() {
   parse_args "$@"
 
   PREFIX="$(expand_home_path "${PREFIX}")"
+  [[ ! -L "${PREFIX}" ]] || die "update target must not be a symlink: ${PREFIX}"
   [[ -d "${PREFIX}" ]] || die "prefix path does not exist: ${PREFIX}"
   PREFIX="$(absolute_existing_path "${PREFIX}")"
+  managed_checkout_require_replaceable_target "${PREFIX}"
+  local update_branch update_origin stage=""
+  update_branch="$(managed_checkout_branch "${PREFIX}" "${BRANCH}")"
+  update_origin="$(managed_checkout_origin "${PREFIX}")"
 
-  local compose_cmd=""
+  local compose_cmd="" expected_image="" expected_runtime_user=""
   if needs_compose_work; then
+    runtime_reject_managed_docker_routing_keys "${PREFIX}/.env"
+    managed_checkout_require_env_key "${PREFIX}/.env" "DOCKER_CONTEXT"
+    managed_checkout_require_env_key "${PREFIX}/.env" "COMPOSE_PROJECT_NAME"
+    managed_checkout_require_env_key "${PREFIX}/.env" "HOST_UID"
+    managed_checkout_require_env_key "${PREFIX}/.env" "HOST_GID"
+    DOCKER_CONTEXT_NAME="$(managed_checkout_env_value "${PREFIX}/.env" "DOCKER_CONTEXT")"
+    COMPOSE_PROJECT="$(managed_checkout_env_value "${PREFIX}/.env" "COMPOSE_PROJECT_NAME")"
+    validate_compose_identity "COMPOSE_PROJECT_NAME" "${COMPOSE_PROJECT}"
+    runtime_require_rootful_docker_context
+    [[ -n "${COMPOSE_PROJECT}" ]] || die "COMPOSE_PROJECT_NAME must be explicit and non-empty"
+    HOST_UID_VALUE="$(managed_checkout_env_value "${PREFIX}/.env" "HOST_UID")"
+    HOST_GID_VALUE="$(managed_checkout_env_value "${PREFIX}/.env" "HOST_GID")"
+    expected_runtime_user="$(runtime_user_identity "${HOST_UID_VALUE}" "${HOST_GID_VALUE}")"
+    export COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT}"
+    export HOST_UID="${HOST_UID_VALUE}"
+    export HOST_GID="${HOST_GID_VALUE}"
     if [[ -z "${COMPOSE_FILE}" ]]; then
       COMPOSE_FILE="${PREFIX}/docker-compose.yml"
     else
@@ -435,7 +207,6 @@ main() {
       fi
     fi
     [[ -f "${COMPOSE_FILE}" ]] || die "compose file not found: ${COMPOSE_FILE}"
-    [[ -n "${SERVICE}" ]] || die "service cannot be empty"
     compose_cmd="$(resolve_compose_cmd)"
     log "using compose command: ${compose_cmd}"
   else
@@ -443,14 +214,30 @@ main() {
   fi
 
   log "target path: ${PREFIX}"
-
-  git_update_repo "${PREFIX}" "${BRANCH}"
-  refresh_installed_payload_permissions "${PREFIX}"
-  rebuild_host_binaries "${PREFIX}"
+  stage="$(managed_checkout_new_stage "${PREFIX}" "update")"
+  trap '[[ -z "${stage:-}" ]] || rm -rf -- "${stage}"' EXIT
+  managed_checkout_clone_exact "${PREFIX}" "${stage}" "${update_branch}" "${update_origin}"
+  if ((NO_PULL)); then
+    log "skipping remote fast-forward (--no-pull)"
+  else
+    log "fast-forwarding staged checkout from origin/${update_branch}"
+    managed_checkout_fast_forward "${stage}" "${update_branch}"
+  fi
+  managed_checkout_stage_env "${PREFIX}" "${stage}" ""
+  build_staged_checkout "${stage}"
+  managed_checkout_validate_env "${stage}"
+  managed_checkout_publish "${stage}" "${PREFIX}"
+  stage=""
+  trap - EXIT
   restart_host_bridge "${PREFIX}"
   if needs_compose_work; then
-    compose_build "${PREFIX}" "${compose_cmd}" "${COMPOSE_FILE}" "${SERVICE}"
-    compose_restart "${PREFIX}" "${compose_cmd}" "${COMPOSE_FILE}" "${SERVICE}"
+    compose_build "${PREFIX}" "${compose_cmd}" "${COMPOSE_FILE}" core "${OMNIDEX_COMMIT}"
+    expected_image="$(compose_image_id "${PREFIX}" "${compose_cmd}" "${COMPOSE_FILE}" core "${OMNIDEX_COMMIT}")"
+    compose_require_image_commit "${expected_image}" "${OMNIDEX_COMMIT}" "${expected_runtime_user}"
+    compose_restart "${PREFIX}" "${compose_cmd}" "${COMPOSE_FILE}" core "${OMNIDEX_COMMIT}"
+    if ((NO_RESTART == 0)); then
+      compose_require_running_image "${PREFIX}" "${compose_cmd}" "${COMPOSE_FILE}" core "${expected_image}" "${OMNIDEX_COMMIT}" "${expected_runtime_user}"
+    fi
   fi
 
   log "update complete"

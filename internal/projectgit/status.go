@@ -2,181 +2,169 @@ package projectgit
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"os/exec"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 )
 
-const (
-	ChangedFileLimit = 64
-	CommitLimit      = 12
-)
-
-func CollectStatus(ctx context.Context, location, source string) (map[string]any, error) {
-	location = strings.TrimSpace(location)
-	if location == "" {
-		return nil, fmt.Errorf("project location is required")
-	}
-	if strings.TrimSpace(source) == "" {
-		source = "local"
-	}
-
-	payload := map[string]any{
-		"location": location,
-		"source":   source,
-		"is_repo":  false,
-	}
-
-	inside, err := gitOutput(ctx, location, "rev-parse", "--is-inside-work-tree")
-	if err != nil || strings.TrimSpace(inside) != "true" {
-		payload["message"] = "Not a git repository"
-		if err != nil {
-			payload["error"] = strings.TrimSpace(err.Error())
-		}
-		return payload, nil
-	}
-
-	payload["is_repo"] = true
-
-	root, _ := gitOutput(ctx, location, "rev-parse", "--show-toplevel")
-	payload["root"] = strings.TrimSpace(root)
-
-	branch, _ := gitOutput(ctx, location, "branch", "--show-current")
-	branch = strings.TrimSpace(branch)
-	detached := branch == ""
-	payload["branch"] = branch
-	payload["detached"] = detached
-
-	headShort, _ := gitOutput(ctx, location, "rev-parse", "--short", "HEAD")
-	payload["head_short"] = strings.TrimSpace(headShort)
-
-	upstream, upstreamErr := gitOutput(ctx, location, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}")
-	upstream = strings.TrimSpace(upstream)
-	hasUpstream := upstreamErr == nil && upstream != "" && upstream != "@{upstream}"
-	payload["has_upstream"] = hasUpstream
-	payload["upstream_branch"] = upstream
-
-	ahead, behind := 0, 0
-	if hasUpstream {
-		counts, err := gitOutput(ctx, location, "rev-list", "--left-right", "--count", "@{upstream}...HEAD")
-		if err == nil {
-			parts := strings.Fields(strings.TrimSpace(counts))
-			if len(parts) == 2 {
-				behind, _ = strconv.Atoi(parts[0])
-				ahead, _ = strconv.Atoi(parts[1])
-			}
-		}
-	}
-	payload["ahead"] = ahead
-	payload["behind"] = behind
-
-	remoteURL, _ := gitOutput(ctx, location, "remote", "get-url", "origin")
-	payload["remote_url"] = strings.TrimSpace(remoteURL)
-
-	staged, modified, untracked, deleted, conflicted := 0, 0, 0, 0, 0
-	changedFiles := make([]map[string]any, 0, ChangedFileLimit)
-	if porcelain, err := gitOutput(ctx, location, "status", "--porcelain=v1", "-u"); err == nil {
-		for _, line := range strings.Split(porcelain, "\n") {
-			line = strings.TrimRight(line, "\r")
-			if line == "" {
-				continue
-			}
-			if len(line) < 3 {
-				continue
-			}
-			indexStatus := line[0:1]
-			worktreeStatus := line[1:2]
-			path := strings.TrimSpace(line[3:])
-			if arrow := strings.Index(path, " -> "); arrow >= 0 {
-				path = path[arrow+4:]
-			}
-
-			switch {
-			case indexStatus == "?" && worktreeStatus == "?":
-				untracked++
-			case indexStatus == "U" || worktreeStatus == "U" || (indexStatus == "A" && worktreeStatus == "A") || (indexStatus == "D" && worktreeStatus == "D"):
-				conflicted++
-			case indexStatus == "D" || worktreeStatus == "D":
-				deleted++
-			default:
-				if indexStatus != " " && indexStatus != "?" {
-					staged++
-				}
-				if worktreeStatus != " " && worktreeStatus != "?" {
-					modified++
-				}
-			}
-
-			if len(changedFiles) < ChangedFileLimit {
-				changedFiles = append(changedFiles, map[string]any{
-					"path":            path,
-					"index_status":    indexStatus,
-					"worktree_status": worktreeStatus,
-					"status":          indexStatus + worktreeStatus,
-				})
-			}
-		}
-	}
-	payload["staged_count"] = staged
-	payload["modified_count"] = modified
-	payload["untracked_count"] = untracked
-	payload["deleted_count"] = deleted
-	payload["conflicted_count"] = conflicted
-	payload["changed_files"] = changedFiles
-	payload["clean"] = staged+modified+untracked+deleted+conflicted == 0
-
-	stashList, _ := gitOutput(ctx, location, "stash", "list")
-	stashCount := 0
-	if strings.TrimSpace(stashList) != "" {
-		stashCount = len(strings.Split(strings.TrimSpace(stashList), "\n"))
-	}
-	payload["stash_count"] = stashCount
-
-	commits := make([]map[string]any, 0, CommitLimit)
-	if logOut, err := gitOutput(ctx, location, "log", fmt.Sprintf("-%d", CommitLimit), "--format=%H|%s|%an|%ar"); err == nil {
-		for _, line := range strings.Split(logOut, "\n") {
-			line = strings.TrimSpace(line)
-			if line == "" {
-				continue
-			}
-			parts := strings.SplitN(line, "|", 4)
-			if len(parts) < 4 {
-				continue
-			}
-			commits = append(commits, map[string]any{
-				"hash":          parts[0][:minInt(12, len(parts[0]))],
-				"subject":       parts[1],
-				"author":        parts[2],
-				"relative_date": parts[3],
-			})
-		}
-	}
-	payload["recent_commits"] = commits
-	if len(commits) > 0 {
-		payload["last_commit"] = commits[0]
-	}
-
-	return payload, nil
+type commandRunner interface {
+	Output(context.Context, string, ...string) (string, error)
 }
 
-func gitOutput(ctx context.Context, dir string, args ...string) (string, error) {
-	cmdArgs := append([]string{"-C", dir}, args...)
-	cmd := exec.CommandContext(ctx, "git", cmdArgs...)
-	out, err := cmd.CombinedOutput()
+func CollectStatus(ctx context.Context, location, source string) (Status, error) {
+	return collectStatus(ctx, location, source, execCommandRunner{})
+}
+
+func collectStatus(ctx context.Context, location, source string, runner commandRunner) (Status, error) {
+	if location == "" || location != strings.TrimSpace(location) {
+		return Status{}, fmt.Errorf("project location must be one exact nonblank path")
+	}
+	if source == "" || source != strings.TrimSpace(source) {
+		return Status{}, fmt.Errorf("git status source must be one exact nonblank value")
+	}
+	isRepo, err := hasRepositoryMarker(location)
 	if err != nil {
-		msg := strings.TrimSpace(string(out))
-		if msg != "" {
-			return "", fmt.Errorf("%s", msg)
-		}
+		return Status{}, err
+	}
+	status := Status{
+		Location: location, Source: source,
+		ChangedFiles: []ChangedFile{}, RecentCommits: []Commit{},
+	}
+	if !isRepo {
+		status.Message = "Not a Git repository"
+		return status, status.Validate()
+	}
+	inside, err := runner.Output(ctx, location, "rev-parse", "--is-inside-work-tree")
+	if err != nil {
+		return Status{}, fmt.Errorf("git repository classification failed: %w", err)
+	}
+	if strings.TrimSpace(inside) != "true" {
+		return Status{}, fmt.Errorf("git repository classification returned %q", strings.TrimSpace(inside))
+	}
+	status.IsRepo = true
+	if status.Root, err = requiredOutput(ctx, runner, location, "root", "rev-parse", "--show-toplevel"); err != nil {
+		return Status{}, err
+	}
+	if status.Branch, err = requiredOutputAllowEmpty(ctx, runner, location, "branch", "branch", "--show-current"); err != nil {
+		return Status{}, err
+	}
+	status.Detached = status.Branch == ""
+	if status.HeadShort, err = requiredOutput(ctx, runner, location, "head", "rev-parse", "--short", "HEAD"); err != nil {
+		return Status{}, err
+	}
+	if err := collectUpstream(ctx, runner, location, &status); err != nil {
+		return Status{}, err
+	}
+	if status.RemoteURL, _, err = optionalConfig(ctx, runner, location, "remote origin", "remote.origin.url"); err != nil {
+		return Status{}, err
+	}
+	if err := collectChangedFiles(ctx, runner, location, &status); err != nil {
+		return Status{}, err
+	}
+	stash, err := requiredOutputAllowEmpty(ctx, runner, location, "stash", "stash", "list")
+	if err != nil {
+		return Status{}, err
+	}
+	if stash != "" {
+		status.StashCount = len(strings.Split(stash, "\n"))
+	}
+	if err := collectCommits(ctx, runner, location, &status); err != nil {
+		return Status{}, err
+	}
+	if err := status.Validate(); err != nil {
+		return Status{}, fmt.Errorf("validate git status: %w", err)
+	}
+	return status, nil
+}
+
+func requiredOutput(ctx context.Context, runner commandRunner, location, label string, args ...string) (string, error) {
+	value, err := requiredOutputAllowEmpty(ctx, runner, location, label, args...)
+	if err != nil {
 		return "", err
 	}
-	return string(out), nil
+	if value == "" {
+		return "", fmt.Errorf("git %s command returned an empty value", label)
+	}
+	return value, nil
 }
 
-func minInt(a, b int) int {
-	if a < b {
-		return a
+func requiredOutputAllowEmpty(ctx context.Context, runner commandRunner, location, label string, args ...string) (string, error) {
+	value, err := runner.Output(ctx, location, args...)
+	if err != nil {
+		return "", fmt.Errorf("git %s command failed: %w", label, err)
 	}
-	return b
+	if !utf8.ValidString(value) || strings.ContainsRune(value, '\x00') {
+		return "", fmt.Errorf("git %s command returned invalid UTF-8 or NUL bytes", label)
+	}
+	return strings.TrimSpace(value), nil
+}
+
+func optionalConfig(ctx context.Context, runner commandRunner, location, label, key string) (string, bool, error) {
+	value, err := runner.Output(ctx, location, "config", "--get", key)
+	if err != nil {
+		var commandErr *commandError
+		if errors.As(err, &commandErr) && commandErr.ExitCode == 1 {
+			return "", false, nil
+		}
+		return "", false, fmt.Errorf("git %s command failed: %w", label, err)
+	}
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "", false, fmt.Errorf("git %s command returned an empty configured value", label)
+	}
+	return value, true, nil
+}
+
+func collectUpstream(ctx context.Context, runner commandRunner, location string, status *Status) error {
+	if status.Detached {
+		return nil
+	}
+	remote, hasRemote, err := optionalConfig(ctx, runner, location, "upstream remote", "branch."+status.Branch+".remote")
+	if err != nil {
+		return err
+	}
+	merge, hasMerge, err := optionalConfig(ctx, runner, location, "upstream merge", "branch."+status.Branch+".merge")
+	if err != nil {
+		return err
+	}
+	if hasRemote != hasMerge {
+		return fmt.Errorf("git upstream configuration is incomplete")
+	}
+	if !hasRemote {
+		return nil
+	}
+	_ = remote
+	_ = merge
+	status.UpstreamBranch, err = requiredOutput(ctx, runner, location, "upstream", "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}")
+	if err != nil {
+		return err
+	}
+	counts, err := requiredOutput(ctx, runner, location, "upstream counts", "rev-list", "--left-right", "--count", "@{upstream}...HEAD")
+	if err != nil {
+		return err
+	}
+	parts := strings.Fields(counts)
+	if len(parts) != 2 {
+		return fmt.Errorf("git upstream counts must contain exactly two integers")
+	}
+	status.Behind, err = parseNonnegativeInt(parts[0], "behind")
+	if err != nil {
+		return err
+	}
+	status.Ahead, err = parseNonnegativeInt(parts[1], "ahead")
+	if err != nil {
+		return err
+	}
+	status.HasUpstream = true
+	return nil
+}
+
+func parseNonnegativeInt(raw, label string) (int, error) {
+	value, err := strconv.Atoi(raw)
+	if err != nil || value < 0 || strconv.Itoa(value) != raw {
+		return 0, fmt.Errorf("git %s count %q is not a canonical non-negative integer", label, raw)
+	}
+	return value, nil
 }

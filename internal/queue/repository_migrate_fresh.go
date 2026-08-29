@@ -54,6 +54,9 @@ func resetExactRuntimeSchema(ctx context.Context, conn *pgxpool.Conn) error {
 		return fmt.Errorf("begin exact runtime schema reset: %w", err)
 	}
 	defer tx.Rollback(context.Background())
+	if err := enforceMigrationTransactionSQLMode(ctx, tx); err != nil {
+		return err
+	}
 
 	runtimeSchema, owner, err := loadResettableRuntimeSchema(ctx, tx)
 	if err != nil {

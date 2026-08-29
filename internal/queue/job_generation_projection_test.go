@@ -25,7 +25,7 @@ func TestGenerationProjectionShapesMatchSharedScanners(t *testing.T) {
 		"repository_cancel.go":        1,
 		"repository_replan_commit.go": 1,
 		"repository_step_input.go":    1,
-		"repository_claims.go":        3,
+		"repository_job_reads.go":     3,
 	}
 	for path, expected := range jobCallFiles {
 		source := normalizedGenerationSource(t, path)
@@ -37,15 +37,13 @@ func TestGenerationProjectionShapesMatchSharedScanners(t *testing.T) {
 		}
 	}
 
-	claimsSource := normalizedGenerationSource(t, "repository_claims.go")
+	jobReadsSource := normalizedGenerationSource(t, "repository_job_reads.go")
 	stepClaimSource := normalizedGenerationSource(t, "repository_step_claim.go")
-	delegatedSource := normalizedGenerationSource(t, "repository_delegated_steps.go")
-	stepSources := claimsSource + " " + delegatedSource
-	if calls := strings.Count(stepSources, "scanStep("); calls != 2 {
-		t.Fatalf("queue claim/delegation writers have %d scanStep call sites; expected 2", calls)
+	if calls := strings.Count(jobReadsSource, "scanStep("); calls != 1 {
+		t.Fatalf("queue job reads have %d scanStep call sites; expected 1", calls)
 	}
-	if projections := strings.Count(stepSources, stepSelectProjection) + strings.Count(stepSources, stepReturningProjection); projections != 2 {
-		t.Fatalf("queue claim/delegation writers have %d complete step projections; expected 2", projections)
+	if projections := strings.Count(jobReadsSource, stepSelectProjection) + strings.Count(jobReadsSource, stepReturningProjection); projections != 1 {
+		t.Fatalf("queue job reads have %d complete step projections; expected 1", projections)
 	}
 	if calls := strings.Count(stepClaimSource, "scanClaim("); calls != 1 {
 		t.Fatalf("repository_step_claim.go has %d scanClaim call sites; expected 1", calls)

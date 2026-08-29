@@ -1,9 +1,12 @@
 package worker
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"unicode"
+
+	"github.com/gryph/omnidex/internal/queue"
 )
 
 type directCodingPhase string
@@ -12,6 +15,7 @@ const (
 	directCodingPhaseAssembling   directCodingPhase = "assembling"
 	directCodingPhaseConstructing directCodingPhase = "constructing"
 	directCodingPhaseVerifying    directCodingPhase = "verifying"
+	directCodingPhaseDeploying    directCodingPhase = "deploying"
 	directCodingPhaseCompleted    directCodingPhase = "completed"
 	directCodingPhaseFailed       directCodingPhase = "failed"
 )
@@ -51,13 +55,29 @@ func directCodingStaticFileDiagnostic(path, detail string, _ ...string) *directC
 }
 
 type directCodingVerification struct {
-	Passed      bool
-	TestsPassed bool
-	Commands    []string
-	Diagnostic  *directCodingDiagnostic
+	Passed                bool
+	TestsPassed           bool
+	Commands              []string
+	EvidenceIDs           []int64
+	MutationOperationID   string
+	MutationReceiptSHA256 string
+	Diagnostic            *directCodingDiagnostic
 }
 
 func (v directCodingVerification) validate() error {
+	if !validRepositoryVerificationOpaqueID(v.MutationOperationID, "workspace_mutation_") ||
+		!validRepositoryVerificationSHA256(v.MutationReceiptSHA256) {
+		return fmt.Errorf("coding verification requires one exact terminal workspace mutation receipt")
+	}
+	if len(v.Commands) != len(v.EvidenceIDs) ||
+		len(v.Commands) > queue.MaxGeneratedWorkloadVerificationEvidence-1 {
+		return fmt.Errorf("coding verification command and evidence identities must be exact")
+	}
+	for index, id := range v.EvidenceIDs {
+		if id <= 0 || index > 0 && id <= v.EvidenceIDs[index-1] {
+			return fmt.Errorf("coding verification evidence identities must be ordered")
+		}
+	}
 	if v.Passed {
 		if v.Diagnostic != nil {
 			return fmt.Errorf("successful coding verification cannot include a diagnostic")
@@ -76,9 +96,14 @@ func (v directCodingVerification) validate() error {
 type directCodingWorkflowDriver interface {
 	Phase(phase directCodingPhase, detail string)
 	Assemble() (directCodingAssembly, error)
-	Delete(path string) (bool, error)
-	Generate(task directCodingFileTask) (bool, error)
-	Verify() (directCodingVerification, error)
+	PrepareAssembly(directCodingAssembly) (*directCodingPreparedMutation, error)
+	ApplyAndVerify(
+		*directCodingPreparedMutation,
+	) (directCodingVerification, directCodingCompletionTaskDisposition, error)
+	FinalizeVerified(
+		verification directCodingVerification,
+		beginState directCodingCompletionTaskDisposition,
+	) error
 	Complete(verification directCodingVerification) (string, error)
 }
 
@@ -95,32 +120,27 @@ func runDirectCodingWorkflow(driver directCodingWorkflowDriver, allowExistingWor
 		return failDirectCodingWorkflow(driver, "validate deterministic assembly", err)
 	}
 
-	driver.Phase(directCodingPhaseConstructing, fmt.Sprintf("files=%d deletes=%d", len(assembly.Files), len(assembly.DeletePaths)))
-	mutations := 0
-	for _, path := range assembly.DeletePaths {
-		changed, deleteErr := driver.Delete(path)
-		if deleteErr != nil {
-			return failDirectCodingWorkflow(driver, "delete "+path, deleteErr)
-		}
-		if changed {
-			mutations++
-		}
+	driver.Phase(directCodingPhaseConstructing, fmt.Sprintf("directories=%d files=%d deletes=%d", len(assembly.Directories), len(assembly.Files), len(assembly.DeletePaths)))
+	prepared, err := driver.PrepareAssembly(assembly)
+	if err != nil {
+		return failDirectCodingWorkflow(driver, "prepare exact workspace mutation", err)
 	}
-	for _, task := range assembly.Files {
-		changed, generateErr := driver.Generate(task)
-		if generateErr != nil {
-			return failDirectCodingWorkflow(driver, "generate "+task.Path, generateErr)
-		}
-		if changed {
-			mutations++
-		}
+	if prepared == nil {
+		return failDirectCodingWorkflow(driver, "prepare exact workspace mutation", fmt.Errorf("driver returned no prepared mutation"))
 	}
-	if mutations == 0 && !allowExistingWorkspace {
-		return failDirectCodingWorkflow(driver, "generate coding files", fmt.Errorf("fresh coding workflow accepted no workspace mutation"))
+	mutations := prepared.MutationCount()
+	if mutations == 0 {
+		reason := fmt.Errorf("direct coding requires one journaled workspace mutation")
+		if !allowExistingWorkspace {
+			reason = fmt.Errorf("fresh coding workflow accepted no workspace mutation")
+		}
+		return failDirectCodingWorkflow(
+			driver, "generate coding files", errors.Join(reason, prepared.Cleanup()),
+		)
 	}
 
 	driver.Phase(directCodingPhaseVerifying, "running code-selected verification")
-	verification, verifyErr := driver.Verify()
+	verification, verificationBeginState, verifyErr := driver.ApplyAndVerify(prepared)
 	if verifyErr != nil {
 		return failDirectCodingWorkflow(driver, "verify accepted workspace", verifyErr)
 	}
@@ -133,6 +153,9 @@ func runDirectCodingWorkflow(driver directCodingWorkflowDriver, allowExistingWor
 			safeLine(verification.Diagnostic.Stage, "unknown"),
 			trimForBudget(verification.Diagnostic.Detail, 1200),
 		))
+	}
+	if err := driver.FinalizeVerified(verification, verificationBeginState); err != nil {
+		return failDirectCodingWorkflow(driver, "finalize verified workspace", err)
 	}
 	summary, completeErr := driver.Complete(verification)
 	if completeErr != nil {

@@ -1,0 +1,127 @@
+package queue
+
+import (
+	"os"
+	"strings"
+	"testing"
+)
+
+const tokenizerProfileAuthorityMigration = "100_general_tokenizer_profile_authority.sql"
+
+const (
+	qwen35TokenizerProfile    = "ollama-0.24.0-qwen35-gpt2-boundary-v1"
+	qwen3TokenizerProfile     = "ollama-0.24.0-qwen3-qwen2-boundary-v1"
+	qwen2BOSTokenizerProfile  = "ollama-0.24.0-qwen2-qwen2-bos-boundary-v1"
+	mistral3TokenizerProfile  = "ollama-0.24.0-mistral3-gpt2-bos-boundary-v1"
+	phi3GPT4OTokenizerProfile = "ollama-0.24.0-phi3-gpt2-gpt4o-boundary-v1"
+	phi3DBRXTokenizerProfile  = "ollama-0.24.0-phi3-gpt2-dbrx-boundary-v1"
+	gemma3TokenizerProfile    = "ollama-0.24.0-gemma3-llama-default-boundary-v1"
+	llama32TokenizerProfile   = "ollama-0.24.0-llama-gpt2-llama-bpe-boundary-v1"
+)
+
+func TestTokenizerProfileAuthorityMigrationWidensOnlyTheRegisteredProfiles(t *testing.T) {
+	t.Parallel()
+	raw, err := os.ReadFile("../../migrations/" + tokenizerProfileAuthorityMigration)
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(raw)
+	for _, required := range []string{
+		"LOCK TABLE station_call_openings IN ACCESS EXCLUSIVE MODE",
+		"DROP CONSTRAINT station_call_openings_tokenizer_profile_check",
+		"ADD CONSTRAINT station_call_openings_tokenizer_profile_check",
+		qwen35TokenizerProfile,
+		qwen3TokenizerProfile,
+		qwen2BOSTokenizerProfile,
+		mistral3TokenizerProfile,
+		phi3GPT4OTokenizerProfile,
+		phi3DBRXTokenizerProfile,
+		gemma3TokenizerProfile,
+		llama32TokenizerProfile,
+	} {
+		if !strings.Contains(source, required) {
+			t.Errorf("tokenizer-profile migration lacks %q", required)
+		}
+	}
+	for _, forbidden := range []string{
+		"UPDATE station_call_openings",
+		"DELETE FROM station_call_openings",
+		"fallback",
+		"compatibility",
+		"LIKE 'ollama-%'",
+	} {
+		if strings.Contains(strings.ToLower(source), strings.ToLower(forbidden)) {
+			t.Errorf("tokenizer-profile migration contains forbidden %q", forbidden)
+		}
+	}
+}
+
+func TestTokenizerProfileAuthorityDatabaseConstraintAcceptsOnlyRegisteredProfiles(t *testing.T) {
+	pool := openIsolatedMigrationPool(t)
+	repository := New(pool)
+	if err := repository.EnsureSchema(t.Context(), loadMigrationBundleThroughPrefix(t, "100")); err != nil {
+		t.Fatal(err)
+	}
+
+	var definition string
+	if err := pool.QueryRow(t.Context(), `
+		SELECT pg_get_constraintdef(oid, true)
+		FROM pg_constraint
+		WHERE conrelid='station_call_openings'::regclass
+		  AND conname='station_call_openings_tokenizer_profile_check'
+	`).Scan(&definition); err != nil {
+		t.Fatal(err)
+	}
+	for _, profile := range []string{
+		qwen35TokenizerProfile,
+		qwen3TokenizerProfile,
+		qwen2BOSTokenizerProfile,
+		mistral3TokenizerProfile,
+		phi3GPT4OTokenizerProfile,
+		phi3DBRXTokenizerProfile,
+		gemma3TokenizerProfile,
+		llama32TokenizerProfile,
+	} {
+		if !strings.Contains(definition, profile) {
+			t.Fatalf("tokenizer-profile constraint=%q lacks registered profile %q", definition, profile)
+		}
+	}
+	for _, forbidden := range []string{"qwen2.5", "deepseek-r1", "ollama-%", "SIMILAR TO"} {
+		if strings.Contains(definition, forbidden) {
+			t.Fatalf("tokenizer-profile constraint=%q accepts unregistered family %q", definition, forbidden)
+		}
+	}
+
+	if _, err := pool.Exec(t.Context(), `
+		CREATE TEMP TABLE tokenizer_profile_constraint_probe (
+			tokenizer_profile TEXT NOT NULL `+definition+`
+		)
+	`); err != nil {
+		t.Fatal(err)
+	}
+	insertProbeProfile := func(profile string) error {
+		_, err := pool.Exec(t.Context(), `
+			INSERT INTO tokenizer_profile_constraint_probe(tokenizer_profile)
+			VALUES ($1)
+		`, profile)
+		return err
+	}
+	for _, profile := range []string{
+		qwen35TokenizerProfile,
+		qwen3TokenizerProfile,
+		qwen2BOSTokenizerProfile,
+		mistral3TokenizerProfile,
+		phi3GPT4OTokenizerProfile,
+		phi3DBRXTokenizerProfile,
+		gemma3TokenizerProfile,
+		llama32TokenizerProfile,
+	} {
+		if err := insertProbeProfile(profile); err != nil {
+			t.Fatalf("registered tokenizer profile %q was rejected: %v", profile, err)
+		}
+	}
+	if err := insertProbeProfile("ollama-0.24.0-unregistered-boundary-v1"); err == nil ||
+		!strings.Contains(err.Error(), "tokenizer_profile") {
+		t.Fatalf("unregistered tokenizer profile error=%v, want database constraint rejection", err)
+	}
+}

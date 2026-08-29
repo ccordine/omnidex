@@ -12,11 +12,11 @@ import (
 	repositoryfacts "github.com/gryph/omnidex/internal/repository"
 )
 
-func planMutations(
-	workspace string,
+func assembleModifiedFileStates(
 	snapshot repositoryfacts.Snapshot,
+	analysis repositoryfacts.Analysis,
 	replacements []targetReplacement,
-) ([]fileMutation, error) {
+) ([]DesiredFileState, error) {
 	files := make(map[string]repositoryfacts.File, len(snapshot.Files))
 	for _, file := range snapshot.Files {
 		files[file.ID] = file
@@ -25,19 +25,19 @@ func planMutations(
 	for _, replacement := range replacements {
 		grouped[replacement.fileID] = append(grouped[replacement.fileID], replacement)
 	}
-	mutations := make([]fileMutation, 0, len(grouped))
+	states := make([]DesiredFileState, 0, len(grouped))
 	for fileID, targets := range grouped {
 		file := files[fileID]
 		if file.Size > maxTargetFileBytes {
 			return nil, fmt.Errorf("repository change target file exceeds %d bytes", maxTargetFileBytes)
 		}
-		absolute := filepath.Join(workspace, filepath.FromSlash(file.Path))
+		absolute := filepath.Join(snapshot.Root, filepath.FromSlash(file.Path))
 		original, err := os.ReadFile(absolute)
 		if err != nil {
-			return nil, fmt.Errorf("read staged repository target %q: %w", file.ID, err)
+			return nil, fmt.Errorf("read repository desired-state source %q: %w", file.ID, err)
 		}
 		if int64(len(original)) != file.Size || digest(original) != file.SHA256 {
-			return nil, fmt.Errorf("staged repository target %q differs from its exact file authority", file.ID)
+			return nil, fmt.Errorf("repository desired-state source %q differs from its exact file authority", file.ID)
 		}
 		if err := validatePatchableSource(file.ID, original); err != nil {
 			return nil, err
@@ -65,14 +65,26 @@ func planMutations(
 			target := targets[index]
 			next = replaceExactBytes(next, int(target.start), int(target.end), target.declaration)
 		}
-		mutations = append(mutations, fileMutation{
-			file: file, original: original, next: next, replacements: targets,
+		symbolIDs := make([]string, len(targets))
+		for index, target := range targets {
+			symbolIDs[index] = target.symbolID
+		}
+		placement, err := repositoryfacts.GoPackagePlacementForSymbols(snapshot, analysis, symbolIDs)
+		if err != nil {
+			return nil, fmt.Errorf("resolve modified repository file %q package authority: %w", file.ID, err)
+		}
+		states = append(states, DesiredFileState{
+			Path: file.Path, Present: true,
+			Source: ExactSourceFile{
+				FileID: file.ID, SHA256: file.SHA256, Size: file.Size, Mode: file.Mode,
+			},
+			Content: next, Mode: file.Mode, PackageArtifactID: placement.ArtifactID,
 		})
 	}
-	sort.Slice(mutations, func(left, right int) bool {
-		return mutations[left].file.Path < mutations[right].file.Path
+	sort.Slice(states, func(left, right int) bool {
+		return states[left].Path < states[right].Path
 	})
-	return mutations, nil
+	return states, nil
 }
 
 func validatePatchableSource(fileID string, content []byte) error {
@@ -99,6 +111,12 @@ func replaceExactBytes(content []byte, start, end int, replacement []byte) []byt
 func verifyStagedMutations(workspace string, mutations []fileMutation) error {
 	for _, mutation := range mutations {
 		absolute := filepath.Join(workspace, filepath.FromSlash(mutation.file.Path))
+		if !mutation.desiredPresent {
+			if _, err := os.Lstat(absolute); !os.IsNotExist(err) {
+				return fmt.Errorf("staged absent state for target file %q was not established", mutation.file.ID)
+			}
+			continue
+		}
 		actual, err := os.ReadFile(absolute)
 		if err != nil {
 			return fmt.Errorf("read applied staged target %q: %w", mutation.file.ID, err)

@@ -28,21 +28,14 @@ func TestMemoryPromotionSchemaBindsCandidateAndMemoryAtomically(t *testing.T) {
 }
 
 func TestMemoryPromotionCallersContainNoSplitPublishThenStatusPath(t *testing.T) {
-	worker := readFunctionSource(t, "../worker/runtime_v3_completion.go", "func (r *nativeRuntimeV3) runMemoryReview", "func (r *nativeRuntimeV3) runFinalize")
 	api := readFunctionSource(t, "../api/server_jobs.go", "func (s *Server) promoteMemoryCandidate", "func (s *Server) rejectMemoryCandidate")
-	for name, source := range map[string]string{"worker": worker, "api": api} {
-		for _, forbidden := range []string{"AddMemoryChunk(", "UpdateCurrentMemoryCandidateStatus("} {
-			if strings.Contains(source, forbidden) {
-				t.Errorf("%s promotion still contains split path %q", name, forbidden)
-			}
+	for _, forbidden := range []string{"AddMemoryChunk(", "UpdateCurrentMemoryCandidateStatus("} {
+		if strings.Contains(api, forbidden) {
+			t.Errorf("API promotion still contains split path %q", forbidden)
 		}
-		promotion := "PromoteCurrentMemoryCandidate("
-		if name == "worker" {
-			promotion = "PromoteCurrentMemoryCandidateByStepAttempt("
-		}
-		if !strings.Contains(source, promotion) {
-			t.Errorf("%s promotion omits the atomic current-generation path", name)
-		}
+	}
+	if !strings.Contains(api, "PromoteCurrentMemoryCandidate(") {
+		t.Error("API promotion omits the atomic current-generation path")
 	}
 	for _, required := range []string{
 		"PromoteHistoricalMemoryCandidate(",

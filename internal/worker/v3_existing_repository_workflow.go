@@ -3,16 +3,14 @@ package worker
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"sort"
 	"strings"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
 	"github.com/gryph/omnidex/internal/evidence"
-	repositoryfacts "github.com/gryph/omnidex/internal/repository"
+	goadapter "github.com/gryph/omnidex/internal/repository/adapters/golang"
 	repositoryretrieval "github.com/gryph/omnidex/internal/repository/retrieval"
-	"github.com/gryph/omnidex/internal/specialist"
+	"github.com/gryph/omnidex/internal/station"
 )
 
 type repositoryEvidenceBuilder interface {
@@ -24,71 +22,180 @@ func (session *directCodingSession) runExistingRepositoryChangeWorkflow() (strin
 		return "", fmt.Errorf("existing repository change workflow requires an immutable index")
 	}
 	authority := existingRepositoryAuthority(session.request)
-	redacted, identities, err := assemblyline.RedactArtifactIdentities(authority)
+	explicitPlainTextPaths, err := explicitPlainTextArtifactPaths(authority)
 	if err != nil {
 		return "", err
 	}
-	partitionModel, err := session.workerModel(
-		"coding_requirement_partition", specialist.RoleCodingRequirementPartitionStation,
+	if err := session.extendPathProvenance(explicitPlainTextPaths...); err != nil {
+		return "", fmt.Errorf("bind explicit plain-text artifact provenance: %w", err)
+	}
+	redacted, identities, err := assemblyline.RedactArtifactIdentities(
+		authority, session.pathProvenance,
 	)
 	if err != nil {
 		return "", err
 	}
-	partition, err := partitionCodingRequirements(
-		directCodingWorkerRuntime(session), partitionModel, redacted, identities,
+	if summary, handled, routeErr := session.tryExistingRepositorySinglePlainTextCreation(
+		authority, redacted, identities, explicitPlainTextPaths,
+	); handled {
+		return summary, routeErr
+	}
+	partitionModel, err := session.workerModel(station.CodingRequirements)
+	if err != nil {
+		return "", err
+	}
+	applicationContext, err := assemblyline.BootstrapApplicationContext(
+		redacted, assemblyline.ApplicationWorkspaceExisting,
 	)
 	if err != nil {
 		return "", err
 	}
-	retrievalModel, err := session.repositorySemanticModel(
-		"coding_repository_retrieval", specialist.RoleCodingRepositoryRetrievalStation,
+	applicationContext, err = resolveDirectCodingApplicationContext(
+		directCodingWorkerRuntime(session), partitionModel, redacted,
+		applicationContext, identities, session.resolveApplicationRepositoryEvidenceNeed,
 	)
 	if err != nil {
 		return "", err
 	}
-	decision, err := classifyExistingRepositoryRetrieval(
-		directCodingWorkerRuntime(session), retrievalModel, redacted, identities,
+	directives, err := classifyExistingRepositoryArtifactDirectives(
+		session, redacted, identities,
 	)
 	if err != nil {
 		return "", err
 	}
-	if err := session.requireCurrentRepositoryAuthority("repository evidence acquisition"); err != nil {
-		return "", err
-	}
-	pack, err := session.buildExistingRepositoryEvidence(decision)
-	if err != nil {
-		return "", err
-	}
-	if err := session.recordExistingRepositoryEvidence(decision, pack); err != nil {
-		return "", err
-	}
-	changeModel, err := session.repositorySemanticModel(
-		"coding_repository_change_surface", specialist.RoleCodingRepositoryChangeStation,
+	featureQuotes, err := interpretRepositoryRequirements(
+		directCodingWorkerRuntime(session), partitionModel, redacted, applicationContext, identities,
 	)
 	if err != nil {
 		return "", err
 	}
-	if err := session.requireCurrentRepositoryAuthority("change-surface projection"); err != nil {
-		return "", err
-	}
-	surface, err := selectExistingRepositoryChangeSurface(
-		directCodingWorkerRuntime(session), changeModel, redacted,
-		partition.FeatureQuotes, pack, identities,
+	absence, err := session.classifyPathFreeArtifactAbsence(
+		featureQuotes, directives, identities,
 	)
 	if err != nil {
 		return "", err
 	}
-	if err := session.runRepositoryCognitionShadow(decision, pack.AnalysisID); err != nil {
+	analysis, err := session.requireExistingRepositoryAnalysis(goadapter.AdapterName)
+	if err != nil {
 		return "", err
 	}
-	contract, err := session.buildExistingRepositoryChangeContract(pack, surface)
+	analysis, err = exactExistingRepositoryGoAnalysis(
+		session.repositoryIndex.Snapshot, session.repositoryIndex.Analyses,
+	)
+	if err != nil {
+		return "", err
+	}
+	absenceQuotes := absence.MustBeAbsent
+	if containsArtifactAbsenceCandidate(directives) {
+		directives, err = session.resolveNamedArtifactDeletionCandidates(
+			featureQuotes, directives, identities, analysis,
+		)
+		if err != nil {
+			return "", err
+		}
+	}
+	if containsForbiddenArtifactDirective(directives) {
+		return session.runNamedArtifactDeletion(
+			authority, featureQuotes, directives, identities, analysis,
+		)
+	}
+	if len(absenceQuotes) != 0 {
+		return session.runPathFreeArtifactDeletion(
+			authority, featureQuotes, absenceQuotes,
+			identities, analysis,
+		)
+	}
+	signature, quote, missing, err := explicitMissingGoArtifactCandidate(
+		authority, featureQuotes, analysis,
+	)
+	if err != nil {
+		return "", err
+	}
+	if missing {
+		if err := validateDesiredCreationFeatureCoverage(
+			quote, featureQuotes, directives,
+		); err != nil {
+			return "", err
+		}
+		boundaryModel, modelErr := session.workerModel(station.CodingDeclarationArtifactBoundary)
+		if modelErr != nil {
+			return "", modelErr
+		}
+		boundary, boundaryErr := classifyDeclarationArtifactBoundary(
+			directCodingWorkerRuntime(session), boundaryModel,
+			assemblyline.DeclarationArtifactBoundaryInput{
+				RequirementQuote: quote, GoSignature: signature.Canonical,
+				DeclarationID: "DECLARATION_1",
+			},
+		)
+		if boundaryErr != nil {
+			return "", boundaryErr
+		}
+		if boundary.Boundary != assemblyline.DeclarationBoundaryIndependentArtifact {
+			return "", fmt.Errorf(
+				"missing Go declaration has no accepted independent artifact boundary; ordinary bounded modification or explicit placement is required",
+			)
+		}
+		graph, graphErr := compileDesiredArtifactCreation(
+			authority, featureQuotes,
+			session.repositoryIndex.Snapshot, analysis,
+		)
+		if graphErr != nil {
+			return "", graphErr
+		}
+		if err := session.recordDesiredRepositoryGraph(graph); err != nil {
+			return "", err
+		}
+		return session.runExistingRepositoryDesiredState(graph, analysis)
+	}
+	if err := session.openExistingRepositoryEvidenceNeeds(featureQuotes); err != nil {
+		return "", err
+	}
+	resolutions, err := prepareExistingRepositoryRequirementResolutions(
+		featureQuotes,
+		strings.TrimSpace(session.request.Instruction),
+		func(query string) (repositoryretrieval.EvidencePack, error) {
+			if authorityErr := session.requireCurrentRepositoryAuthority(
+				"repository evidence acquisition",
+			); authorityErr != nil {
+				return repositoryretrieval.EvidencePack{}, authorityErr
+			}
+			return session.buildExistingRepositoryEvidence(query)
+		},
+		func(acquisition existingRepositoryEvidenceAcquisition) error {
+			return session.recordExistingRepositoryInvestigation(acquisition)
+		},
+		func(acquisition existingRepositoryEvidenceAcquisition) (assemblyline.RepositoryChangeSurfaceDecision, error) {
+			changeModel, modelErr := session.repositorySemanticModel(station.CodingRepositoryChange)
+			if modelErr != nil {
+				return assemblyline.RepositoryChangeSurfaceDecision{}, modelErr
+			}
+			if authorityErr := session.requireCurrentRepositoryAuthority(
+				"change-surface projection",
+			); authorityErr != nil {
+				return assemblyline.RepositoryChangeSurfaceDecision{}, authorityErr
+			}
+			return selectExistingRepositoryRequirementSurface(
+				directCodingWorkerRuntime(session), changeModel, acquisition, identities,
+			)
+		},
+	)
+	if err != nil {
+		return "", err
+	}
+	for _, resolution := range resolutions {
+		if err := session.recordExistingRepositoryInvestigationResolution(resolution); err != nil {
+			return "", err
+		}
+	}
+	contract, err := session.buildExistingRepositoryChangeContract(resolutions)
 	if err != nil {
 		return "", err
 	}
 	if err := session.recordExistingRepositoryChangeContract(contract); err != nil {
 		return "", err
 	}
-	analysis, err := exactRepositoryChangeAnalysis(
+	analysis, err = exactRepositoryChangeAnalysis(
 		session.repositoryIndex.Analyses, contract.AnalysisID,
 	)
 	if err != nil {
@@ -113,23 +220,47 @@ func (session *directCodingSession) runExistingRepositoryChangeWorkflow() (strin
 	return session.applyExistingRepositoryChangeContract(contract, candidates, baseline)
 }
 
+func containsForbiddenArtifactDirective(directives []assemblyline.ArtifactDirective) bool {
+	for _, directive := range directives {
+		if directive.Disposition == assemblyline.ArtifactForbid {
+			return true
+		}
+	}
+	return false
+}
+
+func containsArtifactAbsenceCandidate(directives []assemblyline.ArtifactDirective) bool {
+	for _, directive := range directives {
+		if directive.Disposition == assemblyline.ArtifactAbsenceCandidate {
+			return true
+		}
+	}
+	return false
+}
+
 func existingRepositoryAuthority(request directCodingRequest) string {
 	parts := []string{request.Instruction}
-	parts = append(parts, request.AdditionalAuthority...)
 	parts = append(parts, request.Feedback...)
 	return strings.TrimSpace(strings.Join(parts, "\n"))
 }
 
-func (session *directCodingSession) repositorySemanticModel(skillID, roleID string) (string, error) {
-	modelName := session.runtime.svc.v3SpecialistModel(
-		session.runtime.claim.Job, session.runtime.routing, skillID, roleID, session.runtime.routing.Glue,
-	)
-	return requireDirectCodingModel(roleID, modelName)
+func (session *directCodingSession) repositorySemanticModel(id station.ID) (string, error) {
+	modelName, err := stationModel(session.runtime.routing, id)
+	if err != nil {
+		return "", err
+	}
+	return requireDirectCodingModel(id, modelName)
 }
 
 func (session *directCodingSession) buildExistingRepositoryEvidence(
-	decision assemblyline.RepositoryRetrievalDecision,
+	codeOwnedQuery string,
 ) (repositoryretrieval.EvidencePack, error) {
+	if session == nil || session.runtime == nil || session.runtime.svc == nil ||
+		session.runtime.svc.repo == nil || session.repositoryIndex == nil {
+		return repositoryretrieval.EvidencePack{}, fmt.Errorf(
+			"repository evidence acquisition requires runtime, store, and immutable index authority",
+		)
+	}
 	if session.runtime.svc.repositoryRetrieval == nil {
 		return repositoryretrieval.EvidencePack{}, fmt.Errorf("repository evidence retrieval is unavailable")
 	}
@@ -140,45 +271,48 @@ func (session *directCodingSession) buildExistingRepositoryEvidence(
 	if projectID < 1 {
 		return repositoryretrieval.EvidencePack{}, fmt.Errorf("repository evidence requires durable project authority")
 	}
-	analyses := append([]repositoryfacts.Analysis(nil), session.repositoryIndex.Analyses...)
-	sort.Slice(analyses, func(left, right int) bool { return analyses[left].ID < analyses[right].ID })
-	packs := make([]repositoryretrieval.EvidencePack, 0, len(analyses))
-	for _, analysis := range analyses {
-		pack, buildErr := session.runtime.svc.repositoryRetrieval.Build(session.runtime.ctx, repositoryretrieval.Request{
-			ProjectID: projectID, AnalysisID: analysis.ID,
-			Operation: decision.Operation, Query: decision.QueryQuote,
-			Limits: repositoryretrieval.Limits{
-				MaxSymbols: 8, MaxEdges: 32, MaxSpanBytes: 4 * 1024, MaxPackBytes: 9 * 1024,
-			},
-		})
-		if errors.Is(buildErr, repositoryretrieval.ErrInsufficientEvidence) {
-			continue
-		}
-		if buildErr != nil {
-			return repositoryretrieval.EvidencePack{}, buildErr
-		}
-		packs = append(packs, pack)
+	return buildObjectiveRepositoryEvidence(
+		session.runtime.ctx, session.runtime.svc.repositoryRetrieval,
+		projectID, session.repositoryIndex.Analyses, codeOwnedQuery,
+	)
+}
+
+func newExistingRepositoryEvidenceRequest(
+	projectID int64,
+	analysisID string,
+	codeOwnedQuery string,
+) (repositoryretrieval.Request, error) {
+	if projectID < 1 {
+		return repositoryretrieval.Request{}, fmt.Errorf("repository evidence request requires durable project authority")
 	}
-	if len(packs) == 0 {
-		return repositoryretrieval.EvidencePack{}, fmt.Errorf(
-			"%w: %s %q matched no complete analysis",
-			repositoryretrieval.ErrInsufficientEvidence, decision.Operation, decision.QueryQuote,
-		)
+	if strings.TrimSpace(analysisID) == "" {
+		return repositoryretrieval.Request{}, fmt.Errorf("repository evidence request requires one analysis ID")
 	}
-	if len(packs) > 1 {
-		return repositoryretrieval.EvidencePack{}, fmt.Errorf(
-			"repository evidence spans %d language analyses; composite evidence is required", len(packs),
-		)
+	if _, err := repositoryretrieval.NewQueryBinding(
+		repositoryretrieval.OperationSemanticExcerpts, codeOwnedQuery,
+	); err != nil {
+		return repositoryretrieval.Request{}, fmt.Errorf("repository evidence code-owned query: %w", err)
 	}
-	return packs[0], nil
+	return repositoryretrieval.Request{
+		ProjectID:  projectID,
+		AnalysisID: analysisID,
+		Operation:  repositoryretrieval.OperationSemanticExcerpts,
+		Query:      codeOwnedQuery,
+		Limits: repositoryretrieval.Limits{
+			MaxSymbols: 8, MaxEdges: 32, MaxSpanBytes: 4 * 1024, MaxPackBytes: 9 * 1024,
+		},
+	}, nil
 }
 
 func (session *directCodingSession) recordExistingRepositoryEvidence(
-	decision assemblyline.RepositoryRetrievalDecision,
+	codeOwnedQuery string,
 	pack repositoryretrieval.EvidencePack,
 ) error {
-	if err := pack.ValidateForRequest(decision.Operation, decision.QueryQuote); err != nil {
+	if err := pack.ValidateForRequest(repositoryretrieval.OperationSemanticExcerpts, codeOwnedQuery); err != nil {
 		return fmt.Errorf("record repository evidence: %w", err)
+	}
+	if session == nil || session.runtime == nil {
+		return fmt.Errorf("record repository evidence requires a runtime")
 	}
 	return session.runtime.writeEvidence(evidence.Record{
 		Kind: evidence.KindRepositoryEvidence, SourceType: "repository", SourceRef: pack.ID,
@@ -186,7 +320,7 @@ func (session *directCodingSession) recordExistingRepositoryEvidence(
 		Confidence: 1,
 		Metadata: map[string]any{
 			"snapshot_id": pack.SnapshotID, "analysis_id": pack.AnalysisID,
-			"operation": decision.Operation, "query_quote": decision.QueryQuote,
+			"operation": repositoryretrieval.OperationSemanticExcerpts, "code_owned_query": codeOwnedQuery,
 			"pack_bytes": evidencePackBytes(pack),
 		},
 	})

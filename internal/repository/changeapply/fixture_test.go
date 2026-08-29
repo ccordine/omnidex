@@ -56,7 +56,14 @@ func (fixture *fixture) refresh(t *testing.T) {
 	if err := command.Run(); err != nil {
 		runGit(t, fixture.root, "-c", "user.name=Omnidex Test", "-c", "user.email=test@example.com", "commit", "-m", "fixture")
 	}
-	snapshot, err := repositoryfacts.BuildGitSnapshot(context.Background(), fixture.root, repositoryfacts.SnapshotOptions{})
+	snapshot, analysis := exactFixtureFacts(t, fixture.root)
+	fixture.snapshot = snapshot
+	fixture.analysis = analysis
+}
+
+func exactFixtureFacts(t *testing.T, root string) (repositoryfacts.Snapshot, repositoryfacts.Analysis) {
+	t.Helper()
+	snapshot, err := repositoryfacts.BuildGitSnapshot(context.Background(), root, repositoryfacts.SnapshotOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,8 +71,7 @@ func (fixture *fixture) refresh(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	fixture.snapshot = snapshot
-	fixture.analysis = analysis
+	return snapshot, analysis
 }
 
 func (fixture *fixture) contract(t *testing.T, names ...string) repositoryfacts.ChangeContract {
@@ -103,9 +109,19 @@ func (fixture *fixture) file(t *testing.T, path string) repositoryfacts.File {
 	return repositoryfacts.File{}
 }
 
-func (fixture *fixture) plan(contract repositoryfacts.ChangeContract, candidates []changeapply.CandidateDeclaration) (*changeapply.StagedChange, error) {
-	return changeapply.Plan(context.Background(), changeapply.Input{
-		Snapshot: fixture.snapshot, Analysis: fixture.analysis, Contract: contract, Candidates: candidates,
+func (fixture *fixture) plan(
+	contract repositoryfacts.ChangeContract,
+	candidates map[string]string,
+) (*changeapply.StagedChange, error) {
+	desired, err := changeapply.AssembleExistingGoFileStates(
+		fixture.snapshot, fixture.analysis, contract, candidates,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return changeapply.PlanFileStateTransitions(context.Background(), changeapply.FileStateInput{
+		Snapshot: fixture.snapshot, Analysis: fixture.analysis, OwnerID: contract.ID,
+		Desired: desired,
 	})
 }
 

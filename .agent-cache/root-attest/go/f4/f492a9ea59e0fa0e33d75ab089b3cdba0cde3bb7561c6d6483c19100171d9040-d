@@ -1,4 +1,0 @@
-./env.go
-./preflight.go
-./runner.go
-./env_test.go

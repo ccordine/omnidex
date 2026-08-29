@@ -37,7 +37,8 @@ func TestExistingRepositoryGoVerificationCommandsUseExactTargetAndTestPackages(t
 	want := []testCommand{
 		{
 			Family: "go", Name: "go",
-			Args: []string{"test", "-json", "-count=1", "-run", "^TestFirst$", "."},
+			Args:    []string{"test", "-json", "-count=1", "-run", "^TestFirst$", "."},
+			Purpose: verificationTest,
 			RepositoryProof: &repositoryGoTestProof{
 				Mode: repositoryGoProofFocused, Package: ".",
 				Expected: []repositoryGoExpectedTest{{
@@ -49,7 +50,8 @@ func TestExistingRepositoryGoVerificationCommandsUseExactTargetAndTestPackages(t
 		},
 		{
 			Family: "go", Name: "go",
-			Args: []string{"test", "-json", "-count=1", "-run", "^TestSecond$", "./sub"},
+			Args:    []string{"test", "-json", "-count=1", "-run", "^TestSecond$", "./sub"},
+			Purpose: verificationTest,
 			RepositoryProof: &repositoryGoTestProof{
 				Mode: repositoryGoProofFocused, Package: "./sub",
 				Expected: []repositoryGoExpectedTest{{
@@ -62,6 +64,7 @@ func TestExistingRepositoryGoVerificationCommandsUseExactTargetAndTestPackages(t
 		{
 			Family: "go", Name: "go",
 			Args:            []string{"test", "-json", "-count=1", "./..."},
+			Purpose:         verificationTest,
 			RepositoryProof: &repositoryGoTestProof{Mode: repositoryGoProofBroad, Package: "./..."},
 		},
 	}

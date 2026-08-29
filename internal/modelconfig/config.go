@@ -19,28 +19,32 @@ type Field struct {
 }
 
 var Fields = []Field{
-	{Key: "default_model", Label: "Default model", Description: "Primary conversation/responder model", EnvKeys: []string{"OMNI_MODEL", "OMNI_CONVERSATION_MODEL", "OLLAMA_MODEL_RESPONDER", "OLLAMA_MODEL"}},
-	{Key: "fast_model", Label: "Fast model", Description: "Low-latency model for classification and tagging", EnvKeys: []string{"OMNI_FAST_MODEL", "OLLAMA_MODEL_FAST"}},
-	{Key: "glue_model", Label: "Glue model", Description: "Small stateless model for typed coordination and context reduction jobs", EnvKeys: []string{"OMNI_GLUE_MODEL", "OLLAMA_MODEL_GLUE"}},
-	{Key: "reasoning_model", Label: "Reasoning model", Description: "Deep reasoning model for analysis and complex planning", EnvKeys: []string{"OMNI_REASONING_MODEL", "OLLAMA_MODEL_REASONING"}},
-	{Key: "planner_model", Label: "Planner model", Description: "Task decomposition for non-coding analysis workflows", EnvKeys: []string{"OMNI_PLANNER_MODEL", "OLLAMA_MODEL_PLANNER"}},
-	{Key: "analyzer_model", Label: "Analyzer model", Description: "Analysis and verification model", EnvKeys: []string{"OMNI_ANALYZER_MODEL", "OLLAMA_MODEL_ANALYZER"}},
-	{Key: "responder_model", Label: "Responder model", Description: "Final response composition model", EnvKeys: []string{"OMNI_RESPONDER_MODEL", "OLLAMA_MODEL_RESPONDER"}},
-	{Key: "tagger_model", Label: "Tagger model", Description: "Fast model for tags and classification", EnvKeys: []string{"OMNI_TAGGER_MODEL", "OLLAMA_MODEL_TAGGER"}},
-	{Key: "search_model", Label: "Search model", Description: "Model used for search/research synthesis", EnvKeys: []string{"OMNI_SEARCH_MODEL", "OLLAMA_MODEL_SEARCH"}},
-	{Key: "memory_model", Label: "Memory model", Description: "Model used for memory extraction and retrieval tasks", EnvKeys: []string{"OMNI_MEMORY_MODEL", "OLLAMA_MODEL_MEMORY"}},
-	{Key: "executor_model", Label: "Executor model", Description: "Long-horizon code and tool execution specialist", EnvKeys: []string{"OMNI_EXECUTOR_MODEL", "OLLAMA_MODEL_SPECIALIST_SUBTASK_EXECUTOR"}},
-	{Key: "coding_surface_model", Label: "Coding surface", Description: "Classifies only the requested delivery surface", EnvKeys: []string{"OMNI_CODING_SURFACE_MODEL", "OLLAMA_MODEL_SPECIALIST_CODING_SURFACE"}},
-	{Key: "coding_product_identity_model", Label: "Coding product identity", Description: "Copies one exact product-category quote without extracting features", EnvKeys: []string{"OMNI_CODING_PRODUCT_IDENTITY_MODEL", "OLLAMA_MODEL_SPECIALIST_CODING_PRODUCT_IDENTITY"}},
-	{Key: "coding_requirement_partition_model", Label: "Coding feature partition", Description: "Extracts exact feature envelopes and splits each envelope through one code-owned fixed-point loop", EnvKeys: []string{"OMNI_CODING_REQUIREMENT_PARTITION_MODEL", "OLLAMA_MODEL_SPECIALIST_CODING_REQUIREMENT_PARTITION"}},
-	{Key: "coding_artifact_handling_model", Label: "Coding artifact handling", Description: "Classifies explicit user authority over one redacted artifact token", EnvKeys: []string{"OMNI_CODING_ARTIFACT_HANDLING_MODEL", "OLLAMA_MODEL_SPECIALIST_CODING_ARTIFACT_HANDLING"}},
-	{Key: "coding_capability_relation_model", Label: "Coding capability relation", Description: "Classifies one direct state dependency between two local needs", EnvKeys: []string{"OMNI_CODING_CAPABILITY_RELATION_MODEL", "OLLAMA_MODEL_SPECIALIST_CODING_CAPABILITY_RELATION"}},
-	{Key: "coding_skill_selection_model", Label: "Coding skill selection", Description: "Selects one opaque validated procedure for one local need, or none", EnvKeys: []string{"OMNI_CODING_SKILL_SELECTION_MODEL", "OLLAMA_MODEL_SPECIALIST_CODING_SKILL_SELECTION"}},
-	{Key: "coding_skill_procedure_model", Label: "Coding skill procedure", Description: "Builds one bounded reusable procedure for one local need", EnvKeys: []string{"OMNI_CODING_SKILL_PROCEDURE_MODEL", "OLLAMA_MODEL_SPECIALIST_CODING_SKILL_PROCEDURE"}},
-	{Key: "coding_fragment_model", Label: "Coding fragment", Description: "Returns one exact path-blind function declaration from a bounded local contract", EnvKeys: []string{"OMNI_CODING_FRAGMENT_MODEL", "OLLAMA_MODEL_SPECIALIST_CODING_FRAGMENT"}},
-	{Key: "coding_fragment_correction_model", Label: "Coding fragment correction", Description: "Corrects one current function from one exact local diagnostic", EnvKeys: []string{"OMNI_CODING_FRAGMENT_CORRECTION_MODEL", "OLLAMA_MODEL_SPECIALIST_CODING_FRAGMENT_CORRECTION"}},
-	{Key: "shell_specialist_model", Label: "Shell specialist", Description: "Shell execution specialist", EnvKeys: []string{"OMNI_SHELL_SPECIALIST_MODEL", "OLLAMA_MODEL_SPECIALIST_SHELL_EXECUTION", "OLLAMA_MODEL_SHELL"}},
-	{Key: "ollama_endpoint", Label: "Ollama endpoint", Description: "Ollama HTTP base URL", EnvKeys: []string{"OLLAMA_BASE_URL", "OMNI_OLLAMA_ENDPOINT"}},
+	{Key: "context_relevance_model", Label: "Context relevance", Description: "Selects only relevant opaque IDs from one code-bounded context candidate set", EnvKeys: []string{"OMNI_CONTEXT_RELEVANCE_MODEL"}},
+	{Key: "context_minification_model", Label: "Context minification", Description: "Reduces selected exact authorities into one bounded minimal-context leaf", EnvKeys: []string{"OMNI_CONTEXT_MINIFICATION_MODEL"}},
+	{Key: "conversation_objective_kind_model", Label: "Conversation objective kind", Description: "Classifies one exact free-form turn into one registered objective kind", EnvKeys: []string{"OMNI_CONVERSATION_OBJECTIVE_KIND_MODEL"}},
+	{Key: "conversation_response_model", Label: "Conversation response", Description: "Returns one bounded answer or story response", EnvKeys: []string{"OMNI_CONVERSATION_RESPONSE_MODEL"}},
+	{Key: "roleplay_semantic_model", Label: "Roleplay semantics", Description: "Resolves bounded fictional canon, ongoing-action, and context leaves for roleplay turns", EnvKeys: []string{"OMNI_ROLEPLAY_SEMANTIC_MODEL"}},
+	{Key: "grounded_answer_model", Label: "Grounded answer", Description: "Synthesizes one answer from code-selected evidence IDs", EnvKeys: []string{"OMNI_GROUNDED_ANSWER_MODEL"}},
+	{Key: "database_schema_selection_model", Label: "Database schema selection", Description: "Selects only semantically relevant opaque relation IDs from one bounded schema set", EnvKeys: []string{"OMNI_DATABASE_SCHEMA_SELECTION_MODEL"}},
+	{Key: "database_query_intent_model", Label: "Database query intent", Description: "Expresses one exact evidence need as a typed relational intent over known opaque schema IDs", EnvKeys: []string{"OMNI_DATABASE_QUERY_INTENT_MODEL"}},
+	{Key: "database_evidence_gap_model", Label: "Database evidence gap", Description: "Returns one exact information requirement not established by accumulated database evidence, or an empty leaf", EnvKeys: []string{"OMNI_DATABASE_EVIDENCE_GAP_MODEL"}},
+	{Key: "database_join_path_selection_model", Label: "Database join path selection", Description: "Selects one opaque current foreign-key path for one named semantic relationship ambiguity", EnvKeys: []string{"OMNI_DATABASE_JOIN_PATH_SELECTION_MODEL"}},
+	{Key: "repository_evidence_relevance_model", Label: "Repository evidence relevance", Description: "Selects relevant IDs or none from one bounded repository evidence set", EnvKeys: []string{"OMNI_REPOSITORY_EVIDENCE_RELEVANCE_MODEL"}},
+	{Key: "web_relevance_model", Label: "Web relevance", Description: "Selects relevant IDs from one bounded web candidate set", EnvKeys: []string{"OMNI_WEB_RELEVANCE_MODEL"}},
+	{Key: "web_grounded_synthesis_model", Label: "Web grounded synthesis", Description: "Synthesizes bounded paragraphs from code-selected web evidence IDs", EnvKeys: []string{"OMNI_WEB_GROUNDED_SYNTHESIS_MODEL"}},
+	{Key: "coding_surface_model", Label: "Coding surface", Description: "Classifies only the requested delivery surface", EnvKeys: []string{"OMNI_CODING_SURFACE_MODEL"}},
+	{Key: "coding_requirements_model", Label: "Coding intent", Description: "Identifies bounded context needs and derives one semantic application intent", EnvKeys: []string{"OMNI_CODING_REQUIREMENTS_MODEL"}},
+	// The key and environment name are retained public configuration. One model
+	// selection routes two separately rendered, executed, and persisted calls.
+	{Key: "coding_service_deployment_intent_model", Label: "Service deployment semantics", Description: "Selects the model for separate continued-availability and persistence-destination semantic calls", EnvKeys: []string{"OMNI_CODING_SERVICE_DEPLOYMENT_INTENT_MODEL"}},
+	{Key: "coding_workload_model", Label: "Coding structure", Description: "Returns one bounded target-tree, state-lifetime, state-purpose, state-kind, endpoint-necessity, or endpoint-transport semantic leaf from accepted local authority", EnvKeys: []string{"OMNI_CODING_WORKLOAD_MODEL"}},
+	{Key: "coding_artifact_handling_model", Label: "Coding artifact handling", Description: "Classifies explicit artifact truth and resolves bounded path-blind artifact or declaration candidates", EnvKeys: []string{"OMNI_CODING_ARTIFACT_HANDLING_MODEL"}},
+	{Key: "coding_capability_relation_model", Label: "Coding capability relation", Description: "Classifies one direct state dependency between two local needs", EnvKeys: []string{"OMNI_CODING_CAPABILITY_RELATION_MODEL"}},
+	{Key: "coding_skill_selection_model", Label: "Coding skill selection", Description: "Selects one opaque validated procedure for one local need, or none", EnvKeys: []string{"OMNI_CODING_SKILL_SELECTION_MODEL"}},
+	{Key: "coding_fragment_model", Label: "Coding fragment", Description: "Returns one exact path-blind function declaration from a bounded local contract", EnvKeys: []string{"OMNI_CODING_FRAGMENT_MODEL"}},
+	{Key: "coding_fragment_repair_guidance_model", Label: "Coding repair guidance", Description: "Diagnoses one exact local validation failure into one self-contained source-repair instruction", EnvKeys: []string{"OMNI_CODING_FRAGMENT_REPAIR_GUIDANCE_MODEL"}},
+	{Key: "coding_fragment_correction_model", Label: "Coding fragment correction", Description: "Executes one repair instruction against only its exact mutable source block", EnvKeys: []string{"OMNI_CODING_FRAGMENT_CORRECTION_MODEL"}},
+	{Key: "coding_repository_change_surface_model", Label: "Repository change surface", Description: "Selects bounded symbol IDs for one established repository requirement", EnvKeys: []string{"OMNI_CODING_REPOSITORY_CHANGE_SURFACE_MODEL"}},
 }
 
 type Config map[string]string
@@ -151,9 +155,6 @@ func (c Config) ModelNames() []string {
 	seen := map[string]struct{}{}
 	out := []string{}
 	for _, field := range Fields {
-		if field.Key == "ollama_endpoint" {
-			continue
-		}
 		value := c.Get(field.Key)
 		if value == "" {
 			continue
@@ -166,13 +167,6 @@ func (c Config) ModelNames() []string {
 	}
 	sort.Strings(out)
 	return out
-}
-
-func (c Config) OllamaEndpoint(fallback string) string {
-	if endpoint := c.Get("ollama_endpoint"); endpoint != "" {
-		return endpoint
-	}
-	return strings.TrimSpace(fallback)
 }
 
 func (c Config) ToMap() map[string]string {

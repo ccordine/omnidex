@@ -8,9 +8,9 @@ import (
 )
 
 type providerCatalogResponse struct {
-	GenerationProvider string                `json:"generation_provider"`
-	EmbeddingProvider  string                `json:"embedding_provider"`
-	Providers          []providerCatalogItem `json:"providers"`
+	ExactStationProvider string                `json:"exact_station_provider"`
+	EmbeddingProvider    string                `json:"embedding_provider"`
+	Providers            []providerCatalogItem `json:"providers"`
 }
 
 type providerCatalogItem struct {
@@ -20,15 +20,11 @@ type providerCatalogItem struct {
 	Protocol              string   `json:"protocol"`
 	DefaultBaseURL        string   `json:"default_base_url,omitempty"`
 	ChineseService        bool     `json:"chinese_service"`
-	SupportsGeneration    bool     `json:"supports_generation"`
+	SupportsExactStations bool     `json:"supports_exact_stations"`
 	SupportsEmbeddings    bool     `json:"supports_embeddings"`
-	SelectedForGeneration bool     `json:"selected_for_generation"`
+	SelectedForStations   bool     `json:"selected_for_stations"`
 	SelectedForEmbeddings bool     `json:"selected_for_embeddings"`
-	GenerationModel       string   `json:"generation_model,omitempty"`
 	EmbeddingModel        string   `json:"embedding_model,omitempty"`
-	GenerationConfigured  bool     `json:"generation_configured"`
-	EmbeddingConfigured   bool     `json:"embedding_configured"`
-	ConfigurationError    string   `json:"configuration_error,omitempty"`
 }
 
 func (s *Server) handleProviderCatalog(w http.ResponseWriter, r *http.Request) {
@@ -42,37 +38,25 @@ func (s *Server) handleProviderCatalog(w http.ResponseWriter, r *http.Request) {
 func (s *Server) providerCatalog() providerCatalogResponse {
 	cfg := s.providerConfiguration()
 	response := providerCatalogResponse{
-		GenerationProvider: canonicalProviderID(cfg.LLMProvider),
-		EmbeddingProvider:  canonicalProviderID(cfg.EmbeddingProvider),
-		Providers:          make([]providerCatalogItem, 0, len(catalog.Definitions())),
+		ExactStationProvider: canonicalProviderID(cfg.LLMProvider),
+		EmbeddingProvider:    canonicalProviderID(cfg.EmbeddingProvider),
+		Providers:            make([]providerCatalogItem, 0, len(catalog.ProductionDefinitions())),
 	}
-	for _, definition := range catalog.Definitions() {
-		generation := configuredProviderRoleStatus(cfg, definition.ID, configuredProviderModel(cfg, definition.ID, false), false)
-		embedding := configuredProviderRoleStatus(cfg, definition.ID, configuredProviderModel(cfg, definition.ID, true), true)
+	for _, definition := range catalog.ProductionDefinitions() {
+		embeddingModel := strings.TrimSpace(cfg.ProviderModels[definition.ID].Embedding)
+		if response.EmbeddingProvider == definition.ID {
+			embeddingModel = strings.TrimSpace(cfg.EmbeddingModel)
+		}
 		item := providerCatalogItem{
-			ID:                    definition.ID,
-			DisplayName:           definition.DisplayName,
-			Aliases:               append([]string(nil), definition.Aliases...),
-			Protocol:              string(definition.Protocol),
-			DefaultBaseURL:        definition.DefaultBaseURL,
-			ChineseService:        definition.ChineseService,
-			SupportsGeneration:    definition.SupportsGeneration,
+			ID: definition.ID, DisplayName: definition.DisplayName,
+			Aliases: append([]string(nil), definition.Aliases...), Protocol: string(definition.Protocol),
+			DefaultBaseURL: definition.DefaultBaseURL, ChineseService: definition.ChineseService,
+			SupportsExactStations: definition.SupportsExactPreparedStations,
 			SupportsEmbeddings:    definition.SupportsEmbeddings,
-			SelectedForGeneration: response.GenerationProvider == definition.ID,
+			SelectedForStations:   response.ExactStationProvider == definition.ID,
 			SelectedForEmbeddings: response.EmbeddingProvider == definition.ID,
-			GenerationModel:       generation.Model,
-			EmbeddingModel:        embedding.Model,
-			GenerationConfigured:  generation.Configured,
-			EmbeddingConfigured:   embedding.Configured,
+			EmbeddingModel:        embeddingModel,
 		}
-		errors := make([]string, 0, 2)
-		if item.SelectedForGeneration && generation.Error != "" {
-			errors = append(errors, "generation: "+generation.Error)
-		}
-		if item.SelectedForEmbeddings && embedding.Error != "" {
-			errors = append(errors, "embedding: "+embedding.Error)
-		}
-		item.ConfigurationError = strings.Join(errors, "; ")
 		response.Providers = append(response.Providers, item)
 	}
 	return response

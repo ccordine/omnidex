@@ -109,11 +109,14 @@ func commitPatchMutations(ctx context.Context, workspace string, mutations []pat
 		}
 		switch mutation.action {
 		case "create":
-			if err = os.Rename(mutation.staged, mutation.target); err != nil {
+			if err = commitCreatedPatchFile(mutation.staged, mutation.target); err != nil {
 				return fmt.Errorf("commit created file %s: %w", mutation.path, err)
 			}
-			mutation.staged = ""
 			mutation.committed = true
+			if err = os.Remove(mutation.staged); err != nil {
+				return fmt.Errorf("remove committed create stage %s: %w", mutation.path, err)
+			}
+			mutation.staged = ""
 		case "update", "delete":
 			mutation.backup, err = reservePatchPath(filepath.Dir(mutation.target), ".omnidex-patch-backup-*")
 			if err != nil {
@@ -140,6 +143,16 @@ func commitPatchMutations(ctx context.Context, workspace string, mutations []pat
 	rollbackRequired = false
 	if err = removePatchBackups(mutations); err != nil {
 		return fmt.Errorf("patch committed but backup cleanup failed: %w", err)
+	}
+	return nil
+}
+
+// commitCreatedPatchFile publishes a completely staged file only while the
+// target is still absent. Link is same-filesystem and atomic: unlike Rename,
+// it never replaces a target that appears after the preceding validation.
+func commitCreatedPatchFile(staged, target string) error {
+	if err := os.Link(staged, target); err != nil {
+		return fmt.Errorf("publish staged file without replacement: %w", err)
 	}
 	return nil
 }

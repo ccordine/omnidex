@@ -5,7 +5,7 @@ import (
 	"sync"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
-	"github.com/gryph/omnidex/internal/specialist"
+	"github.com/gryph/omnidex/internal/station"
 )
 
 const maxDirectCodingRequirements = 10
@@ -40,14 +40,11 @@ func (s *directCodingSession) deriveRequirementCapabilities(
 	if len(requirements) == 1 {
 		return directCodingCapabilityGraph{requirements[0].ID: nil}, nil
 	}
-	modelName := s.runtime.svc.v3SpecialistModel(
-		s.runtime.claim.Job,
-		s.runtime.routing,
-		"coding_capability_relation",
-		specialist.RoleCodingCapabilityRelationStation,
-		s.runtime.routing.Glue,
-	)
-	modelName, err := requireDirectCodingModel(specialist.RoleCodingCapabilityRelationStation, modelName)
+	modelName, err := stationModel(s.runtime.routing, station.CodingCapabilityRelation)
+	if err != nil {
+		return nil, err
+	}
+	modelName, err = requireDirectCodingModel(station.CodingCapabilityRelation, modelName)
 	if err != nil {
 		return nil, err
 	}
@@ -103,9 +100,12 @@ func runDirectCodingCapabilityPairs(
 			results[index] = directCodingCapabilityResult{Pair: pair, Err: err}
 			return
 		}
-		decision, err := runDirectCodingSemanticCall[assemblyline.CapabilityRelationDecision](
+		decision, err := runDirectCodingSemanticLeafCall(
 			runtime, modelName, fmt.Sprintf("capability_relation_%03d_%03d", pair.LeftIndex+1, pair.RightIndex+1),
 			job, nil,
+			func(raw string) (assemblyline.CapabilityRelationDecision, error) {
+				return assemblyline.DecodeCapabilityRelationDecision(pair.Input, raw)
+			},
 			func(value assemblyline.CapabilityRelationDecision) error { return value.ValidateFor(pair.Input) },
 		)
 		results[index] = directCodingCapabilityResult{Pair: pair, Decision: decision, Err: err}
@@ -148,7 +148,7 @@ func assembleDirectCodingCapabilityGraph(
 		dependency := requirements[dependencyIndex]
 		graph[owner.ID] = append(graph[owner.ID], directCodingCapabilityBinding{
 			RequirementID: dependency.ID,
-			CapabilityID:  genericBrowserCapabilityID(dependencyIndex + 1),
+			CapabilityID:  genericApplicationCapabilityID(dependencyIndex + 1),
 			Purpose:       dependency.SourceQuote,
 		})
 	}
@@ -164,9 +164,6 @@ func assembleDirectCodingCapabilityGraph(
 		case assemblyline.CapabilityLeftReadsRight:
 			add(result.Pair.LeftIndex, result.Pair.RightIndex)
 		case assemblyline.CapabilityRightReadsLeft:
-			add(result.Pair.RightIndex, result.Pair.LeftIndex)
-		case assemblyline.CapabilityBidirectional:
-			add(result.Pair.LeftIndex, result.Pair.RightIndex)
 			add(result.Pair.RightIndex, result.Pair.LeftIndex)
 		}
 	}
@@ -199,7 +196,7 @@ func validateDirectCodingCapabilityGraph(
 			if !exists || dependency.RequirementID == owner.ID {
 				return fmt.Errorf("requirement %s has invalid capability dependency %s", owner.ID, dependency.RequirementID)
 			}
-			if dependency.CapabilityID != genericBrowserCapabilityID(index+1) ||
+			if dependency.CapabilityID != genericApplicationCapabilityID(index+1) ||
 				dependency.Purpose != requirements[index].SourceQuote {
 				return fmt.Errorf("requirement %s capability dependency %s is not code-owned", owner.ID, dependency.RequirementID)
 			}

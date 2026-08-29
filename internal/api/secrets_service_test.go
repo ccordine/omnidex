@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -40,6 +41,58 @@ func TestHandleAPISecretsGetMasksValues(t *testing.T) {
 	}
 	if openai["hint"] != "••••9876" {
 		t.Fatalf("expected masked hint, got %#v", openai["hint"])
+	}
+}
+
+func TestHandleAPISecretsGetFailsLoudlyOnRetiredStoredCredential(t *testing.T) {
+	store := &secrets.MemoryStore{Values: map[string]string{"cursor_api_key": "retired-secret"}}
+	server := &Server{secretsResolver: secrets.NewResolver(store)}
+	request := httptest.NewRequest(http.MethodGet, "/v1/settings/secrets", nil)
+	response := httptest.NewRecorder()
+	server.handleAPISecretsGet(response, request)
+	if response.Code != http.StatusInternalServerError || !strings.Contains(response.Body.String(), "unsupported or retired") {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
+func TestAPISecretsRequestIsExactBoundedAndRejectsRetiredAgentCredentials(t *testing.T) {
+	validKey := ""
+	for _, field := range secrets.Fields {
+		if field.Key != "" {
+			validKey = field.Key
+			break
+		}
+	}
+	if validKey == "" {
+		t.Fatal("production provider secret catalog is empty")
+	}
+	validBody := []byte(`{"values":{"` + validKey + `":"secret"},"clear_keys":[]}`)
+	request := httptest.NewRequest(http.MethodPut, "/v1/settings/secrets", bytes.NewReader(validBody))
+	response := httptest.NewRecorder()
+	decoded, err := decodeAPISecretsRequest(response, request)
+	if err != nil || decoded.Values[validKey] != "secret" {
+		t.Fatalf("decoded=%+v err=%v", decoded, err)
+	}
+
+	for _, body := range [][]byte{
+		[]byte(`{"values":{},"values":{},"clear_keys":[]}`),
+		[]byte(`{"values":{},"clear_keys":[],"agent":"codex"}`),
+		[]byte(`{"Values":{},"clear_keys":[]}`),
+		[]byte(`{"values":{},"clear_keys":[]} {}`),
+		[]byte(`{"values":null,"clear_keys":[]}`),
+		[]byte(`{"values":{},"clear_keys":null}`),
+		[]byte(`{"values":{"cursor_api_key":"retired"},"clear_keys":[]}`),
+		[]byte(`{"values":{"codex_api_key":"retired"},"clear_keys":[]}`),
+		[]byte(`{"values":{"` + validKey + `":" one "},"clear_keys":[]}`),
+		[]byte(`{"values":{"` + validKey + `":"one"},"clear_keys":["` + validKey + `"]}`),
+		[]byte(`{"values":{},"clear_keys":["` + validKey + `","` + validKey + `"]}`),
+		bytes.Repeat([]byte(" "), int(maxAPISecretsBodyBytes+1)),
+	} {
+		request := httptest.NewRequest(http.MethodPut, "/v1/settings/secrets", bytes.NewReader(body))
+		response := httptest.NewRecorder()
+		if _, err := decodeAPISecretsRequest(response, request); err == nil {
+			t.Fatalf("invalid API secrets authority accepted: %q", body)
+		}
 	}
 }
 

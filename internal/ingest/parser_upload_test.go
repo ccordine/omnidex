@@ -16,6 +16,27 @@ func TestParseUploadText(t *testing.T) {
 	}
 }
 
+func TestDocumentFormatTagHasNoFilenameSemanticTokens(t *testing.T) {
+	tag, err := DocumentFormatTag("markdown")
+	if err != nil || tag != "document-format:markdown" {
+		t.Fatalf("format tag=%q error=%v", tag, err)
+	}
+	for _, value := range []string{"", " markdown", "MARKDOWN", "postgres", "react"} {
+		if _, err := DocumentFormatTag(value); err == nil {
+			t.Fatalf("unknown/inexact document format %q was accepted", value)
+		}
+	}
+	raw, err := os.ReadFile("parser.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, forbidden := range []string{"InferTagsFromPath", "strings.FieldsFunc(base", "parts :="} {
+		if strings.Contains(string(raw), forbidden) {
+			t.Fatalf("document ingest retains filename semantic tagging %q", forbidden)
+		}
+	}
+}
+
 func TestParseUploadPDFUsesTempFile(t *testing.T) {
 	if _, err := ParseUpload("sample.pdf", []byte("%PDF-1.4\n")); err == nil {
 		t.Fatal("expected invalid pdf to fail")

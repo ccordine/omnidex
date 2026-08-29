@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -9,6 +10,28 @@ import (
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/queue"
 )
+
+func TestWriteScrumChannelDispatchResponseAttestsExactOperationIdentity(t *testing.T) {
+	operationID, err := queue.NewLifecycleOperationID("api-scrum-channel-response")
+	if err != nil {
+		t.Fatal(err)
+	}
+	recorder := httptest.NewRecorder()
+	writeScrumChannelDispatchResponse(recorder, scrumChannelDispatchResult{
+		OperationID: operationID,
+		ProjectID:   7,
+		Card:        ScrumCard{ID: "card-operation"},
+		Action:      "replanned",
+	})
+	var response map[string]json.RawMessage
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if len(response) != 4 || string(response["operation_id"]) != `"`+string(operationID)+`"` ||
+		string(response["project_id"]) != "7" || string(response["action"]) != `"replanned"` {
+		t.Fatalf("channel response identity=%s", recorder.Body.String())
+	}
+}
 
 func TestBuildScrumChannelCardUpdateBindsOneUserMessageToOperation(t *testing.T) {
 	operationID, err := queue.NewLifecycleOperationID("api-scrum-channel-builder")
@@ -21,16 +44,12 @@ func TestBuildScrumChannelCardUpdateBindsOneUserMessageToOperation(t *testing.T)
 		Message: "Continue with the accepted correction.",
 	}
 	job := model.Job{ID: 42}
-	update, err := buildScrumChannelCardUpdate(card, request, "started", []string{"planner"}, job)
+	update, err := buildScrumChannelCardUpdate(card, request, "started", job)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var messages []ScrumChatMessage
-	if err := json.Unmarshal(update.Chat, &messages); err != nil {
-		t.Fatal(err)
-	}
 	bound := 0
-	for _, message := range messages {
+	for _, message := range update.Messages {
 		if message.OperationID == string(operationID) {
 			bound++
 			if message.Role != "user" || message.Content != request.Message {
@@ -41,23 +60,14 @@ func TestBuildScrumChannelCardUpdateBindsOneUserMessageToOperation(t *testing.T)
 	if bound != 1 || update.JobID != "42" || update.Column != "in_progress" || update.PlayState != scrumPlayRunning {
 		t.Fatalf("bound=%d update=%+v", bound, update)
 	}
-	if !strings.Contains(update.ConsoleLog, "Job #42 queued from channel") || !strings.Contains(update.ConsoleLog, "Models: planner") {
-		t.Fatalf("console log=%q", update.ConsoleLog)
+	noteFound := false
+	for _, message := range update.Messages {
+		if message.Role == "system" && strings.Contains(message.Content, "Job #42 queued from channel") {
+			noteFound = true
+		}
 	}
-}
-
-func TestBuildScrumChannelCardUpdateRejectsOrphanedOperationMessage(t *testing.T) {
-	operationID, err := queue.NewLifecycleOperationID("api-scrum-channel-orphan")
-	if err != nil {
-		t.Fatal(err)
-	}
-	card := scrumChannelBuilderCard()
-	card.Chat = json.RawMessage(`[{"id":"existing","role":"user","content":"Earlier","created_at":"2026-08-09T00:00:00Z","operation_id":"` + string(operationID) + `"}]`)
-	request := queue.ScrumChannelOperationRequest{
-		OperationID: operationID, ProjectID: card.ProjectID, CardID: card.ID, Message: "Continue.",
-	}
-	if _, err := buildScrumChannelCardUpdate(card, request, "started", nil, model.Job{ID: 42}); err == nil {
-		t.Fatal("operation-bound message without immutable result must fail")
+	if !noteFound {
+		t.Fatalf("typed system note missing from update: %+v", update.Messages)
 	}
 }
 
@@ -67,13 +77,22 @@ func TestScrumChannelResultNoteRejectsUnknownAction(t *testing.T) {
 	}
 }
 
+func TestScrumChannelResultNoteUsesJobAuthorityVocabulary(t *testing.T) {
+	note, err := scrumChannelResultNote("feedback", 42)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if note != "Channel message sent to waiting job" || strings.Contains(note, "agent") {
+		t.Fatalf("feedback note=%q", note)
+	}
+}
+
 func scrumChannelBuilderCard() queue.DBScrumCard {
 	now := time.Now().UTC()
 	return queue.DBScrumCard{
 		ID: "card-operation", ProjectID: 7, Title: "Operation", Column: "assigned",
-		Checklist: json.RawMessage(`[]`), RefFiles: json.RawMessage(`[]`), Chat: json.RawMessage(`[]`),
-		ModelConfig: json.RawMessage(`{}`), AgentConfig: json.RawMessage(`{}`), Recipe: json.RawMessage(`{}`),
-		Tags: json.RawMessage(`[]`), PlanningChat: json.RawMessage(`[]`), CoachConfig: json.RawMessage(`{}`),
+		Checklist: json.RawMessage(`[]`), RefFiles: json.RawMessage(`[]`),
+		Tags:         json.RawMessage(`[]`),
 		TestCriteria: json.RawMessage(`[]`), FlowMetrics: json.RawMessage(`{}`), CreatedAt: now, UpdatedAt: now,
 	}
 }

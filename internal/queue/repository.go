@@ -7,17 +7,11 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
-	"regexp"
 	"strings"
 
-	"github.com/gryph/omnidex/internal/agentconfig"
 	"github.com/gryph/omnidex/internal/artifacts"
-	"github.com/gryph/omnidex/internal/datasource"
 	"github.com/gryph/omnidex/internal/evidence"
 	"github.com/gryph/omnidex/internal/model"
-	"github.com/gryph/omnidex/internal/projectdebugger"
-	"github.com/gryph/omnidex/internal/scrum"
-	"github.com/gryph/omnidex/internal/scrumcardllm"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -30,10 +24,6 @@ type stepSeed struct {
 	action    string
 	sortIndex int
 }
-
-const inferredMemoryCorrectionDistance = 0.08
-
-var channelIDSanitizer = regexp.MustCompile(`[^a-zA-Z0-9_.:-]+`)
 
 func New(pool *pgxpool.Pool) *Repository {
 	return &Repository{pool: pool}
@@ -53,11 +43,26 @@ func (r *Repository) EnsureSchema(ctx context.Context, bundle MigrationBundle) e
 	if err := bundle.validate(); err != nil {
 		return err
 	}
-	return r.applyMigrationBundle(ctx, bundle)
+	if err := r.applyMigrationBundle(ctx, bundle); err != nil {
+		return err
+	}
+	return nil
+}
+
+// ValidateRuntimeAuthority checks post-migration invariants that must hold
+// before the production API or worker loops are allowed to start.
+func (r *Repository) ValidateRuntimeAuthority(ctx context.Context) error {
+	if err := r.validateExecutablePipelineState(ctx); err != nil {
+		return err
+	}
+	if err := r.validateJobStepExecutionIdentityAuthority(ctx); err != nil {
+		return err
+	}
+	return r.validateWorkspaceMutationProjectLocationAuthority(ctx)
 }
 
 func (r *Repository) EnqueueJob(ctx context.Context, instruction, pipeline string, metadataJSON []byte) (model.Job, error) {
-	pipeline, err := validatePipeline(pipeline)
+	pipeline, err := validatePublicEnqueuePipeline(pipeline)
 	if err != nil {
 		return model.Job{}, err
 	}
@@ -82,8 +87,30 @@ func (r *Repository) EnqueueJob(ctx context.Context, instruction, pipeline strin
 }
 
 func (r *Repository) enqueueJobTx(ctx context.Context, tx pgx.Tx, instruction, pipeline string, metadataJSON []byte) (model.Job, error) {
+	steps, err := stepsForJob(pipeline, instruction, metadataJSON)
+	if err != nil {
+		return model.Job{}, fmt.Errorf("resolve job execution steps: %w", err)
+	}
+	return r.enqueueJobWithStepsTx(ctx, tx, instruction, pipeline, metadataJSON, steps)
+}
+
+func (r *Repository) enqueueJobWithStepsTx(
+	ctx context.Context,
+	tx pgx.Tx,
+	instruction, pipeline string,
+	metadataJSON []byte,
+	steps []stepSeed,
+) (model.Job, error) {
+	normalizedPipeline, err := validatePipeline(pipeline)
+	if err != nil {
+		return model.Job{}, err
+	}
+	pipeline = normalizedPipeline
 	if err := validateJobInstruction(instruction); err != nil {
 		return model.Job{}, err
+	}
+	if len(steps) == 0 {
+		return model.Job{}, fmt.Errorf("pipeline %q produced no executable steps", pipeline)
 	}
 	projectID, err := resolveProjectID(ctx, tx, metadataJSON)
 	if err != nil {
@@ -152,13 +179,6 @@ func (r *Repository) enqueueJobTx(ctx context.Context, tx pgx.Tx, instruction, p
 		return model.Job{}, err
 	}
 
-	steps, err := stepsForJob(pipeline, instruction, metadataJSON)
-	if err != nil {
-		return model.Job{}, fmt.Errorf("resolve job execution steps: %w", err)
-	}
-	if len(steps) == 0 {
-		return model.Job{}, fmt.Errorf("pipeline %q produced no executable steps", pipeline)
-	}
 	for _, step := range steps {
 		if _, err := tx.Exec(ctx, `
 			INSERT INTO job_steps (job_id, action, sort_index, status, generation)
@@ -261,83 +281,6 @@ func projectReferenceFromMetadata(metadataJSON []byte) (metadataProjectReference
 	return ref, nil
 }
 
-func createTelemetryRunForJob(ctx context.Context, tx pgx.Tx, job model.Job, projectID *int64) (string, error) {
-	if job.ID <= 0 {
-		return "", nil
-	}
-	metadata := decodeMetadataObject(job.Metadata)
-	workspaceID := strings.TrimSpace(firstMetadataString(metadata, "workspace_id", "workspace", "workspace_root", "project_location"))
-	if workspaceID == "" {
-		workspaceID = projectLocationFromMetadata(job.Metadata)
-	}
-	projectType := strings.TrimSpace(firstMetadataString(metadata, "project_type", "framework", "stack"))
-	taskKind := strings.TrimSpace(firstMetadataString(metadata, "task_kind", "kind"))
-	if taskKind == "" {
-		taskKind = inferTelemetryTaskKind(job.Pipeline, metadata)
-	}
-	promptHash := telemetryPromptHash(job.Instruction)
-	promptSummary := telemetryPromptSummary(job.Instruction, 240)
-	summary := map[string]any{
-		"job_id":         job.ID,
-		"pipeline":       job.Pipeline,
-		"project_id":     projectID,
-		"prompt_summary": promptSummary,
-	}
-	externalAgents := pgTextArray(metadataStringSlice(metadata, "external_agents_used"))
-	var id string
-	err := tx.QueryRow(ctx, `
-		INSERT INTO omni_runs (session_id, workspace_id, task_kind, prompt_hash, prompt_summary, project_type, recipe_id, playbook_id, status, started_at, local_only, external_agents_used, model_roles, summary)
-		VALUES (NULLIF($1,''), NULLIF($2,''), NULLIF($3,''), NULLIF($4,''), NULLIF($5,''), NULLIF($6,''), NULLIF($7,''), NULLIF($8,''), $9, $10, $11, $12, $13, $14)
-		RETURNING id::text
-	`, firstMetadataString(metadata, "session_id"), workspaceID, taskKind, promptHash, promptSummary, projectType, firstMetadataString(metadata, "recipe_id"), firstMetadataString(metadata, "playbook_id"), "pending", job.CreatedAt, len(externalAgents) == 0, externalAgents, jsonParam(metadataValue(metadata, "model_roles")), jsonParam(summary)).Scan(&id)
-	return id, err
-}
-
-func completeTelemetryRunForJob(ctx context.Context, tx pgx.Tx, jobID int64, status string, summary any, completionEvidence any) error {
-	status = strings.TrimSpace(status)
-	if status == "" {
-		status = "completed"
-	}
-	_, err := tx.Exec(ctx, `
-		UPDATE omni_runs
-		SET status = $2,
-		    finished_at = NOW(),
-		    duration_ms = GREATEST(0, (EXTRACT(EPOCH FROM (NOW() - started_at)) * 1000)::bigint),
-		    summary = $3,
-		    completion_evidence = $4,
-		    updated_at = NOW()
-		WHERE id = NULLIF((SELECT metadata->>'telemetry_run_id' FROM jobs WHERE id = $1), '')::uuid
-	`, jobID, status, jsonParam(summary), jsonParam(completionEvidence))
-	return err
-}
-
-func recordTelemetryJobEvent(ctx context.Context, tx pgx.Tx, jobID int64, eventType string, payload any) error {
-	eventType = strings.TrimSpace(eventType)
-	if eventType == "" {
-		return nil
-	}
-	_, err := tx.Exec(ctx, `
-		INSERT INTO omni_run_events (run_id, event_type, payload)
-		SELECT NULLIF(metadata->>'telemetry_run_id', '')::uuid, $2, $3
-		FROM jobs
-		WHERE id = $1 AND NULLIF(metadata->>'telemetry_run_id', '') IS NOT NULL
-	`, jobID, eventType, jsonParam(payload))
-	return err
-}
-
-func markTelemetryRunRunningForJob(ctx context.Context, tx pgx.Tx, jobID int64) error {
-	if jobID <= 0 {
-		return nil
-	}
-	_, err := tx.Exec(ctx, `
-		UPDATE omni_runs
-		SET status = 'running', updated_at = NOW()
-		WHERE id = NULLIF((SELECT metadata->>'telemetry_run_id' FROM jobs WHERE id = $1), '')::uuid
-		  AND status = 'pending'
-	`, jobID)
-	return err
-}
-
 func decodeMetadataObject(raw json.RawMessage) map[string]any {
 	out := map[string]any{}
 	if len(raw) == 0 {
@@ -363,44 +306,6 @@ func metadataValue(metadata map[string]any, key string) any {
 	return map[string]any{}
 }
 
-func metadataStringSlice(metadata map[string]any, key string) []string {
-	value, ok := metadata[key]
-	if !ok || value == nil {
-		return []string{}
-	}
-	switch typed := value.(type) {
-	case []string:
-		return pgTextArray(typed)
-	case []any:
-		out := make([]string, 0, len(typed))
-		for _, item := range typed {
-			if text := strings.TrimSpace(fmt.Sprint(item)); text != "" && text != "<nil>" {
-				out = append(out, text)
-			}
-		}
-		return out
-	case string:
-		parts := strings.Split(typed, ",")
-		out := make([]string, 0, len(parts))
-		for _, part := range parts {
-			if item := strings.TrimSpace(part); item != "" {
-				out = append(out, item)
-			}
-		}
-		return out
-	default:
-		return []string{}
-	}
-}
-
-// pgTextArray ensures pgx sends an empty Postgres text[] instead of NULL.
-func pgTextArray(values []string) []string {
-	if values == nil {
-		return []string{}
-	}
-	return values
-}
-
 func inferTelemetryTaskKind(pipeline string, metadata map[string]any) string {
 	if kind := strings.TrimSpace(firstMetadataString(metadata, "research_topic")); kind != "" {
 		return "research"
@@ -409,8 +314,6 @@ func inferTelemetryTaskKind(pipeline string, metadata map[string]any) string {
 	switch pipeline {
 	case model.PipelineCoding:
 		return "coding"
-	case model.PipelineStory:
-		return "story"
 	case model.PipelineChat:
 		return "chat"
 	}
@@ -466,63 +369,6 @@ func projectNameFromLocation(location string) string {
 		return location
 	}
 	return base
-}
-
-func stepsForJob(pipeline, instruction string, metadataJSON []byte) ([]stepSeed, error) {
-	metadata := decodeMetadataObject(metadataJSON)
-	if err := ValidateJobMetadataAuthority(metadata); err != nil {
-		return nil, err
-	}
-	agentCfg, err := agentconfig.FromJobMetadata(metadataJSON)
-	if err != nil {
-		return nil, err
-	}
-	if datasource.IsExploreJobMetadata(metadataJSON) || normalizePipeline(pipeline) == model.PipelineDataExplore {
-		return []stepSeed{{action: "data_source_explore", sortIndex: 1}}, nil
-	}
-	if projectdebugger.IsJobMetadata(metadataJSON) || normalizePipeline(pipeline) == model.PipelineProjectDebugger {
-		return []stepSeed{{action: "project_debugger", sortIndex: 1}}, nil
-	}
-	if scrumcardllm.IsJobMetadata(metadataJSON) || normalizePipeline(pipeline) == model.PipelineScrumCardLLM {
-		return []stepSeed{{action: "scrum_card_llm", sortIndex: 1}}, nil
-	}
-	if isDataSourceQueryJob(metadataJSON) || normalizePipeline(pipeline) == model.PipelineDataQuery {
-		return []stepSeed{{action: "data_source_query", sortIndex: 1}}, nil
-	}
-	if agentCfg.IsExternal() {
-		return []stepSeed{{action: "external_agent_execute", sortIndex: 1}}, nil
-	}
-	if scrum.IsScrumJob(metadataJSON) {
-		channelOrigin, _ := metadata["scrum_channel_origin"].(bool)
-		if !channelOrigin {
-			return []stepSeed{{action: "v3_coding", sortIndex: 5}}, nil
-		}
-		return v3ConversationSteps(), nil
-	}
-	if normalizePipeline(pipeline) == model.PipelineCoding {
-		return stepsForPipeline(model.PipelineCoding), nil
-	}
-	switch normalizePipeline(pipeline) {
-	case model.PipelineAssistant, model.PipelineChat, model.PipelineStory:
-		return v3ConversationSteps(), nil
-	}
-	return stepsForPipeline(pipeline), nil
-}
-
-func v3ConversationSteps() []stepSeed {
-	return []stepSeed{
-		{action: "v3_intent_parse", sortIndex: 5},
-		{action: "v3_capability_audit", sortIndex: 10},
-		{action: "v3_workspace_research", sortIndex: 20},
-		{action: "v3_memory_retrieval", sortIndex: 30},
-		{action: "v3_external_research", sortIndex: 35},
-		{action: "v3_planning", sortIndex: 40},
-		{action: "v3_analysis", sortIndex: 80},
-		{action: "v3_response_draft", sortIndex: 90},
-		{action: "v3_verification", sortIndex: 100},
-		{action: "v3_memory_review", sortIndex: 110},
-		{action: "v3_finalize", sortIndex: 120},
-	}
 }
 
 func (r *Repository) CurrentArtifact(ctx context.Context, jobID int64, kind string) (artifacts.Envelope, bool, error) {

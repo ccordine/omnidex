@@ -1,6 +1,7 @@
 package assemblyline
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -8,18 +9,34 @@ import (
 	typescript "github.com/tree-sitter/tree-sitter-typescript/bindings/go"
 )
 
-const maxTypeScriptFragmentBytes = 5 * 1024
-
 type TypeScriptFunctionContract struct {
 	Signature string
 	TSX       bool
-	Policy    TypeScriptFunctionPolicy
+	Policy    SourceFunctionPolicy
 }
 
 type TypeScriptFragment struct {
 	Name   string
 	API    string
 	Source string
+}
+
+type TypeScriptSyntaxFailure struct {
+	Kind   string
+	Line   int
+	Column int
+}
+
+func (failure TypeScriptSyntaxFailure) Error() string {
+	return fmt.Sprintf("%s at line %d column %d", failure.Kind, failure.Line, failure.Column)
+}
+
+func TypeScriptSyntaxFailureFromError(err error) (TypeScriptSyntaxFailure, bool) {
+	var failure TypeScriptSyntaxFailure
+	if !errors.As(err, &failure) {
+		return TypeScriptSyntaxFailure{}, false
+	}
+	return failure, true
 }
 
 func ParseTypeScriptFunction(contract TypeScriptFunctionContract, raw string) (TypeScriptFragment, error) {
@@ -32,11 +49,7 @@ func ParseTypeScriptFunction(contract TypeScriptFunctionContract, raw string) (T
 	if content == "" {
 		return zero, fmt.Errorf("TypeScript fragment is empty")
 	}
-	if len(content) > maxTypeScriptFragmentBytes {
-		return zero, fmt.Errorf("TypeScript fragment exceeds %d bytes", maxTypeScriptFragmentBytes)
-	}
-
-	if err := validateTypeScriptFunctionPolicy(contract.Policy); err != nil {
+	if err := validateSourceFunctionPolicy(contract.Policy); err != nil {
 		return zero, fmt.Errorf("TypeScript function policy: %w", err)
 	}
 	actual, closeActual, err := parseSingleTypeScriptFunction(content, contract.TSX, true, contract.Policy)
@@ -45,7 +58,7 @@ func ParseTypeScriptFunction(contract TypeScriptFunctionContract, raw string) (T
 	}
 	defer closeActual()
 	expectedSource := signature + " {}"
-	expected, closeExpected, err := parseSingleTypeScriptFunction(expectedSource, contract.TSX, false, TypeScriptFunctionPolicy{})
+	expected, closeExpected, err := parseSingleTypeScriptFunction(expectedSource, contract.TSX, false, SourceFunctionPolicy{})
 	if err != nil {
 		return zero, fmt.Errorf("invalid code-owned TypeScript signature: %w", err)
 	}
@@ -67,7 +80,7 @@ func parseSingleTypeScriptFunction(
 	source string,
 	tsx bool,
 	requireExecutableBodies bool,
-	policy TypeScriptFunctionPolicy,
+	policy SourceFunctionPolicy,
 ) (parsedTypeScriptFunction, func(), error) {
 	parser := treesitter.NewParser()
 	languagePointer := typescript.LanguageTypescript()
@@ -93,7 +106,7 @@ func parseSingleTypeScriptFunction(
 	if root.HasError() {
 		detail := firstTypeScriptSyntaxFailure(root)
 		closeAll()
-		return parsedTypeScriptFunction{}, func() {}, fmt.Errorf("TypeScript syntax rejected: %s", detail)
+		return parsedTypeScriptFunction{}, func() {}, fmt.Errorf("TypeScript syntax rejected: %w", detail)
 	}
 	if root.NamedChildCount() != 1 {
 		closeAll()
@@ -107,6 +120,12 @@ func parseSingleTypeScriptFunction(
 		}
 		closeAll()
 		return parsedTypeScriptFunction{}, func() {}, fmt.Errorf("TypeScript fragment must be one raw function declaration, received %s", kind)
+	}
+	if int(declaration.StartByte()) != 0 || int(declaration.EndByte()) != len(source) {
+		closeAll()
+		return parsedTypeScriptFunction{}, func() {}, fmt.Errorf(
+			"TypeScript fragment must contain only one exact raw function declaration",
+		)
 	}
 	name := declaration.ChildByFieldName("name")
 	body := declaration.ChildByFieldName("body")
@@ -132,13 +151,6 @@ func validateTypeScriptGeneratedNode(node *treesitter.Node) error {
 	if node == nil {
 		return nil
 	}
-	if node.Kind() == "comment" {
-		return newTypeScriptFragmentViolation(
-			TypeScriptViolationComment,
-			"TypeScript fragment comments are forbidden; return executable code only",
-			"Delete every comment node from the current declaration. Replace a comment that stands in for behavior with executable code, or remove it if no behavior is required. Change nothing unrelated.",
-		)
-	}
 	if node.Kind() == "statement_block" && !hasExecutableTypeScriptChild(node) {
 		position := node.StartPosition()
 		return newTypeScriptFragmentViolation(
@@ -147,7 +159,6 @@ func validateTypeScriptGeneratedNode(node *treesitter.Node) error {
 				"TypeScript fragment contains an empty executable body at line %d column %d",
 				position.Row+1, position.Column+1,
 			),
-			"Implement every empty function or callback body with executable code required by the current declaration, or remove the unused empty function or callback. Change nothing unrelated.",
 		)
 	}
 	for index := uint(0); index < node.ChildCount(); index++ {
@@ -187,13 +198,13 @@ func canonicalTypeScriptNode(node *treesitter.Node, skippedID uintptr, source []
 	return output.String()
 }
 
-func firstTypeScriptSyntaxFailure(root *treesitter.Node) string {
+func firstTypeScriptSyntaxFailure(root *treesitter.Node) TypeScriptSyntaxFailure {
 	if root == nil {
-		return "unknown parser failure"
+		return TypeScriptSyntaxFailure{Kind: "unknown parser failure", Line: 1, Column: 1}
 	}
 	if root.IsError() || root.IsMissing() {
 		position := root.StartPosition()
-		return fmt.Sprintf("%s at line %d column %d", root.Kind(), position.Row+1, position.Column+1)
+		return TypeScriptSyntaxFailure{Kind: root.Kind(), Line: int(position.Row) + 1, Column: int(position.Column) + 1}
 	}
 	for index := uint(0); index < root.ChildCount(); index++ {
 		child := root.Child(index)
@@ -202,7 +213,7 @@ func firstTypeScriptSyntaxFailure(root *treesitter.Node) string {
 		}
 	}
 	position := root.StartPosition()
-	return fmt.Sprintf("invalid syntax at line %d column %d", position.Row+1, position.Column+1)
+	return TypeScriptSyntaxFailure{Kind: "invalid syntax", Line: int(position.Row) + 1, Column: int(position.Column) + 1}
 }
 
 func ValidateTypeScriptSource(source string, tsx bool) error {
@@ -222,7 +233,7 @@ func ValidateTypeScriptSource(source string, tsx bool) error {
 	}
 	defer tree.Close()
 	if root := tree.RootNode(); root.HasError() {
-		return fmt.Errorf("TypeScript syntax rejected: %s", firstTypeScriptSyntaxFailure(root))
+		return fmt.Errorf("TypeScript syntax rejected: %w", firstTypeScriptSyntaxFailure(root))
 	}
 	return nil
 }

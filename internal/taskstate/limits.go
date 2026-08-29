@@ -58,7 +58,7 @@ func (ledger *Ledger) validateProjectedAggregateCapacity(event Event) error {
 		nodes++
 	case EventEdgeAdded:
 		edges++
-	case EventEntryAdded, EventDecisionAccepted:
+	case EventEntryAdded:
 		entries++
 		if event.Entry != nil {
 			entryRefs += len(event.Entry.Refs)

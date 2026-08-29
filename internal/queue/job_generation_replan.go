@@ -11,8 +11,7 @@ const (
 	jobGenerationPurposeInitial = "initial"
 	jobGenerationPurposeReplan  = "replan"
 	replanCodingBoundary        = "v3_coding"
-	replanPlanningBoundary      = "v3_planning"
-	delegatedSubtaskAction      = "v3_subtask"
+	replanObjectiveBoundary     = "objective_resolve"
 )
 
 var ErrInvalidJobGeneration = errors.New("invalid job generation state")
@@ -35,7 +34,7 @@ func canonicalReplanTail(seeds []stepSeed) (replanBoundary, error) {
 	if len(seeds) == 0 {
 		return replanBoundary{}, fmt.Errorf("%w: canonical job has no steps", ErrInvalidJobGeneration)
 	}
-	codingIndex, planningIndex := -1, -1
+	codingIndex, objectiveIndex := -1, -1
 	previousSort := -1
 	for index, seed := range seeds {
 		if seed.action == "" || seed.sortIndex <= previousSort {
@@ -48,24 +47,24 @@ func canonicalReplanTail(seeds []stepSeed) (replanBoundary, error) {
 				return replanBoundary{}, fmt.Errorf("%w: duplicate %s boundary", ErrInvalidJobGeneration, replanCodingBoundary)
 			}
 			codingIndex = index
-		case replanPlanningBoundary:
-			if planningIndex >= 0 {
-				return replanBoundary{}, fmt.Errorf("%w: duplicate %s boundary", ErrInvalidJobGeneration, replanPlanningBoundary)
+		case replanObjectiveBoundary:
+			if objectiveIndex >= 0 {
+				return replanBoundary{}, fmt.Errorf("%w: duplicate %s boundary", ErrInvalidJobGeneration, replanObjectiveBoundary)
 			}
-			planningIndex = index
+			objectiveIndex = index
 		}
 	}
-	if codingIndex >= 0 && planningIndex >= 0 {
+	if codingIndex >= 0 && objectiveIndex >= 0 {
 		return replanBoundary{}, fmt.Errorf("%w: canonical job has competing replan boundaries", ErrInvalidJobGeneration)
 	}
 	boundaryIndex := codingIndex
 	if boundaryIndex < 0 {
-		boundaryIndex = planningIndex
+		boundaryIndex = objectiveIndex
 	}
 	if boundaryIndex < 0 {
 		return replanBoundary{}, fmt.Errorf(
 			"%w: canonical job has neither %s nor %s boundary",
-			ErrInvalidJobGeneration, replanCodingBoundary, replanPlanningBoundary,
+			ErrInvalidJobGeneration, replanCodingBoundary, replanObjectiveBoundary,
 		)
 	}
 	tail := append([]stepSeed(nil), seeds[boundaryIndex:]...)
@@ -117,9 +116,6 @@ func validateCurrentReplanTail(
 			return nil, fmt.Errorf("%w: step %d has unregistered status %q", ErrInvalidJobGeneration, row.ID, row.Status)
 		}
 		retiringIDs = append(retiringIDs, row.ID)
-		if row.Action == delegatedSubtaskAction {
-			continue
-		}
 		if canonicalIndex >= len(boundary.seeds) || row.Action != boundary.seeds[canonicalIndex].action {
 			return nil, fmt.Errorf(
 				"%w: step %d action %q is not canonical tail position %d",

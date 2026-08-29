@@ -1,5 +1,110 @@
 AGENTS.md
 
+
+# PRIME DIRECTIVE
+
+Omnidex is deterministic software that invokes LLMs as small, bounded semantic functions.
+
+Code owns the workflow and must drive the user's objective toward verified completion.
+
+At every step, code MUST perform everything that can be determined mechanically and invoke an LLM only when one specific, necessary semantic question remains unresolved.
+
+Each LLM call MUST have exactly one responsibility, receive only the minimum context required for that responsibility, and return only the semantic result of that responsibility.
+
+The result is returned to code. Code alone validates it, interprets it, applies it, persists it, routes subsequent work, performs tools and side effects, and verifies reality.
+
+LLMs are not agents, workers, orchestrators, tool users, state owners, or authorities. They are byte-in / byte-out semantic functions embedded inside a code-owned machine.
+
+The system exists to complete the user's objective, not to manufacture additional review, challenge, approval, or failure work.
+# PRIME INVARIANT
+
+Every LLM invocation MUST be justified by one named unresolved semantic uncertainty.
+
+Before an LLM may be called, the system MUST be able to state:
+
+1. What exact question remains unresolved?
+2. Why can code not determine the answer exactly?
+3. What exact information does this LLM need?
+4. What single semantic result must it return?
+5. What deterministic code will consume that result afterward?
+
+If those five answers do not exist, the LLM call is forbidden.
+
+If code can compute, search, parse, diff, validate, route, select, persist, execute, inspect, compile, test, or otherwise determine something exactly, code MUST do it.
+
+A model MUST NOT be invoked merely because a workflow stage exists.
+
+A model MUST NOT be invoked merely to approve, accept, review, challenge, retry, or restate something unless a concrete unresolved semantic question requires that judgment.
+
+A model's output MUST NOT become framework authority. Control labels such as "accept", "replace", "repair", "execute", "apply", "search", or similar model-authored workflow decisions have no authority unless the station's single semantic responsibility specifically requires that exact bounded choice and code independently owns the resulting state transition.
+
+One model call = one semantic responsibility.
+
+If another semantic result is required, that is another station and another bounded call. NEVER enlarge the current station's responsibility for convenience.
+
+
+# NON-NEGOTIABLE COROLLARIES
+
+- Code owns state, authority, identity, versions, queues, ordering, routing, retries, persistence, filesystem operations, tools, search execution, parsing, compilation, testing, verification, and completion.
+
+- Models never choose tools. Code invokes repository, memory, web, runtime, compiler, parser, filesystem, and other machinery.
+
+- Models are never prompted to refrain from capabilities they do not possess. Do not put agent/tool/orchestration/state-management language into model context unless that concept is itself the one semantic problem being solved.
+
+- Never spend inference on information code already knows.
+
+- Never make an LLM reconstruct information that a parser, compiler, index, database, filesystem, typechecker, or other deterministic subsystem already possesses.
+
+- Never create a model call merely to obtain permission to continue. Deterministically valid state continues unless a real unresolved semantic uncertainty blocks it.
+
+- Never manufacture adversarial work in the production success path. Guards observe real failures; they do not invent failures to exercise themselves.
+
+- Never treat model prose or control labels as authority over actual returned data. Code evaluates the returned semantic payload and reality.
+
+- Never respond to a failure by broadening the responsible model's job. First reduce the problem further.
+
+- Never solve a downstream need by adding unrelated fields or responsibilities to an upstream model. Add another narrow station if another semantic question genuinely exists.
+
+- Preserve accepted state. Recompute or revisit only what new evidence makes unresolved.
+
+- Progress is measured by verified changes in authoritative reality, not by model activity, retries, reviews, token usage, or changed text.
+
+# CANONICAL EXAMPLE
+
+TREE STATION:
+
+Input:
+- user objective
+- current repository tree when applicable
+- only context required to determine project structure
+
+Question:
+"What file/directory tree should this project have to satisfy the objective?"
+
+Output:
+- the tree
+
+Nothing else.
+
+The tree model does NOT describe file contents, ownership, declarations, implementation, filesystem commands, create/modify/delete operations, or downstream work.
+
+Code parses and diffs the returned tree and creates the filesystem workload. It then
+compiles the accepted tree and code-owned coverage into bounded source-block
+responsibilities.
+
+A declaration/source station receives one exact path-blind source responsibility and
+returns one declaration or source node. Each call remains a different semantic
+function even when the same underlying model is used.
+
+# FUNDAMENTAL TEST
+
+OMNIDEX IS NOT AN LLM WITH CODE AROUND IT.
+
+OMNIDEX IS A CODE-OWNED SOFTWARE SYSTEM THAT MAY INVOKE INTELLIGENCE TO ANSWER ONE NECESSARY SEMANTIC QUESTION AT A TIME.
+
+
+
+
 Prime Directive
 
 This project values correctness, explicit failure, small maintainable architecture, and server-authoritative behavior.
@@ -88,6 +193,9 @@ Architecture Rules
 Omnidex AI Coding Architecture (Non-Negotiable)
 
 The authoritative coding foundation is [docs/CHARMANDER_ASSEMBLY_LINE.md](docs/CHARMANDER_ASSEMBLY_LINE.md). The authoritative repository-intelligence and software-defined context evolution is [docs/CHARMELEON_CONTEXT_SYSTEM.md](docs/CHARMELEON_CONTEXT_SYSTEM.md).
+The authoritative nested job → objective → task coordination direction is [CHARMELEON-EMERGENT-ORCHESTRATION-INVARIANTS.md](CHARMELEON-EMERGENT-ORCHESTRATION-INVARIANTS.md). It is code-owned persisted state, never a coordinator model: an LLM may fill only the exact unresolved semantic leaf inside one stage.
+The authoritative task-local artifact-graph and adapter-projection direction is [CHARMELEON-CONVERGENT-COGNITIVE-DEVELOPMENT-INVARIANTS.md](CHARMELEON-CONVERGENT-COGNITIVE-DEVELOPMENT-INVARIANTS.md). The tree establishes only the work surface; code derives and persists verified artifact interfaces and relations before dependent leaves are dispatched.
+The authoritative roleplay boundary is [docs/ROLEPLAY_SIMULATION.md](docs/ROLEPLAY_SIMULATION.md). Roleplay is a code-owned fictional simulation with bounded narrative generation; it has no model-visible operation or tool interface.
 
 Build Codenames Have No Architectural Meaning
 
@@ -138,11 +246,11 @@ Code must own:
 * Parser and compiler context extraction.
 * Imports, stitching, formatting, complete-graph dependency checks, isolated compiler/test staging, workspace writes, and final test execution.
 
-A coding LLM may only fill one explicitly defined code block when deterministic code cannot provide that block. Initial generation receives only the language, exact signature, local behavioral contract, and strictly required declarations/symbols. Correction is a separate envelope: it receives the signature, required declarations/symbols, current block, one code-owned imperative, and one exact path-free failure; the superseded initial behavioral narrative is not replayed. It returns exactly one parseable code node.
+A coding LLM may only fill one explicitly defined code block when deterministic code cannot provide that block. Initial generation receives only the language, exact signature, local behavioral contract, and strictly required declarations/symbols. Validation repair is split across two separate envelopes. A repair-guidance LLM receives the signature, required declarations/symbols, exact mutable block, compiler-proven lexical scope when available, and one exact path-free failure; it returns one self-contained imperative repair instruction and no replacement source. A repair-executor LLM then receives only that instruction and the exact mutable block; it returns exactly one parseable code node. The executor never receives the raw failure, capability inventory, scope inventory, or superseded initial behavioral narrative.
 
-Dependency order does not grant model context. Every model-visible declaration must be named in a separate explicit capability allowlist, must be a direct dependency, and must be projected at symbol level rather than through an aggregate domain API. Transitive dependencies are invisible. Capability, current-declaration, correction, initial-envelope, and total-envelope budgets are hard failures at the final model-call boundary. A test failure contributes one code-owned single-line repair directive and a bounded sanitized diagnostic; test source is never model context.
+Dependency order does not grant model context. Every model-visible declaration must be named in a separate explicit capability allowlist, must be a direct dependency, and must be projected at symbol level rather than through an aggregate domain API. Transitive dependencies are invisible. Capability, current-declaration, repair-guidance, repair-execution, initial-envelope, and total-envelope budgets are hard failures at the final model-call boundary. A compiler or test failure contributes one bounded sanitized diagnostic only to the repair-guidance station; test source is never model context. Guidance has no mutation authority and becomes useful only when ordinary code validates the executor's returned block against the original signature and reruns the exact compiler/test stage.
 
-No coding LLM may receive or choose:
+No coding, repair, test-generation, or semantic-review LLM may receive or choose:
 
 * A file name, path, tree, workspace snapshot, project plan, queue, phase, or job graph.
 * Whole-file or whole-project responsibility.
@@ -153,9 +261,26 @@ Documents are constructed in memory from parser-validated blocks. Code waits unt
 
 If code can parse, derive, validate, route, format, or decide something, code must do it. AI is not the default solution.
 
+Code owns the cognition loop. It restores typed state, evaluates completion, resolves prerequisites, acquires deterministically available evidence, grounds operation inputs, selects supporting evidence, executes transitions, and repeats. A model call is illegal unless code has exhausted registered deterministic work and persisted one precisely named semantic uncertainty it cannot resolve. That call may return only the station-specific typed leaf needed to cross that uncertainty. Models never call tools and may not request deterministic machinery. Deterministic machinery runs whenever code-owned authoritative state requires it; inference receives only the unresolved semantic remainder after deterministic closure. Tool and adapter selection, invocation, arguments, ordering, retries, and result validation are code control flow; tool catalogs and tool-call schemas are never model context. A model must never choose an environment operation, construct its arguments, cite its execution evidence, predict its effect, manage the Task Ledger or Working Set, invent an obligation graph while acting, or declare completion. There is no universal cognition-decision or tool-calling fallback. The normative boundary is [docs/CHARMELEON_COGNITION_RESOLUTION.md](docs/CHARMELEON_COGNITION_RESOLUTION.md).
+
+No Ceremonial Model Calls
+
+Never invoke a model merely to approve, reject, critique, review, or restate a candidate when code has no concrete unresolved semantic question. A proposal must not flow through a mandatory “accept or replace” gate. Code advances after deterministic validation unless it has persisted a specific necessary uncertainty that cannot be resolved in code.
+
+Every model call must have all of the following before dispatch:
+
+* one named unresolved semantic fact, relation, alternative, or artifact value;
+* the exact authority and current values needed to resolve only that uncertainty;
+* a code-owned rule describing how the returned semantic leaf can affect retained state; and
+* no deterministic answer already available to code.
+
+Models return semantic content only. They must not return a framework control plane such as `accept`, `reject`, `repair`, `replace`, `retry`, `search`, `apply`, `plan`, or completion status. A station that needs a corrected semantic value returns only that complete value. A station that needs to choose among code-enumerated alternatives returns only the selected opaque candidate ID. Code determines whether a returned value creates a delta, which exact retained leaf it binds to, whether a splice is legal, and whether the workflow continues.
+
+If code compares a returned candidate with the exact retained value and the bytes are identical, there is no mutation to perform. Code records the zero delta and continues deterministically; it must not create a retry prompt, response-correction job, reviewer history, or terminal failure from a model-authored action label. A further model call is legal only if a separate, still-unresolved semantic question has been persisted.
+
 Do not fake natural-language understanding with keyword lists, regex phrase routing, or checks for one expected wording. Human phrasing is variable and semantic interpretation is one of the narrow jobs that legitimately requires a model. Split interpretation into fixed tiny stations: surface classification, exact product-context extraction, exact requirement extraction and fixed-point splitting, opaque artifact handling, pairwise direct capability relation, bounded learned-skill selection, and one-need procedure synthesis. No station may emit an expanded software contract. Every station remains blind to documents, paths, workers, and orchestration. A capability-relation station sees exactly two local needs and returns only one registered direction; code owns the resulting graph and compiler-enforced per-feature projection. Code validates every small output and deterministically maps the result to one registered technical adapter. Invalid, contradictory, or unsupported semantic output fails loudly.
 
-Semantic correction must preserve the decoded candidate in code. A correction model receives the exact validation failure and a schema permitting exactly one top-level field; its one-field merge patch must alter exactly one JSON leaf in retained state. Repeating the full response, changing an unrelated label, changing multiple nested values, or returning a no-op is rejected. Never ask a model to reconstruct already accepted semantic fields during correction.
+Semantic correction must preserve the decoded candidate in code. It is legal only after code has established one exact, grounded semantic defect that deterministic machinery cannot correct. The model receives that defect, the exact current leaf, and the minimum authority required to return only one complete replacement value. Code performs the exact one-leaf splice and preserves all accepted state. Never ask a model to reconstruct already accepted semantic fields, emit a repair plan, or decide whether the workflow advances.
 
 Execution transport is explicit state, never inferred from wording. The coding pipeline and Scrum Play enter the coding assembly line directly. Chat, assistant, and story transports always enter semantic intent interpretation; code must not inspect greetings, verbs, nouns, token overlap, or English sentence prefixes to reroute or rewrite them. Semantic outputs may be structurally validated, but code must not reconstruct meaning from phrases in the user request or model response.
 
@@ -169,9 +294,34 @@ User feedback, interruption, and replanning update the same authoritative job. A
 
 Per-job model routing is immutable. Concurrent workers must resolve routing into job-local state and must never mutate shared service routing before attempting to restore it.
 
-Every exposed CLI or API control must have one authoritative runtime consumer and a test proving its effect. Write-only metadata is forbidden. The removed profile, planning-pass, persistent-execution, review, missing-tool, generic reasoning, autonomy, approval, verification, web, and workspace toggles must not return under new names; old top-level metadata using them fails explicitly. Keep only typed settings that actually alter execution, such as model routing, external-agent configuration, and the consumed explicit research query.
+Every exposed CLI or API control must have one authoritative runtime consumer and a test proving its effect. Write-only metadata is forbidden. The removed profile, planning-pass, persistent-execution, review, missing-tool, generic reasoning, autonomy, approval, verification, web, workspace, and external-agent toggles must not return under new names; old top-level metadata using them fails explicitly. Keep only typed settings that actually alter execution, such as model routing and the consumed explicit research query.
 
-Whole-file generation, model-owned planning, model-owned repair routing, and path-bearing prompts are forbidden regressions and require source-level absence tests.
+Whole-file generation, model-owned execution planning, model-owned repair routing, and
+path-bearing coding/repair/test prompts are forbidden regressions and require
+source-level absence tests. The sole exception is the typed target-tree declaration
+station defined in [docs/TARGET_TREE_PLANNING.md](docs/TARGET_TREE_PLANNING.md): it may
+see the code-built current managed tree and return only one complete raw hierarchy of
+directory and file basenames. Code parses that hierarchy and constructs the normalized
+relative file paths; the model never emits a path or a flat path list.
+It cannot return artifact metadata, filesystem actions, commands, source, declaration
+contracts, a work queue, or completion. Code derives parent-directory work and every
+create/reconcile/delete transition. Omission has no deletion authority unless code
+separately proves that exact current managed file is eligible. There is no file-content
+station. The selected stack
+compiler turns the accepted tree and code-owned coverage into bounded source-block
+responsibilities. Each source call remains path-blind and returns only one exact
+declaration or source node; code parses, validates, stitches, and verifies the complete
+documents.
+
+Artifact support is adapter-based, never language-hard-coded into the tree or
+model prompt. Code selects the registered stack from authoritative project
+facts and supplies that exact stack only as technical tree context. A code-constructed
+path is then recognized, parsed, scoped, validated, repaired, and verified by
+its code-owned artifact adapter. New PHP, Java, NGINX, Dockerfile, Blade, CSS,
+JSON, YAML, or other support is added as a focused adapter with explicit
+capability/verification limits; do not create a universal coder prompt.
+The normative capability contract is
+[docs/ARTIFACT_ADAPTERS.md](docs/ARTIFACT_ADAPTERS.md).
 
 Product-Specific Workloads Are Not Framework Code
 

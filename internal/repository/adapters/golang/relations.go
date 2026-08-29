@@ -25,8 +25,14 @@ func (state *analysisState) collectPackageRelations(fileSet *token.FileSet, pkg 
 			return err
 		}
 		state.collectCalls(fileSet, pkg, item.syntax, item.file)
+		if err := state.collectTypedUses(fileSet, pkg, item.syntax, item.file); err != nil {
+			return err
+		}
 	}
-	return nil
+	if err := state.collectEmbedInputs(packageID, pkg); err != nil {
+		return err
+	}
+	return state.collectOpaqueBuildInputs(packageID, pkg)
 }
 
 func (state *analysisState) collectImports(
@@ -50,6 +56,11 @@ func (state *analysisState) collectImports(
 			start, end, repositoryfacts.OriginGoAST, 1,
 		)
 		state.edges[edge.ID] = edge
+		kind := "initializes"
+		if specification.Name != nil && specification.Name.Name == "_" {
+			kind = "registers"
+		}
+		state.addInitializationEdges(importPath, packageID, file.ID, start, end, kind)
 	}
 	return nil
 }

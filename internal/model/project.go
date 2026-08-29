@@ -10,8 +10,6 @@ type Project struct {
 	Name         string          `json:"name"`
 	Location     string          `json:"location"`
 	Description  string          `json:"description,omitempty"`
-	RecipeID     string          `json:"recipe_id,omitempty"`
-	Recipe       json.RawMessage `json:"recipe,omitempty"`
 	ProjectState string          `json:"project_state,omitempty"`
 	Settings     json.RawMessage `json:"settings,omitempty"`
 	LastSeenAt   time.Time       `json:"last_seen_at"`
@@ -23,8 +21,6 @@ type ProjectPatch struct {
 	Name         *string          `json:"name,omitempty"`
 	Location     *string          `json:"location,omitempty"`
 	Description  *string          `json:"description,omitempty"`
-	RecipeID     *string          `json:"recipe_id,omitempty"`
-	Recipe       *json.RawMessage `json:"recipe,omitempty"`
 	ProjectState *string          `json:"project_state,omitempty"`
 	Settings     *json.RawMessage `json:"settings,omitempty"`
 }

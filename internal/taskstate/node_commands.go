@@ -18,6 +18,9 @@ func (command AddNodeCommand) decide(ledger *Ledger) (Event, error) {
 	if err := validateNodeKind(command.Kind); err != nil {
 		return Event{}, err
 	}
+	if command.InlineExecution && command.Kind != NodeTask {
+		return Event{}, fmt.Errorf("%w: inline execution is valid only for task nodes", ErrInvalidCommand)
+	}
 	if err := requireExactText(command.Title, "node title"); err != nil {
 		return Event{}, err
 	}
@@ -26,6 +29,9 @@ func (command AddNodeCommand) decide(ledger *Ledger) (Event, error) {
 	}
 	if err := validateOptionalStep(command.CreatedStepID, "created step ID"); err != nil {
 		return Event{}, err
+	}
+	if command.InlineExecution && command.CreatedStepID == nil {
+		return Event{}, fmt.Errorf("%w: inline task requires its owning queue step", ErrInvalidCommand)
 	}
 	if err := validateCriteria(command.AcceptanceCriteria); err != nil {
 		return Event{}, err
@@ -38,7 +44,7 @@ func (command AddNodeCommand) decide(ledger *Ledger) (Event, error) {
 	}
 	node := Node{
 		ID: command.ID, ParentID: command.ParentID, ObjectiveID: command.ObjectiveID,
-		Kind: command.Kind, Title: command.Title, Status: NodePending,
+		Kind: command.Kind, InlineExecution: command.InlineExecution, Title: command.Title, Status: NodePending,
 		Priority: command.Priority, CreatedBy: command.Actor,
 		CreatedStepID:      cloneInt64(command.CreatedStepID),
 		AcceptanceCriteria: normalizedStrings(command.AcceptanceCriteria),
@@ -114,6 +120,9 @@ func (command AssignNodeStepCommand) decide(ledger *Ledger) (Event, error) {
 	}
 	if !executableNode(node.Kind) {
 		return Event{}, fmt.Errorf("%w: node kind %q cannot be assigned a step", ErrInvalidState, node.Kind)
+	}
+	if node.InlineExecution {
+		return Event{}, fmt.Errorf("%w: inline task %q cannot be assigned a separate queue step", ErrInvalidState, node.ID)
 	}
 	if ledger.nodeSuperseded(node.ID) {
 		return Event{}, fmt.Errorf("%w: node %q is superseded", ErrInvalidState, node.ID)
@@ -304,6 +313,13 @@ func (ledger *Ledger) promotableNodeIDs() []NodeID {
 		return left.ID < right.ID
 	})
 	return ids
+}
+
+// HasPromotableNode lets a code-owned coordinator avoid issuing a ledger
+// transition that would make no state change. It exposes no scheduling
+// authority beyond the ledger's existing dependency evaluation.
+func (ledger *Ledger) HasPromotableNode() bool {
+	return ledger != nil && len(ledger.promotableNodeIDs()) > 0
 }
 
 func (ledger *Ledger) dependenciesDone(id NodeID) bool {

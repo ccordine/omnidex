@@ -143,7 +143,7 @@ func TestPostgresFeedbackAndReplanOperationsReplayExactly(t *testing.T) {
 
 	t.Run("concurrent replan", func(t *testing.T) {
 		marker := fmt.Sprintf("lifecycle-replan-race-%d", time.Now().UnixNano())
-		job, err := repository.EnqueueJob(ctx, marker, model.PipelineAssistant, []byte(`{}`))
+		job, err := repository.EnqueueJob(ctx, marker, model.PipelineCoding, []byte(`{}`))
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -3,30 +3,17 @@ package queue
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/gryph/omnidex/internal/model"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func TestV3CodingFeedbackRequeuesTheSameJob(t *testing.T) {
-	databaseURL := strings.TrimSpace(os.Getenv("OMNI_TEST_DATABASE_URL"))
-	if databaseURL == "" {
-		t.Skip("set OMNI_TEST_DATABASE_URL to run PostgreSQL feedback continuity test")
-	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	pool, err := pgxpool.New(ctx, databaseURL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer pool.Close()
-	if err := pool.Ping(ctx); err != nil {
-		t.Skipf("PostgreSQL unavailable: %v", err)
-	}
+	pool := openIsolatedMigrationPool(t)
 	repo := New(pool)
 	if err := repo.EnsureSchema(ctx, loadCheckedMigrationBundle(t)); err != nil {
 		t.Fatal(err)

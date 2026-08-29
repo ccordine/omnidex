@@ -5,8 +5,8 @@ import "fmt"
 type ProviderRequestDisposition string
 
 const (
-	ProviderRequestNotDispatched   ProviderRequestDisposition = "not_dispatched"
-	ProviderRequestDispatched      ProviderRequestDisposition = "dispatched"
+	ProviderRequestNotDispatched      ProviderRequestDisposition = "not_dispatched"
+	ProviderRequestDispatched         ProviderRequestDisposition = "dispatched"
 	ProviderRequestWriteIndeterminate ProviderRequestDisposition = "write_indeterminate"
 )
 

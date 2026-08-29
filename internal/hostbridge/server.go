@@ -2,8 +2,10 @@ package hostbridge
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 )
 
@@ -20,8 +22,6 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/v1/terminal/ws", s.handleTerminalWS)
 	mux.HandleFunc("/v1/screen/monitors", s.handleScreenMonitors)
 	mux.HandleFunc("/v1/screen/mjpeg", s.handleScreenMJPEG)
-	mux.HandleFunc("/v1/cursor/run", s.handleCursorRun)
-	mux.HandleFunc("/v1/codex/run", s.handleCodexRun)
 	mux.HandleFunc("/v1/project-map/scan", s.handleProjectMapScan)
 	mux.HandleFunc("/v1/project/git", s.handleProjectGit)
 	return mux
@@ -44,8 +44,6 @@ func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
 		"browse":        true,
 		"terminal":      true,
 		"screen":        true,
-		"cursor":        true,
-		"codex":         true,
 		"project_map":   true,
 		"project_git":   true,
 	})
@@ -61,16 +59,67 @@ func (s *Server) handleBrowse(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	target := strings.TrimSpace(r.URL.Query().Get("path"))
-	result, err := ListDirectory(target, BrowseOptions{})
+	opts, err := browseRequestOptions(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	result, err := ListDirectory(target, opts)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"path":    result.Path,
-		"parent":  result.Parent,
-		"entries": NonEmptyEntries(result.Entries),
+		"path":            result.Path,
+		"parent":          result.Parent,
+		"entries":         NonEmptyEntries(result.Entries),
+		"limit":           result.Limit,
+		"offset":          result.Offset,
+		"has_previous":    result.HasPrevious,
+		"previous_offset": result.PreviousOffset,
+		"has_more":        result.HasMore,
+		"next_offset":     result.NextOffset,
+		"required_root":   result.RequiredRoot,
 	})
+}
+
+func browseRequestOptions(r *http.Request) (BrowseOptions, error) {
+	limit, err := browseQueryInteger(r, "limit", DefaultBrowsePageSize)
+	if err != nil {
+		return BrowseOptions{}, err
+	}
+	offset, err := browseQueryInteger(r, "offset", 0)
+	if err != nil {
+		return BrowseOptions{}, err
+	}
+	directoriesOnly := false
+	if raw := strings.TrimSpace(r.URL.Query().Get("directories_only")); raw != "" {
+		value, err := strconv.ParseBool(raw)
+		if err != nil {
+			return BrowseOptions{}, fmt.Errorf("directories_only must be a boolean")
+		}
+		directoriesOnly = value
+	}
+	opts := BrowseOptions{
+		Limit: limit, Offset: offset, DirectoriesOnly: directoriesOnly,
+		RequiredRoot: strings.TrimSpace(r.URL.Query().Get("required_root")),
+	}
+	if err := validateBrowseBounds(opts); err != nil {
+		return BrowseOptions{}, err
+	}
+	return opts, nil
+}
+
+func browseQueryInteger(r *http.Request, name string, fallback int) (int, error) {
+	raw := strings.TrimSpace(r.URL.Query().Get(name))
+	if raw == "" {
+		return fallback, nil
+	}
+	value, err := strconv.Atoi(raw)
+	if err != nil {
+		return 0, fmt.Errorf("%s must be an integer", name)
+	}
+	return value, nil
 }
 
 func (s *Server) handleMkdir(w http.ResponseWriter, r *http.Request) {

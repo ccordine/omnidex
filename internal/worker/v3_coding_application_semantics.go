@@ -1,37 +1,35 @@
 package worker
 
-import (
-	"fmt"
-
-	"github.com/gryph/omnidex/internal/assemblyline"
-)
+import "github.com/gryph/omnidex/internal/assemblyline"
 
 func runDirectCodingApplicationInterpreter(
 	runtime typedWorkerRuntime,
-	partitionModel string,
+	intentModel string,
 	surfaceModel string,
-	identityModel string,
 	artifactModel string,
 	authority string,
+	applicationContext assemblyline.ApplicationContext,
 	identities []assemblyline.ArtifactIdentity,
 ) (assemblyline.ApplicationSpecification, error) {
 	var zero assemblyline.ApplicationSpecification
 
+	formalizedContext, err := resolveDirectCodingApplicationContext(
+		runtime, intentModel, authority, applicationContext, identities, nil,
+	)
+	if err != nil {
+		return zero, err
+	}
 	classification, err := classifyApplicationSurface(runtime, surfaceModel, authority, identities)
 	if err != nil {
 		return zero, err
 	}
-	if classification.Surface != assemblyline.ApplicationSurfaceBrowser {
-		return zero, fmt.Errorf(
-			"generic coding runtime does not yet support application surface %s",
-			classification.Surface,
-		)
-	}
-	identity, err := extractApplicationIdentity(runtime, identityModel, authority, identities)
-	if err != nil {
-		return zero, err
-	}
-	requirements, err := extractGroundedRequirements(runtime, partitionModel, authority, identities)
+	resolution, err := resolveDirectCodingApplicationIntent(
+		runtime, intentModel,
+		assemblyline.ApplicationIntentInput{
+			UserRequest: authority, Context: formalizedContext,
+		},
+		identities,
+	)
 	if err != nil {
 		return zero, err
 	}
@@ -39,8 +37,14 @@ func runDirectCodingApplicationInterpreter(
 	if err != nil {
 		return zero, err
 	}
+	requirements := make([]assemblyline.Requirement, len(resolution.Requirements))
+	for index, requirement := range resolution.Requirements {
+		requirements[index] = assemblyline.Requirement{
+			ID: requirement.ID, SourceQuote: requirement.Statement,
+		}
+	}
 	specification := assemblyline.ApplicationSpecification{
-		Surface: classification.Surface, ProductQuote: identity.ProductQuote,
+		Surface: classification.Surface, ProductQuote: resolution.ProductContext,
 		Requirements: requirements, Artifacts: artifacts,
 	}
 	if err := specification.Validate(); err != nil {
@@ -60,42 +64,11 @@ func classifyApplicationSurface(
 	if err != nil {
 		return assemblyline.ApplicationClassification{}, err
 	}
-	return runDirectCodingSemanticCall[assemblyline.ApplicationClassification](
+	return runDirectCodingSemanticLeafCall(
 		runtime, modelName, "application_surface", job, identities,
+		func(raw string) (assemblyline.ApplicationClassification, error) {
+			return assemblyline.DecodeApplicationClassification(jobInput, raw)
+		},
 		func(value assemblyline.ApplicationClassification) error { return value.Validate() },
 	)
-}
-
-func extractApplicationIdentity(
-	runtime typedWorkerRuntime,
-	modelName string,
-	authority string,
-	identities []assemblyline.ArtifactIdentity,
-) (assemblyline.ApplicationIdentity, error) {
-	input := assemblyline.ApplicationIdentityInput{UserRequest: authority}
-	job, err := assemblyline.NewApplicationIdentityJob(input)
-	if err != nil {
-		return assemblyline.ApplicationIdentity{}, err
-	}
-	return runDirectCodingSemanticCall[assemblyline.ApplicationIdentity](
-		runtime, modelName, "application_identity", job, identities,
-		func(value assemblyline.ApplicationIdentity) error { return value.ValidateFor(input) },
-	)
-}
-
-func extractGroundedRequirements(
-	runtime typedWorkerRuntime,
-	modelName string,
-	authority string,
-	identities []assemblyline.ArtifactIdentity,
-) ([]assemblyline.Requirement, error) {
-	partition, err := partitionCodingRequirements(runtime, modelName, authority, identities)
-	if err != nil {
-		return nil, err
-	}
-	graph, err := assemblyline.BuildRequirementGraph(authority, partition.FeatureQuotes)
-	if err != nil {
-		return nil, err
-	}
-	return graph.Requirements, nil
 }

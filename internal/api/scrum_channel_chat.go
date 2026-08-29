@@ -1,13 +1,10 @@
 package api
 
 import (
-	"crypto/sha1"
-	"encoding/hex"
+	"crypto/rand"
 	"fmt"
-	"sort"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/queue"
@@ -15,7 +12,7 @@ import (
 
 const (
 	scrumChannelDefaultPageSize  = 50
-	scrumChannelMaxPageSize      = 100
+	scrumChannelMaxPageSize      = queue.MaxScrumChannelPageSize
 	scrumRealtimeChannelPageSize = 25
 )
 
@@ -23,452 +20,146 @@ type scrumChannelMessagePage struct {
 	Messages     []ScrumChatMessage
 	BeforeCursor string
 	HasMore      bool
-	Total        int
+	Total        int64
 }
 
-func parseScrumChannelPageLimit(raw string) (int, error) {
-	raw = strings.TrimSpace(raw)
+func parseScrumChannelCursor(raw string) (int64, error) {
+	if raw != strings.TrimSpace(raw) {
+		return 0, fmt.Errorf("Scrum channel cursor is malformed")
+	}
 	if raw == "" {
-		return scrumChannelDefaultPageSize, nil
+		return -1, nil
 	}
-	limit, err := strconv.Atoi(raw)
-	if err != nil || limit <= 0 || limit > scrumChannelMaxPageSize {
-		return 0, fmt.Errorf("channel limit must be between 1 and %d", scrumChannelMaxPageSize)
+	const prefix = "scrumchat_v1_"
+	if !strings.HasPrefix(raw, prefix) {
+		return 0, fmt.Errorf("Scrum channel cursor is malformed")
 	}
-	return limit, nil
+	ordinal, err := strconv.ParseInt(strings.TrimPrefix(raw, prefix), 36, 64)
+	if err != nil || ordinal <= 0 || ordinal > maxScrumChannelCursorOrdinal {
+		return 0, fmt.Errorf("Scrum channel cursor is malformed")
+	}
+	encoded, err := encodeScrumChannelCursor(ordinal, true)
+	if err != nil || encoded != raw {
+		return 0, fmt.Errorf("Scrum channel cursor is malformed")
+	}
+	return ordinal, nil
 }
 
-func scrumChannelMessagePageFor(card ScrumCard, limit int, before string) (scrumChannelMessagePage, error) {
-	if limit <= 0 || limit > scrumChannelMaxPageSize {
-		return scrumChannelMessagePage{}, fmt.Errorf("channel limit must be between 1 and %d", scrumChannelMaxPageSize)
+const maxScrumChannelCursorOrdinal int64 = 9007199254740991
+
+func encodeScrumChannelCursor(start int64, hasMore bool) (string, error) {
+	if start < 0 || start > maxScrumChannelCursorOrdinal || (hasMore && start == 0) {
+		return "", fmt.Errorf("Scrum channel cursor ordinal %d is outside exact transport authority", start)
 	}
-	messages := displayScrumChannelMessages(card)
-	end := len(messages)
-	before = strings.TrimSpace(before)
-	if before != "" {
-		found := false
-		for index, message := range messages {
-			if scrumChatMessageID(message) == before {
-				end = index
-				found = true
-				break
-			}
-		}
-		if !found {
-			return scrumChannelMessagePage{}, fmt.Errorf("channel cursor %q was not found", before)
-		}
+	if !hasMore {
+		return "", nil
 	}
-	start := end - limit
-	if start < 0 {
-		start = 0
-	}
-	page := append([]ScrumChatMessage(nil), messages[start:end]...)
-	beforeCursor := ""
-	if len(page) > 0 {
-		beforeCursor = scrumChatMessageID(page[0])
-	}
-	return scrumChannelMessagePage{
-		Messages:     page,
-		BeforeCursor: beforeCursor,
-		HasMore:      start > 0,
-		Total:        len(messages),
-	}, nil
+	return "scrumchat_v1_" + strconv.FormatInt(start, 36), nil
 }
 
-func scrumChannelBusy(card ScrumCard) bool {
-	switch strings.TrimSpace(card.PlayState) {
-	case scrumPlayRunning, scrumPlayQueued, scrumPlayReviewing:
-		return true
-	default:
-		return false
-	}
-}
-
-func scrumCardChannelPayload(card ScrumCard, limit int) ScrumCard {
-	page, err := scrumChannelMessagePageFor(card, limit, "")
+func appendScrumChatMessage(existing []ScrumChatMessage, role, content string) ([]ScrumChatMessage, error) {
+	messageID, err := queue.NewScrumMessageID(rand.Reader)
 	if err != nil {
-		panic(fmt.Sprintf("build bounded scrum channel payload: %v", err))
+		return nil, err
 	}
-	card.Chat = page.Messages
-	card.ChatCount = page.Total
-	card.ConsoleLog = ""
-	return card
-}
-
-func appendScrumChatMessage(existing []ScrumChatMessage, role, content string) []ScrumChatMessage {
-	content = strings.TrimSpace(sanitizeScrumChannelText(content))
-	if content == "" {
-		return existing
+	message := ScrumChatMessage{
+		ID: messageID, Role: role, Content: content,
 	}
-	role = normalizeScrumChannelRole(role)
-	return append(existing, ScrumChatMessage{
-		ID:        newScrumChatMessageID(role, content),
-		Role:      role,
-		Content:   content,
-		CreatedAt: time.Now().UTC().Format(time.RFC3339),
-	})
-}
-
-func newScrumChatMessageID(role, content string) string {
-	sum := sha1.Sum([]byte(fmt.Sprintf("%s\n%d\n%s", role, time.Now().UTC().UnixNano(), content)))
-	return "chatmsg_" + hex.EncodeToString(sum[:])[:16]
-}
-
-func scrumChatMessageID(msg ScrumChatMessage) string {
-	if strings.TrimSpace(msg.ID) != "" {
-		return strings.TrimSpace(msg.ID)
+	if _, err := scrumChannelMessageAppends([]ScrumChatMessage{message}); err != nil {
+		return nil, err
 	}
-	sum := sha1.Sum([]byte(fmt.Sprintf("%s\n%s\n%s", msg.Role, msg.CreatedAt, msg.Content)))
-	return "chatmsg_" + hex.EncodeToString(sum[:])[:16]
+	return append(existing, message), nil
 }
 
-func normalizeScrumChannelRole(role string) string {
-	switch strings.ToLower(strings.TrimSpace(role)) {
-	case "user", "assistant", "system", "error", "tool", "thinking", "status":
-		return strings.ToLower(strings.TrimSpace(role))
-	default:
-		return "system"
+func appendScrumChannelEvent(card ScrumCard, role, content string) (ScrumCard, error) {
+	messages, err := appendScrumChatMessage(card.PendingChannelMessages, role, content)
+	if err != nil {
+		return card, err
 	}
+	card.PendingChannelMessages = messages
+	return card, nil
 }
 
-func appendScrumChannelEvent(card ScrumCard, role, content string) ScrumCard {
-	card.Chat = appendScrumChatMessage(card.Chat, role, content)
-	card.ConsoleLog = appendScrumConsole(card.ConsoleLog, content)
-	return card
-}
-
-func stripAssistantStreamMarker(content string) string {
-	return StripAgentStreamMarker(content)
-}
-
-func updateLastAssistantChat(chat []ScrumChatMessage, delta string) []ScrumChatMessage {
-	if len(chat) == 0 || strings.TrimSpace(delta) == "" {
-		return chat
-	}
-	for i := len(chat) - 1; i >= 0; i-- {
-		if chat[i].Role != "assistant" {
-			continue
+func scrumChannelMessageAppends(messages []ScrumChatMessage) ([]queue.ScrumCardMessageAppend, error) {
+	appends := make([]queue.ScrumCardMessageAppend, 0, len(messages))
+	for index, message := range messages {
+		if message.ID == "" {
+			return nil, fmt.Errorf("Scrum message %d requires one server-owned identity", index+1)
 		}
-		base := stripAssistantStreamMarker(chat[i].Content)
-		chat[i].Content = strings.TrimRight(base, "\n") + delta
-		chat[i].CreatedAt = time.Now().UTC().Format(time.RFC3339)
-		return chat
-	}
-	return appendScrumChatMessage(chat, "assistant", delta)
-}
-
-func setAssistantStreamMarker(chat []ScrumChatMessage, syncedLen int) []ScrumChatMessage {
-	if len(chat) == 0 || syncedLen <= 0 {
-		return chat
-	}
-	for i := len(chat) - 1; i >= 0; i-- {
-		if chat[i].Role != "assistant" {
-			continue
-		}
-		base := stripAssistantStreamMarker(chat[i].Content)
-		chat[i].Content = strings.TrimRight(base, "\n") + "\n" + agentStreamMarker(syncedLen) + "\n"
-		return chat
-	}
-	return chat
-}
-
-func agentStreamMarker(syncedLen int) string {
-	return fmt.Sprintf("[[agent-stream-len:%d]]", syncedLen)
-}
-
-func sanitizeScrumChannelText(s string) string {
-	return queue.SanitizeUTF8Text(s)
-}
-
-func sanitizeScrumChannelBytes(b []byte) []byte {
-	return queue.SanitizeUTF8Bytes(b)
-}
-
-func truncateScrumChannelText(s string, maxPrefixBytes int, suffix string) string {
-	return queue.TruncateUTF8Text(s, maxPrefixBytes, suffix)
-}
-
-func syncRunningJobChannelChat(card ScrumCard, job model.JobDetails) (ScrumCard, bool) {
-	output := collectScrumAgentOutput(job)
-	syncedLen := syncedAgentStreamLenFromChat(card.Chat)
-	updated := card
-	changed := false
-
-	if strings.TrimSpace(output) != "" && syncedLen < len(output) {
-		delta := output[syncedLen:]
-		if strings.TrimSpace(delta) != "" {
-			updated.Chat = appendParsedAgentStreamLines(updated.Chat, delta)
-			updated.Chat = setChannelSyncMarker(updated.Chat, len(output))
-			changed = true
-		}
-	}
-
-	if syncedCtx, ok := syncRunningJobStepContexts(updated, job); ok {
-		updated = syncedCtx
-		changed = true
-	}
-	if !changed {
-		return card, false
-	}
-	return updated, true
-}
-
-func syncRunningJobStepContexts(card ScrumCard, job model.JobDetails) (ScrumCard, bool) {
-	if len(job.Contexts) == 0 {
-		return card, false
-	}
-	syncedID := syncedStepContextID(card.Chat)
-	updated := card
-	changed := false
-	maxID := syncedID
-	for _, ctxValue := range job.Contexts {
-		if ctxValue.ID <= syncedID {
-			continue
-		}
-		for _, msg := range stepContextToActivity(ctxValue) {
-			if shouldSkipDuplicateChannelMessage(updated.Chat, msg) {
-				continue
-			}
-			updated.Chat = appendOrMergeChannelMessage(updated.Chat, msg)
-			changed = true
-		}
-		if ctxValue.ID > maxID {
-			maxID = ctxValue.ID
-		}
-	}
-	if !changed {
-		return card, false
-	}
-	updated.Chat = setStepContextSyncMarker(updated.Chat, maxID)
-	return updated, true
-}
-
-func hydrateCardChannelChat(card ScrumCard) ScrumCard {
-	if len(card.Chat) > 0 {
-		return card
-	}
-	displayLog := strings.TrimSpace(StripAgentStreamMarker(card.ConsoleLog))
-	if displayLog == "" {
-		return card
-	}
-	updated := card
-	for _, block := range splitConsoleLogBlocks(displayLog) {
-		role := "system"
-		if strings.HasPrefix(strings.ToLower(block), "agent stream:") || strings.HasPrefix(strings.ToLower(block), "agent output:") {
-			role = "assistant"
-		}
-		updated.Chat = appendScrumChatMessage(updated.Chat, role, block)
-	}
-	return updated
-}
-
-func splitConsoleLogBlocks(displayLog string) []string {
-	lines := strings.Split(displayLog, "\n")
-	blocks := make([]string, 0)
-	current := make([]string, 0)
-	flush := func() {
-		if len(current) == 0 {
-			return
-		}
-		block := strings.TrimSpace(strings.Join(current, "\n"))
-		if block != "" {
-			blocks = append(blocks, block)
-		}
-		current = current[:0]
-	}
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if trimmed == "" {
-			flush()
-			continue
-		}
-		current = append(current, line)
-	}
-	flush()
-	return blocks
-}
-
-func scrumCardChannelChanged(before, after ScrumCard) bool {
-	if before.ConsoleLog != after.ConsoleLog {
-		return true
-	}
-	if len(before.Chat) != len(after.Chat) {
-		return true
-	}
-	if len(before.Chat) == 0 {
-		return false
-	}
-	lastBefore := before.Chat[len(before.Chat)-1]
-	lastAfter := after.Chat[len(after.Chat)-1]
-	return lastBefore.Content != lastAfter.Content || lastBefore.Role != lastAfter.Role
-}
-
-func scrumChatMessageTime(msg ScrumChatMessage) time.Time {
-	raw := strings.TrimSpace(msg.CreatedAt)
-	if raw == "" {
-		return time.Time{}
-	}
-	if at, err := time.Parse(time.RFC3339Nano, raw); err == nil {
-		return at.UTC()
-	}
-	if at, err := time.Parse(time.RFC3339, raw); err == nil {
-		return at.UTC()
-	}
-	return time.Time{}
-}
-
-// sortScrumChatChronological orders channel rows by when they happened, not loop/sync order.
-func sortScrumChatChronological(chat []ScrumChatMessage) []ScrumChatMessage {
-	if len(chat) <= 1 {
-		return chat
-	}
-	type indexed struct {
-		msg ScrumChatMessage
-		idx int
-		at  time.Time
-	}
-	items := make([]indexed, len(chat))
-	for i, msg := range chat {
-		items[i] = indexed{msg: msg, idx: i, at: scrumChatMessageTime(msg)}
-	}
-	sort.SliceStable(items, func(i, j int) bool {
-		left, right := items[i], items[j]
-		if !left.at.Equal(right.at) {
-			if left.at.IsZero() {
-				return false
-			}
-			if right.at.IsZero() {
-				return true
-			}
-			return left.at.Before(right.at)
-		}
-		return left.idx < right.idx
-	})
-	out := make([]ScrumChatMessage, len(items))
-	for i, item := range items {
-		out[i] = item.msg
-	}
-	return out
-}
-
-func displayScrumChannelMessages(card ScrumCard) []ScrumChatMessage {
-	card = hydrateCardChannelChat(card)
-	out := make([]ScrumChatMessage, 0, len(card.Chat))
-	seenIDs := map[string]int{}
-	for _, msg := range sortScrumChatChronological(card.Chat) {
-		content := strings.TrimSpace(stripAssistantStreamMarker(msg.Content))
-		if content == "" || strings.HasPrefix(content, "[[agent-stream-len:") || strings.HasPrefix(content, "[[context-sync:") {
-			continue
-		}
-		role := normalizeScrumChannelRole(msg.Role)
-		switch role {
-		case "status":
-			continue
-		case "tool":
-			if _, ok := parseChannelActivity(content); !ok && isScrumChannelNoiseContent(role, content) {
-				continue
-			}
-		case "assistant":
-			if isScrumChannelNoiseContent(role, content) {
-				continue
-			}
-		case "system":
-			if isScrumChannelNoiseContent(role, content) {
-				continue
-			}
-		}
-		id := scrumChatMessageID(msg)
-		if seen := seenIDs[id]; seen > 0 {
-			seenIDs[id] = seen + 1
-			id = fmt.Sprintf("%s_%d", id, seen+1)
-		} else {
-			seenIDs[id] = 1
-		}
-		out = append(out, ScrumChatMessage{
-			ID:          id,
-			Role:        role,
-			Content:     content,
-			CreatedAt:   msg.CreatedAt,
-			Status:      msg.Status,
-			OperationID: msg.OperationID,
+		appends = append(appends, queue.ScrumCardMessageAppend{
+			ID: message.ID, Role: message.Role, Content: message.Content,
+			Status: message.Status, OperationID: message.OperationID,
 		})
+		if _, err := queue.ValidateScrumCardMessageAppend(appends[len(appends)-1]); err != nil {
+			return nil, fmt.Errorf("Scrum message %d is outside canonical row authority: %w", index+1, err)
+		}
 	}
-	return collapseScrumChannelDisplayMessages(out)
+	return appends, nil
 }
 
-func isScrumChannelNoiseContent(role, content string) bool {
-	lower := strings.ToLower(strings.TrimSpace(content))
-	switch lower {
-	case "codex external implementation session started",
-		"codex external implementation session completed",
-		"cursor external implementation session started",
-		"cursor external implementation session completed",
-		"external agent session ended",
-		"external agent session completed",
-		"agent finished",
-		"agent running…",
-		"agent running...",
-		"agent running":
-		return true
-	}
-	if strings.HasPrefix(lower, "job status:") {
-		return true
-	}
-	if role == "system" {
-		if strings.HasPrefix(lower, "execution agent:") ||
-			strings.HasPrefix(lower, "agent config source:") ||
-			strings.HasPrefix(lower, "models:") ||
-			strings.HasPrefix(lower, "channel steer sent") ||
-			strings.HasPrefix(lower, "channel message sent") {
+func pendingScrumMessageContains(messages []ScrumChatMessage, content string) bool {
+	for _, message := range messages {
+		if message.Content == content {
 			return true
 		}
 	}
 	return false
 }
 
-func collapseScrumChannelDisplayMessages(messages []ScrumChatMessage) []ScrumChatMessage {
-	if len(messages) == 0 {
-		return messages
+func syncRunningJobChannelChat(card ScrumCard, job model.JobDetails) (ScrumCard, bool, error) {
+	if err := validateScrumSyncAuthority(card, job); err != nil {
+		return card, false, err
 	}
-	out := make([]ScrumChatMessage, 0, len(messages))
-	for _, msg := range messages {
-		if len(out) == 0 {
-			out = append(out, msg)
+	if syncedCtx, ok, err := syncRunningJobStepContexts(card, job); err != nil {
+		return card, false, err
+	} else if ok {
+		return syncedCtx, true, nil
+	}
+	return card, false, nil
+}
+
+func syncRunningJobStepContexts(card ScrumCard, job model.JobDetails) (ScrumCard, bool, error) {
+	if err := validateScrumSyncAuthority(card, job); err != nil {
+		return card, false, err
+	}
+	if len(job.Contexts) == 0 {
+		return card, false, nil
+	}
+	syncedID := card.StepContextCursor
+	updated := card
+	changed := false
+	maxID := syncedID
+	previousID := int64(0)
+	for _, ctxValue := range job.Contexts {
+		if ctxValue.ID <= 0 {
+			return card, false, fmt.Errorf("Scrum step context cursor authority requires positive context IDs")
+		}
+		if previousID != 0 && ctxValue.ID <= previousID {
+			return card, false, fmt.Errorf("Scrum step contexts must be ordered by strictly increasing typed IDs")
+		}
+		previousID = ctxValue.ID
+		if ctxValue.ID <= syncedID {
 			continue
 		}
-		lastIdx := len(out) - 1
-		last := out[lastIdx]
-		role := normalizeScrumChannelRole(msg.Role)
-		lastRole := normalizeScrumChannelRole(last.Role)
-		if role != lastRole {
-			out = append(out, msg)
-			continue
-		}
-		switch role {
-		case "assistant":
-			last.Content = mergeAssistantStreamContent(last.Content, msg.Content)
-		case "thinking":
-			last.Content = mergeScrumChannelThoughtText(last.Content, msg.Content)
-		case "tool":
-			if lastActivity, ok := parseChannelActivity(last.Content); ok {
-				if nextActivity, ok := parseChannelActivity(msg.Content); ok && sameChannelActivity(lastActivity, nextActivity) {
-					last.Content = formatChannelActivity(mergeChannelActivity(lastActivity, nextActivity))
-					if strings.TrimSpace(msg.CreatedAt) != "" {
-						last.CreatedAt = msg.CreatedAt
-					}
-					out[lastIdx] = last
-					continue
-				}
+		for _, msg := range stepContextToActivity(ctxValue) {
+			before := len(updated.PendingChannelMessages)
+			var err error
+			updated.PendingChannelMessages, err = appendScrumChatMessage(updated.PendingChannelMessages, msg.Role, msg.Content)
+			if err != nil {
+				return card, false, err
 			}
-			out = append(out, msg)
-		default:
-			out = append(out, msg)
-			continue
+			changed = changed || len(updated.PendingChannelMessages) != before
 		}
-		if strings.TrimSpace(msg.CreatedAt) != "" {
-			last.CreatedAt = msg.CreatedAt
+		if ctxValue.ID > maxID {
+			maxID = ctxValue.ID
 		}
-		out[lastIdx] = last
 	}
-	return out
+	if maxID > syncedID {
+		updated.StepContextCursor = maxID
+		changed = true
+	}
+	if !changed {
+		return card, false, nil
+	}
+	return updated, true, nil
 }
