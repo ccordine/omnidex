@@ -63,7 +63,7 @@ func prepareExactStationCall(
 	}
 	if temperature == nil {
 		temperature = transport.Temperature
-		if gap.RendererVersion == assemblyline.PortableRendererV8 &&
+		if gap.RendererVersion == assemblyline.PortableRendererV1 &&
 			(gap.WorkKind == string(assemblyline.WorkFragmentGenerationReplacement) ||
 				gap.WorkKind == string(assemblyline.WorkApplicationRequirementCandidateSplitCorrection) ||
 				gap.WorkKind == string(assemblyline.WorkApplicationRequirementCandidateDuplicateReplacement)) {

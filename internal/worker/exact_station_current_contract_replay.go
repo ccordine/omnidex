@@ -12,8 +12,8 @@ import (
 
 // ReplayStationWithCurrentContract preserves the immutable portable job and
 // model-visible station prompt from one raw opening while using the checked-in
-// transport contract. It refuses renderer drift and performs no
-// queue, historical-job, or workspace writes.
+// transport contract. It refuses renderer drift and performs no queue or
+// workspace writes.
 func ReplayStationWithCurrentContract(
 	ctx context.Context,
 	client llm.ExactStationClient,
@@ -93,7 +93,7 @@ func replayCurrentPortableStation(
 	result.PreparedRequest = string(request)
 	result.PreparedRequestSHA256 = replaySHA256(result.PreparedRequest)
 	return executeExactStationReplayPrepared(
-		ctx, client, result, job, assemblyline.PortableRendererV8,
+		ctx, client, result, job, assemblyline.PortableRendererV1,
 		gap.ContextTokens, prepared,
 	)
 }

@@ -197,47 +197,10 @@ func TestRequirementCandidateKindKeepsRegisteredTemperatureBaseline(t *testing.T
 	}
 }
 
-func TestHistoricalFragmentGenerationReplacementKeepsRegisteredTemperatureBaseline(t *testing.T) {
-	t.Parallel()
-	input := assemblyline.FragmentGenerationInput{
-		Language: "typescript", Dialect: "TypeScript 5.9.3",
-		Signature: "function normalizeCode(value: string): string",
-		Behavior:  "Return the value in lowercase.",
-	}
-	job, err := assemblyline.NewFragmentGenerationReplacementJob(
-		assemblyline.FragmentGenerationReplacementInput{Original: input},
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	prepared := prepareReplacementTemperatureTestCallForRenderer(
-		t, job, replacementTemperatureTestExpectation(),
-		assemblyline.HistoricalPortableRendererV6,
-	)
-	if prepared.Temperature == nil || *prepared.Temperature != 0 {
-		t.Fatalf("historical replacement temperature=%v, want frozen baseline 0", prepared.Temperature)
-	}
-	if got := preparedRequestTemperature(t, prepared); got != 0 {
-		t.Fatalf("historical replacement wire temperature=%v, want 0", got)
-	}
-}
-
 func prepareReplacementTemperatureTestCall(
 	t testing.TB,
 	job assemblyline.PortableJob,
 	expected llm.ProviderIdentityExpectation,
-) llm.PreparedModel {
-	t.Helper()
-	return prepareReplacementTemperatureTestCallForRenderer(
-		t, job, expected, assemblyline.PortableRendererV8,
-	)
-}
-
-func prepareReplacementTemperatureTestCallForRenderer(
-	t testing.TB,
-	job assemblyline.PortableJob,
-	expected llm.ProviderIdentityExpectation,
-	renderer string,
 ) llm.PreparedModel {
 	t.Helper()
 	prompt, err := assemblyline.RenderPortableJob(job)
@@ -252,7 +215,7 @@ func prepareReplacementTemperatureTestCallForRenderer(
 		JobID: 19, Generation: 1, StepID: 7, StepAttempt: 1,
 		WorkerID: "temperature-test", GapID: job.ID,
 		WorkID: job.ID, WorkKind: string(job.Kind),
-		RendererVersion:  renderer,
+		RendererVersion:  assemblyline.PortableRendererV1,
 		ProjectionSHA256: strings.Repeat("c", 64), Prompt: prompt,
 		ContextTokens: expected.NativeContextLimit,
 		MaxOutputTokens: portableWorkerTestMaxOutputTokens(

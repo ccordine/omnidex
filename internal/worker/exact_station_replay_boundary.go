@@ -20,8 +20,8 @@ func loadStationReplayPortableBoundary(
 		call.StepAttempt != gap.StepAttempt || call.WorkerID != gap.WorkerID || call.GapID != gap.GapID {
 		return boundary, fmt.Errorf("station replay point does not preserve one exact call and gap authority")
 	}
-	if !assemblyline.IsReplayablePortableRenderer(gap.RendererVersion) {
-		return boundary, fmt.Errorf("station replay renderer %q is not registered historical evidence", gap.RendererVersion)
+	if gap.RendererVersion != assemblyline.PortableRendererV1 {
+		return boundary, fmt.Errorf("station replay renderer %q is not the current portable renderer", gap.RendererVersion)
 	}
 	if err := queue.ValidateStationGapSemanticUncertainty(gap); err != nil {
 		return boundary, fmt.Errorf("station replay semantic uncertainty: %w", err)
@@ -89,10 +89,10 @@ func validateCurrentContractStationReplayPoint(
 	if err != nil {
 		return boundary, err
 	}
-	if point.Gap.RendererVersion != assemblyline.PortableRendererV8 {
+	if point.Gap.RendererVersion != assemblyline.PortableRendererV1 {
 		return boundary, fmt.Errorf(
-			"current-contract replay requires renderer %q, received frozen historical renderer %q",
-			assemblyline.PortableRendererV8, point.Gap.RendererVersion,
+			"current-contract replay requires renderer %q, received %q",
+			assemblyline.PortableRendererV1, point.Gap.RendererVersion,
 		)
 	}
 	prompt, err := assemblyline.RenderPortableJob(boundary.Job)
@@ -113,7 +113,7 @@ func validateCurrentContractStationReplayPoint(
 		gap.MaxOutputTokens != expectedMaxOutputTokens ||
 		call.OutputLimitMode != gap.OutputLimitMode || call.ModelInputBytes != len(call.ModelInput) ||
 		replaySHA256(call.ModelInput) != call.ModelInputSHA256 {
-		return boundary, fmt.Errorf("stored station call differs from its historical transport authority")
+		return boundary, fmt.Errorf("stored station call differs from its transport authority")
 	}
 	return boundary, nil
 }

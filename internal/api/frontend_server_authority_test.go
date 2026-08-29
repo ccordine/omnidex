@@ -38,7 +38,7 @@ func TestProductionFrontendComponentRenderersAreServerOwned(t *testing.T) {
 
 func TestOperationalAdminComponentIsServerRendered(t *testing.T) {
 	server := NewServer(nil, &fakeLLMClient{})
-	request := httptest.NewRequest(http.MethodGet, "/v1/ui/admin?tab=advanced", nil)
+	request := httptest.NewRequest(http.MethodGet, "/v1/ui/admin?tab=health", nil)
 	response := httptest.NewRecorder()
 	server.Handler().ServeHTTP(response, request)
 	if response.Code != http.StatusOK {
@@ -48,7 +48,7 @@ func TestOperationalAdminComponentIsServerRendered(t *testing.T) {
 	if err := json.Unmarshal(response.Body.Bytes(), &component); err != nil {
 		t.Fatal(err)
 	}
-	for _, required := range []string{`data-recyclr-target="admin-tab-panel"`, "Destructive maintenance"} {
+	for _, required := range []string{`data-recyclr-target="admin-tab-panel"`, "Core health"} {
 		if !strings.Contains(component.HTML.Bundle, required) {
 			t.Errorf("server admin component is missing %q", required)
 		}

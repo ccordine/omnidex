@@ -6,16 +6,6 @@ CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA public;
 CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public;
 CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA public;
 
-SET statement_timeout = 0;
-SET lock_timeout = 0;
-SET idle_in_transaction_session_timeout = 0;
-SET client_encoding = 'UTF8';
-SET standard_conforming_strings = on;
-SET check_function_bodies = false;
-SET xmloption = content;
-SET client_min_messages = warning;
-SET row_security = off;
-
 --
 -- Name: apply_scrum_card_message_counters(); Type: FUNCTION; Schema: current runtime; Owner: -
 --
@@ -2026,9 +2016,9 @@ CREATE FUNCTION require_current_station_gap_renderer() RETURNS trigger
     AS $$
 BEGIN
     IF NEW.renderer_version IS DISTINCT FROM
-       'omnidex.render-portable-job.v8' THEN
+       'omnidex.render-portable-job.v1' THEN
         RAISE EXCEPTION
-            'new station gap opening requires portable renderer V8';
+            'new station gap opening requires the current portable renderer';
     END IF;
     RETURN NEW;
 END;
@@ -4046,8 +4036,10 @@ CREATE FUNCTION station_owns_portable_work(station text, work_kind text, payload
         WHEN 'application_requirement_coverage' THEN station='coding_requirements'
         WHEN 'application_requirement' THEN station='coding_requirements'
         WHEN 'application_requirement_candidate_cardinality' THEN station='coding_requirements'
+        WHEN 'application_requirement_candidate_kind' THEN station='coding_requirements'
         WHEN 'application_requirement_candidate_split' THEN station='coding_requirements'
         WHEN 'application_requirement_candidate_split_correction' THEN station='coding_requirements'
+        WHEN 'application_requirement_candidate_duplicate_replacement' THEN station='coding_requirements'
         WHEN 'repository_requirement_coverage' THEN station='coding_requirements'
         WHEN 'repository_requirement' THEN station='coding_requirements'
         WHEN 'application_target_tree' THEN station='coding_target_tree'
@@ -9962,14 +9954,14 @@ END), 'sha256'::text), 'hex'::text))),
     CONSTRAINT station_gap_openings_projection_resource_ceiling CHECK ((octet_length(projection_envelope) <= 1048576)),
     CONSTRAINT station_gap_openings_prompt_projection CHECK (((jsonb_typeof((projection_envelope)::jsonb) = 'object'::text) AND ((projection_envelope)::jsonb ?& ARRAY['prompt'::text, 'renderer'::text]) AND ((((projection_envelope)::jsonb - 'prompt'::text) - 'renderer'::text) = '{}'::jsonb) AND (jsonb_typeof(((projection_envelope)::jsonb -> 'prompt'::text)) = 'string'::text) AND (jsonb_typeof(((projection_envelope)::jsonb -> 'renderer'::text)) = 'string'::text) AND (((projection_envelope)::jsonb ->> 'prompt'::text) = prompt) AND (((projection_envelope)::jsonb ->> 'renderer'::text) = renderer_version))),
     CONSTRAINT station_gap_openings_prompt_resource_ceiling CHECK (((prompt <> ''::text) AND (btrim(prompt) <> ''::text) AND (octet_length(prompt) <= 1048576))),
-    CONSTRAINT station_gap_openings_renderer_version_check CHECK ((renderer_version = ANY (ARRAY['omnidex.render-portable-job.v5'::text, 'omnidex.render-portable-job.v6'::text, 'omnidex.render-portable-job.v7'::text, 'omnidex.render-portable-job.v8'::text]))),
+    CONSTRAINT station_gap_openings_renderer_version_check CHECK ((renderer_version = 'omnidex.render-portable-job.v1'::text)),
     CONSTRAINT station_gap_openings_replacement_origin_shape CHECK ((((work_kind = 'fragment_generation_replacement'::text) AND (origin_gap_opening_id IS NOT NULL) AND (origin_call_receipt_id IS NOT NULL)) OR ((work_kind <> 'fragment_generation_replacement'::text) AND (origin_gap_opening_id IS NULL) AND (origin_call_receipt_id IS NULL)))),
     CONSTRAINT station_gap_openings_scope_check CHECK ((scope = ANY (ARRAY['portable_semantic_worker'::text, 'portable_structural_worker'::text, 'portable_fragment_worker'::text]))),
     CONSTRAINT station_gap_openings_semantic_uncertainty_digest CHECK (((semantic_uncertainty_contract_sha256 ~ '^[0-9a-f]{64}$'::text) AND (semantic_uncertainty_contract_sha256 = encode(public.digest((((((((((((((convert_to((semantic_uncertainty_contract ->> 'id'::text), 'UTF8'::name) || decode('00'::text, 'hex'::text)) || convert_to((semantic_uncertainty_contract ->> 'work_kind'::text), 'UTF8'::name)) || decode('00'::text, 'hex'::text)) || convert_to((semantic_uncertainty_contract ->> 'exact_question'::text), 'UTF8'::name)) || decode('00'::text, 'hex'::text)) || convert_to((semantic_uncertainty_contract ->> 'deterministic_limitation'::text), 'UTF8'::name)) || decode('00'::text, 'hex'::text)) || convert_to((semantic_uncertainty_contract ->> 'required_information'::text), 'UTF8'::name)) || decode('00'::text, 'hex'::text)) || convert_to((semantic_uncertainty_contract ->> 'single_result'::text), 'UTF8'::name)) || decode('00'::text, 'hex'::text)) || convert_to((semantic_uncertainty_contract ->> 'deterministic_consumer'::text), 'UTF8'::name)) || decode('00'::text, 'hex'::text)), 'sha256'::text), 'hex'::text)))),
-    CONSTRAINT station_gap_openings_semantic_uncertainty_shape_v3 CHECK (((jsonb_typeof(semantic_uncertainty_contract) = 'object'::text) AND (semantic_uncertainty_contract ?& ARRAY['id'::text, 'work_kind'::text, 'exact_question'::text, 'deterministic_limitation'::text, 'required_information'::text, 'single_result'::text, 'deterministic_consumer'::text]) AND ((((((((semantic_uncertainty_contract - 'id'::text) - 'work_kind'::text) - 'exact_question'::text) - 'deterministic_limitation'::text) - 'required_information'::text) - 'single_result'::text) - 'deterministic_consumer'::text) = '{}'::jsonb) AND (jsonb_typeof((semantic_uncertainty_contract -> 'id'::text)) = 'string'::text) AND (jsonb_typeof((semantic_uncertainty_contract -> 'work_kind'::text)) = 'string'::text) AND (jsonb_typeof((semantic_uncertainty_contract -> 'exact_question'::text)) = 'string'::text) AND (jsonb_typeof((semantic_uncertainty_contract -> 'deterministic_limitation'::text)) = 'string'::text) AND (jsonb_typeof((semantic_uncertainty_contract -> 'required_information'::text)) = 'string'::text) AND (jsonb_typeof((semantic_uncertainty_contract -> 'single_result'::text)) = 'string'::text) AND (jsonb_typeof((semantic_uncertainty_contract -> 'deterministic_consumer'::text)) = 'string'::text) AND ((semantic_uncertainty_contract ->> 'work_kind'::text) = work_kind) AND ((work_kind <> ALL (ARRAY['application_requirement_candidate_cardinality'::text, 'application_requirement_candidate_split'::text, 'application_requirement_candidate_split_correction'::text])) OR (renderer_version = 'omnidex.render-portable-job.v8'::text)) AND ((semantic_uncertainty_contract ->> 'id'::text) = (('omnidex.semantic-uncertainty.'::text || work_kind) ||
+    CONSTRAINT station_gap_openings_semantic_uncertainty_shape CHECK (((jsonb_typeof(semantic_uncertainty_contract) = 'object'::text) AND (semantic_uncertainty_contract ?& ARRAY['id'::text, 'work_kind'::text, 'exact_question'::text, 'deterministic_limitation'::text, 'required_information'::text, 'single_result'::text, 'deterministic_consumer'::text]) AND ((((((((semantic_uncertainty_contract - 'id'::text) - 'work_kind'::text) - 'exact_question'::text) - 'deterministic_limitation'::text) - 'required_information'::text) - 'single_result'::text) - 'deterministic_consumer'::text) = '{}'::jsonb) AND (jsonb_typeof((semantic_uncertainty_contract -> 'id'::text)) = 'string'::text) AND (jsonb_typeof((semantic_uncertainty_contract -> 'work_kind'::text)) = 'string'::text) AND (jsonb_typeof((semantic_uncertainty_contract -> 'exact_question'::text)) = 'string'::text) AND (jsonb_typeof((semantic_uncertainty_contract -> 'deterministic_limitation'::text)) = 'string'::text) AND (jsonb_typeof((semantic_uncertainty_contract -> 'required_information'::text)) = 'string'::text) AND (jsonb_typeof((semantic_uncertainty_contract -> 'single_result'::text)) = 'string'::text) AND (jsonb_typeof((semantic_uncertainty_contract -> 'deterministic_consumer'::text)) = 'string'::text) AND ((semantic_uncertainty_contract ->> 'work_kind'::text) = work_kind) AND ((semantic_uncertainty_contract ->> 'id'::text) = (('omnidex.semantic-uncertainty.'::text || work_kind) ||
 CASE
-    WHEN ((renderer_version = 'omnidex.render-portable-job.v8'::text) AND (work_kind = 'application_requirement'::text)) THEN '.v3'::text
-    WHEN ((renderer_version = ANY (ARRAY['omnidex.render-portable-job.v7'::text, 'omnidex.render-portable-job.v8'::text])) AND (work_kind = ANY (ARRAY['application_product_context'::text, 'application_requirement_coverage'::text, 'application_requirement'::text, 'application_project_stack_constraint'::text]))) THEN '.v2'::text
+    WHEN (work_kind = 'application_requirement'::text) THEN '.v3'::text
+    WHEN (work_kind = ANY (ARRAY['application_product_context'::text, 'application_requirement_coverage'::text, 'application_project_stack_constraint'::text])) THEN '.v2'::text
     ELSE '.v1'::text
 END)) AND ((octet_length((semantic_uncertainty_contract ->> 'id'::text)) >= 1) AND (octet_length((semantic_uncertainty_contract ->> 'id'::text)) <= 512)) AND ((semantic_uncertainty_contract ->> 'id'::text) = btrim((semantic_uncertainty_contract ->> 'id'::text))) AND ((octet_length((semantic_uncertainty_contract ->> 'exact_question'::text)) >= 1) AND (octet_length((semantic_uncertainty_contract ->> 'exact_question'::text)) <= 512)) AND ((semantic_uncertainty_contract ->> 'exact_question'::text) = btrim((semantic_uncertainty_contract ->> 'exact_question'::text))) AND ((octet_length((semantic_uncertainty_contract ->> 'deterministic_limitation'::text)) >= 1) AND (octet_length((semantic_uncertainty_contract ->> 'deterministic_limitation'::text)) <= 512)) AND ((semantic_uncertainty_contract ->> 'deterministic_limitation'::text) = btrim((semantic_uncertainty_contract ->> 'deterministic_limitation'::text))) AND ((octet_length((semantic_uncertainty_contract ->> 'required_information'::text)) >= 1) AND (octet_length((semantic_uncertainty_contract ->> 'required_information'::text)) <= 512)) AND ((semantic_uncertainty_contract ->> 'required_information'::text) = btrim((semantic_uncertainty_contract ->> 'required_information'::text))) AND ((octet_length((semantic_uncertainty_contract ->> 'single_result'::text)) >= 1) AND (octet_length((semantic_uncertainty_contract ->> 'single_result'::text)) <= 512)) AND ((semantic_uncertainty_contract ->> 'single_result'::text) = btrim((semantic_uncertainty_contract ->> 'single_result'::text))) AND ((octet_length((semantic_uncertainty_contract ->> 'deterministic_consumer'::text)) >= 1) AND (octet_length((semantic_uncertainty_contract ->> 'deterministic_consumer'::text)) <= 512)) AND ((semantic_uncertainty_contract ->> 'deterministic_consumer'::text) = btrim((semantic_uncertainty_contract ->> 'deterministic_consumer'::text))) AND ((length((semantic_uncertainty_contract ->> 'exact_question'::text)) - length(replace((semantic_uncertainty_contract ->> 'exact_question'::text), '?'::text, ''::text))) = 1) AND ("right"((semantic_uncertainty_contract ->> 'exact_question'::text), 1) = '?'::text) AND ("left"((semantic_uncertainty_contract ->> 'single_result'::text), 4) = 'One '::text) AND ((((((((semantic_uncertainty_contract ->> 'id'::text) || (semantic_uncertainty_contract ->> 'work_kind'::text)) || (semantic_uncertainty_contract ->> 'exact_question'::text)) || (semantic_uncertainty_contract ->> 'deterministic_limitation'::text)) || (semantic_uncertainty_contract ->> 'required_information'::text)) || (semantic_uncertainty_contract ->> 'single_result'::text)) || (semantic_uncertainty_contract ->> 'deterministic_consumer'::text)) !~ '[\r\n]'::text))),
     CONSTRAINT station_gap_openings_station_check CHECK (((station <> ''::text) AND (station = btrim(station)) AND (octet_length(station) <= 128))),
@@ -19262,4 +19254,3 @@ END;
 $install_step_attempt_fence$;
 
 -- End of the authoritative fresh-database setup.
-

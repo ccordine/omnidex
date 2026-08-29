@@ -134,7 +134,7 @@ func TestApplicationRequirementCandidateRefinementRejectsUnboundState(t *testing
 	}
 }
 
-func TestApplicationRequirementRefinementKindsRequireCurrentRenderer(t *testing.T) {
+func TestApplicationRequirementRefinementKindsUseSoleRenderer(t *testing.T) {
 	t.Parallel()
 	input := ApplicationRequirementCandidateCardinalityInput{
 		Candidate: "Provide interactive drum pads and a playable keyboard.",
@@ -143,16 +143,12 @@ func TestApplicationRequirementRefinementKindsRequireCurrentRenderer(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := ValidatePortableJobForRenderer(job, PortableRendererV8); err != nil {
+	if err := ValidatePortableJobForRenderer(job, PortableRendererV1); err != nil {
 		t.Fatal(err)
 	}
-	for _, renderer := range []string{
-		HistoricalPortableRendererV7,
-		HistoricalPortableRendererV6,
-		HistoricalPortableRendererV5,
-	} {
-		if err := ValidatePortableJobForRenderer(job, renderer); err == nil {
-			t.Fatalf("V8 refinement payload validated for %s", renderer)
-		}
+	if err := ValidatePortableJobForRenderer(
+		job, "unsupported-renderer",
+	); err == nil {
+		t.Fatal("requirement refinement accepted a non-current renderer")
 	}
 }

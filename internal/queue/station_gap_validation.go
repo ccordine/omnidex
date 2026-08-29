@@ -11,7 +11,7 @@ import (
 
 func validateStationGapOpening(record StationGapOpenRecord) (StationGapOpening, error) {
 	if err := assemblyline.ValidatePortableJobForRenderer(
-		record.Job, assemblyline.PortableRendererV8,
+		record.Job, assemblyline.PortableRendererV1,
 	); err != nil {
 		return StationGapOpening{}, fmt.Errorf("station gap requires one validated PortableJob: %w", err)
 	}
@@ -99,7 +99,7 @@ func validateStationGapOpening(record StationGapOpenRecord) (StationGapOpening, 
 	projection, err := exactjson.Canonical(struct {
 		Prompt   string `json:"prompt"`
 		Renderer string `json:"renderer"`
-	}{prompt, assemblyline.PortableRendererV8})
+	}{prompt, assemblyline.PortableRendererV1})
 	if err != nil {
 		return StationGapOpening{}, fmt.Errorf("canonicalize station gap projection: %w", err)
 	}
@@ -117,7 +117,7 @@ func validateStationGapOpening(record StationGapOpenRecord) (StationGapOpening, 
 		WorkID: record.Job.ID, WorkKind: string(record.Job.Kind),
 		PortablePayload: string(record.Job.Payload), PortablePayloadSHA256: stationGapSHA256(string(record.Job.Payload)),
 		PortableEnvelope: string(portableEnvelope), PortableEnvelopeSHA256: stationGapSHA256(string(portableEnvelope)),
-		RendererVersion: assemblyline.PortableRendererV8, Prompt: prompt,
+		RendererVersion: assemblyline.PortableRendererV1, Prompt: prompt,
 		ProjectionEnvelope:                string(projection),
 		ProjectionSHA256:                  stationGapSHA256(string(projection)),
 		SemanticUncertaintyContract:       semanticUncertainty,

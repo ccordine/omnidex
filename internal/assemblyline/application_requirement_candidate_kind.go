@@ -117,10 +117,10 @@ func DecodeApplicationRequirementCandidateKindResultForPortableRenderer(
 	raw string,
 ) (ApplicationRequirementCandidateKindResult, error) {
 	var zero ApplicationRequirementCandidateKindResult
-	if renderer != PortableRendererV8 {
+	if renderer != PortableRendererV1 {
 		return zero, fmt.Errorf(
 			"portable work kind %q requires renderer %q",
-			WorkApplicationRequirementCandidateKind, PortableRendererV8,
+			WorkApplicationRequirementCandidateKind, PortableRendererV1,
 		)
 	}
 	var input ApplicationRequirementCandidateKindInput

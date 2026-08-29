@@ -8,7 +8,7 @@ import (
 )
 
 var uiAdminTabs = map[string]struct{}{
-	"overview": {}, "ai": {}, "datasources": {}, "health": {}, "advanced": {},
+	"overview": {}, "ai": {}, "datasources": {}, "health": {},
 }
 
 func (s *Server) handleUIAdminComponent(w http.ResponseWriter, r *http.Request) {
@@ -51,8 +51,6 @@ func (s *Server) renderUIAdminTab(r *http.Request, tab string) (string, error) {
 			`<div data-controller="admin-data-sources" data-recyclr-sink="admin-data-sources" class="space-y-4">` + uiLoading("Loading data sources…") + `</div></div>`, nil
 	case "health":
 		return renderUIAdminHealth(), nil
-	case "advanced":
-		return renderUIAdminAdvanced(), nil
 	default:
 		return "", fmt.Errorf("unsupported admin tab %q", tab)
 	}
@@ -112,13 +110,6 @@ func renderUIAdminHealth() string {
 		`<div class="grid gap-4 lg:grid-cols-2">` +
 		uiAdminSection("Research stack", "Generation, embedding, runtime, and search readiness.", `<div data-chat-target="researchStatusOutput" data-recyclr-sink="research-status-output">`+uiLoading("Loading research health…")+`</div>`) +
 		uiAdminSection("Host bridge", "Folder, terminal, and screen bridge state.", `<div data-chat-target="hostBridgeStatusOutput" data-recyclr-sink="host-bridge-status-output">`+uiLoading("Loading host bridge…")+`</div>`) + `</div></div>`
-}
-
-func renderUIAdminAdvanced() string {
-	return `<div data-admin-tab-panel="advanced" class="mx-auto max-w-5xl space-y-4"><section class="rounded-xl border border-rose-300/20 bg-rose-400/5 p-5">` +
-		`<h3 class="text-sm font-semibold uppercase tracking-[.18em] text-rose-200">Destructive maintenance</h3>` +
-		`<p class="mt-1 text-xs text-rose-200/70">Reset the database schema. This cannot be undone.</p>` +
-		`<button data-action="chat#migrateFresh" type="button" class="mt-4 rounded-md border border-rose-300/30 bg-rose-400/10 px-4 py-2 text-sm font-semibold text-rose-100">Migrate fresh</button></section></div>`
 }
 
 func stringMapValue(values map[string]any, key string) string {

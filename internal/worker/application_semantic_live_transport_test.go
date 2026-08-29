@@ -131,7 +131,7 @@ func (transport *liveCodingQualificationTransport) syntheticGap(
 	projection, err := exactjson.Canonical(struct {
 		Prompt   string `json:"prompt"`
 		Renderer string `json:"renderer"`
-	}{prompt, assemblyline.PortableRendererV8})
+	}{prompt, assemblyline.PortableRendererV1})
 	if err != nil {
 		return queue.StationGapOpening{}, err
 	}
@@ -161,7 +161,7 @@ func (transport *liveCodingQualificationTransport) syntheticGap(
 		JobID: 1, Generation: 1, StepID: int64(len(transport.calls) + 1), StepAttempt: 1,
 		WorkerID: "live-qualification", GapID: job.ID, Station: stationID,
 		Scope: scope, PortableSchema: job.Schema,
-		WorkID: job.ID, WorkKind: string(job.Kind), RendererVersion: assemblyline.PortableRendererV8,
+		WorkID: job.ID, WorkKind: string(job.Kind), RendererVersion: assemblyline.PortableRendererV1,
 		Prompt: prompt, ProjectionEnvelope: string(projection),
 		ProjectionSHA256:                  qualificationSHA256(projection),
 		SemanticUncertaintyContract:       semanticUncertainty,

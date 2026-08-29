@@ -36,20 +36,7 @@ func (r *Repository) Ping(ctx context.Context) error {
 	return r.pool.Ping(ctx)
 }
 
-func (r *Repository) EnsureSchema(ctx context.Context, bundle MigrationBundle) error {
-	if ctx == nil || r == nil || r.pool == nil {
-		return fmt.Errorf("ensure schema requires PostgreSQL and context")
-	}
-	if err := bundle.validate(); err != nil {
-		return err
-	}
-	if err := r.applyMigrationBundle(ctx, bundle); err != nil {
-		return err
-	}
-	return nil
-}
-
-// ValidateRuntimeAuthority checks post-migration invariants that must hold
+// ValidateRuntimeAuthority checks post-setup invariants that must hold
 // before the production API or worker loops are allowed to start.
 func (r *Repository) ValidateRuntimeAuthority(ctx context.Context) error {
 	if err := r.validateExecutablePipelineState(ctx); err != nil {

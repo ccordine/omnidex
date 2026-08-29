@@ -26,7 +26,7 @@ func ValidateRuntimeSchemaName(name string) error {
 }
 
 // RuntimeSearchPath returns the sole search-path projection used by runtime
-// connections and migration applicability proofs.
+// connections.
 func RuntimeSearchPath(runtimeSchema string) (string, error) {
 	if err := ValidateRuntimeSchemaName(runtimeSchema); err != nil {
 		return "", err
@@ -167,14 +167,6 @@ func bootstrapRuntimeSchema(
 	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock($1)`, runtimeSchemaBootstrapLockID); err != nil {
 		return fmt.Errorf("lock runtime schema bootstrap: %w", err)
 	}
-	legacy, err := publicOmnidexSchemaExists(ctx, tx)
-	if err != nil {
-		return err
-	}
-	if err := rejectPublicOmnidexState(legacy); err != nil {
-		return err
-	}
-
 	var exists, owned bool
 	if err := tx.QueryRow(ctx, `
 		SELECT EXISTS (SELECT 1 FROM pg_namespace WHERE nspname=$1),
@@ -198,36 +190,4 @@ func bootstrapRuntimeSchema(
 		return fmt.Errorf("commit runtime schema bootstrap: %w", err)
 	}
 	return nil
-}
-
-func rejectPublicOmnidexState(legacy bool) error {
-	if legacy {
-		return fmt.Errorf("legacy Omnidex state exists in public; explicit migration is required")
-	}
-	return nil
-}
-
-func publicOmnidexSchemaExists(ctx context.Context, tx pgx.Tx) (bool, error) {
-	var legacy bool
-	if err := tx.QueryRow(ctx, `
-		SELECT EXISTS (
-			SELECT 1 FROM pg_class relations
-			JOIN pg_namespace namespaces ON namespaces.oid=relations.relnamespace
-			WHERE namespaces.nspname='public' AND relations.relkind IN ('r','p') AND (
-				relations.relname IN (
-					'schema_migrations','omni_migrations','omni_runs','task_ledgers',
-					'memory_chunks','memory_chunk_tags'
-				) OR
-				relations.relname='jobs' AND EXISTS (
-					SELECT 1 FROM pg_class steps
-					JOIN pg_namespace step_namespaces ON step_namespaces.oid=steps.relnamespace
-					WHERE step_namespaces.nspname='public' AND steps.relname='job_steps' AND
-					      steps.relkind IN ('r','p')
-				)
-			)
-		)
-	`).Scan(&legacy); err != nil {
-		return false, fmt.Errorf("inspect legacy public Omnidex state: %w", err)
-	}
-	return legacy, nil
 }

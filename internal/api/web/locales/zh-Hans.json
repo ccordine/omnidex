@@ -82,7 +82,6 @@
   "panel.admin.tab.ai": "模型",
   "panel.admin.tab.dataSources": "数据源",
   "panel.admin.tab.health": "健康状态",
-  "panel.admin.tab.advanced": "高级",
   "panel.admin.loading": "正在加载管理界面…",
   "drawer.progress": "进度",
   "drawer.timeline": "时间线",

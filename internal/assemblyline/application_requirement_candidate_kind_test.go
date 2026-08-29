@@ -14,7 +14,7 @@ func TestApplicationRequirementCandidateKindReturnsCandidateBoundRelation(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := ValidatePortableJobForRenderer(job, PortableRendererV8); err != nil {
+	if err := ValidatePortableJobForRenderer(job, PortableRendererV1); err != nil {
 		t.Fatal(err)
 	}
 	prompt, err := RenderPortableJob(job)
@@ -72,24 +72,10 @@ func TestApplicationRequirementCandidateKindReturnsCandidateBoundRelation(t *tes
 	}
 
 	replayed, err := DecodeApplicationRequirementCandidateKindResultForPortableRenderer(
-		job.Payload, PortableRendererV8, ApplicationRequirementCandidateTaskLocal,
+		job.Payload, PortableRendererV1, ApplicationRequirementCandidateTaskLocal,
 	)
 	if err != nil || replayed.Relation != ApplicationRequirementCandidateTaskLocal {
 		t.Fatalf("candidate-kind replay result=%+v error=%v", replayed, err)
-	}
-	for _, renderer := range []string{
-		HistoricalPortableRendererV7,
-		HistoricalPortableRendererV6,
-		HistoricalPortableRendererV5,
-	} {
-		if err := ValidatePortableJobForRenderer(job, renderer); err == nil {
-			t.Fatalf("historical renderer %s accepted candidate-kind payload", renderer)
-		}
-		if _, err := DecodeApplicationRequirementCandidateKindResultForPortableRenderer(
-			job.Payload, renderer, ApplicationRequirementCandidateTaskLocal,
-		); err == nil {
-			t.Fatalf("historical renderer %s replayed candidate-kind response", renderer)
-		}
 	}
 }
 

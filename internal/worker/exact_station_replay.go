@@ -15,9 +15,9 @@ import (
 	"github.com/gryph/omnidex/internal/queue"
 )
 
-// ExactStationReplay is one read-only execution of a frozen station boundary.
+// ExactStationReplay is one read-only execution of a persisted station boundary.
 // Generation is retained as exact local benchmark evidence; callers decide
-// where to write it and it is never attached to the historical job attempt.
+// where to write it and it is never attached to the source job attempt.
 type ExactStationReplay struct {
 	SourceOpeningID       int64
 	SourceGapOpeningID    int64
@@ -51,7 +51,7 @@ type exactStationReplayBoundary struct {
 	Contract llmResponseContract
 }
 
-// ReplayExactStation executes the same persisted portable job against one
+// ReplayExactStation executes the same persisted V1 portable job against one
 // selected model. It byte-verifies the stored station boundary before any
 // provider request and performs no queue or workspace writes.
 func ReplayExactStation(
@@ -201,7 +201,7 @@ func replayExactStationArtifact(
 	raw string,
 ) (ExactStationReplayArtifact, error) {
 	return replayExactStationArtifactForRenderer(
-		job, assemblyline.PortableRendererV8, raw,
+		job, assemblyline.PortableRendererV1, raw,
 	)
 }
 
@@ -213,6 +213,9 @@ func replayExactStationArtifactForRenderer(
 	artifact := ExactStationReplayArtifact{
 		Kind: "exact_final_response", Source: raw, SourceSHA256: replaySHA256(raw),
 		StartByte: 0, EndByte: len(raw),
+	}
+	if err := assemblyline.ValidatePortableJobForRenderer(job, renderer); err != nil {
+		return artifact, fmt.Errorf("validate replay portable job: %w", err)
 	}
 	switch job.Kind {
 	case assemblyline.WorkApplicationRequirementCoverage:

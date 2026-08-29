@@ -14,7 +14,7 @@ func TestApplicationRequirementCandidateDuplicateReplacementBindsExactDefect(
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := ValidatePortableJobForRenderer(job, PortableRendererV8); err != nil {
+	if err := ValidatePortableJobForRenderer(job, PortableRendererV1); err != nil {
 		t.Fatal(err)
 	}
 	prompt, err := RenderPortableJob(job)
@@ -88,24 +88,10 @@ func TestApplicationRequirementCandidateDuplicateReplacementBindsExactDefect(
 	}
 
 	replayed, err := DecodeApplicationRequirementCandidateDuplicateReplacementLeafForPortableRenderer(
-		job.Payload, PortableRendererV8, replacement,
+		job.Payload, PortableRendererV1, replacement,
 	)
 	if err != nil || replayed != replacement {
 		t.Fatalf("duplicate-replacement replay=%q error=%v", replayed, err)
-	}
-	for _, renderer := range []string{
-		HistoricalPortableRendererV7,
-		HistoricalPortableRendererV6,
-		HistoricalPortableRendererV5,
-	} {
-		if err := ValidatePortableJobForRenderer(job, renderer); err == nil {
-			t.Fatalf("historical renderer %s accepted duplicate-replacement payload", renderer)
-		}
-		if _, err := DecodeApplicationRequirementCandidateDuplicateReplacementLeafForPortableRenderer(
-			job.Payload, renderer, replacement,
-		); err == nil {
-			t.Fatalf("historical renderer %s replayed duplicate replacement", renderer)
-		}
 	}
 }
 

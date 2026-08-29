@@ -237,7 +237,7 @@ func TestApplicationRequirementExcludedCandidatesAreBoundAndGenerationProjected(
 	}
 }
 
-func TestApplicationRequirementDuplicateReplayIsCurrentEvidenceOnly(t *testing.T) {
+func TestApplicationRequirementDuplicateReplayPreservesCurrentEvidence(t *testing.T) {
 	t.Parallel()
 	authority := applicationIntentLeafFixture(t)
 	const duplicate = "The current count is displayed."
@@ -254,45 +254,14 @@ func TestApplicationRequirementDuplicateReplayIsCurrentEvidenceOnly(t *testing.T
 		t.Fatal(err)
 	}
 	leaf, err := DecodeApplicationRequirementLeafForPortableRenderer(
-		currentJob.Payload, PortableRendererV8, duplicate,
+		currentJob.Payload, PortableRendererV1, duplicate,
 	)
 	if err != nil || leaf != duplicate {
-		t.Fatalf("V8 duplicate evidence=%q error=%v", leaf, err)
-	}
-
-	v7Input := applicationRequirementLeafInputV2{
-		UserRequest:          authority.UserRequest,
-		Context:              authority.Context,
-		ProductContext:       "A browser counter.",
-		AcceptedRequirements: []string{duplicate},
-	}
-	v7Job, err := newPortableJob(WorkApplicationRequirement, v7Input)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := DecodeApplicationRequirementLeafForPortableRenderer(
-		v7Job.Payload, HistoricalPortableRendererV7, duplicate,
-	); err == nil || !strings.Contains(err.Error(), "duplicates") {
-		t.Fatalf("V7 duplicate replay behavior changed: %v", err)
-	}
-
-	v1Input := applicationRequirementLeafInputV1(v7Input)
-	v1Job, err := newPortableJob(WorkApplicationRequirement, v1Input)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, renderer := range []string{
-		HistoricalPortableRendererV6, HistoricalPortableRendererV5,
-	} {
-		if _, err := DecodeApplicationRequirementLeafForPortableRenderer(
-			v1Job.Payload, renderer, duplicate,
-		); err == nil || !strings.Contains(err.Error(), "duplicates") {
-			t.Fatalf("%s duplicate replay behavior changed: %v", renderer, err)
-		}
+		t.Fatalf("duplicate evidence=%q error=%v", leaf, err)
 	}
 }
 
-func TestApplicationRequirementPayloadSchemasAreRendererExact(t *testing.T) {
+func TestApplicationRequirementPayloadSchemasUseSoleRenderer(t *testing.T) {
 	t.Parallel()
 	authority := applicationIntentLeafFixture(t)
 	coverageInput := ApplicationRequirementCoverageInput{
@@ -310,45 +279,14 @@ func TestApplicationRequirementPayloadSchemasAreRendererExact(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	legacy := applicationRequirementLeafInputV1{
-		UserRequest: authority.UserRequest, Context: authority.Context,
-		ProductContext: "A browser counter.", AcceptedRequirements: []string{},
-	}
-	historicalCoverage, err := newPortableJob(WorkApplicationRequirementCoverage, legacy)
-	if err != nil {
-		t.Fatal(err)
-	}
-	historicalGeneration, err := newPortableJob(WorkApplicationRequirement, legacy)
-	if err != nil {
-		t.Fatal(err)
-	}
-
 	for _, job := range []PortableJob{currentCoverage, currentGeneration} {
-		if err := ValidatePortableJobForRenderer(job, PortableRendererV8); err != nil {
+		if err := ValidatePortableJobForRenderer(job, PortableRendererV1); err != nil {
 			t.Fatal(err)
 		}
-		for _, renderer := range []string{
-			HistoricalPortableRendererV7,
-			HistoricalPortableRendererV6,
-			HistoricalPortableRendererV5,
-		} {
-			if err := ValidatePortableJobForRenderer(job, renderer); err == nil {
-				t.Fatalf("current %s payload validated as %s", job.Kind, renderer)
-			}
-		}
-	}
-	for _, job := range []PortableJob{historicalCoverage, historicalGeneration} {
-		if err := ValidatePortableJobForRenderer(job, PortableRendererV8); err == nil {
-			t.Fatalf("historical %s payload validated as V8", job.Kind)
-		}
-		for _, renderer := range []string{
-			HistoricalPortableRendererV7,
-			HistoricalPortableRendererV6,
-			HistoricalPortableRendererV5,
-		} {
-			if err := ValidatePortableJobForRenderer(job, renderer); err != nil {
-				t.Fatalf("historical %s payload rejected for %s: %v", job.Kind, renderer, err)
-			}
+		if err := ValidatePortableJobForRenderer(
+			job, "unsupported-renderer",
+		); err == nil {
+			t.Fatalf("%s payload accepted a non-current renderer", job.Kind)
 		}
 	}
 }

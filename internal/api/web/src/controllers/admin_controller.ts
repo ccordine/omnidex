@@ -14,7 +14,7 @@ import { panelHref, parseAdminTabFromLocation } from "../lib/panel_routing";
 import { reportError, reportErrorMessage, reportOk } from "../lib/feedback";
 import { setGlobalLoading } from "../lib/loading";
 
-const ADMIN_TABS = new Set(["overview", "ai", "datasources", "health", "advanced"]);
+const ADMIN_TABS = new Set(["overview", "ai", "datasources", "health"]);
 
 export default class AdminController extends Controller {
   static targets = ["tabNav", "tabPanel", "adminStatus", "pullModel", "catalogQuery", "ingestFiles", "ingestStage", "ingestTags"];

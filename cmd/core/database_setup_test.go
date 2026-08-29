@@ -13,7 +13,9 @@ func TestCoreDatabaseSetupUsesOnlyReleaseLayout(t *testing.T) {
 	if err := os.Mkdir(directory, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(directory, "setup.sql"), []byte("SELECT 1;\n"), 0o600); err != nil {
+	body := "-- Omnidex authoritative fresh-database setup.\n" +
+		"-- __OMNIDEX_RUNTIME_SCHEMA__\nSELECT 1;\n"
+	if err := os.WriteFile(filepath.Join(directory, "setup.sql"), []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := loadCoreDatabaseSetupBeside(filepath.Join(release, "bin", "agent-core")); err != nil {

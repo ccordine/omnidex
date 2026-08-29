@@ -35,7 +35,7 @@ func portableApplicationResponseMaximum(job PortableJob) (int, bool, error) {
 	case WorkApplicationRequirementCandidateDuplicateReplacement:
 		return maxRequirementQuoteBytes, true, nil
 	case WorkApplicationProjectStackConstraint:
-		var input applicationProjectStackConstraintVersionedInput
+		var input ApplicationProjectStackConstraintInput
 		if err := decodePortablePayload(job.Payload, &input); err != nil {
 			return 0, true, err
 		}

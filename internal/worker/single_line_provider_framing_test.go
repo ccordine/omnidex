@@ -132,7 +132,7 @@ func singleLineFramingGap(
 	gap := queue.StationGapOpening{
 		JobID: 1, Generation: 1, StepID: stepID, StepAttempt: 1,
 		WorkerID: "framing-test", GapID: job.ID, WorkID: job.ID,
-		WorkKind: string(job.Kind), RendererVersion: assemblyline.PortableRendererV8,
+		WorkKind: string(job.Kind), RendererVersion: assemblyline.PortableRendererV1,
 		ProjectionSHA256: strings.Repeat("b", 64), Prompt: prompt,
 		ContextTokens:   contextTokens,
 		MaxOutputTokens: portableWorkerTestMaxOutputTokens(t, job, contextTokens),

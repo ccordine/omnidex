@@ -67,7 +67,7 @@ func TestApplicationIntentSemanticUncertaintyVersionsAreExact(t *testing.T) {
 		WorkApplicationRequirement,
 	} {
 		current, err := SemanticUncertaintyContractForPortableRenderer(
-			PortableRendererV8, kind,
+			PortableRendererV1, kind,
 		)
 		if err != nil {
 			t.Fatal(err)
@@ -100,75 +100,19 @@ func TestApplicationIntentSemanticUncertaintyVersionsAreExact(t *testing.T) {
 				t.Fatalf("current requirement contract lacks bound coverage authority: %+v", current)
 			}
 		}
-		for _, renderer := range []string{
-			HistoricalPortableRendererV7,
-		} {
-			historical, err := SemanticUncertaintyContractForPortableRenderer(
-				renderer, kind,
-			)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if !strings.HasSuffix(historical.ID, ".v2") {
-				t.Fatalf("historical %s/%s contract is not V2: %+v", renderer, kind, historical)
-			}
-			if kind == WorkApplicationRequirement {
-				if historical == current || strings.Contains(
-					historical.RequiredInformation, ApplicationRequirementRemains,
-				) {
-					t.Fatalf("historical %s requirement contract was reinterpreted: %+v", renderer, historical)
-				}
-			} else if kind == WorkApplicationRequirementCoverage {
-				if historical != current || strings.Contains(
-					historical.RequiredInformation, "excluded non-runtime candidates",
-				) {
-					t.Fatalf("historical %s coverage contract was reinterpreted: %+v", renderer, historical)
-				}
-			} else if historical != current {
-				t.Fatalf("historical %s/%s contract drifted from V2: %+v", renderer, kind, historical)
-			}
-		}
-		for _, renderer := range []string{
-			HistoricalPortableRendererV5,
-			HistoricalPortableRendererV6,
-		} {
-			historical, err := SemanticUncertaintyContractForPortableRenderer(
-				renderer, kind,
-			)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if !strings.HasSuffix(historical.ID, ".v1") {
-				t.Fatalf("historical %s/%s contract=%+v", renderer, kind, historical)
-			}
-			if kind == WorkApplicationProductContext {
-				if historical.ExactQuestion != "What concise product context is explicitly established by the software request?" ||
-					historical.SingleResult != "One concise product-context text leaf." {
-					t.Fatalf("historical %s/%s product contract drifted: %+v", renderer, kind, historical)
-				}
-			} else if !strings.Contains(historical.RequiredInformation, "product context") {
-				t.Fatalf("historical %s/%s contract lost product context: %+v", renderer, kind, historical)
-			}
-			if historical == current {
-				t.Fatalf("historical %s contract equals current contract", kind)
-			}
-			if _, err := historical.Digest(); err != nil {
-				t.Fatalf("digest historical %s/%s contract: %v", renderer, kind, err)
-			}
-		}
 	}
 }
 
-func TestSemanticUncertaintyRendererLookupRejectsUnknownHistory(t *testing.T) {
+func TestSemanticUncertaintyRendererLookupRejectsNonCurrentRenderer(t *testing.T) {
 	t.Parallel()
 	if _, err := SemanticUncertaintyContractForPortableRenderer(
-		"omnidex.render-portable-job.v4", WorkApplicationRequirement,
+		"unsupported-renderer", WorkApplicationRequirement,
 	); err == nil {
 		t.Fatal("unregistered renderer resolved semantic uncertainty authority")
 	}
 }
 
-func TestRendererV8OnlyRequirementRefinementContractsRejectHistoricalRenderers(
+func TestRendererV1OwnsRequirementRefinementContracts(
 	t *testing.T,
 ) {
 	t.Parallel()
@@ -180,21 +124,10 @@ func TestRendererV8OnlyRequirementRefinementContractsRejectHistoricalRenderers(
 		WorkApplicationRequirementCandidateDuplicateReplacement,
 	} {
 		current, err := SemanticUncertaintyContractForPortableRenderer(
-			PortableRendererV8, kind,
+			PortableRendererV1, kind,
 		)
 		if err != nil || !strings.HasSuffix(current.ID, ".v1") {
 			t.Fatalf("current %s contract=%+v error=%v", kind, current, err)
-		}
-		for _, renderer := range []string{
-			HistoricalPortableRendererV7,
-			HistoricalPortableRendererV6,
-			HistoricalPortableRendererV5,
-		} {
-			if _, err := SemanticUncertaintyContractForPortableRenderer(
-				renderer, kind,
-			); err == nil {
-				t.Fatalf("historical renderer %s accepted V8-only work kind %s", renderer, kind)
-			}
 		}
 	}
 }

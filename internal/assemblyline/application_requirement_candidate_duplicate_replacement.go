@@ -151,11 +151,11 @@ func DecodeApplicationRequirementCandidateDuplicateReplacementLeafForPortableRen
 	renderer string,
 	raw string,
 ) (string, error) {
-	if renderer != PortableRendererV8 {
+	if renderer != PortableRendererV1 {
 		return "", fmt.Errorf(
 			"portable work kind %q requires renderer %q",
 			WorkApplicationRequirementCandidateDuplicateReplacement,
-			PortableRendererV8,
+			PortableRendererV1,
 		)
 	}
 	var input ApplicationRequirementCandidateDuplicateReplacementInput
