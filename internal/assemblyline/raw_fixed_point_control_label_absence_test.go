@@ -11,20 +11,12 @@ func TestRawFixedPointRelationRegistryHasNoWorkflowControlLabels(t *testing.T) {
 	registry := map[string][2]string{
 		"application context need": {ApplicationContextNeedRemains, ApplicationNoUncoveredContextNeed},
 		"application requirement":  {ApplicationRequirementRemains, ApplicationNoUncoveredRequirement},
-		"application behavior":     {ApplicationBehaviorRemains, ApplicationNoUncoveredBehavior},
-		"application criterion":    {ApplicationCriterionRemains, ApplicationNoUncoveredCriterion},
-		"application state field":  {ApplicationStateFieldRemains, ApplicationNoUncoveredStateField},
-		"application record field": {ApplicationRecordFieldRemains, ApplicationNoUncoveredRecordField},
 		"repository requirement":   {RepositoryRequirementRemains, RepositoryNoUncoveredRequirement},
-		"repository anchor":        {RepositoryAnchorRemains, RepositoryNoUncoveredAnchor},
-		"context term":             {ContextTermRemains, ContextNoUncoveredTerm},
 		"roleplay canon fact":      {RoleplayCanonFactRemains, RoleplayNoUncoveredCanonFact},
 		"database schema relation": {DatabaseSchemaRelationRemains, DatabaseSchemaNoUncoveredRelation},
 		"database query item":      {DatabaseQueryItemRemains, DatabaseQueryNoUncoveredItem},
 		"database query value":     {DatabaseQueryValueRemains, DatabaseQueryNoUncoveredValue},
-		"web query term":           {string(WebQueryTermRemains), string(WebNoUncoveredQueryTerm)},
 		"web synthesis paragraph":  {string(WebSynthesisParagraphRemains), string(WebSynthesisNoUncoveredParagraph)},
-		"web review claim":         {string(WebReviewClaimRemains), string(WebReviewNoUncoveredClaim)},
 	}
 	forbidden := map[string]struct{}{
 		"COMPLETE": {}, "COMPLETED": {}, "DONE": {}, "STOP": {}, "CONTINUE": {},
@@ -57,22 +49,12 @@ func TestRawFixedPointStationSourceHasNoRetiredControlAlternatives(t *testing.T)
 	files := []string{
 		"application_context_need_leaves.go",
 		"application_intent_leaves.go",
-		"application_job_specification_leaves.go",
-		"application_job_objective_behavior_leaves.go",
-		"application_job_criterion_leaves.go",
-		"application_service_state_interface_leaves.go",
-		"application_state_field_leaves.go",
-		"application_record_field_leaves.go",
 		"repository_requirement_leaves.go",
-		"repository_search_term_leaves.go",
-		"context_search_term_leaves.go",
 		"roleplay_canon_fact_leaves.go",
 		"database_schema_selection_leaves.go",
 		"database_query_intent_leaf_types.go",
 		"database_query_intent_leaf_prompt.go",
-		"web_search_term_leaves.go",
 		"web_grounded_synthesis_leaves.go",
-		"web_review_claim_leaves.go",
 	}
 	retired := []string{
 		"CONTEXT_NEEDS_COMPLETE", "COVERAGE_COMPLETE", "SEARCH_ANCHORS_COMPLETE",

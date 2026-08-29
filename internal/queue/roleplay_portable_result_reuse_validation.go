@@ -197,27 +197,10 @@ func validateRoleplayPortableReuseSource(
 }
 
 func materializeRoleplayPortableReuseResult(
-	source assemblyline.PortableJob,
+	_ assemblyline.PortableJob,
 	root assemblyline.PortableJob,
 	rawResponse string,
 ) (assemblyline.PortableResult, error) {
-	if source.Kind == assemblyline.WorkResponseCorrection {
-		var correction assemblyline.ResponseCorrectionInput
-		if err := decodePortableGapPayload(source.Payload, &correction); err != nil {
-			return assemblyline.PortableResult{}, err
-		}
-		candidate, err := assemblyline.ValidateResponseCorrectionReplacement(
-			correction, rawResponse,
-		)
-		if err != nil {
-			return assemblyline.PortableResult{}, fmt.Errorf(
-				"validate reused roleplay response correction: %w", err,
-			)
-		}
-		return assemblyline.PortableResult{
-			JobID: root.ID, Candidate: candidate,
-		}, nil
-	}
 	projection, err := assemblyline.NewExactPortableResultProjection(rawResponse)
 	if err != nil {
 		return assemblyline.PortableResult{}, err
@@ -295,20 +278,6 @@ func requireRoleplayPortableReuseRoot(
 	rootEnvelope, err := exactjson.Canonical(root)
 	if err != nil {
 		return err
-	}
-	if source.Kind == assemblyline.WorkResponseCorrection {
-		var correction assemblyline.ResponseCorrectionInput
-		if err := decodePortableGapPayload(source.Payload, &correction); err != nil {
-			return err
-		}
-		originalEnvelope, err := exactjson.Canonical(correction.Original)
-		if err != nil {
-			return err
-		}
-		if !bytes.Equal(originalEnvelope, rootEnvelope) {
-			return fmt.Errorf("response correction reuse source wraps a different root job")
-		}
-		return nil
 	}
 	sourceEnvelope, err := exactjson.Canonical(source)
 	if err != nil {

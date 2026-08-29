@@ -1,23 +1,42 @@
 package worker
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
+	"unicode/utf8"
 )
 
 const (
-	directCodingVitestReporterFile   = ".omnidex-vitest-reporter.mjs"
-	directCodingVitestReportFile     = ".omnidex-vitest-report.json"
-	directCodingVitestReportSchemaV2 = "omnidex.vitest-report.v2"
-	maxDirectCodingVitestReportBytes = 1024 * 1024
+	directCodingVitestReporterFile                        = ".omnidex-vitest-reporter.mjs"
+	directCodingVitestReportFile                          = ".omnidex-vitest-report.json"
+	directCodingVitestReportSchema                        = "omnidex.vitest-report.v3"
+	directCodingTestingLibraryRoleObservationSchemaV1     = "omnidex.testing-library-role-observation.v1"
+	maxDirectCodingVitestReportBytes                      = 1024 * 1024
+	maxDirectCodingTestingLibraryRequestedRoleBytes       = 64
+	maxDirectCodingTestingLibraryCompleteElementCount     = 100
+	maxDirectCodingTestingLibraryAccessibleNameBytes      = 256
+	maxDirectCodingTestingLibraryRoleObservationSafeCount = int64(9007199254740991)
 )
 
-const directCodingVitestReporterSource = `import { writeFile } from 'node:fs/promises';
+var directCodingVitestReporterSource = strings.Replace(`import { writeFile } from 'node:fs/promises';
 
 const reportURL = new URL('./.omnidex-vitest-report.json', import.meta.url);
+const testingLibraryRoleObservationProperty = 'omnidexTestingLibraryRoleObservation';
+
+function accessibilityObservationRecord(error) {
+  if (error === null || (typeof error !== 'object' && typeof error !== 'function')) {
+    return null;
+  }
+  if (!Object.prototype.propertyIsEnumerable.call(error, testingLibraryRoleObservationProperty)) {
+    return null;
+  }
+  return error[testingLibraryRoleObservationProperty];
+}
 
 function errorRecord(error) {
   return {
@@ -34,6 +53,7 @@ function errorRecord(error) {
         line: frame.line,
         column: frame.column,
       })) : [],
+    accessibility_observation: accessibilityObservationRecord(error),
   };
 }
 
@@ -56,14 +76,14 @@ export default class OmnidexVitestReporter {
       });
     }
     await writeFile(reportURL, JSON.stringify({
-      schema: 'omnidex.vitest-report.v2',
+      schema: '__OMNIDEX_VITEST_REPORT_SCHEMA__',
       reason,
       unhandled_errors: unhandledErrors.map(errorRecord),
       modules,
     }), { encoding: 'utf8' });
   }
 }
-`
+`, "__OMNIDEX_VITEST_REPORT_SCHEMA__", directCodingVitestReportSchema, 1)
 
 type directCodingStageFailureClass string
 
@@ -80,11 +100,36 @@ type directCodingVitestFailureReceipt struct {
 }
 
 type directCodingVitestFailureEvidence struct {
-	FailureClass directCodingStageFailureClass
-	Name         string
-	Message      string
-	Output       string
-	Locations    []directCodingVitestSourceLocation
+	FailureClass             directCodingStageFailureClass
+	Name                     string
+	Message                  string
+	Output                   string
+	Locations                []directCodingVitestSourceLocation
+	AccessibilityObservation *directCodingTestingLibraryRoleObservation
+}
+
+type directCodingTestingLibraryRoleVisibility string
+
+const (
+	directCodingTestingLibraryRoleVisibilityAccessible directCodingTestingLibraryRoleVisibility = "accessible"
+	directCodingTestingLibraryRoleVisibilityAvailable  directCodingTestingLibraryRoleVisibility = "available"
+)
+
+type directCodingTestingLibraryRoleObservationStatus string
+
+const (
+	directCodingTestingLibraryRoleObservationStatusComplete      directCodingTestingLibraryRoleObservationStatus = "complete"
+	directCodingTestingLibraryRoleObservationStatusLimitExceeded directCodingTestingLibraryRoleObservationStatus = "limit_exceeded"
+	directCodingTestingLibraryRoleObservationStatusCaptureFailed directCodingTestingLibraryRoleObservationStatus = "capture_failed"
+)
+
+type directCodingTestingLibraryRoleObservation struct {
+	Schema        string
+	RequestedRole string
+	Visibility    directCodingTestingLibraryRoleVisibility
+	Status        directCodingTestingLibraryRoleObservationStatus
+	ElementCount  int64
+	Names         []string
 }
 
 type directCodingVitestSourceLocation struct {
@@ -112,10 +157,20 @@ type directCodingVitestTestRecord struct {
 }
 
 type directCodingVitestErrorRecord struct {
-	Name    *string                          `json:"name"`
-	Message *string                          `json:"message"`
-	Stack   *string                          `json:"stack"`
-	Stacks  *[]directCodingVitestStackRecord `json:"stacks"`
+	Name                     *string                                           `json:"name"`
+	Message                  *string                                           `json:"message"`
+	Stack                    *string                                           `json:"stack"`
+	Stacks                   *[]directCodingVitestStackRecord                  `json:"stacks"`
+	AccessibilityObservation *directCodingVitestAccessibilityObservationRecord `json:"accessibility_observation"`
+}
+
+type directCodingVitestAccessibilityObservationRecord struct {
+	Schema        *string                                          `json:"schema"`
+	RequestedRole *string                                          `json:"requested_role"`
+	Visibility    *directCodingTestingLibraryRoleVisibility        `json:"visibility"`
+	Status        *directCodingTestingLibraryRoleObservationStatus `json:"status"`
+	ElementCount  *int64                                           `json:"element_count"`
+	Names         *[]string                                        `json:"names"`
 }
 
 type directCodingVitestStackRecord struct {
@@ -188,14 +243,19 @@ func readDirectCodingVitestFailureReceipt(root string) (directCodingVitestFailur
 		return zero, fmt.Errorf("structured Vitest report must contain 1..%d bytes", maxDirectCodingVitestReportBytes)
 	}
 	var report directCodingVitestReport
-	if err := json.Unmarshal(raw, &report); err != nil {
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&report); err != nil {
 		return zero, fmt.Errorf("decode structured Vitest report: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		return zero, fmt.Errorf("decode structured Vitest report: expected exactly one JSON value")
 	}
 	if report.Schema == nil || report.Reason == nil || report.UnhandledErrors == nil || report.Modules == nil {
 		return zero, fmt.Errorf("structured Vitest report omits required fields")
 	}
-	if *report.Schema != directCodingVitestReportSchemaV2 {
-		return zero, fmt.Errorf("structured Vitest report schema must be %q", directCodingVitestReportSchemaV2)
+	if *report.Schema != directCodingVitestReportSchema {
+		return zero, fmt.Errorf("structured Vitest report schema must be %q", directCodingVitestReportSchema)
 	}
 	if *report.Reason != "failed" && *report.Reason != "interrupted" {
 		return zero, fmt.Errorf("structured Vitest failure has contradictory reason %q", *report.Reason)
@@ -291,17 +351,104 @@ func decodeDirectCodingVitestFailureEvidence(
 			"error record name and message must both be non-empty",
 		)
 	}
+	if failure.AccessibilityObservation != nil && *failure.Name != "TestingLibraryElementError" {
+		return directCodingVitestFailureEvidence{}, fmt.Errorf(
+			"accessibility observation is only valid for TestingLibraryElementError records",
+		)
+	}
+	observation, err := validateDirectCodingVitestAccessibilityObservation(
+		failure.AccessibilityObservation,
+	)
+	if err != nil {
+		return directCodingVitestFailureEvidence{}, fmt.Errorf("accessibility observation: %w", err)
+	}
 	output := make([]string, 0, 2)
 	locations := make([]directCodingVitestSourceLocation, 0)
 	if err := appendDirectCodingVitestError(&output, &locations, failure); err != nil {
 		return directCodingVitestFailureEvidence{}, err
 	}
 	return directCodingVitestFailureEvidence{
-		FailureClass: failureClass,
-		Name:         name,
-		Message:      message,
-		Output:       strings.Join(output, "\n"),
-		Locations:    locations,
+		FailureClass:             failureClass,
+		Name:                     name,
+		Message:                  message,
+		Output:                   strings.Join(output, "\n"),
+		Locations:                locations,
+		AccessibilityObservation: observation,
+	}, nil
+}
+
+func validateDirectCodingVitestAccessibilityObservation(
+	record *directCodingVitestAccessibilityObservationRecord,
+) (*directCodingTestingLibraryRoleObservation, error) {
+	if record == nil {
+		return nil, nil
+	}
+	if record.Schema == nil || record.RequestedRole == nil || record.Visibility == nil ||
+		record.Status == nil || record.ElementCount == nil || record.Names == nil {
+		return nil, fmt.Errorf("record omits required fields")
+	}
+	if *record.Schema != directCodingTestingLibraryRoleObservationSchemaV1 {
+		return nil, fmt.Errorf("schema must be %q", directCodingTestingLibraryRoleObservationSchemaV1)
+	}
+	requestedRole := *record.RequestedRole
+	if requestedRole == "" || requestedRole != strings.TrimSpace(requestedRole) ||
+		len(requestedRole) > maxDirectCodingTestingLibraryRequestedRoleBytes ||
+		!utf8.ValidString(requestedRole) || strings.ContainsRune(requestedRole, '\x00') {
+		return nil, fmt.Errorf(
+			"requested_role must contain 1..%d trimmed UTF-8 bytes without NUL",
+			maxDirectCodingTestingLibraryRequestedRoleBytes,
+		)
+	}
+	switch *record.Visibility {
+	case directCodingTestingLibraryRoleVisibilityAccessible,
+		directCodingTestingLibraryRoleVisibilityAvailable:
+	default:
+		return nil, fmt.Errorf("visibility must be accessible or available")
+	}
+	switch *record.Status {
+	case directCodingTestingLibraryRoleObservationStatusComplete,
+		directCodingTestingLibraryRoleObservationStatusLimitExceeded,
+		directCodingTestingLibraryRoleObservationStatusCaptureFailed:
+	default:
+		return nil, fmt.Errorf("status is unsupported")
+	}
+	if *record.ElementCount < 0 || *record.ElementCount > maxDirectCodingTestingLibraryRoleObservationSafeCount {
+		return nil, fmt.Errorf(
+			"element_count must be a nonnegative JavaScript-safe integer no greater than %d",
+			maxDirectCodingTestingLibraryRoleObservationSafeCount,
+		)
+	}
+	names := *record.Names
+	if *record.Status == directCodingTestingLibraryRoleObservationStatusComplete {
+		if *record.ElementCount > maxDirectCodingTestingLibraryCompleteElementCount {
+			return nil, fmt.Errorf(
+				"complete element_count must be no greater than %d",
+				maxDirectCodingTestingLibraryCompleteElementCount,
+			)
+		}
+		if int64(len(names)) != *record.ElementCount {
+			return nil, fmt.Errorf("complete names length must equal element_count")
+		}
+	} else if len(names) != 0 {
+		return nil, fmt.Errorf("noncomplete observation must not carry names")
+	}
+	for index, name := range names {
+		if len(name) > maxDirectCodingTestingLibraryAccessibleNameBytes ||
+			!utf8.ValidString(name) || strings.ContainsRune(name, '\x00') {
+			return nil, fmt.Errorf(
+				"name %d must contain at most %d UTF-8 bytes without NUL",
+				index, maxDirectCodingTestingLibraryAccessibleNameBytes,
+			)
+		}
+	}
+	validatedNames := append([]string(nil), names...)
+	return &directCodingTestingLibraryRoleObservation{
+		Schema:        *record.Schema,
+		RequestedRole: requestedRole,
+		Visibility:    *record.Visibility,
+		Status:        *record.Status,
+		ElementCount:  *record.ElementCount,
+		Names:         validatedNames,
 	}, nil
 }
 

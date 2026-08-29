@@ -218,9 +218,9 @@ func sourceProjectionMigrationOpening(
 		PortableEnvelope:       string(portableEnvelope),
 		PortableEnvelopeSHA256: stationGapSHA256(string(portableEnvelope)),
 		RendererVersion:        renderer, Prompt: prompt,
-		ResponseSchema: responseSchema, ProjectionEnvelope: string(projectionEnvelope),
-		ProjectionSHA256: stationGapSHA256(string(projectionEnvelope)),
-		ContextTokens:    8192, MaxOutputTokens: 8192,
+		ProjectionEnvelope: string(projectionEnvelope),
+		ProjectionSHA256:   stationGapSHA256(string(projectionEnvelope)),
+		ContextTokens:      8192, MaxOutputTokens: 8192,
 		OutputLimitMode: "natural",
 	}
 }
@@ -236,7 +236,7 @@ func persistSourceProjectionMigrationOpening(
 		return StationGapOpening{}, err
 	}
 	defer tx.Rollback(t.Context())
-	if err := insertStationGapOpeningTx(t.Context(), tx, &opening); err != nil {
+	if err := insertHistoricalStationGapOpeningTx(t.Context(), tx, &opening); err != nil {
 		return StationGapOpening{}, err
 	}
 	if err := tx.Commit(t.Context()); err != nil {

@@ -1,7 +1,6 @@
 package queue
 
 import (
-	"encoding/json"
 	"fmt"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
@@ -48,18 +47,8 @@ func ExpectedStationCallStopSequence(
 }
 
 func stationGapResponseFraming(
-	gap StationGapOpening,
+	_ StationGapOpening,
 	kind assemblyline.WorkKind,
 ) (assemblyline.PortableResponseFraming, error) {
-	if kind != assemblyline.WorkResponseCorrection {
-		return assemblyline.PortableResponseFramingForWorkKind(kind)
-	}
-	job := assemblyline.PortableJob{
-		Schema: gap.PortableSchema, ID: gap.WorkID, Kind: kind,
-		Payload: json.RawMessage(gap.PortablePayload),
-	}
-	if err := job.Validate(); err != nil {
-		return "", fmt.Errorf("validate response correction framing authority: %w", err)
-	}
-	return assemblyline.PortableResponseFramingForJob(job)
+	return assemblyline.PortableResponseFramingForWorkKind(kind)
 }

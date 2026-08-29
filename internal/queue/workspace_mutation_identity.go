@@ -33,6 +33,7 @@ func workspaceMutationOperation(
 	commandSHA := hex.EncodeToString(digest[:])
 	return workspaceMutationOperationIdentity{
 		ID: "workspace_mutation_" + commandSHA, CommandSHA256: commandSHA,
-		PlanJSON: string(planRaw), PlanSHA256: hex.EncodeToString(planSHA[:]),
+		ProjectLocation: command.ProjectLocation,
+		PlanJSON:        string(planRaw), PlanSHA256: hex.EncodeToString(planSHA[:]),
 	}, nil
 }

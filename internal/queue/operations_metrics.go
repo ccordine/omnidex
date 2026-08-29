@@ -11,51 +11,20 @@ import (
 var telemetryFailureEventTypes = []string{
 	"step_error",
 	"step_canceled",
-	"llm_error",
-	"llm_retry_same_model",
-	"verify_test_fail",
-	"verify_auto_replan",
-	"verify_replan",
-	"verify_hallucination_retry",
-	"verify_hallucination_loop",
-	"verify_ollama_restart_failed",
-	"verification_retry",
-	"verify_grounding_retry",
-	"tool_call_rejected",
-	"progression_gate_failed",
-	"progression_gate_rejected_false_done",
-	"structured_loop_exhausted",
-	"structured_command_rejected",
-	"artifact_validation_failed",
-	"plan_waiting_input",
-	"analyze_waiting_input",
-	"response_waiting_input",
-	"tooling_waiting_input",
-	"web_search_waiting_input",
-	"retrieve_embedding_error",
-	"workspace_scan_waiting_input",
-}
-
-var telemetryLoopEventTypes = []string{
-	"verification_retry",
-	"verify_hallucination_retry",
-	"verify_grounding_retry",
-	"verify_auto_replan",
-	"verify_replan",
-	"verify_hallucination_loop",
-	"llm_retry_same_model",
-	"structured_loop_exhausted",
-}
-
-type OperationsLoopStat struct {
-	Key            string  `json:"key"`
-	Label          string  `json:"label"`
-	AvgPerRun      float64 `json:"avg_per_run"`
-	MaxPerRun      int     `json:"max_per_run"`
-	TotalEvents    int     `json:"total_events"`
-	RunsAffected   int     `json:"runs_affected"`
-	PriorAvgPerRun float64 `json:"prior_avg_per_run"`
-	DeltaPct       float64 `json:"delta_pct"`
+	"run_failed",
+	"run_cancelled",
+	"repository_snapshot_failed",
+	"repository_analysis_failed",
+	"coding_target_tree_validation_failed",
+	"coding_worker_rejected",
+	"coding_worker_failed",
+	"objective_worker_rejected",
+	"objective_worker_failed",
+	"web_research_worker_rejected",
+	"web_research_worker_failed",
+	"workspace_mutation_deferred",
+	"workspace_mutation_verification_deferred",
+	"workspace_mutation_indeterminate",
 }
 
 type OperationsFailureEvent struct {
@@ -74,7 +43,6 @@ type OperationsRunDiagnostic struct {
 	Status         string          `json:"status"`
 	TaskKind       string          `json:"task_kind,omitempty"`
 	DurationMS     *int64          `json:"duration_ms,omitempty"`
-	LoopEvents     int             `json:"loop_events"`
 	FailureEvents  int             `json:"failure_events"`
 	LLMCalls       int             `json:"llm_calls"`
 	MaxPromptChars int             `json:"max_prompt_chars"`
@@ -99,7 +67,6 @@ type OperationsContextFlood struct {
 type OperationsMetricsResponse struct {
 	FailureCounts   []TelemetryCountSummary   `json:"failure_counts"`
 	RecentFailures  []OperationsFailureEvent  `json:"recent_failures"`
-	LoopStats       []OperationsLoopStat      `json:"loop_stats"`
 	ContextFloods   []OperationsContextFlood  `json:"context_floods"`
 	RunDiagnostics  []OperationsRunDiagnostic `json:"run_diagnostics"`
 	LLMFailures     int                       `json:"llm_failures"`
@@ -143,11 +110,10 @@ func (r *Repository) OperationsMetrics(ctx context.Context) (OperationsMetricsRe
 		    event_type = ANY($1)
 		    OR event_type LIKE '%error%'
 		    OR event_type LIKE '%fail%'
-		    OR event_type LIKE '%retry%'
-		    OR event_type LIKE '%replan%'
-		    OR event_type LIKE '%loop%'
 		    OR event_type LIKE '%reject%'
-		    OR event_type LIKE '%waiting%'
+		    OR event_type LIKE '%cancel%'
+		    OR event_type LIKE '%deferred%'
+		    OR event_type LIKE '%indeterminate%'
 		  )
 		ORDER BY created_at DESC
 		LIMIT 40
@@ -164,11 +130,6 @@ func (r *Repository) OperationsMetrics(ctx context.Context) (OperationsMetricsRe
 		out.RecentFailures = append(out.RecentFailures, item)
 	}
 	if err := recentRows.Err(); err != nil {
-		return OperationsMetricsResponse{}, err
-	}
-
-	out.LoopStats, err = r.operationsLoopStats(ctx)
-	if err != nil {
 		return OperationsMetricsResponse{}, err
 	}
 
@@ -192,66 +153,6 @@ func (r *Repository) OperationsMetrics(ctx context.Context) (OperationsMetricsRe
 	out.AvgContextDelta = math.Round(out.AvgContextDelta*10) / 10
 
 	return out, nil
-}
-
-func (r *Repository) operationsLoopStats(ctx context.Context) ([]OperationsLoopStat, error) {
-	labels := map[string]string{
-		"verification_retry":         "Verification retries",
-		"verify_hallucination_retry": "Hallucination retries",
-		"verify_grounding_retry":     "Grounding retries",
-		"verify_auto_replan":         "Auto replans",
-		"verify_replan":              "Manual replans",
-		"verify_hallucination_loop":  "Hallucination loops",
-		"llm_retry_same_model":       "LLM same-model retries",
-		"structured_loop_exhausted":  "Structured loop exhaustions",
-	}
-	stats := make([]OperationsLoopStat, 0, len(telemetryLoopEventTypes))
-	for _, eventType := range telemetryLoopEventTypes {
-		item, err := r.operationsLoopStatForEvent(ctx, eventType, labels[eventType])
-		if err != nil {
-			return nil, err
-		}
-		stats = append(stats, item)
-	}
-	return stats, nil
-}
-
-func (r *Repository) operationsLoopStatForEvent(ctx context.Context, eventType, label string) (OperationsLoopStat, error) {
-	item := OperationsLoopStat{Key: eventType, Label: label}
-	if label == "" {
-		item.Label = eventType
-	}
-	err := r.pool.QueryRow(ctx, `
-		WITH current AS (
-			SELECT run_id, COUNT(*) AS cnt
-			FROM omni_run_events
-			WHERE event_type = $1 AND created_at >= NOW() - INTERVAL '7 days' AND run_id IS NOT NULL
-			GROUP BY run_id
-		),
-		prior AS (
-			SELECT run_id, COUNT(*) AS cnt
-			FROM omni_run_events
-			WHERE event_type = $1
-			  AND created_at >= NOW() - INTERVAL '14 days'
-			  AND created_at < NOW() - INTERVAL '7 days'
-			  AND run_id IS NOT NULL
-			GROUP BY run_id
-		)
-		SELECT COALESCE((SELECT COUNT(*) FROM omni_run_events WHERE event_type = $1 AND created_at >= NOW() - INTERVAL '7 days'), 0),
-			COALESCE((SELECT COUNT(DISTINCT run_id) FROM current), 0),
-			COALESCE((SELECT AVG(cnt) FROM current), 0),
-			COALESCE((SELECT MAX(cnt) FROM current), 0),
-			COALESCE((SELECT AVG(cnt) FROM prior), 0)
-	`, eventType).Scan(&item.TotalEvents, &item.RunsAffected, &item.AvgPerRun, &item.MaxPerRun, &item.PriorAvgPerRun)
-	if err != nil {
-		return OperationsLoopStat{}, err
-	}
-	item.AvgPerRun = math.Round(item.AvgPerRun*100) / 100
-	item.PriorAvgPerRun = math.Round(item.PriorAvgPerRun*100) / 100
-	if item.PriorAvgPerRun > 0 {
-		item.DeltaPct = math.Round((item.AvgPerRun-item.PriorAvgPerRun)/item.PriorAvgPerRun*1000) / 10
-	}
-	return item, nil
 }
 
 func (r *Repository) operationsContextFloods(ctx context.Context, limit int) ([]OperationsContextFlood, error) {
@@ -288,7 +189,6 @@ func (r *Repository) operationsRunDiagnostics(ctx context.Context, limit int) ([
 	}
 	rows, err := r.pool.Query(ctx, `
 		SELECT r.id::text, r.status, COALESCE(r.task_kind,''), r.duration_ms, r.summary, r.started_at,
-			COALESCE((SELECT COUNT(*) FROM omni_run_events e WHERE e.run_id = r.id AND e.event_type = ANY($2)), 0),
 			COALESCE((SELECT COUNT(*) FROM omni_run_events e WHERE e.run_id = r.id AND (
 				e.event_type LIKE '%fail%' OR e.event_type LIKE '%error%' OR e.event_type LIKE '%reject%'
 			)), 0),
@@ -298,7 +198,7 @@ func (r *Repository) operationsRunDiagnostics(ctx context.Context, limit int) ([
 		WHERE r.started_at >= NOW() - INTERVAL '7 days'
 		ORDER BY r.started_at DESC
 		LIMIT $1
-	`, limit, telemetryLoopEventTypes)
+	`, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -306,7 +206,7 @@ func (r *Repository) operationsRunDiagnostics(ctx context.Context, limit int) ([
 	out := make([]OperationsRunDiagnostic, 0, limit)
 	for rows.Next() {
 		var item OperationsRunDiagnostic
-		if err := rows.Scan(&item.RunID, &item.Status, &item.TaskKind, &item.DurationMS, &item.Summary, &item.StartedAt, &item.LoopEvents, &item.FailureEvents, &item.LLMCalls, &item.MaxPromptChars); err != nil {
+		if err := rows.Scan(&item.RunID, &item.Status, &item.TaskKind, &item.DurationMS, &item.Summary, &item.StartedAt, &item.FailureEvents, &item.LLMCalls, &item.MaxPromptChars); err != nil {
 			return nil, err
 		}
 		out = append(out, item)

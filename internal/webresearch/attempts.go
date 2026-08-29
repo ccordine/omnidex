@@ -153,8 +153,8 @@ func newDiscoveryContract(
 			return discoveryAttemptConfig{query: state.query}, nil
 		},
 		func(config discoveryAttemptConfig) error {
-			if config.query == "" || config.query != strings.TrimSpace(config.query) || len(config.query) > 1_024 {
-				return fmt.Errorf("query must be trimmed and contain 1..1024 bytes")
+			if config.query == "" || config.query != strings.TrimSpace(config.query) || len(config.query) > 4_096 {
+				return fmt.Errorf("query must be trimmed and contain 1..4096 bytes")
 			}
 			return nil
 		},

@@ -1,7 +1,6 @@
 package worker
 
 import (
-	"errors"
 	"fmt"
 	"strings"
 
@@ -65,8 +64,7 @@ func (executor *directCodingLanguageProjectStageExecutor) repairLanguageBlockWit
 	if ref.Block.Role == assemblyline.SourceBlockTaskVerification {
 		return "", fmt.Errorf("generated verification source is not repair model context")
 	}
-	if executor.acceptedRepairTransitions == nil || executor.repairGuidance == nil ||
-		executor.repairSources == nil {
+	if executor.acceptedRepairTransitions == nil || executor.repairDiagnostics == nil {
 		return "", fmt.Errorf("language repair state is not initialized")
 	}
 	if executor.acceptedRepairTransitions[ref.Block.ID] >= maxDirectCodingLanguageRepairTransitions {
@@ -78,66 +76,68 @@ func (executor *directCodingLanguageProjectStageExecutor) repairLanguageBlockWit
 	if strings.TrimSpace(current) == "" {
 		return "", fmt.Errorf("block %s repair current source is empty", ref.Block.ID)
 	}
-	if executor.repairSources[ref.Block.ID] == nil {
-		executor.repairSources[ref.Block.ID] = map[string]struct{}{current: {}}
+	diagnostic = strings.TrimSpace(diagnostic)
+	if err := executor.observeLanguageRepairDiagnostic(ref.Block.ID, diagnostic); err != nil {
+		return "", err
 	}
 	capabilities, symbols, err := directCodingLanguageRepairContext(stage, ref)
 	if err != nil {
 		return "", err
 	}
-	var prior *assemblyline.FragmentRepairGuidanceRejection
-	for attempt := 0; attempt < maxDirectCodingLanguageExecutorAttempts; attempt++ {
-		input := assemblyline.FragmentRepairGuidanceInput{
-			Language: generation.Language, Dialect: generation.Dialect,
-			Signature:          generation.Signature,
-			Capabilities:       capabilities,
-			PermittedSymbols:   symbols,
-			CurrentDeclaration: strings.TrimSpace(current),
-			Diagnostic:         strings.TrimSpace(diagnostic),
-			PriorRejection:     prior,
-		}
-		guidance, err := runDirectCodingLanguageRepairGuidance(
-			runtime, guidanceModel, ref.Block.ID, input,
-		)
-		if err != nil {
-			return "", err
-		}
-		guidance = strings.TrimSpace(guidance)
-		if err := executor.acceptLanguageRepairGuidance(ref.Block.ID, guidance); err != nil {
-			return "", err
-		}
-		candidate, err := runDirectCodingLanguageCorrection(
-			runtime, correctionModel, ref.Block.ID,
-			current, guidance, generation.Language,
-			func(candidate string) (string, error) {
-				return validator(generation, candidate)
-			},
-		)
-		if err == nil {
-			if err := executor.acceptLanguageRepairSource(ref.Block.ID, candidate); err != nil {
-				return "", err
-			}
-			executor.acceptedRepairTransitions[ref.Block.ID]++
-			return candidate, nil
-		}
-		var rejectionKind assemblyline.FragmentRepairGuidanceRejectionKind
-		switch {
-		case errors.Is(err, errDirectCodingLanguageCorrectionUnchanged):
-			rejectionKind = assemblyline.FragmentRepairGuidanceNoSourceChange
-		case errors.Is(err, errDirectCodingLanguageCorrectionInvalid):
-			rejectionKind = assemblyline.FragmentRepairGuidanceInvalidSource
-		default:
-			return "", err
-		}
-		prior = &assemblyline.FragmentRepairGuidanceRejection{
-			Instruction: guidance,
-			Failure:     rejectionKind,
-		}
+	runtime.MaxAttempts = 1
+	input := assemblyline.FragmentRepairGuidanceInput{
+		Language: generation.Language, Dialect: generation.Dialect,
+		Signature:          generation.Signature,
+		Capabilities:       capabilities,
+		PermittedSymbols:   symbols,
+		CurrentDeclaration: strings.TrimSpace(current),
+		Diagnostic:         diagnostic,
 	}
-	return "", fmt.Errorf(
-		"block %s repair produced no valid source transition after %d bounded attempts",
-		ref.Block.ID, maxDirectCodingLanguageExecutorAttempts,
+	guidance, err := runDirectCodingLanguageRepairGuidance(
+		runtime, guidanceModel, ref.Block.ID, input,
 	)
+	if err != nil {
+		return "", err
+	}
+	candidate, err := runDirectCodingLanguageCorrection(
+		runtime, correctionModel, ref.Block.ID,
+		current, strings.TrimSpace(guidance), generation.Language,
+		func(candidate string) (string, error) {
+			return validator(generation, candidate)
+		},
+	)
+	if err != nil {
+		return "", fmt.Errorf(
+			"block %s repair produced no accepted source transition: %w",
+			ref.Block.ID, err,
+		)
+	}
+	executor.acceptedRepairTransitions[ref.Block.ID]++
+	return candidate, nil
+}
+
+func (executor *directCodingLanguageProjectStageExecutor) observeLanguageRepairDiagnostic(
+	blockID string,
+	diagnostic string,
+) error {
+	blockID = strings.TrimSpace(blockID)
+	diagnostic = strings.TrimSpace(diagnostic)
+	if blockID == "" || diagnostic == "" {
+		return fmt.Errorf("language repair progress requires one block and exact diagnostic")
+	}
+	seen := executor.repairDiagnostics[blockID]
+	if seen == nil {
+		seen = make(map[string]struct{})
+		executor.repairDiagnostics[blockID] = seen
+	}
+	if _, repeated := seen[diagnostic]; repeated {
+		return fmt.Errorf(
+			"block %s repeated a compiler diagnostic; no distinct verified failure authorizes another repair call: %s",
+			blockID, safeLine(firstDirectCodingDiagnosticLine(diagnostic), "unknown"),
+		)
+	}
+	seen[diagnostic] = struct{}{}
+	return nil
 }
 
 func directCodingLanguageRepairContext(
@@ -161,38 +161,6 @@ func directCodingLanguageRepairContext(
 		capabilities = append(capabilities, capability.API)
 	}
 	return capabilities, append([]string(nil), ref.Block.Globals...), nil
-}
-
-func (executor *directCodingLanguageProjectStageExecutor) acceptLanguageRepairGuidance(
-	blockID string,
-	guidance string,
-) error {
-	seen := executor.repairGuidance[blockID]
-	if seen == nil {
-		seen = make(map[string]struct{})
-		executor.repairGuidance[blockID] = seen
-	}
-	if _, repeated := seen[guidance]; repeated {
-		return fmt.Errorf("block %s: %w", blockID, errDirectCodingLanguageGuidanceRepeated)
-	}
-	seen[guidance] = struct{}{}
-	return nil
-}
-
-func (executor *directCodingLanguageProjectStageExecutor) acceptLanguageRepairSource(
-	blockID string,
-	source string,
-) error {
-	seen := executor.repairSources[blockID]
-	if seen == nil {
-		seen = make(map[string]struct{})
-		executor.repairSources[blockID] = seen
-	}
-	if _, repeated := seen[source]; repeated {
-		return fmt.Errorf("block %s repair repeated an already accepted source state", blockID)
-	}
-	seen[source] = struct{}{}
-	return nil
 }
 
 func applyDirectCodingLanguageRepair(

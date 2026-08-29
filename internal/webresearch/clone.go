@@ -8,8 +8,8 @@ import (
 )
 
 func cloneObjective(value Objective) Objective {
+	value.KnownArtifactPaths = append([]string{}, value.KnownArtifactPaths...)
 	value.Context = assemblyline.CloneObjectiveContext(value.Context)
-	value.Acceptance = append([]AcceptancePredicate{}, value.Acceptance...)
 	return value
 }
 
@@ -34,34 +34,9 @@ func cloneDocumentReport(value websearch.DocumentReport) websearch.DocumentRepor
 	return value
 }
 
-func cloneSearchTermsCall(value SearchTermsCall) SearchTermsCall {
-	value.Context = assemblyline.CloneObjectiveContext(value.Context)
-	value.AttemptedQueries = append([]string{}, value.AttemptedQueries...)
-	return value
-}
-
 func cloneRelevanceCall(value RelevanceCall) RelevanceCall {
 	value.Context = assemblyline.CloneObjectiveContext(value.Context)
 	value.Candidates = append([]RelevanceCandidate{}, value.Candidates...)
-	return value
-}
-
-func cloneClaimEvidenceReviewCall(value ClaimEvidenceReviewCall) ClaimEvidenceReviewCall {
-	value.Context = assemblyline.CloneObjectiveContext(value.Context)
-	value.Evidence = cloneProjection(value.Evidence)
-	return value
-}
-
-func cloneClaimEvidenceReviewDecision(value ClaimEvidenceReviewDecision) ClaimEvidenceReviewDecision {
-	value.EvidenceIDs = append([]EvidenceID{}, value.EvidenceIDs...)
-	return value
-}
-
-func cloneGroundedSynthesisCorrectionCall(value GroundedSynthesisCorrectionCall) GroundedSynthesisCorrectionCall {
-	value.Context = assemblyline.CloneObjectiveContext(value.Context)
-	value.Paragraphs = cloneParagraphs(value.Paragraphs)
-	value.Issue = cloneClaimEvidenceReviewDecision(value.Issue)
-	value.Evidence = cloneProjection(value.Evidence)
 	return value
 }
 

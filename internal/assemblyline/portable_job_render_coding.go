@@ -4,8 +4,10 @@ func renderPortableCodingJob(job PortableJob) (string, bool, error) {
 	switch job.Kind {
 	case WorkArtifactHandling:
 		return handledPortableRender(renderDecodedPortableInput(job, BuildArtifactHandlingPrompt))
-	case WorkKnownArtifactTruth:
-		return handledPortableRender(renderDecodedPortableInput(job, BuildKnownArtifactTruthPrompt))
+	case WorkRepositoryArtifactAbsence:
+		return handledPortableRender(renderDecodedPortableInput(job, BuildRepositoryArtifactAbsencePrompt))
+	case WorkPlainTextArtifactCreation:
+		return handledPortableRender(renderDecodedPortableInput(job, BuildPlainTextArtifactCreationPrompt))
 	case WorkDeclarationArtifactBoundary:
 		return handledPortableRender(renderDecodedPortableInput(job, BuildDeclarationArtifactBoundaryPrompt))
 	case WorkArtifactCandidateSelection:
@@ -22,8 +24,6 @@ func renderPortableCodingJob(job PortableJob) (string, bool, error) {
 		return handledPortableRender(renderDecodedPortableInput(job, BuildGoFragmentModificationPrompt))
 	case WorkFragmentCorrection:
 		return handledPortableRender(renderDecodedPortableInput(job, renderPortableFragmentCorrection))
-	case WorkResponseCorrection:
-		return handledPortableRender(renderDecodedPortableInput(job, renderPortableResponseCorrection))
 	default:
 		return "", false, nil
 	}

@@ -6,7 +6,6 @@ import (
 
 	"github.com/gryph/omnidex/internal/artifacts"
 	"github.com/gryph/omnidex/internal/evidence"
-	"github.com/gryph/omnidex/internal/model"
 )
 
 const MaxJobHistoryPageSize = 100
@@ -20,7 +19,6 @@ const (
 	JobHistorySteps       JobHistoryStream = "steps"
 	JobHistoryArtifacts   JobHistoryStream = "artifacts"
 	JobHistoryEvidence    JobHistoryStream = "evidence"
-	JobHistoryClaims      JobHistoryStream = "claims"
 	JobHistoryLLMCalls    JobHistoryStream = "llm_calls"
 )
 
@@ -71,11 +69,6 @@ type HistoricalEvidence struct {
 	Step     HistoricalStepReference `json:"step"`
 }
 
-type HistoricalClaim struct {
-	Claim model.ClaimRecord       `json:"claim"`
-	Step  HistoricalStepReference `json:"step"`
-}
-
 type HistoricalLLMCall struct {
 	Call LLMCallEvidence         `json:"call"`
 	Step HistoricalStepReference `json:"step"`
@@ -88,7 +81,6 @@ type JobHistoryPage struct {
 	Steps       []HistoricalStep       `json:"steps,omitempty"`
 	Artifacts   []HistoricalArtifact   `json:"artifacts,omitempty"`
 	Evidence    []HistoricalEvidence   `json:"evidence,omitempty"`
-	Claims      []HistoricalClaim      `json:"claims,omitempty"`
 	LLMCalls    []HistoricalLLMCall    `json:"llm_calls,omitempty"`
 	NextCursor  string                 `json:"next_cursor,omitempty"`
 }

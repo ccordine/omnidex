@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gryph/omnidex/internal/assemblyline"
+	"github.com/gryph/omnidex/internal/modelcontext"
 	repositoryretrieval "github.com/gryph/omnidex/internal/repository/retrieval"
 )
 
@@ -17,7 +19,7 @@ func TestRepositoryEvidenceCapsulesBindExactPackAndSymbolProvenance(t *testing.T
 			Signature: "func ReadThing() string", Source: "func ReadThing() string { return value }",
 			SourceSHA256: strings.Repeat("a", 64),
 		}},
-	})
+	}, assemblyline.ArtifactIdentityProvenance{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -47,7 +49,7 @@ func TestRepositoryEvidenceCapsulesPreserveRelationAsFirstClassEvidence(t *testi
 		}},
 		SourceOmissions: []repositoryretrieval.SourceOmission{}, OmittedSymbolIDs: []string{},
 	}
-	capsules, err := repositoryEvidenceCapsules(pack)
+	capsules, err := repositoryEvidenceCapsules(pack, assemblyline.ArtifactIdentityProvenance{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -57,6 +59,56 @@ func TestRepositoryEvidenceCapsulesPreserveRelationAsFirstClassEvidence(t *testi
 		!strings.Contains(capsules[2].Capsule.Text, "Caller calls Callee") ||
 		capsules[2].SHA256 == "" {
 		t.Fatalf("relation capsule=%#v all=%#v", capsules[2], capsules)
+	}
+}
+
+func TestRepositoryEvidenceSourcePathsAreRedactedBeforeGroundingAndExcludedFromRelevance(t *testing.T) {
+	t.Parallel()
+	provenance, err := modelcontext.NewArtifactIdentityProvenance(
+		[]string{"internal/private/secret_owner.go"},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const source = `package sample
+
+import "internal/private/secret_owner.go"
+
+// secret_owner.go is the authoritative implementation.
+func Owner() string { return "../private/secret_owner.go" }
+`
+	capsules, err := repositoryEvidenceCapsules(repositoryretrieval.EvidencePack{
+		ID: "pack-17",
+		Symbols: []repositoryretrieval.EvidenceSymbol{{
+			ID: "symbol-31", Kind: "function", Name: "Owner",
+			Signature: "func Owner() string", Source: source,
+			SourceSHA256: strings.Repeat("a", 64),
+		}},
+	}, provenance)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(capsules) != 1 || capsules[0].SelectionText != "function\nOwner\nfunc Owner() string" {
+		t.Fatalf("repository evidence selection projection=%#v", capsules)
+	}
+	for _, forbidden := range []string{
+		"internal/private/secret_owner.go", "secret_owner.go", "../private/secret_owner.go",
+	} {
+		if strings.Contains(capsules[0].Capsule.Text, forbidden) {
+			t.Fatalf("grounding capsule exposed path %q: %s", forbidden, capsules[0].Capsule.Text)
+		}
+	}
+	if strings.Count(capsules[0].Capsule.Text, "ARTIFACT_REF") != 3 {
+		t.Fatalf("grounding capsule did not deterministically redact all source paths: %s", capsules[0].Capsule.Text)
+	}
+	input, err := objectiveRepositoryRelevanceInput("Which component owns dispatch?", capsules)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(input.Candidates) != 1 || input.Candidates[0].Text != capsules[0].SelectionText ||
+		strings.Contains(input.Candidates[0].Text, "ARTIFACT_REF") ||
+		strings.Contains(input.Candidates[0].Text, "package sample") {
+		t.Fatalf("relevance candidate received repository source: %#v", input.Candidates)
 	}
 }
 
@@ -81,7 +133,7 @@ func TestRepositoryEvidenceCapsulesRejectIncompleteRetrievalProjection(t *testin
 		t.Run(name, func(t *testing.T) {
 			pack := base
 			mutate(&pack)
-			if _, err := repositoryEvidenceCapsules(pack); err == nil {
+			if _, err := repositoryEvidenceCapsules(pack, assemblyline.ArtifactIdentityProvenance{}); err == nil {
 				t.Fatalf("incomplete %s retrieval projection was silently accepted", name)
 			}
 		})
@@ -97,14 +149,14 @@ func TestRepositoryEvidenceCapsulesRejectBeforeUnboundedProjection(t *testing.T)
 			ID: string(rune('a' + index)), Source: "bounded", SourceSHA256: strings.Repeat("a", 64),
 		}
 	}
-	if _, err := repositoryEvidenceCapsules(repositoryretrieval.EvidencePack{ID: "pack", Symbols: tooMany}); err == nil {
+	if _, err := repositoryEvidenceCapsules(repositoryretrieval.EvidencePack{ID: "pack", Symbols: tooMany}, assemblyline.ArtifactIdentityProvenance{}); err == nil {
 		t.Fatal("unbounded symbol collection was copied and projected")
 	}
 	oversized := repositoryretrieval.EvidencePack{ID: "pack", Symbols: []repositoryretrieval.EvidenceSymbol{{
 		ID: "symbol", Source: strings.Repeat("x", maxObjectiveRepositoryEvidenceTextBytes+1),
 		SourceSHA256: strings.Repeat("a", 64),
 	}}}
-	if _, err := repositoryEvidenceCapsules(oversized); err == nil {
+	if _, err := repositoryEvidenceCapsules(oversized, assemblyline.ArtifactIdentityProvenance{}); err == nil {
 		t.Fatal("oversized symbol source was joined into a model-visible capsule")
 	}
 	oversizedPackID := repositoryretrieval.EvidencePack{
@@ -113,7 +165,7 @@ func TestRepositoryEvidenceCapsulesRejectBeforeUnboundedProjection(t *testing.T)
 			ID: "symbol", Source: "bounded", SourceSHA256: strings.Repeat("a", 64),
 		}},
 	}
-	if _, err := repositoryEvidenceCapsules(oversizedPackID); err == nil {
+	if _, err := repositoryEvidenceCapsules(oversizedPackID, assemblyline.ArtifactIdentityProvenance{}); err == nil {
 		t.Fatal("oversized provenance identity was concatenated before rejection")
 	}
 }

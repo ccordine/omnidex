@@ -4,11 +4,13 @@ import (
 	"context"
 	"errors"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
 	"github.com/gryph/omnidex/internal/model"
+	"github.com/gryph/omnidex/internal/modelcontext"
 	"github.com/gryph/omnidex/internal/webresearch"
 )
 
@@ -17,6 +19,44 @@ type scriptedObjectiveKindStation struct {
 	calls    int
 	input    assemblyline.ConversationObjectiveKindInput
 	err      error
+}
+
+func TestObjectiveTurnProjectsKnownArtifactBeforeClassificationAndRestoresAcceptedAnswer(t *testing.T) {
+	t.Parallel()
+	provenance, err := modelcontext.NewArtifactIdentityProvenance([]string{
+		"internal/private/owner.go",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	kind := &scriptedObjectiveKindStation{decision: assemblyline.ConversationObjectiveKindDecision{
+		Schema: assemblyline.ConversationObjectiveKindSchemaV1,
+		Kind:   assemblyline.ObjectiveKindAnswer,
+	}}
+	conversation := &scriptedObjectiveConversationStation{
+		text: "ARTIFACT_1 owns the behavior.",
+	}
+	result, err := runObjectiveTurn(context.Background(), model.Job{
+		ID: 4101, Pipeline: model.PipelineChat,
+		Instruction: "Explain owner.go.", Metadata: objectiveAssistantMetadata(),
+	}, scriptedConversationCandidateProvider{}, emptyContextSieveStation(), kind,
+		conversation, &scriptedObjectiveAnswerStation{}, objectiveWorkflows{
+			ModelPathProvenance: provenance,
+		})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for label, value := range map[string]string{
+		"kind":   kind.input.ExactInstruction,
+		"answer": conversation.input.ExactInstruction,
+	} {
+		if strings.Contains(value, "owner.go") || value != "Explain ARTIFACT_1." {
+			t.Fatalf("%s received unprojected instruction %q", label, value)
+		}
+	}
+	if result.Output != "internal/private/owner.go owns the behavior." {
+		t.Fatalf("restored answer=%q", result.Output)
+	}
 }
 
 func (station *scriptedObjectiveKindStation) Classify(
@@ -69,25 +109,6 @@ func (station *scriptedObjectiveAnswerStation) Answer(
 	}, objectiveStationReceipt{Calls: 1}, station.err
 }
 
-func (station *scriptedObjectiveAnswerStation) Review(
-	_ context.Context,
-	_ assemblyline.RepositoryGroundedReviewInput,
-) (assemblyline.RepositoryGroundedReviewDecision, objectiveStationReceipt, error) {
-	return assemblyline.RepositoryGroundedReviewDecision{
-		Schema:  assemblyline.RepositoryGroundedReviewSchemaV1,
-		Outcome: assemblyline.RepositoryGroundedReviewNone,
-	}, objectiveStationReceipt{Calls: 1}, station.err
-}
-
-func (station *scriptedObjectiveAnswerStation) Correct(
-	_ context.Context,
-	_ assemblyline.RepositoryGroundedCorrectionInput,
-) (assemblyline.RepositoryGroundedCorrectionDecision, objectiveStationReceipt, error) {
-	return assemblyline.RepositoryGroundedCorrectionDecision{}, objectiveStationReceipt{}, errors.New(
-		"unexpected repository grounded correction",
-	)
-}
-
 func TestObjectiveTurnPreservesExactAuthorityAndCodeOwnsCompletion(t *testing.T) {
 	exact := "  Explain this behavior.  \n"
 	kind := &scriptedObjectiveKindStation{decision: assemblyline.ConversationObjectiveKindDecision{
@@ -110,7 +131,7 @@ func TestObjectiveTurnPreservesExactAuthorityAndCodeOwnsCompletion(t *testing.T)
 	if answer.calls != 0 {
 		t.Fatalf("ungrounded answer invoked grounded station %d times", answer.calls)
 	}
-	if !result.Complete || result.Kind != assemblyline.ObjectiveKindAnswer || result.ModelCalls != 3 {
+	if !result.Complete || result.Kind != assemblyline.ObjectiveKindAnswer || result.ModelCalls != 2 {
 		t.Fatalf("result=%#v", result)
 	}
 	if result.ObjectiveID == "" || result.RequirementID == "" || result.Output != "A bounded answer." {
@@ -137,7 +158,7 @@ func TestObjectiveTurnMapsWorkspaceFactToCodeOwnedMutation(t *testing.T) {
 	if got.Instruction != exact || got.JobID != 42 {
 		t.Fatalf("mutation authority=%#v", got)
 	}
-	if answer.calls != 0 || !result.Complete || result.ModelCalls != 2 {
+	if answer.calls != 0 || !result.Complete || result.ModelCalls != 1 {
 		t.Fatalf("answer calls=%d result=%#v", answer.calls, result)
 	}
 }
@@ -167,7 +188,7 @@ func TestObjectiveTurnConsumesOneCodeOwnedExternalWorkflowWithoutRestatingIt(t *
 	if answer.calls != 0 {
 		t.Fatalf("external synthesis was restated by grounded-answer station %d times", answer.calls)
 	}
-	if !result.Complete || result.Output != rendered || result.ModelCalls != 4 ||
+	if !result.Complete || result.Output != rendered || result.ModelCalls != 3 ||
 		!reflect.DeepEqual(result.Citations, []objectiveEvidence{evidence}) {
 		t.Fatalf("result=%#v", result)
 	}
@@ -266,25 +287,6 @@ func (*mutatingObjectiveAnswerStation) Answer(
 	}, objectiveStationReceipt{Calls: 1}, nil
 }
 
-func (*mutatingObjectiveAnswerStation) Review(
-	_ context.Context,
-	_ assemblyline.RepositoryGroundedReviewInput,
-) (assemblyline.RepositoryGroundedReviewDecision, objectiveStationReceipt, error) {
-	return assemblyline.RepositoryGroundedReviewDecision{
-		Schema:  assemblyline.RepositoryGroundedReviewSchemaV1,
-		Outcome: assemblyline.RepositoryGroundedReviewNone,
-	}, objectiveStationReceipt{Calls: 1}, nil
-}
-
-func (*mutatingObjectiveAnswerStation) Correct(
-	_ context.Context,
-	_ assemblyline.RepositoryGroundedCorrectionInput,
-) (assemblyline.RepositoryGroundedCorrectionDecision, objectiveStationReceipt, error) {
-	return assemblyline.RepositoryGroundedCorrectionDecision{}, objectiveStationReceipt{}, errors.New(
-		"unexpected repository grounded correction",
-	)
-}
-
 func mustObjectiveEvidence(
 	t *testing.T,
 	id, text, sourceType, sourceRef string,
@@ -296,6 +298,8 @@ func mustObjectiveEvidence(
 	}
 	if sourceType == "web_document" {
 		item.ObservedAt = time.Date(2026, time.January, 2, 3, 4, 5, 0, time.UTC)
+	} else if sourceType == "repository_symbol" || sourceType == "repository_relation" {
+		item.SelectionText = text
 	}
 	return item
 }

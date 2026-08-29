@@ -7,11 +7,9 @@ import (
 
 func TestApplicationServiceEndpointRequirementIsOneTaskLocalBlindEnum(t *testing.T) {
 	t.Parallel()
-	workloadInput, frozen := applicationTaskAuthorityProjectionFixture(t)
+	specification, frozen := applicationTaskAuthorityProjectionFixture(t)
 	task := frozen.Tasks[0]
-	authority, err := ProjectApplicationTaskRuntimeAuthority(
-		workloadInput, frozen, task.ID,
-	)
+	authority, err := ProjectApplicationTaskRuntimeAuthority(frozen, task.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -32,7 +30,8 @@ func TestApplicationServiceEndpointRequirementIsOneTaskLocalBlindEnum(t *testing
 	}
 	envelope := prompt
 	for _, required := range []string{
-		workloadInput.ProductQuote, task.RequirementQuote, task.Objective,
+		specification.ProductQuote, task.RequirementQuote,
+		"PRODUCT CONTEXT:", "EXACT ENDPOINT REQUIREMENT:",
 		string(ApplicationServiceEndpointRequired), string(ApplicationServiceSupportOnly),
 	} {
 		if !strings.Contains(envelope, required) {
@@ -41,9 +40,10 @@ func TestApplicationServiceEndpointRequirementIsOneTaskLocalBlindEnum(t *testing
 	}
 	for _, forbidden := range []string{
 		task.ID, task.RequirementID, `"task_id"`, `"requirement_id"`,
-		task.AcceptanceCriteria[0], `"acceptance_criteria"`,
+		`"objective"`, `"required_behaviors"`, `"acceptance_criteria"`,
 		`"path"`, `"file"`, `"command"`, `"tool"`, `"workflow"`,
 		`"route_template"`, `"method"`, `"handler"`, `"source"`,
+		"accepted local", "this task", "TASK", "AUTHORITY_JSON",
 	} {
 		if strings.Contains(envelope, forbidden) {
 			t.Fatalf("endpoint requirement envelope exposed forbidden authority %q", forbidden)
@@ -70,20 +70,18 @@ func TestApplicationServiceEndpointRequirementIsOneTaskLocalBlindEnum(t *testing
 func TestApplicationServiceEndpointRequirementRejectsInvalidAuthorityAndWire(t *testing.T) {
 	t.Parallel()
 	validInput := ApplicationServiceEndpointRequirementInput{
-		ProductContext:    "inventory service",
-		RequirementQuote:  "Records are normalized before storage.",
-		Objective:         "Normalize accepted record values.",
-		RequiredBehaviors: []string{"Normalize each accepted record value."},
+		ProductContext:   "inventory service",
+		RequirementQuote: "Records are normalized before storage.",
 	}
 	for name, mutate := range map[string]func(*ApplicationServiceEndpointRequirementInput){
 		"blank product": func(input *ApplicationServiceEndpointRequirementInput) {
 			input.ProductContext = ""
 		},
-		"multiline objective": func(input *ApplicationServiceEndpointRequirementInput) {
-			input.Objective = "Normalize\nrecords."
+		"path-bearing requirement": func(input *ApplicationServiceEndpointRequirementInput) {
+			input.RequirementQuote = "Normalize records in src/records.go."
 		},
-		"missing behavior": func(input *ApplicationServiceEndpointRequirementInput) {
-			input.RequiredBehaviors = nil
+		"missing requirement": func(input *ApplicationServiceEndpointRequirementInput) {
+			input.RequirementQuote = ""
 		},
 	} {
 		t.Run(name, func(t *testing.T) {

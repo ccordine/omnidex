@@ -56,9 +56,16 @@ func TestPortableResponseTransportRejectsRetiredAggregateKinds(t *testing.T) {
 		"repository_requirements",
 		"repository_change_surface",
 		"repository_search_term",
+		"repository_search_anchor_coverage",
+		"repository_search_anchor",
 		"repository_evidence_relevance",
 		"repository_grounded_review",
+		"repository_grounded_issue_detail",
+		"repository_grounded_issue_kind",
+		"repository_grounded_correction",
 		"context_search_terms",
+		"context_search_term_coverage",
+		"context_search_term",
 		"context_relevance",
 		"roleplay_canon_extraction",
 		"roleplay_grounded_response",
@@ -68,7 +75,13 @@ func TestPortableResponseTransportRejectsRetiredAggregateKinds(t *testing.T) {
 		"web_search_terms",
 		"web_relevance",
 		"web_grounded_synthesis",
+		"web_grounded_synthesis_correction",
 		"web_claim_evidence_review",
+		"web_review_claim_coverage",
+		"web_review_claim",
+		"web_review_claim_verdict",
+		"web_review_issue_evidence_relation",
+		"web_review_issue_detail",
 	} {
 		if validWorkKind(retired) {
 			t.Fatalf("retired aggregate work kind %q remains registered", retired)
@@ -90,27 +103,16 @@ func TestPortableSemanticLeafKindsAreRegistered(t *testing.T) {
 		WorkApplicationProductContext,
 		WorkApplicationRequirementCoverage,
 		WorkApplicationRequirement,
-		WorkApplicationJobObjective,
-		WorkApplicationBehaviorCoverage,
-		WorkApplicationBehavior,
-		WorkApplicationCriterionCoverage,
-		WorkApplicationCriterion,
-		WorkApplicationStateFieldCoverage,
-		WorkApplicationStateFieldName,
-		WorkApplicationStateFieldKind,
-		WorkApplicationRecordFieldCoverage,
-		WorkApplicationRecordFieldName,
-		WorkApplicationRecordFieldKind,
+		WorkApplicationServiceEndpointExposure,
+		WorkApplicationServiceEndpointMethod,
+		WorkApplicationServiceEndpointRouteTemplate,
+		WorkApplicationServiceEndpointRequestMedia,
+		WorkApplicationServiceEndpointResponseMedia,
+		WorkApplicationServiceEndpointSuccessStatus,
 		WorkRepositoryRequirementCoverage,
 		WorkRepositoryRequirement,
-		WorkRepositorySearchAnchorCoverage,
-		WorkRepositorySearchAnchor,
 		WorkRepositoryChangeOwner,
 		WorkRepositoryEvidenceRelevanceLeaf,
-		WorkRepositoryGroundedIssueDetail,
-		WorkRepositoryGroundedIssueKind,
-		WorkContextSearchTermCoverage,
-		WorkContextSearchTerm,
 		WorkContextRelevanceSelection,
 		WorkRoleplayCanonFactCoverage,
 		WorkRoleplayCanonFact,
@@ -146,17 +148,10 @@ func TestPortableSemanticLeafKindsAreRegistered(t *testing.T) {
 		WorkDatabaseQueryOrderCoverage,
 		WorkDatabaseQueryOrderProjection,
 		WorkDatabaseQueryOrderDirection,
-		WorkWebSearchTermCoverage,
-		WorkWebSearchTerm,
 		WorkWebRelevanceRelation,
 		WorkWebSynthesisParagraphCoverage,
 		WorkWebSynthesisParagraph,
 		WorkWebSynthesisEvidenceRelation,
-		WorkWebReviewClaimCoverage,
-		WorkWebReviewClaim,
-		WorkWebReviewClaimVerdict,
-		WorkWebReviewIssueEvidenceRelation,
-		WorkWebReviewIssueDetail,
 	} {
 		if _, ok := registered[kind]; !ok {
 			t.Fatalf("semantic leaf work kind %q is absent from the registry", kind)
@@ -170,7 +165,7 @@ func TestPortableSemanticLeafKindsAreRegistered(t *testing.T) {
 
 func TestNewPortableJobsUseRawTransportIdentity(t *testing.T) {
 	const request = "Build a durable service."
-	context, err := BootstrapApplicationContext(request, ApplicationWorkspaceEmpty, nil)
+	context, err := BootstrapApplicationContext(request, ApplicationWorkspaceEmpty)
 	if err != nil {
 		t.Fatal(err)
 	}

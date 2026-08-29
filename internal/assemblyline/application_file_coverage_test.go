@@ -64,20 +64,14 @@ func TestApplicationFileCoveragePlanRejectsUnknownDuplicateOrUncoveredAuthority(
 
 func applicationFileCoverageWorkload(t *testing.T) FrozenApplicationWorkload {
 	t.Helper()
-	input := ApplicationWorkloadDraftInput{
+	specification := ApplicationSpecification{
 		Surface: ApplicationSurfaceCommandLine, ProductQuote: "record command",
 		Requirements: []Requirement{
 			{ID: "requirement_001", SourceQuote: "create records"},
 			{ID: "requirement_002", SourceQuote: "list records"},
 		},
 	}
-	workload, err := FreezeApplicationWorkload(input, ApplicationWorkloadDraft{
-		Schema: ApplicationWorkloadDraftSchemaV1,
-		Tasks: []ApplicationWorkloadTaskDraft{
-			{RequirementID: "requirement_001", Objective: "Create records.", RequiredBehaviors: []string{"Accept record input."}, AcceptanceCriteria: []string{"A record is accepted."}},
-			{RequirementID: "requirement_002", Objective: "List records.", RequiredBehaviors: []string{"Render records."}, AcceptanceCriteria: []string{"Records are visible."}},
-		},
-	})
+	workload, err := FreezeApplicationWorkload(specification)
 	if err != nil {
 		t.Fatal(err)
 	}

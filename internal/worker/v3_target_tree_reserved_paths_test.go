@@ -60,7 +60,7 @@ func TestMechanicallyProjectedStackGetsNonNilPathAuthority(t *testing.T) {
 	}
 }
 
-func TestInferredProjectStacksRegisterNormalizedCodeOwnedTargetPaths(t *testing.T) {
+func TestCompleteProjectedStacksRegisterNormalizedCodeOwnedTargetPaths(t *testing.T) {
 	want := map[string][]string{
 		genericTypeScriptBrowserAdapter: {
 			"src/App.test.tsx", "src/App.tsx", "src/main.tsx",
@@ -72,12 +72,12 @@ func TestInferredProjectStacksRegisterNormalizedCodeOwnedTargetPaths(t *testing.
 	}
 	seen := make(map[string]struct{}, len(want))
 	for _, stack := range registeredDirectCodingProjectStacks() {
-		if stack.ProjectFocusedTargetTree != nil {
+		if stack.ProjectCompleteTargetTree == nil {
 			continue
 		}
 		expected, exists := want[stack.ID]
 		if !exists {
-			t.Fatalf("inferred project stack %s lacks an expected reservation contract", stack.ID)
+			t.Fatalf("complete-projected stack %s lacks an expected reservation contract", stack.ID)
 		}
 		if !reflect.DeepEqual(stack.TargetTreeReservedPaths, expected) {
 			t.Fatalf("stack %s reservations=%v want=%v", stack.ID, stack.TargetTreeReservedPaths, expected)
@@ -100,7 +100,38 @@ func TestInferredProjectStacksRegisterNormalizedCodeOwnedTargetPaths(t *testing.
 		seen[stack.ID] = struct{}{}
 	}
 	if len(seen) != len(want) {
-		t.Fatalf("inferred stack reservation coverage=%d want=%d", len(seen), len(want))
+		t.Fatalf("complete-projected stack reservation coverage=%d want=%d", len(seen), len(want))
+	}
+}
+
+func TestEveryRegisteredStackHasOneMechanicalTargetTreeProjector(t *testing.T) {
+	for _, stack := range registeredDirectCodingProjectStacks() {
+		complete := stack.ProjectCompleteTargetTree != nil
+		focused := stack.ProjectFocusedTargetTree != nil
+		if complete == focused {
+			t.Fatalf(
+				"stack %s complete/focused target-tree projectors=%t/%t want exactly one",
+				stack.ID, complete, focused,
+			)
+		}
+	}
+}
+
+func TestTargetTreeRegistryRejectsCompetingMechanicalProjectors(t *testing.T) {
+	stacks := registeredDirectCodingProjectStacks()
+	for index := range stacks {
+		if stacks[index].ID == genericTypeScriptBrowserAdapter {
+			stacks[index].ProjectFocusedTargetTree = projectGoCommandLineFocusedTargetTree
+		}
+	}
+	err := validateDirectCodingArtifactRegistriesFrom(
+		registeredDirectCodingArtifactAdapters(),
+		registeredDirectCodingProjectVersionProfiles(),
+		stacks,
+		registeredDirectCodingParserQualifications(),
+	)
+	if err == nil || !strings.Contains(err.Error(), "both complete and focused") {
+		t.Fatalf("competing target-tree projector error=%v", err)
 	}
 }
 

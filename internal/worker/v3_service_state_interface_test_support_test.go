@@ -22,7 +22,7 @@ func bindTestServiceStateInterfaces(
 	plan.InterfaceByTask = make(map[string]string)
 	for _, component := range components {
 		result := assemblyline.ApplicationServiceStateInterfaceResult{
-			Schema: assemblyline.ApplicationServiceStateInterfaceSchemaV1,
+			Schema: assemblyline.ApplicationServiceStateInterfaceSchemaV2,
 			Fields: append([]assemblyline.ApplicationServiceStateField(nil), fields...),
 		}
 		if err := result.ValidateFor(component.Input); err != nil {
@@ -41,7 +41,16 @@ func bindTestServiceStateInterfaces(
 
 func testIntegerServiceStateField(name string) []assemblyline.ApplicationServiceStateField {
 	return []assemblyline.ApplicationServiceStateField{{
-		Name: name, Kind: assemblyline.ApplicationServiceStateInteger,
+		Name: "state_001", Purpose: "The " + name + " value.",
+		Kind:         assemblyline.ApplicationServiceStateInteger,
+		RecordFields: []assemblyline.ApplicationServiceStateRecordField{},
+	}}
+}
+
+func testStringServiceStateField(name string) []assemblyline.ApplicationServiceStateField {
+	return []assemblyline.ApplicationServiceStateField{{
+		Name: "state_001", Purpose: "The " + name + " value.",
+		Kind:         assemblyline.ApplicationServiceStateString,
 		RecordFields: []assemblyline.ApplicationServiceStateRecordField{},
 	}}
 }

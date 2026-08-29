@@ -3,12 +3,14 @@ package queue
 import (
 	"fmt"
 	"strings"
+	"unicode/utf8"
+
+	"github.com/gryph/omnidex/internal/model"
 )
 
 const (
-	maxContextSearchTerms     = 3
-	maxContextSearchTermBytes = 256
-	maxContextSearchRecords   = 24
+	maxContextSearchQueries = 1
+	maxContextSearchRecords = 24
 )
 
 // ContextSearchRecord is an exact server-owned record returned by a fixed
@@ -22,19 +24,17 @@ type ContextSearchRecord struct {
 }
 
 func validateContextSearchRequest(terms []string, limit int) error {
-	if len(terms) > maxContextSearchTerms {
-		return fmt.Errorf("context search exceeds the %d-term bound", maxContextSearchTerms)
+	if len(terms) > maxContextSearchQueries {
+		return fmt.Errorf("context search exceeds the %d-query bound", maxContextSearchQueries)
 	}
-	seen := make(map[string]struct{}, len(terms))
 	for index, term := range terms {
-		if term == "" || term != strings.TrimSpace(term) || len(term) > maxContextSearchTermBytes {
-			return fmt.Errorf("context search term %d must contain 1..%d trimmed bytes", index, maxContextSearchTermBytes)
+		if strings.TrimSpace(term) == "" || len(term) > model.MaxFreeFormTurnBytes ||
+			!utf8.ValidString(term) || strings.ContainsRune(term, '\x00') {
+			return fmt.Errorf(
+				"context search query %d must contain 1..%d valid UTF-8 bytes without NUL",
+				index, model.MaxFreeFormTurnBytes,
+			)
 		}
-		identity := strings.ToLower(term)
-		if _, duplicate := seen[identity]; duplicate {
-			return fmt.Errorf("context search term %q is duplicated", term)
-		}
-		seen[identity] = struct{}{}
 	}
 	if limit < 1 || limit > maxContextSearchRecords {
 		return fmt.Errorf("context search record limit must be within 1..%d", maxContextSearchRecords)

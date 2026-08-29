@@ -11,7 +11,7 @@ func assertGenerationDerivedOwnership(
 	t *testing.T,
 	ctx context.Context,
 	tx pgx.Tx,
-	firstJob, secondJob, firstStep, secondStep, llmID int64,
+	firstJob, secondJob, secondStep, llmID int64,
 ) {
 	t.Helper()
 	if _, err := tx.Exec(ctx, `
@@ -38,56 +38,6 @@ func assertGenerationDerivedOwnership(
 		INSERT INTO evidence (job_id, step_id, kind, payload_json)
 		VALUES ($1, $2, 'cross-job', '{}'::jsonb)
 	`, firstJob, secondStep)
-
-	var evidenceID int64
-	if err := tx.QueryRow(ctx, `
-		INSERT INTO evidence (job_id, step_id, kind, payload_json)
-		VALUES ($1, $2, 'verification', '{}'::jsonb)
-		RETURNING id
-	`, firstJob, firstStep).Scan(&evidenceID); err != nil {
-		t.Fatal(err)
-	}
-	var firstClaimID, secondClaimID int64
-	if err := tx.QueryRow(ctx, `
-		INSERT INTO claims (job_id, step_id, text, normalized_text)
-		VALUES ($1, $2, 'first claim', 'first claim')
-		RETURNING id
-	`, firstJob, firstStep).Scan(&firstClaimID); err != nil {
-		t.Fatal(err)
-	}
-	if err := tx.QueryRow(ctx, `
-		INSERT INTO claims (job_id, step_id, text, normalized_text)
-		VALUES ($1, $2, 'second claim', 'second claim')
-		RETURNING id
-	`, secondJob, secondStep).Scan(&secondClaimID); err != nil {
-		t.Fatal(err)
-	}
-	expectGenerationDatabaseFailure(t, ctx, tx, `
-		INSERT INTO claims (job_id, step_id, text, normalized_text)
-		VALUES ($1, $2, 'cross job', 'cross job')
-	`, firstJob, secondStep)
-	expectGenerationDatabaseFailure(t, ctx, tx, `
-		INSERT INTO claims (job_id, step_id, text, normalized_text, status)
-		VALUES ($1, $2, 'bad status', 'bad status', 'unknown')
-	`, firstJob, firstStep)
-	expectGenerationDatabaseFailure(t, ctx, tx, `
-		INSERT INTO claims (job_id, step_id, text, normalized_text, confidence)
-		VALUES ($1, $2, 'bad confidence', 'bad confidence', 2)
-	`, firstJob, firstStep)
-	if _, err := tx.Exec(ctx, `
-		INSERT INTO claim_support (job_id, claim_id, evidence_id, support_score, rationale)
-		VALUES ($1, $2, $3, 1, 'Exact support evidence.')
-	`, firstJob, firstClaimID, evidenceID); err != nil {
-		t.Fatalf("insert same-job claim support: %v", err)
-	}
-	expectGenerationDatabaseFailure(t, ctx, tx, `
-		INSERT INTO claim_support (job_id, claim_id, evidence_id, support_score, rationale)
-		VALUES ($1, $2, $3, 1, 'Cross-job evidence.')
-	`, firstJob, secondClaimID, evidenceID)
-	expectGenerationDatabaseFailure(t, ctx, tx, `
-		INSERT INTO claim_support (job_id, claim_id, evidence_id, support_score, rationale)
-		VALUES ($1, $2, $3, 2, 'Invalid score.')
-	`, firstJob, firstClaimID, evidenceID)
 
 	if llmID < 1 {
 		t.Fatal("historical LLM evidence fixture is missing")

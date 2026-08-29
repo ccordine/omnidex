@@ -93,7 +93,8 @@ func TestResolveRoleplayUserOngoingActionUsesOnlyExactTypedActionParts(t *testin
 		},
 	}
 	completion, calls, err := resolveRoleplayUserOngoingAction(
-		t.Context(), station, preparation,
+		t.Context(), station, preparation, preparation.UserTurn,
+		turnAuthority{ModelArtifactPaths: []string{}},
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -121,7 +122,8 @@ func TestResolveRoleplayUserOngoingActionSkipsDialogueWithoutStationCall(t *test
 		ExactText:        "[Message]\nGet below!",
 	}}
 	completion, calls, err := resolveRoleplayUserOngoingAction(
-		t.Context(), nil, preparation,
+		t.Context(), nil, preparation, preparation.UserTurn,
+		turnAuthority{ModelArtifactPaths: []string{}},
 	)
 	if err != nil || completion != nil || calls != 0 {
 		t.Fatalf("dialogue completion=%+v calls=%d err=%v", completion, calls, err)

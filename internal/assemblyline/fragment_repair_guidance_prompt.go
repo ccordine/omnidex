@@ -13,14 +13,11 @@ func BuildTypeScriptRepairGuidancePrompt(
 	if err := input.validate(); err != nil {
 		return "", err
 	}
-	request := "Return one self-contained imperative source-transformation instruction that resolves EXACT_VALIDATION_FAILURE in the exact mutable source shown below."
-	if input.PriorRejection != nil {
-		request = "Return one replacement source-transformation instruction that changes the exact mutable source and resolves EXACT_VALIDATION_FAILURE."
-	}
 	parts := []string{
-		request,
+		"Return one self-contained imperative source-transformation instruction that resolves EXACT_VALIDATION_FAILURE in the exact mutable source shown below.",
 		"Return only the raw imperative instruction with no JSON, quotes, label, Markdown wrapper, or commentary.",
 		"The instruction must be complete because only it and the exact mutable source will be available when it is applied. Name every required expression change and preservation constraint. Resolve only the observed failure.",
+		"Name at least one concrete source-byte change whose replacement bytes differ from the bytes being replaced. Never prescribe existing source bytes as their own replacement or describe a byte-identical before/after transformation.",
 		"Constrain the instruction to replacing only the exact mutable source. Preserve REQUIRED_DECLARATION_SIGNATURE exactly. Do not require imports, package/module declarations, sibling declarations, or any other change outside that source.",
 	}
 	if input.CurrentDeclaration != "" {
@@ -46,32 +43,6 @@ func BuildTypeScriptRepairGuidancePrompt(
 		parts = append(parts, "EXACT_MUTABLE_DECLARATION_JSON:\n"+encoded)
 	} else if err := appendTypeScriptRepairRegionPrompt(&parts, input.RepairRegion); err != nil {
 		return "", err
-	}
-	if input.PriorRejection != nil {
-		encoded, err := marshalUntrustedPromptString(input.PriorRejection.Instruction)
-		if err != nil {
-			return "", fmt.Errorf("encode rejected repair instruction: %w", err)
-		}
-		parts = append(parts, "REJECTED_INSTRUCTION_JSON:\n"+encoded)
-		switch input.PriorRejection.Failure {
-		case TypeScriptRepairGuidanceNoSourceChange:
-			parts = append(parts,
-				"EXACT_INSTRUCTION_FAILURE:\nThe rejected instruction produced a byte-identical replacement for the exact mutable source. It made no source change.",
-				"REQUIRED_INSTRUCTION_DELTA:\nName a different replacement expression or operation. The current expression cannot be its own replacement.",
-			)
-		case TypeScriptRepairGuidanceRepeatedInstruction:
-			parts = append(parts,
-				"EXACT_INSTRUCTION_FAILURE:\nThe candidate repeated REJECTED_INSTRUCTION byte-for-byte after that instruction was already proven to make no source change.",
-				"REQUIRED_INSTRUCTION_DELTA:\nReturn a different instruction naming a concrete source change that resolves EXACT_VALIDATION_FAILURE.",
-			)
-		case TypeScriptRepairGuidanceInvalidSource:
-			parts = append(parts,
-				"EXACT_INSTRUCTION_FAILURE:\nThe rejected instruction caused the source executor to return a replacement outside the code-owned declaration, signature, or identifier boundary.",
-				"REQUIRED_INSTRUCTION_DELTA:\nReturn a different instruction whose complete change stays inside the exact mutable source and uses only the exhaustive authority shown above.",
-			)
-		default:
-			return "", fmt.Errorf("render unsupported repair-guidance rejection %q", input.PriorRejection.Failure)
-		}
 	}
 	parts = append(parts, "EXACT_VALIDATION_FAILURE:\n"+input.Diagnostic)
 	prompt := strings.Join(parts, "\n\n")

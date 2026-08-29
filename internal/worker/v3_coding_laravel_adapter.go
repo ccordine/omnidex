@@ -17,7 +17,7 @@ func registeredLaravelProjectStack() directCodingProjectStack {
 			assemblyline.ApplicationSurfaceService,
 		},
 		ConstraintDescription: "Laravel 13 with server rendering, PostgreSQL, NGINX, and Docker Compose for an HTTP service",
-		TreeDescription:       "exactly one src/FeatureNNN.php bounded workload function and one matching tests/FeatureNNNTest.php verifier per accepted behavior",
+		TreeDescription:       "exactly one numbered PHP bounded-workload basename under a directory named src and one matching numbered verifier basename under a directory named tests per accepted behavior",
 		ArtifactAdapterIDs: []string{
 			"composer_lock", "css_tailwind", "dockerfile", "environment_example", "nginx", "php", "php_executable",
 			"plain_text", "structured_json",
@@ -101,7 +101,7 @@ func compileGenericLaravelServiceBlueprint(
 			"Laravel endpoint product context differs from accepted specification",
 		)
 	}
-	if err := endpoints.ValidateFor(applicationWorkloadInput(specification), workload); err != nil {
+	if err := endpoints.ValidateFor(workload); err != nil {
 		return assemblyline.SourceBlueprint{}, nil, fmt.Errorf("validate Laravel endpoints: %w", err)
 	}
 	if err := validatePHPServiceEndpointSupport(endpoints); err != nil {
@@ -110,7 +110,7 @@ func compileGenericLaravelServiceBlueprint(
 	if err := validatePHPServiceCoverage(target, workload, coverage); err != nil {
 		return assemblyline.SourceBlueprint{}, nil, err
 	}
-	contexts, err := directCodingApplicationTaskContexts(applicationWorkloadInput(specification), workload)
+	contexts, err := directCodingApplicationTaskContexts(workload)
 	if err != nil {
 		return assemblyline.SourceBlueprint{}, nil, err
 	}

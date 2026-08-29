@@ -82,6 +82,10 @@ func (r *Repository) RecordContextShrinkMetric(ctx context.Context, record Conte
 	if record.RawChars < 0 || record.ShrunkChars < 0 {
 		return fmt.Errorf("context shrink char counts must be non-negative")
 	}
+	metadataJSON, err := encodeTelemetryJSON("context shrink metadata", record.Metadata)
+	if err != nil {
+		return err
+	}
 	created := record.CreatedAt
 	if created.IsZero() {
 		created = time.Now().UTC()
@@ -90,7 +94,7 @@ func (r *Repository) RecordContextShrinkMetric(ctx context.Context, record Conte
 	if record.ProjectID > 0 {
 		projectID = &record.ProjectID
 	}
-	_, err := r.pool.Exec(ctx, `
+	_, err = r.pool.Exec(ctx, `
 		INSERT INTO omni_context_shrink_metrics (
 			source, card_id, project_id, raw_chars, shrunk_chars, saved_pct,
 			chat_messages, selected_chunks, metadata, created_at
@@ -98,7 +102,7 @@ func (r *Repository) RecordContextShrinkMetric(ctx context.Context, record Conte
 		VALUES ($1, NULLIF($2,''), $3, $4, $5, $6, $7, $8, $9, $10)
 	`, source, strings.TrimSpace(record.CardID), projectID, record.RawChars, record.ShrunkChars,
 		contextShrinkSavedPct(record.RawChars, record.ShrunkChars),
-		record.ChatMessages, record.SelectedChunks, jsonParam(record.Metadata), created)
+		record.ChatMessages, record.SelectedChunks, metadataJSON, created)
 	return err
 }
 

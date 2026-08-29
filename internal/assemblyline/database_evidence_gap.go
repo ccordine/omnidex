@@ -12,16 +12,23 @@ const (
 )
 
 type DatabaseEvidenceGapInput struct {
-	RequirementID    string                    `json:"requirement_id"`
-	ExactRequirement string                    `json:"exact_requirement"`
-	Context          ObjectiveContext          `json:"objective_context"`
-	Evidence         []GroundedEvidenceCapsule `json:"evidence"`
+	RequirementID      string                    `json:"requirement_id"`
+	ExactRequirement   string                    `json:"exact_requirement"`
+	Context            ObjectiveContext          `json:"objective_context"`
+	Evidence           []GroundedEvidenceCapsule `json:"evidence"`
+	KnownArtifactPaths []string                  `json:"known_artifact_paths"`
 }
 
 type DatabaseEvidenceGapDecision struct {
 	Schema             string  `json:"schema"`
 	RequirementID      string  `json:"requirement_id"`
 	MissingInformation *string `json:"missing_information"`
+}
+
+type databaseEvidenceGapProjection struct {
+	ExactRequirement string           `json:"exact_requirement"`
+	Context          ObjectiveContext `json:"objective_context"`
+	Evidence         []string         `json:"evidence"`
 }
 
 func NewDatabaseEvidenceGapJob(input DatabaseEvidenceGapInput) (PortableJob, error) {
@@ -32,6 +39,7 @@ func (input DatabaseEvidenceGapInput) validate() error {
 	return (GroundedAnswerInput{
 		RequirementID: input.RequirementID, ExactRequirement: input.ExactRequirement,
 		Context: input.Context, Evidence: input.Evidence,
+		KnownArtifactPaths: append([]string{}, input.KnownArtifactPaths...),
 	}).validate()
 }
 
@@ -94,7 +102,18 @@ func BuildDatabaseEvidenceGapPrompt(input DatabaseEvidenceGapInput) (string, err
 	if err := input.validate(); err != nil {
 		return "", err
 	}
-	projection, err := marshalObjectiveContextInputForModel(input, input.Context)
+	evidence := make([]string, len(input.Evidence))
+	for index, capsule := range input.Evidence {
+		evidence[index] = capsule.Text
+	}
+	projection, err := marshalObjectiveContextInputForModel(
+		databaseEvidenceGapProjection{
+			ExactRequirement: input.ExactRequirement,
+			Context:          input.Context,
+			Evidence:         evidence,
+		},
+		input.Context,
+	)
 	if err != nil {
 		return "", fmt.Errorf("encode database evidence gap projection: %w", err)
 	}

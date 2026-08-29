@@ -61,7 +61,7 @@ func validateDirectCodingRustAcceptance(
 	if _, err := assemblyline.ValidateRustFragment(ref.Block.Signature, source); err != nil {
 		return fmt.Errorf("Rust acceptance block %s: %w", ref.Block.ID, err)
 	}
-	requiredAssertions, err := directCodingAcceptanceCriterionCount(stage, ref)
+	requiredAssertions, err := directCodingAcceptanceObligationCount(stage, ref)
 	if err != nil {
 		return err
 	}
@@ -73,7 +73,7 @@ func validateDirectCodingRustAcceptance(
 	}
 	if !calledImplementation || assertions < requiredAssertions {
 		return fmt.Errorf(
-			"Rust acceptance block %s must bind %s's result using %s and prove all %d frozen criteria with distinct result-field assertions",
+			"Rust acceptance block %s must bind %s's result using %s and prove the accepted requirement with %d direct result-field assertion",
 			ref.Block.ID, implementationName, fixtureName, requiredAssertions,
 		)
 	}

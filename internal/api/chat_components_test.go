@@ -378,9 +378,7 @@ func TestChatMetricsAreOneServerComputedSummaryWithoutClientLists(t *testing.T) 
 			LiveRuns:     []queue.TelemetryRunSummary{{ID: "run-1"}},
 			StatusCounts: map[string]int{"completed": 3, "failed": 1},
 		},
-		Models:     []queue.TelemetryModelSummary{{Calls: 5, Failures: 1}},
-		Playbooks:  []queue.TelemetryPlaybookSummary{{Uses: 2}},
-		Benchmarks: []queue.TelemetryBenchmarkSummary{{Runs: 4}},
+		Models: []queue.TelemetryModelSummary{{Calls: 5, Failures: 1}},
 		Usage: queue.LLMContextUsageMetricsResponse{Summary: queue.LLMContextUsageSummary{
 			Requests: 7, AvgUtilization: 42.5, OverloadEvents: 0,
 		}},
@@ -392,7 +390,7 @@ func TestChatMetricsAreOneServerComputedSummaryWithoutClientLists(t *testing.T) 
 	}
 	for _, expected := range []string{
 		`data-recyclr-target="metrics-output"`, `Server-computed summaries`, `Live runs`, `>1</dd>`,
-		`Context utilization`, `42.5%`, `Failure events`, `Playbook uses`,
+		`Context utilization`, `42.5%`, `Failure events`,
 	} {
 		if !strings.Contains(bundle, expected) {
 			t.Errorf("metrics component lacks %q: %s", expected, bundle)

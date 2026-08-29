@@ -141,7 +141,7 @@ func summarizeChatRepositoryChange(event parsedChatStepEvent) (chatProgressKind,
 			return "", "", err
 		}
 		files, err := requireChatEventInteger(fields, "files", false)
-		return chatProgressReview, fmt.Sprintf("Staged an exact repository change across %d files", files), err
+		return chatProgressPreparation, fmt.Sprintf("Staged an exact repository change across %d files", files), err
 	}
 	fields, err := exactChatEventFields(event.Message, "contract", "files", "snapshot")
 	if event.Type == "repository_desired_state_verified" {
@@ -261,28 +261,20 @@ func summarizeChatPortableEvent(namespace, state, message string) (chatProgressK
 
 func chatStationLabel(subject string) (string, chatProgressKind) {
 	labels := map[string]string{
-		"context_search_terms":              "Context search concepts",
-		"context_relevance":                 "Context relevance",
-		"context_minification":              "Context minification",
-		"conversation_objective_kind":       "Objective classification",
-		"conversation_response":             "Response",
-		"grounded_answer":                   "Grounded answer",
-		"database_schema_selection":         "Database schema selection",
-		"database_query_intent":             "Database relational intent",
-		"database_evidence_gap":             "Database evidence gap",
-		"database_join_path_selection":      "Database relationship selection",
-		"repository_search_term":            "Repository search-term",
-		"repository_change_surface":         "Repository change-surface",
-		"repository_evidence_relevance":     "Repository relevance",
-		"repository_grounded_review":        "Repository grounded review",
-		"repository_grounded_correction":    "Repository grounded correction",
-		"web_search_terms":                  "Web search-term",
-		"web_relevance":                     "Web relevance",
-		"web_grounded_synthesis":            "Web grounded synthesis",
-		"web_grounded_synthesis_correction": "Web synthesis correction",
-		"web_claim_evidence_review":         "Web claim review",
-		"skill_selection":                   "Skill selection",
-		"response_correction":               "Response correction",
+		"context_relevance":             "Context relevance",
+		"context_minification":          "Context minification",
+		"conversation_objective_kind":   "Objective classification",
+		"conversation_response":         "Response",
+		"grounded_answer":               "Grounded answer",
+		"database_schema_selection":     "Database schema selection",
+		"database_query_intent":         "Database relational intent",
+		"database_evidence_gap":         "Database evidence gap",
+		"database_join_path_selection":  "Database relationship selection",
+		"repository_change_surface":     "Repository change-surface",
+		"repository_evidence_relevance": "Repository relevance",
+		"web_relevance":                 "Web relevance",
+		"web_grounded_synthesis":        "Web grounded synthesis",
+		"skill_selection":               "Skill selection",
 	}
 	label := labels[subject]
 	if label == "" {
@@ -291,13 +283,11 @@ func chatStationLabel(subject string) (string, chatProgressKind) {
 	}
 	category := chatProgressStation
 	switch subject {
-	case "context_search_terms", "context_relevance", "context_minification",
+	case "context_relevance", "context_minification",
 		"database_schema_selection", "database_evidence_gap",
-		"database_join_path_selection", "repository_search_term", "repository_evidence_relevance",
-		"web_search_terms", "web_relevance", "skill_selection":
+		"database_join_path_selection", "repository_evidence_relevance",
+		"web_relevance", "skill_selection":
 		category = chatProgressRetrieval
-	case "repository_grounded_review", "repository_grounded_correction", "web_claim_evidence_review", "response_correction":
-		category = chatProgressReview
 	}
 	return label, category
 }

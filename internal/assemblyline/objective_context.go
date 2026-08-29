@@ -7,14 +7,11 @@ import (
 	"fmt"
 	"strings"
 	"unicode/utf8"
-
-	"github.com/gryph/omnidex/internal/model"
 )
 
 const (
 	MaxMemoryContextCandidateAuthorities = 8
 	MaxMemoryContextCandidateBytes       = 6 * 1024
-	MaxSelectedMemoryProjectionBytes     = 1024
 	MaxObjectiveContextCapsules          = 1
 	MaxObjectiveReplanFeedbackBytes      = 2 * 1024
 	// MaxObjectiveContextAuthorityBytes is a coarse portable-payload safety
@@ -22,51 +19,6 @@ const (
 	// paging and staged reduction before this resource boundary is reached.
 	MaxObjectiveContextAuthorityBytes = 128 * 1024
 )
-
-// ObjectiveMemoryAuthority is an immutable capsule projected by code after
-// an ID-only selection from an exact project/channel-scoped candidate set.
-type ObjectiveMemoryAuthority struct {
-	MemoryID      int64            `json:"memory_id"`
-	Kind          model.MemoryKind `json:"kind"`
-	Content       string           `json:"content"`
-	ContentSHA256 string           `json:"content_sha256"`
-}
-
-// ValidateObjectiveMemoryAuthorities validates exact durable memory rows for
-// non-conversation consumers such as the coding bootstrap. These rows are not
-// fields of the model-visible ObjectiveContext projection.
-func ValidateObjectiveMemoryAuthorities(authorities []ObjectiveMemoryAuthority) error {
-	if len(authorities) > MaxMemoryContextCandidateAuthorities {
-		return fmt.Errorf("memory authority set exceeds the %d-authority bound", MaxMemoryContextCandidateAuthorities)
-	}
-	seen := make(map[int64]struct{}, len(authorities))
-	total := 0
-	for index, authority := range authorities {
-		if authority.MemoryID < 1 {
-			return fmt.Errorf("memory authority %d has invalid identity", index)
-		}
-		if _, duplicate := seen[authority.MemoryID]; duplicate {
-			return fmt.Errorf("memory authority %d is duplicated", authority.MemoryID)
-		}
-		seen[authority.MemoryID] = struct{}{}
-		if _, err := model.ParseMemoryKind(string(authority.Kind)); err != nil {
-			return fmt.Errorf("memory authority %d: %w", index, err)
-		}
-		if err := validateObjectiveContextText(
-			"memory content", authority.Content, model.MaxMemoryContentBytes,
-		); err != nil {
-			return fmt.Errorf("memory authority %d: %w", index, err)
-		}
-		if !exactObjectiveContextSHA(authority.Content, authority.ContentSHA256) {
-			return fmt.Errorf("memory authority %d content hash does not match", index)
-		}
-		total += len(authority.Content)
-	}
-	if total > MaxSelectedMemoryProjectionBytes {
-		return fmt.Errorf("memory authority set exceeds %d bytes", MaxSelectedMemoryProjectionBytes)
-	}
-	return nil
-}
 
 // ObjectiveReplanAuthority is the exact feedback attached to the current
 // generation of this same job. It is sibling authority, not a rewritten user

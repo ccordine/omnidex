@@ -38,7 +38,6 @@ type PreparedModel struct {
 	MaxOutputTokens              int
 	OutputLimitMode              ExactPreparedOutputLimitMode
 	ContextTokens                int
-	ThinkingEnabled              bool
 	Temperature                  *ExactPreparedTemperature
 	RawTextStopSequence          string
 	ProviderIdentityExpectation  *ProviderIdentityExpectation

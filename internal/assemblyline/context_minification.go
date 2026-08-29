@@ -12,6 +12,7 @@ type ContextMinificationInput struct {
 	ExactInstruction    string                      `json:"exact_instruction"`
 	SelectedAuthorities []ContextCandidateAuthority `json:"selected_authorities"`
 	Scope               ContextScope                `json:"scope,omitempty"`
+	KnownArtifactPaths  []string                    `json:"known_artifact_paths"`
 }
 
 type ContextMinificationDecision struct {
@@ -38,6 +39,11 @@ func (input ContextMinificationInput) validate() error {
 	if err := validateContextExactInstruction(input.ExactInstruction); err != nil {
 		return err
 	}
+	if _, err := validateContextArtifactProvenance(
+		"context minification", input.KnownArtifactPaths,
+	); err != nil {
+		return err
+	}
 	return validateContextCandidateAuthorities(
 		"context minification",
 		input.SelectedAuthorities,
@@ -53,13 +59,35 @@ func (decision ContextMinificationDecision) ValidateFor(input ContextMinificatio
 	if decision.Schema != ContextMinificationSchemaV1 {
 		return fmt.Errorf("context minification schema must be %q", ContextMinificationSchemaV1)
 	}
-	return validateContextText("minimal context", decision.MinimalContext, MaxContextMinifiedBytes)
+	if err := validateContextText("minimal context", decision.MinimalContext, MaxContextMinifiedBytes); err != nil {
+		return err
+	}
+	provenance, err := validateContextArtifactProvenance(
+		"context minification", input.KnownArtifactPaths,
+	)
+	if err != nil {
+		return err
+	}
+	return validateContextRawModelOutput(
+		"context minification decision", decision.MinimalContext, provenance,
+	)
 }
 
 func DecodeContextMinificationDecision(
 	input ContextMinificationInput,
 	raw string,
 ) (ContextMinificationDecision, error) {
+	provenance, err := validateContextArtifactProvenance(
+		"context minification", input.KnownArtifactPaths,
+	)
+	if err != nil {
+		return ContextMinificationDecision{}, err
+	}
+	if err := validateContextRawModelOutput(
+		"context minification raw result", raw, provenance,
+	); err != nil {
+		return ContextMinificationDecision{}, err
+	}
 	leaf, err := decodeRawSemanticLeaf("context minification", raw, MaxContextMinifiedBytes, true)
 	if err != nil {
 		return ContextMinificationDecision{}, err
@@ -78,12 +106,30 @@ func BuildContextMinificationPrompt(input ContextMinificationInput) (string, err
 	if err := input.validate(); err != nil {
 		return "", err
 	}
+	provenance, err := validateContextArtifactProvenance(
+		"context minification", input.KnownArtifactPaths,
+	)
+	if err != nil {
+		return "", err
+	}
+	exactInstruction, err := redactContextModelText(
+		"context minification exact instruction", input.ExactInstruction, provenance,
+	)
+	if err != nil {
+		return "", err
+	}
 	modelInput := contextMinificationModelProjection{
-		ExactInstruction: input.ExactInstruction,
+		ExactInstruction: exactInstruction,
 		SelectedContext:  make([]string, len(input.SelectedAuthorities)),
 	}
 	for index, authority := range input.SelectedAuthorities {
-		modelInput.SelectedContext[index] = authority.Content
+		content, err := redactContextModelText(
+			"context minification selected content", authority.Content, provenance,
+		)
+		if err != nil {
+			return "", fmt.Errorf("authority %s: %w", authority.CandidateID, err)
+		}
+		modelInput.SelectedContext[index] = content
 	}
 	projection, err := json.Marshal(modelInput)
 	if err != nil {

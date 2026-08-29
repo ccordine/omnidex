@@ -20,7 +20,7 @@ func TestJobHistoryMigrationAddsOnlyMissingKeysetIndex(t *testing.T) {
 	}
 	for _, duplicate := range []string{
 		"idx_job_steps_job_id", "idx_evidence_job_id_id",
-		"idx_claims_job_id_id", "idx_llm_call_evidence_job",
+		"idx_llm_call_evidence_job",
 	} {
 		if strings.Contains(source, duplicate) {
 			t.Fatalf("history migration duplicated existing index %q", duplicate)

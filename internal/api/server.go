@@ -7,7 +7,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gryph/omnidex/internal/browserinference"
 	"github.com/gryph/omnidex/internal/config"
 	"github.com/gryph/omnidex/internal/llm"
 	"github.com/gryph/omnidex/internal/llmprovider/catalog"
@@ -67,35 +66,31 @@ type Server struct {
 	scrumAutoWorkAsyncMu       sync.Mutex
 	scrumAutoWorkAsyncRunning  bool
 	scrumAutoWorkAsyncPending  bool
-	browserContextRelevance    *browserinference.ContextRelevanceBroker
-	browserContextModel        string
 }
 
 type ServerOptions struct {
-	LifecycleContext        context.Context
-	MigrationBundle         queue.MigrationBundle
-	ProviderConfig          config.Config
-	RequestTimeout          time.Duration
-	WebSearchProviders      []string
-	CoreURL                 string
-	ListenAddr              string
-	HostAgentURL            string
-	HostAgentToken          string
-	IntegrationAPIToken     string
-	RealtimeMaxClients      int
-	RealtimeStreamMaxAge    time.Duration
-	RealtimeHeartbeat       time.Duration
-	RealtimeWriteTimeout    time.Duration
-	RedisURL                string
-	UIRedisRequired         bool
-	UISessionTTL            time.Duration
-	RoleplaySimulation      RoleplaySimulationStore
-	OllamaModelAuthority    OllamaModelAuthority
-	OllamaModelLifecycle    OllamaModelLifecycleAuthority
-	OllamaDownloads         OllamaDownloadStore
-	OllamaCatalog           OllamaCatalogAuthority
-	BrowserContextRelevance *browserinference.ContextRelevanceBroker
-	BrowserContextModel     string
+	LifecycleContext     context.Context
+	MigrationBundle      queue.MigrationBundle
+	ProviderConfig       config.Config
+	RequestTimeout       time.Duration
+	WebSearchProviders   []string
+	CoreURL              string
+	ListenAddr           string
+	HostAgentURL         string
+	HostAgentToken       string
+	IntegrationAPIToken  string
+	RealtimeMaxClients   int
+	RealtimeStreamMaxAge time.Duration
+	RealtimeHeartbeat    time.Duration
+	RealtimeWriteTimeout time.Duration
+	RedisURL             string
+	UIRedisRequired      bool
+	UISessionTTL         time.Duration
+	RoleplaySimulation   RoleplaySimulationStore
+	OllamaModelAuthority OllamaModelAuthority
+	OllamaModelLifecycle OllamaModelLifecycleAuthority
+	OllamaDownloads      OllamaDownloadStore
+	OllamaCatalog        OllamaCatalogAuthority
 }
 
 type memoryCandidatePromotionRequest struct {
@@ -206,8 +201,6 @@ func NewServerWithOptions(repo *queue.Repository, embeddingClient llm.EmbeddingC
 		hostAgentURL:               strings.TrimSpace(options.HostAgentURL),
 		hostAgentToken:             strings.TrimSpace(options.HostAgentToken),
 		integrationAPIToken:        options.IntegrationAPIToken,
-		browserContextRelevance:    options.BrowserContextRelevance,
-		browserContextModel:        strings.TrimSpace(options.BrowserContextModel),
 	}
 	if redis, err := newUIRedisClient(s.redisURL); err == nil {
 		s.uiRedis = redis
@@ -269,8 +262,6 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/v1/projects", s.handleProjects)
 	s.mux.HandleFunc("/v1/projects/", s.handleProjectByID)
 	s.mux.HandleFunc("/v1/realtime/ws", s.handleRealtimeWS)
-	s.mux.HandleFunc("/v1/browser-inference/context-relevance", s.handleBrowserContextRelevanceConfig)
-	s.mux.HandleFunc("/v1/browser-inference/context-relevance/ws", s.handleBrowserContextRelevanceWS)
 	if s.repo != nil {
 		s.mux.HandleFunc("/v1/ai/control", s.handleAIControl)
 		s.mux.HandleFunc("/v1/jobs", s.handleJobs)
@@ -306,8 +297,6 @@ func (s *Server) routes() {
 		s.mux.HandleFunc("/v1/metrics/runs", s.handleMetricsRuns)
 		s.mux.HandleFunc("/v1/metrics/runs/", s.handleMetricsRunByID)
 		s.mux.HandleFunc("/v1/metrics/models", s.handleMetricsModels)
-		s.mux.HandleFunc("/v1/metrics/playbooks", s.handleMetricsPlaybooks)
-		s.mux.HandleFunc("/v1/metrics/benchmarks", s.handleMetricsBenchmarks)
 		s.mux.HandleFunc("/v1/metrics/context-shrink", s.handleMetricsContextShrink)
 		s.mux.HandleFunc("/v1/metrics/context-usage", s.handleMetricsContextUsage)
 		s.mux.HandleFunc("/v1/metrics/operations", s.handleMetricsOperations)

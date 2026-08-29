@@ -82,7 +82,6 @@ func (c *Client) generatePreparedRaw(
 	result.ProviderResponseDisposition = decoded.Disposition
 	result.ProviderResponseModel = decoded.Model
 	result.Content = decoded.Content
-	result.Thinking = decoded.Thinking
 	result.ProviderDonePresent = decoded.DonePresent
 	result.ProviderDone = decoded.Done
 	result.ProviderDoneReason = decoded.DoneReason

@@ -24,6 +24,7 @@ func TestConversationResponseIsOneBoundedLeaf(t *testing.T) {
 	}
 	assertExactJSONFields(t, reflect.TypeOf(input), []string{
 		"kind", "exact_instruction", "objective_context", "roleplay_identity", "roleplay_user_turn",
+		"known_artifact_paths",
 	})
 	assertExactJSONFields(t, reflect.TypeOf(ConversationResponseDecision{}), []string{"schema", "text"})
 	for _, forbidden := range []string{"tool", "action", "plan", "memory_write", "completion", "capabilit"} {
@@ -35,6 +36,25 @@ func TestConversationResponseIsOneBoundedLeaf(t *testing.T) {
 		if strings.Contains(strings.ToLower(prompt), forbidden) {
 			t.Fatalf("conversation response prompt describes unavailable framework capability %q", forbidden)
 		}
+	}
+}
+
+func TestConversationResponseKeepsCodeOwnedArtifactPathsOutOfPrompt(t *testing.T) {
+	t.Parallel()
+	input := ConversationResponseInput{
+		Kind: ObjectiveKindAnswer, ExactInstruction: "Explain ARTIFACT_1.",
+		KnownArtifactPaths: []string{"internal/private/owner.go"},
+	}
+	prompt, err := BuildConversationResponsePrompt(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(prompt, "internal/private/owner.go") || !strings.Contains(prompt, "ARTIFACT_1") {
+		t.Fatalf("conversation response prompt crossed artifact boundary: %s", prompt)
+	}
+	input.ExactInstruction = "Explain owner.go."
+	if _, err := BuildConversationResponsePrompt(input); err == nil {
+		t.Fatal("current-tree basename reached conversation response prompt")
 	}
 }
 

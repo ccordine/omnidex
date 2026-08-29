@@ -109,9 +109,7 @@ func ApplicationServiceEndpointRequestMediaCandidates(
 		}
 	}
 	if len(candidates) == 0 {
-		return nil, fmt.Errorf(
-			"service endpoint method %q has no compatible request media", input.Method,
-		)
+		return nil, fmt.Errorf("service endpoint method %q has no compatible request media", input.Method)
 	}
 	return candidates, nil
 }

@@ -38,7 +38,7 @@ func compileGenericJavaScriptCommandLineBlueprint(
 	if err := validateDirectCodingCapabilityGraph(specification.Requirements, capabilities); err != nil {
 		return assemblyline.SourceBlueprint{}, nil, err
 	}
-	contexts, err := directCodingApplicationTaskContexts(applicationWorkloadInput(specification), workload)
+	contexts, err := directCodingApplicationTaskContexts(workload)
 	if err != nil {
 		return assemblyline.SourceBlueprint{}, nil, err
 	}

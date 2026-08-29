@@ -3,13 +3,11 @@ package queue
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
-	"github.com/gryph/omnidex/internal/exactjson"
 	"github.com/gryph/omnidex/internal/llm"
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/station"
@@ -43,31 +41,32 @@ type StationGapOpenRecord struct {
 }
 
 type StationGapOpening struct {
-	ID                     int64                            `json:"id"`
-	JobID                  int64                            `json:"job_id"`
-	Generation             int64                            `json:"generation"`
-	StepID                 int64                            `json:"step_id"`
-	StepAttempt            int64                            `json:"step_attempt"`
-	WorkerID               string                           `json:"worker_id"`
-	GapID                  string                           `json:"gap_id"`
-	Station                station.ID                       `json:"station"`
-	Scope                  string                           `json:"scope"`
-	PortableSchema         string                           `json:"portable_schema"`
-	WorkID                 string                           `json:"work_id"`
-	WorkKind               string                           `json:"work_kind"`
-	PortablePayload        string                           `json:"portable_payload"`
-	PortablePayloadSHA256  string                           `json:"portable_payload_sha256"`
-	PortableEnvelope       string                           `json:"portable_envelope"`
-	PortableEnvelopeSHA256 string                           `json:"portable_envelope_sha256"`
-	RendererVersion        string                           `json:"renderer_version"`
-	Prompt                 string                           `json:"prompt"`
-	ResponseSchema         json.RawMessage                  `json:"response_schema"`
-	ProjectionEnvelope     string                           `json:"projection_envelope"`
-	ProjectionSHA256       string                           `json:"projection_sha256"`
-	ContextTokens          int                              `json:"context_tokens"`
-	MaxOutputTokens        int                              `json:"max_output_tokens"`
-	OutputLimitMode        llm.ExactPreparedOutputLimitMode `json:"output_limit_mode"`
-	CreatedAt              time.Time                        `json:"created_at"`
+	ID                                int64                                    `json:"id"`
+	JobID                             int64                                    `json:"job_id"`
+	Generation                        int64                                    `json:"generation"`
+	StepID                            int64                                    `json:"step_id"`
+	StepAttempt                       int64                                    `json:"step_attempt"`
+	WorkerID                          string                                   `json:"worker_id"`
+	GapID                             string                                   `json:"gap_id"`
+	Station                           station.ID                               `json:"station"`
+	Scope                             string                                   `json:"scope"`
+	PortableSchema                    string                                   `json:"portable_schema"`
+	WorkID                            string                                   `json:"work_id"`
+	WorkKind                          string                                   `json:"work_kind"`
+	PortablePayload                   string                                   `json:"portable_payload"`
+	PortablePayloadSHA256             string                                   `json:"portable_payload_sha256"`
+	PortableEnvelope                  string                                   `json:"portable_envelope"`
+	PortableEnvelopeSHA256            string                                   `json:"portable_envelope_sha256"`
+	RendererVersion                   string                                   `json:"renderer_version"`
+	Prompt                            string                                   `json:"prompt"`
+	ProjectionEnvelope                string                                   `json:"projection_envelope"`
+	ProjectionSHA256                  string                                   `json:"projection_sha256"`
+	SemanticUncertaintyContract       assemblyline.SemanticUncertaintyContract `json:"semantic_uncertainty_contract"`
+	SemanticUncertaintyContractSHA256 string                                   `json:"semantic_uncertainty_contract_sha256"`
+	ContextTokens                     int                                      `json:"context_tokens"`
+	MaxOutputTokens                   int                                      `json:"max_output_tokens"`
+	OutputLimitMode                   llm.ExactPreparedOutputLimitMode         `json:"output_limit_mode"`
+	CreatedAt                         time.Time                                `json:"created_at"`
 }
 
 type StationGapTerminalRecord struct {
@@ -120,10 +119,6 @@ type StationGapOutcome struct {
 func stationGapSHA256(value string) string {
 	digest := sha256.Sum256([]byte(value))
 	return hex.EncodeToString(digest[:])
-}
-
-func canonicalStationGapSchema() ([]byte, error) {
-	return exactjson.Canonical(nil)
 }
 
 func validateStationGapToken(subject, value string) error {

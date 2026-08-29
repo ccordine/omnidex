@@ -75,19 +75,6 @@ func persistTaskLedgerMutation(
 			return err
 		}
 		return updateTaskLedgerEntry(ctx, tx, ledgerID, jobID, replacement)
-	case taskstate.EventDecisionAccepted:
-		candidate, err := taskLedgerStateEntry(state, event.EntryID)
-		if err != nil {
-			return err
-		}
-		accepted, err := taskLedgerStateEntry(state, event.ReplacementID)
-		if err != nil {
-			return err
-		}
-		if err := updateTaskLedgerEntry(ctx, tx, ledgerID, jobID, candidate); err != nil {
-			return err
-		}
-		return insertTaskLedgerEntry(ctx, tx, ledgerID, jobID, accepted)
 	case taskstate.EventNodesReadied:
 		for _, nodeID := range event.NodeIDs {
 			node, err := taskLedgerStateNode(state, nodeID)
@@ -213,18 +200,16 @@ func insertTaskLedgerEntry(
 		INSERT INTO task_entries (
 			ledger_id, job_id, id, scope_node_id, kind, feedback_purpose, status, authority,
 			content, content_sha256, confidence, created_by, created_step_id, supersedes_id,
-			source_entry_id, acceptance_policy, accepted_by, metadata,
-			disposition_reason, disposition_by, created_version, updated_version
+			metadata, disposition_reason, disposition_by, created_version, updated_version
 		) VALUES (
 			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14,
-			$15, $16, $17, $18::jsonb, $19, $20, $21, $22
+			$15::jsonb, $16, $17, $18, $19
 		)
 	`, ledgerID, jobID, entry.ID, nullableTaskText(string(entry.ScopeNodeID)), entry.Kind,
 		nullableTaskText(string(entry.FeedbackPurpose)), entry.Status, entry.Authority, entry.Content,
 		entry.ContentSHA256, entry.Confidence, entry.CreatedBy, entry.CreatedStepID,
-		nullableTaskText(string(entry.SupersedesID)), nullableTaskText(string(entry.Provenance.SourceEntryID)),
-		nullableTaskText(entry.Provenance.AcceptancePolicy), nullableTaskText(string(entry.Provenance.AcceptedBy)),
-		entry.Metadata.Bytes(), entry.DispositionReason, nullableTaskText(string(entry.DispositionBy)),
+		nullableTaskText(string(entry.SupersedesID)), entry.Metadata.Bytes(),
+		entry.DispositionReason, nullableTaskText(string(entry.DispositionBy)),
 		int64(entry.CreatedVersion), int64(entry.UpdatedVersion))
 	if err != nil {
 		return fmt.Errorf("insert task ledger %q entry %q: %w", ledgerID, entry.ID, err)

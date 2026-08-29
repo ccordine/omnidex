@@ -94,7 +94,7 @@ func TestPHPAcceptanceRequiresExactFeatureResultAndDerivedAssertion(t *testing.T
 	valid := `function verifyFeature101(): void {
     $result = feature101(taskInputFixture101(), []);
     RuntimeAssertions::requireResult($result);
-    RuntimeAssertions::require($result, $result->output === '/records/1', 'route output mismatch');
+    RuntimeAssertions::require($result, $result->output === '/', 'route output mismatch');
     RuntimeAssertions::require($result, $result->error === '', 'unexpected feature failure');
 }`
 	if err := validateDirectCodingPHPAcceptance(&stage, ref, valid); err != nil {
@@ -127,7 +127,7 @@ func TestPHPAcceptanceRequiresExactFeatureResultAndDerivedAssertion(t *testing.T
     $result = feature101(taskInputFixture101(), []);
     $expectedError = $result->error;
     RuntimeAssertions::requireResult($result);
-    RuntimeAssertions::require($result, $result->output === '/records/1', 'first criterion');
+    RuntimeAssertions::require($result, $result->output === '/', 'first criterion');
     RuntimeAssertions::require($result, $result->error === $expectedError, 'aliased error');
 }`,
 		"wrapped field alias": `function verifyFeature101(): void {
@@ -163,11 +163,6 @@ func TestPHPAcceptanceRequiresExactFeatureResultAndDerivedAssertion(t *testing.T
     $result = feature101(taskInputFixture101(), []);
     RuntimeAssertions::requireResult($result);
     RuntimeAssertions::require($result, $result->output !== '' ? $result->error === '' : $result->error !== '', 'conditional escape');
-}`,
-		"missing criterion condition": `function verifyFeature101(): void {
-    $result = feature101(taskInputFixture101(), []);
-    RuntimeAssertions::requireResult($result);
-    RuntimeAssertions::require($result, $result->error === '', 'only one criterion');
 }`,
 		"duplicate conditions": `function verifyFeature101(): void {
     $result = feature101(taskInputFixture101(), []);

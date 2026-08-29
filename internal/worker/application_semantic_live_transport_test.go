@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
@@ -19,7 +18,7 @@ import (
 
 type liveCodingQualificationCall struct {
 	kind                                        assemblyline.WorkKind
-	jobSHA256                                   string
+	jobSHA256, candidateSHA256                  string
 	promptSHA256, requestSHA256, responseSHA256 string
 	promptBytes, promptTokens, outputTokens     int
 	providerDuration, wallDuration              time.Duration
@@ -114,7 +113,8 @@ func (transport *liveCodingQualificationTransport) execute(
 	transport.calls = append(transport.calls, liveCodingQualificationCall{
 		kind: job.Kind, jobSHA256: job.ID, promptSHA256: qualificationSHA256([]byte(prompt)),
 		requestSHA256: requestSHA256, responseSHA256: generation.ProviderResponseSHA256,
-		promptBytes: len(prompt), promptTokens: generation.Usage.PromptEvalCount,
+		candidateSHA256: qualificationSHA256([]byte(generation.Content)),
+		promptBytes:     len(prompt), promptTokens: generation.Usage.PromptEvalCount,
 		outputTokens:     generation.Usage.EvalCount,
 		providerDuration: time.Duration(generation.Usage.TotalDurationNanos), wallDuration: wallDuration,
 	})
@@ -126,15 +126,10 @@ func (transport *liveCodingQualificationTransport) syntheticGap(
 	prompt string,
 	contract llmResponseContract,
 ) (queue.StationGapOpening, error) {
-	schemaJSON, err := exactjson.Canonical(nil)
-	if err != nil {
-		return queue.StationGapOpening{}, err
-	}
 	projection, err := exactjson.Canonical(struct {
-		Prompt         string          `json:"prompt"`
-		Renderer       string          `json:"renderer"`
-		ResponseSchema json.RawMessage `json:"response_schema"`
-	}{prompt, assemblyline.PortableRendererV4, schemaJSON})
+		Prompt   string `json:"prompt"`
+		Renderer string `json:"renderer"`
+	}{prompt, assemblyline.PortableRendererV5})
 	if err != nil {
 		return queue.StationGapOpening{}, err
 	}
@@ -152,14 +147,25 @@ func (transport *liveCodingQualificationTransport) syntheticGap(
 	if err != nil {
 		return queue.StationGapOpening{}, err
 	}
+	semanticUncertainty, err := assemblyline.SemanticUncertaintyContractForWorkKind(job.Kind)
+	if err != nil {
+		return queue.StationGapOpening{}, err
+	}
+	semanticUncertaintySHA256, err := semanticUncertainty.Digest()
+	if err != nil {
+		return queue.StationGapOpening{}, err
+	}
 	return queue.StationGapOpening{
 		JobID: 1, Generation: 1, StepID: int64(len(transport.calls) + 1), StepAttempt: 1,
 		WorkerID: "live-qualification", GapID: job.ID, Station: stationID,
 		Scope: scope, PortableSchema: job.Schema,
-		WorkID: job.ID, WorkKind: string(job.Kind), RendererVersion: assemblyline.PortableRendererV4,
-		Prompt: prompt, ResponseSchema: schemaJSON, ProjectionEnvelope: string(projection),
-		ProjectionSHA256: qualificationSHA256(projection), ContextTokens: transport.selection.NativeContextLimit,
-		MaxOutputTokens: maxOutputTokens, OutputLimitMode: contract.OutputLimitMode,
+		WorkID: job.ID, WorkKind: string(job.Kind), RendererVersion: assemblyline.PortableRendererV5,
+		Prompt: prompt, ProjectionEnvelope: string(projection),
+		ProjectionSHA256:                  qualificationSHA256(projection),
+		SemanticUncertaintyContract:       semanticUncertainty,
+		SemanticUncertaintyContractSHA256: semanticUncertaintySHA256,
+		ContextTokens:                     transport.selection.NativeContextLimit,
+		MaxOutputTokens:                   maxOutputTokens, OutputLimitMode: contract.OutputLimitMode,
 	}, nil
 }
 
@@ -178,19 +184,15 @@ func assertLiveCodingQualificationCalls(
 ) {
 	t.Helper()
 	counts := map[assemblyline.WorkKind]int{}
-	objectiveJobs := map[string]struct{}{}
 	for _, call := range calls {
 		counts[call.kind]++
-		for _, digest := range []string{call.jobSHA256, call.promptSHA256, call.requestSHA256, call.responseSHA256} {
+		for _, digest := range []string{
+			call.jobSHA256, call.promptSHA256, call.requestSHA256,
+			call.responseSHA256, call.candidateSHA256,
+		} {
 			if decoded, err := hex.DecodeString(digest); err != nil || len(decoded) != sha256.Size {
 				t.Fatal("live qualification call lacks an exact digest")
 			}
-		}
-		if call.kind == assemblyline.WorkApplicationJobObjective {
-			if _, duplicate := objectiveJobs[call.jobSHA256]; duplicate {
-				t.Fatal("live qualification repeated one objective leaf")
-			}
-			objectiveJobs[call.jobSHA256] = struct{}{}
 		}
 		if call.promptBytes < 1 || call.promptTokens < 1 || call.outputTokens < 1 ||
 			call.providerDuration <= 0 || call.wallDuration <= 0 {
@@ -198,21 +200,10 @@ func assertLiveCodingQualificationCalls(
 		}
 	}
 	featureCount := len(frozen.Tasks)
-	totalBehaviors := 0
-	totalCriteria := 0
-	for _, task := range frozen.Tasks {
-		totalBehaviors += len(task.RequiredBehaviors)
-		totalCriteria += len(task.AcceptanceCriteria)
-	}
 	if counts[assemblyline.WorkApplicationContextNeedCoverage] != 0 ||
 		counts[assemblyline.WorkApplicationProductContext] != 1 ||
 		counts[assemblyline.WorkApplicationRequirement] != featureCount ||
-		counts[assemblyline.WorkApplicationRequirementCoverage] != featureCount ||
-		counts[assemblyline.WorkApplicationJobObjective] != featureCount ||
-		counts[assemblyline.WorkApplicationBehavior] != totalBehaviors ||
-		counts[assemblyline.WorkApplicationBehaviorCoverage] != totalBehaviors ||
-		counts[assemblyline.WorkApplicationCriterion] != totalCriteria ||
-		counts[assemblyline.WorkApplicationCriterionCoverage] != totalCriteria {
+		counts[assemblyline.WorkApplicationRequirementCoverage] != featureCount {
 		t.Fatalf("live qualification raw-leaf call shape differs from code-owned fixed points: %v", counts)
 	}
 }
@@ -225,9 +216,10 @@ func logLiveCodingQualification(
 	t.Helper()
 	for index, call := range calls {
 		t.Logf(
-			"live_coding_qualification case=%s model=%s call=%d kind=%s job_sha256=%s prompt_sha256=%s request_sha256=%s response_sha256=%s frozen_sha256=%s prompt_bytes=%d prompt_tokens=%d output_tokens=%d provider_ms=%d wall_ms=%d",
+			"live_coding_qualification case=%s model=%s call=%d kind=%s job_sha256=%s prompt_sha256=%s request_sha256=%s response_sha256=%s candidate_sha256=%s frozen_sha256=%s prompt_bytes=%d prompt_tokens=%d output_tokens=%d provider_ms=%d wall_ms=%d",
 			caseName, modelName, index+1, call.kind, call.jobSHA256, call.promptSHA256, call.requestSHA256,
-			call.responseSHA256, frozenSHA256, call.promptBytes, call.promptTokens, call.outputTokens,
+			call.responseSHA256, call.candidateSHA256, frozenSHA256,
+			call.promptBytes, call.promptTokens, call.outputTokens,
 			call.providerDuration.Milliseconds(), call.wallDuration.Milliseconds(),
 		)
 	}

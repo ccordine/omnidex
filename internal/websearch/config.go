@@ -49,12 +49,12 @@ func validateConfig(config Config) error {
 }
 
 func validateQuery(request QueryRequest) (string, error) {
-	query := strings.TrimSpace(request.Query)
-	if query == "" {
+	query := request.Query
+	if query == "" || query != strings.TrimSpace(query) {
 		return "", fmt.Errorf("%w: query is empty", ErrInvalidQuery)
 	}
-	if len(query) > 1_024 {
-		return "", fmt.Errorf("%w: query exceeds 1024 bytes", ErrInvalidQuery)
+	if len(query) > 4_096 {
+		return "", fmt.Errorf("%w: query exceeds 4096 bytes", ErrInvalidQuery)
 	}
 	return query, nil
 }

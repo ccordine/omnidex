@@ -68,6 +68,34 @@ func TestWebSynthesisLeavesSeparateCoverageParagraphAndEvidenceRelation(t *testi
 	}
 }
 
+func TestWebSynthesisPromptsProjectOnlyStationLocalBounds(t *testing.T) {
+	base := webSynthesisFixture()
+	input := WebSynthesisParagraphLeafInput{
+		ExactQuestion: base.ExactQuestion, Context: base.Context,
+		Evidence: base.Evidence, AcceptedParagraphs: []WebGroundedParagraph{},
+		MaxParagraphs: base.MaxParagraphs, MaxParagraphBytes: base.MaxParagraphBytes,
+	}
+	coveragePrompt, err := BuildWebSynthesisParagraphCoveragePrompt(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, hidden := range []string{`"max_paragraphs"`, `"max_paragraph_bytes"`} {
+		if strings.Contains(coveragePrompt, hidden) {
+			t.Fatalf("coverage prompt exposed code-owned generation bound %q: %s", hidden, coveragePrompt)
+		}
+	}
+	paragraphPrompt, err := BuildWebSynthesisParagraphPrompt(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(paragraphPrompt, `"max_paragraphs"`) {
+		t.Fatalf("paragraph prompt exposed code-owned collection bound: %s", paragraphPrompt)
+	}
+	if !strings.Contains(paragraphPrompt, `"max_paragraph_bytes":500`) {
+		t.Fatalf("paragraph prompt omitted its exact per-leaf byte bound: %s", paragraphPrompt)
+	}
+}
+
 func TestWebSynthesisLeafDecodersRejectStructuredAndCompositeResults(t *testing.T) {
 	base := webSynthesisFixture()
 	input := WebSynthesisParagraphLeafInput{

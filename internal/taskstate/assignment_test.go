@@ -34,17 +34,17 @@ func TestCodeAssignsOnePositiveStepToExecutableNode(t *testing.T) {
 	}
 }
 
-func TestModelCannotAssignStepAndGoalCannotBeAssigned(t *testing.T) {
+func TestNonCodeAuthorityCannotAssignStepAndGoalCannotBeAssigned(t *testing.T) {
 	ledger := newTestLedger(t)
 	applyTestCommand(t, ledger, AddNodeCommand{
 		ExpectedVersion: 0, Actor: AuthorityCode,
 		ID: "task", Kind: NodeTask, Title: "Task", Priority: 1, Metadata: EmptyJSONObject(),
 	})
 	_, err := ledger.Apply(withTestCommandID(t, AssignNodeStepCommand{
-		ExpectedVersion: 1, Actor: AuthorityModelProposal, NodeID: "task", StepID: 4,
+		ExpectedVersion: 1, Actor: AuthorityToolEvidence, NodeID: "task", StepID: 4,
 	}))
 	if !errors.Is(err, ErrAuthorityDenied) {
-		t.Fatalf("model assignment error=%v", err)
+		t.Fatalf("non-code assignment error=%v", err)
 	}
 
 	applyTestCommand(t, ledger, AddNodeCommand{

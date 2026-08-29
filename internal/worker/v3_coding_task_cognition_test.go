@@ -165,24 +165,6 @@ func TestDirectCodingTaskCognitionRequiresDurableDeploymentReceiptBeforeObjectiv
 	}
 }
 
-func TestDirectCodingTaskCognitionWillNotStartTaskBeforePersistedDependency(t *testing.T) {
-	_, workload, _ := applicationTaskLifecycleFixture(t)
-	workload.Tasks[1].DependsOn = []string{workload.Tasks[0].ID}
-	store := newDirectCodingTaskCognitionStore(t)
-	coordinator := &directCodingTaskCognition{
-		ctx: context.Background(), store: store, authority: store.authority,
-		instruction: "Build the operations console.", objectiveID: "direct-coding-objective",
-		taskIDs: map[string]taskstate.NodeID{}, treeTaskIDs: map[string]taskstate.NodeID{},
-		treeFiles: map[string]assemblyline.TargetTreeTransition{}, treeDirs: map[string]assemblyline.TargetTreeTransition{},
-	}
-	if err := coordinator.Bootstrap(workload); err != nil {
-		t.Fatal(err)
-	}
-	if err := coordinator.Begin(workload.Tasks[1].ID); err == nil {
-		t.Fatal("dependent task began before its persisted prerequisite")
-	}
-}
-
 func TestDirectCodingTaskCognitionQueuesAdapterBaselineAndTreeLeavesAfterSourceTasks(t *testing.T) {
 	_, workload, _ := applicationTaskLifecycleFixture(t)
 	store := newDirectCodingTaskCognitionStore(t)

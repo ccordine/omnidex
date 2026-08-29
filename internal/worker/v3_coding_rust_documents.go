@@ -220,7 +220,7 @@ func rustCommandLineAcceptanceContract(behavior, featureName, fixtureName string
 	return strings.Join([]string{
 		behavior,
 		"Call " + featureName + " with a representative TaskInput and " + fixtureName + "().",
-		"The code-owned fixture contains one successful TaskResult for every declared direct capability; each result's output and state value equal that capability ID.",
-		"Store its TaskResult in one local binding. For each observable acceptance criterion, use one distinct assert_eq! or assert_ne! with a direct result.output, result.error, result.exit_code, result.state, result-field get, or result-field len observation first and one inline expected value second; assert! may contain one direct result-field comparison or one direct is_empty, contains, starts_with, ends_with, or contains_key test.",
+		"The fixture contains one successful TaskResult for every declared direct capability; each result's output and state value equal that capability ID.",
+		"Store its TaskResult in one local binding. Prove the exact accepted requirement with one assert_eq! or assert_ne! using a direct result.output, result.error, result.exit_code, result.state, result-field get, or result-field len observation first and one inline expected value second; assert! may contain one direct result-field comparison or one direct is_empty, contains, starts_with, ends_with, or contains_key test.",
 	}, "\n")
 }

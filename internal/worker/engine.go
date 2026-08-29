@@ -7,7 +7,6 @@ import (
 	"reflect"
 	"time"
 
-	"github.com/gryph/omnidex/internal/assemblyline"
 	"github.com/gryph/omnidex/internal/llm"
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/queue"
@@ -48,59 +47,46 @@ type DeploymentSettings struct {
 	ProbeHost      string
 }
 
-// ContextRelevanceExecutor is a provider-level semantic transport. It receives
-// the same station contract regardless of whether execution is local Ollama or
-// browser WebGPU; the cognition workflow does not see provider-specific work.
-type ContextRelevanceExecutor interface {
-	ExecuteContextRelevance(
-		context.Context,
-		string,
-		assemblyline.ContextRelevanceSelectionInput,
-	) (assemblyline.ContextRelevanceSelectionDecision, error)
-}
-
 type Options struct {
-	WorkerCount             int
-	FragmentConcurrency     int
-	PollInterval            time.Duration
-	InferenceContextTokens  int
-	InferenceProvider       string
-	EmbeddingProvider       string
-	EmbeddingModel          string
-	Models                  ModelRouting
-	Workspace               WorkspaceSettings
-	Deployment              DeploymentSettings
-	Logger                  *log.Logger
-	OnJobFinished           func(jobID int64)
-	OnJobOutput             func(jobID int64, delta string)
-	BrowserContextRelevance ContextRelevanceExecutor
+	WorkerCount            int
+	FragmentConcurrency    int
+	PollInterval           time.Duration
+	InferenceContextTokens int
+	InferenceProvider      string
+	EmbeddingProvider      string
+	EmbeddingModel         string
+	Models                 ModelRouting
+	Workspace              WorkspaceSettings
+	Deployment             DeploymentSettings
+	Logger                 *log.Logger
+	OnJobFinished          func(jobID int64)
+	OnJobOutput            func(jobID int64, delta string)
 }
 
 type Service struct {
-	repo                    *queue.Repository
-	embeddings              llm.EmbeddingClient
-	stationClient           llm.ExactStationClient
-	webSearch               *websearch.Service
-	workerCount             int
-	fragmentConcurrency     int
-	pollInterval            time.Duration
-	inferenceContextTokens  int
-	inferenceProvider       string
-	embeddingProvider       string
-	embeddingModel          string
-	models                  ModelRouting
-	workspaceRoot           string
-	repositoryIndex         repositoryIndexService
-	repositoryRetrieval     repositoryEvidenceBuilder
-	workspaceHostRoot       string
-	deployment              DeploymentSettings
-	completeStep            stepCompleteFunc
-	reuseRoleplayResult     roleplayPortableResultReuseFunc
-	nativeV3Runner          nativeV3StepRunner
-	logger                  *log.Logger
-	onJobFinished           func(jobID int64)
-	onJobOutput             func(jobID int64, delta string)
-	browserContextRelevance ContextRelevanceExecutor
+	repo                   *queue.Repository
+	embeddings             llm.EmbeddingClient
+	stationClient          llm.ExactStationClient
+	webSearch              *websearch.Service
+	workerCount            int
+	fragmentConcurrency    int
+	pollInterval           time.Duration
+	inferenceContextTokens int
+	inferenceProvider      string
+	embeddingProvider      string
+	embeddingModel         string
+	models                 ModelRouting
+	workspaceRoot          string
+	repositoryIndex        repositoryIndexService
+	repositoryRetrieval    repositoryEvidenceBuilder
+	workspaceHostRoot      string
+	deployment             DeploymentSettings
+	completeStep           stepCompleteFunc
+	reuseRoleplayResult    roleplayPortableResultReuseFunc
+	nativeV3Runner         nativeV3StepRunner
+	logger                 *log.Logger
+	onJobFinished          func(jobID int64)
+	onJobOutput            func(jobID int64, delta string)
 }
 
 func New(
@@ -138,29 +124,28 @@ func New(
 		completeStep = repo.CompleteStep
 	}
 	svc := &Service{
-		repo:                    repo,
-		embeddings:              embeddings,
-		stationClient:           stationClient,
-		webSearch:               webSearch,
-		workerCount:             opts.WorkerCount,
-		fragmentConcurrency:     opts.FragmentConcurrency,
-		pollInterval:            opts.PollInterval,
-		inferenceContextTokens:  opts.InferenceContextTokens,
-		inferenceProvider:       opts.InferenceProvider,
-		embeddingProvider:       opts.EmbeddingProvider,
-		embeddingModel:          opts.EmbeddingModel,
-		models:                  opts.Models,
-		workspaceRoot:           opts.Workspace.Root,
-		repositoryIndex:         repositoryIndex,
-		repositoryRetrieval:     repositoryRetrieval,
-		workspaceHostRoot:       opts.Workspace.HostRoot,
-		deployment:              opts.Deployment,
-		completeStep:            completeStep,
-		reuseRoleplayResult:     repo.ReuseRoleplayPortableResult,
-		logger:                  opts.Logger,
-		onJobFinished:           opts.OnJobFinished,
-		onJobOutput:             opts.OnJobOutput,
-		browserContextRelevance: opts.BrowserContextRelevance,
+		repo:                   repo,
+		embeddings:             embeddings,
+		stationClient:          stationClient,
+		webSearch:              webSearch,
+		workerCount:            opts.WorkerCount,
+		fragmentConcurrency:    opts.FragmentConcurrency,
+		pollInterval:           opts.PollInterval,
+		inferenceContextTokens: opts.InferenceContextTokens,
+		inferenceProvider:      opts.InferenceProvider,
+		embeddingProvider:      opts.EmbeddingProvider,
+		embeddingModel:         opts.EmbeddingModel,
+		models:                 opts.Models,
+		workspaceRoot:          opts.Workspace.Root,
+		repositoryIndex:        repositoryIndex,
+		repositoryRetrieval:    repositoryRetrieval,
+		workspaceHostRoot:      opts.Workspace.HostRoot,
+		deployment:             opts.Deployment,
+		completeStep:           completeStep,
+		reuseRoleplayResult:    repo.ReuseRoleplayPortableResult,
+		logger:                 opts.Logger,
+		onJobFinished:          opts.OnJobFinished,
+		onJobOutput:            opts.OnJobOutput,
 	}
 	if repo != nil && completeStep != nil {
 		svc.completeStep = svc.wrapStepCompleter(completeStep)

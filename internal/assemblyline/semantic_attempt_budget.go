@@ -1,5 +1,6 @@
 package assemblyline
 
-// MaxSemanticStationAttempts is the one code-owned initial-plus-correction
-// budget shared by portable semantic execution and every consumer receipt.
-const MaxSemanticStationAttempts = 3
+// ExactSemanticLeafCalls is the only valid provider-call count for one raw
+// semantic leaf. A fixed point may resolve several leaves, but each leaf is a
+// distinct station invocation and has no retry multiplier.
+const ExactSemanticLeafCalls = 1

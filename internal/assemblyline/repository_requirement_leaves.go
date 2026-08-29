@@ -1,7 +1,6 @@
 package assemblyline
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 )
@@ -65,7 +64,7 @@ func (input RepositoryRequirementLeafInput) validate() error {
 func BuildRepositoryRequirementCoveragePrompt(
 	input RepositoryRequirementLeafInput,
 ) (string, error) {
-	authority, err := repositoryRequirementLeafAuthority(input)
+	projection, err := repositoryRequirementLeafProjection(input)
 	if err != nil {
 		return "", err
 	}
@@ -73,7 +72,7 @@ func BuildRepositoryRequirementCoveragePrompt(
 		"Answer one semantic relation: does the immutable existing-repository request establish any explicit workspace-change requirement that is not semantically covered by the accepted requirement statements?",
 		"Return REQUIREMENT_REMAINS when at least one explicit change remains uncovered. Return NO_UNCOVERED_REQUIREMENT when every explicit change requirement is covered.",
 		"Return exactly that raw registered value and nothing else: no JSON, quotes, label, Markdown, or commentary.",
-		"REPOSITORY_REQUIREMENT_AUTHORITY:\n" + authority,
+		"REPOSITORY REQUIREMENT INPUT:\n" + projection,
 	}, "\n\n"), nil
 }
 
@@ -98,15 +97,15 @@ func DecodeRepositoryRequirementCoverageLeaf(
 func BuildRepositoryRequirementPrompt(
 	input RepositoryRequirementLeafInput,
 ) (string, error) {
-	authority, err := repositoryRequirementLeafAuthority(input)
+	projection, err := repositoryRequirementLeafProjection(input)
 	if err != nil {
 		return "", err
 	}
 	return strings.Join([]string{
 		"Return one explicit workspace-change requirement from the immutable existing-repository request that is not semantically covered by the accepted requirement statements.",
-		"Choose the earliest uncovered requirement in source order. Faithfully paraphrase only that one requirement without paths, implementation guesses, or added obligations.",
+		"Choose the earliest uncovered requirement in source order. Faithfully paraphrase only that one requirement; do not add implementation guesses or obligations.",
 		"Return only the requirement as raw prose. Do not return another requirement, JSON, quotes, a label, Markdown, or commentary.",
-		"REPOSITORY_REQUIREMENT_AUTHORITY:\n" + authority,
+		"REPOSITORY REQUIREMENT INPUT:\n" + projection,
 	}, "\n\n"), nil
 }
 
@@ -134,15 +133,35 @@ func DecodeRepositoryRequirementLeaf(
 	return leaf, nil
 }
 
-func repositoryRequirementLeafAuthority(
+func repositoryRequirementLeafProjection(
 	input RepositoryRequirementLeafInput,
 ) (string, error) {
 	if err := input.validate(); err != nil {
 		return "", err
 	}
-	raw, err := json.Marshal(input)
-	if err != nil {
-		return "", fmt.Errorf("encode repository requirement leaf authority: %w", err)
+	var projection strings.Builder
+	projection.WriteString(renderApplicationContextModelProjection(
+		input.Authority.UserRequest,
+		input.Authority.Context,
+	))
+	projection.WriteByte('\n')
+	if len(input.AcceptedRequirements) == 0 {
+		projection.WriteString("ACCEPTED REQUIREMENTS:\n(none)\n")
+	} else {
+		for index, requirement := range input.AcceptedRequirements {
+			fmt.Fprintf(
+				&projection,
+				"ACCEPTED REQUIREMENT %d:\n%s\n",
+				index+1,
+				requirement,
+			)
+		}
 	}
-	return string(raw), nil
+	if projection.Len() > maxPortablePayloadBytes {
+		return "", fmt.Errorf(
+			"repository requirement projection exceeds %d bytes",
+			maxPortablePayloadBytes,
+		)
+	}
+	return strings.TrimSuffix(projection.String(), "\n"), nil
 }

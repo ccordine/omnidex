@@ -114,7 +114,7 @@ func (stations *PortableStations) bindWebSynthesisEvidence(
 	base assemblyline.WebGroundedSynthesisInput,
 	paragraphText string,
 ) ([]string, int, error) {
-	limit := min(len(base.Evidence), maxPortableReviewEvidence)
+	limit := min(len(base.Evidence), maxEvidenceIDsPerParagraph)
 	bound := make([]string, 0, limit)
 	calls := 0
 	for _, evidence := range base.Evidence {

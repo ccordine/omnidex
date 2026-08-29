@@ -34,9 +34,10 @@ a named uncertainty without its required provider authority fails explicitly.
 ## Application front-door closure
 
 An ordinary coding request enters this same resolver contract. Code first hashes the
-immutable request and bootstraps facts it can establish exactly: whether the workspace
-is empty or existing, bounded accepted durable-memory authorities, and any verified
-repository, runtime, or external evidence already acquired by registered providers.
+immutable request and bootstraps the exact fact it can establish immediately: whether
+the workspace is empty or existing. Any repository, runtime, or external fact added
+afterward must be acquired by a registered code-owned provider and retained with source
+identity and digest.
 It never asks a model what files exist, which command to run, or which provider to use.
 
 Only after deterministic bootstrap may code run the bounded context-need fixed point.
@@ -55,6 +56,14 @@ alternative is named `NO_UNCOVERED_<LEAF>` and the positive alternative is
 legal, enforces the bound, and closes or repeats the loop. No model returns completion,
 continuation, acceptance, retry, execution, search, or planning authority.
 
+Existing-repository artifact interpretation keeps two unresolved relations separate.
+One station answers only whether one repository-authoritative semantic artifact and all
+behavior it owns must be absent. A different station answers only whether one exact
+cohesive requirement calls for one new complete unstructured plain-text artifact and no
+other change. Each returns one closed raw relation. Code decides which uncertainty is
+present, invokes only that station, and owns candidate selection, target construction,
+mutation, and verification.
+
 Intent interpretation occurs only after that closure. One station returns the raw
 product-context leaf. Code then alternates one raw requirement-coverage call with one
 raw requirement call only while coverage remains. It retains each decoded requirement,
@@ -65,17 +74,16 @@ operation catalog, task graph, or completion control. The sole tree-visible boun
 the target-tree declaration station defined in
 [TARGET_TREE_PLANNING.md](TARGET_TREE_PLANNING.md): when naming remains unresolved, it
 receives the complete frozen workload and a bounded code-built current tree and returns
-one complete raw node hierarchy. Code constructs all normalized relative paths. Coding,
-review, repair, and test-generation stations remain path-blind.
+one complete raw node hierarchy. Code constructs all normalized relative paths.
+Source-generation, repair-guidance, repair-execution, and test-generation stations
+remain path-blind.
 
-For each job specification, one raw call returns the objective. Code then runs separate
-behavior and acceptance-criterion fixed points; each coverage call is followed by one
-raw semantic leaf only when coverage remains. Code validates each leaf and assembles the
-typed specification itself. Only an exact deterministic leaf-validation failure creates
-a correction boundary: the correction call receives the rejected complete raw leaf and
-one grounded defect and must return one complete replacement in the original raw format.
-The original decoder validates that replacement before code splices the typed leaf. No
-model returns an aggregate specification, JSON wrapper, merge patch, or workflow control.
+Code projects each accepted requirement into exactly one frozen task in source order.
+That task contains only its code-owned task identity, requirement identity, and exact
+accepted requirement. No cognition gap, correction boundary, or model call elaborates
+the requirement into an objective, behavior list, acceptance contract, dependency, or
+schedule. Downstream code consumes the exact requirement and owns all construction,
+verification, routing, and completion state.
 
 ## Autonomous substrate and subjective meaning
 
@@ -324,6 +332,9 @@ Every call binds the named uncertainty, exact candidates, selected evidence, act
 attempt, episode revision, obligation generation, public-causal-catalog version,
 Working Set version, projection, station and renderer versions, and hard budgets. A
 later operation is derived anew by code; it is never copied from a station response.
+The durable station projection contains exactly the prompt and renderer identity. All
+current provider results are raw text; a response schema is neither stored nor offered
+as model-output authority.
 
 ## Recovery
 
@@ -358,8 +369,8 @@ required before freezing a persistence representation or implementing recovery:
 - missing, contradictory, cyclic, ambiguous-unregistered, or stale state fails
   loudly;
 - procedural mechanics, read-only repository traversal, recursive workload
-  compilation, bounded declaration generation, and semantic review each preserve the
-  same code-owned operation and completion authority; and
+  compilation, bounded declaration generation, and deterministic verification each
+  preserve the same code-owned operation and completion authority; and
 - source-level absence tests reject the universal decision APIs, renderer instruction,
   JSON fields, persistence consumers, compatibility aliases, and fallbacks.
 

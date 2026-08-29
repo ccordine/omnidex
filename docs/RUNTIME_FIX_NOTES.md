@@ -16,9 +16,9 @@ can't scan into dest[5] (col: worker_id): cannot scan NULL into *string
 
 `ExpandDelegatedSubtasks` now routes the `RETURNING` row through `scanStep`, matching the rest of the repository behavior.
 
-## Local model defaults
+## Historical local model defaults
 
-`default.env` and `.env.example` were updated away from the old `llama3.2` defaults and toward the models currently validated on the Framework/Omarchy setup:
+At the time of this historical patch, `default.env` and `.env.example` were updated away from the old `llama3.2` defaults. These entries are not the current route authority; see [LOCAL_MODEL_PROFILE.md](LOCAL_MODEL_PROFILE.md).
 
 - `qwen3:4b-thinking` for reasoning/planning/review
 - `qwen2.5-coder:7b` for code/tool/shell/response work

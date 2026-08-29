@@ -8,28 +8,6 @@ func renderPortableApplicationJob(job PortableJob) (string, bool, error) {
 		return handledPortableRender(renderDecodedPortableInput(job, BuildApplicationRequirementCoveragePrompt))
 	case WorkApplicationRequirement:
 		return handledPortableRender(renderDecodedPortableInput(job, BuildApplicationRequirementPrompt))
-	case WorkApplicationJobObjective:
-		return handledPortableRender(renderDecodedPortableInput(job, BuildApplicationJobObjectivePrompt))
-	case WorkApplicationBehaviorCoverage:
-		return handledPortableRender(renderDecodedPortableInput(job, BuildApplicationBehaviorCoveragePrompt))
-	case WorkApplicationBehavior:
-		return handledPortableRender(renderDecodedPortableInput(job, BuildApplicationBehaviorPrompt))
-	case WorkApplicationCriterionCoverage:
-		return handledPortableRender(renderDecodedPortableInput(job, BuildApplicationCriterionCoveragePrompt))
-	case WorkApplicationCriterion:
-		return handledPortableRender(renderDecodedPortableInput(job, BuildApplicationCriterionPrompt))
-	case WorkApplicationStateFieldCoverage:
-		return handledPortableRender(renderDecodedPortableInput(job, BuildApplicationStateFieldCoveragePrompt))
-	case WorkApplicationStateFieldName:
-		return handledPortableRender(renderDecodedPortableInput(job, BuildApplicationStateFieldNamePrompt))
-	case WorkApplicationStateFieldKind:
-		return handledPortableRender(renderDecodedPortableInput(job, BuildApplicationStateFieldKindPrompt))
-	case WorkApplicationRecordFieldCoverage:
-		return handledPortableRender(renderDecodedPortableInput(job, BuildApplicationRecordFieldCoveragePrompt))
-	case WorkApplicationRecordFieldName:
-		return handledPortableRender(renderDecodedPortableInput(job, BuildApplicationRecordFieldNamePrompt))
-	case WorkApplicationRecordFieldKind:
-		return handledPortableRender(renderDecodedPortableInput(job, BuildApplicationRecordFieldKindPrompt))
 	case WorkApplicationContextNeedCoverage:
 		return handledPortableRender(renderDecodedPortableInput(job, BuildApplicationContextNeedCoveragePrompt))
 	case WorkApplicationContextNeedQuestion:
@@ -42,6 +20,18 @@ func renderPortableApplicationJob(job PortableJob) (string, bool, error) {
 		return handledPortableRender(renderDecodedPortableInput(job, BuildApplicationServicePersistenceDestinationPrompt))
 	case WorkApplicationServiceStateLifetime:
 		return handledPortableRender(renderDecodedPortableInput(job, BuildApplicationServiceStateLifetimePrompt))
+	case WorkApplicationStateFieldCoverage:
+		return handledPortableRender(renderDecodedPortableInput(job, BuildApplicationStateFieldCoveragePrompt))
+	case WorkApplicationStateFieldPurpose:
+		return handledPortableRender(renderDecodedPortableInput(job, BuildApplicationStateFieldPurposePrompt))
+	case WorkApplicationStateFieldKind:
+		return handledPortableRender(renderDecodedPortableInput(job, BuildApplicationStateFieldKindPrompt))
+	case WorkApplicationRecordFieldCoverage:
+		return handledPortableRender(renderDecodedPortableInput(job, BuildApplicationRecordFieldCoveragePrompt))
+	case WorkApplicationRecordFieldPurpose:
+		return handledPortableRender(renderDecodedPortableInput(job, BuildApplicationRecordFieldPurposePrompt))
+	case WorkApplicationRecordFieldKind:
+		return handledPortableRender(renderDecodedPortableInput(job, BuildApplicationRecordFieldKindPrompt))
 	case WorkApplicationServiceEndpointRequirement:
 		return handledPortableRender(renderDecodedPortableInput(job, BuildApplicationServiceEndpointRequirementPrompt))
 	case WorkApplicationServiceEndpointExposure:

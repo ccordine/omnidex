@@ -100,7 +100,7 @@ func (adapter portableObjectiveDatabaseStations) FindEvidenceGap(
 }
 
 func validateObjectiveDatabaseStationCalls(label string, receipt objectiveStationReceipt) error {
-	maximum := maxTypedWorkerAttempts
+	maximum := exactSemanticLeafCalls
 	if label == "schema selection" {
 		maximum = maxDatabaseSchemaSelectionModelCalls
 	}
@@ -108,7 +108,7 @@ func validateObjectiveDatabaseStationCalls(label string, receipt objectiveStatio
 		maximum = maxObjectiveDatabaseQueryIntentCalls
 	}
 	if receipt.Calls < 1 || receipt.Calls > maximum {
-		return fmt.Errorf("database %s station reported %d calls outside the bounded correction budget", label, receipt.Calls)
+		return fmt.Errorf("database %s station reported %d calls outside its exact fixed-point leaf bound", label, receipt.Calls)
 	}
 	return nil
 }

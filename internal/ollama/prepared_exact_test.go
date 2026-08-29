@@ -163,6 +163,25 @@ func TestGeneratePreparedExactPreservesButDoesNotProjectProviderMetadata(t *test
 	}
 }
 
+func TestGeneratePreparedExactRejectsNonEmptyProviderThinking(t *testing.T) {
+	t.Parallel()
+	expected := ollamaIdentityExpectation()
+	body := strings.Replace(
+		exactRawBody(), "{", `{"thinking":"private trace",`, 1,
+	)
+	client := exactPreparedIdentityClient(
+		t, expected, http.StatusOK, body, make(map[string]int), make(map[string][]byte),
+	)
+	result, err := client.GeneratePreparedExact(
+		context.Background(), exactPreparedRequest(expected),
+	)
+	if err == nil || !strings.Contains(err.Error(), "forbidden separate thinking content") ||
+		result.ProviderResponseDisposition != llm.ProviderResponseInvalidJSON ||
+		result.Content != "" || string(result.ProviderResponseCapture) != body {
+		t.Fatalf("non-empty provider thinking result=%+v error=%v", result, err)
+	}
+}
+
 func TestGeneratePreparedExactReportsOnlyActualProviderRequestDispatch(t *testing.T) {
 	t.Parallel()
 	expected := ollamaIdentityExpectation()

@@ -26,23 +26,23 @@ const (
 )
 
 type Record struct {
-	ID             int64          `json:"id,omitempty"`
-	JobID          int64          `json:"job_id,omitempty"`
-	StepID         int64          `json:"step_id,omitempty"`
-	Kind           string         `json:"kind"`
-	SourceType     string         `json:"source_type,omitempty"`
-	SourceRef      string         `json:"source_ref,omitempty"`
-	ToolName       string         `json:"tool_name,omitempty"`
-	Command        string         `json:"command,omitempty"`
-	FilePaths      []string       `json:"file_paths,omitempty"`
-	Excerpt        string         `json:"excerpt,omitempty"`
-	Summary        string         `json:"summary,omitempty"`
-	Hash           string         `json:"hash,omitempty"`
-	Confidence     float64        `json:"confidence,omitempty"`
-	SupportsClaims []string       `json:"supports_claims,omitempty"`
-	Warnings       []string       `json:"warnings,omitempty"`
-	Metadata       map[string]any `json:"metadata,omitempty"`
-	CreatedAt      time.Time      `json:"created_at,omitempty"`
+	ID                           int64          `json:"id,omitempty"`
+	JobID                        int64          `json:"job_id,omitempty"`
+	StepID                       int64          `json:"step_id,omitempty"`
+	Kind                         string         `json:"kind"`
+	SourceType                   string         `json:"source_type,omitempty"`
+	SourceRef                    string         `json:"source_ref,omitempty"`
+	ToolName                     string         `json:"tool_name,omitempty"`
+	Command                      string         `json:"command,omitempty"`
+	FilePaths                    []string       `json:"file_paths,omitempty"`
+	Excerpt                      string         `json:"excerpt,omitempty"`
+	Summary                      string         `json:"summary,omitempty"`
+	Hash                         string         `json:"hash,omitempty"`
+	Confidence                   float64        `json:"confidence,omitempty"`
+	RequirementAuthorityBindings []string       `json:"requirement_authority_bindings,omitempty"`
+	Warnings                     []string       `json:"warnings,omitempty"`
+	Metadata                     map[string]any `json:"metadata,omitempty"`
+	CreatedAt                    time.Time      `json:"created_at,omitempty"`
 }
 
 func (r Record) Validate() error {

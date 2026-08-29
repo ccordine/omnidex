@@ -79,8 +79,8 @@ func runDirectCodingLanguageFragmentWorker(
 		return "", failDirectCodingLanguageGeneration(runtime, modelName, job, err)
 	}
 	rawCandidate := result.Candidate
-	if err := assemblyline.ValidatePathFreeSourceModelContextWithProvenance(
-		"language fragment candidate", runtime.PathProvenance, rawCandidate,
+	if err := validateDirectCodingLanguageFragmentCandidatePathBoundary(
+		job.Input.Language, runtime.PathProvenance, rawCandidate,
 	); err != nil {
 		err = finalizeTypedWorkerResult(runtime, portable, result, err)
 		return "", failDirectCodingLanguageGeneration(runtime, modelName, job, err)
@@ -108,6 +108,21 @@ func runDirectCodingLanguageFragmentWorker(
 		Model: modelName, Attempt: 1, MaxAttempts: 1,
 	})
 	return candidate, nil
+}
+
+func validateDirectCodingLanguageFragmentCandidatePathBoundary(
+	language string,
+	provenance assemblyline.ArtifactIdentityProvenance,
+	candidate string,
+) error {
+	if language == assemblyline.TextFragmentLanguage {
+		return assemblyline.ValidatePathFreeModelContextWithProvenance(
+			"language fragment candidate", provenance, candidate,
+		)
+	}
+	return assemblyline.ValidatePathFreeSourceModelContextWithProvenance(
+		"language fragment candidate", provenance, candidate,
+	)
 }
 
 func languageGenerationCapabilityBytes(input assemblyline.FragmentGenerationInput) int {

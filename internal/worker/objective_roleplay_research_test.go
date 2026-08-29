@@ -50,28 +50,27 @@ func TestResolveObjectiveRoleplayResearchUsesSharedEvidenceSieveAndOneResponseAc
 				query: fixture.question, candidates: []websearch.Candidate{irrelevantCandidate, candidate},
 				documents: []websearch.Document{irrelevantDocument, document},
 			}
-			terms := &scriptedObjectiveRoleplayTermsStation{term: fixture.title + " evidence"}
 			relevance := &scriptedObjectiveRoleplayRelevanceStation{selected: []websearch.CandidateID{candidate.ID}}
 			station := &scriptedObjectiveRoleplayGroundedStation{answer: fixture.answer}
 			result, err := resolveObjectiveRoleplayResearch(
 				context.Background(), authority, research, narrative, acquisition,
-				terms, relevance, station,
+				relevance, station,
 			)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if acquisition.discoverCalls != 1 || acquisition.fetchCalls != 1 || terms.calls != 0 ||
+			if acquisition.discoverCalls != 1 || acquisition.fetchCalls != 1 ||
 				relevance.calls != 1 || station.calls != 1 ||
 				result.ModelCalls != minimumObjectiveRoleplayResearchModelCalls {
-				t.Fatalf("calls discover=%d fetch=%d terms=%d relevance=%d response=%d result=%d",
-					acquisition.discoverCalls, acquisition.fetchCalls, terms.calls,
+				t.Fatalf("calls discover=%d fetch=%d relevance=%d response=%d result=%d",
+					acquisition.discoverCalls, acquisition.fetchCalls,
 					relevance.calls, station.calls, result.ModelCalls)
 			}
-			if terms.question != "" || relevance.question != fixture.question ||
+			if relevance.question != fixture.question ||
 				station.input.ExactQuestion != fixture.question {
 				t.Fatalf(
-					"dedicated research question changed: terms=%q relevance=%q response=%q",
-					terms.question, relevance.question, station.input.ExactQuestion,
+					"dedicated research question changed: relevance=%q response=%q",
+					relevance.question, station.input.ExactQuestion,
 				)
 			}
 			if !strings.Contains(result.Rendered, fixture.url) || !strings.Contains(result.Rendered, "[1]") ||
@@ -127,17 +126,16 @@ func TestObjectiveRoleplayResearchRejectsCharacterAndNamespaceMismatchBeforeAcqu
 		acquisition := &scriptedObjectiveRoleplayAcquisition{
 			query: "Mars orbital period", candidates: []websearch.Candidate{candidate}, documents: []websearch.Document{document},
 		}
-		terms := &scriptedObjectiveRoleplayTermsStation{term: "Mars orbital period"}
 		relevance := &scriptedObjectiveRoleplayRelevanceStation{selected: []websearch.CandidateID{candidate.ID}}
 		_, err := resolveObjectiveRoleplayResearch(
 			context.Background(), changed, research, narrative, acquisition,
-			terms, relevance,
+			relevance,
 			&scriptedObjectiveRoleplayGroundedStation{answer: "unused"},
 		)
 		if err == nil || acquisition.discoverCalls != 0 || acquisition.fetchCalls != 0 ||
-			terms.calls != 0 || relevance.calls != 0 {
-			t.Fatalf("mismatched authority reached sieve: err=%v discover=%d fetch=%d terms=%d relevance=%d",
-				err, acquisition.discoverCalls, acquisition.fetchCalls, terms.calls, relevance.calls)
+			relevance.calls != 0 {
+			t.Fatalf("mismatched authority reached sieve: err=%v discover=%d fetch=%d relevance=%d",
+				err, acquisition.discoverCalls, acquisition.fetchCalls, relevance.calls)
 		}
 	}
 }
@@ -206,26 +204,6 @@ func (fixture *scriptedObjectiveRoleplayAcquisition) Fetch(
 	}
 	return websearch.DocumentReport{
 		Documents: append([]websearch.Document(nil), fixture.documents...), Diagnostics: diagnostics,
-	}, nil
-}
-
-type scriptedObjectiveRoleplayTermsStation struct {
-	term     string
-	question string
-	calls    int
-}
-
-func (station *scriptedObjectiveRoleplayTermsStation) Resolve(
-	_ context.Context,
-	call webresearch.SearchTermsCall,
-) (webresearch.SearchTermsDecision, error) {
-	station.calls++
-	station.question = call.Question
-	if call.Question == "" || len(call.AttemptedQueries) != 0 {
-		return webresearch.SearchTermsDecision{}, fmt.Errorf("search terms received invalid authority")
-	}
-	return webresearch.SearchTermsDecision{
-		Terms: []string{station.term}, SemanticCalls: 1,
 	}, nil
 }
 
@@ -301,8 +279,10 @@ func objectiveRoleplayResearchFixture(
 	}
 	authority := turnAuthority{
 		JobID: int64(index + 1), Pipeline: model.PipelineChat,
-		Instruction: "/research " + fmt.Sprintf("%q", question),
-		ChannelID:   model.ChannelID(research.ChannelID), ChannelMode: model.ChannelModeRoleplay,
+		Instruction:      "/research " + fmt.Sprintf("%q", question),
+		ModelInstruction: question, ModelRedactedInstruction: question,
+		ModelArtifactPaths: []string{},
+		ChannelID:          model.ChannelID(research.ChannelID), ChannelMode: model.ChannelModeRoleplay,
 		RoleplayViewpointCharacterID:    model.RoleplayCharacterID(characterID),
 		RoleplaySimulationPreparationID: preparationID,
 		RoleplayWorldID:                 worldID, RoleplaySceneID: sceneID, RoleplaySceneRevision: 1,

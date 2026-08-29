@@ -25,8 +25,9 @@ type StationAttemptCallEvidence struct {
 // StationAttemptCallEvidence loads every completed provider call for one exact
 // running attempt. Partial gaps, missing receipts, provider failures, and
 // missing llm_call_evidence fail loudly so callers cannot manufacture
-// completion counters from local events. A terminal semantic rejection is an
-// actual successful provider call whose response can authorize one correction.
+// completion counters from local events. A stored response has no transition
+// authority. Only a separately established code-proven defect may authorize the
+// specifically bounded target-tree replacement or staged compiler repair.
 func (r *Repository) StationAttemptCallEvidence(
 	ctx context.Context,
 	authority model.StepAttemptAuthority,

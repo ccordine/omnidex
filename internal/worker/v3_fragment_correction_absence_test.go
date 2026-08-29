@@ -59,11 +59,10 @@ func TestGoAndUnguidedTypeScriptCorrectionEnvelopesAreAbsent(t *testing.T) {
 	}
 	rendererSource := string(renderer)
 	start := strings.Index(rendererSource, "func renderPortableFragmentCorrection(")
-	end := strings.Index(rendererSource, "func renderPortableResponseCorrection(")
-	if start < 0 || end <= start {
+	if start < 0 {
 		t.Fatal("fragment correction renderer boundary is absent")
 	}
-	rendererSource = rendererSource[start:end]
+	rendererSource = rendererSource[start:]
 	for _, forbidden := range []string{
 		"BuildGoFragmentCorrectionPrompt", "RequiredChange: input.RequiredChange",
 		"Diagnostic: input.Diagnostic", "Available: strings.Join(input.Capabilities",

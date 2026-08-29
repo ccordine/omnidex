@@ -10,9 +10,9 @@ import (
 
 func selectRelevantAuthorities(
 	ctx context.Context,
-	exactInstruction string,
+	modelInstruction string,
 	scope assemblyline.ContextScope,
-	retrievalConcepts []string,
+	knownArtifactPaths []string,
 	authorities []assemblyline.ContextCandidateAuthority,
 	station RelevanceStation,
 ) ([]assemblyline.ContextCandidateAuthority, int, error) {
@@ -34,11 +34,11 @@ func selectRelevantAuthorities(
 	calls := 0
 	for pageIndex, page := range pages {
 		input := assemblyline.ContextRelevanceInput{
-			ExactInstruction:     exactInstruction,
-			RetrievalConcepts:    append([]string{}, retrievalConcepts...),
+			ExactInstruction:     modelInstruction,
 			CandidateAuthorities: append([]assemblyline.ContextCandidateAuthority(nil), page...),
 			MaxSelections:        min(assemblyline.MaxContextRelevanceSelections, len(page)),
 			Scope:                scope,
+			KnownArtifactPaths:   append([]string{}, knownArtifactPaths...),
 		}
 		if _, err := assemblyline.NewContextRelevanceSelectionJob(
 			assemblyline.ContextRelevanceSelectionInput{
@@ -77,7 +77,7 @@ func validateContextRelevanceReceipt(
 		}
 		return nil
 	}
-	maximum := input.MaxSelections * assemblyline.MaxSemanticStationAttempts
+	maximum := input.MaxSelections * assemblyline.ExactSemanticLeafCalls
 	if receipt.Calls < 1 || receipt.Calls > maximum {
 		return fmt.Errorf(
 			"context relevance reported %d calls outside the bounded fixed-point budget",
@@ -89,8 +89,9 @@ func validateContextRelevanceReceipt(
 
 func reduceSelectedAuthorities(
 	ctx context.Context,
-	exactInstruction string,
+	modelInstruction string,
 	scope assemblyline.ContextScope,
+	knownArtifactPaths []string,
 	selected []assemblyline.ContextCandidateAuthority,
 	station MinificationStation,
 ) (string, int, error) {
@@ -120,9 +121,10 @@ func reduceSelectedAuthorities(
 			content := joinAuthorityContent(group)
 			if len(group) > 1 {
 				input := assemblyline.ContextMinificationInput{
-					ExactInstruction:    exactInstruction,
+					ExactInstruction:    modelInstruction,
 					SelectedAuthorities: append([]assemblyline.ContextCandidateAuthority(nil), group...),
 					Scope:               scope,
+					KnownArtifactPaths:  append([]string{}, knownArtifactPaths...),
 				}
 				if _, err := assemblyline.NewContextMinificationJob(input); err != nil {
 					return "", totalCalls, fmt.Errorf("context minification group %d: %w", groupIndex+1, err)

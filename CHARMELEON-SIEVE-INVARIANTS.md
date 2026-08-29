@@ -1,3 +1,7 @@
+# Historical, Non-Normative Design Material
+
+This transcript preserves an earlier cognition-sieve discussion for provenance only. It is not an authoritative Omnidex architecture contract. Any model-owned investigation, hypothesis, action, tool-selection, or completion language below is superseded by the code-owned cognition and exact semantic-leaf boundaries in `AGENTS.md` and the normative documents named there.
+
 Yes. “Toolchain” was still the wrong mental model. A toolchain implies a prescribed sequence of specialized machinery. What you’re describing is much closer to a sieve for cognition.
 
 The intelligence is already in the model. Omnidex’s job isn’t to replace that intelligence with language-specific machinery. Its job is to keep cognition moving through progressively stronger evidence until unsupported possibilities get filtered out.

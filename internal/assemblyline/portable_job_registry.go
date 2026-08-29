@@ -13,17 +13,16 @@ const (
 	WorkApplicationServiceEndpointResponseMedia  WorkKind = "application_service_endpoint_response_media"
 	WorkApplicationServiceEndpointSuccessStatus  WorkKind = "application_service_endpoint_success_status"
 	WorkApplicationTargetTree                    WorkKind = "application_target_tree"
-	WorkRepositoryGroundedCorrection             WorkKind = "repository_grounded_correction"
 	WorkContextMinification                      WorkKind = "context_minification"
 	WorkConversationObjectiveKind                WorkKind = "conversation_objective_kind"
 	WorkConversationResponse                     WorkKind = "conversation_response"
 	WorkRoleplayOngoingAction                    WorkKind = "roleplay_ongoing_action"
 	WorkDatabaseEvidenceGap                      WorkKind = "database_evidence_gap"
 	WorkDatabaseJoinPathSelection                WorkKind = "database_join_path_selection"
-	WorkWebGroundedSynthesisCorrection           WorkKind = "web_grounded_synthesis_correction"
 	WorkApplicationClassify                      WorkKind = "application_classification"
 	WorkArtifactHandling                         WorkKind = "artifact_handling"
-	WorkKnownArtifactTruth                       WorkKind = "known_artifact_truth"
+	WorkRepositoryArtifactAbsence                WorkKind = "repository_artifact_absence"
+	WorkPlainTextArtifactCreation                WorkKind = "plain_text_artifact_creation"
 	WorkDeclarationArtifactBoundary              WorkKind = "declaration_artifact_boundary"
 	WorkArtifactCandidateSelection               WorkKind = "artifact_candidate_selection"
 	WorkCapabilityRelation                       WorkKind = "capability_relation"
@@ -32,7 +31,6 @@ const (
 	WorkFragmentGeneration                       WorkKind = "fragment_generation"
 	WorkFragmentModification                     WorkKind = "fragment_modification"
 	WorkFragmentCorrection                       WorkKind = "fragment_correction"
-	WorkResponseCorrection                       WorkKind = "response_correction"
 )
 
 func validWorkKind(kind WorkKind) bool {
@@ -47,10 +45,10 @@ func validWorkKind(kind WorkKind) bool {
 		WorkApplicationServicePersistenceDestination,
 		WorkApplicationServiceStateLifetime,
 		WorkApplicationStateFieldCoverage,
-		WorkApplicationStateFieldName,
+		WorkApplicationStateFieldPurpose,
 		WorkApplicationStateFieldKind,
 		WorkApplicationRecordFieldCoverage,
-		WorkApplicationRecordFieldName,
+		WorkApplicationRecordFieldPurpose,
 		WorkApplicationRecordFieldKind,
 		WorkApplicationServiceEndpointRequirement,
 		WorkApplicationServiceEndpointExposure,
@@ -60,21 +58,11 @@ func validWorkKind(kind WorkKind) bool {
 		WorkApplicationServiceEndpointResponseMedia,
 		WorkApplicationServiceEndpointSuccessStatus,
 		WorkApplicationClassify,
-		WorkApplicationJobObjective,
-		WorkApplicationBehaviorCoverage,
-		WorkApplicationBehavior,
-		WorkApplicationCriterionCoverage,
-		WorkApplicationCriterion,
 		WorkApplicationTargetTree,
 		WorkRepositoryRequirementCoverage,
 		WorkRepositoryRequirement,
-		WorkRepositorySearchAnchorCoverage,
-		WorkRepositorySearchAnchor,
 		WorkRepositoryEvidenceRelevanceLeaf,
 		WorkRepositoryChangeOwner,
-		WorkRepositoryGroundedIssueDetail, WorkRepositoryGroundedIssueKind,
-		WorkRepositoryGroundedCorrection,
-		WorkContextSearchTermCoverage, WorkContextSearchTerm,
 		WorkContextRelevanceSelection, WorkContextMinification,
 		WorkConversationObjectiveKind, WorkConversationResponse,
 		WorkRoleplayGroundedResponseText, WorkRoleplayGroundedResponseEvidenceRelation,
@@ -96,15 +84,14 @@ func validWorkKind(kind WorkKind) bool {
 		WorkDatabaseQueryOrderProjection, WorkDatabaseQueryOrderDirection,
 		WorkDatabaseEvidenceGap,
 		WorkDatabaseJoinPathSelection,
-		WorkWebSearchTermCoverage, WorkWebSearchTerm, WorkWebRelevanceRelation,
+		WorkWebRelevanceRelation,
 		WorkWebSynthesisParagraphCoverage, WorkWebSynthesisParagraph,
-		WorkWebSynthesisEvidenceRelation, WorkWebGroundedSynthesisCorrection,
-		WorkWebReviewClaimCoverage, WorkWebReviewClaim, WorkWebReviewClaimVerdict,
-		WorkWebReviewIssueEvidenceRelation, WorkWebReviewIssueDetail,
-		WorkArtifactHandling, WorkKnownArtifactTruth,
+		WorkWebSynthesisEvidenceRelation,
+		WorkArtifactHandling, WorkRepositoryArtifactAbsence,
+		WorkPlainTextArtifactCreation,
 		WorkDeclarationArtifactBoundary, WorkArtifactCandidateSelection,
 		WorkCapabilityRelation, WorkSkillSelection, WorkTypeScriptRepairGuidance,
-		WorkFragmentGeneration, WorkFragmentModification, WorkFragmentCorrection, WorkResponseCorrection:
+		WorkFragmentGeneration, WorkFragmentModification, WorkFragmentCorrection:
 		return true
 	default:
 		return false
@@ -125,10 +112,10 @@ func AllWorkKinds() []WorkKind {
 		WorkApplicationServicePersistenceDestination,
 		WorkApplicationServiceStateLifetime,
 		WorkApplicationStateFieldCoverage,
-		WorkApplicationStateFieldName,
+		WorkApplicationStateFieldPurpose,
 		WorkApplicationStateFieldKind,
 		WorkApplicationRecordFieldCoverage,
-		WorkApplicationRecordFieldName,
+		WorkApplicationRecordFieldPurpose,
 		WorkApplicationRecordFieldKind,
 		WorkApplicationServiceEndpointRequirement,
 		WorkApplicationServiceEndpointExposure,
@@ -138,21 +125,11 @@ func AllWorkKinds() []WorkKind {
 		WorkApplicationServiceEndpointResponseMedia,
 		WorkApplicationServiceEndpointSuccessStatus,
 		WorkApplicationClassify,
-		WorkApplicationJobObjective,
-		WorkApplicationBehaviorCoverage,
-		WorkApplicationBehavior,
-		WorkApplicationCriterionCoverage,
-		WorkApplicationCriterion,
 		WorkApplicationTargetTree,
 		WorkRepositoryRequirementCoverage,
 		WorkRepositoryRequirement,
-		WorkRepositorySearchAnchorCoverage,
-		WorkRepositorySearchAnchor,
 		WorkRepositoryEvidenceRelevanceLeaf,
 		WorkRepositoryChangeOwner,
-		WorkRepositoryGroundedIssueDetail, WorkRepositoryGroundedIssueKind,
-		WorkRepositoryGroundedCorrection,
-		WorkContextSearchTermCoverage, WorkContextSearchTerm,
 		WorkContextRelevanceSelection, WorkContextMinification,
 		WorkConversationObjectiveKind, WorkConversationResponse,
 		WorkRoleplayGroundedResponseText, WorkRoleplayGroundedResponseEvidenceRelation,
@@ -174,14 +151,13 @@ func AllWorkKinds() []WorkKind {
 		WorkDatabaseQueryOrderProjection, WorkDatabaseQueryOrderDirection,
 		WorkDatabaseEvidenceGap,
 		WorkDatabaseJoinPathSelection,
-		WorkWebSearchTermCoverage, WorkWebSearchTerm, WorkWebRelevanceRelation,
+		WorkWebRelevanceRelation,
 		WorkWebSynthesisParagraphCoverage, WorkWebSynthesisParagraph,
-		WorkWebSynthesisEvidenceRelation, WorkWebGroundedSynthesisCorrection,
-		WorkWebReviewClaimCoverage, WorkWebReviewClaim, WorkWebReviewClaimVerdict,
-		WorkWebReviewIssueEvidenceRelation, WorkWebReviewIssueDetail,
-		WorkArtifactHandling, WorkKnownArtifactTruth,
+		WorkWebSynthesisEvidenceRelation,
+		WorkArtifactHandling, WorkRepositoryArtifactAbsence,
+		WorkPlainTextArtifactCreation,
 		WorkDeclarationArtifactBoundary, WorkArtifactCandidateSelection,
 		WorkCapabilityRelation, WorkSkillSelection, WorkTypeScriptRepairGuidance,
-		WorkFragmentGeneration, WorkFragmentModification, WorkFragmentCorrection, WorkResponseCorrection,
+		WorkFragmentGeneration, WorkFragmentModification, WorkFragmentCorrection,
 	}
 }

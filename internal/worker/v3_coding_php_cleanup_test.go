@@ -136,7 +136,7 @@ func phpCleanupVerificationProgram(t *testing.T) directCodingProgram {
 	program.Generated["acceptance.001"] = `function verifyFeature101(): void {
     $result = feature101(taskInputFixture101(), []);
     RuntimeAssertions::requireResult($result);
-    RuntimeAssertions::require($result, $result->output === '/records/1', 'route output mismatch');
+    RuntimeAssertions::require($result, $result->output === '/', 'route output mismatch');
     RuntimeAssertions::require($result, $result->error === '', 'unexpected feature failure');
 }`
 	return program

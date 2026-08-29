@@ -9,7 +9,7 @@ func TestResolveRepositoryRequirementsRequiresExactOrderedRequestSpans(t *testin
 	t.Parallel()
 	const request = "Add audit logging and CSV exports to the service."
 	context, err := BootstrapApplicationContext(
-		request, ApplicationWorkspaceExisting, nil,
+		request, ApplicationWorkspaceExisting,
 	)
 	if err != nil {
 		t.Fatal(err)

@@ -15,8 +15,8 @@ func TestSyncRunningJobChannelChatUsesOnlyTypedStepContexts(t *testing.T) {
 	job := model.JobDetails{
 		Job: model.Job{ID: 3, Status: model.JobStatusRunning},
 		Contexts: []model.StepContext{
-			{ID: 1, Key: "event", Value: "event=structured_patch_apply_started applying"},
-			{ID: 2, Key: "event", Value: "event=structured_patch_apply_finished applied"},
+			{ID: 1, Key: "event", Value: "event=repository_snapshot_started authority=server"},
+			{ID: 2, Key: "event", Value: "event=repository_snapshot_ready snapshot=sha256:abc files=2"},
 		},
 	}
 	card := scrumSyncTestCard(job.Job.ID, ScrumCard{})

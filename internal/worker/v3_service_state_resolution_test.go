@@ -14,7 +14,7 @@ import (
 
 func TestServiceStateResolutionClassifiesEveryTaskWithOneAttemptEach(t *testing.T) {
 	t.Parallel()
-	input, workload := serviceStateWorkloadFixture(t)
+	_, workload := serviceStateWorkloadFixture(t)
 	calls := 0
 	runtime := typedWorkerRuntime{
 		Context: context.Background(), MaxAttempts: 4, CorrectionModel: "forbidden-correction",
@@ -26,11 +26,6 @@ func TestServiceStateResolutionClassifiesEveryTaskWithOneAttemptEach(t *testing.
 			for _, task := range workload.Tasks {
 				if strings.Contains(prompt, task.ID) {
 					t.Fatalf("state prompt exposed task identity %s: %s", task.ID, prompt)
-				}
-				for _, criterion := range task.AcceptanceCriteria {
-					if strings.Contains(prompt, criterion) {
-						t.Fatalf("state prompt exposed acceptance criterion %q: %s", criterion, prompt)
-					}
 				}
 			}
 			for _, forbidden := range []string{
@@ -49,7 +44,7 @@ func TestServiceStateResolutionClassifiesEveryTaskWithOneAttemptEach(t *testing.
 		}),
 	}
 	plan, err := resolveDirectCodingServiceStatePlan(
-		runtime, "state-model", input, workload, nil,
+		runtime, "state-model", workload, nil,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -66,7 +61,7 @@ func TestServiceStateResolutionClassifiesEveryTaskWithOneAttemptEach(t *testing.
 
 func TestServiceStateResolutionDoesNotRetryInvalidLeaf(t *testing.T) {
 	t.Parallel()
-	input, workload := serviceStateWorkloadFixture(t)
+	_, workload := serviceStateWorkloadFixture(t)
 	calls := 0
 	runtime := typedWorkerRuntime{
 		Context: context.Background(), MaxAttempts: 9, CorrectionModel: "forbidden-correction",
@@ -76,7 +71,7 @@ func TestServiceStateResolutionDoesNotRetryInvalidLeaf(t *testing.T) {
 		}),
 	}
 	_, err := resolveDirectCodingServiceStatePlan(
-		runtime, "state-model", input, workload, nil,
+		runtime, "state-model", workload, nil,
 	)
 	if err == nil || calls != 1 {
 		t.Fatalf("invalid lifetime error=%v calls=%d", err, calls)
@@ -117,7 +112,8 @@ func TestPHPServiceStateHookCompilesCrossRequestAuthorityToPostgreSQL(t *testing
 		assemblyline.ApplicationServiceStateCrossRequestAuthorityRequired
 	capabilities := directCodingCapabilityGraph{"requirement_001": nil}
 	crossRequest = bindTestServiceStateInterfaces(
-		t, workload, capabilities, crossRequest, testIntegerServiceStateField("count"),
+		t, workload, capabilities, crossRequest,
+		testStringServiceStateField("durable feature state"),
 	)
 	if err := validatePHPServiceStateLifetime(workload, crossRequest); err != nil {
 		t.Fatal(err)
@@ -180,18 +176,13 @@ func TestServiceStateHookFollowsHTTPCompilerCapability(t *testing.T) {
 			t.Fatalf("non-HTTP stack %s registered service state authority", stack.ID)
 		}
 	}
-	input, workload, _ := applicationTaskLifecycleFixture(t)
+	_, workload, _ := applicationTaskLifecycleFixture(t)
 	stack, err := directCodingProjectStackByID(genericTypeScriptBrowserAdapter)
 	if err != nil {
 		t.Fatal(err)
 	}
 	plan, err := (&directCodingSession{}).resolveServiceStateBeforeTargetTree(
-		typedWorkerRuntime{}, stack,
-		assemblyline.ApplicationSpecification{
-			Surface: input.Surface, ProductQuote: input.ProductQuote,
-			Requirements: input.Requirements,
-		},
-		workload, nil,
+		typedWorkerRuntime{}, stack, workload, nil,
 	)
 	if err != nil || plan.WorkloadSHA256 != "" || len(plan.ByTask) != 0 {
 		t.Fatalf("non-service state resolution plan=%+v error=%v", plan, err)
@@ -210,35 +201,18 @@ func collectCalls(node ast.Node, calls *[]string) {
 
 func serviceStateWorkloadFixture(
 	t *testing.T,
-) (assemblyline.ApplicationWorkloadDraftInput, assemblyline.FrozenApplicationWorkload) {
+) (assemblyline.ApplicationSpecification, assemblyline.FrozenApplicationWorkload) {
 	t.Helper()
-	input := assemblyline.ApplicationWorkloadDraftInput{
+	specification := assemblyline.ApplicationSpecification{
 		Surface: assemblyline.ApplicationSurfaceService, ProductQuote: "inventory service",
 		Requirements: []assemblyline.Requirement{
 			{ID: "requirement_001", SourceQuote: "Accept one inventory record."},
 			{ID: "requirement_002", SourceQuote: "Return a requested inventory record."},
 		},
 	}
-	workload, err := assemblyline.FreezeApplicationWorkload(
-		input,
-		assemblyline.ApplicationWorkloadDraft{
-			Schema: assemblyline.ApplicationWorkloadDraftSchemaV1,
-			Tasks: []assemblyline.ApplicationWorkloadTaskDraft{
-				{
-					RequirementID: "requirement_001", Objective: "Accept one inventory record.",
-					RequiredBehaviors:  []string{"Accept a valid typed record."},
-					AcceptanceCriteria: []string{"The accepted record produces a successful result."},
-				},
-				{
-					RequirementID: "requirement_002", Objective: "Return a requested inventory record.",
-					RequiredBehaviors:  []string{"Return a typed result for a known record."},
-					AcceptanceCriteria: []string{"A known record produces observable output."},
-				},
-			},
-		},
-	)
+	workload, err := assemblyline.FreezeApplicationWorkload(specification)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return input, workload
+	return specification, workload
 }

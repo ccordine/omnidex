@@ -11,10 +11,8 @@ func TestApplicationServiceStateLifetimeHasOneExactStationOwner(t *testing.T) {
 	t.Parallel()
 	job, err := assemblyline.NewApplicationServiceStateLifetimeJob(
 		assemblyline.ApplicationServiceStateLifetimeInput{
-			ProductContext:    "inventory service",
-			RequirementQuote:  "A later request can observe an earlier value.",
-			Objective:         "Preserve values across separate requests.",
-			RequiredBehaviors: []string{"Retain each accepted value for later retrieval."},
+			ProductContext:   "inventory service",
+			RequirementQuote: "A later request can observe an earlier value.",
 		},
 	)
 	if err != nil {

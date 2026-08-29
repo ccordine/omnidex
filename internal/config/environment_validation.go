@@ -71,6 +71,7 @@ func buildRemovedEnvironmentKeys() []string {
 		"ANTHROPIC_MAX_TOKENS",
 		"OMNI_TICKET_CONTEXT_DEADLINE",
 		"OMNI_OBJECTIVE_ADVISORY_MODE",
+		"OMNI_CONTEXT_RELEVANCE_PROVIDER",
 	}, modelconfig.RemovedEnvironmentKeys()...)
 	for _, definition := range catalog.Definitions() {
 		if definition.SupportsExactPreparedStations || definition.SupportsEmbeddings {

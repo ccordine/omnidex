@@ -76,7 +76,9 @@ func TestOrderedRoleplayResponsesReachLaterActorsOnlyThroughPerItemRelevance(t *
 	}
 	authority := turnAuthority{
 		JobID: 81, Pipeline: string(model.PipelineChat), Instruction: userTurn.ExactText,
-		SHA256: strings.Repeat("a", 64), ChannelID: model.ChannelID(preparation.ChannelID),
+		ModelInstruction: userTurn.ExactText, ModelRedactedInstruction: userTurn.ExactText,
+		ModelArtifactPaths: []string{},
+		SHA256:             strings.Repeat("a", 64), ChannelID: model.ChannelID(preparation.ChannelID),
 		ChannelMode:                     model.ChannelModeRoleplay,
 		RoleplayViewpointCharacterID:    model.RoleplayCharacterID(maraID),
 		RoleplaySimulationPreparationID: preparationID,
@@ -98,7 +100,6 @@ func TestOrderedRoleplayResponsesReachLaterActorsOnlyThroughPerItemRelevance(t *
 		ivoID:  ivoPrivateSentinel,
 	}}
 	contextStation := emptyContextSieveStation()
-	contextStation.terms = []string{"lantern response"}
 	contextStation.relevantIDsByCall = [][]string{{"CTX_1"}, {"CTX_2"}}
 	conversation := &sequenceConversationStation{texts: []string{
 		"Mara lowers the lantern.", "Ivo steps around the dimmed light.",
@@ -128,10 +129,10 @@ func TestOrderedRoleplayResponsesReachLaterActorsOnlyThroughPerItemRelevance(t *
 		t.Fatal(err)
 	}
 	if !result.Complete || len(result.RoleplayResponses) != 2 || conversation.calls != 2 ||
-		provider.calls != 2 || contextStation.termCalls != 1 || contextStation.relevanceCalls != 2 ||
+		provider.calls != 2 || contextStation.relevanceCalls != 2 ||
 		canon.calls != 3 || canonDeltaCalls != 1 {
-		t.Fatalf("result=%#v calls provider/terms/relevance/response=%d/%d/%d/%d",
-			result, provider.calls, contextStation.termCalls, contextStation.relevanceCalls, conversation.calls)
+		t.Fatalf("result=%#v calls provider/relevance/response=%d/%d/%d",
+			result, provider.calls, contextStation.relevanceCalls, conversation.calls)
 	}
 	if result.RoleplayUserCanon == nil ||
 		len(result.RoleplayUserCanon.Facts) != 1 ||
@@ -164,8 +165,8 @@ func TestOrderedRoleplayResponsesReachLaterActorsOnlyThroughPerItemRelevance(t *
 	}
 	if len(contextStation.relevanceInputs) != 2 ||
 		len(provider.termsByCall) != 2 ||
-		!slices.Equal(provider.termsByCall[0], []string{"lantern response"}) ||
-		!slices.Equal(provider.termsByCall[1], []string{"lantern response"}) ||
+		!slices.Equal(provider.termsByCall[0], []string{userTurn.ExactText}) ||
+		!slices.Equal(provider.termsByCall[1], []string{userTurn.ExactText}) ||
 		len(contextStation.relevanceInputs[0].CandidateAuthorities) != 1 ||
 		!strings.Contains(
 			contextStation.relevanceInputs[0].CandidateAuthorities[0].Content,

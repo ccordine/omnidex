@@ -119,7 +119,7 @@ func TestTypeScriptWorkerAcceptsOnlyExactRawOutputBeyondFormerPortableCandidateC
 	foundSizeWarning := false
 	for _, event := range events {
 		if event.State == typedWorkerCompleted &&
-			strings.Contains(event.Warning, "declaration_size_review") &&
+			strings.Contains(event.Warning, "declaration_size_warning") &&
 			!strings.Contains(event.Warning, "output_projection") {
 			foundSizeWarning = true
 		}

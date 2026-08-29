@@ -82,6 +82,9 @@ func compileDirectCodingProgramWithServiceEndpoints(
 	if err := validateDirectCodingCapabilityGraph(specification.Requirements, capabilities); err != nil {
 		return directCodingProgram{}, err
 	}
+	if err := assemblyline.ValidateFrozenApplicationWorkloadFor(specification, workload); err != nil {
+		return directCodingProgram{}, err
+	}
 	stack, err := directCodingProjectStackByID(targetTree.StackID)
 	if err != nil {
 		return directCodingProgram{}, err
@@ -130,7 +133,7 @@ func compileDirectCodingProgramWithServiceEndpoints(
 			return directCodingProgram{}, fmt.Errorf("validate service state plan: %w", err)
 		}
 		if err := endpoints.ValidateForCapabilities(
-			applicationWorkloadInput(specification), workload, capabilities,
+			workload, capabilities,
 		); err != nil {
 			return directCodingProgram{}, fmt.Errorf("validate service endpoint plan: %w", err)
 		}

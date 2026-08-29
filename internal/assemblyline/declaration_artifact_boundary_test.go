@@ -22,10 +22,16 @@ func TestDeclarationArtifactBoundaryIsOnePathBlindSemanticLeaf(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, required := range []string{input.RequirementQuote, input.GoSignature, input.DeclarationID} {
+	for _, required := range []string{input.RequirementQuote, input.GoSignature} {
 		if !strings.Contains(prompt, required) {
 			t.Fatalf("boundary prompt omitted exact authority %q:\n%s", required, prompt)
 		}
+	}
+	if strings.Contains(prompt, input.DeclarationID) {
+		t.Fatalf("boundary prompt exposed code-owned declaration ID %q:\n%s", input.DeclarationID, prompt)
+	}
+	if !strings.Contains(string(job.Payload), input.DeclarationID) {
+		t.Fatalf("portable payload lost code-owned declaration binding %q: %s", input.DeclarationID, job.Payload)
 	}
 	for label, projection := range map[string]string{"prompt": prompt} {
 		lower := strings.ToLower(projection)

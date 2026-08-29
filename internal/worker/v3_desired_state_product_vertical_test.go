@@ -36,7 +36,7 @@ func TestPostgresOrdinaryChannelDesiredStateContaminatedProductionPlumbing(t *te
 				assemblyline.WorkApplicationContextNeedCoverage,
 				assemblyline.WorkRepositoryRequirement,
 				assemblyline.WorkRepositoryRequirementCoverage,
-				assemblyline.WorkKnownArtifactTruth,
+				assemblyline.WorkRepositoryArtifactAbsence,
 				assemblyline.WorkDeclarationArtifactBoundary,
 				assemblyline.WorkFragmentGeneration,
 			},
@@ -50,7 +50,7 @@ func TestPostgresOrdinaryChannelDesiredStateContaminatedProductionPlumbing(t *te
 				assemblyline.WorkApplicationContextNeedCoverage,
 				assemblyline.WorkRepositoryRequirement,
 				assemblyline.WorkRepositoryRequirementCoverage,
-				assemblyline.WorkKnownArtifactTruth,
+				assemblyline.WorkRepositoryArtifactAbsence,
 				assemblyline.WorkArtifactCandidateSelection,
 			},
 		},
@@ -75,7 +75,6 @@ func TestPostgresOrdinaryChannelDeletionProductionPlumbingPinsFrontDoorPathVisib
 			assemblyline.WorkArtifactHandling,
 			assemblyline.WorkRepositoryRequirement,
 			assemblyline.WorkRepositoryRequirementCoverage,
-			assemblyline.WorkKnownArtifactTruth,
 		},
 	}
 	root := desiredStateProductRepository(t, true)

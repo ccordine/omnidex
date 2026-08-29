@@ -145,6 +145,6 @@ func goCommandLineAcceptanceContract(behavior, featureName string) string {
 	return strings.Join([]string{
 		behavior,
 		"Call " + featureName + " with representative TaskInput and CapabilityResults values.",
-		"Each observable acceptance criterion is proven by t.Fatal, t.Fatalf, t.Error, or t.Errorf applied to values read from that exact call's TaskResult.",
+		"The exact accepted requirement is proven by t.Fatal, t.Fatalf, t.Error, or t.Errorf applied to a value read from that exact call's TaskResult.",
 	}, "\n")
 }

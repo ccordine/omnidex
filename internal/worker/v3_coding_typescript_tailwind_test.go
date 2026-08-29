@@ -49,6 +49,22 @@ func TestTypeScriptBrowserTailwindUsageDoesNotExposeToolchainAuthority(t *testin
 	}
 }
 
+func TestBrowserFeatureContractContainsBehaviorWithoutFrameworkMetaFraming(t *testing.T) {
+	t.Parallel()
+	contract := genericBrowserFeatureContract("Show the current inventory level.", nil)
+	if !strings.Contains(contract, "Show the current inventory level.") ||
+		!strings.Contains(contract, "declared inputs") {
+		t.Fatalf("browser behavior contract omitted semantic authority: %s", contract)
+	}
+	for _, forbidden := range []string{
+		"task-neutral", "code-owned boundary", "block", "workload-specific", "local contract",
+	} {
+		if strings.Contains(contract, forbidden) {
+			t.Fatalf("browser behavior contract exposed framework meta-framing %q: %s", forbidden, contract)
+		}
+	}
+}
+
 func TestTypeScriptBrowserAssemblyRejectsTailwindAuthorityDrift(t *testing.T) {
 	for _, testCase := range []struct {
 		name, path, old, replacement, want string

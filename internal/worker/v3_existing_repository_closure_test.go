@@ -10,22 +10,17 @@ import (
 	repositoryretrieval "github.com/gryph/omnidex/internal/repository/retrieval"
 )
 
-func TestRepositoryRequirementClosureAcquiresEveryExactQuoteBeforeSurfaceInference(t *testing.T) {
+func TestRepositoryRequirementClosureAcquiresCodeOwnedAuthorityBeforeSurfaceInference(t *testing.T) {
 	t.Parallel()
-	events := make([]string, 0, 6)
-	searchTermCalls := 0
+	const authority = "Change both exact existing behaviors."
+	events := make([]string, 0, 5)
 	resolutions, err := prepareExistingRepositoryRequirementResolutions(
 		[]string{"first exact requirement", "second exact requirement"},
+		authority,
 		func(query string) (repositoryretrieval.EvidencePack, error) {
 			events = append(events, "acquire:"+query)
 			return repositoryAcquisitionTestPack(t, query), nil
 		},
-		func(requirementQuote string) (assemblyline.RepositorySearchTermDecision, error) {
-			searchTermCalls++
-			return assemblyline.RepositorySearchTermDecision{}, fmt.Errorf(
-				"search-term station must not run for %q", requirementQuote,
-			)
-		},
 		func(acquisition existingRepositoryEvidenceAcquisition) error {
 			events = append(events, "record:"+acquisition.RequirementQuote)
 			return nil
@@ -33,8 +28,11 @@ func TestRepositoryRequirementClosureAcquiresEveryExactQuoteBeforeSurfaceInferen
 		func(acquisition existingRepositoryEvidenceAcquisition) (assemblyline.RepositoryChangeSurfaceDecision, error) {
 			events = append(events, "surface:"+acquisition.RequirementQuote)
 			return assemblyline.RepositoryChangeSurfaceDecision{
-				Schema:  assemblyline.RepositoryChangeSurfaceSchemaV2,
-				Targets: []assemblyline.RepositoryChangeTarget{{SymbolID: acquisition.Pack.Symbols[0].ID, Requirement: acquisition.RequirementQuote}},
+				Schema: assemblyline.RepositoryChangeSurfaceSchemaV2,
+				Targets: []assemblyline.RepositoryChangeTarget{{
+					SymbolID:    acquisition.Pack.Symbols[0].ID,
+					Requirement: acquisition.RequirementQuote,
+				}},
 			}, nil
 		},
 	)
@@ -42,79 +40,20 @@ func TestRepositoryRequirementClosureAcquiresEveryExactQuoteBeforeSurfaceInferen
 		t.Fatal(err)
 	}
 	wantEvents := []string{
-		"acquire:first exact requirement",
-		"acquire:second exact requirement",
+		"acquire:" + authority,
 		"record:first exact requirement",
 		"record:second exact requirement",
 		"surface:first exact requirement",
 		"surface:second exact requirement",
 	}
-	if !reflect.DeepEqual(events, wantEvents) || searchTermCalls != 0 || len(resolutions) != 2 {
-		t.Fatalf("events=%v search-term calls=%d resolutions=%#v", events, searchTermCalls, resolutions)
+	if !reflect.DeepEqual(events, wantEvents) || len(resolutions) != 2 {
+		t.Fatalf("events=%v resolutions=%#v", events, resolutions)
 	}
 	for _, resolution := range resolutions {
-		if resolution.Acquisition.SearchTermCalls != 0 {
-			t.Fatalf("deterministic acquisition opened inference: %#v", resolution)
+		if resolution.Acquisition.Query != authority ||
+			resolution.Acquisition.Need.Schema != assemblyline.ApplicationEvidenceNeedSchemaV2 {
+			t.Fatalf("model-derived operation authority leaked into acquisition: %#v", resolution)
 		}
-	}
-}
-
-func TestRepositoryRequirementClosureOpensOneGapOnlyForTheMissingRequirement(t *testing.T) {
-	t.Parallel()
-	events := make([]string, 0, 8)
-	searchTermCalls := make([]string, 0, 1)
-	resolutions, err := prepareExistingRepositoryRequirementResolutions(
-		[]string{"first exact requirement", "second exact requirement"},
-		func(query string) (repositoryretrieval.EvidencePack, error) {
-			events = append(events, "acquire:"+query)
-			switch query {
-			case "first exact requirement", `"alternate" OR "second" OR "term"`:
-				return repositoryAcquisitionTestPack(t, query), nil
-			case "second exact requirement":
-				return repositoryretrieval.EvidencePack{}, repositoryretrieval.ErrInsufficientEvidence
-			default:
-				return repositoryretrieval.EvidencePack{}, fmt.Errorf("unexpected query %q", query)
-			}
-		},
-		func(requirementQuote string) (assemblyline.RepositorySearchTermDecision, error) {
-			events = append(events, "search-term:"+requirementQuote)
-			searchTermCalls = append(searchTermCalls, requirementQuote)
-			return assemblyline.RepositorySearchTermDecision{
-				Schema:  assemblyline.RepositorySearchTermSchemaV2,
-				Anchors: []string{"alternate second term"},
-			}, nil
-		},
-		func(acquisition existingRepositoryEvidenceAcquisition) error {
-			events = append(events, "record:"+acquisition.RequirementQuote)
-			return nil
-		},
-		func(acquisition existingRepositoryEvidenceAcquisition) (assemblyline.RepositoryChangeSurfaceDecision, error) {
-			events = append(events, "surface:"+acquisition.RequirementQuote)
-			return assemblyline.RepositoryChangeSurfaceDecision{
-				Schema:  assemblyline.RepositoryChangeSurfaceSchemaV2,
-				Targets: []assemblyline.RepositoryChangeTarget{{SymbolID: acquisition.Pack.Symbols[0].ID, Requirement: acquisition.RequirementQuote}},
-			}, nil
-		},
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	wantEvents := []string{
-		"acquire:first exact requirement",
-		"acquire:second exact requirement",
-		"search-term:second exact requirement",
-		`acquire:"alternate" OR "second" OR "term"`,
-		"record:first exact requirement",
-		"record:second exact requirement",
-		"surface:first exact requirement",
-		"surface:second exact requirement",
-	}
-	if !reflect.DeepEqual(events, wantEvents) ||
-		!reflect.DeepEqual(searchTermCalls, []string{"second exact requirement"}) ||
-		len(resolutions) != 2 || resolutions[0].Acquisition.SearchTermCalls != 0 ||
-		resolutions[1].Acquisition.SearchTermCalls != 1 ||
-		resolutions[1].Acquisition.Query != `"alternate" OR "second" OR "term"` {
-		t.Fatalf("events=%v search-term calls=%v resolutions=%#v", events, searchTermCalls, resolutions)
 	}
 }
 
@@ -123,16 +62,10 @@ func TestRepositoryRequirementClosureDispatchesNoSurfaceWhenAcquisitionFails(t *
 	events := make([]string, 0, 2)
 	_, err := prepareExistingRepositoryRequirementResolutions(
 		[]string{"first exact requirement", "second exact requirement"},
+		"Change both exact existing behaviors.",
 		func(query string) (repositoryretrieval.EvidencePack, error) {
 			events = append(events, "acquire:"+query)
-			if query == "first exact requirement" {
-				return repositoryAcquisitionTestPack(t, query), nil
-			}
 			return repositoryretrieval.EvidencePack{}, fmt.Errorf("index unavailable")
-		},
-		func(string) (assemblyline.RepositorySearchTermDecision, error) {
-			events = append(events, "search-term")
-			return assemblyline.RepositorySearchTermDecision{}, nil
 		},
 		func(existingRepositoryEvidenceAcquisition) error {
 			events = append(events, "record")
@@ -144,32 +77,23 @@ func TestRepositoryRequirementClosureDispatchesNoSurfaceWhenAcquisitionFails(t *
 		},
 	)
 	if err == nil || !reflect.DeepEqual(events, []string{
-		"acquire:first exact requirement", "acquire:second exact requirement",
+		"acquire:Change both exact existing behaviors.",
 	}) {
 		t.Fatalf("error=%v events=%v", err, events)
 	}
 }
 
-func TestRepositoryRequirementClosureRejectsCrossAuthorityBeforeSurfaceInference(t *testing.T) {
+func TestRepositoryRequirementClosureRejectsInvalidPackBeforeSurfaceInference(t *testing.T) {
 	t.Parallel()
 	events := make([]string, 0, 4)
 	_, err := prepareExistingRepositoryRequirementResolutions(
 		[]string{"first exact requirement", "second exact requirement"},
+		"Change both exact existing behaviors.",
 		func(query string) (repositoryretrieval.EvidencePack, error) {
 			events = append(events, "acquire:"+query)
 			pack := repositoryAcquisitionTestPack(t, query)
-			if query == "second exact requirement" {
-				pack.ID = ""
-				pack.SnapshotID = "snapshot_" + strings.Repeat("9", 64)
-				if err := repositoryretrieval.FinalizeEvidencePack(&pack); err != nil {
-					t.Fatal(err)
-				}
-			}
+			pack.QueryBinding = "query_binding_" + strings.Repeat("9", 64)
 			return pack, nil
-		},
-		func(string) (assemblyline.RepositorySearchTermDecision, error) {
-			events = append(events, "search-term")
-			return assemblyline.RepositorySearchTermDecision{}, nil
 		},
 		func(existingRepositoryEvidenceAcquisition) error {
 			events = append(events, "record")
@@ -180,10 +104,9 @@ func TestRepositoryRequirementClosureRejectsCrossAuthorityBeforeSurfaceInference
 			return assemblyline.RepositoryChangeSurfaceDecision{}, nil
 		},
 	)
-	if err == nil || !strings.Contains(err.Error(), "share one snapshot and analysis") ||
-		!reflect.DeepEqual(events, []string{
-			"acquire:first exact requirement", "acquire:second exact requirement",
-		}) {
+	if err == nil || !reflect.DeepEqual(events, []string{
+		"acquire:Change both exact existing behaviors.",
+	}) {
 		t.Fatalf("error=%v events=%v", err, events)
 	}
 }

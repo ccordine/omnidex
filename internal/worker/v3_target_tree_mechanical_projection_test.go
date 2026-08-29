@@ -31,12 +31,64 @@ func TestCommandLineStacksProjectExactFocusedTreesMechanically(t *testing.T) {
 			if stack.ProjectFocusedTargetTree == nil {
 				t.Fatal("exact command-line grammar retained an inference-only target-tree path")
 			}
-			target, err := stack.ProjectFocusedTargetTree(1, stack.TargetTreeReservedPaths)
+			target, err := stack.ProjectFocusedTargetTree(1, directCodingTargetTreeOccupation{
+				FilePaths: stack.TargetTreeReservedPaths,
+			})
 			if err != nil {
 				t.Fatal(err)
 			}
 			if err := validateDirectCodingFocusedTargetTree(stack, target); err != nil {
 				t.Fatalf("projected target is invalid: %v", err)
+			}
+			if !reflect.DeepEqual(target.Paths, testCase.want) {
+				t.Fatalf("paths=%v want=%v", target.Paths, testCase.want)
+			}
+		})
+	}
+}
+
+func TestMechanicalCompleteTreeAllocatorSkipsOccupiedPairsAcrossArtifactGrammars(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name     string
+		occupied []string
+		pair     mechanicalTargetTreePair
+		want     []string
+	}{
+		{
+			name: "root ECMAScript modules",
+			occupied: []string{
+				"feature001.mjs", "feature002.test.mjs",
+			},
+			pair: func(ordinal int) (string, string) {
+				return fmt.Sprintf("feature%03d.mjs", ordinal),
+					fmt.Sprintf("feature%03d.test.mjs", ordinal)
+			},
+			want: []string{"feature003.mjs", "feature003.test.mjs"},
+		},
+		{
+			name: "split Rust package directories",
+			occupied: []string{
+				"src/feature001.rs", "tests/feature002_test.rs",
+			},
+			pair: func(ordinal int) (string, string) {
+				return fmt.Sprintf("src/feature%03d.rs", ordinal),
+					fmt.Sprintf("tests/feature%03d_test.rs", ordinal)
+			},
+			want: []string{"src/feature003.rs", "tests/feature003_test.rs"},
+		},
+	}
+	for _, testCase := range tests {
+		testCase := testCase
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+			target, err := projectMechanicalCompleteTargetTree(
+				testCase.name,
+				directCodingTargetTreeOccupation{FilePaths: testCase.occupied},
+				testCase.pair,
+			)
+			if err != nil {
+				t.Fatal(err)
 			}
 			if !reflect.DeepEqual(target.Paths, testCase.want) {
 				t.Fatalf("paths=%v want=%v", target.Paths, testCase.want)
@@ -66,7 +118,7 @@ func TestCommandLineTargetTreeResolutionPerformsNoInference(t *testing.T) {
 			)
 			calls := 0
 			runtime := typedWorkerRuntime{
-				Context: context.Background(), MaxAttempts: maxTypedWorkerAttempts,
+				Context: context.Background(), MaxAttempts: exactSemanticLeafCalls,
 				Execute: func(assemblyline.PortableJob, string) (assemblyline.PortableResult, error) {
 					calls++
 					return assemblyline.PortableResult{}, fmt.Errorf("forbidden target-tree inference")
@@ -97,9 +149,8 @@ func TestMechanicalFocusedTreeSkipsAnyPartiallyOccupiedPair(t *testing.T) {
 	if stack.ProjectFocusedTargetTree == nil {
 		t.Fatal("Go stack lacks its mechanical focused-tree projector")
 	}
-	target, err := stack.ProjectFocusedTargetTree(1, []string{
-		"feature001.go",
-		"feature002_test.go",
+	target, err := stack.ProjectFocusedTargetTree(1, directCodingTargetTreeOccupation{
+		FilePaths: []string{"feature001.go", "feature002_test.go"},
 	})
 	if err != nil {
 		t.Fatal(err)

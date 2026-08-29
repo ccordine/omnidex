@@ -123,6 +123,10 @@ func TestCheckedMigrationBundleFreezesExactProviderSplitSet(t *testing.T) {
 	stationGapOpeningPortableEnvelopeV2Count := 0
 	workspaceMutationPipelineActionAuthorityCount := 0
 	jobExecutionIdentityImmutabilityCount := 0
+	artifactSemanticRelationSplitCount := 0
+	responseSchemaAuthorityRetirementCount := 0
+	semanticUncertaintyContractAuthorityCount := 0
+	llmEvidenceTransportIdentityCutoverCount := 0
 	for _, entry := range bundle.entries {
 		if strings.HasPrefix(entry.name, "060_") {
 			got[entry.name]++
@@ -349,9 +353,21 @@ func TestCheckedMigrationBundleFreezesExactProviderSplitSet(t *testing.T) {
 		if entry.name == jobExecutionIdentityImmutabilityMigration {
 			jobExecutionIdentityImmutabilityCount++
 		}
+		if entry.name == artifactSemanticRelationSplitMigration {
+			artifactSemanticRelationSplitCount++
+		}
+		if entry.name == responseSchemaAuthorityRetirementMigration {
+			responseSchemaAuthorityRetirementCount++
+		}
+		if entry.name == "182_semantic_uncertainty_contract_authority.sql" {
+			semanticUncertaintyContractAuthorityCount++
+		}
+		if entry.name == "183_llm_evidence_transport_identity_cutover.sql" {
+			llmEvidenceTransportIdentityCutoverCount++
+		}
 	}
-	if len(bundle.entries) != 220 || len(got) != len(want) {
-		t.Fatalf("checked migration counts total/provider=%d/%d want 220/%d",
+	if len(bundle.entries) != 234 || len(got) != len(want) {
+		t.Fatalf("checked migration counts total/provider=%d/%d want 234/%d",
 			len(bundle.entries), len(got), len(want))
 	}
 	for _, name := range want {
@@ -391,6 +407,30 @@ func TestCheckedMigrationBundleFreezesExactProviderSplitSet(t *testing.T) {
 		t.Fatalf(
 			"checked job execution identity immutability migration count=%d want 1",
 			jobExecutionIdentityImmutabilityCount,
+		)
+	}
+	if artifactSemanticRelationSplitCount != 1 {
+		t.Fatalf(
+			"checked artifact semantic relation split migration count=%d want 1",
+			artifactSemanticRelationSplitCount,
+		)
+	}
+	if responseSchemaAuthorityRetirementCount != 1 {
+		t.Fatalf(
+			"checked response-schema authority retirement migration count=%d want 1",
+			responseSchemaAuthorityRetirementCount,
+		)
+	}
+	if semanticUncertaintyContractAuthorityCount != 1 {
+		t.Fatalf(
+			"checked semantic uncertainty contract authority migration count=%d want 1",
+			semanticUncertaintyContractAuthorityCount,
+		)
+	}
+	if llmEvidenceTransportIdentityCutoverCount != 1 {
+		t.Fatalf(
+			"checked LLM evidence transport identity cutover migration count=%d want 1",
+			llmEvidenceTransportIdentityCutoverCount,
 		)
 	}
 	if databaseCognitionAuthorityCount != 1 || roleplayCanonAuthorityCount != 1 ||

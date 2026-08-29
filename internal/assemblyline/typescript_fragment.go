@@ -159,7 +159,6 @@ func validateTypeScriptGeneratedNode(node *treesitter.Node) error {
 				"TypeScript fragment contains an empty executable body at line %d column %d",
 				position.Row+1, position.Column+1,
 			),
-			"Implement every empty function or callback body with executable code required by the current declaration, or remove the unused empty function or callback. Change nothing unrelated.",
 		)
 	}
 	for index := uint(0); index < node.ChildCount(); index++ {

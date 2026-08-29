@@ -20,8 +20,10 @@ func resolveRoleplayUserOngoingAction(
 	ctx context.Context,
 	station objectiveRoleplayOngoingActionStation,
 	preparation roleplay.SimulationTurnAuthority,
+	modelUserTurn roleplay.UserTurnAuthority,
+	authority turnAuthority,
 ) (*queue.RoleplayUserOngoingActionCompletion, int, error) {
-	contribution, required, err := preparation.UserTurn.OngoingActionContribution()
+	contribution, required, err := modelUserTurn.OngoingActionContribution()
 	if err != nil {
 		return nil, 0, fmt.Errorf("resolve typed roleplay user action authority: %w", err)
 	}
@@ -41,6 +43,12 @@ func resolveRoleplayUserOngoingAction(
 	)
 	if err != nil {
 		return nil, 0, fmt.Errorf("extract roleplay user ongoing action: %w", err)
+	}
+	resolved, err = restoreObjectiveOptionalModelText(
+		authority, "roleplay user ongoing action", resolved,
+	)
+	if err != nil {
+		return nil, 0, err
 	}
 	return &queue.RoleplayUserOngoingActionCompletion{
 		CharacterID:           model.RoleplayCharacterID(preparation.UserTurn.CharacterID),

@@ -110,7 +110,7 @@ func TestTypeScriptGenerateBlockCoreRepairsInitialParserRejection(t *testing.T) 
 				t.Fatal(err)
 			}
 			if got != corrected || modelResolutions != 1 ||
-				guidanceAttempts != maxTypedWorkerAttempts || !initialRejectionFinalized ||
+				guidanceAttempts != 1 || !initialRejectionFinalized ||
 				len(calls) != 3 {
 				t.Fatalf(
 					"corrected=%q model_resolutions=%d guidance_attempts=%d calls=%v",

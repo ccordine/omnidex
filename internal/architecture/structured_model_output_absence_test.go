@@ -42,51 +42,29 @@ func TestSemanticDomainPackagesDoNotOwnProviderTransports(t *testing.T) {
 	}
 }
 
-func TestIntentionalNonStationInferenceSurfacesRemainRawTextOnly(t *testing.T) {
+func TestOllamaPrewarmLoadsWithoutAnInferencePrompt(t *testing.T) {
 	t.Parallel()
-	root := filepath.Clean(filepath.Join("..", ".."))
-	checks := map[string]struct {
-		required  []string
-		forbidden []string
-	}{
-		"cmd/cli/screen_local.go": {
-			required: []string{
-				`Response string ` + "`json:\"response\"`",
-				"result := normalizeScreenText(parsed.Response)",
-			},
-			forbidden: structuredModelOutputTokens(),
-		},
-		"cmd/cli/ollama_prewarm.go": {
-			required: []string{
-				`Content string ` + "`json:\"content\"`",
-				`strings.TrimSpace(response.Message.Content) == ""`,
-			},
-			forbidden: structuredModelOutputTokens(),
-		},
-		"internal/api/web/src/lib/browser_context_relevance_protocol.ts": {
-			required: []string{
-				"raw_result?: string", "raw_result: rawResult",
-				"ChatCompletionRequestNonStreaming",
-			},
-			forbidden: append(structuredModelOutputTokens(),
-				"JSON.parse(rawResult)", "JSON.parse(content)"),
-		},
+	raw, err := os.ReadFile(filepath.Join("..", "..", "cmd", "cli", "ollama_prewarm.go"))
+	if err != nil {
+		t.Fatal(err)
 	}
-	for relative, check := range checks {
-		raw, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(relative)))
-		if err != nil {
-			t.Fatalf("read %s: %v", relative, err)
+	source := string(raw)
+	for _, required := range []string{
+		`baseURL+"/api/generate"`,
+		`response.Response != ""`,
+		`response.PromptEvalCount != 0`,
+		`response.EvalCount != 0`,
+	} {
+		if !strings.Contains(source, required) {
+			t.Errorf("Ollama prewarm omitted non-inference guard %q", required)
 		}
-		source := string(raw)
-		for _, required := range check.required {
-			if !strings.Contains(source, required) {
-				t.Errorf("raw inference surface %s omitted %q", relative, required)
-			}
-		}
-		for _, forbidden := range check.forbidden {
-			if strings.Contains(source, forbidden) {
-				t.Errorf("raw inference surface %s contains structured output contract %q", relative, forbidden)
-			}
+	}
+	for _, forbidden := range []string{
+		"MinimalGeneratePrompt", "ollamaPrewarmMessage", "NumPredict", "Temperature",
+		`baseURL+"/api/chat"`,
+	} {
+		if strings.Contains(source, forbidden) {
+			t.Errorf("Ollama prewarm retains ceremonial inference authority %q", forbidden)
 		}
 	}
 }
@@ -131,27 +109,53 @@ func TestPortableRendererReturnsOnlyRawPromptAndError(t *testing.T) {
 	})
 }
 
-func TestBrowserInferencePortableBoundaryHasNoStructuredResponseChannel(t *testing.T) {
+func TestProductionHasNoWholeRelationalIntentModelJSONDecoder(t *testing.T) {
 	t.Parallel()
-	raw, err := os.ReadFile(filepath.Join(
-		"..", "browserinference", "context_relevance_broker.go",
-	))
-	if err != nil {
-		t.Fatal(err)
+	root := filepath.Clean(filepath.Join("..", ".."))
+	retired := filepath.Join(root, "internal", "datasource", "relational_intent_decode.go")
+	if _, err := os.Stat(retired); !os.IsNotExist(err) {
+		t.Fatalf("retired whole relational-intent JSON decoder still exists: %v", err)
 	}
-	source := string(raw)
-	for _, required := range []string{
-		"prompt, err := assemblyline.RenderPortableJob(job)",
-		"DecodeContextRelevanceSelectionDecision(",
-		"request.input, submission.RawResult",
+	walkProductionSource(t, root, func(path, source string) {
+		if strings.Contains(source, "DecodeRelationalIntent") {
+			t.Errorf("production source %s retains whole relational-intent JSON decoding authority", path)
+		}
+	})
+}
+
+func TestRetiredBrowserInferenceProductionSurfaceIsAbsent(t *testing.T) {
+	t.Parallel()
+	root := filepath.Clean(filepath.Join("..", ".."))
+	for _, relative := range []string{
+		"internal/browserinference/context_relevance_broker.go",
+		"internal/api/browser_context_relevance_http.go",
+		"internal/api/web/src/controllers/browser_inference_controller.ts",
+		"internal/api/web/src/lib/browser_context_relevance_runtime.ts",
+		"internal/api/web/src/workers/browser_inference_worker.ts",
 	} {
-		if !strings.Contains(source, required) {
-			t.Errorf("browser raw relevance boundary omitted %q", required)
+		if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(relative))); !os.IsNotExist(err) {
+			t.Errorf("retired browser inference source %s still exists: %v", relative, err)
 		}
 	}
-	for _, forbidden := range []string{"responseSchema", "ResponseSchema", "json_schema", "map[string]any"} {
-		if strings.Contains(source, forbidden) {
-			t.Errorf("browser raw relevance boundary retained structured channel %q", forbidden)
+	for _, relative := range []string{
+		"cmd/core/main.go",
+		"internal/api/server.go",
+		"internal/worker/engine.go",
+		"internal/worker/objective_context_sieve_stations.go",
+		"internal/api/web/package.json",
+		"internal/api/web/src/main.ts",
+	} {
+		raw, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(relative)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, forbidden := range []string{
+			"browserContextRelevance", "BrowserContextRelevance", "browser-inference",
+			"@mlc-ai/web-llm",
+		} {
+			if strings.Contains(string(raw), forbidden) {
+				t.Errorf("production source %s retains browser inference authority %q", relative, forbidden)
+			}
 		}
 	}
 }
@@ -171,6 +175,26 @@ func TestProductionSourceContainsNoRetiredRawTransportIdentity(t *testing.T) {
 			}
 		}
 	})
+}
+
+func TestCurrentStationTransportHasNoResponseSchemaAuthority(t *testing.T) {
+	t.Parallel()
+	root := filepath.Clean(filepath.Join("..", ".."))
+	for _, relative := range []string{
+		"internal/queue",
+		"internal/worker",
+	} {
+		walkProductionSource(t, filepath.Join(root, relative), func(path, source string) {
+			for _, forbidden := range []string{
+				"ResponseSchema", "response_schema", "canonicalStationGapSchema",
+				"PortableRendererV4", "render-portable-job.v4",
+			} {
+				if strings.Contains(source, forbidden) {
+					t.Errorf("current station source %s retains retired authority %q", path, forbidden)
+				}
+			}
+		})
+	}
 }
 
 func structuredModelOutputTokens() []string {

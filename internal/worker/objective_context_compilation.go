@@ -57,16 +57,18 @@ func compileObjectiveTurnContext(
 	result, err := contextcompiler.Compile(
 		ctx,
 		contextcompiler.Request{
-			ExactInstruction: contextInstruction,
-			Retrieval:        retrieval,
-			Scope:            contextScope,
+			ExactInstruction:   contextInstruction,
+			ModelInstruction:   authority.ModelInstruction,
+			Retrieval:          retrieval,
+			Scope:              contextScope,
+			KnownArtifactPaths: append([]string{}, authority.ModelArtifactPaths...),
 		},
 		boundContextCandidateSource{
 			source: candidateProvider, job: job, authority: authority,
 			preparation: preparation, projection: projection,
 		},
 		contextcompiler.Stations{
-			Terms: stationProvider, Relevance: stationProvider, Minification: stationProvider,
+			Relevance: stationProvider, Minification: stationProvider,
 		},
 	)
 	if err != nil {
@@ -76,23 +78,24 @@ func compileObjectiveTurnContext(
 	return authority, result.ModelCalls, nil
 }
 
-// resolveRoleplayTurnRetrieval resolves instruction-level retrieval concepts
-// once for an ordered response round. Candidate acquisition and relevance stay
-// responder-specific; only the identical semantic query is shared.
+// resolveRoleplayTurnRetrieval resolves fixed search availability once for an
+// ordered response round. Each responder compilation uses its exact
+// authoritative instruction as the sole query when search is available.
 func resolveRoleplayTurnRetrieval(
 	ctx context.Context,
 	job model.Job,
 	authority turnAuthority,
 	candidateProvider objectiveContextCandidateSource,
-	stationProvider objectiveContextSieveStations,
 	preparation roleplay.SimulationTurnAuthority,
-) (contextcompiler.RetrievalDirective, int, error) {
+) (contextcompiler.RetrievalDirective, error) {
 	contextInstruction, err := objectiveContextInstruction(authority)
 	if err != nil {
-		return contextcompiler.RetrievalDirective{}, 0, err
+		return contextcompiler.RetrievalDirective{}, err
 	}
 	if preparation.InputKind == roleplay.SimulationTurnAction {
-		return contextcompiler.RetrievalDirective{Concepts: []string{}}, 0, nil
+		return contextcompiler.RetrievalDirective{
+			Availability: contextcompiler.SearchUnavailable,
+		}, nil
 	}
 	availability := contextcompiler.SearchUnavailable
 	for index, responder := range preparation.Responders {
@@ -100,7 +103,7 @@ func resolveRoleplayTurnRetrieval(
 			authority, responder, nil,
 		)
 		if err != nil {
-			return contextcompiler.RetrievalDirective{}, 0, fmt.Errorf(
+			return contextcompiler.RetrievalDirective{}, fmt.Errorf(
 				"project roleplay responder %d search authority: %w", index, err,
 			)
 		}
@@ -109,12 +112,12 @@ func resolveRoleplayTurnRetrieval(
 			preparation: &preparation, projection: &projection,
 		}).SearchAvailability(ctx)
 		if err != nil {
-			return contextcompiler.RetrievalDirective{}, 0, fmt.Errorf(
+			return contextcompiler.RetrievalDirective{}, fmt.Errorf(
 				"inspect roleplay responder %d search availability: %w", index, err,
 			)
 		}
 		if err := current.Validate(); err != nil {
-			return contextcompiler.RetrievalDirective{}, 0, fmt.Errorf(
+			return contextcompiler.RetrievalDirective{}, fmt.Errorf(
 				"roleplay responder %d: %w", index, err,
 			)
 		}
@@ -123,14 +126,14 @@ func resolveRoleplayTurnRetrieval(
 			break
 		}
 	}
-	directive, calls, err := contextcompiler.ResolveRetrievalDirective(
+	directive, err := contextcompiler.ResolveRetrievalDirective(
 		ctx, contextInstruction, assemblyline.ContextScopeRoleplaySimulation,
-		availability, stationProvider,
+		availability,
 	)
 	if err != nil {
-		return contextcompiler.RetrievalDirective{}, 0, err
+		return contextcompiler.RetrievalDirective{}, err
 	}
-	return directive, calls, nil
+	return directive, nil
 }
 
 func objectiveContextScope(authority turnAuthority) (assemblyline.ContextScope, error) {

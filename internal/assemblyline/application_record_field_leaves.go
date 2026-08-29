@@ -7,20 +7,30 @@ func BuildApplicationRecordFieldCoveragePrompt(
 ) (string, error) {
 	return buildApplicationServiceStateLeafPrompt(
 		input.validate,
-		"Answer one semantic relation: does the focused record-list field require any scalar record member that is not semantically covered by the accepted record fields?",
+		"Answer one semantic question: does the focused record-list value require another scalar member not covered by the accepted semantic members?",
 		"Return RECORD_FIELD_REMAINS when one or more scalar members remain. Return NO_UNCOVERED_RECORD_FIELD when the accepted members are minimally sufficient.",
-		"APPLICATION_RECORD_FIELD_AUTHORITY", input,
+		"APPLICATION_RECORD_FIELD_AUTHORITY",
+		applicationRecordFieldLeafProjection{
+			Authority:            input.Authority,
+			ParentPurpose:        input.ParentPurpose,
+			AcceptedRecordFields: projectApplicationRecordFields(input.AcceptedRecordFields),
+		},
 	)
 }
 
-func BuildApplicationRecordFieldNamePrompt(
+func BuildApplicationRecordFieldPurposePrompt(
 	input ApplicationRecordFieldLeafInput,
 ) (string, error) {
 	return buildApplicationServiceStateLeafPrompt(
 		input.validate,
-		"Return one canonical lowercase snake-case name for the earliest necessary scalar member of the focused record-list field not semantically covered by the accepted record fields.",
-		"Return only that one raw identifier. Do not return its kind, another member, JSON, quotes, a label, Markdown, or commentary.",
-		"APPLICATION_RECORD_FIELD_AUTHORITY", input,
+		"State one specific semantic responsibility of a necessary scalar member not covered in the focused record-list value.",
+		"Return only one concise raw purpose sentence. Do not return an identifier, data kind, another member, JSON, quotes, a label, Markdown, or commentary.",
+		"APPLICATION_RECORD_FIELD_AUTHORITY",
+		applicationRecordFieldLeafProjection{
+			Authority:            input.Authority,
+			ParentPurpose:        input.ParentPurpose,
+			AcceptedRecordFields: projectApplicationRecordFields(input.AcceptedRecordFields),
+		},
 	)
 }
 
@@ -29,9 +39,14 @@ func BuildApplicationRecordFieldKindPrompt(
 ) (string, error) {
 	return buildApplicationServiceStateLeafPrompt(
 		input.validate,
-		"Answer one semantic question: what registered scalar data kind must the focused record member use to satisfy the directly related behavior authority?",
+		"Answer one semantic question: what registered scalar data kind must the focused record member use to fulfill its exact purpose?",
 		"Return exactly one raw registered scalar kind: string, integer, number, or boolean. Return no JSON, quotes, label, Markdown, or commentary.",
-		"APPLICATION_RECORD_FIELD_KIND_AUTHORITY", input,
+		"APPLICATION_RECORD_FIELD_KIND_AUTHORITY",
+		applicationRecordFieldKindProjection{
+			Authority:      input.Authority,
+			ParentPurpose:  input.ParentPurpose,
+			FocusedPurpose: input.FocusedPurpose,
+		},
 	)
 }
 
@@ -48,18 +63,18 @@ func DecodeApplicationRecordFieldCoverageLeaf(
 	)
 }
 
-func DecodeApplicationRecordFieldNameLeaf(
+func DecodeApplicationRecordFieldPurposeLeaf(
 	input ApplicationRecordFieldLeafInput,
 	raw string,
 ) (string, error) {
 	if err := input.validate(); err != nil {
 		return "", err
 	}
-	return decodeUnacceptedApplicationServiceFieldName(
-		"application record field name", raw,
-		func(name string) bool {
+	return decodeUnacceptedApplicationServicePurpose(
+		"application record field purpose", raw,
+		func(purpose string) bool {
 			for _, field := range input.AcceptedRecordFields {
-				if field.Name == name {
+				if equalApplicationServicePurpose(field.Purpose, purpose) {
 					return true
 				}
 			}

@@ -68,27 +68,22 @@ func TestContextProjectionDurableUsageRequiresExactLiveValue(t *testing.T) {
 	}
 }
 
-func TestLLMCallEvidenceProjectionIdentityIsValidatedAndHashed(t *testing.T) {
+func TestLLMCallEvidenceProjectionIdentityIsValidated(t *testing.T) {
 	t.Parallel()
 	base := normalizeLLMCallEvidenceRecord(LLMCallEvidenceRecord{
 		StepID: 1, Scope: "portable", WorkID: strings.Repeat("a", 64), WorkKind: "test_work",
 		StationCallOpeningID: 1,
 		RequestedModel:       "requested", Model: "effective", Attempt: 1,
-		SystemPrompt: "system", UserPrompt: "user", ResponseFormat: "text",
+		SystemPrompt: "system", UserPrompt: "user",
 		ContextTokens: 4096, MaxOutputTokens: 512,
 		Status: LLMEvidenceSucceeded, Response: "response",
 	})
-	_, directHash, err := validateAndHashLLMCallEvidenceRecord(base)
-	if err != nil {
+	if err := validateLLMCallEvidenceRecord(base); err != nil {
 		t.Fatal(err)
 	}
 	base.ContextProjectionID = "context_projection_" + strings.Repeat("b", 64)
-	_, projectedHash, err := validateAndHashLLMCallEvidenceRecord(base)
-	if err != nil {
+	if err := validateLLMCallEvidenceRecord(base); err != nil {
 		t.Fatal(err)
-	}
-	if directHash == projectedHash {
-		t.Fatal("bound and legacy-null calls shared a request identity")
 	}
 	base.ContextProjectionID = "projection-bad"
 	if err := validateLLMCallEvidenceRecord(base); err == nil {

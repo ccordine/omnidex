@@ -45,11 +45,9 @@ func genericBrowserAcceptanceDocuments(
 			documents = append(documents, assemblyline.SourceDocument{
 				ID:   fmt.Sprintf("acceptance_%03d", sequence),
 				Path: files.VerificationPath,
-				Preamble: fmt.Sprintf(`import '@testing-library/jest-dom/vitest';
-import React from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-			import { createApplicationRuntime, createFeatureRuntime } from '%s';`,
-					typeScriptRelativeModule(files.VerificationPath, "src/runtime.tsx")),
+				Preamble: genericBrowserAcceptancePreamble(
+					typeScriptRelativeModule(files.VerificationPath, "src/runtime.tsx"),
+				),
 			})
 		}
 		taskID := taskContext.Task.TaskID
@@ -110,7 +108,7 @@ func genericBrowserAcceptanceContract(
 ) string {
 	return strings.Join([]string{
 		behavior,
-		"The code-owned harness renders the public component before invoking this function. The function body is a sequence of direct screen-query throwing observations, expect statements, and fireEvent calls using static arguments and event payloads. Asynchronous evidence uses awaited findBy, findAllBy, or waitFor calls whose callbacks contain those same direct forms. Every observable acceptance criterion has user-visible evidence in that sequence.",
+		"The harness renders the public component before invoking this function. The function body is a sequence of direct screen-query throwing observations, expect statements, and fireEvent calls using static arguments and event payloads. Asynchronous evidence uses awaited findBy, findAllBy, or waitFor calls whose callbacks contain those same direct forms. The exact accepted requirement has user-visible evidence in that sequence.",
 	}, "\n")
 }
 

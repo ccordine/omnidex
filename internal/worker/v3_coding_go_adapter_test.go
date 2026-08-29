@@ -158,15 +158,7 @@ func goCommandLineStackFixture(
 			ID: "requirement_001", SourceQuote: "Print the first supplied argument",
 		}},
 	}
-	input := applicationWorkloadInput(specification)
-	workload, err := assemblyline.FreezeApplicationWorkload(input, assemblyline.ApplicationWorkloadDraft{
-		Schema: assemblyline.ApplicationWorkloadDraftSchemaV1,
-		Tasks: []assemblyline.ApplicationWorkloadTaskDraft{{
-			RequirementID: "requirement_001", Objective: "Return the first command argument.",
-			RequiredBehaviors:  []string{"Accept one command argument and expose it as output."},
-			AcceptanceCriteria: []string{"The first command argument is returned unchanged."},
-		}},
-	})
+	workload, err := assemblyline.FreezeApplicationWorkload(specification)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -16,7 +16,6 @@ type ExactPreparedResponse struct {
 	Disposition  ProviderResponseDisposition
 	Model        string
 	Content      string
-	Thinking     string
 	DonePresent  bool
 	Done         bool
 	DoneReason   string
@@ -102,10 +101,15 @@ func decodeExactPreparedResponse(status int, body []byte) (ExactPreparedResponse
 		if err != nil {
 			return invalid, err
 		}
+		if thinking != "" {
+			return invalid, fmt.Errorf(
+				"exact provider response contains forbidden separate thinking content",
+			)
+		}
 	}
 	response := ExactPreparedResponse{
 		Disposition: ProviderResponseSucceeded,
-		Model:       wire.Model, Content: content, Thinking: thinking, DonePresent: wire.Done != nil,
+		Model:       wire.Model, Content: content, DonePresent: wire.Done != nil,
 		DoneReason: wire.DoneReason, Usage: exactPreparedResponseUsage(wire),
 	}
 	if wire.Done != nil {
@@ -142,7 +146,6 @@ func ValidateExactPreparedResponseProjection(generation PreparedGeneration) erro
 	)
 	if derived.Disposition != generation.ProviderResponseDisposition ||
 		derived.Model != generation.ProviderResponseModel || derived.Content != generation.Content ||
-		derived.Thinking != generation.Thinking ||
 		derived.DonePresent != generation.ProviderDonePresent || derived.Done != generation.ProviderDone ||
 		derived.DoneReason != generation.ProviderDoneReason ||
 		derived.UsagePresent != generation.UsagePresent || derived.Usage != generation.Usage {

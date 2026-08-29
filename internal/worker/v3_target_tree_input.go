@@ -21,9 +21,7 @@ func directCodingTargetTreeInput(
 			stack.ID, directCodingProjectStackSurfaceSummary(stack.SupportedSurfaces), specification.Surface,
 		)
 	}
-	if err := assemblyline.ValidateFrozenApplicationWorkload(
-		applicationWorkloadInput(specification), workload,
-	); err != nil {
+	if err := assemblyline.ValidateFrozenApplicationWorkloadFor(specification, workload); err != nil {
 		return assemblyline.TargetTreeInput{}, err
 	}
 	technicalContext, err := directCodingTreeTechnicalContext(stack)
@@ -77,8 +75,8 @@ func directCodingCompleteTargetTreeObjective(
 	sections := []string{"Product context: " + specification.ProductQuote}
 	for index, task := range workload.Tasks {
 		sections = append(sections, fmt.Sprintf(
-			"Accepted goal %d:\nAccepted behavior: %s\nStructural objective: %s",
-			index+1, task.RequirementQuote, task.Objective,
+			"Accepted goal %d: %s",
+			index+1, task.RequirementQuote,
 		))
 	}
 	return strings.Join(sections, "\n")

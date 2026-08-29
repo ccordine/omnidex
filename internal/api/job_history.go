@@ -27,7 +27,7 @@ func parseJobHistoryRequest(request *http.Request) (queue.JobHistoryRequest, err
 	stream := queue.JobHistoryStream(values["stream"][0])
 	switch stream {
 	case queue.JobHistoryGenerations, queue.JobHistorySteps, queue.JobHistoryArtifacts,
-		queue.JobHistoryEvidence, queue.JobHistoryClaims, queue.JobHistoryLLMCalls:
+		queue.JobHistoryEvidence, queue.JobHistoryLLMCalls:
 	default:
 		return queue.JobHistoryRequest{}, fmt.Errorf("job history stream %q is not registered", stream)
 	}

@@ -17,7 +17,7 @@ func buildObjectiveRepositoryEvidence(
 	builder repositoryEvidenceBuilder,
 	projectID int64,
 	analyses []repositoryfacts.Analysis,
-	searchTerm string,
+	codeOwnedQuery string,
 ) (repositoryretrieval.EvidencePack, error) {
 	if ctx == nil || builder == nil || projectID < 1 {
 		return repositoryretrieval.EvidencePack{}, fmt.Errorf("repository evidence build requires context, builder, and project authority")
@@ -32,7 +32,7 @@ func buildObjectiveRepositoryEvidence(
 		if err := ctx.Err(); err != nil {
 			return repositoryretrieval.EvidencePack{}, err
 		}
-		request, err := newExistingRepositoryEvidenceRequest(projectID, analysis.ID, searchTerm)
+		request, err := newExistingRepositoryEvidenceRequest(projectID, analysis.ID, codeOwnedQuery)
 		if err != nil {
 			return repositoryretrieval.EvidencePack{}, err
 		}
@@ -45,7 +45,7 @@ func buildObjectiveRepositoryEvidence(
 		}
 		if err := pack.ValidateForRequest(
 			repositoryretrieval.OperationSemanticExcerpts,
-			searchTerm,
+			codeOwnedQuery,
 		); err != nil {
 			return repositoryretrieval.EvidencePack{}, fmt.Errorf(
 				"repository evidence analysis %q returned invalid evidence: %w",
@@ -58,18 +58,18 @@ func buildObjectiveRepositoryEvidence(
 	if len(packs) == 0 {
 		return repositoryretrieval.EvidencePack{}, fmt.Errorf(
 			"%w: code-owned lexical neighborhood for %q matched no complete analysis",
-			repositoryretrieval.ErrInsufficientEvidence, searchTerm,
+			repositoryretrieval.ErrInsufficientEvidence, codeOwnedQuery,
 		)
 	}
 	if len(packs) == 1 {
 		return packs[0], nil
 	}
-	return mergeObjectiveRepositoryEvidencePacks(packs, searchTerm)
+	return mergeObjectiveRepositoryEvidencePacks(packs, codeOwnedQuery)
 }
 
 func mergeObjectiveRepositoryEvidencePacks(
 	packs []repositoryretrieval.EvidencePack,
-	searchTerm string,
+	codeOwnedQuery string,
 ) (repositoryretrieval.EvidencePack, error) {
 	if len(packs) < 2 {
 		return repositoryretrieval.EvidencePack{}, fmt.Errorf("polyglot repository evidence merge requires at least two packs")
@@ -80,7 +80,7 @@ func mergeObjectiveRepositoryEvidencePacks(
 	})
 	snapshotID := ordered[0].SnapshotID
 	for _, pack := range ordered {
-		if err := pack.ValidateForRequest(repositoryretrieval.OperationSemanticExcerpts, searchTerm); err != nil {
+		if err := pack.ValidateForRequest(repositoryretrieval.OperationSemanticExcerpts, codeOwnedQuery); err != nil {
 			return repositoryretrieval.EvidencePack{}, err
 		}
 		if pack.SnapshotID != snapshotID {

@@ -11,16 +11,15 @@ import (
 // evidence. It contains no provider, operation, or tool choice because code
 // owns those mechanics through Acquisition.
 type EvidenceRequest struct {
-	ID           ObjectiveID
-	Question     string
-	Context      assemblyline.ObjectiveContext
-	InitialQuery string
+	ID                 ObjectiveID
+	Question           string
+	Context            assemblyline.ObjectiveContext
+	InitialQuery       string
+	KnownArtifactPaths []string
 }
 
 // EvidenceConfig contains only the code-owned bounds used before synthesis.
 type EvidenceConfig struct {
-	MaxSearchTerms        int
-	MaxSearchTermBytes    int
 	MaxFetchCandidates    int
 	MaxProjectionBytes    int
 	MaxRelevantCandidates int
@@ -29,15 +28,14 @@ type EvidenceConfig struct {
 
 // EvidenceResult contains only exact selected evidence and its bounded
 // model-visible projection. Acquisition mechanics and ordering remain code
-// owned. Semantic stations return only raw term/relevance leaves; code builds
-// the retained query list and candidate-ID selection.
+// owned. The semantic station returns only one raw relevance relation per
+// candidate; code retains the exact query and builds the candidate-ID selection.
 type EvidenceResult struct {
 	Evidence            []Evidence
 	Projected           []ProjectedEvidence
 	AcquisitionAttempts int
 	DiscoveryAttempts   int
 	FetchAttempts       int
-	SearchTermsCalls    int
 	RelevanceCalls      int
 	SemanticCalls       int
 }
@@ -49,7 +47,6 @@ func GatherRelevantEvidence(
 	request EvidenceRequest,
 	config EvidenceConfig,
 	acquisition Acquisition,
-	terms SearchTermsStation,
 	relevance RelevanceStation,
 ) (EvidenceResult, error) {
 	if ctx == nil {
@@ -60,10 +57,10 @@ func GatherRelevantEvidence(
 	}
 	objective := Objective{
 		ID: request.ID, Question: request.Question,
-		Context:      assemblyline.CloneObjectiveContext(request.Context),
-		InitialQuery: request.InitialQuery,
-		Acceptance:   append([]AcceptancePredicate{}, requiredAcceptance...),
-		Status:       ObjectivePending,
+		Context:            assemblyline.CloneObjectiveContext(request.Context),
+		InitialQuery:       request.InitialQuery,
+		KnownArtifactPaths: append([]string{}, request.KnownArtifactPaths...),
+		Status:             ObjectivePending,
 	}
 	if err := validateObjective(objective); err != nil {
 		return EvidenceResult{}, err
@@ -71,9 +68,9 @@ func GatherRelevantEvidence(
 	if err := validateEvidenceConfig(config); err != nil {
 		return EvidenceResult{}, err
 	}
-	if nilInterface(acquisition) || nilInterface(terms) || nilInterface(relevance) {
+	if nilInterface(acquisition) || nilInterface(relevance) {
 		return EvidenceResult{}, fmt.Errorf(
-			"%w: acquisition, search terms, and relevance are required", ErrInvalidConfiguration,
+			"%w: acquisition and relevance are required", ErrInvalidConfiguration,
 		)
 	}
 	limits := acquisition.Limits()
@@ -91,15 +88,14 @@ func GatherRelevantEvidence(
 	machine := &Machine{
 		objective: objective,
 		config: Config{
-			MaxSearchTerms: config.MaxSearchTerms, MaxSearchTermBytes: config.MaxSearchTermBytes,
 			MaxFetchCandidates: config.MaxFetchCandidates, MaxProjectionBytes: config.MaxProjectionBytes,
 			MaxRelevantCandidates: config.MaxRelevantCandidates, CandidateSummaryBytes: config.CandidateSummaryBytes,
 		},
-		terms: terms, relevance: relevance, contracts: contracts,
+		relevance: relevance, contracts: contracts,
 	}
 	result := Result{
 		Objective:               cloneObjective(objective),
-		AcquisitionAttemptLimit: config.MaxSearchTerms + 3,
+		AcquisitionAttemptLimit: 2,
 	}
 	if err := machine.gatherRelevantEvidence(ctx, &result); err != nil {
 		return evidenceResultFromRun(result, nil), err
@@ -116,8 +112,8 @@ func evidenceResultFromRun(result Result, selected []Evidence) EvidenceResult {
 		Evidence: cloneEvidence(selected), Projected: cloneProjection(result.Projected),
 		AcquisitionAttempts: result.AcquisitionAttempts,
 		DiscoveryAttempts:   result.DiscoveryAttempts, FetchAttempts: result.FetchAttempts,
-		SearchTermsCalls: result.SearchTermsCalls, RelevanceCalls: result.RelevanceCalls,
-		SemanticCalls: result.SemanticCalls,
+		RelevanceCalls: result.RelevanceCalls,
+		SemanticCalls:  result.SemanticCalls,
 	}
 }
 

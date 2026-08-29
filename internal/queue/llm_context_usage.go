@@ -141,6 +141,10 @@ func (r *Repository) RecordLLMContextUsage(ctx context.Context, record LLMContex
 	if record.PromptChars < 0 || record.SentChars < 0 || record.ContextLimitChars < 0 {
 		return fmt.Errorf("llm context usage char counts must be non-negative")
 	}
+	metadataJSON, err := encodeTelemetryJSON("LLM context usage metadata", record.Metadata)
+	if err != nil {
+		return err
+	}
 	sent := record.SentChars
 	if sent <= 0 {
 		sent = record.PromptChars
@@ -190,7 +194,7 @@ func (r *Repository) RecordLLMContextUsage(ctx context.Context, record LLMContex
 	if attempt <= 0 {
 		attempt = 1
 	}
-	_, err := r.pool.Exec(ctx, `
+	_, err = r.pool.Exec(ctx, `
 		INSERT INTO omni_llm_context_usage (
 			source, model, provider, project_id, card_id, run_id, job_id, step_id, scope, attempt,
 			prompt_chars, sent_chars, context_limit_chars, utilization_pct,
@@ -205,7 +209,7 @@ func (r *Repository) RecordLLMContextUsage(ctx context.Context, record LLMContex
 		strings.TrimSpace(record.CardID), nullUUID(runID), jobID, stepID, scope, attempt,
 		record.PromptChars, sent, limit, utilization, overloaded, record.Shrunk, savedPct,
 		record.Success, strings.TrimSpace(record.ErrorClass), record.LatencyMS, delta,
-		jsonParam(record.Metadata), created)
+		metadataJSON, created)
 	return err
 }
 

@@ -205,17 +205,7 @@ func browserHTTPWorkload(
 	specification assemblyline.ApplicationSpecification,
 ) assemblyline.FrozenApplicationWorkload {
 	t.Helper()
-	workload, err := assemblyline.FreezeApplicationWorkload(
-		applicationWorkloadInput(specification), assemblyline.ApplicationWorkloadDraft{
-			Schema: assemblyline.ApplicationWorkloadDraftSchemaV1,
-			Tasks: []assemblyline.ApplicationWorkloadTaskDraft{{
-				RequirementID:      "requirement_001",
-				Objective:          "Return one server-rendered response.",
-				RequiredBehaviors:  []string{"Produce one observable HTML result."},
-				AcceptanceCriteria: []string{"The response contains the observable result."},
-			}},
-		},
-	)
+	workload, err := assemblyline.FreezeApplicationWorkload(specification)
 	if err != nil {
 		t.Fatal(err)
 	}

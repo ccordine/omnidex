@@ -36,7 +36,7 @@ func newDesiredExecutionFixture(t *testing.T, label, transition string) desiredE
 	t.Cleanup(cancel)
 	pool := openIsolatedMigrationPool(t)
 	repository := New(pool)
-	if err := repository.EnsureSchema(ctx, loadMigrationBundleThroughPrefix(t, "159")); err != nil {
+	if err := repository.EnsureSchema(ctx, loadMigrationBundleThroughPrefix(t, "179")); err != nil {
 		t.Fatal(err)
 	}
 	root := t.TempDir()
@@ -161,7 +161,8 @@ func (fixture desiredExecutionFixture) executeMutation(
 		JobID: fixture.job.ID, StepID: fixture.stepID,
 		Generation:     fixture.authority.Generation,
 		CreatorAttempt: fixture.authority.Attempt, CreatorWorkerID: fixture.authority.WorkerID,
-		ProjectID: fixture.projectID, Plan: plan, Verification: verification,
+		ProjectID: fixture.projectID, ProjectLocation: plan.WorkspaceRoot,
+		Plan: plan, Verification: verification,
 	}
 	var post repositoryfacts.Snapshot
 	result, err := fixture.repository.ExecuteWorkspaceMutation(

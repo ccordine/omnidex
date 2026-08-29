@@ -17,7 +17,7 @@ func TestGoFragmentModificationFailsAfterOneInitialCandidate(t *testing.T) {
 	}
 	calls := 0
 	runtime := typedWorkerRuntime{
-		Context: context.Background(), MaxAttempts: 3, CorrectionModel: "forbidden-corrector",
+		Context: context.Background(), MaxAttempts: 1,
 		Execute: func(job assemblyline.PortableJob, model string) (assemblyline.PortableResult, error) {
 			calls++
 			if job.Kind != assemblyline.WorkFragmentModification || model != "coder" {

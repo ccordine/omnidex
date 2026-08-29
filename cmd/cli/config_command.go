@@ -194,8 +194,6 @@ func writeDefaultConfigFile(path string) error {
 		"# OMNI_DATABASE_EVIDENCE_GAP_MODEL=llama3.2",
 		"# OMNI_DATABASE_JOIN_PATH_SELECTION_MODEL=llama3.2",
 		"# OMNI_REPOSITORY_EVIDENCE_RELEVANCE_MODEL=llama3.2",
-		"# OMNI_REPOSITORY_GROUNDED_REVIEW_MODEL=independent-review-model",
-		"# OMNI_REPOSITORY_GROUNDED_CORRECTION_MODEL=llama3.2",
 		"# OMNI_CODING_FRAGMENT_MODEL=qwen3.5:9b-q4_K_M",
 		"",
 	}, "\n")

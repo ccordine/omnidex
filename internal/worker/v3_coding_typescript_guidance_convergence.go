@@ -1,7 +1,6 @@
 package worker
 
 import (
-	"errors"
 	"fmt"
 	"strings"
 
@@ -13,7 +12,6 @@ type directCodingTypeScriptRepairModelResolver func() (string, string, error)
 
 type directCodingTypeScriptRepairEvents struct {
 	guidanceStarted   func(string)
-	guidanceRejected  func(string)
 	correctionStarted func(string)
 }
 
@@ -42,11 +40,6 @@ func (s *directCodingSession) typeScriptRepairEvents() directCodingTypeScriptRep
 		guidanceStarted: func(detail string) {
 			s.runtime.svc.emitStepEvent(
 				s.runtime.claim.Authority, "coding_fragment_repair_guidance_started", detail,
-			)
-		},
-		guidanceRejected: func(detail string) {
-			s.runtime.svc.emitStepEvent(
-				s.runtime.claim.Authority, "coding_fragment_repair_guidance_rejected", detail,
 			)
 		},
 		correctionStarted: func(detail string) {
@@ -85,82 +78,37 @@ func convergeDirectCodingTypeScriptGuidedRepairWithRuntime(
 	repairRegion *assemblyline.TypeScriptFragmentRepairRegion,
 	failure string,
 ) (string, error) {
-	seenGuidance := make(map[string]struct{}, maxTypedWorkerAttempts)
-	var rejectedInstruction string
-	var rejectionKind assemblyline.FragmentRepairGuidanceRejectionKind
-	var err error
-
-	for attempt := 1; attempt <= maxTypedWorkerAttempts; attempt++ {
-		events.emitGuidanceStarted(
-			fmt.Sprintf(
-				"block=%s attempt=%d exact_failure=%s", target.ID, attempt,
-				safeLine(trimForBudget(failure, 500), "unknown"),
-			),
-		)
-		var guidance string
-		if rejectedInstruction == "" {
-			guidance, err = runDirectCodingTypeScriptRepairGuidance(
-				workerRuntime, guidanceModel, target, dialect, available, current, repairRegion, failure,
-			)
-		} else {
-			guidance, err = runDirectCodingTypeScriptRepairGuidanceAfterRejection(
-				workerRuntime, guidanceModel, target, dialect, available, current, repairRegion, failure,
-				rejectedInstruction, rejectionKind,
-			)
-		}
-		if err != nil {
-			return "", fmt.Errorf("derive TypeScript repair guidance: %w", err)
-		}
-		guidance = strings.TrimSpace(guidance)
-		if _, repeated := seenGuidance[guidance]; repeated {
-			rejectedInstruction = guidance
-			rejectionKind = assemblyline.FragmentRepairGuidanceRepeatedInstruction
-			events.emitGuidanceRejected(
-				fmt.Sprintf("block=%s reason=repeated_instruction", target.ID),
-			)
-			continue
-		}
-		seenGuidance[guidance] = struct{}{}
-
-		events.emitCorrectionStarted(
-			fmt.Sprintf("block=%s guidance_bytes=%d", target.ID, len(guidance)),
-		)
-		source, correctionErr := runDirectCodingTypeScriptFragmentWorker(
-			workerRuntime, correctionModel,
-			directCodingTypeScriptFragmentJob{
-				block: target, tsx: tsx, available: available, current: current,
-				repairRegion: repairRegion, repairGuidance: guidance,
-			},
-		)
-		if correctionErr == nil {
-			return source, nil
-		}
-		if !errors.Is(correctionErr, assemblyline.ErrTypeScriptFragmentRepairNoChange) &&
-			!errors.Is(correctionErr, errDirectCodingTypeScriptUnchangedCorrection) {
-			return "", correctionErr
-		}
-		rejectedInstruction = guidance
-		rejectionKind = assemblyline.FragmentRepairGuidanceNoSourceChange
-		events.emitGuidanceRejected(
-			fmt.Sprintf("block=%s reason=no_source_change", target.ID),
-		)
-	}
-
-	return "", fmt.Errorf(
-		"TypeScript repair guidance failed to produce a source transition after %d bounded attempts",
-		maxTypedWorkerAttempts,
+	workerRuntime.MaxAttempts = 1
+	events.emitGuidanceStarted(fmt.Sprintf(
+		"block=%s exact_failure=%s", target.ID,
+		safeLine(trimForBudget(failure, 500), "unknown"),
+	))
+	guidance, err := runDirectCodingTypeScriptRepairGuidance(
+		workerRuntime, guidanceModel, target, dialect, available, current, repairRegion, failure,
 	)
+	if err != nil {
+		return "", fmt.Errorf("derive TypeScript repair guidance: %w", err)
+	}
+	guidance = strings.TrimSpace(guidance)
+	events.emitCorrectionStarted(
+		fmt.Sprintf("block=%s guidance_bytes=%d", target.ID, len(guidance)),
+	)
+	source, err := runDirectCodingTypeScriptFragmentWorker(
+		workerRuntime, correctionModel,
+		directCodingTypeScriptFragmentJob{
+			block: target, tsx: tsx, available: available, current: current,
+			repairRegion: repairRegion, repairGuidance: guidance,
+		},
+	)
+	if err != nil {
+		return "", fmt.Errorf("execute TypeScript repair guidance: %w", err)
+	}
+	return source, nil
 }
 
 func (events directCodingTypeScriptRepairEvents) emitGuidanceStarted(detail string) {
 	if events.guidanceStarted != nil {
 		events.guidanceStarted(detail)
-	}
-}
-
-func (events directCodingTypeScriptRepairEvents) emitGuidanceRejected(detail string) {
-	if events.guidanceRejected != nil {
-		events.guidanceRejected(detail)
 	}
 }
 

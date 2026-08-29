@@ -1,3 +1,7 @@
+# Historical, Non-Normative Design Material
+
+This transcript preserves an earlier specialist design discussion for provenance only. It is not an authoritative Omnidex architecture contract. Any agent, planner, tool-choice, retry-feedback, or model-authored configuration language below is superseded by the code-owned cognition and exact semantic-leaf boundaries in `AGENTS.md` and the normative documents named there.
+
 Now that we're actually being successful doing this, at least in some degree, and much more than before, then I think perhaps my old specialist concept could work too, if it properly abandons the old concept, and instead builds it Charmander first, so like, lets say we need to do a test with chromium and stuff so that it can run a visualizer/ screen capture / etc, we could orchestrate that entire workflow in code, and like how we have the agnostic planner, we have an agnostic specialist, it gets the minimum criteria needed, and feedback / notes for when it's unsuccessful or whatever to try again, and it sets up whatever config we would need to spin up this process, for example, this means that it would be like, okay, we're doing a browser test, we'll load the page for this long, and close out, okay I got some notes back saying that wasn't long enough, and that I need to set up some interactions, and it basically returns a config from just the bare minimum context needed to operate this tool
 
 Yes. I think the specialist concept becomes viable again once “specialist” stops meaning “an LLM agent with specialized tools.”
@@ -356,7 +360,7 @@ The LLM doesn’t have to know how any of that works.
 It might occasionally provide:
 
 selector interpretation
-search term
+candidate relevance
 interaction interpretation
 wait condition choice
 visual semantic judgment

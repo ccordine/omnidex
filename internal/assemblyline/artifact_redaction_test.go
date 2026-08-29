@@ -76,6 +76,25 @@ func TestArtifactRedactionCoversCrossPlatformAndExtensionlessPaths(t *testing.T)
 	}
 }
 
+func TestArtifactIdentityRestorationIsCodeOwnedAndRejectsUnknownTokens(t *testing.T) {
+	t.Parallel()
+	identities := []ArtifactIdentity{{
+		Token: "ARTIFACT_1", Value: "internal/private/secret_owner.go",
+	}}
+	restored, err := RestoreArtifactIdentities(
+		"ARTIFACT_1 owns dispatch; XARTIFACT_1 remains semantic text.", identities,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if restored != "internal/private/secret_owner.go owns dispatch; XARTIFACT_1 remains semantic text." {
+		t.Fatalf("restored=%q", restored)
+	}
+	if _, err := RestoreArtifactIdentities("ARTIFACT_2 owns dispatch.", identities); err == nil {
+		t.Fatal("unknown model-authored artifact token was accepted")
+	}
+}
+
 func TestArtifactRedactionDoesNotGloballyExemptRoutesMIMEOrURLs(t *testing.T) {
 	request := `Serve GET /records/{record_id} as application/json and link https://example.com/assets/app.js.`
 	redacted, identities, err := RedactArtifactIdentities(
@@ -118,8 +137,8 @@ func TestFragmentEnvelopeRejectsInventedFilesystemIdentity(t *testing.T) {
 func TestTypedEndpointFieldsOwnRouteAndMediaExemptions(t *testing.T) {
 	t.Parallel()
 	authority := ApplicationServiceEndpointTaskAuthority{
+		Surface:        ApplicationSurfaceService,
 		ProductContext: "Inventory service", RequirementQuote: "Return one record",
-		Objective: "Return one record", RequiredBehaviors: []string{"Read one record"},
 	}
 	contract := ApplicationServiceEndpointContract{
 		Schema:   ApplicationServiceEndpointContractSchemaV1,

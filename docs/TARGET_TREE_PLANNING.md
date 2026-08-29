@@ -2,16 +2,20 @@
 
 ## Status
 
-This is the sole path/tree-visible model boundary in the coding assembly line.
-It answers one structural semantic question and has no filesystem or workflow
-authority. Every source, declaration, repair, verification, and other semantic
-model remains path- and tree-blind.
+This is the sole tree-visible model boundary in the coding assembly line, and
+it is never a normalized-path-visible boundary. It answers one structural
+semantic question and has no filesystem or workflow authority. Every source,
+declaration, repair, verification, and other semantic model remains path- and
+tree-blind.
 
 ## One frozen workload, one complete answer
 
 Target-tree resolution starts only after code has frozen and validated the
-complete application workload. When the selected stack leaves a real naming
-uncertainty, code makes one initial target-tree call for the whole workload:
+complete application workload. Every currently registered stack has an exact
+mechanical tree projection and therefore makes no target-tree model call. A
+future stack may use the raw-tree station only when its registered technical
+grammar leaves a real naming uncertainty that code cannot resolve. That one
+call is for the whole workload:
 
 > What complete managed workload file tree should exist for all accepted goals
 > in the code-selected technical format?
@@ -72,12 +76,16 @@ completion state.
 
 ## Mechanical stacks
 
-Inference is forbidden when a registered stack has one exact structural
-answer. Go, JavaScript, Rust, Java, PHP, and Laravel allocate neutral
-implementation/verification pairs in code. Code performs the per-task
-allocation against current, reserved, and already allocated paths, records the
-exact task-to-pair provenance, and returns one sorted union. These stacks make
-zero target-tree model calls.
+Inference is forbidden when a registered stack has one exact structural answer.
+Code projects implementation/verification pairs mechanically. TypeScript browser applications
+allocate one neutral numbered source/test pair for the complete frozen
+workload and bind every task to that pair. A valid existing TypeScript pair is
+reused exactly; a partial, ambiguous, or over-complete managed tree fails
+loudly. The other registered stacks perform per-task allocation. Code checks
+current files, existing directories, reserved/static files, and already
+allocated leaves, advances an entire pair when either half is occupied, records
+the exact task-to-pair provenance, and returns one sorted union. These stacks
+make zero target-tree model calls.
 
 A mechanical projection failure is terminal. There is no inference fallback.
 
@@ -85,8 +93,9 @@ A mechanical projection failure is terminal. There is no inference fallback.
 
 The TypeScript browser stack permits one implementation/test pair for the whole
 workload. Because that stack requires exactly those two leaves, code binds every
-frozen task to both returned leaves. This all-to-all coverage is mechanically
-forced by the registered stack; it is not model planning or filename inference.
+frozen task to both returned leaves. This all-to-all coverage and the neutral
+pair allocation are mechanically forced by the registered stack; neither is
+model planning nor filename inference.
 
 Mechanical stacks retain the task-to-pair mapping code created during
 allocation. In both cases the coverage plan proves:
@@ -115,11 +124,21 @@ destructive authority. Eligibility must be code-owned, normalized, duplicate
 free, and limited to files proven present in the current managed snapshot.
 Unmanaged and protected paths remain outside this diff.
 
+Before coverage or source generation, code also proves file-hierarchy closure.
+A target leaf cannot occupy an existing directory, cross a reserved/static
+file boundary, or use an existing regular file as an ancestor. Exact overlap
+is allowed only for one current managed leaf that will be reconciled in place.
+The same closure check runs inside the inferred candidate validator before any
+future raw-tree result can be persisted as accepted, and again at the final
+tree boundary.
+
 The target-tree diff supports scoped delete transitions. The coding driver
 mechanically filters the current snapshot through the selected stack's artifact
 adapters to form the managed workload set, then separately grants exactly that
 deterministic set as deletion eligibility. The standalone plain-text creation
-path grants none. Neither path derives eligibility from model output or omission.
+path grants none. The semantic relation that makes this path applicable is resolved
+by its own raw-leaf station and cannot also classify repository-artifact absence.
+Neither path derives eligibility from model output or omission.
 
 ## Validation correction
 

@@ -30,6 +30,12 @@ type DatabaseJoinPathSelectionDecision struct {
 	PathID         string `json:"path_id"`
 }
 
+type databaseJoinPathSelectionProjection struct {
+	ExactNeed  string                      `json:"exact_need"`
+	Context    ObjectiveContext            `json:"objective_context"`
+	Candidates []DatabaseJoinPathCandidate `json:"candidates"`
+}
+
 func NewDatabaseJoinPathSelectionJob(input DatabaseJoinPathSelectionInput) (PortableJob, error) {
 	return newValidatedPortableJob(WorkDatabaseJoinPathSelection, input, input.validate)
 }
@@ -113,7 +119,16 @@ func BuildDatabaseJoinPathSelectionPrompt(input DatabaseJoinPathSelectionInput) 
 	if err := input.validate(); err != nil {
 		return "", err
 	}
-	projection, err := marshalObjectiveContextInputForModel(input, input.Context)
+	projection, err := marshalObjectiveContextInputForModel(
+		databaseJoinPathSelectionProjection{
+			ExactNeed: input.ExactNeed,
+			Context:   input.Context,
+			Candidates: append(
+				[]DatabaseJoinPathCandidate(nil), input.Candidates...,
+			),
+		},
+		input.Context,
+	)
 	if err != nil {
 		return "", fmt.Errorf("encode database join-path projection: %w", err)
 	}

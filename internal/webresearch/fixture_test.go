@@ -73,25 +73,6 @@ func (acquisition *cancelingAcquisition) Fetch(ctx context.Context, request webs
 	return report, err
 }
 
-type recordingTermsStation struct {
-	decision SearchTermsDecision
-	err      error
-	calls    int
-	last     SearchTermsCall
-	events   []string
-}
-
-func (station *recordingTermsStation) Resolve(_ context.Context, call SearchTermsCall) (SearchTermsDecision, error) {
-	station.calls++
-	station.last = call
-	station.events = append(station.events, "terms")
-	decision := station.decision
-	if decision.SemanticCalls == 0 {
-		decision.SemanticCalls = 1
-	}
-	return decision, station.err
-}
-
 type recordingRelevanceStation struct {
 	decision  RelevanceDecision
 	decisions []RelevanceDecision
@@ -131,28 +112,6 @@ type recordingSynthesisStation struct {
 	events   []string
 }
 
-type recordingSynthesisCorrectionStation struct {
-	decision GroundedSynthesisCorrectionDecision
-	err      error
-	calls    int
-	last     GroundedSynthesisCorrectionCall
-	events   []string
-}
-
-func (station *recordingSynthesisCorrectionStation) Correct(
-	_ context.Context,
-	call GroundedSynthesisCorrectionCall,
-) (GroundedSynthesisCorrectionDecision, error) {
-	station.calls++
-	station.last = call
-	station.events = append(station.events, "synthesis_correction")
-	decision := station.decision
-	if decision.SemanticCalls == 0 {
-		decision.SemanticCalls = 1
-	}
-	return decision, station.err
-}
-
 func (station *recordingSynthesisStation) Synthesize(_ context.Context, call GroundedSynthesisCall) (GroundedSynthesisDecision, error) {
 	station.calls++
 	station.last = call
@@ -164,103 +123,27 @@ func (station *recordingSynthesisStation) Synthesize(_ context.Context, call Gro
 	return decision, station.err
 }
 
-type recordingClaimEvidenceReviewStation struct {
-	decisions []ClaimEvidenceReviewDecision
-	err       error
-	calls     int
-	last      ClaimEvidenceReviewCall
-}
-
-func (station *recordingClaimEvidenceReviewStation) Review(
-	_ context.Context,
-	call ClaimEvidenceReviewCall,
-) (ClaimEvidenceReviewDecision, error) {
-	station.calls++
-	station.last = call
-	if station.err != nil {
-		return ClaimEvidenceReviewDecision{}, station.err
-	}
-	if len(station.decisions) == 0 {
-		return ClaimEvidenceReviewDecision{
-			Outcome: ClaimEvidenceReviewNone, EvidenceIDs: []EvidenceID{}, SemanticCalls: 1,
-		}, nil
-	}
-	index := station.calls - 1
-	if index >= len(station.decisions) {
-		index = len(station.decisions) - 1
-	}
-	decision := station.decisions[index]
-	if decision.SemanticCalls == 0 {
-		decision.SemanticCalls = 1
-	}
-	return decision, nil
-}
-
 func newFixtureMachine(
 	t *testing.T,
 	objective Objective,
 	acquisition Acquisition,
-	terms SearchTermsStation,
 	relevance RelevanceStation,
 	synthesis GroundedSynthesisStation,
-	projectionBytes int,
-) *Machine {
-	return newFixtureMachineWithReview(
-		t, objective, acquisition, terms, relevance, synthesis,
-		&recordingClaimEvidenceReviewStation{}, projectionBytes,
-	)
-}
-
-func newFixtureMachineWithReview(
-	t *testing.T,
-	objective Objective,
-	acquisition Acquisition,
-	terms SearchTermsStation,
-	relevance RelevanceStation,
-	synthesis GroundedSynthesisStation,
-	review ClaimEvidenceReviewStation,
-	projectionBytes int,
-) *Machine {
-	return newFixtureMachineWithCorrection(
-		t, objective, acquisition, terms, relevance, synthesis,
-		&recordingSynthesisCorrectionStation{}, review, projectionBytes,
-	)
-}
-
-func newFixtureMachineWithCorrection(
-	t *testing.T,
-	objective Objective,
-	acquisition Acquisition,
-	terms SearchTermsStation,
-	relevance RelevanceStation,
-	synthesis GroundedSynthesisStation,
-	correction GroundedSynthesisCorrectionStation,
-	review ClaimEvidenceReviewStation,
 	projectionBytes int,
 ) *Machine {
 	t.Helper()
 	machine, err := New(objective, Config{
-		MaxSearchTerms:             3,
-		MaxSearchTermBytes:         120,
 		MaxFetchCandidates:         6,
 		MaxProjectionBytes:         projectionBytes,
 		MaxRelevantCandidates:      3,
 		CandidateSummaryBytes:      240,
 		MaxSynthesisParagraphs:     4,
 		MaxSynthesisParagraphBytes: 1_000,
-	}, acquisition, terms, relevance, synthesis, correction, review)
+	}, acquisition, relevance, synthesis)
 	if err != nil {
 		t.Fatal(err)
 	}
 	return machine
-}
-
-func exactAcceptance() []AcceptancePredicate {
-	return []AcceptancePredicate{
-		AcceptanceGroundedSynthesis,
-		AcceptanceExactCitations,
-		AcceptanceClaimEvidenceReview,
-	}
 }
 
 func candidateFixture(rawURL, title string) websearch.Candidate {

@@ -39,7 +39,6 @@ type PreparedGeneration struct {
 	ProviderRequestDisposition    ProviderRequestDisposition      `json:"provider_request_disposition"`
 	ProviderRequestFailureReason  ProviderRequestFailureReason    `json:"provider_request_failure_reason,omitempty"`
 	Content                       string                          `json:"content"`
-	Thinking                      string                          `json:"thinking,omitempty"`
 	ProviderRequestSHA256         string                          `json:"provider_request_sha256"`
 	ProviderHTTPStatus            int                             `json:"provider_http_status"`
 	ProviderResponseDisposition   ProviderResponseDisposition     `json:"provider_response_disposition"`
@@ -123,8 +122,6 @@ func (generation PreparedGeneration) Validate() error {
 	if generation.ProviderResponseDisposition != ProviderResponseSucceeded ||
 		strings.TrimSpace(generation.Content) == "" ||
 		!utf8.ValidString(generation.Content) || strings.ContainsRune(generation.Content, 0) ||
-		!utf8.ValidString(generation.Thinking) || strings.ContainsRune(generation.Thinking, 0) ||
-		len(generation.Thinking) > MaxExactPreparedProviderResponseBytes ||
 		!generation.ProviderDonePresent || !generation.ProviderDone ||
 		generation.ProviderDoneReason != "stop" ||
 		!generation.UsagePresent {
@@ -177,10 +174,6 @@ func (generation PreparedGeneration) ValidateProviderResponseReceipt() error {
 		!providerIdentityDigest.MatchString(generation.ProviderRequestSHA256) {
 		return fmt.Errorf("exact prepared provider response evidence is invalid")
 	}
-	if !utf8.ValidString(generation.Thinking) || strings.ContainsRune(generation.Thinking, 0) ||
-		len(generation.Thinking) > MaxExactPreparedProviderResponseBytes {
-		return fmt.Errorf("normalized provider thinking is invalid")
-	}
 	if generation.ProviderRequestFailureReason != "" {
 		return fmt.Errorf("provider response receipt cannot claim a local request failure reason")
 	}
@@ -191,7 +184,6 @@ func (generation PreparedGeneration) ValidateProviderResponseReceipt() error {
 			generation.ProviderResponseSHA256 != "" || generation.ProviderResponseBytes != 0 ||
 			generation.ProviderResponseCaptureSHA256 != "" ||
 			generation.ProviderResponseCapturedBytes != 0 || generation.ProviderResponseModel != "" ||
-			generation.Thinking != "" ||
 			generation.ProviderDonePresent || generation.ProviderDone || generation.ProviderDoneReason != "" {
 			return fmt.Errorf("transport failure claims a provider response")
 		}
@@ -244,7 +236,7 @@ func (generation PreparedGeneration) ValidateProviderResponseReceipt() error {
 		return fmt.Errorf("successful provider response receipt is incomplete")
 	}
 	if !parsedFinal &&
-		(generation.ProviderResponseModel != "" || generation.Thinking != "" || generation.ProviderDonePresent ||
+		(generation.ProviderResponseModel != "" || generation.ProviderDonePresent ||
 			generation.ProviderDone || generation.ProviderDoneReason != "" || generation.UsagePresent ||
 			generation.Usage != (ProviderGenerationUsage{})) {
 		return fmt.Errorf("unsuccessful provider response claims a completion reason")

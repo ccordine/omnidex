@@ -45,8 +45,7 @@ func TestCodingFragmentRepairGuidanceMigrationMatchesCodeOwnedRouting(t *testing
 	assertAppliedMigrationCount(t, pool, codingFragmentRepairGuidanceMigration, 1)
 
 	for _, kind := range assemblyline.AllWorkKinds() {
-		if kind == assemblyline.WorkResponseCorrection ||
-			applicationFrontDoorWorkKind(kind) {
+		if applicationFrontDoorWorkKind(kind) {
 			continue
 		}
 		want, err := stationForPortableWorkKind(kind)

@@ -153,11 +153,11 @@ func RunObjective(ctx context.Context, id ObjectiveID) error {
         if err != nil {
             return err
         }
-        accepted, err := gapValidator.Accept(gap, answer)
+        validated, err := gapValidator.Validate(gap, answer)
         if err != nil {
             return err
         }
-        if err := stateReducer.ApplyResolution(ctx, accepted); err != nil {
+        if err := stateReducer.ApplyResolution(ctx, validated); err != nil {
             return err
         }
     }
@@ -183,31 +183,31 @@ The large problem moves through code-owned workflows:
 
 INTAKE
   ↓
-DISCOVERY / RESEARCH
+DISCOVERY / EVIDENCE ACQUISITION
   ↓
-OBJECTIVE COMPILATION / PLANNING
+CODE-OWNED OBJECTIVE / TASK COMPILATION
   ↓
 EXECUTION
   ↓
-VERIFICATION
+DETERMINISTIC VERIFICATION
   ↓
-SEMANTIC REVIEW
-  ↓
-RECONCILIATION
+FAILURE LOCALIZATION / RECONCILIATION
   ↓
 COMPLETE
 
 These are not rigid one-time phases. They are recursively callable workflow types.
 
-Execution can discover that more research is needed.
+Execution can establish that another registered prerequisite must be acquired.
 
-Review can create a correction objective.
+A real verification failure can reopen only its code-proven owning objective or
+generated block.
 
-Research can reveal another planning dependency.
+Evidence can reveal another code-owned prerequisite edge.
 
 A child objective may itself run the entire lifecycle.
 
-The machine owns that recursion.
+The machine owns that recursion. There is no model review phase, planner station, or
+model-authored correction objective.
 
 ⸻
 
@@ -225,32 +225,34 @@ Code immediately preserves:
 * existing organizational policy;
 * any directly derivable terms.
 
-Then bounded Charmander-style semantic stations may help establish the initial objective set.
+Then bounded Charmander-style semantic stations establish only the semantic leaves
+that code cannot derive. Each call has one result: one delivery surface, one product
+context, one requirement-coverage relation, or one requirement.
 
 For example:
 
-Station: requirement partition
+Station: requirement coverage
 
 Input:
 
 Exact user instruction
-Known explicit constraints
+Product context
+Already retained requirements
 
 Output:
 
-R1: Invitation dispatch timing is configurable per client.
-R2: Existing default behavior remains backward compatible.
+REQUIREMENT_REMAINS
 
-Code validates source coverage, overlap, ordering, and grounding. It then creates code-owned objectives:
+Only that relation permits the separate one-requirement station:
 
-O1: Current invitation timing implementation understood.
-O2: Configuration ownership identified.
-O3: Desired per-client behavior established.
-O4: Affected symbols and tests identified.
-O5: Implementation satisfies R1.
-O6: Compatibility satisfies R2.
+R1: Invitation dispatch timing is configurable per client without changing the
+existing default.
 
-The model does not own this plan. It proposed semantic material that code compiled into the workload graph.
+Code validates and retains the leaf, repeats the fixed point within its hard bound,
+and projects each accepted requirement directly into one frozen task in source order.
+The model does not emit a requirement array, objective graph, behavior list,
+acceptance contract, dependency, schedule, or plan. Text-span heuristics are not an
+authority substitute for semantic validation.
 
 ⸻
 
@@ -273,7 +275,7 @@ The workflow:
 
 Objective requires evidence F
         ↓
-Derive queries from known terms
+Resolve the registered provider and exact code-owned query authority
         ↓
 Run exact and structural providers
         ↓
@@ -283,37 +285,27 @@ Enough evidence?
     ├── yes → inspect relevant material
     └── no
          ↓
-Create SearchTermGap
-         ↓
-Tiny model returns 1–3 alternate terms
-         ↓
-Search again
+Fail explicitly unless another registered deterministic evidence source is available
 
-Example tiny station:
+There is no search-term station. For web research, the exact initial query is an
+explicit typed input consumed by code. For repository work, snapshot indexes,
+parsers, symbols, references, and registered semantic-excerpt retrieval remain
+code-invoked providers. A model never creates search strings, chooses a provider, or
+constructs provider arguments.
 
-Unresolved repository concept:
-"invitations all go out at once"
-Already searched:
-invitation
-client
-Return up to three likely implementation terms.
+If twenty plausible results remain, another tiny station can resolve one relevance
+leaf at a time:
 
-Output:
-
-{"terms":["dispatch","schedule","batch"]}
-
-Then code searches those terms.
-
-If twenty plausible results remain, another tiny station can select relevance:
-
-Which candidates are directly concerned with invitation dispatch timing?
-Return up to two candidate IDs.
+Which one remaining candidate is most directly concerned with invitation dispatch
+timing?
+Return one opaque candidate ID or NO_RELEVANT_EVIDENCE.
 
 Output:
 
-{"candidate_ids":["S17","S31"]}
+S17
 
-Code reads S17 and S31, parses them, follows references, and updates repository facts.
+Code retains S17, decides whether another bounded relevance call is legal, then reads
+accepted candidates, parses them, follows references, and updates repository facts.
 
 The model does not decide to search, read, traverse, or stop researching.
 
@@ -349,26 +341,13 @@ Compatibility verification is independently required.
 
 It builds those edges itself.
 
-Only genuine semantic decomposition becomes a model gap.
+The direct coding path does not ask a model to decompose requirements. It freezes one
+task per accepted requirement. Other cognition consumers may ask one bounded semantic
+question among code-enumerated candidates only when one relation or fact is genuinely
+unresolved; the result binds that one leaf and cannot expand the objective graph.
 
-Example:
-
-Objective:
-Make dispatch timing configurable per client.
-Known architecture:
-C17 ClientDeliveryConfig
-S31 InvitationScheduler
-J12 DispatchInvitationJob
-Which decomposition best preserves current ownership?
-A:
-Configuration → Scheduler → Dispatch
-B:
-Configuration → Dispatch directly
-Return A or B.
-
-The result is one candidate ID. Code expands the objective graph accordingly.
-
-The planner model never becomes the owner of scheduling, task state, retries, or execution.
+There is no planner model. Code alone owns decomposition, scheduling, task state,
+retries, and execution.
 
 ⸻
 
@@ -421,9 +400,9 @@ It navigates the workload until it can create a valid Charmander job.
 
 ⸻
 
-8. Review and self-correction
+8. Verification and failure reconciliation
 
-Review begins with exact checks:
+Verification consists of exact checks:
 
 AST changes
 forbidden-state checks
@@ -435,34 +414,16 @@ acceptance predicates
 expected files
 unexpected files
 
-Only residual semantic review reaches a model.
+Valid state advances without a semantic review call. A real parser, compiler, test,
+proof-obligation, or workspace mismatch is reduced by code to the smallest owning
+objective or generated block. Accepted state is preserved.
 
-Example:
-
-Requirement:
-Dispatch timing must be configurable per client.
-Accepted interpretation:
-Use a per-client dispatch interval.
-Implemented behavior:
-[bounded semantic summary]
-Verification:
-[bounded test results]
-Does the implementation contradict the accepted interpretation?
-Return:
-NONE
-or one issue candidate ID.
-
-A review issue becomes another code-owned objective:
-
-review issue
-→ correction objective
-→ deterministic research
-→ semantic gap if needed
-→ bounded generation
-→ verification
-→ review again
-
-The model does not manage the correction loop. The workflow does.
+For supported source failures, one exact path-free diagnostic permits one
+repair-guidance call whose sole result is an instruction, followed by one executor
+call whose sole result is a replacement node. Invalid or byte-identical output stops.
+A later pair requires a distinct diagnostic after a validated source transition.
+There is no generic response correction, critique station, accept-or-replace gate, or
+review-again loop.
 
 ⸻
 
@@ -473,15 +434,13 @@ There should be no general “researcher,” “planner,” “coder,” or “r
 There should be small, consistent station contracts:
 
 Station	Input	Output
-PartitionRequirement	Exact instruction	Exact grounded requirement spans
-GenerateSearchTerms	One unresolved concept	Up to 3 terms
-SelectRelevantCandidate	Small candidate summaries	Candidate IDs
+RequirementCoverage	Instruction, product, retained leaves	One remains/no-uncovered relation
+ExtractRequirement	Instruction, product, retained leaves	One requirement
+SelectRelevantCandidate	Small candidate summaries	One candidate ID or none
 ResolveReference	One phrase and candidate symbols	One candidate ID or none
 ClassifyRelationship	Two bounded facts	One relation enum
-ChooseStrategy	Code-generated alternatives and evidence	One candidate ID
-ProposeSubobjectives	One blocked objective	Small bounded objective candidates
 GenerateDeclaration	Exact source contract	One declaration
-CritiqueSemanticResult	One requirement and result	Issue ID or none
+SynthesizeEvidence	One question and selected evidence	One grounded answer
 
 Each station gets:
 
@@ -491,7 +450,9 @@ Each station gets:
 * one output schema;
 * no authority.
 
-A stronger reasoning model, hotter creative model, local Qwen, or hosted frontier model can occupy any station. The surrounding machine remains unchanged.
+Each station has one immutable configured route whose model has qualified for that
+exact contract. Models do not select routes, and an unavailable route fails instead
+of falling back. Changing model capacity never enlarges the station responsibility.
 
 ⸻
 
@@ -501,19 +462,19 @@ Large scope is handled by recursively compiling it into smaller objective graphs
 
 Top-level objective
 ├── Research objective
-│   ├── Search terminology
+│   ├── Consume exact typed query authority
 │   ├── Identify architecture
 │   └── Establish current behavior
-├── Planning objective
+├── Code-owned compilation objective
 │   ├── Determine change surface
 │   └── Determine verification
 ├── Execution objective
 │   ├── Generate declaration A
 │   ├── Generate declaration B
 │   └── Apply configuration change
-└── Review objective
+└── Verification objective
     ├── Exact verification
-    └── Semantic consistency
+    └── Failure localization
 
 The scheduler only works ready nodes.
 
@@ -580,7 +541,7 @@ Chess	Board, legal moves, checks, captures, rules	Strategic selection among unre
 Poker	Legal bets, pot, cards, odds, history	Opponent/strategy interpretation
 Blackjack	Rules and optimal basic strategy	Usually nothing
 Sims-like simulation	Needs, state, schedules, interactions	Narrative interpretation and personality-consistent semantic choices
-Web research	Fetching, indexing, citation, deduplication	Search terms, relevance, semantic synthesis
+Web research	Query construction, fetching, indexing, citation, deduplication	Candidate relevance and semantic synthesis
 
 The same runtime loop remains:
 
@@ -606,7 +567,7 @@ cognitive gaps opened
 model calls
 model tokens
 artifact-generation calls
-semantic-review calls
+repair-guidance/executor pairs by exact diagnostic
 
 Useful target metrics:
 
@@ -714,17 +675,20 @@ Explain the relationship between two symbols.
 
 No source mutation.
 
-Gate 5 — model-assisted workload compilation
+Gate 5 — bounded semantic intake and code-owned workload compilation
 
-Take a vague request and produce a code-owned objective graph. Validate that the graph is actually worked to completion.
+Take a vague request through one-leaf semantic fixed points. Code must project each
+accepted requirement into exactly one frozen task and work that deterministic graph
+to completion without a planner call.
 
 Gate 6 — Charmander generation handoff
 
 Cognition establishes the exact change surface and behavior. Charmander generates bounded declarations. Code verifies.
 
-Gate 7 — review and recursive correction
+Gate 7 — deterministic failure localization and bounded source repair
 
-Semantic review creates new code-owned objectives rather than starting a broad repair agent.
+Code maps a real diagnostic to one owning block. One guidance/executor pair may change
+only that block; valid retained state is preserved and no review model is invoked.
 
 Gate 8 — persistence and recovery
 
@@ -753,7 +717,7 @@ model resolves recurring gap
         ↓
 verified history accumulates
         ↓
-creative model proposes reusable skill
+one-need procedure station returns one candidate instruction leaf
         ↓
 replay and held-out testing
         ↓
@@ -789,7 +753,7 @@ The architecture in one diagram is:
                        ↓
                OBJECTIVE UPDATED
                        ↓
-             GENERATE / VERIFY / REVIEW
+          GENERATE / VERIFY / RECONCILE
                        ↓
                     COMPLETE
 

@@ -7,24 +7,17 @@ import (
 )
 
 const (
-	maxWebQuestionBytes                 = 4 * 1024
-	maxWebAttemptedQueries              = 4
-	maxWebQueryBytes                    = 1024
-	maxWebSearchTerms                   = 3
-	maxWebSearchTermBytes               = 256
-	maxWebRelevanceCandidates           = 32
-	maxWebCandidateIDBytes              = 128
-	maxWebCandidateSummaryBytes         = 2 * 1024
-	maxWebRelevanceProjectionBytes      = 8 * 1024
-	maxWebGroundedEvidence              = 32
-	maxWebEvidenceIDBytes               = 128
-	maxWebEvidenceProjectionBytes       = 8 * 1024
-	maxWebSynthesisParagraphs           = 4
-	maxWebSynthesisParagraphBytes       = 2 * 1024
-	maxWebEvidenceIDsPerParagraph       = 4
-	maxWebReviewEvidenceProjectionBytes = 8 * 1024
-	maxWebReviewIssueDetailBytes        = 512
-	maxWebSynthesisCorrectionBytes      = 12 * 1024
+	maxWebQuestionBytes            = 4 * 1024
+	maxWebRelevanceCandidates      = 32
+	maxWebCandidateIDBytes         = 128
+	maxWebCandidateSummaryBytes    = 2 * 1024
+	maxWebRelevanceProjectionBytes = 8 * 1024
+	maxWebGroundedEvidence         = 32
+	maxWebEvidenceIDBytes          = 128
+	maxWebEvidenceProjectionBytes  = 8 * 1024
+	maxWebSynthesisParagraphs      = 4
+	maxWebSynthesisParagraphBytes  = 2 * 1024
+	maxWebEvidenceIDsPerParagraph  = 4
 )
 
 func validateExactWebQuestion(question string) error {

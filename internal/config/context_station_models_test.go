@@ -8,13 +8,11 @@ import (
 )
 
 func TestLoadContextSieveStationModelsFromExactEnvironmentKeys(t *testing.T) {
-	t.Setenv("OMNI_CONTEXT_SEARCH_TERMS_MODEL", "terms-model")
 	t.Setenv("OMNI_CONTEXT_RELEVANCE_MODEL", "relevance-model")
 	t.Setenv("OMNI_CONTEXT_MINIFICATION_MODEL", "minification-model")
 
 	models := loadStationModels(Config{})
 	wants := map[station.ID]string{
-		station.ContextSearchTerms:  "terms-model",
 		station.ContextRelevance:    "relevance-model",
 		station.ContextMinification: "minification-model",
 	}
@@ -36,20 +34,12 @@ func TestLoadContextSieveStationModelsFromExactEnvironmentKeys(t *testing.T) {
 	}
 }
 
-func TestLoadContextRelevanceProviderIsExplicitAndValidated(t *testing.T) {
+func TestRetiredBrowserContextRelevanceProviderFailsLoudly(t *testing.T) {
 	t.Setenv("DATABASE_URL", "")
 	t.Setenv("WRAPPER_ONLY", "true")
-	t.Setenv("OMNI_CONTEXT_RELEVANCE_PROVIDER", ContextRelevanceProviderBrowserWebGPU)
-	cfg, err := Load()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.ContextRelevanceProvider != ContextRelevanceProviderBrowserWebGPU {
-		t.Fatalf("provider=%q", cfg.ContextRelevanceProvider)
-	}
-
-	t.Setenv("OMNI_CONTEXT_RELEVANCE_PROVIDER", "automatic")
-	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "OMNI_CONTEXT_RELEVANCE_PROVIDER") {
+	t.Setenv("OMNI_CONTEXT_RELEVANCE_PROVIDER", "browser_webgpu")
+	if _, err := Load(); err == nil ||
+		!strings.Contains(err.Error(), "OMNI_CONTEXT_RELEVANCE_PROVIDER was removed") {
 		t.Fatalf("error=%v", err)
 	}
 }
@@ -59,6 +49,9 @@ func TestRetiredContextStationModelEnvironmentKeysFailLoudly(t *testing.T) {
 		"OMNI_CONVERSATION_CONTEXT_SELECTION_MODEL",
 		"OMNI_MEMORY_CONTEXT_SELECTION_MODEL",
 		"OMNI_ROLEPLAY_NARRATIVE_CONTINUITY_MODEL",
+		"OMNI_CONTEXT_SEARCH_TERMS_MODEL",
+		"OMNI_CODING_REPOSITORY_SEARCH_TERM_MODEL",
+		"OMNI_CONTEXT_RELEVANCE_PROVIDER",
 	} {
 		t.Run(key, func(t *testing.T) {
 			t.Setenv(key, "retired-model")

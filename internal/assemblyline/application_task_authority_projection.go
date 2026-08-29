@@ -1,35 +1,30 @@
 package assemblyline
 
-// ApplicationTaskRuntimeAuthority is the immutable task projection available
-// to runtime construction. Verification criteria are deliberately absent.
+// ApplicationTaskRuntimeAuthority is the immutable accepted-requirement
+// projection available to runtime construction.
 type ApplicationTaskRuntimeAuthority struct {
-	WorkloadSHA256    string             `json:"workload_sha256"`
-	TaskID            string             `json:"task_id"`
-	RequirementID     string             `json:"requirement_id"`
-	Surface           ApplicationSurface `json:"surface"`
-	ProductQuote      string             `json:"product_quote"`
-	RequirementQuote  string             `json:"requirement_quote"`
-	Objective         string             `json:"objective"`
-	RequiredBehaviors []string           `json:"required_behaviors"`
+	WorkloadSHA256   string             `json:"workload_sha256"`
+	TaskID           string             `json:"task_id"`
+	RequirementID    string             `json:"requirement_id"`
+	Surface          ApplicationSurface `json:"surface"`
+	ProductQuote     string             `json:"product_quote"`
+	RequirementQuote string             `json:"requirement_quote"`
 }
 
-// ApplicationTaskVerificationAuthority is the immutable task projection
-// available to verification construction. Runtime product semantics are
-// deliberately absent; code-owned binding identities connect the criteria to
-// the frozen workload.
+// ApplicationTaskVerificationAuthority binds verification to the same exact
+// accepted requirement without inventing a second acceptance contract.
 type ApplicationTaskVerificationAuthority struct {
-	WorkloadSHA256     string   `json:"workload_sha256"`
-	TaskID             string   `json:"task_id"`
-	RequirementID      string   `json:"requirement_id"`
-	AcceptanceCriteria []string `json:"acceptance_criteria"`
+	WorkloadSHA256   string `json:"workload_sha256"`
+	TaskID           string `json:"task_id"`
+	RequirementID    string `json:"requirement_id"`
+	RequirementQuote string `json:"requirement_quote"`
 }
 
 func ProjectApplicationTaskRuntimeAuthority(
-	input ApplicationWorkloadDraftInput,
 	frozen FrozenApplicationWorkload,
 	taskID string,
 ) (ApplicationTaskRuntimeAuthority, error) {
-	context, err := ProjectApplicationTaskContext(input, frozen, taskID)
+	context, err := ProjectApplicationTaskContext(frozen, taskID)
 	if err != nil {
 		return ApplicationTaskRuntimeAuthority{}, err
 	}
@@ -37,23 +32,21 @@ func ProjectApplicationTaskRuntimeAuthority(
 		WorkloadSHA256: context.WorkloadSHA256,
 		TaskID:         context.Task.TaskID, RequirementID: context.Task.RequirementID,
 		Surface: context.Surface, ProductQuote: context.ProductQuote,
-		RequirementQuote: context.Task.RequirementQuote, Objective: context.Task.Objective,
-		RequiredBehaviors: append([]string(nil), context.Task.RequiredBehaviors...),
+		RequirementQuote: context.Task.RequirementQuote,
 	}, nil
 }
 
 func ProjectApplicationTaskVerificationAuthority(
-	input ApplicationWorkloadDraftInput,
 	frozen FrozenApplicationWorkload,
 	taskID string,
 ) (ApplicationTaskVerificationAuthority, error) {
-	context, err := ProjectApplicationTaskContext(input, frozen, taskID)
+	context, err := ProjectApplicationTaskContext(frozen, taskID)
 	if err != nil {
 		return ApplicationTaskVerificationAuthority{}, err
 	}
 	return ApplicationTaskVerificationAuthority{
 		WorkloadSHA256: context.WorkloadSHA256,
 		TaskID:         context.Task.TaskID, RequirementID: context.Task.RequirementID,
-		AcceptanceCriteria: append([]string(nil), context.Task.AcceptanceCriteria...),
+		RequirementQuote: context.Task.RequirementQuote,
 	}, nil
 }

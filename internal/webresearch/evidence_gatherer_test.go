@@ -8,7 +8,7 @@ import (
 	"github.com/gryph/omnidex/internal/websearch"
 )
 
-func TestGatherRelevantEvidenceUsesTermsCodeOwnedAcquisitionAndIDOnlyRelevance(t *testing.T) {
+func TestGatherRelevantEvidenceUsesExactInitialQueryAndIDOnlyRelevance(t *testing.T) {
 	t.Parallel()
 	irrelevant := candidateFixture("https://example.test/bread", "Bread notes")
 	relevant := candidateFixture("https://example.test/mars", "Mars orbit")
@@ -23,9 +23,6 @@ func TestGatherRelevantEvidenceUsesTermsCodeOwnedAcquisitionAndIDOnlyRelevance(t
 			relevant.ID:   relevantDocument,
 		},
 	}
-	terms := &recordingTermsStation{decision: SearchTermsDecision{
-		Terms: []string{"Mars orbital period"}, SemanticCalls: 3,
-	}}
 	relevance := &recordingRelevanceStation{decision: RelevanceDecision{
 		Outcome: RelevanceSelected, CandidateIDs: []websearch.CandidateID{relevant.ID},
 		SemanticCalls: 2,
@@ -33,22 +30,23 @@ func TestGatherRelevantEvidenceUsesTermsCodeOwnedAcquisitionAndIDOnlyRelevance(t
 
 	result, err := GatherRelevantEvidence(
 		context.Background(),
-		EvidenceRequest{ID: "roleplay_research", Question: "How long is a Martian year?"},
+		EvidenceRequest{
+			ID: "roleplay_research", Question: "How long is a Martian year?",
+			InitialQuery: "Mars orbital period",
+		},
 		EvidenceConfig{
-			MaxSearchTerms: 3, MaxSearchTermBytes: 256, MaxFetchCandidates: 2,
+			MaxFetchCandidates: 2,
 			MaxProjectionBytes: 8 * 1024, MaxRelevantCandidates: 2,
 			CandidateSummaryBytes: 512,
 		},
-		acquisition, terms, relevance,
+		acquisition, relevance,
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.SearchTermsCalls != 1 || result.RelevanceCalls != 1 || result.SemanticCalls != 5 ||
-		terms.calls != 1 || relevance.calls != 1 {
-		t.Fatalf("semantic calls terms=%d/%d relevance=%d/%d raw=%d",
-			result.SearchTermsCalls, terms.calls, result.RelevanceCalls, relevance.calls,
-			result.SemanticCalls)
+	if result.RelevanceCalls != 1 || result.SemanticCalls != 2 || relevance.calls != 1 {
+		t.Fatalf("semantic calls relevance=%d/%d raw=%d",
+			result.RelevanceCalls, relevance.calls, result.SemanticCalls)
 	}
 	if !reflect.DeepEqual(acquisition.events, []string{"discover:Mars orbital period", "fetch:2"}) {
 		t.Fatalf("code-owned acquisition events=%v", acquisition.events)

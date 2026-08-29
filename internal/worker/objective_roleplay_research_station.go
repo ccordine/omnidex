@@ -49,9 +49,10 @@ func (adapter portableObjectiveRoleplayGroundedStation) RespondGrounded(
 		evidenceIDs := make([]string, 0, len(input.RealWorldEvidence))
 		for _, evidence := range input.RealWorldEvidence {
 			relationInput := assemblyline.RoleplayGroundedEvidenceRelationInput{
-				ExactQuestion: input.ExactQuestion,
-				ParagraphText: paragraphText,
-				Evidence:      evidence,
+				ExactQuestion:      input.ExactQuestion,
+				ParagraphText:      paragraphText,
+				Evidence:           evidence,
+				KnownArtifactPaths: append([]string{}, input.KnownArtifactPaths...),
 			}
 			relationJob, err := assemblyline.NewRoleplayGroundedResponseEvidenceRelationJob(
 				relationInput,

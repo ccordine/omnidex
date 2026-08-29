@@ -12,7 +12,7 @@ func TestApplicationContextInvestigationResolvesNamedNeedWithoutAcceptanceCall(t
 	t.Parallel()
 	const request = "Exclude archived patients from the existing patient search."
 	initial, err := assemblyline.BootstrapApplicationContext(
-		request, assemblyline.ApplicationWorkspaceExisting, nil,
+		request, assemblyline.ApplicationWorkspaceExisting,
 	)
 	if err != nil {
 		t.Fatal(err)

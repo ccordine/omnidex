@@ -41,17 +41,16 @@ func TestWebWorkflowProjectsOneUnifiedObjectiveContext(t *testing.T) {
 			Text: "Exact current evidence.", EvidenceIDs: []EvidenceID{evidenceID(document.ID)},
 		}},
 	}}
-	review := &recordingClaimEvidenceReviewStation{}
-	machine := newFixtureMachineWithReview(t, Objective{
+	machine := newFixtureMachine(t, Objective{
 		ID: "objective_context", Question: "What is current?", Context: objectiveContext,
-		InitialQuery: "exact context query", Acceptance: exactAcceptance(), Status: ObjectivePending,
-	}, acquisition, &recordingTermsStation{}, relevance, synthesis, review, 4_000)
+		InitialQuery: "exact context query", Status: ObjectivePending,
+	}, acquisition, relevance, synthesis, 4_000)
 	result, err := machine.Run(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, projected := range []assemblyline.ObjectiveContext{
-		relevance.last.Context, synthesis.last.Context, review.last.Context, result.Objective.Context,
+		relevance.last.Context, synthesis.last.Context, result.Objective.Context,
 	} {
 		if !reflect.DeepEqual(projected, objectiveContext) {
 			t.Fatalf("web objective context=%+v want %+v", projected, objectiveContext)

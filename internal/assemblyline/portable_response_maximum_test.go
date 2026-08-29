@@ -24,30 +24,6 @@ func TestPortableResponseMaximumRegistryIsExhaustive(t *testing.T) {
 	}
 }
 
-func TestPortableResponseMaximumUsesEndpointCandidateAuthority(t *testing.T) {
-	authority := testServiceEndpointTaskAuthority()
-	for _, fixture := range []struct {
-		name   string
-		method ApplicationServiceEndpointMethod
-		want   int
-	}{
-		{name: "GET only permits none", method: ApplicationServiceEndpointGET, want: len(ApplicationServiceEndpointMediaNone)},
-		{name: "POST permits form", method: ApplicationServiceEndpointPOST, want: len(ApplicationServiceEndpointForm)},
-	} {
-		t.Run(fixture.name, func(t *testing.T) {
-			job, err := NewApplicationServiceEndpointRequestMediaJob(
-				ApplicationServiceEndpointRequestMediaInput{
-					Task: authority, Method: fixture.method,
-				},
-			)
-			if err != nil {
-				t.Fatal(err)
-			}
-			assertPortableResponseMaximum(t, job, fixture.want)
-		})
-	}
-}
-
 func TestPortableResponseMaximumDerivesTargetTreeGrammarBound(t *testing.T) {
 	for _, fixture := range []struct {
 		name     string
@@ -74,28 +50,6 @@ func TestPortableResponseMaximumDerivesTargetTreeGrammarBound(t *testing.T) {
 	if got := targetTreeBranchMaximumBytes(MaxTargetTreeDepth); got != 817 {
 		t.Fatalf("depth-%d target-tree branch maximum=%d want 817", MaxTargetTreeDepth, got)
 	}
-}
-
-func TestPortableResponseMaximumInheritsSemanticCorrectionBound(t *testing.T) {
-	original, err := NewApplicationClassificationJob(
-		ApplicationClassificationInput{UserRequest: "Describe a browser application."},
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	correction, err := NewRetainedResponseCorrectionJob(
-		original, "candidate is not a registered application surface", "invalid",
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	assertPortableResponseMaximum(
-		t, correction,
-		maximumStringBytes(
-			ApplicationSurfaceBrowser, ApplicationSurfaceCommandLine,
-			ApplicationSurfaceService, ApplicationSurfaceUnsupported,
-		),
-	)
 }
 
 func TestPortableResponseMaximumPreservesFragmentProjectorCeilings(t *testing.T) {
@@ -146,20 +100,6 @@ func TestPortableResponseMaximumPreservesFragmentProjectorCeilings(t *testing.T)
 			assertPortableResponseMaximum(t, fixture.job, fixture.want)
 		})
 	}
-}
-
-func TestPortableResponseMaximumUsesWebPayloadBounds(t *testing.T) {
-	base := webSearchTermsFixture()
-	input := WebSearchTermLeafInput{
-		ExactQuestion: base.ExactQuestion, Context: base.Context,
-		AttemptedQueries: base.AttemptedQueries, AcceptedTerms: []string{},
-		MaxTerms: base.MaxTerms, MaxTermBytes: 37,
-	}
-	job, err := NewWebSearchTermJob(input)
-	if err != nil {
-		t.Fatal(err)
-	}
-	assertPortableResponseMaximum(t, job, input.MaxTermBytes)
 }
 
 func assertPortableResponseMaximum(t *testing.T, job PortableJob, want int) {

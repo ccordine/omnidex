@@ -6,7 +6,7 @@ import (
 	"github.com/gryph/omnidex/internal/assemblyline"
 )
 
-func directCodingAcceptanceCriterionCount(
+func directCodingAcceptanceObligationCount(
 	stage *directCodingProgram,
 	ref assemblyline.SourceBlockRef,
 ) (int, error) {
@@ -17,10 +17,7 @@ func directCodingAcceptanceCriterionCount(
 		if task.ID != ref.Block.TaskID {
 			continue
 		}
-		if len(task.AcceptanceCriteria) == 0 {
-			return 0, fmt.Errorf("acceptance task %s has no frozen criteria", task.ID)
-		}
-		return len(task.AcceptanceCriteria), nil
+		return 1, nil
 	}
 	return 0, fmt.Errorf("acceptance block %s references unknown task %s", ref.Block.ID, ref.Block.TaskID)
 }

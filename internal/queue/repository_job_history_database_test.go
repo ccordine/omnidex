@@ -19,7 +19,6 @@ type jobHistoryFixture struct {
 	stepID     int64
 	artifactID int64
 	evidenceID int64
-	claimID    int64
 	llmID      int64
 }
 
@@ -142,9 +141,6 @@ func assertRecordHistoryPages(
 		{JobHistoryEvidence, old.evidenceID, current.evidenceID,
 			func(page JobHistoryPage) HistoricalStepReference { return page.Evidence[0].Step },
 			func(page JobHistoryPage) int64 { return page.Evidence[0].Evidence.ID }},
-		{JobHistoryClaims, old.claimID, current.claimID,
-			func(page JobHistoryPage) HistoricalStepReference { return page.Claims[0].Step },
-			func(page JobHistoryPage) int64 { return page.Claims[0].Claim.ID }},
 		{JobHistoryLLMCalls, old.llmID, current.llmID,
 			func(page JobHistoryPage) HistoricalStepReference { return page.LLMCalls[0].Step },
 			func(page JobHistoryPage) int64 { return page.LLMCalls[0].Call.ID }},
@@ -209,13 +205,6 @@ func insertJobHistoryFixture(
 		VALUES ($1, $2, $3, $4, $5, $6::jsonb)
 		RETURNING id
 	`, jobID, stepID, record.Kind, record.SourceType, record.SourceRef, payload).Scan(&fixture.evidenceID); err != nil {
-		t.Fatal(err)
-	}
-	if err := pool.QueryRow(ctx, `
-		INSERT INTO claims (job_id, step_id, text, normalized_text, status, confidence)
-		VALUES ($1, $2, $3, $4, 'supported', 1)
-		RETURNING id
-	`, jobID, stepID, marker, marker).Scan(&fixture.claimID); err != nil {
 		t.Fatal(err)
 	}
 	var generation int64

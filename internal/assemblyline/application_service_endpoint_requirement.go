@@ -12,10 +12,8 @@ const (
 )
 
 type ApplicationServiceEndpointRequirementInput struct {
-	ProductContext    string   `json:"product_context"`
-	RequirementQuote  string   `json:"requirement_quote"`
-	Objective         string   `json:"objective"`
-	RequiredBehaviors []string `json:"required_behaviors"`
+	ProductContext   string `json:"product_context"`
+	RequirementQuote string `json:"requirement_quote"`
 }
 
 type ApplicationServiceEndpointRequirementResult struct {
@@ -28,8 +26,6 @@ func ProjectApplicationServiceEndpointRequirementInput(
 ) (ApplicationServiceEndpointRequirementInput, error) {
 	input := ApplicationServiceEndpointRequirementInput{
 		ProductContext: authority.ProductQuote, RequirementQuote: authority.RequirementQuote,
-		Objective:         authority.Objective,
-		RequiredBehaviors: append([]string(nil), authority.RequiredBehaviors...),
 	}
 	if err := input.validate(); err != nil {
 		return ApplicationServiceEndpointRequirementInput{}, err
@@ -51,17 +47,6 @@ func (input ApplicationServiceEndpointRequirementInput) validate() error {
 	}
 	if err := validateApplicationIntentText(
 		"service endpoint requirement quote", input.RequirementQuote, maxRequirementQuoteBytes,
-	); err != nil {
-		return err
-	}
-	if err := validateApplicationWorkloadLine(
-		"service endpoint requirement objective", input.Objective, maxApplicationObjectiveRunes,
-	); err != nil {
-		return err
-	}
-	if err := validateApplicationJobSpecificationList(
-		"service endpoint requirement behavior", input.RequiredBehaviors,
-		maxApplicationRequiredBehaviors, maxApplicationBehaviorRunes,
 	); err != nil {
 		return err
 	}

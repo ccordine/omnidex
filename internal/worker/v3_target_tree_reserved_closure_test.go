@@ -2,6 +2,7 @@ package worker
 
 import (
 	"context"
+	"fmt"
 	"reflect"
 	"sort"
 	"strings"
@@ -64,25 +65,19 @@ func TestRegisteredStackReservationsEqualCompiledCodeOwnedTargetPaths(t *testing
 	}
 }
 
-func TestTypeScriptTargetTreeContractCanReconcileExistingWorkloadPaths(t *testing.T) {
+func TestTypeScriptCompleteTargetTreeReusesValidExistingWorkloadPair(t *testing.T) {
 	specification, workload := testApplicationFileCoverageAuthority(
 		t, assemblyline.ApplicationSurfaceBrowser,
 		"existing browser", "preserve and update the existing behavior",
 	)
-	existing := []string{"src/feature.test.tsx", "src/feature.tsx"}
+	existing := []string{"src/catalog.test.tsx", "src/reading-panel.tsx"}
+	calls := 0
 	runtime := typedWorkerRuntime{
 		Context: context.Background(), MaxAttempts: 1,
-		Execute: testPortableExecutor(func(_ string, _ string, prompt string) (string, error) {
-			for _, expected := range []string{
-				"CURRENT_MANAGED_WORKLOAD_TREE:\nROOT\n  D src\n    F feature.test.tsx\n    F feature.tsx",
-				"CODE_RESERVED_TREE:\nROOT\n  D src\n    F App.test.tsx\n    F App.tsx\n    F main.tsx\n    F runtime.test.tsx\n    F runtime.tsx",
-			} {
-				if !strings.Contains(prompt, expected) {
-					t.Fatalf("inferred target-tree prompt lacks %q: %s", expected, prompt)
-				}
-			}
-			return "ROOT\n  D src\n    F feature.tsx\n    F feature.test.tsx", nil
-		}),
+		Execute: func(assemblyline.PortableJob, string) (assemblyline.PortableResult, error) {
+			calls++
+			return assemblyline.PortableResult{}, fmt.Errorf("forbidden target-tree inference")
+		},
 	}
 	stack, err := directCodingProjectStackByID(genericTypeScriptBrowserAdapter)
 	if err != nil {
@@ -94,6 +89,9 @@ func TestTypeScriptTargetTreeContractCanReconcileExistingWorkloadPaths(t *testin
 	)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if calls != 0 {
+		t.Fatalf("target-tree inference calls=%d want=0", calls)
 	}
 	if !reflect.DeepEqual(tree.Paths, existing) {
 		t.Fatalf("target paths=%v want existing=%v", tree.Paths, existing)
@@ -112,8 +110,8 @@ func TestTypeScriptTargetTreeContractCanReconcileExistingWorkloadPaths(t *testin
 		t.Fatal(err)
 	}
 	wantTransitions := []assemblyline.TargetTreeTransition{
-		{Kind: assemblyline.TargetTreeReconcile, Path: "src/feature.test.tsx"},
-		{Kind: assemblyline.TargetTreeReconcile, Path: "src/feature.tsx"},
+		{Kind: assemblyline.TargetTreeReconcile, Path: "src/catalog.test.tsx"},
+		{Kind: assemblyline.TargetTreeReconcile, Path: "src/reading-panel.tsx"},
 	}
 	if !reflect.DeepEqual(transitions, wantTransitions) {
 		t.Fatalf("final transitions=%v want=%v", transitions, wantTransitions)
@@ -124,6 +122,65 @@ func TestTypeScriptTargetTreeContractCanReconcileExistingWorkloadPaths(t *testin
 			containsTargetTreeTransitionPath(transitions, reservedPath) {
 			t.Fatalf("prompt-only reservation %s escaped into target authority", reservedPath)
 		}
+	}
+}
+
+func TestTypeScriptCompleteTargetTreeRejectsAmbiguousManagedStateWithoutInference(t *testing.T) {
+	specification, workload := testApplicationFileCoverageAuthority(
+		t, assemblyline.ApplicationSurfaceBrowser,
+		"inventory browser", "show inventory entries",
+	)
+	stack, err := directCodingProjectStackByID(genericTypeScriptBrowserAdapter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	calls := 0
+	_, _, err = resolveDirectCodingTargetTree(
+		typedWorkerRuntime{
+			Context: context.Background(), MaxAttempts: 2,
+			Execute: func(assemblyline.PortableJob, string) (assemblyline.PortableResult, error) {
+				calls++
+				return assemblyline.PortableResult{}, fmt.Errorf("forbidden target-tree inference")
+			},
+		},
+		"", "", specification, workload, stack,
+		[]string{"src/alpha.test.tsx", "src/alpha.tsx", "src/beta.tsx"},
+		[]string{"src"},
+	)
+	if err == nil || !strings.Contains(err.Error(), "requires exactly 2 paths") {
+		t.Fatalf("ambiguous managed target-tree error=%v", err)
+	}
+	if calls != 0 {
+		t.Fatalf("target-tree inference calls=%d want=0", calls)
+	}
+}
+
+func TestTypeScriptCompleteTargetTreeRejectsExistingFileAncestorWithoutInference(t *testing.T) {
+	specification, workload := testApplicationFileCoverageAuthority(
+		t, assemblyline.ApplicationSurfaceBrowser,
+		"schedule browser", "show one schedule entry",
+	)
+	stack, err := directCodingProjectStackByID(genericTypeScriptBrowserAdapter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	calls := 0
+	_, _, err = resolveDirectCodingTargetTree(
+		typedWorkerRuntime{
+			Context: context.Background(), MaxAttempts: 2,
+			Execute: func(assemblyline.PortableJob, string) (assemblyline.PortableResult, error) {
+				calls++
+				return assemblyline.PortableResult{}, fmt.Errorf("forbidden target-tree inference")
+			},
+		},
+		"", "", specification, workload, stack,
+		[]string{"src"}, nil,
+	)
+	if err == nil || !strings.Contains(err.Error(), "cannot reserve a free three-digit workload pair") {
+		t.Fatalf("existing file ancestor error=%v", err)
+	}
+	if calls != 0 {
+		t.Fatalf("target-tree inference calls=%d want=0", calls)
 	}
 }
 

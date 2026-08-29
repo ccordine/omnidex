@@ -61,7 +61,7 @@ func generateDirectCodingTypeScriptBlockWithRuntime(
 		return "", modelErr
 	}
 	repairRuntime := runtime
-	repairRuntime.MaxAttempts = maxTypedWorkerAttempts
+	repairRuntime.MaxAttempts = 1
 	return convergeDirectCodingTypeScriptGuidedRepairWithRuntime(
 		repairRuntime, guidanceModel, correctionModel, events,
 		job.block, job.tsx, job.dialect, job.available, rejection.Candidate, nil, diagnostic,

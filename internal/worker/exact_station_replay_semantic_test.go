@@ -38,61 +38,45 @@ func TestExactStationReplayRejectsInvalidRawForEveryRegisteredSemanticLeaf(t *te
 
 func TestExactStationReplayUsesSemanticDecoderInsteadOfRawFallback(t *testing.T) {
 	t.Parallel()
-	job, err := assemblyline.NewKnownArtifactTruthJob(assemblyline.KnownArtifactTruthInput{
+	absence, err := assemblyline.NewRepositoryArtifactAbsenceJob(assemblyline.RepositoryArtifactAbsenceInput{
 		RequirementQuote: "The known semantic artifact must be absent.",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	if _, err := replayExactStationArtifact(
-		job,
-		`{"truth":"known_artifact_must_be_absent"}`,
-	); err == nil || !strings.Contains(err.Error(), string(job.Kind)) {
-		t.Fatalf("structured wrapper replay error=%v", err)
-	}
-
-	artifact, err := replayExactStationArtifact(job, string(assemblyline.KnownArtifactMustBeAbsent))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if artifact.Kind != string(job.Kind) || artifact.Source != string(assemblyline.KnownArtifactMustBeAbsent) {
-		t.Fatalf("semantic artifact=%+v", artifact)
-	}
-}
-
-func TestExactStationReplayValidatesCorrectionWithOriginalSemanticDecoder(t *testing.T) {
-	t.Parallel()
-	original, err := assemblyline.NewKnownArtifactTruthJob(assemblyline.KnownArtifactTruthInput{
-		RequirementQuote: "The known semantic artifact must be absent.",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	const invalid = `{"truth":"known_artifact_must_be_absent"}`
-	job, err := assemblyline.NewRetainedResponseCorrectionJob(
-		original,
-		"Return only the registered raw truth value.",
-		invalid,
+	creation, err := assemblyline.NewPlainTextArtifactCreationJob(
+		assemblyline.PlainTextArtifactCreationInput{
+			RequirementQuote: "Create ARTIFACT_1 containing the complete note: Release ready.",
+		},
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := replayExactStationArtifact(job, invalid); err == nil ||
-		!strings.Contains(err.Error(), "validate corrected known_artifact_truth leaf") {
-		t.Fatalf("correction replay error=%v", err)
-	}
-	if _, err := replayExactStationArtifact(
-		job,
-		string(assemblyline.KnownArtifactMustBeAbsent),
-	); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := replayExactStationArtifact(
-		job,
-		" "+string(assemblyline.KnownArtifactMustBeAbsent),
-	); err == nil || !strings.Contains(err.Error(), "preserve one exact trimmed leaf") {
-		t.Fatalf("whitespace correction replay error=%v", err)
+	for _, fixture := range []struct {
+		job       assemblyline.PortableJob
+		candidate string
+		wrapped   string
+	}{
+		{
+			job: absence, candidate: string(assemblyline.RepositoryArtifactMustBeAbsent),
+			wrapped: `{"relation":"repository_artifact_must_be_absent"}`,
+		},
+		{
+			job: creation, candidate: string(assemblyline.OneNewCompletePlainTextArtifactRequired),
+			wrapped: `{"relation":"one_new_complete_plain_text_artifact_required"}`,
+		},
+	} {
+		if _, err := replayExactStationArtifact(fixture.job, fixture.wrapped); err == nil ||
+			!strings.Contains(err.Error(), string(fixture.job.Kind)) {
+			t.Fatalf("%s structured wrapper replay error=%v", fixture.job.Kind, err)
+		}
+		artifact, err := replayExactStationArtifact(fixture.job, fixture.candidate)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if artifact.Kind != string(fixture.job.Kind) || artifact.Source != fixture.candidate {
+			t.Fatalf("semantic artifact=%+v", artifact)
+		}
 	}
 }
 

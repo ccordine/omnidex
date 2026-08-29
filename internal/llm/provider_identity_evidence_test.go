@@ -77,6 +77,25 @@ func TestProviderIdentityEvidenceRejectsInvalidHTTPStatusAndInexactAuthority(t *
 	if _, err := DeriveExactProviderIdentityExpectation(evidence, selection); err == nil {
 		t.Fatal("noncanonical provider preload request was accepted")
 	}
+
+	for name, response := range map[string][]byte{
+		"response content":  []byte(`{"done":true,"response":"semantic output"}`),
+		"thinking content":  []byte(`{"done":true,"thinking":"private trace"}`),
+		"prompt evaluation": []byte(`{"done":true,"prompt_eval_count":1}`),
+		"output evaluation": []byte(`{"done":true,"eval_count":1}`),
+	} {
+		changed := cloneProviderIdentityOperations(valid.Operations)
+		changed[3].ResponseCapture = response
+		changed[3].ResponseBytes = len(response)
+		changed[3].ResponseSHA256 = providerBodySHA256(response)
+		evidence, err := NewProviderIdentityEvidence(changed)
+		if err != nil {
+			t.Fatalf("construct %s preload evidence: %v", name, err)
+		}
+		if _, err := DeriveExactProviderIdentityExpectation(evidence, selection); err == nil {
+			t.Fatalf("provider identity preload accepted %s", name)
+		}
+	}
 }
 
 func TestProviderIdentityFailureEvidenceKeepsEveryPlannedRequestExact(t *testing.T) {

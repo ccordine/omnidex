@@ -55,7 +55,10 @@ func (r *Repository) ValidateRuntimeAuthority(ctx context.Context) error {
 	if err := r.validateExecutablePipelineState(ctx); err != nil {
 		return err
 	}
-	return r.validateJobStepExecutionIdentityAuthority(ctx)
+	if err := r.validateJobStepExecutionIdentityAuthority(ctx); err != nil {
+		return err
+	}
+	return r.validateWorkspaceMutationProjectLocationAuthority(ctx)
 }
 
 func (r *Repository) EnqueueJob(ctx context.Context, instruction, pipeline string, metadataJSON []byte) (model.Job, error) {

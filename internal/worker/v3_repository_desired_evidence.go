@@ -32,7 +32,7 @@ func (session *directCodingSession) recordDesiredRepositoryGraph(
 		Kind: evidence.KindRepositoryDesiredGraph, SourceType: "repository",
 		SourceRef: graph.ID, Hash: strings.TrimPrefix(graph.ID, "desired_graph_"),
 		Excerpt: string(raw), Confidence: 1,
-		Summary: fmt.Sprintf("Code-owned desired repository graph contains %d artifact truths.", len(graph.Artifacts)),
+		Summary: fmt.Sprintf("Desired repository graph contains %d artifact truths.", len(graph.Artifacts)),
 		Metadata: map[string]any{
 			"snapshot_id": graph.SnapshotID, "artifact_count": len(graph.Artifacts),
 		},

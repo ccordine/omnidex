@@ -1,7 +1,6 @@
 package queue
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -13,6 +12,12 @@ import (
 func validateStationGapOpening(record StationGapOpenRecord) (StationGapOpening, error) {
 	if err := record.Job.Validate(); err != nil {
 		return StationGapOpening{}, fmt.Errorf("station gap requires one validated PortableJob: %w", err)
+	}
+	semanticUncertainty, semanticUncertaintySHA256, err := stationGapSemanticUncertainty(
+		record.Job.Kind,
+	)
+	if err != nil {
+		return StationGapOpening{}, fmt.Errorf("derive station gap semantic uncertainty: %w", err)
 	}
 	if err := validateStepAttemptAuthority(record.Authority); err != nil {
 		return StationGapOpening{}, fmt.Errorf("station gap authority: %w", err)
@@ -74,10 +79,6 @@ func validateStationGapOpening(record StationGapOpenRecord) (StationGapOpening, 
 			scope, record.OutputLimitMode,
 		)
 	}
-	schema, err := canonicalStationGapSchema()
-	if err != nil {
-		return StationGapOpening{}, fmt.Errorf("canonicalize station gap response schema: %w", err)
-	}
 	portableEnvelope, err := exactjson.Canonical(record.Job)
 	if err != nil {
 		return StationGapOpening{}, fmt.Errorf("canonicalize station gap PortableJob: %w", err)
@@ -89,10 +90,9 @@ func validateStationGapOpening(record StationGapOpenRecord) (StationGapOpening, 
 		)
 	}
 	projection, err := exactjson.Canonical(struct {
-		Prompt         string          `json:"prompt"`
-		Renderer       string          `json:"renderer"`
-		ResponseSchema json.RawMessage `json:"response_schema"`
-	}{prompt, assemblyline.PortableRendererV4, schema})
+		Prompt   string `json:"prompt"`
+		Renderer string `json:"renderer"`
+	}{prompt, assemblyline.PortableRendererV5})
 	if err != nil {
 		return StationGapOpening{}, fmt.Errorf("canonicalize station gap projection: %w", err)
 	}
@@ -110,10 +110,13 @@ func validateStationGapOpening(record StationGapOpenRecord) (StationGapOpening, 
 		WorkID: record.Job.ID, WorkKind: string(record.Job.Kind),
 		PortablePayload: string(record.Job.Payload), PortablePayloadSHA256: stationGapSHA256(string(record.Job.Payload)),
 		PortableEnvelope: string(portableEnvelope), PortableEnvelopeSHA256: stationGapSHA256(string(portableEnvelope)),
-		RendererVersion: assemblyline.PortableRendererV4, Prompt: prompt,
-		ResponseSchema: append(json.RawMessage(nil), schema...), ProjectionEnvelope: string(projection),
-		ProjectionSHA256: stationGapSHA256(string(projection)), ContextTokens: record.ContextTokens,
-		MaxOutputTokens: record.MaxOutputTokens, OutputLimitMode: record.OutputLimitMode,
+		RendererVersion: assemblyline.PortableRendererV5, Prompt: prompt,
+		ProjectionEnvelope:                string(projection),
+		ProjectionSHA256:                  stationGapSHA256(string(projection)),
+		SemanticUncertaintyContract:       semanticUncertainty,
+		SemanticUncertaintyContractSHA256: semanticUncertaintySHA256,
+		ContextTokens:                     record.ContextTokens,
+		MaxOutputTokens:                   record.MaxOutputTokens, OutputLimitMode: record.OutputLimitMode,
 	}, nil
 }
 
@@ -180,7 +183,7 @@ func validateStationGapTerminal(record StationGapTerminalRecord) error {
 		if strings.TrimSpace(record.Response) == "" || record.Error != "" || record.Projection == nil {
 			return fmt.Errorf("resolved station gap requires one projected response and no error")
 		}
-		if err := validateStationGapSourceProjection(*record.Projection, len(record.Response)); err != nil {
+		if err := validateStationGapSourceProjection(*record.Projection, record.Response); err != nil {
 			return fmt.Errorf("resolved station gap projection: %w", err)
 		}
 	case StationGapFailed:
@@ -195,7 +198,7 @@ func validateStationGapTerminal(record StationGapTerminalRecord) error {
 
 func validateStationGapSourceProjection(
 	projection StationGapSourceProjection,
-	responseBytes int,
+	response string,
 ) error {
 	if projection.Kind != StationGapProjectionExactResponse &&
 		projection.Kind != StationGapProjectionSourceDeclaration &&
@@ -206,12 +209,11 @@ func validateStationGapSourceProjection(
 		!llmEvidenceLowerHex(projection.SourceResponseSHA256) || len(projection.SourceResponseSHA256) != 64 {
 		return fmt.Errorf("requires exact receipt and source response identities")
 	}
-	if projection.StartByte < 0 || projection.EndByte <= projection.StartByte ||
-		projection.EndByte-projection.StartByte != responseBytes {
-		return fmt.Errorf("source span does not match projected response bytes")
+	if projection.StartByte != 0 || projection.EndByte != len(response) {
+		return fmt.Errorf("source projection must be the exact full response")
 	}
-	if projection.Kind == StationGapProjectionExactResponse && projection.StartByte != 0 {
-		return fmt.Errorf("exact response projection must begin at byte zero")
+	if projection.SourceResponseSHA256 != stationGapSHA256(response) {
+		return fmt.Errorf("source response identity must match the exact full response")
 	}
 	return nil
 }

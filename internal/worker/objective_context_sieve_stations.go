@@ -13,99 +13,6 @@ type portableObjectiveContextSieveStations struct {
 	runtime *nativeRuntimeV3
 }
 
-func (adapter portableObjectiveContextSieveStations) Generate(
-	ctx context.Context,
-	input assemblyline.ContextSearchTermsInput,
-) (assemblyline.ContextSearchTermsDecision, contextcompiler.StationReceipt, error) {
-	if adapter.runtime == nil {
-		return assemblyline.ContextSearchTermsDecision{}, contextcompiler.StationReceipt{}, fmt.Errorf(
-			"context search terms require objective runtime authority",
-		)
-	}
-	resolveModel := func() (string, error) {
-		return objectiveContextStationModel(
-			adapter.runtime, input.Scope, station.ContextSearchTerms,
-		)
-	}
-	modelName := ""
-	if input.Scope != assemblyline.ContextScopeRoleplaySimulation {
-		var err error
-		modelName, err = resolveModel()
-		if err != nil {
-			return assemblyline.ContextSearchTermsDecision{}, contextcompiler.StationReceipt{}, err
-		}
-	}
-	call := func(
-		subject string,
-		job assemblyline.PortableJob,
-		decode objectiveRawLeafDecoder[string],
-	) (string, objectiveStationReceipt, error) {
-		if input.Scope == assemblyline.ContextScopeRoleplaySimulation {
-			return runObjectiveReusablePortableRawLeafCall(
-				ctx, adapter.runtime, subject, job, station.ContextSearchTerms,
-				resolveModel, decode, func(string) error { return nil },
-			)
-		}
-		value, calls, err := runObjectivePortableRawLeafCall(
-			ctx, adapter.runtime, modelName, subject, job,
-			decode, func(string) error { return nil },
-		)
-		return value, objectiveStationReceipt{Calls: calls}, err
-	}
-
-	terms := make([]string, 0, assemblyline.MaxContextSearchTerms)
-	totalCalls, allReused := 0, true
-	for {
-		leafInput := assemblyline.ContextSearchTermLeafInput{
-			ExactInstruction: input.ExactInstruction, Scope: input.Scope,
-			AcceptedTerms: append([]string{}, terms...),
-		}
-		coverageJob, err := assemblyline.NewContextSearchTermCoverageJob(leafInput)
-		if err != nil {
-			return assemblyline.ContextSearchTermsDecision{}, contextcompiler.StationReceipt{}, err
-		}
-		coverage, receipt, err := call(
-			"context_search_term_coverage", coverageJob,
-			func(raw string) (string, error) {
-				return assemblyline.DecodeContextSearchTermCoverageLeaf(leafInput, raw)
-			},
-		)
-		totalCalls += receipt.Calls
-		allReused = allReused && receipt.Reused
-		if err != nil {
-			return assemblyline.ContextSearchTermsDecision{}, contextcompiler.StationReceipt{Calls: totalCalls}, err
-		}
-		if coverage == assemblyline.ContextNoUncoveredTerm {
-			decision, err := assemblyline.AssembleContextSearchTermsDecision(input, terms)
-			return decision, contextcompiler.StationReceipt{
-				Calls: totalCalls, Reused: allReused,
-			}, err
-		}
-		if len(terms) == assemblyline.MaxContextSearchTerms {
-			return assemblyline.ContextSearchTermsDecision{}, contextcompiler.StationReceipt{Calls: totalCalls}, fmt.Errorf(
-				"context search term coverage remains incomplete at the code-owned %d-item bound",
-				assemblyline.MaxContextSearchTerms,
-			)
-		}
-		termJob, err := assemblyline.NewContextSearchTermJob(leafInput)
-		if err != nil {
-			return assemblyline.ContextSearchTermsDecision{}, contextcompiler.StationReceipt{Calls: totalCalls}, err
-		}
-		term, receipt, err := call(
-			"context_search_term", termJob,
-			func(raw string) (string, error) {
-				return assemblyline.DecodeContextSearchTermLeaf(leafInput, raw)
-			},
-		)
-		totalCalls += receipt.Calls
-		allReused = allReused && receipt.Reused
-		if err != nil {
-			return assemblyline.ContextSearchTermsDecision{}, contextcompiler.StationReceipt{Calls: totalCalls}, err
-		}
-		terms = append(terms, term)
-	}
-}
-
 func (adapter portableObjectiveContextSieveStations) SelectRelevant(
 	ctx context.Context,
 	input assemblyline.ContextRelevanceInput,
@@ -155,13 +62,6 @@ func (adapter portableObjectiveContextSieveStations) SelectRelevant(
 			)
 			totalCalls += receipt.Calls
 			allReused = allReused && receipt.Reused
-		} else if executor := adapter.runtime.svc.browserContextRelevance; executor != nil {
-			decision, err = executor.ExecuteContextRelevance(ctx, modelName, leafInput)
-			totalCalls++
-			allReused = false
-			if err == nil {
-				err = decision.ValidateFor(leafInput)
-			}
 		} else {
 			var calls int
 			decision, calls, err = runObjectivePortableRawLeafCall(

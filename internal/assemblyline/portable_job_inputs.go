@@ -35,12 +35,6 @@ type FragmentCorrectionInput struct {
 	RepairGuidance     string                          `json:"repair_guidance,omitempty"`
 }
 
-type ResponseCorrectionInput struct {
-	Original          PortableJob `json:"original"`
-	ValidationFailure string      `json:"validation_failure"`
-	RetainedCandidate string      `json:"retained_candidate"`
-}
-
 func NewApplicationClassificationJob(input ApplicationClassificationInput) (PortableJob, error) {
 	return newValidatedPortableJob(WorkApplicationClassify, input, input.validate)
 }
@@ -94,18 +88,6 @@ func NewSourceProjectedFragmentCorrectionJob(
 		return PortableJob{}, err
 	}
 	return job, nil
-}
-
-func NewRetainedResponseCorrectionJob(
-	original PortableJob,
-	validationFailure string,
-	retainedCandidate string,
-) (PortableJob, error) {
-	input := ResponseCorrectionInput{
-		Original: original, ValidationFailure: strings.TrimSpace(validationFailure),
-		RetainedCandidate: strings.TrimSpace(retainedCandidate),
-	}
-	return newValidatedPortableJob(WorkResponseCorrection, input, input.validate)
 }
 
 func newValidatedPortableJob(kind WorkKind, input any, validate func() error) (PortableJob, error) {

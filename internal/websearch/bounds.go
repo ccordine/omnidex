@@ -63,8 +63,8 @@ func validateCandidateBounds(candidate Candidate) error {
 }
 
 func validateCandidateReportBounds(report CandidateReport, candidates, diagnostics int) error {
-	if len(report.Query) > 1_024 {
-		return boundError("report query bytes", len(report.Query), 1_024)
+	if len(report.Query) > 4_096 {
+		return boundError("report query bytes", len(report.Query), 4_096)
 	}
 	if len(report.Candidates) > candidates {
 		return boundError("report candidate count", len(report.Candidates), candidates)

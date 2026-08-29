@@ -3,6 +3,8 @@ package assemblyline
 import (
 	"fmt"
 	"strings"
+
+	"github.com/gryph/omnidex/internal/modelcontext"
 )
 
 const (
@@ -16,9 +18,10 @@ const (
 type GroundedAnswerEvidenceRelation string
 
 type GroundedAnswerTextInput struct {
-	ExactRequirement string                    `json:"exact_requirement"`
-	Context          ObjectiveContext          `json:"objective_context"`
-	Evidence         []GroundedEvidenceCapsule `json:"evidence"`
+	ExactRequirement   string                    `json:"exact_requirement"`
+	Context            ObjectiveContext          `json:"objective_context"`
+	Evidence           []GroundedEvidenceCapsule `json:"evidence"`
+	KnownArtifactPaths []string                  `json:"known_artifact_paths"`
 }
 
 type GroundedAnswerTextDecision struct {
@@ -26,10 +29,11 @@ type GroundedAnswerTextDecision struct {
 }
 
 type GroundedAnswerEvidenceRelationInput struct {
-	ExactRequirement string                  `json:"exact_requirement"`
-	Context          ObjectiveContext        `json:"objective_context"`
-	AnswerText       string                  `json:"answer_text"`
-	Evidence         GroundedEvidenceCapsule `json:"evidence"`
+	ExactRequirement   string                  `json:"exact_requirement"`
+	Context            ObjectiveContext        `json:"objective_context"`
+	AnswerText         string                  `json:"answer_text"`
+	Evidence           GroundedEvidenceCapsule `json:"evidence"`
+	KnownArtifactPaths []string                `json:"known_artifact_paths"`
 }
 
 type GroundedAnswerEvidenceRelationDecision struct {
@@ -64,6 +68,7 @@ func NewGroundedAnswerEvidenceRelationJob(
 func (input GroundedAnswerTextInput) validate() error {
 	return validateGroundedAnswerAuthority(
 		input.ExactRequirement, input.Context, input.Evidence,
+		input.KnownArtifactPaths,
 	)
 }
 
@@ -72,11 +77,21 @@ func (input GroundedAnswerEvidenceRelationInput) validate() error {
 		input.ExactRequirement,
 		input.Context,
 		[]GroundedEvidenceCapsule{input.Evidence},
+		input.KnownArtifactPaths,
 	); err != nil {
 		return err
 	}
-	return validateGroundedText(
+	if err := validateGroundedText(
 		"answer text", input.AnswerText, maxGroundedAnswerTextBytes, true,
+	); err != nil {
+		return err
+	}
+	provenance, err := modelcontext.NewArtifactIdentityProvenance(input.KnownArtifactPaths)
+	if err != nil {
+		return fmt.Errorf("grounded answer artifact provenance: %w", err)
+	}
+	return ValidatePathFreeModelContextWithProvenance(
+		"grounded answer relation answer text", provenance, input.AnswerText,
 	)
 }
 
@@ -86,8 +101,23 @@ func (decision GroundedAnswerTextDecision) ValidateFor(
 	if err := input.validate(); err != nil {
 		return err
 	}
-	return validateGroundedText(
+	if err := validateGroundedText(
 		"answer text", decision.Text, maxGroundedAnswerTextBytes, true,
+	); err != nil {
+		return err
+	}
+	provenance, err := modelcontext.NewArtifactIdentityProvenance(input.KnownArtifactPaths)
+	if err != nil {
+		return fmt.Errorf("grounded answer artifact provenance: %w", err)
+	}
+	return decision.ValidatePathFree(provenance)
+}
+
+func (decision GroundedAnswerTextDecision) ValidatePathFree(
+	provenance ArtifactIdentityProvenance,
+) error {
+	return ValidatePathFreeModelContextWithProvenance(
+		"grounded answer text", provenance, decision.Text,
 	)
 }
 

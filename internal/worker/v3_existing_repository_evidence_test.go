@@ -20,7 +20,7 @@ func TestExistingRepositoryEvidenceRequestOwnsItsRetrievalOperation(t *testing.T
 		t.Fatalf("code-owned request=%#v", request)
 	}
 	if _, err := newExistingRepositoryEvidenceRequest(17, request.AnalysisID, " Value "); err == nil {
-		t.Fatal("untrimmed model term reached repository machinery")
+		t.Fatal("untrimmed code-owned query reached repository machinery")
 	}
 }
 

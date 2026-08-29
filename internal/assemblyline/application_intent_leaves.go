@@ -1,7 +1,6 @@
 package assemblyline
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 )
@@ -100,15 +99,11 @@ func BuildApplicationProductContextPrompt(
 	if err := input.validate(); err != nil {
 		return "", err
 	}
-	context, err := json.Marshal(input.Context)
-	if err != nil {
-		return "", fmt.Errorf("encode application product context authority: %w", err)
-	}
+	projection := renderApplicationContextModelProjection(input.UserRequest, input.Context)
 	return strings.Join([]string{
-		"Answer one semantic question: what concise product context is explicitly established by this software request and its authoritative facts?",
+		"Answer one semantic question: what concise product context is explicitly established by this software request and its established facts?",
 		"Return only that product context as raw prose. Do not return requirements, implementation detail, JSON, quotes, a label, Markdown, or commentary.",
-		"AUTHORITATIVE_CONTEXT:\n" + string(context),
-		"IMMUTABLE_USER_REQUEST:\n" + input.UserRequest,
+		"APPLICATION PRODUCT INPUT:\n" + projection,
 	}, "\n\n"), nil
 }
 
@@ -139,7 +134,7 @@ func BuildApplicationRequirementCoveragePrompt(
 	if err := input.validate(); err != nil {
 		return "", err
 	}
-	authority, err := applicationRequirementLeafAuthority(input)
+	projection, err := applicationRequirementLeafProjection(input)
 	if err != nil {
 		return "", err
 	}
@@ -147,7 +142,7 @@ func BuildApplicationRequirementCoveragePrompt(
 		"Answer one semantic relation: does the immutable request establish any explicit software requirement that is not semantically covered by the accepted requirement statements?",
 		"Return REQUIREMENT_REMAINS when at least one explicit capability, behavior, user-visible element, artifact constraint, or technical-format constraint remains uncovered. Return NO_UNCOVERED_REQUIREMENT when every explicit requirement is covered.",
 		"Return exactly that raw registered value and nothing else: no JSON, quotes, label, Markdown, or commentary.",
-		"APPLICATION_REQUIREMENT_AUTHORITY:\n" + authority,
+		"APPLICATION REQUIREMENT INPUT:\n" + projection,
 	}, "\n\n"), nil
 }
 
@@ -180,7 +175,7 @@ func BuildApplicationRequirementPrompt(
 	if err := input.validate(); err != nil {
 		return "", err
 	}
-	authority, err := applicationRequirementLeafAuthority(input)
+	projection, err := applicationRequirementLeafProjection(input)
 	if err != nil {
 		return "", err
 	}
@@ -188,7 +183,7 @@ func BuildApplicationRequirementPrompt(
 		"Return one explicit software requirement from the immutable request that is not semantically covered by the accepted requirement statements.",
 		"Choose the earliest uncovered requirement in source order. Faithfully paraphrase only that one requirement; do not add implementation detail or unstated obligations.",
 		"Return only the requirement as raw prose. Do not return another requirement, JSON, quotes, a label, Markdown, or commentary.",
-		"APPLICATION_REQUIREMENT_AUTHORITY:\n" + authority,
+		"APPLICATION REQUIREMENT INPUT:\n" + projection,
 	}, "\n\n"), nil
 }
 
@@ -218,21 +213,35 @@ func DecodeApplicationRequirementLeaf(
 	return leaf, nil
 }
 
-func applicationRequirementLeafAuthority(
+func applicationRequirementLeafProjection(
 	input ApplicationRequirementLeafInput,
 ) (string, error) {
-	raw, err := json.Marshal(struct {
-		UserRequest          string             `json:"user_request"`
-		Context              ApplicationContext `json:"context"`
-		ProductContext       string             `json:"product_context"`
-		AcceptedRequirements []string           `json:"accepted_requirements"`
-	}{
-		UserRequest: input.UserRequest, Context: input.Context,
-		ProductContext:       input.ProductContext,
-		AcceptedRequirements: append([]string{}, input.AcceptedRequirements...),
-	})
-	if err != nil {
-		return "", fmt.Errorf("encode application requirement authority: %w", err)
+	if err := input.validate(); err != nil {
+		return "", err
 	}
-	return string(raw), nil
+	var projection strings.Builder
+	projection.WriteString(renderApplicationContextModelProjection(
+		input.UserRequest,
+		input.Context,
+	))
+	fmt.Fprintf(&projection, "\nPRODUCT CONTEXT:\n%s\n", input.ProductContext)
+	if len(input.AcceptedRequirements) == 0 {
+		projection.WriteString("ACCEPTED REQUIREMENTS:\n(none)\n")
+	} else {
+		for index, requirement := range input.AcceptedRequirements {
+			fmt.Fprintf(
+				&projection,
+				"ACCEPTED REQUIREMENT %d:\n%s\n",
+				index+1,
+				requirement,
+			)
+		}
+	}
+	if projection.Len() > maxPortablePayloadBytes {
+		return "", fmt.Errorf(
+			"application requirement projection exceeds %d bytes",
+			maxPortablePayloadBytes,
+		)
+	}
+	return strings.TrimSuffix(projection.String(), "\n"), nil
 }

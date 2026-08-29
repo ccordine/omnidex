@@ -14,8 +14,6 @@ const chatMetricsTarget = "metrics-output"
 type chatMetricsSnapshot struct {
 	Live       queue.TelemetryDashboardSummary
 	Models     []queue.TelemetryModelSummary
-	Playbooks  []queue.TelemetryPlaybookSummary
-	Benchmarks []queue.TelemetryBenchmarkSummary
 	Shrink     queue.ContextShrinkMetricsResponse
 	Usage      queue.LLMContextUsageMetricsResponse
 	Operations queue.OperationsMetricsResponse
@@ -46,20 +44,6 @@ func renderChatMetrics(snapshot chatMetricsSnapshot) (string, error) {
 		modelCalls += item.Calls
 		modelFailures += item.Failures
 	}
-	playbookUses := 0
-	for _, item := range snapshot.Playbooks {
-		if item.Uses < 0 {
-			return "", fmt.Errorf("playbook metrics contain negative uses")
-		}
-		playbookUses += item.Uses
-	}
-	benchmarkRuns := 0
-	for _, item := range snapshot.Benchmarks {
-		if item.Runs < 0 {
-			return "", fmt.Errorf("benchmark metrics contain negative runs")
-		}
-		benchmarkRuns += item.Runs
-	}
 	failureEvents := 0
 	for _, item := range snapshot.Operations.FailureCounts {
 		if item.Count < 0 {
@@ -78,8 +62,6 @@ func renderChatMetrics(snapshot chatMetricsSnapshot) (string, error) {
 		{Label: "Context overloads", Value: strconv.Itoa(snapshot.Usage.Summary.OverloadEvents), Tone: chatMetricDanger},
 		{Label: "Context saved", Value: fmt.Sprintf("%.1f%%", snapshot.Shrink.Summary.AvgSavedPct), Tone: chatMetricHealthy},
 		{Label: "Failure events", Value: strconv.Itoa(failureEvents), Tone: chatMetricDanger},
-		{Label: "Playbook uses", Value: strconv.Itoa(playbookUses), Tone: chatMetricNeutral},
-		{Label: "Benchmark runs", Value: strconv.Itoa(benchmarkRuns), Tone: chatMetricNeutral},
 	}
 	var output strings.Builder
 	output.WriteString(`<section class="space-y-4" role="status" aria-live="polite"><div><h3 class="text-sm font-semibold uppercase tracking-[.18em] text-zinc-300">Operational metrics</h3><p class="mt-1 text-xs text-zinc-500">Server-computed summaries from durable telemetry.</p></div><dl class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">`)

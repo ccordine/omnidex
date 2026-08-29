@@ -38,7 +38,9 @@ func TestConversationObjectiveKindStationHasOneExactSemanticResponsibility(t *te
 			t.Fatalf("prompt omitted %q:\n%s", required, prompt)
 		}
 	}
-	assertExactJSONFields(t, reflect.TypeOf(input), []string{"exact_instruction", "objective_context", "database_evidence_available"})
+	assertExactJSONFields(t, reflect.TypeOf(input), []string{
+		"exact_instruction", "objective_context", "database_evidence_available", "known_artifact_paths",
+	})
 	assertExactJSONFields(t, reflect.TypeOf(ConversationObjectiveKindDecision{}), []string{"schema", "kind"})
 
 	encoded, err := json.Marshal(job.Payload)
@@ -49,6 +51,25 @@ func TestConversationObjectiveKindStationHasOneExactSemanticResponsibility(t *te
 		if strings.Contains(strings.ToLower(string(encoded)), `"`+forbidden) {
 			t.Fatalf("objective-kind payload exposes forbidden field %q: %s", forbidden, encoded)
 		}
+	}
+}
+
+func TestConversationObjectiveKindKeepsCodeOwnedArtifactPathsOutOfPrompt(t *testing.T) {
+	t.Parallel()
+	input := ConversationObjectiveKindInput{
+		ExactInstruction:   "Explain ARTIFACT_1.",
+		KnownArtifactPaths: []string{"internal/private/owner.go"},
+	}
+	prompt, err := BuildConversationObjectiveKindPrompt(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(prompt, "internal/private/owner.go") || !strings.Contains(prompt, "ARTIFACT_1") {
+		t.Fatalf("objective-kind prompt crossed artifact boundary: %s", prompt)
+	}
+	input.ExactInstruction = "Explain owner.go."
+	if _, err := BuildConversationObjectiveKindPrompt(input); err == nil {
+		t.Fatal("current-tree basename reached objective-kind prompt")
 	}
 }
 

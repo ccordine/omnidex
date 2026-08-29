@@ -7,6 +7,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/gryph/omnidex/internal/model"
+	"github.com/gryph/omnidex/internal/modelcontext"
 )
 
 const (
@@ -29,6 +30,7 @@ type ConversationObjectiveKindInput struct {
 	ExactInstruction          string           `json:"exact_instruction"`
 	Context                   ObjectiveContext `json:"objective_context"`
 	DatabaseEvidenceAvailable bool             `json:"database_evidence_available"`
+	KnownArtifactPaths        []string         `json:"known_artifact_paths"`
 }
 
 type ConversationObjectiveKindDecision struct {
@@ -54,6 +56,15 @@ func (input ConversationObjectiveKindInput) validate() error {
 	}
 	if strings.ContainsRune(input.ExactInstruction, '\x00') {
 		return fmt.Errorf("conversation exact instruction contains NUL")
+	}
+	provenance, err := modelcontext.NewArtifactIdentityProvenance(input.KnownArtifactPaths)
+	if err != nil {
+		return fmt.Errorf("conversation objective kind artifact provenance: %w", err)
+	}
+	if err := ValidatePathFreeModelContextWithProvenance(
+		"conversation objective kind instruction", provenance, input.ExactInstruction,
+	); err != nil {
+		return err
 	}
 	return input.Context.Validate()
 }
@@ -115,7 +126,7 @@ func BuildConversationObjectiveKindPrompt(input ConversationObjectiveKindInput) 
 		return "", fmt.Errorf("encode objective context: %w", err)
 	}
 	lines := []string{
-		"Classify one exact user instruction into exactly one registered code-owned objective kind.",
+		"Classify one exact user instruction into exactly one listed objective kind.",
 		"answer: converse directly, including greetings and small talk, or answer without inspecting a repository or acquiring current external evidence.",
 		"repository_read: satisfying the instruction requires inspecting an existing repository without changing it.",
 		"workspace_mutation: satisfying the instruction requires changing a workspace and verifying the change.",

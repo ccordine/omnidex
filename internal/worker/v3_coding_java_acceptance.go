@@ -16,7 +16,6 @@ func javaAcceptanceRequiredAssertions(
 		return 0, fmt.Errorf("frozen acceptance task authority is required")
 	}
 	found := false
-	criteria := 0
 	for _, task := range stage.Workload.Tasks {
 		if task.ID != ref.Block.TaskID {
 			continue
@@ -25,12 +24,11 @@ func javaAcceptanceRequiredAssertions(
 			return 0, fmt.Errorf("frozen workload repeats task %s", ref.Block.TaskID)
 		}
 		found = true
-		criteria = len(task.AcceptanceCriteria)
 	}
-	if !found || criteria == 0 {
-		return 0, fmt.Errorf("frozen task %s has no acceptance criteria", ref.Block.TaskID)
+	if !found {
+		return 0, fmt.Errorf("frozen task %s is absent", ref.Block.TaskID)
 	}
-	return criteria, nil
+	return 1, nil
 }
 
 func inspectJavaAcceptance(
@@ -119,7 +117,7 @@ func inspectJavaAcceptance(
 	}
 	if len(assertionCalls) < requiredAssertions {
 		return fmt.Errorf(
-			"Java acceptance has %d result assertions for %d criteria",
+			"Java acceptance has %d result assertions for %d accepted-requirement obligation",
 			len(assertionCalls), requiredAssertions,
 		)
 	}

@@ -90,8 +90,8 @@ type StationCallReceipt struct {
 	CreatedAt        time.Time       `json:"created_at"`
 }
 
-// LLMCallEvidenceRecord derives the legacy trace projection from the durable
-// call opening and terminal receipt. Callers cannot independently restate it.
+// LLMCallEvidenceRecord derives the immutable history row from the durable call
+// opening and terminal receipt. Callers cannot independently restate it.
 func (receipt StationCallReceipt) LLMCallEvidenceRecord(
 	authority model.StepAttemptAuthority,
 	gap StationGapOpening,

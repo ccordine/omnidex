@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func TestExactR1PreparedRequestUsesAttestedTemplateAndUncappedThinking(t *testing.T) {
+func TestExactR1PreparedRequestUsesAttestedTemplateWithThinkingDisabled(t *testing.T) {
 	t.Parallel()
 	show := exactR1Show(t, "qwen3", false, exactR18BParameters, nil)
 	selection, evidence := exactProviderProfileEvidence(t, "opaque-r1-transport:local", show)
@@ -24,8 +24,8 @@ func TestExactR1PreparedRequestUsesAttestedTemplateAndUncappedThinking(t *testin
 		BaseModel: expected.Model, ContextModel: expected.Model,
 		Prompt: "return one declaration", PromptHint: MinimalGeneratePrompt,
 		MaxOutputTokens: 1024, ContextTokens: expected.NativeContextLimit,
-		OutputLimitMode: ExactPreparedOutputLimitNatural,
-		ThinkingEnabled: true, Temperature: &temperature,
+		OutputLimitMode:             ExactPreparedOutputLimitNatural,
+		Temperature:                 &temperature,
 		ProviderIdentityExpectation: &expected, ProviderObservationChallenge: challenge,
 	}
 	wire, err := ExactPreparedRequestBytes(prepared)
@@ -39,8 +39,8 @@ func TestExactR1PreparedRequestUsesAttestedTemplateAndUncappedThinking(t *testin
 	if raw, exists := request["raw"]; !exists || raw != false {
 		t.Fatalf("R1 request did not select the attested provider template: %s", wire)
 	}
-	if think, exists := request["think"]; !exists || think != true {
-		t.Fatalf("R1 request did not enable separate provider reasoning: %s", wire)
+	if think, exists := request["think"]; !exists || think != false {
+		t.Fatalf("R1 request did not disable separate provider thinking: %s", wire)
 	}
 	if _, exists := request["template"]; exists {
 		t.Fatalf("R1 request supplied an unattested template override: %s", wire)
@@ -63,7 +63,7 @@ func TestExactR1PreparedRequestUsesAttestedTemplateAndUncappedThinking(t *testin
 	}
 }
 
-func TestExactR114BPreparedRequestUsesTheSameReasoningTransport(t *testing.T) {
+func TestExactR114BPreparedRequestUsesTheSameSingleOutputTransport(t *testing.T) {
 	t.Parallel()
 	show := exactR1Show(t, "qwen2", true, exactR114BParameters, nil)
 	selection, evidence := exactProviderProfileEvidence(t, "opaque-r1-fourteen:local", show)
@@ -81,7 +81,7 @@ func TestExactR114BPreparedRequestUsesTheSameReasoningTransport(t *testing.T) {
 		ContextModel: expected.Model, Prompt: "return one declaration",
 		PromptHint: MinimalGeneratePrompt, MaxOutputTokens: 1024,
 		OutputLimitMode: ExactPreparedOutputLimitNatural,
-		ContextTokens:   expected.NativeContextLimit, ThinkingEnabled: true, Temperature: &temperature,
+		ContextTokens:   expected.NativeContextLimit, Temperature: &temperature,
 		ProviderIdentityExpectation: &expected, ProviderObservationChallenge: challenge,
 	}
 	wire, err := ExactPreparedRequestBytes(prepared)
@@ -93,15 +93,15 @@ func TestExactR114BPreparedRequestUsesTheSameReasoningTransport(t *testing.T) {
 		t.Fatal(err)
 	}
 	options := request["options"].(map[string]any)
-	if request["raw"] != false || request["think"] != true || options["temperature"] != 0.6 {
+	if request["raw"] != false || request["think"] != false || options["temperature"] != 0.6 {
 		t.Fatalf("R1 14B transport=%s", wire)
 	}
 	if _, exists := options["num_predict"]; exists {
 		t.Fatalf("R1 14B request retained an output cap: %s", wire)
 	}
 	settings, err := ResolveExactPreparedTransport(expected)
-	if err != nil || !settings.NativeTemplate || !settings.SeparateThinking ||
-		settings.SeparateSystem || settings.Temperature == nil || *settings.Temperature != 0.6 {
+	if err != nil || !settings.NativeTemplate || settings.SeparateSystem ||
+		settings.Temperature == nil || *settings.Temperature != 0.6 {
 		t.Fatalf("R1 14B transport settings=%+v error=%v", settings, err)
 	}
 }
@@ -120,7 +120,7 @@ func TestExactR1ProfileBindsQwenRawChatMLBoundary(t *testing.T) {
 	}
 }
 
-func TestDecodeExactPreparedResponseRetainsThinkingOutsideFinalCandidate(t *testing.T) {
+func TestDecodeExactPreparedResponseRejectsNonEmptyThinkingField(t *testing.T) {
 	t.Parallel()
 	reasoningCandidate := "reasoning must not win"
 	finalCandidate := "final semantic leaf"
@@ -128,14 +128,9 @@ func TestDecodeExactPreparedResponseRetainsThinkingOutsideFinalCandidate(t *test
 	decoded, err := DecodeExactPreparedResponseForProtocol(
 		ExactPreparedProtocolRawTextV2, 200, body,
 	)
-	if err != nil {
-		t.Fatalf("decode R1 response with separate thinking: %v", err)
-	}
-	if decoded.Content != finalCandidate || strings.Contains(decoded.Content, reasoningCandidate) {
-		t.Fatalf("candidate content=%q want only final response %q", decoded.Content, finalCandidate)
-	}
-	if decoded.Thinking != reasoningCandidate {
-		t.Fatalf("provider thinking was not retained separately: %+v", decoded)
+	if err == nil || decoded.Disposition != ProviderResponseInvalidJSON || decoded.Content != "" ||
+		!strings.Contains(err.Error(), "forbidden separate thinking content") {
+		t.Fatalf("separate thinking was not rejected loudly: response=%+v error=%v", decoded, err)
 	}
 }
 
@@ -157,9 +152,9 @@ func TestDecodeExactPreparedResponseRejectsNonStringThinking(t *testing.T) {
 	}
 }
 
-func TestValidateExactPreparedResponseProjectionBindsThinking(t *testing.T) {
+func TestValidateExactPreparedResponseProjectionBindsSingleContent(t *testing.T) {
 	t.Parallel()
-	body := exactR1ResponseBody(t, "exact trace", "final")
+	body := exactR1ResponseBody(t, "", "final")
 	decoded, err := DecodeExactPreparedResponseForProtocol(
 		ExactPreparedProtocolRawTextV2, 200, body,
 	)
@@ -169,16 +164,16 @@ func TestValidateExactPreparedResponseProjectionBindsThinking(t *testing.T) {
 	generation := PreparedGeneration{
 		Protocol: ExactPreparedProtocolRawTextV2, ProviderHTTPStatus: 200,
 		ProviderResponseCapture: body, ProviderResponseDisposition: decoded.Disposition,
-		ProviderResponseModel: decoded.Model, Content: decoded.Content, Thinking: decoded.Thinking,
+		ProviderResponseModel: decoded.Model, Content: decoded.Content,
 		ProviderDonePresent: decoded.DonePresent, ProviderDone: decoded.Done,
 		ProviderDoneReason: decoded.DoneReason, UsagePresent: decoded.UsagePresent, Usage: decoded.Usage,
 	}
 	if err := ValidateExactPreparedResponseProjection(generation); err != nil {
 		t.Fatal(err)
 	}
-	generation.Thinking = "changed trace"
+	generation.Content = "changed final"
 	if err := ValidateExactPreparedResponseProjection(generation); err == nil {
-		t.Fatal("normalized provider projection accepted changed thinking")
+		t.Fatal("normalized provider projection accepted changed semantic content")
 	}
 }
 
@@ -188,7 +183,7 @@ func TestDecodeExactPreparedResponseNeverUsesThinkingAsCandidateFallback(t *test
 	decoded, err := DecodeExactPreparedResponseForProtocol(
 		ExactPreparedProtocolRawTextV2, 200, body,
 	)
-	if err == nil || decoded.Disposition != ProviderResponseEmptyContent || decoded.Content != "" {
+	if err == nil || decoded.Disposition != ProviderResponseInvalidJSON || decoded.Content != "" {
 		t.Fatalf("thinking became a candidate fallback: response=%+v error=%v", decoded, err)
 	}
 }

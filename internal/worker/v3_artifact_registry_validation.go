@@ -124,6 +124,12 @@ func validateDirectCodingArtifactRegistriesFrom(
 				return fmt.Errorf("project stack %s deployment descriptor: %w", stack.ID, err)
 			}
 		}
+		if stack.ProjectCompleteTargetTree != nil && stack.ProjectFocusedTargetTree != nil {
+			return fmt.Errorf(
+				"project stack %s cannot register both complete and focused target-tree projectors",
+				stack.ID,
+			)
+		}
 		if strings.TrimSpace(stack.TreeDescription) == "" || len(stack.ArtifactAdapterIDs) == 0 ||
 			len(stack.TargetTreeAdapterIDs) == 0 || len(stack.TaskStageStaticPaths) == 0 ||
 			compilerCount != 1 || stack.ValidateTargetTree == nil || stack.ValidateBlueprint == nil ||

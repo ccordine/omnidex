@@ -6,18 +6,24 @@ import (
 	"github.com/gryph/omnidex/internal/station"
 )
 
-func TestRepositoryGroundingStationModelsLoadFromExactEnvironmentKeys(t *testing.T) {
+func TestRepositoryEvidenceRelevanceModelLoadsFromExactEnvironmentKey(t *testing.T) {
 	t.Setenv("OMNI_REPOSITORY_EVIDENCE_RELEVANCE_MODEL", "relevance-model")
-	t.Setenv("OMNI_REPOSITORY_GROUNDED_REVIEW_MODEL", "review-model")
-	t.Setenv("OMNI_REPOSITORY_GROUNDED_CORRECTION_MODEL", "correction-model")
 	models := loadStationModels(Config{})
-	for id, want := range map[station.ID]string{
-		station.RepositoryEvidenceRelevance:  "relevance-model",
-		station.RepositoryGroundedReview:     "review-model",
-		station.RepositoryGroundedCorrection: "correction-model",
+	if got := models[station.RepositoryEvidenceRelevance]; got != "relevance-model" {
+		t.Fatalf("station %q=%q want %q", station.RepositoryEvidenceRelevance, got, "relevance-model")
+	}
+}
+
+func TestRetiredRepositoryGroundingEnvironmentKeysFailLoudly(t *testing.T) {
+	for _, key := range []string{
+		"OMNI_REPOSITORY_GROUNDED_REVIEW_MODEL",
+		"OMNI_REPOSITORY_GROUNDED_CORRECTION_MODEL",
 	} {
-		if models[id] != want {
-			t.Fatalf("station %q=%q want %q", id, models[id], want)
-		}
+		t.Run(key, func(t *testing.T) {
+			t.Setenv(key, "retired-model")
+			if err := validateTypedEnvironment(); err == nil {
+				t.Fatalf("retired environment key %s was silently ignored", key)
+			}
+		})
 	}
 }

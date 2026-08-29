@@ -22,6 +22,9 @@ func validateStationCallOpening(record StationCallOpenRecord) (StationCallOpenin
 		record.Gap.WorkerID != record.Authority.WorkerID {
 		return StationCallOpening{}, fmt.Errorf("station call requires its exact persisted gap authority")
 	}
+	if err := ValidateStationGapSemanticUncertainty(record.Gap); err != nil {
+		return StationCallOpening{}, fmt.Errorf("station call semantic uncertainty: %w", err)
+	}
 	if record.Discovery.ID < 1 || record.Discovery.Status != "succeeded" ||
 		record.Discovery.GapID != record.Gap.GapID || record.Discovery.JobID != record.Authority.JobID ||
 		record.Discovery.Generation != record.Authority.Generation ||
@@ -66,9 +69,6 @@ func validateStationCallOpening(record StationCallOpenRecord) (StationCallOpenin
 	}
 	if prepared.RawTextStopSequence != expectedStop {
 		return StationCallOpening{}, fmt.Errorf("station call stop sequence differs from its raw response transport")
-	}
-	if string(record.Gap.ResponseSchema) != "null" {
-		return StationCallOpening{}, fmt.Errorf("station call response schema differs from its gap projection")
 	}
 	expectation, err := exactjson.Canonical(*prepared.ProviderIdentityExpectation)
 	if err != nil {

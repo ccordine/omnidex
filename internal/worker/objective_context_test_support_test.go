@@ -41,29 +41,13 @@ func (provider scriptedConversationCandidateProvider) ContextCandidates(
 }
 
 type scriptedConversationContextStation struct {
-	terms              []string
 	relevantIDs        []string
 	relevantIDsByCall  [][]string
 	minimalContext     string
-	termCalls          int
-	termInputs         []assemblyline.ContextSearchTermsInput
 	relevanceCalls     int
 	relevanceInputs    []assemblyline.ContextRelevanceInput
 	minificationCalls  int
 	minificationInputs []assemblyline.ContextMinificationInput
-}
-
-func (station *scriptedConversationContextStation) Generate(
-	_ context.Context,
-	input assemblyline.ContextSearchTermsInput,
-) (assemblyline.ContextSearchTermsDecision, contextcompiler.StationReceipt, error) {
-	station.termCalls++
-	station.termInputs = append(station.termInputs, input)
-	decision := assemblyline.ContextSearchTermsDecision{
-		Schema: assemblyline.ContextSearchTermsSchemaV1,
-		Terms:  append([]string{}, station.terms...),
-	}
-	return decision, contextcompiler.StationReceipt{Calls: 1}, decision.ValidateFor(input)
 }
 
 func (station *scriptedConversationContextStation) SelectRelevant(
@@ -98,7 +82,7 @@ func (station *scriptedConversationContextStation) Minify(
 }
 
 func emptyContextSieveStation() *scriptedConversationContextStation {
-	return &scriptedConversationContextStation{terms: []string{}, relevantIDs: []string{}}
+	return &scriptedConversationContextStation{relevantIDs: []string{}}
 }
 
 func answerObjectiveKindStation() *scriptedObjectiveKindStation {

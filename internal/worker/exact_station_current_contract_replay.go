@@ -24,7 +24,10 @@ func ReplayStationWithCurrentContract(
 	if err != nil {
 		return ExactStationReplay{}, err
 	}
-	scope := fmt.Sprintf("station-current-contract:%d:%s", point.Call.ID, boundary.Job.ID)
+	scope := fmt.Sprintf(
+		"station-current-contract:%d:%s:semantic-uncertainty:%s",
+		point.Call.ID, boundary.Job.ID, point.Gap.SemanticUncertaintyContractSHA256,
+	)
 	return replayCurrentPortableStation(ctx, client, point, boundary.Job, modelName, scope, nil)
 }
 
@@ -49,7 +52,7 @@ func replayCurrentPortableStation(
 	if err := ctx.Err(); err != nil {
 		return result, err
 	}
-	gap, contract, err := exactConvergenceGap(point, job)
+	gap, contract, err := exactCurrentContractGap(point, job)
 	if err != nil {
 		return result, err
 	}

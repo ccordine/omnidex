@@ -19,7 +19,7 @@ func validateDirectCodingJavaScriptAcceptance(
 	if err != nil {
 		return fmt.Errorf("JavaScript acceptance block %s: %w", ref.Block.ID, err)
 	}
-	requiredAssertions, err := directCodingAcceptanceCriterionCount(stage, ref)
+	requiredAssertions, err := directCodingAcceptanceObligationCount(stage, ref)
 	if err != nil {
 		return err
 	}
@@ -31,7 +31,7 @@ func validateDirectCodingJavaScriptAcceptance(
 	}
 	if !called || assertions < requiredAssertions {
 		return fmt.Errorf(
-			"JavaScript acceptance block %s must bind one %s result and prove all %d frozen criteria with distinct direct result-field assertions",
+			"JavaScript acceptance block %s must bind one %s result and prove the accepted requirement with %d direct result-field assertion",
 			ref.Block.ID, implementationName, requiredAssertions,
 		)
 	}

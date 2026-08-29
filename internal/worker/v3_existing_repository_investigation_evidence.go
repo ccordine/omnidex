@@ -56,7 +56,7 @@ func (session *directCodingSession) recordExistingRepositoryInvestigation(
 			"snapshot_id":               acquisition.Pack.SnapshotID,
 			"analysis_id":               acquisition.Pack.AnalysisID,
 			"operation":                 repositoryretrieval.OperationSemanticExcerpts,
-			"search_term":               acquisition.Query,
+			"code_owned_query":          acquisition.Query,
 			"pack_bytes":                evidencePackBytes(acquisition.Pack),
 		},
 	})

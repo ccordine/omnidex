@@ -142,7 +142,7 @@ func persistPreparedStationEvidenceFixture(
 	t.Helper()
 	record := fixture.Record
 	record.ContextProjectionID = contextProjectionID
-	evidence, err := repository.RecordLLMCallEvidence(t.Context(), record)
+	evidence, err := insertLLMCallEvidenceForTest(t.Context(), repository, record)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -163,4 +163,24 @@ func persistPreparedStationEvidenceFixture(
 		t.Fatal(err)
 	}
 	return evidence
+}
+
+func insertLLMCallEvidenceForTest(
+	ctx context.Context,
+	repository *Repository,
+	record LLMCallEvidenceRecord,
+) (LLMCallEvidence, error) {
+	tx, err := repository.pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return LLMCallEvidence{}, err
+	}
+	defer tx.Rollback(context.Background())
+	evidence, err := insertLLMCallEvidenceTx(ctx, tx, record)
+	if err != nil {
+		return LLMCallEvidence{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return LLMCallEvidence{}, err
+	}
+	return evidence, nil
 }

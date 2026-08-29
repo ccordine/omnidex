@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func TestCodingWorkloadCannotCreateCertifyOrActivateSkillCandidates(t *testing.T) {
+func TestCodingPipelineCannotCreateCertifyOrActivateSkillCandidates(t *testing.T) {
 	t.Parallel()
 
 	for _, path := range []string{

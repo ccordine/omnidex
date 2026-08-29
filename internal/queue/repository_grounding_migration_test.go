@@ -20,8 +20,6 @@ func TestRepositoryGroundingMigrationIsNarrowAndHashGuarded(t *testing.T) {
 		"digest(convert_to(observed_source,'UTF8'),'sha256')",
 		"CREATE OR REPLACE FUNCTION station_owns_portable_work",
 		"WHEN 'repository_evidence_relevance' THEN station='repository_evidence_relevance'",
-		"WHEN 'repository_grounded_review' THEN station='repository_grounded_review'",
-		"WHEN 'repository_grounded_correction' THEN station='repository_grounded_correction'",
 		"WHEN 'conversation_context_selection' THEN station='conversation_context_selection'",
 		"prior station function hash",
 		"repository grounding station postcondition failed",

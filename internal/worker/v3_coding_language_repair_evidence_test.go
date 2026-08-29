@@ -106,13 +106,12 @@ func TestLanguageRepairAcceptedTransitionCeilingPreventsFurtherExecutorCalls(t *
 		acceptedRepairTransitions: map[string]int{
 			block.ID: maxDirectCodingLanguageRepairTransitions,
 		},
-		repairGuidance: make(map[string]map[string]struct{}),
-		repairSources:  make(map[string]map[string]struct{}),
+		repairDiagnostics: make(map[string]map[string]struct{}),
 	}
 	calls := 0
 	_, err := executor.repairLanguageBlockWithRuntime(
 		typedWorkerRuntime{
-			Context: t.Context(), MaxAttempts: maxTypedWorkerAttempts,
+			Context: t.Context(), MaxAttempts: exactSemanticLeafCalls,
 			Execute: func(
 				assemblyline.PortableJob, string,
 			) (assemblyline.PortableResult, error) {

@@ -12,10 +12,8 @@ const (
 )
 
 type ApplicationServiceStateLifetimeInput struct {
-	ProductContext    string   `json:"product_context"`
-	RequirementQuote  string   `json:"requirement_quote"`
-	Objective         string   `json:"objective"`
-	RequiredBehaviors []string `json:"required_behaviors"`
+	ProductContext   string `json:"product_context"`
+	RequirementQuote string `json:"requirement_quote"`
 }
 
 type ApplicationServiceStateLifetimeResult struct {
@@ -28,8 +26,6 @@ func ProjectApplicationServiceStateLifetimeInput(
 ) (ApplicationServiceStateLifetimeInput, error) {
 	input := ApplicationServiceStateLifetimeInput{
 		ProductContext: authority.ProductQuote, RequirementQuote: authority.RequirementQuote,
-		Objective:         authority.Objective,
-		RequiredBehaviors: append([]string(nil), authority.RequiredBehaviors...),
 	}
 	if err := input.validate(); err != nil {
 		return ApplicationServiceStateLifetimeInput{}, err
@@ -51,17 +47,6 @@ func (input ApplicationServiceStateLifetimeInput) validate() error {
 	}
 	if err := validateApplicationIntentText(
 		"service state lifetime requirement", input.RequirementQuote, maxRequirementQuoteBytes,
-	); err != nil {
-		return err
-	}
-	if err := validateApplicationWorkloadLine(
-		"service state lifetime objective", input.Objective, maxApplicationObjectiveRunes,
-	); err != nil {
-		return err
-	}
-	if err := validateApplicationJobSpecificationList(
-		"service state lifetime behavior", input.RequiredBehaviors,
-		maxApplicationRequiredBehaviors, maxApplicationBehaviorRunes,
 	); err != nil {
 		return err
 	}

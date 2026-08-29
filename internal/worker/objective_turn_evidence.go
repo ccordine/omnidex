@@ -77,6 +77,28 @@ func validateObjectiveEvidence(item objectiveEvidence) error {
 	if item.SHA256 != validated.SHA256 {
 		return fmt.Errorf("objective evidence %q projection hash does not match exact text", item.Capsule.ID)
 	}
+	switch item.SourceType {
+	case "repository_symbol", "repository_relation":
+		if err := assemblyline.ValidatePathFreeModelContext(
+			"repository evidence selection projection", item.SelectionText,
+		); err != nil {
+			return err
+		}
+		if strings.TrimSpace(item.SelectionText) == "" ||
+			len(item.SelectionText) > maxObjectiveEvidenceTextBytes {
+			return fmt.Errorf(
+				"repository evidence %q requires one bounded selection projection",
+				item.Capsule.ID,
+			)
+		}
+	default:
+		if item.SelectionText != "" {
+			return fmt.Errorf(
+				"objective evidence %q carries an unsupported selection projection",
+				item.Capsule.ID,
+			)
+		}
+	}
 	if !validObjectiveSHA256(item.SourceSHA256) {
 		return fmt.Errorf("objective evidence %q requires an exact authoritative source SHA-256", item.Capsule.ID)
 	}
@@ -125,18 +147,21 @@ func objectiveCitationRecord(
 	if err := validateObjectiveEvidence(citation); err != nil {
 		return evidence.Record{}, err
 	}
-	claims := []string{result.RequirementID}
+	requirementAuthorityBindings := []string{result.RequirementID}
 	paragraphIndexes := make([]int, 0, 4)
 	if citation.ParagraphMask != 0 {
-		claims = claims[:0]
+		requirementAuthorityBindings = requirementAuthorityBindings[:0]
 		for paragraphIndex := 0; paragraphIndex < 4; paragraphIndex++ {
 			if citation.ParagraphMask&(1<<paragraphIndex) == 0 {
 				continue
 			}
 			paragraphIndexes = append(paragraphIndexes, paragraphIndex)
-			claims = append(claims, result.RequirementID+"#paragraph-"+strconv.Itoa(paragraphIndex+1))
+			requirementAuthorityBindings = append(
+				requirementAuthorityBindings,
+				result.RequirementID+"#paragraph-"+strconv.Itoa(paragraphIndex+1),
+			)
 		}
-		sort.Strings(claims)
+		sort.Strings(requirementAuthorityBindings)
 	}
 	metadata := map[string]any{
 		"capsule_id": citation.Capsule.ID, "instruction_sha256": result.InstructionSHA256,
@@ -169,8 +194,8 @@ func objectiveCitationRecord(
 			"Objective %s cited evidence capsule %s.", result.ObjectiveID, citation.Capsule.ID,
 		),
 		Hash: citation.SourceSHA256, Confidence: 1,
-		SupportsClaims: claims,
-		Metadata:       metadata,
+		RequirementAuthorityBindings: requirementAuthorityBindings,
+		Metadata:                     metadata,
 	}, nil
 }
 
@@ -261,14 +286,14 @@ func validateObjectiveTurnResult(result objectiveTurnResult) error {
 		assemblyline.ObjectiveKindStory,
 		assemblyline.ObjectiveKindWorkspaceMutation:
 		if len(result.Citations) != 0 {
-			return fmt.Errorf("objective kind %q cannot claim grounded citations", result.Kind)
+			return fmt.Errorf("objective kind %q cannot carry grounded citations", result.Kind)
 		}
 	default:
 		return fmt.Errorf("objective result kind %q is unsupported", result.Kind)
 	}
 	if result.Kind == assemblyline.ObjectiveKindExternalAnswer {
 		if !result.CitationsRendered {
-			return fmt.Errorf("external objective lost code-rendered claim citations")
+			return fmt.Errorf("external objective lost code-rendered citations")
 		}
 		for _, citation := range result.Citations {
 			if citation.ParagraphMask == 0 {
@@ -279,7 +304,7 @@ func validateObjectiveTurnResult(result objectiveTurnResult) error {
 			}
 		}
 	} else if result.CitationsRendered {
-		return fmt.Errorf("objective kind %q cannot claim pre-rendered citations", result.Kind)
+		return fmt.Errorf("objective kind %q cannot carry pre-rendered citations", result.Kind)
 	}
 	return nil
 }

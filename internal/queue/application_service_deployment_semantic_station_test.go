@@ -47,13 +47,6 @@ func TestApplicationServiceDeploymentSemanticsHaveSeparateExactStationOwners(t *
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			assertApplicationServiceDeploymentSemanticOwner(t, testCase.job, testCase.station)
-			correction, err := assemblyline.NewRetainedResponseCorrectionJob(
-				testCase.job, "candidate is unavailable", testCase.candidate,
-			)
-			if err != nil {
-				t.Fatal(err)
-			}
-			assertApplicationServiceDeploymentSemanticOwner(t, correction, testCase.station)
 		})
 	}
 }

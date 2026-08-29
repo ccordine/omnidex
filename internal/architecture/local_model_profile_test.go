@@ -11,14 +11,12 @@ import (
 const (
 	localSemanticModel         = "qwen3.5:9b-q4_K_M"
 	localDeploymentIntentModel = "phi4:14b"
-	localFragmentModel         = "qwen2.5-coder:7b"
+	localFragmentModel         = "qwen3.5:9b-q4_K_M"
 	localRepairGuidanceModel   = "qwen3.5:9b-q4_K_M"
-	localReviewModel           = "deepseek-r1:8b"
 )
 
 func TestLocalModelProfileUsesStableSemanticAndFragmentModels(t *testing.T) {
 	semanticKeys := []string{
-		"OMNI_CONTEXT_SEARCH_TERMS_MODEL",
 		"OMNI_CONTEXT_RELEVANCE_MODEL",
 		"OMNI_CONTEXT_MINIFICATION_MODEL",
 		"OMNI_CONVERSATION_OBJECTIVE_KIND_MODEL",
@@ -30,16 +28,12 @@ func TestLocalModelProfileUsesStableSemanticAndFragmentModels(t *testing.T) {
 		"OMNI_DATABASE_EVIDENCE_GAP_MODEL",
 		"OMNI_DATABASE_JOIN_PATH_SELECTION_MODEL",
 		"OMNI_REPOSITORY_EVIDENCE_RELEVANCE_MODEL",
-		"OMNI_REPOSITORY_GROUNDED_CORRECTION_MODEL",
-		"OMNI_WEB_SEARCH_TERMS_MODEL",
 		"OMNI_WEB_RELEVANCE_MODEL",
 		"OMNI_WEB_GROUNDED_SYNTHESIS_MODEL",
-		"OMNI_WEB_GROUNDED_SYNTHESIS_CORRECTION_MODEL",
 		"OMNI_CODING_SURFACE_MODEL",
 		"OMNI_CODING_ARTIFACT_HANDLING_MODEL",
 		"OMNI_CODING_CAPABILITY_RELATION_MODEL",
 		"OMNI_CODING_SKILL_SELECTION_MODEL",
-		"OMNI_CODING_REPOSITORY_SEARCH_TERM_MODEL",
 		"OMNI_CODING_REPOSITORY_CHANGE_SURFACE_MODEL",
 	}
 
@@ -60,12 +54,6 @@ func TestLocalModelProfileUsesStableSemanticAndFragmentModels(t *testing.T) {
 		}
 		if got := values["OMNI_CODING_SERVICE_DEPLOYMENT_INTENT_MODEL"]; got != localDeploymentIntentModel {
 			t.Errorf("%s: deployment intent model=%q, want %q", name, got, localDeploymentIntentModel)
-		}
-		if got := values["OMNI_WEB_CLAIM_EVIDENCE_REVIEW_MODEL"]; got != localReviewModel {
-			t.Errorf("%s: independent web review model=%q, want %q", name, got, localReviewModel)
-		}
-		if got := values["OMNI_REPOSITORY_GROUNDED_REVIEW_MODEL"]; got != localReviewModel {
-			t.Errorf("%s: independent repository review model=%q, want %q", name, got, localReviewModel)
 		}
 		for _, key := range []string{
 			"OMNI_CODING_FRAGMENT_MODEL",
@@ -100,6 +88,13 @@ func TestLocalModelProfileUsesStableSemanticAndFragmentModels(t *testing.T) {
 			"OMNI_ROLEPLAY_NARRATIVE_CONTINUITY_MODEL",
 			"OMNI_ROLEPLAY_CANON_EXTRACTION_MODEL",
 			"OMNI_ROLEPLAY_ONGOING_ACTION_MODEL",
+			"OMNI_REPOSITORY_GROUNDED_REVIEW_MODEL",
+			"OMNI_REPOSITORY_GROUNDED_CORRECTION_MODEL",
+			"OMNI_CONTEXT_SEARCH_TERMS_MODEL",
+			"OMNI_CODING_REPOSITORY_SEARCH_TERM_MODEL",
+			"OMNI_WEB_SEARCH_TERMS_MODEL",
+			"OMNI_WEB_GROUNDED_SYNTHESIS_CORRECTION_MODEL",
+			"OMNI_WEB_CLAIM_EVIDENCE_REVIEW_MODEL",
 		} {
 			if _, exists := values[removed]; exists {
 				t.Errorf("%s: removed production route %s remains configured", name, removed)
@@ -146,6 +141,15 @@ func TestReadmeCannotAdvertiseStaleOrFabricatedCognitionConfiguration(t *testing
 		"OMNI_CODING_WORKLOAD_MODEL",
 	} {
 		authority := key + "=" + localSemanticModel
+		if strings.Count(contents, authority) != 1 {
+			t.Fatalf("README exact route %q count=%d, want 1", authority, strings.Count(contents, authority))
+		}
+	}
+	for _, key := range []string{
+		"OMNI_CODING_FRAGMENT_MODEL",
+		"OMNI_CODING_FRAGMENT_CORRECTION_MODEL",
+	} {
+		authority := key + "=" + localFragmentModel
 		if strings.Count(contents, authority) != 1 {
 			t.Fatalf("README exact route %q count=%d, want 1", authority, strings.Count(contents, authority))
 		}

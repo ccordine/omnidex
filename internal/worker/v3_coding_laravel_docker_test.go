@@ -10,8 +10,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/gryph/omnidex/internal/assemblyline"
 )
 
 func TestLaravelDockerRuntimeQualification(t *testing.T) {
@@ -26,9 +24,6 @@ func TestLaravelDockerRuntimeQualification(t *testing.T) {
 			Package: "equipment-history", Product: "Equipment inspection history",
 			WriteRequirement: "Retain an accepted equipment inspection between requests.",
 			ReadRequirement:  "Present the current equipment inspection history.",
-			RootField:        "inspections", ValueField: "reference", DetailField: "status",
-			WriteRoute: "/equipment/inspections", ReadRoute: "/equipment/current",
-			WriteMethod: assemblyline.ApplicationServiceEndpointPOST,
 		}))
 	})
 }

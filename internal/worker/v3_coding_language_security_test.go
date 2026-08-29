@@ -234,6 +234,8 @@ func TestCodeOwnedNodeAndJavaVerificationCommandsAreNarrow(t *testing.T) {
 	}{
 		{"node", javaScriptNodeTestArgs()},
 		{"node", javaScriptNodeCheckArgs("main.mjs")},
+		{"node", typeScriptScopeInspectorNodeArgs("src/inventory.ts", 7, 18, 2, 9)},
+		{"node", typeScriptScopeInspectorNodeArgs("src/schedule.tsx", 11, 4, 5, 14)},
 		{"cargo", []string{"test", "--locked", "--offline"}},
 		{"cargo", []string{"test", "--locked", "--offline", "--test", "feature_test"}},
 		{"cargo", []string{"check", "--locked", "--offline", "--all-targets"}},
@@ -253,6 +255,14 @@ func TestCodeOwnedNodeAndJavaVerificationCommandsAreNarrow(t *testing.T) {
 	}{
 		{"node", []string{"--test"}},
 		{"node", append(javaScriptNodeTestArgs(), "untrusted.test.mjs")},
+		{"node", []string{directCodingTypeScriptScopeInspectorFile, "src/inventory.ts", "7", "18", "2", "9"}},
+		{"node", append(typeScriptScopeInspectorNodeArgs("src/inventory.ts", 7, 18, 2, 9), "extra")},
+		{"node", typeScriptScopeInspectorNodeArgs("../inventory.ts", 7, 18, 2, 9)},
+		{"node", typeScriptScopeInspectorNodeArgs(`src\inventory.ts`, 7, 18, 2, 9)},
+		{"node", typeScriptScopeInspectorNodeArgs("src/inventory.mjs", 7, 18, 2, 9)},
+		{"node", typeScriptScopeInspectorNodeArgs("src/inventory.ts", 7, 18, 8, 9)},
+		{"node", []string{"--permission", "--allow-fs-read=..", "--disable-proto=throw", directCodingTypeScriptScopeInspectorFile, "src/inventory.ts", "7", "18", "2", "9"}},
+		{"node", []string{"--permission", "--allow-fs-read=.", "--disable-proto=throw", directCodingTypeScriptScopeInspectorFile, "src/inventory.ts", "07", "18", "2", "9"}},
 		{"cargo", []string{"test", "--release"}},
 		{"cargo", []string{"check", "--manifest-path", "other/Cargo.toml"}},
 		{"cargo", []string{"test", "--locked", "--offline", "--test", "bad/target"}},

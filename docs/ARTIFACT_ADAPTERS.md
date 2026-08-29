@@ -206,12 +206,15 @@ This block is also checked against the executable registry by tests.
   persistent volume, and cross-process verification; request-local projects omit
   those artifacts and services entirely.
 
-Each frozen task receives one focused target-tree resolution under the selected
-stack. A model returns paths only when naming remains semantically unresolved;
-the command-line path-pair grammars and rigid PHP feature/test grammar are
-projected mechanically with no inference. TypeScript/React browser component
-placement remains the current inference consumer.
-Code retains task provenance, builds the union and coverage graph, generates all
-task-neutral static files, and rejects any path or artifact class outside that
-stack. An unsupported surface, state lifetime, or technical format fails loudly;
-there is no fallback stack.
+One complete target-tree resolution covers the frozen workload under the
+selected stack. When naming remains semantically unresolved, the model returns
+only one raw hierarchy of directory and file basenames; code alone constructs
+normalized relative paths from that hierarchy. No current stack needs that
+call. TypeScript/React allocates one neutral numbered TSX source/test pair for
+the whole workload; the command-line and PHP stacks allocate their registered
+per-task pairs. Each allocator treats the pair atomically, checks regular-file
+ancestry separately from existing directories, and cannot claim a reserved or
+static leaf. Code retains task provenance, builds the union and coverage graph,
+generates all task-neutral static files, and rejects any path or artifact class
+outside that stack. An unsupported surface, state lifetime, or technical format
+fails loudly; there is no fallback stack.

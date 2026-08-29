@@ -12,47 +12,37 @@ import (
 // Struggle and outcome event types persisted from the worker pipeline for metrics.
 var telemetryStruggleEventTypes = []string{
 	"step_error",
-	"verify_auto_replan",
-	"verify_replan",
-	"verify_hallucination_retry",
-	"verify_hallucination_loop",
-	"verify_test_fail",
-	"tool_call_rejected",
-	"plan_waiting_input",
-	"analyze_waiting_input",
-	"response_waiting_input",
-	"tooling_waiting_input",
-	"web_search_waiting_input",
-	"llm_error",
-	"progression_gate_failed",
-	"progression_gate_rejected_false_done",
-	"structured_loop_exhausted",
-	"structured_command_rejected",
-	"pathfinder_started",
-	"artifact_validation_failed",
+	"step_canceled",
+	"run_failed",
+	"run_cancelled",
+	"repository_snapshot_failed",
+	"repository_analysis_failed",
+	"coding_target_tree_validation_failed",
+	"coding_worker_rejected",
+	"coding_worker_failed",
+	"objective_worker_rejected",
+	"objective_worker_failed",
+	"web_research_worker_rejected",
+	"web_research_worker_failed",
+	"workspace_mutation_deferred",
+	"workspace_mutation_verification_deferred",
+	"workspace_mutation_indeterminate",
 }
 
 var telemetryAcceptEventTypes = []string{
-	"verify_test_pass",
+	"step_complete",
 	"run_completed",
-	"solution_accepted",
-	"structured_evaluator_repair_accepted",
-	"completion_check_accepted",
-}
-
-var telemetryRecoveryTriggers = map[string]string{
-	"verify_auto_replan":        "auto_replan",
-	"verify_replan":             "replan",
-	"verify_hallucination_loop": "hallucination_loop",
-	"pathfinder_started":        "pathfinder",
-	"progression_gate_failed":   "progression_gate",
+	"coding_stage_passed",
+	"coding_worker_completed",
+	"objective_worker_completed",
+	"web_research_worker_completed",
+	"repository_verification_command_passed",
+	"workspace_mutation_recovered",
 }
 
 type TelemetryStruggleSummary struct {
 	StruggleEvents     []TelemetryCountSummary `json:"struggle_events"`
 	AcceptEvents       []TelemetryCountSummary `json:"accept_events"`
-	RecoveryAttempts   int                     `json:"recovery_attempts"`
-	RecoverySuccesses  int                     `json:"recovery_successes"`
 	RecentStruggleRuns int                     `json:"recent_struggle_runs"`
 }
 
@@ -68,16 +58,7 @@ func shouldRecordTelemetrySignalEvent(eventType, message string) bool {
 	if eventType == "" {
 		return false
 	}
-	switch eventType {
-	case "verify_ready":
-		msg := strings.ToLower(message)
-		return strings.Contains(msg, "status=blocked") ||
-			strings.Contains(msg, "status=retry") ||
-			strings.Contains(msg, "failed=") && !strings.Contains(msg, "failed=0")
-	case "verify_complete", "verify_consensus":
-		msg := strings.ToLower(message)
-		return strings.Contains(msg, "blocked") || strings.Contains(msg, "fail")
-	}
+	_ = message
 	for _, candidate := range telemetryStruggleEventTypes {
 		if eventType == candidate {
 			return true
@@ -97,9 +78,8 @@ func isTelemetryOpsEvent(eventType string) bool {
 		return false
 	}
 	markers := []string{
-		"error", "fail", "failed", "retry", "replan", "loop", "reject",
-		"exhaust", "waiting", "degraded", "blocked", "interrupt", "cancel",
-		"unavailable", "skipped",
+		"error", "failed", "rejected", "waiting_input", "blocked", "cancel",
+		"unavailable", "deferred", "indeterminate",
 	}
 	for _, marker := range markers {
 		if strings.Contains(e, marker) {
@@ -107,24 +87,18 @@ func isTelemetryOpsEvent(eventType string) bool {
 		}
 	}
 	switch e {
-	case "llm_prompt", "llm_response", "llm_model_prepared", "verification_retry",
-		"verify_consensus", "verify_test_start", "verify_test_pass", "verify_test_fail",
-		"step_complete", "run_completed", "tool_call_begin", "tool_call_complete",
-		"plan_candidate_ready", "plan_selected",
+	case "step_complete", "run_completed", "coding_stage_passed",
+		"coding_worker_completed", "objective_worker_completed", "web_research_worker_completed",
+		"repository_verification_command_passed", "workspace_mutation_recovered",
 		"coding_fragment_repair_guidance_started", "coding_fragment_correction_started":
 		return true
 	}
 	return false
 }
 
-func shouldRecordTelemetryRecovery(eventType string) bool {
-	_, ok := telemetryRecoveryTriggers[eventType]
-	return ok
-}
-
 func (r *Repository) MarkTelemetryRunRunningForJob(ctx context.Context, jobID int64) error {
 	if jobID <= 0 {
-		return nil
+		return fmt.Errorf("mark telemetry run running requires a positive job ID")
 	}
 	_, err := r.pool.Exec(ctx, `
 		UPDATE omni_runs
@@ -140,6 +114,10 @@ func (r *Repository) RecordTelemetryStepEvent(
 	authority model.StepAttemptAuthority,
 	eventType, message string,
 ) error {
+	eventType = strings.TrimSpace(eventType)
+	if eventType == "" {
+		return fmt.Errorf("record telemetry step event requires an event type")
+	}
 	if !shouldRecordTelemetryStepEvent(eventType, message) {
 		return nil
 	}
@@ -164,34 +142,37 @@ func (r *Repository) RecordTelemetryStepEvent(
 		"step_attempt": authority.Attempt, "worker_id": authority.WorkerID,
 		"message": strings.TrimSpace(message),
 	}
+	payloadJSON, err := encodeTelemetryJSON("fenced step event payload", payload)
+	if err != nil {
+		return err
+	}
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO omni_run_events (run_id,event_type,payload)
 		VALUES ($1,$2,$3)
-	`, run, strings.TrimSpace(eventType), jsonParam(payload)); err != nil {
+	`, run, strings.TrimSpace(eventType), payloadJSON); err != nil {
 		return fmt.Errorf("insert fenced step telemetry event: %w", err)
-	}
-	if strategy, ok := telemetryRecoveryTriggers[eventType]; ok && shouldRecordTelemetryRecovery(eventType) {
-		if _, err := tx.Exec(ctx, `
-			INSERT INTO omni_recovery_metrics (
-				run_id,recovery_kind,trigger_event,strategy,success,evidence
-			) VALUES ($1,'worker',$2,$3,false,$4)
-		`, run, eventType, strategy, jsonParam(payload)); err != nil {
-			return fmt.Errorf("insert fenced step recovery metric: %w", err)
-		}
 	}
 	return tx.Commit(ctx)
 }
 
 func (r *Repository) RecordTelemetryJobEventNow(ctx context.Context, jobID int64, eventType string, payload any) error {
-	if jobID <= 0 || strings.TrimSpace(eventType) == "" {
-		return nil
+	if jobID <= 0 {
+		return fmt.Errorf("record telemetry job event requires a positive job ID")
 	}
-	_, err := r.pool.Exec(ctx, `
+	eventType = strings.TrimSpace(eventType)
+	if eventType == "" {
+		return fmt.Errorf("record telemetry job event requires an event type")
+	}
+	payloadJSON, err := encodeTelemetryJSON("job event payload", payload)
+	if err != nil {
+		return err
+	}
+	_, err = r.pool.Exec(ctx, `
 		INSERT INTO omni_run_events (run_id, event_type, payload)
 		SELECT NULLIF(metadata->>'telemetry_run_id', '')::uuid, $2, $3
 		FROM jobs
 		WHERE id = $1 AND NULLIF(metadata->>'telemetry_run_id', '') IS NOT NULL
-	`, jobID, strings.TrimSpace(eventType), jsonParam(payload))
+	`, jobID, eventType, payloadJSON)
 	return err
 }
 
@@ -204,12 +185,6 @@ func (r *Repository) TelemetryStruggleSummary(ctx context.Context) (TelemetryStr
 	if err != nil {
 		return TelemetryStruggleSummary{}, err
 	}
-	var attempts, successes int
-	_ = r.pool.QueryRow(ctx, `
-		SELECT COUNT(*), COUNT(*) FILTER (WHERE success IS TRUE)
-		FROM omni_recovery_metrics
-		WHERE created_at >= NOW() - INTERVAL '7 days'
-	`).Scan(&attempts, &successes)
 	var struggleRuns int
 	_ = r.pool.QueryRow(ctx, `
 		SELECT COUNT(DISTINCT run_id)
@@ -220,8 +195,6 @@ func (r *Repository) TelemetryStruggleSummary(ctx context.Context) (TelemetryStr
 	return TelemetryStruggleSummary{
 		StruggleEvents:     struggle,
 		AcceptEvents:       accept,
-		RecoveryAttempts:   attempts,
-		RecoverySuccesses:  successes,
 		RecentStruggleRuns: struggleRuns,
 	}, nil
 }

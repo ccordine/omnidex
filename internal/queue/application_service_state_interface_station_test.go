@@ -7,56 +7,57 @@ import (
 	"github.com/gryph/omnidex/internal/station"
 )
 
-func TestApplicationServiceStateInterfaceHasOneExactStationOwner(t *testing.T) {
+func TestApplicationServiceStateLeavesHaveDistinctExactStationOwners(t *testing.T) {
 	t.Parallel()
 	authority := assemblyline.ApplicationServiceStateInterfaceInput{
 		ProductContext: "shipment registry",
 		Needs: []assemblyline.ApplicationServiceStateInterfaceNeed{{
-			RequirementQuote:  "Store a shipment measurement for later retrieval.",
-			Objective:         "Preserve shipment measurements between requests.",
-			RequiredBehaviors: []string{"Retain each measurement with its stable identifier."},
+			RequirementQuote: "Store a shipment measurement for later retrieval.",
 		}},
 	}
 	stateLeaf := assemblyline.ApplicationStateFieldLeafInput{
 		Authority: authority, AcceptedFields: []assemblyline.ApplicationServiceStateField{},
 	}
 	recordLeaf := assemblyline.ApplicationRecordFieldLeafInput{
-		Authority: authority, ParentName: "measurements",
+		Authority: authority, ParentPurpose: "The stored shipment measurements.",
 		AcceptedRecordFields: []assemblyline.ApplicationServiceStateRecordField{},
 	}
-	constructors := []func() (assemblyline.PortableJob, error){
-		func() (assemblyline.PortableJob, error) {
+	tests := []struct {
+		construct func() (assemblyline.PortableJob, error)
+		want      station.ID
+	}{
+		{func() (assemblyline.PortableJob, error) {
 			return assemblyline.NewApplicationStateFieldCoverageJob(stateLeaf)
-		},
-		func() (assemblyline.PortableJob, error) {
-			return assemblyline.NewApplicationStateFieldNameJob(stateLeaf)
-		},
-		func() (assemblyline.PortableJob, error) {
+		}, station.CodingApplicationStateFieldCoverage},
+		{func() (assemblyline.PortableJob, error) {
+			return assemblyline.NewApplicationStateFieldPurposeJob(stateLeaf)
+		}, station.CodingApplicationStateFieldPurpose},
+		{func() (assemblyline.PortableJob, error) {
 			return assemblyline.NewApplicationStateFieldKindJob(
 				assemblyline.ApplicationStateFieldKindInput{
 					Authority: authority, AcceptedFields: []assemblyline.ApplicationServiceStateField{},
-					FocusedName: "measurements",
+					FocusedPurpose: "The stored shipment measurements.",
 				},
 			)
-		},
-		func() (assemblyline.PortableJob, error) {
+		}, station.CodingApplicationStateFieldKind},
+		{func() (assemblyline.PortableJob, error) {
 			return assemblyline.NewApplicationRecordFieldCoverageJob(recordLeaf)
-		},
-		func() (assemblyline.PortableJob, error) {
-			return assemblyline.NewApplicationRecordFieldNameJob(recordLeaf)
-		},
-		func() (assemblyline.PortableJob, error) {
+		}, station.CodingApplicationRecordFieldCoverage},
+		{func() (assemblyline.PortableJob, error) {
+			return assemblyline.NewApplicationRecordFieldPurposeJob(recordLeaf)
+		}, station.CodingApplicationRecordFieldPurpose},
+		{func() (assemblyline.PortableJob, error) {
 			return assemblyline.NewApplicationRecordFieldKindJob(
 				assemblyline.ApplicationRecordFieldKindInput{
-					Authority: authority, ParentName: "measurements",
+					Authority: authority, ParentPurpose: recordLeaf.ParentPurpose,
 					AcceptedRecordFields: []assemblyline.ApplicationServiceStateRecordField{},
-					FocusedName:          "label",
+					FocusedPurpose:       "The shipment measurement label.",
 				},
 			)
-		},
+		}, station.CodingApplicationRecordFieldKind},
 	}
-	for _, construct := range constructors {
-		job, err := construct()
+	for _, testCase := range tests {
+		job, err := testCase.construct()
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -64,8 +65,8 @@ func TestApplicationServiceStateInterfaceHasOneExactStationOwner(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if got != station.CodingServiceStateInterface {
-			t.Fatalf("kind=%q station=%q want=%q", job.Kind, got, station.CodingServiceStateInterface)
+		if got != testCase.want {
+			t.Fatalf("kind=%q station=%q want=%q", job.Kind, got, testCase.want)
 		}
 	}
 }

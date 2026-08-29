@@ -107,7 +107,7 @@ func TestRoleplayResearchDispatchBypassesFictionalResponseAndCanon(t *testing.T)
 		Optional: []assemblyline.ContextCandidateAuthority{optionalContext},
 	}}
 	contextSieve := &scriptedConversationContextStation{
-		terms: []string{"continuity"}, relevantIDs: []string{"CTX_2"},
+		relevantIDs:    []string{"CTX_2"},
 		minimalContext: "Selected bounded continuity.",
 	}
 	researchWorkflowCalls := 0
@@ -150,24 +150,23 @@ func TestRoleplayResearchDispatchBypassesFictionalResponseAndCanon(t *testing.T)
 	if result.Kind != assemblyline.ObjectiveKindExternalAnswer || !result.Complete ||
 		result.RoleplayResearch == nil || len(result.Citations) != 1 ||
 		len(result.RoleplayResponses) != 0 ||
-		result.ModelCalls != 6 {
+		result.ModelCalls != 5 {
 		t.Fatalf("research result=%#v", result)
 	}
 	if kind.calls != 0 || conversation.calls != 0 || canon.calls != 0 {
 		t.Fatalf("research reached fictional stations: kind=%d response=%d canon=%d", kind.calls, conversation.calls, canon.calls)
 	}
-	if provider.contextCalls != 1 || contextSieve.termCalls != 1 ||
-		contextSieve.relevanceCalls != 1 || contextSieve.minificationCalls != 1 ||
+	if provider.contextCalls != 1 || contextSieve.relevanceCalls != 1 ||
+		contextSieve.minificationCalls != 1 ||
 		researchWorkflowCalls != 1 {
 		t.Fatalf(
-			"research context sieve provider=%d stations=(%d,%d,%d) workflow=%d",
-			provider.contextCalls, contextSieve.termCalls,
-			contextSieve.relevanceCalls, contextSieve.minificationCalls, researchWorkflowCalls,
+			"research context sieve provider=%d stations=(%d,%d) workflow=%d",
+			provider.contextCalls, contextSieve.relevanceCalls,
+			contextSieve.minificationCalls, researchWorkflowCalls,
 		)
 	}
 	modelInputs, err := json.Marshal([]any{
-		contextSieve.termInputs[0], contextSieve.relevanceInputs[0],
-		contextSieve.minificationInputs[0],
+		contextSieve.relevanceInputs[0], contextSieve.minificationInputs[0],
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -176,6 +175,9 @@ func TestRoleplayResearchDispatchBypassesFictionalResponseAndCanon(t *testing.T)
 		strings.Contains(leaked, "/research") || !strings.Contains(leaked, research.Question) ||
 		strings.Contains(leaked, "Continue the scene from the supplied grounded result.") {
 		t.Fatalf("research context model inputs crossed the command boundary: %s", leaked)
+	}
+	if len(provider.terms) != 1 || provider.terms[0] != research.Question {
+		t.Fatalf("research retrieval query=%#v want exact question %q", provider.terms, research.Question)
 	}
 	_, records, err := prepareObjectiveTurnCompletion(result)
 	if err != nil {

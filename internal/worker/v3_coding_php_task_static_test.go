@@ -41,9 +41,9 @@ func TestPHPTaskStaticProjectionLimitsContainerInputsToFocusedTask(t *testing.T)
 		},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
-			program, input := phpTaskStaticProjectionFixture(t, testCase.responseMedia)
+			program := phpTaskStaticProjectionFixture(t, testCase.responseMedia)
 			context, err := assemblyline.ProjectApplicationTaskContext(
-				input, program.Workload, program.Workload.Tasks[0].ID,
+				program.Workload, program.Workload.Tasks[0].ID,
 			)
 			if err != nil {
 				t.Fatal(err)
@@ -77,12 +77,13 @@ func TestPHPTaskStaticProjectionLimitsContainerInputsToFocusedTask(t *testing.T)
 func phpTaskStaticProjectionFixture(
 	t *testing.T,
 	responseMedia assemblyline.ApplicationServiceEndpointMedia,
-) (directCodingProgram, assemblyline.ApplicationWorkloadDraftInput) {
+) directCodingProgram {
 	t.Helper()
-	specification, workload, target, coverage, endpoints := phpServiceStackFixture(t)
-	contract := endpoints.ByTask[workload.Tasks[0].ID]
-	contract.ResponseMedia = responseMedia
-	endpoints.ByTask[workload.Tasks[0].ID] = contract
+	surface := assemblyline.ApplicationSurfaceBrowser
+	if responseMedia == assemblyline.ApplicationServiceEndpointJSON {
+		surface = assemblyline.ApplicationSurfaceService
+	}
+	specification, workload, target, coverage, endpoints := phpServiceStackFixtureForSurface(t, surface)
 	state := testRequestLocalServiceStatePlan(workload)
 	blueprint, staticFiles, err := compileGenericPHPServiceBlueprint(
 		"php-service", specification, map[string]directCodingSkillBinding{}, workload,
@@ -98,7 +99,7 @@ func phpTaskStaticProjectionFixture(
 		Workload: workload, Coverage: coverage,
 		ServiceState:     state,
 		ServiceEndpoints: endpoints, Source: blueprint, StaticFiles: staticFiles,
-	}, applicationWorkloadInput(specification)
+	}
 }
 
 func phpDockerfileContextCopyInputs(t *testing.T, dockerfile string) []string {

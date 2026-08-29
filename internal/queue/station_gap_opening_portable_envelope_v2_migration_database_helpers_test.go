@@ -154,7 +154,7 @@ func stationGapOpeningEnvelopeV2Probe(
 	if err != nil {
 		t.Fatal(err)
 	}
-	return opening
+	return freezeHistoricalRawStationGapV4(t, opening)
 }
 
 func stationGapOpeningEnvelopeV2NullField(
@@ -196,7 +196,7 @@ func insertStationGapOpeningEnvelopeV2Probe(
 		opening.WorkerID, opening.GapID, opening.Station, opening.Scope, opening.PortableSchema,
 		opening.WorkID, opening.WorkKind, opening.PortablePayload, opening.PortablePayloadSHA256,
 		opening.PortableEnvelope, opening.PortableEnvelopeSHA256, opening.RendererVersion,
-		opening.Prompt, string(opening.ResponseSchema), opening.ProjectionEnvelope,
+		opening.Prompt, "null", opening.ProjectionEnvelope,
 		opening.ProjectionSHA256, opening.ContextTokens, opening.MaxOutputTokens,
 		opening.OutputLimitMode)
 	return err

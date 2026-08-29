@@ -5,12 +5,11 @@ import "testing"
 func TestObjectivePreservesExactNonBlankQuestionWhitespace(t *testing.T) {
 	question := "  What is established?\n"
 	objective := Objective{
-		ID: "objective_exact_question", Question: question, InitialQuery: "established evidence",
-		Acceptance: exactAcceptance(), Status: ObjectivePending,
+		ID: "objective_exact_question", Question: question, InitialQuery: "established evidence", Status: ObjectivePending,
 	}
 	machine := newFixtureMachine(
 		t, objective, &scriptedAcquisition{},
-		&recordingTermsStation{}, &recordingRelevanceStation{}, &recordingSynthesisStation{}, 1_000,
+		&recordingRelevanceStation{}, &recordingSynthesisStation{}, 1_000,
 	)
 	if machine.objective.Question != question {
 		t.Fatalf("question=%q want exact %q", machine.objective.Question, question)
@@ -25,8 +24,7 @@ func TestObjectiveRejectsInvalidExactQuestionBytes(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			objective := Objective{
-				ID: "objective_invalid_question", Question: question, InitialQuery: "query",
-				Acceptance: exactAcceptance(), Status: ObjectivePending,
+				ID: "objective_invalid_question", Question: question, InitialQuery: "query", Status: ObjectivePending,
 			}
 			if err := validateObjective(objective); err == nil {
 				t.Fatal("invalid exact question was accepted")

@@ -15,7 +15,7 @@ import (
 	"github.com/gryph/omnidex/internal/websearch"
 )
 
-func TestRoutedWebStationsRequireAllFiveExactStationAuthorities(t *testing.T) {
+func TestRoutedWebStationsRequireOnlyRelevanceAndGroundedSynthesis(t *testing.T) {
 	ids := []station.ID{}
 	stations, err := newRoutedWebStations(func(id station.ID) webresearch.PortableRuntime {
 		ids = append(ids, id)
@@ -32,17 +32,16 @@ func TestRoutedWebStationsRequireAllFiveExactStationAuthorities(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []station.ID{
-		station.WebSearchTerms, station.WebRelevance,
-		station.WebGroundedSynthesis, station.WebGroundedSynthesisCorrection,
-		station.WebClaimEvidenceReview,
+		station.WebRelevance,
+		station.WebGroundedSynthesis,
 	}
-	if fmt.Sprint(ids) != fmt.Sprint(want) || stations.terms == nil || stations.relevance == nil ||
-		stations.synthesis == nil || stations.correction == nil || stations.review == nil {
+	if fmt.Sprint(ids) != fmt.Sprint(want) || stations.relevance == nil ||
+		stations.synthesis == nil {
 		t.Fatalf("ids=%v stations=%+v", ids, stations)
 	}
 }
 
-func TestRoutedWebEvidenceStationsRequireOnlyTermsAndRelevance(t *testing.T) {
+func TestRoutedWebEvidenceStationsRequireOnlyRelevance(t *testing.T) {
 	ids := []station.ID{}
 	stations, err := newRoutedWebEvidenceStations(func(id station.ID) webresearch.PortableRuntime {
 		ids = append(ids, id)
@@ -58,8 +57,8 @@ func TestRoutedWebEvidenceStationsRequireOnlyTermsAndRelevance(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []station.ID{station.WebSearchTerms, station.WebRelevance}
-	if fmt.Sprint(ids) != fmt.Sprint(want) || stations.terms == nil || stations.relevance == nil {
+	want := []station.ID{station.WebRelevance}
+	if fmt.Sprint(ids) != fmt.Sprint(want) || stations.relevance == nil {
 		t.Fatalf("evidence station ids=%v stations=%+v", ids, stations)
 	}
 }
@@ -84,7 +83,7 @@ func TestObjectiveExternalAnswerConsumesExactWebCompletionAuthority(t *testing.T
 			ObservedAt: item.ObservedAt, Truncated: item.Truncated,
 		}},
 		Rendered: rendered, RenderedSHA256: objectiveTestSHA256(rendered), Evidence: []webresearch.Evidence{item},
-		SynthesisCalls: 1, ClaimEvidenceReviewCalls: 1, SemanticCalls: 8,
+		SemanticCalls: 8,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -120,8 +119,7 @@ func TestObjectiveExternalAnswerPropagatesSecondProjectionTruncationAuthority(t 
 			Truncated: false,
 		}},
 		Rendered: rendered, RenderedSHA256: objectiveTestSHA256(rendered),
-		Evidence: []webresearch.Evidence{item}, SynthesisCalls: 1,
-		ClaimEvidenceReviewCalls: 1, SemanticCalls: 8,
+		Evidence: []webresearch.Evidence{item}, SemanticCalls: 8,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -129,67 +127,6 @@ func TestObjectiveExternalAnswerPropagatesSecondProjectionTruncationAuthority(t 
 	if len(answer.Evidence) != 1 || !answer.Evidence[0].Truncated ||
 		!strings.HasSuffix(answer.Evidence[0].Capsule.Text, objectiveEvidenceTruncationMarker) {
 		t.Fatalf("second projection truncation authority was lost: %#v", answer.Evidence)
-	}
-}
-
-func TestObjectiveExternalAnswerConsumesOneBoundedCorrectionReviewLedger(t *testing.T) {
-	item := objectiveWebEvidenceFixture(t, "https://example.test/corrected", "Corrected", "Version 2 is current.")
-	id := item.ID
-	rendered := "Version 2 is current. [1]\n\nSources:\n[1] Corrected — " + item.URL
-	answer, err := objectiveExternalAnswerFromWebResult(objectiveWebResult{
-		Complete: true, Status: webresearch.ObjectiveComplete,
-		Paragraphs: []webresearch.GroundedParagraph{{Text: "Version 2 is current.", EvidenceIDs: []webresearch.EvidenceID{id}}},
-		Sources: []webresearch.CitationSource{{
-			Number: 1, EvidenceID: id, CandidateID: item.CandidateID, DocumentID: item.DocumentID,
-			URL: item.URL, Title: item.Title, ContentSHA256: item.ContentSHA256,
-			ObservedAt: item.ObservedAt, Truncated: item.Truncated,
-		}},
-		Rendered: rendered, RenderedSHA256: objectiveTestSHA256(rendered), Evidence: []webresearch.Evidence{item},
-		SynthesisCalls: 1, SynthesisCorrectionCalls: 1,
-		ClaimEvidenceReviewCalls: 2, SemanticCalls: 14,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if answer.ModelCalls != 14 {
-		t.Fatalf("model calls=%d want exact synthesis/review/correction leaf total", answer.ModelCalls)
-	}
-}
-
-func TestObjectiveExternalAnswerConsumesRecordedZeroDeltaCorrection(t *testing.T) {
-	item := objectiveWebEvidenceFixture(t, "https://example.test/unchanged", "Unchanged", "Version 2 is current.")
-	rendered := "Version 2 is current. [1]\n\nSources:\n[1] Unchanged — " + item.URL
-	answer, err := objectiveExternalAnswerFromWebResult(objectiveWebResult{
-		Complete: true, Status: webresearch.ObjectiveComplete,
-		Paragraphs: []webresearch.GroundedParagraph{{Text: "Version 2 is current.", EvidenceIDs: []webresearch.EvidenceID{item.ID}}},
-		Sources: []webresearch.CitationSource{{
-			Number: 1, EvidenceID: item.ID, CandidateID: item.CandidateID, DocumentID: item.DocumentID,
-			URL: item.URL, Title: item.Title, ContentSHA256: item.ContentSHA256,
-			ObservedAt: item.ObservedAt, Truncated: item.Truncated,
-		}},
-		Rendered: rendered, RenderedSHA256: objectiveTestSHA256(rendered), Evidence: []webresearch.Evidence{item},
-		SynthesisCalls: 1, SynthesisCorrectionCalls: 1,
-		SynthesisCorrectionZeroDeltas: 1, ClaimEvidenceReviewCalls: 1, SemanticCalls: 10,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if answer.ModelCalls != 10 || answer.Text != "Version 2 is current." {
-		t.Fatalf("zero-delta answer=%#v", answer)
-	}
-}
-
-func TestObjectiveExternalAnswerRejectsUnboundedCorrectionReviewLedger(t *testing.T) {
-	for _, result := range []objectiveWebResult{
-		{Paragraphs: []webresearch.GroundedParagraph{{Text: "Claim."}}, SynthesisCorrectionCalls: 2, ClaimEvidenceReviewCalls: 3},
-		{Paragraphs: []webresearch.GroundedParagraph{{Text: "Claim."}}, SynthesisCorrectionCalls: 1, ClaimEvidenceReviewCalls: 1},
-		{Paragraphs: []webresearch.GroundedParagraph{{Text: "Claim."}}, SynthesisCorrectionCalls: 0, ClaimEvidenceReviewCalls: 2},
-		{Paragraphs: []webresearch.GroundedParagraph{{Text: "Claim."}}, SynthesisCorrectionZeroDeltas: 1, ClaimEvidenceReviewCalls: 1},
-		{Paragraphs: []webresearch.GroundedParagraph{{Text: "Claim."}}, SynthesisCorrectionCalls: 1, SynthesisCorrectionZeroDeltas: 2, ClaimEvidenceReviewCalls: 1},
-	} {
-		if validWebReviewCallLedger(result) {
-			t.Fatalf("invalid correction/review ledger accepted: %#v", result)
-		}
 	}
 }
 
@@ -209,8 +146,8 @@ func TestObjectiveExternalAnswerPreservesPerParagraphCitationBinding(t *testing.
 			{Number: 1, EvidenceID: firstID, CandidateID: first.CandidateID, DocumentID: first.DocumentID, Title: first.Title, URL: first.URL, ContentSHA256: first.ContentSHA256, ObservedAt: first.ObservedAt, Truncated: first.Truncated},
 			{Number: 2, EvidenceID: secondID, CandidateID: second.CandidateID, DocumentID: second.DocumentID, Title: second.Title, URL: second.URL, ContentSHA256: second.ContentSHA256, ObservedAt: second.ObservedAt, Truncated: second.Truncated},
 		},
-		Evidence:       []webresearch.Evidence{first, second},
-		SynthesisCalls: 1, ClaimEvidenceReviewCalls: 2, SemanticCalls: 15,
+		Evidence:      []webresearch.Evidence{first, second},
+		SemanticCalls: 15,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -259,7 +196,6 @@ func TestObjectiveExternalAnswerRejectsInvalidAcquiredSourceDigest(t *testing.T)
 			ID: id, URL: "https://example.test", Content: "Exact acquired evidence.",
 			ContentSHA256: "not-a-sha256",
 		}},
-		SynthesisCalls: 1, ClaimEvidenceReviewCalls: 1,
 	})
 	if err == nil {
 		t.Fatal("invalid acquired-source digest was accepted as citation authority")
@@ -270,30 +206,10 @@ func TestObjectiveExternalAnswerRejectsUnboundWebSource(t *testing.T) {
 	id := webresearch.EvidenceID("evidence_" + strings.Repeat("a", 64))
 	_, err := objectiveExternalAnswerFromWebResult(objectiveWebResult{
 		Complete: true, Status: webresearch.ObjectiveComplete,
-		Paragraphs:     []webresearch.GroundedParagraph{{Text: "Claim.", EvidenceIDs: []webresearch.EvidenceID{id}}},
-		Sources:        []webresearch.CitationSource{{EvidenceID: id, URL: "https://example.test", ContentSHA256: strings.Repeat("b", 64)}},
-		SynthesisCalls: 1, ClaimEvidenceReviewCalls: 1,
+		Paragraphs: []webresearch.GroundedParagraph{{Text: "Claim.", EvidenceIDs: []webresearch.EvidenceID{id}}},
+		Sources:    []webresearch.CitationSource{{EvidenceID: id, URL: "https://example.test", ContentSHA256: strings.Repeat("b", 64)}},
 	})
 	if err == nil {
 		t.Fatal("web source without acquired evidence was accepted")
-	}
-}
-
-func TestObjectiveExternalAnswerRejectsCompletionWithoutIndependentClaimEvidenceReview(t *testing.T) {
-	item := objectiveWebEvidenceFixture(t, "https://example.test/review", "Review", "Exact evidence.")
-	rendered := "Claim. [1]\n\nSources:\n[1] Review — " + item.URL
-	_, err := objectiveExternalAnswerFromWebResult(objectiveWebResult{
-		Complete: true, Status: webresearch.ObjectiveComplete,
-		Paragraphs: []webresearch.GroundedParagraph{{Text: "Claim.", EvidenceIDs: []webresearch.EvidenceID{item.ID}}},
-		Sources: []webresearch.CitationSource{{
-			Number: 1, EvidenceID: item.ID, CandidateID: item.CandidateID, DocumentID: item.DocumentID,
-			Title: item.Title, URL: item.URL, ContentSHA256: item.ContentSHA256,
-			ObservedAt: item.ObservedAt, Truncated: item.Truncated,
-		}},
-		Evidence: []webresearch.Evidence{item}, Rendered: rendered,
-		RenderedSHA256: objectiveTestSHA256(rendered), SynthesisCalls: 1,
-	})
-	if err == nil || !strings.Contains(err.Error(), "without code-owned completion") {
-		t.Fatalf("missing independent review error=%v", err)
 	}
 }

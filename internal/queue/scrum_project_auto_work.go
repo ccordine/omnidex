@@ -49,6 +49,12 @@ func (r *Repository) ApplyProjectAutoWork(
 	if err := tx.QueryRow(ctx, `SELECT settings FROM projects WHERE id=$1 FOR UPDATE`, command.ProjectID).Scan(&settings); err != nil {
 		return ProjectAutoWorkResult{}, err
 	}
+	if err := validateProjectSettings(settings); err != nil {
+		return ProjectAutoWorkResult{}, fmt.Errorf(
+			"validate current project settings before project auto-work mutation: %w",
+			err,
+		)
+	}
 	config, err := DecodeScrumAutoWorkConfig(settings)
 	if err != nil {
 		return ProjectAutoWorkResult{}, err

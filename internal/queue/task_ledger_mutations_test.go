@@ -38,7 +38,7 @@ func TestPostgresTaskLedgerRoundTripsEveryMutationAndEventPage(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	events := make([]taskstate.Event, 0, 17)
+	events := make([]taskstate.Event, 0, 15)
 	apply := func(command taskstate.Command, want taskstate.EventKind) {
 		t.Helper()
 		event, err := repository.ApplyTaskCommand(ctx, job.ID, 1, command)
@@ -112,24 +112,9 @@ func TestPostgresTaskLedgerRoundTripsEveryMutationAndEventPage(t *testing.T) {
 		Actor: taskstate.AuthorityCode, EntryID: "entry-old", ReplacementID: "entry-replacement",
 		Reason: "The replacement is authoritative.",
 	}, taskstate.EventEntrySuperseded)
-	apply(taskstate.AddEntryCommand{
-		CommandID: taskLedgerMutationCommandID(t, marker, "add-decision"), ExpectedVersion: initialTaskLedgerVersion + 10,
-		Actor: taskstate.AuthorityModelProposal, ID: "decision-candidate",
-		Kind: taskstate.EntryDecisionCandidate, Content: "Choose the bounded implementation.",
-		Metadata: empty, Refs: []taskstate.Ref{refSource},
-	}, taskstate.EventEntryAdded)
-	apply(taskstate.AcceptDecisionCommand{
-		CommandID: taskLedgerMutationCommandID(t, marker, "accept-decision"), ExpectedVersion: initialTaskLedgerVersion + 11,
-		Actor: taskstate.AuthorityCode, CandidateID: "decision-candidate",
-		AcceptedEntryID: "decision-accepted", AcceptancePolicy: "Validated against source authority.",
-		AcceptanceRefs: []taskstate.Ref{
-			taskLedgerMutationRef("evidence://mutation/acceptance", taskstate.RefEvidence, "d"),
-		},
-		CreatedStepID: &stepID, Metadata: empty,
-	}, taskstate.EventDecisionAccepted)
-	assertTaskLedgerMutationPhase(t, ctx, repository, job.ID, initialTaskLedgerVersion+12, func(state taskstate.MaterializedState) {
+	assertTaskLedgerMutationPhase(t, ctx, repository, job.ID, initialTaskLedgerVersion+10, func(state taskstate.MaterializedState) {
 		entries := taskLedgerMutationEntries(state.Entries)
-		if len(entries) != 7 || entries["entry-rejected"].Status != taskstate.EntryRejected ||
+		if len(entries) != 5 || entries["entry-rejected"].Status != taskstate.EntryRejected ||
 			entries["entry-rejected"].DispositionBy != taskstate.AuthorityCode ||
 			!reflect.DeepEqual(entries["entry-rejected"].Refs, []taskstate.Ref{refContradiction}) ||
 			entries["entry-resolved"].Status != taskstate.EntryResolved ||
@@ -137,39 +122,31 @@ func TestPostgresTaskLedgerRoundTripsEveryMutationAndEventPage(t *testing.T) {
 			!reflect.DeepEqual(entries["entry-resolved"].Refs, []taskstate.Ref{refSource, refEvidence}) ||
 			entries["entry-old"].SupersededBy != "entry-replacement" ||
 			entries["entry-old"].DispositionBy != taskstate.AuthorityCode ||
-			entries["entry-replacement"].SupersedesID != "entry-old" ||
-			entries["decision-candidate"].SupersededBy != "decision-accepted" ||
-			entries["decision-candidate"].DispositionBy != taskstate.AuthorityCode ||
-			entries["decision-accepted"].Kind != taskstate.EntryAcceptedDecision ||
-			entries["decision-accepted"].DispositionBy != "" ||
-			entries["decision-accepted"].SupersedesID != "" ||
-			!reflect.DeepEqual(entries["decision-accepted"].Refs, []taskstate.Ref{
-				taskLedgerMutationRef("evidence://mutation/acceptance", taskstate.RefEvidence, "d"),
-			}) {
+			entries["entry-replacement"].SupersedesID != "entry-old" {
 			t.Fatalf("entry mutation phase entries=%+v", state.Entries)
 		}
 	})
 
 	apply(taskstate.PromoteReadyNodesCommand{
-		CommandID: taskLedgerMutationCommandID(t, marker, "promote-ready"), ExpectedVersion: initialTaskLedgerVersion + 12,
+		CommandID: taskLedgerMutationCommandID(t, marker, "promote-ready"), ExpectedVersion: initialTaskLedgerVersion + 10,
 		Actor: taskstate.AuthorityCode,
 	}, taskstate.EventNodesReadied)
 	apply(taskstate.AssignNodeStepCommand{
-		CommandID: taskLedgerMutationCommandID(t, marker, "assign-step"), ExpectedVersion: initialTaskLedgerVersion + 13,
+		CommandID: taskLedgerMutationCommandID(t, marker, "assign-step"), ExpectedVersion: initialTaskLedgerVersion + 11,
 		Actor: taskstate.AuthorityCode, NodeID: "task-one", StepID: stepID,
 	}, taskstate.EventNodeStepAssigned)
 	apply(taskstate.TransitionNodeCommand{
-		CommandID: taskLedgerMutationCommandID(t, marker, "activate-node"), ExpectedVersion: initialTaskLedgerVersion + 14,
+		CommandID: taskLedgerMutationCommandID(t, marker, "activate-node"), ExpectedVersion: initialTaskLedgerVersion + 12,
 		Actor: taskstate.AuthorityCode, NodeID: "task-one", To: taskstate.NodeActive,
 		VerificationRefs: []taskstate.Ref{},
 	}, taskstate.EventNodeTransitioned)
 	completionRef := taskLedgerMutationRef("evidence://mutation/completion", taskstate.RefVerifies, "c")
 	apply(taskstate.TransitionNodeCommand{
-		CommandID: taskLedgerMutationCommandID(t, marker, "complete-node"), ExpectedVersion: initialTaskLedgerVersion + 15,
+		CommandID: taskLedgerMutationCommandID(t, marker, "complete-node"), ExpectedVersion: initialTaskLedgerVersion + 13,
 		Actor: taskstate.AuthorityCode, NodeID: "task-one", To: taskstate.NodeDone,
 		CompletedStepID: &stepID, VerificationRefs: []taskstate.Ref{completionRef},
 	}, taskstate.EventNodeTransitioned)
-	assertTaskLedgerMutationPhase(t, ctx, repository, job.ID, initialTaskLedgerVersion+16, func(state taskstate.MaterializedState) {
+	assertTaskLedgerMutationPhase(t, ctx, repository, job.ID, initialTaskLedgerVersion+14, func(state taskstate.MaterializedState) {
 		nodes := taskLedgerMutationNodes(state.Nodes)
 		task := nodes["task-one"]
 		if task.Status != taskstate.NodeDone || task.AssignedStepID == nil || *task.AssignedStepID != stepID ||
@@ -186,11 +163,11 @@ func TestPostgresTaskLedgerRoundTripsEveryMutationAndEventPage(t *testing.T) {
 		t.Fatalf("prepare matching terminal job state: rows=%d error=%v", result.RowsAffected(), err)
 	}
 	apply(taskstate.CloseLedgerCommand{
-		CommandID: taskLedgerMutationCommandID(t, marker, "close-ledger"), ExpectedVersion: initialTaskLedgerVersion + 16,
+		CommandID: taskLedgerMutationCommandID(t, marker, "close-ledger"), ExpectedVersion: initialTaskLedgerVersion + 14,
 		Actor: taskstate.AuthorityCode, Status: taskstate.LedgerFailed,
 		StepID: &stepID, Reason: "The remaining checkpoint failed explicitly.",
 	}, taskstate.EventLedgerClosed)
-	assertTaskLedgerMutationPhase(t, ctx, repository, job.ID, initialTaskLedgerVersion+17, func(state taskstate.MaterializedState) {
+	assertTaskLedgerMutationPhase(t, ctx, repository, job.ID, initialTaskLedgerVersion+15, func(state taskstate.MaterializedState) {
 		if state.Status != taskstate.LedgerFailed {
 			t.Fatalf("closed ledger status=%q", state.Status)
 		}
@@ -218,7 +195,7 @@ func TestPostgresTaskLedgerRoundTripsEveryMutationAndEventPage(t *testing.T) {
 	}
 	assertTaskLedgerDatabaseCounts(
 		t, ctx, pool, ledger.ID,
-		int64(initialTaskLedgerVersion+17), 3, int64(initialTaskLedgerVersion+17),
+		int64(initialTaskLedgerVersion+15), 3, int64(initialTaskLedgerVersion+15),
 	)
 }
 

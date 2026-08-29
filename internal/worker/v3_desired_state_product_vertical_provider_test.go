@@ -92,11 +92,11 @@ func desiredStateProductResponse(
 		return assemblyline.ApplicationNoUncoveredContextNeed,
 			assemblyline.WorkApplicationContextNeedCoverage, nil
 	case strings.Contains(prompt, "Answer one semantic relation: does the immutable existing-repository request"):
-		input, err := desiredStateProductRequirementLeafInput(prompt)
+		input, err := desiredStateProductRequirementProjection(prompt)
 		if err != nil {
 			return "", assemblyline.WorkRepositoryRequirementCoverage, err
 		}
-		if len(input.AcceptedRequirements) == 0 {
+		if input.AcceptedCount == 0 {
 			return assemblyline.RepositoryRequirementRemains,
 				assemblyline.WorkRepositoryRequirementCoverage, nil
 		}
@@ -108,12 +108,12 @@ func desiredStateProductResponse(
 	case strings.Contains(prompt, "FOCUSED_DECLARATION"):
 		return string(assemblyline.DeclarationBoundaryIndependentArtifact),
 			assemblyline.WorkDeclarationArtifactBoundary, nil
-	case strings.Contains(prompt, "Classify only the explicit desired truth"):
-		truth := assemblyline.KnownArtifactTruthNotApplicable
+	case strings.Contains(prompt, "does the exact requirement explicitly require one semantic artifact established by repository authority"):
+		relation := assemblyline.RepositoryArtifactAbsenceNotExplicit
 		if strings.Contains(prompt, "must no longer exist") {
-			truth = assemblyline.KnownArtifactMustBeAbsent
+			relation = assemblyline.RepositoryArtifactMustBeAbsent
 		}
-		return string(truth), assemblyline.WorkKnownArtifactTruth, nil
+		return string(relation), assemblyline.WorkRepositoryArtifactAbsence, nil
 	case strings.Contains(prompt, "BOUNDED_CANDIDATES"):
 		candidateID, err := desiredStateProductSelectDeclarationCandidate(
 			prompt, "Obsolete",
@@ -136,36 +136,64 @@ func desiredStateProductResponse(
 }
 
 func desiredStateProductRequirementSource(prompt string) (string, error) {
-	input, err := desiredStateProductRequirementLeafInput(prompt)
+	input, err := desiredStateProductRequirementProjection(prompt)
 	if err != nil {
 		return "", err
 	}
-	source := strings.TrimSpace(input.Authority.UserRequest)
+	source := strings.TrimSpace(input.UserRequest)
 	if source == "" {
 		return "", fmt.Errorf("product vertical repository requirement source is empty")
 	}
 	return source, nil
 }
 
-func desiredStateProductRequirementLeafInput(
+type desiredStateProductRequirementInput struct {
+	UserRequest   string
+	AcceptedCount int
+}
+
+func desiredStateProductRequirementProjection(
 	prompt string,
-) (assemblyline.RepositoryRequirementLeafInput, error) {
-	const marker = "REPOSITORY_REQUIREMENT_AUTHORITY:\n"
+) (desiredStateProductRequirementInput, error) {
+	const marker = "REPOSITORY REQUIREMENT INPUT:\n"
 	index := strings.LastIndex(prompt, marker)
 	if index < 0 {
-		return assemblyline.RepositoryRequirementLeafInput{}, fmt.Errorf(
-			"product vertical repository requirement omitted raw leaf authority",
+		return desiredStateProductRequirementInput{}, fmt.Errorf(
+			"product vertical repository requirement omitted semantic input",
 		)
 	}
-	var input assemblyline.RepositoryRequirementLeafInput
-	if err := json.Unmarshal(
-		[]byte(strings.TrimSpace(prompt[index+len(marker):])), &input,
-	); err != nil {
-		return assemblyline.RepositoryRequirementLeafInput{}, fmt.Errorf(
-			"decode product vertical repository requirement authority: %w", err,
+	projection := strings.TrimSpace(prompt[index+len(marker):])
+	const requestMarker = "IMMUTABLE USER REQUEST:\n"
+	const workspaceMarker = "\nWORKSPACE STATE:\n"
+	if !strings.HasPrefix(projection, requestMarker) {
+		return desiredStateProductRequirementInput{}, fmt.Errorf(
+			"product vertical repository requirement omitted immutable user request",
 		)
 	}
-	return input, nil
+	requestAndRest := projection[len(requestMarker):]
+	workspaceIndex := strings.Index(requestAndRest, workspaceMarker)
+	if workspaceIndex < 0 {
+		return desiredStateProductRequirementInput{}, fmt.Errorf(
+			"product vertical repository requirement omitted workspace state",
+		)
+	}
+	request := strings.TrimSpace(requestAndRest[:workspaceIndex])
+	if request == "" {
+		return desiredStateProductRequirementInput{}, fmt.Errorf(
+			"product vertical repository requirement source is empty",
+		)
+	}
+	acceptedCount := strings.Count(projection, "\nACCEPTED REQUIREMENT ")
+	if acceptedCount == 0 && !strings.Contains(
+		projection, "\nACCEPTED REQUIREMENTS:\n(none)",
+	) {
+		return desiredStateProductRequirementInput{}, fmt.Errorf(
+			"product vertical repository requirement omitted accepted semantic set",
+		)
+	}
+	return desiredStateProductRequirementInput{
+		UserRequest: request, AcceptedCount: acceptedCount,
+	}, nil
 }
 
 func desiredStateProductSelectDeclarationCandidate(

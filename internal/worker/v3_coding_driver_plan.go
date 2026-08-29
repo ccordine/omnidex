@@ -68,7 +68,7 @@ func (s *directCodingSession) Assemble() (directCodingAssembly, error) {
 	s.deploymentResolution = deploymentResolution
 	s.deploymentDisposition = deploymentDisposition
 	applicationContext, err := assemblyline.BootstrapApplicationContext(
-		redacted, assemblyline.ApplicationWorkspaceEmpty, s.request.MemoryAuthorities,
+		redacted, assemblyline.ApplicationWorkspaceEmpty,
 	)
 	if err != nil {
 		return directCodingAssembly{}, err
@@ -104,25 +104,19 @@ func (s *directCodingSession) Assemble() (directCodingAssembly, error) {
 	); err != nil {
 		return directCodingAssembly{}, err
 	}
-	workloadModel, err := s.workerModel(station.CodingWorkload)
-	if err != nil {
-		return directCodingAssembly{}, err
-	}
-	workloadInput := applicationWorkloadInput(specification)
-	workload, err := resolveDirectCodingApplicationWorkload(
-		workerRuntime, workloadModel, workloadInput,
-	)
+	workload, err := assemblyline.FreezeApplicationWorkload(specification)
 	if err != nil {
 		return directCodingAssembly{}, err
 	}
 	serviceState, err := s.resolveServiceStateBeforeTargetTree(
-		workerRuntime, selectedStack, specification, workload, identities,
+		workerRuntime, selectedStack, workload, identities,
 	)
 	if err != nil {
 		return directCodingAssembly{}, err
 	}
 	var targetTreeModel, targetTreeCorrectionModel string
-	if selectedStack.ProjectFocusedTargetTree == nil {
+	if selectedStack.ProjectCompleteTargetTree == nil &&
+		selectedStack.ProjectFocusedTargetTree == nil {
 		targetTreeModel, err = s.workerModel(station.CodingTargetTree)
 		if err != nil {
 			return directCodingAssembly{}, err
@@ -180,7 +174,7 @@ func (s *directCodingSession) Assemble() (directCodingAssembly, error) {
 	var program directCodingProgram
 	if selectedStack.CompileServiceSource != nil {
 		endpoints, endpointErr := s.resolveEndpointsForHTTPStack(
-			workerRuntime, selectedStack, specification, workload, capabilities, identities,
+			workerRuntime, selectedStack, workload, capabilities, identities,
 		)
 		if endpointErr != nil {
 			return directCodingAssembly{}, endpointErr
@@ -218,7 +212,7 @@ func (s *directCodingSession) Assemble() (directCodingAssembly, error) {
 		return directCodingAssembly{}, err
 	}
 	s.cognition = cognition
-	if err := s.runDirectCodingApplicationTaskLifecycle(workloadInput, workload, &program); err != nil {
+	if err := s.runDirectCodingApplicationTaskLifecycle(workload, &program); err != nil {
 		return directCodingAssembly{}, err
 	}
 	protectedPaths, err := snapshotDirectCodingProtectedPathList(s.root, program.ProtectedPaths)

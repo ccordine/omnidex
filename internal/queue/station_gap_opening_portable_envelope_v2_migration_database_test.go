@@ -134,12 +134,13 @@ func TestPostgresStationGapOpeningPortableEnvelopeV2RejectsMalformedExistingRowA
 	if err != nil {
 		t.Fatal(err)
 	}
+	opening = freezeHistoricalRawStationGapV4(t, opening)
 	opening = stationGapOpeningEnvelopeV2NullField(t, opening, "schema")
 	tx, err := pool.Begin(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := insertStationGapOpeningTx(t.Context(), tx, &opening); err != nil {
+	if err := insertHistoricalStationGapOpeningTx(t.Context(), tx, &opening); err != nil {
 		_ = tx.Rollback(t.Context())
 		t.Fatalf("insert historically accepted malformed envelope: %v", err)
 	}

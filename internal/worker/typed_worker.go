@@ -7,7 +7,7 @@ import (
 	"github.com/gryph/omnidex/internal/assemblyline"
 )
 
-const maxTypedWorkerAttempts = assemblyline.MaxSemanticStationAttempts
+const exactSemanticLeafCalls = assemblyline.ExactSemanticLeafCalls
 
 type typedWorkerKind string
 

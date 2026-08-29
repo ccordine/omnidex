@@ -12,7 +12,7 @@ import (
 func TestMachineRunRejectsNilAndCanceledContextsBeforeAcquisition(t *testing.T) {
 	acquisition := &countingAcquisition{}
 	machine := newFixtureMachine(t, boundaryObjective(), acquisition,
-		&recordingTermsStation{}, &recordingRelevanceStation{}, &recordingSynthesisStation{}, 1_000)
+		&recordingRelevanceStation{}, &recordingSynthesisStation{}, 1_000)
 	if _, err := machine.Run(nil); !errors.Is(err, ErrNilContext) {
 		t.Fatalf("Run nil context error=%v", err)
 	}
@@ -35,7 +35,7 @@ func TestAcquisitionReportBoundsFailBeforeKernelClone(t *testing.T) {
 		}},
 	}}
 	machine := newFixtureMachine(t, boundaryObjective(), acquisition,
-		&recordingTermsStation{}, &recordingRelevanceStation{}, &recordingSynthesisStation{}, 1_000)
+		&recordingRelevanceStation{}, &recordingSynthesisStation{}, 1_000)
 	_, err := machine.Run(context.Background())
 	if err == nil || !strings.Contains(err.Error(), "discovery report bounds") {
 		t.Fatalf("Run error=%v", err)
@@ -48,7 +48,7 @@ func TestAcquisitionReportBoundsFailBeforeKernelClone(t *testing.T) {
 func boundaryObjective() Objective {
 	return Objective{
 		ID: "objective_boundary", Question: "What does the evidence establish?",
-		InitialQuery: "deterministic query", Acceptance: exactAcceptance(), Status: ObjectivePending,
+		InitialQuery: "deterministic query", Status: ObjectivePending,
 	}
 }
 

@@ -20,6 +20,7 @@ func TestWorkspaceMutationRecoveryRequiresExactActiveClaim(t *testing.T) {
 	command := queue.WorkspaceMutationCommand{
 		JobID: 41, StepID: 72, Generation: 3,
 		CreatorAttempt: 1, CreatorWorkerID: "worker-original",
+		ProjectLocation: "/srv/workspaces/recovery-claim",
 	}
 	if err := requireCurrentWorkspaceMutationRecoveryClaim(claim, command); err != nil {
 		t.Fatal(err)

@@ -2,6 +2,7 @@ package worker
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -86,7 +87,7 @@ func TestLanguageRepairRequiresRegisteredCorrectionProjectionIdentity(t *testing
 	}
 }
 
-func TestLanguageRepairRetriesInvalidCorrectionWithinBoundedAuthority(t *testing.T) {
+func TestLanguageRepairFailsInvalidCorrectionWithoutManufacturingAnotherGuidanceJob(t *testing.T) {
 	t.Parallel()
 	fixtures := []struct {
 		name       string
@@ -95,7 +96,6 @@ func TestLanguageRepairRetriesInvalidCorrectionWithinBoundedAuthority(t *testing
 		signature  string
 		current    string
 		invalid    string
-		corrected  string
 		validate   directCodingLanguageFragmentValidator
 		diagnostic string
 	}{
@@ -105,7 +105,6 @@ func TestLanguageRepairRetriesInvalidCorrectionWithinBoundedAuthority(t *testing
 			current:   "func Normalize(value int) int { return hidden(value) }",
 			invalid: "import \"example.invalid/hidden\"\n\n" +
 				"func Normalize(value int) int { return value }",
-			corrected:  "func Normalize(value int) int { return value }",
 			validate:   validateDirectCodingGoFragment,
 			diagnostic: `SOURCE_DIAGNOSTIC: Go fragment references undeclared capability "hidden"`,
 		},
@@ -116,7 +115,6 @@ func TestLanguageRepairRetriesInvalidCorrectionWithinBoundedAuthority(t *testing
 			current:   "function normalize(value) { return hidden(value); }",
 			invalid: "function normalize(value) { return value; }\n" +
 				"function sibling(value) { return value; }",
-			corrected:  "function normalize(value) { return value; }",
 			validate:   validateDirectCodingJavaScriptFragment,
 			diagnostic: "SOURCE_DIAGNOSTIC: JavaScript fragment references undeclared direct symbol hidden",
 		},
@@ -143,13 +141,12 @@ func TestLanguageRepairRetriesInvalidCorrectionWithinBoundedAuthority(t *testing
 			executor := &directCodingLanguageProjectStageExecutor{
 				config:                    directCodingLanguageStageConfig{Language: fixture.language},
 				acceptedRepairTransitions: make(map[string]int),
-				repairGuidance:            make(map[string]map[string]struct{}),
-				repairSources:             make(map[string]map[string]struct{}),
+				repairDiagnostics:         make(map[string]map[string]struct{}),
 			}
 			guidanceCalls := 0
 			correctionCalls := 0
 			runtime := typedWorkerRuntime{
-				Context: t.Context(), MaxAttempts: maxTypedWorkerAttempts,
+				Context: t.Context(), MaxAttempts: exactSemanticLeafCalls,
 				Execute: testPortableExecutor(func(
 					scope string, model string, prompt string) (string, error) {
 					switch scope {
@@ -158,45 +155,150 @@ func TestLanguageRepairRetriesInvalidCorrectionWithinBoundedAuthority(t *testing
 						if model != "guidance" {
 							t.Fatalf("guidance model=%s", model)
 						}
-						if guidanceCalls == 2 &&
-							(!strings.Contains(prompt, "outside the code-owned declaration") ||
-								!strings.Contains(prompt, "REJECTED_INSTRUCTION_JSON:")) {
-							t.Fatalf("second guidance omitted invalid-source evidence:\n%s", prompt)
+						if strings.Contains(prompt, "REJECTED_INSTRUCTION_JSON:") ||
+							strings.Contains(prompt, "EXACT_INSTRUCTION_FAILURE:") {
+							t.Fatalf("guidance prompt contains manufactured rejection history:\n%s", prompt)
 						}
-						return "Change the exact mutable declaration using only its local parameter, attempt " +
-							string(rune('0'+guidanceCalls)) + ".", nil
+						return "Change the exact mutable declaration using only its local parameter.", nil
 					case "portable_fragment_worker":
 						correctionCalls++
 						if model != "executor" {
 							t.Fatalf("correction model=%s", model)
 						}
-						if correctionCalls == 1 {
-							return fixture.invalid, nil
-						}
-						return fixture.corrected, nil
+						return fixture.invalid, nil
 					default:
 						t.Fatalf("unexpected scope %q", scope)
 						return "", nil
 					}
 				}),
 			}
-			got, err := executor.repairLanguageBlockWithRuntime(
+			_, err := executor.repairLanguageBlockWithRuntime(
 				runtime, "guidance", "executor", stage,
 				assemblyline.SourceBlockRef{Document: document, Block: block},
 				input, fixture.current, fixture.diagnostic, fixture.validate,
 			)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if got != fixture.corrected || guidanceCalls != 2 || correctionCalls != 2 ||
-				executor.acceptedRepairTransitions[block.ID] != 1 {
+			if !errors.Is(err, errDirectCodingLanguageCorrectionInvalid) ||
+				guidanceCalls != 1 || correctionCalls != 1 ||
+				executor.acceptedRepairTransitions[block.ID] != 0 {
 				t.Fatalf(
-					"source=%q guidance=%d correction=%d repairs=%d",
-					got, guidanceCalls, correctionCalls,
+					"error=%v guidance=%d correction=%d repairs=%d",
+					err, guidanceCalls, correctionCalls,
 					executor.acceptedRepairTransitions[block.ID],
 				)
 			}
 		})
+	}
+}
+
+func TestLanguageRepairRecordsZeroDeltaWithoutManufacturingAnotherGuidanceJob(t *testing.T) {
+	t.Parallel()
+	const current = "func Normalize(value int) int { return value }"
+	block := assemblyline.SourceBlock{
+		ID: "feature.normalize", Signature: "func Normalize(value int) int",
+		API: "func Normalize(value int) int", TaskID: "task_001",
+		Role: assemblyline.SourceBlockTaskImplementation,
+	}
+	document := assemblyline.SourceDocument{
+		ID: "feature", AdapterID: "go", Blocks: []assemblyline.SourceBlock{block},
+	}
+	stage := &directCodingProgram{Source: assemblyline.SourceBlueprint{
+		Documents: []assemblyline.SourceDocument{document},
+	}}
+	executor := &directCodingLanguageProjectStageExecutor{
+		config:                    directCodingLanguageStageConfig{Language: "go"},
+		acceptedRepairTransitions: make(map[string]int),
+		repairDiagnostics:         make(map[string]map[string]struct{}),
+	}
+	calls := 0
+	runtime := typedWorkerRuntime{
+		Context: t.Context(), MaxAttempts: exactSemanticLeafCalls,
+		Execute: testPortableExecutor(func(scope string, _ string, _ string) (string, error) {
+			calls++
+			switch scope {
+			case "portable_semantic_worker":
+				return "Return the local parameter without calling another declaration.", nil
+			case "portable_fragment_worker":
+				return current, nil
+			default:
+				return "", fmt.Errorf("unexpected scope %q", scope)
+			}
+		}),
+	}
+	_, err := executor.repairLanguageBlockWithRuntime(
+		runtime, "guidance", "executor", stage,
+		assemblyline.SourceBlockRef{Document: document, Block: block},
+		assemblyline.FragmentGenerationInput{
+			Language: "go", Dialect: "Go 1.24 function syntax",
+			Signature: block.Signature, Behavior: "Normalize one value.",
+		},
+		current, "SOURCE_DIAGNOSTIC: exact compiler failure", validateDirectCodingGoFragment,
+	)
+	if !errors.Is(err, errDirectCodingLanguageCorrectionUnchanged) || calls != 2 ||
+		executor.acceptedRepairTransitions[block.ID] != 0 {
+		t.Fatalf(
+			"zero delta error=%v calls=%d accepted transitions=%d",
+			err, calls, executor.acceptedRepairTransitions[block.ID],
+		)
+	}
+}
+
+func TestLanguageRepairRequiresDistinctCompilerDiagnosticAfterAcceptedTransition(t *testing.T) {
+	t.Parallel()
+	const (
+		initial    = "func Normalize(value int) int { return missing(value) }"
+		corrected  = "func Normalize(value int) int { return value }"
+		diagnostic = `SOURCE_DIAGNOSTIC: Go fragment references undeclared capability "missing"`
+	)
+	block := assemblyline.SourceBlock{
+		ID: "feature.normalize", Signature: "func Normalize(value int) int",
+		API: "func Normalize(value int) int", TaskID: "task_001",
+		Role: assemblyline.SourceBlockTaskImplementation,
+	}
+	document := assemblyline.SourceDocument{
+		ID: "feature", AdapterID: "go", Blocks: []assemblyline.SourceBlock{block},
+	}
+	stage := &directCodingProgram{Source: assemblyline.SourceBlueprint{
+		Documents: []assemblyline.SourceDocument{document},
+	}}
+	executor := &directCodingLanguageProjectStageExecutor{
+		config:                    directCodingLanguageStageConfig{Language: "go"},
+		acceptedRepairTransitions: make(map[string]int),
+		repairDiagnostics:         make(map[string]map[string]struct{}),
+	}
+	calls := 0
+	runtime := typedWorkerRuntime{
+		Context: t.Context(),
+		Execute: testPortableExecutor(func(scope string, _ string, _ string) (string, error) {
+			calls++
+			switch scope {
+			case "portable_semantic_worker":
+				return "Return the declared parameter directly.", nil
+			case "portable_fragment_worker":
+				return corrected, nil
+			default:
+				return "", fmt.Errorf("unexpected scope %q", scope)
+			}
+		}),
+	}
+	generation := assemblyline.FragmentGenerationInput{
+		Language: "go", Dialect: "Go 1.24 function syntax",
+		Signature: block.Signature, Behavior: "Normalize one value.",
+	}
+	ref := assemblyline.SourceBlockRef{Document: document, Block: block}
+	got, err := executor.repairLanguageBlockWithRuntime(
+		runtime, "guidance", "executor", stage, ref,
+		generation, initial, diagnostic, validateDirectCodingGoFragment,
+	)
+	if err != nil || got != corrected || calls != 2 ||
+		executor.acceptedRepairTransitions[block.ID] != 1 {
+		t.Fatalf("accepted source=%q error=%v calls=%d", got, err, calls)
+	}
+	_, err = executor.repairLanguageBlockWithRuntime(
+		runtime, "guidance", "executor", stage, ref,
+		generation, corrected, diagnostic, validateDirectCodingGoFragment,
+	)
+	if err == nil || !strings.Contains(err.Error(), "no distinct verified failure") || calls != 2 {
+		t.Fatalf("repeated diagnostic error=%v calls=%d", err, calls)
 	}
 }
 
@@ -234,26 +336,6 @@ func TestLanguageRepairSourceKeepsGuidanceAndExecutorEnvelopesDisjoint(t *testin
 		if strings.Contains(guidanceSource, forbidden) {
 			t.Fatalf("repair guidance construction retained forbidden authority %q", forbidden)
 		}
-	}
-}
-
-func TestLanguageRepairRejectsRepeatedGuidanceAndSourceCycles(t *testing.T) {
-	t.Parallel()
-	executor := &directCodingLanguageProjectStageExecutor{
-		repairGuidance: make(map[string]map[string]struct{}),
-		repairSources:  make(map[string]map[string]struct{}),
-	}
-	if err := executor.acceptLanguageRepairGuidance("opaque", "Replace the returned expression."); err != nil {
-		t.Fatal(err)
-	}
-	if err := executor.acceptLanguageRepairGuidance("opaque", "Replace the returned expression."); !errors.Is(err, errDirectCodingLanguageGuidanceRepeated) {
-		t.Fatalf("repeated guidance error=%v", err)
-	}
-	if err := executor.acceptLanguageRepairSource("opaque", "function value() { return 2; }"); err != nil {
-		t.Fatal(err)
-	}
-	if err := executor.acceptLanguageRepairSource("opaque", "function value() { return 2; }"); err == nil {
-		t.Fatal("repeated corrected source was accepted")
 	}
 }
 

@@ -23,10 +23,6 @@ func runMetrics(c *client.Client, args []string) {
 		runMetricsRuns(c, args[1:])
 	case "models":
 		runMetricsFetch(c, "/v1/metrics/models", args[1:])
-	case "playbooks":
-		runMetricsFetch(c, "/v1/metrics/playbooks", args[1:])
-	case "benchmarks":
-		runMetricsFetch(c, "/v1/metrics/benchmarks", args[1:])
 	case "export":
 		runMetricsExport(c, args[1:])
 	default:
@@ -39,8 +35,6 @@ func printMetricsUsage() {
 	fmt.Println("  agent-cli metrics live")
 	fmt.Println("  agent-cli metrics runs [--limit N]")
 	fmt.Println("  agent-cli metrics models")
-	fmt.Println("  agent-cli metrics playbooks")
-	fmt.Println("  agent-cli metrics benchmarks")
 	fmt.Println("  agent-cli metrics export --run <id>")
 }
 

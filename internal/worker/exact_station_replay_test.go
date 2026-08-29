@@ -11,7 +11,7 @@ import (
 	"github.com/gryph/omnidex/internal/queue"
 )
 
-func TestStationReplayValidationRejectsUnregisteredKindsDirectlyAndThroughCorrection(t *testing.T) {
+func TestStationReplayValidationRejectsUnregisteredKindsDirectly(t *testing.T) {
 	for _, kind := range []assemblyline.WorkKind{
 		"conversation_context_selection",
 		"memory_context_selection",
@@ -25,10 +25,17 @@ func TestStationReplayValidationRejectsUnregisteredKindsDirectlyAndThroughCorrec
 		"repository_requirements",
 		"repository_change_surface",
 		"repository_search_term",
+		"repository_search_anchor_coverage",
+		"repository_search_anchor",
 		"context_search_terms",
+		"context_search_term_coverage",
+		"context_search_term",
 		"context_relevance",
 		"repository_evidence_relevance",
 		"repository_grounded_review",
+		"repository_grounded_issue_detail",
+		"repository_grounded_issue_kind",
+		"repository_grounded_correction",
 		"roleplay_canon_extraction",
 		"roleplay_grounded_response",
 		"grounded_answer",
@@ -37,7 +44,13 @@ func TestStationReplayValidationRejectsUnregisteredKindsDirectlyAndThroughCorrec
 		"web_search_terms",
 		"web_relevance",
 		"web_grounded_synthesis",
+		"web_grounded_synthesis_correction",
 		"web_claim_evidence_review",
+		"web_review_claim_coverage",
+		"web_review_claim",
+		"web_review_claim_verdict",
+		"web_review_issue_evidence_relation",
+		"web_review_issue_detail",
 	} {
 		t.Run(string(kind), func(t *testing.T) {
 			retired := assemblyline.PortableJob{
@@ -46,26 +59,7 @@ func TestStationReplayValidationRejectsUnregisteredKindsDirectlyAndThroughCorrec
 			if err := retired.Validate(); err == nil || !strings.Contains(err.Error(), "unsupported") {
 				t.Fatalf("direct unregistered validation error=%v", err)
 			}
-			if _, err := assemblyline.NewRetainedResponseCorrectionJob(
-				retired, "unregistered original", "candidate",
-			); err == nil || !strings.Contains(err.Error(), "unsupported") {
-				t.Fatalf("corrected unregistered validation error=%v", err)
-			}
 		})
-	}
-}
-
-func TestStationReplayRejectsGenericCorrectionWithoutRetainedCandidate(t *testing.T) {
-	original, err := assemblyline.NewKnownArtifactTruthJob(assemblyline.KnownArtifactTruthInput{
-		RequirementQuote: "The known semantic artifact must be absent.",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := assemblyline.NewRetainedResponseCorrectionJob(
-		original, "truth is unsupported", "",
-	); err == nil || !strings.Contains(err.Error(), "retained leaf") {
-		t.Fatalf("empty-retained replay error=%v", err)
 	}
 }
 
@@ -96,7 +90,7 @@ func TestValidateExactStationReplayPointPreservesFrozenPortableBoundary(t *testi
 	t.Run("historical renderer drift retains the stored projection", func(t *testing.T) {
 		point := queue.StationCallReplayPoint{Call: call, Gap: gap}
 		point.Gap.Prompt = "FROZEN_STATION_PROMPT_V1"
-		projection, err := replayTestProjection(point.Gap.Prompt, point.Gap.ResponseSchema)
+		projection, err := replayTestProjection(point.Gap.Prompt)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -128,9 +122,6 @@ func TestValidateExactStationReplayPointPreservesFrozenPortableBoundary(t *testi
 		"historical renderer": func(point *queue.StationCallReplayPoint) {
 			point.Gap.RendererVersion = "omnidex.render-portable-job.v3"
 		},
-		"structured response schema": func(point *queue.StationCallReplayPoint) {
-			point.Gap.ResponseSchema = json.RawMessage(`{"type":"object"}`)
-		},
 		"stored prompt drift": func(point *queue.StationCallReplayPoint) {
 			point.Gap.Prompt += "\nunauthorized"
 		},
@@ -140,8 +131,14 @@ func TestValidateExactStationReplayPointPreservesFrozenPortableBoundary(t *testi
 		"stored model input drift": func(point *queue.StationCallReplayPoint) {
 			point.Call.ModelInput += "\nunauthorized"
 		},
-		"response schema scope drift": func(point *queue.StationCallReplayPoint) {
+		"scope drift": func(point *queue.StationCallReplayPoint) {
 			point.Gap.Scope = "portable_semantic_worker"
+		},
+		"semantic uncertainty drift": func(point *queue.StationCallReplayPoint) {
+			point.Gap.SemanticUncertaintyContract.ExactQuestion = "Which forged value?"
+		},
+		"semantic uncertainty digest drift": func(point *queue.StationCallReplayPoint) {
+			point.Gap.SemanticUncertaintyContractSHA256 = strings.Repeat("0", 64)
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -233,15 +230,11 @@ func replayTestGap(t *testing.T, job assemblyline.PortableJob) queue.StationGapO
 	if err != nil {
 		t.Fatal(err)
 	}
-	schemaRaw, err := exactjson.Canonical(nil)
-	if err != nil {
-		t.Fatal(err)
-	}
 	envelope, err := exactjson.Canonical(job)
 	if err != nil {
 		t.Fatal(err)
 	}
-	projection, err := replayTestProjection(prompt, schemaRaw)
+	projection, err := replayTestProjection(prompt)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -257,25 +250,26 @@ func replayTestGap(t *testing.T, job assemblyline.PortableJob) queue.StationGapO
 	if err != nil {
 		t.Fatal(err)
 	}
-	return queue.StationGapOpening{
+	gap := queue.StationGapOpening{
 		ID: 17, JobID: 3, Generation: 1, StepID: 2, StepAttempt: 1, WorkerID: "replay-test",
 		GapID: job.ID, Station: stationID, Scope: scope,
 		PortableSchema: job.Schema, WorkID: job.ID, WorkKind: string(job.Kind),
 		PortablePayload: string(job.Payload), PortablePayloadSHA256: replaySHA256(string(job.Payload)),
 		PortableEnvelope: string(envelope), PortableEnvelopeSHA256: replaySHA256(string(envelope)),
-		RendererVersion: assemblyline.PortableRendererV4, Prompt: prompt,
-		ResponseSchema: schemaRaw, ProjectionEnvelope: string(projection), ProjectionSHA256: replaySHA256(string(projection)),
+		RendererVersion: assemblyline.PortableRendererV5, Prompt: prompt,
+		ProjectionEnvelope: string(projection), ProjectionSHA256: replaySHA256(string(projection)),
 		ContextTokens: 8192, MaxOutputTokens: maxOutputTokens,
 		OutputLimitMode: llm.ExactPreparedOutputLimitNatural,
 	}
+	bindTestGapSemanticUncertainty(t, &gap)
+	return gap
 }
 
-func replayTestProjection(prompt string, schema json.RawMessage) ([]byte, error) {
+func replayTestProjection(prompt string) ([]byte, error) {
 	return exactjson.Canonical(struct {
-		Prompt         string          `json:"prompt"`
-		Renderer       string          `json:"renderer"`
-		ResponseSchema json.RawMessage `json:"response_schema"`
-	}{prompt, assemblyline.PortableRendererV4, schema})
+		Prompt   string `json:"prompt"`
+		Renderer string `json:"renderer"`
+	}{prompt, assemblyline.PortableRendererV5})
 }
 
 func replayTestCall(t *testing.T, gap queue.StationGapOpening) queue.StationCallOpening {

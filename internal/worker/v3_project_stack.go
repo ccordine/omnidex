@@ -23,7 +23,8 @@ type directCodingProjectStack struct {
 	TaskStageStaticPaths         []string
 	TaskStageOptionalStaticPaths []string
 	ProjectTaskStaticFiles       func(directCodingProgram, directCodingProgram) ([]directCodingFileTask, error)
-	ProjectFocusedTargetTree     func(int, []string) (assemblyline.TargetTree, error)
+	ProjectCompleteTargetTree    func(directCodingTargetTreeOccupation) (assemblyline.TargetTree, error)
+	ProjectFocusedTargetTree     func(int, directCodingTargetTreeOccupation) (assemblyline.TargetTree, error)
 	CompileSource                directCodingProjectCompiler
 	CompileServiceSource         directCodingServiceProjectCompiler
 	ValidateServiceState         func(
@@ -103,14 +104,15 @@ func registeredDirectCodingProjectStacks() []directCodingProjectStack {
 				"src/App.test.tsx", "src/App.tsx", "src/main.tsx",
 				"src/runtime.test.tsx", "src/runtime.tsx",
 			},
-			TaskStageStaticPaths:    []string{"package.json", "package-lock.json", "tsconfig.json", "vite.config.ts"},
-			CompileSource:           compileGenericTypeScriptBrowserBlueprint,
-			ValidateTargetTree:      validateTypeScriptBrowserTargetTree,
-			ValidateBlueprint:       assemblyline.ValidateTypeScriptSourceBlueprint,
-			ValidateSourceOwnership: validateDirectCodingSinglePairSourceOwnership,
-			ValidateAssembly:        validateTypeScriptBrowserAssembly,
-			VerificationCommands:    typeScriptBrowserVerificationCommands,
-			NewStageExecutor:        newDirectCodingTypeScriptProjectStageExecutor,
+			ProjectCompleteTargetTree: projectTypeScriptBrowserCompleteTargetTree,
+			TaskStageStaticPaths:      []string{"package.json", "package-lock.json", "tsconfig.json", "vite.config.ts"},
+			CompileSource:             compileGenericTypeScriptBrowserBlueprint,
+			ValidateTargetTree:        validateTypeScriptBrowserTargetTree,
+			ValidateBlueprint:         assemblyline.ValidateTypeScriptSourceBlueprint,
+			ValidateSourceOwnership:   validateDirectCodingSinglePairSourceOwnership,
+			ValidateAssembly:          validateTypeScriptBrowserAssembly,
+			VerificationCommands:      typeScriptBrowserVerificationCommands,
+			NewStageExecutor:          newDirectCodingTypeScriptProjectStageExecutor,
 		},
 		{
 			ID:                      genericGoCommandLineAdapter,
@@ -162,7 +164,7 @@ func registeredDirectCodingProjectStacks() []directCodingProjectStack {
 			DefaultVersionProfileID: rustCommandLineVersionProfileV1,
 			SupportedSurfaces:       []assemblyline.ApplicationSurface{assemblyline.ApplicationSurfaceCommandLine},
 			ConstraintDescription:   "Rust with Cargo for a command-line application",
-			TreeDescription:         "exactly one src/<snake>.rs workload module and exactly one matching tests/<snake>_test.rs Cargo integration test",
+			TreeDescription:         "exactly one snake_case Rust workload basename under a directory named src and one matching snake_case Cargo integration-test basename under a directory named tests",
 			ArtifactAdapterIDs:      []string{"rust", "cargo_toml", "plain_text"},
 			TargetTreeAdapterIDs:    []string{"rust"},
 			TargetTreeConstraints: assemblyline.TargetTreeConstraints{
@@ -212,7 +214,7 @@ func registeredDirectCodingProjectStacks() []directCodingProjectStack {
 			},
 			DefaultSurfaces:       []assemblyline.ApplicationSurface{assemblyline.ApplicationSurfaceService},
 			ConstraintDescription: "PHP with NGINX, Docker Compose, and CSS for an HTTP service",
-			TreeDescription:       "exactly one src/FeatureNNN.php workload class and one matching tests/FeatureNNNTest.php verifier per accepted behavior",
+			TreeDescription:       "exactly one numbered PHP workload-class basename under a directory named src and one matching numbered verifier basename under a directory named tests per accepted behavior",
 			ArtifactAdapterIDs: []string{
 				"php", "css_tailwind", "nginx", "dockerfile", "postgresql_migration",
 				"structured_json", "environment_example", "plain_text",
@@ -255,8 +257,8 @@ func directCodingTreeTechnicalContext(
 	if _, err := directCodingProjectStackByID(stack.ID); err != nil {
 		return "", err
 	}
-	context := "Code-selected project stack: " + stack.TreeDescription +
-		". The expected tree contains only workload-specific file and directory names in this stack. Code-owned adapters independently supply any runtime, shell, bootstrap, manifests, styles, and their tests."
+	context := "Required project structure: " + stack.TreeDescription +
+		". Return only the application-specific names described here; omit runtime, shell, bootstrap, manifest, style, and infrastructure-support names."
 	return context, nil
 }
 

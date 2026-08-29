@@ -3,10 +3,9 @@ package contextcompiler
 import (
 	"context"
 	"fmt"
-	"sort"
-	"strings"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
+	"github.com/gryph/omnidex/internal/modelcontext"
 )
 
 func Compile(
@@ -27,15 +26,23 @@ func Compile(
 	if provider == nil {
 		return result, fmt.Errorf("context compilation requires fixed retrieval authority")
 	}
-	termsInput := assemblyline.ContextSearchTermsInput{
-		ExactInstruction: request.ExactInstruction,
-		Scope:            request.Scope,
+	if request.KnownArtifactPaths == nil {
+		return result, fmt.Errorf(
+			"context compilation requires explicit current-artifact provenance, including an empty set",
+		)
 	}
-	if _, err := assemblyline.NewContextSearchTermCoverageJob(
-		assemblyline.ContextSearchTermLeafInput{
-			ExactInstruction: termsInput.ExactInstruction, Scope: termsInput.Scope,
-			AcceptedTerms: []string{},
-		},
+	provenance, err := modelcontext.NewArtifactIdentityProvenance(request.KnownArtifactPaths)
+	if err != nil {
+		return result, fmt.Errorf("context compilation current-artifact provenance: %w", err)
+	}
+	if err := validateRetrievalAuthority(request.ExactInstruction, request.Scope); err != nil {
+		return result, err
+	}
+	if err := validateRetrievalAuthority(request.ModelInstruction, request.Scope); err != nil {
+		return result, fmt.Errorf("context compilation model instruction: %w", err)
+	}
+	if err := assemblyline.ValidatePathFreeModelContextWithProvenance(
+		"context compilation model instruction", provenance, request.ModelInstruction,
 	); err != nil {
 		return result, err
 	}
@@ -44,22 +51,22 @@ func Compile(
 		if err != nil {
 			return result, fmt.Errorf("inspect fixed context search availability: %w", err)
 		}
-		directive, calls, err := ResolveRetrievalDirective(
-			ctx, request.ExactInstruction, request.Scope, availability, stations.Terms,
+		directive, err := ResolveRetrievalDirective(
+			ctx, request.ExactInstruction, request.Scope, availability,
 		)
 		if err != nil {
 			return result, err
 		}
 		request.Retrieval = &directive
-		result.SearchTermsCalls += calls
-		result.ModelCalls += calls
 	}
-	retrievalConcepts, err := resolveRetrievalConcepts(request, termsInput)
+	retrievalQueries, err := retrievalQueries(
+		request.ExactInstruction, request.Scope, *request.Retrieval,
+	)
 	if err != nil {
 		return result, err
 	}
 
-	set, err := provider.Retrieve(ctx, append([]string{}, retrievalConcepts...))
+	set, err := provider.Retrieve(ctx, append([]string{}, retrievalQueries...))
 	if err != nil {
 		return result, fmt.Errorf("retrieve fixed context candidates: %w", err)
 	}
@@ -77,8 +84,8 @@ func Compile(
 	selected := append([]assemblyline.ContextCandidateAuthority(nil), set.Required...)
 	if len(set.Optional) > 0 {
 		optional, relevanceCalls, err := selectRelevantAuthorities(
-			ctx, request.ExactInstruction, request.Scope, retrievalConcepts,
-			set.Optional, stations.Relevance,
+			ctx, request.ModelInstruction, request.Scope,
+			request.KnownArtifactPaths, set.Optional, stations.Relevance,
 		)
 		if err != nil {
 			return result, err
@@ -97,7 +104,8 @@ func Compile(
 		return result, nil
 	}
 	content, minificationCalls, err := reduceSelectedAuthorities(
-		ctx, request.ExactInstruction, request.Scope, selected, stations.Minification,
+		ctx, request.ModelInstruction, request.Scope, request.KnownArtifactPaths,
+		selected, stations.Minification,
 	)
 	if err != nil {
 		return result, err
@@ -121,35 +129,6 @@ func Compile(
 	return result, nil
 }
 
-func resolveRetrievalConcepts(
-	request Request,
-	input assemblyline.ContextSearchTermsInput,
-) ([]string, error) {
-	if request.Retrieval == nil {
-		return nil, fmt.Errorf("context retrieval directive was not resolved before acquisition")
-	}
-	decision := assemblyline.ContextSearchTermsDecision{
-		Schema: assemblyline.ContextSearchTermsSchemaV1,
-		Terms:  append([]string{}, request.Retrieval.Concepts...),
-	}
-	if err := decision.ValidateFor(input); err != nil {
-		return nil, fmt.Errorf("code-owned retrieval directive: %w", err)
-	}
-	return canonicalRetrievalConcepts(decision.Terms), nil
-}
-
-// canonicalRetrievalConcepts removes model-authored casing and array order
-// once, before the same immutable semantic leaves are given to fixed retrieval
-// and bounded relevance selection.
-func canonicalRetrievalConcepts(terms []string) []string {
-	concepts := make([]string, len(terms))
-	for index, term := range terms {
-		concepts[index] = strings.ToLower(term)
-	}
-	sort.Strings(concepts)
-	return concepts
-}
-
 func validateReceipt(label string, receipt StationReceipt) error {
 	if receipt.Reused {
 		if receipt.Calls != 0 {
@@ -157,8 +136,11 @@ func validateReceipt(label string, receipt StationReceipt) error {
 		}
 		return nil
 	}
-	if receipt.Calls < 1 || receipt.Calls > assemblyline.MaxSemanticStationAttempts {
-		return fmt.Errorf("%s reported %d calls outside the bounded correction budget", label, receipt.Calls)
+	if receipt.Calls != assemblyline.ExactSemanticLeafCalls {
+		return fmt.Errorf(
+			"%s reported %d calls; one raw semantic leaf requires exactly %d",
+			label, receipt.Calls, assemblyline.ExactSemanticLeafCalls,
+		)
 	}
 	return nil
 }

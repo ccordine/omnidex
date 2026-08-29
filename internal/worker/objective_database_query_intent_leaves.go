@@ -28,17 +28,17 @@ func resolveObjectiveDatabaseQueryIntent(
 		job assemblyline.PortableJob,
 		decode objectiveDatabaseRawLeafDecoder,
 	) (any, int, error) {
-		if boundedCalls > maxObjectiveDatabaseQueryIntentCalls-maxTypedWorkerAttempts {
+		if boundedCalls > maxObjectiveDatabaseQueryIntentCalls-exactSemanticLeafCalls {
 			return nil, 0, fmt.Errorf(
 				"database query intent exceeded its %d-call semantic leaf bound",
 				maxObjectiveDatabaseQueryIntentCalls,
 			)
 		}
 		value, calls, err := originalCall(ctx, subject, job, decode)
-		if calls < 0 || calls > maxTypedWorkerAttempts {
+		if calls < 0 || calls > exactSemanticLeafCalls {
 			return nil, calls, fmt.Errorf(
 				"database query intent leaf %s reported %d calls outside 0..%d",
-				subject, calls, maxTypedWorkerAttempts,
+				subject, calls, exactSemanticLeafCalls,
 			)
 		}
 		boundedCalls += calls

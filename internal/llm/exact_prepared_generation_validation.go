@@ -43,9 +43,6 @@ func ValidateExactPreparedGenerationForRequest(
 	if profile.transport != exactPreparedTransportRaw {
 		return nil
 	}
-	if generation.Thinking != "" {
-		return fmt.Errorf("exact raw prepared generation leaked separate thinking content")
-	}
 	for _, control := range []string{
 		"<|im_start|>",
 		ExactPreparedRawChatEndV1,

@@ -146,9 +146,8 @@ func TestPHPDurableStateRunnerResetsBetweenEveryGeneratedVerifier(t *testing.T) 
 func TestPHPDurableFocusedVerificationResetsAroundAcceptance(t *testing.T) {
 	t.Parallel()
 	program := phpDurableStateProgramFixture(t)
-	specification, _, _, _, _ := phpServiceStackFixture(t)
 	context, err := assemblyline.ProjectApplicationTaskContext(
-		applicationWorkloadInput(specification), program.Workload, program.Workload.Tasks[0].ID,
+		program.Workload, program.Workload.Tasks[0].ID,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -242,7 +241,8 @@ func phpDurableStateProgramFixture(t *testing.T) directCodingProgram {
 		assemblyline.ApplicationServiceStateCrossRequestAuthorityRequired
 	capabilities := directCodingCapabilityGraph{"requirement_001": nil}
 	state = bindTestServiceStateInterfaces(
-		t, workload, capabilities, state, testIntegerServiceStateField("count"),
+		t, workload, capabilities, state,
+		testStringServiceStateField("durable feature state"),
 	)
 	blueprint, staticFiles, err := compileGenericPHPServiceBlueprint(
 		"php-service", specification, map[string]directCodingSkillBinding{}, workload,

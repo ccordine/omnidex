@@ -61,8 +61,7 @@ function auditReading(value) { return value; }`,
 			executor := &directCodingLanguageProjectStageExecutor{
 				config:                    directCodingLanguageStageConfig{Language: fixture.input.Language},
 				acceptedRepairTransitions: make(map[string]int),
-				repairGuidance:            make(map[string]map[string]struct{}),
-				repairSources:             make(map[string]map[string]struct{}),
+				repairDiagnostics:         make(map[string]map[string]struct{}),
 			}
 			generationCalls := 0
 			validationCalls := 0
@@ -130,8 +129,7 @@ func TestGenerateBlockCoreDoesNotExposeVerificationSourceToRepair(t *testing.T) 
 	executor := &directCodingLanguageProjectStageExecutor{
 		config:                    directCodingLanguageStageConfig{Language: "javascript"},
 		acceptedRepairTransitions: make(map[string]int),
-		repairGuidance:            make(map[string]map[string]struct{}),
-		repairSources:             make(map[string]map[string]struct{}),
+		repairDiagnostics:         make(map[string]map[string]struct{}),
 	}
 	calls := 0
 	runtime := typedWorkerRuntime{

@@ -79,7 +79,7 @@ func TestRustCommandLineStackCompilesAndExecutesLockedOffline(t *testing.T) {
 			t.Fatalf("cargo %v failed: %v\n%s", args, err, output)
 		}
 	}
-	contexts, err := directCodingApplicationTaskContexts(applicationWorkloadInput(specification), workload)
+	contexts, err := directCodingApplicationTaskContexts(workload)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -128,15 +128,7 @@ func rustCommandLineStackFixture(
 			ID: "requirement_001", SourceQuote: "Print the first supplied argument",
 		}},
 	}
-	input := applicationWorkloadInput(specification)
-	workload, err := assemblyline.FreezeApplicationWorkload(input, assemblyline.ApplicationWorkloadDraft{
-		Schema: assemblyline.ApplicationWorkloadDraftSchemaV1,
-		Tasks: []assemblyline.ApplicationWorkloadTaskDraft{{
-			RequirementID: "requirement_001", Objective: "Return the first command argument.",
-			RequiredBehaviors:  []string{"Accept one command argument and expose it as output."},
-			AcceptanceCriteria: []string{"The first command argument is returned unchanged."},
-		}},
-	})
+	workload, err := assemblyline.FreezeApplicationWorkload(specification)
 	if err != nil {
 		t.Fatal(err)
 	}

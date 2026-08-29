@@ -114,32 +114,25 @@ func main() {
 	if err != nil {
 		log.Fatalf("web search configuration error: %v", err)
 	}
-	browserContextRelevance, browserContextModel, err := runtimeBrowserContextRelevance(cfg)
-	if err != nil {
-		log.Fatalf("browser context relevance configuration error: %v", err)
-	}
-
 	httpServer := api.NewServerWithOptions(repo, llmTransports.Embeddings, api.ServerOptions{
-		LifecycleContext:        ctx,
-		MigrationBundle:         migrationBundle,
-		ProviderConfig:          cfg,
-		RequestTimeout:          cfg.RequestTimeout,
-		WebSearchProviders:      cfg.WebSearchProviders,
-		CoreURL:                 cfg.CoreURL,
-		ListenAddr:              cfg.ListenAddr,
-		HostAgentURL:            cfg.HostAgentURL,
-		HostAgentToken:          cfg.HostAgentToken,
-		IntegrationAPIToken:     cfg.IntegrationAPIToken,
-		RealtimeMaxClients:      cfg.RealtimeMaxClients,
-		RealtimeStreamMaxAge:    cfg.RealtimeStreamMaxAge,
-		RealtimeHeartbeat:       cfg.RealtimeHeartbeat,
-		RealtimeWriteTimeout:    cfg.RealtimeWriteTimeout,
-		RedisURL:                cfg.RedisURL,
-		UIRedisRequired:         cfg.UIRedisRequired,
-		UISessionTTL:            cfg.UISessionTTL,
-		RoleplaySimulation:      roleplaySimulation,
-		BrowserContextRelevance: browserContextRelevance,
-		BrowserContextModel:     browserContextModel,
+		LifecycleContext:     ctx,
+		MigrationBundle:      migrationBundle,
+		ProviderConfig:       cfg,
+		RequestTimeout:       cfg.RequestTimeout,
+		WebSearchProviders:   cfg.WebSearchProviders,
+		CoreURL:              cfg.CoreURL,
+		ListenAddr:           cfg.ListenAddr,
+		HostAgentURL:         cfg.HostAgentURL,
+		HostAgentToken:       cfg.HostAgentToken,
+		IntegrationAPIToken:  cfg.IntegrationAPIToken,
+		RealtimeMaxClients:   cfg.RealtimeMaxClients,
+		RealtimeStreamMaxAge: cfg.RealtimeStreamMaxAge,
+		RealtimeHeartbeat:    cfg.RealtimeHeartbeat,
+		RealtimeWriteTimeout: cfg.RealtimeWriteTimeout,
+		RedisURL:             cfg.RedisURL,
+		UIRedisRequired:      cfg.UIRedisRequired,
+		UISessionTTL:         cfg.UISessionTTL,
+		RoleplaySimulation:   roleplaySimulation,
 	})
 	if !cfg.WrapperOnly {
 		workerService, err := worker.New(
@@ -167,10 +160,9 @@ func main() {
 					KeyFile: cfg.DeploymentKeyFile, BindAddress: cfg.DeploymentBindAddress,
 					AdvertisedHost: cfg.DeploymentAdvertisedHost, ProbeHost: cfg.DeploymentProbeHost,
 				},
-				Logger:                  log.Default(),
-				OnJobFinished:           httpServer.OnJobFinishedAsync,
-				OnJobOutput:             httpServer.OnJobOutputAsync,
-				BrowserContextRelevance: browserContextRelevance,
+				Logger:        log.Default(),
+				OnJobFinished: httpServer.OnJobFinishedAsync,
+				OnJobOutput:   httpServer.OnJobOutputAsync,
 			},
 		)
 		if err != nil {

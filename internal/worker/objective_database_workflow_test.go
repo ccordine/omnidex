@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -136,7 +137,7 @@ func TestDatabaseBoundObjectiveRunsTypedEvidenceLoopAndGroundsAnswer(t *testing.
 	if !kind.input.DatabaseEvidenceAvailable || executions != 1 || stations.intentCalls != 1 || stations.gapCalls != 1 {
 		t.Fatalf("availability=%v executions=%d intent=%d gap=%d", kind.input.DatabaseEvidenceAvailable, executions, stations.intentCalls, stations.gapCalls)
 	}
-	if result.Kind != assemblyline.ObjectiveKindDatabaseRead || !result.Complete || result.ModelCalls != 5 || len(result.Citations) != 1 {
+	if result.Kind != assemblyline.ObjectiveKindDatabaseRead || !result.Complete || result.ModelCalls != 4 || len(result.Citations) != 1 {
 		t.Fatalf("result=%+v", result)
 	}
 	if strings.Contains(answer.input.Evidence[0].Text, "SELECT") || !strings.Contains(answer.input.Evidence[0].Text, `"label":"count_rows"`) {
@@ -155,6 +156,7 @@ func TestDatabaseEvidenceLoopAccumulatesOneNamedMissingFactThenStops(t *testing.
 	}
 	authority := turnAuthority{
 		JobID: 72, Pipeline: model.PipelineChat, Instruction: "Compare this period with the prior period.",
+		ModelInstruction: "Compare this period with the prior period.", ModelArtifactPaths: []string{},
 		DataSourceID: "source-1",
 	}
 	executions := 0
@@ -192,7 +194,9 @@ func objectiveDatabaseCountEvidence(plan datasource.RelationalQueryPlan, sequenc
 		Name: plan.Outputs[0].Name, PostgresTypeOID: 20, FieldID: plan.Outputs[0].FieldID,
 		Aggregate: plan.Outputs[0].Aggregate, TypeCategory: plan.Outputs[0].TypeCategory,
 	}}
-	rows := [][]datasource.EvidenceValue{{{Kind: datasource.EvidenceInteger, Value: "3"}}}
+	rows := [][]datasource.EvidenceValue{{{
+		Kind: datasource.EvidenceInteger, Value: strconv.Itoa(sequence + 2),
+	}}}
 	canonical, _ := json.Marshal(struct {
 		Columns []datasource.EvidenceColumn  `json:"columns"`
 		Rows    [][]datasource.EvidenceValue `json:"rows"`

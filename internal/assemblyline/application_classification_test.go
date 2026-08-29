@@ -19,7 +19,7 @@ func TestApplicationClassificationIsOneRawRegisteredSurface(t *testing.T) {
 	for _, required := range []string{
 		string(ApplicationSurfaceBrowser), string(ApplicationSurfaceCommandLine),
 		string(ApplicationSurfaceService), string(ApplicationSurfaceUnsupported),
-		"no JSON, quotes, label, Markdown, or commentary",
+		"Output grammar: browser_application | command_line_application | service_application | unsupported",
 	} {
 		if !strings.Contains(prompt, required) {
 			t.Fatalf("classification prompt omitted %q: %s", required, prompt)

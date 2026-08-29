@@ -59,63 +59,6 @@ func findColumn(t *testing.T, relation SchemaRelation, name string) SchemaColumn
 	return SchemaColumn{}
 }
 
-func TestDecodeRelationalIntentAcceptsBoundedTypedRanking(t *testing.T) {
-	t.Parallel()
-	snapshot := commerceSnapshot(t)
-	orders := findRelation(t, snapshot, "orders")
-	customers := findRelation(t, snapshot, "customers")
-	name := findColumn(t, customers, "name")
-	total := findColumn(t, orders, "total")
-	created := findColumn(t, orders, "created_at")
-	raw := marshalIntent(t, RelationalIntent{
-		Schema: RelationalIntentV1, SourceID: snapshot.SourceID, SchemaFingerprint: snapshot.Fingerprint,
-		FromRelationID: orders.ID, Shape: ResultRanking,
-		Projections:     []RelationalProjection{{FieldID: name.ID}, {Aggregate: AggregateSum, FieldID: total.ID}},
-		Filters:         []RelationalPredicate{{FieldID: total.ID, Operator: FilterGTE, Values: []IntentLiteral{{Type: LiteralDecimal, Value: "10.50"}}}},
-		TemporalWindows: []TemporalWindow{{FieldID: created.ID, Unit: WindowDay, Amount: 90, AsOf: "2026-08-18T12:00:00Z"}},
-		GroupBy:         []int{0}, Having: []AggregatePredicate{{Aggregate: AggregateSum, FieldID: total.ID, Operator: FilterGT, Value: IntentLiteral{Type: LiteralDecimal, Value: "100"}}},
-		OrderBy: []OrderTerm{{Projection: 1, Direction: OrderDescending}}, Limit: 20,
-	})
-	decoded, err := DecodeRelationalIntent(snapshot, raw)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if decoded.Shape != ResultRanking || decoded.Projections[1].Aggregate != AggregateSum {
-		t.Fatalf("unexpected decoded intent: %#v", decoded)
-	}
-}
-
-func TestDecodeRelationalIntentRejectsUnknownDuplicateRawSQLAndStaleIDs(t *testing.T) {
-	t.Parallel()
-	snapshot := commerceSnapshot(t)
-	orders := findRelation(t, snapshot, "orders")
-	id := findColumn(t, orders, "id")
-	valid := RelationalIntent{
-		Schema: RelationalIntentV1, SourceID: snapshot.SourceID, SchemaFingerprint: snapshot.Fingerprint,
-		FromRelationID: orders.ID, Shape: ResultRecords,
-		Projections: []RelationalProjection{{FieldID: id.ID}}, Limit: 10,
-	}
-	for name, raw := range map[string]string{
-		"unknown field": strings.TrimSuffix(marshalIntent(t, valid), "}") + `,"execute":true}`,
-		"raw sql":       strings.TrimSuffix(marshalIntent(t, valid), "}") + `,"sql":"SELECT * FROM orders"}`,
-		"duplicate":     strings.Replace(marshalIntent(t, valid), `"limit":10`, `"limit":10,"limit":11`, 1),
-	} {
-		if _, err := DecodeRelationalIntent(snapshot, raw); err == nil {
-			t.Fatalf("%s was accepted", name)
-		}
-	}
-	stale := valid
-	stale.SchemaFingerprint = strings.Repeat("0", 64)
-	if _, err := DecodeRelationalIntent(snapshot, marshalIntent(t, stale)); err == nil {
-		t.Fatal("stale schema fingerprint was accepted")
-	}
-	unknown := valid
-	unknown.Projections[0].FieldID = "col_not-issued"
-	if _, err := DecodeRelationalIntent(snapshot, marshalIntent(t, unknown)); err == nil {
-		t.Fatal("unknown opaque column ID was accepted")
-	}
-}
-
 func TestRelationalIntentEnforcesShapeAndTypeSemantics(t *testing.T) {
 	t.Parallel()
 	snapshot := commerceSnapshot(t)
@@ -173,13 +116,4 @@ func TestProjectSchemaForIntentContainsNoConnectionPromptOrOperationAuthority(t 
 			t.Errorf("model-visible schema projection contains forbidden %q: %s", forbidden, visible)
 		}
 	}
-}
-
-func marshalIntent(t *testing.T, intent RelationalIntent) string {
-	t.Helper()
-	encoded, err := json.Marshal(intent)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return string(encoded)
 }

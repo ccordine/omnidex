@@ -75,7 +75,7 @@ func TestPostgresMigrateFreshResetsAllExactSchemaObjectsAndReinstalls(t *testing
 		}
 		assertExactMigrationLedger(t, pool, bundle)
 		for _, relation := range []string{
-			"jobs", "claims", "claim_support", "ai_channels", "ai_channel_messages",
+			"jobs", "ai_channels", "ai_channel_messages",
 			"ui_sessions", "data_source_channels", "data_source_channel_messages",
 		} {
 			assertMigrationRelationExists(t, pool, relation, true)

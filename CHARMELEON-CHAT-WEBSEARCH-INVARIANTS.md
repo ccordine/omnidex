@@ -6,17 +6,12 @@ differs from this section, this section and production code control.
 
 ## Current raw-leaf execution contract
 
-Code owns retrieval, search execution, candidate identity, bounds, ordering,
-deduplication, evidence, typed result assembly, correction, and semantic-call
-accounting. No web model returns a JSON object, array, tool request, workflow
-decision, or aggregate review.
-
-Search-term resolution is a bounded fixed point. One raw coverage call returns only
-whether another term remains. Only that result permits a separate call returning one
-raw term. Code validates and retains the term, repeats coverage, and assembles the
-typed term set. Its alternatives are the semantic relations `QUERY_TERM_REMAINS` and
-`NO_UNCOVERED_QUERY_TERM`; neither is a workflow instruction. Code alone interprets
-the relation and controls repetition. Code then performs every search.
+Code owns the exact acquisition query, retrieval, search execution, candidate
+identity, bounds, ordering, deduplication, evidence, typed result assembly, and
+semantic-call accounting. The explicit typed research request supplies the exact
+question; code binds that authority as the query and constructs every provider
+operation and argument. There is no search-term model station. No web model returns
+a JSON object, array, query, tool request, workflow decision, or aggregate review.
 
 Relevance is one candidate relation per call. Each raw result classifies only the
 supplied candidate as relevant or irrelevant. Code restores the opaque candidate ID,
@@ -29,19 +24,10 @@ call. Its coverage alternatives are `PARAGRAPH_REMAINS` and
 `NO_UNCOVERED_PARAGRAPH`. Code binds the supporting evidence IDs and assembles the
 typed synthesis.
 
-Review never returns an aggregate verdict. Code alternates raw claim coverage with
-one raw claim while coverage remains, asks one raw verdict question for that claim,
-and stops at the first grounded issue. For an issue, each evidence item receives one
-raw implicated/not-implicated relation call, followed by one raw issue-detail call.
-The coverage alternatives are `CLAIM_REMAINS` and `NO_UNCOVERED_CLAIM`. Code alone
-assembles the review decision and owns every stop or repeat transition. Every coverage,
-value, verdict, and relation call is counted exactly in the web-research result's
-semantic-call total.
-
-When one of these leaves fails deterministic validation, correction receives the same
-single semantic question, the complete rejected raw leaf, and one grounded defect. It
-must return one complete replacement leaf in the original raw format; the original
-decoder validates it. Correction never returns a patch or reconstructs accepted state.
+There is no web review or correction model. Invalid relevance or synthesis output
+fails explicitly. After synthesis, code binds returned support relations to acquired
+evidence identities, constructs citations and the rendered artifact, validates exact
+digests and completion invariants, and alone records completion.
 
 ## Historical motivation (non-normative)
 
@@ -62,7 +48,7 @@ Your chat pipeline is basically:
 
 incoming message
       ↓
-derive retrieval concepts / search terms
+bind the exact incoming message as the code-owned retrieval query
       ↓
 PROGRAM searches:
     recent conversation
@@ -356,7 +342,6 @@ derive retrieval needs
 
 LLMs can participate at tiny semantic points:
 
-generate alternate search terms
 classify relevance
 compress one evidence group
 identify semantic equivalence

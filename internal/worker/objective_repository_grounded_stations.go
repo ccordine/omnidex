@@ -11,7 +11,6 @@ import (
 
 type portableObjectiveRepositoryGroundingStation struct {
 	runtime *nativeRuntimeV3
-	guard   *repositoryGroundingModelIdentityGuard
 }
 
 func newPortableObjectiveRepositoryGroundingStation(
@@ -20,9 +19,7 @@ func newPortableObjectiveRepositoryGroundingStation(
 	if runtime == nil {
 		return nil, fmt.Errorf("repository grounding stations require runtime authority")
 	}
-	return &portableObjectiveRepositoryGroundingStation{
-		runtime: runtime, guard: &repositoryGroundingModelIdentityGuard{},
-	}, nil
+	return &portableObjectiveRepositoryGroundingStation{runtime: runtime}, nil
 }
 
 func (adapter *portableObjectiveRepositoryGroundingStation) Answer(
@@ -38,9 +35,10 @@ func (adapter *portableObjectiveRepositoryGroundingStation) Answer(
 		return assemblyline.GroundedAnswerDecision{}, objectiveStationReceipt{}, err
 	}
 	textInput := assemblyline.GroundedAnswerTextInput{
-		ExactRequirement: input.ExactRequirement,
-		Context:          assemblyline.CloneObjectiveContext(input.Context),
-		Evidence:         append([]assemblyline.GroundedEvidenceCapsule(nil), input.Evidence...),
+		ExactRequirement:   input.ExactRequirement,
+		Context:            assemblyline.CloneObjectiveContext(input.Context),
+		Evidence:           append([]assemblyline.GroundedEvidenceCapsule(nil), input.Evidence...),
+		KnownArtifactPaths: append([]string(nil), input.KnownArtifactPaths...),
 	}
 	job, err := assemblyline.NewGroundedAnswerTextJob(textInput)
 	if err != nil {
@@ -62,9 +60,11 @@ func (adapter *portableObjectiveRepositoryGroundingStation) Answer(
 	evidenceIDs := make([]string, 0, len(input.Evidence))
 	for _, evidence := range input.Evidence {
 		relationInput := assemblyline.GroundedAnswerEvidenceRelationInput{
-			ExactRequirement: input.ExactRequirement,
-			Context:          assemblyline.CloneObjectiveContext(input.Context),
-			AnswerText:       text.Text, Evidence: evidence,
+			ExactRequirement:   input.ExactRequirement,
+			Context:            assemblyline.CloneObjectiveContext(input.Context),
+			AnswerText:         text.Text,
+			Evidence:           evidence,
+			KnownArtifactPaths: append([]string(nil), input.KnownArtifactPaths...),
 		}
 		relationJob, err := assemblyline.NewGroundedAnswerEvidenceRelationJob(relationInput)
 		if err != nil {
@@ -99,82 +99,6 @@ func (adapter *portableObjectiveRepositoryGroundingStation) Answer(
 	return decision, objectiveStationReceipt{Calls: total}, nil
 }
 
-func (adapter *portableObjectiveRepositoryGroundingStation) ValidateRepositoryGrounding() error {
-	if adapter == nil || adapter.runtime == nil {
-		return fmt.Errorf("repository grounding preflight requires runtime authority")
-	}
-	return requireIndependentRepositoryReviewRoutes(adapter.runtime.routing)
-}
-
-func (adapter *portableObjectiveRepositoryGroundingStation) Review(
-	ctx context.Context,
-	input assemblyline.RepositoryGroundedReviewInput,
-) (assemblyline.RepositoryGroundedReviewDecision, objectiveStationReceipt, error) {
-	job, err := assemblyline.NewRepositoryGroundedIssueDetailJob(input)
-	if err != nil {
-		return assemblyline.RepositoryGroundedReviewDecision{}, objectiveStationReceipt{}, err
-	}
-	detail, receipt, err := runRepositoryGroundedLeafCall(
-		ctx, adapter, station.RepositoryGroundedReview,
-		"repository_grounded_issue_detail", job,
-		func(raw string) (string, error) {
-			return assemblyline.DecodeRepositoryGroundedIssueDetailLeaf(input, raw)
-		},
-		func(string) error { return nil },
-	)
-	if err != nil {
-		return assemblyline.RepositoryGroundedReviewDecision{}, receipt, err
-	}
-	if detail == "" {
-		decision, err := assemblyline.AssembleRepositoryGroundedReviewDecision(
-			input, "", "",
-		)
-		return decision, receipt, err
-	}
-
-	kindInput := assemblyline.RepositoryGroundedIssueKindLeafInput{
-		Review: input,
-		Detail: detail,
-	}
-	kindJob, err := assemblyline.NewRepositoryGroundedIssueKindJob(kindInput)
-	if err != nil {
-		return assemblyline.RepositoryGroundedReviewDecision{}, receipt, err
-	}
-	kind, kindReceipt, err := runRepositoryGroundedLeafCall(
-		ctx, adapter, station.RepositoryGroundedReview,
-		"repository_grounded_issue_kind", kindJob,
-		func(raw string) (assemblyline.RepositoryGroundedIssueKind, error) {
-			return assemblyline.DecodeRepositoryGroundedIssueKindLeaf(kindInput, raw)
-		},
-		func(assemblyline.RepositoryGroundedIssueKind) error { return nil },
-	)
-	receipt.Calls += kindReceipt.Calls
-	if err != nil {
-		return assemblyline.RepositoryGroundedReviewDecision{}, receipt, err
-	}
-	decision, err := assemblyline.AssembleRepositoryGroundedReviewDecision(
-		input, detail, kind,
-	)
-	return decision, receipt, err
-}
-
-func (adapter *portableObjectiveRepositoryGroundingStation) Correct(
-	ctx context.Context,
-	input assemblyline.RepositoryGroundedCorrectionInput,
-) (assemblyline.RepositoryGroundedCorrectionDecision, objectiveStationReceipt, error) {
-	job, err := assemblyline.NewRepositoryGroundedCorrectionJob(input)
-	if err != nil {
-		return assemblyline.RepositoryGroundedCorrectionDecision{}, objectiveStationReceipt{}, err
-	}
-	return runRepositoryGroundedLeafCall(
-		ctx, adapter, station.RepositoryGroundedCorrection, "repository_grounded_correction", job,
-		func(raw string) (assemblyline.RepositoryGroundedCorrectionDecision, error) {
-			return assemblyline.DecodeRepositoryGroundedCorrectionDecision(input, raw)
-		},
-		func(value assemblyline.RepositoryGroundedCorrectionDecision) error { return value.ValidateFor(input) },
-	)
-}
-
 func runRepositoryGroundedLeafCall[T any](
 	ctx context.Context,
 	adapter *portableObjectiveRepositoryGroundingStation,
@@ -185,7 +109,7 @@ func runRepositoryGroundedLeafCall[T any](
 	validate func(T) error,
 ) (T, objectiveStationReceipt, error) {
 	var zero T
-	if adapter == nil || adapter.runtime == nil || adapter.guard == nil {
+	if adapter == nil || adapter.runtime == nil {
 		return zero, objectiveStationReceipt{}, fmt.Errorf("repository grounding station %q is unavailable", id)
 	}
 	modelName, err := objectiveStationModel(adapter.runtime, id)
@@ -195,9 +119,7 @@ func runRepositoryGroundedLeafCall[T any](
 	if ctx == nil || strings.TrimSpace(modelName) == "" {
 		return zero, objectiveStationReceipt{}, fmt.Errorf("repository grounding station %q requires context and model routing", id)
 	}
-	workerRuntime := portableWorkerRuntimeWithIdentityGuard(
-		adapter.runtime, "objective", ctx, adapter.guard.validate,
-	)
+	workerRuntime := portableWorkerRuntimeWithContext(adapter.runtime, "objective", ctx)
 	calls := 0
 	execute := workerRuntime.Execute
 	workerRuntime.Execute = func(job assemblyline.PortableJob, model string) (assemblyline.PortableResult, error) {

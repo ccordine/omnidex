@@ -135,6 +135,25 @@ func TestTypeScriptRepairGuidanceRejectsKnownBareArtifactWithProvenance(t *testi
 	}
 }
 
+func TestTypeScriptRepairGuidanceResultHasNoRawRegexPathException(t *testing.T) {
+	t.Parallel()
+	job, err := NewTypeScriptRepairGuidanceJob(TypeScriptRepairGuidanceInput{
+		Language: "typescript", Dialect: "TypeScript function syntax",
+		Signature:          "function Inventory(): string",
+		CurrentDeclaration: "function Inventory(): string { return 'available'; }",
+		Diagnostic: "Unable to find the regular expression pattern formed from ordered components " +
+			`[source text "out"; one hyphen-minus character (U+002D); source text "of"; one hyphen-minus character (U+002D); source text "stock"]. Active flags [source flag "i": case-insensitive matching].`,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := DecodeTypeScriptRepairGuidanceResult(
+		job, "Change the label to match /out-of-stock/i.",
+	); err == nil || !strings.Contains(err.Error(), "filesystem identity") {
+		t.Fatalf("raw regex-shaped guidance bypassed strict result validation: %v", err)
+	}
+}
+
 func TestTypeScriptRepairGuidanceRequiresExactSourceAndFailure(t *testing.T) {
 	t.Parallel()
 	base := TypeScriptRepairGuidanceInput{

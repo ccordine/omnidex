@@ -4,7 +4,6 @@ import ChatController from "./controllers/chat_controller";
 import ScrumController from "./controllers/scrum_controller";
 import ProjectsController from "./controllers/projects_controller";
 import ShellController from "./controllers/shell_controller";
-import BrowserInferenceController from "./controllers/browser_inference_controller";
 import "../styles.css";
 import { initI18n, t } from "./lib/i18n";
 import { showToast } from "./lib/toast";
@@ -17,7 +16,6 @@ application.register("chat", ChatController);
 application.register("scrum", ScrumController);
 application.register("projects", ProjectsController);
 application.register("shell", ShellController);
-application.register("browser-inference", BrowserInferenceController);
 
 async function registerDeferredControllers(): Promise<void> {
   const [admin, adminDataSources, data, terminal, screen, cardModal] = await Promise.all([

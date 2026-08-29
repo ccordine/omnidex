@@ -168,7 +168,7 @@ func TestDirectScrumCodingUsesCardInsteadOfSyntheticInstruction(t *testing.T) {
 	}
 }
 
-func TestDirectScrumChannelCodingUsesOnlyCurrentInstructionAsAuthority(t *testing.T) {
+func TestDirectScrumChannelCodingCompilesOneCurrentJobAuthority(t *testing.T) {
 	runtime := &nativeRuntimeV3{claim: &model.ClaimedStep{Job: model.Job{
 		Instruction: "Fix only the routing defect",
 		Pipeline:    model.PipelineScrum,
@@ -189,10 +189,11 @@ func TestDirectScrumChannelCodingUsesOnlyCurrentInstructionAsAuthority(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	if request.Instruction != "Fix only the routing defect" {
-		t.Fatalf("instruction=%q", request.Instruction)
-	}
-	if !strings.Contains(strings.Join(request.AdditionalAuthority, "\n"), "Preserve the current API") {
-		t.Fatalf("authoritative card scope missing: %#v", request.AdditionalAuthority)
+	for _, currentJobAuthority := range []string{
+		"Fix only the routing defect", "Repair agent routing", "Preserve the current API",
+	} {
+		if !strings.Contains(request.Instruction, currentJobAuthority) {
+			t.Fatalf("current Scrum authority omitted %q: %s", currentJobAuthority, request.Instruction)
+		}
 	}
 }

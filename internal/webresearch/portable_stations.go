@@ -12,10 +12,6 @@ import (
 
 const (
 	maxPortableQuestionBytes           = 4 * 1024
-	maxPortableQueries                 = 4
-	maxPortableQueryBytes              = 1024
-	maxPortableSearchTerms             = 3
-	maxPortableSearchTermBytes         = 256
 	maxPortableCandidates              = 32
 	maxPortableCandidateProjection     = 8 * 1024
 	maxPortableEvidence                = 32
@@ -25,8 +21,6 @@ const (
 	maxPortableEvidenceFieldBytes      = 8 * 1024
 	maxPortableSynthesisParagraphs     = 4
 	maxPortableSynthesisParagraphBytes = 2 * 1024
-	maxPortableReviewDetailBytes       = 512
-	maxPortableReviewEvidence          = 4
 )
 
 type PortableExecutor func(
@@ -92,36 +86,6 @@ func validatePortableRelevanceCall(call RelevanceCall) error {
 				return err
 			}
 		}
-	}
-	return nil
-}
-
-func validatePortableSearchTermsCall(call SearchTermsCall) error {
-	if err := validatePortableQuestion(call.Question); err != nil {
-		return err
-	}
-	if err := validatePortableObjectiveContext(call.Question, call.Context); err != nil {
-		return err
-	}
-	if len(call.AttemptedQueries) > maxPortableQueries {
-		return fmt.Errorf("portable search terms allow at most %d attempted queries", maxPortableQueries)
-	}
-	if call.MaxTerms < 1 || call.MaxTerms > maxPortableSearchTerms {
-		return fmt.Errorf("portable search-term count bound must be 1..%d", maxPortableSearchTerms)
-	}
-	if call.MaxTermBytes < 1 || call.MaxTermBytes > maxPortableSearchTermBytes {
-		return fmt.Errorf("portable search-term byte bound must be 1..%d", maxPortableSearchTermBytes)
-	}
-	seen := make(map[string]struct{}, len(call.AttemptedQueries))
-	for _, query := range call.AttemptedQueries {
-		if err := validatePortableIdentityBound(query, maxPortableQueryBytes); err != nil {
-			return err
-		}
-		identity := strings.ToLower(query)
-		if _, duplicate := seen[identity]; duplicate {
-			return fmt.Errorf("portable attempted query %q is duplicated", query)
-		}
-		seen[identity] = struct{}{}
 	}
 	return nil
 }

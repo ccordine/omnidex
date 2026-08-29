@@ -7,10 +7,6 @@ func replayConversationSemanticLeaf(
 	raw string,
 ) (bool, error) {
 	switch job.Kind {
-	case assemblyline.WorkContextSearchTermCoverage:
-		return true, decodeReplaySemanticLeaf(job, raw, assemblyline.DecodeContextSearchTermCoverageLeaf)
-	case assemblyline.WorkContextSearchTerm:
-		return true, decodeReplaySemanticLeaf(job, raw, assemblyline.DecodeContextSearchTermLeaf)
 	case assemblyline.WorkContextRelevanceSelection:
 		return true, decodeReplaySemanticLeaf(job, raw, assemblyline.DecodeContextRelevanceSelectionDecision)
 	case assemblyline.WorkContextMinification:

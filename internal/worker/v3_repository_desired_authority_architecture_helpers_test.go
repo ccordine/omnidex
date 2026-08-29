@@ -46,7 +46,8 @@ func desiredStateSources(t *testing.T) []architectureSource {
 		"v3_repository_desired_*.go",
 		"v3_existing_repository_desired_*.go",
 		"v3_artifact_candidate_*.go",
-		"v3_known_artifact_truth*.go",
+		"v3_repository_artifact_absence*.go",
+		"v3_plain_text_artifact_creation*.go",
 		"v3_path_free_deletion_*.go",
 	}
 	var sources []architectureSource

@@ -2,7 +2,6 @@ package worker
 
 import (
 	"context"
-	"encoding/json"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -96,14 +95,10 @@ func TestCodingContractDoesNotRequireLearnedSkillEnrichment(t *testing.T) {
 
 func validDirectCodingSkillVersion(t *testing.T, status specialists.SkillStatus) specialists.SkillVersion {
 	t.Helper()
-	spec, err := specialists.SpecWithSchemaDocuments(specialists.Spec{
+	spec := specialists.Spec{
 		ID:           "learned_0123456789abcdef0123456789abcdef",
 		Purpose:      "Local context: a bounded browser tool\nLocal need: filter visible records",
 		Instructions: "Apply one bounded filter.",
-	}, json.RawMessage(`{"type":"object","additionalProperties":false}`),
-		json.RawMessage(`{"type":"object","additionalProperties":false}`))
-	if err != nil {
-		t.Fatal(err)
 	}
 	jobID := int64(41)
 	hash, err := specialists.SkillContentHash(spec, specialists.SkillKindCodeProcedure)

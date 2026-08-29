@@ -2,36 +2,27 @@ package worker
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 	"unicode/utf8"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
+	"github.com/gryph/omnidex/internal/modelcontext"
 	repositoryretrieval "github.com/gryph/omnidex/internal/repository/retrieval"
 )
 
 const (
-	maxObjectiveRepositoryRequirementBytes     = 4 * 1024
-	maxObjectiveRepositorySearchTermRounds     = 1
-	maxObjectiveRepositoryRelevanceRounds      = 4
-	maxObjectiveRepositorySearchTermModelCalls = 2 * assemblyline.MaxRepositorySearchAnchorLeaves * maxTypedWorkerAttempts
-	maxObjectiveRepositoryRelevanceModelCalls  = maxRepositoryGroundedCitations * maxTypedWorkerAttempts
-	maxObjectiveRepositoryEvidenceModelCalls   = maxObjectiveRepositorySearchTermModelCalls +
-		(maxObjectiveRepositoryRelevanceRounds * maxObjectiveRepositoryRelevanceModelCalls)
+	maxObjectiveRepositoryRequirementBytes    = 4 * 1024
+	maxObjectiveRepositoryRelevanceModelCalls = maxRepositoryGroundedCitations * exactSemanticLeafCalls
+	maxObjectiveRepositoryEvidenceModelCalls  = maxObjectiveRepositoryRelevanceModelCalls
 )
-
-type objectiveRepositorySearchTermCall func(
-	string,
-) (assemblyline.RepositorySearchTermDecision, objectiveStationReceipt, error)
 
 type objectiveRepositoryRelevanceCall func(
 	string, []objectiveEvidence,
 ) (assemblyline.RepositoryEvidenceRelevanceDecision, objectiveStationReceipt, error)
 
 type objectiveRepositoryAcquisitionCallLedger struct {
-	searchTermCalls int
-	relevanceCalls  []int
+	relevanceCalls int
 }
 
 func (r *nativeRuntimeV3) acquireObjectiveRepositoryEvidence(
@@ -55,21 +46,30 @@ func (r *nativeRuntimeV3) acquireObjectiveRepositoryEvidence(
 	if err != nil {
 		return objectiveEvidenceAcquisition{}, err
 	}
+	paths := make([]string, len(indexed.Snapshot.Files))
+	for index, file := range indexed.Snapshot.Files {
+		paths[index] = file.Path
+	}
+	provenance, err := modelcontext.NewArtifactIdentityProvenance(paths)
+	if err != nil {
+		return objectiveEvidenceAcquisition{}, fmt.Errorf(
+			"derive repository-read artifact provenance: %w", err,
+		)
+	}
 	projectID, err := r.svc.repo.JobProjectID(ctx, authority.JobID)
 	if err != nil || projectID < 1 {
 		return objectiveEvidenceAcquisition{}, fmt.Errorf("repository-read objective requires durable project authority: %w", err)
 	}
-	_, err = objectiveRepositoryQuery(authority)
+	query, err := objectiveRepositoryQuery(authority)
 	if err != nil {
 		return objectiveEvidenceAcquisition{}, err
 	}
 	return acquireObjectiveRepositoryEvidenceClosure(
 		authority.Instruction,
-		func(searchTerm string) (repositoryretrieval.EvidencePack, error) {
-			return buildObjectiveRepositoryEvidence(ctx, r.svc.repositoryRetrieval, projectID, indexed.Analyses, searchTerm)
-		},
-		func(unresolved string) (assemblyline.RepositorySearchTermDecision, objectiveStationReceipt, error) {
-			return r.resolveObjectiveRepositorySearchTerm(ctx, unresolved)
+		query,
+		provenance,
+		func(codeOwnedQuery string) (repositoryretrieval.EvidencePack, error) {
+			return buildObjectiveRepositoryEvidence(ctx, r.svc.repositoryRetrieval, projectID, indexed.Analyses, codeOwnedQuery)
 		},
 		func(exactRequirement string, evidence []objectiveEvidence) (assemblyline.RepositoryEvidenceRelevanceDecision, objectiveStationReceipt, error) {
 			return r.resolveObjectiveRepositoryRelevance(ctx, exactRequirement, evidence)
@@ -79,97 +79,85 @@ func (r *nativeRuntimeV3) acquireObjectiveRepositoryEvidence(
 
 func acquireObjectiveRepositoryEvidenceClosure(
 	exactRequirement string,
+	codeOwnedQuery string,
+	provenance assemblyline.ArtifactIdentityProvenance,
 	build existingRepositoryEvidenceBuild,
-	searchTerm objectiveRepositorySearchTermCall,
 	relevance objectiveRepositoryRelevanceCall,
 ) (objectiveEvidenceAcquisition, error) {
 	if strings.TrimSpace(exactRequirement) == "" || len(exactRequirement) > maxObjectiveRepositoryRequirementBytes ||
 		!utf8.ValidString(exactRequirement) || strings.ContainsRune(exactRequirement, '\x00') {
 		return objectiveEvidenceAcquisition{}, fmt.Errorf("repository-read evidence closure requires one exact bounded requirement")
 	}
-	if build == nil || searchTerm == nil || relevance == nil {
-		return objectiveEvidenceAcquisition{}, fmt.Errorf("repository-read evidence closure requires acquisition, search-term, and relevance authority")
+	if _, err := repositoryretrieval.NewQueryBinding(
+		repositoryretrieval.OperationSemanticExcerpts, codeOwnedQuery,
+	); err != nil {
+		return objectiveEvidenceAcquisition{}, fmt.Errorf("repository-read code-owned query: %w", err)
 	}
-	queries := []string{strings.TrimSpace(exactRequirement)}
-	anchorsResolved := false
+	if build == nil || relevance == nil {
+		return objectiveEvidenceAcquisition{}, fmt.Errorf("repository-read evidence closure requires acquisition and relevance authority")
+	}
+	modelRequirement, identities, err := assemblyline.RedactArtifactIdentities(
+		exactRequirement, provenance,
+	)
+	if err != nil {
+		return objectiveEvidenceAcquisition{}, fmt.Errorf(
+			"redact repository-read requirement identities: %w", err,
+		)
+	}
+	if err := assemblyline.ValidatePathFreeModelContextWithProvenance(
+		"repository-read model requirement", provenance, modelRequirement,
+	); err != nil {
+		return objectiveEvidenceAcquisition{}, err
+	}
+	pack, err := build(codeOwnedQuery)
+	if err != nil {
+		return objectiveEvidenceAcquisition{}, fmt.Errorf("repository-read deterministic acquisition: %w", err)
+	}
+	if err := pack.ValidateForRequest(
+		repositoryretrieval.OperationSemanticExcerpts, codeOwnedQuery,
+	); err != nil {
+		return objectiveEvidenceAcquisition{}, fmt.Errorf("repository-read acquisition returned invalid evidence: %w", err)
+	}
+	evidence, err := repositoryEvidenceCapsules(pack, provenance)
+	if err != nil {
+		return objectiveEvidenceAcquisition{}, err
+	}
+	input, err := objectiveRepositoryRelevanceInput(modelRequirement, evidence)
+	if err != nil {
+		return objectiveEvidenceAcquisition{}, err
+	}
+	decision, receipt, err := relevance(modelRequirement, cloneObjectiveRepositoryEvidence(evidence))
+	if err != nil {
+		return objectiveEvidenceAcquisition{}, err
+	}
 	ledger := objectiveRepositoryAcquisitionCallLedger{}
-	if len(exactRequirement) > 512 {
-		anchors, receipt, err := resolveObjectiveRepositorySearchTerm(exactRequirement, searchTerm)
-		if err != nil {
-			return objectiveEvidenceAcquisition{}, err
-		}
-		if err := ledger.recordSearchTerm(receipt); err != nil {
-			return objectiveEvidenceAcquisition{}, err
-		}
-		query, queryErr := repositoryretrieval.BuildLexicalAnchorQuery(anchors)
-		if queryErr != nil {
-			return objectiveEvidenceAcquisition{}, queryErr
-		}
-		queries, anchorsResolved = []string{query}, true
+	if err := ledger.recordRelevance(receipt); err != nil {
+		return objectiveEvidenceAcquisition{}, err
 	}
-	for queryIndex := 0; ; {
-		currentQuery := queries[queryIndex]
-		pack, err := build(currentQuery)
-		if err == nil {
-			if err := pack.ValidateForRequest(repositoryretrieval.OperationSemanticExcerpts, currentQuery); err != nil {
-				return objectiveEvidenceAcquisition{}, fmt.Errorf("repository-read acquisition returned invalid evidence: %w", err)
-			}
-			evidence, err := repositoryEvidenceCapsules(pack)
-			if err != nil {
-				return objectiveEvidenceAcquisition{}, err
-			}
-			input, err := objectiveRepositoryRelevanceInput(exactRequirement, evidence)
-			if err != nil {
-				return objectiveEvidenceAcquisition{}, err
-			}
-			decision, receipt, err := relevance(exactRequirement, cloneObjectiveRepositoryEvidence(evidence))
-			if err != nil {
-				return objectiveEvidenceAcquisition{}, err
-			}
-			if err := ledger.recordRelevance(receipt); err != nil {
-				return objectiveEvidenceAcquisition{}, err
-			}
-			if err := decision.ValidateFor(input); err != nil {
-				return objectiveEvidenceAcquisition{}, err
-			}
-			if len(decision.EvidenceIDs) > 0 {
-				selected, err := filterObjectiveRepositoryEvidence(evidence, decision.EvidenceIDs)
-				if err != nil {
-					return objectiveEvidenceAcquisition{}, err
-				}
-				return newObjectiveRepositoryEvidenceAcquisition(selected, ledger)
-			}
-		} else if !errors.Is(err, repositoryretrieval.ErrInsufficientEvidence) {
-			return objectiveEvidenceAcquisition{}, fmt.Errorf("repository-read deterministic acquisition: %w", err)
-		}
-		queryIndex++
-		if queryIndex < len(queries) {
-			continue
-		}
-		if anchorsResolved {
-			return objectiveEvidenceAcquisition{}, fmt.Errorf(
-				"%w: repository evidence remained insufficient or irrelevant after %d bounded search anchors",
-				repositoryretrieval.ErrInsufficientEvidence, len(queries),
-			)
-		}
-		anchors, receipt, err := resolveObjectiveRepositorySearchTerm(exactRequirement, searchTerm)
-		if err != nil {
-			return objectiveEvidenceAcquisition{}, err
-		}
-		if err := ledger.recordSearchTerm(receipt); err != nil {
-			return objectiveEvidenceAcquisition{}, err
-		}
-		query, queryErr := repositoryretrieval.BuildLexicalAnchorQuery(anchors)
-		if queryErr != nil {
-			return objectiveEvidenceAcquisition{}, queryErr
-		}
-		queries, queryIndex, anchorsResolved = []string{query}, 0, true
+	if err := decision.ValidateFor(input); err != nil {
+		return objectiveEvidenceAcquisition{}, err
 	}
+	if len(decision.EvidenceIDs) == 0 {
+		return objectiveEvidenceAcquisition{}, fmt.Errorf(
+			"%w: exact code-owned repository query returned no evidence relevant to the unresolved semantic requirement",
+			repositoryretrieval.ErrInsufficientEvidence,
+		)
+	}
+	selected, err := filterObjectiveRepositoryEvidence(evidence, decision.EvidenceIDs)
+	if err != nil {
+		return objectiveEvidenceAcquisition{}, err
+	}
+	return newObjectiveRepositoryEvidenceAcquisition(
+		selected, ledger, modelRequirement, provenance, identities,
+	)
 }
 
 func newObjectiveRepositoryEvidenceAcquisition(
 	evidence []objectiveEvidence,
 	ledger objectiveRepositoryAcquisitionCallLedger,
+	groundedRequirement string,
+	provenance assemblyline.ArtifactIdentityProvenance,
+	identities []assemblyline.ArtifactIdentity,
 ) (objectiveEvidenceAcquisition, error) {
 	modelCalls, err := ledger.totalForSuccess()
 	if err != nil {
@@ -177,9 +165,11 @@ func newObjectiveRepositoryEvidenceAcquisition(
 	}
 	result := objectiveEvidenceAcquisition{
 		Evidence: evidence, ModelCalls: modelCalls,
+		GroundedRequirement: groundedRequirement,
+		KnownArtifactPaths:  provenance.Paths(),
+		ArtifactIdentities:  append([]assemblyline.ArtifactIdentity(nil), identities...),
 		RepositoryCallLedger: objectiveRepositoryAcquisitionCallLedger{
-			searchTermCalls: ledger.searchTermCalls,
-			relevanceCalls:  append([]int(nil), ledger.relevanceCalls...),
+			relevanceCalls: ledger.relevanceCalls,
 		},
 	}
 	if err := validateObjectiveRepositoryEvidenceAcquisition(result); err != nil {
@@ -202,27 +192,51 @@ func validateObjectiveRepositoryEvidenceAcquisition(acquisition objectiveEvidenc
 			acquisition.ModelCalls, modelCalls,
 		)
 	}
-	return nil
-}
-
-func (ledger *objectiveRepositoryAcquisitionCallLedger) recordSearchTerm(receipt objectiveStationReceipt) error {
-	if ledger == nil || ledger.searchTermCalls != 0 {
-		return fmt.Errorf("repository-read acquisition exceeded its one search-term round")
+	if strings.TrimSpace(acquisition.GroundedRequirement) == "" ||
+		len(acquisition.GroundedRequirement) > maxObjectiveRepositoryRequirementBytes {
+		return fmt.Errorf("repository-read acquisition requires one exact grounded requirement")
 	}
-	if receipt.Reused || receipt.Calls < 2 ||
-		receipt.Calls > maxObjectiveRepositorySearchTermModelCalls {
-		return fmt.Errorf(
-			"repository grounded search term station reported %d calls outside the bounded fixed-point budget",
-			receipt.Calls,
-		)
+	provenance, err := modelcontext.NewArtifactIdentityProvenance(
+		acquisition.KnownArtifactPaths,
+	)
+	if err != nil {
+		return fmt.Errorf("repository-read acquisition artifact provenance: %w", err)
 	}
-	ledger.searchTermCalls = receipt.Calls
+	if err := assemblyline.ValidatePathFreeModelContextWithProvenance(
+		"repository-read grounded requirement", provenance,
+		acquisition.GroundedRequirement,
+	); err != nil {
+		return err
+	}
+	knownPaths := make(map[string]struct{}, len(acquisition.KnownArtifactPaths))
+	for _, path := range acquisition.KnownArtifactPaths {
+		knownPaths[path] = struct{}{}
+	}
+	for _, identity := range acquisition.ArtifactIdentities {
+		if _, exists := knownPaths[identity.Value]; !exists {
+			return fmt.Errorf(
+				"repository-read artifact token %s lacks current-tree provenance",
+				identity.Token,
+			)
+		}
+		if !strings.Contains(acquisition.GroundedRequirement, identity.Token) {
+			return fmt.Errorf(
+				"repository-read artifact token %s is absent from the grounded requirement",
+				identity.Token,
+			)
+		}
+	}
+	if _, err := assemblyline.RestoreArtifactIdentities(
+		acquisition.GroundedRequirement, acquisition.ArtifactIdentities,
+	); err != nil {
+		return fmt.Errorf("repository-read artifact identity bindings: %w", err)
+	}
 	return nil
 }
 
 func (ledger *objectiveRepositoryAcquisitionCallLedger) recordRelevance(receipt objectiveStationReceipt) error {
-	if ledger == nil || len(ledger.relevanceCalls) >= maxObjectiveRepositoryRelevanceRounds {
-		return fmt.Errorf("repository-read acquisition exceeded its %d relevance rounds", maxObjectiveRepositoryRelevanceRounds)
+	if ledger == nil || ledger.relevanceCalls != 0 {
+		return fmt.Errorf("repository-read acquisition exceeded its one relevance round")
 	}
 	if receipt.Reused || receipt.Calls < 1 ||
 		receipt.Calls > maxObjectiveRepositoryRelevanceModelCalls {
@@ -231,25 +245,15 @@ func (ledger *objectiveRepositoryAcquisitionCallLedger) recordRelevance(receipt 
 			receipt.Calls, maxRepositoryGroundedCitations,
 		)
 	}
-	ledger.relevanceCalls = append(ledger.relevanceCalls, receipt.Calls)
+	ledger.relevanceCalls = receipt.Calls
 	return nil
 }
 
 func (ledger objectiveRepositoryAcquisitionCallLedger) totalForSuccess() (int, error) {
-	if len(ledger.relevanceCalls) < 1 || len(ledger.relevanceCalls) > maxObjectiveRepositoryRelevanceRounds {
-		return 0, fmt.Errorf("repository-read acquisition requires 1..%d relevance rounds", maxObjectiveRepositoryRelevanceRounds)
+	if ledger.relevanceCalls < 1 || ledger.relevanceCalls > maxObjectiveRepositoryEvidenceModelCalls {
+		return 0, fmt.Errorf("repository-read acquisition produced invalid relevance-call total %d", ledger.relevanceCalls)
 	}
-	if len(ledger.relevanceCalls) > 1 && ledger.searchTermCalls == 0 {
-		return 0, fmt.Errorf("repository-read acquisition cannot repeat relevance without its one search-term round")
-	}
-	total := ledger.searchTermCalls
-	for _, calls := range ledger.relevanceCalls {
-		total += calls
-	}
-	if total < 1 || total > maxObjectiveRepositoryEvidenceModelCalls {
-		return 0, fmt.Errorf("repository-read acquisition produced invalid model-call total %d", total)
-	}
-	return total, nil
+	return ledger.relevanceCalls, nil
 }
 
 func objectiveRepositoryEvidenceCallTotal(acquisition objectiveEvidenceAcquisition) (int, error) {

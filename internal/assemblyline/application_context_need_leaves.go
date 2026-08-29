@@ -59,16 +59,15 @@ func (input ApplicationContextNeedLeafInput) validate() error {
 func BuildApplicationContextNeedCoveragePrompt(
 	input ApplicationContextNeedLeafInput,
 ) (string, error) {
-	authority, err := renderApplicationContextNeedLeafAuthority(input)
+	projection, err := renderApplicationContextNeedLeafProjection(input)
 	if err != nil {
 		return "", err
 	}
 	return strings.Join([]string{
 		"Answer one semantic coverage relation: is there one necessary missing-fact question that is not semantically covered by the accepted questions?",
-		"A necessary question asks for evidence required to interpret the immutable software request faithfully and not already answered by the authoritative facts. It never proposes an operation, command, artifact identity, implementation, architecture, plan, or completion claim.",
-		"Return CONTEXT_NEED_REMAINS when at least one such question remains. Return NO_UNCOVERED_CONTEXT_NEED when none remains.",
-		"Return exactly that registered raw value and nothing else: no JSON, quotes, label, Markdown, or commentary.",
-		"APPLICATION_CONTEXT_NEED_AUTHORITY:\n" + authority,
+		"A necessary question asks for one repository fact required to interpret the immutable request and not already answered by the established facts or accepted questions.",
+		"Output grammar: CONTEXT_NEED_REMAINS | NO_UNCOVERED_CONTEXT_NEED",
+		"APPLICATION CONTEXT NEED INPUT:\n" + projection,
 	}, "\n\n"), nil
 }
 
@@ -98,15 +97,14 @@ func DecodeApplicationContextNeedCoverageLeaf(
 func BuildApplicationContextNeedQuestionPrompt(
 	input ApplicationContextNeedLeafInput,
 ) (string, error) {
-	authority, err := renderApplicationContextNeedLeafAuthority(input)
+	projection, err := renderApplicationContextNeedLeafProjection(input)
 	if err != nil {
 		return "", err
 	}
 	return strings.Join([]string{
-		"Return exactly one necessary missing-fact question that is not semantically covered by the accepted questions.",
-		"The question must request one evidence fact needed to interpret the immutable software request faithfully. It must not propose an operation, command, artifact identity, implementation, architecture, plan, or completion claim.",
-		"Return only the question as one raw line. Do not return JSON, quotes, a label, Markdown, or commentary.",
-		"APPLICATION_CONTEXT_NEED_AUTHORITY:\n" + authority,
+		"Return exactly one necessary missing-fact question that is not semantically covered by the established facts or accepted questions.",
+		"The result is one raw interrogative sentence asking for one repository fact required to interpret the immutable software request faithfully.",
+		"APPLICATION CONTEXT NEED INPUT:\n" + projection,
 	}, "\n\n"), nil
 }
 
@@ -150,32 +148,29 @@ func AssembleApplicationContextNeedDecision(
 	return decision, nil
 }
 
-func renderApplicationContextNeedLeafAuthority(
+func renderApplicationContextNeedLeafProjection(
 	input ApplicationContextNeedLeafInput,
 ) (string, error) {
 	if err := input.validate(); err != nil {
 		return "", err
 	}
-	var authority strings.Builder
-	fmt.Fprintf(&authority, "IMMUTABLE USER REQUEST:\n%s\n", input.UserRequest)
-	fmt.Fprintf(&authority, "WORKSPACE STATE:\n%s\n", input.Context.WorkspaceState)
-	for index, fact := range input.Context.Facts {
-		fmt.Fprintf(
-			&authority, "AUTHORITATIVE FACT %d (%s; %s):\n%s\n",
-			index+1, fact.Kind, fact.Authority, fact.Value,
-		)
-	}
+	var projection strings.Builder
+	projection.WriteString(renderApplicationContextModelProjection(
+		input.UserRequest,
+		input.Context,
+	))
+	projection.WriteByte('\n')
 	if len(input.AcceptedQuestions) == 0 {
-		authority.WriteString("ACCEPTED QUESTIONS:\n(none)\n")
+		projection.WriteString("ACCEPTED QUESTIONS:\n(none)\n")
 	} else {
 		for index, question := range input.AcceptedQuestions {
-			fmt.Fprintf(&authority, "ACCEPTED QUESTION %d:\n%s\n", index+1, question)
+			fmt.Fprintf(&projection, "ACCEPTED QUESTION %d:\n%s\n", index+1, question)
 		}
 	}
-	if authority.Len() > maxPortablePayloadBytes {
+	if projection.Len() > maxPortablePayloadBytes {
 		return "", fmt.Errorf(
-			"application context need authority exceeds %d bytes", maxPortablePayloadBytes,
+			"application context need projection exceeds %d bytes", maxPortablePayloadBytes,
 		)
 	}
-	return strings.TrimSuffix(authority.String(), "\n"), nil
+	return strings.TrimSuffix(projection.String(), "\n"), nil
 }

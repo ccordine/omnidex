@@ -1,7 +1,5 @@
 package assemblyline
 
-import "errors"
-
 type TypeScriptFragmentViolationCode string
 
 const (
@@ -9,9 +7,8 @@ const (
 )
 
 type TypeScriptFragmentViolation struct {
-	Code        TypeScriptFragmentViolationCode
-	Message     string
-	Instruction string
+	Code    TypeScriptFragmentViolationCode
+	Message string
 }
 
 func (violation *TypeScriptFragmentViolation) Error() string {
@@ -23,15 +20,7 @@ func (violation *TypeScriptFragmentViolation) Error() string {
 
 func newTypeScriptFragmentViolation(
 	code TypeScriptFragmentViolationCode,
-	message, instruction string,
+	message string,
 ) error {
-	return &TypeScriptFragmentViolation{Code: code, Message: message, Instruction: instruction}
-}
-
-func TypeScriptFragmentCorrectionInstruction(err error) (string, bool) {
-	var violation *TypeScriptFragmentViolation
-	if !errors.As(err, &violation) || violation == nil || violation.Instruction == "" {
-		return "", false
-	}
-	return violation.Instruction, true
+	return &TypeScriptFragmentViolation{Code: code, Message: message}
 }

@@ -38,12 +38,7 @@ func TestGenerationSensitiveWritersRequireCurrentAuthority(t *testing.T) {
 			"currentAttempt != authority.Attempt",
 			"attemptWorker != authority.WorkerID",
 		},
-		"repository_claim_writes.go": {
-			"requireActiveStepAttemptTx",
-			"claim_steps.generation = jobs.current_generation",
-			"evidence_steps.superseded_at_generation IS NULL",
-		},
-		"repository_claims.go": {
+		"repository_job_reads.go": {
 			"IsoLevel: pgx.RepeatableRead",
 			"AccessMode: pgx.ReadOnly",
 		},
@@ -106,7 +101,7 @@ func TestQueueExposesNoAmbiguousGenerationReadNames(t *testing.T) {
 	}
 	for _, name := range []string{
 		"GetJobDetails", "LatestArtifact", "ListArtifactsByJob", "ListEvidenceByJob",
-		"ListClaimsByJob", "ListClaimSupportByJob", "ListMemoryCandidates",
+		"ListMemoryCandidates",
 	} {
 		pattern := regexp.MustCompile(`func\s+\([^)]*\)\s+` + name + `\s*\(`)
 		if pattern.MatchString(source.String()) {

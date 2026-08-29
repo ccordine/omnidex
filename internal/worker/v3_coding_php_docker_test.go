@@ -30,7 +30,7 @@ func TestPHPHTTPServiceCompleteDockerFixture(t *testing.T) {
 		"acceptance.001": `function verifyFeature101(): void {
     $result = feature101(taskInputFixture101(), []);
     RuntimeAssertions::requireResult($result);
-    RuntimeAssertions::require($result, $result->output === '/records/1', 'expected endpoint route output');
+    RuntimeAssertions::require($result, $result->output === '/', 'expected endpoint route output');
     RuntimeAssertions::require($result, $result->error === '', 'expected successful endpoint result');
 }`,
 	}

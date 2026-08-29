@@ -202,7 +202,7 @@ func (s *directCodingSession) correctDirectCodingTypeScriptStage(
 				)
 			}
 			if err := progress.observe(
-				target.ID, current, diagnostic.VerificationStage, failure,
+				target.ID, diagnostic.VerificationStage, failure,
 			); err != nil {
 				return err
 			}
@@ -224,7 +224,7 @@ func (s *directCodingSession) correctDirectCodingTypeScriptStage(
 		repairRegion = &localized
 	}
 	if err := progress.observe(
-		target.ID, current, diagnostic.VerificationStage, failure,
+		target.ID, diagnostic.VerificationStage, failure,
 	); err != nil {
 		return err
 	}

@@ -44,17 +44,6 @@ func TestScrumChannelPageIsTypedPaginatedAndContainsNoHTML(t *testing.T) {
 	}
 }
 
-func TestScrumChannelPageKeepsDurableLifecycleRowsDistinct(t *testing.T) {
-	running := commandActivity("go test ./internal/api", "running", "starting")
-	running.ID = "activity-running"
-	completed := commandActivity("go test ./internal/api", "completed", "finished")
-	completed.ID = "activity-completed"
-	messages := []ScrumChatMessage{running, completed}
-	if len(messages) != 2 || messages[0].ID != running.ID || messages[1].ID != completed.ID {
-		t.Fatalf("page-local projection changed durable identities: %+v", messages)
-	}
-}
-
 func TestScrumChannelCursorRejectsNoncanonicalAliases(t *testing.T) {
 	for _, raw := range []string{
 		" scrumchat_v1_1", "scrumchat_v1_1 ", "scrumchat_v1_01", "scrumchat_v1_+1", "scrumchat_v1_A",

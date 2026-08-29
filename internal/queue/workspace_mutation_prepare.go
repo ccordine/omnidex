@@ -20,6 +20,9 @@ func (r *Repository) prepareWorkspaceMutation(
 		return workspaceMutationOperationRecord{}, fmt.Errorf("begin workspace mutation preparation: %w", err)
 	}
 	defer tx.Rollback(ctx)
+	if err := lockWorkspaceMutationProjectAuthorityTx(ctx, tx, command); err != nil {
+		return workspaceMutationOperationRecord{}, err
+	}
 	record, found, err := loadWorkspaceMutationByStageTx(ctx, tx, command.JobID, command.Plan.ID)
 	if err != nil {
 		return workspaceMutationOperationRecord{}, err
@@ -55,24 +58,38 @@ func (r *Repository) prepareWorkspaceMutation(
 	if command.Plan.GitSourceSnapshotID != "" {
 		gitSource = command.Plan.GitSourceSnapshotID
 	}
-	if _, err := tx.Exec(ctx, `
+	inserted, err := tx.Exec(ctx, `
+		WITH project_authority AS MATERIALIZED (
+			SELECT project.location AS project_location
+			FROM jobs AS job
+			JOIN projects AS project ON project.id=job.project_id
+			WHERE job.id=$3 AND job.project_id=$8 AND project.location=$21
+			FOR SHARE OF project
+		)
 		INSERT INTO workspace_mutation_operations (
 			id,command_sha256,job_id,generation,step_id,
 			creator_step_attempt,creator_worker_id,current_step_attempt,current_worker_id,
-			project_id,owner_id,stage_id,workspace_id,workspace_root,
+			project_id,project_location,owner_id,stage_id,workspace_id,workspace_root,
 			source_state_id,expected_state_id,source_repository_snapshot_id,
 			patch,patch_sha256,verification_plan_json,verification_plan_sha256,status
-		) VALUES (
-			$1,$2,$3,$4,$5,$6,$7,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,
-			$16,$17,$18,$19,$20
 		)
+		SELECT $1,$2,$3,$4,$5,$6,$7,$6,$7,$8,project_location,
+		       $9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20
+		FROM project_authority
 	`, identity.ID, identity.CommandSHA256, command.JobID, command.Generation,
 		command.StepID, command.CreatorAttempt, command.CreatorWorkerID, command.ProjectID,
 		command.Plan.OwnerID, command.Plan.ID, command.Plan.WorkspaceID, command.Plan.WorkspaceRoot,
 		command.Plan.SourceStateID, command.Plan.ExpectedStateID, gitSource,
 		command.Plan.Patch, command.Plan.PatchSHA256, identity.PlanJSON, identity.PlanSHA256,
-		workspaceMutationPrepared); err != nil {
+		workspaceMutationPrepared, command.ProjectLocation)
+	if err != nil {
 		return workspaceMutationOperationRecord{}, fmt.Errorf("insert workspace mutation preparation: %w", err)
+	}
+	if inserted.RowsAffected() != 1 {
+		return workspaceMutationOperationRecord{}, fmt.Errorf(
+			"%w: workspace mutation project authority differs from its current job",
+			ErrWorkspaceMutationConflict,
+		)
 	}
 	for index, file := range command.Plan.Files {
 		sourceKind, sourceSHA, sourceSize, sourceMode := workspaceMutationSQLState(
@@ -114,7 +131,8 @@ func (r *Repository) prepareWorkspaceMutation(
 		return workspaceMutationOperationRecord{}, fmt.Errorf("commit workspace mutation preparation: %w", err)
 	}
 	return workspaceMutationOperationRecord{
-		ID: identity.ID, CommandSHA256: identity.CommandSHA256, Status: workspaceMutationPrepared,
+		ID: identity.ID, CommandSHA256: identity.CommandSHA256,
+		ProjectLocation: command.ProjectLocation, Status: workspaceMutationPrepared,
 	}, nil
 }
 
@@ -125,7 +143,7 @@ func loadWorkspaceMutationByStageTx(
 	stageID string,
 ) (workspaceMutationOperationRecord, bool, error) {
 	record, err := scanWorkspaceMutationOperation(tx.QueryRow(ctx, `
-		SELECT id,command_sha256,status,indeterminate_phase,mutation_evidence_id,
+		SELECT id,command_sha256,project_location,status,indeterminate_phase,mutation_evidence_id,
 		       verification_succeeded,verification_receipt_json,verification_evidence_id,
 		       verified_repository_snapshot_id
 		FROM workspace_mutation_operations
@@ -147,7 +165,7 @@ func lockWorkspaceMutationOperationTx(
 	operationID string,
 ) (workspaceMutationOperationRecord, error) {
 	record, err := scanWorkspaceMutationOperation(tx.QueryRow(ctx, `
-		SELECT id,command_sha256,status,indeterminate_phase,mutation_evidence_id,
+		SELECT id,command_sha256,project_location,status,indeterminate_phase,mutation_evidence_id,
 		       verification_succeeded,verification_receipt_json,verification_evidence_id,
 		       verified_repository_snapshot_id
 		FROM workspace_mutation_operations WHERE id=$1 FOR UPDATE
@@ -161,7 +179,8 @@ func lockWorkspaceMutationOperationTx(
 func scanWorkspaceMutationOperation(row pgx.Row) (workspaceMutationOperationRecord, error) {
 	var record workspaceMutationOperationRecord
 	err := row.Scan(
-		&record.ID, &record.CommandSHA256, &record.Status, &record.IndeterminatePhase,
+		&record.ID, &record.CommandSHA256, &record.ProjectLocation,
+		&record.Status, &record.IndeterminatePhase,
 		&record.MutationEvidenceID, &record.VerificationSucceeded,
 		&record.VerificationReceipt, &record.VerificationEvidenceID,
 		&record.VerifiedRepositorySnapshotID,
@@ -173,7 +192,8 @@ func requireWorkspaceMutationIdentity(
 	record workspaceMutationOperationRecord,
 	identity workspaceMutationOperationIdentity,
 ) error {
-	if record.ID != identity.ID || record.CommandSHA256 != identity.CommandSHA256 {
+	if record.ID != identity.ID || record.CommandSHA256 != identity.CommandSHA256 ||
+		record.ProjectLocation != identity.ProjectLocation {
 		return fmt.Errorf("%w: persisted workspace mutation command differs", ErrWorkspaceMutationConflict)
 	}
 	return nil

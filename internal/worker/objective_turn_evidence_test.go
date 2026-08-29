@@ -75,7 +75,7 @@ func TestObjectiveCompletionPreparesExactCitationsForAtomicCommit(t *testing.T) 
 		Kind: evidence.KindObjectiveCitation, SourceType: citation.SourceType,
 		SourceRef: citation.SourceRef, Excerpt: citation.Capsule.Text,
 		Summary: "Objective objective-17 cited evidence capsule R01.", Hash: citation.SourceSHA256,
-		Confidence: 1, SupportsClaims: []string{"requirement-17"},
+		Confidence: 1, RequirementAuthorityBindings: []string{"requirement-17"},
 		Metadata: map[string]any{
 			"capsule_id": "R01", "instruction_sha256": strings.Repeat("a", 64),
 			"objective_id": "objective-17", "objective_kind": "repository_read",
@@ -133,8 +133,9 @@ func TestExternalCitationPersistenceKeepsExactParagraphClaimsSeparate(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(records) != 2 || !reflect.DeepEqual(records[0].SupportsClaims, []string{"requirement-web#paragraph-1"}) ||
-		!reflect.DeepEqual(records[1].SupportsClaims, []string{"requirement-web#paragraph-2"}) {
+	if len(records) != 2 ||
+		!reflect.DeepEqual(records[0].RequirementAuthorityBindings, []string{"requirement-web#paragraph-1"}) ||
+		!reflect.DeepEqual(records[1].RequirementAuthorityBindings, []string{"requirement-web#paragraph-2"}) {
 		t.Fatalf("claim/source bindings crossed: %#v", records)
 	}
 	if records[0].Metadata["source_truncated"] != true ||

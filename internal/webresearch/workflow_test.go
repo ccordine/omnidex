@@ -2,7 +2,7 @@ package webresearch
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"strings"
 	"testing"
 
@@ -22,7 +22,6 @@ func TestDeterministicInitialAcquisitionStillRequiresBoundedRelevance(t *testing
 			oceanCandidate.ID: oceanDocument,
 		},
 	}
-	terms := &recordingTermsStation{decision: SearchTermsDecision{Terms: []string{"must not run"}}}
 	relevance := &recordingRelevanceStation{decision: RelevanceDecision{
 		Outcome: RelevanceSelected, CandidateIDs: []websearch.CandidateID{oceanCandidate.ID},
 	}}
@@ -30,9 +29,8 @@ func TestDeterministicInitialAcquisitionStillRequiresBoundedRelevance(t *testing
 		{Text: "Ocean circulation is driven by wind and water-density differences.", EvidenceIDs: []EvidenceID{evidenceID(oceanDocument.ID)}},
 	}}}
 	machine := newFixtureMachine(t, Objective{
-		ID: "objective_ocean", Question: "What drives ocean circulation?", InitialQuery: "ocean current circulation",
-		Acceptance: exactAcceptance(), Status: ObjectivePending,
-	}, acquisition, terms, relevance, synthesis, 4_000)
+		ID: "objective_ocean", Question: "What drives ocean circulation?", InitialQuery: "ocean current circulation", Status: ObjectivePending,
+	}, acquisition, relevance, synthesis, 4_000)
 
 	result, err := machine.Run(context.Background())
 	if err != nil {
@@ -41,14 +39,14 @@ func TestDeterministicInitialAcquisitionStillRequiresBoundedRelevance(t *testing
 	if !result.Complete || result.Objective.Status != ObjectiveComplete {
 		t.Fatalf("result did not complete: %#v", result)
 	}
-	if result.SearchTermsCalls != 0 || result.RelevanceCalls != 1 || result.SynthesisCalls != 1 || result.ClaimEvidenceReviewCalls != 1 {
-		t.Fatalf("station counters terms=%d relevance=%d synthesis=%d", result.SearchTermsCalls, result.RelevanceCalls, result.SynthesisCalls)
+	if result.RelevanceCalls != 1 || result.SynthesisCalls != 1 {
+		t.Fatalf("station counters relevance=%d synthesis=%d", result.RelevanceCalls, result.SynthesisCalls)
 	}
-	if result.AcquisitionAttempts != 2 || result.DiscoveryAttempts != 1 || result.FetchAttempts != 1 || result.AcquisitionAttemptLimit != 6 {
+	if result.AcquisitionAttempts != 2 || result.DiscoveryAttempts != 1 || result.FetchAttempts != 1 || result.AcquisitionAttemptLimit != 2 {
 		t.Fatalf("acquisition attempts=%d discovery=%d fetch=%d limit=%d", result.AcquisitionAttempts, result.DiscoveryAttempts, result.FetchAttempts, result.AcquisitionAttemptLimit)
 	}
-	if terms.calls != 0 || relevance.calls != 1 || synthesis.calls != 1 {
-		t.Fatalf("fake calls terms=%d relevance=%d synthesis=%d", terms.calls, relevance.calls, synthesis.calls)
+	if relevance.calls != 1 || synthesis.calls != 1 {
+		t.Fatalf("fake calls relevance=%d synthesis=%d", relevance.calls, synthesis.calls)
 	}
 	if got := strings.Join(acquisition.events, ","); got != "discover:ocean current circulation,fetch:1" {
 		t.Fatalf("acquisition order=%s", got)
@@ -58,69 +56,35 @@ func TestDeterministicInitialAcquisitionStillRequiresBoundedRelevance(t *testing
 	}
 }
 
-func TestTermAndRelevanceStationsCrossOnlyTheirNamedBounds(t *testing.T) {
-	firstCandidate := candidateFixture("https://city.example/library/schedule", "Library schedule")
-	secondCandidate := candidateFixture("https://community.example/library/notice", "Community notice")
-	firstDocument := documentFixture(firstCandidate.URL, firstCandidate.Title, strings.Repeat("Official schedule evidence. ", 45))
-	secondDocument := documentFixture(secondCandidate.URL, secondCandidate.Title, strings.Repeat("Community announcement. ", 45))
+func TestExactInitialQueryExhaustionFailsWithoutSemanticQueryExpansion(t *testing.T) {
 	acquisition := &scriptedAcquisition{
 		discoveries: map[string]discoverOutcome{
 			"central library weekend availability": {report: emptyCandidateReport("central library weekend availability"), err: websearch.ErrNoCandidates},
-			"library Sunday hours":                 {report: candidateReport("library Sunday hours", firstCandidate)},
-			"municipal weekend opening":            {report: candidateReport("municipal weekend opening", secondCandidate)},
 		},
-		documents: map[websearch.CandidateID]websearch.Document{
-			firstCandidate.ID:  firstDocument,
-			secondCandidate.ID: secondDocument,
-		},
+		documents: map[websearch.CandidateID]websearch.Document{},
 	}
-	terms := &recordingTermsStation{decision: SearchTermsDecision{Terms: []string{"library Sunday hours", "municipal weekend opening"}}}
-	relevance := &recordingRelevanceStation{decision: RelevanceDecision{
-		Outcome: RelevanceSelected, CandidateIDs: []websearch.CandidateID{firstCandidate.ID},
-	}}
-	synthesis := &recordingSynthesisStation{decision: GroundedSynthesisDecision{Paragraphs: []GroundedParagraph{
-		{Text: "The central library is open on Sunday.", EvidenceIDs: []EvidenceID{evidenceID(firstDocument.ID)}},
-	}}}
+	relevance := &recordingRelevanceStation{}
+	synthesis := &recordingSynthesisStation{}
 	machine := newFixtureMachine(t, Objective{
-		ID: "objective_library", Question: "Is the central library open on Sunday?", InitialQuery: "central library weekend availability",
-		Acceptance: exactAcceptance(), Status: ObjectivePending,
-	}, acquisition, terms, relevance, synthesis, 600)
+		ID: "objective_library", Question: "Is the central library open on Sunday?", InitialQuery: "central library weekend availability", Status: ObjectivePending,
+	}, acquisition, relevance, synthesis, 600)
 
 	result, err := machine.Run(context.Background())
-	if err != nil {
-		t.Fatal(err)
+	if !errors.Is(err, ErrEvidenceUnavailable) {
+		t.Fatalf("Run error=%v want ErrEvidenceUnavailable", err)
 	}
-	if !result.Complete || result.SearchTermsCalls != 1 || result.RelevanceCalls != 1 || result.SynthesisCalls != 1 {
+	if result.Complete || result.RelevanceCalls != 0 || result.SynthesisCalls != 0 {
 		t.Fatalf("unexpected result: %#v", result)
 	}
-	if result.AcquisitionAttempts != 4 || result.DiscoveryAttempts != 3 || result.FetchAttempts != 1 || result.AcquisitionAttemptLimit != 6 {
+	if result.AcquisitionAttempts != 1 || result.DiscoveryAttempts != 1 || result.FetchAttempts != 0 || result.AcquisitionAttemptLimit != 2 {
 		t.Fatalf("acquisition attempts=%d discovery=%d fetch=%d limit=%d", result.AcquisitionAttempts, result.DiscoveryAttempts, result.FetchAttempts, result.AcquisitionAttemptLimit)
 	}
-	wantSteps := []Step{StepInitialDiscovery, StepSearchTermsResolved, StepExpandedDiscovery, StepDocumentsFetched, StepRelevanceResolved, StepEvidenceProjected, StepSynthesisResolved, StepClaimEvidenceReviewed, StepObjectiveCompleted}
-	if fmt.Sprint(result.Steps) != fmt.Sprint(wantSteps) {
-		t.Fatalf("steps=%v want %v", result.Steps, wantSteps)
-	}
-	if len(synthesis.last.Evidence) != 1 || synthesis.last.Evidence[0].CandidateID != firstCandidate.ID {
-		t.Fatalf("synthesis projection=%#v", synthesis.last.Evidence)
-	}
-	if len(relevance.last.Candidates) != 2 {
-		t.Fatalf("relevance candidates=%d want 2", len(relevance.last.Candidates))
-	}
-	if terms.last.Question != "Is the central library open on Sunday?" || len(terms.last.AttemptedQueries) != 1 {
-		t.Fatalf("term call=%#v", terms.last)
-	}
-	if terms.last.MaxTerms != 3 || terms.last.MaxTermBytes != 120 {
-		t.Fatalf("term bounds=%#v", terms.last)
-	}
-	if relevance.last.MaxSelections != 2 {
-		t.Fatalf("relevance bound=%d", relevance.last.MaxSelections)
-	}
-	if synthesis.last.MaxParagraphs != 4 || synthesis.last.MaxParagraphBytes != 1_000 {
-		t.Fatalf("synthesis bounds=%#v", synthesis.last)
+	if got := strings.Join(acquisition.events, ","); got != "discover:central library weekend availability" {
+		t.Fatalf("query authority changed: %q", got)
 	}
 }
 
-func TestInitialUsableEvidenceNeverCallsSearchTermsEvenWhenProjectionOverflows(t *testing.T) {
+func TestInitialUsableEvidenceUsesRelevanceWhenProjectionOverflows(t *testing.T) {
 	first := candidateFixture("https://alpha.example/doc", "Alpha")
 	second := candidateFixture("https://beta.example/doc", "Beta")
 	firstDocument := documentFixture(first.URL, first.Title, strings.Repeat("alpha ", 200))
@@ -132,7 +96,6 @@ func TestInitialUsableEvidenceNeverCallsSearchTermsEvenWhenProjectionOverflows(t
 			second.ID: secondDocument,
 		},
 	}
-	terms := &recordingTermsStation{decision: SearchTermsDecision{Terms: []string{"illegal"}}}
 	relevance := &recordingRelevanceStation{decision: RelevanceDecision{
 		Outcome: RelevanceSelected, CandidateIDs: []websearch.CandidateID{second.ID},
 	}}
@@ -140,14 +103,13 @@ func TestInitialUsableEvidenceNeverCallsSearchTermsEvenWhenProjectionOverflows(t
 		{Text: "Beta is relevant.", EvidenceIDs: []EvidenceID{evidenceID(secondDocument.ID)}},
 	}}}
 	machine := newFixtureMachine(t, Objective{
-		ID: "objective_bounds", Question: "Which evidence is relevant?", InitialQuery: "bounded evidence",
-		Acceptance: exactAcceptance(), Status: ObjectivePending,
-	}, acquisition, terms, relevance, synthesis, 500)
+		ID: "objective_bounds", Question: "Which evidence is relevant?", InitialQuery: "bounded evidence", Status: ObjectivePending,
+	}, acquisition, relevance, synthesis, 500)
 	result, err := machine.Run(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.SearchTermsCalls != 0 || terms.calls != 0 || result.RelevanceCalls != 1 {
-		t.Fatalf("calls=%#v terms=%d", result, terms.calls)
+	if result.RelevanceCalls != 1 {
+		t.Fatalf("calls=%#v", result)
 	}
 }

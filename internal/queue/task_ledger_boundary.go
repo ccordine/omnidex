@@ -82,10 +82,6 @@ func reservedTaskCommandMutation(command taskstate.Command) bool {
 		return reservedTaskEntryID(typed.EntryID) || reservedTaskEntryID(typed.ReplacementID)
 	case *taskstate.SupersedeEntryCommand:
 		return typed != nil && (reservedTaskEntryID(typed.EntryID) || reservedTaskEntryID(typed.ReplacementID))
-	case taskstate.AcceptDecisionCommand:
-		return reservedTaskEntryID(typed.CandidateID) || reservedTaskEntryID(typed.AcceptedEntryID)
-	case *taskstate.AcceptDecisionCommand:
-		return typed != nil && (reservedTaskEntryID(typed.CandidateID) || reservedTaskEntryID(typed.AcceptedEntryID))
 	default:
 		return false
 	}

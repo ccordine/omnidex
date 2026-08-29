@@ -28,18 +28,4 @@ func TestArtifactCandidateSelectionHasOneExactStationOwner(t *testing.T) {
 	if got != station.CodingArtifactCandidateSelection {
 		t.Fatalf("station=%q want=%q", got, station.CodingArtifactCandidateSelection)
 	}
-	correction, err := assemblyline.NewRetainedResponseCorrectionJob(
-		job, "candidate is unavailable",
-		"ARTIFACT_CANDIDATE_1",
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	got, err = StationForPortableJob(correction)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got != station.CodingArtifactCandidateSelection {
-		t.Fatalf("correction station=%q want=%q", got, station.CodingArtifactCandidateSelection)
-	}
 }

@@ -20,8 +20,8 @@ func exactProtocolPrepared(t *testing.T, protocol ExactPreparedProtocol) Prepare
 		BaseModel: expected.Model, ContextModel: expected.Model,
 		Prompt: "return one declaration", PromptHint: MinimalGeneratePrompt,
 		MaxOutputTokens: 1024, ContextTokens: expected.NativeContextLimit,
-		OutputLimitMode: ExactPreparedOutputLimitExplicit,
-		ThinkingEnabled: false, Temperature: &zero,
+		OutputLimitMode:             ExactPreparedOutputLimitExplicit,
+		Temperature:                 &zero,
 		RawTextStopSequence:         ExactPreparedRawChatEndV1,
 		ProviderIdentityExpectation: &expected, ProviderObservationChallenge: challenge,
 	}

@@ -55,7 +55,8 @@ func TestDatabaseBoundChannelCompletionPersistsCitationAndAssistantTranscript(t 
 		JobID: claim.Job.ID, StepID: claim.Step.ID, Kind: evidence.KindObjectiveCitation,
 		SourceType: "postgres_query", SourceRef: source.ID + ":result-proof",
 		Excerpt: excerpt, Summary: "Database objective cited one typed result.",
-		Hash: sourceHash, Confidence: 1, SupportsClaims: []string{"requirement-database-proof"},
+		Hash: sourceHash, Confidence: 1,
+		RequirementAuthorityBindings: []string{"requirement-database-proof"},
 		Metadata: map[string]any{
 			"capsule_id": "database-evidence-1", "instruction_sha256": strings.Repeat("b", 64),
 			"objective_id": "objective-database-proof", "objective_kind": "database_read",

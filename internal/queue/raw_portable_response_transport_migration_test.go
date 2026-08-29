@@ -4,8 +4,6 @@ import (
 	"os"
 	"strings"
 	"testing"
-
-	"github.com/gryph/omnidex/internal/assemblyline"
 )
 
 const rawPortableResponseTransportMigration = "163_raw_portable_response_transport.sql"
@@ -52,17 +50,20 @@ func TestRawPortableResponseTransportMigrationIsCurrentOnly(t *testing.T) {
 	}
 }
 
-func TestRawPortableResponseTransportMigrationRegistersEveryCurrentKind(t *testing.T) {
+func TestRawPortableResponseTransportMigrationUsesGenericSemanticScope(t *testing.T) {
 	t.Parallel()
 	raw, err := os.ReadFile("../../migrations/" + rawPortableResponseTransportMigration)
 	if err != nil {
 		t.Fatal(err)
 	}
 	source := strings.Join(strings.Fields(string(raw)), " ")
-	for _, kind := range assemblyline.AllWorkKinds() {
-		mapping := "WHEN '" + string(kind) + "' THEN"
-		if !strings.Contains(source, mapping) {
-			t.Fatalf("raw transport migration omitted current work kind %q", kind)
+	for _, required := range []string{
+		"WHEN work_kind='application_target_tree' THEN scope='portable_structural_worker'",
+		"'fragment_generation', 'fragment_modification', 'fragment_correction'",
+		"ELSE scope='portable_semantic_worker'",
+	} {
+		if !strings.Contains(source, required) {
+			t.Fatalf("raw transport migration omitted generic scope rule %q", required)
 		}
 	}
 	for _, retired := range []string{

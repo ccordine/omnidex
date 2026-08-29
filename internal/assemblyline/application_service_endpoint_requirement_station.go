@@ -1,7 +1,6 @@
 package assemblyline
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 )
@@ -12,16 +11,13 @@ func BuildApplicationServiceEndpointRequirementPrompt(
 	if err := input.validate(); err != nil {
 		return "", err
 	}
-	authority, err := json.Marshal(input)
-	if err != nil {
-		return "", fmt.Errorf("encode service endpoint requirement authority: %w", err)
-	}
 	prompt := strings.Join([]string{
-		"Classify whether this one accepted local service task's own behavior requires a direct HTTP request and response interaction.",
-		"Choose endpoint_required when an HTTP requester directly invokes or retrieves this task's behavior. Choose support_only when this task's own behavior has no direct HTTP interaction.",
+		"Classify whether the exact endpoint requirement needs a direct HTTP request-and-response interaction.",
+		"Choose endpoint_required when an HTTP requester directly invokes or retrieves the required behavior. Choose support_only when the required behavior supports another interaction and has no direct HTTP interaction.",
 		"Return exactly one raw endpoint_requirement value: endpoint_required or support_only.",
 		"Return only that registered value with no JSON, quotes, label, Markdown, or commentary.",
-		"ACCEPTED_LOCAL_TASK_AUTHORITY_JSON:\n" + string(authority),
+		"PRODUCT CONTEXT:\n" + input.ProductContext,
+		"EXACT ENDPOINT REQUIREMENT:\n" + input.RequirementQuote,
 	}, "\n\n")
 	if len(prompt) > maxPortablePayloadBytes {
 		return "", fmt.Errorf(

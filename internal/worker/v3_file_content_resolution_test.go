@@ -3,7 +3,6 @@ package worker
 import (
 	"fmt"
 	"reflect"
-	"strings"
 	"testing"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
@@ -107,29 +106,14 @@ func testApplicationFileCoverageAuthority(
 ) (assemblyline.ApplicationSpecification, assemblyline.FrozenApplicationWorkload) {
 	t.Helper()
 	requirements := make([]assemblyline.Requirement, len(requirementQuotes))
-	tasks := make([]assemblyline.ApplicationWorkloadTaskDraft, len(requirementQuotes))
 	for index, quote := range requirementQuotes {
 		requirementID := fmt.Sprintf("requirement_%03d", index+1)
 		requirements[index] = assemblyline.Requirement{ID: requirementID, SourceQuote: quote}
-		tasks[index] = assemblyline.ApplicationWorkloadTaskDraft{
-			RequirementID: requirementID,
-			Objective:     "Deliver " + strings.TrimSuffix(quote, ".") + ".",
-			RequiredBehaviors: []string{
-				"Implement " + strings.TrimSuffix(quote, ".") + ".",
-			},
-			AcceptanceCriteria: []string{
-				"The application visibly supports " + strings.TrimSuffix(quote, ".") + ".",
-			},
-		}
 	}
 	specification := assemblyline.ApplicationSpecification{
 		Surface: surface, ProductQuote: product, Requirements: requirements,
 	}
-	input := applicationWorkloadInput(specification)
-	workload, err := assemblyline.FreezeApplicationWorkload(input, assemblyline.ApplicationWorkloadDraft{
-		Schema: assemblyline.ApplicationWorkloadDraftSchemaV1,
-		Tasks:  tasks,
-	})
+	workload, err := assemblyline.FreezeApplicationWorkload(specification)
 	if err != nil {
 		t.Fatal(err)
 	}

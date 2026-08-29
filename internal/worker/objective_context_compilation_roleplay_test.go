@@ -54,12 +54,18 @@ func TestRoleplayContextSieveReceivesOnlyCodeOwnedSemanticInstruction(t *testing
 				Optional: []assemblyline.ContextCandidateAuthority{optional},
 			}}
 			station := &scriptedConversationContextStation{
-				terms: []string{"continuity"}, relevantIDs: []string{"CTX_2"},
+				relevantIDs:    []string{"CTX_2"},
 				minimalContext: "Selected bounded continuity.",
 			}
 			authority := turnAuthority{
 				JobID: 71, Instruction: fixture.raw, ChannelMode: model.ChannelModeRoleplay,
 				RoleplayInputKind: fixture.kind,
+			}
+			authority, err := bindObjectiveModelInstruction(
+				authority, assemblyline.ArtifactIdentityProvenance{},
+			)
+			if err != nil {
+				t.Fatal(err)
 			}
 			compiled, calls, err := compileObjectiveTurnContext(
 				context.Background(),
@@ -70,11 +76,11 @@ func TestRoleplayContextSieveReceivesOnlyCodeOwnedSemanticInstruction(t *testing
 			if err != nil {
 				t.Fatal(err)
 			}
-			if calls != 3 || station.termCalls != 1 || station.relevanceCalls != 1 ||
+			if calls != 2 || station.relevanceCalls != 1 ||
 				station.minificationCalls != 1 {
 				t.Fatalf(
-					"calls=%d terms=%d relevance=%d minification=%d",
-					calls, station.termCalls, station.relevanceCalls, station.minificationCalls,
+					"calls=%d relevance=%d minification=%d",
+					calls, station.relevanceCalls, station.minificationCalls,
 				)
 			}
 			if compiled.Instruction != fixture.raw || provider.authority.Instruction != fixture.raw {
@@ -83,12 +89,12 @@ func TestRoleplayContextSieveReceivesOnlyCodeOwnedSemanticInstruction(t *testing
 					compiled.Instruction, provider.authority.Instruction,
 				)
 			}
-			if len(station.termInputs) != 1 || len(station.relevanceInputs) != 1 ||
+			if len(station.relevanceInputs) != 1 ||
 				len(station.minificationInputs) != 1 {
 				t.Fatalf("context station inputs were not captured exactly")
 			}
 			modelInputs, err := json.Marshal([]any{
-				station.termInputs[0], station.relevanceInputs[0], station.minificationInputs[0],
+				station.relevanceInputs[0], station.minificationInputs[0],
 			})
 			if err != nil {
 				t.Fatal(err)
@@ -99,6 +105,9 @@ func TestRoleplayContextSieveReceivesOnlyCodeOwnedSemanticInstruction(t *testing
 				(fixture.hidden != "" && strings.Contains(projected, fixture.hidden)) ||
 				strings.Contains(projected, "/give") || strings.Contains(projected, "/research") {
 				t.Fatalf("context model inputs leaked raw command authority: %s", projected)
+			}
+			if len(provider.terms) != 1 || provider.terms[0] != fixture.visible {
+				t.Fatalf("fixed retrieval query=%#v want exact instruction %q", provider.terms, fixture.visible)
 			}
 		})
 	}
@@ -120,11 +129,17 @@ func TestEmptyRoleplaySearchUniverseSkipsTermsButRanksFrozenOptionalAuthority(t 
 		},
 	}
 	station := &scriptedConversationContextStation{
-		terms: []string{"rain cloak"}, relevantIDs: []string{"CTX_1"},
+		relevantIDs: []string{"CTX_1"},
 	}
 	authority := turnAuthority{
 		JobID: 72, Instruction: "I pull it tighter.", ChannelMode: model.ChannelModeRoleplay,
 		RoleplayInputKind: roleplay.SimulationTurnProse,
+	}
+	authority, err = bindObjectiveModelInstruction(
+		authority, assemblyline.ArtifactIdentityProvenance{},
+	)
+	if err != nil {
+		t.Fatal(err)
 	}
 	compiled, calls, err := compileObjectiveTurnContext(
 		context.Background(),
@@ -135,16 +150,15 @@ func TestEmptyRoleplaySearchUniverseSkipsTermsButRanksFrozenOptionalAuthority(t 
 		t.Fatal(err)
 	}
 	if calls != 1 || provider.availabilityCalls != 1 || provider.contextCalls != 1 ||
-		station.termCalls != 0 || station.relevanceCalls != 1 ||
+		station.relevanceCalls != 1 ||
 		provider.terms == nil || len(provider.terms) != 0 ||
 		len(station.relevanceInputs) != 1 ||
-		len(station.relevanceInputs[0].RetrievalConcepts) != 0 ||
 		len(compiled.Context.Capsules) != 1 ||
 		compiled.Context.Capsules[0].Content != optional.Content {
 		t.Fatalf(
-			"calls=%d availability/retrieval=%d/%d terms/relevance=%d/%d context=%#v",
+			"calls=%d availability/retrieval=%d/%d relevance=%d context=%#v",
 			calls, provider.availabilityCalls, provider.contextCalls,
-			station.termCalls, station.relevanceCalls, compiled.Context,
+			station.relevanceCalls, compiled.Context,
 		)
 	}
 }
@@ -152,24 +166,23 @@ func TestEmptyRoleplaySearchUniverseSkipsTermsButRanksFrozenOptionalAuthority(t 
 func TestDeterministicRoleplayActionDoesNotManufactureSearchTerms(t *testing.T) {
 	t.Parallel()
 	provider := &roleplayContextProviderProbe{availability: contextcompiler.SearchAvailable}
-	station := &scriptedConversationContextStation{terms: []string{"must not run"}}
 	authority := turnAuthority{
 		JobID: 73, Instruction: `/give "iron key"`, ChannelMode: model.ChannelModeRoleplay,
 		RoleplayInputKind: roleplay.SimulationTurnAction,
 	}
-	directive, calls, err := resolveRoleplayTurnRetrieval(
+	directive, err := resolveRoleplayTurnRetrieval(
 		t.Context(), model.Job{ID: 73, Pipeline: model.PipelineChat, Instruction: authority.Instruction},
-		authority, provider, station,
+		authority, provider,
 		roleplay.SimulationTurnAuthority{InputKind: roleplay.SimulationTurnAction},
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if calls != 0 || station.termCalls != 0 || provider.availabilityCalls != 0 ||
-		directive.Concepts == nil || len(directive.Concepts) != 0 {
+	if provider.availabilityCalls != 0 ||
+		directive.Availability != contextcompiler.SearchUnavailable {
 		t.Fatalf(
-			"calls=%d terms=%d availability=%d directive=%#v",
-			calls, station.termCalls, provider.availabilityCalls, directive,
+			"availability calls=%d directive=%#v",
+			provider.availabilityCalls, directive,
 		)
 	}
 }

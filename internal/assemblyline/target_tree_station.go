@@ -24,10 +24,9 @@ func BuildTargetTreePrompt(input TargetTreeInput) (string, error) {
 	}
 	sections := []string{
 		"Determine the complete expected managed workload file tree for all accepted goals under the code-selected technical context.",
-		"Return exactly one raw tree and nothing else. The response is the complete expected workload tree, not a delta.",
+		"Return exactly one raw basename hierarchy matching RAW_TREE_GRAMMAR. The response is the complete expected workload tree, not a delta.",
 		"RAW_TREE_GRAMMAR:\nROOT\n  D <single basename>\n    F <single basename>\n  F <single basename>",
-		"ROOT must be the exact first line. Every other line uses exactly two spaces per depth followed by D or F, one space, and one basename. A basename never contains a slash or backslash. Every D node contains at least one child and ultimately one F node. An F node has no children.",
-		"Do not return JSON, Markdown, code fences, a flat path list, prose, artifact metadata, filesystem operations, file contents, source, declarations, commands, ownership, dependencies, or completion state.",
+		"ROOT must be the exact first line. Every other line uses exactly two spaces per depth followed by D or F, one space, and one basename. A basename never contains a slash or backslash. Every D node contains at least one child and ultimately one F node. An F node has no children. The entire response consists only of these hierarchy lines.",
 		"CODE_SELECTED_FILE_COUNT:\n" + strconv.Itoa(input.Constraints.ExactPathCount),
 		"CODE_SELECTED_ROOT_FILES_ONLY:\n" + strconv.FormatBool(input.Constraints.RootFilesOnly),
 		"The response contains exactly CODE_SELECTED_FILE_COUNT F nodes. When CODE_SELECTED_ROOT_FILES_ONLY is true, it contains no D nodes. Every file leaf and the complete tree must satisfy CODE_SELECTED_TECHNICAL_CONTEXT exactly. A node present in CODE_RESERVED_TREE cannot appear in the response.",
@@ -42,12 +41,15 @@ func BuildTargetTreePrompt(input TargetTreeInput) (string, error) {
 		}
 		sections = append(sections,
 			"VALIDATION_FAILURE:\n"+correction.Failure,
-			"Return one complete replacement raw tree that resolves this exact validation failure.",
+			"Return one complete replacement basename hierarchy matching RAW_TREE_GRAMMAR that resolves this exact validation failure.",
 		)
 	}
 	prompt := strings.Join(sections, "\n\n")
 	if len(prompt) > maxPortablePayloadBytes {
 		return "", fmt.Errorf("target tree prompt exceeds %d bytes", maxPortablePayloadBytes)
+	}
+	if err := ValidatePathFreeModelContext("target tree rendered prompt", prompt); err != nil {
+		return "", err
 	}
 	return prompt, nil
 }

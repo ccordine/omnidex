@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/gryph/omnidex/internal/modelcontext"
 	"github.com/gryph/omnidex/internal/roleplay"
 )
 
@@ -15,11 +16,12 @@ const (
 )
 
 type ConversationResponseInput struct {
-	Kind             ConversationObjectiveKind   `json:"kind"`
-	ExactInstruction string                      `json:"exact_instruction"`
-	Context          ObjectiveContext            `json:"objective_context"`
-	RoleplayIdentity *RoleplayResponseIdentity   `json:"roleplay_identity"`
-	RoleplayUserTurn *RoleplayUserTurnProjection `json:"roleplay_user_turn"`
+	Kind               ConversationObjectiveKind   `json:"kind"`
+	ExactInstruction   string                      `json:"exact_instruction"`
+	Context            ObjectiveContext            `json:"objective_context"`
+	RoleplayIdentity   *RoleplayResponseIdentity   `json:"roleplay_identity"`
+	RoleplayUserTurn   *RoleplayUserTurnProjection `json:"roleplay_user_turn"`
+	KnownArtifactPaths []string                    `json:"known_artifact_paths"`
 }
 
 type RoleplayResponseIdentity struct {
@@ -38,6 +40,10 @@ func NewConversationResponseJob(input ConversationResponseInput) (PortableJob, e
 }
 
 func (input ConversationResponseInput) validate() error {
+	provenance, err := modelcontext.NewArtifactIdentityProvenance(input.KnownArtifactPaths)
+	if err != nil {
+		return fmt.Errorf("conversation response artifact provenance: %w", err)
+	}
 	if input.Kind != ObjectiveKindAnswer && input.Kind != ObjectiveKindStory {
 		return fmt.Errorf("conversation response kind %q is unsupported", input.Kind)
 	}
@@ -64,12 +70,28 @@ func (input ConversationResponseInput) validate() error {
 		if err := input.RoleplayUserTurn.validate(); err != nil {
 			return err
 		}
+		values := []string{
+			input.RoleplayIdentity.CharacterName,
+			input.RoleplayIdentity.Summary,
+			input.RoleplayIdentity.Voice,
+			input.RoleplayUserTurn.PersonaName,
+			input.RoleplayUserTurn.PersonaSummary,
+		}
+		for _, part := range input.RoleplayUserTurn.Parts {
+			values = append(values, part.Text)
+		}
+		if err := ValidatePathFreeModelContextWithProvenance(
+			"conversation roleplay authority", provenance, values...,
+		); err != nil {
+			return err
+		}
 	} else if input.RoleplayUserTurn != nil {
 		return fmt.Errorf("roleplay user turn requires one responding character identity")
 	}
 	return (ConversationObjectiveKindInput{
-		ExactInstruction: input.ExactInstruction,
-		Context:          input.Context,
+		ExactInstruction:   input.ExactInstruction,
+		Context:            input.Context,
+		KnownArtifactPaths: append([]string{}, input.KnownArtifactPaths...),
 	}).validate()
 }
 
@@ -88,9 +110,23 @@ func (decision ConversationResponseDecision) ValidateFor(input ConversationRespo
 		return err
 	}
 	if input.RoleplayIdentity != nil {
-		return validateRoleplayProse("conversation response text", decision.Text)
+		if err := validateRoleplayProse("conversation response text", decision.Text); err != nil {
+			return err
+		}
 	}
-	return nil
+	provenance, err := modelcontext.NewArtifactIdentityProvenance(input.KnownArtifactPaths)
+	if err != nil {
+		return err
+	}
+	return decision.ValidatePathFree(provenance)
+}
+
+func (decision ConversationResponseDecision) ValidatePathFree(
+	provenance ArtifactIdentityProvenance,
+) error {
+	return ValidatePathFreeModelContextWithProvenance(
+		"conversation response text", provenance, decision.Text,
+	)
 }
 
 func DecodeConversationResponseDecision(

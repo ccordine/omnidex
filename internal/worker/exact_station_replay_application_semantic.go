@@ -27,14 +27,14 @@ func replayApplicationSemanticLeaf(
 		return true, decodeReplaySemanticLeaf(job, raw, assemblyline.DecodeApplicationServiceStateLifetimeResult)
 	case assemblyline.WorkApplicationStateFieldCoverage:
 		return true, decodeReplaySemanticLeaf(job, raw, assemblyline.DecodeApplicationStateFieldCoverageLeaf)
-	case assemblyline.WorkApplicationStateFieldName:
-		return true, decodeReplaySemanticLeaf(job, raw, assemblyline.DecodeApplicationStateFieldNameLeaf)
+	case assemblyline.WorkApplicationStateFieldPurpose:
+		return true, decodeReplaySemanticLeaf(job, raw, assemblyline.DecodeApplicationStateFieldPurposeLeaf)
 	case assemblyline.WorkApplicationStateFieldKind:
 		return true, decodeReplaySemanticLeaf(job, raw, assemblyline.DecodeApplicationStateFieldKindLeaf)
 	case assemblyline.WorkApplicationRecordFieldCoverage:
 		return true, decodeReplaySemanticLeaf(job, raw, assemblyline.DecodeApplicationRecordFieldCoverageLeaf)
-	case assemblyline.WorkApplicationRecordFieldName:
-		return true, decodeReplaySemanticLeaf(job, raw, assemblyline.DecodeApplicationRecordFieldNameLeaf)
+	case assemblyline.WorkApplicationRecordFieldPurpose:
+		return true, decodeReplaySemanticLeaf(job, raw, assemblyline.DecodeApplicationRecordFieldPurposeLeaf)
 	case assemblyline.WorkApplicationRecordFieldKind:
 		return true, decodeReplaySemanticLeaf(job, raw, assemblyline.DecodeApplicationRecordFieldKindLeaf)
 	case assemblyline.WorkApplicationServiceEndpointRequirement:
@@ -53,16 +53,6 @@ func replayApplicationSemanticLeaf(
 		return true, decodeReplaySemanticLeaf(job, raw, assemblyline.DecodeApplicationServiceEndpointSuccessStatusResult)
 	case assemblyline.WorkApplicationClassify:
 		return true, decodeReplaySemanticLeaf(job, raw, assemblyline.DecodeApplicationClassification)
-	case assemblyline.WorkApplicationJobObjective:
-		return true, decodeReplaySemanticLeaf(job, raw, assemblyline.DecodeApplicationJobObjectiveLeaf)
-	case assemblyline.WorkApplicationBehaviorCoverage:
-		return true, decodeReplaySemanticLeaf(job, raw, assemblyline.DecodeApplicationBehaviorCoverageLeaf)
-	case assemblyline.WorkApplicationBehavior:
-		return true, decodeReplaySemanticLeaf(job, raw, assemblyline.DecodeApplicationBehaviorLeaf)
-	case assemblyline.WorkApplicationCriterionCoverage:
-		return true, decodeReplaySemanticLeaf(job, raw, assemblyline.DecodeApplicationCriterionCoverageLeaf)
-	case assemblyline.WorkApplicationCriterion:
-		return true, decodeReplaySemanticLeaf(job, raw, assemblyline.DecodeApplicationCriterionLeaf)
 	default:
 		return false, nil
 	}

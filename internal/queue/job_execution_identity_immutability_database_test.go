@@ -19,9 +19,7 @@ func TestPostgresJobExecutionIdentityIsImmutable(t *testing.T) {
 	fixture := newWorkspaceMutationPipelineActionFixture(
 		t, repository, model.PipelineCoding, "immutable-identity",
 	)
-	if _, err := repository.prepareWorkspaceMutation(
-		t.Context(), fixture.claim.Authority, fixture.command, fixture.identity,
-	); err != nil {
+	if _, err := prepareWorkspaceMutationBeforeProjectLocation(t, fixture); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := pool.Exec(t.Context(), `
@@ -36,12 +34,10 @@ func TestPostgresJobExecutionIdentityIsImmutable(t *testing.T) {
 		!strings.Contains(err.Error(), "job step action identity is immutable") {
 		t.Fatalf("step action identity rewrite error=%v", err)
 	}
-	if err := repository.markWorkspaceMutationApplying(
-		t.Context(), fixture.claim.Authority, fixture.command, fixture.identity,
-	); err != nil {
+	if err := markWorkspaceMutationApplyingBeforeProjectLocation(t, fixture); err != nil {
 		t.Fatalf("valid operation lost authority after rejected identity rewrites: %v", err)
 	}
-	if err := repository.ValidateRuntimeAuthority(t.Context()); err != nil {
+	if err := repository.validateJobStepExecutionIdentityAuthority(t.Context()); err != nil {
 		t.Fatalf("validate immutable execution identity authority: %v", err)
 	}
 	assertAppliedMigrationCount(t, pool, jobExecutionIdentityImmutabilityMigration, 1)
@@ -58,9 +54,7 @@ func TestPostgresJobExecutionIdentityRejectsStaleOperationAtomically(t *testing.
 	fixture := newWorkspaceMutationPipelineActionFixture(
 		t, repository, model.PipelineCoding, "identity-stale-row",
 	)
-	if _, err := repository.prepareWorkspaceMutation(
-		t.Context(), fixture.claim.Authority, fixture.command, fixture.identity,
-	); err != nil {
+	if _, err := prepareWorkspaceMutationBeforeProjectLocation(t, fixture); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := pool.Exec(t.Context(), `

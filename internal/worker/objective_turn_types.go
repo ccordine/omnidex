@@ -32,6 +32,10 @@ type turnAuthority struct {
 	JobID                           int64
 	Pipeline                        string
 	Instruction                     string
+	ModelInstruction                string
+	ModelRedactedInstruction        string
+	ModelArtifactIdentities         []assemblyline.ArtifactIdentity
+	ModelArtifactPaths              []string
 	SHA256                          string
 	DataSourceID                    model.DataSourceID
 	DelegatedDataAuthorityID        string
@@ -72,10 +76,10 @@ func validateObjectiveStationReceipt(label string, receipt objectiveStationRecei
 		}
 		return nil
 	}
-	if receipt.Calls < 1 || receipt.Calls > maxTypedWorkerAttempts {
+	if receipt.Calls != exactSemanticLeafCalls {
 		return fmt.Errorf(
-			"%s reported %d calls outside the bounded correction budget",
-			label, receipt.Calls,
+			"%s reported %d calls; one exact semantic leaf requires exactly %d",
+			label, receipt.Calls, exactSemanticLeafCalls,
 		)
 	}
 	return nil
@@ -106,7 +110,6 @@ type objectiveContextCandidateSource interface {
 }
 
 type objectiveContextSieveStations interface {
-	contextcompiler.SearchTermsStation
 	contextcompiler.RelevanceStation
 	contextcompiler.MinificationStation
 }
@@ -136,6 +139,7 @@ type objectiveRoleplayGroundedStation interface {
 }
 
 type objectiveWorkflows struct {
+	ModelPathProvenance   assemblyline.ArtifactIdentityProvenance
 	WorkspaceMutation     func(context.Context, turnAuthority) (string, error)
 	RepositoryRead        func(context.Context, turnAuthority) (objectiveEvidenceAcquisition, error)
 	ExternalAnswer        func(context.Context, turnAuthority) (objectiveExternalAnswer, error)
@@ -151,6 +155,9 @@ type objectiveEvidenceAcquisition struct {
 	Evidence             []objectiveEvidence
 	ModelCalls           int
 	RepositoryCallLedger objectiveRepositoryAcquisitionCallLedger
+	GroundedRequirement  string
+	KnownArtifactPaths   []string
+	ArtifactIdentities   []assemblyline.ArtifactIdentity
 }
 
 type objectiveExternalAnswer struct {
@@ -176,6 +183,7 @@ type objectiveRoleplayResearchAnswer struct {
 
 type objectiveEvidence struct {
 	Capsule       assemblyline.GroundedEvidenceCapsule
+	SelectionText string
 	SourceType    string
 	SourceRef     string
 	SHA256        string

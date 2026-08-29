@@ -15,34 +15,6 @@ func validatePortableJobPayload(kind WorkKind, payload json.RawMessage) error {
 		return decodeAndValidatePortablePayload[ApplicationRequirementLeafInput](
 			payload, ApplicationRequirementLeafInput.validate,
 		)
-	case WorkApplicationJobObjective:
-		return decodeAndValidatePortablePayload[ApplicationJobSpecificationInput](
-			payload, validateApplicationJobSpecificationInput,
-		)
-	case WorkApplicationBehaviorCoverage, WorkApplicationBehavior:
-		return decodeAndValidatePortablePayload[ApplicationJobBehaviorLeafInput](
-			payload, ApplicationJobBehaviorLeafInput.validate,
-		)
-	case WorkApplicationCriterionCoverage, WorkApplicationCriterion:
-		return decodeAndValidatePortablePayload[ApplicationJobCriterionLeafInput](
-			payload, ApplicationJobCriterionLeafInput.validate,
-		)
-	case WorkApplicationStateFieldCoverage, WorkApplicationStateFieldName:
-		return decodeAndValidatePortablePayload[ApplicationStateFieldLeafInput](
-			payload, ApplicationStateFieldLeafInput.validate,
-		)
-	case WorkApplicationStateFieldKind:
-		return decodeAndValidatePortablePayload[ApplicationStateFieldKindInput](
-			payload, ApplicationStateFieldKindInput.validate,
-		)
-	case WorkApplicationRecordFieldCoverage, WorkApplicationRecordFieldName:
-		return decodeAndValidatePortablePayload[ApplicationRecordFieldLeafInput](
-			payload, ApplicationRecordFieldLeafInput.validate,
-		)
-	case WorkApplicationRecordFieldKind:
-		return decodeAndValidatePortablePayload[ApplicationRecordFieldKindInput](
-			payload, ApplicationRecordFieldKindInput.validate,
-		)
 	case WorkApplicationContextNeedCoverage, WorkApplicationContextNeedQuestion:
 		return decodeAndValidatePortablePayload[ApplicationContextNeedLeafInput](
 			payload, ApplicationContextNeedLeafInput.validate,
@@ -62,6 +34,22 @@ func validatePortableJobPayload(kind WorkKind, payload json.RawMessage) error {
 	case WorkApplicationServiceStateLifetime:
 		return decodeAndValidatePortablePayload[ApplicationServiceStateLifetimeInput](
 			payload, ApplicationServiceStateLifetimeInput.validate,
+		)
+	case WorkApplicationStateFieldCoverage, WorkApplicationStateFieldPurpose:
+		return decodeAndValidatePortablePayload[ApplicationStateFieldLeafInput](
+			payload, ApplicationStateFieldLeafInput.validate,
+		)
+	case WorkApplicationStateFieldKind:
+		return decodeAndValidatePortablePayload[ApplicationStateFieldKindInput](
+			payload, ApplicationStateFieldKindInput.validate,
+		)
+	case WorkApplicationRecordFieldCoverage, WorkApplicationRecordFieldPurpose:
+		return decodeAndValidatePortablePayload[ApplicationRecordFieldLeafInput](
+			payload, ApplicationRecordFieldLeafInput.validate,
+		)
+	case WorkApplicationRecordFieldKind:
+		return decodeAndValidatePortablePayload[ApplicationRecordFieldKindInput](
+			payload, ApplicationRecordFieldKindInput.validate,
 		)
 	case WorkApplicationServiceEndpointRequirement:
 		return decodeAndValidatePortablePayload[ApplicationServiceEndpointRequirementInput](
@@ -99,10 +87,6 @@ func validatePortableJobPayload(kind WorkKind, payload json.RawMessage) error {
 		return decodeAndValidatePortablePayload[RepositoryRequirementLeafInput](
 			payload, RepositoryRequirementLeafInput.validate,
 		)
-	case WorkRepositorySearchAnchorCoverage, WorkRepositorySearchAnchor:
-		return decodeAndValidatePortablePayload[RepositorySearchAnchorLeafInput](
-			payload, RepositorySearchAnchorLeafInput.validate,
-		)
 	case WorkRepositoryChangeOwner:
 		return decodeAndValidatePortablePayload[RepositoryChangeOwnerInput](
 			payload, RepositoryChangeOwnerInput.validate,
@@ -110,18 +94,6 @@ func validatePortableJobPayload(kind WorkKind, payload json.RawMessage) error {
 	case WorkRepositoryEvidenceRelevanceLeaf:
 		return decodeAndValidatePortablePayload[RepositoryEvidenceRelevanceLeafInput](
 			payload, RepositoryEvidenceRelevanceLeafInput.validate,
-		)
-	case WorkRepositoryGroundedIssueDetail:
-		return decodeAndValidatePortablePayload[RepositoryGroundedReviewInput](payload, RepositoryGroundedReviewInput.validate)
-	case WorkRepositoryGroundedIssueKind:
-		return decodeAndValidatePortablePayload[RepositoryGroundedIssueKindLeafInput](
-			payload, RepositoryGroundedIssueKindLeafInput.validate,
-		)
-	case WorkRepositoryGroundedCorrection:
-		return decodeAndValidatePortablePayload[RepositoryGroundedCorrectionInput](payload, RepositoryGroundedCorrectionInput.validate)
-	case WorkContextSearchTermCoverage, WorkContextSearchTerm:
-		return decodeAndValidatePortablePayload[ContextSearchTermLeafInput](
-			payload, ContextSearchTermLeafInput.validate,
 		)
 	case WorkContextRelevanceSelection:
 		return decodeAndValidatePortablePayload[ContextRelevanceSelectionInput](
@@ -243,14 +215,6 @@ func validatePortableJobPayload(kind WorkKind, payload json.RawMessage) error {
 		return decodeAndValidatePortablePayload[DatabaseEvidenceGapInput](payload, DatabaseEvidenceGapInput.validate)
 	case WorkDatabaseJoinPathSelection:
 		return decodeAndValidatePortablePayload[DatabaseJoinPathSelectionInput](payload, DatabaseJoinPathSelectionInput.validate)
-	case WorkWebSearchTermCoverage:
-		return decodeAndValidatePortablePayload[WebSearchTermLeafInput](
-			payload, WebSearchTermLeafInput.validate,
-		)
-	case WorkWebSearchTerm:
-		return decodeAndValidatePortablePayload[WebSearchTermLeafInput](
-			payload, WebSearchTermLeafInput.validateForTerm,
-		)
 	case WorkWebRelevanceRelation:
 		return decodeAndValidatePortablePayload[WebRelevanceRelationInput](
 			payload, WebRelevanceRelationInput.validate,
@@ -263,28 +227,16 @@ func validatePortableJobPayload(kind WorkKind, payload json.RawMessage) error {
 		return decodeAndValidatePortablePayload[WebSynthesisEvidenceRelationInput](
 			payload, WebSynthesisEvidenceRelationInput.validate,
 		)
-	case WorkWebGroundedSynthesisCorrection:
-		return decodeAndValidatePortablePayload[WebGroundedSynthesisCorrectionInput](payload, WebGroundedSynthesisCorrectionInput.validate)
-	case WorkWebReviewClaimCoverage, WorkWebReviewClaim:
-		return decodeAndValidatePortablePayload[WebReviewClaimLeafInput](
-			payload, WebReviewClaimLeafInput.validate,
-		)
-	case WorkWebReviewClaimVerdict:
-		return decodeAndValidatePortablePayload[WebReviewClaimVerdictInput](
-			payload, WebReviewClaimVerdictInput.validate,
-		)
-	case WorkWebReviewIssueEvidenceRelation:
-		return decodeAndValidatePortablePayload[WebReviewIssueEvidenceRelationInput](
-			payload, WebReviewIssueEvidenceRelationInput.validate,
-		)
-	case WorkWebReviewIssueDetail:
-		return decodeAndValidatePortablePayload[WebReviewIssueDetailInput](
-			payload, WebReviewIssueDetailInput.validate,
-		)
 	case WorkArtifactHandling:
 		return decodeAndValidatePortablePayload[ArtifactHandlingInput](payload, ArtifactHandlingInput.validate)
-	case WorkKnownArtifactTruth:
-		return decodeAndValidatePortablePayload[KnownArtifactTruthInput](payload, KnownArtifactTruthInput.validate)
+	case WorkRepositoryArtifactAbsence:
+		return decodeAndValidatePortablePayload[RepositoryArtifactAbsenceInput](
+			payload, RepositoryArtifactAbsenceInput.validate,
+		)
+	case WorkPlainTextArtifactCreation:
+		return decodeAndValidatePortablePayload[PlainTextArtifactCreationInput](
+			payload, PlainTextArtifactCreationInput.validate,
+		)
 	case WorkDeclarationArtifactBoundary:
 		return decodeAndValidatePortablePayload[DeclarationArtifactBoundaryInput](payload, DeclarationArtifactBoundaryInput.validate)
 	case WorkArtifactCandidateSelection:
@@ -303,8 +255,6 @@ func validatePortableJobPayload(kind WorkKind, payload json.RawMessage) error {
 		return decodeAndValidatePortablePayload[FragmentModificationInput](payload, FragmentModificationInput.validate)
 	case WorkFragmentCorrection:
 		return decodeAndValidatePortablePayload[FragmentCorrectionInput](payload, FragmentCorrectionInput.validate)
-	case WorkResponseCorrection:
-		return decodeAndValidatePortablePayload[ResponseCorrectionInput](payload, ResponseCorrectionInput.validate)
 	default:
 		return fmt.Errorf("portable job kind %q has no payload validator", kind)
 	}

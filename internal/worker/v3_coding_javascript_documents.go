@@ -169,6 +169,6 @@ func javaScriptCommandLineAcceptanceContract(behavior, featureName string) strin
 	return strings.Join([]string{
 		behavior,
 		"Call " + featureName + " with representative input and dependency values.",
-		"Each observable acceptance criterion is proven with node:assert/strict applied to values read from that exact call's result.",
+		"The exact accepted requirement is proven with node:assert/strict applied to a value read from that exact call's result.",
 	}, "\n")
 }

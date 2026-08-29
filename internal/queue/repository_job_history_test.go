@@ -17,6 +17,7 @@ func TestJobHistoryRequestRejectsInvalidBoundaries(t *testing.T) {
 	}{
 		{name: "job", request: JobHistoryRequest{Stream: JobHistoryGenerations, Limit: 1}, want: "positive job"},
 		{name: "stream", jobID: 1, request: JobHistoryRequest{Stream: "everything", Limit: 1}, want: "stream"},
+		{name: "retired claims stream", jobID: 1, request: JobHistoryRequest{Stream: "claims", Limit: 1}, want: "stream"},
 		{name: "zero limit", jobID: 1, request: JobHistoryRequest{Stream: JobHistorySteps}, want: "limit"},
 		{name: "large limit", jobID: 1, request: JobHistoryRequest{Stream: JobHistorySteps, Limit: MaxJobHistoryPageSize + 1}, want: "limit"},
 		{name: "cursor whitespace", jobID: 1, request: JobHistoryRequest{Stream: JobHistorySteps, Limit: 1, Cursor: " bad "}, want: "cursor"},
@@ -51,7 +52,7 @@ func TestJobHistoryCursorIsOpaqueAndBoundToAuthority(t *testing.T) {
 		stream JobHistoryStream
 	}{
 		{jobID: 43, stream: JobHistoryArtifacts},
-		{jobID: 42, stream: JobHistoryClaims},
+		{jobID: 42, stream: JobHistoryEvidence},
 	} {
 		if _, err := decodeJobHistoryCursor(cursor, mismatch.jobID, mismatch.stream); !errors.Is(err, ErrInvalidJobHistoryRequest) {
 			t.Fatalf("cross-authority cursor error=%v", err)

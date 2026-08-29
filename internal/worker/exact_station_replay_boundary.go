@@ -20,8 +20,11 @@ func loadStationReplayPortableBoundary(
 		call.StepAttempt != gap.StepAttempt || call.WorkerID != gap.WorkerID || call.GapID != gap.GapID {
 		return boundary, fmt.Errorf("station replay point does not preserve one exact call and gap authority")
 	}
-	if gap.RendererVersion != assemblyline.PortableRendererV4 {
+	if gap.RendererVersion != assemblyline.PortableRendererV5 {
 		return boundary, fmt.Errorf("station replay renderer %q is not current", gap.RendererVersion)
+	}
+	if err := queue.ValidateStationGapSemanticUncertainty(gap); err != nil {
+		return boundary, fmt.Errorf("station replay semantic uncertainty: %w", err)
 	}
 	var persistedJob assemblyline.PortableJob
 	if err := exactjson.ValidateObject(
@@ -53,10 +56,7 @@ func loadStationReplayPortableBoundary(
 	if strings.TrimSpace(gap.Prompt) == "" {
 		return boundary, fmt.Errorf("station replay stored prompt is empty")
 	}
-	if string(gap.ResponseSchema) != "null" {
-		return boundary, fmt.Errorf("station replay rejects a structured response schema")
-	}
-	projection, err := replayProjectionEnvelope(gap.Prompt, gap.ResponseSchema)
+	projection, err := replayProjectionEnvelope(gap.Prompt)
 	if err != nil || string(projection) != gap.ProjectionEnvelope ||
 		replaySHA256(string(projection)) != gap.ProjectionSHA256 {
 		return boundary, fmt.Errorf("station replay projection differs from its stored identity")
@@ -80,7 +80,7 @@ func validateCurrentContractStationReplayPoint(
 	if err != nil {
 		return boundary, fmt.Errorf("render current station replay contract: %w", err)
 	}
-	if prompt != point.Gap.Prompt || string(point.Gap.ResponseSchema) != "null" {
+	if prompt != point.Gap.Prompt {
 		return boundary, fmt.Errorf("current station renderer differs from the frozen model-visible packet")
 	}
 	call, gap := point.Call, point.Gap
@@ -99,10 +99,9 @@ func validateCurrentContractStationReplayPoint(
 	return boundary, nil
 }
 
-func replayProjectionEnvelope(prompt string, schema json.RawMessage) ([]byte, error) {
+func replayProjectionEnvelope(prompt string) ([]byte, error) {
 	return exactjson.Canonical(struct {
-		Prompt         string          `json:"prompt"`
-		Renderer       string          `json:"renderer"`
-		ResponseSchema json.RawMessage `json:"response_schema"`
-	}{prompt, assemblyline.PortableRendererV4, schema})
+		Prompt   string `json:"prompt"`
+		Renderer string `json:"renderer"`
+	}{prompt, assemblyline.PortableRendererV5})
 }

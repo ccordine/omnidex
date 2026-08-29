@@ -1,7 +1,6 @@
 package worker
 
 import (
-	"encoding/json"
 	"fmt"
 	"path"
 	"regexp"
@@ -68,10 +67,7 @@ func compileDesiredRepositoryCallProof(
 		if call.OpeningID < 1 {
 			return proof, fmt.Errorf("desired repository call proof has invalid opening identity")
 		}
-		kind, err := desiredRepositoryOriginalWorkKind(call.WorkKind, call.Payload)
-		if err != nil {
-			return proof, fmt.Errorf("classify station call %d: %w", call.OpeningID, err)
-		}
+		kind := call.WorkKind
 		proof.TotalModelCalls++
 		switch kind {
 		case assemblyline.WorkFragmentGeneration:
@@ -116,26 +112,6 @@ func desiredRepositoryCallContainsTarget(value, target string) bool {
 	}
 	base := path.Base(target)
 	return base != "." && base != "/" && base != target && strings.Contains(value, base)
-}
-
-func desiredRepositoryOriginalWorkKind(
-	kind assemblyline.WorkKind,
-	payload string,
-) (assemblyline.WorkKind, error) {
-	if kind != assemblyline.WorkResponseCorrection {
-		return kind, nil
-	}
-	var correction assemblyline.ResponseCorrectionInput
-	if err := json.Unmarshal([]byte(payload), &correction); err != nil {
-		return "", fmt.Errorf("decode response correction authority: %w", err)
-	}
-	if err := correction.Original.Validate(); err != nil {
-		return "", fmt.Errorf("validate response correction original: %w", err)
-	}
-	if correction.Original.Kind == assemblyline.WorkResponseCorrection {
-		return "", fmt.Errorf("nested response correction is unsupported")
-	}
-	return correction.Original.Kind, nil
 }
 
 func desiredRepositoryContainsPhysicalOperation(value string) bool {

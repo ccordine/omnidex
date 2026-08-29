@@ -164,7 +164,7 @@ func javaCommandLineAcceptanceContract(behavior, callable string) string {
 		behavior,
 		"Call exactly " + callable + " with representative Map input and dependency values and store its returned map in one local variable.",
 		"Pass that variable to Runtime.requireResult exactly once.",
-		"For every stated acceptance criterion, add one distinct Runtime.require using expected.equals(result.get(\"output\")), expected.equals(result.get(\"error\")), expected.equals(result.get(\"exitCode\")), or expected.equals(result.get(\"state\")); prefix that single predicate with ! when inequality is required.",
+		"Prove the exact accepted requirement with one Runtime.require using expected.equals(result.get(\"output\")), expected.equals(result.get(\"error\")), expected.equals(result.get(\"exitCode\")), or expected.equals(result.get(\"state\")); prefix that predicate with ! when inequality is required.",
 		"Return exactly the declared complete verification method.",
 	}, "\n")
 }

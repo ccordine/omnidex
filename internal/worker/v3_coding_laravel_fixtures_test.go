@@ -96,6 +96,7 @@ func TestLaravelReservedReadinessRouteRejectsGeneratedCollisions(t *testing.T) {
 func laravelWeatherFixtureInput() laravelFixtureInput {
 	return laravelFixtureInput{
 		PackageName: "regional-weather", Product: "Regional weather display",
+		Surface:     assemblyline.ApplicationSurfaceBrowser,
 		Requirement: "Show the current forecast for a selected region.",
 		Objective:   "Return a server-rendered regional forecast.",
 		Behaviors:   []string{"Read the accepted region route parameter."},
@@ -103,9 +104,6 @@ func laravelWeatherFixtureInput() laravelFixtureInput {
 			"The response identifies the selected region.",
 			"The response reports no failure for a valid region.",
 		},
-		Route: "/forecast/{region_code}", Method: assemblyline.ApplicationServiceEndpointGET,
-		RequestMedia:  assemblyline.ApplicationServiceEndpointMediaNone,
-		ResponseMedia: assemblyline.ApplicationServiceEndpointHTML, Status: 200,
 		FeatureSource: `function feature101(TaskInput $input, array $dependencies): TaskResult {
     return TaskResult::success('Forecast ' . ($input->routeParameters['region_code'] ?? ''), ['region' => $input->routeParameters['region_code'] ?? '']);
 }`,
@@ -127,6 +125,7 @@ func laravelWeatherFixtureInput() laravelFixtureInput {
 func laravelCheckoutFixtureInput() laravelFixtureInput {
 	return laravelFixtureInput{
 		PackageName: "equipment-checkout", Product: "Equipment checkout endpoint",
+		Surface:     assemblyline.ApplicationSurfaceService,
 		Requirement: "Record an equipment checkout across requests.",
 		Objective:   "Persist and report each accepted equipment checkout.",
 		Behaviors:   []string{"Increment the durable checkout count."},
@@ -134,21 +133,18 @@ func laravelCheckoutFixtureInput() laravelFixtureInput {
 			"A valid checkout reports that it was recorded.",
 			"The returned state contains the incremented durable count.",
 		},
-		Route: "/equipment/checkouts", Method: assemblyline.ApplicationServiceEndpointPOST,
-		RequestMedia:  assemblyline.ApplicationServiceEndpointJSON,
-		ResponseMedia: assemblyline.ApplicationServiceEndpointJSON, Status: 201,
 		Durable: true,
 		FeatureSource: `function feature101(TaskInput $input, array $dependencies): TaskResult {
     $state = FeatureState101::load();
-    $count = (int) ($state['count'] ?? 0) + 1;
-    FeatureState101::save(['count' => $count]);
-    return TaskResult::success('Checkout recorded', ['count' => $count]);
+    $count = (int) ($state['state_001'] ?? '0') + 1;
+    FeatureState101::save(['state_001' => (string) $count]);
+    return TaskResult::success('Checkout recorded', ['state_001' => (string) $count]);
 }`,
 		AcceptanceSource: `function verifyFeature101(): void {
     $result = feature101(taskInputFixture101(), []);
     RuntimeAssertions::requireResult($result);
     RuntimeAssertions::require($result, $result->output === 'Checkout recorded', 'expected recorded checkout');
-    RuntimeAssertions::require($result, $result->state === ['count' => 1], 'expected first durable count');
+    RuntimeAssertions::require($result, $result->state === ['state_001' => '1'], 'expected first durable count');
 }`,
 	}
 }
@@ -156,11 +152,7 @@ func laravelCheckoutFixtureInput() laravelFixtureInput {
 type laravelFixtureInput struct {
 	PackageName, Product, Requirement, Objective string
 	Behaviors, Criteria                          []string
-	Route                                        string
-	Method                                       assemblyline.ApplicationServiceEndpointMethod
-	RequestMedia                                 assemblyline.ApplicationServiceEndpointMedia
-	ResponseMedia                                assemblyline.ApplicationServiceEndpointMedia
-	Status                                       int
+	Surface                                      assemblyline.ApplicationSurface
 	Durable                                      bool
 	FeatureSource, RepresentationSource          string
 	AcceptanceSource                             string
@@ -169,18 +161,10 @@ type laravelFixtureInput struct {
 func laravelFixtureProgram(t *testing.T, fixture laravelFixtureInput) directCodingProgram {
 	t.Helper()
 	specification := assemblyline.ApplicationSpecification{
-		Surface: assemblyline.ApplicationSurfaceService, ProductQuote: fixture.Product,
+		Surface: fixture.Surface, ProductQuote: fixture.Product,
 		Requirements: []assemblyline.Requirement{{ID: "requirement_001", SourceQuote: fixture.Requirement}},
 	}
-	workload, err := assemblyline.FreezeApplicationWorkload(
-		applicationWorkloadInput(specification), assemblyline.ApplicationWorkloadDraft{
-			Schema: assemblyline.ApplicationWorkloadDraftSchemaV1,
-			Tasks: []assemblyline.ApplicationWorkloadTaskDraft{{
-				RequirementID: "requirement_001", Objective: fixture.Objective,
-				RequiredBehaviors: fixture.Behaviors, AcceptanceCriteria: fixture.Criteria,
-			}},
-		},
-	)
+	workload, err := assemblyline.FreezeApplicationWorkload(specification)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -206,24 +190,31 @@ func laravelFixtureProgram(t *testing.T, fixture laravelFixtureInput) directCodi
 	if fixture.Durable {
 		state.ByTask[workload.Tasks[0].ID] = assemblyline.ApplicationServiceStateCrossRequestAuthorityRequired
 		state = bindTestServiceStateInterfaces(
-			t, workload, capabilities, state, testIntegerServiceStateField("count"),
+			t, workload, capabilities, state,
+			testStringServiceStateField("durable feature state"),
 		)
 	}
-	endpoints := directCodingServiceEndpointPlan{
-		WorkloadSHA256: workload.SHA256, ProductContext: specification.ProductQuote,
-		Requirements: map[string]assemblyline.ApplicationServiceEndpointRequirement{
+	method := assemblyline.ApplicationServiceEndpointGET
+	route := "/regions/{region_code}"
+	requestMedia := assemblyline.ApplicationServiceEndpointMediaNone
+	responseMedia := assemblyline.ApplicationServiceEndpointHTML
+	if fixture.Surface == assemblyline.ApplicationSurfaceService {
+		method = assemblyline.ApplicationServiceEndpointPOST
+		route = "/checkouts"
+		requestMedia = assemblyline.ApplicationServiceEndpointJSON
+		responseMedia = assemblyline.ApplicationServiceEndpointJSON
+	}
+	endpoints := testServiceEndpointPlan(
+		t, laravelHTTPServiceAdapter, workload,
+		map[string]assemblyline.ApplicationServiceEndpointRequirement{
 			workload.Tasks[0].ID: assemblyline.ApplicationServiceEndpointRequired,
 		},
-		ByTask: map[string]assemblyline.ApplicationServiceEndpointContract{
-			workload.Tasks[0].ID: {
-				Schema:   assemblyline.ApplicationServiceEndpointContractSchemaV1,
-				Exposure: assemblyline.ApplicationServiceEndpointPublic,
-				Method:   fixture.Method, RouteTemplate: fixture.Route,
-				RequestMedia: fixture.RequestMedia, ResponseMedia: fixture.ResponseMedia,
-				SuccessStatus: fixture.Status,
-			},
+		map[string]assemblyline.ApplicationServiceEndpointContract{
+			workload.Tasks[0].ID: testHTTPServiceEndpointContract(
+				method, route, requestMedia, responseMedia, 200,
+			),
 		},
-	}
+	)
 	blueprint, staticFiles, err := compileGenericLaravelServiceBlueprint(
 		fixture.PackageName, specification, map[string]directCodingSkillBinding{}, workload,
 		capabilities, target, coverage, state, endpoints,
@@ -234,7 +225,7 @@ func laravelFixtureProgram(t *testing.T, fixture laravelFixtureInput) directCodi
 	generated := map[string]string{
 		"feature.001": fixture.FeatureSource, "acceptance.001": fixture.AcceptanceSource,
 	}
-	if fixture.ResponseMedia == assemblyline.ApplicationServiceEndpointHTML {
+	if fixture.Surface == assemblyline.ApplicationSurfaceBrowser {
 		generated["representation.html.001"] = fixture.RepresentationSource
 	}
 	return directCodingProgram{

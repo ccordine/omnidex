@@ -137,6 +137,7 @@ func TestDatabaseEvidenceWorkflowExecutesCompiledIntentAgainstPostgres(t *testin
 	limits.MaxBytes = 64 * 1024
 	result, err := runObjectiveDatabaseEvidenceWorkflow(ctx, turnAuthority{
 		JobID: 1, Pipeline: model.PipelineChat, Instruction: "How many open evidence items exist?",
+		ModelInstruction: "How many open evidence items exist?", ModelArtifactPaths: []string{},
 		DataSourceID: "worker-proof-source",
 	}, "requirement-postgres-proof", snapshot, stations,
 		func(callContext context.Context, exact datasource.SchemaSnapshot, plan datasource.RelationalQueryPlan) (datasource.EvidenceResult, error) {

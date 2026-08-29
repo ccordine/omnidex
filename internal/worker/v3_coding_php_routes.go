@@ -115,8 +115,8 @@ func phpServiceRendererRouteContract(routes []phpServiceFeatureBinding) []string
 	lines := make([]string, 0, len(routes))
 	for _, route := range routes {
 		lines = append(lines, fmt.Sprintf(
-			"Registered interaction %s returns the code-owned %s route for the accepted behavior bound to task %s.",
-			route.RouteName, route.Endpoint.Method, route.TaskID,
+			"Generate the interaction for %s by calling %s with HTTP %s.",
+			route.RequirementQuote, route.RouteName, route.Endpoint.Method,
 		))
 	}
 	return lines

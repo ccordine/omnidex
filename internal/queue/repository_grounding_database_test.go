@@ -9,16 +9,13 @@ import (
 	"github.com/gryph/omnidex/internal/station"
 )
 
-func TestPostgresRepositoryGroundingStationsUseExactGapAuthority(t *testing.T) {
+func TestPostgresRepositoryEvidenceRelevanceUsesExactGapAuthority(t *testing.T) {
 	tests := []struct {
 		name    string
 		station station.ID
 		job     func(testing.TB) assemblyline.PortableJob
 	}{
 		{name: "relevance", station: station.RepositoryEvidenceRelevance, job: repositoryRelevancePortableJob},
-		{name: "review detail", station: station.RepositoryGroundedReview, job: repositoryReviewPortableJob},
-		{name: "review kind", station: station.RepositoryGroundedReview, job: repositoryReviewKindPortableJob},
-		{name: "correction", station: station.RepositoryGroundedCorrection, job: repositoryCorrectionPortableJob},
 	}
 	for _, test := range tests {
 		test := test
@@ -92,60 +89,6 @@ func repositoryRelevancePortableJob(t testing.TB) assemblyline.PortableJob {
 		ExactRequirement:    "Which component owns dispatch?",
 		Candidates:          []assemblyline.RepositoryEvidenceCandidate{{EvidenceID: "R01", Text: "DispatchOwner owns dispatch."}},
 		SelectedEvidenceIDs: []string{}, MaxSelections: 1,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	return job
-}
-
-func repositoryReviewPortableJob(t testing.TB) assemblyline.PortableJob {
-	t.Helper()
-	job, err := assemblyline.NewRepositoryGroundedIssueDetailJob(assemblyline.RepositoryGroundedReviewInput{
-		RequirementID: "requirement-1", ExactRequirement: "Which component owns dispatch?",
-		AnswerText: "DispatchOwner owns dispatch.", EvidenceIDs: []string{"R01"},
-		Evidence: []assemblyline.GroundedEvidenceCapsule{{ID: "R01", Text: "DispatchOwner owns dispatch."}},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	return job
-}
-
-func repositoryReviewKindPortableJob(t testing.TB) assemblyline.PortableJob {
-	t.Helper()
-	detail := repositoryReviewPortableJob(t)
-	var reviewInput assemblyline.RepositoryGroundedReviewInput
-	if err := decodePortableGapPayload(detail.Payload, &reviewInput); err != nil {
-		t.Fatal(err)
-	}
-	job, err := assemblyline.NewRepositoryGroundedIssueKindJob(
-		assemblyline.RepositoryGroundedIssueKindLeafInput{
-			Review: reviewInput, Detail: "The ownership wording is unsupported.",
-		},
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return job
-}
-
-func repositoryCorrectionPortableJob(t testing.TB) assemblyline.PortableJob {
-	t.Helper()
-	review := repositoryReviewPortableJob(t)
-	var reviewInput assemblyline.RepositoryGroundedReviewInput
-	if err := decodePortableGapPayload(review.Payload, &reviewInput); err != nil {
-		t.Fatal(err)
-	}
-	job, err := assemblyline.NewRepositoryGroundedCorrectionJob(assemblyline.RepositoryGroundedCorrectionInput{
-		RequirementID: reviewInput.RequirementID, ExactRequirement: reviewInput.ExactRequirement,
-		CurrentText: reviewInput.AnswerText, EvidenceIDs: reviewInput.EvidenceIDs, Evidence: reviewInput.Evidence,
-		Issue: assemblyline.RepositoryGroundedReviewDecision{
-			Schema:    assemblyline.RepositoryGroundedReviewSchemaV1,
-			Outcome:   assemblyline.RepositoryGroundedReviewIssue,
-			IssueKind: assemblyline.RepositoryGroundedUnsupportedClaim,
-			Detail:    "The ownership wording is unsupported.",
-		},
 	})
 	if err != nil {
 		t.Fatal(err)

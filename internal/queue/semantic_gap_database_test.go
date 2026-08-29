@@ -25,6 +25,23 @@ func TestPostgresSemanticGapLifecycleIsExactImmutableAndSingular(t *testing.T) {
 	if opened.GapID != opening.Job.ID || opened.Prompt != prompt || opened.ProjectionSHA256 == "" {
 		t.Fatalf("opened event=%+v", opened)
 	}
+	if err := ValidateStationGapSemanticUncertainty(opened); err != nil {
+		t.Fatalf("persisted opening lacks exact semantic uncertainty: %v", err)
+	}
+	var persistedContract []byte
+	var persistedDigest string
+	if err := pool.QueryRow(t.Context(), `
+		SELECT semantic_uncertainty_contract,semantic_uncertainty_contract_sha256
+		FROM station_gap_openings WHERE id=$1
+	`, opened.ID).Scan(&persistedContract, &persistedDigest); err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := decodeStationGapSemanticUncertainty(
+		persistedContract, persistedDigest, opened.WorkKind,
+	)
+	if err != nil || decoded != opened.SemanticUncertaintyContract {
+		t.Fatalf("persisted semantic uncertainty=%+v err=%v", decoded, err)
+	}
 	if _, err := repository.OpenStationGap(t.Context(), opening); err == nil {
 		t.Fatal("duplicate gap opening was accepted")
 	}

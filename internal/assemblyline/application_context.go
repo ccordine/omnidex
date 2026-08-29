@@ -24,7 +24,6 @@ type ApplicationContextFactKind string
 
 const (
 	ApplicationContextWorkspaceState ApplicationContextFactKind = "workspace_state"
-	ApplicationContextAcceptedMemory ApplicationContextFactKind = "accepted_memory"
 	ApplicationContextRepositoryFact ApplicationContextFactKind = "repository_fact"
 	ApplicationContextExternalFact   ApplicationContextFactKind = "external_fact"
 	ApplicationContextRuntimeFact    ApplicationContextFactKind = "runtime_fact"
@@ -34,7 +33,6 @@ type ApplicationContextAuthority string
 
 const (
 	ApplicationContextCodeAuthority     ApplicationContextAuthority = "code"
-	ApplicationContextMemoryAuthority   ApplicationContextAuthority = "accepted_memory"
 	ApplicationContextEvidenceAuthority ApplicationContextAuthority = "verified_evidence"
 )
 
@@ -78,7 +76,6 @@ func validateApplicationRequest(label, request string) error {
 func BootstrapApplicationContext(
 	request string,
 	workspace ApplicationWorkspaceState,
-	memory []ObjectiveMemoryAuthority,
 ) (ApplicationContext, error) {
 	var zero ApplicationContext
 	if err := validateApplicationRequest("application context bootstrap", request); err != nil {
@@ -87,23 +84,11 @@ func BootstrapApplicationContext(
 	if err := validateApplicationWorkspaceState(workspace); err != nil {
 		return zero, err
 	}
-	if err := ValidateObjectiveMemoryAuthorities(memory); err != nil {
-		return zero, fmt.Errorf("application context memory authority: %w", err)
-	}
-	facts := make([]ApplicationContextFact, 0, len(memory)+1)
-	facts = append(facts, ApplicationContextFact{
+	facts := []ApplicationContextFact{{
 		ID: "fact_001", Kind: ApplicationContextWorkspaceState,
 		Authority: ApplicationContextCodeAuthority, Value: string(workspace),
 		SourceID: "workspace", SourceSHA256: ExactObjectiveContextSHA(string(workspace)),
-	})
-	for index, authority := range memory {
-		facts = append(facts, ApplicationContextFact{
-			ID: fmt.Sprintf("fact_%03d", index+2), Kind: ApplicationContextAcceptedMemory,
-			Authority: ApplicationContextMemoryAuthority, Value: authority.Content,
-			SourceID:     fmt.Sprintf("memory_%d", authority.MemoryID),
-			SourceSHA256: authority.ContentSHA256,
-		})
-	}
+	}}
 	context := ApplicationContext{
 		Schema: ApplicationContextSchemaV1, WorkspaceState: workspace,
 		RequestSHA256: ExactObjectiveContextSHA(request), Facts: facts,
@@ -227,13 +212,6 @@ func validateApplicationContextFactBoundary(fact ApplicationContextFact) error {
 		}
 		if fact.NeedID != "" {
 			return fmt.Errorf("workspace state cannot cite an evidence need")
-		}
-	case ApplicationContextAcceptedMemory:
-		if fact.Authority != ApplicationContextMemoryAuthority {
-			return fmt.Errorf("accepted memory requires memory authority")
-		}
-		if fact.NeedID != "" {
-			return fmt.Errorf("accepted memory cannot cite an evidence need")
 		}
 	case ApplicationContextRepositoryFact, ApplicationContextExternalFact, ApplicationContextRuntimeFact:
 		if fact.Authority != ApplicationContextEvidenceAuthority {

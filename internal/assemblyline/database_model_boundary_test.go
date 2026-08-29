@@ -22,7 +22,7 @@ func TestDatabaseSemanticStationJSONBoundariesContainNoExecutionAuthority(t *tes
 		"temporal_windows", "exists", "group_by", "having", "order_by", "limit",
 	})
 	assertExactJSONFields(t, reflect.TypeOf(DatabaseEvidenceGapInput{}), []string{
-		"requirement_id", "exact_requirement", "objective_context", "evidence",
+		"requirement_id", "exact_requirement", "objective_context", "evidence", "known_artifact_paths",
 	})
 	assertExactJSONFields(t, reflect.TypeOf(DatabaseEvidenceGapDecision{}), []string{
 		"schema", "requirement_id", "missing_information",

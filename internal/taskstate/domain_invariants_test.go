@@ -77,7 +77,7 @@ func TestFeedbackPurposeAndAuthorityAreTyped(t *testing.T) {
 		Reason: "The replanned task graph incorporates the feedback.", Refs: testVerificationRefs(),
 	})
 	for _, invalid := range []AddEntryCommand{
-		{ExpectedVersion: 2, Actor: AuthorityModelProposal, ID: "model-feedback",
+		{ExpectedVersion: 2, Actor: AuthorityToolEvidence, ID: "tool-feedback",
 			Kind: EntryFeedback, FeedbackPurpose: FeedbackInterrupt,
 			Content: "Not direct user input.", Metadata: EmptyJSONObject()},
 		{ExpectedVersion: 2, Actor: AuthorityUser, ID: "purpose-on-note",
@@ -109,11 +109,11 @@ func TestSupersessionPreservesSemanticKindAndAuthority(t *testing.T) {
 		t.Fatalf("user authority downgrade error=%v", err)
 	}
 	applyTestCommand(t, ledger, AddEntryCommand{
-		ExpectedVersion: 2, Actor: AuthorityModelProposal, ID: "hypothesis", Kind: EntryHypothesis,
+		ExpectedVersion: 2, Actor: AuthorityCode, ID: "hypothesis", Kind: EntryHypothesis,
 		Content: "Hypothesis.", Metadata: EmptyJSONObject(),
 	})
 	applyTestCommand(t, ledger, AddEntryCommand{
-		ExpectedVersion: 3, Actor: AuthorityModelProposal, ID: "question", Kind: EntryQuestion,
+		ExpectedVersion: 3, Actor: AuthorityCode, ID: "question", Kind: EntryQuestion,
 		Content: "Question?", Metadata: EmptyJSONObject(),
 	})
 	_, err = ledger.Apply(withTestCommandID(t, SupersedeEntryCommand{

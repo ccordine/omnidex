@@ -156,22 +156,10 @@ func TestRustAcceptanceRequiresBoundImplementationResultAssertion(t *testing.T) 
 		})
 	}
 
-	stage.Workload.Tasks[0].AcceptanceCriteria = append(
-		stage.Workload.Tasks[0].AcceptanceCriteria,
-		"The result has the expected exit status.",
-	)
-	duplicate := `fn verify_feature_001() {
-		let result = feature_001(&TaskInput::default(), &representative_capability_results_for_feature_001());
-		assert_eq!(result.output, "ready");
-		assert_eq!(result.output, "ready");
-	}`
-	if err := validateDirectCodingRustAcceptance(&stage, ref, duplicate); err == nil {
-		t.Fatalf("accepted duplicate Rust verification conditions:\n%s", duplicate)
-	}
 }
 
 func TestRustTaskVerificationUsesExactCoverageTestTarget(t *testing.T) {
-	specification, workload := rustCommandLineStackFixture(t)
+	_, workload := rustCommandLineStackFixture(t)
 	target := assemblyline.TargetTree{
 		Paths: []string{"src/argument_echo.rs", "tests/argument_echo_test.rs"},
 	}
@@ -186,7 +174,7 @@ func TestRustTaskVerificationUsesExactCoverageTestTarget(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	contexts, err := directCodingApplicationTaskContexts(applicationWorkloadInput(specification), workload)
+	contexts, err := directCodingApplicationTaskContexts(workload)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -212,26 +200,11 @@ func TestRustCoverageRejectsSharedWorkloadModules(t *testing.T) {
 			{ID: "requirement_002", SourceQuote: "Return the standard input"},
 		},
 	}
-	input := applicationWorkloadInput(specification)
-	workload, err := assemblyline.FreezeApplicationWorkload(input, assemblyline.ApplicationWorkloadDraft{
-		Schema: assemblyline.ApplicationWorkloadDraftSchemaV1,
-		Tasks: []assemblyline.ApplicationWorkloadTaskDraft{
-			{
-				RequirementID: "requirement_001", Objective: "Return the first argument.",
-				RequiredBehaviors:  []string{"Read the first argument."},
-				AcceptanceCriteria: []string{"The first argument is returned."},
-			},
-			{
-				RequirementID: "requirement_002", Objective: "Return standard input.",
-				RequiredBehaviors:  []string{"Read standard input."},
-				AcceptanceCriteria: []string{"Standard input is returned."},
-			},
-		},
-	})
+	workload, err := assemblyline.FreezeApplicationWorkload(specification)
 	if err != nil {
 		t.Fatal(err)
 	}
-	context, err := directCodingApplicationTaskContexts(applicationWorkloadInput(specification), workload)
+	context, err := directCodingApplicationTaskContexts(workload)
 	if err != nil {
 		t.Fatal(err)
 	}

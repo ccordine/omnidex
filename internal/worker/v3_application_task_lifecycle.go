@@ -21,7 +21,6 @@ type directCodingApplicationTaskLifecycleHooks struct {
 }
 
 func runDirectCodingApplicationTaskLifecycle(
-	input assemblyline.ApplicationWorkloadDraftInput,
 	frozen assemblyline.FrozenApplicationWorkload,
 	program *directCodingProgram,
 	hooks directCodingApplicationTaskLifecycleHooks,
@@ -32,7 +31,7 @@ func runDirectCodingApplicationTaskLifecycle(
 	if hooks.BuildBlock == nil || hooks.VerifyTask == nil || hooks.FinalStage == nil {
 		return fmt.Errorf("application task lifecycle requires generation, verification, and final-stage hooks")
 	}
-	if err := assemblyline.ValidateFrozenApplicationWorkload(input, frozen); err != nil {
+	if err := assemblyline.ValidateFrozenApplicationWorkload(frozen); err != nil {
 		return err
 	}
 	if !reflect.DeepEqual(program.Workload, frozen) {
@@ -46,7 +45,7 @@ func runDirectCodingApplicationTaskLifecycle(
 	}
 
 	err := executeDirectCodingApplicationWorkload(
-		input, frozen,
+		frozen,
 		func(context assemblyline.ApplicationTaskContext) error {
 			if hooks.BeginTask != nil {
 				if err := hooks.BeginTask(context); err != nil {

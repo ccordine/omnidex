@@ -34,7 +34,8 @@ describe("card modal React SPA", () => {
   });
 
   it("applies the single typed realtime card event without refetching modal context", async () => {
-    const fetchMock = vi.fn(async () => jsonResponse(modalContext));
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) =>
+      jsonResponse(String(input).includes("/tags?") ? { tags: [] } : modalContext));
     vi.stubGlobal("fetch", fetchMock);
     render(<CardModalApp cardID="card_1" projectID={7} />);
     expect(await screen.findByText("React modal card")).toBeInTheDocument();
@@ -45,7 +46,7 @@ describe("card modal React SPA", () => {
       ...modalContext.card, title: "Live typed card", updated_at: "2026-06-13T12:01:00Z",
     }) }));
     expect(await screen.findByText("Live typed card")).toBeInTheDocument();
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalledWith("/v1/scrum/cards/card_1/modal?project_id=7&tab=card");
     expect(boardRefresh).not.toHaveBeenCalled();
     document.removeEventListener("omni:scrum-refresh", boardRefresh);
   });

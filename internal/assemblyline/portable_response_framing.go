@@ -9,12 +9,10 @@ type PortableResponseFraming string
 const (
 	PortableResponseFramingSingleLine       PortableResponseFraming = "single_line"
 	PortableResponseFramingNaturalMultiline PortableResponseFraming = "natural_multiline"
-	portableResponseFramingOriginal         PortableResponseFraming = "retained_original"
 )
 
 // PortableResponseFramingForWorkKind classifies every registered work kind by
-// its exact result grammar. Response correction is resolved from its retained
-// original job by PortableResponseFramingForJob.
+// its exact result grammar.
 func PortableResponseFramingForWorkKind(
 	kind WorkKind,
 ) (PortableResponseFraming, error) {
@@ -23,7 +21,6 @@ func PortableResponseFramingForWorkKind(
 		WorkApplicationRequirement,
 		WorkApplicationTargetTree,
 		WorkRepositoryRequirement,
-		WorkRepositoryGroundedCorrection,
 		WorkContextMinification,
 		WorkConversationResponse,
 		WorkRoleplayGroundedResponseText,
@@ -31,14 +28,11 @@ func PortableResponseFramingForWorkKind(
 		WorkGroundedAnswerText,
 		WorkDatabaseEvidenceGap,
 		WorkWebSynthesisParagraph,
-		WorkWebGroundedSynthesisCorrection,
 		WorkTypeScriptRepairGuidance,
 		WorkFragmentGeneration,
 		WorkFragmentModification,
 		WorkFragmentCorrection:
 		return PortableResponseFramingNaturalMultiline, nil
-	case WorkResponseCorrection:
-		return portableResponseFramingOriginal, nil
 	case WorkApplicationContextNeedCoverage,
 		WorkApplicationContextNeedQuestion,
 		WorkApplicationRequirementCoverage,
@@ -47,10 +41,10 @@ func PortableResponseFramingForWorkKind(
 		WorkApplicationServicePersistenceDestination,
 		WorkApplicationServiceStateLifetime,
 		WorkApplicationStateFieldCoverage,
-		WorkApplicationStateFieldName,
+		WorkApplicationStateFieldPurpose,
 		WorkApplicationStateFieldKind,
 		WorkApplicationRecordFieldCoverage,
-		WorkApplicationRecordFieldName,
+		WorkApplicationRecordFieldPurpose,
 		WorkApplicationRecordFieldKind,
 		WorkApplicationServiceEndpointRequirement,
 		WorkApplicationServiceEndpointExposure,
@@ -60,20 +54,9 @@ func PortableResponseFramingForWorkKind(
 		WorkApplicationServiceEndpointResponseMedia,
 		WorkApplicationServiceEndpointSuccessStatus,
 		WorkApplicationClassify,
-		WorkApplicationJobObjective,
-		WorkApplicationBehaviorCoverage,
-		WorkApplicationBehavior,
-		WorkApplicationCriterionCoverage,
-		WorkApplicationCriterion,
 		WorkRepositoryRequirementCoverage,
-		WorkRepositorySearchAnchorCoverage,
-		WorkRepositorySearchAnchor,
 		WorkRepositoryEvidenceRelevanceLeaf,
 		WorkRepositoryChangeOwner,
-		WorkRepositoryGroundedIssueDetail,
-		WorkRepositoryGroundedIssueKind,
-		WorkContextSearchTermCoverage,
-		WorkContextSearchTerm,
 		WorkContextRelevanceSelection,
 		WorkConversationObjectiveKind,
 		WorkRoleplayGroundedResponseEvidenceRelation,
@@ -109,18 +92,12 @@ func PortableResponseFramingForWorkKind(
 		WorkDatabaseQueryOrderProjection,
 		WorkDatabaseQueryOrderDirection,
 		WorkDatabaseJoinPathSelection,
-		WorkWebSearchTermCoverage,
-		WorkWebSearchTerm,
 		WorkWebRelevanceRelation,
 		WorkWebSynthesisParagraphCoverage,
 		WorkWebSynthesisEvidenceRelation,
-		WorkWebReviewClaimCoverage,
-		WorkWebReviewClaim,
-		WorkWebReviewClaimVerdict,
-		WorkWebReviewIssueEvidenceRelation,
-		WorkWebReviewIssueDetail,
 		WorkArtifactHandling,
-		WorkKnownArtifactTruth,
+		WorkRepositoryArtifactAbsence,
+		WorkPlainTextArtifactCreation,
 		WorkDeclarationArtifactBoundary,
 		WorkArtifactCandidateSelection,
 		WorkCapabilityRelation,
@@ -131,29 +108,11 @@ func PortableResponseFramingForWorkKind(
 	}
 }
 
-// PortableResponseFramingForJob resolves inherited correction framing and
-// returns only a provider-actionable framing value.
+// PortableResponseFramingForJob returns only a provider-actionable framing
+// value for one validated job.
 func PortableResponseFramingForJob(job PortableJob) (PortableResponseFraming, error) {
 	if err := job.Validate(); err != nil {
 		return "", err
 	}
-	framing, err := PortableResponseFramingForWorkKind(job.Kind)
-	if err != nil {
-		return "", err
-	}
-	if framing != portableResponseFramingOriginal {
-		return framing, nil
-	}
-	var input ResponseCorrectionInput
-	if err := decodePortablePayload(job.Payload, &input); err != nil {
-		return "", fmt.Errorf("decode response correction framing authority: %w", err)
-	}
-	originalFraming, err := PortableResponseFramingForWorkKind(input.Original.Kind)
-	if err != nil {
-		return "", err
-	}
-	if originalFraming == portableResponseFramingOriginal {
-		return "", fmt.Errorf("response correction framing cannot inherit another correction")
-	}
-	return originalFraming, nil
+	return PortableResponseFramingForWorkKind(job.Kind)
 }

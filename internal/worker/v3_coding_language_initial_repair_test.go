@@ -74,8 +74,7 @@ func TestGenerateBlockCoreRepairsInitialParserRejectionWithoutStageFailureMapper
 			executor := &directCodingLanguageProjectStageExecutor{
 				config:                    directCodingLanguageStageConfig{Language: fixture.input.Language},
 				acceptedRepairTransitions: make(map[string]int),
-				repairGuidance:            make(map[string]map[string]struct{}),
-				repairSources:             make(map[string]map[string]struct{}),
+				repairDiagnostics:         make(map[string]map[string]struct{}),
 			}
 			calls := make([]string, 0, 3)
 			guidanceAttempts := 0
@@ -141,7 +140,7 @@ func TestGenerateBlockCoreRepairsInitialParserRejectionWithoutStageFailureMapper
 				t.Fatal(err)
 			}
 			want := fixture.corrected
-			if got != want || modelResolutions != 1 || guidanceAttempts != maxTypedWorkerAttempts ||
+			if got != want || modelResolutions != 1 || guidanceAttempts != 1 ||
 				len(calls) != 3 ||
 				calls[0] != "portable_fragment_worker:initial" ||
 				calls[1] != "portable_semantic_worker:guidance" ||

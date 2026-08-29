@@ -87,7 +87,10 @@ func ReplayExactStation(
 	if err != nil {
 		return result, err
 	}
-	discoveryScope := fmt.Sprintf("station-replay:%d:%s", point.Call.ID, point.Gap.GapID)
+	discoveryScope := fmt.Sprintf(
+		"station-replay:%d:%s:semantic-uncertainty:%s",
+		point.Call.ID, point.Gap.GapID, point.Gap.SemanticUncertaintyContractSHA256,
+	)
 	observed, err := llm.RequireDiscoveredProviderIdentityEvidence(
 		ctx, client, selection, discoveryScope,
 	)

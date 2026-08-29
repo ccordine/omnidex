@@ -84,22 +84,7 @@ func targetTreeCompilerFixture(
 	if err := specification.Validate(); err != nil {
 		t.Fatal(err)
 	}
-	workload, err := assemblyline.FreezeApplicationWorkload(
-		applicationWorkloadInput(specification),
-		assemblyline.ApplicationWorkloadDraft{
-			Schema: assemblyline.ApplicationWorkloadDraftSchemaV1,
-			Tasks: []assemblyline.ApplicationWorkloadTaskDraft{{
-				RequirementID: "requirement_001",
-				Objective:     "Produce the observable result.",
-				RequiredBehaviors: []string{
-					"Return one observable result.",
-				},
-				AcceptanceCriteria: []string{
-					"The observable result is present.",
-				},
-			}},
-		},
-	)
+	workload, err := assemblyline.FreezeApplicationWorkload(specification)
 	if err != nil {
 		t.Fatal(err)
 	}

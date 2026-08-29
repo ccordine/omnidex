@@ -130,13 +130,15 @@ func singleLineFramingGap(
 ) queue.StationGapOpening {
 	t.Helper()
 	const contextTokens = 8192
-	return queue.StationGapOpening{
+	gap := queue.StationGapOpening{
 		JobID: 1, Generation: 1, StepID: stepID, StepAttempt: 1,
 		WorkerID: "framing-test", GapID: job.ID, WorkID: job.ID,
-		WorkKind: string(job.Kind), RendererVersion: assemblyline.PortableRendererV4,
+		WorkKind: string(job.Kind), RendererVersion: assemblyline.PortableRendererV5,
 		ProjectionSHA256: strings.Repeat("b", 64), Prompt: prompt,
-		ResponseSchema: []byte("null"), ContextTokens: contextTokens,
+		ContextTokens:   contextTokens,
 		MaxOutputTokens: portableWorkerTestMaxOutputTokens(t, job, contextTokens),
 		OutputLimitMode: contract.OutputLimitMode,
 	}
+	bindTestGapSemanticUncertainty(t, &gap)
+	return gap
 }

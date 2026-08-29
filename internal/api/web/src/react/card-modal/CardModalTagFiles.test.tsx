@@ -34,14 +34,16 @@ describe("card modal tag and file authority", () => {
   });
 
   it("shows a live error when the server-owned tag catalog cannot be loaded", async () => {
-    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       if (String(input).includes("/tags?")) return jsonResponse({ error: "tag catalog failed" }, 503);
       return jsonResponse(modalContext);
-    }));
+    });
+    vi.stubGlobal("fetch", fetchMock);
 
     render(<CardModalApp cardID="card_1" projectID={7} />);
 
-    expect(await screen.findByRole("alert")).toHaveTextContent("Tag catalog unavailable: tag catalog failed");
+    expect(await screen.findByRole("alert", {}, { timeout: 5_000 })).toHaveTextContent("Tag catalog unavailable: tag catalog failed");
+    expect(fetchMock).toHaveBeenCalledWith("/v1/scrum/tags?project_id=7&limit=40");
   });
 
   it("sends exact user tag bytes and renders only the canonical server result", async () => {

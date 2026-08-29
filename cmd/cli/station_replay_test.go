@@ -3,9 +3,6 @@ package main
 import (
 	"strings"
 	"testing"
-	"time"
-
-	"github.com/gryph/omnidex/internal/worker"
 )
 
 func TestParseStationReplayOptionsRequiresOneFrozenPointAndReport(t *testing.T) {
@@ -23,68 +20,14 @@ func TestParseStationReplayOptionsRequiresOneFrozenPointAndReport(t *testing.T) 
 	}
 
 	for name, args := range map[string][]string{
-		"no frozen point":    {"--model", "qwen", "--report", "/tmp/replay.jsonl"},
-		"both frozen points": {"--opening", "7", "--job", "22", "--model", "qwen", "--report", "/tmp/replay.jsonl"},
-		"no model":           {"--opening", "7", "--report", "/tmp/replay.jsonl"},
-		"no report":          {"--opening", "7", "--model", "qwen"},
-		"duplicate model":    {"--opening", "7", "--model", "qwen", "--model", "qwen", "--report", "/tmp/replay.jsonl"},
-		"conflicting modes":  {"--opening", "7", "--model", "qwen", "--report", "/tmp/replay.jsonl", "--current-contract", "--compiler-converge"},
-	} {
-		t.Run(name, func(t *testing.T) {
-			if _, err := parseStationReplayOptions(args); err == nil {
-				t.Fatal("expected option rejection")
-			}
-		})
-	}
-}
-
-func TestParseStationReplayOptionsSupportsSpecificationConvergence(t *testing.T) {
-	options, err := parseStationReplayOptions([]string{
-		"--opening", "266", "--model", "llama3.2:3b",
-		"--specification-converge",
-		"--report", "/tmp/specification-convergence.jsonl",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !options.SpecificationConverge {
-		t.Fatalf("options=%+v", options)
-	}
-	for name, args := range map[string][]string{
-		"conflicting replay mode": {
-			"--opening", "266", "--model", "llama3.2:3b",
-			"--specification-converge", "--current-contract", "--report", "/tmp/specification-convergence.jsonl",
-		},
-	} {
-		t.Run(name, func(t *testing.T) {
-			if _, err := parseStationReplayOptions(args); err == nil {
-				t.Fatal("expected option rejection")
-			}
-		})
-	}
-}
-
-func TestParseStationReplayOptionsRequiresGuidanceModelForCompilerConvergence(t *testing.T) {
-	options, err := parseStationReplayOptions([]string{
-		"--opening", "267", "--model", "qwen3.5:9b-q4_K_M",
-		"--guidance-model", "deepseek-r1:8b", "--compiler-converge",
-		"--report", "/tmp/guided-convergence.jsonl",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !options.CompilerConverge || options.GuidanceModel != "deepseek-r1:8b" {
-		t.Fatalf("options=%+v", options)
-	}
-	for name, args := range map[string][]string{
-		"missing guidance model": {
-			"--opening", "267", "--model", "qwen3.5:9b-q4_K_M", "--compiler-converge",
-			"--report", "/tmp/guided-convergence.jsonl",
-		},
-		"guidance outside mode": {
-			"--opening", "267", "--model", "qwen3.5:9b-q4_K_M",
-			"--guidance-model", "deepseek-r1:8b", "--report", "/tmp/guided-convergence.jsonl",
-		},
+		"no frozen point":              {"--model", "qwen", "--report", "/tmp/replay.jsonl"},
+		"both frozen points":           {"--opening", "7", "--job", "22", "--model", "qwen", "--report", "/tmp/replay.jsonl"},
+		"no model":                     {"--opening", "7", "--report", "/tmp/replay.jsonl"},
+		"no report":                    {"--opening", "7", "--model", "qwen"},
+		"duplicate model":              {"--opening", "7", "--model", "qwen", "--model", "qwen", "--report", "/tmp/replay.jsonl"},
+		"removed compiler convergence": {"--opening", "7", "--model", "qwen", "--report", "/tmp/replay.jsonl", "--compiler-converge"},
+		"removed guidance model":       {"--opening", "7", "--model", "qwen", "--report", "/tmp/replay.jsonl", "--guidance-model", "deepseek"},
+		"retired workload convergence": {"--opening", "7", "--model", "qwen", "--report", "/tmp/replay.jsonl", "--specification-converge"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			if _, err := parseStationReplayOptions(args); err == nil {
@@ -112,46 +55,5 @@ func TestStationReplayRuntimeConfigRequiresDirectReadOnlyInputs(t *testing.T) {
 	}, "")
 	if err == nil || !strings.Contains(err.Error(), "OLLAMA_BASE_URL") {
 		t.Fatalf("error=%v", err)
-	}
-}
-
-func TestStationConvergenceDiagnosticSummaryDoesNotReportUncompiledOutputAsZeroErrors(t *testing.T) {
-	if got := stationConvergenceDiagnosticSummary(worker.ExactTypeScriptConvergenceIteration{
-		ExecutionArtifactError: "no required declaration",
-	}); got != "not_compiled" {
-		t.Fatalf("malformed artifact summary=%q", got)
-	}
-	if got := stationConvergenceDiagnosticSummary(worker.ExactTypeScriptConvergenceIteration{
-		AfterDiagnostic: &worker.ExactTypeScriptReplayDiagnostic{Count: 4},
-	}); got != "4" {
-		t.Fatalf("compiled artifact summary=%q", got)
-	}
-}
-
-func TestStationConvergenceProgressSummaryReportsExactDiagnosticDelta(t *testing.T) {
-	iteration := worker.ExactTypeScriptConvergenceIteration{
-		DiagnosticDelta: &worker.ExactTypeScriptDiagnosticDelta{
-			Before: 9, After: 9, Resolved: 1, Retained: 8, Introduced: 1,
-			Assessment: worker.ExactTypeScriptConvergenceMixed,
-		},
-	}
-	if got := stationConvergenceProgressSummary(iteration); got !=
-		"before=9 after=9 resolved=1 retained=8 introduced=1 assessment=mixed" {
-		t.Fatalf("progress summary=%q", got)
-	}
-	if got := stationConvergenceProgressSummary(worker.ExactTypeScriptConvergenceIteration{}); got != "not_scored" {
-		t.Fatalf("unverified progress summary=%q", got)
-	}
-}
-
-func TestStationConvergenceReportMeasuresCompilerSetupAndModelLoop(t *testing.T) {
-	started := time.Date(2026, 8, 15, 1, 0, 0, 0, time.UTC)
-	finished := started.Add(7 * time.Second)
-	run := newStationConvergenceReportRun(
-		started, finished,
-		worker.ExactTypeScriptConvergence{WallDuration: 2 * time.Second}, nil,
-	)
-	if run.Convergence.WallDuration != 7*time.Second {
-		t.Fatalf("reported convergence duration=%s", run.Convergence.WallDuration)
 	}
 }

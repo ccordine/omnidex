@@ -22,7 +22,6 @@ func exactPreparedRequest(expected llm.ProviderIdentityExpectation) llm.Prepared
 		Prompt: "Return one exact semantic leaf.", PromptHint: llm.MinimalGeneratePrompt,
 		MaxOutputTokens: 1024, OutputLimitMode: llm.ExactPreparedOutputLimitExplicit,
 		ContextTokens:                expected.NativeContextLimit,
-		ThinkingEnabled:              false,
 		Temperature:                  &zero,
 		RawTextStopSequence:          llm.ExactPreparedLineStopV1,
 		ProviderIdentityExpectation:  &expected,

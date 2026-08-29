@@ -24,8 +24,8 @@ func TestParseTelemetryNotifyPayloadRequiresTypedJSON(t *testing.T) {
 }
 
 func TestTelemetryJobProgressSignalsIntermediateAndTerminalState(t *testing.T) {
-	phase, summary, ok := telemetryJobProgress(telemetryNotifyPayload{EventType: "tool_call_complete", JobID: 42})
-	if !ok || phase != realtimeJobChanged || summary != "tool call complete" {
+	phase, summary, ok := telemetryJobProgress(telemetryNotifyPayload{EventType: "coding_stage_passed", JobID: 42})
+	if !ok || phase != realtimeJobChanged || summary != "coding stage passed" {
 		t.Fatalf("phase=%q summary=%q ok=%t", phase, summary, ok)
 	}
 	for eventType, expectedSummary := range map[string]string{
@@ -38,11 +38,11 @@ func TestTelemetryJobProgressSignalsIntermediateAndTerminalState(t *testing.T) {
 			t.Fatalf("terminal event=%q phase=%q summary=%q ok=%t", eventType, phase, summary, ok)
 		}
 	}
-	if _, _, ok := telemetryJobProgress(telemetryNotifyPayload{EventType: "tool_call_begin"}); ok {
+	if _, _, ok := telemetryJobProgress(telemetryNotifyPayload{EventType: "coding_stage_started"}); ok {
 		t.Fatal("telemetry without job id must not publish job progress")
 	}
 	_, summary, ok = telemetryJobProgress(telemetryNotifyPayload{
-		EventType: "tool_call_begin",
+		EventType: "coding_stage_started",
 		JobID:     42,
 		Message:   "Inspecting the workspace",
 	})

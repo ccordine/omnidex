@@ -95,8 +95,8 @@ func validateProjectedEntryAdded(event Event) error {
 	if err := validateProjectedEntryCore(entry, event); err != nil {
 		return err
 	}
-	if entry.Provenance != (EntryProvenance{}) || entry.SupersedesID != "" || entry.SupersededBy != "" {
-		return invalidEvent("new ordinary entry contains accepted-decision or supersession state")
+	if entry.SupersedesID != "" || entry.SupersededBy != "" {
+		return invalidEvent("new ordinary entry contains supersession state")
 	}
 	return nil
 }
@@ -141,29 +141,6 @@ func validateProjectedEntryCore(entry Entry, event Event) error {
 		return invalidEvent("fact entry requires evidence")
 	}
 	return nil
-}
-
-func validateProjectedDecisionAccepted(event Event) error {
-	if event.Authority != AuthorityCode && event.Authority != AuthorityUser || event.Entry == nil {
-		return invalidEvent("decision acceptance requires code or user authority and one accepted entry")
-	}
-	if err := requireEventEntryAndReplacement(event); err != nil {
-		return err
-	}
-	entry := *event.Entry
-	if entry.ID != event.ReplacementID || entry.Kind != EntryAcceptedDecision ||
-		entry.Authority != AuthorityAcceptedModelDecision || entry.SupersedesID != "" ||
-		entry.SupersededBy != "" || entry.Provenance.SourceEntryID != event.EntryID ||
-		entry.Provenance.AcceptancePolicy != event.Reason || entry.Provenance.AcceptedBy != event.Authority {
-		return invalidEvent("accepted decision identity or provenance is inconsistent")
-	}
-	if event.Reason == "" {
-		return invalidEvent("decision acceptance requires a policy")
-	}
-	if !hasEvidenceRef(entry.Refs) {
-		return invalidEvent("accepted decision requires acceptance evidence")
-	}
-	return validateProjectedEntryCore(entry, event)
 }
 
 func requireEventEntryAndReason(event Event) error {

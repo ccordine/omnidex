@@ -30,11 +30,9 @@ const (
 type Authority string
 
 const (
-	AuthorityUser                  Authority = "user"
-	AuthorityCode                  Authority = "code"
-	AuthorityToolEvidence          Authority = "tool_evidence"
-	AuthorityModelProposal         Authority = "model_proposal"
-	AuthorityAcceptedModelDecision Authority = "accepted_model_decision"
+	AuthorityUser         Authority = "user"
+	AuthorityCode         Authority = "code"
+	AuthorityToolEvidence Authority = "tool_evidence"
 )
 
 type NodeKind string
@@ -71,17 +69,15 @@ const (
 type EntryKind string
 
 const (
-	EntryConstraint        EntryKind = "constraint"
-	EntryFact              EntryKind = "fact"
-	EntryObservation       EntryKind = "observation"
-	EntryHypothesis        EntryKind = "hypothesis"
-	EntryDecisionCandidate EntryKind = "decision_candidate"
-	EntryAcceptedDecision  EntryKind = "accepted_decision"
-	EntryQuestion          EntryKind = "question"
-	EntryFailure           EntryKind = "failure"
-	EntryCheckpoint        EntryKind = "checkpoint"
-	EntryNote              EntryKind = "note"
-	EntryFeedback          EntryKind = "feedback"
+	EntryConstraint  EntryKind = "constraint"
+	EntryFact        EntryKind = "fact"
+	EntryObservation EntryKind = "observation"
+	EntryHypothesis  EntryKind = "hypothesis"
+	EntryQuestion    EntryKind = "question"
+	EntryFailure     EntryKind = "failure"
+	EntryCheckpoint  EntryKind = "checkpoint"
+	EntryNote        EntryKind = "note"
+	EntryFeedback    EntryKind = "feedback"
 )
 
 type EntryStatus string
@@ -122,7 +118,6 @@ const (
 	CommandRejectEntry             CommandKind = "reject_entry"
 	CommandResolveEntry            CommandKind = "resolve_entry"
 	CommandSupersedeEntry          CommandKind = "supersede_entry"
-	CommandAcceptDecision          CommandKind = "accept_decision"
 	CommandPromoteReady            CommandKind = "promote_ready_nodes"
 	CommandAssignStep              CommandKind = "assign_node_step"
 	CommandTransitionNode          CommandKind = "transition_node"
@@ -139,7 +134,6 @@ const (
 	EventEntryRejected            EventKind = "entry_rejected"
 	EventEntryResolved            EventKind = "entry_resolved"
 	EventEntrySuperseded          EventKind = "entry_superseded"
-	EventDecisionAccepted         EventKind = "decision_accepted"
 	EventNodesReadied             EventKind = "nodes_readied"
 	EventNodeStepAssigned         EventKind = "node_step_assigned"
 	EventNodeTransitioned         EventKind = "node_transitioned"
@@ -152,12 +146,6 @@ type Ref struct {
 	Version  string      `json:"version"`
 	Hash     string      `json:"content_sha256"`
 	Relation RefRelation `json:"relation"`
-}
-
-type EntryProvenance struct {
-	SourceEntryID    EntryID   `json:"source_entry_id,omitempty"`
-	AcceptancePolicy string    `json:"acceptance_policy,omitempty"`
-	AcceptedBy       Authority `json:"accepted_by,omitempty"`
 }
 
 type Node struct {
@@ -214,7 +202,6 @@ type Entry struct {
 	SupersedesID      EntryID         `json:"supersedes_id,omitempty"`
 	SupersededBy      EntryID         `json:"superseded_by,omitempty"`
 	Metadata          JSONObject      `json:"metadata"`
-	Provenance        EntryProvenance `json:"provenance"`
 	Refs              []Ref           `json:"refs"`
 	DispositionReason string          `json:"disposition_reason,omitempty"`
 	DispositionBy     Authority       `json:"disposition_by,omitempty"`

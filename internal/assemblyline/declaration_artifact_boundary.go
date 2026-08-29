@@ -82,10 +82,9 @@ func BuildDeclarationArtifactBoundaryPrompt(input DeclarationArtifactBoundaryInp
 		return "", err
 	}
 	return strings.Join([]string{
-		"Classify only the explicit semantic artifact boundary of FOCUSED_DECLARATION in REQUIREMENT_QUOTE.",
+		"Classify only the explicit semantic artifact boundary of the exact Go signature in REQUIREMENT_QUOTE.",
 		"Choose independent_artifact when the quote explicitly requires the declaration to be an independently owned artifact, existing_artifact when it explicitly requires the declaration to belong to a previously established artifact, or none when neither relationship is specified.",
 		"Return exactly one raw registered boundary value with no JSON, quotes, label, Markdown, or commentary.",
-		"FOCUSED_DECLARATION: " + input.DeclarationID,
 		"EXACT_GO_SIGNATURE: " + input.GoSignature,
 		"REQUIREMENT_QUOTE:\n" + input.RequirementQuote,
 	}, "\n\n"), nil

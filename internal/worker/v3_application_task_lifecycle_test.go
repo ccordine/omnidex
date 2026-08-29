@@ -13,7 +13,7 @@ import (
 func TestApplicationTaskLifecycleGeneratesAllBlocksBeforeFinalStage(t *testing.T) {
 	t.Parallel()
 
-	input, frozen, program := applicationTaskLifecycleFixture(t)
+	_, frozen, program := applicationTaskLifecycleFixture(t)
 	var events []string
 	finalCalls := 0
 	hooks := directCodingApplicationTaskLifecycleHooks{
@@ -39,7 +39,7 @@ func TestApplicationTaskLifecycleGeneratesAllBlocksBeforeFinalStage(t *testing.T
 			return nil
 		},
 	}
-	if err := runDirectCodingApplicationTaskLifecycle(input, frozen, &program, hooks); err != nil {
+	if err := runDirectCodingApplicationTaskLifecycle(frozen, &program, hooks); err != nil {
 		t.Fatal(err)
 	}
 	want := []string{
@@ -55,10 +55,10 @@ func TestApplicationTaskLifecycleGeneratesAllBlocksBeforeFinalStage(t *testing.T
 func TestApplicationTaskLifecycleGenerationFailureStartsNoLaterTaskOrFinalStage(t *testing.T) {
 	t.Parallel()
 
-	input, frozen, program := applicationTaskLifecycleFixture(t)
+	_, frozen, program := applicationTaskLifecycleFixture(t)
 	var events []string
 	err := runDirectCodingApplicationTaskLifecycle(
-		input, frozen, &program,
+		frozen, &program,
 		directCodingApplicationTaskLifecycleHooks{
 			BuildBlock: func(
 				_ assemblyline.ApplicationTaskContext,
@@ -89,9 +89,9 @@ func TestApplicationTaskLifecycleGenerationFailureStartsNoLaterTaskOrFinalStage(
 
 func TestApplicationTaskLifecycleWrapsEveryGeneratedTaskInCodeOwnedCognitionTransitions(t *testing.T) {
 	t.Parallel()
-	input, frozen, program := applicationTaskLifecycleFixture(t)
+	_, frozen, program := applicationTaskLifecycleFixture(t)
 	var events []string
-	err := runDirectCodingApplicationTaskLifecycle(input, frozen, &program, directCodingApplicationTaskLifecycleHooks{
+	err := runDirectCodingApplicationTaskLifecycle(frozen, &program, directCodingApplicationTaskLifecycleHooks{
 		BeginTask: func(context assemblyline.ApplicationTaskContext) error {
 			events = append(events, "begin:"+context.Task.TaskID)
 			return nil

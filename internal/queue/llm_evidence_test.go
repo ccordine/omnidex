@@ -18,8 +18,7 @@ func TestLLMCallEvidenceRejectsIncompleteOrFakeSuccess(t *testing.T) {
 		StepID: 1, Scope: "portable", RequestedModel: "requested", Model: "effective", Attempt: 1,
 		StationCallOpeningID: 1,
 		SystemPrompt:         "exact system prompt", UserPrompt: "exact user prompt",
-		ResponseFormat: "text",
-		ContextTokens:  4096, MaxOutputTokens: 512,
+		ContextTokens: 4096, MaxOutputTokens: 512,
 		Status: LLMEvidenceSucceeded, Response: "exact response",
 	}
 	for name, mutate := range map[string]func(*LLMCallEvidenceRecord){
@@ -27,19 +26,11 @@ func TestLLMCallEvidenceRejectsIncompleteOrFakeSuccess(t *testing.T) {
 		"fake success":   func(record *LLMCallEvidenceRecord) { record.Response = "" },
 		"partial work":   func(record *LLMCallEvidenceRecord) { record.WorkID = strings.Repeat("a", 64) },
 		"unbounded call": func(record *LLMCallEvidenceRecord) { record.ContextTokens = 0 },
-		"JSON format":    func(record *LLMCallEvidenceRecord) { record.ResponseFormat = "json" },
-		"empty format":   func(record *LLMCallEvidenceRecord) { record.ResponseFormat = "" },
-		"normalized format": func(record *LLMCallEvidenceRecord) {
-			record.ResponseFormat = " TEXT "
-		},
-		"response schema": func(record *LLMCallEvidenceRecord) {
-			record.ResponseSchema = map[string]any{"type": "object"}
-		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			record := base
 			mutate(&record)
-			if _, err := (&Repository{}).RecordLLMCallEvidence(context.Background(), record); err == nil {
+			if err := validateLLMCallEvidenceRecord(record); err == nil {
 				t.Fatalf("accepted invalid evidence %#v", record)
 			}
 		})
@@ -52,7 +43,7 @@ func TestLLMCallEvidencePreservesExactPromptsAndRawResponse(t *testing.T) {
 	record := normalizeLLMCallEvidenceRecord(LLMCallEvidenceRecord{
 		Scope: " portable ", RequestedModel: " requested ", Model: " effective ",
 		SystemPrompt: "\nexact system prompt\n", UserPrompt: " exact user prompt ",
-		Response: "\n  exact raw response  \n", ResponseFormat: " TEXT ",
+		Response: "\n  exact raw response  \n",
 	})
 	if record.SystemPrompt != "\nexact system prompt\n" || record.UserPrompt != " exact user prompt " {
 		t.Fatalf("prompt content was normalized: system=%q user=%q", record.SystemPrompt, record.UserPrompt)
@@ -63,59 +54,24 @@ func TestLLMCallEvidencePreservesExactPromptsAndRawResponse(t *testing.T) {
 	if record.Scope != "portable" || record.RequestedModel != "requested" || record.Model != "effective" {
 		t.Fatalf("routing metadata was not normalized: %#v", record)
 	}
-	if record.ResponseFormat != " TEXT " {
-		t.Fatalf("response format authority was normalized or defaulted: %q", record.ResponseFormat)
-	}
 }
 
-func TestLLMCallEvidenceRejectsStructuredResponseAuthority(t *testing.T) {
+func TestLLMCallEvidenceAcceptsCurrentTransportRecord(t *testing.T) {
 	base := LLMCallEvidenceRecord{
 		StepID: 1, Scope: "portable_semantic_worker",
 		RequestedModel: "requested", Model: "effective", Attempt: 1,
 		StationCallOpeningID: 1,
-		SystemPrompt:         "system", UserPrompt: "user", ResponseFormat: "text",
+		SystemPrompt:         "system", UserPrompt: "user",
 		ContextTokens: 4096, MaxOutputTokens: 4096,
 		Status: LLMEvidenceSucceeded, Response: "exact raw leaf",
 	}
 	if err := validateLLMCallEvidenceRecord(base); err != nil {
 		t.Fatal(err)
 	}
-	withFormat := base
-	withFormat.ResponseFormat = "json"
-	if err := validateLLMCallEvidenceRecord(withFormat); err == nil {
-		t.Fatal("LLM evidence accepted JSON response authority")
-	}
-	withSchema := base
-	withSchema.ResponseSchema = map[string]any{"type": "object"}
-	if err := validateLLMCallEvidenceRecord(withSchema); err == nil {
-		t.Fatal("LLM evidence accepted a response schema")
-	}
-	if schema, _, err := validateAndHashLLMCallEvidenceRecord(base); err != nil {
-		t.Fatal(err)
-	} else if schema != nil {
-		t.Fatalf("raw LLM evidence persisted response schema %#v", schema)
-	}
-}
-
-func TestLLMCallEvidenceHashIncludesNativeThinkingMode(t *testing.T) {
-	base := normalizeLLMCallEvidenceRecord(LLMCallEvidenceRecord{
-		StepID: 1, Scope: "portable_advisory_worker", RequestedModel: "requested", Model: "effective", Attempt: 1,
-		StationCallOpeningID: 1,
-		SystemPrompt:         "system", UserPrompt: "user", ResponseFormat: "text",
-		ContextTokens: 4096, MaxOutputTokens: 512,
-		Status: LLMEvidenceSucceeded, Response: "exact memo",
-	})
-	_, directHash, err := validateAndHashLLMCallEvidenceRecord(base)
-	if err != nil {
-		t.Fatal(err)
-	}
-	base.ThinkingEnabled = true
-	_, advisoryHash, err := validateAndHashLLMCallEvidenceRecord(base)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if directHash == advisoryHash {
-		t.Fatal("thinking-enabled request shared the direct request identity")
+	unsupported := base
+	unsupported.Status = LLMCallEvidenceStatus("retired_status")
+	if err := validateLLMCallEvidenceRecord(unsupported); err == nil {
+		t.Fatal("LLM evidence accepted a retired transport status")
 	}
 }
 
@@ -125,16 +81,16 @@ func TestLLMCallEvidenceAllowsPartialOutputOnlyForGenerationFailure(t *testing.T
 	base := LLMCallEvidenceRecord{
 		StepID: 1, Scope: "portable", RequestedModel: "requested", Model: "effective", Attempt: 1,
 		StationCallOpeningID: 1,
-		SystemPrompt:         "system", UserPrompt: "user", ResponseFormat: "text",
+		SystemPrompt:         "system", UserPrompt: "user",
 		ContextTokens: 4096, MaxOutputTokens: 512, Error: "stream ended", Response: "partial",
 	}
 	base.Status = LLMEvidenceGenerationFailed
 	if err := validateLLMCallEvidenceRecord(base); err != nil {
 		t.Fatalf("generation failure lost partial evidence: %v", err)
 	}
-	base.Status = LLMEvidencePreparationFailed
+	base.Status = LLMCallEvidenceStatus("unsupported")
 	if err := validateLLMCallEvidenceRecord(base); err == nil {
-		t.Fatal("preparation failure accepted a response that could not have been generated")
+		t.Fatal("unsupported failure status accepted partial evidence")
 	}
 }
 
@@ -154,18 +110,6 @@ func TestLLMEvidenceMigrationIsImmutableAndExact(t *testing.T) {
 	} {
 		if !strings.Contains(source, required) {
 			t.Fatalf("LLM evidence migration omitted %q", required)
-		}
-	}
-}
-
-func TestLLMAdvisoryEvidenceMigrationAddsThinkingRequestIdentity(t *testing.T) {
-	raw, err := os.ReadFile("../../migrations/025_llm_advisory_evidence.sql")
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, required := range []string{"thinking_enabled", "BOOLEAN", "NOT NULL"} {
-		if !strings.Contains(string(raw), required) {
-			t.Fatalf("advisory evidence migration omitted %q", required)
 		}
 	}
 }
@@ -198,17 +142,15 @@ func TestPostgresLLMCallEvidenceRoundTripIsExactAndImmutable(t *testing.T) {
 		t, repository, authority,
 		newStationEvidenceJobForTest(t, marker+"-success"), response,
 	)
-	first.Record.ThinkingEnabled = true
 	created := persistPreparedStationEvidenceFixture(t, repository, first, "")
 	if created.Response != response || created.SystemPrompt != first.Record.SystemPrompt ||
 		created.UserPrompt != first.Record.UserPrompt {
 		t.Fatalf("PostgreSQL changed exact model evidence: %#v", created)
 	}
-	if created.ResponseSHA256 != llmEvidenceSHA256(response) || len(created.RequestSHA256) != 64 {
-		t.Fatalf("hashes request=%q response=%q", created.RequestSHA256, created.ResponseSHA256)
-	}
-	if !created.ThinkingEnabled {
-		t.Fatal("PostgreSQL omitted native thinking state from exact request evidence")
+	if created.ResponseSHA256 != llmEvidenceSHA256(response) ||
+		created.WireRequestSHA256 != first.Call.WireRequestSHA256 {
+		t.Fatalf("wire request hash=%q want %q; response hash=%q",
+			created.WireRequestSHA256, first.Call.WireRequestSHA256, created.ResponseSHA256)
 	}
 	if created.JobGeneration != 1 || created.StepAttempt != 1 ||
 		created.WorkerID != authority.WorkerID || created.ContextProjectionID != "" {
@@ -228,6 +170,8 @@ func TestPostgresLLMCallEvidenceRoundTripIsExactAndImmutable(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(page.LLMCalls) != 2 || page.LLMCalls[0].Call.ID != created.ID ||
+		page.LLMCalls[0].Call.WireRequestSHA256 != first.Call.WireRequestSHA256 ||
+		page.LLMCalls[1].Call.WireRequestSHA256 != failed.Call.WireRequestSHA256 ||
 		page.LLMCalls[1].Call.Response != "partial output" {
 		t.Fatalf("evidence page=%#v", page.LLMCalls)
 	}

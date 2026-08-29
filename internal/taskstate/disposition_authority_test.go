@@ -16,31 +16,19 @@ func TestDispositionAuthorityMaterializesAndRestores(t *testing.T) {
 		Reason: "The user withdrew it.",
 	})
 	applyTestCommand(t, ledger, AddEntryCommand{
-		ExpectedVersion: 2, Actor: AuthorityModelProposal, ID: "question",
+		ExpectedVersion: 2, Actor: AuthorityCode, ID: "question",
 		Kind: EntryQuestion, Content: "Is proof available?", Metadata: EmptyJSONObject(),
 	})
 	applyTestCommand(t, ledger, ResolveEntryCommand{
 		ExpectedVersion: 3, Actor: AuthorityCode, EntryID: "question",
 		Reason: "The proof answered it.", Refs: testVerificationRefs(),
 	})
-	applyTestCommand(t, ledger, AddEntryCommand{
-		ExpectedVersion: 4, Actor: AuthorityModelProposal, ID: "candidate",
-		Kind: EntryDecisionCandidate, Content: "Use the bounded option.", Metadata: EmptyJSONObject(),
-	})
-	applyTestCommand(t, ledger, AcceptDecisionCommand{
-		ExpectedVersion: 5, Actor: AuthorityCode, CandidateID: "candidate",
-		AcceptedEntryID: "accepted", AcceptancePolicy: "verified-policy",
-		AcceptanceRefs: testVerificationRefs(), Metadata: EmptyJSONObject(),
-	})
-
 	restored, err := RestoreLedger(ledger.MaterializedState())
 	if err != nil {
 		t.Fatal(err)
 	}
 	assertDispositionBy(t, restored, "user-note", AuthorityUser)
 	assertDispositionBy(t, restored, "question", AuthorityCode)
-	assertDispositionBy(t, restored, "candidate", AuthorityCode)
-	assertDispositionBy(t, restored, "accepted", "")
 }
 
 func TestRestoreRejectsForgedDispositionAuthority(t *testing.T) {
@@ -87,11 +75,6 @@ func TestRestoreRejectsForgedDispositionAuthority(t *testing.T) {
 		state := supersededUserState(t)
 		stateEntry(t, &state, "old").DispositionBy = AuthorityCode
 		assertRestoreAuthorityInvalid(t, state)
-	})
-	t.Run("candidate actor differs from acceptance actor", func(t *testing.T) {
-		state := decisionReplacementState(t)
-		stateEntry(t, &state, "candidate-1").DispositionBy = AuthorityUser
-		assertRestoreInvalid(t, state)
 	})
 }
 

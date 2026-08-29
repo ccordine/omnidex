@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
+	"github.com/gryph/omnidex/internal/modelcontext"
 )
 
 func TestTypeScriptStageMapsCompilerLocationsToOneGeneratedBlock(t *testing.T) {
@@ -117,6 +118,124 @@ func TestStructuredVitestFramesMapExactlyWithoutInventingFailureRouting(t *testi
 			}
 			if routed.BlockID != testCase.wantBlock {
 				t.Fatalf("routed block=%s want=%s", routed.BlockID, testCase.wantBlock)
+			}
+		})
+	}
+}
+
+func TestStructuredVitestRegexProjectionIsBlockLocalAndRepairGuidanceReady(t *testing.T) {
+	t.Parallel()
+	fixtures := []struct {
+		name               string
+		literal            string
+		featureID          string
+		expectedProjection string
+	}{
+		{name: "inventory", literal: `/out of stock/i`, featureID: "inventory.render", expectedProjection: `plain text "out of stock" (case-insensitive)`},
+		{name: "schedule", literal: `/^monday\/tuesday$/u`, featureID: "schedule.render", expectedProjection: "regular expression pattern formed from ordered components"},
+	}
+	for _, fixture := range fixtures {
+		fixture := fixture
+		t.Run(fixture.name, func(t *testing.T) {
+			t.Parallel()
+			root := t.TempDir()
+			acceptanceID := fixture.name + ".acceptance"
+			document := assemblyline.SourceDocument{
+				ID: fixture.name + ".verification", Path: "src/" + fixture.name + ".test.ts",
+				Preamble: "const preambleMatcher = /preamble-only/i;",
+				Blocks: []assemblyline.SourceBlock{
+					{
+						ID: acceptanceID, Signature: "function Verify(): void",
+						Contract: "Verify one observable result.", API: "function Verify(): void",
+						DependsOn: []string{fixture.featureID}, Globals: []string{"expect"},
+					},
+					{
+						ID:     "sibling." + fixture.name,
+						Static: "function Sibling(): boolean { return /sibling-only/i.test('value'); }",
+						API:    "function Sibling(): boolean",
+					},
+				},
+			}
+			acceptanceSource := "function Verify(): void { expect(" + fixture.literal + ".test('value')).toBe(true); }"
+			composed, err := assemblyline.ComposeTypeScriptDocument(
+				document,
+				assemblyline.SourceComposition{
+					Generated:  map[string]string{acceptanceID: acceptanceSource},
+					Interfaces: map[string]string{},
+				},
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			line := composed.Spans[acceptanceID].StartLine
+			message := "Unable to find matcher `" + fixture.literal + "`; unrelated `/sibling-only/i` and `/preamble-only/i`."
+			diagnostic, mapped, err := mapDirectCodingVitestFailureReceipt(
+				root,
+				[]assemblyline.ComposedSourceDocument{composed},
+				directCodingVitestFailureReceipt{Failures: []directCodingVitestFailureEvidence{{
+					FailureClass: directCodingStageFailureVitestBehavior,
+					Name:         "TestingLibraryElementError",
+					Message:      message,
+					Output:       message,
+					Locations: []directCodingVitestSourceLocation{{
+						File: filepath.Join(root, filepath.FromSlash(document.Path)), Line: line, Column: 7,
+					}},
+				}}},
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !mapped || diagnostic.BlockID != acceptanceID {
+				t.Fatalf("mapped diagnostic=%+v mapped=%t", diagnostic, mapped)
+			}
+			feedback := diagnostic.ModelFeedback
+			if modelcontext.ContainsPathIdentity(feedback) || strings.Contains(feedback, fixture.literal) {
+				t.Fatalf("feedback retained matcher path syntax: %q", feedback)
+			}
+			if strings.Count(feedback, fixture.expectedProjection) != 1 ||
+				strings.Contains(feedback, `source text "sibling"`) || strings.Contains(feedback, `source text "preamble"`) {
+				t.Fatalf("feedback used nonlocal regex authority: %q", feedback)
+			}
+
+			feature := assemblyline.SourceBlock{
+				ID: fixture.featureID, Signature: "function Feature(): string",
+				Contract: "Return one observable result.", API: "function Feature(): string",
+			}
+			blueprint := assemblyline.SourceBlueprint{Documents: []assemblyline.SourceDocument{
+				document,
+				{ID: fixture.name + ".feature", Path: "src/" + fixture.name + ".ts", Blocks: []assemblyline.SourceBlock{feature}},
+			}}
+			diagnostic, err = routeDirectCodingAcceptanceFailure(
+				directCodingProgram{Source: blueprint}, diagnostic,
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if diagnostic.BlockID != fixture.featureID {
+				t.Fatalf("behavior failure routed to %s", diagnostic.BlockID)
+			}
+			failure, err := directCodingTypeScriptStageModelFeedback(diagnostic)
+			if err != nil {
+				t.Fatal(err)
+			}
+			job, err := assemblyline.NewFragmentRepairGuidanceJob(
+				assemblyline.FragmentRepairGuidanceInput{
+					Language: "typescript", Dialect: "TypeScript function syntax",
+					Signature:          feature.Signature,
+					CurrentDeclaration: "function Feature(): string { return 'observed'; }",
+					Diagnostic:         failure,
+				},
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			prompt, err := assemblyline.RenderPortableJob(job)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(prompt, fixture.expectedProjection) ||
+				strings.Contains(prompt, fixture.literal) || strings.Contains(prompt, "regex_literals") {
+				t.Fatalf("repair prompt has invalid regex projection:\n%s", prompt)
 			}
 		})
 	}

@@ -64,32 +64,17 @@ func TestLoadDedicatedCodingAssemblyModels(t *testing.T) {
 	if got := cfg.StationModels[station.CodingServiceStateLifetime]; got != "qwen3.5:27b-workload" {
 		t.Fatalf("coding service state lifetime model=%q want workload override", got)
 	}
-	if got := cfg.StationModels[station.CodingServiceStateInterface]; got != "qwen3.5:27b-workload" {
-		t.Fatalf("coding service state interface model=%q want workload override", got)
-	}
 	if got := cfg.StationModels[station.CodingServiceEndpointRequirement]; got != "qwen3.5:27b-workload" {
 		t.Fatalf("coding service endpoint requirement model=%q want workload override", got)
-	}
-	for _, id := range []station.ID{
-		station.CodingServiceEndpointExposure,
-		station.CodingServiceEndpointMethod,
-		station.CodingServiceEndpointRouteTemplate,
-		station.CodingServiceEndpointRequestMedia,
-		station.CodingServiceEndpointResponseMedia,
-		station.CodingServiceEndpointSuccessStatus,
-	} {
-		if got := cfg.StationModels[id]; got != "qwen3.5:27b-workload" {
-			t.Fatalf("coding service endpoint leaf %s model=%q want workload override", id, got)
-		}
-	}
-	if got := cfg.StationModels[station.CodingWorkload]; got != "qwen3.5:27b-workload" {
-		t.Fatalf("coding workload model=%q want dedicated override", got)
 	}
 	if got := cfg.StationModels[station.CodingArtifactHandling]; got != "qwen2.5:3b-artifact" {
 		t.Fatalf("coding artifact handling model=%q want dedicated override", got)
 	}
-	if got := cfg.StationModels[station.CodingKnownArtifactTruth]; got != "qwen2.5:3b-artifact" {
-		t.Fatalf("coding known artifact truth model=%q want shared narrow artifact override", got)
+	if got := cfg.StationModels[station.CodingRepositoryArtifactAbsence]; got != "qwen2.5:3b-artifact" {
+		t.Fatalf("coding repository artifact absence model=%q want shared narrow artifact override", got)
+	}
+	if got := cfg.StationModels[station.CodingPlainTextArtifactCreation]; got != "qwen2.5:3b-artifact" {
+		t.Fatalf("coding plain-text artifact creation model=%q want shared narrow artifact override", got)
 	}
 	if got := cfg.StationModels[station.CodingDeclarationArtifactBoundary]; got != "qwen2.5:3b-artifact" {
 		t.Fatalf("coding declaration artifact boundary model=%q want shared narrow artifact override", got)
@@ -128,29 +113,23 @@ func TestLoadExactConversationAndWebStationModels(t *testing.T) {
 	t.Setenv("OMNI_DATABASE_QUERY_INTENT_MODEL", "database-intent")
 	t.Setenv("OMNI_DATABASE_EVIDENCE_GAP_MODEL", "database-gap")
 	t.Setenv("OMNI_DATABASE_JOIN_PATH_SELECTION_MODEL", "database-join")
-	t.Setenv("OMNI_WEB_SEARCH_TERMS_MODEL", "terms")
 	t.Setenv("OMNI_WEB_RELEVANCE_MODEL", "relevance")
 	t.Setenv("OMNI_WEB_GROUNDED_SYNTHESIS_MODEL", "synthesis")
-	t.Setenv("OMNI_WEB_GROUNDED_SYNTHESIS_CORRECTION_MODEL", "correction")
-	t.Setenv("OMNI_WEB_CLAIM_EVIDENCE_REVIEW_MODEL", "review")
 
 	cfg, err := Load()
 	if err != nil {
 		t.Fatal(err)
 	}
 	wants := map[station.ID]string{
-		station.ConversationObjectiveKind:      "kind",
-		station.ConversationResponse:           "conversation",
-		station.GroundedAnswer:                 "grounded",
-		station.DatabaseSchemaSelection:        "database-schema",
-		station.DatabaseQueryIntent:            "database-intent",
-		station.DatabaseEvidenceGap:            "database-gap",
-		station.DatabaseJoinPathSelection:      "database-join",
-		station.WebSearchTerms:                 "terms",
-		station.WebRelevance:                   "relevance",
-		station.WebGroundedSynthesis:           "synthesis",
-		station.WebGroundedSynthesisCorrection: "correction",
-		station.WebClaimEvidenceReview:         "review",
+		station.ConversationObjectiveKind: "kind",
+		station.ConversationResponse:      "conversation",
+		station.GroundedAnswer:            "grounded",
+		station.DatabaseSchemaSelection:   "database-schema",
+		station.DatabaseQueryIntent:       "database-intent",
+		station.DatabaseEvidenceGap:       "database-gap",
+		station.DatabaseJoinPathSelection: "database-join",
+		station.WebRelevance:              "relevance",
+		station.WebGroundedSynthesis:      "synthesis",
 	}
 	for id, want := range wants {
 		if got := cfg.StationModels[id]; got != want {

@@ -6,10 +6,8 @@ import (
 )
 
 const (
-	ApplicationEvidenceNeedSchemaV1   = "omnidex.application-evidence-need.v1"
+	ApplicationEvidenceNeedSchemaV2   = "omnidex.application-evidence-need.v2"
 	maxApplicationEvidenceNeedIDBytes = 128
-	maxApplicationEvidenceAnchorBytes = 512
-	maxApplicationEvidenceAnchors     = 3
 )
 
 type ApplicationEvidenceNeedKind string
@@ -47,7 +45,6 @@ type ApplicationEvidenceNeed struct {
 	Question         string                           `json:"question"`
 	WhyItMatters     string                           `json:"why_it_matters"`
 	SourceClasses    []ApplicationEvidenceSourceClass `json:"source_classes"`
-	SearchAnchors    []string                         `json:"search_anchors"`
 	RequiredEvidence []ApplicationEvidenceCriterion   `json:"required_evidence"`
 	StopCondition    ApplicationEvidenceStopCondition `json:"stop_condition"`
 }
@@ -60,13 +57,12 @@ type ApplicationContextEvidence struct {
 
 func NewApplicationRepositoryContextNeed(index int, question string) (ApplicationEvidenceNeed, error) {
 	need := ApplicationEvidenceNeed{
-		Schema:           ApplicationEvidenceNeedSchemaV1,
+		Schema:           ApplicationEvidenceNeedSchemaV2,
 		ID:               fmt.Sprintf("context_evidence_need_%03d", index),
 		Kind:             ApplicationEvidenceContextFact,
 		Question:         question,
 		WhyItMatters:     "The request cannot be interpreted faithfully until this fact is established.",
 		SourceClasses:    []ApplicationEvidenceSourceClass{ApplicationEvidenceRepository},
-		SearchAnchors:    []string{},
 		RequiredEvidence: []ApplicationEvidenceCriterion{ApplicationEvidenceDirectlyRelevant},
 		StopCondition:    ApplicationEvidenceRelevantSelection,
 	}
@@ -75,13 +71,12 @@ func NewApplicationRepositoryContextNeed(index int, question string) (Applicatio
 
 func NewApplicationRepositoryChangeOwnerNeed(index int, requirement string) (ApplicationEvidenceNeed, error) {
 	need := ApplicationEvidenceNeed{
-		Schema:           ApplicationEvidenceNeedSchemaV1,
+		Schema:           ApplicationEvidenceNeedSchemaV2,
 		ID:               fmt.Sprintf("change_owner_need_%03d", index),
 		Kind:             ApplicationEvidenceChangeOwner,
 		Question:         requirement,
 		WhyItMatters:     "Repository mutation cannot be scoped until the current owning symbol is established.",
 		SourceClasses:    []ApplicationEvidenceSourceClass{ApplicationEvidenceRepository},
-		SearchAnchors:    []string{},
 		RequiredEvidence: []ApplicationEvidenceCriterion{ApplicationEvidenceOwningSymbol},
 		StopCondition:    ApplicationEvidenceOwnerResolved,
 	}
@@ -89,8 +84,8 @@ func NewApplicationRepositoryChangeOwnerNeed(index int, requirement string) (App
 }
 
 func (need ApplicationEvidenceNeed) Validate() error {
-	if need.Schema != ApplicationEvidenceNeedSchemaV1 {
-		return fmt.Errorf("application evidence need schema must be %q", ApplicationEvidenceNeedSchemaV1)
+	if need.Schema != ApplicationEvidenceNeedSchemaV2 {
+		return fmt.Errorf("application evidence need schema must be %q", ApplicationEvidenceNeedSchemaV2)
 	}
 	if need.ID == "" || need.ID != strings.TrimSpace(need.ID) ||
 		len(need.ID) > maxApplicationEvidenceNeedIDBytes || strings.ContainsAny(need.ID, "\r\n") {
@@ -106,19 +101,6 @@ func (need ApplicationEvidenceNeed) Validate() error {
 	}
 	if len(need.SourceClasses) != 1 || need.SourceClasses[0] != ApplicationEvidenceRepository {
 		return fmt.Errorf("application evidence need %q has no promoted source-class resolver", need.ID)
-	}
-	if len(need.SearchAnchors) > maxApplicationEvidenceAnchors {
-		return fmt.Errorf("application evidence need %q exceeds %d search anchors", need.ID, maxApplicationEvidenceAnchors)
-	}
-	seen := make(map[string]struct{}, len(need.SearchAnchors))
-	for _, anchor := range need.SearchAnchors {
-		if anchor == "" || anchor != strings.TrimSpace(anchor) || len(anchor) > maxApplicationEvidenceAnchorBytes {
-			return fmt.Errorf("application evidence need %q has an invalid search anchor", need.ID)
-		}
-		if _, duplicate := seen[anchor]; duplicate {
-			return fmt.Errorf("application evidence need %q has duplicate search anchors", need.ID)
-		}
-		seen[anchor] = struct{}{}
 	}
 	if len(need.RequiredEvidence) != 1 {
 		return fmt.Errorf("application evidence need %q requires one registered evidence criterion", need.ID)

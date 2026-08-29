@@ -10,18 +10,38 @@ import (
 func TestRepositoryChangeOwnerProjectsPathBlindEvidenceAndReturnsOneOpaqueLeaf(t *testing.T) {
 	t.Parallel()
 	input := repositoryChangeOwnerTestInput(t)
+	input.Authority.ResearchNeed = "RESEARCH_NEED_HIDDEN_SENTINEL_9374"
+	symbolID := input.Authority.Evidence.Symbols[0].ID
+	relationID := "RELATION_ID_HIDDEN_SENTINEL_5182"
+	relationOrigin := "RELATION_ORIGIN_HIDDEN_SENTINEL_6403"
+	input.Authority.Evidence.Relations = []repositoryretrieval.EvidenceRelation{{
+		ID: relationID, FromID: symbolID, ToID: symbolID, Kind: "calls",
+		Origin: relationOrigin, Confidence: 0.731,
+	}}
+	if err := repositoryretrieval.FinalizeEvidencePack(&input.Authority.Evidence); err != nil {
+		t.Fatal(err)
+	}
 	prompt, err := BuildRepositoryChangeOwnerPrompt(input)
 	if err != nil {
 		t.Fatal(err)
 	}
+	if !strings.Contains(prompt, "OWNER_EVIDENCE:\n") || strings.Contains(prompt, "PATH_BLIND_OWNER_EVIDENCE") {
+		t.Fatalf("repository owner prompt retained framework projection vocabulary:\n%s", prompt)
+	}
 	for _, forbidden := range []string{
 		`example.test/private/secret`, "internal/private.go", "return 1",
+		"workflow", input.Authority.ResearchNeed, relationID, relationOrigin,
+		`"confidence"`, `"origin"`,
 	} {
 		if strings.Contains(prompt, forbidden) {
 			t.Fatalf("repository owner prompt exposed source material %q:\n%s", forbidden, prompt)
 		}
 	}
-	symbolID := input.Authority.Evidence.Symbols[0].ID
+	for _, visible := range []string{input.FocusedRequirement, symbolID, `"kind":"calls"`} {
+		if !strings.Contains(prompt, visible) {
+			t.Fatalf("repository owner prompt omitted semantic selection authority %q:\n%s", visible, prompt)
+		}
+	}
 	owner, err := DecodeRepositoryChangeOwnerLeaf(input, symbolID)
 	if err != nil || owner != symbolID {
 		t.Fatalf("owner=%q err=%v", owner, err)

@@ -12,10 +12,8 @@ import (
 )
 
 type directCodingRequest struct {
-	Instruction         string
-	AdditionalAuthority []string
-	Feedback            []string
-	MemoryAuthorities   []assemblyline.ObjectiveMemoryAuthority
+	Instruction string
+	Feedback    []string
 }
 
 type directCodingSession struct {
@@ -52,7 +50,6 @@ func (s *directCodingSession) Phase(phase directCodingPhase, detail string) {
 
 func (s *directCodingSession) directCodingAuthority() string {
 	parts := []string{s.request.Instruction}
-	parts = append(parts, s.request.AdditionalAuthority...)
 	parts = append(parts, s.request.Feedback...)
 	return strings.TrimSpace(strings.Join(parts, "\n"))
 }
@@ -79,7 +76,6 @@ func (r *nativeRuntimeV3) directCodingRequest() (directCodingRequest, error) {
 		return directCodingRequest{}, fmt.Errorf("direct coding requires a claimed job")
 	}
 	instruction := r.claim.Job.Instruction
-	additionalAuthority := make([]string, 0)
 	if r.claim.Job.Pipeline == model.PipelineScrum {
 		metadata, err := scrum.DecodeStoredJobMetadata(r.claim.Job.Metadata)
 		if err != nil {
@@ -96,16 +92,15 @@ func (r *nativeRuntimeV3) directCodingRequest() (directCodingRequest, error) {
 		if !metadata.ChannelOrigin {
 			instruction = card
 		} else {
-			additionalAuthority = append(additionalAuthority, card)
+			instruction = strings.TrimSpace(strings.Join([]string{instruction, card}, "\n"))
 		}
 	}
 	if strings.TrimSpace(instruction) == "" {
 		return directCodingRequest{}, fmt.Errorf("direct coding requires a non-empty current instruction")
 	}
 	return directCodingRequest{
-		Instruction:         instruction,
-		AdditionalAuthority: cleanOrderedStrings(additionalAuthority),
-		Feedback:            collectContextValuesByKey(r.claim.Contexts, "user_feedback", "replan_feedback"),
+		Instruction: instruction,
+		Feedback:    collectContextValuesByKey(r.claim.Contexts, "user_feedback", "replan_feedback"),
 	}, nil
 }
 

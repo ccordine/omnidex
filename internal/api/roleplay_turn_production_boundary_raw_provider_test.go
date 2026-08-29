@@ -15,26 +15,6 @@ func TestRoleplayProductionBoundaryProviderReturnsOnlyRawStationLeaves(t *testin
 		terminal               bool
 	}{
 		{
-			name: "context term remains",
-			prompt: "Answer one semantic coverage relation: does the exact current instruction\n" +
-				"ACCEPTED RETRIEVAL CONCEPTS:\n(none)",
-			response: assemblyline.ContextTermRemains,
-			kind:     assemblyline.WorkContextSearchTermCoverage,
-		},
-		{
-			name:     "context term",
-			prompt:   "Return exactly one concise retrieval concept",
-			response: roleplayBoundarySearchTerm,
-			kind:     assemblyline.WorkContextSearchTerm,
-		},
-		{
-			name: "context terms complete",
-			prompt: "Answer one semantic coverage relation: does the exact current instruction\n" +
-				"ACCEPTED RETRIEVAL CONCEPT 1:\n" + roleplayBoundarySearchTerm,
-			response: assemblyline.ContextNoUncoveredTerm,
-			kind:     assemblyline.WorkContextSearchTermCoverage,
-		},
-		{
 			name: "context relevance",
 			prompt: "CONTEXT_RELEVANCE_AUTHORITY:\n" +
 				`{"candidates":[{"candidate_id":"CTX_3"}],"accepted_candidate_ids":[]}`,

@@ -35,7 +35,6 @@ type Config struct {
 	HuggingFaceAPIKey         string
 	StationModels             map[station.ID]string
 	RoleplaySemanticModel     string
-	ContextRelevanceProvider  string
 	EmbeddingModel            string
 	WebSearchProviders        []string
 	WebSearchTimeout          time.Duration
@@ -101,7 +100,6 @@ func Load() (Config, error) {
 		HuggingFaceAPIKey:         firstEnv("HUGGINGFACE_API_KEY", "HF_TOKEN"),
 		EmbeddingModel:            embeddingModelForProvider(embeddingProvider),
 		RoleplaySemanticModel:     getenv("OMNI_ROLEPLAY_SEMANTIC_MODEL", ""),
-		ContextRelevanceProvider:  strings.ToLower(getenv("OMNI_CONTEXT_RELEVANCE_PROVIDER", ContextRelevanceProviderServer)),
 		WebSearchProviders:        getenvCSV("WEB_SEARCH_PROVIDERS", []string{"brave", "google", "reddit"}),
 		WebSearchTimeout:          getenvDuration("WEB_SEARCH_TIMEOUT", 15*time.Second),
 		WebSearchPerSourceBudget:  getenvInt("WEB_SEARCH_PER_SOURCE_BUDGET", 3000),

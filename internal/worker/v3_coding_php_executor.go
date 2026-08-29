@@ -119,11 +119,7 @@ func phpServiceVerificationCommands(program directCodingProgram) ([]testCommand,
 	if err := validatePHPServiceStateLifetime(program.Workload, program.ServiceState); err != nil {
 		return nil, fmt.Errorf("validate PHP HTTP state authority: %w", err)
 	}
-	workloadInput, err := applicationWorkloadInputFromFrozen(program.Workload)
-	if err != nil {
-		return nil, err
-	}
-	if err := program.ServiceEndpoints.ValidateFor(workloadInput, program.Workload); err != nil {
+	if err := program.ServiceEndpoints.ValidateFor(program.Workload); err != nil {
 		return nil, fmt.Errorf("validate PHP HTTP endpoint authority: %w", err)
 	}
 	hasState, err := phpServiceProgramRequiresPostgreSQL(program)

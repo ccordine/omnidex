@@ -9,8 +9,8 @@ import (
 )
 
 const (
-	directCodingTypeScriptDeclarationReviewBytes = 5 * 1024
-	directCodingTypeScriptModelAttempts          = 1
+	directCodingTypeScriptDeclarationWarningBytes = 5 * 1024
+	directCodingTypeScriptModelAttempts           = 1
 )
 
 var errDirectCodingTypeScriptUnchangedCorrection = errors.New(

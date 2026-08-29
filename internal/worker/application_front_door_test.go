@@ -14,7 +14,7 @@ func TestApplicationFrontDoorSkipsCeremonialReviewForEmptyWorkspace(t *testing.T
 	t.Parallel()
 	const request = "Build a browser counter that shows the count and can increment, decrement, and reset it."
 	applicationContext, err := assemblyline.BootstrapApplicationContext(
-		request, assemblyline.ApplicationWorkspaceEmpty, nil,
+		request, assemblyline.ApplicationWorkspaceEmpty,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -96,7 +96,7 @@ func TestApplicationFrontDoorFailsLoudlyWhenEvidenceNeedsAreUnresolved(t *testin
 	t.Parallel()
 	const request = "Extend the existing application with the established reporting behavior."
 	applicationContext, err := assemblyline.BootstrapApplicationContext(
-		request, assemblyline.ApplicationWorkspaceExisting, nil,
+		request, assemblyline.ApplicationWorkspaceExisting,
 	)
 	if err != nil {
 		t.Fatal(err)

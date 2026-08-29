@@ -2,11 +2,43 @@ package queue
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/jackc/pgx/v5"
 )
+
+func lockWorkspaceMutationProjectAuthorityTx(
+	ctx context.Context,
+	tx pgx.Tx,
+	command WorkspaceMutationCommand,
+) error {
+	var projectLocation string
+	err := tx.QueryRow(ctx, `
+		SELECT location
+		FROM projects
+		WHERE id=$1
+		FOR SHARE
+	`, command.ProjectID).Scan(&projectLocation)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return fmt.Errorf(
+			"%w: workspace mutation project %d does not exist",
+			ErrWorkspaceMutationConflict,
+			command.ProjectID,
+		)
+	}
+	if err != nil {
+		return fmt.Errorf("lock workspace mutation project authority: %w", err)
+	}
+	if projectLocation != command.ProjectLocation {
+		return fmt.Errorf(
+			"%w: workspace mutation project location differs from its current project",
+			ErrWorkspaceMutationConflict,
+		)
+	}
+	return nil
+}
 
 func lockWorkspaceMutationAuthorityTx(
 	ctx context.Context,

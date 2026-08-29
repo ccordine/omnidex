@@ -29,15 +29,15 @@ func TestTelemetryRealtimeCoalescerBatchesMetricsQueriesAndRetainsUrgentTrigger(
 	defer coalescer.Stop()
 
 	for index := 0; index < 50; index++ {
-		if err := coalescer.Signal(telemetryNotifyPayload{EventType: "step_output"}); err != nil {
+		if err := coalescer.Signal(telemetryNotifyPayload{EventType: "coding_worker_completed"}); err != nil {
 			t.Fatal(err)
 		}
 	}
-	urgent := "verify_test_fail"
+	urgent := "coding_worker_failed"
 	if err := coalescer.Signal(telemetryNotifyPayload{EventType: urgent, Message: "verification failed"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := coalescer.Signal(telemetryNotifyPayload{EventType: "step_output"}); err != nil {
+	if err := coalescer.Signal(telemetryNotifyPayload{EventType: "coding_worker_completed"}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -57,7 +57,7 @@ func TestTelemetryRealtimeCoalescerBatchesMetricsQueriesAndRetainsUrgentTrigger(
 func TestTelemetryRealtimeCoalescerRejectsSignalsAfterStop(t *testing.T) {
 	coalescer := newTelemetryRealtimeCoalescer(time.Second, func(telemetryNotifyPayload) {})
 	coalescer.Stop()
-	if err := coalescer.Signal(telemetryNotifyPayload{EventType: "step_output"}); err == nil {
+	if err := coalescer.Signal(telemetryNotifyPayload{EventType: "coding_worker_completed"}); err == nil {
 		t.Fatal("expected stopped coalescer to reject signal")
 	}
 }

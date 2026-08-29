@@ -12,8 +12,8 @@ func TestPHPHTTPLifecycleDerivesTwoUnrelatedStateAuthorities(t *testing.T) {
 	workload, capabilities, state := unrelatedServiceStateComponentsFixture(t)
 	state = bindTestServiceStateInterfaces(t, workload, capabilities, state,
 		[]assemblyline.ApplicationServiceStateField{
-			{Name: "reference", Kind: assemblyline.ApplicationServiceStateString},
-			{Name: "label", Kind: assemblyline.ApplicationServiceStateString},
+			{Name: "state_001", Purpose: "The stored reference.", Kind: assemblyline.ApplicationServiceStateString},
+			{Name: "state_002", Purpose: "The stored label.", Kind: assemblyline.ApplicationServiceStateString},
 		},
 	)
 	bindings := []phpServiceFeatureBinding{
@@ -89,7 +89,8 @@ func TestPHPHTTPLifecycleFailsLoudlyWithoutExactSemanticAuthority(t *testing.T) 
 	workload, capabilities, state := unrelatedServiceStateComponentsFixture(t)
 	state = bindTestServiceStateInterfaces(t, workload, capabilities, state,
 		[]assemblyline.ApplicationServiceStateField{{
-			Name: "enabled", Kind: assemblyline.ApplicationServiceStateBoolean,
+			Name: "state_001", Purpose: "Whether the operation is enabled.",
+			Kind: assemblyline.ApplicationServiceStateBoolean,
 		}},
 	)
 	bindings := []phpServiceFeatureBinding{
@@ -132,7 +133,8 @@ func TestPHPSharedStateDependencyLoadsSnapshotWithoutReinvokingWriter(t *testing
 	workload, capabilities, state := unrelatedServiceStateComponentsFixture(t)
 	state = bindTestServiceStateInterfaces(t, workload, capabilities, state,
 		[]assemblyline.ApplicationServiceStateField{{
-			Name: "entries", Kind: assemblyline.ApplicationServiceStateStringList,
+			Name: "state_001", Purpose: "The stored entries.",
+			Kind: assemblyline.ApplicationServiceStateStringList,
 		}},
 	)
 	writer := phpServiceLifecycleTestBinding(

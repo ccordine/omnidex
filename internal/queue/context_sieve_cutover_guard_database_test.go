@@ -204,7 +204,6 @@ func historicalContextSieveOpening(
 		PortableEnvelopeSHA256: stationGapSHA256(string(envelope)),
 		RendererVersion:        historicalRenderer,
 		Prompt:                 historicalPrompt,
-		ResponseSchema:         responseSchema,
 		ProjectionEnvelope:     string(projection),
 		ProjectionSHA256:       stationGapSHA256(string(projection)),
 		ContextTokens:          contextTokens,
@@ -256,25 +255,25 @@ func insertNestedRetiredContextCorrection(
 ) {
 	t.Helper()
 	retired := mustRetiredConversationContextJob(t)
-	innerPayload := mustCanonical(t, assemblyline.ResponseCorrectionInput{
+	innerPayload := mustCanonical(t, historicalResponseCorrectionInput{
 		Original:          retired,
 		ValidationFailure: "historical inner correction failure",
 		RetainedCandidate: "{}",
 	})
 	inner := assemblyline.PortableJob{
 		Schema:  "omnidex.portable-job.v1",
-		Kind:    assemblyline.WorkResponseCorrection,
+		Kind:    historicalWorkResponseCorrection,
 		Payload: innerPayload,
 	}
 	inner.ID = historicalPortableID(inner.Schema, string(inner.Kind), inner.Payload)
-	outerPayload := mustCanonical(t, assemblyline.ResponseCorrectionInput{
+	outerPayload := mustCanonical(t, historicalResponseCorrectionInput{
 		Original:          inner,
 		ValidationFailure: "historical outer correction failure",
 		RetainedCandidate: "{}",
 	})
 	outer := assemblyline.PortableJob{
 		Schema:  "omnidex.portable-job.v1",
-		Kind:    assemblyline.WorkResponseCorrection,
+		Kind:    historicalWorkResponseCorrection,
 		Payload: outerPayload,
 	}
 	outer.ID = historicalPortableID(outer.Schema, string(outer.Kind), outer.Payload)
@@ -324,7 +323,7 @@ func TestPostgresContextSieveCutoverRejectsInvalidActiveOpening(t *testing.T) {
 	}
 	portableJob := historicalContextSievePortableJob(t, "context_search_terms", 5)
 	opening := historicalContextSieveOpening(
-		t, claim, portableJob, station.ContextSearchTerms,
+		t, claim, portableJob, station.ID("context_search_terms"),
 	)
 	opening.Station = station.ConversationResponse
 	insertContextSieveMigrationOpening(t, pool, &opening)
@@ -352,7 +351,7 @@ func insertContextSieveMigrationOpening(
 		t.Fatal(err)
 	}
 	defer tx.Rollback(t.Context())
-	if err := insertStationGapOpeningTx(t.Context(), tx, opening); err != nil {
+	if err := insertHistoricalStationGapOpeningTx(t.Context(), tx, opening); err != nil {
 		t.Fatal(err)
 	}
 	if err := tx.Commit(t.Context()); err != nil {

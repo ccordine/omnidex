@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/gryph/omnidex/internal/modelcontext"
 	"github.com/gryph/omnidex/internal/roleplay"
 )
 
@@ -22,9 +23,10 @@ const (
 type RoleplayGroundedEvidenceRelation string
 
 type RoleplayGroundedEvidenceRelationInput struct {
-	ExactQuestion string                  `json:"exact_question"`
-	ParagraphText string                  `json:"paragraph_text"`
-	Evidence      GroundedEvidenceCapsule `json:"evidence"`
+	ExactQuestion      string                  `json:"exact_question"`
+	ParagraphText      string                  `json:"paragraph_text"`
+	Evidence           GroundedEvidenceCapsule `json:"evidence"`
+	KnownArtifactPaths []string                `json:"known_artifact_paths"`
 }
 
 type roleplayGroundedResponseTextProjection struct {
@@ -64,6 +66,16 @@ func (input RoleplayGroundedEvidenceRelationInput) validate() error {
 		return err
 	}
 	if err := validateRoleplayGroundedParagraphText(input.ParagraphText); err != nil {
+		return err
+	}
+	provenance, err := modelcontext.NewArtifactIdentityProvenance(input.KnownArtifactPaths)
+	if err != nil {
+		return err
+	}
+	if err := ValidatePathFreeModelContextWithProvenance(
+		"roleplay grounded evidence relation", provenance,
+		input.ExactQuestion, input.ParagraphText, input.Evidence.Text,
+	); err != nil {
 		return err
 	}
 	if err := validateGroundedID(

@@ -193,7 +193,7 @@ func objectiveCompletionEvidence(claim *model.ClaimedStep, sourceRef string) evi
 		JobID: claim.Job.ID, StepID: claim.Step.ID, Kind: evidence.KindObjectiveCitation,
 		SourceType: "fixture", SourceRef: sourceRef, Excerpt: excerpt,
 		Summary: "Exact objective citation.", Hash: sourceSHA, Confidence: 1,
-		SupportsClaims: []string{"requirement-test"},
+		RequirementAuthorityBindings: []string{"requirement-test"},
 		Metadata: map[string]any{
 			"capsule_id": sourceRef, "instruction_sha256": strings.Repeat("b", 64),
 			"objective_id": "objective-test", "objective_kind": "repository_read",

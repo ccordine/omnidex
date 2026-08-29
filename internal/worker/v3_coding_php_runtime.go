@@ -30,7 +30,7 @@ func phpServiceRuntimeDocument(
 		},
 		assemblyline.SourceBlock{
 			ID: "runtime.http", Static: phpServiceHTTPRuntimeSource(),
-			API: "code-owned HTTP request decoding, routing, rendering, and response emission",
+			API: "HTTP request decoding, routing, rendering, and response emission",
 			DependsOn: []string{
 				"runtime.task_input", "runtime.task_result", "runtime.assertions",
 			},

@@ -75,34 +75,11 @@ func TestPostgresJobGenerationMigrationRejectsAmbiguousLegacyRows(t *testing.T) 
 			},
 		},
 		{
-			name: "cross-job claim", wantError: "cross-job or orphan claim",
-			seed: func(ctx context.Context, tx pgx.Tx, rows generationPreflightRows) {
-				mustGenerationPreflightExec(t, ctx, tx, `
-					INSERT INTO claims (job_id, step_id) VALUES ($1, $2)
-				`, rows.firstJob, rows.secondStep)
-			},
-		},
-		{
 			name: "cross-job llm evidence", wantError: "cross-job LLM call evidence",
 			seed: func(ctx context.Context, tx pgx.Tx, rows generationPreflightRows) {
 				mustGenerationPreflightExec(t, ctx, tx, `
 					INSERT INTO llm_call_evidence (job_id, step_id) VALUES ($1, $2)
 				`, rows.firstJob, rows.secondStep)
-			},
-		},
-		{
-			name: "cross-job claim support", wantError: "cross-job claim support",
-			seed: func(ctx context.Context, tx pgx.Tx, rows generationPreflightRows) {
-				var claimID, evidenceID int64
-				mustGenerationPreflightQuery(t, ctx, tx, `
-					INSERT INTO claims (job_id, step_id) VALUES ($1, $2) RETURNING id
-				`, []any{rows.firstJob, rows.firstStep}, &claimID)
-				mustGenerationPreflightQuery(t, ctx, tx, `
-					INSERT INTO evidence (job_id, step_id) VALUES ($1, $2) RETURNING id
-				`, []any{rows.secondJob, rows.secondStep}, &evidenceID)
-				mustGenerationPreflightExec(t, ctx, tx, `
-					INSERT INTO claim_support (claim_id, evidence_id) VALUES ($1, $2)
-				`, claimID, evidenceID)
 			},
 		},
 	}

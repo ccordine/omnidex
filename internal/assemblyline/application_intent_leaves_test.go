@@ -52,9 +52,9 @@ func TestApplicationRequirementLeavesSeparateCoverageFromGeneration(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(coveragePrompt, `"accepted_requirements":[]`) ||
-		!strings.Contains(requirementPrompt, `"accepted_requirements":[]`) {
-		t.Fatalf("empty accepted requirement authority was not preserved as an array")
+	if !strings.Contains(coveragePrompt, "ACCEPTED REQUIREMENTS:\n(none)") ||
+		!strings.Contains(requirementPrompt, "ACCEPTED REQUIREMENTS:\n(none)") {
+		t.Fatalf("empty accepted requirement projection was not explicit")
 	}
 	if strings.Contains(coveragePrompt, "Return only the requirement as raw prose") ||
 		strings.Contains(requirementPrompt, "NO_UNCOVERED_REQUIREMENT") {
@@ -83,7 +83,7 @@ func applicationIntentLeafFixture(t *testing.T) ApplicationIntentInput {
 	t.Helper()
 	request := "Build a browser counter that displays and increments a count."
 	context, err := BootstrapApplicationContext(
-		request, ApplicationWorkspaceEmpty, nil,
+		request, ApplicationWorkspaceEmpty,
 	)
 	if err != nil {
 		t.Fatal(err)

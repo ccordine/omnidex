@@ -45,7 +45,7 @@ func TestExistingRepositoryRequirementsUseCoverageAndOneRawLeafCalls(t *testing.
 		},
 	}
 	context, err := assemblyline.BootstrapApplicationContext(
-		request, assemblyline.ApplicationWorkspaceExisting, nil,
+		request, assemblyline.ApplicationWorkspaceExisting,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -91,7 +91,7 @@ func TestExistingRepositoryRequirementsExtractFirstLeafBeforeCoverage(t *testing
 	}
 	const request = "Add audit logging to the service."
 	context, err := assemblyline.BootstrapApplicationContext(
-		request, assemblyline.ApplicationWorkspaceExisting, nil,
+		request, assemblyline.ApplicationWorkspaceExisting,
 	)
 	if err != nil {
 		t.Fatal(err)

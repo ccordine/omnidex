@@ -18,8 +18,10 @@ func TestDesiredStateModelContractsExposeOnlySemanticLeaves(t *testing.T) {
 		reflect.TypeOf(assemblyline.RepositoryRequirementInterpretation{}),
 		reflect.TypeOf(assemblyline.ArtifactHandlingInput{}),
 		reflect.TypeOf(assemblyline.ArtifactHandlingDecision{}),
-		reflect.TypeOf(assemblyline.KnownArtifactTruthInput{}),
-		reflect.TypeOf(assemblyline.KnownArtifactTruthDecision{}),
+		reflect.TypeOf(assemblyline.RepositoryArtifactAbsenceInput{}),
+		reflect.TypeOf(assemblyline.RepositoryArtifactAbsenceDecision{}),
+		reflect.TypeOf(assemblyline.PlainTextArtifactCreationInput{}),
+		reflect.TypeOf(assemblyline.PlainTextArtifactCreationDecision{}),
 		reflect.TypeOf(assemblyline.DeclarationArtifactBoundaryInput{}),
 		reflect.TypeOf(assemblyline.DeclarationArtifactBoundaryDecision{}),
 		reflect.TypeOf(assemblyline.ArtifactCandidateEvidence{}),
@@ -51,7 +53,7 @@ func TestDesiredStateModelSchemasContainNoMutationToolSurface(t *testing.T) {
 	t.Parallel()
 	repositoryRequest := "ARTIFACT_1 must no longer exist"
 	repositoryContext, err := assemblyline.BootstrapApplicationContext(
-		repositoryRequest, assemblyline.ApplicationWorkspaceExisting, nil,
+		repositoryRequest, assemblyline.ApplicationWorkspaceExisting,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -72,8 +74,11 @@ func TestDesiredStateModelSchemasContainNoMutationToolSurface(t *testing.T) {
 		must(assemblyline.NewArtifactHandlingJob(assemblyline.ArtifactHandlingInput{
 			UserRequest: "ARTIFACT_1 must no longer exist", Token: "ARTIFACT_1",
 		})),
-		must(assemblyline.NewKnownArtifactTruthJob(assemblyline.KnownArtifactTruthInput{
+		must(assemblyline.NewRepositoryArtifactAbsenceJob(assemblyline.RepositoryArtifactAbsenceInput{
 			RequirementQuote: "One known semantic artifact must no longer exist",
+		})),
+		must(assemblyline.NewPlainTextArtifactCreationJob(assemblyline.PlainTextArtifactCreationInput{
+			RequirementQuote: "Create ARTIFACT_1 containing the complete note: Release ready.",
 		})),
 		must(assemblyline.NewDeclarationArtifactBoundaryJob(assemblyline.DeclarationArtifactBoundaryInput{
 			RequirementQuote: "func Added() string has an independent artifact boundary",

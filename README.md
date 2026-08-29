@@ -13,21 +13,21 @@ Charmander made individual model jobs reliable. Charmeleon makes those bounded j
 ```text
 conversation
     ↓
-behavior class (five fields)             semantic model
+delivery surface                         one semantic leaf
     ↓
-shape-specific semantic labels           semantic model
+product context + requirement fixed point one semantic leaf per call
     ↓
-expanded typed behavior                  code-owned
+one frozen task per accepted requirement code-owned
     ↓
-validated adapter + block graph          code-owned
+stack, target tree, coverage + block graph code-owned
     ↓
-static declarations + rare functions     code + fragment model(s)
+static declarations + bounded source nodes code + source model(s)
     ↓
 AST assembly + isolated full tests        code-owned
     ↓
 authoritative writes + exact verification code-owned
-    ↑ exact failure
-one owning generated function only        fragment model
+    ↑ exact code-routed diagnostic
+guidance instruction → one replacement node model(s)
 ```
 
 ## What changed after Venusaur
@@ -39,7 +39,7 @@ one owning generated function only        fragment model
 | Correction arrived late or restarted the build. | Accepted blocks remain in memory and only one declared generated owner can be corrected. |
 | Models chose commands, declared success, and confused advice with execution. | Code owns tools, mutation authority, verification, and completion. |
 | Intermediate files were rejected because unfinished siblings did not compile. | Dependency waves complete before the whole staged program is compiled or tested. |
-| Source workers received paths, trees, plans, and excessive project context. | A fragment model receives one signature, one behavior, direct declarations, allowed symbols, and optionally its own current function plus a path-free failure. |
+| Source workers received paths, trees, plans, and excessive project context. | Initial generation receives one signature, one local behavior, direct declarations, and allowed symbols. Repair guidance receives one path-free diagnostic; the executor receives only its instruction and mutable source. |
 | Hidden ledgers and duplicate recovery systems accumulated stale state. | Git is the source history; Omnidex keeps one current workspace and one coding engine. |
 | Long generic status streams obscured real progress. | Live events report phase, active station, target, accepted diff, diagnostic, and terminal outcome. |
 
@@ -47,12 +47,12 @@ one owning generated function only        fragment model
 
 The runtime has deliberately unequal stations:
 
-1. **Semantic interpreter (model)** — performs two bounded jobs: a three-field schema/shape/language classification and one compact shape-specific label extraction. Code owns the surface and toolchain version. Neither response can express implementation or orchestration.
-2. **Seed validator, expander, and adapter registry (code)** — reject malformed or unsupported seeds, expand types/roles/inputs/persistence guarantees, resolve opaque protected artifacts, and build one exact block graph.
-3. **Block scheduler and parser (code)** — compute dependency waves, render all standard behavior directly, and derive the minimum declarations for any behavior code cannot render.
-4. **Fragment transformer (model, only when required)** — returns exactly one function with an immutable signature. It never sees a path, document, project, job, plan, or filesystem operation.
-5. **Stager and correction controller (code)** — stitch and format complete documents, run the isolated complete program, and map an exact failure to one declared generated owner. Static defects fail as adapter defects.
-6. **Mutation, verification, and completion controllers (code)** — write only a staged program, emit reviewable diffs, verify exact workspace content, run fixed tests once more, and declare the outcome.
+1. **Semantic front door (models, one leaf at a time)** — returns one delivery surface, one product-context value, one requirement-coverage relation, or one requirement. No call emits an aggregate application contract, plan, workflow decision, or completion state.
+2. **Intent and workload compiler (code)** — validates each leaf, assembles the typed intent, and projects every accepted requirement directly into one frozen task in source order. There is no workload-planning model.
+3. **Stack, tree, and graph compilers (code, with one narrow tree exception)** — select a registered stack, derive every mechanical target, parse the optional target-tree station's complete raw basename hierarchy, construct all paths, and compile exact block ownership and direct capabilities.
+4. **Source transformer (model, only when required)** — returns exactly one parser-qualified declaration or source node with an immutable signature. It never sees a path, document, project, job, plan, or filesystem operation.
+5. **Stager and repair controller (code)** — stitch and format complete documents, run isolated verification, and map one exact compiler-proven diagnostic to one generated owner. One guidance call returns only an instruction; one executor call returns only the replacement node. A later pair requires a distinct diagnostic after a validated source transition.
+6. **Mutation, verification, and completion controllers (code)** — write only a verified staged program, emit reviewable diffs, verify exact workspace content, rerun fixed checks, and declare the outcome.
 
 The detailed contract lives in [internal/worker/RUNTIME.md](internal/worker/RUNTIME.md).
 
@@ -67,9 +67,10 @@ server-owned path:
    source spans as derived PostgreSQL facts.
 3. Typed semantic-excerpt, declaration, and incoming-reference queries construct a
    bounded evidence pack; the model never receives a path or repository tree.
-4. One bounded call extracts exact grounded change requirements, and code validates complete change-surface
-   coverage into one source-snapshot-bound change contract and ordered verification
-   plan.
+4. Repository requirement coverage and requirement extraction alternate as separate
+   one-leaf calls. Code retains each requirement, resolves one opaque change owner per
+   focused requirement from bounded evidence, and builds the source-snapshot-bound
+   change contract and ordered verification plan itself.
 5. Before any fragment generation, the complete focused-plus-terminal-broad plan must
    pass in a disposable projection containing exactly the validated source-snapshot
    files. Git metadata, `.omni`, ignored files, and excluded paths are never mounted.
@@ -82,9 +83,11 @@ server-owned path:
    sandbox receives a disposable checksum-validated projection of only the source
    module's resolved build-list dependencies; it never receives the host-wide Go
    module cache.
-7. Only a uniquely owned, path-free ordinary test/compiler failure may correct one
-   function. The complete candidate set is restaged, with two total correction rounds
-   and explicit no-progress/oscillation rejection.
+7. Only a uniquely owned, path-free ordinary test/compiler failure may enter the
+   separated repair boundary for one function. One diagnostic permits one guidance
+   call and one executor call. Invalid or byte-identical replacement source stops
+   loudly; another pair requires a newly proven diagnostic after a validated source
+   transition.
 8. A PostgreSQL mutation journal binds the exact source snapshot, contract, stage,
    patch, source/post file states, claim, and generated-diff evidence. Exact source may
    apply once; exact post may finalize once; every other state is indeterminate and
@@ -114,10 +117,10 @@ documented in [docs/CHARMELEON_CONTEXT_SYSTEM.md](docs/CHARMELEON_CONTEXT_SYSTEM
 - No deletion unless the current instruction authorizes deletion.
 - No modification of protected instruction files.
 - One raw semantic leaf per classification, relation, label, coverage, or value question; code alone assembles typed state. Coding transforms return one raw AST declaration.
-- Bounded fragment retries and node corrections; unchanged output and repeated failure stop loudly.
+- One guidance/executor pair per exact source diagnostic; invalid or unchanged output stops loudly, and another pair requires a newly proven diagnostic after a validated transition.
 - Verification commands are selected from the accepted typed program, never inferred from prose or workspace guesses.
 - Direct, exact diagnostic feedback reaches the next worker immediately.
-- Bounded contract correction stays on the configured model and receives current authority plus the exact failure, never a fallback model or replayed rejected response.
+- Source repair uses the separately configured guidance and executor routes; the executor receives only the instruction and mutable source, never the raw diagnostic, a fallback model, or rejected-response history.
 
 ## Live operator experience
 
@@ -149,13 +152,10 @@ OMNI_CODING_WORKLOAD_MODEL=qwen3.5:9b-q4_K_M
 OMNI_CODING_ARTIFACT_HANDLING_MODEL=qwen3.5:9b-q4_K_M
 OMNI_CODING_CAPABILITY_RELATION_MODEL=qwen3.5:9b-q4_K_M
 OMNI_CODING_SKILL_SELECTION_MODEL=qwen3.5:9b-q4_K_M
-OMNI_CODING_FRAGMENT_MODEL=qwen2.5-coder:7b
+OMNI_CODING_FRAGMENT_MODEL=qwen3.5:9b-q4_K_M
 OMNI_CODING_FRAGMENT_REPAIR_GUIDANCE_MODEL=qwen3.5:9b-q4_K_M
-OMNI_CODING_FRAGMENT_CORRECTION_MODEL=qwen2.5-coder:7b
-OMNI_CODING_REPOSITORY_SEARCH_TERM_MODEL=qwen3.5:9b-q4_K_M
+OMNI_CODING_FRAGMENT_CORRECTION_MODEL=qwen3.5:9b-q4_K_M
 OMNI_CODING_REPOSITORY_CHANGE_SURFACE_MODEL=qwen3.5:9b-q4_K_M
-OMNI_REPOSITORY_GROUNDED_REVIEW_MODEL=deepseek-r1:8b
-OMNI_WEB_CLAIM_EVIDENCE_REVIEW_MODEL=deepseek-r1:8b
 INFERENCE_CONTEXT_TOKENS=8192
 CODING_FRAGMENT_CONCURRENCY=1
 ```
@@ -167,40 +167,39 @@ for the independent continued-availability and persistence-destination stations;
 they do not restore the retired ternary deployment-intent station or combine the
 two semantic responsibilities.
 
-The first opt-in browser WebGPU provider executes the existing
-`context_relevance` station in a resident Web Worker while the server retains all
-workflow, state, retrieval, provenance, and validation authority. No tested browser
-model is currently qualified, so `OMNI_CONTEXT_RELEVANCE_PROVIDER=server` remains the
-default. The exact boundary, live corpus, rejected candidate measurements, and rerun
-command are in [docs/BROWSER_INFERENCE.md](docs/BROWSER_INFERENCE.md).
+`context_relevance` executes only through its durable server-side exact-station
+route. The retired browser/WebGPU provider key is rejected explicitly; the browser
+has no inference transport, model lifecycle, or semantic-result channel.
 
 ### Deployment sizing
 
 The checked-in profile is Qwen-led, but it is not a single-model deployment.
 The active routes use Qwen 3.5 9B for bounded semantic work including requirement
-extraction and workload construction, Qwen 2.5 Coder 7B for source fragments and
-corrections, Phi-4 14B for the two service deployment semantics, DeepSeek R1 8B for
-the independently routed evidence reviews, and `nomic-embed-text` for local embeddings.
+extraction and target-tree naming, and for exact raw source-fragment generation and
+repair execution, while code alone constructs the workload. Phi-4 14B is used for
+the two service deployment semantics, and
+`nomic-embed-text` for local embeddings.
 The complete route list is in
 [`default.env`](default.env).
 
 The following values are capacity-planning estimates, not universal performance
 guarantees. Model-file sizes come from the exact local Ollama inventory and agree
-with the current Ollama library entries. Runtime allocation and timing rows were
-measured on 2026-08-19 using `omni ollama:prewarm` and the exact production 8,192-token
-context. Re-run that command on every candidate server before accepting it.
+with the current Ollama library entries. Runtime allocation and historical
+generation-timing rows were measured on 2026-08-19 at the exact production
+8,192-token context. The current `omni ollama:prewarm` command reproduces only
+the mechanical model-load, context, memory, and offload checks; governed station
+evidence owns current generation timing.
 
 #### Model working set
 
 | Route | Current model | Local model file | Runtime role |
 | --- | --- | ---: | --- |
-| Semantic, requirement, workload, database, answer, and repair-guidance stations | `qwen3.5:9b-q4_K_M` | 6.6 GB | One raw semantic result |
-| Fragment generation and correction | `qwen2.5-coder:7b` | 4.7 GB | One bounded source node |
+| Semantic leaf, requirement, target-tree, database, answer, and repair-guidance stations | `qwen3.5:9b-q4_K_M` | 6.6 GB | One raw semantic result |
+| Fragment generation and correction | `qwen3.5:9b-q4_K_M` | shared 6.6 GB image | One exact raw bounded source node |
 | Service deployment semantics | `phi4:14b` | 9.1 GB | Conditional availability and destination leaves |
-| Independent repository/web evidence review | `deepseek-r1:8b` | 5.2 GB | Separate review identity |
 | Embeddings | `nomic-embed-text` | 0.27 GB | Retrieval vectors |
 
-The exact set occupies about **25.9 GB (24.1 GiB) on disk**. Reserve at least
+The exact set occupies about **16.0 GB (14.9 GiB) on disk**. Reserve at least
 50 GB of fast local storage for the model set and runtime files. A practical
 all-in-one host should have 100 GB free before adding workspace checkouts,
 PostgreSQL growth, backups, logs, or Docker build cache.
@@ -254,8 +253,8 @@ The VRAM tier matters more than raw model parameter count:
 
 - 8 GB is viable because the 9B runner partially offloads to system RAM.
 - 16 GB is the sensible floor for consistently interactive single-model use.
-- 24 GB is the preferred value for a small team because the measured Qwen
-  allocations total about 14.3 GiB before scheduler and driver headroom.
+- 24 GB is the preferred value for a small team because it leaves useful
+  headroom for route transitions, scheduler state, and driver allocation.
 - 48 GB is the safer target before enabling several loaded models or parallel
   contexts on one Ollama server.
 
@@ -270,8 +269,8 @@ OLLAMA_KEEP_ALIVE=5m
 ```
 
 Keep `INFERENCE_CONTEXT_TOKENS=8192` and `CODING_FRAGMENT_CONCURRENCY=1`. On a
-24 GB or larger GPU, test `OLLAMA_MAX_LOADED_MODELS=2` to retain the two Qwen
-runners. Increase `OLLAMA_NUM_PARALLEL` only after the exact 8K prewarm and a
+24 GB or larger GPU, test `OLLAMA_MAX_LOADED_MODELS=2` to retain the Qwen and
+Phi-4 runners. Increase `OLLAMA_NUM_PARALLEL` only after the exact 8K prewarm and a
 two-request load test prove the resulting allocation, latency, and stability.
 Production station requests carry their own five-minute keep-alive; a server
 default does not override that request-specific value.
@@ -286,10 +285,11 @@ turn time ≈ cold model loads + prompt evaluation + output tokens / decode rate
 ```
 
 On the measured 8 GB GPU, 100 output tokens take roughly 5 seconds of Qwen 3.5
-decode or 2 seconds of Qwen 2.5 Coder decode after prompt evaluation. A cold or
-swapped model adds roughly 12–14 seconds in the current profile. Larger prompts,
-raw-contract retries and validation repairs add time even when their output
-is short.
+decode after prompt evaluation. The retained Qwen 2.5 Coder row below is a
+historical comparison, not an active route. Historical cold probes added roughly
+12–14 seconds. Larger prompts,
+additional bounded semantic leaves, and compiler-validation repairs add time
+even when their output is short.
 
 These ranges are deployment-planning estimates for one active inference stream:
 
@@ -353,20 +353,16 @@ the candidate host:
 
 ```bash
 ollama pull qwen3.5:9b-q4_K_M
-ollama pull qwen2.5-coder:7b
 ollama pull phi4:14b
-ollama pull deepseek-r1:8b
 ollama pull nomic-embed-text
 
 omni ollama:prewarm --model qwen3.5:9b-q4_K_M --num-ctx 8192 --json
-omni ollama:prewarm --model qwen2.5-coder:7b --num-ctx 8192 --json
 omni ollama:prewarm --model phi4:14b --num-ctx 8192 --json
-omni ollama:prewarm --model deepseek-r1:8b --num-ctx 8192 --json
 ```
 
 Accept a host only after the probe reports the exact 8,192-token context, memory
-fits without sustained swap, the intended GPU is used, warm latency is acceptable,
-and repeated runs produce no runner restart or GPU error. Then run one ordinary
+fits without sustained swap, the intended GPU is used, and repeated loads
+produce no runner restart or GPU error. Then run one ordinary
 chat/database turn and one representative coding job while recording queue time,
 model loads, tokens per second, peak RAM/VRAM, and end-to-end duration. Published
 parameter counts and context windows do not replace that application-level check.
@@ -378,33 +374,31 @@ Upstream capacity references: the
 [Ollama Llama 3.2 tags](https://ollama.com/library/llama3.2/tags),
 [Microsoft Phi-4 model card](https://huggingface.co/microsoft/phi-4),
 [Ollama Phi-4 tags](https://ollama.com/library/phi4/tags),
-[Ollama DeepSeek R1 tags](https://ollama.com/library/deepseek-r1/tags),
 [Ollama nomic-embed-text](https://ollama.com/library/nomic-embed-text),
 [Ollama concurrency and memory FAQ](https://docs.ollama.com/faq), and
 [Ollama GPU support matrix](https://docs.ollama.com/gpu).
 
 The surface station classifies only browser, command-line, or service delivery.
-Before intent interpretation, code hashes the immutable request and records exact
-workspace state plus bounded accepted durable memory as typed facts. A
+Before intent interpretation, code hashes the immutable request and records the exact
+workspace state as a typed fact. A
 code-owned context-need fixed point alternates one raw coverage call with one raw
 question call only while another question remains; registered providers resolve each
 decoded question and formalize selected results into source-backed facts. The promoted
 fresh-workspace vertical resolves context mechanically and makes no context-need call.
 A separate raw station returns one product context. Code then alternates requirement
 coverage with one raw requirement call only while another requirement remains and
-assembles the typed intent itself. A valid leaf advances directly; only one exact
-deterministic defect permits a bounded complete raw replacement of that same leaf.
-There is no aggregate model response or call merely to accept or review valid state.
+assembles the typed intent itself. A valid leaf advances directly; an invalid semantic
+leaf fails at its owning station. There is no generic response-correction station,
+aggregate model response, or call merely to accept or review valid state.
 Requirements are bound to the immutable request digest; exact substrings,
 quote intervals, source order, punctuation, disjointness, and overlap are not authority
 gates.
 
-For each accepted requirement, one raw call returns the objective. Code then owns
-separate behavior and acceptance-criterion fixed points: a coverage call permits one
-raw value call only while another leaf remains. Code validates every leaf, assembles
-the typed job specification, assigns task identity and source order, and freezes the
-workload hash. Dependencies, scheduling, tools, paths, and completion remain outside
-model authority. Artifact handling remains a separate token-blind classification job.
+For each accepted requirement, code creates exactly one frozen task containing the
+code-owned task identity, requirement identity, and unchanged accepted requirement.
+Code assigns source order and freezes the workload hash. There are no model-authored
+objectives, behaviors, acceptance criteria, dependencies, schedules, tools, paths, or
+completion state. Artifact handling remains a separate token-blind classification job.
 Code may bind one independently accepted
 PostgreSQL skill and may expose only direct pairwise capability APIs. After code selects
 the stack, it projects an exact target tree mechanically when the registered grammar is
@@ -418,14 +412,17 @@ stitching, isolated checks, and final verification.
 
 A mapped source failure is diagnosed by the separately routed repair-guidance model
 into one self-contained instruction; the correction model sees only that instruction
-and the exact mutable source block. Code applies and verifies the result, and any new
-failure starts a new guidance/execution iteration. Every call is an immutable
+and the exact mutable source block. Code validates and verifies the result. Invalid or
+byte-identical source stops; a later guidance/execution pair is legal only for a newly
+compiler-proven diagnostic after a validated transition. Every call is an immutable
 content-addressed work unit. Local Ollama station models are selected through
 environment-backed routing, so structurally qualified local models can be measured
 against the same unchanged gates without application changes. A missing model, context
-mismatch, or invalid capacity fails explicitly. The guided compiler qualification and
-its exact evidence are documented in
-[docs/LOCAL_MODEL_PROFILE.md](docs/LOCAL_MODEL_PROFILE.md#live-guided-repair-qualification).
+mismatch, or invalid capacity fails explicitly. The current repair boundary is
+documented in
+[docs/CHARMANDER_ASSEMBLY_LINE.md](docs/CHARMANDER_ASSEMBLY_LINE.md#production-flow);
+historical live primitive evidence remains in
+[docs/evidence/2026-08-15-guided-typescript-repair-iterative-live.jsonl](docs/evidence/2026-08-15-guided-typescript-repair-iterative-live.jsonl).
 
 Production station inference currently requires Ollama's exact prepared contract.
 OpenAI, Azure AI, Google, Hugging Face, and compatible services appear only when
@@ -571,7 +568,8 @@ CORE_URL=http://localhost:8090 /path/to/omnidex/bin/agent-cli run \
   "Build the requested feature, include focused tests, and run the project test suite."
 ```
 
-The CLI prints live phases, file events, diagnostics, and the final state. Direct correction stays on the job:
+The CLI prints live phases, file events, diagnostics, and the final state. Explicit
+user feedback updates the same authoritative job:
 
 ```bash
 CORE_URL=http://localhost:8090 /path/to/omnidex/bin/agent-cli feedback JOB_ID \

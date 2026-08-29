@@ -10,24 +10,25 @@ const maxPHPServiceFeatureNumber = 999
 
 func projectGenericPHPServiceFocusedTargetTree(
 	taskOrdinal int,
-	currentPaths []string,
+	occupation directCodingTargetTreeOccupation,
 ) (assemblyline.TargetTree, error) {
 	if taskOrdinal < 1 {
 		return assemblyline.TargetTree{}, fmt.Errorf(
 			"PHP HTTP focused target tree requires a positive frozen task ordinal",
 		)
 	}
-	present := make(map[string]struct{}, len(currentPaths))
-	for _, artifactPath := range currentPaths {
-		present[artifactPath] = struct{}{}
-	}
 	for feature := 1; feature <= maxPHPServiceFeatureNumber; feature++ {
 		implementation := fmt.Sprintf("src/Feature%03d.php", feature)
 		verification := fmt.Sprintf("tests/Feature%03dTest.php", feature)
-		if _, exists := present[implementation]; exists {
-			continue
+		available, err := directCodingTargetTreePairAvailable(
+			[]string{implementation, verification}, occupation,
+		)
+		if err != nil {
+			return assemblyline.TargetTree{}, fmt.Errorf(
+				"PHP HTTP target-tree grammar returned an invalid pair: %w", err,
+			)
 		}
-		if _, exists := present[verification]; exists {
+		if !available {
 			continue
 		}
 		return assemblyline.TargetTree{Paths: []string{implementation, verification}}, nil

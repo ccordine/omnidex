@@ -66,7 +66,7 @@ func TestVersionProfileIDPropagatesFromSelectionThroughTaskAssembly(t *testing.T
 		t.Fatalf("assembly profile=%s want=%s", assembly.VersionProfileID, profile.ID)
 	}
 
-	contexts, err := directCodingApplicationTaskContexts(applicationWorkloadInput(specification), workload)
+	contexts, err := directCodingApplicationTaskContexts(workload)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -15,6 +15,8 @@ func readHistoricalLLMCallPage(
 ) ([]HistoricalLLMCall, string, error) {
 	rows, err := tx.Query(ctx, `SELECT `+llmCallEvidenceSelectColumns+`
 		FROM llm_call_evidence AS calls
+		JOIN station_call_openings AS openings
+		  ON openings.id=calls.station_call_opening_id
 		WHERE calls.job_id=$1 AND calls.id>$2
 		ORDER BY calls.id ASC
 		LIMIT $3

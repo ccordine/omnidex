@@ -41,25 +41,34 @@ func insertStationGapOpeningTx(
 	tx pgx.Tx,
 	opening *StationGapOpening,
 ) error {
-	err := scanStationGapOpening(tx.QueryRow(ctx, `
+	semanticUncertainty, err := canonicalStationGapSemanticUncertainty(*opening)
+	if err != nil {
+		return fmt.Errorf("persist exact station gap semantic uncertainty: %w", err)
+	}
+	err = scanStationGapOpening(tx.QueryRow(ctx, `
 		INSERT INTO station_gap_openings (
 			job_id,generation,step_id,step_attempt,worker_id,gap_id,station,scope,
 			portable_schema,work_id,work_kind,portable_payload,portable_payload_sha256,
-			portable_envelope,portable_envelope_sha256,renderer_version,prompt,response_schema,
-			projection_envelope,projection_sha256,context_tokens,max_output_tokens,output_limit_mode
+			portable_envelope,portable_envelope_sha256,renderer_version,prompt,
+			projection_envelope,projection_sha256,semantic_uncertainty_contract,
+			semantic_uncertainty_contract_sha256,context_tokens,max_output_tokens,
+			output_limit_mode
 		) VALUES (
-			$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23
+			$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24
 		)
 		RETURNING id,job_id,generation,step_id,step_attempt,worker_id,gap_id,station,scope,
 			portable_schema,work_id,work_kind,portable_payload,portable_payload_sha256,
-			portable_envelope,portable_envelope_sha256,renderer_version,prompt,response_schema,
-			projection_envelope,projection_sha256,context_tokens,max_output_tokens,output_limit_mode,created_at
+			portable_envelope,portable_envelope_sha256,renderer_version,prompt,
+			projection_envelope,projection_sha256,semantic_uncertainty_contract,
+			semantic_uncertainty_contract_sha256,context_tokens,max_output_tokens,
+			output_limit_mode,created_at
 	`, opening.JobID, opening.Generation, opening.StepID, opening.StepAttempt,
 		opening.WorkerID, opening.GapID, opening.Station, opening.Scope, opening.PortableSchema,
 		opening.WorkID, opening.WorkKind, opening.PortablePayload, opening.PortablePayloadSHA256,
 		opening.PortableEnvelope, opening.PortableEnvelopeSHA256, opening.RendererVersion,
-		opening.Prompt, string(opening.ResponseSchema), opening.ProjectionEnvelope,
-		opening.ProjectionSHA256, opening.ContextTokens, opening.MaxOutputTokens,
+		opening.Prompt, opening.ProjectionEnvelope,
+		opening.ProjectionSHA256, semanticUncertainty,
+		opening.SemanticUncertaintyContractSHA256, opening.ContextTokens, opening.MaxOutputTokens,
 		opening.OutputLimitMode), opening)
 	if err != nil {
 		return fmt.Errorf("persist exact station gap opening: %w", err)

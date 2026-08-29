@@ -32,12 +32,20 @@ func runObjectiveRoleplayTurn(
 	if err := requireObjectiveRoleplayPreparation(authority, preparation); err != nil {
 		return objectiveTurnResult{}, err
 	}
-	modelInstruction, err := roleplayModelVisibleInstruction(preparation.InputKind, authority.Instruction)
+	modelInstruction := authority.ModelInstruction
+	if err := validateObjectiveModelInput(
+		authority, "roleplay model instruction", modelInstruction,
+	); err != nil {
+		return objectiveTurnResult{}, err
+	}
+	modelUserTurn, err := projectObjectiveRoleplayUserTurn(
+		authority, preparation.UserTurn,
+	)
 	if err != nil {
 		return objectiveTurnResult{}, err
 	}
 	canonAntecedent, err := assemblyline.ProjectRoleplayCanonAntecedent(
-		preparation.UserTurn, modelInstruction,
+		modelUserTurn, authority.ModelRedactedInstruction,
 	)
 	if err != nil {
 		return objectiveTurnResult{}, err
@@ -54,7 +62,7 @@ func runObjectiveRoleplayTurn(
 		return result, fmt.Errorf("roleplay ongoing-action station is unavailable")
 	}
 	userAction, calls, err := resolveRoleplayUserOngoingAction(
-		ctx, ongoingActionStation, preparation,
+		ctx, ongoingActionStation, preparation, modelUserTurn, authority,
 	)
 	if err != nil {
 		return result, err
@@ -62,7 +70,7 @@ func runObjectiveRoleplayTurn(
 	result.ModelCalls += calls
 	result.RoleplayUserOngoingAction = userAction
 	roundFacts := make([]string, 0)
-	source, userCanonPresent, err := assemblyline.ProjectRoleplayUserCanonSource(preparation.UserTurn)
+	source, userCanonPresent, err := assemblyline.ProjectRoleplayUserCanonSource(modelUserTurn)
 	if err != nil {
 		return result, fmt.Errorf("project roleplay user canon source: %w", err)
 	}
@@ -85,19 +93,24 @@ func runObjectiveRoleplayTurn(
 		if err != nil {
 			return result, fmt.Errorf("filter roleplay user contribution canon: %w", err)
 		}
+		facts, err = restoreObjectiveModelTexts(
+			authority, "roleplay user canon fact", facts,
+		)
+		if err != nil {
+			return result, err
+		}
 		result.RoleplayUserCanon, err = newRoleplayUserCanonCompletion(preparation, facts)
 		if err != nil {
 			return result, err
 		}
 		roundFacts = append(roundFacts, facts...)
 	}
-	retrieval, retrievalCalls, err := resolveRoleplayTurnRetrieval(
-		ctx, job, authority, candidateProvider, contextStation, preparation,
+	retrieval, err := resolveRoleplayTurnRetrieval(
+		ctx, job, authority, candidateProvider, preparation,
 	)
 	if err != nil {
 		return result, fmt.Errorf("resolve roleplay round retrieval: %w", err)
 	}
-	result.ModelCalls += retrievalCalls
 	earlier := make([]roleplayRoundResponseAuthority, 0, len(preparation.Responders))
 	outputs := make([]string, 0, len(preparation.Responders))
 	for index, responder := range preparation.Responders {
@@ -117,8 +130,8 @@ func runObjectiveRoleplayTurn(
 		}
 		result.ModelCalls += contextCalls
 		modelAuthority := responderAuthority
-		modelAuthority.Instruction = modelInstruction
-		modelAuthority.RoleplayUserTurn = &preparation.UserTurn
+		modelAuthority.ModelInstruction = modelInstruction
+		modelAuthority.RoleplayUserTurn = &modelUserTurn
 		responseResult := objectiveTurnResult{
 			ObjectiveID: result.ObjectiveID, RequirementID: result.RequirementID,
 			InstructionSHA256: result.InstructionSHA256, Kind: result.Kind,
@@ -148,6 +161,12 @@ func runObjectiveRoleplayTurn(
 			return result, fmt.Errorf("extract roleplay responder %d ongoing action: %w", index, err)
 		}
 		result.ModelCalls += ongoingActionCalls
+		ongoingAction, err = restoreObjectiveOptionalModelText(
+			authority, "roleplay responder ongoing action", ongoingAction,
+		)
+		if err != nil {
+			return result, err
+		}
 		source, err := assemblyline.NewRoleplayAssistantCanonSource(
 			projection.Viewpoint.Name, responseResult.Output,
 		)
@@ -172,17 +191,29 @@ func runObjectiveRoleplayTurn(
 		if err != nil {
 			return result, fmt.Errorf("filter roleplay responder %d canon: %w", index, err)
 		}
+		facts, err = restoreObjectiveModelTexts(
+			authority, "roleplay responder canon fact", facts,
+		)
+		if err != nil {
+			return result, err
+		}
 		roundFacts = append(roundFacts, facts...)
 		knowledge := []model.RoleplayCharacterID(nil)
 		if len(facts) != 0 {
 			knowledge = []model.RoleplayCharacterID{model.RoleplayCharacterID(responder.CharacterID)}
 		}
+		restoredResponse, err := restoreObjectiveModelText(
+			authority, "roleplay responder output", responseResult.Output,
+		)
+		if err != nil {
+			return result, err
+		}
 		result.RoleplayResponses = append(result.RoleplayResponses, queue.RoleplayResponseCompletion{
 			Position: index, CharacterID: model.RoleplayCharacterID(responder.CharacterID),
-			Output: responseResult.Output, Facts: facts, KnowledgeCharacterIDs: knowledge,
+			Output: restoredResponse, Facts: facts, KnowledgeCharacterIDs: knowledge,
 			PreviousOngoingAction: previousOngoingAction, OngoingAction: ongoingAction,
 		})
-		outputs = append(outputs, responseResult.Output)
+		outputs = append(outputs, restoredResponse)
 		earlier = append(earlier, roleplayRoundResponseAuthority{
 			Position: index, CharacterID: model.RoleplayCharacterID(responder.CharacterID),
 			CharacterName: projection.Viewpoint.Name, Text: responseResult.Output,
@@ -298,8 +329,9 @@ func runObjectiveConversationResponse(
 		return result, fmt.Errorf("conversation response station is unavailable")
 	}
 	input := assemblyline.ConversationResponseInput{
-		Kind: result.Kind, ExactInstruction: authority.Instruction,
-		Context: assemblyline.CloneObjectiveContext(authority.Context),
+		Kind: result.Kind, ExactInstruction: authority.ModelInstruction,
+		Context:            assemblyline.CloneObjectiveContext(authority.Context),
+		KnownArtifactPaths: append([]string{}, authority.ModelArtifactPaths...),
 	}
 	if authority.RoleplayIdentity != nil {
 		identity := *authority.RoleplayIdentity
@@ -329,7 +361,16 @@ func runObjectiveConversationResponse(
 		return result, err
 	}
 	result.ModelCalls += receipt.Calls
-	result.Output = decision.Text
+	if authority.RoleplayIdentity != nil {
+		result.Output = decision.Text
+	} else {
+		result.Output, err = restoreObjectiveModelText(
+			authority, "conversation response", decision.Text,
+		)
+		if err != nil {
+			return result, err
+		}
+	}
 	result.Complete = true
 	return result, nil
 }

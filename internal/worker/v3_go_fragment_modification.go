@@ -21,8 +21,8 @@ func runDirectCodingGoFragmentModificationWorker(
 	if runtime.Context == nil || runtime.Execute == nil {
 		return "", fmt.Errorf("Go fragment modification worker requires a portable execution runtime")
 	}
-	if runtime.MaxAttempts < 1 || runtime.MaxAttempts > maxTypedWorkerAttempts {
-		return "", fmt.Errorf("Go fragment modification attempts must be between 1 and %d", maxTypedWorkerAttempts)
+	if runtime.MaxAttempts != exactSemanticLeafCalls {
+		return "", fmt.Errorf("Go fragment modification requires exactly %d model call", exactSemanticLeafCalls)
 	}
 	modelName = strings.TrimSpace(modelName)
 	if modelName == "" || strings.TrimSpace(job.Subject) == "" {

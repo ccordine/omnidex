@@ -13,8 +13,6 @@ func TestSingleLineProviderFramingRemainsCodeOwnedAndByteExact(t *testing.T) {
 		"internal/assemblyline/portable_response_framing.go": {
 			"func PortableResponseFramingForWorkKind(",
 			"func PortableResponseFramingForJob(",
-			"portableResponseFramingOriginal",
-			"PortableResponseFramingForWorkKind(input.Original.Kind)",
 		},
 		"internal/worker/llm_response_contract.go": {
 			"assemblyline.PortableResponseFramingForJob(job)",
@@ -72,7 +70,10 @@ func TestSingleLineProviderFramingRemainsCodeOwnedAndByteExact(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, forbidden := range []string{"internal/llm", "strings.Trim", ".Candidate"} {
+	for _, forbidden := range []string{
+		"internal/llm", "strings.Trim", ".Candidate",
+		"portableResponseFramingOriginal", "ResponseCorrection",
+	} {
 		if strings.Contains(string(framing), forbidden) {
 			t.Errorf("assemblyline response framing owns forbidden operation %q", forbidden)
 		}

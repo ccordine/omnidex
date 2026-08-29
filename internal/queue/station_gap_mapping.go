@@ -11,13 +11,6 @@ func stationForPortableJob(job assemblyline.PortableJob) (station.ID, error) {
 	if err := job.Validate(); err != nil {
 		return "", err
 	}
-	if job.Kind == assemblyline.WorkResponseCorrection {
-		var input assemblyline.ResponseCorrectionInput
-		if err := decodePortableGapPayload(job.Payload, &input); err != nil {
-			return "", err
-		}
-		return stationForPortableJob(input.Original)
-	}
 	return stationForPortableWorkKind(job.Kind)
 }
 
@@ -46,13 +39,18 @@ func stationForPortableWorkKind(kind assemblyline.WorkKind) (station.ID, error) 
 		return station.CodingServicePersistenceDestination, nil
 	case assemblyline.WorkApplicationServiceStateLifetime:
 		return station.CodingServiceStateLifetime, nil
-	case assemblyline.WorkApplicationStateFieldCoverage,
-		assemblyline.WorkApplicationStateFieldName,
-		assemblyline.WorkApplicationStateFieldKind,
-		assemblyline.WorkApplicationRecordFieldCoverage,
-		assemblyline.WorkApplicationRecordFieldName,
-		assemblyline.WorkApplicationRecordFieldKind:
-		return station.CodingServiceStateInterface, nil
+	case assemblyline.WorkApplicationStateFieldCoverage:
+		return station.CodingApplicationStateFieldCoverage, nil
+	case assemblyline.WorkApplicationStateFieldPurpose:
+		return station.CodingApplicationStateFieldPurpose, nil
+	case assemblyline.WorkApplicationStateFieldKind:
+		return station.CodingApplicationStateFieldKind, nil
+	case assemblyline.WorkApplicationRecordFieldCoverage:
+		return station.CodingApplicationRecordFieldCoverage, nil
+	case assemblyline.WorkApplicationRecordFieldPurpose:
+		return station.CodingApplicationRecordFieldPurpose, nil
+	case assemblyline.WorkApplicationRecordFieldKind:
+		return station.CodingApplicationRecordFieldKind, nil
 	case assemblyline.WorkApplicationServiceEndpointRequirement:
 		return station.CodingServiceEndpointRequirement, nil
 	case assemblyline.WorkApplicationServiceEndpointExposure:
@@ -69,22 +67,10 @@ func stationForPortableWorkKind(kind assemblyline.WorkKind) (station.ID, error) 
 		return station.CodingServiceEndpointSuccessStatus, nil
 	case assemblyline.WorkApplicationClassify:
 		return station.CodingSurface, nil
-	case assemblyline.WorkApplicationJobObjective,
-		assemblyline.WorkApplicationBehaviorCoverage,
-		assemblyline.WorkApplicationBehavior,
-		assemblyline.WorkApplicationCriterionCoverage,
-		assemblyline.WorkApplicationCriterion:
-		return station.CodingWorkload, nil
 	case assemblyline.WorkApplicationTargetTree:
 		return station.CodingTargetTree, nil
-	case assemblyline.WorkRepositorySearchAnchorCoverage,
-		assemblyline.WorkRepositorySearchAnchor:
-		return station.CodingRepositorySearchTerm, nil
 	case assemblyline.WorkRepositoryChangeOwner:
 		return station.CodingRepositoryChange, nil
-	case assemblyline.WorkContextSearchTermCoverage,
-		assemblyline.WorkContextSearchTerm:
-		return station.ContextSearchTerms, nil
 	case assemblyline.WorkContextRelevanceSelection:
 		return station.ContextRelevance, nil
 	case assemblyline.WorkContextMinification:
@@ -139,32 +125,18 @@ func stationForPortableWorkKind(kind assemblyline.WorkKind) (station.ID, error) 
 		return station.DatabaseJoinPathSelection, nil
 	case assemblyline.WorkRepositoryEvidenceRelevanceLeaf:
 		return station.RepositoryEvidenceRelevance, nil
-	case assemblyline.WorkRepositoryGroundedIssueDetail,
-		assemblyline.WorkRepositoryGroundedIssueKind:
-		return station.RepositoryGroundedReview, nil
-	case assemblyline.WorkRepositoryGroundedCorrection:
-		return station.RepositoryGroundedCorrection, nil
-	case assemblyline.WorkWebSearchTermCoverage,
-		assemblyline.WorkWebSearchTerm:
-		return station.WebSearchTerms, nil
 	case assemblyline.WorkWebRelevanceRelation:
 		return station.WebRelevance, nil
 	case assemblyline.WorkWebSynthesisParagraphCoverage,
 		assemblyline.WorkWebSynthesisParagraph,
 		assemblyline.WorkWebSynthesisEvidenceRelation:
 		return station.WebGroundedSynthesis, nil
-	case assemblyline.WorkWebGroundedSynthesisCorrection:
-		return station.WebGroundedSynthesisCorrection, nil
-	case assemblyline.WorkWebReviewClaimCoverage,
-		assemblyline.WorkWebReviewClaim,
-		assemblyline.WorkWebReviewClaimVerdict,
-		assemblyline.WorkWebReviewIssueEvidenceRelation,
-		assemblyline.WorkWebReviewIssueDetail:
-		return station.WebClaimEvidenceReview, nil
 	case assemblyline.WorkArtifactHandling:
 		return station.CodingArtifactHandling, nil
-	case assemblyline.WorkKnownArtifactTruth:
-		return station.CodingKnownArtifactTruth, nil
+	case assemblyline.WorkRepositoryArtifactAbsence:
+		return station.CodingRepositoryArtifactAbsence, nil
+	case assemblyline.WorkPlainTextArtifactCreation:
+		return station.CodingPlainTextArtifactCreation, nil
 	case assemblyline.WorkDeclarationArtifactBoundary:
 		return station.CodingDeclarationArtifactBoundary, nil
 	case assemblyline.WorkArtifactCandidateSelection:

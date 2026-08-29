@@ -70,9 +70,10 @@ A model response is not a state transition.
    inventory, canon fact, memory, or simulation event fails immediately with
    the exact changed category and an explicit restore-and-retry path.
 6. Code deterministically compiles the smallest relevant continuity context.
-   Search-term interpretation, relevance, or minification is invoked only when
-   one corresponding semantic uncertainty actually remains; context that
-   already fits is retained without a minification call.
+   Candidate relevance or minification is invoked only when one corresponding
+   semantic uncertainty actually remains; acquisition queries and arguments
+   remain exact code-owned authority. Context that already fits is retained
+   without a minification call.
 7. For each code-ordered responder, one response station receives the exact
    typed user contribution, that responding character's current identity and voice, the prepared
    narrative projection, and only the selected continuity. It returns the
@@ -198,14 +199,15 @@ typed evidence need, invokes the registered resolver, validates provenance, and
 projects the bounded result. The character model never receives a search
 operation or resolver catalog and never claims that it performed the search.
 
-The production research sieve has one fixed shape. A search-term station sees
-only the exact question and compiled minimal context and returns bounded query
-strings. Code invokes the configured acquisition providers, fetches the bounded
-candidate set, and gives an ID-only relevance station bounded excerpts. The
-final roleplay response station receives only the exact question, minimal
+The production research sieve has one fixed shape. The explicit typed research
+request supplies the exact question, and code binds it as the acquisition query,
+invokes the configured providers, and fetches the bounded candidate set. One
+relevance relation call receives one bounded excerpt without its code-owned ID.
+The final roleplay response station receives only the exact question, minimal
 character identity, compiled context, and selected bounded evidence. The full
 simulation projection remains server authority and is never research-response
-context. Code alone binds returned evidence IDs to exact citations.
+context. Code alone binds returned evidence IDs to exact citations. There is no
+search-term, review, or correction model station in this path.
 
 Do not expose a research checkbox until that end-to-end consumer exists and is
 tested. Write-only capability metadata is forbidden.

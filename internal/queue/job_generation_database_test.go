@@ -110,7 +110,7 @@ func TestPostgresJobGenerationBoundaryIsExactAndJobOwned(t *testing.T) {
 	`, secondJob)
 
 	assertGenerationDerivedOwnership(
-		t, ctx, tx, firstJob, secondJob, firstStep, secondStep, historicalLLMID,
+		t, ctx, tx, firstJob, secondJob, secondStep, historicalLLMID,
 	)
 	assertGenerationMemoryCandidateOwnership(
 		t, ctx, tx, firstJob, secondJob, memoryScope.ProjectID, string(memoryScope.ChannelID),

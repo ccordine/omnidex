@@ -99,16 +99,18 @@ func validateObjectiveCitationMetadata(record evidence.Record) error {
 		if err := validateObjectiveDatabaseMetadata(record); err != nil {
 			return err
 		}
-		if len(record.SupportsClaims) != 1 || record.SupportsClaims[0] != requirementID {
-			return fmt.Errorf("objective database citation claim differs from its requirement authority")
+		if len(record.RequirementAuthorityBindings) != 1 ||
+			record.RequirementAuthorityBindings[0] != requirementID {
+			return fmt.Errorf("objective database citation binding differs from its requirement authority")
 		}
 		return nil
 	}
 	if kind != "repository_read" {
 		return fmt.Errorf("objective non-web citation requires objective kind %q", "repository_read")
 	}
-	if len(record.SupportsClaims) != 1 || record.SupportsClaims[0] != requirementID {
-		return fmt.Errorf("objective non-web citation claim differs from its requirement authority")
+	if len(record.RequirementAuthorityBindings) != 1 ||
+		record.RequirementAuthorityBindings[0] != requirementID {
+		return fmt.Errorf("objective non-web citation binding differs from its requirement authority")
 	}
 	return nil
 }
@@ -184,9 +186,10 @@ func validateObjectiveWebMetadata(record evidence.Record, requirementID string) 
 		if index < 0 || index > 3 || index <= previous {
 			return fmt.Errorf("objective web citation paragraph indexes must be unique ascending values in 0..3")
 		}
-		if len(record.SupportsClaims) != len(indexes) ||
-			record.SupportsClaims[position] != fmt.Sprintf("%s#paragraph-%d", requirementID, index+1) {
-			return fmt.Errorf("objective web citation claims differ from paragraph authority")
+		if len(record.RequirementAuthorityBindings) != len(indexes) ||
+			record.RequirementAuthorityBindings[position] !=
+				fmt.Sprintf("%s#paragraph-%d", requirementID, index+1) {
+			return fmt.Errorf("objective web citation bindings differ from paragraph authority")
 		}
 		previous = index
 	}

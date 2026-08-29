@@ -92,7 +92,7 @@ func laravelRuntimeDocument(
 		},
 		assemblyline.SourceBlock{
 			ID: "runtime.laravel.http", Static: laravelHTTPRuntimeSource(),
-			API:       "code-owned Laravel request decoding and response emission",
+			API:       "Laravel request decoding and response emission",
 			DependsOn: []string{"runtime.task_input", "runtime.task_result", "runtime.assertions"},
 		},
 	)

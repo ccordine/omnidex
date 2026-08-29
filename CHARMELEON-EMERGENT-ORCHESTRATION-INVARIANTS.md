@@ -64,9 +64,10 @@ repository facts.
 If those facts are sufficient, the task proceeds. If they are not, code
 persists an evidence need with its question, relevance, permitted evidence
 classes, and completion criterion. Code selects and runs the appropriate
-repository, memory, web, runtime, or user-evidence workflow. A model may fill
-only a remaining semantic leaf, such as a bounded search phrase or a choice
-between supplied evidence candidates; it never selects or calls a tool.
+repository, memory, web, runtime, or user-evidence workflow. Code owns every
+acquisition query. A model may fill only a remaining semantic leaf, such as one
+relevance relation or a choice between supplied opaque evidence candidates; it
+never selects or calls a tool.
 
 ## 5. Raw target-tree boundary
 

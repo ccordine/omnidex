@@ -1,9 +1,11 @@
 package queue
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 
+	"github.com/gryph/omnidex/internal/exactjson"
 	"github.com/gryph/omnidex/internal/llm"
 	"github.com/gryph/omnidex/internal/model"
 )
@@ -27,12 +29,11 @@ func llmEvidenceForStationCall(
 		receipt.WorkerID != authority.WorkerID || receipt.GapID != opening.GapID {
 		return LLMCallEvidenceRecord{}, fmt.Errorf("LLM evidence requires one exact station call receipt")
 	}
-	var generation llm.PreparedGeneration
-	if err := json.Unmarshal(receipt.GenerationJSON, &generation); err != nil {
+	generation, err := decodeDurableStationGeneration(receipt.GenerationJSON)
+	if err != nil {
 		return LLMCallEvidenceRecord{}, fmt.Errorf("decode durable station call receipt: %w", err)
 	}
-	if string(gap.ResponseSchema) != "null" ||
-		opening.Protocol != string(llm.ExactPreparedProtocolRawTextV2) {
+	if opening.Protocol != string(llm.ExactPreparedProtocolRawTextV2) {
 		return LLMCallEvidenceRecord{}, fmt.Errorf("LLM evidence rejects structured station output authority")
 	}
 	status := LLMEvidenceSucceeded
@@ -44,8 +45,24 @@ func llmEvidenceForStationCall(
 		WorkID: opening.GapID, WorkKind: gap.WorkKind, StationCallOpeningID: opening.ID,
 		RequestedModel: requestedModel, Model: opening.Model, Attempt: attempt,
 		SystemPrompt: gap.Prompt, UserPrompt: llm.MinimalGeneratePrompt,
-		ResponseFormat: "text",
-		ContextTokens:  opening.ContextTokens, MaxOutputTokens: opening.MaxOutputTokens,
+		ContextTokens: opening.ContextTokens, MaxOutputTokens: opening.MaxOutputTokens,
 		Response: generation.Content, Status: status, Error: receipt.Error, LatencyMS: latencyMS,
 	}, nil
+}
+
+func decodeDurableStationGeneration(raw []byte) (llm.PreparedGeneration, error) {
+	type durableGeneration struct {
+		llm.PreparedGeneration
+		ProviderIdentityEvidence llm.ProviderIdentityEvidence `json:"provider_identity_evidence"`
+	}
+	if err := exactjson.ValidateUniqueObject(raw, "durable station generation"); err != nil {
+		return llm.PreparedGeneration{}, err
+	}
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	var durable durableGeneration
+	if err := decoder.Decode(&durable); err != nil {
+		return llm.PreparedGeneration{}, err
+	}
+	return durable.PreparedGeneration, nil
 }

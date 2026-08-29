@@ -193,11 +193,7 @@ func javaCommandLineStackFixture(
 			ID: "requirement_001", SourceQuote: "Print the first supplied argument",
 		}},
 	}
-	return specification, freezeJavaWorkload(t, specification, []assemblyline.ApplicationWorkloadTaskDraft{{
-		RequirementID: "requirement_001", Objective: "Return the first command argument.",
-		RequiredBehaviors:  []string{"Accept one command argument and expose it as output."},
-		AcceptanceCriteria: []string{"The first command argument is returned unchanged."},
-	}})
+	return specification, freezeJavaWorkload(t, specification)
 }
 
 func javaTwoTaskWorkloadFixture(
@@ -211,25 +207,18 @@ func javaTwoTaskWorkloadFixture(
 			{ID: "requirement_002", SourceQuote: "Perform the second operation"},
 		},
 	}
-	return specification, freezeJavaWorkload(t, specification, []assemblyline.ApplicationWorkloadTaskDraft{
-		{RequirementID: "requirement_001", Objective: "Perform the first operation.", RequiredBehaviors: []string{"Return the first result."}, AcceptanceCriteria: []string{"The first result is present."}},
-		{RequirementID: "requirement_002", Objective: "Perform the second operation.", RequiredBehaviors: []string{"Return the second result."}, AcceptanceCriteria: []string{"The second result is present."}},
-	})
+	return specification, freezeJavaWorkload(t, specification)
 }
 
 func freezeJavaWorkload(
 	t *testing.T,
 	specification assemblyline.ApplicationSpecification,
-	tasks []assemblyline.ApplicationWorkloadTaskDraft,
 ) assemblyline.FrozenApplicationWorkload {
 	t.Helper()
 	if err := specification.Validate(); err != nil {
 		t.Fatal(err)
 	}
-	workload, err := assemblyline.FreezeApplicationWorkload(
-		applicationWorkloadInput(specification),
-		assemblyline.ApplicationWorkloadDraft{Schema: assemblyline.ApplicationWorkloadDraftSchemaV1, Tasks: tasks},
-	)
+	workload, err := assemblyline.FreezeApplicationWorkload(specification)
 	if err != nil {
 		t.Fatal(err)
 	}

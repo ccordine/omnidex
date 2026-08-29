@@ -5,31 +5,19 @@ import (
 	"testing"
 )
 
-func TestApplicationServiceEndpointContractIsComposedAndValidatedByCode(t *testing.T) {
+func TestApplicationServiceEndpointContractIsValidatedByCode(t *testing.T) {
 	t.Parallel()
 	authority := testServiceEndpointTaskAuthority()
-	contract, err := ComposeApplicationServiceEndpointContract(
-		authority,
-		ApplicationServiceEndpointExposureResult{
-			Schema: ApplicationServiceEndpointExposureSchemaV1, Exposure: ApplicationServiceEndpointPublic,
-		},
-		ApplicationServiceEndpointMethodResult{
-			Schema: ApplicationServiceEndpointMethodSchemaV1, Method: ApplicationServiceEndpointGET,
-		},
-		ApplicationServiceEndpointRouteTemplateResult{
-			Schema: ApplicationServiceEndpointRouteTemplateSchemaV1, RouteTemplate: "/records/{record_id}",
-		},
-		ApplicationServiceEndpointRequestMediaResult{
-			Schema: ApplicationServiceEndpointRequestMediaSchemaV1, RequestMedia: ApplicationServiceEndpointMediaNone,
-		},
-		ApplicationServiceEndpointResponseMediaResult{
-			Schema: ApplicationServiceEndpointResponseMediaSchemaV1, ResponseMedia: ApplicationServiceEndpointJSON,
-		},
-		ApplicationServiceEndpointSuccessStatusResult{
-			Schema: ApplicationServiceEndpointSuccessStatusSchemaV1, SuccessStatus: 200,
-		},
-	)
-	if err != nil {
+	contract := ApplicationServiceEndpointContract{
+		Schema:        ApplicationServiceEndpointContractSchemaV1,
+		Exposure:      ApplicationServiceEndpointPublic,
+		Method:        ApplicationServiceEndpointGET,
+		RouteTemplate: "/records/{record_id}",
+		RequestMedia:  ApplicationServiceEndpointMediaNone,
+		ResponseMedia: ApplicationServiceEndpointJSON,
+		SuccessStatus: 200,
+	}
+	if err := contract.ValidateFor(authority); err != nil {
 		t.Fatal(err)
 	}
 	if contract.Schema != ApplicationServiceEndpointContractSchemaV1 ||
@@ -84,9 +72,8 @@ func TestApplicationServiceEndpointContractRejectsInvalidAggregateCompatibility(
 
 func testServiceEndpointTaskAuthority() ApplicationServiceEndpointTaskAuthority {
 	return ApplicationServiceEndpointTaskAuthority{
-		ProductContext:    "inventory service",
-		RequirementQuote:  "Clients can retrieve an inventory record.",
-		Objective:         "Expose retrieval of one inventory record.",
-		RequiredBehaviors: []string{"Return the requested record."},
+		Surface:          ApplicationSurfaceService,
+		ProductContext:   "inventory service",
+		RequirementQuote: "Clients can retrieve an inventory record.",
 	}
 }

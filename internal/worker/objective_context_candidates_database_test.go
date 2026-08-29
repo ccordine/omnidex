@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gryph/omnidex/internal/assemblyline"
 	"github.com/gryph/omnidex/internal/contextcompiler"
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/queue"
@@ -70,6 +71,12 @@ func TestPostgresFirstRoleplayTurnHasNoSearchTermsQuestion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	authority, err = bindObjectiveModelInstruction(
+		authority, assemblyline.ArtifactIdentityProvenance{},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
 	preparation, projection, err := repository.ProjectRoleplaySimulationContext(
 		ctx, authority.RoleplaySimulationPreparationID, job.ID,
 	)
@@ -88,19 +95,19 @@ func TestPostgresFirstRoleplayTurnHasNoSearchTermsQuestion(t *testing.T) {
 	if availability != contextcompiler.SearchUnavailable {
 		t.Fatalf("first-turn roleplay search availability=%q", availability)
 	}
-	station := &scriptedConversationContextStation{terms: []string{"must not be requested"}}
+	station := &scriptedConversationContextStation{}
 	compiled, modelCalls, err := compileObjectiveTurnContext(
 		ctx, job, authority, provider, station, &preparation, &projection, nil,
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if station.termCalls != 0 || station.relevanceCalls != 0 || modelCalls != 0 ||
+	if station.relevanceCalls != 0 || modelCalls != 0 ||
 		len(compiled.Context.Capsules) != 1 ||
 		len(compiled.Context.Capsules[0].Sources) != 2 {
 		t.Fatalf(
-			"first-turn terms/relevance/model=%d/%d/%d context=%#v",
-			station.termCalls, station.relevanceCalls, modelCalls, compiled.Context,
+			"first-turn relevance/model=%d/%d context=%#v",
+			station.relevanceCalls, modelCalls, compiled.Context,
 		)
 	}
 }
@@ -155,6 +162,12 @@ func TestPostgresEmptyContextTermsKeepRecentAssistantExchangeForOpaqueRelevance(
 	if err != nil {
 		t.Fatal(err)
 	}
+	authority, err = bindObjectiveModelInstruction(
+		authority, assemblyline.ArtifactIdentityProvenance{},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
 	provider := boundObjectiveContextProvider{
 		runtime: &nativeRuntimeV3{svc: &Service{repo: repository}},
 		job:     currentJob, authority: authority,
@@ -183,7 +196,7 @@ func TestPostgresEmptyContextTermsKeepRecentAssistantExchangeForOpaqueRelevance(
 		t.Fatal(err)
 	}
 	station := &scriptedConversationContextStation{
-		terms: []string{}, relevantIDs: []string{set.Optional[0].CandidateID},
+		relevantIDs: []string{set.Optional[0].CandidateID},
 	}
 	compiled, modelCalls, err := compileObjectiveTurnContext(
 		ctx, currentJob, authority,
@@ -193,9 +206,8 @@ func TestPostgresEmptyContextTermsKeepRecentAssistantExchangeForOpaqueRelevance(
 	if err != nil {
 		t.Fatal(err)
 	}
-	if modelCalls != 1 || station.termCalls != 0 || station.relevanceCalls != 1 ||
+	if modelCalls != 1 || station.relevanceCalls != 1 ||
 		len(station.relevanceInputs) != 1 ||
-		len(station.relevanceInputs[0].RetrievalConcepts) != 0 ||
 		len(compiled.Context.Capsules) != 1 ||
 		compiled.Context.Capsules[0].Content != set.Optional[0].Content {
 		t.Fatalf(
@@ -211,11 +223,10 @@ func TestPostgresSearchAvailabilityDistinguishesExactRecentBoundFromOneOlderExch
 	fixtures := []struct {
 		name           string
 		historyCount   int
-		wantTermCalls  int
 		wantModelCalls int
 	}{
-		{name: "exact bound has no hidden authority", historyCount: 6, wantTermCalls: 0, wantModelCalls: 1},
-		{name: "one older exchange enables search", historyCount: 7, wantTermCalls: 1, wantModelCalls: 2},
+		{name: "exact bound has no hidden authority", historyCount: 6, wantModelCalls: 1},
+		{name: "one older exchange enables deterministic search", historyCount: 7, wantModelCalls: 1},
 	}
 	for _, fixture := range fixtures {
 		t.Run(fixture.name, func(t *testing.T) {
@@ -242,9 +253,13 @@ func TestPostgresSearchAvailabilityDistinguishesExactRecentBoundFromOneOlderExch
 			if err != nil {
 				t.Fatal(err)
 			}
-			station := &scriptedConversationContextStation{
-				terms: []string{"history marker"}, relevantIDs: []string{},
+			authority, err = bindObjectiveModelInstruction(
+				authority, assemblyline.ArtifactIdentityProvenance{},
+			)
+			if err != nil {
+				t.Fatal(err)
 			}
+			station := &scriptedConversationContextStation{relevantIDs: []string{}}
 			compiled, modelCalls, err := compileObjectiveTurnContext(
 				ctx, currentJob, authority,
 				runtimeConversationCandidateProvider{runtime: &nativeRuntimeV3{
@@ -255,12 +270,11 @@ func TestPostgresSearchAvailabilityDistinguishesExactRecentBoundFromOneOlderExch
 			if err != nil {
 				t.Fatal(err)
 			}
-			if station.termCalls != fixture.wantTermCalls ||
-				modelCalls != fixture.wantModelCalls || station.relevanceCalls != 1 ||
+			if modelCalls != fixture.wantModelCalls || station.relevanceCalls != 1 ||
 				len(compiled.Context.Capsules) != 0 {
 				t.Fatalf(
-					"history=%d terms/relevance/model=%d/%d/%d context=%#v",
-					fixture.historyCount, station.termCalls, station.relevanceCalls,
+					"history=%d relevance/model=%d/%d context=%#v",
+					fixture.historyCount, station.relevanceCalls,
 					modelCalls, compiled.Context,
 				)
 			}

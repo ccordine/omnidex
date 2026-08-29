@@ -7,14 +7,12 @@ import (
 )
 
 func TestContextSieveFieldsLoadAndApplyToExactStations(t *testing.T) {
-	t.Setenv("OMNI_CONTEXT_SEARCH_TERMS_MODEL", "terms-model")
 	t.Setenv("OMNI_CONTEXT_RELEVANCE_MODEL", "relevance-model")
 	t.Setenv("OMNI_CONTEXT_MINIFICATION_MODEL", "minification-model")
 
 	cfg := FromEnv()
 	routing := Apply(Routing{}, cfg)
 	wants := map[station.ID]string{
-		station.ContextSearchTerms:  "terms-model",
 		station.ContextRelevance:    "relevance-model",
 		station.ContextMinification: "minification-model",
 	}
@@ -33,6 +31,8 @@ func TestContextSieveModelConfigRejectsUnknownAlias(t *testing.T) {
 		`{"conversation_context_selection_model":"forbidden"}`,
 		`{"memory_context_selection_model":"forbidden"}`,
 		`{"roleplay_narrative_continuity_model":"forbidden"}`,
+		`{"context_search_terms_model":"forbidden"}`,
+		`{"coding_repository_search_term_model":"forbidden"}`,
 	} {
 		if _, err := FromJSON([]byte(retired)); err == nil {
 			t.Fatalf("retired context selector model field was accepted: %s", retired)

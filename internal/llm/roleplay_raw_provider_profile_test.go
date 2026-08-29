@@ -127,7 +127,7 @@ func TestRoleplayRawProviderPolicyStillRequiresRegisteredStructuralProfile(t *te
 	if err != nil {
 		t.Fatal(err)
 	}
-	if settings.NativeTemplate || settings.SeparateThinking || settings.SeparateSystem ||
+	if settings.NativeTemplate || settings.SeparateSystem ||
 		!settings.NaturalOutputCeiling || settings.Temperature == nil || *settings.Temperature != 0 {
 		t.Fatalf("unexpected roleplay local transport settings: %+v", settings)
 	}

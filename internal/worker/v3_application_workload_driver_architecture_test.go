@@ -38,7 +38,7 @@ func TestFreshApplicationDriverFreezesWorkloadBeforeCompilationAndGeneration(t *
 	})
 
 	interpreter := uniqueWorkloadCallIndex(t, calls, "runDirectCodingApplicationInterpreter")
-	freeze := uniqueWorkloadCallIndex(t, calls, "resolveDirectCodingApplicationWorkload")
+	freeze := uniqueWorkloadCallIndex(t, calls, "FreezeApplicationWorkload")
 	capabilities := uniqueWorkloadCallIndex(t, calls, "deriveRequirementCapabilities")
 	compile := uniqueWorkloadCallIndex(t, calls, "compileDirectCodingProgram")
 	execute := uniqueWorkloadCallIndex(t, calls, "runDirectCodingApplicationTaskLifecycle")
@@ -62,6 +62,7 @@ func TestFreshApplicationDriverFreezesWorkloadBeforeCompilationAndGeneration(t *
 		t.Fatalf("focused target-tree coverage order=%v", calls)
 	}
 	for _, forbidden := range []string{
+		"resolveDirectCodingApplicationWorkload",
 		"deriveDirectCodingTargetTreeBindings",
 		"generateProgramFragments",
 		"stageProgram",

@@ -13,7 +13,8 @@ const maxArtifactIdentities = 64
 type ArtifactIdentityProvenance = modelcontext.ArtifactIdentityProvenance
 
 var (
-	opaqueArtifactPattern = regexp.MustCompile(`^ARTIFACT_[1-9][0-9]*$`)
+	opaqueArtifactPattern        = regexp.MustCompile(`^ARTIFACT_[1-9][0-9]*$`)
+	opaqueArtifactMentionPattern = regexp.MustCompile(`ARTIFACT_[1-9][0-9]*`)
 )
 
 func RedactArtifactIdentities(
@@ -44,6 +45,53 @@ func RedactArtifactIdentities(
 	}
 	redacted.WriteString(input[previous:])
 	return redacted.String(), identities, nil
+}
+
+// RestoreArtifactIdentities applies only code-owned identity bindings after a
+// path-free semantic result has been validated. Unknown artifact tokens fail
+// explicitly instead of becoming user-visible or guessed filesystem state.
+func RestoreArtifactIdentities(
+	input string,
+	identities []ArtifactIdentity,
+) (string, error) {
+	resolved, err := artifactIdentityMap(identities)
+	if err != nil {
+		return "", err
+	}
+	matches := opaqueArtifactMentionPattern.FindAllStringIndex(input, -1)
+	if len(matches) == 0 {
+		return input, nil
+	}
+	var restored strings.Builder
+	previous := 0
+	for _, match := range matches {
+		if !artifactTokenBoundary(input, match[0], match[1]) {
+			continue
+		}
+		token := input[match[0]:match[1]]
+		value, exists := resolved[token]
+		if !exists {
+			return "", fmt.Errorf("semantic result contains unknown artifact token %s", token)
+		}
+		restored.WriteString(input[previous:match[0]])
+		restored.WriteString(value)
+		previous = match[1]
+	}
+	if previous == 0 {
+		return input, nil
+	}
+	restored.WriteString(input[previous:])
+	return restored.String(), nil
+}
+
+func artifactTokenBoundary(value string, start, end int) bool {
+	return (start == 0 || !artifactTokenByte(value[start-1])) &&
+		(end == len(value) || !artifactTokenByte(value[end]))
+}
+
+func artifactTokenByte(value byte) bool {
+	return value >= 'a' && value <= 'z' || value >= 'A' && value <= 'Z' ||
+		value >= '0' && value <= '9' || value == '_'
 }
 
 // ValidatePathFreeModelContext is the final byte-level invariant for untyped

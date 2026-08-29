@@ -10,7 +10,7 @@ func TestExpectedPortableStationMaxOutputTokensIncludesExactStopReserve(t *testi
 	t.Parallel()
 	request := "Build a small browser tool."
 	context, err := assemblyline.BootstrapApplicationContext(
-		request, assemblyline.ApplicationWorkspaceEmpty, nil,
+		request, assemblyline.ApplicationWorkspaceEmpty,
 	)
 	if err != nil {
 		t.Fatal(err)

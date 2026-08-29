@@ -47,7 +47,7 @@ func TestLiveQwenRawMultilinePromptBoundaryQualification(t *testing.T) {
 
 	const request = "Create a browser weather board that shows current conditions and a two-day outlook."
 	applicationContext, err := assemblyline.BootstrapApplicationContext(
-		request, assemblyline.ApplicationWorkspaceEmpty, nil,
+		request, assemblyline.ApplicationWorkspaceEmpty,
 	)
 	if err != nil {
 		t.Fatal(err)

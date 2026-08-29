@@ -88,17 +88,11 @@ func serviceStorageWorkloadFixture(
 	requirement string,
 ) assemblyline.FrozenApplicationWorkload {
 	t.Helper()
-	input := assemblyline.ApplicationWorkloadDraftInput{
+	specification := assemblyline.ApplicationSpecification{
 		Surface: assemblyline.ApplicationSurfaceService, ProductQuote: product,
 		Requirements: []assemblyline.Requirement{{ID: "requirement_001", SourceQuote: requirement}},
 	}
-	workload, err := assemblyline.FreezeApplicationWorkload(input, assemblyline.ApplicationWorkloadDraft{
-		Schema: assemblyline.ApplicationWorkloadDraftSchemaV1,
-		Tasks: []assemblyline.ApplicationWorkloadTaskDraft{{
-			RequirementID: "requirement_001", Objective: requirement,
-			RequiredBehaviors: []string{requirement}, AcceptanceCriteria: []string{"The result is observable."},
-		}},
-	})
+	workload, err := assemblyline.FreezeApplicationWorkload(specification)
 	if err != nil {
 		t.Fatal(err)
 	}

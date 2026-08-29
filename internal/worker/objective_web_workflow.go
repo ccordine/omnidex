@@ -14,33 +14,23 @@ import (
 )
 
 type routedWebStations struct {
-	terms      *webresearch.PortableStations
-	relevance  *webresearch.PortableStations
-	synthesis  *webresearch.PortableStations
-	correction *webresearch.PortableStations
-	review     *webresearch.PortableStations
+	relevance *webresearch.PortableStations
+	synthesis *webresearch.PortableStations
 }
 
 type routedWebEvidenceStations struct {
-	terms     *webresearch.PortableStations
 	relevance *webresearch.PortableStations
 }
 
 type objectiveWebResult struct {
-	Complete                      bool
-	Status                        webresearch.ObjectiveStatus
-	Paragraphs                    []webresearch.GroundedParagraph
-	Sources                       []webresearch.CitationSource
-	Evidence                      []webresearch.Evidence
-	Rendered                      string
-	RenderedSHA256                string
-	SearchTermsCalls              int
-	RelevanceCalls                int
-	SynthesisCalls                int
-	SynthesisCorrectionCalls      int
-	SynthesisCorrectionZeroDeltas int
-	ClaimEvidenceReviewCalls      int
-	SemanticCalls                 int
+	Complete       bool
+	Status         webresearch.ObjectiveStatus
+	Paragraphs     []webresearch.GroundedParagraph
+	Sources        []webresearch.CitationSource
+	Evidence       []webresearch.Evidence
+	Rendered       string
+	RenderedSHA256 string
+	SemanticCalls  int
 }
 
 func newRoutedWebStations(
@@ -50,16 +40,8 @@ func newRoutedWebStations(
 	if err != nil {
 		return routedWebStations{}, err
 	}
-	result := routedWebStations{terms: evidence.terms, relevance: evidence.relevance}
+	result := routedWebStations{relevance: evidence.relevance}
 	result.synthesis, err = webresearch.NewPortableStations(runtimeFor(station.WebGroundedSynthesis))
-	if err != nil {
-		return routedWebStations{}, err
-	}
-	result.correction, err = webresearch.NewPortableStations(runtimeFor(station.WebGroundedSynthesisCorrection))
-	if err != nil {
-		return routedWebStations{}, err
-	}
-	result.review, err = webresearch.NewPortableStations(runtimeFor(station.WebClaimEvidenceReview))
 	return result, err
 }
 
@@ -69,25 +51,18 @@ func newRoutedWebEvidenceStations(
 	if runtimeFor == nil {
 		return routedWebEvidenceStations{}, fmt.Errorf("web evidence portable runtime is unavailable")
 	}
-	terms, err := webresearch.NewPortableStations(runtimeFor(station.WebSearchTerms))
-	if err != nil {
-		return routedWebEvidenceStations{}, err
-	}
 	relevance, err := webresearch.NewPortableStations(runtimeFor(station.WebRelevance))
 	if err != nil {
 		return routedWebEvidenceStations{}, err
 	}
-	return routedWebEvidenceStations{terms: terms, relevance: relevance}, nil
+	return routedWebEvidenceStations{relevance: relevance}, nil
 }
 
 func runtimeWebPortableRuntime(
 	runtime *nativeRuntimeV3,
 	id station.ID,
-	identityGuard *webModelIdentityGuard,
 ) webresearch.PortableRuntime {
-	workerRuntime := portableWorkerRuntimeWithIdentityGuard(
-		runtime, "web_research", runtime.ctx, identityGuard.validate,
-	)
+	workerRuntime := portableWorkerRuntimeWithContext(runtime, "web_research", runtime.ctx)
 	return webresearch.PortableRuntime{
 		Execute: func(_ context.Context, job assemblyline.PortableJob) (assemblyline.PortableResult, error) {
 			if runtime == nil || runtime.svc == nil {
@@ -104,6 +79,11 @@ func runtimeWebPortableRuntime(
 			return workerRuntime.Execute(job, modelName)
 		},
 		Finalize: func(_ context.Context, job assemblyline.PortableJob, result assemblyline.PortableResult, validationErr error) error {
+			if validationErr == nil {
+				validationErr = validateObjectiveRawCandidatePathBoundary(
+					job.Kind, result.Candidate, workerRuntime.PathProvenance,
+				)
+			}
 			return workerRuntime.Finalize(job, result, validationErr)
 		},
 	}
@@ -112,7 +92,6 @@ func runtimeWebPortableRuntime(
 func objectiveWebResearchConfig() webresearch.Config {
 	evidence := objectiveWebEvidenceConfig()
 	return webresearch.Config{
-		MaxSearchTerms: evidence.MaxSearchTerms, MaxSearchTermBytes: evidence.MaxSearchTermBytes,
 		MaxFetchCandidates: evidence.MaxFetchCandidates, MaxProjectionBytes: evidence.MaxProjectionBytes,
 		MaxRelevantCandidates: evidence.MaxRelevantCandidates,
 		CandidateSummaryBytes: evidence.CandidateSummaryBytes, MaxSynthesisParagraphs: 4,
@@ -122,7 +101,7 @@ func objectiveWebResearchConfig() webresearch.Config {
 
 func objectiveWebEvidenceConfig() webresearch.EvidenceConfig {
 	return webresearch.EvidenceConfig{
-		MaxSearchTerms: 3, MaxSearchTermBytes: 256, MaxFetchCandidates: 2,
+		MaxFetchCandidates: 2,
 		MaxProjectionBytes: 8 * 1024, MaxRelevantCandidates: 2,
 		CandidateSummaryBytes: 512,
 	}
@@ -133,21 +112,15 @@ func objectiveExternalAnswerFromWeb(result webresearch.Result) (objectiveExterna
 		Complete: result.Complete, Status: result.Objective.Status,
 		Paragraphs: result.Artifact.Paragraphs, Sources: result.Artifact.Sources,
 		Evidence: result.Evidence, Rendered: result.Artifact.Rendered,
-		RenderedSHA256:   result.Artifact.SHA256,
-		SearchTermsCalls: result.SearchTermsCalls,
-		RelevanceCalls:   result.RelevanceCalls, SynthesisCalls: result.SynthesisCalls,
-		SynthesisCorrectionCalls:      result.SynthesisCorrectionCalls,
-		SynthesisCorrectionZeroDeltas: result.SynthesisCorrectionZeroDeltas,
-		ClaimEvidenceReviewCalls:      result.ClaimEvidenceReviewCalls,
-		SemanticCalls:                 result.SemanticCalls,
+		RenderedSHA256: result.Artifact.SHA256,
+		SemanticCalls:  result.SemanticCalls,
 	})
 }
 
 func objectiveExternalAnswerFromWebResult(result objectiveWebResult) (objectiveExternalAnswer, error) {
 	if !result.Complete || result.Status != webresearch.ObjectiveComplete ||
 		len(result.Paragraphs) == 0 || len(result.Sources) == 0 ||
-		result.Rendered == "" || result.Rendered != strings.TrimSpace(result.Rendered) ||
-		!validWebReviewCallLedger(result) {
+		result.Rendered == "" || result.Rendered != strings.TrimSpace(result.Rendered) {
 		return objectiveExternalAnswer{}, fmt.Errorf("web research returned without code-owned completion")
 	}
 	if err := webresearch.ValidateCompletionArtifact(webresearch.Artifact{
@@ -225,28 +198,6 @@ func objectiveExternalAnswerFromWebResult(result objectiveWebResult) (objectiveE
 		RenderedSHA256: renderedSHA, Paragraphs: cloneWebParagraphs(result.Paragraphs),
 		Evidence: evidence, EvidenceIDs: ids, ModelCalls: calls,
 	}, nil
-}
-
-func validWebReviewCallLedger(result objectiveWebResult) bool {
-	paragraphs := len(result.Paragraphs)
-	if result.SynthesisCorrectionZeroDeltas < 0 ||
-		result.SynthesisCorrectionZeroDeltas > result.SynthesisCorrectionCalls ||
-		result.SemanticCalls < result.SynthesisCalls+result.SynthesisCorrectionCalls+
-			result.ClaimEvidenceReviewCalls {
-		return false
-	}
-	switch result.SynthesisCorrectionCalls {
-	case 0:
-		return result.SynthesisCorrectionZeroDeltas == 0 && result.ClaimEvidenceReviewCalls == paragraphs
-	case 1:
-		if result.SynthesisCorrectionZeroDeltas == 1 {
-			return result.ClaimEvidenceReviewCalls >= 1 && result.ClaimEvidenceReviewCalls <= paragraphs
-		}
-		return result.ClaimEvidenceReviewCalls > paragraphs &&
-			result.ClaimEvidenceReviewCalls <= 2*paragraphs
-	default:
-		return false
-	}
 }
 
 func cloneWebParagraphs(items []webresearch.GroundedParagraph) []webresearch.GroundedParagraph {

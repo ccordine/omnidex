@@ -70,7 +70,7 @@ func TestScrumOutcomeRejectsUnregisteredLifecycleBeforeReadingProse(t *testing.T
 }
 
 func TestScrumStepContextSyncRejectsMissingForeignAndInvalidCursorAuthority(t *testing.T) {
-	job := model.JobDetails{Job: model.Job{ID: 21}, Contexts: []model.StepContext{{ID: 1, Key: "event", Value: "event=patch_apply_started"}}}
+	job := model.JobDetails{Job: model.Job{ID: 21}, Contexts: []model.StepContext{{ID: 1, Key: "event", Value: "event=repository_snapshot_started authority=server"}}}
 	tests := []struct {
 		name string
 		card ScrumCard
@@ -128,7 +128,7 @@ func TestScrumStepContextSyncUsesTypedCursorNotMessageContent(t *testing.T) {
 	markerLike := "[[context-sync:999]]"
 	card := ScrumCard{Chat: []ScrumChatMessage{{Role: "system", Content: markerLike}}}
 	job := model.JobDetails{Job: model.Job{ID: 12}, Contexts: []model.StepContext{{
-		ID: 7, Key: "event", Value: "event=structured_patch_apply_started applying",
+		ID: 7, Key: "event", Value: "event=repository_snapshot_started authority=server",
 	}}}
 	card = scrumSyncTestCard(job.Job.ID, card)
 

@@ -6,6 +6,7 @@ import (
 
 	"github.com/gryph/omnidex/internal/assemblyline"
 	"github.com/gryph/omnidex/internal/evidence"
+	"github.com/gryph/omnidex/internal/modelcontext"
 	repositoryretrieval "github.com/gryph/omnidex/internal/repository/retrieval"
 )
 
@@ -28,10 +29,18 @@ func (session *directCodingSession) resolveApplicationRepositoryEvidenceNeed(
 		"application_evidence_need_opened",
 		fmt.Sprintf("need=%s source=repository stop=%s", need.ID, need.StopCondition),
 	)
-	resolvedNeed := need
-	resolvedNeed.SearchAnchors = []string{need.Question}
+	paths := make([]string, len(session.repositoryIndex.Snapshot.Files))
+	for index, file := range session.repositoryIndex.Snapshot.Files {
+		paths[index] = file.Path
+	}
+	provenance, err := modelcontext.NewArtifactIdentityProvenance(paths)
+	if err != nil {
+		return nil, fmt.Errorf("derive application repository artifact provenance: %w", err)
+	}
 	acquisition, err := acquireObjectiveRepositoryEvidenceClosure(
 		need.Question,
+		strings.TrimSpace(session.request.Instruction),
+		provenance,
 		func(query string) (repositoryretrieval.EvidencePack, error) {
 			pack, buildErr := session.buildExistingRepositoryEvidence(query)
 			if buildErr != nil {
@@ -41,15 +50,6 @@ func (session *directCodingSession) resolveApplicationRepositoryEvidenceNeed(
 				return repositoryretrieval.EvidencePack{}, recordErr
 			}
 			return pack, nil
-		},
-		func(unresolved string) (assemblyline.RepositorySearchTermDecision, objectiveStationReceipt, error) {
-			decision, receipt, callErr := session.runtime.resolveObjectiveRepositorySearchTerm(
-				session.runtime.ctx, unresolved,
-			)
-			if callErr == nil {
-				resolvedNeed.SearchAnchors = append([]string(nil), decision.Anchors...)
-			}
-			return decision, receipt, callErr
 		},
 		func(question string, candidates []objectiveEvidence) (
 			assemblyline.RepositoryEvidenceRelevanceDecision, objectiveStationReceipt, error,
@@ -62,7 +62,7 @@ func (session *directCodingSession) resolveApplicationRepositoryEvidenceNeed(
 	if err != nil {
 		return nil, err
 	}
-	if err := resolvedNeed.Validate(); err != nil {
+	if err := need.Validate(); err != nil {
 		return nil, err
 	}
 	contextEvidence := make([]assemblyline.ApplicationContextEvidence, len(acquisition.Evidence))
@@ -78,7 +78,7 @@ func (session *directCodingSession) resolveApplicationRepositoryEvidenceNeed(
 			Value: value, SourceID: selected.SourceRef,
 			SourceSHA256: assemblyline.ExactObjectiveContextSHA(value),
 		}
-		if err := session.recordApplicationContextFact(resolvedNeed, selected, value); err != nil {
+		if err := session.recordApplicationContextFact(need, selected, value); err != nil {
 			return nil, err
 		}
 	}

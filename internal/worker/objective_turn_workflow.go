@@ -32,6 +32,12 @@ func runObjectiveTurn(
 	if err != nil {
 		return objectiveTurnResult{}, err
 	}
+	authority, err = bindObjectiveModelInstruction(
+		authority, workflows.ModelPathProvenance,
+	)
+	if err != nil {
+		return objectiveTurnResult{}, err
+	}
 	if authority.ChannelMode == model.ChannelModeRoleplay {
 		if workflows.RoleplaySimulation == nil {
 			return objectiveTurnResult{}, fmt.Errorf("roleplay character context projection is unavailable")
@@ -78,9 +84,10 @@ func runObjectiveTurn(
 		return objectiveTurnResult{}, err
 	}
 	input := assemblyline.ConversationObjectiveKindInput{
-		ExactInstruction:          authority.Instruction,
+		ExactInstruction:          authority.ModelInstruction,
 		Context:                   assemblyline.CloneObjectiveContext(authority.Context),
 		DatabaseEvidenceAvailable: authority.DataSourceID != "",
+		KnownArtifactPaths:        append([]string{}, authority.ModelArtifactPaths...),
 	}
 	if kindStation == nil {
 		return objectiveTurnResult{}, fmt.Errorf("conversation objective kind station is unavailable")
@@ -95,9 +102,10 @@ func runObjectiveTurn(
 	if err := ctx.Err(); err != nil {
 		return objectiveTurnResult{}, err
 	}
-	if receipt.Calls < 1 || receipt.Calls > maxTypedWorkerAttempts {
+	if receipt.Calls != exactSemanticLeafCalls {
 		return objectiveTurnResult{}, fmt.Errorf(
-			"conversation objective kind station reported %d calls outside the bounded correction budget", receipt.Calls,
+			"conversation objective kind station reported %d calls; exactly %d is required",
+			receipt.Calls, exactSemanticLeafCalls,
 		)
 	}
 	kindCalls := receipt.Calls
@@ -121,9 +129,8 @@ func runObjectiveTurn(
 	if decision.Kind == assemblyline.ObjectiveKindDatabaseRead {
 		return runObjectiveDatabaseRead(ctx, authority, result, answerStation, workflows.DatabaseRead)
 	}
-	repositoryStations, ok := answerStation.(objectiveRepositoryGroundingStation)
-	if !ok || repositoryStations == nil {
-		return result, fmt.Errorf("repository-read objective requires grounded answer, independent review, and correction stations")
+	if answerStation == nil {
+		return result, fmt.Errorf("repository-read objective requires one grounded-answer station")
 	}
 	acquisition, err := acquireObjectiveEvidence(ctx, authority, decision.Kind, workflows)
 	if err != nil {
@@ -143,14 +150,17 @@ func runObjectiveTurn(
 	}
 	answerInput := assemblyline.GroundedAnswerInput{
 		RequirementID:    result.RequirementID,
-		ExactRequirement: authority.Instruction,
+		ExactRequirement: acquisition.GroundedRequirement,
 		Context:          assemblyline.CloneObjectiveContext(authority.Context),
 		Evidence:         modelEvidence,
+		KnownArtifactPaths: append(
+			[]string(nil), acquisition.KnownArtifactPaths...,
+		),
 	}
 	grounded, err := runObjectiveRepositoryGroundedClosure(
 		ctx,
 		answerInput,
-		repositoryStations,
+		answerStation,
 	)
 	if err != nil {
 		return result, err
@@ -160,7 +170,12 @@ func runObjectiveTurn(
 	if err != nil {
 		return result, err
 	}
-	result.Output = grounded.Answer.Text
+	result.Output, err = assemblyline.RestoreArtifactIdentities(
+		grounded.Answer.Text, acquisition.ArtifactIdentities,
+	)
+	if err != nil {
+		return result, fmt.Errorf("restore repository answer artifact identities: %w", err)
+	}
 	result.Citations = citations
 	result.Complete = true
 	return result, nil
@@ -198,12 +213,22 @@ func runObjectiveRoleplayResearchTurn(
 	if err := validateObjectiveRoleplayResearchTurn(authority, answer.Research); err != nil {
 		return result, err
 	}
+	if err := validateObjectiveModelInput(
+		authority, "roleplay research model answer", answer.Text,
+	); err != nil {
+		return result, err
+	}
 	citations, err := selectObjectiveCitations(answer.Evidence, answer.EvidenceIDs)
 	if err != nil {
 		return result, err
 	}
 	research := answer.Research
-	result.Output = answer.Rendered
+	result.Output, err = restoreObjectiveCodeRenderedArtifact(
+		authority, "roleplay research answer", answer.Rendered,
+	)
+	if err != nil {
+		return result, err
+	}
 	result.Citations = citations
 	result.CitationsRendered = true
 	result.ModelCalls = answer.ModelCalls
@@ -240,8 +265,9 @@ func runObjectiveDatabaseRead(
 		return result, fmt.Errorf("database-read objective requires a grounded answer station")
 	}
 	input := assemblyline.GroundedAnswerInput{
-		RequirementID: result.RequirementID, ExactRequirement: authority.Instruction,
+		RequirementID: result.RequirementID, ExactRequirement: authority.ModelInstruction,
 		Context: assemblyline.CloneObjectiveContext(authority.Context), Evidence: modelEvidence,
+		KnownArtifactPaths: append([]string{}, authority.ModelArtifactPaths...),
 	}
 	if err := input.Validate(); err != nil {
 		return result, err
@@ -261,7 +287,12 @@ func runObjectiveDatabaseRead(
 		return result, err
 	}
 	result.ModelCalls += acquisition.ModelCalls + receipt.Calls
-	result.Output = answer.Text
+	result.Output, err = restoreObjectiveModelText(
+		authority, "database grounded answer", answer.Text,
+	)
+	if err != nil {
+		return result, err
+	}
 	result.Citations = citations
 	result.Complete = true
 	return result, nil
@@ -294,7 +325,17 @@ func runObjectiveExternalAnswer(
 	if err != nil {
 		return result, err
 	}
-	result.Output = answer.Rendered
+	if err := validateObjectiveModelInput(
+		authority, "external grounded model answer", answer.Text,
+	); err != nil {
+		return result, err
+	}
+	result.Output, err = restoreObjectiveCodeRenderedArtifact(
+		authority, "external grounded answer", answer.Rendered,
+	)
+	if err != nil {
+		return result, err
+	}
 	result.Citations = citations
 	result.CitationsRendered = true
 	result.ModelCalls += answer.ModelCalls
@@ -311,6 +352,7 @@ func cloneGroundedAnswerInput(input assemblyline.GroundedAnswerInput) assemblyli
 	copy := input
 	copy.Context = assemblyline.CloneObjectiveContext(input.Context)
 	copy.Evidence = append([]assemblyline.GroundedEvidenceCapsule(nil), input.Evidence...)
+	copy.KnownArtifactPaths = append([]string(nil), input.KnownArtifactPaths...)
 	return copy
 }
 

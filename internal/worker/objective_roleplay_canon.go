@@ -79,7 +79,7 @@ func validateRoleplayCanonExtractionReceipt(receipt objectiveStationReceipt) err
 		}
 		return nil
 	}
-	maximum := (2*assemblyline.MaxRoleplayCanonFactsPerTurn + 1) * maxTypedWorkerAttempts
+	maximum := (2*assemblyline.MaxRoleplayCanonFactsPerTurn + 1) * exactSemanticLeafCalls
 	if receipt.Calls < 1 || receipt.Calls > maximum {
 		return fmt.Errorf(
 			"roleplay canon extraction reported %d calls outside the bounded fixed-point budget",

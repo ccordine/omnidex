@@ -96,6 +96,9 @@ func ValidateScrumAutoWorkConfig(config ScrumAutoWorkConfig) (ScrumAutoWorkConfi
 }
 
 func encodeScrumAutoWorkSettings(settings json.RawMessage, config ScrumAutoWorkConfig) (json.RawMessage, error) {
+	if err := validateProjectSettings(settings); err != nil {
+		return nil, fmt.Errorf("validate current project settings before Scrum auto-work mutation: %w", err)
+	}
 	validated, err := ValidateScrumAutoWorkConfig(config)
 	if err != nil {
 		return nil, err
@@ -114,5 +117,12 @@ func encodeScrumAutoWorkSettings(settings json.RawMessage, config ScrumAutoWorkC
 		return nil, err
 	}
 	root[ScrumAutoWorkConfigKey] = encoded
-	return json.Marshal(root)
+	reencoded, err := json.Marshal(root)
+	if err != nil {
+		return nil, err
+	}
+	if err := validateProjectSettings(reencoded); err != nil {
+		return nil, fmt.Errorf("validate re-encoded project settings after Scrum auto-work mutation: %w", err)
+	}
+	return reencoded, nil
 }

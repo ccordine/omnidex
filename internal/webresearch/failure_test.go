@@ -17,17 +17,15 @@ func TestInfrastructureFailureDoesNotBecomeSearchTermInference(t *testing.T) {
 			err:    websearch.ErrNoCandidates,
 		},
 	}}
-	terms := &recordingTermsStation{decision: SearchTermsDecision{Terms: []string{"different words"}}}
 	machine := newFixtureMachine(t, Objective{
-		ID: "objective_failure", Question: "What is the service status?", InitialQuery: "service status",
-		Acceptance: exactAcceptance(), Status: ObjectivePending,
-	}, acquisition, terms, &recordingRelevanceStation{}, &recordingSynthesisStation{}, 2_000)
+		ID: "objective_failure", Question: "What is the service status?", InitialQuery: "service status", Status: ObjectivePending,
+	}, acquisition, &recordingRelevanceStation{}, &recordingSynthesisStation{}, 2_000)
 	result, err := machine.Run(context.Background())
 	if err == nil || !strings.Contains(err.Error(), "every provider failed") {
 		t.Fatalf("Run error=%v", err)
 	}
-	if result.SearchTermsCalls != 0 || terms.calls != 0 {
-		t.Fatalf("infrastructure failure invoked semantic station: result=%d fake=%d", result.SearchTermsCalls, terms.calls)
+	if result.SemanticCalls != 0 {
+		t.Fatalf("infrastructure failure invoked semantic station: result=%d", result.SemanticCalls)
 	}
 }
 
@@ -35,25 +33,17 @@ func TestStationOutputsFailLoudly(t *testing.T) {
 	candidate := candidateFixture("https://evidence.example/doc", "Evidence")
 	tests := []struct {
 		name      string
-		build     func(*scriptedAcquisition) (SearchTermsStation, RelevanceStation, GroundedSynthesisStation)
+		build     func(*scriptedAcquisition) (RelevanceStation, GroundedSynthesisStation)
 		query     string
 		budget    int
 		wantError string
 	}{
 		{
-			name: "duplicate search terms",
-			build: func(acquisition *scriptedAcquisition) (SearchTermsStation, RelevanceStation, GroundedSynthesisStation) {
-				acquisition.discoveries["initial empty"] = discoverOutcome{report: emptyCandidateReport("initial empty"), err: websearch.ErrNoCandidates}
-				return &recordingTermsStation{decision: SearchTermsDecision{Terms: []string{"same", "same"}}}, &recordingRelevanceStation{}, &recordingSynthesisStation{}
-			},
-			query: "initial empty", budget: 2_000, wantError: "duplicate search term",
-		},
-		{
 			name: "unknown relevance candidate",
-			build: func(acquisition *scriptedAcquisition) (SearchTermsStation, RelevanceStation, GroundedSynthesisStation) {
+			build: func(acquisition *scriptedAcquisition) (RelevanceStation, GroundedSynthesisStation) {
 				acquisition.discoveries["overflow"] = discoverOutcome{report: candidateReport("overflow", candidate)}
 				acquisition.documents[candidate.ID] = documentFixture(candidate.URL, candidate.Title, strings.Repeat("overflow ", 300))
-				return &recordingTermsStation{}, &recordingRelevanceStation{decision: RelevanceDecision{
+				return &recordingRelevanceStation{decision: RelevanceDecision{
 					Outcome: RelevanceSelected, CandidateIDs: []websearch.CandidateID{"candidate_unknown"},
 				}}, &recordingSynthesisStation{}
 			},
@@ -61,10 +51,10 @@ func TestStationOutputsFailLoudly(t *testing.T) {
 		},
 		{
 			name: "unknown synthesis citation",
-			build: func(acquisition *scriptedAcquisition) (SearchTermsStation, RelevanceStation, GroundedSynthesisStation) {
+			build: func(acquisition *scriptedAcquisition) (RelevanceStation, GroundedSynthesisStation) {
 				acquisition.discoveries["citation"] = discoverOutcome{report: candidateReport("citation", candidate)}
 				acquisition.documents[candidate.ID] = documentFixture(candidate.URL, candidate.Title, "short evidence")
-				return &recordingTermsStation{}, &recordingRelevanceStation{decision: RelevanceDecision{
+				return &recordingRelevanceStation{decision: RelevanceDecision{
 					Outcome: RelevanceSelected, CandidateIDs: []websearch.CandidateID{candidate.ID},
 				}}, &recordingSynthesisStation{decision: GroundedSynthesisDecision{Paragraphs: []GroundedParagraph{{Text: "Claim.", EvidenceIDs: []EvidenceID{"evidence_unknown"}}}}}
 			},
@@ -72,11 +62,11 @@ func TestStationOutputsFailLoudly(t *testing.T) {
 		},
 		{
 			name: "model authored citation syntax",
-			build: func(acquisition *scriptedAcquisition) (SearchTermsStation, RelevanceStation, GroundedSynthesisStation) {
+			build: func(acquisition *scriptedAcquisition) (RelevanceStation, GroundedSynthesisStation) {
 				document := documentFixture(candidate.URL, candidate.Title, "short evidence")
 				acquisition.discoveries["citation syntax"] = discoverOutcome{report: candidateReport("citation syntax", candidate)}
 				acquisition.documents[candidate.ID] = document
-				return &recordingTermsStation{}, &recordingRelevanceStation{decision: RelevanceDecision{
+				return &recordingRelevanceStation{decision: RelevanceDecision{
 					Outcome: RelevanceSelected, CandidateIDs: []websearch.CandidateID{candidate.ID},
 				}}, &recordingSynthesisStation{decision: GroundedSynthesisDecision{Paragraphs: []GroundedParagraph{{Text: "Claim [99].", EvidenceIDs: []EvidenceID{evidenceID(document.ID)}}}}}
 			},
@@ -86,11 +76,10 @@ func TestStationOutputsFailLoudly(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			acquisition := &scriptedAcquisition{discoveries: map[string]discoverOutcome{}, documents: map[websearch.CandidateID]websearch.Document{}}
-			terms, relevance, synthesis := test.build(acquisition)
+			relevance, synthesis := test.build(acquisition)
 			machine := newFixtureMachine(t, Objective{
-				ID: "objective_invalid", Question: "Answer the bounded question.", InitialQuery: test.query,
-				Acceptance: exactAcceptance(), Status: ObjectivePending,
-			}, acquisition, terms, relevance, synthesis, test.budget)
+				ID: "objective_invalid", Question: "Answer the bounded question.", InitialQuery: test.query, Status: ObjectivePending,
+			}, acquisition, relevance, synthesis, test.budget)
 			if _, err := machine.Run(context.Background()); err == nil || !strings.Contains(err.Error(), test.wantError) {
 				t.Fatalf("Run error=%v want substring %q", err, test.wantError)
 			}
@@ -110,9 +99,8 @@ func TestCancellationPreventsSynthesisCall(t *testing.T) {
 	}
 	synthesis := &recordingSynthesisStation{}
 	machine := newFixtureMachine(t, Objective{
-		ID: "objective_cancel", Question: "Will this stop?", InitialQuery: "cancel",
-		Acceptance: exactAcceptance(), Status: ObjectivePending,
-	}, acquisition, &recordingTermsStation{}, &recordingRelevanceStation{}, synthesis, 2_000)
+		ID: "objective_cancel", Question: "Will this stop?", InitialQuery: "cancel", Status: ObjectivePending,
+	}, acquisition, &recordingRelevanceStation{}, synthesis, 2_000)
 	result, err := machine.Run(ctx)
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("Run error=%v want context canceled", err)

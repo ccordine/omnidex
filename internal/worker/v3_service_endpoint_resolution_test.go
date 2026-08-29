@@ -11,9 +11,9 @@ import (
 
 func TestServiceEndpointResolutionClassifiesEveryTaskAndContractsOnlyRequiredEndpoints(t *testing.T) {
 	t.Parallel()
-	input, frozen, _ := applicationTaskLifecycleFixture(t)
+	_, frozen, _ := applicationTaskLifecycleFixture(t)
 	requirementCalls := 0
-	leafCalls := map[string]int{}
+	leafCalls := 0
 	runtime := typedWorkerRuntime{
 		Context: context.Background(), MaxAttempts: 3, CorrectionModel: "forbidden-correction",
 		Execute: testPortableExecutor(func(_ string, model, prompt string) (string, error) {
@@ -36,21 +36,17 @@ func TestServiceEndpointResolutionClassifiesEveryTaskAndContractsOnlyRequiredEnd
 				requirementCalls++
 				return string(requirement), nil
 			case "exposure-model":
-				leafCalls[model]++
-				return "public", nil
+				leafCalls++
+				return string(assemblyline.ApplicationServiceEndpointPublic), nil
 			case "method-model":
-				leafCalls[model]++
-				return "GET", nil
+				leafCalls++
+				return string(assemblyline.ApplicationServiceEndpointGET), nil
 			case "route-model":
-				leafCalls[model]++
+				leafCalls++
 				return "/records", nil
-			case "request-media-model":
-				return "", fmt.Errorf("GET request media must be derived without inference")
-			case "response-media-model":
-				leafCalls[model]++
-				return "application/json", nil
-			case "success-status-model":
-				return "", fmt.Errorf("GET success status must be derived without inference")
+			case "response-model":
+				leafCalls++
+				return string(assemblyline.ApplicationServiceEndpointHTML), nil
 			default:
 				return "", fmt.Errorf("unexpected service model %q", model)
 			}
@@ -64,86 +60,30 @@ func TestServiceEndpointResolutionClassifiesEveryTaskAndContractsOnlyRequiredEnd
 		}},
 		frozen.Tasks[1].RequirementID: nil,
 	}
+	stack, err := directCodingProjectStackByID(genericPHPServiceAdapter)
+	if err != nil {
+		t.Fatal(err)
+	}
 	plan, err := resolveDirectCodingServiceEndpointPlan(
 		runtime, "requirement-model", directCodingServiceEndpointLeafModels{
 			Exposure: "exposure-model", Method: "method-model", Route: "route-model",
-			RequestMedia: "request-media-model", ResponseMedia: "response-media-model",
-			SuccessStatus: "success-status-model",
-		}, input, frozen, capabilities, nil,
+			RequestMedia: "request-model", ResponseMedia: "response-model", SuccessStatus: "status-model",
+		}, stack, frozen, capabilities, nil,
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if requirementCalls != len(frozen.Tasks) || len(leafCalls) != 4 ||
+	if requirementCalls != len(frozen.Tasks) || leafCalls != 4 ||
 		len(plan.Requirements) != len(frozen.Tasks) || len(plan.ByTask) != 1 {
 		t.Fatalf(
-			"requirement calls=%d leaf calls=%v plan=%+v",
-			requirementCalls, leafCalls, plan,
+			"requirement calls=%d plan=%+v", requirementCalls, plan,
 		)
 	}
-	for model, count := range leafCalls {
-		if count != 1 {
-			t.Fatalf("leaf model %s calls=%d", model, count)
-		}
-	}
 	if got := plan.ByTask[frozen.Tasks[0].ID]; got.Schema != assemblyline.ApplicationServiceEndpointContractSchemaV1 ||
-		got.RouteTemplate != "/records" || got.SuccessStatus != 200 {
+		got.RouteTemplate != "/records" || got.Method != assemblyline.ApplicationServiceEndpointGET ||
+		got.RequestMedia != assemblyline.ApplicationServiceEndpointMediaNone ||
+		got.ResponseMedia != assemblyline.ApplicationServiceEndpointHTML || got.SuccessStatus != 200 {
 		t.Fatalf("code-composed endpoint=%+v", got)
-	}
-}
-
-func TestServiceEndpointResolutionDerivesNoContentStatusWithoutInference(t *testing.T) {
-	t.Parallel()
-	input, frozen, _ := applicationTaskLifecycleFixture(t)
-	runtimeAuthority, err := assemblyline.ProjectApplicationTaskRuntimeAuthority(
-		input, frozen, frozen.Tasks[0].ID,
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	authority, err := assemblyline.ProjectApplicationServiceEndpointTaskAuthority(
-		runtimeAuthority,
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	calls := make(map[string]int)
-	runtime := typedWorkerRuntime{
-		Context: context.Background(), MaxAttempts: 1,
-		Execute: testPortableExecutor(func(_ string, model, _ string) (string, error) {
-			calls[model]++
-			switch model {
-			case "exposure-model":
-				return "public", nil
-			case "method-model":
-				return "POST", nil
-			case "route-model":
-				return "/records", nil
-			case "request-media-model":
-				return "application/json", nil
-			case "response-media-model":
-				return "none", nil
-			case "success-status-model":
-				return "", fmt.Errorf("no-content status must be derived without inference")
-			default:
-				return "", fmt.Errorf("unexpected model %q", model)
-			}
-		}),
-	}
-	contract, err := resolveDirectCodingServiceEndpointContractLeaves(
-		runtime,
-		directCodingServiceEndpointLeafModels{
-			Exposure: "exposure-model", Method: "method-model", Route: "route-model",
-			RequestMedia: "request-media-model", ResponseMedia: "response-media-model",
-			SuccessStatus: "success-status-model",
-		},
-		authority, nil,
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if contract.SuccessStatus != 204 || calls["success-status-model"] != 0 || len(calls) != 5 {
-		t.Fatalf("contract=%+v calls=%v", contract, calls)
 	}
 }
 
@@ -162,7 +102,7 @@ func TestServiceEndpointPlanRequiresOneNonOverlappingContractPerFrozenTask(t *te
 			frozen.Tasks[1].ID: testServiceEndpointContract("/groups/{group_id}"),
 		},
 	}
-	if err := plan.ValidateFor(input, frozen); err != nil {
+	if err := plan.ValidateFor(frozen); err != nil {
 		t.Fatal(err)
 	}
 	capabilities := directCodingCapabilityGraph{
@@ -172,7 +112,7 @@ func TestServiceEndpointPlanRequiresOneNonOverlappingContractPerFrozenTask(t *te
 		}},
 		frozen.Tasks[1].RequirementID: nil,
 	}
-	if err := plan.ValidateForCapabilities(input, frozen, capabilities); err != nil {
+	if err := plan.ValidateForCapabilities(frozen, capabilities); err != nil {
 		t.Fatal(err)
 	}
 	projected, err := plan.projectTask(frozen.Tasks[1].ID)
@@ -188,14 +128,14 @@ func TestServiceEndpointPlanRequiresOneNonOverlappingContractPerFrozenTask(t *te
 		frozen.Tasks[0].ID: testServiceEndpointContract("/records/{record_id}"),
 		frozen.Tasks[1].ID: testServiceEndpointContract("/records/{different_name}"),
 	}
-	if err := overlap.ValidateFor(input, frozen); err == nil || !strings.Contains(err.Error(), "overlapping") {
+	if err := overlap.ValidateFor(frozen); err == nil || !strings.Contains(err.Error(), "overlapping") {
 		t.Fatalf("overlapping route validation error=%v", err)
 	}
 	overlap.ByTask = map[string]assemblyline.ApplicationServiceEndpointContract{
 		frozen.Tasks[0].ID: testServiceEndpointContract("/records/{record_id}"),
 		frozen.Tasks[1].ID: testServiceEndpointContract("/{collection}/active"),
 	}
-	if err := overlap.ValidateFor(input, frozen); err == nil || !strings.Contains(err.Error(), "overlapping") {
+	if err := overlap.ValidateFor(frozen); err == nil || !strings.Contains(err.Error(), "overlapping") {
 		t.Fatalf("intersecting literal/parameter route validation error=%v", err)
 	}
 }
@@ -214,10 +154,10 @@ func TestServiceEndpointPlanProjectsSupportOnlyTaskWithoutInventingRoute(t *test
 			frozen.Tasks[0].ID: testServiceEndpointContract("/records"),
 		},
 	}
-	if err := plan.ValidateFor(input, frozen); err != nil {
+	if err := plan.ValidateFor(frozen); err != nil {
 		t.Fatal(err)
 	}
-	if err := plan.ValidateForCapabilities(input, frozen, directCodingCapabilityGraph{
+	if err := plan.ValidateForCapabilities(frozen, directCodingCapabilityGraph{
 		frozen.Tasks[0].RequirementID: {{
 			RequirementID: frozen.Tasks[1].RequirementID,
 			CapabilityID:  genericApplicationCapabilityID(2),
@@ -235,11 +175,11 @@ func TestServiceEndpointPlanProjectsSupportOnlyTaskWithoutInventingRoute(t *test
 		t.Fatalf("support-only projection=%+v", projected)
 	}
 	plan.ByTask[frozen.Tasks[1].ID] = testServiceEndpointContract("/invented")
-	if err := plan.ValidateFor(input, frozen); err == nil || !strings.Contains(err.Error(), "support-only") {
+	if err := plan.ValidateFor(frozen); err == nil || !strings.Contains(err.Error(), "support-only") {
 		t.Fatalf("support-only route validation error=%v", err)
 	}
 	delete(plan.ByTask, frozen.Tasks[1].ID)
-	if err := plan.ValidateForCapabilities(input, frozen, directCodingCapabilityGraph{
+	if err := plan.ValidateForCapabilities(frozen, directCodingCapabilityGraph{
 		frozen.Tasks[0].RequirementID: nil,
 		frozen.Tasks[1].RequirementID: nil,
 	}); err == nil || !strings.Contains(err.Error(), "no code-derived capability consumer") {
@@ -262,7 +202,7 @@ func TestServiceEndpointPlanRejectsMissingAndUnknownTaskAuthority(t *testing.T) 
 			"task_unknown":     testServiceEndpointContract("/unknown"),
 		},
 	}
-	if err := plan.ValidateFor(input, frozen); err == nil {
+	if err := plan.ValidateFor(frozen); err == nil {
 		t.Fatal("service endpoint plan accepted missing and unknown task authority")
 	}
 }

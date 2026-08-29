@@ -205,12 +205,12 @@ identity, authority, scope, provenance, freshness, and cost.
 ### Need-driven context compilation
 
 Context compilation does not call a model merely because a context station exists.
-Code uses an explicit structured retrieval directive when the caller already knows
-the lookup. A search-term station is legal only when query formulation remains one
-real semantic uncertainty. Independent canonical query embeddings may execute
-concurrently; database queries, ranking, filtering, authority checks, deduplication,
-ordering, hashing, provenance binding, and result combination remain deterministic.
-Concurrency never creates model researchers or model-owned retrieval.
+Code checks whether the fixed provider has searchable authority. When it does, the
+exact authoritative instruction is the sole retrieval query; when it does not,
+retrieval receives an explicit empty query set. A model never formulates or rewrites
+that environment-operation argument. Database queries, ranking, filtering, authority
+checks, deduplication, ordering, hashing, provenance binding, and result combination
+remain deterministic.
 
 After code has acquired and validated candidates, `context_relevance` receives only
 bounded pages of candidate text and may return only opaque supplied IDs. Code restores
@@ -228,10 +228,8 @@ artificial terminal failure, while a real per-call or provider resource limit st
 fails loudly.
 
 Model routes are qualified station profiles, not parameter-count classes. The station
-contract stays stable while deployment configuration resolves it to one exact model.
-Browser WebGPU is one provider below that same contract; its current first vertical
-and qualification status are documented in
-[`BROWSER_INFERENCE.md`](BROWSER_INFERENCE.md).
+contract stays stable while deployment configuration resolves it to one exact server
+model. Context relevance has no browser inference provider or alternate result path.
 
 ## Human-readable projections
 
@@ -266,7 +264,7 @@ machine passes its executable gates:
    and test providers run under code control; inference can select only among an exact
    bounded semantic remainder.
 5. **Bounded front door and workload compilation** — code first records exact workspace
-   state and bounded accepted durable memory as typed, hashed facts. For an existing workspace,
+   state as a typed, hashed fact. For an existing workspace,
    code alternates one raw context-need coverage call with one raw question call only while
    coverage remains; it resolves each decoded question through a registered deterministic
    provider and formalizes selected evidence as compact source-backed facts. A separate raw call
@@ -274,13 +272,12 @@ machine passes its executable gates:
    raw requirement call only while coverage remains and assembles the typed intent itself. A model
    is not called merely to emit, accept, reject, or restate the aggregate intent.
    Substring, interval, overlap, source-order, punctuation, and exact-quote allocation are not
-   authority checks. For each accepted requirement, one raw call returns the objective. Code then
-   owns separate behavior and acceptance-criterion fixed points: each raw coverage result is a
-   remains/no-uncovered semantic relation, and only a remains relation permits one raw semantic-leaf
-   call. These relation values have no workflow authority. Code validates every leaf and
-   assembles the typed job specification itself. Only a deterministic invalid-leaf result creates
-   a correction boundary; the correction call returns one complete raw replacement in the original
-   format, and code validates it with the original decoder before splicing the typed leaf.
+   authority checks. Code projects each accepted requirement directly into one frozen task in
+   accepted source order. The task contains only its code-owned task identity, requirement identity,
+   and exact accepted requirement; there are no objective, behavior, acceptance-criterion,
+   dependency, schedule, or completion model calls. Code validates every leaf and assembles the
+   typed job specification itself. Invalid semantic leaves fail at their owning station; there is
+   no generic response-correction station or retry path.
    Code preserves user authority separately from derived build decisions, assigns identity and
    order, freezes only validated state, executes one task at a time with
    the minimum sufficient authoritative task projection, and alone decides completion. A
@@ -291,12 +288,11 @@ machine passes its executable gates:
    there is no acceptance-grounding reviewer. Code verifies the grounded artifact before advancing.
 6. **Charmander handoff** — cognition produces one existing bounded declaration job;
    code parses, stitches, formats, stages, tests, applies, and reconciles it.
-7. **Semantic correction** — a correction call exists only after code identifies one exact
-   raw-leaf validation failure. It receives the original semantic question, the rejected complete
-   leaf, and one grounded defect and returns one complete replacement in the original raw format.
-   The original decoder validates the replacement; code alone updates typed state. There is no JSON
-   merge patch, aggregate reconstruction, mandatory semantic-review loop, or model-authored
-   acceptance control plane.
+7. **Failure-specific replacement** — ordinary invalid semantic leaves fail explicitly and cannot
+   dispatch a generic correction job. The target-tree station alone may replace its complete raw
+   hierarchy once after one exact code-proven tree defect. Source repair remains the separate
+   guidance-instruction then executor-node boundary. Neither path can reconstruct aggregate state,
+   review valid output, return a merge patch, or author an acceptance control plane.
 8. **Incompatible production cutover** — remove the universal model-action path and
    its schemas, recovery consumers, and provider eagerness. There is no fallback or
    feature flag.

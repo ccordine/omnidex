@@ -22,9 +22,9 @@ func TestDecodeExactPreparedResponseIgnoresProviderMetadataOutsideProjection(t *
 		},
 		{
 			name:     "R1 native context and reasoning metrics",
-			baseline: exactR1ResponseBody(t, "private trace", "replacement source"),
+			baseline: exactR1ResponseBody(t, "", "replacement source"),
 			withMeta: providerResponseMetadataFixture(
-				exactR1ResponseBody(t, "private trace", "replacement source"),
+				exactR1ResponseBody(t, "", "replacement source"),
 				`"context":[null,true,[1,2,3]],"reasoning_metrics":{"passes":4}`,
 			),
 		},

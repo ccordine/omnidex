@@ -144,71 +144,11 @@ func (command SupersedeEntryCommand) decide(ledger *Ledger) (Event, error) {
 		ReplacementID: replacement.ID, Reason: command.Reason}, nil
 }
 
-func (command AcceptDecisionCommand) decide(ledger *Ledger) (Event, error) {
-	if command.Actor != AuthorityCode && command.Actor != AuthorityUser {
-		return Event{}, fmt.Errorf("%w: only code or user may accept a model decision", ErrAuthorityDenied)
-	}
-	candidate, exists := ledger.entries[command.CandidateID]
-	if !exists {
-		return Event{}, fmt.Errorf("%w: decision candidate %q", ErrNotFound, command.CandidateID)
-	}
-	if candidate.Status != EntryActive || candidate.Kind != EntryDecisionCandidate ||
-		candidate.Authority != AuthorityModelProposal {
-		return Event{}, fmt.Errorf("%w: acceptance requires an active model decision candidate", ErrInvalidState)
-	}
-	if err := requireExactText(string(command.AcceptedEntryID), "accepted entry ID"); err != nil {
-		return Event{}, err
-	}
-	if _, exists := ledger.entries[command.AcceptedEntryID]; exists {
-		return Event{}, fmt.Errorf("%w: entry %q already exists", ErrInvalidState, command.AcceptedEntryID)
-	}
-	if err := requireExactText(command.AcceptancePolicy, "acceptance policy"); err != nil {
-		return Event{}, err
-	}
-	if err := validateOptionalStep(command.CreatedStepID, "created step ID"); err != nil {
-		return Event{}, err
-	}
-	if err := command.Metadata.Validate(); err != nil {
-		return Event{}, fmt.Errorf("%w: invalid accepted decision metadata: %v", ErrInvalidCommand, err)
-	}
-	if err := validateRefs(command.AcceptanceRefs); err != nil {
-		return Event{}, err
-	}
-	if !hasEvidenceRef(command.AcceptanceRefs) {
-		return Event{}, fmt.Errorf("%w: decision acceptance requires code or tool evidence", ErrEvidenceRequired)
-	}
-	entry := Entry{
-		ID: command.AcceptedEntryID, ScopeNodeID: candidate.ScopeNodeID,
-		Kind: EntryAcceptedDecision, Status: EntryActive,
-		Authority: AuthorityAcceptedModelDecision, CreatedBy: command.Actor,
-		Content: candidate.Content, ContentSHA256: candidate.ContentSHA256,
-		Confidence: cloneFloat64(candidate.Confidence), CreatedStepID: cloneInt64(command.CreatedStepID),
-		Metadata: cloneJSONObject(command.Metadata), Refs: cloneRefs(command.AcceptanceRefs),
-		Provenance: EntryProvenance{SourceEntryID: candidate.ID,
-			AcceptancePolicy: command.AcceptancePolicy, AcceptedBy: command.Actor},
-		CreatedVersion: ledger.version + 1, UpdatedVersion: ledger.version + 1,
-	}
-	return Event{Kind: EventDecisionAccepted, EntryID: candidate.ID,
-		ReplacementID: entry.ID, Entry: &entry, StepID: cloneInt64(command.CreatedStepID),
-		Reason: command.AcceptancePolicy}, nil
-}
-
 func validateNewEntryAuthority(actor Authority, kind EntryKind) error {
 	if err := validateEntryKind(kind); err != nil {
 		return err
 	}
-	if kind == EntryAcceptedDecision {
-		return fmt.Errorf("%w: accepted decisions require the acceptance command", ErrAuthorityDenied)
-	}
-	if actor == AuthorityAcceptedModelDecision {
-		return fmt.Errorf("%w: accepted-model-decision authority cannot create entries directly", ErrAuthorityDenied)
-	}
-	if actor == AuthorityModelProposal {
-		if kind != EntryObservation && kind != EntryHypothesis && kind != EntryQuestion && kind != EntryDecisionCandidate {
-			return fmt.Errorf("%w: model proposals may create only observations, hypotheses, questions, and decision candidates", ErrAuthorityDenied)
-		}
-	}
-	return nil
+	return validateAuthority(actor)
 }
 
 func validateFeedback(kind EntryKind, purpose FeedbackPurpose, actor Authority) error {
@@ -231,16 +171,12 @@ func validateFeedback(kind EntryKind, purpose FeedbackPurpose, actor Authority) 
 
 func authorityRank(authority Authority) int {
 	switch authority {
-	case AuthorityModelProposal:
-		return 1
 	case AuthorityToolEvidence:
-		return 2
-	case AuthorityAcceptedModelDecision:
-		return 3
+		return 1
 	case AuthorityCode:
-		return 4
+		return 2
 	case AuthorityUser:
-		return 5
+		return 3
 	default:
 		return 0
 	}

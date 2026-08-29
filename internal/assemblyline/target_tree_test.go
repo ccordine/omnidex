@@ -127,6 +127,14 @@ func TestTargetTreePromptUsesRawCurrentAndReservedTrees(t *testing.T) {
 	if strings.Contains(prompt, "_JSON") {
 		t.Fatalf("raw target-tree renderer returned JSON authority: prompt=%s", prompt)
 	}
+	for _, forbidden := range []string{
+		"artifact metadata", "filesystem operations", "file contents", "source",
+		"declarations", "commands", "ownership", "dependencies", "completion state",
+	} {
+		if strings.Contains(prompt, forbidden) {
+			t.Fatalf("target-tree prompt contains unrelated responsibility %q: %s", forbidden, prompt)
+		}
+	}
 }
 
 func TestTargetTreeDecodeAppliesCodeSelectedConstraints(t *testing.T) {
@@ -151,6 +159,23 @@ func TestTargetTreeDecodeAppliesCodeSelectedConstraints(t *testing.T) {
 		rootOnly, "ROOT\n  D src\n    F counter.tsx\n  F counter.test.tsx",
 	); err == nil {
 		t.Fatal("nested tree passed root-files-only constraint")
+	}
+}
+
+func TestTargetTreeDecodeRejectsReservedFileHierarchyCrossing(t *testing.T) {
+	t.Parallel()
+	input := targetTreeTestInput()
+	input.ReservedPaths = []string{"src/App.tsx"}
+	_, err := DecodeTargetTreeCandidate(input, strings.Join([]string{
+		"ROOT",
+		"  D src",
+		"    D App.tsx",
+		"      F child.tsx",
+		"  D tests",
+		"    F child.test.tsx",
+	}, "\n"))
+	if err == nil || !strings.Contains(err.Error(), "crosses reserved file boundary") {
+		t.Fatalf("reserved ancestor error=%v", err)
 	}
 }
 
@@ -219,6 +244,19 @@ func TestTargetTreeInputRequiresCompletePathAuthority(t *testing.T) {
 	pathBearing.Objective = "Read /private/workspace/secret.tsx."
 	if err := pathBearing.Validate(); err == nil || !strings.Contains(err.Error(), "filesystem identity") {
 		t.Fatalf("absolute accepted-goal identity error=%v", err)
+	}
+	pathBearing = valid
+	pathBearing.TechnicalContext = "Place one leaf under src/private."
+	if err := pathBearing.Validate(); err == nil || !strings.Contains(err.Error(), "filesystem identity") {
+		t.Fatalf("technical-context path identity error=%v", err)
+	}
+	pathBearing = valid
+	pathBearing.Correction = &TargetTreeCorrection{
+		CandidateTree: "ROOT\n  D src\n    F counter.tsx\n  D tests\n    F counter.test.tsx",
+		Failure:       "The node at src/counter.tsx is invalid.",
+	}
+	if err := pathBearing.Validate(); err == nil || !strings.Contains(err.Error(), "filesystem identity") {
+		t.Fatalf("correction path identity error=%v", err)
 	}
 }
 

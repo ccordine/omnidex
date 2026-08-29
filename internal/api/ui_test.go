@@ -23,7 +23,7 @@ func TestUIServesChatShell(t *testing.T) {
 	for _, want := range []string{
 		"Omni Chat",
 		`<link rel="icon" href="data:image/svg+xml,`,
-		`data-controller="shell recyclr chat projects scrum browser-inference"`,
+		`data-controller="shell recyclr chat projects scrum"`,
 		`data-recyclr-scope-value="page"`,
 		`data-recyclr-target="status"`,
 		`data-recyclr-sink="app-panel"`,
@@ -42,6 +42,9 @@ func TestUIServesChatShell(t *testing.T) {
 	}
 	if strings.Contains(body, `data-controller="shell gx`) {
 		t.Fatal("legacy gx controller remains on the page")
+	}
+	if strings.Contains(body, "browser-inference") {
+		t.Fatal("retired browser inference controller remains on the page")
 	}
 	if strings.Contains(body, `href="/ui/styles.css"`) {
 		t.Fatal("legacy unbundled stylesheet remains in the page shell")

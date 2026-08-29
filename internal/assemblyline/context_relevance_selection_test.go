@@ -65,8 +65,8 @@ func TestContextRelevanceSelectionRejectsStructuredDuplicateAndUnknownLeaves(t *
 func contextRelevanceSelectionFixture(t *testing.T) ContextRelevanceInput {
 	t.Helper()
 	return ContextRelevanceInput{
-		ExactInstruction:  "Do it again.",
-		RetrievalConcepts: []string{"previous action"},
+		ExactInstruction:   "Do it again.",
+		KnownArtifactPaths: []string{},
 		CandidateAuthorities: []ContextCandidateAuthority{
 			contextCandidateFixture(
 				t, "conversation", "CTX_7",

@@ -14,20 +14,22 @@ type directCodingServiceEndpointPlan struct {
 	ByTask         map[string]assemblyline.ApplicationServiceEndpointContract
 }
 
-type directCodingServiceEndpointLeafModels struct {
-	Exposure      string
-	Method        string
-	Route         string
-	RequestMedia  string
-	ResponseMedia string
-	SuccessStatus string
+func validateServiceEndpointPlanForHTTPStack(
+	stack directCodingProjectStack,
+	workload assemblyline.FrozenApplicationWorkload,
+	plan directCodingServiceEndpointPlan,
+) error {
+	if stack.CompileServiceSource == nil {
+		return fmt.Errorf("project stack %s has no HTTP compiler", stack.ID)
+	}
+	return plan.ValidateFor(workload)
 }
 
 func resolveDirectCodingServiceEndpointPlan(
 	runtime typedWorkerRuntime,
 	requirementModel string,
 	leafModels directCodingServiceEndpointLeafModels,
-	workloadInput assemblyline.ApplicationWorkloadDraftInput,
+	stack directCodingProjectStack,
 	workload assemblyline.FrozenApplicationWorkload,
 	capabilities directCodingCapabilityGraph,
 	identities []assemblyline.ArtifactIdentity,
@@ -36,13 +38,13 @@ func resolveDirectCodingServiceEndpointPlan(
 	runtime.CorrectionModel = ""
 	plan := directCodingServiceEndpointPlan{
 		WorkloadSHA256: workload.SHA256,
-		ProductContext: workloadInput.ProductQuote,
+		ProductContext: workload.ProductQuote,
 		Requirements:   make(map[string]assemblyline.ApplicationServiceEndpointRequirement, len(workload.Tasks)),
 		ByTask:         make(map[string]assemblyline.ApplicationServiceEndpointContract, len(workload.Tasks)),
 	}
 	for _, task := range workload.Tasks {
 		runtimeAuthority, err := assemblyline.ProjectApplicationTaskRuntimeAuthority(
-			workloadInput, workload, task.ID,
+			workload, task.ID,
 		)
 		if err != nil {
 			return directCodingServiceEndpointPlan{}, err
@@ -84,23 +86,25 @@ func resolveDirectCodingServiceEndpointPlan(
 		)
 		if err != nil {
 			return directCodingServiceEndpointPlan{}, fmt.Errorf(
-				"resolve service endpoint for task %s: %w", task.ID, err,
+				"resolve service endpoint leaves for task %s: %w", task.ID, err,
 			)
 		}
 		plan.ByTask[task.ID] = contract
 	}
-	if err := plan.ValidateForCapabilities(workloadInput, workload, capabilities); err != nil {
+	if err := plan.ValidateForCapabilities(workload, capabilities); err != nil {
+		return directCodingServiceEndpointPlan{}, err
+	}
+	if err := validateServiceEndpointPlanForHTTPStack(stack, workload, plan); err != nil {
 		return directCodingServiceEndpointPlan{}, err
 	}
 	return plan, nil
 }
 
 func (plan directCodingServiceEndpointPlan) ValidateForCapabilities(
-	workloadInput assemblyline.ApplicationWorkloadDraftInput,
 	workload assemblyline.FrozenApplicationWorkload,
 	capabilities directCodingCapabilityGraph,
 ) error {
-	if err := plan.ValidateFor(workloadInput, workload); err != nil {
+	if err := plan.ValidateFor(workload); err != nil {
 		return err
 	}
 	requirementByTask := make(map[string]string, len(workload.Tasks))
@@ -142,9 +146,11 @@ func (plan directCodingServiceEndpointPlan) ValidateForCapabilities(
 }
 
 func (plan directCodingServiceEndpointPlan) ValidateFor(
-	workloadInput assemblyline.ApplicationWorkloadDraftInput,
 	workload assemblyline.FrozenApplicationWorkload,
 ) error {
+	if err := assemblyline.ValidateFrozenApplicationWorkload(workload); err != nil {
+		return err
+	}
 	if plan.WorkloadSHA256 == "" || plan.WorkloadSHA256 != workload.SHA256 {
 		return fmt.Errorf("service endpoint plan differs from frozen workload authority")
 	}
@@ -168,7 +174,7 @@ func (plan directCodingServiceEndpointPlan) ValidateFor(
 			return fmt.Errorf("service endpoint plan omits requirement decision for frozen task %s", task.ID)
 		}
 		runtimeAuthority, err := assemblyline.ProjectApplicationTaskRuntimeAuthority(
-			workloadInput, workload, task.ID,
+			workload, task.ID,
 		)
 		if err != nil {
 			return err

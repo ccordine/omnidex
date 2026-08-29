@@ -22,14 +22,6 @@ func TestApplicationProjectStackConstraintHasOneExactStationOwner(t *testing.T) 
 		t.Fatal(err)
 	}
 	assertProjectStackConstraintOwner(t, job)
-	correction, err := assemblyline.NewRetainedResponseCorrectionJob(
-		job, "candidate is unavailable",
-		"STACK_CANDIDATE_1",
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	assertProjectStackConstraintOwner(t, correction)
 }
 
 func assertProjectStackConstraintOwner(t *testing.T, job assemblyline.PortableJob) {

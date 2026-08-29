@@ -13,14 +13,14 @@ import (
 func TestApplicationTaskStageProjectionExcludesOtherTasksAndApplicationEntrypoints(t *testing.T) {
 	t.Parallel()
 
-	input, frozen, program := applicationTaskLifecycleFixture(t)
+	_, frozen, program := applicationTaskLifecycleFixture(t)
 	program.Generated = map[string]string{
 		"feature.001":    "function Feature001View(): number { return 1; }",
 		"acceptance.001": "function VerifyFeature001(): number { return 1; }",
 		"feature.002":    "function Feature002View(): number { return 2; }",
 		"acceptance.002": "function VerifyFeature002(): number { return 2; }",
 	}
-	context, err := assemblyline.ProjectApplicationTaskContext(input, frozen, "task_001")
+	context, err := assemblyline.ProjectApplicationTaskContext(frozen, "task_001")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -63,9 +63,9 @@ func TestApplicationTaskStageProjectionExcludesOtherTasksAndApplicationEntrypoin
 func TestApplicationTaskStageProjectionSupportsMultipleTasksInOneFile(t *testing.T) {
 	t.Parallel()
 
-	input, frozen, program := applicationTaskLifecycleFixture(t)
+	_, frozen, program := applicationTaskLifecycleFixture(t)
 	program.Source.Documents = coalesceApplicationTaskFixtureDocuments(t, program.Source.Documents)
-	context, err := assemblyline.ProjectApplicationTaskContext(input, frozen, "task_002")
+	context, err := assemblyline.ProjectApplicationTaskContext(frozen, "task_002")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -108,9 +108,9 @@ func coalesceApplicationTaskFixtureDocuments(
 
 func applicationTaskLifecycleFixture(
 	t *testing.T,
-) (assemblyline.ApplicationWorkloadDraftInput, assemblyline.FrozenApplicationWorkload, directCodingProgram) {
+) (assemblyline.ApplicationSpecification, assemblyline.FrozenApplicationWorkload, directCodingProgram) {
 	t.Helper()
-	input := assemblyline.ApplicationWorkloadDraftInput{
+	specification := assemblyline.ApplicationSpecification{
 		Surface:      assemblyline.ApplicationSurfaceBrowser,
 		ProductQuote: "small operations console",
 		Requirements: []assemblyline.Requirement{
@@ -118,36 +118,7 @@ func applicationTaskLifecycleFixture(
 			{ID: "requirement_002", SourceQuote: "filter records"},
 		},
 	}
-	draft := assemblyline.ApplicationWorkloadDraft{
-		Schema: assemblyline.ApplicationWorkloadDraftSchemaV1,
-		Tasks: []assemblyline.ApplicationWorkloadTaskDraft{
-			{
-				RequirementID: "requirement_001",
-				Objective:     "Implement interactive record grouping in the operations console.",
-				RequiredBehaviors: []string{
-					"Users can create a named record group.",
-					"Users can assign a visible record to that group.",
-				},
-				AcceptanceCriteria: []string{
-					"A created group is visible.",
-					"An assigned record is visible in its selected group.",
-				},
-			},
-			{
-				RequirementID: "requirement_002",
-				Objective:     "Implement interactive record filtering in the operations console.",
-				RequiredBehaviors: []string{
-					"Users can enter a record filter.",
-					"Users can clear the active record filter.",
-				},
-				AcceptanceCriteria: []string{
-					"Entering a filter changes the visible records to matching results.",
-					"Clearing the filter restores all visible records.",
-				},
-			},
-		},
-	}
-	frozen, err := assemblyline.FreezeApplicationWorkload(input, draft)
+	frozen, err := assemblyline.FreezeApplicationWorkload(specification)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -166,7 +137,7 @@ func applicationTaskLifecycleFixture(
 	if err := program.Source.Validate(); err != nil {
 		t.Fatal(err)
 	}
-	return input, frozen, program
+	return specification, frozen, program
 }
 
 func applicationTaskLifecycleBlueprint() assemblyline.SourceBlueprint {

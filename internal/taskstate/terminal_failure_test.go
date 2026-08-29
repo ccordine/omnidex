@@ -33,10 +33,10 @@ func TestTerminalFailureRequiresCodeReasonAndVerifyingProof(t *testing.T) {
 		Actor: AuthorityCode, NodeID: "node-1", Reason: "terminal proof", Proof: testVerificationRefs()[0],
 	}
 	for name, mutate := range map[string]func(*TerminalFailNodeCommand){
-		"model authority": func(value *TerminalFailNodeCommand) { value.Actor = AuthorityModelProposal },
-		"user authority":  func(value *TerminalFailNodeCommand) { value.Actor = AuthorityUser },
-		"missing reason":  func(value *TerminalFailNodeCommand) { value.Reason = "" },
-		"wrong proof":     func(value *TerminalFailNodeCommand) { value.Proof.Relation = RefConcerns },
+		"tool authority": func(value *TerminalFailNodeCommand) { value.Actor = AuthorityToolEvidence },
+		"user authority": func(value *TerminalFailNodeCommand) { value.Actor = AuthorityUser },
+		"missing reason": func(value *TerminalFailNodeCommand) { value.Reason = "" },
+		"wrong proof":    func(value *TerminalFailNodeCommand) { value.Proof.Relation = RefConcerns },
 	} {
 		t.Run(name, func(t *testing.T) {
 			ledger := terminalFailureLedger(t, NodePending)

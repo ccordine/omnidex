@@ -125,7 +125,6 @@ func TestTypeScriptCompilerCorrectionCannotUseTestSummaryTruncation(t *testing.T
 	for _, path := range []string{
 		"v3_coding_typescript_compiler_feedback.go",
 		"v3_coding_typescript_stage_workspace.go",
-		"exact_station_convergence_compiler.go",
 	} {
 		raw, err := os.ReadFile(path)
 		if err != nil {

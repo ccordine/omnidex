@@ -118,13 +118,6 @@ func (c *directCodingTaskCognition) Bootstrap(workload assemblyline.FrozenApplic
 			return err
 		}
 	}
-	for _, task := range workload.Tasks {
-		for _, dependency := range task.DependsOn {
-			if err := c.addDependency(task.ID, dependency); err != nil {
-				return err
-			}
-		}
-	}
 	if err := c.promoteReady(); err != nil {
 		return err
 	}
@@ -280,8 +273,8 @@ func (c *directCodingTaskCognition) addTask(task assemblyline.FrozenApplicationT
 		return taskstate.AddNodeCommand{
 			CommandID: commandID, ExpectedVersion: ledger.Version(), Actor: taskstate.AuthorityCode,
 			ID: id, ParentID: c.objectiveID, ObjectiveID: c.objectiveID, Kind: taskstate.NodeTask,
-			InlineExecution: true, Title: task.Objective, Priority: 50, CreatedStepID: &stepID,
-			AcceptanceCriteria: append([]string(nil), task.AcceptanceCriteria...), Metadata: taskstate.EmptyJSONObject(),
+			InlineExecution: true, Title: task.RequirementQuote, Priority: 50, CreatedStepID: &stepID,
+			AcceptanceCriteria: []string{task.RequirementQuote}, Metadata: taskstate.EmptyJSONObject(),
 		}, nil
 	}); err != nil {
 		return err
@@ -300,33 +293,6 @@ func (c *directCodingTaskCognition) addTask(task assemblyline.FrozenApplicationT
 			CommandID: commandID, ExpectedVersion: ledger.Version(), Actor: taskstate.AuthorityCode,
 			ID:   taskstate.EdgeID("direct-coding-decomposes-" + task.ID),
 			Kind: taskstate.EdgeDecomposes, From: c.objectiveID, To: id,
-		}, nil
-	})
-}
-
-func (c *directCodingTaskCognition) addDependency(taskID, dependencyID string) error {
-	dependent, found := c.taskIDs[taskID]
-	if !found {
-		return fmt.Errorf("direct coding task cognition task %q is not registered", taskID)
-	}
-	prerequisite, found := c.taskIDs[dependencyID]
-	if !found {
-		return fmt.Errorf("direct coding task cognition dependency %q is not registered", dependencyID)
-	}
-	return c.apply(func(ledger *taskstate.Ledger) (taskstate.Command, error) {
-		for _, edge := range ledger.Edges() {
-			if edge.Kind == taskstate.EdgeDependsOn && edge.From == dependent && edge.To == prerequisite {
-				return nil, nil
-			}
-		}
-		commandID, err := c.commandID("dependency", taskID, dependencyID)
-		if err != nil {
-			return nil, err
-		}
-		return taskstate.AddEdgeCommand{
-			CommandID: commandID, ExpectedVersion: ledger.Version(), Actor: taskstate.AuthorityCode,
-			ID:   taskstate.EdgeID("direct-coding-dependency-" + taskID + "-" + dependencyID),
-			Kind: taskstate.EdgeDependsOn, From: dependent, To: prerequisite,
 		}, nil
 	})
 }

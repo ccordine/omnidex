@@ -52,10 +52,8 @@ func TestLiveCodingRequirementsAndWorkloadQualification(t *testing.T) {
 	for _, testCase := range liveCodingQualificationCases() {
 		t.Run(testCase.name, func(t *testing.T) {
 			start := transport.callCount()
-			var resolvedProduct string
-			var resolvedFeatures []string
 			runtime := typedWorkerRuntime{
-				Context: ctx, MaxAttempts: maxTypedWorkerAttempts,
+				Context: ctx, MaxAttempts: exactSemanticLeafCalls,
 				Execute: func(job assemblyline.PortableJob, selectedModel string) (assemblyline.PortableResult, error) {
 					if selectedModel != modelName {
 						return assemblyline.PortableResult{}, fmt.Errorf("selected model changed")
@@ -65,7 +63,7 @@ func TestLiveCodingRequirementsAndWorkloadQualification(t *testing.T) {
 						return assemblyline.PortableResult{}, renderErr
 					}
 					if projectionErr := validateLiveCodingQualificationProjection(
-						testCase, job, prompt, resolvedProduct, resolvedFeatures,
+						testCase, job, prompt,
 					); projectionErr != nil {
 						return assemblyline.PortableResult{}, projectionErr
 					}
@@ -74,7 +72,7 @@ func TestLiveCodingRequirementsAndWorkloadQualification(t *testing.T) {
 			}
 
 			applicationContext, err := assemblyline.BootstrapApplicationContext(
-				testCase.request, assemblyline.ApplicationWorkspaceEmpty, nil,
+				testCase.request, assemblyline.ApplicationWorkspaceEmpty,
 			)
 			if err != nil {
 				t.Fatal(err)
@@ -95,26 +93,21 @@ func TestLiveCodingRequirementsAndWorkloadQualification(t *testing.T) {
 				t.Fatal(err)
 			}
 			assertLiveCodingRequirementResolution(t, testCase, resolution)
-			resolvedProduct = resolution.ProductContext
-			resolvedFeatures = make([]string, 0, len(resolution.Requirements))
-			for _, requirement := range resolution.Requirements {
-				resolvedFeatures = append(resolvedFeatures, requirement.Statement)
-			}
 			compiledRequirements := make([]assemblyline.Requirement, len(resolution.Requirements))
 			for index, requirement := range resolution.Requirements {
 				compiledRequirements[index] = assemblyline.Requirement{
 					ID: requirement.ID, SourceQuote: requirement.Statement,
 				}
 			}
-			input := assemblyline.ApplicationWorkloadDraftInput{
+			specification := assemblyline.ApplicationSpecification{
 				Surface:      assemblyline.ApplicationSurfaceBrowser,
 				ProductQuote: resolution.ProductContext, Requirements: compiledRequirements,
 			}
-			frozen, err := resolveDirectCodingApplicationWorkload(runtime, modelName, input)
+			frozen, err := assemblyline.FreezeApplicationWorkload(specification)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if err := assemblyline.ValidateFrozenApplicationWorkload(input, frozen); err != nil {
+			if err := assemblyline.ValidateFrozenApplicationWorkloadFor(specification, frozen); err != nil {
 				t.Fatalf("frozen workload rejected: %v", err)
 			}
 			if len(frozen.Tasks) < 1 || len(frozen.Tasks) > 10 {
@@ -166,8 +159,6 @@ func validateLiveCodingQualificationProjection(
 	testCase liveCodingQualificationCase,
 	job assemblyline.PortableJob,
 	prompt string,
-	resolvedProduct string,
-	resolvedFeatures []string,
 ) error {
 	switch job.Kind {
 	case assemblyline.WorkApplicationProductContext:
@@ -190,72 +181,9 @@ func validateLiveCodingQualificationProjection(
 			return fmt.Errorf("requirement leaf did not receive one intact request and product context")
 		}
 		return nil
-	case assemblyline.WorkApplicationJobObjective:
-		var input assemblyline.ApplicationJobSpecificationInput
-		if err := json.Unmarshal(job.Payload, &input); err != nil {
-			return err
-		}
-		return validateLiveCodingWorkloadLeafProjection(
-			testCase, input, prompt, resolvedProduct, resolvedFeatures,
-		)
-	case assemblyline.WorkApplicationBehaviorCoverage,
-		assemblyline.WorkApplicationBehavior:
-		var input assemblyline.ApplicationJobBehaviorLeafInput
-		if err := json.Unmarshal(job.Payload, &input); err != nil {
-			return err
-		}
-		return validateLiveCodingWorkloadLeafProjection(
-			testCase, input.Authority, prompt, resolvedProduct, resolvedFeatures,
-		)
-	case assemblyline.WorkApplicationCriterionCoverage,
-		assemblyline.WorkApplicationCriterion:
-		var input assemblyline.ApplicationJobCriterionLeafInput
-		if err := json.Unmarshal(job.Payload, &input); err != nil {
-			return err
-		}
-		return validateLiveCodingWorkloadLeafProjection(
-			testCase, input.Authority, prompt, resolvedProduct, resolvedFeatures,
-		)
 	default:
 		return fmt.Errorf("qualification dispatched unexpected work kind %q", job.Kind)
 	}
-}
-
-func validateLiveCodingWorkloadLeafProjection(
-	testCase liveCodingQualificationCase,
-	input assemblyline.ApplicationJobSpecificationInput,
-	prompt string,
-	resolvedProduct string,
-	resolvedFeatures []string,
-) error {
-	if input.Surface != assemblyline.ApplicationSurfaceBrowser ||
-		input.ProductQuote != resolvedProduct ||
-		!containsExactString(resolvedFeatures, input.FocusedRequirement.SourceQuote) {
-		return fmt.Errorf("workload leaf authority differs from its focused accepted requirement")
-	}
-	if strings.Contains(prompt, testCase.request) ||
-		!strings.Contains(prompt, string(assemblyline.ApplicationSurfaceBrowser)) ||
-		!strings.Contains(prompt, resolvedProduct) ||
-		!strings.Contains(prompt, input.FocusedRequirement.SourceQuote) {
-		return fmt.Errorf("workload leaf omitted its minimal surface, product, or focused requirement authority")
-	}
-	for _, forbidden := range []string{
-		"requirement_id", "task_id", "depends_on", "file_path", "workspace_path", "completion_state",
-	} {
-		if strings.Contains(prompt, forbidden) {
-			return fmt.Errorf("workload leaf received forbidden %s authority", forbidden)
-		}
-	}
-	return nil
-}
-
-func containsExactString(values []string, target string) bool {
-	for _, value := range values {
-		if value == target {
-			return true
-		}
-	}
-	return false
 }
 
 func requireLiveCodingQualificationEnv(t *testing.T, key string) string {

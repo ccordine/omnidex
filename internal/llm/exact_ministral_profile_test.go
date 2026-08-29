@@ -148,7 +148,7 @@ func TestExactMinistralPreparedRequestUsesNativeSystemAndNaturalCompletion(t *te
 	}
 	settings, err := ResolveExactPreparedTransport(expected)
 	if err != nil || !settings.NativeTemplate || !settings.SeparateSystem ||
-		settings.SeparateThinking || settings.Temperature != nil {
+		settings.Temperature != nil {
 		t.Fatalf("Ministral transport settings=%+v error=%v", settings, err)
 	}
 }

@@ -22,29 +22,10 @@ func TestDownstreamSemanticPromptsHideObjectiveContextProvenance(t *testing.T) {
 				Evidence:         base.Evidence,
 			})
 		}},
-		{name: "repository grounded review", job: func() (PortableJob, error) {
-			input := repositoryGroundedReviewFixture()
-			input.Context = context
-			return NewRepositoryGroundedIssueDetailJob(input)
-		}},
-		{name: "repository grounded correction", job: func() (PortableJob, error) {
-			input := repositoryGroundedCorrectionFixture()
-			input.Context = context
-			return NewRepositoryGroundedCorrectionJob(input)
-		}},
 		{name: "roleplay grounded response", job: func() (PortableJob, error) {
 			input := roleplayGroundedFixture()
 			input.Context = context
 			return NewRoleplayGroundedResponseTextJob(input)
-		}},
-		{name: "web search terms", job: func() (PortableJob, error) {
-			input := webSearchTermsFixture()
-			input.Context = context
-			return NewWebSearchTermCoverageJob(WebSearchTermLeafInput{
-				ExactQuestion: input.ExactQuestion, Context: input.Context,
-				AttemptedQueries: input.AttemptedQueries, AcceptedTerms: []string{},
-				MaxTerms: input.MaxTerms, MaxTermBytes: input.MaxTermBytes,
-			})
 		}},
 		{name: "web relevance", job: func() (PortableJob, error) {
 			input := webRelevanceFixture()
@@ -52,15 +33,6 @@ func TestDownstreamSemanticPromptsHideObjectiveContextProvenance(t *testing.T) {
 			return NewWebRelevanceRelationJob(WebRelevanceRelationInput{
 				ExactQuestion: input.ExactQuestion, Context: input.Context,
 				Candidate: input.Candidates[0],
-			})
-		}},
-		{name: "web claim evidence review", job: func() (PortableJob, error) {
-			base := webClaimEvidenceReviewFixture()
-			return NewWebReviewClaimCoverageJob(WebReviewClaimLeafInput{
-				ExactQuestion:  base.ExactQuestion,
-				Context:        context,
-				ParagraphText:  base.Paragraph.Text,
-				AcceptedClaims: []string{},
 			})
 		}},
 		{name: "web grounded synthesis", job: func() (PortableJob, error) {
@@ -73,11 +45,6 @@ func TestDownstreamSemanticPromptsHideObjectiveContextProvenance(t *testing.T) {
 				MaxParagraphs:      base.MaxParagraphs,
 				MaxParagraphBytes:  base.MaxParagraphBytes,
 			})
-		}},
-		{name: "web grounded synthesis correction", job: func() (PortableJob, error) {
-			input := webGroundedSynthesisCorrectionFixture()
-			input.Context = context
-			return NewWebGroundedSynthesisCorrectionJob(input)
 		}},
 		{name: "database evidence gap", job: func() (PortableJob, error) {
 			return NewDatabaseEvidenceGapJob(DatabaseEvidenceGapInput{

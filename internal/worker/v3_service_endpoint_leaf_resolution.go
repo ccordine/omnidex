@@ -1,8 +1,15 @@
 package worker
 
-import (
-	"github.com/gryph/omnidex/internal/assemblyline"
-)
+import "github.com/gryph/omnidex/internal/assemblyline"
+
+type directCodingServiceEndpointLeafModels struct {
+	Exposure      string
+	Method        string
+	Route         string
+	RequestMedia  string
+	ResponseMedia string
+	SuccessStatus string
+}
 
 func resolveDirectCodingServiceEndpointContractLeaves(
 	runtime typedWorkerRuntime,
@@ -10,7 +17,7 @@ func resolveDirectCodingServiceEndpointContractLeaves(
 	authority assemblyline.ApplicationServiceEndpointTaskAuthority,
 	identities []assemblyline.ArtifactIdentity,
 ) (assemblyline.ApplicationServiceEndpointContract, error) {
-	exposureInput := assemblyline.ApplicationServiceEndpointExposureInput{Task: authority}
+	exposureInput := assemblyline.ApplicationServiceEndpointExposureInput{Authority: authority}
 	exposureJob, err := assemblyline.NewApplicationServiceEndpointExposureJob(exposureInput)
 	if err != nil {
 		return assemblyline.ApplicationServiceEndpointContract{}, err
@@ -28,7 +35,7 @@ func resolveDirectCodingServiceEndpointContractLeaves(
 		return assemblyline.ApplicationServiceEndpointContract{}, err
 	}
 
-	methodInput := assemblyline.ApplicationServiceEndpointMethodInput{Task: authority}
+	methodInput := assemblyline.ApplicationServiceEndpointMethodInput{Authority: authority}
 	methodJob, err := assemblyline.NewApplicationServiceEndpointMethodJob(methodInput)
 	if err != nil {
 		return assemblyline.ApplicationServiceEndpointContract{}, err
@@ -46,7 +53,7 @@ func resolveDirectCodingServiceEndpointContractLeaves(
 		return assemblyline.ApplicationServiceEndpointContract{}, err
 	}
 
-	routeInput := assemblyline.ApplicationServiceEndpointRouteTemplateInput{Task: authority}
+	routeInput := assemblyline.ApplicationServiceEndpointRouteTemplateInput{Authority: authority}
 	routeJob, err := assemblyline.NewApplicationServiceEndpointRouteTemplateJob(routeInput)
 	if err != nil {
 		return assemblyline.ApplicationServiceEndpointContract{}, err
@@ -65,7 +72,7 @@ func resolveDirectCodingServiceEndpointContractLeaves(
 	}
 
 	requestInput := assemblyline.ApplicationServiceEndpointRequestMediaInput{
-		Task: authority, Method: method.Method,
+		Authority: authority, Method: method.Method,
 	}
 	requestCandidates, err := assemblyline.ApplicationServiceEndpointRequestMediaCandidates(requestInput)
 	if err != nil {
@@ -95,7 +102,9 @@ func resolveDirectCodingServiceEndpointContractLeaves(
 		}
 	}
 
-	responseInput := assemblyline.ApplicationServiceEndpointResponseMediaInput{Task: authority}
+	responseInput := assemblyline.ApplicationServiceEndpointResponseMediaInput{
+		Authority: authority, Method: method.Method,
+	}
 	responseJob, err := assemblyline.NewApplicationServiceEndpointResponseMediaJob(responseInput)
 	if err != nil {
 		return assemblyline.ApplicationServiceEndpointContract{}, err
@@ -114,7 +123,7 @@ func resolveDirectCodingServiceEndpointContractLeaves(
 	}
 
 	statusInput := assemblyline.ApplicationServiceEndpointSuccessStatusInput{
-		Task: authority, Method: method.Method,
+		Authority: authority, Method: method.Method,
 		RequestMedia: requestMedia.RequestMedia, ResponseMedia: responseMedia.ResponseMedia,
 	}
 	statusCandidates, err := assemblyline.ApplicationServiceEndpointSuccessStatusCandidates(statusInput)

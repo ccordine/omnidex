@@ -78,7 +78,7 @@ func TestRecoveredPlainWorkspaceMutationCompletesPersistedCognitionWithoutReasse
 		OperationID: operationID,
 		Command: queue.WorkspaceMutationCommand{
 			JobID: store.authority.JobID, StepID: store.authority.StepID,
-			Generation: store.authority.Generation, Plan: plan,
+			Generation: store.authority.Generation, ProjectLocation: root, Plan: plan,
 		},
 		Terminal: &queue.WorkspaceMutationTerminal{
 			Result: queue.WorkspaceMutationResult{

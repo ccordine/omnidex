@@ -1,7 +1,6 @@
 package worker
 
 import (
-	"errors"
 	"fmt"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
@@ -11,7 +10,6 @@ import (
 const maxExistingRepositoryDeterministicQueries = 8
 
 type existingRepositoryEvidenceBuild func(string) (repositoryretrieval.EvidencePack, error)
-type existingRepositorySearchTermCall func(string) (assemblyline.RepositorySearchTermDecision, error)
 type existingRepositoryEvidenceConsumer func(existingRepositoryEvidenceAcquisition) error
 type existingRepositoryChangeSurfaceCall func(
 	existingRepositoryEvidenceAcquisition,
@@ -22,7 +20,6 @@ type existingRepositoryEvidenceAcquisition struct {
 	RequirementQuote string
 	Pack             repositoryretrieval.EvidencePack
 	Query            string
-	SearchTermCalls  int
 }
 
 type existingRepositoryRequirementResolution struct {
@@ -32,8 +29,8 @@ type existingRepositoryRequirementResolution struct {
 
 func acquireExistingRepositoryEvidence(
 	requirementQuotes []string,
+	codeOwnedQuery string,
 	build existingRepositoryEvidenceBuild,
-	searchTerm existingRepositorySearchTermCall,
 ) ([]existingRepositoryEvidenceAcquisition, error) {
 	if len(requirementQuotes) < 1 || len(requirementQuotes) > maxExistingRepositoryDeterministicQueries {
 		return nil, fmt.Errorf(
@@ -44,6 +41,11 @@ func acquireExistingRepositoryEvidence(
 	if build == nil {
 		return nil, fmt.Errorf("repository evidence closure requires one code-owned acquisition operation")
 	}
+	if _, err := repositoryretrieval.NewQueryBinding(
+		repositoryretrieval.OperationSemanticExcerpts, codeOwnedQuery,
+	); err != nil {
+		return nil, fmt.Errorf("repository evidence code-owned query: %w", err)
+	}
 	seen := make(map[string]struct{}, len(requirementQuotes))
 	needs := make([]assemblyline.ApplicationEvidenceNeed, len(requirementQuotes))
 	for index, query := range requirementQuotes {
@@ -52,100 +54,36 @@ func acquireExistingRepositoryEvidence(
 			return nil, err
 		}
 		needs[index] = need
-		if _, err := repositoryretrieval.NewQueryBinding(
-			repositoryretrieval.OperationSemanticExcerpts, query,
-		); err != nil {
-			return nil, fmt.Errorf("repository deterministic query: %w", err)
-		}
 		if _, duplicate := seen[query]; duplicate {
-			return nil, fmt.Errorf("repository deterministic queries must be unique")
+			return nil, fmt.Errorf("repository semantic requirements must be unique")
 		}
 		seen[query] = struct{}{}
 	}
+	pack, err := build(codeOwnedQuery)
+	if err != nil {
+		return nil, fmt.Errorf("repository deterministic acquisition: %w", err)
+	}
+	if err := pack.ValidateForRequest(
+		repositoryretrieval.OperationSemanticExcerpts, codeOwnedQuery,
+	); err != nil {
+		return nil, fmt.Errorf("repository deterministic acquisition returned invalid evidence: %w", err)
+	}
 	results := make([]existingRepositoryEvidenceAcquisition, len(requirementQuotes))
-	missing := make([]int, 0, len(requirementQuotes))
-	for index, query := range requirementQuotes {
+	for index, requirement := range requirementQuotes {
 		results[index] = existingRepositoryEvidenceAcquisition{
 			Need:             needs[index],
-			RequirementQuote: query,
-			Query:            query,
+			RequirementQuote: requirement,
+			Pack:             pack,
+			Query:            codeOwnedQuery,
 		}
-		pack, err := build(query)
-		if err == nil {
-			if err := pack.ValidateForRequest(
-				repositoryretrieval.OperationSemanticExcerpts, query,
-			); err != nil {
-				return results, fmt.Errorf(
-					"repository deterministic acquisition for %q returned invalid evidence: %w",
-					query, err,
-				)
-			}
-			results[index].Need.SearchAnchors = []string{query}
-			if err := results[index].Need.Validate(); err != nil {
-				return results, err
-			}
-			results[index].Pack = pack
-			continue
-		}
-		if !errors.Is(err, repositoryretrieval.ErrInsufficientEvidence) {
-			return results, fmt.Errorf("repository deterministic acquisition for %q: %w", query, err)
-		}
-		missing = append(missing, index)
-	}
-	if len(missing) == 0 {
-		return results, nil
-	}
-	if searchTerm == nil {
-		return results, fmt.Errorf(
-			"%w: deterministic repository queries exhausted and search-term station is unavailable",
-			repositoryretrieval.ErrInsufficientEvidence,
-		)
-	}
-	for _, index := range missing {
-		result := &results[index]
-		result.SearchTermCalls = 1
-		decision, err := searchTerm(result.RequirementQuote)
-		if err != nil {
-			return results, err
-		}
-		searchInput := assemblyline.RepositorySearchTermInput{
-			UnresolvedConcept: result.RequirementQuote,
-		}
-		if err := decision.ValidateFor(searchInput); err != nil {
-			return results, err
-		}
-		result.Need.SearchAnchors = append([]string(nil), decision.Anchors...)
-		if err := result.Need.Validate(); err != nil {
-			return results, err
-		}
-		query, err := repositoryretrieval.BuildLexicalAnchorQuery(decision.Anchors)
-		if err != nil {
-			return results, err
-		}
-		pack, buildErr := build(query)
-		if buildErr != nil {
-			return results, fmt.Errorf(
-				"repository acquisition for requirement %q bounded lexical anchor query: %w",
-				result.RequirementQuote, buildErr,
-			)
-		}
-		if err := pack.ValidateForRequest(
-			repositoryretrieval.OperationSemanticExcerpts, query,
-		); err != nil {
-			return results, fmt.Errorf(
-				"repository acquisition for requirement %q bounded lexical anchor query returned invalid evidence: %w",
-				result.RequirementQuote, err,
-			)
-		}
-		result.Pack, result.Query = pack, query
 	}
 	return results, nil
 }
 
 func prepareExistingRepositoryRequirementResolutions(
 	requirementQuotes []string,
+	codeOwnedQuery string,
 	build existingRepositoryEvidenceBuild,
-	searchTerm existingRepositorySearchTermCall,
 	consume existingRepositoryEvidenceConsumer,
 	resolveSurface existingRepositoryChangeSurfaceCall,
 ) ([]existingRepositoryRequirementResolution, error) {
@@ -155,7 +93,9 @@ func prepareExistingRepositoryRequirementResolutions(
 	if resolveSurface == nil {
 		return nil, fmt.Errorf("repository requirement closure requires one bounded change-surface station")
 	}
-	acquisitions, err := acquireExistingRepositoryEvidence(requirementQuotes, build, searchTerm)
+	acquisitions, err := acquireExistingRepositoryEvidence(
+		requirementQuotes, codeOwnedQuery, build,
+	)
 	if err != nil {
 		return nil, err
 	}

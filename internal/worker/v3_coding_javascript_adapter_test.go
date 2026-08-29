@@ -176,18 +176,6 @@ func TestJavaScriptAcceptanceRequiresImplementationCallAndAssertion(t *testing.T
 		})
 	}
 
-	stage.Workload.Tasks[0].AcceptanceCriteria = append(
-		stage.Workload.Tasks[0].AcceptanceCriteria,
-		"The result exposes the expected exit status.",
-	)
-	duplicate := `function verifyFeature001() {
-		const result = feature001({ arguments: ['ready'], standardInput: '' }, {});
-		assert.equal(result.output, 'ready');
-		assert.equal(result.output, 'ready');
-	}`
-	if err := validateDirectCodingJavaScriptAcceptance(&stage, ref, duplicate); err == nil {
-		t.Fatalf("accepted duplicate JavaScript verification conditions:\n%s", duplicate)
-	}
 }
 
 func TestProjectStackSelectionCanSelectJavaScriptWithoutRegistryIdentity(t *testing.T) {
@@ -220,15 +208,7 @@ func javaScriptCommandLineStackFixture(
 			ID: "requirement_001", SourceQuote: "Print the first supplied argument",
 		}},
 	}
-	input := applicationWorkloadInput(specification)
-	workload, err := assemblyline.FreezeApplicationWorkload(input, assemblyline.ApplicationWorkloadDraft{
-		Schema: assemblyline.ApplicationWorkloadDraftSchemaV1,
-		Tasks: []assemblyline.ApplicationWorkloadTaskDraft{{
-			RequirementID: "requirement_001", Objective: "Return the first command argument.",
-			RequiredBehaviors:  []string{"Accept one command argument and expose it as output."},
-			AcceptanceCriteria: []string{"The first command argument is returned unchanged."},
-		}},
-	})
+	workload, err := assemblyline.FreezeApplicationWorkload(specification)
 	if err != nil {
 		t.Fatal(err)
 	}

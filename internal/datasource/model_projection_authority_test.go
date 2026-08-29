@@ -10,7 +10,7 @@ import (
 
 func TestDatabaseCognitionProjectionHasNoDomainPromptCredentialRawSQLOrToolPath(t *testing.T) {
 	t.Parallel()
-	for _, file := range []string{"schema_projection.go", "relational_intent_types.go", "relational_intent_decode.go", "evidence_types.go"} {
+	for _, file := range []string{"schema_projection.go", "relational_intent_types.go", "evidence_types.go"} {
 		source, err := os.ReadFile(file)
 		if err != nil {
 			t.Fatal(err)
@@ -26,6 +26,9 @@ func TestDatabaseCognitionProjectionHasNoDomainPromptCredentialRawSQLOrToolPath(
 	}
 	if _, err := os.Stat("profile.go"); !os.IsNotExist(err) {
 		t.Fatalf("retired data-source profile authority still exists: %v", err)
+	}
+	if _, err := os.Stat("relational_intent_decode.go"); !os.IsNotExist(err) {
+		t.Fatalf("retired whole-intent model JSON decoder still exists: %v", err)
 	}
 }
 

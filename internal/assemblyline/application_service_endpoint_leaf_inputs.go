@@ -3,28 +3,29 @@ package assemblyline
 import "fmt"
 
 type ApplicationServiceEndpointExposureInput struct {
-	Task ApplicationServiceEndpointTaskAuthority `json:"accepted_local_task_authority"`
+	Authority ApplicationServiceEndpointTaskAuthority `json:"endpoint_requirement_authority"`
 }
 
 type ApplicationServiceEndpointMethodInput struct {
-	Task ApplicationServiceEndpointTaskAuthority `json:"accepted_local_task_authority"`
+	Authority ApplicationServiceEndpointTaskAuthority `json:"endpoint_requirement_authority"`
 }
 
 type ApplicationServiceEndpointRouteTemplateInput struct {
-	Task ApplicationServiceEndpointTaskAuthority `json:"accepted_local_task_authority"`
+	Authority ApplicationServiceEndpointTaskAuthority `json:"endpoint_requirement_authority"`
 }
 
 type ApplicationServiceEndpointRequestMediaInput struct {
-	Task   ApplicationServiceEndpointTaskAuthority `json:"accepted_local_task_authority"`
-	Method ApplicationServiceEndpointMethod        `json:"accepted_method"`
+	Authority ApplicationServiceEndpointTaskAuthority `json:"endpoint_requirement_authority"`
+	Method    ApplicationServiceEndpointMethod        `json:"accepted_method"`
 }
 
 type ApplicationServiceEndpointResponseMediaInput struct {
-	Task ApplicationServiceEndpointTaskAuthority `json:"accepted_local_task_authority"`
+	Authority ApplicationServiceEndpointTaskAuthority `json:"endpoint_requirement_authority"`
+	Method    ApplicationServiceEndpointMethod        `json:"accepted_method"`
 }
 
 type ApplicationServiceEndpointSuccessStatusInput struct {
-	Task          ApplicationServiceEndpointTaskAuthority `json:"accepted_local_task_authority"`
+	Authority     ApplicationServiceEndpointTaskAuthority `json:"endpoint_requirement_authority"`
 	Method        ApplicationServiceEndpointMethod        `json:"accepted_method"`
 	RequestMedia  ApplicationServiceEndpointMedia         `json:"accepted_request_media"`
 	ResponseMedia ApplicationServiceEndpointMedia         `json:"accepted_response_media"`
@@ -55,19 +56,19 @@ func NewApplicationServiceEndpointSuccessStatusJob(input ApplicationServiceEndpo
 }
 
 func (input ApplicationServiceEndpointExposureInput) validate() error {
-	return input.Task.validate()
+	return input.Authority.validate()
 }
 
 func (input ApplicationServiceEndpointMethodInput) validate() error {
-	return input.Task.validate()
+	return input.Authority.validate()
 }
 
 func (input ApplicationServiceEndpointRouteTemplateInput) validate() error {
-	return input.Task.validate()
+	return input.Authority.validate()
 }
 
 func (input ApplicationServiceEndpointRequestMediaInput) validate() error {
-	if err := input.Task.validate(); err != nil {
+	if err := input.Authority.validate(); err != nil {
 		return err
 	}
 	if !validApplicationServiceEndpointMethod(input.Method) {
@@ -77,11 +78,17 @@ func (input ApplicationServiceEndpointRequestMediaInput) validate() error {
 }
 
 func (input ApplicationServiceEndpointResponseMediaInput) validate() error {
-	return input.Task.validate()
+	if err := input.Authority.validate(); err != nil {
+		return err
+	}
+	if !validApplicationServiceEndpointMethod(input.Method) {
+		return fmt.Errorf("response-media prerequisite method %q is unsupported", input.Method)
+	}
+	return nil
 }
 
 func (input ApplicationServiceEndpointSuccessStatusInput) validate() error {
-	if err := input.Task.validate(); err != nil {
+	if err := input.Authority.validate(); err != nil {
 		return err
 	}
 	if !validApplicationServiceEndpointMethod(input.Method) {

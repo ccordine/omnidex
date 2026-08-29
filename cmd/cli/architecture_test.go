@@ -62,7 +62,7 @@ func TestSplitCLICommandFilesStayFocused(t *testing.T) {
 		"watch_steps.go",
 		"watch_context.go",
 		"watch_events.go",
-		"watch_llm_trace.go",
+		"watch_text.go",
 	} {
 		source := readCLISource(t, path)
 		if lines := strings.Count(source, "\n") + 1; lines > 350 {

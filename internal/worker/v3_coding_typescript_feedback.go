@@ -1,10 +1,8 @@
 package worker
 
 import (
-	"encoding/json"
 	"fmt"
 	"regexp"
-	"sort"
 	"strings"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
@@ -27,14 +25,28 @@ func directCodingTypeScriptStructuredTestModelFailure(
 	if name == "" || message == "" {
 		return "", fmt.Errorf("structured Vitest failure requires one exact error name and message")
 	}
+	message = directCodingTypeScriptPrimaryTestFailure(name, message)
+	message = directCodingANSISequencePattern.ReplaceAllString(message, "")
+	observation, err := directCodingTestingLibraryRoleObservationProjection(
+		name, message, failure.AccessibilityObservation,
+	)
+	if err != nil {
+		return "", fmt.Errorf("project Testing Library role observation: %w", err)
+	}
 	clean := directCodingANSISequencePattern.ReplaceAllString(name+": "+message, "")
+	clean, err = canonicalizeDirectCodingTypeScriptDiagnosticRegularExpressions(
+		clean, authorizedRegexLiterals,
+	)
+	if err != nil {
+		return "", fmt.Errorf("canonicalize structured Vitest regular expressions: %w", err)
+	}
+	if observation != "" {
+		clean += " " + observation
+	}
 	clean = strings.ReplaceAll(strings.ReplaceAll(clean, "\r", " "), "\n", " ")
 	fields := strings.Fields(clean)
 	for index, field := range fields {
-		pathCheck := maskDirectCodingAuthorizedRegularExpressions(
-			field, authorizedRegexLiterals,
-		)
-		if modelcontext.ContainsPathIdentityWithProvenance(pathCheck, provenance) {
+		if modelcontext.ContainsPathIdentityWithProvenance(field, provenance) {
 			fields[index] = "[source]"
 		}
 	}
@@ -44,13 +56,28 @@ func directCodingTypeScriptStructuredTestModelFailure(
 	if clean == "" {
 		return "", fmt.Errorf("structured Vitest failure became empty after path redaction")
 	}
-	pathCheck := maskDirectCodingAuthorizedRegularExpressions(
-		clean, authorizedRegexLiterals,
-	)
-	if modelcontext.ContainsPathIdentityWithProvenance(pathCheck, provenance) {
+	if modelcontext.ContainsPathIdentityWithProvenance(clean, provenance) {
 		return "", fmt.Errorf("structured Vitest failure retained path identity after redaction")
 	}
 	return clean, nil
+}
+
+// Testing Library appends provider prose and serialized DOM after the primary
+// error paragraph. Code captures the requested role's computed accessible
+// names separately as typed data before reducing that prose. Other error types
+// and messages without the provider paragraph boundary remain unchanged.
+func directCodingTypeScriptPrimaryTestFailure(name string, message string) string {
+	if name != "TestingLibraryElementError" {
+		return message
+	}
+	normalized := strings.ReplaceAll(message, "\r\n", "\n")
+	if boundary := strings.Index(normalized, "\n\n"); boundary >= 0 {
+		primary := strings.TrimSpace(normalized[:boundary])
+		if primary != "" {
+			return primary
+		}
+	}
+	return message
 }
 
 func redactDirectCodingPathIdentities(
@@ -83,43 +110,8 @@ func directCodingTypeScriptStageModelFeedback(diagnostic *directCodingStageDiagn
 			diagnostic.BlockID,
 		)
 	}
-	pathCheckFeedback := maskDirectCodingAuthorizedRegularExpressions(
-		feedback, diagnostic.AuthorizedRegexLiterals,
-	)
-	if directCodingTypeScriptCompilerContainsPathIdentity(pathCheckFeedback) {
+	if directCodingTypeScriptCompilerContainsPathIdentity(feedback) {
 		return "", fmt.Errorf("TypeScript stage diagnostic for block %s contains path identity", diagnostic.BlockID)
 	}
 	return feedback, nil
-}
-
-func maskDirectCodingAuthorizedRegularExpressions(
-	value string,
-	authorized []string,
-) string {
-	literals := append([]string(nil), authorized...)
-	sort.SliceStable(literals, func(left, right int) bool {
-		return len(literals[left]) > len(literals[right])
-	})
-	for _, literal := range literals {
-		if literal = strings.TrimSpace(literal); literal != "" {
-			value = strings.ReplaceAll(value, literal, "[regular_expression]")
-			if encoded, err := json.Marshal(literal); err == nil && len(encoded) >= 2 {
-				value = strings.ReplaceAll(
-					value, string(encoded[1:len(encoded)-1]), "[regular_expression]",
-				)
-			}
-		}
-	}
-	return value
-}
-
-func directCodingTypeScriptFragmentFailure(original string, rejection error) string {
-	parts := make([]string, 0, 2)
-	if original = strings.TrimSpace(original); original != "" {
-		parts = append(parts, trimForBudget(original, 700))
-	}
-	if rejection != nil {
-		parts = append(parts, "CORRECTION_REJECTION: "+trimForBudget(rejection.Error(), 250))
-	}
-	return strings.Join(parts, "\n")
 }

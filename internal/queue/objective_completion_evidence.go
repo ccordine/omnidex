@@ -75,18 +75,18 @@ func normalizeObjectiveCompletionEvidence(record evidence.Record, jobID, stepID 
 	if record.Confidence < 0 || record.Confidence > 1 {
 		return nil, fmt.Errorf("objective citation confidence must be between 0 and 1")
 	}
-	if len(record.SupportsClaims) == 0 || len(record.SupportsClaims) > 4 {
-		return nil, fmt.Errorf("objective citation requires between 1 and 4 claim authorities")
+	if len(record.RequirementAuthorityBindings) == 0 || len(record.RequirementAuthorityBindings) > 4 {
+		return nil, fmt.Errorf("objective citation requires between 1 and 4 requirement authority bindings")
 	}
-	seenClaims := make(map[string]struct{}, len(record.SupportsClaims))
-	for _, claim := range record.SupportsClaims {
-		if err := validateExactObjectiveEvidenceText("claim authority", claim, 512, true); err != nil {
+	seenBindings := make(map[string]struct{}, len(record.RequirementAuthorityBindings))
+	for _, binding := range record.RequirementAuthorityBindings {
+		if err := validateExactObjectiveEvidenceText("requirement authority binding", binding, 512, true); err != nil {
 			return nil, err
 		}
-		if _, duplicate := seenClaims[claim]; duplicate {
-			return nil, fmt.Errorf("objective citation claim authority %q is duplicated", claim)
+		if _, duplicate := seenBindings[binding]; duplicate {
+			return nil, fmt.Errorf("objective citation requirement authority binding %q is duplicated", binding)
 		}
-		seenClaims[claim] = struct{}{}
+		seenBindings[binding] = struct{}{}
 	}
 	if err := validateObjectiveCitationMetadata(record); err != nil {
 		return nil, err

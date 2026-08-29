@@ -85,7 +85,7 @@ func TestInvalidCompletionAuthorityLeavesStateUnchanged(t *testing.T) {
 	beforeVersion := ledger.Version()
 	completionStep := int64(7)
 	_, err := ledger.Apply(withTestCommandID(t, TransitionNodeCommand{
-		ExpectedVersion: beforeVersion, Actor: AuthorityModelProposal,
+		ExpectedVersion: beforeVersion, Actor: AuthorityToolEvidence,
 		NodeID: "task", To: NodeDone, CompletedStepID: &completionStep,
 		VerificationRefs: testVerificationRefs(),
 	}))
@@ -97,14 +97,6 @@ func TestInvalidCompletionAuthorityLeavesStateUnchanged(t *testing.T) {
 	}
 	assertNodeStatus(t, ledger, "task", NodeActive)
 
-	_, err = ledger.Apply(withTestCommandID(t, TransitionNodeCommand{
-		ExpectedVersion: beforeVersion, Actor: AuthorityAcceptedModelDecision,
-		NodeID: "task", To: NodeDone, CompletedStepID: &completionStep,
-		VerificationRefs: testVerificationRefs(),
-	}))
-	if !errors.Is(err, ErrAuthorityDenied) {
-		t.Fatalf("accepted model decision completed node: %v", err)
-	}
 }
 
 func TestInlineTaskUsesItsCreatingStepWithoutASecondQueueAssignment(t *testing.T) {

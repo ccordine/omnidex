@@ -47,14 +47,14 @@ func prepareExactStationCall(
 	expected llm.ProviderIdentityExpectation,
 	temperature *llm.ExactPreparedTemperature,
 ) (llm.PreparedModel, error) {
+	if err := queue.ValidateStationGapSemanticUncertainty(gap); err != nil {
+		return llm.PreparedModel{}, fmt.Errorf("prepare station semantic uncertainty: %w", err)
+	}
 	if gap.OutputLimitMode != contract.OutputLimitMode {
 		return llm.PreparedModel{}, fmt.Errorf(
 			"durable station gap output-limit mode %q differs from response contract %q",
 			gap.OutputLimitMode, contract.OutputLimitMode,
 		)
-	}
-	if string(gap.ResponseSchema) != "null" {
-		return llm.PreparedModel{}, fmt.Errorf("durable station gap contains a forbidden structured response schema")
 	}
 	transport, err := llm.ResolveExactPreparedTransport(expected)
 	if err != nil {
@@ -85,9 +85,9 @@ func prepareExactStationCall(
 		Protocol: contract.Protocol, BaseModel: modelName, ContextModel: modelName,
 		Prompt: gap.Prompt, PromptHint: llm.MinimalGeneratePrompt,
 		MaxOutputTokens: gap.MaxOutputTokens, OutputLimitMode: gap.OutputLimitMode,
-		ContextTokens:       gap.ContextTokens,
-		RawTextStopSequence: stop,
-		ThinkingEnabled:     transport.SeparateThinking, Temperature: temperature,
+		ContextTokens:               gap.ContextTokens,
+		RawTextStopSequence:         stop,
+		Temperature:                 temperature,
 		ProviderIdentityExpectation: &expected, ProviderObservationChallenge: challenge,
 	}, nil
 }
@@ -104,6 +104,7 @@ func stationCallChallengeScope(
 		JobID                                                        int64
 		Generation, StepID, StepAttempt                              int64
 		WorkerID, GapID, Station, WorkID, WorkKind, ProjectionSHA256 string
+		SemanticUncertaintyContractSHA256                            string
 		RendererVersion, Model, Protocol, ResponseFramingIdentity    string
 		RawTextStopSequence                                          string
 		OutputLimitMode                                              llm.ExactPreparedOutputLimitMode
@@ -114,7 +115,8 @@ func stationCallChallengeScope(
 		StepAttempt: gap.StepAttempt, WorkerID: gap.WorkerID,
 		GapID: gap.GapID, Station: string(gap.Station), WorkID: gap.WorkID,
 		WorkKind: gap.WorkKind, ProjectionSHA256: gap.ProjectionSHA256,
-		RendererVersion: gap.RendererVersion, Model: modelName,
+		SemanticUncertaintyContractSHA256: gap.SemanticUncertaintyContractSHA256,
+		RendererVersion:                   gap.RendererVersion, Model: modelName,
 		Protocol: string(contract.Protocol), ContextTokens: gap.ContextTokens,
 		ResponseFramingIdentity: responseFramingIdentity,
 		MaxOutputTokens:         gap.MaxOutputTokens, RawTextStopSequence: rawTextStopSequence,

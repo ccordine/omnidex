@@ -103,13 +103,13 @@ func TestPostgresContextProjectionBindingRejectsEveryAuthorityMismatch(t *testin
 	wrongWork := fixture.Record
 	wrongWork.ContextProjectionID = projection.ID
 	wrongWork.WorkID = strings.Repeat("f", 64)
-	if _, err := repository.RecordLLMCallEvidence(ctx, wrongWork); err == nil {
+	if _, err := insertLLMCallEvidenceForTest(ctx, repository, wrongWork); err == nil {
 		t.Fatal("cross-work projection binding succeeded")
 	}
 	wrongKind := fixture.Record
 	wrongKind.ContextProjectionID = projection.ID
 	wrongKind.WorkKind = "other_work"
-	if _, err := repository.RecordLLMCallEvidence(ctx, wrongKind); err == nil {
+	if _, err := insertLLMCallEvidenceForTest(ctx, repository, wrongKind); err == nil {
 		t.Fatal("cross-work-kind projection binding succeeded")
 	}
 
@@ -122,7 +122,7 @@ func TestPostgresContextProjectionBindingRejectsEveryAuthorityMismatch(t *testin
 	}
 	wrongStep := fixture.Record
 	wrongStep.ContextProjectionID, wrongStep.StepID = projection.ID, secondStep
-	if _, err := repository.RecordLLMCallEvidence(ctx, wrongStep); err == nil {
+	if _, err := insertLLMCallEvidenceForTest(ctx, repository, wrongStep); err == nil {
 		t.Fatal("cross-step projection binding succeeded")
 	}
 
@@ -130,7 +130,7 @@ func TestPostgresContextProjectionBindingRejectsEveryAuthorityMismatch(t *testin
 	otherAuthority := claimWorkingSetTestJob(t, ctx, repository, other)
 	wrongJob := fixture.Record
 	wrongJob.ContextProjectionID, wrongJob.StepID = projection.ID, otherAuthority.StepID
-	if _, err := repository.RecordLLMCallEvidence(ctx, wrongJob); err == nil {
+	if _, err := insertLLMCallEvidenceForTest(ctx, repository, wrongJob); err == nil {
 		t.Fatal("cross-job projection binding succeeded")
 	}
 
@@ -138,7 +138,7 @@ func TestPostgresContextProjectionBindingRejectsEveryAuthorityMismatch(t *testin
 	secondGenerationStep := advanceContextProjectionGeneration(t, ctx, pool, authority.JobID)
 	wrongGeneration := fixture.Record
 	wrongGeneration.ContextProjectionID, wrongGeneration.StepID = projection.ID, secondGenerationStep
-	if _, err := repository.RecordLLMCallEvidence(ctx, wrongGeneration); err == nil {
+	if _, err := insertLLMCallEvidenceForTest(ctx, repository, wrongGeneration); err == nil {
 		t.Fatal("cross-generation projection binding succeeded")
 	}
 	if replay, err := repository.StoreContextProjection(ctx, authority, projection); err != nil || replay.Projection.ID != projection.ID {

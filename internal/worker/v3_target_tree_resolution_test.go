@@ -10,77 +10,92 @@ import (
 	"github.com/gryph/omnidex/internal/assemblyline"
 )
 
-func TestInferredTargetTreeResolvesOneCompleteWorkloadCall(t *testing.T) {
-	specification, workload := testApplicationFileCoverageAuthority(
-		t, assemblyline.ApplicationSurfaceBrowser,
-		"counter application",
-		"display a current count",
-		"increment the current count",
-	)
-	calls := 0
-	runtime := typedWorkerRuntime{
-		Context: context.Background(), MaxAttempts: 1,
-		Execute: testPortableExecutor(func(_ string, model, prompt string) (string, error) {
-			calls++
-			if model != "tree-model" {
-				t.Fatalf("target-tree call model=%q", model)
+func TestTypeScriptCompleteTargetTreeIsTaskNeutralAndCompiles(t *testing.T) {
+	tests := []struct {
+		name         string
+		product      string
+		requirements []string
+	}{
+		{
+			name:    "unit conversion",
+			product: "unit conversion browser",
+			requirements: []string{
+				"accept a distance expressed in miles",
+				"show the equivalent distance in kilometers",
+			},
+		},
+		{
+			name:    "reading list",
+			product: "reading list browser",
+			requirements: []string{
+				"display the saved book titles",
+				"let a reader add another title",
+			},
+		},
+	}
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			specification, workload := testApplicationFileCoverageAuthority(
+				t, assemblyline.ApplicationSurfaceBrowser,
+				testCase.product, testCase.requirements...,
+			)
+			calls := 0
+			runtime := typedWorkerRuntime{
+				Context: context.Background(), MaxAttempts: 2,
+				Execute: testPortableExecutor(func(_ string, _ string, _ string) (string, error) {
+					calls++
+					return "ROOT\n  D src\n    F App.test.tsx\n    F App.tsx", nil
+				}),
 			}
-			for _, expected := range []string{
-				"Product context: counter application",
-				"Accepted goal 1:",
-				"Accepted behavior: display a current count",
-				"Accepted goal 2:",
-				"Accepted behavior: increment the current count",
-				"CURRENT_MANAGED_WORKLOAD_TREE:\nROOT",
-			} {
-				if !strings.Contains(prompt, expected) {
-					t.Fatalf("complete target-tree prompt lacks %q:\n%s", expected, prompt)
+			stack, err := directCodingProjectStackByID(genericTypeScriptBrowserAdapter)
+			if err != nil {
+				t.Fatal(err)
+			}
+			tree, coverage, err := resolveDirectCodingTargetTree(
+				runtime, "", "", specification, workload, stack,
+				[]string{}, []string{},
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			wantPaths := []string{"src/feature001.test.tsx", "src/feature001.tsx"}
+			if calls != 0 || !reflect.DeepEqual(tree.Paths, wantPaths) {
+				t.Fatalf("calls=%d paths=%v want=%v", calls, tree.Paths, wantPaths)
+			}
+			wantOwners := make([]string, len(workload.Tasks))
+			for index, task := range workload.Tasks {
+				wantOwners[index] = task.ID
+			}
+			for _, artifactPath := range tree.Paths {
+				owners, ownerErr := coverage.TasksForPath(artifactPath)
+				if ownerErr != nil {
+					t.Fatal(ownerErr)
+				}
+				if !reflect.DeepEqual(owners, wantOwners) {
+					t.Fatalf("path %s owners=%v want=%v", artifactPath, owners, wantOwners)
 				}
 			}
-			for _, forbidden := range []string{
-				workload.Tasks[0].ID, workload.Tasks[1].ID,
-				"task_id", "REUSABLE_ACCEPTED", "_JSON",
-			} {
-				if strings.Contains(prompt, forbidden) {
-					t.Fatalf("target-tree prompt contains forbidden %q:\n%s", forbidden, prompt)
-				}
+			if err := coverage.ValidateFor(tree, workload); err != nil {
+				t.Fatal(err)
 			}
-			return strings.Join([]string{
-				"ROOT",
-				"  D src",
-				"    F counter.tsx",
-				"  D tests",
-				"    F counter.test.tsx",
-			}, "\n"), nil
-		}),
-	}
-	stack, err := directCodingProjectStackByID(genericTypeScriptBrowserAdapter)
-	if err != nil {
-		t.Fatal(err)
-	}
-	tree, coverage, err := resolveDirectCodingTargetTree(
-		runtime, "tree-model", "repair-model", specification, workload, stack,
-		[]string{}, []string{},
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	wantPaths := []string{"src/counter.tsx", "tests/counter.test.tsx"}
-	if calls != 1 || !reflect.DeepEqual(tree.Paths, wantPaths) {
-		t.Fatalf("calls=%d paths=%v want=%v", calls, tree.Paths, wantPaths)
-	}
-	wantOwners := []string{workload.Tasks[0].ID, workload.Tasks[1].ID}
-	for _, artifactPath := range tree.Paths {
-		owners, ownerErr := coverage.TasksForPath(artifactPath)
-		if ownerErr != nil {
-			t.Fatal(ownerErr)
-		}
-		if !reflect.DeepEqual(owners, wantOwners) {
-			t.Fatalf("path %s owners=%v want=%v", artifactPath, owners, wantOwners)
-		}
-	}
-	if err := coverage.ValidateFor(tree, workload); err != nil {
-		t.Fatal(err)
+			tree.StackID = stack.ID
+			tree.VersionProfileID = stack.DefaultVersionProfileID
+			capabilities := make(directCodingCapabilityGraph, len(specification.Requirements))
+			for _, requirement := range specification.Requirements {
+				capabilities[requirement.ID] = nil
+			}
+			program, err := compileDirectCodingProgram(
+				"task-neutral-browser", specification, nil,
+				map[string]directCodingSkillBinding{}, workload,
+				capabilities, tree, coverage,
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(program.Source.Documents) == 0 {
+				t.Fatal("compiled TypeScript blueprint has no source documents")
+			}
+		})
 	}
 }
 
@@ -105,7 +120,7 @@ func TestTargetTreeCorrectionReplacesTheSameCompleteSafeTree(t *testing.T) {
 					"CURRENT_SAFE_TREE_CANDIDATE:",
 					"F counter.css",
 					"VALIDATION_FAILURE:",
-					"complete replacement raw tree",
+					"complete replacement basename hierarchy",
 				} {
 					if !strings.Contains(prompt, expected) {
 						t.Fatalf("correction prompt lacks %q:\n%s", expected, prompt)
@@ -118,10 +133,7 @@ func TestTargetTreeCorrectionReplacesTheSameCompleteSafeTree(t *testing.T) {
 			}
 		}),
 	}
-	stack, err := directCodingProjectStackByID(genericTypeScriptBrowserAdapter)
-	if err != nil {
-		t.Fatal(err)
-	}
+	stack := inferredTypeScriptTargetTreeFixture(t)
 	tree, _, err := resolveDirectCodingTargetTree(
 		runtime, "tree-model", "repair-model", specification, workload, stack,
 		[]string{}, []string{},
@@ -133,6 +145,46 @@ func TestTargetTreeCorrectionReplacesTheSameCompleteSafeTree(t *testing.T) {
 		tree.Paths, []string{"src/counter.tsx", "tests/counter.test.tsx"},
 	) {
 		t.Fatalf("calls=%d tree=%v", calls, tree.Paths)
+	}
+}
+
+func TestTargetTreeCorrectionNeverExposesConstructedPaths(t *testing.T) {
+	specification, workload := testApplicationFileCoverageAuthority(
+		t, assemblyline.ApplicationSurfaceBrowser,
+		"counter application", "display a count",
+	)
+	calls := 0
+	runtime := typedWorkerRuntime{
+		Context: context.Background(), MaxAttempts: 2,
+		Execute: testPortableExecutor(func(_ string, _ string, prompt string) (string, error) {
+			calls++
+			if calls == 1 {
+				return "ROOT\n  D src\n    F App.tsx\n  D tests\n    F App.test.tsx", nil
+			}
+			if strings.Contains(prompt, "src/App.tsx") ||
+				strings.Contains(prompt, "tests/App.test.tsx") {
+				t.Fatalf("constructed path leaked into correction prompt:\n%s", prompt)
+			}
+			if err := assemblyline.ValidatePathFreeModelContext(
+				"captured target-tree correction prompt", prompt,
+			); err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(prompt, "duplicates a basename hierarchy in CODE_RESERVED_TREE") {
+				t.Fatalf("correction prompt lacks path-free exact defect:\n%s", prompt)
+			}
+			return "ROOT\n  D src\n    F counter.tsx\n  D tests\n    F counter.test.tsx", nil
+		}),
+	}
+	stack := inferredTypeScriptTargetTreeFixture(t)
+	if _, _, err := resolveDirectCodingTargetTree(
+		runtime, "tree-model", "repair-model", specification, workload, stack,
+		[]string{}, []string{},
+	); err != nil {
+		t.Fatal(err)
+	}
+	if calls != 2 {
+		t.Fatalf("calls=%d want=2", calls)
 	}
 }
 
@@ -159,10 +211,7 @@ func TestTargetTreeCorrectionDoesNotEchoUnsafeCandidate(t *testing.T) {
 			return "ROOT\n  D src\n    F counter.tsx\n  D tests\n    F counter.test.tsx", nil
 		}),
 	}
-	stack, err := directCodingProjectStackByID(genericTypeScriptBrowserAdapter)
-	if err != nil {
-		t.Fatal(err)
-	}
+	stack := inferredTypeScriptTargetTreeFixture(t)
 	if _, _, err := resolveDirectCodingTargetTree(
 		runtime, "tree-model", "repair-model", specification, workload, stack,
 		[]string{}, []string{},
@@ -172,6 +221,65 @@ func TestTargetTreeCorrectionDoesNotEchoUnsafeCandidate(t *testing.T) {
 	if calls != 2 {
 		t.Fatalf("calls=%d want=2", calls)
 	}
+}
+
+func TestInferredTargetTreeValidatesExistingFileClosureBeforeAcceptance(t *testing.T) {
+	specification, workload := testApplicationFileCoverageAuthority(
+		t, assemblyline.ApplicationSurfaceBrowser,
+		"annotation browser", "display one annotation",
+	)
+	calls := 0
+	finalizedValid := make([]bool, 0, 2)
+	runtime := typedWorkerRuntime{
+		Context: context.Background(), MaxAttempts: 2,
+		Execute: testPortableExecutor(func(_ string, _ string, prompt string) (string, error) {
+			calls++
+			if calls == 1 {
+				return "ROOT\n  D src\n    F feature.test.tsx\n    F feature.tsx", nil
+			}
+			const exactDefect = "One response node crosses a basename hierarchy already held by an existing workspace file."
+			if !strings.Contains(prompt, exactDefect) {
+				t.Fatalf("existing-file correction prompt lacks exact defect:\n%s", prompt)
+			}
+			if strings.Contains(prompt, "src/feature") {
+				t.Fatalf("constructed path leaked into existing-file correction prompt:\n%s", prompt)
+			}
+			return "ROOT\n  D work\n    F feature.test.tsx\n    F feature.tsx", nil
+		}),
+		Finalize: func(
+			_ assemblyline.PortableJob,
+			_ assemblyline.PortableResult,
+			validationErr error,
+		) error {
+			finalizedValid = append(finalizedValid, validationErr == nil)
+			return nil
+		},
+	}
+	stack := inferredTypeScriptTargetTreeFixture(t)
+	target, _, err := resolveDirectCodingTargetTree(
+		runtime, "tree-model", "repair-model", specification, workload, stack,
+		[]string{"src"}, nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if calls != 2 || !reflect.DeepEqual(finalizedValid, []bool{false, true}) {
+		t.Fatalf("calls=%d finalized-valid=%v", calls, finalizedValid)
+	}
+	want := []string{"work/feature.test.tsx", "work/feature.tsx"}
+	if !reflect.DeepEqual(target.Paths, want) {
+		t.Fatalf("paths=%v want=%v", target.Paths, want)
+	}
+}
+
+func inferredTypeScriptTargetTreeFixture(t *testing.T) directCodingProjectStack {
+	t.Helper()
+	stack, err := directCodingProjectStackByID(genericTypeScriptBrowserAdapter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stack.ProjectCompleteTargetTree = nil
+	return stack
 }
 
 func TestExclusiveCommandLineTreeProjectsTaskPairsWithoutInference(t *testing.T) {

@@ -14,9 +14,14 @@ import (
 )
 
 type workspaceMutationPipelineActionFixture struct {
-	claim    *model.ClaimedStep
-	command  WorkspaceMutationCommand
-	identity workspaceMutationOperationIdentity
+	repository *Repository
+	claim      *model.ClaimedStep
+	command    WorkspaceMutationCommand
+	identity   workspaceMutationOperationIdentity
+}
+
+func (fixture workspaceMutationPipelineActionFixture) commandDatabase() *pgxpool.Pool {
+	return fixture.repository.pool
 }
 
 func newWorkspaceMutationPipelineActionFixture(
@@ -71,14 +76,15 @@ func newWorkspaceMutationPipelineActionFixture(
 		JobID: claim.Job.ID, StepID: claim.Step.ID,
 		Generation: claim.Authority.Generation, CreatorAttempt: claim.Authority.Attempt,
 		CreatorWorkerID: claim.Authority.WorkerID, ProjectID: projectID,
-		Plan: plan, Verification: verification,
+		ProjectLocation: root,
+		Plan:            plan, Verification: verification,
 	}
 	identity, err := workspaceMutationOperation(command)
 	if err != nil {
 		t.Fatal(err)
 	}
 	return workspaceMutationPipelineActionFixture{
-		claim: claim, command: command, identity: identity,
+		repository: repository, claim: claim, command: command, identity: identity,
 	}
 }
 

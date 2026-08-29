@@ -1,6 +1,7 @@
 package assemblyline
 
 import (
+	"errors"
 	"strings"
 	"testing"
 )
@@ -56,7 +57,7 @@ func TestParseTypeScriptFunctionPreservesOrdinaryJSXCommentWithExecutableResult(
 	}
 }
 
-func TestTypeScriptViolationProvidesTypedEmptyBodyCorrection(t *testing.T) {
+func TestTypeScriptViolationProvidesTypedEmptyBodyFailure(t *testing.T) {
 	t.Parallel()
 
 	contract := TypeScriptFunctionContract{Signature: "function calculate(): number"}
@@ -64,9 +65,9 @@ func TestTypeScriptViolationProvidesTypedEmptyBodyCorrection(t *testing.T) {
 	if err == nil {
 		t.Fatal("empty callback body was accepted")
 	}
-	instruction, ok := TypeScriptFragmentCorrectionInstruction(err)
-	if !ok || !strings.Contains(instruction, "empty function or callback body") {
-		t.Fatalf("instruction=%q ok=%v error=%v", instruction, ok, err)
+	var violation *TypeScriptFragmentViolation
+	if !errors.As(err, &violation) || violation.Code != TypeScriptViolationEmptyBody {
+		t.Fatalf("violation=%#v error=%v", violation, err)
 	}
 }
 

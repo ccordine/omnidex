@@ -7,23 +7,6 @@ import (
 	"github.com/gryph/omnidex/internal/websearch"
 )
 
-type SearchTermsCall struct {
-	Question         string
-	Context          assemblyline.ObjectiveContext
-	AttemptedQueries []string
-	MaxTerms         int
-	MaxTermBytes     int
-}
-
-type SearchTermsDecision struct {
-	Terms         []string
-	SemanticCalls int
-}
-
-type SearchTermsStation interface {
-	Resolve(context.Context, SearchTermsCall) (SearchTermsDecision, error)
-}
-
 type RelevanceCandidate struct {
 	CandidateID websearch.CandidateID
 	Title       string
@@ -84,58 +67,6 @@ type GroundedSynthesisDecision struct {
 
 type GroundedSynthesisStation interface {
 	Synthesize(context.Context, GroundedSynthesisCall) (GroundedSynthesisDecision, error)
-}
-
-type GroundedSynthesisCorrectionCall struct {
-	Question          string
-	Context           assemblyline.ObjectiveContext
-	Paragraphs        []GroundedParagraph
-	Issue             ClaimEvidenceReviewDecision
-	Evidence          []ProjectedEvidence
-	MaxParagraphBytes int
-}
-
-type GroundedSynthesisCorrectionDecision struct {
-	Text          string
-	SemanticCalls int
-}
-
-type GroundedSynthesisCorrectionStation interface {
-	Correct(context.Context, GroundedSynthesisCorrectionCall) (GroundedSynthesisCorrectionDecision, error)
-}
-
-type ParagraphID string
-type ClaimEvidenceReviewOutcome string
-type ClaimEvidenceIssueKind string
-
-const (
-	ClaimEvidenceReviewNone  ClaimEvidenceReviewOutcome = "none"
-	ClaimEvidenceReviewIssue ClaimEvidenceReviewOutcome = "issue"
-
-	ClaimEvidenceInsufficientSupport ClaimEvidenceIssueKind = "insufficient_support"
-	ClaimEvidenceContradictedSupport ClaimEvidenceIssueKind = "contradicted_support"
-	ClaimEvidenceQuestionMismatch    ClaimEvidenceIssueKind = "question_mismatch"
-)
-
-type ClaimEvidenceReviewCall struct {
-	Question      string
-	Context       assemblyline.ObjectiveContext
-	ParagraphID   ParagraphID
-	ParagraphText string
-	Evidence      []ProjectedEvidence
-}
-
-type ClaimEvidenceReviewDecision struct {
-	Outcome       ClaimEvidenceReviewOutcome
-	ParagraphID   ParagraphID
-	EvidenceIDs   []EvidenceID
-	IssueKind     ClaimEvidenceIssueKind
-	Detail        string
-	SemanticCalls int
-}
-
-type ClaimEvidenceReviewStation interface {
-	Review(context.Context, ClaimEvidenceReviewCall) (ClaimEvidenceReviewDecision, error)
 }
 
 // Acquisition is code-operated web mechanics. It is deliberately not exposed

@@ -20,17 +20,20 @@ func TestPHPRendererReceivesOnlyOwnAndDirectDependencyRoutes(t *testing.T) {
 	}
 	owner := phpServiceFeatureBinding{
 		TaskID: "task_001", RequirementID: "requirement_001", HasEndpoint: true,
-		RouteBlockID: "runtime.route.001", RouteName: "routeFeature101",
+		RequirementQuote: "Show the current inventory record.",
+		RouteBlockID:     "runtime.route.001", RouteName: "routeFeature101",
 		Endpoint: endpoint(assemblyline.ApplicationServiceEndpointGET),
 	}
 	direct := phpServiceFeatureBinding{
 		TaskID: "task_002", RequirementID: "requirement_002", HasEndpoint: true,
-		RouteBlockID: "runtime.route.002", RouteName: "routeFeature102",
+		RequirementQuote: "Create a new inventory record.",
+		RouteBlockID:     "runtime.route.002", RouteName: "routeFeature102",
 		Endpoint: endpoint(assemblyline.ApplicationServiceEndpointPOST),
 	}
 	unrelated := phpServiceFeatureBinding{
 		TaskID: "task_003", RequirementID: "requirement_003", HasEndpoint: true,
-		RouteBlockID: "runtime.route.003", RouteName: "routeFeature103",
+		RequirementQuote: "Delete an archived inventory record.",
+		RouteBlockID:     "runtime.route.003", RouteName: "routeFeature103",
 		Endpoint: endpoint(assemblyline.ApplicationServiceEndpointDELETE),
 	}
 	routes, err := phpServiceRendererRouteBindings(
@@ -50,6 +53,19 @@ func TestPHPRendererReceivesOnlyOwnAndDirectDependencyRoutes(t *testing.T) {
 	contract := strings.Join(phpServiceRendererRouteContract(routes), "\n")
 	if strings.Contains(contract, unrelated.RouteName) || strings.Contains(contract, "/registered") {
 		t.Fatalf("route contract exposed unrelated or concrete route authority: %s", contract)
+	}
+	for _, required := range []string{
+		owner.RequirementQuote, owner.RouteName, string(owner.Endpoint.Method),
+		direct.RequirementQuote, direct.RouteName, string(direct.Endpoint.Method),
+	} {
+		if !strings.Contains(contract, required) {
+			t.Fatalf("route contract omitted semantic binding %q: %s", required, contract)
+		}
+	}
+	for _, forbidden := range []string{owner.TaskID, direct.TaskID, "code-owned", "exact accepted requirement"} {
+		if strings.Contains(contract, forbidden) {
+			t.Fatalf("route contract exposed meta-authority %q: %s", forbidden, contract)
+		}
 	}
 }
 

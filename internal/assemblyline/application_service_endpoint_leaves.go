@@ -50,13 +50,13 @@ func ComposeApplicationServiceEndpointContract(
 	responseMedia ApplicationServiceEndpointResponseMediaResult,
 	status ApplicationServiceEndpointSuccessStatusResult,
 ) (ApplicationServiceEndpointContract, error) {
-	exposureInput := ApplicationServiceEndpointExposureInput{Task: authority}
-	methodInput := ApplicationServiceEndpointMethodInput{Task: authority}
-	routeInput := ApplicationServiceEndpointRouteTemplateInput{Task: authority}
-	requestInput := ApplicationServiceEndpointRequestMediaInput{Task: authority, Method: method.Method}
-	responseInput := ApplicationServiceEndpointResponseMediaInput{Task: authority}
+	exposureInput := ApplicationServiceEndpointExposureInput{Authority: authority}
+	methodInput := ApplicationServiceEndpointMethodInput{Authority: authority}
+	routeInput := ApplicationServiceEndpointRouteTemplateInput{Authority: authority}
+	requestInput := ApplicationServiceEndpointRequestMediaInput{Authority: authority, Method: method.Method}
+	responseInput := ApplicationServiceEndpointResponseMediaInput{Authority: authority, Method: method.Method}
 	statusInput := ApplicationServiceEndpointSuccessStatusInput{
-		Task: authority, Method: method.Method,
+		Authority: authority, Method: method.Method,
 		RequestMedia: requestMedia.RequestMedia, ResponseMedia: responseMedia.ResponseMedia,
 	}
 	validations := []struct {

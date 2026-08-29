@@ -18,7 +18,7 @@ import { FeatureBoundary, createApplicationRuntime, createFeatureRuntime, publis
 import type { CapabilityID, FeatureViewProps } from './runtime';`,
 		Blocks: []assemblyline.SourceBlock{{
 			ID: "tests.runtime", Static: genericBrowserRuntimeTestSource(requirements),
-			API: "tests code-owned application capability runtime", DependsOn: []string{"runtime.factory"},
+			API: "tests the application capability runtime", DependsOn: []string{"runtime.factory"},
 		}},
 	}
 }

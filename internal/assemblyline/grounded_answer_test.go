@@ -85,6 +85,56 @@ func TestGroundedAnswerLeafDecodersRejectStructuredOrCompositeResults(t *testing
 	}
 }
 
+func TestGroundedAnswerTextRejectsFilesystemIdentityAtTheResultBoundary(t *testing.T) {
+	t.Parallel()
+	base := groundedAnswerFixture()
+	input := GroundedAnswerTextInput{
+		ExactRequirement:   base.ExactRequirement,
+		Context:            base.Context,
+		Evidence:           base.Evidence,
+		KnownArtifactPaths: []string{"internal/private/secret_owner.go"},
+	}
+	for name, candidate := range map[string]string{
+		"posix absolute": "/private/file.go contains the setting.",
+		"traversal":      "../private contains the setting.",
+		"windows":        `C:\private\file.go contains the setting.`,
+		"known basename": "secret_owner.go contains the setting.",
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := DecodeGroundedAnswerTextDecision(input, candidate); err == nil {
+				t.Fatalf("path-bearing grounded answer was accepted: %q", candidate)
+			}
+		})
+	}
+}
+
+func TestGroundedAnswerArtifactProvenanceRemainsOutsideThePrompt(t *testing.T) {
+	t.Parallel()
+	base := groundedAnswerFixture()
+	input := GroundedAnswerTextInput{
+		ExactRequirement:   base.ExactRequirement,
+		Context:            base.Context,
+		Evidence:           base.Evidence,
+		KnownArtifactPaths: []string{"internal/private/secret_owner.go"},
+	}
+	job, err := NewGroundedAnswerTextJob(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prompt, err := RenderPortableJob(job)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, hidden := range []string{"internal/private/secret_owner.go", "secret_owner.go"} {
+		if strings.Contains(prompt, hidden) {
+			t.Fatalf("grounded answer prompt exposed code-owned artifact provenance %q: %s", hidden, prompt)
+		}
+	}
+	if !strings.Contains(string(job.Payload), "internal/private/secret_owner.go") {
+		t.Fatalf("portable payload lost code-owned artifact provenance: %s", job.Payload)
+	}
+}
+
 func TestGroundedAnswerDecisionIsAssembledByCode(t *testing.T) {
 	input := groundedAnswerFixture()
 	decision := GroundedAnswerDecision{

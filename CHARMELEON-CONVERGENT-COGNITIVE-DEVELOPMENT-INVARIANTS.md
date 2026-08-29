@@ -166,7 +166,7 @@ export function Counter(props: CounterProps): JSX.Element
 CounterProps:
   initialValue?: number
 
-App’s content worker receives that, not all of Counter.tsx.
+The dependent source station receives that verified interface, not all of Counter.tsx.
 
 That’s exactly your “don’t throw thousands of lines into context” rule generalized into the relationship graph.
 
@@ -178,13 +178,13 @@ You begin:
 
 USER OBJECTIVE
         ↓
-objective planning
+one-leaf semantic intake
         ↓
-task
+code projects one frozen task per accepted requirement
         ↓
-cognition
+code-owned cognition closure
 
-Cognition establishes a task-local graph:
+Code establishes and persists a task-local graph:
 
 A → B
 A → C
@@ -216,7 +216,7 @@ That’s convergent development as a graph fixed point.
 
 You’re repeatedly moving from:
 
-planned relationships
+code-derived unresolved relationships
 → generated reality
 → parsed verified relationships
 → revised remaining work
@@ -274,12 +274,10 @@ Your earlier hierarchy now plugs into this nicely:
 
 USER REQUEST
     ↓
-context / memory / investigation
+code-owned context acquisition + one-leaf intent interpretation
     ↓
-OBJECTIVES
-for objective:
-    ↓
-TASKS
+FROZEN TASKS
+one per accepted requirement, in source order
 for task:
     ↓
 COGNITION LOOP
@@ -290,11 +288,11 @@ COGNITION LOOP
         ↓
     resolve genuine semantic gaps
         ↓
-    formulate task plan
+    compile ready block obligations
         ↓
     EXECUTION LOOP
         ↓
-    tree / file / declaration / config work
+    code-owned tree diff / adapter compilation / source-block dispatch
         ↓
     adapters parse new reality
         ↓
@@ -308,11 +306,12 @@ COGNITION LOOP
 
 The coding loop you’ve already built becomes one implementation of task execution.
 
-The tree LLM becomes one narrow semantic function cognition might invoke when task structure itself is unresolved.
+The target-tree station is the sole tree-visible exception: only when structural naming
+is genuinely unresolved, it returns one complete raw hierarchy of directory and file
+basenames. Code constructs every normalized relative path and filesystem transition.
 
-The file-content LLM becomes another.
-
-The coder another.
+A bounded source station returns one exact path-blind declaration or source node. There
+is no file-content station and no whole-file model responsibility.
 
 None of them is Omnidex.
 

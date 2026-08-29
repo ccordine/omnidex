@@ -140,8 +140,10 @@ func loadStationCallReplayGapTx(
 	err := scanStationGapOpening(tx.QueryRow(ctx, `
 		SELECT id,job_id,generation,step_id,step_attempt,worker_id,gap_id,station,scope,
 			portable_schema,work_id,work_kind,portable_payload,portable_payload_sha256,
-			portable_envelope,portable_envelope_sha256,renderer_version,prompt,response_schema,
-			projection_envelope,projection_sha256,context_tokens,max_output_tokens,output_limit_mode,created_at
+			portable_envelope,portable_envelope_sha256,renderer_version,prompt,
+			projection_envelope,projection_sha256,semantic_uncertainty_contract,
+			semantic_uncertainty_contract_sha256,context_tokens,max_output_tokens,
+			output_limit_mode,created_at
 		FROM station_gap_openings WHERE id=$1
 	`, openingID), &opening)
 	return opening, err

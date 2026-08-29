@@ -4,10 +4,11 @@ import (
 	"fmt"
 	"math"
 	"sort"
-	"strconv"
 	"strings"
 	"unicode/utf8"
 
+	"github.com/gryph/omnidex/internal/assemblyline"
+	"github.com/gryph/omnidex/internal/modelcontext"
 	repositoryretrieval "github.com/gryph/omnidex/internal/repository/retrieval"
 )
 
@@ -19,6 +20,7 @@ const (
 
 func repositoryEvidenceCapsules(
 	pack repositoryretrieval.EvidencePack,
+	provenance assemblyline.ArtifactIdentityProvenance,
 ) ([]objectiveEvidence, error) {
 	if err := validateRepositoryEvidenceProjectionBounds(pack); err != nil {
 		return nil, err
@@ -31,15 +33,29 @@ func repositoryEvidenceCapsules(
 	seenText := make(map[string]struct{}, len(symbols)+len(relations))
 	symbolNames := make(map[string]string, len(symbols))
 	for _, symbol := range symbols {
-		text := strings.TrimSpace(strings.Join(
-			[]string{symbol.Kind, symbol.Name, symbol.Signature, symbol.Source}, "\n",
+		selectionText := strings.TrimSpace(strings.Join(
+			[]string{symbol.Kind, symbol.Name, symbol.Signature}, "\n",
 		))
+		if err := assemblyline.ValidatePathFreeModelContextWithProvenance(
+			"repository symbol selection projection", provenance, selectionText,
+		); err != nil {
+			return nil, fmt.Errorf("repository evidence symbol %q: %w", symbol.ID, err)
+		}
+		source, err := redactRepositorySourcePathIdentities(symbol.Source, provenance)
+		if err != nil {
+			return nil, fmt.Errorf("repository evidence symbol %q: %w", symbol.ID, err)
+		}
+		text := selectionText
+		if strings.TrimSpace(source) != "" {
+			text += "\n" + source
+		}
 		item, err := appendRepositoryObjectiveEvidence(
 			&capsules, seenText, text, "repository_symbol", pack.ID+"#"+symbol.ID,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("repository evidence symbol %q: %w", symbol.ID, err)
 		}
+		item.SelectionText = selectionText
 		item.SourceSHA256 = symbol.SourceSHA256
 		capsules[len(capsules)-1] = item
 		symbolNames[symbol.ID] = symbol.Name
@@ -49,13 +65,54 @@ func repositoryEvidenceCapsules(
 		if err != nil {
 			return nil, err
 		}
-		if _, err := appendRepositoryObjectiveEvidence(
-			&capsules, seenText, text, "repository_relation", pack.ID+"#"+relation.ID,
+		if err := assemblyline.ValidatePathFreeModelContextWithProvenance(
+			"repository relation selection projection", provenance, text,
 		); err != nil {
 			return nil, fmt.Errorf("repository evidence relation %q: %w", relation.ID, err)
 		}
+		item, err := appendRepositoryObjectiveEvidence(
+			&capsules, seenText, text, "repository_relation", pack.ID+"#"+relation.ID,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("repository evidence relation %q: %w", relation.ID, err)
+		}
+		item.SelectionText = text
+		capsules[len(capsules)-1] = item
 	}
 	return capsules, nil
+}
+
+func redactRepositorySourcePathIdentities(
+	source string,
+	provenance assemblyline.ArtifactIdentityProvenance,
+) (string, error) {
+	identities := modelcontext.SourcePathIdentities(source, provenance)
+	if len(identities) == 0 {
+		if err := assemblyline.ValidatePathFreeSourceModelContextWithProvenance(
+			"repository source projection", provenance, source,
+		); err != nil {
+			return "", err
+		}
+		return source, nil
+	}
+	var projected strings.Builder
+	previous := 0
+	for _, identity := range identities {
+		if identity.Start < previous || identity.End < identity.Start || identity.End > len(source) {
+			return "", fmt.Errorf("repository source path projection contains overlapping evidence")
+		}
+		projected.WriteString(source[previous:identity.Start])
+		projected.WriteString("ARTIFACT_REF")
+		previous = identity.End
+	}
+	projected.WriteString(source[previous:])
+	result := projected.String()
+	if err := assemblyline.ValidatePathFreeSourceModelContextWithProvenance(
+		"repository source projection", provenance, result,
+	); err != nil {
+		return "", err
+	}
+	return result, nil
 }
 
 func repositoryRelationEvidenceText(
@@ -67,13 +124,7 @@ func repositoryRelationEvidenceText(
 	if !fromExists || !toExists {
 		return "", fmt.Errorf("repository evidence relation %q lacks projected endpoints", relation.ID)
 	}
-	return strings.Join([]string{
-		fromName + " " + relation.Kind + " " + toName,
-		"from_id=" + relation.FromID,
-		"to_id=" + relation.ToID,
-		"origin=" + relation.Origin,
-		"confidence=" + strconv.FormatFloat(relation.Confidence, 'g', -1, 64),
-	}, "\n"), nil
+	return fromName + " " + relation.Kind + " " + toName, nil
 }
 
 func appendRepositoryObjectiveEvidence(

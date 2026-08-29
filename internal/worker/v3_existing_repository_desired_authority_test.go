@@ -8,7 +8,7 @@ import (
 	repositoryfacts "github.com/gryph/omnidex/internal/repository"
 )
 
-func TestDesiredArtifactCandidateUsesCompleteSameJobAuthority(t *testing.T) {
+func TestDesiredArtifactCandidateUsesCurrentInstructionAndSameJobFeedback(t *testing.T) {
 	t.Parallel()
 	for _, test := range []struct {
 		name      string
@@ -16,12 +16,9 @@ func TestDesiredArtifactCandidateUsesCompleteSameJobAuthority(t *testing.T) {
 		request   directCodingRequest
 	}{
 		{
-			name: "project authority", signature: "func FromProject() int",
+			name: "current instruction", signature: "func FromInstruction() int",
 			request: directCodingRequest{
-				Instruction: "Keep the current behavior.",
-				AdditionalAuthority: []string{
-					"Add func FromProject() int as an independent artifact.",
-				},
+				Instruction: "Add func FromInstruction() int as an independent artifact.",
 			},
 		},
 		{

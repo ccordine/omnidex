@@ -3,6 +3,7 @@ package assemblyline
 import (
 	"fmt"
 
+	"github.com/gryph/omnidex/internal/modelcontext"
 	"github.com/gryph/omnidex/internal/roleplay"
 )
 
@@ -14,11 +15,12 @@ const (
 )
 
 type RoleplayGroundedResponseInput struct {
-	ExactQuestion     string                     `json:"exact_question"`
-	RoleplayIdentity  RoleplayResponseIdentity   `json:"roleplay_identity"`
-	RoleplayUserTurn  RoleplayUserTurnProjection `json:"roleplay_user_turn"`
-	Context           ObjectiveContext           `json:"objective_context"`
-	RealWorldEvidence []GroundedEvidenceCapsule  `json:"real_world_evidence"`
+	ExactQuestion      string                     `json:"exact_question"`
+	RoleplayIdentity   RoleplayResponseIdentity   `json:"roleplay_identity"`
+	RoleplayUserTurn   RoleplayUserTurnProjection `json:"roleplay_user_turn"`
+	Context            ObjectiveContext           `json:"objective_context"`
+	RealWorldEvidence  []GroundedEvidenceCapsule  `json:"real_world_evidence"`
+	KnownArtifactPaths []string                   `json:"known_artifact_paths"`
 }
 
 type RoleplayGroundedParagraph struct {
@@ -46,6 +48,7 @@ func (input RoleplayGroundedResponseInput) validate() error {
 	if err := (ConversationResponseInput{
 		Kind: ObjectiveKindStory, ExactInstruction: input.ExactQuestion,
 		Context: input.Context, RoleplayIdentity: &identity, RoleplayUserTurn: &userTurn,
+		KnownArtifactPaths: append([]string{}, input.KnownArtifactPaths...),
 	}).validate(); err != nil {
 		return err
 	}
@@ -53,9 +56,10 @@ func (input RoleplayGroundedResponseInput) validate() error {
 		return fmt.Errorf("roleplay grounded response requires 1..%d evidence capsules", maxRoleplayGroundedEvidence)
 	}
 	return (GroundedAnswerInput{
-		RequirementID:    "roleplay-grounded-response",
-		ExactRequirement: input.ExactQuestion,
-		Evidence:         append([]GroundedEvidenceCapsule(nil), input.RealWorldEvidence...),
+		RequirementID:      "roleplay-grounded-response",
+		ExactRequirement:   input.ExactQuestion,
+		Evidence:           append([]GroundedEvidenceCapsule(nil), input.RealWorldEvidence...),
+		KnownArtifactPaths: append([]string{}, input.KnownArtifactPaths...),
 	}).validate()
 }
 
@@ -96,6 +100,17 @@ func (decision RoleplayGroundedResponseDecision) ValidateFor(
 				return fmt.Errorf("roleplay grounded paragraph %d duplicates evidence %q", index, id)
 			}
 			seen[id] = struct{}{}
+		}
+	}
+	provenance, err := modelcontext.NewArtifactIdentityProvenance(input.KnownArtifactPaths)
+	if err != nil {
+		return err
+	}
+	for _, paragraph := range decision.Paragraphs {
+		if err := ValidatePathFreeModelContextWithProvenance(
+			"roleplay grounded response paragraph", provenance, paragraph.Text,
+		); err != nil {
+			return err
 		}
 	}
 	return nil

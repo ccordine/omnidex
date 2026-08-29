@@ -21,9 +21,10 @@ func BuildApplicationServiceEndpointRequestMediaPrompt(
 		values[index] = string(candidate)
 	}
 	return buildApplicationServiceEndpointLeafPrompt(
-		input,
-		"Determine the one request media type required by this accepted local task and accepted HTTP method.",
-		"Return exactly one raw request media value from this registered set: "+strings.Join(values, ", ")+".",
+		input.Authority,
+		[]applicationServiceEndpointPrerequisite{{label: "ACCEPTED HTTP METHOD", value: string(input.Method)}},
+		"Determine the one request media type required by the exact endpoint requirement and accepted HTTP method.",
+		"Return exactly one raw request media value from this compatible set: "+strings.Join(values, ", ")+".",
 	)
 }
 
@@ -55,9 +56,10 @@ func BuildApplicationServiceEndpointResponseMediaPrompt(
 		return "", err
 	}
 	return buildApplicationServiceEndpointLeafPrompt(
-		input,
-		"Determine the one response media type produced by this accepted local task.",
-		"Return exactly one raw response media value from this registered set: "+
+		input.Authority,
+		[]applicationServiceEndpointPrerequisite{{label: "ACCEPTED HTTP METHOD", value: string(input.Method)}},
+		"Determine the one response media type produced for the exact endpoint requirement and accepted HTTP method.",
+		"Return exactly one raw response media value from this compatible set: "+
 			strings.Join(applicationServiceResponseMediaValues(), ", ")+".",
 	)
 }
@@ -98,9 +100,14 @@ func BuildApplicationServiceEndpointSuccessStatusPrompt(
 		values[index] = strconv.Itoa(candidate)
 	}
 	return buildApplicationServiceEndpointLeafPrompt(
-		input,
-		"Determine the one successful HTTP status compatible with this accepted local task, method, and media types.",
-		"Return exactly one raw decimal success status from this registered set: "+strings.Join(values, ", ")+".",
+		input.Authority,
+		[]applicationServiceEndpointPrerequisite{
+			{label: "ACCEPTED HTTP METHOD", value: string(input.Method)},
+			{label: "ACCEPTED REQUEST MEDIA", value: string(input.RequestMedia)},
+			{label: "ACCEPTED RESPONSE MEDIA", value: string(input.ResponseMedia)},
+		},
+		"Determine the one successful HTTP status compatible with the exact endpoint requirement and accepted prerequisites.",
+		"Return exactly one raw decimal success status from this compatible set: "+strings.Join(values, ", ")+".",
 	)
 }
 

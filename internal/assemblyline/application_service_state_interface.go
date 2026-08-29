@@ -3,14 +3,16 @@ package assemblyline
 import (
 	"fmt"
 	"regexp"
+	"strings"
 )
 
-const ApplicationServiceStateInterfaceSchemaV1 = "omnidex.application-service-state-interface.v1"
+const ApplicationServiceStateInterfaceSchemaV2 = "omnidex.application-service-state-interface.v2"
 
 const (
 	maxApplicationServiceStateInterfaceNeeds  = 10
 	maxApplicationServiceStateInterfaceFields = 8
 	MaxApplicationServiceStateFieldNameBytes  = 48
+	MaxApplicationServiceStatePurposeBytes    = 256
 )
 
 type ApplicationServiceStateFieldKind string
@@ -28,9 +30,7 @@ const (
 )
 
 type ApplicationServiceStateInterfaceNeed struct {
-	RequirementQuote  string   `json:"requirement_quote"`
-	Objective         string   `json:"objective"`
-	RequiredBehaviors []string `json:"required_behaviors"`
+	RequirementQuote string `json:"requirement_quote"`
 }
 
 type ApplicationServiceStateInterfaceInput struct {
@@ -42,8 +42,7 @@ func ProjectApplicationServiceStateInterfaceNeed(
 	authority ApplicationTaskRuntimeAuthority,
 ) (ApplicationServiceStateInterfaceNeed, error) {
 	need := ApplicationServiceStateInterfaceNeed{
-		RequirementQuote: authority.RequirementQuote, Objective: authority.Objective,
-		RequiredBehaviors: append([]string(nil), authority.RequiredBehaviors...),
+		RequirementQuote: authority.RequirementQuote,
 	}
 	if err := need.validate(); err != nil {
 		return ApplicationServiceStateInterfaceNeed{}, err
@@ -52,12 +51,14 @@ func ProjectApplicationServiceStateInterfaceNeed(
 }
 
 type ApplicationServiceStateRecordField struct {
-	Name string                           `json:"name"`
-	Kind ApplicationServiceStateFieldKind `json:"kind"`
+	Name    string                           `json:"name"`
+	Purpose string                           `json:"purpose"`
+	Kind    ApplicationServiceStateFieldKind `json:"kind"`
 }
 
 type ApplicationServiceStateField struct {
 	Name         string                               `json:"name"`
+	Purpose      string                               `json:"purpose"`
 	Kind         ApplicationServiceStateFieldKind     `json:"kind"`
 	RecordFields []ApplicationServiceStateRecordField `json:"record_fields"`
 }
@@ -97,15 +98,7 @@ func (need ApplicationServiceStateInterfaceNeed) validate() error {
 	); err != nil {
 		return err
 	}
-	if err := validateApplicationWorkloadLine(
-		"service state interface objective", need.Objective, maxApplicationObjectiveRunes,
-	); err != nil {
-		return err
-	}
-	return validateApplicationJobSpecificationList(
-		"service state interface behavior", need.RequiredBehaviors,
-		maxApplicationRequiredBehaviors, maxApplicationBehaviorRunes,
-	)
+	return nil
 }
 
 func (result ApplicationServiceStateInterfaceResult) ValidateFor(
@@ -114,10 +107,10 @@ func (result ApplicationServiceStateInterfaceResult) ValidateFor(
 	if err := input.Validate(); err != nil {
 		return err
 	}
-	if result.Schema != ApplicationServiceStateInterfaceSchemaV1 {
+	if result.Schema != ApplicationServiceStateInterfaceSchemaV2 {
 		return fmt.Errorf(
 			"service state interface schema must be %q",
-			ApplicationServiceStateInterfaceSchemaV1,
+			ApplicationServiceStateInterfaceSchemaV2,
 		)
 	}
 	if len(result.Fields) < 1 || len(result.Fields) > maxApplicationServiceStateInterfaceFields {
@@ -126,15 +119,26 @@ func (result ApplicationServiceStateInterfaceResult) ValidateFor(
 			maxApplicationServiceStateInterfaceFields,
 		)
 	}
-	seen := make(map[string]struct{}, len(result.Fields))
+	seenPurposes := make(map[string]struct{}, len(result.Fields))
 	for index, field := range result.Fields {
-		if err := validateApplicationServiceStateFieldName(field.Name); err != nil {
-			return fmt.Errorf("service state interface field %d: %w", index+1, err)
+		expectedName, err := CodeOwnedApplicationServiceStateFieldName(index + 1)
+		if err != nil {
+			return err
 		}
-		if _, duplicate := seen[field.Name]; duplicate {
-			return fmt.Errorf("service state interface repeats field %q", field.Name)
+		if field.Name != expectedName {
+			return fmt.Errorf(
+				"service state interface field %d name %q differs from code-owned name %q",
+				index+1, field.Name, expectedName,
+			)
 		}
-		seen[field.Name] = struct{}{}
+		if err := validateApplicationServiceStatePurpose("root field", field.Purpose); err != nil {
+			return fmt.Errorf("service state interface field %q: %w", field.Name, err)
+		}
+		purposeKey := strings.ToLower(field.Purpose)
+		if _, duplicate := seenPurposes[purposeKey]; duplicate {
+			return fmt.Errorf("service state interface repeats root purpose %q", field.Purpose)
+		}
+		seenPurposes[purposeKey] = struct{}{}
 		if err := validateApplicationServiceStateField(field); err != nil {
 			return fmt.Errorf("service state interface field %q: %w", field.Name, err)
 		}
@@ -159,15 +163,28 @@ func validateApplicationServiceStateField(field ApplicationServiceStateField) er
 				maxApplicationServiceStateInterfaceFields,
 			)
 		}
-		seen := make(map[string]struct{}, len(field.RecordFields))
-		for _, recordField := range field.RecordFields {
-			if err := validateApplicationServiceStateFieldName(recordField.Name); err != nil {
-				return fmt.Errorf("record field: %w", err)
+		seenPurposes := make(map[string]struct{}, len(field.RecordFields))
+		for index, recordField := range field.RecordFields {
+			expectedName, err := CodeOwnedApplicationServiceRecordFieldName(index + 1)
+			if err != nil {
+				return err
 			}
-			if _, duplicate := seen[recordField.Name]; duplicate {
-				return fmt.Errorf("repeats record field %q", recordField.Name)
+			if recordField.Name != expectedName {
+				return fmt.Errorf(
+					"record field %d name %q differs from code-owned name %q",
+					index+1, recordField.Name, expectedName,
+				)
 			}
-			seen[recordField.Name] = struct{}{}
+			if err := validateApplicationServiceStatePurpose(
+				"record field", recordField.Purpose,
+			); err != nil {
+				return fmt.Errorf("record field %q: %w", recordField.Name, err)
+			}
+			purposeKey := strings.ToLower(recordField.Purpose)
+			if _, duplicate := seenPurposes[purposeKey]; duplicate {
+				return fmt.Errorf("repeats record purpose %q", recordField.Purpose)
+			}
+			seenPurposes[purposeKey] = struct{}{}
 			switch recordField.Kind {
 			case ApplicationServiceStateString, ApplicationServiceStateInteger,
 				ApplicationServiceStateNumber, ApplicationServiceStateBoolean:
@@ -189,4 +206,45 @@ func validateApplicationServiceStateFieldName(name string) error {
 		return fmt.Errorf("name %q must be one bounded lowercase snake-case identifier", name)
 	}
 	return nil
+}
+
+func validateApplicationServiceStatePurpose(label, purpose string) error {
+	if err := validateContextText(
+		"application service state "+label+" purpose",
+		purpose,
+		MaxApplicationServiceStatePurposeBytes,
+	); err != nil {
+		return err
+	}
+	if strings.ContainsAny(purpose, "\r\n") {
+		return fmt.Errorf("application service state %s purpose must be one line", label)
+	}
+	return ValidatePathFreeModelContext(
+		"application service state "+label+" purpose",
+		purpose,
+	)
+}
+
+func equalApplicationServicePurpose(left, right string) bool {
+	return strings.EqualFold(left, right)
+}
+
+func CodeOwnedApplicationServiceStateFieldName(index int) (string, error) {
+	if index < 1 || index > maxApplicationServiceStateInterfaceFields {
+		return "", fmt.Errorf(
+			"application service state field index must be between 1 and %d",
+			maxApplicationServiceStateInterfaceFields,
+		)
+	}
+	return fmt.Sprintf("state_%03d", index), nil
+}
+
+func CodeOwnedApplicationServiceRecordFieldName(index int) (string, error) {
+	if index < 1 || index > maxApplicationServiceStateInterfaceFields {
+		return "", fmt.Errorf(
+			"application service record field index must be between 1 and %d",
+			maxApplicationServiceStateInterfaceFields,
+		)
+	}
+	return fmt.Sprintf("member_%03d", index), nil
 }

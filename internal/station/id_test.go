@@ -29,8 +29,8 @@ func TestAllContainsOnlyUniqueRegisteredStations(t *testing.T) {
 		}
 		seen[id] = struct{}{}
 	}
-	if len(seen) != 47 {
-		t.Fatalf("registered stations=%d want 47", len(seen))
+	if len(seen) != 45 {
+		t.Fatalf("registered stations=%d want 45", len(seen))
 	}
 }
 
@@ -45,6 +45,14 @@ func TestRetiredContextStationsAreUnregistered(t *testing.T) {
 		"roleplay_voice_preservation",
 		"coding_workload_review",
 		"coding_service_endpoint_contract",
+		"coding_service_state_interface",
+		"repository_grounded_review",
+		"repository_grounded_correction",
+		"context_search_terms",
+		"coding_repository_search_term",
+		"web_grounded_synthesis_correction",
+		"web_claim_evidence_review",
+		"coding_known_artifact_truth",
 	} {
 		if err := retired.Validate(); err == nil {
 			t.Fatalf("retired context station %q remains registered", retired)

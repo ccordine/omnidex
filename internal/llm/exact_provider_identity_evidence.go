@@ -278,6 +278,21 @@ func validateExactPreloadOperation(
 	if raw, exists := response["done"]; !exists || json.Unmarshal(raw, &done) != nil || !done {
 		return fmt.Errorf("exact provider preload did not complete")
 	}
+	for _, field := range []string{"response", "thinking"} {
+		if _, exists := response[field]; !exists {
+			continue
+		}
+		value, err := strictExactJSONObjectString(operation.ResponseCapture, field)
+		if err != nil || value != "" {
+			return fmt.Errorf("exact provider preload unexpectedly produced %s content", field)
+		}
+	}
+	for _, field := range []string{"prompt_eval_count", "eval_count"} {
+		raw, exists := response[field]
+		if exists && string(bytes.TrimSpace(raw)) != "0" {
+			return fmt.Errorf("exact provider preload unexpectedly performed model inference")
+		}
+	}
 	return nil
 }
 

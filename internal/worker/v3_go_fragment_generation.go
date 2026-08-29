@@ -23,8 +23,8 @@ func runDirectCodingGoFragmentGenerationWorker(
 	if runtime.Context == nil || runtime.Execute == nil {
 		return "", fmt.Errorf("Go fragment generation worker requires a portable execution runtime")
 	}
-	if runtime.MaxAttempts < 1 || runtime.MaxAttempts > maxTypedWorkerAttempts {
-		return "", fmt.Errorf("Go fragment generation attempts must be between 1 and %d", maxTypedWorkerAttempts)
+	if runtime.MaxAttempts != exactSemanticLeafCalls {
+		return "", fmt.Errorf("Go fragment generation requires exactly %d model call", exactSemanticLeafCalls)
 	}
 	modelName = strings.TrimSpace(modelName)
 	if modelName == "" || strings.TrimSpace(job.Subject) == "" {

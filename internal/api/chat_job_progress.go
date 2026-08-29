@@ -21,7 +21,7 @@ const (
 	chatProgressActivity     chatProgressKind = "activity"
 	chatProgressStation      chatProgressKind = "station"
 	chatProgressRetrieval    chatProgressKind = "retrieval"
-	chatProgressReview       chatProgressKind = "review"
+	chatProgressPreparation  chatProgressKind = "preparation"
 	chatProgressFile         chatProgressKind = "file"
 	chatProgressVerification chatProgressKind = "verification"
 	chatProgressDiagnostic   chatProgressKind = "diagnostic"

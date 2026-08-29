@@ -10,6 +10,14 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+const historicalWorkResponseCorrection assemblyline.WorkKind = "response_correction"
+
+type historicalResponseCorrectionInput struct {
+	Original          assemblyline.PortableJob `json:"original"`
+	ValidationFailure string                   `json:"validation_failure"`
+	RetainedCandidate string                   `json:"retained_candidate"`
+}
+
 func TestPostgresContextSieveCutoverOwnsOnlyExactNewStationsAndIndexes(t *testing.T) {
 	pool := openIsolatedMigrationPool(t)
 	repository := New(pool)
@@ -185,19 +193,14 @@ func assertContextSieveNewStationsOpen(
 	relevanceJob := historicalContextSievePortableJob(t, "context_relevance", 2)
 	minificationJob := historicalContextSievePortableJob(t, "context_minification", 3)
 	retainedCorrection := historicalContextSieveCorrectionJob(t, termsJob)
-	applicationJob := historicalContextSievePortableJob(
-		t, "application_job_specification", 4,
-	)
-	applicationCorrection := historicalContextSieveCorrectionJob(t, applicationJob)
 	jobs := []struct {
 		station station.ID
 		job     assemblyline.PortableJob
 	}{
-		{station: station.ContextSearchTerms, job: termsJob},
+		{station: station.ID("context_search_terms"), job: termsJob},
 		{station: station.ContextRelevance, job: relevanceJob},
 		{station: station.ContextMinification, job: minificationJob},
-		{station: station.ContextSearchTerms, job: retainedCorrection},
-		{station: station.CodingWorkload, job: applicationCorrection},
+		{station: station.ID("context_search_terms"), job: retainedCorrection},
 	}
 	for _, fixture := range jobs {
 		opening := historicalContextSieveOpening(
@@ -241,7 +244,7 @@ func historicalContextSieveCorrectionJob(
 	})
 	job := assemblyline.PortableJob{
 		Schema:  "omnidex.portable-job.v1",
-		Kind:    assemblyline.WorkResponseCorrection,
+		Kind:    historicalWorkResponseCorrection,
 		Payload: payload,
 	}
 	job.ID = historicalPortableID(job.Schema, string(job.Kind), job.Payload)

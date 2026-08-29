@@ -60,7 +60,7 @@ func laravelRouterDocument(
 		Preamble: strings.Join(preamble, "\n"),
 		Blocks: []assemblyline.SourceBlock{{
 			ID: "application.laravel.routes", Static: source,
-			API:       "register code-owned Laravel routes from accepted endpoint contracts",
+			API:       "register Laravel routes for the accepted service interactions",
 			DependsOn: dependencies,
 		}},
 	}, nil

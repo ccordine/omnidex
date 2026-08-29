@@ -81,8 +81,8 @@ func TestPHPHTTPFinalRunnerOwnsDispatchContractSmoke(t *testing.T) {
 	}
 	fixture := byPath["tests/Feature101Test.php"].Blocks[0].Static
 	if !strings.Contains(fixture, "taskInputFixture101") ||
-		!strings.Contains(fixture, "'GET', '/records/1'") ||
-		!strings.Contains(fixture, "'record_id' => '1'") ||
+		!strings.Contains(fixture, "'GET', '/'") ||
+		strings.Contains(fixture, "'record_id' => '1'") ||
 		strings.Contains(fixture, "TaskInput::example") {
 		t.Fatalf("endpoint-shaped acceptance fixture is not exact:\n%s", fixture)
 	}

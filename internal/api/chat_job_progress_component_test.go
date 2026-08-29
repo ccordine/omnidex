@@ -16,10 +16,10 @@ func TestChatJobProgressIsTypedEscapedServerMarkup(t *testing.T) {
 	t.Parallel()
 	now := time.Now().UTC().Truncate(time.Second)
 	presentation := chatProgressPresentationFixture(now, []string{
-		"event=coding_file_written path=src/<unsafe>.go bytes=42 operation=create result=accepted",
+		"event=coding_target_tree_validation_failed diagnostic=<unsafe> tree failure",
 		"event=objective_worker_started kind=semantic subject=context_minification model=local attempt=1/3 context=prompt:120B,capabilities:0B,current:0B,correction:0B",
-		"event=coding_verification_failed command=go_test_./... diagnostic=<script>alert(1)</script> exact failure",
-		"event=coding_file_deleted path=src/old.go result=deleted",
+		"event=repository_snapshot_failed <script>alert(1)</script> exact failure",
+		"event=coding_phase_changed phase=deploying detail=deploying verified workload",
 	})
 	bundle, err := renderChatJobStateBundle(presentation)
 	if err != nil {
@@ -27,10 +27,10 @@ func TestChatJobProgressIsTypedEscapedServerMarkup(t *testing.T) {
 	}
 	for _, expected := range []string{
 		`data-recyclr-target="job-progress-events"`,
-		`Accepted src/&lt;unsafe&gt;.go (42 bytes)`,
+		`Target tree validation failed: &lt;unsafe&gt; tree failure`,
 		`Context minification station started (attempt 1/3)`,
-		`Verification failed for go_test_./...: &lt;script&gt;alert(1)&lt;/script&gt; exact failure`,
-		`Deleted src/old.go`,
+		`Repository snapshot failed: &lt;script&gt;alert(1)&lt;/script&gt; exact failure`,
+		`Deploying the verified workload`,
 		`Latest 4 authoritative events`,
 	} {
 		if !strings.Contains(bundle, expected) {
@@ -48,7 +48,7 @@ func TestChatJobProgressRejectsMalformedOrUnknownEventAuthority(t *testing.T) {
 	for _, raw := range []string{
 		"event=coding_file_written path=main.go bytes=12 operation=create",
 		"event=invented_agent_thinking secret=hidden",
-		"time=not-a-time event=coding_file_deleted path=old.go result=deleted",
+		"time=not-a-time event=coding_phase_changed phase=deploying detail=deploying",
 		"event=objective_worker_started kind=semantic model=local attempt=1/3",
 	} {
 		presentation := chatProgressPresentationFixture(now, []string{raw})

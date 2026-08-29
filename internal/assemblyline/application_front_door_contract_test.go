@@ -4,41 +4,49 @@ import (
 	"reflect"
 	"strings"
 	"testing"
-
-	"github.com/gryph/omnidex/internal/model"
 )
 
-func TestApplicationContextBootstrapRecordsOnlyCodeAndAcceptedMemoryAuthority(t *testing.T) {
+func TestApplicationContextBootstrapRecordsOnlyCurrentWorkspaceAuthority(t *testing.T) {
 	t.Parallel()
 	request := "Build a browser counter with increment and reset controls."
-	memory := ObjectiveMemoryAuthority{
-		MemoryID: 17, Kind: model.MemoryKindReference,
-		Content:       "Prefer accessible native controls.",
-		ContentSHA256: ExactObjectiveContextSHA("Prefer accessible native controls."),
-	}
-	context, err := BootstrapApplicationContext(request, ApplicationWorkspaceEmpty, []ObjectiveMemoryAuthority{memory})
+	context, err := BootstrapApplicationContext(request, ApplicationWorkspaceEmpty)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if context.WorkspaceState != ApplicationWorkspaceEmpty ||
-		context.RequestSHA256 != ExactObjectiveContextSHA(request) || len(context.Facts) != 2 {
+		context.RequestSHA256 != ExactObjectiveContextSHA(request) || len(context.Facts) != 1 {
 		t.Fatalf("context=%+v", context)
 	}
 	if context.Facts[0].Kind != ApplicationContextWorkspaceState ||
 		context.Facts[0].Authority != ApplicationContextCodeAuthority || context.Facts[0].Value != "empty" {
 		t.Fatalf("workspace fact=%+v", context.Facts[0])
 	}
-	if context.Facts[1].Kind != ApplicationContextAcceptedMemory ||
-		context.Facts[1].Authority != ApplicationContextMemoryAuthority ||
-		context.Facts[1].Value != memory.Content || context.Facts[1].SourceSHA256 != memory.ContentSHA256 {
-		t.Fatalf("memory fact=%+v", context.Facts[1])
+}
+
+func TestApplicationContextRejectsHistoricalMemoryFacts(t *testing.T) {
+	t.Parallel()
+	context, err := BootstrapApplicationContext(
+		"Build a browser counter with increment and reset controls.",
+		ApplicationWorkspaceEmpty,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	memory := "Prior preference that is not current coding authority."
+	context.Facts = append(context.Facts, ApplicationContextFact{
+		ID: "fact_002", Kind: ApplicationContextFactKind("accepted_memory"),
+		Authority: ApplicationContextAuthority("accepted_memory"), Value: memory,
+		SourceID: "memory_17", SourceSHA256: ExactObjectiveContextSHA(memory),
+	})
+	if err := context.Validate(); err == nil || !strings.Contains(err.Error(), "kind \"accepted_memory\" is unsupported") {
+		t.Fatalf("historical memory fact validation error=%v", err)
 	}
 }
 
 func TestApplicationContextNeedStationReturnsQuestionsNotTools(t *testing.T) {
 	t.Parallel()
 	request := "Build a browser counter with increment and reset controls."
-	context, err := BootstrapApplicationContext(request, ApplicationWorkspaceEmpty, nil)
+	context, err := BootstrapApplicationContext(request, ApplicationWorkspaceEmpty)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,7 +99,7 @@ func TestApplicationContextNeedStationReturnsQuestionsNotTools(t *testing.T) {
 func TestApplicationIntentUsesReviewedSemanticStatementsWithoutSubstringGates(t *testing.T) {
 	t.Parallel()
 	request := "Build a browser-based counter app that displays the current count and has buttons to increment it, decrement it, and reset it to zero."
-	context, err := BootstrapApplicationContext(request, ApplicationWorkspaceEmpty, nil)
+	context, err := BootstrapApplicationContext(request, ApplicationWorkspaceEmpty)
 	if err != nil {
 		t.Fatal(err)
 	}

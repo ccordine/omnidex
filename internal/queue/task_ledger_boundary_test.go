@@ -28,7 +28,6 @@ func TestGeneralTaskBoundaryReservesQueueOwnedAuthority(t *testing.T) {
 		taskstate.ResolveEntryCommand{EntryID: initialUserInstructionEntryID},
 		taskstate.RejectEntryCommand{EntryID: initialUserInstructionEntryID},
 		taskstate.SupersedeEntryCommand{ReplacementID: initialUserInstructionEntryID},
-		taskstate.AcceptDecisionCommand{AcceptedEntryID: initialUserInstructionEntryID},
 		taskstate.AddEntryCommand{ID: replanFeedbackEntryID(2)},
 	}
 	for _, command := range commands {

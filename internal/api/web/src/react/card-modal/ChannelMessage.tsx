@@ -5,8 +5,6 @@ type ChannelActivity = {
   activity: string;
   title?: string;
   status?: string;
-  command?: string;
-  tool?: string;
   path?: string;
   files?: string[];
   detail?: string;
@@ -25,11 +23,9 @@ function parseActivity(message: ScrumChatMessage): ChannelActivity | null {
 }
 
 function activityLabel(activity: ChannelActivity): string {
-  if (activity.activity === "command") return "Command";
   if (activity.activity === "file_change") return "File change";
-  if (activity.activity === "patch") return "Patch";
   if (activity.activity === "output") return "Output";
-  return activity.tool?.trim() || "Tool";
+  return "Event";
 }
 
 function statusClass(status = ""): string {
@@ -59,7 +55,7 @@ export function ChannelMessage({ message }: { message: ScrumChatMessage }) {
     );
   }
 
-  const hasDetails = Boolean(activity.command || activity.detail || activity.diff || activity.files?.length);
+  const hasDetails = Boolean(activity.detail || activity.diff || activity.files?.length);
   return (
     <article className="rounded-md border border-white/10 bg-zinc-900/70 px-3 py-2">
       <div className="flex flex-wrap items-start justify-between gap-2">
@@ -80,7 +76,6 @@ export function ChannelMessage({ message }: { message: ScrumChatMessage }) {
           <summary className="cursor-pointer select-none font-medium text-zinc-400 hover:text-cyan-100">Details</summary>
           <div className="mt-2 space-y-2">
             {activity.files?.length ? <div className="font-mono text-[11px] text-zinc-400">{activity.files.join(" · ")}</div> : null}
-            {activity.command ? <pre className="overflow-x-auto whitespace-pre-wrap font-mono text-[11px] leading-5 text-cyan-100">{activity.command}</pre> : null}
             {activity.detail ? <pre className="overflow-x-auto whitespace-pre-wrap text-xs leading-5 text-zinc-300">{activity.detail}</pre> : null}
             {activity.diff ? <pre className="max-h-64 overflow-auto whitespace-pre font-mono text-[11px] leading-5 text-zinc-300">{activity.diff}</pre> : null}
           </div>

@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	maxRepositorySymbolQueryBytes = 512
+	maxRepositorySymbolQueryBytes = 4 * 1024
 	maxRepositorySymbolMatches    = 50
 	maxRepositoryGraphSubjects    = 32
 	maxRepositoryGraphEdges       = 200

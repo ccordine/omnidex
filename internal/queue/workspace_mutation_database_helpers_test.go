@@ -28,11 +28,22 @@ func newWorkspaceMutationDatabaseFixture(
 	label string,
 ) workspaceMutationDatabaseFixture {
 	t.Helper()
+	return newWorkspaceMutationDatabaseFixtureThrough(t, label, "179")
+}
+
+func newWorkspaceMutationDatabaseFixtureThrough(
+	t *testing.T,
+	label string,
+	migrationPrefix string,
+) workspaceMutationDatabaseFixture {
+	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	t.Cleanup(cancel)
 	pool := openIsolatedMigrationPool(t)
 	repository := New(pool)
-	if err := repository.EnsureSchema(ctx, loadMigrationBundleThroughPrefix(t, "159")); err != nil {
+	if err := repository.EnsureSchema(
+		ctx, loadMigrationBundleThroughPrefix(t, migrationPrefix),
+	); err != nil {
 		t.Fatal(err)
 	}
 
@@ -93,7 +104,8 @@ func newWorkspaceMutationDatabaseFixture(
 	command := WorkspaceMutationCommand{
 		JobID: job.ID, StepID: claim.Step.ID, Generation: claim.Step.Generation,
 		CreatorAttempt: claim.Authority.Attempt, CreatorWorkerID: claim.Authority.WorkerID,
-		ProjectID: project.ID, Plan: plan, Verification: verification,
+		ProjectID: project.ID, ProjectLocation: project.Location,
+		Plan: plan, Verification: verification,
 	}
 	return workspaceMutationDatabaseFixture{
 		repository: repository, pool: pool, ctx: ctx, root: root,

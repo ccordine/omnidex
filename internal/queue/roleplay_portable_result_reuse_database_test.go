@@ -104,66 +104,6 @@ func TestPostgresRoleplayPortableResultReusePreservesFailedAcceptedLeaf(t *testi
 	}
 }
 
-func TestPostgresRoleplayPortableResultReuseMapsCorrectionToRoot(t *testing.T) {
-	fixture := newRoleplayPortableReuseDatabaseFixture(t, "roleplay-reuse-correction")
-	_, sourceJob, err := enqueueNarratorRoleplayTurn(
-		t.Context(), fixture.Repository, fixture.Channel.ID, "Keep watch.",
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	sourceClaim, err := fixture.Repository.ClaimNextStep(t.Context(), "roleplay-correction-source")
-	if err != nil || sourceClaim == nil {
-		t.Fatalf("source claim=%+v err=%v", sourceClaim, err)
-	}
-	root := roleplayPortableReuseRootJob(t, "resolve corrected leaf")
-	retained := "The rejected retained first responder leaf."
-	replacement := roleplayPortableReuseExactCandidate
-	correction, err := assemblyline.NewRetainedResponseCorrectionJob(
-		root, "text was not grounded", retained,
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	persistRoleplayPortableReuseLeaf(
-		t, fixture.Repository, sourceClaim, correction, replacement,
-	)
-	failRoleplayPortableReuseJob(t, fixture.Repository, sourceClaim, "roleplay-correction-fail")
-	_, targetJob, err := enqueueNarratorRoleplayTurn(
-		t.Context(), fixture.Repository, fixture.Channel.ID, "Keep watch.",
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	targetClaim, err := fixture.Repository.ClaimNextStep(t.Context(), "roleplay-correction-target")
-	if err != nil || targetClaim == nil || targetClaim.Job.ID != targetJob.ID {
-		t.Fatalf("target claim=%+v err=%v", targetClaim, err)
-	}
-	reused, found, err := fixture.Repository.ReuseRoleplayPortableResult(t.Context(),
-		RoleplayPortableResultReuseRequest{
-			Authority: targetClaim.Authority, Job: root,
-			Station: roleplayPortableReuseStation(t, root),
-		})
-	if err != nil || !found {
-		t.Fatalf("correction reuse found=%t err=%v", found, err)
-	}
-	if reused.Receipt.SourceWorkID != correction.ID || reused.Result.JobID != root.ID ||
-		reused.Result.Candidate != roleplayPortableReuseExactCandidate ||
-		reused.Result.Projection != nil || reused.Receipt.SourceAuthority.JobID != sourceJob.ID ||
-		reused.Receipt.SourceResponseSHA256 != stationGapSHA256(replacement) {
-		t.Fatalf("correction reuse=%+v", reused)
-	}
-	var input assemblyline.ConversationResponseInput
-	if err := json.Unmarshal(root.Payload, &input); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := assemblyline.DecodeConversationResponseDecision(
-		input, reused.Result.Candidate,
-	); err != nil {
-		t.Fatalf("decode corrected root candidate: %v", err)
-	}
-}
-
 func TestPostgresRoleplayPortableResultReuseRejectsFictionalAuthorityDrift(t *testing.T) {
 	t.Run("user turn", func(t *testing.T) {
 		fixture := newRoleplayPortableReuseDatabaseFixture(t, "roleplay-reuse-user-drift")

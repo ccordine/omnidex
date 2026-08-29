@@ -1,5 +1,7 @@
 package assemblyline
 
+import "strings"
+
 func BuildApplicationServiceEndpointExposurePrompt(
 	input ApplicationServiceEndpointExposureInput,
 ) (string, error) {
@@ -7,9 +9,10 @@ func BuildApplicationServiceEndpointExposurePrompt(
 		return "", err
 	}
 	return buildApplicationServiceEndpointLeafPrompt(
-		input,
-		"Determine who may reach the one HTTP endpoint that exposes this accepted local task.",
-		"Return exactly one raw exposure value: public, authenticated, or internal.",
+		input.Authority, nil,
+		"Determine who may reach the one HTTP endpoint required by the exact endpoint requirement.",
+		"Return exactly one raw exposure value from this compatible set: "+
+			strings.Join(applicationServiceEndpointExposureValues(), ", ")+".",
 	)
 }
 
@@ -41,9 +44,10 @@ func BuildApplicationServiceEndpointMethodPrompt(
 		return "", err
 	}
 	return buildApplicationServiceEndpointLeafPrompt(
-		input,
-		"Determine the one HTTP method whose semantics match this accepted local task.",
-		"Return exactly one raw method value: GET, POST, PUT, PATCH, or DELETE.",
+		input.Authority, nil,
+		"Determine the one HTTP method whose semantics match the exact accepted endpoint requirement.",
+		"Return exactly one raw method value from this compatible set: "+
+			strings.Join(applicationServiceEndpointMethodValues(), ", ")+".",
 	)
 }
 
@@ -75,8 +79,8 @@ func BuildApplicationServiceEndpointRouteTemplatePrompt(
 		return "", err
 	}
 	return buildApplicationServiceEndpointLeafPrompt(
-		input,
-		"Determine the one normalized HTTP route template that names this accepted local task.",
+		input.Authority, nil,
+		"Determine the one normalized HTTP route template that names the exact accepted endpoint requirement.",
 		"Return exactly one raw normalized route template using lowercase literal segments or {lower_snake_case} parameter segments.",
 	)
 }

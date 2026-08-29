@@ -143,9 +143,9 @@ func rendererMigrationOpening(
 		PortableEnvelope:       string(portableEnvelope),
 		PortableEnvelopeSHA256: stationGapSHA256(string(portableEnvelope)),
 		RendererVersion:        renderer, Prompt: prompt,
-		ResponseSchema: responseSchema, ProjectionEnvelope: string(projection),
-		ProjectionSHA256: stationGapSHA256(string(projection)),
-		ContextTokens:    8192, MaxOutputTokens: 8192,
+		ProjectionEnvelope: string(projection),
+		ProjectionSHA256:   stationGapSHA256(string(projection)),
+		ContextTokens:      8192, MaxOutputTokens: 8192,
 	}
 }
 
@@ -155,7 +155,7 @@ func openingWithRenderer(t *testing.T, opening StationGapOpening, renderer strin
 		Prompt         string          `json:"prompt"`
 		Renderer       string          `json:"renderer"`
 		ResponseSchema json.RawMessage `json:"response_schema"`
-	}{opening.Prompt, renderer, opening.ResponseSchema})
+	}{opening.Prompt, renderer, json.RawMessage(`{}`)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -191,7 +191,7 @@ func insertRendererMigrationOpening(
 		opening.WorkerID, opening.GapID, opening.Station, opening.Scope, opening.PortableSchema,
 		opening.WorkID, opening.WorkKind, opening.PortablePayload, opening.PortablePayloadSHA256,
 		opening.PortableEnvelope, opening.PortableEnvelopeSHA256, opening.RendererVersion,
-		opening.Prompt, string(opening.ResponseSchema), opening.ProjectionEnvelope,
+		opening.Prompt, "{}", opening.ProjectionEnvelope,
 		opening.ProjectionSHA256, opening.ContextTokens, opening.MaxOutputTokens).Scan(
 		&opening.ID, &opening.CreatedAt,
 	)

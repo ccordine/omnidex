@@ -1,7 +1,6 @@
 package assemblyline
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 )
@@ -12,15 +11,12 @@ func BuildApplicationServiceStateLifetimePrompt(
 	if err := input.validate(); err != nil {
 		return "", err
 	}
-	authority, err := json.Marshal(input)
-	if err != nil {
-		return "", fmt.Errorf("encode service state lifetime authority: %w", err)
-	}
 	prompt := strings.Join([]string{
-		"Classify whether this one accepted local service behavior requires authoritative state produced during one request or process to remain available to a later request or process.",
-		"Choose cross_request_authority_required only when that later availability is necessary. Choose request_local_only when the behavior can be satisfied within the current request or process, including stateless behavior.",
+		"Classify whether the exact service requirement needs state produced during one request or process to remain available to a later request or process.",
+		"Choose cross_request_authority_required only when that later availability is necessary. Choose request_local_only when the requirement can be satisfied within the current request or process, including stateless behavior.",
 		"Return exactly the raw state_lifetime value and nothing else: no JSON, quotes, label, Markdown, or commentary.",
-		"ACCEPTED_LOCAL_BEHAVIOR_AUTHORITY_JSON:\n" + string(authority),
+		"PRODUCT CONTEXT:\n" + input.ProductContext,
+		"EXACT SERVICE REQUIREMENT:\n" + input.RequirementQuote,
 	}, "\n\n")
 	if len(prompt) > maxPortablePayloadBytes {
 		return "", fmt.Errorf(

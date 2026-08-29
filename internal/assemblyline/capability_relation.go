@@ -46,7 +46,9 @@ func (input CapabilityRelationInput) validate() error {
 	if input.LeftNeed == input.RightNeed {
 		return fmt.Errorf("capability relation requires two distinct local needs")
 	}
-	return nil
+	return ValidatePathFreeModelContext(
+		"capability relation", input.LocalContext, input.LeftNeed, input.RightNeed,
+	)
 }
 
 func (decision CapabilityRelationDecision) ValidateFor(input CapabilityRelationInput) error {

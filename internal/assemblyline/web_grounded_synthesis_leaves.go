@@ -32,12 +32,18 @@ type WebSynthesisParagraphDecision struct {
 	Text string `json:"text"`
 }
 
-type webSynthesisParagraphProjection struct {
+type webSynthesisParagraphCoverageProjection struct {
 	ExactQuestion      string                      `json:"exact_question"`
 	Context            ObjectiveContext            `json:"objective_context"`
 	Evidence           []webEvidenceTextProjection `json:"evidence"`
 	AcceptedParagraphs []string                    `json:"accepted_paragraphs"`
-	MaxParagraphs      int                         `json:"max_paragraphs"`
+}
+
+type webSynthesisParagraphGenerationProjection struct {
+	ExactQuestion      string                      `json:"exact_question"`
+	Context            ObjectiveContext            `json:"objective_context"`
+	Evidence           []webEvidenceTextProjection `json:"evidence"`
+	AcceptedParagraphs []string                    `json:"accepted_paragraphs"`
 	MaxParagraphBytes  int                         `json:"max_paragraph_bytes"`
 }
 
@@ -170,7 +176,7 @@ func BuildWebSynthesisParagraphCoveragePrompt(
 	if err := input.validate(); err != nil {
 		return "", err
 	}
-	projection, err := marshalWebSynthesisParagraphInput(input)
+	projection, err := marshalWebSynthesisParagraphCoverageInput(input)
 	if err != nil {
 		return "", fmt.Errorf("encode web synthesis paragraph coverage authority: %w", err)
 	}
@@ -191,7 +197,7 @@ func BuildWebSynthesisParagraphPrompt(
 	if len(input.AcceptedParagraphs) >= input.MaxParagraphs {
 		return "", fmt.Errorf("web synthesis paragraph bound is exhausted")
 	}
-	projection, err := marshalWebSynthesisParagraphInput(input)
+	projection, err := marshalWebSynthesisParagraphGenerationInput(input)
 	if err != nil {
 		return "", fmt.Errorf("encode web synthesis paragraph authority: %w", err)
 	}
@@ -203,20 +209,39 @@ func BuildWebSynthesisParagraphPrompt(
 	}, "\n\n"), nil
 }
 
-func marshalWebSynthesisParagraphInput(
+func webSynthesisAcceptedParagraphText(
 	input WebSynthesisParagraphLeafInput,
-) ([]byte, error) {
+) []string {
 	accepted := make([]string, len(input.AcceptedParagraphs))
 	for index, paragraph := range input.AcceptedParagraphs {
 		accepted[index] = paragraph.Text
 	}
+	return accepted
+}
+
+func marshalWebSynthesisParagraphCoverageInput(
+	input WebSynthesisParagraphLeafInput,
+) ([]byte, error) {
 	return marshalObjectiveContextInputForModel(
-		webSynthesisParagraphProjection{
+		webSynthesisParagraphCoverageProjection{
 			ExactQuestion:      input.ExactQuestion,
 			Context:            input.Context,
 			Evidence:           projectWebGroundedEvidenceText(input.Evidence),
-			AcceptedParagraphs: accepted,
-			MaxParagraphs:      input.MaxParagraphs,
+			AcceptedParagraphs: webSynthesisAcceptedParagraphText(input),
+		},
+		input.Context,
+	)
+}
+
+func marshalWebSynthesisParagraphGenerationInput(
+	input WebSynthesisParagraphLeafInput,
+) ([]byte, error) {
+	return marshalObjectiveContextInputForModel(
+		webSynthesisParagraphGenerationProjection{
+			ExactQuestion:      input.ExactQuestion,
+			Context:            input.Context,
+			Evidence:           projectWebGroundedEvidenceText(input.Evidence),
+			AcceptedParagraphs: webSynthesisAcceptedParagraphText(input),
 			MaxParagraphBytes:  input.MaxParagraphBytes,
 		},
 		input.Context,

@@ -23,23 +23,11 @@ func TestProductionStepEventFormsHaveTypedGUIProjections(t *testing.T) {
 		"coding_assembly_ready adapter=typescript files=5 blocks=9 waves=3",
 		"coding_artifact_sieve_passed stack=typescript_browser_v1 files=5",
 		"coding_workload_frozen tasks=3 sha256=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-		"coding_task_verification_started task=application_task_001 requirement_bytes=42",
-		"coding_task_verified task=application_task_001",
-		"coding_file_written path=src/main.ts bytes=42 operation=create result=accepted",
-		"coding_file_deleted path=src/old.ts result=deleted",
-		"coding_file_unchanged path=src/main.ts",
-		"coding_file_delete_skipped path=src/old.ts reason=missing",
-		"coding_verification_started commands=2",
-		"coding_verification_failed command=npm_test diagnostic=one exact failure",
-		"coding_verification_command_passed command=npm_test",
-		"coding_static_validation_failed diagnostic=one exact failure",
 		"coding_stage_started attempt=1 generated_blocks=9",
 		"coding_stage_passed attempt=1 generated_blocks=9",
 		"coding_fragment_repair_guidance_started block=feature.render exact_failure=one exact failure",
-		"coding_fragment_repair_guidance_rejected block=feature.render reason=repeated_instruction",
 		"coding_fragment_correction_started block=feature.render guidance_bytes=128",
 		"coding_compiler_repair_applied block=feature.render mechanism=deterministic_primitive_nullish_narrowing",
-		"coding_directory_ensured path=src/features state=created",
 		"coding_target_tree_validation_failed diagnostic=one exact tree failure",
 		"application_evidence_need_opened need=evidence_001 source=repository stop=one exact fact",
 		"application_evidence_need_resolved need=evidence_001 facts=2 stop=one exact fact",
@@ -91,6 +79,8 @@ func TestChatProgressRejectsRemovedFixedCorrectionCounts(t *testing.T) {
 
 	for _, event := range []parsedChatStepEvent{
 		{Type: "coding_task_verified", Message: "task=application_task_001 corrections_remaining=2"},
+		{Type: "coding_file_written", Message: "path=main.go bytes=12 operation=create result=accepted"},
+		{Type: "coding_verification_failed", Message: "command=go_test diagnostic=failure"},
 		{Type: "coding_fragment_correction_started", Message: "block=feature.render correction=1 exact_failure=failure"},
 	} {
 		if _, _, err := summarizeChatStepEvent(event, "v3_coding"); err == nil {

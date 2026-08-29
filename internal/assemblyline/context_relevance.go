@@ -1,15 +1,18 @@
 package assemblyline
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 const ContextRelevanceSchemaV1 = "omnidex.context-relevance.v1"
 
 type ContextRelevanceInput struct {
 	ExactInstruction     string                      `json:"exact_instruction"`
-	RetrievalConcepts    []string                    `json:"retrieval_concepts"`
 	CandidateAuthorities []ContextCandidateAuthority `json:"candidate_authorities"`
 	MaxSelections        int                         `json:"max_selections"`
 	Scope                ContextScope                `json:"scope,omitempty"`
+	KnownArtifactPaths   []string                    `json:"known_artifact_paths"`
 }
 
 type ContextRelevanceDecision struct {
@@ -33,7 +36,9 @@ func (input ContextRelevanceInput) validate() error {
 	if err := validateContextExactInstruction(input.ExactInstruction); err != nil {
 		return err
 	}
-	if err := validateCanonicalContextRetrievalConcepts(input.RetrievalConcepts); err != nil {
+	if _, err := validateContextArtifactProvenance(
+		"context relevance", input.KnownArtifactPaths,
+	); err != nil {
 		return err
 	}
 	if err := validateContextCandidateAuthorities(
@@ -63,6 +68,17 @@ func (decision ContextRelevanceDecision) ValidateFor(input ContextRelevanceInput
 	}
 	if decision.ReferencedCandidateIDs == nil {
 		return fmt.Errorf("context relevance candidate IDs must be an explicit array")
+	}
+	provenance, err := validateContextArtifactProvenance(
+		"context relevance", input.KnownArtifactPaths,
+	)
+	if err != nil {
+		return err
+	}
+	if err := validateContextRawModelOutput(
+		"context relevance decision", strings.Join(decision.ReferencedCandidateIDs, "\n"), provenance,
+	); err != nil {
+		return err
 	}
 	if len(decision.ReferencedCandidateIDs) > input.MaxSelections {
 		return fmt.Errorf("context relevance selection exceeds %d IDs", input.MaxSelections)

@@ -25,18 +25,21 @@ func phpServiceStateInterfaceSummary(
 ) string {
 	fields := make([]string, 0, len(binding.Result.Fields))
 	for _, field := range binding.Result.Fields {
-		description := field.Name + ":" + string(field.Kind)
+		description := field.Name + " (" + field.Purpose + "):" + string(field.Kind)
 		if field.Kind == assemblyline.ApplicationServiceStateRecordList {
 			records := make([]string, 0, len(field.RecordFields))
 			for _, record := range field.RecordFields {
-				records = append(records, record.Name+":"+string(record.Kind))
+				records = append(
+					records,
+					record.Name+" ("+record.Purpose+"):"+string(record.Kind),
+				)
 			}
 			description += "{" + strings.Join(records, ",") + "}"
 		}
 		fields = append(fields, description)
 	}
-	return "Exact shared durable state interface " + binding.ID + ": " +
-		strings.Join(fields, "; ") + ". Unknown fields and incompatible values fail."
+	return "Exact shared durable state fields: " + strings.Join(fields, "; ") +
+		". Unknown fields and incompatible values fail."
 }
 
 func phpServiceStateInterfaceSchemaSource(

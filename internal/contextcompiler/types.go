@@ -10,23 +10,25 @@ import (
 const (
 	// MinModelCalls is zero because an explicit code-owned retrieval directive
 	// can prove that no semantic lookup or reduction is required. Each invoked
-	// station retains its own bounded correction budget; the total number of
-	// relevance and reduction calls is derived from acquired authority volume.
+	// station call resolves exactly one raw leaf; the total number of relevance
+	// and reduction calls is derived from acquired authority volume.
 	MinModelCalls = 0
 )
 
-// RetrievalDirective is code-owned authority for an exact retrieval request.
-// A nil directive means query formulation remains semantically unresolved. A
-// non-nil directive, including one with an empty Concepts slice, forbids a
-// ceremonial search-term model call.
+// RetrievalDirective is code-owned authority for whether the fixed provider
+// can search beyond mechanically retained candidates. The query itself is
+// always Request.ExactInstruction and cannot be supplied independently.
+// A nil directive asks Compile to inspect the provider's fixed availability.
 type RetrievalDirective struct {
-	Concepts []string
+	Availability SearchAvailability
 }
 
 type Request struct {
-	ExactInstruction string
-	Retrieval        *RetrievalDirective
-	Scope            assemblyline.ContextScope
+	ExactInstruction   string
+	ModelInstruction   string
+	Retrieval          *RetrievalDirective
+	Scope              assemblyline.ContextScope
+	KnownArtifactPaths []string
 }
 
 // OptionalSelectionGroup binds contiguous optional candidate chunks that must
@@ -44,10 +46,10 @@ type CandidateSet struct {
 	Replan                  *assemblyline.ObjectiveReplanAuthority
 }
 
-// SearchAvailability is code-owned authority for whether term-directed
+// SearchAvailability is code-owned authority for whether exact-instruction
 // retrieval can add candidates beyond the provider's mechanically acquired
 // required and optional candidates. Unknown availability is invalid: callers
-// may not guess whether a semantic search-term question exists.
+// may not guess whether another deterministic retrieval is available.
 type SearchAvailability string
 
 const (
@@ -74,12 +76,6 @@ type StationReceipt struct {
 	Reused bool
 }
 
-type SearchTermsStation interface {
-	Generate(context.Context, assemblyline.ContextSearchTermsInput) (
-		assemblyline.ContextSearchTermsDecision, StationReceipt, error,
-	)
-}
-
 type RelevanceStation interface {
 	SelectRelevant(context.Context, assemblyline.ContextRelevanceInput) (
 		assemblyline.ContextRelevanceDecision, StationReceipt, error,
@@ -93,14 +89,12 @@ type MinificationStation interface {
 }
 
 type Stations struct {
-	Terms        SearchTermsStation
 	Relevance    RelevanceStation
 	Minification MinificationStation
 }
 
 type Result struct {
 	Context           assemblyline.ObjectiveContext
-	SearchTermsCalls  int
 	RelevanceCalls    int
 	MinificationCalls int
 	ModelCalls        int

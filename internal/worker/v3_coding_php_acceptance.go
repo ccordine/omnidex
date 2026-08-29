@@ -28,7 +28,7 @@ func validateDirectCodingPHPAcceptance(
 	if err != nil {
 		return fmt.Errorf("PHP acceptance block %s: %w", ref.Block.ID, err)
 	}
-	requiredConditions, err := phpAcceptanceCriterionCount(stage, ref)
+	requiredConditions, err := phpAcceptanceObligationCount(stage, ref)
 	if err != nil {
 		return fmt.Errorf("PHP acceptance block %s: %w", ref.Block.ID, err)
 	}
@@ -103,7 +103,7 @@ func phpAcceptanceFixtureName(
 	return name, nil
 }
 
-func phpAcceptanceCriterionCount(
+func phpAcceptanceObligationCount(
 	stage *directCodingProgram,
 	ref assemblyline.SourceBlockRef,
 ) (int, error) {
@@ -112,10 +112,7 @@ func phpAcceptanceCriterionCount(
 	}
 	for _, task := range stage.Workload.Tasks {
 		if task.ID == ref.Block.TaskID {
-			if len(task.AcceptanceCriteria) == 0 {
-				return 0, fmt.Errorf("acceptance task has no frozen criteria")
-			}
-			return len(task.AcceptanceCriteria), nil
+			return 1, nil
 		}
 	}
 	return 0, fmt.Errorf("acceptance task %s is absent from frozen workload", ref.Block.TaskID)

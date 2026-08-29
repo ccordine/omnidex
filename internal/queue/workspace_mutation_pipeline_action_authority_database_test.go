@@ -33,9 +33,7 @@ func TestPostgresWorkspaceMutationPipelineActionAuthorityAcceptsRegisteredPairs(
 				t, repository, pipeline,
 				workspaceMutationPipelineActionLabel(pipeline, "positive"),
 			)
-			record, err := repository.prepareWorkspaceMutation(
-				t.Context(), fixture.claim.Authority, fixture.command, fixture.identity,
-			)
+			record, err := prepareWorkspaceMutationBeforeProjectLocation(t, fixture)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -59,9 +57,7 @@ func TestPostgresWorkspaceMutationPipelineActionAuthorityRejectsChangedPairOnTra
 	fixture := newWorkspaceMutationPipelineActionFixture(
 		t, repository, model.PipelineCoding, "transition-mismatch",
 	)
-	if _, err := repository.prepareWorkspaceMutation(
-		t.Context(), fixture.claim.Authority, fixture.command, fixture.identity,
-	); err != nil {
+	if _, err := prepareWorkspaceMutationBeforeProjectLocation(t, fixture); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := pool.Exec(t.Context(), `
@@ -69,9 +65,7 @@ func TestPostgresWorkspaceMutationPipelineActionAuthorityRejectsChangedPairOnTra
 	`, fixture.claim.Step.ID); err != nil {
 		t.Fatal(err)
 	}
-	err := repository.markWorkspaceMutationApplying(
-		t.Context(), fixture.claim.Authority, fixture.command, fixture.identity,
-	)
+	err := markWorkspaceMutationApplyingBeforeProjectLocation(t, fixture)
 	if err == nil || !strings.Contains(
 		err.Error(), "lost exact current step-attempt authority",
 	) {
@@ -92,9 +86,7 @@ func TestPostgresWorkspaceMutationPipelineActionAuthorityRejectsStaleRowsAtomica
 	fixture := newWorkspaceMutationPipelineActionFixture(
 		t, repository, model.PipelineCoding, "stale-row",
 	)
-	if _, err := repository.prepareWorkspaceMutation(
-		t.Context(), fixture.claim.Authority, fixture.command, fixture.identity,
-	); err != nil {
+	if _, err := prepareWorkspaceMutationBeforeProjectLocation(t, fixture); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := pool.Exec(t.Context(), `
@@ -147,9 +139,7 @@ func TestPostgresWorkspaceMutationPipelineActionAuthorityRejectsMismatchedPairs(
 			`, fixture.claim.Step.ID, test.mismatchedAction); err != nil {
 				t.Fatal(err)
 			}
-			_, err := repository.prepareWorkspaceMutation(
-				t.Context(), fixture.claim.Authority, fixture.command, fixture.identity,
-			)
+			_, err := prepareWorkspaceMutationBeforeProjectLocation(t, fixture)
 			if err == nil || !strings.Contains(
 				err.Error(), "requires the exact current active step attempt and root",
 			) {

@@ -5,60 +5,13 @@ import (
 	"testing"
 )
 
-func TestApplicationServiceEndpointLeafStationsExposeOneSemanticFieldEach(t *testing.T) {
+func TestApplicationServiceEndpointLeafEnvelopesContainOnlyExactAuthorityAndPrerequisites(t *testing.T) {
 	t.Parallel()
-	authority := testServiceEndpointTaskAuthority()
-	jobs := []struct {
-		name string
-		kind WorkKind
-		job  PortableJob
-		leaf string
-	}{
-		leafJobFixture("exposure", WorkApplicationServiceEndpointExposure,
-			mustEndpointLeafJob(NewApplicationServiceEndpointExposureJob(ApplicationServiceEndpointExposureInput{Task: authority}))),
-		leafJobFixture("method", WorkApplicationServiceEndpointMethod,
-			mustEndpointLeafJob(NewApplicationServiceEndpointMethodJob(ApplicationServiceEndpointMethodInput{Task: authority}))),
-		leafJobFixture("route", WorkApplicationServiceEndpointRouteTemplate,
-			mustEndpointLeafJob(NewApplicationServiceEndpointRouteTemplateJob(ApplicationServiceEndpointRouteTemplateInput{Task: authority}))),
-		leafJobFixture("request media", WorkApplicationServiceEndpointRequestMedia,
-			mustEndpointLeafJob(NewApplicationServiceEndpointRequestMediaJob(ApplicationServiceEndpointRequestMediaInput{
-				Task: authority, Method: ApplicationServiceEndpointGET,
-			}))),
-		leafJobFixture("response media", WorkApplicationServiceEndpointResponseMedia,
-			mustEndpointLeafJob(NewApplicationServiceEndpointResponseMediaJob(ApplicationServiceEndpointResponseMediaInput{Task: authority}))),
-		leafJobFixture("success status", WorkApplicationServiceEndpointSuccessStatus,
-			mustEndpointLeafJob(NewApplicationServiceEndpointSuccessStatusJob(ApplicationServiceEndpointSuccessStatusInput{
-				Task: authority, Method: ApplicationServiceEndpointGET,
-				RequestMedia: ApplicationServiceEndpointMediaNone, ResponseMedia: ApplicationServiceEndpointJSON,
-			}))),
-	}
-	seenIDs := make(map[string]WorkKind, len(jobs))
-	for _, item := range jobs {
-		item := item
-		t.Run(item.name, func(t *testing.T) {
-			if previous, duplicate := seenIDs[item.job.ID]; duplicate {
-				t.Fatalf("leaf work %s reused persisted identity owned by %s", item.kind, previous)
-			}
-			seenIDs[item.job.ID] = item.kind
-			prompt, err := RenderPortableJob(item.job)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if item.job.Kind != item.kind || !strings.Contains(prompt, "LOCAL_ACCEPTED_AUTHORITY_JSON") {
-				t.Fatalf("kind=%q prompt=%q", item.job.Kind, prompt)
-			}
-		})
-	}
-}
-
-func TestApplicationServiceEndpointLeafEnvelopesExcludeVerificationAuthority(t *testing.T) {
-	t.Parallel()
-	workloadInput, frozen := applicationTaskAuthorityProjectionFixture(t)
-	runtimeAuthority, err := ProjectApplicationTaskRuntimeAuthority(
-		workloadInput, frozen, "task_001",
-	)
-	if err != nil {
-		t.Fatal(err)
+	runtimeAuthority := ApplicationTaskRuntimeAuthority{
+		WorkloadSHA256: strings.Repeat("a", 64),
+		TaskID:         "task_sensitive_001", RequirementID: "requirement_sensitive_001",
+		Surface: ApplicationSurfaceBrowser, ProductQuote: "inventory browser",
+		RequirementQuote: "Clients can create one inventory record.",
 	}
 	authority, err := ProjectApplicationServiceEndpointTaskAuthority(runtimeAuthority)
 	if err != nil {
@@ -66,189 +19,140 @@ func TestApplicationServiceEndpointLeafEnvelopesExcludeVerificationAuthority(t *
 	}
 	jobs := []PortableJob{
 		mustEndpointLeafJob(NewApplicationServiceEndpointExposureJob(
-			ApplicationServiceEndpointExposureInput{Task: authority},
+			ApplicationServiceEndpointExposureInput{Authority: authority},
 		)),
 		mustEndpointLeafJob(NewApplicationServiceEndpointMethodJob(
-			ApplicationServiceEndpointMethodInput{Task: authority},
+			ApplicationServiceEndpointMethodInput{Authority: authority},
 		)),
 		mustEndpointLeafJob(NewApplicationServiceEndpointRouteTemplateJob(
-			ApplicationServiceEndpointRouteTemplateInput{Task: authority},
+			ApplicationServiceEndpointRouteTemplateInput{Authority: authority},
 		)),
 		mustEndpointLeafJob(NewApplicationServiceEndpointRequestMediaJob(
-			ApplicationServiceEndpointRequestMediaInput{
-				Task: authority, Method: ApplicationServiceEndpointPOST,
-			},
+			ApplicationServiceEndpointRequestMediaInput{Authority: authority, Method: ApplicationServiceEndpointPOST},
 		)),
 		mustEndpointLeafJob(NewApplicationServiceEndpointResponseMediaJob(
-			ApplicationServiceEndpointResponseMediaInput{Task: authority},
+			ApplicationServiceEndpointResponseMediaInput{Authority: authority, Method: ApplicationServiceEndpointPOST},
 		)),
 		mustEndpointLeafJob(NewApplicationServiceEndpointSuccessStatusJob(
 			ApplicationServiceEndpointSuccessStatusInput{
-				Task: authority, Method: ApplicationServiceEndpointPOST,
-				RequestMedia:  ApplicationServiceEndpointJSON,
-				ResponseMedia: ApplicationServiceEndpointJSON,
+				Authority: authority, Method: ApplicationServiceEndpointPOST,
+				RequestMedia: ApplicationServiceEndpointJSON, ResponseMedia: ApplicationServiceEndpointHTML,
 			},
 		)),
 	}
-	criterion := frozen.Tasks[0].AcceptanceCriteria[0]
+	seen := make(map[string]struct{}, len(jobs))
 	for _, job := range jobs {
+		if _, duplicate := seen[job.ID]; duplicate {
+			t.Fatalf("endpoint leaf job identity %s was reused", job.ID)
+		}
+		seen[job.ID] = struct{}{}
 		prompt, renderErr := RenderPortableJob(job)
 		if renderErr != nil {
 			t.Fatal(renderErr)
 		}
-		if strings.Contains(prompt, criterion) || strings.Contains(prompt, `"acceptance_criteria"`) {
-			t.Fatalf("endpoint leaf %s exposed verification authority: %s", job.Kind, prompt)
+		for _, required := range []string{
+			"PRODUCT CONTEXT:\ninventory browser",
+			"EXACT ENDPOINT REQUIREMENT:\nClients can create one inventory record.",
+			"ACCEPTED APPLICATION SURFACE:\nbrowser_application",
+		} {
+			if !strings.Contains(prompt, required) {
+				t.Fatalf("endpoint leaf %s omitted %q: %s", job.Kind, required, prompt)
+			}
+		}
+		for _, forbidden := range []string{
+			runtimeAuthority.WorkloadSHA256, runtimeAuthority.TaskID, runtimeAuthority.RequirementID,
+			"workload_sha256", "task_id", "requirement_id", "LOCAL_ACCEPTED", "AUTHORITY_JSON",
+			"acceptance", "objective", "behavior", "workspace", "ordinal", "sequence",
+		} {
+			if strings.Contains(prompt, forbidden) {
+				t.Fatalf("endpoint leaf %s leaked %q: %s", job.Kind, forbidden, prompt)
+			}
+		}
+		if job.Kind == WorkApplicationServiceEndpointResponseMedia &&
+			!strings.Contains(prompt, "ACCEPTED HTTP METHOD:\nPOST") {
+			t.Fatalf("response-media leaf omitted accepted method: %s", prompt)
 		}
 	}
 }
 
-func TestApplicationServiceEndpointLeafDecodersRejectAggregateAndInvalidPrerequisites(t *testing.T) {
+func TestApplicationServiceEndpointLeafDecodersAndCompositionStayNarrow(t *testing.T) {
 	t.Parallel()
 	authority := testServiceEndpointTaskAuthority()
-	exposureInput := ApplicationServiceEndpointExposureInput{Task: authority}
-	if _, err := DecodeApplicationServiceEndpointExposureResult(
-		exposureInput,
-		`{"exposure":"public","method":"GET"}`,
-	); err == nil {
-		t.Fatal("exposure leaf accepted an aggregate field")
-	}
-	requestInput := ApplicationServiceEndpointRequestMediaInput{
-		Task: authority, Method: ApplicationServiceEndpointGET,
-	}
-	if _, err := DecodeApplicationServiceEndpointRequestMediaResult(
-		requestInput,
-		"application/json",
-	); err == nil {
-		t.Fatal("request-media leaf accepted a GET body")
-	}
-	routeInput := ApplicationServiceEndpointRouteTemplateInput{Task: authority}
-	if result, err := DecodeApplicationServiceEndpointRouteTemplateResult(
-		routeInput,
-		"/records/{record_id}",
-	); err != nil || result.RouteTemplate != "/records/{record_id}" {
-		t.Fatalf("typed route leaf result=%+v error=%v", result, err)
-	}
-	if _, err := DecodeApplicationServiceEndpointRouteTemplateResult(
-		routeInput,
-		"/Records",
-	); err == nil {
-		t.Fatal("route leaf bypassed the typed HTTP-route validator")
-	}
-	statusInput := ApplicationServiceEndpointSuccessStatusInput{
-		Task: authority, Method: ApplicationServiceEndpointPOST,
-		RequestMedia: ApplicationServiceEndpointJSON, ResponseMedia: ApplicationServiceEndpointMediaNone,
-	}
-	if _, err := DecodeApplicationServiceEndpointSuccessStatusResult(
-		statusInput,
-		"201",
-	); err == nil {
-		t.Fatal("success-status leaf accepted a payload status without response media")
-	}
-}
-
-func TestApplicationServiceEndpointLeafDecodersConstructTypedResultsFromRawLeaves(t *testing.T) {
-	t.Parallel()
-	authority := testServiceEndpointTaskAuthority()
-
 	exposure, err := DecodeApplicationServiceEndpointExposureResult(
-		ApplicationServiceEndpointExposureInput{Task: authority}, "public",
+		ApplicationServiceEndpointExposureInput{Authority: authority}, "public",
 	)
-	if err != nil || exposure.Schema != ApplicationServiceEndpointExposureSchemaV1 ||
-		exposure.Exposure != ApplicationServiceEndpointPublic {
-		t.Fatalf("exposure=%+v err=%v", exposure, err)
+	if err != nil {
+		t.Fatal(err)
 	}
 	method, err := DecodeApplicationServiceEndpointMethodResult(
-		ApplicationServiceEndpointMethodInput{Task: authority}, "POST",
+		ApplicationServiceEndpointMethodInput{Authority: authority}, "POST",
 	)
-	if err != nil || method.Schema != ApplicationServiceEndpointMethodSchemaV1 ||
-		method.Method != ApplicationServiceEndpointPOST {
-		t.Fatalf("method=%+v err=%v", method, err)
+	if err != nil {
+		t.Fatal(err)
+	}
+	route, err := DecodeApplicationServiceEndpointRouteTemplateResult(
+		ApplicationServiceEndpointRouteTemplateInput{Authority: authority}, "/records/{record_id}",
+	)
+	if err != nil {
+		t.Fatal(err)
 	}
 	requestMedia, err := DecodeApplicationServiceEndpointRequestMediaResult(
-		ApplicationServiceEndpointRequestMediaInput{Task: authority, Method: ApplicationServiceEndpointPOST},
+		ApplicationServiceEndpointRequestMediaInput{Authority: authority, Method: method.Method},
 		"application/json",
 	)
-	if err != nil || requestMedia.Schema != ApplicationServiceEndpointRequestMediaSchemaV1 ||
-		requestMedia.RequestMedia != ApplicationServiceEndpointJSON {
-		t.Fatalf("request media=%+v err=%v", requestMedia, err)
+	if err != nil {
+		t.Fatal(err)
 	}
 	responseMedia, err := DecodeApplicationServiceEndpointResponseMediaResult(
-		ApplicationServiceEndpointResponseMediaInput{Task: authority}, "application/json",
+		ApplicationServiceEndpointResponseMediaInput{Authority: authority, Method: method.Method}, "application/json",
 	)
-	if err != nil || responseMedia.Schema != ApplicationServiceEndpointResponseMediaSchemaV1 ||
-		responseMedia.ResponseMedia != ApplicationServiceEndpointJSON {
-		t.Fatalf("response media=%+v err=%v", responseMedia, err)
+	if err != nil {
+		t.Fatal(err)
 	}
 	status, err := DecodeApplicationServiceEndpointSuccessStatusResult(
 		ApplicationServiceEndpointSuccessStatusInput{
-			Task: authority, Method: ApplicationServiceEndpointPOST,
-			RequestMedia: ApplicationServiceEndpointJSON, ResponseMedia: ApplicationServiceEndpointJSON,
-		},
-		"201",
+			Authority: authority, Method: method.Method,
+			RequestMedia: requestMedia.RequestMedia, ResponseMedia: responseMedia.ResponseMedia,
+		}, "201",
 	)
-	if err != nil || status.Schema != ApplicationServiceEndpointSuccessStatusSchemaV1 ||
-		status.SuccessStatus != 201 {
-		t.Fatalf("status=%+v err=%v", status, err)
+	if err != nil {
+		t.Fatal(err)
+	}
+	contract, err := ComposeApplicationServiceEndpointContract(
+		authority, exposure, method, route, requestMedia, responseMedia, status,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if contract.RouteTemplate != "/records/{record_id}" || contract.SuccessStatus != 201 {
+		t.Fatalf("composed endpoint contract=%+v", contract)
+	}
+	if _, err := DecodeApplicationServiceEndpointExposureResult(
+		ApplicationServiceEndpointExposureInput{Authority: authority},
+		`{"exposure":"public","method":"GET"}`,
+	); err == nil {
+		t.Fatal("exposure leaf accepted an aggregate contract")
 	}
 }
 
-func TestApplicationServiceEndpointCandidateSetsExposeOnlyUnresolvedChoices(t *testing.T) {
+func TestApplicationServiceEndpointCompatibleCandidatesAreCodeOwned(t *testing.T) {
 	t.Parallel()
 	authority := testServiceEndpointTaskAuthority()
 	requestCandidates, err := ApplicationServiceEndpointRequestMediaCandidates(
-		ApplicationServiceEndpointRequestMediaInput{
-			Task: authority, Method: ApplicationServiceEndpointGET,
-		},
+		ApplicationServiceEndpointRequestMediaInput{Authority: authority, Method: ApplicationServiceEndpointGET},
 	)
-	if err != nil || len(requestCandidates) != 1 ||
-		requestCandidates[0] != ApplicationServiceEndpointMediaNone {
+	if err != nil || len(requestCandidates) != 1 || requestCandidates[0] != ApplicationServiceEndpointMediaNone {
 		t.Fatalf("GET request candidates=%v error=%v", requestCandidates, err)
 	}
 	statusCandidates, err := ApplicationServiceEndpointSuccessStatusCandidates(
 		ApplicationServiceEndpointSuccessStatusInput{
-			Task: authority, Method: ApplicationServiceEndpointPOST,
-			RequestMedia:  ApplicationServiceEndpointJSON,
-			ResponseMedia: ApplicationServiceEndpointMediaNone,
+			Authority: authority, Method: ApplicationServiceEndpointPOST,
+			RequestMedia: ApplicationServiceEndpointJSON, ResponseMedia: ApplicationServiceEndpointMediaNone,
 		},
 	)
 	if err != nil || len(statusCandidates) != 1 || statusCandidates[0] != 204 {
 		t.Fatalf("no-content status candidates=%v error=%v", statusCandidates, err)
 	}
-	if _, err := ApplicationServiceEndpointSuccessStatusCandidates(
-		ApplicationServiceEndpointSuccessStatusInput{
-			Task: authority, Method: ApplicationServiceEndpointGET,
-			RequestMedia:  ApplicationServiceEndpointMediaNone,
-			ResponseMedia: ApplicationServiceEndpointMediaNone,
-		},
-	); err == nil {
-		t.Fatal("accepted a GET contract with no compatible response status")
-	}
-}
-
-func leafJobFixture(
-	name string,
-	kind WorkKind,
-	job PortableJob,
-) struct {
-	name string
-	kind WorkKind
-	job  PortableJob
-	leaf string
-} {
-	leaves := map[WorkKind]string{
-		WorkApplicationServiceEndpointExposure:      "exposure",
-		WorkApplicationServiceEndpointMethod:        "method",
-		WorkApplicationServiceEndpointRouteTemplate: "route_template",
-		WorkApplicationServiceEndpointRequestMedia:  "request_media",
-		WorkApplicationServiceEndpointResponseMedia: "response_media",
-		WorkApplicationServiceEndpointSuccessStatus: "success_status",
-	}
-	return struct {
-		name string
-		kind WorkKind
-		job  PortableJob
-		leaf string
-	}{name: name, kind: kind, job: job, leaf: leaves[kind]}
 }
 
 func mustEndpointLeafJob(job PortableJob, err error) PortableJob {

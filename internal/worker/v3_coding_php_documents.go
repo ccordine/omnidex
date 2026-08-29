@@ -95,11 +95,11 @@ func genericPHPServiceDocuments(
 			dependencies = append(dependencies, binding.StateBlockID)
 			capabilityDependencies = append(capabilityDependencies, binding.StateBlockID)
 			if writable {
-				featureBehavior += "\nCross-request state for this task is authoritative through " +
+				featureBehavior += "\nCross-request state for the focused behavior is authoritative through " +
 					binding.StateClassName + "; load and persist only values admitted by its exact interface."
 			} else {
 				featureBehavior += "\nRead the directly related cross-request state only through " +
-					binding.StateClassName + "; this task has no durable mutation authority."
+					binding.StateClassName + "; the focused behavior has no durable mutation authority."
 			}
 		}
 		featureSignature := fmt.Sprintf(

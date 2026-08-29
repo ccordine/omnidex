@@ -2,7 +2,6 @@ package queue
 
 import (
 	"context"
-	"encoding/json"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -12,19 +11,26 @@ type stationGapScanner interface {
 }
 
 func scanStationGapOpening(scanner stationGapScanner, opening *StationGapOpening) error {
-	var schema string
+	var semanticUncertainty []byte
 	if err := scanner.Scan(
 		&opening.ID, &opening.JobID, &opening.Generation, &opening.StepID,
 		&opening.StepAttempt, &opening.WorkerID, &opening.GapID, &opening.Station,
 		&opening.Scope, &opening.PortableSchema, &opening.WorkID, &opening.WorkKind,
 		&opening.PortablePayload, &opening.PortablePayloadSHA256, &opening.PortableEnvelope,
-		&opening.PortableEnvelopeSHA256, &opening.RendererVersion, &opening.Prompt, &schema,
-		&opening.ProjectionEnvelope, &opening.ProjectionSHA256, &opening.ContextTokens,
+		&opening.PortableEnvelopeSHA256, &opening.RendererVersion, &opening.Prompt,
+		&opening.ProjectionEnvelope, &opening.ProjectionSHA256, &semanticUncertainty,
+		&opening.SemanticUncertaintyContractSHA256, &opening.ContextTokens,
 		&opening.MaxOutputTokens, &opening.OutputLimitMode, &opening.CreatedAt,
 	); err != nil {
 		return err
 	}
-	opening.ResponseSchema = append(json.RawMessage(nil), schema...)
+	contract, err := decodeStationGapSemanticUncertainty(
+		semanticUncertainty, opening.SemanticUncertaintyContractSHA256, opening.WorkKind,
+	)
+	if err != nil {
+		return err
+	}
+	opening.SemanticUncertaintyContract = contract
 	return nil
 }
 
@@ -63,8 +69,10 @@ func loadStationGapOpeningTx(
 	err := scanStationGapOpening(tx.QueryRow(ctx, `
 		SELECT id,job_id,generation,step_id,step_attempt,worker_id,gap_id,station,scope,
 			portable_schema,work_id,work_kind,portable_payload,portable_payload_sha256,
-			portable_envelope,portable_envelope_sha256,renderer_version,prompt,response_schema,
-			projection_envelope,projection_sha256,context_tokens,max_output_tokens,output_limit_mode,created_at
+			portable_envelope,portable_envelope_sha256,renderer_version,prompt,
+			projection_envelope,projection_sha256,semantic_uncertainty_contract,
+			semantic_uncertainty_contract_sha256,context_tokens,max_output_tokens,
+			output_limit_mode,created_at
 		FROM station_gap_openings WHERE id=$1 FOR SHARE
 	`, openingID), &opening)
 	return opening, err

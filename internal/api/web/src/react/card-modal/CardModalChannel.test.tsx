@@ -12,18 +12,17 @@ describe("card modal channel authority", () => {
     document.body.innerHTML = "";
   });
 
-  it("summarizes structured tool activity and keeps verbose command output in details", async () => {
+  it("summarizes structured tool activity and keeps verbose output in details", async () => {
     const context = makeModalContext({ tab: "channel", card: { chat: [{
       id: "tool_1", role: "tool", created_at: "2026-06-13T12:00:00Z",
       content: JSON.stringify({
-        activity: "command", title: "Run · go test ./internal/api", status: "completed",
-        command: "go test ./internal/api -count=1", detail: "all tests passed",
+        activity: "output", title: "Test output", status: "completed", detail: "all tests passed",
       }),
     }] } });
     vi.stubGlobal("fetch", vi.fn(async () => jsonResponse(context)));
     render(<CardModalApp cardID="card_1" projectID={7} initialTab="channel" />);
-    expect(await screen.findByText("Run · go test ./internal/api")).toBeInTheDocument();
-    expect(screen.queryByText(/"activity":"command"/)).not.toBeInTheDocument();
+    expect(await screen.findByText("Test output")).toBeInTheDocument();
+    expect(screen.queryByText(/"activity":"output"/)).not.toBeInTheDocument();
     expect(screen.getByText("all tests passed")).not.toBeVisible();
     expect(screen.getByText("Details")).toBeInTheDocument();
   });

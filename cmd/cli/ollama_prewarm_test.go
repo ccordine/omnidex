@@ -8,30 +8,34 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/gryph/omnidex/internal/llm"
 )
 
-func TestProbeOllamaModelUsesBoundedDeterministicRequest(t *testing.T) {
+func TestProbeOllamaModelUsesNonInferenceLoadRequest(t *testing.T) {
 	var request ollamaPrewarmRequest
+	var requestFields map[string]json.RawMessage
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/api/chat":
-			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		case "/api/generate":
+			var raw json.RawMessage
+			if err := json.NewDecoder(r.Body).Decode(&raw); err != nil {
 				t.Fatalf("decode request: %v", err)
+			}
+			if err := json.Unmarshal(raw, &request); err != nil {
+				t.Fatal(err)
+			}
+			if err := json.Unmarshal(raw, &requestFields); err != nil {
+				t.Fatal(err)
 			}
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{
 				"model":"qwen3-coder:30b",
-				"message":{"role":"assistant","content":"OK"},
+				"response":"",
 				"done":true,
-				"done_reason":"stop",
+				"done_reason":"load",
 				"total_duration":2500000000,
 				"load_duration":500000000,
-				"prompt_eval_count":20,
-				"prompt_eval_duration":100000000,
-				"eval_count":40,
-				"eval_duration":2000000000
+				"prompt_eval_count":0,
+				"eval_count":0
 			}`))
 		case "/api/ps":
 			w.Header().Set("Content-Type", "application/json")
@@ -55,26 +59,22 @@ func TestProbeOllamaModelUsesBoundedDeterministicRequest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if request.Model != "qwen3-coder:30b" || request.Stream || request.Think {
+	if request.Model != "qwen3-coder:30b" || request.Stream {
 		t.Fatalf("request routing=%#v", request)
 	}
-	if request.KeepAlive != "5m" || request.Options.NumCtx != 16384 || request.Options.NumPredict != ollamaPrewarmOutputTokens {
+	if request.KeepAlive != "5m" || request.Options.NumCtx != 16384 {
 		t.Fatalf("request bounds=%#v", request)
 	}
-	if request.Options.Temperature != 0 {
-		t.Fatalf("temperature=%v want 0", request.Options.Temperature)
-	}
-	if len(request.Messages) != 1 || request.Messages[0].Role != "user" || request.Messages[0].Content != llm.MinimalGeneratePrompt {
-		t.Fatalf("request messages=%#v", request.Messages)
+	for _, forbidden := range []string{"prompt", "messages", "think", "system", "format"} {
+		if _, present := requestFields[forbidden]; present {
+			t.Fatalf("prewarm request contains inference field %q: %#v", forbidden, requestFields)
+		}
 	}
 	if report.Model != "qwen3-coder:30b" || report.ContextTokens != 16384 {
 		t.Fatalf("report identity=%#v", report)
 	}
 	if report.TotalDurationMS != 2500 || report.LoadDurationMS != 500 {
 		t.Fatalf("report durations=%#v", report)
-	}
-	if report.PromptTokensPerSecond != 200 || report.EvalTokensPerSecond != 20 {
-		t.Fatalf("report throughput=%#v", report)
 	}
 	if report.AllocatedBytes != 22410000384 || report.VRAMBytes != 7281586176 {
 		t.Fatalf("report allocation=%#v", report)
@@ -87,49 +87,56 @@ func TestProbeOllamaModelUsesBoundedDeterministicRequest(t *testing.T) {
 func TestProbeOllamaModelFailsLoudly(t *testing.T) {
 	tests := []struct {
 		name      string
-		chat      string
-		chatCode  int
+		load      string
+		loadCode  int
 		ps        string
 		psCode    int
 		options   ollamaPrewarmOptions
 		wantError string
 	}{
 		{
-			name: "chat failure", chatCode: http.StatusInternalServerError,
-			chat: `{"error":"runner crashed"}`, psCode: http.StatusOK, ps: `{"models":[]}`,
+			name: "load failure", loadCode: http.StatusInternalServerError,
+			load: `{"error":"runner crashed"}`, psCode: http.StatusOK, ps: `{"models":[]}`,
 			options:   ollamaPrewarmOptions{Model: "qwen", KeepAlive: "5m", NumCtx: 16384},
 			wantError: "runner crashed",
 		},
 		{
-			name: "empty output", chatCode: http.StatusOK,
-			chat:   `{"model":"qwen","message":{"content":""},"done":true}`,
+			name: "unexpected inference", loadCode: http.StatusOK,
+			load:   `{"model":"qwen","response":"generated","done":true}`,
 			psCode: http.StatusOK, ps: `{"models":[]}`,
 			options:   ollamaPrewarmOptions{Model: "qwen", KeepAlive: "5m", NumCtx: 16384},
-			wantError: "empty content",
+			wantError: "performed model inference",
 		},
 		{
-			name: "runner absent", chatCode: http.StatusOK,
-			chat:   `{"model":"qwen","message":{"content":"OK"},"done":true}`,
+			name: "unexpected thinking", loadCode: http.StatusOK,
+			load:   `{"model":"qwen","response":"","thinking":"private trace","done":true}`,
+			psCode: http.StatusOK, ps: `{"models":[]}`,
+			options:   ollamaPrewarmOptions{Model: "qwen", KeepAlive: "5m", NumCtx: 16384},
+			wantError: "performed model inference",
+		},
+		{
+			name: "runner absent", loadCode: http.StatusOK,
+			load:   `{"model":"qwen","response":"","done":true}`,
 			psCode: http.StatusOK, ps: `{"models":[]}`,
 			options:   ollamaPrewarmOptions{Model: "qwen", KeepAlive: "5m", NumCtx: 16384},
 			wantError: "not present in /api/ps",
 		},
 		{
-			name: "context mismatch", chatCode: http.StatusOK,
-			chat:      `{"model":"qwen","message":{"content":"OK"},"done":true}`,
+			name: "context mismatch", loadCode: http.StatusOK,
+			load:      `{"model":"qwen","response":"","done":true}`,
 			psCode:    http.StatusOK,
 			ps:        `{"models":[{"name":"qwen","size":100,"size_vram":80,"context_length":8192}]}`,
 			options:   ollamaPrewarmOptions{Model: "qwen", KeepAlive: "5m", NumCtx: 16384},
 			wantError: "context length is 8192, requested 16384",
 		},
 		{
-			name: "invalid context", chatCode: http.StatusOK, chat: `{}`,
+			name: "invalid context", loadCode: http.StatusOK, load: `{}`,
 			psCode: http.StatusOK, ps: `{}`,
 			options:   ollamaPrewarmOptions{Model: "qwen", KeepAlive: "5m", NumCtx: 4096},
 			wantError: "inference context tokens",
 		},
 		{
-			name: "invalid keep alive", chatCode: http.StatusOK, chat: `{}`,
+			name: "invalid keep alive", loadCode: http.StatusOK, load: `{}`,
 			psCode: http.StatusOK, ps: `{}`,
 			options:   ollamaPrewarmOptions{Model: "qwen", KeepAlive: "forever", NumCtx: 16384},
 			wantError: "keep alive",
@@ -139,9 +146,9 @@ func TestProbeOllamaModelFailsLoudly(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				if r.URL.Path == "/api/chat" {
-					w.WriteHeader(test.chatCode)
-					_, _ = w.Write([]byte(test.chat))
+				if r.URL.Path == "/api/generate" {
+					w.WriteHeader(test.loadCode)
+					_, _ = w.Write([]byte(test.load))
 					return
 				}
 				if r.URL.Path == "/api/ps" {

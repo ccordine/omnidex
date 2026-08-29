@@ -1,6 +1,8 @@
 package queue
 
 import (
+	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -41,7 +43,8 @@ func TestWorkspaceMutationCommandIdentityBindsGenericPlanAndVerification(t *test
 	}
 	command := WorkspaceMutationCommand{
 		JobID: 1, StepID: 2, Generation: 3, CreatorAttempt: 1,
-		CreatorWorkerID: "worker", ProjectID: 4, Plan: plan, Verification: verification,
+		CreatorWorkerID: "worker", ProjectID: 4, ProjectLocation: root,
+		Plan: plan, Verification: verification,
 	}
 	identity, err := workspaceMutationOperation(command)
 	if err != nil {
@@ -51,6 +54,44 @@ func TestWorkspaceMutationCommandIdentityBindsGenericPlanAndVerification(t *test
 		identity.PlanJSON == "" || !validSHA256Digest(identity.PlanSHA256) {
 		t.Fatalf("workspace mutation identity=%+v", identity)
 	}
+	identityJSON, err := json.Marshal(workspaceMutationIdentityEnvelope{
+		Schema: workspaceMutationCommandSchema, Command: command,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	command.ProjectLocation = filepath.Join(filepath.Dir(root), "different-project-location")
+	differentLocation, err := workspaceMutationOperation(command)
+	if err != nil {
+		t.Fatal(err)
+	}
+	differentLocationJSON, err := json.Marshal(workspaceMutationIdentityEnvelope{
+		Schema: workspaceMutationCommandSchema, Command: command,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if identity.ID != differentLocation.ID ||
+		identity.CommandSHA256 != differentLocation.CommandSHA256 ||
+		identity.PlanJSON != differentLocation.PlanJSON ||
+		identity.PlanSHA256 != differentLocation.PlanSHA256 ||
+		!bytes.Equal(identityJSON, differentLocationJSON) {
+		t.Fatal("non-serialized project location changed workspace mutation v1 JSON or hashes")
+	}
+	if identity.ProjectLocation == differentLocation.ProjectLocation {
+		t.Fatal("workspace mutation execution authority discarded the exact project location")
+	}
+	record := workspaceMutationOperationRecord{
+		ID: identity.ID, CommandSHA256: identity.CommandSHA256,
+		ProjectLocation: identity.ProjectLocation,
+	}
+	if err := requireWorkspaceMutationIdentity(record, identity); err != nil {
+		t.Fatal(err)
+	}
+	if err := requireWorkspaceMutationIdentity(record, differentLocation); err == nil {
+		t.Fatal("persisted workspace mutation accepted different project-location authority")
+	}
+	command.ProjectLocation = root
 	again, err := workspaceMutationOperation(command)
 	if err != nil {
 		t.Fatal(err)
@@ -61,6 +102,23 @@ func TestWorkspaceMutationCommandIdentityBindsGenericPlanAndVerification(t *test
 	command.Plan.ExpectedStateID = command.Plan.SourceStateID
 	if _, err := workspaceMutationOperation(command); err == nil {
 		t.Fatal("workspace mutation accepted a zero state delta")
+	}
+}
+
+func TestWorkspaceMutationCommandRejectsNoncanonicalProjectLocation(t *testing.T) {
+	command, _ := workspaceMutationValidationFixture(t)
+	for _, invalid := range []string{
+		"", "relative/project", "/", command.ProjectLocation + "/",
+		"/srv/workspaces/project\\nested", "/srv/workspaces/project\nother",
+	} {
+		t.Run(invalid, func(t *testing.T) {
+			candidate := command
+			candidate.ProjectLocation = invalid
+			if _, err := workspaceMutationOperation(candidate); err == nil ||
+				!strings.Contains(err.Error(), "canonical non-root project location") {
+				t.Fatalf("invalid project location %q error=%v", invalid, err)
+			}
+		})
 	}
 }
 
@@ -131,7 +189,8 @@ func workspaceMutationValidationFixture(t *testing.T) (WorkspaceMutationCommand,
 	}
 	command := WorkspaceMutationCommand{
 		JobID: 1, StepID: 2, Generation: 3, CreatorAttempt: 1,
-		CreatorWorkerID: "worker", ProjectID: 4, Plan: plan, Verification: verification,
+		CreatorWorkerID: "worker", ProjectID: 4, ProjectLocation: root,
+		Plan: plan, Verification: verification,
 	}
 	identity, err := workspaceMutationOperation(command)
 	if err != nil {

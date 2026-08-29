@@ -42,11 +42,22 @@ func TestExactStationContextNegotiationRunsForRoleplayCompletionProfiles(t *test
 	if got != 8192 || client.calls != 1 || client.model != "tinydolphin:latest" || client.requested != 16384 {
 		t.Fatalf("context=%d client=%+v", got, client)
 	}
-	semanticJob, err := assemblyline.NewContextSearchTermCoverageJob(
-		assemblyline.ContextSearchTermLeafInput{
-			ExactInstruction: "Continue.",
-			Scope:            assemblyline.ContextScopeRoleplaySimulation,
-			AcceptedTerms:    []string{},
+	candidate, err := assemblyline.NewContextCandidateAuthority(
+		"simulation_event", "CTX_1", "The bridge remains raised.",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	semanticJob, err := assemblyline.NewContextRelevanceSelectionJob(
+		assemblyline.ContextRelevanceSelectionInput{
+			Authority: assemblyline.ContextRelevanceInput{
+				ExactInstruction:     "Continue.",
+				KnownArtifactPaths:   []string{},
+				CandidateAuthorities: []assemblyline.ContextCandidateAuthority{candidate},
+				MaxSelections:        1,
+				Scope:                assemblyline.ContextScopeRoleplaySimulation,
+			},
+			AcceptedCandidateIDs: []string{},
 		},
 	)
 	if err != nil {
@@ -125,29 +136,7 @@ func TestProviderSelectionUsesRawProfileOnlyForRoleplayProse(t *testing.T) {
 
 }
 
-func TestRoleplayResponseCorrectionRetainsRawProfilePolicy(t *testing.T) {
-	roleplayJob, err := roleplayResponseProviderPolicyJob()
-	if err != nil {
-		t.Fatal(err)
-	}
-	correction, err := assemblyline.NewRetainedResponseCorrectionJob(
-		roleplayJob,
-		"text must be nonempty",
-		"invalid",
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	selection, err := providerSelectionForPortableJob(correction, "story-model:latest", 8192)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if selection.ProfilePolicy != llm.ProviderIdentityProfileRoleplayRawCompletion {
-		t.Fatalf("roleplay correction used policy %q", selection.ProfilePolicy)
-	}
-}
-
-func TestRoleplayEvidenceRelationAndCorrectionUseSemanticProfilePolicy(t *testing.T) {
+func TestRoleplayEvidenceRelationUsesSemanticProfilePolicy(t *testing.T) {
 	relation, err := assemblyline.NewRoleplayGroundedResponseEvidenceRelationJob(
 		assemblyline.RoleplayGroundedEvidenceRelationInput{
 			ExactQuestion: "When was the harbor opened?",
@@ -168,21 +157,6 @@ func TestRoleplayEvidenceRelationAndCorrectionUseSemanticProfilePolicy(t *testin
 	}
 	if selection.ProfilePolicy != llm.ProviderIdentityProfileRoleplaySemanticCompletion {
 		t.Fatalf("roleplay evidence relation used policy %q", selection.ProfilePolicy)
-	}
-	correction, err := assemblyline.NewRetainedResponseCorrectionJob(
-		relation, "relation is not one registered value", "invalid",
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	selection, err = providerSelectionForPortableJob(
-		correction, "semantic-model:latest", 8192,
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if selection.ProfilePolicy != llm.ProviderIdentityProfileRoleplaySemanticCompletion {
-		t.Fatalf("roleplay evidence relation correction used policy %q", selection.ProfilePolicy)
 	}
 }
 

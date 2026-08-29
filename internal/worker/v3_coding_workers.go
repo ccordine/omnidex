@@ -50,8 +50,9 @@ func portableWorkerRuntimeWithIdentityGuard(
 	pending := &sync.Map{}
 	return typedWorkerRuntime{
 		Context:        executionContext,
-		MaxAttempts:    maxTypedWorkerAttempts,
+		MaxAttempts:    exactSemanticLeafCalls,
 		MaxConcurrency: runtime.svc.fragmentConcurrency,
+		PathProvenance: runtime.objectivePathProvenance,
 		Execute: func(job assemblyline.PortableJob, model string) (assemblyline.PortableResult, error) {
 			runtime.svc.emitStepEvent(
 				runtime.claim.Authority,

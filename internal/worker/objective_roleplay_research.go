@@ -20,7 +20,7 @@ const (
 	maxObjectiveRoleplayEvidenceSemanticCalls  = 9
 	minimumObjectiveRoleplayResearchModelCalls = 3
 	maximumObjectiveRoleplayResearchModelCalls = maxObjectiveRoleplayEvidenceSemanticCalls +
-		(1+maxObjectiveRoleplayResearchParagraphs*4)*maxTypedWorkerAttempts
+		(1+maxObjectiveRoleplayResearchParagraphs*4)*exactSemanticLeafCalls
 )
 
 func (r *nativeRuntimeV3) acquireObjectiveRoleplayResearch(
@@ -49,16 +49,15 @@ func (r *nativeRuntimeV3) acquireObjectiveRoleplayResearch(
 	if err != nil {
 		return objectiveRoleplayResearchAnswer{}, err
 	}
-	identityGuard := &webModelIdentityGuard{}
 	stations, err := newRoutedWebEvidenceStations(func(id station.ID) webresearch.PortableRuntime {
-		return runtimeWebPortableRuntime(r, id, identityGuard)
+		return runtimeWebPortableRuntime(r, id)
 	})
 	if err != nil {
 		return objectiveRoleplayResearchAnswer{}, err
 	}
 	return resolveObjectiveRoleplayResearch(
 		ctx, authority, research, narrative, r.svc.webSearch,
-		stations.terms, stations.relevance,
+		stations.relevance,
 		portableObjectiveRoleplayGroundedStation{runtime: r},
 	)
 }
@@ -69,13 +68,12 @@ func resolveObjectiveRoleplayResearch(
 	research roleplay.ResearchTurnAuthority,
 	narrative roleplay.NarrativeSimulationProjection,
 	acquisition webresearch.Acquisition,
-	terms webresearch.SearchTermsStation,
 	relevance webresearch.RelevanceStation,
 	response objectiveRoleplayGroundedStation,
 ) (objectiveRoleplayResearchAnswer, error) {
-	if ctx == nil || acquisition == nil || terms == nil || relevance == nil || response == nil {
+	if ctx == nil || acquisition == nil || relevance == nil || response == nil {
 		return objectiveRoleplayResearchAnswer{}, fmt.Errorf(
-			"roleplay research requires context, code-owned acquisition, search terms, relevance, and one response station",
+			"roleplay research requires context, code-owned acquisition, relevance, and one response station",
 		)
 	}
 	if err := ctx.Err(); err != nil {
@@ -91,21 +89,21 @@ func resolveObjectiveRoleplayResearch(
 		ctx,
 		webresearch.EvidenceRequest{
 			ID:       webresearch.ObjectiveID(objectiveTurnID(authority, assemblyline.ObjectiveKindExternalAnswer)),
-			Question: research.Question, Context: assemblyline.CloneObjectiveContext(authority.Context),
-			InitialQuery: research.Question,
+			Question: authority.ModelInstruction, Context: assemblyline.CloneObjectiveContext(authority.Context),
+			InitialQuery:       research.Question,
+			KnownArtifactPaths: append([]string{}, authority.ModelArtifactPaths...),
 		},
-		objectiveWebEvidenceConfig(), acquisition, terms, relevance,
+		objectiveWebEvidenceConfig(), acquisition, relevance,
 	)
 	if err != nil {
 		return objectiveRoleplayResearchAnswer{}, err
 	}
-	if gathered.SearchTermsCalls < 0 || gathered.SearchTermsCalls > 1 ||
-		gathered.RelevanceCalls != 1 || gathered.SemanticCalls < 1 ||
+	if gathered.RelevanceCalls != 1 || gathered.SemanticCalls < 1 ||
 		gathered.SemanticCalls > maxObjectiveRoleplayEvidenceSemanticCalls {
 		return objectiveRoleplayResearchAnswer{}, fmt.Errorf(
-			"roleplay research evidence sieve permits zero or one search-term call, requires one relevance call, and permits 1..%d raw semantic calls; received %d, %d, and %d",
+			"roleplay research evidence sieve requires one relevance call and permits 1..%d raw semantic calls; received %d and %d",
 			maxObjectiveRoleplayEvidenceSemanticCalls,
-			gathered.SearchTermsCalls, gathered.RelevanceCalls, gathered.SemanticCalls,
+			gathered.RelevanceCalls, gathered.SemanticCalls,
 		)
 	}
 	projected, err := projectObjectiveRoleplayResearchEvidence(gathered.Evidence, gathered.Projected)
@@ -117,7 +115,7 @@ func resolveObjectiveRoleplayResearch(
 		capsules[index] = item.Capsule
 	}
 	input := assemblyline.RoleplayGroundedResponseInput{
-		ExactQuestion: research.Question,
+		ExactQuestion: authority.ModelInstruction,
 		RoleplayIdentity: assemblyline.RoleplayResponseIdentity{
 			CharacterName: narrative.Viewpoint.Name,
 			Summary:       narrative.Viewpoint.Summary,
@@ -127,8 +125,9 @@ func resolveObjectiveRoleplayResearch(
 			PersonaKind: roleplay.UserPersonaNarrator, PersonaName: roleplay.NarratorPersonaName,
 			ContributionKind: roleplay.UserContributionCommand,
 		},
-		Context:           assemblyline.CloneObjectiveContext(authority.Context),
-		RealWorldEvidence: capsules,
+		Context:            assemblyline.CloneObjectiveContext(authority.Context),
+		RealWorldEvidence:  capsules,
+		KnownArtifactPaths: append([]string{}, authority.ModelArtifactPaths...),
 	}
 	decision, receipt, err := response.RespondGrounded(ctx, input)
 	if err != nil {
@@ -136,7 +135,7 @@ func resolveObjectiveRoleplayResearch(
 	}
 	minimumResponseCalls := 1 + len(capsules)
 	maximumResponseCalls := (1 + maxObjectiveRoleplayResearchParagraphs*len(capsules)) *
-		maxTypedWorkerAttempts
+		exactSemanticLeafCalls
 	if receipt.Reused || receipt.Calls < minimumResponseCalls ||
 		receipt.Calls > maximumResponseCalls {
 		return objectiveRoleplayResearchAnswer{}, fmt.Errorf(

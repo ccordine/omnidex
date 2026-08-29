@@ -14,9 +14,8 @@ func TestProductionAcquisitionUsesRegisteredKernelContractAndAttemptBudget(t *te
 		"kernel evidence": {report: candidateReport("kernel evidence", candidate)},
 	}}
 	machine := newFixtureMachine(t, Objective{
-		ID: "objective_kernel", Question: "What does the evidence establish?", InitialQuery: "kernel evidence",
-		Acceptance: exactAcceptance(), Status: ObjectivePending,
-	}, acquisition, &recordingTermsStation{}, &recordingRelevanceStation{}, &recordingSynthesisStation{}, 2_000)
+		ID: "objective_kernel", Question: "What does the evidence establish?", InitialQuery: "kernel evidence", Status: ObjectivePending,
+	}, acquisition, &recordingRelevanceStation{}, &recordingSynthesisStation{}, 2_000)
 	registration := machine.contracts.discovery.Registration()
 	if registration.Capability() != discoveryCapability || registration.Workflow() != discoveryWorkflow || registration.Version() != "1" {
 		t.Fatalf("discovery registration=%#v", registration)

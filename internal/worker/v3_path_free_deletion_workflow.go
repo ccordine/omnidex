@@ -8,27 +8,54 @@ import (
 	"github.com/gryph/omnidex/internal/station"
 )
 
-func (session *directCodingSession) classifyPathFreeArtifactTruth(
+func (session *directCodingSession) classifyPathFreeArtifactAbsence(
 	featureQuotes []string,
 	directives []assemblyline.ArtifactDirective,
 	identities []assemblyline.ArtifactIdentity,
-) (knownArtifactTruthPartition, error) {
-	modelName, err := session.workerModel(station.CodingKnownArtifactTruth)
+) (repositoryArtifactAbsencePartition, error) {
+	pathFreeQuotes, err := pathFreeArtifactAbsenceQuotes(featureQuotes, directives)
 	if err != nil {
-		return knownArtifactTruthPartition{}, err
+		return repositoryArtifactAbsencePartition{}, err
 	}
-	partition, err := classifyKnownArtifactTruthQuotes(
-		directCodingWorkerRuntime(session), modelName, featureQuotes, identities,
+	if len(pathFreeQuotes) == 0 {
+		return repositoryArtifactAbsencePartition{}, nil
+	}
+	modelName, err := session.workerModel(station.CodingRepositoryArtifactAbsence)
+	if err != nil {
+		return repositoryArtifactAbsencePartition{}, err
+	}
+	partition, err := classifyRepositoryArtifactAbsenceQuotes(
+		directCodingWorkerRuntime(session), modelName, pathFreeQuotes, identities,
 	)
 	if err != nil {
-		return knownArtifactTruthPartition{}, err
-	}
-	if err := validateDirectArtifactAbsenceTruth(
-		featureQuotes, directives, partition.MustBeAbsent,
-	); err != nil {
-		return knownArtifactTruthPartition{}, err
+		return repositoryArtifactAbsencePartition{}, err
 	}
 	return partition, nil
+}
+
+func pathFreeArtifactAbsenceQuotes(
+	featureQuotes []string,
+	directives []assemblyline.ArtifactDirective,
+) ([]string, error) {
+	named := make(map[string]struct{}, len(directives))
+	for _, directive := range directives {
+		if directive.Disposition != assemblyline.ArtifactForbid &&
+			directive.Disposition != assemblyline.ArtifactAbsenceCandidate {
+			continue
+		}
+		quote, err := exactArtifactAbsenceRequirementQuote(directive.Token, featureQuotes)
+		if err != nil {
+			return nil, err
+		}
+		named[quote] = struct{}{}
+	}
+	pathFree := make([]string, 0, len(featureQuotes)-len(named))
+	for _, quote := range featureQuotes {
+		if _, hasNamedArtifact := named[quote]; !hasNamedArtifact {
+			pathFree = append(pathFree, quote)
+		}
+	}
+	return pathFree, nil
 }
 
 func (session *directCodingSession) runPathFreeArtifactDeletion(

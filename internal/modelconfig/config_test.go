@@ -49,6 +49,8 @@ func TestFromJSONRejectsMalformedAndUnknownValues(t *testing.T) {
 		json.RawMessage(`{"coding_workload_review_model":"x"}`),
 		json.RawMessage(`{"coding_requirement_adviser_model":"x"}`),
 		json.RawMessage(`{"coding_requirement_split_model":"x"}`),
+		json.RawMessage(`{"web_grounded_synthesis_correction_model":"x"}`),
+		json.RawMessage(`{"web_claim_evidence_review_model":"x"}`),
 		json.RawMessage(`{"default_model":"x"}`),
 		json.RawMessage(`{"fast_model":"x"}`),
 		json.RawMessage(`{"glue_model":"x"}`),
@@ -102,25 +104,22 @@ func TestModelNamesReturnsEverySelectedProviderModel(t *testing.T) {
 
 func TestApplyExactStationRoutingFields(t *testing.T) {
 	applied := Apply(Routing{}, Config{
-		"conversation_objective_kind_model":       "qwen3:4b-kind",
-		"conversation_response_model":             "qwen3:8b-response",
-		"roleplay_semantic_model":                 "qwen3:8b-roleplay-fidelity",
-		"grounded_answer_model":                   "qwen3:8b-grounded",
-		"web_search_terms_model":                  "qwen3:4b-terms",
-		"web_relevance_model":                     "qwen3:4b-relevance",
-		"web_grounded_synthesis_model":            "qwen3:8b-synthesis",
-		"web_grounded_synthesis_correction_model": "qwen3:8b-synthesis",
-		"web_claim_evidence_review_model":         "qwen3:8b-review",
-		"coding_surface_model":                    "qwen3:4b-surface",
-		"coding_requirements_model":               "qwen2.5-coder:7b-requirements",
-		"coding_service_deployment_intent_model":  "phi4:14b-deployment",
-		"coding_workload_model":                   "qwen3.5:27b-workload",
-		"coding_artifact_handling_model":          "qwen2.5:3b-artifact",
-		"coding_capability_relation_model":        "qwen3:4b-relation",
-		"coding_skill_selection_model":            "qwen3:4b-skill-select",
-		"coding_fragment_model":                   "qwen3-coder:30b-fragment",
-		"coding_fragment_repair_guidance_model":   "deepseek-r1:8b-guidance",
-		"coding_fragment_correction_model":        "qwen2.5-coder:14b-correction",
+		"conversation_objective_kind_model":      "qwen3:4b-kind",
+		"conversation_response_model":            "qwen3:8b-response",
+		"roleplay_semantic_model":                "qwen3:8b-roleplay-fidelity",
+		"grounded_answer_model":                  "qwen3:8b-grounded",
+		"web_relevance_model":                    "qwen3:4b-relevance",
+		"web_grounded_synthesis_model":           "qwen3:8b-synthesis",
+		"coding_surface_model":                   "qwen3:4b-surface",
+		"coding_requirements_model":              "qwen2.5-coder:7b-requirements",
+		"coding_service_deployment_intent_model": "phi4:14b-deployment",
+		"coding_workload_model":                  "qwen3.5:27b-workload",
+		"coding_artifact_handling_model":         "qwen2.5:3b-artifact",
+		"coding_capability_relation_model":       "qwen3:4b-relation",
+		"coding_skill_selection_model":           "qwen3:4b-skill-select",
+		"coding_fragment_model":                  "qwen3-coder:30b-fragment",
+		"coding_fragment_repair_guidance_model":  "deepseek-r1:8b-guidance",
+		"coding_fragment_correction_model":       "qwen2.5-coder:14b-correction",
 	})
 	if got := applied.Stations[station.ConversationObjectiveKind]; got != "qwen3:4b-kind" {
 		t.Fatalf("conversation kind model=%q", got)
@@ -134,20 +133,11 @@ func TestApplyExactStationRoutingFields(t *testing.T) {
 	if got := applied.Stations[station.GroundedAnswer]; got != "qwen3:8b-grounded" {
 		t.Fatalf("grounded answer model=%q", got)
 	}
-	if got := applied.Stations[station.WebSearchTerms]; got != "qwen3:4b-terms" {
-		t.Fatalf("web search terms model=%q", got)
-	}
 	if got := applied.Stations[station.WebRelevance]; got != "qwen3:4b-relevance" {
 		t.Fatalf("web relevance model=%q", got)
 	}
 	if got := applied.Stations[station.WebGroundedSynthesis]; got != "qwen3:8b-synthesis" {
 		t.Fatalf("web synthesis model=%q", got)
-	}
-	if got := applied.Stations[station.WebGroundedSynthesisCorrection]; got != "qwen3:8b-synthesis" {
-		t.Fatalf("web synthesis correction model=%q", got)
-	}
-	if got := applied.Stations[station.WebClaimEvidenceReview]; got != "qwen3:8b-review" {
-		t.Fatalf("web claim-evidence review model=%q", got)
 	}
 	if got := applied.Stations[station.CodingSurface]; got != "qwen3:4b-surface" {
 		t.Fatalf("coding surface model=%q", got)
@@ -167,32 +157,17 @@ func TestApplyExactStationRoutingFields(t *testing.T) {
 	if got := applied.Stations[station.CodingServiceStateLifetime]; got != "qwen3.5:27b-workload" {
 		t.Fatalf("coding service state lifetime model=%q", got)
 	}
-	if got := applied.Stations[station.CodingServiceStateInterface]; got != "qwen3.5:27b-workload" {
-		t.Fatalf("coding service state interface model=%q", got)
-	}
 	if got := applied.Stations[station.CodingServiceEndpointRequirement]; got != "qwen3.5:27b-workload" {
 		t.Fatalf("coding service endpoint requirement model=%q", got)
-	}
-	for _, id := range []station.ID{
-		station.CodingServiceEndpointExposure,
-		station.CodingServiceEndpointMethod,
-		station.CodingServiceEndpointRouteTemplate,
-		station.CodingServiceEndpointRequestMedia,
-		station.CodingServiceEndpointResponseMedia,
-		station.CodingServiceEndpointSuccessStatus,
-	} {
-		if got := applied.Stations[id]; got != "qwen3.5:27b-workload" {
-			t.Fatalf("coding service endpoint leaf %s model=%q", id, got)
-		}
-	}
-	if got := applied.Stations[station.CodingWorkload]; got != "qwen3.5:27b-workload" {
-		t.Fatalf("coding workload model=%q", got)
 	}
 	if got := applied.Stations[station.CodingArtifactHandling]; got != "qwen2.5:3b-artifact" {
 		t.Fatalf("coding artifact handling model=%q", got)
 	}
-	if got := applied.Stations[station.CodingKnownArtifactTruth]; got != "qwen2.5:3b-artifact" {
-		t.Fatalf("coding known artifact truth model=%q", got)
+	if got := applied.Stations[station.CodingRepositoryArtifactAbsence]; got != "qwen2.5:3b-artifact" {
+		t.Fatalf("coding repository artifact absence model=%q", got)
+	}
+	if got := applied.Stations[station.CodingPlainTextArtifactCreation]; got != "qwen2.5:3b-artifact" {
+		t.Fatalf("coding plain-text artifact creation model=%q", got)
 	}
 	if got := applied.Stations[station.CodingDeclarationArtifactBoundary]; got != "qwen2.5:3b-artifact" {
 		t.Fatalf("coding declaration artifact boundary model=%q", got)

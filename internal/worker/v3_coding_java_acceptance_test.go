@@ -118,56 +118,17 @@ func TestJavaAcceptanceRequiresExactFeatureAndResultDerivedRuntimeChecks(t *test
 	}
 }
 
-func TestJavaAcceptanceRequiresDistinctResultConditionPerFrozenCriterion(t *testing.T) {
-	stage, ref := javaAcceptanceFixture(t, "output is ready", "exit status is successful")
-	valid := `static void verifyFeature001() {
-  Map<String, Object> result = Feature001.feature001(Map.of(), Map.of());
-  Runtime.requireResult(result);
-  Runtime.require("ready".equals(result.get("output")), "output mismatch");
-  Runtime.require(Integer.valueOf(0).equals(result.get("exitCode")), "exit status mismatch");
-}`
-	if err := validateDirectCodingJavaAcceptance(&stage, ref, valid); err != nil {
-		t.Fatal(err)
-	}
-	for name, source := range map[string]string{
-		"one condition": `static void verifyFeature001() {
-  Map<String, Object> result = Feature001.feature001(Map.of(), Map.of());
-  Runtime.requireResult(result);
-  Runtime.require("ready".equals(result.get("output")), "output mismatch");
-}`,
-		"duplicate condition": `static void verifyFeature001() {
-  Map<String, Object> result = Feature001.feature001(Map.of(), Map.of());
-  Runtime.requireResult(result);
-  Runtime.require("ready".equals(result.get("output")), "first");
-  Runtime.require(("ready".equals(result.get("output"))), "second");
-}`,
-	} {
-		t.Run(name, func(t *testing.T) {
-			if err := validateDirectCodingJavaAcceptance(&stage, ref, source); err == nil {
-				t.Fatalf("accepted invalid Java verification source:\n%s", source)
-			}
-		})
-	}
-}
-
 func javaAcceptanceFixture(
 	t *testing.T,
-	criteria ...string,
 ) (directCodingProgram, assemblyline.SourceBlockRef) {
 	t.Helper()
-	if len(criteria) == 0 {
-		criteria = []string{"output is ready"}
-	}
 	specification := assemblyline.ApplicationSpecification{
 		Surface: assemblyline.ApplicationSurfaceCommandLine, ProductQuote: "verification fixture",
 		Requirements: []assemblyline.Requirement{{
 			ID: "requirement_001", SourceQuote: "Return a ready result",
 		}},
 	}
-	workload := freezeJavaWorkload(t, specification, []assemblyline.ApplicationWorkloadTaskDraft{{
-		RequirementID: "requirement_001", Objective: "Return a ready result.",
-		RequiredBehaviors: []string{"Return a normalized result."}, AcceptanceCriteria: criteria,
-	}})
+	workload := freezeJavaWorkload(t, specification)
 	feature := assemblyline.SourceBlock{
 		ID:        "feature.001",
 		Signature: "static Map<String, Object> feature001(Map<String, Object> input, Map<String, Object> dependencies)",

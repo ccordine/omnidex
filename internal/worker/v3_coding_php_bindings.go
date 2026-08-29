@@ -10,6 +10,7 @@ import (
 type phpServiceFeatureBinding struct {
 	Sequence         int
 	RequirementID    string
+	RequirementQuote string
 	TaskID           string
 	FeatureNumber    string
 	Implementation   string
@@ -70,7 +71,8 @@ func phpServiceFeatureBindings(
 			return nil, nil, fmt.Errorf("PHP task %s input fixture: %w", task.ID, err)
 		}
 		binding := phpServiceFeatureBinding{
-			Sequence: index + 1, RequirementID: requirement.ID, TaskID: task.ID,
+			Sequence: index + 1, RequirementID: requirement.ID,
+			RequirementQuote: requirement.SourceQuote, TaskID: task.ID,
 			FeatureNumber: featureNumber, Implementation: pair.ImplementationPath,
 			Verification:     pair.VerificationPath,
 			FeatureBlockID:   fmt.Sprintf("feature.%03d", index+1),
@@ -86,7 +88,7 @@ func phpServiceFeatureBindings(
 			RendererName:     "renderFeature" + featureNumber + "HTML",
 			VerificationName: "verifyFeature" + featureNumber,
 			FixtureName:      "taskInputFixture" + featureNumber,
-			AcceptanceCount:  len(task.AcceptanceCriteria),
+			AcceptanceCount:  1,
 			HasEndpoint:      hasEndpoint,
 			Endpoint:         endpoint,
 			Fixture:          fixture,

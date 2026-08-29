@@ -3,7 +3,6 @@ package assemblyline
 import (
 	"fmt"
 	"strings"
-	"unicode/utf8"
 )
 
 func validateRequirementQuote(label, quote string) error {
@@ -20,7 +19,12 @@ func validateRequirementQuote(label, quote string) error {
 }
 
 func (input ApplicationClassificationInput) validate() error {
-	return validateApplicationRequest("application classification", input.UserRequest)
+	if err := validateApplicationRequest("application classification", input.UserRequest); err != nil {
+		return err
+	}
+	return ValidatePathFreeModelContext(
+		"application classification request", input.UserRequest,
+	)
 }
 
 func (input ArtifactHandlingInput) validate() error {
@@ -33,7 +37,9 @@ func (input ArtifactHandlingInput) validate() error {
 	if !strings.Contains(input.UserRequest, input.Token) {
 		return fmt.Errorf("artifact handling token %s is absent from the user request", input.Token)
 	}
-	return nil
+	return ValidatePathFreeModelContext(
+		"artifact handling request", input.UserRequest,
+	)
 }
 
 func validateGroundedQuoteCollection(label, source string, quotes []string) error {
@@ -192,40 +198,6 @@ func (input FragmentCorrectionInput) ValidatePathFree(
 	return ValidatePathFreeSourceModelContextWithProvenance(
 		"fragment correction", provenance, sourceValues...,
 	)
-}
-
-func (input ResponseCorrectionInput) validate() error {
-	if err := input.Original.Validate(); err != nil {
-		return fmt.Errorf("response correction original job: %w", err)
-	}
-	if input.Original.Kind == WorkResponseCorrection {
-		return fmt.Errorf("response correction cannot wrap another response correction")
-	}
-	if input.ValidationFailure == "" || input.ValidationFailure != strings.TrimSpace(input.ValidationFailure) {
-		return fmt.Errorf("response correction requires one trimmed validation failure")
-	}
-	if len(input.ValidationFailure) > 1200 {
-		return fmt.Errorf("response correction validation failure exceeds 1200 bytes")
-	}
-	transport, err := PortableResponseTransportForWorkKind(input.Original.Kind)
-	if err != nil {
-		return err
-	}
-	if transport != PortableResponseTransportSemanticRaw {
-		return fmt.Errorf(
-			"response correction requires a raw semantic original; %s uses %s",
-			input.Original.Kind, transport,
-		)
-	}
-	if input.RetainedCandidate == "" ||
-		input.RetainedCandidate != strings.TrimSpace(input.RetainedCandidate) ||
-		len(input.RetainedCandidate) > maxPortableCandidateBytes ||
-		!utf8.ValidString(input.RetainedCandidate) ||
-		strings.ContainsRune(input.RetainedCandidate, '\x00') {
-		return fmt.Errorf("response correction requires one exact bounded NUL-free UTF-8 retained leaf")
-	}
-	_, err = RenderPortableJob(input.Original)
-	return err
 }
 
 func validatePortableFragmentCore(language, signature string, capabilities, symbols []string) error {

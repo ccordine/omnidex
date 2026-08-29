@@ -35,12 +35,15 @@ type WorkspaceMutationVerificationPlan struct {
 // exact claim that created it. Recovery may run under a later active attempt;
 // creator authority remains immutable in this command.
 type WorkspaceMutationCommand struct {
-	JobID           int64                             `json:"job_id"`
-	StepID          int64                             `json:"step_id"`
-	Generation      int64                             `json:"generation"`
-	CreatorAttempt  int64                             `json:"creator_attempt"`
-	CreatorWorkerID string                            `json:"creator_worker_id"`
-	ProjectID       int64                             `json:"project_id"`
+	JobID           int64  `json:"job_id"`
+	StepID          int64  `json:"step_id"`
+	Generation      int64  `json:"generation"`
+	CreatorAttempt  int64  `json:"creator_attempt"`
+	CreatorWorkerID string `json:"creator_worker_id"`
+	ProjectID       int64  `json:"project_id"`
+	// ProjectLocation is host-visible execution authority persisted outside
+	// the historical v1 command JSON and its immutable digest.
+	ProjectLocation string                            `json:"-"`
 	Plan            workspacefacts.MutationPlan       `json:"plan"`
 	Verification    WorkspaceMutationVerificationPlan `json:"verification"`
 }
@@ -103,15 +106,17 @@ type WorkspaceMutationSnapshot struct {
 }
 
 type workspaceMutationOperationIdentity struct {
-	ID            string
-	CommandSHA256 string
-	PlanJSON      string
-	PlanSHA256    string
+	ID              string
+	CommandSHA256   string
+	ProjectLocation string
+	PlanJSON        string
+	PlanSHA256      string
 }
 
 type workspaceMutationOperationRecord struct {
 	ID                           string
 	CommandSHA256                string
+	ProjectLocation              string
 	Status                       string
 	IndeterminatePhase           *string
 	MutationEvidenceID           *int64

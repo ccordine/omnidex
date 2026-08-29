@@ -17,43 +17,6 @@ func runDirectCodingTypeScriptRepairGuidance(
 	repairRegion *assemblyline.TypeScriptFragmentRepairRegion,
 	diagnostic string,
 ) (string, error) {
-	return runDirectCodingTypeScriptRepairGuidanceWithRejection(
-		runtime, modelName, block, dialect, available, current, repairRegion, diagnostic, nil,
-	)
-}
-
-func runDirectCodingTypeScriptRepairGuidanceAfterRejection(
-	runtime typedWorkerRuntime,
-	modelName string,
-	block assemblyline.SourceBlock,
-	dialect string,
-	available string,
-	current string,
-	repairRegion *assemblyline.TypeScriptFragmentRepairRegion,
-	diagnostic string,
-	rejectedInstruction string,
-	rejectionKind assemblyline.TypeScriptRepairGuidanceRejectionKind,
-) (string, error) {
-	return runDirectCodingTypeScriptRepairGuidanceWithRejection(
-		runtime, modelName, block, dialect, available, current, repairRegion, diagnostic,
-		&assemblyline.FragmentRepairGuidanceRejection{
-			Instruction: strings.TrimSpace(rejectedInstruction),
-			Failure:     rejectionKind,
-		},
-	)
-}
-
-func runDirectCodingTypeScriptRepairGuidanceWithRejection(
-	runtime typedWorkerRuntime,
-	modelName string,
-	block assemblyline.SourceBlock,
-	dialect string,
-	available string,
-	current string,
-	repairRegion *assemblyline.TypeScriptFragmentRepairRegion,
-	diagnostic string,
-	priorRejection *assemblyline.FragmentRepairGuidanceRejection,
-) (string, error) {
 	capabilities := make([]string, 0, 1)
 	if declaration := strings.TrimSpace(available); declaration != "" {
 		capabilities = append(capabilities, declaration)
@@ -75,8 +38,7 @@ func runDirectCodingTypeScriptRepairGuidanceWithRejection(
 			Signature:    strings.TrimSpace(block.Signature),
 			Capabilities: capabilities, PermittedSymbols: permittedSymbols,
 			CurrentDeclaration: portableCurrent, RepairRegion: repairRegion,
-			Diagnostic:     strings.TrimSpace(diagnostic),
-			PriorRejection: priorRejection,
+			Diagnostic: strings.TrimSpace(diagnostic),
 		},
 	)
 	if err != nil {

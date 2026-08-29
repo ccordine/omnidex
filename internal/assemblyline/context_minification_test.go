@@ -9,7 +9,8 @@ import (
 func TestContextMinificationReturnsOneBoundedLeafForAnaphora(t *testing.T) {
 	t.Parallel()
 	input := ContextMinificationInput{
-		ExactInstruction: "Do it again.",
+		ExactInstruction:   "Do it again.",
+		KnownArtifactPaths: []string{},
 		SelectedAuthorities: []ContextCandidateAuthority{
 			contextCandidateFixture(t, "conversation", "CTX_4", "USER: Set the starship course for Europa.\nASSISTANT: I set the course for Europa."),
 			contextCandidateFixture(t, "mission.fact", "CTX_9", "The Europa route requires a gravity assist around Ganymede."),
@@ -59,7 +60,8 @@ func TestContextMinificationReturnsOneBoundedLeafForAnaphora(t *testing.T) {
 func TestContextMinificationRejectsEmptyOversizedOrExpandedResponse(t *testing.T) {
 	t.Parallel()
 	input := ContextMinificationInput{
-		ExactInstruction: "Prepare it the same way.",
+		ExactInstruction:   "Prepare it the same way.",
+		KnownArtifactPaths: []string{},
 		SelectedAuthorities: []ContextCandidateAuthority{
 			contextCandidateFixture(t, "conversation", "CTX_2", "The pastry was folded twice and chilled for twenty minutes."),
 		},
@@ -82,7 +84,9 @@ func TestContextMinificationRejectsEmptyOversizedOrExpandedResponse(t *testing.T
 
 func TestContextMinificationRequiresSelectedExactAuthoritiesWithinBudget(t *testing.T) {
 	t.Parallel()
-	input := ContextMinificationInput{ExactInstruction: "Do that again."}
+	input := ContextMinificationInput{
+		ExactInstruction: "Do that again.", KnownArtifactPaths: []string{},
+	}
 	if _, err := NewContextMinificationJob(input); err == nil {
 		t.Fatal("minification without selected authority was accepted")
 	}

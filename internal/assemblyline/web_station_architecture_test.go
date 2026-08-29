@@ -8,15 +8,10 @@ import (
 
 func TestWebStationWireContractsContainNoExecutionAuthority(t *testing.T) {
 	values := []any{
-		WebSearchTermsInput{}, WebSearchTermsDecision{},
-		WebSearchTermLeafInput{}, WebSearchTermCoverageDecision{}, WebSearchTermDecision{},
 		WebRelevanceInput{}, WebRelevanceCandidate{}, WebRelevanceDecision{},
 		WebRelevanceRelationInput{}, WebRelevanceRelationDecision{},
 		WebGroundedSynthesisInput{}, WebGroundedEvidence{},
 		WebGroundedSynthesisDecision{}, WebGroundedParagraph{},
-		WebGroundedSynthesisCorrectionInput{}, WebGroundedSynthesisCorrectionDecision{},
-		WebClaimEvidenceReviewInput{}, WebReviewParagraph{}, WebReviewEvidence{},
-		WebClaimEvidenceReviewDecision{},
 	}
 	for _, value := range values {
 		typeOf := reflect.TypeOf(value)
@@ -30,13 +25,5 @@ func TestWebStationWireContractsContainNoExecutionAuthority(t *testing.T) {
 				t.Fatalf("%s exposes forbidden field %q", typeOf.Name(), wire)
 			}
 		}
-	}
-}
-
-func TestWebSynthesisCorrectionDecisionContainsExactlyOneTextLeaf(t *testing.T) {
-	typeOf := reflect.TypeOf(WebGroundedSynthesisCorrectionDecision{})
-	if typeOf.NumField() != 1 || typeOf.Field(0).Name != "Text" ||
-		strings.Split(typeOf.Field(0).Tag.Get("json"), ",")[0] != "text" {
-		t.Fatalf("web synthesis correction may return only one text leaf: %v", typeOf)
 	}
 }

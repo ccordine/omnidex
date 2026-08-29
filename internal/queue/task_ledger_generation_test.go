@@ -19,7 +19,6 @@ func TestTaskCommandStepTargetClassifiesEveryRegisteredCommand(t *testing.T) {
 		{name: "reject entry", command: taskstate.RejectEntryCommand{}},
 		{name: "resolve entry", command: taskstate.ResolveEntryCommand{}},
 		{name: "supersede entry", command: taskstate.SupersedeEntryCommand{}},
-		{name: "accept decision", command: taskstate.AcceptDecisionCommand{CreatedStepID: &stepID}, want: &stepID},
 		{name: "promote ready", command: taskstate.PromoteReadyNodesCommand{}},
 		{name: "assign step", command: taskstate.AssignNodeStepCommand{StepID: stepID}, want: &stepID},
 		{name: "transition node", command: taskstate.TransitionNodeCommand{CompletedStepID: &stepID}, want: &stepID},

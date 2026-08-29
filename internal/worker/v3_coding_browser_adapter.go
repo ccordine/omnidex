@@ -45,7 +45,7 @@ func compileGenericTypeScriptBrowserBlueprint(
 	if err := validateDirectCodingCapabilityGraph(specification.Requirements, capabilities); err != nil {
 		return assemblyline.SourceBlueprint{}, nil, err
 	}
-	contexts, err := directCodingApplicationTaskContexts(applicationWorkloadInput(specification), workload)
+	contexts, err := directCodingApplicationTaskContexts(workload)
 	if err != nil {
 		return assemblyline.SourceBlueprint{}, nil, err
 	}
@@ -180,11 +180,11 @@ func genericBrowserFeatureContract(
 	parts = append(parts,
 		"Return a complete accessible interactive React view. No placeholder, TODO, invented endpoint, import, or extra declaration.",
 		"Tailwind CSS utility classes are available in className. Use complete static utility names; do not construct class names from fragments.",
-		"The task-neutral code-owned boundary supplies state, read-only capability snapshots, mutations, live working status, and visible errors.",
-		"All shared state changes go through actions inside user interaction handlers. Use state for this feature and capabilities only when another feature materially affects this view.",
-		"React hooks and standard browser APIs are available when the requested behavior needs them. This block supplies the workload-specific behavior required by its local contract.",
+		"State, read-only capability snapshots, mutations, live working status, and visible errors are available through the declared inputs.",
+		"Route shared state changes through actions inside user interaction handlers. Read state for this behavior and capabilities only when another required behavior materially affects this view.",
+		"React hooks and standard browser APIs are available when the required behavior needs them. Implement that behavior using only the declared inputs.",
 	)
-	parts = append(parts, "Every capability identifier referenced by the block is one of the listed capability identifiers.")
+	parts = append(parts, "Every referenced capability identifier must be one of the listed capability identifiers.")
 	return strings.Join(parts, "\n")
 }
 

@@ -1,30 +1,61 @@
 package assemblyline
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 )
 
+type applicationServiceEndpointPrerequisite struct {
+	label string
+	value string
+}
+
 func buildApplicationServiceEndpointLeafPrompt(
-	authority any,
+	authority ApplicationServiceEndpointTaskAuthority,
+	prerequisites []applicationServiceEndpointPrerequisite,
 	question string,
 	response string,
 ) (string, error) {
-	raw, err := json.Marshal(authority)
-	if err != nil {
-		return "", fmt.Errorf("encode service endpoint leaf authority: %w", err)
+	if err := authority.validate(); err != nil {
+		return "", err
 	}
-	prompt := strings.Join([]string{
+	sections := []string{
 		question,
 		response,
 		"Return only that raw semantic leaf with no JSON, quotes, label, Markdown, or commentary.",
-		"LOCAL_ACCEPTED_AUTHORITY_JSON:\n" + string(raw),
-	}, "\n\n")
+		"PRODUCT CONTEXT:\n" + authority.ProductContext,
+		"EXACT ENDPOINT REQUIREMENT:\n" + authority.RequirementQuote,
+		"ACCEPTED APPLICATION SURFACE:\n" + string(authority.Surface),
+	}
+	for _, prerequisite := range prerequisites {
+		if prerequisite.label == "" || prerequisite.value == "" {
+			return "", fmt.Errorf("service endpoint leaf prerequisite is incomplete")
+		}
+		sections = append(sections, prerequisite.label+":\n"+prerequisite.value)
+	}
+	prompt := strings.Join(sections, "\n\n")
 	if len(prompt) > maxPortablePayloadBytes {
 		return "", fmt.Errorf("service endpoint leaf prompt exceeds %d bytes", maxPortablePayloadBytes)
 	}
 	return prompt, nil
+}
+
+func applicationServiceEndpointExposureValues() []string {
+	return []string{
+		string(ApplicationServiceEndpointPublic),
+		string(ApplicationServiceEndpointAuthenticated),
+		string(ApplicationServiceEndpointInternal),
+	}
+}
+
+func applicationServiceEndpointMethodValues() []string {
+	return []string{
+		string(ApplicationServiceEndpointGET),
+		string(ApplicationServiceEndpointPOST),
+		string(ApplicationServiceEndpointPUT),
+		string(ApplicationServiceEndpointPATCH),
+		string(ApplicationServiceEndpointDELETE),
+	}
 }
 
 func applicationServiceRequestMediaValues() []string {

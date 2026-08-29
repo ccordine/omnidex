@@ -62,6 +62,11 @@ func validateWorkspaceMutationCommand(command WorkspaceMutationCommand) error {
 	if command.ProjectID <= 0 {
 		return fmt.Errorf("workspace mutation requires one positive project identity")
 	}
+	if err := model.ValidateChannelWorkspaceRoot(command.ProjectLocation); err != nil ||
+		command.ProjectLocation == "/" ||
+		strings.ContainsAny(command.ProjectLocation, "\\\r\n") {
+		return fmt.Errorf("workspace mutation requires one canonical non-root project location")
+	}
 	if err := command.Plan.Validate(); err != nil {
 		return fmt.Errorf("workspace mutation plan: %w", err)
 	}

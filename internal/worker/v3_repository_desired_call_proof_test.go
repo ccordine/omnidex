@@ -1,7 +1,6 @@
 package worker
 
 import (
-	"encoding/json"
 	"strings"
 	"testing"
 
@@ -11,59 +10,18 @@ import (
 
 func TestDesiredRepositoryCallProofUsesExactWorkKinds(t *testing.T) {
 	t.Parallel()
-	original, err := assemblyline.NewApplicationClassificationJob(assemblyline.ApplicationClassificationInput{
-		UserRequest: "Build a browser tool.",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	correctionPayload, err := json.Marshal(assemblyline.ResponseCorrectionInput{
-		Original:          original,
-		ValidationFailure: "one field is invalid",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
 	proof, err := compileDesiredRepositoryCallProof([]queue.StationAttemptCallEvidence{
 		{OpeningID: 1, WorkKind: assemblyline.WorkConversationObjectiveKind, Payload: `{}`, Prompt: "classify"},
-		{OpeningID: 2, WorkKind: assemblyline.WorkResponseCorrection, Payload: string(correctionPayload), Prompt: "correct"},
 		{OpeningID: 3, WorkKind: assemblyline.WorkFragmentGeneration, Payload: `{}`, Prompt: "generate", Response: "func Added() int { return 1 }"},
 		{OpeningID: 4, WorkKind: assemblyline.WorkFragmentCorrection, Payload: `{}`, Prompt: "repair", Response: "func Added() int { return 2 }"},
 	}, []string{"omni_added_artifact.go"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if proof.TotalModelCalls != 4 || proof.SemanticGapCalls != 2 ||
+	if proof.TotalModelCalls != 3 || proof.SemanticGapCalls != 1 ||
 		proof.DeclarationGenerationCalls != 1 || proof.DeclarationCorrectionCalls != 1 ||
 		proof.ModelVisibleTargetPaths != 0 || proof.ModelSelectedMutationOperations != 0 {
 		t.Fatalf("proof=%+v", proof)
-	}
-}
-
-func TestDesiredRepositoryCallProofCountsGenericFragmentCorrectionAsCorrection(t *testing.T) {
-	t.Parallel()
-	original, err := assemblyline.NewFragmentGenerationJob(assemblyline.FragmentGenerationInput{
-		Language: "go", Dialect: "Go 1.24", Signature: "func Added() int",
-		Behavior: "Return the accepted integer.",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	payload, err := json.Marshal(assemblyline.ResponseCorrectionInput{
-		Original: original, ValidationFailure: "candidate did not match the signature",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	proof, err := compileDesiredRepositoryCallProof([]queue.StationAttemptCallEvidence{
-		{OpeningID: 1, WorkKind: assemblyline.WorkFragmentGeneration, Payload: string(original.Payload)},
-		{OpeningID: 2, WorkKind: assemblyline.WorkResponseCorrection, Payload: string(payload)},
-	}, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if proof.DeclarationGenerationCalls != 1 || proof.DeclarationCorrectionCalls != 1 {
-		t.Fatalf("fragment call proof=%+v", proof)
 	}
 }
 

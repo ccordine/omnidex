@@ -45,8 +45,7 @@ func loadTaskLedgerEntries(ctx context.Context, tx pgx.Tx, ledgerID taskstate.Le
 	rows, err := tx.Query(ctx, `
 		SELECT id, scope_node_id, kind, feedback_purpose, status, authority, content,
 		       content_sha256, confidence, created_by, created_step_id, supersedes_id,
-		       source_entry_id, acceptance_policy, accepted_by, metadata,
-		       disposition_reason, disposition_by, created_version, updated_version
+		       metadata, disposition_reason, disposition_by, created_version, updated_version
 		FROM task_entries WHERE ledger_id=$1 ORDER BY id ASC
 		LIMIT $2
 	`, ledgerID, maxTaskLedgerEntries+1)
@@ -58,7 +57,6 @@ func loadTaskLedgerEntries(ctx context.Context, tx pgx.Tx, ledgerID taskstate.Le
 	for rows.Next() {
 		var entry taskstate.Entry
 		var scopeNodeID, feedbackPurpose, supersedesID *string
-		var sourceEntryID, acceptancePolicy, acceptedBy *string
 		var kind, status, authority, createdBy string
 		var dispositionBy *string
 		var metadataRaw []byte
@@ -66,8 +64,7 @@ func loadTaskLedgerEntries(ctx context.Context, tx pgx.Tx, ledgerID taskstate.Le
 		if err := rows.Scan(
 			&entry.ID, &scopeNodeID, &kind, &feedbackPurpose, &status, &authority,
 			&entry.Content, &entry.ContentSHA256, &entry.Confidence, &createdBy,
-			&entry.CreatedStepID, &supersedesID, &sourceEntryID, &acceptancePolicy,
-			&acceptedBy, &metadataRaw,
+			&entry.CreatedStepID, &supersedesID, &metadataRaw,
 			&entry.DispositionReason, &dispositionBy, &createdVersion, &updatedVersion,
 		); err != nil {
 			return nil, fmt.Errorf("scan task ledger %q entry: %w", ledgerID, err)
@@ -77,11 +74,6 @@ func loadTaskLedgerEntries(ctx context.Context, tx pgx.Tx, ledgerID taskstate.Le
 		entry.Status, entry.Authority = taskstate.EntryStatus(status), taskstate.Authority(authority)
 		entry.CreatedBy, entry.SupersedesID = taskstate.Authority(createdBy), taskstate.EntryID(exactOptionalText(supersedesID))
 		entry.DispositionBy = taskstate.Authority(exactOptionalText(dispositionBy))
-		entry.Provenance = taskstate.EntryProvenance{
-			SourceEntryID:    taskstate.EntryID(exactOptionalText(sourceEntryID)),
-			AcceptancePolicy: exactOptionalText(acceptancePolicy),
-			AcceptedBy:       taskstate.Authority(exactOptionalText(acceptedBy)),
-		}
 		entry.Refs = make([]taskstate.Ref, 0)
 		if entry.Metadata, err = taskstate.NewJSONObject(metadataRaw); err != nil {
 			return nil, fmt.Errorf("decode task ledger %q entry %q metadata: %w", ledgerID, entry.ID, err)
@@ -171,12 +163,6 @@ func deriveTaskLedgerSupersession(entries []taskstate.Entry) error {
 		oldID := entries[entryIndex].SupersedesID
 		if oldID != "" {
 			if err := assignTaskLedgerReplacement(entries, index, oldID, entries[entryIndex].ID); err != nil {
-				return err
-			}
-		}
-		sourceID := entries[entryIndex].Provenance.SourceEntryID
-		if sourceID != "" {
-			if err := assignTaskLedgerReplacement(entries, index, sourceID, entries[entryIndex].ID); err != nil {
 				return err
 			}
 		}

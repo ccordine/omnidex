@@ -3,86 +3,76 @@ package contextcompiler
 import (
 	"context"
 	"fmt"
+	"strings"
+	"unicode/utf8"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
+	"github.com/gryph/omnidex/internal/model"
 )
 
-// ResolveRetrievalDirective answers the one semantic retrieval-concept
-// question only when code has proved that term-directed acquisition may add
-// authority. The returned directive is immutable code-owned input that can be
-// reused across multiple viewpoint-specific compilations of the same exact
-// instruction.
+// ResolveRetrievalDirective binds fixed provider availability to an immutable
+// code-owned directive. It performs no inference: when search is available,
+// Compile passes the exact authoritative instruction as the sole query.
 func ResolveRetrievalDirective(
 	ctx context.Context,
 	exactInstruction string,
 	scope assemblyline.ContextScope,
 	availability SearchAvailability,
-	station SearchTermsStation,
-) (RetrievalDirective, int, error) {
-	empty := RetrievalDirective{Concepts: []string{}}
+) (RetrievalDirective, error) {
+	empty := RetrievalDirective{}
 	if ctx == nil {
-		return empty, 0, fmt.Errorf("context retrieval resolution requires a context")
+		return empty, fmt.Errorf("context retrieval resolution requires a context")
 	}
 	if err := ctx.Err(); err != nil {
-		return empty, 0, err
+		return empty, err
 	}
-	input := assemblyline.ContextSearchTermsInput{
-		ExactInstruction: exactInstruction,
-		Scope:            scope,
-	}
-	if _, err := assemblyline.NewContextSearchTermCoverageJob(
-		assemblyline.ContextSearchTermLeafInput{
-			ExactInstruction: input.ExactInstruction, Scope: input.Scope,
-			AcceptedTerms: []string{},
-		},
-	); err != nil {
-		return empty, 0, err
+	if err := validateRetrievalAuthority(exactInstruction, scope); err != nil {
+		return empty, err
 	}
 	if err := availability.Validate(); err != nil {
-		return empty, 0, err
+		return empty, err
 	}
-	if availability == SearchUnavailable {
-		return empty, 0, nil
-	}
-	if station == nil {
-		return empty, 0, fmt.Errorf(
-			"context search terms remain unresolved but the station is unavailable",
-		)
-	}
-	decision, receipt, err := station.Generate(ctx, input)
-	if err != nil {
-		return empty, 0, fmt.Errorf("context search terms: %w", err)
-	}
-	if err := ctx.Err(); err != nil {
-		return empty, 0, err
-	}
-	if err := validateSearchTermsReceipt(receipt); err != nil {
-		return empty, 0, err
-	}
-	if err := decision.ValidateFor(input); err != nil {
-		return empty, 0, err
-	}
-	return RetrievalDirective{
-		Concepts: canonicalRetrievalConcepts(decision.Terms),
-	}, receipt.Calls, nil
+	return RetrievalDirective{Availability: availability}, nil
 }
 
-func validateSearchTermsReceipt(receipt StationReceipt) error {
-	if receipt.Reused {
-		if receipt.Calls != 0 {
-			return fmt.Errorf(
-				"context search terms reuse reported %d provider calls", receipt.Calls,
-			)
-		}
-		return nil
+func validateRetrievalAuthority(
+	exactInstruction string,
+	scope assemblyline.ContextScope,
+) error {
+	if err := scope.Validate(); err != nil {
+		return err
 	}
-	maximum := (2*assemblyline.MaxContextSearchTerms + 1) *
-		assemblyline.MaxSemanticStationAttempts
-	if receipt.Calls < 1 || receipt.Calls > maximum {
+	if strings.TrimSpace(exactInstruction) == "" {
+		return fmt.Errorf("context retrieval requires one non-blank exact instruction")
+	}
+	if len(exactInstruction) > model.MaxFreeFormTurnBytes {
 		return fmt.Errorf(
-			"context search terms reported %d calls outside the bounded fixed-point budget",
-			receipt.Calls,
+			"context retrieval exact instruction exceeds %d bytes",
+			model.MaxFreeFormTurnBytes,
 		)
 	}
+	if !utf8.ValidString(exactInstruction) {
+		return fmt.Errorf("context retrieval exact instruction is not valid UTF-8")
+	}
+	if strings.ContainsRune(exactInstruction, '\x00') {
+		return fmt.Errorf("context retrieval exact instruction contains NUL")
+	}
 	return nil
+}
+
+func retrievalQueries(
+	exactInstruction string,
+	scope assemblyline.ContextScope,
+	directive RetrievalDirective,
+) ([]string, error) {
+	if err := validateRetrievalAuthority(exactInstruction, scope); err != nil {
+		return nil, err
+	}
+	if err := directive.Availability.Validate(); err != nil {
+		return nil, err
+	}
+	if directive.Availability == SearchUnavailable {
+		return []string{}, nil
+	}
+	return []string{exactInstruction}, nil
 }

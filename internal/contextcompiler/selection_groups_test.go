@@ -26,8 +26,12 @@ func TestOptionalSelectionGroupExpandsLatePagedMemberBeforeMinificationAndProven
 	relevance := &scriptedRelevanceStation{idsByCall: [][]string{{}, {"CTX_17"}}}
 	minifier := &scriptedMinificationStation{text: "The complete grouped exchange remains authoritative."}
 	result, err := Compile(t.Context(), Request{
-		ExactInstruction: "Use the marker in the final exchange segment.",
-		Retrieval:        &RetrievalDirective{Concepts: []string{"final exchange marker"}},
+		ExactInstruction:   "Use the marker in the final exchange segment.",
+		ModelInstruction:   "Use the marker in the final exchange segment.",
+		KnownArtifactPaths: []string{},
+		Retrieval: &RetrievalDirective{
+			Availability: SearchAvailable,
+		},
 	}, &scriptedProvider{set: CandidateSet{
 		Optional: optional,
 		OptionalSelectionGroups: []OptionalSelectionGroup{{
@@ -135,8 +139,12 @@ func TestMalformedOptionalSelectionGroupsFailBeforeRelevance(t *testing.T) {
 			relevance := &scriptedRelevanceStation{ids: []string{"CTX_1"}}
 			minifier := &scriptedMinificationStation{text: "must not run"}
 			_, err := Compile(t.Context(), Request{
-				ExactInstruction: "Use the relevant grouped authority.",
-				Retrieval:        &RetrievalDirective{Concepts: []string{"grouped authority"}},
+				ExactInstruction:   "Use the relevant grouped authority.",
+				ModelInstruction:   "Use the relevant grouped authority.",
+				KnownArtifactPaths: []string{},
+				Retrieval: &RetrievalDirective{
+					Availability: SearchAvailable,
+				},
 			}, &scriptedProvider{set: fixture.set(t)}, Stations{
 				Relevance: relevance, Minification: minifier,
 			})

@@ -7,6 +7,15 @@ import (
 	"github.com/gryph/omnidex/internal/station"
 )
 
+type directCodingServiceStateLeafModels struct {
+	FieldCoverage  string
+	FieldPurpose   string
+	FieldKind      string
+	RecordCoverage string
+	RecordPurpose  string
+	RecordKind     string
+}
+
 type directCodingServiceStateInterfaceBinding struct {
 	ID      string
 	TaskIDs []string
@@ -36,18 +45,36 @@ func (s *directCodingSession) resolveServiceStateInterfaces(
 		plan.InterfaceByTask = nil
 		return plan, nil
 	}
-	model, err := s.workerModel(station.CodingServiceStateInterface)
+	models := directCodingServiceStateLeafModels{}
+	for _, binding := range []struct {
+		destination *string
+		stationID   station.ID
+	}{
+		{&models.FieldCoverage, station.CodingApplicationStateFieldCoverage},
+		{&models.FieldPurpose, station.CodingApplicationStateFieldPurpose},
+		{&models.FieldKind, station.CodingApplicationStateFieldKind},
+		{&models.RecordCoverage, station.CodingApplicationRecordFieldCoverage},
+		{&models.RecordPurpose, station.CodingApplicationRecordFieldPurpose},
+		{&models.RecordKind, station.CodingApplicationRecordFieldKind},
+	} {
+		model, modelErr := s.workerModel(binding.stationID)
+		if modelErr != nil {
+			return directCodingServiceStatePlan{}, modelErr
+		}
+		*binding.destination = model
+	}
+	resolved, err := resolveDirectCodingServiceStateInterfaces(
+		runtime, models, workload, capabilities, plan, identities,
+	)
 	if err != nil {
 		return directCodingServiceStatePlan{}, err
 	}
-	return resolveDirectCodingServiceStateInterfaces(
-		runtime, model, workload, capabilities, plan, identities,
-	)
+	return resolved, nil
 }
 
 func resolveDirectCodingServiceStateInterfaces(
 	runtime typedWorkerRuntime,
-	model string,
+	models directCodingServiceStateLeafModels,
 	workload assemblyline.FrozenApplicationWorkload,
 	capabilities directCodingCapabilityGraph,
 	plan directCodingServiceStatePlan,
@@ -68,7 +95,7 @@ func resolveDirectCodingServiceStateInterfaces(
 	plan.InterfaceByTask = make(map[string]string)
 	for _, component := range components {
 		result, err := resolveDirectCodingServiceStateInterface(
-			runtime, model, "application_service_"+component.ID,
+			runtime, models, "application_service_"+component.ID,
 			component.Input, identities,
 		)
 		if err != nil {
@@ -92,7 +119,7 @@ func resolveDirectCodingServiceStateInterfaces(
 
 func resolveDirectCodingServiceStateInterface(
 	runtime typedWorkerRuntime,
-	model string,
+	models directCodingServiceStateLeafModels,
 	subject string,
 	authority assemblyline.ApplicationServiceStateInterfaceInput,
 	identities []assemblyline.ArtifactIdentity,
@@ -115,7 +142,7 @@ func resolveDirectCodingServiceStateInterface(
 				return zero, err
 			}
 			coverage, err := runDirectCodingSemanticLeafCall(
-				runtime, model, subject+"_field_coverage", coverageJob, identities,
+				runtime, models.FieldCoverage, subject+"_field_coverage", coverageJob, identities,
 				func(raw string) (string, error) {
 					return assemblyline.DecodeApplicationStateFieldCoverageLeaf(leafInput, raw)
 				},
@@ -135,17 +162,21 @@ func resolveDirectCodingServiceStateInterface(
 			)
 		}
 
-		nameJob, err := assemblyline.NewApplicationStateFieldNameJob(leafInput)
+		purposeJob, err := assemblyline.NewApplicationStateFieldPurposeJob(leafInput)
 		if err != nil {
 			return zero, err
 		}
-		name, err := runDirectCodingSemanticLeafCall(
-			runtime, model, subject+"_field_name", nameJob, identities,
+		purpose, err := runDirectCodingSemanticLeafCall(
+			runtime, models.FieldPurpose, subject+"_field_purpose", purposeJob, identities,
 			func(raw string) (string, error) {
-				return assemblyline.DecodeApplicationStateFieldNameLeaf(leafInput, raw)
+				return assemblyline.DecodeApplicationStateFieldPurposeLeaf(leafInput, raw)
 			},
 			func(string) error { return nil },
 		)
+		if err != nil {
+			return zero, err
+		}
+		name, err := assemblyline.CodeOwnedApplicationServiceStateFieldName(len(fields) + 1)
 		if err != nil {
 			return zero, err
 		}
@@ -154,14 +185,14 @@ func resolveDirectCodingServiceStateInterface(
 			AcceptedFields: append(
 				[]assemblyline.ApplicationServiceStateField{}, fields...,
 			),
-			FocusedName: name,
+			FocusedPurpose: purpose,
 		}
 		kindJob, err := assemblyline.NewApplicationStateFieldKindJob(kindInput)
 		if err != nil {
 			return zero, err
 		}
 		kind, err := runDirectCodingSemanticLeafCall(
-			runtime, model, subject+"_field_kind", kindJob, identities,
+			runtime, models.FieldKind, subject+"_field_kind", kindJob, identities,
 			func(raw string) (assemblyline.ApplicationServiceStateFieldKind, error) {
 				return assemblyline.DecodeApplicationStateFieldKindLeaf(kindInput, raw)
 			},
@@ -171,22 +202,22 @@ func resolveDirectCodingServiceStateInterface(
 			return zero, err
 		}
 		field := assemblyline.ApplicationServiceStateField{
-			Name: name, Kind: kind,
+			Name: name, Purpose: purpose, Kind: kind,
 			RecordFields: []assemblyline.ApplicationServiceStateRecordField{},
 		}
 		if kind == assemblyline.ApplicationServiceStateRecordList {
-			recordFields, err := resolveDirectCodingServiceRecordFields(
-				runtime, model, subject+"_"+name, authority, name, identities,
+			recordFields, recordErr := resolveDirectCodingServiceRecordFields(
+				runtime, models, subject+"_"+name, authority, purpose, identities,
 			)
-			if err != nil {
-				return zero, err
+			if recordErr != nil {
+				return zero, recordErr
 			}
 			field.RecordFields = recordFields
 		}
 		fields = append(fields, field)
 	}
 	result := assemblyline.ApplicationServiceStateInterfaceResult{
-		Schema: assemblyline.ApplicationServiceStateInterfaceSchemaV1,
+		Schema: assemblyline.ApplicationServiceStateInterfaceSchemaV2,
 		Fields: fields,
 	}
 	if err := result.ValidateFor(authority); err != nil {
@@ -197,10 +228,10 @@ func resolveDirectCodingServiceStateInterface(
 
 func resolveDirectCodingServiceRecordFields(
 	runtime typedWorkerRuntime,
-	model string,
+	models directCodingServiceStateLeafModels,
 	subject string,
 	authority assemblyline.ApplicationServiceStateInterfaceInput,
-	parentName string,
+	parentPurpose string,
 	identities []assemblyline.ArtifactIdentity,
 ) ([]assemblyline.ApplicationServiceStateRecordField, error) {
 	fields := make(
@@ -209,7 +240,7 @@ func resolveDirectCodingServiceRecordFields(
 	)
 	for {
 		leafInput := assemblyline.ApplicationRecordFieldLeafInput{
-			Authority: authority, ParentName: parentName,
+			Authority: authority, ParentPurpose: parentPurpose,
 			AcceptedRecordFields: append(
 				[]assemblyline.ApplicationServiceStateRecordField{}, fields...,
 			),
@@ -220,7 +251,7 @@ func resolveDirectCodingServiceRecordFields(
 				return nil, err
 			}
 			coverage, err := runDirectCodingSemanticLeafCall(
-				runtime, model, subject+"_record_field_coverage", coverageJob, identities,
+				runtime, models.RecordCoverage, subject+"_record_field_coverage", coverageJob, identities,
 				func(raw string) (string, error) {
 					return assemblyline.DecodeApplicationRecordFieldCoverageLeaf(leafInput, raw)
 				},
@@ -240,33 +271,37 @@ func resolveDirectCodingServiceRecordFields(
 			)
 		}
 
-		nameJob, err := assemblyline.NewApplicationRecordFieldNameJob(leafInput)
+		purposeJob, err := assemblyline.NewApplicationRecordFieldPurposeJob(leafInput)
 		if err != nil {
 			return nil, err
 		}
-		name, err := runDirectCodingSemanticLeafCall(
-			runtime, model, subject+"_record_field_name", nameJob, identities,
+		purpose, err := runDirectCodingSemanticLeafCall(
+			runtime, models.RecordPurpose, subject+"_record_field_purpose", purposeJob, identities,
 			func(raw string) (string, error) {
-				return assemblyline.DecodeApplicationRecordFieldNameLeaf(leafInput, raw)
+				return assemblyline.DecodeApplicationRecordFieldPurposeLeaf(leafInput, raw)
 			},
 			func(string) error { return nil },
 		)
 		if err != nil {
 			return nil, err
 		}
+		name, err := assemblyline.CodeOwnedApplicationServiceRecordFieldName(len(fields) + 1)
+		if err != nil {
+			return nil, err
+		}
 		kindInput := assemblyline.ApplicationRecordFieldKindInput{
-			Authority: authority, ParentName: parentName,
+			Authority: authority, ParentPurpose: parentPurpose,
 			AcceptedRecordFields: append(
 				[]assemblyline.ApplicationServiceStateRecordField{}, fields...,
 			),
-			FocusedName: name,
+			FocusedPurpose: purpose,
 		}
 		kindJob, err := assemblyline.NewApplicationRecordFieldKindJob(kindInput)
 		if err != nil {
 			return nil, err
 		}
 		kind, err := runDirectCodingSemanticLeafCall(
-			runtime, model, subject+"_record_field_kind", kindJob, identities,
+			runtime, models.RecordKind, subject+"_record_field_kind", kindJob, identities,
 			func(raw string) (assemblyline.ApplicationServiceStateFieldKind, error) {
 				return assemblyline.DecodeApplicationRecordFieldKindLeaf(kindInput, raw)
 			},
@@ -276,7 +311,7 @@ func resolveDirectCodingServiceRecordFields(
 			return nil, err
 		}
 		fields = append(fields, assemblyline.ApplicationServiceStateRecordField{
-			Name: name, Kind: kind,
+			Name: name, Purpose: purpose, Kind: kind,
 		})
 	}
 }
@@ -289,59 +324,20 @@ func directCodingServiceStateComponents(
 	if err := plan.ValidateFor(workload); err != nil {
 		return nil, err
 	}
-	workloadInput, err := applicationWorkloadInputFromFrozen(workload)
-	if err != nil {
-		return nil, err
-	}
 	requirements := make([]assemblyline.Requirement, 0, len(workload.Tasks))
-	indexByRequirement := make(map[string]int, len(workload.Tasks))
-	for index, task := range workload.Tasks {
+	for _, task := range workload.Tasks {
 		requirements = append(requirements, assemblyline.Requirement{
 			ID: task.RequirementID, SourceQuote: task.RequirementQuote,
 		})
-		indexByRequirement[task.RequirementID] = index
 	}
 	if err := validateDirectCodingCapabilityGraph(requirements, capabilities); err != nil {
 		return nil, err
 	}
-	adjacency := make([]map[int]struct{}, len(workload.Tasks))
-	for index := range adjacency {
-		adjacency[index] = make(map[int]struct{})
-	}
-	for ownerID, dependencies := range capabilities {
-		owner := indexByRequirement[ownerID]
-		for _, dependency := range dependencies {
-			provider := indexByRequirement[dependency.RequirementID]
-			adjacency[owner][provider] = struct{}{}
-			adjacency[provider][owner] = struct{}{}
-		}
-	}
-	visited := make([]bool, len(workload.Tasks))
 	components := make([]directCodingServiceStateComponent, 0)
-	for start := range workload.Tasks {
-		if visited[start] {
-			continue
-		}
-		queue := []int{start}
-		visited[start] = true
-		indices := make([]int, 0)
-		hasDurable := false
-		for len(queue) > 0 {
-			current := queue[0]
-			queue = queue[1:]
-			indices = append(indices, current)
-			if plan.ByTask[workload.Tasks[current].ID] ==
-				assemblyline.ApplicationServiceStateCrossRequestAuthorityRequired {
-				hasDurable = true
-			}
-			for candidate := range workload.Tasks {
-				if _, linked := adjacency[current][candidate]; linked && !visited[candidate] {
-					visited[candidate] = true
-					queue = append(queue, candidate)
-				}
-			}
-		}
-		if !hasDurable {
+	interfaceByTask := make(map[string]string)
+	for durableIndex, durableTask := range workload.Tasks {
+		if plan.ByTask[durableTask.ID] !=
+			assemblyline.ApplicationServiceStateCrossRequestAuthorityRequired {
 			continue
 		}
 		component := directCodingServiceStateComponent{
@@ -350,10 +346,27 @@ func directCodingServiceStateComponents(
 				ProductContext: workload.ProductQuote,
 			},
 		}
-		for _, index := range indices {
-			task := workload.Tasks[index]
+		for candidateIndex, task := range workload.Tasks {
+			included := candidateIndex == durableIndex
+			if !included {
+				for _, dependency := range capabilities[task.RequirementID] {
+					if dependency.RequirementID == durableTask.RequirementID {
+						included = true
+						break
+					}
+				}
+			}
+			if !included {
+				continue
+			}
+			if existing, duplicate := interfaceByTask[task.ID]; duplicate {
+				return nil, fmt.Errorf(
+					"service state task %s requires overlapping direct durable interfaces %s and %s",
+					task.ID, existing, component.ID,
+				)
+			}
 			authority, err := assemblyline.ProjectApplicationTaskRuntimeAuthority(
-				workloadInput, workload, task.ID,
+				workload, task.ID,
 			)
 			if err != nil {
 				return nil, err
@@ -364,6 +377,7 @@ func directCodingServiceStateComponents(
 			}
 			component.TaskIDs = append(component.TaskIDs, task.ID)
 			component.Input.Needs = append(component.Input.Needs, need)
+			interfaceByTask[task.ID] = component.ID
 		}
 		if err := component.Input.Validate(); err != nil {
 			return nil, err

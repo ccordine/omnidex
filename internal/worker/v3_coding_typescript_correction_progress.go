@@ -5,13 +5,13 @@ import (
 	"strings"
 )
 
-const maxDirectCodingTypeScriptStageCorrections = maxTypedWorkerAttempts
+// Each correction requires a distinct compiler-proven diagnostic. This is a
+// stage bound over different verified failures, not a model-response retry.
+const maxDirectCodingTypeScriptStageCorrections = 3
 
 type directCodingTypeScriptCorrectionState struct {
-	blockID           string
-	candidate         string
-	verificationStage string
-	diagnostic        string
+	blockID    string
+	diagnostic string
 }
 
 type directCodingTypeScriptCorrectionProgress struct {
@@ -35,7 +35,6 @@ func (progress *directCodingTypeScriptCorrectionProgress) beginStage() error {
 
 func (progress *directCodingTypeScriptCorrectionProgress) observe(
 	blockID string,
-	candidate string,
 	verificationStage string,
 	diagnostic string,
 ) error {
@@ -43,19 +42,17 @@ func (progress *directCodingTypeScriptCorrectionProgress) observe(
 		return fmt.Errorf("TypeScript correction progress authority is unavailable")
 	}
 	state := directCodingTypeScriptCorrectionState{
-		blockID:           strings.TrimSpace(blockID),
-		candidate:         strings.TrimSpace(candidate),
-		verificationStage: strings.TrimSpace(verificationStage),
-		diagnostic:        strings.TrimSpace(diagnostic),
+		blockID:    strings.TrimSpace(blockID),
+		diagnostic: strings.TrimSpace(diagnostic),
 	}
-	if state.blockID == "" || state.verificationStage == "" || state.diagnostic == "" {
+	if state.blockID == "" || strings.TrimSpace(verificationStage) == "" || state.diagnostic == "" {
 		return fmt.Errorf(
 			"TypeScript correction progress requires one block, verification stage, and exact diagnostic",
 		)
 	}
 	if _, repeated := progress.seen[state]; repeated {
 		return fmt.Errorf(
-			"repeated candidate/diagnostic correction state rejected for block %s: %s",
+			"repeated compiler diagnostic rejected for block %s; no distinct verified failure authorizes another repair call: %s",
 			state.blockID,
 			safeLine(firstDirectCodingDiagnosticLine(state.diagnostic), "unknown"),
 		)

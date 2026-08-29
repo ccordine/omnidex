@@ -9,10 +9,13 @@ func portableCodingResponseMaximum(job PortableJob) (int, bool, error) {
 			ArtifactPreserveUnchanged, ArtifactMustExist, ArtifactMustBeAbsent,
 			ArtifactPossibleAbsenceCandidate, ArtifactMentionedOnly,
 		), true, nil
-	case WorkKnownArtifactTruth:
+	case WorkRepositoryArtifactAbsence:
 		return maximumStringBytes(
-			KnownArtifactMustBeAbsent, OnePlainTextArtifactMustExist,
-			KnownArtifactTruthNotApplicable,
+			RepositoryArtifactMustBeAbsent, RepositoryArtifactAbsenceNotExplicit,
+		), true, nil
+	case WorkPlainTextArtifactCreation:
+		return maximumStringBytes(
+			OneNewCompletePlainTextArtifactRequired, PlainTextArtifactCreationNotExplicit,
 		), true, nil
 	case WorkDeclarationArtifactBoundary:
 		return maximumStringBytes(
@@ -53,13 +56,6 @@ func portableCodingResponseMaximum(job PortableJob) (int, bool, error) {
 		return MaxPortableRawCandidateBytes, true, nil
 	case WorkFragmentCorrection:
 		maximum, err := fragmentCorrectionResponseMaximum(job)
-		return maximum, true, err
-	case WorkResponseCorrection:
-		var input ResponseCorrectionInput
-		if err := decodePortablePayload(job.Payload, &input); err != nil {
-			return 0, true, err
-		}
-		maximum, err := portableResponseMaximumBytesForValidatedJob(input.Original)
 		return maximum, true, err
 	default:
 		return 0, false, nil

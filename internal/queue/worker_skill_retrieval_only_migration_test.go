@@ -129,8 +129,8 @@ func insertHistoricalProcedureOpening(
 		PortablePayload: string(payload), PortablePayloadSHA256: stationGapSHA256(string(payload)),
 		PortableEnvelope: string(portableEnvelope), PortableEnvelopeSHA256: stationGapSHA256(string(portableEnvelope)),
 		RendererVersion: "omnidex.render-portable-job.v1", Prompt: prompt,
-		ResponseSchema: responseSchema, ProjectionEnvelope: string(projection),
-		ProjectionSHA256: stationGapSHA256(string(projection)), ContextTokens: 32768, MaxOutputTokens: 1024,
+		ProjectionEnvelope: string(projection),
+		ProjectionSHA256:   stationGapSHA256(string(projection)), ContextTokens: 32768, MaxOutputTokens: 1024,
 	}
 	tx, err := pool.Begin(t.Context())
 	if err != nil {
@@ -151,7 +151,7 @@ func insertHistoricalProcedureOpening(
 		opening.WorkerID, opening.GapID, opening.Station, opening.Scope, opening.PortableSchema,
 		opening.WorkID, opening.WorkKind, opening.PortablePayload, opening.PortablePayloadSHA256,
 		opening.PortableEnvelope, opening.PortableEnvelopeSHA256, opening.RendererVersion,
-		opening.Prompt, string(opening.ResponseSchema), opening.ProjectionEnvelope,
+		opening.Prompt, string(responseSchema), opening.ProjectionEnvelope,
 		opening.ProjectionSHA256, opening.ContextTokens, opening.MaxOutputTokens).Scan(
 		&opening.ID, &opening.CreatedAt,
 	)

@@ -234,7 +234,7 @@ func roleplayResearchQueueEvidenceFixture(
 		SourceType: "web_document", SourceRef: sourceURL, Excerpt: excerpt,
 		Summary: "The roleplay research response cited one acquired real-world document.",
 		Hash:    hex.EncodeToString(sourceDigest[:]), Confidence: 1,
-		SupportsClaims: []string{requirementID + "#paragraph-1"},
+		RequirementAuthorityBindings: []string{requirementID + "#paragraph-1"},
 		Metadata: map[string]any{
 			"capsule_id":         "evidence_" + strings.Repeat("a", 64),
 			"instruction_sha256": hex.EncodeToString(instructionDigest[:]),

@@ -54,7 +54,7 @@ func chatProgressKindClass(kind chatProgressKind) (string, error) {
 		chatProgressActivity:     "bg-zinc-400",
 		chatProgressStation:      "bg-violet-300",
 		chatProgressRetrieval:    "bg-sky-300",
-		chatProgressReview:       "bg-cyan-300",
+		chatProgressPreparation:  "bg-cyan-300",
 		chatProgressFile:         "bg-emerald-300",
 		chatProgressVerification: "bg-blue-300",
 		chatProgressDiagnostic:   "bg-amber-300",

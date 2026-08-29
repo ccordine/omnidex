@@ -118,7 +118,7 @@ func TestPHPHTTPCompilerRejectsUnenforceableExposure(t *testing.T) {
 				directCodingCapabilityGraph{"requirement_001": nil}, target, coverage,
 				testRequestLocalServiceStatePlan(workload), endpoints,
 			)
-			if err == nil || !strings.Contains(err.Error(), "authority") {
+			if err == nil || !strings.Contains(err.Error(), "requires "+string(testCase.exposure)+" exposure") {
 				t.Fatalf("%s PHP endpoint error=%v", testCase.name, err)
 			}
 		})
@@ -133,24 +133,7 @@ func TestPHPHTTPSupportOnlyTaskBuildsAndTestsWithoutInventingARoute(t *testing.T
 			{ID: "requirement_002", SourceQuote: "Return one processed representation"},
 		},
 	}
-	workload, err := assemblyline.FreezeApplicationWorkload(
-		applicationWorkloadInput(specification),
-		assemblyline.ApplicationWorkloadDraft{
-			Schema: assemblyline.ApplicationWorkloadDraftSchemaV1,
-			Tasks: []assemblyline.ApplicationWorkloadTaskDraft{
-				{
-					RequirementID: "requirement_001", Objective: "Normalize one typed value.",
-					RequiredBehaviors:  []string{"Derive deterministic output from typed input."},
-					AcceptanceCriteria: []string{"The normalized output is observable."},
-				},
-				{
-					RequirementID: "requirement_002", Objective: "Return one processed representation.",
-					RequiredBehaviors:  []string{"Produce a typed result for a request."},
-					AcceptanceCriteria: []string{"The response result is observable."},
-				},
-			},
-		},
-	)
+	workload, err := assemblyline.FreezeApplicationWorkload(specification)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -172,16 +155,21 @@ func TestPHPHTTPSupportOnlyTaskBuildsAndTestsWithoutInventingARoute(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	endpoint := phpServiceRouteContract("/output")
-	endpoints := directCodingServiceEndpointPlan{
-		WorkloadSHA256: workload.SHA256, ProductContext: specification.ProductQuote,
-		Requirements: map[string]assemblyline.ApplicationServiceEndpointRequirement{
+	endpoints := testServiceEndpointPlan(
+		t, genericPHPServiceAdapter, workload,
+		map[string]assemblyline.ApplicationServiceEndpointRequirement{
 			workload.Tasks[0].ID: assemblyline.ApplicationServiceSupportOnly,
 			workload.Tasks[1].ID: assemblyline.ApplicationServiceEndpointRequired,
 		},
-		ByTask: map[string]assemblyline.ApplicationServiceEndpointContract{workload.Tasks[1].ID: endpoint},
-	}
-	if err := endpoints.ValidateFor(applicationWorkloadInput(specification), workload); err != nil {
+		map[string]assemblyline.ApplicationServiceEndpointContract{
+			workload.Tasks[1].ID: testHTTPServiceEndpointContract(
+				assemblyline.ApplicationServiceEndpointGET, "/processed",
+				assemblyline.ApplicationServiceEndpointMediaNone,
+				assemblyline.ApplicationServiceEndpointJSON, 200,
+			),
+		},
+	)
+	if err := endpoints.ValidateFor(workload); err != nil {
 		t.Fatal(err)
 	}
 	blueprint, _, err := compileGenericPHPServiceBlueprint(
@@ -212,8 +200,10 @@ func TestPHPHTTPSupportOnlyTaskBuildsAndTestsWithoutInventingARoute(t *testing.T
 	}
 	router := paths["public/index.php"]
 	routerSource := router.Preamble + "\n" + router.Blocks[0].Static
+	endpointRoute := endpoints.ByTask[workload.Tasks[1].ID].RouteTemplate
 	if strings.Contains(routerSource, "Feature111") || strings.Contains(routerSource, "feature111") ||
-		!strings.Contains(routerSource, "Feature222") || !strings.Contains(routerSource, "'/output'") {
+		!strings.Contains(routerSource, "Feature222") ||
+		!strings.Contains(routerSource, phpSingleQuoted(endpointRoute)) {
 		t.Fatalf("support-only task leaked into code-owned HTTP behavior:\n%s", routerSource)
 	}
 	runner := paths["tests/TestRunner.php"].Blocks[0].Static

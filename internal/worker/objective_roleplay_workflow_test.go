@@ -104,7 +104,6 @@ func TestRoleplayChannelUsesOnlySelectedCharacterScopedKnowledge(t *testing.T) {
 		},
 	}
 	contextSieve := &scriptedConversationContextStation{
-		terms:          []string{"harbor rain"},
 		relevantIDs:    []string{"CTX_3", "CTX_5"},
 		minimalContext: "must not run for fitting selected context",
 	}
@@ -194,19 +193,18 @@ func TestRoleplayChannelUsesOnlySelectedCharacterScopedKnowledge(t *testing.T) {
 		result.RoleplayResponses[0].KnowledgeCharacterIDs[0] != viewpoint {
 		t.Fatalf("roleplay knowledge recipients=%#v", result.RoleplayResponses[0].KnowledgeCharacterIDs)
 	}
-	if len(provider.terms) != 1 || provider.terms[0] != "harbor rain" ||
+	if len(provider.terms) != 1 || provider.terms[0] != userTurn.ExactText ||
 		provider.authority.RoleplayWorldID != worldID ||
 		provider.authority.RoleplayViewpointCharacterID != viewpoint ||
 		provider.preparation == nil || provider.preparation.PreparationID != preparationID ||
 		provider.projection == nil || provider.projection.Viewpoint.Name != "Bob" {
 		t.Fatalf("fixed context retrieval terms=%#v preparation=%#v projection=%#v", provider.terms, provider.preparation, provider.projection)
 	}
-	if contextSieve.termCalls != 1 || contextSieve.relevanceCalls != 1 ||
-		contextSieve.minificationCalls != 0 || result.ModelCalls != 5 {
+	if contextSieve.relevanceCalls != 1 ||
+		contextSieve.minificationCalls != 0 || result.ModelCalls != 4 {
 		t.Fatalf(
-			"sieve_calls=(%d,%d,%d) total_model_calls=%d",
-			contextSieve.termCalls, contextSieve.relevanceCalls,
-			contextSieve.minificationCalls, result.ModelCalls,
+			"sieve_calls=(%d,%d) total_model_calls=%d",
+			contextSieve.relevanceCalls, contextSieve.minificationCalls, result.ModelCalls,
 		)
 	}
 	if len(contextSieve.relevanceInputs) != 1 ||

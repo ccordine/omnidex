@@ -145,11 +145,9 @@ func TestPHPHTMLRepresentationIsASeparateGeneratedTaskLeaf(t *testing.T) {
 
 func TestPHPJSONServiceOmitsHTMLLeafAndTailwindToolchain(t *testing.T) {
 	t.Parallel()
-	specification, workload, target, coverage, endpoints := phpServiceStackFixture(t)
-	taskID := workload.Tasks[0].ID
-	contract := endpoints.ByTask[taskID]
-	contract.ResponseMedia = assemblyline.ApplicationServiceEndpointJSON
-	endpoints.ByTask = map[string]assemblyline.ApplicationServiceEndpointContract{taskID: contract}
+	specification, workload, target, coverage, endpoints := phpServiceStackFixtureForSurface(
+		t, assemblyline.ApplicationSurfaceService,
+	)
 	blueprint, files, err := compileGenericPHPServiceBlueprint(
 		"php-service", specification, map[string]directCodingSkillBinding{}, workload,
 		directCodingCapabilityGraph{"requirement_001": nil}, target, coverage,

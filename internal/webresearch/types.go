@@ -9,17 +9,13 @@ import (
 )
 
 var (
-	ErrInvalidObjective           = errors.New("invalid web research objective")
-	ErrInvalidConfiguration       = errors.New("invalid web research configuration")
-	ErrInvalidAcquisition         = errors.New("invalid web research acquisition")
-	ErrEvidenceUnavailable        = errors.New("web research evidence unavailable")
-	ErrInvalidSearchTerms         = errors.New("invalid web search terms decision")
-	ErrInvalidRelevance           = errors.New("invalid web relevance decision")
-	ErrInvalidSynthesis           = errors.New("invalid grounded synthesis decision")
-	ErrInvalidSynthesisCorrection = errors.New("invalid grounded synthesis correction decision")
-	ErrInvalidClaimEvidenceReview = errors.New("invalid claim-evidence review decision")
-	ErrClaimEvidenceInadequate    = errors.New("web research claim evidence inadequate")
-	ErrNilContext                 = errors.New("web research context is nil")
+	ErrInvalidObjective     = errors.New("invalid web research objective")
+	ErrInvalidConfiguration = errors.New("invalid web research configuration")
+	ErrInvalidAcquisition   = errors.New("invalid web research acquisition")
+	ErrEvidenceUnavailable  = errors.New("web research evidence unavailable")
+	ErrInvalidRelevance     = errors.New("invalid web relevance decision")
+	ErrInvalidSynthesis     = errors.New("invalid grounded synthesis decision")
+	ErrNilContext           = errors.New("web research context is nil")
 )
 
 type ObjectiveID string
@@ -30,26 +26,16 @@ const (
 	ObjectiveComplete ObjectiveStatus = "complete"
 )
 
-type AcceptancePredicate string
-
-const (
-	AcceptanceGroundedSynthesis   AcceptancePredicate = "grounded_synthesis_validated"
-	AcceptanceExactCitations      AcceptancePredicate = "exact_citations_validated"
-	AcceptanceClaimEvidenceReview AcceptancePredicate = "claim_evidence_reviewed"
-)
-
 type Objective struct {
-	ID           ObjectiveID
-	Question     string
-	Context      assemblyline.ObjectiveContext
-	InitialQuery string
-	Acceptance   []AcceptancePredicate
-	Status       ObjectiveStatus
+	ID                 ObjectiveID
+	Question           string
+	Context            assemblyline.ObjectiveContext
+	InitialQuery       string
+	KnownArtifactPaths []string
+	Status             ObjectiveStatus
 }
 
 type Config struct {
-	MaxSearchTerms             int
-	MaxSearchTermBytes         int
 	MaxFetchCandidates         int
 	MaxProjectionBytes         int
 	MaxRelevantCandidates      int
@@ -76,17 +62,12 @@ type Evidence struct {
 type Step string
 
 const (
-	StepInitialDiscovery      Step = "initial_discovery"
-	StepSearchTermsResolved   Step = "search_terms_resolved"
-	StepExpandedDiscovery     Step = "expanded_discovery"
-	StepDocumentsFetched      Step = "documents_fetched"
-	StepRelevanceResolved     Step = "relevance_resolved"
-	StepEvidenceProjected     Step = "evidence_projected"
-	StepSynthesisResolved     Step = "synthesis_resolved"
-	StepSynthesisCorrected    Step = "synthesis_corrected"
-	StepSynthesisZeroDelta    Step = "synthesis_correction_zero_delta"
-	StepClaimEvidenceReviewed Step = "claim_evidence_reviewed"
-	StepObjectiveCompleted    Step = "objective_completed"
+	StepInitialDiscovery   Step = "initial_discovery"
+	StepDocumentsFetched   Step = "documents_fetched"
+	StepRelevanceResolved  Step = "relevance_resolved"
+	StepEvidenceProjected  Step = "evidence_projected"
+	StepSynthesisResolved  Step = "synthesis_resolved"
+	StepObjectiveCompleted Step = "objective_completed"
 )
 
 type CitationSource struct {
@@ -109,23 +90,19 @@ type Artifact struct {
 }
 
 type Result struct {
-	Objective                     Objective
-	Steps                         []Step
-	Discovery                     []websearch.CandidateReport
-	Fetches                       []websearch.DocumentReport
-	Evidence                      []Evidence
-	Projected                     []ProjectedEvidence
-	Artifact                      Artifact
-	AcquisitionAttempts           int
-	AcquisitionAttemptLimit       int
-	DiscoveryAttempts             int
-	FetchAttempts                 int
-	SearchTermsCalls              int
-	RelevanceCalls                int
-	SynthesisCalls                int
-	SynthesisCorrectionCalls      int
-	SynthesisCorrectionZeroDeltas int
-	ClaimEvidenceReviewCalls      int
-	SemanticCalls                 int
-	Complete                      bool
+	Objective               Objective
+	Steps                   []Step
+	Discovery               []websearch.CandidateReport
+	Fetches                 []websearch.DocumentReport
+	Evidence                []Evidence
+	Projected               []ProjectedEvidence
+	Artifact                Artifact
+	AcquisitionAttempts     int
+	AcquisitionAttemptLimit int
+	DiscoveryAttempts       int
+	FetchAttempts           int
+	RelevanceCalls          int
+	SynthesisCalls          int
+	SemanticCalls           int
+	Complete                bool
 }

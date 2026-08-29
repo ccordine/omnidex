@@ -58,6 +58,13 @@ func runObjectiveReusablePortableRawLeafCall[T any](
 				"validate reused %s result: %w", subject, err,
 			)
 		}
+		if err := validateObjectiveRawCandidatePathBoundary(
+			job.Kind, reuse.Result.Candidate, pathProvenance,
+		); err != nil {
+			return zero, objectiveStationReceipt{}, fmt.Errorf(
+				"validate reused %s raw path boundary: %w", subject, err,
+			)
+		}
 		value, err := decode(reuse.Result.Candidate)
 		if err == nil {
 			err = validateObjectiveRawLeafPathBoundary(value, pathProvenance)

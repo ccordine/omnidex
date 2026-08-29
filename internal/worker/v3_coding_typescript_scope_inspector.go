@@ -8,7 +8,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -78,11 +77,15 @@ func inspectDirectCodingTypeScriptScope(
 		diagnostic.DocumentLine > diagnostic.DocumentBlockEndLine {
 		return directCodingTypeScriptScope{}, fmt.Errorf("inspect TypeScript scope received invalid document coordinates")
 	}
+	if err := validateDirectCodingTypeScriptScopeInspector(root); err != nil {
+		return directCodingTypeScriptScope{}, err
+	}
+	args := typeScriptScopeInspectorNodeArgs(
+		filepath.ToSlash(path), diagnostic.DocumentLine, diagnostic.DocumentColumn,
+		diagnostic.DocumentBlockStartLine, diagnostic.DocumentBlockEndLine,
+	)
 	output, err := runDirectCodingStageCommand(
-		ctx, root, directCodingStageTimeout, "node", directCodingTypeScriptScopeInspectorFile,
-		filepath.ToSlash(path), strconv.Itoa(diagnostic.DocumentLine),
-		strconv.Itoa(diagnostic.DocumentColumn), strconv.Itoa(diagnostic.DocumentBlockStartLine),
-		strconv.Itoa(diagnostic.DocumentBlockEndLine),
+		ctx, root, directCodingStageTimeout, "node", args...,
 	)
 	if err != nil {
 		return directCodingTypeScriptScope{}, fmt.Errorf("inspect TypeScript compiler scope: %w\n%s", err, trimForBudget(output, 12_000))
@@ -99,6 +102,25 @@ func inspectDirectCodingTypeScriptScope(
 		return directCodingTypeScriptScope{}, err
 	}
 	return projected, nil
+}
+
+func validateDirectCodingTypeScriptScopeInspector(root string) error {
+	path := filepath.Join(root, directCodingTypeScriptScopeInspectorFile)
+	info, err := os.Lstat(path)
+	if err != nil {
+		return fmt.Errorf("validate TypeScript scope inspector: %w", err)
+	}
+	if !info.Mode().IsRegular() || info.Mode().Perm() != 0o600 {
+		return fmt.Errorf("TypeScript scope inspector is not the exact code-owned regular file")
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("read TypeScript scope inspector: %w", err)
+	}
+	if !bytes.Equal(raw, []byte(directCodingTypeScriptScopeInspectorSource)) {
+		return fmt.Errorf("TypeScript scope inspector differs from its code-owned source")
+	}
+	return nil
 }
 
 // projectDirectCodingTypeScriptCompilerScope reduces a compiler-proven union

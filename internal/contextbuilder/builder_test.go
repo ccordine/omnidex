@@ -82,10 +82,10 @@ func TestBuildFailsWhenRequiredSelectorCannotResolve(t *testing.T) {
 		t.Fatalf("missing material error=%v, want ErrRequiredSelector", err)
 	}
 
-	material := contextMaterial(item, taskstate.AuthorityModelProposal, "unaccepted proposal")
+	material := contextMaterial(item, taskstate.Authority("model_proposal"), "unaccepted proposal")
 	_, err = Build(BuildInput{WorkID: "work-1", Spec: spec, WorkingSet: set, Materials: []Material{material}})
-	if !errors.Is(err, ErrRequiredSelector) {
-		t.Fatalf("disallowed authority error=%v, want ErrRequiredSelector", err)
+	if !errors.Is(err, ErrMaterialMismatch) {
+		t.Fatalf("unregistered authority error=%v, want ErrMaterialMismatch", err)
 	}
 }
 
@@ -190,12 +190,16 @@ func TestOptionalItemsAreOmittedWithTypedReasons(t *testing.T) {
 		{ID: "repository", Role: workingset.RoleRepositoryEvidence, MaxItems: 1},
 		{ID: "historical", Role: workingset.RoleHistorical, MaxItems: 1},
 	}
+	spec.AllowedAuthorities = []taskstate.Authority{
+		taskstate.AuthorityUser,
+		taskstate.AuthorityToolEvidence,
+	}
 	projection, err := Build(BuildInput{
 		WorkID: "work-1", Spec: spec, WorkingSet: set,
 		Materials: []Material{
 			contextMaterial(user, taskstate.AuthorityUser, "user authority"),
 			contextMaterial(repository, taskstate.AuthorityToolEvidence, "repository evidence"),
-			contextMaterial(historical, taskstate.AuthorityModelProposal, "unaccepted history"),
+			contextMaterial(historical, taskstate.AuthorityCode, "unaccepted history"),
 		},
 	})
 	if err != nil {
@@ -279,7 +283,6 @@ func testSpec() ContextSpec {
 			taskstate.AuthorityUser,
 			taskstate.AuthorityCode,
 			taskstate.AuthorityToolEvidence,
-			taskstate.AuthorityAcceptedModelDecision,
 		},
 		MaxItems: 8, MaxBytes: 4096, MaxAcquisitionRounds: 2,
 	}

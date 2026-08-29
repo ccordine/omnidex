@@ -1,59 +1,44 @@
 package main
 
 import (
-	"bytes"
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
-	"io"
-	"net/http"
 	"os"
 	"os/exec"
 	"strings"
 	"time"
 )
 
-const screenCaptureTimeout = 8 * time.Second
-const screenOCRTimeout = 10 * time.Second
-const screenVisionTimeout = 45 * time.Second
+const (
+	screenCaptureTimeout = 8 * time.Second
+	screenOCRTimeout     = 10 * time.Second
+)
 
 type screenReadResult struct {
-	GeneratedAt   string   `json:"generated_at"`
-	CaptureTool   string   `json:"capture_tool"`
-	ImagePath     string   `json:"image_path,omitempty"`
-	OCRText       string   `json:"ocr_text,omitempty"`
-	VisionModel   string   `json:"vision_model,omitempty"`
-	VisionSummary string   `json:"vision_summary,omitempty"`
-	Warnings      []string `json:"warnings,omitempty"`
-}
-
-type ollamaGenerateRequest struct {
-	Model  string   `json:"model"`
-	Prompt string   `json:"prompt"`
-	Images []string `json:"images,omitempty"`
-	Stream bool     `json:"stream"`
-}
-
-type ollamaGenerateResponse struct {
-	Response string `json:"response"`
-	Error    string `json:"error"`
+	GeneratedAt string   `json:"generated_at"`
+	CaptureTool string   `json:"capture_tool"`
+	ImagePath   string   `json:"image_path,omitempty"`
+	OCRText     string   `json:"ocr_text,omitempty"`
+	Warnings    []string `json:"warnings,omitempty"`
 }
 
 func runScreenRead(args []string) {
+	if retired := retiredScreenReadFlag(args); retired != "" {
+		die(fmt.Sprintf("screen-read flag %s was removed; screen-read supports deterministic screenshot capture and OCR only", retired))
+	}
 	fs := flag.NewFlagSet("screen-read", flag.ExitOnError)
 	withOCR := fs.Bool("ocr", true, "extract text with OCR (tesseract)")
-	withVision := fs.Bool("vision", false, "send screenshot to Ollama vision model")
-	prompt := fs.String("prompt", "", "optional focus prompt for vision summary")
-	model := fs.String("model", defaultVisionModel(), "vision model (for --vision), e.g. llava:latest")
-	baseURL := fs.String("base-url", defaultOllamaBaseURL(), "Ollama base URL for --vision")
 	keep := fs.Bool("keep", false, "keep captured screenshot file")
 	jsonOutput := fs.Bool("json", false, "print JSON output")
 	_ = fs.Parse(args)
+	if fs.NArg() != 0 {
+		die("screen-read does not accept positional arguments")
+	}
 
-	result, err := screenReadReport(*withOCR, *withVision, *prompt, *model, *baseURL, *keep)
+	result, err := screenReadReport(*withOCR, *keep)
 	if err != nil {
 		die(err.Error())
 	}
@@ -70,33 +55,32 @@ func runScreenRead(args []string) {
 	fmt.Println(screenReadToText(result))
 }
 
-func screenReadReport(withOCR, withVision bool, prompt, visionModel, ollamaBaseURL string, keep bool) (screenReadResult, error) {
-	if !withOCR && !withVision {
-		withOCR = true
+func retiredScreenReadFlag(args []string) string {
+	for _, argument := range args {
+		if !strings.HasPrefix(argument, "-") {
+			continue
+		}
+		name := strings.TrimLeft(argument, "-")
+		if separator := strings.IndexByte(name, '='); separator >= 0 {
+			name = name[:separator]
+		}
+		switch name {
+		case "vision", "prompt", "model", "base-url":
+			return "--" + name
+		}
+	}
+	return ""
+}
+
+func screenReadReport(withOCR, keep bool) (screenReadResult, error) {
+	if !withOCR {
+		return screenReadResult{}, errors.New("screen-read requires OCR; --ocr=false is unsupported")
 	}
 	if err := ensureLocalPermission(permissionKeyScreenCapture, "Allow capturing a local screenshot from your active display."); err != nil {
 		return screenReadResult{}, err
 	}
-
-	warnings := make([]string, 0, 3)
-	if withOCR {
-		if err := ensureLocalPermission(permissionKeyScreenOCR, "Allow OCR text extraction from captured screenshots."); err != nil {
-			withOCR = false
-			warnings = append(warnings, err.Error())
-		}
-	}
-	if withVision {
-		visionReason := "Allow sending captured screenshots to local Ollama vision model at " + screenGenerateEndpoint(ollamaBaseURL) + "."
-		if err := ensureLocalPermission(permissionKeyScreenVision, visionReason); err != nil {
-			withVision = false
-			warnings = append(warnings, err.Error())
-		}
-	}
-	if !withOCR && !withVision {
-		if len(warnings) == 0 {
-			warnings = append(warnings, "all screen reading operations are disabled")
-		}
-		return screenReadResult{}, errors.New(strings.Join(warnings, "; "))
+	if err := ensureLocalPermission(permissionKeyScreenOCR, "Allow OCR text extraction from captured screenshots."); err != nil {
+		return screenReadResult{}, err
 	}
 
 	imagePath, tool, err := captureScreenImage()
@@ -114,41 +98,13 @@ func screenReadReport(withOCR, withVision bool, prompt, visionModel, ollamaBaseU
 	if keep {
 		result.ImagePath = imagePath
 	}
-	if len(warnings) > 0 {
-		result.Warnings = append(result.Warnings, warnings...)
+	text, err := runScreenOCR(imagePath)
+	if err != nil {
+		warning := "ocr: " + err.Error()
+		result.Warnings = []string{warning}
+		return result, errors.New(warning)
 	}
-	if withOCR {
-		text, err := runScreenOCR(imagePath)
-		if err != nil {
-			warnings = append(warnings, "ocr: "+err.Error())
-		} else {
-			result.OCRText = text
-		}
-	}
-
-	if withVision {
-		visionPrompt := strings.TrimSpace(prompt)
-		if visionPrompt == "" {
-			visionPrompt = "Describe what is currently visible on this screen, including key windows, text, and actionable UI elements."
-		}
-		summary, err := runOllamaVision(ollamaBaseURL, visionModel, visionPrompt, imagePath)
-		if err != nil {
-			warnings = append(warnings, "vision: "+err.Error())
-		} else {
-			result.VisionModel = strings.TrimSpace(visionModel)
-			result.VisionSummary = summary
-		}
-	}
-
-	if len(warnings) > 0 {
-		result.Warnings = warnings
-	}
-	if strings.TrimSpace(result.OCRText) == "" && strings.TrimSpace(result.VisionSummary) == "" {
-		if len(warnings) == 0 {
-			warnings = append(warnings, "no OCR or vision output produced")
-		}
-		return result, errors.New(strings.Join(warnings, "; "))
-	}
+	result.OCRText = text
 
 	return result, nil
 }
@@ -232,99 +188,6 @@ func runScreenOCR(imagePath string) (string, error) {
 	return normalized, nil
 }
 
-func runOllamaVision(baseURL, model, prompt, imagePath string) (string, error) {
-	model = strings.TrimSpace(model)
-	if model == "" {
-		return "", errors.New("vision model is required (set --model or OLLAMA_MODEL_VISION)")
-	}
-	endpoint := screenGenerateEndpoint(baseURL)
-	if endpoint == "" {
-		return "", errors.New("invalid Ollama base URL")
-	}
-
-	data, err := os.ReadFile(imagePath)
-	if err != nil {
-		return "", err
-	}
-	encoded := base64.StdEncoding.EncodeToString(data)
-
-	requestBody := ollamaGenerateRequest{
-		Model:  model,
-		Prompt: strings.TrimSpace(prompt),
-		Images: []string{encoded},
-		Stream: false,
-	}
-	payload, err := json.Marshal(requestBody)
-	if err != nil {
-		return "", err
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), screenVisionTimeout)
-	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	client := &http.Client{Timeout: screenVisionTimeout}
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-
-	raw, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
-	if err != nil {
-		return "", err
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", fmt.Errorf("ollama status=%d body=%s", resp.StatusCode, truncateScreenText(strings.TrimSpace(string(raw)), 240))
-	}
-
-	var parsed ollamaGenerateResponse
-	if err := json.Unmarshal(raw, &parsed); err != nil {
-		return "", fmt.Errorf("failed to parse ollama response: %w", err)
-	}
-	if strings.TrimSpace(parsed.Error) != "" {
-		return "", errors.New(strings.TrimSpace(parsed.Error))
-	}
-	result := normalizeScreenText(parsed.Response)
-	if result == "" {
-		return "", errors.New("empty vision response")
-	}
-	return result, nil
-}
-
-func screenGenerateEndpoint(baseURL string) string {
-	base := strings.TrimSpace(baseURL)
-	if base == "" {
-		base = defaultOllamaBaseURL()
-	}
-	base = strings.TrimRight(base, "/")
-	if base == "" {
-		return ""
-	}
-	if strings.HasSuffix(base, "/api/generate") {
-		return base
-	}
-	return base + "/api/generate"
-}
-
-func defaultVisionModel() string {
-	if value := strings.TrimSpace(os.Getenv("OLLAMA_MODEL_VISION")); value != "" {
-		return value
-	}
-	return "llava:latest"
-}
-
-func defaultOllamaBaseURL() string {
-	if value := strings.TrimSpace(os.Getenv("OLLAMA_BASE_URL")); value != "" {
-		return value
-	}
-	return "http://localhost:11434"
-}
-
 func normalizeScreenText(value string) string {
 	clean := strings.TrimSpace(value)
 	if clean == "" {
@@ -354,10 +217,6 @@ func screenReadToText(result screenReadResult) string {
 	if strings.TrimSpace(result.OCRText) != "" {
 		lines = append(lines, "ocr_text:")
 		lines = append(lines, truncateScreenText(result.OCRText, 1800))
-	}
-	if strings.TrimSpace(result.VisionSummary) != "" {
-		lines = append(lines, "vision_summary (model="+safeValue(result.VisionModel, "unknown")+"):")
-		lines = append(lines, truncateScreenText(result.VisionSummary, 1800))
 	}
 	if len(result.Warnings) > 0 {
 		lines = append(lines, "warnings:")

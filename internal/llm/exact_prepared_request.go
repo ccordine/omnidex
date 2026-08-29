@@ -151,11 +151,6 @@ func validateExactPreparedRequest(prepared PreparedModel) error {
 	if prepared.Temperature != nil && math.Signbit(float64(*prepared.Temperature)) {
 		return fmt.Errorf("prepared request temperature cannot be negative zero")
 	}
-	wantThinking := profile.transport == exactPreparedTransportNativeThinking ||
-		profile.transport == exactPreparedTransportNativeSystemThinking
-	if prepared.ThinkingEnabled != wantThinking {
-		return fmt.Errorf("prepared reasoning mode differs from its exact provider profile")
-	}
 	if err := (ProviderIdentityObservationRequest{
 		Expectation:     *prepared.ProviderIdentityExpectation,
 		ChallengeSHA256: prepared.ProviderObservationChallenge,

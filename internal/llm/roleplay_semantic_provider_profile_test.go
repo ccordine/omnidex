@@ -40,7 +40,7 @@ func TestRoleplaySemanticPolicyRequiresStructurallyAttestedCompletionModel(t *te
 	if err != nil {
 		t.Fatal(err)
 	}
-	if settings.NativeTemplate || settings.SeparateSystem || settings.SeparateThinking ||
+	if settings.NativeTemplate || settings.SeparateSystem ||
 		!settings.NaturalOutputCeiling || settings.Temperature == nil || *settings.Temperature != 0 {
 		t.Fatalf("semantic transport settings=%+v", settings)
 	}

@@ -49,9 +49,6 @@ func TestApplicationFrontDoorMigrationMatchesCompleteCodeOwnedRouting(t *testing
 	assertAppliedMigrationCount(t, pool, applicationFrontDoorStationMigration, 1)
 
 	for _, kind := range assemblyline.AllWorkKinds() {
-		if kind == assemblyline.WorkResponseCorrection {
-			continue
-		}
 		want, err := stationForPortableWorkKind(kind)
 		if err != nil {
 			t.Fatalf("registered work kind %q has no station: %v", kind, err)
@@ -75,13 +72,7 @@ func applicationFrontDoorWorkKind(kind assemblyline.WorkKind) bool {
 	case assemblyline.WorkKind("application_context_needs"),
 		assemblyline.WorkKind("application_intent"),
 		assemblyline.WorkApplicationProjectStackConstraint,
-		assemblyline.WorkApplicationServiceEndpointRequirement,
-		assemblyline.WorkApplicationServiceEndpointExposure,
-		assemblyline.WorkApplicationServiceEndpointMethod,
-		assemblyline.WorkApplicationServiceEndpointRouteTemplate,
-		assemblyline.WorkApplicationServiceEndpointRequestMedia,
-		assemblyline.WorkApplicationServiceEndpointResponseMedia,
-		assemblyline.WorkApplicationServiceEndpointSuccessStatus:
+		assemblyline.WorkApplicationServiceEndpointRequirement:
 		return true
 	default:
 		return false

@@ -9,25 +9,19 @@ import (
 )
 
 type Machine struct {
-	objective  Objective
-	config     Config
-	terms      SearchTermsStation
-	relevance  RelevanceStation
-	synthesis  GroundedSynthesisStation
-	correction GroundedSynthesisCorrectionStation
-	review     ClaimEvidenceReviewStation
-	contracts  acquisitionContracts
+	objective Objective
+	config    Config
+	relevance RelevanceStation
+	synthesis GroundedSynthesisStation
+	contracts acquisitionContracts
 }
 
 func New(
 	objective Objective,
 	config Config,
 	acquisition Acquisition,
-	terms SearchTermsStation,
 	relevance RelevanceStation,
 	synthesis GroundedSynthesisStation,
-	correction GroundedSynthesisCorrectionStation,
-	review ClaimEvidenceReviewStation,
 ) (*Machine, error) {
 	if err := validateObjective(objective); err != nil {
 		return nil, err
@@ -35,9 +29,8 @@ func New(
 	if err := validateConfig(config); err != nil {
 		return nil, err
 	}
-	if nilInterface(acquisition) || nilInterface(terms) || nilInterface(relevance) ||
-		nilInterface(synthesis) || nilInterface(correction) || nilInterface(review) {
-		return nil, fmt.Errorf("%w: acquisition and all exact stations are required", ErrInvalidConfiguration)
+	if nilInterface(acquisition) || nilInterface(relevance) || nilInterface(synthesis) {
+		return nil, fmt.Errorf("%w: acquisition, relevance, and synthesis are required", ErrInvalidConfiguration)
 	}
 	limits := acquisition.Limits()
 	if limits.MaxDocuments < 1 || limits.MaxDocuments > 32 ||
@@ -51,11 +44,9 @@ func New(
 	if err != nil {
 		return nil, fmt.Errorf("%w: acquisition contracts: %w", ErrInvalidConfiguration, err)
 	}
-	objective.Acceptance = append([]AcceptancePredicate{}, objective.Acceptance...)
 	return &Machine{
 		objective: objective, config: config,
-		terms: terms, relevance: relevance, synthesis: synthesis, correction: correction,
-		review: review, contracts: contracts,
+		relevance: relevance, synthesis: synthesis, contracts: contracts,
 	}, nil
 }
 
@@ -69,7 +60,7 @@ func (machine *Machine) Run(ctx context.Context) (Result, error) {
 	if err := ctx.Err(); err != nil {
 		return Result{}, err
 	}
-	attemptLimit := uint16(machine.config.MaxSearchTerms + 3)
+	const attemptLimit uint16 = 2
 	result := Result{Objective: cloneObjective(machine.objective), AcquisitionAttemptLimit: int(attemptLimit)}
 	fail := func(runErr error) (Result, error) {
 		if contextErr := ctx.Err(); contextErr != nil {
@@ -115,34 +106,10 @@ func (machine *Machine) Run(ctx context.Context) (Result, error) {
 		return fail(err)
 	}
 	result.Steps = append(result.Steps, StepSynthesisResolved)
-	issue, err := machine.reviewSynthesis(ctx, artifact.Paragraphs, projected, &result)
-	if err != nil {
+	if err := ValidateCompletionArtifact(artifact, evidence); err != nil {
 		return fail(err)
 	}
-	if issue != nil {
-		corrected, changed, correctionErr := machine.correctSynthesis(ctx, artifact.Paragraphs, projected, *issue, &result)
-		if correctionErr != nil {
-			return fail(correctionErr)
-		}
-		if !changed {
-			result.SynthesisCorrectionZeroDeltas++
-			result.Steps = append(result.Steps, StepSynthesisZeroDelta)
-		} else {
-			artifact, err = buildArtifact(GroundedSynthesisDecision{Paragraphs: corrected}, projected, evidence, machine.config)
-			if err != nil {
-				return fail(err)
-			}
-			result.Steps = append(result.Steps, StepSynthesisCorrected)
-			secondIssue, reviewErr := machine.reviewSynthesis(ctx, artifact.Paragraphs, projected, &result)
-			if reviewErr != nil {
-				return fail(reviewErr)
-			}
-			if secondIssue != nil {
-				return fail(claimEvidenceIssueError(*secondIssue))
-			}
-		}
-	}
-	if err := commitReviewedCompletion(ctx, &result, artifact); err != nil {
+	if err := commitCompletion(ctx, &result, artifact); err != nil {
 		return fail(err)
 	}
 	return cloneResult(result), nil

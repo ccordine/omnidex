@@ -26,17 +26,4 @@ func TestDeclarationArtifactBoundaryHasOneExactStationOwner(t *testing.T) {
 	if got != station.CodingDeclarationArtifactBoundary {
 		t.Fatalf("station=%q want=%q", got, station.CodingDeclarationArtifactBoundary)
 	}
-	correction, err := assemblyline.NewRetainedResponseCorrectionJob(
-		job, "boundary is unsupported", "none",
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	got, err = StationForPortableJob(correction)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got != station.CodingDeclarationArtifactBoundary {
-		t.Fatalf("correction station=%q want=%q", got, station.CodingDeclarationArtifactBoundary)
-	}
 }

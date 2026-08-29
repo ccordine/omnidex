@@ -9,8 +9,8 @@ import (
 func TestContextRelevanceSelectionPromptHidesCandidateProvenance(t *testing.T) {
 	t.Parallel()
 	authority := ContextRelevanceInput{
-		ExactInstruction:  "Hello.",
-		RetrievalConcepts: []string{"prior telescope tuning"},
+		ExactInstruction:   "Hello.",
+		KnownArtifactPaths: []string{},
 		CandidateAuthorities: []ContextCandidateAuthority{
 			contextCandidateFixture(t, "conversation", "CTX_1", "  Yesterday we tuned the telescope.\n"),
 			contextCandidateFixture(t, "roleplay.canon", "CTX_2", "The northern gate opens at dawn."),
@@ -32,7 +32,6 @@ func TestContextRelevanceSelectionPromptHidesCandidateProvenance(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !strings.Contains(prompt, `"candidate_id":"CTX_2"`) ||
-		!strings.Contains(prompt, `"retrieval_concepts":["prior telescope tuning"]`) ||
 		!strings.Contains(prompt, `"content":"  Yesterday we tuned the telescope.\n"`) {
 		t.Fatalf("relevance projection=%s", prompt)
 	}
@@ -67,8 +66,8 @@ func TestContextRelevanceSelectionPromptHidesCandidateProvenance(t *testing.T) {
 func TestContextRelevanceSelectionReturnsOnlyOneProjectedOpaqueID(t *testing.T) {
 	t.Parallel()
 	authority := ContextRelevanceInput{
-		ExactInstruction:  "Do it again.",
-		RetrievalConcepts: []string{"previous action"},
+		ExactInstruction:   "Do it again.",
+		KnownArtifactPaths: []string{},
 		CandidateAuthorities: []ContextCandidateAuthority{
 			contextCandidateFixture(t, "conversation", "CTX_7", "The greenhouse beds were watered."),
 			contextCandidateFixture(t, "memory", "CTX_3", "Use rye flour for morning loaves."),
@@ -107,8 +106,8 @@ func TestContextRelevanceSelectionReturnsOnlyOneProjectedOpaqueID(t *testing.T) 
 func TestContextRelevanceSelectionRejectsInvalidAuthority(t *testing.T) {
 	t.Parallel()
 	base := ContextRelevanceInput{
-		ExactInstruction:  "Repeat the previous greenhouse operation.",
-		RetrievalConcepts: []string{"previous greenhouse operation"},
+		ExactInstruction:   "Repeat the previous greenhouse operation.",
+		KnownArtifactPaths: []string{},
 		CandidateAuthorities: []ContextCandidateAuthority{
 			contextCandidateFixture(t, "conversation", "CTX_1", "The vents were opened."),
 			contextCandidateFixture(t, "memory", "CTX_2", "The irrigation cycle ran."),
@@ -120,31 +119,6 @@ func TestContextRelevanceSelectionRejectsInvalidAuthority(t *testing.T) {
 			Authority: input, AcceptedCandidateIDs: []string{},
 		})
 		return err
-	}
-	for name, concepts := range map[string][]string{
-		"nil": nil, "mixed case": {"Previous action"}, "unsorted": {"zulu", "alpha"},
-		"duplicate": {"previous action", "previous action"}, "over bound": {"a", "b", "c", "d"},
-	} {
-		t.Run("retrieval concepts "+name, func(t *testing.T) {
-			input := base
-			input.RetrievalConcepts = concepts
-			if err := newJob(input); err == nil {
-				t.Fatal("noncanonical retrieval concepts were accepted")
-			}
-		})
-	}
-	emptyConceptInput := base
-	emptyConceptInput.RetrievalConcepts = []string{}
-	emptyConceptJob, err := NewContextRelevanceSelectionJob(ContextRelevanceSelectionInput{
-		Authority: emptyConceptInput, AcceptedCandidateIDs: []string{},
-	})
-	if err != nil {
-		t.Fatalf("explicit empty retrieval concepts were rejected: %v", err)
-	}
-	emptyPrompt, err := RenderPortableJob(emptyConceptJob)
-	if err != nil || !strings.Contains(emptyPrompt, `"retrieval_concepts":[]`) ||
-		strings.Contains(emptyPrompt, `"retrieval_concepts":null`) {
-		t.Fatalf("empty concepts prompt=%s error=%v", emptyPrompt, err)
 	}
 	tests := map[string]func(*ContextRelevanceInput){
 		"namespace": func(input *ContextRelevanceInput) { input.CandidateAuthorities[0].Namespace = "Conversation History" },
@@ -188,8 +162,9 @@ func TestContextRelevanceSelectionRejectsInvalidAuthority(t *testing.T) {
 func TestContextRelevanceSelectionEnforcesPerCallCandidateBudget(t *testing.T) {
 	t.Parallel()
 	input := ContextRelevanceInput{
-		ExactInstruction: "Repeat the prior procedure.", RetrievalConcepts: []string{"prior procedure"},
-		MaxSelections: 3,
+		ExactInstruction:   "Repeat the prior procedure.",
+		MaxSelections:      3,
+		KnownArtifactPaths: []string{},
 	}
 	for index := 1; index <= 3; index++ {
 		input.CandidateAuthorities = append(input.CandidateAuthorities, contextCandidateFixture(

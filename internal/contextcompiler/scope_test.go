@@ -9,20 +9,8 @@ import (
 )
 
 type scopeCapturingStations struct {
-	terms        assemblyline.ContextScope
 	relevance    assemblyline.ContextScope
 	minification assemblyline.ContextScope
-}
-
-func (station *scopeCapturingStations) Generate(
-	_ context.Context,
-	input assemblyline.ContextSearchTermsInput,
-) (assemblyline.ContextSearchTermsDecision, StationReceipt, error) {
-	station.terms = input.Scope
-	decision := assemblyline.ContextSearchTermsDecision{
-		Schema: assemblyline.ContextSearchTermsSchemaV1, Terms: []string{"bridge"},
-	}
-	return decision, StationReceipt{Calls: 1}, decision.ValidateFor(input)
 }
 
 func (station *scopeCapturingStations) SelectRelevant(
@@ -62,20 +50,20 @@ func TestCompilePropagatesRoleplayScopeThroughEveryContextStation(t *testing.T) 
 		},
 	}}
 	result, err := Compile(t.Context(), Request{
-		ExactInstruction: "Continue from the bridge.",
-		Scope:            assemblyline.ContextScopeRoleplaySimulation,
-	}, provider, Stations{Terms: stations, Relevance: stations, Minification: stations})
+		ExactInstruction:   "Continue from the bridge.",
+		ModelInstruction:   "Continue from the bridge.",
+		KnownArtifactPaths: []string{},
+		Scope:              assemblyline.ContextScopeRoleplaySimulation,
+	}, provider, Stations{Relevance: stations, Minification: stations})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if stations.terms != assemblyline.ContextScopeRoleplaySimulation ||
-		stations.relevance != assemblyline.ContextScopeRoleplaySimulation ||
+	if stations.relevance != assemblyline.ContextScopeRoleplaySimulation ||
 		stations.minification != assemblyline.ContextScopeRoleplaySimulation {
-		t.Fatalf("station scopes terms/relevance/minification=%q/%q/%q",
-			stations.terms, stations.relevance, stations.minification)
+		t.Fatalf("station scopes relevance/minification=%q/%q",
+			stations.relevance, stations.minification)
 	}
-	if result.SearchTermsCalls != 1 || result.RelevanceCalls != 1 ||
-		result.MinificationCalls != 1 {
+	if result.RelevanceCalls != 1 || result.MinificationCalls != 1 {
 		t.Fatalf("scoped result=%#v", result)
 	}
 }

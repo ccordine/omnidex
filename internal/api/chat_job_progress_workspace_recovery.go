@@ -15,7 +15,7 @@ func summarizeChatWorkspaceRecovery(event parsedChatStepEvent) (chatProgressKind
 		if _, err := requireChatEventText(fields, "source", 256); err != nil {
 			return "", "", err
 		}
-		return chatProgressReview, "Reconciling a durable workspace mutation", nil
+		return chatProgressPreparation, "Reconciling a durable workspace mutation", nil
 	case "workspace_mutation_recovered":
 		fields, err := exactChatEventFields(event.Message, "operation", "expected")
 		if err != nil {

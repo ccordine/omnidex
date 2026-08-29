@@ -55,7 +55,11 @@ func (input SkillSelectionInput) validate() error {
 		}
 		seen[candidate.Purpose] = struct{}{}
 	}
-	return nil
+	values := []string{input.LocalContext, input.Need}
+	for _, candidate := range input.Candidates {
+		values = append(values, candidate.Purpose)
+	}
+	return ValidatePathFreeModelContext("skill selection", values...)
 }
 
 func (decision SkillSelectionDecision) ValidateFor(input SkillSelectionInput) error {

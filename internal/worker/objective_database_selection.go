@@ -71,7 +71,7 @@ func reduceObjectiveDatabaseCandidates(
 	for {
 		next := make([]assemblyline.DatabaseSchemaCandidate, 0)
 		for start := 0; start < len(current); start += databaseSchemaSelectionChunk {
-			if totalCalls > maxDatabaseSchemaSelectionModelCalls-maxTypedWorkerAttempts {
+			if totalCalls > maxDatabaseSchemaSelectionModelCalls-exactSemanticLeafCalls {
 				return nil, totalCalls, fmt.Errorf(
 					"database schema selection exceeded its %d-call semantic reduction bound",
 					maxDatabaseSchemaSelectionModelCalls,
@@ -130,8 +130,8 @@ func objectiveDatabaseRelationDescriptor(snapshot datasource.SchemaSnapshot, rel
 	fmt.Fprintf(&rendered, "RELATION label=%s.%s kind=%s\n", relation.SchemaName, relation.Name, relation.Kind)
 	for _, column := range relation.Columns {
 		fmt.Fprintf(
-			&rendered, "FIELD %s label=%s type=%s nullable=%t",
-			column.ID, column.Name, column.TypeCategory, column.Nullable,
+			&rendered, "FIELD label=%s type=%s nullable=%t",
+			column.Name, column.TypeCategory, column.Nullable,
 		)
 		if len(column.AllowedValues) > 0 {
 			fmt.Fprintf(&rendered, " allowed=%s", strings.Join(column.AllowedValues, " | "))
@@ -139,10 +139,24 @@ func objectiveDatabaseRelationDescriptor(snapshot datasource.SchemaSnapshot, rel
 		rendered.WriteByte('\n')
 	}
 	for _, foreignKey := range relation.ForeignKeys {
+		columnLabels, err := objectiveDatabaseColumnLabels(relation.Columns, foreignKey.ColumnIDs)
+		if err != nil {
+			return "", fmt.Errorf("database relation %q foreign key: %w", relation.Name, err)
+		}
+		referencedRelation, err := snapshot.Relation(foreignKey.ReferencedRelationID)
+		if err != nil {
+			return "", err
+		}
+		referencedLabels, err := objectiveDatabaseSchemaColumnLabels(
+			referencedRelation.Columns, foreignKey.ReferencedColumnIDs,
+		)
+		if err != nil {
+			return "", fmt.Errorf("database relation %q referenced foreign key: %w", relation.Name, err)
+		}
 		fmt.Fprintf(
-			&rendered, "FOREIGN KEY %s fields=%s references_relation=%s references_fields=%s\n",
-			foreignKey.ID, strings.Join(foreignKey.ColumnIDs, " | "),
-			foreignKey.ReferencedRelationID, strings.Join(foreignKey.ReferencedColumnIDs, " | "),
+			&rendered, "FOREIGN KEY fields=%s references=%s.%s fields=%s\n",
+			strings.Join(columnLabels, " | "), referencedRelation.Schema, referencedRelation.Name,
+			strings.Join(referencedLabels, " | "),
 		)
 	}
 	value := strings.TrimSpace(rendered.String())
@@ -150,4 +164,46 @@ func objectiveDatabaseRelationDescriptor(snapshot datasource.SchemaSnapshot, rel
 		return "", fmt.Errorf("database relation descriptor is empty")
 	}
 	return value, nil
+}
+
+func objectiveDatabaseColumnLabels(
+	columns []datasource.IntentColumnProjection,
+	ids []string,
+) ([]string, error) {
+	labels := make([]string, len(ids))
+	for index, id := range ids {
+		found := false
+		for _, column := range columns {
+			if column.ID == id {
+				labels[index] = column.Name
+				found = true
+				break
+			}
+		}
+		if !found {
+			return nil, fmt.Errorf("unknown local field reference")
+		}
+	}
+	return labels, nil
+}
+
+func objectiveDatabaseSchemaColumnLabels(
+	columns []datasource.SchemaColumn,
+	ids []string,
+) ([]string, error) {
+	labels := make([]string, len(ids))
+	for index, id := range ids {
+		found := false
+		for _, column := range columns {
+			if column.ID == id {
+				labels[index] = column.Name
+				found = true
+				break
+			}
+		}
+		if !found {
+			return nil, fmt.Errorf("unknown referenced field")
+		}
+	}
+	return labels, nil
 }

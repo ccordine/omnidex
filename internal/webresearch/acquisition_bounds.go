@@ -18,8 +18,8 @@ const (
 )
 
 func validateAcquisitionQuery(query string) error {
-	if query == "" || query != strings.TrimSpace(query) || len(query) > 1_024 {
-		return fmt.Errorf("query must be trimmed and contain 1..1024 bytes")
+	if query == "" || query != strings.TrimSpace(query) || len(query) > 4_096 {
+		return fmt.Errorf("query must be trimmed and contain 1..4096 bytes")
 	}
 	return nil
 }
@@ -44,8 +44,8 @@ func validateCandidateSliceBounds(candidates []websearch.Candidate) error {
 }
 
 func validateCandidateReportBounds(report websearch.CandidateReport) error {
-	if len(report.Query) > 1_024 {
-		return fmt.Errorf("query exceeds 1024 bytes")
+	if len(report.Query) > 4_096 {
+		return fmt.Errorf("query exceeds 4096 bytes")
 	}
 	if err := validateCandidateSliceBounds(report.Candidates); err != nil {
 		return err

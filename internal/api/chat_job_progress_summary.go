@@ -62,7 +62,7 @@ func summarizeChatStepEvent(event parsedChatStepEvent, stepAction string) (chatP
 		if _, err := requireChatEventInteger(fields, "product_bytes", false); err != nil {
 			return "", "", err
 		}
-		return chatProgressReview, fmt.Sprintf("Accepted %d exact requirements", requirements), nil
+		return chatProgressPreparation, fmt.Sprintf("Accepted %d exact requirements", requirements), nil
 	case "coding_assembly_ready":
 		fields, err := exactChatEventFields(event.Message, "adapter", "files", "blocks", "waves")
 		if err != nil {
@@ -79,7 +79,7 @@ func summarizeChatStepEvent(event parsedChatStepEvent, stepAction string) (chatP
 		if _, err := requireChatEventInteger(fields, "waves", false); err != nil {
 			return "", "", err
 		}
-		return chatProgressReview, fmt.Sprintf("Assembly ready: %d files, %d typed blocks", files, blocks), nil
+		return chatProgressPreparation, fmt.Sprintf("Assembly ready: %d files, %d typed blocks", files, blocks), nil
 	case "coding_artifact_sieve_passed":
 		fields, err := exactChatEventFields(event.Message, "stack", "files")
 		if err != nil {
@@ -105,112 +105,7 @@ func summarizeChatStepEvent(event parsedChatStepEvent, stepAction string) (chatP
 		if _, err := requireChatEventToken(fields, "sha256", 64); err != nil {
 			return "", "", err
 		}
-		return chatProgressReview, fmt.Sprintf("Frozen workload with %d concrete tasks", tasks), nil
-	case "coding_task_verification_started":
-		fields, err := exactChatEventFields(event.Message, "task", "requirement_bytes")
-		if err != nil {
-			return "", "", err
-		}
-		task, err := requireChatEventToken(fields, "task", 256)
-		if err != nil {
-			return "", "", err
-		}
-		requirementBytes, err := requireChatEventInteger(fields, "requirement_bytes", false)
-		return chatProgressVerification, fmt.Sprintf(
-			"Verifying %s against its %d-byte exact requirement", task, requirementBytes,
-		), err
-	case "coding_task_verified":
-		fields, err := exactChatEventFields(event.Message, "task")
-		if err != nil {
-			return "", "", err
-		}
-		task, err := requireChatEventToken(fields, "task", 256)
-		return chatProgressVerification, "Verified " + task, err
-	case "coding_file_started":
-		fields, err := exactChatEventFields(event.Message, "path", "stage")
-		if err != nil {
-			return "", "", err
-		}
-		path, err := requireChatEventText(fields, "path", 512)
-		if err != nil {
-			return "", "", err
-		}
-		stage, err := requireChatEventToken(fields, "stage", 32)
-		if stage == "repair" {
-			return chatProgressFile, "Repairing " + path, err
-		}
-		return chatProgressFile, "Constructing " + path, err
-	case "coding_file_written":
-		fields, err := exactChatEventFields(event.Message, "path", "bytes", "operation", "result")
-		if err != nil {
-			return "", "", err
-		}
-		path, err := requireChatEventText(fields, "path", 512)
-		if err != nil {
-			return "", "", err
-		}
-		bytes, err := requireChatEventInteger(fields, "bytes", false)
-		if err != nil {
-			return "", "", err
-		}
-		operation, err := requireChatEventToken(fields, "operation", 32)
-		if err != nil || (operation != "create" && operation != "replace") {
-			return "", "", fmt.Errorf("coding file operation %q is not registered", operation)
-		}
-		if _, err := requireChatEventText(fields, "result", 512); err != nil {
-			return "", "", err
-		}
-		return chatProgressFile, fmt.Sprintf("Accepted %s (%d bytes)", path, bytes), nil
-	case "coding_file_deleted":
-		fields, err := exactChatEventFields(event.Message, "path", "result")
-		if err != nil {
-			return "", "", err
-		}
-		path, err := requireChatEventText(fields, "path", 512)
-		if err != nil {
-			return "", "", err
-		}
-		if _, err := requireChatEventText(fields, "result", 512); err != nil {
-			return "", "", err
-		}
-		return chatProgressFile, "Deleted " + path, nil
-	case "coding_file_unchanged":
-		fields, err := exactChatEventFields(event.Message, "path")
-		path, fieldErr := requireChatEventText(fields, "path", 512)
-		return chatProgressFile, "No change required for " + path, firstChatProgressError(err, fieldErr)
-	case "coding_file_delete_skipped":
-		fields, err := exactChatEventFields(event.Message, "path", "reason")
-		if err != nil {
-			return "", "", err
-		}
-		path, err := requireChatEventText(fields, "path", 512)
-		if err != nil || fields["reason"] != "missing" {
-			return "", "", firstChatProgressError(err, fmt.Errorf("delete skip reason must be missing"))
-		}
-		return chatProgressFile, "Delete skipped because " + path + " is absent", nil
-	case "coding_verification_started":
-		fields, err := exactChatEventFields(event.Message, "commands")
-		commands, fieldErr := requireChatEventInteger(fields, "commands", false)
-		return chatProgressVerification, fmt.Sprintf("Running %d code-selected verification commands", commands), firstChatProgressError(err, fieldErr)
-	case "coding_verification_command_passed":
-		fields, err := exactChatEventFields(event.Message, "command")
-		command, fieldErr := requireChatEventText(fields, "command", 512)
-		return chatProgressVerification, "Verification passed: " + command, firstChatProgressError(err, fieldErr)
-	case "coding_verification_failed":
-		fields, err := exactChatEventFields(event.Message, "command", "diagnostic")
-		if err != nil {
-			return "", "", err
-		}
-		command, err := requireChatEventText(fields, "command", 512)
-		if err != nil {
-			return "", "", err
-		}
-		diagnostic, err := requireChatEventText(fields, "diagnostic", maxChatProgressRawBytes)
-		return chatProgressDiagnostic, "Verification failed for " + command + ": " + boundedChatProgressText(diagnostic), err
-	case "coding_static_validation_failed":
-		fields, err := exactChatEventFields(event.Message, "diagnostic")
-		diagnostic, fieldErr := requireChatEventText(fields, "diagnostic", maxChatProgressRawBytes)
-		return chatProgressDiagnostic, "Static validation failed: " + boundedChatProgressText(diagnostic), firstChatProgressError(err, fieldErr)
+		return chatProgressPreparation, fmt.Sprintf("Frozen workload with %d concrete tasks", tasks), nil
 	case "coding_stage_started", "coding_stage_passed":
 		return summarizeChatCodingStage(event)
 	case "coding_fragment_repair_guidance_started":
@@ -229,17 +124,6 @@ func summarizeChatStepEvent(event parsedChatStepEvent, stepAction string) (chatP
 		return summarizeChatRepositoryVerification(event)
 	case "workspace_mutation_recovery_started", "workspace_mutation_recovered":
 		return summarizeChatWorkspaceRecovery(event)
-	case "coding_repair_selected":
-		fields, err := exactChatEventFields(event.Message, "repair", "path", "command")
-		if err != nil {
-			return "", "", err
-		}
-		repair, err := requireChatEventInteger(fields, "repair", false)
-		if err != nil {
-			return "", "", err
-		}
-		path, err := requireChatEventText(fields, "path", 512)
-		return chatProgressReview, fmt.Sprintf("Selected %s for exact repair %d", path, repair), err
 	}
 	if namespace, state, ok := chatPortableEventIdentity(event.Type); ok {
 		return summarizeChatPortableEvent(namespace, state, event.Message)
@@ -260,6 +144,7 @@ func summarizeChatCodingPhase(message string) (chatProgressKind, string, error) 
 		"assembling":   "Compiling the deterministic assembly",
 		"constructing": "Constructing accepted files",
 		"verifying":    "Verifying the workspace",
+		"deploying":    "Deploying the verified workload",
 		"completed":    "Coding workflow reached verified completion",
 		"failed":       "Coding workflow failed",
 	}

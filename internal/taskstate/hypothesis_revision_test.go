@@ -9,7 +9,7 @@ func TestCodeRejectsHypothesisOnlyWithPersistedContradictionEvidence(t *testing.
 	t.Parallel()
 	ledger := newTestLedger(t)
 	applyTestCommand(t, ledger, AddEntryCommand{
-		ExpectedVersion: 0, Actor: AuthorityModelProposal,
+		ExpectedVersion: 0, Actor: AuthorityCode,
 		ID: "hypothesis-1", Kind: EntryHypothesis, Content: "The first mechanism is available.",
 		Metadata: EmptyJSONObject(), Refs: []Ref{},
 	})

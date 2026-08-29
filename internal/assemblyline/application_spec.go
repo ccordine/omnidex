@@ -70,9 +70,13 @@ func (specification ApplicationSpecification) Validate() error {
 	if len(specification.ProductQuote) > maxApplicationProductBytes {
 		return fmt.Errorf("application product quote exceeds %d bytes", maxApplicationProductBytes)
 	}
-	if len(specification.Requirements) == 0 {
-		return fmt.Errorf("application specification requires at least one grounded requirement")
+	if len(specification.Requirements) < 1 || len(specification.Requirements) > maxRequirementCount {
+		return fmt.Errorf(
+			"application specification requires 1..%d grounded requirements",
+			maxRequirementCount,
+		)
 	}
+	seenRequirements := make(map[string]struct{}, len(specification.Requirements))
 	for index, requirement := range specification.Requirements {
 		if requirement.ID != fmt.Sprintf("requirement_%03d", index+1) {
 			return fmt.Errorf("requirement %d has non-code-owned identity %q", index, requirement.ID)
@@ -80,6 +84,10 @@ func (specification ApplicationSpecification) Validate() error {
 		if err := validateRequirementQuote("application requirement", requirement.SourceQuote); err != nil {
 			return fmt.Errorf("requirement %s: %w", requirement.ID, err)
 		}
+		if _, duplicate := seenRequirements[requirement.SourceQuote]; duplicate {
+			return fmt.Errorf("application requirement quote %q is duplicated", requirement.SourceQuote)
+		}
+		seenRequirements[requirement.SourceQuote] = struct{}{}
 	}
 	for index, artifact := range specification.Artifacts {
 		if strings.TrimSpace(artifact.Token) == "" || strings.TrimSpace(string(artifact.Disposition)) == "" {

@@ -34,7 +34,7 @@ func repositoryRequirementLeafTestInput(t *testing.T) RepositoryRequirementLeafI
 	t.Helper()
 	request := "Add audit logging and CSV export to the service."
 	context, err := BootstrapApplicationContext(
-		request, ApplicationWorkspaceExisting, nil,
+		request, ApplicationWorkspaceExisting,
 	)
 	if err != nil {
 		t.Fatal(err)

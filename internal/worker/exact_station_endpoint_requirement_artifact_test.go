@@ -10,10 +10,8 @@ func TestReplayArtifactValidatesServiceEndpointRequirement(t *testing.T) {
 	t.Parallel()
 	job, err := assemblyline.NewApplicationServiceEndpointRequirementJob(
 		assemblyline.ApplicationServiceEndpointRequirementInput{
-			ProductContext:    "inventory service",
-			RequirementQuote:  "Records are normalized before storage.",
-			Objective:         "Normalize accepted record values.",
-			RequiredBehaviors: []string{"Normalize each accepted record value."},
+			ProductContext:   "inventory service",
+			RequirementQuote: "Records are normalized before storage.",
 		},
 	)
 	if err != nil {

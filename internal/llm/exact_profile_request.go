@@ -2,6 +2,7 @@ package llm
 
 import (
 	"fmt"
+	"slices"
 
 	"github.com/gryph/omnidex/internal/exactjson"
 )
@@ -41,6 +42,12 @@ func ExactPreparedRequestBytes(prepared PreparedModel) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	if request.Think != nil && *request.Think {
+		return nil, fmt.Errorf("exact prepared request enabled forbidden provider thinking")
+	}
+	if slices.Contains(profile.capabilities, "thinking") && request.Think == nil {
+		return nil, fmt.Errorf("thinking-capable provider request omitted think=false")
+	}
 	return exactjson.Canonical(request)
 }
 
@@ -70,17 +77,11 @@ func (profile exactProviderModelProfile) preparedRequest(
 	switch profile.transport {
 	case exactPreparedTransportRaw:
 		return profile.rawPreparedRequest(prepared, request)
-	case exactPreparedTransportNativeThinking:
-		return profile.thinkingPreparedRequest(prepared, request)
+	case exactPreparedTransportNativeNoThinking:
+		return profile.noThinkingPreparedRequest(prepared, request)
 	case exactPreparedTransportNativeSystem:
 		request.Prompt = prepared.PromptHint
 		request.System = prepared.Prompt
-		return request, nil
-	case exactPreparedTransportNativeSystemThinking:
-		request.Prompt = prepared.PromptHint
-		request.System = prepared.Prompt
-		think := true
-		request.Think = &think
 		return request, nil
 	case exactPreparedTransportNativeSystemNoThinking:
 		request.Prompt = prepared.PromptHint
@@ -121,7 +122,7 @@ func (profile exactProviderModelProfile) rawPreparedRequest(
 	return request, nil
 }
 
-func (profile exactProviderModelProfile) thinkingPreparedRequest(
+func (profile exactProviderModelProfile) noThinkingPreparedRequest(
 	prepared PreparedModel,
 	request exactPreparedRequest,
 ) (exactPreparedRequest, error) {
@@ -130,7 +131,7 @@ func (profile exactProviderModelProfile) thinkingPreparedRequest(
 		return exactPreparedRequest{}, err
 	}
 	request.Prompt = prompt
-	think := true
+	think := false
 	request.Think = &think
 	return request, nil
 }

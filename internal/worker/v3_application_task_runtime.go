@@ -96,7 +96,6 @@ func directCodingApplicationTaskStageCommands(
 }
 
 func (s *directCodingSession) runDirectCodingApplicationTaskLifecycle(
-	input assemblyline.ApplicationWorkloadDraftInput,
 	frozen assemblyline.FrozenApplicationWorkload,
 	program *directCodingProgram,
 ) error {
@@ -115,7 +114,7 @@ func (s *directCodingSession) runDirectCodingApplicationTaskLifecycle(
 		return err
 	}
 	lifecycleErr := runDirectCodingApplicationTaskLifecycle(
-		input, frozen, program,
+		frozen, program,
 		directCodingApplicationTaskLifecycleHooks{
 			BeginTask: func(context assemblyline.ApplicationTaskContext) error {
 				if s.cognition == nil {

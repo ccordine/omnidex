@@ -7,20 +7,28 @@ func BuildApplicationStateFieldCoveragePrompt(
 ) (string, error) {
 	return buildApplicationServiceStateLeafPrompt(
 		input.validate,
-		"Answer one semantic relation: does the directly related behavior authority require any durable root state field that is not semantically covered by the accepted fields?",
-		"Return STATE_FIELD_REMAINS when one or more root fields remain. Return NO_UNCOVERED_STATE_FIELD when the accepted fields form the minimal sufficient durable interface.",
-		"APPLICATION_STATE_FIELD_AUTHORITY", input,
+		"Answer one semantic question: does the directly related behavior authority require another durable root state value not covered by the accepted semantic values?",
+		"Return STATE_FIELD_REMAINS when one or more root values remain. Return NO_UNCOVERED_STATE_FIELD when the accepted values form the minimal sufficient durable interface.",
+		"APPLICATION_STATE_FIELD_AUTHORITY",
+		applicationStateFieldLeafProjection{
+			Authority:      input.Authority,
+			AcceptedFields: projectApplicationStateFields(input.AcceptedFields),
+		},
 	)
 }
 
-func BuildApplicationStateFieldNamePrompt(
+func BuildApplicationStateFieldPurposePrompt(
 	input ApplicationStateFieldLeafInput,
 ) (string, error) {
 	return buildApplicationServiceStateLeafPrompt(
 		input.validate,
-		"Return one canonical lowercase snake-case name for the earliest necessary durable root state field not semantically covered by the accepted fields.",
-		"Return only that one raw identifier. Do not return its kind, record members, JSON, quotes, a label, Markdown, or commentary.",
-		"APPLICATION_STATE_FIELD_AUTHORITY", input,
+		"State one specific semantic responsibility of a necessary durable root value not covered by the accepted semantic values.",
+		"Return only one concise raw purpose sentence. Do not return an identifier, data kind, record members, JSON, quotes, a label, Markdown, or commentary.",
+		"APPLICATION_STATE_FIELD_AUTHORITY",
+		applicationStateFieldLeafProjection{
+			Authority:      input.Authority,
+			AcceptedFields: projectApplicationStateFields(input.AcceptedFields),
+		},
 	)
 }
 
@@ -29,9 +37,13 @@ func BuildApplicationStateFieldKindPrompt(
 ) (string, error) {
 	return buildApplicationServiceStateLeafPrompt(
 		input.validate,
-		"Answer one semantic question: what registered data kind must the focused durable root state field use to satisfy the directly related behavior authority?",
+		"Answer one semantic question: what registered data kind must the focused durable root value use to fulfill its exact purpose?",
 		"Return exactly one raw registered kind: string, integer, number, boolean, string_list, integer_list, number_list, boolean_list, or record_list. Return no JSON, quotes, label, Markdown, or commentary.",
-		"APPLICATION_STATE_FIELD_KIND_AUTHORITY", input,
+		"APPLICATION_STATE_FIELD_KIND_AUTHORITY",
+		applicationStateFieldKindProjection{
+			Authority:      input.Authority,
+			FocusedPurpose: input.FocusedPurpose,
+		},
 	)
 }
 
@@ -48,18 +60,18 @@ func DecodeApplicationStateFieldCoverageLeaf(
 	)
 }
 
-func DecodeApplicationStateFieldNameLeaf(
+func DecodeApplicationStateFieldPurposeLeaf(
 	input ApplicationStateFieldLeafInput,
 	raw string,
 ) (string, error) {
 	if err := input.validate(); err != nil {
 		return "", err
 	}
-	return decodeUnacceptedApplicationServiceFieldName(
-		"application state field name", raw,
-		func(name string) bool {
+	return decodeUnacceptedApplicationServicePurpose(
+		"application state field purpose", raw,
+		func(purpose string) bool {
 			for _, field := range input.AcceptedFields {
-				if field.Name == name {
+				if equalApplicationServicePurpose(field.Purpose, purpose) {
 					return true
 				}
 			}

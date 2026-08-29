@@ -209,11 +209,7 @@ func listRoleplayPortableReuseCandidatesTx(
 		      outcome.status='resolved' AND outcome.projection_kind='exact_response' AND
 		      source_job.pipeline='chat' AND source_job.metadata->>'channel_mode'='roleplay' AND
 		      source_job.metadata->>'channel_id'=$2 AND
-		      (
-		        opening.work_id=$3 OR
-		        (opening.work_kind='response_correction' AND
-		         opening.portable_payload::jsonb->'original'->>'id'=$3)
-		      ) AND NOT (
+		      opening.work_id=$3 AND NOT (
 		        opening.job_id=$4 AND opening.generation=$5 AND opening.step_id=$6 AND
 		        opening.step_attempt=$7 AND opening.worker_id=$8
 		      ) AND (

@@ -77,7 +77,6 @@ func TestGeneralLocalModelProfilesAreClosedNativeTemplateProfiles(t *testing.T) 
 				Quantization: "Q4_K_M", NativeContextLimit: 8192, TokenizerProfile: test.id,
 			})
 			if err != nil || !settings.NativeTemplate || !settings.SeparateSystem ||
-				settings.SeparateThinking ||
 				(test.deterministic && (settings.Temperature == nil || *settings.Temperature != 0)) ||
 				(!test.deterministic && settings.Temperature != nil) {
 				t.Fatalf("settings=%+v error=%v", settings, err)

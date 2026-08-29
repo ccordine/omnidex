@@ -67,7 +67,7 @@ func TestQwen3NativeProfileRejectsStructuralDrift(t *testing.T) {
 	}
 }
 
-func TestQwen3NativePreparedRequestUsesSystemAndUncappedThinking(t *testing.T) {
+func TestQwen3NativePreparedRequestUsesSystemWithThinkingDisabled(t *testing.T) {
 	t.Parallel()
 	expected := ProviderIdentityExpectation{
 		Backend: ExactPreparedProviderBackend, BackendVersion: ExactPreparedProviderVersion,
@@ -85,14 +85,14 @@ func TestQwen3NativePreparedRequestUsesSystemAndUncappedThinking(t *testing.T) {
 		ContextModel: expected.Model, Prompt: "return one declaration",
 		PromptHint: MinimalGeneratePrompt, MaxOutputTokens: expected.NativeContextLimit,
 		OutputLimitMode: ExactPreparedOutputLimitNatural,
-		ContextTokens:   expected.NativeContextLimit, ThinkingEnabled: true, Temperature: &temperature,
+		ContextTokens:   expected.NativeContextLimit, Temperature: &temperature,
 		ProviderIdentityExpectation: &expected, ProviderObservationChallenge: challenge,
 	}
 	wire, err := ExactPreparedRequestBytes(prepared)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := `{"model":"opaque-qwen3-native:local","options":{"num_ctx":8192,"temperature":0.6},"prompt":"Return only the requested output.","raw":false,"shift":false,"stream":false,"system":"return one declaration","think":true,"truncate":false}`
+	want := `{"model":"opaque-qwen3-native:local","options":{"num_ctx":8192,"temperature":0.6},"prompt":"Return only the requested output.","raw":false,"shift":false,"stream":false,"system":"return one declaration","think":false,"truncate":false}`
 	if string(wire) != want {
 		t.Fatalf("Qwen3 native exact request changed:\n got %s\nwant %s", wire, want)
 	}

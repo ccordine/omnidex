@@ -7,65 +7,6 @@ import (
 	repositoryretrieval "github.com/gryph/omnidex/internal/repository/retrieval"
 )
 
-func generateExistingRepositorySearchTerm(
-	runtime typedWorkerRuntime,
-	modelName, unresolvedConcept string,
-	identities []assemblyline.ArtifactIdentity,
-) (assemblyline.RepositorySearchTermDecision, error) {
-	input := assemblyline.RepositorySearchTermInput{UnresolvedConcept: unresolvedConcept}
-	anchors := make([]string, 0, assemblyline.MaxRepositorySearchAnchorLeaves)
-	for {
-		leafInput := assemblyline.RepositorySearchAnchorLeafInput{
-			UnresolvedConcept: unresolvedConcept,
-			AcceptedAnchors:   append([]string{}, anchors...),
-		}
-		anchorJob, err := assemblyline.NewRepositorySearchAnchorJob(leafInput)
-		if err != nil {
-			return assemblyline.RepositorySearchTermDecision{}, err
-		}
-		anchor, err := runDirectCodingSemanticLeafCall(
-			runtime, modelName, "repository_search_anchor", anchorJob, identities,
-			func(raw string) (string, error) {
-				return assemblyline.DecodeRepositorySearchAnchorLeaf(leafInput, raw)
-			},
-			func(value string) error {
-				return assemblyline.ValidatePathFreeModelContextWithProvenance(
-					"repository search anchor", runtime.PathProvenance, value,
-				)
-			},
-		)
-		if err != nil {
-			return assemblyline.RepositorySearchTermDecision{}, err
-		}
-		anchors = append(anchors, anchor)
-		leafInput.AcceptedAnchors = append([]string{}, anchors...)
-		coverageJob, err := assemblyline.NewRepositorySearchAnchorCoverageJob(leafInput)
-		if err != nil {
-			return assemblyline.RepositorySearchTermDecision{}, err
-		}
-		coverage, err := runDirectCodingSemanticLeafCall(
-			runtime, modelName, "repository_search_anchor_coverage",
-			coverageJob, identities,
-			func(raw string) (string, error) {
-				return assemblyline.DecodeRepositorySearchAnchorCoverageLeaf(leafInput, raw)
-			},
-			func(string) error { return nil },
-		)
-		if err != nil {
-			return assemblyline.RepositorySearchTermDecision{}, err
-		}
-		if coverage == assemblyline.RepositoryNoUncoveredAnchor {
-			return assemblyline.AssembleRepositorySearchTermDecision(input, anchors)
-		}
-		if len(anchors) == assemblyline.MaxRepositorySearchAnchorLeaves {
-			return assemblyline.RepositorySearchTermDecision{}, fmt.Errorf(
-				"repository search anchor coverage remains incomplete at the code-owned %d-item bound",
-				assemblyline.MaxRepositorySearchAnchorLeaves,
-			)
-		}
-	}
-}
-
 func selectExistingRepositoryChangeSurface(
 	runtime typedWorkerRuntime,
 	modelName, researchNeed string,

@@ -22,7 +22,6 @@ const (
 	roleplayBoundaryReply           = "Mara ducks beneath the blade, blood streaking her sleeve, and drives the attacker back through the shattered archive door."
 	roleplayBoundaryAction          = "Mara is holding the shattered doorway against the remaining attackers."
 	roleplayBoundaryFact            = "Mara survived the first assault at the shattered archive doorway."
-	roleplayBoundarySearchTerm      = "the current fictional ambush"
 )
 
 type roleplayBoundaryOllama struct {
@@ -213,15 +212,6 @@ func roleplayBoundaryRawResponse(
 	prompt string,
 ) (string, assemblyline.WorkKind, bool, error) {
 	switch {
-	case strings.Contains(prompt, "Answer one semantic coverage relation: does the exact current instruction"):
-		if strings.Contains(prompt, "ACCEPTED RETRIEVAL CONCEPTS:\n(none)") {
-			return assemblyline.ContextTermRemains,
-				assemblyline.WorkContextSearchTermCoverage, false, nil
-		}
-		return assemblyline.ContextNoUncoveredTerm,
-			assemblyline.WorkContextSearchTermCoverage, false, nil
-	case strings.Contains(prompt, "Return exactly one concise retrieval concept"):
-		return roleplayBoundarySearchTerm, assemblyline.WorkContextSearchTerm, false, nil
 	case strings.Contains(prompt, "CONTEXT_RELEVANCE_AUTHORITY:\n"):
 		candidateID, err := roleplayBoundaryRelevantCandidate(prompt)
 		return candidateID, assemblyline.WorkContextRelevanceSelection, false, err

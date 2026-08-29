@@ -35,8 +35,7 @@ type directCodingLanguageProjectStageExecutor struct {
 	config                    directCodingLanguageStageConfig
 	cleanupRequired           bool
 	acceptedRepairTransitions map[string]int
-	repairGuidance            map[string]map[string]struct{}
-	repairSources             map[string]map[string]struct{}
+	repairDiagnostics         map[string]map[string]struct{}
 }
 
 func newDirectCodingLanguageProjectStageExecutor(
@@ -56,8 +55,7 @@ func newDirectCodingLanguageProjectStageExecutor(
 	return &directCodingLanguageProjectStageExecutor{
 		session: session, root: root, removeEmptyRoot: removeEmptyRoot, config: config,
 		acceptedRepairTransitions: make(map[string]int),
-		repairGuidance:            make(map[string]map[string]struct{}),
-		repairSources:             make(map[string]map[string]struct{}),
+		repairDiagnostics:         make(map[string]map[string]struct{}),
 	}, nil
 }
 
@@ -166,7 +164,7 @@ func (executor *directCodingLanguageProjectStageExecutor) generateBlockWithRunti
 				return "", modelErr
 			}
 			repairRuntime := runtime
-			repairRuntime.MaxAttempts = maxTypedWorkerAttempts
+			repairRuntime.MaxAttempts = 1
 			return executor.repairLanguageBlockWithRuntime(
 				repairRuntime, guidanceModel, correctionModel,
 				stage, ref, input, rejection.Candidate, diagnostic, validate,

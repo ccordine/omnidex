@@ -37,13 +37,12 @@ func TestProductionAcquisitionBoundFetchesExactlyTwoOfThreeCandidates(t *testing
 	synthesis := &synthesizeFirstEvidenceStation{}
 	machine, err := New(Objective{
 		ID: "objective_service_integration", Question: "What is established?",
-		InitialQuery: "bounded integration", Acceptance: exactAcceptance(), Status: ObjectivePending,
+		InitialQuery: "bounded integration", Status: ObjectivePending,
 	}, Config{
-		MaxSearchTerms: 3, MaxSearchTermBytes: 120, MaxFetchCandidates: 2,
+		MaxFetchCandidates: 2,
 		MaxProjectionBytes: 2_000, MaxRelevantCandidates: 2, CandidateSummaryBytes: 240,
 		MaxSynthesisParagraphs: 4, MaxSynthesisParagraphBytes: 1_000,
-	}, service, &recordingTermsStation{}, relevance, synthesis,
-		&recordingSynthesisCorrectionStation{}, &recordingClaimEvidenceReviewStation{})
+	}, service, relevance, synthesis)
 	if err != nil {
 		t.Fatal(err)
 	}

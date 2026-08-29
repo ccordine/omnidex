@@ -96,9 +96,6 @@ func validateEventPayload(event Event) (eventProjectionField, error) {
 			return 0, invalidEvent("entry supersession requires a reason")
 		}
 		return eventFieldEntryID | eventFieldReplacementID | eventFieldReason, nil
-	case EventDecisionAccepted:
-		return eventFieldEntry | eventFieldEntryID | eventFieldReplacementID |
-			eventFieldStep | eventFieldReason, validateProjectedDecisionAccepted(event)
 	case EventNodesReadied:
 		return eventFieldNodeIDs, validateProjectedNodesReadied(event)
 	case EventNodeStepAssigned:

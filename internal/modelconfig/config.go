@@ -19,7 +19,6 @@ type Field struct {
 }
 
 var Fields = []Field{
-	{Key: "context_search_terms_model", Label: "Context search terms", Description: "Returns bounded query concepts from only the exact current instruction", EnvKeys: []string{"OMNI_CONTEXT_SEARCH_TERMS_MODEL"}},
 	{Key: "context_relevance_model", Label: "Context relevance", Description: "Selects only relevant opaque IDs from one code-bounded context candidate set", EnvKeys: []string{"OMNI_CONTEXT_RELEVANCE_MODEL"}},
 	{Key: "context_minification_model", Label: "Context minification", Description: "Reduces selected exact authorities into one bounded minimal-context leaf", EnvKeys: []string{"OMNI_CONTEXT_MINIFICATION_MODEL"}},
 	{Key: "conversation_objective_kind_model", Label: "Conversation objective kind", Description: "Classifies one exact free-form turn into one registered objective kind", EnvKeys: []string{"OMNI_CONVERSATION_OBJECTIVE_KIND_MODEL"}},
@@ -31,26 +30,20 @@ var Fields = []Field{
 	{Key: "database_evidence_gap_model", Label: "Database evidence gap", Description: "Returns one exact information requirement not established by accumulated database evidence, or an empty leaf", EnvKeys: []string{"OMNI_DATABASE_EVIDENCE_GAP_MODEL"}},
 	{Key: "database_join_path_selection_model", Label: "Database join path selection", Description: "Selects one opaque current foreign-key path for one named semantic relationship ambiguity", EnvKeys: []string{"OMNI_DATABASE_JOIN_PATH_SELECTION_MODEL"}},
 	{Key: "repository_evidence_relevance_model", Label: "Repository evidence relevance", Description: "Selects relevant IDs or none from one bounded repository evidence set", EnvKeys: []string{"OMNI_REPOSITORY_EVIDENCE_RELEVANCE_MODEL"}},
-	{Key: "repository_grounded_review_model", Label: "Repository grounded review", Description: "Independently checks one answer against only its cited repository evidence", EnvKeys: []string{"OMNI_REPOSITORY_GROUNDED_REVIEW_MODEL"}},
-	{Key: "repository_grounded_correction_model", Label: "Repository grounded correction", Description: "Corrects one reviewed repository answer text leaf while retaining evidence IDs", EnvKeys: []string{"OMNI_REPOSITORY_GROUNDED_CORRECTION_MODEL"}},
-	{Key: "web_search_terms_model", Label: "Web search terms", Description: "Returns alternate terms for one unresolved search concept", EnvKeys: []string{"OMNI_WEB_SEARCH_TERMS_MODEL"}},
 	{Key: "web_relevance_model", Label: "Web relevance", Description: "Selects relevant IDs from one bounded web candidate set", EnvKeys: []string{"OMNI_WEB_RELEVANCE_MODEL"}},
 	{Key: "web_grounded_synthesis_model", Label: "Web grounded synthesis", Description: "Synthesizes bounded paragraphs from code-selected web evidence IDs", EnvKeys: []string{"OMNI_WEB_GROUNDED_SYNTHESIS_MODEL"}},
-	{Key: "web_grounded_synthesis_correction_model", Label: "Web grounded synthesis correction", Description: "Corrects one exact reviewed paragraph against retained web evidence", EnvKeys: []string{"OMNI_WEB_GROUNDED_SYNTHESIS_CORRECTION_MODEL"}},
-	{Key: "web_claim_evidence_review_model", Label: "Web claim-evidence review", Description: "Checks one synthesized paragraph against only its cited web evidence", EnvKeys: []string{"OMNI_WEB_CLAIM_EVIDENCE_REVIEW_MODEL"}},
 	{Key: "coding_surface_model", Label: "Coding surface", Description: "Classifies only the requested delivery surface", EnvKeys: []string{"OMNI_CODING_SURFACE_MODEL"}},
 	{Key: "coding_requirements_model", Label: "Coding intent", Description: "Identifies bounded context needs and derives one semantic application intent", EnvKeys: []string{"OMNI_CODING_REQUIREMENTS_MODEL"}},
 	// The key and environment name are retained public configuration. One model
 	// selection routes two separately rendered, executed, and persisted calls.
 	{Key: "coding_service_deployment_intent_model", Label: "Service deployment semantics", Description: "Selects the model for separate continued-availability and persistence-destination semantic calls", EnvKeys: []string{"OMNI_CODING_SERVICE_DEPLOYMENT_INTENT_MODEL"}},
-	{Key: "coding_workload_model", Label: "Coding workload", Description: "Returns one bounded task or service-endpoint semantic leaf from accepted local authority", EnvKeys: []string{"OMNI_CODING_WORKLOAD_MODEL"}},
+	{Key: "coding_workload_model", Label: "Coding structure", Description: "Returns one bounded target-tree, state-lifetime, state-purpose, state-kind, endpoint-necessity, or endpoint-transport semantic leaf from accepted local authority", EnvKeys: []string{"OMNI_CODING_WORKLOAD_MODEL"}},
 	{Key: "coding_artifact_handling_model", Label: "Coding artifact handling", Description: "Classifies explicit artifact truth and resolves bounded path-blind artifact or declaration candidates", EnvKeys: []string{"OMNI_CODING_ARTIFACT_HANDLING_MODEL"}},
 	{Key: "coding_capability_relation_model", Label: "Coding capability relation", Description: "Classifies one direct state dependency between two local needs", EnvKeys: []string{"OMNI_CODING_CAPABILITY_RELATION_MODEL"}},
 	{Key: "coding_skill_selection_model", Label: "Coding skill selection", Description: "Selects one opaque validated procedure for one local need, or none", EnvKeys: []string{"OMNI_CODING_SKILL_SELECTION_MODEL"}},
 	{Key: "coding_fragment_model", Label: "Coding fragment", Description: "Returns one exact path-blind function declaration from a bounded local contract", EnvKeys: []string{"OMNI_CODING_FRAGMENT_MODEL"}},
 	{Key: "coding_fragment_repair_guidance_model", Label: "Coding repair guidance", Description: "Diagnoses one exact local validation failure into one self-contained source-repair instruction", EnvKeys: []string{"OMNI_CODING_FRAGMENT_REPAIR_GUIDANCE_MODEL"}},
 	{Key: "coding_fragment_correction_model", Label: "Coding fragment correction", Description: "Executes one repair instruction against only its exact mutable source block", EnvKeys: []string{"OMNI_CODING_FRAGMENT_CORRECTION_MODEL"}},
-	{Key: "coding_repository_search_term_model", Label: "Repository search term", Description: "Returns one alternate term for one unresolved repository concept", EnvKeys: []string{"OMNI_CODING_REPOSITORY_SEARCH_TERM_MODEL"}},
 	{Key: "coding_repository_change_surface_model", Label: "Repository change surface", Description: "Selects bounded symbol IDs for one established repository requirement", EnvKeys: []string{"OMNI_CODING_REPOSITORY_CHANGE_SURFACE_MODEL"}},
 }
 

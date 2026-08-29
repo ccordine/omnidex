@@ -17,15 +17,3 @@ func projectWebGroundedEvidenceText(
 	}
 	return projected
 }
-
-func projectWebReviewEvidenceText(
-	evidence []WebReviewEvidence,
-) []webEvidenceTextProjection {
-	projected := make([]webEvidenceTextProjection, len(evidence))
-	for index, item := range evidence {
-		projected[index] = webEvidenceTextProjection{
-			Title: item.Title, Snippet: item.Snippet, Content: item.Content,
-		}
-	}
-	return projected
-}

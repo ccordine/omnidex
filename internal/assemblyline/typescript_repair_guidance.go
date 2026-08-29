@@ -11,32 +11,15 @@ const maxTypeScriptRepairGuidanceBytes = 2 * 1024
 // TypeScriptRepairGuidanceInput is the complete input for deriving one bounded
 // source-transformation instruction from one exact diagnostic.
 type TypeScriptRepairGuidanceInput struct {
-	Language           string                             `json:"language"`
-	Dialect            string                             `json:"dialect"`
-	Signature          string                             `json:"signature"`
-	Capabilities       []string                           `json:"capabilities"`
-	PermittedSymbols   []string                           `json:"permitted_symbols"`
-	CurrentDeclaration string                             `json:"current_declaration,omitempty"`
-	RepairRegion       *TypeScriptFragmentRepairRegion    `json:"repair_region,omitempty"`
-	Diagnostic         string                             `json:"diagnostic"`
-	PriorRejection     *TypeScriptRepairGuidanceRejection `json:"prior_rejection,omitempty"`
+	Language           string                          `json:"language"`
+	Dialect            string                          `json:"dialect"`
+	Signature          string                          `json:"signature"`
+	Capabilities       []string                        `json:"capabilities"`
+	PermittedSymbols   []string                        `json:"permitted_symbols"`
+	CurrentDeclaration string                          `json:"current_declaration,omitempty"`
+	RepairRegion       *TypeScriptFragmentRepairRegion `json:"repair_region,omitempty"`
+	Diagnostic         string                          `json:"diagnostic"`
 }
-
-// TypeScriptRepairGuidanceRejection is code-owned evidence that one previously
-// accepted instruction could not produce a valid source transition for the
-// exact current declaration and diagnostic.
-type TypeScriptRepairGuidanceRejection struct {
-	Instruction string                                `json:"instruction"`
-	Failure     TypeScriptRepairGuidanceRejectionKind `json:"failure"`
-}
-
-type TypeScriptRepairGuidanceRejectionKind string
-
-const (
-	TypeScriptRepairGuidanceNoSourceChange      TypeScriptRepairGuidanceRejectionKind = "no_source_change"
-	TypeScriptRepairGuidanceRepeatedInstruction TypeScriptRepairGuidanceRejectionKind = "repeated_instruction"
-	TypeScriptRepairGuidanceInvalidSource       TypeScriptRepairGuidanceRejectionKind = "invalid_source"
-)
 
 // TypeScriptRepairGuidance is one instruction-only semantic leaf. It has no
 // source-code, routing, mutation, verification, or completion authority.
@@ -48,15 +31,7 @@ type TypeScriptRepairGuidance struct {
 // envelope. The TypeScript spelling names the same schema because its optional
 // compiler-region evidence is TypeScript-specific; there is one implementation.
 type FragmentRepairGuidanceInput = TypeScriptRepairGuidanceInput
-type FragmentRepairGuidanceRejection = TypeScriptRepairGuidanceRejection
-type FragmentRepairGuidanceRejectionKind = TypeScriptRepairGuidanceRejectionKind
 type FragmentRepairGuidance = TypeScriptRepairGuidance
-
-const (
-	FragmentRepairGuidanceNoSourceChange      = TypeScriptRepairGuidanceNoSourceChange
-	FragmentRepairGuidanceRepeatedInstruction = TypeScriptRepairGuidanceRepeatedInstruction
-	FragmentRepairGuidanceInvalidSource       = TypeScriptRepairGuidanceInvalidSource
-)
 
 func NewFragmentRepairGuidanceJob(input FragmentRepairGuidanceInput) (PortableJob, error) {
 	return NewTypeScriptRepairGuidanceJob(input)
@@ -148,11 +123,6 @@ func (input TypeScriptRepairGuidanceInput) validate() error {
 			maxTypeScriptDiagnosticBytes,
 		)
 	}
-	if input.PriorRejection != nil {
-		if err := input.PriorRejection.validate(); err != nil {
-			return fmt.Errorf("TypeScript repair guidance prior rejection: %w", err)
-		}
-	}
 	proseValues := []string{input.Dialect, input.Diagnostic}
 	sourceValues := []string{input.Signature, input.CurrentDeclaration}
 	sourceValues = append(sourceValues, input.Capabilities...)
@@ -173,9 +143,6 @@ func (input TypeScriptRepairGuidanceInput) validate() error {
 			sourceValues = append(sourceValues, evidence.ReferencedBindings...)
 		}
 	}
-	if input.PriorRejection != nil {
-		proseValues = append(proseValues, input.PriorRejection.Instruction)
-	}
 	if err := ValidatePathFreeModelContext("TypeScript repair guidance", proseValues...); err != nil {
 		return err
 	}
@@ -188,23 +155,6 @@ func validateFragmentRepairGuidanceLanguage(language string) error {
 	}
 	_, err := boundedSourceLanguageByID(language)
 	return err
-}
-
-func (rejection TypeScriptRepairGuidanceRejection) validate() error {
-	if rejection.Instruction == "" ||
-		rejection.Instruction != strings.TrimSpace(rejection.Instruction) ||
-		!utf8.ValidString(rejection.Instruction) || strings.ContainsRune(rejection.Instruction, 0) {
-		return fmt.Errorf("instruction must be trimmed valid UTF-8")
-	}
-	if len(rejection.Instruction) > maxTypeScriptRepairGuidanceBytes {
-		return fmt.Errorf("instruction exceeds %d bytes", maxTypeScriptRepairGuidanceBytes)
-	}
-	if rejection.Failure != TypeScriptRepairGuidanceNoSourceChange &&
-		rejection.Failure != TypeScriptRepairGuidanceRepeatedInstruction &&
-		rejection.Failure != TypeScriptRepairGuidanceInvalidSource {
-		return fmt.Errorf("failure %q is unsupported", rejection.Failure)
-	}
-	return nil
 }
 
 func (guidance TypeScriptRepairGuidance) Validate() error {

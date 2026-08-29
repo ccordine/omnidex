@@ -22,8 +22,9 @@ func loadCheckedMigrationBundle(t testing.TB) MigrationBundle {
 
 func TestCheckedMigrationBundleFreezesCurrentTail(t *testing.T) {
 	bundle := loadCheckedMigrationBundle(t)
-	if tail := bundle.entries[len(bundle.entries)-1].name; tail != jobExecutionIdentityImmutabilityMigration {
-		t.Fatalf("checked migration tail=%q want %q", tail, jobExecutionIdentityImmutabilityMigration)
+	const currentTail = "183_llm_evidence_transport_identity_cutover.sql"
+	if tail := bundle.entries[len(bundle.entries)-1].name; tail != currentTail {
+		t.Fatalf("checked migration tail=%q want %q", tail, currentTail)
 	}
 	want := map[string]int{
 		"146_generated_workload_deployment_namespace_requalification.sql": 0,
@@ -50,6 +51,20 @@ func TestCheckedMigrationBundleFreezesCurrentTail(t *testing.T) {
 		"167_station_gap_opening_portable_envelope_v2.sql":                0,
 		"168_workspace_mutation_pipeline_action_authority.sql":            0,
 		"169_job_execution_identity_immutability.sql":                     0,
+		"170_single_output_and_ledger_authority_retirement.sql":           0,
+		"171_current_semantic_station_authority.sql":                      0,
+		"172_generic_claim_persistence_retirement.sql":                    0,
+		"173_dormant_telemetry_authority_retirement.sql":                  0,
+		"174_model_call_repair_metric_retirement.sql":                     0,
+		"175_objective_citation_requirement_authority_bindings.sql":       0,
+		"176_scrum_auto_play_through_setting_retirement.sql":              0,
+		"177_narrow_service_semantic_leaf_authority.sql":                  0,
+		"178_exact_source_response_authority.sql":                         0,
+		"179_workspace_mutation_project_location_authority.sql":           0,
+		"180_artifact_semantic_relation_split.sql":                        0,
+		"181_response_schema_authority_retirement.sql":                    0,
+		"182_semantic_uncertainty_contract_authority.sql":                 0,
+		currentTail: 0,
 	}
 	for _, entry := range bundle.entries {
 		if _, tracked := want[entry.name]; tracked {

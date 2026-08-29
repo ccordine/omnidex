@@ -10,8 +10,8 @@ func TestSyncRunningJobStepContexts(t *testing.T) {
 	job := model.JobDetails{
 		Job: model.Job{ID: 2, Status: model.JobStatusRunning},
 		Contexts: []model.StepContext{
-			{ID: 1, Key: "event", Value: "time=2026-05-29T10:00:00Z event=structured_patch_apply_started Applying structured patch artifact"},
-			{ID: 2, Key: "event", Value: "time=2026-05-29T10:00:01Z event=structured_patch_apply_finished files=2"},
+			{ID: 1, Key: "event", Value: "time=2026-05-29T10:00:00Z event=repository_snapshot_started authority=server"},
+			{ID: 2, Key: "event", Value: "time=2026-05-29T10:00:01Z event=repository_snapshot_ready snapshot=sha256:abc files=2"},
 		},
 	}
 	card := scrumSyncTestCard(job.Job.ID, ScrumCard{Chat: []ScrumChatMessage{{Role: "system", Content: "Job queued"}}})
@@ -51,23 +51,11 @@ func TestStepContextCommandOutput(t *testing.T) {
 	}
 }
 
-func TestRemovedWebSearchDegradedEventIsNotSilentlyHidden(t *testing.T) {
-	if isNoisyStepEvent("web_search_degraded") {
-		t.Fatal("removed web_search_degraded event must not remain a hidden compatibility path")
+func TestOnlyCurrentRedundantEventsAreHidden(t *testing.T) {
+	if !isNoisyStepEvent("coding_portable_dispatched") {
+		t.Fatal("current redundant dispatch event should be hidden")
 	}
-}
-
-func TestCommandActivityUsesConciseTitleAndKeepsFullCommandInDetails(t *testing.T) {
-	command := "go test ./...\nGOCACHE=/tmp/omni-cache another very long command segment that should not fill the activity screen"
-	message := commandActivity(command, "running", "")
-	activity, ok := parseChannelActivity(message.Content)
-	if !ok {
-		t.Fatalf("activity not encoded: %s", message.Content)
-	}
-	if activity.Command != command {
-		t.Fatalf("command details were lost: %q", activity.Command)
-	}
-	if len(activity.Title) > 96 || activity.Title == command {
-		t.Fatalf("title is not concise: %q", activity.Title)
+	if isNoisyStepEvent("plan_begin") {
+		t.Fatal("removed plan event must not remain a hidden compatibility path")
 	}
 }

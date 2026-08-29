@@ -10,13 +10,11 @@ import (
 
 const (
 	maxDirectCodingLanguageRepairTransitions = 2
-	maxDirectCodingLanguageExecutorAttempts  = 2
 )
 
 var (
 	errDirectCodingLanguageCorrectionUnchanged = errors.New("repair executor returned byte-identical source")
 	errDirectCodingLanguageCorrectionInvalid   = errors.New("repair executor returned invalid source")
-	errDirectCodingLanguageGuidanceRepeated    = errors.New("repair guidance repeated a rejected instruction")
 )
 
 type directCodingLanguageFragmentRejection struct {

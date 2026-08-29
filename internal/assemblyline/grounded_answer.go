@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/gryph/omnidex/internal/modelcontext"
 )
 
 const (
@@ -23,10 +25,11 @@ type GroundedEvidenceCapsule struct {
 }
 
 type GroundedAnswerInput struct {
-	RequirementID    string                    `json:"requirement_id"`
-	ExactRequirement string                    `json:"exact_requirement"`
-	Context          ObjectiveContext          `json:"objective_context"`
-	Evidence         []GroundedEvidenceCapsule `json:"evidence"`
+	RequirementID      string                    `json:"requirement_id"`
+	ExactRequirement   string                    `json:"exact_requirement"`
+	Context            ObjectiveContext          `json:"objective_context"`
+	Evidence           []GroundedEvidenceCapsule `json:"evidence"`
+	KnownArtifactPaths []string                  `json:"known_artifact_paths"`
 }
 
 type GroundedAnswerDecision struct {
@@ -46,6 +49,7 @@ func (input GroundedAnswerInput) validate() error {
 	}
 	return validateGroundedAnswerAuthority(
 		input.ExactRequirement, input.Context, input.Evidence,
+		input.KnownArtifactPaths,
 	)
 }
 
@@ -53,14 +57,31 @@ func validateGroundedAnswerAuthority(
 	exactRequirement string,
 	context ObjectiveContext,
 	evidence []GroundedEvidenceCapsule,
+	knownArtifactPaths []string,
 ) error {
+	provenance, err := modelcontext.NewArtifactIdentityProvenance(knownArtifactPaths)
+	if err != nil {
+		return fmt.Errorf("grounded answer artifact provenance: %w", err)
+	}
 	if err := validateGroundedText(
 		"exact requirement", exactRequirement, maxGroundedRequirementBytes, false,
 	); err != nil {
 		return err
 	}
+	if err := ValidatePathFreeModelContextWithProvenance(
+		"grounded answer exact requirement", provenance, exactRequirement,
+	); err != nil {
+		return err
+	}
 	if err := context.Validate(); err != nil {
 		return err
+	}
+	for _, capsule := range context.Capsules {
+		if err := ValidatePathFreeModelContextWithProvenance(
+			"grounded answer objective context", provenance, capsule.Content,
+		); err != nil {
+			return err
+		}
 	}
 	if len(evidence) < 1 || len(evidence) > maxGroundedEvidenceCapsules {
 		return fmt.Errorf(
@@ -111,6 +132,13 @@ func (decision GroundedAnswerDecision) ValidateFor(input GroundedAnswerInput) er
 	if err := validateGroundedText("answer text", decision.Text, maxGroundedAnswerTextBytes, true); err != nil {
 		return err
 	}
+	provenance, err := modelcontext.NewArtifactIdentityProvenance(input.KnownArtifactPaths)
+	if err != nil {
+		return fmt.Errorf("grounded answer artifact provenance: %w", err)
+	}
+	if err := decision.ValidatePathFree(provenance); err != nil {
+		return err
+	}
 	if len(decision.EvidenceIDs) < 1 || len(decision.EvidenceIDs) > len(input.Evidence) {
 		return fmt.Errorf("grounded answer must cite between 1 and %d evidence IDs", len(input.Evidence))
 	}
@@ -132,6 +160,14 @@ func (decision GroundedAnswerDecision) ValidateFor(input GroundedAnswerInput) er
 		}
 	}
 	return nil
+}
+
+func (decision GroundedAnswerDecision) ValidatePathFree(
+	provenance ArtifactIdentityProvenance,
+) error {
+	return ValidatePathFreeModelContextWithProvenance(
+		"grounded answer text", provenance, decision.Text,
+	)
 }
 
 func validateGroundedID(label, value string, maximum int) error {

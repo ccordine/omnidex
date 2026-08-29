@@ -24,8 +24,7 @@ func validateLedgerOwner(owner LedgerOwner) error {
 
 func validateAuthority(authority Authority) error {
 	switch authority {
-	case AuthorityUser, AuthorityCode, AuthorityToolEvidence,
-		AuthorityModelProposal, AuthorityAcceptedModelDecision:
+	case AuthorityUser, AuthorityCode, AuthorityToolEvidence:
 		return nil
 	default:
 		return fmt.Errorf("%w: authority %q is not registered", ErrInvalidCommand, authority)
@@ -81,8 +80,7 @@ func validateEdgeKind(kind EdgeKind) error {
 
 func validateEntryKind(kind EntryKind) error {
 	switch kind {
-	case EntryConstraint, EntryFact, EntryObservation, EntryHypothesis,
-		EntryDecisionCandidate, EntryAcceptedDecision, EntryQuestion,
+	case EntryConstraint, EntryFact, EntryObservation, EntryHypothesis, EntryQuestion,
 		EntryFailure, EntryCheckpoint, EntryNote, EntryFeedback:
 		return nil
 	default:

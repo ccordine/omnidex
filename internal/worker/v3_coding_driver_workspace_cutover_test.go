@@ -97,15 +97,18 @@ func TestPreparedWorkspaceMutationAccountingIsReplayIdempotent(t *testing.T) {
 		assembly: directCodingAssembly{Files: []directCodingFileTask{{
 			Path: "main.go", Content: "package main\n",
 		}}},
-		command: queue.WorkspaceMutationCommand{Plan: workspacefacts.MutationPlan{
-			ExpectedStateID: strings.Repeat("a", 64),
-			Files: []workspacefacts.MutationFileTransition{{
-				Path: "main.go",
-				Expected: workspacefacts.MutationFileState{
-					Present: true, SHA256: strings.Repeat("b", 64), Size: 13, Mode: 0o644,
-				},
-			}},
-		}},
+		command: queue.WorkspaceMutationCommand{
+			ProjectLocation: "/srv/workspaces/accounting",
+			Plan: workspacefacts.MutationPlan{
+				ExpectedStateID: strings.Repeat("a", 64),
+				Files: []workspacefacts.MutationFileTransition{{
+					Path: "main.go",
+					Expected: workspacefacts.MutationFileState{
+						Present: true, SHA256: strings.Repeat("b", 64), Size: 13, Mode: 0o644,
+					},
+				}},
+			},
+		},
 	}
 	session.recordPreparedWorkspaceMutation(prepared)
 	session.recordPreparedWorkspaceMutation(prepared)

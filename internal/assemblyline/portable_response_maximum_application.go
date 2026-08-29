@@ -1,9 +1,6 @@
 package assemblyline
 
-import (
-	"fmt"
-	"strconv"
-)
+import "strconv"
 
 func portableApplicationResponseMaximum(job PortableJob) (int, bool, error) {
 	switch job.Kind {
@@ -52,15 +49,19 @@ func portableApplicationResponseMaximum(job PortableJob) (int, bool, error) {
 		return maximumStringBytes(
 			ApplicationStateFieldRemains, ApplicationNoUncoveredStateField,
 		), true, nil
-	case WorkApplicationStateFieldName, WorkApplicationRecordFieldName:
-		return MaxApplicationServiceStateFieldNameBytes, true, nil
+	case WorkApplicationStateFieldPurpose, WorkApplicationRecordFieldPurpose:
+		return MaxApplicationServiceStatePurposeBytes, true, nil
 	case WorkApplicationStateFieldKind:
 		return maximumStringBytes(
-			ApplicationServiceStateString, ApplicationServiceStateInteger,
-			ApplicationServiceStateNumber, ApplicationServiceStateBoolean,
-			ApplicationServiceStateStringList, ApplicationServiceStateIntegerList,
-			ApplicationServiceStateNumberList, ApplicationServiceStateBooleanList,
-			ApplicationServiceStateRecordList,
+			string(ApplicationServiceStateString),
+			string(ApplicationServiceStateInteger),
+			string(ApplicationServiceStateNumber),
+			string(ApplicationServiceStateBoolean),
+			string(ApplicationServiceStateStringList),
+			string(ApplicationServiceStateIntegerList),
+			string(ApplicationServiceStateNumberList),
+			string(ApplicationServiceStateBooleanList),
+			string(ApplicationServiceStateRecordList),
 		), true, nil
 	case WorkApplicationRecordFieldCoverage:
 		return maximumStringBytes(
@@ -68,92 +69,62 @@ func portableApplicationResponseMaximum(job PortableJob) (int, bool, error) {
 		), true, nil
 	case WorkApplicationRecordFieldKind:
 		return maximumStringBytes(
-			ApplicationServiceStateString, ApplicationServiceStateInteger,
-			ApplicationServiceStateNumber, ApplicationServiceStateBoolean,
+			string(ApplicationServiceStateString),
+			string(ApplicationServiceStateInteger),
+			string(ApplicationServiceStateNumber),
+			string(ApplicationServiceStateBoolean),
 		), true, nil
 	case WorkApplicationServiceEndpointRequirement:
 		return maximumStringBytes(
 			ApplicationServiceEndpointRequired, ApplicationServiceSupportOnly,
 		), true, nil
 	case WorkApplicationServiceEndpointExposure:
-		return maximumStringBytes(
-			ApplicationServiceEndpointPublic,
-			ApplicationServiceEndpointAuthenticated,
-			ApplicationServiceEndpointInternal,
-		), true, nil
+		return maximumStringBytes(applicationServiceEndpointExposureValues()...), true, nil
 	case WorkApplicationServiceEndpointMethod:
-		return maximumStringBytes(
-			ApplicationServiceEndpointGET, ApplicationServiceEndpointPOST,
-			ApplicationServiceEndpointPUT, ApplicationServiceEndpointPATCH,
-			ApplicationServiceEndpointDELETE,
-		), true, nil
+		return maximumStringBytes(applicationServiceEndpointMethodValues()...), true, nil
 	case WorkApplicationServiceEndpointRouteTemplate:
 		return maxApplicationServiceRouteBytes, true, nil
 	case WorkApplicationServiceEndpointRequestMedia:
-		maximum, err := applicationEndpointRequestMediaMaximum(job)
-		return maximum, true, err
+		var input ApplicationServiceEndpointRequestMediaInput
+		if err := decodePortablePayload(job.Payload, &input); err != nil {
+			return 0, true, err
+		}
+		candidates, err := ApplicationServiceEndpointRequestMediaCandidates(input)
+		if err != nil {
+			return 0, true, err
+		}
+		maximum := 0
+		for _, candidate := range candidates {
+			maximum = max(maximum, len(candidate))
+		}
+		return maximum, true, nil
 	case WorkApplicationServiceEndpointResponseMedia:
-		values := applicationServiceResponseMediaValues()
-		return maximumStringBytes(values...), true, nil
+		return maximumStringBytes(applicationServiceResponseMediaValues()...), true, nil
 	case WorkApplicationServiceEndpointSuccessStatus:
-		maximum, err := applicationEndpointStatusMaximum(job)
-		return maximum, true, err
+		var input ApplicationServiceEndpointSuccessStatusInput
+		if err := decodePortablePayload(job.Payload, &input); err != nil {
+			return 0, true, err
+		}
+		candidates, err := ApplicationServiceEndpointSuccessStatusCandidates(input)
+		if err != nil {
+			return 0, true, err
+		}
+		maximum := 0
+		for _, candidate := range candidates {
+			maximum = max(maximum, len(strconv.Itoa(candidate)))
+		}
+		return maximum, true, nil
 	case WorkApplicationClassify:
 		return maximumStringBytes(
 			ApplicationSurfaceBrowser, ApplicationSurfaceCommandLine,
 			ApplicationSurfaceService, ApplicationSurfaceUnsupported,
 		), true, nil
-	case WorkApplicationJobObjective:
-		return maxApplicationObjectiveRunes * 4, true, nil
-	case WorkApplicationBehaviorCoverage:
-		return maximumStringBytes(
-			ApplicationBehaviorRemains, ApplicationNoUncoveredBehavior,
-		), true, nil
-	case WorkApplicationBehavior:
-		return maxApplicationBehaviorRunes * 4, true, nil
-	case WorkApplicationCriterionCoverage:
-		return maximumStringBytes(
-			ApplicationCriterionRemains, ApplicationNoUncoveredCriterion,
-		), true, nil
-	case WorkApplicationCriterion:
-		return maxApplicationCriterionRunes * 4, true, nil
 	case WorkApplicationTargetTree:
 		maximum, err := targetTreeResponseMaximum(job)
 		return maximum, true, err
 	default:
 		return 0, false, nil
 	}
-}
-
-func applicationEndpointRequestMediaMaximum(job PortableJob) (int, error) {
-	var input ApplicationServiceEndpointRequestMediaInput
-	if err := decodePortablePayload(job.Payload, &input); err != nil {
-		return 0, err
-	}
-	candidates, err := ApplicationServiceEndpointRequestMediaCandidates(input)
-	if err != nil {
-		return 0, err
-	}
-	return maximumStringBytes(candidates...), nil
-}
-
-func applicationEndpointStatusMaximum(job PortableJob) (int, error) {
-	var input ApplicationServiceEndpointSuccessStatusInput
-	if err := decodePortablePayload(job.Payload, &input); err != nil {
-		return 0, err
-	}
-	candidates, err := ApplicationServiceEndpointSuccessStatusCandidates(input)
-	if err != nil {
-		return 0, err
-	}
-	maximum := 0
-	for _, candidate := range candidates {
-		maximum = max(maximum, len(strconv.Itoa(candidate)))
-	}
-	if maximum == 0 {
-		return 0, fmt.Errorf("service endpoint success status has no accepted candidate")
-	}
-	return maximum, nil
 }
 
 func targetTreeResponseMaximum(job PortableJob) (int, error) {

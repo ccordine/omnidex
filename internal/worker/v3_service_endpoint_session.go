@@ -10,7 +10,6 @@ import (
 func (s *directCodingSession) resolveEndpointsForHTTPStack(
 	runtime typedWorkerRuntime,
 	stack directCodingProjectStack,
-	specification assemblyline.ApplicationSpecification,
 	workload assemblyline.FrozenApplicationWorkload,
 	capabilities directCodingCapabilityGraph,
 	identities []assemblyline.ArtifactIdentity,
@@ -42,7 +41,6 @@ func (s *directCodingSession) resolveEndpointsForHTTPStack(
 		}
 	}
 	return resolveDirectCodingServiceEndpointPlan(
-		runtime, requirementModel, models, applicationWorkloadInput(specification),
-		workload, capabilities, identities,
+		runtime, requirementModel, models, stack, workload, capabilities, identities,
 	)
 }

@@ -216,9 +216,6 @@ func taskEventJSONFieldContract(kind taskstate.EventKind) (map[string]bool, map[
 		require("entry_id", "verification_refs", "reason")
 	case taskstate.EventEntrySuperseded:
 		require("entry_id", "replacement_id", "reason")
-	case taskstate.EventDecisionAccepted:
-		require("entry", "entry_id", "replacement_id", "reason")
-		allow("step_id")
 	case taskstate.EventNodesReadied:
 		require("node_ids")
 	case taskstate.EventNodeStepAssigned:

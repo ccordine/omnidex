@@ -36,12 +36,15 @@ func TestStationGapOpeningPreservesRawPortableJobAndCanonicalProjection(t *testi
 	if validated.Prompt != prompt || validated.PortablePayload != string(job.Payload) {
 		t.Fatalf("opening changed exact prompt or payload: %+v", validated)
 	}
-	if !strings.Contains(validated.ProjectionEnvelope, `"renderer":"omnidex.render-portable-job.v4"`) ||
-		!strings.Contains(validated.ProjectionEnvelope, `"response_schema":null`) ||
+	if !strings.Contains(validated.ProjectionEnvelope, `"renderer":"omnidex.render-portable-job.v5"`) ||
+		strings.Contains(validated.ProjectionEnvelope, `"response_schema"`) ||
 		validated.PortableSchema != assemblyline.PortableJobSchemaV2 ||
 		validated.Scope != assemblyline.PortableSemanticWorkerScope ||
 		len(validated.ProjectionSHA256) != 64 || len(validated.PortableEnvelopeSHA256) != 64 {
 		t.Fatalf("projection envelope=%q sha=%q", validated.ProjectionEnvelope, validated.ProjectionSHA256)
+	}
+	if err := ValidateStationGapSemanticUncertainty(validated); err != nil {
+		t.Fatalf("opening omitted exact semantic uncertainty authority: %v", err)
 	}
 }
 
@@ -80,15 +83,8 @@ func TestStationMappingIsExplicitForEveryPortableWorkKind(t *testing.T) {
 	t.Parallel()
 	for _, kind := range assemblyline.AllWorkKinds() {
 		_, err := stationForPortableWorkKind(kind)
-		switch kind {
-		case assemblyline.WorkResponseCorrection:
-			if err == nil {
-				t.Fatalf("non-direct work kind %q unexpectedly mapped without its exact envelope", kind)
-			}
-		default:
-			if err != nil {
-				t.Fatalf("production work kind %q has no station mapping: %v", kind, err)
-			}
+		if err != nil {
+			t.Fatalf("production work kind %q has no station mapping: %v", kind, err)
 		}
 	}
 }
@@ -131,6 +127,32 @@ func TestStationGapTerminalRequiresOneExactOutcome(t *testing.T) {
 	}
 	if err := validateStationGapTerminal(base); err != nil {
 		t.Fatal(err)
+	}
+	const prefix = "wrapped "
+	for _, kind := range []StationGapProjectionKind{
+		StationGapProjectionSourceDeclaration,
+		StationGapProjectionTypeScriptFunction,
+	} {
+		wrapped := base
+		raw := prefix + base.Response
+		wrapped.Projection = &StationGapSourceProjection{
+			Kind: kind, CallReceiptSHA256: strings.Repeat("a", 64),
+			SourceResponseSHA256: stationGapSHA256(raw),
+			StartByte:            len(prefix), EndByte: len(raw),
+		}
+		if err := validateStationGapTerminal(wrapped); err == nil ||
+			!strings.Contains(err.Error(), "exact full response") {
+			t.Fatalf("resolved gap accepted %s projected inner span: %v", kind, err)
+		}
+	}
+	forgedIdentity := base
+	forgedIdentity.Projection = stationGapExactResponseProjection(
+		strings.Repeat("a", 64), base.Response,
+	)
+	forgedIdentity.Projection.SourceResponseSHA256 = strings.Repeat("b", 64)
+	if err := validateStationGapTerminal(forgedIdentity); err == nil ||
+		!strings.Contains(err.Error(), "identity") {
+		t.Fatalf("resolved gap accepted a different source response identity: %v", err)
 	}
 	base.Error = "invented failure"
 	if err := validateStationGapTerminal(base); err == nil {

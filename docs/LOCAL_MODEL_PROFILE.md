@@ -39,40 +39,67 @@ guidance, and source-node generation:
 OMNI_CODING_REQUIREMENTS_MODEL=qwen3.5:9b-q4_K_M
 OMNI_CODING_SERVICE_DEPLOYMENT_INTENT_MODEL=phi4:14b
 OMNI_CODING_WORKLOAD_MODEL=qwen3.5:9b-q4_K_M
-OMNI_CODING_FRAGMENT_MODEL=qwen2.5-coder:7b
+OMNI_CODING_FRAGMENT_MODEL=qwen3.5:9b-q4_K_M
 OMNI_CODING_FRAGMENT_REPAIR_GUIDANCE_MODEL=qwen3.5:9b-q4_K_M
-OMNI_CODING_FRAGMENT_CORRECTION_MODEL=qwen2.5-coder:7b
+OMNI_CODING_FRAGMENT_CORRECTION_MODEL=qwen3.5:9b-q4_K_M
 
 INFERENCE_CONTEXT_TOKENS=8192
 CODING_FRAGMENT_CONCURRENCY=1
 ```
 
 The complete exact station-key list is checked in to `default.env` and `.env.example`.
-Bounded semantic stations, including requirement extraction and frozen workload
-construction, use Qwen 3.5 9B. The target-tree station consumes that same
+Bounded semantic stations, including requirement extraction and optional target-tree
+naming, use Qwen 3.5 9B. Frozen workload construction is entirely code-owned. The
+target-tree station consumes that same
 `OMNI_CODING_WORKLOAD_MODEL` route when a stack retains a genuine structural naming
-question; current command-line and PHP stacks project their exact path grammars in
-code, while TypeScript/React browser structure remains its current consumer. There
-is no separate target-tree environment key. The continued-availability and conditional
+question. No currently registered stack consumes target-tree inference; the route is
+retained only for a future registered stack with genuinely unresolved structural
+naming. There is no separate target-tree environment key. Independent state-lifetime, state-field
+coverage, state-purpose, state-kind, and endpoint-property stations also share this
+model route while retaining separate IDs, prompts, raw leaves, validation, and call
+evidence. The continued-availability and conditional
 persistence-destination stations share the explicit Phi-4 14B deployment-semantics
 route. The established `OMNI_CODING_SERVICE_DEPLOYMENT_INTENT_MODEL` environment key
 and `coding_service_deployment_intent_model` project-setting key are retained for
 persisted configuration compatibility. They select only that shared provider route;
 the two stations retain separate IDs, prompts, raw results, and conditional
-dispatch, and the retired ternary deployment-intent station remains unavailable. The
-repository and web claim-evidence review routes use `deepseek-r1:8b`; their live
-provider identity must differ from the Qwen answer, synthesis, and correction routes.
+dispatch, and the retired ternary deployment-intent station remains unavailable.
 Startup or the named gap fails loudly when an exact configured route is unavailable.
 No route falls back to another model.
 
-Qwen 3.5 9B is the practical bounded semantic and repair-guidance choice because its
-Q4_K_M Ollama image is 6.6 GB, its live requirement/workload qualification converged,
-and Qwen publishes strong instruction following, tool-use, and coding results for the
-9B checkpoint. Qwen 2.5 Coder 7B owns raw fragment generation
-and instruction-only repair execution because the live two-fixture compiler
-qualification terminated promptly and compiled both guided edits. DeepSeek R1 8B is restricted to the two
-independent evidence-review stations; it does not plan, synthesize, correct, or
-select repository operations. Qwen3-Coder 30B is a 30.5B-total, 3.3B-active MoE
+Every generation request has one semantic result channel. Structurally attested
+profiles that expose Ollama's thinking capability are invoked with `think:false`.
+A non-empty provider `thinking` field is a transport-contract failure and is never
+projected into station state or retained as a second normalized result.
+
+Qwen 3.5 9B is the practical bounded semantic, source-fragment, and repair choice because its
+Q4_K_M Ollama image is 6.6 GB, earlier bounded semantic qualification converged, and
+Qwen publishes strong instruction following and coding results for the 9B checkpoint.
+The env-gated raw-fragment qualification exercises the exact Qwen 3.5 ChatML
+transport through production TSX and Go generation workers plus the production
+instruction-only correction worker. Every fixture requires one semantic station
+generation call, a zero-discard full-response projection, parser/signature/scope
+validation, and compiler/type validity. Provider discovery may issue a separate model
+preload request; it is deterministic transport setup, not another semantic station call.
+This qualification selects the named model candidate explicitly. It does not resolve
+that candidate through production station routing or independently execute the fixture's
+requested behavior; checked configuration tests and a fresh uncontaminated application
+run prove those separate boundaries.
+The test creates and drops an isolated schema, so `OMNI_TEST_DATABASE_URL` must name a
+disposable PostgreSQL database whose role can create schemas and the required public
+extensions. Run the qualification against that database and the exact local model
+candidate with:
+
+```bash
+OMNI_TEST_DATABASE_URL='postgres://test:test@127.0.0.1:5432/omnidex_test?sslmode=disable' \
+OMNIDEX_TEST_QWEN_RAW_FRAGMENT_MODEL=qwen3.5:9b-q4_K_M \
+OMNIDEX_TEST_OLLAMA_URL=http://127.0.0.1:11434 \
+OMNIDEX_TEST_OLLAMA_CONTEXT=8192 \
+go test ./internal/worker -run '^TestLiveQwenRawFragmentRouteQualification$' -count=1 -v
+```
+
+Qwen3-Coder 30B
+is a 30.5B-total, 3.3B-active MoE
 trained primarily on code and is non-thinking by design, which fits Omnidex's
 bounded single-node output contract.
 
@@ -83,17 +110,16 @@ planning. They are model-file sizes, not runner-allocation or latency measuremen
 
 | Route | Exact model | Model file |
 | --- | --- | ---: |
-| Semantic stations, requirements, workload, target tree, and repair guidance | `qwen3.5:9b-q4_K_M` | 6.6 GB |
-| Source generation and repair execution | `qwen2.5-coder:7b` | 4.7 GB |
+| Semantic leaf stations, requirements, target-tree naming, and repair guidance | `qwen3.5:9b-q4_K_M` | 6.6 GB |
+| Source generation and repair execution | `qwen3.5:9b-q4_K_M` | shared 6.6 GB image |
 | Service deployment semantics | `phi4:14b` | 9.1 GB |
-| Independent repository/web evidence review | `deepseek-r1:8b` | 5.2 GB |
 | Local embeddings | `nomic-embed-text` | 0.27 GB |
 
-The active model files total about 25.9 GB (24.1 GiB). Reserve additional space for
+The active model files total about 16.0 GB (14.9 GiB). Reserve additional space for
 Ollama runtime files, application workspaces, PostgreSQL, backups, logs, and Docker
 build cache.
 
-Primary model sources:
+Primary and historical measurement model sources:
 
 - https://huggingface.co/Qwen/Qwen3.5-9B
 - https://ollama.com/library/qwen3.5/tags
@@ -106,22 +132,27 @@ Primary model sources:
 - https://huggingface.co/Qwen/Qwen3-Coder-30B-A3B-Instruct
 - https://ollama.com/library/qwen3-coder
 
-## Live requirements and workload qualification
+## Historical requirements and workload qualification
 
-On 2026-08-28, the checked-in
+On 2026-08-28, an earlier version of
 `TestLiveCodingRequirementsAndWorkloadQualification` exercised three unrelated
-immutable requests through the production raw-leaf renderers: a music studio, a
+immutable requests through the then-current raw-leaf renderers: a music studio, a
 catalog, and an appointment scheduler. Qwen 3.5 9B completed every requirement
-fixed point and every objective, behavior, and criterion leaf in 38 calls without a
-correction call. All three frozen workloads passed their code-owned validation.
+fixed point and the now-retired objective, behavior, and criterion leaves in 38 calls
+without a correction call. All three then-current frozen workloads passed their
+code-owned validation. This is retained as historical route evidence; it does not
+qualify the current v2 workload contract.
 
 Provider identity was Ollama 0.24.0, model digest
 `6488c96fa5faab64bb65cbd30d4289e20e6130ef535a93ef9a49f42eda893ea7`,
 quantization `Q4_K_M`, with an 8192-token context. The complete qualification took
-91.55 seconds. This is route qualification for task-neutral station contracts, not
-application-specific framework behavior. The checked-in test proves bounded transport,
-fixed-point termination, call shape, and frozen-workload validation; it does not use
-keyword matching to pretend that code can score the semantic coverage of each fixture.
+91.55 seconds. The checked-in test has since been cut over: it now permits only
+product-context, requirement-coverage, and single-requirement work, then asks code to
+freeze one exact task per accepted requirement. The test rejects every unexpected work
+kind, while architecture tests require the retired workload-planner symbols to remain
+absent. A new live execution of that current test is required before claiming current
+route qualification; neither the historical measurements nor keyword matching can
+establish it.
 
 ## Live deployment-semantics qualification
 
@@ -160,80 +191,22 @@ go test ./internal/worker \
   -count=1 -v -timeout=15m
 ```
 
-## Live guided-repair qualification
-
-The checked-in opt-in qualification is an isolated framework-primitive test,
-not an autonomy benchmark. On 2026-08-15 it sent three real TypeScript compiler
-scenarios through the production repair-guidance renderer, the separate
-instruction-only executor renderer, code-owned AST replacement, and the pinned
-TypeScript compiler. The third scenario proves iterative convergence: it began
-with two compiler errors, the first guided repair reduced that set to one, the
-remaining compiler failure produced a new guidance/execution pair, and the
-second repair compiled cleanly.
-
-| Failure class | Guidance tokens in/out | Executor tokens in/out | Compiler result |
-| --- | ---: | ---: | --- |
-| nested lexical scope | 468 / 35 | 160 / 40 | 1 -> 0 |
-| incompatible local value | 356 / 35 | 121 / 9 | 1 -> 0 |
-| successive failures, iteration 1 | 373 / 36 | 122 / 9 | 2 -> 1 |
-| successive failures, iteration 2 | 373 / 30 | 117 / 9 | 1 -> 0 |
-
-The exact prepared requests, raw provider bodies, provider-identity evidence,
-instructions, candidates, and compiler receipts are retained in
-[`evidence/2026-08-15-guided-typescript-repair-iterative-live.jsonl`](evidence/2026-08-15-guided-typescript-repair-iterative-live.jsonl)
-(SHA-256 `c1970966b4d47194787b528f624d602248d5653a13eb6fd64b54a3d9b799b78c`).
-The synthetic frozen source points in that report were not dispatched; only the
-derived guidance and execution jobs were model calls.
-
-The qualification also rejected two prior routes loudly. `deepseek-r1:8b`
-requires native thinking and did not match the tested repair-guidance transport.
-The `qwen3.5:9b-q4_K_M` alias could not be attested as the
-active canonical runner, and canonical Qwen 3.5 raw execution then ran for more
-than six minutes without terminating a tiny edit. Neither remains a coding
-repair default.
-
-Re-run the qualification with:
-
-```bash
-OMNIDEX_TEST_OLLAMA_URL=http://127.0.0.1:11434 \
-OMNIDEX_TEST_OLLAMA_CONTEXT=8192 \
-OMNIDEX_TEST_TYPESCRIPT_REPAIR_GUIDANCE_MODEL=qwen3.5:9b-q4_K_M \
-OMNIDEX_TEST_TYPESCRIPT_REPAIR_EXECUTOR_MODEL=qwen2.5-coder:7b \
-OMNIDEX_TEST_TYPESCRIPT_REPAIR_REPORT=/tmp/guided-repair.jsonl \
-go test ./internal/worker \
-  -run '^TestLiveTypeScriptGuidanceExecutorCompilerConvergence$' \
-  -count=1 -v -timeout=15m
-```
-
-## Browser context-relevance qualification
-
-The browser WebGPU provider is implemented below the existing
-`context_relevance` station, but remains disabled by default. Its small ten-case live
-corpus and report format deliberately stop at the minimum useful qualification record:
-station, exact model, corpus version/hash, pass/fail, measured latency, measured
-quality, and `qualified`.
-
-Three initial candidates completed real WebGPU inference through the production UI
-bridge and server validator. All three met the supplied latency target and failed the
-semantic contract, so none was promoted. The results and rerun command are in
-[`BROWSER_INFERENCE.md`](BROWSER_INFERENCE.md); compact evidence is retained in
-[`evidence/2026-08-20-browser-context-relevance-candidates.json`](evidence/2026-08-20-browser-context-relevance-candidates.json).
-
 ## Local measurements
 
-Measurements use the same deterministic request shape now checked in as
-`omni ollama:prewarm`: the fixed minimal prompt, thinking disabled, temperature
-zero, a 64-token output ceiling, and runner inspection through Ollama `/api/ps`.
-The current retained 8K baseline was measured on 2026-08-19:
+The allocation rows below were measured on 2026-08-19 with a historical bounded
+generation probe. The current `omni ollama:prewarm` command intentionally does
+not reproduce decode throughput: it performs only an empty model-load request
+and runner inspection through Ollama `/api/ps`. Use governed station evidence
+for current generation latency and token-rate measurements.
 
 | Model | Runner allocation | RX 7700S allocation | GPU offload | Cold probe | Warm probe | Warm decode |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | `qwen3.5:9b-q4_K_M` | 9.3 GiB | 7.0 GiB | 75% | 11.9 s | 2.4 s | 19.1 tok/s |
 | `qwen2.5-coder:7b` | 5.0 GiB | 5.0 GiB | 100% | 14.2 s | 1.9 s | 48.3 tok/s |
 
-No retained 8K prewarm allocation measurement is recorded here for
-`phi4:14b` or `deepseek-r1:8b`. Their model-file sizes above and
-the Phi-4 station-call measurements are not substitutes for runner-memory evidence.
+No retained 8K prewarm allocation measurement is recorded here for `phi4:14b`.
+Its model-file size above and station-call measurements are not substitutes for
+runner-memory evidence.
 
 The following historical context-scaling rows were recorded earlier. The measured
 16K rows were verified by the command. The 2K comparison rows used equivalent direct
@@ -245,7 +218,7 @@ inference-context minimum and cannot be selected through the command.
 | `qwen2.5-coder:7b` | 2K | 4.81 GB | 4.81 GB | 51.67 tok/s |
 | `qwen2.5-coder:14b` | 2K | 9.91 GB | 7.32 GB | 7.86 tok/s |
 | `qwen3.5:9b-q4_K_M` | 16K | 13.82 GB | 7.53 GB | 11.10 tok/s |
-| `deepseek-r1:8b` | 16K | 13.82 GB peak in paired trial | recorded in trial evidence | independent evidence review |
+| `deepseek-r1:8b` | 16K | 13.82 GB peak in paired trial | recorded in trial evidence | historical retired evidence-review trial |
 | `qwen3-coder:30b` | 2K | 18.98 GB | 7.56 GB | 14.85 tok/s |
 | `qwen3-coder:30b` | 16K | 22.41 GB | 7.28 GB | 13.12 tok/s |
 | `qwen3-coder:30b` | 32K | 26.24 GB | 7.28 GB | 11.06 tok/s |
@@ -264,9 +237,7 @@ Run the same exact load check after any model, context, backend, or memory chang
 
 ```bash
 omni ollama:prewarm --model qwen3.5:9b-q4_K_M --num-ctx 8192 --json
-omni ollama:prewarm --model qwen2.5-coder:7b --num-ctx 8192 --json
 omni ollama:prewarm --model phi4:14b --num-ctx 8192 --json
-omni ollama:prewarm --model deepseek-r1:8b --num-ctx 8192 --json
 ```
 
 ## Other genuinely viable choices
@@ -290,7 +261,7 @@ Sources for the alternatives:
 If the machine receives a second 48 GB SODIMM, retest Qwen 3.6 35B-A3B at 16K.
 Do not change the production route based on parameter counts or published
 benchmarks alone; compare cold load, warm throughput, exact raw-leaf acceptance,
-correction rate, and a fresh uncontaminated Omnidex run.
+target-tree replacement and source-repair rates, and a fresh uncontaminated Omnidex run.
 
 ## Hosted capability ceiling
 

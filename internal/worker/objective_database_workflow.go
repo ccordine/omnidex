@@ -50,10 +50,15 @@ func runObjectiveDatabaseEvidenceWorkflow(
 	if _, err := snapshot.Relation(snapshot.Relations[0].ID); err != nil {
 		return result, err
 	}
-	if err := validateDatabaseEvidenceNeed(authority.Instruction); err != nil {
+	if err := validateDatabaseEvidenceNeed(authority.ModelInstruction); err != nil {
 		return result, err
 	}
-	currentNeed := authority.Instruction
+	if err := validateObjectiveModelInput(
+		authority, "database initial evidence need", authority.ModelInstruction,
+	); err != nil {
+		return result, err
+	}
+	currentNeed := authority.ModelInstruction
 	seenNeeds := map[string]struct{}{}
 	for round := 1; round <= maxObjectiveDatabaseRounds; round++ {
 		needID := objectiveDatabaseEvidenceNeedID(requirementID, round, currentNeed)
@@ -125,8 +130,9 @@ func runObjectiveDatabaseEvidenceWorkflow(
 			return result, err
 		}
 		gapInput := assemblyline.DatabaseEvidenceGapInput{
-			RequirementID: requirementID, ExactRequirement: authority.Instruction,
+			RequirementID: requirementID, ExactRequirement: authority.ModelInstruction,
 			Context: assemblyline.CloneObjectiveContext(authority.Context), Evidence: modelEvidence,
+			KnownArtifactPaths: append([]string{}, authority.ModelArtifactPaths...),
 		}
 		gap, gapReceipt, err := stations.FindEvidenceGap(ctx, gapInput)
 		result.ModelCalls += gapReceipt.Calls

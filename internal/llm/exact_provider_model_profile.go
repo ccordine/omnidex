@@ -30,9 +30,8 @@ type exactPreparedTransport uint8
 
 const (
 	exactPreparedTransportRaw exactPreparedTransport = iota + 1
-	exactPreparedTransportNativeThinking
+	exactPreparedTransportNativeNoThinking
 	exactPreparedTransportNativeSystem
-	exactPreparedTransportNativeSystemThinking
 	exactPreparedTransportNativeSystemNoThinking
 	exactPreparedTransportNativePrompt
 )
@@ -40,9 +39,8 @@ const (
 // ExactPreparedTransportSettings exposes only the provider framing decisions
 // that a caller must persist or validate. Output limits remain station-owned.
 type ExactPreparedTransportSettings struct {
-	NativeTemplate   bool
-	SeparateThinking bool
-	SeparateSystem   bool
+	NativeTemplate bool
+	SeparateSystem bool
 	// NaturalOutputCeiling is true only when natural-mode requests send the
 	// persisted MaxOutputTokens value to the provider as num_predict.
 	NaturalOutputCeiling bool
@@ -92,17 +90,11 @@ func (profile exactProviderModelProfile) transportSettings() ExactPreparedTransp
 	switch profile.transport {
 	case exactPreparedTransportRaw:
 		return settings
-	case exactPreparedTransportNativeThinking:
+	case exactPreparedTransportNativeNoThinking:
 		settings.NativeTemplate = true
-		settings.SeparateThinking = true
 		return settings
 	case exactPreparedTransportNativeSystem:
 		settings.NativeTemplate = true
-		settings.SeparateSystem = true
-		return settings
-	case exactPreparedTransportNativeSystemThinking:
-		settings.NativeTemplate = true
-		settings.SeparateThinking = true
 		settings.SeparateSystem = true
 		return settings
 	case exactPreparedTransportNativeSystemNoThinking:

@@ -10,31 +10,12 @@ func portableRepositoryConversationResponseMaximum(job PortableJob) (int, bool, 
 		), true, nil
 	case WorkRepositoryRequirement:
 		return maxRequirementQuoteBytes, true, nil
-	case WorkRepositorySearchAnchorCoverage:
-		return maximumStringBytes(
-			RepositoryAnchorRemains, RepositoryNoUncoveredAnchor,
-		), true, nil
-	case WorkRepositorySearchAnchor:
-		return maxRepositorySearchTermBytes, true, nil
 	case WorkRepositoryEvidenceRelevanceLeaf:
 		maximum, err := repositoryEvidenceRelevanceMaximum(job)
 		return maximum, true, err
 	case WorkRepositoryChangeOwner:
 		maximum, err := repositoryChangeOwnerMaximum(job)
 		return maximum, true, err
-	case WorkRepositoryGroundedIssueDetail:
-		return maxRepositoryGroundedReviewDetailBytes, true, nil
-	case WorkRepositoryGroundedIssueKind:
-		return maximumStringBytes(
-			RepositoryGroundedUnsupportedClaim, RepositoryGroundedContradiction,
-			RepositoryGroundedRequirementGap,
-		), true, nil
-	case WorkRepositoryGroundedCorrection:
-		return maxGroundedAnswerTextBytes, true, nil
-	case WorkContextSearchTermCoverage:
-		return maximumStringBytes(ContextTermRemains, ContextNoUncoveredTerm), true, nil
-	case WorkContextSearchTerm:
-		return MaxContextSearchTermBytes, true, nil
 	case WorkContextRelevanceSelection:
 		maximum, err := contextRelevanceMaximum(job)
 		return maximum, true, err

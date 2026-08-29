@@ -15,8 +15,8 @@ func TestLegacyAggregateJobInspectionIsAbsent(t *testing.T) {
 		"internal/api/server_llm.go":                   {`/inspection`, "inspectJob"},
 		"internal/client/client.go":                    {"func (c *Client) Inspect"},
 		"internal/model/model.go":                      {"type JobInspection struct"},
-		"internal/queue/repository_mind_inspection.go": {"GetJobInspection", "ListHistoricalClaimSupportByJob"},
-		"internal/queue/repository.go":                 {"ListHistoricalArtifactsByJob", "ListHistoricalEvidenceByJob", "ListHistoricalClaimsByJob"},
+		"internal/queue/repository_mind_inspection.go": {"GetJobInspection"},
+		"internal/queue/repository.go":                 {"ListHistoricalArtifactsByJob", "ListHistoricalEvidenceByJob"},
 		"internal/queue/llm_evidence.go":               {"ListLLMCallEvidenceForJob", "OFFSET $3"},
 		"cmd/cli/job_query_commands.go":                {`fs.Bool("inspect"`, ".Inspect("},
 	}

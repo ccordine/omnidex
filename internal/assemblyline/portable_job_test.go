@@ -160,6 +160,7 @@ func TestPortableJobRejectsRetiredStationKinds(t *testing.T) {
 		"memory_context_selection",
 		"roleplay_narrative_continuity",
 		"application_acceptance_grounding_review",
+		"known_artifact_truth",
 	} {
 		if validWorkKind(retired) {
 			t.Fatalf("retired context work kind %q remains registered", retired)
@@ -191,128 +192,9 @@ func portableApplicationProductContextInput(
 	request string,
 ) ApplicationProductContextInput {
 	t.Helper()
-	context, err := BootstrapApplicationContext(request, ApplicationWorkspaceEmpty, nil)
+	context, err := BootstrapApplicationContext(request, ApplicationWorkspaceEmpty)
 	if err != nil {
 		t.Fatal(err)
 	}
 	return ApplicationProductContextInput{UserRequest: request, Context: context}
-}
-
-func TestPortableResponseCorrectionReturnsOneCompleteRawReplacement(t *testing.T) {
-	t.Parallel()
-
-	input := ApplicationClassificationInput{
-		UserRequest: "Build a small browser tool.",
-	}
-	original, err := NewApplicationClassificationJob(input)
-	if err != nil {
-		t.Fatal(err)
-	}
-	retained := "unsupported"
-	correction, err := NewRetainedResponseCorrectionJob(
-		original, "application surface is unsupported", retained,
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if correction.ID == original.ID || correction.Kind != WorkResponseCorrection {
-		t.Fatalf("correction=%#v original=%#v", correction, original)
-	}
-	prompt, err := RenderPortableJob(correction)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, required := range []string{
-		"complete replacement leaf", "application surface is unsupported",
-		"Build a small browser tool.", retained,
-	} {
-		if !strings.Contains(prompt, required) {
-			t.Fatalf("correction prompt omitted %q:\n%s", required, prompt)
-		}
-	}
-	for _, forbidden := range []string{
-		"workspace", "filename", "dependency graph", "agent",
-	} {
-		if strings.Contains(strings.ToLower(prompt), strings.ToLower(forbidden)) {
-			t.Fatalf("correction prompt leaked %q:\n%s", forbidden, prompt)
-		}
-	}
-	if _, err := NewRetainedResponseCorrectionJob(correction, "another failure", retained); err == nil {
-		t.Fatal("nested correction chain was accepted")
-	}
-	replacement, err := DecodeResponseCorrectionReplacement(correction, "browser_application")
-	if err != nil {
-		t.Fatal(err)
-	}
-	classification, err := DecodeApplicationClassification(input, replacement)
-	if err != nil || classification.Surface != ApplicationSurfaceBrowser {
-		t.Fatalf("classification=%+v err=%v", classification, err)
-	}
-}
-
-func TestSemanticResponseCorrectionDoesNotPatchOrAssembleTypedState(t *testing.T) {
-	t.Parallel()
-
-	input := ApplicationClassificationInput{
-		UserRequest: "Build a small browser tool.",
-	}
-	original, err := NewApplicationClassificationJob(input)
-	if err != nil {
-		t.Fatal(err)
-	}
-	correction, err := NewRetainedResponseCorrectionJob(
-		original, "application surface is unsupported", "unsupported",
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	corrected, err := DecodeResponseCorrectionReplacement(correction, "browser_application")
-	if err != nil || corrected != "browser_application" {
-		t.Fatalf("corrected=%q err=%v", corrected, err)
-	}
-	for _, invalid := range []string{
-		`{"surface":"browser_application"}`,
-		`"browser_application"`,
-		`["browser_application"]`,
-	} {
-		replacement, transportErr := DecodeResponseCorrectionReplacement(correction, invalid)
-		if transportErr != nil {
-			continue
-		}
-		if _, err := DecodeApplicationClassification(input, replacement); err == nil {
-			t.Fatalf("station decoder accepted structured correction %s", invalid)
-		}
-	}
-}
-
-func TestSemanticResponseCorrectionRejectsInvalidRawTransportAuthority(t *testing.T) {
-	t.Parallel()
-	original, err := NewApplicationClassificationJob(ApplicationClassificationInput{
-		UserRequest: "Build a small browser tool.",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	correction, err := NewRetainedResponseCorrectionJob(
-		original, "application surface is unsupported", "unsupported",
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	invalid := map[string]string{
-		"empty":               "  ",
-		"leading whitespace":  " browser_application",
-		"trailing whitespace": "browser_application\n",
-		"nul":                 "browser\x00_application",
-		"invalid utf":         string([]byte{0xff}),
-	}
-	for name, replacement := range invalid {
-		name, replacement := name, replacement
-		t.Run(name, func(t *testing.T) {
-			t.Parallel()
-			if corrected, err := DecodeResponseCorrectionReplacement(correction, replacement); err == nil {
-				t.Fatalf("accepted invalid correction replacement %q as %s", replacement, corrected)
-			}
-		})
-	}
 }

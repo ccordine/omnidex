@@ -34,13 +34,6 @@ func PortableJobProviderIdentityProfilePolicy(
 		assemblyline.WorkRoleplayGroundedResponseEvidenceRelation,
 		assemblyline.WorkRoleplayOngoingAction:
 		return llm.ProviderIdentityProfileRoleplaySemanticCompletion, nil
-	case assemblyline.WorkContextSearchTermCoverage,
-		assemblyline.WorkContextSearchTerm:
-		var input assemblyline.ContextSearchTermLeafInput
-		if err := json.Unmarshal(job.Payload, &input); err != nil {
-			return "", fmt.Errorf("decode context-search provider policy: %w", err)
-		}
-		return contextProviderIdentityProfilePolicy(input.Scope)
 	case assemblyline.WorkContextRelevanceSelection:
 		var input assemblyline.ContextRelevanceSelectionInput
 		if err := json.Unmarshal(job.Payload, &input); err != nil {
@@ -53,12 +46,6 @@ func PortableJobProviderIdentityProfilePolicy(
 			return "", fmt.Errorf("decode context-minification provider policy: %w", err)
 		}
 		return contextProviderIdentityProfilePolicy(input.Scope)
-	case assemblyline.WorkResponseCorrection:
-		var input assemblyline.ResponseCorrectionInput
-		if err := json.Unmarshal(job.Payload, &input); err != nil {
-			return "", fmt.Errorf("decode response-correction provider policy: %w", err)
-		}
-		return PortableJobProviderIdentityProfilePolicy(input.Original)
 	default:
 		return "", nil
 	}

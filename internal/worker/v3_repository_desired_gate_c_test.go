@@ -17,7 +17,7 @@ func TestMalformedDeclarationInitialFailureLeavesRepositoryUnchanged(t *testing.
 	before, _ := existingRepositoryVerificationFixture(t)
 	calls := 0
 	runtime := typedWorkerRuntime{
-		Context: context.Background(), MaxAttempts: 3, CorrectionModel: "corrector",
+		Context: context.Background(), MaxAttempts: 1,
 		Execute: func(job assemblyline.PortableJob, model string) (assemblyline.PortableResult, error) {
 			if calls == 0 && (job.Kind != assemblyline.WorkFragmentGeneration || model != "coder") {
 				t.Fatalf("initial generation call=%q/%q", job.Kind, model)

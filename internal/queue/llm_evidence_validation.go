@@ -3,39 +3,9 @@ package queue
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"strings"
 )
-
-func validateAndHashLLMCallEvidenceRecord(record LLMCallEvidenceRecord) (any, string, error) {
-	if err := validateLLMCallEvidenceRecord(record); err != nil {
-		return nil, "", err
-	}
-	digestInput := struct {
-		ContextProjectionID string `json:"context_projection_id,omitempty"`
-		RequestedModel      string `json:"requested_model"`
-		Model               string `json:"model"`
-		SystemPrompt        string `json:"system_prompt"`
-		UserPrompt          string `json:"user_prompt"`
-		ResponseFormat      string `json:"response_format"`
-		ContextTokens       int    `json:"context_tokens"`
-		MaxOutputTokens     int    `json:"max_output_tokens"`
-		ThinkingEnabled     bool   `json:"thinking_enabled"`
-	}{
-		ContextProjectionID: record.ContextProjectionID,
-		RequestedModel:      record.RequestedModel, Model: record.Model,
-		SystemPrompt: record.SystemPrompt, UserPrompt: record.UserPrompt,
-		ResponseFormat: record.ResponseFormat,
-		ContextTokens:  record.ContextTokens, MaxOutputTokens: record.MaxOutputTokens,
-		ThinkingEnabled: record.ThinkingEnabled,
-	}
-	raw, err := json.Marshal(digestInput)
-	if err != nil {
-		return nil, "", fmt.Errorf("hash exact LLM request: %w", err)
-	}
-	return nil, llmEvidenceSHA256(string(raw)), nil
-}
 
 func validateLLMCallEvidenceRecord(record LLMCallEvidenceRecord) error {
 	if record.StepID < 1 || record.Attempt < 1 {
@@ -61,12 +31,6 @@ func validateLLMCallEvidenceRecord(record LLMCallEvidenceRecord) error {
 			return fmt.Errorf("LLM call evidence projection requires exact work and projection identities")
 		}
 	}
-	if record.ResponseFormat != "text" {
-		return fmt.Errorf("LLM call evidence requires raw text response format")
-	}
-	if record.ResponseSchema != nil {
-		return fmt.Errorf("LLM call evidence forbids a response schema")
-	}
 	if record.ContextTokens < 1 || record.MaxOutputTokens < 1 ||
 		record.MaxOutputTokens > record.ContextTokens || record.LatencyMS < 0 {
 		return fmt.Errorf("LLM call evidence requires bounded inference limits and non-negative latency")
@@ -76,17 +40,9 @@ func validateLLMCallEvidenceRecord(record LLMCallEvidenceRecord) error {
 		if strings.TrimSpace(record.Response) == "" || record.Error != "" {
 			return fmt.Errorf("successful LLM call evidence requires a response and no error")
 		}
-	case LLMEvidencePreparationFailed:
-		if record.Response != "" || record.Error == "" {
-			return fmt.Errorf("preparation failure evidence requires an error and no response")
-		}
 	case LLMEvidenceGenerationFailed:
 		if record.Error == "" {
 			return fmt.Errorf("generation failure evidence requires an error")
-		}
-	case LLMEvidenceEmptyResponse:
-		if strings.TrimSpace(record.Response) != "" || record.Error == "" {
-			return fmt.Errorf("empty response evidence requires an error and no non-whitespace response")
 		}
 	default:
 		return fmt.Errorf("LLM call evidence status %q is unsupported", record.Status)

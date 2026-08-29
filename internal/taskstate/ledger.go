@@ -110,8 +110,8 @@ func validateCommandEventKinds(command CommandKind, event EventKind) error {
 		CommandAddNode: EventNodeAdded, CommandAddEdge: EventEdgeAdded,
 		CommandAddEntry: EventEntryAdded, CommandRejectEntry: EventEntryRejected,
 		CommandResolveEntry: EventEntryResolved, CommandSupersedeEntry: EventEntrySuperseded,
-		CommandAcceptDecision: EventDecisionAccepted, CommandPromoteReady: EventNodesReadied,
-		CommandAssignStep: EventNodeStepAssigned, CommandTransitionNode: EventNodeTransitioned,
+		CommandPromoteReady: EventNodesReadied,
+		CommandAssignStep:   EventNodeStepAssigned, CommandTransitionNode: EventNodeTransitioned,
 		CommandSupersedeNodeGeneration: EventNodeGenerationSuperseded,
 		CommandCloseLedger:             EventLedgerClosed,
 	}

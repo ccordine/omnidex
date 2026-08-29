@@ -69,7 +69,7 @@ func printInteractiveChatHelp() {
 	fmt.Println("  /last              show most recent job id")
 	fmt.Println("  /exit              quit interactive mode")
 	fmt.Println("  progress note      live stage/event updates are shown by default (disable with --progress=false)")
-	fmt.Println("  phase note         stage lines include phase=planning|execution|review")
+	fmt.Println("  phase note         stage lines include phase=coding|objective|execution")
 	fmt.Println("  queue note         while assistant is running, type TAB + message + Enter to queue a follow-up for the next turn")
 	fmt.Println("  routing note       every non-slash message is sent unchanged to the core semantic pipeline")
 	fmt.Println("  host operations    use explicit top-level commands: browser-scan, screen-read, audio-notes, media-index, media-search")
@@ -78,7 +78,7 @@ func printInteractiveChatHelp() {
 func printInteractiveInputHelp() {
 	fmt.Println("feedback mode commands:")
 	fmt.Println("  /interrupt <text>  inject context into the active job")
-	fmt.Println("  /replan <text>     restart the job from plan with new context")
+	fmt.Println("  /replan <text>     create a new generation on the same job with new context")
 	fmt.Println("  /cancel <reason>   stop the active job")
 	fmt.Println("  note               during a running turn, type these slash commands directly; TAB + text queues a follow-up")
 	fmt.Println("  /exit              quit interactive mode")

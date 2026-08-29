@@ -26,12 +26,19 @@ func validateStationDiscoveryOpening(
 		record.Selection.NativeContextLimit != record.Gap.ContextTokens {
 		return StationDiscoveryOpening{}, fmt.Errorf("station discovery differs from its exact gap authority")
 	}
+	if err := ValidateStationGapSemanticUncertainty(record.Gap); err != nil {
+		return StationDiscoveryOpening{}, fmt.Errorf(
+			"station discovery semantic uncertainty: %w", err,
+		)
+	}
 	selection, err := exactjson.Canonical(record.Selection)
 	if err != nil {
 		return StationDiscoveryOpening{}, err
 	}
 	challenge, err := llm.DeriveProviderIdentityDiscoveryChallenge(
-		"station-gap:"+record.Gap.GapID, record.Selection,
+		"station-gap:"+record.Gap.GapID+":semantic-uncertainty:"+
+			record.Gap.SemanticUncertaintyContractSHA256,
+		record.Selection,
 	)
 	if err != nil {
 		return StationDiscoveryOpening{}, err

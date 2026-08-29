@@ -148,26 +148,6 @@ type MemoryCandidate struct {
 	UpdatedAt      time.Time       `json:"updated_at"`
 }
 
-type ClaimRecord struct {
-	ID             int64     `json:"id"`
-	JobID          int64     `json:"job_id,omitempty"`
-	StepID         int64     `json:"step_id,omitempty"`
-	Text           string    `json:"text"`
-	NormalizedText string    `json:"normalized_text,omitempty"`
-	Status         string    `json:"status,omitempty"`
-	Confidence     float64   `json:"confidence,omitempty"`
-	CreatedAt      time.Time `json:"created_at"`
-}
-
-type ClaimSupportRecord struct {
-	ID           int64     `json:"id"`
-	ClaimID      int64     `json:"claim_id"`
-	EvidenceID   int64     `json:"evidence_id"`
-	SupportScore float64   `json:"support_score,omitempty"`
-	Rationale    string    `json:"rationale,omitempty"`
-	CreatedAt    time.Time `json:"created_at"`
-}
-
 type MemoryCandidatePromotionResult struct {
 	Candidate MemoryCandidate `json:"candidate"`
 	Memory    *MemoryChunk    `json:"memory,omitempty"`

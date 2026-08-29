@@ -31,12 +31,6 @@ func (s *Server) collectChatMetrics(r *http.Request) (chatMetricsSnapshot, error
 	if snapshot.Models, err = s.repo.TelemetryModelSummaries(r.Context()); err != nil {
 		return snapshot, err
 	}
-	if snapshot.Playbooks, err = s.repo.TelemetryPlaybookSummaries(r.Context()); err != nil {
-		return snapshot, err
-	}
-	if snapshot.Benchmarks, err = s.repo.TelemetryBenchmarkSummaries(r.Context()); err != nil {
-		return snapshot, err
-	}
 	if snapshot.Shrink, err = s.repo.ContextShrinkMetrics(r.Context(), "", 1); err != nil {
 		return snapshot, err
 	}

@@ -69,7 +69,7 @@ func validateDirectCodingGoAcceptance(
 	if implementationName == "" {
 		return fmt.Errorf("Go acceptance block %s has no implementation owner", ref.Block.ID)
 	}
-	requiredAssertions, err := directCodingAcceptanceCriterionCount(stage, ref)
+	requiredAssertions, err := directCodingAcceptanceObligationCount(stage, ref)
 	if err != nil {
 		return err
 	}
@@ -123,7 +123,7 @@ func validateDirectCodingGoAcceptance(
 	if featureCalls != 1 || len(resultNames) != 1 || invalidStructure ||
 		len(assertions) < requiredAssertions {
 		return fmt.Errorf(
-			"Go acceptance block %s must bind one %s result and prove all %d frozen criteria with distinct result-field failure conditions",
+			"Go acceptance block %s must bind one %s result and prove the accepted requirement with %d direct result-field failure condition",
 			ref.Block.ID, implementationName, requiredAssertions,
 		)
 	}

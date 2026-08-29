@@ -8,15 +8,10 @@ import (
 	"unicode/utf8"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
+	"github.com/gryph/omnidex/internal/modelcontext"
 )
 
 var objectiveIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$`)
-
-var requiredAcceptance = []AcceptancePredicate{
-	AcceptanceGroundedSynthesis,
-	AcceptanceExactCitations,
-	AcceptanceClaimEvidenceReview,
-}
 
 func validateObjective(objective Objective) error {
 	if !objectiveIDPattern.MatchString(string(objective.ID)) {
@@ -28,6 +23,15 @@ func validateObjective(objective Objective) error {
 	if !utf8.ValidString(objective.Question) || strings.ContainsRune(objective.Question, '\x00') {
 		return fmt.Errorf("%w: question must be valid UTF-8 without NUL", ErrInvalidObjective)
 	}
+	provenance, err := modelcontext.NewArtifactIdentityProvenance(objective.KnownArtifactPaths)
+	if err != nil {
+		return fmt.Errorf("%w: known artifact provenance: %v", ErrInvalidObjective, err)
+	}
+	if err := assemblyline.ValidatePathFreeModelContextWithProvenance(
+		"web research model question", provenance, objective.Question,
+	); err != nil {
+		return fmt.Errorf("%w: %v", ErrInvalidObjective, err)
+	}
 	if _, err := assemblyline.NewConversationObjectiveKindJob(
 		assemblyline.ConversationObjectiveKindInput{
 			ExactInstruction: objective.Question,
@@ -36,26 +40,19 @@ func validateObjective(objective Objective) error {
 	); err != nil {
 		return fmt.Errorf("%w: selected conversation projection: %v", ErrInvalidObjective, err)
 	}
-	if objective.InitialQuery != strings.TrimSpace(objective.InitialQuery) || len(objective.InitialQuery) > 1_024 {
-		return fmt.Errorf("%w: initial query must be empty or trimmed within 1024 bytes", ErrInvalidObjective)
+	if objective.InitialQuery == "" || objective.InitialQuery != strings.TrimSpace(objective.InitialQuery) ||
+		len(objective.InitialQuery) > 4_096 || !utf8.ValidString(objective.InitialQuery) ||
+		strings.ContainsRune(objective.InitialQuery, '\x00') {
+		return fmt.Errorf("%w: initial query must contain 1..4096 exact trimmed UTF-8 bytes", ErrInvalidObjective)
 	}
 	if objective.Status != ObjectivePending {
 		return fmt.Errorf("%w: objective must begin pending", ErrInvalidObjective)
-	}
-	if len(objective.Acceptance) != len(requiredAcceptance) {
-		return fmt.Errorf("%w: exact acceptance predicates are required", ErrInvalidObjective)
-	}
-	for index := range requiredAcceptance {
-		if objective.Acceptance[index] != requiredAcceptance[index] {
-			return fmt.Errorf("%w: acceptance predicate %d is invalid", ErrInvalidObjective, index)
-		}
 	}
 	return nil
 }
 
 func validateConfig(config Config) error {
 	if err := validateEvidenceConfig(EvidenceConfig{
-		MaxSearchTerms: config.MaxSearchTerms, MaxSearchTermBytes: config.MaxSearchTermBytes,
 		MaxFetchCandidates: config.MaxFetchCandidates, MaxProjectionBytes: config.MaxProjectionBytes,
 		MaxRelevantCandidates: config.MaxRelevantCandidates, CandidateSummaryBytes: config.CandidateSummaryBytes,
 	}); err != nil {
@@ -71,12 +68,6 @@ func validateConfig(config Config) error {
 }
 
 func validateEvidenceConfig(config EvidenceConfig) error {
-	if config.MaxSearchTerms < 1 || config.MaxSearchTerms > 3 {
-		return fmt.Errorf("%w: max search terms must be 1..3", ErrInvalidConfiguration)
-	}
-	if config.MaxSearchTermBytes < 1 || config.MaxSearchTermBytes > 256 {
-		return fmt.Errorf("%w: search term bound must be 1..256 bytes", ErrInvalidConfiguration)
-	}
 	if config.MaxFetchCandidates < 1 || config.MaxFetchCandidates > 32 {
 		return fmt.Errorf("%w: fetch candidate bound must be 1..32", ErrInvalidConfiguration)
 	}

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net"
 	"net/http"
 	"strings"
@@ -88,13 +89,11 @@ func (c *Client) EnsureModels(ctx context.Context, models []string) ([]string, e
 }
 
 type embeddingsRequest struct {
-	Model  string `json:"model"`
-	Prompt string `json:"prompt"`
-	Input  string `json:"input,omitempty"`
+	Model string `json:"model"`
+	Input string `json:"input"`
 }
 
 type embeddingsResponse struct {
-	Embedding  []float64   `json:"embedding"`
 	Embeddings [][]float64 `json:"embeddings"`
 }
 
@@ -211,63 +210,53 @@ func (c *Client) DeleteModel(ctx context.Context, model string) error {
 }
 
 func (c *Client) Embedding(ctx context.Context, content string) ([]float64, error) {
+	model := strings.TrimSpace(c.embeddingModel)
+	if model == "" {
+		return nil, fmt.Errorf("ollama embedding model is required")
+	}
 	payload, err := json.Marshal(embeddingsRequest{
-		Model:  c.embeddingModel,
-		Prompt: content,
-		Input:  content,
+		Model: model,
+		Input: content,
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("encode ollama embedding request: %w", err)
 	}
 
-	endpoints := []string{"/api/embeddings", "/api/embed"}
-	var lastErr error
-
-	for _, endpoint := range endpoints {
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+endpoint, bytes.NewReader(payload))
-		if err != nil {
-			return nil, err
-		}
-		req.Header.Set("Content-Type", "application/json")
-
-		resp, err := c.httpClient.Do(req)
-		if err != nil {
-			lastErr = c.wrapConnectivityError(err, endpoint)
-			continue
-		}
-
-		body, readErr := io.ReadAll(resp.Body)
-		resp.Body.Close()
-		if readErr != nil {
-			lastErr = readErr
-			continue
-		}
-
-		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-			lastErr = fmt.Errorf("ollama embedding failed endpoint=%s status=%d body=%s", endpoint, resp.StatusCode, string(body))
-			continue
-		}
-
-		var parsed embeddingsResponse
-		if err := json.Unmarshal(body, &parsed); err != nil {
-			lastErr = err
-			continue
-		}
-
-		if len(parsed.Embedding) > 0 {
-			return parsed.Embedding, nil
-		}
-		if len(parsed.Embeddings) > 0 && len(parsed.Embeddings[0]) > 0 {
-			return parsed.Embeddings[0], nil
-		}
-
-		lastErr = fmt.Errorf("embedding response missing vectors")
+	status, body, err := c.postJSON(ctx, "/api/embed", payload)
+	if err != nil {
+		return nil, fmt.Errorf("ollama embedding request: %w", err)
+	}
+	if status < 200 || status >= 300 {
+		return nil, fmt.Errorf(
+			"ollama embedding failed: endpoint=/api/embed status=%d body=%s",
+			status,
+			string(body),
+		)
 	}
 
-	if lastErr == nil {
-		lastErr = fmt.Errorf("embedding request failed")
+	var parsed embeddingsResponse
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		return nil, fmt.Errorf("decode ollama embedding response: %w", err)
 	}
-	return nil, lastErr
+	if len(parsed.Embeddings) != 1 {
+		return nil, fmt.Errorf(
+			"ollama embedding response returned %d vectors, expected exactly one",
+			len(parsed.Embeddings),
+		)
+	}
+	vector := parsed.Embeddings[0]
+	if len(vector) == 0 {
+		return nil, fmt.Errorf("ollama embedding response returned an empty vector")
+	}
+	for index, value := range vector {
+		if math.IsNaN(value) || math.IsInf(value, 0) {
+			return nil, fmt.Errorf(
+				"ollama embedding response returned a non-finite value at index %d",
+				index,
+			)
+		}
+	}
+	return vector, nil
 }
 
 func (c *Client) wrapConnectivityError(err error, endpoint string) error {

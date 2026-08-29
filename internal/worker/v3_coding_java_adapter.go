@@ -42,7 +42,7 @@ func compileGenericJavaCommandLineBlueprint(
 	if err := validateJavaCommandLineCoverage(target, workload, coverage); err != nil {
 		return assemblyline.SourceBlueprint{}, nil, err
 	}
-	contexts, err := directCodingApplicationTaskContexts(applicationWorkloadInput(specification), workload)
+	contexts, err := directCodingApplicationTaskContexts(workload)
 	if err != nil {
 		return assemblyline.SourceBlueprint{}, nil, err
 	}

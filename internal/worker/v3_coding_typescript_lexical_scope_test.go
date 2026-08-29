@@ -57,15 +57,16 @@ function MoveAppointment(day: number, actions: ScheduleActions): void {
 		},
 		{
 			name: "regular expression escape in exact expression source",
-			source: `function VerifyPattern(): void {
-  const matches = (value: string) => value.includes('\\d+');
-  void matches;
+			source: `// Exact regular-expression syntax remains source, not path identity.
+function VerifyPattern(): void {
+	  const matches = (value: string) => /\d+/.test(value);
+	  void matches;
 }`,
-			marker: "includes('\\d+')",
+			marker: `/\d+/.test(value)`,
 			want: []string{
 				"VerifyPattern: () => void", "matches: (value: string) => boolean",
 			},
-			wantEvidence: []string{`value.includes('\\d+')`},
+			wantEvidence: []string{`/\d+/.test(value)`},
 		},
 	}
 	root := t.TempDir()
@@ -298,6 +299,27 @@ func TestApplyTypeScriptDeterministicRepairRequiresExactByteAuthority(t *testing
 	if _, _, err := applyDirectCodingTypeScriptDeterministicRepair(current, stale); err == nil ||
 		!strings.Contains(err.Error(), "no longer matches") {
 		t.Fatalf("stale deterministic repair error=%v", err)
+	}
+}
+
+func TestTypeScriptScopeInspectorRequiresExactCodeOwnedSource(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	if err := writeDirectCodingTypeScriptScopeInspector(root); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateDirectCodingTypeScriptScopeInspector(root); err != nil {
+		t.Fatalf("fresh inspector rejected: %v", err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(root, directCodingTypeScriptScopeInspectorFile),
+		[]byte("process.stdout.write('{}');"), 0o600,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateDirectCodingTypeScriptScopeInspector(root); err == nil ||
+		!strings.Contains(err.Error(), "differs from its code-owned source") {
+		t.Fatalf("mutated inspector error=%v", err)
 	}
 }
 

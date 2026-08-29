@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
+	"github.com/gryph/omnidex/internal/exactjson"
 	"github.com/gryph/omnidex/internal/llm"
 	"github.com/gryph/omnidex/internal/model"
 	repositoryretrieval "github.com/gryph/omnidex/internal/repository/retrieval"
@@ -42,7 +43,7 @@ func TestRawStationPromptsCrossRetiredThirtyTwoKiBRuler(t *testing.T) {
 			}
 
 			opening, err := validateStationGapOpening(StationGapOpenRecord{
-				Authority: stationResponseSchemaAuthority(), Job: fixture.job, Station: fixture.station,
+				Authority: stationRawProjectionAuthority(), Job: fixture.job, Station: fixture.station,
 				ContextTokens:   262144,
 				MaxOutputTokens: portableStationTestMaxOutputTokens(t, fixture.job, 262144),
 				OutputLimitMode: llm.ExactPreparedOutputLimitNatural,
@@ -50,9 +51,16 @@ func TestRawStationPromptsCrossRetiredThirtyTwoKiBRuler(t *testing.T) {
 			if err != nil {
 				t.Fatalf("station rejected raw renderer prompt: %v", err)
 			}
-			if string(opening.ResponseSchema) != "null" ||
+			expectedProjection, err := exactjson.Canonical(struct {
+				Prompt   string `json:"prompt"`
+				Renderer string `json:"renderer"`
+			}{prompt, assemblyline.PortableRendererV5})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if opening.ProjectionEnvelope != string(expectedProjection) ||
 				len(opening.ProjectionEnvelope) >= maxStationRequestResourceBytes {
-				t.Fatalf("opening lost raw transport or coarse authority: schema=%s projection=%d", opening.ResponseSchema, len(opening.ProjectionEnvelope))
+				t.Fatalf("opening lost exact raw projection authority: projection=%q", opening.ProjectionEnvelope)
 			}
 		})
 	}
@@ -71,7 +79,9 @@ func TestStandaloneStationResponseSchemaByteRulerIsAbsent(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		for _, forbidden := range []string{"maxStationGapSchemaBytes", "station gap response schema exceeds"} {
+		for _, forbidden := range []string{
+			"ResponseSchema", "response_schema", "canonicalStationGapSchema",
+		} {
 			if strings.Contains(string(raw), forbidden) {
 				t.Fatalf("%s retains standalone response-schema ruler %q", name, forbidden)
 			}
@@ -119,7 +129,7 @@ func largeRepositoryChangeOwnerJob(t *testing.T) assemblyline.PortableJob {
 	return job
 }
 
-func stationResponseSchemaAuthority() model.StepAttemptAuthority {
+func stationRawProjectionAuthority() model.StepAttemptAuthority {
 	return model.StepAttemptAuthority{
 		JobID: 41, Generation: 1, StepID: 7, Attempt: 1, WorkerID: "schema-resource-test",
 	}

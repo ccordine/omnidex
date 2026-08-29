@@ -3,6 +3,7 @@ package queue
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -17,7 +18,9 @@ func TestObjectiveCompletionMetadataRequiresExactWebFreshnessAuthority(t *testin
 	record.Metadata["paragraph_indexes"] = []int{0, 2}
 	record.Metadata["source_observed_at"] = "2026-01-02T03:04:05.123456Z"
 	record.Metadata["source_truncated"] = true
-	record.SupportsClaims = []string{"requirement-test#paragraph-1", "requirement-test#paragraph-3"}
+	record.RequirementAuthorityBindings = []string{
+		"requirement-test#paragraph-1", "requirement-test#paragraph-3",
+	}
 	if _, err := normalizeObjectiveCompletionEvidence(record, 7, 9); err != nil {
 		t.Fatal(err)
 	}
@@ -66,7 +69,7 @@ func TestObjectiveCompletionMetadataKeepsRoleplayResearchInRealWorldAuthority(t 
 	record.Metadata["roleplay_research_character_id"] = "rpc_0123456789abcdef0123456789abcdef"
 	record.Metadata["roleplay_research_question_sha256"] = strings.Repeat("c", 64)
 	record.Metadata["roleplay_research_capability_grant_id"] = "rpg_0123456789abcdef0123456789abcdef"
-	record.SupportsClaims = []string{"requirement-test#paragraph-1"}
+	record.RequirementAuthorityBindings = []string{"requirement-test#paragraph-1"}
 	if _, err := normalizeObjectiveCompletionEvidence(record, 7, 9); err != nil {
 		t.Fatal(err)
 	}
@@ -144,6 +147,36 @@ func TestObjectiveCompletionMetadataBoundsBeforeJSONMarshal(t *testing.T) {
 	}
 }
 
+func TestObjectiveCompletionRejectsLegacyRequirementAuthorityBindingKey(t *testing.T) {
+	record := exactObjectiveCitationRecord("repository_symbol")
+	raw, err := json.Marshal(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		t.Fatal(err)
+	}
+	legacyKey := "supports_" + "claims"
+	payload[legacyKey] = payload["requirement_authority_bindings"]
+	delete(payload, "requirement_authority_bindings")
+	raw, err = json.Marshal(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded evidence.Record
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if len(decoded.RequirementAuthorityBindings) != 0 {
+		t.Fatal("legacy requirement binding key populated current authority")
+	}
+	if _, err := normalizeObjectiveCompletionEvidence(decoded, 7, 9); err == nil ||
+		!strings.Contains(err.Error(), "requires between 1 and 4 requirement authority bindings") {
+		t.Fatalf("legacy requirement binding error=%v", err)
+	}
+}
+
 type panicObjectiveMetadataMarshaler struct{}
 
 func (panicObjectiveMetadataMarshaler) MarshalJSON() ([]byte, error) {
@@ -158,7 +191,7 @@ func exactObjectiveCitationRecord(sourceType string) evidence.Record {
 		JobID: 7, StepID: 9, Kind: evidence.KindObjectiveCitation,
 		SourceType: sourceType, SourceRef: "source-ref", Excerpt: excerpt,
 		Summary: "Exact objective citation.", Hash: sourceHash, Confidence: 1,
-		SupportsClaims: []string{"requirement-test"},
+		RequirementAuthorityBindings: []string{"requirement-test"},
 		Metadata: map[string]any{
 			"capsule_id": "R01", "instruction_sha256": strings.Repeat("b", 64),
 			"objective_id": "objective-test", "objective_kind": "repository_read",
@@ -170,7 +203,9 @@ func exactObjectiveCitationRecord(sourceType string) evidence.Record {
 }
 
 func cloneObjectiveCitationRecord(record evidence.Record) evidence.Record {
-	record.SupportsClaims = append([]string(nil), record.SupportsClaims...)
+	record.RequirementAuthorityBindings = append(
+		[]string(nil), record.RequirementAuthorityBindings...,
+	)
 	record.Metadata = make(map[string]any, len(record.Metadata))
 	for key, value := range record.Metadata {
 		record.Metadata[key] = value

@@ -45,14 +45,26 @@ func mapDirectCodingVitestFailureEvidence(
 			continue
 		}
 		diagnostic.FailureClass = failure.FailureClass
-		provenance, provenanceErr := modelcontext.NewArtifactIdentityProvenance(
-			[]string{diagnostic.DocumentPath},
-		)
+		regularExpressions := []string(nil)
+		if failure.FailureClass == directCodingStageFailureVitestBehavior {
+			derived, regexErr := directCodingTypeScriptBlockRegularExpressions(
+				documents, diagnostic.DocumentPath, diagnostic.BlockID,
+			)
+			if regexErr != nil {
+				return nil, false, fmt.Errorf("derive block-local Vitest regex authority: %w", regexErr)
+			}
+			regularExpressions = derived
+		}
+		paths := make([]string, len(documents))
+		for index := range documents {
+			paths[index] = filepath.ToSlash(documents[index].Path)
+		}
+		provenance, provenanceErr := modelcontext.NewArtifactIdentityProvenance(paths)
 		if provenanceErr != nil {
 			return nil, false, fmt.Errorf("derive Vitest diagnostic artifact provenance: %w", provenanceErr)
 		}
 		feedback, err := directCodingTypeScriptStructuredTestModelFailure(
-			failure, provenance, diagnostic.AuthorizedRegexLiterals...,
+			failure, provenance, regularExpressions...,
 		)
 		if err != nil {
 			return nil, false, fmt.Errorf("map structured Vitest failure: %w", err)
@@ -61,6 +73,33 @@ func mapDirectCodingVitestFailureEvidence(
 		return diagnostic, true, nil
 	}
 	return nil, false, nil
+}
+
+func directCodingTypeScriptBlockRegularExpressions(
+	documents []assemblyline.ComposedSourceDocument,
+	documentPath string,
+	blockID string,
+) ([]string, error) {
+	var matched *assemblyline.ComposedSourceDocument
+	for index := range documents {
+		if filepath.ToSlash(documents[index].Path) != filepath.ToSlash(documentPath) {
+			continue
+		}
+		if matched != nil {
+			return nil, fmt.Errorf("TypeScript document path %s is duplicated", documentPath)
+		}
+		matched = &documents[index]
+	}
+	if matched == nil {
+		return nil, fmt.Errorf("TypeScript document path %s is not composed", documentPath)
+	}
+	source, err := matched.BlockSource(blockID)
+	if err != nil {
+		return nil, err
+	}
+	return assemblyline.TypeScriptRegularExpressionLiterals(
+		source, strings.HasSuffix(strings.ToLower(matched.Path), ".tsx"),
+	)
 }
 
 func directCodingVitestStagePath(root string, raw string) (string, bool) {
@@ -111,19 +150,12 @@ func mapDirectCodingTypeScriptDocumentLocation(
 				continue
 			}
 			location := path + ":" + strconv.Itoa(line) + ":" + strconv.Itoa(column)
-			regularExpressions, err := assemblyline.TypeScriptRegularExpressionLiterals(
-				document.Source, strings.HasSuffix(strings.ToLower(document.Path), ".tsx"),
-			)
-			if err != nil {
-				return nil, false
-			}
 			return &directCodingStageDiagnostic{
 				BlockID: blockID, DeclarationLine: line - span.StartLine + 1,
 				DeclarationColumn: column, DocumentPath: path,
 				DocumentLine: line, DocumentColumn: column,
 				DocumentBlockStartLine: span.StartLine, DocumentBlockEndLine: span.EndLine,
 				Message: location + "\n" + trimForBudget(output, 5000), Output: output,
-				AuthorizedRegexLiterals: regularExpressions,
 			}, true
 		}
 	}

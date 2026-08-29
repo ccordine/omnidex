@@ -1,8 +1,10 @@
 package queue
 
 import (
+	"strings"
 	"testing"
 
+	"github.com/gryph/omnidex/internal/llm"
 	"github.com/gryph/omnidex/internal/model"
 )
 
@@ -39,7 +41,23 @@ func TestStationCallEvidenceIsDerivedFromDurableCallAuthority(t *testing.T) {
 	}
 	if evidence.StationCallOpeningID != opening.ID || evidence.SystemPrompt != gap.Prompt ||
 		evidence.Response != result.Content || evidence.WorkID != opening.GapID ||
-		evidence.ResponseFormat != "text" || evidence.ResponseSchema != nil {
+		evidence.ContextTokens != opening.ContextTokens {
 		t.Fatalf("derived evidence=%+v", evidence)
+	}
+}
+
+func TestDurableStationGenerationRejectsThinkingAuthority(t *testing.T) {
+	t.Parallel()
+	for _, field := range []string{"thinking", "Thinking"} {
+		field := field
+		t.Run(field, func(t *testing.T) {
+			t.Parallel()
+			raw := []byte(`{"schema":"` + llm.PreparedGenerationSchemaV1 +
+				`","` + field + `":"forbidden trace"}`)
+			if _, err := decodeDurableStationGeneration(raw); err == nil ||
+				!strings.Contains(err.Error(), field) {
+				t.Fatalf("durable generation accepted %q authority: %v", field, err)
+			}
+		})
 	}
 }

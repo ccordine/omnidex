@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
+	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/queue"
 	repositoryfacts "github.com/gryph/omnidex/internal/repository"
 	workspacefacts "github.com/gryph/omnidex/internal/workspace"
@@ -122,14 +124,58 @@ func workspaceMutationCommandForStage(
 	if err != nil {
 		return queue.WorkspaceMutationCommand{}, fmt.Errorf("resolve workspace mutation project: %w", err)
 	}
+	project, err := runtime.svc.repo.GetProject(runtime.ctx, projectID)
+	if err != nil {
+		return queue.WorkspaceMutationCommand{}, fmt.Errorf("load workspace mutation project authority: %w", err)
+	}
+	plan := stage.Plan()
+	if err := requireWorkspaceMutationStageAuthority(
+		runtime.svc, claim.Job, projectID, project, plan,
+	); err != nil {
+		return queue.WorkspaceMutationCommand{}, err
+	}
 	return queue.WorkspaceMutationCommand{
 		JobID: claim.Authority.JobID, StepID: claim.Authority.StepID,
 		Generation:      claim.Authority.Generation,
 		CreatorAttempt:  claim.Authority.Attempt,
 		CreatorWorkerID: claim.Authority.WorkerID,
 		ProjectID:       projectID,
-		Plan:            stage.Plan(), Verification: verification,
+		ProjectLocation: project.Location,
+		Plan:            plan, Verification: verification,
 	}, nil
+}
+
+func requireWorkspaceMutationStageAuthority(
+	service *Service,
+	job model.Job,
+	projectID int64,
+	project model.Project,
+	plan workspacefacts.MutationPlan,
+) error {
+	if service == nil || projectID <= 0 || project.ID != projectID {
+		return fmt.Errorf("workspace mutation project authority is incomplete")
+	}
+	jobLocation := strings.TrimSpace(codingWorkspaceForJob(job))
+	if err := model.ValidateChannelWorkspaceRoot(jobLocation); err != nil {
+		return fmt.Errorf("workspace mutation project locations must be absolute")
+	}
+	if err := model.ValidateChannelWorkspaceRoot(project.Location); err != nil ||
+		project.Location == "/" || strings.ContainsAny(project.Location, "\\\r\n") {
+		return fmt.Errorf("workspace mutation current project location is not canonical")
+	}
+	jobLocation = filepath.Clean(jobLocation)
+	projectLocation := filepath.Clean(project.Location)
+	if projectLocation != jobLocation {
+		return fmt.Errorf("workspace mutation job location differs from its current project")
+	}
+	scope, err := service.workspaceScopeForV3Job(job)
+	if err != nil {
+		return fmt.Errorf("resolve workspace mutation runtime root: %w", err)
+	}
+	if plan.WorkspaceRoot != scope.Root {
+		return fmt.Errorf("workspace mutation plan root differs from its resolved runtime root")
+	}
+	return nil
 }
 
 func observeWorkspaceMutation(

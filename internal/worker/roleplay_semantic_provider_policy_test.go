@@ -8,7 +8,7 @@ import (
 	"github.com/gryph/omnidex/internal/roleplay"
 )
 
-func TestRoleplaySemanticStationsAndCorrectionsUseSemanticProfile(t *testing.T) {
+func TestRoleplaySemanticStationsUseSemanticProfile(t *testing.T) {
 	t.Parallel()
 	source, err := assemblyline.NewRoleplayAssistantCanonSource(
 		"Mara", "Mara lowers the bridge.",
@@ -43,16 +43,6 @@ func TestRoleplaySemanticStationsAndCorrectionsUseSemanticProfile(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	contextJob, err := assemblyline.NewContextSearchTermCoverageJob(
-		assemblyline.ContextSearchTermLeafInput{
-			ExactInstruction: "Continue.",
-			Scope:            assemblyline.ContextScopeRoleplaySimulation,
-			AcceptedTerms:    []string{},
-		},
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
 	candidate, err := assemblyline.NewContextCandidateAuthority(
 		"simulation_event", "CTX_8", "The bridge remains raised.",
 	)
@@ -62,7 +52,8 @@ func TestRoleplaySemanticStationsAndCorrectionsUseSemanticProfile(t *testing.T) 
 	relevanceJob, err := assemblyline.NewContextRelevanceSelectionJob(
 		assemblyline.ContextRelevanceSelectionInput{
 			Authority: assemblyline.ContextRelevanceInput{
-				ExactInstruction: "Continue.", RetrievalConcepts: []string{},
+				ExactInstruction:     "Continue.",
+				KnownArtifactPaths:   []string{},
 				CandidateAuthorities: []assemblyline.ContextCandidateAuthority{candidate},
 				MaxSelections:        1, Scope: assemblyline.ContextScopeRoleplaySimulation,
 			},
@@ -75,6 +66,7 @@ func TestRoleplaySemanticStationsAndCorrectionsUseSemanticProfile(t *testing.T) 
 	minificationJob, err := assemblyline.NewContextMinificationJob(
 		assemblyline.ContextMinificationInput{
 			ExactInstruction:    "Continue.",
+			KnownArtifactPaths:  []string{},
 			SelectedAuthorities: []assemblyline.ContextCandidateAuthority{candidate},
 			Scope:               assemblyline.ContextScopeRoleplaySimulation,
 		},
@@ -83,51 +75,46 @@ func TestRoleplaySemanticStationsAndCorrectionsUseSemanticProfile(t *testing.T) 
 		t.Fatal(err)
 	}
 	baseJobs := []assemblyline.PortableJob{
-		canonJob, actionJob, contextJob, relevanceJob, minificationJob,
+		canonJob, actionJob, relevanceJob, minificationJob,
 	}
-	for _, base := range baseJobs {
-		correction, err := assemblyline.NewRetainedResponseCorrectionJob(
-			base, "candidate violates its exact station contract", "invalid",
-		)
+	for _, job := range baseJobs {
+		selection, err := providerSelectionForPortableJob(job, "semantic-model:latest", 8192)
 		if err != nil {
 			t.Fatal(err)
 		}
-		for _, job := range []assemblyline.PortableJob{base, correction} {
-			selection, err := providerSelectionForPortableJob(job, "semantic-model:latest", 8192)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if selection.ProfilePolicy != llm.ProviderIdentityProfileRoleplaySemanticCompletion {
-				t.Fatalf("work %q for %q used provider profile %q",
-					job.Kind, base.Kind, selection.ProfilePolicy)
-			}
+		if selection.ProfilePolicy != llm.ProviderIdentityProfileRoleplaySemanticCompletion {
+			t.Fatalf("work %q used provider profile %q", job.Kind, selection.ProfilePolicy)
 		}
 	}
 }
 
-func TestAssistantContextAndCorrectionRemainStrict(t *testing.T) {
+func TestAssistantContextRemainsStrict(t *testing.T) {
 	t.Parallel()
-	job, err := assemblyline.NewContextSearchTermCoverageJob(
-		assemblyline.ContextSearchTermLeafInput{
-			ExactInstruction: "Recall it.", AcceptedTerms: []string{},
+	candidate, err := assemblyline.NewContextCandidateAuthority(
+		"conversation_exchange", "CTX_1", "The bridge remains raised.",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	job, err := assemblyline.NewContextRelevanceSelectionJob(
+		assemblyline.ContextRelevanceSelectionInput{
+			Authority: assemblyline.ContextRelevanceInput{
+				ExactInstruction:     "Recall it.",
+				KnownArtifactPaths:   []string{},
+				CandidateAuthorities: []assemblyline.ContextCandidateAuthority{candidate},
+				MaxSelections:        1,
+			},
+			AcceptedCandidateIDs: []string{},
 		},
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	correction, err := assemblyline.NewRetainedResponseCorrectionJob(
-		job, "coverage value is not registered", "unsupported",
-	)
+	selection, err := providerSelectionForPortableJob(job, "strict-model:latest", 8192)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, candidate := range []assemblyline.PortableJob{job, correction} {
-		selection, err := providerSelectionForPortableJob(candidate, "strict-model:latest", 8192)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if selection.ProfilePolicy != "" {
-			t.Fatalf("assistant work %q escaped strict policy: %q", candidate.Kind, selection.ProfilePolicy)
-		}
+	if selection.ProfilePolicy != "" {
+		t.Fatalf("assistant work %q escaped strict policy: %q", job.Kind, selection.ProfilePolicy)
 	}
 }

@@ -21,10 +21,6 @@ func renderPortableDatabaseWebJob(job PortableJob) (string, bool, error) {
 		return handledPortableRender(renderDecodedPortableInput(job, BuildDatabaseEvidenceGapPrompt))
 	case WorkDatabaseJoinPathSelection:
 		return handledPortableRender(renderDecodedPortableInput(job, BuildDatabaseJoinPathSelectionPrompt))
-	case WorkWebSearchTermCoverage:
-		return handledPortableRender(renderDecodedPortableInput(job, BuildWebSearchTermCoveragePrompt))
-	case WorkWebSearchTerm:
-		return handledPortableRender(renderDecodedPortableInput(job, BuildWebSearchTermPrompt))
 	case WorkWebRelevanceRelation:
 		return handledPortableRender(renderDecodedPortableInput(job, BuildWebRelevanceRelationPrompt))
 	case WorkWebSynthesisParagraphCoverage:
@@ -33,18 +29,6 @@ func renderPortableDatabaseWebJob(job PortableJob) (string, bool, error) {
 		return handledPortableRender(renderDecodedPortableInput(job, BuildWebSynthesisParagraphPrompt))
 	case WorkWebSynthesisEvidenceRelation:
 		return handledPortableRender(renderDecodedPortableInput(job, BuildWebSynthesisEvidenceRelationPrompt))
-	case WorkWebGroundedSynthesisCorrection:
-		return handledPortableRender(renderDecodedPortableInput(job, BuildWebGroundedSynthesisCorrectionPrompt))
-	case WorkWebReviewClaimCoverage:
-		return handledPortableRender(renderDecodedPortableInput(job, BuildWebReviewClaimCoveragePrompt))
-	case WorkWebReviewClaim:
-		return handledPortableRender(renderDecodedPortableInput(job, BuildWebReviewClaimPrompt))
-	case WorkWebReviewClaimVerdict:
-		return handledPortableRender(renderDecodedPortableInput(job, BuildWebReviewClaimVerdictPrompt))
-	case WorkWebReviewIssueEvidenceRelation:
-		return handledPortableRender(renderDecodedPortableInput(job, BuildWebReviewIssueEvidenceRelationPrompt))
-	case WorkWebReviewIssueDetail:
-		return handledPortableRender(renderDecodedPortableInput(job, BuildWebReviewIssueDetailPrompt))
 	default:
 		return "", false, nil
 	}

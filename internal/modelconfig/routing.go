@@ -20,9 +20,6 @@ func Apply(base Routing, cfg Config) Routing {
 		}
 		out.Stations = clone
 	}
-	if value := cfg.Get("context_search_terms_model"); value != "" {
-		out.Stations[station.ContextSearchTerms] = value
-	}
 	if value := cfg.Get("context_relevance_model"); value != "" {
 		out.Stations[station.ContextRelevance] = value
 	}
@@ -56,26 +53,11 @@ func Apply(base Routing, cfg Config) Routing {
 	if value := cfg.Get("repository_evidence_relevance_model"); value != "" {
 		out.Stations[station.RepositoryEvidenceRelevance] = value
 	}
-	if value := cfg.Get("repository_grounded_review_model"); value != "" {
-		out.Stations[station.RepositoryGroundedReview] = value
-	}
-	if value := cfg.Get("repository_grounded_correction_model"); value != "" {
-		out.Stations[station.RepositoryGroundedCorrection] = value
-	}
-	if value := cfg.Get("web_search_terms_model"); value != "" {
-		out.Stations[station.WebSearchTerms] = value
-	}
 	if value := cfg.Get("web_relevance_model"); value != "" {
 		out.Stations[station.WebRelevance] = value
 	}
 	if value := cfg.Get("web_grounded_synthesis_model"); value != "" {
 		out.Stations[station.WebGroundedSynthesis] = value
-	}
-	if value := cfg.Get("web_grounded_synthesis_correction_model"); value != "" {
-		out.Stations[station.WebGroundedSynthesisCorrection] = value
-	}
-	if value := cfg.Get("web_claim_evidence_review_model"); value != "" {
-		out.Stations[station.WebClaimEvidenceReview] = value
 	}
 	if value := cfg.Get("coding_surface_model"); value != "" {
 		out.Stations[station.CodingSurface] = value
@@ -91,10 +73,14 @@ func Apply(base Routing, cfg Config) Routing {
 		out.Stations[station.CodingServicePersistenceDestination] = value
 	}
 	if value := cfg.Get("coding_workload_model"); value != "" {
-		out.Stations[station.CodingWorkload] = value
 		out.Stations[station.CodingTargetTree] = value
 		out.Stations[station.CodingServiceStateLifetime] = value
-		out.Stations[station.CodingServiceStateInterface] = value
+		out.Stations[station.CodingApplicationStateFieldCoverage] = value
+		out.Stations[station.CodingApplicationStateFieldPurpose] = value
+		out.Stations[station.CodingApplicationStateFieldKind] = value
+		out.Stations[station.CodingApplicationRecordFieldCoverage] = value
+		out.Stations[station.CodingApplicationRecordFieldPurpose] = value
+		out.Stations[station.CodingApplicationRecordFieldKind] = value
 		out.Stations[station.CodingServiceEndpointRequirement] = value
 		out.Stations[station.CodingServiceEndpointExposure] = value
 		out.Stations[station.CodingServiceEndpointMethod] = value
@@ -105,7 +91,8 @@ func Apply(base Routing, cfg Config) Routing {
 	}
 	if value := cfg.Get("coding_artifact_handling_model"); value != "" {
 		out.Stations[station.CodingArtifactHandling] = value
-		out.Stations[station.CodingKnownArtifactTruth] = value
+		out.Stations[station.CodingRepositoryArtifactAbsence] = value
+		out.Stations[station.CodingPlainTextArtifactCreation] = value
 		out.Stations[station.CodingDeclarationArtifactBoundary] = value
 		out.Stations[station.CodingArtifactCandidateSelection] = value
 	}
@@ -123,9 +110,6 @@ func Apply(base Routing, cfg Config) Routing {
 	}
 	if value := cfg.Get("coding_fragment_correction_model"); value != "" {
 		out.Stations[station.CodingFragmentCorrection] = value
-	}
-	if value := cfg.Get("coding_repository_search_term_model"); value != "" {
-		out.Stations[station.CodingRepositorySearchTerm] = value
 	}
 	if value := cfg.Get("coding_repository_change_surface_model"); value != "" {
 		out.Stations[station.CodingRepositoryChange] = value

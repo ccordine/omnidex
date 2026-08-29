@@ -5,11 +5,11 @@ import (
 	"regexp"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/gryph/omnidex/internal/modelcontext"
 )
 
 const (
-	MaxContextSearchTerms                 = 3
-	MaxContextSearchTermBytes             = 256
 	MaxContextCandidateAuthorities        = 16
 	MaxContextCandidateNamespaceBytes     = 48
 	MaxContextCandidateIDBytes            = 64
@@ -70,29 +70,6 @@ func validateContextExactInstruction(value string) error {
 	return nil
 }
 
-func validateCanonicalContextRetrievalConcepts(concepts []string) error {
-	if concepts == nil || len(concepts) > MaxContextSearchTerms {
-		return fmt.Errorf(
-			"context relevance requires an explicit array of 0..%d canonical retrieval concepts",
-			MaxContextSearchTerms,
-		)
-	}
-	previous := ""
-	for index, concept := range concepts {
-		if err := validateContextSearchTerm(concept); err != nil {
-			return fmt.Errorf("context retrieval concept %d: %w", index, err)
-		}
-		if concept != strings.ToLower(concept) {
-			return fmt.Errorf("context retrieval concept %d must be case-folded", index)
-		}
-		if index > 0 && concept <= previous {
-			return fmt.Errorf("context retrieval concepts must be sorted and unique")
-		}
-		previous = concept
-	}
-	return nil
-}
-
 func validateContextCandidateAuthorities(
 	label string,
 	authorities []ContextCandidateAuthority,
@@ -137,6 +114,48 @@ func validateContextCandidateAuthorities(
 		return fmt.Errorf("%s candidate projection exceeds %d bytes", label, maximumBytes)
 	}
 	return nil
+}
+
+func validateContextArtifactProvenance(
+	label string,
+	paths []string,
+) (modelcontext.ArtifactIdentityProvenance, error) {
+	if paths == nil {
+		return modelcontext.ArtifactIdentityProvenance{}, fmt.Errorf(
+			"%s requires explicit current-artifact provenance, including an empty set",
+			label,
+		)
+	}
+	provenance, err := modelcontext.NewArtifactIdentityProvenance(paths)
+	if err != nil {
+		return modelcontext.ArtifactIdentityProvenance{}, fmt.Errorf(
+			"%s current-artifact provenance: %w", label, err,
+		)
+	}
+	return provenance, nil
+}
+
+func redactContextModelText(
+	label string,
+	value string,
+	provenance modelcontext.ArtifactIdentityProvenance,
+) (string, error) {
+	redacted, _, err := RedactArtifactIdentities(value, provenance)
+	if err != nil {
+		return "", fmt.Errorf("redact %s filesystem identities: %w", label, err)
+	}
+	if err := ValidatePathFreeModelContextWithProvenance(label, provenance, redacted); err != nil {
+		return "", err
+	}
+	return redacted, nil
+}
+
+func validateContextRawModelOutput(
+	label string,
+	value string,
+	provenance modelcontext.ArtifactIdentityProvenance,
+) error {
+	return ValidatePathFreeModelContextWithProvenance(label, provenance, value)
 }
 
 func validateContextCandidateText(label, value string, maximum int) error {

@@ -10,7 +10,7 @@ import (
 func TestApplicationContextNeedLeavesUseCoverageAndOneRawQuestion(t *testing.T) {
 	const request = "Exclude archived patients from the existing search."
 	context, err := BootstrapApplicationContext(
-		request, ApplicationWorkspaceExisting, nil,
+		request, ApplicationWorkspaceExisting,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -40,63 +40,6 @@ func TestApplicationContextNeedLeavesUseCoverageAndOneRawQuestion(t *testing.T) 
 	}
 	if _, err := DecodeApplicationContextNeedQuestionLeaf(input, `{"question":"unsafe"}`); err == nil {
 		t.Fatal("JSON application context question was accepted")
-	}
-}
-
-func TestRepositorySearchAnchorLeavesAssembleTypedDecision(t *testing.T) {
-	base := RepositorySearchTermInput{UnresolvedConcept: "ownership of archived filtering"}
-	input := RepositorySearchAnchorLeafInput{
-		UnresolvedConcept: base.UnresolvedConcept, AcceptedAnchors: []string{},
-	}
-	const anchor = "applyFilters"
-	value, err := DecodeRepositorySearchAnchorLeaf(input, anchor)
-	if err != nil || value != anchor {
-		t.Fatalf("anchor=%q err=%v", value, err)
-	}
-	input.AcceptedAnchors = []string{anchor}
-	if value, err := DecodeRepositorySearchAnchorCoverageLeaf(
-		input, RepositoryNoUncoveredAnchor,
-	); err != nil || value != RepositoryNoUncoveredAnchor {
-		t.Fatalf("coverage=%q err=%v", value, err)
-	}
-	decision, err := AssembleRepositorySearchTermDecision(base, []string{anchor})
-	if err != nil || len(decision.Anchors) != 1 || decision.Anchors[0] != anchor {
-		t.Fatalf("decision=%#v err=%v", decision, err)
-	}
-	for _, raw := range []string{anchor, `{"anchor":"other"}`, "/tmp/owner"} {
-		if _, err := DecodeRepositorySearchAnchorLeaf(input, raw); err == nil {
-			t.Fatalf("invalid repository search anchor %q was accepted", raw)
-		}
-	}
-}
-
-func TestContextSearchTermLeavesPermitCodeOwnedEmptyCompletion(t *testing.T) {
-	base := ContextSearchTermsInput{ExactInstruction: "Hello."}
-	input := ContextSearchTermLeafInput{
-		ExactInstruction: base.ExactInstruction, AcceptedTerms: []string{},
-	}
-	value, err := DecodeContextSearchTermCoverageLeaf(
-		input, ContextNoUncoveredTerm,
-	)
-	if err != nil || value != ContextNoUncoveredTerm {
-		t.Fatalf("coverage=%q err=%v", value, err)
-	}
-	decision, err := AssembleContextSearchTermsDecision(base, nil)
-	if err != nil || decision.Terms == nil || len(decision.Terms) != 0 {
-		t.Fatalf("decision=%#v err=%v", decision, err)
-	}
-
-	input.ExactInstruction = "Do it again."
-	const term = "previous requested action"
-	if value, err := DecodeContextSearchTermLeaf(input, term); err != nil || value != term {
-		t.Fatalf("term=%q err=%v", value, err)
-	}
-	input.AcceptedTerms = []string{term}
-	if _, err := DecodeContextSearchTermLeaf(input, strings.ToUpper(term)); err == nil {
-		t.Fatal("case-insensitive duplicate context term was accepted")
-	}
-	if _, err := DecodeContextSearchTermLeaf(input, `["prior action"]`); err == nil {
-		t.Fatal("JSON context term was accepted")
 	}
 }
 

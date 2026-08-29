@@ -68,20 +68,20 @@ func (session *directCodingSession) tryExistingRepositorySinglePlainTextCreation
 			artifactPath,
 		)
 	}
-	modelName, err := session.workerModel(station.CodingKnownArtifactTruth)
+	modelName, err := session.workerModel(station.CodingPlainTextArtifactCreation)
 	if err != nil {
 		return "", true, err
 	}
 	runtime := directCodingWorkerRuntime(session)
 	runtime.MaxAttempts = 1
-	decision, err := classifyKnownArtifactTruth(
+	decision, err := classifyPlainTextArtifactCreation(
 		runtime, modelName,
-		assemblyline.KnownArtifactTruthInput{RequirementQuote: redactedAuthority}, identities,
+		assemblyline.PlainTextArtifactCreationInput{RequirementQuote: redactedAuthority}, identities,
 	)
 	if err != nil {
 		return "", true, err
 	}
-	if decision.Truth != assemblyline.OnePlainTextArtifactMustExist {
+	if decision.Relation != assemblyline.OneNewCompletePlainTextArtifactRequired {
 		return "", false, nil
 	}
 	summary, err = session.runExistingRepositorySingleArtifactCreation(

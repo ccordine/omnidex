@@ -48,11 +48,7 @@ func TestPostgresNamedGapResolvesLazyAbsentProviderAfterPersistence(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	portable, err := assemblyline.NewRepositorySearchAnchorCoverageJob(
-		assemblyline.RepositorySearchAnchorLeafInput{
-			UnresolvedConcept: "registered owner", AcceptedAnchors: []string{},
-		},
-	)
+	portable, err := lazyProviderRepositoryRelevanceJob()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -107,11 +103,7 @@ func TestPostgresExactContractRejectionOccursAfterPersistedGap(t *testing.T) {
 	if err != nil {
 		t.Fatalf("worker construction validated provider early: %v", err)
 	}
-	portable, err := assemblyline.NewRepositorySearchAnchorCoverageJob(
-		assemblyline.RepositorySearchAnchorLeafInput{
-			UnresolvedConcept: "registered owner", AcceptedAnchors: []string{},
-		},
-	)
+	portable, err := lazyProviderRepositoryRelevanceJob()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -139,4 +131,17 @@ func TestPostgresExactContractRejectionOccursAfterPersistedGap(t *testing.T) {
 		t.Fatalf("gap/discovery/receipt/outcome/call/dispatched=%d/%d/%d/%d/%d/%d",
 			gaps, discoveries, receipts, outcomes, calls, dispatched)
 	}
+}
+
+func lazyProviderRepositoryRelevanceJob() (assemblyline.PortableJob, error) {
+	return assemblyline.NewRepositoryEvidenceRelevanceLeafJob(
+		assemblyline.RepositoryEvidenceRelevanceLeafInput{
+			ExactRequirement: "Which declaration owns the registered behavior?",
+			Candidates: []assemblyline.RepositoryEvidenceCandidate{{
+				EvidenceID: "R01", Text: "RegisteredOwner owns the behavior.",
+			}},
+			SelectedEvidenceIDs: []string{},
+			MaxSelections:       1,
+		},
+	)
 }

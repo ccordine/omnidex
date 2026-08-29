@@ -158,14 +158,14 @@ func insertUnresolvedHistoricalLegacyOpening(
 	t.Helper()
 	job := historicalLegacyPortableJob(t, fixture.workKind, marker)
 	if corrected {
-		payload := mustCanonical(t, assemblyline.ResponseCorrectionInput{
+		payload := mustCanonical(t, historicalResponseCorrectionInput{
 			Original:          job,
 			ValidationFailure: "legacy semantic value was invalid",
 			RetainedCandidate: "{}",
 		})
 		job = assemblyline.PortableJob{
 			Schema:  "omnidex.portable-job.v1",
-			Kind:    assemblyline.WorkResponseCorrection,
+			Kind:    historicalWorkResponseCorrection,
 			Payload: payload,
 		}
 		job.ID = historicalPortableID(job.Schema, string(job.Kind), job.Payload)

@@ -4,16 +4,18 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/gryph/omnidex/internal/assemblyline"
 	"github.com/gryph/omnidex/internal/model"
 )
 
 type nativeRuntimeV3 struct {
-	svc      *Service
-	ctx      context.Context
-	claim    *model.ClaimedStep
-	action   string
-	contexts map[string]string
-	routing  ModelRouting
+	svc                     *Service
+	ctx                     context.Context
+	claim                   *model.ClaimedStep
+	action                  string
+	contexts                map[string]string
+	routing                 ModelRouting
+	objectivePathProvenance assemblyline.ArtifactIdentityProvenance
 }
 
 func (s *Service) runNativeV3Step(ctx context.Context, claim *model.ClaimedStep, contexts map[string]string, action string) error {

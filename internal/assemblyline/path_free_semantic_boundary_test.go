@@ -9,18 +9,24 @@ func TestSemanticStationInputsRejectQualifiedPathsBeforeInference(t *testing.T) 
 	t.Parallel()
 	const qualified = "/workspace/generated"
 	emptyContext, err := BootstrapApplicationContext(
-		qualified, ApplicationWorkspaceEmpty, nil,
+		qualified, ApplicationWorkspaceEmpty,
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
 	existingContext, err := BootstrapApplicationContext(
-		qualified, ApplicationWorkspaceExisting, nil,
+		qualified, ApplicationWorkspaceExisting,
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for name, build := range map[string]func() error{
+		"application classification": func() error {
+			_, err := NewApplicationClassificationJob(ApplicationClassificationInput{
+				UserRequest: qualified,
+			})
+			return err
+		},
 		"application product context": func() error {
 			_, err := NewApplicationProductContextJob(ApplicationProductContextInput{
 				UserRequest: qualified, Context: emptyContext,
@@ -33,12 +39,6 @@ func TestSemanticStationInputsRejectQualifiedPathsBeforeInference(t *testing.T) 
 			})
 			return err
 		},
-		"repository search term": func() error {
-			_, err := NewRepositorySearchAnchorCoverageJob(RepositorySearchAnchorLeafInput{
-				UnresolvedConcept: qualified, AcceptedAnchors: []string{},
-			})
-			return err
-		},
 		"repository requirements": func() error {
 			_, err := NewRepositoryRequirementCoverageJob(
 				RepositoryRequirementLeafInput{
@@ -48,6 +48,31 @@ func TestSemanticStationInputsRejectQualifiedPathsBeforeInference(t *testing.T) 
 					AcceptedRequirements: []string{},
 				},
 			)
+			return err
+		},
+		"artifact handling": func() error {
+			_, err := NewArtifactHandlingJob(ArtifactHandlingInput{
+				UserRequest: "Remove ARTIFACT_1 through " + qualified + ".",
+				Token:       "ARTIFACT_1",
+			})
+			return err
+		},
+		"capability relation": func() error {
+			_, err := NewCapabilityRelationJob(CapabilityRelationInput{
+				LocalContext: "One local application.",
+				LeftNeed:     "Read " + qualified,
+				RightNeed:    "Return a value.",
+			})
+			return err
+		},
+		"skill selection": func() error {
+			_, err := NewSkillSelectionJob(SkillSelectionInput{
+				LocalContext: "One local application.",
+				Need:         "Read a value.",
+				Candidates: []SkillCandidateSummary{{
+					Token: "SKILL_1", Purpose: "Inspect " + qualified,
+				}},
+			})
 			return err
 		},
 	} {
@@ -64,12 +89,11 @@ func TestSemanticStationCandidatesRejectQualifiedPathsAtAcceptance(t *testing.T)
 	t.Parallel()
 	const request = "Improve the existing service."
 	existingContext, err := BootstrapApplicationContext(
-		request, ApplicationWorkspaceExisting, nil,
+		request, ApplicationWorkspaceExisting,
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	searchInput := RepositorySearchTermInput{UnresolvedConcept: "Find the owner"}
 	requirementInput := RepositoryRequirementInterpretationInput{
 		UserRequest: request, Context: existingContext,
 	}
@@ -85,11 +109,6 @@ func TestSemanticStationCandidatesRejectQualifiedPathsAtAcceptance(t *testing.T)
 				Schema:    ApplicationContextNeedSchemaV1,
 				Questions: []string{"What owns C:\\private\\value?"},
 			}).Validate()
-		},
-		"repository search term": func() error {
-			return (RepositorySearchTermDecision{
-				Schema: RepositorySearchTermSchemaV2, Anchors: []string{"foo/bar"},
-			}).ValidateFor(searchInput)
 		},
 		"repository requirements": func() error {
 			return (RepositoryRequirementInterpretation{

@@ -19,13 +19,13 @@ The architecture
                          │
                          ▼
                  SEMANTIC INTAKE
-             one bounded transformation
+             one bounded leaf per call
                          │
                          ▼
               CODE-HELD REQUIREMENTS
                          │
                          ▼
-               OBJECTIVE COMPILER
+             CODE OBJECTIVE COMPILER
                          │
                          ▼
               OBJECTIVE / WORK GRAPH
@@ -56,9 +56,6 @@ The architecture
                  STAGED CHANGE
                          ▼
            LOCAL + INTEGRATION PROOF
-                         ▼
-              SEMANTIC REVIEW GAP
-                 only if required
                          ▼
                  CODE COMPLETES
 
@@ -229,50 +226,27 @@ That prevents competing specialists from independently rewriting the same file.
 
 4. Compile vague requests into code-held objectives
 
-The first model call may perform one coherent semantic transformation over the intact user request:
+Semantic intake is a code-owned fixed point over the intact user request, not one
+aggregate model transformation. A surface call returns one registered delivery
+surface. A product-context call returns one value. A requirement-coverage call returns
+only whether one uncovered requirement remains, and only that relation permits a
+separate call for one requirement:
 
 Build an appointment-search page using the existing Laravel application,
 with dynamic filters and a modal for appointment details.
 
-Output:
+Possible successive requirement leaves:
 
-{
-  "objective": "Add appointment search and detail viewing",
-  "requirements": [
-    "Users can search appointments",
-    "Users can dynamically filter the visible results",
-    "Users can open appointment details in a modal"
-  ],
-  "constraints": [
-    "Use the existing Laravel application"
-  ]
-}
+R1 Users can search appointments.
+R2 Users can dynamically filter the visible results.
+R3 Users can open appointment details in a modal.
 
-Code validates grounding, bounds, duplicates, and contradictions. It assigns identities and creates authoritative requirements.
-
-Then the objective compiler creates a workload:
-
-O1 Understand current appointment architecture
-O2 Identify current route/controller/query ownership
-O3 Establish exact filter behavior
-O4 Implement server-side search
-O5 Implement Blade result view
-O6 Implement Stimulus filtering/modal behavior
-O7 Apply existing Tailwind conventions
-O8 Verify backend behavior
-O9 Verify browser behavior
-O10 Perform semantic consistency review
-
-The initial planner does not need a perfect plan. Work may discover more work later.
-
-Each objective is code-owned and has:
-
-desired predicate
-dependencies
-acceptance criteria
-required facts
-status
-applicable capability set
+Code validates and retains each leaf, assigns identities, and projects each accepted
+requirement directly into one frozen task in source order. The task contains only its
+code-owned task identity, requirement identity, and exact requirement. No model emits
+an objective, behavior list, acceptance contract, dependency, schedule, review task,
+or plan. Code derives required facts, capabilities, block ownership, verification, and
+completion predicates from the frozen workload and registered stack.
 
 5. Resolve a capability closure per objective
 
@@ -425,40 +399,22 @@ No specialist persona and no model-owned tools.
 
 8. Hand source generation to Charmander
 
-Once cognition has established:
+Once code has compiled one exact generated block responsibility, it creates an
+executable Charmander job. The coding model receives only:
 
-target artifact and declaration
-specific objective
-required behavior
-acceptance criteria
-applicable constraints
-direct dependencies
-relevant evidence
+language and parser-qualified dialect
+exact immutable signature
+one local behavioral contract derived from the task's exact requirement
+strictly required direct declarations and permitted symbols
+minimum source/runtime evidence required by that block
 
-it creates an executable Charmander job.
-
-The coding model gets:
-
-WHY
-Parent objective and relevant project intent
-WHAT
-One specific declaration or bounded artifact region
-MUST DO
-Accepted behavior
-DONE WHEN
-Code-owned acceptance criteria
-MUST RESPECT
-Applicable constraints and invariants
-KNOW THIS
-Only direct source/evidence/dependencies
-
-That packet may be 3K, 8K, or 20K tokens. The goal is minimum sufficient context, not minimum bytes.
-
-A leaf is ready only when a competent developer receiving that packet could independently understand what to implement and how success will be judged.
+It receives no artifact path, document, project plan, objective graph, acceptance
+contract, queue, sibling task, or whole-workload responsibility. The packet is subject
+to hard station-specific byte and capability budgets at the final call boundary.
 
 Then:
 
-model generates one source unit
+model returns one parser-qualified declaration or source node
 → parser validates structure
 → code stages it
 → formatter/linter
@@ -502,11 +458,14 @@ stage complete change group
         ↓
 cross-stack integration verification
         ↓
-semantic acceptance
+code-owned proof obligations satisfied
         ↓
 promote atomically
 
-If integration fails, code maps the failure to the smallest owning artifact/capability and opens a bounded correction there. It does not ask one model to reconsider the whole stack.
+If integration fails, code maps the failure to the smallest owning generated
+block/capability. A supported source failure may enter one guidance-instruction then
+executor-node repair pair for that exact diagnostic. It does not ask one model to
+reconsider the whole stack or review valid output.
 
 10. Model routing is station-specific
 
@@ -515,16 +474,16 @@ No single “project model.”
 Each station has a measured capability requirement:
 
 semantic intake            → model proven at grounded extraction
-job specification          → model proven at bounded elaboration
-search terms               → cheap small model
+requirement extraction     → model proven at grounded extraction
 candidate relevance        → cheap small model
+pairwise capability relation → bounded classifier
 source generation          → coder model
-strategic architecture     → strong model/frontier pilot
-protocol normalization     → disciplined small model
+repair guidance            → semantic diagnostic model
+repair execution           → coder model
 
 A station manifest can record:
 
-allowed models
+exact routed model identity
 minimum benchmark score
 context budget
 temperature
@@ -533,23 +492,17 @@ failure rate
 
 That lets Omnidex use:
 
-27B for difficult intake/specification
-9B for bounded generation
-4B/9B for tiny classification
-ChatGPT/another frontier model for rare strategic review
+one qualified route for each semantic leaf
+one qualified route for bounded source generation
+one qualified route for repair guidance
+one qualified route for repair execution
 
 without changing authority or workflow.
 
-The eventual long-context pilot should see a compiled strategic state, not a filesystem or toolbelt:
-
-top-level intent
-objective graph
-important architecture facts
-accepted decisions
-major failures
-candidate strategies
-
-It proposes strategy or decomposition. The mech still operates itself.
+There is no long-context strategist, planner, specification model, or review route.
+Adding model capacity cannot enlarge a station's single responsibility or expose an
+aggregate objective graph. Per-job routing is immutable, and an unavailable exact
+route fails instead of falling back.
 
 11. Capability conformance is how you guarantee support
 
@@ -602,7 +555,7 @@ parse symbols
 compile
 format/static check
 JUnit
-localized correction
+exact failure localization
 
 A capability version moves through:
 
@@ -689,9 +642,10 @@ Phase 9 — heterogeneous change groups
 
 One objective spanning several capability packs and one integration proof.
 
-Phase 10 — strategic pilot
+Phase 10 — additional adapter conformance
 
-Give a strong long-context model rare architecture-level semantic gaps while keeping all execution code-owned.
+Extend only task-neutral parser, composer, staging, and proof capabilities, and prove
+each new adapter against unrelated fixtures without adding a planner or review model.
 
 14. Anti-drift invariants
 

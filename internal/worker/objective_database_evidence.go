@@ -9,35 +9,19 @@ import (
 )
 
 const (
-	databaseEvidenceCapsuleV1       = "omnidex.database-evidence-capsule.v1"
 	maxDatabaseEvidenceCapsules     = 12
 	maxDatabaseEvidenceContextBytes = 8 * 1024
 	maxDatabaseEvidenceNeedBytes    = 2 * 1024
 )
 
 type objectiveDatabaseEvidenceColumn struct {
-	ResultName string                        `json:"result_name"`
-	Label      string                        `json:"label"`
-	Kind       datasource.ColumnTypeCategory `json:"kind"`
-}
-
-type objectiveDatabaseEvidenceProvenance struct {
-	SourceID          string  `json:"source_id"`
-	SchemaFingerprint string  `json:"schema_fingerprint"`
-	IntentHash        string  `json:"intent_hash"`
-	QueryHash         string  `json:"query_hash"`
-	ResultHash        string  `json:"result_hash"`
-	PlanCost          float64 `json:"plan_cost"`
-	EstimatedRows     int64   `json:"estimated_rows"`
+	Label string                        `json:"label"`
+	Kind  datasource.ColumnTypeCategory `json:"kind"`
 }
 
 type objectiveDatabaseEvidencePayload struct {
-	Schema           string                              `json:"schema"`
-	Provenance       objectiveDatabaseEvidenceProvenance `json:"provenance"`
-	Columns          []objectiveDatabaseEvidenceColumn   `json:"columns"`
-	ReturnedRowCount int                                 `json:"returned_row_count"`
-	RowOffset        int                                 `json:"row_offset"`
-	Rows             [][]datasource.EvidenceValue        `json:"rows"`
+	Columns []objectiveDatabaseEvidenceColumn `json:"columns"`
+	Rows    [][]datasource.EvidenceValue      `json:"rows"`
 }
 
 func projectObjectiveDatabaseEvidence(
@@ -62,14 +46,7 @@ func projectObjectiveDatabaseEvidence(
 		return nil, err
 	}
 	base := objectiveDatabaseEvidencePayload{
-		Schema: databaseEvidenceCapsuleV1,
-		Provenance: objectiveDatabaseEvidenceProvenance{
-			SourceID: snapshot.SourceID, SchemaFingerprint: snapshot.Fingerprint,
-			IntentHash: evidence.Provenance.IntentHash, QueryHash: evidence.Provenance.QueryHash,
-			ResultHash: evidence.Provenance.ResultHash, PlanCost: evidence.Provenance.Plan.TotalCost,
-			EstimatedRows: evidence.Provenance.Plan.EstimatedRows,
-		},
-		Columns: columns, ReturnedRowCount: evidence.Result.RowCount,
+		Columns: columns,
 	}
 	groups, err := splitObjectiveDatabaseRows(base, evidence.Result.Rows)
 	if err != nil {
@@ -80,10 +57,8 @@ func projectObjectiveDatabaseEvidence(
 	}
 	projected := make([]objectiveEvidence, 0, len(groups))
 	total := 0
-	rowOffset := 0
 	for index, rows := range groups {
 		payload := base
-		payload.RowOffset = rowOffset
 		payload.Rows = rows
 		encoded, err := json.Marshal(payload)
 		if err != nil {
@@ -105,7 +80,6 @@ func projectObjectiveDatabaseEvidence(
 		item.SourceSHA256 = evidence.Provenance.ResultHash
 		item.ObservedAt = evidence.Provenance.AcquiredAt
 		projected = append(projected, item)
-		rowOffset += len(rows)
 	}
 	return projected, nil
 }
@@ -120,7 +94,7 @@ func objectiveDatabaseEvidenceColumns(
 			return nil, fmt.Errorf("database existence evidence must contain exactly one code-owned boolean column")
 		}
 		return []objectiveDatabaseEvidenceColumn{{
-			ResultName: evidence.Result.Columns[0].Name, Label: "exists", Kind: datasource.TypeBoolean,
+			Label: "exists", Kind: datasource.TypeBoolean,
 		}}, nil
 	}
 	if len(evidence.Result.Columns) != len(intent.Projections) {
@@ -133,7 +107,7 @@ func objectiveDatabaseEvidenceColumns(
 			return nil, err
 		}
 		columns[index] = objectiveDatabaseEvidenceColumn{
-			ResultName: evidence.Result.Columns[index].Name, Label: label, Kind: category,
+			Label: label, Kind: category,
 		}
 	}
 	return columns, nil
@@ -169,11 +143,9 @@ func splitObjectiveDatabaseRows(
 	}
 	groups := [][][]datasource.EvidenceValue{}
 	current := [][]datasource.EvidenceValue{}
-	rowOffset := 0
 	for _, row := range rows {
 		candidate := append(append([][]datasource.EvidenceValue(nil), current...), row)
 		probe := base
-		probe.RowOffset = rowOffset
 		probe.Rows = candidate
 		encoded, err := json.Marshal(probe)
 		if err != nil {
@@ -187,9 +159,7 @@ func splitObjectiveDatabaseRows(
 			return nil, fmt.Errorf("one database evidence row exceeds %d context bytes", maxObjectiveEvidenceTextBytes)
 		}
 		groups = append(groups, current)
-		rowOffset += len(current)
 		current = [][]datasource.EvidenceValue{row}
-		probe.RowOffset = rowOffset
 		probe.Rows = current
 		encoded, err = json.Marshal(probe)
 		if err != nil || len(encoded) > maxObjectiveEvidenceTextBytes {

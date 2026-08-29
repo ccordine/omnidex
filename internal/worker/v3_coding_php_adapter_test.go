@@ -27,7 +27,7 @@ func TestPHPHTTPServiceBlueprintComposesAParserValidatedServerRenderedProject(t 
 		"acceptance.001": `function verifyFeature101(): void {
     $result = feature101(taskInputFixture101(), []);
     RuntimeAssertions::requireResult($result);
-    RuntimeAssertions::require($result, $result->output === '/records/1', 'expected endpoint route output');
+    RuntimeAssertions::require($result, $result->output === '/', 'expected endpoint route output');
     RuntimeAssertions::require($result, $result->error === '', 'expected successful endpoint result');
 }`,
 	}
@@ -150,29 +150,28 @@ func phpServiceStackFixture(t *testing.T) (
 	assemblyline.ApplicationFileCoveragePlan,
 	directCodingServiceEndpointPlan,
 ) {
+	return phpServiceStackFixtureForSurface(t, assemblyline.ApplicationSurfaceBrowser)
+}
+
+func phpServiceStackFixtureForSurface(
+	t *testing.T,
+	surface assemblyline.ApplicationSurface,
+) (
+	assemblyline.ApplicationSpecification,
+	assemblyline.FrozenApplicationWorkload,
+	assemblyline.TargetTree,
+	assemblyline.ApplicationFileCoveragePlan,
+	directCodingServiceEndpointPlan,
+) {
 	t.Helper()
 	specification := assemblyline.ApplicationSpecification{
-		Surface:      assemblyline.ApplicationSurfaceService,
+		Surface:      surface,
 		ProductQuote: "HTTP service that returns a requested record representation",
 		Requirements: []assemblyline.Requirement{{
 			ID: "requirement_001", SourceQuote: "Return the requested record representation",
 		}},
 	}
-	workload, err := assemblyline.FreezeApplicationWorkload(
-		applicationWorkloadInput(specification),
-		assemblyline.ApplicationWorkloadDraft{
-			Schema: assemblyline.ApplicationWorkloadDraftSchemaV1,
-			Tasks: []assemblyline.ApplicationWorkloadTaskDraft{{
-				RequirementID:     "requirement_001",
-				Objective:         "Return a representation for the requested record.",
-				RequiredBehaviors: []string{"Read the route parameter from typed request input."},
-				AcceptanceCriteria: []string{
-					"The result contains observable output for the requested route.",
-					"The result reports no failure for a valid request.",
-				},
-			}},
-		},
-	)
+	workload, err := assemblyline.FreezeApplicationWorkload(specification)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -194,24 +193,22 @@ func phpServiceStackFixture(t *testing.T) (
 	if err != nil {
 		t.Fatal(err)
 	}
-	contract := assemblyline.ApplicationServiceEndpointContract{
-		Schema:        assemblyline.ApplicationServiceEndpointContractSchemaV1,
-		Exposure:      assemblyline.ApplicationServiceEndpointPublic,
-		Method:        assemblyline.ApplicationServiceEndpointGET,
-		RouteTemplate: "/records/{record_id}",
-		RequestMedia:  assemblyline.ApplicationServiceEndpointMediaNone,
-		ResponseMedia: assemblyline.ApplicationServiceEndpointHTML,
-		SuccessStatus: 200,
+	responseMedia := assemblyline.ApplicationServiceEndpointJSON
+	if surface == assemblyline.ApplicationSurfaceBrowser {
+		responseMedia = assemblyline.ApplicationServiceEndpointHTML
 	}
-	endpoints := directCodingServiceEndpointPlan{
-		WorkloadSHA256: workload.SHA256, ProductContext: specification.ProductQuote,
-		Requirements: map[string]assemblyline.ApplicationServiceEndpointRequirement{
+	endpoints := testServiceEndpointPlan(
+		t, genericPHPServiceAdapter, workload,
+		map[string]assemblyline.ApplicationServiceEndpointRequirement{
 			workload.Tasks[0].ID: assemblyline.ApplicationServiceEndpointRequired,
 		},
-		ByTask: map[string]assemblyline.ApplicationServiceEndpointContract{
-			workload.Tasks[0].ID: contract,
+		map[string]assemblyline.ApplicationServiceEndpointContract{
+			workload.Tasks[0].ID: testHTTPServiceEndpointContract(
+				assemblyline.ApplicationServiceEndpointGET, "/",
+				assemblyline.ApplicationServiceEndpointMediaNone, responseMedia, 200,
+			),
 		},
-	}
+	)
 	return specification, workload, target, coverage, endpoints
 }
 

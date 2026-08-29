@@ -167,6 +167,80 @@ func TestTypeScriptGuidedExecutorRejectsNoChangeAfterOneCall(t *testing.T) {
 	}
 }
 
+func TestTypeScriptGuidedExecutorRejectsLiteralFramingNewlinesWithoutNormalization(t *testing.T) {
+	t.Parallel()
+	const current = "function Present(): ReactElement {\n  return <output>old</output>;\n}"
+	const raw = "function Present(): ReactElement {\\n  return <output>new</output>;\\n}"
+	calls := 0
+	finalized := false
+	runtime := typedWorkerRuntime{
+		Context: context.Background(), MaxAttempts: 3,
+		Execute: func(job assemblyline.PortableJob, _ string) (assemblyline.PortableResult, error) {
+			calls++
+			return assemblyline.PortableResult{JobID: job.ID, Candidate: raw}, nil
+		},
+		Finalize: func(
+			_ assemblyline.PortableJob,
+			result assemblyline.PortableResult,
+			validationErr error,
+		) error {
+			if result.Candidate != raw || validationErr == nil {
+				t.Fatalf("raw framing response=%q validation=%v", result.Candidate, validationErr)
+			}
+			finalized = true
+			return nil
+		},
+	}
+	_, err := runDirectCodingTypeScriptFragmentWorker(
+		runtime, "executor", directCodingTypeScriptFragmentJob{
+			block: assemblyline.SourceBlock{
+				ID: "fixture.presentation", Signature: "function Present(): ReactElement",
+				API: "function Present(): ReactElement",
+			},
+			tsx: true, current: current,
+			repairGuidance: "Replace the visible old label with the visible new label.",
+		},
+	)
+	if err == nil || calls != 1 || !finalized {
+		t.Fatalf("literal framing newline error=%v calls=%d finalized=%t", err, calls, finalized)
+	}
+}
+
+func TestTypeScriptGuidedExecutorAcceptsPhysicalLinesAndPreservesSourceEscapes(t *testing.T) {
+	t.Parallel()
+	const current = "function Present(): ReactElement {\n  return <output>old</output>;\n}"
+	const candidate = `function Present(): ReactElement {
+  const text = "line\nfeed";
+  const pattern = /\n/;
+  return <output>{pattern.test(text) ? text : "new"}</output>;
+}`
+	calls := 0
+	runtime := typedWorkerRuntime{
+		Context: context.Background(), MaxAttempts: 3,
+		Execute: func(job assemblyline.PortableJob, _ string) (assemblyline.PortableResult, error) {
+			calls++
+			return assemblyline.PortableResult{JobID: job.ID, Candidate: candidate}, nil
+		},
+	}
+	source, err := runDirectCodingTypeScriptFragmentWorker(
+		runtime, "executor", directCodingTypeScriptFragmentJob{
+			block: assemblyline.SourceBlock{
+				ID: "fixture.presentation", Signature: "function Present(): ReactElement",
+				API: "function Present(): ReactElement",
+			},
+			tsx: true, current: current,
+			repairGuidance: "Replace the visible old label while preserving source-level escapes.",
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if calls != 1 || source != candidate || strings.Count(source, "\\n") != 2 ||
+		strings.Count(source, "\n") != 4 {
+		t.Fatalf("physical-line source changed: calls=%d source=%q", calls, source)
+	}
+}
+
 func TestTypeScriptFragmentWorkerStopsWhenRejectionPersistenceFails(t *testing.T) {
 	t.Parallel()
 	executions := 0

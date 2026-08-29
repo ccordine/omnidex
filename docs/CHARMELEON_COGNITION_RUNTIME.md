@@ -279,9 +279,10 @@ Two budgets remain distinct:
 
 Consuming one episode call decrements only the remaining-call allowance. It does not
 shrink the next station's input or output capacity. Candidate selection, semantic
-classification, one declaration, and one correction may therefore each use their
-complete registered workspace while seeing different exact projections. Environment
-execution is not itself a model station.
+classification, one declaration, one repair-guidance instruction, and one
+repair-executor source node may therefore each use their complete registered budget
+while seeing different exact projections. Environment execution is not itself a model
+station.
 
 Conversation history is never selected by `last N`. The current direct instruction,
 active accepted constraints, authority referenced by the active obligation, and
@@ -406,8 +407,9 @@ is:
    work that graph to code-owned completion;
 5. hand one exact source leaf to the existing Charmander generation contract and keep
    parsing, formatting, testing, mutation, and completion in code;
-6. prove semantic review creates a code-owned correction objective rather than a
-   repair agent;
+6. prove deterministic verification routes one real failure to the smallest owning
+   objective or source block; inference remains forbidden unless that route exposes a
+   separate named semantic uncertainty;
 7. replace the production universal decision loop incompatibly and prove that a
    deterministic production workload can run without provider configuration or
    contact; and only then
