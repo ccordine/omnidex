@@ -67,6 +67,43 @@ func TestTypeScriptReferenceNormalizationRequiresExactCodeOwnedOccurrence(t *tes
 		}
 	})
 
+	t.Run("model authored nullable normalization remains semantic", func(t *testing.T) {
+		program := typeScriptNormalizationAuthorityProgram(`function LedgerEntry(state: LedgerState): void {
+  const normalized: string | null = typeof state.value === 'string' ? state.value : null;
+  recordNullableText(state.value);
+  void normalized;
+}`)
+		if err := writeDirectCodingTypeScriptStage(root, program); err != nil {
+			t.Fatal(err)
+		}
+		diagnostic, err := verifyDirectCodingTypeScriptStageCommands(
+			context.Background(), root, program, [][]string{{"run", "typecheck"}},
+		)
+		if err != nil || diagnostic == nil {
+			t.Fatalf("compiler diagnostic=%+v error=%v", diagnostic, err)
+		}
+		scope, err := inspectDirectCodingTypeScriptScope(context.Background(), root, *diagnostic)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(scope.DeterministicRepairs) != 1 ||
+			scope.DeterministicRepairs[0].Mechanism != directCodingTypeScriptPrimitiveReferenceNarrowing ||
+			scope.DeterministicRepairs[0].Replacement !=
+				"typeof state.value === 'string' ? state.value : null" {
+			t.Fatalf("expected one optional nullable reference candidate, got %+v", scope.DeterministicRepairs)
+		}
+		progress := newDirectCodingTypeScriptCorrectionProgress()
+		if err := progress.beginStage(); err != nil {
+			t.Fatal(err)
+		}
+		authorized, err := progress.authorizeDeterministicRepair(
+			"ledger.entry", scope.DeterministicRepairs[0],
+		)
+		if err != nil || authorized {
+			t.Fatalf("unowned nullable candidate authorization=%t error=%v", authorized, err)
+		}
+	})
+
 	t.Run("multiline model authored normalization remains semantic", func(t *testing.T) {
 		program := typeScriptNormalizationAuthorityProgram(`function LedgerEntry(state: LedgerState): void {
   const normalized: string =
@@ -169,7 +206,8 @@ func typeScriptNormalizationAuthorityProgram(source string) directCodingProgram 
 		ID: "ledger", Path: "src/fixture.ts", AdapterID: "typescript",
 		Preamble: `type LedgerValue = null | number | string;
 interface LedgerState { readonly value: LedgerValue }
-declare function recordText(value: string | ((previous: string) => string)): void;`,
+declare function recordText(value: string | ((previous: string) => string)): void;
+declare function recordNullableText(value: string | null | ((previous: string | null) => string | null)): void;`,
 		Blocks: []assemblyline.SourceBlock{{
 			ID: blockID, Signature: "function LedgerEntry(state: LedgerState): void",
 			Contract: "Apply one typed ledger value.", API: "function LedgerEntry(state: LedgerState): void",

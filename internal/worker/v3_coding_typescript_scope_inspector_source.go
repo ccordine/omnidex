@@ -195,12 +195,22 @@ function exactTypeofPrimitive(type) {
   if ((type.flags & ts.TypeFlags.BooleanLike) !== 0) return 'boolean';
   return '';
 }
-function exactContextualTypeofPrimitive(type) {
+function isExactlyNullishType(type) {
+  if (!type) return false;
+  const constituents = type.isUnion() ? type.types : [type];
+  return constituents.length > 0 && constituents.every((constituent) =>
+    (constituent.flags & (ts.TypeFlags.Null | ts.TypeFlags.Undefined)) !== 0,
+  );
+}
+function exactContextualTypeofPrimitive(type, visited = new Set()) {
   const direct = exactTypeofPrimitive(type);
   if (direct || !type || !type.isUnion()) return direct;
+  if (visited.has(type)) return '';
+  visited.add(type);
   let primitive = '';
   let hasDirectPrimitive = false;
   for (const constituent of type.types) {
+    if (isExactlyNullishType(constituent)) continue;
     const constituentPrimitive = exactTypeofPrimitive(constituent);
     if (constituentPrimitive) {
       if (primitive && primitive !== constituentPrimitive) return '';
@@ -212,7 +222,9 @@ function exactContextualTypeofPrimitive(type) {
     if (signatures.length === 0) return '';
     for (const signature of signatures) {
       if (signature.parameters.length !== 0) return '';
-      const returnedPrimitive = exactTypeofPrimitive(checker.getReturnTypeOfSignature(signature));
+      const returnedPrimitive = exactContextualTypeofPrimitive(
+        checker.getReturnTypeOfSignature(signature), new Set(visited),
+      );
       if (!returnedPrimitive || (primitive && primitive !== returnedPrimitive)) return '';
       primitive = returnedPrimitive;
     }
@@ -258,8 +270,12 @@ function hasExactPrimitiveUnionMismatch(inferred, contextual, primitive) {
   let hasIncompatibleNonNullish = false;
   for (const constituent of constituents) {
     if (checker.isTypeAssignableTo(constituent, contextual)) {
-      if (exactTypeofPrimitive(constituent) !== primitive) return false;
-      hasCompatible = true;
+      const constituentPrimitive = exactTypeofPrimitive(constituent);
+      if (constituentPrimitive === primitive) {
+        hasCompatible = true;
+      } else if (!isExactlyNullishType(constituent)) {
+        return false;
+      }
       continue;
     }
     if ((constituent.flags & (ts.TypeFlags.Null | ts.TypeFlags.Undefined)) === 0) {
@@ -276,6 +292,9 @@ function exactPrimitiveLiteral(node, primitive) {
   }
   return false;
 }
+function exactNullLiteral(node) {
+  return node.kind === ts.SyntaxKind.NullKeyword;
+}
 function priorPrimitiveNarrowing(reference, contextual, before) {
   const narrowings = new Map();
   function collect(node) {
@@ -288,10 +307,11 @@ function priorPrimitiveNarrowing(reference, contextual, before) {
           ts.isTypeOfExpression(condition.left) && ts.isStringLiteral(condition.right) &&
           sameStableReferenceExpression(condition.left.expression, reference) &&
           sameStableReferenceExpression(node.whenTrue, reference) &&
-          exactPrimitiveLiteral(node.whenFalse, condition.right.text)) {
+          (exactPrimitiveLiteral(node.whenFalse, condition.right.text) ||
+            exactNullLiteral(node.whenFalse))) {
         const primitive = condition.right.text;
         const narrowedType = checker.getTypeAtLocation(node);
-        if (exactTypeofPrimitive(narrowedType) === primitive &&
+        if (exactContextualTypeofPrimitive(narrowedType) === primitive &&
             checker.isTypeAssignableTo(narrowedType, contextual)) {
           const source = node.getText(sourceFile).trim();
           if (!/[\r\n]/.test(source) && source.length <= 2048) {
@@ -317,7 +337,8 @@ function deterministicPrimitiveNullishRepair(
   if (!primitive) return null;
   const fallbackType = checker.getTypeAtLocation(node.right);
   if (!checker.isTypeAssignableTo(fallbackType, contextual) ||
-      exactTypeofPrimitive(fallbackType) !== primitive) return null;
+      (exactTypeofPrimitive(fallbackType) !== primitive &&
+        !(exactNullLiteral(node.right) && isExactlyNullishType(fallbackType)))) return null;
   const leftType = checker.getTypeAtLocation(node.left);
   if (!hasExactPrimitiveUnionMismatch(leftType, contextual, primitive)) return null;
   const left = node.left.getText(sourceFile).trim();
