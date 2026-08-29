@@ -292,8 +292,9 @@ machine passes its executable gates:
    Code preserves user authority separately from derived build decisions, assigns identity and
    order, freezes only validated state, executes one task at a time with
    the minimum sufficient authoritative task projection, and alone decides completion. A
-   task-local source projection contains its exact accepted requirement and direct declared
-   capabilities, but no aggregate product summary or sibling requirement. A
+   task-local source projection contains its exact accepted product identity, exact accepted
+   requirement, and direct declared capabilities, but no derived aggregate product summary or
+   sibling requirement. A
    static code-owned harness alone renders the exact public feature with its runtime and capability
    identity. The generated acceptance declaration receives no render, JSX, component, runtime, or
    source authority and is source-free inventoried before it executes. Code binds the closed awaited

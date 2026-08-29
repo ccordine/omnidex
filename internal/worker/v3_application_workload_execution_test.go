@@ -63,16 +63,24 @@ func TestDirectCodingTaskBehaviorContainsNoPlannerExpansion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	wantPrefix := strings.Join([]string{
+		"Authoritative delivery surface: " + string(specification.Surface),
+		"Authoritative product context: " + specification.ProductQuote,
+		"Exact user requirement: " + specification.Requirements[0].SourceQuote,
+	}, "\n")
+	if !strings.HasPrefix(behavior, wantPrefix) {
+		t.Fatalf("task behavior authority order differs:\n%s", behavior)
+	}
 	for _, required := range []string{
-		string(specification.Surface), specification.Requirements[0].SourceQuote,
+		string(specification.Surface), specification.ProductQuote,
+		specification.Requirements[0].SourceQuote,
 	} {
-		if !strings.Contains(behavior, required) {
-			t.Fatalf("task behavior omitted exact authority %q: %s", required, behavior)
+		if strings.Count(behavior, required) != 1 {
+			t.Fatalf("task behavior does not contain exact authority %q once: %s", required, behavior)
 		}
 	}
-	if strings.Contains(behavior, specification.ProductQuote) ||
-		strings.Contains(behavior, "Authoritative product context:") {
-		t.Fatalf("task behavior received aggregate product context: %s", behavior)
+	if strings.Count(behavior, "Authoritative product context:") != 1 {
+		t.Fatalf("task behavior does not identify exact product authority once: %s", behavior)
 	}
 	for _, forbidden := range []string{
 		"Derived implementation objective", "Derived build decision",
@@ -89,12 +97,13 @@ func TestDirectCodingTaskBehaviorIsolatesRequirementsAcrossSurfaces(t *testing.T
 	for _, surface := range []assemblyline.ApplicationSurface{
 		assemblyline.ApplicationSurfaceBrowser,
 		assemblyline.ApplicationSurfaceCommandLine,
+		assemblyline.ApplicationSurfaceService,
 	} {
 		surface := surface
 		t.Run(string(surface), func(t *testing.T) {
 			t.Parallel()
 			specification := assemblyline.ApplicationSpecification{
-				Surface: surface, ProductQuote: "aggregate product context sentinel",
+				Surface: surface, ProductQuote: "environmental sensor console",
 				Requirements: []assemblyline.Requirement{
 					{ID: "requirement_001", SourceQuote: "Display the current reading."},
 					{ID: "requirement_002", SourceQuote: "Export the retained history."},
@@ -115,9 +124,10 @@ func TestDirectCodingTaskBehaviorIsolatesRequirementsAcrossSurfaces(t *testing.T
 				}
 				own := specification.Requirements[index].SourceQuote
 				sibling := specification.Requirements[1-index].SourceQuote
-				if !strings.Contains(behavior, own) ||
+				if strings.Count(behavior, own) != 1 ||
+					strings.Count(behavior, specification.ProductQuote) != 1 ||
 					strings.Contains(behavior, sibling) ||
-					strings.Contains(behavior, specification.ProductQuote) {
+					strings.Count(behavior, "Authoritative product context:") != 1 {
 					t.Fatalf("task %s projection is not isolated: %s", task.ID, behavior)
 				}
 			}

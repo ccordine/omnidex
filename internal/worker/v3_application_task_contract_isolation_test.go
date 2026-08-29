@@ -109,7 +109,10 @@ func TestBrowserAcceptanceContractRequiresCausalStaticInteractionEvidence(t *tes
 					append([]assemblyline.SourceDocument(nil), featureDocuments...),
 					acceptanceDocuments...,
 				)},
-				Generated: map[string]string{},
+				Generated: map[string]string{
+					"feature.001":    "IMPLEMENTATION_SOURCE_MUST_NOT_REACH_PROMPTS",
+					"acceptance.001": "VERIFICATION_SOURCE_MUST_NOT_REACH_PROMPTS",
+				},
 			}
 			acceptance := directCodingTestGeneratedBlockRef(t, program.Source, "acceptance.001")
 			acceptanceInput, err := directCodingLanguageFragmentInput(
@@ -149,6 +152,32 @@ func TestBrowserAcceptanceContractRequiresCausalStaticInteractionEvidence(t *tes
 			if strings.Count(acceptancePrompt, fixture.behavior) != 1 {
 				t.Fatalf("acceptance prompt does not contain its exact behavior once:\n%s", acceptancePrompt)
 			}
+			for _, promptCase := range []struct {
+				label  string
+				prompt string
+			}{
+				{label: "implementation", prompt: featurePrompt},
+				{label: "verification", prompt: acceptancePrompt},
+			} {
+				if strings.Count(promptCase.prompt, fixture.product) != 1 ||
+					strings.Count(promptCase.prompt, "Authoritative product context:") != 1 {
+					t.Fatalf("%s prompt does not contain its exact product identity once:\n%s", promptCase.label, promptCase.prompt)
+				}
+				for _, forbidden := range []string{
+					fixture.sibling,
+					"src/Features.tsx",
+					"src/Features.test.tsx",
+					"feature.001",
+					"acceptance.001",
+					"task_001",
+					"IMPLEMENTATION_SOURCE_MUST_NOT_REACH_PROMPTS",
+					"VERIFICATION_SOURCE_MUST_NOT_REACH_PROMPTS",
+				} {
+					if strings.Contains(promptCase.prompt, forbidden) {
+						t.Fatalf("%s prompt exposes unrelated authority %q:\n%s", promptCase.label, forbidden, promptCase.prompt)
+					}
+				}
+			}
 			for _, required := range []string{
 				"Realize every explicit interaction condition in the exact requirement before observing its outcome.",
 				"enter concrete static values with fireEvent.change or fireEvent.input before activating the behavior",
@@ -164,18 +193,6 @@ func TestBrowserAcceptanceContractRequiresCausalStaticInteractionEvidence(t *tes
 					t.Fatalf("implementation prompt inherited verification rail %q:\n%s", required, featurePrompt)
 				}
 			}
-			for _, forbidden := range []string{
-				fixture.product,
-				fixture.sibling,
-				"src/Features.tsx",
-				"src/Features.test.tsx",
-				"acceptance.001",
-				"task_001",
-			} {
-				if strings.Contains(acceptancePrompt, forbidden) {
-					t.Fatalf("acceptance prompt exposes unrelated authority %q:\n%s", forbidden, acceptancePrompt)
-				}
-			}
 		})
 	}
 }
@@ -184,7 +201,7 @@ func isolatedTaskContractSpecification(
 	surface assemblyline.ApplicationSurface,
 ) assemblyline.ApplicationSpecification {
 	return assemblyline.ApplicationSpecification{
-		Surface: surface, ProductQuote: "aggregate product context sentinel",
+		Surface: surface, ProductQuote: "environmental sensor console",
 		Requirements: []assemblyline.Requirement{
 			{ID: "requirement_001", SourceQuote: "Display the current reading."},
 			{ID: "requirement_002", SourceQuote: "Export the retained history."},
@@ -262,9 +279,10 @@ func assertIsolatedTaskContracts(
 			}
 			own := specification.Requirements[index].SourceQuote
 			sibling := specification.Requirements[1-index].SourceQuote
-			if !strings.Contains(block.Contract, own) ||
-				strings.Contains(block.Contract, sibling) ||
-				strings.Contains(block.Contract, specification.ProductQuote) {
+			if strings.Count(block.Contract, own) != 1 ||
+				strings.Count(block.Contract, specification.ProductQuote) != 1 ||
+				strings.Count(block.Contract, "Authoritative product context:") != 1 ||
+				strings.Contains(block.Contract, sibling) {
 				t.Fatalf("block %s contract is not task-local:\n%s", block.ID, block.Contract)
 			}
 		}

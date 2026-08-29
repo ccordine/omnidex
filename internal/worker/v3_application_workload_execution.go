@@ -64,6 +64,7 @@ func compileDirectCodingApplicationTaskBehavior(
 	}
 	parts := []string{
 		"Authoritative delivery surface: " + string(context.Surface),
+		"Authoritative product context: " + context.ProductQuote,
 		"Exact user requirement: " + context.Task.RequirementQuote,
 	}
 	seen := make(map[string]struct{}, len(capabilities))
