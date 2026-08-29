@@ -19,6 +19,7 @@ func PortableResponseFramingForWorkKind(
 	switch kind {
 	case WorkApplicationProductContext,
 		WorkApplicationRequirement,
+		WorkApplicationRequirementCandidateResultRelationCorrection,
 		WorkApplicationRequirementCandidateSplit,
 		WorkApplicationRequirementCandidateSplitCorrection,
 		WorkApplicationRequirementCandidateDuplicateReplacement,
@@ -42,6 +43,7 @@ func PortableResponseFramingForWorkKind(
 		WorkApplicationRequirementCoverage,
 		WorkApplicationRequirementCandidateCardinality,
 		WorkApplicationRequirementCandidateKind,
+		WorkApplicationRequirementCandidateResultRelation,
 		WorkApplicationProjectStackConstraint,
 		WorkApplicationServiceContinuedAvailability,
 		WorkApplicationServicePersistenceDestination,

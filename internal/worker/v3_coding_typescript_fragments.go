@@ -8,15 +8,17 @@ import (
 )
 
 type directCodingTypeScriptFragmentJob struct {
-	block          assemblyline.SourceBlock
-	dialect        string
-	tsx            bool
-	available      string
-	current        string
-	repairRegion   *assemblyline.TypeScriptFragmentRepairRegion
-	failure        string
-	requiredChange string
-	repairGuidance string
+	block                    assemblyline.SourceBlock
+	dialect                  string
+	tsx                      bool
+	available                string
+	publicInteractionSurface *assemblyline.FragmentPublicInteractionSurface
+	validateInitialCandidate func(string) error
+	current                  string
+	repairRegion             *assemblyline.TypeScriptFragmentRepairRegion
+	failure                  string
+	requiredChange           string
+	repairGuidance           string
 }
 
 func directCodingTypeScriptAvailableDeclarations(

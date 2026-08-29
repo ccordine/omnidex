@@ -35,7 +35,11 @@ func resolveDirectCodingApplicationIntent(
 	if err != nil {
 		return zero, err
 	}
-	requirements := make([]string, 0, assemblyline.MaxApplicationRequirementLeaves)
+	requirements := make(
+		[]assemblyline.ApplicationIntentCandidateRequirement,
+		0,
+		assemblyline.MaxApplicationRequirementLeaves,
+	)
 	excludedCandidates := make(
 		[]string, 0, assemblyline.MaxApplicationRequirementExcludedCandidates,
 	)
@@ -46,9 +50,13 @@ func resolveDirectCodingApplicationIntent(
 			candidateInput = *reboundGenerationAuthority
 			reboundGenerationAuthority = nil
 		} else {
+			acceptedStatements := make([]string, len(requirements))
+			for index, requirement := range requirements {
+				acceptedStatements[index] = requirement.Statement
+			}
 			coverageInput := assemblyline.ApplicationRequirementCoverageInput{
 				UserRequest: authority.UserRequest, Context: authority.Context,
-				AcceptedRequirements: append([]string{}, requirements...),
+				AcceptedRequirements: acceptedStatements,
 				ExcludedCandidates:   append([]string{}, excludedCandidates...),
 			}
 			coverageJob, err := assemblyline.NewApplicationRequirementCoverageJob(coverageInput)
@@ -76,7 +84,10 @@ func resolveDirectCodingApplicationIntent(
 				candidate := assemblyline.ApplicationIntentCandidate{
 					Schema:         assemblyline.ApplicationIntentCandidateSchemaV1,
 					ProductContext: productContext,
-					Requirements:   append([]string(nil), requirements...),
+					Requirements: append(
+						[]assemblyline.ApplicationIntentCandidateRequirement(nil),
+						requirements...,
+					),
 				}
 				return assemblyline.ResolveApplicationIntent(authority, candidate)
 			}
@@ -116,6 +127,11 @@ func resolveDirectCodingApplicationIntent(
 			return zero, err
 		}
 		if !resolved.Retain {
+			if resolved.ResultRelation != (assemblyline.ApplicationRequirementCandidateResultRelationResult{}) {
+				return zero, fmt.Errorf(
+					"non-runtime application requirement unexpectedly carries a result-relation receipt",
+				)
+			}
 			if len(excludedCandidates) == assemblyline.MaxApplicationRequirementExcludedCandidates {
 				return zero, fmt.Errorf(
 					"application requirement exclusions reached the code-owned %d-item bound",
@@ -136,6 +152,11 @@ func resolveDirectCodingApplicationIntent(
 				"retained application requirement unexpectedly carries exclusion authority",
 			)
 		}
-		requirements = append(requirements, resolved.Candidate)
+		if err := resolved.ResultRelation.ValidateAcceptedFor(resolved.Candidate); err != nil {
+			return zero, fmt.Errorf("retained application requirement result relation: %w", err)
+		}
+		requirements = append(requirements, assemblyline.ApplicationIntentCandidateRequirement{
+			Statement: resolved.Candidate, ResultRelation: resolved.ResultRelation,
+		})
 	}
 }

@@ -46,6 +46,16 @@ func runDirectCodingTypeScriptFragmentWorker(
 	} else {
 		proseContext = append([]string{job.dialect}, proseContext...)
 		sourceContext = append(sourceContext, job.block.Globals...)
+		if job.publicInteractionSurface != nil {
+			receipt, renderErr := job.publicInteractionSurface.Render()
+			if renderErr != nil {
+				return "", failDirectCodingTypeScriptFragmentWorker(
+					runtime, modelName, job.block.ID, 0,
+					fmt.Errorf("render TypeScript public interaction surface: %w", renderErr),
+				)
+			}
+			proseContext = append(proseContext, receipt)
+		}
 	}
 	if err := assemblyline.ValidatePathFreeModelContextWithProvenance(
 		"TypeScript fragment", runtime.PathProvenance, proseContext...,
@@ -162,6 +172,30 @@ func runDirectCodingTypeScriptFragmentWorker(
 			Signature: job.block.Signature, TSX: job.tsx, Policy: job.block.Policy,
 		}, candidate)
 	}
+	if err == nil && job.validateInitialCandidate != nil {
+		if validationErr := job.validateInitialCandidate(candidate); validationErr != nil {
+			if job.block.Role == assemblyline.SourceBlockTaskVerification {
+				validationErr = fmt.Errorf(
+					"TypeScript verification candidate failed deterministic public-surface grounding: %w",
+					validationErr,
+				)
+				rejectionErr := finalizeTypedWorkerResult(runtime, baseJob, result, validationErr)
+				emitTypedWorker(runtime, typedWorkerEvent{
+					State: typedWorkerRejected, Kind: typedWorkerFragment, Subject: job.block.ID,
+					Model: modelName, Attempt: 1, MaxAttempts: directCodingTypeScriptModelAttempts,
+					Warning: directCodingTypeScriptDeclarationSizeWarning(len(candidate)),
+					Detail:  trimForBudget(rejectionErr.Error(), 1200),
+				})
+				return "", failDirectCodingTypeScriptFragmentWorker(
+					runtime, modelName, job.block.ID, 1, rejectionErr,
+				)
+			}
+			err = fmt.Errorf(
+				"TypeScript implementation candidate has no exact public interaction surface: %w",
+				validationErr,
+			)
+		}
+	}
 	if err != nil {
 		validationErr := err
 		if !guided && initialProjectionAccepted && candidatePathFree {
@@ -194,6 +228,24 @@ func runDirectCodingTypeScriptFragmentWorker(
 
 func newDirectCodingTypeScriptPortableJob(job directCodingTypeScriptFragmentJob) (assemblyline.PortableJob, error) {
 	guidance := strings.TrimSpace(job.repairGuidance)
+	hasPublicSurface := job.publicInteractionSurface != nil
+	hasInitialValidator := job.validateInitialCandidate != nil
+	if hasPublicSurface && !hasInitialValidator {
+		return assemblyline.PortableJob{}, fmt.Errorf(
+			"TypeScript public interaction surface requires a candidate validator",
+		)
+	}
+	if hasPublicSurface && job.block.Role != assemblyline.SourceBlockTaskVerification {
+		return assemblyline.PortableJob{}, fmt.Errorf(
+			"TypeScript public interaction surface is restricted to verification declarations",
+		)
+	}
+	if hasInitialValidator && !hasPublicSurface &&
+		job.block.Role != assemblyline.SourceBlockTaskImplementation {
+		return assemblyline.PortableJob{}, fmt.Errorf(
+			"TypeScript source-only candidate validation is restricted to implementation declarations",
+		)
+	}
 	if strings.TrimSpace(job.current) == "" && job.repairRegion == nil {
 		if guidance != "" || strings.TrimSpace(job.failure) != "" ||
 			strings.TrimSpace(job.requiredChange) != "" {
@@ -209,8 +261,14 @@ func newDirectCodingTypeScriptPortableJob(job directCodingTypeScriptFragmentJob)
 			Language: "typescript", Dialect: strings.TrimSpace(job.dialect),
 			Signature: strings.TrimSpace(job.block.Signature),
 			Behavior:  strings.TrimSpace(job.block.Contract), Capabilities: capabilities,
-			PermittedSymbols: append([]string(nil), job.block.Globals...),
+			PermittedSymbols:         append([]string(nil), job.block.Globals...),
+			PublicInteractionSurface: job.publicInteractionSurface,
 		})
+	}
+	if hasPublicSurface {
+		return assemblyline.PortableJob{}, fmt.Errorf(
+			"TypeScript correction cannot receive a public interaction surface",
+		)
 	}
 	if guidance == "" {
 		return assemblyline.PortableJob{}, fmt.Errorf(

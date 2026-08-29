@@ -104,12 +104,22 @@ func TestApplicationIntentUsesReviewedSemanticStatementsWithoutSubstringGates(t 
 		t.Fatal(err)
 	}
 	input := ApplicationIntentInput{UserRequest: request, Context: context}
+	statements := []string{
+		"Show the current count.",
+		"Provide controls that increment, decrement, and reset the count.",
+	}
 	candidate := ApplicationIntentCandidate{
 		Schema:         ApplicationIntentCandidateSchemaV1,
 		ProductContext: "A browser counter application",
-		Requirements: []string{
-			"Show the current count.",
-			"Provide controls that increment, decrement, and reset the count.",
+		Requirements: []ApplicationIntentCandidateRequirement{
+			applicationIntentCandidateRequirementFixture(
+				t,
+				statements[0], ApplicationRequirementNoDerivedResult,
+			),
+			applicationIntentCandidateRequirementFixture(
+				t,
+				statements[1], ApplicationRequirementExplicitResultRelation,
+			),
 		},
 	}
 	resolved, err := ResolveApplicationIntent(input, candidate)
@@ -120,15 +130,39 @@ func TestApplicationIntentUsesReviewedSemanticStatementsWithoutSubstringGates(t 
 		t.Fatalf("resolution=%+v", resolved)
 	}
 	want := []ApplicationRequirement{
-		{ID: "requirement_001", Statement: candidate.Requirements[0], RequestSHA256: context.RequestSHA256},
-		{ID: "requirement_002", Statement: candidate.Requirements[1], RequestSHA256: context.RequestSHA256},
+		{
+			ID: "requirement_001", Statement: statements[0], RequestSHA256: context.RequestSHA256,
+			ResultRelation: candidate.Requirements[0].ResultRelation,
+		},
+		{
+			ID: "requirement_002", Statement: statements[1], RequestSHA256: context.RequestSHA256,
+			ResultRelation: candidate.Requirements[1].ResultRelation,
+		},
 	}
 	if !reflect.DeepEqual(resolved.Requirements, want) {
 		t.Fatalf("requirements=%+v want=%+v", resolved.Requirements, want)
 	}
-	for _, statement := range candidate.Requirements {
+	for _, statement := range statements {
 		if strings.Contains(request, statement) {
 			t.Fatalf("fixture unexpectedly used an exact substring: %q", statement)
 		}
+	}
+}
+
+func applicationIntentCandidateRequirementFixture(
+	t testing.TB,
+	statement string,
+	relation string,
+) ApplicationIntentCandidateRequirement {
+	t.Helper()
+	result, err := DecodeApplicationRequirementCandidateResultRelationResult(
+		applicationRequirementCandidateResultRelationInputFixture(t, statement),
+		relation,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return ApplicationIntentCandidateRequirement{
+		Statement: statement, ResultRelation: result,
 	}
 }

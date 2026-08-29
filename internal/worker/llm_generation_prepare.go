@@ -65,6 +65,7 @@ func prepareExactStationCall(
 		temperature = transport.Temperature
 		if gap.WorkKind == string(assemblyline.WorkFragmentGenerationReplacement) ||
 			gap.WorkKind == string(assemblyline.WorkApplicationRequirementCandidateSplitCorrection) ||
+			gap.WorkKind == string(assemblyline.WorkApplicationRequirementCandidateResultRelationCorrection) ||
 			gap.WorkKind == string(assemblyline.WorkApplicationRequirementCandidateDuplicateReplacement) {
 			next, ok, progressionErr := llm.NextExactPreparedTemperature(
 				expected, temperature,

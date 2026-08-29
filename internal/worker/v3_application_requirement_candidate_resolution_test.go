@@ -42,6 +42,8 @@ func TestDirectCodingRequirementCandidateRepairsAcceptedDuplicateOnce(t *testing
 				candidate = assemblyline.ApplicationRequirementCandidateTaskLocal
 			case assemblyline.WorkApplicationRequirementCandidateCardinality:
 				candidate = assemblyline.ApplicationRequirementOneRuntimeOutcome
+			case assemblyline.WorkApplicationRequirementCandidateResultRelation:
+				candidate = assemblyline.ApplicationRequirementNoDerivedResult
 			default:
 				return assemblyline.PortableResult{}, fmt.Errorf("unexpected work kind %q", job.Kind)
 			}
@@ -61,6 +63,7 @@ func TestDirectCodingRequirementCandidateRepairsAcceptedDuplicateOnce(t *testing
 		assemblyline.WorkApplicationRequirementCandidateDuplicateReplacement,
 		assemblyline.WorkApplicationRequirementCandidateKind,
 		assemblyline.WorkApplicationRequirementCandidateCardinality,
+		assemblyline.WorkApplicationRequirementCandidateResultRelation,
 	}
 	if !reflect.DeepEqual(calls, wantCalls) {
 		t.Fatalf("calls=%v want=%v", calls, wantCalls)
@@ -96,6 +99,8 @@ func TestDirectCodingRequirementCandidateRepairsPostSplitDuplicateThenReclassifi
 				}
 			case assemblyline.WorkApplicationRequirementCandidateSplit:
 				candidate = accepted
+			case assemblyline.WorkApplicationRequirementCandidateResultRelation:
+				candidate = assemblyline.ApplicationRequirementNoDerivedResult
 			case assemblyline.WorkApplicationRequirementCandidateDuplicateReplacement:
 				var input assemblyline.ApplicationRequirementCandidateDuplicateReplacementInput
 				if err := json.Unmarshal(job.Payload, &input); err != nil {
@@ -129,9 +134,68 @@ func TestDirectCodingRequirementCandidateRepairsPostSplitDuplicateThenReclassifi
 		assemblyline.WorkApplicationRequirementCandidateDuplicateReplacement,
 		assemblyline.WorkApplicationRequirementCandidateKind,
 		assemblyline.WorkApplicationRequirementCandidateCardinality,
+		assemblyline.WorkApplicationRequirementCandidateResultRelation,
 	}
 	if !reflect.DeepEqual(calls, wantCalls) {
 		t.Fatalf("calls=%v want=%v", calls, wantCalls)
+	}
+}
+
+func TestDirectCodingRequirementCandidateRebindsKindWithoutRepeatingTerminalCardinality(
+	t *testing.T,
+) {
+	t.Parallel()
+	const compound = "Display a current status and expose a refresh control."
+	const atomic = "Display a current status."
+	authority := directCodingRequirementGenerationAuthorityFixture(t, []string{}, []string{})
+	var calls []assemblyline.WorkKind
+	runtime := typedWorkerRuntime{
+		Context: context.Background(), MaxAttempts: 1,
+		Execute: func(job assemblyline.PortableJob, _ string) (assemblyline.PortableResult, error) {
+			calls = append(calls, job.Kind)
+			candidate := ""
+			switch job.Kind {
+			case assemblyline.WorkApplicationRequirementCandidateKind:
+				candidate = assemblyline.ApplicationRequirementCandidateTaskLocal
+			case assemblyline.WorkApplicationRequirementCandidateCardinality:
+				var input assemblyline.ApplicationRequirementCandidateCardinalityInput
+				if err := json.Unmarshal(job.Payload, &input); err != nil {
+					return assemblyline.PortableResult{}, err
+				}
+				if input.Candidate == compound {
+					candidate = assemblyline.ApplicationRequirementMultipleRuntimeOutcomes
+				} else {
+					candidate = assemblyline.ApplicationRequirementOneRuntimeOutcome
+				}
+			case assemblyline.WorkApplicationRequirementCandidateSplit:
+				candidate = atomic
+			case assemblyline.WorkApplicationRequirementCandidateResultRelation:
+				candidate = assemblyline.ApplicationRequirementNoDerivedResult
+			default:
+				return assemblyline.PortableResult{}, fmt.Errorf("unexpected work kind %q", job.Kind)
+			}
+			return assemblyline.PortableResult{JobID: job.ID, Candidate: candidate}, nil
+		},
+	}
+	got, err := resolveDirectCodingApplicationRequirementCandidate(
+		runtime, "intent-model", compound, authority, nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.Retain || got.Candidate != atomic {
+		t.Fatalf("resolution=%+v", got)
+	}
+	want := []assemblyline.WorkKind{
+		assemblyline.WorkApplicationRequirementCandidateKind,
+		assemblyline.WorkApplicationRequirementCandidateCardinality,
+		assemblyline.WorkApplicationRequirementCandidateSplit,
+		assemblyline.WorkApplicationRequirementCandidateCardinality,
+		assemblyline.WorkApplicationRequirementCandidateKind,
+		assemblyline.WorkApplicationRequirementCandidateResultRelation,
+	}
+	if !reflect.DeepEqual(calls, want) {
+		t.Fatalf("calls=%v want=%v", calls, want)
 	}
 }
 

@@ -20,8 +20,9 @@ const (
 )
 
 type liveCodingQualificationCase struct {
-	name, request string
-	features      []string
+	name, request                  string
+	features                       []string
+	requiresExplicitResultRelation bool
 }
 
 func TestLiveCodingRequirementsAndWorkloadQualification(t *testing.T) {
@@ -118,6 +119,7 @@ func TestLiveCodingRequirementsAndWorkloadQualification(t *testing.T) {
 				t.Fatalf("frozen tasks=%d outside front-door bounds", len(frozen.Tasks))
 			}
 			assertLiveCodingQualificationCalls(t, calls, frozen)
+			assertLiveCodingQualificationResultRelations(t, testCase, calls)
 			logLiveCodingQualification(t, testCase.name, modelName, frozen.SHA256, calls)
 		})
 	}
@@ -145,6 +147,59 @@ func liveCodingQualificationCases() []liveCodingQualificationCase {
 			request:  "Build a command-line checksum reporter. It must print a SHA-256 digest for one input file, show clear help, and return a useful error for invalid input. Use Go, include focused automated tests, and produce a production build.",
 			features: []string{"SHA-256 digest", "clear help", "useful error"},
 		},
+		{
+			name:                           "tax-estimator",
+			request:                        "Build a browser tax estimator that computes a final total as the user-provided subtotal plus eight percent of that subtotal.",
+			features:                       []string{"final total"},
+			requiresExplicitResultRelation: true,
+		},
+		{
+			name:                           "storage-reporter",
+			request:                        "Build a command-line storage reporter that prints remaining bytes as user-provided capacity minus user-provided used bytes.",
+			features:                       []string{"remaining bytes"},
+			requiresExplicitResultRelation: true,
+		},
+		{
+			name:                           "rectangle-area-finder",
+			request:                        "Build a browser rectangle-area finder.",
+			features:                       []string{"reported area value"},
+			requiresExplicitResultRelation: true,
+		},
+		{
+			name:                           "fahrenheit-celsius-converter",
+			request:                        "Build a command-line Fahrenheit-to-Celsius converter.",
+			features:                       []string{"converted Celsius value"},
+			requiresExplicitResultRelation: true,
+		},
+	}
+}
+
+func assertLiveCodingQualificationResultRelations(
+	t *testing.T,
+	testCase liveCodingQualificationCase,
+	calls []liveCodingQualificationCall,
+) {
+	t.Helper()
+	if !testCase.requiresExplicitResultRelation {
+		return
+	}
+	explicit := 0
+	corrections := 0
+	for _, call := range calls {
+		switch call.kind {
+		case assemblyline.WorkApplicationRequirementCandidateResultRelation:
+			if call.candidate == assemblyline.ApplicationRequirementExplicitResultRelation {
+				explicit++
+			}
+		case assemblyline.WorkApplicationRequirementCandidateResultRelationCorrection:
+			corrections++
+		}
+	}
+	if explicit != len(testCase.features) || corrections != 0 {
+		t.Fatalf(
+			"explicit derived-result fixture did not remain oracle-determinate: explicit=%d corrections=%d calls=%+v",
+			explicit, corrections, calls,
+		)
 	}
 }
 
@@ -244,6 +299,50 @@ func validateLiveCodingQualificationProjection(
 			strings.Contains(prompt, testCase.request) ||
 			strings.Contains(prompt, "ACCEPTED REQUIREMENT") {
 			return fmt.Errorf("candidate cardinality received authority beyond one exact candidate")
+		}
+		return nil
+	case assemblyline.WorkApplicationRequirementCandidateResultRelation:
+		var input assemblyline.ApplicationRequirementCandidateResultRelationInput
+		if err := json.Unmarshal(job.Payload, &input); err != nil {
+			return err
+		}
+		kindInput := assemblyline.ApplicationRequirementCandidateKindInput{
+			Candidate: input.Candidate,
+		}
+		cardinalityInput := assemblyline.ApplicationRequirementCandidateCardinalityInput{
+			Candidate: input.Candidate,
+		}
+		if err := input.Kind.ValidateFor(kindInput); err != nil ||
+			input.Kind.Relation != assemblyline.ApplicationRequirementCandidateTaskLocal {
+			return fmt.Errorf("result relation lacks bound task-local authority: %v", err)
+		}
+		if err := input.Cardinality.ValidateFor(cardinalityInput); err != nil ||
+			input.Cardinality.Relation != assemblyline.ApplicationRequirementOneRuntimeOutcome {
+			return fmt.Errorf("result relation lacks bound one-outcome authority: %v", err)
+		}
+		if strings.Count(prompt, input.Candidate) != 1 ||
+			strings.Contains(prompt, testCase.request) ||
+			strings.Contains(prompt, "ACCEPTED REQUIREMENT") {
+			return fmt.Errorf("result relation exceeded one bound candidate")
+		}
+		return nil
+	case assemblyline.WorkApplicationRequirementCandidateResultRelationCorrection:
+		var input assemblyline.ApplicationRequirementCandidateResultRelationCorrectionInput
+		if err := json.Unmarshal(job.Payload, &input); err != nil {
+			return err
+		}
+		if _, err := assemblyline.NewApplicationRequirementCandidateResultRelationCorrectionJob(
+			input,
+		); err != nil {
+			return fmt.Errorf("result-relation correction lacks bound authority: %v", err)
+		}
+		if strings.Count(prompt, testCase.request) != 1 ||
+			strings.Count(
+				prompt,
+				"EXACT CURRENT CANDIDATE:\n"+input.CandidateAuthority.Candidate,
+			) != 1 ||
+			strings.Contains(prompt, "PRODUCT CONTEXT:") {
+			return fmt.Errorf("result-relation correction exceeded its exact authority")
 		}
 		return nil
 	case assemblyline.WorkApplicationRequirementCandidateSplit:

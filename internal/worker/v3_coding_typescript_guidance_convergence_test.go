@@ -35,7 +35,7 @@ func TestTypeScriptGuidedRepairRecordsZeroDeltaWithoutAnotherSemanticCall(t *tes
 	_, err := convergeDirectCodingTypeScriptGuidedRepairWithRuntime(
 		runtime, "guidance", "executor", directCodingTypeScriptRepairEvents{},
 		block, false, "TypeScript function syntax", "", current, nil,
-		"TYPESCRIPT_DIAGNOSTIC: exact compiler failure",
+		"TYPESCRIPT_DIAGNOSTIC: exact compiler failure", nil,
 	)
 	if !errors.Is(err, errDirectCodingTypeScriptUnchangedCorrection) || calls != 2 {
 		t.Fatalf("zero delta error=%v calls=%d", err, calls)

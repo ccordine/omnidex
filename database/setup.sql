@@ -4037,6 +4037,8 @@ CREATE FUNCTION station_owns_portable_work(station text, work_kind text, payload
         WHEN 'application_requirement' THEN station='coding_requirements'
         WHEN 'application_requirement_candidate_cardinality' THEN station='coding_requirements'
         WHEN 'application_requirement_candidate_kind' THEN station='coding_requirements'
+        WHEN 'application_requirement_candidate_result_relation' THEN station='coding_requirements'
+        WHEN 'application_requirement_candidate_result_relation_correction' THEN station='coding_requirements'
         WHEN 'application_requirement_candidate_split' THEN station='coding_requirements'
         WHEN 'application_requirement_candidate_split_correction' THEN station='coding_requirements'
         WHEN 'application_requirement_candidate_duplicate_replacement' THEN station='coding_requirements'

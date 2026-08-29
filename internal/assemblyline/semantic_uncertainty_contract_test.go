@@ -108,6 +108,8 @@ func TestRequirementRefinementSemanticUncertaintyContractsAreV1(
 	for _, kind := range []WorkKind{
 		WorkApplicationRequirementCandidateCardinality,
 		WorkApplicationRequirementCandidateKind,
+		WorkApplicationRequirementCandidateResultRelation,
+		WorkApplicationRequirementCandidateResultRelationCorrection,
 		WorkApplicationRequirementCandidateSplit,
 		WorkApplicationRequirementCandidateSplitCorrection,
 		WorkApplicationRequirementCandidateDuplicateReplacement,
@@ -217,7 +219,7 @@ func TestSemanticUncertaintyRegistryDigestIsStable(t *testing.T) {
 		_, _ = hash.Write([]byte{0})
 	}
 	got := hex.EncodeToString(hash.Sum(nil))
-	const want = "28da6569863dc4bd602079199310cc2d97322e085451548c71019acaa178fa72"
+	const want = "891bf59123b4e5e30204afb36c61223ee4762401aa3abba30c30ffe06d5c8857"
 	if got != want {
 		t.Fatalf("semantic uncertainty registry digest changed: got %s want %s", got, want)
 	}

@@ -39,7 +39,9 @@ func TestTypeScriptBrowserAssemblyOwnsTailwindViteToolchain(t *testing.T) {
 
 func TestTypeScriptBrowserTailwindUsageDoesNotExposeToolchainAuthority(t *testing.T) {
 	contract := genericBrowserFeatureContract("Render one bounded view.", nil)
-	if !strings.Contains(contract, "Tailwind CSS utility classes are available in className") {
+	if !strings.Contains(contract, "Tailwind CSS utility classes are available in className") ||
+		!strings.Contains(contract, "Use only complete static non-arbitrary utilities") ||
+		!strings.Contains(contract, "unknown or custom classes are unavailable") {
 		t.Fatal("browser fragment contract omits its usable styling capability")
 	}
 	for _, forbidden := range []string{"@tailwindcss/vite", "vite.config", "package.json", "npm ", "src/styles.css"} {

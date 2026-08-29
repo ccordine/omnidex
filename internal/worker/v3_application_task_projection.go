@@ -23,6 +23,12 @@ func projectDirectCodingApplicationTaskStage(
 	if context.WorkloadSHA256 == "" || context.WorkloadSHA256 != program.Workload.SHA256 {
 		return zero, fmt.Errorf("application task context differs from program workload authority")
 	}
+	requirementRelations, err := program.RequirementRelations.projectTask(
+		program.Workload, context.Task.TaskID,
+	)
+	if err != nil {
+		return zero, err
+	}
 	included, err := directCodingTaskStageBlockIDs(program.Source, context.Task.TaskID)
 	if err != nil {
 		return zero, err
@@ -98,8 +104,9 @@ func projectDirectCodingApplicationTaskStage(
 	}
 	stage := directCodingProgram{
 		StackID: program.StackID, VersionProfileID: program.VersionProfileID,
-		Workload:   program.Workload,
-		TargetTree: program.TargetTree, Coverage: program.Coverage,
+		Workload:             program.Workload,
+		RequirementRelations: requirementRelations,
+		TargetTree:           program.TargetTree, Coverage: program.Coverage,
 		ServiceState:     serviceState,
 		ServiceEndpoints: serviceEndpoints,
 		Source:           assemblyline.SourceBlueprint{Documents: documents},

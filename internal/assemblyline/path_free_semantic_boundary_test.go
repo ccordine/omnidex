@@ -100,8 +100,13 @@ func TestSemanticStationCandidatesRejectQualifiedPathsAtAcceptance(t *testing.T)
 	for name, validate := range map[string]func() error{
 		"application intent": func() error {
 			return (ApplicationIntentCandidate{
-				Schema:         ApplicationIntentCandidateSchemaV1,
-				ProductContext: "Read /mnt/data", Requirements: []string{"Return one value"},
+				Schema: ApplicationIntentCandidateSchemaV1, ProductContext: "Read /mnt/data",
+				Requirements: []ApplicationIntentCandidateRequirement{
+					applicationIntentCandidateRequirementFixture(
+						t,
+						"Return one value", ApplicationRequirementNoDerivedResult,
+					),
+				},
 			}).Validate()
 		},
 		"application context need": func() error {
@@ -131,7 +136,12 @@ func TestSemanticBoundariesRetainUnprovenDottedProductNames(t *testing.T) {
 	if err := (ApplicationIntentCandidate{
 		Schema:         ApplicationIntentCandidateSchemaV1,
 		ProductContext: "Node.js service with Vue.js interface",
-		Requirements:   []string{"Expose the requested behavior"},
+		Requirements: []ApplicationIntentCandidateRequirement{
+			applicationIntentCandidateRequirementFixture(
+				t,
+				"Expose the requested behavior", ApplicationRequirementNoDerivedResult,
+			),
+		},
 	}).Validate(); err != nil {
 		t.Fatalf("dotted product names were rejected: %v", err)
 	}

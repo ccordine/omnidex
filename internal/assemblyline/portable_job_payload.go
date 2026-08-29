@@ -27,6 +27,14 @@ func validatePortableJobPayload(kind WorkKind, payload json.RawMessage) error {
 		return decodeAndValidatePortablePayload[ApplicationRequirementCandidateKindInput](
 			payload, ApplicationRequirementCandidateKindInput.validate,
 		)
+	case WorkApplicationRequirementCandidateResultRelation:
+		return decodeAndValidatePortablePayload[ApplicationRequirementCandidateResultRelationInput](
+			payload, ApplicationRequirementCandidateResultRelationInput.validate,
+		)
+	case WorkApplicationRequirementCandidateResultRelationCorrection:
+		return decodeAndValidatePortablePayload[ApplicationRequirementCandidateResultRelationCorrectionInput](
+			payload, ApplicationRequirementCandidateResultRelationCorrectionInput.validate,
+		)
 	case WorkApplicationRequirementCandidateSplit:
 		return decodeAndValidatePortablePayload[ApplicationRequirementCandidateSplitInput](
 			payload, ApplicationRequirementCandidateSplitInput.validate,

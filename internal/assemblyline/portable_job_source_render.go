@@ -15,11 +15,12 @@ func renderPortableFragmentGeneration(input FragmentGenerationInput) (string, er
 		prompt, err = BuildTextFragmentGenerationPrompt(input)
 	case "typescript":
 		prompt, err = BuildTypeScriptFragmentPrompt(TypeScriptFragmentPrompt{
-			Dialect:   input.Dialect,
-			Signature: input.Signature,
-			Contract:  input.Behavior,
-			Available: strings.Join(input.Capabilities, "\n"),
-			Globals:   input.PermittedSymbols,
+			Dialect:                  input.Dialect,
+			Signature:                input.Signature,
+			Contract:                 input.Behavior,
+			Available:                strings.Join(input.Capabilities, "\n"),
+			Globals:                  input.PermittedSymbols,
+			PublicInteractionSurface: input.PublicInteractionSurface,
 		})
 	case "javascript", "java", "rust", "php":
 		prompt, err = BuildBoundedSourceFragmentGenerationPrompt(input)

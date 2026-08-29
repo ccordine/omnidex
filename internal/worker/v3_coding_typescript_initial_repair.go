@@ -65,5 +65,6 @@ func generateDirectCodingTypeScriptBlockWithRuntime(
 	return convergeDirectCodingTypeScriptGuidedRepairWithRuntime(
 		repairRuntime, guidanceModel, correctionModel, events,
 		job.block, job.tsx, job.dialect, job.available, rejection.Candidate, nil, diagnostic,
+		job.validateInitialCandidate,
 	)
 }

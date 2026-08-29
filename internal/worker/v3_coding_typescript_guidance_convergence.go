@@ -31,7 +31,7 @@ func (s *directCodingSession) convergeDirectCodingTypeScriptGuidedRepair(
 	workerRuntime := directCodingWorkerRuntime(s)
 	return convergeDirectCodingTypeScriptGuidedRepairWithRuntime(
 		workerRuntime, guidanceModel, correctionModel, s.typeScriptRepairEvents(),
-		target, tsx, dialect, available, current, repairRegion, failure,
+		target, tsx, dialect, available, current, repairRegion, failure, nil,
 	)
 }
 
@@ -77,6 +77,7 @@ func convergeDirectCodingTypeScriptGuidedRepairWithRuntime(
 	current string,
 	repairRegion *assemblyline.TypeScriptFragmentRepairRegion,
 	failure string,
+	validateCandidate func(string) error,
 ) (string, error) {
 	workerRuntime.MaxAttempts = 1
 	events.emitGuidanceStarted(fmt.Sprintf(
@@ -98,6 +99,7 @@ func convergeDirectCodingTypeScriptGuidedRepairWithRuntime(
 		directCodingTypeScriptFragmentJob{
 			block: target, tsx: tsx, available: available, current: current,
 			repairRegion: repairRegion, repairGuidance: guidance,
+			validateInitialCandidate: validateCandidate,
 		},
 	)
 	if err != nil {

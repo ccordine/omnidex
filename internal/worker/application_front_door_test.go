@@ -96,6 +96,8 @@ func TestApplicationFrontDoorSkipsCeremonialReviewForEmptyWorkspace(t *testing.T
 					return assemblyline.PortableResult{}, fmt.Errorf("application requirement cardinality received an empty candidate")
 				}
 				candidate = assemblyline.ApplicationRequirementOneRuntimeOutcome
+			case assemblyline.WorkApplicationRequirementCandidateResultRelation:
+				candidate = assemblyline.ApplicationRequirementNoDerivedResult
 			case assemblyline.WorkApplicationRequirementCandidateSplit:
 				return assemblyline.PortableResult{}, fmt.Errorf("atomic fixture unexpectedly requested candidate splitting")
 			default:
@@ -104,19 +106,22 @@ func TestApplicationFrontDoorSkipsCeremonialReviewForEmptyWorkspace(t *testing.T
 			return assemblyline.PortableResult{JobID: job.ID, Candidate: candidate}, nil
 		},
 	}
-	specification, err := runDirectCodingApplicationInterpreter(
+	interpretation, err := runDirectCodingApplicationInterpreter(
 		runtime, "intent-model", "surface-model", "artifact-model",
 		request, applicationContext, nil,
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
+	specification := interpretation.Specification
 	if counts[assemblyline.WorkApplicationContextNeedCoverage] != 0 ||
 		counts[assemblyline.WorkApplicationProductContext] != 1 ||
 		counts[assemblyline.WorkApplicationRequirementCoverage] != 5 ||
 		counts[assemblyline.WorkApplicationRequirement] != 4 ||
 		counts[assemblyline.WorkApplicationRequirementCandidateKind] != 4 ||
 		counts[assemblyline.WorkApplicationRequirementCandidateCardinality] != 4 ||
+		counts[assemblyline.WorkApplicationRequirementCandidateResultRelation] != 4 ||
+		counts[assemblyline.WorkApplicationRequirementCandidateResultRelationCorrection] != 0 ||
 		counts[assemblyline.WorkApplicationRequirementCandidateSplit] != 0 ||
 		counts[assemblyline.WorkApplicationRequirementCandidateSplitCorrection] != 0 ||
 		counts[assemblyline.WorkApplicationRequirementCandidateDuplicateReplacement] != 0 ||
@@ -132,6 +137,15 @@ func TestApplicationFrontDoorSkipsCeremonialReviewForEmptyWorkspace(t *testing.T
 	if specification.ProductQuote != productContext ||
 		!reflect.DeepEqual(specification.Requirements, want) {
 		t.Fatalf("specification=%+v", specification)
+	}
+	if len(interpretation.AcceptedRequirements) != len(want) {
+		t.Fatalf("accepted requirement receipts=%+v", interpretation.AcceptedRequirements)
+	}
+	for _, accepted := range interpretation.AcceptedRequirements {
+		if accepted.ResultRelation.Relation != assemblyline.ApplicationRequirementNoDerivedResult ||
+			accepted.ResultRelation.CandidateSHA256 != assemblyline.ExactObjectiveContextSHA(accepted.Statement) {
+			t.Fatalf("accepted requirement lost result-relation receipt: %+v", accepted)
+		}
 	}
 }
 

@@ -282,6 +282,14 @@ machine passes its executable gates:
    the typed intent itself. Surface, technical/structural format, generic test/build, and deployment
    constraints stay outside this fixed point and are consumed by their narrow code-owned owners. A model
    is not called merely to emit, accept, reject, or restate the aggregate intent.
+   Before retention, code binds one task-local candidate-kind receipt and one terminal one-outcome
+   cardinality receipt to a separate three-way result-relation question. It returns only that the
+   outcome needs no derived result, explicitly states an independently computable determining relation,
+   or omits that relation. The result carries the exact candidate hash and hashes of both complete input
+   receipts; code validates those identities before the relation can be retained. Only the last value
+   opens one exact candidate correction from immutable request authority; code preserves the decoded
+   candidate and all other retained leaves and reruns kind, cardinality, and result-relation validation.
+   A repeated omission fails at the one-correction bound.
    Substring, interval, overlap, source-order, punctuation, and exact-quote allocation are not
    authority checks. Code projects each accepted task-local runtime implementation requirement directly into one frozen task in
    accepted source order. The task contains only its code-owned task identity, requirement identity,
@@ -290,16 +298,59 @@ machine passes its executable gates:
    typed job specification itself. Invalid semantic leaves fail at their owning station; there is
    no generic response-correction station or retry path.
    Code preserves user authority separately from derived build decisions, assigns identity and
-   order, freezes only validated state, executes one task at a time with
+   order, and builds a separate result-relation validation plan bound to the frozen workload SHA.
+   The plan has one task/requirement/receipt binding per frozen task, projects exactly one binding into
+   the current task stage, and remains code-only: it is absent from the frozen task, task context, and
+   every model envelope. Code freezes only validated state and executes one task at a time with
    the minimum sufficient authoritative task projection, and alone decides completion. A
    task-local source projection contains its exact accepted product identity, exact accepted
    requirement, and direct declared capabilities, but no derived aggregate product summary or
    sibling requirement. A
    static code-owned harness alone renders the exact public feature with its runtime and capability
-   identity. The generated acceptance declaration receives no render, JSX, component, runtime, or
-   source authority and is source-free inventoried before it executes. Code binds the closed awaited
-   wait mechanic, observes the returned result, and evaluates the frozen criteria deterministically;
-   there is no acceptance-grounding reviewer. Code verifies the grounded artifact before advancing.
+   identity. The generated browser acceptance declaration receives no render, JSX, component, runtime,
+   or source authority. Code first stages the accepted implementation without its unresolved verification
+   declaration, closes that implementation-only projection through the real typechecker and registered
+   deterministic compiler corrections, and revalidates its source and public-surface shape. Only then may
+   code extract the declaration's sole implementation-derived projection: a bounded public-interaction
+   receipt containing allowlisted intrinsic control roles, canonical counts/ordinals, literal accessible
+   names and hints, value kinds, explicit public action claims, and named dynamic `<output>` selector facts.
+   Each visible output has a unique exact literal accessible name, direct dynamic-only nonmixed content,
+   and an implicit `status` role. Its receipt fact contains only the selector name, never static text, a
+   current value, a JSX expression, handler source, an expected result, or ordinary dynamic text outside
+   a registered output.
+
+   Extraction is fail-closed over registered intrinsic elements, literal public attributes, accessible
+   and available ancestry, and an allowlisted Tailwind utility grammar. Custom or unsupported intrinsics,
+   spread or dynamic visibility state, hidden/inert/ARIA-hidden or disabled ancestry, and any unproved
+   opacity, pointer-event, clipping, transform, zero-size, screen-reader-only, or arbitrary Tailwind form
+   fail. Code statically binds JSX event handlers and rejects browser-host, DOM-selection, navigation,
+   network, storage, audio, dynamic-evaluation, reflection, alias, computed-event, mutation, and event
+   escape authority. Only a direct read-only `value` or `checked` leaf through `event.target` or
+   `event.currentTarget` is admitted, represented by the canonical `event.target.value` and
+   `event.currentTarget.checked` forms.
+
+   Code freezes the receipt, result-relation receipt, and internal element-ID sequence before verification
+   generation, then re-extracts and compares them after every staged attempt and before final execution.
+   IDs are never model-visible, must remain globally unique across task surfaces, and cannot collide with
+   reserved code-owned mount IDs. The verifier grammar is exhaustive: one executable function contains a
+   non-empty flat sequence of direct registered `fireEvent` calls, direct screen-grounded expectations, or
+   an awaited `waitFor` whose parameterless callback contains only direct expectations. Queries are direct
+   throwing allowlisted `screen` calls with exact receipt roles, names, cardinality, and literal indexes;
+   asynchronous queries and `waitFor` are explicitly awaited; events use compatible static payloads.
+   Declarations, branches, loops, returns, helpers, nested/dead closures, aliases, optional chains, and
+   every unregistered statement, query, event, matcher, or consumer fail.
+
+   An explicit derived-result relation requires a singular receipt-named implicit-`status` output asserted
+   with non-negated `toHaveTextContent` and an anchored literal regular expression, even when no event is
+   needed; with interactions, that exact assertion must follow the final `fireEvent`. Any other interacting
+   verification also needs a qualifying outcome after its final event. Only when no named output owns that
+   outcome may a compatible checked, validity, value, or display-value control-state assertion qualify.
+   Generic text and presence assertions do not prove a derived result. An action claim may select only among
+   alternatives already established by the exact requirement and remains independent from static inputs;
+   it is never a missing relation, proof, or expected-output authority. There is no acceptance-grounding
+   reviewer. A generated verifier's receipt-grounding or grammar rejection, and any staged execution
+   failure originating in the generated verification block, is terminal and cannot authorize
+   implementation-repair inference. Code verifies the grounded artifact before advancing.
 6. **Charmander handoff** — cognition produces one existing bounded declaration job;
    code parses, stitches, formats, stages, tests, applies, and reconciles it.
 7. **Failure-specific replacement** — ordinary invalid semantic leaves fail explicitly and cannot

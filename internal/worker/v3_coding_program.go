@@ -11,6 +11,7 @@ type directCodingProgram struct {
 	StackID              string
 	VersionProfileID     string
 	Workload             assemblyline.FrozenApplicationWorkload
+	RequirementRelations directCodingApplicationTaskResultRelationPlan
 	TargetTree           assemblyline.TargetTree
 	Coverage             assemblyline.ApplicationFileCoveragePlan
 	ServiceState         directCodingServiceStatePlan

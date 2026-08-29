@@ -1,6 +1,41 @@
 package worker
 
-import "github.com/gryph/omnidex/internal/assemblyline"
+import (
+	"fmt"
+
+	"github.com/gryph/omnidex/internal/assemblyline"
+)
+
+type directCodingApplicationInterpretation struct {
+	Specification        assemblyline.ApplicationSpecification
+	AcceptedRequirements []assemblyline.ApplicationRequirement
+}
+
+func (interpretation directCodingApplicationInterpretation) validate() error {
+	if err := interpretation.Specification.Validate(); err != nil {
+		return err
+	}
+	if len(interpretation.AcceptedRequirements) != len(interpretation.Specification.Requirements) {
+		return fmt.Errorf("application interpretation result-relation receipts do not cover accepted requirements")
+	}
+	for index, accepted := range interpretation.AcceptedRequirements {
+		requirement := interpretation.Specification.Requirements[index]
+		if accepted.ID != requirement.ID || accepted.Statement != requirement.SourceQuote ||
+			accepted.RequestSHA256 == "" {
+			return fmt.Errorf(
+				"application interpretation requirement %d differs from accepted specification authority",
+				index,
+			)
+		}
+		if err := accepted.ResultRelation.ValidateAcceptedFor(accepted.Statement); err != nil {
+			return fmt.Errorf(
+				"application interpretation requirement %s result relation: %w",
+				accepted.ID, err,
+			)
+		}
+	}
+	return nil
+}
 
 func runDirectCodingApplicationInterpreter(
 	runtime typedWorkerRuntime,
@@ -10,8 +45,8 @@ func runDirectCodingApplicationInterpreter(
 	authority string,
 	applicationContext assemblyline.ApplicationContext,
 	identities []assemblyline.ArtifactIdentity,
-) (assemblyline.ApplicationSpecification, error) {
-	var zero assemblyline.ApplicationSpecification
+) (directCodingApplicationInterpretation, error) {
+	var zero directCodingApplicationInterpretation
 
 	formalizedContext, err := resolveDirectCodingApplicationContext(
 		runtime, intentModel, authority, applicationContext, identities, nil,
@@ -47,10 +82,16 @@ func runDirectCodingApplicationInterpreter(
 		Surface: classification.Surface, ProductQuote: resolution.ProductContext,
 		Requirements: requirements, Artifacts: artifacts,
 	}
-	if err := specification.Validate(); err != nil {
+	interpretation := directCodingApplicationInterpretation{
+		Specification: specification,
+		AcceptedRequirements: append(
+			[]assemblyline.ApplicationRequirement(nil), resolution.Requirements...,
+		),
+	}
+	if err := interpretation.validate(); err != nil {
 		return zero, err
 	}
-	return specification, nil
+	return interpretation, nil
 }
 
 func classifyApplicationSurface(

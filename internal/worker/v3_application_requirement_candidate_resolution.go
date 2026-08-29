@@ -9,6 +9,7 @@ import (
 type directCodingApplicationRequirementCandidateResolution struct {
 	Candidate                  string
 	Retain                     bool
+	ResultRelation             assemblyline.ApplicationRequirementCandidateResultRelationResult
 	ReboundGenerationAuthority *assemblyline.ApplicationRequirementCandidateInput
 }
 
@@ -21,6 +22,7 @@ func resolveDirectCodingApplicationRequirementCandidate(
 ) (directCodingApplicationRequirementCandidateResolution, error) {
 	var zero directCodingApplicationRequirementCandidateResolution
 	replacementUsed := false
+	resultRelationCorrectionUsed := false
 	for {
 		if duplicate, found := directCodingApplicationRequirementDuplicate(
 			generationAuthority.Authority, candidate,
@@ -58,19 +60,65 @@ func resolveDirectCodingApplicationRequirementCandidate(
 			}, nil
 		}
 
-		candidate, err = refineDirectCodingApplicationRequirementCandidate(
+		refinement, err := refineDirectCodingApplicationRequirementCandidate(
 			runtime, intentModel, candidate, generationAuthority.Authority, identities,
 		)
 		if err != nil {
 			return zero, err
 		}
+		classifiedCandidate := candidate
+		candidate = refinement.Candidate
 		if _, duplicate := directCodingApplicationRequirementDuplicate(
 			generationAuthority.Authority, candidate,
 		); duplicate {
 			continue
 		}
+		if candidate != classifiedCandidate {
+			kind, err = classifyDirectCodingApplicationRequirementCandidate(
+				runtime, intentModel, candidate, identities,
+			)
+			if err != nil {
+				return zero, err
+			}
+			if kind.Relation == assemblyline.ApplicationRequirementCandidateNonRuntime {
+				rebound, err := assemblyline.RebindApplicationRequirementAfterNonRuntimeExclusion(
+					generationAuthority, candidate, kind,
+				)
+				if err != nil {
+					return zero, err
+				}
+				return directCodingApplicationRequirementCandidateResolution{
+					Candidate: candidate, ReboundGenerationAuthority: &rebound,
+				}, nil
+			}
+		}
+		resultRelation, err := classifyDirectCodingApplicationRequirementCandidateResultRelation(
+			runtime, intentModel, candidate, kind, refinement.Cardinality, identities,
+		)
+		if err != nil {
+			return zero, err
+		}
+		if resultRelation.Relation == assemblyline.ApplicationRequirementMissingResultRelation {
+			if resultRelationCorrectionUsed {
+				return zero, fmt.Errorf(
+					"application requirement candidate result relation remained underdetermined after its one correction",
+				)
+			}
+			candidate, err = correctDirectCodingApplicationRequirementCandidateResultRelation(
+				runtime, intentModel, generationAuthority, candidate, kind,
+				refinement.Cardinality, resultRelation, identities,
+			)
+			if err != nil {
+				return zero, err
+			}
+			resultRelationCorrectionUsed = true
+			continue
+		}
+		if err := resultRelation.ValidateAcceptedFor(candidate); err != nil {
+			return zero, err
+		}
 		return directCodingApplicationRequirementCandidateResolution{
-			Candidate: candidate, Retain: true,
+			Candidate: candidate, Retain: true, ResultRelation: resultRelation,
 		}, nil
 	}
 }

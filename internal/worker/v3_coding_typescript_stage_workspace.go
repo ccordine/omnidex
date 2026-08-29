@@ -116,6 +116,7 @@ func (s *directCodingSession) stageTypeScriptProgramIn(
 	program *directCodingProgram,
 	commands [][]string,
 	progress *directCodingTypeScriptCorrectionProgress,
+	stateValidators ...func(*directCodingProgram) error,
 ) error {
 	if program == nil || progress == nil || progress.seen == nil {
 		return fmt.Errorf("staged TypeScript verification requires a program and correction progress authority")
@@ -129,6 +130,14 @@ func (s *directCodingSession) stageTypeScriptProgramIn(
 	for attempt := 1; ; attempt++ {
 		if err := s.runtime.ctx.Err(); err != nil {
 			return fmt.Errorf("staged TypeScript correction stopped by context authority: %w", err)
+		}
+		for _, validate := range stateValidators {
+			if validate == nil {
+				return fmt.Errorf("staged TypeScript verification received a nil state validator")
+			}
+			if err := validate(program); err != nil {
+				return fmt.Errorf("validate staged TypeScript code-owned state: %w", err)
+			}
 		}
 		s.runtime.svc.emitStepEvent(s.runtime.claim.Authority, "coding_stage_started", fmt.Sprintf(
 			"attempt=%d generated_blocks=%d", attempt, len(program.Generated),

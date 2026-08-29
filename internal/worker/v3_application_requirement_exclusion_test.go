@@ -80,6 +80,8 @@ func TestDirectCodingIntentExcludesNonRuntimeCandidateAndContinuesCoverage(t *te
 				}
 			case assemblyline.WorkApplicationRequirementCandidateCardinality:
 				candidate = assemblyline.ApplicationRequirementOneRuntimeOutcome
+			case assemblyline.WorkApplicationRequirementCandidateResultRelation:
+				candidate = assemblyline.ApplicationRequirementNoDerivedResult
 			default:
 				return assemblyline.PortableResult{}, fmt.Errorf("unexpected work kind %q", job.Kind)
 			}
@@ -101,6 +103,8 @@ func TestDirectCodingIntentExcludesNonRuntimeCandidateAndContinuesCoverage(t *te
 		counts[assemblyline.WorkApplicationRequirement] != 2 ||
 		counts[assemblyline.WorkApplicationRequirementCandidateKind] != 2 ||
 		counts[assemblyline.WorkApplicationRequirementCandidateCardinality] != 1 ||
+		counts[assemblyline.WorkApplicationRequirementCandidateResultRelation] != 1 ||
+		counts[assemblyline.WorkApplicationRequirementCandidateResultRelationCorrection] != 0 ||
 		counts[assemblyline.WorkApplicationRequirementCandidateDuplicateReplacement] != 0 {
 		t.Fatalf("fixed-point calls=%v", counts)
 	}

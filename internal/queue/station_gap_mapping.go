@@ -30,6 +30,8 @@ func stationForPortableWorkKind(kind assemblyline.WorkKind) (station.ID, error) 
 		assemblyline.WorkApplicationRequirement,
 		assemblyline.WorkApplicationRequirementCandidateCardinality,
 		assemblyline.WorkApplicationRequirementCandidateKind,
+		assemblyline.WorkApplicationRequirementCandidateResultRelation,
+		assemblyline.WorkApplicationRequirementCandidateResultRelationCorrection,
 		assemblyline.WorkApplicationRequirementCandidateSplit,
 		assemblyline.WorkApplicationRequirementCandidateSplitCorrection,
 		assemblyline.WorkApplicationRequirementCandidateDuplicateReplacement,

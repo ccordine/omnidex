@@ -16,6 +16,14 @@ func renderPortableApplicationJob(job PortableJob) (string, bool, error) {
 		return handledPortableRender(renderDecodedPortableInput(
 			job, BuildApplicationRequirementCandidateKindPrompt,
 		))
+	case WorkApplicationRequirementCandidateResultRelation:
+		return handledPortableRender(renderDecodedPortableInput(
+			job, BuildApplicationRequirementCandidateResultRelationPrompt,
+		))
+	case WorkApplicationRequirementCandidateResultRelationCorrection:
+		return handledPortableRender(renderDecodedPortableInput(
+			job, BuildApplicationRequirementCandidateResultRelationCorrectionPrompt,
+		))
 	case WorkApplicationRequirementCandidateSplit:
 		return handledPortableRender(renderDecodedPortableInput(
 			job, BuildApplicationRequirementCandidateSplitPrompt,

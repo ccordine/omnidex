@@ -69,6 +69,8 @@ func TestApplicationRequirementLeavesSeparateCoverageFromGeneration(t *testing.T
 	for _, required := range []string{
 		"task-local runtime implementation requirement",
 		"independently testable runtime outcome",
+		"semantic relation that determines the result",
+		"semantically entails exactly one determining rule",
 		"Items joined by commas, conjunctions, or a list remain separate outcomes",
 		"generic test obligations",
 		"build or verification obligations",
@@ -81,6 +83,8 @@ func TestApplicationRequirementLeavesSeparateCoverageFromGeneration(t *testing.T
 	}
 	for _, required := range []string{
 		"exactly one independently testable runtime outcome",
+		"name the one semantic relation that determines it",
+		"semantically entails exactly one determining rule",
 		"return only the first uncovered outcome",
 		"Never return an umbrella construction statement, a list, or multiple actions",
 		"generic test obligations",

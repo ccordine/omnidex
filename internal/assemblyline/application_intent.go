@@ -14,15 +14,21 @@ type ApplicationIntentInput struct {
 }
 
 type ApplicationIntentCandidate struct {
-	Schema         string   `json:"schema"`
-	ProductContext string   `json:"product_context"`
-	Requirements   []string `json:"requirements"`
+	Schema         string                                  `json:"schema"`
+	ProductContext string                                  `json:"product_context"`
+	Requirements   []ApplicationIntentCandidateRequirement `json:"requirements"`
+}
+
+type ApplicationIntentCandidateRequirement struct {
+	Statement      string                                              `json:"statement"`
+	ResultRelation ApplicationRequirementCandidateResultRelationResult `json:"result_relation"`
 }
 
 type ApplicationRequirement struct {
-	ID            string `json:"id"`
-	Statement     string `json:"statement"`
-	RequestSHA256 string `json:"request_sha256"`
+	ID             string                                              `json:"id"`
+	Statement      string                                              `json:"statement"`
+	RequestSHA256  string                                              `json:"request_sha256"`
+	ResultRelation ApplicationRequirementCandidateResultRelationResult `json:"result_relation"`
 }
 
 type ApplicationIntentResolution struct {
@@ -66,11 +72,17 @@ func (candidate ApplicationIntentCandidate) Validate() error {
 		)
 	}
 	seen := make(map[string]struct{}, len(candidate.Requirements))
-	for index, statement := range candidate.Requirements {
+	for index, requirement := range candidate.Requirements {
+		statement := requirement.Statement
 		if err := validateApplicationIntentText(
 			"requirement statement", statement, maxRequirementQuoteBytes,
 		); err != nil {
 			return fmt.Errorf("application intent requirement %d: %w", index, err)
+		}
+		if err := requirement.ResultRelation.ValidateAcceptedFor(statement); err != nil {
+			return fmt.Errorf(
+				"application intent requirement %d result relation: %w", index, err,
+			)
 		}
 		if _, duplicate := seen[statement]; duplicate {
 			return fmt.Errorf("application intent requirement %d is duplicated", index)
@@ -83,7 +95,11 @@ func (candidate ApplicationIntentCandidate) Validate() error {
 func (candidate ApplicationIntentCandidate) ValidatePathFree(
 	provenance ArtifactIdentityProvenance,
 ) error {
-	values := append([]string{candidate.ProductContext}, candidate.Requirements...)
+	values := make([]string, 1, len(candidate.Requirements)+1)
+	values[0] = candidate.ProductContext
+	for _, requirement := range candidate.Requirements {
+		values = append(values, requirement.Statement)
+	}
 	return ValidatePathFreeModelContextWithProvenance(
 		"application intent candidate", provenance, values...,
 	)
@@ -101,10 +117,10 @@ func ResolveApplicationIntent(
 		return zero, err
 	}
 	requirements := make([]ApplicationRequirement, len(candidate.Requirements))
-	for index, statement := range candidate.Requirements {
+	for index, requirement := range candidate.Requirements {
 		requirements[index] = ApplicationRequirement{
-			ID: fmt.Sprintf("requirement_%03d", index+1), Statement: statement,
-			RequestSHA256: input.Context.RequestSHA256,
+			ID: fmt.Sprintf("requirement_%03d", index+1), Statement: requirement.Statement,
+			RequestSHA256: input.Context.RequestSHA256, ResultRelation: requirement.ResultRelation,
 		}
 	}
 	return ApplicationIntentResolution{
@@ -115,7 +131,9 @@ func ResolveApplicationIntent(
 }
 
 func cloneApplicationIntentCandidate(candidate ApplicationIntentCandidate) ApplicationIntentCandidate {
-	candidate.Requirements = append([]string(nil), candidate.Requirements...)
+	candidate.Requirements = append(
+		[]ApplicationIntentCandidateRequirement(nil), candidate.Requirements...,
+	)
 	return candidate
 }
 

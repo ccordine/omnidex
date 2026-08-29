@@ -30,11 +30,17 @@ func TestResetDatabaseAlwaysReplacesTheExactRuntimeSchema(t *testing.T) {
 		t.Fatalf("fresh setup relations jobs=%v discarded=%v", jobs, discarded)
 	}
 
-	var candidateKind, duplicateReplacement bool
+	var candidateKind, resultRelation, resultRelationCorrection, duplicateReplacement bool
 	var rendererConstraint string
 	if err := pool.QueryRow(t.Context(), `
 		SELECT station_owns_portable_work(
 		           'coding_requirements','application_requirement_candidate_kind','{}'::jsonb
+		       ),
+		       station_owns_portable_work(
+		           'coding_requirements','application_requirement_candidate_result_relation','{}'::jsonb
+		       ),
+		       station_owns_portable_work(
+		           'coding_requirements','application_requirement_candidate_result_relation_correction','{}'::jsonb
 		       ),
 		       station_owns_portable_work(
 		           'coding_requirements','application_requirement_candidate_duplicate_replacement','{}'::jsonb
@@ -43,14 +49,18 @@ func TestResetDatabaseAlwaysReplacesTheExactRuntimeSchema(t *testing.T) {
 		FROM pg_constraint
 		WHERE conrelid='station_gap_openings'::regclass
 		  AND conname='station_gap_openings_renderer_version_check'
-	`).Scan(&candidateKind, &duplicateReplacement, &rendererConstraint); err != nil {
+	`).Scan(
+		&candidateKind, &resultRelation, &resultRelationCorrection,
+		&duplicateReplacement, &rendererConstraint,
+	); err != nil {
 		t.Fatal(err)
 	}
-	if !candidateKind || !duplicateReplacement ||
+	if !candidateKind || !resultRelation || !resultRelationCorrection || !duplicateReplacement ||
 		rendererConstraint != "CHECK ((renderer_version = 'omnidex.render-portable-job.v1'::text))" {
 		t.Fatalf(
-			"fresh renderer authority candidate_kind=%t duplicate_replacement=%t constraint=%q",
-			candidateKind, duplicateReplacement, rendererConstraint,
+			"fresh renderer authority candidate_kind=%t result_relation=%t result_relation_correction=%t duplicate_replacement=%t constraint=%q",
+			candidateKind, resultRelation, resultRelationCorrection,
+			duplicateReplacement, rendererConstraint,
 		)
 	}
 }

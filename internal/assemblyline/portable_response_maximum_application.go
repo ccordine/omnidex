@@ -28,6 +28,14 @@ func portableApplicationResponseMaximum(job PortableJob) (int, bool, error) {
 			ApplicationRequirementCandidateTaskLocal,
 			ApplicationRequirementCandidateNonRuntime,
 		), true, nil
+	case WorkApplicationRequirementCandidateResultRelation:
+		return maximumStringBytes(
+			ApplicationRequirementNoDerivedResult,
+			ApplicationRequirementExplicitResultRelation,
+			ApplicationRequirementMissingResultRelation,
+		), true, nil
+	case WorkApplicationRequirementCandidateResultRelationCorrection:
+		return maxRequirementQuoteBytes, true, nil
 	case WorkApplicationRequirementCandidateSplit:
 		return maxRequirementQuoteBytes, true, nil
 	case WorkApplicationRequirementCandidateSplitCorrection:

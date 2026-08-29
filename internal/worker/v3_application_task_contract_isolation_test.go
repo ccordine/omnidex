@@ -179,12 +179,14 @@ func TestBrowserAcceptanceContractRequiresCausalStaticInteractionEvidence(t *tes
 				}
 			}
 			for _, required := range []string{
-				"Realize every explicit interaction condition in the exact requirement before observing its outcome.",
-				"enter concrete static values with fireEvent.change or fireEvent.input before activating the behavior",
-				"Every asserted derived value must be grounded in the exact requirement",
-				"exactly determined by the preceding static event payloads",
-				"Do not invent an accessible control name that the exact requirement does not state",
-				"assert the exact element that owns the expected text or accessible value",
+				"Realize every explicit interaction condition before observing its outcome.",
+				"Enter concrete static user values with fireEvent.change or fireEvent.input before activation",
+				"An action name is only a selector claim",
+				"Derive the unique expected result independently from the exact requirement relation and static payloads.",
+				"output names locate nodes but never supply results",
+				"Receipt accessible_name literals are the only named selectors.",
+				"all-query indexes are zero-based",
+				"getByText and findByText never prove output ownership.",
 			} {
 				if strings.Count(acceptancePrompt, required) != 1 {
 					t.Fatalf("acceptance prompt does not contain one exact causal rail %q:\n%s", required, acceptancePrompt)
@@ -192,6 +194,11 @@ func TestBrowserAcceptanceContractRequiresCausalStaticInteractionEvidence(t *tes
 				if strings.Contains(featurePrompt, required) {
 					t.Fatalf("implementation prompt inherited verification rail %q:\n%s", required, featurePrompt)
 				}
+			}
+			const publicOperationRail = "Give every requirement-defined result operation a literal accessible control name."
+			if strings.Count(featurePrompt, publicOperationRail) != 1 ||
+				strings.Contains(acceptancePrompt, publicOperationRail) {
+				t.Fatalf("public operation rail crossed task roles:\nfeature=%s\nacceptance=%s", featurePrompt, acceptancePrompt)
 			}
 		})
 	}

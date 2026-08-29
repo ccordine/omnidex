@@ -178,11 +178,12 @@ func genericBrowserFeatureContract(
 		parts = append(parts, "Validated procedure: "+skill.Procedure)
 	}
 	parts = append(parts,
-		"Return a complete accessible interactive React view. No placeholder, TODO, invented endpoint, import, or extra declaration.",
-		"Tailwind CSS utility classes are available in className. Use complete static utility names; do not construct class names from fragments.",
-		"State, read-only capability snapshots, mutations, live working status, and visible errors are available through the declared inputs.",
-		"Route shared state changes through actions inside user interaction handlers. Read state for this behavior and capabilities only when another required behavior materially affects this view.",
-		"React hooks and standard browser APIs are available when the required behavior needs them. Implement that behavior using only the declared inputs.",
+		"Return one complete accessible interactive React view; no placeholder, TODO, endpoint, import, or extra declaration.",
+		"Use one unconditional top-level intrinsic JSX root; no fragment or other JSX. Controls are unconditional, never in branches, ternaries, loops, or maps. Each visible dynamic expression is the sole child of an intrinsic. A derived result is the sole genuinely dynamic child of output with a unique literal aria-label; other dynamic text cannot prove results. Only condition && intrinsic may conditionally show non-control text.",
+		"Controls are intrinsic button, textarea, select, or supported input. Buttons have literal text; others have a literal aria-label or label. Public attributes are static quoted literals. No custom components, explicit roles, aria-labelledby, spreads, style, script, template, noscript, title, alt, contentEditable, dialog, popover, hidden or visibility changes, disabled or read-only controls, links, media, datalist, or other native interactive elements.",
+		"Give every requirement-defined result operation a literal accessible control name. Names may identify alternatives but cannot invent result relations.",
+		"Classes are static allowlisted Tailwind display and layout, nonnegative padding and gap, mx-auto, nonzero size, non-color type, border, radius, or shadow utilities; no other classes.",
+		"Use only declared state, capabilities, actions, status, errors, and hooks. Mutate shared state through actions in handlers; read state or capabilities only when this behavior requires them.",
 	)
 	parts = append(parts, "Every referenced capability identifier must be one of the listed capability identifiers.")
 	return strings.Join(parts, "\n")

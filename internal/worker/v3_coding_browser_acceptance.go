@@ -108,9 +108,11 @@ func genericBrowserAcceptanceContract(
 ) string {
 	return strings.Join([]string{
 		behavior,
-		"The harness renders the public component before invoking this function. The function body is a sequence of direct screen-query throwing observations, expect statements, and fireEvent calls using static arguments and event payloads. Asynchronous evidence uses awaited findBy, findAllBy, or waitFor calls whose callbacks contain those same direct forms. The exact accepted requirement has user-visible evidence in that sequence.",
-		"Realize every explicit interaction condition in the exact requirement before observing its outcome. When that outcome depends on user-provided values, enter concrete static values with fireEvent.change or fireEvent.input before activating the behavior; never assume preloaded values. Every asserted derived value must be grounded in the exact requirement, including any stated initial condition, and exactly determined by the preceding static event payloads; never invent an expected value.",
-		"Do not invent an accessible control name that the exact requirement does not state; use direct role queries and indexes for unnamed repeated controls. Observe and assert the exact element that owns the expected text or accessible value; do not rely on concatenating text from separate descendants.",
+		"The harness renders first. Use one flat sequence of direct fireEvent calls and screen-grounded expect assertions. No declarations, branches, loops, returns, helpers, nested calls, or side effects. An awaited waitFor callback may contain only direct expect assertions.",
+		"Realize every explicit interaction condition before observing its outcome. Enter concrete static user values with fireEvent.change or fireEvent.input before activation; never assume preloaded values. Derive the unique expected result independently from the exact requirement relation and static payloads. An action name is only a selector claim, never a missing relation, expected value, or proof.",
+		"Receipt accessible_name literals are the only named selectors. role_ordinal is one-based; all-query indexes are zero-based. Never invent names or use placeholder_hint.",
+		"Use only screen.getByRole, awaited screen.findByRole, indexed screen.getAllByRole, awaited indexed screen.findAllByRole, screen.getByText, and awaited screen.findByText. Role status requires a singular query with its exact receipt name and is never a fireEvent target. Use only compatible direct fireEvent.click, fireEvent.change, and fireEvent.input.",
+		"For a derived result, select its exact named status output and assert non-negated toHaveTextContent with one no-flags ^literal$ regex; escape regex metacharacters. Compute the literal independently: output names locate nodes but never supply results. getByText and findByText never prove output ownership.",
 	}, "\n")
 }
 

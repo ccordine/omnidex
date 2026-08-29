@@ -33,6 +33,7 @@ func TestRustCommandLineStackCompilesAndExecutesLockedOffline(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	bindDirectCodingTestRequirementRelations(t, &program)
 	program.Generated = map[string]string{
 		"feature.001": `pub fn feature_001(input: &TaskInput, dependencies: &CapabilityResults) -> TaskResult {
     let _ = dependencies;

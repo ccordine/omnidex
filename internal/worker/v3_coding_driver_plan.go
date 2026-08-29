@@ -73,13 +73,14 @@ func (s *directCodingSession) Assemble() (directCodingAssembly, error) {
 	if err != nil {
 		return directCodingAssembly{}, err
 	}
-	specification, err := runDirectCodingApplicationInterpreter(
+	interpretation, err := runDirectCodingApplicationInterpreter(
 		workerRuntime, requirementModel, surfaceModel, artifactModel,
 		redacted, applicationContext, identities,
 	)
 	if err != nil {
 		return directCodingAssembly{}, err
 	}
+	specification := interpretation.Specification
 	if err := validateDirectCodingRequirementCount(specification.Requirements); err != nil {
 		return directCodingAssembly{}, err
 	}
@@ -105,6 +106,12 @@ func (s *directCodingSession) Assemble() (directCodingAssembly, error) {
 		return directCodingAssembly{}, err
 	}
 	workload, err := assemblyline.FreezeApplicationWorkload(specification)
+	if err != nil {
+		return directCodingAssembly{}, err
+	}
+	requirementRelations, err := newDirectCodingApplicationTaskResultRelationPlan(
+		workload, interpretation.AcceptedRequirements,
+	)
 	if err != nil {
 		return directCodingAssembly{}, err
 	}
@@ -201,6 +208,7 @@ func (s *directCodingSession) Assemble() (directCodingAssembly, error) {
 	if err != nil {
 		return directCodingAssembly{}, err
 	}
+	program.RequirementRelations = requirementRelations
 	program, err = bindDirectCodingRuntimeCapabilities(
 		selectedStack, program, runtimeCapabilities,
 	)

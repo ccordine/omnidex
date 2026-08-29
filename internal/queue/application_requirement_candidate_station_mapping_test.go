@@ -12,6 +12,8 @@ func TestApplicationRequirementCandidateWorkHasOneExactStationOwner(t *testing.T
 	for _, kind := range []assemblyline.WorkKind{
 		assemblyline.WorkApplicationRequirementCandidateCardinality,
 		assemblyline.WorkApplicationRequirementCandidateKind,
+		assemblyline.WorkApplicationRequirementCandidateResultRelation,
+		assemblyline.WorkApplicationRequirementCandidateResultRelationCorrection,
 		assemblyline.WorkApplicationRequirementCandidateSplit,
 		assemblyline.WorkApplicationRequirementCandidateSplitCorrection,
 		assemblyline.WorkApplicationRequirementCandidateDuplicateReplacement,

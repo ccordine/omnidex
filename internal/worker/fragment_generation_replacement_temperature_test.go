@@ -176,6 +176,58 @@ func TestRequirementDuplicateReplacementAdvancesRegisteredTemperature(t *testing
 	}
 }
 
+func TestRequirementResultRelationCorrectionAdvancesRegisteredTemperature(t *testing.T) {
+	t.Parallel()
+	const candidate = "Accept values and display a correct result."
+	kindInput := assemblyline.ApplicationRequirementCandidateKindInput{Candidate: candidate}
+	kind, err := assemblyline.DecodeApplicationRequirementCandidateKindResult(
+		kindInput, assemblyline.ApplicationRequirementCandidateTaskLocal,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cardinalityInput := assemblyline.ApplicationRequirementCandidateCardinalityInput{
+		Candidate: candidate,
+	}
+	cardinality, err := assemblyline.DecodeApplicationRequirementCandidateCardinalityResult(
+		cardinalityInput, assemblyline.ApplicationRequirementOneRuntimeOutcome,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	candidateAuthority := assemblyline.ApplicationRequirementCandidateResultRelationInput{
+		Candidate: candidate, Kind: kind, Cardinality: cardinality,
+	}
+	relation, err := assemblyline.DecodeApplicationRequirementCandidateResultRelationResult(
+		candidateAuthority, assemblyline.ApplicationRequirementMissingResultRelation,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	job, err := assemblyline.NewApplicationRequirementCandidateResultRelationCorrectionJob(
+		assemblyline.ApplicationRequirementCandidateResultRelationCorrectionInput{
+			GenerationAuthority: directCodingRequirementGenerationAuthorityForRequest(
+				t,
+				"Build a browser capacity display that subtracts used capacity from its limit.",
+			),
+			CandidateAuthority: candidateAuthority,
+			ResultRelation:     relation,
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prepared := prepareReplacementTemperatureTestCall(
+		t, job, replacementTemperatureTestExpectation(),
+	)
+	if prepared.Temperature == nil || *prepared.Temperature != 0.2 {
+		t.Fatalf("result-relation correction temperature=%v, want 0.2", prepared.Temperature)
+	}
+	if got := preparedRequestTemperature(t, prepared); got != 0.2 {
+		t.Fatalf("result-relation correction wire temperature=%v, want 0.2", got)
+	}
+}
+
 func TestRequirementCandidateKindKeepsRegisteredTemperatureBaseline(t *testing.T) {
 	t.Parallel()
 	job, err := assemblyline.NewApplicationRequirementCandidateKindJob(

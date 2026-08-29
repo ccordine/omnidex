@@ -106,6 +106,8 @@ func TestPortableSemanticLeafKindsAreRegistered(t *testing.T) {
 		WorkApplicationRequirement,
 		WorkApplicationRequirementCandidateCardinality,
 		WorkApplicationRequirementCandidateKind,
+		WorkApplicationRequirementCandidateResultRelation,
+		WorkApplicationRequirementCandidateResultRelationCorrection,
 		WorkApplicationRequirementCandidateSplit,
 		WorkApplicationRequirementCandidateSplitCorrection,
 		WorkApplicationRequirementCandidateDuplicateReplacement,

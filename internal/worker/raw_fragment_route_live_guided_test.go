@@ -91,7 +91,7 @@ func runLiveQwenGuidedTSXRepairQualification(
 			start := provider.callCount()
 			source, convergenceErr := convergeDirectCodingTypeScriptGuidedRepairWithRuntime(
 				runtime, modelName, modelName, directCodingTypeScriptRepairEvents{},
-				fixture.target, true, dialect, fixture.available, fixture.current, nil, feedback,
+				fixture.target, true, dialect, fixture.available, fixture.current, nil, feedback, nil,
 			)
 			calls := provider.callsFrom(start)
 			if convergenceErr != nil {

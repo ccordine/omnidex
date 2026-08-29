@@ -5,10 +5,11 @@ import "testing"
 func TestPortableResponseFramingRegistryIsExhaustive(t *testing.T) {
 	natural := map[WorkKind]struct{}{
 		WorkApplicationProductContext: {}, WorkApplicationRequirement: {},
-		WorkApplicationRequirementCandidateSplit:                {},
-		WorkApplicationRequirementCandidateSplitCorrection:      {},
-		WorkApplicationRequirementCandidateDuplicateReplacement: {},
-		WorkApplicationTargetTree:                               {}, WorkRepositoryRequirement: {},
+		WorkApplicationRequirementCandidateSplit:                    {},
+		WorkApplicationRequirementCandidateSplitCorrection:          {},
+		WorkApplicationRequirementCandidateDuplicateReplacement:     {},
+		WorkApplicationRequirementCandidateResultRelationCorrection: {},
+		WorkApplicationTargetTree:                                   {}, WorkRepositoryRequirement: {},
 		WorkContextMinification:  {},
 		WorkConversationResponse: {}, WorkRoleplayGroundedResponseText: {},
 		WorkRoleplayOngoingAction: {}, WorkGroundedAnswerText: {},

@@ -54,6 +54,7 @@ func TestVersionProfileIDPropagatesFromSelectionThroughTaskAssembly(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
+	bindDirectCodingTestRequirementRelations(t, &program)
 	if program.VersionProfileID != profile.ID {
 		t.Fatalf("program profile=%s want=%s", program.VersionProfileID, profile.ID)
 	}

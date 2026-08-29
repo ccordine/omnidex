@@ -205,6 +205,8 @@ func assertLiveCodingQualificationCalls(
 	generationCount := counts[assemblyline.WorkApplicationRequirement]
 	kindCount := counts[assemblyline.WorkApplicationRequirementCandidateKind]
 	cardinalityCount := counts[assemblyline.WorkApplicationRequirementCandidateCardinality]
+	resultRelationCount := counts[assemblyline.WorkApplicationRequirementCandidateResultRelation]
+	resultRelationCorrectionCount := counts[assemblyline.WorkApplicationRequirementCandidateResultRelationCorrection]
 	splitCount := counts[assemblyline.WorkApplicationRequirementCandidateSplit]
 	correctionCount := counts[assemblyline.WorkApplicationRequirementCandidateSplitCorrection]
 	duplicateReplacementCount := counts[assemblyline.WorkApplicationRequirementCandidateDuplicateReplacement]
@@ -229,10 +231,15 @@ func assertLiveCodingQualificationCalls(
 		counts[assemblyline.WorkApplicationRequirementCoverage] !=
 			generationCount-nonRuntimeCount+1 ||
 		kindCount != nonRuntimeCount+taskLocalCount ||
-		kindCount < generationCount || kindCount > generationCount+duplicateReplacementCount ||
-		cardinalityCount != taskLocalCount+splitCount ||
+		kindCount < generationCount ||
+		kindCount > generationCount+duplicateReplacementCount+splitCount+resultRelationCorrectionCount ||
+		(cardinalityCount < taskLocalCount ||
+			cardinalityCount > taskLocalCount+splitCount) ||
+		resultRelationCount != featureCount+resultRelationCorrectionCount ||
 		splitCount > taskLocalCount*assemblyline.MaxApplicationRequirementCandidateSplitDepth ||
-		correctionCount > splitCount || duplicateReplacementCount > generationCount {
+		correctionCount > splitCount ||
+		resultRelationCorrectionCount > generationCount ||
+		duplicateReplacementCount > generationCount {
 		t.Fatalf("live qualification raw-leaf call shape differs from code-owned fixed points: %v", counts)
 	}
 }

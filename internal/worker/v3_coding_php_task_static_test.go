@@ -94,12 +94,14 @@ func phpTaskStaticProjectionFixture(
 	if err != nil {
 		t.Fatal(err)
 	}
-	return directCodingProgram{
+	program := directCodingProgram{
 		StackID: genericPHPServiceAdapter, VersionProfileID: phpServiceVersionProfileV1,
 		Workload: workload, Coverage: coverage,
 		ServiceState:     state,
 		ServiceEndpoints: endpoints, Source: blueprint, StaticFiles: staticFiles,
 	}
+	bindDirectCodingTestRequirementRelations(t, &program)
+	return program
 }
 
 func phpDockerfileContextCopyInputs(t *testing.T, dockerfile string) []string {

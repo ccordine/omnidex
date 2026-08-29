@@ -7,9 +7,10 @@ import (
 )
 
 type directCodingTypeScriptProjectStageExecutor struct {
-	session   *directCodingSession
-	workspace *directCodingTypeScriptStageWorkspace
-	progress  *directCodingTypeScriptCorrectionProgress
+	session               *directCodingSession
+	workspace             *directCodingTypeScriptStageWorkspace
+	progress              *directCodingTypeScriptCorrectionProgress
+	publicSurfaceBindings map[string]directCodingBrowserPublicSurfaceBinding
 }
 
 func newDirectCodingTypeScriptProjectStageExecutor(
@@ -25,7 +26,8 @@ func newDirectCodingTypeScriptProjectStageExecutor(
 	}
 	return &directCodingTypeScriptProjectStageExecutor{
 		session: session, workspace: workspace,
-		progress: newDirectCodingTypeScriptCorrectionProgress(),
+		progress:              newDirectCodingTypeScriptCorrectionProgress(),
+		publicSurfaceBindings: make(map[string]directCodingBrowserPublicSurfaceBinding),
 	}, nil
 }
 
@@ -40,7 +42,29 @@ func (executor *directCodingTypeScriptProjectStageExecutor) GenerateBlock(
 			ref.Document.AdapterID, ref.Block.ID,
 		)
 	}
-	return executor.session.generateDirectCodingApplicationTaskBlock(context, stage, ref)
+	var publicSurface *assemblyline.FragmentPublicInteractionSurface
+	var validateInitialCandidate func(string) error
+	if ref.Block.Role == assemblyline.SourceBlockTaskImplementation {
+		validateInitialCandidate = validateDirectCodingBrowserPublicInteractionCandidate
+	} else if ref.Block.Role == assemblyline.SourceBlockTaskVerification {
+		var err error
+		publicSurface, validateInitialCandidate, err = executor.bindBrowserPublicSurface(
+			context, stage, ref,
+		)
+		if err != nil {
+			return "", err
+		}
+	}
+	source, err := executor.session.generateDirectCodingApplicationTaskBlock(
+		context, stage, ref, publicSurface, validateInitialCandidate,
+	)
+	if err != nil {
+		return "", err
+	}
+	if ref.Block.Role == assemblyline.SourceBlockTaskImplementation {
+		return executor.closeImplementationBeforeVerification(stage, ref, source)
+	}
+	return source, nil
 }
 
 func (executor *directCodingTypeScriptProjectStageExecutor) VerifyTask(
@@ -53,6 +77,9 @@ func (executor *directCodingTypeScriptProjectStageExecutor) VerifyTask(
 	}
 	return executor.session.stageTypeScriptProgramIn(
 		executor.workspace.Root(), stage, commands, executor.progress,
+		func(current *directCodingProgram) error {
+			return executor.validateTaskBrowserPublicSurface(current, context.Task.TaskID)
+		},
 	)
 }
 
@@ -61,6 +88,7 @@ func (executor *directCodingTypeScriptProjectStageExecutor) VerifyFinal(
 ) error {
 	return executor.session.stageTypeScriptProgramIn(
 		executor.workspace.Root(), program, directCodingFullStageCommands(), executor.progress,
+		executor.validateAllBrowserPublicSurfaces,
 	)
 }
 

@@ -54,6 +54,20 @@ func applicationSemanticUncertaintyContract(
 			"One exact requirement candidate and the registered task-local-or-non-runtime vocabulary.",
 			"One registered requirement-candidate kind relation.",
 			"DecodeApplicationRequirementCandidateKindResult validates the candidate-bound relation before code retains the runtime candidate or records the non-runtime candidate as excluded.")
+	case WorkApplicationRequirementCandidateResultRelation:
+		contract = semanticUncertaintyContract(kind,
+			"Does the exact one-outcome runtime requirement need no derived result, state its determining result relation explicitly, or leave that relation underdetermined?",
+			"Whether natural-language outcome semantics provide an independently computable result oracle cannot be established by syntax or byte validation.",
+			"One exact requirement candidate, its code-bound TASK_LOCAL_RUNTIME_OUTCOME and ONE_RUNTIME_OUTCOME receipts, and the registered result-relation vocabulary.",
+			"One registered candidate-bound result-relation value.",
+			"DecodeApplicationRequirementCandidateResultRelationResult validates the relation before code retains the candidate or opens one exact one-leaf correction.")
+	case WorkApplicationRequirementCandidateResultRelationCorrection:
+		contract = semanticUncertaintyContract(kind,
+			"What complete replacement corrects the exact one-outcome requirement whose derived-result relation is underdetermined?",
+			"The missing semantic relation must be selected from the immutable natural-language authority and cannot be supplied by structural validation.",
+			"The immutable generation authority, exact current candidate, and its code-bound MISSING_DERIVED_RESULT_RELATION defect.",
+			"One complete byte-different one-outcome runtime requirement with an explicit determining relation.",
+			"DecodeApplicationRequirementCandidateResultRelationCorrectionLeaf validates the replacement before code reruns ordinary kind, cardinality, and result-relation validation.")
 	case WorkApplicationRequirementCandidateSplit:
 		contract = semanticUncertaintyContract(kind,
 			"What is the earliest single runtime outcome contained in the exact multi-outcome requirement candidate?",

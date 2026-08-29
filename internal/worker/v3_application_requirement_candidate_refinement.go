@@ -6,13 +6,19 @@ import (
 	"github.com/gryph/omnidex/internal/assemblyline"
 )
 
+type directCodingApplicationRequirementCandidateRefinement struct {
+	Candidate   string
+	Cardinality assemblyline.ApplicationRequirementCandidateCardinalityResult
+}
+
 func refineDirectCodingApplicationRequirementCandidate(
 	runtime typedWorkerRuntime,
 	intentModel string,
 	candidate string,
 	retainedAuthority assemblyline.ApplicationRequirementCoverageInput,
 	identities []assemblyline.ArtifactIdentity,
-) (string, error) {
+) (directCodingApplicationRequirementCandidateRefinement, error) {
+	var zero directCodingApplicationRequirementCandidateRefinement
 	seen := map[string]struct{}{candidate: {}}
 	correctionUsed := false
 	for splitCount := 0; ; {
@@ -23,7 +29,7 @@ func refineDirectCodingApplicationRequirementCandidate(
 			cardinalityInput,
 		)
 		if err != nil {
-			return "", err
+			return zero, err
 		}
 		cardinality, err := runDirectCodingSemanticLeafCall(
 			runtime, intentModel, "application_requirement_candidate_cardinality",
@@ -38,13 +44,15 @@ func refineDirectCodingApplicationRequirementCandidate(
 			},
 		)
 		if err != nil {
-			return "", err
+			return zero, err
 		}
 		if cardinality.Relation == assemblyline.ApplicationRequirementOneRuntimeOutcome {
-			return candidate, nil
+			return directCodingApplicationRequirementCandidateRefinement{
+				Candidate: candidate, Cardinality: cardinality,
+			}, nil
 		}
 		if splitCount == assemblyline.MaxApplicationRequirementCandidateSplitDepth {
-			return "", fmt.Errorf(
+			return zero, fmt.Errorf(
 				"application requirement candidate remains multi-outcome at the code-owned %d-split bound",
 				assemblyline.MaxApplicationRequirementCandidateSplitDepth,
 			)
@@ -54,7 +62,7 @@ func refineDirectCodingApplicationRequirementCandidate(
 		}
 		splitJob, err := assemblyline.NewApplicationRequirementCandidateSplitJob(splitInput)
 		if err != nil {
-			return "", err
+			return zero, err
 		}
 		split, err := runDirectCodingSemanticLeafCall(
 			runtime, intentModel, "application_requirement_candidate_split",
@@ -69,11 +77,11 @@ func refineDirectCodingApplicationRequirementCandidate(
 			},
 		)
 		if err != nil {
-			return "", err
+			return zero, err
 		}
 		if split == candidate {
 			if correctionUsed {
-				return "", fmt.Errorf(
+				return zero, fmt.Errorf(
 					"application requirement candidate split repeated an unchanged value after its one correction",
 				)
 			}
@@ -86,7 +94,7 @@ func refineDirectCodingApplicationRequirementCandidate(
 				correctionInput,
 			)
 			if err != nil {
-				return "", err
+				return zero, err
 			}
 			split, err = runDirectCodingSemanticLeafCall(
 				runtime, intentModel, "application_requirement_candidate_split_correction",
@@ -104,17 +112,19 @@ func refineDirectCodingApplicationRequirementCandidate(
 				},
 			)
 			if err != nil {
-				return "", err
+				return zero, err
 			}
 			correctionUsed = true
 		}
 		if _, duplicate := directCodingApplicationRequirementDuplicate(
 			retainedAuthority, split,
 		); duplicate {
-			return split, nil
+			return directCodingApplicationRequirementCandidateRefinement{
+				Candidate: split,
+			}, nil
 		}
 		if _, repeated := seen[split]; repeated {
-			return "", fmt.Errorf("application requirement candidate split entered a repeated cycle")
+			return zero, fmt.Errorf("application requirement candidate split entered a repeated cycle")
 		}
 		seen[split] = struct{}{}
 		candidate = split

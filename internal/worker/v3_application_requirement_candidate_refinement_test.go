@@ -57,8 +57,9 @@ func TestDirectCodingRequirementCandidateRefinementSplitsBeforeRetention(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got != atomic {
-		t.Fatalf("refined=%q", got)
+	if got.Candidate != atomic ||
+		got.Cardinality.Relation != assemblyline.ApplicationRequirementOneRuntimeOutcome {
+		t.Fatalf("refined=%+v", got)
 	}
 	wantCalls := []assemblyline.WorkKind{
 		assemblyline.WorkApplicationRequirementCandidateCardinality,
@@ -149,8 +150,9 @@ func TestDirectCodingRequirementCandidateRefinementCorrectsOneExactUnchangedSpli
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got != atomic {
-		t.Fatalf("refined=%q", got)
+	if got.Candidate != atomic ||
+		got.Cardinality.Relation != assemblyline.ApplicationRequirementOneRuntimeOutcome {
+		t.Fatalf("refined=%+v", got)
 	}
 	wantCalls := []assemblyline.WorkKind{
 		assemblyline.WorkApplicationRequirementCandidateCardinality,

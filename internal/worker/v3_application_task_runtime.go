@@ -13,8 +13,12 @@ func (s *directCodingSession) generateDirectCodingApplicationTaskBlock(
 	_ assemblyline.ApplicationTaskContext,
 	stage *directCodingProgram,
 	ref assemblyline.SourceBlockRef,
+	publicSurface *assemblyline.FragmentPublicInteractionSurface,
+	validateInitialCandidate func(string) error,
 ) (string, error) {
-	job, err := directCodingApplicationTaskFragmentJob(stage, ref)
+	job, err := directCodingApplicationTaskFragmentJob(
+		stage, ref, publicSurface, validateInitialCandidate,
+	)
 	if err != nil {
 		return "", err
 	}
@@ -31,6 +35,8 @@ func (s *directCodingSession) generateDirectCodingApplicationTaskBlock(
 func directCodingApplicationTaskFragmentJob(
 	stage *directCodingProgram,
 	ref assemblyline.SourceBlockRef,
+	publicSurface *assemblyline.FragmentPublicInteractionSurface,
+	validateInitialCandidate func(string) error,
 ) (directCodingTypeScriptFragmentJob, error) {
 	if stage == nil {
 		return directCodingTypeScriptFragmentJob{}, fmt.Errorf("application task generation requires one isolated stage")
@@ -65,6 +71,8 @@ func directCodingApplicationTaskFragmentJob(
 	}
 	return directCodingTypeScriptFragmentJob{
 		block: block, dialect: profile.SourceDialect, tsx: tsx, available: available,
+		publicInteractionSurface: publicSurface,
+		validateInitialCandidate: validateInitialCandidate,
 	}, nil
 }
 

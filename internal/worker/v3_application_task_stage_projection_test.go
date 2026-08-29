@@ -134,6 +134,7 @@ func applicationTaskLifecycleFixture(
 			{Path: "src/styles.css", Content: "body {}"},
 		},
 	}
+	bindDirectCodingTestRequirementRelations(t, &program)
 	if err := program.Source.Validate(); err != nil {
 		t.Fatal(err)
 	}
