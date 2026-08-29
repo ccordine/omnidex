@@ -109,6 +109,8 @@ func genericBrowserAcceptanceContract(
 	return strings.Join([]string{
 		behavior,
 		"The harness renders the public component before invoking this function. The function body is a sequence of direct screen-query throwing observations, expect statements, and fireEvent calls using static arguments and event payloads. Asynchronous evidence uses awaited findBy, findAllBy, or waitFor calls whose callbacks contain those same direct forms. The exact accepted requirement has user-visible evidence in that sequence.",
+		"Realize every explicit interaction condition in the exact requirement before observing its outcome. When that outcome depends on user-provided values, enter concrete static values with fireEvent.change or fireEvent.input before activating the behavior; never assume preloaded values. Every asserted derived value must be grounded in the exact requirement, including any stated initial condition, and exactly determined by the preceding static event payloads; never invent an expected value.",
+		"Do not invent an accessible control name that the exact requirement does not state; use direct role queries and indexes for unnamed repeated controls. Observe and assert the exact element that owns the expected text or accessible value; do not rely on concatenating text from separate descendants.",
 	}, "\n")
 }
 
