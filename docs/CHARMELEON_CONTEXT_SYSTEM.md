@@ -292,11 +292,11 @@ machine passes its executable gates:
    correction, or retry station. Only a distinct candidate proceeds to the separate three-way
    result-relation question. It returns only that the outcome needs no derived result, explicitly states an
    independently computable determining relation, or omits that relation. A named existing per-item grouping
-   key completely determines group membership; its origin and unasserted ordering are not missing. A concrete
-   rule-bearing calculation, expression, formula, predicate, or named operation supplied, configured, selected,
-   or performed at runtime is itself an observable determining input; applying or evaluating it states the
-   relation even when its runtime choice and operands vary, while a bare quality claim or unspecified calculated
-   result remains missing. Selection,
+   key completely determines group membership; its origin and unasserted ordering are not missing. An expression,
+   formula, predicate, or named operation supplied, configured, or selected by an actor is a rule-bearing input.
+   When an actor performs a calculation, its chosen operation and operands are observable runtime inputs; neither
+   form must be fixed before runtime. A bare quality claim or output described only as calculated, computed,
+   evaluated, generated, or selected remains missing. Selection,
    ordering, transformation, aggregation, measurement, or decision can establish a derived relation even when that value is the only rendered output. Actions, controls, unchanged rendering, state transitions, artifact availability, and event occurrences are `NO_DERIVED_RESULT` when they assert only that behavior. A qualitative descriptor on an action, event, or message does not create a derived value. The result carries the exact
    candidate hash and hashes of both complete input receipts; code validates those identities before the
    relation can be retained. The last value first opens one separate entailment relation over only the

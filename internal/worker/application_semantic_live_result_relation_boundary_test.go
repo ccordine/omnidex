@@ -47,8 +47,28 @@ func TestLiveApplicationResultRelationBoundaryQualification(t *testing.T) {
 			relation:  assemblyline.ApplicationRequirementExplicitResultRelation,
 		},
 		{
+			name:      "runtime-performed-calculation-declarative",
+			candidate: "The application displays a numeric result for the calculation performed by the user.",
+			relation:  assemblyline.ApplicationRequirementExplicitResultRelation,
+		},
+		{
+			name:      "runtime-selected-operation-declarative",
+			candidate: "The display reports the result of the operation selected and performed by the operator.",
+			relation:  assemblyline.ApplicationRequirementExplicitResultRelation,
+		},
+		{
+			name:      "runtime-supplied-formula-declarative",
+			candidate: "The interface displays the value obtained from the formula supplied by its operator.",
+			relation:  assemblyline.ApplicationRequirementExplicitResultRelation,
+		},
+		{
 			name:      "runtime-calculated-without-rule",
 			candidate: "Display a result calculated at runtime.",
+			relation:  assemblyline.ApplicationRequirementMissingResultRelation,
+		},
+		{
+			name:      "runtime-computed-output-declarative",
+			candidate: "The display reports an output computed during execution.",
 			relation:  assemblyline.ApplicationRequirementMissingResultRelation,
 		},
 		{
