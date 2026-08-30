@@ -2,18 +2,79 @@ package worker
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
 )
 
+// directCodingApplicationRequestAuthority keeps the actual request provenance
+// code-only while exposing only the artifact-redacted request to semantic jobs.
+type directCodingApplicationRequestAuthority struct {
+	authoritativeRequest string
+	modelRequest         string
+	requestSHA256        string
+}
+
+func newDirectCodingApplicationRequestAuthority(
+	authoritativeRequest string,
+	modelRequest string,
+) (directCodingApplicationRequestAuthority, error) {
+	var zero directCodingApplicationRequestAuthority
+	if authoritativeRequest == "" || authoritativeRequest != strings.TrimSpace(authoritativeRequest) {
+		return zero, fmt.Errorf("direct coding application authority requires one trimmed request")
+	}
+	if modelRequest == "" || modelRequest != strings.TrimSpace(modelRequest) {
+		return zero, fmt.Errorf("direct coding application authority requires one trimmed model request")
+	}
+	authority := directCodingApplicationRequestAuthority{
+		authoritativeRequest: authoritativeRequest,
+		modelRequest:         modelRequest,
+		requestSHA256:        assemblyline.ExactObjectiveContextSHA(authoritativeRequest),
+	}
+	if err := authority.validate(); err != nil {
+		return zero, err
+	}
+	return authority, nil
+}
+
+func (authority directCodingApplicationRequestAuthority) validate() error {
+	if authority.authoritativeRequest == "" ||
+		authority.authoritativeRequest != strings.TrimSpace(authority.authoritativeRequest) {
+		return fmt.Errorf("direct coding application authority has an invalid authoritative request")
+	}
+	if authority.modelRequest == "" || authority.modelRequest != strings.TrimSpace(authority.modelRequest) {
+		return fmt.Errorf("direct coding application authority has an invalid model request")
+	}
+	if err := assemblyline.ValidatePathFreeModelContext(
+		"direct coding application model request", authority.modelRequest,
+	); err != nil {
+		return err
+	}
+	if authority.requestSHA256 != assemblyline.ExactObjectiveContextSHA(authority.authoritativeRequest) {
+		return fmt.Errorf("direct coding application authority request provenance is not authenticated")
+	}
+	return nil
+}
+
 type directCodingApplicationInterpretation struct {
 	Specification        assemblyline.ApplicationSpecification
+	RequestSHA256        string
 	AcceptedRequirements []assemblyline.ApplicationRequirement
 }
 
-func (interpretation directCodingApplicationInterpretation) validate() error {
+func (interpretation directCodingApplicationInterpretation) validateForAuthority(
+	authority directCodingApplicationRequestAuthority,
+) error {
 	if err := interpretation.Specification.Validate(); err != nil {
 		return err
+	}
+	if err := authority.validate(); err != nil {
+		return err
+	}
+	if interpretation.RequestSHA256 != authority.requestSHA256 {
+		return fmt.Errorf(
+			"application interpretation request provenance does not match authoritative request",
+		)
 	}
 	if len(interpretation.AcceptedRequirements) != len(interpretation.Specification.Requirements) {
 		return fmt.Errorf("application interpretation result-relation receipts do not cover accepted requirements")
@@ -21,7 +82,7 @@ func (interpretation directCodingApplicationInterpretation) validate() error {
 	for index, accepted := range interpretation.AcceptedRequirements {
 		requirement := interpretation.Specification.Requirements[index]
 		if accepted.ID != requirement.ID || accepted.Statement != requirement.SourceQuote ||
-			accepted.RequestSHA256 == "" {
+			accepted.RequestSHA256 != authority.requestSHA256 {
 			return fmt.Errorf(
 				"application interpretation requirement %d differs from accepted specification authority",
 				index,
@@ -42,33 +103,40 @@ func runDirectCodingApplicationInterpreter(
 	intentModel string,
 	surfaceModel string,
 	artifactModel string,
-	authority string,
+	authority directCodingApplicationRequestAuthority,
 	applicationContext assemblyline.ApplicationContext,
 	identities []assemblyline.ArtifactIdentity,
 ) (directCodingApplicationInterpretation, error) {
 	var zero directCodingApplicationInterpretation
+	if err := authority.validate(); err != nil {
+		return zero, err
+	}
 
 	formalizedContext, err := resolveDirectCodingApplicationContext(
-		runtime, intentModel, authority, applicationContext, identities, nil,
+		runtime, intentModel, authority.modelRequest, applicationContext, identities, nil,
 	)
 	if err != nil {
 		return zero, err
 	}
-	classification, err := classifyApplicationSurface(runtime, surfaceModel, authority, identities)
+	classification, err := classifyApplicationSurface(
+		runtime, surfaceModel, authority.modelRequest, identities,
+	)
 	if err != nil {
 		return zero, err
 	}
 	resolution, err := resolveDirectCodingApplicationIntent(
 		runtime, intentModel,
 		assemblyline.ApplicationIntentInput{
-			UserRequest: authority, Context: formalizedContext,
+			UserRequest: authority.modelRequest, Context: formalizedContext,
 		},
 		identities,
 	)
 	if err != nil {
 		return zero, err
 	}
-	artifacts, err := classifyArtifactHandling(runtime, artifactModel, authority, identities)
+	artifacts, err := classifyArtifactHandling(
+		runtime, artifactModel, authority.modelRequest, identities,
+	)
 	if err != nil {
 		return zero, err
 	}
@@ -82,13 +150,18 @@ func runDirectCodingApplicationInterpreter(
 		Surface: classification.Surface, ProductQuote: resolution.ProductContext,
 		Requirements: requirements, Artifacts: artifacts,
 	}
-	interpretation := directCodingApplicationInterpretation{
-		Specification: specification,
-		AcceptedRequirements: append(
-			[]assemblyline.ApplicationRequirement(nil), resolution.Requirements...,
-		),
+	if resolution.RequestSHA256 != assemblyline.ExactObjectiveContextSHA(authority.modelRequest) {
+		return zero, fmt.Errorf("application interpretation resolution differs from model request authority")
 	}
-	if err := interpretation.validate(); err != nil {
+	accepted := append([]assemblyline.ApplicationRequirement(nil), resolution.Requirements...)
+	for index := range accepted {
+		accepted[index].RequestSHA256 = authority.requestSHA256
+	}
+	interpretation := directCodingApplicationInterpretation{
+		Specification: specification, RequestSHA256: authority.requestSHA256,
+		AcceptedRequirements: accepted,
+	}
+	if err := interpretation.validateForAuthority(authority); err != nil {
 		return zero, err
 	}
 	return interpretation, nil

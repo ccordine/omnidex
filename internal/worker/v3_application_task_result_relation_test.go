@@ -8,6 +8,22 @@ import (
 	"github.com/gryph/omnidex/internal/assemblyline"
 )
 
+const directCodingResultRelationTestRequest = "Build a neutral operations console with one public control and one observable value derived from one input."
+
+func directCodingResultRelationTestAuthority(
+	t testing.TB,
+) directCodingApplicationRequestAuthority {
+	t.Helper()
+	authority, err := newDirectCodingApplicationRequestAuthority(
+		directCodingResultRelationTestRequest,
+		directCodingResultRelationTestRequest,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return authority
+}
+
 func directCodingTestRequirementRelations(
 	t *testing.T,
 	workload assemblyline.FrozenApplicationWorkload,
@@ -24,6 +40,9 @@ func directCodingTestRequirementRelations(
 		t.Fatalf("result-relation fixture has %d values for %d tasks", len(relations), len(workload.Tasks))
 	}
 	accepted := make([]assemblyline.ApplicationRequirement, len(workload.Tasks))
+	requestSHA256 := assemblyline.ExactObjectiveContextSHA(
+		directCodingResultRelationTestRequest,
+	)
 	for index, task := range workload.Tasks {
 		kind, err := assemblyline.DecodeApplicationRequirementCandidateKindResult(
 			assemblyline.ApplicationRequirementCandidateKindInput{Candidate: task.RequirementQuote},
@@ -50,11 +69,13 @@ func directCodingTestRequirementRelations(
 		}
 		accepted[index] = assemblyline.ApplicationRequirement{
 			ID: task.RequirementID, Statement: task.RequirementQuote,
-			RequestSHA256:  strings.Repeat("a", 64),
+			RequestSHA256:  requestSHA256,
 			ResultRelation: relation,
 		}
 	}
-	plan, err := newDirectCodingApplicationTaskResultRelationPlan(workload, accepted)
+	plan, err := newDirectCodingApplicationTaskResultRelationPlan(
+		workload, accepted, directCodingResultRelationTestAuthority(t),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -115,6 +136,18 @@ func TestApplicationTaskResultRelationPlanRejectsAuthorityDrift(t *testing.T) {
 		"workload hash": func(plan *directCodingApplicationTaskResultRelationPlan) {
 			plan.WorkloadSHA256 = strings.Repeat("b", 64)
 		},
+		"request hash": func(plan *directCodingApplicationTaskResultRelationPlan) {
+			plan.RequestSHA256 = strings.Repeat("b", 64)
+		},
+		"agreed fabricated request hash": func(plan *directCodingApplicationTaskResultRelationPlan) {
+			plan.RequestSHA256 = strings.Repeat("b", 64)
+			for index := range plan.Bindings {
+				plan.Bindings[index].RequestSHA256 = plan.RequestSHA256
+			}
+		},
+		"binding request hash": func(plan *directCodingApplicationTaskResultRelationPlan) {
+			plan.Bindings[0].RequestSHA256 = strings.Repeat("b", 64)
+		},
 		"candidate hash": func(plan *directCodingApplicationTaskResultRelationPlan) {
 			plan.Bindings[0].Receipt.CandidateSHA256 = strings.Repeat("c", 64)
 		},
@@ -133,6 +166,34 @@ func TestApplicationTaskResultRelationPlanRejectsAuthorityDrift(t *testing.T) {
 				t.Fatalf("drifted result-relation plan was accepted: %+v", candidate)
 			}
 		})
+	}
+}
+
+func TestApplicationTaskResultRelationPlanRejectsAgreedFabricatedRequestHash(t *testing.T) {
+	workload := directCodingResultRelationTestWorkload(t)
+	valid := directCodingTestRequirementRelations(t, workload)
+	accepted := make([]assemblyline.ApplicationRequirement, len(workload.Tasks))
+	for index, task := range workload.Tasks {
+		accepted[index] = assemblyline.ApplicationRequirement{
+			ID: task.RequirementID, Statement: task.RequirementQuote,
+			RequestSHA256:  strings.Repeat("a", 64),
+			ResultRelation: valid.Bindings[index].Receipt,
+		}
+	}
+	if _, err := newDirectCodingApplicationTaskResultRelationPlan(
+		workload, accepted, directCodingResultRelationTestAuthority(t),
+	); err == nil || !strings.Contains(err.Error(), "authoritative request") {
+		t.Fatalf("agreed fabricated request hashes were accepted: %v", err)
+	}
+	for index := range accepted {
+		accepted[index].RequestSHA256 = valid.RequestSHA256
+	}
+	authority := directCodingResultRelationTestAuthority(t)
+	authority.authoritativeRequest += " changed"
+	if _, err := newDirectCodingApplicationTaskResultRelationPlan(
+		workload, accepted, authority,
+	); err == nil || !strings.Contains(err.Error(), "not authenticated") {
+		t.Fatalf("unauthenticated request authority was accepted: %v", err)
 	}
 }
 

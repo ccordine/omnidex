@@ -1,6 +1,7 @@
 package assemblyline
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -38,9 +39,13 @@ func TestApplicationRequirementCandidateResultRelationIsOneBoundQuestion(t *test
 				t.Fatal(err)
 			}
 			for _, required := range []string{
-				"one semantic classification",
-				"precisely enough for an independent test to compute the expected result",
-				"semantically entails exactly one determining rule",
+				"Classify one fact about this exact one-outcome runtime requirement",
+				"Apply these steps in order",
+				"Detect a derived value when the candidate requires an observable value selected, ordered, transformed, hashed, grouped, aggregated, measured, calculated, or decided",
+				"Data described as converted or transformed is not supplied data unchanged",
+				"existing per-item grouping key is a stated rule",
+				"equal observed key values determine groups",
+				"Only when no derived value is asserted",
 				fixture.candidate,
 			} {
 				if !strings.Contains(prompt, required) {
@@ -50,6 +55,15 @@ func TestApplicationRequirementCandidateResultRelationIsOneBoundQuestion(t *test
 			if strings.Count(prompt, fixture.candidate) != 1 ||
 				strings.Contains(prompt, "APPLICATION REQUIREMENT INPUT") {
 				t.Fatalf("result-relation prompt exceeded one-candidate authority:\n%s", prompt)
+			}
+			first := strings.Index(prompt, "1. Detect a derived value")
+			second := strings.Index(prompt, "2. For a derived value")
+			third := strings.Index(prompt, "3. Only when no derived value")
+			if first < 0 || second <= first || third <= second {
+				t.Fatalf("result-relation rules are not ordered:\n%s", prompt)
+			}
+			if overhead := len(strings.Fields(prompt)) - len(strings.Fields(fixture.candidate)); overhead > 220 {
+				t.Fatalf("result-relation prompt overhead=%d words", overhead)
 			}
 			result, err := DecodeApplicationRequirementCandidateResultRelationResult(
 				input, fixture.relation,
@@ -64,41 +78,58 @@ func TestApplicationRequirementCandidateResultRelationIsOneBoundQuestion(t *test
 func TestApplicationRequirementCandidateResultRelationCorrectionIsBound(t *testing.T) {
 	t.Parallel()
 	request := "Build a browser route selector that scores available routes with the user-provided scoring rule and displays the highest-scoring route."
-	context, err := BootstrapApplicationContext(request, ApplicationWorkspaceEmpty)
-	if err != nil {
-		t.Fatal(err)
-	}
-	authority := ApplicationIntentInput{UserRequest: request, Context: context}
-	generation := applicationRequirementCandidateFixture(t, ApplicationRequirementCoverageInput{
-		UserRequest: authority.UserRequest, Context: authority.Context,
-		AcceptedRequirements: []string{}, ExcludedCandidates: []string{},
-	})
 	current := "Accept values and display a correct result."
-	candidateAuthority := applicationRequirementCandidateResultRelationInputFixture(t, current)
-	relation, err := DecodeApplicationRequirementCandidateResultRelationResult(
-		candidateAuthority,
-		ApplicationRequirementMissingResultRelation,
+	groundingInput := applicationRequirementCandidateResultRelationGroundingInputFixture(
+		t,
+		request,
+		current,
+	)
+	grounding, err := DecodeApplicationRequirementCandidateResultRelationGroundingResult(
+		groundingInput,
+		ApplicationRequirementExactlyOneDeterminingRelationEntailed,
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
 	input := ApplicationRequirementCandidateResultRelationCorrectionInput{
-		GenerationAuthority: generation,
-		CandidateAuthority:  candidateAuthority,
-		ResultRelation:      relation,
+		ImmutableRequest: request,
+		Context:          groundingInput.Context,
+		CurrentCandidate: current,
+		Defect:           ApplicationRequirementMissingResultRelation,
+		Grounding:        grounding,
 	}
 	prompt, err := BuildApplicationRequirementCandidateResultRelationCorrectionPrompt(input)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, required := range []string{
-		authority.UserRequest,
+		request,
 		current,
 		ApplicationRequirementMissingResultRelation,
-		"semantically entails exactly one determining rule",
 	} {
 		if strings.Count(prompt, required) != 1 {
 			t.Fatalf("correction prompt did not bind %q exactly once:\n%s", required, prompt)
+		}
+	}
+	job, err := NewApplicationRequirementCandidateResultRelationCorrectionJob(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var envelope map[string]json.RawMessage
+	if err := json.Unmarshal(job.Payload, &envelope); err != nil {
+		t.Fatal(err)
+	}
+	if len(envelope) != 5 || envelope["immutable_request"] == nil ||
+		envelope["context"] == nil ||
+		envelope["current_candidate"] == nil || envelope["defect"] == nil ||
+		envelope["grounding"] == nil {
+		t.Fatalf("correction envelope contains non-minimal authority: %s", job.Payload)
+	}
+	for _, forbidden := range []string{
+		"accepted_requirements", "excluded_candidates", "generation_authority",
+	} {
+		if strings.Contains(prompt, forbidden) || strings.Contains(string(job.Payload), forbidden) {
+			t.Fatalf("correction envelope leaked workflow collection %q", forbidden)
 		}
 	}
 	corrected := "Score every available route with the user-provided scoring rule and display the highest-scoring route."
@@ -112,14 +143,44 @@ func TestApplicationRequirementCandidateResultRelationCorrectionIsBound(t *testi
 	); err == nil || !strings.Contains(err.Error(), "repeated") {
 		t.Fatalf("unchanged correction error=%v", err)
 	}
-	relation.Relation = ApplicationRequirementExplicitResultRelation
-	input.ResultRelation = relation
+	input.Defect = ApplicationRequirementExplicitResultRelation
 	if _, err := NewApplicationRequirementCandidateResultRelationCorrectionJob(input); err == nil {
 		t.Fatal("non-defective relation opened a correction job")
 	}
+	input.Defect = ApplicationRequirementMissingResultRelation
+	input.Grounding, err = DecodeApplicationRequirementCandidateResultRelationGroundingResult(
+		groundingInput,
+		ApplicationRequirementNoExactlyOneDeterminingRelationEntailed,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewApplicationRequirementCandidateResultRelationCorrectionJob(input); err == nil {
+		t.Fatal("negative grounding opened a correction job")
+	}
+	input.Grounding = ApplicationRequirementCandidateResultRelationGroundingResult{}
+	if _, err := NewApplicationRequirementCandidateResultRelationCorrectionJob(input); err == nil {
+		t.Fatal("absent grounding opened a correction job")
+	}
+	input.Grounding = grounding
+	input.Grounding.CandidateSHA256 = ExactObjectiveContextSHA("another candidate")
+	if _, err := NewApplicationRequirementCandidateResultRelationCorrectionJob(input); err == nil {
+		t.Fatal("candidate-drifted grounding opened a correction job")
+	}
+	input.Grounding = grounding
+	input.Context.Facts[0].SourceID = "different_workspace_authority"
+	if _, err := NewApplicationRequirementCandidateResultRelationCorrectionJob(input); err == nil {
+		t.Fatal("context-drifted grounding opened a correction job")
+	}
+	input.Context.Facts[0].SourceID = "workspace"
+	input.Context = groundingInput.Context
+	input.ImmutableRequest += " Add another behavior."
+	if _, err := NewApplicationRequirementCandidateResultRelationCorrectionJob(input); err == nil {
+		t.Fatal("request-drifted grounding opened a correction job")
+	}
 }
 
-func TestApplicationRequirementCandidateResultRelationRejectsReceiptTamperingAndCorrectionDuplicates(
+func TestApplicationRequirementCandidateResultRelationRejectsReceiptTampering(
 	t *testing.T,
 ) {
 	t.Parallel()
@@ -144,33 +205,6 @@ func TestApplicationRequirementCandidateResultRelationRejectsReceiptTamperingAnd
 		}
 	}
 
-	request := "Build a browser label formatter that converts user-provided text to lowercase."
-	context, err := BootstrapApplicationContext(request, ApplicationWorkspaceEmpty)
-	if err != nil {
-		t.Fatal(err)
-	}
-	duplicate := "Convert the user-provided text to lowercase and display the formatted label."
-	coverageInput := ApplicationRequirementCoverageInput{
-		UserRequest: request, Context: context,
-		AcceptedRequirements: []string{duplicate}, ExcludedCandidates: []string{},
-	}
-	generation := applicationRequirementCandidateFixture(t, coverageInput)
-	relation, err := DecodeApplicationRequirementCandidateResultRelationResult(
-		authority, ApplicationRequirementMissingResultRelation,
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	correction := ApplicationRequirementCandidateResultRelationCorrectionInput{
-		GenerationAuthority: generation,
-		CandidateAuthority:  authority,
-		ResultRelation:      relation,
-	}
-	if _, err := DecodeApplicationRequirementCandidateResultRelationCorrectionLeaf(
-		correction, duplicate,
-	); err == nil || !strings.Contains(err.Error(), "duplicated an accepted requirement") {
-		t.Fatalf("duplicate correction error=%v", err)
-	}
 }
 
 func TestApplicationRequirementCandidateResultRelationAcceptedReceiptIsTerminalAndBound(t *testing.T) {

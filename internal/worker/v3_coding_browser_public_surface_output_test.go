@@ -9,13 +9,14 @@ import (
 func TestBrowserPublicInteractionSurfaceIgnoresNestedFunctionControlFlow(t *testing.T) {
 	source := `
 function View() {
+	const blocked = false;
   const handleRun = () => {
     if (blocked) {
       return;
     }
     throw new Error("callback failure");
   };
-  return <button onClick={handleRun}>Run</button>;
+  return <button type="button" onClick={handleRun}>Run</button>;
 }`
 	surface, err := extractDirectCodingBrowserPublicInteractionSurface(source)
 	if err != nil {
@@ -30,8 +31,8 @@ function View() {
 func TestBrowserPublicInteractionSurfaceOmitsUnboundTextAuthority(t *testing.T) {
 	fixtures := map[string]string{
 		"static result":      `function View() { return <main><p>Result: 100</p></main>; }`,
-		"inventory quantity": `function View() { return <p>Units available: {quantity}</p>; }`,
-		"travel duration":    `function View() { return <p>Suggested duration: {duration}</p>; }`,
+		"inventory quantity": `function View({ state }) { return <p>Units available: {state.quantity}</p>; }`,
+		"travel duration":    `function View({ state }) { return <p>Suggested duration: {state.duration}</p>; }`,
 	}
 	for name, source := range fixtures {
 		t.Run(name, func(t *testing.T) {
@@ -98,11 +99,11 @@ func TestBrowserPublicInteractionSurfaceRejectsInvalidOutputs(t *testing.T) {
 			want:   "not runtime-derived",
 		},
 		"mixed": {
-			source: `function View() { return <output aria-label="Result">Value: {result}</output>; }`,
+			source: `function View({ state }) { return <output aria-label="Result">Value: {state.result}</output>; }`,
 			want:   "mixed literal and dynamic content",
 		},
 		"nested": {
-			source: `function View() { return <output aria-label="Result"><span>{result}</span></output>; }`,
+			source: `function View({ state }) { return <output aria-label="Result"><span>{state.result}</span></output>; }`,
 			want:   "direct dynamic-only content",
 		},
 		"self closing": {
@@ -110,7 +111,7 @@ func TestBrowserPublicInteractionSurfaceRejectsInvalidOutputs(t *testing.T) {
 			want:   "direct dynamic-only content",
 		},
 		"duplicate name": {
-			source: `function View() { return <main><output aria-label="Result">{first}</output><output aria-label="Result">{second}</output></main>; }`,
+			source: `function View({ state }) { return <main><output aria-label="Result">{state.first}</output><output aria-label="Result">{state.second}</output></main>; }`,
 			want:   `repeat accessible name "Result"`,
 		},
 	}
@@ -126,10 +127,11 @@ func TestBrowserPublicInteractionSurfaceRejectsInvalidOutputs(t *testing.T) {
 
 func TestBrowserPublicInteractionSurfaceAcceptsRuntimeDerivedOutputs(t *testing.T) {
 	fixtures := map[string]string{
-		"identifier":            `function View() { return <output aria-label="Result">{result}</output>; }`,
-		"formatted identifier":  `function View() { return <output aria-label="Result">{String(result)}</output>; }`,
-		"member":                `function View() { return <output aria-label="Result">{state.total}</output>; }`,
-		"interpolated template": "function View() { return <output aria-label=\"Result\">{`${result}`}</output>; }",
+		"identifier alias":      `function View({ state }) { const result = state.total; return <output aria-label="Result">{result}</output>; }`,
+		"formatted identifier":  `function View({ state }) { const result = state.total; return <output aria-label="Result">{String(result)}</output>; }`,
+		"member":                `function View({ state }) { return <output aria-label="Result">{state.total}</output>; }`,
+		"capability":            `function View({ capabilities }) { return <output aria-label="Result">{capabilities.summary}</output>; }`,
+		"interpolated template": "function View({ state }) { return <output aria-label=\"Result\">{`${state.total}`}</output>; }",
 	}
 	for name, source := range fixtures {
 		t.Run(name, func(t *testing.T) {
@@ -146,7 +148,7 @@ func TestBrowserPublicInteractionSurfaceAcceptsRuntimeDerivedOutputs(t *testing.
 
 func TestBrowserPublicInteractionSurfaceAccessibleNameSkipsHiddenDescendants(t *testing.T) {
 	surface, err := extractDirectCodingBrowserPublicInteractionSurface(
-		`function View() { return <button><span aria-hidden="true">Decorative</span>Save item</button>; }`,
+		`function View() { return <button type="button"><span aria-hidden="true">Decorative</span>Save item</button>; }`,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -165,9 +167,9 @@ func TestBrowserPublicInteractionSurfaceEnforcesBoundsAndCanonicalState(t *testi
 		t.Fatalf("control bound was not enforced: %v", err)
 	}
 	var outputs strings.Builder
-	outputs.WriteString(`function View() { return <main>`)
+	outputs.WriteString(`function View({ state }) { return <main>`)
 	for index := 0; index <= directCodingBrowserPublicSurfaceMaxOutputs; index++ {
-		fmt.Fprintf(&outputs, `<output aria-label="Result %d">{value}</output>`, index)
+		fmt.Fprintf(&outputs, `<output aria-label="Result %d">{state.value}</output>`, index)
 	}
 	outputs.WriteString(`</main>; }`)
 	if _, err := extractDirectCodingBrowserPublicInteractionSurface(outputs.String()); err == nil ||
@@ -175,7 +177,7 @@ func TestBrowserPublicInteractionSurfaceEnforcesBoundsAndCanonicalState(t *testi
 		t.Fatalf("output bound was not enforced: %v", err)
 	}
 	tooLong := fmt.Sprintf(
-		`function View() { return <output aria-label="%s">{value}</output>; }`,
+		`function View({ state }) { return <output aria-label="%s">{state.value}</output>; }`,
 		strings.Repeat("x", directCodingBrowserPublicSurfaceMaxLiteralBytes+1),
 	)
 	if _, err := extractDirectCodingBrowserPublicInteractionSurface(tooLong); err == nil ||

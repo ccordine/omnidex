@@ -95,8 +95,8 @@ func (result ApplicationRequirementCandidateResultRelationResult) ValidateFor(
 }
 
 // ValidateAcceptedFor validates the immutable result-relation receipt retained
-// with one accepted requirement. A missing relation is a correction trigger and
-// can never become accepted requirement authority.
+// with one accepted requirement. A missing relation requires separate request
+// grounding and can never become accepted requirement authority.
 func (result ApplicationRequirementCandidateResultRelationResult) ValidateAcceptedFor(
 	candidate string,
 ) error {
@@ -202,14 +202,14 @@ func BuildApplicationRequirementCandidateResultRelationPrompt(
 		return "", err
 	}
 	return strings.Join([]string{
-		"Answer one semantic classification about the exact one-outcome runtime requirement below: does it require no derived result, explicitly state the semantic relation needed to determine its derived result, or require a derived result while leaving that relation unstated?",
-		"A derived result is an observable value, selection, ordering, transformation, summary, decision, or other output whose correctness depends on a semantic relation to inputs or conditions. Its relation is explicit only when this exact requirement identifies the operation or rule and the observable operands, conditions, and result meaning precisely enough for an independent test to compute the expected result.",
-		"A quality claim about an output does not identify its determining rule. An action that generically triggers a result does not identify the rule either.",
-		"Classify only the exact candidate. Treat an otherwise unstated relation as supplied only when the candidate semantically entails exactly one determining rule and its operands, conditions, and result meaning; ambiguity means the relation is missing. Do not rewrite the candidate, infer another requirement, or use surrounding context.",
-		"Return NO_DERIVED_RESULT when the outcome needs no derived-result oracle. Return EXPLICIT_DERIVED_RESULT_RELATION when the candidate itself supplies the determining relation. Return MISSING_DERIVED_RESULT_RELATION when it requires a derived result but omits any information needed to determine that result independently.",
-		"Return exactly that raw registered value and nothing else: no JSON, quotes, label, Markdown, or commentary.",
+		"Classify one fact about this exact one-outcome runtime requirement: its derived-result relation.",
+		"Apply these steps in order:",
+		"1. Detect a derived value when the candidate requires an observable value selected, ordered, transformed, hashed, grouped, aggregated, measured, calculated, or decided from inputs or conditions. Displaying that value does not remove the relation. Data described as converted or transformed is not supplied data unchanged.",
+		"2. For a derived value, return EXPLICIT_DERIVED_RESULT_RELATION if the candidate names the necessary input or condition and the determining rule; otherwise return MISSING_DERIVED_RESULT_RELATION. A named standard transformation, ordering, digest algorithm, comparison or selection rule, aggregation, or existing per-item grouping key is a stated rule; do not demand implementation steps. For a named grouping key, equal observed key values determine groups; how the key was assigned is irrelevant. Correct, best, useful, or appropriate alone do not state a rule.",
+		"3. Only when no derived value is asserted, return NO_DERIVED_RESULT for an action, control, state transition, event, message, artifact creation or availability, or display of supplied data unchanged. A qualitative adjective about such behavior does not create a derived value.",
+		"Classify only the exact candidate. Do not rewrite it, infer another requirement, or use surrounding context.",
 		"EXACT ONE-OUTCOME REQUIREMENT CANDIDATE:\n" + input.Candidate,
-		"FINAL QUESTION:\nWhich one registered result-relation classification applies? Return only NO_DERIVED_RESULT, EXPLICIT_DERIVED_RESULT_RELATION, or MISSING_DERIVED_RESULT_RELATION.",
+		"Return exactly one raw registered value and nothing else: NO_DERIVED_RESULT, EXPLICIT_DERIVED_RESULT_RELATION, or MISSING_DERIVED_RESULT_RELATION.",
 	}, "\n\n"), nil
 }
 

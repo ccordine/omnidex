@@ -7,36 +7,6 @@ import (
 	treesitter "github.com/tree-sitter/go-tree-sitter"
 )
 
-var directCodingBrowserForbiddenRuntimeHostIdentifiers = map[string]struct{}{
-	// Global object and browsing-context authority.
-	"document": {}, "window": {}, "globalThis": {}, "self": {},
-	"frames": {}, "parent": {}, "top": {}, "opener": {},
-	"navigator": {}, "location": {}, "history": {},
-
-	// Network, cross-context, worker, and persistent-storage authority.
-	"fetch": {}, "XMLHttpRequest": {}, "WebSocket": {},
-	"EventSource": {}, "WebTransport": {}, "BroadcastChannel": {},
-	"Worker": {}, "SharedWorker": {}, "importScripts": {},
-	"localStorage": {}, "sessionStorage": {}, "caches": {}, "indexedDB": {},
-
-	// Audio runtime authority.
-	"AudioContext": {}, "OfflineAudioContext": {},
-	"webkitAudioContext": {}, "webkitOfflineAudioContext": {},
-
-	// Dynamic evaluation, reflection, and document-selection authority.
-	"eval": {}, "Function": {}, "Proxy": {}, "Reflect": {},
-	"getSelection": {},
-}
-
-var directCodingBrowserForbiddenRuntimeReflectionProperties = map[string]struct{}{
-	"constructor": {}, "prototype": {}, "__proto__": {},
-	"caller": {}, "callee": {}, "arguments": {},
-	"defineProperty": {}, "defineProperties": {},
-	"getPrototypeOf": {}, "setPrototypeOf": {},
-	"getOwnPropertyDescriptor": {}, "getOwnPropertyDescriptors": {},
-	"getOwnPropertyNames": {}, "getOwnPropertySymbols": {},
-}
-
 func validateDirectCodingBrowserRuntimeDOMAuthority(
 	root *treesitter.Node,
 	source []byte,
@@ -52,6 +22,15 @@ func validateDirectCodingBrowserRuntimeDOMAuthority(
 	if err != nil {
 		return err
 	}
+	regExpAliases := collectDirectCodingBrowserRuntimeRegExpAliases(root, source, runtimeBindings)
+	authoritativeValues := collectDirectCodingBrowserRuntimeAuthoritativeValues(
+		root, source, runtimeBindings,
+	)
+	localProperties := collectDirectCodingBrowserRuntimeLocalProperties(root, source, runtimeBindings)
+	numericIndices, err := collectDirectCodingBrowserNumericIndexBindings(root)
+	if err != nil {
+		return err
+	}
 	nodes := 0
 	var inspect func(*treesitter.Node) error
 	inspect = func(node *treesitter.Node) error {
@@ -62,9 +41,21 @@ func validateDirectCodingBrowserRuntimeDOMAuthority(
 		if nodes > directCodingBrowserPublicSurfaceMaxNodes {
 			return fmt.Errorf("browser public surface exceeds %d syntax nodes", directCodingBrowserPublicSurfaceMaxNodes)
 		}
+		if directCodingBrowserRuntimeIdentifierIsEscaped(node, source) {
+			return fmt.Errorf("browser public surface rejects escaped runtime identifier")
+		}
 		if name, reference := directCodingBrowserRuntimeReferenceName(source, node); reference {
-			if _, forbidden := directCodingBrowserForbiddenRuntimeHostIdentifiers[name]; forbidden && !runtimeBindings.binds(name, node) {
+			bound := runtimeBindings.binds(name, node)
+			if _, forbidden := directCodingBrowserForbiddenRuntimeHostIdentifiers[name]; forbidden && !bound {
 				return fmt.Errorf("browser public surface rejects runtime host authority identifier %s", name)
+			}
+			if !bound && !directCodingBrowserRuntimeGlobalPermitted(name) &&
+				!directCodingBrowserRuntimeReferenceIsSyntax(node) {
+				return fmt.Errorf("browser public surface rejects undeclared runtime identifier %s", name)
+			}
+			if !bound && directCodingBrowserRuntimeGlobalPermitted(name) &&
+				directCodingBrowserRuntimeGlobalReferenceEscapes(node, name) {
+				return fmt.Errorf("browser public surface rejects runtime global value escape %s", name)
 			}
 			if node.Kind() == "identifier" && eventBindings.reference(node, source) &&
 				!directCodingBrowserEventReferenceIsPropertyObject(node) {
@@ -73,13 +64,36 @@ func validateDirectCodingBrowserRuntimeDOMAuthority(
 		}
 		if name, resolved, property := directCodingBrowserRuntimeProperty(source, node); property {
 			if resolved {
-				if _, forbidden := directCodingBrowserForbiddenRuntimeReflectionProperties[name]; forbidden {
+				if directCodingBrowserRuntimeNondeterministicProperty(
+					node, name, source, runtimeBindings, localProperties,
+				) {
+					return fmt.Errorf(
+						"browser public surface rejects nondeterministic runtime property %s",
+						name,
+					)
+				}
+				if directCodingBrowserRuntimeReflectionPropertyForbidden(name) {
 					return fmt.Errorf(
 						"browser public surface rejects runtime reflection property %s", name,
 					)
 				}
+				if regExpAliases.rejectsProperty(node, name, source, runtimeBindings) {
+					return fmt.Errorf(
+						"browser public surface rejects RegExp realm-global property %s", name,
+					)
+				}
+			}
+			if directCodingBrowserRuntimeGlobalPropertyEscapes(
+				node, name, resolved, source, runtimeBindings,
+			) {
+				return fmt.Errorf("browser public surface rejects runtime global property value escape")
 			}
 			object := node.ChildByFieldName("object")
+			if !resolved && directCodingBrowserExpressionContainsEventRoot(
+				object, source, eventBindings,
+			) {
+				return fmt.Errorf("browser public surface rejects unresolved computed event property authority")
+			}
 			if directCodingBrowserExpressionIsEventRoot(object, source, eventBindings) {
 				if !resolved {
 					return fmt.Errorf("browser public surface rejects unresolved computed event property authority")
@@ -99,15 +113,23 @@ func validateDirectCodingBrowserRuntimeDOMAuthority(
 					return fmt.Errorf("browser public surface rejects runtime DOM event-target property %s", name)
 				}
 			}
+			if err := validateDirectCodingBrowserComputedProperty(
+				node, source, runtimeBindings, numericIndices,
+			); err != nil {
+				return err
+			}
 		}
 		switch node.Kind() {
 		case "pair_pattern", "shorthand_property_identifier_pattern":
-			if directCodingBrowserPatternAliasesEventTarget(node, source, eventBindings) {
-				return fmt.Errorf("browser public surface rejects runtime DOM event-target destructuring")
+			if err := validateDirectCodingBrowserRuntimePatternAuthority(
+				node, source, runtimeBindings, localProperties, eventBindings, regExpAliases,
+			); err != nil {
+				return err
 			}
 		case "assignment_expression", "augmented_assignment_expression":
 			if err := directCodingBrowserValidateRuntimeDOMMutation(
-				node.ChildByFieldName("left"), source, eventBindings,
+				node.ChildByFieldName("left"), source, runtimeBindings, eventBindings,
+				authoritativeValues,
 			); err != nil {
 				return err
 			}
@@ -116,7 +138,9 @@ func validateDirectCodingBrowserRuntimeDOMAuthority(
 			if target == nil && node.NamedChildCount() == 1 {
 				target = node.NamedChild(0)
 			}
-			if err := directCodingBrowserValidateRuntimeDOMMutation(target, source, eventBindings); err != nil {
+			if err := directCodingBrowserValidateRuntimeDOMMutation(
+				target, source, runtimeBindings, eventBindings, authoritativeValues,
+			); err != nil {
 				return err
 			}
 		case "unary_expression":
@@ -125,9 +149,30 @@ func validateDirectCodingBrowserRuntimeDOMAuthority(
 				if target == nil && node.NamedChildCount() == 1 {
 					target = node.NamedChild(0)
 				}
-				if err := directCodingBrowserValidateRuntimeDOMMutation(target, source, eventBindings); err != nil {
+				if err := directCodingBrowserValidateRuntimeDOMMutation(
+					target, source, runtimeBindings, eventBindings, authoritativeValues,
+				); err != nil {
 					return err
 				}
+			}
+		case "for_in_statement", "for_of_statement":
+			if err := directCodingBrowserValidateRuntimeDOMMutation(
+				node.ChildByFieldName("left"), source, runtimeBindings, eventBindings,
+				authoritativeValues,
+			); err != nil {
+				return err
+			}
+		case "meta_property":
+			return fmt.Errorf("browser public surface rejects runtime host metadata authority")
+		case "call_expression":
+			if err := directCodingBrowserValidateAuthoritativeMutationCall(
+				node, source, runtimeBindings, authoritativeValues,
+			); err != nil {
+				return err
+			}
+			callable := node.ChildByFieldName("function")
+			if directCodingBrowserRuntimeNodeText(source, callable) == "import" {
+				return fmt.Errorf("browser public surface rejects dynamic import authority")
 			}
 		}
 		for index := uint(0); index < node.NamedChildCount(); index++ {
@@ -138,43 +183,6 @@ func validateDirectCodingBrowserRuntimeDOMAuthority(
 		return nil
 	}
 	return inspect(root)
-}
-
-func directCodingBrowserRuntimeReferenceName(
-	source []byte,
-	node *treesitter.Node,
-) (string, bool) {
-	if node == nil {
-		return "", false
-	}
-	switch node.Kind() {
-	case "identifier", "shorthand_property_identifier":
-		return directCodingBrowserRuntimeNodeText(source, node), true
-	default:
-		return "", false
-	}
-}
-
-func directCodingBrowserRuntimeProperty(
-	source []byte,
-	node *treesitter.Node,
-) (string, bool, bool) {
-	if node == nil {
-		return "", false, false
-	}
-	switch node.Kind() {
-	case "member_expression":
-		property := node.ChildByFieldName("property")
-		if property == nil {
-			return "", false, true
-		}
-		return directCodingBrowserRuntimeNodeText(source, property), true, true
-	case "subscript_expression":
-		name, resolved := javaScriptStaticPropertyName(source, node.ChildByFieldName("index"))
-		return name, resolved, true
-	default:
-		return "", false, false
-	}
 }
 
 func directCodingBrowserValidateEventTargetRead(node *treesitter.Node, source []byte) error {
@@ -194,24 +202,6 @@ func directCodingBrowserValidateEventTargetRead(node *treesitter.Node, source []
 		"browser public surface rejects runtime DOM event-target authority %s outside read-only value or checked access",
 		name,
 	)
-}
-
-func directCodingBrowserValidateRuntimeDOMMutation(
-	target *treesitter.Node,
-	source []byte,
-	eventBindings directCodingBrowserEventBindings,
-) error {
-	target = directCodingBrowserUnwrapRuntimeExpression(target)
-	name, resolved, property := directCodingBrowserRuntimeProperty(source, target)
-	if !property || !resolved {
-		return nil
-	}
-	if directCodingBrowserExpressionIsEventTarget(
-		target.ChildByFieldName("object"), source, eventBindings,
-	) && (name == "value" || name == "checked") {
-		return fmt.Errorf("browser public surface rejects runtime DOM event-target mutation property %s", name)
-	}
-	return nil
 }
 
 func directCodingBrowserExpressionIsEventRoot(
@@ -282,11 +272,4 @@ func directCodingBrowserRuntimeTransparentExpression(parent, child *treesitter.N
 		}
 	}
 	return false
-}
-
-func directCodingBrowserRuntimeNodeText(source []byte, node *treesitter.Node) string {
-	if node == nil || node.EndByte() > uint(len(source)) {
-		return ""
-	}
-	return string(source[node.StartByte():node.EndByte()])
 }

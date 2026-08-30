@@ -22,7 +22,7 @@ func directCodingBrowserSupportedIntrinsicTag(tag string) bool {
 	switch tag {
 	case "article", "aside", "blockquote", "br", "button", "caption", "code",
 		"dd", "div", "dl", "dt", "em", "fieldset", "figcaption", "figure",
-		"footer", "form", "h1", "h2", "h3", "h4", "h5", "h6", "header",
+		"footer", "h1", "h2", "h3", "h4", "h5", "h6", "header",
 		"hr", "input", "label", "legend", "li", "main", "nav", "ol",
 		"optgroup", "option", "output", "p", "pre", "section", "select",
 		"small", "span", "strong", "table", "tbody", "td", "textarea",
@@ -39,6 +39,12 @@ func directCodingBrowserIntrinsicControl(
 ) (string, string, bool, error) {
 	switch tag {
 	case "button":
+		buttonType := attributes["type"]
+		if !buttonType.present || buttonType.literal != "button" {
+			return "", "", false, fmt.Errorf(
+				"browser public surface button requires exact type=\"button\"",
+			)
+		}
 		return "button", "action", true, nil
 	case "textarea":
 		return "textbox", "text", true, nil

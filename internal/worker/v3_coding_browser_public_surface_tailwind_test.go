@@ -6,10 +6,10 @@ import (
 )
 
 func TestBrowserPublicInteractionSurfaceAllowsRegisteredNonConcealingTailwind(t *testing.T) {
-	source := `function View() {
+	source := `function View({ state }) {
   return <main className="grid grid-cols-2 gap-4 p-6 mx-auto w-full max-w-lg text-center text-lg font-semibold leading-normal border border-solid rounded-xl shadow-lg">
-    <button className="px-4 py-2 rounded-md shadow-sm">Apply change</button>
-    <p className="col-span-2 pt-4">{result}</p>
+    <button type="button" className="px-4 py-2 rounded-md shadow-sm">Apply change</button>
+    <p className="col-span-2 pt-4">{state.result}</p>
   </main>;
 }`
 	if _, err := extractDirectCodingBrowserPublicInteractionSurface(source); err != nil {
@@ -19,15 +19,15 @@ func TestBrowserPublicInteractionSurfaceAllowsRegisteredNonConcealingTailwind(t 
 
 func TestBrowserPublicInteractionSurfaceRejectsNonAllowlistedConcealmentClasses(t *testing.T) {
 	fixtures := map[string]string{
-		"arbitrary decimal opacity on booking control": `function View() { return <button className="opacity-[0.0]">Reserve room</button>; }`,
-		"arbitrary zero scale on billing control":      `function View() { return <button className="scale-[0]">Pay invoice</button>; }`,
+		"arbitrary decimal opacity on booking control": `function View() { return <button type="button" className="opacity-[0.0]">Reserve room</button>; }`,
+		"arbitrary zero scale on billing control":      `function View() { return <button type="button" className="scale-[0]">Pay invoice</button>; }`,
 		"arbitrary zero width on inventory control":    `function View() { return <input aria-label="Stock code" className="w-[0px]" />; }`,
 		"arbitrary zero height on travel control":      `function View() { return <textarea aria-label="Trip notes" className="h-[0px]" />; }`,
-		"transparent foreground on scheduling control": `function View() { return <button className="text-transparent">Publish schedule</button>; }`,
-		"off-screen transform on reporting control":    `function View() { return <button className="-translate-x-full">Export report</button>; }`,
-		"off-screen transform on dynamic result owner": `function View() { return <main><button>Recalculate forecast</button><p className="translate-x-full">{forecast}</p></main>; }`,
-		"arbitrary opacity on dynamic result owner":    `function View() { return <main><button>Update estimate</button><p className="opacity-[0.0]">{estimate}</p></main>; }`,
-		"transparent dynamic result owner":             `function View() { return <main><button>Refresh capacity</button><p className="text-transparent">{capacity}</p></main>; }`,
+		"transparent foreground on scheduling control": `function View() { return <button type="button" className="text-transparent">Publish schedule</button>; }`,
+		"off-screen transform on reporting control":    `function View() { return <button type="button" className="-translate-x-full">Export report</button>; }`,
+		"off-screen transform on dynamic result owner": `function View() { return <main><button type="button">Recalculate forecast</button><p className="translate-x-full">{forecast}</p></main>; }`,
+		"arbitrary opacity on dynamic result owner":    `function View() { return <main><button type="button">Update estimate</button><p className="opacity-[0.0]">{estimate}</p></main>; }`,
+		"transparent dynamic result owner":             `function View() { return <main><button type="button">Refresh catalog</button><p className="text-transparent">{catalogStatus}</p></main>; }`,
 	}
 	for name, source := range fixtures {
 		t.Run(name, func(t *testing.T) {
@@ -41,7 +41,7 @@ func TestBrowserPublicInteractionSurfaceRejectsNonAllowlistedConcealmentClasses(
 
 func TestBrowserPublicInteractionSurfaceRejectsUnknownTailwindClass(t *testing.T) {
 	_, err := extractDirectCodingBrowserPublicInteractionSurface(
-		`function View() { return <button className="custom-application-control">Continue</button>; }`,
+		`function View() { return <button type="button" className="custom-application-control">Continue</button>; }`,
 	)
 	if err == nil || !strings.Contains(err.Error(), "non-allowlisted Tailwind class") {
 		t.Fatalf("unknown class was not rejected: %v", err)

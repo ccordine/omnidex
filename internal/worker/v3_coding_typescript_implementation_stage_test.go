@@ -10,7 +10,7 @@ import (
 
 func TestTypeScriptImplementationStageExcludesVerificationAndComposes(t *testing.T) {
 	source := `function FeatureView(): ReactElement {
-  return <main><input aria-label="Record value" /><button>Apply update</button><p>Updated: {0}</p></main>;
+	return <main><input aria-label="Record value" /><button type="button">Apply update</button><p>Updated: {0}</p></main>;
 }`
 	stage, _, _ := browserPublicSurfaceBindingFixture(t, "Apply a record update.", source)
 	stage.Generated["acceptance.verify"] = `async function VerifyFeature(): Promise<void> {
@@ -62,10 +62,10 @@ func TestTypeScriptImplementationStageExcludesVerificationAndComposes(t *testing
 
 func TestTypeScriptImplementationClosureReturnsCompilerCorrectedSourceBeforeBinding(t *testing.T) {
 	initial := `function FeatureView(): ReactElement {
-  return <main><input aria-label="Profile value" /><button>Apply preference</button><p>Saved: {0}</p></main>;
+	return <main><input aria-label="Profile value" /><button type="button">Apply preference</button><p>Saved: {0}</p></main>;
 }`
 	corrected := `function FeatureView(): ReactElement {
-  return <main><input aria-label="Profile value" /><button>Confirm preference</button><p>Saved: {0}</p></main>;
+	return <main><input aria-label="Profile value" /><button type="button">Confirm preference</button><p>Saved: {0}</p></main>;
 }`
 	stage, _, acceptanceRef := browserPublicSurfaceBindingFixture(
 		t, "Store one profile preference.", initial,
@@ -129,7 +129,7 @@ func TestTypeScriptImplementationClosureReturnsCompilerCorrectedSourceBeforeBind
 
 func TestTypeScriptImplementationClosureRejectsCompilerBrokenPublicSurface(t *testing.T) {
 	initial := `function FeatureView(): ReactElement {
-  return <main><button>Publish entry</button><p>Published: {0}</p></main>;
+	return <main><button type="button">Publish entry</button><p>Published: {0}</p></main>;
 }`
 	stage, _, _ := browserPublicSurfaceBindingFixture(t, "Publish one journal entry.", initial)
 	stage.Generated = map[string]string{}
@@ -138,7 +138,7 @@ func TestTypeScriptImplementationClosureRejectsCompilerBrokenPublicSurface(t *te
 		func(projection *directCodingProgram, _ ...func(*directCodingProgram) error) error {
 			projection.Generated["feature.impl"] = `function FeatureView(): ReactElement {
   const action = "Publish entry";
-  return <main><button>{action}</button><p>Published: {0}</p></main>;
+	return <main><button type="button">{action}</button><p>Published: {0}</p></main>;
 }`
 			return nil
 		},
@@ -149,7 +149,7 @@ func TestTypeScriptImplementationClosureRejectsCompilerBrokenPublicSurface(t *te
 }
 
 func TestTypeScriptImplementationStageRejectsUnresolvedRetainedNeighbor(t *testing.T) {
-	source := `function FeatureView(): ReactElement { return <button>Archive record</button>; }`
+	source := `function FeatureView(): ReactElement { return <button type="button">Archive record</button>; }`
 	stage, _, _ := browserPublicSurfaceBindingFixture(t, "Archive one record.", source)
 	stage.Source.Documents[0].Blocks = append(stage.Source.Documents[0].Blocks,
 		assemblyline.SourceBlock{

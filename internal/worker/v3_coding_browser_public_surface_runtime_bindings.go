@@ -7,9 +7,10 @@ import (
 )
 
 type directCodingBrowserRuntimeBinding struct {
-	name  string
-	start uint
-	end   uint
+	name          string
+	start         uint
+	end           uint
+	declarationID uintptr
 }
 
 type directCodingBrowserRuntimeBindings struct {
@@ -33,6 +34,29 @@ func (bindings directCodingBrowserRuntimeBindings) binds(
 		}
 	}
 	return false
+}
+
+func (bindings directCodingBrowserRuntimeBindings) resolve(
+	name string,
+	reference *treesitter.Node,
+) (directCodingBrowserRuntimeBinding, bool) {
+	var selected directCodingBrowserRuntimeBinding
+	selectedWidth := ^uint(0)
+	found, ambiguous := false, false
+	for _, binding := range bindings.byName[name] {
+		if reference == nil || reference.StartByte() < binding.start ||
+			reference.EndByte() > binding.end {
+			continue
+		}
+		width := binding.end - binding.start
+		if !found || width < selectedWidth {
+			selected, selectedWidth = binding, width
+			found, ambiguous = true, false
+		} else if width == selectedWidth {
+			ambiguous = true
+		}
+	}
+	return selected, found && !ambiguous
 }
 
 func collectDirectCodingBrowserRuntimeBindings(
@@ -72,6 +96,10 @@ func collectDirectCodingBrowserRuntimeBindings(
 				parameters = node.ChildByFieldName("parameter")
 			}
 			if err := add(parameters, node); err != nil {
+				return err
+			}
+		case "method_definition":
+			if err := add(node.ChildByFieldName("parameters"), node); err != nil {
 				return err
 			}
 		case "variable_declarator":
@@ -125,6 +153,7 @@ func (bindings *directCodingBrowserRuntimeBindings) addPattern(
 		bindings.declarations[pattern.Id()] = struct{}{}
 		bindings.byName[name] = append(bindings.byName[name], directCodingBrowserRuntimeBinding{
 			name: name, start: scope.StartByte(), end: scope.EndByte(),
+			declarationID: pattern.Id(),
 		})
 		return nil
 	case "required_parameter", "optional_parameter":
@@ -180,7 +209,7 @@ func directCodingBrowserRuntimeLexicalScope(node *treesitter.Node) *treesitter.N
 		case "statement_block", "program", "catch_clause", "for_statement",
 			"for_in_statement", "for_of_statement", "switch_statement":
 			return current
-		case "function_declaration", "function_expression", "arrow_function":
+		case "function_declaration", "function_expression", "arrow_function", "method_definition":
 			return current
 		}
 	}
@@ -190,7 +219,7 @@ func directCodingBrowserRuntimeLexicalScope(node *treesitter.Node) *treesitter.N
 func directCodingBrowserRuntimeFunctionScope(node *treesitter.Node) *treesitter.Node {
 	for current := node; current != nil; current = current.Parent() {
 		switch current.Kind() {
-		case "function_declaration", "function_expression", "arrow_function", "program":
+		case "function_declaration", "function_expression", "arrow_function", "method_definition", "program":
 			return current
 		}
 	}

@@ -20,31 +20,31 @@ func TestBrowserPublicSurfaceBindingProjectsOnlyAcceptedPublicFacts(t *testing.T
 		{
 			name: "inventory", behavior: "Adjust an inventory quantity.",
 			featureSource: `function FeatureView(): ReactElement {
-  const privateInventoryValue = "";
-  return <main><label htmlFor="sku">Stock code</label><input id="sku" value={privateInventoryValue} /><button>Apply adjustment</button><p><span>Updated:</span><output aria-label="Updated inventory">{privateInventoryValue}</output></p></main>;
+	const [privateInventoryValue, setPrivateInventoryValue] = useState("");
+  return <main><label htmlFor="sku">Stock code</label><input id="sku" value={privateInventoryValue} onChange={(event) => setPrivateInventoryValue(event.target.value)} /><button type="button">Apply adjustment</button><p><span>Updated:</span><output aria-label="Updated inventory">{privateInventoryValue}</output></p></main>;
 }`,
 			private:     []string{"privateInventoryValue", "FeatureView", "value={"},
 			badQuery:    `async function VerifyFeature(): Promise<void> { expect(screen.getByRole('textbox', { name: 'Missing stock name' })).toBeInTheDocument(); }`,
 			wantFailure: "accessible name \"Missing stock name\"",
 			changedSource: `function FeatureView(): ReactElement {
-  const privateInventoryValue = "";
-  return <main><label htmlFor="sku">Stock code</label><input id="sku" value={privateInventoryValue} /><button>Remove adjustment</button><p><span>Updated:</span><output aria-label="Updated inventory">{privateInventoryValue}</output></p></main>;
+	const [privateInventoryValue, setPrivateInventoryValue] = useState("");
+  return <main><label htmlFor="sku">Stock code</label><input id="sku" value={privateInventoryValue} onChange={(event) => setPrivateInventoryValue(event.target.value)} /><button type="button">Remove adjustment</button><p><span>Updated:</span><output aria-label="Updated inventory">{privateInventoryValue}</output></p></main>;
 }`,
 		},
 		{
 			name: "travel", behavior: "Find a journey duration.",
 			featureSource: `function FeatureView(): ReactElement {
-  const privateDepartureValue = "";
-  const privateArrivalValue = "";
-  return <main><input aria-label="Departure city" value={privateDepartureValue} /><input aria-label="Arrival city" value={privateArrivalValue} /><button>Find routes</button><p><span>Duration:</span><output aria-label="Journey duration">{privateArrivalValue}</output></p></main>;
+	const [privateDepartureValue, setPrivateDepartureValue] = useState("");
+	const [privateArrivalValue, setPrivateArrivalValue] = useState("");
+  return <main><input aria-label="Departure city" value={privateDepartureValue} onChange={(event) => setPrivateDepartureValue(event.target.value)} /><input aria-label="Arrival city" value={privateArrivalValue} onChange={(event) => setPrivateArrivalValue(event.target.value)} /><button type="button">Find routes</button><p><span>Duration:</span><output aria-label="Journey duration">{privateArrivalValue}</output></p></main>;
 }`,
 			private:     []string{"privateDepartureValue", "privateArrivalValue", "FeatureView"},
 			badQuery:    `async function VerifyFeature(): Promise<void> { expect(screen.getByRole('textbox')).toBeInTheDocument(); }`,
 			wantFailure: "matches 2 public controls",
 			changedSource: `function FeatureView(): ReactElement {
-  const privateDepartureValue = "";
-  const privateArrivalValue = "";
-  return <main><input aria-label="Origin city" value={privateDepartureValue} /><input aria-label="Arrival city" value={privateArrivalValue} /><button>Find routes</button><p><span>Duration:</span><output aria-label="Journey duration">{privateArrivalValue}</output></p></main>;
+	const [privateDepartureValue, setPrivateDepartureValue] = useState("");
+	const [privateArrivalValue, setPrivateArrivalValue] = useState("");
+  return <main><input aria-label="Origin city" value={privateDepartureValue} onChange={(event) => setPrivateDepartureValue(event.target.value)} /><input aria-label="Arrival city" value={privateArrivalValue} onChange={(event) => setPrivateArrivalValue(event.target.value)} /><button type="button">Find routes</button><p><span>Duration:</span><output aria-label="Journey duration">{privateArrivalValue}</output></p></main>;
 }`,
 		},
 	}
@@ -136,7 +136,7 @@ func TestBrowserPublicSurfaceBindingRejectsCodeOnlyElementIDDrift(t *testing.T) 
 	stage, _, acceptance := browserPublicSurfaceBindingFixture(
 		t,
 		"Adjust one quantity.",
-		`function FeatureView(): ReactElement { return <main><label htmlFor="value">Quantity</label><input id="value" /><button>Apply adjustment</button></main>; }`,
+		`function FeatureView(): ReactElement { return <main><label htmlFor="value">Quantity</label><input id="value" /><button type="button">Apply adjustment</button></main>; }`,
 	)
 	executor := &directCodingTypeScriptProjectStageExecutor{
 		publicSurfaceBindings: make(map[string]directCodingBrowserPublicSurfaceBinding),
@@ -149,7 +149,7 @@ func TestBrowserPublicSurfaceBindingRejectsCodeOnlyElementIDDrift(t *testing.T) 
 		t.Fatal(err)
 	}
 	stage.Generated["feature.impl"] =
-		`function FeatureView(): ReactElement { return <main><label htmlFor="amount">Quantity</label><input id="amount" /><button>Apply adjustment</button></main>; }`
+		`function FeatureView(): ReactElement { return <main><label htmlFor="amount">Quantity</label><input id="amount" /><button type="button">Apply adjustment</button></main>; }`
 	if err := executor.validateTaskBrowserPublicSurface(stage, "task_001"); err == nil ||
 		!strings.Contains(err.Error(), "surface drifted") {
 		t.Fatalf("code-only public id drift was not rejected: %v", err)
@@ -160,7 +160,7 @@ func TestBrowserPublicSurfaceBindingRejectsResultRelationReceiptDrift(t *testing
 	stage, _, acceptance := browserPublicSurfaceBindingFixture(
 		t,
 		"Derive one visible quantity from one supplied value.",
-		`function FeatureView(): ReactElement { return <main><label htmlFor="value">Quantity</label><input id="value" /><button>Apply quantity</button><p>Result: 2</p></main>; }`,
+		`function FeatureView(): ReactElement { return <main><label htmlFor="value">Quantity</label><input id="value" /><button type="button">Apply quantity</button><p>Result: 2</p></main>; }`,
 	)
 	executor := &directCodingTypeScriptProjectStageExecutor{
 		publicSurfaceBindings: make(map[string]directCodingBrowserPublicSurfaceBinding),

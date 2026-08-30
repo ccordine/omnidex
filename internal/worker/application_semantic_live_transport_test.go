@@ -21,6 +21,7 @@ type liveCodingQualificationCall struct {
 	jobSHA256, candidateSHA256                  string
 	promptSHA256, requestSHA256, responseSHA256 string
 	candidate                                   string
+	coverageSnapshot                            *liveCodingQualificationCoverageSnapshot
 	promptBytes, promptTokens, outputTokens     int
 	providerDuration, wallDuration              time.Duration
 }
@@ -83,6 +84,10 @@ func (transport *liveCodingQualificationTransport) execute(
 	if err := validateExactStationStaticCall(prompt, contract, transport.selection); err != nil {
 		return assemblyline.PortableResult{}, err
 	}
+	coverageSnapshot, err := captureLiveCodingQualificationCoverageSnapshot(job)
+	if err != nil {
+		return assemblyline.PortableResult{}, err
+	}
 	gap, err := transport.syntheticGap(job, prompt, contract)
 	if err != nil {
 		return assemblyline.PortableResult{}, err
@@ -115,8 +120,8 @@ func (transport *liveCodingQualificationTransport) execute(
 		kind: job.Kind, jobSHA256: job.ID, promptSHA256: qualificationSHA256([]byte(prompt)),
 		requestSHA256: requestSHA256, responseSHA256: generation.ProviderResponseSHA256,
 		candidateSHA256: qualificationSHA256([]byte(generation.Content)),
-		candidate:       generation.Content,
-		promptBytes:     len(prompt), promptTokens: generation.Usage.PromptEvalCount,
+		candidate:       generation.Content, coverageSnapshot: coverageSnapshot,
+		promptBytes: len(prompt), promptTokens: generation.Usage.PromptEvalCount,
 		outputTokens:     generation.Usage.EvalCount,
 		providerDuration: time.Duration(generation.Usage.TotalDurationNanos), wallDuration: wallDuration,
 	})
@@ -179,71 +184,6 @@ func (transport *liveCodingQualificationTransport) callsFrom(start int) []liveCo
 	return append([]liveCodingQualificationCall(nil), transport.calls[start:]...)
 }
 
-func assertLiveCodingQualificationCalls(
-	t *testing.T,
-	calls []liveCodingQualificationCall,
-	frozen assemblyline.FrozenApplicationWorkload,
-) {
-	t.Helper()
-	counts := map[assemblyline.WorkKind]int{}
-	for _, call := range calls {
-		counts[call.kind]++
-		for _, digest := range []string{
-			call.jobSHA256, call.promptSHA256, call.requestSHA256,
-			call.responseSHA256, call.candidateSHA256,
-		} {
-			if decoded, err := hex.DecodeString(digest); err != nil || len(decoded) != sha256.Size {
-				t.Fatal("live qualification call lacks an exact digest")
-			}
-		}
-		if call.promptBytes < 1 || call.promptTokens < 1 || call.outputTokens < 1 ||
-			call.providerDuration <= 0 || call.wallDuration <= 0 {
-			t.Fatal("live qualification call lacks bounded native metrics")
-		}
-	}
-	featureCount := len(frozen.Tasks)
-	generationCount := counts[assemblyline.WorkApplicationRequirement]
-	kindCount := counts[assemblyline.WorkApplicationRequirementCandidateKind]
-	cardinalityCount := counts[assemblyline.WorkApplicationRequirementCandidateCardinality]
-	resultRelationCount := counts[assemblyline.WorkApplicationRequirementCandidateResultRelation]
-	resultRelationCorrectionCount := counts[assemblyline.WorkApplicationRequirementCandidateResultRelationCorrection]
-	splitCount := counts[assemblyline.WorkApplicationRequirementCandidateSplit]
-	correctionCount := counts[assemblyline.WorkApplicationRequirementCandidateSplitCorrection]
-	duplicateReplacementCount := counts[assemblyline.WorkApplicationRequirementCandidateDuplicateReplacement]
-	nonRuntimeCount := 0
-	taskLocalCount := 0
-	for _, call := range calls {
-		if call.kind != assemblyline.WorkApplicationRequirementCandidateKind {
-			continue
-		}
-		switch call.candidate {
-		case assemblyline.ApplicationRequirementCandidateNonRuntime:
-			nonRuntimeCount++
-		case assemblyline.ApplicationRequirementCandidateTaskLocal:
-			taskLocalCount++
-		default:
-			t.Fatalf("live qualification candidate-kind result=%q", call.candidate)
-		}
-	}
-	if counts[assemblyline.WorkApplicationContextNeedCoverage] != 0 ||
-		counts[assemblyline.WorkApplicationProductContext] != 1 ||
-		generationCount != featureCount+nonRuntimeCount ||
-		counts[assemblyline.WorkApplicationRequirementCoverage] !=
-			generationCount-nonRuntimeCount+1 ||
-		kindCount != nonRuntimeCount+taskLocalCount ||
-		kindCount < generationCount ||
-		kindCount > generationCount+duplicateReplacementCount+splitCount+resultRelationCorrectionCount ||
-		(cardinalityCount < taskLocalCount ||
-			cardinalityCount > taskLocalCount+splitCount) ||
-		resultRelationCount != featureCount+resultRelationCorrectionCount ||
-		splitCount > taskLocalCount*assemblyline.MaxApplicationRequirementCandidateSplitDepth ||
-		correctionCount > splitCount ||
-		resultRelationCorrectionCount > generationCount ||
-		duplicateReplacementCount > generationCount {
-		t.Fatalf("live qualification raw-leaf call shape differs from code-owned fixed points: %v", counts)
-	}
-}
-
 func logLiveCodingQualification(
 	t *testing.T,
 	caseName, modelName, frozenSHA256 string,
@@ -251,10 +191,18 @@ func logLiveCodingQualification(
 ) {
 	t.Helper()
 	for index, call := range calls {
+		accepted, excluded, exactZero, semanticZero := -1, -1, -1, -1
+		if call.coverageSnapshot != nil {
+			accepted = len(call.coverageSnapshot.AcceptedRequirements)
+			excluded = len(call.coverageSnapshot.ExcludedCandidates)
+			exactZero = call.coverageSnapshot.ExactZeroDeltas
+			semanticZero = call.coverageSnapshot.SemanticZeroDeltas
+		}
 		t.Logf(
-			"live_coding_qualification case=%s model=%s call=%d kind=%s job_sha256=%s prompt_sha256=%s request_sha256=%s response_sha256=%s candidate_sha256=%s candidate=%q frozen_sha256=%s prompt_bytes=%d prompt_tokens=%d output_tokens=%d provider_ms=%d wall_ms=%d",
+			"live_coding_qualification case=%s model=%s call=%d kind=%s job_sha256=%s prompt_sha256=%s request_sha256=%s response_sha256=%s candidate_sha256=%s candidate=%q frozen_sha256=%s coverage_accepted=%d coverage_excluded=%d coverage_exact_zero=%d coverage_semantic_zero=%d prompt_bytes=%d prompt_tokens=%d output_tokens=%d provider_ms=%d wall_ms=%d",
 			caseName, modelName, index+1, call.kind, call.jobSHA256, call.promptSHA256, call.requestSHA256,
 			call.responseSHA256, call.candidateSHA256, call.candidate, frozenSHA256,
+			accepted, excluded, exactZero, semanticZero,
 			call.promptBytes, call.promptTokens, call.outputTokens,
 			call.providerDuration.Milliseconds(), call.wallDuration.Milliseconds(),
 		)

@@ -43,6 +43,11 @@ func resolveDirectCodingApplicationIntent(
 	excludedCandidates := make(
 		[]string, 0, assemblyline.MaxApplicationRequirementExcludedCandidates,
 	)
+	zeroDeltas := make(
+		[]assemblyline.ApplicationRequirementCandidateZeroDelta,
+		0,
+		assemblyline.MaxApplicationRequirementZeroDeltas,
+	)
 	var reboundGenerationAuthority *assemblyline.ApplicationRequirementCandidateInput
 	for {
 		var candidateInput assemblyline.ApplicationRequirementCandidateInput
@@ -58,6 +63,10 @@ func resolveDirectCodingApplicationIntent(
 				UserRequest: authority.UserRequest, Context: authority.Context,
 				AcceptedRequirements: acceptedStatements,
 				ExcludedCandidates:   append([]string{}, excludedCandidates...),
+				ZeroDeltas: append(
+					[]assemblyline.ApplicationRequirementCandidateZeroDelta{},
+					zeroDeltas...,
+				),
 			}
 			coverageJob, err := assemblyline.NewApplicationRequirementCoverageJob(coverageInput)
 			if err != nil {
@@ -121,7 +130,7 @@ func resolveDirectCodingApplicationIntent(
 			return zero, err
 		}
 		resolved, err := resolveDirectCodingApplicationRequirementCandidate(
-			runtime, intentModel, requirement, candidateInput, identities,
+			runtime, intentModel, requirement, candidateInput, requirements, identities,
 		)
 		if err != nil {
 			return zero, err
@@ -129,8 +138,26 @@ func resolveDirectCodingApplicationIntent(
 		if !resolved.Retain {
 			if resolved.ResultRelation != (assemblyline.ApplicationRequirementCandidateResultRelationResult{}) {
 				return zero, fmt.Errorf(
-					"non-runtime application requirement unexpectedly carries a result-relation receipt",
+					"unretained application requirement unexpectedly carries a result-relation receipt",
 				)
+			}
+			if resolved.ZeroDelta != nil {
+				if resolved.ReboundGenerationAuthority != nil {
+					return zero, fmt.Errorf(
+						"zero-delta application requirement unexpectedly carries exclusion authority",
+					)
+				}
+				rebound, err := assemblyline.RecordApplicationRequirementCandidateZeroDelta(
+					candidateInput, *resolved.ZeroDelta,
+				)
+				if err != nil {
+					return zero, err
+				}
+				zeroDeltas = append(
+					[]assemblyline.ApplicationRequirementCandidateZeroDelta{},
+					rebound.ZeroDeltas...,
+				)
+				continue
 			}
 			if len(excludedCandidates) == assemblyline.MaxApplicationRequirementExcludedCandidates {
 				return zero, fmt.Errorf(
@@ -150,6 +177,11 @@ func resolveDirectCodingApplicationIntent(
 		if resolved.ReboundGenerationAuthority != nil {
 			return zero, fmt.Errorf(
 				"retained application requirement unexpectedly carries exclusion authority",
+			)
+		}
+		if resolved.ZeroDelta != nil {
+			return zero, fmt.Errorf(
+				"retained application requirement unexpectedly carries zero-delta evidence",
 			)
 		}
 		if err := resolved.ResultRelation.ValidateAcceptedFor(resolved.Candidate); err != nil {

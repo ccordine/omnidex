@@ -30,9 +30,8 @@ function View(): JSX.Element {
 
 func TestBrowserAcceptanceUnrelatedNamedOutputCannotAuthorizeStaticText(t *testing.T) {
 	surface, err := extractDirectCodingBrowserPublicInteractionSurface(`
-		function View(): JSX.Element {
-  const liveStatus = "ready";
-  return <main><output aria-label="Live status">{liveStatus}</output><p>Updated</p></main>;
+		function View({ state }): JSX.Element {
+  return <main><output aria-label="Live status">{state.liveStatus}</output><p>Updated</p></main>;
 }`)
 	if err != nil {
 		t.Fatalf("extract unrelated output surface: %v", err)

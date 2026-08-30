@@ -103,9 +103,10 @@ func TestDirectCodingIntentExcludesNonRuntimeCandidateAndContinuesCoverage(t *te
 		counts[assemblyline.WorkApplicationRequirement] != 2 ||
 		counts[assemblyline.WorkApplicationRequirementCandidateKind] != 2 ||
 		counts[assemblyline.WorkApplicationRequirementCandidateCardinality] != 1 ||
+		counts[assemblyline.WorkApplicationRequirementCandidateOutcomeRelation] != 0 ||
 		counts[assemblyline.WorkApplicationRequirementCandidateResultRelation] != 1 ||
-		counts[assemblyline.WorkApplicationRequirementCandidateResultRelationCorrection] != 0 ||
-		counts[assemblyline.WorkApplicationRequirementCandidateDuplicateReplacement] != 0 {
+		counts[assemblyline.WorkApplicationRequirementCandidateResultRelationGrounding] != 0 ||
+		counts[assemblyline.WorkApplicationRequirementCandidateResultRelationCorrection] != 0 {
 		t.Fatalf("fixed-point calls=%v", counts)
 	}
 }

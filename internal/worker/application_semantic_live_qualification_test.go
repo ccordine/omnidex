@@ -118,9 +118,9 @@ func TestLiveCodingRequirementsAndWorkloadQualification(t *testing.T) {
 			if len(frozen.Tasks) < 1 || len(frozen.Tasks) > 10 {
 				t.Fatalf("frozen tasks=%d outside front-door bounds", len(frozen.Tasks))
 			}
+			logLiveCodingQualification(t, testCase.name, modelName, frozen.SHA256, calls)
 			assertLiveCodingQualificationCalls(t, calls, frozen)
 			assertLiveCodingQualificationResultRelations(t, testCase, calls)
-			logLiveCodingQualification(t, testCase.name, modelName, frozen.SHA256, calls)
 		})
 	}
 }
@@ -130,7 +130,7 @@ func liveCodingQualificationCases() []liveCodingQualificationCase {
 		{
 			name:     "music-studio",
 			request:  "Build a browser music studio with channels, drum pads, and a keyboard. Use TypeScript and React, include focused automated tests, and produce a production build.",
-			features: []string{"channels", "drum pads", "keyboard"},
+			features: []string{"channels", "drum pads", "keyboard", "audio playback"},
 		},
 		{
 			name:     "catalog",
@@ -148,27 +148,27 @@ func liveCodingQualificationCases() []liveCodingQualificationCase {
 			features: []string{"SHA-256 digest", "clear help", "useful error"},
 		},
 		{
-			name:                           "tax-estimator",
-			request:                        "Build a browser tax estimator that computes a final total as the user-provided subtotal plus eight percent of that subtotal.",
-			features:                       []string{"final total"},
+			name:                           "label-normalizer",
+			request:                        "Build a browser label normalizer that displays user-provided text converted to Unicode lowercase.",
+			features:                       []string{"normalized label"},
 			requiresExplicitResultRelation: true,
 		},
 		{
-			name:                           "storage-reporter",
-			request:                        "Build a command-line storage reporter that prints remaining bytes as user-provided capacity minus user-provided used bytes.",
-			features:                       []string{"remaining bytes"},
+			name:                           "route-selector",
+			request:                        "Build a command-line route selector that prints the lexicographically smallest route name from user-provided route names.",
+			features:                       []string{"selected route name"},
 			requiresExplicitResultRelation: true,
 		},
 		{
-			name:                           "rectangle-area-finder",
-			request:                        "Build a browser rectangle-area finder.",
-			features:                       []string{"reported area value"},
+			name:                           "alphabetical-word-sorter",
+			request:                        "Build a browser alphabetical word sorter.",
+			features:                       []string{"alphabetically ordered words"},
 			requiresExplicitResultRelation: true,
 		},
 		{
-			name:                           "fahrenheit-celsius-converter",
-			request:                        "Build a command-line Fahrenheit-to-Celsius converter.",
-			features:                       []string{"converted Celsius value"},
+			name:                           "sha256-text-digester",
+			request:                        "Build a command-line SHA-256 text digester.",
+			features:                       []string{"SHA-256 digest"},
 			requiresExplicitResultRelation: true,
 		},
 	}
@@ -184,6 +184,7 @@ func assertLiveCodingQualificationResultRelations(
 		return
 	}
 	explicit := 0
+	groundings := 0
 	corrections := 0
 	for _, call := range calls {
 		switch call.kind {
@@ -191,14 +192,16 @@ func assertLiveCodingQualificationResultRelations(
 			if call.candidate == assemblyline.ApplicationRequirementExplicitResultRelation {
 				explicit++
 			}
+		case assemblyline.WorkApplicationRequirementCandidateResultRelationGrounding:
+			groundings++
 		case assemblyline.WorkApplicationRequirementCandidateResultRelationCorrection:
 			corrections++
 		}
 	}
-	if explicit != len(testCase.features) || corrections != 0 {
+	if explicit != len(testCase.features) || groundings != 0 || corrections != 0 {
 		t.Fatalf(
-			"explicit derived-result fixture did not remain oracle-determinate: explicit=%d corrections=%d calls=%+v",
-			explicit, corrections, calls,
+			"explicit derived-result fixture did not remain oracle-determinate: explicit=%d groundings=%d corrections=%d calls=%+v",
+			explicit, groundings, corrections, calls,
 		)
 	}
 }
@@ -254,6 +257,9 @@ func validateLiveCodingQualificationProjection(
 		if input.AcceptedRequirements == nil || input.ExcludedCandidates == nil {
 			return fmt.Errorf("requirement coverage lacks exact retained and excluded sets")
 		}
+		if input.ZeroDeltas == nil {
+			return fmt.Errorf("requirement coverage lacks code-owned zero-delta state")
+		}
 		if strings.Contains(prompt, "PRODUCT CONTEXT:") {
 			return fmt.Errorf("requirement leaf received redundant derived product context")
 		}
@@ -301,6 +307,34 @@ func validateLiveCodingQualificationProjection(
 			return fmt.Errorf("candidate cardinality received authority beyond one exact candidate")
 		}
 		return nil
+	case assemblyline.WorkApplicationRequirementCandidateOutcomeRelation:
+		var input assemblyline.ApplicationRequirementCandidateOutcomeRelationInput
+		if err := json.Unmarshal(job.Payload, &input); err != nil {
+			return err
+		}
+		if err := input.Kind.ValidateFor(
+			assemblyline.ApplicationRequirementCandidateKindInput{Candidate: input.Candidate},
+		); err != nil || input.Kind.Relation != assemblyline.ApplicationRequirementCandidateTaskLocal {
+			return fmt.Errorf("outcome relation lacks task-local candidate authority: %v", err)
+		}
+		if err := input.Cardinality.ValidateFor(
+			assemblyline.ApplicationRequirementCandidateCardinalityInput{Candidate: input.Candidate},
+		); err != nil || input.Cardinality.Relation != assemblyline.ApplicationRequirementOneRuntimeOutcome {
+			return fmt.Errorf("outcome relation lacks one-outcome candidate authority: %v", err)
+		}
+		if err := input.AcceptedResultRelation.ValidateAcceptedFor(
+			input.AcceptedRequirement,
+		); err != nil {
+			return fmt.Errorf("outcome relation lacks retained accepted authority: %v", err)
+		}
+		if input.Candidate == input.AcceptedRequirement ||
+			strings.Count(prompt, input.Candidate) != 1 ||
+			strings.Count(prompt, input.AcceptedRequirement) != 1 ||
+			strings.Contains(prompt, testCase.request) ||
+			strings.Contains(prompt, "ACCEPTED REQUIREMENTS") {
+			return fmt.Errorf("outcome relation exceeded its exact byte-different pair")
+		}
+		return nil
 	case assemblyline.WorkApplicationRequirementCandidateResultRelation:
 		var input assemblyline.ApplicationRequirementCandidateResultRelationInput
 		if err := json.Unmarshal(job.Payload, &input); err != nil {
@@ -326,6 +360,38 @@ func validateLiveCodingQualificationProjection(
 			return fmt.Errorf("result relation exceeded one bound candidate")
 		}
 		return nil
+	case assemblyline.WorkApplicationRequirementCandidateResultRelationGrounding:
+		var input assemblyline.ApplicationRequirementCandidateResultRelationGroundingInput
+		if err := json.Unmarshal(job.Payload, &input); err != nil {
+			return err
+		}
+		if _, err := assemblyline.NewApplicationRequirementCandidateResultRelationGroundingJob(
+			input,
+		); err != nil {
+			return fmt.Errorf("result-relation grounding lacks bound authority: %v", err)
+		}
+		if input.ImmutableRequest != testCase.request ||
+			input.Context.RequestSHA256 != assemblyline.ExactObjectiveContextSHA(testCase.request) ||
+			strings.Count(prompt, testCase.request) != 1 ||
+			strings.Count(
+				prompt,
+				"EXACT CURRENT CANDIDATE:\n"+input.CandidateAuthority.Candidate,
+			) != 1 ||
+			strings.Contains(prompt, "PRODUCT CONTEXT:") ||
+			strings.Contains(prompt, "ACCEPTED REQUIREMENT") ||
+			strings.Contains(prompt, "EXCLUDED") {
+			return fmt.Errorf("result-relation grounding exceeded request/candidate authority")
+		}
+		for _, fact := range input.Context.Facts {
+			if fact.Kind == assemblyline.ApplicationContextWorkspaceState {
+				continue
+			}
+			if !strings.Contains(prompt, fact.Value) || strings.Contains(prompt, fact.SourceID) ||
+				strings.Contains(prompt, fact.NeedID) {
+				return fmt.Errorf("result-relation grounding lost minimal verified context projection")
+			}
+		}
+		return nil
 	case assemblyline.WorkApplicationRequirementCandidateResultRelationCorrection:
 		var input assemblyline.ApplicationRequirementCandidateResultRelationCorrectionInput
 		if err := json.Unmarshal(job.Payload, &input); err != nil {
@@ -336,13 +402,25 @@ func validateLiveCodingQualificationProjection(
 		); err != nil {
 			return fmt.Errorf("result-relation correction lacks bound authority: %v", err)
 		}
-		if strings.Count(prompt, testCase.request) != 1 ||
+		if input.Context.RequestSHA256 != assemblyline.ExactObjectiveContextSHA(testCase.request) ||
+			strings.Count(prompt, testCase.request) != 1 ||
 			strings.Count(
 				prompt,
-				"EXACT CURRENT CANDIDATE:\n"+input.CandidateAuthority.Candidate,
+				"EXACT CURRENT CANDIDATE:\n"+input.CurrentCandidate,
 			) != 1 ||
-			strings.Contains(prompt, "PRODUCT CONTEXT:") {
+			strings.Contains(prompt, "PRODUCT CONTEXT:") ||
+			strings.Contains(prompt, "accepted_requirements") ||
+			strings.Contains(prompt, "excluded_candidates") {
 			return fmt.Errorf("result-relation correction exceeded its exact authority")
+		}
+		for _, fact := range input.Context.Facts {
+			if fact.Kind == assemblyline.ApplicationContextWorkspaceState {
+				continue
+			}
+			if !strings.Contains(prompt, fact.Value) || strings.Contains(prompt, fact.SourceID) ||
+				strings.Contains(prompt, fact.NeedID) {
+				return fmt.Errorf("result-relation correction lost minimal verified context projection")
+			}
 		}
 		return nil
 	case assemblyline.WorkApplicationRequirementCandidateSplit:
@@ -388,35 +466,6 @@ func validateLiveCodingQualificationProjection(
 			) != 1 || strings.Contains(prompt, testCase.request) ||
 			strings.Contains(prompt, "ACCEPTED REQUIREMENT") {
 			return fmt.Errorf("candidate split correction exceeded its exact mutable leaf")
-		}
-		return nil
-	case assemblyline.WorkApplicationRequirementCandidateDuplicateReplacement:
-		var input assemblyline.ApplicationRequirementCandidateDuplicateReplacementInput
-		if err := json.Unmarshal(job.Payload, &input); err != nil {
-			return err
-		}
-		if err := input.GenerationAuthority.Coverage.ValidateFor(
-			input.GenerationAuthority.Authority,
-		); err != nil ||
-			input.GenerationAuthority.Coverage.Relation != assemblyline.ApplicationRequirementRemains ||
-			input.Defect != assemblyline.ApplicationRequirementDuplicateCandidateDefect {
-			return fmt.Errorf("duplicate replacement lacks exact generation authority: %v", err)
-		}
-		var retained []string
-		switch input.Duplicate.Set {
-		case assemblyline.ApplicationRequirementDuplicateAcceptedRequirement:
-			retained = input.GenerationAuthority.Authority.AcceptedRequirements
-		case assemblyline.ApplicationRequirementDuplicateExcludedNonRuntimeCandidate:
-			retained = input.GenerationAuthority.Authority.ExcludedCandidates
-		default:
-			return fmt.Errorf("duplicate replacement set=%q", input.Duplicate.Set)
-		}
-		if input.Duplicate.Index < 0 || input.Duplicate.Index >= len(retained) ||
-			retained[input.Duplicate.Index] != input.CurrentCandidate ||
-			strings.Count(prompt, testCase.request) != 1 ||
-			strings.Count(prompt, input.CurrentCandidate) < 2 ||
-			strings.Contains(prompt, "PRODUCT CONTEXT:") {
-			return fmt.Errorf("duplicate replacement projection differs from its bounded candidate state")
 		}
 		return nil
 	default:

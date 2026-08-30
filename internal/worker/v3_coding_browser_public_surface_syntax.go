@@ -3,20 +3,9 @@ package worker
 import (
 	"fmt"
 	"strings"
-	"unicode"
 
 	treesitter "github.com/tree-sitter/go-tree-sitter"
 )
-
-var directCodingBrowserPublicSemanticAttributes = map[string]struct{}{
-	"accessKey": {}, "alt": {}, "aria-disabled": {}, "aria-hidden": {}, "aria-label": {},
-	"aria-labelledby": {}, "aria-readonly": {}, "children": {}, "className": {},
-	"contentEditable": {}, "controls": {}, "dangerouslySetInnerHTML": {}, "draggable": {},
-	"disabled": {}, "display": {}, "hidden": {}, "htmlFor": {}, "href": {}, "id": {},
-	"inert": {}, "list": {}, "multiple": {}, "open": {}, "placeholder": {},
-	"popover": {}, "readOnly": {}, "ref": {}, "role": {}, "size": {}, "style": {}, "tabIndex": {},
-	"title": {}, "type": {}, "visibility": {}, "autoFocus": {},
-}
 
 func (extractor *directCodingBrowserPublicSurfaceExtractor) elementHeader(
 	element *treesitter.Node,
@@ -45,55 +34,9 @@ func (extractor *directCodingBrowserPublicSurfaceExtractor) elementHeader(
 			"browser public surface rejects unsupported intrinsic element %q", tag,
 		)
 	}
-	attributes := make(map[string]directCodingBrowserJSXAttribute)
-	eventAttributes := make([]string, 0, 1)
-	for index := uint(0); index < element.NamedChildCount(); index++ {
-		child := element.NamedChild(index)
-		if child == nil || child == name {
-			continue
-		}
-		if child.Kind() == "jsx_expression" {
-			return "", nil, fmt.Errorf("browser public surface rejects spread attributes")
-		}
-		if child.Kind() != "jsx_attribute" || child.NamedChildCount() == 0 {
-			continue
-		}
-		attributeNameNode := child.NamedChild(0)
-		if attributeNameNode == nil || attributeNameNode.Kind() != "property_identifier" {
-			return "", nil, fmt.Errorf("browser public surface rejects namespaced attributes")
-		}
-		attributeName := extractor.nodeText(attributeNameNode)
-		if directCodingBrowserEventHandlerAttribute(attributeName) {
-			eventAttributes = append(eventAttributes, attributeName)
-		}
-		if _, relevant := directCodingBrowserPublicSemanticAttributes[attributeName]; !relevant {
-			continue
-		}
-		if attributes[attributeName].present {
-			return "", nil, fmt.Errorf("browser public surface rejects duplicate public attribute %s", attributeName)
-		}
-		attribute := directCodingBrowserJSXAttribute{present: true, boolean: child.NamedChildCount() == 1}
-		if !attribute.boolean {
-			value := child.NamedChild(1)
-			if value == nil || value.Kind() != "string" {
-				return "", nil, fmt.Errorf("browser public surface rejects dynamic public attribute %s", attributeName)
-			}
-			literal, err := extractor.quotedAttribute(value)
-			if err != nil {
-				return "", nil, err
-			}
-			attribute.literal = literal
-		}
-		attributes[attributeName] = attribute
-	}
-	for _, unsupported := range []string{
-		"accessKey", "alt", "aria-labelledby", "autoFocus", "children",
-		"contentEditable", "dangerouslySetInnerHTML", "display", "draggable",
-		"open", "popover", "ref", "role", "style", "tabIndex", "title", "visibility",
-	} {
-		if attributes[unsupported].present {
-			return "", nil, fmt.Errorf("browser public surface rejects unsupported public attribute %s", unsupported)
-		}
+	attributes, eventAttributes, err := extractor.elementAttributes(element, name, tag)
+	if err != nil {
+		return "", nil, err
 	}
 	if len(eventAttributes) != 0 {
 		_, _, control, controlErr := directCodingBrowserIntrinsicControl(tag, attributes)
@@ -105,33 +48,6 @@ func (extractor *directCodingBrowserPublicSurfaceExtractor) elementHeader(
 				"browser public surface rejects event attribute %s on unregistered intrinsic element %s",
 				eventAttributes[0], tag,
 			)
-		}
-	}
-	for _, requiredLiteral := range []string{
-		"aria-disabled", "aria-hidden", "aria-label", "aria-readonly", "className",
-		"htmlFor", "href", "id", "list", "placeholder", "size", "type",
-	} {
-		if attributes[requiredLiteral].present && attributes[requiredLiteral].boolean {
-			return "", nil, fmt.Errorf("browser public surface attribute %s requires an exact literal", requiredLiteral)
-		}
-	}
-	if attributes["htmlFor"].present && tag != "label" {
-		return "", nil, fmt.Errorf("browser public surface rejects htmlFor outside a label")
-	}
-	for _, key := range []string{"aria-label", "className", "placeholder"} {
-		attribute := attributes[key]
-		if attribute.present {
-			attribute.literal = normalizeDirectCodingBrowserPublicLiteral(attribute.literal)
-			if key == "aria-label" && attribute.literal == "" {
-				return "", nil, fmt.Errorf("browser public surface aria-label is empty")
-			}
-			attributes[key] = attribute
-		}
-	}
-	for _, key := range []string{"id", "htmlFor"} {
-		attribute := attributes[key]
-		if attribute.present && (attribute.literal == "" || strings.IndexFunc(attribute.literal, unicode.IsSpace) >= 0) {
-			return "", nil, fmt.Errorf("browser public surface attribute %s is not an exact identifier", key)
 		}
 	}
 	return tag, attributes, nil

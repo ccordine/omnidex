@@ -20,7 +20,7 @@ export function InventoryPanel(): JSX.Element {
         <input type="number" value={quantity}
           onChange={(event) => quantitySetter(Number(event.target.value))} />
       </label>
-      <button onClick={() => void quantity}>Apply adjustment</button>
+      <button type="button" onClick={() => void quantity}>Apply adjustment</button>
       {quantity !== null && <div><span>Current count:</span><output aria-label="Current count">{quantity}</output></div>}
     </main>
   );
@@ -52,20 +52,22 @@ END_PUBLIC_INTERACTION_SURFACE`
 func TestBrowserPublicInteractionSurfaceTravel(t *testing.T) {
 	source := `
 export function TravelSearch(): JSX.Element {
-  const departureValueSecret = "";
-  const arrivalValueSecret = "";
-  const durationValueSecret = 0;
-  return <form>
-    <input aria-label="Departure city" placeholder="Boston" value={departureValueSecret} />
+	const [departureValueSecret, setDepartureValueSecret] = useState("");
+	const [arrivalValueSecret, setArrivalValueSecret] = useState("");
+	const [durationValueSecret, setDurationValueSecret] = useState(0);
+  return <section>
+    <input aria-label="Departure city" placeholder="Boston" value={departureValueSecret}
+      onChange={(event) => setDepartureValueSecret(event.target.value)} />
     <label htmlFor="arrival">Arrival city</label>
-    <input id="arrival" value={arrivalValueSecret} />
+    <input id="arrival" value={arrivalValueSecret}
+      onChange={(event) => setArrivalValueSecret(event.target.value)} />
     <label>Travel class<select value="economy">
       <option value="economy">Economy</option>
       <option value="business">Business</option>
     </select></label>
-    <button onClick={() => void durationValueSecret}><span>Find routes</span></button>
+		<button type="button" onClick={() => setDurationValueSecret(departureValueSecret.length + arrivalValueSecret.length)}><span>Find routes</span></button>
     <p><span>Suggested duration:</span><output aria-label="Suggested duration">{durationValueSecret}</output></p>
-  </form>;
+	</section>;
 }`
 	surface, err := extractDirectCodingBrowserPublicInteractionSurface(source)
 	if err != nil {
@@ -115,7 +117,7 @@ func TestBrowserPublicInteractionSurfaceRejectsUnprovenSemantics(t *testing.T) {
 		},
 		"dynamic accessible name": {
 			source: `function View() { return <input aria-label={caption} />; }`,
-			want:   "dynamic public attribute aria-label",
+			want:   "attribute aria-label requires an exact literal",
 		},
 		"custom component": {
 			source: `function View() { return <InventoryControl />; }`,
@@ -142,27 +144,27 @@ func TestBrowserPublicInteractionSurfaceRejectsUnprovenSemantics(t *testing.T) {
 			want:   "exact literal label text",
 		},
 		"conditional control": {
-			source: `function View() { return <main>{visible && <button>Continue</button>}</main>; }`,
+			source: `function View() { return <main>{visible && <button type="button">Continue</button>}</main>; }`,
 			want:   "dynamic control cardinality",
 		},
 		"explicit role": {
 			source: `function View() { return <div role="button">Continue</div>; }`,
-			want:   "unsupported public attribute role",
+			want:   "unsupported attribute role",
 		},
 		"unused JSX local": {
-			source: `function View() { const ghost = <button>Ghost</button>; return <button>Real</button>; }`,
+			source: `function View() { const ghost = <button type="button">Ghost</button>; return <button type="button">Real</button>; }`,
 			want:   "JSX outside the unconditional return",
 		},
 		"conditional returns": {
-			source: `function View() { if (ready) { return <button>Ready</button>; } return <button>Wait</button>; }`,
+			source: `function View() { if (ready) { return <button type="button">Ready</button>; } return <button type="button">Wait</button>; }`,
 			want:   "JSX outside the unconditional return",
 		},
 		"early null return": {
-			source: `function View() { if (blocked) { return null; } return <button>Run</button>; }`,
+			source: `function View() { if (blocked) { return null; } return <button type="button">Run</button>; }`,
 			want:   "return outside the unconditional top-level return",
 		},
 		"conditional throw": {
-			source: `function View() { if (blocked) { throw new Error("blocked"); } return <button>Run</button>; }`,
+			source: `function View() { if (blocked) { throw new Error("blocked"); } return <button type="button">Run</button>; }`,
 			want:   "throw in render function control flow",
 		},
 		"unregistered inventory event surface": {
@@ -171,78 +173,78 @@ func TestBrowserPublicInteractionSurfaceRejectsUnprovenSemantics(t *testing.T) {
 		},
 		"unregistered itinerary focus surface": {
 			source: `function View() { return <div tabIndex="0">Choose itinerary</div>; }`,
-			want:   "unsupported public attribute tabIndex",
+			want:   "unsupported attribute tabIndex",
 		},
 		"runtime-mutated schedule surface": {
-			source: `function View() { return <button ref={(node) => void node}>Publish schedule</button>; }`,
-			want:   "dynamic public attribute ref",
+			source: `function View() { return <button type="button" ref={(node) => void node}>Publish schedule</button>; }`,
+			want:   "unsupported attribute ref",
 		},
 		"multiple top-level returns": {
-			source: `function View() { return <button>First</button>; return <button>Second</button>; }`,
+			source: `function View() { return <button type="button">First</button>; return <button type="button">Second</button>; }`,
 			want:   "one unconditional top-level return",
 		},
 		"ternary render root": {
-			source: `function View() { return ready ? <button>Ready</button> : <button>Wait</button>; }`,
+			source: `function View() { return ready ? <button type="button">Ready</button> : <button type="button">Wait</button>; }`,
 			want:   "one unconditional intrinsic JSX root",
 		},
 		"closed dialog": {
-			source: `function View() { return <dialog><button>Continue</button></dialog>; }`,
+			source: `function View() { return <dialog><button type="button">Continue</button></dialog>; }`,
 			want:   "visibility-bearing dialog",
 		},
 		"embedded style": {
-			source: `function View() { return <main><style>{"button { display: none }"}</style><button>Continue</button></main>; }`,
+			source: `function View() { return <main><style>{"button { display: none }"}</style><button type="button">Continue</button></main>; }`,
 			want:   `embedded non-public element "style"`,
 		},
 		"embedded script": {
-			source: `function View() { return <main><script>{"void 0"}</script><button>Continue</button></main>; }`,
+			source: `function View() { return <main><script>{"void 0"}</script><button type="button">Continue</button></main>; }`,
 			want:   `embedded non-public element "script"`,
 		},
 		"popover state": {
-			source: `function View() { return <main popover><button>Continue</button></main>; }`,
-			want:   "unsupported public attribute popover",
+			source: `function View() { return <main popover><button type="button">Continue</button></main>; }`,
+			want:   "unsupported attribute popover",
 		},
 		"conditional hidden class": {
-			source: `function View() { return <main className="md:hidden"><button>Continue</button></main>; }`,
+			source: `function View() { return <main className="md:hidden"><button type="button">Continue</button></main>; }`,
 			want:   "non-allowlisted Tailwind class",
 		},
 		"important hidden class": {
-			source: `function View() { return <main className="!hidden"><button>Continue</button></main>; }`,
+			source: `function View() { return <main className="!hidden"><button type="button">Continue</button></main>; }`,
 			want:   "non-allowlisted Tailwind class",
 		},
 		"trailing important hidden class": {
-			source: `function View() { return <main className="hidden!"><button>Continue</button></main>; }`,
+			source: `function View() { return <main className="hidden!"><button type="button">Continue</button></main>; }`,
 			want:   "non-allowlisted Tailwind class",
 		},
 		"arbitrary hidden class": {
-			source: `function View() { return <main className="[display:none]"><button>Continue</button></main>; }`,
+			source: `function View() { return <main className="[display:none]"><button type="button">Continue</button></main>; }`,
 			want:   "non-allowlisted Tailwind class",
 		},
 		"content visibility class": {
-			source: `function View() { return <main className="[content-visibility:hidden]"><button>Continue</button></main>; }`,
+			source: `function View() { return <main className="[content-visibility:hidden]"><button type="button">Continue</button></main>; }`,
 			want:   "non-allowlisted Tailwind class",
 		},
 		"transparent reservation control": {
-			source: `function View() { return <button className="opacity-0">Reserve seat</button>; }`,
+			source: `function View() { return <button type="button" className="opacity-0">Reserve seat</button>; }`,
 			want:   "non-allowlisted Tailwind class",
 		},
 		"pointer-disabled search control": {
-			source: `function View() { return <button className="pointer-events-none">Run search</button>; }`,
+			source: `function View() { return <button type="button" className="pointer-events-none">Run search</button>; }`,
 			want:   "non-allowlisted Tailwind class",
 		},
 		"screen-reader-only checkout control": {
-			source: `function View() { return <button className="sr-only">Complete checkout</button>; }`,
+			source: `function View() { return <button type="button" className="sr-only">Complete checkout</button>; }`,
 			want:   "non-allowlisted Tailwind class",
 		},
 		"zero-size clipped profile control": {
-			source: `function View() { return <section className="w-0 overflow-hidden"><button>Save profile</button></section>; }`,
+			source: `function View() { return <section className="w-0 overflow-hidden"><button type="button">Save profile</button></section>; }`,
 			want:   "non-allowlisted Tailwind class",
 		},
 		"arbitrary clipped report control": {
-			source: `function View() { return <section className="[clip-path:inset(50%)]"><button>Export report</button></section>; }`,
+			source: `function View() { return <section className="[clip-path:inset(50%)]"><button type="button">Export report</button></section>; }`,
 			want:   "non-allowlisted Tailwind class",
 		},
 		"disabled fieldset billing control": {
-			source: `function View() { return <fieldset disabled><button>Submit payment</button></fieldset>; }`,
+			source: `function View() { return <fieldset disabled><button type="button">Submit payment</button></fieldset>; }`,
 			want:   "disabled fieldset ancestry",
 		},
 		"svg visibility": {
@@ -254,7 +256,7 @@ func TestBrowserPublicInteractionSurfaceRejectsUnprovenSemantics(t *testing.T) {
 			want:   "repeats public element id",
 		},
 		"disabled control": {
-			source: `function View() { return <button disabled>Continue</button>; }`,
+			source: `function View() { return <button type="button" disabled>Continue</button>; }`,
 			want:   "unavailable control state disabled",
 		},
 		"readonly control": {

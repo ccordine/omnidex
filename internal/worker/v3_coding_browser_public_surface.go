@@ -34,15 +34,19 @@ func extractDirectCodingBrowserPublicInteractionSurface(
 	if root == nil || root.HasError() {
 		return directCodingBrowserPublicInteractionSurface{}, fmt.Errorf("browser public surface source is not valid TSX")
 	}
-	if err := validateDirectCodingBrowserRuntimeDOMAuthority(root, []byte(source)); err != nil {
+	renderRoot, err := directCodingBrowserPublicRenderRoot(root)
+	if err != nil {
 		return directCodingBrowserPublicInteractionSurface{}, err
 	}
-	renderRoot, err := directCodingBrowserPublicRenderRoot(root)
+	outputFlow, err := newDirectCodingBrowserOutputDataflow(
+		root, renderRoot, []byte(source),
+	)
 	if err != nil {
 		return directCodingBrowserPublicInteractionSurface{}, err
 	}
 	extractor := directCodingBrowserPublicSurfaceExtractor{
 		source:      []byte(source),
+		outputFlow:  outputFlow,
 		seenIDs:     make(map[string]struct{}),
 		seenOutputs: make(map[string]struct{}),
 	}
@@ -52,7 +56,14 @@ func extractDirectCodingBrowserPublicInteractionSurface(
 	if err := extractor.inspect(renderRoot, -1, false); err != nil {
 		return directCodingBrowserPublicInteractionSurface{}, err
 	}
-	return extractor.finish()
+	surface, err := extractor.finish()
+	if err != nil {
+		return directCodingBrowserPublicInteractionSurface{}, err
+	}
+	if err := validateDirectCodingBrowserRuntimeDOMAuthority(root, []byte(source)); err != nil {
+		return directCodingBrowserPublicInteractionSurface{}, err
+	}
+	return surface, nil
 }
 
 func (extractor *directCodingBrowserPublicSurfaceExtractor) preflight(root *treesitter.Node) error {

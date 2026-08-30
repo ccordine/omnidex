@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/gryph/omnidex/internal/assemblyline"
 )
 
 func TestTypeScriptBrowserAssemblyOwnsTailwindViteToolchain(t *testing.T) {
@@ -39,9 +41,8 @@ func TestTypeScriptBrowserAssemblyOwnsTailwindViteToolchain(t *testing.T) {
 
 func TestTypeScriptBrowserTailwindUsageDoesNotExposeToolchainAuthority(t *testing.T) {
 	contract := genericBrowserFeatureContract("Render one bounded view.", nil)
-	if !strings.Contains(contract, "Tailwind CSS utility classes are available in className") ||
-		!strings.Contains(contract, "Use only complete static non-arbitrary utilities") ||
-		!strings.Contains(contract, "unknown or custom classes are unavailable") {
+	if !strings.Contains(contract, "Classes are static allowlisted Tailwind") ||
+		!strings.Contains(contract, "no other classes") {
 		t.Fatal("browser fragment contract omits its usable styling capability")
 	}
 	for _, forbidden := range []string{"@tailwindcss/vite", "vite.config", "package.json", "npm ", "src/styles.css"} {
@@ -55,7 +56,7 @@ func TestBrowserFeatureContractContainsBehaviorWithoutFrameworkMetaFraming(t *te
 	t.Parallel()
 	contract := genericBrowserFeatureContract("Show the current inventory level.", nil)
 	if !strings.Contains(contract, "Show the current inventory level.") ||
-		!strings.Contains(contract, "declared inputs") {
+		!strings.Contains(contract, "Use only declared state") {
 		t.Fatalf("browser behavior contract omitted semantic authority: %s", contract)
 	}
 	for _, forbidden := range []string{
@@ -64,6 +65,24 @@ func TestBrowserFeatureContractContainsBehaviorWithoutFrameworkMetaFraming(t *te
 		if strings.Contains(contract, forbidden) {
 			t.Fatalf("browser behavior contract exposed framework meta-framing %q: %s", forbidden, contract)
 		}
+	}
+}
+
+func TestBrowserFeatureContractDeclaresButtonGrammarWithinPromptBudget(t *testing.T) {
+	t.Parallel()
+	contract := genericBrowserFeatureContract("Render one bounded account control.", nil)
+	if !strings.Contains(contract, `Every button has exact type="button"`) {
+		t.Fatalf("browser contract omits exact non-submit button grammar: %s", contract)
+	}
+	if _, err := assemblyline.BuildTypeScriptFragmentPrompt(
+		assemblyline.TypeScriptFragmentPrompt{
+			Dialect:   "TypeScript 5.9.3 with TSX",
+			Signature: "function AccountView(): ReactElement",
+			Contract:  contract,
+			Globals:   []string{"ReactElement", "useState"},
+		},
+	); err != nil {
+		t.Fatalf("browser contract exceeds the bounded initial prompt: %v", err)
 	}
 }
 

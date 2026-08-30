@@ -54,18 +54,32 @@ func applicationSemanticUncertaintyContract(
 			"One exact requirement candidate and the registered task-local-or-non-runtime vocabulary.",
 			"One registered requirement-candidate kind relation.",
 			"DecodeApplicationRequirementCandidateKindResult validates the candidate-bound relation before code retains the runtime candidate or records the non-runtime candidate as excluded.")
+	case WorkApplicationRequirementCandidateOutcomeRelation:
+		contract = semanticUncertaintyContract(kind,
+			"Do the exact current and accepted one-outcome runtime requirements express the same independently testable outcome or distinct outcomes?",
+			"Semantic outcome equivalence between byte-different natural-language statements cannot be established by syntax or byte comparison.",
+			"One exact current candidate, one exact accepted requirement, and the registered same-or-distinct outcome vocabulary.",
+			"One registered pair-bound runtime-outcome relation.",
+			"DecodeApplicationRequirementCandidateOutcomeRelationResult validates both statement hashes before code records a zero delta or continues candidate validation.")
 	case WorkApplicationRequirementCandidateResultRelation:
 		contract = semanticUncertaintyContract(kind,
 			"Does the exact one-outcome runtime requirement need no derived result, state its determining result relation explicitly, or leave that relation underdetermined?",
 			"Whether natural-language outcome semantics provide an independently computable result oracle cannot be established by syntax or byte validation.",
 			"One exact requirement candidate, its code-bound TASK_LOCAL_RUNTIME_OUTCOME and ONE_RUNTIME_OUTCOME receipts, and the registered result-relation vocabulary.",
 			"One registered candidate-bound result-relation value.",
-			"DecodeApplicationRequirementCandidateResultRelationResult validates the relation before code retains the candidate or opens one exact one-leaf correction.")
+			"DecodeApplicationRequirementCandidateResultRelationResult validates the relation before code retains the candidate or opens one exact application-authority grounding question.")
+	case WorkApplicationRequirementCandidateResultRelationGrounding:
+		contract = semanticUncertaintyContract(kind,
+			"Do the immutable request and established application facts entail exactly one determining relation for the exact candidate outcome whose derived-result relation is missing?",
+			"A candidate-only missing-relation receipt cannot establish whether natural-language request and verified context authority uniquely supply the omitted semantic rule.",
+			"The immutable request, validated application context, exact current candidate, and its code-bound MISSING_DERIVED_RESULT_RELATION receipt.",
+			"One registered request-context-and-candidate-bound entailment relation.",
+			"DecodeApplicationRequirementCandidateResultRelationGroundingResult validates the receipt before code fails loudly or opens one exact one-leaf correction.")
 	case WorkApplicationRequirementCandidateResultRelationCorrection:
 		contract = semanticUncertaintyContract(kind,
 			"What complete replacement corrects the exact one-outcome requirement whose derived-result relation is underdetermined?",
-			"The missing semantic relation must be selected from the immutable natural-language authority and cannot be supplied by structural validation.",
-			"The immutable generation authority, exact current candidate, and its code-bound MISSING_DERIVED_RESULT_RELATION defect.",
+			"The exact determining relation must be expressed from immutable natural-language authority and cannot be supplied by structural validation.",
+			"The immutable request, validated application context, exact current candidate, code-bound MISSING_DERIVED_RESULT_RELATION defect, and positive request-context-and-candidate-bound grounding receipt.",
 			"One complete byte-different one-outcome runtime requirement with an explicit determining relation.",
 			"DecodeApplicationRequirementCandidateResultRelationCorrectionLeaf validates the replacement before code reruns ordinary kind, cardinality, and result-relation validation.")
 	case WorkApplicationRequirementCandidateSplit:
@@ -82,13 +96,6 @@ func applicationSemanticUncertaintyContract(
 			"The exact current candidate, its code-bound MULTIPLE_RUNTIME_OUTCOMES relation, and the exact byte-identity defect.",
 			"One complete byte-different single-outcome requirement text leaf.",
 			"DecodeApplicationRequirementCandidateSplitCorrectionLeaf validates the replacement before code repeats ordinary cardinality validation.")
-	case WorkApplicationRequirementCandidateDuplicateReplacement:
-		contract = semanticUncertaintyContract(kind,
-			"What complete requirement replaces the exact candidate that duplicates one indexed retained value?",
-			"Selecting a different earliest uncovered semantic outcome from the immutable request cannot be performed by byte comparison.",
-			"The exact generation authority and REQUIREMENT_REMAINS receipt, exact duplicate candidate, its code-validated retained-set identity, and the exact duplicate defect.",
-			"One complete byte-different requirement text leaf.",
-			"DecodeApplicationRequirementCandidateDuplicateReplacementLeaf validates the replacement before code reruns ordinary candidate classification and cardinality checks.")
 	case WorkApplicationProjectStackConstraint:
 		contract = semanticUncertaintyContractV2(kind,
 			"Which registered technical format and packaging shape, if any, is explicitly established by the immutable software request?",

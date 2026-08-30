@@ -279,17 +279,33 @@ machine passes its executable gates:
    returns only the product/domain identity. Code retains that identity outside the model-visible
    task-local runtime requirement fixed point, then alternates one raw requirement-coverage call
    with one raw requirement call only while source-owning runtime behavior remains and assembles
-   the typed intent itself. Surface, technical/structural format, generic test/build, and deployment
-   constraints stay outside this fixed point and are consumed by their narrow code-owned owners. A model
+   the typed intent itself. Product or category identity never licenses customary features, prerequisites,
+   enabling behavior, or likely consequences. Surface, technical/structural format, generic test/build, and deployment constraints stay outside this fixed point and are consumed by their narrow code-owned owners. A model
    is not called merely to emit, accept, reject, or restate the aggregate intent.
-   Before retention, code binds one task-local candidate-kind receipt and one terminal one-outcome
-   cardinality receipt to a separate three-way result-relation question. It returns only that the
-   outcome needs no derived result, explicitly states an independently computable determining relation,
-   or omits that relation. The result carries the exact candidate hash and hashes of both complete input
-   receipts; code validates those identities before the relation can be retained. Only the last value
-   opens one exact candidate correction from immutable request authority; code preserves the decoded
-   candidate and all other retained leaves and reruns kind, cardinality, and result-relation validation.
-   A repeated omission fails at the one-correction bound.
+   Before retention, code records byte-exact accepted or excluded repeats as bounded zero-delta
+   evidence without mutation or inference. For a byte-different task-local one-outcome candidate, one
+   pairwise station returns only `SAME_RUNTIME_OUTCOME` or `DISTINCT_RUNTIME_OUTCOMES`; the model sees
+   only the two statements, while code binds the job and result to the complete candidate kind/cardinality
+   receipts and the accepted requirement's result-relation receipt. `SAME_RUNTIME_OUTCOME` enters the
+   same zero-delta closure. Repeated zero-delta candidate bytes fail loudly. Each newly recorded zero delta
+   changes coverage authority and requires a fresh ordinary coverage call; there is no duplicate-replacement,
+   correction, or retry station. Only a distinct candidate proceeds to the separate three-way
+   result-relation question. It returns only that the outcome needs no derived result, explicitly states an
+   independently computable determining relation, or omits that relation. A named existing per-item grouping
+   key completely determines group membership; its origin and unasserted ordering are not missing. Selection,
+   ordering, transformation, aggregation, measurement, or decision can establish a derived relation even when that value is the only rendered output. Actions, controls, unchanged rendering, state transitions, artifact availability, and event occurrences are `NO_DERIVED_RESULT` when they assert only that behavior. A qualitative descriptor on an action, event, or message does not create a derived value. The result carries the exact
+   candidate hash and hashes of both complete input receipts; code validates those identities before the
+   relation can be retained. The last value first opens one separate entailment relation over only the
+   immutable request, established verified application facts, exact current candidate, and complete
+   missing-relation authority. The same minimal code-owned context projection used by requirement
+   interpretation is rendered; source identities, evidence-need identities, and hashes stay code-only.
+   Its receipt binds the request, validated `ApplicationContext`, candidate, and missing-relation receipt.
+   `NO_EXACTLY_ONE_DETERMINING_RELATION_ENTAILED` fails loudly before correction and cannot authorize a guessed policy.
+   Only `EXACTLY_ONE_DETERMINING_RELATION_ENTAILED` opens one exact candidate correction, and that positive
+   receipt is mandatory correction input. Its context contains only the immutable semantic request,
+   minimal verified facts, current candidate, code-established defect, and positive grounding relation.
+   Code preserves every retained leaf and reruns duplicate, kind, cardinality, outcome-relation, and
+   result-relation closure. A repeated omission fails at the one-correction bound; there is no reviewer.
    Substring, interval, overlap, source-order, punctuation, and exact-quote allocation are not
    authority checks. Code projects each accepted task-local runtime implementation requirement directly into one frozen task in
    accepted source order. The task contains only its code-owned task identity, requirement identity,
@@ -297,8 +313,11 @@ machine passes its executable gates:
    dependency, schedule, or completion model calls. Code validates every leaf and assembles the
    typed job specification itself. Invalid semantic leaves fail at their owning station; there is
    no generic response-correction station or retry path.
-   Code preserves user authority separately from derived build decisions, assigns identity and
-   order, and builds a separate result-relation validation plan bound to the frozen workload SHA.
+   Code preserves user authority separately from derived build decisions. A private authority pairs the
+   raw production-request digest with the path-redacted semantic request, and only the redacted request is
+   model-visible. Code rebinds accepted receipts to the raw digest after semantic resolution and rejects
+   individual or coordinated digest drift. It assigns identity and order, and builds a separate
+   result-relation validation plan bound to both that authenticated request digest and the frozen workload SHA.
    The plan has one task/requirement/receipt binding per frozen task, projects exactly one binding into
    the current task stage, and remains code-only: it is absent from the frozen task, task context, and
    every model envelope. Code freezes only validated state and executes one task at a time with
@@ -315,19 +334,29 @@ machine passes its executable gates:
    receipt containing allowlisted intrinsic control roles, canonical counts/ordinals, literal accessible
    names and hints, value kinds, explicit public action claims, and named dynamic `<output>` selector facts.
    Each visible output has a unique exact literal accessible name, direct dynamic-only nonmixed content,
-   and an implicit `status` role. Its receipt fact contains only the selector name, never static text, a
+   code-proven dataflow from declared state/capabilities or event/prior-state-derived local state, and an
+   implicit `status` role. Literal expressions, constant aliases, static memoization, and constant setter
+   calls cannot obtain output authority. Its receipt fact contains only the selector name, never static text, a
    current value, a JSX expression, handler source, an expected result, or ordinary dynamic text outside
    a registered output.
 
-   Extraction is fail-closed over registered intrinsic elements, literal public attributes, accessible
-   and available ancestry, and an allowlisted Tailwind utility grammar. Custom or unsupported intrinsics,
-   spread or dynamic visibility state, hidden/inert/ARIA-hidden or disabled ancestry, and any unproved
+   Extraction is fail-closed over registered intrinsic elements, an exact per-attribute grammar, accessible
+   and available ancestry, and an allowlisted Tailwind utility grammar. Unknown, effectful, namespaced,
+   duplicate, spread, or wrongly typed attributes fail; forms are unavailable and buttons require exact
+   `type="button"`. Custom or unsupported intrinsics, dynamic visibility state,
+   hidden/inert/ARIA-hidden or disabled ancestry, and any unproved
    opacity, pointer-event, clipping, transform, zero-size, screen-reader-only, or arbitrary Tailwind form
-   fail. Code statically binds JSX event handlers and rejects browser-host, DOM-selection, navigation,
-   network, storage, audio, dynamic-evaluation, reflection, alias, computed-event, mutation, and event
-   escape authority. Only a direct read-only `value` or `checked` leaf through `event.target` or
+   fail. All unbound runtime identifiers require an exact deterministic ECMAScript/React allowlist. Code
+   statically binds JSX event handlers and rejects browser-host, DOM-selection, navigation, network,
+   storage, audio, scheduling, dynamic import, host metadata, dynamic-evaluation, reflection, alias,
+   unresolved computed-property, computed-event, mutation, and event escape authority. Only literal or
+   immutable numeric-constant domain indexing is admitted. Only a direct read-only `value` or `checked` leaf through `event.target` or
    `event.currentTarget` is admitted, represented by the canonical `event.target.value` and
    `event.currentTarget.checked` forms.
+
+   Browser `state` and `capabilities` are immutable authority. Extraction rejects direct or aliased writes
+   and mutators. Every `SharedValue` fallback and publication accepts only bounded dense arrays or plain
+   records, atomically rejects cycles, accessors, hidden/symbol keys, custom prototypes, and unsupported values, and deep-freezes accepted graphs before exposure.
 
    Code freezes the receipt, result-relation receipt, and internal element-ID sequence before verification
    generation, then re-extracts and compares them after every staged attempt and before final execution.

@@ -203,3 +203,23 @@ func directCodingBrowserRuntimePatternProperty(
 	}
 	return javaScriptStaticPropertyName(source, node)
 }
+
+func directCodingBrowserExpressionContainsEventRoot(
+	node *treesitter.Node,
+	source []byte,
+	eventBindings directCodingBrowserEventBindings,
+) bool {
+	node = directCodingBrowserUnwrapRuntimeExpression(node)
+	if node == nil {
+		return false
+	}
+	if directCodingBrowserExpressionIsEventRoot(node, source, eventBindings) {
+		return true
+	}
+	if node.Kind() != "member_expression" && node.Kind() != "subscript_expression" {
+		return false
+	}
+	return directCodingBrowserExpressionContainsEventRoot(
+		node.ChildByFieldName("object"), source, eventBindings,
+	)
+}

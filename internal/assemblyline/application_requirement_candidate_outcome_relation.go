@@ -1,0 +1,226 @@
+package assemblyline
+
+import (
+	"fmt"
+	"strings"
+)
+
+const (
+	WorkApplicationRequirementCandidateOutcomeRelation WorkKind = "application_requirement_candidate_outcome_relation"
+
+	ApplicationRequirementSameRuntimeOutcome      = "SAME_RUNTIME_OUTCOME"
+	ApplicationRequirementDistinctRuntimeOutcomes = "DISTINCT_RUNTIME_OUTCOMES"
+
+	ApplicationRequirementCandidateOutcomeRelationSchemaV1 = "omnidex.application-requirement-candidate-outcome-relation.v1"
+)
+
+type ApplicationRequirementCandidateOutcomeRelationInput struct {
+	Candidate              string                                              `json:"candidate"`
+	Kind                   ApplicationRequirementCandidateKindResult           `json:"kind"`
+	Cardinality            ApplicationRequirementCandidateCardinalityResult    `json:"cardinality"`
+	AcceptedRequirement    string                                              `json:"accepted_requirement"`
+	AcceptedResultRelation ApplicationRequirementCandidateResultRelationResult `json:"accepted_result_relation"`
+}
+
+type ApplicationRequirementCandidateOutcomeRelationResult struct {
+	Schema                    string `json:"schema"`
+	CandidateSHA256           string `json:"candidate_sha256"`
+	AcceptedRequirementSHA256 string `json:"accepted_requirement_sha256"`
+	KindReceiptSHA256         string `json:"kind_receipt_sha256"`
+	CardinalityReceiptSHA256  string `json:"cardinality_receipt_sha256"`
+	AcceptedReceiptSHA256     string `json:"accepted_receipt_sha256"`
+	Relation                  string `json:"relation"`
+}
+
+func NewApplicationRequirementCandidateOutcomeRelationJob(
+	input ApplicationRequirementCandidateOutcomeRelationInput,
+) (PortableJob, error) {
+	return newValidatedPortableJob(
+		WorkApplicationRequirementCandidateOutcomeRelation,
+		input,
+		input.validateForModel,
+	)
+}
+
+func (input ApplicationRequirementCandidateOutcomeRelationInput) validate() error {
+	if err := validateApplicationIntentText(
+		"application requirement outcome candidate",
+		input.Candidate,
+		maxRequirementQuoteBytes,
+	); err != nil {
+		return err
+	}
+	if err := validateApplicationIntentText(
+		"accepted application requirement outcome",
+		input.AcceptedRequirement,
+		maxRequirementQuoteBytes,
+	); err != nil {
+		return err
+	}
+	kindInput := ApplicationRequirementCandidateKindInput{Candidate: input.Candidate}
+	if err := input.Kind.ValidateFor(kindInput); err != nil {
+		return fmt.Errorf("validate outcome-relation candidate kind: %w", err)
+	}
+	if input.Kind.Relation != ApplicationRequirementCandidateTaskLocal {
+		return fmt.Errorf(
+			"application requirement outcome relation requires candidate kind %q",
+			ApplicationRequirementCandidateTaskLocal,
+		)
+	}
+	cardinalityInput := ApplicationRequirementCandidateCardinalityInput{
+		Candidate: input.Candidate,
+	}
+	if err := input.Cardinality.ValidateFor(cardinalityInput); err != nil {
+		return fmt.Errorf("validate outcome-relation candidate cardinality: %w", err)
+	}
+	if input.Cardinality.Relation != ApplicationRequirementOneRuntimeOutcome {
+		return fmt.Errorf(
+			"application requirement outcome relation requires candidate cardinality %q",
+			ApplicationRequirementOneRuntimeOutcome,
+		)
+	}
+	if err := input.AcceptedResultRelation.ValidateAcceptedFor(
+		input.AcceptedRequirement,
+	); err != nil {
+		return fmt.Errorf("validate accepted outcome-relation authority: %w", err)
+	}
+	return nil
+}
+
+func (input ApplicationRequirementCandidateOutcomeRelationInput) validateForModel() error {
+	if err := input.validate(); err != nil {
+		return err
+	}
+	if input.Candidate == input.AcceptedRequirement {
+		return fmt.Errorf("application requirement outcome relation is mechanically exact")
+	}
+	return nil
+}
+
+func (result ApplicationRequirementCandidateOutcomeRelationResult) ValidateFor(
+	input ApplicationRequirementCandidateOutcomeRelationInput,
+) error {
+	if err := input.validate(); err != nil {
+		return err
+	}
+	if result.Schema != ApplicationRequirementCandidateOutcomeRelationSchemaV1 {
+		return fmt.Errorf(
+			"application requirement candidate outcome-relation schema must be %q",
+			ApplicationRequirementCandidateOutcomeRelationSchemaV1,
+		)
+	}
+	if result.CandidateSHA256 != ExactObjectiveContextSHA(input.Candidate) {
+		return fmt.Errorf("application requirement outcome-relation candidate hash does not match")
+	}
+	if result.AcceptedRequirementSHA256 != ExactObjectiveContextSHA(input.AcceptedRequirement) {
+		return fmt.Errorf("application requirement outcome-relation accepted hash does not match")
+	}
+	kindSHA256, err := applicationRequirementSemanticReceiptSHA256(input.Kind)
+	if err != nil {
+		return fmt.Errorf("hash outcome-relation kind receipt: %w", err)
+	}
+	if result.KindReceiptSHA256 != kindSHA256 {
+		return fmt.Errorf("application requirement outcome-relation kind receipt hash does not match")
+	}
+	cardinalitySHA256, err := applicationRequirementSemanticReceiptSHA256(input.Cardinality)
+	if err != nil {
+		return fmt.Errorf("hash outcome-relation cardinality receipt: %w", err)
+	}
+	if result.CardinalityReceiptSHA256 != cardinalitySHA256 {
+		return fmt.Errorf("application requirement outcome-relation cardinality receipt hash does not match")
+	}
+	acceptedSHA256, err := applicationRequirementSemanticReceiptSHA256(
+		input.AcceptedResultRelation,
+	)
+	if err != nil {
+		return fmt.Errorf("hash accepted outcome-relation receipt: %w", err)
+	}
+	if result.AcceptedReceiptSHA256 != acceptedSHA256 {
+		return fmt.Errorf("application requirement outcome-relation accepted receipt hash does not match")
+	}
+	switch result.Relation {
+	case ApplicationRequirementSameRuntimeOutcome,
+		ApplicationRequirementDistinctRuntimeOutcomes:
+		return nil
+	default:
+		return fmt.Errorf(
+			"application requirement candidate outcome relation %q is not registered",
+			result.Relation,
+		)
+	}
+}
+
+func BuildApplicationRequirementCandidateOutcomeRelationPrompt(
+	input ApplicationRequirementCandidateOutcomeRelationInput,
+) (string, error) {
+	if err := input.validateForModel(); err != nil {
+		return "", err
+	}
+	return strings.Join([]string{
+		"Answer one semantic relation between the two exact one-outcome runtime requirements below: do they require the same independently testable runtime outcome or distinct runtime outcomes?",
+		"Return SAME_RUNTIME_OUTCOME only when satisfying either statement would satisfy the other statement's named observable behavior despite different wording. Shared product identity, inputs, subject matter, visual proximity, or a dependency between two behaviors does not make them the same outcome.",
+		"Return DISTINCT_RUNTIME_OUTCOMES when each statement requires a separately observable behavior, element, state transition, quality, or result.",
+		"Return exactly one raw registered value and nothing else: no JSON, quotes, label, Markdown, or commentary.",
+		"CURRENT CANDIDATE:\n" + input.Candidate,
+		"ACCEPTED REQUIREMENT:\n" + input.AcceptedRequirement,
+		"FINAL QUESTION:\nDo these statements require SAME_RUNTIME_OUTCOME or DISTINCT_RUNTIME_OUTCOMES? Return only that registered value.",
+	}, "\n\n"), nil
+}
+
+func DecodeApplicationRequirementCandidateOutcomeRelationResult(
+	input ApplicationRequirementCandidateOutcomeRelationInput,
+	raw string,
+) (ApplicationRequirementCandidateOutcomeRelationResult, error) {
+	var zero ApplicationRequirementCandidateOutcomeRelationResult
+	if err := input.validateForModel(); err != nil {
+		return zero, err
+	}
+	leaf, err := decodeRawSemanticLeaf(
+		"application requirement candidate outcome relation",
+		raw,
+		maximumStringBytes(
+			ApplicationRequirementSameRuntimeOutcome,
+			ApplicationRequirementDistinctRuntimeOutcomes,
+		),
+		false,
+	)
+	if err != nil {
+		return zero, err
+	}
+	result, err := applicationRequirementCandidateOutcomeRelationResult(input, leaf)
+	if err != nil {
+		return zero, err
+	}
+	if err := result.ValidateFor(input); err != nil {
+		return zero, err
+	}
+	return result, nil
+}
+
+func applicationRequirementCandidateOutcomeRelationResult(
+	input ApplicationRequirementCandidateOutcomeRelationInput,
+	relation string,
+) (ApplicationRequirementCandidateOutcomeRelationResult, error) {
+	var zero ApplicationRequirementCandidateOutcomeRelationResult
+	kindSHA256, err := applicationRequirementSemanticReceiptSHA256(input.Kind)
+	if err != nil {
+		return zero, fmt.Errorf("hash outcome-relation kind receipt: %w", err)
+	}
+	cardinalitySHA256, err := applicationRequirementSemanticReceiptSHA256(input.Cardinality)
+	if err != nil {
+		return zero, fmt.Errorf("hash outcome-relation cardinality receipt: %w", err)
+	}
+	acceptedSHA256, err := applicationRequirementSemanticReceiptSHA256(input.AcceptedResultRelation)
+	if err != nil {
+		return zero, fmt.Errorf("hash accepted outcome-relation receipt: %w", err)
+	}
+	return ApplicationRequirementCandidateOutcomeRelationResult{
+		Schema:                    ApplicationRequirementCandidateOutcomeRelationSchemaV1,
+		CandidateSHA256:           ExactObjectiveContextSHA(input.Candidate),
+		AcceptedRequirementSHA256: ExactObjectiveContextSHA(input.AcceptedRequirement),
+		KindReceiptSHA256:         kindSHA256,
+		CardinalityReceiptSHA256:  cardinalitySHA256,
+		AcceptedReceiptSHA256:     acceptedSHA256,
+		Relation:                  relation,
+	}, nil
+}

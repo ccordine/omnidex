@@ -16,9 +16,17 @@ func renderPortableApplicationJob(job PortableJob) (string, bool, error) {
 		return handledPortableRender(renderDecodedPortableInput(
 			job, BuildApplicationRequirementCandidateKindPrompt,
 		))
+	case WorkApplicationRequirementCandidateOutcomeRelation:
+		return handledPortableRender(renderDecodedPortableInput(
+			job, BuildApplicationRequirementCandidateOutcomeRelationPrompt,
+		))
 	case WorkApplicationRequirementCandidateResultRelation:
 		return handledPortableRender(renderDecodedPortableInput(
 			job, BuildApplicationRequirementCandidateResultRelationPrompt,
+		))
+	case WorkApplicationRequirementCandidateResultRelationGrounding:
+		return handledPortableRender(renderDecodedPortableInput(
+			job, BuildApplicationRequirementCandidateResultRelationGroundingPrompt,
 		))
 	case WorkApplicationRequirementCandidateResultRelationCorrection:
 		return handledPortableRender(renderDecodedPortableInput(
@@ -31,10 +39,6 @@ func renderPortableApplicationJob(job PortableJob) (string, bool, error) {
 	case WorkApplicationRequirementCandidateSplitCorrection:
 		return handledPortableRender(renderDecodedPortableInput(
 			job, BuildApplicationRequirementCandidateSplitCorrectionPrompt,
-		))
-	case WorkApplicationRequirementCandidateDuplicateReplacement:
-		return handledPortableRender(renderDecodedPortableInput(
-			job, BuildApplicationRequirementCandidateDuplicateReplacementPrompt,
 		))
 	case WorkApplicationContextNeedCoverage:
 		return handledPortableRender(renderDecodedPortableInput(job, BuildApplicationContextNeedCoveragePrompt))

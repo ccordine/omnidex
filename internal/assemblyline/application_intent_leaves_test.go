@@ -44,10 +44,17 @@ func TestApplicationRequirementLeavesSeparateCoverageFromGeneration(t *testing.T
 		UserRequest: authority.UserRequest, Context: authority.Context,
 		AcceptedRequirements: []string{},
 		ExcludedCandidates:   []string{},
+		ZeroDeltas:           []ApplicationRequirementCandidateZeroDelta{},
 	}
 	coveragePrompt, err := BuildApplicationRequirementCoveragePrompt(coverageInput)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if !strings.Contains(
+		coveragePrompt,
+		"Compare every explicit runtime outcome separately in source order",
+	) {
+		t.Fatalf("coverage prompt omitted response-meaning boundary:\n%s", coveragePrompt)
 	}
 	coverage, err := DecodeApplicationRequirementCoverageLeaf(
 		coverageInput, ApplicationRequirementRemains,
@@ -67,11 +74,13 @@ func TestApplicationRequirementLeavesSeparateCoverageFromGeneration(t *testing.T
 		t.Fatalf("empty accepted requirement projection was not explicit")
 	}
 	for _, required := range []string{
-		"task-local runtime implementation requirement",
-		"independently testable runtime outcome",
-		"semantic relation that determines the result",
-		"semantically entails exactly one determining rule",
-		"Items joined by commas, conjunctions, or a list remain separate outcomes",
+		"task-local runtime outcome",
+		"one independently testable capability",
+		"A qualitative description or missing determining rule does not erase an explicitly requested outcome",
+		"Split comma, conjunction, and list items",
+		"semantically entails the same behavior and affected object, response, state, quality, or output",
+		"behavior merely customary for a product category is not",
+		"an excluded clause never removes a neighboring runtime outcome",
 		"generic test obligations",
 		"build or verification obligations",
 		"deployment and continued-availability obligations",
@@ -87,6 +96,8 @@ func TestApplicationRequirementLeavesSeparateCoverageFromGeneration(t *testing.T
 		"semantically entails exactly one determining rule",
 		"return only the first uncovered outcome",
 		"Never return an umbrella construction statement, a list, or multiple actions",
+		"A product name asserts only an action or result literally denoted by its words",
+		"never infer behavior merely customary for that product category",
 		"generic test obligations",
 		"build or verification obligations",
 		"deployment and continued-availability obligations",
@@ -97,6 +108,7 @@ func TestApplicationRequirementLeavesSeparateCoverageFromGeneration(t *testing.T
 		}
 	}
 	if strings.Contains(coveragePrompt, "Return only the requirement as raw prose") ||
+		strings.Contains(coveragePrompt, "compute an independent oracle") ||
 		strings.Contains(requirementPrompt, "NO_UNCOVERED_REQUIREMENT") {
 		t.Fatalf("coverage and generation responsibilities were combined")
 	}
@@ -125,6 +137,7 @@ func TestApplicationRequirementCandidateRequiresExactBoundCoverageAuthority(t *t
 		UserRequest: authority.UserRequest, Context: authority.Context,
 		AcceptedRequirements: []string{},
 		ExcludedCandidates:   []string{},
+		ZeroDeltas:           []ApplicationRequirementCandidateZeroDelta{},
 	}
 	remains, err := DecodeApplicationRequirementCoverageLeaf(
 		coverageInput, ApplicationRequirementRemains,
@@ -194,6 +207,7 @@ func TestApplicationRequirementExcludedCandidatesAreBoundAndGenerationProjected(
 		Context:              authority.Context,
 		AcceptedRequirements: []string{"The current count is displayed."},
 		ExcludedCandidates:   []string{"Use one source file."},
+		ZeroDeltas:           []ApplicationRequirementCandidateZeroDelta{},
 	}
 	coveragePrompt, err := BuildApplicationRequirementCoveragePrompt(input)
 	if err != nil {
@@ -248,6 +262,7 @@ func TestApplicationRequirementPayloadSchemasAreCurrent(t *testing.T) {
 		UserRequest: authority.UserRequest, Context: authority.Context,
 		AcceptedRequirements: []string{},
 		ExcludedCandidates:   []string{},
+		ZeroDeltas:           []ApplicationRequirementCandidateZeroDelta{},
 	}
 	currentCoverage, err := NewApplicationRequirementCoverageJob(coverageInput)
 	if err != nil {
@@ -277,6 +292,7 @@ func TestApplicationRequirementFixedPointExcludesGlobalConstraintsButKeepsRuntim
 		UserRequest: request, Context: context,
 		AcceptedRequirements: []string{"Export reports as CSV."},
 		ExcludedCandidates:   []string{},
+		ZeroDeltas:           []ApplicationRequirementCandidateZeroDelta{},
 	}
 	candidateInput := applicationRequirementCandidateFixture(t, coverageInput)
 	prompts := map[string]struct {
@@ -343,6 +359,7 @@ func TestApplicationRequirementPromptsDoNotLetUmbrellaContextHideDistinctRequire
 				UserRequest: fixture.request, Context: context,
 				AcceptedRequirements: []string{fixture.accepted},
 				ExcludedCandidates:   []string{},
+				ZeroDeltas:           []ApplicationRequirementCandidateZeroDelta{},
 			}
 			coverage, err := BuildApplicationRequirementCoveragePrompt(coverageInput)
 			if err != nil {

@@ -86,6 +86,10 @@ export interface FeatureViewProps {
 }
 type ChangeListener = () => void;
 
+%s
+
+const emptyFeatureState: FeatureState = Object.freeze({});
+
 export class ApplicationRuntime {
 	private readonly allowed = new Set<string>([%s]);
 	private readonly changes = new Map<string, Set<ChangeListener>>();
@@ -104,8 +108,9 @@ export class ApplicationRuntime {
 
 	read<T extends SharedValue>(capability: CapabilityID, fallback: T): T {
 		this.assertCapability(capability);
+		const frozenFallback = validateAndFreezeSharedValue(fallback, 'fallback for ' + capability);
 		const value = this.snapshotValue[capability];
-		return (value === null ? fallback : value) as T;
+		return (value === null ? frozenFallback : value) as T;
 	}
 
 	subscribe(capability: CapabilityID, listener: ChangeListener): () => void {
@@ -125,7 +130,8 @@ export class ApplicationRuntime {
 
 	publish<T extends SharedValue>(capability: CapabilityID, value: T): void {
 		this.assertCapability(capability);
-		this.snapshotValue = Object.freeze({ ...this.snapshotValue, [capability]: value });
+		const frozenValue = validateAndFreezeSharedValue(value, 'publication for ' + capability);
+		this.snapshotValue = Object.freeze({ ...this.snapshotValue, [capability]: frozenValue });
 		this.changes.get(capability)?.forEach((listener) => listener());
 		this.allChanges.forEach((listener) => listener());
 	}
@@ -153,10 +159,14 @@ interface FeatureBoundaryProps {
 function useCapabilityValue<T extends SharedValue>(
   runtime: ApplicationRuntime, capability: CapabilityID, fallback: T,
 ): readonly [T, (next: T) => void] {
+	const frozenFallback = useMemo(
+		() => validateAndFreezeSharedValue(fallback, 'hook fallback for ' + capability),
+		[capability, fallback],
+	);
   const value = useSyncExternalStore(
     (listener) => runtime.subscribe(capability, listener),
-    () => runtime.read(capability, fallback),
-    () => fallback,
+    () => runtime.read(capability, frozenFallback),
+    () => frozenFallback,
   );
 	const setValue = useCallback((next: T) => runtime.publish(capability, next), [runtime, capability]);
   return [value, setValue] as const;
@@ -201,7 +211,7 @@ function useFeatureActions(
 	setStatus: (status: OperationStatus) => void,
 ): FeatureActions {
 	return useMemo(() => {
-			const current = (): FeatureState => runtime.application.read(runtime.capability, {} as FeatureState);
+			const current = (): FeatureState => runtime.application.read(runtime.capability, emptyFeatureState);
 			const commit = (message: string, update: () => FeatureState): void => {
 				setStatus({ phase: 'working', message: 'Working…' });
 				try {
@@ -256,7 +266,7 @@ function useFeatureActions(
 
 export function FeatureBoundary({ runtime, view }: FeatureBoundaryProps): ReactElement {
 	const View = view;
-	const [state] = useOwnCapabilityState(runtime, {} as FeatureState);
+	const [state] = useOwnCapabilityState(runtime, emptyFeatureState);
 	const capabilities = useCapabilitySnapshot(runtime);
 	const [status, setStatus] = useState<OperationStatus>({ phase: 'ready', message: 'Ready.' });
 	const actions = useFeatureActions(runtime, setStatus);
@@ -271,7 +281,7 @@ export function FeatureBoundary({ runtime, view }: FeatureBoundaryProps): ReactE
 		</div>
 	);
 }
-`, genericBrowserCapabilityUnion(requirements), strings.Join(allowed, ", "))
+`, genericBrowserCapabilityUnion(requirements), genericBrowserSharedValueBoundarySource(), strings.Join(allowed, ", "))
 }
 
 func genericBrowserRuntimeFactoryAPI() string {

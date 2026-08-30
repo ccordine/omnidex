@@ -2,7 +2,6 @@ package assemblyline
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/gryph/omnidex/internal/exactjson"
 )
@@ -18,10 +17,11 @@ const (
 )
 
 type ApplicationRequirementCoverageInput struct {
-	UserRequest          string             `json:"user_request"`
-	Context              ApplicationContext `json:"context"`
-	AcceptedRequirements []string           `json:"accepted_requirements"`
-	ExcludedCandidates   []string           `json:"excluded_candidates"`
+	UserRequest          string                                     `json:"user_request"`
+	Context              ApplicationContext                         `json:"context"`
+	AcceptedRequirements []string                                   `json:"accepted_requirements"`
+	ExcludedCandidates   []string                                   `json:"excluded_candidates"`
+	ZeroDeltas           []ApplicationRequirementCandidateZeroDelta `json:"zero_deltas"`
 }
 
 type ApplicationRequirementCoverageResult struct {
@@ -103,7 +103,7 @@ func (input ApplicationRequirementCoverageInput) validate() error {
 		}
 		seen[candidate] = struct{}{}
 	}
-	return nil
+	return validateApplicationRequirementZeroDeltas(input)
 }
 
 func (result ApplicationRequirementCoverageResult) ValidateFor(
@@ -201,6 +201,9 @@ func RebindApplicationRequirementAfterNonRuntimeExclusion(
 	authority.ExcludedCandidates = append(
 		append([]string{}, input.Authority.ExcludedCandidates...), candidate,
 	)
+	authority.ZeroDeltas = append(
+		[]ApplicationRequirementCandidateZeroDelta{}, input.Authority.ZeroDeltas...,
+	)
 	authoritySHA256, err := applicationRequirementCoverageAuthoritySHA256(authority)
 	if err != nil {
 		return zero, err
@@ -232,68 +235,4 @@ func applicationRequirementCoverageAuthoritySHA256(
 		return "", fmt.Errorf("encode application requirement coverage authority: %w", err)
 	}
 	return ExactObjectiveContextSHA(string(authority)), nil
-}
-
-func applicationRequirementCoverageProjection(
-	input ApplicationRequirementCoverageInput,
-) (string, error) {
-	if err := input.validate(); err != nil {
-		return "", err
-	}
-	var projection strings.Builder
-	projection.WriteString(renderApplicationContextModelProjection(
-		input.UserRequest,
-		input.Context,
-	))
-	projection.WriteByte('\n')
-	if len(input.AcceptedRequirements) == 0 {
-		projection.WriteString("ACCEPTED REQUIREMENTS:\n(none)\n")
-	} else {
-		for index, requirement := range input.AcceptedRequirements {
-			fmt.Fprintf(
-				&projection,
-				"ACCEPTED REQUIREMENT %d:\n%s\n",
-				index+1,
-				requirement,
-			)
-		}
-	}
-	if projection.Len() > maxPortablePayloadBytes {
-		return "", fmt.Errorf(
-			"application requirement projection exceeds %d bytes",
-			maxPortablePayloadBytes,
-		)
-	}
-	return strings.TrimSuffix(projection.String(), "\n"), nil
-}
-
-func applicationRequirementGenerationProjection(
-	input ApplicationRequirementCoverageInput,
-) (string, error) {
-	projection, err := applicationRequirementCoverageProjection(input)
-	if err != nil {
-		return "", err
-	}
-	var generation strings.Builder
-	generation.WriteString(projection)
-	generation.WriteByte('\n')
-	if len(input.ExcludedCandidates) == 0 {
-		generation.WriteString("EXCLUDED NON-RUNTIME CANDIDATES:\n(none)\n")
-	} else {
-		for index, candidate := range input.ExcludedCandidates {
-			fmt.Fprintf(
-				&generation,
-				"EXCLUDED NON-RUNTIME CANDIDATE %d:\n%s\n",
-				index+1,
-				candidate,
-			)
-		}
-	}
-	if generation.Len() > maxPortablePayloadBytes {
-		return "", fmt.Errorf(
-			"application requirement generation projection exceeds %d bytes",
-			maxPortablePayloadBytes,
-		)
-	}
-	return strings.TrimSuffix(generation.String(), "\n"), nil
 }

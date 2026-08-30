@@ -87,7 +87,7 @@ function omnidexTestingLibraryRoleObservation(
     ) => Record<string, HTMLElement[]>)(container as HTMLElement, {
       hidden: missingRole.visibility === 'available',
     });
-    const candidate = Object.prototype.hasOwnProperty.call(roles, missingRole.requestedRole)
+    const candidate = Object.hasOwn(roles, missingRole.requestedRole)
       ? roles[missingRole.requestedRole]
       : [];
     if (!Array.isArray(candidate)) {

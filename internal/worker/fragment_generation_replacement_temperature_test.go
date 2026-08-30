@@ -129,89 +129,53 @@ func TestRequirementSplitCorrectionAdvancesRegisteredTemperature(t *testing.T) {
 	}
 }
 
-func TestRequirementDuplicateReplacementAdvancesRegisteredTemperature(t *testing.T) {
+func TestRequirementResultRelationGroundingAndCorrectionKeepRegisteredTemperatureBaseline(t *testing.T) {
 	t.Parallel()
-	request := "Create a browser status board that displays one current status."
-	applicationContext, err := assemblyline.BootstrapApplicationContext(
-		request, assemblyline.ApplicationWorkspaceEmpty,
+	const candidate = "Transform submitted text and display the output."
+	const request = "Build a browser label formatter that converts user-provided text to Unicode lowercase."
+	generationAuthority := directCodingRequirementGenerationAuthorityForRequest(t, request)
+	candidateAuthority := applicationRequirementCandidateResultRelationAuthorityForTest(
+		t,
+		candidate,
+	)
+	missing, err := assemblyline.DecodeApplicationRequirementCandidateResultRelationResult(
+		candidateAuthority,
+		assemblyline.ApplicationRequirementMissingResultRelation,
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	coverageInput := assemblyline.ApplicationRequirementCoverageInput{
-		UserRequest: request, Context: applicationContext,
-		AcceptedRequirements: []string{"Display the current status."},
-		ExcludedCandidates:   []string{},
+	groundingInput := assemblyline.ApplicationRequirementCandidateResultRelationGroundingInput{
+		ImmutableRequest: request, CandidateAuthority: candidateAuthority,
+		Context:               generationAuthority.Authority.Context,
+		MissingResultRelation: missing,
 	}
-	coverage, err := assemblyline.DecodeApplicationRequirementCoverageLeaf(
-		coverageInput, assemblyline.ApplicationRequirementRemains,
+	groundingJob, err := assemblyline.NewApplicationRequirementCandidateResultRelationGroundingJob(
+		groundingInput,
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	job, err := assemblyline.NewApplicationRequirementCandidateDuplicateReplacementJob(
-		assemblyline.ApplicationRequirementCandidateDuplicateReplacementInput{
-			GenerationAuthority: assemblyline.ApplicationRequirementCandidateInput{
-				Authority: coverageInput, Coverage: coverage,
-			},
-			CurrentCandidate: coverageInput.AcceptedRequirements[0],
-			Duplicate: assemblyline.ApplicationRequirementCandidateDuplicateIdentity{
-				Set:   assemblyline.ApplicationRequirementDuplicateAcceptedRequirement,
-				Index: 0,
-			},
-			Defect: assemblyline.ApplicationRequirementDuplicateCandidateDefect,
-		},
+	groundingPrepared := prepareReplacementTemperatureTestCall(
+		t, groundingJob, replacementTemperatureTestExpectation(),
 	)
-	if err != nil {
-		t.Fatal(err)
+	if groundingPrepared.Temperature == nil || *groundingPrepared.Temperature != 0 {
+		t.Fatalf("result-relation grounding temperature=%v, want baseline 0", groundingPrepared.Temperature)
 	}
-	prepared := prepareReplacementTemperatureTestCall(
-		t, job, replacementTemperatureTestExpectation(),
-	)
-	if prepared.Temperature == nil || *prepared.Temperature != 0.2 {
-		t.Fatalf("duplicate replacement temperature=%v, want 0.2", prepared.Temperature)
-	}
-	if got := preparedRequestTemperature(t, prepared); got != 0.2 {
-		t.Fatalf("duplicate replacement wire temperature=%v, want 0.2", got)
-	}
-}
-
-func TestRequirementResultRelationCorrectionAdvancesRegisteredTemperature(t *testing.T) {
-	t.Parallel()
-	const candidate = "Accept values and display a correct result."
-	kindInput := assemblyline.ApplicationRequirementCandidateKindInput{Candidate: candidate}
-	kind, err := assemblyline.DecodeApplicationRequirementCandidateKindResult(
-		kindInput, assemblyline.ApplicationRequirementCandidateTaskLocal,
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	cardinalityInput := assemblyline.ApplicationRequirementCandidateCardinalityInput{
-		Candidate: candidate,
-	}
-	cardinality, err := assemblyline.DecodeApplicationRequirementCandidateCardinalityResult(
-		cardinalityInput, assemblyline.ApplicationRequirementOneRuntimeOutcome,
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	candidateAuthority := assemblyline.ApplicationRequirementCandidateResultRelationInput{
-		Candidate: candidate, Kind: kind, Cardinality: cardinality,
-	}
-	relation, err := assemblyline.DecodeApplicationRequirementCandidateResultRelationResult(
-		candidateAuthority, assemblyline.ApplicationRequirementMissingResultRelation,
+	grounding, err := assemblyline.DecodeApplicationRequirementCandidateResultRelationGroundingResult(
+		groundingInput,
+		assemblyline.ApplicationRequirementExactlyOneDeterminingRelationEntailed,
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
 	job, err := assemblyline.NewApplicationRequirementCandidateResultRelationCorrectionJob(
 		assemblyline.ApplicationRequirementCandidateResultRelationCorrectionInput{
-			GenerationAuthority: directCodingRequirementGenerationAuthorityForRequest(
-				t,
-				"Build a browser capacity display that subtracts used capacity from its limit.",
-			),
-			CandidateAuthority: candidateAuthority,
-			ResultRelation:     relation,
+			ImmutableRequest: request,
+			Context:          generationAuthority.Authority.Context,
+			CurrentCandidate: candidate,
+			Defect:           assemblyline.ApplicationRequirementMissingResultRelation,
+			Grounding:        grounding,
 		},
 	)
 	if err != nil {
@@ -220,11 +184,11 @@ func TestRequirementResultRelationCorrectionAdvancesRegisteredTemperature(t *tes
 	prepared := prepareReplacementTemperatureTestCall(
 		t, job, replacementTemperatureTestExpectation(),
 	)
-	if prepared.Temperature == nil || *prepared.Temperature != 0.2 {
-		t.Fatalf("result-relation correction temperature=%v, want 0.2", prepared.Temperature)
+	if prepared.Temperature == nil || *prepared.Temperature != 0 {
+		t.Fatalf("result-relation correction temperature=%v, want baseline 0", prepared.Temperature)
 	}
-	if got := preparedRequestTemperature(t, prepared); got != 0.2 {
-		t.Fatalf("result-relation correction wire temperature=%v, want 0.2", got)
+	if got := preparedRequestTemperature(t, prepared); got != 0 {
+		t.Fatalf("result-relation correction wire temperature=%v, want 0", got)
 	}
 }
 
@@ -246,6 +210,30 @@ func TestRequirementCandidateKindKeepsRegisteredTemperatureBaseline(t *testing.T
 	}
 	if got := preparedRequestTemperature(t, prepared); got != 0 {
 		t.Fatalf("candidate-kind wire temperature=%v, want 0", got)
+	}
+}
+
+func applicationRequirementCandidateResultRelationAuthorityForTest(
+	t testing.TB,
+	candidate string,
+) assemblyline.ApplicationRequirementCandidateResultRelationInput {
+	t.Helper()
+	kind, err := assemblyline.DecodeApplicationRequirementCandidateKindResult(
+		assemblyline.ApplicationRequirementCandidateKindInput{Candidate: candidate},
+		assemblyline.ApplicationRequirementCandidateTaskLocal,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cardinality, err := assemblyline.DecodeApplicationRequirementCandidateCardinalityResult(
+		assemblyline.ApplicationRequirementCandidateCardinalityInput{Candidate: candidate},
+		assemblyline.ApplicationRequirementOneRuntimeOutcome,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return assemblyline.ApplicationRequirementCandidateResultRelationInput{
+		Candidate: candidate, Kind: kind, Cardinality: cardinality,
 	}
 }
 

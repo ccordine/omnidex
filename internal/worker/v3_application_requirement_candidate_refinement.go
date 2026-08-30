@@ -116,9 +116,11 @@ func refineDirectCodingApplicationRequirementCandidate(
 			}
 			correctionUsed = true
 		}
-		if _, duplicate := directCodingApplicationRequirementDuplicate(
+		if _, duplicate, err := directCodingApplicationRequirementExactZeroDelta(
 			retainedAuthority, split,
-		); duplicate {
+		); err != nil {
+			return zero, err
+		} else if duplicate {
 			return directCodingApplicationRequirementCandidateRefinement{
 				Candidate: split,
 			}, nil

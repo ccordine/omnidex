@@ -198,7 +198,8 @@ func collectJavaScriptChildren(
 
 func javaScriptFunctionScopeKind(kind string) bool {
 	switch kind {
-	case "function_declaration", "function_expression", "arrow_function", "generator_function_declaration", "generator_function":
+	case "function_declaration", "function_expression", "arrow_function", "method_definition",
+		"generator_function_declaration", "generator_function":
 		return true
 	default:
 		return false

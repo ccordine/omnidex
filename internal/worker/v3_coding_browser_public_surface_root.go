@@ -125,7 +125,9 @@ func directCodingBrowserBoundedRootNodes(
 		}
 		switch node.Kind() {
 		case "function_declaration":
-			functions = append(functions, node)
+			if !directCodingBrowserFunctionIsNested(node) {
+				functions = append(functions, node)
+			}
 		case "jsx_element", "jsx_self_closing_element":
 			jsxNodes = append(jsxNodes, node)
 		}
@@ -134,6 +136,18 @@ func directCodingBrowserBoundedRootNodes(
 		}
 	}
 	return functions, jsxNodes, nil
+}
+
+func directCodingBrowserFunctionIsNested(node *treesitter.Node) bool {
+	if node == nil {
+		return false
+	}
+	for parent := node.Parent(); parent != nil; parent = parent.Parent() {
+		if javaScriptFunctionScopeKind(parent.Kind()) {
+			return true
+		}
+	}
+	return false
 }
 
 func directCodingBrowserNodeInside(

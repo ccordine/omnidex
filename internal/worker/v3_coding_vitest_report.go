@@ -32,7 +32,11 @@ function accessibilityObservationRecord(error) {
   if (error === null || (typeof error !== 'object' && typeof error !== 'function')) {
     return null;
   }
-  if (!Object.prototype.propertyIsEnumerable.call(error, testingLibraryRoleObservationProperty)) {
+  const observationDescriptor = Object.getOwnPropertyDescriptor(
+    error,
+    testingLibraryRoleObservationProperty,
+  );
+  if (observationDescriptor?.enumerable !== true) {
     return null;
   }
   return error[testingLibraryRoleObservationProperty];

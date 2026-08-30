@@ -30,11 +30,12 @@ func stationForPortableWorkKind(kind assemblyline.WorkKind) (station.ID, error) 
 		assemblyline.WorkApplicationRequirement,
 		assemblyline.WorkApplicationRequirementCandidateCardinality,
 		assemblyline.WorkApplicationRequirementCandidateKind,
+		assemblyline.WorkApplicationRequirementCandidateOutcomeRelation,
 		assemblyline.WorkApplicationRequirementCandidateResultRelation,
+		assemblyline.WorkApplicationRequirementCandidateResultRelationGrounding,
 		assemblyline.WorkApplicationRequirementCandidateResultRelationCorrection,
 		assemblyline.WorkApplicationRequirementCandidateSplit,
 		assemblyline.WorkApplicationRequirementCandidateSplitCorrection,
-		assemblyline.WorkApplicationRequirementCandidateDuplicateReplacement,
 		assemblyline.WorkRepositoryRequirementCoverage,
 		assemblyline.WorkRepositoryRequirement:
 		return station.CodingRequirements, nil

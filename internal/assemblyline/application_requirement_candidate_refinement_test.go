@@ -39,7 +39,8 @@ func TestApplicationRequirementCandidateRefinementUsesOneBoundLeafAtATime(t *tes
 		t.Fatalf("split=%q", split)
 	}
 	if strings.Count(cardinalityPrompt, cardinalityInput.Candidate) != 1 ||
-		strings.Contains(cardinalityPrompt, "ACCEPTED REQUIREMENTS") {
+		strings.Contains(cardinalityPrompt, "ACCEPTED REQUIREMENTS") ||
+		!strings.Contains(cardinalityPrompt, "A second required response meaning is a separate outcome") {
 		t.Fatalf("cardinality prompt exceeded candidate-only authority:\n%s", cardinalityPrompt)
 	}
 	if strings.Count(splitPrompt, cardinalityInput.Candidate) != 1 ||

@@ -34,6 +34,7 @@ func TestBrowserAcceptancePreambleCapturesBoundedRoleObservations(t *testing.T) 
 		"computeAccessibleName(element)",
 		"getRoles as unknown as",
 		"hidden: missingRole.visibility === 'available'",
+		"Object.hasOwn(roles, missingRole.requestedRole)",
 	} {
 		if !strings.Contains(source, required) {
 			t.Fatalf("role-observation preamble omits %q", required)
@@ -41,7 +42,7 @@ func TestBrowserAcceptancePreambleCapturesBoundedRoleObservations(t *testing.T) 
 	}
 	for _, forbidden := range []string{
 		"prettyRoles", "prettyDOM", "innerHTML", "outerHTML", "querySelector",
-		"Here are the accessible roles", "Name \"",
+		"Here are the accessible roles", "Name \"", "hasOwnProperty.call",
 	} {
 		if strings.Contains(source, forbidden) {
 			t.Fatalf("role-observation preamble parses provider/DOM prose through %q", forbidden)

@@ -131,6 +131,12 @@ func TestExactStationReplayPreservesCurrentRequirementRefinementKinds(t *testing
 	if err != nil || resultArtifact.Kind != string(resultJob.Kind) {
 		t.Fatalf("result-relation artifact=%+v error=%v", resultArtifact, err)
 	}
+	acceptedResult, err := assemblyline.DecodeApplicationRequirementCandidateResultRelationResult(
+		resultAuthority, assemblyline.ApplicationRequirementNoDerivedResult,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	request := "Create a browser status board that displays one current status and offers refresh."
 	applicationContext, err := assemblyline.BootstrapApplicationContext(
@@ -143,66 +149,80 @@ func TestExactStationReplayPreservesCurrentRequirementRefinementKinds(t *testing
 		UserRequest: request, Context: applicationContext,
 		AcceptedRequirements: []string{"Display the current status."},
 		ExcludedCandidates:   []string{},
+		ZeroDeltas:           []assemblyline.ApplicationRequirementCandidateZeroDelta{},
 	}
-	coverage, err := assemblyline.DecodeApplicationRequirementCoverageLeaf(
-		coverageInput, assemblyline.ApplicationRequirementRemains,
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	duplicateJob, err := assemblyline.NewApplicationRequirementCandidateDuplicateReplacementJob(
-		assemblyline.ApplicationRequirementCandidateDuplicateReplacementInput{
-			GenerationAuthority: assemblyline.ApplicationRequirementCandidateInput{
-				Authority: coverageInput, Coverage: coverage,
-			},
-			CurrentCandidate: coverageInput.AcceptedRequirements[0],
-			Duplicate: assemblyline.ApplicationRequirementCandidateDuplicateIdentity{
-				Set: assemblyline.ApplicationRequirementDuplicateAcceptedRequirement, Index: 0,
-			},
-			Defect: assemblyline.ApplicationRequirementDuplicateCandidateDefect,
-		},
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	duplicateArtifact, err := replayExactStationArtifact(
-		duplicateJob, "Offer a refresh control.",
-	)
-	if err != nil || duplicateArtifact.Kind != string(duplicateJob.Kind) {
-		t.Fatalf("duplicate-replacement artifact=%+v error=%v", duplicateArtifact, err)
-	}
-
-	const vague = "Display a correct refreshed result."
-	vagueKind, err := assemblyline.DecodeApplicationRequirementCandidateKindResult(
-		assemblyline.ApplicationRequirementCandidateKindInput{Candidate: vague},
+	const currentCandidate = "Offer a refresh control."
+	currentKind, err := assemblyline.DecodeApplicationRequirementCandidateKindResult(
+		assemblyline.ApplicationRequirementCandidateKindInput{Candidate: currentCandidate},
 		assemblyline.ApplicationRequirementCandidateTaskLocal,
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	vagueCardinality, err := assemblyline.DecodeApplicationRequirementCandidateCardinalityResult(
-		assemblyline.ApplicationRequirementCandidateCardinalityInput{Candidate: vague},
+	currentCardinality, err := assemblyline.DecodeApplicationRequirementCandidateCardinalityResult(
+		assemblyline.ApplicationRequirementCandidateCardinalityInput{Candidate: currentCandidate},
 		assemblyline.ApplicationRequirementOneRuntimeOutcome,
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	vagueAuthority := assemblyline.ApplicationRequirementCandidateResultRelationInput{
-		Candidate: vague, Kind: vagueKind, Cardinality: vagueCardinality,
+	outcomeJob, err := assemblyline.NewApplicationRequirementCandidateOutcomeRelationJob(
+		assemblyline.ApplicationRequirementCandidateOutcomeRelationInput{
+			Candidate: currentCandidate, Kind: currentKind, Cardinality: currentCardinality,
+			AcceptedRequirement: resultCandidate, AcceptedResultRelation: acceptedResult,
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
 	}
-	vagueRelation, err := assemblyline.DecodeApplicationRequirementCandidateResultRelationResult(
-		vagueAuthority, assemblyline.ApplicationRequirementMissingResultRelation,
+	outcomeArtifact, err := replayExactStationArtifact(
+		outcomeJob, assemblyline.ApplicationRequirementDistinctRuntimeOutcomes,
+	)
+	if err != nil || outcomeArtifact.Kind != string(outcomeJob.Kind) {
+		t.Fatalf("outcome-relation artifact=%+v error=%v", outcomeArtifact, err)
+	}
+
+	const vague = "Display a correct refreshed result."
+	vagueAuthority := applicationRequirementCandidateResultRelationAuthorityForTest(t, vague)
+	missing, err := assemblyline.DecodeApplicationRequirementCandidateResultRelationResult(
+		vagueAuthority,
+		assemblyline.ApplicationRequirementMissingResultRelation,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	groundingInput := assemblyline.ApplicationRequirementCandidateResultRelationGroundingInput{
+		ImmutableRequest: coverageInput.UserRequest, CandidateAuthority: vagueAuthority,
+		Context:               coverageInput.Context,
+		MissingResultRelation: missing,
+	}
+	groundingJob, err := assemblyline.NewApplicationRequirementCandidateResultRelationGroundingJob(
+		groundingInput,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	groundingArtifact, err := replayExactStationArtifact(
+		groundingJob,
+		assemblyline.ApplicationRequirementExactlyOneDeterminingRelationEntailed,
+	)
+	if err != nil || groundingArtifact.Kind != string(groundingJob.Kind) {
+		t.Fatalf("result-relation grounding artifact=%+v error=%v", groundingArtifact, err)
+	}
+	grounding, err := assemblyline.DecodeApplicationRequirementCandidateResultRelationGroundingResult(
+		groundingInput,
+		assemblyline.ApplicationRequirementExactlyOneDeterminingRelationEntailed,
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
 	correctionJob, err := assemblyline.NewApplicationRequirementCandidateResultRelationCorrectionJob(
 		assemblyline.ApplicationRequirementCandidateResultRelationCorrectionInput{
-			GenerationAuthority: assemblyline.ApplicationRequirementCandidateInput{
-				Authority: coverageInput, Coverage: coverage,
-			},
-			CandidateAuthority: vagueAuthority,
-			ResultRelation:     vagueRelation,
+			ImmutableRequest: coverageInput.UserRequest,
+			Context:          coverageInput.Context,
+			CurrentCandidate: vague,
+			Defect:           assemblyline.ApplicationRequirementMissingResultRelation,
+			Grounding:        grounding,
 		},
 	)
 	if err != nil {

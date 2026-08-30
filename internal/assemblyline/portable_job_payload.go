@@ -27,9 +27,17 @@ func validatePortableJobPayload(kind WorkKind, payload json.RawMessage) error {
 		return decodeAndValidatePortablePayload[ApplicationRequirementCandidateKindInput](
 			payload, ApplicationRequirementCandidateKindInput.validate,
 		)
+	case WorkApplicationRequirementCandidateOutcomeRelation:
+		return decodeAndValidatePortablePayload[ApplicationRequirementCandidateOutcomeRelationInput](
+			payload, ApplicationRequirementCandidateOutcomeRelationInput.validateForModel,
+		)
 	case WorkApplicationRequirementCandidateResultRelation:
 		return decodeAndValidatePortablePayload[ApplicationRequirementCandidateResultRelationInput](
 			payload, ApplicationRequirementCandidateResultRelationInput.validate,
+		)
+	case WorkApplicationRequirementCandidateResultRelationGrounding:
+		return decodeAndValidatePortablePayload[ApplicationRequirementCandidateResultRelationGroundingInput](
+			payload, ApplicationRequirementCandidateResultRelationGroundingInput.validate,
 		)
 	case WorkApplicationRequirementCandidateResultRelationCorrection:
 		return decodeAndValidatePortablePayload[ApplicationRequirementCandidateResultRelationCorrectionInput](
@@ -42,10 +50,6 @@ func validatePortableJobPayload(kind WorkKind, payload json.RawMessage) error {
 	case WorkApplicationRequirementCandidateSplitCorrection:
 		return decodeAndValidatePortablePayload[ApplicationRequirementCandidateSplitCorrectionInput](
 			payload, ApplicationRequirementCandidateSplitCorrectionInput.validate,
-		)
-	case WorkApplicationRequirementCandidateDuplicateReplacement:
-		return decodeAndValidatePortablePayload[ApplicationRequirementCandidateDuplicateReplacementInput](
-			payload, ApplicationRequirementCandidateDuplicateReplacementInput.validate,
 		)
 	case WorkApplicationContextNeedCoverage, WorkApplicationContextNeedQuestion:
 		return decodeAndValidatePortablePayload[ApplicationContextNeedLeafInput](

@@ -48,6 +48,7 @@ type directCodingBrowserPendingLabel struct {
 
 type directCodingBrowserPublicSurfaceExtractor struct {
 	source      []byte
+	outputFlow  directCodingBrowserOutputDataflow
 	controls    []directCodingBrowserPendingControl
 	labels      []directCodingBrowserPendingLabel
 	outputs     []directCodingBrowserPublicOutput

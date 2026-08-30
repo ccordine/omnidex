@@ -14,8 +14,9 @@ func genericBrowserRuntimeTestDocument(
 		ID: "application_runtime_test", Path: "src/runtime.test.tsx",
 		Preamble: `import '@testing-library/jest-dom/vitest';
 import { act, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react';
+import { renderToString } from 'react-dom/server';
 import { FeatureBoundary, createApplicationRuntime, createFeatureRuntime, publishCapability, useCapabilityState, useOwnCapabilityState } from './runtime';
-import type { CapabilityID, FeatureViewProps } from './runtime';`,
+import type { CapabilityID, FeatureState, FeatureViewProps, SharedValue } from './runtime';`,
 		Blocks: []assemblyline.SourceBlock{{
 			ID: "tests.runtime", Static: genericBrowserRuntimeTestSource(requirements),
 			API: "tests the application capability runtime", DependsOn: []string{"runtime.factory"},
@@ -25,7 +26,7 @@ import type { CapabilityID, FeatureViewProps } from './runtime';`,
 
 func genericBrowserRuntimeTestSource(requirements []assemblyline.Requirement) string {
 	capability := strconv.Quote(genericApplicationCapabilityID(1))
-	return fmt.Sprintf(`function ActionProbe({ state, actions }: FeatureViewProps) {
+	base := fmt.Sprintf(`function ActionProbe({ state, actions }: FeatureViewProps) {
 	return <button onClick={() => actions.set('ready', true)}>{String(state.ready ?? false)}</button>;
 }
 
@@ -53,4 +54,5 @@ describe('application runtime', () => {
 		expect(() => createFeatureRuntime(runtime, 'unknown' as CapabilityID)).toThrow(/Unknown application capability/);
 	});
 });`, capability, capability, capability)
+	return base + "\n\n" + genericBrowserSharedValueTestSource(capability)
 }

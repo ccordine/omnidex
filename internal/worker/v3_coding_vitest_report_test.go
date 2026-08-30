@@ -225,12 +225,16 @@ func TestVitestReporterDeclaresOneV3AccessibilityObservationTransport(t *testing
 	}
 	for _, required := range []string{
 		"omnidexTestingLibraryRoleObservation",
-		"Object.prototype.propertyIsEnumerable.call",
+		"Object.getOwnPropertyDescriptor(",
+		"observationDescriptor?.enumerable !== true",
 		"accessibility_observation: accessibilityObservationRecord(error)",
 	} {
 		if !strings.Contains(directCodingVitestReporterSource, required) {
 			t.Fatalf("reporter source omits %q", required)
 		}
+	}
+	if strings.Contains(directCodingVitestReporterSource, "propertyIsEnumerable.call") {
+		t.Fatal("reporter source depends on one mutable prototype method")
 	}
 }
 

@@ -7,7 +7,6 @@ func TestPortableResponseFramingRegistryIsExhaustive(t *testing.T) {
 		WorkApplicationProductContext: {}, WorkApplicationRequirement: {},
 		WorkApplicationRequirementCandidateSplit:                    {},
 		WorkApplicationRequirementCandidateSplitCorrection:          {},
-		WorkApplicationRequirementCandidateDuplicateReplacement:     {},
 		WorkApplicationRequirementCandidateResultRelationCorrection: {},
 		WorkApplicationTargetTree:                                   {}, WorkRepositoryRequirement: {},
 		WorkContextMinification:  {},

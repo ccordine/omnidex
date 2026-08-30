@@ -12,11 +12,12 @@ func TestApplicationRequirementCandidateWorkHasOneExactStationOwner(t *testing.T
 	for _, kind := range []assemblyline.WorkKind{
 		assemblyline.WorkApplicationRequirementCandidateCardinality,
 		assemblyline.WorkApplicationRequirementCandidateKind,
+		assemblyline.WorkApplicationRequirementCandidateOutcomeRelation,
 		assemblyline.WorkApplicationRequirementCandidateResultRelation,
+		assemblyline.WorkApplicationRequirementCandidateResultRelationGrounding,
 		assemblyline.WorkApplicationRequirementCandidateResultRelationCorrection,
 		assemblyline.WorkApplicationRequirementCandidateSplit,
 		assemblyline.WorkApplicationRequirementCandidateSplitCorrection,
-		assemblyline.WorkApplicationRequirementCandidateDuplicateReplacement,
 	} {
 		got, err := stationForPortableWorkKind(kind)
 		if err != nil || got != station.CodingRequirements {

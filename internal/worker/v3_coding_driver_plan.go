@@ -37,6 +37,10 @@ func (s *directCodingSession) Assemble() (directCodingAssembly, error) {
 	if err != nil {
 		return directCodingAssembly{}, err
 	}
+	requestAuthority, err := newDirectCodingApplicationRequestAuthority(authority, redacted)
+	if err != nil {
+		return directCodingAssembly{}, err
+	}
 	surfaceModel, err := s.workerModel(station.CodingSurface)
 	if err != nil {
 		return directCodingAssembly{}, err
@@ -75,7 +79,7 @@ func (s *directCodingSession) Assemble() (directCodingAssembly, error) {
 	}
 	interpretation, err := runDirectCodingApplicationInterpreter(
 		workerRuntime, requirementModel, surfaceModel, artifactModel,
-		redacted, applicationContext, identities,
+		requestAuthority, applicationContext, identities,
 	)
 	if err != nil {
 		return directCodingAssembly{}, err
@@ -110,7 +114,7 @@ func (s *directCodingSession) Assemble() (directCodingAssembly, error) {
 		return directCodingAssembly{}, err
 	}
 	requirementRelations, err := newDirectCodingApplicationTaskResultRelationPlan(
-		workload, interpretation.AcceptedRequirements,
+		workload, interpretation.AcceptedRequirements, requestAuthority,
 	)
 	if err != nil {
 		return directCodingAssembly{}, err

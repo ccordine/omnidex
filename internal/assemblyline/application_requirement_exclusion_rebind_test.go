@@ -15,7 +15,7 @@ func TestApplicationRequirementNonRuntimeExclusionRebindsRemainingAuthority(t *t
 	}
 	authority := ApplicationRequirementCoverageInput{
 		UserRequest: request, Context: context,
-		AcceptedRequirements: []string{}, ExcludedCandidates: []string{},
+		AcceptedRequirements: []string{}, ExcludedCandidates: []string{}, ZeroDeltas: []ApplicationRequirementCandidateZeroDelta{},
 	}
 	coverage, err := DecodeApplicationRequirementCoverageLeaf(
 		authority, ApplicationRequirementRemains,
@@ -56,7 +56,7 @@ func TestApplicationRequirementNonRuntimeExclusionRebindsRemainingAuthority(t *t
 
 func TestApplicationRequirementNonRuntimeExclusionRebindRejectsInvalidAuthority(t *testing.T) {
 	t.Parallel()
-	valid := applicationRequirementDuplicateReplacementFixture(t).GenerationAuthority
+	valid := applicationRequirementCandidateFixture(t, applicationRequirementZeroDeltaAuthority(t))
 	const candidate = "Add a generic test obligation."
 	kindInput := ApplicationRequirementCandidateKindInput{Candidate: candidate}
 	nonRuntime, err := DecodeApplicationRequirementCandidateKindResult(

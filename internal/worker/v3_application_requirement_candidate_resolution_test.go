@@ -5,76 +5,42 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
-	"strings"
 	"testing"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
 )
 
-func TestDirectCodingRequirementCandidateRepairsAcceptedDuplicateOnce(t *testing.T) {
+func TestDirectCodingRequirementCandidateRecordsExactAcceptedZeroDeltaWithoutInference(t *testing.T) {
 	t.Parallel()
 	const duplicate = "Display the current status."
-	const replacement = "Show a refresh control."
 	authority := directCodingRequirementGenerationAuthorityFixture(
 		t, []string{duplicate}, []string{},
 	)
-	var calls []assemblyline.WorkKind
 	runtime := typedWorkerRuntime{
 		Context: context.Background(), MaxAttempts: 1,
 		Execute: func(job assemblyline.PortableJob, _ string) (assemblyline.PortableResult, error) {
-			calls = append(calls, job.Kind)
-			var candidate string
-			switch job.Kind {
-			case assemblyline.WorkApplicationRequirementCandidateDuplicateReplacement:
-				var input assemblyline.ApplicationRequirementCandidateDuplicateReplacementInput
-				if err := json.Unmarshal(job.Payload, &input); err != nil {
-					return assemblyline.PortableResult{}, err
-				}
-				if !reflect.DeepEqual(input.GenerationAuthority, authority) ||
-					input.CurrentCandidate != duplicate ||
-					input.Duplicate.Set != assemblyline.ApplicationRequirementDuplicateAcceptedRequirement ||
-					input.Duplicate.Index != 0 ||
-					input.Defect != assemblyline.ApplicationRequirementDuplicateCandidateDefect {
-					return assemblyline.PortableResult{}, fmt.Errorf("replacement received unbound duplicate authority: %+v", input)
-				}
-				candidate = replacement
-			case assemblyline.WorkApplicationRequirementCandidateKind:
-				candidate = assemblyline.ApplicationRequirementCandidateTaskLocal
-			case assemblyline.WorkApplicationRequirementCandidateCardinality:
-				candidate = assemblyline.ApplicationRequirementOneRuntimeOutcome
-			case assemblyline.WorkApplicationRequirementCandidateResultRelation:
-				candidate = assemblyline.ApplicationRequirementNoDerivedResult
-			default:
-				return assemblyline.PortableResult{}, fmt.Errorf("unexpected work kind %q", job.Kind)
-			}
-			return assemblyline.PortableResult{JobID: job.ID, Candidate: candidate}, nil
+			return assemblyline.PortableResult{}, fmt.Errorf("exact zero delta dispatched %q", job.Kind)
 		},
 	}
 	got, err := resolveDirectCodingApplicationRequirementCandidate(
-		runtime, "intent-model", duplicate, authority, nil,
+		runtime, "intent-model", duplicate, authority,
+		directCodingAcceptedRequirementAuthorities(t, []string{duplicate}), nil,
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Candidate != replacement || !got.Retain || got.ReboundGenerationAuthority != nil {
+	if got.Candidate != duplicate || got.Retain || got.ReboundGenerationAuthority != nil ||
+		got.ZeroDelta == nil ||
+		got.ZeroDelta.RetainedSet != assemblyline.ApplicationRequirementZeroDeltaAcceptedSet ||
+		got.ZeroDelta.RetainedIndex != 0 {
 		t.Fatalf("resolved candidate=%+v", got)
-	}
-	wantCalls := []assemblyline.WorkKind{
-		assemblyline.WorkApplicationRequirementCandidateDuplicateReplacement,
-		assemblyline.WorkApplicationRequirementCandidateKind,
-		assemblyline.WorkApplicationRequirementCandidateCardinality,
-		assemblyline.WorkApplicationRequirementCandidateResultRelation,
-	}
-	if !reflect.DeepEqual(calls, wantCalls) {
-		t.Fatalf("calls=%v want=%v", calls, wantCalls)
 	}
 }
 
-func TestDirectCodingRequirementCandidateRepairsPostSplitDuplicateThenReclassifies(t *testing.T) {
+func TestDirectCodingRequirementCandidateRecordsPostSplitExactZeroDelta(t *testing.T) {
 	t.Parallel()
 	const accepted = "Display the current status."
 	const compound = "Display the current status and show a refresh control."
-	const replacement = "Show a refresh control."
 	authority := directCodingRequirementGenerationAuthorityFixture(
 		t, []string{accepted}, []string{},
 	)
@@ -99,19 +65,6 @@ func TestDirectCodingRequirementCandidateRepairsPostSplitDuplicateThenReclassifi
 				}
 			case assemblyline.WorkApplicationRequirementCandidateSplit:
 				candidate = accepted
-			case assemblyline.WorkApplicationRequirementCandidateResultRelation:
-				candidate = assemblyline.ApplicationRequirementNoDerivedResult
-			case assemblyline.WorkApplicationRequirementCandidateDuplicateReplacement:
-				var input assemblyline.ApplicationRequirementCandidateDuplicateReplacementInput
-				if err := json.Unmarshal(job.Payload, &input); err != nil {
-					return assemblyline.PortableResult{}, err
-				}
-				if input.CurrentCandidate != accepted ||
-					input.Duplicate.Set != assemblyline.ApplicationRequirementDuplicateAcceptedRequirement ||
-					input.Duplicate.Index != 0 {
-					return assemblyline.PortableResult{}, fmt.Errorf("post-split replacement received wrong duplicate: %+v", input)
-				}
-				candidate = replacement
 			default:
 				return assemblyline.PortableResult{}, fmt.Errorf("unexpected work kind %q", job.Kind)
 			}
@@ -119,22 +72,19 @@ func TestDirectCodingRequirementCandidateRepairsPostSplitDuplicateThenReclassifi
 		},
 	}
 	got, err := resolveDirectCodingApplicationRequirementCandidate(
-		runtime, "intent-model", compound, authority, nil,
+		runtime, "intent-model", compound, authority,
+		directCodingAcceptedRequirementAuthorities(t, []string{accepted}), nil,
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Candidate != replacement || !got.Retain || got.ReboundGenerationAuthority != nil {
+	if got.Candidate != accepted || got.Retain || got.ZeroDelta == nil {
 		t.Fatalf("resolved candidate=%+v", got)
 	}
 	wantCalls := []assemblyline.WorkKind{
 		assemblyline.WorkApplicationRequirementCandidateKind,
 		assemblyline.WorkApplicationRequirementCandidateCardinality,
 		assemblyline.WorkApplicationRequirementCandidateSplit,
-		assemblyline.WorkApplicationRequirementCandidateDuplicateReplacement,
-		assemblyline.WorkApplicationRequirementCandidateKind,
-		assemblyline.WorkApplicationRequirementCandidateCardinality,
-		assemblyline.WorkApplicationRequirementCandidateResultRelation,
 	}
 	if !reflect.DeepEqual(calls, wantCalls) {
 		t.Fatalf("calls=%v want=%v", calls, wantCalls)
@@ -178,7 +128,7 @@ func TestDirectCodingRequirementCandidateRebindsKindWithoutRepeatingTerminalCard
 		},
 	}
 	got, err := resolveDirectCodingApplicationRequirementCandidate(
-		runtime, "intent-model", compound, authority, nil,
+		runtime, "intent-model", compound, authority, []assemblyline.ApplicationIntentCandidateRequirement{}, nil,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -199,49 +149,50 @@ func TestDirectCodingRequirementCandidateRebindsKindWithoutRepeatingTerminalCard
 	}
 }
 
-func TestDirectCodingRequirementDuplicateReplacementRejectsAnyRetainedDuplicate(t *testing.T) {
+func TestDirectCodingRequirementCandidateRoutesSemanticDuplicateThroughZeroDelta(t *testing.T) {
 	t.Parallel()
 	const accepted = "Display the current status."
-	const excluded = "Use a single source file."
+	const candidate = "Show the current status to the user."
 	authority := directCodingRequirementGenerationAuthorityFixture(
-		t, []string{accepted}, []string{excluded},
+		t, []string{accepted}, []string{},
 	)
-	for name, replacement := range map[string]string{
-		"byte identical":               accepted,
-		"different retained duplicate": excluded,
-	} {
-		t.Run(name, func(t *testing.T) {
-			calls := 0
-			var finalizedValidation error
-			runtime := typedWorkerRuntime{
-				Context: context.Background(), MaxAttempts: 1,
-				Execute: func(job assemblyline.PortableJob, _ string) (assemblyline.PortableResult, error) {
-					calls++
-					if job.Kind != assemblyline.WorkApplicationRequirementCandidateDuplicateReplacement {
-						return assemblyline.PortableResult{}, fmt.Errorf("unexpected work kind %q", job.Kind)
-					}
-					return assemblyline.PortableResult{JobID: job.ID, Candidate: replacement}, nil
-				},
-				Finalize: func(
-					_ assemblyline.PortableJob,
-					_ assemblyline.PortableResult,
-					validationErr error,
-				) error {
-					finalizedValidation = validationErr
-					return nil
-				},
+	var calls []assemblyline.WorkKind
+	runtime := typedWorkerRuntime{
+		Context: context.Background(), MaxAttempts: 1,
+		Execute: func(job assemblyline.PortableJob, _ string) (assemblyline.PortableResult, error) {
+			calls = append(calls, job.Kind)
+			value := ""
+			switch job.Kind {
+			case assemblyline.WorkApplicationRequirementCandidateKind:
+				value = assemblyline.ApplicationRequirementCandidateTaskLocal
+			case assemblyline.WorkApplicationRequirementCandidateCardinality:
+				value = assemblyline.ApplicationRequirementOneRuntimeOutcome
+			case assemblyline.WorkApplicationRequirementCandidateOutcomeRelation:
+				value = assemblyline.ApplicationRequirementSameRuntimeOutcome
+			default:
+				return assemblyline.PortableResult{}, fmt.Errorf("unexpected work kind %q", job.Kind)
 			}
-			_, err := resolveDirectCodingApplicationRequirementCandidate(
-				runtime, "intent-model", accepted, authority, nil,
-			)
-			if err == nil || calls != 1 || finalizedValidation == nil ||
-				!strings.Contains(err.Error(), "duplicate") {
-				t.Fatalf(
-					"replacement=%q calls=%d finalized=%v error=%v",
-					replacement, calls, finalizedValidation, err,
-				)
-			}
-		})
+			return assemblyline.PortableResult{JobID: job.ID, Candidate: value}, nil
+		},
+	}
+	got, err := resolveDirectCodingApplicationRequirementCandidate(
+		runtime, "intent-model", candidate, authority,
+		directCodingAcceptedRequirementAuthorities(t, []string{accepted}), nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Retain || got.ZeroDelta == nil ||
+		got.ZeroDelta.OutcomeRelation.Relation != assemblyline.ApplicationRequirementSameRuntimeOutcome {
+		t.Fatalf("semantic duplicate resolution=%+v", got)
+	}
+	want := []assemblyline.WorkKind{
+		assemblyline.WorkApplicationRequirementCandidateKind,
+		assemblyline.WorkApplicationRequirementCandidateCardinality,
+		assemblyline.WorkApplicationRequirementCandidateOutcomeRelation,
+	}
+	if !reflect.DeepEqual(calls, want) {
+		t.Fatalf("calls=%v want=%v", calls, want)
 	}
 }
 
@@ -262,6 +213,7 @@ func directCodingRequirementGenerationAuthorityFixture(
 		UserRequest: request, Context: applicationContext,
 		AcceptedRequirements: append([]string{}, accepted...),
 		ExcludedCandidates:   append([]string{}, excluded...),
+		ZeroDeltas:           []assemblyline.ApplicationRequirementCandidateZeroDelta{},
 	}
 	coverage, err := assemblyline.DecodeApplicationRequirementCoverageLeaf(
 		coverageInput, assemblyline.ApplicationRequirementRemains,
@@ -272,4 +224,41 @@ func directCodingRequirementGenerationAuthorityFixture(
 	return assemblyline.ApplicationRequirementCandidateInput{
 		Authority: coverageInput, Coverage: coverage,
 	}
+}
+
+func directCodingAcceptedRequirementAuthorities(
+	t testing.TB,
+	statements []string,
+) []assemblyline.ApplicationIntentCandidateRequirement {
+	t.Helper()
+	result := make([]assemblyline.ApplicationIntentCandidateRequirement, len(statements))
+	for index, statement := range statements {
+		kind, err := assemblyline.DecodeApplicationRequirementCandidateKindResult(
+			assemblyline.ApplicationRequirementCandidateKindInput{Candidate: statement},
+			assemblyline.ApplicationRequirementCandidateTaskLocal,
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		cardinality, err := assemblyline.DecodeApplicationRequirementCandidateCardinalityResult(
+			assemblyline.ApplicationRequirementCandidateCardinalityInput{Candidate: statement},
+			assemblyline.ApplicationRequirementOneRuntimeOutcome,
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		relation, err := assemblyline.DecodeApplicationRequirementCandidateResultRelationResult(
+			assemblyline.ApplicationRequirementCandidateResultRelationInput{
+				Candidate: statement, Kind: kind, Cardinality: cardinality,
+			},
+			assemblyline.ApplicationRequirementNoDerivedResult,
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		result[index] = assemblyline.ApplicationIntentCandidateRequirement{
+			Statement: statement, ResultRelation: relation,
+		}
+	}
+	return result
 }
