@@ -40,12 +40,15 @@ func TestApplicationRequirementCandidateResultRelationIsOneBoundQuestion(t *test
 			}
 			for _, required := range []string{
 				"Classify one fact about this exact one-outcome runtime requirement",
-				"Apply these steps in order",
+				"Follow these steps",
 				"Detect a derived value when the candidate requires an observable value selected, ordered, transformed, hashed, grouped, aggregated, measured, calculated, or decided",
-				"Data described as converted or transformed is not supplied data unchanged",
-				"existing per-item grouping key is a stated rule",
-				"equal observed key values determine groups",
-				"Only when no derived value is asserted",
+				"transformed data is not unchanged",
+				"existing per-item grouping key",
+				"named operation supplied, configured, selected, or performed by a user",
+				"unspecified output merely labeled calculated, evaluated, generated, or selected",
+				"condition only triggers that behavior",
+				"equal key values determine groups",
+				"Return NO_DERIVED_RESULT only when no derived value is asserted",
 				fixture.candidate,
 			} {
 				if !strings.Contains(prompt, required) {
@@ -58,7 +61,7 @@ func TestApplicationRequirementCandidateResultRelationIsOneBoundQuestion(t *test
 			}
 			first := strings.Index(prompt, "1. Detect a derived value")
 			second := strings.Index(prompt, "2. For a derived value")
-			third := strings.Index(prompt, "3. Only when no derived value")
+			third := strings.Index(prompt, "3. Return NO_DERIVED_RESULT")
 			if first < 0 || second <= first || third <= second {
 				t.Fatalf("result-relation rules are not ordered:\n%s", prompt)
 			}
