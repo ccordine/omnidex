@@ -241,21 +241,23 @@ func assertDatabaseEvidenceReceiptHasNoExecutionOrCredentialPayload(
 
 func assertDatabaseCognitionStationOwnership(t *testing.T, repository *Repository) {
 	t.Helper()
-	for station, work := range map[string]string{
-		"database_schema_selection":    "database_schema_selection",
-		"database_query_intent":        "database_query_intent",
-		"database_evidence_gap":        "database_evidence_gap",
-		"database_join_path_selection": "database_join_path_selection",
+	for _, binding := range []struct{ station, work string }{
+		{station: "database_schema_selection", work: "database_schema_relation_inventory"},
+		{station: "database_query_intent", work: "database_query_purpose_inventory"},
+		{station: "database_join_path_selection", work: "database_join_path_selection"},
 	} {
 		var owns, crossOwns bool
 		if err := repository.pool.QueryRow(t.Context(), `
 			SELECT station_owns_portable_work($1,$2,'{}'::jsonb),
 			       station_owns_portable_work('conversation_response',$2,'{}'::jsonb)
-		`, station, work).Scan(&owns, &crossOwns); err != nil {
+		`, binding.station, binding.work).Scan(&owns, &crossOwns); err != nil {
 			t.Fatal(err)
 		}
 		if !owns || crossOwns {
-			t.Fatalf("station/work ownership %s/%s exact=%t cross=%t", station, work, owns, crossOwns)
+			t.Fatalf(
+				"station/work ownership %s/%s exact=%t cross=%t",
+				binding.station, binding.work, owns, crossOwns,
+			)
 		}
 	}
 }

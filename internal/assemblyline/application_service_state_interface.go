@@ -225,10 +225,6 @@ func validateApplicationServiceStatePurpose(label, purpose string) error {
 	)
 }
 
-func equalApplicationServicePurpose(left, right string) bool {
-	return strings.EqualFold(left, right)
-}
-
 func CodeOwnedApplicationServiceStateFieldName(index int) (string, error) {
 	if index < 1 || index > maxApplicationServiceStateInterfaceFields {
 		return "", fmt.Errorf(

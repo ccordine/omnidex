@@ -18,7 +18,7 @@ func PortableJobProviderIdentityProfilePolicy(
 		return "", err
 	}
 	switch job.Kind {
-	case assemblyline.WorkRoleplayGroundedResponseText:
+	case assemblyline.WorkRoleplayGroundedResponseParagraphInventory:
 		return llm.ProviderIdentityProfileRoleplayRawCompletion, nil
 	case assemblyline.WorkConversationResponse:
 		var input assemblyline.ConversationResponseInput
@@ -29,17 +29,19 @@ func PortableJobProviderIdentityProfilePolicy(
 			return llm.ProviderIdentityProfileRoleplayRawCompletion, nil
 		}
 		return "", nil
-	case assemblyline.WorkRoleplayCanonFactCoverage,
-		assemblyline.WorkRoleplayCanonFact,
+	case assemblyline.WorkRoleplayCanonFactInventory,
+		assemblyline.WorkRoleplayCanonFactCandidateAuthorization,
+		assemblyline.WorkRoleplayCanonFactCandidateRelation,
 		assemblyline.WorkRoleplayGroundedResponseEvidenceRelation,
+		assemblyline.WorkRoleplayGroundedResponseParagraphAuthorization,
 		assemblyline.WorkRoleplayOngoingAction:
 		return llm.ProviderIdentityProfileRoleplaySemanticCompletion, nil
-	case assemblyline.WorkContextRelevanceSelection:
-		var input assemblyline.ContextRelevanceSelectionInput
+	case assemblyline.WorkContextRelevanceRelation:
+		var input assemblyline.ContextRelevanceRelationInput
 		if err := json.Unmarshal(job.Payload, &input); err != nil {
 			return "", fmt.Errorf("decode context-relevance provider policy: %w", err)
 		}
-		return contextProviderIdentityProfilePolicy(input.Authority.Scope)
+		return contextProviderIdentityProfilePolicy(input.Scope)
 	case assemblyline.WorkContextMinification:
 		var input assemblyline.ContextMinificationInput
 		if err := json.Unmarshal(job.Payload, &input); err != nil {

@@ -18,41 +18,46 @@ func prepareObjectiveDatabaseQueryPlan(
 	exactNeed string,
 	objectiveContext assemblyline.ObjectiveContext,
 	stations objectiveDatabaseStations,
-) (datasource.RelationalQueryPlan, int, error) {
+) (datasource.RelationalQueryPlan, objectiveStationReceipt, error) {
 	selected := map[string]string{}
-	totalCalls := 0
+	var ledger objectiveDatabaseBoundedCallLedger
 	for attempts := 0; attempts <= datasource.MaxProjectedRelations; attempts++ {
 		plan, err := datasource.BuildRelationalQueryPlan(snapshot, intent, selected)
 		if err == nil {
-			return plan, totalCalls, nil
+			if ledger.count() == 0 {
+				return plan, objectiveStationReceipt{}, nil
+			}
+			receipt, receiptErr := ledger.totalForSuccess("database join-path planning")
+			return plan, receipt, receiptErr
 		}
 		var ambiguous *datasource.AmbiguousJoinPathError
 		if !errors.As(err, &ambiguous) {
-			return datasource.RelationalQueryPlan{}, totalCalls, err
+			return datasource.RelationalQueryPlan{}, ledger.partial(), err
 		}
 		if _, repeated := selected[ambiguous.ToRelationID]; repeated {
-			return datasource.RelationalQueryPlan{}, totalCalls, fmt.Errorf("database join-path selection made no planning progress")
+			return datasource.RelationalQueryPlan{}, ledger.partial(), fmt.Errorf("database join-path selection made no planning progress")
 		}
 		input, err := objectiveDatabaseJoinPathInput(
 			snapshot, evidenceNeedID, exactNeed, objectiveContext, ambiguous,
 		)
 		if err != nil {
-			return datasource.RelationalQueryPlan{}, totalCalls, err
+			return datasource.RelationalQueryPlan{}, ledger.partial(), err
 		}
 		decision, receipt, err := stations.SelectJoinPath(ctx, input)
-		totalCalls += receipt.Calls
 		if err != nil {
-			return datasource.RelationalQueryPlan{}, totalCalls, err
+			return datasource.RelationalQueryPlan{}, ledger.partial(), err
 		}
-		if err := validateObjectiveDatabaseStationCalls("join-path selection", receipt); err != nil {
-			return datasource.RelationalQueryPlan{}, totalCalls, err
+		if err := ledger.record(
+			"database join-path planning", "selection", receipt, exactSemanticLeafCalls,
+		); err != nil {
+			return datasource.RelationalQueryPlan{}, ledger.partial(), err
 		}
 		if err := decision.ValidateFor(input); err != nil {
-			return datasource.RelationalQueryPlan{}, totalCalls, err
+			return datasource.RelationalQueryPlan{}, ledger.partial(), err
 		}
 		selected[ambiguous.ToRelationID] = decision.PathID
 	}
-	return datasource.RelationalQueryPlan{}, totalCalls, fmt.Errorf("database join-path resolution exceeded its bounded relation count")
+	return datasource.RelationalQueryPlan{}, ledger.partial(), fmt.Errorf("database join-path resolution exceeded its bounded relation count")
 }
 
 func objectiveDatabaseJoinPathInput(

@@ -21,13 +21,12 @@ func TestRoleplaySemanticStationsUseSemanticProfile(t *testing.T) {
 		ContributionKind:    roleplay.UserContributionDirection,
 		ContributionContext: "Continue.",
 	}
-	canonJob, err := assemblyline.NewRoleplayCanonFactCoverageJob(
-		assemblyline.RoleplayCanonFactLeafInput{
+	canonJob, err := assemblyline.NewRoleplayCanonFactInventoryJob(
+		assemblyline.RoleplayCanonExtractionInput{
 			Source: source, AntecedentUserTurn: &antecedent,
 			Context: assemblyline.ObjectiveContext{
 				Capsules: []assemblyline.ObjectiveContextCapsule{},
 			},
-			AcceptedFacts: []string{},
 		},
 	)
 	if err != nil {
@@ -49,15 +48,12 @@ func TestRoleplaySemanticStationsUseSemanticProfile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	relevanceJob, err := assemblyline.NewContextRelevanceSelectionJob(
-		assemblyline.ContextRelevanceSelectionInput{
-			Authority: assemblyline.ContextRelevanceInput{
-				ExactInstruction:     "Continue.",
-				KnownArtifactPaths:   []string{},
-				CandidateAuthorities: []assemblyline.ContextCandidateAuthority{candidate},
-				MaxSelections:        1, Scope: assemblyline.ContextScopeRoleplaySimulation,
-			},
-			AcceptedCandidateIDs: []string{},
+	relevanceJob, err := assemblyline.NewContextRelevanceRelationJob(
+		assemblyline.ContextRelevanceRelationInput{
+			ExactInstruction:   "Continue.",
+			KnownArtifactPaths: []string{},
+			Candidate:          candidate,
+			Scope:              assemblyline.ContextScopeRoleplaySimulation,
 		},
 	)
 	if err != nil {
@@ -96,15 +92,11 @@ func TestAssistantContextRemainsStrict(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	job, err := assemblyline.NewContextRelevanceSelectionJob(
-		assemblyline.ContextRelevanceSelectionInput{
-			Authority: assemblyline.ContextRelevanceInput{
-				ExactInstruction:     "Recall it.",
-				KnownArtifactPaths:   []string{},
-				CandidateAuthorities: []assemblyline.ContextCandidateAuthority{candidate},
-				MaxSelections:        1,
-			},
-			AcceptedCandidateIDs: []string{},
+	job, err := assemblyline.NewContextRelevanceRelationJob(
+		assemblyline.ContextRelevanceRelationInput{
+			ExactInstruction:   "Recall it.",
+			KnownArtifactPaths: []string{},
+			Candidate:          candidate,
 		},
 	)
 	if err != nil {

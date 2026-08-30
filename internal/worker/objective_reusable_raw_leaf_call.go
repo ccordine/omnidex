@@ -21,7 +21,7 @@ func runObjectiveReusablePortableRawLeafCall[T any](
 ) (T, objectiveStationReceipt, error) {
 	var zero T
 	if ctx == nil || runtime == nil || runtime.svc == nil || runtime.claim == nil ||
-		runtime.svc.reuseRoleplayResult == nil || resolveModel == nil ||
+		runtime.svc.reuseObjectiveResult == nil || resolveModel == nil ||
 		decode == nil || validate == nil {
 		return zero, objectiveStationReceipt{}, fmt.Errorf(
 			"reusable objective raw leaf requires exact running step authority",
@@ -42,8 +42,8 @@ func runObjectiveReusablePortableRawLeafCall[T any](
 	); err != nil {
 		return zero, objectiveStationReceipt{}, err
 	}
-	reuse, found, err := runtime.svc.reuseRoleplayResult(
-		ctx, queue.RoleplayPortableResultReuseRequest{
+	reuse, found, err := runtime.svc.reuseObjectiveResult(
+		ctx, queue.ObjectivePortableResultReuseRequest{
 			Authority: runtime.claim.Authority, Job: job, Station: owner,
 		},
 	)

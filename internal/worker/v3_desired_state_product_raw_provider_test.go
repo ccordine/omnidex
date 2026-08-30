@@ -18,9 +18,9 @@ func TestDesiredStateProductProviderReturnsOnlyCurrentRawCollectionLeaves(t *tes
 		t.Fatal(err)
 	}
 
-	contextPrompt, err := assemblyline.BuildApplicationContextNeedCoveragePrompt(
-		assemblyline.ApplicationContextNeedLeafInput{
-			UserRequest: request, Context: context, AcceptedQuestions: []string{},
+	contextPrompt, err := assemblyline.BuildApplicationContextQuestionInventoryPrompt(
+		assemblyline.ApplicationContextQuestionInventoryInput{
+			UserRequest: request, Context: context,
 		},
 	)
 	if err != nil {
@@ -29,20 +29,19 @@ func TestDesiredStateProductProviderReturnsOnlyCurrentRawCollectionLeaves(t *tes
 	authority := assemblyline.RepositoryRequirementInterpretationInput{
 		UserRequest: request, Context: context,
 	}
-	empty := assemblyline.RepositoryRequirementLeafInput{
-		Authority: authority, AcceptedRequirements: []string{},
-	}
-	coveragePrompt, err := assemblyline.BuildRepositoryRequirementCoveragePrompt(empty)
+	inventoryPrompt, err := assemblyline.BuildRepositoryRequirementInventoryPrompt(authority)
 	if err != nil {
 		t.Fatal(err)
 	}
-	requirementPrompt, err := assemblyline.BuildRepositoryRequirementPrompt(empty)
+	inventory, err := assemblyline.DecodeRepositoryRequirementInventory(authority, request)
 	if err != nil {
 		t.Fatal(err)
 	}
-	retained := empty
-	retained.AcceptedRequirements = []string{request}
-	completePrompt, err := assemblyline.BuildRepositoryRequirementCoveragePrompt(retained)
+	relationPrompt, err := assemblyline.BuildRepositoryRequirementCandidateAuthorizationPrompt(
+		assemblyline.RepositoryRequirementCandidateAuthorizationInput{
+			Authority: authority, Inventory: inventory, CandidateIndex: 0,
+		},
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -52,23 +51,18 @@ func TestDesiredStateProductProviderReturnsOnlyCurrentRawCollectionLeaves(t *tes
 		kind                   assemblyline.WorkKind
 	}{
 		{
-			name: "context coverage", prompt: contextPrompt,
-			response: assemblyline.ApplicationNoUncoveredContextNeed,
-			kind:     assemblyline.WorkApplicationContextNeedCoverage,
+			name: "context question inventory", prompt: contextPrompt,
+			response: assemblyline.ApplicationNoRepositoryFactQuestionCandidates,
+			kind:     assemblyline.WorkApplicationContextQuestionInventory,
 		},
 		{
-			name: "requirement remains", prompt: coveragePrompt,
-			response: assemblyline.RepositoryRequirementRemains,
-			kind:     assemblyline.WorkRepositoryRequirementCoverage,
+			name: "requirement inventory", prompt: inventoryPrompt,
+			response: request, kind: assemblyline.WorkRepositoryRequirementInventory,
 		},
 		{
-			name: "one requirement", prompt: requirementPrompt,
-			response: request, kind: assemblyline.WorkRepositoryRequirement,
-		},
-		{
-			name: "requirement complete", prompt: completePrompt,
-			response: assemblyline.RepositoryNoUncoveredRequirement,
-			kind:     assemblyline.WorkRepositoryRequirementCoverage,
+			name: "requirement candidate relation", prompt: relationPrompt,
+			response: assemblyline.RepositoryRequirementCandidateRequiresChange,
+			kind:     assemblyline.WorkRepositoryRequirementCandidateAuthorization,
 		},
 	}
 	for _, test := range tests {

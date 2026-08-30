@@ -16,7 +16,7 @@ import (
 
 const (
 	liveQwenRawSingleLineModelEnv = "OMNIDEX_TEST_QWEN_RAW_SINGLE_LINE_MODEL"
-	liveQwenRawSingleLineScope    = "live-qwen-raw-single-line-prompt-boundary-v1"
+	liveQwenRawSingleLineScope    = "live-qwen-raw-single-line-prompt-boundary-v7"
 )
 
 func TestLiveQwenRawSingleLinePromptBoundaryQualification(t *testing.T) {
@@ -61,7 +61,6 @@ func TestLiveQwenRawSingleLinePromptBoundaryQualification(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-
 	fixtures := []struct {
 		name   string
 		job    assemblyline.PortableJob

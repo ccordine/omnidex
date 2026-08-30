@@ -1,6 +1,7 @@
 package workspace_test
 
 import (
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -78,7 +79,7 @@ func TestPlanMutationFiltersExactStatesAndRejectsZeroDelta(t *testing.T) {
 		Present: true, Content: []byte("same\n"), Mode: 0o600,
 	}
 	absent := workspace.DesiredFileState{Path: "absent.txt"}
-	if _, err := workspace.PlanMutation(t.Context(), source, "objective_"+strings.Repeat("b", 64), []workspace.DesiredFileState{exact, absent}); err == nil || !strings.Contains(err.Error(), "already exact") {
+	if _, err := workspace.PlanMutation(t.Context(), source, "objective_"+strings.Repeat("b", 64), []workspace.DesiredFileState{exact, absent}); !errors.Is(err, workspace.ErrDesiredStateAlreadyExact) {
 		t.Fatalf("zero-delta error=%v", err)
 	}
 	created := workspace.DesiredFileState{Path: "created.txt", Present: true, Content: []byte("new\n"), Mode: 0o644}

@@ -1,6 +1,10 @@
 package worker
 
-import "github.com/gryph/omnidex/internal/assemblyline"
+import (
+	"fmt"
+
+	"github.com/gryph/omnidex/internal/assemblyline"
+)
 
 func classifyArtifactHandling(
 	runtime typedWorkerRuntime,
@@ -43,4 +47,33 @@ func classifyArtifactHandling(
 		})
 	}
 	return artifacts, nil
+}
+
+// sieveDirectCodingApplicationArtifactDirectives keeps only artifact state
+// that can bind the current application workload. A bare reference and one
+// member of an unresolved absence choice are intake candidates, not accepted
+// state, so neither may become a later compiler veto. Exact preserve, create,
+// and absence obligations remain visible and fail loudly when the selected
+// application adapter cannot satisfy them.
+func sieveDirectCodingApplicationArtifactDirectives(
+	directives []assemblyline.ArtifactDirective,
+) ([]assemblyline.ArtifactDirective, error) {
+	retained := make([]assemblyline.ArtifactDirective, 0, len(directives))
+	for index, directive := range directives {
+		switch directive.Disposition {
+		case assemblyline.ArtifactReference,
+			assemblyline.ArtifactAbsenceCandidate:
+			continue
+		case assemblyline.ArtifactProtect,
+			assemblyline.ArtifactRequire,
+			assemblyline.ArtifactForbid:
+			retained = append(retained, directive)
+		default:
+			return nil, fmt.Errorf(
+				"application artifact directive %d has unsupported disposition %q",
+				index, directive.Disposition,
+			)
+		}
+	}
+	return retained, nil
 }

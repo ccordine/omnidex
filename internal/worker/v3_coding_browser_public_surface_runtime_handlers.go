@@ -32,6 +32,18 @@ func (bindings directCodingBrowserEventBindings) reference(
 	return false
 }
 
+func (bindings directCodingBrowserEventBindings) contains(node *treesitter.Node) bool {
+	if node == nil {
+		return false
+	}
+	for _, binding := range bindings {
+		if node.StartByte() >= binding.start && node.EndByte() <= binding.end {
+			return true
+		}
+	}
+	return false
+}
+
 func collectDirectCodingBrowserEventBindings(
 	root *treesitter.Node,
 	source []byte,
@@ -99,13 +111,14 @@ func collectDirectCodingBrowserEventBindings(
 		if err != nil {
 			return nil, err
 		}
-		if parameter == nil {
-			continue
+		binding := directCodingBrowserEventBinding{
+			start: function.StartByte(), end: function.EndByte(),
 		}
-		bindings = append(bindings, directCodingBrowserEventBinding{
-			name:  directCodingBrowserRuntimeNodeText(source, parameter),
-			start: function.StartByte(), end: function.EndByte(), declarationID: parameter.Id(),
-		})
+		if parameter != nil {
+			binding.name = directCodingBrowserRuntimeNodeText(source, parameter)
+			binding.declarationID = parameter.Id()
+		}
+		bindings = append(bindings, binding)
 	}
 	return bindings, nil
 }

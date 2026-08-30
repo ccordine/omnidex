@@ -12,33 +12,31 @@ func resolveDatabaseQueryFilters(
 	ctx context.Context,
 	state assemblyline.DatabaseQueryIntentLeafState,
 	scopeRelationID string,
+	parentPurpose string,
 	accepted []datasource.RelationalPredicate,
 	call objectiveDatabaseRawLeafCall,
 	total int,
 ) ([]datasource.RelationalPredicate, int, error) {
-	for {
+	purposes, nextTotal, err := resolveDatabaseQueryPurposeQueue(
+		ctx,
+		assemblyline.DatabaseQueryPurposeAuthority{
+			State: state, Collection: assemblyline.DatabaseQueryFilterPurpose,
+			ScopeRelationID: scopeRelationID, ParentPurpose: parentPurpose,
+		},
+		datasource.MaxIntentFilters-len(accepted), call, total,
+	)
+	total = nextTotal
+	if err != nil {
+		return nil, total, err
+	}
+	for _, purpose := range purposes {
 		leaf := assemblyline.DatabaseQueryFilterLeafInput{
 			State: state, ScopeRelationID: scopeRelationID,
+			Purpose: purpose, ParentPurpose: parentPurpose,
 			AcceptedFilters: append([]datasource.RelationalPredicate{}, accepted...),
 			AcceptedValues:  []datasource.IntentLiteral{},
 		}
-		coverageJob, err := assemblyline.NewDatabaseQueryFilterCoverageJob(leaf)
-		if err != nil {
-			return nil, total, err
-		}
-		coverage, calls, err := callObjectiveDatabaseRawLeaf(
-			ctx, call, "database_query_filter_coverage", coverageJob,
-			func(raw string) (string, error) {
-				return assemblyline.DecodeDatabaseQueryFilterCoverageLeaf(leaf, raw)
-			},
-		)
-		total += calls
-		if err != nil {
-			return nil, total, err
-		}
-		if coverage == assemblyline.DatabaseQueryNoUncoveredItem {
-			return accepted, total, nil
-		}
+		var calls int
 		fields := objectiveDatabaseFilterFields(state, scopeRelationID)
 		if len(fields) == 0 {
 			return nil, total, fmt.Errorf("database query filter has no compatible field")
@@ -103,6 +101,7 @@ func resolveDatabaseQueryFilters(
 			FieldID: leaf.FieldID, Operator: leaf.Operator, Values: values,
 		})
 	}
+	return accepted, total, nil
 }
 
 func resolveDatabaseQueryFilterValues(
@@ -111,36 +110,36 @@ func resolveDatabaseQueryFilterValues(
 	call objectiveDatabaseRawLeafCall,
 	total int,
 ) ([]datasource.IntentLiteral, int, error) {
+	purposes, nextTotal, err := resolveDatabaseQueryPurposeQueue(
+		ctx,
+		assemblyline.DatabaseQueryPurposeAuthority{
+			State: leaf.State, Collection: assemblyline.DatabaseQueryFilterValuePurpose,
+			ScopeRelationID: leaf.ScopeRelationID, ParentPurpose: leaf.Purpose,
+			FocusedFieldID: leaf.FieldID, FocusedOperator: leaf.Operator,
+		},
+		datasource.MaxIntentFilterValues, call, total,
+	)
+	total = nextTotal
+	if err != nil {
+		return nil, total, err
+	}
+	if len(purposes) == 0 {
+		return nil, total, fmt.Errorf("database query set-membership filter purpose queue requires at least one literal purpose")
+	}
 	values := []datasource.IntentLiteral{}
-	for {
-		leaf.AcceptedValues = append([]datasource.IntentLiteral{}, values...)
-		if len(values) > 0 {
-			coverageJob, err := assemblyline.NewDatabaseQueryFilterValueCoverageJob(leaf)
-			if err != nil {
-				return nil, total, err
-			}
-			coverage, calls, err := callObjectiveDatabaseRawLeaf(
-				ctx, call, "database_query_filter_value_coverage", coverageJob,
-				func(raw string) (string, error) {
-					return assemblyline.DecodeDatabaseQueryFilterValueCoverageLeaf(leaf, raw)
-				},
-			)
-			total += calls
-			if err != nil {
-				return nil, total, err
-			}
-			if coverage == assemblyline.DatabaseQueryNoUncoveredValue {
-				return values, total, nil
-			}
-		}
-		valueJob, err := assemblyline.NewDatabaseQueryFilterValueJob(leaf)
+	for _, purpose := range purposes {
+		valueLeaf := leaf
+		valueLeaf.ParentPurpose = leaf.Purpose
+		valueLeaf.Purpose = purpose
+		valueLeaf.AcceptedValues = append([]datasource.IntentLiteral{}, values...)
+		valueJob, err := assemblyline.NewDatabaseQueryFilterValueJob(valueLeaf)
 		if err != nil {
 			return nil, total, err
 		}
 		value, calls, err := callObjectiveDatabaseRawLeaf(
 			ctx, call, "database_query_filter_value", valueJob,
 			func(raw string) (datasource.IntentLiteral, error) {
-				return assemblyline.DecodeDatabaseQueryFilterValueLeaf(leaf, raw)
+				return assemblyline.DecodeDatabaseQueryFilterValueLeaf(valueLeaf, raw)
 			},
 		)
 		total += calls
@@ -149,6 +148,7 @@ func resolveDatabaseQueryFilterValues(
 		}
 		values = append(values, value)
 	}
+	return values, total, nil
 }
 
 func objectiveDatabaseFilterFields(

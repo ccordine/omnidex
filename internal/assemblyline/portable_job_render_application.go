@@ -4,17 +4,19 @@ func renderPortableApplicationJob(job PortableJob) (string, bool, error) {
 	switch job.Kind {
 	case WorkApplicationProductContext:
 		return handledPortableRender(renderDecodedPortableInput(job, BuildApplicationProductContextPrompt))
-	case WorkApplicationRequirementCoverage:
-		return handledPortableRender(renderDecodedPortableInput(job, BuildApplicationRequirementCoveragePrompt))
-	case WorkApplicationRequirement:
-		return handledPortableRender(renderDecodedPortableInput(job, BuildApplicationRequirementPrompt))
+	case WorkApplicationRequirementInventory:
+		return handledPortableRender(renderDecodedPortableInput(job, BuildApplicationRequirementInventoryPrompt))
 	case WorkApplicationRequirementCandidateCardinality:
 		return handledPortableRender(renderDecodedPortableInput(
 			job, BuildApplicationRequirementCandidateCardinalityPrompt,
 		))
 	case WorkApplicationRequirementCandidateKind:
 		return handledPortableRender(renderDecodedPortableInput(
-			job, BuildApplicationRequirementCandidateKindPrompt,
+			job, BuildApplicationRequirementCandidateContentPresencePrompt,
+		))
+	case WorkApplicationRequirementCandidateAuthorization:
+		return handledPortableRender(renderDecodedPortableInput(
+			job, BuildApplicationRequirementCandidateAuthorizationPrompt,
 		))
 	case WorkApplicationRequirementCandidateOutcomeRelation:
 		return handledPortableRender(renderDecodedPortableInput(
@@ -22,7 +24,7 @@ func renderPortableApplicationJob(job PortableJob) (string, bool, error) {
 		))
 	case WorkApplicationRequirementCandidateResultRelation:
 		return handledPortableRender(renderDecodedPortableInput(
-			job, BuildApplicationRequirementCandidateResultRelationPrompt,
+			job, BuildApplicationRequirementCandidateResultPresencePrompt,
 		))
 	case WorkApplicationRequirementCandidateResultRelationGrounding:
 		return handledPortableRender(renderDecodedPortableInput(
@@ -32,18 +34,22 @@ func renderPortableApplicationJob(job PortableJob) (string, bool, error) {
 		return handledPortableRender(renderDecodedPortableInput(
 			job, BuildApplicationRequirementCandidateResultRelationCorrectionPrompt,
 		))
-	case WorkApplicationRequirementCandidateSplit:
+	case WorkApplicationRequirementCandidatePartition:
 		return handledPortableRender(renderDecodedPortableInput(
-			job, BuildApplicationRequirementCandidateSplitPrompt,
+			job, BuildApplicationRequirementCandidatePartitionPrompt,
 		))
-	case WorkApplicationRequirementCandidateSplitCorrection:
+	case WorkApplicationContextQuestionInventory:
 		return handledPortableRender(renderDecodedPortableInput(
-			job, BuildApplicationRequirementCandidateSplitCorrectionPrompt,
+			job, BuildApplicationContextQuestionInventoryPrompt,
 		))
-	case WorkApplicationContextNeedCoverage:
-		return handledPortableRender(renderDecodedPortableInput(job, BuildApplicationContextNeedCoveragePrompt))
-	case WorkApplicationContextNeedQuestion:
-		return handledPortableRender(renderDecodedPortableInput(job, BuildApplicationContextNeedQuestionPrompt))
+	case WorkApplicationContextQuestionNecessity:
+		return handledPortableRender(renderDecodedPortableInput(
+			job, BuildApplicationContextQuestionNecessityPrompt,
+		))
+	case WorkApplicationContextQuestionRelation:
+		return handledPortableRender(renderDecodedPortableInput(
+			job, BuildApplicationContextQuestionRelationPrompt,
+		))
 	case WorkApplicationProjectStackConstraint:
 		return handledPortableRender(renderDecodedPortableInput(job, BuildApplicationProjectStackConstraintPrompt))
 	case WorkApplicationServiceContinuedAvailability:
@@ -52,18 +58,18 @@ func renderPortableApplicationJob(job PortableJob) (string, bool, error) {
 		return handledPortableRender(renderDecodedPortableInput(job, BuildApplicationServicePersistenceDestinationPrompt))
 	case WorkApplicationServiceStateLifetime:
 		return handledPortableRender(renderDecodedPortableInput(job, BuildApplicationServiceStateLifetimePrompt))
-	case WorkApplicationStateFieldCoverage:
-		return handledPortableRender(renderDecodedPortableInput(job, BuildApplicationStateFieldCoveragePrompt))
-	case WorkApplicationStateFieldPurpose:
-		return handledPortableRender(renderDecodedPortableInput(job, BuildApplicationStateFieldPurposePrompt))
+	case WorkApplicationStateFieldPurposeInventory:
+		return handledPortableRender(renderDecodedPortableInput(job, BuildApplicationStateFieldPurposeInventoryPrompt))
 	case WorkApplicationStateFieldKind:
 		return handledPortableRender(renderDecodedPortableInput(job, BuildApplicationStateFieldKindPrompt))
-	case WorkApplicationRecordFieldCoverage:
-		return handledPortableRender(renderDecodedPortableInput(job, BuildApplicationRecordFieldCoveragePrompt))
-	case WorkApplicationRecordFieldPurpose:
-		return handledPortableRender(renderDecodedPortableInput(job, BuildApplicationRecordFieldPurposePrompt))
+	case WorkApplicationRecordFieldPurposeInventory:
+		return handledPortableRender(renderDecodedPortableInput(job, BuildApplicationRecordFieldPurposeInventoryPrompt))
 	case WorkApplicationRecordFieldKind:
 		return handledPortableRender(renderDecodedPortableInput(job, BuildApplicationRecordFieldKindPrompt))
+	case WorkApplicationServiceStatePurposeNecessity:
+		return handledPortableRender(renderDecodedPortableInput(job, BuildApplicationServiceStatePurposeNecessityPrompt))
+	case WorkApplicationServiceStatePurposeRelation:
+		return handledPortableRender(renderDecodedPortableInput(job, BuildApplicationServiceStatePurposeRelationPrompt))
 	case WorkApplicationServiceEndpointRequirement:
 		return handledPortableRender(renderDecodedPortableInput(job, BuildApplicationServiceEndpointRequirementPrompt))
 	case WorkApplicationServiceEndpointExposure:

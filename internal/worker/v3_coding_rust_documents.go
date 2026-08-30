@@ -28,12 +28,15 @@ func genericRustCommandLineDocuments(
 		if !exists {
 			return nil, fmt.Errorf("Rust command-line workload omits requirement %s", requirement.ID)
 		}
-		behavior, err := compileDirectCodingApplicationTaskBehavior(context, capabilities[requirement.ID])
+		requirementBehavior, err := compileDirectCodingApplicationTaskBehavior(
+			context, capabilities[requirement.ID],
+		)
 		if err != nil {
 			return nil, err
 		}
+		implementationBehavior := requirementBehavior
 		if skill, exists := skills[requirement.ID]; exists {
-			behavior += "\nValidated procedure: " + skill.Procedure
+			implementationBehavior += "\nValidated procedure: " + skill.Procedure
 		}
 		pair, err := rustCommandLineTaskPair(coverage, context.Task.TaskID)
 		if err != nil {
@@ -79,7 +82,7 @@ func genericRustCommandLineDocuments(
 			Signature: fmt.Sprintf(
 				"pub fn %s(input: &TaskInput, dependencies: &CapabilityResults) -> TaskResult", featureName,
 			),
-			Contract:     rustCommandLineFeatureContract(behavior),
+			Contract:     rustCommandLineFeatureContract(implementationBehavior),
 			API:          fmt.Sprintf("pub fn %s(input: &TaskInput, dependencies: &CapabilityResults) -> TaskResult", featureName),
 			DependsOn:    dependencies,
 			Capabilities: append([]string(nil), dependencies...),
@@ -97,7 +100,7 @@ func genericRustCommandLineDocuments(
 		verifyName := fmt.Sprintf("verify_feature_%03d", sequence)
 		verifications = append(verifications, rustCommandLineVerificationDocument(
 			crateName, sequence, context.Task.TaskID, pair.VerificationPath,
-			module, featureID, featureName, verificationID, verifyName, behavior,
+			module, featureID, featureName, verificationID, verifyName, requirementBehavior,
 			capabilities[requirement.ID],
 		))
 		applicationDependencies = append(applicationDependencies, featureID)

@@ -69,6 +69,28 @@ If another semantic result is required, that is another station and another boun
 
 - Progress is measured by verified changes in authoritative reality, not by model activity, retries, reviews, token usage, or changed text.
 
+# ITERATIVE FUNCTIONAL COMPLETION
+
+Omnidex is iterative by design. One job must make the accepted current objective real and verified; it does not have to predict the final product the user may eventually want.
+
+- Completion is defined by a functional, verified realization of the accepted current objective. It is not defined by exhausting every plausible feature, enhancement, interpretation, or future requirement.
+
+- After code resolves needed context facts, exactly one bounded requirement-inventory call returns either `NO_RUNTIME_REQUIREMENT_CANDIDATES` or between one and the code-owned maximum positive candidate lines. Code parses and counts those lines mechanically. No semantic station pre-counts the inventory, and no pre-count receipt exists. Inventory generation is untrusted intake, not authority or a completeness claim.
+
+- Every positive inventory candidate enters the ordinary authorization-first sieve independently. A candidate that is unrequested, unnecessary, unsupported, malformed as semantic content, or duplicative is discarded without reopening accepted state or stopping independent work. Only after at least one leaf survives may product-context, delivery-surface, deployment, or other downstream semantic leaves run, each at its first actual consumer.
+
+- Structurally invalid station output still fails loudly. A valid negative semantic relation is not an error or recovery path; it is the expected sieve result for that one candidate.
+
+- Accepted leaves are never placed back before a global review, coverage, challenge, approval, or completion model. New evidence may reopen only the exact leaf whose invariant it changes.
+
+- A model may not veto completion by claiming abstractly that something remains. There is no production completeness-review station. A possible future capability may be retained only as non-authoritative follow-up data outside the current workload and requires a later explicit user objective before it can enter the ordinary sieve.
+
+- Rejected or speculative candidates may be retained outside the current workload as provenance-bound optional follow-up suggestions. They must never enter the current task ledger, verifier, workload, or completion criteria unless a later explicit user turn makes one authoritative.
+
+- Capacity limits do not convert non-authoritative candidates into blockers. Code may defer or discard candidates beyond a bounded iteration. Code fails explicitly only when it can prove that an already authorized user obligation cannot fit a required hard capability boundary without producing an incorrect result.
+
+- A completed job may intentionally leave the product improvable. A later user turn creates a new objective against the resulting authoritative workspace and passes through the same machine.
+
 # CANONICAL EXAMPLE
 
 TREE STATION:
@@ -278,7 +300,7 @@ Models return semantic content only. They must not return a framework control pl
 
 If code compares a returned candidate with the exact retained value and the bytes are identical, there is no mutation to perform. Code records the zero delta and continues deterministically; it must not create a retry prompt, response-correction job, reviewer history, or terminal failure from a model-authored action label. A further model call is legal only if a separate, still-unresolved semantic question has been persisted.
 
-Do not fake natural-language understanding with keyword lists, regex phrase routing, or checks for one expected wording. Human phrasing is variable and semantic interpretation is one of the narrow jobs that legitimately requires a model. Split interpretation into fixed tiny stations: surface classification, exact product-context extraction, exact requirement extraction and fixed-point splitting, opaque artifact handling, pairwise direct capability relation, bounded learned-skill selection, and one-need procedure synthesis. No station may emit an expanded software contract. Every station remains blind to documents, paths, workers, and orchestration. A capability-relation station sees exactly two local needs and returns only one registered direction; code owns the resulting graph and compiler-enforced per-feature projection. Code validates every small output and deterministically maps the result to one registered technical adapter. Invalid, contradictory, or unsupported semantic output fails loudly.
+Do not fake natural-language understanding with keyword lists, regex phrase routing, or checks for one expected wording. Human phrasing is variable and semantic interpretation is one of the narrow jobs that legitimately requires a model. Split interpretation into fixed tiny stations: bounded repository-fact questions when context is needed, one bounded untrusted requirement inventory, one-candidate authorization and classification, bounded compound-candidate partitioning, exact product-context extraction and surface or deployment semantics only at their first downstream consumer, opaque artifact handling, pairwise direct capability relation, bounded learned-skill selection, and one-need procedure synthesis. No semantic station pre-counts the inventory, and no pre-count receipt exists. Candidate-level cardinality remains one local candidate question and may only permit bounded partitioning. No station may emit an expanded software contract. Every station remains blind to documents, paths, workers, and orchestration. A capability-relation station sees exactly two local needs and returns only one registered direction; code owns the resulting graph and compiler-enforced per-feature projection. Code validates every small output and deterministically maps the result to one registered technical adapter. Invalid, contradictory, or unsupported semantic output fails loudly.
 
 Semantic correction must preserve the decoded candidate in code. It is legal only after code has established one exact, grounded semantic defect that deterministic machinery cannot correct. The model receives that defect, the exact current leaf, and the minimum authority required to return only one complete replacement value. Code performs the exact one-leaf splice and preserves all accepted state. Never ask a model to reconstruct already accepted semantic fields, emit a repair plan, or decide whether the workflow advances.
 

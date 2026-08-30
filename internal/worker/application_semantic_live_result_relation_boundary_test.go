@@ -6,7 +6,7 @@ import (
 	"github.com/gryph/omnidex/internal/assemblyline"
 )
 
-const liveApplicationResultRelationBoundaryScope = "live-application-result-relation-boundary-v1"
+const liveApplicationResultRelationBoundaryScope = "live-application-result-relation-boundary-v6"
 
 func TestLiveApplicationResultRelationBoundaryQualification(t *testing.T) {
 	ctx, modelName, transport := newLiveApplicationSemanticBoundaryTransport(
@@ -62,6 +62,16 @@ func TestLiveApplicationResultRelationBoundaryQualification(t *testing.T) {
 			relation:  assemblyline.ApplicationRequirementExplicitResultRelation,
 		},
 		{
+			name:      "action-form-named-transformation",
+			candidate: "The finished software resizes supplied images.",
+			relation:  assemblyline.ApplicationRequirementExplicitResultRelation,
+		},
+		{
+			name:      "governed-value-decoding-without-presentation",
+			candidate: "The finished software decodes the value encoded in each supplied symbol.",
+			relation:  assemblyline.ApplicationRequirementExplicitResultRelation,
+		},
+		{
 			name:      "runtime-calculated-without-rule",
 			candidate: "Display a result calculated at runtime.",
 			relation:  assemblyline.ApplicationRequirementMissingResultRelation,
@@ -89,6 +99,11 @@ func TestLiveApplicationResultRelationBoundaryQualification(t *testing.T) {
 		{
 			name:      "telemetry-warning",
 			candidate: "Show a prominent warning when a telemetry packet is invalid.",
+			relation:  assemblyline.ApplicationRequirementNoDerivedResult,
+		},
+		{
+			name:      "action-without-governed-value",
+			candidate: "The finished software archives each received message.",
 			relation:  assemblyline.ApplicationRequirementNoDerivedResult,
 		},
 		{
@@ -134,14 +149,11 @@ func liveApplicationResultRelationInput(
 	candidate string,
 ) assemblyline.ApplicationRequirementCandidateResultRelationInput {
 	t.Helper()
-	kindInput := assemblyline.ApplicationRequirementCandidateKindInput{Candidate: candidate}
-	kind, err := assemblyline.DecodeApplicationRequirementCandidateKindResult(
-		kindInput,
+	kind := applicationRequirementCandidateKindReceiptForTest(
+		t,
+		candidate,
 		assemblyline.ApplicationRequirementCandidateTaskLocal,
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
 	cardinalityInput := assemblyline.ApplicationRequirementCandidateCardinalityInput{
 		Candidate: candidate,
 	}

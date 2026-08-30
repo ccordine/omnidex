@@ -40,21 +40,36 @@ afterward must be acquired by a registered code-owned provider and retained with
 identity and digest.
 It never asks a model what files exist, which command to run, or which provider to use.
 
-Only after deterministic bootstrap may code run the bounded context-need fixed point.
-One raw coverage call says whether another unanswered semantic evidence question
-remains. Only that result permits a separate raw call for one question. Code retains
-each decoded question up to the three-question bound, maps it to a registered evidence
-class, invokes the deterministic provider with code-owned arguments, validates the
-result, and records a compact fact with source identity and digest. Provider transcripts
-and broad search results are not planning context. If no provider owns a required
-question, resolution fails loudly. The promoted fresh-workspace vertical resolves
-context mechanically and makes no context-need call.
+Only after deterministic bootstrap may code request one bounded raw inventory of
+repository-fact-question candidates, or the registered semantic absence
+`NO_REPOSITORY_FACT_QUESTION_CANDIDATES`. The inventory is untrusted semantic data.
+Code owns its source-order queue and skips exact repeats mechanically. Each remaining
+candidate first receives one necessity/unresolvedness relation against only the immutable
+request, current established facts, and exact candidate.
+`NOT_NECESSARY_OR_ALREADY_RESOLVED` evaporates without a pairwise relation or evidence
+acquisition. Only a necessary unresolved candidate is compared with each already accepted
+question by a separate same-fact/distinct-facts relation; each call sees only that exact
+pair and cannot review or revoke accepted state. A same-fact candidate evaporates. For a
+necessary distinct question, code maps it to the registered evidence class, invokes the
+deterministic provider with code-owned arguments, validates the result, and records compact
+facts with source identity and digest before evaluating the next queued candidate. An
+accepted question is resolved once and never reviewed again.
+Queue exhaustion—not a model absence or completeness claim—returns the evolved context without a completeness call or a
+max-bound "another need" failure. Provider transcripts and broad search results are not
+planning context. If no provider owns an authorized necessary question, resolution
+fails loudly. The promoted fresh-workspace vertical resolves context mechanically and
+makes no context-question model call.
 
-Every fixed-point output is a semantic relation, never a control label. The negative
-alternative is named `NO_UNCOVERED_<LEAF>` and the positive alternative is
-`<LEAF>_REMAINS`. Code validates that relation, decides whether another leaf call is
-legal, enforces the bound, and closes or repeats the loop. No model returns completion,
-continuation, acceptance, retry, execution, search, or planning authority.
+When a semantic stage begins with one bounded inventory, that output is untrusted
+candidate data rather than a completeness claim or workflow decision. Code parses the
+inventory into a source-order queue, removes exact repeats mechanically, and submits
+each remaining candidate only to the independently necessary one-candidate or pairwise
+relations registered for that stage. A structurally invalid station response fails at
+that station. A structurally valid but semantically malformed, rejected, unauthorized,
+unnecessary, or duplicate candidate evaporates locally; it cannot block an independent
+candidate or reopen accepted state. Queue exhaustion ends the sieve without a coverage, review,
+completion, `NO_UNCOVERED`, or `REMAINS` call. No model returns continuation,
+acceptance, retry, execution, search, or planning authority.
 
 Existing-repository artifact interpretation keeps two unresolved relations separate.
 One station answers only whether one repository-authoritative semantic artifact and all
@@ -64,10 +79,42 @@ other change. Each returns one closed raw relation. Code decides which uncertain
 present, invokes only that station, and owns candidate selection, target construction,
 mutation, and verification.
 
-Intent interpretation occurs only after that closure. One station returns the raw
-product-context leaf. Code then alternates one raw requirement-coverage call with one
-raw requirement call only while coverage remains. It retains each decoded requirement,
-binds the code-assembled typed intent to the immutable request digest, and never asks a
+Intent interpretation occurs only after that closure. Exactly one bounded,
+source-ordered requirement-inventory station returns either
+`NO_RUNTIME_REQUIREMENT_CANDIDATES` or between one and the code-owned maximum positive
+atomic finished-software runtime-outcome candidates. Code parses and counts those lines
+mechanically. No semantic station pre-counts the inventory, and no pre-count receipt
+exists. Inventory generation is untrusted candidate intake, not
+authorization or a completeness claim. The inventory may turn a purpose-denoting product
+or category name into only its literal core operation or governed result. It omits
+construction constraints, customary features, and speculative enhancements. Code owns
+the queue and exact deduplication. Every positive candidate is
+first checked by one request-entailment authorization relation; an unauthorized candidate
+evaporates before classification. Code then invokes kind and cardinality only for
+authorized candidates. An authorized candidate that still proves mixed or compound may
+return one bounded partition whose children re-enter the same queue and authorization
+boundary. A structurally invalid partition response fails at that station; a structurally
+valid child whose semantic content remains malformed, cyclic, over-depth, or over-capacity
+dies without blocking independent candidates or reopening accepted state. No later
+product-name generator or aggregate review may reopen intake. Only an authorized
+task-local one-outcome candidate is compared pairwise with one accepted requirement at
+a time. A semantic duplicate evaporates;
+only a distinct candidate reaches the result-relation station. A missing determining
+relation may use the separately bound request/context grounding relation and one exact
+candidate correction, after which that replacement re-enters ordinary exact-dedup,
+authorization, kind, cardinality, duplicate, and result checks. Queue exhaustion freezes
+the currently accepted functional objective for this iteration. It does not invoke a
+review, coverage, completeness, or `REQUIREMENT_REMAINS` station; later objectives may
+continue iteratively from verified reality. Any rejected, speculative, or over-capacity
+candidate retained as a possible follow-up remains non-authoritative and outside the
+current ledger, workload, verifier, and completion criteria until a later explicit user
+objective sends it through the ordinary sieve.
+
+Only when at least one task-local leaf survives does code resolve product, surface, or
+deployment semantics, and each such semantic leaf runs only at its first concrete
+consumer. An empty accepted queue creates no downstream interpretation work.
+
+Code binds the assembled typed intent to the immutable request digest and never asks a
 model to emit or review the aggregate. Authority does not depend on reproducing a
 contiguous substring or allocating non-overlapping text intervals. Models see no
 operation catalog, task graph, or completion control. The sole tree-visible boundary is
@@ -319,7 +366,8 @@ set. Code owns the ID mapping, validates and persists the result as typed state,
 reruns deterministic closure.
 
 Classification, extraction, hypothesis selection, declaration generation, and
-critique require separate hard-typed ports and minimal schemas if later justified.
+failure-specific repair guidance require separate hard-typed ports and minimal schemas
+if later justified. No such port may review accepted state or decide completion.
 There is no generic station result union. A station cannot emit:
 
 - an environment operation or its arguments;

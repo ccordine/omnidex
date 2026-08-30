@@ -8,218 +8,119 @@ import (
 )
 
 const (
-	WorkGroundedAnswerText             WorkKind = "grounded_answer_text"
-	WorkGroundedAnswerEvidenceRelation WorkKind = "grounded_answer_evidence_relation"
+	WorkGroundedAnswerParagraphInventory        WorkKind = "grounded_answer_paragraph_inventory"
+	WorkGroundedAnswerParagraphEvidenceRelation WorkKind = "grounded_answer_paragraph_evidence_relation"
+	WorkGroundedAnswerParagraphAuthorization    WorkKind = "grounded_answer_paragraph_authorization"
 
-	GroundedEvidenceSupportsAnswer GroundedAnswerEvidenceRelation = "SUPPORTS_ANSWER"
-	GroundedEvidenceDoesNotSupport GroundedAnswerEvidenceRelation = "DOES_NOT_SUPPORT_ANSWER"
+	GroundedEvidenceSupportsParagraph GroundedAnswerParagraphEvidenceRelation = "SUPPORTS_PARAGRAPH"
+	GroundedEvidenceDoesNotSupport    GroundedAnswerParagraphEvidenceRelation = "DOES_NOT_SUPPORT_PARAGRAPH"
+
+	GroundedParagraphResponsiveAndFullySupported GroundedAnswerParagraphAuthorization = "RESPONSIVE_AND_FULLY_SUPPORTED"
+	GroundedParagraphNotResponsiveOrUnsupported  GroundedAnswerParagraphAuthorization = "NOT_RESPONSIVE_OR_NOT_FULLY_SUPPORTED"
 )
 
-type GroundedAnswerEvidenceRelation string
+type GroundedAnswerParagraphEvidenceRelation string
 
-type GroundedAnswerTextInput struct {
+type GroundedAnswerParagraphAuthorization string
+
+type GroundedAnswerParagraphInventoryInput struct {
 	ExactRequirement   string                    `json:"exact_requirement"`
 	Context            ObjectiveContext          `json:"objective_context"`
 	Evidence           []GroundedEvidenceCapsule `json:"evidence"`
 	KnownArtifactPaths []string                  `json:"known_artifact_paths"`
 }
 
-type GroundedAnswerTextDecision struct {
-	Text string `json:"text"`
-}
-
-type GroundedAnswerEvidenceRelationInput struct {
-	ExactRequirement   string                  `json:"exact_requirement"`
-	Context            ObjectiveContext        `json:"objective_context"`
-	AnswerText         string                  `json:"answer_text"`
+type GroundedAnswerParagraphEvidenceRelationInput struct {
+	ParagraphText      string                  `json:"paragraph_text"`
 	Evidence           GroundedEvidenceCapsule `json:"evidence"`
 	KnownArtifactPaths []string                `json:"known_artifact_paths"`
 }
 
-type GroundedAnswerEvidenceRelationDecision struct {
-	Relation GroundedAnswerEvidenceRelation `json:"relation"`
+type GroundedAnswerParagraphEvidenceRelationDecision struct {
+	Relation GroundedAnswerParagraphEvidenceRelation `json:"relation"`
 }
 
-type groundedAnswerTextProjection struct {
+type GroundedAnswerParagraphAuthorizationInput struct {
+	ExactRequirement   string                    `json:"exact_requirement"`
+	Context            ObjectiveContext          `json:"objective_context"`
+	ParagraphText      string                    `json:"paragraph_text"`
+	Evidence           []GroundedEvidenceCapsule `json:"evidence"`
+	KnownArtifactPaths []string                  `json:"known_artifact_paths"`
+}
+
+type GroundedAnswerParagraphAuthorizationDecision struct {
+	Relation GroundedAnswerParagraphAuthorization `json:"relation"`
+}
+
+type groundedAnswerParagraphInventoryProjection struct {
+	ExactRequirement  string           `json:"exact_requirement"`
+	Context           ObjectiveContext `json:"objective_context"`
+	Evidence          []string         `json:"evidence"`
+	MaxParagraphs     int              `json:"max_paragraphs"`
+	MaxParagraphBytes int              `json:"max_paragraph_bytes"`
+}
+
+type groundedAnswerParagraphEvidenceRelationProjection struct {
+	ParagraphText string `json:"paragraph_text"`
+	EvidenceText  string `json:"evidence_text"`
+}
+
+type groundedAnswerParagraphAuthorizationProjection struct {
 	ExactRequirement string           `json:"exact_requirement"`
 	Context          ObjectiveContext `json:"objective_context"`
+	ParagraphText    string           `json:"paragraph_text"`
 	Evidence         []string         `json:"evidence"`
 }
 
-type groundedAnswerEvidenceRelationProjection struct {
-	ExactRequirement string           `json:"exact_requirement"`
-	Context          ObjectiveContext `json:"objective_context"`
-	AnswerText       string           `json:"answer_text"`
-	EvidenceText     string           `json:"evidence_text"`
-}
-
-func NewGroundedAnswerTextJob(input GroundedAnswerTextInput) (PortableJob, error) {
-	return newValidatedPortableJob(WorkGroundedAnswerText, input, input.validate)
-}
-
-func NewGroundedAnswerEvidenceRelationJob(
-	input GroundedAnswerEvidenceRelationInput,
-) (PortableJob, error) {
-	return newValidatedPortableJob(
-		WorkGroundedAnswerEvidenceRelation, input, input.validate,
-	)
-}
-
-func (input GroundedAnswerTextInput) validate() error {
+func (input GroundedAnswerParagraphInventoryInput) validate() error {
 	return validateGroundedAnswerAuthority(
 		input.ExactRequirement, input.Context, input.Evidence,
 		input.KnownArtifactPaths,
 	)
 }
 
-func (input GroundedAnswerEvidenceRelationInput) validate() error {
+func (input GroundedAnswerParagraphEvidenceRelationInput) validate() error {
+	if err := validateGroundedEvidenceCapsules([]GroundedEvidenceCapsule{input.Evidence}); err != nil {
+		return err
+	}
+	return validateGroundedAnswerParagraphText(input.ParagraphText, input.KnownArtifactPaths)
+}
+
+func (input GroundedAnswerParagraphAuthorizationInput) validate() error {
 	if err := validateGroundedAnswerAuthority(
-		input.ExactRequirement,
-		input.Context,
-		[]GroundedEvidenceCapsule{input.Evidence},
+		input.ExactRequirement, input.Context, input.Evidence,
 		input.KnownArtifactPaths,
 	); err != nil {
 		return err
 	}
+	return validateGroundedAnswerParagraphText(input.ParagraphText, input.KnownArtifactPaths)
+}
+
+func validateGroundedAnswerParagraphText(text string, knownArtifactPaths []string) error {
 	if err := validateGroundedText(
-		"answer text", input.AnswerText, maxGroundedAnswerTextBytes, true,
+		"paragraph text", text, maxGroundedAnswerParagraphBytes, true,
 	); err != nil {
 		return err
 	}
-	provenance, err := modelcontext.NewArtifactIdentityProvenance(input.KnownArtifactPaths)
+	if strings.ContainsAny(text, "\r\n") {
+		return fmt.Errorf("grounded answer paragraph must be one line")
+	}
+	if webModelCitationSyntax.MatchString(text) {
+		return fmt.Errorf("grounded answer paragraph contains model-authored citation syntax")
+	}
+	provenance, err := modelcontext.NewArtifactIdentityProvenance(knownArtifactPaths)
 	if err != nil {
 		return fmt.Errorf("grounded answer artifact provenance: %w", err)
 	}
 	return ValidatePathFreeModelContextWithProvenance(
-		"grounded answer relation answer text", provenance, input.AnswerText,
+		"grounded answer paragraph", provenance, text,
 	)
 }
 
-func (decision GroundedAnswerTextDecision) ValidateFor(
-	input GroundedAnswerTextInput,
-) error {
-	if err := input.validate(); err != nil {
-		return err
+func groundedAnswerEvidenceText(evidence []GroundedEvidenceCapsule) []string {
+	result := make([]string, len(evidence))
+	for index, capsule := range evidence {
+		result[index] = capsule.Text
 	}
-	if err := validateGroundedText(
-		"answer text", decision.Text, maxGroundedAnswerTextBytes, true,
-	); err != nil {
-		return err
-	}
-	provenance, err := modelcontext.NewArtifactIdentityProvenance(input.KnownArtifactPaths)
-	if err != nil {
-		return fmt.Errorf("grounded answer artifact provenance: %w", err)
-	}
-	return decision.ValidatePathFree(provenance)
-}
-
-func (decision GroundedAnswerTextDecision) ValidatePathFree(
-	provenance ArtifactIdentityProvenance,
-) error {
-	return ValidatePathFreeModelContextWithProvenance(
-		"grounded answer text", provenance, decision.Text,
-	)
-}
-
-func (decision GroundedAnswerEvidenceRelationDecision) ValidateFor(
-	input GroundedAnswerEvidenceRelationInput,
-) error {
-	if err := input.validate(); err != nil {
-		return err
-	}
-	switch decision.Relation {
-	case GroundedEvidenceSupportsAnswer, GroundedEvidenceDoesNotSupport:
-		return nil
-	default:
-		return fmt.Errorf(
-			"grounded answer evidence relation %q is unsupported",
-			decision.Relation,
-		)
-	}
-}
-
-func BuildGroundedAnswerTextPrompt(input GroundedAnswerTextInput) (string, error) {
-	if err := input.validate(); err != nil {
-		return "", err
-	}
-	evidence := make([]string, len(input.Evidence))
-	for index, capsule := range input.Evidence {
-		evidence[index] = capsule.Text
-	}
-	projection, err := marshalObjectiveContextInputForModel(
-		groundedAnswerTextProjection{
-			ExactRequirement: input.ExactRequirement,
-			Context:          input.Context, Evidence: evidence,
-		},
-		input.Context,
-	)
-	if err != nil {
-		return "", fmt.Errorf("encode grounded answer text authority: %w", err)
-	}
-	return strings.Join([]string{
-		"Answer one exact requirement using only the supplied evidence capsules. Every factual claim in the answer must be supported by at least one capsule.",
-		"Return exactly one raw answer-text leaf. Do not return evidence IDs, citation syntax, JSON, quotes, a label, Markdown wrapping, or commentary.",
-		"GROUNDING_AUTHORITY:\n" + string(projection),
-	}, "\n\n"), nil
-}
-
-func BuildGroundedAnswerEvidenceRelationPrompt(
-	input GroundedAnswerEvidenceRelationInput,
-) (string, error) {
-	if err := input.validate(); err != nil {
-		return "", err
-	}
-	projection, err := marshalObjectiveContextInputForModel(
-		groundedAnswerEvidenceRelationProjection{
-			ExactRequirement: input.ExactRequirement,
-			Context:          input.Context, AnswerText: input.AnswerText,
-			EvidenceText: input.Evidence.Text,
-		},
-		input.Context,
-	)
-	if err != nil {
-		return "", fmt.Errorf("encode grounded answer evidence relation authority: %w", err)
-	}
-	return strings.Join([]string{
-		"Answer one semantic question: does this one evidence capsule materially support at least one factual claim in the exact answer?",
-		"Return exactly SUPPORTS_ANSWER or DOES_NOT_SUPPORT_ANSWER. Return no JSON, quotes, label, explanation, or commentary.",
-		"EVIDENCE_RELATION_AUTHORITY:\n" + string(projection),
-	}, "\n\n"), nil
-}
-
-func DecodeGroundedAnswerTextDecision(
-	input GroundedAnswerTextInput,
-	raw string,
-) (GroundedAnswerTextDecision, error) {
-	leaf, err := decodeRawSemanticLeaf(
-		"grounded answer text", raw, maxGroundedAnswerTextBytes, true,
-	)
-	if err != nil {
-		return GroundedAnswerTextDecision{}, err
-	}
-	decision := GroundedAnswerTextDecision{Text: leaf}
-	if err := decision.ValidateFor(input); err != nil {
-		return GroundedAnswerTextDecision{}, err
-	}
-	return decision, nil
-}
-
-func DecodeGroundedAnswerEvidenceRelationDecision(
-	input GroundedAnswerEvidenceRelationInput,
-	raw string,
-) (GroundedAnswerEvidenceRelationDecision, error) {
-	leaf, err := decodeRawSemanticLeaf(
-		"grounded answer evidence relation", raw,
-		len(GroundedEvidenceDoesNotSupport), false,
-	)
-	if err != nil {
-		return GroundedAnswerEvidenceRelationDecision{}, err
-	}
-	decision := GroundedAnswerEvidenceRelationDecision{
-		Relation: GroundedAnswerEvidenceRelation(leaf),
-	}
-	if err := decision.ValidateFor(input); err != nil {
-		return GroundedAnswerEvidenceRelationDecision{}, err
-	}
-	return decision, nil
+	return result
 }

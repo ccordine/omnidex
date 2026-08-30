@@ -7,19 +7,6 @@ import (
 	"github.com/gryph/omnidex/internal/datasource"
 )
 
-func DecodeDatabaseQueryFilterCoverageLeaf(
-	input DatabaseQueryFilterLeafInput,
-	raw string,
-) (string, error) {
-	if err := input.validate(); err != nil {
-		return "", err
-	}
-	return decodeDatabaseQueryCollectionCoverage(
-		"database query filter coverage", raw, true,
-		len(input.AcceptedFilters) == datasource.MaxIntentFilters,
-	)
-}
-
 func DecodeDatabaseQueryFilterFieldLeaf(
 	input DatabaseQueryFilterLeafInput,
 	raw string,
@@ -58,33 +45,6 @@ func DecodeDatabaseQueryFilterOperatorLeaf(
 	return "", fmt.Errorf("database query filter operator %q is invalid for field %q", operator, input.FieldID)
 }
 
-func DecodeDatabaseQueryFilterValueCoverageLeaf(
-	input DatabaseQueryFilterLeafInput,
-	raw string,
-) (string, error) {
-	if err := input.validateOperator(); err != nil {
-		return "", err
-	}
-	leaf, err := decodeDatabaseQueryRawLeaf("database query filter value coverage", raw)
-	if err != nil {
-		return "", err
-	}
-	switch leaf {
-	case DatabaseQueryNoUncoveredValue:
-		if len(input.AcceptedValues) == 0 {
-			return "", fmt.Errorf("database query set-membership filter requires at least one value")
-		}
-		return leaf, nil
-	case DatabaseQueryValueRemains:
-		if len(input.AcceptedValues) == datasource.MaxIntentFilterValues {
-			return "", fmt.Errorf("database query filter value bound is exhausted")
-		}
-		return leaf, nil
-	default:
-		return "", fmt.Errorf("database query filter value coverage %q is not registered", leaf)
-	}
-}
-
 func DecodeDatabaseQueryFilterValueLeaf(
 	input DatabaseQueryFilterLeafInput,
 	raw string,
@@ -115,19 +75,6 @@ func DecodeDatabaseQueryFilterValueLeaf(
 		return datasource.IntentLiteral{}, err
 	}
 	return literal, nil
-}
-
-func DecodeDatabaseQueryWindowCoverageLeaf(
-	state DatabaseQueryIntentLeafState,
-	raw string,
-) (string, error) {
-	if err := state.validateReady(); err != nil {
-		return "", err
-	}
-	return decodeDatabaseQueryCollectionCoverage(
-		"database query window coverage", raw, true,
-		len(state.TemporalWindows) == datasource.MaxIntentFilters,
-	)
 }
 
 func DecodeDatabaseQueryWindowFieldLeaf(

@@ -149,13 +149,13 @@ func BuildApplicationRequirementCandidateResultRelationGroundingPrompt(
 	)
 	return strings.Join([]string{
 		"Answer one semantic relation: do the immutable request and established facts entail exactly one determining relation for the derived-result outcome named by the exact current candidate?",
-		"The code-bound defect is exact: the candidate requires a derived result but omits information needed to determine that result independently. Do not reconsider or repair the candidate.",
+		"The supplied defect is exact: the candidate requires a derived result but omits information needed to determine that result independently. Evaluate only whether the authority entails exactly one determining relation.",
 		"Return EXACTLY_ONE_DETERMINING_RELATION_ENTAILED only when the immutable request and established facts together fix one operation or rule and all observable operands, conditions, and result meaning needed for an independent oracle. A conventional default, common product expectation, optional policy, implementation choice, or one of several valid rules is not entailed.",
-		"Return NO_EXACTLY_ONE_DETERMINING_RELATION_ENTAILED when any required part is absent or ambiguous. Do not propose a rule, rewrite the candidate, add an example value, or decide what the workflow should do.",
+		"Return NO_EXACTLY_ONE_DETERMINING_RELATION_ENTAILED when any required part is absent or ambiguous.",
 		"Return exactly one raw registered value and nothing else: no JSON, quotes, label, Markdown, or commentary.",
 		"APPLICATION AUTHORITY:\n" + authorityProjection,
 		"EXACT CURRENT CANDIDATE:\n" + input.CandidateAuthority.Candidate,
-		"EXACT CODE-ESTABLISHED DEFECT:\n" + input.MissingResultRelation.Relation,
+		"EXACT DEFECT:\n" + input.MissingResultRelation.Relation,
 		"FINAL QUESTION:\nDo the immutable request and established facts entail exactly one determining relation for this outcome? Return only EXACTLY_ONE_DETERMINING_RELATION_ENTAILED or NO_EXACTLY_ONE_DETERMINING_RELATION_ENTAILED.",
 	}, "\n\n"), nil
 }
@@ -210,7 +210,7 @@ func canonicalApplicationRequirementCandidateResultRelationGroundingInput(
 	candidate string,
 ) (ApplicationRequirementCandidateResultRelationGroundingInput, error) {
 	candidateAuthority := canonicalAcceptedApplicationRequirementResultRelationInput(candidate)
-	missing, err := DecodeApplicationRequirementCandidateResultRelationResult(
+	missing, err := canonicalApplicationRequirementCandidateResultRelation(
 		candidateAuthority,
 		ApplicationRequirementMissingResultRelation,
 	)

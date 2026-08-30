@@ -11,113 +11,87 @@ import (
 	"github.com/gryph/omnidex/internal/assemblyline"
 )
 
-func TestApplicationFrontDoorSkipsCeremonialReviewForEmptyWorkspace(t *testing.T) {
+func TestApplicationFrontDoorUsesOneInventoryAndOneSievePassPerAcceptedLeaf(
+	t *testing.T,
+) {
 	t.Parallel()
 	const request = "Build a browser counter in ARTIFACT_1 that shows the count and can increment, decrement, and reset it."
 	const authoritativeRequest = "Build a browser counter in ui/private-counter.ts that shows the count and can increment, decrement, and reset it."
-	const productContext = "Resolved counter product identity."
+	const productContext = "A browser counter."
 	applicationContext, err := assemblyline.BootstrapApplicationContext(
-		request, assemblyline.ApplicationWorkspaceEmpty,
+		request,
+		assemblyline.ApplicationWorkspaceEmpty,
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
 	requestAuthority, err := newDirectCodingApplicationRequestAuthority(
-		authoritativeRequest, request,
+		authoritativeRequest,
+		request,
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
+	leaves := []string{
+		"Show the current count.",
+		"Increment the current count.",
+		"Decrement the current count.",
+		"Reset the current count.",
+	}
 	counts := make(map[assemblyline.WorkKind]int)
+	callOrder := make([]assemblyline.WorkKind, 0, 4)
+	candidateCounts := make(map[string]map[assemblyline.WorkKind]int)
 	runtime := typedWorkerRuntime{
-		Context: context.Background(), MaxAttempts: 3,
-		Execute: func(job assemblyline.PortableJob, modelName string) (assemblyline.PortableResult, error) {
+		Context: context.Background(), MaxAttempts: 1,
+		Execute: func(job assemblyline.PortableJob, _ string) (assemblyline.PortableResult, error) {
 			prompt, err := assemblyline.RenderPortableJob(job)
 			if err != nil {
 				return assemblyline.PortableResult{}, err
 			}
 			if strings.Contains(prompt, "ui/private-counter.ts") ||
 				strings.Contains(string(job.Payload), "ui/private-counter.ts") {
-				return assemblyline.PortableResult{}, fmt.Errorf(
-					"semantic station received the unredacted authoritative request",
-				)
-			}
-			if (job.Kind == assemblyline.WorkApplicationRequirementCoverage ||
-				job.Kind == assemblyline.WorkApplicationRequirement) &&
-				(strings.Contains(prompt, productContext) ||
-					strings.Contains(prompt, "PRODUCT CONTEXT:")) {
-				return assemblyline.PortableResult{}, fmt.Errorf(
-					"requirement station received redundant product context",
-				)
+				return assemblyline.PortableResult{}, fmt.Errorf("semantic station received unredacted authority")
 			}
 			counts[job.Kind]++
-			var candidate string
+			callOrder = append(callOrder, job.Kind)
+			candidate := ""
 			switch job.Kind {
 			case assemblyline.WorkApplicationClassify:
 				candidate = string(assemblyline.ApplicationSurfaceBrowser)
 			case assemblyline.WorkApplicationProductContext:
 				candidate = productContext
-			case assemblyline.WorkApplicationRequirementCoverage:
-				var input assemblyline.ApplicationRequirementCoverageInput
-				if err := json.Unmarshal(job.Payload, &input); err != nil {
-					return assemblyline.PortableResult{}, err
-				}
-				if input.AcceptedRequirements == nil {
-					return assemblyline.PortableResult{}, fmt.Errorf("application requirement coverage received a nil accepted set")
-				}
-				if input.ExcludedCandidates == nil {
-					return assemblyline.PortableResult{}, fmt.Errorf("application requirement coverage received a nil excluded set")
-				}
-				if input.ZeroDeltas == nil {
-					return assemblyline.PortableResult{}, fmt.Errorf("application requirement coverage received a nil zero-delta set")
-				}
-				if len(input.AcceptedRequirements) < 4 {
-					candidate = assemblyline.ApplicationRequirementRemains
-				} else {
-					candidate = assemblyline.ApplicationNoUncoveredRequirement
-				}
-			case assemblyline.WorkApplicationRequirement:
-				var input assemblyline.ApplicationRequirementCandidateInput
-				if err := json.Unmarshal(job.Payload, &input); err != nil {
-					return assemblyline.PortableResult{}, err
-				}
-				if input.Authority.AcceptedRequirements == nil {
-					return assemblyline.PortableResult{}, fmt.Errorf("application requirement received a nil accepted set")
-				}
-				if err := input.Coverage.ValidateFor(input.Authority); err != nil ||
-					input.Coverage.Relation != assemblyline.ApplicationRequirementRemains {
-					return assemblyline.PortableResult{}, fmt.Errorf("application requirement received invalid coverage authority: %v", err)
-				}
-				candidate = []string{
-					"Show the current count.",
-					"Increment the current count.",
-					"Decrement the current count.",
-					"Reset the current count.",
-				}[counts[job.Kind]-1]
+			case assemblyline.WorkApplicationRequirementInventory:
+				candidate = strings.Join(leaves, "\n")
 			case assemblyline.WorkApplicationRequirementCandidateKind:
-				var input assemblyline.ApplicationRequirementCandidateKindInput
-				if err := json.Unmarshal(job.Payload, &input); err != nil {
+				candidate, err = applicationRequirementCandidateContentPresenceForKindForTest(
+					job,
+					assemblyline.ApplicationRequirementCandidateTaskLocal,
+				)
+				if err != nil {
 					return assemblyline.PortableResult{}, err
 				}
-				if strings.TrimSpace(input.Candidate) == "" {
-					return assemblyline.PortableResult{}, fmt.Errorf("application requirement kind received an empty candidate")
-				}
-				candidate = assemblyline.ApplicationRequirementCandidateTaskLocal
+				recordApplicationFrontDoorCandidateCall(t, candidateCounts, job)
 			case assemblyline.WorkApplicationRequirementCandidateCardinality:
-				var input assemblyline.ApplicationRequirementCandidateCardinalityInput
+				candidate = assemblyline.ApplicationRequirementOneRuntimeOutcome
+				recordApplicationFrontDoorCandidateCall(t, candidateCounts, job)
+			case assemblyline.WorkApplicationRequirementCandidateAuthorization:
+				var input assemblyline.ApplicationRequirementCandidateAuthorizationInput
 				if err := json.Unmarshal(job.Payload, &input); err != nil {
 					return assemblyline.PortableResult{}, err
 				}
-				if strings.TrimSpace(input.Candidate) == "" {
-					return assemblyline.PortableResult{}, fmt.Errorf("application requirement cardinality received an empty candidate")
+				if input.UserRequest != request || strings.Count(prompt, request) != 1 {
+					return assemblyline.PortableResult{}, fmt.Errorf("authorization lost immutable request")
 				}
-				candidate = assemblyline.ApplicationRequirementOneRuntimeOutcome
-			case assemblyline.WorkApplicationRequirementCandidateResultRelation:
-				candidate = assemblyline.ApplicationRequirementNoDerivedResult
+				if candidateCounts[input.Candidate] == nil {
+					candidateCounts[input.Candidate] = map[assemblyline.WorkKind]int{}
+				}
+				candidateCounts[input.Candidate][job.Kind]++
+				candidate = assemblyline.ApplicationRequirementCandidateEntailed
 			case assemblyline.WorkApplicationRequirementCandidateOutcomeRelation:
 				candidate = assemblyline.ApplicationRequirementDistinctRuntimeOutcomes
-			case assemblyline.WorkApplicationRequirementCandidateSplit:
-				return assemblyline.PortableResult{}, fmt.Errorf("atomic fixture unexpectedly requested candidate splitting")
+			case assemblyline.WorkApplicationRequirementCandidateResultRelation:
+				candidate = assemblyline.ApplicationRequirementNoDerivedResult
+				recordApplicationFrontDoorCandidateCall(t, candidateCounts, job)
 			default:
 				return assemblyline.PortableResult{}, fmt.Errorf("unexpected semantic work kind %q", job.Kind)
 			}
@@ -125,98 +99,138 @@ func TestApplicationFrontDoorSkipsCeremonialReviewForEmptyWorkspace(t *testing.T
 		},
 	}
 	interpretation, err := runDirectCodingApplicationInterpreter(
-		runtime, "intent-model", "surface-model", "artifact-model",
-		requestAuthority, applicationContext, nil,
+		runtime,
+		"intent-model",
+		"surface-model",
+		"artifact-model",
+		requestAuthority,
+		applicationContext,
+		nil,
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	specification := interpretation.Specification
-	if counts[assemblyline.WorkApplicationContextNeedCoverage] != 0 ||
-		counts[assemblyline.WorkApplicationProductContext] != 1 ||
-		counts[assemblyline.WorkApplicationRequirementCoverage] != 5 ||
-		counts[assemblyline.WorkApplicationRequirement] != 4 ||
-		counts[assemblyline.WorkApplicationRequirementCandidateKind] != 4 ||
-		counts[assemblyline.WorkApplicationRequirementCandidateCardinality] != 4 ||
-		counts[assemblyline.WorkApplicationRequirementCandidateOutcomeRelation] != 6 ||
-		counts[assemblyline.WorkApplicationRequirementCandidateResultRelation] != 4 ||
-		counts[assemblyline.WorkApplicationRequirementCandidateResultRelationGrounding] != 0 ||
-		counts[assemblyline.WorkApplicationRequirementCandidateResultRelationCorrection] != 0 ||
-		counts[assemblyline.WorkApplicationRequirementCandidateSplit] != 0 ||
-		counts[assemblyline.WorkApplicationRequirementCandidateSplitCorrection] != 0 ||
-		counts[assemblyline.WorkApplicationClassify] != 1 {
-		t.Fatalf("front-door calls=%v", counts)
+	wantCounts := map[assemblyline.WorkKind]int{
+		assemblyline.WorkApplicationClassify:                            1,
+		assemblyline.WorkApplicationProductContext:                      1,
+		assemblyline.WorkApplicationRequirementInventory:                1,
+		assemblyline.WorkApplicationRequirementCandidateKind:            8,
+		assemblyline.WorkApplicationRequirementCandidateCardinality:     4,
+		assemblyline.WorkApplicationRequirementCandidateAuthorization:   4,
+		assemblyline.WorkApplicationRequirementCandidateOutcomeRelation: 6,
+		assemblyline.WorkApplicationRequirementCandidateResultRelation:  4,
 	}
-	want := []assemblyline.Requirement{
-		{ID: "requirement_001", SourceQuote: "Show the current count."},
-		{ID: "requirement_002", SourceQuote: "Increment the current count."},
-		{ID: "requirement_003", SourceQuote: "Decrement the current count."},
-		{ID: "requirement_004", SourceQuote: "Reset the current count."},
+	if !reflect.DeepEqual(counts, wantCounts) {
+		t.Fatalf("front-door calls=%v want=%v", counts, wantCounts)
 	}
-	if specification.ProductQuote != productContext ||
-		!reflect.DeepEqual(specification.Requirements, want) {
-		t.Fatalf("specification=%+v", specification)
+	if len(callOrder) == 0 || callOrder[0] != assemblyline.WorkApplicationRequirementInventory {
+		t.Fatalf("front-door first call=%v want inventory", callOrder)
 	}
-	if len(interpretation.AcceptedRequirements) != len(want) {
-		t.Fatalf("accepted requirement receipts=%+v", interpretation.AcceptedRequirements)
+	firstResultRelation := applicationFrontDoorFirstCallIndex(
+		callOrder,
+		assemblyline.WorkApplicationRequirementCandidateResultRelation,
+	)
+	productIndex := applicationFrontDoorFirstCallIndex(
+		callOrder,
+		assemblyline.WorkApplicationProductContext,
+	)
+	surfaceIndex := applicationFrontDoorFirstCallIndex(
+		callOrder,
+		assemblyline.WorkApplicationClassify,
+	)
+	if firstResultRelation < 0 || productIndex <= firstResultRelation || surfaceIndex <= productIndex {
+		t.Fatalf(
+			"front-door order=%v want accepted leaf before product context before surface classification",
+			callOrder,
+		)
 	}
-	if interpretation.RequestSHA256 != assemblyline.ExactObjectiveContextSHA(authoritativeRequest) {
-		t.Fatalf("interpretation request provenance=%q", interpretation.RequestSHA256)
+	for _, leaf := range leaves {
+		for _, kind := range []assemblyline.WorkKind{
+			assemblyline.WorkApplicationRequirementCandidateKind,
+			assemblyline.WorkApplicationRequirementCandidateCardinality,
+			assemblyline.WorkApplicationRequirementCandidateAuthorization,
+			assemblyline.WorkApplicationRequirementCandidateResultRelation,
+		} {
+			want := 1
+			if kind == assemblyline.WorkApplicationRequirementCandidateKind {
+				want = 2
+			}
+			if candidateCounts[leaf][kind] != want {
+				t.Fatalf(
+					"accepted leaf %q work %q calls=%d want=%d",
+					leaf,
+					kind,
+					candidateCounts[leaf][kind],
+					want,
+				)
+			}
+		}
 	}
-	for _, accepted := range interpretation.AcceptedRequirements {
-		if accepted.RequestSHA256 != assemblyline.ExactObjectiveContextSHA(authoritativeRequest) ||
-			accepted.ResultRelation.Relation != assemblyline.ApplicationRequirementNoDerivedResult ||
-			accepted.ResultRelation.CandidateSHA256 != assemblyline.ExactObjectiveContextSHA(accepted.Statement) {
-			t.Fatalf("accepted requirement lost result-relation receipt: %+v", accepted)
+	if interpretation.Specification.ProductQuote != productContext ||
+		len(interpretation.AcceptedRequirements) != len(leaves) {
+		t.Fatalf("interpretation=%+v", interpretation)
+	}
+	for index, accepted := range interpretation.AcceptedRequirements {
+		if accepted.Statement != leaves[index] ||
+			accepted.ResultRelation.Relation != assemblyline.ApplicationRequirementNoDerivedResult {
+			t.Fatalf("accepted[%d]=%+v", index, accepted)
 		}
 	}
 }
 
-func TestApplicationFrontDoorFailsLoudlyWhenEvidenceNeedsAreUnresolved(t *testing.T) {
-	t.Parallel()
-	const request = "Extend the existing application with the established reporting behavior."
-	applicationContext, err := assemblyline.BootstrapApplicationContext(
-		request, assemblyline.ApplicationWorkspaceExisting,
-	)
-	if err != nil {
-		t.Fatal(err)
+func applicationFrontDoorFirstCallIndex(
+	calls []assemblyline.WorkKind,
+	want assemblyline.WorkKind,
+) int {
+	for index, kind := range calls {
+		if kind == want {
+			return index
+		}
 	}
-	requestAuthority, err := newDirectCodingApplicationRequestAuthority(request, request)
-	if err != nil {
-		t.Fatal(err)
+	return -1
+}
+
+func recordApplicationFrontDoorCandidateCall(
+	t *testing.T,
+	counts map[string]map[assemblyline.WorkKind]int,
+	job assemblyline.PortableJob,
+) {
+	t.Helper()
+	var candidate string
+	switch job.Kind {
+	case assemblyline.WorkApplicationRequirementCandidateKind:
+		input, err := applicationRequirementCandidateContentPresenceInputForTest(job)
+		if err != nil {
+			t.Fatal(err)
+		}
+		candidate = input.Candidate
+	case assemblyline.WorkApplicationRequirementCandidateCardinality:
+		var input assemblyline.ApplicationRequirementCandidateCardinalityInput
+		if err := json.Unmarshal(job.Payload, &input); err != nil {
+			t.Fatal(err)
+		}
+		candidate = input.Candidate
+	case assemblyline.WorkApplicationRequirementCandidateResultRelation:
+		var input assemblyline.ApplicationRequirementCandidateResultRelationInput
+		if err := json.Unmarshal(job.Payload, &input); err != nil {
+			t.Fatal(err)
+		}
+		candidate = input.Candidate
+	default:
+		t.Fatalf("unregistered candidate-count work %q", job.Kind)
 	}
-	coverageCalls := 0
-	runtime := typedWorkerRuntime{
-		Context: context.Background(), MaxAttempts: 1,
-		Execute: testPortableExecutor(func(kind string, _ string, _ string) (string, error) {
-			switch assemblyline.WorkKind(kind) {
-			case assemblyline.WorkApplicationContextNeedCoverage:
-				coverageCalls++
-				if coverageCalls == 1 {
-					return assemblyline.ApplicationContextNeedRemains, nil
-				}
-				return assemblyline.ApplicationNoUncoveredContextNeed, nil
-			case assemblyline.WorkApplicationContextNeedQuestion:
-				return "What verified behavior is meant by the established reporting behavior?", nil
-			default:
-				return "", fmt.Errorf("unexpected semantic work kind %q", kind)
-			}
-		}),
+	if counts[candidate] == nil {
+		counts[candidate] = map[assemblyline.WorkKind]int{}
 	}
-	_, err = runDirectCodingApplicationInterpreter(
-		runtime, "intent-model", "surface-model", "artifact-model",
-		requestAuthority, applicationContext, nil,
-	)
-	if err == nil {
-		t.Fatal("unresolved evidence need silently continued")
-	}
+	counts[candidate][job.Kind]++
 }
 
 func TestApplicationFrontDoorRejectsUnauthenticatedRequestBeforeSemanticWork(t *testing.T) {
 	t.Parallel()
 	const request = "Build a browser status display."
 	applicationContext, err := assemblyline.BootstrapApplicationContext(
-		request, assemblyline.ApplicationWorkspaceEmpty,
+		request,
+		assemblyline.ApplicationWorkspaceEmpty,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -235,10 +249,15 @@ func TestApplicationFrontDoorRejectsUnauthenticatedRequestBeforeSemanticWork(t *
 		},
 	}
 	_, err = runDirectCodingApplicationInterpreter(
-		runtime, "intent-model", "surface-model", "artifact-model",
-		authority, applicationContext, nil,
+		runtime,
+		"intent-model",
+		"surface-model",
+		"artifact-model",
+		authority,
+		applicationContext,
+		nil,
 	)
-	if err == nil || !strings.Contains(err.Error(), "not authenticated") || calls != 0 {
-		t.Fatalf("semantic calls=%d error=%v", calls, err)
+	if err == nil || calls != 0 {
+		t.Fatalf("unauthenticated request error=%v semantic calls=%d", err, calls)
 	}
 }

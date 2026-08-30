@@ -80,7 +80,7 @@ func resolveObjectiveDatabaseQueryIntent(
 		}
 	}
 	state.Filters, totalCalls, err = resolveDatabaseQueryFilters(
-		ctx, state, "", state.Filters, call, totalCalls,
+		ctx, state, "", "", state.Filters, call, totalCalls,
 	)
 	if err != nil {
 		return assemblyline.DatabaseQueryIntentDecision{}, totalCalls, err

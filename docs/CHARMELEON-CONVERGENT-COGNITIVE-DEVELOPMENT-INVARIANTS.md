@@ -214,6 +214,13 @@ D becomes ready
 
 That’s convergent development as a graph fixed point.
 
+This fixed point is mechanical closure over the already frozen accepted tasks and
+their adapter-proven artifact obligations. It is not a semantic completeness loop. No
+model asks what product capability remains, invents another requirement, reviews the
+accepted set, or vetoes completion. Rejected and speculative intake candidates never
+become graph nodes; a later user turn may create another bounded iteration against the
+verified workspace.
+
 You’re repeatedly moving from:
 
 code-derived unresolved relationships
@@ -300,8 +307,8 @@ COGNITION LOOP
         ↓
     verification
         ↓
-    more work required?
-        ├── yes → cognition continues
+    code-proven graph obligations remain?
+        ├── yes → code resolves the next ready obligation
         └── no  → task complete
 
 The coding loop you’ve already built becomes one implementation of task execution.

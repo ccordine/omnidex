@@ -13,6 +13,7 @@ func TestDatabaseQueryLeafPromptsExposeOnlyCurrentSelectableOpaqueIDs(t *testing
 	base := NewDatabaseQueryIntentLeafState(input)
 	base.FromRelationID = input.SchemaProjection.Relations[0].ID
 	base.Shape = datasource.ResultRanking
+	const purpose = "answer the focused evidence clause"
 
 	var statusID, createdAtID string
 	allIDs := []string{
@@ -46,36 +47,15 @@ func TestDatabaseQueryLeafPromptsExposeOnlyCurrentSelectableOpaqueIDs(t *testing
 		t.Fatal("database query prompt fixture lacks status or created_at field")
 	}
 
-	projectionState := base
-	projectionState.Projections = []datasource.RelationalProjection{{FieldID: appointmentClinicID}}
 	filterInput := DatabaseQueryFilterLeafInput{
 		State: base, AcceptedFilters: []datasource.RelationalPredicate{},
-		AcceptedValues: []datasource.IntentLiteral{},
+		AcceptedValues: []datasource.IntentLiteral{}, Purpose: purpose,
 	}
-	acceptedFilterInput := filterInput
-	acceptedFilterInput.AcceptedFilters = []datasource.RelationalPredicate{{
-		FieldID: statusID, Operator: datasource.FilterEqual,
-		Values: []datasource.IntentLiteral{{Type: datasource.LiteralString, Value: "open"}},
-	}}
 	operatorInput := filterInput
 	operatorInput.FieldID = statusID
 	valueInput := operatorInput
 	valueInput.Operator = datasource.FilterIn
 	valueInput.AcceptedValues = []datasource.IntentLiteral{{Type: datasource.LiteralString, Value: "open"}}
-	windowState := base
-	windowState.TemporalWindows = []DatabaseTemporalWindowDecision{{
-		FieldID: createdAtID, Unit: datasource.WindowDay, Amount: 7,
-	}}
-	existenceState := base
-	existenceState.Exists = []datasource.ExistencePredicate{{
-		RelationID: input.SchemaProjection.Relations[1].ID,
-		Filters:    []datasource.RelationalPredicate{},
-	}}
-	havingState := base
-	havingState.Having = []datasource.AggregatePredicate{{
-		Aggregate: datasource.AggregateCountRows, Operator: datasource.FilterGT,
-		Value: datasource.IntentLiteral{Type: datasource.LiteralInteger, Value: "2"},
-	}}
 	orderState := base
 	orderState.Projections = []datasource.RelationalProjection{
 		{FieldID: appointmentClinicID}, {Aggregate: datasource.AggregateCountRows},
@@ -98,24 +78,23 @@ func TestDatabaseQueryLeafPromptsExposeOnlyCurrentSelectableOpaqueIDs(t *testing
 			state.FromRelationID = base.FromRelationID
 			return BuildDatabaseQueryShapePrompt(state)
 		}},
-		{name: "projection coverage", build: func() (string, error) {
-			return BuildDatabaseQueryProjectionCoveragePrompt(projectionState)
+		{name: "purpose inventory", build: func() (string, error) {
+			return BuildDatabaseQueryPurposeInventoryPrompt(DatabaseQueryPurposeAuthority{
+				State: base, Collection: DatabaseQueryProjectionPurpose,
+			})
 		}},
 		{name: "projection aggregate", build: func() (string, error) {
-			return BuildDatabaseQueryProjectionAggregatePrompt(DatabaseQueryProjectionLeafInput{State: projectionState})
+			return BuildDatabaseQueryProjectionAggregatePrompt(DatabaseQueryProjectionLeafInput{State: base, Purpose: purpose})
 		}},
 		{name: "projection field", build: func() (string, error) {
 			return BuildDatabaseQueryProjectionFieldPrompt(DatabaseQueryProjectionLeafInput{
-				State: base, Aggregate: datasource.AggregateCount,
+				State: base, Purpose: purpose, Aggregate: datasource.AggregateCount,
 			})
 		}, allowed: fieldIDs},
 		{name: "projection time bucket", build: func() (string, error) {
 			return BuildDatabaseQueryProjectionTimeBucketPrompt(DatabaseQueryProjectionLeafInput{
-				State: base, FieldID: createdAtID,
+				State: base, Purpose: purpose, FieldID: createdAtID,
 			})
-		}},
-		{name: "filter coverage", build: func() (string, error) {
-			return BuildDatabaseQueryFilterCoveragePrompt(acceptedFilterInput)
 		}},
 		{name: "filter field", build: func() (string, error) {
 			return BuildDatabaseQueryFilterFieldPrompt(filterInput)
@@ -123,70 +102,55 @@ func TestDatabaseQueryLeafPromptsExposeOnlyCurrentSelectableOpaqueIDs(t *testing
 		{name: "filter operator", build: func() (string, error) {
 			return BuildDatabaseQueryFilterOperatorPrompt(operatorInput)
 		}},
-		{name: "filter value coverage", build: func() (string, error) {
-			return BuildDatabaseQueryFilterValueCoveragePrompt(valueInput)
-		}},
 		{name: "filter value", build: func() (string, error) {
 			return BuildDatabaseQueryFilterValuePrompt(valueInput)
 		}},
-		{name: "window coverage", build: func() (string, error) {
-			return BuildDatabaseQueryWindowCoveragePrompt(windowState)
-		}},
 		{name: "window field", build: func() (string, error) {
-			return BuildDatabaseQueryWindowFieldPrompt(DatabaseQueryWindowLeafInput{State: base})
+			return BuildDatabaseQueryWindowFieldPrompt(DatabaseQueryWindowLeafInput{State: base, Purpose: purpose})
 		}, allowed: temporalFieldIDs},
 		{name: "window unit", build: func() (string, error) {
-			return BuildDatabaseQueryWindowUnitPrompt(DatabaseQueryWindowLeafInput{State: base, FieldID: createdAtID})
+			return BuildDatabaseQueryWindowUnitPrompt(DatabaseQueryWindowLeafInput{State: base, Purpose: purpose, FieldID: createdAtID})
 		}},
 		{name: "window amount", build: func() (string, error) {
 			return BuildDatabaseQueryWindowAmountPrompt(DatabaseQueryWindowLeafInput{
-				State: base, FieldID: createdAtID, Unit: datasource.WindowDay,
+				State: base, Purpose: purpose, FieldID: createdAtID, Unit: datasource.WindowDay,
 			})
-		}},
-		{name: "existence coverage", build: func() (string, error) {
-			return BuildDatabaseQueryExistenceCoveragePrompt(existenceState)
 		}},
 		{name: "existence relation", build: func() (string, error) {
 			return BuildDatabaseQueryExistenceRelationPrompt(DatabaseQueryExistenceLeafInput{
-				State: base, Filters: []datasource.RelationalPredicate{},
+				State: base, Purpose: purpose, Filters: []datasource.RelationalPredicate{},
 			})
 		}, allowed: relationIDs},
 		{name: "existence negated", build: func() (string, error) {
 			return BuildDatabaseQueryExistenceNegatedPrompt(DatabaseQueryExistenceLeafInput{
-				State: base, RelationID: input.SchemaProjection.Relations[1].ID,
+				State: base, Purpose: purpose, RelationID: input.SchemaProjection.Relations[1].ID,
 				Filters: []datasource.RelationalPredicate{},
 			})
 		}},
-		{name: "having coverage", build: func() (string, error) {
-			return BuildDatabaseQueryHavingCoveragePrompt(havingState)
-		}},
 		{name: "having aggregate", build: func() (string, error) {
-			return BuildDatabaseQueryHavingAggregatePrompt(DatabaseQueryHavingLeafInput{State: base})
+			return BuildDatabaseQueryHavingAggregatePrompt(DatabaseQueryHavingLeafInput{State: base, Purpose: purpose})
 		}},
 		{name: "having field", build: func() (string, error) {
 			return BuildDatabaseQueryHavingFieldPrompt(DatabaseQueryHavingLeafInput{
-				State: base, Aggregate: datasource.AggregateCount,
+				State: base, Purpose: purpose, Aggregate: datasource.AggregateCount,
 			})
 		}, allowed: fieldIDs},
 		{name: "having operator", build: func() (string, error) {
 			return BuildDatabaseQueryHavingOperatorPrompt(DatabaseQueryHavingLeafInput{
-				State: base, Aggregate: datasource.AggregateCountRows,
+				State: base, Purpose: purpose, Aggregate: datasource.AggregateCountRows,
 			})
 		}},
 		{name: "having value", build: func() (string, error) {
 			return BuildDatabaseQueryHavingValuePrompt(DatabaseQueryHavingLeafInput{
-				State: base, Aggregate: datasource.AggregateCountRows, Operator: datasource.FilterGT,
+				State: base, Purpose: purpose, Aggregate: datasource.AggregateCountRows, Operator: datasource.FilterGT,
 			})
 		}},
-		{name: "order coverage", build: func() (string, error) {
-			return BuildDatabaseQueryOrderCoveragePrompt(orderState)
-		}},
 		{name: "order projection", build: func() (string, error) {
-			return BuildDatabaseQueryOrderProjectionPrompt(DatabaseQueryOrderLeafInput{State: orderState})
+			return BuildDatabaseQueryOrderProjectionPrompt(DatabaseQueryOrderLeafInput{State: orderState, Purpose: purpose})
 		}},
 		{name: "order direction", build: func() (string, error) {
 			return BuildDatabaseQueryOrderDirectionPrompt(DatabaseQueryOrderLeafInput{
-				State: orderState, Projection: &projectionIndex,
+				State: orderState, Purpose: purpose, Projection: &projectionIndex,
 			})
 		}},
 	}
@@ -233,7 +197,7 @@ func TestDatabaseQueryPortablePayloadRetainsBindingHiddenFromOperatorPrompt(t *t
 	state.FromRelationID = input.SchemaProjection.Relations[0].ID
 	state.Shape = datasource.ResultRecords
 	leaf := DatabaseQueryFilterLeafInput{
-		State: state, FieldID: appointmentClinicID,
+		State: state, Purpose: "match the requested status", FieldID: appointmentClinicID,
 		AcceptedFilters: []datasource.RelationalPredicate{}, AcceptedValues: []datasource.IntentLiteral{},
 	}
 	job, err := NewDatabaseQueryFilterOperatorJob(leaf)

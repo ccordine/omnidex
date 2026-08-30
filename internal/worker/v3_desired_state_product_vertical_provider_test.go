@@ -88,23 +88,19 @@ func desiredStateProductResponse(
 	case strings.Contains(prompt, "Classify one exact user instruction"):
 		return string(assemblyline.ObjectiveKindWorkspaceMutation),
 			assemblyline.WorkConversationObjectiveKind, nil
-	case strings.Contains(prompt, "Answer one semantic coverage relation: is there one necessary missing-fact question"):
-		return assemblyline.ApplicationNoUncoveredContextNeed,
-			assemblyline.WorkApplicationContextNeedCoverage, nil
-	case strings.Contains(prompt, "Answer one semantic relation: does the immutable existing-repository request"):
-		input, err := desiredStateProductRequirementProjection(prompt)
-		if err != nil {
-			return "", assemblyline.WorkRepositoryRequirementCoverage, err
-		}
-		if input.AcceptedCount == 0 {
-			return assemblyline.RepositoryRequirementRemains,
-				assemblyline.WorkRepositoryRequirementCoverage, nil
-		}
-		return assemblyline.RepositoryNoUncoveredRequirement,
-			assemblyline.WorkRepositoryRequirementCoverage, nil
-	case strings.Contains(prompt, "Return one explicit workspace-change requirement"):
+	case strings.Contains(prompt, "Return one bounded source-ordered inventory of candidate repository-fact questions"):
+		return assemblyline.ApplicationNoRepositoryFactQuestionCandidates,
+			assemblyline.WorkApplicationContextQuestionInventory, nil
+	case strings.Contains(prompt, "REPOSITORY REQUIREMENT INVENTORY INPUT:\n"):
 		source, err := desiredStateProductRequirementSource(prompt)
-		return source, assemblyline.WorkRepositoryRequirement, err
+		return source, assemblyline.WorkRepositoryRequirementInventory, err
+	case strings.Contains(prompt, "Answer one semantic relation about the exact source clause below"):
+		_, err := desiredStateProductPromptLine(
+			prompt,
+			"EXACT SOURCE CLAUSE CANDIDATE:\n",
+		)
+		return assemblyline.RepositoryRequirementCandidateRequiresChange,
+			assemblyline.WorkRepositoryRequirementCandidateAuthorization, err
 	case strings.Contains(prompt, "EXACT_GO_SIGNATURE:"):
 		return string(assemblyline.DeclarationBoundaryIndependentArtifact),
 			assemblyline.WorkDeclarationArtifactBoundary, nil
@@ -148,14 +144,13 @@ func desiredStateProductRequirementSource(prompt string) (string, error) {
 }
 
 type desiredStateProductRequirementInput struct {
-	UserRequest   string
-	AcceptedCount int
+	UserRequest string
 }
 
 func desiredStateProductRequirementProjection(
 	prompt string,
 ) (desiredStateProductRequirementInput, error) {
-	const marker = "REPOSITORY REQUIREMENT INPUT:\n"
+	const marker = "REPOSITORY REQUIREMENT INVENTORY INPUT:\n"
 	index := strings.LastIndex(prompt, marker)
 	if index < 0 {
 		return desiredStateProductRequirementInput{}, fmt.Errorf(
@@ -164,35 +159,27 @@ func desiredStateProductRequirementProjection(
 	}
 	projection := strings.TrimSpace(prompt[index+len(marker):])
 	const requestMarker = "IMMUTABLE USER REQUEST:\n"
-	const workspaceMarker = "\nWORKSPACE STATE:\n"
+	const finalQuestionMarker = "\n\nFINAL QUESTION:\n"
 	if !strings.HasPrefix(projection, requestMarker) {
 		return desiredStateProductRequirementInput{}, fmt.Errorf(
 			"product vertical repository requirement omitted immutable user request",
 		)
 	}
 	requestAndRest := projection[len(requestMarker):]
-	workspaceIndex := strings.Index(requestAndRest, workspaceMarker)
-	if workspaceIndex < 0 {
+	finalQuestionIndex := strings.LastIndex(requestAndRest, finalQuestionMarker)
+	if finalQuestionIndex < 0 {
 		return desiredStateProductRequirementInput{}, fmt.Errorf(
-			"product vertical repository requirement omitted workspace state",
+			"product vertical repository requirement omitted final question boundary",
 		)
 	}
-	request := strings.TrimSpace(requestAndRest[:workspaceIndex])
+	request := strings.TrimSpace(requestAndRest[:finalQuestionIndex])
 	if request == "" {
 		return desiredStateProductRequirementInput{}, fmt.Errorf(
 			"product vertical repository requirement source is empty",
 		)
 	}
-	acceptedCount := strings.Count(projection, "\nACCEPTED REQUIREMENT ")
-	if acceptedCount == 0 && !strings.Contains(
-		projection, "\nACCEPTED REQUIREMENTS:\n(none)",
-	) {
-		return desiredStateProductRequirementInput{}, fmt.Errorf(
-			"product vertical repository requirement omitted accepted semantic set",
-		)
-	}
 	return desiredStateProductRequirementInput{
-		UserRequest: request, AcceptedCount: acceptedCount,
+		UserRequest: request,
 	}, nil
 }
 

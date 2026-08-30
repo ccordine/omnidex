@@ -26,6 +26,11 @@ func TestApplicationRequirementCandidateResultRelationIsOneBoundQuestion(t *test
 			candidate: "Accept a user's preferences and display the best recommendation.",
 			relation:  ApplicationRequirementMissingResultRelation,
 		},
+		{
+			name:      "action-form transformation",
+			candidate: "The finished software resizes supplied images.",
+			relation:  ApplicationRequirementExplicitResultRelation,
+		},
 	}
 	for _, fixture := range fixtures {
 		fixture := fixture
@@ -39,18 +44,21 @@ func TestApplicationRequirementCandidateResultRelationIsOneBoundQuestion(t *test
 				t.Fatal(err)
 			}
 			for _, required := range []string{
-				"Classify one fact about this exact one-outcome runtime requirement",
-				"Follow these steps",
-				"Detect a derived value when the candidate requires an observable value selected, ordered, transformed, hashed, grouped, aggregated, measured, calculated, or decided",
-				"transformed data is not unchanged",
+				"Classify this exact one-outcome runtime requirement's derived-result relation",
+				"Follow in order; stop at the first result",
+				"named transform, read, extraction, decode, ordering, calculation, or selection over a governed object is not action-only",
+				"if the candidate asserts only an action, control, state transition, event, message, artifact creation/availability, or unchanged supplied data",
+				"trigger condition is not a derived-value rule",
+				"Detect a derived value when an observable value is selected, ordered, transformed, read, extracted, decoded, hashed, grouped, aggregated, measured, calculated, or decided",
+				"governed object is the input and the operation is the rule even when phrased as an action",
 				"existing per-item grouping keys are rules",
-				"actor supplies an expression, formula, or operation, or performs a calculation",
-				"chosen rule and operands are observable runtime inputs",
+				"actor-supplied expression, formula, or operation, or an actor-performed calculation",
+				"supplies runtime rule and operands",
 				"Passively describing an unspecified output as calculated, computed, evaluated, generated, or selected",
 				"Selected, correct, best, useful, or appropriate alone name no rule",
-				"condition only triggers that behavior",
 				"equal key values determine groups",
-				"Return NO_DERIVED_RESULT only when no derived value is asserted",
+				"return EXPLICIT_DERIVED_RESULT_RELATION only if",
+				"otherwise return MISSING_DERIVED_RESULT_RELATION",
 				fixture.candidate,
 			} {
 				if !strings.Contains(prompt, required) {
@@ -61,9 +69,9 @@ func TestApplicationRequirementCandidateResultRelationIsOneBoundQuestion(t *test
 				strings.Contains(prompt, "APPLICATION REQUIREMENT INPUT") {
 				t.Fatalf("result-relation prompt exceeded one-candidate authority:\n%s", prompt)
 			}
-			first := strings.Index(prompt, "1. Detect a derived value")
-			second := strings.Index(prompt, "2. For a derived value")
-			third := strings.Index(prompt, "3. Return NO_DERIVED_RESULT")
+			first := strings.Index(prompt, "1. A named transform")
+			second := strings.Index(prompt, "2. Detect a derived value")
+			third := strings.Index(prompt, "3. For a derived value")
 			if first < 0 || second <= first || third <= second {
 				t.Fatalf("result-relation rules are not ordered:\n%s", prompt)
 			}
@@ -262,13 +270,11 @@ func applicationRequirementCandidateResultRelationInputFixture(
 	candidate string,
 ) ApplicationRequirementCandidateResultRelationInput {
 	t.Helper()
-	kind, err := DecodeApplicationRequirementCandidateKindResult(
-		ApplicationRequirementCandidateKindInput{Candidate: candidate},
+	kind := applicationRequirementCandidateKindFixture(
+		t,
+		candidate,
 		ApplicationRequirementCandidateTaskLocal,
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
 	cardinality, err := DecodeApplicationRequirementCandidateCardinalityResult(
 		ApplicationRequirementCandidateCardinalityInput{Candidate: candidate},
 		ApplicationRequirementOneRuntimeOutcome,

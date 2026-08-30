@@ -12,8 +12,11 @@ func TestDatabaseChatSemanticStationsCannotReceiveConnectionOrCompiledQueryAutho
 	root := filepath.Clean(filepath.Join("..", ".."))
 	paths := []string{
 		"internal/assemblyline/database_schema_selection.go",
+		"internal/assemblyline/database_schema_selection_leaves.go",
+		"internal/assemblyline/database_schema_relation_inventory.go",
+		"internal/assemblyline/database_schema_relation_necessity.go",
+		"internal/assemblyline/database_schema_relation_resolution.go",
 		"internal/assemblyline/database_query_intent.go",
-		"internal/assemblyline/database_evidence_gap.go",
 		"internal/assemblyline/database_join_path_selection.go",
 		"internal/worker/objective_database_stations.go",
 	}

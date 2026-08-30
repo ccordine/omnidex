@@ -17,14 +17,11 @@ func TestRoleplayContextScopeIsPortableButNeverModelVisible(t *testing.T) {
 		{
 			name: "relevance",
 			job: func() (PortableJob, error) {
-				return NewContextRelevanceSelectionJob(ContextRelevanceSelectionInput{
-					Authority: ContextRelevanceInput{
-						ExactInstruction:     "Continue.",
-						KnownArtifactPaths:   []string{},
-						CandidateAuthorities: []ContextCandidateAuthority{candidate},
-						MaxSelections:        1, Scope: ContextScopeRoleplaySimulation,
-					},
-					AcceptedCandidateIDs: []string{},
+				return NewContextRelevanceRelationJob(ContextRelevanceRelationInput{
+					ExactInstruction:   "Continue.",
+					KnownArtifactPaths: []string{},
+					Candidate:          candidate,
+					Scope:              ContextScopeRoleplaySimulation,
 				})
 			},
 		},

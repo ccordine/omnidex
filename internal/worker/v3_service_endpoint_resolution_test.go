@@ -9,7 +9,7 @@ import (
 	"github.com/gryph/omnidex/internal/assemblyline"
 )
 
-func TestServiceEndpointResolutionClassifiesEveryTaskAndContractsOnlyRequiredEndpoints(t *testing.T) {
+func TestServiceEndpointResolutionClassifiesOnlyConsumedTaskAndContractsUnconsumedTask(t *testing.T) {
 	t.Parallel()
 	_, frozen, _ := applicationTaskLifecycleFixture(t)
 	requirementCalls := 0
@@ -29,12 +29,15 @@ func TestServiceEndpointResolutionClassifiesEveryTaskAndContractsOnlyRequiredEnd
 			}
 			switch model {
 			case "requirement-model":
-				requirement := assemblyline.ApplicationServiceEndpointRequired
-				if requirementCalls == 1 {
-					requirement = assemblyline.ApplicationServiceSupportOnly
+				if !strings.Contains(prompt, "DIRECT_CAPABILITY_CONSUMER:\ntrue") {
+					t.Fatalf("endpoint requirement prompt omitted code-owned consumer fact: %s", prompt)
+				}
+				if !strings.Contains(prompt, frozen.Tasks[1].RequirementQuote) ||
+					strings.Contains(prompt, frozen.Tasks[0].RequirementQuote) {
+					t.Fatalf("endpoint requirement prompt was not isolated to the consumed task: %s", prompt)
 				}
 				requirementCalls++
-				return string(requirement), nil
+				return string(assemblyline.ApplicationServiceSupportOnly), nil
 			case "exposure-model":
 				leafCalls++
 				return string(assemblyline.ApplicationServiceEndpointPublic), nil
@@ -56,7 +59,7 @@ func TestServiceEndpointResolutionClassifiesEveryTaskAndContractsOnlyRequiredEnd
 		frozen.Tasks[0].RequirementID: {{
 			RequirementID: frozen.Tasks[1].RequirementID,
 			CapabilityID:  genericApplicationCapabilityID(2),
-			Purpose:       "Use the support result.",
+			Purpose:       frozen.Tasks[1].RequirementQuote,
 		}},
 		frozen.Tasks[1].RequirementID: nil,
 	}
@@ -73,17 +76,76 @@ func TestServiceEndpointResolutionClassifiesEveryTaskAndContractsOnlyRequiredEnd
 	if err != nil {
 		t.Fatal(err)
 	}
-	if requirementCalls != len(frozen.Tasks) || leafCalls != 4 ||
+	if requirementCalls != 1 || leafCalls != 4 ||
 		len(plan.Requirements) != len(frozen.Tasks) || len(plan.ByTask) != 1 {
 		t.Fatalf(
 			"requirement calls=%d plan=%+v", requirementCalls, plan,
 		)
+	}
+	if plan.Requirements[frozen.Tasks[0].ID] != assemblyline.ApplicationServiceEndpointRequired ||
+		plan.Requirements[frozen.Tasks[1].ID] != assemblyline.ApplicationServiceSupportOnly {
+		t.Fatalf("endpoint requirement decisions=%+v", plan.Requirements)
 	}
 	if got := plan.ByTask[frozen.Tasks[0].ID]; got.Schema != assemblyline.ApplicationServiceEndpointContractSchemaV1 ||
 		got.RouteTemplate != "/records" || got.Method != assemblyline.ApplicationServiceEndpointGET ||
 		got.RequestMedia != assemblyline.ApplicationServiceEndpointMediaNone ||
 		got.ResponseMedia != assemblyline.ApplicationServiceEndpointHTML || got.SuccessStatus != 200 {
 		t.Fatalf("code-composed endpoint=%+v", got)
+	}
+}
+
+func TestServiceEndpointResolutionMakesNoRequirementCallWithoutCapabilityConsumer(t *testing.T) {
+	t.Parallel()
+	input, _, _ := applicationTaskLifecycleFixture(t)
+	oneRequirement := input
+	oneRequirement.Requirements = append(
+		[]assemblyline.Requirement(nil), input.Requirements[:1]...,
+	)
+	frozen, err := assemblyline.FreezeApplicationWorkload(oneRequirement)
+	if err != nil {
+		t.Fatal(err)
+	}
+	requirementCalls := 0
+	runtime := typedWorkerRuntime{
+		Context: context.Background(), MaxAttempts: 3, CorrectionModel: "forbidden-correction",
+		Execute: testPortableExecutor(func(_ string, model, _ string) (string, error) {
+			switch model {
+			case "requirement-model":
+				requirementCalls++
+				return "", fmt.Errorf("endpoint requirement model must not run without a capability consumer")
+			case "exposure-model":
+				return string(assemblyline.ApplicationServiceEndpointPublic), nil
+			case "method-model":
+				return string(assemblyline.ApplicationServiceEndpointGET), nil
+			case "route-model":
+				return "/records", nil
+			case "response-model":
+				return string(assemblyline.ApplicationServiceEndpointHTML), nil
+			default:
+				return "", fmt.Errorf("unexpected service model %q", model)
+			}
+		}),
+	}
+	stack, err := directCodingProjectStackByID(genericPHPServiceAdapter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := resolveDirectCodingServiceEndpointPlan(
+		runtime, "requirement-model", directCodingServiceEndpointLeafModels{
+			Exposure: "exposure-model", Method: "method-model", Route: "route-model",
+			RequestMedia: "request-model", ResponseMedia: "response-model", SuccessStatus: "status-model",
+		}, stack, frozen, directCodingCapabilityGraph{
+			frozen.Tasks[0].RequirementID: nil,
+		}, nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if requirementCalls != 0 {
+		t.Fatalf("endpoint requirement model calls=%d, want 0", requirementCalls)
+	}
+	if got := plan.Requirements[frozen.Tasks[0].ID]; got != assemblyline.ApplicationServiceEndpointRequired {
+		t.Fatalf("deterministic endpoint requirement=%q", got)
 	}
 }
 

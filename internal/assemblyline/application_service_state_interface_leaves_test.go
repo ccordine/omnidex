@@ -5,68 +5,166 @@ import (
 	"testing"
 )
 
-func TestApplicationServiceStateLeavesKeepIdentifiersCodeOwned(t *testing.T) {
+func TestApplicationServiceStatePurposeInventoriesAreBoundedUntrustedRawLines(t *testing.T) {
 	t.Parallel()
 	authority := serviceStateInterfaceFixture()
-	accepted := []ApplicationServiceStateField{{
-		Name: "state_001", Purpose: "The accepted shipment count.",
-		Kind:         ApplicationServiceStateInteger,
-		RecordFields: []ApplicationServiceStateRecordField{},
-	}}
-	leafInput := ApplicationStateFieldLeafInput{
-		Authority: authority, AcceptedFields: accepted,
+	rootInput := ApplicationStateFieldPurposeInventoryInput{Authority: authority}
+	rootJob, err := NewApplicationStateFieldPurposeInventoryJob(rootInput)
+	if err != nil {
+		t.Fatal(err)
 	}
-	for name, construct := range map[string]func() (PortableJob, error){
-		"coverage": func() (PortableJob, error) {
-			return NewApplicationStateFieldCoverageJob(leafInput)
-		},
-		"purpose": func() (PortableJob, error) {
-			return NewApplicationStateFieldPurposeJob(leafInput)
-		},
+	prompt, err := RenderPortableJob(rootJob)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, visible := range []string{
+		authority.ProductContext,
+		authority.Needs[0].RequirementQuote,
+		"minimal durable root-value purposes",
+		"omit customary capabilities not required by the supplied authority",
 	} {
-		t.Run(name, func(t *testing.T) {
-			job, err := construct()
-			if err != nil {
-				t.Fatal(err)
-			}
-			prompt, err := RenderPortableJob(job)
-			if err != nil {
-				t.Fatal(err)
-			}
-			for _, visible := range []string{
-				authority.ProductContext,
-				authority.Needs[0].RequirementQuote,
-				accepted[0].Purpose,
-			} {
-				if !strings.Contains(prompt, visible) {
-					t.Fatalf("%s prompt omitted semantic authority %q: %s", name, visible, prompt)
-				}
-			}
-			for _, hidden := range []string{accepted[0].Name, `"name"`} {
-				if strings.Contains(prompt, hidden) {
-					t.Fatalf("%s prompt exposed code-owned identifier %q: %s", name, hidden, prompt)
-				}
-			}
-			if !strings.Contains(string(job.Payload), accepted[0].Name) {
-				t.Fatalf("%s payload lost code-owned purpose binding: %s", name, job.Payload)
-			}
-		})
+		if !strings.Contains(prompt, visible) {
+			t.Fatalf("root inventory prompt omitted %q: %s", visible, prompt)
+		}
+	}
+	for _, forbidden := range []string{
+		"Code screens", "sieve", "queue", "workflow", "completion", "downstream",
+	} {
+		if strings.Contains(prompt, forbidden) {
+			t.Fatalf("root inventory prompt exposed orchestration language %q: %s", forbidden, prompt)
+		}
+	}
+	raw := "The stored shipment entries.\nThe stored shipment entries.\nThe last retrieval cursor."
+	inventory, err := DecodeApplicationStateFieldPurposeInventory(rootInput, raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(inventory.Purposes) != 3 || inventory.Purposes[0] != inventory.Purposes[1] {
+		t.Fatalf("inventory=%+v", inventory)
+	}
+	if err := inventory.ValidateForStateFields(rootInput); err != nil {
+		t.Fatal(err)
+	}
+
+	recordInput := ApplicationRecordFieldPurposeInventoryInput{
+		Authority: authority, ParentPurpose: "The stored shipment entries.",
+	}
+	recordJob, err := NewApplicationRecordFieldPurposeInventoryJob(recordInput)
+	if err != nil {
+		t.Fatal(err)
+	}
+	recordPrompt, err := RenderPortableJob(recordJob)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(recordPrompt, recordInput.ParentPurpose) ||
+		strings.Contains(recordPrompt, "accepted_fields") {
+		t.Fatalf("record inventory prompt has wrong authority: %s", recordPrompt)
+	}
+	if _, err := DecodeApplicationRecordFieldPurposeInventory(
+		recordInput, "The shipment identifier.\nThe recorded amount.",
+	); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestApplicationServiceStatePurposeInventoryRejectsInvalidFramingAndBounds(t *testing.T) {
+	t.Parallel()
+	input := ApplicationStateFieldPurposeInventoryInput{Authority: serviceStateInterfaceFixture()}
+	tooMany := strings.Repeat("A necessary value.\n", MaxApplicationServiceStateInterfaceFields) +
+		"One extra value."
+	for _, raw := range []string{
+		"",
+		"The stored value.\r\nThe other value.",
+		"The stored value.\n\nThe other value.",
+		`{"purposes":["The stored value."]}`,
+		tooMany,
+	} {
+		if _, err := DecodeApplicationStateFieldPurposeInventory(input, raw); err == nil {
+			t.Fatalf("invalid inventory %q was accepted", raw)
+		}
+	}
+}
+
+func TestApplicationServiceStatePurposeNecessityUsesOnlyDirectAuthorityAndCandidate(t *testing.T) {
+	t.Parallel()
+	input := ApplicationServiceStatePurposeNecessityInput{
+		Scope:            ApplicationServiceStateRootPurposeScope,
+		Authority:        serviceStateInterfaceFixture(),
+		CandidatePurpose: "The stored shipment entries.",
+	}
+	job, err := NewApplicationServiceStatePurposeNecessityJob(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prompt, err := RenderPortableJob(job)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, visible := range []string{
+		input.Authority.ProductContext,
+		input.Authority.Needs[0].RequirementQuote,
+		input.CandidatePurpose,
+		ApplicationServiceStatePurposeNecessary,
+		ApplicationServiceStatePurposeNotNecessary,
+	} {
+		if !strings.Contains(prompt, visible) {
+			t.Fatalf("necessity prompt omitted %q: %s", visible, prompt)
+		}
+	}
+	result, err := DecodeApplicationServiceStatePurposeNecessityResult(
+		input, ApplicationServiceStatePurposeNecessary,
+	)
+	if err != nil || result.Relation != ApplicationServiceStatePurposeNecessary {
+		t.Fatalf("result=%+v err=%v", result, err)
+	}
+	if _, err := DecodeApplicationServiceStatePurposeNecessityResult(input, "ACCEPT"); err == nil {
+		t.Fatal("workflow control label was accepted as necessity relation")
+	}
+}
+
+func TestApplicationServiceStatePurposeRelationIsPairwiseAndByteDifferent(t *testing.T) {
+	t.Parallel()
+	input := ApplicationServiceStatePurposeRelationInput{
+		Scope:            ApplicationServiceStateRecordPurposeScope,
+		CandidatePurpose: "The shipment identifier.",
+		AcceptedPurpose:  "The identifier of each shipment.",
+	}
+	job, err := NewApplicationServiceStatePurposeRelationJob(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prompt, err := RenderPortableJob(job)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, visible := range []string{input.CandidatePurpose, input.AcceptedPurpose} {
+		if !strings.Contains(prompt, visible) {
+			t.Fatalf("relation prompt omitted %q: %s", visible, prompt)
+		}
+	}
+	for _, hidden := range []string{"product_context", "requirement_quote", "accepted_fields"} {
+		if strings.Contains(prompt, hidden) {
+			t.Fatalf("relation prompt exposed unrelated authority %q: %s", hidden, prompt)
+		}
+	}
+	result, err := DecodeApplicationServiceStatePurposeRelationResult(
+		input, ApplicationServiceStateSamePurpose,
+	)
+	if err != nil || result.Relation != ApplicationServiceStateSamePurpose {
+		t.Fatalf("result=%+v err=%v", result, err)
+	}
+	input.AcceptedPurpose = input.CandidatePurpose
+	if _, err := NewApplicationServiceStatePurposeRelationJob(input); err == nil {
+		t.Fatal("byte-identical purposes opened a semantic relation")
 	}
 }
 
 func TestApplicationServiceStateKindLeavesReceiveOnlyFocusedSemanticValue(t *testing.T) {
 	t.Parallel()
-	authority := serviceStateInterfaceFixture()
-	acceptedPurpose := "ACCEPTED PURPOSE HIDDEN FROM KIND SENTINEL"
-	focusedPurpose := "FOCUSED PURPOSE VISIBLE SENTINEL"
 	input := ApplicationStateFieldKindInput{
-		Authority: authority,
-		AcceptedFields: []ApplicationServiceStateField{{
-			Name: "state_001", Purpose: acceptedPurpose,
-			Kind:         ApplicationServiceStateInteger,
-			RecordFields: []ApplicationServiceStateRecordField{},
-		}},
-		FocusedPurpose: focusedPurpose,
+		Authority:      serviceStateInterfaceFixture(),
+		FocusedPurpose: "The stored shipment entries.",
 	}
 	job, err := NewApplicationStateFieldKindJob(input)
 	if err != nil {
@@ -76,102 +174,13 @@ func TestApplicationServiceStateKindLeavesReceiveOnlyFocusedSemanticValue(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(prompt, focusedPurpose) || !strings.Contains(prompt, authority.ProductContext) {
-		t.Fatalf("kind prompt omitted focused semantic authority: %s", prompt)
-	}
-	for _, hidden := range []string{acceptedPurpose, "state_001", `"accepted_fields"`} {
-		if strings.Contains(prompt, hidden) {
-			t.Fatalf("kind prompt exposed unrelated accepted state %q: %s", hidden, prompt)
-		}
-		if !strings.Contains(string(job.Payload), hidden) && hidden != `"accepted_fields"` {
-			t.Fatalf("kind payload lost code-owned retained state %q: %s", hidden, job.Payload)
-		}
+	if !strings.Contains(prompt, input.FocusedPurpose) || strings.Contains(prompt, "accepted_fields") {
+		t.Fatalf("kind prompt has wrong semantic authority: %s", prompt)
 	}
 	if kind, err := DecodeApplicationStateFieldKindLeaf(
-		input, string(ApplicationServiceStateInteger),
-	); err != nil || kind != ApplicationServiceStateInteger {
+		input, string(ApplicationServiceStateRecordList),
+	); err != nil || kind != ApplicationServiceStateRecordList {
 		t.Fatalf("kind=%q err=%v", kind, err)
-	}
-}
-
-func TestApplicationServiceRecordLeavesProjectPurposesWithoutTechnicalKeys(t *testing.T) {
-	t.Parallel()
-	authority := serviceStateInterfaceFixture()
-	input := ApplicationRecordFieldLeafInput{
-		Authority: authority, ParentPurpose: "The stored shipment measurements.",
-		AcceptedRecordFields: []ApplicationServiceStateRecordField{{
-			Name: "member_001", Purpose: "The measurement label.",
-			Kind: ApplicationServiceStateString,
-		}},
-	}
-	job, err := NewApplicationRecordFieldPurposeJob(input)
-	if err != nil {
-		t.Fatal(err)
-	}
-	prompt, err := RenderPortableJob(job)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, visible := range []string{input.ParentPurpose, input.AcceptedRecordFields[0].Purpose} {
-		if !strings.Contains(prompt, visible) {
-			t.Fatalf("record purpose prompt omitted %q: %s", visible, prompt)
-		}
-	}
-	for _, hidden := range []string{input.AcceptedRecordFields[0].Name, `"name"`} {
-		if strings.Contains(prompt, hidden) {
-			t.Fatalf("record purpose prompt exposed code-owned key %q: %s", hidden, prompt)
-		}
-	}
-	if purpose, err := DecodeApplicationRecordFieldPurposeLeaf(
-		input, "The measurement rank.",
-	); err != nil || purpose != "The measurement rank." {
-		t.Fatalf("purpose=%q err=%v", purpose, err)
-	}
-}
-
-func TestApplicationServiceStatePurposeDecodersRejectStructuredOrRepeatedValues(t *testing.T) {
-	t.Parallel()
-	input := ApplicationStateFieldLeafInput{
-		Authority: serviceStateInterfaceFixture(),
-		AcceptedFields: []ApplicationServiceStateField{{
-			Name: "state_001", Purpose: "The shipment count.",
-			Kind:         ApplicationServiceStateInteger,
-			RecordFields: []ApplicationServiceStateRecordField{},
-		}},
-	}
-	for _, candidate := range []string{
-		`{"purpose":"The next value."}`,
-		`"The next value."`,
-		"THE SHIPMENT COUNT.",
-		"two\nlines",
-		ApplicationStateFieldRemains,
-		ApplicationNoUncoveredStateField,
-		ApplicationRecordFieldRemains,
-		ApplicationNoUncoveredRecordField,
-	} {
-		if _, err := DecodeApplicationStateFieldPurposeLeaf(input, candidate); err == nil {
-			t.Fatalf("invalid purpose candidate %q was accepted", candidate)
-		}
-	}
-	recordInput := ApplicationRecordFieldLeafInput{
-		Authority:            input.Authority,
-		ParentPurpose:        "The stored shipment measurements.",
-		AcceptedRecordFields: []ApplicationServiceStateRecordField{},
-	}
-	for _, candidate := range []string{
-		ApplicationStateFieldRemains,
-		ApplicationNoUncoveredStateField,
-		ApplicationRecordFieldRemains,
-		ApplicationNoUncoveredRecordField,
-	} {
-		if _, err := DecodeApplicationRecordFieldPurposeLeaf(recordInput, candidate); err == nil {
-			t.Fatalf("invalid record purpose candidate %q was accepted", candidate)
-		}
-	}
-	if got, err := DecodeApplicationStateFieldCoverageLeaf(
-		input, ApplicationNoUncoveredStateField,
-	); err != nil || got != ApplicationNoUncoveredStateField {
-		t.Fatalf("coverage=%q err=%v", got, err)
 	}
 }
 
@@ -188,13 +197,5 @@ func TestApplicationServiceStateTechnicalNamesAreExactCodeOwnedOrdinals(t *testi
 		if err != nil || got != want {
 			t.Fatalf("member %d=%q want=%q err=%v", index+1, got, want, err)
 		}
-	}
-	if _, err := CodeOwnedApplicationServiceStateFieldName(0); err == nil {
-		t.Fatal("zero root field ordinal was accepted")
-	}
-	if _, err := CodeOwnedApplicationServiceRecordFieldName(
-		MaxApplicationServiceStateInterfaceFields + 1,
-	); err == nil {
-		t.Fatal("out-of-bound record field ordinal was accepted")
 	}
 }

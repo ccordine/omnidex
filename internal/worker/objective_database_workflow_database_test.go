@@ -57,20 +57,6 @@ func (station postgresDatabaseProofStations) BuildIntent(
 	}, objectiveStationReceipt{Calls: 1}, nil
 }
 
-func (station postgresDatabaseProofStations) FindEvidenceGap(
-	_ context.Context,
-	input assemblyline.DatabaseEvidenceGapInput,
-) (assemblyline.DatabaseEvidenceGapDecision, objectiveStationReceipt, error) {
-	if len(input.Evidence) != 1 || !strings.Contains(input.Evidence[0].Text, `"value":"2"`) {
-		station.t.Fatalf("gap station received unexpected typed evidence: %+v", input.Evidence)
-	}
-	missing := ""
-	return assemblyline.DatabaseEvidenceGapDecision{
-		Schema: assemblyline.DatabaseEvidenceGapV1, RequirementID: input.RequirementID,
-		MissingInformation: &missing,
-	}, objectiveStationReceipt{Calls: 1}, nil
-}
-
 func (station postgresDatabaseProofStations) SelectJoinPath(
 	context.Context,
 	assemblyline.DatabaseJoinPathSelectionInput,

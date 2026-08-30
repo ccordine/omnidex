@@ -53,9 +53,9 @@ func TestStationContractsContainOnlyTheirTypedSemanticLeaf(t *testing.T) {
 		fields []string
 	}{
 		{name: "relevance call", value: RelevanceCall{}, fields: []string{"Question", "Context", "Candidates", "MaxSelections"}},
-		{name: "relevance decision", value: RelevanceDecision{}, fields: []string{"Outcome", "CandidateIDs", "SemanticCalls"}},
+		{name: "relevance decision", value: RelevanceDecision{}, fields: []string{"Outcome", "CandidateIDs", "SemanticCalls", "CallLedger"}},
 		{name: "synthesis call", value: GroundedSynthesisCall{}, fields: []string{"Question", "Context", "Evidence", "MaxParagraphs", "MaxParagraphBytes"}},
-		{name: "synthesis decision", value: GroundedSynthesisDecision{}, fields: []string{"Paragraphs", "SemanticCalls"}},
+		{name: "synthesis decision", value: GroundedSynthesisDecision{}, fields: []string{"Paragraphs", "SemanticCalls", "CallLedger"}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

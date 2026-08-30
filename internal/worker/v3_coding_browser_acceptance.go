@@ -14,6 +14,10 @@ func genericBrowserAcceptanceDocuments(
 	capabilities directCodingCapabilityGraph,
 	coverage assemblyline.ApplicationFileCoveragePlan,
 ) ([]assemblyline.SourceDocument, error) {
+	forbiddenHostIdentifiers, err := directCodingBrowserAcceptanceForbiddenHostIdentifiers()
+	if err != nil {
+		return nil, err
+	}
 	documents := make([]assemblyline.SourceDocument, 0, len(specification.Requirements))
 	documentByPath := make(map[string]int, len(specification.Requirements))
 	for index, requirement := range specification.Requirements {
@@ -47,6 +51,7 @@ func genericBrowserAcceptanceDocuments(
 				Path: files.VerificationPath,
 				Preamble: genericBrowserAcceptancePreamble(
 					typeScriptRelativeModule(files.VerificationPath, "src/runtime.tsx"),
+					false,
 				),
 			})
 		}
@@ -72,7 +77,7 @@ func genericBrowserAcceptanceDocuments(
 						{Callees: []string{"expect"}},
 					},
 					ForbiddenIdentifiers: append(
-						append([]string(nil), acceptanceForbiddenHostAPIs...),
+						append([]string(nil), forbiddenHostIdentifiers...),
 						"render", "createApplicationRuntime", "createFeatureRuntime", functionName,
 					),
 				},
@@ -81,7 +86,7 @@ func genericBrowserAcceptanceDocuments(
 			assemblyline.SourceBlock{
 				ID: harnessID,
 				Static: genericBrowserAcceptanceHarnessSource(
-					harnessName, verifyName, functionName, genericApplicationCapabilityID(sequence),
+					harnessName, verifyName, functionName, genericApplicationCapabilityID(sequence), nil,
 				),
 				API: fmt.Sprintf("async function %s(): Promise<void>", harnessName),
 				DependsOn: []string{
@@ -121,9 +126,34 @@ func genericBrowserAcceptanceHarnessSource(
 	verifyName string,
 	functionName string,
 	capabilityID string,
+	hostCapabilityIDs []string,
 ) string {
-	return fmt.Sprintf(`async function %s(): Promise<void> {
+	if len(hostCapabilityIDs) == 0 {
+		return fmt.Sprintf(`async function %s(): Promise<void> {
   render(<%s runtime={createFeatureRuntime(createApplicationRuntime(), %s)} />);
   await %s();
 }`, harnessName, functionName, strconv.Quote(capabilityID), verifyName)
+	}
+	expected := make([]string, len(hostCapabilityIDs))
+	for index, hostCapabilityID := range hostCapabilityIDs {
+		expected[index] = strconv.Quote(hostCapabilityID)
+	}
+	return fmt.Sprintf(`async function %s(): Promise<void> {
+  const expectedHostCapabilities = [%s] as const;
+  const observedHostCapabilities = new Set<string>();
+  const stopObservingHostReceipts = observeBrowserHostRequestReceipts((capability) => {
+    observedHostCapabilities.add(capability);
+  });
+  try {
+    render(<%s runtime={createFeatureRuntime(createApplicationRuntime(), %s)} />);
+    await %s();
+    for (const expectedCapability of expectedHostCapabilities) {
+      if (!observedHostCapabilities.has(expectedCapability)) {
+        throw new Error('Expected browser host request was not dispatched: ' + expectedCapability);
+      }
+    }
+  } finally {
+    stopObservingHostReceipts();
+  }
+}`, harnessName, strings.Join(expected, ", "), functionName, strconv.Quote(capabilityID), verifyName)
 }

@@ -93,11 +93,25 @@ func (machine *Machine) Run(ctx context.Context) (Result, error) {
 	if err != nil {
 		return fail(fmt.Errorf("grounded synthesis station: %w", err))
 	}
-	if decision.SemanticCalls < 1 {
-		return fail(fmt.Errorf("%w: grounded synthesis reported no semantic calls", ErrInvalidSynthesis))
+	maximumSynthesisCalls := (1 + machine.config.MaxSynthesisParagraphs*(len(projected)+1)) *
+		exactPortableSemanticLeafCalls
+	receipt, err := decision.CallLedger.ValidateForMaximum(
+		"web grounded synthesis decision", maximumSynthesisCalls,
+	)
+	if err != nil {
+		return fail(fmt.Errorf("%w: %v", ErrInvalidSynthesis, err))
+	}
+	if decision.SemanticCalls != receipt.Calls {
+		return fail(fmt.Errorf(
+			"%w: grounded synthesis reported %d calls but its exact ledger proves %d",
+			ErrInvalidSynthesis, decision.SemanticCalls, receipt.Calls,
+		))
+	}
+	if err := result.CallLedger.Merge("synthesis", decision.CallLedger); err != nil {
+		return fail(fmt.Errorf("%w: %v", ErrInvalidSynthesis, err))
 	}
 	result.SynthesisCalls++
-	result.SemanticCalls += decision.SemanticCalls
+	result.SemanticCalls += receipt.Calls
 	if err := ctx.Err(); err != nil {
 		return fail(err)
 	}

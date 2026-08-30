@@ -194,8 +194,11 @@ func TestPHPHTTPSupportOnlyTaskBuildsAndTestsWithoutInventingARoute(t *testing.T
 	}
 	supportContract := paths["src/Feature111.php"].Blocks[0].Contract
 	endpointContract := paths["src/Feature222.php"].Blocks[0].Contract
-	if strings.Contains(supportContract, "Typed input originates") ||
-		!strings.Contains(endpointContract, "Typed input originates") {
+	endpointNarrative := phpServiceEndpointInputContract(
+		endpoints.ByTask[workload.Tasks[1].ID],
+	)
+	if strings.Contains(supportContract, endpointNarrative) ||
+		!strings.Contains(endpointContract, endpointNarrative) {
 		t.Fatal("endpoint narrative was not confined to the endpoint-required task")
 	}
 	router := paths["public/index.php"]

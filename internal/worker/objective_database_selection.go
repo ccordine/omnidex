@@ -22,37 +22,37 @@ func selectObjectiveDatabaseRelations(
 	exactNeed string,
 	objectiveContext assemblyline.ObjectiveContext,
 	stations objectiveDatabaseStations,
-) ([]string, int, error) {
+) ([]string, objectiveStationReceipt, error) {
 	if len(snapshot.Relations) == 0 {
-		return nil, 0, fmt.Errorf("database schema snapshot has no relations")
+		return nil, objectiveStationReceipt{}, fmt.Errorf("database schema snapshot has no relations")
 	}
 	if len(snapshot.Relations) == 1 {
-		return []string{snapshot.Relations[0].ID}, 0, nil
+		return []string{snapshot.Relations[0].ID}, objectiveStationReceipt{}, nil
 	}
 	candidates := make([]assemblyline.DatabaseSchemaCandidate, 0, len(snapshot.Relations))
 	for _, relation := range snapshot.Relations {
 		descriptor, err := objectiveDatabaseRelationDescriptor(snapshot, relation.ID)
 		if err != nil {
-			return nil, 0, err
+			return nil, objectiveStationReceipt{}, err
 		}
 		candidates = append(candidates, assemblyline.DatabaseSchemaCandidate{
 			RelationID: relation.ID, Descriptor: descriptor,
 		})
 	}
-	selected, calls, err := reduceObjectiveDatabaseCandidates(
+	selected, receipt, err := reduceObjectiveDatabaseCandidates(
 		ctx, evidenceNeedID, exactNeed, objectiveContext, candidates, stations,
 	)
 	if err != nil {
-		return nil, calls, err
+		return nil, receipt, err
 	}
 	if len(selected) == 0 {
-		return nil, calls, fmt.Errorf("database schema selection found no relation for evidence need %q", evidenceNeedID)
+		return nil, receipt, fmt.Errorf("database schema selection found no relation for evidence need %q", evidenceNeedID)
 	}
 	ids := make([]string, len(selected))
 	for index, candidate := range selected {
 		ids[index] = candidate.RelationID
 	}
-	return ids, calls, nil
+	return ids, receipt, nil
 }
 
 func reduceObjectiveDatabaseCandidates(
@@ -62,62 +62,68 @@ func reduceObjectiveDatabaseCandidates(
 	objectiveContext assemblyline.ObjectiveContext,
 	candidates []assemblyline.DatabaseSchemaCandidate,
 	stations objectiveDatabaseStations,
-) ([]assemblyline.DatabaseSchemaCandidate, int, error) {
+) ([]assemblyline.DatabaseSchemaCandidate, objectiveStationReceipt, error) {
 	if stations == nil {
-		return nil, 0, fmt.Errorf("database schema selection station is unavailable")
+		return nil, objectiveStationReceipt{}, fmt.Errorf("database schema selection station is unavailable")
 	}
-	current := append([]assemblyline.DatabaseSchemaCandidate(nil), candidates...)
-	totalCalls := 0
-	for {
-		next := make([]assemblyline.DatabaseSchemaCandidate, 0)
-		for start := 0; start < len(current); start += databaseSchemaSelectionChunk {
-			if totalCalls > maxDatabaseSchemaSelectionModelCalls-exactSemanticLeafCalls {
-				return nil, totalCalls, fmt.Errorf(
-					"database schema selection exceeded its %d-call semantic reduction bound",
-					maxDatabaseSchemaSelectionModelCalls,
-				)
-			}
-			end := start + databaseSchemaSelectionChunk
-			if end > len(current) {
-				end = len(current)
-			}
-			chunk := append([]assemblyline.DatabaseSchemaCandidate(nil), current[start:end]...)
-			bound := databaseSchemaSelectionLimit
-			if bound > len(chunk) {
-				bound = len(chunk)
-			}
-			input := assemblyline.DatabaseSchemaSelectionInput{
-				EvidenceNeedID: evidenceNeedID, ExactNeed: exactNeed,
-				Context:    assemblyline.CloneObjectiveContext(objectiveContext),
-				Candidates: chunk, MaxSelections: bound,
-			}
-			decision, receipt, err := stations.SelectSchema(ctx, input)
-			totalCalls += receipt.Calls
-			if err != nil {
-				return nil, totalCalls, err
-			}
-			if err := validateObjectiveDatabaseStationCalls("schema selection", receipt); err != nil {
-				return nil, totalCalls, err
-			}
-			if err := decision.ValidateFor(input); err != nil {
-				return nil, totalCalls, err
-			}
-			byID := make(map[string]assemblyline.DatabaseSchemaCandidate, len(chunk))
-			for _, candidate := range chunk {
-				byID[candidate.RelationID] = candidate
-			}
-			for _, id := range decision.RelationIDs {
-				next = append(next, byID[id])
-			}
+	var ledger objectiveDatabaseBoundedCallLedger
+	selected := make([]assemblyline.DatabaseSchemaCandidate, 0, databaseSchemaSelectionLimit)
+	for start := 0; start < len(candidates); start += databaseSchemaSelectionChunk {
+		if ledger.freshCalls() > maxDatabaseSchemaSelectionModelCalls-exactSemanticLeafCalls {
+			return nil, ledger.partial(), fmt.Errorf(
+				"database schema selection exceeded its %d-call semantic reduction bound",
+				maxDatabaseSchemaSelectionModelCalls,
+			)
 		}
-		if len(next) <= databaseSchemaSelectionLimit {
-			return next, totalCalls, nil
+		end := start + databaseSchemaSelectionChunk
+		if end > len(candidates) {
+			end = len(candidates)
 		}
-		if len(next) >= len(current) {
-			return nil, totalCalls, fmt.Errorf("database schema selection made no bounded reduction")
+		chunk := append([]assemblyline.DatabaseSchemaCandidate(nil), candidates[start:end]...)
+		bound := databaseSchemaSelectionLimit
+		if bound > len(chunk) {
+			bound = len(chunk)
 		}
-		current = next
+		input := assemblyline.DatabaseSchemaSelectionInput{
+			EvidenceNeedID: evidenceNeedID, ExactNeed: exactNeed,
+			Context:    assemblyline.CloneObjectiveContext(objectiveContext),
+			Candidates: chunk, MaxSelections: bound,
+		}
+		decision, receipt, err := stations.SelectSchema(ctx, input)
+		if err != nil {
+			return nil, ledger.partial(), err
+		}
+		if err := ledger.record(
+			"database schema reduction", "selection chunk", receipt,
+			maxDatabaseSchemaSelectionLeafCalls,
+		); err != nil {
+			return nil, ledger.partial(), err
+		}
+		if ledger.freshCalls() > maxDatabaseSchemaSelectionModelCalls {
+			return nil, ledger.partial(), fmt.Errorf(
+				"database schema selection exceeded its %d-call semantic reduction bound",
+				maxDatabaseSchemaSelectionModelCalls,
+			)
+		}
+		if err := decision.ValidateFor(input); err != nil {
+			return nil, ledger.partial(), err
+		}
+		byID := make(map[string]assemblyline.DatabaseSchemaCandidate, len(chunk))
+		for _, candidate := range chunk {
+			byID[candidate.RelationID] = candidate
+		}
+		for _, id := range decision.RelationIDs {
+			selected = append(selected, byID[id])
+		}
+		if len(selected) > databaseSchemaSelectionLimit {
+			return nil, ledger.partial(), fmt.Errorf(
+				"database schema selection found more than %d necessary relations without reopening accepted selections",
+				databaseSchemaSelectionLimit,
+			)
+		}
 	}
+	receipt, err := ledger.totalForSuccess("database schema reduction")
+	return selected, receipt, err
 }
 
 func objectiveDatabaseRelationDescriptor(snapshot datasource.SchemaSnapshot, relationID string) (string, error) {

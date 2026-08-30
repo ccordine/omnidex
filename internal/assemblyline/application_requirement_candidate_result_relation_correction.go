@@ -67,15 +67,15 @@ func BuildApplicationRequirementCandidateResultRelationCorrectionPrompt(
 	)
 	return strings.Join([]string{
 		"Return one complete replacement for the exact current requirement candidate below.",
-		"The code-bound semantic relation establishes one exact defect: the candidate requires a derived result but does not state the semantic relation needed to determine that result independently.",
-		"A separate request-context-and-candidate-bound semantic receipt establishes that the immutable request and established facts entail exactly one determining relation for this outcome. Express only that relation; do not reconsider whether one exists.",
+		"The exact defect is fixed: the candidate requires a derived result but does not state the semantic relation needed to determine that result independently.",
+		"The supplied grounding relation is also fixed: the immutable request and established facts entail exactly one determining relation for this outcome. Express only that determining relation.",
 		"Replace only this candidate with one one-outcome task-local runtime requirement grounded by the application authority. Name the determining operation or rule and its observable operands, conditions, and result meaning precisely enough for an independent test to compute the expected result.",
 		"Do not add an optional feature, conventional default, implementation detail, another outcome, broader summary, test instruction, or expected example value.",
 		"The replacement must be byte-different from the current candidate. Return only the complete replacement requirement as raw prose. Do not return JSON, quotes, a label, Markdown, commentary, an instruction, or a patch.",
 		"APPLICATION AUTHORITY:\n" + authorityProjection,
 		"EXACT CURRENT CANDIDATE:\n" + input.CurrentCandidate,
-		"EXACT CODE-ESTABLISHED DEFECT:\n" + input.Defect,
-		"EXACT CODE-BOUND GROUNDING RELATION:\n" + input.Grounding.Relation,
+		"EXACT DEFECT:\n" + input.Defect,
+		"EXACT GROUNDING RELATION:\n" + input.Grounding.Relation,
 		"FINAL QUESTION:\nWhat complete byte-different one-outcome replacement states the missing determining relation? Return only that replacement.",
 	}, "\n\n"), nil
 }

@@ -23,7 +23,7 @@ func BuildTypeScriptRepairGuidancePrompt(
 	}
 	if input.CurrentDeclaration != "" {
 		parts = append(parts,
-			"Identifiers declared inside the exact mutable source and language-predeclared identifiers remain available. The two external-authority lists below are exhaustive. An external identifier merely referenced by the rejected source is unavailable unless one of those lists declares it.",
+			"Identifiers declared inside the exact mutable source and language-predeclared identifiers remain available. The two external-authority lists below are exhaustive. An external identifier merely referenced by the mutable source is unavailable unless one of those lists declares it.",
 		)
 	} else {
 		parts = append(parts,

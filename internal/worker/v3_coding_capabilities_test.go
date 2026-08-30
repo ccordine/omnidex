@@ -60,6 +60,36 @@ func TestCapabilityGraphRejectsUnselectedOrUnorderedBindings(t *testing.T) {
 	}
 }
 
+func TestCapabilityGraphRejectsCycles(t *testing.T) {
+	t.Parallel()
+	requirements := []assemblyline.Requirement{
+		{ID: "requirement_001", SourceQuote: "produce the first result"},
+		{ID: "requirement_002", SourceQuote: "produce the second result"},
+		{ID: "requirement_003", SourceQuote: "produce the third result"},
+	}
+	graph := directCodingCapabilityGraph{
+		requirements[0].ID: {{
+			RequirementID: requirements[1].ID,
+			CapabilityID:  genericApplicationCapabilityID(2),
+			Purpose:       requirements[1].SourceQuote,
+		}},
+		requirements[1].ID: {{
+			RequirementID: requirements[2].ID,
+			CapabilityID:  genericApplicationCapabilityID(3),
+			Purpose:       requirements[2].SourceQuote,
+		}},
+		requirements[2].ID: {{
+			RequirementID: requirements[0].ID,
+			CapabilityID:  genericApplicationCapabilityID(1),
+			Purpose:       requirements[0].SourceQuote,
+		}},
+	}
+	if err := validateDirectCodingCapabilityGraph(requirements, graph); err == nil ||
+		!strings.Contains(err.Error(), "cycle") {
+		t.Fatalf("cyclic graph error=%v", err)
+	}
+}
+
 func TestCapabilityGraphRejectsWorkloadsBeyondItsBoundedAssembly(t *testing.T) {
 	t.Parallel()
 

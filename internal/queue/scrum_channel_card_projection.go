@@ -126,7 +126,7 @@ func canonicalScrumFlowMetrics(raw json.RawMessage) (json.RawMessage, error) {
 			return nil, fmt.Errorf("Scrum flow metric %s must not be null", name)
 		}
 	}
-	for _, name := range []string{"last_play_outcome", "review_gate", "column", "updated_at"} {
+	for _, name := range []string{"last_play_outcome", "column", "updated_at"} {
 		if value, present := fields[name]; present {
 			switch string(value) {
 			case `""`:

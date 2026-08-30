@@ -170,16 +170,15 @@ func (provider *roleplayBoundaryOllama) assertCompleted(t *testing.T) {
 		t.Fatalf("unexpected provider traffic: %v", provider.unexpected)
 	}
 	wantKinds := []assemblyline.WorkKind{
-		assemblyline.WorkContextRelevanceSelection,
-		assemblyline.WorkContextRelevanceSelection,
-		assemblyline.WorkContextRelevanceSelection,
-		assemblyline.WorkContextRelevanceSelection,
+		assemblyline.WorkContextRelevanceRelation,
+		assemblyline.WorkContextRelevanceRelation,
+		assemblyline.WorkContextRelevanceRelation,
+		assemblyline.WorkContextRelevanceRelation,
 		assemblyline.WorkContextMinification,
 		assemblyline.WorkConversationResponse,
 		assemblyline.WorkRoleplayOngoingAction,
-		assemblyline.WorkRoleplayCanonFactCoverage,
-		assemblyline.WorkRoleplayCanonFact,
-		assemblyline.WorkRoleplayCanonFactCoverage,
+		assemblyline.WorkRoleplayCanonFactInventory,
+		assemblyline.WorkRoleplayCanonFactCandidateAuthorization,
 	}
 	if len(provider.stationKinds) != len(wantKinds) {
 		t.Fatalf("station calls=%v want=%v", provider.stationKinds, wantKinds)
@@ -212,9 +211,9 @@ func roleplayBoundaryRawResponse(
 	prompt string,
 ) (string, assemblyline.WorkKind, bool, error) {
 	switch {
-	case strings.Contains(prompt, "CONTEXT_RELEVANCE_AUTHORITY:\n"):
-		candidateID, err := roleplayBoundaryRelevantCandidate(prompt)
-		return candidateID, assemblyline.WorkContextRelevanceSelection, false, err
+	case strings.Contains(prompt, "CONTEXT RELEVANCE RELATION AUTHORITY:\n"):
+		return assemblyline.ContextCandidateDirectlyRelevant,
+			assemblyline.WorkContextRelevanceRelation, false, nil
 	case strings.Contains(prompt, "CONTEXT_MINIFICATION_JSON:\n"):
 		return "Mara is defending the archive.",
 			assemblyline.WorkContextMinification, false, nil
@@ -222,51 +221,17 @@ func roleplayBoundaryRawResponse(
 		return roleplayBoundaryReply, assemblyline.WorkConversationResponse, false, nil
 	case strings.Contains(prompt, "ROLEPLAY_ONGOING_ACTION_JSON:\n"):
 		return roleplayBoundaryAction, assemblyline.WorkRoleplayOngoingAction, false, nil
-	case strings.Contains(prompt, "Answer one semantic coverage relation: does the exact current contribution"):
-		if strings.Contains(prompt, "ACCEPTED CURRENT-CONTRIBUTION FACTS:\n(none)") {
-			return assemblyline.RoleplayCanonFactRemains,
-				assemblyline.WorkRoleplayCanonFactCoverage, false, nil
-		}
-		return assemblyline.RoleplayNoUncoveredCanonFact,
-			assemblyline.WorkRoleplayCanonFactCoverage, true, nil
-	case strings.Contains(prompt, "Return exactly one durable fictional fact established by the exact current contribution"):
-		return roleplayBoundaryFact, assemblyline.WorkRoleplayCanonFact, false, nil
+	case strings.Contains(prompt, "ROLEPLAY CANON CANDIDATE INVENTORY AUTHORITY:\n"):
+		return roleplayBoundaryFact, assemblyline.WorkRoleplayCanonFactInventory, false, nil
+	case strings.Contains(prompt, "EXACT CANDIDATE FACT:\n"):
+		return assemblyline.RoleplayCanonFactEstablished,
+			assemblyline.WorkRoleplayCanonFactCandidateAuthorization, true, nil
+	case strings.Contains(prompt, "ALREADY ACCEPTED FACT:\n"):
+		return assemblyline.RoleplayCanonFactsDistinct,
+			assemblyline.WorkRoleplayCanonFactCandidateRelation, false, nil
 	default:
 		return "", "", false, fmt.Errorf("unexpected raw roleplay station envelope")
 	}
-}
-
-func roleplayBoundaryRelevantCandidate(prompt string) (string, error) {
-	const marker = "CONTEXT_RELEVANCE_AUTHORITY:\n"
-	index := strings.Index(prompt, marker)
-	if index < 0 {
-		return "", fmt.Errorf("raw context relevance prompt omitted authority")
-	}
-	var authority struct {
-		Candidates []struct {
-			CandidateID string `json:"candidate_id"`
-		} `json:"candidates"`
-		AcceptedCandidateIDs []string `json:"accepted_candidate_ids"`
-	}
-	if err := json.NewDecoder(strings.NewReader(prompt[index+len(marker):])).Decode(&authority); err != nil {
-		return "", fmt.Errorf("decode raw context relevance authority: %w", err)
-	}
-	available := make(map[string]struct{}, len(authority.Candidates))
-	for _, candidate := range authority.Candidates {
-		available[candidate.CandidateID] = struct{}{}
-	}
-	accepted := make(map[string]struct{}, len(authority.AcceptedCandidateIDs))
-	for _, candidateID := range authority.AcceptedCandidateIDs {
-		accepted[candidateID] = struct{}{}
-	}
-	for _, candidateID := range []string{"CTX_3", "CTX_4", "CTX_5", "CTX_6"} {
-		_, exists := available[candidateID]
-		_, retained := accepted[candidateID]
-		if exists && !retained {
-			return candidateID, nil
-		}
-	}
-	return assemblyline.ContextRelevanceNoCandidate, nil
 }
 
 func roleplayBoundaryShowResponse() map[string]any {

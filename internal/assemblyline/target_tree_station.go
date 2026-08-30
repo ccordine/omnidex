@@ -23,17 +23,17 @@ func BuildTargetTreePrompt(input TargetTreeInput) (string, error) {
 		return "", fmt.Errorf("render code-reserved tree: %w", err)
 	}
 	sections := []string{
-		"Determine the complete expected managed workload file tree for all accepted goals under the code-selected technical context.",
+		"Determine the complete expected managed workload file tree for all accepted goals under the supplied technical context.",
 		"Return exactly one raw basename hierarchy matching RAW_TREE_GRAMMAR. The response is the complete expected workload tree, not a delta.",
 		"RAW_TREE_GRAMMAR:\nROOT\n  D <single basename>\n    F <single basename>\n  F <single basename>",
 		"ROOT must be the exact first line. Every other line uses exactly two spaces per depth followed by D or F, one space, and one basename. A basename never contains a slash or backslash. Every D node contains at least one child and ultimately one F node. An F node has no children. The entire response consists only of these hierarchy lines.",
-		"CODE_SELECTED_FILE_COUNT:\n" + strconv.Itoa(input.Constraints.ExactPathCount),
-		"CODE_SELECTED_ROOT_FILES_ONLY:\n" + strconv.FormatBool(input.Constraints.RootFilesOnly),
-		"The response contains exactly CODE_SELECTED_FILE_COUNT F nodes. When CODE_SELECTED_ROOT_FILES_ONLY is true, it contains no D nodes. Every file leaf and the complete tree must satisfy CODE_SELECTED_TECHNICAL_CONTEXT exactly. A node present in CODE_RESERVED_TREE cannot appear in the response.",
+		"EXACT_FILE_COUNT:\n" + strconv.Itoa(input.Constraints.ExactPathCount),
+		"ROOT_FILES_ONLY:\n" + strconv.FormatBool(input.Constraints.RootFilesOnly),
+		"The response contains exactly EXACT_FILE_COUNT F nodes. When ROOT_FILES_ONLY is true, it contains no D nodes. Every file leaf and the complete tree must satisfy TECHNICAL_CONTEXT exactly. A node present in RESERVED_TREE cannot appear in the response.",
 		"ACCEPTED_GOALS:\n" + input.Objective,
-		"CODE_SELECTED_TECHNICAL_CONTEXT:\n" + input.TechnicalContext,
+		"TECHNICAL_CONTEXT:\n" + input.TechnicalContext,
 		"CURRENT_MANAGED_WORKLOAD_TREE:\n" + currentTree,
-		"CODE_RESERVED_TREE:\n" + reservedTree,
+		"RESERVED_TREE:\n" + reservedTree,
 	}
 	if correction := input.Correction; correction != nil {
 		if correction.CandidateTree != "" {

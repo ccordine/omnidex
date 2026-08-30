@@ -172,7 +172,7 @@ func TestTargetTreeCorrectionNeverExposesConstructedPaths(t *testing.T) {
 			); err != nil {
 				t.Fatal(err)
 			}
-			if !strings.Contains(prompt, "duplicates a basename hierarchy in CODE_RESERVED_TREE") {
+			if !strings.Contains(prompt, "duplicates a basename hierarchy in RESERVED_TREE") {
 				t.Fatalf("correction prompt lacks path-free exact defect:\n%s", prompt)
 			}
 			return "ROOT\n  D src\n    F counter.tsx\n  D tests\n    F counter.test.tsx", nil

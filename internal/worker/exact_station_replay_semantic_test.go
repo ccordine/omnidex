@@ -82,31 +82,28 @@ func TestExactStationReplayUsesSemanticDecoderInsteadOfRawFallback(t *testing.T)
 
 func TestExactStationReplayPreservesCurrentRequirementRefinementKinds(t *testing.T) {
 	t.Parallel()
-	kindJob, err := assemblyline.NewApplicationRequirementCandidateKindJob(
-		assemblyline.ApplicationRequirementCandidateKindInput{
+	kindJob, err := assemblyline.NewApplicationRequirementCandidateContentPresenceJob(
+		assemblyline.ApplicationRequirementCandidateContentPresenceInput{
 			Candidate: "Display the current status.",
+			Dimension: assemblyline.ApplicationRequirementCandidateRuntimeContentDimension,
 		},
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
 	kindArtifact, err := replayExactStationArtifact(
-		kindJob, assemblyline.ApplicationRequirementCandidateTaskLocal,
+		kindJob, string(assemblyline.ApplicationRequirementCandidateContentPresent),
 	)
 	if err != nil || kindArtifact.Kind != string(kindJob.Kind) {
 		t.Fatalf("candidate-kind artifact=%+v error=%v", kindArtifact, err)
 	}
 
 	const resultCandidate = "Display the current status."
-	resultKindInput := assemblyline.ApplicationRequirementCandidateKindInput{
-		Candidate: resultCandidate,
-	}
-	resultKind, err := assemblyline.DecodeApplicationRequirementCandidateKindResult(
-		resultKindInput, assemblyline.ApplicationRequirementCandidateTaskLocal,
+	resultKind := applicationRequirementCandidateKindReceiptForTest(
+		t,
+		resultCandidate,
+		assemblyline.ApplicationRequirementCandidateTaskLocal,
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
 	resultCardinalityInput := assemblyline.ApplicationRequirementCandidateCardinalityInput{
 		Candidate: resultCandidate,
 	}
@@ -145,20 +142,16 @@ func TestExactStationReplayPreservesCurrentRequirementRefinementKinds(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	coverageInput := assemblyline.ApplicationRequirementCoverageInput{
-		UserRequest: request, Context: applicationContext,
-		AcceptedRequirements: []string{"Display the current status."},
-		ExcludedCandidates:   []string{},
-		ZeroDeltas:           []assemblyline.ApplicationRequirementCandidateZeroDelta{},
+	inventoryInput := assemblyline.ApplicationRequirementInventoryInput{
+		UserRequest: request,
+		Context:     applicationContext,
 	}
 	const currentCandidate = "Offer a refresh control."
-	currentKind, err := assemblyline.DecodeApplicationRequirementCandidateKindResult(
-		assemblyline.ApplicationRequirementCandidateKindInput{Candidate: currentCandidate},
+	currentKind := applicationRequirementCandidateKindReceiptForTest(
+		t,
+		currentCandidate,
 		assemblyline.ApplicationRequirementCandidateTaskLocal,
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
 	currentCardinality, err := assemblyline.DecodeApplicationRequirementCandidateCardinalityResult(
 		assemblyline.ApplicationRequirementCandidateCardinalityInput{Candidate: currentCandidate},
 		assemblyline.ApplicationRequirementOneRuntimeOutcome,
@@ -192,8 +185,8 @@ func TestExactStationReplayPreservesCurrentRequirementRefinementKinds(t *testing
 		t.Fatal(err)
 	}
 	groundingInput := assemblyline.ApplicationRequirementCandidateResultRelationGroundingInput{
-		ImmutableRequest: coverageInput.UserRequest, CandidateAuthority: vagueAuthority,
-		Context:               coverageInput.Context,
+		ImmutableRequest: inventoryInput.UserRequest, CandidateAuthority: vagueAuthority,
+		Context:               inventoryInput.Context,
 		MissingResultRelation: missing,
 	}
 	groundingJob, err := assemblyline.NewApplicationRequirementCandidateResultRelationGroundingJob(
@@ -218,8 +211,8 @@ func TestExactStationReplayPreservesCurrentRequirementRefinementKinds(t *testing
 	}
 	correctionJob, err := assemblyline.NewApplicationRequirementCandidateResultRelationCorrectionJob(
 		assemblyline.ApplicationRequirementCandidateResultRelationCorrectionInput{
-			ImmutableRequest: coverageInput.UserRequest,
-			Context:          coverageInput.Context,
+			ImmutableRequest: inventoryInput.UserRequest,
+			Context:          inventoryInput.Context,
 			CurrentCandidate: vague,
 			Defect:           assemblyline.ApplicationRequirementMissingResultRelation,
 			Grounding:        grounding,

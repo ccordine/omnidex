@@ -1,7 +1,6 @@
 package assemblyline
 
 import (
-	"fmt"
 	"strconv"
 
 	"github.com/gryph/omnidex/internal/datasource"
@@ -9,11 +8,13 @@ import (
 
 func portableDatabaseResponseMaximum(job PortableJob) (int, bool, error) {
 	switch job.Kind {
-	case WorkDatabaseSchemaSelectionCoverage:
+	case WorkDatabaseSchemaRelationInventory:
+		return maxDatabaseSchemaRelationInventoryBytes, true, nil
+	case WorkDatabaseSchemaRelationNecessity:
 		return maximumStringBytes(
-			DatabaseSchemaRelationRemains, DatabaseSchemaNoUncoveredRelation,
+			DatabaseSchemaRelationNecessary, DatabaseSchemaRelationNotNecessary,
 		), true, nil
-	case WorkDatabaseSchemaRelationSelection:
+	case WorkDatabaseSchemaRelationResolution:
 		maximum, err := databaseSchemaRelationMaximum(job)
 		return maximum, true, err
 	case WorkDatabaseQueryFromRelation:
@@ -26,9 +27,16 @@ func portableDatabaseResponseMaximum(job PortableJob) (int, bool, error) {
 			datasource.ResultComparison, datasource.ResultTrend,
 			datasource.ResultExistence,
 		), true, nil
-	case WorkDatabaseQueryProjectionCoverage:
-		maximum, err := databaseCollectionCoverageMaximum(job, "projection")
-		return maximum, true, err
+	case WorkDatabaseQueryPurposeInventory:
+		return maxDatabaseQueryPurposeInventoryBytes, true, nil
+	case WorkDatabaseQueryPurposeNecessity:
+		return maximumStringBytes(
+			DatabaseQueryPurposeNecessary, DatabaseQueryPurposeNotNecessary,
+		), true, nil
+	case WorkDatabaseQueryPurposeRelation:
+		return maximumStringBytes(
+			DatabaseQueryPurposesSame, DatabaseQueryPurposesDistinct,
+		), true, nil
 	case WorkDatabaseQueryProjectionAggregate:
 		return maximumStringBytes(
 			datasource.AggregateCountRows, datasource.AggregateCount,
@@ -44,27 +52,15 @@ func portableDatabaseResponseMaximum(job PortableJob) (int, bool, error) {
 			datasource.BucketDay, datasource.BucketWeek, datasource.BucketMonth,
 			datasource.BucketQuarter, datasource.BucketYear,
 		), true, nil
-	case WorkDatabaseQueryFilterCoverage:
-		return maximumStringBytes(
-			DatabaseQueryItemRemains, DatabaseQueryNoUncoveredItem,
-		), true, nil
 	case WorkDatabaseQueryFilterField:
 		maximum, err := databaseFilterFieldMaximum(job)
 		return maximum, true, err
 	case WorkDatabaseQueryFilterOperator:
 		maximum, err := databaseFilterOperatorMaximum(job)
 		return maximum, true, err
-	case WorkDatabaseQueryFilterValueCoverage:
-		maximum, err := databaseFilterValueCoverageMaximum(job)
-		return maximum, true, err
 	case WorkDatabaseQueryFilterValue:
 		maximum, err := databaseFilterValueMaximum(job)
 		return maximum, true, err
-	case WorkDatabaseQueryWindowCoverage,
-		WorkDatabaseQueryExistenceCoverage, WorkDatabaseQueryHavingCoverage:
-		return maximumStringBytes(
-			DatabaseQueryItemRemains, DatabaseQueryNoUncoveredItem,
-		), true, nil
 	case WorkDatabaseQueryWindowField:
 		maximum, err := databaseWindowFieldMaximum(job)
 		return maximum, true, err
@@ -97,9 +93,6 @@ func portableDatabaseResponseMaximum(job PortableJob) (int, bool, error) {
 		), true, nil
 	case WorkDatabaseQueryHavingValue:
 		return datasource.MaxIntentDecimalLiteralBytes, true, nil
-	case WorkDatabaseQueryOrderCoverage:
-		maximum, err := databaseCollectionCoverageMaximum(job, "order")
-		return maximum, true, err
 	case WorkDatabaseQueryOrderProjection:
 		maximum, err := databaseOrderProjectionMaximum(job)
 		return maximum, true, err
@@ -107,8 +100,6 @@ func portableDatabaseResponseMaximum(job PortableJob) (int, bool, error) {
 		return maximumStringBytes(
 			datasource.OrderAscending, datasource.OrderDescending,
 		), true, nil
-	case WorkDatabaseEvidenceGap:
-		return maxDatabaseEvidenceGapBytes, true, nil
 	case WorkDatabaseJoinPathSelection:
 		maximum, err := databaseJoinPathMaximum(job)
 		return maximum, true, err
@@ -118,18 +109,18 @@ func portableDatabaseResponseMaximum(job PortableJob) (int, bool, error) {
 }
 
 func databaseSchemaRelationMaximum(job PortableJob) (int, error) {
-	var input DatabaseSchemaSelectionLeafInput
+	var input DatabaseSchemaRelationResolutionInput
 	if err := decodePortablePayload(job.Payload, &input); err != nil {
 		return 0, err
 	}
-	candidates := make([]string, 0, len(input.Authority.Candidates))
-	for _, candidate := range input.Authority.Candidates {
+	candidates := make([]string, 0, len(input.Candidates))
+	for _, candidate := range input.Candidates {
 		candidates = append(candidates, candidate.RelationID)
 	}
 	return maximumAcceptedCandidateBytes(
-		"database schema relation selection", candidates,
+		"database schema relation resolution", candidates,
 		func(candidate string) error {
-			_, err := DecodeDatabaseSchemaRelationSelectionLeaf(input, candidate)
+			_, err := DecodeDatabaseSchemaRelationResolutionResult(input, candidate)
 			return err
 		},
 	)
@@ -145,29 +136,6 @@ func databaseFromRelationMaximum(job PortableJob) (int, error) {
 		"database query from relation", candidates,
 		func(candidate string) error {
 			_, err := DecodeDatabaseQueryFromRelationLeaf(state, candidate)
-			return err
-		},
-	)
-}
-
-func databaseCollectionCoverageMaximum(job PortableJob, collection string) (int, error) {
-	var state DatabaseQueryIntentLeafState
-	if err := decodePortablePayload(job.Payload, &state); err != nil {
-		return 0, err
-	}
-	return maximumAcceptedCandidateBytes(
-		"database query "+collection+" coverage",
-		[]string{DatabaseQueryItemRemains, DatabaseQueryNoUncoveredItem},
-		func(candidate string) error {
-			var err error
-			switch collection {
-			case "projection":
-				_, err = DecodeDatabaseQueryProjectionCoverageLeaf(state, candidate)
-			case "order":
-				_, err = DecodeDatabaseQueryOrderCoverageLeaf(state, candidate)
-			default:
-				err = fmt.Errorf("database collection %q has no coverage decoder", collection)
-			}
 			return err
 		},
 	)

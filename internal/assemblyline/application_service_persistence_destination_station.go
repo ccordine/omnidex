@@ -25,7 +25,7 @@ func BuildApplicationServicePersistenceDestinationPrompt(
 		"Determine exactly one semantic fact: whether the immutable request explicitly identifies the environment where the software is built as the continued-availability destination.",
 		"Select exactly one opaque candidate ID. A destination reference whose identity could merely be the build environment does not explicitly establish identity.",
 		"Return exactly the raw candidate ID and nothing else: no JSON, quotes, label, Markdown, or commentary.",
-		"CODE_OWNED_CANDIDATES_JSON:\n" + string(candidates),
+		"REGISTERED_CANDIDATES_JSON:\n" + string(candidates),
 		"IMMUTABLE_USER_REQUEST:\n" + input.UserRequest,
 	}, "\n\n")
 	if len(prompt) > maxPortablePayloadBytes {

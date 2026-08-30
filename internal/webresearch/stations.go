@@ -25,6 +25,7 @@ type RelevanceDecision struct {
 	Outcome       RelevanceOutcome
 	CandidateIDs  []websearch.CandidateID
 	SemanticCalls int
+	CallLedger    SemanticCallLedger
 }
 
 type RelevanceOutcome string
@@ -63,6 +64,7 @@ type GroundedParagraph struct {
 type GroundedSynthesisDecision struct {
 	Paragraphs    []GroundedParagraph
 	SemanticCalls int
+	CallLedger    SemanticCallLedger
 }
 
 type GroundedSynthesisStation interface {

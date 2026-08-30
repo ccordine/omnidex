@@ -78,19 +78,39 @@ func (decision RepositoryEvidenceRelevanceDecision) ValidateFor(input Repository
 	if len(decision.EvidenceIDs) > input.MaxSelections {
 		return fmt.Errorf("repository evidence relevance selection exceeds %d evidence IDs", input.MaxSelections)
 	}
-	available := make(map[string]struct{}, len(input.Candidates))
-	for _, candidate := range input.Candidates {
-		available[candidate.EvidenceID] = struct{}{}
+	available := make(map[string]int, len(input.Candidates))
+	for index, candidate := range input.Candidates {
+		available[candidate.EvidenceID] = index
 	}
 	seen := make(map[string]struct{}, len(decision.EvidenceIDs))
+	previousIndex := -1
 	for _, id := range decision.EvidenceIDs {
-		if _, exists := available[id]; !exists {
+		index, exists := available[id]
+		if !exists {
 			return fmt.Errorf("repository evidence relevance ID %q was not projected", id)
 		}
 		if _, duplicate := seen[id]; duplicate {
 			return fmt.Errorf("repository evidence relevance ID %q is duplicated", id)
 		}
+		if index <= previousIndex {
+			return fmt.Errorf("repository evidence relevance IDs must preserve candidate source order")
+		}
 		seen[id] = struct{}{}
+		previousIndex = index
 	}
 	return nil
+}
+
+func AssembleRepositoryEvidenceRelevanceDecision(
+	input RepositoryEvidenceRelevanceInput,
+	evidenceIDs []string,
+) (RepositoryEvidenceRelevanceDecision, error) {
+	decision := RepositoryEvidenceRelevanceDecision{
+		Schema:      RepositoryEvidenceRelevanceSchemaV1,
+		EvidenceIDs: append([]string{}, evidenceIDs...),
+	}
+	if err := decision.ValidateFor(input); err != nil {
+		return RepositoryEvidenceRelevanceDecision{}, err
+	}
+	return decision, nil
 }

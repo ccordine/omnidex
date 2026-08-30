@@ -97,43 +97,17 @@ func TestNonReplacementStationKeepsRegisteredTemperatureBaseline(t *testing.T) {
 	}
 }
 
-func TestRequirementSplitCorrectionAdvancesRegisteredTemperature(t *testing.T) {
-	t.Parallel()
-	cardinalityInput := assemblyline.ApplicationRequirementCandidateCardinalityInput{
-		Candidate: "Display a status and export a report.",
-	}
-	cardinality, err := assemblyline.DecodeApplicationRequirementCandidateCardinalityResult(
-		cardinalityInput, assemblyline.ApplicationRequirementMultipleRuntimeOutcomes,
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	job, err := assemblyline.NewApplicationRequirementCandidateSplitCorrectionJob(
-		assemblyline.ApplicationRequirementCandidateSplitCorrectionInput{
-			CurrentCandidate: cardinalityInput.Candidate,
-			Cardinality:      cardinality,
-			Defect:           assemblyline.ApplicationRequirementUnchangedSplitDefect,
-		},
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	prepared := prepareReplacementTemperatureTestCall(
-		t, job, replacementTemperatureTestExpectation(),
-	)
-	if prepared.Temperature == nil || *prepared.Temperature != 0.2 {
-		t.Fatalf("split correction temperature=%v, want 0.2", prepared.Temperature)
-	}
-	if got := preparedRequestTemperature(t, prepared); got != 0.2 {
-		t.Fatalf("split correction wire temperature=%v, want 0.2", got)
-	}
-}
-
 func TestRequirementResultRelationGroundingAndCorrectionKeepRegisteredTemperatureBaseline(t *testing.T) {
 	t.Parallel()
 	const candidate = "Transform submitted text and display the output."
 	const request = "Build a browser label formatter that converts user-provided text to Unicode lowercase."
-	generationAuthority := directCodingRequirementGenerationAuthorityForRequest(t, request)
+	applicationContext, err := assemblyline.BootstrapApplicationContext(
+		request,
+		assemblyline.ApplicationWorkspaceEmpty,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
 	candidateAuthority := applicationRequirementCandidateResultRelationAuthorityForTest(
 		t,
 		candidate,
@@ -147,7 +121,7 @@ func TestRequirementResultRelationGroundingAndCorrectionKeepRegisteredTemperatur
 	}
 	groundingInput := assemblyline.ApplicationRequirementCandidateResultRelationGroundingInput{
 		ImmutableRequest: request, CandidateAuthority: candidateAuthority,
-		Context:               generationAuthority.Authority.Context,
+		Context:               applicationContext,
 		MissingResultRelation: missing,
 	}
 	groundingJob, err := assemblyline.NewApplicationRequirementCandidateResultRelationGroundingJob(
@@ -172,7 +146,7 @@ func TestRequirementResultRelationGroundingAndCorrectionKeepRegisteredTemperatur
 	job, err := assemblyline.NewApplicationRequirementCandidateResultRelationCorrectionJob(
 		assemblyline.ApplicationRequirementCandidateResultRelationCorrectionInput{
 			ImmutableRequest: request,
-			Context:          generationAuthority.Authority.Context,
+			Context:          applicationContext,
 			CurrentCandidate: candidate,
 			Defect:           assemblyline.ApplicationRequirementMissingResultRelation,
 			Grounding:        grounding,
@@ -194,9 +168,10 @@ func TestRequirementResultRelationGroundingAndCorrectionKeepRegisteredTemperatur
 
 func TestRequirementCandidateKindKeepsRegisteredTemperatureBaseline(t *testing.T) {
 	t.Parallel()
-	job, err := assemblyline.NewApplicationRequirementCandidateKindJob(
-		assemblyline.ApplicationRequirementCandidateKindInput{
+	job, err := assemblyline.NewApplicationRequirementCandidateContentPresenceJob(
+		assemblyline.ApplicationRequirementCandidateContentPresenceInput{
 			Candidate: "Display the current status.",
+			Dimension: assemblyline.ApplicationRequirementCandidateRuntimeContentDimension,
 		},
 	)
 	if err != nil {
@@ -218,13 +193,11 @@ func applicationRequirementCandidateResultRelationAuthorityForTest(
 	candidate string,
 ) assemblyline.ApplicationRequirementCandidateResultRelationInput {
 	t.Helper()
-	kind, err := assemblyline.DecodeApplicationRequirementCandidateKindResult(
-		assemblyline.ApplicationRequirementCandidateKindInput{Candidate: candidate},
+	kind := applicationRequirementCandidateKindReceiptForTest(
+		t,
+		candidate,
 		assemblyline.ApplicationRequirementCandidateTaskLocal,
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
 	cardinality, err := assemblyline.DecodeApplicationRequirementCandidateCardinalityResult(
 		assemblyline.ApplicationRequirementCandidateCardinalityInput{Candidate: candidate},
 		assemblyline.ApplicationRequirementOneRuntimeOutcome,

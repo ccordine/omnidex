@@ -11,8 +11,9 @@ func TestContextRelevanceHasOnlyTheDurableExactStationExecutionPath(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(stationSource), "runObjectivePortableRawLeafCall(") {
-		t.Fatal("context relevance omitted the durable exact station call")
+	if !strings.Contains(string(stationSource), "runObjectiveReusablePortableRawLeafCall(") ||
+		strings.Contains(string(stationSource), "runObjectivePortableRawLeafCall(") {
+		t.Fatal("context relevance bypasses durable accepted-result reuse")
 	}
 	for _, forbidden := range []string{
 		"ExecuteContextRelevance", "browserContextRelevance", "ContextRelevanceExecutor",
@@ -20,6 +21,14 @@ func TestContextRelevanceHasOnlyTheDurableExactStationExecutionPath(t *testing.T
 		if strings.Contains(string(stationSource), forbidden) {
 			t.Errorf("context relevance station retains alternate executor %q", forbidden)
 		}
+	}
+
+	reuseSource, err := os.ReadFile("objective_reusable_raw_leaf_call.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(reuseSource), "runObjectivePortableRawLeafCall(") {
+		t.Fatal("accepted-result reuse omitted the durable exact station fallback")
 	}
 
 	engineSource, err := os.ReadFile("engine.go")

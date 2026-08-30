@@ -196,15 +196,15 @@ func TargetTreeCorrectionFailure(err error) (string, error) {
 	var failure string
 	switch {
 	case errors.Is(err, errTargetTreeFileCount):
-		failure = "The response has the wrong number of F nodes for CODE_SELECTED_FILE_COUNT."
+		failure = "The response has the wrong number of F nodes for EXACT_FILE_COUNT."
 	case errors.Is(err, errTargetTreeRootFilesOnly):
-		failure = "The response contains a D node while CODE_SELECTED_ROOT_FILES_ONLY is true."
+		failure = "The response contains a D node while ROOT_FILES_ONLY is true."
 	case errors.Is(err, errTargetTreeDirectoryConflict):
 		failure = "One F node occupies a basename hierarchy already held by an existing workspace directory."
 	case errors.Is(err, errTargetTreeReservedConflict):
-		failure = "One F node duplicates a basename hierarchy in CODE_RESERVED_TREE."
+		failure = "One F node duplicates a basename hierarchy in RESERVED_TREE."
 	default:
-		failure = "The response violates CODE_SELECTED_TECHNICAL_CONTEXT."
+		failure = "The response violates TECHNICAL_CONTEXT."
 	}
 	if pathErr := ValidatePathFreeModelContext("target tree correction failure", failure); pathErr != nil {
 		return "", pathErr

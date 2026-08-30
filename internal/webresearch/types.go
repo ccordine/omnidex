@@ -104,5 +104,6 @@ type Result struct {
 	RelevanceCalls          int
 	SynthesisCalls          int
 	SemanticCalls           int
+	CallLedger              SemanticCallLedger
 	Complete                bool
 }

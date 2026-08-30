@@ -29,9 +29,74 @@ func (s *directCodingSession) collectDirectCodingWorkspaceVerification(
 	if err := requireDirectCodingWorkspacePost(ctx, mutation); err != nil {
 		return directCodingVerification{}, queue.WorkspaceMutationVerificationResult{}, err
 	}
-	diagnostic, err := s.directCodingWorkspaceDiagnostic()
+	records, diagnostic, testEvidence, err := s.executeDirectCodingVerificationJournal(
+		ctx, commands, sandbox,
+		func(index int, command testCommand, result operation.Result) (evidence.Record, error) {
+			return directCodingVerificationEvidence(mutation, index, command, result)
+		},
+		func(index int, command testCommand, detail string) evidence.Record {
+			return directCodingSkippedVerificationEvidence(mutation, index, command, detail)
+		},
+	)
 	if err != nil {
 		return directCodingVerification{}, queue.WorkspaceMutationVerificationResult{}, err
+	}
+	if err := requireDirectCodingWorkspacePost(ctx, mutation); err != nil {
+		return directCodingVerification{}, queue.WorkspaceMutationVerificationResult{}, err
+	}
+	current, err := workspacefacts.Capture(ctx, mutation.Plan.WorkspaceRoot)
+	if err != nil {
+		return directCodingVerification{}, queue.WorkspaceMutationVerificationResult{}, err
+	}
+	verifiedRepositoryID := ""
+	if current.Git != nil {
+		verifiedRepositoryID = current.Git.RepositorySnapshotID
+	}
+	passed := diagnostic == nil
+	verification := directCodingVerification{
+		Passed: passed, TestsPassed: testEvidence,
+		Commands: directCodingPrimaryCommandLabels(commands), Diagnostic: diagnostic,
+	}
+	if passed {
+		sequence := s.nextSequence()
+		s.completion.LatestCheckTurn = sequence
+		if testEvidence {
+			s.completion.LatestTestTurn = sequence
+		}
+		s.completion.LastTestHadNoTests = false
+		s.lastCommands = append([]string(nil), verification.Commands...)
+	}
+	failure := ""
+	if diagnostic != nil {
+		failure = diagnostic.Stage + ": " + diagnostic.Detail
+	}
+	return verification, queue.WorkspaceMutationVerificationResult{
+		Succeeded: passed, Failure: failure, CommandEvidence: records,
+		VerifiedRepositorySnapshotID: verifiedRepositoryID,
+	}, nil
+}
+
+type directCodingVerificationEvidenceBinder func(
+	int,
+	testCommand,
+	operation.Result,
+) (evidence.Record, error)
+
+type directCodingSkippedVerificationBinder func(int, testCommand, string) evidence.Record
+
+func (s *directCodingSession) executeDirectCodingVerificationJournal(
+	ctx context.Context,
+	commands []testCommand,
+	sandbox *directCodingWorkspaceSandbox,
+	bindEvidence directCodingVerificationEvidenceBinder,
+	bindSkipped directCodingSkippedVerificationBinder,
+) ([]evidence.Record, *directCodingDiagnostic, bool, error) {
+	if sandbox == nil || bindEvidence == nil || bindSkipped == nil {
+		return nil, nil, false, fmt.Errorf("direct-coding verification journal authority is incomplete")
+	}
+	diagnostic, err := s.directCodingWorkspaceDiagnostic()
+	if err != nil {
+		return nil, nil, false, err
 	}
 	records := make([]evidence.Record, 0, len(commands))
 	primaryFailed := diagnostic != nil
@@ -42,8 +107,8 @@ func (s *directCodingSession) collectDirectCodingWorkspaceVerification(
 	for index, command := range commands {
 		if command.WorkspaceRole == workspaceVerificationPrimary &&
 			(primaryFailed || infrastructureErr != nil) {
-			records = append(records, directCodingSkippedVerificationEvidence(
-				mutation, index, command, directCodingDiagnosticText(diagnostic, infrastructureErr),
+			records = append(records, bindSkipped(
+				index, command, directCodingDiagnosticText(diagnostic, infrastructureErr),
 			))
 			continue
 		}
@@ -58,9 +123,7 @@ func (s *directCodingSession) collectDirectCodingWorkspaceVerification(
 			}
 			continue
 		}
-		record, recordErr := directCodingVerificationEvidence(
-			mutation, index, command, result,
-		)
+		record, recordErr := bindEvidence(index, command, result)
 		if recordErr != nil {
 			infrastructureErr = errors.Join(infrastructureErr, recordErr)
 			if command.WorkspaceRole == workspaceVerificationPrimary {
@@ -103,12 +166,12 @@ func (s *directCodingSession) collectDirectCodingWorkspaceVerification(
 		records = append(records, record)
 	}
 	if infrastructureErr != nil || cleanupErr != nil {
-		return directCodingVerification{}, queue.WorkspaceMutationVerificationResult{},
-			errors.Join(infrastructureErr, cleanupErr)
+		return nil, nil, false, errors.Join(infrastructureErr, cleanupErr)
 	}
 	if len(records) != len(commands) {
-		return directCodingVerification{}, queue.WorkspaceMutationVerificationResult{},
-			fmt.Errorf("direct-coding verification evidence differs from its journal plan")
+		return nil, nil, false, fmt.Errorf(
+			"direct-coding verification evidence differs from its journal plan",
+		)
 	}
 	if s.completion.TestsRequired && !testEvidence && diagnostic == nil {
 		diagnostic = &directCodingDiagnostic{
@@ -117,47 +180,14 @@ func (s *directCodingSession) collectDirectCodingWorkspaceVerification(
 			Detail:  "Verification commands succeeded but reported no executed tests. Add focused tests for the requested success and failure behavior.",
 		}
 		if lastTestIndex < 0 || lastTestIndex >= len(records) {
-			return directCodingVerification{}, queue.WorkspaceMutationVerificationResult{},
-				fmt.Errorf("test-required verification journal has no test evidence command")
+			return nil, nil, false, fmt.Errorf(
+				"test-required verification journal has no test evidence command",
+			)
 		}
 		records[lastTestIndex].Metadata["succeeded"] = false
-		records[lastTestIndex].Warnings = append(
-			records[lastTestIndex].Warnings, diagnostic.Detail,
-		)
+		records[lastTestIndex].Warnings = append(records[lastTestIndex].Warnings, diagnostic.Detail)
 	}
-	if err := requireDirectCodingWorkspacePost(ctx, mutation); err != nil {
-		return directCodingVerification{}, queue.WorkspaceMutationVerificationResult{}, err
-	}
-	current, err := workspacefacts.Capture(ctx, mutation.Plan.WorkspaceRoot)
-	if err != nil {
-		return directCodingVerification{}, queue.WorkspaceMutationVerificationResult{}, err
-	}
-	verifiedRepositoryID := ""
-	if current.Git != nil {
-		verifiedRepositoryID = current.Git.RepositorySnapshotID
-	}
-	passed := diagnostic == nil
-	verification := directCodingVerification{
-		Passed: passed, TestsPassed: testEvidence,
-		Commands: directCodingPrimaryCommandLabels(commands), Diagnostic: diagnostic,
-	}
-	if passed {
-		sequence := s.nextSequence()
-		s.completion.LatestCheckTurn = sequence
-		if testEvidence {
-			s.completion.LatestTestTurn = sequence
-		}
-		s.completion.LastTestHadNoTests = false
-		s.lastCommands = append([]string(nil), verification.Commands...)
-	}
-	failure := ""
-	if diagnostic != nil {
-		failure = diagnostic.Stage + ": " + diagnostic.Detail
-	}
-	return verification, queue.WorkspaceMutationVerificationResult{
-		Succeeded: passed, Failure: failure, CommandEvidence: records,
-		VerifiedRepositorySnapshotID: verifiedRepositoryID,
-	}, nil
+	return records, diagnostic, testEvidence, nil
 }
 
 func (s *directCodingSession) directCodingWorkspaceDiagnostic() (*directCodingDiagnostic, error) {

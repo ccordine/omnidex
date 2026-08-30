@@ -64,8 +64,8 @@ func TestDirectCodingTaskBehaviorContainsNoPlannerExpansion(t *testing.T) {
 		t.Fatal(err)
 	}
 	wantPrefix := strings.Join([]string{
-		"Authoritative delivery surface: " + string(specification.Surface),
-		"Authoritative product context: " + specification.ProductQuote,
+		"Delivery surface: " + string(specification.Surface),
+		"Product context: " + specification.ProductQuote,
 		"Exact user requirement: " + specification.Requirements[0].SourceQuote,
 	}, "\n")
 	if !strings.HasPrefix(behavior, wantPrefix) {
@@ -79,7 +79,7 @@ func TestDirectCodingTaskBehaviorContainsNoPlannerExpansion(t *testing.T) {
 			t.Fatalf("task behavior does not contain exact authority %q once: %s", required, behavior)
 		}
 	}
-	if strings.Count(behavior, "Authoritative product context:") != 1 {
+	if strings.Count(behavior, "Product context:") != 1 {
 		t.Fatalf("task behavior does not identify exact product authority once: %s", behavior)
 	}
 	for _, forbidden := range []string{
@@ -127,7 +127,7 @@ func TestDirectCodingTaskBehaviorIsolatesRequirementsAcrossSurfaces(t *testing.T
 				if strings.Count(behavior, own) != 1 ||
 					strings.Count(behavior, specification.ProductQuote) != 1 ||
 					strings.Contains(behavior, sibling) ||
-					strings.Count(behavior, "Authoritative product context:") != 1 {
+					strings.Count(behavior, "Product context:") != 1 {
 					t.Fatalf("task %s projection is not isolated: %s", task.ID, behavior)
 				}
 			}

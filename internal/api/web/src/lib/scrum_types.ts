@@ -43,7 +43,6 @@ export type ScrumFlowMetrics = {
   completion_status?: "likely_complete" | "likely_incomplete" | "uncertain" | string;
   signals?: string[];
   last_play_outcome?: string;
-  review_gate?: "" | "passed" | "failed" | "pending" | "running" | string;
   column?: string;
 };
 

@@ -48,16 +48,12 @@ func TestExactStationContextNegotiationRunsForRoleplayCompletionProfiles(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	semanticJob, err := assemblyline.NewContextRelevanceSelectionJob(
-		assemblyline.ContextRelevanceSelectionInput{
-			Authority: assemblyline.ContextRelevanceInput{
-				ExactInstruction:     "Continue.",
-				KnownArtifactPaths:   []string{},
-				CandidateAuthorities: []assemblyline.ContextCandidateAuthority{candidate},
-				MaxSelections:        1,
-				Scope:                assemblyline.ContextScopeRoleplaySimulation,
-			},
-			AcceptedCandidateIDs: []string{},
+	semanticJob, err := assemblyline.NewContextRelevanceRelationJob(
+		assemblyline.ContextRelevanceRelationInput{
+			ExactInstruction:   "Continue.",
+			KnownArtifactPaths: []string{},
+			Candidate:          candidate,
+			Scope:              assemblyline.ContextScopeRoleplaySimulation,
 		},
 	)
 	if err != nil {

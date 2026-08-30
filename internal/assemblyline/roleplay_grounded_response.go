@@ -33,34 +33,102 @@ type RoleplayGroundedResponseDecision struct {
 	Paragraphs []RoleplayGroundedParagraph `json:"paragraphs"`
 }
 
+func AssembleRoleplayGroundedResponseDecision(
+	input RoleplayGroundedResponseInput,
+	paragraphs []RoleplayGroundedParagraph,
+) (RoleplayGroundedResponseDecision, error) {
+	cloned := make([]RoleplayGroundedParagraph, len(paragraphs))
+	for index, paragraph := range paragraphs {
+		cloned[index] = paragraph
+		cloned[index].EvidenceIDs = append([]string(nil), paragraph.EvidenceIDs...)
+	}
+	decision := RoleplayGroundedResponseDecision{
+		Schema: RoleplayGroundedResponseSchemaV1, Paragraphs: cloned,
+	}
+	if err := decision.ValidateFor(input); err != nil {
+		return RoleplayGroundedResponseDecision{}, err
+	}
+	return decision, nil
+}
+
 func (input RoleplayGroundedResponseInput) Validate() error {
 	return input.validate()
 }
 
 func (input RoleplayGroundedResponseInput) validate() error {
-	if err := validateGroundedText(
-		"roleplay grounded question", input.ExactQuestion, roleplay.MaxResearchQuestionBytes, true,
+	if err := validateRoleplayGroundedSemanticAuthority(
+		input.ExactQuestion,
+		input.RoleplayIdentity,
+		input.Context,
+		input.RealWorldEvidence,
+		input.KnownArtifactPaths,
 	); err != nil {
 		return err
 	}
-	identity := input.RoleplayIdentity
-	userTurn := input.RoleplayUserTurn
-	if err := (ConversationResponseInput{
-		Kind: ObjectiveKindStory, ExactInstruction: input.ExactQuestion,
-		Context: input.Context, RoleplayIdentity: &identity, RoleplayUserTurn: &userTurn,
-		KnownArtifactPaths: append([]string{}, input.KnownArtifactPaths...),
+	if err := input.RoleplayUserTurn.validate(); err != nil {
+		return err
+	}
+	provenance, err := modelcontext.NewArtifactIdentityProvenance(input.KnownArtifactPaths)
+	if err != nil {
+		return err
+	}
+	values := []string{
+		input.RoleplayUserTurn.PersonaName,
+		input.RoleplayUserTurn.PersonaSummary,
+	}
+	for _, part := range input.RoleplayUserTurn.Parts {
+		values = append(values, part.Text)
+	}
+	return ValidatePathFreeModelContextWithProvenance(
+		"roleplay grounded user-turn authority", provenance, values...,
+	)
+}
+
+func validateRoleplayGroundedSemanticAuthority(
+	exactQuestion string,
+	identity RoleplayResponseIdentity,
+	context ObjectiveContext,
+	evidence []GroundedEvidenceCapsule,
+	knownArtifactPaths []string,
+) error {
+	if err := validateGroundedText(
+		"roleplay grounded question", exactQuestion, roleplay.MaxResearchQuestionBytes, true,
+	); err != nil {
+		return err
+	}
+	for label, value := range map[string]string{
+		"character name":    identity.CharacterName,
+		"character summary": identity.Summary,
+	} {
+		if err := validateContextText("roleplay "+label, value, 1024); err != nil {
+			return err
+		}
+	}
+	if err := validateOptionalContextText(
+		"roleplay character voice", identity.Voice, 1024,
+	); err != nil {
+		return err
+	}
+	if len(evidence) < 1 || len(evidence) > maxRoleplayGroundedEvidence {
+		return fmt.Errorf("roleplay grounded response requires 1..%d evidence capsules", maxRoleplayGroundedEvidence)
+	}
+	if err := (GroundedAnswerInput{
+		RequirementID:      "roleplay-grounded-response",
+		ExactRequirement:   exactQuestion,
+		Context:            CloneObjectiveContext(context),
+		Evidence:           append([]GroundedEvidenceCapsule(nil), evidence...),
+		KnownArtifactPaths: append([]string{}, knownArtifactPaths...),
 	}).validate(); err != nil {
 		return err
 	}
-	if len(input.RealWorldEvidence) < 1 || len(input.RealWorldEvidence) > maxRoleplayGroundedEvidence {
-		return fmt.Errorf("roleplay grounded response requires 1..%d evidence capsules", maxRoleplayGroundedEvidence)
+	provenance, err := modelcontext.NewArtifactIdentityProvenance(knownArtifactPaths)
+	if err != nil {
+		return err
 	}
-	return (GroundedAnswerInput{
-		RequirementID:      "roleplay-grounded-response",
-		ExactRequirement:   input.ExactQuestion,
-		Evidence:           append([]GroundedEvidenceCapsule(nil), input.RealWorldEvidence...),
-		KnownArtifactPaths: append([]string{}, input.KnownArtifactPaths...),
-	}).validate()
+	return ValidatePathFreeModelContextWithProvenance(
+		"roleplay grounded identity authority", provenance,
+		identity.CharacterName, identity.Summary, identity.Voice,
+	)
 }
 
 func (decision RoleplayGroundedResponseDecision) ValidateFor(
@@ -80,13 +148,8 @@ func (decision RoleplayGroundedResponseDecision) ValidateFor(
 		available[item.ID] = struct{}{}
 	}
 	for index, paragraph := range decision.Paragraphs {
-		if err := validateGroundedText(
-			"roleplay grounded paragraph", paragraph.Text, maxRoleplayGroundedParagraphBytes, true,
-		); err != nil {
+		if err := validateRoleplayGroundedParagraphText(paragraph.Text); err != nil {
 			return fmt.Errorf("paragraph %d: %w", index, err)
-		}
-		if webModelCitationSyntax.MatchString(paragraph.Text) {
-			return fmt.Errorf("roleplay grounded paragraph %d contains model-authored citation syntax", index)
 		}
 		if len(paragraph.EvidenceIDs) < 1 || len(paragraph.EvidenceIDs) > len(input.RealWorldEvidence) {
 			return fmt.Errorf("roleplay grounded paragraph %d requires projected evidence IDs", index)

@@ -68,13 +68,13 @@ func TestBrowserPublicSurfaceBindingProjectsOnlyAcceptedPublicFacts(t *testing.T
 				t.Fatal(err)
 			}
 			after := renderBrowserPublicSurfaceTestJob(t, stage, featureRef, nil, nil)
-			if before != after || strings.Contains(after, "CODE_PROVEN_PUBLIC_INTERACTION_SURFACE") {
+			if before != after || strings.Contains(after, "PUBLIC_INTERACTION_SURFACE:") {
 				t.Fatalf("implementation prompt changed after public-surface binding:\n%s", after)
 			}
 			verificationPrompt := renderBrowserPublicSurfaceTestJob(
 				t, stage, acceptanceRef, surface, validate,
 			)
-			if strings.Count(verificationPrompt, "CODE_PROVEN_PUBLIC_INTERACTION_SURFACE:") != 1 ||
+			if strings.Count(verificationPrompt, "PUBLIC_INTERACTION_SURFACE:") != 1 ||
 				strings.Count(verificationPrompt, "PUBLIC_INTERACTION_SURFACE_V1") != 1 {
 				t.Fatalf("verification prompt lacks one public receipt:\n%s", verificationPrompt)
 			}

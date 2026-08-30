@@ -11,8 +11,9 @@ func TestApplicationServiceEndpointRequirementHasOneExactStationOwner(t *testing
 	t.Parallel()
 	job, err := assemblyline.NewApplicationServiceEndpointRequirementJob(
 		assemblyline.ApplicationServiceEndpointRequirementInput{
-			ProductContext:   "inventory service",
-			RequirementQuote: "Records are normalized before storage.",
+			ProductContext:              "inventory service",
+			RequirementQuote:            "Records are normalized before storage.",
+			HasDirectCapabilityConsumer: true,
 		},
 	)
 	if err != nil {

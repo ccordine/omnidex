@@ -25,6 +25,25 @@ func TestDesiredRepositoryCallProofUsesExactWorkKinds(t *testing.T) {
 	}
 }
 
+func TestDesiredRepositoryCallProofAllowsZeroCeremonialCalls(t *testing.T) {
+	t.Parallel()
+	if err := validateDesiredRepositoryCallProofCounters(desiredRepositoryCallProof{}); err != nil {
+		t.Fatalf("zero exact call evidence was rejected: %v", err)
+	}
+	for name, proof := range map[string]desiredRepositoryCallProof{
+		"negative": {TotalModelCalls: -1},
+		"inconsistent": {
+			TotalModelCalls: 2, SemanticGapCalls: 1,
+		},
+		"model operation": {ModelSelectedMutationOperations: 1},
+		"visible path":    {ModelVisibleTargetPaths: 1},
+	} {
+		if err := validateDesiredRepositoryCallProofCounters(proof); err == nil {
+			t.Errorf("%s proof was accepted: %+v", name, proof)
+		}
+	}
+}
+
 func TestDesiredRepositoryCallProofRejectsVisibleTargetBeforeMutation(t *testing.T) {
 	t.Parallel()
 	_, err := compileDesiredRepositoryCallProof([]queue.StationAttemptCallEvidence{{

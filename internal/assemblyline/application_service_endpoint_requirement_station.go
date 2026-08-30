@@ -13,11 +13,12 @@ func BuildApplicationServiceEndpointRequirementPrompt(
 	}
 	prompt := strings.Join([]string{
 		"Classify whether the exact endpoint requirement needs a direct HTTP request-and-response interaction.",
-		"Choose endpoint_required when an HTTP requester directly invokes or retrieves the required behavior. Choose support_only when the required behavior supports another interaction and has no direct HTTP interaction.",
+		"Another accepted behavior directly consumes this requirement's result. Choose endpoint_required when an HTTP requester also directly invokes or retrieves the required behavior. Choose support_only only when the required behavior has no direct HTTP interaction and exists solely through that consumer.",
 		"Return exactly one raw endpoint_requirement value: endpoint_required or support_only.",
 		"Return only that registered value with no JSON, quotes, label, Markdown, or commentary.",
 		"PRODUCT CONTEXT:\n" + input.ProductContext,
 		"EXACT ENDPOINT REQUIREMENT:\n" + input.RequirementQuote,
+		"DIRECT_CAPABILITY_CONSUMER:\ntrue",
 	}, "\n\n")
 	if len(prompt) > maxPortablePayloadBytes {
 		return "", fmt.Errorf(

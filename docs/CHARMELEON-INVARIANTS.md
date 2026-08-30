@@ -226,41 +226,52 @@ Code immediately preserves:
 * any directly derivable terms.
 
 Then bounded Charmander-style semantic stations establish only the semantic leaves
-that code cannot derive. Each call has one result: one delivery surface, one product
-context, one requirement-coverage relation, or one requirement.
+that code cannot derive. During intake, each call has one result: one bounded atomic
+runtime-candidate inventory, one candidate-bound relation, or one code-authorized
+partition artifact. Product identity, delivery surface, deployment semantics, and other
+downstream leaves are resolved only after a task-local requirement survives and only at
+their first actual consumer.
 
-For example:
+Exactly one requirement-inventory station returns either
+`NO_RUNTIME_REQUIREMENT_CANDIDATES` or between one and the code-owned maximum positive,
+source-ordered runtime-outcome candidate lines. Code parses and counts those lines
+mechanically. No semantic station pre-counts the inventory, and no pre-count receipt
+exists. At this one intake boundary the inventory splits independent
+outcomes and may express only the literal core operation or governed result inherent in a
+purpose-denoting product or category name. It omits construction constraints, customary
+features, and speculative enhancements. The inventory is not an accepted specification,
+feature list, task queue, authorization, or completeness claim. Code validates the
+inventory and creates the only authoritative candidate queue.
 
-Station: requirement coverage
+For each queued candidate, code first removes exact byte duplicates mechanically.
+The first semantic call asks only whether the candidate's complete meaning is entailed
+by the current request. A speculative or invented candidate is discarded before any
+kind, cardinality, partition, or result analysis. An authorized candidate is then
+classified by kind and, when it contains runtime meaning, cardinality. Only a
+code-established mixed-kind or multiple-outcome result permits one bounded lossless
+partition; its source-ordered children return to the same code-owned queue.
 
-Input:
+An authorized atomic runtime candidate is compared with retained requirements one
+pair at a time through a same-or-distinct semantic relation. Exact and semantic
+duplicates evaporate. Only a distinct, grounded functional outcome is retained and
+projected into one frozen task in source order. Product identity, delivery surface,
+technical and structural format, generic test/build/verification, and deployment
+constraints remain outside this queue. Only after at least one task-local requirement
+survives do their narrow code-owned consumers resolve the necessary semantic leaves from
+the immutable request, each at its first use.
 
-Exact user instruction
-Established source-backed facts
-Already retained requirements
-
-Output:
-
-REQUIREMENT_REMAINS
-
-Only that relation permits the separate one-requirement station:
-
-R1: Invitation dispatch timing is configurable per client without changing the
-existing default.
-
-Code validates and retains the leaf, repeats the fixed point within its hard bound,
-and projects each accepted task-local runtime implementation requirement directly into
-one frozen task in source order. Product identity, delivery surface, technical and
-structural format, generic test/build/verification, and deployment constraints are outside
-this fixed point; their existing narrow code-owned consumers receive the immutable request
-directly, and unconditional stack verification supplies test and build evidence.
-The separately accepted product/domain identity is retained in code-owned workload
-authority but is not projected into requirement coverage, requirement extraction, or
-task-local source generation; those calls receive no aggregate paraphrase of sibling
-requirements.
-The model does not emit a requirement array, objective graph, behavior list,
-acceptance contract, dependency, schedule, or plan. Text-span heuristics are not an
-authority substitute for semantic validation.
+Rejected, speculative, duplicate, non-runtime, unresolved, or over-bound candidates
+cannot block the queue, reopen accepted state, or manufacture another review. Queue
+exhaustion freezes the retained functional objectives for the current iteration, including
+an empty accepted set. A product or
+category name does not imply customary extra features as prerequisites, and no later
+product-name generator reopens the queue; a later user turn can request another bounded
+iteration. If code retains a rejected or speculative candidate as an optional suggestion,
+it remains provenance-bound but outside the current ledger, workload, verifier, and
+completion predicates until that later user turn makes it authoritative through the
+ordinary sieve. No model emits an objective graph, acceptance contract, dependency,
+schedule, or plan. Text-span heuristics are not an authority substitute for semantic
+validation.
 
 ⸻
 
@@ -301,19 +312,17 @@ parsers, symbols, references, and registered semantic-excerpt retrieval remain
 code-invoked providers. A model never creates search strings, chooses a provider, or
 constructs provider arguments.
 
-If twenty plausible results remain, another tiny station can resolve one relevance
-leaf at a time:
+If bounded plausible results remain, code walks them in their authoritative source
+order. Until the configured citation cap is reached, one tiny station resolves one
+candidate-bound relation at a time:
 
-Which one remaining candidate is most directly concerned with invitation dispatch
-timing?
-Return one opaque candidate ID or NO_RELEVANT_EVIDENCE.
+Is this exact evidence candidate directly relevant to this exact requirement?
+Return DIRECTLY_RELEVANT or NOT_DIRECTLY_RELEVANT.
 
-Output:
-
-S17
-
-Code retains S17, decides whether another bounded relevance call is legal, then reads
-accepted candidates, parses them, follows references, and updates repository facts.
+Code validates each pair-bound result, retains the candidate identity only for a
+direct relation, and closes the sieve when the cap is reached or its code-owned queue
+is exhausted. The model never sees other candidates, accepted identities, queue
+state, or an absence/completion choice.
 
 The model does not decide to search, read, traverse, or stop researching.
 
@@ -349,10 +358,13 @@ Compatibility verification is independently required.
 
 It builds those edges itself.
 
-The direct coding path does not ask a model to decompose requirements. It freezes one
-task per accepted requirement. Other cognition consumers may ask one bounded semantic
-question among code-enumerated candidates only when one relation or fact is genuinely
-unresolved; the result binds that one leaf and cannot expand the objective graph.
+The direct coding path does not ask a model to plan or decompose the workload. It
+freezes one task per accepted atomic functional requirement. A partition call is legal
+only for one candidate whose mixed kind or multiple runtime outcomes were already
+established, and it returns only narrower candidate text to the code-owned queue.
+Other cognition consumers may ask one bounded semantic question among code-enumerated
+candidates only when one relation or fact is genuinely unresolved; the result binds
+that one leaf and cannot expand the objective graph.
 
 There is no planner model. Code alone owns decomposition, scheduling, task state,
 retries, and execution.
@@ -442,13 +454,19 @@ There should be no general “researcher,” “planner,” “coder,” or “r
 There should be small, consistent station contracts:
 
 Station	Input	Output
-RequirementCoverage	Instruction, product, retained leaves	One remains/no-uncovered relation
-ExtractRequirement	Instruction, product, retained leaves	One requirement
-SelectRelevantCandidate	Small candidate summaries	One candidate ID or none
+InventoryRequirementCandidates	Exact immutable request	Registered semantic absence or bounded 1..N source-ordered atomic runtime-outcome candidates
+AuthorizeRequirementCandidate	Exact request, established facts, and one untrusted candidate	One entailment relation
+ClassifyRequirementKind	One authorized candidate	One registered kind
+ClassifyRequirementCardinality	One authorized runtime candidate	One registered cardinality
+PartitionRequirementCandidate	One candidate and one established compound relation	Bounded source-ordered child candidates
+RelateRequirementDuplicate	One atomic candidate and one retained requirement	One same-or-distinct relation
+RelateContextCandidate	Exact instruction, one candidate content	One relevance relation
 ResolveReference	One phrase and candidate symbols	One candidate ID or none
 ClassifyRelationship	Two bounded facts	One relation enum
 GenerateDeclaration	Exact source contract	One declaration
-SynthesizeEvidence	One question and selected evidence	One grounded answer
+InventoryAnswerParagraphs	One exact requirement and selected evidence	Bounded untrusted paragraph candidates
+AuthorizeAnswerParagraph	One candidate paragraph, exact requirement, and the complete supplied evidence set	One responsiveness-and-collective-support relation
+RelateParagraphEvidence	One authorized candidate paragraph and one evidence capsule	One citation-attribution relation
 
 Each station gets:
 
@@ -685,9 +703,20 @@ No source mutation.
 
 Gate 5 — bounded semantic intake and code-owned workload compilation
 
-Take a vague request through one-leaf semantic fixed points. Code must project each
-accepted task-local runtime implementation requirement into exactly one frozen task and work that deterministic graph
-to completion without a planner call.
+Take a vague request through one bounded requirement inventory that returns the exact
+registered semantic absence or 1..N positive candidates within the code-owned maximum.
+Code parses and counts its lines mechanically; no semantic station pre-counts the inventory,
+no pre-count receipt exists, and inventory generation is not a completeness claim. Code owns the
+source-order candidate queue. Every positive candidate enters the ordinary sieve.
+Authorization precedes candidate semantic classification;
+candidate kind/cardinality receipts permit only bounded candidate partitioning, and
+pairwise relations remove semantic duplicates. Queue exhaustion closes intake. Code must
+project each accepted task-local runtime requirement into exactly one frozen task and
+work that deterministic graph to completion without a planner call. Rejected
+candidates never reopen accepted work; the current accepted functional objective owns
+completion, while a later user turn begins another bounded iteration. Product, surface,
+deployment, and other downstream semantic leaves run only after a surviving requirement
+exists and only at their first consumer.
 
 Gate 6 — Charmander generation handoff
 

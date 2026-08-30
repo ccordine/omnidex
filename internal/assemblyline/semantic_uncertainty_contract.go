@@ -99,6 +99,97 @@ func semanticUncertaintyContractV3(
 	)
 }
 
+func semanticUncertaintyContractV4(
+	kind WorkKind,
+	question string,
+	limitation string,
+	requiredInformation string,
+	singleResult string,
+	consumer string,
+) SemanticUncertaintyContract {
+	return semanticUncertaintyContractVersion(
+		kind, "v4", question, limitation, requiredInformation, singleResult, consumer,
+	)
+}
+
+func semanticUncertaintyContractV5(
+	kind WorkKind,
+	question string,
+	limitation string,
+	requiredInformation string,
+	singleResult string,
+	consumer string,
+) SemanticUncertaintyContract {
+	return semanticUncertaintyContractVersion(
+		kind, "v5", question, limitation, requiredInformation, singleResult, consumer,
+	)
+}
+
+func semanticUncertaintyContractV6(
+	kind WorkKind,
+	question string,
+	limitation string,
+	requiredInformation string,
+	singleResult string,
+	consumer string,
+) SemanticUncertaintyContract {
+	return semanticUncertaintyContractVersion(
+		kind, "v6", question, limitation, requiredInformation, singleResult, consumer,
+	)
+}
+
+func semanticUncertaintyContractV7(
+	kind WorkKind,
+	question string,
+	limitation string,
+	requiredInformation string,
+	singleResult string,
+	consumer string,
+) SemanticUncertaintyContract {
+	return semanticUncertaintyContractVersion(
+		kind, "v7", question, limitation, requiredInformation, singleResult, consumer,
+	)
+}
+
+func semanticUncertaintyContractV8(
+	kind WorkKind,
+	question string,
+	limitation string,
+	requiredInformation string,
+	singleResult string,
+	consumer string,
+) SemanticUncertaintyContract {
+	return semanticUncertaintyContractVersion(
+		kind, "v8", question, limitation, requiredInformation, singleResult, consumer,
+	)
+}
+
+func semanticUncertaintyContractV9(
+	kind WorkKind,
+	question string,
+	limitation string,
+	requiredInformation string,
+	singleResult string,
+	consumer string,
+) SemanticUncertaintyContract {
+	return semanticUncertaintyContractVersion(
+		kind, "v9", question, limitation, requiredInformation, singleResult, consumer,
+	)
+}
+
+func semanticUncertaintyContractV10(
+	kind WorkKind,
+	question string,
+	limitation string,
+	requiredInformation string,
+	singleResult string,
+	consumer string,
+) SemanticUncertaintyContract {
+	return semanticUncertaintyContractVersion(
+		kind, "v10", question, limitation, requiredInformation, singleResult, consumer,
+	)
+}
+
 func semanticUncertaintyContractVersion(
 	kind WorkKind,
 	version string,

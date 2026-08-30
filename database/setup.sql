@@ -71,7 +71,6 @@ CREATE FUNCTION current_model_config_is_valid(config jsonb) RETURNS boolean
             'grounded_answer_model',
             'database_schema_selection_model',
             'database_query_intent_model',
-            'database_evidence_gap_model',
             'database_join_path_selection_model',
             'repository_evidence_relevance_model',
             'web_relevance_model',
@@ -1732,16 +1731,9 @@ CREATE FUNCTION reject_retired_roleplay_voice_opening() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
 DECLARE
-    payload JSONB;
     kind TEXT;
 BEGIN
-    payload := NEW.portable_payload::jsonb;
     kind := NEW.work_kind;
-    WHILE kind='response_correction' LOOP
-        kind := payload->'original'->>'kind';
-        payload := payload->'original'->'payload';
-        EXIT WHEN kind IS NULL;
-    END LOOP;
     IF kind IN ('roleplay_voice_rewrite','roleplay_voice_preservation') THEN
         RAISE EXCEPTION 'roleplay voice rewrite stations are retired';
     END IF;
@@ -4030,32 +4022,33 @@ CREATE FUNCTION station_owns_portable_work(station text, work_kind text, payload
     AS $$
     SELECT CASE work_kind
         WHEN 'application_classification' THEN station='coding_surface'
-        WHEN 'application_context_need_coverage' THEN station='coding_requirements'
-        WHEN 'application_context_need_question' THEN station='coding_requirements'
+        WHEN 'application_context_question_inventory' THEN station='coding_requirements'
+        WHEN 'application_context_question_necessity' THEN station='coding_requirements'
+        WHEN 'application_context_question_relation' THEN station='coding_requirements'
         WHEN 'application_product_context' THEN station='coding_requirements'
-        WHEN 'application_requirement_coverage' THEN station='coding_requirements'
-        WHEN 'application_requirement' THEN station='coding_requirements'
+		WHEN 'application_requirement_inventory' THEN station='coding_requirements'
         WHEN 'application_requirement_candidate_cardinality' THEN station='coding_requirements'
         WHEN 'application_requirement_candidate_kind' THEN station='coding_requirements'
+        WHEN 'application_requirement_candidate_authorization' THEN station='coding_requirements'
         WHEN 'application_requirement_candidate_result_relation' THEN station='coding_requirements'
         WHEN 'application_requirement_candidate_result_relation_grounding' THEN station='coding_requirements'
         WHEN 'application_requirement_candidate_result_relation_correction' THEN station='coding_requirements'
         WHEN 'application_requirement_candidate_outcome_relation' THEN station='coding_requirements'
-        WHEN 'application_requirement_candidate_split' THEN station='coding_requirements'
-        WHEN 'application_requirement_candidate_split_correction' THEN station='coding_requirements'
-        WHEN 'repository_requirement_coverage' THEN station='coding_requirements'
-        WHEN 'repository_requirement' THEN station='coding_requirements'
+        WHEN 'application_requirement_candidate_partition' THEN station='coding_requirements'
+        WHEN 'repository_requirement_inventory' THEN station='coding_requirements'
+        WHEN 'repository_requirement_candidate_authorization' THEN station='coding_requirements'
+        WHEN 'repository_requirement_candidate_relation' THEN station='coding_requirements'
         WHEN 'application_target_tree' THEN station='coding_target_tree'
         WHEN 'application_project_stack_constraint' THEN station='coding_project_stack_constraint'
         WHEN 'application_service_continued_availability' THEN station='coding_service_continued_availability'
         WHEN 'application_service_persistence_destination' THEN station='coding_service_persistence_destination'
         WHEN 'application_service_state_lifetime' THEN station='coding_service_state_lifetime'
-        WHEN 'application_state_field_coverage' THEN station='coding_application_state_field_coverage'
-        WHEN 'application_state_field_purpose' THEN station='coding_application_state_field_purpose'
+        WHEN 'application_state_field_purpose_inventory' THEN station='coding_application_state_field_purpose_inventory'
         WHEN 'application_state_field_kind' THEN station='coding_application_state_field_kind'
-        WHEN 'application_record_field_coverage' THEN station='coding_application_record_field_coverage'
-        WHEN 'application_record_field_purpose' THEN station='coding_application_record_field_purpose'
+        WHEN 'application_record_field_purpose_inventory' THEN station='coding_application_record_field_purpose_inventory'
         WHEN 'application_record_field_kind' THEN station='coding_application_record_field_kind'
+        WHEN 'application_service_state_purpose_necessity' THEN station='coding_application_service_state_purpose_necessity'
+        WHEN 'application_service_state_purpose_relation' THEN station='coding_application_service_state_purpose_relation'
         WHEN 'application_service_endpoint_requirement' THEN station='coding_service_endpoint_requirement'
         WHEN 'application_service_endpoint_exposure' THEN station='coding_service_endpoint_exposure'
         WHEN 'application_service_endpoint_method' THEN station='coding_service_endpoint_method'
@@ -4064,52 +4057,51 @@ CREATE FUNCTION station_owns_portable_work(station text, work_kind text, payload
         WHEN 'application_service_endpoint_response_media' THEN station='coding_service_endpoint_response_media'
         WHEN 'application_service_endpoint_success_status' THEN station='coding_service_endpoint_success_status'
         WHEN 'repository_change_owner' THEN station='coding_repository_change_surface'
-        WHEN 'repository_evidence_relevance_leaf' THEN station='repository_evidence_relevance'
-        WHEN 'context_relevance_selection' THEN station='context_relevance'
+        WHEN 'repository_evidence_relevance_relation' THEN station='repository_evidence_relevance'
+        WHEN 'context_relevance_relation' THEN station='context_relevance'
         WHEN 'context_minification' THEN station='context_minification'
         WHEN 'conversation_objective_kind' THEN station='conversation_objective_kind'
         WHEN 'conversation_response' THEN station='conversation_response'
-        WHEN 'roleplay_grounded_response_text' THEN station='conversation_response'
+        WHEN 'roleplay_grounded_response_paragraph_inventory' THEN station='conversation_response'
         WHEN 'roleplay_grounded_response_evidence_relation' THEN station='conversation_response'
-        WHEN 'roleplay_canon_fact_coverage' THEN station='roleplay_canon_extraction'
-        WHEN 'roleplay_canon_fact' THEN station='roleplay_canon_extraction'
+        WHEN 'roleplay_grounded_response_paragraph_authorization' THEN station='conversation_response'
+		WHEN 'roleplay_canon_fact_inventory' THEN station='roleplay_canon_extraction'
+		WHEN 'roleplay_canon_fact_candidate_authorization' THEN station='roleplay_canon_extraction'
+		WHEN 'roleplay_canon_fact_candidate_relation' THEN station='roleplay_canon_extraction'
         WHEN 'roleplay_ongoing_action' THEN station='roleplay_ongoing_action'
-        WHEN 'grounded_answer_text' THEN station='grounded_answer'
-        WHEN 'grounded_answer_evidence_relation' THEN station='grounded_answer'
-        WHEN 'database_schema_selection_coverage' THEN station='database_schema_selection'
-        WHEN 'database_schema_relation_selection' THEN station='database_schema_selection'
+        WHEN 'grounded_answer_paragraph_inventory' THEN station='grounded_answer'
+        WHEN 'grounded_answer_paragraph_evidence_relation' THEN station='grounded_answer'
+        WHEN 'grounded_answer_paragraph_authorization' THEN station='grounded_answer'
+        WHEN 'database_schema_relation_inventory' THEN station='database_schema_selection'
+        WHEN 'database_schema_relation_necessity' THEN station='database_schema_selection'
+        WHEN 'database_schema_relation_resolution' THEN station='database_schema_selection'
         WHEN 'database_query_from_relation' THEN station='database_query_intent'
         WHEN 'database_query_shape' THEN station='database_query_intent'
-        WHEN 'database_query_projection_coverage' THEN station='database_query_intent'
+        WHEN 'database_query_purpose_inventory' THEN station='database_query_intent'
+        WHEN 'database_query_purpose_necessity' THEN station='database_query_intent'
+        WHEN 'database_query_purpose_relation' THEN station='database_query_intent'
         WHEN 'database_query_projection_aggregate' THEN station='database_query_intent'
         WHEN 'database_query_projection_field' THEN station='database_query_intent'
         WHEN 'database_query_projection_time_bucket' THEN station='database_query_intent'
-        WHEN 'database_query_filter_coverage' THEN station='database_query_intent'
         WHEN 'database_query_filter_field' THEN station='database_query_intent'
         WHEN 'database_query_filter_operator' THEN station='database_query_intent'
-        WHEN 'database_query_filter_value_coverage' THEN station='database_query_intent'
         WHEN 'database_query_filter_value' THEN station='database_query_intent'
-        WHEN 'database_query_window_coverage' THEN station='database_query_intent'
         WHEN 'database_query_window_field' THEN station='database_query_intent'
         WHEN 'database_query_window_unit' THEN station='database_query_intent'
         WHEN 'database_query_window_amount' THEN station='database_query_intent'
-        WHEN 'database_query_existence_coverage' THEN station='database_query_intent'
         WHEN 'database_query_existence_relation' THEN station='database_query_intent'
         WHEN 'database_query_existence_negated' THEN station='database_query_intent'
-        WHEN 'database_query_having_coverage' THEN station='database_query_intent'
         WHEN 'database_query_having_aggregate' THEN station='database_query_intent'
         WHEN 'database_query_having_field' THEN station='database_query_intent'
         WHEN 'database_query_having_operator' THEN station='database_query_intent'
         WHEN 'database_query_having_value' THEN station='database_query_intent'
-        WHEN 'database_query_order_coverage' THEN station='database_query_intent'
         WHEN 'database_query_order_projection' THEN station='database_query_intent'
         WHEN 'database_query_order_direction' THEN station='database_query_intent'
-        WHEN 'database_evidence_gap' THEN station='database_evidence_gap'
         WHEN 'database_join_path_selection' THEN station='database_join_path_selection'
         WHEN 'web_relevance_relation' THEN station='web_relevance'
-        WHEN 'web_synthesis_paragraph_coverage' THEN station='web_grounded_synthesis'
-        WHEN 'web_synthesis_paragraph' THEN station='web_grounded_synthesis'
+        WHEN 'web_synthesis_paragraph_inventory' THEN station='web_grounded_synthesis'
         WHEN 'web_synthesis_evidence_relation' THEN station='web_grounded_synthesis'
+        WHEN 'web_synthesis_paragraph_authorization' THEN station='web_grounded_synthesis'
         WHEN 'artifact_handling' THEN station='coding_artifact_handling'
         WHEN 'repository_artifact_absence' THEN station='coding_repository_artifact_absence'
         WHEN 'plain_text_artifact_creation' THEN station='coding_plain_text_artifact_creation'
@@ -4117,7 +4109,7 @@ CREATE FUNCTION station_owns_portable_work(station text, work_kind text, payload
         WHEN 'artifact_candidate_selection' THEN station='coding_artifact_candidate_selection'
         WHEN 'capability_relation' THEN station='coding_capability_relation'
         WHEN 'skill_selection' THEN station='coding_skill_selection'
-        WHEN 'runtime_capability_selection' THEN station='coding_runtime_capability_selection'
+        WHEN 'runtime_capability_necessity' THEN station='coding_runtime_capability_necessity'
         WHEN 'typescript_repair_guidance' THEN station='coding_fragment_repair_guidance'
         WHEN 'fragment_generation' THEN station='coding_fragment'
         WHEN 'fragment_generation_replacement' THEN station='coding_fragment'
@@ -5508,10 +5500,10 @@ $$;
 
 
 --
--- Name: validate_roleplay_portable_result_reuse_insert(); Type: FUNCTION; Schema: current runtime; Owner: -
+-- Name: validate_objective_portable_result_reuse_insert(); Type: FUNCTION; Schema: current runtime; Owner: -
 --
 
-CREATE FUNCTION validate_roleplay_portable_result_reuse_insert() RETURNS trigger
+CREATE FUNCTION validate_objective_portable_result_reuse_insert() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
 DECLARE
@@ -5542,7 +5534,7 @@ BEGIN
        target_step.worker_id IS DISTINCT FROM NEW.target_worker_id OR
        target_attempt.status<>'active' OR target_attempt.worker_id<>NEW.target_worker_id OR
        target_attempt.expires_at<=clock_timestamp() THEN
-        RAISE EXCEPTION 'roleplay portable reuse target is not the current active step attempt';
+        RAISE EXCEPTION 'objective portable reuse target is not the current active step attempt';
     END IF;
 
     SELECT * INTO source_job FROM jobs WHERE id=NEW.source_job_id FOR SHARE;
@@ -5578,7 +5570,7 @@ BEGIN
        source_outcome.source_response_sha256<>NEW.source_response_sha256 OR
        source_outcome.source_start_byte<>0 OR
        source_outcome.source_end_byte<>octet_length(source_outcome.response) THEN
-        RAISE EXCEPTION 'roleplay portable reuse source is not one exact resolved response';
+        RAISE EXCEPTION 'objective portable reuse source is not one exact resolved response';
     END IF;
 
     IF ROW(source_opening.job_id,source_opening.generation,source_opening.step_id,
@@ -5586,7 +5578,7 @@ BEGIN
        IS NOT DISTINCT FROM
        ROW(NEW.target_job_id,NEW.target_generation,NEW.target_step_id,
            NEW.target_step_attempt,NEW.target_worker_id) THEN
-        RAISE EXCEPTION 'roleplay portable reuse cannot read the current attempt';
+        RAISE EXCEPTION 'objective portable reuse cannot read the current attempt';
     END IF;
     IF NOT (
         (source_job.status='failed' AND source_job.id<>target_job.id) OR
@@ -5596,41 +5588,46 @@ BEGIN
          NEW.source_step_attempt<NEW.target_step_attempt AND
          source_attempt.status IN ('expired','superseded','canceled'))
     ) THEN
-        RAISE EXCEPTION 'roleplay portable reuse source is not failed or a superseded prior attempt';
+        RAISE EXCEPTION 'objective portable reuse source is not failed or a superseded prior attempt';
     END IF;
 
     target_envelope := NEW.target_portable_envelope::jsonb;
     source_envelope := source_opening.portable_envelope::jsonb;
     IF NOT station_owns_portable_work(
         NEW.target_station,target_envelope->>'kind',target_envelope->'payload'
-    ) OR NOT (
-        (source_opening.work_kind<>'response_correction' AND
-         source_envelope=target_envelope AND source_opening.work_id=NEW.target_root_work_id) OR
-        (source_opening.work_kind='response_correction' AND
-         source_envelope->'payload'->'original'=target_envelope AND
-         source_envelope->'payload'->'original'->>'id'=NEW.target_root_work_id)
-    ) THEN
-        RAISE EXCEPTION 'roleplay portable reuse source does not resolve the exact root portable job';
+    ) OR source_envelope<>target_envelope OR
+         source_opening.work_id<>NEW.target_root_work_id THEN
+        RAISE EXCEPTION 'objective portable reuse source does not resolve the exact root portable job';
     END IF;
 
-    target_authority := roleplay_portable_result_reuse_authority(target_job.metadata);
-    source_authority := roleplay_portable_result_reuse_authority(source_job.metadata);
-    IF target_job.pipeline<>'chat' OR source_job.pipeline<>'chat' OR
-       target_authority IS NULL OR source_authority IS NULL OR
-       target_authority<>source_authority OR
-       NEW.roleplay_authority::jsonb<>target_authority OR
-       NOT EXISTS (
-           SELECT 1 FROM roleplay_simulation_preparation_jobs AS binding
-           WHERE binding.preparation_id=
-                     target_job.metadata->>'roleplay_simulation_preparation_id' AND
-                 binding.job_id=target_job.id
-       ) OR NOT EXISTS (
-           SELECT 1 FROM roleplay_simulation_preparation_jobs AS binding
-           WHERE binding.preparation_id=
-                     source_job.metadata->>'roleplay_simulation_preparation_id' AND
-                 binding.job_id=source_job.id
-       ) THEN
-        RAISE EXCEPTION 'roleplay portable reuse fictional authority differs';
+    IF target_job.metadata->>'channel_mode'='roleplay' OR
+       source_job.metadata->>'channel_mode'='roleplay' THEN
+        target_authority := roleplay_portable_result_reuse_authority(target_job.metadata);
+        source_authority := roleplay_portable_result_reuse_authority(source_job.metadata);
+        IF target_job.pipeline<>'chat' OR source_job.pipeline<>'chat' OR
+           target_authority IS NULL OR source_authority IS NULL OR
+           target_authority<>source_authority OR
+           NEW.objective_authority::jsonb<>target_authority OR
+           NOT EXISTS (
+               SELECT 1 FROM roleplay_simulation_preparation_jobs AS binding
+               WHERE binding.preparation_id=
+                         target_job.metadata->>'roleplay_simulation_preparation_id' AND
+                     binding.job_id=target_job.id
+           ) OR NOT EXISTS (
+               SELECT 1 FROM roleplay_simulation_preparation_jobs AS binding
+               WHERE binding.preparation_id=
+                         source_job.metadata->>'roleplay_simulation_preparation_id' AND
+                     binding.job_id=source_job.id
+           ) THEN
+            RAISE EXCEPTION 'objective portable reuse fictional authority differs';
+        END IF;
+    ELSE
+        target_authority := jsonb_build_object('job_id',target_job.id);
+        source_authority := jsonb_build_object('job_id',source_job.id);
+        IF source_job.id<>target_job.id OR target_authority<>source_authority OR
+           NEW.objective_authority::jsonb<>target_authority THEN
+            RAISE EXCEPTION 'objective portable reuse non-roleplay source is not the same job';
+        END IF;
     END IF;
     RETURN NEW;
 END;
@@ -9230,10 +9227,10 @@ ALTER TABLE roleplay_ongoing_action_states ALTER COLUMN ordinal ADD GENERATED AL
 
 
 --
--- Name: roleplay_portable_result_reuses; Type: TABLE; Schema: current runtime; Owner: -
+-- Name: objective_portable_result_reuses; Type: TABLE; Schema: current runtime; Owner: -
 --
 
-CREATE TABLE roleplay_portable_result_reuses (
+CREATE TABLE objective_portable_result_reuses (
     id bigint NOT NULL,
     receipt_schema text NOT NULL,
     target_job_id bigint NOT NULL,
@@ -9259,44 +9256,44 @@ CREATE TABLE roleplay_portable_result_reuses (
     source_portable_envelope_sha256 text NOT NULL,
     source_call_receipt_sha256 text NOT NULL,
     source_response_sha256 text NOT NULL,
-    roleplay_authority text NOT NULL,
-    roleplay_authority_sha256 text NOT NULL,
+    objective_authority text NOT NULL,
+    objective_authority_sha256 text NOT NULL,
     created_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
-    CONSTRAINT roleplay_portable_result_reu_source_portable_envelope_sha_check CHECK ((source_portable_envelope_sha256 ~ '^[0-9a-f]{64}$'::text)),
-    CONSTRAINT roleplay_portable_result_reuse_source_call_receipt_sha256_check CHECK ((source_call_receipt_sha256 ~ '^[0-9a-f]{64}$'::text)),
-    CONSTRAINT roleplay_portable_result_reuses_check CHECK (((target_portable_payload_sha256 ~ '^[0-9a-f]{64}$'::text) AND (target_portable_payload_sha256 = encode(public.digest(target_portable_payload, 'sha256'::text), 'hex'::text)))),
-    CONSTRAINT roleplay_portable_result_reuses_check1 CHECK (((target_portable_envelope_sha256 ~ '^[0-9a-f]{64}$'::text) AND (target_portable_envelope_sha256 = encode(public.digest(target_portable_envelope, 'sha256'::text), 'hex'::text)))),
-    CONSTRAINT roleplay_portable_result_reuses_check2 CHECK (((roleplay_authority_sha256 ~ '^[0-9a-f]{64}$'::text) AND (roleplay_authority_sha256 = encode(public.digest(roleplay_authority, 'sha256'::text), 'hex'::text)))),
-    CONSTRAINT roleplay_portable_result_reuses_receipt_schema_check CHECK ((receipt_schema = 'omnidex.roleplay-portable-result-reuse.v1'::text)),
-    CONSTRAINT roleplay_portable_result_reuses_roleplay_authority_check CHECK (((roleplay_authority <> ''::text) AND (octet_length(roleplay_authority) <= 1048576) AND (jsonb_typeof((roleplay_authority)::jsonb) = 'object'::text))),
-    CONSTRAINT roleplay_portable_result_reuses_source_generation_check CHECK ((source_generation > 0)),
-    CONSTRAINT roleplay_portable_result_reuses_source_response_sha256_check CHECK ((source_response_sha256 ~ '^[0-9a-f]{64}$'::text)),
-    CONSTRAINT roleplay_portable_result_reuses_source_step_attempt_check CHECK ((source_step_attempt > 0)),
-    CONSTRAINT roleplay_portable_result_reuses_source_work_id_check CHECK ((source_work_id ~ '^[0-9a-f]{64}$'::text)),
-    CONSTRAINT roleplay_portable_result_reuses_source_worker_id_check CHECK (((source_worker_id <> ''::text) AND (source_worker_id = btrim(source_worker_id)) AND (octet_length(source_worker_id) <= 256))),
-    CONSTRAINT roleplay_portable_result_reuses_target_envelope_v2 CHECK (((jsonb_typeof((target_portable_envelope)::jsonb) = 'object'::text) AND ((target_portable_envelope)::jsonb ?& ARRAY['schema'::text, 'id'::text, 'kind'::text, 'payload'::text]) AND (((((((target_portable_envelope)::jsonb - 'schema'::text) - 'id'::text) - 'kind'::text) - 'payload'::text) - 'source_projection'::text) = '{}'::jsonb) AND (jsonb_typeof(((target_portable_envelope)::jsonb -> 'schema'::text)) = 'string'::text) AND (jsonb_typeof(((target_portable_envelope)::jsonb -> 'id'::text)) = 'string'::text) AND (jsonb_typeof(((target_portable_envelope)::jsonb -> 'kind'::text)) = 'string'::text) AND (NOT (((target_portable_envelope)::jsonb ->> 'id'::text) IS DISTINCT FROM target_root_work_id)) AND (NOT (((target_portable_envelope)::jsonb ->> 'kind'::text) IS DISTINCT FROM target_work_kind)) AND (NOT (((target_portable_envelope)::jsonb -> 'payload'::text) IS DISTINCT FROM (target_portable_payload)::jsonb)) AND ((NOT ((target_portable_envelope)::jsonb ? 'source_projection'::text)) OR ((jsonb_typeof(((target_portable_envelope)::jsonb -> 'source_projection'::text)) = 'string'::text) AND (((target_portable_envelope)::jsonb ->> 'source_projection'::text) = ANY (ARRAY['go'::text, 'javascript'::text, 'java'::text, 'rust'::text, 'php'::text])) AND (target_work_kind = 'fragment_correction'::text) AND ((target_portable_payload)::jsonb ?& ARRAY['current_declaration'::text, 'repair_guidance'::text]) AND ((((target_portable_payload)::jsonb - 'current_declaration'::text) - 'repair_guidance'::text) = '{}'::jsonb))))),
-    CONSTRAINT roleplay_portable_result_reuses_target_generation_check CHECK ((target_generation > 0)),
-    CONSTRAINT roleplay_portable_result_reuses_target_identity_v2 CHECK ((NOT (target_root_work_id IS DISTINCT FROM encode(public.digest((((((convert_to(((target_portable_envelope)::jsonb ->> 'schema'::text), 'UTF8'::name) || decode('00'::text, 'hex'::text)) || convert_to(target_work_kind, 'UTF8'::name)) || decode('00'::text, 'hex'::text)) || convert_to(target_portable_payload, 'UTF8'::name)) ||
+    CONSTRAINT objective_portable_result_reu_source_portable_envelope_sha_check CHECK ((source_portable_envelope_sha256 ~ '^[0-9a-f]{64}$'::text)),
+    CONSTRAINT objective_portable_result_reuse_source_call_receipt_sha256_check CHECK ((source_call_receipt_sha256 ~ '^[0-9a-f]{64}$'::text)),
+    CONSTRAINT objective_portable_result_reuses_check CHECK (((target_portable_payload_sha256 ~ '^[0-9a-f]{64}$'::text) AND (target_portable_payload_sha256 = encode(public.digest(target_portable_payload, 'sha256'::text), 'hex'::text)))),
+    CONSTRAINT objective_portable_result_reuses_check1 CHECK (((target_portable_envelope_sha256 ~ '^[0-9a-f]{64}$'::text) AND (target_portable_envelope_sha256 = encode(public.digest(target_portable_envelope, 'sha256'::text), 'hex'::text)))),
+    CONSTRAINT objective_portable_result_reuses_check2 CHECK (((objective_authority_sha256 ~ '^[0-9a-f]{64}$'::text) AND (objective_authority_sha256 = encode(public.digest(objective_authority, 'sha256'::text), 'hex'::text)))),
+    CONSTRAINT objective_portable_result_reuses_receipt_schema_check CHECK ((receipt_schema = 'omnidex.objective-portable-result-reuse.v1'::text)),
+    CONSTRAINT objective_portable_result_reuses_objective_authority_check CHECK (((objective_authority <> ''::text) AND (octet_length(objective_authority) <= 1048576) AND (jsonb_typeof((objective_authority)::jsonb) = 'object'::text))),
+    CONSTRAINT objective_portable_result_reuses_source_generation_check CHECK ((source_generation > 0)),
+    CONSTRAINT objective_portable_result_reuses_source_response_sha256_check CHECK ((source_response_sha256 ~ '^[0-9a-f]{64}$'::text)),
+    CONSTRAINT objective_portable_result_reuses_source_step_attempt_check CHECK ((source_step_attempt > 0)),
+    CONSTRAINT objective_portable_result_reuses_source_work_id_check CHECK ((source_work_id ~ '^[0-9a-f]{64}$'::text)),
+    CONSTRAINT objective_portable_result_reuses_source_worker_id_check CHECK (((source_worker_id <> ''::text) AND (source_worker_id = btrim(source_worker_id)) AND (octet_length(source_worker_id) <= 256))),
+    CONSTRAINT objective_portable_result_reuses_target_envelope_v2 CHECK (((jsonb_typeof((target_portable_envelope)::jsonb) = 'object'::text) AND ((target_portable_envelope)::jsonb ?& ARRAY['schema'::text, 'id'::text, 'kind'::text, 'payload'::text]) AND (((((((target_portable_envelope)::jsonb - 'schema'::text) - 'id'::text) - 'kind'::text) - 'payload'::text) - 'source_projection'::text) = '{}'::jsonb) AND (jsonb_typeof(((target_portable_envelope)::jsonb -> 'schema'::text)) = 'string'::text) AND (jsonb_typeof(((target_portable_envelope)::jsonb -> 'id'::text)) = 'string'::text) AND (jsonb_typeof(((target_portable_envelope)::jsonb -> 'kind'::text)) = 'string'::text) AND (NOT (((target_portable_envelope)::jsonb ->> 'id'::text) IS DISTINCT FROM target_root_work_id)) AND (NOT (((target_portable_envelope)::jsonb ->> 'kind'::text) IS DISTINCT FROM target_work_kind)) AND (NOT (((target_portable_envelope)::jsonb -> 'payload'::text) IS DISTINCT FROM (target_portable_payload)::jsonb)) AND ((NOT ((target_portable_envelope)::jsonb ? 'source_projection'::text)) OR ((jsonb_typeof(((target_portable_envelope)::jsonb -> 'source_projection'::text)) = 'string'::text) AND (((target_portable_envelope)::jsonb ->> 'source_projection'::text) = ANY (ARRAY['go'::text, 'javascript'::text, 'java'::text, 'rust'::text, 'php'::text])) AND (target_work_kind = 'fragment_correction'::text) AND ((target_portable_payload)::jsonb ?& ARRAY['current_declaration'::text, 'repair_guidance'::text]) AND ((((target_portable_payload)::jsonb - 'current_declaration'::text) - 'repair_guidance'::text) = '{}'::jsonb))))),
+    CONSTRAINT objective_portable_result_reuses_target_generation_check CHECK ((target_generation > 0)),
+    CONSTRAINT objective_portable_result_reuses_target_identity_v2 CHECK ((NOT (target_root_work_id IS DISTINCT FROM encode(public.digest((((((convert_to(((target_portable_envelope)::jsonb ->> 'schema'::text), 'UTF8'::name) || decode('00'::text, 'hex'::text)) || convert_to(target_work_kind, 'UTF8'::name)) || decode('00'::text, 'hex'::text)) || convert_to(target_portable_payload, 'UTF8'::name)) ||
 CASE
     WHEN ((target_portable_envelope)::jsonb ? 'source_projection'::text) THEN (decode('00'::text, 'hex'::text) || convert_to(((target_portable_envelope)::jsonb ->> 'source_projection'::text), 'UTF8'::name))
     ELSE '\x'::bytea
 END), 'sha256'::text), 'hex'::text)))),
-    CONSTRAINT roleplay_portable_result_reuses_target_portable_envelope_check CHECK (((target_portable_envelope <> ''::text) AND (octet_length(target_portable_envelope) <= 1048576))),
-    CONSTRAINT roleplay_portable_result_reuses_target_portable_payload_check CHECK (((target_portable_payload <> ''::text) AND (octet_length(target_portable_payload) <= 1048576) AND (jsonb_typeof((target_portable_payload)::jsonb) = 'object'::text))),
-    CONSTRAINT roleplay_portable_result_reuses_target_root_work_id_check CHECK ((target_root_work_id ~ '^[0-9a-f]{64}$'::text)),
-    CONSTRAINT roleplay_portable_result_reuses_target_schema_v2 CHECK (((jsonb_typeof(((target_portable_envelope)::jsonb -> 'schema'::text)) = 'string'::text) AND (NOT (((target_portable_envelope)::jsonb ->> 'schema'::text) IS DISTINCT FROM 'omnidex.portable-job.v2'::text)))),
-    CONSTRAINT roleplay_portable_result_reuses_target_station_check CHECK (((target_station <> ''::text) AND (target_station = btrim(target_station)) AND (octet_length(target_station) <= 128))),
-    CONSTRAINT roleplay_portable_result_reuses_target_step_attempt_check CHECK ((target_step_attempt > 0)),
-    CONSTRAINT roleplay_portable_result_reuses_target_work_kind_check CHECK (((target_work_kind <> ''::text) AND (target_work_kind = btrim(target_work_kind)) AND (octet_length(target_work_kind) <= 128))),
-    CONSTRAINT roleplay_portable_result_reuses_target_worker_id_check CHECK (((target_worker_id <> ''::text) AND (target_worker_id = btrim(target_worker_id)) AND (octet_length(target_worker_id) <= 256)))
+    CONSTRAINT objective_portable_result_reuses_target_portable_envelope_check CHECK (((target_portable_envelope <> ''::text) AND (octet_length(target_portable_envelope) <= 1048576))),
+    CONSTRAINT objective_portable_result_reuses_target_portable_payload_check CHECK (((target_portable_payload <> ''::text) AND (octet_length(target_portable_payload) <= 1048576) AND (jsonb_typeof((target_portable_payload)::jsonb) = 'object'::text))),
+    CONSTRAINT objective_portable_result_reuses_target_root_work_id_check CHECK ((target_root_work_id ~ '^[0-9a-f]{64}$'::text)),
+    CONSTRAINT objective_portable_result_reuses_target_schema_v2 CHECK (((jsonb_typeof(((target_portable_envelope)::jsonb -> 'schema'::text)) = 'string'::text) AND (NOT (((target_portable_envelope)::jsonb ->> 'schema'::text) IS DISTINCT FROM 'omnidex.portable-job.v2'::text)))),
+    CONSTRAINT objective_portable_result_reuses_target_station_check CHECK (((target_station <> ''::text) AND (target_station = btrim(target_station)) AND (octet_length(target_station) <= 128))),
+    CONSTRAINT objective_portable_result_reuses_target_step_attempt_check CHECK ((target_step_attempt > 0)),
+    CONSTRAINT objective_portable_result_reuses_target_work_kind_check CHECK (((target_work_kind <> ''::text) AND (target_work_kind = btrim(target_work_kind)) AND (octet_length(target_work_kind) <= 128))),
+    CONSTRAINT objective_portable_result_reuses_target_worker_id_check CHECK (((target_worker_id <> ''::text) AND (target_worker_id = btrim(target_worker_id)) AND (octet_length(target_worker_id) <= 256)))
 );
 
 
 --
--- Name: roleplay_portable_result_reuses_id_seq; Type: SEQUENCE; Schema: current runtime; Owner: -
+-- Name: objective_portable_result_reuses_id_seq; Type: SEQUENCE; Schema: current runtime; Owner: -
 --
 
-CREATE SEQUENCE roleplay_portable_result_reuses_id_seq
+CREATE SEQUENCE objective_portable_result_reuses_id_seq
     START WITH 1
     INCREMENT BY 1
     NO MINVALUE
@@ -9305,10 +9302,10 @@ CREATE SEQUENCE roleplay_portable_result_reuses_id_seq
 
 
 --
--- Name: roleplay_portable_result_reuses_id_seq; Type: SEQUENCE OWNED BY; Schema: current runtime; Owner: -
+-- Name: objective_portable_result_reuses_id_seq; Type: SEQUENCE OWNED BY; Schema: current runtime; Owner: -
 --
 
-ALTER SEQUENCE roleplay_portable_result_reuses_id_seq OWNED BY roleplay_portable_result_reuses.id;
+ALTER SEQUENCE objective_portable_result_reuses_id_seq OWNED BY objective_portable_result_reuses.id;
 
 
 --
@@ -9961,8 +9958,11 @@ END), 'sha256'::text), 'hex'::text))),
     CONSTRAINT station_gap_openings_semantic_uncertainty_digest CHECK (((semantic_uncertainty_contract_sha256 ~ '^[0-9a-f]{64}$'::text) AND (semantic_uncertainty_contract_sha256 = encode(public.digest((((((((((((((convert_to((semantic_uncertainty_contract ->> 'id'::text), 'UTF8'::name) || decode('00'::text, 'hex'::text)) || convert_to((semantic_uncertainty_contract ->> 'work_kind'::text), 'UTF8'::name)) || decode('00'::text, 'hex'::text)) || convert_to((semantic_uncertainty_contract ->> 'exact_question'::text), 'UTF8'::name)) || decode('00'::text, 'hex'::text)) || convert_to((semantic_uncertainty_contract ->> 'deterministic_limitation'::text), 'UTF8'::name)) || decode('00'::text, 'hex'::text)) || convert_to((semantic_uncertainty_contract ->> 'required_information'::text), 'UTF8'::name)) || decode('00'::text, 'hex'::text)) || convert_to((semantic_uncertainty_contract ->> 'single_result'::text), 'UTF8'::name)) || decode('00'::text, 'hex'::text)) || convert_to((semantic_uncertainty_contract ->> 'deterministic_consumer'::text), 'UTF8'::name)) || decode('00'::text, 'hex'::text)), 'sha256'::text), 'hex'::text)))),
     CONSTRAINT station_gap_openings_semantic_uncertainty_shape CHECK (((jsonb_typeof(semantic_uncertainty_contract) = 'object'::text) AND (semantic_uncertainty_contract ?& ARRAY['id'::text, 'work_kind'::text, 'exact_question'::text, 'deterministic_limitation'::text, 'required_information'::text, 'single_result'::text, 'deterministic_consumer'::text]) AND ((((((((semantic_uncertainty_contract - 'id'::text) - 'work_kind'::text) - 'exact_question'::text) - 'deterministic_limitation'::text) - 'required_information'::text) - 'single_result'::text) - 'deterministic_consumer'::text) = '{}'::jsonb) AND (jsonb_typeof((semantic_uncertainty_contract -> 'id'::text)) = 'string'::text) AND (jsonb_typeof((semantic_uncertainty_contract -> 'work_kind'::text)) = 'string'::text) AND (jsonb_typeof((semantic_uncertainty_contract -> 'exact_question'::text)) = 'string'::text) AND (jsonb_typeof((semantic_uncertainty_contract -> 'deterministic_limitation'::text)) = 'string'::text) AND (jsonb_typeof((semantic_uncertainty_contract -> 'required_information'::text)) = 'string'::text) AND (jsonb_typeof((semantic_uncertainty_contract -> 'single_result'::text)) = 'string'::text) AND (jsonb_typeof((semantic_uncertainty_contract -> 'deterministic_consumer'::text)) = 'string'::text) AND ((semantic_uncertainty_contract ->> 'work_kind'::text) = work_kind) AND ((semantic_uncertainty_contract ->> 'id'::text) = (('omnidex.semantic-uncertainty.'::text || work_kind) ||
 CASE
-    WHEN (work_kind = 'application_requirement'::text) THEN '.v3'::text
-    WHEN (work_kind = ANY (ARRAY['application_product_context'::text, 'application_requirement_coverage'::text, 'application_project_stack_constraint'::text])) THEN '.v2'::text
+	WHEN (work_kind = 'application_requirement_inventory'::text) THEN '.v10'::text
+	WHEN (work_kind = 'repository_requirement_inventory'::text) THEN '.v5'::text
+	WHEN (work_kind = 'application_requirement_candidate_authorization'::text) THEN '.v7'::text
+    WHEN (work_kind = ANY (ARRAY['application_context_question_inventory'::text, 'application_requirement_candidate_kind'::text, 'application_requirement_candidate_partition'::text, 'application_state_field_purpose_inventory'::text, 'application_record_field_purpose_inventory'::text, 'application_service_state_purpose_necessity'::text, 'repository_requirement_candidate_authorization'::text, 'repository_requirement_candidate_relation'::text, 'web_synthesis_paragraph_inventory'::text])) THEN '.v3'::text
+	WHEN (work_kind = ANY (ARRAY['application_context_question_necessity'::text, 'application_product_context'::text, 'application_project_stack_constraint'::text, 'application_requirement_candidate_result_relation'::text, 'application_requirement_candidate_result_relation_grounding'::text, 'roleplay_grounded_response_evidence_relation'::text, 'roleplay_grounded_response_paragraph_authorization'::text, 'grounded_answer_paragraph_evidence_relation'::text, 'grounded_answer_paragraph_authorization'::text, 'web_synthesis_evidence_relation'::text, 'web_synthesis_paragraph_authorization'::text])) THEN '.v2'::text
     ELSE '.v1'::text
 END)) AND ((octet_length((semantic_uncertainty_contract ->> 'id'::text)) >= 1) AND (octet_length((semantic_uncertainty_contract ->> 'id'::text)) <= 512)) AND ((semantic_uncertainty_contract ->> 'id'::text) = btrim((semantic_uncertainty_contract ->> 'id'::text))) AND ((octet_length((semantic_uncertainty_contract ->> 'exact_question'::text)) >= 1) AND (octet_length((semantic_uncertainty_contract ->> 'exact_question'::text)) <= 512)) AND ((semantic_uncertainty_contract ->> 'exact_question'::text) = btrim((semantic_uncertainty_contract ->> 'exact_question'::text))) AND ((octet_length((semantic_uncertainty_contract ->> 'deterministic_limitation'::text)) >= 1) AND (octet_length((semantic_uncertainty_contract ->> 'deterministic_limitation'::text)) <= 512)) AND ((semantic_uncertainty_contract ->> 'deterministic_limitation'::text) = btrim((semantic_uncertainty_contract ->> 'deterministic_limitation'::text))) AND ((octet_length((semantic_uncertainty_contract ->> 'required_information'::text)) >= 1) AND (octet_length((semantic_uncertainty_contract ->> 'required_information'::text)) <= 512)) AND ((semantic_uncertainty_contract ->> 'required_information'::text) = btrim((semantic_uncertainty_contract ->> 'required_information'::text))) AND ((octet_length((semantic_uncertainty_contract ->> 'single_result'::text)) >= 1) AND (octet_length((semantic_uncertainty_contract ->> 'single_result'::text)) <= 512)) AND ((semantic_uncertainty_contract ->> 'single_result'::text) = btrim((semantic_uncertainty_contract ->> 'single_result'::text))) AND ((octet_length((semantic_uncertainty_contract ->> 'deterministic_consumer'::text)) >= 1) AND (octet_length((semantic_uncertainty_contract ->> 'deterministic_consumer'::text)) <= 512)) AND ((semantic_uncertainty_contract ->> 'deterministic_consumer'::text) = btrim((semantic_uncertainty_contract ->> 'deterministic_consumer'::text))) AND ((length((semantic_uncertainty_contract ->> 'exact_question'::text)) - length(replace((semantic_uncertainty_contract ->> 'exact_question'::text), '?'::text, ''::text))) = 1) AND ("right"((semantic_uncertainty_contract ->> 'exact_question'::text), 1) = '?'::text) AND ("left"((semantic_uncertainty_contract ->> 'single_result'::text), 4) = 'One '::text) AND ((((((((semantic_uncertainty_contract ->> 'id'::text) || (semantic_uncertainty_contract ->> 'work_kind'::text)) || (semantic_uncertainty_contract ->> 'exact_question'::text)) || (semantic_uncertainty_contract ->> 'deterministic_limitation'::text)) || (semantic_uncertainty_contract ->> 'required_information'::text)) || (semantic_uncertainty_contract ->> 'single_result'::text)) || (semantic_uncertainty_contract ->> 'deterministic_consumer'::text)) !~ '[\r\n]'::text))),
     CONSTRAINT station_gap_openings_station_check CHECK (((station <> ''::text) AND (station = btrim(station)) AND (octet_length(station) <= 128))),
@@ -10606,9 +10606,9 @@ CREATE TABLE worker_skills (
     CONSTRAINT worker_skills_code_procedure_kind CHECK ((skill_kind = 'code_procedure'::text)),
     CONSTRAINT worker_skills_content_sha256_check CHECK ((content_sha256 ~ '^[0-9a-f]{64}$'::text)),
     CONSTRAINT worker_skills_creating_job_required CHECK ((created_by_job_id IS NOT NULL)),
-    CONSTRAINT worker_skills_instructions_check CHECK ((btrim(instructions) <> ''::text)),
+    CONSTRAINT worker_skills_instructions_check CHECK ((task_ledger_text_is_exact(instructions) AND (octet_length(instructions) <= 1536))),
     CONSTRAINT worker_skills_learned_origin CHECK ((origin = 'learned'::text)),
-    CONSTRAINT worker_skills_purpose_check CHECK ((btrim(purpose) <> ''::text)),
+    CONSTRAINT worker_skills_purpose_check CHECK ((task_ledger_text_is_exact(purpose) AND (octet_length(purpose) <= 1536))),
     CONSTRAINT worker_skills_version_check CHECK ((version > 0))
 );
 
@@ -10987,10 +10987,10 @@ ALTER TABLE ONLY projects ALTER COLUMN id SET DEFAULT nextval('projects_id_seq':
 
 
 --
--- Name: roleplay_portable_result_reuses id; Type: DEFAULT; Schema: current runtime; Owner: -
+-- Name: objective_portable_result_reuses id; Type: DEFAULT; Schema: current runtime; Owner: -
 --
 
-ALTER TABLE ONLY roleplay_portable_result_reuses ALTER COLUMN id SET DEFAULT nextval('roleplay_portable_result_reuses_id_seq'::regclass);
+ALTER TABLE ONLY objective_portable_result_reuses ALTER COLUMN id SET DEFAULT nextval('objective_portable_result_reuses_id_seq'::regclass);
 
 
 --
@@ -11496,7 +11496,7 @@ ALTER TABLE ONLY working_set_events ALTER COLUMN id SET DEFAULT nextval('working
 
 
 --
--- Data for Name: roleplay_portable_result_reuses; Type: TABLE DATA; Schema: current runtime; Owner: -
+-- Data for Name: objective_portable_result_reuses; Type: TABLE DATA; Schema: current runtime; Owner: -
 --
 
 
@@ -11932,10 +11932,10 @@ SELECT pg_catalog.setval('roleplay_ongoing_action_states_ordinal_seq', 1, false)
 
 
 --
--- Name: roleplay_portable_result_reuses_id_seq; Type: SEQUENCE SET; Schema: current runtime; Owner: -
+-- Name: objective_portable_result_reuses_id_seq; Type: SEQUENCE SET; Schema: current runtime; Owner: -
 --
 
-SELECT pg_catalog.setval('roleplay_portable_result_reuses_id_seq', 1, false);
+SELECT pg_catalog.setval('objective_portable_result_reuses_id_seq', 1, false);
 
 
 --
@@ -13072,19 +13072,19 @@ ALTER TABLE ONLY roleplay_ongoing_action_states
 
 
 --
--- Name: roleplay_portable_result_reuses roleplay_portable_result_reuses_one_target; Type: CONSTRAINT; Schema: current runtime; Owner: -
+-- Name: objective_portable_result_reuses objective_portable_result_reuses_one_target; Type: CONSTRAINT; Schema: current runtime; Owner: -
 --
 
-ALTER TABLE ONLY roleplay_portable_result_reuses
-    ADD CONSTRAINT roleplay_portable_result_reuses_one_target UNIQUE (target_job_id, target_generation, target_step_id, target_step_attempt, target_worker_id, target_station, target_root_work_id);
+ALTER TABLE ONLY objective_portable_result_reuses
+    ADD CONSTRAINT objective_portable_result_reuses_one_target UNIQUE (target_job_id, target_generation, target_step_id, target_step_attempt, target_worker_id, target_station, target_root_work_id);
 
 
 --
--- Name: roleplay_portable_result_reuses roleplay_portable_result_reuses_pkey; Type: CONSTRAINT; Schema: current runtime; Owner: -
+-- Name: objective_portable_result_reuses objective_portable_result_reuses_pkey; Type: CONSTRAINT; Schema: current runtime; Owner: -
 --
 
-ALTER TABLE ONLY roleplay_portable_result_reuses
-    ADD CONSTRAINT roleplay_portable_result_reuses_pkey PRIMARY KEY (id);
+ALTER TABLE ONLY objective_portable_result_reuses
+    ADD CONSTRAINT objective_portable_result_reuses_pkey PRIMARY KEY (id);
 
 
 --
@@ -14857,10 +14857,10 @@ CREATE INDEX roleplay_ongoing_action_states_current_idx ON roleplay_ongoing_acti
 
 
 --
--- Name: roleplay_portable_result_reuses_source; Type: INDEX; Schema: current runtime; Owner: -
+-- Name: objective_portable_result_reuses_source; Type: INDEX; Schema: current runtime; Owner: -
 --
 
-CREATE INDEX roleplay_portable_result_reuses_source ON roleplay_portable_result_reuses USING btree (source_job_id, source_gap_outcome_id);
+CREATE INDEX objective_portable_result_reuses_source ON objective_portable_result_reuses USING btree (source_job_id, source_gap_outcome_id);
 
 
 --
@@ -16152,24 +16152,24 @@ CREATE TRIGGER roleplay_ongoing_action_states_validate_insert BEFORE INSERT ON r
 
 
 --
--- Name: roleplay_portable_result_reuses roleplay_portable_result_reuses_immutable; Type: TRIGGER; Schema: current runtime; Owner: -
+-- Name: objective_portable_result_reuses objective_portable_result_reuses_immutable; Type: TRIGGER; Schema: current runtime; Owner: -
 --
 
-CREATE TRIGGER roleplay_portable_result_reuses_immutable BEFORE DELETE OR UPDATE ON roleplay_portable_result_reuses FOR EACH ROW EXECUTE FUNCTION prevent_station_gap_history_mutation();
-
-
---
--- Name: roleplay_portable_result_reuses roleplay_portable_result_reuses_truncate_immutable; Type: TRIGGER; Schema: current runtime; Owner: -
---
-
-CREATE TRIGGER roleplay_portable_result_reuses_truncate_immutable BEFORE TRUNCATE ON roleplay_portable_result_reuses FOR EACH STATEMENT EXECUTE FUNCTION prevent_station_gap_history_mutation();
+CREATE TRIGGER objective_portable_result_reuses_immutable BEFORE DELETE OR UPDATE ON objective_portable_result_reuses FOR EACH ROW EXECUTE FUNCTION prevent_station_gap_history_mutation();
 
 
 --
--- Name: roleplay_portable_result_reuses roleplay_portable_result_reuses_validate_insert; Type: TRIGGER; Schema: current runtime; Owner: -
+-- Name: objective_portable_result_reuses objective_portable_result_reuses_truncate_immutable; Type: TRIGGER; Schema: current runtime; Owner: -
 --
 
-CREATE TRIGGER roleplay_portable_result_reuses_validate_insert BEFORE INSERT ON roleplay_portable_result_reuses FOR EACH ROW EXECUTE FUNCTION validate_roleplay_portable_result_reuse_insert();
+CREATE TRIGGER objective_portable_result_reuses_truncate_immutable BEFORE TRUNCATE ON objective_portable_result_reuses FOR EACH STATEMENT EXECUTE FUNCTION prevent_station_gap_history_mutation();
+
+
+--
+-- Name: objective_portable_result_reuses objective_portable_result_reuses_validate_insert; Type: TRIGGER; Schema: current runtime; Owner: -
+--
+
+CREATE TRIGGER objective_portable_result_reuses_validate_insert BEFORE INSERT ON objective_portable_result_reuses FOR EACH ROW EXECUTE FUNCTION validate_objective_portable_result_reuse_insert();
 
 
 --
@@ -18191,35 +18191,35 @@ ALTER TABLE ONLY roleplay_ongoing_action_states
 
 
 --
--- Name: roleplay_portable_result_reuses roleplay_portable_result_reuses_source_attempt_fkey; Type: FK CONSTRAINT; Schema: current runtime; Owner: -
+-- Name: objective_portable_result_reuses objective_portable_result_reuses_source_attempt_fkey; Type: FK CONSTRAINT; Schema: current runtime; Owner: -
 --
 
-ALTER TABLE ONLY roleplay_portable_result_reuses
-    ADD CONSTRAINT roleplay_portable_result_reuses_source_attempt_fkey FOREIGN KEY (source_job_id, source_generation, source_step_id, source_step_attempt) REFERENCES job_step_attempts(job_id, generation, step_id, attempt) ON DELETE RESTRICT;
-
-
---
--- Name: roleplay_portable_result_reuses roleplay_portable_result_reuses_source_gap_opening_id_fkey; Type: FK CONSTRAINT; Schema: current runtime; Owner: -
---
-
-ALTER TABLE ONLY roleplay_portable_result_reuses
-    ADD CONSTRAINT roleplay_portable_result_reuses_source_gap_opening_id_fkey FOREIGN KEY (source_gap_opening_id) REFERENCES station_gap_openings(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY objective_portable_result_reuses
+    ADD CONSTRAINT objective_portable_result_reuses_source_attempt_fkey FOREIGN KEY (source_job_id, source_generation, source_step_id, source_step_attempt) REFERENCES job_step_attempts(job_id, generation, step_id, attempt) ON DELETE RESTRICT;
 
 
 --
--- Name: roleplay_portable_result_reuses roleplay_portable_result_reuses_source_gap_outcome_id_fkey; Type: FK CONSTRAINT; Schema: current runtime; Owner: -
+-- Name: objective_portable_result_reuses objective_portable_result_reuses_source_gap_opening_id_fkey; Type: FK CONSTRAINT; Schema: current runtime; Owner: -
 --
 
-ALTER TABLE ONLY roleplay_portable_result_reuses
-    ADD CONSTRAINT roleplay_portable_result_reuses_source_gap_outcome_id_fkey FOREIGN KEY (source_gap_outcome_id) REFERENCES station_gap_outcomes(id) ON DELETE RESTRICT;
+ALTER TABLE ONLY objective_portable_result_reuses
+    ADD CONSTRAINT objective_portable_result_reuses_source_gap_opening_id_fkey FOREIGN KEY (source_gap_opening_id) REFERENCES station_gap_openings(id) ON DELETE RESTRICT;
 
 
 --
--- Name: roleplay_portable_result_reuses roleplay_portable_result_reuses_target_attempt_fkey; Type: FK CONSTRAINT; Schema: current runtime; Owner: -
+-- Name: objective_portable_result_reuses objective_portable_result_reuses_source_gap_outcome_id_fkey; Type: FK CONSTRAINT; Schema: current runtime; Owner: -
 --
 
-ALTER TABLE ONLY roleplay_portable_result_reuses
-    ADD CONSTRAINT roleplay_portable_result_reuses_target_attempt_fkey FOREIGN KEY (target_job_id, target_generation, target_step_id, target_step_attempt) REFERENCES job_step_attempts(job_id, generation, step_id, attempt) ON DELETE RESTRICT;
+ALTER TABLE ONLY objective_portable_result_reuses
+    ADD CONSTRAINT objective_portable_result_reuses_source_gap_outcome_id_fkey FOREIGN KEY (source_gap_outcome_id) REFERENCES station_gap_outcomes(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: objective_portable_result_reuses objective_portable_result_reuses_target_attempt_fkey; Type: FK CONSTRAINT; Schema: current runtime; Owner: -
+--
+
+ALTER TABLE ONLY objective_portable_result_reuses
+    ADD CONSTRAINT objective_portable_result_reuses_target_attempt_fkey FOREIGN KEY (target_job_id, target_generation, target_step_id, target_step_attempt) REFERENCES job_step_attempts(job_id, generation, step_id, attempt) ON DELETE RESTRICT;
 
 
 --

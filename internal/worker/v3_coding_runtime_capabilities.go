@@ -34,7 +34,7 @@ func (s *directCodingSession) selectRequirementRuntimeCapabilities(
 	if err := validateDirectCodingRuntimeCapabilityRegistry(candidates); err != nil {
 		return nil, fmt.Errorf("validate %s runtime capabilities: %w", stack.ID, err)
 	}
-	modelName, err := s.workerModel(station.CodingRuntimeCapabilitySelection)
+	modelName, err := s.workerModel(station.CodingRuntimeCapabilityNecessity)
 	if err != nil {
 		return nil, err
 	}
@@ -73,7 +73,7 @@ func selectDirectCodingRuntimeCapabilities(
 		return nil, err
 	}
 	modelName, err := requireDirectCodingModel(
-		station.CodingRuntimeCapabilitySelection, modelName,
+		station.CodingRuntimeCapabilityNecessity, modelName,
 	)
 	if err != nil {
 		return nil, err
@@ -83,58 +83,35 @@ func selectDirectCodingRuntimeCapabilities(
 		selectionContext := directCodingRuntimeCapabilityLocalContext(
 			localContext, dependencies[requirement.ID],
 		)
-		selected := make(map[string]struct{}, len(candidates))
-		selectedPurposes := make([]string, 0, len(candidates))
-		for len(selected) < len(candidates) {
-			input, candidateByToken, err := directCodingRuntimeCapabilitySelectionInput(
-				selectionContext, requirement.SourceQuote, dialect,
-				candidates, selected, selectedPurposes,
-			)
+		for candidateIndex, candidate := range candidates {
+			input := assemblyline.RuntimeCapabilityNecessityInput{
+				LocalContext:     selectionContext,
+				Need:             requirement.SourceQuote,
+				Dialect:          dialect,
+				CandidatePurpose: candidate.Purpose,
+			}
+			job, err := assemblyline.NewRuntimeCapabilityNecessityJob(input)
 			if err != nil {
 				return nil, fmt.Errorf(
-					"runtime capability selection input for requirement %s: %w",
-					requirement.ID, err,
+					"runtime capability necessity input for requirement %s candidate %s: %w",
+					requirement.ID, candidate.ID, err,
 				)
-			}
-			job, err := assemblyline.NewRuntimeCapabilitySelectionJob(input)
-			if err != nil {
-				return nil, err
 			}
 			decision, err := runDirectCodingSemanticLeafCall(
 				runtime, modelName,
-				fmt.Sprintf("runtime_capability_selection_%03d_%03d", requirementIndex+1, len(selected)+1),
+				fmt.Sprintf("runtime_capability_necessity_%03d_%03d", requirementIndex+1, candidateIndex+1),
 				job, nil,
-				func(raw string) (assemblyline.RuntimeCapabilitySelectionDecision, error) {
-					return assemblyline.DecodeRuntimeCapabilitySelectionDecision(input, raw)
+				func(raw string) (assemblyline.RuntimeCapabilityNecessityDecision, error) {
+					return assemblyline.DecodeRuntimeCapabilityNecessityDecision(input, raw)
 				},
-				func(value assemblyline.RuntimeCapabilitySelectionDecision) error {
+				func(value assemblyline.RuntimeCapabilityNecessityDecision) error {
 					return value.ValidateFor(input)
 				},
 			)
 			if err != nil {
 				return nil, err
 			}
-			if decision.Selected == assemblyline.RuntimeCapabilitySelectionNone {
-				break
-			}
-			candidate, exists := candidateByToken[decision.Selected]
-			if !exists {
-				return nil, fmt.Errorf("runtime capability selection escaped its code-owned candidate map")
-			}
-			if _, duplicate := selected[candidate.ID]; duplicate {
-				return nil, fmt.Errorf("runtime capability selection repeated registered ID %s", candidate.ID)
-			}
-			selected[candidate.ID] = struct{}{}
-			selectedPurposes = append(selectedPurposes, candidate.Purpose)
-			if len(selected) > maxDirectCodingRuntimeCapabilitiesPerRequirement {
-				return nil, fmt.Errorf(
-					"requirement %s exceeds the %d runtime-capability bound",
-					requirement.ID, maxDirectCodingRuntimeCapabilitiesPerRequirement,
-				)
-			}
-		}
-		for _, candidate := range candidates {
-			if _, exists := selected[candidate.ID]; exists {
+			if decision.Relation == assemblyline.RuntimeCapabilityNecessary {
 				graph[requirement.ID] = append(graph[requirement.ID], candidate.ID)
 			}
 		}
@@ -157,39 +134,4 @@ func directCodingRuntimeCapabilityLocalContext(
 		lines = append(lines, "- "+dependency.Purpose)
 	}
 	return strings.Join(lines, "\n")
-}
-
-func directCodingRuntimeCapabilitySelectionInput(
-	localContext string,
-	need string,
-	dialect string,
-	candidates []directCodingRuntimeCapability,
-	selected map[string]struct{},
-	selectedPurposes []string,
-) (assemblyline.RuntimeCapabilitySelectionInput, map[string]directCodingRuntimeCapability, error) {
-	remaining := make([]assemblyline.RuntimeCapabilityCandidateSummary, 0, len(candidates)-len(selected))
-	byToken := make(map[string]directCodingRuntimeCapability, len(candidates)-len(selected))
-	for _, candidate := range candidates {
-		if _, exists := selected[candidate.ID]; exists {
-			continue
-		}
-		token := fmt.Sprintf("RUNTIME_CAPABILITY_%d", len(remaining)+1)
-		remaining = append(remaining, assemblyline.RuntimeCapabilityCandidateSummary{
-			CandidateID: token, Purpose: candidate.Purpose,
-		})
-		byToken[token] = candidate
-	}
-	input := assemblyline.RuntimeCapabilitySelectionInput{
-		LocalContext: localContext,
-		Need:         need,
-		Dialect:      dialect,
-		AcceptedPurposes: append(
-			[]string{}, selectedPurposes...,
-		),
-		Candidates: remaining,
-	}
-	if _, err := assemblyline.NewRuntimeCapabilitySelectionJob(input); err != nil {
-		return assemblyline.RuntimeCapabilitySelectionInput{}, nil, err
-	}
-	return input, byToken, nil
 }

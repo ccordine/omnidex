@@ -14,22 +14,20 @@ func resolveDatabaseQueryWindows(
 	call objectiveDatabaseRawLeafCall,
 	total int,
 ) (assemblyline.DatabaseQueryIntentLeafState, int, error) {
-	for {
-		job, err := assemblyline.NewDatabaseQueryWindowCoverageJob(state)
-		if err != nil {
-			return state, total, err
-		}
-		coverage, calls, err := callObjectiveDatabaseRawLeaf(
-			ctx, call, "database_query_window_coverage", job,
-			func(raw string) (string, error) {
-				return assemblyline.DecodeDatabaseQueryWindowCoverageLeaf(state, raw)
-			},
-		)
-		total += calls
-		if err != nil || coverage == assemblyline.DatabaseQueryNoUncoveredItem {
-			return state, total, err
-		}
-		leaf := assemblyline.DatabaseQueryWindowLeafInput{State: state}
+	purposes, nextTotal, err := resolveDatabaseQueryPurposeQueue(
+		ctx,
+		assemblyline.DatabaseQueryPurposeAuthority{
+			State: state, Collection: assemblyline.DatabaseQueryWindowPurpose,
+		},
+		datasource.MaxIntentFilters-len(state.TemporalWindows), call, total,
+	)
+	total = nextTotal
+	if err != nil {
+		return state, total, err
+	}
+	for _, purpose := range purposes {
+		leaf := assemblyline.DatabaseQueryWindowLeafInput{State: state, Purpose: purpose}
+		var calls int
 		fields := objectiveDatabaseTemporalFields(state)
 		if len(fields) == 0 {
 			return state, total, fmt.Errorf("database query window has no temporal field")
@@ -84,6 +82,7 @@ func resolveDatabaseQueryWindows(
 			FieldID: leaf.FieldID, Unit: leaf.Unit, Amount: amount,
 		})
 	}
+	return state, total, nil
 }
 
 func resolveDatabaseQueryExistence(
@@ -92,24 +91,22 @@ func resolveDatabaseQueryExistence(
 	call objectiveDatabaseRawLeafCall,
 	total int,
 ) (assemblyline.DatabaseQueryIntentLeafState, int, error) {
-	for {
-		job, err := assemblyline.NewDatabaseQueryExistenceCoverageJob(state)
-		if err != nil {
-			return state, total, err
-		}
-		coverage, calls, err := callObjectiveDatabaseRawLeaf(
-			ctx, call, "database_query_existence_coverage", job,
-			func(raw string) (string, error) {
-				return assemblyline.DecodeDatabaseQueryExistenceCoverageLeaf(state, raw)
-			},
-		)
-		total += calls
-		if err != nil || coverage == assemblyline.DatabaseQueryNoUncoveredItem {
-			return state, total, err
-		}
+	purposes, nextTotal, err := resolveDatabaseQueryPurposeQueue(
+		ctx,
+		assemblyline.DatabaseQueryPurposeAuthority{
+			State: state, Collection: assemblyline.DatabaseQueryExistencePurpose,
+		},
+		datasource.MaxIntentExistenceChecks-len(state.Exists), call, total,
+	)
+	total = nextTotal
+	if err != nil {
+		return state, total, err
+	}
+	for _, purpose := range purposes {
 		leaf := assemblyline.DatabaseQueryExistenceLeafInput{
-			State: state, Filters: []datasource.RelationalPredicate{},
+			State: state, Purpose: purpose, Filters: []datasource.RelationalPredicate{},
 		}
+		var calls int
 		relations := objectiveDatabaseExistenceRelations(state)
 		if len(relations) == 0 {
 			return state, total, fmt.Errorf("database query existence has no unused projected relation")
@@ -147,7 +144,7 @@ func resolveDatabaseQueryExistence(
 			return state, total, err
 		}
 		filters, nextTotal, err := resolveDatabaseQueryFilters(
-			ctx, state, leaf.RelationID, leaf.Filters, call, total,
+			ctx, state, leaf.RelationID, purpose, leaf.Filters, call, total,
 		)
 		total = nextTotal
 		if err != nil {
@@ -157,6 +154,7 @@ func resolveDatabaseQueryExistence(
 			RelationID: leaf.RelationID, Negated: negated, Filters: filters,
 		})
 	}
+	return state, total, nil
 }
 
 func objectiveDatabaseTemporalFields(state assemblyline.DatabaseQueryIntentLeafState) []string {

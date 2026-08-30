@@ -61,7 +61,7 @@ func TestResolveObjectiveRoleplayResearchUsesSharedEvidenceSieveAndOneResponseAc
 			}
 			if acquisition.discoverCalls != 1 || acquisition.fetchCalls != 1 ||
 				relevance.calls != 1 || station.calls != 1 ||
-				result.ModelCalls != minimumObjectiveRoleplayResearchModelCalls {
+				result.ModelCalls != 3 {
 				t.Fatalf("calls discover=%d fetch=%d relevance=%d response=%d result=%d",
 					acquisition.discoverCalls, acquisition.fetchCalls,
 					relevance.calls, station.calls, result.ModelCalls)
@@ -87,7 +87,7 @@ func TestResolveObjectiveRoleplayResearchUsesSharedEvidenceSieveAndOneResponseAc
 				!reflect.DeepEqual(station.input.Context, authority.Context) {
 				t.Fatalf("final roleplay research projection is not minimal and selected: %#v", station.input)
 			}
-			job, err := assemblyline.NewRoleplayGroundedResponseTextJob(station.input)
+			job, err := assemblyline.NewRoleplayGroundedParagraphInventoryJob(station.input)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -137,6 +137,141 @@ func TestObjectiveRoleplayResearchRejectsCharacterAndNamespaceMismatchBeforeAcqu
 			t.Fatalf("mismatched authority reached sieve: err=%v discover=%d fetch=%d relevance=%d",
 				err, acquisition.discoverCalls, acquisition.fetchCalls, relevance.calls)
 		}
+	}
+}
+
+func TestObjectiveRoleplayResearchResponseRequiresAggregateReuseProof(t *testing.T) {
+	t.Parallel()
+	fixtures := []struct {
+		name       string
+		receipt    objectiveStationReceipt
+		wantError  bool
+		modelCalls int
+	}{
+		{name: "fully restored", receipt: objectiveStationReceipt{Reused: true}, modelCalls: 1},
+		{name: "zero without reuse proof", receipt: objectiveStationReceipt{}, wantError: true},
+		{name: "fresh calls marked reused", receipt: objectiveStationReceipt{Calls: 1, Reused: true}, wantError: true},
+	}
+	for index, fixture := range fixtures {
+		fixture := fixture
+		t.Run(fixture.name, func(t *testing.T) {
+			t.Parallel()
+			question := "Which mineral dominates this sample?"
+			authority, research, narrative := objectiveRoleplayResearchFixture(index+10, question)
+			candidate, document := objectiveRoleplayResearchDocumentFixture(
+				t, "https://geology.example/sample", "Sample analysis",
+				"The sample is dominated by quartz.",
+			)
+			acquisition := &scriptedObjectiveRoleplayAcquisition{
+				query: question, candidates: []websearch.Candidate{candidate},
+				documents: []websearch.Document{document},
+			}
+			relevance := &scriptedObjectiveRoleplayRelevanceStation{
+				selected: []websearch.CandidateID{candidate.ID},
+			}
+			response := &scriptedObjectiveRoleplayGroundedStation{
+				answer:  "The sample is dominated by quartz.",
+				receipt: fixture.receipt, useReceipt: true,
+			}
+			result, err := resolveObjectiveRoleplayResearch(
+				context.Background(), authority, research, narrative,
+				acquisition, relevance, response,
+			)
+			if fixture.wantError {
+				if err == nil || !strings.Contains(err.Error(), "roleplay research response") {
+					t.Fatalf("receipt=%+v error=%v", fixture.receipt, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.ModelCalls != fixture.modelCalls {
+				t.Fatalf("model calls=%d want %d", result.ModelCalls, fixture.modelCalls)
+			}
+		})
+	}
+}
+
+func TestObjectiveRoleplayResearchAcceptsFullyRestoredWebLedgerThroughTurnBoundary(t *testing.T) {
+	t.Parallel()
+	question := "Which mineral dominates this restored sample?"
+	authority, research, narrative := objectiveRoleplayResearchFixture(40, question)
+	candidate, document := objectiveRoleplayResearchDocumentFixture(
+		t, "https://geology.example/restored-sample", "Restored sample analysis",
+		"The restored sample is dominated by quartz.",
+	)
+	answer, err := resolveObjectiveRoleplayResearch(
+		t.Context(), authority, research, narrative,
+		&scriptedObjectiveRoleplayAcquisition{
+			query: question, candidates: []websearch.Candidate{candidate},
+			documents: []websearch.Document{document},
+		},
+		&scriptedObjectiveRoleplayRelevanceStation{
+			selected:   []websearch.CandidateID{candidate.ID},
+			receipt:    webresearch.SemanticCallReceipt{Reused: true},
+			useReceipt: true,
+		},
+		&scriptedObjectiveRoleplayGroundedStation{
+			answer:  "The restored sample is dominated by quartz.",
+			receipt: objectiveStationReceipt{Reused: true}, useReceipt: true,
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	receipt, err := answer.WebCallLedger.ValidateForMaximum(
+		"restored roleplay research", maximumObjectiveRoleplayResearchModelCalls,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := runObjectiveRoleplayResearchTurn(
+		t.Context(), authority,
+		func(context.Context, turnAuthority) (objectiveRoleplayResearchAnswer, error) {
+			return answer, nil
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if answer.ModelCalls != 0 || !receipt.Reused || !result.Complete ||
+		result.ModelCalls != 0 || result.Output != answer.Rendered {
+		t.Fatalf("receipt=%+v answer=%+v result=%+v", receipt, answer, result)
+	}
+}
+
+func TestObjectiveRoleplayResearchRejectsForgedRelevanceReceipts(t *testing.T) {
+	t.Parallel()
+	for _, receipt := range []webresearch.SemanticCallReceipt{
+		{},
+		{Calls: 1, Reused: true},
+	} {
+		receipt := receipt
+		t.Run(fmt.Sprintf("calls_%d_reused_%t", receipt.Calls, receipt.Reused), func(t *testing.T) {
+			t.Parallel()
+			question := "Which mineral dominates this sample?"
+			authority, research, narrative := objectiveRoleplayResearchFixture(41, question)
+			candidate, document := objectiveRoleplayResearchDocumentFixture(
+				t, "https://geology.example/forged-sample", "Sample analysis",
+				"The sample is dominated by quartz.",
+			)
+			_, err := resolveObjectiveRoleplayResearch(
+				t.Context(), authority, research, narrative,
+				&scriptedObjectiveRoleplayAcquisition{
+					query: question, candidates: []websearch.Candidate{candidate},
+					documents: []websearch.Document{document},
+				},
+				&scriptedObjectiveRoleplayRelevanceStation{
+					selected: []websearch.CandidateID{candidate.ID},
+					receipt:  receipt, useReceipt: true,
+				},
+				&scriptedObjectiveRoleplayGroundedStation{answer: "unused"},
+			)
+			if err == nil {
+				t.Fatalf("forged relevance receipt %+v was accepted", receipt)
+			}
+		})
 	}
 }
 
@@ -208,9 +343,11 @@ func (fixture *scriptedObjectiveRoleplayAcquisition) Fetch(
 }
 
 type scriptedObjectiveRoleplayRelevanceStation struct {
-	selected []websearch.CandidateID
-	question string
-	calls    int
+	selected   []websearch.CandidateID
+	question   string
+	receipt    webresearch.SemanticCallReceipt
+	useReceipt bool
+	calls      int
 }
 
 func (station *scriptedObjectiveRoleplayRelevanceStation) Select(
@@ -222,17 +359,32 @@ func (station *scriptedObjectiveRoleplayRelevanceStation) Select(
 	if call.Question == "" || len(call.Candidates) == 0 {
 		return webresearch.RelevanceDecision{}, fmt.Errorf("relevance received invalid authority")
 	}
+	receipt := webresearch.SemanticCallReceipt{Calls: 1}
+	if station.useReceipt {
+		receipt = station.receipt
+	}
+	var ledger webresearch.SemanticCallLedger
+	if err := ledger.Record(
+		"scripted roleplay relevance",
+		receipt,
+		1,
+	); err != nil {
+		return webresearch.RelevanceDecision{}, err
+	}
 	return webresearch.RelevanceDecision{
 		Outcome:       webresearch.RelevanceSelected,
 		CandidateIDs:  append([]websearch.CandidateID(nil), station.selected...),
-		SemanticCalls: 1,
+		SemanticCalls: receipt.Calls,
+		CallLedger:    ledger,
 	}, nil
 }
 
 type scriptedObjectiveRoleplayGroundedStation struct {
-	answer string
-	calls  int
-	input  assemblyline.RoleplayGroundedResponseInput
+	answer     string
+	receipt    objectiveStationReceipt
+	useReceipt bool
+	calls      int
+	input      assemblyline.RoleplayGroundedResponseInput
 }
 
 func (station *scriptedObjectiveRoleplayGroundedStation) RespondGrounded(
@@ -244,12 +396,16 @@ func (station *scriptedObjectiveRoleplayGroundedStation) RespondGrounded(
 	if len(input.RealWorldEvidence) != 1 || strings.Contains(input.ExactQuestion, "/research") {
 		return assemblyline.RoleplayGroundedResponseDecision{}, objectiveStationReceipt{}, fmt.Errorf("unsafe response input")
 	}
+	receipt := objectiveStationReceipt{Calls: 2}
+	if station.useReceipt {
+		receipt = station.receipt
+	}
 	return assemblyline.RoleplayGroundedResponseDecision{
 		Schema: assemblyline.RoleplayGroundedResponseSchemaV1,
 		Paragraphs: []assemblyline.RoleplayGroundedParagraph{{
 			Text: station.answer, EvidenceIDs: []string{input.RealWorldEvidence[0].ID},
 		}},
-	}, objectiveStationReceipt{Calls: 2}, nil
+	}, receipt, nil
 }
 
 func objectiveRoleplayResearchFixture(

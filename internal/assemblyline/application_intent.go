@@ -6,7 +6,10 @@ import (
 	"unicode/utf8"
 )
 
-const ApplicationIntentCandidateSchemaV1 = "omnidex.application-intent.v1"
+const (
+	ApplicationIntentCandidateSchemaV1 = "omnidex.application-intent.v1"
+	MaxApplicationRequirementLeaves    = maxRequirementCount
+)
 
 type ApplicationIntentInput struct {
 	UserRequest string             `json:"user_request"`

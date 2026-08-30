@@ -5,11 +5,21 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+)
+
+// ErrDesiredStateAlreadyExact is returned only after mutation planning has
+// mechanically proved every requested byte, mode, and presence state against
+// the exact source snapshot. PlanMutation remains a nonempty transaction
+// primitive: callers that need no-delta verification must handle this result
+// through a separate higher-level authority.
+var ErrDesiredStateAlreadyExact = errors.New(
+	"workspace desired file states are already exact and require no mutation",
 )
 
 type plannedMutation struct {
@@ -49,7 +59,7 @@ func PlanMutation(
 		return MutationPlan{}, err
 	}
 	if len(mutations) == 0 {
-		return MutationPlan{}, fmt.Errorf("workspace desired file states are already exact and require no mutation")
+		return MutationPlan{}, ErrDesiredStateAlreadyExact
 	}
 	sort.Slice(mutations, func(left, right int) bool {
 		return mutations[left].transition.Path < mutations[right].transition.Path

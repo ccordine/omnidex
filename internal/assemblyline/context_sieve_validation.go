@@ -15,7 +15,6 @@ const (
 	MaxContextCandidateIDBytes            = 64
 	MaxContextCandidateContentBytes       = 2 * 1024
 	MaxContextCandidateProjectionBytes    = 8 * 1024
-	MaxContextRelevanceSelections         = 8
 	MaxContextMinificationAuthorities     = 8
 	MaxContextMinificationProjectionBytes = 6 * 1024
 	MaxContextMinifiedBytes               = 2 * 1024

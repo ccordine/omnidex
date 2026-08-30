@@ -18,9 +18,8 @@ const (
 	maxObjectiveRoleplayResearchParagraphs     = 4
 	maxObjectiveRoleplayResearchParagraphBytes = 2 * 1024
 	maxObjectiveRoleplayEvidenceSemanticCalls  = 9
-	minimumObjectiveRoleplayResearchModelCalls = 3
 	maximumObjectiveRoleplayResearchModelCalls = maxObjectiveRoleplayEvidenceSemanticCalls +
-		(1+maxObjectiveRoleplayResearchParagraphs*4)*exactSemanticLeafCalls
+		(1+maxObjectiveRoleplayResearchParagraphs*(4+1))*exactSemanticLeafCalls
 )
 
 func (r *nativeRuntimeV3) acquireObjectiveRoleplayResearch(
@@ -98,12 +97,16 @@ func resolveObjectiveRoleplayResearch(
 	if err != nil {
 		return objectiveRoleplayResearchAnswer{}, err
 	}
-	if gathered.RelevanceCalls != 1 || gathered.SemanticCalls < 1 ||
-		gathered.SemanticCalls > maxObjectiveRoleplayEvidenceSemanticCalls {
+	evidenceReceipt, err := gathered.CallLedger.ValidateForMaximum(
+		"roleplay research evidence sieve", maxObjectiveRoleplayEvidenceSemanticCalls,
+	)
+	if err != nil {
+		return objectiveRoleplayResearchAnswer{}, err
+	}
+	if gathered.RelevanceCalls != 1 || gathered.SemanticCalls != evidenceReceipt.Calls {
 		return objectiveRoleplayResearchAnswer{}, fmt.Errorf(
-			"roleplay research evidence sieve requires one relevance call and permits 1..%d raw semantic calls; received %d and %d",
-			maxObjectiveRoleplayEvidenceSemanticCalls,
-			gathered.RelevanceCalls, gathered.SemanticCalls,
+			"roleplay research evidence sieve requires one relevance round; received %d, reported %d calls, and its exact ledger proves %d",
+			gathered.RelevanceCalls, gathered.SemanticCalls, evidenceReceipt.Calls,
 		)
 	}
 	projected, err := projectObjectiveRoleplayResearchEvidence(gathered.Evidence, gathered.Projected)
@@ -133,15 +136,29 @@ func resolveObjectiveRoleplayResearch(
 	if err != nil {
 		return objectiveRoleplayResearchAnswer{}, err
 	}
-	minimumResponseCalls := 1 + len(capsules)
-	maximumResponseCalls := (1 + maxObjectiveRoleplayResearchParagraphs*len(capsules)) *
+	maximumResponseCalls := (1 + maxObjectiveRoleplayResearchParagraphs*(len(capsules)+1)) *
 		exactSemanticLeafCalls
-	if receipt.Reused || receipt.Calls < minimumResponseCalls ||
-		receipt.Calls > maximumResponseCalls {
-		return objectiveRoleplayResearchAnswer{}, fmt.Errorf(
-			"roleplay research response reported %d calls outside the raw text and pairwise evidence budget %d..%d",
-			receipt.Calls, minimumResponseCalls, maximumResponseCalls,
-		)
+	if err := validateObjectiveBoundedStationReceipt(
+		"roleplay research response", receipt, maximumResponseCalls,
+	); err != nil {
+		return objectiveRoleplayResearchAnswer{}, err
+	}
+	var callLedger webresearch.SemanticCallLedger
+	if err := callLedger.Merge("web evidence", gathered.CallLedger); err != nil {
+		return objectiveRoleplayResearchAnswer{}, err
+	}
+	if err := callLedger.Record(
+		"roleplay grounded response",
+		webresearch.SemanticCallReceipt{Calls: receipt.Calls, Reused: receipt.Reused},
+		maximumResponseCalls,
+	); err != nil {
+		return objectiveRoleplayResearchAnswer{}, err
+	}
+	totalReceipt, err := callLedger.ValidateForMaximum(
+		"roleplay research", maximumObjectiveRoleplayResearchModelCalls,
+	)
+	if err != nil {
+		return objectiveRoleplayResearchAnswer{}, err
 	}
 	paragraphs := make([]webresearch.GroundedParagraph, len(decision.Paragraphs))
 	for index, paragraph := range decision.Paragraphs {
@@ -174,7 +191,7 @@ func resolveObjectiveRoleplayResearch(
 		Rendered: artifact.Rendered, RenderedSHA256: artifact.SHA256,
 		Paragraphs: cloneWebParagraphs(artifact.Paragraphs), Evidence: selected,
 		EvidenceIDs: ids,
-		ModelCalls:  gathered.SemanticCalls + receipt.Calls,
+		ModelCalls:  totalReceipt.Calls, WebCallLedger: callLedger.Clone(),
 	}, nil
 }
 

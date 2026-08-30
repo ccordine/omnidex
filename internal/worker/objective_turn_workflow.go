@@ -102,11 +102,10 @@ func runObjectiveTurn(
 	if err := ctx.Err(); err != nil {
 		return objectiveTurnResult{}, err
 	}
-	if receipt.Calls != exactSemanticLeafCalls {
-		return objectiveTurnResult{}, fmt.Errorf(
-			"conversation objective kind station reported %d calls; exactly %d is required",
-			receipt.Calls, exactSemanticLeafCalls,
-		)
+	if err := validateObjectiveStationReceipt(
+		"conversation objective kind station", receipt,
+	); err != nil {
+		return objectiveTurnResult{}, err
 	}
 	kindCalls := receipt.Calls
 	if err := decision.ValidateFor(input); err != nil {
@@ -201,9 +200,20 @@ func runObjectiveRoleplayResearchTurn(
 	if err := ctx.Err(); err != nil {
 		return result, err
 	}
+	webReceipt, err := answer.WebCallLedger.ValidateForMaximum(
+		"roleplay research completion", maximumObjectiveRoleplayResearchModelCalls,
+	)
+	if err != nil {
+		return result, err
+	}
+	if answer.ModelCalls != webReceipt.Calls {
+		return result, fmt.Errorf(
+			"roleplay research reported %d calls but its exact ledger proves %d",
+			answer.ModelCalls, webReceipt.Calls,
+		)
+	}
 	if strings.TrimSpace(answer.Text) == "" || answer.Text != strings.TrimSpace(answer.Text) ||
 		len(answer.Text) > maxObjectiveOutputBytes ||
-		answer.ModelCalls < minimumObjectiveRoleplayResearchModelCalls ||
 		answer.ModelCalls > maximumObjectiveRoleplayResearchModelCalls ||
 		answer.Rendered == "" || answer.Rendered != strings.TrimSpace(answer.Rendered) ||
 		len(answer.Rendered) > maxObjectiveOutputBytes ||
@@ -254,8 +264,15 @@ func runObjectiveDatabaseRead(
 	if err != nil {
 		return result, err
 	}
-	if acquisition.ModelCalls < 1 {
-		return result, fmt.Errorf("database-read workflow returned no bounded semantic work")
+	databaseReceipt, err := acquisition.DatabaseCallLedger.totalForSuccess()
+	if err != nil {
+		return result, fmt.Errorf("database-read workflow receipt: %w", err)
+	}
+	if acquisition.ModelCalls != databaseReceipt.Calls {
+		return result, fmt.Errorf(
+			"database-read workflow reported %d model calls but its exact receipt ledger proves %d",
+			acquisition.ModelCalls, databaseReceipt.Calls,
+		)
 	}
 	modelEvidence, err := objectiveModelEvidence(acquisition.Evidence)
 	if err != nil {
@@ -276,7 +293,7 @@ func runObjectiveDatabaseRead(
 	if err != nil {
 		return result, err
 	}
-	if err := validateObjectiveGroundedAnswerCalls(receipt.Calls, input); err != nil {
+	if err := validateObjectiveGroundedAnswerReceipt(receipt, input); err != nil {
 		return result, fmt.Errorf("database grounded answer: %w", err)
 	}
 	if err := answer.ValidateFor(input); err != nil {
@@ -314,8 +331,20 @@ func runObjectiveExternalAnswer(
 	if err := ctx.Err(); err != nil {
 		return result, err
 	}
+	webReceipt, err := answer.WebCallLedger.ValidateForMaximum(
+		"external-answer completion", maxObjectiveWebSemanticCalls,
+	)
+	if err != nil {
+		return result, err
+	}
+	if answer.ModelCalls != webReceipt.Calls {
+		return result, fmt.Errorf(
+			"external-answer workflow reported %d calls but its exact ledger proves %d",
+			answer.ModelCalls, webReceipt.Calls,
+		)
+	}
 	if strings.TrimSpace(answer.Text) == "" || answer.Text != strings.TrimSpace(answer.Text) ||
-		len(answer.Text) > maxObjectiveOutputBytes || answer.ModelCalls < 1 ||
+		len(answer.Text) > maxObjectiveOutputBytes ||
 		answer.Rendered == "" || answer.Rendered != strings.TrimSpace(answer.Rendered) ||
 		len(answer.Rendered) > maxObjectiveOutputBytes ||
 		!validObjectiveTextSHA(answer.Rendered, answer.RenderedSHA256) || len(answer.Paragraphs) == 0 {

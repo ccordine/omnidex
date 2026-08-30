@@ -464,25 +464,43 @@ func directCodingTaskProof(jobID int64, taskID string, generated map[string]stri
 
 func directCodingVerificationProof(jobID int64, verification directCodingVerification) taskstate.Ref {
 	parts := make([]string, 0, len(verification.Commands)+1)
-	parts = append(parts, verification.MutationReceiptSHA256)
-	for index, command := range verification.Commands {
-		parts = append(parts, command+"\x00"+strconv.FormatInt(verification.EvidenceIDs[index], 10))
+	authorityID := verification.MutationOperationID
+	receiptSHA256 := verification.MutationReceiptSHA256
+	uriKind := "workspace"
+	version := "v2"
+	if verification.ExactStateAuthorityID != "" {
+		authorityID = verification.ExactStateAuthorityID
+		receiptSHA256 = verification.ExactStateReceiptSHA256
+		uriKind = "workspace-exact"
+		version = "v1"
+	}
+	parts = append(parts, receiptSHA256)
+	if verification.ExactStateAuthorityID == "" {
+		for index, command := range verification.Commands {
+			parts = append(parts, command+"\x00"+strconv.FormatInt(verification.EvidenceIDs[index], 10))
+		}
 	}
 	return taskstate.Ref{
 		URI: fmt.Sprintf(
-			"verification://job/%d/workspace/%s", jobID, verification.MutationOperationID,
+			"verification://job/%d/%s/%s", jobID, uriKind, authorityID,
 		),
-		Version: "v2", Hash: directCodingDigest(strings.Join(parts, "\n")),
+		Version: version, Hash: directCodingDigest(strings.Join(parts, "\n")),
 		Relation: taskstate.RefVerifies,
 	}
 }
 
 func validDirectCodingVerificationProof(jobID int64, proof taskstate.Ref) bool {
-	prefix := fmt.Sprintf("verification://job/%d/workspace/", jobID)
-	operationID := strings.TrimPrefix(proof.URI, prefix)
-	return proof.URI != operationID &&
-		validRepositoryVerificationOpaqueID(operationID, "workspace_mutation_") &&
-		proof.Version == "v2" &&
+	mutationPrefix := fmt.Sprintf("verification://job/%d/workspace/", jobID)
+	mutationID := strings.TrimPrefix(proof.URI, mutationPrefix)
+	exactPrefix := fmt.Sprintf("verification://job/%d/workspace-exact/", jobID)
+	exactID := strings.TrimPrefix(proof.URI, exactPrefix)
+	validAuthority := proof.URI != mutationID &&
+		validRepositoryVerificationOpaqueID(mutationID, "workspace_mutation_") && proof.Version == "v2"
+	if !validAuthority {
+		validAuthority = proof.URI != exactID &&
+			validRepositoryVerificationOpaqueID(exactID, "workspace_exact_") && proof.Version == "v1"
+	}
+	return validAuthority &&
 		validRepositoryVerificationSHA256(proof.Hash) &&
 		proof.Relation == taskstate.RefVerifies
 }

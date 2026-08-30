@@ -28,7 +28,7 @@ func (stations *PortableStations) Select(
 		Candidates:    candidates, MaxSelections: call.MaxSelections,
 	}
 	selected := make([]string, 0, call.MaxSelections)
-	semanticCalls := 0
+	var ledger SemanticCallLedger
 	for _, candidate := range candidates {
 		if len(selected) == call.MaxSelections {
 			break
@@ -42,14 +42,20 @@ func (stations *PortableStations) Select(
 		if err != nil {
 			return RelevanceDecision{}, fmt.Errorf("build web relevance relation job: %w", err)
 		}
-		relation, err := runPortableSemanticLeaf(
+		relation, receipt, err := runPortableSemanticLeaf(
 			ctx, stations, job,
 			func(raw string) (assemblyline.WebRelevanceRelationDecision, error) {
 				return assemblyline.DecodeWebRelevanceRelationLeaf(input, raw)
 			},
 		)
-		semanticCalls++
 		if err != nil {
+			return RelevanceDecision{}, err
+		}
+		if err := ledger.Record(
+			"web relevance candidate "+candidate.CandidateID,
+			receipt,
+			exactPortableSemanticLeafCalls,
+		); err != nil {
 			return RelevanceDecision{}, err
 		}
 		if relation.Relation == assemblyline.WebCandidateRelevant {
@@ -68,7 +74,14 @@ func (stations *PortableStations) Select(
 	if len(ids) > 0 {
 		outcome = RelevanceSelected
 	}
+	receipt, err := ledger.ValidateForMaximum(
+		"web relevance station", len(candidates)*exactPortableSemanticLeafCalls,
+	)
+	if err != nil {
+		return RelevanceDecision{}, err
+	}
 	return RelevanceDecision{
-		Outcome: outcome, CandidateIDs: ids, SemanticCalls: semanticCalls,
+		Outcome: outcome, CandidateIDs: ids, SemanticCalls: receipt.Calls,
+		CallLedger: ledger.Clone(),
 	}, nil
 }

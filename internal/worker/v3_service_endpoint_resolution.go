@@ -36,6 +36,15 @@ func resolveDirectCodingServiceEndpointPlan(
 ) (directCodingServiceEndpointPlan, error) {
 	runtime.MaxAttempts = 1
 	runtime.CorrectionModel = ""
+	requirements, err := directCodingRequirementsFromFrozenWorkload(workload)
+	if err != nil {
+		return directCodingServiceEndpointPlan{}, err
+	}
+	if err := validateDirectCodingCapabilityGraph(requirements, capabilities); err != nil {
+		return directCodingServiceEndpointPlan{}, fmt.Errorf(
+			"service endpoint capability graph: %w", err,
+		)
+	}
 	plan := directCodingServiceEndpointPlan{
 		WorkloadSHA256: workload.SHA256,
 		ProductContext: workload.ProductQuote,
@@ -43,38 +52,45 @@ func resolveDirectCodingServiceEndpointPlan(
 		ByTask:         make(map[string]assemblyline.ApplicationServiceEndpointContract, len(workload.Tasks)),
 	}
 	for _, task := range workload.Tasks {
+		hasDirectCapabilityConsumer := directCodingRequirementHasCapabilityConsumer(
+			task.RequirementID, capabilities,
+		)
 		runtimeAuthority, err := assemblyline.ProjectApplicationTaskRuntimeAuthority(
 			workload, task.ID,
 		)
 		if err != nil {
 			return directCodingServiceEndpointPlan{}, err
 		}
-		requirementInput, err := assemblyline.ProjectApplicationServiceEndpointRequirementInput(
-			runtimeAuthority,
-		)
-		if err != nil {
-			return directCodingServiceEndpointPlan{}, err
-		}
-		requirementJob, err := assemblyline.NewApplicationServiceEndpointRequirementJob(requirementInput)
-		if err != nil {
-			return directCodingServiceEndpointPlan{}, err
-		}
-		requirement, err := runDirectCodingSemanticLeafCall(
-			runtime, requirementModel, "application_service_endpoint_requirement", requirementJob, identities,
-			func(raw string) (assemblyline.ApplicationServiceEndpointRequirementResult, error) {
-				return assemblyline.DecodeApplicationServiceEndpointRequirementResult(requirementInput, raw)
-			},
-			func(value assemblyline.ApplicationServiceEndpointRequirementResult) error {
-				return value.ValidateFor(requirementInput)
-			},
-		)
-		if err != nil {
-			return directCodingServiceEndpointPlan{}, fmt.Errorf(
-				"resolve service endpoint requirement for task %s: %w", task.ID, err,
+		endpointRequirement := assemblyline.ApplicationServiceEndpointRequired
+		if hasDirectCapabilityConsumer {
+			requirementInput, err := assemblyline.ProjectApplicationServiceEndpointRequirementInput(
+				runtimeAuthority, true,
 			)
+			if err != nil {
+				return directCodingServiceEndpointPlan{}, err
+			}
+			requirementJob, err := assemblyline.NewApplicationServiceEndpointRequirementJob(requirementInput)
+			if err != nil {
+				return directCodingServiceEndpointPlan{}, err
+			}
+			requirement, err := runDirectCodingSemanticLeafCall(
+				runtime, requirementModel, "application_service_endpoint_requirement", requirementJob, identities,
+				func(raw string) (assemblyline.ApplicationServiceEndpointRequirementResult, error) {
+					return assemblyline.DecodeApplicationServiceEndpointRequirementResult(requirementInput, raw)
+				},
+				func(value assemblyline.ApplicationServiceEndpointRequirementResult) error {
+					return value.ValidateFor(requirementInput)
+				},
+			)
+			if err != nil {
+				return directCodingServiceEndpointPlan{}, fmt.Errorf(
+					"resolve service endpoint requirement for task %s: %w", task.ID, err,
+				)
+			}
+			endpointRequirement = requirement.EndpointRequirement
 		}
-		plan.Requirements[task.ID] = requirement.EndpointRequirement
-		if requirement.EndpointRequirement == assemblyline.ApplicationServiceSupportOnly {
+		plan.Requirements[task.ID] = endpointRequirement
+		if endpointRequirement == assemblyline.ApplicationServiceSupportOnly {
 			continue
 		}
 		authority, err := assemblyline.ProjectApplicationServiceEndpointTaskAuthority(runtimeAuthority)
@@ -100,6 +116,23 @@ func resolveDirectCodingServiceEndpointPlan(
 	return plan, nil
 }
 
+func directCodingRequirementHasCapabilityConsumer(
+	requirementID string,
+	capabilities directCodingCapabilityGraph,
+) bool {
+	for consumerRequirement, dependencies := range capabilities {
+		if consumerRequirement == requirementID {
+			continue
+		}
+		for _, dependency := range dependencies {
+			if dependency.RequirementID == requirementID {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func (plan directCodingServiceEndpointPlan) ValidateForCapabilities(
 	workload assemblyline.FrozenApplicationWorkload,
 	capabilities directCodingCapabilityGraph,
@@ -115,22 +148,7 @@ func (plan directCodingServiceEndpointPlan) ValidateForCapabilities(
 		if plan.Requirements[task.ID] != assemblyline.ApplicationServiceSupportOnly {
 			continue
 		}
-		consumed := false
-		for consumerRequirement, dependencies := range capabilities {
-			if consumerRequirement == task.RequirementID {
-				continue
-			}
-			for _, dependency := range dependencies {
-				if dependency.RequirementID == task.RequirementID {
-					consumed = true
-					break
-				}
-			}
-			if consumed {
-				break
-			}
-		}
-		if !consumed {
+		if !directCodingRequirementHasCapabilityConsumer(task.RequirementID, capabilities) {
 			return fmt.Errorf(
 				"support-only service task %s has no code-derived capability consumer",
 				task.ID,
@@ -179,16 +197,7 @@ func (plan directCodingServiceEndpointPlan) ValidateFor(
 		if err != nil {
 			return err
 		}
-		requirementInput, err := assemblyline.ProjectApplicationServiceEndpointRequirementInput(
-			runtimeAuthority,
-		)
-		if err != nil {
-			return err
-		}
-		if err := (assemblyline.ApplicationServiceEndpointRequirementResult{
-			Schema:              assemblyline.ApplicationServiceEndpointRequirementSchemaV1,
-			EndpointRequirement: requirement,
-		}).ValidateFor(requirementInput); err != nil {
+		if err := requirement.Validate(); err != nil {
 			return fmt.Errorf("validate service endpoint requirement for task %s: %w", task.ID, err)
 		}
 		contract, hasContract := plan.ByTask[task.ID]

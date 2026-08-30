@@ -26,8 +26,8 @@ func TestApplicationRequirementCandidateOutcomeRelationIsOneBoundPair(t *testing
 		}
 	}
 	for _, required := range []string{
-		"one source-owning runtime obligation",
-		"requires additional runtime evidence",
+		"same independently observable outcome",
+		"distinct independently observable outcomes",
 		"keeping it after a session restart is DISTINCT_RUNTIME_OUTCOMES",
 		"returning it before a fixed deadline is DISTINCT_RUNTIME_OUTCOMES",
 		"delivering it to a nonvisual consumer is DISTINCT_RUNTIME_OUTCOMES",

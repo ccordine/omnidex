@@ -11,7 +11,7 @@ import (
 func TestBrowserAcceptancePreambleCapturesBoundedRoleObservations(t *testing.T) {
 	t.Parallel()
 
-	source := genericBrowserAcceptancePreamble("./runtime")
+	source := genericBrowserAcceptancePreamble("./runtime", false)
 	if err := assemblyline.ValidateTypeScriptSource(source, true); err != nil {
 		t.Fatalf("role-observation preamble is not parseable TypeScript: %v", err)
 	}

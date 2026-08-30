@@ -49,6 +49,7 @@ func TestFromJSONRejectsMalformedAndUnknownValues(t *testing.T) {
 		json.RawMessage(`{"coding_workload_review_model":"x"}`),
 		json.RawMessage(`{"coding_requirement_adviser_model":"x"}`),
 		json.RawMessage(`{"coding_requirement_split_model":"x"}`),
+		json.RawMessage(`{"database_evidence_refinement_model":"x"}`),
 		json.RawMessage(`{"web_grounded_synthesis_correction_model":"x"}`),
 		json.RawMessage(`{"web_claim_evidence_review_model":"x"}`),
 		json.RawMessage(`{"default_model":"x"}`),

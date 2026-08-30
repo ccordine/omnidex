@@ -226,27 +226,56 @@ That prevents competing specialists from independently rewriting the same file.
 
 4. Compile vague requests into code-held objectives
 
-Semantic intake is a code-owned fixed point over the intact user request, not one
-aggregate model transformation. A surface call returns one registered delivery
-surface. A product-context call returns one value. A requirement-coverage call returns
-only whether one uncovered requirement remains, and only that relation permits a
-separate call for one requirement:
+Semantic intake begins from the intact user request and remains code-owned. Code first
+acquires any context facts needed to interpret that request. Exactly one bounded,
+source-ordered requirement-inventory call then returns either
+`NO_RUNTIME_REQUIREMENT_CANDIDATES` or between one and the code-owned maximum positive
+raw candidates. Code parses and counts those lines mechanically. No semantic station
+pre-counts the inventory, and no pre-count receipt exists. Inventory generation is
+untrusted intake, not authorization or a completeness claim. Every positive candidate
+enters the ordinary authorization-first sieve. The inventory is the only product-name
+candidate generator: a
+purpose-denoting product or category name may contribute only its literal core operation
+or governed result, while independent outcomes are split and construction constraints,
+customary features, and speculative enhancements are omitted:
 
 Build an appointment-search page using the existing Laravel application,
 with dynamic filters and a modal for appointment details.
 
-Possible successive requirement leaves:
+Possible untrusted inventory candidates:
 
 R1 Users can search appointments.
 R2 Users can dynamically filter the visible results.
 R3 Users can open appointment details in a modal.
 
-Code validates and retains each leaf, assigns identities, and projects each accepted
-requirement directly into one frozen task in source order. The task contains only its
-code-owned task identity, requirement identity, and exact requirement. No model emits
-an objective, behavior list, acceptance contract, dependency, schedule, review task,
-or plan. Code derives required facts, capabilities, block ownership, verification, and
-completion predicates from the frozen workload and registered stack.
+The inventory is not a feature list, accepted specification, task queue, or completion
+claim. Code validates its receipt and creates the only authoritative source-order
+candidate queue. It drops exact byte duplicates mechanically. For every other
+candidate, the first semantic question is whether the candidate's complete meaning is
+entailed by the immutable current request. A speculative or invented candidate dies
+before downstream classification.
+
+Code sends only an authorized candidate through kind and runtime-cardinality
+relations. A mixed-kind or multiple-outcome receipt may authorize one bounded lossless
+partition, whose source-ordered children return to the code queue. An authorized
+atomic runtime candidate is compared with retained requirements one pair at a time;
+the relation returns only same or distinct. Exact and semantic duplicates evaporate.
+Only a distinct grounded functional outcome is assigned an identity and projected
+into one frozen task in source order.
+
+Queue exhaustion freezes the accepted set for the current iteration. Rejected,
+speculative, duplicate, non-runtime, unresolved, or over-bound candidates never block
+functional progress or reopen accepted state. If retained as optional suggestions, they
+remain outside the current ledger, workload, verifier, and completion criteria until a
+later explicit user objective sends them through the ordinary sieve. The current retained
+functional objectives define completion for this user turn; a later user turn can request
+another bounded iteration. A product category
+does not expand into customary features that must be accepted before current work can
+finish. Each task contains only its code-owned task identity, requirement identity,
+and exact requirement. No model emits an objective, behavior list, acceptance
+contract, dependency, schedule, review task, or plan. Code derives required facts,
+capabilities, block ownership, verification, and completion predicates from the frozen
+workload and registered stack.
 
 5. Resolve a capability closure per objective
 
@@ -471,12 +500,18 @@ reconsider the whole stack or review valid output.
 
 No single “project model.”
 
-Each station has a measured capability requirement:
+Each station has a measured capability requirement. Context facts run first when needed;
+requirement intake and its sieve run next. Product, surface, and deployment semantics run
+only after at least one leaf survives and only at their first concrete consumer:
 
-semantic intake            → model proven at grounded extraction
-requirement extraction     → model proven at grounded extraction
+requirement inventory        → model proven at bounded absence-or-1..N atomic runtime-candidate generation
+candidate authorization    → model proven at request entailment
+candidate kind/cardinality  → bounded classifier
+candidate partition        → model proven at lossless local partitioning
+pairwise requirement relation → bounded equivalence classifier
 candidate relevance        → cheap small model
 pairwise capability relation → bounded classifier
+surface/product/deployment → model proven at grounded interpretation when first consumed
 source generation          → coder model
 repair guidance            → semantic diagnostic model
 repair execution           → coder model

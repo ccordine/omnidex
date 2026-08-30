@@ -10,13 +10,6 @@ import (
 
 const genericTypeScriptBrowserAdapter = "typescript_browser_capabilities_v3"
 
-var acceptanceForbiddenHostAPIs = []string{
-	"AudioContext", "Audio", "fetch", "XMLHttpRequest", "WebSocket", "EventSource",
-	"Worker", "SharedWorker", "localStorage", "sessionStorage", "indexedDB",
-	"window", "document", "navigator", "globalThis", "alert", "confirm", "prompt",
-	"requestAnimationFrame", "cancelAnimationFrame",
-}
-
 func compileGenericTypeScriptBrowserBlueprint(
 	packageName string,
 	specification assemblyline.ApplicationSpecification,
@@ -121,14 +114,9 @@ func genericBrowserFeatureDocuments(
 			documentIndex = len(documents)
 			documentByPath[files.ImplementationPath] = documentIndex
 			documents = append(documents, assemblyline.SourceDocument{
-				ID:   fmt.Sprintf("feature_%03d", sequence),
-				Path: files.ImplementationPath,
-				Preamble: fmt.Sprintf(`import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { ReactElement } from 'react';
-import { FeatureBoundary } from '%s';
-import type { CapabilitySnapshot, FeatureActions, FeatureProps, FeatureState, FeatureViewProps, SharedValue } from '%s';`,
-					typeScriptRelativeModule(files.ImplementationPath, "src/runtime.tsx"),
-					typeScriptRelativeModule(files.ImplementationPath, "src/runtime.tsx")),
+				ID:       fmt.Sprintf("feature_%03d", sequence),
+				Path:     files.ImplementationPath,
+				Preamble: genericBrowserFeaturePreamble(files.ImplementationPath, nil),
 			})
 		}
 		taskID := taskContext.Task.TaskID
@@ -169,6 +157,19 @@ import type { CapabilitySnapshot, FeatureActions, FeatureProps, FeatureState, Fe
 	return documents, nil
 }
 
+func genericBrowserFeaturePreamble(
+	implementationPath string,
+	runtimeValueImports []string,
+) string {
+	values := append([]string{"FeatureBoundary"}, runtimeValueImports...)
+	runtimeModule := typeScriptRelativeModule(implementationPath, "src/runtime.tsx")
+	return fmt.Sprintf(`import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { ReactElement } from 'react';
+import { %s } from '%s';
+import type { CapabilitySnapshot, FeatureActions, FeatureProps, FeatureState, FeatureViewProps, SharedValue } from '%s';`,
+		strings.Join(values, ", "), runtimeModule, runtimeModule)
+}
+
 func genericBrowserFeatureContract(
 	behavior string,
 	skill *directCodingSkillBinding,
@@ -180,10 +181,10 @@ func genericBrowserFeatureContract(
 	parts = append(parts,
 		"Return one complete accessible interactive React view; no placeholder, TODO, endpoint, import, or extra declaration.",
 		"Use one unconditional top-level intrinsic JSX root; no fragment or other JSX. Controls are unconditional, never in branches, ternaries, loops, or maps. Each visible dynamic expression is the sole child of an intrinsic. A derived result is the sole genuinely dynamic child of output with a unique literal aria-label; other dynamic text cannot prove results. Only condition && intrinsic may conditionally show non-control text.",
-		"Controls are intrinsic button, textarea, select, or supported input. Every button has exact type=\"button\" and literal text; other controls have a literal aria-label or label. Public attributes are static quoted literals. No forms, custom components, explicit roles, aria-labelledby, spreads, effectful or unknown attributes, style, script, template, noscript, title, alt, contentEditable, dialog, popover, hidden or visibility changes, disabled or read-only controls, links, media, datalist, or other native interactive elements.",
+		"Controls are intrinsic button, textarea, select, or supported input. Every button has exact type=\"button\" and literal text; other controls have a literal aria-label or label. Public attributes are static quoted literals. No forms, custom components, explicit roles, aria-labelledby, spreads, effectful or unknown attributes, style, script, template, noscript, title, alt, contentEditable, dialog, popover, hidden or visibility changes, disabled or read-only controls, links, datalist, or other native interactive elements.",
 		"Give every requirement-defined result operation a literal accessible control name. Names may identify alternatives but cannot invent result relations.",
 		"Classes are static allowlisted Tailwind display and layout, nonnegative padding and gap, mx-auto, nonzero size, non-color type, border, radius, or shadow utilities; no other classes.",
-		"Use only declared state, capabilities, actions, status, errors, and hooks. Mutate shared state through actions in handlers; read state or capabilities only when this behavior requires them.",
+		"Use only the listed direct declarations. Mutate shared state through actions in handlers; read state or capabilities only when this behavior requires them.",
 	)
 	parts = append(parts, "Every referenced capability identifier must be one of the listed capability identifiers.")
 	return strings.Join(parts, "\n")

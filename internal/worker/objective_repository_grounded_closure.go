@@ -33,7 +33,7 @@ func runObjectiveRepositoryGroundedClosure(
 	if err != nil {
 		return result, err
 	}
-	if err := validateObjectiveGroundedAnswerCalls(receipt.Calls, input); err != nil {
+	if err := validateObjectiveGroundedAnswerReceipt(receipt, input); err != nil {
 		return result, err
 	}
 	if err := ctx.Err(); err != nil {
@@ -46,19 +46,16 @@ func runObjectiveRepositoryGroundedClosure(
 	return result, nil
 }
 
-func validateObjectiveGroundedAnswerCalls(
-	calls int,
+func validateObjectiveGroundedAnswerReceipt(
+	receipt objectiveStationReceipt,
 	input assemblyline.GroundedAnswerInput,
 ) error {
 	if err := input.Validate(); err != nil {
 		return err
 	}
-	maximum := (1 + len(input.Evidence)) * exactSemanticLeafCalls
-	if calls < 1 || calls > maximum {
-		return fmt.Errorf(
-			"repository grounded answer station reported %d calls outside the exact %d-leaf total",
-			calls, maximum,
-		)
-	}
-	return nil
+	maximum := (1 + assemblyline.MaxGroundedAnswerParagraphCandidates*(len(input.Evidence)+1)) *
+		exactSemanticLeafCalls
+	return validateObjectiveBoundedStationReceipt(
+		"repository grounded answer station", receipt, maximum,
+	)
 }

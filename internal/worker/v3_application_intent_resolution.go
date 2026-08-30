@@ -13,6 +13,143 @@ func resolveDirectCodingApplicationIntent(
 	identities []assemblyline.ArtifactIdentity,
 ) (assemblyline.ApplicationIntentResolution, error) {
 	var zero assemblyline.ApplicationIntentResolution
+	inventoryInput := assemblyline.ApplicationRequirementInventoryInput{
+		UserRequest: authority.UserRequest,
+		Context:     authority.Context,
+	}
+	inventoryJob, err := assemblyline.NewApplicationRequirementInventoryJob(inventoryInput)
+	if err != nil {
+		return zero, err
+	}
+	inventory, err := runDirectCodingSemanticLeafCall(
+		runtime, intentModel, "application_requirement_inventory", inventoryJob, identities,
+		func(raw string) (assemblyline.ApplicationRequirementInventory, error) {
+			return assemblyline.DecodeApplicationRequirementInventory(inventoryInput, raw)
+		},
+		func(value assemblyline.ApplicationRequirementInventory) error {
+			if err := value.ValidateFor(inventoryInput); err != nil {
+				return err
+			}
+			return assemblyline.ValidatePathFreeModelContextWithProvenance(
+				"application requirement inventory",
+				runtime.PathProvenance,
+				value.Candidates...,
+			)
+		},
+	)
+	if err != nil {
+		return zero, err
+	}
+
+	queue, err := newDirectCodingApplicationRequirementCandidateQueue(
+		inventoryInput,
+		inventory,
+	)
+	if err != nil {
+		return zero, err
+	}
+	requirements := make(
+		[]assemblyline.ApplicationIntentCandidateRequirement,
+		0,
+		assemblyline.MaxApplicationRequirementLeaves,
+	)
+	processedCandidates := make([]string, 0, len(inventory.Candidates))
+	enqueuedCandidates := len(queue)
+	// Once the accepted workload is full, no queued candidate can acquire
+	// authority in this bounded iteration. Preserve the accepted leaves and
+	// leave any further capability for a later explicit user objective without
+	// spending inference on an unconsumable queue tail.
+	for len(queue) > 0 && len(requirements) < assemblyline.MaxApplicationRequirementLeaves {
+		current := queue[0]
+		queue = queue[1:]
+		currentCandidate, _, err := current.validateFor(inventoryInput)
+		if err != nil {
+			return zero, err
+		}
+		resolved, err := resolveDirectCodingApplicationRequirementCandidate(
+			runtime,
+			intentModel,
+			inventoryInput,
+			current,
+			requirements,
+			processedCandidates,
+			identities,
+		)
+		if err != nil {
+			return zero, err
+		}
+		if resolved.Candidate == "" {
+			return zero, fmt.Errorf("application requirement candidate resolution is empty")
+		}
+		processedCandidates = append(processedCandidates, currentCandidate)
+		if resolved.Candidate != currentCandidate {
+			processedCandidates = append(processedCandidates, resolved.Candidate)
+		}
+
+		switch resolved.Disposition {
+		case directCodingApplicationRequirementExcluded,
+			directCodingApplicationRequirementUnrequested,
+			directCodingApplicationRequirementDuplicate,
+			directCodingApplicationRequirementUnresolved:
+			if resolved.ResultRelation != (assemblyline.ApplicationRequirementCandidateResultRelationResult{}) ||
+				resolved.PartitionInput != (assemblyline.ApplicationRequirementCandidatePartitionInput{}) ||
+				!directCodingApplicationRequirementPartitionIsZero(resolved.Partition) {
+				return zero, fmt.Errorf(
+					"discarded application requirement unexpectedly carries retained state",
+				)
+			}
+		case directCodingApplicationRequirementPartitioned:
+			if resolved.ResultRelation != (assemblyline.ApplicationRequirementCandidateResultRelationResult{}) {
+				return zero, fmt.Errorf(
+					"partitioned application requirement unexpectedly carries a result-relation receipt",
+				)
+			}
+			if len(current.Lineage) == assemblyline.MaxApplicationRequirementCandidatePartitionDepth {
+				return zero, fmt.Errorf(
+					"application requirement candidate crossed the partition-depth preflight",
+				)
+			}
+			children, err := current.partitionChildren(
+				inventoryInput,
+				resolved.PartitionInput,
+				resolved.Partition,
+			)
+			if err != nil {
+				return zero, err
+			}
+			if enqueuedCandidates+len(children) > assemblyline.MaxApplicationRequirementCandidateQueueNodes {
+				// This candidate's proposed partition cannot fit the bounded queue.
+				// Discard only that proposal; it has no authority to stop already
+				// accepted work or any independent candidate still in the queue.
+				continue
+			}
+			enqueuedCandidates += len(children)
+			queue = append(children, queue...)
+		case directCodingApplicationRequirementRetained:
+			if resolved.PartitionInput != (assemblyline.ApplicationRequirementCandidatePartitionInput{}) ||
+				!directCodingApplicationRequirementPartitionIsZero(resolved.Partition) {
+				return zero, fmt.Errorf(
+					"retained application requirement unexpectedly carries a partition receipt",
+				)
+			}
+			if err := resolved.ResultRelation.ValidateAcceptedFor(resolved.Candidate); err != nil {
+				return zero, fmt.Errorf("retained application requirement result relation: %w", err)
+			}
+			requirements = append(requirements, assemblyline.ApplicationIntentCandidateRequirement{
+				Statement: resolved.Candidate, ResultRelation: resolved.ResultRelation,
+			})
+		default:
+			return zero, fmt.Errorf(
+				"application requirement candidate has unregistered disposition %d",
+				resolved.Disposition,
+			)
+		}
+	}
+	if len(requirements) == 0 {
+		return zero, fmt.Errorf(
+			"application requirement inventory produced no retained task-local runtime outcome",
+		)
+	}
 	productInput := assemblyline.ApplicationProductContextInput{
 		UserRequest: authority.UserRequest,
 		Context:     authority.Context,
@@ -35,160 +172,22 @@ func resolveDirectCodingApplicationIntent(
 	if err != nil {
 		return zero, err
 	}
-	requirements := make(
-		[]assemblyline.ApplicationIntentCandidateRequirement,
-		0,
-		assemblyline.MaxApplicationRequirementLeaves,
-	)
-	excludedCandidates := make(
-		[]string, 0, assemblyline.MaxApplicationRequirementExcludedCandidates,
-	)
-	zeroDeltas := make(
-		[]assemblyline.ApplicationRequirementCandidateZeroDelta,
-		0,
-		assemblyline.MaxApplicationRequirementZeroDeltas,
-	)
-	var reboundGenerationAuthority *assemblyline.ApplicationRequirementCandidateInput
-	for {
-		var candidateInput assemblyline.ApplicationRequirementCandidateInput
-		if reboundGenerationAuthority != nil {
-			candidateInput = *reboundGenerationAuthority
-			reboundGenerationAuthority = nil
-		} else {
-			acceptedStatements := make([]string, len(requirements))
-			for index, requirement := range requirements {
-				acceptedStatements[index] = requirement.Statement
-			}
-			coverageInput := assemblyline.ApplicationRequirementCoverageInput{
-				UserRequest: authority.UserRequest, Context: authority.Context,
-				AcceptedRequirements: acceptedStatements,
-				ExcludedCandidates:   append([]string{}, excludedCandidates...),
-				ZeroDeltas: append(
-					[]assemblyline.ApplicationRequirementCandidateZeroDelta{},
-					zeroDeltas...,
-				),
-			}
-			coverageJob, err := assemblyline.NewApplicationRequirementCoverageJob(coverageInput)
-			if err != nil {
-				return zero, err
-			}
-			coverage, err := runDirectCodingSemanticLeafCall(
-				runtime, intentModel, "application_requirement_coverage", coverageJob, identities,
-				func(raw string) (assemblyline.ApplicationRequirementCoverageResult, error) {
-					return assemblyline.DecodeApplicationRequirementCoverageLeaf(coverageInput, raw)
-				},
-				func(value assemblyline.ApplicationRequirementCoverageResult) error {
-					return value.ValidateFor(coverageInput)
-				},
-			)
-			if err != nil {
-				return zero, err
-			}
-			if coverage.Relation == assemblyline.ApplicationNoUncoveredRequirement {
-				if len(requirements) == 0 {
-					return zero, fmt.Errorf(
-						"application requirement coverage found no task-local runtime implementation requirement",
-					)
-				}
-				candidate := assemblyline.ApplicationIntentCandidate{
-					Schema:         assemblyline.ApplicationIntentCandidateSchemaV1,
-					ProductContext: productContext,
-					Requirements: append(
-						[]assemblyline.ApplicationIntentCandidateRequirement(nil),
-						requirements...,
-					),
-				}
-				return assemblyline.ResolveApplicationIntent(authority, candidate)
-			}
-			candidateInput = assemblyline.ApplicationRequirementCandidateInput{
-				Authority: coverageInput,
-				Coverage:  coverage,
-			}
-		}
-		if len(requirements) == assemblyline.MaxApplicationRequirementLeaves {
-			return zero, fmt.Errorf(
-				"application requirement coverage remains incomplete at the code-owned %d-item bound",
-				assemblyline.MaxApplicationRequirementLeaves,
-			)
-		}
-		requirementJob, err := assemblyline.NewApplicationRequirementJob(candidateInput)
-		if err != nil {
-			return zero, err
-		}
-		requirement, err := runDirectCodingSemanticLeafCall(
-			runtime, intentModel, "application_requirement", requirementJob, identities,
-			func(raw string) (string, error) {
-				return assemblyline.DecodeApplicationRequirementLeaf(candidateInput, raw)
-			},
-			func(value string) error {
-				return assemblyline.ValidatePathFreeModelContextWithProvenance(
-					"application requirement", runtime.PathProvenance, value,
-				)
-			},
-		)
-		if err != nil {
-			return zero, err
-		}
-		resolved, err := resolveDirectCodingApplicationRequirementCandidate(
-			runtime, intentModel, requirement, candidateInput, requirements, identities,
-		)
-		if err != nil {
-			return zero, err
-		}
-		if !resolved.Retain {
-			if resolved.ResultRelation != (assemblyline.ApplicationRequirementCandidateResultRelationResult{}) {
-				return zero, fmt.Errorf(
-					"unretained application requirement unexpectedly carries a result-relation receipt",
-				)
-			}
-			if resolved.ZeroDelta != nil {
-				if resolved.ReboundGenerationAuthority != nil {
-					return zero, fmt.Errorf(
-						"zero-delta application requirement unexpectedly carries exclusion authority",
-					)
-				}
-				rebound, err := assemblyline.RecordApplicationRequirementCandidateZeroDelta(
-					candidateInput, *resolved.ZeroDelta,
-				)
-				if err != nil {
-					return zero, err
-				}
-				zeroDeltas = append(
-					[]assemblyline.ApplicationRequirementCandidateZeroDelta{},
-					rebound.ZeroDeltas...,
-				)
-				continue
-			}
-			if len(excludedCandidates) == assemblyline.MaxApplicationRequirementExcludedCandidates {
-				return zero, fmt.Errorf(
-					"application requirement exclusions reached the code-owned %d-item bound",
-					assemblyline.MaxApplicationRequirementExcludedCandidates,
-				)
-			}
-			if resolved.ReboundGenerationAuthority == nil {
-				return zero, fmt.Errorf(
-					"non-runtime application requirement lacks rebound generation authority",
-				)
-			}
-			excludedCandidates = append(excludedCandidates, resolved.Candidate)
-			reboundGenerationAuthority = resolved.ReboundGenerationAuthority
-			continue
-		}
-		if resolved.ReboundGenerationAuthority != nil {
-			return zero, fmt.Errorf(
-				"retained application requirement unexpectedly carries exclusion authority",
-			)
-		}
-		if resolved.ZeroDelta != nil {
-			return zero, fmt.Errorf(
-				"retained application requirement unexpectedly carries zero-delta evidence",
-			)
-		}
-		if err := resolved.ResultRelation.ValidateAcceptedFor(resolved.Candidate); err != nil {
-			return zero, fmt.Errorf("retained application requirement result relation: %w", err)
-		}
-		requirements = append(requirements, assemblyline.ApplicationIntentCandidateRequirement{
-			Statement: resolved.Candidate, ResultRelation: resolved.ResultRelation,
-		})
+	candidate := assemblyline.ApplicationIntentCandidate{
+		Schema:         assemblyline.ApplicationIntentCandidateSchemaV1,
+		ProductContext: productContext,
+		Requirements: append(
+			[]assemblyline.ApplicationIntentCandidateRequirement(nil),
+			requirements...,
+		),
 	}
+	return assemblyline.ResolveApplicationIntent(authority, candidate)
+}
+
+func directCodingApplicationRequirementPartitionIsZero(
+	partition assemblyline.ApplicationRequirementCandidatePartition,
+) bool {
+	return partition.Schema == "" &&
+		partition.AuthoritySHA256 == "" &&
+		partition.RawSHA256 == "" &&
+		partition.Candidates == nil
 }

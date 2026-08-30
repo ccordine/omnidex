@@ -62,7 +62,7 @@ describe("closed Scrum card response authority", () => {
     ["unsafe flow wide counter", { flow_metrics: flow({ conversation_chars: Number.MAX_SAFE_INTEGER + 1 }) }],
     ["unregistered flow status", { flow_metrics: flow({ completion_status: "complete" }) }],
     ["unregistered flow outcome", { flow_metrics: flow({ last_play_outcome: "agent_done" }) }],
-    ["explicit empty flow review gate", { flow_metrics: flow({ review_gate: "" }) }],
+    ["retired flow review gate", { flow_metrics: flow({ review_gate: "pending" }) }],
     ["explicit empty flow outcome", { flow_metrics: flow({ last_play_outcome: "" }) }],
     ["explicit empty flow column", { flow_metrics: flow({ column: "" }) }],
     ["explicit empty flow timestamp", { flow_metrics: flow({ updated_at: "" }) }],

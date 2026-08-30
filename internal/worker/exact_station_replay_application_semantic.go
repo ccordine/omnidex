@@ -7,19 +7,29 @@ func replayApplicationSemanticLeaf(
 	raw string,
 ) (bool, error) {
 	switch job.Kind {
-	case assemblyline.WorkApplicationContextNeedCoverage:
-		return true, decodeReplaySemanticLeaf(job, raw, assemblyline.DecodeApplicationContextNeedCoverageLeaf)
-	case assemblyline.WorkApplicationContextNeedQuestion:
-		return true, decodeReplaySemanticLeaf(job, raw, assemblyline.DecodeApplicationContextNeedQuestionLeaf)
+	case assemblyline.WorkApplicationContextQuestionInventory:
+		return true, decodeReplaySemanticLeaf(
+			job, raw, assemblyline.DecodeApplicationContextQuestionInventory,
+		)
+	case assemblyline.WorkApplicationContextQuestionNecessity:
+		return true, decodeReplaySemanticLeaf(
+			job, raw, assemblyline.DecodeApplicationContextQuestionNecessityResult,
+		)
+	case assemblyline.WorkApplicationContextQuestionRelation:
+		return true, decodeReplaySemanticLeaf(
+			job, raw, assemblyline.DecodeApplicationContextQuestionRelationResult,
+		)
 	case assemblyline.WorkApplicationProductContext:
 		return true, decodeReplaySemanticLeaf(job, raw, assemblyline.DecodeApplicationProductContextLeaf)
-	case assemblyline.WorkApplicationRequirementCoverage:
-		return true, decodeReplaySemanticLeaf(job, raw, assemblyline.DecodeApplicationRequirementCoverageLeaf)
-	case assemblyline.WorkApplicationRequirement:
-		return true, decodeReplaySemanticLeaf(job, raw, assemblyline.DecodeApplicationRequirementLeaf)
+	case assemblyline.WorkApplicationRequirementInventory:
+		return true, decodeReplaySemanticLeaf(job, raw, assemblyline.DecodeApplicationRequirementInventory)
 	case assemblyline.WorkApplicationRequirementCandidateKind:
 		return true, decodeReplaySemanticLeaf(
-			job, raw, assemblyline.DecodeApplicationRequirementCandidateKindResult,
+			job, raw, assemblyline.DecodeApplicationRequirementCandidateContentPresenceResult,
+		)
+	case assemblyline.WorkApplicationRequirementCandidateAuthorization:
+		return true, decodeReplaySemanticLeaf(
+			job, raw, assemblyline.DecodeApplicationRequirementCandidateAuthorizationResult,
 		)
 	case assemblyline.WorkApplicationRequirementCandidateCardinality:
 		return true, decodeReplaySemanticLeaf(
@@ -31,7 +41,7 @@ func replayApplicationSemanticLeaf(
 		)
 	case assemblyline.WorkApplicationRequirementCandidateResultRelation:
 		return true, decodeReplaySemanticLeaf(
-			job, raw, assemblyline.DecodeApplicationRequirementCandidateResultRelationResult,
+			job, raw, assemblyline.DecodeApplicationRequirementCandidateResultPresenceResult,
 		)
 	case assemblyline.WorkApplicationRequirementCandidateResultRelationGrounding:
 		return true, decodeReplaySemanticLeaf(
@@ -41,13 +51,9 @@ func replayApplicationSemanticLeaf(
 		return true, decodeReplaySemanticLeaf(
 			job, raw, assemblyline.DecodeApplicationRequirementCandidateResultRelationCorrectionLeaf,
 		)
-	case assemblyline.WorkApplicationRequirementCandidateSplit:
+	case assemblyline.WorkApplicationRequirementCandidatePartition:
 		return true, decodeReplaySemanticLeaf(
-			job, raw, assemblyline.DecodeApplicationRequirementCandidateSplitLeaf,
-		)
-	case assemblyline.WorkApplicationRequirementCandidateSplitCorrection:
-		return true, decodeReplaySemanticLeaf(
-			job, raw, assemblyline.DecodeApplicationRequirementCandidateSplitCorrectionLeaf,
+			job, raw, assemblyline.DecodeApplicationRequirementCandidatePartition,
 		)
 	case assemblyline.WorkApplicationProjectStackConstraint:
 		return true, decodeReplaySemanticLeaf(job, raw, assemblyline.DecodeApplicationProjectStackConstraintDecision)
@@ -57,18 +63,18 @@ func replayApplicationSemanticLeaf(
 		return true, decodeReplaySemanticLeaf(job, raw, assemblyline.DecodeApplicationServicePersistenceDestinationResult)
 	case assemblyline.WorkApplicationServiceStateLifetime:
 		return true, decodeReplaySemanticLeaf(job, raw, assemblyline.DecodeApplicationServiceStateLifetimeResult)
-	case assemblyline.WorkApplicationStateFieldCoverage:
-		return true, decodeReplaySemanticLeaf(job, raw, assemblyline.DecodeApplicationStateFieldCoverageLeaf)
-	case assemblyline.WorkApplicationStateFieldPurpose:
-		return true, decodeReplaySemanticLeaf(job, raw, assemblyline.DecodeApplicationStateFieldPurposeLeaf)
+	case assemblyline.WorkApplicationStateFieldPurposeInventory:
+		return true, decodeReplaySemanticLeaf(job, raw, assemblyline.DecodeApplicationStateFieldPurposeInventory)
 	case assemblyline.WorkApplicationStateFieldKind:
 		return true, decodeReplaySemanticLeaf(job, raw, assemblyline.DecodeApplicationStateFieldKindLeaf)
-	case assemblyline.WorkApplicationRecordFieldCoverage:
-		return true, decodeReplaySemanticLeaf(job, raw, assemblyline.DecodeApplicationRecordFieldCoverageLeaf)
-	case assemblyline.WorkApplicationRecordFieldPurpose:
-		return true, decodeReplaySemanticLeaf(job, raw, assemblyline.DecodeApplicationRecordFieldPurposeLeaf)
+	case assemblyline.WorkApplicationRecordFieldPurposeInventory:
+		return true, decodeReplaySemanticLeaf(job, raw, assemblyline.DecodeApplicationRecordFieldPurposeInventory)
 	case assemblyline.WorkApplicationRecordFieldKind:
 		return true, decodeReplaySemanticLeaf(job, raw, assemblyline.DecodeApplicationRecordFieldKindLeaf)
+	case assemblyline.WorkApplicationServiceStatePurposeNecessity:
+		return true, decodeReplaySemanticLeaf(job, raw, assemblyline.DecodeApplicationServiceStatePurposeNecessityResult)
+	case assemblyline.WorkApplicationServiceStatePurposeRelation:
+		return true, decodeReplaySemanticLeaf(job, raw, assemblyline.DecodeApplicationServiceStatePurposeRelationResult)
 	case assemblyline.WorkApplicationServiceEndpointRequirement:
 		return true, decodeReplaySemanticLeaf(job, raw, assemblyline.DecodeApplicationServiceEndpointRequirementResult)
 	case assemblyline.WorkApplicationServiceEndpointExposure:

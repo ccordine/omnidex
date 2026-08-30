@@ -7,14 +7,6 @@ import (
 	"github.com/gryph/omnidex/internal/datasource"
 )
 
-func databaseQueryCoveragePrompt(collection, authority string) string {
-	return databaseQueryLeafPrompt(
-		fmt.Sprintf("Answer one semantic coverage question: is another %s required to answer the exact evidence need?", collection),
-		"Return ITEM_REMAINS when another item is required. Return NO_UNCOVERED_ITEM when the accepted items are sufficient. Return no item, JSON, quotes, label, SQL, explanation, or commentary.",
-		authority,
-	)
-}
-
 func databaseQueryLeafPrompt(question, output, authority string) string {
 	return strings.Join([]string{
 		question,
@@ -38,6 +30,20 @@ func renderDatabaseQueryAuthority(state DatabaseQueryIntentLeafState, sections .
 		}
 	}
 	return strings.TrimSuffix(rendered.String(), "\n")
+}
+
+func renderDatabaseQueryFocusedParameterAuthority(
+	purpose string,
+	collection string,
+	sections ...string,
+) string {
+	parts := []string{renderDatabaseQueryFocusedPurpose(purpose, collection)}
+	for _, section := range sections {
+		if section = strings.TrimSpace(section); section != "" {
+			parts = append(parts, section)
+		}
+	}
+	return strings.Join(parts, "\n")
 }
 
 func extendDatabaseQueryAuthority(authority string, sections ...string) string {

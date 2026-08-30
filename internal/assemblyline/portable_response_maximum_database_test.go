@@ -7,60 +7,54 @@ import (
 	"github.com/gryph/omnidex/internal/datasource"
 )
 
-func TestPortableResponseMaximumUsesRemainingDatabaseSchemaIDs(t *testing.T) {
+func TestPortableResponseMaximumBoundsDatabaseSchemaRelationInventory(t *testing.T) {
+	input, err := ProjectDatabaseSchemaRelationInventoryInput(databaseSchemaSelectionFixture())
+	if err != nil {
+		t.Fatal(err)
+	}
+	job, err := NewDatabaseSchemaRelationInventoryJob(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertPortableResponseMaximum(t, job, maxDatabaseSchemaRelationInventoryBytes)
+}
+
+func TestPortableResponseMaximumUsesRegisteredDatabaseSchemaIDs(t *testing.T) {
 	authority := databaseSchemaSelectionFixture()
 	authority.Candidates[0].RelationID = strings.Repeat("r", 91)
-	input := DatabaseSchemaSelectionLeafInput{
-		Authority: authority, SelectedRelationIDs: []string{"rel_b"},
+	input := DatabaseSchemaRelationResolutionInput{
+		Candidate:  "The clinic appointment records.",
+		Candidates: authority.Candidates,
 	}
-	job, err := NewDatabaseSchemaRelationSelectionJob(input)
+	job, err := NewDatabaseSchemaRelationResolutionJob(input)
 	if err != nil {
 		t.Fatal(err)
 	}
 	assertPortableResponseMaximum(t, job, len(authority.Candidates[0].RelationID))
 }
 
-func TestPortableResponseMaximumUsesExactDatabaseCoverageState(t *testing.T) {
-	incomplete := readyDatabaseMaximumState(t, datasource.ResultRanking)
-	incompleteJob, err := NewDatabaseQueryProjectionCoverageJob(incomplete)
+func TestPortableResponseMaximumUsesBoundedDatabasePurposeContracts(t *testing.T) {
+	authority := DatabaseQueryPurposeAuthority{
+		State:      readyDatabaseMaximumState(t, datasource.ResultRecords),
+		Collection: DatabaseQueryFilterPurpose,
+	}
+	inventoryJob, err := NewDatabaseQueryPurposeInventoryJob(authority)
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertPortableResponseMaximum(t, incompleteJob, len(DatabaseQueryItemRemains))
+	assertPortableResponseMaximum(t, inventoryJob, maxDatabaseQueryPurposeInventoryBytes)
 
-	complete := readyDatabaseMaximumState(t, datasource.ResultRecords)
-	complete.Projections = []datasource.RelationalProjection{{
-		FieldID: complete.Authority.SchemaProjection.Relations[0].Columns[0].ID,
-	}}
-	completeJob, err := NewDatabaseQueryProjectionCoverageJob(complete)
+	inventory, err := DecodeDatabaseQueryPurposeInventory(authority, "match the requested state")
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertPortableResponseMaximum(t, completeJob, len(DatabaseQueryNoUncoveredItem))
-}
-
-func TestPortableResponseMaximumUsesExactDatabaseFilterValueCoverageState(t *testing.T) {
-	state, fieldID := enumDatabaseMaximumState(t, datasource.TypeText, []string{"open", "closed"})
-	empty := DatabaseQueryFilterLeafInput{
-		State: state, AcceptedFilters: []datasource.RelationalPredicate{},
-		FieldID: fieldID, Operator: datasource.FilterIn,
-		AcceptedValues: []datasource.IntentLiteral{},
-	}
-	emptyJob, err := NewDatabaseQueryFilterValueCoverageJob(empty)
+	necessityJob, err := NewDatabaseQueryPurposeNecessityJob(DatabaseQueryPurposeNecessityInput{
+		Authority: authority, Inventory: inventory, CandidateIndex: 0,
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertPortableResponseMaximum(t, emptyJob, len(DatabaseQueryValueRemains))
-
-	retained := empty
-	retained.AcceptedValues = []datasource.IntentLiteral{{
-		Type: datasource.LiteralString, Value: "open",
-	}}
-	retainedJob, err := NewDatabaseQueryFilterValueCoverageJob(retained)
-	if err != nil {
-		t.Fatal(err)
-	}
-	assertPortableResponseMaximum(t, retainedJob, len(DatabaseQueryNoUncoveredValue))
+	assertPortableResponseMaximum(t, necessityJob, len(DatabaseQueryPurposeNotNecessary))
 }
 
 func TestPortableResponseMaximumFiltersPayloadAllowedValuesByType(t *testing.T) {
@@ -69,6 +63,7 @@ func TestPortableResponseMaximumFiltersPayloadAllowedValuesByType(t *testing.T) 
 	)
 	input := DatabaseQueryFilterLeafInput{
 		State: state, AcceptedFilters: []datasource.RelationalPredicate{},
+		Purpose: "match the requested state",
 		FieldID: fieldID, Operator: datasource.FilterEqual,
 		AcceptedValues: []datasource.IntentLiteral{},
 	}
@@ -96,6 +91,7 @@ func TestPortableResponseMaximumUsesDatabaseLiteralTypeBounds(t *testing.T) {
 			state, fieldID := enumDatabaseMaximumState(t, fixture.category, nil)
 			input := DatabaseQueryFilterLeafInput{
 				State: state, AcceptedFilters: []datasource.RelationalPredicate{},
+				Purpose: "match the requested value",
 				FieldID: fieldID, Operator: datasource.FilterEqual,
 				AcceptedValues: []datasource.IntentLiteral{},
 			}
@@ -115,7 +111,7 @@ func TestPortableResponseMaximumIncludesDescendingDatabaseOrder(t *testing.T) {
 	}}
 	projection := 0
 	job, err := NewDatabaseQueryOrderDirectionJob(DatabaseQueryOrderLeafInput{
-		State: state, Projection: &projection,
+		State: state, Purpose: "sort by the requested projection", Projection: &projection,
 	})
 	if err != nil {
 		t.Fatal(err)

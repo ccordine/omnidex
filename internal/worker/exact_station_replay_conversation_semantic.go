@@ -7,28 +7,34 @@ func replayConversationSemanticLeaf(
 	raw string,
 ) (bool, error) {
 	switch job.Kind {
-	case assemblyline.WorkContextRelevanceSelection:
-		return true, decodeReplaySemanticLeaf(job, raw, assemblyline.DecodeContextRelevanceSelectionDecision)
+	case assemblyline.WorkContextRelevanceRelation:
+		return true, decodeReplaySemanticLeaf(job, raw, assemblyline.DecodeContextRelevanceRelationResult)
 	case assemblyline.WorkContextMinification:
 		return true, decodeReplaySemanticLeaf(job, raw, assemblyline.DecodeContextMinificationDecision)
 	case assemblyline.WorkConversationObjectiveKind:
 		return true, decodeReplaySemanticLeaf(job, raw, assemblyline.DecodeConversationObjectiveKindDecision)
 	case assemblyline.WorkConversationResponse:
 		return true, decodeReplaySemanticLeaf(job, raw, assemblyline.DecodeConversationResponseDecision)
-	case assemblyline.WorkRoleplayGroundedResponseText:
-		return true, decodeReplaySemanticLeaf(job, raw, assemblyline.DecodeRoleplayGroundedResponseTextLeaf)
+	case assemblyline.WorkRoleplayGroundedResponseParagraphInventory:
+		return true, decodeReplaySemanticLeaf(job, raw, assemblyline.DecodeRoleplayGroundedParagraphInventory)
 	case assemblyline.WorkRoleplayGroundedResponseEvidenceRelation:
 		return true, decodeReplaySemanticLeaf(job, raw, assemblyline.DecodeRoleplayGroundedResponseEvidenceRelationLeaf)
-	case assemblyline.WorkRoleplayCanonFactCoverage:
-		return true, decodeReplaySemanticLeaf(job, raw, assemblyline.DecodeRoleplayCanonFactCoverageLeaf)
-	case assemblyline.WorkRoleplayCanonFact:
-		return true, decodeReplaySemanticLeaf(job, raw, assemblyline.DecodeRoleplayCanonFactLeaf)
+	case assemblyline.WorkRoleplayGroundedResponseParagraphAuthorization:
+		return true, decodeReplaySemanticLeaf(job, raw, assemblyline.DecodeRoleplayGroundedParagraphAuthorizationDecision)
+	case assemblyline.WorkRoleplayCanonFactInventory:
+		return true, decodeReplaySemanticLeaf(job, raw, assemblyline.DecodeRoleplayCanonFactInventory)
+	case assemblyline.WorkRoleplayCanonFactCandidateAuthorization:
+		return true, decodeReplaySemanticLeaf(job, raw, assemblyline.DecodeRoleplayCanonFactCandidateAuthorization)
+	case assemblyline.WorkRoleplayCanonFactCandidateRelation:
+		return true, decodeReplaySemanticLeaf(job, raw, assemblyline.DecodeRoleplayCanonFactCandidateRelation)
 	case assemblyline.WorkRoleplayOngoingAction:
 		return true, decodeReplaySemanticLeaf(job, raw, assemblyline.DecodeRoleplayOngoingActionDecision)
-	case assemblyline.WorkGroundedAnswerText:
-		return true, decodeReplaySemanticLeaf(job, raw, assemblyline.DecodeGroundedAnswerTextDecision)
-	case assemblyline.WorkGroundedAnswerEvidenceRelation:
-		return true, decodeReplaySemanticLeaf(job, raw, assemblyline.DecodeGroundedAnswerEvidenceRelationDecision)
+	case assemblyline.WorkGroundedAnswerParagraphInventory:
+		return true, decodeReplaySemanticLeaf(job, raw, assemblyline.DecodeGroundedAnswerParagraphInventory)
+	case assemblyline.WorkGroundedAnswerParagraphEvidenceRelation:
+		return true, decodeReplaySemanticLeaf(job, raw, assemblyline.DecodeGroundedAnswerParagraphEvidenceRelationDecision)
+	case assemblyline.WorkGroundedAnswerParagraphAuthorization:
+		return true, decodeReplaySemanticLeaf(job, raw, assemblyline.DecodeGroundedAnswerParagraphAuthorizationDecision)
 	default:
 		return false, nil
 	}

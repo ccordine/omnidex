@@ -52,15 +52,15 @@ func TestReusableRoleplayPortableCallConsumesAcceptedLeafBeforeModelResolution(t
 		t.Fatal(err)
 	}
 	reuseCalls := 0
-	service := &Service{reuseRoleplayResult: func(
+	service := &Service{reuseObjectiveResult: func(
 		_ context.Context,
-		request queue.RoleplayPortableResultReuseRequest,
-	) (queue.RoleplayPortableResultReuse, bool, error) {
+		request queue.ObjectivePortableResultReuseRequest,
+	) (queue.ObjectivePortableResultReuse, bool, error) {
 		reuseCalls++
 		if request.Job.ID != job.ID || request.Station != station.ConversationResponse {
 			t.Fatalf("reuse request=%+v", request)
 		}
-		return queue.RoleplayPortableResultReuse{Result: assemblyline.PortableResult{
+		return queue.ObjectivePortableResultReuse{Result: assemblyline.PortableResult{
 			JobID: job.ID, Candidate: candidate, Projection: &projection,
 		}}, true, nil
 	}}
@@ -142,5 +142,31 @@ func TestObjectiveStationReceiptAcceptsOnlyZeroCallDurableReuse(t *testing.T) {
 		"roleplay canon", objectiveStationReceipt{},
 	); err == nil {
 		t.Fatal("zero-call roleplay station lacked durable reuse provenance")
+	}
+}
+
+func TestObjectiveBoundedStationReceiptPreservesAggregateReuseProof(t *testing.T) {
+	t.Parallel()
+	for _, fixture := range []struct {
+		name    string
+		receipt objectiveStationReceipt
+		valid   bool
+	}{
+		{name: "all restored", receipt: objectiveStationReceipt{Reused: true}, valid: true},
+		{name: "mixed or fresh", receipt: objectiveStationReceipt{Calls: 2}, valid: true},
+		{name: "zero without proof", receipt: objectiveStationReceipt{}},
+		{name: "reuse with fresh calls", receipt: objectiveStationReceipt{Calls: 1, Reused: true}},
+		{name: "over budget", receipt: objectiveStationReceipt{Calls: 4}},
+	} {
+		fixture := fixture
+		t.Run(fixture.name, func(t *testing.T) {
+			t.Parallel()
+			err := validateObjectiveBoundedStationReceipt(
+				"paragraph sieve", fixture.receipt, 3,
+			)
+			if (err == nil) != fixture.valid {
+				t.Fatalf("receipt=%+v valid=%t error=%v", fixture.receipt, fixture.valid, err)
+			}
+		})
 	}
 }

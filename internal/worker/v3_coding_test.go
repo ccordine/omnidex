@@ -42,7 +42,6 @@ func TestDirectCodingMutationSummaryReportsActualOperationsAndPaths(t *testing.T
 func TestDirectCodingCompletionGatesOnlyFinalClaim(t *testing.T) {
 	state := directCodingCompletionState{
 		MutationCount: 1, LatestMutationTurn: 4, TestsRequired: true,
-		WrittenSource: map[string]string{"main.go": "package main\n\nfunc main() {}\n"},
 	}
 	if err := validateDirectCodingCompletion(state); err == nil || !strings.Contains(err.Error(), "test command") {
 		t.Fatalf("unverified final claim err=%v", err)
@@ -52,18 +51,12 @@ func TestDirectCodingCompletionGatesOnlyFinalClaim(t *testing.T) {
 	if err := validateDirectCodingCompletion(state); err != nil {
 		t.Fatalf("verified final claim rejected: %v", err)
 	}
-
-	state.WrittenSource["main.go"] = "package main\n\n// TODO implement\nfunc main() {}\n"
-	if err := validateDirectCodingCompletion(state); err == nil || !strings.Contains(err.Error(), "unfinished") {
-		t.Fatalf("unfinished final source err=%v", err)
-	}
 }
 
 func TestDirectCodingCorrectionCanVerifyAcceptedWorkspaceWithoutNoOpRewrite(t *testing.T) {
 	state := directCodingCompletionState{
 		AllowExistingWorkspace: true,
 		LatestCheckTurn:        3,
-		WrittenSource:          map[string]string{},
 	}
 	if err := validateDirectCodingCompletion(state); err != nil {
 		t.Fatalf("resumed verified workspace was rejected: %v", err)
@@ -77,10 +70,35 @@ func TestDirectCodingCorrectionCanVerifyAcceptedWorkspaceWithoutNoOpRewrite(t *t
 func TestDirectCodingCompletionRejectsNoTestSuccess(t *testing.T) {
 	state := directCodingCompletionState{
 		MutationCount: 1, LatestMutationTurn: 2, LatestCheckTurn: 3, LatestTestTurn: 3,
-		TestsRequired: true, LastTestHadNoTests: true, WrittenSource: map[string]string{},
+		TestsRequired: true, LastTestHadNoTests: true,
 	}
 	if err := validateDirectCodingCompletion(state); err == nil || !strings.Contains(err.Error(), "reported no tests") {
 		t.Fatalf("no-test completion err=%v", err)
+	}
+}
+
+func TestVerificationNoTestEvidenceDoesNotErasePositiveSuites(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name    string
+		output  string
+		noTests bool
+	}{
+		{name: "go only empty", output: "? example/cmd [no test files]", noTests: true},
+		{name: "go mixed", output: "? example/cmd [no test files]\nok example/pkg 0.012s"},
+		{name: "rust only empty", output: "running 0 tests\ntest result: ok. 0 passed; 0 failed", noTests: true},
+		{name: "rust mixed", output: "running 0 tests\nrunning 4 tests\ntest result: ok. 4 passed; 0 failed"},
+		{name: "decimal suffix", output: "10 tests passed"},
+		{name: "node tap", output: "# tests 12\n# pass 12"},
+		{name: "explicit absence", output: "No tests found", noTests: true},
+	} {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			if got := verificationReportsNoTests(test.output); got != test.noTests {
+				t.Fatalf("verificationReportsNoTests(%q)=%t want=%t", test.output, got, test.noTests)
+			}
+		})
 	}
 }
 

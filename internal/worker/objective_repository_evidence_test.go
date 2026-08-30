@@ -77,11 +77,39 @@ func TestObjectiveRepositoryEvidenceUsesCodeOwnedQueryAndOpaqueEvidenceSelection
 	if len(queries) != 1 || queries[0] != query ||
 		relevanceCalls != 1 || result.ModelCalls != 1 ||
 		len(result.Evidence) != 1 || result.Evidence[0].Capsule.ID != "R01" ||
-		result.RepositoryCallLedger.relevanceCalls != 1 {
+		result.RepositoryCallLedger.relevanceReceipt != (objectiveStationReceipt{Calls: 1}) ||
+		!result.RepositoryCallLedger.relevanceRecorded {
 		t.Fatalf(
 			"queries=%v relevance_calls=%d result=%#v",
 			queries, relevanceCalls, result,
 		)
+	}
+}
+
+func TestObjectiveRepositoryEvidenceAcceptsFullyRestoredRelevanceRound(t *testing.T) {
+	t.Parallel()
+	result, err := acquireObjectiveRepositoryEvidenceClosure(
+		"Which component owns dispatch?",
+		"Explain which existing component owns dispatch.",
+		assemblyline.ArtifactIdentityProvenance{},
+		func(query string) (repositoryretrieval.EvidencePack, error) {
+			return repositoryAcquisitionTestPack(t, query), nil
+		},
+		func(_ string, evidence []objectiveEvidence) (
+			assemblyline.RepositoryEvidenceRelevanceDecision, objectiveStationReceipt, error,
+		) {
+			return assemblyline.RepositoryEvidenceRelevanceDecision{
+				Schema:      assemblyline.RepositoryEvidenceRelevanceSchemaV1,
+				EvidenceIDs: []string{evidence[0].Capsule.ID},
+			}, objectiveStationReceipt{Reused: true}, nil
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.ModelCalls != 0 || !result.RepositoryCallLedger.relevanceRecorded ||
+		result.RepositoryCallLedger.relevanceReceipt != (objectiveStationReceipt{Reused: true}) {
+		t.Fatalf("result=%+v", result)
 	}
 }
 

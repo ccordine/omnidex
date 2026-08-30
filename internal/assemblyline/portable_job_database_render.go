@@ -4,48 +4,44 @@ import "fmt"
 
 func renderPortableDatabaseLeaf(job PortableJob) (string, error) {
 	switch job.Kind {
-	case WorkDatabaseSchemaSelectionCoverage:
-		return renderPortableDatabaseInput(job, BuildDatabaseSchemaSelectionCoveragePrompt)
-	case WorkDatabaseSchemaRelationSelection:
-		return renderPortableDatabaseInput(job, BuildDatabaseSchemaRelationSelectionPrompt)
+	case WorkDatabaseSchemaRelationInventory:
+		return renderPortableDatabaseInput(job, BuildDatabaseSchemaRelationInventoryPrompt)
+	case WorkDatabaseSchemaRelationNecessity:
+		return renderPortableDatabaseInput(job, BuildDatabaseSchemaRelationNecessityPrompt)
+	case WorkDatabaseSchemaRelationResolution:
+		return renderPortableDatabaseInput(job, BuildDatabaseSchemaRelationResolutionPrompt)
 	case WorkDatabaseQueryFromRelation:
 		return renderPortableDatabaseInput(job, BuildDatabaseQueryFromRelationPrompt)
 	case WorkDatabaseQueryShape:
 		return renderPortableDatabaseInput(job, BuildDatabaseQueryShapePrompt)
-	case WorkDatabaseQueryProjectionCoverage:
-		return renderPortableDatabaseInput(job, BuildDatabaseQueryProjectionCoveragePrompt)
+	case WorkDatabaseQueryPurposeInventory:
+		return renderPortableDatabaseInput(job, BuildDatabaseQueryPurposeInventoryPrompt)
+	case WorkDatabaseQueryPurposeNecessity:
+		return renderPortableDatabaseInput(job, BuildDatabaseQueryPurposeNecessityPrompt)
+	case WorkDatabaseQueryPurposeRelation:
+		return renderPortableDatabaseInput(job, BuildDatabaseQueryPurposeRelationPrompt)
 	case WorkDatabaseQueryProjectionAggregate:
 		return renderPortableDatabaseInput(job, BuildDatabaseQueryProjectionAggregatePrompt)
 	case WorkDatabaseQueryProjectionField:
 		return renderPortableDatabaseInput(job, BuildDatabaseQueryProjectionFieldPrompt)
 	case WorkDatabaseQueryProjectionTimeBucket:
 		return renderPortableDatabaseInput(job, BuildDatabaseQueryProjectionTimeBucketPrompt)
-	case WorkDatabaseQueryFilterCoverage:
-		return renderPortableDatabaseInput(job, BuildDatabaseQueryFilterCoveragePrompt)
 	case WorkDatabaseQueryFilterField:
 		return renderPortableDatabaseInput(job, BuildDatabaseQueryFilterFieldPrompt)
 	case WorkDatabaseQueryFilterOperator:
 		return renderPortableDatabaseInput(job, BuildDatabaseQueryFilterOperatorPrompt)
-	case WorkDatabaseQueryFilterValueCoverage:
-		return renderPortableDatabaseInput(job, BuildDatabaseQueryFilterValueCoveragePrompt)
 	case WorkDatabaseQueryFilterValue:
 		return renderPortableDatabaseInput(job, BuildDatabaseQueryFilterValuePrompt)
-	case WorkDatabaseQueryWindowCoverage:
-		return renderPortableDatabaseInput(job, BuildDatabaseQueryWindowCoveragePrompt)
 	case WorkDatabaseQueryWindowField:
 		return renderPortableDatabaseInput(job, BuildDatabaseQueryWindowFieldPrompt)
 	case WorkDatabaseQueryWindowUnit:
 		return renderPortableDatabaseInput(job, BuildDatabaseQueryWindowUnitPrompt)
 	case WorkDatabaseQueryWindowAmount:
 		return renderPortableDatabaseInput(job, BuildDatabaseQueryWindowAmountPrompt)
-	case WorkDatabaseQueryExistenceCoverage:
-		return renderPortableDatabaseInput(job, BuildDatabaseQueryExistenceCoveragePrompt)
 	case WorkDatabaseQueryExistenceRelation:
 		return renderPortableDatabaseInput(job, BuildDatabaseQueryExistenceRelationPrompt)
 	case WorkDatabaseQueryExistenceNegated:
 		return renderPortableDatabaseInput(job, BuildDatabaseQueryExistenceNegatedPrompt)
-	case WorkDatabaseQueryHavingCoverage:
-		return renderPortableDatabaseInput(job, BuildDatabaseQueryHavingCoveragePrompt)
 	case WorkDatabaseQueryHavingAggregate:
 		return renderPortableDatabaseInput(job, BuildDatabaseQueryHavingAggregatePrompt)
 	case WorkDatabaseQueryHavingField:
@@ -54,8 +50,6 @@ func renderPortableDatabaseLeaf(job PortableJob) (string, error) {
 		return renderPortableDatabaseInput(job, BuildDatabaseQueryHavingOperatorPrompt)
 	case WorkDatabaseQueryHavingValue:
 		return renderPortableDatabaseInput(job, BuildDatabaseQueryHavingValuePrompt)
-	case WorkDatabaseQueryOrderCoverage:
-		return renderPortableDatabaseInput(job, BuildDatabaseQueryOrderCoveragePrompt)
 	case WorkDatabaseQueryOrderProjection:
 		return renderPortableDatabaseInput(job, BuildDatabaseQueryOrderProjectionPrompt)
 	case WorkDatabaseQueryOrderDirection:

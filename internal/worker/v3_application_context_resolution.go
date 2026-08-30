@@ -2,7 +2,6 @@ package worker
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
 )
@@ -25,86 +24,136 @@ func resolveDirectCodingApplicationContext(
 		// be a ceremonial call, not a named semantic uncertainty.
 		return context, nil
 	}
-	input := assemblyline.ApplicationContextNeedInput{UserRequest: authority, Context: context}
-	questions := make([]string, 0, assemblyline.MaxApplicationEvidenceNeeds)
-	for {
-		leafInput := assemblyline.ApplicationContextNeedLeafInput{
-			UserRequest: authority, Context: context,
-			AcceptedQuestions: append([]string{}, questions...),
-		}
-		coverageJob, err := assemblyline.NewApplicationContextNeedCoverageJob(leafInput)
-		if err != nil {
-			return assemblyline.ApplicationContext{}, err
-		}
-		coverage, err := runDirectCodingSemanticLeafCall(
-			runtime, modelName, "application_context_need_coverage",
-			coverageJob, identities,
-			func(raw string) (string, error) {
-				return assemblyline.DecodeApplicationContextNeedCoverageLeaf(leafInput, raw)
-			},
-			func(string) error { return nil },
-		)
-		if err != nil {
-			return assemblyline.ApplicationContext{}, err
-		}
-		if coverage == assemblyline.ApplicationNoUncoveredContextNeed {
-			break
-		}
-		if len(questions) == assemblyline.MaxApplicationEvidenceNeeds {
-			return assemblyline.ApplicationContext{}, fmt.Errorf(
-				"application context need coverage remains incomplete at the code-owned %d-item bound",
-				assemblyline.MaxApplicationEvidenceNeeds,
-			)
-		}
-		questionJob, err := assemblyline.NewApplicationContextNeedQuestionJob(leafInput)
-		if err != nil {
-			return assemblyline.ApplicationContext{}, err
-		}
-		question, err := runDirectCodingSemanticLeafCall(
-			runtime, modelName, "application_context_need_question",
-			questionJob, identities,
-			func(raw string) (string, error) {
-				return assemblyline.DecodeApplicationContextNeedQuestionLeaf(leafInput, raw)
-			},
-			func(value string) error {
-				return assemblyline.ValidatePathFreeModelContextWithProvenance(
-					"application context need question", runtime.PathProvenance, value,
-				)
-			},
-		)
-		if err != nil {
-			return assemblyline.ApplicationContext{}, err
-		}
-		questions = append(questions, question)
+	authorityContext := context
+	authorityContext.Facts = append([]assemblyline.ApplicationContextFact(nil), context.Facts...)
+	inventoryInput := assemblyline.ApplicationContextQuestionInventoryInput{
+		UserRequest: authority,
+		Context:     authorityContext,
 	}
-	decision, err := assemblyline.AssembleApplicationContextNeedDecision(input, questions)
+	inventoryJob, err := assemblyline.NewApplicationContextQuestionInventoryJob(inventoryInput)
 	if err != nil {
 		return assemblyline.ApplicationContext{}, err
 	}
-	if len(decision.Questions) == 0 {
-		return context, nil
+	inventory, err := runDirectCodingSemanticLeafCall(
+		runtime, modelName, "application_context_question_inventory",
+		inventoryJob, identities,
+		func(raw string) (assemblyline.ApplicationContextQuestionInventory, error) {
+			return assemblyline.DecodeApplicationContextQuestionInventory(inventoryInput, raw)
+		},
+		func(value assemblyline.ApplicationContextQuestionInventory) error {
+			if err := value.ValidateFor(inventoryInput); err != nil {
+				return err
+			}
+			return assemblyline.ValidatePathFreeModelContextWithProvenance(
+				"application context question inventory",
+				runtime.PathProvenance,
+				value.Candidates...,
+			)
+		},
+	)
+	if err != nil {
+		return assemblyline.ApplicationContext{}, err
 	}
-	if resolveEvidence == nil {
-		return assemblyline.ApplicationContext{}, fmt.Errorf(
-			"application context has %d unresolved evidence needs without a registered resolver: %s",
-			len(decision.Questions), strings.Join(decision.Questions, " | "),
+	acceptedQuestions := make([]string, 0, len(inventory.Candidates))
+	seenCandidates := make(map[string]struct{}, len(inventory.Candidates))
+	for candidateIndex, question := range inventory.Candidates {
+		if _, duplicate := seenCandidates[question]; duplicate {
+			continue
+		}
+		seenCandidates[question] = struct{}{}
+		necessityInput := assemblyline.ApplicationContextQuestionNecessityInput{
+			Authority:      inventoryInput,
+			Inventory:      inventory,
+			CandidateIndex: candidateIndex,
+			CurrentContext: context,
+		}
+		necessityJob, err := assemblyline.NewApplicationContextQuestionNecessityJob(
+			necessityInput,
 		)
-	}
-	for index, question := range decision.Questions {
-		need, err := assemblyline.NewApplicationRepositoryContextNeed(index+1, question)
+		if err != nil {
+			return assemblyline.ApplicationContext{}, err
+		}
+		necessity, err := runDirectCodingSemanticLeafCall(
+			runtime, modelName, "application_context_question_necessity",
+			necessityJob, identities,
+			func(raw string) (assemblyline.ApplicationContextQuestionNecessityResult, error) {
+				return assemblyline.DecodeApplicationContextQuestionNecessityResult(
+					necessityInput,
+					raw,
+				)
+			},
+			func(value assemblyline.ApplicationContextQuestionNecessityResult) error {
+				return value.ValidateFor(necessityInput)
+			},
+		)
+		if err != nil {
+			return assemblyline.ApplicationContext{}, err
+		}
+		if necessity.Relation != assemblyline.ApplicationContextQuestionNecessary {
+			continue
+		}
+		semanticDuplicate := false
+		for _, acceptedQuestion := range acceptedQuestions {
+			relationInput := assemblyline.ApplicationContextQuestionRelationInput{
+				CandidateQuestion: question,
+				AcceptedQuestion:  acceptedQuestion,
+			}
+			relationJob, err := assemblyline.NewApplicationContextQuestionRelationJob(
+				relationInput,
+			)
+			if err != nil {
+				return assemblyline.ApplicationContext{}, err
+			}
+			relation, err := runDirectCodingSemanticLeafCall(
+				runtime, modelName, "application_context_question_relation",
+				relationJob, identities,
+				func(raw string) (assemblyline.ApplicationContextQuestionRelationResult, error) {
+					return assemblyline.DecodeApplicationContextQuestionRelationResult(
+						relationInput,
+						raw,
+					)
+				},
+				func(value assemblyline.ApplicationContextQuestionRelationResult) error {
+					return value.ValidateFor(relationInput)
+				},
+			)
+			if err != nil {
+				return assemblyline.ApplicationContext{}, err
+			}
+			if relation.Relation == assemblyline.ApplicationContextQuestionsSameFact {
+				semanticDuplicate = true
+				break
+			}
+		}
+		if semanticDuplicate {
+			continue
+		}
+		if resolveEvidence == nil {
+			return assemblyline.ApplicationContext{}, fmt.Errorf(
+				"authorized application context repository-fact question has no registered resolver: %s",
+				question,
+			)
+		}
+		need, err := assemblyline.NewApplicationRepositoryContextNeed(
+			len(acceptedQuestions)+1,
+			question,
+		)
 		if err != nil {
 			return assemblyline.ApplicationContext{}, err
 		}
 		evidence, err := resolveEvidence(need)
 		if err != nil {
 			return assemblyline.ApplicationContext{}, fmt.Errorf(
-				"resolve application evidence need %q: %w", need.ID, err,
+				"resolve application evidence need %q: %w",
+				need.ID,
+				err,
 			)
 		}
 		context, err = assemblyline.AppendApplicationContextEvidence(context, need, evidence)
 		if err != nil {
 			return assemblyline.ApplicationContext{}, err
 		}
+		acceptedQuestions = append(acceptedQuestions, question)
 	}
 	return context, nil
 }

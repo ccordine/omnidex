@@ -76,7 +76,7 @@ func TestDirectCodingWorkflowRejectsFreshNoMutationAssembly(t *testing.T) {
 	}
 }
 
-func TestDirectCodingWorkflowRejectsUnjournaledPersistedNoOp(t *testing.T) {
+func TestDirectCodingWorkflowVerifiesMechanicallyExactPersistedWorkspace(t *testing.T) {
 	driver := &workflowDriverStub{
 		assembly: directCodingAssembly{
 			VersionProfileID: goCommandLineVersionProfileV1,
@@ -86,15 +86,22 @@ func TestDirectCodingWorkflowRejectsUnjournaledPersistedNoOp(t *testing.T) {
 		beginVerificationState: directCodingCompletionTaskAlreadyDone,
 		verification: directCodingVerification{
 			Passed: true, TestsPassed: true, Commands: []string{"go test ./..."}, EvidenceIDs: []int64{12},
-			MutationOperationID: "workspace_mutation_" + strings.Repeat("a", 64), MutationReceiptSHA256: strings.Repeat("b", 64),
+			ExactStateAuthorityID:   "workspace_exact_" + strings.Repeat("a", 64),
+			ExactStateReceiptSHA256: strings.Repeat("b", 64),
 		},
 	}
-	if _, err := runDirectCodingWorkflow(driver, true); err == nil ||
-		!strings.Contains(err.Error(), "requires one journaled workspace mutation") {
-		t.Fatalf("persisted no-op error=%v", err)
+	summary, err := runDirectCodingWorkflow(driver, true)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if driver.beginVerificationCalls != 0 || driver.verifyCalls != 0 || driver.finalizeCalls != 0 {
+	if summary != "workflow complete" {
+		t.Fatalf("summary=%q", summary)
+	}
+	if driver.beginVerificationCalls != 1 || driver.verifyCalls != 1 || driver.finalizeCalls != 1 {
 		t.Fatalf("begin=%d verify=%d finalize=%d", driver.beginVerificationCalls, driver.verifyCalls, driver.finalizeCalls)
+	}
+	if got := strings.Join(driver.phases, ","); got != "assembling,constructing,verifying,completed" {
+		t.Fatalf("phases=%q", got)
 	}
 }
 
@@ -121,6 +128,19 @@ func TestDirectCodingVerificationRequiresExactOrderedEvidenceIdentities(t *testi
 	}
 	if err := valid.validate(); err != nil {
 		t.Fatalf("exact failed verification proof error=%v", err)
+	}
+	validNoDelta := directCodingVerification{
+		Passed: true, Commands: []string{"go test"}, EvidenceIDs: []int64{12},
+		ExactStateAuthorityID:   "workspace_exact_" + strings.Repeat("c", 64),
+		ExactStateReceiptSHA256: strings.Repeat("d", 64),
+	}
+	if err := validNoDelta.validate(); err != nil {
+		t.Fatalf("verified no-delta proof error=%v", err)
+	}
+	validNoDelta.MutationOperationID = "workspace_mutation_" + strings.Repeat("e", 64)
+	validNoDelta.MutationReceiptSHA256 = strings.Repeat("f", 64)
+	if err := validNoDelta.validate(); err == nil {
+		t.Fatal("verification accepted simultaneous mutation and no-delta authority")
 	}
 }
 
@@ -156,7 +176,11 @@ func (d *workflowDriverStub) PrepareAssembly(
 	if d.unchanged {
 		mutations = 0
 	}
-	return &directCodingPreparedMutation{mutationCount: mutations}, nil
+	prepared := &directCodingPreparedMutation{mutationCount: mutations}
+	if d.unchanged {
+		prepared.exactState = &directCodingPreparedExactState{}
+	}
+	return prepared, nil
 }
 
 func (d *workflowDriverStub) ApplyAndVerify(

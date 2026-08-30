@@ -50,6 +50,42 @@ func TestDirectCodingVerificationTaskResumesAndRequiresExactFreshProof(t *testin
 	}
 }
 
+func TestDirectCodingVerificationTaskPersistsDistinctReplayStableNoDeltaProof(t *testing.T) {
+	coordinator, store, _ := directCodingCompletionResumeFixture(t, false)
+	verification := directCodingVerification{
+		Passed: true, TestsPassed: true,
+		Commands: []string{"go test ./..."}, EvidenceIDs: []int64{51},
+		ExactStateAuthorityID:   "workspace_exact_" + strings.Repeat("d", 64),
+		ExactStateReceiptSHA256: strings.Repeat("e", 64),
+	}
+	if state, err := coordinator.BeginWorkspaceVerification(); err != nil ||
+		state != directCodingCompletionTaskStarted {
+		t.Fatalf("begin state=%q err=%v", state, err)
+	}
+	if state, err := coordinator.CompleteWorkspaceVerification(verification); err != nil ||
+		state != directCodingCompletionTaskCompleted {
+		t.Fatalf("complete state=%q err=%v", state, err)
+	}
+	proof := taskNode(
+		t, store.ledger.MaterializedState(), directCodingVerificationTaskNodeID,
+	).VerificationRefs
+	if len(proof) != 1 ||
+		proof[0].URI != "verification://job/71/workspace-exact/"+verification.ExactStateAuthorityID ||
+		proof[0].Version != "v1" || proof[0].Relation != taskstate.RefVerifies {
+		t.Fatalf("verified no-delta proof=%+v", proof)
+	}
+	retry := directCodingRetryCognition(coordinator, store)
+	if state, err := retry.BeginWorkspaceVerification(); err != nil ||
+		state != directCodingCompletionTaskAlreadyDone {
+		t.Fatalf("replay begin state=%q err=%v", state, err)
+	}
+	verification.EvidenceIDs = []int64{61}
+	if state, err := retry.CompleteWorkspaceVerification(verification); err != nil ||
+		state != directCodingCompletionTaskAlreadyDone {
+		t.Fatalf("replay complete state=%q err=%v", state, err)
+	}
+}
+
 func TestDirectCodingDeploymentTaskResumesAndReusesExactReceiptProof(t *testing.T) {
 	coordinator, store, verification := directCodingCompletionResumeFixture(t, true)
 	if _, err := coordinator.BeginWorkspaceVerification(); err != nil {

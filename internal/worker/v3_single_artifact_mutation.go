@@ -133,7 +133,6 @@ func (session *directCodingSession) applySinglePlainTextArtifact(
 	}
 	session.repositoryIndex = &refreshed
 	session.completion.MutationCount++
-	session.completion.WrittenSource[artifactPath] = string(content)
 	session.mutationJournal = append(session.mutationJournal, directCodingMutationJournalEntry{
 		Path: artifactPath, Operation: workspaceFileCreate,
 	})

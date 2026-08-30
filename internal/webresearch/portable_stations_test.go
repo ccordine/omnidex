@@ -17,11 +17,25 @@ var (
 	_ GroundedSynthesisStation = (*PortableStations)(nil)
 )
 
-func testPortableRuntime(execute PortableExecutor) PortableRuntime {
+func testPortableRuntime(execute func(
+	context.Context,
+	assemblyline.PortableJob,
+) (assemblyline.PortableResult, error)) PortableRuntime {
 	return PortableRuntime{
-		Execute: execute,
-		Finalize: func(context.Context, assemblyline.PortableJob, assemblyline.PortableResult, error) error {
-			return nil
+		Resolve: func(
+			ctx context.Context,
+			job assemblyline.PortableJob,
+			validate PortableCandidateValidator,
+		) (SemanticCallReceipt, error) {
+			result, err := execute(ctx, job)
+			receipt := SemanticCallReceipt{Calls: exactPortableSemanticLeafCalls}
+			if err != nil {
+				return receipt, err
+			}
+			if err := result.ValidateFor(job); err != nil {
+				return receipt, err
+			}
+			return receipt, validate(result.Candidate)
 		},
 	}
 }
@@ -47,16 +61,7 @@ func TestPortableStationsExecuteOneJobPerSemanticLeaf(t *testing.T) {
 			if input.Candidate.CandidateID == "C31" {
 				candidate = string(assemblyline.WebCandidateRelevant)
 			}
-		case assemblyline.WorkWebSynthesisParagraphCoverage:
-			var input assemblyline.WebSynthesisParagraphLeafInput
-			if err := json.Unmarshal(job.Payload, &input); err != nil {
-				return assemblyline.PortableResult{}, err
-			}
-			candidate = string(assemblyline.WebSynthesisParagraphRemains)
-			if len(input.AcceptedParagraphs) > 0 {
-				candidate = string(assemblyline.WebSynthesisNoUncoveredParagraph)
-			}
-		case assemblyline.WorkWebSynthesisParagraph:
+		case assemblyline.WorkWebSynthesisParagraphInventory:
 			candidate = "Version 2 is current."
 		case assemblyline.WorkWebSynthesisEvidenceRelation:
 			var input assemblyline.WebSynthesisEvidenceRelationInput
@@ -67,6 +72,8 @@ func TestPortableStationsExecuteOneJobPerSemanticLeaf(t *testing.T) {
 			if input.Evidence.EvidenceID == "E31" {
 				candidate = string(assemblyline.WebEvidenceSupportsParagraph)
 			}
+		case assemblyline.WorkWebSynthesisParagraphAuthorization:
+			candidate = string(assemblyline.WebParagraphResponsiveAndFullySupported)
 		default:
 			return assemblyline.PortableResult{}, fmt.Errorf("unexpected job %q", job.Kind)
 		}
@@ -99,10 +106,10 @@ func TestPortableStationsExecuteOneJobPerSemanticLeaf(t *testing.T) {
 	want := []assemblyline.WorkKind{
 		assemblyline.WorkWebRelevanceRelation,
 		assemblyline.WorkWebRelevanceRelation,
-		assemblyline.WorkWebSynthesisParagraph,
+		assemblyline.WorkWebSynthesisParagraphInventory,
+		assemblyline.WorkWebSynthesisParagraphAuthorization,
 		assemblyline.WorkWebSynthesisEvidenceRelation,
 		assemblyline.WorkWebSynthesisEvidenceRelation,
-		assemblyline.WorkWebSynthesisParagraphCoverage,
 	}
 	if fmt.Sprint(calls) != fmt.Sprint(want) {
 		t.Fatalf("calls=%v want %v", calls, want)
@@ -112,6 +119,151 @@ func TestPortableStationsExecuteOneJobPerSemanticLeaf(t *testing.T) {
 			"semantic calls relevance=%d synthesis=%d",
 			relevance.SemanticCalls, synthesis.SemanticCalls,
 		)
+	}
+}
+
+func TestPortableSynthesisCandidateQueueDiscardsRejectedAndNeverRechecksAccepted(t *testing.T) {
+	const (
+		accepted    = "Version 2 is current."
+		unsupported = "Version 3 is current."
+		invented    = "Version 2 is current and its maintainer is Alice."
+	)
+	workKinds := make([]assemblyline.WorkKind, 0, 9)
+	supportCalls := make(map[string]int)
+	authorizationCalls := make(map[string]int)
+	station, err := NewPortableStations(testPortableRuntime(func(
+		_ context.Context,
+		job assemblyline.PortableJob,
+	) (assemblyline.PortableResult, error) {
+		workKinds = append(workKinds, job.Kind)
+		var candidate string
+		switch job.Kind {
+		case assemblyline.WorkWebSynthesisParagraphInventory:
+			var input assemblyline.WebGroundedSynthesisInput
+			if err := json.Unmarshal(job.Payload, &input); err != nil {
+				return assemblyline.PortableResult{}, err
+			}
+			if input.ExactQuestion != "Which release is current?" {
+				return assemblyline.PortableResult{}, fmt.Errorf("inventory question=%q", input.ExactQuestion)
+			}
+			candidate = strings.Join([]string{accepted, unsupported, invented, accepted}, "\n")
+		case assemblyline.WorkWebSynthesisEvidenceRelation:
+			var input assemblyline.WebSynthesisEvidenceRelationInput
+			if err := json.Unmarshal(job.Payload, &input); err != nil {
+				return assemblyline.PortableResult{}, err
+			}
+			if input.ExactQuestion != "Which release is current?" {
+				return assemblyline.PortableResult{}, fmt.Errorf("support question=%q", input.ExactQuestion)
+			}
+			supportCalls[input.ParagraphText]++
+			candidate = string(assemblyline.WebEvidenceDoesNotSupport)
+			if input.Evidence.EvidenceID == "E31" && input.ParagraphText != unsupported {
+				candidate = string(assemblyline.WebEvidenceSupportsParagraph)
+			}
+		case assemblyline.WorkWebSynthesisParagraphAuthorization:
+			var input assemblyline.WebSynthesisParagraphAuthorizationInput
+			if err := json.Unmarshal(job.Payload, &input); err != nil {
+				return assemblyline.PortableResult{}, err
+			}
+			if input.ExactQuestion != "Which release is current?" ||
+				len(input.Evidence) != 2 || input.Evidence[0].EvidenceID != "E17" ||
+				input.Evidence[1].EvidenceID != "E31" {
+				return assemblyline.PortableResult{}, fmt.Errorf(
+					"authorization authority question=%q evidence=%+v",
+					input.ExactQuestion, input.Evidence,
+				)
+			}
+			authorizationCalls[input.ParagraphText]++
+			candidate = string(assemblyline.WebParagraphNotResponsiveOrUnsupported)
+			if input.ParagraphText == accepted {
+				candidate = string(assemblyline.WebParagraphResponsiveAndFullySupported)
+			}
+		default:
+			return assemblyline.PortableResult{}, fmt.Errorf("unexpected job %q", job.Kind)
+		}
+		return assemblyline.PortableResult{JobID: job.ID, Candidate: candidate}, nil
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	decision, err := station.Synthesize(context.Background(), GroundedSynthesisCall{
+		Question: "Which release is current?", MaxParagraphs: 4, MaxParagraphBytes: 500,
+		Evidence: []ProjectedEvidence{
+			{EvidenceID: "E17", Title: "History", Content: "Version 1 was superseded."},
+			{EvidenceID: "E31", Title: "Current", Content: "Version 2 is current."},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(decision.Paragraphs) != 1 || decision.Paragraphs[0].Text != accepted {
+		t.Fatalf("decision=%+v", decision)
+	}
+	if fmt.Sprint(decision.Paragraphs[0].EvidenceIDs) != "[E31]" {
+		t.Fatalf("accepted evidence IDs=%v", decision.Paragraphs[0].EvidenceIDs)
+	}
+	if decision.SemanticCalls != 6 || len(workKinds) != 6 {
+		t.Fatalf("semantic calls=%d work=%v", decision.SemanticCalls, workKinds)
+	}
+	wantKinds := []assemblyline.WorkKind{
+		assemblyline.WorkWebSynthesisParagraphInventory,
+		assemblyline.WorkWebSynthesisParagraphAuthorization,
+		assemblyline.WorkWebSynthesisEvidenceRelation,
+		assemblyline.WorkWebSynthesisEvidenceRelation,
+		assemblyline.WorkWebSynthesisParagraphAuthorization,
+		assemblyline.WorkWebSynthesisParagraphAuthorization,
+	}
+	if fmt.Sprint(workKinds) != fmt.Sprint(wantKinds) {
+		t.Fatalf("work kinds=%v want %v", workKinds, wantKinds)
+	}
+	if supportCalls[accepted] != 2 || authorizationCalls[accepted] != 1 {
+		t.Fatalf(
+			"accepted candidate was not processed exactly once: support=%d authorization=%d",
+			supportCalls[accepted], authorizationCalls[accepted],
+		)
+	}
+	if supportCalls[unsupported] != 0 || authorizationCalls[unsupported] != 1 {
+		t.Fatalf(
+			"unsupported candidate did not evaporate before pairwise evidence work: support=%d authorization=%d",
+			supportCalls[unsupported], authorizationCalls[unsupported],
+		)
+	}
+	if supportCalls[invented] != 0 || authorizationCalls[invented] != 1 {
+		t.Fatalf(
+			"rejected candidate did not evaporate after exactly one authorization: support=%d authorization=%d",
+			supportCalls[invented], authorizationCalls[invented],
+		)
+	}
+}
+
+func TestPortableSynthesisRegisteredInventoryAbsenceStopsWithoutMoreModelWork(t *testing.T) {
+	calls := 0
+	station, err := NewPortableStations(testPortableRuntime(func(
+		_ context.Context,
+		job assemblyline.PortableJob,
+	) (assemblyline.PortableResult, error) {
+		calls++
+		if job.Kind != assemblyline.WorkWebSynthesisParagraphInventory {
+			return assemblyline.PortableResult{}, fmt.Errorf("unexpected job %q", job.Kind)
+		}
+		return assemblyline.PortableResult{
+			JobID: job.ID, Candidate: assemblyline.WebNoSynthesisParagraphCandidates,
+		}, nil
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = station.Synthesize(context.Background(), GroundedSynthesisCall{
+		Question: "Which release is current?", MaxParagraphs: 2, MaxParagraphBytes: 500,
+		Evidence: []ProjectedEvidence{{
+			EvidenceID: "E31", Title: "Current", Content: "Version 2 is current.",
+		}},
+	})
+	if err == nil || !strings.Contains(err.Error(), "queue produced no responsive fully supported paragraphs") {
+		t.Fatalf("error=%v", err)
+	}
+	if calls != 1 {
+		t.Fatalf("registered absence triggered %d semantic calls", calls)
 	}
 }
 

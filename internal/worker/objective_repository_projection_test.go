@@ -1,6 +1,8 @@
 package worker
 
 import (
+	"context"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -8,6 +10,170 @@ import (
 	"github.com/gryph/omnidex/internal/modelcontext"
 	repositoryretrieval "github.com/gryph/omnidex/internal/repository/retrieval"
 )
+
+func TestRepositoryEvidenceRelevanceSievePreservesSourceOrderAndCodeOwnedCap(t *testing.T) {
+	t.Parallel()
+	input := assemblyline.RepositoryEvidenceRelevanceInput{
+		ExactRequirement: "Identify the declaration that owns dispatch timing.",
+		Candidates: []assemblyline.RepositoryEvidenceCandidate{
+			{EvidenceID: "R01", Text: "A package comment describes delivery."},
+			{EvidenceID: "R02", Text: "ScheduleDispatch starts the dispatch timer."},
+			{EvidenceID: "R03", Text: "DispatchClock owns the timing state."},
+			{EvidenceID: "R04", Text: "A later helper formats a receipt."},
+		},
+		MaxSelections: 2,
+	}
+	rawRelations := []string{
+		assemblyline.RepositoryEvidenceNotDirectlyRelevant,
+		assemblyline.RepositoryEvidenceDirectlyRelevant,
+		assemblyline.RepositoryEvidenceDirectlyRelevant,
+	}
+	seen := []string{}
+	decision, receipt, err := resolveObjectiveRepositoryEvidenceRelations(
+		t.Context(), input,
+		func(
+			_ context.Context,
+			relationInput assemblyline.RepositoryEvidenceRelevanceRelationInput,
+		) (assemblyline.RepositoryEvidenceRelevanceRelationResult, objectiveStationReceipt, error) {
+			seen = append(seen, relationInput.Candidate.EvidenceID)
+			result, err := assemblyline.DecodeRepositoryEvidenceRelevanceRelationResult(
+				relationInput, rawRelations[len(seen)-1],
+			)
+			return result, objectiveStationReceipt{Calls: 1}, err
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if receipt.Calls != 3 ||
+		!reflect.DeepEqual(seen, []string{"R01", "R02", "R03"}) ||
+		!reflect.DeepEqual(decision.EvidenceIDs, []string{"R02", "R03"}) {
+		t.Fatalf("calls=%d seen=%v selected=%v", receipt.Calls, seen, decision.EvidenceIDs)
+	}
+}
+
+func TestRepositoryEvidenceRelevanceSieveExhaustsAfterNegativeCandidates(t *testing.T) {
+	t.Parallel()
+	input := assemblyline.RepositoryEvidenceRelevanceInput{
+		ExactRequirement: "Identify the declaration that owns dispatch timing.",
+		Candidates: []assemblyline.RepositoryEvidenceCandidate{
+			{EvidenceID: "R01", Text: "A package comment describes delivery."},
+			{EvidenceID: "R02", Text: "A formatting helper serializes a receipt."},
+		},
+		MaxSelections: 2,
+	}
+	seen := []string{}
+	decision, receipt, err := resolveObjectiveRepositoryEvidenceRelations(
+		t.Context(), input,
+		func(
+			_ context.Context,
+			relationInput assemblyline.RepositoryEvidenceRelevanceRelationInput,
+		) (assemblyline.RepositoryEvidenceRelevanceRelationResult, objectiveStationReceipt, error) {
+			seen = append(seen, relationInput.Candidate.EvidenceID)
+			result, decodeErr := assemblyline.DecodeRepositoryEvidenceRelevanceRelationResult(
+				relationInput, assemblyline.RepositoryEvidenceNotDirectlyRelevant,
+			)
+			return result, objectiveStationReceipt{Calls: 1}, decodeErr
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if receipt.Calls != 2 ||
+		!reflect.DeepEqual(seen, []string{"R01", "R02"}) ||
+		decision.EvidenceIDs == nil || len(decision.EvidenceIDs) != 0 {
+		t.Fatalf("calls=%d seen=%v selected=%v", receipt.Calls, seen, decision.EvidenceIDs)
+	}
+}
+
+func TestRepositoryEvidenceRelevanceSieveAggregatesExactReuseReceipt(t *testing.T) {
+	t.Parallel()
+	input := assemblyline.RepositoryEvidenceRelevanceInput{
+		ExactRequirement: "Identify the declaration that owns dispatch timing.",
+		Candidates: []assemblyline.RepositoryEvidenceCandidate{
+			{EvidenceID: "R01", Text: "A package comment describes delivery."},
+			{EvidenceID: "R02", Text: "DispatchClock owns the timing state."},
+		},
+		MaxSelections: 1,
+	}
+
+	for _, test := range []struct {
+		name       string
+		second     objectiveStationReceipt
+		wantCalls  int
+		wantReused bool
+	}{
+		{name: "fully restored", second: objectiveStationReceipt{Reused: true}, wantReused: true},
+		{name: "mixed restored and fresh", second: objectiveStationReceipt{Calls: 1}, wantCalls: 1},
+	} {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			seen := 0
+			decision, receipt, err := resolveObjectiveRepositoryEvidenceRelations(
+				t.Context(), input,
+				func(
+					_ context.Context,
+					relationInput assemblyline.RepositoryEvidenceRelevanceRelationInput,
+				) (assemblyline.RepositoryEvidenceRelevanceRelationResult, objectiveStationReceipt, error) {
+					seen++
+					raw := assemblyline.RepositoryEvidenceNotDirectlyRelevant
+					leafReceipt := objectiveStationReceipt{Reused: true}
+					if seen == 2 {
+						raw = assemblyline.RepositoryEvidenceDirectlyRelevant
+						leafReceipt = test.second
+					}
+					result, err := assemblyline.DecodeRepositoryEvidenceRelevanceRelationResult(
+						relationInput, raw,
+					)
+					return result, leafReceipt, err
+				},
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if seen != 2 || receipt.Calls != test.wantCalls || receipt.Reused != test.wantReused ||
+				!reflect.DeepEqual(decision.EvidenceIDs, []string{"R02"}) {
+				t.Fatalf("seen=%d receipt=%+v decision=%+v", seen, receipt, decision)
+			}
+		})
+	}
+}
+
+func TestRepositoryEvidenceRelevanceSieveRejectsInvalidLeafReceipts(t *testing.T) {
+	t.Parallel()
+	input := assemblyline.RepositoryEvidenceRelevanceInput{
+		ExactRequirement: "Identify the declaration that owns dispatch timing.",
+		Candidates: []assemblyline.RepositoryEvidenceCandidate{{
+			EvidenceID: "R01", Text: "DispatchClock owns the timing state.",
+		}},
+		MaxSelections: 1,
+	}
+	for name, receipt := range map[string]objectiveStationReceipt{
+		"zero calls without reuse proof": {},
+		"calls with reuse proof":         {Calls: 1, Reused: true},
+	} {
+		name, receipt := name, receipt
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			_, _, err := resolveObjectiveRepositoryEvidenceRelations(
+				t.Context(), input,
+				func(
+					_ context.Context,
+					relationInput assemblyline.RepositoryEvidenceRelevanceRelationInput,
+				) (assemblyline.RepositoryEvidenceRelevanceRelationResult, objectiveStationReceipt, error) {
+					result, decodeErr := assemblyline.DecodeRepositoryEvidenceRelevanceRelationResult(
+						relationInput, assemblyline.RepositoryEvidenceDirectlyRelevant,
+					)
+					return result, receipt, decodeErr
+				},
+			)
+			if err == nil {
+				t.Fatalf("invalid receipt %+v was accepted", receipt)
+			}
+		})
+	}
+}
 
 func TestRepositoryEvidenceCapsulesBindExactPackAndSymbolProvenance(t *testing.T) {
 	t.Parallel()

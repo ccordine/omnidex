@@ -1,73 +1,51 @@
 package worker
 
-import (
-	"fmt"
+import "github.com/gryph/omnidex/internal/assemblyline"
 
-	"github.com/gryph/omnidex/internal/assemblyline"
+type directCodingApplicationRequirementExactDuplicateKind uint8
+
+const (
+	directCodingApplicationRequirementNotExactDuplicate directCodingApplicationRequirementExactDuplicateKind = iota
+	directCodingApplicationRequirementExactAcceptedDuplicate
+	directCodingApplicationRequirementExactProcessedDuplicate
 )
 
-func directCodingApplicationRequirementExactZeroDelta(
-	authority assemblyline.ApplicationRequirementCoverageInput,
+func directCodingApplicationRequirementExactDuplicate(
 	candidate string,
-) (assemblyline.ApplicationRequirementCandidateZeroDelta, bool, error) {
-	for _, retained := range authority.ZeroDeltas {
-		if candidate == retained.Candidate {
-			return assemblyline.ApplicationRequirementCandidateZeroDelta{}, false, fmt.Errorf(
-				"application requirement candidate repeats a recorded zero delta",
-			)
+	acceptedRequirements []assemblyline.ApplicationIntentCandidateRequirement,
+	processedCandidates []string,
+) directCodingApplicationRequirementExactDuplicateKind {
+	for _, accepted := range acceptedRequirements {
+		if candidate == accepted.Statement {
+			return directCodingApplicationRequirementExactAcceptedDuplicate
 		}
 	}
-	for index, accepted := range authority.AcceptedRequirements {
-		if candidate != accepted {
-			continue
-		}
-		return assemblyline.ApplicationRequirementCandidateZeroDelta{
-			Candidate: candidate, RetainedSet: assemblyline.ApplicationRequirementZeroDeltaAcceptedSet,
-			RetainedIndex: index,
-		}, true, nil
-	}
-	for index, excluded := range authority.ExcludedCandidates {
-		if candidate == excluded {
-			return assemblyline.ApplicationRequirementCandidateZeroDelta{
-				Candidate: candidate, RetainedSet: assemblyline.ApplicationRequirementZeroDeltaExcludedSet,
-				RetainedIndex: index,
-			}, true, nil
+	for _, processed := range processedCandidates {
+		if candidate == processed {
+			return directCodingApplicationRequirementExactProcessedDuplicate
 		}
 	}
-	return assemblyline.ApplicationRequirementCandidateZeroDelta{}, false, nil
+	return directCodingApplicationRequirementNotExactDuplicate
 }
 
-func directCodingApplicationRequirementSemanticZeroDelta(
+func directCodingApplicationRequirementSemanticDuplicate(
 	runtime typedWorkerRuntime,
 	intentModel string,
-	authority assemblyline.ApplicationRequirementCoverageInput,
 	candidate string,
 	kind assemblyline.ApplicationRequirementCandidateKindResult,
 	cardinality assemblyline.ApplicationRequirementCandidateCardinalityResult,
 	acceptedRequirements []assemblyline.ApplicationIntentCandidateRequirement,
 	identities []assemblyline.ArtifactIdentity,
-) (assemblyline.ApplicationRequirementCandidateZeroDelta, bool, error) {
-	if len(acceptedRequirements) != len(authority.AcceptedRequirements) {
-		return assemblyline.ApplicationRequirementCandidateZeroDelta{}, false, fmt.Errorf(
-			"accepted requirement outcome authority count differs from generation authority",
-		)
-	}
-	for index, accepted := range authority.AcceptedRequirements {
-		acceptedAuthority := acceptedRequirements[index]
-		if acceptedAuthority.Statement != accepted {
-			return assemblyline.ApplicationRequirementCandidateZeroDelta{}, false, fmt.Errorf(
-				"accepted requirement outcome authority %d differs from generation authority",
-				index,
-			)
-		}
+) (bool, error) {
+	for _, accepted := range acceptedRequirements {
 		input := assemblyline.ApplicationRequirementCandidateOutcomeRelationInput{
 			Candidate: candidate, Kind: kind, Cardinality: cardinality,
-			AcceptedRequirement:    accepted,
-			AcceptedResultRelation: acceptedAuthority.ResultRelation,
+			AcceptedRequirement:    accepted.Statement,
+			AcceptedResultRelation: accepted.ResultRelation,
 		}
 		job, err := assemblyline.NewApplicationRequirementCandidateOutcomeRelationJob(input)
 		if err != nil {
-			return assemblyline.ApplicationRequirementCandidateZeroDelta{}, false, err
+			return false, err
 		}
 		relation, err := runDirectCodingSemanticLeafCall(
 			runtime,
@@ -83,19 +61,11 @@ func directCodingApplicationRequirementSemanticZeroDelta(
 			},
 		)
 		if err != nil {
-			return assemblyline.ApplicationRequirementCandidateZeroDelta{}, false, err
+			return false, err
 		}
 		if relation.Relation == assemblyline.ApplicationRequirementSameRuntimeOutcome {
-			return assemblyline.ApplicationRequirementCandidateZeroDelta{
-				Candidate:              candidate,
-				RetainedSet:            assemblyline.ApplicationRequirementZeroDeltaAcceptedSet,
-				RetainedIndex:          index,
-				CandidateKind:          kind,
-				CandidateCardinality:   cardinality,
-				AcceptedResultRelation: acceptedAuthority.ResultRelation,
-				OutcomeRelation:        relation,
-			}, true, nil
+			return true, nil
 		}
 	}
-	return assemblyline.ApplicationRequirementCandidateZeroDelta{}, false, nil
+	return false, nil
 }

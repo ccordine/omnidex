@@ -23,21 +23,16 @@ const (
 	maxPortableSynthesisParagraphBytes = 2 * 1024
 )
 
-type PortableExecutor func(
-	context.Context,
-	assemblyline.PortableJob,
-) (assemblyline.PortableResult, error)
+type PortableCandidateValidator func(string) error
 
-type PortableFinalizer func(
+type PortableResolver func(
 	context.Context,
 	assemblyline.PortableJob,
-	assemblyline.PortableResult,
-	error,
-) error
+	PortableCandidateValidator,
+) (SemanticCallReceipt, error)
 
 type PortableRuntime struct {
-	Execute  PortableExecutor
-	Finalize PortableFinalizer
+	Resolve PortableResolver
 }
 
 type PortableStations struct {
@@ -45,7 +40,7 @@ type PortableStations struct {
 }
 
 func NewPortableStations(runtime PortableRuntime) (*PortableStations, error) {
-	if runtime.Execute == nil || runtime.Finalize == nil {
+	if runtime.Resolve == nil {
 		return nil, fmt.Errorf("portable web stations require one exact runtime")
 	}
 	return &PortableStations{runtime: runtime}, nil

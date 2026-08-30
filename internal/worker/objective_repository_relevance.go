@@ -10,6 +10,11 @@ import (
 
 const maxRepositoryGroundedCitations = 2
 
+type objectiveRepositoryEvidenceRelationCall func(
+	context.Context,
+	assemblyline.RepositoryEvidenceRelevanceRelationInput,
+) (assemblyline.RepositoryEvidenceRelevanceRelationResult, objectiveStationReceipt, error)
+
 func objectiveRepositoryRelevanceInput(
 	exactRequirement string,
 	evidence []objectiveEvidence,
@@ -74,39 +79,81 @@ func (r *nativeRuntimeV3) resolveObjectiveRepositoryRelevance(
 	if err != nil {
 		return assemblyline.RepositoryEvidenceRelevanceDecision{}, objectiveStationReceipt{}, err
 	}
-	modelName, err := r.svc.requiredStationModel(r.routing, station.RepositoryEvidenceRelevance)
-	if err != nil {
+	resolveModel := func() (string, error) {
+		return r.svc.requiredStationModel(r.routing, station.RepositoryEvidenceRelevance)
+	}
+	return resolveObjectiveRepositoryEvidenceRelations(
+		ctx, input,
+		func(
+			ctx context.Context,
+			relationInput assemblyline.RepositoryEvidenceRelevanceRelationInput,
+		) (assemblyline.RepositoryEvidenceRelevanceRelationResult, objectiveStationReceipt, error) {
+			job, err := assemblyline.NewRepositoryEvidenceRelevanceRelationJob(relationInput)
+			if err != nil {
+				return assemblyline.RepositoryEvidenceRelevanceRelationResult{}, objectiveStationReceipt{}, err
+			}
+			return runObjectiveReusablePortableRawLeafCall(
+				ctx, r, "repository_evidence_relevance_relation", job,
+				station.RepositoryEvidenceRelevance, resolveModel,
+				func(raw string) (assemblyline.RepositoryEvidenceRelevanceRelationResult, error) {
+					return assemblyline.DecodeRepositoryEvidenceRelevanceRelationResult(relationInput, raw)
+				},
+				func(value assemblyline.RepositoryEvidenceRelevanceRelationResult) error {
+					return value.ValidateFor(relationInput)
+				},
+			)
+		},
+	)
+}
+
+func resolveObjectiveRepositoryEvidenceRelations(
+	ctx context.Context,
+	input assemblyline.RepositoryEvidenceRelevanceInput,
+	call objectiveRepositoryEvidenceRelationCall,
+) (assemblyline.RepositoryEvidenceRelevanceDecision, objectiveStationReceipt, error) {
+	if err := input.Validate(); err != nil {
 		return assemblyline.RepositoryEvidenceRelevanceDecision{}, objectiveStationReceipt{}, err
+	}
+	if call == nil {
+		return assemblyline.RepositoryEvidenceRelevanceDecision{}, objectiveStationReceipt{}, fmt.Errorf(
+			"repository evidence relevance relation call is unavailable",
+		)
 	}
 	selected := make([]string, 0, input.MaxSelections)
 	totalCalls := 0
-	for len(selected) < input.MaxSelections {
-		leafInput := assemblyline.RepositoryEvidenceRelevanceLeafInput{
-			ExactRequirement:    input.ExactRequirement,
-			Candidates:          append([]assemblyline.RepositoryEvidenceCandidate(nil), input.Candidates...),
-			SelectedEvidenceIDs: append([]string{}, selected...),
-			MaxSelections:       input.MaxSelections,
-		}
-		job, err := assemblyline.NewRepositoryEvidenceRelevanceLeafJob(leafInput)
-		if err != nil {
-			return assemblyline.RepositoryEvidenceRelevanceDecision{}, objectiveStationReceipt{Calls: totalCalls}, err
-		}
-		evidenceID, calls, err := runObjectivePortableRawLeafCall(
-			ctx, r, modelName, "repository_evidence_relevance_leaf", job,
-			func(raw string) (string, error) {
-				return assemblyline.DecodeRepositoryEvidenceRelevanceLeaf(leafInput, raw)
-			},
-			func(string) error { return nil },
-		)
-		totalCalls += calls
-		if err != nil {
-			return assemblyline.RepositoryEvidenceRelevanceDecision{}, objectiveStationReceipt{Calls: totalCalls}, err
-		}
-		if evidenceID == assemblyline.RepositoryEvidenceNoRelevantCandidate {
+	allReused := true
+	for _, candidate := range input.Candidates {
+		if len(selected) == input.MaxSelections {
 			break
 		}
-		selected = append(selected, evidenceID)
+		relationInput := assemblyline.RepositoryEvidenceRelevanceRelationInput{
+			ExactRequirement: input.ExactRequirement,
+			Candidate:        candidate,
+		}
+		relation, receipt, err := call(ctx, relationInput)
+		totalCalls += receipt.Calls
+		allReused = allReused && receipt.Reused
+		if err != nil {
+			return assemblyline.RepositoryEvidenceRelevanceDecision{}, objectiveStationReceipt{
+				Calls: totalCalls, Reused: allReused,
+			}, err
+		}
+		if err := validateObjectiveStationReceipt(
+			"repository evidence relevance relation", receipt,
+		); err != nil {
+			return assemblyline.RepositoryEvidenceRelevanceDecision{}, objectiveStationReceipt{
+				Calls: totalCalls, Reused: allReused,
+			}, err
+		}
+		if err := relation.ValidateFor(relationInput); err != nil {
+			return assemblyline.RepositoryEvidenceRelevanceDecision{}, objectiveStationReceipt{
+				Calls: totalCalls, Reused: allReused,
+			}, err
+		}
+		if relation.Relation == assemblyline.RepositoryEvidenceDirectlyRelevant {
+			selected = append(selected, candidate.EvidenceID)
+		}
 	}
 	decision, err := assemblyline.AssembleRepositoryEvidenceRelevanceDecision(input, selected)
-	return decision, objectiveStationReceipt{Calls: totalCalls}, err
+	return decision, objectiveStationReceipt{Calls: totalCalls, Reused: allReused}, err
 }

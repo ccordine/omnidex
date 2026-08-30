@@ -118,12 +118,6 @@ func runDirectCodingApplicationInterpreter(
 	if err != nil {
 		return zero, err
 	}
-	classification, err := classifyApplicationSurface(
-		runtime, surfaceModel, authority.modelRequest, identities,
-	)
-	if err != nil {
-		return zero, err
-	}
 	resolution, err := resolveDirectCodingApplicationIntent(
 		runtime, intentModel,
 		assemblyline.ApplicationIntentInput{
@@ -134,9 +128,19 @@ func runDirectCodingApplicationInterpreter(
 	if err != nil {
 		return zero, err
 	}
+	classification, err := classifyApplicationSurface(
+		runtime, surfaceModel, authority.modelRequest, identities,
+	)
+	if err != nil {
+		return zero, err
+	}
 	artifacts, err := classifyArtifactHandling(
 		runtime, artifactModel, authority.modelRequest, identities,
 	)
+	if err != nil {
+		return zero, err
+	}
+	artifacts, err = sieveDirectCodingApplicationArtifactDirectives(artifacts)
 	if err != nil {
 		return zero, err
 	}

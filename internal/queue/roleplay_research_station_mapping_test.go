@@ -10,8 +10,9 @@ import (
 func TestRoleplayGroundedResponseUsesTheBoundedResponseStation(t *testing.T) {
 	t.Parallel()
 	for _, kind := range []assemblyline.WorkKind{
-		assemblyline.WorkRoleplayGroundedResponseText,
+		assemblyline.WorkRoleplayGroundedResponseParagraphInventory,
 		assemblyline.WorkRoleplayGroundedResponseEvidenceRelation,
+		assemblyline.WorkRoleplayGroundedResponseParagraphAuthorization,
 	} {
 		got, err := stationForPortableWorkKind(kind)
 		if err != nil {

@@ -12,8 +12,7 @@ import (
 )
 
 const (
-	maxObjectiveDatabaseRounds = 3
-	maxObjectiveDatabaseRows   = 50
+	maxObjectiveDatabaseRows = 50
 )
 
 type objectiveDatabaseExecutor func(
@@ -38,6 +37,7 @@ func runObjectiveDatabaseEvidenceWorkflow(
 	execute objectiveDatabaseExecutor,
 ) (objectiveEvidenceAcquisition, error) {
 	result := objectiveEvidenceAcquisition{}
+	var ledger objectiveDatabaseAcquisitionCallLedger
 	if ctx == nil || authority.DataSourceID == "" || snapshot.SourceID != string(authority.DataSourceID) {
 		return result, fmt.Errorf("database evidence workflow requires exact turn and schema authority")
 	}
@@ -58,111 +58,97 @@ func runObjectiveDatabaseEvidenceWorkflow(
 	); err != nil {
 		return result, err
 	}
-	currentNeed := authority.ModelInstruction
-	seenNeeds := map[string]struct{}{}
-	for round := 1; round <= maxObjectiveDatabaseRounds; round++ {
-		needID := objectiveDatabaseEvidenceNeedID(requirementID, round, currentNeed)
-		needDigest := objectiveDatabaseEvidenceNeedDigest(currentNeed)
-		if _, duplicate := seenNeeds[needDigest]; duplicate {
-			return result, fmt.Errorf("database cognition repeated an unresolved evidence need without progress")
-		}
-		seenNeeds[needDigest] = struct{}{}
-
-		relationIDs, selectionCalls, err := selectObjectiveDatabaseRelations(
-			ctx, snapshot, needID, currentNeed,
-			assemblyline.CloneObjectiveContext(authority.Context), stations,
-		)
-		result.ModelCalls += selectionCalls
-		if err != nil {
-			return result, err
-		}
-		projection, err := datasource.ProjectSchemaForIntent(snapshot, relationIDs)
-		if err != nil {
-			return result, err
-		}
-		intentInput := assemblyline.DatabaseQueryIntentInput{
-			EvidenceNeedID: needID, ExactNeed: currentNeed,
-			Context:          assemblyline.CloneObjectiveContext(authority.Context),
-			SchemaProjection: projection,
-			TemporalAsOf:     snapshot.CapturedAt.UTC().Format(time.RFC3339Nano),
-			MaxRows:          maxObjectiveDatabaseRows,
-		}
-		decision, receipt, err := stations.BuildIntent(ctx, intentInput)
-		result.ModelCalls += receipt.Calls
-		if err != nil {
-			return result, err
-		}
-		if err := validateObjectiveDatabaseStationCalls("query intent", receipt); err != nil {
-			return result, err
-		}
-		if err := decision.ValidateFor(intentInput); err != nil {
-			return result, err
-		}
-		intent := decision.Bind(intentInput)
-		if err := intent.Validate(snapshot); err != nil {
-			return result, fmt.Errorf("database query intent failed full schema validation: %w", err)
-		}
-		plan, planningCalls, err := prepareObjectiveDatabaseQueryPlan(
-			ctx, snapshot, intent, needID, currentNeed,
-			assemblyline.CloneObjectiveContext(authority.Context), stations,
-		)
-		result.ModelCalls += planningCalls
-		if err != nil {
-			return result, err
-		}
-		executed, err := execute(ctx, snapshot, plan)
-		if err != nil {
-			return result, err
-		}
-		if err := executed.ValidateForPlan(snapshot, plan, objectiveDatabaseExecutionLimits()); err != nil {
-			return result, fmt.Errorf("database executor returned invalid evidence: %w", err)
-		}
-		evidence, err := projectObjectiveDatabaseEvidence(round, snapshot, intent, executed)
-		if err != nil {
-			return result, err
-		}
-		result.Evidence = append(result.Evidence, evidence...)
-		if len(result.Evidence) > maxDatabaseEvidenceCapsules {
-			return result, fmt.Errorf("database cognition exceeded %d accumulated evidence capsules", maxDatabaseEvidenceCapsules)
-		}
-		modelEvidence, err := objectiveModelEvidence(result.Evidence)
-		if err != nil {
-			return result, err
-		}
-		gapInput := assemblyline.DatabaseEvidenceGapInput{
-			RequirementID: requirementID, ExactRequirement: authority.ModelInstruction,
-			Context: assemblyline.CloneObjectiveContext(authority.Context), Evidence: modelEvidence,
-			KnownArtifactPaths: append([]string{}, authority.ModelArtifactPaths...),
-		}
-		gap, gapReceipt, err := stations.FindEvidenceGap(ctx, gapInput)
-		result.ModelCalls += gapReceipt.Calls
-		if err != nil {
-			return result, err
-		}
-		if err := validateObjectiveDatabaseStationCalls("evidence gap", gapReceipt); err != nil {
-			return result, err
-		}
-		if err := gap.ValidateFor(gapInput); err != nil {
-			return result, err
-		}
-		missing := gap.Missing()
-		if missing == "" {
-			return result, nil
-		}
-		if err := validateDatabaseEvidenceNeed(missing); err != nil {
-			return result, err
-		}
-		currentNeed = missing
+	exactNeed := authority.ModelInstruction
+	needID := objectiveDatabaseEvidenceNeedID(requirementID, exactNeed)
+	relationIDs, selectionReceipt, err := selectObjectiveDatabaseRelations(
+		ctx, snapshot, needID, exactNeed,
+		assemblyline.CloneObjectiveContext(authority.Context), stations,
+	)
+	if err != nil {
+		return result, err
 	}
-	return result, fmt.Errorf("database cognition still has unresolved information after %d bounded rounds", maxObjectiveDatabaseRounds)
+	if selectionReceipt != (objectiveStationReceipt{}) {
+		if err := ledger.record(
+			"schema selection", selectionReceipt,
+			maxDatabaseSchemaSelectionModelCalls,
+		); err != nil {
+			return result, err
+		}
+	}
+	projection, err := datasource.ProjectSchemaForIntent(snapshot, relationIDs)
+	if err != nil {
+		return result, err
+	}
+	intentInput := assemblyline.DatabaseQueryIntentInput{
+		EvidenceNeedID: needID, ExactNeed: exactNeed,
+		Context:          assemblyline.CloneObjectiveContext(authority.Context),
+		SchemaProjection: projection,
+		TemporalAsOf:     snapshot.CapturedAt.UTC().Format(time.RFC3339Nano),
+		MaxRows:          maxObjectiveDatabaseRows,
+	}
+	decision, receipt, err := stations.BuildIntent(ctx, intentInput)
+	if err != nil {
+		return result, err
+	}
+	if err := ledger.record(
+		"query intent", receipt, maxObjectiveDatabaseQueryIntentCalls,
+	); err != nil {
+		return result, err
+	}
+	if err := decision.ValidateFor(intentInput); err != nil {
+		return result, err
+	}
+	intent := decision.Bind(intentInput)
+	if err := intent.Validate(snapshot); err != nil {
+		return result, fmt.Errorf("database query intent failed full schema validation: %w", err)
+	}
+	plan, planningReceipt, err := prepareObjectiveDatabaseQueryPlan(
+		ctx, snapshot, intent, needID, exactNeed,
+		assemblyline.CloneObjectiveContext(authority.Context), stations,
+	)
+	if err != nil {
+		return result, err
+	}
+	if planningReceipt != (objectiveStationReceipt{}) {
+		if err := ledger.record(
+			"join-path selection", planningReceipt,
+			datasource.MaxProjectedRelations*exactSemanticLeafCalls,
+		); err != nil {
+			return result, err
+		}
+	}
+	executed, err := execute(ctx, snapshot, plan)
+	if err != nil {
+		return result, err
+	}
+	if err := executed.ValidateForPlan(snapshot, plan, objectiveDatabaseExecutionLimits()); err != nil {
+		return result, fmt.Errorf("database executor returned invalid evidence: %w", err)
+	}
+	evidence, err := projectObjectiveDatabaseEvidence(snapshot, intent, executed)
+	if err != nil {
+		return result, err
+	}
+	result.Evidence = append(result.Evidence, evidence...)
+	if len(result.Evidence) > maxDatabaseEvidenceCapsules {
+		return result, fmt.Errorf("database cognition exceeded %d evidence capsules", maxDatabaseEvidenceCapsules)
+	}
+	return completeObjectiveDatabaseEvidenceAcquisition(result, ledger)
 }
 
-func objectiveDatabaseEvidenceNeedID(requirementID string, round int, exactNeed string) string {
-	digest := sha256.Sum256([]byte(fmt.Sprintf("%s\x00%d\x00%s", requirementID, round, exactNeed)))
+func completeObjectiveDatabaseEvidenceAcquisition(
+	result objectiveEvidenceAcquisition,
+	ledger objectiveDatabaseAcquisitionCallLedger,
+) (objectiveEvidenceAcquisition, error) {
+	receipt, err := ledger.totalForSuccess()
+	if err != nil {
+		return objectiveEvidenceAcquisition{}, err
+	}
+	result.ModelCalls = receipt.Calls
+	result.DatabaseCallLedger = ledger
+	return result, nil
+}
+
+func objectiveDatabaseEvidenceNeedID(requirementID string, exactNeed string) string {
+	digest := sha256.Sum256([]byte(requirementID + "\x00" + exactNeed))
 	return "database-need-" + hex.EncodeToString(digest[:])
-}
-
-func objectiveDatabaseEvidenceNeedDigest(exactNeed string) string {
-	digest := sha256.Sum256([]byte(exactNeed))
-	return hex.EncodeToString(digest[:])
 }

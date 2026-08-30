@@ -1,130 +1,233 @@
 package worker
 
-import (
-	"fmt"
+import "github.com/gryph/omnidex/internal/assemblyline"
 
-	"github.com/gryph/omnidex/internal/assemblyline"
+type directCodingApplicationRequirementDisposition uint8
+
+const (
+	directCodingApplicationRequirementRetained directCodingApplicationRequirementDisposition = iota + 1
+	directCodingApplicationRequirementExcluded
+	directCodingApplicationRequirementUnrequested
+	directCodingApplicationRequirementDuplicate
+	directCodingApplicationRequirementPartitioned
+	directCodingApplicationRequirementUnresolved
 )
 
 type directCodingApplicationRequirementCandidateResolution struct {
-	Candidate                  string
-	Retain                     bool
-	ResultRelation             assemblyline.ApplicationRequirementCandidateResultRelationResult
-	ReboundGenerationAuthority *assemblyline.ApplicationRequirementCandidateInput
-	ZeroDelta                  *assemblyline.ApplicationRequirementCandidateZeroDelta
+	Candidate      string
+	Disposition    directCodingApplicationRequirementDisposition
+	ResultRelation assemblyline.ApplicationRequirementCandidateResultRelationResult
+	PartitionInput assemblyline.ApplicationRequirementCandidatePartitionInput
+	Partition      assemblyline.ApplicationRequirementCandidatePartition
 }
 
 func resolveDirectCodingApplicationRequirementCandidate(
 	runtime typedWorkerRuntime,
 	intentModel string,
-	candidate string,
-	generationAuthority assemblyline.ApplicationRequirementCandidateInput,
+	authority assemblyline.ApplicationRequirementInventoryInput,
+	entry directCodingApplicationRequirementCandidateQueueEntry,
 	acceptedRequirements []assemblyline.ApplicationIntentCandidateRequirement,
+	processedCandidates []string,
 	identities []assemblyline.ArtifactIdentity,
 ) (directCodingApplicationRequirementCandidateResolution, error) {
 	var zero directCodingApplicationRequirementCandidateResolution
+	candidate, _, err := entry.validateFor(authority)
+	if err != nil {
+		return zero, err
+	}
 	resultRelationCorrectionUsed := false
 	for {
-		zeroDelta, found, err := directCodingApplicationRequirementExactZeroDelta(
-			generationAuthority.Authority, candidate,
+		exactDuplicate := directCodingApplicationRequirementExactDuplicate(
+			candidate,
+			acceptedRequirements,
+			processedCandidates,
 		)
-		if err != nil {
-			return zero, err
-		}
-		if found {
+		if exactDuplicate != directCodingApplicationRequirementNotExactDuplicate {
 			return directCodingApplicationRequirementCandidateResolution{
-				Candidate: candidate, ZeroDelta: &zeroDelta,
+				Candidate:   candidate,
+				Disposition: directCodingApplicationRequirementDuplicate,
 			}, nil
 		}
 
-		kind, err := classifyDirectCodingApplicationRequirementCandidate(
-			runtime, intentModel, candidate, identities,
+		authorizationInput := assemblyline.ApplicationRequirementCandidateAuthorizationInput{
+			UserRequest: authority.UserRequest,
+			Context:     authority.Context,
+			Candidate:   candidate,
+		}
+		authorization, authorizationResolved, err := assemblyline.ResolveExactSourceApplicationRequirementCandidateAuthorization(
+			authorizationInput,
 		)
 		if err != nil {
 			return zero, err
 		}
-		if kind.Relation == assemblyline.ApplicationRequirementCandidateNonRuntime {
-			rebound, err := assemblyline.RebindApplicationRequirementAfterNonRuntimeExclusion(
-				generationAuthority, candidate, kind,
+		if !authorizationResolved {
+			authorizationJob, err := assemblyline.NewApplicationRequirementCandidateAuthorizationJob(
+				authorizationInput,
 			)
 			if err != nil {
 				return zero, err
 			}
-			return directCodingApplicationRequirementCandidateResolution{
-				Candidate: candidate, ReboundGenerationAuthority: &rebound,
-			}, nil
-		}
-
-		refinement, err := refineDirectCodingApplicationRequirementCandidate(
-			runtime, intentModel, candidate, generationAuthority.Authority, identities,
-		)
-		if err != nil {
-			return zero, err
-		}
-		classifiedCandidate := candidate
-		candidate = refinement.Candidate
-		zeroDelta, found, err = directCodingApplicationRequirementExactZeroDelta(
-			generationAuthority.Authority, candidate,
-		)
-		if err != nil {
-			return zero, err
-		}
-		if found {
-			return directCodingApplicationRequirementCandidateResolution{
-				Candidate: candidate, ZeroDelta: &zeroDelta,
-			}, nil
-		}
-		if candidate != classifiedCandidate {
-			kind, err = classifyDirectCodingApplicationRequirementCandidate(
-				runtime, intentModel, candidate, identities,
+			authorization, err = runDirectCodingSemanticLeafCall(
+				runtime,
+				intentModel,
+				"application_requirement_candidate_authorization",
+				authorizationJob,
+				identities,
+				func(raw string) (assemblyline.ApplicationRequirementCandidateAuthorizationResult, error) {
+					return assemblyline.DecodeApplicationRequirementCandidateAuthorizationResult(
+						authorizationInput,
+						raw,
+					)
+				},
+				func(value assemblyline.ApplicationRequirementCandidateAuthorizationResult) error {
+					return value.ValidateFor(authorizationInput)
+				},
 			)
 			if err != nil {
 				return zero, err
 			}
-			if kind.Relation == assemblyline.ApplicationRequirementCandidateNonRuntime {
-				rebound, err := assemblyline.RebindApplicationRequirementAfterNonRuntimeExclusion(
-					generationAuthority, candidate, kind,
-				)
-				if err != nil {
-					return zero, err
-				}
+		}
+		if authorization.Relation == assemblyline.ApplicationRequirementCandidateNotEntailed {
+			return directCodingApplicationRequirementCandidateResolution{
+				Candidate:   candidate,
+				Disposition: directCodingApplicationRequirementUnrequested,
+			}, nil
+		}
+
+		kind, kindResolved, err := classifyDirectCodingApplicationRequirementCandidate(
+			runtime,
+			intentModel,
+			candidate,
+			identities,
+		)
+		if err != nil {
+			return zero, err
+		}
+		if !kindResolved {
+			return directCodingApplicationRequirementCandidateResolution{
+				Candidate: candidate, Disposition: directCodingApplicationRequirementUnresolved,
+			}, nil
+		}
+		if kind.Relation == assemblyline.ApplicationRequirementCandidateMixed {
+			if resultRelationCorrectionUsed ||
+				len(entry.Lineage) >= assemblyline.MaxApplicationRequirementCandidatePartitionDepth {
 				return directCodingApplicationRequirementCandidateResolution{
-					Candidate: candidate, ReboundGenerationAuthority: &rebound,
+					Candidate: candidate, Disposition: directCodingApplicationRequirementUnresolved,
 				}, nil
 			}
+			partitionInput := assemblyline.ApplicationRequirementCandidatePartitionInput{
+				Candidate: candidate,
+				Kind:      &kind,
+			}
+			partition, err := partitionDirectCodingApplicationRequirementCandidate(
+				runtime,
+				intentModel,
+				partitionInput,
+				identities,
+			)
+			if err != nil {
+				return zero, err
+			}
+			return directCodingApplicationRequirementCandidateResolution{
+				Candidate:      candidate,
+				Disposition:    directCodingApplicationRequirementPartitioned,
+				PartitionInput: partitionInput,
+				Partition:      partition,
+			}, nil
 		}
-		semanticZeroDelta, found, err := directCodingApplicationRequirementSemanticZeroDelta(
-			runtime, intentModel, generationAuthority.Authority, candidate, kind,
-			refinement.Cardinality, acceptedRequirements, identities,
+		if kind.Relation == assemblyline.ApplicationRequirementCandidateNonRuntime {
+			if resultRelationCorrectionUsed {
+				return directCodingApplicationRequirementCandidateResolution{
+					Candidate: candidate, Disposition: directCodingApplicationRequirementUnresolved,
+				}, nil
+			}
+			return directCodingApplicationRequirementCandidateResolution{
+				Candidate:   candidate,
+				Disposition: directCodingApplicationRequirementExcluded,
+			}, nil
+		}
+
+		cardinality, err := classifyDirectCodingApplicationRequirementCandidateCardinality(
+			runtime,
+			intentModel,
+			candidate,
+			identities,
 		)
 		if err != nil {
 			return zero, err
 		}
-		if found {
+		if cardinality.Relation == assemblyline.ApplicationRequirementMultipleRuntimeOutcomes {
+			if resultRelationCorrectionUsed ||
+				len(entry.Lineage) >= assemblyline.MaxApplicationRequirementCandidatePartitionDepth {
+				return directCodingApplicationRequirementCandidateResolution{
+					Candidate: candidate, Disposition: directCodingApplicationRequirementUnresolved,
+				}, nil
+			}
+			partitionInput := assemblyline.ApplicationRequirementCandidatePartitionInput{
+				Candidate:   candidate,
+				Cardinality: &cardinality,
+			}
+			partition, err := partitionDirectCodingApplicationRequirementCandidate(
+				runtime,
+				intentModel,
+				partitionInput,
+				identities,
+			)
+			if err != nil {
+				return zero, err
+			}
 			return directCodingApplicationRequirementCandidateResolution{
-				Candidate: candidate, ZeroDelta: &semanticZeroDelta,
+				Candidate:      candidate,
+				Disposition:    directCodingApplicationRequirementPartitioned,
+				PartitionInput: partitionInput,
+				Partition:      partition,
 			}, nil
 		}
+
+		duplicate, err := directCodingApplicationRequirementSemanticDuplicate(
+			runtime,
+			intentModel,
+			candidate,
+			kind,
+			cardinality,
+			acceptedRequirements,
+			identities,
+		)
+		if err != nil {
+			return zero, err
+		}
+		if duplicate {
+			return directCodingApplicationRequirementCandidateResolution{
+				Candidate:   candidate,
+				Disposition: directCodingApplicationRequirementDuplicate,
+			}, nil
+		}
+
 		resultRelation, err := classifyDirectCodingApplicationRequirementCandidateResultRelation(
-			runtime, intentModel, candidate, kind, refinement.Cardinality, identities,
+			runtime,
+			intentModel,
+			candidate,
+			kind,
+			cardinality,
+			identities,
 		)
 		if err != nil {
 			return zero, err
 		}
 		if resultRelation.Relation == assemblyline.ApplicationRequirementMissingResultRelation {
 			if resultRelationCorrectionUsed {
-				return zero, fmt.Errorf(
-					"application requirement candidate result relation remained underdetermined after its one correction",
-				)
+				return directCodingApplicationRequirementCandidateResolution{
+					Candidate: candidate, Disposition: directCodingApplicationRequirementUnresolved,
+				}, nil
 			}
 			grounding, groundingErr := groundDirectCodingApplicationRequirementCandidateResultRelation(
 				runtime,
 				intentModel,
-				generationAuthority.Authority.UserRequest,
-				generationAuthority.Authority.Context,
+				authority.UserRequest,
+				authority.Context,
 				candidate,
 				kind,
-				refinement.Cardinality,
+				cardinality,
 				resultRelation,
 				identities,
 			)
@@ -132,13 +235,21 @@ func resolveDirectCodingApplicationRequirementCandidate(
 				return zero, groundingErr
 			}
 			if grounding.Relation != assemblyline.ApplicationRequirementExactlyOneDeterminingRelationEntailed {
-				return zero, fmt.Errorf(
-					"application requirement candidate requires a derived result, but the immutable request does not entail exactly one determining relation; refusing to invent result semantics",
-				)
+				return directCodingApplicationRequirementCandidateResolution{
+					Candidate: candidate, Disposition: directCodingApplicationRequirementUnresolved,
+				}, nil
 			}
 			candidate, err = correctDirectCodingApplicationRequirementCandidateResultRelation(
-				runtime, intentModel, generationAuthority, candidate, kind,
-				refinement.Cardinality, resultRelation, grounding, identities,
+				runtime,
+				intentModel,
+				authority.UserRequest,
+				authority.Context,
+				candidate,
+				kind,
+				cardinality,
+				resultRelation,
+				grounding,
+				identities,
 			)
 			if err != nil {
 				return zero, err
@@ -150,29 +261,9 @@ func resolveDirectCodingApplicationRequirementCandidate(
 			return zero, err
 		}
 		return directCodingApplicationRequirementCandidateResolution{
-			Candidate: candidate, Retain: true, ResultRelation: resultRelation,
+			Candidate:      candidate,
+			Disposition:    directCodingApplicationRequirementRetained,
+			ResultRelation: resultRelation,
 		}, nil
 	}
-}
-
-func classifyDirectCodingApplicationRequirementCandidate(
-	runtime typedWorkerRuntime,
-	intentModel string,
-	candidate string,
-	identities []assemblyline.ArtifactIdentity,
-) (assemblyline.ApplicationRequirementCandidateKindResult, error) {
-	input := assemblyline.ApplicationRequirementCandidateKindInput{Candidate: candidate}
-	job, err := assemblyline.NewApplicationRequirementCandidateKindJob(input)
-	if err != nil {
-		return assemblyline.ApplicationRequirementCandidateKindResult{}, err
-	}
-	return runDirectCodingSemanticLeafCall(
-		runtime, intentModel, "application_requirement_candidate_kind", job, identities,
-		func(raw string) (assemblyline.ApplicationRequirementCandidateKindResult, error) {
-			return assemblyline.DecodeApplicationRequirementCandidateKindResult(input, raw)
-		},
-		func(value assemblyline.ApplicationRequirementCandidateKindResult) error {
-			return value.ValidateFor(input)
-		},
-	)
 }

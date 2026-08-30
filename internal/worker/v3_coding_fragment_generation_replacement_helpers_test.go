@@ -31,8 +31,17 @@ func assertReplacementEnvelope(
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(prompt, "provider output boundary") ||
-		!strings.Contains(prompt, "contained no accepted declaration") ||
+	origin, err := assemblyline.NewFragmentGenerationJob(input.Original)
+	if err != nil {
+		t.Fatal(err)
+	}
+	originPrompt, err := assemblyline.RenderPortableJob(origin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if prompt != originPrompt ||
+		strings.Contains(prompt, "provider output boundary") ||
+		strings.Contains(prompt, "accepted declaration") ||
 		strings.Contains(prompt, rejectedPrefix+" partial-provider-suffix") ||
 		strings.Contains(string(job.Payload), "partial-provider-suffix") ||
 		strings.Contains(string(job.Payload), "gap_opening_id") ||

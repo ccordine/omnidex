@@ -85,6 +85,31 @@ func validateObjectiveStationReceipt(label string, receipt objectiveStationRecei
 	return nil
 }
 
+func validateObjectiveBoundedStationReceipt(
+	label string,
+	receipt objectiveStationReceipt,
+	maximumCalls int,
+) error {
+	if maximumCalls < exactSemanticLeafCalls {
+		return fmt.Errorf(
+			"%s has invalid maximum call budget %d", label, maximumCalls,
+		)
+	}
+	if receipt.Reused {
+		if receipt.Calls != 0 {
+			return fmt.Errorf("%s reuse reported %d provider calls", label, receipt.Calls)
+		}
+		return nil
+	}
+	if receipt.Calls < exactSemanticLeafCalls || receipt.Calls > maximumCalls {
+		return fmt.Errorf(
+			"%s reported %d calls outside the 1..%d bounded leaf budget",
+			label, receipt.Calls, maximumCalls,
+		)
+	}
+	return nil
+}
+
 type objectiveKindStation interface {
 	Classify(context.Context, assemblyline.ConversationObjectiveKindInput) (
 		assemblyline.ConversationObjectiveKindDecision, objectiveStationReceipt, error,
@@ -155,6 +180,7 @@ type objectiveEvidenceAcquisition struct {
 	Evidence             []objectiveEvidence
 	ModelCalls           int
 	RepositoryCallLedger objectiveRepositoryAcquisitionCallLedger
+	DatabaseCallLedger   objectiveDatabaseAcquisitionCallLedger
 	GroundedRequirement  string
 	KnownArtifactPaths   []string
 	ArtifactIdentities   []assemblyline.ArtifactIdentity
@@ -168,6 +194,7 @@ type objectiveExternalAnswer struct {
 	Evidence       []objectiveEvidence
 	EvidenceIDs    []string
 	ModelCalls     int
+	WebCallLedger  webresearch.SemanticCallLedger
 }
 
 type objectiveRoleplayResearchAnswer struct {
@@ -179,6 +206,7 @@ type objectiveRoleplayResearchAnswer struct {
 	Evidence       []objectiveEvidence
 	EvidenceIDs    []string
 	ModelCalls     int
+	WebCallLedger  webresearch.SemanticCallLedger
 }
 
 type objectiveEvidence struct {

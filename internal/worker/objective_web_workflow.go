@@ -31,7 +31,15 @@ type objectiveWebResult struct {
 	Rendered       string
 	RenderedSHA256 string
 	SemanticCalls  int
+	CallLedger     webresearch.SemanticCallLedger
 }
+
+const (
+	maxObjectiveWebRelevantCandidates  = 2
+	maxObjectiveWebSynthesisParagraphs = 4
+	maxObjectiveWebSemanticCalls       = maxObjectiveWebRelevantCandidates +
+		1 + maxObjectiveWebSynthesisParagraphs*(maxObjectiveWebRelevantCandidates+1)
+)
 
 func newRoutedWebStations(
 	runtimeFor func(station.ID) webresearch.PortableRuntime,
@@ -62,29 +70,42 @@ func runtimeWebPortableRuntime(
 	runtime *nativeRuntimeV3,
 	id station.ID,
 ) webresearch.PortableRuntime {
-	workerRuntime := portableWorkerRuntimeWithContext(runtime, "web_research", runtime.ctx)
 	return webresearch.PortableRuntime{
-		Execute: func(_ context.Context, job assemblyline.PortableJob) (assemblyline.PortableResult, error) {
+		Resolve: func(
+			ctx context.Context,
+			job assemblyline.PortableJob,
+			validate webresearch.PortableCandidateValidator,
+		) (webresearch.SemanticCallReceipt, error) {
 			if runtime == nil || runtime.svc == nil {
-				return assemblyline.PortableResult{}, fmt.Errorf("web station %q requires runtime authority", id)
+				return webresearch.SemanticCallReceipt{}, fmt.Errorf("web station %q requires runtime authority", id)
 			}
 			stationID, err := queue.StationForPortableJob(job)
 			if err != nil || stationID != id {
-				return assemblyline.PortableResult{}, fmt.Errorf("web station %q received work for %q", id, stationID)
+				return webresearch.SemanticCallReceipt{}, fmt.Errorf("web station %q received work for %q", id, stationID)
 			}
-			modelName, err := runtime.svc.requiredStationModel(runtime.routing, id)
-			if err != nil {
-				return assemblyline.PortableResult{}, err
+			if validate == nil {
+				return webresearch.SemanticCallReceipt{}, fmt.Errorf("web station %q requires one exact decoder", id)
 			}
-			return workerRuntime.Execute(job, modelName)
-		},
-		Finalize: func(_ context.Context, job assemblyline.PortableJob, result assemblyline.PortableResult, validationErr error) error {
-			if validationErr == nil {
-				validationErr = validateObjectiveRawCandidatePathBoundary(
-					job.Kind, result.Candidate, workerRuntime.PathProvenance,
-				)
-			}
-			return workerRuntime.Finalize(job, result, validationErr)
+			_, receipt, err := runObjectiveReusablePortableRawLeafCall(
+				ctx,
+				runtime,
+				"web_"+string(job.Kind),
+				job,
+				id,
+				func() (string, error) {
+					return runtime.svc.requiredStationModel(runtime.routing, id)
+				},
+				func(raw string) (string, error) {
+					if err := validate(raw); err != nil {
+						return "", err
+					}
+					return raw, nil
+				},
+				func(string) error { return nil },
+			)
+			return webresearch.SemanticCallReceipt{
+				Calls: receipt.Calls, Reused: receipt.Reused,
+			}, err
 		},
 	}
 }
@@ -93,16 +114,17 @@ func objectiveWebResearchConfig() webresearch.Config {
 	evidence := objectiveWebEvidenceConfig()
 	return webresearch.Config{
 		MaxFetchCandidates: evidence.MaxFetchCandidates, MaxProjectionBytes: evidence.MaxProjectionBytes,
-		MaxRelevantCandidates: evidence.MaxRelevantCandidates,
-		CandidateSummaryBytes: evidence.CandidateSummaryBytes, MaxSynthesisParagraphs: 4,
+		MaxRelevantCandidates:      evidence.MaxRelevantCandidates,
+		CandidateSummaryBytes:      evidence.CandidateSummaryBytes,
+		MaxSynthesisParagraphs:     maxObjectiveWebSynthesisParagraphs,
 		MaxSynthesisParagraphBytes: 2 * 1024,
 	}
 }
 
 func objectiveWebEvidenceConfig() webresearch.EvidenceConfig {
 	return webresearch.EvidenceConfig{
-		MaxFetchCandidates: 2,
-		MaxProjectionBytes: 8 * 1024, MaxRelevantCandidates: 2,
+		MaxFetchCandidates: maxObjectiveWebRelevantCandidates,
+		MaxProjectionBytes: 8 * 1024, MaxRelevantCandidates: maxObjectiveWebRelevantCandidates,
 		CandidateSummaryBytes: 512,
 	}
 }
@@ -114,6 +136,7 @@ func objectiveExternalAnswerFromWeb(result webresearch.Result) (objectiveExterna
 		Evidence: result.Evidence, Rendered: result.Artifact.Rendered,
 		RenderedSHA256: result.Artifact.SHA256,
 		SemanticCalls:  result.SemanticCalls,
+		CallLedger:     result.CallLedger.Clone(),
 	})
 }
 
@@ -189,14 +212,23 @@ func objectiveExternalAnswerFromWebResult(result objectiveWebResult) (objectiveE
 		evidence = append(evidence, projected)
 		ids = append(ids, string(item.ID))
 	}
-	calls := result.SemanticCalls
-	if calls < 1 {
-		return objectiveExternalAnswer{}, fmt.Errorf("web research completion reported no semantic synthesis call")
+	receipt, err := result.CallLedger.ValidateForMaximum(
+		"web research completion", maxObjectiveWebSemanticCalls,
+	)
+	if err != nil {
+		return objectiveExternalAnswer{}, err
+	}
+	if result.SemanticCalls != receipt.Calls {
+		return objectiveExternalAnswer{}, fmt.Errorf(
+			"web research completion reported %d calls but its exact ledger proves %d",
+			result.SemanticCalls, receipt.Calls,
+		)
 	}
 	return objectiveExternalAnswer{
 		Text: strings.Join(textParts, "\n\n"), Rendered: result.Rendered,
 		RenderedSHA256: renderedSHA, Paragraphs: cloneWebParagraphs(result.Paragraphs),
-		Evidence: evidence, EvidenceIDs: ids, ModelCalls: calls,
+		Evidence: evidence, EvidenceIDs: ids, ModelCalls: receipt.Calls,
+		WebCallLedger: result.CallLedger.Clone(),
 	}, nil
 }
 

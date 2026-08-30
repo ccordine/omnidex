@@ -16,6 +16,11 @@ func TestDesiredStateModelContractsExposeOnlySemanticLeaves(t *testing.T) {
 	contracts := []reflect.Type{
 		reflect.TypeOf(assemblyline.RepositoryRequirementInterpretationInput{}),
 		reflect.TypeOf(assemblyline.RepositoryRequirementInterpretation{}),
+		reflect.TypeOf(assemblyline.RepositoryRequirementInventory{}),
+		reflect.TypeOf(assemblyline.RepositoryRequirementCandidateAuthorizationInput{}),
+		reflect.TypeOf(assemblyline.RepositoryRequirementCandidateAuthorizationResult{}),
+		reflect.TypeOf(assemblyline.RepositoryRequirementCandidateRelationInput{}),
+		reflect.TypeOf(assemblyline.RepositoryRequirementCandidateRelationResult{}),
 		reflect.TypeOf(assemblyline.ArtifactHandlingInput{}),
 		reflect.TypeOf(assemblyline.ArtifactHandlingDecision{}),
 		reflect.TypeOf(assemblyline.RepositoryArtifactAbsenceInput{}),
@@ -65,12 +70,11 @@ func TestDesiredStateModelSchemasContainNoMutationToolSurface(t *testing.T) {
 		return job
 	}
 	jobs := []assemblyline.PortableJob{
-		must(assemblyline.NewRepositoryRequirementCoverageJob(assemblyline.RepositoryRequirementLeafInput{
-			Authority: assemblyline.RepositoryRequirementInterpretationInput{
+		must(assemblyline.NewRepositoryRequirementInventoryJob(
+			assemblyline.RepositoryRequirementInterpretationInput{
 				UserRequest: repositoryRequest, Context: repositoryContext,
 			},
-			AcceptedRequirements: []string{},
-		})),
+		)),
 		must(assemblyline.NewArtifactHandlingJob(assemblyline.ArtifactHandlingInput{
 			UserRequest: "ARTIFACT_1 must no longer exist", Token: "ARTIFACT_1",
 		})),

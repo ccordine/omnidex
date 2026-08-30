@@ -38,6 +38,7 @@ type EvidenceResult struct {
 	FetchAttempts       int
 	RelevanceCalls      int
 	SemanticCalls       int
+	CallLedger          SemanticCallLedger
 }
 
 // GatherRelevantEvidence runs the shared deterministic web evidence sieve.
@@ -114,6 +115,7 @@ func evidenceResultFromRun(result Result, selected []Evidence) EvidenceResult {
 		DiscoveryAttempts:   result.DiscoveryAttempts, FetchAttempts: result.FetchAttempts,
 		RelevanceCalls: result.RelevanceCalls,
 		SemanticCalls:  result.SemanticCalls,
+		CallLedger:     result.CallLedger.Clone(),
 	}
 }
 

@@ -56,11 +56,6 @@ func validateScrumFlowMetrics(metrics ScrumFlowMetrics) error {
 	if metrics.LastPlayOutcome != "" && metrics.LastPlayOutcome != "success" && metrics.LastPlayOutcome != "failed" {
 		return fmt.Errorf("Scrum flow outcome %q is not registered", metrics.LastPlayOutcome)
 	}
-	switch metrics.ReviewGate {
-	case "", "passed", "failed", "pending", "running":
-	default:
-		return fmt.Errorf("Scrum flow review gate %q is not registered", metrics.ReviewGate)
-	}
 	if metrics.Column != "" {
 		if _, err := ParseScrumCardColumn(metrics.Column); err != nil {
 			return err

@@ -13,7 +13,7 @@ import (
 
 const (
 	maxObjectiveRepositoryRequirementBytes    = 4 * 1024
-	maxObjectiveRepositoryRelevanceModelCalls = maxRepositoryGroundedCitations * exactSemanticLeafCalls
+	maxObjectiveRepositoryRelevanceModelCalls = maxObjectiveRepositoryEvidenceCapsules * exactSemanticLeafCalls
 	maxObjectiveRepositoryEvidenceModelCalls  = maxObjectiveRepositoryRelevanceModelCalls
 )
 
@@ -22,7 +22,8 @@ type objectiveRepositoryRelevanceCall func(
 ) (assemblyline.RepositoryEvidenceRelevanceDecision, objectiveStationReceipt, error)
 
 type objectiveRepositoryAcquisitionCallLedger struct {
-	relevanceCalls int
+	relevanceReceipt  objectiveStationReceipt
+	relevanceRecorded bool
 }
 
 func (r *nativeRuntimeV3) acquireObjectiveRepositoryEvidence(
@@ -165,12 +166,10 @@ func newObjectiveRepositoryEvidenceAcquisition(
 	}
 	result := objectiveEvidenceAcquisition{
 		Evidence: evidence, ModelCalls: modelCalls,
-		GroundedRequirement: groundedRequirement,
-		KnownArtifactPaths:  provenance.Paths(),
-		ArtifactIdentities:  append([]assemblyline.ArtifactIdentity(nil), identities...),
-		RepositoryCallLedger: objectiveRepositoryAcquisitionCallLedger{
-			relevanceCalls: ledger.relevanceCalls,
-		},
+		GroundedRequirement:  groundedRequirement,
+		KnownArtifactPaths:   provenance.Paths(),
+		ArtifactIdentities:   append([]assemblyline.ArtifactIdentity(nil), identities...),
+		RepositoryCallLedger: ledger,
 	}
 	if err := validateObjectiveRepositoryEvidenceAcquisition(result); err != nil {
 		return objectiveEvidenceAcquisition{}, err
@@ -235,25 +234,37 @@ func validateObjectiveRepositoryEvidenceAcquisition(acquisition objectiveEvidenc
 }
 
 func (ledger *objectiveRepositoryAcquisitionCallLedger) recordRelevance(receipt objectiveStationReceipt) error {
-	if ledger == nil || ledger.relevanceCalls != 0 {
+	if ledger == nil || ledger.relevanceRecorded {
 		return fmt.Errorf("repository-read acquisition exceeded its one relevance round")
 	}
-	if receipt.Reused || receipt.Calls < 1 ||
-		receipt.Calls > maxObjectiveRepositoryRelevanceModelCalls {
+	if err := validateObjectiveBoundedStationReceipt(
+		"repository grounded relevance station",
+		receipt,
+		maxObjectiveRepositoryRelevanceModelCalls,
+	); err != nil {
 		return fmt.Errorf(
-			"repository grounded relevance station reported %d calls outside the bounded %d-leaf budget",
-			receipt.Calls, maxRepositoryGroundedCitations,
+			"repository-read acquisition relevance-call receipt: %w", err,
 		)
 	}
-	ledger.relevanceCalls = receipt.Calls
+	ledger.relevanceReceipt = receipt
+	ledger.relevanceRecorded = true
 	return nil
 }
 
 func (ledger objectiveRepositoryAcquisitionCallLedger) totalForSuccess() (int, error) {
-	if ledger.relevanceCalls < 1 || ledger.relevanceCalls > maxObjectiveRepositoryEvidenceModelCalls {
-		return 0, fmt.Errorf("repository-read acquisition produced invalid relevance-call total %d", ledger.relevanceCalls)
+	if !ledger.relevanceRecorded {
+		return 0, fmt.Errorf("repository-read acquisition has no recorded relevance-call receipt")
 	}
-	return ledger.relevanceCalls, nil
+	if err := validateObjectiveBoundedStationReceipt(
+		"repository grounded relevance station",
+		ledger.relevanceReceipt,
+		maxObjectiveRepositoryEvidenceModelCalls,
+	); err != nil {
+		return 0, fmt.Errorf(
+			"repository-read acquisition relevance-call receipt: %w", err,
+		)
+	}
+	return ledger.relevanceReceipt.Calls, nil
 }
 
 func objectiveRepositoryEvidenceCallTotal(acquisition objectiveEvidenceAcquisition) (int, error) {

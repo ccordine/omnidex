@@ -157,7 +157,7 @@ func BuildApplicationRequirementCandidateOutcomeRelationPrompt(
 		return "", err
 	}
 	return strings.Join([]string{
-		"Decide whether the two exact one-outcome runtime requirements impose one source-owning runtime obligation or whether either requires additional runtime evidence.",
+		"Decide whether the two exact one-outcome runtime requirements describe the same independently observable outcome or distinct independently observable outcomes.",
 		"Reference relations: making a transformed value visible versus keeping it after a session restart is DISTINCT_RUNTIME_OUTCOMES; returning a response versus returning it before a fixed deadline is DISTINCT_RUNTIME_OUTCOMES; showing a response visually versus also delivering it to a nonvisual consumer is DISTINCT_RUNTIME_OUTCOMES; returning the value yielded by rule R versus returning the value that conforms to that same R is SAME_RUNTIME_OUTCOME.",
 		"CURRENT CANDIDATE:\n" + input.Candidate,
 		"ACCEPTED REQUIREMENT:\n" + input.AcceptedRequirement,

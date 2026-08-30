@@ -16,7 +16,7 @@ func TestDownstreamSemanticPromptsHideObjectiveContextProvenance(t *testing.T) {
 	}{
 		{name: "grounded answer", job: func() (PortableJob, error) {
 			base := groundedAnswerFixture()
-			return NewGroundedAnswerTextJob(GroundedAnswerTextInput{
+			return NewGroundedAnswerParagraphInventoryJob(GroundedAnswerParagraphInventoryInput{
 				ExactRequirement: base.ExactRequirement,
 				Context:          context,
 				Evidence:         base.Evidence,
@@ -25,7 +25,7 @@ func TestDownstreamSemanticPromptsHideObjectiveContextProvenance(t *testing.T) {
 		{name: "roleplay grounded response", job: func() (PortableJob, error) {
 			input := roleplayGroundedFixture()
 			input.Context = context
-			return NewRoleplayGroundedResponseTextJob(input)
+			return NewRoleplayGroundedParagraphInventoryJob(input)
 		}},
 		{name: "web relevance", job: func() (PortableJob, error) {
 			input := webRelevanceFixture()
@@ -37,21 +37,8 @@ func TestDownstreamSemanticPromptsHideObjectiveContextProvenance(t *testing.T) {
 		}},
 		{name: "web grounded synthesis", job: func() (PortableJob, error) {
 			base := webSynthesisFixture()
-			return NewWebSynthesisParagraphCoverageJob(WebSynthesisParagraphLeafInput{
-				ExactQuestion:      base.ExactQuestion,
-				Context:            context,
-				Evidence:           base.Evidence,
-				AcceptedParagraphs: []WebGroundedParagraph{},
-				MaxParagraphs:      base.MaxParagraphs,
-				MaxParagraphBytes:  base.MaxParagraphBytes,
-			})
-		}},
-		{name: "database evidence gap", job: func() (PortableJob, error) {
-			return NewDatabaseEvidenceGapJob(DatabaseEvidenceGapInput{
-				RequirementID: "requirement-1", ExactRequirement: "Count the exact records.",
-				Context:  context,
-				Evidence: []GroundedEvidenceCapsule{{ID: "E1", Text: "The count is 7."}},
-			})
+			base.Context = context
+			return NewWebSynthesisParagraphInventoryJob(base)
 		}},
 		{name: "database join path", job: func() (PortableJob, error) {
 			return NewDatabaseJoinPathSelectionJob(DatabaseJoinPathSelectionInput{
@@ -73,9 +60,11 @@ func TestDownstreamSemanticPromptsHideObjectiveContextProvenance(t *testing.T) {
 		{name: "database schema selection", job: func() (PortableJob, error) {
 			input := databaseSchemaSelectionFixture()
 			input.Context = context
-			return NewDatabaseSchemaSelectionCoverageJob(DatabaseSchemaSelectionLeafInput{
-				Authority: input, SelectedRelationIDs: []string{},
-			})
+			inventoryInput, err := ProjectDatabaseSchemaRelationInventoryInput(input)
+			if err != nil {
+				return PortableJob{}, err
+			}
+			return NewDatabaseSchemaRelationInventoryJob(inventoryInput)
 		}},
 	}
 

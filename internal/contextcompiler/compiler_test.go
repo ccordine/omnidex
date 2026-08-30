@@ -12,34 +12,39 @@ import (
 
 type scriptedRelevanceStation struct {
 	ids          []string
-	idsByCall    [][]string
 	receiptCalls int
 	calls        int
-	input        assemblyline.ContextRelevanceInput
-	inputs       []assemblyline.ContextRelevanceInput
+	invalidHash  bool
+	input        assemblyline.ContextRelevanceRelationInput
+	inputs       []assemblyline.ContextRelevanceRelationInput
 }
 
-func (station *scriptedRelevanceStation) SelectRelevant(
+func (station *scriptedRelevanceStation) Relate(
 	_ context.Context,
-	input assemblyline.ContextRelevanceInput,
-) (assemblyline.ContextRelevanceDecision, StationReceipt, error) {
-	callIndex := station.calls
+	input assemblyline.ContextRelevanceRelationInput,
+) (assemblyline.ContextRelevanceRelationResult, StationReceipt, error) {
 	station.calls++
 	station.input = input
 	station.inputs = append(station.inputs, input)
-	ids := station.ids
-	if callIndex < len(station.idsByCall) {
-		ids = station.idsByCall[callIndex]
+	raw := assemblyline.ContextCandidateNotDirectlyRelevant
+	for _, candidateID := range station.ids {
+		if input.Candidate.CandidateID == candidateID {
+			raw = assemblyline.ContextCandidateDirectlyRelevant
+			break
+		}
 	}
-	decision := assemblyline.ContextRelevanceDecision{
-		Schema:                 assemblyline.ContextRelevanceSchemaV1,
-		ReferencedCandidateIDs: append([]string{}, ids...),
+	decision, err := assemblyline.DecodeContextRelevanceRelationResult(input, raw)
+	if err != nil {
+		return assemblyline.ContextRelevanceRelationResult{}, StationReceipt{}, err
+	}
+	if station.invalidHash {
+		decision.AuthoritySHA256 = strings.Repeat("0", 64)
 	}
 	receiptCalls := station.receiptCalls
 	if receiptCalls == 0 {
 		receiptCalls = 1
 	}
-	return decision, StationReceipt{Calls: receiptCalls}, decision.ValidateFor(input)
+	return decision, StationReceipt{Calls: receiptCalls}, nil
 }
 
 type scriptedMinificationStation struct {
@@ -255,7 +260,7 @@ func TestContextRelevanceReceiptAcceptsMultipleBoundedLeaves(t *testing.T) {
 		candidate(t, "fictional_canon", "CTX_4", "The keeper carries the brass key."),
 	}
 	relevance := &scriptedRelevanceStation{
-		ids: []string{"CTX_1", "CTX_2", "CTX_3", "CTX_4"}, receiptCalls: 4,
+		ids: []string{"CTX_1", "CTX_2", "CTX_3", "CTX_4"},
 	}
 	result, err := Compile(t.Context(), Request{
 		ExactInstruction:   "Continue from the established scene.",
@@ -277,34 +282,6 @@ func TestContextRelevanceReceiptAcceptsMultipleBoundedLeaves(t *testing.T) {
 	}
 }
 
-func TestContextRelevanceReceiptEnforcesFixedPointLeafBudget(t *testing.T) {
-	t.Parallel()
-	input := assemblyline.ContextRelevanceInput{MaxSelections: 4}
-	maximum := input.MaxSelections * assemblyline.ExactSemanticLeafCalls
-	tests := []struct {
-		name    string
-		receipt StationReceipt
-		wantErr bool
-	}{
-		{name: "multiple leaves", receipt: StationReceipt{Calls: 4}},
-		{name: "exact boundary", receipt: StationReceipt{Calls: maximum}},
-		{name: "over boundary", receipt: StationReceipt{Calls: maximum + 1}, wantErr: true},
-		{name: "zero without reuse", receipt: StationReceipt{}, wantErr: true},
-		{name: "durable reuse", receipt: StationReceipt{Reused: true}},
-		{name: "reuse with provider call", receipt: StationReceipt{Calls: 1, Reused: true}, wantErr: true},
-	}
-	for _, test := range tests {
-		test := test
-		t.Run(test.name, func(t *testing.T) {
-			t.Parallel()
-			err := validateContextRelevanceReceipt(input, test.receipt)
-			if (err != nil) != test.wantErr {
-				t.Fatalf("receipt=%#v error=%v want_error=%t", test.receipt, err, test.wantErr)
-			}
-		})
-	}
-}
-
 func TestAnaphoricTurnUsesSelectedAuthorityVerbatimWhenItFits(t *testing.T) {
 	relevance := &scriptedRelevanceStation{ids: []string{"CTX_2"}}
 	minifier := &scriptedMinificationStation{text: "must not run"}
@@ -322,14 +299,14 @@ func TestAnaphoricTurnUsesSelectedAuthorityVerbatimWhenItFits(t *testing.T) {
 	if len(provider.gotTerms) != 1 || provider.gotTerms[0] != "Do it again." {
 		t.Fatalf("provider queries=%#v", provider.gotTerms)
 	}
-	if relevance.calls != 1 || minifier.calls != 0 {
-		t.Fatalf("relevance/minification calls=%d/%d, want 1/0", relevance.calls, minifier.calls)
+	if relevance.calls != 2 || minifier.calls != 0 {
+		t.Fatalf("relevance/minification calls=%d/%d, want 2/0", relevance.calls, minifier.calls)
 	}
 	if len(result.Context.Capsules) != 1 ||
 		result.Context.Capsules[0].Content != "I rotated the rover antenna toward Earth." ||
 		len(result.Context.Capsules[0].Sources) != 1 ||
 		result.Context.Capsules[0].Sources[0].CandidateID != "CTX_2" ||
-		result.ModelCalls != 1 {
+		result.ModelCalls != 2 {
 		t.Fatalf("result=%#v", result)
 	}
 	if err := result.Context.Validate(); err != nil {
@@ -337,7 +314,7 @@ func TestAnaphoricTurnUsesSelectedAuthorityVerbatimWhenItFits(t *testing.T) {
 	}
 }
 
-func TestContextRelevancePagesAcquiredAuthoritiesWithoutGlobalCandidateWall(t *testing.T) {
+func TestContextRelevanceRelatesEveryAcquiredAuthorityOnceWithoutGlobalCandidateWall(t *testing.T) {
 	optional := make([]assemblyline.ContextCandidateAuthority, assemblyline.MaxContextCandidateAuthorities+1)
 	for index := range optional {
 		optional[index] = candidate(
@@ -345,24 +322,28 @@ func TestContextRelevancePagesAcquiredAuthoritiesWithoutGlobalCandidateWall(t *t
 			fmt.Sprintf("Distinct exchange %d.", index+1),
 		)
 	}
-	relevance := &scriptedRelevanceStation{idsByCall: [][]string{{"CTX_1"}, {"CTX_17"}}}
+	relevance := &scriptedRelevanceStation{ids: []string{"CTX_1", "CTX_17"}}
 	result, err := Compile(t.Context(), contextRequest("Recall the two exchanges."),
 		&scriptedProvider{set: CandidateSet{Optional: optional}}, Stations{Relevance: relevance})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if relevance.calls != 2 || len(relevance.inputs) != 2 ||
-		len(relevance.inputs[0].CandidateAuthorities) != assemblyline.MaxContextCandidateAuthorities ||
-		len(relevance.inputs[1].CandidateAuthorities) != 1 {
-		t.Fatalf("paged relevance inputs=%#v", relevance.inputs)
+	if relevance.calls != len(optional) || len(relevance.inputs) != len(optional) {
+		t.Fatalf("per-candidate relevance inputs=%#v", relevance.inputs)
 	}
-	if result.ModelCalls != 2 || result.RelevanceCalls != 2 || result.MinificationCalls != 0 {
-		t.Fatalf("paged result=%#v", result)
+	for index, input := range relevance.inputs {
+		if input.Candidate.CandidateID != optional[index].CandidateID {
+			t.Fatalf("candidate %d input=%#v", index, input)
+		}
+	}
+	if result.ModelCalls != len(optional) || result.RelevanceCalls != len(optional) ||
+		result.MinificationCalls != 0 {
+		t.Fatalf("per-candidate result=%#v", result)
 	}
 	if len(result.Context.Capsules) != 1 || len(result.Context.Capsules[0].Sources) != 2 ||
 		result.Context.Capsules[0].Sources[0].CandidateID != "CTX_1" ||
 		result.Context.Capsules[0].Sources[1].CandidateID != "CTX_17" {
-		t.Fatalf("paged selection=%#v", result.Context)
+		t.Fatalf("per-candidate selection=%#v", result.Context)
 	}
 }
 
@@ -423,7 +404,7 @@ func TestProviderFailureAndInvalidSelectionFailWithoutRawContextFallback(t *test
 		candidate(t, "durable_memory", "CTX_1", "The launch code is seven blue lanterns."),
 	}}}
 	_, err = Compile(t.Context(), contextRequest("Recall the launch code."), provider, Stations{
-		Relevance:    &scriptedRelevanceStation{ids: []string{"CTX_99"}},
+		Relevance:    &scriptedRelevanceStation{ids: []string{"CTX_1"}, invalidHash: true},
 		Minification: &scriptedMinificationStation{text: "unreachable"},
 	})
 	if err == nil {

@@ -13,13 +13,17 @@ Charmander made individual model jobs reliable. Charmeleon makes those bounded j
 ```text
 conversation
     ↓
-delivery surface                         one semantic leaf
+context facts when needed                code-owned acquisition + bounded semantic leaves
     ↓
-product identity + task-local requirement fixed point one semantic leaf per call
+untrusted requirement inventory          exact absence or 1..code-owned maximum
+    ↓
+code-owned authorization-first sieve      one candidate relation per call
+    ↓ at least one accepted leaf
+product / surface / deployment semantics  only at each first consumer
     ↓
 one frozen task per accepted task-local requirement code-owned
     ↓
-stack, target tree, coverage + block graph code-owned
+stack, target tree, workload + block graph code-owned
     ↓
 static declarations + bounded source nodes code + source model(s)
     ↓
@@ -47,14 +51,20 @@ guidance instruction → one replacement node model(s)
 
 The runtime has deliberately unequal stations:
 
-1. **Semantic front door (models, one leaf at a time)** — returns one delivery surface, one product-context value, one requirement-coverage relation, or one requirement. No call emits an aggregate application contract, plan, workflow decision, or completion state.
-2. **Intent and workload compiler (code)** — validates each leaf, assembles the typed intent, and projects every accepted task-local runtime implementation requirement directly into one frozen task in source order. Global surface, technical/structural, test/build, and deployment constraints remain with their narrow owners. There is no workload-planning model.
-3. **Stack, tree, and graph compilers (code, with one narrow tree exception)** — select a registered stack, derive every mechanical target, parse the optional target-tree station's complete raw basename hierarchy, construct all paths, and compile exact block ownership and direct capabilities.
+1. **Semantic intake (models, one responsibility at a time)** — after code resolves needed context facts, one bounded requirement-inventory call returns exactly `NO_RUNTIME_REQUIREMENT_CANDIDATES` or between one and the code-owned maximum positive atomic runtime-candidate lines. Every positive candidate then receives only its independently necessary candidate-bound relations. No call emits an authoritative application contract, plan, workflow decision, or completion state.
+2. **Intent and workload compiler (code)** — parses and counts inventory lines mechanically; no semantic station pre-counts the inventory, and no pre-count receipt exists. The inventory is untrusted intake, not a completeness claim. Code owns its source-ordered queue; sends every positive candidate through authorization first; discards exact repeats, unrequested candidates, non-runtime candidates, and semantic duplicates; partitions only an authorized compound candidate; and projects each surviving task-local runtime outcome directly into one frozen task. Rejected candidates cannot block or reopen accepted state. Queue exhaustion freezes the current iteration without a completeness review. Optional rejected or speculative suggestions remain outside current authority.
+3. **Consumer semantics, stack, tree, and graph compilers** — only after at least one requirement survives does code resolve product identity, delivery surface, deployment semantics, or another semantic leaf at its first actual consumer. Code then selects a registered stack, derives every mechanical target, parses the optional target-tree station's complete raw basename hierarchy, constructs all paths, and compiles exact block ownership and direct capabilities.
 4. **Source transformer (model, only when required)** — returns exactly one parser-qualified declaration or source node with an immutable signature. It never sees a path, document, project, job, plan, or filesystem operation.
 5. **Stager and repair controller (code)** — stitch and format complete documents, run isolated verification, and map one exact compiler-proven diagnostic to one generated owner. One guidance call returns only an instruction; one executor call returns only the replacement node. A later pair requires a distinct diagnostic after a validated source transition.
 6. **Mutation, verification, and completion controllers (code)** — write only a verified staged program, emit reviewable diffs, verify exact workspace content, rerun fixed checks, and declare the outcome.
 
 The detailed contract lives in [internal/worker/RUNTIME.md](internal/worker/RUNTIME.md).
+
+Completion is iteration-scoped: Omnidex must produce and verify a functional result for
+the currently retained objective, not predict every feature the user may eventually
+want. Rejected or speculative candidates do not enter the workload. If they are retained
+as optional follow-up suggestions, they remain non-authoritative until a later explicit
+user turn sends them through the ordinary candidate sieve.
 
 ## Existing-repository path (development)
 
@@ -67,10 +77,15 @@ server-owned path:
    source spans as derived PostgreSQL facts.
 3. Typed semantic-excerpt, declaration, and incoming-reference queries construct a
    bounded evidence pack; the model never receives a path or repository tree.
-4. Repository requirement coverage and requirement extraction alternate as separate
-   one-leaf calls. Code retains each requirement, resolves one opaque change owner per
-   focused requirement from bounded evidence, and builds the source-snapshot-bound
-   change contract and ordered verification plan itself.
+4. One bounded raw call returns a source-ordered inventory of exact request clauses.
+   Code owns the candidate queue, removes exact repeats and overlapping source spans,
+   and asks one candidate-bound relation only whether that clause requires or directly
+   constrains a persisted workspace change. A separately authorized candidate is compared
+   pairwise with retained requirements only to discard a semantic duplicate; retained state
+   cannot be reopened. Queue exhaustion closes intake, never a model-authored completeness
+   result. Code then resolves one opaque
+   change owner per retained requirement from bounded evidence and builds the
+   source-snapshot-bound change contract and ordered verification plan itself.
 5. Before any fragment generation, the complete focused-plus-terminal-broad plan must
    pass in a disposable projection containing exactly the validated source-snapshot
    files. Git metadata, `.omni`, ignored files, and excluded paths are never mounted.
@@ -116,7 +131,7 @@ documented in [docs/CHARMELEON_CONTEXT_SYSTEM.md](docs/CHARMELEON_CONTEXT_SYSTEM
 - No rollback of valid file work because a later file fails.
 - No deletion unless the current instruction authorizes deletion.
 - No modification of protected instruction files.
-- One raw semantic leaf per classification, relation, label, coverage, or value question; code alone assembles typed state. Coding transforms return one raw AST declaration.
+- One bounded raw semantic result per inventory, classification, relation, selection, or value question; code alone assembles typed state. Coding transforms return one raw AST declaration.
 - One guidance/executor pair per exact source diagnostic; invalid or unchanged output stops loudly, and another pair requires a newly proven diagnostic after a validated transition.
 - Verification commands are selected from the accepted typed program, never inferred from prose or workspace guesses.
 - Direct, exact diagnostic feedback reaches the next worker immediately.
@@ -296,16 +311,17 @@ These ranges are deployment-planning estimates for one active inference stream:
 | Workload | Warm GPU planning range | Main variables |
 | --- | ---: | --- |
 | Short conversational turn | 5–30 s | Context selection, answer length, memory retrieval |
-| Simple database-RAG turn | 20–90 s | Relation count, schema-selection chunks, evidence rounds, answer length |
+| Simple database-RAG turn | 20–90 s | Relation count, schema-selection chunks, query-intent leaves, answer length |
 | Small bounded coding change | 5–30 min | Requirements, generated declarations, model swaps, compiler/test runs, repairs |
 | Multi-feature repository build | Tens of minutes to hours | Task count, dependency waves, corrections, project build/test cost |
 
 A simple database turn normally needs schema selection, typed query-intent
-construction, an evidence-gap decision, and final grounded synthesis. Schemas
-over 24 relations require additional bounded selection calls; ambiguous joins or
-missing evidence add more rounds. PostgreSQL execution itself is bounded and is
-usually not the dominant latency unless the application authority or database is
-remote or slow.
+construction, one code-owned bounded query execution, and final grounded synthesis.
+The validated execution evidence completes acquisition; it is not reopened by a
+post-query completeness or refinement model. Schemas over 24 relations require
+additional bounded selection calls, and more complex typed intents may require more
+intent-leaf calls. PostgreSQL execution itself is bounded and is usually not the
+dominant latency unless the application authority or database is remote or slow.
 
 CPU-only timing is intentionally not guessed. Run the same prewarm command on the
 candidate CPU host and substitute its reported decode rate into the formula. For
@@ -378,29 +394,45 @@ Upstream capacity references: the
 [Ollama concurrency and memory FAQ](https://docs.ollama.com/faq), and
 [Ollama GPU support matrix](https://docs.ollama.com/gpu).
 
-The surface station classifies only browser, command-line, or service delivery.
 Before intent interpretation, code hashes the immutable request and records the exact
-workspace state as a typed fact. A
-code-owned context-need fixed point alternates one raw coverage call with one raw
-question call only while another question remains; registered providers resolve each
-decoded question and formalize selected results into source-backed facts. The promoted
-fresh-workspace vertical resolves context mechanically and makes no context-need call.
-A separate raw station returns one product context. Code then alternates requirement
-coverage with one raw requirement call only while another requirement remains and
-assembles the typed intent itself. A valid leaf advances directly; an invalid semantic
-leaf fails at its owning station. There is no generic response-correction station,
-aggregate model response, or call merely to accept or review valid state.
-Product context is limited to product/domain identity and remains outside the model-visible
-requirement fixed point and each task-local source contract. Those boundaries receive the
-immutable request or one exact accepted requirement respectively, never a derived aggregate
-summary that can supply sibling requirements.
-The requirement fixed point retains only task-local runtime implementation obligations that
-become source tasks. Delivery surface, technical and structural format, generic tests/builds,
-and deployment are resolved or verified by their narrow code-owned owners from the immutable
-request and never become fake application features.
-Requirements are bound to the immutable request digest; exact substrings,
-quote intervals, source order, punctuation, disjointness, and overlap are not authority
-gates.
+workspace state as a typed fact. For an existing workspace, one bounded call proposes a
+repository-fact-question inventory. Code owns its queue, tests one candidate at a time,
+and resolves only a necessary distinct question through its registered provider. A fresh
+workspace needs no context-question call. Queue exhaustion closes context intake without
+a coverage or completeness claim.
+
+After context closure, exactly one bounded requirement-inventory call returns either
+`NO_RUNTIME_REQUIREMENT_CANDIDATES` or between one and the code-owned maximum positive,
+source-ordered atomic finished-software runtime-outcome candidates. Code parses and counts
+those lines mechanically. No semantic station pre-counts the inventory, and no pre-count
+receipt exists. The inventory is candidate generation, not authority or a completeness
+claim. At this boundary, a purpose-denoting product or category name may contribute only its
+literal core operation or governed result; the inventory splits independent outcomes and
+omits construction constraints, customary features, and speculative enhancements.
+
+Code owns the candidate queue. It closes exact repeats mechanically, authorizes each positive
+candidate against the immutable request before spending downstream inference on it,
+classifies only an authorized candidate, partitions only an authorized candidate that still
+proves mixed or multi-outcome, and compares one byte-different runtime candidate with one
+retained outcome at a time only to remove duplicates. A rejected, unrequested, non-runtime,
+malformed-after-bounded-correction, or duplicate candidate dies at that boundary and cannot
+open a later product-name generator. Accepted outcomes are never globally reviewed or
+reopened. Queue exhaustion, not a model-authored completion label, freezes the current typed
+intent for this iteration. An invalid station grammar or receipt still fails at its owning
+boundary; a valid negative candidate relation is an ordinary sieve result, not an error or
+retry trigger. Rejected or speculative candidates may be retained only as non-authoritative
+follow-up suggestions outside the current ledger, workload, verifier, and completion criteria.
+
+Only after at least one task-local requirement survives does code invoke product-context,
+delivery-surface, deployment, or other downstream semantics at the first consumer that needs
+that exact leaf. Product context remains limited to product/domain identity and outside each
+task-local source contract. Source boundaries receive one exact accepted requirement, never
+a derived aggregate summary that can supply sibling requirements. Delivery surface,
+technical and structural format, generic tests/builds, and deployment never become fake
+application features. A functional verified result satisfying the current accepted objective
+is a successful iteration; speculative enhancements require a later explicit user objective.
+Requirements are bound to the immutable request digest; exact substrings, quote intervals,
+source order, punctuation, disjointness, and overlap are not authority gates.
 
 For each accepted task-local runtime implementation requirement, code creates exactly one frozen task containing the
 code-owned task identity, requirement identity, and unchanged accepted requirement.
@@ -416,7 +448,7 @@ objective by receiving the exact immutable request, while selected technical con
 remains a separate code-owned projection. It returns the raw `ROOT` node grammar; code
 constructs and validates all normalized relative paths. The raw request stops at this
 structural boundary and is never forwarded to a source call. The
-selected compiler turns the accepted tree and coverage into bounded source-block
+selected compiler turns the accepted tree and frozen workload into bounded source-block
 responsibilities. Each source call returns one exact path-blind
 declaration or source node; code owns document construction, imports, formatting,
 stitching, isolated checks, and final verification.

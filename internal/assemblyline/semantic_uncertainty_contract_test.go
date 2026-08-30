@@ -63,60 +63,144 @@ func TestApplicationIntentSemanticUncertaintyVersionsAreExact(t *testing.T) {
 	t.Parallel()
 	for _, kind := range []WorkKind{
 		WorkApplicationProductContext,
-		WorkApplicationRequirementCoverage,
-		WorkApplicationRequirement,
+		WorkApplicationContextQuestionNecessity,
 	} {
 		current, err := SemanticUncertaintyContractForWorkKind(kind)
 		if err != nil {
 			t.Fatal(err)
 		}
-		wantCurrentVersion := ".v2"
-		if kind == WorkApplicationRequirement {
-			wantCurrentVersion = ".v3"
-		}
-		if !strings.HasSuffix(current.ID, wantCurrentVersion) {
+		if !strings.HasSuffix(current.ID, ".v2") {
 			t.Fatalf("current %s contract=%+v", kind, current)
 		}
-		if kind == WorkApplicationProductContext {
-			if !strings.Contains(current.ExactQuestion, "product or domain identity") ||
-				!strings.Contains(current.SingleResult, "excludes software requirements") {
-				t.Fatalf("current %s contract is not identity-only: %+v", kind, current)
-			}
-		} else {
-			if strings.Contains(current.RequiredInformation, "product context") {
-				t.Fatalf("current %s contract retains redundant product context: %+v", kind, current)
-			}
-			if !strings.Contains(current.ExactQuestion, "task-local runtime implementation requirement") {
-				t.Fatalf("current %s contract is not source-task-local: %+v", kind, current)
-			}
-			if kind == WorkApplicationRequirement &&
-				!strings.Contains(current.RequiredInformation, "excluded non-runtime candidates") {
-				t.Fatalf("current %s contract lacks excluded candidate authority: %+v", kind, current)
-			}
-			if kind == WorkApplicationRequirement &&
-				!strings.Contains(current.RequiredInformation, ApplicationRequirementRemains) {
-				t.Fatalf("current requirement contract lacks bound coverage authority: %+v", current)
-			}
+		if kind == WorkApplicationProductContext &&
+			(!strings.Contains(current.ExactQuestion, "product or domain identity") ||
+				!strings.Contains(current.SingleResult, "excludes software requirements")) {
+			t.Fatalf("current %s contract is not identity-only: %+v", kind, current)
+		}
+		if kind == WorkApplicationContextQuestionNecessity &&
+			(!strings.Contains(current.RequiredInformation, "accepted question text is excluded") ||
+				strings.Contains(current.ExactQuestion, "distinct")) {
+			t.Fatalf("current %s contract combines pairwise identity: %+v", kind, current)
+		}
+	}
+	for _, kind := range []WorkKind{
+		WorkApplicationContextQuestionInventory,
+		WorkApplicationRequirementCandidatePartition,
+	} {
+		current, err := SemanticUncertaintyContractForWorkKind(kind)
+		if err != nil || !strings.HasSuffix(current.ID, ".v3") {
+			t.Fatalf("current %s contract=%+v error=%v", kind, current, err)
+		}
+	}
+	current, err := SemanticUncertaintyContractForWorkKind(WorkApplicationRequirementInventory)
+	if err != nil || !strings.HasSuffix(current.ID, ".v10") ||
+		current.RequiredInformation != "Only the immutable user request, its validated application context, and the exact candidate-count and byte bounds." ||
+		!strings.Contains(current.SingleResult, "atomic runtime-outcome candidates") ||
+		!strings.Contains(current.DeterministicConsumer, "authorization-first candidate queue") {
+		t.Fatalf("current %s contract=%+v error=%v", WorkApplicationRequirementInventory, current, err)
+	}
+	for _, kind := range []WorkKind{
+		WorkApplicationRequirementCandidateAuthorization,
+	} {
+		current, err := SemanticUncertaintyContractForWorkKind(kind)
+		if err != nil || !strings.HasSuffix(current.ID, ".v7") ||
+			!strings.Contains(current.DeterministicLimitation, "direct-imperative grammatical normalization") ||
+			!strings.Contains(current.DeterministicLimitation, "construction-only constraints") ||
+			!strings.Contains(current.DeterministicConsumer, "unstated semantic detail") {
+			t.Fatalf("current %s contract=%+v error=%v", kind, current, err)
 		}
 	}
 }
 
-func TestRequirementRefinementSemanticUncertaintyContractsAreV1(
+func TestRepositoryRequirementSemanticUncertaintyVersionsAreExact(t *testing.T) {
+	t.Parallel()
+	current, err := SemanticUncertaintyContractForWorkKind(WorkRepositoryRequirementInventory)
+	if err != nil || !strings.HasSuffix(current.ID, ".v5") ||
+		current.RequiredInformation != "Only the immutable repository request." {
+		t.Fatalf("current %s contract=%+v error=%v", WorkRepositoryRequirementInventory, current, err)
+	}
+	for _, kind := range []WorkKind{
+		WorkRepositoryRequirementCandidateAuthorization,
+		WorkRepositoryRequirementCandidateRelation,
+	} {
+		current, err := SemanticUncertaintyContractForWorkKind(kind)
+		if err != nil || !strings.HasSuffix(current.ID, ".v3") {
+			t.Fatalf("current %s contract=%+v error=%v", kind, current, err)
+		}
+	}
+}
+
+func TestRequirementRefinementSemanticUncertaintyContractVersionsAreExact(
 	t *testing.T,
 ) {
 	t.Parallel()
 	for _, kind := range []WorkKind{
 		WorkApplicationRequirementCandidateCardinality,
-		WorkApplicationRequirementCandidateKind,
 		WorkApplicationRequirementCandidateOutcomeRelation,
-		WorkApplicationRequirementCandidateResultRelation,
-		WorkApplicationRequirementCandidateResultRelationGrounding,
 		WorkApplicationRequirementCandidateResultRelationCorrection,
-		WorkApplicationRequirementCandidateSplit,
-		WorkApplicationRequirementCandidateSplitCorrection,
 	} {
 		current, err := SemanticUncertaintyContractForWorkKind(kind)
 		if err != nil || !strings.HasSuffix(current.ID, ".v1") {
+			t.Fatalf("current %s contract=%+v error=%v", kind, current, err)
+		}
+	}
+	resultRelationContract, err := SemanticUncertaintyContractForWorkKind(
+		WorkApplicationRequirementCandidateResultRelation,
+	)
+	if err != nil || !strings.HasSuffix(resultRelationContract.ID, ".v3") ||
+		!strings.Contains(
+			resultRelationContract.DeterministicConsumer,
+			"code alone combines them",
+		) {
+		t.Fatalf(
+			"current %s contract=%+v error=%v",
+			WorkApplicationRequirementCandidateResultRelation,
+			resultRelationContract,
+			err,
+		)
+	}
+	current, err := SemanticUncertaintyContractForWorkKind(
+		WorkApplicationRequirementCandidateResultRelationGrounding,
+	)
+	if err != nil || !strings.HasSuffix(current.ID, ".v2") {
+		t.Fatalf(
+			"current %s contract=%+v error=%v",
+			WorkApplicationRequirementCandidateResultRelationGrounding,
+			current,
+			err,
+		)
+	}
+	kindContract, err := SemanticUncertaintyContractForWorkKind(
+		WorkApplicationRequirementCandidateKind,
+	)
+	if err != nil || !strings.HasSuffix(kindContract.ID, ".v3") ||
+		!strings.Contains(
+			kindContract.DeterministicConsumer,
+			"two independently bound runtime-content and non-runtime-content receipts",
+		) {
+		t.Fatalf(
+			"current %s contract=%+v error=%v",
+			WorkApplicationRequirementCandidateKind,
+			kindContract,
+			err,
+		)
+	}
+}
+
+func TestGroundedParagraphSemanticUncertaintyContractVersionsAreExact(
+	t *testing.T,
+) {
+	t.Parallel()
+	for _, kind := range []WorkKind{
+		WorkRoleplayGroundedResponseEvidenceRelation,
+		WorkRoleplayGroundedResponseParagraphAuthorization,
+		WorkGroundedAnswerParagraphEvidenceRelation,
+		WorkGroundedAnswerParagraphAuthorization,
+		WorkWebSynthesisEvidenceRelation,
+		WorkWebSynthesisParagraphAuthorization,
+	} {
+		current, err := SemanticUncertaintyContractForWorkKind(kind)
+		if err != nil || !strings.HasSuffix(current.ID, ".v2") {
 			t.Fatalf("current %s contract=%+v error=%v", kind, current, err)
 		}
 	}
@@ -220,7 +304,7 @@ func TestSemanticUncertaintyRegistryDigestIsStable(t *testing.T) {
 		_, _ = hash.Write([]byte{0})
 	}
 	got := hex.EncodeToString(hash.Sum(nil))
-	const want = "7d5475947d2b63d2a864b15fec659509a0225986f47fb85ab3a054d37b9cf231"
+	const want = "31778698438e981716e438380b3e57208b7fa19707f673217327c4b2973b8829"
 	if got != want {
 		t.Fatalf("semantic uncertainty registry digest changed: got %s want %s", got, want)
 	}

@@ -8,19 +8,6 @@ import (
 	"github.com/gryph/omnidex/internal/datasource"
 )
 
-func DecodeDatabaseQueryExistenceCoverageLeaf(
-	state DatabaseQueryIntentLeafState,
-	raw string,
-) (string, error) {
-	if err := state.validateReady(); err != nil {
-		return "", err
-	}
-	return decodeDatabaseQueryCollectionCoverage(
-		"database query existence coverage", raw, true,
-		len(state.Exists) == datasource.MaxIntentExistenceChecks,
-	)
-}
-
 func DecodeDatabaseQueryExistenceRelationLeaf(
 	input DatabaseQueryExistenceLeafInput,
 	raw string,
@@ -62,19 +49,6 @@ func DecodeDatabaseQueryExistenceNegatedLeaf(
 	default:
 		return false, fmt.Errorf("database query existence value %q is not registered", leaf)
 	}
-}
-
-func DecodeDatabaseQueryHavingCoverageLeaf(
-	state DatabaseQueryIntentLeafState,
-	raw string,
-) (string, error) {
-	if err := state.validateReady(); err != nil {
-		return "", err
-	}
-	return decodeDatabaseQueryCollectionCoverage(
-		"database query having coverage", raw, true,
-		len(state.Having) == datasource.MaxIntentGroups,
-	)
 }
 
 func DecodeDatabaseQueryHavingAggregateLeaf(
@@ -161,20 +135,6 @@ func DecodeDatabaseQueryHavingValueLeaf(
 		return datasource.IntentLiteral{}, err
 	}
 	return literal, nil
-}
-
-func DecodeDatabaseQueryOrderCoverageLeaf(
-	state DatabaseQueryIntentLeafState,
-	raw string,
-) (string, error) {
-	if err := state.validateReady(); err != nil {
-		return "", err
-	}
-	canComplete := state.Shape != datasource.ResultRanking || len(state.OrderBy) > 0
-	return decodeDatabaseQueryCollectionCoverage(
-		"database query order coverage", raw, canComplete,
-		len(state.OrderBy) == datasource.MaxIntentOrderTerms,
-	)
 }
 
 func DecodeDatabaseQueryOrderProjectionLeaf(

@@ -5,20 +5,27 @@ func databaseSemanticUncertaintyContract(
 ) (SemanticUncertaintyContract, bool) {
 	var contract SemanticUncertaintyContract
 	switch kind {
-	case WorkDatabaseSchemaSelectionCoverage:
+	case WorkDatabaseSchemaRelationInventory:
 		contract = semanticUncertaintyContract(kind,
-			"Does one not-yet-selected relation remain necessary for the exact evidence need?",
-			"Schema structure cannot establish semantic sufficiency for a free-form evidence need.",
-			"The exact evidence need, compact context, bounded relation summaries, retained relation IDs, and selection limit.",
-			"One registered schema-relation coverage value.",
-			"DecodeDatabaseSchemaSelectionCoverageLeaf validates the value before code continues or closes the bounded relation set.")
-	case WorkDatabaseSchemaRelationSelection:
+			"What bounded inventory of available relation responsibilities might be necessary for the exact database objective?",
+			"Natural-language database objectives and relation descriptors cannot be semantically aligned by syntax or schema structure alone.",
+			"The exact database objective, compact context, and bounded registered relation descriptors without their identifiers.",
+			"One bounded raw-line inventory of candidate relation responsibilities with no selection or completion metadata.",
+			"DecodeDatabaseSchemaRelationInventory binds the inventory to its authority; code alone owns the candidate queue and every subsequent disposition.")
+	case WorkDatabaseSchemaRelationNecessity:
 		contract = semanticUncertaintyContract(kind,
-			"Which not-yet-selected relation is most necessary for the exact evidence need?",
-			"Relation labels expose meaning that structural foreign-key analysis cannot rank semantically.",
-			"The exact evidence need, compact context, bounded relation summaries, and retained relation IDs.",
-			"One opaque database-relation ID.",
-			"DecodeDatabaseSchemaRelationSelectionLeaf validates the ID before code retains the corresponding relation authority.")
+			"Is this exact candidate relation responsibility necessary for the exact database objective?",
+			"Semantic necessity for a free-form database objective cannot be established by schema syntax or structural validation.",
+			"Only the exact database objective, compact context, and one exact candidate relation responsibility.",
+			"One candidate-bound necessary-or-not-necessary relation.",
+			"DecodeDatabaseSchemaRelationNecessityResult validates the relation before code skips the suggestion or opens its independent registered-relation resolution.")
+	case WorkDatabaseSchemaRelationResolution:
+		contract = semanticUncertaintyContract(kind,
+			"Which one registered relation supplies this exact necessary relation responsibility?",
+			"Relation descriptors expose semantic meaning that opaque IDs and structural validation cannot map to a free-form responsibility.",
+			"Only one exact necessary relation responsibility and the bounded registered relation IDs with their descriptors.",
+			"One opaque registered database-relation ID.",
+			"DecodeDatabaseSchemaRelationResolutionResult validates the ID before code skips a duplicate or retains the new selection; accepted selections are never reopened.")
 	case WorkDatabaseQueryFromRelation:
 		contract = semanticUncertaintyContract(kind,
 			"Which projected relation should anchor the query for the exact evidence need?",
@@ -33,13 +40,27 @@ func databaseSemanticUncertaintyContract(
 			"The exact evidence need, compact context, accepted anchor relation, and registered result shapes.",
 			"One registered database-result shape.",
 			"DecodeDatabaseQueryShapeLeaf validates the shape before code opens its compatible query leaves.")
-	case WorkDatabaseQueryProjectionCoverage:
+	case WorkDatabaseQueryPurposeInventory:
 		contract = semanticUncertaintyContract(kind,
-			"Is another projection required to answer the exact evidence need?",
-			"Projection sufficiency is a semantic coverage judgment not derivable from query validity.",
-			"The exact evidence need, compact context, accepted query shape, and retained projections.",
-			"One registered projection-coverage relation.",
-			"DecodeDatabaseQueryProjectionCoverageLeaf validates the relation before code continues or closes the projection set.")
+			"What bounded source-ordered candidate-purpose inventory is expressed for this one focused query collection?",
+			"Natural-language evidence needs do not expose semantically separable collection purposes through syntax or schema structure alone.",
+			"The exact evidence need, compact context, accepted query anchor and shape, and only the code-owned collection focus.",
+			"One bounded raw-line inventory of untrusted candidate purposes with no parameter or completion metadata.",
+			"DecodeDatabaseQueryPurposeInventory binds the inventory to its authority; code alone owns exact filtering, source order, and queue exhaustion.")
+	case WorkDatabaseQueryPurposeNecessity:
+		contract = semanticUncertaintyContract(kind,
+			"Is this exact candidate purpose necessary and authorized for the focused query collection?",
+			"Semantic entailment from a free-form evidence need cannot be proven by query validation or text shape.",
+			"Only the exact evidence need, compact context, code-owned collection focus, and one inventory-bound candidate purpose.",
+			"One candidate-bound necessary-or-not-necessary relation.",
+			"DecodeDatabaseQueryPurposeNecessityResult validates the relation before code skips the candidate or retains it for duplicate comparison.")
+	case WorkDatabaseQueryPurposeRelation:
+		contract = semanticUncertaintyContract(kind,
+			"Do one candidate purpose and one already accepted purpose express the same responsibility within this query collection?",
+			"Paraphrased semantic equivalence cannot be established by exact byte comparison.",
+			"Only the focused collection name, one candidate purpose, and one accepted purpose.",
+			"One pairwise same-or-distinct purpose relation.",
+			"DecodeDatabaseQueryPurposeRelationResult validates the relation before code skips a semantic duplicate or appends one distinct accepted purpose; accepted purposes are never reopened.")
 	case WorkDatabaseQueryProjectionAggregate:
 		contract = semanticUncertaintyContract(kind,
 			"Which registered aggregate operation applies to the next projection?",
@@ -61,13 +82,6 @@ func databaseSemanticUncertaintyContract(
 			"The exact evidence need, compact context, focused temporal field, and registered bucket values.",
 			"One registered projection time-bucket value.",
 			"DecodeDatabaseQueryProjectionTimeBucketLeaf validates the value before code binds temporal projection granularity.")
-	case WorkDatabaseQueryFilterCoverage:
-		contract = semanticUncertaintyContract(kind,
-			"Is another filter required in the focused query scope?",
-			"Query validity cannot establish semantic filter sufficiency for the evidence need.",
-			"The exact evidence need, compact context, focused filter scope, and retained filters.",
-			"One registered filter-coverage relation.",
-			"DecodeDatabaseQueryFilterCoverageLeaf validates the relation before code continues or closes the focused filter set.")
 	case WorkDatabaseQueryFilterField:
 		contract = semanticUncertaintyContract(kind,
 			"Which projected field is constrained by the next focused filter?",
@@ -82,13 +96,6 @@ func databaseSemanticUncertaintyContract(
 			"The exact evidence need, compact context, focused field semantics, and compatible operators.",
 			"One registered filter-operator value.",
 			"DecodeDatabaseQueryFilterOperatorLeaf validates the value before code binds the focused comparison.")
-	case WorkDatabaseQueryFilterValueCoverage:
-		contract = semanticUncertaintyContract(kind,
-			"Does another distinct literal remain required by the focused set-membership filter?",
-			"Semantic set membership cannot be proven complete from literal syntax or count.",
-			"The exact evidence need, focused field, accepted operator, and retained literal values.",
-			"One registered filter-value coverage relation.",
-			"DecodeDatabaseQueryFilterValueCoverageLeaf validates the relation before code continues or closes the bounded literal set.")
 	case WorkDatabaseQueryFilterValue:
 		contract = semanticUncertaintyContract(kind,
 			"What exact literal value is required next by the focused filter?",
@@ -96,13 +103,6 @@ func databaseSemanticUncertaintyContract(
 			"The exact evidence need, focused field, accepted operator, and retained literal values.",
 			"One exact filter-literal value.",
 			"DecodeDatabaseQueryFilterValueLeaf parses the literal before code appends it to the focused filter.")
-	case WorkDatabaseQueryWindowCoverage:
-		contract = semanticUncertaintyContract(kind,
-			"Is another relative temporal window required to answer the exact evidence need?",
-			"Temporal-window sufficiency cannot be derived from available temporal fields.",
-			"The exact evidence need, compact context, accepted query, and retained temporal windows.",
-			"One registered temporal-window coverage relation.",
-			"DecodeDatabaseQueryWindowCoverageLeaf validates the relation before code continues or closes the window set.")
 	case WorkDatabaseQueryWindowField:
 		contract = semanticUncertaintyContract(kind,
 			"Which temporal field is constrained by the next relative window?",
@@ -124,13 +124,6 @@ func databaseSemanticUncertaintyContract(
 			"The exact evidence need, focused temporal field, and accepted relative-time unit.",
 			"One bounded positive window amount.",
 			"DecodeDatabaseQueryWindowAmountLeaf parses the amount before code binds the relative window.")
-	case WorkDatabaseQueryExistenceCoverage:
-		contract = semanticUncertaintyContract(kind,
-			"Is another existence predicate required to answer the exact evidence need?",
-			"Relationship reachability cannot establish semantic predicate sufficiency.",
-			"The exact evidence need, compact context, accepted query, and retained existence predicates.",
-			"One registered existence-predicate coverage relation.",
-			"DecodeDatabaseQueryExistenceCoverageLeaf validates the relation before code continues or closes the predicate set.")
 	case WorkDatabaseQueryExistenceRelation:
 		contract = semanticUncertaintyContract(kind,
 			"Which projected relation has its row existence tested by the next predicate?",
@@ -145,13 +138,6 @@ func databaseSemanticUncertaintyContract(
 			"The exact evidence need, compact context, and focused relation semantics.",
 			"One registered existence-polarity value.",
 			"DecodeDatabaseQueryExistenceNegatedLeaf validates the value before code binds predicate polarity.")
-	case WorkDatabaseQueryHavingCoverage:
-		contract = semanticUncertaintyContract(kind,
-			"Is another aggregate having predicate required to answer the exact evidence need?",
-			"Aggregate query validity cannot establish semantic having-predicate sufficiency.",
-			"The exact evidence need, compact context, accepted projections, and retained having predicates.",
-			"One registered having-predicate coverage relation.",
-			"DecodeDatabaseQueryHavingCoverageLeaf validates the relation before code continues or closes the having set.")
 	case WorkDatabaseQueryHavingAggregate:
 		contract = semanticUncertaintyContract(kind,
 			"Which registered aggregate is measured by the next having predicate?",
@@ -180,13 +166,6 @@ func databaseSemanticUncertaintyContract(
 			"The exact evidence need, focused aggregate measure, and accepted comparison operator.",
 			"One exact numeric having value.",
 			"DecodeDatabaseQueryHavingValueLeaf parses the number before code binds the predicate threshold.")
-	case WorkDatabaseQueryOrderCoverage:
-		contract = semanticUncertaintyContract(kind,
-			"Is another ordering term required to answer the exact evidence need?",
-			"Projection structure cannot establish semantic ordering sufficiency.",
-			"The exact evidence need, compact context, accepted projections, and retained ordering terms.",
-			"One registered ordering-term coverage relation.",
-			"DecodeDatabaseQueryOrderCoverageLeaf validates the relation before code continues or closes the ordering set.")
 	case WorkDatabaseQueryOrderProjection:
 		contract = semanticUncertaintyContract(kind,
 			"Which accepted projection is ordered by the next ordering term?",
@@ -201,13 +180,6 @@ func databaseSemanticUncertaintyContract(
 			"The exact evidence need and focused accepted projection.",
 			"One registered ordering-direction value.",
 			"DecodeDatabaseQueryOrderDirectionLeaf validates the value before code binds the ordering term.")
-	case WorkDatabaseEvidenceGap:
-		contract = semanticUncertaintyContract(kind,
-			"What single required piece of information remains unestablished by the database evidence?",
-			"Structural query evidence cannot prove semantic satisfaction of every natural-language claim.",
-			"The exact requirement, compact objective context, and bounded database evidence text.",
-			"One optional missing-information leaf.",
-			"DecodeDatabaseEvidenceGapDecision validates the leaf before code either records the gap or accepts evidence sufficiency.")
 	case WorkDatabaseJoinPathSelection:
 		contract = semanticUncertaintyContract(kind,
 			"Which projected foreign-key path matches the exact evidence need?",

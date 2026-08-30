@@ -6,11 +6,11 @@ import (
 )
 
 const (
-	ApplicationContextSchemaV1          = "omnidex.application-context.v1"
-	MaxApplicationContextFacts          = 12
-	MaxApplicationContextFactBytes      = 1024
-	MaxApplicationEvidenceNeeds         = 3
-	maxApplicationEvidenceQuestionBytes = 512
+	ApplicationContextSchemaV1              = "omnidex.application-context.v1"
+	MaxApplicationContextFacts              = 12
+	MaxApplicationContextFactBytes          = 1024
+	MaxApplicationContextQuestionCandidates = 3
+	maxApplicationEvidenceQuestionBytes     = 512
 )
 
 type ApplicationWorkspaceState string
@@ -51,16 +51,6 @@ type ApplicationContext struct {
 	WorkspaceState ApplicationWorkspaceState `json:"workspace_state"`
 	RequestSHA256  string                    `json:"request_sha256"`
 	Facts          []ApplicationContextFact  `json:"facts"`
-}
-
-type ApplicationContextNeedInput struct {
-	UserRequest string             `json:"user_request"`
-	Context     ApplicationContext `json:"context"`
-}
-
-type ApplicationContextNeedDecision struct {
-	Schema    string   `json:"schema"`
-	Questions []string `json:"questions"`
 }
 
 func validateApplicationRequest(label, request string) error {
@@ -142,57 +132,6 @@ func (context ApplicationContext) Validate() error {
 		return fmt.Errorf("application context first fact must be the code-owned workspace state")
 	}
 	return nil
-}
-
-func (input ApplicationContextNeedInput) validate() error {
-	if err := validateApplicationRequest("application context needs", input.UserRequest); err != nil {
-		return err
-	}
-	if err := ValidatePathFreeModelContext("application context need request", input.UserRequest); err != nil {
-		return err
-	}
-	if err := input.Context.Validate(); err != nil {
-		return err
-	}
-	if input.Context.RequestSHA256 != ExactObjectiveContextSHA(input.UserRequest) {
-		return fmt.Errorf("application context needs request does not match context authority")
-	}
-	return nil
-}
-
-func (decision ApplicationContextNeedDecision) Validate() error {
-	if decision.Schema != ApplicationContextNeedSchemaV1 {
-		return fmt.Errorf("application context need schema must be %q", ApplicationContextNeedSchemaV1)
-	}
-	if decision.Questions == nil {
-		return fmt.Errorf("application context questions must be an array")
-	}
-	if len(decision.Questions) > MaxApplicationEvidenceNeeds {
-		return fmt.Errorf("application context questions exceed %d", MaxApplicationEvidenceNeeds)
-	}
-	seen := make(map[string]struct{}, len(decision.Questions))
-	for index, question := range decision.Questions {
-		if question == "" || question != strings.TrimSpace(question) ||
-			len(question) > maxApplicationEvidenceQuestionBytes {
-			return fmt.Errorf("application context question %d is invalid", index)
-		}
-		if err := ValidatePathFreeModelContext("application context question", question); err != nil {
-			return fmt.Errorf("application context question %d: %w", index, err)
-		}
-		if _, duplicate := seen[question]; duplicate {
-			return fmt.Errorf("application context question %d is duplicated", index)
-		}
-		seen[question] = struct{}{}
-	}
-	return nil
-}
-
-func (decision ApplicationContextNeedDecision) ValidatePathFree(
-	provenance ArtifactIdentityProvenance,
-) error {
-	return ValidatePathFreeModelContextWithProvenance(
-		"application context need decision", provenance, decision.Questions...,
-	)
 }
 
 func validateApplicationWorkspaceState(state ApplicationWorkspaceState) error {

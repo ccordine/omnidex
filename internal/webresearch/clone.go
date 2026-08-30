@@ -77,6 +77,7 @@ func cloneResult(value Result) Result {
 	value.Evidence = cloneEvidence(value.Evidence)
 	value.Projected = cloneProjection(value.Projected)
 	value.Artifact = cloneArtifact(value.Artifact)
+	value.CallLedger = value.CallLedger.Clone()
 	return value
 }
 

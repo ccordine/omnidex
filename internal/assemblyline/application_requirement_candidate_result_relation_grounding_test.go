@@ -25,7 +25,7 @@ func TestApplicationRequirementCandidateResultRelationGroundingIsOneBoundQuestio
 		candidate,
 		ApplicationRequirementMissingResultRelation,
 		"do the immutable request and established facts entail exactly one determining relation",
-		"Do not propose a rule",
+		"Return exactly one raw registered value",
 	} {
 		if !strings.Contains(prompt, required) {
 			t.Fatalf("grounding prompt omitted %q:\n%s", required, prompt)

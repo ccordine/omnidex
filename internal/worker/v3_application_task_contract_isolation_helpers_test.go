@@ -91,7 +91,7 @@ func assertIsolatedTaskContracts(
 			sibling := specification.Requirements[1-index].SourceQuote
 			if strings.Count(block.Contract, own) != 1 ||
 				strings.Count(block.Contract, specification.ProductQuote) != 1 ||
-				strings.Count(block.Contract, "Authoritative product context:") != 1 ||
+				strings.Count(block.Contract, "Product context:") != 1 ||
 				strings.Contains(block.Contract, sibling) {
 				t.Fatalf("block %s contract is not task-local:\n%s", block.ID, block.Contract)
 			}

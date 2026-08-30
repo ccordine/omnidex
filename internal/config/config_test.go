@@ -111,7 +111,6 @@ func TestLoadExactConversationAndWebStationModels(t *testing.T) {
 	t.Setenv("OMNI_GROUNDED_ANSWER_MODEL", "grounded")
 	t.Setenv("OMNI_DATABASE_SCHEMA_SELECTION_MODEL", "database-schema")
 	t.Setenv("OMNI_DATABASE_QUERY_INTENT_MODEL", "database-intent")
-	t.Setenv("OMNI_DATABASE_EVIDENCE_GAP_MODEL", "database-gap")
 	t.Setenv("OMNI_DATABASE_JOIN_PATH_SELECTION_MODEL", "database-join")
 	t.Setenv("OMNI_WEB_RELEVANCE_MODEL", "relevance")
 	t.Setenv("OMNI_WEB_GROUNDED_SYNTHESIS_MODEL", "synthesis")
@@ -121,15 +120,14 @@ func TestLoadExactConversationAndWebStationModels(t *testing.T) {
 		t.Fatal(err)
 	}
 	wants := map[station.ID]string{
-		station.ConversationObjectiveKind: "kind",
-		station.ConversationResponse:      "conversation",
-		station.GroundedAnswer:            "grounded",
+		station.ConversationObjectiveKind:  "kind",
+		station.ConversationResponse:       "conversation",
+		station.GroundedAnswer:             "grounded",
 		station.DatabaseSchemaSelection:   "database-schema",
 		station.DatabaseQueryIntent:       "database-intent",
-		station.DatabaseEvidenceGap:       "database-gap",
 		station.DatabaseJoinPathSelection: "database-join",
-		station.WebRelevance:              "relevance",
-		station.WebGroundedSynthesis:      "synthesis",
+		station.WebRelevance:               "relevance",
+		station.WebGroundedSynthesis:       "synthesis",
 	}
 	for id, want := range wants {
 		if got := cfg.StationModels[id]; got != want {
@@ -147,6 +145,7 @@ func TestLoadRejectsRemovedRequirementModelEnvironmentRoutes(t *testing.T) {
 		"OMNI_CODING_REQUIREMENT_SPLIT_MODEL",
 		"OLLAMA_MODEL_SPECIALIST_CODING_REQUIREMENT_SPLIT",
 		"OMNI_CODING_SKILL_PROCEDURE_MODEL",
+		"OMNI_DATABASE_EVIDENCE_REFINEMENT_MODEL",
 	} {
 		t.Run(key, func(t *testing.T) {
 			t.Setenv("DATABASE_URL", "")

@@ -41,20 +41,6 @@ func DecodeDatabaseQueryShapeLeaf(
 	return shape, nil
 }
 
-func DecodeDatabaseQueryProjectionCoverageLeaf(
-	state DatabaseQueryIntentLeafState,
-	raw string,
-) (string, error) {
-	if err := state.validateReady(); err != nil {
-		return "", err
-	}
-	return decodeDatabaseQueryCollectionCoverage(
-		"database query projection coverage", raw,
-		DatabaseQueryProjectionsHaveRequiredShape(state),
-		len(state.Projections) == datasource.MaxIntentProjections,
-	)
-}
-
 func DecodeDatabaseQueryProjectionAggregateLeaf(
 	input DatabaseQueryProjectionLeafInput,
 	raw string,

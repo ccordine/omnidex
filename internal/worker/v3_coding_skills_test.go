@@ -77,6 +77,58 @@ func TestCodingProgramRejectsPendingLearnedSkillBinding(t *testing.T) {
 	}
 }
 
+func TestCodingProgramAcceptsExactValidatedLearnedSkillProcedure(t *testing.T) {
+	t.Parallel()
+
+	requirements := []assemblyline.Requirement{{ID: "requirement_001", SourceQuote: "filter visible records"}}
+	version := validDirectCodingSkillVersion(t, specialists.SkillStatusActive)
+	err := validateDirectCodingSkillBindings(requirements, map[string]directCodingSkillBinding{
+		requirements[0].ID: {
+			RequirementID: requirements[0].ID,
+			Procedure:     version.Spec.Instructions,
+			Version:       version,
+		},
+	})
+	if err != nil {
+		t.Fatalf("exact validated procedure was rejected: %v", err)
+	}
+}
+
+func TestCodingProgramRejectsProcedureDifferentFromImmutableSkillVersion(t *testing.T) {
+	t.Parallel()
+
+	requirements := []assemblyline.Requirement{{ID: "requirement_001", SourceQuote: "filter visible records"}}
+	version := validDirectCodingSkillVersion(t, specialists.SkillStatusActive)
+	err := validateDirectCodingSkillBindings(requirements, map[string]directCodingSkillBinding{
+		requirements[0].ID: {
+			RequirementID: requirements[0].ID,
+			Procedure:     version.Spec.Instructions + " ",
+			Version:       version,
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), "does not match its immutable version") {
+		t.Fatalf("mismatched procedure error=%v, want immutable-version failure", err)
+	}
+}
+
+func TestCodingProgramRejectsBindingWithInvalidModelVisibleProcedure(t *testing.T) {
+	t.Parallel()
+
+	requirements := []assemblyline.Requirement{{ID: "requirement_001", SourceQuote: "filter visible records"}}
+	version := validDirectCodingSkillVersion(t, specialists.SkillStatusActive)
+	version.Spec.Instructions = "Send the result to the downstream worker."
+	err := validateDirectCodingSkillBindings(requirements, map[string]directCodingSkillBinding{
+		requirements[0].ID: {
+			RequirementID: requirements[0].ID,
+			Procedure:     version.Spec.Instructions,
+			Version:       version,
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), "version is invalid") {
+		t.Fatalf("invalid model-visible procedure error=%v, want version validation failure", err)
+	}
+}
+
 func TestCodingContractDoesNotRequireLearnedSkillEnrichment(t *testing.T) {
 	t.Parallel()
 

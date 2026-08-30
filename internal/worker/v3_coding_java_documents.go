@@ -28,12 +28,15 @@ func genericJavaCommandLineDocuments(
 		if !exists {
 			return nil, fmt.Errorf("Java command-line workload omits requirement %s", requirement.ID)
 		}
-		behavior, err := compileDirectCodingApplicationTaskBehavior(context, capabilities[requirement.ID])
+		requirementBehavior, err := compileDirectCodingApplicationTaskBehavior(
+			context, capabilities[requirement.ID],
+		)
 		if err != nil {
 			return nil, err
 		}
+		implementationBehavior := requirementBehavior
 		if skill, exists := skills[requirement.ID]; exists {
-			behavior += "\nValidated procedure: " + skill.Procedure
+			implementationBehavior += "\nValidated procedure: " + skill.Procedure
 		}
 		pair, err := directCodingTaskSinglePair(coverage, context.Task.TaskID)
 		if err != nil {
@@ -61,7 +64,7 @@ func genericJavaCommandLineDocuments(
 		)
 		implementationBlocks = append(implementationBlocks, assemblyline.SourceBlock{
 			ID: featureID, Signature: featureSignature,
-			Contract:     javaCommandLineFeatureContract(behavior),
+			Contract:     javaCommandLineFeatureContract(implementationBehavior),
 			API:          javaCommandLineFeatureAPI(featureClass, featureSignature),
 			DependsOn:    dependencies,
 			Capabilities: append([]string(nil), dependencies...),
@@ -84,7 +87,7 @@ func genericJavaCommandLineDocuments(
 			Blocks: []assemblyline.SourceBlock{{
 				ID: verificationID, Signature: verificationSignature,
 				Contract: javaCommandLineAcceptanceContract(
-					behavior, featureClass+"."+featureMethod,
+					requirementBehavior, featureClass+"."+featureMethod,
 				),
 				API:          verificationSignature,
 				DependsOn:    []string{javaRuntimeAcceptanceAssertBlock, featureID},

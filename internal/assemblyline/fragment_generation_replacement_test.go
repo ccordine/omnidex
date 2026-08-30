@@ -68,14 +68,15 @@ func TestFragmentGenerationReplacementPreservesUnrelatedSourceResponsibilities(t
 			if err != nil {
 				t.Fatal(err)
 			}
-			if !strings.HasPrefix(prompt, originPrompt+"\n\nEXACT_OUTPUT_LIMIT_EVIDENCE:\n") ||
-				!strings.Contains(prompt, "reached the provider output boundary") ||
+			if prompt != originPrompt ||
+				strings.Contains(prompt, "provider output boundary") ||
+				strings.Contains(prompt, "accepted declaration") ||
 				strings.Contains(prompt, "partial-provider-source") ||
 				strings.Contains(string(replacement.Payload), "partial-provider-source") ||
 				strings.Contains(string(replacement.Payload), "origin_work_id") ||
 				strings.Contains(string(replacement.Payload), "output_tokens") ||
 				strings.Contains(string(replacement.Payload), "content_bytes") {
-				t.Fatalf("replacement envelope=%q payload=%s", prompt, replacement.Payload)
+				t.Fatalf("replacement envelope exposed transport history: prompt=%q payload=%s", prompt, replacement.Payload)
 			}
 			framing, err := PortableResponseFramingForJob(replacement)
 			if err != nil || framing != PortableResponseFramingNaturalMultiline {

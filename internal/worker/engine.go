@@ -25,10 +25,10 @@ type ModelRouting struct {
 
 type stepCompleteFunc func(context.Context, queue.CompleteStepCommand) error
 
-type roleplayPortableResultReuseFunc func(
+type objectivePortableResultReuseFunc func(
 	context.Context,
-	queue.RoleplayPortableResultReuseRequest,
-) (queue.RoleplayPortableResultReuse, bool, error)
+	queue.ObjectivePortableResultReuseRequest,
+) (queue.ObjectivePortableResultReuse, bool, error)
 
 type nativeV3StepRunner func(context.Context, *model.ClaimedStep, map[string]string, string) error
 
@@ -82,7 +82,7 @@ type Service struct {
 	workspaceHostRoot      string
 	deployment             DeploymentSettings
 	completeStep           stepCompleteFunc
-	reuseRoleplayResult    roleplayPortableResultReuseFunc
+	reuseObjectiveResult   objectivePortableResultReuseFunc
 	nativeV3Runner         nativeV3StepRunner
 	logger                 *log.Logger
 	onJobFinished          func(jobID int64)
@@ -142,7 +142,7 @@ func New(
 		workspaceHostRoot:      opts.Workspace.HostRoot,
 		deployment:             opts.Deployment,
 		completeStep:           completeStep,
-		reuseRoleplayResult:    repo.ReuseRoleplayPortableResult,
+		reuseObjectiveResult:   repo.ReuseObjectivePortableResult,
 		logger:                 opts.Logger,
 		onJobFinished:          opts.OnJobFinished,
 		onJobOutput:            opts.OnJobOutput,

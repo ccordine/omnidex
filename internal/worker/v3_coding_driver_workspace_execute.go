@@ -14,7 +14,16 @@ func (s *directCodingSession) ApplyAndVerify(
 	prepared *directCodingPreparedMutation,
 ) (verification directCodingVerification, begin directCodingCompletionTaskDisposition, resultErr error) {
 	if s == nil || s.runtime == nil || s.runtime.svc == nil || s.runtime.svc.repo == nil ||
-		prepared == nil || prepared.stage == nil || prepared.mutationCount == 0 {
+		prepared == nil {
+		return directCodingVerification{}, "", fmt.Errorf("apply direct-coding workspace mutation requires one prepared transaction")
+	}
+	if prepared.HasExactStateAuthority() {
+		if prepared.stage != nil || prepared.mutationCount != 0 {
+			return directCodingVerification{}, "", fmt.Errorf("verified no-delta authority cannot contain a workspace mutation")
+		}
+		return s.verifyPreparedExactWorkspace(prepared)
+	}
+	if prepared.stage == nil || prepared.mutationCount == 0 {
 		return directCodingVerification{}, "", fmt.Errorf("apply direct-coding workspace mutation requires one prepared transaction")
 	}
 	defer func() {
@@ -135,21 +144,33 @@ func requireDirectCodingWorkspacePost(
 func (s *directCodingSession) completePreparedTreeCognition(
 	prepared *directCodingPreparedMutation,
 ) error {
+	return s.completePreparedTreeCognitionAtState(
+		prepared, prepared.command.Plan.ExpectedStateID,
+	)
+}
+
+func (s *directCodingSession) completePreparedTreeCognitionAtState(
+	prepared *directCodingPreparedMutation,
+	workspaceStateID string,
+) error {
+	if prepared == nil || !validRepositoryVerificationOpaqueID(workspaceStateID, "workspace_state_") {
+		return fmt.Errorf("direct-coding tree completion requires one exact workspace state")
+	}
 	for _, path := range prepared.assembly.Directories {
-		if err := s.completePreparedTreeLeaf(path, true, prepared.command.Plan.ExpectedStateID); err != nil {
+		if err := s.completePreparedTreeLeaf(path, true, workspaceStateID); err != nil {
 			return err
 		}
 	}
 	for _, file := range prepared.assembly.Files {
 		evidence := "file=" + file.Path + " sha256=" + directCodingDigest(file.Content) +
-			" workspace_state=" + prepared.command.Plan.ExpectedStateID
+			" workspace_state=" + workspaceStateID
 		if err := s.completePreparedTreeLeaf(file.Path, false, evidence); err != nil {
 			return err
 		}
 	}
 	for _, path := range prepared.assembly.DeletePaths {
 		evidence := "file=" + path + " absent=true workspace_state=" +
-			prepared.command.Plan.ExpectedStateID
+			workspaceStateID
 		if err := s.completePreparedTreeLeaf(path, false, evidence); err != nil {
 			return err
 		}
@@ -225,7 +246,6 @@ func (s *directCodingSession) recordPreparedWorkspaceMutation(
 	content := make(map[string]string, len(prepared.assembly.Files))
 	for _, file := range prepared.assembly.Files {
 		content[file.Path] = file.Content
-		s.completion.WrittenSource[file.Path] = file.Content
 	}
 	for _, transition := range prepared.command.Plan.Files {
 		operation := workspaceFileReplace
@@ -234,7 +254,6 @@ func (s *directCodingSession) recordPreparedWorkspaceMutation(
 			operation = workspaceFileCreate
 		case !transition.Expected.Present:
 			operation = workspaceFileDelete
-			delete(s.completion.WrittenSource, transition.Path)
 		case content[transition.Path] == "":
 			operation = workspaceFileReplace
 		}

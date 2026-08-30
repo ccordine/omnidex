@@ -139,9 +139,10 @@ func desiredRepositoryMutationSummary(
 	before repositoryindex.Result,
 	after repositoryindex.Result,
 ) (string, error) {
-	if callProof.TotalModelCalls < 1 || callProof.SemanticGapCalls < 1 ||
-		callProof.ModelSelectedMutationOperations != 0 || callProof.ModelVisibleTargetPaths != 0 {
-		return "", fmt.Errorf("desired repository counters contain forbidden model authority")
+	if err := validateDesiredRepositoryCallProofCounters(callProof); err != nil {
+		return "", fmt.Errorf(
+			"desired repository counters contain forbidden model authority: %w", err,
+		)
 	}
 	mutationOperations, err := desiredRepositoryMutationOperations(compiled)
 	if err != nil {
@@ -177,6 +178,17 @@ func desiredRepositoryMutationSummary(
 		strings.Join(created, ","), strings.Join(deleted, ","), strings.Join(labels, ";"),
 		executionProof.VerificationCommands.Total(), executionProof.InventoryDelta, after.Snapshot.ID,
 	), nil
+}
+
+func validateDesiredRepositoryCallProofCounters(callProof desiredRepositoryCallProof) error {
+	if callProof.TotalModelCalls < 0 || callProof.SemanticGapCalls < 0 ||
+		callProof.DeclarationGenerationCalls < 0 || callProof.DeclarationCorrectionCalls < 0 ||
+		callProof.TotalModelCalls != callProof.SemanticGapCalls+
+			callProof.DeclarationGenerationCalls+callProof.DeclarationCorrectionCalls ||
+		callProof.ModelSelectedMutationOperations != 0 || callProof.ModelVisibleTargetPaths != 0 {
+		return fmt.Errorf("desired repository call proof counters are inconsistent")
+	}
+	return nil
 }
 
 func desiredRepositoryCompiledPaths(compiled desiredRepositoryCompileResult) ([]string, error) {

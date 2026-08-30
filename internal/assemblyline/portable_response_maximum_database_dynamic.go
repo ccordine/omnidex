@@ -34,21 +34,6 @@ func databaseFilterOperatorMaximum(job PortableJob) (int, error) {
 	return maximumStringBytes(operators...), nil
 }
 
-func databaseFilterValueCoverageMaximum(job PortableJob) (int, error) {
-	var input DatabaseQueryFilterLeafInput
-	if err := decodePortablePayload(job.Payload, &input); err != nil {
-		return 0, err
-	}
-	return maximumAcceptedCandidateBytes(
-		"database query filter value coverage",
-		[]string{DatabaseQueryValueRemains, DatabaseQueryNoUncoveredValue},
-		func(candidate string) error {
-			_, err := DecodeDatabaseQueryFilterValueCoverageLeaf(input, candidate)
-			return err
-		},
-	)
-}
-
 func databaseFilterValueMaximum(job PortableJob) (int, error) {
 	var input DatabaseQueryFilterLeafInput
 	if err := decodePortablePayload(job.Payload, &input); err != nil {

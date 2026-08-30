@@ -44,9 +44,6 @@ func Apply(base Routing, cfg Config) Routing {
 	if value := cfg.Get("database_query_intent_model"); value != "" {
 		out.Stations[station.DatabaseQueryIntent] = value
 	}
-	if value := cfg.Get("database_evidence_gap_model"); value != "" {
-		out.Stations[station.DatabaseEvidenceGap] = value
-	}
 	if value := cfg.Get("database_join_path_selection_model"); value != "" {
 		out.Stations[station.DatabaseJoinPathSelection] = value
 	}
@@ -75,12 +72,12 @@ func Apply(base Routing, cfg Config) Routing {
 	if value := cfg.Get("coding_workload_model"); value != "" {
 		out.Stations[station.CodingTargetTree] = value
 		out.Stations[station.CodingServiceStateLifetime] = value
-		out.Stations[station.CodingApplicationStateFieldCoverage] = value
-		out.Stations[station.CodingApplicationStateFieldPurpose] = value
+		out.Stations[station.CodingApplicationStateFieldPurposeInventory] = value
 		out.Stations[station.CodingApplicationStateFieldKind] = value
-		out.Stations[station.CodingApplicationRecordFieldCoverage] = value
-		out.Stations[station.CodingApplicationRecordFieldPurpose] = value
+		out.Stations[station.CodingApplicationRecordFieldPurposeInventory] = value
 		out.Stations[station.CodingApplicationRecordFieldKind] = value
+		out.Stations[station.CodingApplicationServiceStatePurposeNecessity] = value
+		out.Stations[station.CodingApplicationServiceStatePurposeRelation] = value
 		out.Stations[station.CodingServiceEndpointRequirement] = value
 		out.Stations[station.CodingServiceEndpointExposure] = value
 		out.Stations[station.CodingServiceEndpointMethod] = value
@@ -98,7 +95,7 @@ func Apply(base Routing, cfg Config) Routing {
 	}
 	if value := cfg.Get("coding_capability_relation_model"); value != "" {
 		out.Stations[station.CodingCapabilityRelation] = value
-		out.Stations[station.CodingRuntimeCapabilitySelection] = value
+		out.Stations[station.CodingRuntimeCapabilityNecessity] = value
 	}
 	if value := cfg.Get("coding_skill_selection_model"); value != "" {
 		out.Stations[station.CodingSkillSelection] = value

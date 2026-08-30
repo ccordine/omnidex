@@ -16,10 +16,10 @@ func TestRoleplayProductionBoundaryProviderReturnsOnlyRawStationLeaves(t *testin
 	}{
 		{
 			name: "context relevance",
-			prompt: "CONTEXT_RELEVANCE_AUTHORITY:\n" +
-				`{"candidates":[{"candidate_id":"CTX_3"}],"accepted_candidate_ids":[]}`,
-			response: "CTX_3",
-			kind:     assemblyline.WorkContextRelevanceSelection,
+			prompt: "CONTEXT RELEVANCE RELATION AUTHORITY:\n" +
+				`{"exact_instruction":"Continue.","candidate_content":"The bridge is raised."}`,
+			response: assemblyline.ContextCandidateDirectlyRelevant,
+			kind:     assemblyline.WorkContextRelevanceRelation,
 		},
 		{
 			name: "context minification", prompt: "CONTEXT_MINIFICATION_JSON:\n{}",
@@ -34,23 +34,25 @@ func TestRoleplayProductionBoundaryProviderReturnsOnlyRawStationLeaves(t *testin
 			response: roleplayBoundaryAction, kind: assemblyline.WorkRoleplayOngoingAction,
 		},
 		{
-			name: "canon fact remains",
-			prompt: "Answer one semantic coverage relation: does the exact current contribution\n" +
-				"ACCEPTED CURRENT-CONTRIBUTION FACTS:\n(none)",
-			response: assemblyline.RoleplayCanonFactRemains,
-			kind:     assemblyline.WorkRoleplayCanonFactCoverage,
+			name: "canon candidate inventory",
+			prompt: "Return one bounded source-ordered inventory of candidate durable fictional facts\n" +
+				"ROLEPLAY CANON CANDIDATE INVENTORY AUTHORITY:\n",
+			response: roleplayBoundaryFact,
+			kind:     assemblyline.WorkRoleplayCanonFactInventory,
 		},
 		{
-			name:     "canon fact",
-			prompt:   "Return exactly one durable fictional fact established by the exact current contribution",
-			response: roleplayBoundaryFact, kind: assemblyline.WorkRoleplayCanonFact,
+			name: "canon candidate authorization",
+			prompt: "Answer one semantic entailment question: is the exact candidate a durable fictional fact\n" +
+				"EXACT CANDIDATE FACT:\n" + roleplayBoundaryFact,
+			response: assemblyline.RoleplayCanonFactEstablished,
+			kind:     assemblyline.WorkRoleplayCanonFactCandidateAuthorization, terminal: true,
 		},
 		{
-			name: "canon facts complete",
-			prompt: "Answer one semantic coverage relation: does the exact current contribution\n" +
-				"ACCEPTED CURRENT-CONTRIBUTION FACT 1:\n" + roleplayBoundaryFact,
-			response: assemblyline.RoleplayNoUncoveredCanonFact,
-			kind:     assemblyline.WorkRoleplayCanonFactCoverage, terminal: true,
+			name: "canon candidate relation",
+			prompt: "Answer one pairwise semantic relation: do the candidate fact and the already accepted fact\n" +
+				"CANDIDATE FACT:\nA.\nALREADY ACCEPTED FACT:\nB.",
+			response: assemblyline.RoleplayCanonFactsDistinct,
+			kind:     assemblyline.WorkRoleplayCanonFactCandidateRelation,
 		},
 	}
 	for _, test := range tests {

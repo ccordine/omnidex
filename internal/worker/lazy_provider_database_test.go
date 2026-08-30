@@ -134,14 +134,12 @@ func TestPostgresExactContractRejectionOccursAfterPersistedGap(t *testing.T) {
 }
 
 func lazyProviderRepositoryRelevanceJob() (assemblyline.PortableJob, error) {
-	return assemblyline.NewRepositoryEvidenceRelevanceLeafJob(
-		assemblyline.RepositoryEvidenceRelevanceLeafInput{
+	return assemblyline.NewRepositoryEvidenceRelevanceRelationJob(
+		assemblyline.RepositoryEvidenceRelevanceRelationInput{
 			ExactRequirement: "Which declaration owns the registered behavior?",
-			Candidates: []assemblyline.RepositoryEvidenceCandidate{{
+			Candidate: assemblyline.RepositoryEvidenceCandidate{
 				EvidenceID: "R01", Text: "RegisteredOwner owns the behavior.",
-			}},
-			SelectedEvidenceIDs: []string{},
-			MaxSelections:       1,
+			},
 		},
 	)
 }

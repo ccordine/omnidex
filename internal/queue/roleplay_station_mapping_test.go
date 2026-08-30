@@ -9,8 +9,9 @@ import (
 
 func TestRoleplayCanonExtractionHasOneExactStationOwner(t *testing.T) {
 	for _, kind := range []assemblyline.WorkKind{
-		assemblyline.WorkRoleplayCanonFactCoverage,
-		assemblyline.WorkRoleplayCanonFact,
+		assemblyline.WorkRoleplayCanonFactInventory,
+		assemblyline.WorkRoleplayCanonFactCandidateAuthorization,
+		assemblyline.WorkRoleplayCanonFactCandidateRelation,
 	} {
 		got, err := stationForPortableWorkKind(kind)
 		if err != nil {

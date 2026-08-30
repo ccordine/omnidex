@@ -40,19 +40,19 @@ func genericPHPServiceDocuments(
 		if !exists {
 			return nil, fmt.Errorf("PHP HTTP workload omits requirement %s", binding.RequirementID)
 		}
-		behavior, err := compileDirectCodingApplicationTaskBehavior(
+		requirementBehavior, err := compileDirectCodingApplicationTaskBehavior(
 			context, capabilities[binding.RequirementID],
 		)
 		if err != nil {
 			return nil, err
 		}
-		if skill, exists := skills[binding.RequirementID]; exists {
-			behavior += "\nValidated procedure: " + skill.Procedure
-		}
 		if binding.HasEndpoint {
-			behavior += "\n" + phpServiceEndpointInputContract(binding.Endpoint)
+			requirementBehavior += "\n" + phpServiceEndpointInputContract(binding.Endpoint)
 		}
-		featureBehavior := behavior
+		implementationBehavior := requirementBehavior
+		if skill, exists := skills[binding.RequirementID]; exists {
+			implementationBehavior += "\nValidated procedure: " + skill.Procedure
+		}
 		supportID, supportSource, supportAPI, err := phpServiceCapabilityProjection(
 			binding, capabilities[binding.RequirementID], byRequirement,
 		)
@@ -94,20 +94,13 @@ func genericPHPServiceDocuments(
 			))
 			dependencies = append(dependencies, binding.StateBlockID)
 			capabilityDependencies = append(capabilityDependencies, binding.StateBlockID)
-			if writable {
-				featureBehavior += "\nCross-request state for the focused behavior is authoritative through " +
-					binding.StateClassName + "; load and persist only values admitted by its exact interface."
-			} else {
-				featureBehavior += "\nRead the directly related cross-request state only through " +
-					binding.StateClassName + "; the focused behavior has no durable mutation authority."
-			}
 		}
 		featureSignature := fmt.Sprintf(
 			"function %s(TaskInput $input, array $dependencies): TaskResult", binding.FeatureName,
 		)
 		blocks = append(blocks, assemblyline.SourceBlock{
 			ID: binding.FeatureBlockID, Signature: featureSignature,
-			Contract: phpServiceFeatureContract(featureBehavior), API: featureSignature,
+			Contract: phpServiceFeatureContract(implementationBehavior), API: featureSignature,
 			DependsOn: dependencies, Capabilities: capabilityDependencies,
 			TaskID: binding.TaskID, Role: assemblyline.SourceBlockTaskImplementation,
 		})
@@ -128,7 +121,7 @@ func genericPHPServiceDocuments(
 			blocks = append(blocks, assemblyline.SourceBlock{
 				ID: binding.RendererBlockID, Signature: rendererSignature,
 				Contract: phpServiceHTMLRepresentationContract(
-					behavior, phpServiceRendererRouteContract(routes),
+					requirementBehavior, phpServiceRendererRouteContract(routes),
 				), API: rendererSignature,
 				DependsOn:    rendererDependencies,
 				Capabilities: append([]string(nil), rendererDependencies...),
@@ -159,7 +152,7 @@ func genericPHPServiceDocuments(
 				},
 				{
 					ID: binding.AcceptanceID, Signature: verificationSignature,
-					Contract: phpServiceAcceptanceContract(behavior, binding, capabilities[binding.RequirementID], byRequirement),
+					Contract: phpServiceAcceptanceContract(requirementBehavior, binding, capabilities[binding.RequirementID], byRequirement),
 					API:      verificationSignature, DependsOn: acceptanceDependencies,
 					Capabilities: append([]string(nil), acceptanceDependencies...),
 					TaskID:       binding.TaskID, Role: assemblyline.SourceBlockTaskVerification,
@@ -203,14 +196,14 @@ func genericPHPServiceDocuments(
 
 func phpServiceEndpointInputContract(contract assemblyline.ApplicationServiceEndpointContract) string {
 	_ = contract
-	return "Typed input originates from one code-validated endpoint contract; derive only the endpoint-independent TaskResult content from that typed input."
+	return "Derive only the endpoint-independent TaskResult content from the supplied typed input."
 }
 
 func phpServiceFeatureContract(behavior string) string {
 	return strings.Join([]string{
 		behavior,
 		"Return one TaskResult derived only from the typed TaskInput and declared direct dependency TaskResult values.",
-		"Use TaskResult::success for observable output/state or TaskResult::failure for an explicit failure.",
+		"Use TaskResult::success for observable output or state, or TaskResult::failure for an explicit failure.",
 		"Do not declare helper functions, classes, imports, placeholders, or TODO behavior.",
 	}, "\n")
 }

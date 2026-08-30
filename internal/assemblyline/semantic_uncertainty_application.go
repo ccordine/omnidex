@@ -5,20 +5,27 @@ func applicationSemanticUncertaintyContract(
 ) (SemanticUncertaintyContract, bool) {
 	var contract SemanticUncertaintyContract
 	switch kind {
-	case WorkApplicationContextNeedCoverage:
+	case WorkApplicationContextQuestionInventory:
+		contract = semanticUncertaintyContractV3(kind,
+			"What bounded source-ordered inventory of candidate repository-fact questions, if any, may be needed to interpret the immutable request under the established context?",
+			"Potential semantic dependencies between unconstrained request language and repository facts cannot be enumerated from repository syntax alone.",
+			"The immutable request, established application facts, and exact candidate count and byte bounds.",
+			"One bounded raw-line repository-fact-question inventory or the registered semantic absence.",
+			"DecodeApplicationContextQuestionInventory parses and binds the inventory before code alone owns exact deduplication, the candidate queue, authorization, evidence resolution, accepted context, and exhaustion.")
+	case WorkApplicationContextQuestionNecessity:
+		contract = semanticUncertaintyContractV2(kind,
+			"Is one exact inventory candidate a necessary, still-unresolved repository-fact question under the immutable request and current established context?",
+			"Necessity and unresolvedness of a natural-language repository-fact dependency cannot be established by byte comparison or repository syntax.",
+			"The immutable request, current established facts, and one exact inventory candidate; accepted question text is excluded.",
+			"One registered necessary-unresolved or not-necessary/already-resolved relation.",
+			"DecodeApplicationContextQuestionNecessityResult validates the candidate-bound relation before code discards a negative candidate immediately or admits a positive candidate to pairwise duplicate checks and one registered repository-evidence resolution.")
+	case WorkApplicationContextQuestionRelation:
 		contract = semanticUncertaintyContract(kind,
-			"Does one necessary repository-fact question remain uncovered by the retained questions?",
-			"Semantic coverage of free-form questions cannot be established by structural validation.",
-			"The immutable request, established application context, and retained missing-fact questions.",
-			"One registered context-need coverage relation.",
-			"DecodeApplicationContextNeedCoverageLeaf validates the relation before code continues or closes the bounded fixed point.")
-	case WorkApplicationContextNeedQuestion:
-		contract = semanticUncertaintyContract(kind,
-			"What single necessary repository-fact question remains uncovered?",
-			"The missing semantic fact required to interpret free-form authority cannot be derived from repository structure alone.",
-			"The immutable request, established application context, and retained missing-fact questions.",
-			"One necessary missing-fact question.",
-			"DecodeApplicationContextNeedQuestionLeaf validates the question before code appends it to the bounded retained set.")
+			"Do one exact queued repository-fact question and one exact accepted question ask for the same repository fact?",
+			"Semantic identity between byte-different natural-language questions cannot be established by byte comparison or repository syntax.",
+			"Exactly one queued candidate question and one immutable accepted question; no request, facts, accepted set, or queue state.",
+			"One registered pair-bound same-fact or distinct-facts relation.",
+			"DecodeApplicationContextQuestionRelationResult binds the pair before code discards only the duplicate candidate or compares the next accepted question; accepted state is never reopened.")
 	case WorkApplicationProductContext:
 		contract = semanticUncertaintyContractV2(kind,
 			"What concise product or domain identity is explicitly established by the immutable software request and established facts, excluding its requirements?",
@@ -26,20 +33,13 @@ func applicationSemanticUncertaintyContract(
 			"The immutable user request and established application facts needed to identify only the product, domain, audience, setting, or purpose.",
 			"One concise product-or-domain identity phrase that excludes software requirements.",
 			"DecodeApplicationProductContextLeaf validates the leaf before code binds it as accepted application authority.")
-	case WorkApplicationRequirementCoverage:
-		contract = semanticUncertaintyContractV2(kind,
-			"Does one task-local runtime implementation requirement remain uncovered by the retained requirements?",
-			"Semantic equivalence and whether free-form behavior requires task-local application source cannot be computed by byte or syntax comparison.",
-			"The immutable request, established facts, and retained requirement statements.",
-			"One registered task-local application-requirement coverage relation.",
-			"DecodeApplicationRequirementCoverageLeaf validates the relation before code continues or closes the bounded fixed point.")
-	case WorkApplicationRequirement:
-		contract = semanticUncertaintyContractV3(kind,
-			"What is the earliest task-local runtime implementation requirement not covered by the retained requirements?",
-			"Faithful extraction of one source-owning runtime obligation from unconstrained human phrasing cannot be performed by a parser.",
-			"The immutable request, established facts, accepted requirement statements, excluded non-runtime candidates, and the exact code-established REQUIREMENT_REMAINS coverage receipt bound to that authority.",
-			"One task-local runtime implementation-requirement text leaf.",
-			"DecodeApplicationRequirementLeaf validates the leaf before code appends it to the bounded retained set.")
+	case WorkApplicationRequirementInventory:
+		contract = semanticUncertaintyContractV10(kind,
+			"What bounded source-ordered inventory of atomic finished-software runtime-outcome candidates is grounded by the immutable request and established facts?",
+			"Atomic runtime-outcome wording and the literal core operation carried by natural-language product names cannot be produced exactly by a parser.",
+			"Only the immutable user request, its validated application context, and the exact candidate-count and byte bounds.",
+			"One bounded raw-line inventory of untrusted atomic runtime-outcome candidates or the permitted semantic absence.",
+			"DecodeApplicationRequirementInventory parses and binds the inventory before code alone owns the authorization-first candidate queue, local discards, partitioning, duplicate removal, accepted leaves, and exhaustion.")
 	case WorkApplicationRequirementCandidateCardinality:
 		contract = semanticUncertaintyContract(kind,
 			"How many independently testable runtime outcomes does the exact requirement candidate contain?",
@@ -48,33 +48,40 @@ func applicationSemanticUncertaintyContract(
 			"One registered requirement-candidate cardinality relation.",
 			"DecodeApplicationRequirementCandidateCardinalityResult validates the relation before code appends the candidate or opens bounded splitting.")
 	case WorkApplicationRequirementCandidateKind:
-		contract = semanticUncertaintyContract(kind,
-			"Does the exact requirement candidate contain only task-local runtime-outcome content or express a non-runtime constraint?",
-			"Whether natural-language prose requires application source is a semantic distinction that byte and syntax validation cannot establish.",
-			"One exact requirement candidate and the registered task-local-or-non-runtime vocabulary.",
-			"One registered requirement-candidate kind relation.",
-			"DecodeApplicationRequirementCandidateKindResult validates the candidate-bound relation before code retains the runtime candidate or records the non-runtime candidate as excluded.")
+		contract = semanticUncertaintyContractV3(kind,
+			"Does the exact requirement candidate contain the code-selected content dimension?",
+			"Whether natural-language prose directly states runtime behavior or contains non-runtime constraints cannot be established by byte or syntax validation.",
+			"One exact requirement candidate, one code-selected registered content dimension, and the registered present-or-absent vocabulary.",
+			"One candidate-and-dimension-bound content-presence relation.",
+			"DecodeApplicationRequirementCandidateContentPresenceResult validates the exact presence receipt; code alone combines exactly the two independently bound runtime-content and non-runtime-content receipts into the candidate kind.")
+	case WorkApplicationRequirementCandidateAuthorization:
+		contract = semanticUncertaintyContractV7(kind,
+			"Is the complete semantic content of this exact unclassified candidate entailed by the immutable current request?",
+			"Semantic entailment, including direct-imperative grammatical normalization, purpose-name core meaning, and construction-only constraints, cannot be established by syntax or byte comparison.",
+			"The immutable request, established application facts, and one exact unclassified inventory or partition candidate.",
+			"One request-and-candidate-bound entailed-or-not-entailed relation.",
+			"DecodeApplicationRequirementCandidateAuthorizationResult binds the relation to request authority; code alone discards a candidate containing any unstated semantic detail immediately or permits only that candidate to enter downstream classification.")
 	case WorkApplicationRequirementCandidateOutcomeRelation:
 		contract = semanticUncertaintyContract(kind,
 			"Do the exact current and accepted one-outcome runtime requirements express the same independently testable outcome or distinct outcomes?",
 			"Semantic outcome equivalence between byte-different natural-language statements cannot be established by syntax or byte comparison.",
 			"One exact current candidate, one exact accepted requirement, and the registered same-or-distinct outcome vocabulary.",
 			"One registered pair-bound runtime-outcome relation.",
-			"DecodeApplicationRequirementCandidateOutcomeRelationResult validates both statement hashes before code records a zero delta or continues candidate validation.")
+			"DecodeApplicationRequirementCandidateOutcomeRelationResult validates both statement hashes before code discards the new duplicate or continues candidate validation; accepted state is never reopened.")
 	case WorkApplicationRequirementCandidateResultRelation:
-		contract = semanticUncertaintyContract(kind,
-			"Does the exact one-outcome runtime requirement need no derived result, state its determining result relation explicitly, or leave that relation underdetermined?",
-			"Whether natural-language outcome semantics provide an independently computable result oracle cannot be established by syntax or byte validation.",
-			"One exact requirement candidate, its code-bound TASK_LOCAL_RUNTIME_OUTCOME and ONE_RUNTIME_OUTCOME receipts, and the registered result-relation vocabulary.",
-			"One registered candidate-bound result-relation value.",
-			"DecodeApplicationRequirementCandidateResultRelationResult validates the relation before code retains the candidate or opens one exact application-authority grounding question.")
+		contract = semanticUncertaintyContractV3(kind,
+			"Does the exact one-outcome runtime requirement contain the code-selected result dimension?",
+			"Whether natural-language outcome semantics assert a derived value, and whether that value has an independently computable determining relation, cannot be established by syntax or byte validation.",
+			"One exact requirement candidate, its TASK_LOCAL_RUNTIME_OUTCOME and ONE_RUNTIME_OUTCOME receipts, one code-selected result dimension, and for determining-relation presence only the positive derived-value receipt.",
+			"One candidate-dimension-bound present-or-absent relation.",
+			"DecodeApplicationRequirementCandidateResultPresenceResult validates each binary receipt; code alone combines them into NO_DERIVED_RESULT, EXPLICIT_DERIVED_RESULT_RELATION, or MISSING_DERIVED_RESULT_RELATION before retaining or grounding the candidate.")
 	case WorkApplicationRequirementCandidateResultRelationGrounding:
-		contract = semanticUncertaintyContract(kind,
+		contract = semanticUncertaintyContractV2(kind,
 			"Do the immutable request and established application facts entail exactly one determining relation for the exact candidate outcome whose derived-result relation is missing?",
 			"A candidate-only missing-relation receipt cannot establish whether natural-language request and verified context authority uniquely supply the omitted semantic rule.",
 			"The immutable request, validated application context, exact current candidate, and its code-bound MISSING_DERIVED_RESULT_RELATION receipt.",
 			"One registered request-context-and-candidate-bound entailment relation.",
-			"DecodeApplicationRequirementCandidateResultRelationGroundingResult validates the receipt before code fails loudly or opens one exact one-leaf correction.")
+			"DecodeApplicationRequirementCandidateResultRelationGroundingResult validates the receipt before code discards only that underdetermined candidate or opens one exact one-leaf correction.")
 	case WorkApplicationRequirementCandidateResultRelationCorrection:
 		contract = semanticUncertaintyContract(kind,
 			"What complete replacement corrects the exact one-outcome requirement whose derived-result relation is underdetermined?",
@@ -82,20 +89,13 @@ func applicationSemanticUncertaintyContract(
 			"The immutable request, validated application context, exact current candidate, code-bound MISSING_DERIVED_RESULT_RELATION defect, and positive request-context-and-candidate-bound grounding receipt.",
 			"One complete byte-different one-outcome runtime requirement with an explicit determining relation.",
 			"DecodeApplicationRequirementCandidateResultRelationCorrectionLeaf validates the replacement before code reruns ordinary kind, cardinality, and result-relation validation.")
-	case WorkApplicationRequirementCandidateSplit:
-		contract = semanticUncertaintyContract(kind,
-			"What is the earliest single runtime outcome contained in the exact multi-outcome requirement candidate?",
-			"The earliest semantic outcome inside compound natural-language prose cannot be extracted by a parser.",
-			"One exact requirement candidate and its code-bound MULTIPLE_RUNTIME_OUTCOMES relation.",
-			"One single-outcome requirement text leaf.",
-			"DecodeApplicationRequirementCandidateSplitLeaf validates a changed leaf before code repeats the bounded cardinality check.")
-	case WorkApplicationRequirementCandidateSplitCorrection:
-		contract = semanticUncertaintyContract(kind,
-			"What complete replacement corrects the exact byte-identical multi-outcome split candidate?",
-			"Selecting the earliest semantic outcome inside the preserved defective prose cannot be performed by byte comparison.",
-			"The exact current candidate, its code-bound MULTIPLE_RUNTIME_OUTCOMES relation, and the exact byte-identity defect.",
-			"One complete byte-different single-outcome requirement text leaf.",
-			"DecodeApplicationRequirementCandidateSplitCorrectionLeaf validates the replacement before code repeats ordinary cardinality validation.")
+	case WorkApplicationRequirementCandidatePartition:
+		contract = semanticUncertaintyContractV3(kind,
+			"What complete source-ordered proper refinement is contained in this exact compound candidate?",
+			"Lossless semantic partitioning of mixed or multi-outcome natural-language prose cannot be performed by syntax or byte operations.",
+			"One exact compound candidate and exactly one code-bound mixed-kind or multi-outcome receipt.",
+			"One bounded raw-line proper refinement containing every child meaning exactly once and no classification or control metadata.",
+			"DecodeApplicationRequirementCandidatePartition binds every child to its parent receipt before code replaces that parent with a code-owned child queue.")
 	case WorkApplicationProjectStackConstraint:
 		contract = semanticUncertaintyContractV2(kind,
 			"Which registered technical format and packaging shape, if any, is explicitly established by the immutable software request?",
@@ -124,20 +124,13 @@ func applicationSemanticUncertaintyContract(
 			"The accepted product context and one exact service requirement.",
 			"One registered service-state lifetime value.",
 			"DecodeApplicationServiceStateLifetimeResult validates the value before code derives state authority.")
-	case WorkApplicationStateFieldCoverage:
-		contract = semanticUncertaintyContract(kind,
-			"Does one necessary durable root-state value remain uncovered by the retained values?",
-			"Minimal semantic state coverage cannot be decided from structural field validation.",
-			"The directly related behavior authority and retained root-state purposes.",
-			"One registered root-state coverage relation.",
-			"DecodeApplicationStateFieldCoverageLeaf validates the relation before code continues or closes the bounded field set.")
-	case WorkApplicationStateFieldPurpose:
-		contract = semanticUncertaintyContract(kind,
-			"What single necessary durable root-state responsibility remains uncovered?",
-			"A required state responsibility must be inferred from behavior meaning rather than data syntax.",
-			"The directly related behavior authority and retained root-state purposes.",
-			"One durable root-state purpose sentence.",
-			"DecodeApplicationStateFieldPurposeLeaf validates the purpose before code appends it to the state interface.")
+	case WorkApplicationStateFieldPurposeInventory:
+		contract = semanticUncertaintyContractV3(kind,
+			"What bounded candidate inventory of durable root-state responsibilities might be necessary for the directly related accepted behavior authority?",
+			"The possible state responsibilities implied by natural-language behavior cannot be enumerated by structural validation.",
+			"Only the directly related accepted behavior authority.",
+			"One bounded raw-line inventory of candidate root-state purposes with no classifications, field authority, or control metadata.",
+			"DecodeApplicationStateFieldPurposeInventory binds the inventory to its authority; code alone owns the candidate queue and screens every purpose independently before retention.")
 	case WorkApplicationStateFieldKind:
 		contract = semanticUncertaintyContract(kind,
 			"Which registered data kind fulfills the focused durable root-state purpose?",
@@ -145,20 +138,13 @@ func applicationSemanticUncertaintyContract(
 			"The directly related behavior authority and focused root-state purpose.",
 			"One registered root-state data kind.",
 			"DecodeApplicationStateFieldKindLeaf validates the kind before code binds it to the focused field.")
-	case WorkApplicationRecordFieldCoverage:
-		contract = semanticUncertaintyContract(kind,
-			"Does one necessary scalar record member remain uncovered by the retained members?",
-			"Minimal semantic member coverage cannot be decided from record structure alone.",
-			"The behavior authority, focused record-list purpose, and retained member purposes.",
-			"One registered record-member coverage relation.",
-			"DecodeApplicationRecordFieldCoverageLeaf validates the relation before code continues or closes the bounded member set.")
-	case WorkApplicationRecordFieldPurpose:
-		contract = semanticUncertaintyContract(kind,
-			"What single necessary scalar record-member responsibility remains uncovered?",
-			"A required member responsibility must be inferred from record behavior meaning.",
-			"The behavior authority, focused record-list purpose, and retained member purposes.",
-			"One scalar record-member purpose sentence.",
-			"DecodeApplicationRecordFieldPurposeLeaf validates the purpose before code appends it to the record interface.")
+	case WorkApplicationRecordFieldPurposeInventory:
+		contract = semanticUncertaintyContractV3(kind,
+			"What bounded candidate inventory of scalar member responsibilities might be necessary within the focused durable record-list value?",
+			"The possible member responsibilities implied by natural-language behavior and the parent purpose cannot be enumerated by structural validation.",
+			"Only the directly related accepted behavior authority and focused record-list purpose.",
+			"One bounded raw-line inventory of candidate scalar-member purposes with no classifications, field authority, or control metadata.",
+			"DecodeApplicationRecordFieldPurposeInventory binds the inventory to its authority; code alone owns the candidate queue and screens every purpose independently before retention.")
 	case WorkApplicationRecordFieldKind:
 		contract = semanticUncertaintyContract(kind,
 			"Which registered scalar data kind fulfills the focused record-member purpose?",
@@ -166,11 +152,25 @@ func applicationSemanticUncertaintyContract(
 			"The behavior authority, parent record purpose, and focused member purpose.",
 			"One registered scalar record-member kind.",
 			"DecodeApplicationRecordFieldKindLeaf validates the kind before code binds it to the focused member.")
+	case WorkApplicationServiceStatePurposeNecessity:
+		contract = semanticUncertaintyContractV3(kind,
+			"Does the directly related accepted behavior authority require this exact candidate state purpose?",
+			"Semantic necessity of a natural-language state responsibility cannot be established by type or syntax validation.",
+			"Only the directly related accepted behavior authority, the focused record-list purpose when applicable, and one exact candidate purpose.",
+			"One candidate-bound necessary-or-not-necessary relation.",
+			"DecodeApplicationServiceStatePurposeNecessityResult binds the relation to its exact authority; code alone skips an unauthorized suggestion or continues deterministic candidate screening.")
+	case WorkApplicationServiceStatePurposeRelation:
+		contract = semanticUncertaintyContract(kind,
+			"Do one exact candidate state purpose and one byte-different accepted purpose express the same durable responsibility or distinct responsibilities?",
+			"Semantic equivalence between byte-different natural-language purposes cannot be established by syntax or byte comparison.",
+			"Only the root-or-record scope, one exact candidate purpose, and one exact accepted purpose.",
+			"One pair-bound same-or-distinct purpose relation.",
+			"DecodeApplicationServiceStatePurposeRelationResult validates the pair-bound relation before code skips a duplicate or continues; accepted state is never reopened.")
 	case WorkApplicationServiceEndpointRequirement:
 		contract = semanticUncertaintyContract(kind,
 			"Does the exact service requirement need a direct HTTP request-response interaction?",
 			"Direct endpoint intent is not mechanically implied by a behavior description.",
-			"The accepted product context and one exact service requirement.",
+			"The accepted product context, one exact service requirement, and the code-proven fact that another accepted behavior directly consumes its result.",
 			"One registered endpoint-requirement value.",
 			"DecodeApplicationServiceEndpointRequirementResult validates the value before code decides whether endpoint leaves exist.")
 	case WorkApplicationServiceEndpointExposure:

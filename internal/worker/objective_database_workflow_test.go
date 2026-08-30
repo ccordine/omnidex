@@ -16,11 +16,8 @@ import (
 )
 
 type scriptedObjectiveDatabaseStations struct {
-	t             *testing.T
-	fieldID       string
-	intentCalls   int
-	gapCalls      int
-	missingByCall []string
+	t           *testing.T
+	intentCalls int
 }
 
 type databaseTestKindStation struct {
@@ -87,27 +84,9 @@ func (station *scriptedObjectiveDatabaseStations) BuildIntent(
 	}, objectiveStationReceipt{Calls: 1}, nil
 }
 
-func (station *scriptedObjectiveDatabaseStations) FindEvidenceGap(
-	_ context.Context,
-	input assemblyline.DatabaseEvidenceGapInput,
-) (assemblyline.DatabaseEvidenceGapDecision, objectiveStationReceipt, error) {
-	station.gapCalls++
-	missing := ""
-	if station.gapCalls <= len(station.missingByCall) {
-		missing = station.missingByCall[station.gapCalls-1]
-	}
-	if len(input.Evidence) != station.gapCalls {
-		station.t.Fatalf("gap call %d received %d accumulated capsules", station.gapCalls, len(input.Evidence))
-	}
-	return assemblyline.DatabaseEvidenceGapDecision{
-		Schema: assemblyline.DatabaseEvidenceGapV1, RequirementID: input.RequirementID,
-		MissingInformation: &missing,
-	}, objectiveStationReceipt{Calls: 1}, nil
-}
-
-func TestDatabaseBoundObjectiveRunsTypedEvidenceLoopAndGroundsAnswer(t *testing.T) {
+func TestDatabaseBoundObjectiveRunsOneTypedQueryAndGroundsAnswer(t *testing.T) {
 	snapshot := objectiveDatabaseSingleRelationSnapshot(t)
-	stations := &scriptedObjectiveDatabaseStations{t: t, fieldID: snapshot.Relations[0].Columns[0].ID}
+	stations := &scriptedObjectiveDatabaseStations{t: t}
 	executions := 0
 	workflow := func(
 		ctx context.Context,
@@ -134,10 +113,10 @@ func TestDatabaseBoundObjectiveRunsTypedEvidenceLoopAndGroundsAnswer(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !kind.input.DatabaseEvidenceAvailable || executions != 1 || stations.intentCalls != 1 || stations.gapCalls != 1 {
-		t.Fatalf("availability=%v executions=%d intent=%d gap=%d", kind.input.DatabaseEvidenceAvailable, executions, stations.intentCalls, stations.gapCalls)
+	if !kind.input.DatabaseEvidenceAvailable || executions != 1 || stations.intentCalls != 1 {
+		t.Fatalf("availability=%v executions=%d intent=%d", kind.input.DatabaseEvidenceAvailable, executions, stations.intentCalls)
 	}
-	if result.Kind != assemblyline.ObjectiveKindDatabaseRead || !result.Complete || result.ModelCalls != 4 || len(result.Citations) != 1 {
+	if result.Kind != assemblyline.ObjectiveKindDatabaseRead || !result.Complete || result.ModelCalls != 3 || len(result.Citations) != 1 {
 		t.Fatalf("result=%+v", result)
 	}
 	if strings.Contains(answer.input.Evidence[0].Text, "SELECT") || !strings.Contains(answer.input.Evidence[0].Text, `"label":"count_rows"`) {
@@ -145,33 +124,6 @@ func TestDatabaseBoundObjectiveRunsTypedEvidenceLoopAndGroundsAnswer(t *testing.
 	}
 	if _, _, err := prepareObjectiveTurnCompletion(result); err != nil {
 		t.Fatalf("database completion evidence rejected: %v", err)
-	}
-}
-
-func TestDatabaseEvidenceLoopAccumulatesOneNamedMissingFactThenStops(t *testing.T) {
-	snapshot := objectiveDatabaseSingleRelationSnapshot(t)
-	stations := &scriptedObjectiveDatabaseStations{
-		t: t, fieldID: snapshot.Relations[0].Columns[0].ID,
-		missingByCall: []string{"The comparable count for the prior period."},
-	}
-	authority := turnAuthority{
-		JobID: 72, Pipeline: model.PipelineChat, Instruction: "Compare this period with the prior period.",
-		ModelInstruction: "Compare this period with the prior period.", ModelArtifactPaths: []string{},
-		DataSourceID: "source-1",
-	}
-	executions := 0
-	result, err := runObjectiveDatabaseEvidenceWorkflow(
-		context.Background(), authority, "requirement-72", snapshot, stations,
-		func(_ context.Context, _ datasource.SchemaSnapshot, plan datasource.RelationalQueryPlan) (datasource.EvidenceResult, error) {
-			executions++
-			return objectiveDatabaseCountEvidence(plan, executions), nil
-		},
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if executions != 2 || stations.intentCalls != 2 || stations.gapCalls != 2 || result.ModelCalls != 4 || len(result.Evidence) != 2 {
-		t.Fatalf("executions=%d intent=%d gap=%d result=%+v", executions, stations.intentCalls, stations.gapCalls, result)
 	}
 }
 

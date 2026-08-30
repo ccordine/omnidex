@@ -20,7 +20,7 @@ func TestDatabaseQueryIntentUsesRawSemanticLeavesAndRejectsJSON(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(prompt, `{"shape"`) || !strings.Contains(prompt, "Return exactly one registered value") {
+	if strings.Contains(prompt, `{"shape"`) || !strings.Contains(prompt, "Return exactly one raw registered value") {
 		t.Fatalf("query shape prompt is not a raw one-result contract: %s", prompt)
 	}
 	shape, err := DecodeDatabaseQueryShapeLeaf(state, "ranking")
@@ -74,7 +74,10 @@ func TestDatabaseQueryWindowLeafCannotAuthorTemporalClock(t *testing.T) {
 			createdAtID = column.ID
 		}
 	}
-	leaf := DatabaseQueryWindowLeafInput{State: state, FieldID: createdAtID, Unit: datasource.WindowDay}
+	leaf := DatabaseQueryWindowLeafInput{
+		State: state, Purpose: "within the preceding ninety days",
+		FieldID: createdAtID, Unit: datasource.WindowDay,
+	}
 	amount, err := DecodeDatabaseQueryWindowAmountLeaf(leaf, "90")
 	if err != nil || amount != 90 {
 		t.Fatalf("amount=%d err=%v", amount, err)

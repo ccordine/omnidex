@@ -5,6 +5,10 @@ import (
 	"strings"
 )
 
+func renderImmutableUserRequestModelProjection(userRequest string) string {
+	return "IMMUTABLE USER REQUEST:\n" + userRequest
+}
+
 // renderApplicationContextModelProjection exposes only the semantic facts a
 // station needs. ApplicationContext retains provenance and identity metadata
 // for code-owned validation, but that metadata is not model context.
@@ -13,7 +17,7 @@ func renderApplicationContextModelProjection(
 	context ApplicationContext,
 ) string {
 	var projection strings.Builder
-	fmt.Fprintf(&projection, "IMMUTABLE USER REQUEST:\n%s\n", userRequest)
+	fmt.Fprintf(&projection, "%s\n", renderImmutableUserRequestModelProjection(userRequest))
 	fmt.Fprintf(&projection, "WORKSPACE STATE:\n%s\n", context.WorkspaceState)
 	for _, fact := range context.Facts {
 		if fact.Kind == ApplicationContextWorkspaceState {

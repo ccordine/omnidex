@@ -54,10 +54,10 @@ target-tree station consumes that same
 `OMNI_CODING_WORKLOAD_MODEL` route when a stack retains a genuine structural naming
 question. No currently registered stack consumes target-tree inference; the route is
 retained only for a future registered stack with genuinely unresolved structural
-naming. There is no separate target-tree environment key. Independent state-lifetime, state-field
-coverage, state-purpose, state-kind, and endpoint-property stations also share this
-model route while retaining separate IDs, prompts, raw leaves, validation, and call
-evidence. The continued-availability and conditional
+naming. There is no separate target-tree environment key. Independent state-lifetime,
+state-purpose inventory, per-candidate necessity, pairwise purpose relation, state-kind,
+and endpoint-property stations also share this model route while retaining separate
+IDs, prompts, raw leaves, validation, and call evidence. The continued-availability and conditional
 persistence-destination stations share the explicit Phi-4 14B deployment-semantics
 route. The established `OMNI_CODING_SERVICE_DEPLOYMENT_INTENT_MODEL` environment key
 and `coding_service_deployment_intent_model` project-setting key are retained for
@@ -137,22 +137,32 @@ Primary and historical measurement model sources:
 On 2026-08-28, an earlier version of
 `TestLiveCodingRequirementsAndWorkloadQualification` exercised three unrelated
 immutable requests through the then-current raw-leaf renderers: a music studio, a
-catalog, and an appointment scheduler. Qwen 3.5 9B completed every requirement
-fixed point and the now-retired objective, behavior, and criterion leaves in 38 calls
-without a correction call. All three then-current frozen workloads passed their
-code-owned validation. This is retained as historical route evidence; it does not
-qualify the current v2 workload contract.
+catalog, and an appointment scheduler. Qwen 3.5 9B completed the now-retired iterative
+coverage route and its objective, behavior, and criterion leaves in 38 calls without a
+correction call. All three then-current frozen workloads passed their code-owned
+validation. This is retained only as historical evidence for a removed route; it does
+not qualify the current inventory-and-sieve workload contract.
 
 Provider identity was Ollama 0.24.0, model digest
 `6488c96fa5faab64bb65cbd30d4289e20e6130ef535a93ef9a49f42eda893ea7`,
 quantization `Q4_K_M`, with an 8192-token context. The complete qualification took
-91.55 seconds. The checked-in test has since been cut over: it now permits only
-product-context, requirement-coverage, and single-requirement work, then asks code to
-freeze one exact task per accepted requirement. The test rejects every unexpected work
-kind, while architecture tests require the retired workload-planner symbols to remain
-absent. A new live execution of that current test is required before claiming current
-route qualification; neither the historical measurements nor keyword matching can
-establish it.
+91.55 seconds. The checked-in test has since been cut over: it now permits one bounded
+untrusted requirement inventory, which returns exactly
+`NO_RUNTIME_REQUIREMENT_CANDIDATES` or between one and the code-owned maximum positive
+candidate lines, followed by the authorization-first per-candidate
+kind/cardinality/partition/duplicate/result sieve. Code parses and counts inventory lines
+mechanically; no semantic station pre-counts the inventory, and no pre-count receipt
+exists. Inventory generation does not authorize candidates or prove completeness. Every
+positive candidate enters the ordinary sieve. Code freezes one exact task per retained
+requirement when the candidate queue is exhausted; the completed functional result is
+iteration-scoped, and rejected or speculative suggestions remain outside current
+authority. Product, surface, and deployment semantics run only after a leaf survives and
+only at their first concrete consumer. There is no completeness or accepted-set review
+call. The test rejects every unexpected work kind, while architecture tests require the
+retired workload-planner symbols to remain absent.
+A new live execution of that current test is required before claiming current route
+qualification; neither the historical measurements nor keyword matching can establish
+it.
 
 ## Live deployment-semantics qualification
 

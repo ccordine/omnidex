@@ -1,6 +1,9 @@
 package worker
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 const genericBrowserTestingLibraryRoleObservationSupport = `{
 type OmnidexTestingLibraryRoleObservation = {
@@ -151,13 +154,20 @@ configure({
 });
 }`
 
-func genericBrowserAcceptancePreamble(runtimeModule string) string {
+func genericBrowserAcceptancePreamble(
+	runtimeModule string,
+	includeHostReceiptObserver bool,
+) string {
+	runtimeImports := []string{"createApplicationRuntime", "createFeatureRuntime"}
+	if includeHostReceiptObserver {
+		runtimeImports = append(runtimeImports, "observeBrowserHostRequestReceipts")
+	}
 	return fmt.Sprintf(`import '@testing-library/jest-dom/vitest';
 // @ts-expect-error dom-accessibility-api 0.5.16 omits its declarations from package exports.
 import { computeAccessibleName } from 'dom-accessibility-api';
 import React from 'react';
 import { configure, fireEvent, getRoles, render, screen, waitFor } from '@testing-library/react';
-import { createApplicationRuntime, createFeatureRuntime } from '%s';
+import { %s } from '%s';
 
-%s`, runtimeModule, genericBrowserTestingLibraryRoleObservationSupport)
+%s`, strings.Join(runtimeImports, ", "), runtimeModule, genericBrowserTestingLibraryRoleObservationSupport)
 }

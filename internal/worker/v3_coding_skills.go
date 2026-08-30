@@ -94,6 +94,17 @@ func validateDirectCodingSkillBindings(
 		if binding.Version.Status != specialists.SkillStatusActive {
 			return fmt.Errorf("coding requirement %s learned skill is not active", requirement.ID)
 		}
+		if err := binding.Version.Validate(); err != nil {
+			return fmt.Errorf(
+				"coding requirement %s learned skill version is invalid: %w", requirement.ID, err,
+			)
+		}
+		if binding.Procedure != binding.Version.Spec.Instructions {
+			return fmt.Errorf(
+				"coding requirement %s learned skill procedure does not match its immutable version",
+				requirement.ID,
+			)
+		}
 	}
 	unknown := make([]string, 0)
 	for requirementID := range bindings {

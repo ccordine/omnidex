@@ -146,6 +146,11 @@ complete only after its exact transition is observed. An objective is complete
 only after all prerequisite tasks and filesystem leaves are complete and the
 selected real workspace verification passes.
 
+Those predicates close only the frozen accepted objective for the current iteration.
+They do not require every plausible product enhancement. Rejected, speculative, and
+deferred intake candidates own no task or filesystem leaf and cannot block completion;
+only a later explicit user objective may send one through the ordinary sieve.
+
 Compiler, parser, test, runtime, and repository results are authoritative.
 They either close a bounded task or create one exact next failure. They never
 restart a completed project or cause a model to reconstruct accepted state.

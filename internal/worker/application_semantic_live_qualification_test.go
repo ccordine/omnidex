@@ -16,7 +16,7 @@ import (
 
 const (
 	liveCodingQualificationModelEnv = "OMNIDEX_TEST_CODING_QUALIFICATION_MODEL"
-	liveCodingQualificationScope    = "live-coding-requirements-workload-qualification-v1"
+	liveCodingQualificationScope    = "live-coding-requirements-workload-qualification-v10"
 )
 
 type liveCodingQualificationCase struct {
@@ -119,7 +119,7 @@ func TestLiveCodingRequirementsAndWorkloadQualification(t *testing.T) {
 				t.Fatalf("frozen tasks=%d outside front-door bounds", len(frozen.Tasks))
 			}
 			logLiveCodingQualification(t, testCase.name, modelName, frozen.SHA256, calls)
-			assertLiveCodingQualificationCalls(t, calls, frozen)
+			assertLiveCodingQualificationCalls(t, calls, frozen, testCase.request)
 			assertLiveCodingQualificationResultRelations(t, testCase, calls)
 		})
 	}
@@ -245,52 +245,50 @@ func validateLiveCodingQualificationProjection(
 			return fmt.Errorf("product-context station did not receive one intact request")
 		}
 		return nil
-	case assemblyline.WorkApplicationRequirementCoverage:
-		var input assemblyline.ApplicationRequirementCoverageInput
+	case assemblyline.WorkApplicationRequirementInventory:
+		var input assemblyline.ApplicationRequirementInventoryInput
 		if err := json.Unmarshal(job.Payload, &input); err != nil {
 			return err
 		}
 		if input.UserRequest != testCase.request ||
 			strings.Count(prompt, testCase.request) != 1 {
-			return fmt.Errorf("requirement leaf did not retain its intact request authority")
-		}
-		if input.AcceptedRequirements == nil || input.ExcludedCandidates == nil {
-			return fmt.Errorf("requirement coverage lacks exact retained and excluded sets")
-		}
-		if input.ZeroDeltas == nil {
-			return fmt.Errorf("requirement coverage lacks code-owned zero-delta state")
+			return fmt.Errorf("requirement inventory did not retain its intact request authority")
 		}
 		if strings.Contains(prompt, "PRODUCT CONTEXT:") {
-			return fmt.Errorf("requirement leaf received redundant derived product context")
-		}
-		return nil
-	case assemblyline.WorkApplicationRequirement:
-		var input assemblyline.ApplicationRequirementCandidateInput
-		if err := json.Unmarshal(job.Payload, &input); err != nil {
-			return err
-		}
-		if input.Authority.UserRequest != testCase.request ||
-			strings.Count(prompt, testCase.request) != 1 {
-			return fmt.Errorf("requirement candidate did not retain its intact request authority")
-		}
-		if err := input.Coverage.ValidateFor(input.Authority); err != nil ||
-			input.Coverage.Relation != assemblyline.ApplicationRequirementRemains {
-			return fmt.Errorf("requirement candidate lacks bound uncovered authority: %v", err)
-		}
-		if strings.Count(
-			prompt,
-			"CODE-ESTABLISHED UNCOVERED RELATION:\n"+assemblyline.ApplicationRequirementRemains,
-		) != 1 || strings.Contains(prompt, "PRODUCT CONTEXT:") {
-			return fmt.Errorf("requirement candidate projection differs from bound coverage authority")
+			return fmt.Errorf("requirement inventory received redundant product context")
 		}
 		return nil
 	case assemblyline.WorkApplicationRequirementCandidateKind:
-		var input assemblyline.ApplicationRequirementCandidateKindInput
+		var input assemblyline.ApplicationRequirementCandidateContentPresenceInput
 		if err := json.Unmarshal(job.Payload, &input); err != nil {
 			return err
 		}
+		if _, err := assemblyline.NewApplicationRequirementCandidateContentPresenceJob(input); err != nil {
+			return fmt.Errorf("candidate content presence lacks bound authority: %v", err)
+		}
+		var requiredQuestion string
+		forbiddenQuestions := []string{
+			"Is directly stated finished-software runtime content PRESENT or ABSENT?",
+			"Is construction-or-delivery constraint content PRESENT or ABSENT?",
+		}
+		switch input.Dimension {
+		case assemblyline.ApplicationRequirementCandidateRuntimeContentDimension:
+			requiredQuestion = forbiddenQuestions[0]
+		case assemblyline.ApplicationRequirementCandidateNonRuntimeContentDimension:
+			requiredQuestion = forbiddenQuestions[1]
+		default:
+			return fmt.Errorf("candidate content presence has unregistered dimension %q", input.Dimension)
+		}
+		forbiddenQuestionPresent := false
+		for _, question := range forbiddenQuestions {
+			if question != requiredQuestion && strings.Contains(prompt, question) {
+				forbiddenQuestionPresent = true
+			}
+		}
 		if strings.Count(prompt, input.Candidate) != 1 ||
-			strings.Contains(prompt, testCase.request) ||
+			strings.Count(prompt, requiredQuestion) != 1 ||
+			forbiddenQuestionPresent ||
+			(testCase.request != input.Candidate && strings.Contains(prompt, testCase.request)) ||
 			strings.Contains(prompt, "ACCEPTED REQUIREMENT") ||
 			strings.Contains(prompt, "EXCLUDED CANDIDATE") {
 			return fmt.Errorf("candidate kind received authority beyond one exact candidate")
@@ -302,9 +300,22 @@ func validateLiveCodingQualificationProjection(
 			return err
 		}
 		if strings.Count(prompt, input.Candidate) != 1 ||
-			strings.Contains(prompt, testCase.request) ||
+			(testCase.request != input.Candidate && strings.Contains(prompt, testCase.request)) ||
 			strings.Contains(prompt, "ACCEPTED REQUIREMENT") {
 			return fmt.Errorf("candidate cardinality received authority beyond one exact candidate")
+		}
+		return nil
+	case assemblyline.WorkApplicationRequirementCandidateAuthorization:
+		var input assemblyline.ApplicationRequirementCandidateAuthorizationInput
+		if err := json.Unmarshal(job.Payload, &input); err != nil {
+			return err
+		}
+		if input.UserRequest != testCase.request ||
+			input.Context.RequestSHA256 != assemblyline.ExactObjectiveContextSHA(testCase.request) ||
+			!strings.Contains(prompt, "EXACT CANDIDATE:\n"+input.Candidate) ||
+			strings.Contains(prompt, "ACCEPTED REQUIREMENT") ||
+			strings.Contains(prompt, "PRODUCT CONTEXT:") {
+			return fmt.Errorf("candidate authorization exceeded request and one candidate")
 		}
 		return nil
 	case assemblyline.WorkApplicationRequirementCandidateOutcomeRelation:
@@ -330,7 +341,9 @@ func validateLiveCodingQualificationProjection(
 		if input.Candidate == input.AcceptedRequirement ||
 			strings.Count(prompt, input.Candidate) != 1 ||
 			strings.Count(prompt, input.AcceptedRequirement) != 1 ||
-			strings.Contains(prompt, testCase.request) ||
+			(testCase.request != input.Candidate &&
+				testCase.request != input.AcceptedRequirement &&
+				strings.Contains(prompt, testCase.request)) ||
 			strings.Contains(prompt, "ACCEPTED REQUIREMENTS") {
 			return fmt.Errorf("outcome relation exceeded its exact byte-different pair")
 		}
@@ -355,7 +368,7 @@ func validateLiveCodingQualificationProjection(
 			return fmt.Errorf("result relation lacks bound one-outcome authority: %v", err)
 		}
 		if strings.Count(prompt, input.Candidate) != 1 ||
-			strings.Contains(prompt, testCase.request) ||
+			(testCase.request != input.Candidate && strings.Contains(prompt, testCase.request)) ||
 			strings.Contains(prompt, "ACCEPTED REQUIREMENT") {
 			return fmt.Errorf("result relation exceeded one bound candidate")
 		}
@@ -423,49 +436,18 @@ func validateLiveCodingQualificationProjection(
 			}
 		}
 		return nil
-	case assemblyline.WorkApplicationRequirementCandidateSplit:
-		var input assemblyline.ApplicationRequirementCandidateSplitInput
+	case assemblyline.WorkApplicationRequirementCandidatePartition:
+		var input assemblyline.ApplicationRequirementCandidatePartitionInput
 		if err := json.Unmarshal(job.Payload, &input); err != nil {
 			return err
 		}
-		cardinalityInput := assemblyline.ApplicationRequirementCandidateCardinalityInput{
-			Candidate: input.Candidate,
+		if _, err := assemblyline.NewApplicationRequirementCandidatePartitionJob(input); err != nil {
+			return fmt.Errorf("candidate partition lacks bound compound authority: %v", err)
 		}
-		if err := input.Cardinality.ValidateFor(cardinalityInput); err != nil ||
-			input.Cardinality.Relation != assemblyline.ApplicationRequirementMultipleRuntimeOutcomes {
-			return fmt.Errorf("candidate split lacks bound multiple-outcome authority: %v", err)
-		}
-		if strings.Count(prompt, input.Candidate) != 1 ||
-			strings.Count(
-				prompt,
-				"CODE-ESTABLISHED CARDINALITY RELATION:\n"+
-					assemblyline.ApplicationRequirementMultipleRuntimeOutcomes,
-			) != 1 || strings.Contains(prompt, testCase.request) ||
+		if !strings.Contains(prompt, "EXACT COMPOUND CANDIDATE:\n"+input.Candidate) ||
+			(testCase.request != input.Candidate && strings.Contains(prompt, testCase.request)) ||
 			strings.Contains(prompt, "ACCEPTED REQUIREMENT") {
-			return fmt.Errorf("candidate split received authority beyond candidate and cardinality")
-		}
-		return nil
-	case assemblyline.WorkApplicationRequirementCandidateSplitCorrection:
-		var input assemblyline.ApplicationRequirementCandidateSplitCorrectionInput
-		if err := json.Unmarshal(job.Payload, &input); err != nil {
-			return err
-		}
-		cardinalityInput := assemblyline.ApplicationRequirementCandidateCardinalityInput{
-			Candidate: input.CurrentCandidate,
-		}
-		if err := input.Cardinality.ValidateFor(cardinalityInput); err != nil ||
-			input.Cardinality.Relation != assemblyline.ApplicationRequirementMultipleRuntimeOutcomes ||
-			input.Defect != assemblyline.ApplicationRequirementUnchangedSplitDefect {
-			return fmt.Errorf("candidate split correction lacks exact grounded authority: %v", err)
-		}
-		if strings.Count(prompt, input.CurrentCandidate) != 1 ||
-			strings.Count(
-				prompt,
-				"CODE-ESTABLISHED CARDINALITY RELATION:\n"+
-					assemblyline.ApplicationRequirementMultipleRuntimeOutcomes,
-			) != 1 || strings.Contains(prompt, testCase.request) ||
-			strings.Contains(prompt, "ACCEPTED REQUIREMENT") {
-			return fmt.Errorf("candidate split correction exceeded its exact mutable leaf")
+			return fmt.Errorf("candidate partition exceeded one candidate and defect receipt")
 		}
 		return nil
 	default:

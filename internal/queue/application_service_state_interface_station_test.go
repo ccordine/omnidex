@@ -15,46 +15,55 @@ func TestApplicationServiceStateLeavesHaveDistinctExactStationOwners(t *testing.
 			RequirementQuote: "Store a shipment measurement for later retrieval.",
 		}},
 	}
-	stateLeaf := assemblyline.ApplicationStateFieldLeafInput{
-		Authority: authority, AcceptedFields: []assemblyline.ApplicationServiceStateField{},
-	}
-	recordLeaf := assemblyline.ApplicationRecordFieldLeafInput{
-		Authority: authority, ParentPurpose: "The stored shipment measurements.",
-		AcceptedRecordFields: []assemblyline.ApplicationServiceStateRecordField{},
-	}
+	parentPurpose := "The stored shipment measurements."
 	tests := []struct {
 		construct func() (assemblyline.PortableJob, error)
 		want      station.ID
 	}{
 		{func() (assemblyline.PortableJob, error) {
-			return assemblyline.NewApplicationStateFieldCoverageJob(stateLeaf)
-		}, station.CodingApplicationStateFieldCoverage},
-		{func() (assemblyline.PortableJob, error) {
-			return assemblyline.NewApplicationStateFieldPurposeJob(stateLeaf)
-		}, station.CodingApplicationStateFieldPurpose},
+			return assemblyline.NewApplicationStateFieldPurposeInventoryJob(
+				assemblyline.ApplicationStateFieldPurposeInventoryInput{Authority: authority},
+			)
+		}, station.CodingApplicationStateFieldPurposeInventory},
 		{func() (assemblyline.PortableJob, error) {
 			return assemblyline.NewApplicationStateFieldKindJob(
 				assemblyline.ApplicationStateFieldKindInput{
-					Authority: authority, AcceptedFields: []assemblyline.ApplicationServiceStateField{},
-					FocusedPurpose: "The stored shipment measurements.",
+					Authority: authority, FocusedPurpose: parentPurpose,
 				},
 			)
 		}, station.CodingApplicationStateFieldKind},
 		{func() (assemblyline.PortableJob, error) {
-			return assemblyline.NewApplicationRecordFieldCoverageJob(recordLeaf)
-		}, station.CodingApplicationRecordFieldCoverage},
-		{func() (assemblyline.PortableJob, error) {
-			return assemblyline.NewApplicationRecordFieldPurposeJob(recordLeaf)
-		}, station.CodingApplicationRecordFieldPurpose},
+			return assemblyline.NewApplicationRecordFieldPurposeInventoryJob(
+				assemblyline.ApplicationRecordFieldPurposeInventoryInput{
+					Authority: authority, ParentPurpose: parentPurpose,
+				},
+			)
+		}, station.CodingApplicationRecordFieldPurposeInventory},
 		{func() (assemblyline.PortableJob, error) {
 			return assemblyline.NewApplicationRecordFieldKindJob(
 				assemblyline.ApplicationRecordFieldKindInput{
-					Authority: authority, ParentPurpose: recordLeaf.ParentPurpose,
-					AcceptedRecordFields: []assemblyline.ApplicationServiceStateRecordField{},
-					FocusedPurpose:       "The shipment measurement label.",
+					Authority: authority, ParentPurpose: parentPurpose,
+					FocusedPurpose: "The shipment measurement label.",
 				},
 			)
 		}, station.CodingApplicationRecordFieldKind},
+		{func() (assemblyline.PortableJob, error) {
+			return assemblyline.NewApplicationServiceStatePurposeNecessityJob(
+				assemblyline.ApplicationServiceStatePurposeNecessityInput{
+					Scope:     assemblyline.ApplicationServiceStateRootPurposeScope,
+					Authority: authority, CandidatePurpose: parentPurpose,
+				},
+			)
+		}, station.CodingApplicationServiceStatePurposeNecessity},
+		{func() (assemblyline.PortableJob, error) {
+			return assemblyline.NewApplicationServiceStatePurposeRelationJob(
+				assemblyline.ApplicationServiceStatePurposeRelationInput{
+					Scope:            assemblyline.ApplicationServiceStateRootPurposeScope,
+					CandidatePurpose: "The stored shipment entries.",
+					AcceptedPurpose:  parentPurpose,
+				},
+			)
+		}, station.CodingApplicationServiceStatePurposeRelation},
 	}
 	for _, testCase := range tests {
 		job, err := testCase.construct()

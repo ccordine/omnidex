@@ -6,68 +6,68 @@ import (
 	"testing"
 )
 
-func TestRepositoryEvidenceRelevanceUsesOneRawOpaqueIDLeaf(t *testing.T) {
+func TestRepositoryEvidenceRelevanceUsesOneCandidateBoundRelation(t *testing.T) {
 	t.Parallel()
 	base := repositoryEvidenceRelevanceFixture()
-	input := RepositoryEvidenceRelevanceLeafInput{
-		ExactRequirement:    base.ExactRequirement,
-		Candidates:          append([]RepositoryEvidenceCandidate(nil), base.Candidates...),
-		SelectedEvidenceIDs: []string{},
-		MaxSelections:       base.MaxSelections,
+	input := RepositoryEvidenceRelevanceRelationInput{
+		ExactRequirement: base.ExactRequirement,
+		Candidate:        base.Candidates[1],
 	}
-	job, err := NewRepositoryEvidenceRelevanceLeafJob(input)
+	job, err := NewRepositoryEvidenceRelevanceRelationJob(input)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if job.Kind != WorkRepositoryEvidenceRelevanceLeaf {
+	if job.Kind != WorkRepositoryEvidenceRelevanceRelation {
 		t.Fatalf("kind=%q", job.Kind)
+	}
+	if maximum, err := PortableResponseMaximumBytesForJob(job); err != nil ||
+		maximum != len(RepositoryEvidenceNotDirectlyRelevant) {
+		t.Fatalf("response maximum=%d error=%v", maximum, err)
 	}
 	prompt, err := RenderPortableJob(job)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(prompt, base.ExactRequirement) ||
-		!strings.Contains(prompt, base.Candidates[0].Text) ||
-		!strings.Contains(prompt, RepositoryEvidenceNoRelevantCandidate) {
+		!strings.Contains(prompt, base.Candidates[1].Text) ||
+		strings.Contains(prompt, base.Candidates[0].Text) ||
+		strings.Contains(prompt, base.Candidates[1].EvidenceID) {
 		t.Fatalf("prompt lost bounded relevance authority: %q", prompt)
 	}
-	for _, forbidden := range []string{"evidence_ids array", `"schema"`, "outcome"} {
+	for _, forbidden := range []string{
+		"evidence_ids array", `"schema"`, "most directly", "none of the remaining",
+		"ranking", "selection", "completeness", "workflow", "continues",
+	} {
 		if strings.Contains(prompt, forbidden) {
-			t.Fatalf("raw relevance prompt exposes aggregate field %q: %s", forbidden, prompt)
+			t.Fatalf("relation prompt exposes ranking/control authority %q: %s", forbidden, prompt)
 		}
 	}
-	if got, err := DecodeRepositoryEvidenceRelevanceLeaf(input, "R02"); err != nil || got != "R02" {
-		t.Fatalf("selected=%q error=%v", got, err)
+	got, err := DecodeRepositoryEvidenceRelevanceRelationResult(
+		input, RepositoryEvidenceDirectlyRelevant,
+	)
+	if err != nil || got.Relation != RepositoryEvidenceDirectlyRelevant {
+		t.Fatalf("relation=%+v error=%v", got, err)
 	}
-	if got, err := DecodeRepositoryEvidenceRelevanceLeaf(
-		input, RepositoryEvidenceNoRelevantCandidate,
-	); err != nil || got != RepositoryEvidenceNoRelevantCandidate {
-		t.Fatalf("none=%q error=%v", got, err)
+	other := input
+	other.Candidate = base.Candidates[0]
+	if err := got.ValidateFor(other); err == nil {
+		t.Fatal("candidate-bound relevance relation replayed against another candidate")
 	}
 }
 
-func TestRepositoryEvidenceRelevanceLeafRejectsWrappersAndRetainedIDs(t *testing.T) {
+func TestRepositoryEvidenceRelevanceRelationRejectsWrappersAndControlValues(t *testing.T) {
 	t.Parallel()
 	base := repositoryEvidenceRelevanceFixture()
-	base.MaxSelections = 2
-	input := RepositoryEvidenceRelevanceLeafInput{
-		ExactRequirement:    base.ExactRequirement,
-		Candidates:          append([]RepositoryEvidenceCandidate(nil), base.Candidates...),
-		SelectedEvidenceIDs: []string{"R01"},
-		MaxSelections:       base.MaxSelections,
-	}
-	prompt, err := BuildRepositoryEvidenceRelevanceLeafPrompt(input)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(prompt, base.Candidates[0].Text) || !strings.Contains(prompt, base.Candidates[1].Text) {
-		t.Fatalf("prompt did not project only remaining candidates: %s", prompt)
+	input := RepositoryEvidenceRelevanceRelationInput{
+		ExactRequirement: base.ExactRequirement,
+		Candidate:        base.Candidates[0],
 	}
 	for _, raw := range []string{
-		"R01", "R99", `{"evidence_id":"R02"}`, `"R02"`, " R02 ",
+		"R01", "NO_RELEVANT_EVIDENCE", `{"relation":"DIRECTLY_RELEVANT"}`,
+		`"DIRECTLY_RELEVANT"`, " DIRECTLY_RELEVANT ",
 	} {
-		if _, err := DecodeRepositoryEvidenceRelevanceLeaf(input, raw); err == nil {
-			t.Fatalf("invalid raw relevance leaf accepted: %q", raw)
+		if _, err := DecodeRepositoryEvidenceRelevanceRelationResult(input, raw); err == nil {
+			t.Fatalf("invalid raw relevance relation accepted: %q", raw)
 		}
 	}
 }
@@ -92,6 +92,10 @@ func TestRepositoryEvidenceRelevanceAssemblyIsCodeOwned(t *testing.T) {
 	}
 	if _, err := AssembleRepositoryEvidenceRelevanceDecision(input, []string{"R99"}); err == nil {
 		t.Fatal("unprojected evidence ID was assembled")
+	}
+	input.MaxSelections = 2
+	if _, err := AssembleRepositoryEvidenceRelevanceDecision(input, []string{"R02", "R01"}); err == nil {
+		t.Fatal("reordered evidence IDs were assembled")
 	}
 }
 

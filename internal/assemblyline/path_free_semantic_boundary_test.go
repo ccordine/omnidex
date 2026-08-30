@@ -33,19 +33,16 @@ func TestSemanticStationInputsRejectQualifiedPathsBeforeInference(t *testing.T) 
 			})
 			return err
 		},
-		"application context need": func() error {
-			_, err := NewApplicationContextNeedCoverageJob(ApplicationContextNeedLeafInput{
-				UserRequest: qualified, Context: existingContext, AcceptedQuestions: []string{},
+		"application context question inventory": func() error {
+			_, err := NewApplicationContextQuestionInventoryJob(ApplicationContextQuestionInventoryInput{
+				UserRequest: qualified, Context: existingContext,
 			})
 			return err
 		},
 		"repository requirements": func() error {
-			_, err := NewRepositoryRequirementCoverageJob(
-				RepositoryRequirementLeafInput{
-					Authority: RepositoryRequirementInterpretationInput{
-						UserRequest: qualified, Context: existingContext,
-					},
-					AcceptedRequirements: []string{},
+			_, err := NewRepositoryRequirementInventoryJob(
+				RepositoryRequirementInterpretationInput{
+					UserRequest: qualified, Context: existingContext,
 				},
 			)
 			return err
@@ -109,11 +106,14 @@ func TestSemanticStationCandidatesRejectQualifiedPathsAtAcceptance(t *testing.T)
 				},
 			}).Validate()
 		},
-		"application context need": func() error {
-			return (ApplicationContextNeedDecision{
-				Schema:    ApplicationContextNeedSchemaV1,
-				Questions: []string{"What owns C:\\private\\value?"},
-			}).Validate()
+		"application context question inventory": func() error {
+			_, err := DecodeApplicationContextQuestionInventory(
+				ApplicationContextQuestionInventoryInput{
+					UserRequest: request, Context: existingContext,
+				},
+				"What owns C:\\private\\value?",
+			)
+			return err
 		},
 		"repository requirements": func() error {
 			return (RepositoryRequirementInterpretation{

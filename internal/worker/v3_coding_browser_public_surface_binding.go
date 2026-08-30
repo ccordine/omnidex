@@ -19,7 +19,16 @@ type directCodingBrowserPublicSurfaceBinding struct {
 }
 
 func validateDirectCodingBrowserPublicInteractionCandidate(source string) error {
-	surface, err := extractDirectCodingBrowserPublicInteractionSurface(source)
+	return validateDirectCodingBrowserPublicInteractionCandidateWithRuntimeCalls(source, nil)
+}
+
+func validateDirectCodingBrowserPublicInteractionCandidateWithRuntimeCalls(
+	source string,
+	permittedRuntimeCalls []string,
+) error {
+	surface, err := extractDirectCodingBrowserPublicInteractionSurfaceWithRuntimeCalls(
+		source, permittedRuntimeCalls,
+	)
 	if err != nil {
 		return err
 	}
@@ -78,7 +87,13 @@ func deriveDirectCodingBrowserPublicSurfaceBinding(
 			implementationID, err,
 		)
 	}
-	surface, err := extractDirectCodingBrowserPublicInteractionSurface(source)
+	permittedRuntimeCalls, err := directCodingBrowserHostCallsForBlock(block)
+	if err != nil {
+		return directCodingBrowserPublicSurfaceBinding{}, err
+	}
+	surface, err := extractDirectCodingBrowserPublicInteractionSurfaceWithRuntimeCalls(
+		source, permittedRuntimeCalls,
+	)
 	if err != nil {
 		return directCodingBrowserPublicSurfaceBinding{}, fmt.Errorf(
 			"extract browser public surface from implementation %s: %w",

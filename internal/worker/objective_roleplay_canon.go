@@ -49,12 +49,7 @@ func extractRoleplayCanonSource(
 	station objectiveRoleplayCanonStation,
 	input assemblyline.RoleplayCanonExtractionInput,
 ) ([]string, int, error) {
-	if _, err := assemblyline.NewRoleplayCanonFactCoverageJob(
-		assemblyline.RoleplayCanonFactLeafInput{
-			Source: input.Source, AntecedentUserTurn: input.AntecedentUserTurn,
-			Context: input.Context, AcceptedFacts: []string{},
-		},
-	); err != nil {
+	if _, err := assemblyline.NewRoleplayCanonFactInventoryJob(input); err != nil {
 		return nil, 0, err
 	}
 	decision, receipt, err := station.ExtractCanon(ctx, input)
@@ -79,10 +74,13 @@ func validateRoleplayCanonExtractionReceipt(receipt objectiveStationReceipt) err
 		}
 		return nil
 	}
-	maximum := (2*assemblyline.MaxRoleplayCanonFactsPerTurn + 1) * exactSemanticLeafCalls
+	maximumLeaves := 1 +
+		assemblyline.MaxRoleplayCanonFactsPerTurn +
+		(assemblyline.MaxRoleplayCanonFactsPerTurn*(assemblyline.MaxRoleplayCanonFactsPerTurn-1))/2
+	maximum := maximumLeaves * exactSemanticLeafCalls
 	if receipt.Calls < 1 || receipt.Calls > maximum {
 		return fmt.Errorf(
-			"roleplay canon extraction reported %d calls outside the bounded fixed-point budget",
+			"roleplay canon extraction reported %d calls outside the bounded inventory-sieve budget",
 			receipt.Calls,
 		)
 	}

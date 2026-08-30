@@ -54,13 +54,13 @@ func codingSemanticUncertaintyContract(
 			"The bounded local context, one local need, and code-enumerated opaque skill-purpose candidates.",
 			"One opaque learned-skill candidate token.",
 			"DecodeSkillSelectionDecision validates the token before code binds the accepted skill version.")
-	case WorkRuntimeCapabilitySelection:
+	case WorkRuntimeCapabilityNecessity:
 		contract = semanticUncertaintyContract(kind,
-			"Which one remaining registered runtime behavior is strictly necessary for the focused local need?",
+			"Is this one exact registered runtime behavior necessary for the focused local need?",
 			"Natural-language behavior cannot be matched exactly to a minimal technical runtime boundary by parsing or keyword rules.",
-			"The bounded local context including direct-dependency purpose summaries, one local need, selected source dialect, already accepted semantic purposes, and code-enumerated opaque candidate purposes.",
-			"One opaque runtime-capability candidate ID or NONE.",
-			"DecodeRuntimeCapabilitySelectionDecision validates the ID before code binds its registered source block only to the owning implementation.")
+			"The bounded local context including direct-dependency purpose summaries, one local need, selected source dialect, and one exact candidate purpose with its identity hidden.",
+			"One candidate-bound necessary-or-not-necessary relation.",
+			"DecodeRuntimeCapabilityNecessityDecision validates the relation before code retains or discards only that candidate and advances its queue.")
 	case WorkTypeScriptRepairGuidance:
 		contract = semanticUncertaintyContract(kind,
 			"What single source transformation resolves the exact compiler-proven failure in the mutable source?",

@@ -9,20 +9,15 @@ import (
 
 func TestContextRelevanceProjectionRedactsFilesystemIdentitiesAndHidesProvenance(t *testing.T) {
 	t.Parallel()
-	authority := ContextRelevanceInput{
+	input := ContextRelevanceRelationInput{
 		ExactInstruction:   "Compare /srv/private/turn.json with secret_owner.go.",
 		KnownArtifactPaths: []string{"internal/private/secret_owner.go"},
-		CandidateAuthorities: []ContextCandidateAuthority{
-			contextCandidateFixture(
-				t, "conversation", "CTX_1",
-				`The prior response cited docs/private/guide.md and C:\private\notes.txt.`,
-			),
-		},
-		MaxSelections: 1,
+		Candidate: contextCandidateFixture(
+			t, "conversation", "CTX_1",
+			`The prior response cited docs/private/guide.md and C:\private\notes.txt.`,
+		),
 	}
-	job, err := NewContextRelevanceSelectionJob(ContextRelevanceSelectionInput{
-		Authority: authority, AcceptedCandidateIDs: []string{},
-	})
+	job, err := NewContextRelevanceRelationJob(input)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -48,21 +43,17 @@ func TestContextRelevanceProjectionRedactsFilesystemIdentitiesAndHidesProvenance
 
 func TestContextRelevanceRawLeafRejectsQualifiedAndKnownArtifactIdentities(t *testing.T) {
 	t.Parallel()
-	authority := ContextRelevanceInput{
+	input := ContextRelevanceRelationInput{
 		ExactInstruction:   "Recall the relevant exchange.",
 		KnownArtifactPaths: []string{"internal/private/secret_owner.go"},
-		CandidateAuthorities: []ContextCandidateAuthority{
-			contextCandidateFixture(t, "conversation", "CTX_1", "The prior exchange remains relevant."),
-		},
-		MaxSelections: 1,
-	}
-	input := ContextRelevanceSelectionInput{
-		Authority: authority, AcceptedCandidateIDs: []string{},
+		Candidate: contextCandidateFixture(
+			t, "conversation", "CTX_1", "The prior exchange remains relevant.",
+		),
 	}
 	for _, raw := range []string{
 		"/private/result", "../private/result", `C:\private\result`, "secret_owner.go",
 	} {
-		if _, err := DecodeContextRelevanceSelectionDecision(input, raw); err == nil ||
+		if _, err := DecodeContextRelevanceRelationResult(input, raw); err == nil ||
 			!strings.Contains(err.Error(), "filesystem identity") {
 			t.Fatalf("context relevance leaf %q path error=%v", raw, err)
 		}
@@ -116,12 +107,8 @@ func TestContextMinificationProjectionAndRawLeafEnforceArtifactBoundary(t *testi
 func TestContextSieveRequiresExplicitArtifactProvenance(t *testing.T) {
 	t.Parallel()
 	candidate := contextCandidateFixture(t, "conversation", "CTX_1", "The prior exchange remains relevant.")
-	if _, err := NewContextRelevanceSelectionJob(ContextRelevanceSelectionInput{
-		Authority: ContextRelevanceInput{
-			ExactInstruction: "Recall it.", CandidateAuthorities: []ContextCandidateAuthority{candidate},
-			MaxSelections: 1,
-		},
-		AcceptedCandidateIDs: []string{},
+	if _, err := NewContextRelevanceRelationJob(ContextRelevanceRelationInput{
+		ExactInstruction: "Recall it.", Candidate: candidate,
 	}); err == nil {
 		t.Fatal("context relevance accepted missing artifact provenance authority")
 	}
@@ -135,7 +122,7 @@ func TestContextSieveRequiresExplicitArtifactProvenance(t *testing.T) {
 func TestContextSieveModelProjectionsHaveNoArtifactProvenanceField(t *testing.T) {
 	t.Parallel()
 	for name, projection := range map[string]any{
-		"relevance":    contextRelevanceSelectionProjection{},
+		"relevance":    contextRelevanceRelationProjection{},
 		"minification": contextMinificationModelProjection{},
 	} {
 		typeOf := reflect.TypeOf(projection)
@@ -148,9 +135,9 @@ func TestContextSieveModelProjectionsHaveNoArtifactProvenanceField(t *testing.T)
 func TestContextSieveSourceHasNoDirectRawTextProjection(t *testing.T) {
 	t.Parallel()
 	for path, forbidden := range map[string][]string{
-		"context_relevance_selection.go": {
-			"ExactInstruction:     input.Authority.ExactInstruction",
-			"Content:     candidate.Content",
+		"context_relevance_relation.go": {
+			"ExactInstruction: input.ExactInstruction",
+			"CandidateContent: input.Candidate.Content",
 		},
 		"context_minification.go": {
 			"ExactInstruction: input.ExactInstruction",

@@ -11,12 +11,12 @@ import (
 	"github.com/gryph/omnidex/internal/assemblyline"
 )
 
-func TestDirectCodingRequirementCorrectsMissingResultRelationBeforeRetention(t *testing.T) {
+func TestDirectCodingRequirementCorrectsOneMissingResultRelation(t *testing.T) {
 	t.Parallel()
 	const request = "Build a browser distance converter that converts miles to kilometers using 1 mile = 1.609344 kilometers."
 	const vague = "Accept a distance and display an accurate converted result."
-	const corrected = "Multiply the user-provided distance in miles by 1.609344 and display the result in kilometers."
-	authority := directCodingRequirementGenerationAuthorityForRequest(t, request)
+	const corrected = "Multiply the submitted distance in miles by 1.609344 and display the result in kilometers."
+	authority, entry := directCodingRequirementQueueEntry(t, request, vague, nil)
 	var calls []assemblyline.WorkKind
 	runtime := typedWorkerRuntime{
 		Context: context.Background(), MaxAttempts: 1,
@@ -25,51 +25,33 @@ func TestDirectCodingRequirementCorrectsMissingResultRelationBeforeRetention(t *
 			candidate := ""
 			switch job.Kind {
 			case assemblyline.WorkApplicationRequirementCandidateKind:
-				candidate = assemblyline.ApplicationRequirementCandidateTaskLocal
+				var err error
+				candidate, err = applicationRequirementCandidateContentPresenceForKindForTest(
+					job,
+					assemblyline.ApplicationRequirementCandidateTaskLocal,
+				)
+				if err != nil {
+					return assemblyline.PortableResult{}, err
+				}
 			case assemblyline.WorkApplicationRequirementCandidateCardinality:
 				candidate = assemblyline.ApplicationRequirementOneRuntimeOutcome
+			case assemblyline.WorkApplicationRequirementCandidateAuthorization:
+				candidate = assemblyline.ApplicationRequirementCandidateEntailed
 			case assemblyline.WorkApplicationRequirementCandidateResultRelation:
 				var input assemblyline.ApplicationRequirementCandidateResultRelationInput
 				if err := json.Unmarshal(job.Payload, &input); err != nil {
 					return assemblyline.PortableResult{}, err
 				}
-				switch input.Candidate {
-				case vague:
+				if input.Candidate == vague {
 					candidate = assemblyline.ApplicationRequirementMissingResultRelation
-				case corrected:
+				} else if input.Candidate == corrected {
 					candidate = assemblyline.ApplicationRequirementExplicitResultRelation
-				default:
-					return assemblyline.PortableResult{}, fmt.Errorf("unexpected result candidate %q", input.Candidate)
+				} else {
+					return assemblyline.PortableResult{}, fmt.Errorf("unexpected candidate %q", input.Candidate)
 				}
 			case assemblyline.WorkApplicationRequirementCandidateResultRelationGrounding:
-				var input assemblyline.ApplicationRequirementCandidateResultRelationGroundingInput
-				if err := json.Unmarshal(job.Payload, &input); err != nil {
-					return assemblyline.PortableResult{}, err
-				}
-				if !reflect.DeepEqual(input.Context, authority.Authority.Context) {
-					return assemblyline.PortableResult{}, fmt.Errorf("grounding lost application context authority")
-				}
 				candidate = assemblyline.ApplicationRequirementExactlyOneDeterminingRelationEntailed
 			case assemblyline.WorkApplicationRequirementCandidateResultRelationCorrection:
-				var input assemblyline.ApplicationRequirementCandidateResultRelationCorrectionInput
-				if err := json.Unmarshal(job.Payload, &input); err != nil {
-					return assemblyline.PortableResult{}, err
-				}
-				if input.ImmutableRequest != request || input.CurrentCandidate != vague ||
-					input.Defect != assemblyline.ApplicationRequirementMissingResultRelation ||
-					!reflect.DeepEqual(input.Context, authority.Authority.Context) ||
-					input.Grounding.Relation != assemblyline.ApplicationRequirementExactlyOneDeterminingRelationEntailed {
-					return assemblyline.PortableResult{}, fmt.Errorf("correction received unbound authority: %+v", input)
-				}
-				for _, forbidden := range []string{
-					"accepted_requirements", "excluded_candidates", "generation_authority",
-				} {
-					if strings.Contains(string(job.Payload), forbidden) {
-						return assemblyline.PortableResult{}, fmt.Errorf(
-							"correction leaked workflow authority %q", forbidden,
-						)
-					}
-				}
 				candidate = corrected
 			default:
 				return assemblyline.PortableResult{}, fmt.Errorf("unexpected work kind %q", job.Kind)
@@ -78,23 +60,26 @@ func TestDirectCodingRequirementCorrectsMissingResultRelationBeforeRetention(t *
 		},
 	}
 	got, err := resolveDirectCodingApplicationRequirementCandidate(
-		runtime, "intent-model", vague, authority,
-		[]assemblyline.ApplicationIntentCandidateRequirement{}, nil,
+		runtime, "intent-model", authority, entry, nil, nil, nil,
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !got.Retain || got.Candidate != corrected ||
-		got.ResultRelation.Relation != assemblyline.ApplicationRequirementExplicitResultRelation ||
-		got.ResultRelation.CandidateSHA256 != assemblyline.ExactObjectiveContextSHA(corrected) {
+	if got.Disposition != directCodingApplicationRequirementRetained ||
+		got.Candidate != corrected ||
+		got.ResultRelation.Relation != assemblyline.ApplicationRequirementExplicitResultRelation {
 		t.Fatalf("resolution=%+v", got)
 	}
 	want := []assemblyline.WorkKind{
+		assemblyline.WorkApplicationRequirementCandidateAuthorization,
+		assemblyline.WorkApplicationRequirementCandidateKind,
 		assemblyline.WorkApplicationRequirementCandidateKind,
 		assemblyline.WorkApplicationRequirementCandidateCardinality,
 		assemblyline.WorkApplicationRequirementCandidateResultRelation,
 		assemblyline.WorkApplicationRequirementCandidateResultRelationGrounding,
 		assemblyline.WorkApplicationRequirementCandidateResultRelationCorrection,
+		assemblyline.WorkApplicationRequirementCandidateAuthorization,
+		assemblyline.WorkApplicationRequirementCandidateKind,
 		assemblyline.WorkApplicationRequirementCandidateKind,
 		assemblyline.WorkApplicationRequirementCandidateCardinality,
 		assemblyline.WorkApplicationRequirementCandidateResultRelation,
@@ -104,136 +89,60 @@ func TestDirectCodingRequirementCorrectsMissingResultRelationBeforeRetention(t *
 	}
 }
 
-func TestDirectCodingRequirementFailsWhenResultRelationRemainsMissing(t *testing.T) {
-	t.Parallel()
-	const request = "Build a label formatter that converts user-provided text to Unicode lowercase."
-	const vague = "Display the correctly formatted label."
-	const stillVague = "Show an accurate transformed label."
-	authority := directCodingRequirementGenerationAuthorityForRequest(t, request)
-	correctionCalls := 0
-	runtime := typedWorkerRuntime{
-		Context: context.Background(), MaxAttempts: 1,
-		Execute: func(job assemblyline.PortableJob, _ string) (assemblyline.PortableResult, error) {
-			candidate := ""
-			switch job.Kind {
-			case assemblyline.WorkApplicationRequirementCandidateKind:
-				candidate = assemblyline.ApplicationRequirementCandidateTaskLocal
-			case assemblyline.WorkApplicationRequirementCandidateCardinality:
-				candidate = assemblyline.ApplicationRequirementOneRuntimeOutcome
-			case assemblyline.WorkApplicationRequirementCandidateResultRelation:
-				candidate = assemblyline.ApplicationRequirementMissingResultRelation
-			case assemblyline.WorkApplicationRequirementCandidateResultRelationGrounding:
-				candidate = assemblyline.ApplicationRequirementExactlyOneDeterminingRelationEntailed
-			case assemblyline.WorkApplicationRequirementCandidateResultRelationCorrection:
-				correctionCalls++
-				candidate = stillVague
-			default:
-				return assemblyline.PortableResult{}, fmt.Errorf("unexpected work kind %q", job.Kind)
-			}
-			return assemblyline.PortableResult{JobID: job.ID, Candidate: candidate}, nil
-		},
-	}
-	_, err := resolveDirectCodingApplicationRequirementCandidate(
-		runtime, "intent-model", vague, authority,
-		[]assemblyline.ApplicationIntentCandidateRequirement{}, nil,
-	)
-	if err == nil || correctionCalls != 1 ||
-		!strings.Contains(err.Error(), "remained underdetermined after its one correction") {
-		t.Fatalf("corrections=%d error=%v", correctionCalls, err)
-	}
-}
-
-func TestDirectCodingRequirementFailsLoudlyWhenRequestDoesNotGroundMissingResultRelation(
+func TestDirectCodingRequirementMissingResultRelationDiscardsOnlyThatCandidate(
 	t *testing.T,
 ) {
 	t.Parallel()
-	const request = "Build a browser preference assistant that displays a useful recommendation."
-	const vague = "Accept preferences and display the best recommendation."
-	authority := directCodingRequirementGenerationAuthorityForRequest(t, request)
-	var calls []assemblyline.WorkKind
-	runtime := typedWorkerRuntime{
-		Context: context.Background(), MaxAttempts: 1,
-		Execute: func(job assemblyline.PortableJob, _ string) (assemblyline.PortableResult, error) {
-			calls = append(calls, job.Kind)
-			candidate := ""
-			switch job.Kind {
-			case assemblyline.WorkApplicationRequirementCandidateKind:
-				candidate = assemblyline.ApplicationRequirementCandidateTaskLocal
-			case assemblyline.WorkApplicationRequirementCandidateCardinality:
-				candidate = assemblyline.ApplicationRequirementOneRuntimeOutcome
-			case assemblyline.WorkApplicationRequirementCandidateResultRelation:
-				candidate = assemblyline.ApplicationRequirementMissingResultRelation
-			case assemblyline.WorkApplicationRequirementCandidateResultRelationGrounding:
-				candidate = assemblyline.ApplicationRequirementNoExactlyOneDeterminingRelationEntailed
-			case assemblyline.WorkApplicationRequirementCandidateResultRelationCorrection:
-				return assemblyline.PortableResult{}, fmt.Errorf("correction opened without grounding authority")
-			default:
-				return assemblyline.PortableResult{}, fmt.Errorf("unexpected work kind %q", job.Kind)
-			}
-			return assemblyline.PortableResult{JobID: job.ID, Candidate: candidate}, nil
-		},
-	}
-	_, err := resolveDirectCodingApplicationRequirementCandidate(
-		runtime, "intent-model", vague, authority,
-		[]assemblyline.ApplicationIntentCandidateRequirement{}, nil,
-	)
-	if err == nil || !strings.Contains(err.Error(), "refusing to invent result semantics") {
-		t.Fatalf("negative grounding error=%v", err)
-	}
-	want := []assemblyline.WorkKind{
-		assemblyline.WorkApplicationRequirementCandidateKind,
-		assemblyline.WorkApplicationRequirementCandidateCardinality,
-		assemblyline.WorkApplicationRequirementCandidateResultRelation,
-		assemblyline.WorkApplicationRequirementCandidateResultRelationGrounding,
-	}
-	if !reflect.DeepEqual(calls, want) {
-		t.Fatalf("calls=%v want=%v", calls, want)
-	}
-}
-
-func TestDirectCodingRequirementCorrectionRoutesCodeOnlyWorkflowDuplicatesToZeroDelta(t *testing.T) {
-	t.Parallel()
-	const request = "Build a browser record normalizer that trims one submitted label and displays the normalized label."
-	const vague = "Display the correct normalized label."
-	const duplicate = "Trim surrounding whitespace from the submitted label and display it."
 	tests := []struct {
-		name     string
-		accepted []string
-		excluded []string
-		set      string
+		name            string
+		grounding       string
+		correction      string
+		wantCorrections int
 	}{
-		{name: "accepted", accepted: []string{duplicate}, excluded: []string{}, set: assemblyline.ApplicationRequirementZeroDeltaAcceptedSet},
-		{name: "excluded", accepted: []string{}, excluded: []string{duplicate}, set: assemblyline.ApplicationRequirementZeroDeltaExcludedSet},
+		{
+			name:            "request does not determine result",
+			grounding:       assemblyline.ApplicationRequirementNoExactlyOneDeterminingRelationEntailed,
+			wantCorrections: 0,
+		},
+		{
+			name:            "one correction remains vague",
+			grounding:       assemblyline.ApplicationRequirementExactlyOneDeterminingRelationEntailed,
+			correction:      "Show an accurate transformed label.",
+			wantCorrections: 1,
+		},
 	}
 	for _, test := range tests {
 		test := test
 		t.Run(test.name, func(t *testing.T) {
-			t.Parallel()
-			authority := directCodingRequirementGenerationAuthorityWithCollections(
-				t, request, test.accepted, test.excluded,
-			)
+			const request = "Build a label formatter that converts user-provided text to Unicode lowercase."
+			const vague = "Display the correctly formatted label."
+			authority, entry := directCodingRequirementQueueEntry(t, request, vague, nil)
+			corrections := 0
 			runtime := typedWorkerRuntime{
 				Context: context.Background(), MaxAttempts: 1,
 				Execute: func(job assemblyline.PortableJob, _ string) (assemblyline.PortableResult, error) {
 					candidate := ""
 					switch job.Kind {
 					case assemblyline.WorkApplicationRequirementCandidateKind:
-						candidate = assemblyline.ApplicationRequirementCandidateTaskLocal
+						var err error
+						candidate, err = applicationRequirementCandidateContentPresenceForKindForTest(
+							job,
+							assemblyline.ApplicationRequirementCandidateTaskLocal,
+						)
+						if err != nil {
+							return assemblyline.PortableResult{}, err
+						}
 					case assemblyline.WorkApplicationRequirementCandidateCardinality:
 						candidate = assemblyline.ApplicationRequirementOneRuntimeOutcome
-					case assemblyline.WorkApplicationRequirementCandidateOutcomeRelation:
-						candidate = assemblyline.ApplicationRequirementDistinctRuntimeOutcomes
+					case assemblyline.WorkApplicationRequirementCandidateAuthorization:
+						candidate = assemblyline.ApplicationRequirementCandidateEntailed
 					case assemblyline.WorkApplicationRequirementCandidateResultRelation:
 						candidate = assemblyline.ApplicationRequirementMissingResultRelation
 					case assemblyline.WorkApplicationRequirementCandidateResultRelationGrounding:
-						candidate = assemblyline.ApplicationRequirementExactlyOneDeterminingRelationEntailed
+						candidate = test.grounding
 					case assemblyline.WorkApplicationRequirementCandidateResultRelationCorrection:
-						if strings.Contains(string(job.Payload), duplicate) {
-							return assemblyline.PortableResult{}, fmt.Errorf(
-								"correction envelope leaked code-only workflow collection",
-							)
-						}
-						candidate = duplicate
+						corrections++
+						candidate = test.correction
 					default:
 						return assemblyline.PortableResult{}, fmt.Errorf("unexpected work kind %q", job.Kind)
 					}
@@ -241,53 +150,111 @@ func TestDirectCodingRequirementCorrectionRoutesCodeOnlyWorkflowDuplicatesToZero
 				},
 			}
 			resolved, err := resolveDirectCodingApplicationRequirementCandidate(
-				runtime, "intent-model", vague, authority,
-				directCodingAcceptedRequirementAuthorities(t, test.accepted), nil,
+				runtime, "intent-model", authority, entry, nil, nil, nil,
 			)
-			if err != nil || resolved.Retain || resolved.ZeroDelta == nil ||
-				resolved.ZeroDelta.RetainedSet != test.set {
-				t.Fatalf("code-only %s duplicate resolution=%+v error=%v", test.name, resolved, err)
+			if err != nil || resolved.Disposition != directCodingApplicationRequirementUnresolved {
+				t.Fatalf("corrections=%d resolution=%+v error=%v", corrections, resolved, err)
+			}
+			if corrections != test.wantCorrections {
+				t.Fatalf("corrections=%d want=%d", corrections, test.wantCorrections)
 			}
 		})
 	}
 }
 
-func directCodingRequirementGenerationAuthorityForRequest(
-	t testing.TB,
-	request string,
-) assemblyline.ApplicationRequirementCandidateInput {
-	t.Helper()
-	return directCodingRequirementGenerationAuthorityWithCollections(
-		t, request, []string{}, []string{},
+func TestDirectCodingRequirementCorrectionPreservesVerifiedContext(t *testing.T) {
+	t.Parallel()
+	const request = "Build a browser measurement converter using the verified conversion policy."
+	const fact = "The verified policy multiplies the submitted yard value by 3 and reports feet."
+	const vague = "Accept a measurement and display the correct converted result."
+	const corrected = "Multiply the submitted yard value by 3 and display the result in feet."
+	authority, entry := directCodingRequirementQueueEntry(t, request, vague, func(context *assemblyline.ApplicationContext) {
+		context.Facts = append(context.Facts, assemblyline.ApplicationContextFact{
+			ID: "fact_002", Kind: assemblyline.ApplicationContextRepositoryFact,
+			Authority: assemblyline.ApplicationContextEvidenceAuthority,
+			NeedID:    "verified_context_need", Value: fact,
+			SourceID: "verified_context_source", SourceSHA256: assemblyline.ExactObjectiveContextSHA(fact),
+		})
+	})
+	runtime := typedWorkerRuntime{
+		Context: context.Background(), MaxAttempts: 1,
+		Execute: func(job assemblyline.PortableJob, _ string) (assemblyline.PortableResult, error) {
+			candidate := ""
+			switch job.Kind {
+			case assemblyline.WorkApplicationRequirementCandidateKind:
+				var err error
+				candidate, err = applicationRequirementCandidateContentPresenceForKindForTest(
+					job,
+					assemblyline.ApplicationRequirementCandidateTaskLocal,
+				)
+				if err != nil {
+					return assemblyline.PortableResult{}, err
+				}
+			case assemblyline.WorkApplicationRequirementCandidateCardinality:
+				candidate = assemblyline.ApplicationRequirementOneRuntimeOutcome
+			case assemblyline.WorkApplicationRequirementCandidateAuthorization:
+				candidate = assemblyline.ApplicationRequirementCandidateEntailed
+			case assemblyline.WorkApplicationRequirementCandidateResultRelation:
+				var input assemblyline.ApplicationRequirementCandidateResultRelationInput
+				if err := json.Unmarshal(job.Payload, &input); err != nil {
+					return assemblyline.PortableResult{}, err
+				}
+				if input.Candidate == vague {
+					candidate = assemblyline.ApplicationRequirementMissingResultRelation
+				} else {
+					candidate = assemblyline.ApplicationRequirementExplicitResultRelation
+				}
+			case assemblyline.WorkApplicationRequirementCandidateResultRelationGrounding:
+				prompt, err := assemblyline.RenderPortableJob(job)
+				if err != nil || !strings.Contains(prompt, fact) || strings.Contains(prompt, "verified_context_source") {
+					return assemblyline.PortableResult{}, fmt.Errorf("grounding lost minimal verified context: %v", err)
+				}
+				candidate = assemblyline.ApplicationRequirementExactlyOneDeterminingRelationEntailed
+			case assemblyline.WorkApplicationRequirementCandidateResultRelationCorrection:
+				candidate = corrected
+			default:
+				return assemblyline.PortableResult{}, fmt.Errorf("unexpected work kind %q", job.Kind)
+			}
+			return assemblyline.PortableResult{JobID: job.ID, Candidate: candidate}, nil
+		},
+	}
+	resolved, err := resolveDirectCodingApplicationRequirementCandidate(
+		runtime, "intent-model", authority, entry, nil, nil, nil,
 	)
+	if err != nil || resolved.Candidate != corrected {
+		t.Fatalf("resolution=%+v error=%v", resolved, err)
+	}
 }
 
-func directCodingRequirementGenerationAuthorityWithCollections(
+func directCodingRequirementQueueEntry(
 	t testing.TB,
 	request string,
-	accepted []string,
-	excluded []string,
-) assemblyline.ApplicationRequirementCandidateInput {
+	candidate string,
+	mutateContext func(*assemblyline.ApplicationContext),
+) (assemblyline.ApplicationRequirementInventoryInput, directCodingApplicationRequirementCandidateQueueEntry) {
 	t.Helper()
-	applicationContext, err := assemblyline.BootstrapApplicationContext(
-		request, assemblyline.ApplicationWorkspaceEmpty,
-	)
+	workspaceState := assemblyline.ApplicationWorkspaceEmpty
+	if mutateContext != nil {
+		workspaceState = assemblyline.ApplicationWorkspaceExisting
+	}
+	applicationContext, err := assemblyline.BootstrapApplicationContext(request, workspaceState)
 	if err != nil {
 		t.Fatal(err)
 	}
-	input := assemblyline.ApplicationRequirementCoverageInput{
-		UserRequest: request, Context: applicationContext,
-		AcceptedRequirements: append([]string{}, accepted...),
-		ExcludedCandidates:   append([]string{}, excluded...),
-		ZeroDeltas:           []assemblyline.ApplicationRequirementCandidateZeroDelta{},
+	if mutateContext != nil {
+		mutateContext(&applicationContext)
 	}
-	coverage, err := assemblyline.DecodeApplicationRequirementCoverageLeaf(
-		input, assemblyline.ApplicationRequirementRemains,
-	)
+	input := assemblyline.ApplicationRequirementInventoryInput{
+		UserRequest: request,
+		Context:     applicationContext,
+	}
+	inventory, err := assemblyline.DecodeApplicationRequirementInventory(input, candidate)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return assemblyline.ApplicationRequirementCandidateInput{
-		Authority: input, Coverage: coverage,
+	queue, err := newDirectCodingApplicationRequirementCandidateQueue(input, inventory)
+	if err != nil {
+		t.Fatal(err)
 	}
+	return input, queue[0]
 }

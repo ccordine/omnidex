@@ -13,19 +13,15 @@ type scopeCapturingStations struct {
 	minification assemblyline.ContextScope
 }
 
-func (station *scopeCapturingStations) SelectRelevant(
+func (station *scopeCapturingStations) Relate(
 	_ context.Context,
-	input assemblyline.ContextRelevanceInput,
-) (assemblyline.ContextRelevanceDecision, StationReceipt, error) {
+	input assemblyline.ContextRelevanceRelationInput,
+) (assemblyline.ContextRelevanceRelationResult, StationReceipt, error) {
 	station.relevance = input.Scope
-	ids := make([]string, len(input.CandidateAuthorities))
-	for index, candidate := range input.CandidateAuthorities {
-		ids[index] = candidate.CandidateID
-	}
-	decision := assemblyline.ContextRelevanceDecision{
-		Schema: assemblyline.ContextRelevanceSchemaV1, ReferencedCandidateIDs: ids,
-	}
-	return decision, StationReceipt{Calls: 1}, decision.ValidateFor(input)
+	decision, err := assemblyline.DecodeContextRelevanceRelationResult(
+		input, assemblyline.ContextCandidateDirectlyRelevant,
+	)
+	return decision, StationReceipt{Calls: 1}, err
 }
 
 func (station *scopeCapturingStations) Minify(
@@ -63,7 +59,7 @@ func TestCompilePropagatesRoleplayScopeThroughEveryContextStation(t *testing.T) 
 		t.Fatalf("station scopes relevance/minification=%q/%q",
 			stations.relevance, stations.minification)
 	}
-	if result.RelevanceCalls != 1 || result.MinificationCalls != 1 {
+	if result.RelevanceCalls != 2 || result.MinificationCalls != 1 {
 		t.Fatalf("scoped result=%#v", result)
 	}
 }

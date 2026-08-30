@@ -268,7 +268,6 @@ func chatStationLabel(subject string) (string, chatProgressKind) {
 		"grounded_answer":               "Grounded answer",
 		"database_schema_selection":     "Database schema selection",
 		"database_query_intent":         "Database relational intent",
-		"database_evidence_gap":         "Database evidence gap",
 		"database_join_path_selection":  "Database relationship selection",
 		"repository_change_surface":     "Repository change-surface",
 		"repository_evidence_relevance": "Repository relevance",
@@ -284,7 +283,7 @@ func chatStationLabel(subject string) (string, chatProgressKind) {
 	category := chatProgressStation
 	switch subject {
 	case "context_relevance", "context_minification",
-		"database_schema_selection", "database_evidence_gap",
+		"database_schema_selection",
 		"database_join_path_selection", "repository_evidence_relevance",
 		"web_relevance", "skill_selection":
 		category = chatProgressRetrieval

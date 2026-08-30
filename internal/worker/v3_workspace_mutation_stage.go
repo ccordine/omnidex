@@ -104,18 +104,7 @@ func workspaceMutationCommandForStage(
 		runtime.svc.repo == nil || stage == nil {
 		return queue.WorkspaceMutationCommand{}, fmt.Errorf("workspace mutation command requires one active claim and stage")
 	}
-	intents := make([]queue.WorkspaceMutationVerificationIntent, len(commands))
-	for index, command := range commands {
-		authority, err := encodeWorkspaceVerificationCommand(command)
-		if err != nil {
-			return queue.WorkspaceMutationCommand{}, fmt.Errorf(
-				"encode workspace verification command %d: %w", index+1, err,
-			)
-		}
-		kind := workspaceVerificationEvidenceKind(command.Purpose)
-		intents[index] = queue.WorkspaceMutationVerificationIntent{Kind: kind, Command: authority}
-	}
-	verification, err := queue.NewWorkspaceMutationVerificationPlan(intents)
+	verification, err := workspaceVerificationPlanForCommands(commands)
 	if err != nil {
 		return queue.WorkspaceMutationCommand{}, err
 	}

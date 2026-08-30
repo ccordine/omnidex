@@ -56,7 +56,7 @@ func TestBrowserFeatureContractContainsBehaviorWithoutFrameworkMetaFraming(t *te
 	t.Parallel()
 	contract := genericBrowserFeatureContract("Show the current inventory level.", nil)
 	if !strings.Contains(contract, "Show the current inventory level.") ||
-		!strings.Contains(contract, "Use only declared state") {
+		!strings.Contains(contract, "Use only the listed direct declarations.") {
 		t.Fatalf("browser behavior contract omitted semantic authority: %s", contract)
 	}
 	for _, forbidden := range []string{

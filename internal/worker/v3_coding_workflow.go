@@ -55,19 +55,30 @@ func directCodingStaticFileDiagnostic(path, detail string, _ ...string) *directC
 }
 
 type directCodingVerification struct {
-	Passed                bool
-	TestsPassed           bool
-	Commands              []string
-	EvidenceIDs           []int64
-	MutationOperationID   string
-	MutationReceiptSHA256 string
-	Diagnostic            *directCodingDiagnostic
+	Passed                  bool
+	TestsPassed             bool
+	Commands                []string
+	EvidenceIDs             []int64
+	MutationOperationID     string
+	MutationReceiptSHA256   string
+	ExactStateAuthorityID   string
+	ExactStateReceiptSHA256 string
+	Diagnostic              *directCodingDiagnostic
 }
 
 func (v directCodingVerification) validate() error {
-	if !validRepositoryVerificationOpaqueID(v.MutationOperationID, "workspace_mutation_") ||
-		!validRepositoryVerificationSHA256(v.MutationReceiptSHA256) {
+	mutationPresent := v.MutationOperationID != "" || v.MutationReceiptSHA256 != ""
+	exactStatePresent := v.ExactStateAuthorityID != "" || v.ExactStateReceiptSHA256 != ""
+	if mutationPresent == exactStatePresent {
+		return fmt.Errorf("coding verification requires exactly one mutation or verified no-delta authority")
+	}
+	if mutationPresent && (!validRepositoryVerificationOpaqueID(v.MutationOperationID, "workspace_mutation_") ||
+		!validRepositoryVerificationSHA256(v.MutationReceiptSHA256)) {
 		return fmt.Errorf("coding verification requires one exact terminal workspace mutation receipt")
+	}
+	if exactStatePresent && (!validRepositoryVerificationOpaqueID(v.ExactStateAuthorityID, "workspace_exact_") ||
+		!validRepositoryVerificationSHA256(v.ExactStateReceiptSHA256)) {
+		return fmt.Errorf("coding verification requires one exact verified no-delta receipt")
 	}
 	if len(v.Commands) != len(v.EvidenceIDs) ||
 		len(v.Commands) > queue.MaxGeneratedWorkloadVerificationEvidence-1 {
@@ -129,7 +140,7 @@ func runDirectCodingWorkflow(driver directCodingWorkflowDriver, allowExistingWor
 		return failDirectCodingWorkflow(driver, "prepare exact workspace mutation", fmt.Errorf("driver returned no prepared mutation"))
 	}
 	mutations := prepared.MutationCount()
-	if mutations == 0 {
+	if mutations == 0 && !(allowExistingWorkspace && prepared.HasExactStateAuthority()) {
 		reason := fmt.Errorf("direct coding requires one journaled workspace mutation")
 		if !allowExistingWorkspace {
 			reason = fmt.Errorf("fresh coding workflow accepted no workspace mutation")

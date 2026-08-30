@@ -100,7 +100,7 @@ func TestOrderedRoleplayResponsesReachLaterActorsOnlyThroughPerItemRelevance(t *
 		ivoID:  ivoPrivateSentinel,
 	}}
 	contextStation := emptyContextSieveStation()
-	contextStation.relevantIDsByCall = [][]string{{"CTX_1"}, {"CTX_2"}}
+	contextStation.relevantIDsByCall = [][]string{{"CTX_1"}, {}, {"CTX_2"}}
 	conversation := &sequenceConversationStation{texts: []string{
 		"Mara lowers the lantern.", "Ivo steps around the dimmed light.",
 	}}
@@ -129,7 +129,7 @@ func TestOrderedRoleplayResponsesReachLaterActorsOnlyThroughPerItemRelevance(t *
 		t.Fatal(err)
 	}
 	if !result.Complete || len(result.RoleplayResponses) != 2 || conversation.calls != 2 ||
-		provider.calls != 2 || contextStation.relevanceCalls != 2 ||
+		provider.calls != 2 || contextStation.relevanceCalls != 3 ||
 		canon.calls != 3 || canonDeltaCalls != 1 {
 		t.Fatalf("result=%#v calls provider/relevance/response=%d/%d/%d",
 			result, provider.calls, contextStation.relevanceCalls, conversation.calls)
@@ -163,22 +163,20 @@ func TestOrderedRoleplayResponsesReachLaterActorsOnlyThroughPerItemRelevance(t *
 		!strings.Contains(roleplayCanonInputContext(canon.inputs[1]), privateResponderSentinel) {
 		t.Fatalf("user/response canon private contexts=%#v", canon.inputs)
 	}
-	if len(contextStation.relevanceInputs) != 2 ||
+	if len(contextStation.relevanceInputs) != 3 ||
 		len(provider.termsByCall) != 2 ||
 		!slices.Equal(provider.termsByCall[0], []string{userTurn.ExactText}) ||
 		!slices.Equal(provider.termsByCall[1], []string{userTurn.ExactText}) ||
-		len(contextStation.relevanceInputs[0].CandidateAuthorities) != 1 ||
 		!strings.Contains(
-			contextStation.relevanceInputs[0].CandidateAuthorities[0].Content,
+			contextStation.relevanceInputs[0].Candidate.Content,
 			"Mara alone knows",
 		) ||
-		len(contextStation.relevanceInputs[1].CandidateAuthorities) != 2 ||
 		!strings.Contains(
-			contextStation.relevanceInputs[1].CandidateAuthorities[0].Content,
+			contextStation.relevanceInputs[1].Candidate.Content,
 			"Ivo alone knows",
 		) ||
 		!strings.Contains(
-			contextStation.relevanceInputs[1].CandidateAuthorities[1].Content,
+			contextStation.relevanceInputs[2].Candidate.Content,
 			"Earlier response by Mara",
 		) {
 		t.Fatalf("current-round relevance=%#v", contextStation.relevanceInputs)

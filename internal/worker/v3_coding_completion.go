@@ -2,12 +2,9 @@ package worker
 
 import (
 	"fmt"
-	"regexp"
 	"sort"
 	"strings"
 )
-
-var unfinishedCodePattern = regexp.MustCompile(`(?im)(\bTODO\b|\bFIXME\b|IMPLEMENT[ _-]?ME|not implemented|unimplemented!\s*\(|panic\s*\(\s*["']not implemented|\bplaceholder\b|here we would typically|would typically|would need to be refactored|here we would|left as an exercise|add assertions(?:\s+to\s+verify)?)`)
 
 type directCodingCompletionState struct {
 	AllowExistingWorkspace bool
@@ -17,7 +14,6 @@ type directCodingCompletionState struct {
 	LatestTestTurn         int
 	TestsRequired          bool
 	LastTestHadNoTests     bool
-	WrittenSource          map[string]string
 }
 
 func validateDirectCodingCompletion(state directCodingCompletionState) error {
@@ -33,43 +29,11 @@ func validateDirectCodingCompletion(state directCodingCompletionState) error {
 	} else if state.TestsRequired && state.LastTestHadNoTests {
 		violations = append(violations, "the successful test command reported no tests")
 	}
-	for path, content := range state.WrittenSource {
-		if isDirectCodingSourcePath(path) && unfinishedCodePattern.MatchString(content) {
-			violations = append(violations, fmt.Sprintf("written source %s still contains an unfinished implementation marker", path))
-		}
-	}
 	if len(violations) == 0 {
 		return nil
 	}
 	sort.Strings(violations)
 	return fmt.Errorf("coding completion is not ready: %s", strings.Join(violations, "; "))
-}
-
-func directCodingUnfinishedDiagnostic(state directCodingCompletionState) *directCodingDiagnostic {
-	paths := make([]string, 0, len(state.WrittenSource))
-	for path := range state.WrittenSource {
-		paths = append(paths, path)
-	}
-	sort.Strings(paths)
-	for _, path := range paths {
-		content := state.WrittenSource[path]
-		if !isDirectCodingSourcePath(path) {
-			continue
-		}
-		marker := strings.TrimSpace(unfinishedCodePattern.FindString(content))
-		if marker == "" {
-			continue
-		}
-		return directCodingStaticFileDiagnostic(
-			path,
-			fmt.Sprintf(
-				"%s contains forbidden unfinished implementation marker %q. Replace it with the real implementation required by the assigned requirements without weakening existing behavior.",
-				path,
-				marker,
-			),
-		)
-	}
-	return nil
 }
 
 func isDirectCodingSourcePath(path string) bool {

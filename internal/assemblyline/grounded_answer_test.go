@@ -1,94 +1,154 @@
 package assemblyline
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 )
 
-func TestGroundedAnswerLeavesSeparateTextFromEvidenceBinding(t *testing.T) {
-	input := groundedAnswerFixture()
-	textInput := GroundedAnswerTextInput{
-		ExactRequirement: input.ExactRequirement,
-		Context:          input.Context, Evidence: input.Evidence,
+func TestGroundedAnswerParagraphLeavesKeepInventorySupportAndAuthorizationSeparate(t *testing.T) {
+	t.Parallel()
+	base := groundedAnswerFixture()
+	inventoryInput := GroundedAnswerParagraphInventoryInput{
+		ExactRequirement: base.ExactRequirement,
+		Context:          base.Context,
+		Evidence:         base.Evidence,
 	}
-	textJob, err := NewGroundedAnswerTextJob(textInput)
+	job, err := NewGroundedAnswerParagraphInventoryJob(inventoryInput)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if textJob.Kind != WorkGroundedAnswerText {
-		t.Fatalf("kind=%q", textJob.Kind)
+	if job.Kind != WorkGroundedAnswerParagraphInventory {
+		t.Fatalf("inventory kind=%q", job.Kind)
 	}
-	prompt, err := BuildGroundedAnswerTextPrompt(textInput)
+	prompt, err := BuildGroundedAnswerParagraphInventoryPrompt(inventoryInput)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(prompt, input.Evidence[0].Text) || strings.Contains(prompt, input.Evidence[0].ID) {
-		t.Fatalf("text prompt lost evidence or exposed its code-owned ID: %q", prompt)
+	for _, evidence := range base.Evidence {
+		if !strings.Contains(prompt, evidence.Text) || strings.Contains(prompt, evidence.ID) {
+			t.Fatalf("inventory prompt exposed an evidence ID or lost evidence text: %s", prompt)
+		}
 	}
-	text, err := DecodeGroundedAnswerTextDecision(
-		textInput, "The dispatch interval controls invitation timing.",
+	const paragraph = "The dispatch interval controls invitation timing."
+	inventory, err := DecodeGroundedAnswerParagraphInventory(
+		inventoryInput, paragraph+"\n"+paragraph,
 	)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if len(inventory.Candidates) != 2 {
+		t.Fatalf("inventory candidates=%v", inventory.Candidates)
 	}
 
-	relationInput := GroundedAnswerEvidenceRelationInput{
-		ExactRequirement: input.ExactRequirement,
-		Context:          input.Context, AnswerText: text.Text, Evidence: input.Evidence[0],
+	relationInput := GroundedAnswerParagraphEvidenceRelationInput{
+		ParagraphText: paragraph,
+		Evidence:      base.Evidence[0],
 	}
-	relationJob, err := NewGroundedAnswerEvidenceRelationJob(relationInput)
+	relationJob, err := NewGroundedAnswerParagraphEvidenceRelationJob(relationInput)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if relationJob.Kind != WorkGroundedAnswerEvidenceRelation {
-		t.Fatalf("kind=%q", relationJob.Kind)
+	if relationJob.Kind != WorkGroundedAnswerParagraphEvidenceRelation {
+		t.Fatalf("relation kind=%q", relationJob.Kind)
 	}
-	relationPrompt, err := BuildGroundedAnswerEvidenceRelationPrompt(relationInput)
+	relationPrompt, err := BuildGroundedAnswerParagraphEvidenceRelationPrompt(relationInput)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(relationPrompt, relationInput.Evidence.ID) {
-		t.Fatalf("pairwise relation prompt exposed code-owned evidence ID: %q", relationPrompt)
+	if !strings.Contains(relationPrompt, paragraph) ||
+		!strings.Contains(relationPrompt, base.Evidence[0].Text) ||
+		strings.Contains(relationPrompt, base.Evidence[0].ID) ||
+		strings.Contains(relationPrompt, base.ExactRequirement) {
+		t.Fatalf("pairwise relation prompt exceeded its exact authority: %s", relationPrompt)
 	}
-	relation, err := DecodeGroundedAnswerEvidenceRelationDecision(
-		relationInput, string(GroundedEvidenceSupportsAnswer),
+	relation, err := DecodeGroundedAnswerParagraphEvidenceRelationDecision(
+		relationInput, string(GroundedEvidenceSupportsParagraph),
 	)
-	if err != nil || relation.Relation != GroundedEvidenceSupportsAnswer {
+	if err != nil || relation.Relation != GroundedEvidenceSupportsParagraph {
 		t.Fatalf("relation=%+v err=%v", relation, err)
+	}
+
+	authorizationInput := GroundedAnswerParagraphAuthorizationInput{
+		ExactRequirement: base.ExactRequirement,
+		Context:          base.Context,
+		ParagraphText:    paragraph,
+		Evidence:         base.Evidence[:1],
+	}
+	authorizationJob, err := NewGroundedAnswerParagraphAuthorizationJob(authorizationInput)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if authorizationJob.Kind != WorkGroundedAnswerParagraphAuthorization {
+		t.Fatalf("authorization kind=%q", authorizationJob.Kind)
+	}
+	authorizationPrompt, err := BuildGroundedAnswerParagraphAuthorizationPrompt(authorizationInput)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(authorizationPrompt, base.Evidence[0].Text) ||
+		strings.Contains(authorizationPrompt, base.Evidence[1].Text) ||
+		strings.Contains(authorizationPrompt, base.Evidence[0].ID) {
+		t.Fatalf("authorization prompt did not receive only supporting evidence: %s", authorizationPrompt)
+	}
+	authorization, err := DecodeGroundedAnswerParagraphAuthorizationDecision(
+		authorizationInput, string(GroundedParagraphResponsiveAndFullySupported),
+	)
+	if err != nil || authorization.Relation != GroundedParagraphResponsiveAndFullySupported {
+		t.Fatalf("authorization=%+v err=%v", authorization, err)
 	}
 }
 
-func TestGroundedAnswerLeafDecodersRejectStructuredOrCompositeResults(t *testing.T) {
-	input := groundedAnswerFixture()
-	textInput := GroundedAnswerTextInput{
-		ExactRequirement: input.ExactRequirement,
-		Context:          input.Context, Evidence: input.Evidence,
+func TestGroundedAnswerParagraphDecodersRejectStructuredCompositeAndCitationResults(t *testing.T) {
+	t.Parallel()
+	base := groundedAnswerFixture()
+	inventoryInput := GroundedAnswerParagraphInventoryInput{
+		ExactRequirement: base.ExactRequirement, Context: base.Context, Evidence: base.Evidence,
 	}
 	for _, raw := range []string{
-		`{"text":"answer"}`,
+		`{"paragraphs":["answer"]}`,
 		`["answer"]`,
 		`"answer"`,
 		"```\nanswer\n```",
+		"answer [1]",
 	} {
-		if _, err := DecodeGroundedAnswerTextDecision(textInput, raw); err == nil {
-			t.Fatalf("structured text result accepted: %q", raw)
+		if _, err := DecodeGroundedAnswerParagraphInventory(inventoryInput, raw); err == nil {
+			t.Fatalf("structured or cited inventory result accepted: %q", raw)
 		}
 	}
-	relationInput := GroundedAnswerEvidenceRelationInput{
-		ExactRequirement: input.ExactRequirement,
-		Context:          input.Context, AnswerText: "Answer.", Evidence: input.Evidence[0],
+	relationInput := GroundedAnswerParagraphEvidenceRelationInput{
+		ParagraphText: "Answer.", Evidence: base.Evidence[0],
 	}
-	for _, raw := range []string{"supports", "SUPPORTS_ANSWER\ncomment", `{"relation":"SUPPORTS_ANSWER"}`} {
-		if _, err := DecodeGroundedAnswerEvidenceRelationDecision(relationInput, raw); err == nil {
+	for _, raw := range []string{
+		"supports", "SUPPORTS_PARAGRAPH\ncomment", `{"relation":"SUPPORTS_PARAGRAPH"}`,
+	} {
+		if _, err := DecodeGroundedAnswerParagraphEvidenceRelationDecision(relationInput, raw); err == nil {
 			t.Fatalf("invalid relation accepted: %q", raw)
 		}
 	}
 }
 
-func TestGroundedAnswerTextRejectsFilesystemIdentityAtTheResultBoundary(t *testing.T) {
+func TestGroundedAnswerParagraphInventorySupportsExplicitAbsence(t *testing.T) {
 	t.Parallel()
 	base := groundedAnswerFixture()
-	input := GroundedAnswerTextInput{
+	input := GroundedAnswerParagraphInventoryInput{
+		ExactRequirement: base.ExactRequirement, Context: base.Context, Evidence: base.Evidence,
+	}
+	inventory, err := DecodeGroundedAnswerParagraphInventory(
+		input, GroundedAnswerNoParagraphCandidates,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if inventory.Candidates == nil || len(inventory.Candidates) != 0 {
+		t.Fatalf("absence inventory=%#v", inventory)
+	}
+}
+
+func TestGroundedAnswerParagraphRejectsFilesystemIdentityAtResultBoundary(t *testing.T) {
+	t.Parallel()
+	base := groundedAnswerFixture()
+	input := GroundedAnswerParagraphInventoryInput{
 		ExactRequirement:   base.ExactRequirement,
 		Context:            base.Context,
 		Evidence:           base.Evidence,
@@ -101,23 +161,23 @@ func TestGroundedAnswerTextRejectsFilesystemIdentityAtTheResultBoundary(t *testi
 		"known basename": "secret_owner.go contains the setting.",
 	} {
 		t.Run(name, func(t *testing.T) {
-			if _, err := DecodeGroundedAnswerTextDecision(input, candidate); err == nil {
-				t.Fatalf("path-bearing grounded answer was accepted: %q", candidate)
+			if _, err := DecodeGroundedAnswerParagraphInventory(input, candidate); err == nil {
+				t.Fatalf("path-bearing grounded answer paragraph was accepted: %q", candidate)
 			}
 		})
 	}
 }
 
-func TestGroundedAnswerArtifactProvenanceRemainsOutsideThePrompt(t *testing.T) {
+func TestGroundedAnswerArtifactProvenanceRemainsOutsideInventoryPrompt(t *testing.T) {
 	t.Parallel()
 	base := groundedAnswerFixture()
-	input := GroundedAnswerTextInput{
+	input := GroundedAnswerParagraphInventoryInput{
 		ExactRequirement:   base.ExactRequirement,
 		Context:            base.Context,
 		Evidence:           base.Evidence,
 		KnownArtifactPaths: []string{"internal/private/secret_owner.go"},
 	}
-	job, err := NewGroundedAnswerTextJob(input)
+	job, err := NewGroundedAnswerParagraphInventoryJob(input)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -135,19 +195,22 @@ func TestGroundedAnswerArtifactProvenanceRemainsOutsideThePrompt(t *testing.T) {
 	}
 }
 
-func TestGroundedAnswerDecisionIsAssembledByCode(t *testing.T) {
+func TestAssembleGroundedAnswerDecisionPreservesParagraphAndEvidenceOrder(t *testing.T) {
+	t.Parallel()
 	input := groundedAnswerFixture()
-	decision := GroundedAnswerDecision{
-		Schema: GroundedAnswerSchemaV1, RequirementID: input.RequirementID,
-		Text:        "The dispatch interval controls invitation timing.",
-		EvidenceIDs: []string{"E17"},
-	}
-	if err := decision.ValidateFor(input); err != nil {
+	decision, err := AssembleGroundedAnswerDecision(input, []GroundedAnswerParagraph{
+		{Text: "The dispatch interval controls invitation timing.", EvidenceIDs: []string{"E17", "E31"}},
+		{Text: "The scheduler reads that interval.", EvidenceIDs: []string{"E31"}},
+	})
+	if err != nil {
 		t.Fatal(err)
 	}
-	decision.EvidenceIDs = []string{"E99"}
-	if err := decision.ValidateFor(input); err == nil {
-		t.Fatal("code-owned assembly accepted an unprojected evidence ID")
+	if decision.Text != "The dispatch interval controls invitation timing.\n\nThe scheduler reads that interval." ||
+		!reflect.DeepEqual(decision.EvidenceIDs, []string{"E17", "E31"}) {
+		t.Fatalf("decision=%#v", decision)
+	}
+	if _, err := AssembleGroundedAnswerDecision(input, nil); err == nil {
+		t.Fatal("zero accepted paragraphs were silently assembled")
 	}
 }
 

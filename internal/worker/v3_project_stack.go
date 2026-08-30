@@ -111,6 +111,8 @@ func registeredDirectCodingProjectStacks() []directCodingProjectStack {
 			},
 			ProjectCompleteTargetTree: projectTypeScriptBrowserCompleteTargetTree,
 			TaskStageStaticPaths:      []string{"package.json", "package-lock.json", "tsconfig.json", "vite.config.ts"},
+			RuntimeCapabilities:       directCodingBrowserRuntimeCapabilities,
+			BindRuntimeCapabilities:   bindDirectCodingBrowserHostCapabilities,
 			CompileSource:             compileGenericTypeScriptBrowserBlueprint,
 			ValidateTargetTree:        validateTypeScriptBrowserTargetTree,
 			ValidateBlueprint:         assemblyline.ValidateTypeScriptSourceBlueprint,

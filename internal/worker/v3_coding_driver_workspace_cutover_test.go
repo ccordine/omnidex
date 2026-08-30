@@ -90,9 +90,7 @@ func TestDirectCodingDriverOmitsFullTreeDockerCopyOut(t *testing.T) {
 }
 
 func TestPreparedWorkspaceMutationAccountingIsReplayIdempotent(t *testing.T) {
-	session := directCodingSession{completion: directCodingCompletionState{
-		WrittenSource: make(map[string]string),
-	}}
+	session := directCodingSession{}
 	prepared := &directCodingPreparedMutation{
 		assembly: directCodingAssembly{Files: []directCodingFileTask{{
 			Path: "main.go", Content: "package main\n",
@@ -112,12 +110,10 @@ func TestPreparedWorkspaceMutationAccountingIsReplayIdempotent(t *testing.T) {
 	}
 	session.recordPreparedWorkspaceMutation(prepared)
 	session.recordPreparedWorkspaceMutation(prepared)
-	if session.completion.MutationCount != 1 || len(session.mutationJournal) != 1 ||
-		session.completion.WrittenSource["main.go"] != "package main\n" {
+	if session.completion.MutationCount != 1 || len(session.mutationJournal) != 1 {
 		t.Fatalf(
-			"replayed accounting count=%d journal=%+v source=%q",
+			"replayed accounting count=%d journal=%+v",
 			session.completion.MutationCount, session.mutationJournal,
-			session.completion.WrittenSource["main.go"],
 		)
 	}
 }

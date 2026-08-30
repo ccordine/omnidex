@@ -139,7 +139,6 @@ func (r *nativeRuntimeV3) runDirectCodingSession(request directCodingRequest) (s
 		completion: directCodingCompletionState{
 			AllowExistingWorkspace: len(request.Feedback) > 0 || hasExistingImplementation,
 			TestsRequired:          true,
-			WrittenSource:          map[string]string{},
 		},
 	}
 	session.deploymentRecovery = newDirectCodingDeploymentRecovery(session)

@@ -9,36 +9,25 @@ import (
 const (
 	WorkDatabaseQueryFromRelation         WorkKind = "database_query_from_relation"
 	WorkDatabaseQueryShape                WorkKind = "database_query_shape"
-	WorkDatabaseQueryProjectionCoverage   WorkKind = "database_query_projection_coverage"
 	WorkDatabaseQueryProjectionAggregate  WorkKind = "database_query_projection_aggregate"
 	WorkDatabaseQueryProjectionField      WorkKind = "database_query_projection_field"
 	WorkDatabaseQueryProjectionTimeBucket WorkKind = "database_query_projection_time_bucket"
-	WorkDatabaseQueryFilterCoverage       WorkKind = "database_query_filter_coverage"
 	WorkDatabaseQueryFilterField          WorkKind = "database_query_filter_field"
 	WorkDatabaseQueryFilterOperator       WorkKind = "database_query_filter_operator"
-	WorkDatabaseQueryFilterValueCoverage  WorkKind = "database_query_filter_value_coverage"
 	WorkDatabaseQueryFilterValue          WorkKind = "database_query_filter_value"
-	WorkDatabaseQueryWindowCoverage       WorkKind = "database_query_window_coverage"
 	WorkDatabaseQueryWindowField          WorkKind = "database_query_window_field"
 	WorkDatabaseQueryWindowUnit           WorkKind = "database_query_window_unit"
 	WorkDatabaseQueryWindowAmount         WorkKind = "database_query_window_amount"
-	WorkDatabaseQueryExistenceCoverage    WorkKind = "database_query_existence_coverage"
 	WorkDatabaseQueryExistenceRelation    WorkKind = "database_query_existence_relation"
 	WorkDatabaseQueryExistenceNegated     WorkKind = "database_query_existence_negated"
-	WorkDatabaseQueryHavingCoverage       WorkKind = "database_query_having_coverage"
 	WorkDatabaseQueryHavingAggregate      WorkKind = "database_query_having_aggregate"
 	WorkDatabaseQueryHavingField          WorkKind = "database_query_having_field"
 	WorkDatabaseQueryHavingOperator       WorkKind = "database_query_having_operator"
 	WorkDatabaseQueryHavingValue          WorkKind = "database_query_having_value"
-	WorkDatabaseQueryOrderCoverage        WorkKind = "database_query_order_coverage"
 	WorkDatabaseQueryOrderProjection      WorkKind = "database_query_order_projection"
 	WorkDatabaseQueryOrderDirection       WorkKind = "database_query_order_direction"
 
-	DatabaseQueryItemRemains      = "ITEM_REMAINS"
-	DatabaseQueryNoUncoveredItem  = "NO_UNCOVERED_ITEM"
-	DatabaseQueryValueRemains     = "VALUE_REMAINS"
-	DatabaseQueryNoUncoveredValue = "NO_UNCOVERED_VALUE"
-	maxDatabaseQueryLeafBytes     = 2 * 1024
+	maxDatabaseQueryLeafBytes = 2 * 1024
 )
 
 // DatabaseQueryIntentLeafState is code-owned partial intent state. Every
@@ -58,6 +47,7 @@ type DatabaseQueryIntentLeafState struct {
 
 type DatabaseQueryProjectionLeafInput struct {
 	State     DatabaseQueryIntentLeafState  `json:"state"`
+	Purpose   string                        `json:"purpose"`
 	Aggregate datasource.AggregateOperation `json:"aggregate"`
 	FieldID   string                        `json:"field_id"`
 }
@@ -67,6 +57,8 @@ type DatabaseQueryProjectionLeafInput struct {
 type DatabaseQueryFilterLeafInput struct {
 	State           DatabaseQueryIntentLeafState     `json:"state"`
 	ScopeRelationID string                           `json:"scope_relation_id"`
+	Purpose         string                           `json:"purpose"`
+	ParentPurpose   string                           `json:"parent_purpose"`
 	AcceptedFilters []datasource.RelationalPredicate `json:"accepted_filters"`
 	FieldID         string                           `json:"field_id"`
 	Operator        datasource.FilterOperator        `json:"operator"`
@@ -75,12 +67,14 @@ type DatabaseQueryFilterLeafInput struct {
 
 type DatabaseQueryWindowLeafInput struct {
 	State   DatabaseQueryIntentLeafState `json:"state"`
+	Purpose string                       `json:"purpose"`
 	FieldID string                       `json:"field_id"`
 	Unit    datasource.WindowUnit        `json:"unit"`
 }
 
 type DatabaseQueryExistenceLeafInput struct {
 	State      DatabaseQueryIntentLeafState     `json:"state"`
+	Purpose    string                           `json:"purpose"`
 	RelationID string                           `json:"relation_id"`
 	Negated    *bool                            `json:"negated"`
 	Filters    []datasource.RelationalPredicate `json:"filters"`
@@ -88,6 +82,7 @@ type DatabaseQueryExistenceLeafInput struct {
 
 type DatabaseQueryHavingLeafInput struct {
 	State     DatabaseQueryIntentLeafState  `json:"state"`
+	Purpose   string                        `json:"purpose"`
 	Aggregate datasource.AggregateOperation `json:"aggregate"`
 	FieldID   string                        `json:"field_id"`
 	Operator  datasource.FilterOperator     `json:"operator"`
@@ -95,6 +90,7 @@ type DatabaseQueryHavingLeafInput struct {
 
 type DatabaseQueryOrderLeafInput struct {
 	State      DatabaseQueryIntentLeafState `json:"state"`
+	Purpose    string                       `json:"purpose"`
 	Projection *int                         `json:"projection"`
 }
 
@@ -104,10 +100,6 @@ func NewDatabaseQueryFromRelationJob(input DatabaseQueryIntentLeafState) (Portab
 
 func NewDatabaseQueryShapeJob(input DatabaseQueryIntentLeafState) (PortableJob, error) {
 	return newValidatedPortableJob(WorkDatabaseQueryShape, input, input.validate)
-}
-
-func NewDatabaseQueryProjectionCoverageJob(input DatabaseQueryIntentLeafState) (PortableJob, error) {
-	return newValidatedPortableJob(WorkDatabaseQueryProjectionCoverage, input, input.validateReady)
 }
 
 func NewDatabaseQueryProjectionAggregateJob(input DatabaseQueryProjectionLeafInput) (PortableJob, error) {
@@ -122,10 +114,6 @@ func NewDatabaseQueryProjectionTimeBucketJob(input DatabaseQueryProjectionLeafIn
 	return newValidatedPortableJob(WorkDatabaseQueryProjectionTimeBucket, input, input.validateForTimeBucket)
 }
 
-func NewDatabaseQueryFilterCoverageJob(input DatabaseQueryFilterLeafInput) (PortableJob, error) {
-	return newValidatedPortableJob(WorkDatabaseQueryFilterCoverage, input, input.validate)
-}
-
 func NewDatabaseQueryFilterFieldJob(input DatabaseQueryFilterLeafInput) (PortableJob, error) {
 	return newValidatedPortableJob(WorkDatabaseQueryFilterField, input, input.validate)
 }
@@ -134,16 +122,8 @@ func NewDatabaseQueryFilterOperatorJob(input DatabaseQueryFilterLeafInput) (Port
 	return newValidatedPortableJob(WorkDatabaseQueryFilterOperator, input, input.validateField)
 }
 
-func NewDatabaseQueryFilterValueCoverageJob(input DatabaseQueryFilterLeafInput) (PortableJob, error) {
-	return newValidatedPortableJob(WorkDatabaseQueryFilterValueCoverage, input, input.validateOperator)
-}
-
 func NewDatabaseQueryFilterValueJob(input DatabaseQueryFilterLeafInput) (PortableJob, error) {
 	return newValidatedPortableJob(WorkDatabaseQueryFilterValue, input, input.validateOperator)
-}
-
-func NewDatabaseQueryWindowCoverageJob(input DatabaseQueryIntentLeafState) (PortableJob, error) {
-	return newValidatedPortableJob(WorkDatabaseQueryWindowCoverage, input, input.validateReady)
 }
 
 func NewDatabaseQueryWindowFieldJob(input DatabaseQueryWindowLeafInput) (PortableJob, error) {
@@ -158,20 +138,12 @@ func NewDatabaseQueryWindowAmountJob(input DatabaseQueryWindowLeafInput) (Portab
 	return newValidatedPortableJob(WorkDatabaseQueryWindowAmount, input, input.validateUnit)
 }
 
-func NewDatabaseQueryExistenceCoverageJob(input DatabaseQueryIntentLeafState) (PortableJob, error) {
-	return newValidatedPortableJob(WorkDatabaseQueryExistenceCoverage, input, input.validateReady)
-}
-
 func NewDatabaseQueryExistenceRelationJob(input DatabaseQueryExistenceLeafInput) (PortableJob, error) {
 	return newValidatedPortableJob(WorkDatabaseQueryExistenceRelation, input, input.validate)
 }
 
 func NewDatabaseQueryExistenceNegatedJob(input DatabaseQueryExistenceLeafInput) (PortableJob, error) {
 	return newValidatedPortableJob(WorkDatabaseQueryExistenceNegated, input, input.validateRelation)
-}
-
-func NewDatabaseQueryHavingCoverageJob(input DatabaseQueryIntentLeafState) (PortableJob, error) {
-	return newValidatedPortableJob(WorkDatabaseQueryHavingCoverage, input, input.validateReady)
 }
 
 func NewDatabaseQueryHavingAggregateJob(input DatabaseQueryHavingLeafInput) (PortableJob, error) {
@@ -188,10 +160,6 @@ func NewDatabaseQueryHavingOperatorJob(input DatabaseQueryHavingLeafInput) (Port
 
 func NewDatabaseQueryHavingValueJob(input DatabaseQueryHavingLeafInput) (PortableJob, error) {
 	return newValidatedPortableJob(WorkDatabaseQueryHavingValue, input, input.validateOperator)
-}
-
-func NewDatabaseQueryOrderCoverageJob(input DatabaseQueryIntentLeafState) (PortableJob, error) {
-	return newValidatedPortableJob(WorkDatabaseQueryOrderCoverage, input, input.validateReady)
 }
 
 func NewDatabaseQueryOrderProjectionJob(input DatabaseQueryOrderLeafInput) (PortableJob, error) {

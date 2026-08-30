@@ -207,5 +207,39 @@ func validateDirectCodingCapabilityGraph(
 			lastIndex = index
 		}
 	}
+	return validateDirectCodingCapabilityGraphAcyclic(requirements, graph)
+}
+
+func validateDirectCodingCapabilityGraphAcyclic(
+	requirements []assemblyline.Requirement,
+	graph directCodingCapabilityGraph,
+) error {
+	const (
+		capabilityVisiting = iota + 1
+		capabilityVisited
+	)
+	states := make(map[string]int, len(requirements))
+	var visit func(string) error
+	visit = func(requirementID string) error {
+		switch states[requirementID] {
+		case capabilityVisiting:
+			return fmt.Errorf("capability graph contains a cycle through requirement %s", requirementID)
+		case capabilityVisited:
+			return nil
+		}
+		states[requirementID] = capabilityVisiting
+		for _, dependency := range graph[requirementID] {
+			if err := visit(dependency.RequirementID); err != nil {
+				return err
+			}
+		}
+		states[requirementID] = capabilityVisited
+		return nil
+	}
+	for _, requirement := range requirements {
+		if err := visit(requirement.ID); err != nil {
+			return err
+		}
+	}
 	return nil
 }

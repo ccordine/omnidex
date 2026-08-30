@@ -31,7 +31,6 @@ type ScrumFlowMetrics struct {
 	CompletionStatus  string   `json:"completion_status"`
 	Signals           []string `json:"signals"`
 	LastPlayOutcome   string   `json:"last_play_outcome,omitempty"`
-	ReviewGate        string   `json:"review_gate,omitempty"`
 	Column            string   `json:"column,omitempty"`
 	UpdatedAt         string   `json:"updated_at,omitempty"`
 }
@@ -113,7 +112,6 @@ func parseScrumFlowMetrics(raw json.RawMessage) (ScrumFlowMetrics, error) {
 		value string
 	}{
 		{name: "last_play_outcome", value: out.LastPlayOutcome},
-		{name: "review_gate", value: out.ReviewGate},
 		{name: "column", value: out.Column},
 		{name: "updated_at", value: out.UpdatedAt},
 	} {
@@ -168,9 +166,6 @@ func validateScrumFlowMetrics(metrics ScrumFlowMetrics) error {
 	}
 	if metrics.LastPlayOutcome != "" && metrics.LastPlayOutcome != "success" && metrics.LastPlayOutcome != "failed" {
 		return fmt.Errorf("last_play_outcome is not registered")
-	}
-	if metrics.ReviewGate != "" && metrics.ReviewGate != "passed" && metrics.ReviewGate != "failed" && metrics.ReviewGate != "pending" && metrics.ReviewGate != "running" {
-		return fmt.Errorf("review_gate is not registered")
 	}
 	if metrics.Column != "" && normalizeScrumColumn(metrics.Column) != metrics.Column {
 		return fmt.Errorf("column is not registered")

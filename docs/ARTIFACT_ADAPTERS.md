@@ -175,6 +175,15 @@ This block is also checked against the executable registry by tests.
   Tailwind CSS v4 through its pinned Vite plugin and code-owned CSS import,
   integrity-locked npm dependencies, strict source policy, isolated
   acceptance/runtime tests, typechecking, and a CSS-producing production build.
+  Raw browser host APIs remain unavailable to generated source. A registered
+  technical host capability is considered independently for each accepted
+  requirement, and code projects only a selected wrapper declaration into that
+  task. The wrapper is direct-call-only inside a public event handler and sends
+  one validated owned request to the application-mounted code-owned host bridge;
+  its selected static driver alone holds the raw host API. The code-owned
+  acceptance harness requires a dispatch receipt for each selected host
+  capability. Generated acceptance cannot call wrappers, receipt observers, or
+  raw host APIs and cannot supply a substitute driver.
 - The Go CLI stack supplies a dependency-free module/runtime/entrypoint and runs
   focused tests, `go test -count=1 ./...`, `go vet ./...`, and `go build ./...`.
 - The Laravel HTTP stack supplies Laravel 13's application/router lifecycle,

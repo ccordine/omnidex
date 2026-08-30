@@ -31,9 +31,9 @@ func TestPostgresOrdinaryChannelDesiredStateContaminatedProductionPlumbing(t *te
 			target:      "omni_added_artifact.go", present: true, wantGenerationCalls: 1,
 			wantKinds: []assemblyline.WorkKind{
 				assemblyline.WorkConversationObjectiveKind,
-				assemblyline.WorkApplicationContextNeedCoverage,
-				assemblyline.WorkRepositoryRequirement,
-				assemblyline.WorkRepositoryRequirementCoverage,
+				assemblyline.WorkApplicationContextQuestionInventory,
+				assemblyline.WorkRepositoryRequirementInventory,
+				assemblyline.WorkRepositoryRequirementCandidateAuthorization,
 				assemblyline.WorkRepositoryArtifactAbsence,
 				assemblyline.WorkDeclarationArtifactBoundary,
 				assemblyline.WorkFragmentGeneration,
@@ -45,9 +45,9 @@ func TestPostgresOrdinaryChannelDesiredStateContaminatedProductionPlumbing(t *te
 			target:      "obsolete.go", present: false, wantGenerationCalls: 0,
 			wantKinds: []assemblyline.WorkKind{
 				assemblyline.WorkConversationObjectiveKind,
-				assemblyline.WorkApplicationContextNeedCoverage,
-				assemblyline.WorkRepositoryRequirement,
-				assemblyline.WorkRepositoryRequirementCoverage,
+				assemblyline.WorkApplicationContextQuestionInventory,
+				assemblyline.WorkRepositoryRequirementInventory,
+				assemblyline.WorkRepositoryRequirementCandidateAuthorization,
 				assemblyline.WorkRepositoryArtifactAbsence,
 				assemblyline.WorkArtifactCandidateSelection,
 			},
@@ -70,10 +70,10 @@ func TestPostgresOrdinaryChannelDeletionProductionPlumbingKeepsTargetPathModelBl
 		target: "obsolete.go", present: false, wantGenerationCalls: 0,
 		wantKinds: []assemblyline.WorkKind{
 			assemblyline.WorkConversationObjectiveKind,
-			assemblyline.WorkApplicationContextNeedCoverage,
+			assemblyline.WorkApplicationContextQuestionInventory,
 			assemblyline.WorkArtifactHandling,
-			assemblyline.WorkRepositoryRequirement,
-			assemblyline.WorkRepositoryRequirementCoverage,
+			assemblyline.WorkRepositoryRequirementInventory,
+			assemblyline.WorkRepositoryRequirementCandidateAuthorization,
 		},
 	}
 	// The physical filename is redacted before every semantic boundary and is

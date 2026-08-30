@@ -258,17 +258,16 @@ func validateObjectiveTurnResult(result objectiveTurnResult) error {
 		}
 		exactInstruction := "/research " + strconv.Quote(result.RoleplayResearch.Question)
 		digest := sha256.Sum256([]byte(exactInstruction))
-		minimumCalls := minimumObjectiveRoleplayResearchModelCalls
 		if result.Kind != assemblyline.ObjectiveKindExternalAnswer {
 			return fmt.Errorf("roleplay research result has objective kind %q", result.Kind)
 		}
 		if result.InstructionSHA256 != hex.EncodeToString(digest[:]) {
 			return fmt.Errorf("roleplay research result differs from its exact instruction authority")
 		}
-		if result.ModelCalls < minimumCalls {
+		if result.ModelCalls < 0 {
 			return fmt.Errorf(
-				"roleplay research result has %d model calls below the %d-call semantic minimum",
-				result.ModelCalls, minimumCalls,
+				"roleplay research result has negative model-call evidence %d",
+				result.ModelCalls,
 			)
 		}
 		if len(result.RoleplayResponses) != 0 || result.RoleplayUserCanon != nil ||

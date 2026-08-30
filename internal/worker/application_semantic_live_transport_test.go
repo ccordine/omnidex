@@ -21,7 +21,8 @@ type liveCodingQualificationCall struct {
 	jobSHA256, candidateSHA256                  string
 	promptSHA256, requestSHA256, responseSHA256 string
 	candidate                                   string
-	coverageSnapshot                            *liveCodingQualificationCoverageSnapshot
+	subject                                     string
+	contentDimension                            assemblyline.ApplicationRequirementCandidateContentDimension
 	promptBytes, promptTokens, outputTokens     int
 	providerDuration, wallDuration              time.Duration
 }
@@ -84,10 +85,6 @@ func (transport *liveCodingQualificationTransport) execute(
 	if err := validateExactStationStaticCall(prompt, contract, transport.selection); err != nil {
 		return assemblyline.PortableResult{}, err
 	}
-	coverageSnapshot, err := captureLiveCodingQualificationCoverageSnapshot(job)
-	if err != nil {
-		return assemblyline.PortableResult{}, err
-	}
 	gap, err := transport.syntheticGap(job, prompt, contract)
 	if err != nil {
 		return assemblyline.PortableResult{}, err
@@ -116,11 +113,15 @@ func (transport *liveCodingQualificationTransport) execute(
 	if generation.ProviderRequestSHA256 != requestSHA256 || generation.ProviderResponseModel != modelName {
 		return assemblyline.PortableResult{}, fmt.Errorf("live exact generation identity differs from prepared authority")
 	}
+	subject, contentDimension, err := liveCodingQualificationCallSubject(job)
+	if err != nil {
+		return assemblyline.PortableResult{}, err
+	}
 	transport.calls = append(transport.calls, liveCodingQualificationCall{
 		kind: job.Kind, jobSHA256: job.ID, promptSHA256: qualificationSHA256([]byte(prompt)),
 		requestSHA256: requestSHA256, responseSHA256: generation.ProviderResponseSHA256,
 		candidateSHA256: qualificationSHA256([]byte(generation.Content)),
-		candidate:       generation.Content, coverageSnapshot: coverageSnapshot,
+		candidate:       generation.Content, subject: subject, contentDimension: contentDimension,
 		promptBytes: len(prompt), promptTokens: generation.Usage.PromptEvalCount,
 		outputTokens:     generation.Usage.EvalCount,
 		providerDuration: time.Duration(generation.Usage.TotalDurationNanos), wallDuration: wallDuration,
@@ -191,18 +192,10 @@ func logLiveCodingQualification(
 ) {
 	t.Helper()
 	for index, call := range calls {
-		accepted, excluded, exactZero, semanticZero := -1, -1, -1, -1
-		if call.coverageSnapshot != nil {
-			accepted = len(call.coverageSnapshot.AcceptedRequirements)
-			excluded = len(call.coverageSnapshot.ExcludedCandidates)
-			exactZero = call.coverageSnapshot.ExactZeroDeltas
-			semanticZero = call.coverageSnapshot.SemanticZeroDeltas
-		}
 		t.Logf(
-			"live_coding_qualification case=%s model=%s call=%d kind=%s job_sha256=%s prompt_sha256=%s request_sha256=%s response_sha256=%s candidate_sha256=%s candidate=%q frozen_sha256=%s coverage_accepted=%d coverage_excluded=%d coverage_exact_zero=%d coverage_semantic_zero=%d prompt_bytes=%d prompt_tokens=%d output_tokens=%d provider_ms=%d wall_ms=%d",
-			caseName, modelName, index+1, call.kind, call.jobSHA256, call.promptSHA256, call.requestSHA256,
+			"live_coding_qualification case=%s model=%s call=%d kind=%s subject=%q content_dimension=%q job_sha256=%s prompt_sha256=%s request_sha256=%s response_sha256=%s candidate_sha256=%s candidate=%q frozen_sha256=%s prompt_bytes=%d prompt_tokens=%d output_tokens=%d provider_ms=%d wall_ms=%d",
+			caseName, modelName, index+1, call.kind, call.subject, call.contentDimension, call.jobSHA256, call.promptSHA256, call.requestSHA256,
 			call.responseSHA256, call.candidateSHA256, call.candidate, frozenSHA256,
-			accepted, excluded, exactZero, semanticZero,
 			call.promptBytes, call.promptTokens, call.outputTokens,
 			call.providerDuration.Milliseconds(), call.wallDuration.Milliseconds(),
 		)

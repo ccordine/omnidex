@@ -25,7 +25,7 @@ func BuildApplicationServiceContinuedAvailabilityPrompt(
 		"Determine exactly one semantic fact: whether the immutable request explicitly requires the completed software to remain available after build and verification.",
 		"Select exactly one opaque candidate ID. A description of how software runs or what it produces does not by itself require continued availability.",
 		"Return exactly the raw candidate ID and nothing else: no JSON, quotes, label, Markdown, or commentary.",
-		"CODE_OWNED_CANDIDATES_JSON:\n" + string(candidates),
+		"REGISTERED_CANDIDATES_JSON:\n" + string(candidates),
 		"IMMUTABLE_USER_REQUEST:\n" + input.UserRequest,
 	}, "\n\n")
 	if len(prompt) > maxPortablePayloadBytes {

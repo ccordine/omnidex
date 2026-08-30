@@ -16,49 +16,74 @@ func webSynthesisFixture() WebGroundedSynthesisInput {
 	}
 }
 
-func TestWebSynthesisLeavesSeparateCoverageParagraphAndEvidenceRelation(t *testing.T) {
+func TestWebSynthesisInventoryIsOneBoundedUntrustedCandidateCollection(t *testing.T) {
 	base := webSynthesisFixture()
-	leafInput := WebSynthesisParagraphLeafInput{
-		ExactQuestion: base.ExactQuestion, Context: base.Context,
-		Evidence: base.Evidence, AcceptedParagraphs: []WebGroundedParagraph{},
-		MaxParagraphs: base.MaxParagraphs, MaxParagraphBytes: base.MaxParagraphBytes,
-	}
-	coverageJob, err := NewWebSynthesisParagraphCoverageJob(leafInput)
+	job, err := NewWebSynthesisParagraphInventoryJob(base)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if coverageJob.Kind != WorkWebSynthesisParagraphCoverage {
-		t.Fatalf("kind=%q", coverageJob.Kind)
+	if job.Kind != WorkWebSynthesisParagraphInventory {
+		t.Fatalf("kind=%q", job.Kind)
 	}
-	coverage, err := DecodeWebSynthesisParagraphCoverageDecision(
-		leafInput, string(WebSynthesisParagraphRemains),
-	)
-	if err != nil || coverage.Coverage != WebSynthesisParagraphRemains {
-		t.Fatalf("coverage=%+v err=%v", coverage, err)
-	}
-	paragraph, err := DecodeWebSynthesisParagraphDecision(
-		leafInput, "Version 2 is current.",
+	inventory, err := DecodeWebSynthesisParagraphInventory(
+		base,
+		"Version 2 is current.\nVersion 2 superseded version 1.",
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
+	if len(inventory.Candidates) != 2 || inventory.Candidates[0] != "Version 2 is current." {
+		t.Fatalf("inventory=%+v", inventory)
+	}
+	if err := inventory.ValidateFor(base); err != nil {
+		t.Fatal(err)
+	}
+
+	absence, err := DecodeWebSynthesisParagraphInventory(base, WebNoSynthesisParagraphCandidates)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if absence.Candidates == nil || len(absence.Candidates) != 0 {
+		t.Fatalf("absence inventory=%+v", absence)
+	}
+
+	// Exact duplicates remain untrusted inventory data. Queue code, rather than
+	// another semantic review, deterministically prevents duplicate processing.
+	duplicate, err := DecodeWebSynthesisParagraphInventory(
+		base, "Version 2 is current.\nVersion 2 is current.",
+	)
+	if err != nil || len(duplicate.Candidates) != 2 {
+		t.Fatalf("duplicate inventory=%+v err=%v", duplicate, err)
+	}
+}
+
+func TestWebSynthesisInventoryAndRelationsProjectOnlySemanticAuthority(t *testing.T) {
+	base := webSynthesisFixture()
+	inventoryPrompt, err := BuildWebSynthesisParagraphInventoryPrompt(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, hidden := range []string{"E17", "E31"} {
+		if strings.Contains(inventoryPrompt, hidden) {
+			t.Fatalf("inventory exposed code-owned evidence ID %q: %s", hidden, inventoryPrompt)
+		}
+	}
+	for _, visible := range []string{`"max_paragraphs":2`, `"max_paragraph_bytes":500`} {
+		if !strings.Contains(inventoryPrompt, visible) {
+			t.Fatalf("inventory omitted exact bound %q: %s", visible, inventoryPrompt)
+		}
+	}
+
 	relationInput := WebSynthesisEvidenceRelationInput{
 		ExactQuestion: base.ExactQuestion, Context: base.Context,
-		ParagraphText: paragraph.Text, Evidence: base.Evidence[1],
+		ParagraphText: "Version 2 is current.", Evidence: base.Evidence[1],
 	}
-	relationJob, err := NewWebSynthesisEvidenceRelationJob(relationInput)
+	relationPrompt, err := BuildWebSynthesisEvidenceRelationPrompt(relationInput)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if relationJob.Kind != WorkWebSynthesisEvidenceRelation {
-		t.Fatalf("kind=%q", relationJob.Kind)
-	}
-	prompt, err := BuildWebSynthesisEvidenceRelationPrompt(relationInput)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(prompt, relationInput.Evidence.EvidenceID) {
-		t.Fatalf("pairwise evidence relation exposed code-owned ID: %q", prompt)
+	if strings.Contains(relationPrompt, relationInput.Evidence.EvidenceID) {
+		t.Fatalf("pairwise evidence relation exposed code-owned ID: %q", relationPrompt)
 	}
 	relation, err := DecodeWebSynthesisEvidenceRelationDecision(
 		relationInput, string(WebEvidenceSupportsParagraph),
@@ -66,51 +91,69 @@ func TestWebSynthesisLeavesSeparateCoverageParagraphAndEvidenceRelation(t *testi
 	if err != nil || relation.Relation != WebEvidenceSupportsParagraph {
 		t.Fatalf("relation=%+v err=%v", relation, err)
 	}
-}
 
-func TestWebSynthesisPromptsProjectOnlyStationLocalBounds(t *testing.T) {
-	base := webSynthesisFixture()
-	input := WebSynthesisParagraphLeafInput{
+	authorizationInput := WebSynthesisParagraphAuthorizationInput{
 		ExactQuestion: base.ExactQuestion, Context: base.Context,
-		Evidence: base.Evidence, AcceptedParagraphs: []WebGroundedParagraph{},
-		MaxParagraphs: base.MaxParagraphs, MaxParagraphBytes: base.MaxParagraphBytes,
+		ParagraphText: "Version 2 is current.", Evidence: []WebGroundedEvidence{base.Evidence[1]},
+		MaxParagraphBytes: base.MaxParagraphBytes,
 	}
-	coveragePrompt, err := BuildWebSynthesisParagraphCoveragePrompt(input)
+	authorizationJob, err := NewWebSynthesisParagraphAuthorizationJob(authorizationInput)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, hidden := range []string{`"max_paragraphs"`, `"max_paragraph_bytes"`} {
-		if strings.Contains(coveragePrompt, hidden) {
-			t.Fatalf("coverage prompt exposed code-owned generation bound %q: %s", hidden, coveragePrompt)
-		}
+	if authorizationJob.Kind != WorkWebSynthesisParagraphAuthorization {
+		t.Fatalf("authorization kind=%q", authorizationJob.Kind)
 	}
-	paragraphPrompt, err := BuildWebSynthesisParagraphPrompt(input)
+	authorizationPrompt, err := BuildWebSynthesisParagraphAuthorizationPrompt(authorizationInput)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(paragraphPrompt, `"max_paragraphs"`) {
-		t.Fatalf("paragraph prompt exposed code-owned collection bound: %s", paragraphPrompt)
+	if strings.Contains(authorizationPrompt, base.Evidence[1].EvidenceID) {
+		t.Fatalf("paragraph authorization exposed code-owned evidence ID: %q", authorizationPrompt)
 	}
-	if !strings.Contains(paragraphPrompt, `"max_paragraph_bytes":500`) {
-		t.Fatalf("paragraph prompt omitted its exact per-leaf byte bound: %s", paragraphPrompt)
+	for _, required := range []string{
+		"complete exact paragraph", "exact question", "every factual claim", "sole factual authority",
+	} {
+		if !strings.Contains(authorizationPrompt, required) {
+			t.Fatalf("paragraph authorization omitted %q: %s", required, authorizationPrompt)
+		}
+	}
+	authorization, err := DecodeWebSynthesisParagraphAuthorizationDecision(
+		authorizationInput, string(WebParagraphResponsiveAndFullySupported),
+	)
+	if err != nil || authorization.Relation != WebParagraphResponsiveAndFullySupported {
+		t.Fatalf("authorization=%+v err=%v", authorization, err)
 	}
 }
 
-func TestWebSynthesisLeafDecodersRejectStructuredAndCompositeResults(t *testing.T) {
+func TestWebSynthesisInventoryAndAuthorizationRejectInvalidRawLeaves(t *testing.T) {
 	base := webSynthesisFixture()
-	input := WebSynthesisParagraphLeafInput{
-		ExactQuestion: base.ExactQuestion, Context: base.Context,
-		Evidence: base.Evidence, AcceptedParagraphs: []WebGroundedParagraph{},
-		MaxParagraphs: base.MaxParagraphs, MaxParagraphBytes: base.MaxParagraphBytes,
-	}
-	for _, raw := range []string{`{"text":"Version 2 is current."}`, `"Version 2 is current."`, "Version 2 [1]", "See https://example.test"} {
-		if _, err := DecodeWebSynthesisParagraphDecision(input, raw); err == nil {
-			t.Fatalf("invalid paragraph leaf accepted: %q", raw)
+	for _, raw := range []string{
+		`{"text":"Version 2 is current."}`,
+		`"Version 2 is current."`,
+		"Version 2 [1]",
+		"See https://example.test",
+		"Version 2 is current.\n\nVersion 1 was superseded.",
+	} {
+		if _, err := DecodeWebSynthesisParagraphInventory(base, raw); err == nil {
+			t.Fatalf("invalid paragraph inventory accepted: %q", raw)
 		}
 	}
-	for _, raw := range []string{"unknown", "PARAGRAPH_REMAINS\nreason", `{"coverage":"NO_UNCOVERED_PARAGRAPH"}`} {
-		if _, err := DecodeWebSynthesisParagraphCoverageDecision(input, raw); err == nil {
-			t.Fatalf("invalid coverage leaf accepted: %q", raw)
+	authorizationInput := WebSynthesisParagraphAuthorizationInput{
+		ExactQuestion:     base.ExactQuestion,
+		ParagraphText:     "Version 2 is current.",
+		Evidence:          []WebGroundedEvidence{base.Evidence[1]},
+		MaxParagraphBytes: base.MaxParagraphBytes,
+	}
+	for _, raw := range []string{
+		"unknown",
+		string(WebParagraphResponsiveAndFullySupported) + "\nreason",
+		`{"relation":"RESPONSIVE_AND_FULLY_SUPPORTED"}`,
+	} {
+		if _, err := DecodeWebSynthesisParagraphAuthorizationDecision(
+			authorizationInput, raw,
+		); err == nil {
+			t.Fatalf("invalid paragraph authorization accepted: %q", raw)
 		}
 	}
 }

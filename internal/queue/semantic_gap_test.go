@@ -107,6 +107,8 @@ func TestStationMappingRejectsRetiredWork(t *testing.T) {
 		"roleplay_narrative_continuity",
 		"application_acceptance_grounding_review",
 		"application_service_endpoint_contract",
+		"repository_requirement_coverage",
+		"repository_requirement",
 	} {
 		if _, err := stationForPortableWorkKind(retired); err == nil ||
 			!strings.Contains(err.Error(), "not a production semantic station") {

@@ -92,14 +92,14 @@ func (station *recordingRelevanceStation) Select(_ context.Context, call Relevan
 			index = len(station.decisions) - 1
 		}
 		decision := station.decisions[index]
-		if decision.SemanticCalls == 0 {
-			decision.SemanticCalls = 1
+		if err := ensureTestRelevanceReceipt(&decision); err != nil {
+			return RelevanceDecision{}, err
 		}
 		return decision, station.err
 	}
 	decision := station.decision
-	if decision.SemanticCalls == 0 {
-		decision.SemanticCalls = 1
+	if err := ensureTestRelevanceReceipt(&decision); err != nil {
+		return RelevanceDecision{}, err
 	}
 	return decision, station.err
 }
@@ -117,10 +117,33 @@ func (station *recordingSynthesisStation) Synthesize(_ context.Context, call Gro
 	station.last = call
 	station.events = append(station.events, "synthesis")
 	decision := station.decision
+	if decision.CallLedger.Count() == 0 {
+		if decision.SemanticCalls == 0 {
+			decision.SemanticCalls = 1
+		}
+		if err := decision.CallLedger.Record(
+			"test grounded synthesis",
+			SemanticCallReceipt{Calls: decision.SemanticCalls},
+			decision.SemanticCalls,
+		); err != nil {
+			return GroundedSynthesisDecision{}, err
+		}
+	}
+	return decision, station.err
+}
+
+func ensureTestRelevanceReceipt(decision *RelevanceDecision) error {
+	if decision == nil || decision.CallLedger.Count() > 0 {
+		return nil
+	}
 	if decision.SemanticCalls == 0 {
 		decision.SemanticCalls = 1
 	}
-	return decision, station.err
+	return decision.CallLedger.Record(
+		"test relevance",
+		SemanticCallReceipt{Calls: decision.SemanticCalls},
+		decision.SemanticCalls,
+	)
 }
 
 func newFixtureMachine(

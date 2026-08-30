@@ -12,8 +12,9 @@ const (
 )
 
 type ApplicationServiceEndpointRequirementInput struct {
-	ProductContext   string `json:"product_context"`
-	RequirementQuote string `json:"requirement_quote"`
+	ProductContext              string `json:"product_context"`
+	RequirementQuote            string `json:"requirement_quote"`
+	HasDirectCapabilityConsumer bool   `json:"has_direct_capability_consumer"`
 }
 
 type ApplicationServiceEndpointRequirementResult struct {
@@ -23,9 +24,11 @@ type ApplicationServiceEndpointRequirementResult struct {
 
 func ProjectApplicationServiceEndpointRequirementInput(
 	authority ApplicationTaskRuntimeAuthority,
+	hasDirectCapabilityConsumer bool,
 ) (ApplicationServiceEndpointRequirementInput, error) {
 	input := ApplicationServiceEndpointRequirementInput{
 		ProductContext: authority.ProductQuote, RequirementQuote: authority.RequirementQuote,
+		HasDirectCapabilityConsumer: hasDirectCapabilityConsumer,
 	}
 	if err := input.validate(); err != nil {
 		return ApplicationServiceEndpointRequirementInput{}, err
@@ -50,7 +53,21 @@ func (input ApplicationServiceEndpointRequirementInput) validate() error {
 	); err != nil {
 		return err
 	}
+	if !input.HasDirectCapabilityConsumer {
+		return fmt.Errorf(
+			"service endpoint requirement semantic input requires one code-proven direct capability consumer",
+		)
+	}
 	return nil
+}
+
+func (requirement ApplicationServiceEndpointRequirement) Validate() error {
+	switch requirement {
+	case ApplicationServiceEndpointRequired, ApplicationServiceSupportOnly:
+		return nil
+	default:
+		return fmt.Errorf("service endpoint requirement %q is unsupported", requirement)
+	}
 }
 
 func (result ApplicationServiceEndpointRequirementResult) ValidateFor(
@@ -65,13 +82,5 @@ func (result ApplicationServiceEndpointRequirementResult) ValidateFor(
 			ApplicationServiceEndpointRequirementSchemaV1,
 		)
 	}
-	switch result.EndpointRequirement {
-	case ApplicationServiceEndpointRequired, ApplicationServiceSupportOnly:
-		return nil
-	default:
-		return fmt.Errorf(
-			"service endpoint requirement %q is unsupported",
-			result.EndpointRequirement,
-		)
-	}
+	return result.EndpointRequirement.Validate()
 }

@@ -7,12 +7,14 @@ func replayRepositorySemanticLeaf(
 	raw string,
 ) (bool, error) {
 	switch job.Kind {
-	case assemblyline.WorkRepositoryRequirementCoverage:
-		return true, decodeReplaySemanticLeaf(job, raw, assemblyline.DecodeRepositoryRequirementCoverageLeaf)
-	case assemblyline.WorkRepositoryRequirement:
-		return true, decodeReplaySemanticLeaf(job, raw, assemblyline.DecodeRepositoryRequirementLeaf)
-	case assemblyline.WorkRepositoryEvidenceRelevanceLeaf:
-		return true, decodeReplaySemanticLeaf(job, raw, assemblyline.DecodeRepositoryEvidenceRelevanceLeaf)
+	case assemblyline.WorkRepositoryRequirementInventory:
+		return true, decodeReplaySemanticLeaf(job, raw, assemblyline.DecodeRepositoryRequirementInventory)
+	case assemblyline.WorkRepositoryRequirementCandidateAuthorization:
+		return true, decodeReplaySemanticLeaf(job, raw, assemblyline.DecodeRepositoryRequirementCandidateAuthorizationResult)
+	case assemblyline.WorkRepositoryRequirementCandidateRelation:
+		return true, decodeReplaySemanticLeaf(job, raw, assemblyline.DecodeRepositoryRequirementCandidateRelationResult)
+	case assemblyline.WorkRepositoryEvidenceRelevanceRelation:
+		return true, decodeReplaySemanticLeaf(job, raw, assemblyline.DecodeRepositoryEvidenceRelevanceRelationResult)
 	case assemblyline.WorkRepositoryChangeOwner:
 		return true, decodeReplaySemanticLeaf(job, raw, assemblyline.DecodeRepositoryChangeOwnerLeaf)
 	default:

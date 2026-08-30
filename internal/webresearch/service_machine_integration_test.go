@@ -93,9 +93,15 @@ func (*selectFirstCandidateStation) Select(
 	if len(call.Candidates) != 2 {
 		return RelevanceDecision{}, fmt.Errorf("relevance candidates=%d want 2", len(call.Candidates))
 	}
+	var ledger SemanticCallLedger
+	if err := ledger.Record(
+		"integration relevance", SemanticCallReceipt{Calls: 1}, 1,
+	); err != nil {
+		return RelevanceDecision{}, err
+	}
 	return RelevanceDecision{
 		Outcome: RelevanceSelected, CandidateIDs: []websearch.CandidateID{call.Candidates[0].CandidateID},
-		SemanticCalls: 1,
+		SemanticCalls: 1, CallLedger: ledger,
 	}, nil
 }
 
@@ -108,7 +114,13 @@ func (*synthesizeFirstEvidenceStation) Synthesize(
 	if len(call.Evidence) != 1 {
 		return GroundedSynthesisDecision{}, fmt.Errorf("synthesis evidence=%d want 1", len(call.Evidence))
 	}
+	var ledger SemanticCallLedger
+	if err := ledger.Record(
+		"integration synthesis", SemanticCallReceipt{Calls: 1}, 1,
+	); err != nil {
+		return GroundedSynthesisDecision{}, err
+	}
 	return GroundedSynthesisDecision{Paragraphs: []GroundedParagraph{{
 		Text: "The bounded evidence establishes the result.", EvidenceIDs: []EvidenceID{call.Evidence[0].EvidenceID},
-	}}, SemanticCalls: 1}, nil
+	}}, SemanticCalls: 1, CallLedger: ledger}, nil
 }

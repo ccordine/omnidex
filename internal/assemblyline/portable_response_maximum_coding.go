@@ -47,16 +47,11 @@ func portableCodingResponseMaximum(job PortableJob) (int, bool, error) {
 			maximum = max(maximum, len(candidate.Token))
 		}
 		return maximum, true, nil
-	case WorkRuntimeCapabilitySelection:
-		var input RuntimeCapabilitySelectionInput
-		if err := decodePortablePayload(job.Payload, &input); err != nil {
-			return 0, true, err
-		}
-		maximum := len(RuntimeCapabilitySelectionNone)
-		for _, candidate := range input.Candidates {
-			maximum = max(maximum, len(candidate.CandidateID))
-		}
-		return maximum, true, nil
+	case WorkRuntimeCapabilityNecessity:
+		return maximumStringBytes(
+			RuntimeCapabilityNecessary,
+			RuntimeCapabilityNotNecessary,
+		), true, nil
 	case WorkTypeScriptRepairGuidance:
 		return maxTypeScriptRepairGuidanceBytes, true, nil
 	case WorkFragmentGeneration:

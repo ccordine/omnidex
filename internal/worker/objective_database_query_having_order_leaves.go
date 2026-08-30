@@ -14,22 +14,20 @@ func resolveDatabaseQueryHaving(
 	call objectiveDatabaseRawLeafCall,
 	total int,
 ) (assemblyline.DatabaseQueryIntentLeafState, int, error) {
-	for {
-		job, err := assemblyline.NewDatabaseQueryHavingCoverageJob(state)
-		if err != nil {
-			return state, total, err
-		}
-		coverage, calls, err := callObjectiveDatabaseRawLeaf(
-			ctx, call, "database_query_having_coverage", job,
-			func(raw string) (string, error) {
-				return assemblyline.DecodeDatabaseQueryHavingCoverageLeaf(state, raw)
-			},
-		)
-		total += calls
-		if err != nil || coverage == assemblyline.DatabaseQueryNoUncoveredItem {
-			return state, total, err
-		}
-		leaf := assemblyline.DatabaseQueryHavingLeafInput{State: state}
+	purposes, nextTotal, err := resolveDatabaseQueryPurposeQueue(
+		ctx,
+		assemblyline.DatabaseQueryPurposeAuthority{
+			State: state, Collection: assemblyline.DatabaseQueryHavingPurpose,
+		},
+		datasource.MaxIntentGroups-len(state.Having), call, total,
+	)
+	total = nextTotal
+	if err != nil {
+		return state, total, err
+	}
+	for _, purpose := range purposes {
+		leaf := assemblyline.DatabaseQueryHavingLeafInput{State: state, Purpose: purpose}
+		var calls int
 		aggregateJob, err := assemblyline.NewDatabaseQueryHavingAggregateJob(leaf)
 		if err != nil {
 			return state, total, err
@@ -101,6 +99,7 @@ func resolveDatabaseQueryHaving(
 			Operator: leaf.Operator, Value: value,
 		})
 	}
+	return state, total, nil
 }
 
 func resolveDatabaseQueryOrder(
@@ -109,25 +108,23 @@ func resolveDatabaseQueryOrder(
 	call objectiveDatabaseRawLeafCall,
 	total int,
 ) (assemblyline.DatabaseQueryIntentLeafState, int, error) {
-	for {
+	purposes, nextTotal, err := resolveDatabaseQueryPurposeQueue(
+		ctx,
+		assemblyline.DatabaseQueryPurposeAuthority{
+			State: state, Collection: assemblyline.DatabaseQueryOrderPurpose,
+		},
+		datasource.MaxIntentOrderTerms-len(state.OrderBy), call, total,
+	)
+	total = nextTotal
+	if err != nil {
+		return state, total, err
+	}
+	if state.Shape == datasource.ResultRanking && len(state.OrderBy) == 0 && len(purposes) == 0 {
+		return state, total, fmt.Errorf("database query ranking shape requires one accepted ordering purpose")
+	}
+	for _, purpose := range purposes {
+		leaf := assemblyline.DatabaseQueryOrderLeafInput{State: state, Purpose: purpose}
 		var calls int
-		if state.Shape != datasource.ResultRanking || len(state.OrderBy) > 0 {
-			job, err := assemblyline.NewDatabaseQueryOrderCoverageJob(state)
-			if err != nil {
-				return state, total, err
-			}
-			coverage, calls, err := callObjectiveDatabaseRawLeaf(
-				ctx, call, "database_query_order_coverage", job,
-				func(raw string) (string, error) {
-					return assemblyline.DecodeDatabaseQueryOrderCoverageLeaf(state, raw)
-				},
-			)
-			total += calls
-			if err != nil || coverage == assemblyline.DatabaseQueryNoUncoveredItem {
-				return state, total, err
-			}
-		}
-		leaf := assemblyline.DatabaseQueryOrderLeafInput{State: state}
 		remaining := objectiveDatabaseOrderProjections(state)
 		if len(remaining) == 0 {
 			return state, total, fmt.Errorf("database query order has no unused projection")
@@ -170,6 +167,7 @@ func resolveDatabaseQueryOrder(
 			Projection: projection, Direction: direction,
 		})
 	}
+	return state, total, nil
 }
 
 func objectiveDatabaseOrderProjections(state assemblyline.DatabaseQueryIntentLeafState) []int {

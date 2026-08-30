@@ -5,41 +5,150 @@ import (
 	"testing"
 )
 
-func TestDatabaseSchemaSelectionUsesOneRawLeafPerQuestion(t *testing.T) {
-	input := DatabaseSchemaSelectionLeafInput{
-		Authority: databaseSchemaSelectionFixture(), SelectedRelationIDs: []string{},
-	}
-	coverageJob, err := NewDatabaseSchemaSelectionCoverageJob(input)
+func TestDatabaseSchemaRelationInventoryIsBoundedUntrustedSemanticData(t *testing.T) {
+	selection := databaseSchemaSelectionFixture()
+	input, err := ProjectDatabaseSchemaRelationInventoryInput(selection)
 	if err != nil {
 		t.Fatal(err)
 	}
-	prompt, err := RenderPortableJob(coverageJob)
+	job, err := NewDatabaseSchemaRelationInventoryJob(input)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(prompt, DatabaseSchemaRelationRemains) {
-		t.Fatalf("coverage prompt omitted registered result tokens: %s", prompt)
+	prompt, err := RenderPortableJob(job)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if got, err := DecodeDatabaseSchemaSelectionCoverageLeaf(input, DatabaseSchemaRelationRemains); err != nil || got != DatabaseSchemaRelationRemains {
-		t.Fatalf("coverage=%q err=%v", got, err)
+	for _, visible := range []string{
+		selection.ExactNeed,
+		selection.Candidates[0].Descriptor,
+		"candidate semantic relation responsibilities",
+		"Include no customary, optional, speculative, or merely useful responsibility",
+	} {
+		if !strings.Contains(prompt, visible) {
+			t.Fatalf("inventory prompt omitted %q: %s", visible, prompt)
+		}
 	}
-	if _, err := DecodeDatabaseSchemaSelectionCoverageLeaf(input, `{"coverage":"RELATION_REMAINS"}`); err == nil {
-		t.Fatal("database schema coverage accepted JSON")
+	for _, forbidden := range []string{
+		"Code independently", "authorize", "discard", "workflow", "completion", "queue", "sieve",
+	} {
+		if strings.Contains(prompt, forbidden) {
+			t.Fatalf("inventory prompt exposed orchestration language %q: %s", forbidden, prompt)
+		}
 	}
+	for _, hidden := range []string{selection.Candidates[0].RelationID, selection.Candidates[1].RelationID} {
+		if strings.Contains(prompt, hidden) {
+			t.Fatalf("inventory prompt exposed relation ID %q: %s", hidden, prompt)
+		}
+		if !strings.Contains(string(job.Payload), hidden) {
+			t.Fatalf("inventory payload lost code-owned relation ID %q: %s", hidden, job.Payload)
+		}
+	}
+	raw := "The appointment records containing missed outcomes.\nThe appointment records containing missed outcomes."
+	inventory, err := DecodeDatabaseSchemaRelationInventory(input, raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(inventory.Candidates) != 2 || inventory.Candidates[0] != inventory.Candidates[1] {
+		t.Fatalf("inventory=%+v", inventory)
+	}
+	if err := inventory.ValidateFor(input); err != nil {
+		t.Fatal(err)
+	}
+}
 
-	relationJob, err := NewDatabaseSchemaRelationSelectionJob(input)
+func TestDatabaseSchemaRelationInventoryRejectsInvalidFramingAndBounds(t *testing.T) {
+	input, err := ProjectDatabaseSchemaRelationInventoryInput(databaseSchemaSelectionFixture())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if relationJob.Kind != WorkDatabaseSchemaRelationSelection {
-		t.Fatalf("kind=%q", relationJob.Kind)
+	tooMany := strings.Repeat(
+		"A candidate relation responsibility.\n",
+		MaxDatabaseSchemaRelationInventoryCandidates,
+	) + "One extra relation responsibility."
+	for _, raw := range []string{
+		"",
+		"The appointment records.\r\nThe clinic records.",
+		"The appointment records.\n\nThe clinic records.",
+		tooMany,
+		`{"candidates":["The appointment records."]}`,
+	} {
+		if _, err := DecodeDatabaseSchemaRelationInventory(input, raw); err == nil {
+			t.Fatalf("invalid inventory %q was accepted", raw)
+		}
 	}
-	selected, err := DecodeDatabaseSchemaRelationSelectionLeaf(input, "rel_b")
-	if err != nil || selected != "rel_b" {
-		t.Fatalf("selected=%q err=%v", selected, err)
+}
+
+func TestDatabaseSchemaRelationNecessityReceivesOnlyObjectiveAndOneCandidate(t *testing.T) {
+	selection := databaseSchemaSelectionFixture()
+	input := DatabaseSchemaRelationNecessityInput{
+		ExactNeed: selection.ExactNeed, Context: selection.Context,
+		Candidate: "The appointment records containing missed outcomes.",
 	}
-	if _, err := DecodeDatabaseSchemaRelationSelectionLeaf(input, `["rel_b"]`); err == nil {
-		t.Fatal("database relation selection accepted JSON")
+	job, err := NewDatabaseSchemaRelationNecessityJob(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prompt, err := RenderPortableJob(job)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, visible := range []string{selection.ExactNeed, input.Candidate} {
+		if !strings.Contains(prompt, visible) {
+			t.Fatalf("necessity prompt omitted %q: %s", visible, prompt)
+		}
+	}
+	for _, hidden := range []string{
+		selection.Candidates[0].RelationID,
+		selection.Candidates[0].Descriptor,
+		"selected_relation_ids",
+	} {
+		if strings.Contains(prompt, hidden) {
+			t.Fatalf("necessity prompt exposed unrelated selection authority %q: %s", hidden, prompt)
+		}
+	}
+	result, err := DecodeDatabaseSchemaRelationNecessityResult(
+		input, DatabaseSchemaRelationNecessary,
+	)
+	if err != nil || result.Relation != DatabaseSchemaRelationNecessary {
+		t.Fatalf("necessity=%+v err=%v", result, err)
+	}
+}
+
+func TestDatabaseSchemaRelationResolutionMapsOneCandidateToRegisteredID(t *testing.T) {
+	selection := databaseSchemaSelectionFixture()
+	input := DatabaseSchemaRelationResolutionInput{
+		Candidate:  "The appointment records containing missed outcomes.",
+		Candidates: selection.Candidates,
+	}
+	job, err := NewDatabaseSchemaRelationResolutionJob(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prompt, err := RenderPortableJob(job)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, visible := range []string{
+		input.Candidate,
+		selection.Candidates[0].RelationID,
+		selection.Candidates[1].Descriptor,
+	} {
+		if !strings.Contains(prompt, visible) {
+			t.Fatalf("resolution prompt omitted %q: %s", visible, prompt)
+		}
+	}
+	if strings.Contains(prompt, selection.ExactNeed) {
+		t.Fatalf("resolution prompt exposed the already-resolved objective: %s", prompt)
+	}
+	result, err := DecodeDatabaseSchemaRelationResolutionResult(input, "rel_b")
+	if err != nil || result.RelationID != "rel_b" {
+		t.Fatalf("resolution=%+v err=%v", result, err)
+	}
+	for _, raw := range []string{"rel_missing", `["rel_b"]`} {
+		if _, err := DecodeDatabaseSchemaRelationResolutionResult(input, raw); err == nil {
+			t.Fatalf("invalid resolution %q was accepted", raw)
+		}
 	}
 }
 
@@ -49,7 +158,9 @@ func TestDatabaseSchemaSelectionCodeAssemblesAndValidatesRetainedSet(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	if decision.Schema != DatabaseSchemaSelectionV1 || decision.EvidenceNeedID != input.EvidenceNeedID || len(decision.RelationIDs) != 1 || decision.RelationIDs[0] != "rel_b" {
+	if decision.Schema != DatabaseSchemaSelectionV1 ||
+		decision.EvidenceNeedID != input.EvidenceNeedID ||
+		len(decision.RelationIDs) != 1 || decision.RelationIDs[0] != "rel_b" {
 		t.Fatalf("decision=%+v", decision)
 	}
 	for name, relationIDs := range map[string][]string{

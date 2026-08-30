@@ -15,6 +15,10 @@ type maximumDatabaseSchemaSelectionStations struct {
 	*scriptedObjectiveDatabaseStations
 }
 
+type emptyDatabaseSchemaSelectionStations struct {
+	*scriptedObjectiveDatabaseStations
+}
+
 func TestDatabaseSchemaCandidateDescriptorProjectsSemanticRelationsWithoutNestedIDs(t *testing.T) {
 	t.Parallel()
 	snapshot, err := datasource.NewSchemaSnapshot("source-selection", "selection", []datasource.RelationDefinition{
@@ -88,8 +92,18 @@ func (station *maximumDatabaseSchemaSelectionStations) SelectSchema(
 	}, objectiveStationReceipt{Calls: exactSemanticLeafCalls}, nil
 }
 
-func TestDatabaseSchemaReductionHasOneHardSemanticCallBound(t *testing.T) {
-	candidates := make([]assemblyline.DatabaseSchemaCandidate, 2048)
+func (station *emptyDatabaseSchemaSelectionStations) SelectSchema(
+	_ context.Context,
+	input assemblyline.DatabaseSchemaSelectionInput,
+) (assemblyline.DatabaseSchemaSelectionDecision, objectiveStationReceipt, error) {
+	return assemblyline.DatabaseSchemaSelectionDecision{
+		Schema: assemblyline.DatabaseSchemaSelectionV1, EvidenceNeedID: input.EvidenceNeedID,
+		RelationIDs: []string{},
+	}, objectiveStationReceipt{Calls: exactSemanticLeafCalls}, nil
+}
+
+func TestDatabaseSchemaReductionDoesNotReopenAcceptedSelectionsAtGlobalLimit(t *testing.T) {
+	candidates := make([]assemblyline.DatabaseSchemaCandidate, 48)
 	for index := range candidates {
 		candidates[index] = assemblyline.DatabaseSchemaCandidate{
 			RelationID: fmt.Sprintf("rel_%04d", index),
@@ -99,14 +113,37 @@ func TestDatabaseSchemaReductionHasOneHardSemanticCallBound(t *testing.T) {
 	station := &maximumDatabaseSchemaSelectionStations{
 		scriptedObjectiveDatabaseStations: &scriptedObjectiveDatabaseStations{t: t},
 	}
-	_, calls, err := reduceObjectiveDatabaseCandidates(
+	_, receipt, err := reduceObjectiveDatabaseCandidates(
+		context.Background(), "need-1", "Find the exact relevant records.",
+		assemblyline.ObjectiveContext{}, candidates, station,
+	)
+	if err == nil || !strings.Contains(err.Error(), "more than 8 necessary relations without reopening accepted selections") {
+		t.Fatalf("schema reduction error=%v", err)
+	}
+	if receipt.Calls != 2*exactSemanticLeafCalls || receipt.Reused {
+		t.Fatalf("schema reduction receipt=%+v want %d fresh calls", receipt, 2*exactSemanticLeafCalls)
+	}
+}
+
+func TestDatabaseSchemaReductionHasOneHardSemanticCallBound(t *testing.T) {
+	candidates := make([]assemblyline.DatabaseSchemaCandidate, 4096)
+	for index := range candidates {
+		candidates[index] = assemblyline.DatabaseSchemaCandidate{
+			RelationID: fmt.Sprintf("rel_%04d", index),
+			Descriptor: fmt.Sprintf("schema relation %04d", index),
+		}
+	}
+	station := &emptyDatabaseSchemaSelectionStations{
+		scriptedObjectiveDatabaseStations: &scriptedObjectiveDatabaseStations{t: t},
+	}
+	_, receipt, err := reduceObjectiveDatabaseCandidates(
 		context.Background(), "need-1", "Find the exact relevant records.",
 		assemblyline.ObjectiveContext{}, candidates, station,
 	)
 	if err == nil || !strings.Contains(err.Error(), "96-call semantic reduction bound") {
 		t.Fatalf("schema reduction error=%v", err)
 	}
-	if calls != maxDatabaseSchemaSelectionModelCalls {
-		t.Fatalf("schema reduction calls=%d want %d", calls, maxDatabaseSchemaSelectionModelCalls)
+	if receipt.Calls != maxDatabaseSchemaSelectionModelCalls || receipt.Reused {
+		t.Fatalf("schema reduction receipt=%+v want %d fresh calls", receipt, maxDatabaseSchemaSelectionModelCalls)
 	}
 }

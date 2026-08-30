@@ -4,20 +4,22 @@ import "strconv"
 
 func portableApplicationResponseMaximum(job PortableJob) (int, bool, error) {
 	switch job.Kind {
-	case WorkApplicationContextNeedCoverage:
+	case WorkApplicationContextQuestionInventory:
+		return applicationContextQuestionInventoryMaximum(), true, nil
+	case WorkApplicationContextQuestionNecessity:
 		return maximumStringBytes(
-			ApplicationContextNeedRemains, ApplicationNoUncoveredContextNeed,
+			ApplicationContextQuestionNecessary,
+			ApplicationContextQuestionNotNecessary,
 		), true, nil
-	case WorkApplicationContextNeedQuestion:
-		return maxApplicationEvidenceQuestionBytes, true, nil
+	case WorkApplicationContextQuestionRelation:
+		return maximumStringBytes(
+			ApplicationContextQuestionsSameFact,
+			ApplicationContextQuestionsDistinctFact,
+		), true, nil
 	case WorkApplicationProductContext:
 		return maxApplicationProductBytes, true, nil
-	case WorkApplicationRequirementCoverage:
-		return maximumStringBytes(
-			ApplicationRequirementRemains, ApplicationNoUncoveredRequirement,
-		), true, nil
-	case WorkApplicationRequirement:
-		return maxRequirementQuoteBytes, true, nil
+	case WorkApplicationRequirementInventory:
+		return max(maxApplicationRequirementInventoryBytes, len(ApplicationNoRuntimeRequirementCandidates)), true, nil
 	case WorkApplicationRequirementCandidateCardinality:
 		return maximumStringBytes(
 			ApplicationRequirementOneRuntimeOutcome,
@@ -25,8 +27,13 @@ func portableApplicationResponseMaximum(job PortableJob) (int, bool, error) {
 		), true, nil
 	case WorkApplicationRequirementCandidateKind:
 		return maximumStringBytes(
-			ApplicationRequirementCandidateTaskLocal,
-			ApplicationRequirementCandidateNonRuntime,
+			string(ApplicationRequirementCandidateContentPresent),
+			string(ApplicationRequirementCandidateContentAbsent),
+		), true, nil
+	case WorkApplicationRequirementCandidateAuthorization:
+		return maximumStringBytes(
+			ApplicationRequirementCandidateEntailed,
+			ApplicationRequirementCandidateNotEntailed,
 		), true, nil
 	case WorkApplicationRequirementCandidateOutcomeRelation:
 		return maximumStringBytes(
@@ -35,9 +42,8 @@ func portableApplicationResponseMaximum(job PortableJob) (int, bool, error) {
 		), true, nil
 	case WorkApplicationRequirementCandidateResultRelation:
 		return maximumStringBytes(
-			ApplicationRequirementNoDerivedResult,
-			ApplicationRequirementExplicitResultRelation,
-			ApplicationRequirementMissingResultRelation,
+			string(ApplicationRequirementCandidateResultPresent),
+			string(ApplicationRequirementCandidateResultAbsent),
 		), true, nil
 	case WorkApplicationRequirementCandidateResultRelationGrounding:
 		return maximumStringBytes(
@@ -46,10 +52,18 @@ func portableApplicationResponseMaximum(job PortableJob) (int, bool, error) {
 		), true, nil
 	case WorkApplicationRequirementCandidateResultRelationCorrection:
 		return maxRequirementQuoteBytes, true, nil
-	case WorkApplicationRequirementCandidateSplit:
-		return maxRequirementQuoteBytes, true, nil
-	case WorkApplicationRequirementCandidateSplitCorrection:
-		return maxRequirementQuoteBytes, true, nil
+	case WorkApplicationRequirementCandidatePartition:
+		var input ApplicationRequirementCandidatePartitionInput
+		if err := decodePortablePayload(job.Payload, &input); err != nil {
+			return 0, true, err
+		}
+		if err := input.validate(); err != nil {
+			return 0, true, err
+		}
+		if input.Kind != nil {
+			return 2*maxRequirementQuoteBytes + 1, true, nil
+		}
+		return maxApplicationRequirementCandidatePartitionBytes, true, nil
 	case WorkApplicationProjectStackConstraint:
 		var input ApplicationProjectStackConstraintInput
 		if err := decodePortablePayload(job.Payload, &input); err != nil {
@@ -77,12 +91,9 @@ func portableApplicationResponseMaximum(job PortableJob) (int, bool, error) {
 			ApplicationServiceStateRequestLocalOnly,
 			ApplicationServiceStateCrossRequestAuthorityRequired,
 		), true, nil
-	case WorkApplicationStateFieldCoverage:
-		return maximumStringBytes(
-			ApplicationStateFieldRemains, ApplicationNoUncoveredStateField,
-		), true, nil
-	case WorkApplicationStateFieldPurpose, WorkApplicationRecordFieldPurpose:
-		return MaxApplicationServiceStatePurposeBytes, true, nil
+	case WorkApplicationStateFieldPurposeInventory,
+		WorkApplicationRecordFieldPurposeInventory:
+		return maxApplicationServiceStatePurposeInventoryBytes, true, nil
 	case WorkApplicationStateFieldKind:
 		return maximumStringBytes(
 			string(ApplicationServiceStateString),
@@ -95,16 +106,22 @@ func portableApplicationResponseMaximum(job PortableJob) (int, bool, error) {
 			string(ApplicationServiceStateBooleanList),
 			string(ApplicationServiceStateRecordList),
 		), true, nil
-	case WorkApplicationRecordFieldCoverage:
-		return maximumStringBytes(
-			ApplicationRecordFieldRemains, ApplicationNoUncoveredRecordField,
-		), true, nil
 	case WorkApplicationRecordFieldKind:
 		return maximumStringBytes(
 			string(ApplicationServiceStateString),
 			string(ApplicationServiceStateInteger),
 			string(ApplicationServiceStateNumber),
 			string(ApplicationServiceStateBoolean),
+		), true, nil
+	case WorkApplicationServiceStatePurposeNecessity:
+		return maximumStringBytes(
+			ApplicationServiceStatePurposeNecessary,
+			ApplicationServiceStatePurposeNotNecessary,
+		), true, nil
+	case WorkApplicationServiceStatePurposeRelation:
+		return maximumStringBytes(
+			ApplicationServiceStateSamePurpose,
+			ApplicationServiceStateDistinctPurposes,
 		), true, nil
 	case WorkApplicationServiceEndpointRequirement:
 		return maximumStringBytes(

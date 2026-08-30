@@ -27,12 +27,12 @@ func TestStateLeafStationsReuseCodingWorkloadModelRouting(t *testing.T) {
 	t.Parallel()
 	routing := Apply(Routing{}, Config{"coding_workload_model": "state-leaf-model"})
 	for _, id := range []station.ID{
-		station.CodingApplicationStateFieldCoverage,
-		station.CodingApplicationStateFieldPurpose,
+		station.CodingApplicationStateFieldPurposeInventory,
 		station.CodingApplicationStateFieldKind,
-		station.CodingApplicationRecordFieldCoverage,
-		station.CodingApplicationRecordFieldPurpose,
+		station.CodingApplicationRecordFieldPurposeInventory,
 		station.CodingApplicationRecordFieldKind,
+		station.CodingApplicationServiceStatePurposeNecessity,
+		station.CodingApplicationServiceStatePurposeRelation,
 	} {
 		if got := routing.Stations[id]; got != "state-leaf-model" {
 			t.Fatalf("state leaf station %s model=%q", id, got)

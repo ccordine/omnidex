@@ -30,12 +30,15 @@ func genericGoCommandLineDocuments(
 		if !exists {
 			return nil, fmt.Errorf("Go command-line workload omits requirement %s", requirement.ID)
 		}
-		behavior, err := compileDirectCodingApplicationTaskBehavior(context, capabilities[requirement.ID])
+		requirementBehavior, err := compileDirectCodingApplicationTaskBehavior(
+			context, capabilities[requirement.ID],
+		)
 		if err != nil {
 			return nil, err
 		}
+		implementationBehavior := requirementBehavior
 		if skill, exists := skills[requirement.ID]; exists {
-			behavior += "\nValidated procedure: " + skill.Procedure
+			implementationBehavior += "\nValidated procedure: " + skill.Procedure
 		}
 		pair, err := directCodingTaskSinglePair(coverage, context.Task.TaskID)
 		if err != nil {
@@ -81,7 +84,7 @@ func genericGoCommandLineDocuments(
 				Signature: fmt.Sprintf(
 					"func %s(input TaskInput, dependencies CapabilityResults) TaskResult", featureName,
 				),
-				Contract: goCommandLineFeatureContract(behavior),
+				Contract: goCommandLineFeatureContract(implementationBehavior),
 				API: fmt.Sprintf(
 					"func %s(input TaskInput, dependencies CapabilityResults) TaskResult", featureName,
 				),
@@ -93,7 +96,7 @@ func genericGoCommandLineDocuments(
 			verifications[verificationIndex].Blocks, assemblyline.SourceBlock{
 				ID:           fmt.Sprintf("acceptance.%03d", sequence),
 				Signature:    fmt.Sprintf("func Test%s(t *testing.T)", featureName),
-				Contract:     goCommandLineAcceptanceContract(behavior, featureName),
+				Contract:     goCommandLineAcceptanceContract(requirementBehavior, featureName),
 				API:          fmt.Sprintf("func Test%s(t *testing.T)", featureName),
 				DependsOn:    acceptanceDependencies,
 				Capabilities: append([]string(nil), acceptanceDependencies...),

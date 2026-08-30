@@ -27,12 +27,15 @@ func genericJavaScriptCommandLineDocuments(
 		if !exists {
 			return nil, fmt.Errorf("JavaScript command-line workload omits requirement %s", requirement.ID)
 		}
-		behavior, err := compileDirectCodingApplicationTaskBehavior(context, capabilities[requirement.ID])
+		requirementBehavior, err := compileDirectCodingApplicationTaskBehavior(
+			context, capabilities[requirement.ID],
+		)
 		if err != nil {
 			return nil, err
 		}
+		implementationBehavior := requirementBehavior
 		if skill, exists := skills[requirement.ID]; exists {
-			behavior += "\nValidated procedure: " + skill.Procedure
+			implementationBehavior += "\nValidated procedure: " + skill.Procedure
 		}
 		pair, err := directCodingTaskSinglePair(coverage, context.Task.TaskID)
 		if err != nil {
@@ -67,7 +70,7 @@ func genericJavaScriptCommandLineDocuments(
 		implementations[implementationIndex].Blocks = append(
 			implementations[implementationIndex].Blocks, assemblyline.SourceBlock{
 				ID: featureID, Signature: "function " + featureName + "(input, dependencies)",
-				Contract:  javaScriptCommandLineFeatureContract(behavior),
+				Contract:  javaScriptCommandLineFeatureContract(implementationBehavior),
 				API:       "function " + featureName + "(input, dependencies)",
 				DependsOn: dependencies, Capabilities: append([]string(nil), dependencies...),
 				Export: true,
@@ -86,7 +89,7 @@ func genericJavaScriptCommandLineDocuments(
 			verifications[verificationIndex].Blocks,
 			assemblyline.SourceBlock{
 				ID: verificationID, Signature: "function " + verifyName + "()",
-				Contract:     javaScriptCommandLineAcceptanceContract(behavior, featureName),
+				Contract:     javaScriptCommandLineAcceptanceContract(requirementBehavior, featureName),
 				API:          "function " + verifyName + "()",
 				DependsOn:    append(append([]string(nil), dependencies...), featureID),
 				Capabilities: []string{featureID}, Globals: []string{"assert"},
@@ -169,6 +172,6 @@ func javaScriptCommandLineAcceptanceContract(behavior, featureName string) strin
 	return strings.Join([]string{
 		behavior,
 		"Call " + featureName + " with representative input and dependency values.",
-		"The exact accepted requirement is proven with node:assert/strict applied to a value read from that exact call's result.",
+		"The exact accepted requirement is proven with the declared assert capability applied to a value read from that exact call's result.",
 	}, "\n")
 }

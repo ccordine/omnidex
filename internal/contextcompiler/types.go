@@ -77,8 +77,8 @@ type StationReceipt struct {
 }
 
 type RelevanceStation interface {
-	SelectRelevant(context.Context, assemblyline.ContextRelevanceInput) (
-		assemblyline.ContextRelevanceDecision, StationReceipt, error,
+	Relate(context.Context, assemblyline.ContextRelevanceRelationInput) (
+		assemblyline.ContextRelevanceRelationResult, StationReceipt, error,
 	)
 }
 

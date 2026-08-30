@@ -45,7 +45,7 @@ func TestRawRequestAuthorityStopsAtSemanticTargetTreeBoundary(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !strings.Contains(targetPrompt, "ACCEPTED_GOALS:\n"+request) ||
-		!strings.Contains(targetPrompt, "CODE_SELECTED_TECHNICAL_CONTEXT:\n"+input.TechnicalContext) {
+		!strings.Contains(targetPrompt, "TECHNICAL_CONTEXT:\n"+input.TechnicalContext) {
 		t.Fatalf("semantic target-tree prompt lost separated request or technical authority:\n%s", targetPrompt)
 	}
 

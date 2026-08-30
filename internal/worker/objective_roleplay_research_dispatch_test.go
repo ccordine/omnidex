@@ -140,6 +140,7 @@ func TestRoleplayResearchDispatchBypassesFictionalResponseAndCanon(t *testing.T)
 					Rendered: rendered, RenderedSHA256: hex.EncodeToString(renderedDigest[:]),
 					Paragraphs: []webresearch.GroundedParagraph{{Text: "Mars takes about 687 Earth days to orbit the Sun."}},
 					Evidence:   []objectiveEvidence{evidenceItem}, EvidenceIDs: []string{"E01"}, ModelCalls: 3,
+					WebCallLedger: objectiveWebTestCallLedger(t, 3),
 				}, nil
 			},
 		},

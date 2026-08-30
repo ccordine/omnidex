@@ -10,7 +10,7 @@ import (
 	"github.com/gryph/omnidex/internal/assemblyline"
 )
 
-func TestRuntimeCapabilitySelectionUsesOnlyOpaquePurposeProjection(t *testing.T) {
+func TestRuntimeCapabilityNecessityUsesOnePurposePerCall(t *testing.T) {
 	t.Parallel()
 	requirements := []assemblyline.Requirement{
 		{ID: "requirement_001", SourceQuote: "Load a poem supplied by local name and return its text."},
@@ -29,20 +29,22 @@ func TestRuntimeCapabilitySelectionUsesOnlyOpaquePurposeProjection(t *testing.T)
 		t.Fatal(err)
 	}
 	responses := []string{
-		"RUNTIME_CAPABILITY_2", assemblyline.RuntimeCapabilitySelectionNone,
-		"RUNTIME_CAPABILITY_1", assemblyline.RuntimeCapabilitySelectionNone,
+		assemblyline.RuntimeCapabilityNotNecessary,
+		assemblyline.RuntimeCapabilityNecessary,
+		assemblyline.RuntimeCapabilityNecessary,
+		assemblyline.RuntimeCapabilityNotNecessary,
 	}
 	calls := 0
 	runtime := typedWorkerRuntime{
 		Context: t.Context(), MaxAttempts: 1,
 		Execute: func(job assemblyline.PortableJob, model string) (assemblyline.PortableResult, error) {
-			if model != "semantic-model" || job.Kind != assemblyline.WorkRuntimeCapabilitySelection {
+			if model != "semantic-model" || job.Kind != assemblyline.WorkRuntimeCapabilityNecessity {
 				t.Fatalf("model=%q kind=%q", model, job.Kind)
 			}
 			if calls >= len(responses) {
-				t.Fatalf("unexpected runtime capability selection call %d", calls+1)
+				t.Fatalf("unexpected runtime capability necessity call %d", calls+1)
 			}
-			var input assemblyline.RuntimeCapabilitySelectionInput
+			var input assemblyline.RuntimeCapabilityNecessityInput
 			if err := json.Unmarshal(job.Payload, &input); err != nil {
 				t.Fatal(err)
 			}
@@ -51,7 +53,7 @@ func TestRuntimeCapabilitySelectionUsesOnlyOpaquePurposeProjection(t *testing.T)
 				t.Fatal(err)
 			}
 			if !strings.Contains(prompt, "Go 1.24 command-line source") {
-				t.Fatalf("selection prompt omits source dialect:\n%s", prompt)
+				t.Fatalf("necessity prompt omits source dialect:\n%s", prompt)
 			}
 			if calls >= 2 && !strings.Contains(
 				input.LocalContext, requirements[0].SourceQuote,
@@ -65,11 +67,12 @@ func TestRuntimeCapabilitySelectionUsesOnlyOpaquePurposeProjection(t *testing.T)
 			} {
 				if strings.Contains(prompt, forbidden) ||
 					strings.Contains(string(job.Payload), forbidden) {
-					t.Fatalf("opaque selection exposed %q in prompt or payload", forbidden)
+					t.Fatalf("candidate-bound necessity exposed %q in prompt or payload", forbidden)
 				}
 			}
-			if len(input.Candidates) == 0 || input.AcceptedPurposes == nil {
-				t.Fatalf("selection input is not one bounded iterative leaf: %+v", input)
+			if input.CandidatePurpose == "" || strings.Contains(prompt, "REMAINING_CANDIDATE") ||
+				strings.Contains(prompt, "ALREADY_ACCEPTED") {
+				t.Fatalf("necessity input is not one candidate-bound leaf: %+v", input)
 			}
 			response := responses[calls]
 			calls++

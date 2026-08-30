@@ -16,9 +16,9 @@ func renderPortableCodingJob(job PortableJob) (string, bool, error) {
 		return handledPortableRender(renderDecodedPortableInput(job, BuildCapabilityRelationPrompt))
 	case WorkSkillSelection:
 		return handledPortableRender(renderDecodedPortableInput(job, BuildSkillSelectionPrompt))
-	case WorkRuntimeCapabilitySelection:
+	case WorkRuntimeCapabilityNecessity:
 		return handledPortableRender(renderDecodedPortableInput(
-			job, BuildRuntimeCapabilitySelectionPrompt,
+			job, BuildRuntimeCapabilityNecessityPrompt,
 		))
 	case WorkTypeScriptRepairGuidance:
 		return handledPortableRender(renderDecodedPortableInput(job, BuildFragmentRepairGuidancePrompt))

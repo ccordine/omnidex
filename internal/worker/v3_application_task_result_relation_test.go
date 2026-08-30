@@ -44,13 +44,11 @@ func directCodingTestRequirementRelations(
 		directCodingResultRelationTestRequest,
 	)
 	for index, task := range workload.Tasks {
-		kind, err := assemblyline.DecodeApplicationRequirementCandidateKindResult(
-			assemblyline.ApplicationRequirementCandidateKindInput{Candidate: task.RequirementQuote},
+		kind := applicationRequirementCandidateKindReceiptForTest(
+			t,
+			task.RequirementQuote,
 			assemblyline.ApplicationRequirementCandidateTaskLocal,
 		)
-		if err != nil {
-			t.Fatal(err)
-		}
 		cardinality, err := assemblyline.DecodeApplicationRequirementCandidateCardinalityResult(
 			assemblyline.ApplicationRequirementCandidateCardinalityInput{Candidate: task.RequirementQuote},
 			assemblyline.ApplicationRequirementOneRuntimeOutcome,

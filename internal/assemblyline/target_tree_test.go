@@ -116,7 +116,7 @@ func TestTargetTreePromptUsesRawCurrentAndReservedTrees(t *testing.T) {
 	for _, expected := range []string{
 		"ACCEPTED_GOALS:\nProduct context: counter\nAccepted goal 1: display a count",
 		"CURRENT_MANAGED_WORKLOAD_TREE:\nROOT\n  D src\n    F existing.tsx",
-		"CODE_RESERVED_TREE:\nROOT\n  D src\n    F App.tsx\n    F runtime.tsx",
+		"RESERVED_TREE:\nROOT\n  D src\n    F App.tsx\n    F runtime.tsx",
 		"RAW_TREE_GRAMMAR:\nROOT\n  D <single basename>",
 		"complete expected workload tree, not a delta",
 	} {
@@ -130,6 +130,7 @@ func TestTargetTreePromptUsesRawCurrentAndReservedTrees(t *testing.T) {
 	for _, forbidden := range []string{
 		"artifact metadata", "filesystem operations", "file contents", "source",
 		"declarations", "commands", "ownership", "dependencies", "completion state",
+		"code-selected", "CODE_SELECTED", "code-reserved", "CODE_RESERVED",
 	} {
 		if strings.Contains(prompt, forbidden) {
 			t.Fatalf("target-tree prompt contains unrelated responsibility %q: %s", forbidden, prompt)

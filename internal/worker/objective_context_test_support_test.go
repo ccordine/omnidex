@@ -45,27 +45,31 @@ type scriptedConversationContextStation struct {
 	relevantIDsByCall  [][]string
 	minimalContext     string
 	relevanceCalls     int
-	relevanceInputs    []assemblyline.ContextRelevanceInput
+	relevanceInputs    []assemblyline.ContextRelevanceRelationInput
 	minificationCalls  int
 	minificationInputs []assemblyline.ContextMinificationInput
 }
 
-func (station *scriptedConversationContextStation) SelectRelevant(
+func (station *scriptedConversationContextStation) Relate(
 	_ context.Context,
-	input assemblyline.ContextRelevanceInput,
-) (assemblyline.ContextRelevanceDecision, contextcompiler.StationReceipt, error) {
+	input assemblyline.ContextRelevanceRelationInput,
+) (assemblyline.ContextRelevanceRelationResult, contextcompiler.StationReceipt, error) {
 	callIndex := station.relevanceCalls
 	station.relevanceCalls++
 	station.relevanceInputs = append(station.relevanceInputs, input)
+	raw := assemblyline.ContextCandidateNotDirectlyRelevant
 	relevantIDs := station.relevantIDs
 	if callIndex < len(station.relevantIDsByCall) {
 		relevantIDs = station.relevantIDsByCall[callIndex]
 	}
-	decision := assemblyline.ContextRelevanceDecision{
-		Schema:                 assemblyline.ContextRelevanceSchemaV1,
-		ReferencedCandidateIDs: append([]string{}, relevantIDs...),
+	for _, candidateID := range relevantIDs {
+		if input.Candidate.CandidateID == candidateID {
+			raw = assemblyline.ContextCandidateDirectlyRelevant
+			break
+		}
 	}
-	return decision, contextcompiler.StationReceipt{Calls: 1}, decision.ValidateFor(input)
+	decision, err := assemblyline.DecodeContextRelevanceRelationResult(input, raw)
+	return decision, contextcompiler.StationReceipt{Calls: 1}, err
 }
 
 func (station *scriptedConversationContextStation) Minify(

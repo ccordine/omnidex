@@ -15,22 +15,11 @@ func TestExpectedPortableStationMaxOutputTokensIncludesExactStopReserve(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	coverageInput := assemblyline.ApplicationRequirementCoverageInput{
-		UserRequest: request, Context: context,
-		AcceptedRequirements: []string{}, ExcludedCandidates: []string{},
-		ZeroDeltas: []assemblyline.ApplicationRequirementCandidateZeroDelta{},
+	inventoryInput := assemblyline.ApplicationRequirementInventoryInput{
+		UserRequest: request,
+		Context:     context,
 	}
-	coverage, err := assemblyline.DecodeApplicationRequirementCoverageLeaf(
-		coverageInput, assemblyline.ApplicationRequirementRemains,
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	requirement, err := assemblyline.NewApplicationRequirementJob(
-		assemblyline.ApplicationRequirementCandidateInput{
-			Authority: coverageInput, Coverage: coverage,
-		},
-	)
+	requirement, err := assemblyline.NewApplicationRequirementInventoryJob(inventoryInput)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -44,6 +33,30 @@ func TestExpectedPortableStationMaxOutputTokensIncludesExactStopReserve(t *testi
 	}
 	if got != requirementBytes+10 {
 		t.Fatalf("multiline output ceiling=%d want decoder bytes %d + ChatML reserve 10", got, requirementBytes)
+	}
+	stateInventory, err := assemblyline.NewApplicationStateFieldPurposeInventoryJob(
+		assemblyline.ApplicationStateFieldPurposeInventoryInput{
+			Authority: assemblyline.ApplicationServiceStateInterfaceInput{
+				ProductContext: "reading preference service",
+				Needs: []assemblyline.ApplicationServiceStateInterfaceNeed{{
+					RequirementQuote: "Remember whether compact text is preferred across requests.",
+				}},
+			},
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stateBytes, err := assemblyline.PortableResponseMaximumBytesForJob(stateInventory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err = ExpectedPortableStationMaxOutputTokens(stateInventory, 32768)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != stateBytes+10 {
+		t.Fatalf("state inventory output ceiling=%d want decoder bytes %d + ChatML reserve 10", got, stateBytes)
 	}
 
 	classification, err := assemblyline.NewApplicationClassificationJob(

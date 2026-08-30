@@ -2,36 +2,6 @@ package assemblyline
 
 import "fmt"
 
-func BuildApplicationStateFieldCoveragePrompt(
-	input ApplicationStateFieldLeafInput,
-) (string, error) {
-	return buildApplicationServiceStateLeafPrompt(
-		input.validate,
-		"Answer one semantic question: does the directly related behavior authority require another durable root state value not covered by the accepted semantic values?",
-		"Return STATE_FIELD_REMAINS when one or more root values remain. Return NO_UNCOVERED_STATE_FIELD when the accepted values form the minimal sufficient durable interface.",
-		"APPLICATION_STATE_FIELD_AUTHORITY",
-		applicationStateFieldLeafProjection{
-			Authority:      input.Authority,
-			AcceptedFields: projectApplicationStateFields(input.AcceptedFields),
-		},
-	)
-}
-
-func BuildApplicationStateFieldPurposePrompt(
-	input ApplicationStateFieldLeafInput,
-) (string, error) {
-	return buildApplicationServiceStateLeafPrompt(
-		input.validate,
-		"State one specific semantic responsibility of a necessary durable root value not covered by the accepted semantic values.",
-		"Return only one concise raw purpose sentence. Do not return an identifier, data kind, record members, JSON, quotes, a label, Markdown, or commentary.",
-		"APPLICATION_STATE_FIELD_AUTHORITY",
-		applicationStateFieldLeafProjection{
-			Authority:      input.Authority,
-			AcceptedFields: projectApplicationStateFields(input.AcceptedFields),
-		},
-	)
-}
-
 func BuildApplicationStateFieldKindPrompt(
 	input ApplicationStateFieldKindInput,
 ) (string, error) {
@@ -43,39 +13,6 @@ func BuildApplicationStateFieldKindPrompt(
 		applicationStateFieldKindProjection{
 			Authority:      input.Authority,
 			FocusedPurpose: input.FocusedPurpose,
-		},
-	)
-}
-
-func DecodeApplicationStateFieldCoverageLeaf(
-	input ApplicationStateFieldLeafInput,
-	raw string,
-) (string, error) {
-	if err := input.validate(); err != nil {
-		return "", err
-	}
-	return decodeApplicationServiceCoverageLeaf(
-		"application state field coverage", raw,
-		ApplicationStateFieldRemains, ApplicationNoUncoveredStateField,
-	)
-}
-
-func DecodeApplicationStateFieldPurposeLeaf(
-	input ApplicationStateFieldLeafInput,
-	raw string,
-) (string, error) {
-	if err := input.validate(); err != nil {
-		return "", err
-	}
-	return decodeUnacceptedApplicationServicePurpose(
-		"application state field purpose", raw,
-		func(purpose string) bool {
-			for _, field := range input.AcceptedFields {
-				if equalApplicationServicePurpose(field.Purpose, purpose) {
-					return true
-				}
-			}
-			return false
 		},
 	)
 }

@@ -16,9 +16,9 @@ func genericBrowserAppDocument(
 	imports := []string{
 		"import { useMemo } from 'react';",
 		"import type { ReactElement } from 'react';",
-		"import { createApplicationRuntime, createFeatureRuntime } from './runtime';",
+		"import { BrowserHostBridge, createApplicationRuntime, createFeatureRuntime } from './runtime';",
 	}
-	dependencies := []string{"runtime.factory"}
+	dependencies := []string{"runtime.factory", "runtime.host_bridge"}
 	for index := range specification.Requirements {
 		requirement := specification.Requirements[index]
 		context, exists := contexts[requirement.ID]
@@ -59,6 +59,7 @@ func genericBrowserAppSource(specification assemblyline.ApplicationSpecification
 	body.WriteString("  }), [runtime]);\n")
 	body.WriteString("  return (\n")
 	body.WriteString("    <main className=\"application-shell isolate\">\n")
+	body.WriteString("      <BrowserHostBridge />\n")
 	body.WriteString("      <header className=\"application-header\">\n")
 	body.WriteString("        <p className=\"application-kicker\">Live workspace</p>\n")
 	body.WriteString("        <h1>" + escapeTypeScriptJSXText(specification.ProductQuote) + "</h1>\n")

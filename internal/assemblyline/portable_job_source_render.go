@@ -39,21 +39,7 @@ func renderPortableFragmentGenerationReplacement(
 	if err := input.validate(); err != nil {
 		return "", err
 	}
-	prompt, err := renderPortableFragmentGeneration(input.Original)
-	if err != nil {
-		return "", err
-	}
-	prompt +=
-		"\n\nEXACT_OUTPUT_LIMIT_EVIDENCE:\n" +
-			"A prior answer for this unchanged declaration reached the provider output boundary and contained no accepted declaration. " +
-			"Return one complete declaration within this response; do not emit duplicate or redundant statements."
-	if len(prompt) > maxPortableResourceBytes {
-		return "", fmt.Errorf(
-			"fragment generation replacement prompt exceeds %d bytes",
-			maxPortableResourceBytes,
-		)
-	}
-	return prompt, nil
+	return renderPortableFragmentGeneration(input.Original)
 }
 
 func renderPortableFragmentCorrection(input FragmentCorrectionInput) (string, error) {

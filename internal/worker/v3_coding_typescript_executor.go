@@ -45,7 +45,15 @@ func (executor *directCodingTypeScriptProjectStageExecutor) GenerateBlock(
 	var publicSurface *assemblyline.FragmentPublicInteractionSurface
 	var validateInitialCandidate func(string) error
 	if ref.Block.Role == assemblyline.SourceBlockTaskImplementation {
-		validateInitialCandidate = validateDirectCodingBrowserPublicInteractionCandidate
+		permittedRuntimeCalls, err := directCodingBrowserHostCallsForBlock(ref.Block)
+		if err != nil {
+			return "", err
+		}
+		validateInitialCandidate = func(candidate string) error {
+			return validateDirectCodingBrowserPublicInteractionCandidateWithRuntimeCalls(
+				candidate, permittedRuntimeCalls,
+			)
+		}
 	} else if ref.Block.Role == assemblyline.SourceBlockTaskVerification {
 		var err error
 		publicSurface, validateInitialCandidate, err = executor.bindBrowserPublicSurface(

@@ -14,38 +14,24 @@ func resolveDatabaseQueryProjections(
 	call objectiveDatabaseRawLeafCall,
 	total int,
 ) (assemblyline.DatabaseQueryIntentLeafState, int, error) {
-	for {
+	maximumPurposes := datasource.MaxIntentProjections - len(state.Projections)
+	if state.Shape == datasource.ResultScalar {
+		maximumPurposes = 1 - len(state.Projections)
+	}
+	purposes, nextTotal, err := resolveDatabaseQueryPurposeQueue(
+		ctx,
+		assemblyline.DatabaseQueryPurposeAuthority{
+			State: state, Collection: assemblyline.DatabaseQueryProjectionPurpose,
+		},
+		maximumPurposes, call, total,
+	)
+	total = nextTotal
+	if err != nil {
+		return state, total, err
+	}
+	for _, purpose := range purposes {
+		leaf := assemblyline.DatabaseQueryProjectionLeafInput{State: state, Purpose: purpose}
 		var calls int
-		if assemblyline.DatabaseQueryProjectionsHaveRequiredShape(state) {
-			switch state.Shape {
-			case datasource.ResultScalar, datasource.ResultExistence:
-				return state, total, nil
-			}
-			coverageJob, err := assemblyline.NewDatabaseQueryProjectionCoverageJob(state)
-			if err != nil {
-				return state, total, err
-			}
-			coverage, calls, err := callObjectiveDatabaseRawLeaf(
-				ctx, call, "database_query_projection_coverage", coverageJob,
-				func(raw string) (string, error) {
-					return assemblyline.DecodeDatabaseQueryProjectionCoverageLeaf(state, raw)
-				},
-			)
-			total += calls
-			if err != nil {
-				return state, total, err
-			}
-			if coverage == assemblyline.DatabaseQueryNoUncoveredItem {
-				return state, total, nil
-			}
-		}
-		if len(state.Projections) == datasource.MaxIntentProjections {
-			return state, total, fmt.Errorf(
-				"database query projections do not satisfy the required shape at the code-owned %d-item bound",
-				datasource.MaxIntentProjections,
-			)
-		}
-		leaf := assemblyline.DatabaseQueryProjectionLeafInput{State: state}
 		if state.Shape != datasource.ResultRecords {
 			job, err := assemblyline.NewDatabaseQueryProjectionAggregateJob(leaf)
 			if err != nil {
@@ -108,6 +94,13 @@ func resolveDatabaseQueryProjections(
 		}
 		state.Projections = append(state.Projections, projection)
 	}
+	if !assemblyline.DatabaseQueryProjectionsHaveRequiredShape(state) {
+		return state, total, fmt.Errorf(
+			"database query projection purpose queue exhausted before satisfying the code-owned %s shape",
+			state.Shape,
+		)
+	}
+	return state, total, nil
 }
 
 func objectiveDatabaseProjectionFields(

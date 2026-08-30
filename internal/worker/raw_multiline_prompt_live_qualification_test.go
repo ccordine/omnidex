@@ -16,7 +16,7 @@ import (
 
 const (
 	liveQwenRawMultilineModelEnv = "OMNIDEX_TEST_QWEN_RAW_MULTILINE_MODEL"
-	liveQwenRawMultilineScope    = "live-qwen-raw-multiline-prompt-boundary-v1"
+	liveQwenRawMultilineScope    = "live-qwen-raw-multiline-prompt-boundary-v4"
 )
 
 func TestLiveQwenRawMultilinePromptBoundaryQualification(t *testing.T) {
@@ -59,22 +59,11 @@ func TestLiveQwenRawMultilinePromptBoundaryQualification(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	coverageInput := assemblyline.ApplicationRequirementCoverageInput{
-		UserRequest: request, Context: applicationContext,
-		AcceptedRequirements: []string{},
-		ExcludedCandidates:   []string{},
-		ZeroDeltas:           []assemblyline.ApplicationRequirementCandidateZeroDelta{},
+	requirementInput := assemblyline.ApplicationRequirementInventoryInput{
+		UserRequest: request,
+		Context:     applicationContext,
 	}
-	coverage, err := assemblyline.DecodeApplicationRequirementCoverageLeaf(
-		coverageInput, assemblyline.ApplicationRequirementRemains,
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	requirementInput := assemblyline.ApplicationRequirementCandidateInput{
-		Authority: coverageInput, Coverage: coverage,
-	}
-	requirementJob, err := assemblyline.NewApplicationRequirementJob(requirementInput)
+	requirementJob, err := assemblyline.NewApplicationRequirementInventoryJob(requirementInput)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,9 +71,8 @@ func TestLiveQwenRawMultilinePromptBoundaryQualification(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(requirementPrompt, "A browser weather board.") ||
-		strings.Contains(requirementPrompt, "PRODUCT CONTEXT:") {
-		t.Fatalf("raw multiline requirement received redundant product context:\n%s", requirementPrompt)
+	if strings.Contains(requirementPrompt, "PRODUCT CONTEXT:") {
+		t.Fatalf("raw multiline inventory received redundant product context:\n%s", requirementPrompt)
 	}
 	treeInput := assemblyline.TargetTreeInput{
 		Objective:        "Create one root-level plain-text artifact that displays a greeting.",
@@ -112,9 +100,9 @@ func TestLiveQwenRawMultilinePromptBoundaryQualification(t *testing.T) {
 			},
 		},
 		{
-			name: "application requirement", job: requirementJob,
+			name: "application requirement inventory", job: requirementJob,
 			decode: func(raw string) error {
-				_, err := assemblyline.DecodeApplicationRequirementLeaf(requirementInput, raw)
+				_, err := assemblyline.DecodeApplicationRequirementInventory(requirementInput, raw)
 				return err
 			},
 		},

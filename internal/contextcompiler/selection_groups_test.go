@@ -8,7 +8,7 @@ import (
 	"github.com/gryph/omnidex/internal/assemblyline"
 )
 
-func TestOptionalSelectionGroupExpandsLatePagedMemberBeforeMinificationAndProvenance(t *testing.T) {
+func TestOptionalSelectionGroupExpandsOneRelevantMemberBeforeMinificationAndProvenance(t *testing.T) {
 	optional := make([]assemblyline.ContextCandidateAuthority, 17)
 	for index := 0; index < 14; index++ {
 		optional[index] = candidate(
@@ -23,7 +23,7 @@ func TestOptionalSelectionGroupExpandsLatePagedMemberBeforeMinificationAndProven
 			fmt.Sprintf("Complete exchange segment %d: %s", index+1, strings.Repeat(fill, 850)),
 		)
 	}
-	relevance := &scriptedRelevanceStation{idsByCall: [][]string{{}, {"CTX_17"}}}
+	relevance := &scriptedRelevanceStation{ids: []string{"CTX_17"}}
 	minifier := &scriptedMinificationStation{text: "The complete grouped exchange remains authoritative."}
 	result, err := Compile(t.Context(), Request{
 		ExactInstruction:   "Use the marker in the final exchange segment.",
@@ -41,10 +41,8 @@ func TestOptionalSelectionGroupExpandsLatePagedMemberBeforeMinificationAndProven
 	if err != nil {
 		t.Fatal(err)
 	}
-	if relevance.calls != 2 || len(relevance.inputs) != 2 ||
-		len(relevance.inputs[0].CandidateAuthorities) != 16 ||
-		len(relevance.inputs[1].CandidateAuthorities) != 1 {
-		t.Fatalf("relevance pages=%#v", relevance.inputs)
+	if relevance.calls != len(optional) || len(relevance.inputs) != len(optional) {
+		t.Fatalf("per-candidate relevance=%#v", relevance.inputs)
 	}
 	if minifier.calls != 1 || len(minifier.inputs) != 1 ||
 		!candidateIDsEqual(
@@ -53,7 +51,8 @@ func TestOptionalSelectionGroupExpandsLatePagedMemberBeforeMinificationAndProven
 		) {
 		t.Fatalf("grouped minification inputs=%#v", minifier.inputs)
 	}
-	if result.RelevanceCalls != 2 || result.MinificationCalls != 1 || result.ModelCalls != 3 ||
+	if result.RelevanceCalls != len(optional) || result.MinificationCalls != 1 ||
+		result.ModelCalls != len(optional)+1 ||
 		len(result.Context.Capsules) != 1 ||
 		result.Context.Capsules[0].Content != minifier.text ||
 		!sourceIDsEqual(

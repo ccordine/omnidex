@@ -7,19 +7,18 @@ import (
 	"github.com/gryph/omnidex/internal/assemblyline"
 )
 
-func TestPortableStationsFinalizeOnlyAfterTypedLeafValidation(t *testing.T) {
-	finalized := 0
-	var finalizedErr error
+func TestPortableStationsResolveOnlyAfterTypedLeafValidation(t *testing.T) {
+	validated := 0
 	station, err := NewPortableStations(PortableRuntime{
-		Execute: func(_ context.Context, job assemblyline.PortableJob) (assemblyline.PortableResult, error) {
-			return assemblyline.PortableResult{
-				JobID: job.ID, Candidate: string(assemblyline.WebCandidateRelevant),
-			}, nil
-		},
-		Finalize: func(_ context.Context, _ assemblyline.PortableJob, _ assemblyline.PortableResult, validationErr error) error {
-			finalized++
-			finalizedErr = validationErr
-			return nil
+		Resolve: func(
+			_ context.Context,
+			_ assemblyline.PortableJob,
+			validate PortableCandidateValidator,
+		) (SemanticCallReceipt, error) {
+			validated++
+			return SemanticCallReceipt{Calls: 1}, validate(
+				string(assemblyline.WebCandidateRelevant),
+			)
 		},
 	})
 	if err != nil {
@@ -31,24 +30,23 @@ func TestPortableStationsFinalizeOnlyAfterTypedLeafValidation(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if finalized != 1 || finalizedErr != nil {
-		t.Fatalf("finalized=%d validation_error=%v", finalized, finalizedErr)
+	if validated != 1 {
+		t.Fatalf("typed validations=%d", validated)
 	}
 }
 
-func TestPortableStationsFinalizeTypedLeafRejection(t *testing.T) {
-	finalized := 0
-	var finalizedErr error
+func TestPortableStationsResolvePropagatesTypedLeafRejection(t *testing.T) {
+	validated := 0
+	var validationErr error
 	station, err := NewPortableStations(PortableRuntime{
-		Execute: func(_ context.Context, job assemblyline.PortableJob) (assemblyline.PortableResult, error) {
-			return assemblyline.PortableResult{
-				JobID: job.ID, Candidate: `{"relation":"RELEVANT"}`,
-			}, nil
-		},
-		Finalize: func(_ context.Context, _ assemblyline.PortableJob, _ assemblyline.PortableResult, validationErr error) error {
-			finalized++
-			finalizedErr = validationErr
-			return nil
+		Resolve: func(
+			_ context.Context,
+			_ assemblyline.PortableJob,
+			validate PortableCandidateValidator,
+		) (SemanticCallReceipt, error) {
+			validated++
+			validationErr = validate(`{"relation":"RELEVANT"}`)
+			return SemanticCallReceipt{Calls: 1}, validationErr
 		},
 	})
 	if err != nil {
@@ -60,7 +58,7 @@ func TestPortableStationsFinalizeTypedLeafRejection(t *testing.T) {
 	}); err == nil {
 		t.Fatal("invalid typed web leaf was accepted")
 	}
-	if finalized != 1 || finalizedErr == nil {
-		t.Fatalf("finalized=%d validation_error=%v", finalized, finalizedErr)
+	if validated != 1 || validationErr == nil {
+		t.Fatalf("typed validations=%d validation_error=%v", validated, validationErr)
 	}
 }

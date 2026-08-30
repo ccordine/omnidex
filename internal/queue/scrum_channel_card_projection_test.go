@@ -8,17 +8,24 @@ import (
 )
 
 func TestScrumChannelCardProjectionRejectsRetiredFlowMetric(t *testing.T) {
-	card := DBScrumCard{
-		ID: "projection-card", ProjectID: 7, Title: "Projection", Column: "assigned",
-		Checklist: json.RawMessage(`[]`), RefFiles: json.RawMessage(`[]`),
-		Tags: json.RawMessage(`[]`), TestCriteria: json.RawMessage(`[]`),
-		FlowMetrics: json.RawMessage(`{"planning_messages":2}`),
-		CreatedAt:   time.Date(2026, 8, 13, 12, 0, 0, 0, time.UTC),
-		UpdatedAt:   time.Date(2026, 8, 13, 12, 0, 0, 0, time.UTC),
-	}
-	if _, err := encodeScrumChannelCardProjection(card); err == nil ||
-		!strings.Contains(err.Error(), "planning_messages") {
-		t.Fatalf("retired flow metric encode error=%v", err)
+	for name, raw := range map[string]json.RawMessage{
+		"planning_messages": json.RawMessage(`{"planning_messages":2}`),
+		"review_gate":       json.RawMessage(`{"assigned_returns":0,"review_bounces":0,"regression_count":0,"play_runs":0,"channel_messages":0,"conversation_chars":0,"incomplete_score":0,"completion_status":"uncertain","signals":[],"review_gate":"pending"}`),
+	} {
+		t.Run(name, func(t *testing.T) {
+			card := DBScrumCard{
+				ID: "projection-card", ProjectID: 7, Title: "Projection", Column: "assigned",
+				Checklist: json.RawMessage(`[]`), RefFiles: json.RawMessage(`[]`),
+				Tags: json.RawMessage(`[]`), TestCriteria: json.RawMessage(`[]`),
+				FlowMetrics: raw,
+				CreatedAt:   time.Date(2026, 8, 13, 12, 0, 0, 0, time.UTC),
+				UpdatedAt:   time.Date(2026, 8, 13, 12, 0, 0, 0, time.UTC),
+			}
+			if _, err := encodeScrumChannelCardProjection(card); err == nil ||
+				!strings.Contains(err.Error(), name) {
+				t.Fatalf("retired flow metric encode error=%v", err)
+			}
+		})
 	}
 }
 
@@ -30,7 +37,6 @@ func TestScrumChannelCardProjectionRejectsUnboundedOrNoncanonicalFlowMetrics(t *
 		"duplicate signal":    func(metrics *ScrumFlowMetrics) { metrics.Signals = []string{"same", "same"} },
 		"noncanonical signal": func(metrics *ScrumFlowMetrics) { metrics.Signals = []string{" padded"} },
 		"unknown outcome":     func(metrics *ScrumFlowMetrics) { metrics.LastPlayOutcome = "agent_done" },
-		"unknown gate":        func(metrics *ScrumFlowMetrics) { metrics.ReviewGate = "guessed" },
 		"unknown column":      func(metrics *ScrumFlowMetrics) { metrics.Column = "complete" },
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -70,7 +76,7 @@ func TestScrumChannelCardProjectionBindsFlowTimestampToCardRevision(t *testing.T
 }
 
 func TestScrumChannelCardProjectionRejectsExplicitEmptyOptionalFlowIdentity(t *testing.T) {
-	for _, field := range []string{"last_play_outcome", "review_gate", "column", "updated_at"} {
+	for _, field := range []string{"last_play_outcome", "column", "updated_at"} {
 		t.Run(field, func(t *testing.T) {
 			raw := json.RawMessage(`{"assigned_returns":0,"review_bounces":0,"regression_count":0,"play_runs":0,"channel_messages":0,"conversation_chars":0,"incomplete_score":0,"completion_status":"uncertain","signals":[],"` + field + `":""}`)
 			if _, err := canonicalScrumFlowMetrics(raw); err == nil || !strings.Contains(err.Error(), "must be absent") {
@@ -108,7 +114,7 @@ func TestScrumChannelCardProjectionRejectsExplicitNullFlowMetricFields(t *testin
 	fields := []string{
 		"assigned_returns", "review_bounces", "regression_count", "play_runs",
 		"channel_messages", "conversation_chars", "incomplete_score", "completion_status", "signals",
-		"last_play_outcome", "review_gate", "column", "updated_at",
+		"last_play_outcome", "column", "updated_at",
 	}
 	for _, field := range fields {
 		t.Run(field, func(t *testing.T) {

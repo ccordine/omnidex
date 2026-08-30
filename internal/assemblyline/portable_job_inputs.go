@@ -59,11 +59,11 @@ func NewSkillSelectionJob(input SkillSelectionInput) (PortableJob, error) {
 	return newValidatedPortableJob(WorkSkillSelection, input, input.validate)
 }
 
-func NewRuntimeCapabilitySelectionJob(
-	input RuntimeCapabilitySelectionInput,
+func NewRuntimeCapabilityNecessityJob(
+	input RuntimeCapabilityNecessityInput,
 ) (PortableJob, error) {
 	return newValidatedPortableJob(
-		WorkRuntimeCapabilitySelection, input, input.validate,
+		WorkRuntimeCapabilityNecessity, input, input.validate,
 	)
 }
 

@@ -16,6 +16,7 @@ import (
 type directCodingPreparedMutation struct {
 	assembly        directCodingAssembly
 	stage           *workspacefacts.StagedMutation
+	exactState      *directCodingPreparedExactState
 	command         queue.WorkspaceMutationCommand
 	projection      repositoryWorkspaceProjection
 	primaryCommands []testCommand
@@ -29,6 +30,10 @@ func (prepared *directCodingPreparedMutation) MutationCount() int {
 		return 0
 	}
 	return prepared.mutationCount
+}
+
+func (prepared *directCodingPreparedMutation) HasExactStateAuthority() bool {
+	return prepared != nil && prepared.exactState != nil
 }
 
 func (prepared *directCodingPreparedMutation) Cleanup() error {
@@ -52,9 +57,6 @@ func (s *directCodingSession) PrepareAssembly(
 	if err := assembly.validate(); err != nil {
 		return nil, err
 	}
-	if diagnostic := directCodingAssemblyUnfinishedDiagnostic(assembly); diagnostic != nil {
-		return nil, fmt.Errorf("%s: %s", diagnostic.Stage, diagnostic.Detail)
-	}
 	source, err := workspacefacts.Capture(s.runtime.ctx, s.root)
 	if err != nil {
 		return nil, fmt.Errorf("capture direct-coding workspace: %w", err)
@@ -70,15 +72,7 @@ func (s *directCodingSession) PrepareAssembly(
 	if err != nil {
 		return nil, err
 	}
-	plan, err := workspacefacts.PlanMutation(s.runtime.ctx, source, ownerID, desired)
-	if err != nil {
-		return nil, fmt.Errorf("plan direct-coding workspace mutation: %w", err)
-	}
-	stage, err := workspacefacts.StageMutation(s.runtime.ctx, source, plan)
-	if err != nil {
-		return nil, fmt.Errorf("stage direct-coding workspace mutation: %w", err)
-	}
-	prepared := &directCodingPreparedMutation{assembly: assembly, stage: stage}
+	prepared := &directCodingPreparedMutation{assembly: assembly}
 	defer func() {
 		if resultErr != nil {
 			resultErr = errors.Join(resultErr, prepared.Cleanup())
@@ -88,6 +82,31 @@ func (s *directCodingSession) PrepareAssembly(
 	if err != nil {
 		return nil, err
 	}
+	plan, err := workspacefacts.PlanMutation(s.runtime.ctx, source, ownerID, desired)
+	if err != nil {
+		if errors.Is(err, workspacefacts.ErrDesiredStateAlreadyExact) {
+			authority, authorityErr := newDirectCodingExactStateAuthority(
+				source, ownerID, prepared.allCommands,
+			)
+			if authorityErr != nil {
+				return nil, authorityErr
+			}
+			prepared.projection, authorityErr = newWorkspaceSnapshotProjection(source)
+			if authorityErr != nil {
+				return nil, fmt.Errorf("project exact direct-coding workspace: %w", authorityErr)
+			}
+			prepared.exactState = &directCodingPreparedExactState{
+				source: source, authority: authority,
+			}
+			return prepared, nil
+		}
+		return nil, fmt.Errorf("plan direct-coding workspace mutation: %w", err)
+	}
+	stage, err := workspacefacts.StageMutation(s.runtime.ctx, source, plan)
+	if err != nil {
+		return nil, fmt.Errorf("stage direct-coding workspace mutation: %w", err)
+	}
+	prepared.stage = stage
 	prepared.command, err = workspaceMutationCommandForStage(
 		s.runtime, prepared.allCommands, stage,
 	)
@@ -194,16 +213,6 @@ func directCodingAssemblyOwnerID(assembly directCodingAssembly) (string, error) 
 		return "", fmt.Errorf("encode direct-coding assembly identity: %w", err)
 	}
 	return "coding_" + directCodingDigest(string(raw)), nil
-}
-
-func directCodingAssemblyUnfinishedDiagnostic(
-	assembly directCodingAssembly,
-) *directCodingDiagnostic {
-	written := make(map[string]string, len(assembly.Files))
-	for _, file := range assembly.Files {
-		written[file.Path] = file.Content
-	}
-	return directCodingUnfinishedDiagnostic(directCodingCompletionState{WrittenSource: written})
 }
 
 func (s *directCodingSession) directCodingJournalCommands() (

@@ -200,15 +200,14 @@ func TestRoleplayChannelUsesOnlySelectedCharacterScopedKnowledge(t *testing.T) {
 		provider.projection == nil || provider.projection.Viewpoint.Name != "Bob" {
 		t.Fatalf("fixed context retrieval terms=%#v preparation=%#v projection=%#v", provider.terms, provider.preparation, provider.projection)
 	}
-	if contextSieve.relevanceCalls != 1 ||
-		contextSieve.minificationCalls != 0 || result.ModelCalls != 4 {
+	if contextSieve.relevanceCalls != 6 ||
+		contextSieve.minificationCalls != 0 || result.ModelCalls != 9 {
 		t.Fatalf(
 			"sieve_calls=(%d,%d) total_model_calls=%d",
 			contextSieve.relevanceCalls, contextSieve.minificationCalls, result.ModelCalls,
 		)
 	}
-	if len(contextSieve.relevanceInputs) != 1 ||
-		len(contextSieve.relevanceInputs[0].CandidateAuthorities) != 6 {
+	if len(contextSieve.relevanceInputs) != 6 {
 		t.Fatalf("per-item relevance input=%#v", contextSieve.relevanceInputs)
 	}
 	raw, err := json.Marshal(conversation.input)
@@ -231,10 +230,10 @@ func TestRoleplayChannelUsesOnlySelectedCharacterScopedKnowledge(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	canonJob, err := assemblyline.NewRoleplayCanonFactCoverageJob(
-		assemblyline.RoleplayCanonFactLeafInput{
+	canonJob, err := assemblyline.NewRoleplayCanonFactInventoryJob(
+		assemblyline.RoleplayCanonExtractionInput{
 			Source: canon.input.Source, AntecedentUserTurn: canon.input.AntecedentUserTurn,
-			Context: canon.input.Context, AcceptedFacts: []string{},
+			Context: canon.input.Context,
 		},
 	)
 	if err != nil {
@@ -303,11 +302,10 @@ func TestRoleplaySlashCommandBytesAreAbsentFromRenderedNarrativeAndCanonPrompts(
 			ContributionKind:    roleplay.UserContributionCommand,
 			ContributionContext: visible,
 		}
-		canonJob, err := assemblyline.NewRoleplayCanonFactCoverageJob(
-			assemblyline.RoleplayCanonFactLeafInput{
+		canonJob, err := assemblyline.NewRoleplayCanonFactInventoryJob(
+			assemblyline.RoleplayCanonExtractionInput{
 				Source: canonSource, AntecedentUserTurn: &canonAntecedent,
-				Context:       assemblyline.ObjectiveContext{Capsules: []assemblyline.ObjectiveContextCapsule{}},
-				AcceptedFacts: []string{},
+				Context: assemblyline.ObjectiveContext{Capsules: []assemblyline.ObjectiveContextCapsule{}},
 			},
 		)
 		if err != nil {

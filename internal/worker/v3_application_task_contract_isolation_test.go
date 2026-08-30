@@ -160,7 +160,7 @@ func TestBrowserAcceptanceContractRequiresCausalStaticInteractionEvidence(t *tes
 				{label: "verification", prompt: acceptancePrompt},
 			} {
 				if strings.Count(promptCase.prompt, fixture.product) != 1 ||
-					strings.Count(promptCase.prompt, "Authoritative product context:") != 1 {
+					strings.Count(promptCase.prompt, "Product context:") != 1 {
 					t.Fatalf("%s prompt does not contain its exact product identity once:\n%s", promptCase.label, promptCase.prompt)
 				}
 				for _, forbidden := range []string{

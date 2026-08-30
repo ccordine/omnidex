@@ -27,96 +27,114 @@ func (stations *PortableStations) Synthesize(
 		Evidence:      evidence,
 		MaxParagraphs: call.MaxParagraphs, MaxParagraphBytes: call.MaxParagraphBytes,
 	}
+	inventoryJob, err := assemblyline.NewWebSynthesisParagraphInventoryJob(base)
+	if err != nil {
+		return GroundedSynthesisDecision{}, fmt.Errorf("build web synthesis paragraph inventory job: %w", err)
+	}
+	inventory, inventoryReceipt, err := runPortableSemanticLeaf(
+		ctx, stations, inventoryJob,
+		func(raw string) (assemblyline.WebSynthesisParagraphInventory, error) {
+			return assemblyline.DecodeWebSynthesisParagraphInventory(base, raw)
+		},
+	)
+	if err != nil {
+		return GroundedSynthesisDecision{}, err
+	}
+	var ledger SemanticCallLedger
+	if err := ledger.Record(
+		"web synthesis paragraph inventory", inventoryReceipt,
+		exactPortableSemanticLeafCalls,
+	); err != nil {
+		return GroundedSynthesisDecision{}, err
+	}
 	accepted := make([]assemblyline.WebGroundedParagraph, 0, call.MaxParagraphs)
-	semanticCalls := 0
-	for {
-		leafInput := webSynthesisParagraphLeafInput(base, accepted)
-		if len(accepted) > 0 {
-			coverageJob, err := assemblyline.NewWebSynthesisParagraphCoverageJob(leafInput)
-			if err != nil {
-				return GroundedSynthesisDecision{}, fmt.Errorf("build web synthesis coverage job: %w", err)
-			}
-			coverage, err := runPortableSemanticLeaf(
-				ctx, stations, coverageJob,
-				func(raw string) (assemblyline.WebSynthesisParagraphCoverageDecision, error) {
-					return assemblyline.DecodeWebSynthesisParagraphCoverageDecision(leafInput, raw)
-				},
-			)
-			semanticCalls++
-			if err != nil {
-				return GroundedSynthesisDecision{}, err
-			}
-			if coverage.Coverage == assemblyline.WebSynthesisNoUncoveredParagraph {
-				assembled := assemblyline.WebGroundedSynthesisDecision{
-					Schema:     assemblyline.WebGroundedSynthesisSchemaV1,
-					Paragraphs: append([]assemblyline.WebGroundedParagraph(nil), accepted...),
-				}
-				if err := assembled.ValidateFor(base); err != nil {
-					return GroundedSynthesisDecision{}, err
-				}
-				return portableGroundedSynthesisDecision(assembled, semanticCalls), nil
-			}
+	seenCandidates := make(map[string]struct{}, len(inventory.Candidates))
+	for _, candidate := range inventory.Candidates {
+		if _, duplicate := seenCandidates[candidate]; duplicate {
+			continue
 		}
-		if len(accepted) >= call.MaxParagraphs {
-			return GroundedSynthesisDecision{}, fmt.Errorf(
-				"web synthesis still requires another paragraph after the %d-paragraph bound",
-				call.MaxParagraphs,
-			)
+		seenCandidates[candidate] = struct{}{}
+		authorizationInput := assemblyline.WebSynthesisParagraphAuthorizationInput{
+			ExactQuestion:     base.ExactQuestion,
+			Context:           assemblyline.CloneObjectiveContext(base.Context),
+			ParagraphText:     candidate,
+			Evidence:          append([]assemblyline.WebGroundedEvidence(nil), base.Evidence...),
+			MaxParagraphBytes: base.MaxParagraphBytes,
 		}
-
-		paragraphJob, err := assemblyline.NewWebSynthesisParagraphJob(leafInput)
+		authorizationJob, err := assemblyline.NewWebSynthesisParagraphAuthorizationJob(
+			authorizationInput,
+		)
 		if err != nil {
-			return GroundedSynthesisDecision{}, fmt.Errorf("build web synthesis paragraph job: %w", err)
+			return GroundedSynthesisDecision{}, fmt.Errorf(
+				"build web synthesis paragraph authorization job: %w", err,
+			)
 		}
-		paragraph, err := runPortableSemanticLeaf(
-			ctx, stations, paragraphJob,
-			func(raw string) (assemblyline.WebSynthesisParagraphDecision, error) {
-				return assemblyline.DecodeWebSynthesisParagraphDecision(leafInput, raw)
+		authorization, authorizationReceipt, err := runPortableSemanticLeaf(
+			ctx, stations, authorizationJob,
+			func(raw string) (assemblyline.WebSynthesisParagraphAuthorizationDecision, error) {
+				return assemblyline.DecodeWebSynthesisParagraphAuthorizationDecision(
+					authorizationInput, raw,
+				)
 			},
 		)
-		semanticCalls++
 		if err != nil {
 			return GroundedSynthesisDecision{}, err
 		}
-		boundIDs, relationCalls, err := stations.bindWebSynthesisEvidence(
-			ctx, base, paragraph.Text,
+		if err := ledger.Record(
+			"web synthesis paragraph authorization",
+			authorizationReceipt,
+			exactPortableSemanticLeafCalls,
+		); err != nil {
+			return GroundedSynthesisDecision{}, err
+		}
+		if authorization.Relation != assemblyline.WebParagraphResponsiveAndFullySupported {
+			continue
+		}
+		boundIDs, relationLedger, err := stations.bindWebSynthesisEvidence(
+			ctx, base, candidate,
 		)
-		semanticCalls += relationCalls
 		if err != nil {
 			return GroundedSynthesisDecision{}, err
+		}
+		if err := ledger.Merge("web synthesis evidence", relationLedger); err != nil {
+			return GroundedSynthesisDecision{}, err
+		}
+		if len(boundIDs) == 0 {
+			continue
 		}
 		accepted = append(accepted, assemblyline.WebGroundedParagraph{
-			Text: paragraph.Text, EvidenceIDs: boundIDs,
+			Text: candidate, EvidenceIDs: boundIDs,
 		})
 	}
-}
-
-func webSynthesisParagraphLeafInput(
-	base assemblyline.WebGroundedSynthesisInput,
-	accepted []assemblyline.WebGroundedParagraph,
-) assemblyline.WebSynthesisParagraphLeafInput {
-	cloned := make([]assemblyline.WebGroundedParagraph, len(accepted))
-	for index, paragraph := range accepted {
-		cloned[index] = paragraph
-		cloned[index].EvidenceIDs = append([]string(nil), paragraph.EvidenceIDs...)
+	if len(accepted) == 0 {
+		return GroundedSynthesisDecision{}, fmt.Errorf(
+			"web synthesis paragraph inventory queue produced no responsive fully supported paragraphs",
+		)
 	}
-	return assemblyline.WebSynthesisParagraphLeafInput{
-		ExactQuestion:      base.ExactQuestion,
-		Context:            assemblyline.CloneObjectiveContext(base.Context),
-		Evidence:           append([]assemblyline.WebGroundedEvidence(nil), base.Evidence...),
-		AcceptedParagraphs: cloned,
-		MaxParagraphs:      base.MaxParagraphs, MaxParagraphBytes: base.MaxParagraphBytes,
+	assembled := assemblyline.WebGroundedSynthesisDecision{
+		Schema:     assemblyline.WebGroundedSynthesisSchemaV1,
+		Paragraphs: append([]assemblyline.WebGroundedParagraph(nil), accepted...),
 	}
+	if err := assembled.ValidateFor(base); err != nil {
+		return GroundedSynthesisDecision{}, err
+	}
+	maximumCalls := (1 + call.MaxParagraphs*(len(call.Evidence)+1)) *
+		exactPortableSemanticLeafCalls
+	receipt, err := ledger.ValidateForMaximum("web grounded synthesis station", maximumCalls)
+	if err != nil {
+		return GroundedSynthesisDecision{}, err
+	}
+	return portableGroundedSynthesisDecision(assembled, receipt, ledger), nil
 }
 
 func (stations *PortableStations) bindWebSynthesisEvidence(
 	ctx context.Context,
 	base assemblyline.WebGroundedSynthesisInput,
 	paragraphText string,
-) ([]string, int, error) {
+) ([]string, SemanticCallLedger, error) {
 	limit := min(len(base.Evidence), maxEvidenceIDsPerParagraph)
 	bound := make([]string, 0, limit)
-	calls := 0
+	var ledger SemanticCallLedger
 	for _, evidence := range base.Evidence {
 		if len(bound) == limit {
 			break
@@ -128,31 +146,35 @@ func (stations *PortableStations) bindWebSynthesisEvidence(
 		}
 		job, err := assemblyline.NewWebSynthesisEvidenceRelationJob(input)
 		if err != nil {
-			return nil, calls, fmt.Errorf("build web synthesis evidence relation job: %w", err)
+			return nil, ledger, fmt.Errorf("build web synthesis evidence relation job: %w", err)
 		}
-		relation, err := runPortableSemanticLeaf(
+		relation, receipt, err := runPortableSemanticLeaf(
 			ctx, stations, job,
 			func(raw string) (assemblyline.WebSynthesisEvidenceRelationDecision, error) {
 				return assemblyline.DecodeWebSynthesisEvidenceRelationDecision(input, raw)
 			},
 		)
-		calls++
 		if err != nil {
-			return nil, calls, err
+			return nil, ledger, err
+		}
+		if err := ledger.Record(
+			"web synthesis evidence "+evidence.EvidenceID,
+			receipt,
+			exactPortableSemanticLeafCalls,
+		); err != nil {
+			return nil, ledger, err
 		}
 		if relation.Relation == assemblyline.WebEvidenceSupportsParagraph {
 			bound = append(bound, evidence.EvidenceID)
 		}
 	}
-	if len(bound) == 0 {
-		return nil, calls, fmt.Errorf("web synthesis paragraph has no semantically bound evidence")
-	}
-	return bound, calls, nil
+	return bound, ledger, nil
 }
 
 func portableGroundedSynthesisDecision(
 	decision assemblyline.WebGroundedSynthesisDecision,
-	semanticCalls int,
+	receipt SemanticCallReceipt,
+	ledger SemanticCallLedger,
 ) GroundedSynthesisDecision {
 	paragraphs := make([]GroundedParagraph, len(decision.Paragraphs))
 	for index, paragraph := range decision.Paragraphs {
@@ -163,6 +185,7 @@ func portableGroundedSynthesisDecision(
 		paragraphs[index] = GroundedParagraph{Text: paragraph.Text, EvidenceIDs: ids}
 	}
 	return GroundedSynthesisDecision{
-		Paragraphs: paragraphs, SemanticCalls: semanticCalls,
+		Paragraphs: paragraphs, SemanticCalls: receipt.Calls,
+		CallLedger: ledger.Clone(),
 	}
 }

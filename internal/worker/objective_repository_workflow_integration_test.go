@@ -92,11 +92,13 @@ func TestObjectiveTurnRestoresArtifactIdentityOnlyAfterGroundedAcceptance(t *tes
 		&artifactTokenRepositoryGroundingStation{},
 		objectiveWorkflows{RepositoryRead: func(context.Context, turnAuthority) (objectiveEvidenceAcquisition, error) {
 			return objectiveEvidenceAcquisition{
-				Evidence:             []objectiveEvidence{evidence},
-				ModelCalls:           1,
-				RepositoryCallLedger: objectiveRepositoryAcquisitionCallLedger{relevanceCalls: 1},
-				GroundedRequirement:  "Which component owns ARTIFACT_1?",
-				KnownArtifactPaths:   []string{"internal/private/secret_owner.go"},
+				Evidence:   []objectiveEvidence{evidence},
+				ModelCalls: 1,
+				RepositoryCallLedger: objectiveRepositoryAcquisitionCallLedger{
+					relevanceReceipt: objectiveStationReceipt{Calls: 1}, relevanceRecorded: true,
+				},
+				GroundedRequirement: "Which component owns ARTIFACT_1?",
+				KnownArtifactPaths:  []string{"internal/private/secret_owner.go"},
 				ArtifactIdentities: []assemblyline.ArtifactIdentity{{
 					Token: "ARTIFACT_1", Value: "internal/private/secret_owner.go",
 				}},
@@ -200,7 +202,9 @@ func objectiveRepositoryTestAcquisition(
 	evidence []objectiveEvidence,
 	modelCalls int,
 ) objectiveEvidenceAcquisition {
-	ledger := objectiveRepositoryAcquisitionCallLedger{relevanceCalls: modelCalls}
+	ledger := objectiveRepositoryAcquisitionCallLedger{
+		relevanceReceipt: objectiveStationReceipt{Calls: modelCalls}, relevanceRecorded: true,
+	}
 	return objectiveEvidenceAcquisition{
 		Evidence: evidence, ModelCalls: modelCalls, RepositoryCallLedger: ledger,
 		GroundedRequirement: "Resolve the exact repository requirement.",

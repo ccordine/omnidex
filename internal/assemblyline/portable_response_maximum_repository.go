@@ -4,21 +4,31 @@ import "github.com/gryph/omnidex/internal/roleplay"
 
 func portableRepositoryConversationResponseMaximum(job PortableJob) (int, bool, error) {
 	switch job.Kind {
-	case WorkRepositoryRequirementCoverage:
+	case WorkRepositoryRequirementInventory:
+		return maxRepositoryRequirementInventoryBytes, true, nil
+	case WorkRepositoryRequirementCandidateAuthorization:
 		return maximumStringBytes(
-			RepositoryRequirementRemains, RepositoryNoUncoveredRequirement,
+			RepositoryRequirementCandidateRequiresChange,
+			RepositoryRequirementCandidateNoChange,
 		), true, nil
-	case WorkRepositoryRequirement:
-		return maxRequirementQuoteBytes, true, nil
-	case WorkRepositoryEvidenceRelevanceLeaf:
-		maximum, err := repositoryEvidenceRelevanceMaximum(job)
-		return maximum, true, err
+	case WorkRepositoryRequirementCandidateRelation:
+		return maximumStringBytes(
+			RepositoryRequirementCandidatesSameChange,
+			RepositoryRequirementCandidatesDistinctChanges,
+		), true, nil
+	case WorkRepositoryEvidenceRelevanceRelation:
+		return maximumStringBytes(
+			RepositoryEvidenceDirectlyRelevant,
+			RepositoryEvidenceNotDirectlyRelevant,
+		), true, nil
 	case WorkRepositoryChangeOwner:
 		maximum, err := repositoryChangeOwnerMaximum(job)
 		return maximum, true, err
-	case WorkContextRelevanceSelection:
-		maximum, err := contextRelevanceMaximum(job)
-		return maximum, true, err
+	case WorkContextRelevanceRelation:
+		return maximumStringBytes(
+			ContextCandidateDirectlyRelevant,
+			ContextCandidateNotDirectlyRelevant,
+		), true, nil
 	case WorkContextMinification:
 		return MaxContextMinifiedBytes, true, nil
 	case WorkConversationObjectiveKind:
@@ -36,48 +46,50 @@ func portableRepositoryConversationResponseMaximum(job PortableJob) (int, bool, 
 			return roleplay.MaxNarrativeResponseBytes, true, nil
 		}
 		return maxConversationResponseTextBytes, true, nil
-	case WorkRoleplayGroundedResponseText:
-		return maxRoleplayGroundedResponseBytes, true, nil
+	case WorkRoleplayGroundedResponseParagraphInventory:
+		return max(
+			maxRoleplayGroundedParagraphInventoryBytes,
+			len(RoleplayNoGroundedParagraphCandidates),
+		), true, nil
 	case WorkRoleplayGroundedResponseEvidenceRelation:
 		return maximumStringBytes(
 			RoleplayGroundedEvidenceSupportsParagraph,
 			RoleplayGroundedEvidenceDoesNotSupport,
 		), true, nil
-	case WorkRoleplayCanonFactCoverage:
+	case WorkRoleplayGroundedResponseParagraphAuthorization:
 		return maximumStringBytes(
-			RoleplayCanonFactRemains, RoleplayNoUncoveredCanonFact,
+			RoleplayGroundedParagraphResponsiveAndSupported,
+			RoleplayGroundedParagraphNotAuthorized,
 		), true, nil
-	case WorkRoleplayCanonFact:
-		return roleplay.MaxCanonEventBytes, true, nil
+	case WorkRoleplayCanonFactInventory:
+		return maxRoleplayCanonFactInventoryBytes, true, nil
+	case WorkRoleplayCanonFactCandidateAuthorization:
+		return maximumStringBytes(
+			RoleplayCanonFactEstablished, RoleplayCanonFactNotEstablished,
+		), true, nil
+	case WorkRoleplayCanonFactCandidateRelation:
+		return maximumStringBytes(
+			RoleplayCanonFactsEquivalent, RoleplayCanonFactsDistinct,
+		), true, nil
 	case WorkRoleplayOngoingAction:
 		return roleplay.MaxOngoingActionBytes, true, nil
-	case WorkGroundedAnswerText:
-		return maxGroundedAnswerTextBytes, true, nil
-	case WorkGroundedAnswerEvidenceRelation:
+	case WorkGroundedAnswerParagraphInventory:
+		return max(
+			maxGroundedAnswerParagraphInventoryBytes,
+			len(GroundedAnswerNoParagraphCandidates),
+		), true, nil
+	case WorkGroundedAnswerParagraphEvidenceRelation:
 		return maximumStringBytes(
-			GroundedEvidenceSupportsAnswer, GroundedEvidenceDoesNotSupport,
+			GroundedEvidenceSupportsParagraph, GroundedEvidenceDoesNotSupport,
+		), true, nil
+	case WorkGroundedAnswerParagraphAuthorization:
+		return maximumStringBytes(
+			GroundedParagraphResponsiveAndFullySupported,
+			GroundedParagraphNotResponsiveOrUnsupported,
 		), true, nil
 	default:
 		return 0, false, nil
 	}
-}
-
-func repositoryEvidenceRelevanceMaximum(job PortableJob) (int, error) {
-	var input RepositoryEvidenceRelevanceLeafInput
-	if err := decodePortablePayload(job.Payload, &input); err != nil {
-		return 0, err
-	}
-	candidates := []string{RepositoryEvidenceNoRelevantCandidate}
-	for _, candidate := range input.Candidates {
-		candidates = append(candidates, candidate.EvidenceID)
-	}
-	return maximumAcceptedCandidateBytes(
-		"repository evidence relevance", candidates,
-		func(candidate string) error {
-			_, err := DecodeRepositoryEvidenceRelevanceLeaf(input, candidate)
-			return err
-		},
-	)
 }
 
 func repositoryChangeOwnerMaximum(job PortableJob) (int, error) {
@@ -93,24 +105,6 @@ func repositoryChangeOwnerMaximum(job PortableJob) (int, error) {
 		"repository change owner", candidates,
 		func(candidate string) error {
 			_, err := DecodeRepositoryChangeOwnerLeaf(input, candidate)
-			return err
-		},
-	)
-}
-
-func contextRelevanceMaximum(job PortableJob) (int, error) {
-	var input ContextRelevanceSelectionInput
-	if err := decodePortablePayload(job.Payload, &input); err != nil {
-		return 0, err
-	}
-	candidates := []string{ContextRelevanceNoCandidate}
-	for _, candidate := range input.Authority.CandidateAuthorities {
-		candidates = append(candidates, candidate.CandidateID)
-	}
-	return maximumAcceptedCandidateBytes(
-		"context relevance selection", candidates,
-		func(candidate string) error {
-			_, err := DecodeContextRelevanceSelectionDecision(input, candidate)
 			return err
 		},
 	)

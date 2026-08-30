@@ -20,11 +20,11 @@ func TestRoutedWebStationsRequireOnlyRelevanceAndGroundedSynthesis(t *testing.T)
 	stations, err := newRoutedWebStations(func(id station.ID) webresearch.PortableRuntime {
 		ids = append(ids, id)
 		return webresearch.PortableRuntime{
-			Execute: func(context.Context, assemblyline.PortableJob) (assemblyline.PortableResult, error) {
-				return assemblyline.PortableResult{}, nil
-			},
-			Finalize: func(context.Context, assemblyline.PortableJob, assemblyline.PortableResult, error) error {
-				return nil
+			Resolve: func(
+				context.Context, assemblyline.PortableJob,
+				webresearch.PortableCandidateValidator,
+			) (webresearch.SemanticCallReceipt, error) {
+				return webresearch.SemanticCallReceipt{Calls: 1}, nil
 			},
 		}
 	})
@@ -46,11 +46,11 @@ func TestRoutedWebEvidenceStationsRequireOnlyRelevance(t *testing.T) {
 	stations, err := newRoutedWebEvidenceStations(func(id station.ID) webresearch.PortableRuntime {
 		ids = append(ids, id)
 		return webresearch.PortableRuntime{
-			Execute: func(context.Context, assemblyline.PortableJob) (assemblyline.PortableResult, error) {
-				return assemblyline.PortableResult{}, nil
-			},
-			Finalize: func(context.Context, assemblyline.PortableJob, assemblyline.PortableResult, error) error {
-				return nil
+			Resolve: func(
+				context.Context, assemblyline.PortableJob,
+				webresearch.PortableCandidateValidator,
+			) (webresearch.SemanticCallReceipt, error) {
+				return webresearch.SemanticCallReceipt{Calls: 1}, nil
 			},
 		}
 	})
@@ -83,7 +83,7 @@ func TestObjectiveExternalAnswerConsumesExactWebCompletionAuthority(t *testing.T
 			ObservedAt: item.ObservedAt, Truncated: item.Truncated,
 		}},
 		Rendered: rendered, RenderedSHA256: objectiveTestSHA256(rendered), Evidence: []webresearch.Evidence{item},
-		SemanticCalls: 8,
+		SemanticCalls: 8, CallLedger: objectiveWebTestCallLedger(t, 8),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -97,6 +97,137 @@ func TestObjectiveExternalAnswerConsumesExactWebCompletionAuthority(t *testing.T
 	if answer.Rendered != rendered ||
 		answer.RenderedSHA256 == "" {
 		t.Fatalf("rendered claim/source binding was lost: %#v", answer)
+	}
+}
+
+func TestObjectiveExternalAnswerAcceptsRestoredAndMixedWebLedgers(t *testing.T) {
+	t.Parallel()
+	for _, fixture := range []struct {
+		name     string
+		receipts []webresearch.SemanticCallReceipt
+		calls    int
+	}{
+		{
+			name:     "fully restored",
+			receipts: []webresearch.SemanticCallReceipt{{Reused: true}},
+		},
+		{
+			name: "restored and fresh",
+			receipts: []webresearch.SemanticCallReceipt{
+				{Reused: true}, {Calls: 1},
+			},
+			calls: 1,
+		},
+	} {
+		fixture := fixture
+		t.Run(fixture.name, func(t *testing.T) {
+			t.Parallel()
+			item := objectiveWebEvidenceFixture(
+				t, "https://example.test/restored", "Restored source",
+				"Exact restored evidence.",
+			)
+			rendered := "Restored evidence supports the result. [1]\n\nSources:\n[1] Restored source — " + item.URL
+			answer, err := objectiveExternalAnswerFromWebResult(objectiveWebResult{
+				Complete: true, Status: webresearch.ObjectiveComplete,
+				Paragraphs: []webresearch.GroundedParagraph{{
+					Text:        "Restored evidence supports the result.",
+					EvidenceIDs: []webresearch.EvidenceID{item.ID},
+				}},
+				Sources: []webresearch.CitationSource{{
+					Number: 1, EvidenceID: item.ID, CandidateID: item.CandidateID,
+					DocumentID: item.DocumentID, URL: item.URL, Title: item.Title,
+					ContentSHA256: item.ContentSHA256, ObservedAt: item.ObservedAt,
+					Truncated: item.Truncated,
+				}},
+				Evidence: []webresearch.Evidence{item}, Rendered: rendered,
+				RenderedSHA256: objectiveTestSHA256(rendered),
+				SemanticCalls:  fixture.calls,
+				CallLedger: objectiveWebTestReceiptLedger(
+					t, fixture.receipts...,
+				),
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			result, err := runObjectiveExternalAnswer(
+				t.Context(),
+				turnAuthority{ModelInstruction: "What does the evidence support?"},
+				objectiveTurnResult{ModelCalls: 1},
+				func(context.Context, turnAuthority) (objectiveExternalAnswer, error) {
+					return answer, nil
+				},
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if answer.ModelCalls != fixture.calls || !result.Complete ||
+				result.ModelCalls != fixture.calls+1 || result.Output != rendered {
+				t.Fatalf("answer=%+v result=%+v", answer, result)
+			}
+		})
+	}
+}
+
+func TestObjectiveExternalAnswerRejectsAbsentOrContradictoryWebLedger(t *testing.T) {
+	t.Parallel()
+	item := objectiveWebEvidenceFixture(
+		t, "https://example.test/provenance", "Provenance source",
+		"Exact provenance evidence.",
+	)
+	rendered := "Provenance evidence supports the result. [1]\n\nSources:\n[1] Provenance source — " + item.URL
+	valid, err := objectiveExternalAnswerFromWebResult(objectiveWebResult{
+		Complete: true, Status: webresearch.ObjectiveComplete,
+		Paragraphs: []webresearch.GroundedParagraph{{
+			Text: "Provenance evidence supports the result.", EvidenceIDs: []webresearch.EvidenceID{item.ID},
+		}},
+		Sources: []webresearch.CitationSource{{
+			Number: 1, EvidenceID: item.ID, CandidateID: item.CandidateID,
+			DocumentID: item.DocumentID, URL: item.URL, Title: item.Title,
+			ContentSHA256: item.ContentSHA256, ObservedAt: item.ObservedAt,
+		}},
+		Evidence: []webresearch.Evidence{item}, Rendered: rendered,
+		RenderedSHA256: objectiveTestSHA256(rendered),
+		CallLedger: objectiveWebTestReceiptLedger(
+			t, webresearch.SemanticCallReceipt{Reused: true},
+		),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, fixture := range []struct {
+		name   string
+		mutate func(*objectiveExternalAnswer)
+	}{
+		{
+			name: "absent ledger",
+			mutate: func(answer *objectiveExternalAnswer) {
+				answer.WebCallLedger = webresearch.SemanticCallLedger{}
+			},
+		},
+		{
+			name: "counter contradicts restored ledger",
+			mutate: func(answer *objectiveExternalAnswer) {
+				answer.ModelCalls = 1
+			},
+		},
+	} {
+		fixture := fixture
+		t.Run(fixture.name, func(t *testing.T) {
+			t.Parallel()
+			answer := valid
+			fixture.mutate(&answer)
+			result, err := runObjectiveExternalAnswer(
+				t.Context(),
+				turnAuthority{ModelInstruction: "What does the evidence support?"},
+				objectiveTurnResult{},
+				func(context.Context, turnAuthority) (objectiveExternalAnswer, error) {
+					return answer, nil
+				},
+			)
+			if err == nil || result.Complete {
+				t.Fatalf("answer=%+v result=%+v error=%v", answer, result, err)
+			}
+		})
 	}
 }
 
@@ -120,6 +251,7 @@ func TestObjectiveExternalAnswerPropagatesSecondProjectionTruncationAuthority(t 
 		}},
 		Rendered: rendered, RenderedSHA256: objectiveTestSHA256(rendered),
 		Evidence: []webresearch.Evidence{item}, SemanticCalls: 8,
+		CallLedger: objectiveWebTestCallLedger(t, 8),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -147,7 +279,7 @@ func TestObjectiveExternalAnswerPreservesPerParagraphCitationBinding(t *testing.
 			{Number: 2, EvidenceID: secondID, CandidateID: second.CandidateID, DocumentID: second.DocumentID, Title: second.Title, URL: second.URL, ContentSHA256: second.ContentSHA256, ObservedAt: second.ObservedAt, Truncated: second.Truncated},
 		},
 		Evidence:      []webresearch.Evidence{first, second},
-		SemanticCalls: 15,
+		SemanticCalls: 15, CallLedger: objectiveWebTestCallLedger(t, 15),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -184,6 +316,33 @@ func objectiveWebEvidenceFixture(t *testing.T, rawURL, title, content string) we
 func objectiveTestSHA256(value string) string {
 	digest := sha256.Sum256([]byte(value))
 	return hex.EncodeToString(digest[:])
+}
+
+func objectiveWebTestCallLedger(t *testing.T, calls int) webresearch.SemanticCallLedger {
+	t.Helper()
+	var ledger webresearch.SemanticCallLedger
+	if err := ledger.Record(
+		"test web completion", webresearch.SemanticCallReceipt{Calls: calls}, calls,
+	); err != nil {
+		t.Fatal(err)
+	}
+	return ledger
+}
+
+func objectiveWebTestReceiptLedger(
+	t *testing.T,
+	receipts ...webresearch.SemanticCallReceipt,
+) webresearch.SemanticCallLedger {
+	t.Helper()
+	var ledger webresearch.SemanticCallLedger
+	for index, receipt := range receipts {
+		if err := ledger.Record(
+			fmt.Sprintf("test web leaf %d", index+1), receipt, 1,
+		); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return ledger
 }
 
 func TestObjectiveExternalAnswerRejectsInvalidAcquiredSourceDigest(t *testing.T) {

@@ -99,9 +99,11 @@ Dependencies and verification relationships are explicit edges. Current status i
 of pending, ready, active, blocked, done, failed, or canceled.
 
 Entries have epistemic type and provenance. Initial kinds are constraints, facts,
-observations, hypotheses, decision candidates, accepted decisions, questions,
-failures, checkpoints, notes, and typed user feedback. Authority is one of user, code, tool evidence, model
-proposal, or accepted model decision.
+observations, hypotheses, questions, failures, checkpoints, notes, and typed user
+feedback. Authority is user, code, or tool evidence. Model-proposal and
+accepted-model-decision authorities and entry kinds are retired. A model result remains
+station evidence; only code may persist a validated bound value into an appropriate
+entry under the registered rule and evidence references.
 
 Rules:
 
@@ -121,9 +123,11 @@ Rules:
 
 The initial immutable plan remains evidence of what was authorized. Mutable task nodes
 record execution under that authority; they do not rewrite the plan artifact. Direct
-coding transports that do not emit an intent or plan artifact must project their
-accepted application specification and requirements before generation begins; they may
-not run without task authority merely because their transport is shorter.
+coding transports that do not emit an intent or plan artifact must first acquire needed
+context facts, then freeze task-local requirements through the ordinary inventory and
+sieve. Only if a leaf survives may they resolve surface, product, or deployment
+semantics, each at its first concrete consumer and before that consumer generates work.
+They may not run without task authority merely because their transport is shorter.
 
 Claim, completion, failure, cancellation, interruption, input, and replan transitions
 are committed inside the queue transactions that own job and step state. Worker
@@ -218,10 +222,15 @@ that environment-operation argument. Database queries, ranking, filtering, autho
 checks, deduplication, ordering, hashing, provenance binding, and result combination
 remain deterministic.
 
-After code has acquired and validated candidates, `context_relevance` receives only
-bounded pages of candidate text and may return only opaque supplied IDs. Code restores
-the selected authorities in authoritative order. Per-call count and byte budgets
-partition work; they are not global correctness ceilings.
+After code has acquired and validated candidates, it owns one source-ordered relevance
+queue. `context_relevance` receives the exact instruction and exactly one untrusted
+candidate content value and returns only the registered directly-relevant or
+not-directly-relevant relation. Candidate identity, authority class, provenance, queue
+state, and whether another candidate exists remain code-owned. A negative candidate
+evaporates; a positive candidate is preserved in authoritative order and is never
+reviewed again. Queue exhaustion ends relevance processing without a model-authored
+absence, completeness, or continuation claim. Per-call byte budgets are local safety
+bounds, not global correctness ceilings.
 
 Selected content that fits the target projection budget is used verbatim with zero
 minification calls. Content beyond the target first exhausts the available lossless
@@ -272,27 +281,64 @@ machine passes its executable gates:
    and test providers run under code control; inference can select only among an exact
    bounded semantic remainder.
 5. **Bounded front door and workload compilation** — code first records exact workspace
-   state as a typed, hashed fact. For an existing workspace,
-   code alternates one raw context-need coverage call with one raw question call only while
-   coverage remains; it resolves each decoded question through a registered deterministic
-   provider and formalizes selected evidence as compact source-backed facts. A separate raw call
-   returns only the product/domain identity. Code retains that identity outside the model-visible
-   task-local runtime requirement fixed point, then alternates one raw requirement-coverage call
-   with one raw requirement call only while source-owning runtime behavior remains and assembles
-   the typed intent itself. Product or category identity never licenses customary features, prerequisites,
-   enabling behavior, or likely consequences. Surface, technical/structural format, generic test/build, and deployment constraints stay outside this fixed point and are consumed by their narrow code-owned owners. A model
-   is not called merely to emit, accept, reject, or restate the aggregate intent.
-   Before retention, code records byte-exact accepted or excluded repeats as bounded zero-delta
-   evidence without mutation or inference. For a byte-different task-local one-outcome candidate, one
-   pairwise station returns only `SAME_RUNTIME_OUTCOME` or `DISTINCT_RUNTIME_OUTCOMES`; the model sees
-   only the two statements, while code binds the job and result to the complete candidate kind/cardinality
-   receipts and the accepted requirement's result-relation receipt. Language that only restates conformance of
-   the identical value to the identical determining rule is `SAME_RUNTIME_OUTCOME`; another determining rule,
-   reference, scope, response, event, observation time, retention boundary, time bound, delivery channel,
-   recipient, format, or state remains distinct. `SAME_RUNTIME_OUTCOME` enters the
-   same zero-delta closure. Repeated zero-delta candidate bytes fail loudly. Each newly recorded zero delta
-   changes coverage authority and requires a fresh ordinary coverage call; there is no duplicate-replacement,
-   correction, or retry station. Only a distinct candidate proceeds to the separate three-way
+   state as a typed, hashed fact. For an existing workspace, one bounded raw call returns a
+   source-ordered repository-fact-question candidate inventory or the registered semantic
+   absence. The inventory is untrusted candidate data; code owns the queue and exact
+   deduplication. Each unique candidate first receives one necessity/unresolvedness relation
+   against only the request, current facts, and candidate. A not-necessary or already-resolved
+   candidate evaporates without a pairwise relation or evidence acquisition. Only a necessary
+   unresolved candidate is compared with one accepted question at a time through a separate
+   same-fact/distinct-facts relation. Accepted questions remain immutable, and a same-fact
+   candidate evaporates. Code resolves each necessary distinct question exactly once through
+   a registered deterministic provider, formalizes selected evidence as
+   compact source-backed facts, and makes those facts visible to later queued candidates. Queue
+   exhaustion—not a model absence or completeness claim—returns the context without a second review, completeness call, or bound-overflow
+   request for more work. Exactly one bounded, source-ordered requirement-inventory call
+   then returns either `NO_RUNTIME_REQUIREMENT_CANDIDATES` or between one and the
+   code-owned maximum positive atomic finished-software runtime-outcome candidates. Code
+   parses and counts the returned lines mechanically. No semantic station pre-counts the
+   inventory, and no pre-count receipt exists. Inventory generation is
+   untrusted candidate intake, not authorization or a completeness claim. Every positive
+   candidate enters the ordinary authorization-first sieve. The inventory generator
+   splits independent outcomes and may express only the
+   literal core operation or governed result inherent in a purpose-denoting product or
+   category name. Independently verifiable means that the governed result exists; it does
+   not authorize an unstated presentation, delivery, storage, interface, or output format.
+   It omits construction constraints, customary features, and speculative
+   enhancements. Code owns exact deduplication and the queue.
+   Every remaining candidate first receives one request-entailment authorization relation; an
+   unauthorized candidate evaporates before classification. Only then does code ask kind and
+   cardinality. An authorized candidate that still proves mixed or compound may return one bounded
+   partition whose children re-enter the same queue and authorization boundary. A structurally invalid
+   station response fails at that station. A structurally valid candidate whose semantic content
+   remains malformed, cyclic, over-depth, or over-capacity dies without blocking an independent
+   candidate or reopening accepted state. There is no later requirement generator or aggregate review.
+
+   Product or category identity never licenses customary features, prerequisites, enabling behavior,
+   or likely consequences. Its literal core action or governed result is proposed once at inventory
+   intake and has no authority until its own candidate passes the ordinary sieve. Separately named
+   controls, elements, states, persistence behavior, channels, formats, or other behavior still require
+   their own authorized candidates. Candidate interpretation preserves semantic subjects: when the
+   software produces a derived value from actor-selected or actor-supplied rule-bearing inputs, the
+   application applies the rule and exposes the result; an actor or external source that supplies an
+   already-derived value remains the source. Surface, technical or structural format, generic test or
+   build, and deployment constraints are non-runtime and remain owned by their narrow code paths. A
+   construction-workflow descriptor attached to the builder's act is non-runtime unless the request
+   assigns that behavior or data flow to the completed application. A builder-directed test or
+   verification clause adds no runtime outcome when it merely confirms that an accepted governed result
+   is produced or conforms to the same determining rule. An explicitly different rule, external
+   reference, scope, tolerance, event or observation time, retention boundary, time bound, delivery
+   channel or recipient, output format, or state remains a distinct outcome when authorized.
+
+   Only an authorized task-local one-outcome candidate is compared pairwise with one retained
+   requirement at a time. The station returns only `SAME_RUNTIME_OUTCOME` or
+   `DISTINCT_RUNTIME_OUTCOMES`; the model sees only the two statements, while code binds the job and
+   result to the complete candidate kind/cardinality receipts and the retained requirement's
+   result-relation receipt. Language that only restates conformance of the identical value to the
+   identical determining rule is `SAME_RUNTIME_OUTCOME`; another determining rule, reference, scope,
+   response, event, observation time, retention boundary, time bound, delivery channel, recipient,
+   format, or state remains distinct. An exact or semantic duplicate evaporates, and the retained
+   requirement is never reviewed or reopened. Only a distinct candidate proceeds to the separate three-way
    result-relation question. It returns only that the outcome needs no derived result, explicitly states an
    independently computable determining relation, or omits that relation. A named existing per-item grouping
    key completely determines group membership; its origin and unasserted ordering are not missing. An expression,
@@ -300,21 +346,29 @@ machine passes its executable gates:
    When an actor performs a calculation, its chosen operation and operands are observable runtime inputs; neither
    form must be fixed before runtime. A bare quality claim or output described only as calculated, computed,
    evaluated, generated, or selected remains missing. Selection,
-   ordering, transformation, aggregation, measurement, or decision can establish a derived relation even when that value is the only rendered output. Actions, controls, unchanged rendering, state transitions, artifact availability, and event occurrences are `NO_DERIVED_RESULT` when they assert only that behavior. A qualitative descriptor on an action, event, or message does not create a derived value. The result carries the exact
+   ordering, transformation, aggregation, measurement, or decision can establish a derived relation even when that value is the only rendered output. A named result-bearing operation applied to its governed object still asserts the resulting value when phrased as an action; action form does not turn a transform, read, extraction, decode, ordering, calculation, or selection into a result-free event. Actions, controls, unchanged rendering, state transitions, artifact availability, and event occurrences are `NO_DERIVED_RESULT` when they assert only that behavior. A qualitative descriptor on an action, event, or message does not create a derived value. The result carries the exact
    candidate hash and hashes of both complete input receipts; code validates those identities before the
    relation can be retained. The last value first opens one separate entailment relation over only the
    immutable request, established verified application facts, exact current candidate, and complete
    missing-relation authority. The same minimal code-owned context projection used by requirement
    interpretation is rendered; source identities, evidence-need identities, and hashes stay code-only.
    Its receipt binds the request, validated `ApplicationContext`, candidate, and missing-relation receipt.
-   `NO_EXACTLY_ONE_DETERMINING_RELATION_ENTAILED` fails loudly before correction and cannot authorize a guessed policy.
+   `NO_EXACTLY_ONE_DETERMINING_RELATION_ENTAILED` discards only that candidate before correction and cannot authorize a guessed policy.
    Only `EXACTLY_ONE_DETERMINING_RELATION_ENTAILED` opens one exact candidate correction, and that positive
    receipt is mandatory correction input. Its context contains only the immutable semantic request,
    minimal verified facts, current candidate, code-established defect, and positive grounding relation.
-   Code preserves every retained leaf and reruns duplicate, kind, cardinality, outcome-relation, and
-   result-relation closure. A repeated omission fails at the one-correction bound; there is no reviewer.
+   Code preserves every retained leaf and reruns exact deduplication, authorization, kind, cardinality, outcome-relation, and
+   result-relation closure. A repeated omission exhausts the one-correction bound and discards only that candidate; there is no reviewer.
    Substring, interval, overlap, source-order, punctuation, and exact-quote allocation are not
-   authority checks. Code projects each accepted task-local runtime implementation requirement directly into one frozen task in
+   authority checks. Queue exhaustion freezes the currently accepted functional objective for this
+   iteration without a coverage, review, completeness, or `REQUIREMENT_REMAINS` call; later objectives
+   may continue iteratively from verified reality. Rejected, speculative, or over-capacity candidates
+   may be retained only as non-authoritative follow-up suggestions outside the current ledger,
+   workload, verifier, and completion criteria; a later explicit user objective must send one through
+   the ordinary sieve before it can become work. Only when a task-local leaf survives does
+   code resolve product, surface, or deployment semantics, and each runs only at its first
+   concrete consumer; an empty accepted queue creates no downstream interpretation work.
+   Code projects each accepted task-local runtime implementation requirement directly into one frozen task in
    accepted source order. The task contains only its code-owned task identity, requirement identity,
    and exact accepted requirement; there are no objective, behavior, acceptance-criterion,
    dependency, schedule, or completion model calls. Code validates every leaf and assembles the

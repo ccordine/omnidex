@@ -13,7 +13,7 @@ func TestApplicationServiceEndpointRequirementIsOneTaskLocalBlindEnum(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	input, err := ProjectApplicationServiceEndpointRequirementInput(authority)
+	input, err := ProjectApplicationServiceEndpointRequirementInput(authority, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -32,6 +32,7 @@ func TestApplicationServiceEndpointRequirementIsOneTaskLocalBlindEnum(t *testing
 	for _, required := range []string{
 		specification.ProductQuote, task.RequirementQuote,
 		"PRODUCT CONTEXT:", "EXACT ENDPOINT REQUIREMENT:",
+		"DIRECT_CAPABILITY_CONSUMER:\ntrue",
 		string(ApplicationServiceEndpointRequired), string(ApplicationServiceSupportOnly),
 	} {
 		if !strings.Contains(envelope, required) {
@@ -43,7 +44,7 @@ func TestApplicationServiceEndpointRequirementIsOneTaskLocalBlindEnum(t *testing
 		`"objective"`, `"required_behaviors"`, `"acceptance_criteria"`,
 		`"path"`, `"file"`, `"command"`, `"tool"`, `"workflow"`,
 		`"route_template"`, `"method"`, `"handler"`, `"source"`,
-		"accepted local", "this task", "TASK", "AUTHORITY_JSON",
+		"accepted local", "this task", "TASK", "AUTHORITY_JSON", "Code has", "code-proven",
 	} {
 		if strings.Contains(envelope, forbidden) {
 			t.Fatalf("endpoint requirement envelope exposed forbidden authority %q", forbidden)
@@ -70,10 +71,14 @@ func TestApplicationServiceEndpointRequirementIsOneTaskLocalBlindEnum(t *testing
 func TestApplicationServiceEndpointRequirementRejectsInvalidAuthorityAndWire(t *testing.T) {
 	t.Parallel()
 	validInput := ApplicationServiceEndpointRequirementInput{
-		ProductContext:   "inventory service",
-		RequirementQuote: "Records are normalized before storage.",
+		ProductContext:              "inventory service",
+		RequirementQuote:            "Records are normalized before storage.",
+		HasDirectCapabilityConsumer: true,
 	}
 	for name, mutate := range map[string]func(*ApplicationServiceEndpointRequirementInput){
+		"missing direct consumer": func(input *ApplicationServiceEndpointRequirementInput) {
+			input.HasDirectCapabilityConsumer = false
+		},
 		"blank product": func(input *ApplicationServiceEndpointRequirementInput) {
 			input.ProductContext = ""
 		},

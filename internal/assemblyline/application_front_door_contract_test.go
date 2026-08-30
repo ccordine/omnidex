@@ -43,17 +43,17 @@ func TestApplicationContextRejectsHistoricalMemoryFacts(t *testing.T) {
 	}
 }
 
-func TestApplicationContextNeedStationReturnsQuestionsNotTools(t *testing.T) {
+func TestApplicationContextQuestionInventoryReturnsCandidatesOrAbsenceNotTools(t *testing.T) {
 	t.Parallel()
 	request := "Build a browser counter with increment and reset controls."
-	context, err := BootstrapApplicationContext(request, ApplicationWorkspaceEmpty)
+	context, err := BootstrapApplicationContext(request, ApplicationWorkspaceExisting)
 	if err != nil {
 		t.Fatal(err)
 	}
-	leafInput := ApplicationContextNeedLeafInput{
-		UserRequest: request, Context: context, AcceptedQuestions: []string{},
+	input := ApplicationContextQuestionInventoryInput{
+		UserRequest: request, Context: context,
 	}
-	job, err := NewApplicationContextNeedCoverageJob(leafInput)
+	job, err := NewApplicationContextQuestionInventoryJob(input)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -69,30 +69,16 @@ func TestApplicationContextNeedStationReturnsQuestionsNotTools(t *testing.T) {
 			t.Fatalf("context-need prompt exposes tool surface %q: %s", forbidden, prompt)
 		}
 	}
-	coverage, err := DecodeApplicationContextNeedCoverageLeaf(
-		leafInput, ApplicationNoUncoveredContextNeed,
+	absence, err := DecodeApplicationContextQuestionInventory(
+		input, ApplicationNoRepositoryFactQuestionCandidates,
 	)
-	if err != nil || coverage != ApplicationNoUncoveredContextNeed {
-		t.Fatalf("coverage=%q err=%v", coverage, err)
+	if err != nil || absence.Candidates == nil || len(absence.Candidates) != 0 {
+		t.Fatalf("absence=%+v err=%v", absence, err)
 	}
-	decision, err := AssembleApplicationContextNeedDecision(ApplicationContextNeedInput{
-		UserRequest: request, Context: context,
-	}, []string{})
-	if err != nil || len(decision.Questions) != 0 {
-		t.Fatalf("zero-need decision=%+v err=%v", decision, err)
-	}
-	questionJob, err := NewApplicationContextNeedQuestionJob(ApplicationContextNeedLeafInput{
-		UserRequest: request, Context: context, AcceptedQuestions: []string{},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	questionPrompt, err := RenderPortableJob(questionJob)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Count(questionPrompt, request) != 1 {
-		t.Fatalf("question prompt=%q", questionPrompt)
+	const question = "Which repository declaration owns the counter state?"
+	decoded, decodeErr := DecodeApplicationContextQuestionInventory(input, question)
+	if decodeErr != nil || len(decoded.Candidates) != 1 || decoded.Candidates[0] != question {
+		t.Fatalf("inventory=%+v err=%v", decoded, decodeErr)
 	}
 }
 

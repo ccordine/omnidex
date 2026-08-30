@@ -42,7 +42,7 @@ func TestObjectiveDatabaseEvidenceSeparatesSemanticRowsFromCodeOwnedProvenance(t
 		},
 	}
 
-	projected, err := projectObjectiveDatabaseEvidence(1, snapshot, intent, evidence)
+	projected, err := projectObjectiveDatabaseEvidence(snapshot, intent, evidence)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -9,12 +9,12 @@ func replayWebSemanticLeaf(
 	switch job.Kind {
 	case assemblyline.WorkWebRelevanceRelation:
 		return true, decodeReplaySemanticLeaf(job, raw, assemblyline.DecodeWebRelevanceRelationLeaf)
-	case assemblyline.WorkWebSynthesisParagraphCoverage:
-		return true, decodeReplaySemanticLeaf(job, raw, assemblyline.DecodeWebSynthesisParagraphCoverageDecision)
-	case assemblyline.WorkWebSynthesisParagraph:
-		return true, decodeReplaySemanticLeaf(job, raw, assemblyline.DecodeWebSynthesisParagraphDecision)
+	case assemblyline.WorkWebSynthesisParagraphInventory:
+		return true, decodeReplaySemanticLeaf(job, raw, assemblyline.DecodeWebSynthesisParagraphInventory)
 	case assemblyline.WorkWebSynthesisEvidenceRelation:
 		return true, decodeReplaySemanticLeaf(job, raw, assemblyline.DecodeWebSynthesisEvidenceRelationDecision)
+	case assemblyline.WorkWebSynthesisParagraphAuthorization:
+		return true, decodeReplaySemanticLeaf(job, raw, assemblyline.DecodeWebSynthesisParagraphAuthorizationDecision)
 	default:
 		return false, nil
 	}

@@ -27,12 +27,12 @@ func TestStateLeafStationsReuseCodingWorkloadEnvironmentModel(t *testing.T) {
 	t.Setenv("OMNI_CODING_WORKLOAD_MODEL", "state-leaf-model")
 	models := loadStationModels(Config{})
 	for _, id := range []station.ID{
-		station.CodingApplicationStateFieldCoverage,
-		station.CodingApplicationStateFieldPurpose,
+		station.CodingApplicationStateFieldPurposeInventory,
 		station.CodingApplicationStateFieldKind,
-		station.CodingApplicationRecordFieldCoverage,
-		station.CodingApplicationRecordFieldPurpose,
+		station.CodingApplicationRecordFieldPurposeInventory,
 		station.CodingApplicationRecordFieldKind,
+		station.CodingApplicationServiceStatePurposeNecessity,
+		station.CodingApplicationServiceStatePurposeRelation,
 	} {
 		if got := models[id]; got != "state-leaf-model" {
 			t.Fatalf("state leaf station %s model=%q", id, got)

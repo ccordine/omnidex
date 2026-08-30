@@ -17,12 +17,20 @@ Relevance is one candidate relation per call. Each raw result classifies only th
 supplied candidate as relevant or irrelevant. Code restores the opaque candidate ID,
 enforces the selection bound, and assembles the typed selection.
 
-Grounded synthesis is another code-owned fixed point. One raw coverage call says
-whether another paragraph remains; a separate call returns one paragraph only when
-needed. For that paragraph, each evidence item receives its own raw support-relation
-call. Its coverage alternatives are `PARAGRAPH_REMAINS` and
-`NO_UNCOVERED_PARAGRAPH`. Code binds the supporting evidence IDs and assembles the
-typed synthesis.
+Grounded synthesis begins with one bounded raw paragraph-candidate inventory, or the
+exact registered absence `NO_GROUNDED_PARAGRAPH_CANDIDATES`. Code parses that inventory
+once and owns a source-order queue. Each unique candidate first receives one
+paragraph-local authorization relation against the exact question and complete supplied
+evidence set. That relation asks only whether the complete paragraph directly answers
+the question and whether every factual claim is fully supported by that evidence. A
+negative candidate evaporates before citation work. Only a positive candidate receives
+one pairwise paragraph-to-evidence relation per capsule so code can bind the exact
+supporting citation identities. This later attribution does not re-authorize or review
+the paragraph; a positive candidate with no attributable evidence evaporates locally.
+Queue exhaustion ends candidate processing. A functional grounded answer still requires
+at least one surviving paragraph; zero survivors is an explicit synthesis failure, not
+a model-authored blocker or a reason to reopen rejected candidates. There is no second
+coverage, completeness, or accepted-paragraph review call.
 
 There is no web review or correction model. Invalid relevance or synthesis output
 fails explicitly. After synthesis, code binds returned support relations to acquired
@@ -133,17 +141,19 @@ What’s actually going on with orbital data centers and heat management?
 
 You don’t need a WebResearchAgent.
 
-You need something like:
+You need the explicit typed question to become code-owned query authority:
 
 Prompt
  ↓
-SearchTermCoverageStation
-raw output: TERM_REMAINS
+code binds the unchanged research question
  ↓
-SearchTermStation
-raw output: orbital data center thermal management
+registered acquisition provider executes that exact query
  ↓
-code retains one term and repeats coverage
+code receives a bounded candidate set
+ ↓
+one candidate / one relevance relation
+ ↓
+code retains or discards the candidate and advances its queue
 
 Then CODE does:
 
@@ -201,10 +211,14 @@ CONFLICT:
 S14 estimates X;
 S18 disputes X due to Y.
 
-In the current implementation, code asks whether another grounded paragraph remains,
-requests at most one raw paragraph, and tests that paragraph against one evidence item
-per raw relation call. Code assembles the grounded response; no model emits this
-evidence capsule set or a structured final-answer aggregate.
+In the current implementation, one synthesis call emits at most the bounded raw
+paragraph-candidate inventory. Code queues its lines in source order and authorizes each
+unique candidate once against the exact question and complete supplied evidence set.
+Only a positive candidate proceeds to one raw paragraph-to-evidence attribution
+relation per capsule. Code binds the supporting citation identities and assembles the
+grounded response after queue exhaustion when at least one paragraph survives; no model
+emits the query, evidence capsule set, structured final-answer aggregate, or a
+completeness decision.
 
 ⸻
 

@@ -180,6 +180,7 @@ func TestObjectiveTurnConsumesOneCodeOwnedExternalWorkflowWithoutRestatingIt(t *
 			Paragraphs:     []webresearch.GroundedParagraph{{Text: "Current answer.", EvidenceIDs: []webresearch.EvidenceID{"W01"}}},
 			Evidence:       []objectiveEvidence{evidence},
 			EvidenceIDs:    []string{"W01"}, ModelCalls: 2,
+			WebCallLedger: objectiveWebTestCallLedger(t, 2),
 		}, nil
 	}})
 	if err != nil {
@@ -264,6 +265,7 @@ func TestObjectiveTurnRejectsInvalidEvidenceBeforeInference(t *testing.T) {
 			Text: "Invalid answer.", Rendered: rendered, RenderedSHA256: objectiveTestSHA256(rendered),
 			Paragraphs: []webresearch.GroundedParagraph{{Text: "Invalid answer.", EvidenceIDs: []webresearch.EvidenceID{"W01"}}},
 			Evidence:   []objectiveEvidence{valid}, EvidenceIDs: []string{"W01"}, ModelCalls: 1,
+			WebCallLedger: objectiveWebTestCallLedger(t, 1),
 		}, nil
 	}})
 	if err == nil {

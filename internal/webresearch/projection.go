@@ -49,10 +49,22 @@ func (machine *Machine) selectAndProject(
 	if err != nil {
 		return nil, false, fmt.Errorf("relevance station: %w", err)
 	}
-	if decision.SemanticCalls < 1 {
-		return nil, false, fmt.Errorf("%w: relevance reported no semantic calls", ErrInvalidRelevance)
+	receipt, err := decision.CallLedger.ValidateForMaximum(
+		"web relevance decision", len(candidates)*exactPortableSemanticLeafCalls,
+	)
+	if err != nil {
+		return nil, false, fmt.Errorf("%w: %v", ErrInvalidRelevance, err)
 	}
-	result.SemanticCalls += decision.SemanticCalls
+	if decision.SemanticCalls != receipt.Calls {
+		return nil, false, fmt.Errorf(
+			"%w: relevance reported %d calls but its exact ledger proves %d",
+			ErrInvalidRelevance, decision.SemanticCalls, receipt.Calls,
+		)
+	}
+	if err := result.CallLedger.Merge("relevance", decision.CallLedger); err != nil {
+		return nil, false, fmt.Errorf("%w: %v", ErrInvalidRelevance, err)
+	}
+	result.SemanticCalls += receipt.Calls
 	if err := ctx.Err(); err != nil {
 		return nil, false, err
 	}

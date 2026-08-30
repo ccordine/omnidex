@@ -13,6 +13,9 @@ import (
 
 func TestStationReplayValidationRejectsUnregisteredKindsDirectly(t *testing.T) {
 	for _, kind := range []assemblyline.WorkKind{
+		"application_context_need_coverage",
+		"application_context_need_question",
+		"application_context_next_need",
 		"conversation_context_selection",
 		"memory_context_selection",
 		"roleplay_narrative_continuity",
@@ -32,6 +35,7 @@ func TestStationReplayValidationRejectsUnregisteredKindsDirectly(t *testing.T) {
 		"context_search_term",
 		"context_relevance",
 		"repository_evidence_relevance",
+		"repository_evidence_relevance_leaf",
 		"repository_grounded_review",
 		"repository_grounded_issue_detail",
 		"repository_grounded_issue_kind",
@@ -51,6 +55,9 @@ func TestStationReplayValidationRejectsUnregisteredKindsDirectly(t *testing.T) {
 		"web_review_claim_verdict",
 		"web_review_issue_evidence_relation",
 		"web_review_issue_detail",
+		"web_synthesis_paragraph_coverage",
+		"web_synthesis_paragraph",
+		"runtime_capability_selection",
 	} {
 		t.Run(string(kind), func(t *testing.T) {
 			retired := assemblyline.PortableJob{
