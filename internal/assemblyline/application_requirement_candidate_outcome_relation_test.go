@@ -25,6 +25,25 @@ func TestApplicationRequirementCandidateOutcomeRelationIsOneBoundPair(t *testing
 			t.Fatalf("outcome-relation prompt did not project one exact pair member %q:\n%s", text, prompt)
 		}
 	}
+	for _, required := range []string{
+		"one source-owning runtime obligation",
+		"requires additional runtime evidence",
+		"keeping it after a session restart is DISTINCT_RUNTIME_OUTCOMES",
+		"returning it before a fixed deadline is DISTINCT_RUNTIME_OUTCOMES",
+		"delivering it to a nonvisual consumer is DISTINCT_RUNTIME_OUTCOMES",
+		"conforms to that same R is SAME_RUNTIME_OUTCOME",
+		"Use this decision order after reading the exact pair",
+		"exactly one statement adds runtime evidence",
+		"Conformance of the identical value to its identical already-named determining rule is not added evidence",
+		"A modifier alone does not add evidence",
+		"no different delivery is required",
+		"failing a later observation or retention check",
+		"failing to deliver it through another channel",
+	} {
+		if !strings.Contains(prompt, required) {
+			t.Fatalf("outcome-relation prompt omitted %q:\n%s", required, prompt)
+		}
+	}
 	for _, forbidden := range []string{
 		"user request", "accepted requirements", "workspace", "file path",
 	} {

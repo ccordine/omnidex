@@ -157,12 +157,15 @@ func BuildApplicationRequirementCandidateOutcomeRelationPrompt(
 		return "", err
 	}
 	return strings.Join([]string{
-		"Answer one semantic relation between the two exact one-outcome runtime requirements below: do they require the same independently testable runtime outcome or distinct runtime outcomes?",
-		"Return SAME_RUNTIME_OUTCOME only when satisfying either statement would satisfy the other statement's named observable behavior despite different wording. Shared product identity, inputs, subject matter, visual proximity, or a dependency between two behaviors does not make them the same outcome.",
-		"Return DISTINCT_RUNTIME_OUTCOMES when each statement requires a separately observable behavior, element, state transition, quality, or result.",
-		"Return exactly one raw registered value and nothing else: no JSON, quotes, label, Markdown, or commentary.",
+		"Decide whether the two exact one-outcome runtime requirements impose one source-owning runtime obligation or whether either requires additional runtime evidence.",
+		"Reference relations: making a transformed value visible versus keeping it after a session restart is DISTINCT_RUNTIME_OUTCOMES; returning a response versus returning it before a fixed deadline is DISTINCT_RUNTIME_OUTCOMES; showing a response visually versus also delivering it to a nonvisual consumer is DISTINCT_RUNTIME_OUTCOMES; returning the value yielded by rule R versus returning the value that conforms to that same R is SAME_RUNTIME_OUTCOME.",
 		"CURRENT CANDIDATE:\n" + input.Candidate,
 		"ACCEPTED REQUIREMENT:\n" + input.AcceptedRequirement,
+		"Use this decision order after reading the exact pair.",
+		"1. Return DISTINCT_RUNTIME_OUTCOMES if exactly one statement adds runtime evidence through a different determining rule, external reference, scope, response, event, observation time, retention boundary, time bound, presentation or delivery channel, recipient, data format, or state. A runtime can satisfy a one-time output while failing a later observation or retention check, can provide an output while missing its time bound, and can show a value while failing to deliver it through another channel. Each is distinct even though the value is shared.",
+		"2. Conformance of the identical value to its identical already-named determining rule is not added evidence. A value named as the result yielded by a rule already must conform to that rule. If the other statement only restates that relation, return SAME_RUNTIME_OUTCOME. A modifier alone does not add evidence, and producing, returning, or showing that sole value does not split it when no different delivery is required.",
+		"3. Otherwise return SAME_RUNTIME_OUTCOME only for a paraphrase that adds no runtime evidence. Shared input, subject, element, or dependency alone is insufficient; all other pairs are DISTINCT_RUNTIME_OUTCOMES.",
+		"Return exactly one raw registered value and nothing else: no JSON, quotes, label, Markdown, or commentary.",
 		"FINAL QUESTION:\nDo these statements require SAME_RUNTIME_OUTCOME or DISTINCT_RUNTIME_OUTCOMES? Return only that registered value.",
 	}, "\n\n"), nil
 }

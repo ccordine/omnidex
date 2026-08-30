@@ -286,7 +286,10 @@ machine passes its executable gates:
    evidence without mutation or inference. For a byte-different task-local one-outcome candidate, one
    pairwise station returns only `SAME_RUNTIME_OUTCOME` or `DISTINCT_RUNTIME_OUTCOMES`; the model sees
    only the two statements, while code binds the job and result to the complete candidate kind/cardinality
-   receipts and the accepted requirement's result-relation receipt. `SAME_RUNTIME_OUTCOME` enters the
+   receipts and the accepted requirement's result-relation receipt. Language that only restates conformance of
+   the identical value to the identical determining rule is `SAME_RUNTIME_OUTCOME`; another determining rule,
+   reference, scope, response, event, observation time, retention boundary, time bound, delivery channel,
+   recipient, format, or state remains distinct. `SAME_RUNTIME_OUTCOME` enters the
    same zero-delta closure. Repeated zero-delta candidate bytes fail loudly. Each newly recorded zero delta
    changes coverage authority and requires a fresh ordinary coverage call; there is no duplicate-replacement,
    correction, or retry station. Only a distinct candidate proceeds to the separate three-way
