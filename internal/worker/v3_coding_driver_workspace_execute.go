@@ -46,6 +46,9 @@ func (s *directCodingSession) recordPreparedWorkspaceMutation(
 		s.mutationJournal = append(s.mutationJournal, directCodingMutationJournalEntry{
 			Path: change.Path, Operation: operation,
 		})
+		s.runtime.svc.emitWorkspaceFileChange(
+			s.runtime.claim.Authority, string(operation), change.Path,
+		)
 	}
 	prepared.recorded = true
 }

@@ -60,6 +60,7 @@ const (
 	LifecycleCompleteStep   LifecycleOperationKind = "complete_step"
 	LifecycleFailStep       LifecycleOperationKind = "fail_step"
 	LifecycleSubmitFeedback LifecycleOperationKind = "submit_feedback"
+	LifecycleInterruptJob   LifecycleOperationKind = "interrupt_job"
 	LifecycleReplanJob      LifecycleOperationKind = "replan_job"
 	LifecycleScrumChannel   LifecycleOperationKind = "scrum_channel_message"
 	LifecycleCancelJob      LifecycleOperationKind = "cancel_job"

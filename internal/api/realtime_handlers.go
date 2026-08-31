@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/gryph/omnidex/internal/model"
 )
 
 var realtimeUpgrader = websocket.Upgrader{
@@ -19,25 +20,32 @@ var realtimeUpgrader = websocket.Upgrader{
 }
 
 type realtimeMessage struct {
-	ID           uint64           `json:"id,omitempty"`
-	StateKey     string           `json:"stateKey,omitempty"`
-	OccurredAt   string           `json:"occurredAt,omitempty"`
-	HTML         string           `json:"html,omitempty"`
-	EventName    string           `json:"eventName,omitempty"`
-	Reason       string           `json:"reason,omitempty"`
-	Toast        string           `json:"toast,omitempty"`
-	ToastTone    string           `json:"toastTone,omitempty"`
-	ProjectID    int64            `json:"projectID,omitempty"`
-	CardID       string           `json:"cardID,omitempty"`
-	Card         *ScrumCard       `json:"card,omitempty"`
-	PlayQueue    map[string]any   `json:"playQueue,omitempty"`
-	LatestID     uint64           `json:"latestID,omitempty"`
-	ReplayCount  int              `json:"replayCount,omitempty"`
-	SyncRequired bool             `json:"syncRequired,omitempty"`
-	JobID        int64            `json:"jobID,omitempty"`
-	Phase        realtimeJobPhase `json:"phase,omitempty"`
-	Summary      string           `json:"summary,omitempty"`
-	Snapshot     bool             `json:"snapshot,omitempty"`
+	ID            uint64           `json:"id,omitempty"`
+	StateKey      string           `json:"stateKey,omitempty"`
+	OccurredAt    string           `json:"occurredAt,omitempty"`
+	HTML          string           `json:"html,omitempty"`
+	EventName     string           `json:"eventName,omitempty"`
+	Reason        string           `json:"reason,omitempty"`
+	Toast         string           `json:"toast,omitempty"`
+	ToastTone     string           `json:"toastTone,omitempty"`
+	ProjectID     int64            `json:"projectID,omitempty"`
+	CardID        string           `json:"cardID,omitempty"`
+	Card          *ScrumCard       `json:"card,omitempty"`
+	PlayQueue     map[string]any   `json:"playQueue,omitempty"`
+	LatestID      uint64           `json:"latestID,omitempty"`
+	ReplayCount   int              `json:"replayCount,omitempty"`
+	SyncRequired  bool             `json:"syncRequired,omitempty"`
+	JobID         int64            `json:"jobID,omitempty"`
+	ChannelID     string           `json:"channelID,omitempty"`
+	Phase         realtimeJobPhase `json:"phase,omitempty"`
+	Summary       string           `json:"summary,omitempty"`
+	StepID        int64            `json:"stepID,omitempty"`
+	Attempt       int64            `json:"attempt,omitempty"`
+	RuntimeEvent  string           `json:"runtimeEvent,omitempty"`
+	Detail        string           `json:"detail,omitempty"`
+	FileOperation string           `json:"fileOperation,omitempty"`
+	FilePath      string           `json:"filePath,omitempty"`
+	Snapshot      bool             `json:"snapshot,omitempty"`
 }
 
 type realtimeJobPhase string
@@ -100,6 +108,28 @@ func (s *Server) broadcastRealtimeChecked(topics []string, message realtimeMessa
 }
 
 func (s *Server) publishJobProgress(jobID int64, phase realtimeJobPhase, summary string) {
+	s.publishJobProgressForChannel("", jobID, phase, summary)
+}
+
+func (s *Server) publishChannelJobProgress(
+	channelID model.ChannelID,
+	jobID int64,
+	phase realtimeJobPhase,
+	summary string,
+) {
+	if err := channelID.Validate(); err != nil {
+		log.Printf("realtime channel job progress rejected job=%d phase=%q: %v", jobID, phase, err)
+		return
+	}
+	s.publishJobProgressForChannel(string(channelID), jobID, phase, summary)
+}
+
+func (s *Server) publishJobProgressForChannel(
+	channelID string,
+	jobID int64,
+	phase realtimeJobPhase,
+	summary string,
+) {
 	if jobID <= 0 {
 		log.Printf("realtime job progress rejected job=%d phase=%q: positive job id required", jobID, phase)
 		return
@@ -112,6 +142,7 @@ func (s *Server) publishJobProgress(jobID int64, phase realtimeJobPhase, summary
 	message := realtimeMessage{
 		EventName: "job-progress",
 		JobID:     jobID,
+		ChannelID: channelID,
 		Phase:     phase,
 		Summary:   summary,
 	}

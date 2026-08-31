@@ -23,6 +23,7 @@ type Options struct {
 	PollInterval           string
 	InferenceContextTokens string
 	Logger                 *log.Logger
+	RuntimeEventSink       RuntimeEventSink
 }
 
 type Service struct {
@@ -33,6 +34,7 @@ type Service struct {
 	inferenceContextTokens string
 	completeStep           stepCompleteFunc
 	logger                 *log.Logger
+	runtimeEventSink       RuntimeEventSink
 }
 
 func New(
@@ -53,6 +55,7 @@ func New(
 		inferenceContextTokens: opts.InferenceContextTokens,
 		completeStep:           repo.CompleteStep,
 		logger:                 opts.Logger,
+		runtimeEventSink:       opts.RuntimeEventSink,
 	}
 	return svc, nil
 }

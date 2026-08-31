@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path"
 
 	"golang.org/x/sys/unix"
 )
@@ -104,4 +105,68 @@ func (root *authoritativeWorkspaceRoot) OpenFile(
 		return nil, errors.Join(mountErr, file.Close())
 	}
 	return file, nil
+}
+
+func (root *authoritativeWorkspaceRoot) Rename(oldRelative, newRelative string) (resultErr error) {
+	if root == nil || root.Root == nil || root.authorityFD < 0 || root.mountID == 0 {
+		return fmt.Errorf("rename workspace path: root authority is unavailable")
+	}
+	if err := validateRelativePath(oldRelative); err != nil {
+		return fmt.Errorf("rename workspace source: %w", err)
+	}
+	if err := validateRelativePath(newRelative); err != nil {
+		return fmt.Errorf("rename workspace destination: %w", err)
+	}
+	if _, err := root.Lstat(oldRelative); err != nil {
+		return fmt.Errorf("inspect workspace rename source %q: %w", oldRelative, err)
+	}
+	if _, err := root.Lstat(newRelative); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("inspect workspace rename destination %q: %w", newRelative, err)
+	}
+
+	oldParent, oldName, err := root.openRenameParent(oldRelative)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		resultErr = errors.Join(resultErr, oldParent.Close())
+	}()
+	newParent, newName, err := root.openRenameParent(newRelative)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		resultErr = errors.Join(resultErr, newParent.Close())
+	}()
+
+	for {
+		err = unix.Renameat(int(oldParent.Fd()), oldName, int(newParent.Fd()), newName)
+		if errors.Is(err, unix.EINTR) {
+			continue
+		}
+		break
+	}
+	if err != nil {
+		return fmt.Errorf("rename workspace path %q to %q: %w", oldRelative, newRelative, err)
+	}
+	if err := root.requirePathMount(newRelative); err != nil {
+		return fmt.Errorf("verify renamed workspace path %q: %w", newRelative, err)
+	}
+	return nil
+}
+
+func (root *authoritativeWorkspaceRoot) openRenameParent(relative string) (*os.File, string, error) {
+	parentPath := path.Dir(relative)
+	parent, err := root.Open(parentPath)
+	if err != nil {
+		return nil, "", fmt.Errorf("open workspace rename parent %q: %w", parentPath, err)
+	}
+	info, err := parent.Stat()
+	if err != nil || !info.IsDir() {
+		if err == nil {
+			err = fmt.Errorf("workspace rename parent %q is not a directory", parentPath)
+		}
+		return nil, "", errors.Join(err, parent.Close())
+	}
+	return parent, path.Base(relative), nil
 }

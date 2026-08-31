@@ -8,10 +8,11 @@ import (
 )
 
 const (
-	jobGenerationPurposeInitial = "initial"
-	jobGenerationPurposeReplan  = "replan"
-	replanCodingBoundary        = "v3_coding"
-	replanObjectiveBoundary     = "objective_resolve"
+	jobGenerationPurposeInitial   = "initial"
+	jobGenerationPurposeInterrupt = "interrupt"
+	jobGenerationPurposeReplan    = "replan"
+	replanCodingBoundary          = "v3_coding"
+	replanObjectiveBoundary       = "objective_resolve"
 )
 
 var ErrInvalidJobGeneration = errors.New("invalid job generation state")

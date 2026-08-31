@@ -59,6 +59,34 @@ func submitJobFeedbackTx(
 			ErrStepNotWritable, job.ID, job.Status, model.JobStatusWaiting,
 		)
 	}
+	var generationPurpose string
+	if err := tx.QueryRow(ctx, `
+		SELECT purpose
+		FROM job_generations
+		WHERE job_id=$1 AND generation=$2
+		FOR SHARE
+	`, command.JobID, job.CurrentGeneration).Scan(&generationPurpose); err != nil {
+		return model.Job{}, fmt.Errorf("read waiting job %d generation purpose: %w", command.JobID, err)
+	}
+	switch generationPurpose {
+	case jobGenerationPurposeInitial, jobGenerationPurposeReplan:
+	case jobGenerationPurposeInterrupt:
+		return model.Job{}, fmt.Errorf(
+			"%w: %w: job %d generation %d cannot accept generic feedback",
+			ErrStepNotWritable,
+			ErrInterruptedJobRequiresReplan,
+			job.ID,
+			job.CurrentGeneration,
+		)
+	default:
+		return model.Job{}, fmt.Errorf(
+			"%w: job %d generation %d has unregistered purpose %q",
+			ErrInvalidJobGeneration,
+			job.ID,
+			job.CurrentGeneration,
+			generationPurpose,
+		)
+	}
 
 	var stepID int64
 	err = tx.QueryRow(ctx, `

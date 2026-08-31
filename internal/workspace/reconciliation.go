@@ -50,6 +50,11 @@ type ReconciliationResult struct {
 	Changes []Change
 }
 
+// VerifiedChangeObserver receives one bounded change only after that exact
+// filesystem mutation has been committed and verified. Returning an error
+// stops the reconciliation; the applied change remains present in the result.
+type VerifiedChangeObserver func(Change) error
+
 // PreparedReconciliation owns one exact desired-state transaction. Preparation
 // validates only the values the filesystem consumer needs; it creates no
 // staging directories and performs no mutation.

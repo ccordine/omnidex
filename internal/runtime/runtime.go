@@ -76,6 +76,13 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*Runtime, 
 			PollInterval:           cfg.WorkerPollInterval,
 			InferenceContextTokens: cfg.InferenceContextTokens,
 			Logger:                 logger,
+			RuntimeEventSink: func(event worker.RuntimeEvent) error {
+				return server.PublishJobRuntimeEvent(api.JobRuntimeEvent{
+					JobID: event.JobID, StepID: event.StepID, Attempt: event.Attempt,
+					RuntimeEvent: event.Kind, Detail: event.Detail,
+					FileOperation: event.FileOperation, FilePath: event.FilePath,
+				})
+			},
 		},
 	)
 	if err != nil {

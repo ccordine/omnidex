@@ -2,19 +2,13 @@ package queue
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"math"
-	"strings"
-	"unicode/utf8"
 
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/jackc/pgx/v5"
 )
-
-const maxReplanFeedbackBytes = 64 * 1024
 
 func (r *Repository) ReplanJob(ctx context.Context, command ReplanJobCommand) (model.Job, error) {
 	command, feedbackSHA, err := normalizeReplanJobCommand(command)
@@ -122,27 +116,6 @@ func replanJobTx(
 		return model.Job{}, err
 	}
 	return job, nil
-}
-
-func validateReplanFeedback(feedback string) (string, string, error) {
-	return validateLifecycleFeedback(feedback, "replan feedback")
-}
-
-func validateLifecycleFeedback(feedback, subject string) (string, string, error) {
-	if !utf8.ValidString(feedback) {
-		return "", "", fmt.Errorf("%s must be valid UTF-8", subject)
-	}
-	if strings.TrimSpace(feedback) == "" {
-		return "", "", fmt.Errorf("feedback is required")
-	}
-	if strings.ContainsRune(feedback, '\x00') {
-		return "", "", fmt.Errorf("%s must not contain NUL", subject)
-	}
-	if len(feedback) > maxReplanFeedbackBytes {
-		return "", "", fmt.Errorf("%s exceeds the %d-byte limit", subject, maxReplanFeedbackBytes)
-	}
-	digest := sha256.Sum256([]byte(feedback))
-	return feedback, hex.EncodeToString(digest[:]), nil
 }
 
 func terminalJobStatus(status string) bool {

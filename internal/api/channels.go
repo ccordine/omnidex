@@ -224,6 +224,18 @@ func (s *Server) handleChannelByID(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
+	if len(parts) > 1 && parts[1] == "session" {
+		if len(parts) > 2 {
+			writeError(w, http.StatusNotFound, "channel route not found")
+			return
+		}
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		s.getChannelSession(w, r, channelID)
+		return
+	}
 	if len(parts) > 1 && parts[1] == "roleplay" {
 		s.handleRoleplaySimulationChannel(w, r, channelID, parts[2:])
 		return
@@ -296,17 +308,17 @@ func (s *Server) postChannelMessage(w http.ResponseWriter, r *http.Request, chan
 			writeError(w, http.StatusBadRequest, "assistant channel turn cannot carry roleplay user authority")
 			return
 		case model.ChannelModeRoleplay:
-		if req.DelegatedDataAuthorityID.Present {
-			writeError(w, http.StatusBadRequest, "roleplay channel turn cannot carry delegated data authority")
-			return
-		}
-		if err = req.RoleplayTurn.ValidateForExactText(prompt); err != nil {
-			writeError(w, http.StatusBadRequest, err.Error())
-			return
-		}
-		userMessage, job, err = s.repo.EnqueueRoleplayChannelTurn(
-			r.Context(), channel.ID, prompt, *req.RoleplayTurn,
-		)
+			if req.DelegatedDataAuthorityID.Present {
+				writeError(w, http.StatusBadRequest, "roleplay channel turn cannot carry delegated data authority")
+				return
+			}
+			if err = req.RoleplayTurn.ValidateForExactText(prompt); err != nil {
+				writeError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			userMessage, job, err = s.repo.EnqueueRoleplayChannelTurn(
+				r.Context(), channel.ID, prompt, *req.RoleplayTurn,
+			)
 		default:
 			writeError(w, http.StatusInternalServerError, "channel has unsupported stored mode")
 			return
@@ -332,6 +344,7 @@ func (s *Server) postChannelMessage(w http.ResponseWriter, r *http.Request, chan
 		"channel turn accepted channel=%s mode=%s message=%d job=%d",
 		channel.ID, channel.Mode, userMessage.ID, job.ID,
 	)
+	s.publishChannelJobProgress(channel.ID, job.ID, realtimeJobQueued, "Job queued")
 	writeJSON(w, http.StatusAccepted, channelMessageResponse{
 		Channel: channel, UserMessage: userMessage, Job: job,
 	})

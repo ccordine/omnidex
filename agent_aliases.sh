@@ -1,0 +1,135 @@
+#!/usr/bin/env bash
+# Source this file to get convenient helpers for Omnidex (short name: omni).
+# Example:
+#   source /absolute/path/to/omnidex/agent_aliases.sh
+
+_agent_aliases_script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -z "${OMNIDEX_DIR:-}" \
+   || ! -d "${OMNIDEX_DIR}" \
+   || ! -f "${OMNIDEX_DIR}/go.mod" ]]; then
+  OMNIDEX_DIR="${_agent_aliases_script_dir}"
+fi
+unset _agent_aliases_script_dir
+
+_agent_cli_cmd() {
+  local caller_cwd="${PWD}"
+
+  if [[ ! -x "${OMNIDEX_DIR}/bin/agent-cli" ]]; then
+    printf '[omnidex][error] managed CLI binary is missing: %s\n' \
+      "${OMNIDEX_DIR}/bin/agent-cli" >&2
+    return 1
+  fi
+  OMNI_INVOKE_CWD="${caller_cwd}" "${OMNIDEX_DIR}/bin/agent-cli" "$@"
+}
+
+_omni_cmd() {
+  local caller_cwd="${PWD}"
+
+  if [[ ! -x "${OMNIDEX_DIR}/bin/omni" ]]; then
+    printf '[omnidex][error] managed omni binary is missing: %s\n' \
+      "${OMNIDEX_DIR}/bin/omni" >&2
+    return 1
+  fi
+  OMNI_INVOKE_CWD="${caller_cwd}" "${OMNIDEX_DIR}/bin/omni" "$@"
+}
+
+# Canonical deterministic Omnidex CLI
+omni() { _omni_cmd "$@"; }
+omnidex() { _omni_cmd "$@"; }
+oagent() { _omni_cmd agent "$@"; }
+oagentcodex() { _omni_cmd agent --agent codex "$@"; }
+oagentcursor() { _omni_cmd agent --agent cursor "$@"; }
+oagentomni() { _omni_cmd agent --agent omnidex "$@"; }
+
+# Queue/API CLI passthrough
+acli() { _agent_cli_cmd "$@"; }
+
+# Core URL helper
+asetcore() {
+  if [[ -z "${1:-}" ]]; then
+    echo "usage: asetcore <url>"
+    return 1
+  fi
+  export CORE_URL="$1"
+  echo "CORE_URL=${CORE_URL}"
+}
+
+# Host dependency bootstrap
+asetupdeps() {
+  (cd "${OMNIDEX_DIR}" && ./scripts/setup-host-deps.sh "$@")
+}
+
+aupdate() {
+  (cd "${OMNIDEX_DIR}" && ./update.sh "$@")
+}
+
+# Typed chat transport
+achatrepl() { _agent_cli_cmd chat "$@"; }
+
+# Job inspection
+alist() { _agent_cli_cmd list "$@"; }
+arun()  { _agent_cli_cmd list --status running "$@"; }
+awaiting() { _agent_cli_cmd list --status waiting_input "$@"; }
+ashow() { _agent_cli_cmd show "$@"; }
+awatch() { _agent_cli_cmd watch "$@"; }
+awv() { _agent_cli_cmd watch --interval 2s --verbose --max-chars 1600 "$@"; }
+
+# Feedback and memory
+afb()       { _agent_cli_cmd feedback "$@"; }
+aint()      { _agent_cli_cmd interrupt "$@"; }
+areplan()   { _agent_cli_cmd replan "$@"; }
+acancel()   { _agent_cli_cmd cancel "$@"; }
+aremember() { _agent_cli_cmd remember "$@"; }
+aingest()   { _agent_cli_cmd ingest "$@"; }
+amediaindex() { _agent_cli_cmd media-index "$@"; }
+amediasearch() { _agent_cli_cmd media-search "$@"; }
+abrowserscan() { _agent_cli_cmd browser-scan "$@"; }
+ascreenread() { _agent_cli_cmd screen-read "$@"; }
+aresearch() { _agent_cli_cmd research "$@"; }
+aperms() { _agent_cli_cmd permissions "$@"; }
+anotes() { _agent_cli_cmd audio-notes "$@"; }
+
+# Latest job helpers
+alast_id() {
+  _agent_cli_cmd list --limit 1 | awk '/^#/ {gsub("#", "", $1); print $1; exit}'
+}
+
+alast() {
+  local id
+  id="$(alast_id)"
+  if [[ -z "${id}" ]]; then
+    echo "no jobs found"
+    return 1
+  fi
+  echo "${id}"
+}
+
+aslatest() {
+  local id
+  id="$(alast_id)"
+  if [[ -z "${id}" ]]; then
+    echo "no jobs found"
+    return 1
+  fi
+  _agent_cli_cmd show "${id}"
+}
+
+awlatest() {
+  local id
+  id="$(alast_id)"
+  if [[ -z "${id}" ]]; then
+    echo "no jobs found"
+    return 1
+  fi
+  _agent_cli_cmd watch "${id}"
+}
+
+awlatestv() {
+  local id
+  id="$(alast_id)"
+  if [[ -z "${id}" ]]; then
+    echo "no jobs found"
+    return 1
+  fi
+  _agent_cli_cmd watch --interval 2s --verbose --max-chars 1600 "${id}"
+}

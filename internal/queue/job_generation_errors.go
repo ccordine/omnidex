@@ -10,6 +10,10 @@ var ErrStaleJobGeneration = errors.New("stale job generation")
 // longer permits the requested worker mutation.
 var ErrStepNotWritable = errors.New("step is not writable")
 
+// ErrInterruptedJobRequiresReplan prevents generic waiting-input feedback from
+// consuming the canonical boundary created by an explicit interruption.
+var ErrInterruptedJobRequiresReplan = errors.New("interrupted job requires explicit replan")
+
 // ErrStaleStepAttempt means a worker write did not carry the exact current,
 // unexpired execution-attempt authority for its job generation and step.
 var ErrStaleStepAttempt = errors.New("stale step attempt")

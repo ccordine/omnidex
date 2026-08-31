@@ -3,6 +3,7 @@ package worker
 import (
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/gryph/omnidex/internal/model"
 )
@@ -31,16 +32,65 @@ func (s *Service) emitStepStream(authority model.StepAttemptAuthority, stream, m
 }
 
 func (s *Service) emitStepEvent(authority model.StepAttemptAuthority, eventType, message string) {
+	if s == nil {
+		return
+	}
+	eventType = strings.TrimSpace(eventType)
+	message = boundedRuntimeEventDetail(message)
+	s.emitRuntimeEvent(RuntimeEvent{
+		JobID: authority.JobID, StepID: authority.StepID, Attempt: authority.Attempt,
+		Kind: eventType, Detail: message,
+	})
 	payload := strings.TrimSpace(strings.Join([]string{
 		"time=" + time.Now().UTC().Format(time.RFC3339),
-		"event=" + strings.TrimSpace(eventType),
-		strings.TrimSpace(message),
+		"event=" + eventType,
+		message,
 	}, " "))
-	if payload == "" || s == nil || s.logger == nil {
+	if payload == "" || s.logger == nil {
 		return
 	}
 	s.logf(
 		"job=%d step=%d attempt=%d %s",
 		authority.JobID, authority.StepID, authority.Attempt, trimForBudget(payload, 1800),
 	)
+}
+
+func (s *Service) emitWorkspaceFileChange(
+	authority model.StepAttemptAuthority,
+	operation, path string,
+) {
+	if s == nil {
+		return
+	}
+	s.emitRuntimeEvent(RuntimeEvent{
+		JobID: authority.JobID, StepID: authority.StepID, Attempt: authority.Attempt,
+		Kind: "workspace_file_changed", Detail: boundedRuntimeEventDetail(operation + " " + path),
+		FileOperation: operation, FilePath: path,
+	})
+}
+
+func boundedRuntimeEventDetail(value string) string {
+	const maxBytes = 1800
+	const suffix = "\n...[truncated]"
+	value = strings.TrimSpace(value)
+	if len(value) <= maxBytes {
+		return value
+	}
+	end := maxBytes - len(suffix)
+	for end > 0 && !utf8.ValidString(value[:end]) {
+		end--
+	}
+	return value[:end] + suffix
+}
+
+func (s *Service) emitRuntimeEvent(event RuntimeEvent) {
+	if s == nil || s.runtimeEventSink == nil {
+		return
+	}
+	if err := s.runtimeEventSink(event); err != nil {
+		s.logf(
+			"job=%d step=%d attempt=%d runtime event=%q publication failed: %v",
+			event.JobID, event.StepID, event.Attempt, event.Kind, err,
+		)
+	}
 }

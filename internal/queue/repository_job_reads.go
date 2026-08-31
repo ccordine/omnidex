@@ -57,11 +57,28 @@ func (r *Repository) CurrentJobDetails(ctx context.Context, jobID int64) (model.
 	if jobID <= 0 {
 		return model.JobDetails{}, fmt.Errorf("current job details require a positive job ID")
 	}
+	if ctx == nil || r == nil || r.pool == nil {
+		return model.JobDetails{}, fmt.Errorf("current job details require PostgreSQL and context")
+	}
 	tx, err := r.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly})
 	if err != nil {
 		return model.JobDetails{}, err
 	}
 	defer tx.Rollback(ctx)
+	details, err := currentJobDetailsTx(ctx, tx, jobID)
+	if err != nil {
+		return model.JobDetails{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return model.JobDetails{}, err
+	}
+	return details, nil
+}
+
+func currentJobDetailsTx(ctx context.Context, tx pgx.Tx, jobID int64) (model.JobDetails, error) {
+	if ctx == nil || tx == nil || jobID <= 0 {
+		return model.JobDetails{}, fmt.Errorf("current job details transaction requires PostgreSQL, context, and a positive job ID")
+	}
 	row := tx.QueryRow(ctx, `
 		SELECT id, instruction, pipeline, status, result, error, metadata, current_generation,
 		       created_at, updated_at, completed_at
@@ -100,9 +117,6 @@ func (r *Repository) CurrentJobDetails(ctx context.Context, jobID int64) (model.
 	}
 	stepsRows.Close()
 
-	if err := tx.Commit(ctx); err != nil {
-		return model.JobDetails{}, err
-	}
 	return model.JobDetails{Job: job, Steps: steps}, nil
 }
 

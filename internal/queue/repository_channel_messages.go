@@ -11,12 +11,33 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
+type channelMessageQuerier interface {
+	QueryRow(context.Context, string, ...any) pgx.Row
+	Query(context.Context, string, ...any) (pgx.Rows, error)
+}
+
 func (r *Repository) ListChannelMessages(
 	ctx context.Context,
 	channelID model.ChannelID,
 	limit int,
 	beforeID *int64,
 ) (model.ChannelMessagePage, error) {
+	if r == nil || r.pool == nil {
+		return model.ChannelMessagePage{}, fmt.Errorf("channel message list requires PostgreSQL")
+	}
+	return listChannelMessages(ctx, r.pool, channelID, limit, beforeID)
+}
+
+func listChannelMessages(
+	ctx context.Context,
+	querier channelMessageQuerier,
+	channelID model.ChannelID,
+	limit int,
+	beforeID *int64,
+) (model.ChannelMessagePage, error) {
+	if ctx == nil || querier == nil {
+		return model.ChannelMessagePage{}, fmt.Errorf("channel message list requires PostgreSQL and context")
+	}
 	if err := channelID.Validate(); err != nil {
 		return model.ChannelMessagePage{}, err
 	}
@@ -27,13 +48,13 @@ func (r *Repository) ListChannelMessages(
 		return model.ChannelMessagePage{}, fmt.Errorf("channel message cursor must be positive")
 	}
 	var exists bool
-	if err := r.pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM ai_channels WHERE id=$1)`, channelID).Scan(&exists); err != nil {
+	if err := querier.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM ai_channels WHERE id=$1)`, channelID).Scan(&exists); err != nil {
 		return model.ChannelMessagePage{}, err
 	}
 	if !exists {
 		return model.ChannelMessagePage{}, pgx.ErrNoRows
 	}
-	rows, err := r.pool.Query(ctx, `
+	rows, err := querier.Query(ctx, `
 		SELECT message.id,message.channel_id,message.role,message.content,message.created_at,
 		       channel.mode,COALESCE(fictional_character.name,research_character.name),
 		       fictional.source_message_id IS NOT NULL,research.source_message_id IS NOT NULL,

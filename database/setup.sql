@@ -1009,11 +1009,89 @@ CREATE FUNCTION require_current_job_generation_boundary() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
 BEGIN
-    IF NEW.purpose='replan' AND
+    IF NEW.purpose IN ('interrupt', 'replan') AND
        NEW.boundary_action NOT IN ('v3_coding', 'objective_resolve') THEN
         RAISE EXCEPTION 'new job generation boundary % is retired', NEW.boundary_action;
     END IF;
     RETURN NEW;
+END;
+$$;
+
+
+--
+-- Name: require_lifecycle_generation_transition(); Type: FUNCTION; Schema: current runtime; Owner: -
+--
+
+CREATE FUNCTION require_lifecycle_generation_transition() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+    transition_generation BIGINT;
+    transition_purpose TEXT;
+    transition_predecessor BIGINT;
+    transition_boundary TEXT;
+    transition_feedback TEXT;
+BEGIN
+    IF NEW.kind NOT IN ('interrupt_job', 'replan_job', 'submit_feedback') THEN
+        RETURN NULL;
+    END IF;
+    transition_generation := CASE
+        WHEN NEW.kind='submit_feedback' THEN NEW.observed_generation
+        ELSE NEW.result_generation
+    END;
+    SELECT purpose,predecessor_generation,boundary_action,feedback
+    INTO transition_purpose,transition_predecessor,transition_boundary,transition_feedback
+    FROM job_generations
+    WHERE job_id=NEW.job_id AND generation=transition_generation;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'lifecycle operation lacks exact generation authority';
+    END IF;
+    IF NEW.kind='submit_feedback' THEN
+        IF transition_purpose='interrupt' THEN
+            RAISE EXCEPTION 'interrupted canonical boundary requires explicit replan';
+        END IF;
+        RETURN NULL;
+    END IF;
+    IF transition_purpose IS DISTINCT FROM
+           CASE WHEN NEW.kind='interrupt_job' THEN 'interrupt' ELSE 'replan' END OR
+       transition_predecessor IS DISTINCT FROM NEW.observed_generation OR
+       transition_feedback IS DISTINCT FROM NEW.command_payload->>'feedback' THEN
+        RAISE EXCEPTION 'lifecycle generation differs from its exact transition command';
+    END IF;
+    IF NEW.kind='interrupt_job' THEN
+        IF NOT EXISTS (
+            SELECT 1 FROM jobs
+            WHERE id=NEW.job_id AND current_generation=NEW.result_generation
+              AND status='waiting_input'
+        ) OR NOT EXISTS (
+            SELECT 1 FROM job_steps AS boundary_step
+            WHERE boundary_step.job_id=NEW.job_id
+              AND boundary_step.generation=NEW.result_generation
+              AND boundary_step.superseded_at_generation IS NULL
+              AND boundary_step.action=transition_boundary
+              AND boundary_step.status='waiting_input'
+              AND NOT EXISTS (
+                  SELECT 1 FROM job_steps AS predecessor
+                  WHERE predecessor.job_id=boundary_step.job_id
+                    AND predecessor.generation=boundary_step.generation
+                    AND predecessor.superseded_at_generation IS NULL
+                    AND predecessor.sort_index<boundary_step.sort_index
+              )
+        ) OR (
+            SELECT COUNT(*) FROM job_steps
+            WHERE job_id=NEW.job_id AND generation=NEW.result_generation
+              AND superseded_at_generation IS NULL AND status='waiting_input'
+        )<>1 THEN
+            RAISE EXCEPTION 'interrupt lifecycle lacks one exact waiting canonical boundary';
+        END IF;
+    ELSIF NOT EXISTS (
+        SELECT 1 FROM jobs
+        WHERE id=NEW.job_id AND current_generation=NEW.result_generation
+          AND status='running'
+    ) THEN
+        RAISE EXCEPTION 'replan lifecycle lacks running same-job generation authority';
+    END IF;
+    RETURN NULL;
 END;
 $$;
 
@@ -3593,10 +3671,9 @@ CREATE TABLE job_generations (
     feedback text,
     feedback_sha256 text,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT job_generations_authoritative_shape CHECK ((((generation = 1) AND (purpose = 'initial'::text) AND (predecessor_generation IS NULL) AND (boundary_action IS NULL) AND (feedback IS NULL) AND (feedback_sha256 IS NULL)) OR ((generation > 1) AND (purpose = 'replan'::text) AND (predecessor_generation = (generation - 1)) AND (boundary_action = ANY (ARRAY['v3_coding'::text, 'objective_resolve'::text])) AND lifecycle_feedback_is_valid(feedback, 65536) AND (feedback_sha256 ~ '^[0-9a-f]{64}$'::text) AND (feedback_sha256 = encode(pg_catalog.sha256(convert_to(feedback, 'UTF8')), 'hex'::text))))),
+    CONSTRAINT job_generations_authoritative_shape CHECK ((((generation = 1) AND (purpose = 'initial'::text) AND (predecessor_generation IS NULL) AND (boundary_action IS NULL) AND (feedback IS NULL) AND (feedback_sha256 IS NULL)) OR ((generation > 1) AND (purpose = ANY (ARRAY['interrupt'::text, 'replan'::text])) AND (predecessor_generation = (generation - 1)) AND (boundary_action = ANY (ARRAY['v3_coding'::text, 'objective_resolve'::text])) AND lifecycle_feedback_is_valid(feedback, 2048) AND (feedback_sha256 ~ '^[0-9a-f]{64}$'::text) AND (feedback_sha256 = encode(pg_catalog.sha256(convert_to(feedback, 'UTF8')), 'hex'::text))))),
     CONSTRAINT job_generations_generation_check CHECK ((generation > 0)),
-    CONSTRAINT job_generations_objective_feedback_bounded CHECK (((boundary_action <> 'objective_resolve'::text) OR (octet_length(feedback) <= 2048))),
-    CONSTRAINT job_generations_purpose_check CHECK ((purpose = ANY (ARRAY['initial'::text, 'replan'::text])))
+    CONSTRAINT job_generations_purpose_check CHECK ((purpose = ANY (ARRAY['initial'::text, 'interrupt'::text, 'replan'::text])))
 );
 
 
@@ -3619,14 +3696,14 @@ CREATE TABLE job_lifecycle_operations (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT job_lifecycle_operations_check CHECK (((jsonb_typeof(command_payload) = 'object'::text) AND (command_payload ? 'operation_id'::text) AND ((command_payload ->> 'operation_id'::text) = operation_id))),
     CONSTRAINT job_lifecycle_operations_check2 CHECK (((jsonb_typeof(result_job) = 'object'::text) AND (result_job ? 'id'::text) AND (result_job ? 'current_generation'::text) AND (result_job ? 'status'::text) AND (((result_job ->> 'id'::text))::bigint = job_id) AND (((result_job ->> 'current_generation'::text))::bigint = result_generation) AND ((result_job ->> 'status'::text) = result_job_status))),
-    CONSTRAINT job_lifecycle_operations_check3 CHECK ((((kind = 'complete_step'::text) AND (step_id IS NOT NULL) AND (result_generation = observed_generation) AND (result_step_status = 'completed'::text)) OR ((kind = 'fail_step'::text) AND (step_id IS NOT NULL) AND (result_generation = observed_generation) AND (result_step_status = 'failed'::text) AND (result_job_status = 'failed'::text)) OR ((kind = 'submit_feedback'::text) AND (step_id IS NOT NULL) AND (result_generation = observed_generation) AND (result_step_status = 'completed'::text)) OR ((kind = 'replan_job'::text) AND (step_id IS NULL) AND (result_step_status IS NULL) AND (result_generation = (observed_generation + 1)) AND (result_job_status = 'running'::text)) OR ((kind = 'cancel_job'::text) AND (step_id IS NULL) AND (result_step_status IS NULL) AND (result_generation = observed_generation) AND (result_job_status = 'canceled'::text)))),
+    CONSTRAINT job_lifecycle_operations_check3 CHECK ((((kind = 'complete_step'::text) AND (step_id IS NOT NULL) AND (result_generation = observed_generation) AND (result_step_status = 'completed'::text)) OR ((kind = 'fail_step'::text) AND (step_id IS NOT NULL) AND (result_generation = observed_generation) AND (result_step_status = 'failed'::text) AND (result_job_status = 'failed'::text)) OR ((kind = 'submit_feedback'::text) AND (step_id IS NOT NULL) AND (result_generation = observed_generation) AND (result_step_status = 'completed'::text)) OR ((kind = 'interrupt_job'::text) AND (step_id IS NULL) AND (result_step_status IS NULL) AND (result_generation = (observed_generation + 1)) AND (result_job_status = 'waiting_input'::text)) OR ((kind = 'replan_job'::text) AND (step_id IS NULL) AND (result_step_status IS NULL) AND (result_generation = (observed_generation + 1)) AND (result_job_status = 'running'::text)) OR ((kind = 'cancel_job'::text) AND (step_id IS NULL) AND (result_step_status IS NULL) AND (result_generation = observed_generation) AND (result_job_status = 'canceled'::text)))),
     CONSTRAINT job_lifecycle_operations_check4 CHECK (
 CASE
     WHEN (kind = ANY (ARRAY['complete_step'::text, 'fail_step'::text])) THEN ((command_payload ? 'step_id'::text) AND (((command_payload ->> 'step_id'::text))::bigint = step_id))
     ELSE ((command_payload ? 'job_id'::text) AND (((command_payload ->> 'job_id'::text))::bigint = job_id))
 END),
     CONSTRAINT job_lifecycle_operations_command_sha256_check CHECK ((command_sha256 ~ '^[0-9a-f]{64}$'::text)),
-    CONSTRAINT job_lifecycle_operations_kind_check CHECK ((kind = ANY (ARRAY['complete_step'::text, 'fail_step'::text, 'submit_feedback'::text, 'replan_job'::text, 'cancel_job'::text]))),
+    CONSTRAINT job_lifecycle_operations_kind_check CHECK ((kind = ANY (ARRAY['complete_step'::text, 'fail_step'::text, 'submit_feedback'::text, 'interrupt_job'::text, 'replan_job'::text, 'cancel_job'::text]))),
     CONSTRAINT job_lifecycle_operations_observed_generation_check CHECK ((observed_generation > 0)),
     CONSTRAINT job_lifecycle_operations_operation_id_check CHECK ((operation_id ~ '^lifecycle_operation_[0-9a-f]{64}$'::text)),
     CONSTRAINT job_lifecycle_operations_result_generation_check CHECK ((result_generation > 0)),
@@ -3761,7 +3838,7 @@ CREATE TABLE lifecycle_operation_registry (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT lifecycle_operation_registry_check CHECK (((jsonb_typeof(command_payload) = 'object'::text) AND (command_payload ? 'operation_id'::text) AND ((command_payload ->> 'operation_id'::text) = operation_id))),
     CONSTRAINT lifecycle_operation_registry_command_sha256_check CHECK ((command_sha256 ~ '^[0-9a-f]{64}$'::text)),
-    CONSTRAINT lifecycle_operation_registry_kind_check CHECK ((kind = ANY (ARRAY['complete_step'::text, 'fail_step'::text, 'submit_feedback'::text, 'replan_job'::text, 'scrum_channel_message'::text, 'cancel_job'::text]))),
+    CONSTRAINT lifecycle_operation_registry_kind_check CHECK ((kind = ANY (ARRAY['complete_step'::text, 'fail_step'::text, 'submit_feedback'::text, 'interrupt_job'::text, 'replan_job'::text, 'scrum_channel_message'::text, 'cancel_job'::text]))),
     CONSTRAINT lifecycle_operation_registry_operation_id_check CHECK ((operation_id ~ '^lifecycle_operation_[0-9a-f]{64}$'::text))
 );
 
@@ -5184,7 +5261,7 @@ ALTER TABLE ONLY job_lifecycle_operations
 --
 
 ALTER TABLE job_lifecycle_operations
-    ADD CONSTRAINT job_lifecycle_operations_roleplay_payload_check CHECK ((((kind = 'complete_step'::text) AND (command_payload ?& ARRAY['operation_id'::text, 'step_id'::text, 'output'::text, 'context_key'::text, 'context_value'::text]) AND ((command_payload - ARRAY['operation_id'::text, 'step_id'::text, 'output'::text, 'context_key'::text, 'context_value'::text, 'roleplay_responses'::text, 'roleplay_user_canon'::text, 'roleplay_user_ongoing_action'::text]) = '{}'::jsonb) AND roleplay_lifecycle_response_round_valid(COALESCE((command_payload -> 'roleplay_responses'::text), '[]'::jsonb)) AND ((NOT (command_payload ? 'roleplay_user_canon'::text)) OR roleplay_user_canon_payload_valid((command_payload -> 'roleplay_user_canon'::text))) AND ((NOT (command_payload ? 'roleplay_user_ongoing_action'::text)) OR roleplay_user_ongoing_action_payload_valid((command_payload -> 'roleplay_user_ongoing_action'::text)))) OR ((kind = 'fail_step'::text) AND (command_payload ?& ARRAY['operation_id'::text, 'step_id'::text, 'error'::text]) AND ((command_payload - ARRAY['operation_id'::text, 'step_id'::text, 'error'::text]) = '{}'::jsonb)) OR ((kind = ANY (ARRAY['submit_feedback'::text, 'replan_job'::text])) AND (command_payload ?& ARRAY['operation_id'::text, 'job_id'::text, 'feedback'::text]) AND ((command_payload - ARRAY['operation_id'::text, 'job_id'::text, 'feedback'::text]) = '{}'::jsonb)) OR ((kind = 'cancel_job'::text) AND (command_payload ?& ARRAY['operation_id'::text, 'job_id'::text, 'reason'::text]) AND ((command_payload - ARRAY['operation_id'::text, 'job_id'::text, 'reason'::text]) = '{}'::jsonb)))) NOT VALID;
+    ADD CONSTRAINT job_lifecycle_operations_roleplay_payload_check CHECK ((((kind = 'complete_step'::text) AND (command_payload ?& ARRAY['operation_id'::text, 'step_id'::text, 'output'::text, 'context_key'::text, 'context_value'::text]) AND ((command_payload - ARRAY['operation_id'::text, 'step_id'::text, 'output'::text, 'context_key'::text, 'context_value'::text, 'roleplay_responses'::text, 'roleplay_user_canon'::text, 'roleplay_user_ongoing_action'::text]) = '{}'::jsonb) AND roleplay_lifecycle_response_round_valid(COALESCE((command_payload -> 'roleplay_responses'::text), '[]'::jsonb)) AND ((NOT (command_payload ? 'roleplay_user_canon'::text)) OR roleplay_user_canon_payload_valid((command_payload -> 'roleplay_user_canon'::text))) AND ((NOT (command_payload ? 'roleplay_user_ongoing_action'::text)) OR roleplay_user_ongoing_action_payload_valid((command_payload -> 'roleplay_user_ongoing_action'::text)))) OR ((kind = 'fail_step'::text) AND (command_payload ?& ARRAY['operation_id'::text, 'step_id'::text, 'error'::text]) AND ((command_payload - ARRAY['operation_id'::text, 'step_id'::text, 'error'::text]) = '{}'::jsonb)) OR ((kind = ANY (ARRAY['submit_feedback'::text, 'interrupt_job'::text, 'replan_job'::text])) AND (command_payload ?& ARRAY['operation_id'::text, 'job_id'::text, 'feedback'::text]) AND ((command_payload - ARRAY['operation_id'::text, 'job_id'::text, 'feedback'::text]) = '{}'::jsonb)) OR ((kind = 'cancel_job'::text) AND (command_payload ?& ARRAY['operation_id'::text, 'job_id'::text, 'reason'::text]) AND ((command_payload - ARRAY['operation_id'::text, 'job_id'::text, 'reason'::text]) = '{}'::jsonb)))) NOT VALID;
 
 
 --
@@ -6582,6 +6659,13 @@ CREATE TRIGGER job_generations_truncate_immutable BEFORE TRUNCATE ON job_generat
 --
 
 CREATE TRIGGER job_lifecycle_operations_immutable BEFORE DELETE OR UPDATE ON job_lifecycle_operations FOR EACH ROW EXECUTE FUNCTION prevent_job_lifecycle_operation_mutation();
+
+
+--
+-- Name: job_lifecycle_operations job_lifecycle_operations_require_generation_transition; Type: TRIGGER; Schema: current runtime; Owner: -
+--
+
+CREATE CONSTRAINT TRIGGER job_lifecycle_operations_require_generation_transition AFTER INSERT ON job_lifecycle_operations DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION require_lifecycle_generation_transition();
 
 
 --

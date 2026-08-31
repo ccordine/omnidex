@@ -9,6 +9,8 @@ import (
 	"github.com/gryph/omnidex/internal/model"
 )
 
+const maxCancelReasonBytes = 64 * 1024
+
 var ErrInvalidJobInstruction = errors.New("invalid job instruction")
 
 func validateJobInstruction(instruction string) error {
@@ -38,8 +40,8 @@ func validateCancelReason(reason string) (string, error) {
 	if strings.TrimSpace(reason) == "" {
 		return "", fmt.Errorf("cancel reason is required")
 	}
-	if len(reason) > maxReplanFeedbackBytes {
-		return "", fmt.Errorf("cancel reason exceeds the %d-byte limit", maxReplanFeedbackBytes)
+	if len(reason) > maxCancelReasonBytes {
+		return "", fmt.Errorf("cancel reason exceeds the %d-byte limit", maxCancelReasonBytes)
 	}
 	return reason, nil
 }

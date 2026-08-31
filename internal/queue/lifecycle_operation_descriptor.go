@@ -196,7 +196,7 @@ func normalizeSubmitFeedbackCommand(command SubmitJobFeedbackCommand) (SubmitJob
 	if command.JobID <= 0 {
 		return SubmitJobFeedbackCommand{}, fmt.Errorf("feedback command requires a positive job ID")
 	}
-	feedback, _, err := validateLifecycleFeedback(command.Feedback, "job feedback")
+	feedback, _, err := validateJobFeedback(command.Feedback)
 	if err != nil {
 		return SubmitJobFeedbackCommand{}, err
 	}
@@ -209,6 +209,18 @@ func normalizeReplanJobCommand(command ReplanJobCommand) (ReplanJobCommand, stri
 		return ReplanJobCommand{}, "", fmt.Errorf("replan command requires a positive job ID")
 	}
 	feedback, feedbackSHA, err := validateReplanFeedback(command.Feedback)
+	if err != nil {
+		return ReplanJobCommand{}, "", err
+	}
+	command.Feedback = feedback
+	return command, feedbackSHA, nil
+}
+
+func normalizeInterruptJobCommand(command ReplanJobCommand) (ReplanJobCommand, string, error) {
+	if command.JobID <= 0 {
+		return ReplanJobCommand{}, "", fmt.Errorf("interrupt command requires a positive job ID")
+	}
+	feedback, feedbackSHA, err := validateInterruptFeedback(command.Feedback)
 	if err != nil {
 		return ReplanJobCommand{}, "", err
 	}
@@ -243,8 +255,8 @@ func validateLifecycleText(name, value string, maximum int, allowEmpty bool) err
 
 func registeredLifecycleOperationKind(kind LifecycleOperationKind) bool {
 	switch kind {
-	case LifecycleCompleteStep, LifecycleFailStep, LifecycleSubmitFeedback, LifecycleReplanJob,
-		LifecycleCancelJob:
+	case LifecycleCompleteStep, LifecycleFailStep, LifecycleSubmitFeedback, LifecycleInterruptJob,
+		LifecycleReplanJob, LifecycleCancelJob:
 		return true
 	default:
 		return false

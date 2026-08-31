@@ -10,6 +10,7 @@ import (
 
 func (prepared *PreparedReconciliation) ApplyVerified(
 	ctx context.Context,
+	observer VerifiedChangeObserver,
 ) (ReconciliationResult, error) {
 	if prepared == nil {
 		return ReconciliationResult{}, fmt.Errorf("apply workspace reconciliation requires a prepared transaction")
@@ -52,7 +53,7 @@ func (prepared *PreparedReconciliation) ApplyVerified(
 	root := &authoritativeWorkspaceRoot{
 		Root: rootFS, authorityFD: int(directory.Fd()), mountID: mountID,
 	}
-	result, applyErr := applyReconciliation(ctx, root, prepared.desired)
+	result, applyErr := applyReconciliation(ctx, root, prepared.desired, observer)
 	closeErr := errors.Join(directory.Close(), rootFS.Close())
 	if applyErr != nil {
 		return result, errors.Join(applyErr, closeErr)
@@ -68,6 +69,7 @@ func applyReconciliation(
 	ctx context.Context,
 	root *authoritativeWorkspaceRoot,
 	desired []DesiredFile,
+	observer VerifiedChangeObserver,
 ) (ReconciliationResult, error) {
 	result := ReconciliationResult{Changes: []Change{}}
 	moves := make([]DesiredFile, 0)
@@ -76,7 +78,7 @@ func applyReconciliation(
 			moves = append(moves, state)
 		}
 	}
-	if err := applyMoves(ctx, root, moves, &result); err != nil {
+	if err := applyMoves(ctx, root, moves, &result, observer); err != nil {
 		return result, err
 	}
 	for _, state := range desired {
@@ -88,17 +90,17 @@ func applyReconciliation(
 		}
 		if state.Present {
 			if state.PreserveExisting {
-				if err := applyRequiredFile(ctx, root, state, &result); err != nil {
+				if err := applyRequiredFile(ctx, root, state, &result, observer); err != nil {
 					return result, err
 				}
 				continue
 			}
-			if err := applyFile(ctx, root, state, &result); err != nil {
+			if err := applyFile(ctx, root, state, &result, observer); err != nil {
 				return result, err
 			}
 			continue
 		}
-		if err := applyDeletion(ctx, root, state.Path, &result); err != nil {
+		if err := applyDeletion(ctx, root, state.Path, &result, observer); err != nil {
 			return result, err
 		}
 	}
@@ -110,8 +112,9 @@ func applyRequiredFile(
 	root *authoritativeWorkspaceRoot,
 	state DesiredFile,
 	result *ReconciliationResult,
+	observer VerifiedChangeObserver,
 ) error {
-	missingParent, err := inspectWorkspaceParents(ctx, root, state.Path, false, nil)
+	missingParent, err := inspectWorkspaceParents(ctx, root, state.Path, false, nil, nil)
 	if err != nil {
 		return err
 	}
@@ -126,7 +129,7 @@ func applyRequiredFile(
 		}
 	}
 	state.PreserveExisting = false
-	return applyFile(ctx, root, state, result)
+	return applyFile(ctx, root, state, result, observer)
 }
 
 func applyFile(
@@ -134,8 +137,9 @@ func applyFile(
 	root *authoritativeWorkspaceRoot,
 	state DesiredFile,
 	result *ReconciliationResult,
+	observer VerifiedChangeObserver,
 ) (resultErr error) {
-	if _, err := inspectWorkspaceParents(ctx, root, state.Path, true, result); err != nil {
+	if _, err := inspectWorkspaceParents(ctx, root, state.Path, true, result, observer); err != nil {
 		return err
 	}
 	before, err := root.Lstat(state.Path)
@@ -188,13 +192,12 @@ func applyFile(
 	if existed {
 		kind = ChangeReplace
 	}
-	result.Changes = append(result.Changes, Change{Path: state.Path, Kind: kind})
 	after, err := root.Lstat(state.Path)
 	if err != nil || !after.Mode().IsRegular() || !os.SameFile(temporaryInfo, after) ||
 		after.Size() != int64(len(state.Content)) || after.Mode().Perm() != os.FileMode(state.Mode) {
 		return fmt.Errorf("installed workspace file %q differs from desired bytes or permissions", state.Path)
 	}
-	return nil
+	return recordVerifiedChange(result, observer, Change{Path: state.Path, Kind: kind})
 }
 
 func verifyOpenFileExact(
