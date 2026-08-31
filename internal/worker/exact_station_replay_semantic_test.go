@@ -116,20 +116,33 @@ func TestExactStationReplayPreservesCurrentRequirementRefinementKinds(t *testing
 	resultAuthority := assemblyline.ApplicationRequirementCandidateResultRelationInput{
 		Candidate: resultCandidate, Kind: resultKind, Cardinality: resultCardinality,
 	}
-	resultJob, err := assemblyline.NewApplicationRequirementCandidateResultRelationJob(
-		resultAuthority,
+	resultPresenceInput := assemblyline.ApplicationRequirementCandidateResultPresenceInput{
+		Candidate: resultCandidate, Kind: resultKind, Cardinality: resultCardinality,
+		Dimension: assemblyline.ApplicationRequirementDerivedValueDimension,
+	}
+	resultJob, err := assemblyline.NewApplicationRequirementCandidateResultPresenceJob(
+		resultPresenceInput,
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
 	resultArtifact, err := replayExactStationArtifact(
-		resultJob, assemblyline.ApplicationRequirementNoDerivedResult,
+		resultJob, string(assemblyline.ApplicationRequirementCandidateResultAbsent),
 	)
 	if err != nil || resultArtifact.Kind != string(resultJob.Kind) {
 		t.Fatalf("result-relation artifact=%+v error=%v", resultArtifact, err)
 	}
-	acceptedResult, err := assemblyline.DecodeApplicationRequirementCandidateResultRelationResult(
-		resultAuthority, assemblyline.ApplicationRequirementNoDerivedResult,
+	resultPresence, err := assemblyline.DecodeApplicationRequirementCandidateResultPresenceResult(
+		resultPresenceInput,
+		string(assemblyline.ApplicationRequirementCandidateResultAbsent),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	acceptedResult, err := assemblyline.ResolveApplicationRequirementCandidateResultRelation(
+		resultAuthority,
+		resultPresence,
+		nil,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -177,13 +190,11 @@ func TestExactStationReplayPreservesCurrentRequirementRefinementKinds(t *testing
 
 	const vague = "Display a correct refreshed result."
 	vagueAuthority := applicationRequirementCandidateResultRelationAuthorityForTest(t, vague)
-	missing, err := assemblyline.DecodeApplicationRequirementCandidateResultRelationResult(
+	missing := applicationRequirementCandidateResultRelationReceiptForTest(
+		t,
 		vagueAuthority,
 		assemblyline.ApplicationRequirementMissingResultRelation,
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
 	groundingInput := assemblyline.ApplicationRequirementCandidateResultRelationGroundingInput{
 		ImmutableRequest: inventoryInput.UserRequest, CandidateAuthority: vagueAuthority,
 		Context:               inventoryInput.Context,

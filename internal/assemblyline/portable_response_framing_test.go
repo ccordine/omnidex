@@ -19,8 +19,8 @@ func TestPortableResponseFramingRegistryIsExhaustive(t *testing.T) {
 		WorkRoleplayCanonFactInventory: {},
 		WorkRoleplayOngoingAction:      {}, WorkGroundedAnswerParagraphInventory: {},
 		WorkWebSynthesisParagraphInventory: {},
-		WorkTypeScriptRepairGuidance: {},
-		WorkFragmentGeneration:       {}, WorkFragmentGenerationReplacement: {},
+		WorkTypeScriptRepairGuidance:       {},
+		WorkFragmentGeneration:             {}, WorkFragmentGenerationReplacement: {},
 		WorkFragmentModification: {},
 		WorkFragmentCorrection:   {},
 	}

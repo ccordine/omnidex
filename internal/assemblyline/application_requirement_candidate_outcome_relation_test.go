@@ -123,7 +123,7 @@ func applicationRequirementCandidateOutcomeRelationFixture(
 	t.Helper()
 	candidateAuthority := applicationRequirementCandidateResultRelationInputFixture(t, candidate)
 	acceptedAuthority := applicationRequirementCandidateResultRelationInputFixture(t, accepted)
-	acceptedRelation, err := DecodeApplicationRequirementCandidateResultRelationResult(
+	acceptedRelation, err := canonicalApplicationRequirementCandidateResultRelation(
 		acceptedAuthority,
 		ApplicationRequirementNoDerivedResult,
 	)

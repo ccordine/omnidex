@@ -6,7 +6,7 @@ import (
 	"github.com/gryph/omnidex/internal/assemblyline"
 )
 
-const liveApplicationResultRelationBoundaryScope = "live-application-result-relation-boundary-v6"
+const liveApplicationResultRelationBoundaryScope = "live-application-result-relation-boundary-v7"
 
 func TestLiveApplicationResultRelationBoundaryQualification(t *testing.T) {
 	ctx, modelName, transport := newLiveApplicationSemanticBoundaryTransport(
@@ -114,8 +114,13 @@ func TestLiveApplicationResultRelationBoundaryQualification(t *testing.T) {
 	}
 	for _, fixture := range fixtures {
 		t.Run(fixture.name, func(t *testing.T) {
-			input := liveApplicationResultRelationInput(t, fixture.candidate)
-			job, err := assemblyline.NewApplicationRequirementCandidateResultRelationJob(input)
+			finalInput := liveApplicationResultRelationInput(t, fixture.candidate)
+			derivedInput := assemblyline.ApplicationRequirementCandidateResultPresenceInput{
+				Candidate: fixture.candidate, Kind: finalInput.Kind,
+				Cardinality: finalInput.Cardinality,
+				Dimension:   assemblyline.ApplicationRequirementDerivedValueDimension,
+			}
+			job, err := assemblyline.NewApplicationRequirementCandidateResultPresenceJob(derivedInput)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -124,9 +129,44 @@ func TestLiveApplicationResultRelationBoundaryQualification(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			result, err := assemblyline.DecodeApplicationRequirementCandidateResultRelationResult(
-				input,
+			derived, err := assemblyline.DecodeApplicationRequirementCandidateResultPresenceResult(
+				derivedInput,
 				raw.Candidate,
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var determining *assemblyline.ApplicationRequirementCandidateResultPresenceResult
+			if derived.Presence == assemblyline.ApplicationRequirementCandidateResultPresent {
+				determiningInput := assemblyline.ApplicationRequirementCandidateResultPresenceInput{
+					Candidate: fixture.candidate, Kind: finalInput.Kind,
+					Cardinality:          finalInput.Cardinality,
+					Dimension:            assemblyline.ApplicationRequirementDeterminingRelationDimension,
+					DerivedValuePresence: &derived,
+				}
+				determiningJob, err := assemblyline.NewApplicationRequirementCandidateResultPresenceJob(
+					determiningInput,
+				)
+				if err != nil {
+					t.Fatal(err)
+				}
+				determiningRaw, err := transport.execute(ctx, determiningJob, modelName)
+				if err != nil {
+					t.Fatal(err)
+				}
+				decoded, err := assemblyline.DecodeApplicationRequirementCandidateResultPresenceResult(
+					determiningInput,
+					determiningRaw.Candidate,
+				)
+				if err != nil {
+					t.Fatal(err)
+				}
+				determining = &decoded
+			}
+			result, err := assemblyline.ResolveApplicationRequirementCandidateResultRelation(
+				finalInput,
+				derived,
+				determining,
 			)
 			if err != nil {
 				t.Fatal(err)
@@ -135,9 +175,17 @@ func TestLiveApplicationResultRelationBoundaryQualification(t *testing.T) {
 				t.Fatalf("relation=%q, want %q", result.Relation, fixture.relation)
 			}
 			calls := transport.callsFrom(start)
-			if len(calls) != 1 ||
-				calls[0].kind != assemblyline.WorkApplicationRequirementCandidateResultRelation {
+			wantCalls := 2
+			if fixture.relation == assemblyline.ApplicationRequirementNoDerivedResult {
+				wantCalls = 1
+			}
+			if len(calls) != wantCalls {
 				t.Fatalf("unexpected exact station calls: %+v", calls)
+			}
+			for _, call := range calls {
+				if call.kind != assemblyline.WorkApplicationRequirementCandidateResultRelation {
+					t.Fatalf("unexpected exact station call: %+v", call)
+				}
 			}
 			logLiveCodingQualification(t, fixture.name, modelName, "not-applicable", calls)
 		})

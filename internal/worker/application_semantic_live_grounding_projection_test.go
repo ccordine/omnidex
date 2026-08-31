@@ -14,13 +14,11 @@ func TestLiveCodingQualificationResultRelationGroundingProjectionIsBound(t *test
 		t,
 		candidate,
 	)
-	missing, err := assemblyline.DecodeApplicationRequirementCandidateResultRelationResult(
+	missing := applicationRequirementCandidateResultRelationReceiptForTest(
+		t,
 		candidateAuthority,
 		assemblyline.ApplicationRequirementMissingResultRelation,
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
 	context, err := assemblyline.BootstrapApplicationContext(
 		request,
 		assemblyline.ApplicationWorkspaceEmpty,

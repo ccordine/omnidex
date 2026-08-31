@@ -129,7 +129,8 @@ func TestLiveApplicationRequirementCandidateInventoryBoundaryQualification(t *te
 				case assemblyline.WorkApplicationRequirementCandidateAuthorization:
 					authorizationCalls++
 				case assemblyline.WorkApplicationRequirementCandidateResultRelation:
-					if call.candidate == assemblyline.ApplicationRequirementExplicitResultRelation {
+					if call.resultDimension == assemblyline.ApplicationRequirementDeterminingRelationDimension &&
+						call.candidate == string(assemblyline.ApplicationRequirementCandidateResultPresent) {
 						explicitResultRelations++
 					}
 				}

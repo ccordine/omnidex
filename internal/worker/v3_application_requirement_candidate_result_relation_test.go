@@ -2,7 +2,6 @@ package worker
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"reflect"
 	"strings"
@@ -38,16 +37,23 @@ func TestDirectCodingRequirementCorrectsOneMissingResultRelation(t *testing.T) {
 			case assemblyline.WorkApplicationRequirementCandidateAuthorization:
 				candidate = assemblyline.ApplicationRequirementCandidateEntailed
 			case assemblyline.WorkApplicationRequirementCandidateResultRelation:
-				var input assemblyline.ApplicationRequirementCandidateResultRelationInput
-				if err := json.Unmarshal(job.Payload, &input); err != nil {
+				input, err := applicationRequirementCandidateResultPresenceInputForTest(job)
+				if err != nil {
 					return assemblyline.PortableResult{}, err
 				}
+				relation := ""
 				if input.Candidate == vague {
-					candidate = assemblyline.ApplicationRequirementMissingResultRelation
+					relation = assemblyline.ApplicationRequirementMissingResultRelation
 				} else if input.Candidate == corrected {
-					candidate = assemblyline.ApplicationRequirementExplicitResultRelation
+					relation = assemblyline.ApplicationRequirementExplicitResultRelation
 				} else {
 					return assemblyline.PortableResult{}, fmt.Errorf("unexpected candidate %q", input.Candidate)
+				}
+				candidate, err = applicationRequirementCandidateResultPresenceForRelationForTest(
+					job, relation,
+				)
+				if err != nil {
+					return assemblyline.PortableResult{}, err
 				}
 			case assemblyline.WorkApplicationRequirementCandidateResultRelationGrounding:
 				candidate = assemblyline.ApplicationRequirementExactlyOneDeterminingRelationEntailed
@@ -76,12 +82,14 @@ func TestDirectCodingRequirementCorrectsOneMissingResultRelation(t *testing.T) {
 		assemblyline.WorkApplicationRequirementCandidateKind,
 		assemblyline.WorkApplicationRequirementCandidateCardinality,
 		assemblyline.WorkApplicationRequirementCandidateResultRelation,
+		assemblyline.WorkApplicationRequirementCandidateResultRelation,
 		assemblyline.WorkApplicationRequirementCandidateResultRelationGrounding,
 		assemblyline.WorkApplicationRequirementCandidateResultRelationCorrection,
 		assemblyline.WorkApplicationRequirementCandidateAuthorization,
 		assemblyline.WorkApplicationRequirementCandidateKind,
 		assemblyline.WorkApplicationRequirementCandidateKind,
 		assemblyline.WorkApplicationRequirementCandidateCardinality,
+		assemblyline.WorkApplicationRequirementCandidateResultRelation,
 		assemblyline.WorkApplicationRequirementCandidateResultRelation,
 	}
 	if !reflect.DeepEqual(calls, want) {
@@ -137,7 +145,13 @@ func TestDirectCodingRequirementMissingResultRelationDiscardsOnlyThatCandidate(
 					case assemblyline.WorkApplicationRequirementCandidateAuthorization:
 						candidate = assemblyline.ApplicationRequirementCandidateEntailed
 					case assemblyline.WorkApplicationRequirementCandidateResultRelation:
-						candidate = assemblyline.ApplicationRequirementMissingResultRelation
+						var relationErr error
+						candidate, relationErr = applicationRequirementCandidateResultPresenceForRelationForTest(
+							job, assemblyline.ApplicationRequirementMissingResultRelation,
+						)
+						if relationErr != nil {
+							return assemblyline.PortableResult{}, relationErr
+						}
 					case assemblyline.WorkApplicationRequirementCandidateResultRelationGrounding:
 						candidate = test.grounding
 					case assemblyline.WorkApplicationRequirementCandidateResultRelationCorrection:
@@ -195,14 +209,19 @@ func TestDirectCodingRequirementCorrectionPreservesVerifiedContext(t *testing.T)
 			case assemblyline.WorkApplicationRequirementCandidateAuthorization:
 				candidate = assemblyline.ApplicationRequirementCandidateEntailed
 			case assemblyline.WorkApplicationRequirementCandidateResultRelation:
-				var input assemblyline.ApplicationRequirementCandidateResultRelationInput
-				if err := json.Unmarshal(job.Payload, &input); err != nil {
+				input, err := applicationRequirementCandidateResultPresenceInputForTest(job)
+				if err != nil {
 					return assemblyline.PortableResult{}, err
 				}
+				relation := assemblyline.ApplicationRequirementExplicitResultRelation
 				if input.Candidate == vague {
-					candidate = assemblyline.ApplicationRequirementMissingResultRelation
-				} else {
-					candidate = assemblyline.ApplicationRequirementExplicitResultRelation
+					relation = assemblyline.ApplicationRequirementMissingResultRelation
+				}
+				candidate, err = applicationRequirementCandidateResultPresenceForRelationForTest(
+					job, relation,
+				)
+				if err != nil {
+					return assemblyline.PortableResult{}, err
 				}
 			case assemblyline.WorkApplicationRequirementCandidateResultRelationGrounding:
 				prompt, err := assemblyline.RenderPortableJob(job)

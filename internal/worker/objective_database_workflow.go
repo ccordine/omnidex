@@ -11,9 +11,7 @@ import (
 	"github.com/gryph/omnidex/internal/datasource"
 )
 
-const (
-	maxObjectiveDatabaseRows = 50
-)
+const maxObjectiveDatabaseRows = 50
 
 type objectiveDatabaseExecutor func(
 	context.Context,

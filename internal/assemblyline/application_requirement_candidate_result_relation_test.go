@@ -6,80 +6,120 @@ import (
 	"testing"
 )
 
-func TestApplicationRequirementCandidateResultRelationIsOneBoundQuestion(t *testing.T) {
+func TestApplicationRequirementCandidateResultRelationUsesOnlyBoundBinaryQuestions(t *testing.T) {
 	t.Parallel()
 	fixtures := []struct {
 		name, candidate, relation string
+		derived, determining      ApplicationRequirementCandidateResultPresence
 	}{
 		{
-			name:      "ordered words",
-			candidate: "Sort the user-provided words in ascending Unicode code-point order and display the ordered words.",
-			relation:  ApplicationRequirementExplicitResultRelation,
+			name:        "ordered words",
+			candidate:   "Sort the user-provided words in ascending Unicode code-point order and display the ordered words.",
+			relation:    ApplicationRequirementExplicitResultRelation,
+			derived:     ApplicationRequirementCandidateResultPresent,
+			determining: ApplicationRequirementCandidateResultPresent,
 		},
 		{
 			name:      "inventory status",
 			candidate: "Display the current inventory status heading.",
 			relation:  ApplicationRequirementNoDerivedResult,
+			derived:   ApplicationRequirementCandidateResultAbsent,
 		},
 		{
-			name:      "underdetermined recommendation",
-			candidate: "Accept a user's preferences and display the best recommendation.",
-			relation:  ApplicationRequirementMissingResultRelation,
+			name:        "underdetermined recommendation",
+			candidate:   "Accept a user's preferences and display the best recommendation.",
+			relation:    ApplicationRequirementMissingResultRelation,
+			derived:     ApplicationRequirementCandidateResultPresent,
+			determining: ApplicationRequirementCandidateResultAbsent,
 		},
 		{
-			name:      "action-form transformation",
-			candidate: "The finished software resizes supplied images.",
-			relation:  ApplicationRequirementExplicitResultRelation,
+			name:        "action-form transformation",
+			candidate:   "The finished software resizes supplied images.",
+			relation:    ApplicationRequirementExplicitResultRelation,
+			derived:     ApplicationRequirementCandidateResultPresent,
+			determining: ApplicationRequirementCandidateResultPresent,
 		},
 	}
 	for _, fixture := range fixtures {
 		fixture := fixture
 		t.Run(fixture.name, func(t *testing.T) {
 			t.Parallel()
-			input := applicationRequirementCandidateResultRelationInputFixture(
+			finalInput := applicationRequirementCandidateResultRelationInputFixture(
 				t, fixture.candidate,
 			)
-			prompt, err := BuildApplicationRequirementCandidateResultRelationPrompt(input)
+			derivedInput := ApplicationRequirementCandidateResultPresenceInput{
+				Candidate: fixture.candidate, Kind: finalInput.Kind,
+				Cardinality: finalInput.Cardinality,
+				Dimension:   ApplicationRequirementDerivedValueDimension,
+			}
+			job, err := NewApplicationRequirementCandidateResultPresenceJob(derivedInput)
+			if err != nil {
+				t.Fatal(err)
+			}
+			prompt, err := RenderPortableJob(job)
 			if err != nil {
 				t.Fatal(err)
 			}
 			for _, required := range []string{
-				"Classify this exact one-outcome runtime requirement's derived-result relation",
-				"Follow in order; stop at the first result",
-				"named transform, read, extraction, decode, ordering, calculation, or selection over a governed object is not action-only",
-				"if the candidate asserts only an action, control, state transition, event, message, artifact creation/availability, or unchanged supplied data",
-				"trigger condition is not a derived-value rule",
-				"Detect a derived value when an observable value is selected, ordered, transformed, read, extracted, decoded, hashed, grouped, aggregated, measured, calculated, or decided",
-				"governed object is the input and the operation is the rule even when phrased as an action",
-				"existing per-item grouping keys are rules",
-				"actor-supplied expression, formula, or operation, or an actor-performed calculation",
-				"supplies runtime rule and operands",
-				"Passively describing an unspecified output as calculated, computed, evaluated, generated, or selected",
-				"Selected, correct, best, useful, or appropriate alone name no rule",
-				"equal key values determine groups",
-				"return EXPLICIT_DERIVED_RESULT_RELATION only if",
-				"otherwise return MISSING_DERIVED_RESULT_RELATION",
+				"does it assert a derived runtime value",
+				"Return ABSENT when the candidate asserts only an action",
+				"Is a derived runtime value PRESENT or ABSENT",
 				fixture.candidate,
 			} {
 				if !strings.Contains(prompt, required) {
-					t.Fatalf("result-relation prompt omitted %q:\n%s", required, prompt)
+					t.Fatalf("derived-value prompt omitted %q:\n%s", required, prompt)
 				}
 			}
 			if strings.Count(prompt, fixture.candidate) != 1 ||
-				strings.Contains(prompt, "APPLICATION REQUIREMENT INPUT") {
-				t.Fatalf("result-relation prompt exceeded one-candidate authority:\n%s", prompt)
+				strings.Contains(prompt, "independently computable determining relation") {
+				t.Fatalf("derived-value prompt exceeded one binary question:\n%s", prompt)
 			}
-			first := strings.Index(prompt, "1. A named transform")
-			second := strings.Index(prompt, "2. Detect a derived value")
-			third := strings.Index(prompt, "3. For a derived value")
-			if first < 0 || second <= first || third <= second {
-				t.Fatalf("result-relation rules are not ordered:\n%s", prompt)
+			derived, err := DecodeApplicationRequirementCandidateResultPresenceResult(
+				derivedInput, string(fixture.derived),
+			)
+			if err != nil {
+				t.Fatal(err)
 			}
-			if overhead := len(strings.Fields(prompt)) - len(strings.Fields(fixture.candidate)); overhead > 220 {
-				t.Fatalf("result-relation prompt overhead=%d words", overhead)
+
+			var determining *ApplicationRequirementCandidateResultPresenceResult
+			if fixture.derived == ApplicationRequirementCandidateResultPresent {
+				determiningInput := ApplicationRequirementCandidateResultPresenceInput{
+					Candidate: fixture.candidate, Kind: finalInput.Kind,
+					Cardinality:          finalInput.Cardinality,
+					Dimension:            ApplicationRequirementDeterminingRelationDimension,
+					DerivedValuePresence: &derived,
+				}
+				determiningJob, err := NewApplicationRequirementCandidateResultPresenceJob(
+					determiningInput,
+				)
+				if err != nil {
+					t.Fatal(err)
+				}
+				determiningPrompt, err := RenderPortableJob(determiningJob)
+				if err != nil {
+					t.Fatal(err)
+				}
+				for _, required := range []string{
+					"does it state an independently computable determining relation",
+					"existing per-item grouping keys are rules",
+					"actor-supplied expression, formula, or operation",
+					"Is the independently computable determining relation PRESENT or ABSENT",
+					fixture.candidate,
+				} {
+					if !strings.Contains(determiningPrompt, required) {
+						t.Fatalf("determining-relation prompt omitted %q:\n%s", required, determiningPrompt)
+					}
+				}
+				decoded, err := DecodeApplicationRequirementCandidateResultPresenceResult(
+					determiningInput, string(fixture.determining),
+				)
+				if err != nil {
+					t.Fatal(err)
+				}
+				determining = &decoded
 			}
-			result, err := DecodeApplicationRequirementCandidateResultRelationResult(
-				input, fixture.relation,
+			result, err := ResolveApplicationRequirementCandidateResultRelation(
+				finalInput, derived, determining,
 			)
 			if err != nil || result.Relation != fixture.relation {
 				t.Fatalf("result=%+v error=%v", result, err)
@@ -213,7 +253,13 @@ func TestApplicationRequirementCandidateResultRelationRejectsReceiptTampering(
 	for index, mutate := range mutations {
 		candidate := authority
 		mutate(&candidate)
-		if _, err := NewApplicationRequirementCandidateResultRelationJob(candidate); err == nil {
+		if _, err := NewApplicationRequirementCandidateResultPresenceJob(
+			ApplicationRequirementCandidateResultPresenceInput{
+				Candidate: candidate.Candidate, Kind: candidate.Kind,
+				Cardinality: candidate.Cardinality,
+				Dimension:   ApplicationRequirementDerivedValueDimension,
+			},
+		); err == nil {
 			t.Fatalf("tampered result-relation authority %d opened a job", index)
 		}
 	}
@@ -227,7 +273,7 @@ func TestApplicationRequirementCandidateResultRelationAcceptedReceiptIsTerminalA
 		ApplicationRequirementNoDerivedResult,
 		ApplicationRequirementExplicitResultRelation,
 	} {
-		result, err := DecodeApplicationRequirementCandidateResultRelationResult(input, relation)
+		result, err := canonicalApplicationRequirementCandidateResultRelation(input, relation)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -235,7 +281,7 @@ func TestApplicationRequirementCandidateResultRelationAcceptedReceiptIsTerminalA
 			t.Fatalf("accepted relation %s was rejected: %v", relation, err)
 		}
 	}
-	valid, err := DecodeApplicationRequirementCandidateResultRelationResult(
+	valid, err := canonicalApplicationRequirementCandidateResultRelation(
 		input, ApplicationRequirementNoDerivedResult,
 	)
 	if err != nil {

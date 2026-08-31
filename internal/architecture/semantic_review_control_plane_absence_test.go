@@ -146,6 +146,7 @@ func TestProductionHasNoRetiredSemanticReviewControlPlane(t *testing.T) {
 		"'database_evidence_refinement_candidate'",
 		"'database_evidence_refinement_authorization'",
 		"'database_evidence_refinement'",
+		"'database_evidence_refinement_model'",
 		"'web_synthesis_paragraph_coverage'",
 		"'runtime_capability_selection'",
 		"'response_correction'",
@@ -155,7 +156,11 @@ func TestProductionHasNoRetiredSemanticReviewControlPlane(t *testing.T) {
 		}
 	}
 
-	for _, relative := range []string{".env.example", "default.env"} {
+	for _, relative := range []string{
+		".env.example",
+		"default.env",
+		"cmd/cli/config_command.go",
+	} {
 		template, err := os.ReadFile(filepath.Join(repositoryRoot, relative))
 		if err != nil {
 			t.Fatal(err)

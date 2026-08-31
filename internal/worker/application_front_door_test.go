@@ -90,7 +90,14 @@ func TestApplicationFrontDoorUsesOneInventoryAndOneSievePassPerAcceptedLeaf(
 			case assemblyline.WorkApplicationRequirementCandidateOutcomeRelation:
 				candidate = assemblyline.ApplicationRequirementDistinctRuntimeOutcomes
 			case assemblyline.WorkApplicationRequirementCandidateResultRelation:
-				candidate = assemblyline.ApplicationRequirementNoDerivedResult
+				presence, presenceErr := applicationRequirementCandidateResultPresenceForRelationForTest(
+					job,
+					assemblyline.ApplicationRequirementNoDerivedResult,
+				)
+				if presenceErr != nil {
+					return assemblyline.PortableResult{}, presenceErr
+				}
+				candidate = presence
 				recordApplicationFrontDoorCandidateCall(t, candidateCounts, job)
 			default:
 				return assemblyline.PortableResult{}, fmt.Errorf("unexpected semantic work kind %q", job.Kind)
@@ -211,8 +218,8 @@ func recordApplicationFrontDoorCandidateCall(
 		}
 		candidate = input.Candidate
 	case assemblyline.WorkApplicationRequirementCandidateResultRelation:
-		var input assemblyline.ApplicationRequirementCandidateResultRelationInput
-		if err := json.Unmarshal(job.Payload, &input); err != nil {
+		input, err := applicationRequirementCandidateResultPresenceInputForTest(job)
+		if err != nil {
 			t.Fatal(err)
 		}
 		candidate = input.Candidate

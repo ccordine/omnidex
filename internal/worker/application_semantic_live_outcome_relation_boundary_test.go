@@ -63,13 +63,11 @@ func TestLiveApplicationOutcomeRelationBoundaryQualification(t *testing.T) {
 		t.Run(fixture.name, func(t *testing.T) {
 			candidateAuthority := liveApplicationResultRelationInput(t, fixture.candidate)
 			acceptedAuthority := liveApplicationResultRelationInput(t, fixture.accepted)
-			acceptedRelation, err := assemblyline.DecodeApplicationRequirementCandidateResultRelationResult(
+			acceptedRelation := applicationRequirementCandidateResultRelationReceiptForTest(
+				t,
 				acceptedAuthority,
 				assemblyline.ApplicationRequirementExplicitResultRelation,
 			)
-			if err != nil {
-				t.Fatal(err)
-			}
 			input := assemblyline.ApplicationRequirementCandidateOutcomeRelationInput{
 				Candidate:              fixture.candidate,
 				Kind:                   candidateAuthority.Kind,

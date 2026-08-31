@@ -33,7 +33,13 @@ func TestApplicationRequirementCorrectionCollisionEvaporatesAsDuplicate(t *testi
 			case assemblyline.WorkApplicationRequirementCandidateAuthorization:
 				candidate = assemblyline.ApplicationRequirementCandidateEntailed
 			case assemblyline.WorkApplicationRequirementCandidateResultRelation:
-				candidate = assemblyline.ApplicationRequirementMissingResultRelation
+				var err error
+				candidate, err = applicationRequirementCandidateResultPresenceForRelationForTest(
+					job, assemblyline.ApplicationRequirementMissingResultRelation,
+				)
+				if err != nil {
+					return assemblyline.PortableResult{}, err
+				}
 			case assemblyline.WorkApplicationRequirementCandidateResultRelationGrounding:
 				candidate = assemblyline.ApplicationRequirementExactlyOneDeterminingRelationEntailed
 			case assemblyline.WorkApplicationRequirementCandidateResultRelationCorrection:

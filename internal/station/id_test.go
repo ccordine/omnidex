@@ -54,6 +54,7 @@ func TestRetiredContextStationsAreUnregistered(t *testing.T) {
 		"web_claim_evidence_review",
 		"coding_known_artifact_truth",
 		"coding_runtime_capability_selection",
+		"database_evidence_refinement",
 	} {
 		if err := retired.Validate(); err == nil {
 			t.Fatalf("retired context station %q remains registered", retired)

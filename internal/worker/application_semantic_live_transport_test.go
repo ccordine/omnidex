@@ -23,6 +23,7 @@ type liveCodingQualificationCall struct {
 	candidate                                   string
 	subject                                     string
 	contentDimension                            assemblyline.ApplicationRequirementCandidateContentDimension
+	resultDimension                             assemblyline.ApplicationRequirementCandidateResultDimension
 	promptBytes, promptTokens, outputTokens     int
 	providerDuration, wallDuration              time.Duration
 }
@@ -117,11 +118,16 @@ func (transport *liveCodingQualificationTransport) execute(
 	if err != nil {
 		return assemblyline.PortableResult{}, err
 	}
+	resultDimension, err := liveCodingQualificationCallResultDimension(job)
+	if err != nil {
+		return assemblyline.PortableResult{}, err
+	}
 	transport.calls = append(transport.calls, liveCodingQualificationCall{
 		kind: job.Kind, jobSHA256: job.ID, promptSHA256: qualificationSHA256([]byte(prompt)),
 		requestSHA256: requestSHA256, responseSHA256: generation.ProviderResponseSHA256,
 		candidateSHA256: qualificationSHA256([]byte(generation.Content)),
-		candidate:       generation.Content, subject: subject, contentDimension: contentDimension,
+		candidate:       generation.Content, subject: subject,
+		contentDimension: contentDimension, resultDimension: resultDimension,
 		promptBytes: len(prompt), promptTokens: generation.Usage.PromptEvalCount,
 		outputTokens:     generation.Usage.EvalCount,
 		providerDuration: time.Duration(generation.Usage.TotalDurationNanos), wallDuration: wallDuration,
@@ -193,8 +199,8 @@ func logLiveCodingQualification(
 	t.Helper()
 	for index, call := range calls {
 		t.Logf(
-			"live_coding_qualification case=%s model=%s call=%d kind=%s subject=%q content_dimension=%q job_sha256=%s prompt_sha256=%s request_sha256=%s response_sha256=%s candidate_sha256=%s candidate=%q frozen_sha256=%s prompt_bytes=%d prompt_tokens=%d output_tokens=%d provider_ms=%d wall_ms=%d",
-			caseName, modelName, index+1, call.kind, call.subject, call.contentDimension, call.jobSHA256, call.promptSHA256, call.requestSHA256,
+			"live_coding_qualification case=%s model=%s call=%d kind=%s subject=%q content_dimension=%q result_dimension=%q job_sha256=%s prompt_sha256=%s request_sha256=%s response_sha256=%s candidate_sha256=%s candidate=%q frozen_sha256=%s prompt_bytes=%d prompt_tokens=%d output_tokens=%d provider_ms=%d wall_ms=%d",
+			caseName, modelName, index+1, call.kind, call.subject, call.contentDimension, call.resultDimension, call.jobSHA256, call.promptSHA256, call.requestSHA256,
 			call.responseSHA256, call.candidateSHA256, call.candidate, frozenSHA256,
 			call.promptBytes, call.promptTokens, call.outputTokens,
 			call.providerDuration.Milliseconds(), call.wallDuration.Milliseconds(),

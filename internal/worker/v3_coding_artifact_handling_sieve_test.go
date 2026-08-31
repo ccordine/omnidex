@@ -101,7 +101,13 @@ func TestApplicationInterpreterDoesNotPromoteArtifactIntakeCandidates(t *testing
 					case assemblyline.WorkApplicationRequirementCandidateCardinality:
 						candidate = assemblyline.ApplicationRequirementOneRuntimeOutcome
 					case assemblyline.WorkApplicationRequirementCandidateResultRelation:
-						candidate = assemblyline.ApplicationRequirementNoDerivedResult
+						presence, presenceErr := applicationRequirementCandidateResultPresenceForRelationForTest(
+							job, assemblyline.ApplicationRequirementNoDerivedResult,
+						)
+						if presenceErr != nil {
+							return assemblyline.PortableResult{}, presenceErr
+						}
+						candidate = presence
 					case assemblyline.WorkArtifactHandling:
 						artifactCalls++
 						candidate = string(handling)

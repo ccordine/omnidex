@@ -19,6 +19,7 @@ func assertLiveCodingQualificationCalls(
 	counts := map[assemblyline.WorkKind]int{}
 	bySubject := map[string]map[assemblyline.WorkKind]int{}
 	bySubjectDimension := map[string]map[assemblyline.ApplicationRequirementCandidateContentDimension]int{}
+	bySubjectResultDimension := map[string]map[assemblyline.ApplicationRequirementCandidateResultDimension]int{}
 	for _, call := range calls {
 		counts[call.kind]++
 		for _, digest := range []string{
@@ -47,6 +48,12 @@ func assertLiveCodingQualificationCalls(
 				}
 				bySubjectDimension[call.subject][call.contentDimension]++
 			}
+			if call.resultDimension != "" {
+				if bySubjectResultDimension[call.subject] == nil {
+					bySubjectResultDimension[call.subject] = map[assemblyline.ApplicationRequirementCandidateResultDimension]int{}
+				}
+				bySubjectResultDimension[call.subject][call.resultDimension]++
+			}
 		}
 	}
 	if counts[assemblyline.WorkApplicationProductContext] != 1 ||
@@ -64,18 +71,15 @@ func assertLiveCodingQualificationCalls(
 				bySubjectDimension[task.RequirementQuote],
 			)
 		}
-		for _, kind := range []assemblyline.WorkKind{
-			assemblyline.WorkApplicationRequirementCandidateCardinality,
-			assemblyline.WorkApplicationRequirementCandidateResultRelation,
-		} {
-			if bySubject[task.RequirementQuote][kind] != 1 {
-				t.Fatalf(
-					"accepted leaf %q was not sieved exactly once for %q: %+v",
-					task.RequirementQuote,
-					kind,
-					bySubject[task.RequirementQuote],
-				)
-			}
+		if bySubject[task.RequirementQuote][assemblyline.WorkApplicationRequirementCandidateCardinality] != 1 ||
+			bySubjectResultDimension[task.RequirementQuote][assemblyline.ApplicationRequirementDerivedValueDimension] != 1 ||
+			bySubjectResultDimension[task.RequirementQuote][assemblyline.ApplicationRequirementDeterminingRelationDimension] > 1 {
+			t.Fatalf(
+				"accepted leaf %q did not receive one bounded call per necessary sieve dimension: calls=%+v result_dimensions=%+v",
+				task.RequirementQuote,
+				bySubject[task.RequirementQuote],
+				bySubjectResultDimension[task.RequirementQuote],
+			)
 		}
 		expectedAuthorizationCalls := 1
 		if task.RequirementQuote == userRequest {
@@ -122,7 +126,7 @@ func liveCodingQualificationCallSubject(
 		}
 		return input.Candidate, "", nil
 	case assemblyline.WorkApplicationRequirementCandidateResultRelation:
-		var input assemblyline.ApplicationRequirementCandidateResultRelationInput
+		var input assemblyline.ApplicationRequirementCandidateResultPresenceInput
 		if err := json.Unmarshal(job.Payload, &input); err != nil {
 			return "", "", err
 		}
@@ -151,4 +155,17 @@ func liveCodingQualificationCallSubject(
 	default:
 		return "", "", nil
 	}
+}
+
+func liveCodingQualificationCallResultDimension(
+	job assemblyline.PortableJob,
+) (assemblyline.ApplicationRequirementCandidateResultDimension, error) {
+	if job.Kind != assemblyline.WorkApplicationRequirementCandidateResultRelation {
+		return "", nil
+	}
+	var input assemblyline.ApplicationRequirementCandidateResultPresenceInput
+	if err := json.Unmarshal(job.Payload, &input); err != nil {
+		return "", err
+	}
+	return input.Dimension, nil
 }

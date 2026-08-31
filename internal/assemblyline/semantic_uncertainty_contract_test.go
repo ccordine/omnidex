@@ -304,7 +304,7 @@ func TestSemanticUncertaintyRegistryDigestIsStable(t *testing.T) {
 		_, _ = hash.Write([]byte{0})
 	}
 	got := hex.EncodeToString(hash.Sum(nil))
-	const want = "31778698438e981716e438380b3e57208b7fa19707f673217327c4b2973b8829"
+	const want = "0371a17a3cbff29d282bd57c73157bd7e94b9bb9796c20788e43bb9fdf6fc145"
 	if got != want {
 		t.Fatalf("semantic uncertainty registry digest changed: got %s want %s", got, want)
 	}

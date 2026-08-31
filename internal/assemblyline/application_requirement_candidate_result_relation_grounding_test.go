@@ -95,7 +95,7 @@ func TestApplicationRequirementCandidateResultRelationGroundingRejectsAuthorityD
 	}
 
 	explicit := input
-	explicit.MissingResultRelation, err = DecodeApplicationRequirementCandidateResultRelationResult(
+	explicit.MissingResultRelation, err = canonicalApplicationRequirementCandidateResultRelation(
 		explicit.CandidateAuthority,
 		ApplicationRequirementExplicitResultRelation,
 	)
@@ -204,7 +204,7 @@ func applicationRequirementCandidateResultRelationGroundingInputWithContextFixtu
 ) ApplicationRequirementCandidateResultRelationGroundingInput {
 	t.Helper()
 	candidateAuthority := applicationRequirementCandidateResultRelationInputFixture(t, candidate)
-	missing, err := DecodeApplicationRequirementCandidateResultRelationResult(
+	missing, err := canonicalApplicationRequirementCandidateResultRelation(
 		candidateAuthority,
 		ApplicationRequirementMissingResultRelation,
 	)

@@ -9,32 +9,32 @@ import (
 
 func TestDatabaseCognitionPortableWorkHasOneExactStation(t *testing.T) {
 	wants := map[assemblyline.WorkKind]station.ID{
-		assemblyline.WorkDatabaseSchemaRelationInventory:         station.DatabaseSchemaSelection,
-		assemblyline.WorkDatabaseSchemaRelationNecessity:         station.DatabaseSchemaSelection,
-		assemblyline.WorkDatabaseSchemaRelationResolution:        station.DatabaseSchemaSelection,
-		assemblyline.WorkDatabaseQueryFromRelation:               station.DatabaseQueryIntent,
-		assemblyline.WorkDatabaseQueryShape:                      station.DatabaseQueryIntent,
-		assemblyline.WorkDatabaseQueryPurposeInventory:           station.DatabaseQueryIntent,
-		assemblyline.WorkDatabaseQueryPurposeNecessity:           station.DatabaseQueryIntent,
-		assemblyline.WorkDatabaseQueryPurposeRelation:            station.DatabaseQueryIntent,
-		assemblyline.WorkDatabaseQueryProjectionAggregate:        station.DatabaseQueryIntent,
-		assemblyline.WorkDatabaseQueryProjectionField:            station.DatabaseQueryIntent,
-		assemblyline.WorkDatabaseQueryProjectionTimeBucket:       station.DatabaseQueryIntent,
-		assemblyline.WorkDatabaseQueryFilterField:                station.DatabaseQueryIntent,
-		assemblyline.WorkDatabaseQueryFilterOperator:             station.DatabaseQueryIntent,
-		assemblyline.WorkDatabaseQueryFilterValue:                station.DatabaseQueryIntent,
-		assemblyline.WorkDatabaseQueryWindowField:                station.DatabaseQueryIntent,
-		assemblyline.WorkDatabaseQueryWindowUnit:                 station.DatabaseQueryIntent,
-		assemblyline.WorkDatabaseQueryWindowAmount:               station.DatabaseQueryIntent,
-		assemblyline.WorkDatabaseQueryExistenceRelation:          station.DatabaseQueryIntent,
-		assemblyline.WorkDatabaseQueryExistenceNegated:           station.DatabaseQueryIntent,
-		assemblyline.WorkDatabaseQueryHavingAggregate:            station.DatabaseQueryIntent,
-		assemblyline.WorkDatabaseQueryHavingField:                station.DatabaseQueryIntent,
-		assemblyline.WorkDatabaseQueryHavingOperator:             station.DatabaseQueryIntent,
-		assemblyline.WorkDatabaseQueryHavingValue:                station.DatabaseQueryIntent,
-		assemblyline.WorkDatabaseQueryOrderProjection:            station.DatabaseQueryIntent,
-		assemblyline.WorkDatabaseQueryOrderDirection:             station.DatabaseQueryIntent,
-		assemblyline.WorkDatabaseJoinPathSelection:               station.DatabaseJoinPathSelection,
+		assemblyline.WorkDatabaseSchemaRelationInventory:   station.DatabaseSchemaSelection,
+		assemblyline.WorkDatabaseSchemaRelationNecessity:   station.DatabaseSchemaSelection,
+		assemblyline.WorkDatabaseSchemaRelationResolution:  station.DatabaseSchemaSelection,
+		assemblyline.WorkDatabaseQueryFromRelation:         station.DatabaseQueryIntent,
+		assemblyline.WorkDatabaseQueryShape:                station.DatabaseQueryIntent,
+		assemblyline.WorkDatabaseQueryPurposeInventory:     station.DatabaseQueryIntent,
+		assemblyline.WorkDatabaseQueryPurposeNecessity:     station.DatabaseQueryIntent,
+		assemblyline.WorkDatabaseQueryPurposeRelation:      station.DatabaseQueryIntent,
+		assemblyline.WorkDatabaseQueryProjectionAggregate:  station.DatabaseQueryIntent,
+		assemblyline.WorkDatabaseQueryProjectionField:      station.DatabaseQueryIntent,
+		assemblyline.WorkDatabaseQueryProjectionTimeBucket: station.DatabaseQueryIntent,
+		assemblyline.WorkDatabaseQueryFilterField:          station.DatabaseQueryIntent,
+		assemblyline.WorkDatabaseQueryFilterOperator:       station.DatabaseQueryIntent,
+		assemblyline.WorkDatabaseQueryFilterValue:          station.DatabaseQueryIntent,
+		assemblyline.WorkDatabaseQueryWindowField:          station.DatabaseQueryIntent,
+		assemblyline.WorkDatabaseQueryWindowUnit:           station.DatabaseQueryIntent,
+		assemblyline.WorkDatabaseQueryWindowAmount:         station.DatabaseQueryIntent,
+		assemblyline.WorkDatabaseQueryExistenceRelation:    station.DatabaseQueryIntent,
+		assemblyline.WorkDatabaseQueryExistenceNegated:     station.DatabaseQueryIntent,
+		assemblyline.WorkDatabaseQueryHavingAggregate:      station.DatabaseQueryIntent,
+		assemblyline.WorkDatabaseQueryHavingField:          station.DatabaseQueryIntent,
+		assemblyline.WorkDatabaseQueryHavingOperator:       station.DatabaseQueryIntent,
+		assemblyline.WorkDatabaseQueryHavingValue:          station.DatabaseQueryIntent,
+		assemblyline.WorkDatabaseQueryOrderProjection:      station.DatabaseQueryIntent,
+		assemblyline.WorkDatabaseQueryOrderDirection:       station.DatabaseQueryIntent,
+		assemblyline.WorkDatabaseJoinPathSelection:         station.DatabaseJoinPathSelection,
 	}
 	for kind, want := range wants {
 		got, err := stationForPortableWorkKind(kind)
@@ -43,6 +43,14 @@ func TestDatabaseCognitionPortableWorkHasOneExactStation(t *testing.T) {
 		}
 		if got != want {
 			t.Fatalf("station for %s=%s want %s", kind, got, want)
+		}
+	}
+	for _, retired := range []assemblyline.WorkKind{
+		"database_evidence_refinement_candidate",
+		"database_evidence_refinement_authorization",
+	} {
+		if _, err := stationForPortableWorkKind(retired); err == nil {
+			t.Fatalf("retired database work kind %q retains a station route", retired)
 		}
 	}
 }

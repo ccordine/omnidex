@@ -81,7 +81,13 @@ func TestApplicationRequirementQueueDiscardsBadProposalsWithoutReviewingAccepted
 					candidate = assemblyline.ApplicationRequirementDistinctRuntimeOutcomes
 				}
 			case assemblyline.WorkApplicationRequirementCandidateResultRelation:
-				candidate = assemblyline.ApplicationRequirementNoDerivedResult
+				presence, presenceErr := applicationRequirementCandidateResultPresenceForRelationForTest(
+					job, assemblyline.ApplicationRequirementNoDerivedResult,
+				)
+				if presenceErr != nil {
+					return assemblyline.PortableResult{}, presenceErr
+				}
+				candidate = presence
 			default:
 				return assemblyline.PortableResult{}, fmt.Errorf("unexpected work kind %q", job.Kind)
 			}
@@ -151,7 +157,13 @@ func TestApplicationRequirementQueueSplicesEveryPartitionChildInSourceOrder(t *t
 			case assemblyline.WorkApplicationRequirementCandidateOutcomeRelation:
 				candidate = assemblyline.ApplicationRequirementDistinctRuntimeOutcomes
 			case assemblyline.WorkApplicationRequirementCandidateResultRelation:
-				candidate = assemblyline.ApplicationRequirementNoDerivedResult
+				presence, presenceErr := applicationRequirementCandidateResultPresenceForRelationForTest(
+					job, assemblyline.ApplicationRequirementNoDerivedResult,
+				)
+				if presenceErr != nil {
+					return assemblyline.PortableResult{}, presenceErr
+				}
+				candidate = presence
 			default:
 				return assemblyline.PortableResult{}, fmt.Errorf("unexpected work kind %q", job.Kind)
 			}
@@ -224,7 +236,13 @@ func TestApplicationRequirementQueuePreservesRuntimeChildOfMixedClause(t *testin
 				authorizationCandidates = append(authorizationCandidates, leaf)
 				candidate = assemblyline.ApplicationRequirementCandidateEntailed
 			case assemblyline.WorkApplicationRequirementCandidateResultRelation:
-				candidate = assemblyline.ApplicationRequirementNoDerivedResult
+				presence, presenceErr := applicationRequirementCandidateResultPresenceForRelationForTest(
+					job, assemblyline.ApplicationRequirementNoDerivedResult,
+				)
+				if presenceErr != nil {
+					return assemblyline.PortableResult{}, presenceErr
+				}
+				candidate = presence
 			default:
 				return assemblyline.PortableResult{}, fmt.Errorf("unexpected work kind %q", job.Kind)
 			}
@@ -291,7 +309,13 @@ func TestApplicationRequirementQueueSkipsSemanticAuthorizationForExactRequest(t 
 					case assemblyline.WorkApplicationRequirementCandidateCardinality:
 						candidate = assemblyline.ApplicationRequirementOneRuntimeOutcome
 					case assemblyline.WorkApplicationRequirementCandidateResultRelation:
-						candidate = assemblyline.ApplicationRequirementNoDerivedResult
+						presence, presenceErr := applicationRequirementCandidateResultPresenceForRelationForTest(
+							job, assemblyline.ApplicationRequirementNoDerivedResult,
+						)
+						if presenceErr != nil {
+							return assemblyline.PortableResult{}, presenceErr
+						}
+						candidate = presence
 					default:
 						return assemblyline.PortableResult{}, fmt.Errorf(
 							"unexpected work kind %q",

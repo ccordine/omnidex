@@ -112,13 +112,11 @@ func TestRequirementResultRelationGroundingAndCorrectionKeepRegisteredTemperatur
 		t,
 		candidate,
 	)
-	missing, err := assemblyline.DecodeApplicationRequirementCandidateResultRelationResult(
+	missing := applicationRequirementCandidateResultRelationReceiptForTest(
+		t,
 		candidateAuthority,
 		assemblyline.ApplicationRequirementMissingResultRelation,
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
 	groundingInput := assemblyline.ApplicationRequirementCandidateResultRelationGroundingInput{
 		ImmutableRequest: request, CandidateAuthority: candidateAuthority,
 		Context:               applicationContext,
@@ -185,28 +183,6 @@ func TestRequirementCandidateKindKeepsRegisteredTemperatureBaseline(t *testing.T
 	}
 	if got := preparedRequestTemperature(t, prepared); got != 0 {
 		t.Fatalf("candidate-kind wire temperature=%v, want 0", got)
-	}
-}
-
-func applicationRequirementCandidateResultRelationAuthorityForTest(
-	t testing.TB,
-	candidate string,
-) assemblyline.ApplicationRequirementCandidateResultRelationInput {
-	t.Helper()
-	kind := applicationRequirementCandidateKindReceiptForTest(
-		t,
-		candidate,
-		assemblyline.ApplicationRequirementCandidateTaskLocal,
-	)
-	cardinality, err := assemblyline.DecodeApplicationRequirementCandidateCardinalityResult(
-		assemblyline.ApplicationRequirementCandidateCardinalityInput{Candidate: candidate},
-		assemblyline.ApplicationRequirementOneRuntimeOutcome,
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return assemblyline.ApplicationRequirementCandidateResultRelationInput{
-		Candidate: candidate, Kind: kind, Cardinality: cardinality,
 	}
 }
 

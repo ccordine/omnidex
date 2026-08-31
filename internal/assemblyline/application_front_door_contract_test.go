@@ -82,7 +82,7 @@ func TestApplicationContextQuestionInventoryReturnsCandidatesOrAbsenceNotTools(t
 	}
 }
 
-func TestApplicationIntentUsesReviewedSemanticStatementsWithoutSubstringGates(t *testing.T) {
+func TestApplicationIntentUsesAcceptedSemanticStatementsWithoutSubstringGates(t *testing.T) {
 	t.Parallel()
 	request := "Build a browser-based counter app that displays the current count and has buttons to increment it, decrement it, and reset it to zero."
 	context, err := BootstrapApplicationContext(request, ApplicationWorkspaceEmpty)
@@ -141,7 +141,7 @@ func applicationIntentCandidateRequirementFixture(
 	relation string,
 ) ApplicationIntentCandidateRequirement {
 	t.Helper()
-	result, err := DecodeApplicationRequirementCandidateResultRelationResult(
+	result, err := canonicalApplicationRequirementCandidateResultRelation(
 		applicationRequirementCandidateResultRelationInputFixture(t, statement),
 		relation,
 	)

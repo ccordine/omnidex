@@ -120,14 +120,14 @@ func TestLoadExactConversationAndWebStationModels(t *testing.T) {
 		t.Fatal(err)
 	}
 	wants := map[station.ID]string{
-		station.ConversationObjectiveKind:  "kind",
-		station.ConversationResponse:       "conversation",
-		station.GroundedAnswer:             "grounded",
+		station.ConversationObjectiveKind: "kind",
+		station.ConversationResponse:      "conversation",
+		station.GroundedAnswer:            "grounded",
 		station.DatabaseSchemaSelection:   "database-schema",
 		station.DatabaseQueryIntent:       "database-intent",
 		station.DatabaseJoinPathSelection: "database-join",
-		station.WebRelevance:               "relevance",
-		station.WebGroundedSynthesis:       "synthesis",
+		station.WebRelevance:              "relevance",
+		station.WebGroundedSynthesis:      "synthesis",
 	}
 	for id, want := range wants {
 		if got := cfg.StationModels[id]; got != want {

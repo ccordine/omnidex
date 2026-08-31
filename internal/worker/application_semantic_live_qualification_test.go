@@ -189,7 +189,8 @@ func assertLiveCodingQualificationResultRelations(
 	for _, call := range calls {
 		switch call.kind {
 		case assemblyline.WorkApplicationRequirementCandidateResultRelation:
-			if call.candidate == assemblyline.ApplicationRequirementExplicitResultRelation {
+			if call.resultDimension == assemblyline.ApplicationRequirementDeterminingRelationDimension &&
+				call.candidate == string(assemblyline.ApplicationRequirementCandidateResultPresent) {
 				explicit++
 			}
 		case assemblyline.WorkApplicationRequirementCandidateResultRelationGrounding:
@@ -349,9 +350,12 @@ func validateLiveCodingQualificationProjection(
 		}
 		return nil
 	case assemblyline.WorkApplicationRequirementCandidateResultRelation:
-		var input assemblyline.ApplicationRequirementCandidateResultRelationInput
+		var input assemblyline.ApplicationRequirementCandidateResultPresenceInput
 		if err := json.Unmarshal(job.Payload, &input); err != nil {
 			return err
+		}
+		if _, err := assemblyline.NewApplicationRequirementCandidateResultPresenceJob(input); err != nil {
+			return fmt.Errorf("result relation lacks bound presence authority: %v", err)
 		}
 		kindInput := assemblyline.ApplicationRequirementCandidateKindInput{
 			Candidate: input.Candidate,

@@ -56,15 +56,13 @@ func directCodingTestRequirementRelations(
 		if err != nil {
 			t.Fatal(err)
 		}
-		relation, err := assemblyline.DecodeApplicationRequirementCandidateResultRelationResult(
+		relation := applicationRequirementCandidateResultRelationReceiptForTest(
+			t,
 			assemblyline.ApplicationRequirementCandidateResultRelationInput{
 				Candidate: task.RequirementQuote, Kind: kind, Cardinality: cardinality,
 			},
 			relations[index],
 		)
-		if err != nil {
-			t.Fatal(err)
-		}
 		accepted[index] = assemblyline.ApplicationRequirement{
 			ID: task.RequirementID, Statement: task.RequirementQuote,
 			RequestSHA256:  requestSHA256,
