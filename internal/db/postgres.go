@@ -167,6 +167,7 @@ func installRuntimeSchema(
 	}
 	if _, err := tx.Exec(ctx, `
 		SET LOCAL standard_conforming_strings TO on;
+		SET LOCAL check_function_bodies TO off;
 	`); err != nil {
 		return fmt.Errorf("set database setup SQL mode: %w", err)
 	}
