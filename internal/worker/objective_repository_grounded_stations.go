@@ -47,7 +47,7 @@ func (adapter *portableObjectiveRepositoryGroundingStation) Answer(
 			if err != nil {
 				return assemblyline.GroundedAnswerParagraphInventory{}, objectiveStationReceipt{}, err
 			}
-			return runObjectiveReusablePortableRawLeafCall(
+			return runObjectivePortableRawLeafStation(
 				ctx, adapter.runtime, "grounded_answer_paragraph_inventory", job,
 				station.GroundedAnswer, resolveModel,
 				func(raw string) (assemblyline.GroundedAnswerParagraphInventory, error) {
@@ -66,7 +66,7 @@ func (adapter *portableObjectiveRepositoryGroundingStation) Answer(
 			if err != nil {
 				return assemblyline.GroundedAnswerParagraphEvidenceRelationDecision{}, objectiveStationReceipt{}, err
 			}
-			return runObjectiveReusablePortableRawLeafCall(
+			return runObjectivePortableRawLeafStation(
 				ctx, adapter.runtime, "grounded_answer_paragraph_evidence_relation", job,
 				station.GroundedAnswer, resolveModel,
 				func(raw string) (assemblyline.GroundedAnswerParagraphEvidenceRelationDecision, error) {
@@ -85,7 +85,7 @@ func (adapter *portableObjectiveRepositoryGroundingStation) Answer(
 			if err != nil {
 				return assemblyline.GroundedAnswerParagraphAuthorizationDecision{}, objectiveStationReceipt{}, err
 			}
-			return runObjectiveReusablePortableRawLeafCall(
+			return runObjectivePortableRawLeafStation(
 				ctx, adapter.runtime, "grounded_answer_paragraph_authorization", job,
 				station.GroundedAnswer, resolveModel,
 				func(raw string) (assemblyline.GroundedAnswerParagraphAuthorizationDecision, error) {

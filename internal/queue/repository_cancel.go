@@ -82,11 +82,6 @@ func applyJobCancellationTx(
 			ErrStepNotWritable, job.ID,
 		)
 	}
-	if err := rejectUnresolvedGeneratedWorkloadDeploymentsTx(
-		ctx, tx, command.JobID,
-	); err != nil {
-		return model.Job{}, err
-	}
 	stepIDs, err := lockCurrentNonterminalStepIDsTx(ctx, tx, command.JobID, job.CurrentGeneration)
 	if err != nil {
 		return model.Job{}, err

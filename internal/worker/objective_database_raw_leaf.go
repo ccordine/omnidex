@@ -28,7 +28,7 @@ func (adapter portableObjectiveDatabaseStations) rawLeafCall(
 		job assemblyline.PortableJob,
 		decode objectiveDatabaseRawLeafDecoder,
 	) (any, int, error) {
-		value, receipt, err := runObjectiveReusablePortableRawLeafCall[any](
+		value, receipt, err := runObjectivePortableRawLeafStation[any](
 			ctx, adapter.runtime, subject, job, owner, resolveModel,
 			objectiveRawLeafDecoder[any](decode),
 			func(any) error { return nil },

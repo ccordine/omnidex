@@ -13,9 +13,7 @@ import (
 )
 
 const (
-	SnapshotSchemaV1 = "omnidex.workspace-snapshot.v1"
-
-	maxSnapshotEntries     = 100_000
+	SnapshotSchemaV3       = "omnidex.workspace-path-state.v3"
 	maxSnapshotPathBytes   = 4 * 1024
 	maxSnapshotTargetBytes = 16 * 1024
 )
@@ -23,58 +21,39 @@ const (
 type EntryKind string
 
 const (
-	EntryRegular EntryKind = "regular"
-	EntrySymlink EntryKind = "symlink"
+	EntryRegular   EntryKind = "regular"
+	EntrySymlink   EntryKind = "symlink"
+	EntryDirectory EntryKind = "directory"
 )
 
-type ExclusionReason string
-
-const (
-	ExclusionProtected   ExclusionReason = "protected"
-	ExclusionSensitive   ExclusionReason = "sensitive"
-	ExclusionAbsent      ExclusionReason = "absent"
-	ExclusionUnsupported ExclusionReason = "unsupported"
-)
-
+// Snapshot is the exact state of only the paths named in Paths. It is not an
+// inventory of the surrounding workspace, so unrelated files cannot affect a
+// reconciliation transaction.
 type Snapshot struct {
-	Schema      string      `json:"schema"`
-	ID          string      `json:"id"`
-	WorkspaceID string      `json:"workspace_id"`
-	Root        string      `json:"root"`
-	GeneratedAt time.Time   `json:"generated_at"`
-	Entries     []Entry     `json:"entries"`
-	Exclusions  []Exclusion `json:"exclusions"`
-	Git         *GitBinding `json:"git,omitempty"`
+	Schema      string    `json:"schema"`
+	ID          string    `json:"id"`
+	WorkspaceID string    `json:"workspace_id"`
+	Root        string    `json:"root"`
+	GeneratedAt time.Time `json:"generated_at"`
+	Paths       []string  `json:"paths"`
+	Entries     []Entry   `json:"entries"`
 }
 
 type Entry struct {
-	ID               string    `json:"id"`
-	Path             string    `json:"path"`
-	Kind             EntryKind `json:"kind"`
-	SHA256           string    `json:"sha256"`
-	Size             int64     `json:"size"`
-	Mode             uint32    `json:"mode"`
-	LinkTarget       string    `json:"link_target,omitempty"`
-	RepositoryFileID string    `json:"repository_file_id,omitempty"`
-}
-
-type Exclusion struct {
-	Path   string          `json:"path"`
-	Reason ExclusionReason `json:"reason"`
-}
-
-type GitBinding struct {
-	RepositorySnapshotID string `json:"repository_snapshot_id"`
-	RepositoryID         string `json:"repository_id"`
-	HeadCommit           string `json:"head_commit"`
-	StateSHA256          string `json:"state_sha256"`
+	ID         string    `json:"id"`
+	Path       string    `json:"path"`
+	Kind       EntryKind `json:"kind"`
+	SHA256     string    `json:"sha256"`
+	Size       int64     `json:"size"`
+	Mode       uint32    `json:"mode"`
+	LinkTarget string    `json:"link_target,omitempty"`
 }
 
 type snapshotIdentity struct {
 	Schema      string               `json:"schema"`
 	WorkspaceID string               `json:"workspace_id"`
+	Paths       []string             `json:"paths"`
 	Entries     []stateEntryIdentity `json:"entries"`
-	Exclusions  []Exclusion          `json:"exclusions"`
 }
 
 type stateEntryIdentity struct {
@@ -87,74 +66,53 @@ type stateEntryIdentity struct {
 }
 
 func (snapshot Snapshot) Validate() error {
-	if snapshot.Schema != SnapshotSchemaV1 {
-		return fmt.Errorf("workspace snapshot schema must be %q", SnapshotSchemaV1)
+	if snapshot.Schema != SnapshotSchemaV3 {
+		return fmt.Errorf("workspace path state schema must be %q", SnapshotSchemaV3)
 	}
 	root, err := exactRootPath(snapshot.Root)
 	if err != nil {
 		return err
 	}
 	if snapshot.Root != root || snapshot.WorkspaceID != workspaceID(root) {
-		return fmt.Errorf("workspace snapshot root identity is invalid")
+		return fmt.Errorf("workspace path state root identity is invalid")
 	}
 	if snapshot.GeneratedAt.IsZero() || snapshot.GeneratedAt != canonicalTime(snapshot.GeneratedAt) {
-		return fmt.Errorf("workspace snapshot generated time must use canonical microsecond UTC precision")
+		return fmt.Errorf("workspace path state time must use canonical microsecond UTC precision")
 	}
-	if snapshot.Entries == nil || snapshot.Exclusions == nil || len(snapshot.Entries) > maxSnapshotEntries {
-		return fmt.Errorf("workspace snapshot inventory is absent or exceeds %d entries", maxSnapshotEntries)
+	if snapshot.Paths == nil || snapshot.Entries == nil || len(snapshot.Paths) > MaxReconciliationFiles {
+		return fmt.Errorf("workspace path state is absent or exceeds %d paths", MaxReconciliationFiles)
 	}
-	seen := make(map[string]struct{}, len(snapshot.Entries)+len(snapshot.Exclusions))
+	selected := make(map[string]struct{}, len(snapshot.Paths))
 	previous := ""
+	for _, relative := range snapshot.Paths {
+		if err := validateRelativePath(relative); err != nil {
+			return err
+		}
+		if previous != "" && relative <= previous {
+			return fmt.Errorf("workspace path state paths must be uniquely sorted")
+		}
+		previous = relative
+		selected[relative] = struct{}{}
+	}
+	previous = ""
 	for _, entry := range snapshot.Entries {
 		if err := entry.validate(snapshot.WorkspaceID); err != nil {
 			return err
 		}
+		if _, ok := selected[entry.Path]; !ok {
+			return fmt.Errorf("workspace entry %q is outside selected path authority", entry.Path)
+		}
 		if previous != "" && entry.Path <= previous {
-			return fmt.Errorf("workspace snapshot entries must be uniquely sorted")
+			return fmt.Errorf("workspace path state entries must be uniquely sorted")
 		}
 		previous = entry.Path
-		seen[entry.Path] = struct{}{}
-	}
-	previous = ""
-	for _, exclusion := range snapshot.Exclusions {
-		if err := validateRelativePath(exclusion.Path); err != nil {
-			return fmt.Errorf("workspace exclusion path: %w", err)
-		}
-		if exclusion.Reason != ExclusionProtected && exclusion.Reason != ExclusionSensitive &&
-			exclusion.Reason != ExclusionAbsent && exclusion.Reason != ExclusionUnsupported {
-			return fmt.Errorf("workspace exclusion %q has invalid reason %q", exclusion.Path, exclusion.Reason)
-		}
-		if previous != "" && exclusion.Path <= previous {
-			return fmt.Errorf("workspace snapshot exclusions must be uniquely sorted")
-		}
-		previous = exclusion.Path
-		if _, duplicate := seen[exclusion.Path]; duplicate {
-			return fmt.Errorf("workspace path %q is both included and excluded", exclusion.Path)
-		}
-		seen[exclusion.Path] = struct{}{}
-	}
-	if snapshot.Git != nil {
-		if err := snapshot.Git.validate(); err != nil {
-			return err
-		}
-		for _, entry := range snapshot.Entries {
-			if !validOpaqueID(entry.RepositoryFileID, "file_") {
-				return fmt.Errorf("Git-bound workspace entry %q lacks repository file authority", entry.Path)
-			}
-		}
-	} else {
-		for _, entry := range snapshot.Entries {
-			if entry.RepositoryFileID != "" {
-				return fmt.Errorf("plain workspace entry %q contains Git-only authority", entry.Path)
-			}
-		}
 	}
 	expected, err := snapshotID(snapshot)
 	if err != nil {
 		return err
 	}
 	if snapshot.ID != expected {
-		return fmt.Errorf("workspace snapshot ID differs from its exact content")
+		return fmt.Errorf("workspace path state ID differs from its exact content")
 	}
 	return nil
 }
@@ -162,9 +120,6 @@ func (snapshot Snapshot) Validate() error {
 func (entry Entry) validate(workspaceID string) error {
 	if err := validateRelativePath(entry.Path); err != nil {
 		return fmt.Errorf("workspace entry path: %w", err)
-	}
-	if protectedPath(entry.Path) {
-		return fmt.Errorf("workspace entry %q enters protected authority", entry.Path)
 	}
 	if entry.ID != opaqueID("workspace_file_", workspaceID, entry.Path) ||
 		!validSHA256(entry.SHA256) || entry.Size < 0 || entry.Mode&^uint32(0o777) != 0 {
@@ -176,11 +131,13 @@ func (entry Entry) validate(workspaceID string) error {
 			return fmt.Errorf("regular workspace entry %q cannot have a link target", entry.Path)
 		}
 	case EntrySymlink:
-		if entry.LinkTarget == "" || len(entry.LinkTarget) > maxSnapshotTargetBytes {
+		if len(entry.LinkTarget) > maxSnapshotTargetBytes || int64(len(entry.LinkTarget)) != entry.Size ||
+			entry.SHA256 != digestBytes([]byte("symlink\x00"+entry.LinkTarget)) {
 			return fmt.Errorf("workspace symlink %q has invalid target authority", entry.Path)
 		}
-		if err := validateSymlink(entry.Path, entry.LinkTarget); err != nil {
-			return err
+	case EntryDirectory:
+		if entry.LinkTarget != "" || entry.Size != 0 || entry.SHA256 != digestBytes([]byte("directory\x00")) {
+			return fmt.Errorf("workspace directory %q has invalid exact authority", entry.Path)
 		}
 	default:
 		return fmt.Errorf("workspace entry %q has unsupported kind %q", entry.Path, entry.Kind)
@@ -188,25 +145,14 @@ func (entry Entry) validate(workspaceID string) error {
 	return nil
 }
 
-func (binding GitBinding) validate() error {
-	if !validOpaqueID(binding.RepositorySnapshotID, "snapshot_") ||
-		!validOpaqueID(binding.RepositoryID, "repository_") ||
-		!validHexBytes(binding.HeadCommit, 20, 32) || !validSHA256(binding.StateSHA256) {
-		return fmt.Errorf("workspace Git binding is incomplete or malformed")
-	}
-	return nil
-}
-
 func snapshotID(snapshot Snapshot) (string, error) {
-	return stateIDForEntries(
-		snapshot.Schema, snapshot.WorkspaceID, snapshot.Entries, snapshot.Exclusions,
-	)
+	return stateIDForEntries(snapshot.Schema, snapshot.WorkspaceID, snapshot.Paths, snapshot.Entries)
 }
 
 func canonicalStateIdentityJSON(identity snapshotIdentity) ([]byte, error) {
 	raw, err := json.Marshal(identity)
 	if err != nil {
-		return nil, fmt.Errorf("encode workspace snapshot identity: %w", err)
+		return nil, fmt.Errorf("encode workspace path state identity: %w", err)
 	}
 	return raw, nil
 }
@@ -254,34 +200,10 @@ func validateRelativePath(value string) error {
 	return nil
 }
 
-func protectedPath(value string) bool {
-	for _, component := range strings.Split(value, "/") {
-		if component == ".git" || component == ".omni" {
-			return true
-		}
-	}
-	return false
-}
-
-func validateSymlink(relative, target string) error {
-	if filepath.IsAbs(target) {
-		return fmt.Errorf("workspace symlink %q has an absolute target", relative)
-	}
-	resolved := filepath.ToSlash(filepath.Clean(filepath.Join(
-		filepath.Dir(filepath.FromSlash(relative)), target,
-	)))
-	if resolved == "." || resolved == ".." || strings.HasPrefix(resolved, "../") || protectedPath(resolved) {
-		return fmt.Errorf("workspace symlink %q escapes included workspace authority", relative)
-	}
-	return nil
-}
-
 func sortSnapshot(snapshot *Snapshot) {
+	sort.Strings(snapshot.Paths)
 	sort.Slice(snapshot.Entries, func(left, right int) bool {
 		return snapshot.Entries[left].Path < snapshot.Entries[right].Path
-	})
-	sort.Slice(snapshot.Exclusions, func(left, right int) bool {
-		return snapshot.Exclusions[left].Path < snapshot.Exclusions[right].Path
 	})
 }
 

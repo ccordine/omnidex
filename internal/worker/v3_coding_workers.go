@@ -51,16 +51,14 @@ func portableWorkerRuntimeWithIdentityGuard(
 	execute := func(
 		job assemblyline.PortableJob,
 		model string,
-		replacementOrigin *queue.StationGapReplacementOrigin,
 	) (assemblyline.PortableResult, error) {
 		runtime.svc.emitStepEvent(
 			runtime.claim.Authority,
 			eventNamespace+"_portable_dispatched",
 			fmt.Sprintf("kind=%s work=%s payload=%dB model=%s", job.Kind, job.ID[:12], len(job.Payload), safeEventToken(model, "unknown")),
 		)
-		result, execution, err := runtime.svc.executeExactPortableStationWithReplacementOrigin(
+		result, execution, err := runtime.svc.executeExactPortableStation(
 			executionContext, runtime.claim.Authority, job, model,
-			replacementOrigin,
 		)
 		if err != nil {
 			return assemblyline.PortableResult{}, err
@@ -83,20 +81,7 @@ func portableWorkerRuntimeWithIdentityGuard(
 		MaxConcurrency: runtime.svc.fragmentConcurrency,
 		PathProvenance: runtime.objectivePathProvenance,
 		Execute: func(job assemblyline.PortableJob, model string) (assemblyline.PortableResult, error) {
-			return execute(job, model, nil)
-		},
-		ExecuteFragmentGenerationReplacement: func(
-			job assemblyline.PortableJob,
-			model string,
-			origin queue.StationGapReplacementOrigin,
-		) (assemblyline.PortableResult, error) {
-			if job.Kind != assemblyline.WorkFragmentGenerationReplacement {
-				return assemblyline.PortableResult{}, fmt.Errorf(
-					"replacement execution authority cannot open portable work kind %q",
-					job.Kind,
-				)
-			}
-			return execute(job, model, &origin)
+			return execute(job, model)
 		},
 		Finalize: func(job assemblyline.PortableJob, result assemblyline.PortableResult, validationErr error) error {
 			stored, exists := pending.LoadAndDelete(job.ID)
@@ -176,7 +161,11 @@ func (s *directCodingSession) workerModel(id station.ID) (string, error) {
 	if s == nil || s.runtime == nil || s.runtime.svc == nil || s.runtime.claim == nil {
 		return "", fmt.Errorf("direct coding worker model routing is unavailable")
 	}
-	modelName, err := stationModel(s.runtime.routing, id)
+	routing, err := s.runtime.modelRouting()
+	if err != nil {
+		return "", err
+	}
+	modelName, err := stationModel(routing, id)
 	if err != nil {
 		return "", err
 	}

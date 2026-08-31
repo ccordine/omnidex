@@ -32,13 +32,15 @@ func runObjectiveTurn(
 	if err != nil {
 		return objectiveTurnResult{}, err
 	}
-	authority, err = bindObjectiveModelInstruction(
-		authority, workflows.ModelPathProvenance,
-	)
-	if err != nil {
-		return objectiveTurnResult{}, err
-	}
 	if authority.ChannelMode == model.ChannelModeRoleplay {
+		provenance, err := resolveObjectiveModelPathProvenance(workflows)
+		if err != nil {
+			return objectiveTurnResult{}, err
+		}
+		authority, err = bindObjectiveModelInstruction(authority, provenance)
+		if err != nil {
+			return objectiveTurnResult{}, err
+		}
 		if workflows.RoleplaySimulation == nil {
 			return objectiveTurnResult{}, fmt.Errorf("roleplay character context projection is unavailable")
 		}
@@ -77,17 +79,17 @@ func runObjectiveTurn(
 			workflows.RoleplayOngoingAction,
 		)
 	}
-	authority, contextCalls, err := compileObjectiveTurnContext(
-		ctx, job, authority, candidateProvider, contextStation, nil, nil, nil,
+	authority, err = bindObjectiveModelInstruction(
+		authority, assemblyline.ArtifactIdentityProvenance{},
 	)
 	if err != nil {
 		return objectiveTurnResult{}, err
 	}
 	input := assemblyline.ConversationObjectiveKindInput{
 		ExactInstruction:          authority.ModelInstruction,
-		Context:                   assemblyline.CloneObjectiveContext(authority.Context),
+		Context:                   assemblyline.ObjectiveContext{Capsules: []assemblyline.ObjectiveContextCapsule{}},
 		DatabaseEvidenceAvailable: authority.DataSourceID != "",
-		KnownArtifactPaths:        append([]string{}, authority.ModelArtifactPaths...),
+		KnownArtifactPaths:        []string{},
 	}
 	if kindStation == nil {
 		return objectiveTurnResult{}, fmt.Errorf("conversation objective kind station is unavailable")
@@ -102,23 +104,35 @@ func runObjectiveTurn(
 	if err := ctx.Err(); err != nil {
 		return objectiveTurnResult{}, err
 	}
-	if err := validateObjectiveStationReceipt(
-		"conversation objective kind station", receipt,
-	); err != nil {
-		return objectiveTurnResult{}, err
-	}
 	kindCalls := receipt.Calls
 	if err := decision.ValidateFor(input); err != nil {
 		return objectiveTurnResult{}, err
 	}
 	result := objectiveTurnResult{
 		ObjectiveID: objectiveTurnID(authority, decision.Kind), Kind: decision.Kind,
-		InstructionSHA256: authority.SHA256, ModelCalls: contextCalls + kindCalls,
+		InstructionSHA256: authority.SHA256, ModelCalls: kindCalls,
 	}
 	result.RequirementID = objectiveRequirementID(result.ObjectiveID)
 	if decision.Kind == assemblyline.ObjectiveKindWorkspaceMutation {
 		return runObjectiveWorkspaceMutation(ctx, authority, result, workflows.WorkspaceMutation)
 	}
+	if decision.Kind == assemblyline.ObjectiveKindRepositoryRead {
+		provenance, err := resolveObjectiveModelPathProvenance(workflows)
+		if err != nil {
+			return result, err
+		}
+		authority, err = bindObjectiveModelInstruction(authority, provenance)
+		if err != nil {
+			return result, err
+		}
+	}
+	authority, contextCalls, err := compileObjectiveTurnContext(
+		ctx, job, authority, candidateProvider, contextStation, nil, nil, nil,
+	)
+	if err != nil {
+		return result, err
+	}
+	result.ModelCalls += contextCalls
 	if decision.Kind == assemblyline.ObjectiveKindAnswer || decision.Kind == assemblyline.ObjectiveKindStory {
 		return runObjectiveConversationResponse(ctx, authority, result, conversationStation, "")
 	}
@@ -178,6 +192,17 @@ func runObjectiveTurn(
 	result.Citations = citations
 	result.Complete = true
 	return result, nil
+}
+
+func resolveObjectiveModelPathProvenance(
+	workflows objectiveWorkflows,
+) (assemblyline.ArtifactIdentityProvenance, error) {
+	if workflows.ResolveModelPathProvenance == nil {
+		return assemblyline.ArtifactIdentityProvenance{}, fmt.Errorf(
+			"objective artifact provenance resolver is unavailable",
+		)
+	}
+	return workflows.ResolveModelPathProvenance()
 }
 
 func runObjectiveRoleplayResearchTurn(

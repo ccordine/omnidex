@@ -3,6 +3,7 @@ package llm
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strings"
 	"unicode/utf8"
 )
@@ -11,6 +12,8 @@ const (
 	PreparedGenerationSchemaV1            = "omnidex.prepared-generation.v1"
 	MaxExactPreparedProviderResponseBytes = 16 * 1024 * 1024
 )
+
+var exactSHA256Digest = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
 type ProviderResponseDisposition string
 
@@ -37,7 +40,6 @@ type PreparedGeneration struct {
 	Schema                        string                          `json:"schema"`
 	Protocol                      ExactPreparedProtocol           `json:"protocol"`
 	ProviderRequestDisposition    ProviderRequestDisposition      `json:"provider_request_disposition"`
-	ProviderRequestFailureReason  ProviderRequestFailureReason    `json:"provider_request_failure_reason,omitempty"`
 	Content                       string                          `json:"content"`
 	ProviderRequestSHA256         string                          `json:"provider_request_sha256"`
 	ProviderHTTPStatus            int                             `json:"provider_http_status"`
@@ -50,37 +52,11 @@ type PreparedGeneration struct {
 	ProviderResponseCaptureSHA256 string                          `json:"provider_response_capture_sha256"`
 	ProviderResponseCapturedBytes int                             `json:"provider_response_captured_bytes"`
 	ProviderResponseCapture       []byte                          `json:"-"`
-	ProviderResponseModel         string                          `json:"provider_response_model"`
 	ProviderDonePresent           bool                            `json:"provider_done_present"`
 	ProviderDone                  bool                            `json:"provider_done"`
 	ProviderDoneReason            string                          `json:"provider_done_reason"`
 	UsagePresent                  bool                            `json:"usage_present"`
 	Usage                         ProviderGenerationUsage         `json:"usage"`
-	ProviderObservation           ProviderIdentityObservation     `json:"provider_observation"`
-	// ProviderIdentityEvidence is persisted out of line. The normalized
-	// observation above binds its content-addressed reference; keeping the raw
-	// bodies out of the prepared-generation JSON prevents large provider
-	// identity responses from entering prompts or terminal trace payloads.
-	ProviderIdentityEvidence ProviderIdentityEvidence `json:"-"`
-}
-
-type ProviderRequestFailureReason string
-
-const (
-	ProviderRequestFailureAuthorityCanceled   ProviderRequestFailureReason = "authority_canceled"
-	ProviderRequestFailureAuthoritySuperseded ProviderRequestFailureReason = "authority_superseded"
-	ProviderRequestFailureAuthorityExpired    ProviderRequestFailureReason = "authority_expired"
-)
-
-func (reason ProviderRequestFailureReason) Validate() error {
-	switch reason {
-	case ProviderRequestFailureAuthorityCanceled,
-		ProviderRequestFailureAuthoritySuperseded,
-		ProviderRequestFailureAuthorityExpired:
-		return nil
-	default:
-		return fmt.Errorf("provider request failure reason %q is not registered", reason)
-	}
 }
 
 func (usage ProviderGenerationUsage) ValidateSuccessful() error {
@@ -144,24 +120,15 @@ func (generation PreparedGeneration) validateSuccessfulContentEvidence() error {
 	if err := generation.Usage.ValidateSuccessful(); err != nil {
 		return err
 	}
-	return generation.ProviderObservation.Validate()
+	return nil
 }
 
 func (generation PreparedGeneration) ValidateInvocationEvidence() error {
-	if err := generation.ProviderObservation.Validate(); err != nil {
-		return err
-	}
-	if err := generation.ProviderObservation.ValidateEvidence(
-		generation.ProviderIdentityEvidence,
-	); err != nil {
-		return err
-	}
 	return generation.ValidateProviderResponseEvidence()
 }
 
-// ValidateProviderResponseEvidence validates only the exact dispatch and raw
-// response receipt. It intentionally does not trust or validate the separately
-// challenge-bound provider identity observation.
+// ValidateProviderResponseEvidence validates the exact dispatch and raw
+// response receipt returned by the provider adapter.
 func (generation PreparedGeneration) ValidateProviderResponseEvidence() error {
 	if err := generation.ValidateProviderResponseReceipt(); err != nil {
 		return err
@@ -185,11 +152,8 @@ func (generation PreparedGeneration) ValidateProviderResponseEvidence() error {
 func (generation PreparedGeneration) ValidateProviderResponseReceipt() error {
 	if generation.Schema != PreparedGenerationSchemaV1 || generation.Protocol.Validate() != nil ||
 		generation.ProviderRequestDisposition.Validate() != nil ||
-		!providerIdentityDigest.MatchString(generation.ProviderRequestSHA256) {
+		!exactSHA256Digest.MatchString(generation.ProviderRequestSHA256) {
 		return fmt.Errorf("exact prepared provider response evidence is invalid")
-	}
-	if generation.ProviderRequestFailureReason != "" {
-		return fmt.Errorf("provider response receipt cannot claim a local request failure reason")
 	}
 	if generation.ProviderResponseDisposition == ProviderResponseTransportError {
 		if generation.ProviderHTTPStatus != 0 || generation.ProviderResponseComplete ||
@@ -197,7 +161,7 @@ func (generation PreparedGeneration) ValidateProviderResponseReceipt() error {
 			generation.ProviderContentEncoding != (ProviderContentEncodingEvidence{}) ||
 			generation.ProviderResponseSHA256 != "" || generation.ProviderResponseBytes != 0 ||
 			generation.ProviderResponseCaptureSHA256 != "" ||
-			generation.ProviderResponseCapturedBytes != 0 || generation.ProviderResponseModel != "" ||
+			generation.ProviderResponseCapturedBytes != 0 ||
 			generation.ProviderDonePresent || generation.ProviderDone || generation.ProviderDoneReason != "" {
 			return fmt.Errorf("transport failure claims a provider response")
 		}
@@ -210,7 +174,7 @@ func (generation PreparedGeneration) ValidateProviderResponseReceipt() error {
 		generation.ProviderHTTPStatus < 100 || generation.ProviderHTTPStatus > 599 ||
 		generation.ProviderResponseBytes < 0 || generation.ProviderResponseCapturedBytes < 0 ||
 		generation.ProviderResponseCapturedBytes > MaxExactPreparedProviderResponseBytes+1 ||
-		!providerIdentityDigest.MatchString(generation.ProviderResponseCaptureSHA256) ||
+		!exactSHA256Digest.MatchString(generation.ProviderResponseCaptureSHA256) ||
 		generation.ProviderContentEncoding.Validate() != nil {
 		return fmt.Errorf("provider response receipt is invalid")
 	}
@@ -220,7 +184,7 @@ func (generation PreparedGeneration) ValidateProviderResponseReceipt() error {
 			return fmt.Errorf("partial provider response disposition claims a complete body")
 		}
 		if !generation.ProviderResponseBytesKnown ||
-			!providerIdentityDigest.MatchString(generation.ProviderResponseSHA256) ||
+			!exactSHA256Digest.MatchString(generation.ProviderResponseSHA256) ||
 			generation.ProviderResponseCapturedBytes > MaxExactPreparedProviderResponseBytes ||
 			generation.ProviderResponseBytes != int64(generation.ProviderResponseCapturedBytes) ||
 			generation.ProviderResponseSHA256 != generation.ProviderResponseCaptureSHA256 {
@@ -243,24 +207,19 @@ func (generation PreparedGeneration) ValidateProviderResponseReceipt() error {
 	if parsedFinal &&
 		(generation.ProviderHTTPStatus < 200 || generation.ProviderHTTPStatus >= 300 ||
 			!generation.ProviderContentEncoding.IsIdentity() ||
-			!generation.ProviderResponseComplete || !validPreparedResponseModel(generation.ProviderResponseModel) ||
+			!generation.ProviderResponseComplete ||
 			(!generation.ProviderDonePresent && generation.ProviderDone) ||
 			(generation.ProviderDoneReason != "" && generation.ProviderDoneReason != "stop" &&
 				generation.ProviderDoneReason != "length") || generation.Usage.Validate() != nil) {
 		return fmt.Errorf("successful provider response receipt is incomplete")
 	}
 	if !parsedFinal &&
-		(generation.ProviderResponseModel != "" || generation.ProviderDonePresent ||
+		(generation.ProviderDonePresent ||
 			generation.ProviderDone || generation.ProviderDoneReason != "" || generation.UsagePresent ||
 			generation.Usage != (ProviderGenerationUsage{})) {
 		return fmt.Errorf("unsuccessful provider response claims a completion reason")
 	}
 	return nil
-}
-
-func validPreparedResponseModel(model string) bool {
-	return strings.TrimSpace(model) == model && model != "" && len(model) <= 512 &&
-		utf8.ValidString(model) && !strings.ContainsRune(model, 0)
 }
 
 func registeredProviderResponseDisposition(value ProviderResponseDisposition) bool {
@@ -277,20 +236,8 @@ func registeredProviderResponseDisposition(value ProviderResponseDisposition) bo
 // policy must reject providers that cannot enforce every PreparedModel field.
 type ExactPreparedContractClient interface {
 	RequireExactPreparedContract() error
-	ValidateExactPreparedProvider(ProviderIdentityExpectation) error
 	ValidateExactPreparedContract(PreparedModel) error
 	GeneratePreparedExact(context.Context, PreparedModel) (PreparedGeneration, error)
-}
-
-func ValidateExactPreparedProvider(client ExactPreparedContractClient, expected ProviderIdentityExpectation) error {
-	exact, err := RequireExactPreparedContract(client)
-	if err != nil {
-		return err
-	}
-	if err := exact.ValidateExactPreparedProvider(expected); err != nil {
-		return fmt.Errorf("configured provider lacks the registered exact raw contract: %w", err)
-	}
-	return nil
 }
 
 func RequireExactPreparedContract(client ExactPreparedContractClient) (ExactPreparedContractClient, error) {

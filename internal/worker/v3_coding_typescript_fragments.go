@@ -12,10 +12,8 @@ type directCodingTypeScriptFragmentJob struct {
 	dialect                  string
 	tsx                      bool
 	available                string
-	publicInteractionSurface *assemblyline.FragmentPublicInteractionSurface
 	validateInitialCandidate func(string) error
 	current                  string
-	repairRegion             *assemblyline.TypeScriptFragmentRepairRegion
 	failure                  string
 	requiredChange           string
 	repairGuidance           string

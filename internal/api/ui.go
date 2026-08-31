@@ -51,7 +51,11 @@ func (s *Server) handleUIShell(w http.ResponseWriter, r *http.Request, shells ma
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
-	sessionID := s.ensureUISessionCookie(w, r)
+	sessionID, err := s.ensureUISessionCookie(w, r)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
 	state, _, err := s.loadUIState(r.Context(), sessionID)
 	if err != nil {
 		writeError(w, http.StatusServiceUnavailable, err.Error())

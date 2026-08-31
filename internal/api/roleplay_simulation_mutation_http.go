@@ -272,7 +272,6 @@ func (s *Server) writeRoleplayScene(w http.ResponseWriter, r *http.Request, chan
 	}
 	status := http.StatusCreated
 	if r.Method == http.MethodPost {
-		sessionID := s.ensureUISessionCookie(w, r)
 		createScene := func() error {
 			id, identityErr := roleplay.NewSceneIdentity()
 			if identityErr != nil {
@@ -288,6 +287,11 @@ func (s *Server) writeRoleplayScene(w http.ResponseWriter, r *http.Request, chan
 		if request.ExpectedDraftRevision == nil {
 			err = createScene()
 		} else {
+			sessionID, sessionErr := s.ensureUISessionCookie(w, r)
+			if sessionErr != nil {
+				writeRoleplaySimulationError(w, sessionErr)
+				return
+			}
 			s.roleplaySceneDraftMu.Lock()
 			err = s.validateRoleplaySceneDraftSelectionLocked(
 				r.Context(), sessionID, channel.ID, world.ID, *request.ExpectedDraftRevision, 0, request.ParticipantIDs,
@@ -317,7 +321,11 @@ func (s *Server) writeRoleplayScene(w http.ResponseWriter, r *http.Request, chan
 		if request.ExpectedDraftRevision == nil {
 			err = updateScene()
 		} else {
-			sessionID := s.ensureUISessionCookie(w, r)
+			sessionID, sessionErr := s.ensureUISessionCookie(w, r)
+			if sessionErr != nil {
+				writeRoleplaySimulationError(w, sessionErr)
+				return
+			}
 			s.roleplaySceneDraftMu.Lock()
 			err = s.validateRoleplaySceneDraftSelectionLocked(
 				r.Context(), sessionID, channel.ID, world.ID, *request.ExpectedDraftRevision,

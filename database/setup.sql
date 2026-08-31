@@ -81,11 +81,9 @@ CREATE FUNCTION current_model_config_is_valid(config jsonb) RETURNS boolean
             'coding_workload_model',
             'coding_artifact_handling_model',
             'coding_capability_relation_model',
-            'coding_skill_selection_model',
             'coding_fragment_model',
             'coding_fragment_repair_guidance_model',
-            'coding_fragment_correction_model',
-            'coding_repository_change_surface_model'
+			'coding_fragment_correction_model'
         ) OR jsonb_typeof(field.value)<>'string' OR
              field.value #>> '{}'='' OR
              btrim(field.value #>> '{}')<>field.value #>> '{}'
@@ -313,211 +311,6 @@ END $$;
 
 
 --
--- Name: fragment_generation_replacement_authority_is_exact(); Type: FUNCTION; Schema: current runtime; Owner: -
---
-
-CREATE FUNCTION fragment_generation_replacement_authority_is_exact() RETURNS boolean
-    LANGUAGE sql STABLE
-    AS $$
-	SELECT
-	EXISTS (
-		SELECT 1
-		FROM pg_proc AS procedure
-		JOIN pg_language AS language ON language.oid=procedure.prolang
-		WHERE procedure.oid=to_regprocedure(
-			'replacement_json_nonnegative_integer_is_exact(json,numeric)'
-		)
-		  AND encode(digest(convert_to(procedure.prosrc,'UTF8'),'sha256'),'hex')=
-			  'f57834d6b2254d72f43e31c2e2538561e67a3c4c96007f300395670c04a741e8'
-		  AND language.lanname='sql'
-		  AND procedure.provolatile='i' AND procedure.proisstrict
-	) AND EXISTS (
-		SELECT 1
-		FROM pg_proc AS procedure
-		JOIN pg_language AS language ON language.oid=procedure.prolang
-		WHERE procedure.oid=to_regprocedure(
-			'require_fragment_generation_replacement_origin()'
-		)
-		  AND encode(digest(convert_to(procedure.prosrc,'UTF8'),'sha256'),'hex')=
-			  'b58fe7fa955d90de6e35b20b27e7a5f7cf6609a42c2fed99b0d2bf6237cb8f61'
-		  AND language.lanname='plpgsql'
-		  AND procedure.provolatile='v' AND NOT procedure.proisstrict
-	) AND EXISTS (
-		SELECT 1
-		FROM pg_proc AS procedure
-		JOIN pg_language AS language ON language.oid=procedure.prolang
-		WHERE procedure.oid=to_regprocedure(
-			'require_fragment_generation_replacement_provider()'
-		)
-		  AND encode(digest(convert_to(procedure.prosrc,'UTF8'),'sha256'),'hex')=
-			  '420e75aff26d2ceb453b6d332b9b041ead13d18d03616daad9572ee059f67932'
-		  AND language.lanname='plpgsql'
-		  AND procedure.provolatile='v' AND NOT procedure.proisstrict
-	) AND EXISTS (
-		SELECT 1
-		FROM pg_proc AS procedure
-		JOIN pg_language AS language ON language.oid=procedure.prolang
-		WHERE procedure.oid=to_regprocedure(
-			'validate_station_call_opening_insert()'
-		)
-		  AND encode(digest(convert_to(procedure.prosrc,'UTF8'),'sha256'),'hex')=
-			  '123622e87362a4c9485228704e3330a7e11871b81869807b33f78c9c9e83a5c7'
-		  AND language.lanname='plpgsql'
-		  AND procedure.provolatile='v' AND NOT procedure.proisstrict
-	) AND EXISTS (
-		SELECT 1
-		FROM pg_proc AS procedure
-		JOIN pg_language AS language ON language.oid=procedure.prolang
-		WHERE procedure.oid=to_regprocedure(
-			'validate_station_call_receipt_insert()'
-		)
-		  AND encode(digest(convert_to(procedure.prosrc,'UTF8'),'sha256'),'hex')=
-			  'fab459a7660d8fa8a7aed0d0a57b81bbd346a266a461e08d007e484fd5f4e5d3'
-		  AND language.lanname='plpgsql'
-		  AND procedure.provolatile='v' AND NOT procedure.proisstrict
-	) AND EXISTS (
-		SELECT 1
-		FROM pg_proc AS procedure
-		JOIN pg_language AS language ON language.oid=procedure.prolang
-		WHERE procedure.oid=to_regprocedure(
-			'require_llm_call_station_gap()'
-		)
-		  AND encode(digest(convert_to(procedure.prosrc,'UTF8'),'sha256'),'hex')=
-			  '137f98e5c9262e6611a28b2ea2a46a96bdf1ae176b6c896b2ea0078529673c50'
-		  AND language.lanname='plpgsql'
-		  AND procedure.provolatile='v' AND NOT procedure.proisstrict
-	) AND NOT EXISTS (
-		SELECT 1
-		FROM (VALUES
-			('station_gap_openings',
-			 'station_gap_replacement_origin_required',7,
-			 'require_fragment_generation_replacement_origin()'),
-			('station_provider_discoveries',
-			 'station_provider_replacement_model_required',7,
-			 'require_fragment_generation_replacement_provider()'),
-			('station_call_openings',
-			 'station_call_openings_validate_insert',7,
-			 'validate_station_call_opening_insert()'),
-			('station_call_receipts',
-			 'station_call_receipts_validate_insert',7,
-			 'validate_station_call_receipt_insert()'),
-			('llm_call_evidence',
-			 'llm_call_evidence_require_station_gap',7,
-			 'require_llm_call_station_gap()')
-		) AS expected(table_name,trigger_name,trigger_type,function_name)
-		LEFT JOIN pg_trigger AS actual
-		  ON actual.tgrelid=to_regclass(expected.table_name)
-		 AND actual.tgname=expected.trigger_name
-		 AND actual.tgfoid=to_regprocedure(expected.function_name)
-		 AND actual.tgtype=expected.trigger_type
-		 AND actual.tgenabled='O' AND NOT actual.tgisinternal
-		WHERE actual.oid IS NULL
-	) AND EXISTS (
-		SELECT 1 FROM pg_constraint
-		WHERE conrelid='station_gap_openings'::regclass
-		  AND conname='station_gap_openings_replacement_origin_shape'
-		  AND contype='c' AND convalidated
-		  AND encode(digest(
-			  convert_to(pg_get_constraintdef(oid),'UTF8'),'sha256'
-		  ),'hex')=
-			  'c38597634fb724f8e0f7fd1ac37c80b84f994c4e18fd757cf873e06b609d611d'
-	) AND NOT EXISTS (
-		SELECT 1
-		FROM (VALUES
-			('station_gap_openings_origin_gap_opening_id_fkey',
-			 'origin_gap_opening_id','station_gap_openings'),
-			('station_gap_openings_origin_call_receipt_id_fkey',
-			 'origin_call_receipt_id','station_call_receipts')
-		) AS expected(constraint_name,column_name,referenced_table)
-		LEFT JOIN pg_attribute AS source_column
-		  ON source_column.attrelid='station_gap_openings'::regclass
-		 AND source_column.attname=expected.column_name
-		 AND NOT source_column.attisdropped
-		LEFT JOIN pg_attribute AS referenced_column
-		  ON referenced_column.attrelid=to_regclass(expected.referenced_table)
-		 AND referenced_column.attname='id' AND NOT referenced_column.attisdropped
-		LEFT JOIN pg_constraint AS actual
-		  ON actual.conrelid='station_gap_openings'::regclass
-		 AND actual.conname=expected.constraint_name
-		 AND actual.contype='f'
-		 AND actual.confrelid=to_regclass(expected.referenced_table)
-		 AND actual.conkey=ARRAY[source_column.attnum]::SMALLINT[]
-		 AND actual.confkey=ARRAY[referenced_column.attnum]::SMALLINT[]
-		 AND actual.confdeltype='r' AND actual.convalidated
-		WHERE actual.oid IS NULL
-	) AND EXISTS (
-		SELECT 1
-		FROM pg_index AS authority_index
-		JOIN pg_class AS index_relation
-		  ON index_relation.oid=authority_index.indexrelid
-		JOIN pg_attribute AS source_column
-		  ON source_column.attrelid=authority_index.indrelid
-		 AND source_column.attname='origin_call_receipt_id'
-		 AND NOT source_column.attisdropped
-		WHERE authority_index.indrelid='station_gap_openings'::regclass
-		  AND index_relation.relname=
-			  'station_gap_openings_one_fragment_generation_replacement'
-		  AND authority_index.indisunique AND authority_index.indisvalid
-		  AND authority_index.indisready AND authority_index.indnkeyatts=1
-		  AND authority_index.indexprs IS NULL
-		  AND authority_index.indkey::TEXT=source_column.attnum::TEXT
-		  AND pg_get_expr(
-			  authority_index.indpred,authority_index.indrelid
-		  )='(origin_call_receipt_id IS NOT NULL)'
-	) AND EXISTS (
-		SELECT 1
-		FROM pg_proc AS procedure
-		JOIN pg_language AS language ON language.oid=procedure.prolang
-		WHERE procedure.oid=to_regprocedure('prevent_station_gap_history_mutation()')
-		  AND encode(digest(convert_to(procedure.prosrc,'UTF8'),'sha256'),'hex')=
-			  '59fec256f7ee7ba609115e0c37f4ac9ca1fe7d475e1c00a31ee66b9f5a17dc58'
-		  AND language.lanname='plpgsql'
-		  AND procedure.provolatile='v' AND NOT procedure.proisstrict
-	) AND NOT EXISTS (
-		SELECT 1
-		FROM (VALUES
-			('station_gap_openings','station_gap_openings_immutable',27),
-			('station_gap_openings','station_gap_openings_truncate_immutable',34),
-			('station_gap_outcomes','station_gap_outcomes_immutable',27),
-			('station_gap_outcomes','station_gap_outcomes_truncate_immutable',34),
-			('station_provider_discoveries','station_provider_discoveries_immutable',27),
-			('station_provider_discoveries','station_provider_discoveries_truncate_immutable',34),
-			('station_call_openings','station_call_openings_immutable',27),
-			('station_call_openings','station_call_openings_truncate_immutable',34),
-			('station_call_receipts','station_call_receipts_immutable',27),
-			('station_call_receipts','station_call_receipts_truncate_immutable',34)
-		) AS expected(table_name,trigger_name,trigger_type)
-		LEFT JOIN pg_trigger AS actual
-		  ON actual.tgrelid=to_regclass(expected.table_name)
-		 AND actual.tgname=expected.trigger_name
-		 AND actual.tgfoid=to_regprocedure('prevent_station_gap_history_mutation()')
-		 AND actual.tgtype=expected.trigger_type
-		 AND actual.tgenabled='O' AND NOT actual.tgisinternal
-		WHERE actual.oid IS NULL
-	) AND EXISTS (
-		SELECT 1
-		FROM pg_proc AS procedure
-		JOIN pg_language AS language ON language.oid=procedure.prolang
-		WHERE procedure.oid=to_regprocedure('prevent_llm_call_evidence_mutation()')
-		  AND encode(digest(convert_to(procedure.prosrc,'UTF8'),'sha256'),'hex')=
-			  '2b612d0c6ed800e1ed5cc182d4032ed4eebcfd25c423c63ccfae9922ea22cce7'
-		  AND language.lanname='plpgsql'
-		  AND procedure.provolatile='v' AND NOT procedure.proisstrict
-	) AND NOT EXISTS (
-		SELECT 1
-		FROM (VALUES
-			('llm_call_evidence_immutable',27),
-			('llm_call_evidence_truncate_immutable',34)
-		) AS expected(trigger_name,trigger_type)
-		LEFT JOIN pg_trigger AS actual
-		  ON actual.tgrelid='llm_call_evidence'::regclass
-		 AND actual.tgname=expected.trigger_name
-		 AND actual.tgfoid=to_regprocedure('prevent_llm_call_evidence_mutation()')
-		 AND actual.tgtype=expected.trigger_type
-		 AND actual.tgenabled='O' AND NOT actual.tgisinternal
-		WHERE actual.oid IS NULL
-	);
-$$;
 
 
 --
@@ -1221,16 +1014,6 @@ $$;
 
 
 --
--- Name: prevent_llm_call_evidence_mutation(); Type: FUNCTION; Schema: current runtime; Owner: -
---
-
-CREATE FUNCTION prevent_llm_call_evidence_mutation() RETURNS trigger
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    RAISE EXCEPTION 'LLM call evidence is immutable';
-END;
-$$;
 
 
 --
@@ -1283,19 +1066,6 @@ CREATE FUNCTION prevent_repository_fact_update() RETURNS trigger
     AS $$
 BEGIN
     RAISE EXCEPTION 'repository facts are immutable; create a new snapshot';
-END;
-$$;
-
-
---
--- Name: prevent_retired_repository_mutation_change(); Type: FUNCTION; Schema: current runtime; Owner: -
---
-
-CREATE FUNCTION prevent_retired_repository_mutation_change() RETURNS trigger
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    RAISE EXCEPTION 'retired repository mutation journal is immutable';
 END;
 $$;
 
@@ -1384,81 +1154,6 @@ CREATE FUNCTION prevent_working_set_history_truncate() RETURNS trigger
     AS $$
 BEGIN
     RAISE EXCEPTION 'working-set history cannot be truncated';
-END;
-$$;
-
-
---
--- Name: prevent_workspace_mutation_evidence_change(); Type: FUNCTION; Schema: current runtime; Owner: -
---
-
-CREATE FUNCTION prevent_workspace_mutation_evidence_change() RETURNS trigger
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    IF EXISTS (
-        SELECT 1 FROM retired_repository_mutation_operations
-        WHERE evidence_id=OLD.id
-    ) OR EXISTS (
-        SELECT 1 FROM workspace_mutation_operations
-        WHERE mutation_evidence_id=OLD.id OR verification_evidence_id=OLD.id
-    ) OR EXISTS (
-        SELECT 1
-        FROM workspace_mutation_operations AS operation,
-             jsonb_array_elements_text(
-                 operation.verification_receipt_json::JSONB->'command_evidence_ids'
-             ) AS cited(evidence_id)
-        WHERE operation.verification_receipt_json IS NOT NULL AND
-              cited.evidence_id::BIGINT=OLD.id
-    ) THEN
-        RAISE EXCEPTION 'workspace mutation cited evidence is immutable';
-    END IF;
-    IF TG_OP='UPDATE' THEN
-        RETURN NEW;
-    END IF;
-    RETURN OLD;
-END;
-$$;
-
-
---
--- Name: prevent_workspace_mutation_file_change(); Type: FUNCTION; Schema: current runtime; Owner: -
---
-
-CREATE FUNCTION prevent_workspace_mutation_file_change() RETURNS trigger
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    RAISE EXCEPTION 'workspace mutation file authority is immutable';
-END;
-$$;
-
-
---
--- Name: prevent_workspace_mutation_project_location_change(); Type: FUNCTION; Schema: current runtime; Owner: -
---
-
-CREATE FUNCTION prevent_workspace_mutation_project_location_change() RETURNS trigger
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    IF OLD.project_location IS DISTINCT FROM NEW.project_location THEN
-        RAISE EXCEPTION 'workspace mutation project location is immutable';
-    END IF;
-    RETURN NEW;
-END;
-$$;
-
-
---
--- Name: prevent_workspace_mutation_removal(); Type: FUNCTION; Schema: current runtime; Owner: -
---
-
-CREATE FUNCTION prevent_workspace_mutation_removal() RETURNS trigger
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    RAISE EXCEPTION 'workspace mutation journal is immutable';
 END;
 $$;
 
@@ -1953,33 +1648,6 @@ $$;
 
 
 --
--- Name: reject_unavailable_worker_skill_mutation(); Type: FUNCTION; Schema: current runtime; Owner: -
---
-
-CREATE FUNCTION reject_unavailable_worker_skill_mutation() RETURNS trigger
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    RAISE EXCEPTION
-        'learned skill mutation is unavailable until code-owned recurring-gap and held-out replay authority exists';
-END;
-$$;
-
-
---
--- Name: replacement_json_nonnegative_integer_is_exact(json, numeric); Type: FUNCTION; Schema: current runtime; Owner: -
---
-
-CREATE FUNCTION replacement_json_nonnegative_integer_is_exact(value json, maximum numeric) RETURNS boolean
-    LANGUAGE sql IMMUTABLE STRICT
-    AS $_$
-	SELECT CASE
-		WHEN json_typeof(value)='number' AND
-		     value::TEXT~'^(0|[1-9][0-9]*)$'
-		THEN (value::TEXT)::NUMERIC<=maximum
-		ELSE FALSE
-	END;
-$_$;
 
 
 --
@@ -2018,272 +1686,9 @@ $$;
 
 
 --
--- Name: require_fragment_generation_replacement_origin(); Type: FUNCTION; Schema: current runtime; Owner: -
---
-
-CREATE FUNCTION require_fragment_generation_replacement_origin() RETURNS trigger
-    LANGUAGE plpgsql
-    AS $_$
-DECLARE
-    origin_count INTEGER;
-    replacement_payload JSONB;
-BEGIN
-    IF NEW.work_kind<>'fragment_generation_replacement' THEN
-		IF NEW.origin_gap_opening_id IS NOT NULL OR
-		   NEW.origin_call_receipt_id IS NOT NULL THEN
-			RAISE EXCEPTION
-				'non-replacement station gap cannot claim fragment generation origin authority';
-		END IF;
-        RETURN NEW;
-    END IF;
-	IF NEW.origin_gap_opening_id IS NULL OR
-	   NEW.origin_call_receipt_id IS NULL THEN
-		RAISE EXCEPTION
-			'fragment generation replacement requires exact persisted origin identities';
-	END IF;
-	IF fragment_generation_replacement_authority_is_exact() IS DISTINCT FROM TRUE THEN
-		RAISE EXCEPTION
-			'fragment generation replacement requires intact persisted lineage authority';
-	END IF;
-
-    replacement_payload := NEW.portable_payload::jsonb;
-	IF jsonb_typeof(replacement_payload)<>'object' OR
-	   (SELECT COUNT(*) FROM jsonb_object_keys(replacement_payload))<>1 OR
-	   NOT (replacement_payload ? 'original') THEN
-		RAISE EXCEPTION
-			'fragment generation replacement payload must contain only the unresolved original source responsibility';
-	END IF;
-
-    SELECT COUNT(*) INTO origin_count
-    FROM station_gap_openings AS origin
-    JOIN station_gap_outcomes AS outcome
-      ON outcome.opening_id=origin.id
-    JOIN station_call_openings AS call
-      ON call.gap_opening_id=origin.id
-    JOIN station_call_receipts AS receipt
-      ON receipt.opening_id=call.id
-    JOIN llm_call_evidence AS evidence
-      ON evidence.station_call_opening_id=call.id
-    WHERE origin.id=NEW.origin_gap_opening_id
-      AND receipt.id=NEW.origin_call_receipt_id
-      AND origin.work_kind='fragment_generation'
-      AND origin.portable_payload::jsonb=replacement_payload->'original'
-      AND ROW(
-          origin.job_id,origin.generation,origin.step_id,
-          origin.step_attempt,origin.worker_id
-      )=ROW(
-          NEW.job_id,NEW.generation,NEW.step_id,
-          NEW.step_attempt,NEW.worker_id
-      )
-	  AND NEW.context_tokens=origin.context_tokens
-	  AND NEW.max_output_tokens=origin.max_output_tokens
-	  AND NEW.output_limit_mode=origin.output_limit_mode
-	  AND origin.output_limit_mode='natural'
-	  AND ROW(
-		  call.job_id,call.generation,call.step_id,
-		  call.step_attempt,call.worker_id,call.gap_id
-	  )=ROW(
-		  origin.job_id,origin.generation,origin.step_id,
-		  origin.step_attempt,origin.worker_id,origin.gap_id
-	  )
-	  AND ROW(
-		  receipt.job_id,receipt.generation,receipt.step_id,
-		  receipt.step_attempt,receipt.worker_id,receipt.gap_id
-	  )=ROW(
-		  origin.job_id,origin.generation,origin.step_id,
-		  origin.step_attempt,origin.worker_id,origin.gap_id
-	  )
-	  AND ROW(
-		  outcome.job_id,outcome.generation,outcome.step_id,
-		  outcome.step_attempt,outcome.worker_id,outcome.gap_id
-	  )=ROW(
-		  origin.job_id,origin.generation,origin.step_id,
-		  origin.step_attempt,origin.worker_id,origin.gap_id
-	  )
-	  AND ROW(
-		  evidence.job_id,evidence.job_generation,evidence.step_id,
-		  evidence.step_attempt,evidence.worker_id,evidence.work_id
-	  )=ROW(
-		  origin.job_id,origin.generation,origin.step_id,
-		  origin.step_attempt,origin.worker_id,origin.work_id
-	  )
-      AND outcome.status='failed'
-      AND receipt.status='failed'
-      AND evidence.status='generation_failed'
-	  AND evidence.scope=origin.scope
-	  AND evidence.work_kind=origin.work_kind
-	  AND evidence.context_projection_id IS NULL
-	  AND evidence.requested_model=call.model
-	  AND evidence.model=call.model
-	  AND evidence.system_prompt=origin.prompt
-	  AND evidence.user_prompt='Return only the requested output.'
-	  AND evidence.context_tokens=origin.context_tokens
-	  AND evidence.max_output_tokens=origin.max_output_tokens
-	  AND evidence.error IS NOT DISTINCT FROM receipt.error
-	  AND evidence.response IS NOT DISTINCT FROM
-		  NULLIF(receipt.generation_json::jsonb->>'content','')
-	  AND evidence.response_sha256=
-		  encode(digest(evidence.response,'sha256'),'hex')
-      AND call.context_tokens=origin.context_tokens
-      AND call.max_output_tokens=origin.max_output_tokens
-	  AND call.output_limit_mode=origin.output_limit_mode
-	  AND receipt.error IS NOT NULL AND BTRIM(receipt.error)<>''
-	  AND receipt.generation_sha256=
-		  encode(digest(receipt.generation_json,'sha256'),'hex')
-	  AND jsonb_typeof(receipt.generation_json::jsonb)='object'
-	  AND receipt.generation_json::jsonb->'schema' IS NOT DISTINCT FROM
-		  to_jsonb('omnidex.prepared-generation.v1'::TEXT)
-      AND receipt.generation_json::jsonb->'provider_response_disposition'
-		  IS NOT DISTINCT FROM to_jsonb('succeeded'::TEXT)
-	  AND receipt.generation_json::jsonb->'provider_request_disposition'
-		  IS NOT DISTINCT FROM to_jsonb('dispatched'::TEXT)
-	  AND NOT (receipt.generation_json::jsonb ? 'provider_request_failure_reason')
-	  AND receipt.generation_json::jsonb->'provider_request_sha256'
-		  IS NOT DISTINCT FROM to_jsonb(call.wire_request_sha256)
-	  AND receipt.generation_json::jsonb->'provider_response_model'
-		  IS NOT DISTINCT FROM to_jsonb(call.model)
-	  AND receipt.generation_json::jsonb->'protocol'
-		  IS NOT DISTINCT FROM to_jsonb(call.protocol)
-	  AND replacement_json_nonnegative_integer_is_exact(
-		  receipt.generation_json::json->'provider_http_status',599
-	  )
-	  AND (receipt.generation_json::jsonb->>'provider_http_status')::INTEGER
-		  BETWEEN 200 AND 299
-	  AND receipt.generation_json::jsonb->'provider_response_complete'
-		  IS NOT DISTINCT FROM 'true'::JSONB
-	  AND receipt.generation_json::jsonb->'provider_response_bytes_known'
-		  IS NOT DISTINCT FROM 'true'::JSONB
-	  AND replacement_json_nonnegative_integer_is_exact(
-		  receipt.generation_json::json->'provider_response_bytes',16777216
-	  )
-	  AND replacement_json_nonnegative_integer_is_exact(
-		  receipt.generation_json::json->'provider_response_captured_bytes',16777216
-	  )
-	  AND receipt.generation_json::jsonb->'provider_response_bytes'=
-		  receipt.generation_json::jsonb->'provider_response_captured_bytes'
-	  AND jsonb_typeof(receipt.generation_json::jsonb->'provider_response_sha256')='string'
-	  AND receipt.generation_json::jsonb->'provider_response_sha256'=
-		  receipt.generation_json::jsonb->'provider_response_capture_sha256'
-	  AND receipt.generation_json::jsonb->>'provider_response_sha256'~'^[0-9a-f]{64}$'
-	  AND jsonb_typeof(receipt.generation_json::jsonb->'provider_content_encoding')='object'
-	  AND receipt.generation_json::jsonb->'provider_content_encoding'->'schema'
-		  IS NOT DISTINCT FROM
-		  to_jsonb('omnidex.provider-content-encoding-evidence.v1'::TEXT)
-	  AND receipt.generation_json::jsonb->'provider_content_encoding'->'complete'
-		  IS NOT DISTINCT FROM 'true'::JSONB
-	  AND receipt.generation_json::jsonb->'provider_content_encoding'->'uncompressed'
-		  IS NOT DISTINCT FROM 'false'::JSONB
-	  AND replacement_json_nonnegative_integer_is_exact(
-		  receipt.generation_json::json->'provider_content_encoding'->'values',1
-	  )
-	  AND replacement_json_nonnegative_integer_is_exact(
-		  receipt.generation_json::json->'provider_content_encoding'->'bytes',65538
-	  )
-	  AND replacement_json_nonnegative_integer_is_exact(
-		  receipt.generation_json::json->'provider_content_encoding'->'captured_bytes',65537
-	  )
-	  AND receipt.generation_json::jsonb->'provider_content_encoding'->'bytes'=
-		  receipt.generation_json::jsonb->'provider_content_encoding'->'captured_bytes'
-	  AND jsonb_typeof(
-		  receipt.generation_json::jsonb->'provider_content_encoding'->'sha256'
-	  )='string'
-	  AND jsonb_typeof(
-		  receipt.generation_json::jsonb->'provider_content_encoding'->'captured_base64'
-	  )='string'
-	  AND (receipt.generation_json::jsonb->'provider_content_encoding'->>'captured_bytes')::INTEGER=
-		  octet_length(decode(
-			  receipt.generation_json::jsonb->'provider_content_encoding'->>'captured_base64',
-			  'base64'
-		  ))
-	  AND receipt.generation_json::jsonb->'provider_content_encoding'->>'sha256'=
-		  encode(digest(decode(
-			  receipt.generation_json::jsonb->'provider_content_encoding'->>'captured_base64',
-			  'base64'
-		  ),'sha256'),'hex')
-	  AND (
-		  (receipt.generation_json::jsonb->'provider_content_encoding'->'values'='0'::JSONB AND
-		   receipt.generation_json::jsonb->'provider_content_encoding'->'captured_base64'=
-		       to_jsonb(''::TEXT)) OR
-		  (receipt.generation_json::jsonb->'provider_content_encoding'->'values'='1'::JSONB AND
-		   receipt.generation_json::jsonb->'provider_content_encoding'->'captured_base64'=
-		       to_jsonb('AAAAAAAAAAhpZGVudGl0eQ=='::TEXT))
-	  )
-      AND receipt.generation_json::jsonb->'provider_done_present'
-		  IS NOT DISTINCT FROM 'true'::JSONB
-      AND receipt.generation_json::jsonb->'provider_done'
-		  IS NOT DISTINCT FROM 'true'::JSONB
-      AND receipt.generation_json::jsonb->'provider_done_reason'
-		  IS NOT DISTINCT FROM to_jsonb('length'::TEXT)
-      AND receipt.generation_json::jsonb->'usage_present'
-		  IS NOT DISTINCT FROM 'true'::JSONB
-	  AND jsonb_typeof(receipt.generation_json::jsonb->'usage')='object'
-	  AND replacement_json_nonnegative_integer_is_exact(
-		  receipt.generation_json::json->'usage'->'prompt_eval_count',2147483647
-	  )
-	  AND replacement_json_nonnegative_integer_is_exact(
-		  receipt.generation_json::json->'usage'->'eval_count',2147483647
-	  )
-	  AND receipt.generation_json::jsonb->'usage'->'prompt_eval_count'<>'0'::JSONB
-	  AND receipt.generation_json::jsonb->'usage'->'eval_count'<>'0'::JSONB
-	  AND replacement_json_nonnegative_integer_is_exact(
-		  receipt.generation_json::json->'usage'->'total_duration_nanos',9223372036854775807
-	  )
-	  AND replacement_json_nonnegative_integer_is_exact(
-		  receipt.generation_json::json->'usage'->'load_duration_nanos',9223372036854775807
-	  )
-	  AND replacement_json_nonnegative_integer_is_exact(
-		  receipt.generation_json::json->'usage'->'prompt_eval_duration_nanos',9223372036854775807
-	  )
-	  AND replacement_json_nonnegative_integer_is_exact(
-		  receipt.generation_json::json->'usage'->'eval_duration_nanos',9223372036854775807
-	  )
-	  AND (receipt.generation_json::jsonb->'usage'->>'prompt_eval_count')::INTEGER+
-		  (receipt.generation_json::jsonb->'usage'->>'eval_count')::INTEGER<=
-		  origin.context_tokens
-	  AND jsonb_typeof(receipt.generation_json::jsonb->'content')='string'
-	  AND octet_length(receipt.generation_json::jsonb->>'content')
-		  BETWEEN 1 AND 16777216;
-
-    IF origin_count<>1 THEN
-        RAISE EXCEPTION
-            'fragment generation replacement requires one exact persisted failed output-limit origin';
-    END IF;
-    RETURN NEW;
-END;
-$_$;
 
 
 --
--- Name: require_fragment_generation_replacement_provider(); Type: FUNCTION; Schema: current runtime; Owner: -
---
-
-CREATE FUNCTION require_fragment_generation_replacement_provider() RETURNS trigger
-    LANGUAGE plpgsql
-    AS $$
-DECLARE
-	gap_work_kind TEXT;
-	origin_model TEXT;
-BEGIN
-	SELECT gap.work_kind,origin_call.model
-	  INTO gap_work_kind,origin_model
-	FROM station_gap_openings AS gap
-	LEFT JOIN station_call_receipts AS origin_receipt
-	  ON origin_receipt.id=gap.origin_call_receipt_id
-	LEFT JOIN station_call_openings AS origin_call
-	  ON origin_call.id=origin_receipt.opening_id
-	WHERE gap.id=NEW.gap_opening_id;
-
-	IF gap_work_kind IS DISTINCT FROM 'fragment_generation_replacement' THEN
-		RETURN NEW;
-	END IF;
-	IF origin_model IS NULL OR
-	   NEW.selection::jsonb->>'model' IS DISTINCT FROM origin_model THEN
-		RAISE EXCEPTION
-			'fragment generation replacement requires the exact origin provider model';
-	END IF;
-	RETURN NEW;
-END;
-$$;
 
 
 --
@@ -2382,42 +1787,6 @@ END $$;
 
 
 --
--- Name: require_llm_call_station_gap(); Type: FUNCTION; Schema: current runtime; Owner: -
---
-
-CREATE FUNCTION require_llm_call_station_gap() RETURNS trigger
-    LANGUAGE plpgsql
-    AS $$
-DECLARE
-    opening station_gap_openings%ROWTYPE;
-    receipt station_call_receipts%ROWTYPE;
-BEGIN
-    IF NEW.station_call_opening_id IS NULL THEN
-        RAISE EXCEPTION 'new LLM call evidence requires one persisted station call opening';
-    END IF;
-    SELECT gaps.* INTO opening FROM station_gap_openings AS gaps
-    JOIN station_call_openings AS calls ON calls.gap_opening_id=gaps.id
-    WHERE calls.id=NEW.station_call_opening_id FOR SHARE OF gaps;
-    SELECT * INTO receipt FROM station_call_receipts
-    WHERE opening_id=NEW.station_call_opening_id FOR SHARE;
-    IF NOT FOUND OR
-       ROW(NEW.job_id,NEW.job_generation,NEW.step_id,NEW.step_attempt,NEW.worker_id,
-           NEW.scope,NEW.work_id,NEW.work_kind,NEW.system_prompt,
-           NEW.context_tokens,NEW.max_output_tokens)
-       IS DISTINCT FROM
-       ROW(opening.job_id,opening.generation,opening.step_id,opening.step_attempt,
-           opening.worker_id,opening.scope,opening.work_id,opening.work_kind,opening.prompt,
-           opening.context_tokens,opening.max_output_tokens) OR
-       receipt.id IS NULL OR NEW.status::text IS DISTINCT FROM (CASE receipt.status
-           WHEN 'succeeded' THEN 'succeeded' ELSE 'generation_failed' END) OR
-       NEW.response IS DISTINCT FROM NULLIF(receipt.generation_json::jsonb->>'content','') OR
-       (receipt.status='failed' AND NEW.error IS NULL) OR
-       (receipt.status='succeeded' AND NEW.error IS NOT NULL) THEN
-        RAISE EXCEPTION 'LLM call evidence does not match its exact station gap opening';
-    END IF;
-    RETURN NEW;
-END;
-$$;
 
 
 --
@@ -2687,88 +2056,6 @@ $$;
 
 
 --
--- Name: require_station_call_receipt_before_gap_outcome(); Type: FUNCTION; Schema: current runtime; Owner: -
---
-
-CREATE FUNCTION require_station_call_receipt_before_gap_outcome() RETURNS trigger
-    LANGUAGE plpgsql
-    AS $$
-DECLARE
-    discovery_count INTEGER;
-    discovery_status TEXT;
-    call_count INTEGER;
-    call_status TEXT;
-    call_response TEXT;
-    call_receipt_sha256 TEXT;
-    call_response_sha256 TEXT;
-    evidence_count INTEGER;
-    gap_work_kind TEXT;
-    gap_payload JSONB;
-BEGIN
-    SELECT COUNT(*),MIN(receipts.status) INTO discovery_count,discovery_status
-    FROM station_provider_discoveries discoveries
-    LEFT JOIN station_provider_discovery_receipts receipts
-      ON receipts.opening_id=discoveries.id
-    WHERE discoveries.gap_opening_id=NEW.opening_id;
-
-    SELECT COUNT(*),MIN(receipts.status),MIN(receipts.generation_json::jsonb->>'content'),
-           MIN(receipts.generation_sha256),MIN(evidence.response_sha256),COUNT(evidence.id)
-    INTO call_count,call_status,call_response,call_receipt_sha256,
-         call_response_sha256,evidence_count
-    FROM station_call_openings calls
-    LEFT JOIN station_call_receipts receipts ON receipts.opening_id=calls.id
-    LEFT JOIN llm_call_evidence evidence ON evidence.station_call_opening_id=calls.id
-    WHERE calls.gap_opening_id=NEW.opening_id;
-
-    SELECT work_kind,portable_payload::jsonb INTO gap_work_kind,gap_payload
-    FROM station_gap_openings WHERE id=NEW.opening_id;
-
-    IF discovery_count<>1 OR discovery_status IS NULL THEN
-        RAISE EXCEPTION
-            'station gap outcome requires one terminal provider discovery receipt';
-    END IF;
-    IF call_count>0 AND (call_status IS NULL OR evidence_count<>call_count) THEN
-        RAISE EXCEPTION
-            'station gap outcome requires one immutable evidence row for every terminal provider call';
-    END IF;
-    IF NEW.status='resolved' AND
-       (discovery_status<>'succeeded' OR call_count<>1 OR call_status<>'succeeded' OR
-        NEW.call_receipt_sha256 IS DISTINCT FROM call_receipt_sha256 OR
-        NEW.source_response_sha256 IS DISTINCT FROM call_response_sha256 OR
-        NEW.source_start_byte<>0 OR
-        NEW.source_end_byte<>octet_length(call_response) OR
-        NEW.response IS DISTINCT FROM call_response OR
-        (NEW.projection_kind='source_declaration' AND NOT (
-            gap_work_kind='fragment_correction' OR
-            (gap_work_kind='fragment_generation' AND
-             gap_payload->>'language' IN ('go','javascript','java','rust','php')) OR
-            (gap_work_kind='fragment_generation_replacement' AND
-             gap_payload->'original'->>'language' IN ('go','javascript','java','rust','php')) OR
-            (gap_work_kind='fragment_modification' AND
-             gap_payload->>'language'='go')
-        )) OR
-        (NEW.projection_kind='typescript_function' AND NOT (
-            ((gap_work_kind IN ('fragment_generation','fragment_correction') AND
-              gap_payload->>'language'='typescript' AND
-              NOT (gap_payload ? 'repair_region')) OR
-             (gap_work_kind='fragment_generation_replacement' AND
-              gap_payload->'original'->>'language'='typescript'))
-        ))) THEN
-        RAISE EXCEPTION
-            'resolved station gap projection differs from its exact full provider receipt';
-    END IF;
-    IF NEW.status='failed' AND discovery_status='succeeded' AND
-       (call_count<>1 OR call_status IS NULL) THEN
-        RAISE EXCEPTION
-            'failed station gap requires its terminal provider call receipt';
-    END IF;
-    IF NEW.status='failed' AND discovery_status='failed' AND call_count<>0 THEN
-        RAISE EXCEPTION
-            'failed provider discovery cannot have a provider call';
-    END IF;
-    RETURN NEW;
-END;
-$$;
 
 
 --
@@ -2915,33 +2202,6 @@ BEGIN
         RAISE EXCEPTION 'working-set item reacquisition has no exact immutable event history';
     END IF;
     RETURN NULL;
-END;
-$$;
-
-
---
--- Name: require_workspace_mutation_files(); Type: FUNCTION; Schema: current runtime; Owner: -
---
-
-CREATE FUNCTION require_workspace_mutation_files() RETURNS trigger
-    LANGUAGE plpgsql
-    AS $$
-DECLARE
-    file_count INTEGER;
-    first_ordinal INTEGER;
-    last_ordinal INTEGER;
-    operation_sealed_at TIMESTAMPTZ;
-BEGIN
-    SELECT sealed_at INTO operation_sealed_at
-    FROM workspace_mutation_operations WHERE id=NEW.id;
-    SELECT COUNT(*),MIN(ordinal),MAX(ordinal)
-      INTO file_count,first_ordinal,last_ordinal
-    FROM workspace_mutation_files WHERE operation_id=NEW.id;
-    IF operation_sealed_at IS NULL OR file_count NOT BETWEEN 1 AND 32 OR
-       first_ordinal<>0 OR last_ordinal<>file_count-1 THEN
-        RAISE EXCEPTION 'workspace mutation must be sealed with 1-32 exact files';
-    END IF;
-    RETURN NEW;
 END;
 $$;
 
@@ -4056,7 +3316,6 @@ CREATE FUNCTION station_owns_portable_work(station text, work_kind text, payload
         WHEN 'application_service_endpoint_request_media' THEN station='coding_service_endpoint_request_media'
         WHEN 'application_service_endpoint_response_media' THEN station='coding_service_endpoint_response_media'
         WHEN 'application_service_endpoint_success_status' THEN station='coding_service_endpoint_success_status'
-        WHEN 'repository_change_owner' THEN station='coding_repository_change_surface'
         WHEN 'repository_evidence_relevance_relation' THEN station='repository_evidence_relevance'
         WHEN 'context_relevance_relation' THEN station='context_relevance'
         WHEN 'context_minification' THEN station='context_minification'
@@ -4103,12 +3362,7 @@ CREATE FUNCTION station_owns_portable_work(station text, work_kind text, payload
         WHEN 'web_synthesis_evidence_relation' THEN station='web_grounded_synthesis'
         WHEN 'web_synthesis_paragraph_authorization' THEN station='web_grounded_synthesis'
         WHEN 'artifact_handling' THEN station='coding_artifact_handling'
-        WHEN 'repository_artifact_absence' THEN station='coding_repository_artifact_absence'
-        WHEN 'plain_text_artifact_creation' THEN station='coding_plain_text_artifact_creation'
-        WHEN 'declaration_artifact_boundary' THEN station='coding_declaration_artifact_boundary'
-        WHEN 'artifact_candidate_selection' THEN station='coding_artifact_candidate_selection'
         WHEN 'capability_relation' THEN station='coding_capability_relation'
-        WHEN 'skill_selection' THEN station='coding_skill_selection'
         WHEN 'runtime_capability_necessity' THEN station='coding_runtime_capability_necessity'
         WHEN 'typescript_repair_guidance' THEN station='coding_fragment_repair_guidance'
         WHEN 'fragment_generation' THEN station='coding_fragment'
@@ -5500,138 +4754,6 @@ $$;
 
 
 --
--- Name: validate_objective_portable_result_reuse_insert(); Type: FUNCTION; Schema: current runtime; Owner: -
---
-
-CREATE FUNCTION validate_objective_portable_result_reuse_insert() RETURNS trigger
-    LANGUAGE plpgsql
-    AS $$
-DECLARE
-    target_job jobs%ROWTYPE;
-    source_job jobs%ROWTYPE;
-    target_step job_steps%ROWTYPE;
-    target_attempt job_step_attempts%ROWTYPE;
-    source_attempt job_step_attempts%ROWTYPE;
-    source_opening station_gap_openings%ROWTYPE;
-    source_outcome station_gap_outcomes%ROWTYPE;
-    target_authority JSONB;
-    source_authority JSONB;
-    target_envelope JSONB;
-    source_envelope JSONB;
-BEGIN
-    SELECT * INTO target_job FROM jobs WHERE id=NEW.target_job_id FOR SHARE;
-    SELECT * INTO target_step FROM job_steps
-    WHERE job_id=NEW.target_job_id AND generation=NEW.target_generation AND id=NEW.target_step_id
-    FOR SHARE;
-    SELECT * INTO target_attempt FROM job_step_attempts
-    WHERE job_id=NEW.target_job_id AND generation=NEW.target_generation AND
-          step_id=NEW.target_step_id AND attempt=NEW.target_step_attempt
-    FOR SHARE;
-    IF target_job.id IS NULL OR target_step.id IS NULL OR target_attempt.job_id IS NULL OR
-       target_job.status<>'running' OR target_job.current_generation<>NEW.target_generation OR
-       target_step.status<>'running' OR target_step.superseded_at_generation IS NOT NULL OR
-       target_step.current_attempt<>NEW.target_step_attempt OR
-       target_step.worker_id IS DISTINCT FROM NEW.target_worker_id OR
-       target_attempt.status<>'active' OR target_attempt.worker_id<>NEW.target_worker_id OR
-       target_attempt.expires_at<=clock_timestamp() THEN
-        RAISE EXCEPTION 'objective portable reuse target is not the current active step attempt';
-    END IF;
-
-    SELECT * INTO source_job FROM jobs WHERE id=NEW.source_job_id FOR SHARE;
-    SELECT * INTO source_attempt FROM job_step_attempts
-    WHERE job_id=NEW.source_job_id AND generation=NEW.source_generation AND
-          step_id=NEW.source_step_id AND attempt=NEW.source_step_attempt
-    FOR SHARE;
-    SELECT * INTO source_opening FROM station_gap_openings
-    WHERE id=NEW.source_gap_opening_id FOR SHARE;
-    SELECT * INTO source_outcome FROM station_gap_outcomes
-    WHERE id=NEW.source_gap_outcome_id FOR SHARE;
-    IF source_job.id IS NULL OR source_attempt.job_id IS NULL OR
-       source_opening.id IS NULL OR source_outcome.id IS NULL OR
-       ROW(source_opening.job_id,source_opening.generation,source_opening.step_id,
-           source_opening.step_attempt,source_opening.worker_id)
-       IS DISTINCT FROM
-       ROW(NEW.source_job_id,NEW.source_generation,NEW.source_step_id,
-           NEW.source_step_attempt,NEW.source_worker_id) OR
-       source_outcome.opening_id<>source_opening.id OR
-       ROW(source_outcome.job_id,source_outcome.generation,source_outcome.step_id,
-           source_outcome.step_attempt,source_outcome.worker_id)
-       IS DISTINCT FROM
-       ROW(source_opening.job_id,source_opening.generation,source_opening.step_id,
-           source_opening.step_attempt,source_opening.worker_id) OR
-       source_attempt.worker_id<>NEW.source_worker_id OR
-       source_opening.station<>NEW.target_station OR
-       source_opening.work_id<>NEW.source_work_id OR
-       source_opening.portable_envelope_sha256<>NEW.source_portable_envelope_sha256 OR
-       source_outcome.status<>'resolved' OR
-       source_outcome.projection_kind<>'exact_response' OR
-       source_outcome.call_receipt_sha256<>NEW.source_call_receipt_sha256 OR
-       source_outcome.response_sha256<>NEW.source_response_sha256 OR
-       source_outcome.source_response_sha256<>NEW.source_response_sha256 OR
-       source_outcome.source_start_byte<>0 OR
-       source_outcome.source_end_byte<>octet_length(source_outcome.response) THEN
-        RAISE EXCEPTION 'objective portable reuse source is not one exact resolved response';
-    END IF;
-
-    IF ROW(source_opening.job_id,source_opening.generation,source_opening.step_id,
-           source_opening.step_attempt,source_opening.worker_id)
-       IS NOT DISTINCT FROM
-       ROW(NEW.target_job_id,NEW.target_generation,NEW.target_step_id,
-           NEW.target_step_attempt,NEW.target_worker_id) THEN
-        RAISE EXCEPTION 'objective portable reuse cannot read the current attempt';
-    END IF;
-    IF NOT (
-        (source_job.status='failed' AND source_job.id<>target_job.id) OR
-        (source_job.id=target_job.id AND source_job.status='running' AND
-         NEW.source_generation=NEW.target_generation AND
-         NEW.source_step_id=NEW.target_step_id AND
-         NEW.source_step_attempt<NEW.target_step_attempt AND
-         source_attempt.status IN ('expired','superseded','canceled'))
-    ) THEN
-        RAISE EXCEPTION 'objective portable reuse source is not failed or a superseded prior attempt';
-    END IF;
-
-    target_envelope := NEW.target_portable_envelope::jsonb;
-    source_envelope := source_opening.portable_envelope::jsonb;
-    IF NOT station_owns_portable_work(
-        NEW.target_station,target_envelope->>'kind',target_envelope->'payload'
-    ) OR source_envelope<>target_envelope OR
-         source_opening.work_id<>NEW.target_root_work_id THEN
-        RAISE EXCEPTION 'objective portable reuse source does not resolve the exact root portable job';
-    END IF;
-
-    IF target_job.metadata->>'channel_mode'='roleplay' OR
-       source_job.metadata->>'channel_mode'='roleplay' THEN
-        target_authority := roleplay_portable_result_reuse_authority(target_job.metadata);
-        source_authority := roleplay_portable_result_reuse_authority(source_job.metadata);
-        IF target_job.pipeline<>'chat' OR source_job.pipeline<>'chat' OR
-           target_authority IS NULL OR source_authority IS NULL OR
-           target_authority<>source_authority OR
-           NEW.objective_authority::jsonb<>target_authority OR
-           NOT EXISTS (
-               SELECT 1 FROM roleplay_simulation_preparation_jobs AS binding
-               WHERE binding.preparation_id=
-                         target_job.metadata->>'roleplay_simulation_preparation_id' AND
-                     binding.job_id=target_job.id
-           ) OR NOT EXISTS (
-               SELECT 1 FROM roleplay_simulation_preparation_jobs AS binding
-               WHERE binding.preparation_id=
-                         source_job.metadata->>'roleplay_simulation_preparation_id' AND
-                     binding.job_id=source_job.id
-           ) THEN
-            RAISE EXCEPTION 'objective portable reuse fictional authority differs';
-        END IF;
-    ELSE
-        target_authority := jsonb_build_object('job_id',target_job.id);
-        source_authority := jsonb_build_object('job_id',source_job.id);
-        IF source_job.id<>target_job.id OR target_authority<>source_authority OR
-           NEW.objective_authority::jsonb<>target_authority THEN
-            RAISE EXCEPTION 'objective portable reuse non-roleplay source is not the same job';
-        END IF;
-    END IF;
-    RETURN NEW;
-END;
-$$;
 
 
 --
@@ -6285,179 +5407,9 @@ $$;
 
 
 --
--- Name: validate_station_call_opening_insert(); Type: FUNCTION; Schema: current runtime; Owner: -
---
-
-CREATE FUNCTION validate_station_call_opening_insert() RETURNS trigger
-    LANGUAGE plpgsql
-    AS $$
-DECLARE
-    gap station_gap_openings%ROWTYPE;
-    discovery station_provider_discovery_receipts%ROWTYPE;
-	origin_model TEXT;
-BEGIN
-    SELECT * INTO gap FROM station_gap_openings WHERE id=NEW.gap_opening_id FOR SHARE;
-    SELECT * INTO discovery FROM station_provider_discovery_receipts WHERE id=NEW.discovery_receipt_id FOR SHARE;
-	SELECT origin_call.model INTO origin_model
-	FROM station_call_receipts AS origin_receipt
-	JOIN station_call_openings AS origin_call
-	  ON origin_call.id=origin_receipt.opening_id
-	WHERE origin_receipt.id=gap.origin_call_receipt_id;
-    IF gap.id IS NULL OR discovery.id IS NULL OR
-       ROW(NEW.job_id,NEW.generation,NEW.step_id,NEW.step_attempt,NEW.worker_id,NEW.gap_id,
-           NEW.context_tokens,NEW.max_output_tokens,NEW.output_limit_mode)
-       IS DISTINCT FROM
-       ROW(gap.job_id,gap.generation,gap.step_id,gap.step_attempt,gap.worker_id,gap.gap_id,
-           gap.context_tokens,gap.max_output_tokens,gap.output_limit_mode) OR
-       discovery.status<>'succeeded' OR discovery.gap_id<>gap.gap_id OR
-       discovery.job_id<>gap.job_id OR discovery.generation<>gap.generation OR
-       discovery.step_id<>gap.step_id OR discovery.step_attempt<>gap.step_attempt OR
-       discovery.worker_id<>gap.worker_id OR discovery.expectation::jsonb<>NEW.expectation::jsonb OR
-	   (gap.work_kind='fragment_generation_replacement' AND
-		(origin_model IS NULL OR NEW.model IS DISTINCT FROM origin_model)) THEN
-        RAISE EXCEPTION 'station call opening does not match its exact gap authority';
-    END IF;
-    RETURN NEW;
-END;
-$$;
 
 
 --
--- Name: validate_station_call_receipt_insert(); Type: FUNCTION; Schema: current runtime; Owner: -
---
-
-CREATE FUNCTION validate_station_call_receipt_insert() RETURNS trigger
-    LANGUAGE plpgsql
-    AS $_$
-DECLARE
-    opening station_call_openings%ROWTYPE;
-    attempt_status TEXT;
-    attempt_worker TEXT;
-    generation JSONB := NEW.generation_json::jsonb;
-    evidence JSONB;
-    operations JSONB;
-    observation JSONB;
-    identity_count INTEGER;
-    response_count INTEGER;
-    mismatches INTEGER;
-    request_disposition TEXT;
-    response_disposition TEXT;
-    authority_reason TEXT;
-    zero_observation JSONB := '{
-        "schema":"","observed_at":"0001-01-01T00:00:00Z","attestation_sha256":"",
-        "version_body_sha256":"","installed_body_sha256":"","tokenizer_request_sha256":"",
-        "tokenizer_body_sha256":"","preload_body_sha256":"","runner_body_sha256":"",
-        "preload_method":"","preload_endpoint":"","preload_request_sha256":"",
-        "challenge_sha256":"","evidence":{"schema":"","id":"","sha256":"","bytes":0},
-        "observation_sha256":""
-    }'::jsonb;
-BEGIN
-    SELECT * INTO opening FROM station_call_openings WHERE id=NEW.opening_id FOR SHARE;
-    SELECT attempts.status,attempts.worker_id INTO attempt_status,attempt_worker
-    FROM job_step_attempts AS attempts
-    WHERE attempts.job_id=opening.job_id AND attempts.generation=opening.generation AND
-          attempts.step_id=opening.step_id AND attempts.attempt=opening.step_attempt FOR SHARE;
-    evidence := generation->'provider_identity_evidence';
-    operations := evidence->'operations';
-    observation := generation->'provider_observation';
-    request_disposition := generation->>'provider_request_disposition';
-    response_disposition := generation->>'provider_response_disposition';
-    authority_reason := generation->>'provider_request_failure_reason';
-    IF opening.id IS NULL OR jsonb_typeof(generation) IS DISTINCT FROM 'object' OR
-       generation->>'schema' IS DISTINCT FROM 'omnidex.prepared-generation.v1' OR
-       generation->>'protocol' IS DISTINCT FROM opening.protocol OR
-       request_disposition IS NULL OR request_disposition NOT IN
-           ('not_dispatched','dispatched','write_indeterminate') OR
-       NOT generation ? 'provider_response_disposition' OR response_disposition IS NULL OR
-       jsonb_typeof(observation) IS DISTINCT FROM 'object' OR
-       jsonb_typeof(evidence) IS DISTINCT FROM 'object' OR
-       evidence->>'schema' IS DISTINCT FROM 'omnidex.provider-identity-evidence.v1' OR
-       jsonb_typeof(evidence->'ref') IS DISTINCT FROM 'object' OR
-       evidence->'ref'->>'schema' IS DISTINCT FROM 'omnidex.provider-identity-evidence-ref.v1' OR
-       evidence->'ref'->>'sha256' IS NULL OR
-       evidence->'ref'->>'sha256' !~ '^[0-9a-f]{64}$' OR
-       evidence->'ref'->>'id' IS DISTINCT FROM
-           'provider_identity_'||(evidence->'ref'->>'sha256') OR
-       (CASE
-           WHEN jsonb_typeof(evidence->'ref'->'bytes')='number' AND
-                (evidence->'ref'->>'bytes')~'^[1-9][0-9]{0,7}$'
-           THEN ((evidence->'ref'->>'bytes')::INTEGER BETWEEN 1 AND 29360135)
-           ELSE FALSE
-       END) IS DISTINCT FROM TRUE OR
-       jsonb_typeof(operations) IS DISTINCT FROM 'array' OR jsonb_array_length(operations)<>5 THEN
-        RAISE EXCEPTION 'station call receipt contains sparse JSON authority';
-    END IF;
-    SELECT COUNT(*) INTO identity_count FROM station_call_identity_captures WHERE opening_id=NEW.opening_id;
-    SELECT COUNT(*) INTO response_count FROM station_call_response_captures WHERE opening_id=NEW.opening_id;
-    SELECT COUNT(*) INTO mismatches
-    FROM station_call_identity_captures AS capture
-    LEFT JOIN LATERAL (
-        SELECT item FROM jsonb_array_elements(operations) WITH ORDINALITY AS value(item,ordinality)
-        WHERE value.ordinality=capture.operation_index+1
-    ) operation ON TRUE
-    WHERE capture.opening_id=NEW.opening_id AND (
-        operation.item->>'operation' IS DISTINCT FROM capture.operation OR
-        operation.item->>'method' IS DISTINCT FROM capture.method OR
-        operation.item->>'endpoint' IS DISTINCT FROM capture.endpoint OR
-        operation.item->>'request_sha256' IS DISTINCT FROM capture.request_sha256 OR
-        operation.item->'request_bytes' IS DISTINCT FROM to_jsonb(capture.request_bytes) OR
-        operation.item->>'response_sha256' IS DISTINCT FROM capture.response_sha256 OR
-        operation.item->'response_bytes' IS DISTINCT FROM to_jsonb(capture.response_bytes)
-    );
-    IF attempt_worker IS DISTINCT FROM opening.worker_id OR identity_count<>5 OR mismatches<>0 OR
-       response_count IS DISTINCT FROM (CASE WHEN response_disposition IN ('','transport_error') THEN 0 ELSE 1 END) OR
-       (response_count=1 AND NOT EXISTS (
-           SELECT 1 FROM station_call_response_captures capture WHERE capture.opening_id=NEW.opening_id AND
-             capture.capture_sha256 IS NOT DISTINCT FROM generation->>'provider_response_capture_sha256' AND
-             to_jsonb(capture.captured_bytes) IS NOT DISTINCT FROM
-                 generation->'provider_response_captured_bytes'
-       )) OR
-       ROW(NEW.job_id,NEW.generation,NEW.step_id,NEW.step_attempt,NEW.worker_id,NEW.gap_id)
-       IS DISTINCT FROM ROW(opening.job_id,opening.generation,opening.step_id,
-                            opening.step_attempt,opening.worker_id,opening.gap_id) OR
-       (NEW.status='succeeded' AND (
-           request_disposition IS DISTINCT FROM 'dispatched' OR
-           generation ? 'provider_request_failure_reason' OR
-           generation->>'provider_request_sha256' IS DISTINCT FROM opening.wire_request_sha256 OR
-           observation->>'schema' IS DISTINCT FROM 'omnidex.provider-identity-observation.v2' OR
-           observation->>'challenge_sha256' IS DISTINCT FROM opening.observation_challenge OR
-           response_disposition IS DISTINCT FROM 'succeeded' OR response_count<>1 OR
-           COALESCE(BTRIM(generation->>'content'),'')='' OR
-           generation->'provider_done_present' IS DISTINCT FROM 'true'::jsonb OR
-           generation->'provider_done' IS DISTINCT FROM 'true'::jsonb
-       )) OR
-       (NEW.status='failed' AND request_disposition='not_dispatched' AND (
-           response_count<>0 OR
-           (attempt_status='active' AND (
-               generation ? 'provider_request_failure_reason' OR NOT (
-                   (response_disposition='' AND
-                    generation->>'provider_request_sha256' IS NOT DISTINCT FROM '' AND
-                    observation IS NOT DISTINCT FROM zero_observation) OR
-                   (response_disposition='transport_error' AND
-                    generation->>'provider_request_sha256' IS NOT DISTINCT FROM opening.wire_request_sha256 AND
-                    observation->>'schema' IS NOT DISTINCT FROM 'omnidex.provider-identity-observation.v2' AND
-                    observation->>'challenge_sha256' IS NOT DISTINCT FROM opening.observation_challenge)
-               )
-           )) OR
-           (attempt_status IN ('canceled','superseded','expired') AND (
-               authority_reason IS DISTINCT FROM 'authority_'||attempt_status OR
-               generation->>'provider_request_sha256' IS DISTINCT FROM opening.wire_request_sha256 OR
-               response_disposition IS DISTINCT FROM '' OR observation IS DISTINCT FROM zero_observation
-           )) OR attempt_status NOT IN ('active','canceled','superseded','expired')
-       )) OR
-       (request_disposition IN ('dispatched','write_indeterminate') AND (
-           generation ? 'provider_request_failure_reason' OR
-           generation->>'provider_request_sha256' IS DISTINCT FROM opening.wire_request_sha256 OR
-           observation->>'schema' IS DISTINCT FROM 'omnidex.provider-identity-observation.v2' OR
-           observation->>'challenge_sha256' IS DISTINCT FROM opening.observation_challenge OR
-           response_disposition IS NULL OR response_disposition NOT IN
-               ('succeeded','transport_error','http_error','body_limit','body_read_error','invalid_json','empty_content')
-       )) THEN
-        RAISE EXCEPTION 'station call receipt differs from exact typed JSON authority';
-    END IF;
-    RETURN NEW;
-END;
-$_$;
 
 
 --
@@ -6482,132 +5434,12 @@ $$;
 
 
 --
--- Name: validate_station_llm_call_evidence_identity(); Type: FUNCTION; Schema: current runtime; Owner: -
---
-
-CREATE FUNCTION validate_station_llm_call_evidence_identity() RETURNS trigger
-    LANGUAGE plpgsql
-    AS $$
-DECLARE
-    opening station_call_openings%ROWTYPE;
-BEGIN
-    SELECT * INTO opening FROM station_call_openings
-    WHERE id=NEW.station_call_opening_id FOR SHARE;
-    IF opening.id IS NULL OR NEW.requested_model<>opening.model OR
-       NEW.model<>opening.model OR NEW.attempt<>1 THEN
-        RAISE EXCEPTION 'LLM call evidence differs from its exact opened model authority';
-    END IF;
-    RETURN NEW;
-END;
-$$;
 
 
 --
--- Name: validate_station_provider_discovery_insert(); Type: FUNCTION; Schema: current runtime; Owner: -
---
-
-CREATE FUNCTION validate_station_provider_discovery_insert() RETURNS trigger
-    LANGUAGE plpgsql
-    AS $$
-DECLARE gap station_gap_openings%ROWTYPE;
-BEGIN
-    SELECT * INTO gap FROM station_gap_openings WHERE id=NEW.gap_opening_id FOR SHARE;
-    IF NOT FOUND OR
-       ROW(NEW.job_id,NEW.generation,NEW.step_id,NEW.step_attempt,NEW.worker_id,NEW.gap_id)
-       IS DISTINCT FROM
-       ROW(gap.job_id,gap.generation,gap.step_id,gap.step_attempt,gap.worker_id,gap.gap_id) OR
-       ((NEW.selection::jsonb)->>'native_context_limit')::INTEGER<>gap.context_tokens THEN
-        RAISE EXCEPTION 'station provider discovery does not match its exact gap authority';
-    END IF;
-    RETURN NEW;
-END;
-$$;
 
 
 --
--- Name: validate_station_provider_discovery_receipt_insert(); Type: FUNCTION; Schema: current runtime; Owner: -
---
-
-CREATE FUNCTION validate_station_provider_discovery_receipt_insert() RETURNS trigger
-    LANGUAGE plpgsql
-    AS $_$
-DECLARE
-    opening station_provider_discoveries%ROWTYPE;
-    captures INTEGER;
-    mismatches INTEGER;
-    envelope JSONB := NEW.observation::jsonb;
-    evidence JSONB;
-    operations JSONB;
-    reason TEXT;
-BEGIN
-    SELECT * INTO opening FROM station_provider_discoveries WHERE id=NEW.opening_id FOR SHARE;
-    evidence := envelope->'evidence';
-    operations := evidence->'operations';
-    reason := envelope->>'failure_reason';
-    IF opening.id IS NULL OR jsonb_typeof(envelope) IS DISTINCT FROM 'object' OR
-       jsonb_typeof(evidence) IS DISTINCT FROM 'object' OR
-       evidence->>'schema' IS DISTINCT FROM 'omnidex.provider-identity-evidence.v1' OR
-       jsonb_typeof(evidence->'ref') IS DISTINCT FROM 'object' OR
-       evidence->'ref'->>'schema' IS DISTINCT FROM 'omnidex.provider-identity-evidence-ref.v1' OR
-       evidence->'ref'->>'sha256' IS NULL OR
-       evidence->'ref'->>'sha256' !~ '^[0-9a-f]{64}$' OR
-       evidence->'ref'->>'id' IS DISTINCT FROM
-           'provider_identity_'||(evidence->'ref'->>'sha256') OR
-       (CASE
-           WHEN jsonb_typeof(evidence->'ref'->'bytes')='number' AND
-                (evidence->'ref'->>'bytes')~'^[1-9][0-9]{0,7}$'
-           THEN ((evidence->'ref'->>'bytes')::INTEGER BETWEEN 1 AND 29360135)
-           ELSE FALSE
-       END) IS DISTINCT FROM TRUE OR
-       jsonb_typeof(operations) IS DISTINCT FROM 'array' OR jsonb_array_length(operations)<>5 THEN
-        RAISE EXCEPTION 'station provider discovery receipt contains sparse JSON authority';
-    END IF;
-    SELECT COUNT(*) INTO captures FROM station_provider_discovery_captures WHERE opening_id=NEW.opening_id;
-    SELECT COUNT(*) INTO mismatches
-    FROM station_provider_discovery_captures AS capture
-    LEFT JOIN LATERAL (
-        SELECT item FROM jsonb_array_elements(operations) WITH ORDINALITY AS value(item,ordinality)
-        WHERE value.ordinality=capture.operation_index+1
-    ) operation ON TRUE
-    WHERE capture.opening_id=NEW.opening_id AND (
-        operation.item->>'operation' IS DISTINCT FROM capture.operation OR
-        operation.item->>'method' IS DISTINCT FROM capture.method OR
-        operation.item->>'endpoint' IS DISTINCT FROM capture.endpoint OR
-        operation.item->>'request_disposition' IS DISTINCT FROM capture.request_disposition OR
-        operation.item->>'request_sha256' IS DISTINCT FROM capture.request_sha256 OR
-        operation.item->'request_bytes' IS DISTINCT FROM to_jsonb(capture.request_bytes) OR
-        operation.item->'http_status' IS DISTINCT FROM to_jsonb(capture.http_status) OR
-        operation.item->>'disposition' IS DISTINCT FROM capture.disposition OR
-        operation.item->'response_complete' IS DISTINCT FROM to_jsonb(capture.response_complete) OR
-        operation.item->'content_encoding' IS DISTINCT FROM capture.content_encoding::jsonb OR
-        operation.item->>'response_sha256' IS DISTINCT FROM capture.response_sha256 OR
-        operation.item->'response_bytes' IS DISTINCT FROM to_jsonb(capture.response_bytes)
-    );
-    IF captures<>5 OR mismatches<>0 OR
-       ROW(NEW.job_id,NEW.generation,NEW.step_id,NEW.step_attempt,NEW.worker_id,NEW.gap_id)
-       IS DISTINCT FROM ROW(opening.job_id,opening.generation,opening.step_id,
-                            opening.step_attempt,opening.worker_id,opening.gap_id) OR
-       (NEW.status='succeeded' AND (
-           envelope ? 'failure_reason' OR envelope->>'schema' IS DISTINCT FROM
-               'omnidex.provider-identity-observation.v2' OR
-           envelope->>'challenge_sha256' IS DISTINCT FROM opening.challenge OR
-           jsonb_typeof(envelope->'observed_at') IS DISTINCT FROM 'string'
-       )) OR
-       (NEW.status='failed' AND (
-           NOT envelope ? 'failure_reason' OR
-           reason IS NULL OR reason NOT IN
-               ('evidence_rejected','observation_rejected','provider_contract_rejected') OR
-           (reason='evidence_rejected' AND
-               (envelope ? 'attestation' OR envelope ? 'observation')) OR
-           (reason IN ('observation_rejected','provider_contract_rejected') AND
-               (jsonb_typeof(envelope->'attestation') IS DISTINCT FROM 'object' OR
-                jsonb_typeof(envelope->'observation') IS DISTINCT FROM 'object'))
-       )) THEN
-        RAISE EXCEPTION 'station provider discovery receipt differs from exact typed JSON authority';
-    END IF;
-    RETURN NEW;
-END;
-$_$;
 
 
 --
@@ -6626,451 +5458,6 @@ BEGIN
     END IF;
     RETURN NEW;
 END;
-$$;
-
-
---
--- Name: validate_workspace_mutation_file_insert(); Type: FUNCTION; Schema: current runtime; Owner: -
---
-
-CREATE FUNCTION validate_workspace_mutation_file_insert() RETURNS trigger
-    LANGUAGE plpgsql
-    AS $$
-DECLARE
-    operation_workspace_id TEXT;
-    operation_status TEXT;
-    operation_sealed_at TIMESTAMPTZ;
-BEGIN
-    SELECT workspace_id,status,sealed_at
-      INTO operation_workspace_id,operation_status,operation_sealed_at
-    FROM workspace_mutation_operations WHERE id=NEW.operation_id FOR UPDATE;
-    IF NOT FOUND THEN
-        RAISE EXCEPTION 'workspace mutation file has no operation';
-    END IF;
-    IF operation_status<>'prepared' OR operation_sealed_at IS NOT NULL THEN
-        RAISE EXCEPTION 'workspace mutation file authority is sealed';
-    END IF;
-    IF NEW.file_id<>'workspace_file_' || encode(digest(
-        convert_to(operation_workspace_id,'UTF8') || decode('00','hex') ||
-        convert_to(NEW.path,'UTF8') || decode('00','hex'),'sha256'
-    ),'hex') THEN
-        RAISE EXCEPTION 'workspace mutation file identity differs from workspace path authority';
-    END IF;
-    RETURN NEW;
-END;
-$$;
-
-
---
--- Name: validate_workspace_mutation_insert(); Type: FUNCTION; Schema: current runtime; Owner: -
---
-
-CREATE FUNCTION validate_workspace_mutation_insert() RETURNS trigger
-    LANGUAGE plpgsql
-    AS $_$
-DECLARE
-    authority_valid BOOLEAN;
-    source_binding_valid BOOLEAN;
-    plan JSONB;
-BEGIN
-    IF NEW.status<>'prepared' OR NEW.sealed_at IS NOT NULL OR
-       NEW.apply_attempt_count<>0 OR NEW.verification_attempt_count<>0 OR
-       ROW(NEW.last_error,NEW.mutation_evidence_id,NEW.verification_succeeded,
-           NEW.verification_receipt_json,NEW.verification_receipt_sha256,
-           NEW.verification_evidence_id,NEW.applying_at,NEW.applied_at,
-           NEW.verifying_at,NEW.terminal_at,NEW.verified_repository_snapshot_id)
-       IS DISTINCT FROM ROW(NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL) OR
-       ROW(NEW.creator_step_attempt,NEW.creator_worker_id) IS DISTINCT FROM
-       ROW(NEW.current_step_attempt,NEW.current_worker_id) THEN
-        RAISE EXCEPTION 'workspace mutation insert must be one unattempted prepared command';
-    END IF;
-    SELECT jobs.status='running' AND (
-               (jobs.pipeline='chat' AND steps.action='objective_resolve') OR
-               (jobs.pipeline='coding' AND steps.action='v3_coding') OR
-               (jobs.pipeline='scrum' AND steps.action='v3_coding')
-           ) AND
-           jobs.project_id=NEW.project_id AND jobs.current_generation=NEW.generation AND
-           projects.location=NEW.project_location AND
-           steps.status='running' AND steps.generation=NEW.generation AND
-           steps.current_attempt=NEW.current_step_attempt AND
-           steps.worker_id=NEW.current_worker_id AND steps.superseded_at_generation IS NULL AND
-           attempts.status='active' AND attempts.worker_id=NEW.current_worker_id AND
-           attempts.expires_at>clock_timestamp()
-      INTO authority_valid
-    FROM jobs
-    JOIN projects ON projects.id=jobs.project_id
-    JOIN job_steps AS steps ON steps.job_id=jobs.id AND steps.id=NEW.step_id
-    JOIN job_step_attempts AS attempts
-      ON attempts.job_id=NEW.job_id AND attempts.generation=NEW.generation AND
-         attempts.step_id=NEW.step_id AND attempts.attempt=NEW.current_step_attempt
-    WHERE jobs.id=NEW.job_id;
-    IF authority_valid IS DISTINCT FROM TRUE THEN
-        RAISE EXCEPTION 'workspace mutation requires the exact current active step attempt and project location';
-    END IF;
-    IF NEW.source_repository_snapshot_id IS NOT NULL THEN
-        SELECT snapshot.project_id=NEW.project_id AND snapshot.root=NEW.workspace_root
-          INTO source_binding_valid
-        FROM repository_snapshots AS snapshot
-        WHERE snapshot.id=NEW.source_repository_snapshot_id;
-        IF source_binding_valid IS DISTINCT FROM TRUE THEN
-            RAISE EXCEPTION 'workspace mutation optional Git source binding differs from workspace authority';
-        END IF;
-    END IF;
-    plan := NEW.verification_plan_json::JSONB;
-    IF NOT workspace_mutation_exact_keys(plan,ARRAY['commands','schema']) OR
-       plan->>'schema'<>'omnidex.workspace-mutation-verification-plan.v1' OR
-       jsonb_typeof(plan->'commands')<>'array' OR
-       jsonb_array_length(plan->'commands') NOT BETWEEN 1 AND 32 OR
-       EXISTS (
-           SELECT 1
-           FROM jsonb_array_elements(plan->'commands') WITH ORDINALITY AS item(command,ordinal)
-           WHERE NOT workspace_mutation_exact_keys(
-                     command,ARRAY['command','command_sha256','kind','ordinal']
-                 ) OR
-                 command->>'kind' NOT IN ('command_output','test_result') OR
-                 jsonb_typeof(command->'command')<>'string' OR
-                 command->>'command'<>btrim(command->>'command') OR
-                 octet_length(command->>'command') NOT BETWEEN 1 AND 16384 OR
-                 command->>'command_sha256' !~ '^[0-9a-f]{64}$' OR
-                 command->>'command_sha256'<>encode(
-                     digest(convert_to(command->>'command','UTF8'),'sha256'),'hex'
-                 ) OR
-                 jsonb_typeof(command->'ordinal')<>'number' OR
-                 command->>'ordinal'<>ordinal::TEXT
-       ) THEN
-        RAISE EXCEPTION 'workspace mutation verification plan is invalid';
-    END IF;
-    RETURN NEW;
-END;
-$_$;
-
-
---
--- Name: validate_workspace_mutation_update(); Type: FUNCTION; Schema: current runtime; Owner: -
---
-
-CREATE FUNCTION validate_workspace_mutation_update() RETURNS trigger
-    LANGUAGE plpgsql
-    AS $_$
-DECLARE
-    valid_mutation_evidence BOOLEAN;
-    valid_verification_evidence BOOLEAN;
-    receipt JSONB;
-    plan JSONB := NEW.verification_plan_json::JSONB;
-    planned_count INTEGER;
-    valid_command_count INTEGER;
-    all_commands_succeeded BOOLEAN;
-    any_command_failed BOOLEAN;
-BEGIN
-    IF ROW(OLD.id,OLD.command_sha256,OLD.job_id,OLD.generation,OLD.step_id,
-           OLD.creator_step_attempt,OLD.creator_worker_id,OLD.project_id,
-           OLD.owner_id,OLD.stage_id,OLD.workspace_id,OLD.workspace_root,
-           OLD.source_state_id,OLD.expected_state_id,OLD.source_repository_snapshot_id,
-           OLD.patch,OLD.patch_sha256,OLD.verification_plan_json,
-           OLD.verification_plan_sha256,OLD.prepared_at)
-       IS DISTINCT FROM
-       ROW(NEW.id,NEW.command_sha256,NEW.job_id,NEW.generation,NEW.step_id,
-           NEW.creator_step_attempt,NEW.creator_worker_id,NEW.project_id,
-           NEW.owner_id,NEW.stage_id,NEW.workspace_id,NEW.workspace_root,
-           NEW.source_state_id,NEW.expected_state_id,NEW.source_repository_snapshot_id,
-           NEW.patch,NEW.patch_sha256,NEW.verification_plan_json,
-           NEW.verification_plan_sha256,NEW.prepared_at) THEN
-        RAISE EXCEPTION 'workspace mutation command authority is immutable';
-    END IF;
-    IF OLD.sealed_at IS NULL AND NEW.sealed_at IS NOT NULL THEN
-        IF OLD.status<>'prepared' OR NEW.status<>'prepared' OR
-           OLD.apply_attempt_count<>0 OR NEW.apply_attempt_count<>0 OR
-           OLD.verification_attempt_count<>0 OR NEW.verification_attempt_count<>0 OR
-           (to_jsonb(OLD)-ARRAY['sealed_at','updated_at']) IS DISTINCT FROM
-           (to_jsonb(NEW)-ARRAY['sealed_at','updated_at']) THEN
-            RAISE EXCEPTION 'workspace mutation sealing transition is invalid';
-        END IF;
-        IF NOT workspace_mutation_current_authority_valid(NEW) THEN
-            RAISE EXCEPTION 'workspace mutation sealing lost exact current step-attempt authority';
-        END IF;
-        RETURN NEW;
-    END IF;
-    IF NEW.sealed_at IS DISTINCT FROM OLD.sealed_at OR NEW.sealed_at IS NULL THEN
-        RAISE EXCEPTION 'workspace mutation file seal is immutable';
-    END IF;
-    IF OLD.status IN ('verified','verification_failed') THEN
-        RAISE EXCEPTION '% workspace mutation is terminal',OLD.status;
-    END IF;
-    IF NOT workspace_mutation_current_authority_valid(NEW) THEN
-        RAISE EXCEPTION 'workspace mutation transition lost exact current step-attempt authority';
-    END IF;
-    IF OLD.status=NEW.status AND OLD.status NOT IN ('applying','verifying') THEN
-        IF (to_jsonb(OLD)-ARRAY['current_step_attempt','current_worker_id','updated_at']) IS DISTINCT FROM
-           (to_jsonb(NEW)-ARRAY['current_step_attempt','current_worker_id','updated_at']) THEN
-            RAISE EXCEPTION 'workspace mutation authority replay cannot change journal state';
-        END IF;
-        RETURN NEW;
-    END IF;
-    IF (OLD.status='prepared' AND NEW.status NOT IN ('applying','applied','indeterminate')) OR
-       (OLD.status='applying' AND NEW.status NOT IN ('applying','prepared','applied','indeterminate')) OR
-       (OLD.status='applied' AND NEW.status NOT IN ('verifying','indeterminate')) OR
-       (OLD.status='verifying' AND NEW.status NOT IN ('verifying','applied','verified','verification_failed','indeterminate')) OR
-       (OLD.status='indeterminate' AND OLD.indeterminate_phase='apply' AND
-        NEW.status NOT IN ('applying','applied')) OR
-       (OLD.status='indeterminate' AND OLD.indeterminate_phase='verification' AND
-        NEW.status NOT IN ('verifying','applied','verified','verification_failed')) THEN
-        RAISE EXCEPTION 'workspace mutation transition from %/% to %/% is invalid',
-            OLD.status,OLD.indeterminate_phase,NEW.status,NEW.indeterminate_phase;
-    END IF;
-    IF (NEW.status='applying' AND NEW.apply_attempt_count<>OLD.apply_attempt_count+1) OR
-       (NEW.status<>'applying' AND NEW.apply_attempt_count<>OLD.apply_attempt_count) OR
-       (NEW.status='applying' AND
-        (NEW.applying_at IS NULL OR NEW.applying_at IS NOT DISTINCT FROM OLD.applying_at)) OR
-       (NEW.status<>'applying' AND NEW.applying_at IS DISTINCT FROM OLD.applying_at) THEN
-        RAISE EXCEPTION 'workspace mutation application attempt transition is invalid';
-    END IF;
-    IF (NEW.status='verifying' AND
-        NEW.verification_attempt_count<>OLD.verification_attempt_count+1) OR
-       (NEW.status<>'verifying' AND
-        NEW.verification_attempt_count<>OLD.verification_attempt_count) OR
-       (NEW.status='verifying' AND
-        (NEW.verifying_at IS NULL OR NEW.verifying_at IS NOT DISTINCT FROM OLD.verifying_at)) OR
-       (NEW.status<>'verifying' AND NEW.verifying_at IS DISTINCT FROM OLD.verifying_at) THEN
-        RAISE EXCEPTION 'workspace mutation verification attempt transition is invalid';
-    END IF;
-    IF NEW.mutation_evidence_id IS NOT NULL THEN
-        SELECT evidence.job_id=NEW.job_id AND evidence.step_id=NEW.step_id AND
-               evidence.kind='generated_diff' AND evidence.source_type='workspace' AND
-               evidence.source_ref=NEW.stage_id AND
-               evidence.payload_json->>'hash'=NEW.patch_sha256 AND
-               evidence.payload_json->'metadata'->>'workspace_mutation_operation_id'=NEW.id AND
-               evidence.payload_json->'metadata'->>'source_state_id'=NEW.source_state_id AND
-               evidence.payload_json->'metadata'->>'expected_state_id'=NEW.expected_state_id
-          INTO valid_mutation_evidence
-        FROM evidence WHERE evidence.id=NEW.mutation_evidence_id;
-        IF valid_mutation_evidence IS DISTINCT FROM TRUE THEN
-            RAISE EXCEPTION 'applied workspace mutation has invalid generated-diff evidence';
-        END IF;
-    END IF;
-    IF NEW.status NOT IN ('verified','verification_failed') THEN
-        RETURN NEW;
-    END IF;
-    receipt := NEW.verification_receipt_json::JSONB;
-    IF NEW.verification_receipt_sha256<>encode(digest(
-           convert_to(NEW.verification_receipt_json,'UTF8'),'sha256'),'hex') OR
-       NOT workspace_mutation_exact_keys(receipt,ARRAY[
-           'command_evidence_ids','expected_state_id','observed_state_id','operation_id',
-           'schema','source_state_id','succeeded'
-       ]) OR
-       receipt->>'schema'<>'omnidex.workspace-mutation-verification-receipt.v1' OR
-       receipt->>'operation_id'<>NEW.id OR
-       receipt->>'source_state_id'<>NEW.source_state_id OR
-       receipt->>'expected_state_id'<>NEW.expected_state_id OR
-       receipt->>'observed_state_id'<>NEW.expected_state_id OR
-       jsonb_typeof(receipt->'succeeded')<>'boolean' OR
-       (receipt->>'succeeded')::BOOLEAN<>NEW.verification_succeeded OR
-       jsonb_typeof(receipt->'command_evidence_ids')<>'array' THEN
-        RAISE EXCEPTION 'workspace mutation verification receipt differs from command authority';
-    END IF;
-    planned_count := jsonb_array_length(plan->'commands');
-    IF jsonb_array_length(receipt->'command_evidence_ids')<>planned_count OR
-       EXISTS (
-           SELECT 1 FROM jsonb_array_elements(receipt->'command_evidence_ids') AS item
-           WHERE jsonb_typeof(item)<>'number' OR item#>>'{}' !~ '^[1-9][0-9]*$'
-       ) OR
-       (SELECT array_agg(value::BIGINT ORDER BY ordinal)
-          FROM jsonb_array_elements_text(receipt->'command_evidence_ids')
-               WITH ORDINALITY AS item(value,ordinal)) IS DISTINCT FROM
-       (SELECT array_agg(DISTINCT value::BIGINT ORDER BY value::BIGINT)
-          FROM jsonb_array_elements_text(receipt->'command_evidence_ids') AS item(value)) THEN
-        RAISE EXCEPTION 'workspace mutation verification receipt evidence set is invalid';
-    END IF;
-    SELECT COUNT(*),BOOL_AND((evidence.payload_json->'metadata'->>'succeeded')::BOOLEAN),
-           BOOL_OR(NOT (evidence.payload_json->'metadata'->>'succeeded')::BOOLEAN)
-      INTO valid_command_count,all_commands_succeeded,any_command_failed
-    FROM jsonb_array_elements(plan->'commands') WITH ORDINALITY AS planned(command,ordinal)
-    JOIN jsonb_array_elements_text(receipt->'command_evidence_ids')
-         WITH ORDINALITY AS cited(evidence_id,ordinal) USING (ordinal)
-    JOIN evidence ON evidence.id=cited.evidence_id::BIGINT AND
-         evidence.job_id=NEW.job_id AND evidence.step_id=NEW.step_id AND
-         evidence.kind=planned.command->>'kind' AND
-         evidence.source_type='workspace_verification' AND evidence.source_ref=NEW.id AND
-         evidence.payload_json->>'command'<>'' AND
-         encode(digest(convert_to(evidence.payload_json->>'command','UTF8'),'sha256'),'hex')=
-             planned.command->>'command_sha256' AND
-         evidence.payload_json->'metadata'->>'succeeded' IN ('true','false');
-    IF valid_command_count<>planned_count OR
-       (NEW.status='verified' AND all_commands_succeeded IS DISTINCT FROM TRUE) OR
-       (NEW.status='verification_failed' AND any_command_failed IS DISTINCT FROM TRUE) THEN
-        RAISE EXCEPTION 'workspace mutation verification receipt command evidence is not exact';
-    END IF;
-    SELECT evidence.job_id=NEW.job_id AND evidence.step_id=NEW.step_id AND
-           evidence.kind='workspace_verification_receipt' AND
-           evidence.source_type='workspace_mutation' AND evidence.source_ref=NEW.id AND
-           evidence.payload_json->>'hash'=NEW.verification_receipt_sha256 AND
-           evidence.payload_json->>'excerpt'=NEW.verification_receipt_json AND
-           evidence.payload_json->'metadata'->>'workspace_mutation_operation_id'=NEW.id AND
-           evidence.payload_json->'metadata'->>'observed_state_id'=NEW.expected_state_id AND
-           evidence.payload_json->'metadata'->>'succeeded'=NEW.verification_succeeded::TEXT
-      INTO valid_verification_evidence
-    FROM evidence WHERE evidence.id=NEW.verification_evidence_id;
-    IF valid_verification_evidence IS DISTINCT FROM TRUE THEN
-        RAISE EXCEPTION 'workspace mutation verification receipt evidence is invalid';
-    END IF;
-    IF NEW.verified_repository_snapshot_id IS NOT NULL THEN
-        PERFORM 1 FROM repository_snapshots AS verified
-        JOIN repository_snapshots AS source
-          ON source.id=NEW.source_repository_snapshot_id AND
-             source.project_id=NEW.project_id AND source.root=NEW.workspace_root
-        WHERE verified.id=NEW.verified_repository_snapshot_id AND
-              verified.project_id=NEW.project_id AND verified.root=NEW.workspace_root AND
-              verified.repository_id=source.repository_id;
-        IF NOT FOUND THEN
-            RAISE EXCEPTION 'workspace mutation verified Git binding differs from source authority';
-        END IF;
-    END IF;
-    RETURN NEW;
-END;
-$_$;
-
-
-SET default_tablespace = '';
-
-SET default_table_access_method = heap;
-
---
--- Name: workspace_mutation_operations; Type: TABLE; Schema: current runtime; Owner: -
---
-
-CREATE TABLE workspace_mutation_operations (
-    id text NOT NULL,
-    command_sha256 text NOT NULL,
-    job_id bigint NOT NULL,
-    generation bigint NOT NULL,
-    step_id bigint NOT NULL,
-    creator_step_attempt bigint NOT NULL,
-    creator_worker_id text NOT NULL,
-    current_step_attempt bigint NOT NULL,
-    current_worker_id text NOT NULL,
-    project_id bigint NOT NULL,
-    owner_id text NOT NULL,
-    stage_id text NOT NULL,
-    workspace_id text NOT NULL,
-    workspace_root text NOT NULL,
-    source_state_id text NOT NULL,
-    expected_state_id text NOT NULL,
-    source_repository_snapshot_id text,
-    verified_repository_snapshot_id text,
-    patch text NOT NULL,
-    patch_sha256 text NOT NULL,
-    verification_plan_json text NOT NULL,
-    verification_plan_sha256 text NOT NULL,
-    status text NOT NULL,
-    indeterminate_phase text,
-    apply_attempt_count integer DEFAULT 0 NOT NULL,
-    verification_attempt_count integer DEFAULT 0 NOT NULL,
-    last_error text,
-    mutation_evidence_id bigint,
-    verification_succeeded boolean,
-    verification_receipt_json text,
-    verification_receipt_sha256 text,
-    verification_evidence_id bigint,
-    prepared_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
-    sealed_at timestamp with time zone,
-    applying_at timestamp with time zone,
-    applied_at timestamp with time zone,
-    verifying_at timestamp with time zone,
-    updated_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
-    terminal_at timestamp with time zone,
-    project_location text NOT NULL,
-    CONSTRAINT workspace_mutation_operations_apply_attempt_count_check CHECK ((apply_attempt_count >= 0)),
-    CONSTRAINT workspace_mutation_operations_check CHECK ((id = ('workspace_mutation_'::text || command_sha256))),
-    CONSTRAINT workspace_mutation_operations_check1 CHECK ((workspace_id = ('workspace_'::text || encode(public.digest((convert_to(workspace_root, 'UTF8'::name) || decode('00'::text, 'hex'::text)), 'sha256'::text), 'hex'::text)))),
-    CONSTRAINT workspace_mutation_operations_check10 CHECK ((((status = ANY (ARRAY['applied'::text, 'verifying'::text, 'verified'::text, 'verification_failed'::text])) OR ((status = 'indeterminate'::text) AND (indeterminate_phase = 'verification'::text))) = (mutation_evidence_id IS NOT NULL))),
-    CONSTRAINT workspace_mutation_operations_check11 CHECK ((((status = ANY (ARRAY['applied'::text, 'verifying'::text, 'verified'::text, 'verification_failed'::text])) OR ((status = 'indeterminate'::text) AND (indeterminate_phase = 'verification'::text))) = (applied_at IS NOT NULL))),
-    CONSTRAINT workspace_mutation_operations_check12 CHECK (((verification_receipt_json IS NULL) = (verification_receipt_sha256 IS NULL))),
-    CONSTRAINT workspace_mutation_operations_check13 CHECK (((verification_receipt_json IS NULL) = (verification_evidence_id IS NULL))),
-    CONSTRAINT workspace_mutation_operations_check14 CHECK (((verification_receipt_json IS NULL) = (verification_succeeded IS NULL))),
-    CONSTRAINT workspace_mutation_operations_check15 CHECK (((status = ANY (ARRAY['verified'::text, 'verification_failed'::text])) = (verification_receipt_json IS NOT NULL))),
-    CONSTRAINT workspace_mutation_operations_check16 CHECK (((status = 'verified'::text) = (verification_succeeded IS TRUE))),
-    CONSTRAINT workspace_mutation_operations_check17 CHECK (((status = ANY (ARRAY['verified'::text, 'verification_failed'::text])) = (terminal_at IS NOT NULL))),
-    CONSTRAINT workspace_mutation_operations_check18 CHECK (((verified_repository_snapshot_id IS NULL) OR (source_repository_snapshot_id IS NOT NULL))),
-    CONSTRAINT workspace_mutation_operations_check19 CHECK (((verified_repository_snapshot_id IS NULL) OR (status = ANY (ARRAY['verified'::text, 'verification_failed'::text])))),
-    CONSTRAINT workspace_mutation_operations_check2 CHECK ((source_state_id <> expected_state_id)),
-    CONSTRAINT workspace_mutation_operations_check20 CHECK (((status <> ALL (ARRAY['verified'::text, 'verification_failed'::text])) OR (source_repository_snapshot_id IS NULL) OR (verified_repository_snapshot_id IS NOT NULL))),
-    CONSTRAINT workspace_mutation_operations_check3 CHECK ((patch_sha256 = encode(public.digest(convert_to(patch, 'UTF8'::name), 'sha256'::text), 'hex'::text))),
-    CONSTRAINT workspace_mutation_operations_check4 CHECK ((verification_plan_sha256 = encode(public.digest(convert_to(verification_plan_json, 'UTF8'::name), 'sha256'::text), 'hex'::text))),
-    CONSTRAINT workspace_mutation_operations_check5 CHECK (((status = 'indeterminate'::text) = (indeterminate_phase IS NOT NULL))),
-    CONSTRAINT workspace_mutation_operations_check6 CHECK (((status <> 'indeterminate'::text) OR (last_error IS NOT NULL))),
-    CONSTRAINT workspace_mutation_operations_check7 CHECK (((status <> 'verification_failed'::text) OR (last_error IS NOT NULL))),
-    CONSTRAINT workspace_mutation_operations_check8 CHECK (((apply_attempt_count = 0) = (applying_at IS NULL))),
-    CONSTRAINT workspace_mutation_operations_check9 CHECK (((verification_attempt_count = 0) = (verifying_at IS NULL))),
-    CONSTRAINT workspace_mutation_operations_command_sha256_check CHECK ((command_sha256 ~ '^[0-9a-f]{64}$'::text)),
-    CONSTRAINT workspace_mutation_operations_creator_step_attempt_check CHECK ((creator_step_attempt > 0)),
-    CONSTRAINT workspace_mutation_operations_creator_worker_id_check CHECK (((creator_worker_id <> ''::text) AND (creator_worker_id = btrim(creator_worker_id)) AND (octet_length(creator_worker_id) <= 256))),
-    CONSTRAINT workspace_mutation_operations_current_step_attempt_check CHECK ((current_step_attempt > 0)),
-    CONSTRAINT workspace_mutation_operations_current_worker_id_check CHECK (((current_worker_id <> ''::text) AND (current_worker_id = btrim(current_worker_id)) AND (octet_length(current_worker_id) <= 256))),
-    CONSTRAINT workspace_mutation_operations_expected_state_id_check CHECK ((expected_state_id ~ '^workspace_state_[0-9a-f]{64}$'::text)),
-    CONSTRAINT workspace_mutation_operations_generation_check CHECK ((generation > 0)),
-    CONSTRAINT workspace_mutation_operations_id_check CHECK ((id ~ '^workspace_mutation_[0-9a-f]{64}$'::text)),
-    CONSTRAINT workspace_mutation_operations_indeterminate_phase_check CHECK ((indeterminate_phase = ANY (ARRAY['apply'::text, 'verification'::text]))),
-    CONSTRAINT workspace_mutation_operations_last_error_check CHECK (((last_error IS NULL) OR ((last_error <> ''::text) AND (last_error = btrim(last_error)) AND (octet_length(last_error) <= 65536)))),
-    CONSTRAINT workspace_mutation_operations_owner_id_check CHECK ((owner_id ~ '^[a-z][a-z0-9_]{0,63}_[0-9a-f]{64}$'::text)),
-    CONSTRAINT workspace_mutation_operations_patch_check CHECK (((octet_length(patch) >= 1) AND (octet_length(patch) <= 33554432))),
-    CONSTRAINT workspace_mutation_operations_patch_sha256_check CHECK ((patch_sha256 ~ '^[0-9a-f]{64}$'::text)),
-    CONSTRAINT workspace_mutation_operations_source_state_id_check CHECK ((source_state_id ~ '^workspace_state_[0-9a-f]{64}$'::text)),
-    CONSTRAINT workspace_mutation_operations_stage_id_check CHECK ((stage_id ~ '^[a-z][a-z0-9_]{0,63}_[0-9a-f]{64}$'::text)),
-    CONSTRAINT workspace_mutation_operations_status_check CHECK ((status = ANY (ARRAY['prepared'::text, 'applying'::text, 'applied'::text, 'verifying'::text, 'verified'::text, 'verification_failed'::text, 'indeterminate'::text]))),
-    CONSTRAINT workspace_mutation_operations_verification_attempt_count_check CHECK ((verification_attempt_count >= 0)),
-    CONSTRAINT workspace_mutation_operations_verification_plan_json_check CHECK (((octet_length(verification_plan_json) >= 2) AND (octet_length(verification_plan_json) <= 262144))),
-    CONSTRAINT workspace_mutation_operations_verification_plan_sha256_check CHECK ((verification_plan_sha256 ~ '^[0-9a-f]{64}$'::text)),
-    CONSTRAINT workspace_mutation_operations_verification_receipt_json_check CHECK (((verification_receipt_json IS NULL) OR ((octet_length(verification_receipt_json) >= 2) AND (octet_length(verification_receipt_json) <= 262144)))),
-    CONSTRAINT workspace_mutation_operations_verification_receipt_sha256_check CHECK (((verification_receipt_sha256 IS NULL) OR (verification_receipt_sha256 ~ '^[0-9a-f]{64}$'::text))),
-    CONSTRAINT workspace_mutation_operations_workspace_id_check CHECK ((workspace_id ~ '^workspace_[0-9a-f]{64}$'::text)),
-    CONSTRAINT workspace_mutation_operations_workspace_root_check CHECK (((workspace_root <> ''::text) AND (workspace_root = btrim(workspace_root)) AND (octet_length(workspace_root) <= 4096) AND ("left"(workspace_root, 1) = '/'::text) AND (workspace_root <> '/'::text) AND ("right"(workspace_root, 1) <> '/'::text) AND (POSITION((chr(92)) IN (workspace_root)) = 0) AND (workspace_root !~ '[
-]'::text) AND (POSITION(('//'::text) IN (workspace_root)) = 0) AND (workspace_root !~ '(^|/)[.][.]?(/|$)'::text))),
-    CONSTRAINT workspace_mutation_project_location_valid CHECK (((project_location <> ''::text) AND (project_location = btrim(project_location)) AND (octet_length(project_location) <= 4096) AND ("left"(project_location, 1) = '/'::text) AND (project_location <> '/'::text) AND ("right"(project_location, 1) <> '/'::text) AND (POSITION((chr(92)) IN (project_location)) = 0) AND (project_location !~ '[
-]'::text) AND (POSITION(('//'::text) IN (project_location)) = 0) AND (project_location !~ '(^|/)[.][.]?(/|$)'::text)))
-);
-
-
---
--- Name: workspace_mutation_current_authority_valid(workspace_mutation_operations); Type: FUNCTION; Schema: current runtime; Owner: -
---
-
-CREATE FUNCTION workspace_mutation_current_authority_valid(operation workspace_mutation_operations) RETURNS boolean
-    LANGUAGE sql
-    AS $$
-    SELECT COALESCE((
-        SELECT jobs.status='running' AND jobs.current_generation=operation.generation AND
-               jobs.project_id=operation.project_id AND
-               projects.location=operation.project_location AND (
-                   (jobs.pipeline='chat' AND steps.action='objective_resolve') OR
-                   (jobs.pipeline='coding' AND steps.action='v3_coding') OR
-                   (jobs.pipeline='scrum' AND steps.action='v3_coding')
-               ) AND
-               steps.status='running' AND steps.generation=operation.generation AND
-               steps.current_attempt=operation.current_step_attempt AND
-               steps.worker_id=operation.current_worker_id AND
-               steps.superseded_at_generation IS NULL AND attempts.status='active' AND
-               attempts.worker_id=operation.current_worker_id AND
-               attempts.expires_at>clock_timestamp()
-        FROM jobs
-        JOIN projects ON projects.id=jobs.project_id
-        JOIN job_steps AS steps ON steps.job_id=jobs.id AND steps.id=operation.step_id
-        JOIN job_step_attempts AS attempts
-          ON attempts.job_id=operation.job_id AND attempts.generation=operation.generation AND
-             attempts.step_id=operation.step_id AND attempts.attempt=operation.current_step_attempt
-        WHERE jobs.id=operation.job_id
-    ),FALSE);
-$$;
-
-
---
--- Name: workspace_mutation_exact_keys(jsonb, text[]); Type: FUNCTION; Schema: current runtime; Owner: -
---
-
-CREATE FUNCTION workspace_mutation_exact_keys(value jsonb, required text[]) RETURNS boolean
-    LANGUAGE sql IMMUTABLE
-    AS $$
-    SELECT jsonb_typeof(value)='object' AND
-        COALESCE((SELECT array_agg(key ORDER BY key) FROM jsonb_object_keys(value) AS key),ARRAY[]::TEXT[])=
-        COALESCE((SELECT array_agg(item ORDER BY item) FROM unnest(required) AS item),ARRAY[]::TEXT[]);
 $$;
 
 
@@ -8117,73 +6504,12 @@ CREATE TABLE lifecycle_operation_registry (
 
 
 --
--- Name: llm_call_evidence; Type: TABLE; Schema: current runtime; Owner: -
---
-
-CREATE TABLE llm_call_evidence (
-    id bigint NOT NULL,
-    job_id bigint NOT NULL,
-    step_id bigint NOT NULL,
-    scope text NOT NULL,
-    work_id text,
-    work_kind text,
-    requested_model text NOT NULL,
-    model text NOT NULL,
-    attempt integer NOT NULL,
-    system_prompt text NOT NULL,
-    user_prompt text NOT NULL,
-    context_tokens integer NOT NULL,
-    max_output_tokens integer NOT NULL,
-    response text,
-    response_sha256 text,
-    status text NOT NULL,
-    error text,
-    latency_ms bigint NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    job_generation bigint NOT NULL,
-    context_projection_id text,
-    step_attempt bigint,
-    worker_id text,
-    station_call_opening_id bigint,
-    CONSTRAINT llm_call_evidence_attempt_authority_complete CHECK ((((step_attempt IS NULL) AND (worker_id IS NULL)) OR ((step_attempt > 0) AND (worker_id IS NOT NULL) AND (worker_id <> ''::text)))),
-    CONSTRAINT llm_call_evidence_attempt_check CHECK ((attempt > 0)),
-    CONSTRAINT llm_call_evidence_check CHECK (((work_id IS NULL) = (work_kind IS NULL))),
-    CONSTRAINT llm_call_evidence_check2 CHECK (((response IS NULL) = (response_sha256 IS NULL))),
-    CONSTRAINT llm_call_evidence_check3 CHECK (((status = 'succeeded'::text) = (error IS NULL))),
-    CONSTRAINT llm_call_evidence_check4 CHECK (((status <> 'succeeded'::text) OR ((response IS NOT NULL) AND (btrim(response) <> ''::text)))),
-    CONSTRAINT llm_call_evidence_context_projection_shape CHECK (((context_projection_id IS NULL) OR ((work_id IS NOT NULL) AND (work_kind IS NOT NULL)))),
-    CONSTRAINT llm_call_evidence_context_tokens_check CHECK ((context_tokens > 0)),
-    CONSTRAINT llm_call_evidence_latency_ms_check CHECK ((latency_ms >= 0)),
-    CONSTRAINT llm_call_evidence_max_output_tokens_check CHECK ((max_output_tokens > 0)),
-    CONSTRAINT llm_call_evidence_model_check CHECK ((btrim(model) <> ''::text)),
-    CONSTRAINT llm_call_evidence_requested_model_check CHECK ((btrim(requested_model) <> ''::text)),
-    CONSTRAINT llm_call_evidence_response_sha256_check CHECK (((response_sha256 IS NULL) OR (response_sha256 ~ '^[0-9a-f]{64}$'::text))),
-    CONSTRAINT llm_call_evidence_scope_check CHECK ((btrim(scope) <> ''::text)),
-    CONSTRAINT llm_call_evidence_status_check CHECK ((status = ANY (ARRAY['generation_failed'::text, 'succeeded'::text]))),
-    CONSTRAINT llm_call_evidence_system_prompt_check CHECK ((btrim(system_prompt) <> ''::text)),
-    CONSTRAINT llm_call_evidence_user_prompt_check CHECK ((btrim(user_prompt) <> ''::text)),
-    CONSTRAINT llm_call_evidence_work_id_check CHECK (((work_id IS NULL) OR (work_id ~ '^[0-9a-f]{64}$'::text))),
-    CONSTRAINT llm_call_evidence_work_kind_check CHECK (((work_kind IS NULL) OR (btrim(work_kind) <> ''::text)))
-);
 
 
 --
--- Name: llm_call_evidence_id_seq; Type: SEQUENCE; Schema: current runtime; Owner: -
---
-
-CREATE SEQUENCE llm_call_evidence_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
 
 
 --
--- Name: llm_call_evidence_id_seq; Type: SEQUENCE OWNED BY; Schema: current runtime; Owner: -
---
-
-ALTER SEQUENCE llm_call_evidence_id_seq OWNED BY llm_call_evidence.id;
 
 
 --
@@ -8750,82 +7076,6 @@ CREATE TABLE repository_symbols (
 
 
 --
--- Name: retired_repository_mutation_files; Type: TABLE; Schema: current runtime; Owner: -
---
-
-CREATE TABLE retired_repository_mutation_files (
-    operation_id text NOT NULL,
-    ordinal integer NOT NULL,
-    file_id text NOT NULL,
-    path text NOT NULL,
-    source_sha256 text,
-    source_size bigint,
-    expected_sha256 text,
-    expected_size bigint,
-    source_present boolean NOT NULL,
-    source_mode integer,
-    expected_present boolean NOT NULL,
-    expected_mode integer,
-    CONSTRAINT repository_mutation_files_changed_state_check CHECK (((((source_present IS DISTINCT FROM expected_present) OR (source_sha256 IS DISTINCT FROM expected_sha256)) OR (source_size IS DISTINCT FROM expected_size)) OR (source_mode IS DISTINCT FROM expected_mode))),
-    CONSTRAINT repository_mutation_files_expected_sha256_check CHECK ((expected_sha256 ~ '^[0-9a-f]{64}$'::text)),
-    CONSTRAINT repository_mutation_files_expected_size_check CHECK ((expected_size >= 0)),
-    CONSTRAINT repository_mutation_files_expected_state_check CHECK (((expected_present AND (expected_sha256 ~ '^[0-9a-f]{64}$'::text) AND (expected_size >= 0) AND ((expected_mode >= 0) AND (expected_mode <= 511))) OR ((NOT expected_present) AND (expected_sha256 IS NULL) AND (expected_size IS NULL) AND (expected_mode IS NULL)))),
-    CONSTRAINT repository_mutation_files_file_id_check CHECK ((file_id ~ '^file_[0-9a-f]{64}$'::text)),
-    CONSTRAINT repository_mutation_files_ordinal_check CHECK (((ordinal >= 0) AND (ordinal <= 7))),
-    CONSTRAINT repository_mutation_files_path_check CHECK (((path <> ''::text) AND (path = btrim(path)) AND (octet_length(path) <= 4096))),
-    CONSTRAINT repository_mutation_files_source_sha256_check CHECK ((source_sha256 ~ '^[0-9a-f]{64}$'::text)),
-    CONSTRAINT repository_mutation_files_source_size_check CHECK ((source_size >= 0)),
-    CONSTRAINT repository_mutation_files_source_state_check CHECK (((source_present AND (source_sha256 ~ '^[0-9a-f]{64}$'::text) AND (source_size >= 0) AND ((source_mode >= 0) AND (source_mode <= 511))) OR ((NOT source_present) AND (source_sha256 IS NULL) AND (source_size IS NULL) AND (source_mode IS NULL)))),
-    CONSTRAINT repository_mutation_files_transition_check CHECK ((source_present OR expected_present))
-);
-
-
---
--- Name: retired_repository_mutation_operations; Type: TABLE; Schema: current runtime; Owner: -
---
-
-CREATE TABLE retired_repository_mutation_operations (
-    id text NOT NULL,
-    command_sha256 text NOT NULL,
-    job_id bigint NOT NULL,
-    step_id bigint NOT NULL,
-    generation bigint NOT NULL,
-    worker_id text NOT NULL,
-    contract_id text NOT NULL,
-    stage_id text NOT NULL,
-    source_snapshot_id text NOT NULL,
-    patch text NOT NULL,
-    patch_sha256 text NOT NULL,
-    status text NOT NULL,
-    attempt_count integer DEFAULT 0 NOT NULL,
-    last_error text,
-    evidence_id bigint,
-    prepared_at timestamp with time zone DEFAULT now() NOT NULL,
-    sealed_at timestamp with time zone,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    applied_at timestamp with time zone,
-    step_attempt bigint,
-    CONSTRAINT repository_mutation_operations_attempt_count_check CHECK ((attempt_count >= 0)),
-    CONSTRAINT repository_mutation_operations_check CHECK ((id = ('repository_mutation_'::text || command_sha256))),
-    CONSTRAINT repository_mutation_operations_check1 CHECK ((patch_sha256 = encode(public.digest(convert_to(patch, 'UTF8'::name), 'sha256'::text), 'hex'::text))),
-    CONSTRAINT repository_mutation_operations_check2 CHECK (((status = 'applied'::text) = (evidence_id IS NOT NULL))),
-    CONSTRAINT repository_mutation_operations_check3 CHECK (((status = 'applied'::text) = (applied_at IS NOT NULL))),
-    CONSTRAINT repository_mutation_operations_check4 CHECK (((status <> 'indeterminate'::text) OR (last_error IS NOT NULL))),
-    CONSTRAINT repository_mutation_operations_command_sha256_check CHECK ((command_sha256 ~ '^[0-9a-f]{64}$'::text)),
-    CONSTRAINT repository_mutation_operations_contract_id_check CHECK (((contract_id ~ '^change_contract_[0-9a-f]{64}$'::text) OR (contract_id ~ '^desired_graph_[0-9a-f]{64}$'::text))),
-    CONSTRAINT repository_mutation_operations_generation_check CHECK ((generation > 0)),
-    CONSTRAINT repository_mutation_operations_id_check CHECK ((id ~ '^repository_mutation_[0-9a-f]{64}$'::text)),
-    CONSTRAINT repository_mutation_operations_last_error_check CHECK (((last_error IS NULL) OR ((last_error <> ''::text) AND (last_error = btrim(last_error))))),
-    CONSTRAINT repository_mutation_operations_patch_check CHECK (((octet_length(patch) >= 1) AND (octet_length(patch) <= 1048576))),
-    CONSTRAINT repository_mutation_operations_patch_sha256_check CHECK ((patch_sha256 ~ '^[0-9a-f]{64}$'::text)),
-    CONSTRAINT repository_mutation_operations_stage_id_check CHECK ((stage_id ~ '^repository_change_stage_[0-9a-f]{64}$'::text)),
-    CONSTRAINT repository_mutation_operations_status_check CHECK ((status = ANY (ARRAY['prepared'::text, 'applying'::text, 'applied'::text, 'indeterminate'::text]))),
-    CONSTRAINT repository_mutation_operations_step_attempt_check CHECK ((step_attempt > 0)),
-    CONSTRAINT repository_mutation_operations_worker_id_check CHECK (((worker_id <> ''::text) AND (worker_id = btrim(worker_id)) AND (octet_length(worker_id) <= 256)))
-);
-
-
---
 -- Name: roleplay_canon_events; Type: TABLE; Schema: current runtime; Owner: -
 --
 
@@ -9227,85 +7477,12 @@ ALTER TABLE roleplay_ongoing_action_states ALTER COLUMN ordinal ADD GENERATED AL
 
 
 --
--- Name: objective_portable_result_reuses; Type: TABLE; Schema: current runtime; Owner: -
---
-
-CREATE TABLE objective_portable_result_reuses (
-    id bigint NOT NULL,
-    receipt_schema text NOT NULL,
-    target_job_id bigint NOT NULL,
-    target_generation bigint NOT NULL,
-    target_step_id bigint NOT NULL,
-    target_step_attempt bigint NOT NULL,
-    target_worker_id text NOT NULL,
-    target_station text NOT NULL,
-    target_root_work_id text NOT NULL,
-    target_work_kind text NOT NULL,
-    target_portable_payload text NOT NULL,
-    target_portable_payload_sha256 text NOT NULL,
-    target_portable_envelope text NOT NULL,
-    target_portable_envelope_sha256 text NOT NULL,
-    source_job_id bigint NOT NULL,
-    source_generation bigint NOT NULL,
-    source_step_id bigint NOT NULL,
-    source_step_attempt bigint NOT NULL,
-    source_worker_id text NOT NULL,
-    source_gap_opening_id bigint NOT NULL,
-    source_gap_outcome_id bigint NOT NULL,
-    source_work_id text NOT NULL,
-    source_portable_envelope_sha256 text NOT NULL,
-    source_call_receipt_sha256 text NOT NULL,
-    source_response_sha256 text NOT NULL,
-    objective_authority text NOT NULL,
-    objective_authority_sha256 text NOT NULL,
-    created_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
-    CONSTRAINT objective_portable_result_reu_source_portable_envelope_sha_check CHECK ((source_portable_envelope_sha256 ~ '^[0-9a-f]{64}$'::text)),
-    CONSTRAINT objective_portable_result_reuse_source_call_receipt_sha256_check CHECK ((source_call_receipt_sha256 ~ '^[0-9a-f]{64}$'::text)),
-    CONSTRAINT objective_portable_result_reuses_check CHECK (((target_portable_payload_sha256 ~ '^[0-9a-f]{64}$'::text) AND (target_portable_payload_sha256 = encode(public.digest(target_portable_payload, 'sha256'::text), 'hex'::text)))),
-    CONSTRAINT objective_portable_result_reuses_check1 CHECK (((target_portable_envelope_sha256 ~ '^[0-9a-f]{64}$'::text) AND (target_portable_envelope_sha256 = encode(public.digest(target_portable_envelope, 'sha256'::text), 'hex'::text)))),
-    CONSTRAINT objective_portable_result_reuses_check2 CHECK (((objective_authority_sha256 ~ '^[0-9a-f]{64}$'::text) AND (objective_authority_sha256 = encode(public.digest(objective_authority, 'sha256'::text), 'hex'::text)))),
-    CONSTRAINT objective_portable_result_reuses_receipt_schema_check CHECK ((receipt_schema = 'omnidex.objective-portable-result-reuse.v1'::text)),
-    CONSTRAINT objective_portable_result_reuses_objective_authority_check CHECK (((objective_authority <> ''::text) AND (octet_length(objective_authority) <= 1048576) AND (jsonb_typeof((objective_authority)::jsonb) = 'object'::text))),
-    CONSTRAINT objective_portable_result_reuses_source_generation_check CHECK ((source_generation > 0)),
-    CONSTRAINT objective_portable_result_reuses_source_response_sha256_check CHECK ((source_response_sha256 ~ '^[0-9a-f]{64}$'::text)),
-    CONSTRAINT objective_portable_result_reuses_source_step_attempt_check CHECK ((source_step_attempt > 0)),
-    CONSTRAINT objective_portable_result_reuses_source_work_id_check CHECK ((source_work_id ~ '^[0-9a-f]{64}$'::text)),
-    CONSTRAINT objective_portable_result_reuses_source_worker_id_check CHECK (((source_worker_id <> ''::text) AND (source_worker_id = btrim(source_worker_id)) AND (octet_length(source_worker_id) <= 256))),
-    CONSTRAINT objective_portable_result_reuses_target_envelope_v2 CHECK (((jsonb_typeof((target_portable_envelope)::jsonb) = 'object'::text) AND ((target_portable_envelope)::jsonb ?& ARRAY['schema'::text, 'id'::text, 'kind'::text, 'payload'::text]) AND (((((((target_portable_envelope)::jsonb - 'schema'::text) - 'id'::text) - 'kind'::text) - 'payload'::text) - 'source_projection'::text) = '{}'::jsonb) AND (jsonb_typeof(((target_portable_envelope)::jsonb -> 'schema'::text)) = 'string'::text) AND (jsonb_typeof(((target_portable_envelope)::jsonb -> 'id'::text)) = 'string'::text) AND (jsonb_typeof(((target_portable_envelope)::jsonb -> 'kind'::text)) = 'string'::text) AND (NOT (((target_portable_envelope)::jsonb ->> 'id'::text) IS DISTINCT FROM target_root_work_id)) AND (NOT (((target_portable_envelope)::jsonb ->> 'kind'::text) IS DISTINCT FROM target_work_kind)) AND (NOT (((target_portable_envelope)::jsonb -> 'payload'::text) IS DISTINCT FROM (target_portable_payload)::jsonb)) AND ((NOT ((target_portable_envelope)::jsonb ? 'source_projection'::text)) OR ((jsonb_typeof(((target_portable_envelope)::jsonb -> 'source_projection'::text)) = 'string'::text) AND (((target_portable_envelope)::jsonb ->> 'source_projection'::text) = ANY (ARRAY['go'::text, 'javascript'::text, 'java'::text, 'rust'::text, 'php'::text])) AND (target_work_kind = 'fragment_correction'::text) AND ((target_portable_payload)::jsonb ?& ARRAY['current_declaration'::text, 'repair_guidance'::text]) AND ((((target_portable_payload)::jsonb - 'current_declaration'::text) - 'repair_guidance'::text) = '{}'::jsonb))))),
-    CONSTRAINT objective_portable_result_reuses_target_generation_check CHECK ((target_generation > 0)),
-    CONSTRAINT objective_portable_result_reuses_target_identity_v2 CHECK ((NOT (target_root_work_id IS DISTINCT FROM encode(public.digest((((((convert_to(((target_portable_envelope)::jsonb ->> 'schema'::text), 'UTF8'::name) || decode('00'::text, 'hex'::text)) || convert_to(target_work_kind, 'UTF8'::name)) || decode('00'::text, 'hex'::text)) || convert_to(target_portable_payload, 'UTF8'::name)) ||
-CASE
-    WHEN ((target_portable_envelope)::jsonb ? 'source_projection'::text) THEN (decode('00'::text, 'hex'::text) || convert_to(((target_portable_envelope)::jsonb ->> 'source_projection'::text), 'UTF8'::name))
-    ELSE '\x'::bytea
-END), 'sha256'::text), 'hex'::text)))),
-    CONSTRAINT objective_portable_result_reuses_target_portable_envelope_check CHECK (((target_portable_envelope <> ''::text) AND (octet_length(target_portable_envelope) <= 1048576))),
-    CONSTRAINT objective_portable_result_reuses_target_portable_payload_check CHECK (((target_portable_payload <> ''::text) AND (octet_length(target_portable_payload) <= 1048576) AND (jsonb_typeof((target_portable_payload)::jsonb) = 'object'::text))),
-    CONSTRAINT objective_portable_result_reuses_target_root_work_id_check CHECK ((target_root_work_id ~ '^[0-9a-f]{64}$'::text)),
-    CONSTRAINT objective_portable_result_reuses_target_schema_v2 CHECK (((jsonb_typeof(((target_portable_envelope)::jsonb -> 'schema'::text)) = 'string'::text) AND (NOT (((target_portable_envelope)::jsonb ->> 'schema'::text) IS DISTINCT FROM 'omnidex.portable-job.v2'::text)))),
-    CONSTRAINT objective_portable_result_reuses_target_station_check CHECK (((target_station <> ''::text) AND (target_station = btrim(target_station)) AND (octet_length(target_station) <= 128))),
-    CONSTRAINT objective_portable_result_reuses_target_step_attempt_check CHECK ((target_step_attempt > 0)),
-    CONSTRAINT objective_portable_result_reuses_target_work_kind_check CHECK (((target_work_kind <> ''::text) AND (target_work_kind = btrim(target_work_kind)) AND (octet_length(target_work_kind) <= 128))),
-    CONSTRAINT objective_portable_result_reuses_target_worker_id_check CHECK (((target_worker_id <> ''::text) AND (target_worker_id = btrim(target_worker_id)) AND (octet_length(target_worker_id) <= 256)))
-);
 
 
 --
--- Name: objective_portable_result_reuses_id_seq; Type: SEQUENCE; Schema: current runtime; Owner: -
---
-
-CREATE SEQUENCE objective_portable_result_reuses_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
 
 
 --
--- Name: objective_portable_result_reuses_id_seq; Type: SEQUENCE OWNED BY; Schema: current runtime; Owner: -
---
-
-ALTER SEQUENCE objective_portable_result_reuses_id_seq OWNED BY objective_portable_result_reuses.id;
 
 
 --
@@ -9711,183 +7888,27 @@ CREATE TABLE scrum_channel_operations (
 
 
 --
--- Name: station_call_identity_captures; Type: TABLE; Schema: current runtime; Owner: -
---
-
-CREATE TABLE station_call_identity_captures (
-    opening_id bigint NOT NULL,
-    operation_index integer NOT NULL,
-    operation text NOT NULL,
-    method text NOT NULL,
-    endpoint text NOT NULL,
-    request_capture bytea NOT NULL,
-    request_sha256 text NOT NULL,
-    request_bytes integer NOT NULL,
-    response_capture bytea NOT NULL,
-    response_sha256 text NOT NULL,
-    response_bytes integer NOT NULL,
-    created_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
-    CONSTRAINT station_call_identity_captures_check CHECK (((request_sha256 ~ '^[0-9a-f]{64}$'::text) AND (request_sha256 = encode(public.digest(request_capture, 'sha256'::text), 'hex'::text)))),
-    CONSTRAINT station_call_identity_captures_check1 CHECK ((request_bytes = octet_length(request_capture))),
-    CONSTRAINT station_call_identity_captures_check2 CHECK (((response_sha256 ~ '^[0-9a-f]{64}$'::text) AND (response_sha256 = encode(public.digest(response_capture, 'sha256'::text), 'hex'::text)))),
-    CONSTRAINT station_call_identity_captures_check3 CHECK ((response_bytes = octet_length(response_capture))),
-    CONSTRAINT station_call_identity_captures_check4 CHECK ((((operation_index = 0) AND (operation = 'version'::text) AND (method = 'GET'::text) AND (endpoint = '/api/version'::text)) OR ((operation_index = 1) AND (operation = 'installed'::text) AND (method = 'GET'::text) AND (endpoint = '/api/tags'::text)) OR ((operation_index = 2) AND (operation = 'tokenizer'::text) AND (method = 'POST'::text) AND (endpoint = '/api/show'::text)) OR ((operation_index = 3) AND (operation = 'preload'::text) AND (method = 'POST'::text) AND (endpoint = '/api/generate'::text)) OR ((operation_index = 4) AND (operation = 'runner'::text) AND (method = 'GET'::text) AND (endpoint = '/api/ps'::text)))),
-    CONSTRAINT station_call_identity_captures_endpoint_check CHECK ((endpoint = ANY (ARRAY['/api/version'::text, '/api/tags'::text, '/api/show'::text, '/api/generate'::text, '/api/ps'::text]))),
-    CONSTRAINT station_call_identity_captures_method_check CHECK ((method = ANY (ARRAY['GET'::text, 'POST'::text]))),
-    CONSTRAINT station_call_identity_captures_operation_check CHECK ((operation = ANY (ARRAY['version'::text, 'installed'::text, 'tokenizer'::text, 'preload'::text, 'runner'::text]))),
-    CONSTRAINT station_call_identity_captures_operation_index_check CHECK (((operation_index >= 0) AND (operation_index <= 4))),
-    CONSTRAINT station_call_identity_captures_request_capture_check CHECK ((octet_length(request_capture) <= 4194304)),
-    CONSTRAINT station_call_identity_captures_response_capture_check CHECK ((octet_length(response_capture) <= 4194305))
-);
 
 
 --
--- Name: station_call_openings; Type: TABLE; Schema: current runtime; Owner: -
---
-
-CREATE TABLE station_call_openings (
-    id bigint NOT NULL,
-    gap_opening_id bigint NOT NULL,
-    discovery_receipt_id bigint NOT NULL,
-    job_id bigint NOT NULL,
-    generation bigint NOT NULL,
-    step_id bigint NOT NULL,
-    step_attempt bigint NOT NULL,
-    worker_id text NOT NULL,
-    gap_id text NOT NULL,
-    protocol text NOT NULL,
-    tokenizer_profile text NOT NULL,
-    provider_method text NOT NULL,
-    provider_endpoint text NOT NULL,
-    wire_request bytea NOT NULL,
-    wire_request_sha256 text NOT NULL,
-    wire_request_bytes integer NOT NULL,
-    expectation text NOT NULL,
-    expectation_sha256 text NOT NULL,
-    observation_challenge text NOT NULL,
-    model text NOT NULL,
-    context_tokens integer NOT NULL,
-    max_input_tokens integer NOT NULL,
-    max_output_tokens integer NOT NULL,
-    model_input text NOT NULL,
-    model_input_sha256 text NOT NULL,
-    model_input_bytes integer NOT NULL,
-    model_input_token_upper_bound integer NOT NULL,
-    created_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
-    output_limit_mode text NOT NULL,
-    CONSTRAINT station_call_openings_check CHECK (((wire_request_sha256 ~ '^[0-9a-f]{64}$'::text) AND (wire_request_sha256 = encode(public.digest(wire_request, 'sha256'::text), 'hex'::text)))),
-    CONSTRAINT station_call_openings_check2 CHECK (((expectation_sha256 ~ '^[0-9a-f]{64}$'::text) AND (expectation_sha256 = encode(public.digest(expectation, 'sha256'::text), 'hex'::text)))),
-    CONSTRAINT station_call_openings_check3 CHECK (((model_input_sha256 ~ '^[0-9a-f]{64}$'::text) AND (model_input_sha256 = encode(public.digest(model_input, 'sha256'::text), 'hex'::text)))),
-    CONSTRAINT station_call_openings_check4 CHECK ((model_input_bytes = octet_length(model_input))),
-    CONSTRAINT station_call_openings_check7 CHECK ((((expectation)::jsonb ->> 'model'::text) = model)),
-    CONSTRAINT station_call_openings_check8 CHECK ((((expectation)::jsonb ->> 'tokenizer_profile'::text) = tokenizer_profile)),
-    CONSTRAINT station_call_openings_check9 CHECK (((((expectation)::jsonb ->> 'native_context_limit'::text))::integer = context_tokens)),
-    CONSTRAINT station_call_openings_context_tokens_check CHECK (((context_tokens >= 1) AND (context_tokens <= 262144))),
-    CONSTRAINT station_call_openings_current_raw_transport CHECK ((protocol = 'omnidex.ollama-raw-text-generate-request.v2'::text)),
-    CONSTRAINT station_call_openings_expectation_check CHECK ((octet_length(expectation) <= 8192)),
-    CONSTRAINT station_call_openings_expectation_check1 CHECK ((((expectation)::jsonb ->> 'backend'::text) = 'ollama'::text)),
-    CONSTRAINT station_call_openings_expectation_check2 CHECK ((((expectation)::jsonb ->> 'backend_version'::text) = '0.24.0'::text)),
-    CONSTRAINT station_call_openings_gap_id_check CHECK ((gap_id ~ '^[0-9a-f]{64}$'::text)),
-    CONSTRAINT station_call_openings_generation_check CHECK ((generation > 0)),
-    CONSTRAINT station_call_openings_max_input_tokens_check CHECK ((max_input_tokens > 0)),
-    CONSTRAINT station_call_openings_model_check CHECK (((model <> ''::text) AND (model = btrim(model)) AND (octet_length(model) <= 512))),
-    CONSTRAINT station_call_openings_model_input_resource_ceiling CHECK (((octet_length(model_input) >= 1) AND (octet_length(model_input) <= 1048576))),
-    CONSTRAINT station_call_openings_observation_challenge_check CHECK ((observation_challenge ~ '^[0-9a-f]{64}$'::text)),
-    CONSTRAINT station_call_openings_output_budget_check CHECK ((((output_limit_mode = 'explicit'::text) AND ((max_output_tokens >= 1) AND (max_output_tokens <= 16384)) AND (max_input_tokens = (context_tokens - max_output_tokens)) AND (model_input_token_upper_bound > 0) AND (model_input_token_upper_bound <= max_input_tokens) AND ((model_input_token_upper_bound + max_output_tokens) <= context_tokens)) OR ((output_limit_mode = 'natural'::text) AND ((max_output_tokens >= 1) AND (max_output_tokens <= context_tokens)) AND (max_input_tokens = context_tokens) AND (model_input_token_upper_bound = context_tokens)))),
-    CONSTRAINT station_call_openings_output_limit_mode_check CHECK ((output_limit_mode = ANY (ARRAY['explicit'::text, 'natural'::text]))),
-    CONSTRAINT station_call_openings_protocol_check CHECK ((protocol = 'omnidex.ollama-raw-text-generate-request.v2'::text)),
-    CONSTRAINT station_call_openings_provider_endpoint_check CHECK ((provider_endpoint = '/api/generate'::text)),
-    CONSTRAINT station_call_openings_provider_method_check CHECK ((provider_method = 'POST'::text)),
-    CONSTRAINT station_call_openings_step_attempt_check CHECK ((step_attempt > 0)),
-    CONSTRAINT station_call_openings_tokenizer_profile_check CHECK ((tokenizer_profile = ANY (ARRAY['ollama-0.24.0-qwen35-gpt2-chatml-boundary-v2'::text, 'ollama-0.24.0-qwen3-qwen2-boundary-v1'::text, 'ollama-0.24.0-qwen2-qwen2-bos-boundary-v1'::text, 'ollama-0.24.0-mistral3-gpt2-bos-boundary-v1'::text, 'ollama-0.24.0-phi3-gpt2-gpt4o-boundary-v1'::text, 'ollama-0.24.0-phi3-gpt2-dbrx-boundary-v1'::text, 'ollama-0.24.0-gemma3-llama-default-boundary-v1'::text, 'ollama-0.24.0-llama-gpt2-llama-bpe-boundary-v1'::text, 'ollama-0.24.0-qwen2-gpt2-qwen2-no-bos-boundary-v1'::text, 'ollama-0.24.0-qwen3-gpt2-qwen2-no-bos-boundary-v1'::text, 'ollama-0.24.0-qwen2-llama-default-code-boundary-v1'::text, 'ollama-0.24.0-gemma-llama-default-fim-boundary-v1'::text, 'ollama-0.24.0-gemma-llama-default-chat-boundary-v1'::text, 'ollama-0.24.0-llama-llama-default-code-boundary-v1'::text, 'ollama-0.24.0-llama-gpt2-no-pre-deepseek-code-boundary-v1'::text, 'ollama-0.24.0-deepseek2-gpt2-deepseek-llm-code-boundary-v1'::text]))),
-    CONSTRAINT station_call_openings_wire_request_bytes_resource_ceiling CHECK ((((wire_request_bytes >= 1) AND (wire_request_bytes <= 1048576)) AND (wire_request_bytes = octet_length(wire_request)))),
-    CONSTRAINT station_call_openings_wire_request_resource_ceiling CHECK (((octet_length(wire_request) >= 1) AND (octet_length(wire_request) <= 1048576))),
-    CONSTRAINT station_call_openings_worker_id_check CHECK (((worker_id <> ''::text) AND (worker_id = btrim(worker_id)) AND (octet_length(worker_id) <= 256)))
-);
 
 
 --
--- Name: station_call_openings_id_seq; Type: SEQUENCE; Schema: current runtime; Owner: -
---
-
-CREATE SEQUENCE station_call_openings_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
 
 
 --
--- Name: station_call_openings_id_seq; Type: SEQUENCE OWNED BY; Schema: current runtime; Owner: -
---
-
-ALTER SEQUENCE station_call_openings_id_seq OWNED BY station_call_openings.id;
 
 
 --
--- Name: station_call_receipts; Type: TABLE; Schema: current runtime; Owner: -
---
-
-CREATE TABLE station_call_receipts (
-    id bigint NOT NULL,
-    opening_id bigint NOT NULL,
-    job_id bigint NOT NULL,
-    generation bigint NOT NULL,
-    step_id bigint NOT NULL,
-    step_attempt bigint NOT NULL,
-    worker_id text NOT NULL,
-    gap_id text NOT NULL,
-    status text NOT NULL,
-    generation_json text NOT NULL,
-    generation_sha256 text NOT NULL,
-    error text,
-    created_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
-    CONSTRAINT station_call_receipts_check CHECK (((generation_sha256 ~ '^[0-9a-f]{64}$'::text) AND (generation_sha256 = encode(public.digest(generation_json, 'sha256'::text), 'hex'::text)))),
-    CONSTRAINT station_call_receipts_check1 CHECK ((((status = 'succeeded'::text) AND (error IS NULL)) OR ((status = 'failed'::text) AND (error IS NOT NULL) AND (error = btrim(error)) AND (error <> ''::text) AND (octet_length(error) <= 8192)))),
-    CONSTRAINT station_call_receipts_gap_id_check CHECK ((gap_id ~ '^[0-9a-f]{64}$'::text)),
-    CONSTRAINT station_call_receipts_generation_check CHECK ((generation > 0)),
-    CONSTRAINT station_call_receipts_generation_json_check1 CHECK ((((generation_json)::jsonb ->> 'schema'::text) = 'omnidex.prepared-generation.v1'::text)),
-    CONSTRAINT station_call_receipts_generation_resource_ceiling CHECK ((octet_length(generation_json) <= 134217728)),
-    CONSTRAINT station_call_receipts_status_check CHECK ((status = ANY (ARRAY['succeeded'::text, 'failed'::text]))),
-    CONSTRAINT station_call_receipts_step_attempt_check CHECK ((step_attempt > 0)),
-    CONSTRAINT station_call_receipts_worker_id_check CHECK (((worker_id <> ''::text) AND (worker_id = btrim(worker_id)) AND (octet_length(worker_id) <= 256)))
-);
 
 
 --
--- Name: station_call_receipts_id_seq; Type: SEQUENCE; Schema: current runtime; Owner: -
---
-
-CREATE SEQUENCE station_call_receipts_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
 
 
 --
--- Name: station_call_receipts_id_seq; Type: SEQUENCE OWNED BY; Schema: current runtime; Owner: -
---
-
-ALTER SEQUENCE station_call_receipts_id_seq OWNED BY station_call_receipts.id;
 
 
 --
--- Name: station_call_response_captures; Type: TABLE; Schema: current runtime; Owner: -
---
-
-CREATE TABLE station_call_response_captures (
-    opening_id bigint NOT NULL,
-    capture bytea NOT NULL,
-    capture_sha256 text NOT NULL,
-    captured_bytes integer NOT NULL,
-    created_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
-    CONSTRAINT station_call_response_captures_capture_check CHECK ((octet_length(capture) <= 16777217)),
-    CONSTRAINT station_call_response_captures_check CHECK (((capture_sha256 ~ '^[0-9a-f]{64}$'::text) AND (capture_sha256 = encode(public.digest(capture, 'sha256'::text), 'hex'::text)))),
-    CONSTRAINT station_call_response_captures_check1 CHECK (((captured_bytes = octet_length(capture)) AND (captured_bytes <= 16777217)))
-);
 
 
 --
@@ -9921,8 +7942,6 @@ CREATE TABLE station_gap_openings (
     output_limit_mode text NOT NULL,
     semantic_uncertainty_contract jsonb NOT NULL,
     semantic_uncertainty_contract_sha256 text NOT NULL,
-    origin_gap_opening_id bigint,
-    origin_call_receipt_id bigint,
     CONSTRAINT station_gap_openings_check CHECK (((work_id ~ '^[0-9a-f]{64}$'::text) AND (work_id = gap_id))),
     CONSTRAINT station_gap_openings_check1 CHECK (((portable_payload_sha256 ~ '^[0-9a-f]{64}$'::text) AND (portable_payload_sha256 = encode(public.digest(portable_payload, 'sha256'::text), 'hex'::text)))),
     CONSTRAINT station_gap_openings_check2 CHECK (((portable_envelope_sha256 ~ '^[0-9a-f]{64}$'::text) AND (portable_envelope_sha256 = encode(public.digest(portable_envelope, 'sha256'::text), 'hex'::text)))),
@@ -9953,7 +7972,6 @@ END), 'sha256'::text), 'hex'::text))),
     CONSTRAINT station_gap_openings_prompt_projection CHECK (((jsonb_typeof((projection_envelope)::jsonb) = 'object'::text) AND ((projection_envelope)::jsonb ?& ARRAY['prompt'::text, 'renderer'::text]) AND ((((projection_envelope)::jsonb - 'prompt'::text) - 'renderer'::text) = '{}'::jsonb) AND (jsonb_typeof(((projection_envelope)::jsonb -> 'prompt'::text)) = 'string'::text) AND (jsonb_typeof(((projection_envelope)::jsonb -> 'renderer'::text)) = 'string'::text) AND (((projection_envelope)::jsonb ->> 'prompt'::text) = prompt) AND (((projection_envelope)::jsonb ->> 'renderer'::text) = renderer_version))),
     CONSTRAINT station_gap_openings_prompt_resource_ceiling CHECK (((prompt <> ''::text) AND (btrim(prompt) <> ''::text) AND (octet_length(prompt) <= 1048576))),
     CONSTRAINT station_gap_openings_renderer_version_check CHECK ((renderer_version = 'omnidex.render-portable-job.v1'::text)),
-    CONSTRAINT station_gap_openings_replacement_origin_shape CHECK ((((work_kind = 'fragment_generation_replacement'::text) AND (origin_gap_opening_id IS NOT NULL) AND (origin_call_receipt_id IS NOT NULL)) OR ((work_kind <> 'fragment_generation_replacement'::text) AND (origin_gap_opening_id IS NULL) AND (origin_call_receipt_id IS NULL)))),
     CONSTRAINT station_gap_openings_scope_check CHECK ((scope = ANY (ARRAY['portable_semantic_worker'::text, 'portable_structural_worker'::text, 'portable_fragment_worker'::text]))),
     CONSTRAINT station_gap_openings_semantic_uncertainty_digest CHECK (((semantic_uncertainty_contract_sha256 ~ '^[0-9a-f]{64}$'::text) AND (semantic_uncertainty_contract_sha256 = encode(public.digest((((((((((((((convert_to((semantic_uncertainty_contract ->> 'id'::text), 'UTF8'::name) || decode('00'::text, 'hex'::text)) || convert_to((semantic_uncertainty_contract ->> 'work_kind'::text), 'UTF8'::name)) || decode('00'::text, 'hex'::text)) || convert_to((semantic_uncertainty_contract ->> 'exact_question'::text), 'UTF8'::name)) || decode('00'::text, 'hex'::text)) || convert_to((semantic_uncertainty_contract ->> 'deterministic_limitation'::text), 'UTF8'::name)) || decode('00'::text, 'hex'::text)) || convert_to((semantic_uncertainty_contract ->> 'required_information'::text), 'UTF8'::name)) || decode('00'::text, 'hex'::text)) || convert_to((semantic_uncertainty_contract ->> 'single_result'::text), 'UTF8'::name)) || decode('00'::text, 'hex'::text)) || convert_to((semantic_uncertainty_contract ->> 'deterministic_consumer'::text), 'UTF8'::name)) || decode('00'::text, 'hex'::text)), 'sha256'::text), 'hex'::text)))),
     CONSTRAINT station_gap_openings_semantic_uncertainty_shape CHECK (((jsonb_typeof(semantic_uncertainty_contract) = 'object'::text) AND (semantic_uncertainty_contract ?& ARRAY['id'::text, 'work_kind'::text, 'exact_question'::text, 'deterministic_limitation'::text, 'required_information'::text, 'single_result'::text, 'deterministic_consumer'::text]) AND ((((((((semantic_uncertainty_contract - 'id'::text) - 'work_kind'::text) - 'exact_question'::text) - 'deterministic_limitation'::text) - 'required_information'::text) - 'single_result'::text) - 'deterministic_consumer'::text) = '{}'::jsonb) AND (jsonb_typeof((semantic_uncertainty_contract -> 'id'::text)) = 'string'::text) AND (jsonb_typeof((semantic_uncertainty_contract -> 'work_kind'::text)) = 'string'::text) AND (jsonb_typeof((semantic_uncertainty_contract -> 'exact_question'::text)) = 'string'::text) AND (jsonb_typeof((semantic_uncertainty_contract -> 'deterministic_limitation'::text)) = 'string'::text) AND (jsonb_typeof((semantic_uncertainty_contract -> 'required_information'::text)) = 'string'::text) AND (jsonb_typeof((semantic_uncertainty_contract -> 'single_result'::text)) = 'string'::text) AND (jsonb_typeof((semantic_uncertainty_contract -> 'deterministic_consumer'::text)) = 'string'::text) AND ((semantic_uncertainty_contract ->> 'work_kind'::text) = work_kind) AND ((semantic_uncertainty_contract ->> 'id'::text) = (('omnidex.semantic-uncertainty.'::text || work_kind) ||
@@ -10043,140 +8061,24 @@ ALTER SEQUENCE station_gap_outcomes_id_seq OWNED BY station_gap_outcomes.id;
 
 
 --
--- Name: station_provider_discoveries; Type: TABLE; Schema: current runtime; Owner: -
---
-
-CREATE TABLE station_provider_discoveries (
-    id bigint NOT NULL,
-    gap_opening_id bigint NOT NULL,
-    job_id bigint NOT NULL,
-    generation bigint NOT NULL,
-    step_id bigint NOT NULL,
-    step_attempt bigint NOT NULL,
-    worker_id text NOT NULL,
-    gap_id text NOT NULL,
-    selection text NOT NULL,
-    selection_sha256 text NOT NULL,
-    challenge text NOT NULL,
-    created_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
-    CONSTRAINT station_provider_discoveries_challenge_check CHECK ((challenge ~ '^[0-9a-f]{64}$'::text)),
-    CONSTRAINT station_provider_discoveries_check CHECK (((selection_sha256 ~ '^[0-9a-f]{64}$'::text) AND (selection_sha256 = encode(public.digest(selection, 'sha256'::text), 'hex'::text)))),
-    CONSTRAINT station_provider_discoveries_gap_id_check CHECK ((gap_id ~ '^[0-9a-f]{64}$'::text)),
-    CONSTRAINT station_provider_discoveries_generation_check CHECK ((generation > 0)),
-    CONSTRAINT station_provider_discoveries_selection_check CHECK ((octet_length(selection) <= 1024)),
-    CONSTRAINT station_provider_discoveries_selection_check1 CHECK (((((selection)::jsonb ->> 'native_context_limit'::text))::integer > 0)),
-    CONSTRAINT station_provider_discoveries_step_attempt_check CHECK ((step_attempt > 0)),
-    CONSTRAINT station_provider_discoveries_worker_id_check CHECK (((worker_id <> ''::text) AND (worker_id = btrim(worker_id)) AND (octet_length(worker_id) <= 256)))
-);
 
 
 --
--- Name: station_provider_discoveries_id_seq; Type: SEQUENCE; Schema: current runtime; Owner: -
---
-
-CREATE SEQUENCE station_provider_discoveries_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
 
 
 --
--- Name: station_provider_discoveries_id_seq; Type: SEQUENCE OWNED BY; Schema: current runtime; Owner: -
---
-
-ALTER SEQUENCE station_provider_discoveries_id_seq OWNED BY station_provider_discoveries.id;
 
 
 --
--- Name: station_provider_discovery_captures; Type: TABLE; Schema: current runtime; Owner: -
---
-
-CREATE TABLE station_provider_discovery_captures (
-    opening_id bigint NOT NULL,
-    operation_index integer NOT NULL,
-    operation text NOT NULL,
-    method text NOT NULL,
-    endpoint text NOT NULL,
-    request_capture bytea NOT NULL,
-    request_sha256 text NOT NULL,
-    request_bytes integer NOT NULL,
-    response_capture bytea NOT NULL,
-    response_sha256 text NOT NULL,
-    response_bytes integer NOT NULL,
-    request_disposition text NOT NULL,
-    http_status integer NOT NULL,
-    disposition text NOT NULL,
-    response_complete boolean NOT NULL,
-    content_encoding text NOT NULL,
-    created_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
-    CONSTRAINT station_provider_discovery_captures_check CHECK (((request_sha256 ~ '^[0-9a-f]{64}$'::text) AND (request_sha256 = encode(public.digest(request_capture, 'sha256'::text), 'hex'::text)))),
-    CONSTRAINT station_provider_discovery_captures_check1 CHECK ((request_bytes = octet_length(request_capture))),
-    CONSTRAINT station_provider_discovery_captures_check2 CHECK (((response_sha256 ~ '^[0-9a-f]{64}$'::text) AND (response_sha256 = encode(public.digest(response_capture, 'sha256'::text), 'hex'::text)))),
-    CONSTRAINT station_provider_discovery_captures_check3 CHECK ((response_bytes = octet_length(response_capture))),
-    CONSTRAINT station_provider_discovery_captures_check4 CHECK ((((operation_index = 0) AND (operation = 'version'::text) AND (method = 'GET'::text) AND (endpoint = '/api/version'::text)) OR ((operation_index = 1) AND (operation = 'installed'::text) AND (method = 'GET'::text) AND (endpoint = '/api/tags'::text)) OR ((operation_index = 2) AND (operation = 'tokenizer'::text) AND (method = 'POST'::text) AND (endpoint = '/api/show'::text)) OR ((operation_index = 3) AND (operation = 'preload'::text) AND (method = 'POST'::text) AND (endpoint = '/api/generate'::text)) OR ((operation_index = 4) AND (operation = 'runner'::text) AND (method = 'GET'::text) AND (endpoint = '/api/ps'::text)))),
-    CONSTRAINT station_provider_discovery_captures_content_encoding_check CHECK ((octet_length(content_encoding) <= 131072)),
-    CONSTRAINT station_provider_discovery_captures_disposition_check CHECK ((disposition = ANY (ARRAY['not_dispatched'::text, 'succeeded'::text, 'transport_error'::text, 'http_error'::text, 'body_limit'::text, 'body_read_error'::text, 'invalid_json'::text]))),
-    CONSTRAINT station_provider_discovery_captures_endpoint_check CHECK ((endpoint = ANY (ARRAY['/api/version'::text, '/api/tags'::text, '/api/show'::text, '/api/generate'::text, '/api/ps'::text]))),
-    CONSTRAINT station_provider_discovery_captures_http_status_check CHECK (((http_status >= 0) AND (http_status <= 599))),
-    CONSTRAINT station_provider_discovery_captures_method_check CHECK ((method = ANY (ARRAY['GET'::text, 'POST'::text]))),
-    CONSTRAINT station_provider_discovery_captures_operation_check CHECK ((operation = ANY (ARRAY['version'::text, 'installed'::text, 'tokenizer'::text, 'preload'::text, 'runner'::text]))),
-    CONSTRAINT station_provider_discovery_captures_operation_index_check CHECK (((operation_index >= 0) AND (operation_index <= 4))),
-    CONSTRAINT station_provider_discovery_captures_request_capture_check CHECK ((octet_length(request_capture) <= 4194304)),
-    CONSTRAINT station_provider_discovery_captures_request_disposition_check CHECK ((request_disposition = ANY (ARRAY['not_dispatched'::text, 'dispatched'::text, 'write_indeterminate'::text]))),
-    CONSTRAINT station_provider_discovery_captures_response_capture_check CHECK ((octet_length(response_capture) <= 4194305))
-);
 
 
 --
--- Name: station_provider_discovery_receipts; Type: TABLE; Schema: current runtime; Owner: -
---
-
-CREATE TABLE station_provider_discovery_receipts (
-    id bigint NOT NULL,
-    opening_id bigint NOT NULL,
-    job_id bigint NOT NULL,
-    generation bigint NOT NULL,
-    step_id bigint NOT NULL,
-    step_attempt bigint NOT NULL,
-    worker_id text NOT NULL,
-    gap_id text NOT NULL,
-    status text NOT NULL,
-    observation text NOT NULL,
-    observation_sha256 text NOT NULL,
-    expectation text,
-    expectation_sha256 text,
-    error text,
-    created_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
-    CONSTRAINT station_provider_discovery_receipts_check CHECK (((observation_sha256 ~ '^[0-9a-f]{64}$'::text) AND (observation_sha256 = encode(public.digest(observation, 'sha256'::text), 'hex'::text)))),
-    CONSTRAINT station_provider_discovery_receipts_check1 CHECK ((((status = 'succeeded'::text) AND (expectation IS NOT NULL) AND (expectation_sha256 ~ '^[0-9a-f]{64}$'::text) AND (expectation_sha256 = encode(public.digest(expectation, 'sha256'::text), 'hex'::text)) AND (error IS NULL)) OR ((status = 'failed'::text) AND (expectation IS NULL) AND (expectation_sha256 IS NULL) AND (error IS NOT NULL) AND (error = btrim(error)) AND (error <> ''::text) AND (octet_length(error) <= 8192)))),
-    CONSTRAINT station_provider_discovery_receipts_gap_id_check CHECK ((gap_id ~ '^[0-9a-f]{64}$'::text)),
-    CONSTRAINT station_provider_discovery_receipts_generation_check CHECK ((generation > 0)),
-    CONSTRAINT station_provider_discovery_receipts_observation_check CHECK ((octet_length(observation) <= 32768)),
-    CONSTRAINT station_provider_discovery_receipts_status_check CHECK ((status = ANY (ARRAY['succeeded'::text, 'failed'::text]))),
-    CONSTRAINT station_provider_discovery_receipts_step_attempt_check CHECK ((step_attempt > 0)),
-    CONSTRAINT station_provider_discovery_receipts_worker_id_check CHECK (((worker_id <> ''::text) AND (worker_id = btrim(worker_id)) AND (octet_length(worker_id) <= 256)))
-);
 
 
 --
--- Name: station_provider_discovery_receipts_id_seq; Type: SEQUENCE; Schema: current runtime; Owner: -
---
-
-CREATE SEQUENCE station_provider_discovery_receipts_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
 
 
 --
--- Name: station_provider_discovery_receipts_id_seq; Type: SEQUENCE OWNED BY; Schema: current runtime; Owner: -
---
-
-ALTER SEQUENCE station_provider_discovery_receipts_id_seq OWNED BY station_provider_discovery_receipts.id;
 
 
 --
@@ -10552,68 +8454,6 @@ CREATE TABLE task_nodes (
 
 
 --
--- Name: ui_sessions; Type: TABLE; Schema: current runtime; Owner: -
---
-
-CREATE TABLE ui_sessions (
-    session_id text NOT NULL,
-    state_json jsonb DEFAULT '{}'::jsonb NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    expires_at timestamp with time zone DEFAULT (now() + '00:30:00'::interval) NOT NULL
-);
-
-
---
--- Name: worker_skill_embeddings; Type: TABLE; Schema: current runtime; Owner: -
---
-
-CREATE TABLE worker_skill_embeddings (
-    skill_id text NOT NULL,
-    skill_version integer NOT NULL,
-    embedding_provider text NOT NULL,
-    embedding_model text NOT NULL,
-    embedding public.vector NOT NULL,
-    embedding_sha256 text NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT worker_skill_embeddings_embedding_check CHECK ((public.vector_dims(embedding) > 0)),
-    CONSTRAINT worker_skill_embeddings_embedding_model_check CHECK ((btrim(embedding_model) <> ''::text)),
-    CONSTRAINT worker_skill_embeddings_embedding_provider_check CHECK ((btrim(embedding_provider) <> ''::text)),
-    CONSTRAINT worker_skill_embeddings_embedding_sha256_check CHECK ((embedding_sha256 ~ '^[0-9a-f]{64}$'::text))
-);
-
-
---
--- Name: worker_skills; Type: TABLE; Schema: current runtime; Owner: -
---
-
-CREATE TABLE worker_skills (
-    skill_id text NOT NULL,
-    version integer NOT NULL,
-    status text NOT NULL,
-    origin text NOT NULL,
-    skill_kind text NOT NULL,
-    purpose text NOT NULL,
-    instructions text NOT NULL,
-    input_schema jsonb,
-    output_schema jsonb,
-    content_sha256 text NOT NULL,
-    created_by_job_id bigint,
-    validation jsonb DEFAULT '[]'::jsonb NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT worker_skills_active_only CHECK ((status = 'active'::text)),
-    CONSTRAINT worker_skills_check2 CHECK (((status <> ALL (ARRAY['active'::text, 'rejected'::text])) OR (jsonb_typeof(validation) = 'array'::text))),
-    CONSTRAINT worker_skills_check3 CHECK (((status <> 'active'::text) OR (jsonb_array_length(validation) > 0))),
-    CONSTRAINT worker_skills_code_procedure_kind CHECK ((skill_kind = 'code_procedure'::text)),
-    CONSTRAINT worker_skills_content_sha256_check CHECK ((content_sha256 ~ '^[0-9a-f]{64}$'::text)),
-    CONSTRAINT worker_skills_creating_job_required CHECK ((created_by_job_id IS NOT NULL)),
-    CONSTRAINT worker_skills_instructions_check CHECK ((task_ledger_text_is_exact(instructions) AND (octet_length(instructions) <= 1536))),
-    CONSTRAINT worker_skills_learned_origin CHECK ((origin = 'learned'::text)),
-    CONSTRAINT worker_skills_purpose_check CHECK ((task_ledger_text_is_exact(purpose) AND (octet_length(purpose) <= 1536))),
-    CONSTRAINT worker_skills_version_check CHECK ((version > 0))
-);
-
-
---
 -- Name: working_set_closed_scopes; Type: TABLE; Schema: current runtime; Owner: -
 --
 
@@ -10817,50 +8657,6 @@ CREATE TABLE working_sets (
 
 
 --
--- Name: workspace_mutation_files; Type: TABLE; Schema: current runtime; Owner: -
---
-
-CREATE TABLE workspace_mutation_files (
-    operation_id text NOT NULL,
-    ordinal integer NOT NULL,
-    file_id text NOT NULL,
-    path text NOT NULL,
-    source_present boolean NOT NULL,
-    source_kind text,
-    source_sha256 text,
-    source_size bigint,
-    source_mode integer,
-    source_link_target text,
-    expected_present boolean NOT NULL,
-    expected_kind text,
-    expected_sha256 text,
-    expected_size bigint,
-    expected_mode integer,
-    expected_link_target text,
-    CONSTRAINT workspace_mutation_files_check CHECK ((source_present OR expected_present)),
-    CONSTRAINT workspace_mutation_files_check1 CHECK (((source_present = (source_kind IS NOT NULL)) AND (source_present = (source_sha256 IS NOT NULL)) AND (source_present = (source_size IS NOT NULL)) AND (source_present = (source_mode IS NOT NULL)) AND ((NOT source_present) OR ((source_kind = 'regular'::text) AND (source_link_target IS NULL)) OR ((source_kind = 'symlink'::text) AND (source_link_target IS NOT NULL))))),
-    CONSTRAINT workspace_mutation_files_check2 CHECK (((expected_present = (expected_kind IS NOT NULL)) AND (expected_present = (expected_sha256 IS NOT NULL)) AND (expected_present = (expected_size IS NOT NULL)) AND (expected_present = (expected_mode IS NOT NULL)) AND ((NOT expected_present) OR ((expected_kind = 'regular'::text) AND (expected_link_target IS NULL)) OR ((expected_kind = 'symlink'::text) AND (expected_link_target IS NOT NULL))))),
-    CONSTRAINT workspace_mutation_files_check3 CHECK (((source_kind <> 'symlink'::text) OR ((source_size = octet_length(source_link_target)) AND (source_sha256 = encode(public.digest(((convert_to('symlink'::text, 'UTF8'::name) || decode('00'::text, 'hex'::text)) || convert_to(source_link_target, 'UTF8'::name)), 'sha256'::text), 'hex'::text))))),
-    CONSTRAINT workspace_mutation_files_check4 CHECK (((expected_kind <> 'symlink'::text) OR ((expected_size = octet_length(expected_link_target)) AND (expected_sha256 = encode(public.digest(((convert_to('symlink'::text, 'UTF8'::name) || decode('00'::text, 'hex'::text)) || convert_to(expected_link_target, 'UTF8'::name)), 'sha256'::text), 'hex'::text))))),
-    CONSTRAINT workspace_mutation_files_check5 CHECK (((((((source_present IS DISTINCT FROM expected_present) OR (source_kind IS DISTINCT FROM expected_kind)) OR (source_sha256 IS DISTINCT FROM expected_sha256)) OR (source_size IS DISTINCT FROM expected_size)) OR (source_mode IS DISTINCT FROM expected_mode)) OR (source_link_target IS DISTINCT FROM expected_link_target))),
-    CONSTRAINT workspace_mutation_files_expected_kind_check CHECK ((expected_kind = ANY (ARRAY['regular'::text, 'symlink'::text]))),
-    CONSTRAINT workspace_mutation_files_expected_link_target_check CHECK (((expected_link_target IS NULL) OR ((expected_link_target <> ''::text) AND (octet_length(expected_link_target) <= 16384)))),
-    CONSTRAINT workspace_mutation_files_expected_mode_check CHECK (((expected_mode >= 0) AND (expected_mode <= 511))),
-    CONSTRAINT workspace_mutation_files_expected_sha256_check CHECK ((expected_sha256 ~ '^[0-9a-f]{64}$'::text)),
-    CONSTRAINT workspace_mutation_files_expected_size_check CHECK ((expected_size >= 0)),
-    CONSTRAINT workspace_mutation_files_file_id_check CHECK ((file_id ~ '^workspace_file_[0-9a-f]{64}$'::text)),
-    CONSTRAINT workspace_mutation_files_ordinal_check CHECK (((ordinal >= 0) AND (ordinal <= 31))),
-    CONSTRAINT workspace_mutation_files_path_check CHECK (((path <> ''::text) AND (path = btrim(path)) AND (octet_length(path) <= 4096) AND ("left"(path, 1) <> '/'::text) AND ("right"(path, 1) <> '/'::text) AND (POSITION((chr(92)) IN (path)) = 0) AND (path !~ '[
-]'::text) AND (path !~ '(^|/)[.][.]?(/|$)'::text) AND (POSITION(('//'::text) IN (path)) = 0) AND ((('/'::text || path) || '/'::text) !~ '/[.](git|omni)/'::text))),
-    CONSTRAINT workspace_mutation_files_source_kind_check CHECK ((source_kind = ANY (ARRAY['regular'::text, 'symlink'::text]))),
-    CONSTRAINT workspace_mutation_files_source_link_target_check CHECK (((source_link_target IS NULL) OR ((source_link_target <> ''::text) AND (octet_length(source_link_target) <= 16384)))),
-    CONSTRAINT workspace_mutation_files_source_mode_check CHECK (((source_mode >= 0) AND (source_mode <= 511))),
-    CONSTRAINT workspace_mutation_files_source_sha256_check CHECK ((source_sha256 ~ '^[0-9a-f]{64}$'::text)),
-    CONSTRAINT workspace_mutation_files_source_size_check CHECK ((source_size >= 0))
-);
-
-
---
 -- Name: workspace_settings; Type: TABLE; Schema: current runtime; Owner: -
 --
 
@@ -10938,10 +8734,6 @@ ALTER TABLE ONLY jobs ALTER COLUMN id SET DEFAULT nextval('jobs_id_seq'::regclas
 
 
 --
--- Name: llm_call_evidence id; Type: DEFAULT; Schema: current runtime; Owner: -
---
-
-ALTER TABLE ONLY llm_call_evidence ALTER COLUMN id SET DEFAULT nextval('llm_call_evidence_id_seq'::regclass);
 
 
 --
@@ -10987,24 +8779,12 @@ ALTER TABLE ONLY projects ALTER COLUMN id SET DEFAULT nextval('projects_id_seq':
 
 
 --
--- Name: objective_portable_result_reuses id; Type: DEFAULT; Schema: current runtime; Owner: -
---
-
-ALTER TABLE ONLY objective_portable_result_reuses ALTER COLUMN id SET DEFAULT nextval('objective_portable_result_reuses_id_seq'::regclass);
 
 
 --
--- Name: station_call_openings id; Type: DEFAULT; Schema: current runtime; Owner: -
---
-
-ALTER TABLE ONLY station_call_openings ALTER COLUMN id SET DEFAULT nextval('station_call_openings_id_seq'::regclass);
 
 
 --
--- Name: station_call_receipts id; Type: DEFAULT; Schema: current runtime; Owner: -
---
-
-ALTER TABLE ONLY station_call_receipts ALTER COLUMN id SET DEFAULT nextval('station_call_receipts_id_seq'::regclass);
 
 
 --
@@ -11022,17 +8802,9 @@ ALTER TABLE ONLY station_gap_outcomes ALTER COLUMN id SET DEFAULT nextval('stati
 
 
 --
--- Name: station_provider_discoveries id; Type: DEFAULT; Schema: current runtime; Owner: -
---
-
-ALTER TABLE ONLY station_provider_discoveries ALTER COLUMN id SET DEFAULT nextval('station_provider_discoveries_id_seq'::regclass);
 
 
 --
--- Name: station_provider_discovery_receipts id; Type: DEFAULT; Schema: current runtime; Owner: -
---
-
-ALTER TABLE ONLY station_provider_discovery_receipts ALTER COLUMN id SET DEFAULT nextval('station_provider_discovery_receipts_id_seq'::regclass);
 
 
 --
@@ -11238,8 +9010,6 @@ ALTER TABLE ONLY working_set_events ALTER COLUMN id SET DEFAULT nextval('working
 
 
 --
--- Data for Name: llm_call_evidence; Type: TABLE DATA; Schema: current runtime; Owner: -
---
 
 
 
@@ -11370,18 +9140,6 @@ ALTER TABLE ONLY working_set_events ALTER COLUMN id SET DEFAULT nextval('working
 
 
 --
--- Data for Name: retired_repository_mutation_files; Type: TABLE DATA; Schema: current runtime; Owner: -
---
-
-
-
---
--- Data for Name: retired_repository_mutation_operations; Type: TABLE DATA; Schema: current runtime; Owner: -
---
-
-
-
---
 -- Data for Name: roleplay_canon_events; Type: TABLE DATA; Schema: current runtime; Owner: -
 --
 
@@ -11496,8 +9254,6 @@ ALTER TABLE ONLY working_set_events ALTER COLUMN id SET DEFAULT nextval('working
 
 
 --
--- Data for Name: objective_portable_result_reuses; Type: TABLE DATA; Schema: current runtime; Owner: -
---
 
 
 
@@ -11598,25 +9354,17 @@ ALTER TABLE ONLY working_set_events ALTER COLUMN id SET DEFAULT nextval('working
 
 
 --
--- Data for Name: station_call_identity_captures; Type: TABLE DATA; Schema: current runtime; Owner: -
---
 
 
 
---
--- Data for Name: station_call_openings; Type: TABLE DATA; Schema: current runtime; Owner: -
---
-
-
-
---
--- Data for Name: station_call_receipts; Type: TABLE DATA; Schema: current runtime; Owner: -
 --
 
 
 
 --
--- Data for Name: station_call_response_captures; Type: TABLE DATA; Schema: current runtime; Owner: -
+
+
+
 --
 
 
@@ -11634,19 +9382,13 @@ ALTER TABLE ONLY working_set_events ALTER COLUMN id SET DEFAULT nextval('working
 
 
 --
--- Data for Name: station_provider_discoveries; Type: TABLE DATA; Schema: current runtime; Owner: -
---
 
 
 
 --
--- Data for Name: station_provider_discovery_captures; Type: TABLE DATA; Schema: current runtime; Owner: -
---
 
 
 
---
--- Data for Name: station_provider_discovery_receipts; Type: TABLE DATA; Schema: current runtime; Owner: -
 --
 
 
@@ -11726,24 +9468,6 @@ INSERT INTO step_attempt_transaction_fence_authority VALUES
 
 
 --
--- Data for Name: ui_sessions; Type: TABLE DATA; Schema: current runtime; Owner: -
---
-
-
-
---
--- Data for Name: worker_skill_embeddings; Type: TABLE DATA; Schema: current runtime; Owner: -
---
-
-
-
---
--- Data for Name: worker_skills; Type: TABLE DATA; Schema: current runtime; Owner: -
---
-
-
-
---
 -- Data for Name: working_set_closed_scopes; Type: TABLE DATA; Schema: current runtime; Owner: -
 --
 
@@ -11769,18 +9493,6 @@ INSERT INTO step_attempt_transaction_fence_authority VALUES
 
 --
 -- Data for Name: working_sets; Type: TABLE DATA; Schema: current runtime; Owner: -
---
-
-
-
---
--- Data for Name: workspace_mutation_files; Type: TABLE DATA; Schema: current runtime; Owner: -
---
-
-
-
---
--- Data for Name: workspace_mutation_operations; Type: TABLE DATA; Schema: current runtime; Owner: -
 --
 
 
@@ -11862,10 +9574,6 @@ SELECT pg_catalog.setval('jobs_id_seq', 1, false);
 
 
 --
--- Name: llm_call_evidence_id_seq; Type: SEQUENCE SET; Schema: current runtime; Owner: -
---
-
-SELECT pg_catalog.setval('llm_call_evidence_id_seq', 1, false);
 
 
 --
@@ -11932,10 +9640,6 @@ SELECT pg_catalog.setval('roleplay_ongoing_action_states_ordinal_seq', 1, false)
 
 
 --
--- Name: objective_portable_result_reuses_id_seq; Type: SEQUENCE SET; Schema: current runtime; Owner: -
---
-
-SELECT pg_catalog.setval('objective_portable_result_reuses_id_seq', 1, false);
 
 
 --
@@ -11946,17 +9650,9 @@ SELECT pg_catalog.setval('roleplay_simulation_transitions_ordinal_seq', 1, false
 
 
 --
--- Name: station_call_openings_id_seq; Type: SEQUENCE SET; Schema: current runtime; Owner: -
---
-
-SELECT pg_catalog.setval('station_call_openings_id_seq', 1, false);
 
 
 --
--- Name: station_call_receipts_id_seq; Type: SEQUENCE SET; Schema: current runtime; Owner: -
---
-
-SELECT pg_catalog.setval('station_call_receipts_id_seq', 1, false);
 
 
 --
@@ -11974,17 +9670,9 @@ SELECT pg_catalog.setval('station_gap_outcomes_id_seq', 1, false);
 
 
 --
--- Name: station_provider_discoveries_id_seq; Type: SEQUENCE SET; Schema: current runtime; Owner: -
---
-
-SELECT pg_catalog.setval('station_provider_discoveries_id_seq', 1, false);
 
 
 --
--- Name: station_provider_discovery_receipts_id_seq; Type: SEQUENCE SET; Schema: current runtime; Owner: -
---
-
-SELECT pg_catalog.setval('station_provider_discovery_receipts_id_seq', 1, false);
 
 
 --
@@ -12448,11 +10136,6 @@ ALTER TABLE ONLY lifecycle_operation_registry
 
 
 --
--- Name: llm_call_evidence llm_call_evidence_pkey; Type: CONSTRAINT; Schema: current runtime; Owner: -
---
-
-ALTER TABLE ONLY llm_call_evidence
-    ADD CONSTRAINT llm_call_evidence_pkey PRIMARY KEY (id);
 
 
 --
@@ -12669,54 +10352,6 @@ ALTER TABLE ONLY repository_files
 
 ALTER TABLE ONLY repository_files
     ADD CONSTRAINT repository_files_snapshot_id_file_id_key UNIQUE (snapshot_id, file_id);
-
-
---
--- Name: retired_repository_mutation_files repository_mutation_files_operation_id_file_id_key; Type: CONSTRAINT; Schema: current runtime; Owner: -
---
-
-ALTER TABLE ONLY retired_repository_mutation_files
-    ADD CONSTRAINT repository_mutation_files_operation_id_file_id_key UNIQUE (operation_id, file_id);
-
-
---
--- Name: retired_repository_mutation_files repository_mutation_files_operation_id_path_key; Type: CONSTRAINT; Schema: current runtime; Owner: -
---
-
-ALTER TABLE ONLY retired_repository_mutation_files
-    ADD CONSTRAINT repository_mutation_files_operation_id_path_key UNIQUE (operation_id, path);
-
-
---
--- Name: retired_repository_mutation_files repository_mutation_files_pkey; Type: CONSTRAINT; Schema: current runtime; Owner: -
---
-
-ALTER TABLE ONLY retired_repository_mutation_files
-    ADD CONSTRAINT repository_mutation_files_pkey PRIMARY KEY (operation_id, ordinal);
-
-
---
--- Name: retired_repository_mutation_operations repository_mutation_operations_job_id_id_key; Type: CONSTRAINT; Schema: current runtime; Owner: -
---
-
-ALTER TABLE ONLY retired_repository_mutation_operations
-    ADD CONSTRAINT repository_mutation_operations_job_id_id_key UNIQUE (job_id, id);
-
-
---
--- Name: retired_repository_mutation_operations repository_mutation_operations_job_id_stage_id_key; Type: CONSTRAINT; Schema: current runtime; Owner: -
---
-
-ALTER TABLE ONLY retired_repository_mutation_operations
-    ADD CONSTRAINT repository_mutation_operations_job_id_stage_id_key UNIQUE (job_id, stage_id);
-
-
---
--- Name: retired_repository_mutation_operations repository_mutation_operations_pkey; Type: CONSTRAINT; Schema: current runtime; Owner: -
---
-
-ALTER TABLE ONLY retired_repository_mutation_operations
-    ADD CONSTRAINT repository_mutation_operations_pkey PRIMARY KEY (id);
 
 
 --
@@ -13072,19 +10707,9 @@ ALTER TABLE ONLY roleplay_ongoing_action_states
 
 
 --
--- Name: objective_portable_result_reuses objective_portable_result_reuses_one_target; Type: CONSTRAINT; Schema: current runtime; Owner: -
---
-
-ALTER TABLE ONLY objective_portable_result_reuses
-    ADD CONSTRAINT objective_portable_result_reuses_one_target UNIQUE (target_job_id, target_generation, target_step_id, target_step_attempt, target_worker_id, target_station, target_root_work_id);
 
 
 --
--- Name: objective_portable_result_reuses objective_portable_result_reuses_pkey; Type: CONSTRAINT; Schema: current runtime; Owner: -
---
-
-ALTER TABLE ONLY objective_portable_result_reuses
-    ADD CONSTRAINT objective_portable_result_reuses_pkey PRIMARY KEY (id);
 
 
 --
@@ -13392,43 +11017,18 @@ ALTER TABLE ONLY scrum_channel_operations
 
 
 --
--- Name: station_call_identity_captures station_call_identity_captures_opening_id_operation_key; Type: CONSTRAINT; Schema: current runtime; Owner: -
---
-
-ALTER TABLE ONLY station_call_identity_captures
-    ADD CONSTRAINT station_call_identity_captures_opening_id_operation_key UNIQUE (opening_id, operation);
 
 
 --
--- Name: station_call_identity_captures station_call_identity_captures_pkey; Type: CONSTRAINT; Schema: current runtime; Owner: -
---
-
-ALTER TABLE ONLY station_call_identity_captures
-    ADD CONSTRAINT station_call_identity_captures_pkey PRIMARY KEY (opening_id, operation_index);
 
 
 --
--- Name: station_call_openings station_call_openings_pkey; Type: CONSTRAINT; Schema: current runtime; Owner: -
---
-
-ALTER TABLE ONLY station_call_openings
-    ADD CONSTRAINT station_call_openings_pkey PRIMARY KEY (id);
 
 
 --
--- Name: station_call_receipts station_call_receipts_pkey; Type: CONSTRAINT; Schema: current runtime; Owner: -
---
-
-ALTER TABLE ONLY station_call_receipts
-    ADD CONSTRAINT station_call_receipts_pkey PRIMARY KEY (id);
 
 
 --
--- Name: station_call_response_captures station_call_response_captures_pkey; Type: CONSTRAINT; Schema: current runtime; Owner: -
---
-
-ALTER TABLE ONLY station_call_response_captures
-    ADD CONSTRAINT station_call_response_captures_pkey PRIMARY KEY (opening_id);
 
 
 --
@@ -13464,35 +11064,15 @@ ALTER TABLE station_gap_outcomes
 
 
 --
--- Name: station_provider_discoveries station_provider_discoveries_pkey; Type: CONSTRAINT; Schema: current runtime; Owner: -
---
-
-ALTER TABLE ONLY station_provider_discoveries
-    ADD CONSTRAINT station_provider_discoveries_pkey PRIMARY KEY (id);
 
 
 --
--- Name: station_provider_discovery_captures station_provider_discovery_captures_opening_id_operation_key; Type: CONSTRAINT; Schema: current runtime; Owner: -
---
-
-ALTER TABLE ONLY station_provider_discovery_captures
-    ADD CONSTRAINT station_provider_discovery_captures_opening_id_operation_key UNIQUE (opening_id, operation);
 
 
 --
--- Name: station_provider_discovery_captures station_provider_discovery_captures_pkey; Type: CONSTRAINT; Schema: current runtime; Owner: -
---
-
-ALTER TABLE ONLY station_provider_discovery_captures
-    ADD CONSTRAINT station_provider_discovery_captures_pkey PRIMARY KEY (opening_id, operation_index);
 
 
 --
--- Name: station_provider_discovery_receipts station_provider_discovery_receipts_pkey; Type: CONSTRAINT; Schema: current runtime; Owner: -
---
-
-ALTER TABLE ONLY station_provider_discovery_receipts
-    ADD CONSTRAINT station_provider_discovery_receipts_pkey PRIMARY KEY (id);
 
 
 --
@@ -13680,30 +11260,6 @@ ALTER TABLE ONLY task_nodes
 
 
 --
--- Name: ui_sessions ui_sessions_pkey; Type: CONSTRAINT; Schema: current runtime; Owner: -
---
-
-ALTER TABLE ONLY ui_sessions
-    ADD CONSTRAINT ui_sessions_pkey PRIMARY KEY (session_id);
-
-
---
--- Name: worker_skill_embeddings worker_skill_embeddings_pkey; Type: CONSTRAINT; Schema: current runtime; Owner: -
---
-
-ALTER TABLE ONLY worker_skill_embeddings
-    ADD CONSTRAINT worker_skill_embeddings_pkey PRIMARY KEY (skill_id, skill_version, embedding_provider, embedding_model);
-
-
---
--- Name: worker_skills worker_skills_pkey; Type: CONSTRAINT; Schema: current runtime; Owner: -
---
-
-ALTER TABLE ONLY worker_skills
-    ADD CONSTRAINT worker_skills_pkey PRIMARY KEY (skill_id, version);
-
-
---
 -- Name: working_set_closed_scopes working_set_closed_scopes_pkey; Type: CONSTRAINT; Schema: current runtime; Owner: -
 --
 
@@ -13797,54 +11353,6 @@ ALTER TABLE ONLY working_sets
 
 ALTER TABLE ONLY working_sets
     ADD CONSTRAINT working_sets_pkey PRIMARY KEY (id);
-
-
---
--- Name: workspace_mutation_files workspace_mutation_files_operation_id_file_id_key; Type: CONSTRAINT; Schema: current runtime; Owner: -
---
-
-ALTER TABLE ONLY workspace_mutation_files
-    ADD CONSTRAINT workspace_mutation_files_operation_id_file_id_key UNIQUE (operation_id, file_id);
-
-
---
--- Name: workspace_mutation_files workspace_mutation_files_operation_id_path_key; Type: CONSTRAINT; Schema: current runtime; Owner: -
---
-
-ALTER TABLE ONLY workspace_mutation_files
-    ADD CONSTRAINT workspace_mutation_files_operation_id_path_key UNIQUE (operation_id, path);
-
-
---
--- Name: workspace_mutation_files workspace_mutation_files_pkey; Type: CONSTRAINT; Schema: current runtime; Owner: -
---
-
-ALTER TABLE ONLY workspace_mutation_files
-    ADD CONSTRAINT workspace_mutation_files_pkey PRIMARY KEY (operation_id, ordinal);
-
-
---
--- Name: workspace_mutation_operations workspace_mutation_operations_job_id_id_key; Type: CONSTRAINT; Schema: current runtime; Owner: -
---
-
-ALTER TABLE ONLY workspace_mutation_operations
-    ADD CONSTRAINT workspace_mutation_operations_job_id_id_key UNIQUE (job_id, id);
-
-
---
--- Name: workspace_mutation_operations workspace_mutation_operations_job_id_stage_id_key; Type: CONSTRAINT; Schema: current runtime; Owner: -
---
-
-ALTER TABLE ONLY workspace_mutation_operations
-    ADD CONSTRAINT workspace_mutation_operations_job_id_stage_id_key UNIQUE (job_id, stage_id);
-
-
---
--- Name: workspace_mutation_operations workspace_mutation_operations_pkey; Type: CONSTRAINT; Schema: current runtime; Owner: -
---
-
-ALTER TABLE ONLY workspace_mutation_operations
-    ADD CONSTRAINT workspace_mutation_operations_pkey PRIMARY KEY (id);
 
 
 --
@@ -14129,31 +11637,15 @@ CREATE INDEX idx_jobs_status_id_desc ON jobs USING btree (status, id DESC);
 
 
 --
--- Name: idx_llm_call_evidence_context_projection; Type: INDEX; Schema: current runtime; Owner: -
---
-
-CREATE INDEX idx_llm_call_evidence_context_projection ON llm_call_evidence USING btree (context_projection_id) WHERE (context_projection_id IS NOT NULL);
 
 
 --
--- Name: idx_llm_call_evidence_job; Type: INDEX; Schema: current runtime; Owner: -
---
-
-CREATE INDEX idx_llm_call_evidence_job ON llm_call_evidence USING btree (job_id, id);
 
 
 --
--- Name: idx_llm_call_evidence_step; Type: INDEX; Schema: current runtime; Owner: -
---
-
-CREATE INDEX idx_llm_call_evidence_step ON llm_call_evidence USING btree (step_id, id);
 
 
 --
--- Name: idx_llm_call_evidence_work; Type: INDEX; Schema: current runtime; Owner: -
---
-
-CREATE INDEX idx_llm_call_evidence_work ON llm_call_evidence USING btree (work_id, id) WHERE (work_id IS NOT NULL);
 
 
 --
@@ -14766,34 +12258,6 @@ CREATE INDEX idx_task_nodes_ledger_parent ON task_nodes USING btree (ledger_id, 
 
 
 --
--- Name: idx_ui_sessions_expires; Type: INDEX; Schema: current runtime; Owner: -
---
-
-CREATE INDEX idx_ui_sessions_expires ON ui_sessions USING btree (expires_at);
-
-
---
--- Name: idx_worker_skill_embeddings_model; Type: INDEX; Schema: current runtime; Owner: -
---
-
-CREATE INDEX idx_worker_skill_embeddings_model ON worker_skill_embeddings USING btree (embedding_provider, embedding_model, skill_id, skill_version);
-
-
---
--- Name: idx_worker_skills_active_created; Type: INDEX; Schema: current runtime; Owner: -
---
-
-CREATE INDEX idx_worker_skills_active_created ON worker_skills USING btree (created_at DESC, skill_id) WHERE (status = 'active'::text);
-
-
---
--- Name: idx_worker_skills_one_active_version; Type: INDEX; Schema: current runtime; Owner: -
---
-
-CREATE UNIQUE INDEX idx_worker_skills_one_active_version ON worker_skills USING btree (skill_id) WHERE (status = 'active'::text);
-
-
---
 -- Name: idx_working_set_events_page; Type: INDEX; Schema: current runtime; Owner: -
 --
 
@@ -14822,31 +12286,6 @@ CREATE INDEX idx_working_sets_job_status ON working_sets USING btree (job_id, st
 
 
 --
--- Name: idx_workspace_mutations_recovery; Type: INDEX; Schema: current runtime; Owner: -
---
-
-CREATE INDEX idx_workspace_mutations_recovery ON workspace_mutation_operations USING btree (job_id, generation, status, id);
-
-
---
--- Name: idx_workspace_mutations_unresolved_generation; Type: INDEX; Schema: current runtime; Owner: -
---
-
-CREATE UNIQUE INDEX idx_workspace_mutations_unresolved_generation ON workspace_mutation_operations USING btree (job_id, generation) WHERE (status <> ALL (ARRAY['verified'::text, 'verification_failed'::text]));
-
-
---
--- Name: idx_workspace_mutations_unresolved_workspace; Type: INDEX; Schema: current runtime; Owner: -
---
-
-CREATE UNIQUE INDEX idx_workspace_mutations_unresolved_workspace ON workspace_mutation_operations USING btree (workspace_id) WHERE (status <> ALL (ARRAY['verified'::text, 'verification_failed'::text]));
-
-
---
--- Name: llm_call_evidence_one_station_gap; Type: INDEX; Schema: current runtime; Owner: -
---
-
-CREATE UNIQUE INDEX llm_call_evidence_one_station_gap ON llm_call_evidence USING btree (station_call_opening_id) WHERE (station_call_opening_id IS NOT NULL);
 
 
 --
@@ -14857,10 +12296,6 @@ CREATE INDEX roleplay_ongoing_action_states_current_idx ON roleplay_ongoing_acti
 
 
 --
--- Name: objective_portable_result_reuses_source; Type: INDEX; Schema: current runtime; Owner: -
---
-
-CREATE INDEX objective_portable_result_reuses_source ON objective_portable_result_reuses USING btree (source_job_id, source_gap_outcome_id);
 
 
 --
@@ -14885,24 +12320,12 @@ CREATE INDEX scrum_channel_operations_card ON scrum_channel_operations USING btr
 
 
 --
--- Name: station_call_openings_attempt; Type: INDEX; Schema: current runtime; Owner: -
---
-
-CREATE INDEX station_call_openings_attempt ON station_call_openings USING btree (job_id, generation, step_id, step_attempt, id);
 
 
 --
--- Name: station_call_openings_one_gap; Type: INDEX; Schema: current runtime; Owner: -
---
-
-CREATE UNIQUE INDEX station_call_openings_one_gap ON station_call_openings USING btree (gap_opening_id);
 
 
 --
--- Name: station_call_receipts_one_terminal; Type: INDEX; Schema: current runtime; Owner: -
---
-
-CREATE UNIQUE INDEX station_call_receipts_one_terminal ON station_call_receipts USING btree (opening_id);
 
 
 --
@@ -14913,10 +12336,6 @@ CREATE INDEX station_gap_openings_attempt ON station_gap_openings USING btree (j
 
 
 --
--- Name: station_gap_openings_one_fragment_generation_replacement; Type: INDEX; Schema: current runtime; Owner: -
---
-
-CREATE UNIQUE INDEX station_gap_openings_one_fragment_generation_replacement ON station_gap_openings USING btree (origin_call_receipt_id) WHERE (origin_call_receipt_id IS NOT NULL);
 
 
 --
@@ -14934,24 +12353,9 @@ CREATE UNIQUE INDEX station_gap_outcomes_one_terminal ON station_gap_outcomes US
 
 
 --
--- Name: station_provider_discoveries_one_gap; Type: INDEX; Schema: current runtime; Owner: -
---
-
-CREATE UNIQUE INDEX station_provider_discoveries_one_gap ON station_provider_discoveries USING btree (gap_opening_id);
 
 
 --
--- Name: station_provider_discovery_receipts_one_terminal; Type: INDEX; Schema: current runtime; Owner: -
---
-
-CREATE UNIQUE INDEX station_provider_discovery_receipts_one_terminal ON station_provider_discovery_receipts USING btree (opening_id);
-
-
---
--- Name: worker_skill_embeddings_one_frozen_identity; Type: INDEX; Schema: current runtime; Owner: -
---
-
-CREATE UNIQUE INDEX worker_skill_embeddings_one_frozen_identity ON worker_skill_embeddings USING btree (skill_id, skill_version);
 
 
 --
@@ -15613,31 +13017,15 @@ CREATE TRIGGER lifecycle_operation_registry_truncate_immutable BEFORE TRUNCATE O
 
 
 --
--- Name: llm_call_evidence llm_call_evidence_immutable; Type: TRIGGER; Schema: current runtime; Owner: -
---
-
-CREATE TRIGGER llm_call_evidence_immutable BEFORE DELETE OR UPDATE ON llm_call_evidence FOR EACH ROW EXECUTE FUNCTION prevent_llm_call_evidence_mutation();
 
 
 --
--- Name: llm_call_evidence llm_call_evidence_require_station_gap; Type: TRIGGER; Schema: current runtime; Owner: -
---
-
-CREATE TRIGGER llm_call_evidence_require_station_gap BEFORE INSERT ON llm_call_evidence FOR EACH ROW EXECUTE FUNCTION require_llm_call_station_gap();
 
 
 --
--- Name: llm_call_evidence llm_call_evidence_truncate_immutable; Type: TRIGGER; Schema: current runtime; Owner: -
---
-
-CREATE TRIGGER llm_call_evidence_truncate_immutable BEFORE TRUNCATE ON llm_call_evidence FOR EACH STATEMENT EXECUTE FUNCTION prevent_llm_call_evidence_mutation();
 
 
 --
--- Name: llm_call_evidence llm_call_evidence_validate_station_identity; Type: TRIGGER; Schema: current runtime; Owner: -
---
-
-CREATE TRIGGER llm_call_evidence_validate_station_identity BEFORE INSERT ON llm_call_evidence FOR EACH ROW EXECUTE FUNCTION validate_station_llm_call_evidence_identity();
 
 
 --
@@ -15771,34 +13159,6 @@ CREATE TRIGGER repository_snapshots_immutable BEFORE UPDATE ON repository_snapsh
 --
 
 CREATE TRIGGER repository_symbols_immutable BEFORE UPDATE ON repository_symbols FOR EACH ROW EXECUTE FUNCTION prevent_repository_fact_update();
-
-
---
--- Name: retired_repository_mutation_files retired_repository_mutation_files_immutable; Type: TRIGGER; Schema: current runtime; Owner: -
---
-
-CREATE TRIGGER retired_repository_mutation_files_immutable BEFORE INSERT OR DELETE OR UPDATE ON retired_repository_mutation_files FOR EACH ROW EXECUTE FUNCTION prevent_retired_repository_mutation_change();
-
-
---
--- Name: retired_repository_mutation_files retired_repository_mutation_files_truncate_immutable; Type: TRIGGER; Schema: current runtime; Owner: -
---
-
-CREATE TRIGGER retired_repository_mutation_files_truncate_immutable BEFORE TRUNCATE ON retired_repository_mutation_files FOR EACH STATEMENT EXECUTE FUNCTION prevent_retired_repository_mutation_change();
-
-
---
--- Name: retired_repository_mutation_operations retired_repository_mutation_operations_immutable; Type: TRIGGER; Schema: current runtime; Owner: -
---
-
-CREATE TRIGGER retired_repository_mutation_operations_immutable BEFORE INSERT OR DELETE OR UPDATE ON retired_repository_mutation_operations FOR EACH ROW EXECUTE FUNCTION prevent_retired_repository_mutation_change();
-
-
---
--- Name: retired_repository_mutation_operations retired_repository_mutation_operations_truncate_immutable; Type: TRIGGER; Schema: current runtime; Owner: -
---
-
-CREATE TRIGGER retired_repository_mutation_operations_truncate_immutable BEFORE TRUNCATE ON retired_repository_mutation_operations FOR EACH STATEMENT EXECUTE FUNCTION prevent_retired_repository_mutation_change();
 
 
 --
@@ -16152,24 +13512,12 @@ CREATE TRIGGER roleplay_ongoing_action_states_validate_insert BEFORE INSERT ON r
 
 
 --
--- Name: objective_portable_result_reuses objective_portable_result_reuses_immutable; Type: TRIGGER; Schema: current runtime; Owner: -
---
-
-CREATE TRIGGER objective_portable_result_reuses_immutable BEFORE DELETE OR UPDATE ON objective_portable_result_reuses FOR EACH ROW EXECUTE FUNCTION prevent_station_gap_history_mutation();
 
 
 --
--- Name: objective_portable_result_reuses objective_portable_result_reuses_truncate_immutable; Type: TRIGGER; Schema: current runtime; Owner: -
---
-
-CREATE TRIGGER objective_portable_result_reuses_truncate_immutable BEFORE TRUNCATE ON objective_portable_result_reuses FOR EACH STATEMENT EXECUTE FUNCTION prevent_station_gap_history_mutation();
 
 
 --
--- Name: objective_portable_result_reuses objective_portable_result_reuses_validate_insert; Type: TRIGGER; Schema: current runtime; Owner: -
---
-
-CREATE TRIGGER objective_portable_result_reuses_validate_insert BEFORE INSERT ON objective_portable_result_reuses FOR EACH ROW EXECUTE FUNCTION validate_objective_portable_result_reuse_insert();
 
 
 --
@@ -16551,73 +13899,33 @@ CREATE CONSTRAINT TRIGGER scrum_registry_requires_operation AFTER INSERT ON life
 
 
 --
--- Name: station_call_identity_captures station_call_identity_captures_immutable; Type: TRIGGER; Schema: current runtime; Owner: -
---
-
-CREATE TRIGGER station_call_identity_captures_immutable BEFORE DELETE OR UPDATE ON station_call_identity_captures FOR EACH ROW EXECUTE FUNCTION prevent_station_gap_history_mutation();
 
 
 --
--- Name: station_call_identity_captures station_call_identity_captures_truncate_immutable; Type: TRIGGER; Schema: current runtime; Owner: -
---
-
-CREATE TRIGGER station_call_identity_captures_truncate_immutable BEFORE TRUNCATE ON station_call_identity_captures FOR EACH STATEMENT EXECUTE FUNCTION prevent_station_gap_history_mutation();
 
 
 --
--- Name: station_call_openings station_call_openings_immutable; Type: TRIGGER; Schema: current runtime; Owner: -
---
-
-CREATE TRIGGER station_call_openings_immutable BEFORE DELETE OR UPDATE ON station_call_openings FOR EACH ROW EXECUTE FUNCTION prevent_station_gap_history_mutation();
 
 
 --
--- Name: station_call_openings station_call_openings_truncate_immutable; Type: TRIGGER; Schema: current runtime; Owner: -
---
-
-CREATE TRIGGER station_call_openings_truncate_immutable BEFORE TRUNCATE ON station_call_openings FOR EACH STATEMENT EXECUTE FUNCTION prevent_station_gap_history_mutation();
 
 
 --
--- Name: station_call_openings station_call_openings_validate_insert; Type: TRIGGER; Schema: current runtime; Owner: -
---
-
-CREATE TRIGGER station_call_openings_validate_insert BEFORE INSERT ON station_call_openings FOR EACH ROW EXECUTE FUNCTION validate_station_call_opening_insert();
 
 
 --
--- Name: station_call_receipts station_call_receipts_immutable; Type: TRIGGER; Schema: current runtime; Owner: -
---
-
-CREATE TRIGGER station_call_receipts_immutable BEFORE DELETE OR UPDATE ON station_call_receipts FOR EACH ROW EXECUTE FUNCTION prevent_station_gap_history_mutation();
 
 
 --
--- Name: station_call_receipts station_call_receipts_truncate_immutable; Type: TRIGGER; Schema: current runtime; Owner: -
---
-
-CREATE TRIGGER station_call_receipts_truncate_immutable BEFORE TRUNCATE ON station_call_receipts FOR EACH STATEMENT EXECUTE FUNCTION prevent_station_gap_history_mutation();
 
 
 --
--- Name: station_call_receipts station_call_receipts_validate_insert; Type: TRIGGER; Schema: current runtime; Owner: -
---
-
-CREATE TRIGGER station_call_receipts_validate_insert BEFORE INSERT ON station_call_receipts FOR EACH ROW EXECUTE FUNCTION validate_station_call_receipt_insert();
 
 
 --
--- Name: station_call_response_captures station_call_response_captures_immutable; Type: TRIGGER; Schema: current runtime; Owner: -
---
-
-CREATE TRIGGER station_call_response_captures_immutable BEFORE DELETE OR UPDATE ON station_call_response_captures FOR EACH ROW EXECUTE FUNCTION prevent_station_gap_history_mutation();
 
 
 --
--- Name: station_call_response_captures station_call_response_captures_truncate_immutable; Type: TRIGGER; Schema: current runtime; Owner: -
---
-
-CREATE TRIGGER station_call_response_captures_truncate_immutable BEFORE TRUNCATE ON station_call_response_captures FOR EACH STATEMENT EXECUTE FUNCTION prevent_station_gap_history_mutation();
 
 
 --
@@ -16656,10 +13964,6 @@ CREATE TRIGGER station_gap_outcomes_immutable BEFORE DELETE OR UPDATE ON station
 
 
 --
--- Name: station_gap_outcomes station_gap_outcomes_require_call_receipt; Type: TRIGGER; Schema: current runtime; Owner: -
---
-
-CREATE TRIGGER station_gap_outcomes_require_call_receipt BEFORE INSERT ON station_gap_outcomes FOR EACH ROW EXECUTE FUNCTION require_station_call_receipt_before_gap_outcome();
 
 
 --
@@ -16677,73 +13981,33 @@ CREATE TRIGGER station_gap_outcomes_validate_insert BEFORE INSERT ON station_gap
 
 
 --
--- Name: station_gap_openings station_gap_replacement_origin_required; Type: TRIGGER; Schema: current runtime; Owner: -
---
-
-CREATE TRIGGER station_gap_replacement_origin_required BEFORE INSERT ON station_gap_openings FOR EACH ROW EXECUTE FUNCTION require_fragment_generation_replacement_origin();
 
 
 --
--- Name: station_provider_discoveries station_provider_discoveries_immutable; Type: TRIGGER; Schema: current runtime; Owner: -
---
-
-CREATE TRIGGER station_provider_discoveries_immutable BEFORE DELETE OR UPDATE ON station_provider_discoveries FOR EACH ROW EXECUTE FUNCTION prevent_station_gap_history_mutation();
 
 
 --
--- Name: station_provider_discoveries station_provider_discoveries_truncate_immutable; Type: TRIGGER; Schema: current runtime; Owner: -
---
-
-CREATE TRIGGER station_provider_discoveries_truncate_immutable BEFORE TRUNCATE ON station_provider_discoveries FOR EACH STATEMENT EXECUTE FUNCTION prevent_station_gap_history_mutation();
 
 
 --
--- Name: station_provider_discoveries station_provider_discoveries_validate_insert; Type: TRIGGER; Schema: current runtime; Owner: -
---
-
-CREATE TRIGGER station_provider_discoveries_validate_insert BEFORE INSERT ON station_provider_discoveries FOR EACH ROW EXECUTE FUNCTION validate_station_provider_discovery_insert();
 
 
 --
--- Name: station_provider_discovery_captures station_provider_discovery_captures_immutable; Type: TRIGGER; Schema: current runtime; Owner: -
---
-
-CREATE TRIGGER station_provider_discovery_captures_immutable BEFORE DELETE OR UPDATE ON station_provider_discovery_captures FOR EACH ROW EXECUTE FUNCTION prevent_station_gap_history_mutation();
 
 
 --
--- Name: station_provider_discovery_captures station_provider_discovery_captures_truncate_immutable; Type: TRIGGER; Schema: current runtime; Owner: -
---
-
-CREATE TRIGGER station_provider_discovery_captures_truncate_immutable BEFORE TRUNCATE ON station_provider_discovery_captures FOR EACH STATEMENT EXECUTE FUNCTION prevent_station_gap_history_mutation();
 
 
 --
--- Name: station_provider_discovery_receipts station_provider_discovery_receipts_immutable; Type: TRIGGER; Schema: current runtime; Owner: -
---
-
-CREATE TRIGGER station_provider_discovery_receipts_immutable BEFORE DELETE OR UPDATE ON station_provider_discovery_receipts FOR EACH ROW EXECUTE FUNCTION prevent_station_gap_history_mutation();
 
 
 --
--- Name: station_provider_discovery_receipts station_provider_discovery_receipts_truncate_immutable; Type: TRIGGER; Schema: current runtime; Owner: -
---
-
-CREATE TRIGGER station_provider_discovery_receipts_truncate_immutable BEFORE TRUNCATE ON station_provider_discovery_receipts FOR EACH STATEMENT EXECUTE FUNCTION prevent_station_gap_history_mutation();
 
 
 --
--- Name: station_provider_discovery_receipts station_provider_discovery_receipts_validate_insert; Type: TRIGGER; Schema: current runtime; Owner: -
---
-
-CREATE TRIGGER station_provider_discovery_receipts_validate_insert BEFORE INSERT ON station_provider_discovery_receipts FOR EACH ROW EXECUTE FUNCTION validate_station_provider_discovery_receipt_insert();
 
 
 --
--- Name: station_provider_discoveries station_provider_replacement_model_required; Type: TRIGGER; Schema: current runtime; Owner: -
---
-
-CREATE TRIGGER station_provider_replacement_model_required BEFORE INSERT ON station_provider_discoveries FOR EACH ROW EXECUTE FUNCTION require_fragment_generation_replacement_provider();
 
 
 --
@@ -16831,34 +14095,6 @@ CREATE TRIGGER task_node_supersessions_validate BEFORE INSERT ON task_node_gener
 
 
 --
--- Name: worker_skill_embeddings worker_skill_embeddings_reject_unavailable_statements; Type: TRIGGER; Schema: current runtime; Owner: -
---
-
-CREATE TRIGGER worker_skill_embeddings_reject_unavailable_statements BEFORE INSERT OR DELETE OR UPDATE ON worker_skill_embeddings FOR EACH STATEMENT EXECUTE FUNCTION reject_unavailable_worker_skill_mutation();
-
-
---
--- Name: worker_skill_embeddings worker_skill_embeddings_reject_unavailable_truncate; Type: TRIGGER; Schema: current runtime; Owner: -
---
-
-CREATE TRIGGER worker_skill_embeddings_reject_unavailable_truncate BEFORE TRUNCATE ON worker_skill_embeddings FOR EACH STATEMENT EXECUTE FUNCTION reject_unavailable_worker_skill_mutation();
-
-
---
--- Name: worker_skills worker_skills_reject_unavailable_statements; Type: TRIGGER; Schema: current runtime; Owner: -
---
-
-CREATE TRIGGER worker_skills_reject_unavailable_statements BEFORE INSERT OR DELETE OR UPDATE ON worker_skills FOR EACH STATEMENT EXECUTE FUNCTION reject_unavailable_worker_skill_mutation();
-
-
---
--- Name: worker_skills worker_skills_reject_unavailable_truncate; Type: TRIGGER; Schema: current runtime; Owner: -
---
-
-CREATE TRIGGER worker_skills_reject_unavailable_truncate BEFORE TRUNCATE ON worker_skills FOR EACH STATEMENT EXECUTE FUNCTION reject_unavailable_worker_skill_mutation();
-
-
---
 -- Name: working_set_closed_scopes working_set_closed_scopes_immutable; Type: TRIGGER; Schema: current runtime; Owner: -
 --
 
@@ -16926,76 +14162,6 @@ CREATE TRIGGER working_sets_identity_guard BEFORE DELETE OR UPDATE ON working_se
 --
 
 CREATE TRIGGER working_sets_truncate_guard BEFORE TRUNCATE ON working_sets FOR EACH STATEMENT EXECUTE FUNCTION prevent_working_set_history_truncate();
-
-
---
--- Name: evidence workspace_mutation_evidence_immutable; Type: TRIGGER; Schema: current runtime; Owner: -
---
-
-CREATE TRIGGER workspace_mutation_evidence_immutable BEFORE DELETE OR UPDATE ON evidence FOR EACH ROW EXECUTE FUNCTION prevent_workspace_mutation_evidence_change();
-
-
---
--- Name: workspace_mutation_files workspace_mutation_file_insert_validate; Type: TRIGGER; Schema: current runtime; Owner: -
---
-
-CREATE TRIGGER workspace_mutation_file_insert_validate BEFORE INSERT ON workspace_mutation_files FOR EACH ROW EXECUTE FUNCTION validate_workspace_mutation_file_insert();
-
-
---
--- Name: workspace_mutation_files workspace_mutation_files_immutable; Type: TRIGGER; Schema: current runtime; Owner: -
---
-
-CREATE TRIGGER workspace_mutation_files_immutable BEFORE DELETE OR UPDATE ON workspace_mutation_files FOR EACH ROW EXECUTE FUNCTION prevent_workspace_mutation_file_change();
-
-
---
--- Name: workspace_mutation_files workspace_mutation_files_truncate_immutable; Type: TRIGGER; Schema: current runtime; Owner: -
---
-
-CREATE TRIGGER workspace_mutation_files_truncate_immutable BEFORE TRUNCATE ON workspace_mutation_files FOR EACH STATEMENT EXECUTE FUNCTION prevent_workspace_mutation_file_change();
-
-
---
--- Name: workspace_mutation_operations workspace_mutation_insert_validate; Type: TRIGGER; Schema: current runtime; Owner: -
---
-
-CREATE TRIGGER workspace_mutation_insert_validate BEFORE INSERT ON workspace_mutation_operations FOR EACH ROW EXECUTE FUNCTION validate_workspace_mutation_insert();
-
-
---
--- Name: workspace_mutation_operations workspace_mutation_operations_delete_immutable; Type: TRIGGER; Schema: current runtime; Owner: -
---
-
-CREATE TRIGGER workspace_mutation_operations_delete_immutable BEFORE DELETE ON workspace_mutation_operations FOR EACH ROW EXECUTE FUNCTION prevent_workspace_mutation_removal();
-
-
---
--- Name: workspace_mutation_operations workspace_mutation_operations_truncate_immutable; Type: TRIGGER; Schema: current runtime; Owner: -
---
-
-CREATE TRIGGER workspace_mutation_operations_truncate_immutable BEFORE TRUNCATE ON workspace_mutation_operations FOR EACH STATEMENT EXECUTE FUNCTION prevent_workspace_mutation_removal();
-
-
---
--- Name: workspace_mutation_operations workspace_mutation_project_location_immutable; Type: TRIGGER; Schema: current runtime; Owner: -
---
-
-CREATE TRIGGER workspace_mutation_project_location_immutable BEFORE UPDATE ON workspace_mutation_operations FOR EACH ROW EXECUTE FUNCTION prevent_workspace_mutation_project_location_change();
-
-
---
--- Name: workspace_mutation_operations workspace_mutation_requires_files; Type: TRIGGER; Schema: current runtime; Owner: -
---
-
-CREATE CONSTRAINT TRIGGER workspace_mutation_requires_files AFTER INSERT ON workspace_mutation_operations DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION require_workspace_mutation_files();
-
-
---
--- Name: workspace_mutation_operations workspace_mutation_update_validate; Type: TRIGGER; Schema: current runtime; Owner: -
---
-
-CREATE TRIGGER workspace_mutation_update_validate BEFORE UPDATE ON workspace_mutation_operations FOR EACH ROW EXECUTE FUNCTION validate_workspace_mutation_update();
 
 
 --
@@ -17559,67 +14725,27 @@ ALTER TABLE ONLY jobs
 
 
 --
--- Name: llm_call_evidence llm_call_evidence_context_projection_fkey; Type: FK CONSTRAINT; Schema: current runtime; Owner: -
---
-
-ALTER TABLE ONLY llm_call_evidence
-    ADD CONSTRAINT llm_call_evidence_context_projection_fkey FOREIGN KEY (context_projection_id, job_id, job_generation, step_id, work_id, work_kind) REFERENCES context_projections(projection_id, job_id, generation, step_id, work_id, work_kind) ON DELETE RESTRICT;
 
 
 --
--- Name: llm_call_evidence llm_call_evidence_job_generation_fkey; Type: FK CONSTRAINT; Schema: current runtime; Owner: -
---
-
-ALTER TABLE ONLY llm_call_evidence
-    ADD CONSTRAINT llm_call_evidence_job_generation_fkey FOREIGN KEY (job_id, job_generation) REFERENCES job_generations(job_id, generation) ON DELETE RESTRICT;
 
 
 --
--- Name: llm_call_evidence llm_call_evidence_job_id_fkey; Type: FK CONSTRAINT; Schema: current runtime; Owner: -
---
-
-ALTER TABLE ONLY llm_call_evidence
-    ADD CONSTRAINT llm_call_evidence_job_id_fkey FOREIGN KEY (job_id) REFERENCES jobs(id) ON DELETE RESTRICT;
 
 
 --
--- Name: llm_call_evidence llm_call_evidence_job_step_fkey; Type: FK CONSTRAINT; Schema: current runtime; Owner: -
---
-
-ALTER TABLE ONLY llm_call_evidence
-    ADD CONSTRAINT llm_call_evidence_job_step_fkey FOREIGN KEY (job_id, step_id) REFERENCES job_steps(job_id, id) ON DELETE RESTRICT;
 
 
 --
--- Name: llm_call_evidence llm_call_evidence_job_step_generation_fkey; Type: FK CONSTRAINT; Schema: current runtime; Owner: -
---
-
-ALTER TABLE ONLY llm_call_evidence
-    ADD CONSTRAINT llm_call_evidence_job_step_generation_fkey FOREIGN KEY (job_id, job_generation, step_id) REFERENCES job_steps(job_id, generation, id) ON DELETE RESTRICT;
 
 
 --
--- Name: llm_call_evidence llm_call_evidence_station_call_opening_id_fkey; Type: FK CONSTRAINT; Schema: current runtime; Owner: -
---
-
-ALTER TABLE ONLY llm_call_evidence
-    ADD CONSTRAINT llm_call_evidence_station_call_opening_id_fkey FOREIGN KEY (station_call_opening_id) REFERENCES station_call_openings(id) ON DELETE RESTRICT;
 
 
 --
--- Name: llm_call_evidence llm_call_evidence_step_attempt_fkey; Type: FK CONSTRAINT; Schema: current runtime; Owner: -
---
-
-ALTER TABLE ONLY llm_call_evidence
-    ADD CONSTRAINT llm_call_evidence_step_attempt_fkey FOREIGN KEY (job_id, job_generation, step_id, step_attempt) REFERENCES job_step_attempts(job_id, generation, step_id, attempt) ON DELETE RESTRICT;
 
 
 --
--- Name: llm_call_evidence llm_call_evidence_step_id_fkey; Type: FK CONSTRAINT; Schema: current runtime; Owner: -
---
-
-ALTER TABLE ONLY llm_call_evidence
-    ADD CONSTRAINT llm_call_evidence_step_id_fkey FOREIGN KEY (step_id) REFERENCES job_steps(id) ON DELETE RESTRICT;
 
 
 --
@@ -17804,54 +14930,6 @@ ALTER TABLE ONLY repository_exclusions
 
 ALTER TABLE ONLY repository_files
     ADD CONSTRAINT repository_files_snapshot_id_fkey FOREIGN KEY (snapshot_id) REFERENCES repository_snapshots(id) ON DELETE CASCADE;
-
-
---
--- Name: retired_repository_mutation_files repository_mutation_files_operation_id_fkey; Type: FK CONSTRAINT; Schema: current runtime; Owner: -
---
-
-ALTER TABLE ONLY retired_repository_mutation_files
-    ADD CONSTRAINT repository_mutation_files_operation_id_fkey FOREIGN KEY (operation_id) REFERENCES retired_repository_mutation_operations(id) ON DELETE RESTRICT;
-
-
---
--- Name: retired_repository_mutation_operations repository_mutation_operations_job_id_evidence_id_fkey; Type: FK CONSTRAINT; Schema: current runtime; Owner: -
---
-
-ALTER TABLE ONLY retired_repository_mutation_operations
-    ADD CONSTRAINT repository_mutation_operations_job_id_evidence_id_fkey FOREIGN KEY (job_id, evidence_id) REFERENCES evidence(job_id, id) ON DELETE RESTRICT;
-
-
---
--- Name: retired_repository_mutation_operations repository_mutation_operations_job_id_generation_fkey; Type: FK CONSTRAINT; Schema: current runtime; Owner: -
---
-
-ALTER TABLE ONLY retired_repository_mutation_operations
-    ADD CONSTRAINT repository_mutation_operations_job_id_generation_fkey FOREIGN KEY (job_id, generation) REFERENCES job_generations(job_id, generation) ON DELETE RESTRICT;
-
-
---
--- Name: retired_repository_mutation_operations repository_mutation_operations_job_id_generation_step_id_fkey; Type: FK CONSTRAINT; Schema: current runtime; Owner: -
---
-
-ALTER TABLE ONLY retired_repository_mutation_operations
-    ADD CONSTRAINT repository_mutation_operations_job_id_generation_step_id_fkey FOREIGN KEY (job_id, generation, step_id) REFERENCES job_steps(job_id, generation, id) ON DELETE RESTRICT;
-
-
---
--- Name: retired_repository_mutation_operations repository_mutation_operations_source_snapshot_id_fkey; Type: FK CONSTRAINT; Schema: current runtime; Owner: -
---
-
-ALTER TABLE ONLY retired_repository_mutation_operations
-    ADD CONSTRAINT repository_mutation_operations_source_snapshot_id_fkey FOREIGN KEY (source_snapshot_id) REFERENCES repository_snapshots(id) ON DELETE RESTRICT;
-
-
---
--- Name: retired_repository_mutation_operations repository_mutation_operations_step_attempt_fkey; Type: FK CONSTRAINT; Schema: current runtime; Owner: -
---
-
-ALTER TABLE ONLY retired_repository_mutation_operations
-    ADD CONSTRAINT repository_mutation_operations_step_attempt_fkey FOREIGN KEY (job_id, generation, step_id, step_attempt) REFERENCES job_step_attempts(job_id, generation, step_id, attempt) ON DELETE RESTRICT;
 
 
 --
@@ -18191,35 +15269,15 @@ ALTER TABLE ONLY roleplay_ongoing_action_states
 
 
 --
--- Name: objective_portable_result_reuses objective_portable_result_reuses_source_attempt_fkey; Type: FK CONSTRAINT; Schema: current runtime; Owner: -
---
-
-ALTER TABLE ONLY objective_portable_result_reuses
-    ADD CONSTRAINT objective_portable_result_reuses_source_attempt_fkey FOREIGN KEY (source_job_id, source_generation, source_step_id, source_step_attempt) REFERENCES job_step_attempts(job_id, generation, step_id, attempt) ON DELETE RESTRICT;
 
 
 --
--- Name: objective_portable_result_reuses objective_portable_result_reuses_source_gap_opening_id_fkey; Type: FK CONSTRAINT; Schema: current runtime; Owner: -
---
-
-ALTER TABLE ONLY objective_portable_result_reuses
-    ADD CONSTRAINT objective_portable_result_reuses_source_gap_opening_id_fkey FOREIGN KEY (source_gap_opening_id) REFERENCES station_gap_openings(id) ON DELETE RESTRICT;
 
 
 --
--- Name: objective_portable_result_reuses objective_portable_result_reuses_source_gap_outcome_id_fkey; Type: FK CONSTRAINT; Schema: current runtime; Owner: -
---
-
-ALTER TABLE ONLY objective_portable_result_reuses
-    ADD CONSTRAINT objective_portable_result_reuses_source_gap_outcome_id_fkey FOREIGN KEY (source_gap_outcome_id) REFERENCES station_gap_outcomes(id) ON DELETE RESTRICT;
 
 
 --
--- Name: objective_portable_result_reuses objective_portable_result_reuses_target_attempt_fkey; Type: FK CONSTRAINT; Schema: current runtime; Owner: -
---
-
-ALTER TABLE ONLY objective_portable_result_reuses
-    ADD CONSTRAINT objective_portable_result_reuses_target_attempt_fkey FOREIGN KEY (target_job_id, target_generation, target_step_id, target_step_attempt) REFERENCES job_step_attempts(job_id, generation, step_id, attempt) ON DELETE RESTRICT;
 
 
 --
@@ -18647,59 +15705,24 @@ ALTER TABLE ONLY scrum_channel_operations
 
 
 --
--- Name: station_call_identity_captures station_call_identity_captures_opening_id_fkey; Type: FK CONSTRAINT; Schema: current runtime; Owner: -
---
-
-ALTER TABLE ONLY station_call_identity_captures
-    ADD CONSTRAINT station_call_identity_captures_opening_id_fkey FOREIGN KEY (opening_id) REFERENCES station_call_openings(id) ON DELETE RESTRICT;
 
 
 --
--- Name: station_call_openings station_call_openings_discovery_receipt_id_fkey; Type: FK CONSTRAINT; Schema: current runtime; Owner: -
---
-
-ALTER TABLE ONLY station_call_openings
-    ADD CONSTRAINT station_call_openings_discovery_receipt_id_fkey FOREIGN KEY (discovery_receipt_id) REFERENCES station_provider_discovery_receipts(id) ON DELETE RESTRICT;
 
 
 --
--- Name: station_call_openings station_call_openings_gap_opening_id_fkey; Type: FK CONSTRAINT; Schema: current runtime; Owner: -
---
-
-ALTER TABLE ONLY station_call_openings
-    ADD CONSTRAINT station_call_openings_gap_opening_id_fkey FOREIGN KEY (gap_opening_id) REFERENCES station_gap_openings(id) ON DELETE RESTRICT;
 
 
 --
--- Name: station_call_openings station_call_openings_job_id_generation_step_id_step_attem_fkey; Type: FK CONSTRAINT; Schema: current runtime; Owner: -
---
-
-ALTER TABLE ONLY station_call_openings
-    ADD CONSTRAINT station_call_openings_job_id_generation_step_id_step_attem_fkey FOREIGN KEY (job_id, generation, step_id, step_attempt) REFERENCES job_step_attempts(job_id, generation, step_id, attempt) ON DELETE RESTRICT;
 
 
 --
--- Name: station_call_receipts station_call_receipts_job_id_generation_step_id_step_attem_fkey; Type: FK CONSTRAINT; Schema: current runtime; Owner: -
---
-
-ALTER TABLE ONLY station_call_receipts
-    ADD CONSTRAINT station_call_receipts_job_id_generation_step_id_step_attem_fkey FOREIGN KEY (job_id, generation, step_id, step_attempt) REFERENCES job_step_attempts(job_id, generation, step_id, attempt) ON DELETE RESTRICT;
 
 
 --
--- Name: station_call_receipts station_call_receipts_opening_id_fkey; Type: FK CONSTRAINT; Schema: current runtime; Owner: -
---
-
-ALTER TABLE ONLY station_call_receipts
-    ADD CONSTRAINT station_call_receipts_opening_id_fkey FOREIGN KEY (opening_id) REFERENCES station_call_openings(id) ON DELETE RESTRICT;
 
 
 --
--- Name: station_call_response_captures station_call_response_captures_opening_id_fkey; Type: FK CONSTRAINT; Schema: current runtime; Owner: -
---
-
-ALTER TABLE ONLY station_call_response_captures
-    ADD CONSTRAINT station_call_response_captures_opening_id_fkey FOREIGN KEY (opening_id) REFERENCES station_call_openings(id) ON DELETE RESTRICT;
 
 
 --
@@ -18711,19 +15734,9 @@ ALTER TABLE ONLY station_gap_openings
 
 
 --
--- Name: station_gap_openings station_gap_openings_origin_call_receipt_id_fkey; Type: FK CONSTRAINT; Schema: current runtime; Owner: -
---
-
-ALTER TABLE ONLY station_gap_openings
-    ADD CONSTRAINT station_gap_openings_origin_call_receipt_id_fkey FOREIGN KEY (origin_call_receipt_id) REFERENCES station_call_receipts(id) ON DELETE RESTRICT;
 
 
 --
--- Name: station_gap_openings station_gap_openings_origin_gap_opening_id_fkey; Type: FK CONSTRAINT; Schema: current runtime; Owner: -
---
-
-ALTER TABLE ONLY station_gap_openings
-    ADD CONSTRAINT station_gap_openings_origin_gap_opening_id_fkey FOREIGN KEY (origin_gap_opening_id) REFERENCES station_gap_openings(id) ON DELETE RESTRICT;
 
 
 --
@@ -18743,43 +15756,18 @@ ALTER TABLE ONLY station_gap_outcomes
 
 
 --
--- Name: station_provider_discoveries station_provider_discoveries_gap_opening_id_fkey; Type: FK CONSTRAINT; Schema: current runtime; Owner: -
---
-
-ALTER TABLE ONLY station_provider_discoveries
-    ADD CONSTRAINT station_provider_discoveries_gap_opening_id_fkey FOREIGN KEY (gap_opening_id) REFERENCES station_gap_openings(id) ON DELETE RESTRICT;
 
 
 --
--- Name: station_provider_discoveries station_provider_discoveries_job_id_generation_step_id_ste_fkey; Type: FK CONSTRAINT; Schema: current runtime; Owner: -
---
-
-ALTER TABLE ONLY station_provider_discoveries
-    ADD CONSTRAINT station_provider_discoveries_job_id_generation_step_id_ste_fkey FOREIGN KEY (job_id, generation, step_id, step_attempt) REFERENCES job_step_attempts(job_id, generation, step_id, attempt) ON DELETE RESTRICT;
 
 
 --
--- Name: station_provider_discovery_captures station_provider_discovery_captures_opening_id_fkey; Type: FK CONSTRAINT; Schema: current runtime; Owner: -
---
-
-ALTER TABLE ONLY station_provider_discovery_captures
-    ADD CONSTRAINT station_provider_discovery_captures_opening_id_fkey FOREIGN KEY (opening_id) REFERENCES station_provider_discoveries(id) ON DELETE RESTRICT;
 
 
 --
--- Name: station_provider_discovery_receipts station_provider_discovery_re_job_id_generation_step_id_st_fkey; Type: FK CONSTRAINT; Schema: current runtime; Owner: -
---
-
-ALTER TABLE ONLY station_provider_discovery_receipts
-    ADD CONSTRAINT station_provider_discovery_re_job_id_generation_step_id_st_fkey FOREIGN KEY (job_id, generation, step_id, step_attempt) REFERENCES job_step_attempts(job_id, generation, step_id, attempt) ON DELETE RESTRICT;
 
 
 --
--- Name: station_provider_discovery_receipts station_provider_discovery_receipts_opening_id_fkey; Type: FK CONSTRAINT; Schema: current runtime; Owner: -
---
-
-ALTER TABLE ONLY station_provider_discovery_receipts
-    ADD CONSTRAINT station_provider_discovery_receipts_opening_id_fkey FOREIGN KEY (opening_id) REFERENCES station_provider_discoveries(id) ON DELETE RESTRICT;
 
 
 --
@@ -19015,22 +16003,6 @@ ALTER TABLE ONLY task_nodes
 
 
 --
--- Name: worker_skill_embeddings worker_skill_embeddings_skill_id_skill_version_fkey; Type: FK CONSTRAINT; Schema: current runtime; Owner: -
---
-
-ALTER TABLE ONLY worker_skill_embeddings
-    ADD CONSTRAINT worker_skill_embeddings_skill_id_skill_version_fkey FOREIGN KEY (skill_id, skill_version) REFERENCES worker_skills(skill_id, version) ON DELETE CASCADE;
-
-
---
--- Name: worker_skills worker_skills_created_by_job_id_fkey; Type: FK CONSTRAINT; Schema: current runtime; Owner: -
---
-
-ALTER TABLE ONLY worker_skills
-    ADD CONSTRAINT worker_skills_created_by_job_id_fkey FOREIGN KEY (created_by_job_id) REFERENCES jobs(id) ON DELETE RESTRICT;
-
-
---
 -- Name: working_set_closed_scopes working_set_closed_scopes_working_set_id_job_id_generation_fkey; Type: FK CONSTRAINT; Schema: current runtime; Owner: -
 --
 
@@ -19087,171 +16059,3 @@ ALTER TABLE ONLY working_sets
 
 
 --
--- Name: workspace_mutation_files workspace_mutation_files_operation_id_fkey; Type: FK CONSTRAINT; Schema: current runtime; Owner: -
---
-
-ALTER TABLE ONLY workspace_mutation_files
-    ADD CONSTRAINT workspace_mutation_files_operation_id_fkey FOREIGN KEY (operation_id) REFERENCES workspace_mutation_operations(id) ON DELETE RESTRICT;
-
-
---
--- Name: workspace_mutation_operations workspace_mutation_operations_job_id_generation_fkey; Type: FK CONSTRAINT; Schema: current runtime; Owner: -
---
-
-ALTER TABLE ONLY workspace_mutation_operations
-    ADD CONSTRAINT workspace_mutation_operations_job_id_generation_fkey FOREIGN KEY (job_id, generation) REFERENCES job_generations(job_id, generation) ON DELETE RESTRICT;
-
-
---
--- Name: workspace_mutation_operations workspace_mutation_operations_job_id_generation_step_id_cr_fkey; Type: FK CONSTRAINT; Schema: current runtime; Owner: -
---
-
-ALTER TABLE ONLY workspace_mutation_operations
-    ADD CONSTRAINT workspace_mutation_operations_job_id_generation_step_id_cr_fkey FOREIGN KEY (job_id, generation, step_id, creator_step_attempt) REFERENCES job_step_attempts(job_id, generation, step_id, attempt) ON DELETE RESTRICT;
-
-
---
--- Name: workspace_mutation_operations workspace_mutation_operations_job_id_generation_step_id_cu_fkey; Type: FK CONSTRAINT; Schema: current runtime; Owner: -
---
-
-ALTER TABLE ONLY workspace_mutation_operations
-    ADD CONSTRAINT workspace_mutation_operations_job_id_generation_step_id_cu_fkey FOREIGN KEY (job_id, generation, step_id, current_step_attempt) REFERENCES job_step_attempts(job_id, generation, step_id, attempt) ON DELETE RESTRICT;
-
-
---
--- Name: workspace_mutation_operations workspace_mutation_operations_job_id_generation_step_id_fkey; Type: FK CONSTRAINT; Schema: current runtime; Owner: -
---
-
-ALTER TABLE ONLY workspace_mutation_operations
-    ADD CONSTRAINT workspace_mutation_operations_job_id_generation_step_id_fkey FOREIGN KEY (job_id, generation, step_id) REFERENCES job_steps(job_id, generation, id) ON DELETE RESTRICT;
-
-
---
--- Name: workspace_mutation_operations workspace_mutation_operations_job_id_mutation_evidence_id_fkey; Type: FK CONSTRAINT; Schema: current runtime; Owner: -
---
-
-ALTER TABLE ONLY workspace_mutation_operations
-    ADD CONSTRAINT workspace_mutation_operations_job_id_mutation_evidence_id_fkey FOREIGN KEY (job_id, mutation_evidence_id) REFERENCES evidence(job_id, id) ON DELETE RESTRICT;
-
-
---
--- Name: workspace_mutation_operations workspace_mutation_operations_job_id_verification_evidence_fkey; Type: FK CONSTRAINT; Schema: current runtime; Owner: -
---
-
-ALTER TABLE ONLY workspace_mutation_operations
-    ADD CONSTRAINT workspace_mutation_operations_job_id_verification_evidence_fkey FOREIGN KEY (job_id, verification_evidence_id) REFERENCES evidence(job_id, id) ON DELETE RESTRICT;
-
-
---
--- Name: workspace_mutation_operations workspace_mutation_operations_project_id_fkey; Type: FK CONSTRAINT; Schema: current runtime; Owner: -
---
-
-ALTER TABLE ONLY workspace_mutation_operations
-    ADD CONSTRAINT workspace_mutation_operations_project_id_fkey FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE RESTRICT;
-
-
---
--- Name: workspace_mutation_operations workspace_mutation_operations_project_id_source_repository_fkey; Type: FK CONSTRAINT; Schema: current runtime; Owner: -
---
-
-ALTER TABLE ONLY workspace_mutation_operations
-    ADD CONSTRAINT workspace_mutation_operations_project_id_source_repository_fkey FOREIGN KEY (project_id, source_repository_snapshot_id) REFERENCES repository_snapshots(project_id, id) ON DELETE RESTRICT;
-
-
---
--- Name: workspace_mutation_operations workspace_mutation_operations_project_id_verified_reposito_fkey; Type: FK CONSTRAINT; Schema: current runtime; Owner: -
---
-
-ALTER TABLE ONLY workspace_mutation_operations
-    ADD CONSTRAINT workspace_mutation_operations_project_id_verified_reposito_fkey FOREIGN KEY (project_id, verified_repository_snapshot_id) REFERENCES repository_snapshots(project_id, id) ON DELETE RESTRICT;
-
-
-DO $install_step_attempt_fence$
-DECLARE
-    installed_schema TEXT := current_schema();
-    authority_schema TEXT := 'omnidex_host_authority_' || md5(current_schema());
-BEGIN
-    EXECUTE format($definition$
-        CREATE FUNCTION %1$I.omnidex_authorize_step_attempt_transaction_v1(
-            requested_job_id BIGINT,
-            requested_generation BIGINT,
-            requested_step_id BIGINT,
-            requested_attempt BIGINT,
-            requested_worker_id TEXT
-        ) RETURNS BOOLEAN AS $body$
-        DECLARE
-            locked_job_status TEXT;
-            locked_job_generation BIGINT;
-            locked_step_status TEXT;
-            locked_step_generation BIGINT;
-            locked_step_superseded BIGINT;
-            locked_step_attempt BIGINT;
-            locked_step_worker TEXT;
-            locked_attempt_status TEXT;
-            locked_attempt_worker TEXT;
-            locked_attempt_expires TIMESTAMPTZ;
-        BEGIN
-            IF requested_job_id<=0 OR requested_generation<=0 OR requested_step_id<=0 OR
-               requested_attempt<=0 OR requested_worker_id IS NULL OR
-               requested_worker_id='' OR requested_worker_id<>BTRIM(requested_worker_id) OR
-               octet_length(requested_worker_id)>256 THEN
-                RETURN FALSE;
-            END IF;
-
-            SELECT status,current_generation
-              INTO locked_job_status,locked_job_generation
-              FROM %1$I.jobs WHERE id=requested_job_id FOR UPDATE;
-            IF NOT FOUND OR locked_job_status<>'running' OR
-               locked_job_generation<>requested_generation THEN
-                RETURN FALSE;
-            END IF;
-
-            SELECT status,generation,superseded_at_generation,current_attempt,worker_id
-              INTO locked_step_status,locked_step_generation,locked_step_superseded,
-                   locked_step_attempt,locked_step_worker
-              FROM %1$I.job_steps
-              WHERE job_id=requested_job_id AND id=requested_step_id
-              FOR UPDATE;
-            IF NOT FOUND OR locked_step_status<>'running' OR
-               locked_step_generation<>requested_generation OR
-               locked_step_superseded IS NOT NULL OR
-               locked_step_attempt<>requested_attempt OR
-               locked_step_worker IS DISTINCT FROM requested_worker_id THEN
-                RETURN FALSE;
-            END IF;
-
-            SELECT status,worker_id,expires_at
-              INTO locked_attempt_status,locked_attempt_worker,locked_attempt_expires
-              FROM %1$I.job_step_attempts
-              WHERE job_id=requested_job_id AND generation=requested_generation AND
-                    step_id=requested_step_id AND attempt=requested_attempt
-              FOR UPDATE;
-            IF NOT FOUND OR locked_attempt_status<>'active' OR
-               locked_attempt_worker<>requested_worker_id OR
-               locked_attempt_expires<=clock_timestamp() THEN
-                RETURN FALSE;
-            END IF;
-            RETURN TRUE;
-        END;
-        $body$ LANGUAGE plpgsql SECURITY DEFINER VOLATILE
-    $definition$,installed_schema);
-    EXECUTE format(
-        'ALTER FUNCTION %I.omnidex_authorize_step_attempt_transaction_v1(bigint,bigint,bigint,bigint,text) SET search_path TO pg_catalog, %I',
-        installed_schema,installed_schema
-    );
-    EXECUTE format(
-        'CREATE SCHEMA %I AUTHORIZATION %I',authority_schema,current_user
-    );
-    EXECUTE format('REVOKE ALL ON SCHEMA %I FROM PUBLIC',authority_schema);
-    EXECUTE format(
-        'ALTER FUNCTION %I.omnidex_authorize_step_attempt_transaction_v1(bigint,bigint,bigint,bigint,text) SET SCHEMA %I',
-        installed_schema,authority_schema
-    );
-    EXECUTE format(
-        'REVOKE ALL ON FUNCTION %I.omnidex_authorize_step_attempt_transaction_v1(bigint,bigint,bigint,bigint,text) FROM PUBLIC',
-        authority_schema
-    );
-END;
-$install_step_attempt_fence$;
-
--- End of the authoritative fresh-database setup.

@@ -67,7 +67,7 @@ func (evidence ProviderContentEncodingEvidence) Validate() error {
 	if evidence.Schema != ProviderContentEncodingEvidenceSchemaV1 || evidence.Values < 0 ||
 		evidence.Values > MaxProviderContentEncodingValues || evidence.Bytes < 0 ||
 		evidence.Bytes > MaxProviderContentEncodingBytes ||
-		!providerIdentityDigest.MatchString(evidence.SHA256) ||
+		!exactSHA256Digest.MatchString(evidence.SHA256) ||
 		evidence.CapturedBytes < 0 || evidence.CapturedBytes > MaxProviderContentEncodingCaptureBytes {
 		return fmt.Errorf("provider content-encoding evidence identity is invalid")
 	}
@@ -117,4 +117,9 @@ func decodeProviderContentEncodingValues(raw []byte) ([][]byte, error) {
 		raw = raw[int(length):]
 	}
 	return values, nil
+}
+
+func providerBodySHA256(raw []byte) string {
+	digest := sha256.Sum256(raw)
+	return hex.EncodeToString(digest[:])
 }

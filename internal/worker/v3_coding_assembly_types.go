@@ -24,9 +24,6 @@ func (t *directCodingFileTask) normalize() error {
 	if t.Content == "" {
 		return fmt.Errorf("code-owned source %s is empty", t.Path)
 	}
-	if len(t.Content) > maxV3WriteBytes {
-		return fmt.Errorf("server-owned content for %s exceeds the %d-byte limit", t.Path, maxV3WriteBytes)
-	}
 	return nil
 }
 

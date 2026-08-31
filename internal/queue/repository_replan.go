@@ -69,16 +69,6 @@ func replanJobTx(
 	if terminalJobStatus(job.Status) {
 		return model.Job{}, fmt.Errorf("job is already %s", job.Status)
 	}
-	if err := rejectUnresolvedGeneratedWorkloadDeploymentsTx(
-		ctx, tx, command.JobID,
-	); err != nil {
-		return model.Job{}, err
-	}
-	if err := rejectUnresolvedWorkspaceMutationsTx(
-		ctx, tx, command.JobID, job.CurrentGeneration,
-	); err != nil {
-		return model.Job{}, err
-	}
 	currentGeneration, err := lockCurrentJobGenerationTx(ctx, tx, command.JobID)
 	if err != nil {
 		return model.Job{}, err

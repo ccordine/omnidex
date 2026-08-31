@@ -14,19 +14,7 @@ func (c *Client) GeneratePreparedExact(
 	if err := c.ValidateExactPreparedContract(prepared); err != nil {
 		return llm.PreparedGeneration{}, err
 	}
-	observed, err := c.ObserveProviderIdentity(ctx, llm.ProviderIdentityObservationRequest{
-		Expectation:     *prepared.ProviderIdentityExpectation,
-		ChallengeSHA256: prepared.ProviderObservationChallenge,
-	})
-	if err != nil {
-		return llm.PreparedGeneration{
-			Schema:                     llm.PreparedGenerationSchemaV1,
-			Protocol:                   prepared.Protocol,
-			ProviderRequestDisposition: llm.ProviderRequestNotDispatched,
-			ProviderIdentityEvidence:   observed.Evidence,
-		}, fmt.Errorf("observe exact cognition provider identity: %w", err)
-	}
-	result, generationErr := c.generatePreparedRaw(ctx, prepared, observed)
+	result, generationErr := c.generatePreparedRaw(ctx, prepared)
 	if generationErr != nil {
 		return result, generationErr
 	}
@@ -38,10 +26,6 @@ func (c *Client) RequireExactPreparedContract() error {
 		return fmt.Errorf("ollama exact prepared contract requires an initialized client")
 	}
 	return nil
-}
-
-func (c *Client) ValidateExactPreparedProvider(expected llm.ProviderIdentityExpectation) error {
-	return llm.ValidateExactPreparedProviderExpectation(expected)
 }
 
 func (c *Client) ValidateExactPreparedContract(prepared llm.PreparedModel) error {

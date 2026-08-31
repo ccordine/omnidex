@@ -42,8 +42,6 @@ func directCodingSourceDeclarationProjector(
 		return assemblyline.ProjectJavaFragment, nil
 	case "rust":
 		return assemblyline.ProjectRustFragment, nil
-	case "php":
-		return assemblyline.ProjectPHPFragment, nil
 	default:
 		return nil, fmt.Errorf(
 			"source declaration projection does not support language %q", language,

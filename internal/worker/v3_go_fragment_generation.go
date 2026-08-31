@@ -52,9 +52,7 @@ func runDirectCodingGoFragmentGenerationWorker(
 		Model: modelName, Attempt: 1, MaxAttempts: directCodingGoModelAttempts,
 		PromptBytes: len(prompt), CapabilityBytes: goGenerationCapabilityBytes(job.Input),
 	})
-	baseJob, result, err := executeInitialFragmentGenerationWithReplacement(
-		runtime, baseJob, job.Input, modelName,
-	)
+	result, err := runtime.Execute(baseJob, modelName)
 	if err != nil {
 		return "", failDirectCodingGoGeneration(runtime, modelName, job.Subject, 1, err)
 	}

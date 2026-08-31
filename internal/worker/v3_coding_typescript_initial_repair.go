@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/gryph/omnidex/internal/assemblyline"
 )
 
 // directCodingTypeScriptInitialFragmentRejection retains only an exact,
@@ -43,8 +42,7 @@ func generateDirectCodingTypeScriptBlockWithRuntime(
 		return source, nil
 	}
 	var rejection *directCodingTypeScriptInitialFragmentRejection
-	if job.block.Role == assemblyline.SourceBlockTaskVerification ||
-		!errors.As(err, &rejection) {
+	if !errors.As(err, &rejection) {
 		return "", err
 	}
 	diagnostic, diagnosticErr := directCodingLanguageParserRepairDiagnostic(
@@ -64,7 +62,7 @@ func generateDirectCodingTypeScriptBlockWithRuntime(
 	repairRuntime.MaxAttempts = 1
 	return convergeDirectCodingTypeScriptGuidedRepairWithRuntime(
 		repairRuntime, guidanceModel, correctionModel, events,
-		job.block, job.tsx, job.dialect, job.available, rejection.Candidate, nil, diagnostic,
+		job.block, job.tsx, job.dialect, job.available, rejection.Candidate, diagnostic,
 		job.validateInitialCandidate,
 	)
 }

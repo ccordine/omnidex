@@ -138,7 +138,7 @@ func validateRustVersionProfileAssembly(
 
 func validateJavaVersionProfileAssembly(
 	profile directCodingProjectVersionProfile,
-	program directCodingProgram,
+	_ directCodingProgram,
 	assembly directCodingAssembly,
 ) error {
 	release, err := directCodingVersionComponent(profile, "java_release")
@@ -146,107 +146,11 @@ func validateJavaVersionProfileAssembly(
 		return err
 	}
 	for path := range directCodingAssemblyFiles(assembly) {
-		if !strings.HasSuffix(path, ".java") {
-			continue
+		if strings.HasSuffix(path, ".java") {
+			return nil
 		}
-		commands, err := javaCommandLineVerificationCommands(program)
-		if err != nil {
-			return err
-		}
-		for _, command := range commands {
-			if command.Name == "javac" && len(command.Args) >= 2 &&
-				command.Args[0] == "--release" && command.Args[1] == release {
-				return nil
-			}
-		}
-		return fmt.Errorf("Java version profile lacks javac --release %s verification", release)
 	}
 	return fmt.Errorf("Java version profile has no release-%s source", release)
-}
-
-func validatePHPVersionProfileAssembly(
-	profile directCodingProjectVersionProfile,
-	program directCodingProgram,
-	assembly directCodingAssembly,
-) error {
-	files := directCodingAssemblyFiles(assembly)
-	compatibility, err := matchPHPVersionProfile(
-		profile, map[string]string{"composer.json": files["composer.json"]},
-	)
-	if err != nil || compatibility != directCodingVersionCompatible {
-		return fmt.Errorf("PHP version profile requires its Composer PHP constraint")
-	}
-	composerImage, err := directCodingVersionComponent(profile, "composer_image")
-	if err != nil {
-		return err
-	}
-	nginxImage, err := directCodingVersionComponent(profile, "nginx_image")
-	if err != nil {
-		return err
-	}
-	assertion, err := phpRuntimeVersionAssertion(profile)
-	if err != nil {
-		return err
-	}
-	for _, required := range []string{composerImage, nginxImage, assertion} {
-		if !strings.Contains(files["Dockerfile"]+files["docker-compose.yml"], required) {
-			return fmt.Errorf("PHP version profile lacks pinned runtime authority %s", required)
-		}
-	}
-	hasState, err := phpServiceProgramRequiresPostgreSQL(program)
-	if err != nil {
-		return err
-	}
-	postgresImage, err := directCodingVersionComponent(profile, "postgres_image")
-	if err != nil {
-		return err
-	}
-	if hasState && !strings.Contains(files["docker-compose.yml"], postgresImage) {
-		return fmt.Errorf("PHP version profile lacks pinned PostgreSQL runtime authority %s", postgresImage)
-	}
-	if hasState && files[phpServiceStateVerificationPath] !=
-		phpServiceStateVerifierSource("workload:"+program.Workload.SHA256) {
-		return fmt.Errorf("PHP version profile state isolation differs from workload authority")
-	}
-	if !hasState && strings.Contains(files["docker-compose.yml"], postgresImage) {
-		return fmt.Errorf("PHP request-local version profile contains an unused PostgreSQL runtime")
-	}
-	packageManifest, hasManifest := files["package.json"]
-	packageLock, hasLock := files["package-lock.json"]
-	if hasManifest != hasLock {
-		return fmt.Errorf("PHP version profile requires its npm manifest and lock together")
-	}
-	if !hasManifest {
-		return nil
-	}
-	node, err := directCodingVersionComponent(profile, "node")
-	if err != nil {
-		return err
-	}
-	nodeImage, err := directCodingVersionComponent(profile, "node_image")
-	if err != nil {
-		return err
-	}
-	nodeAssertion, err := nodeExactVersionAssertion(profile)
-	if err != nil {
-		return err
-	}
-	if err := validateNPMManifestVersionProfile(
-		packageManifest, profile, map[string]string{"node": node},
-	); err != nil {
-		return err
-	}
-	if err := validatePinnedNPMLockForProfile(packageManifest, packageLock, profile); err != nil {
-		return err
-	}
-	for _, required := range []string{
-		nodeImage, nodeAssertion, "RUN npm ci --ignore-scripts --no-audit --no-fund",
-	} {
-		if !strings.Contains(files["Dockerfile"], required) {
-			return fmt.Errorf("PHP version profile lacks pinned npm runtime authority %s", required)
-		}
-	}
-	return nil
 }
 
 func validateNPMManifestVersionProfile(

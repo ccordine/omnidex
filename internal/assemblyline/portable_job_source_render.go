@@ -22,7 +22,7 @@ func renderPortableFragmentGeneration(input FragmentGenerationInput) (string, er
 			Globals:                  input.PermittedSymbols,
 			PublicInteractionSurface: input.PublicInteractionSurface,
 		})
-	case "javascript", "java", "rust", "php":
+	case "javascript", "java", "rust":
 		prompt, err = BuildBoundedSourceFragmentGenerationPrompt(input)
 	default:
 		return "", fmt.Errorf("no fragment renderer supports language %q", input.Language)

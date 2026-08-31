@@ -11,25 +11,14 @@ func newDirectCodingTypeScriptPortableJob(
 	job directCodingTypeScriptFragmentJob,
 ) (assemblyline.PortableJob, error) {
 	guidance := strings.TrimSpace(job.repairGuidance)
-	hasPublicSurface := job.publicInteractionSurface != nil
 	hasInitialValidator := job.validateInitialCandidate != nil
-	if hasPublicSurface && !hasInitialValidator {
-		return assemblyline.PortableJob{}, fmt.Errorf(
-			"TypeScript public interaction surface requires a candidate validator",
-		)
-	}
-	if hasPublicSurface && job.block.Role != assemblyline.SourceBlockTaskVerification {
-		return assemblyline.PortableJob{}, fmt.Errorf(
-			"TypeScript public interaction surface is restricted to verification declarations",
-		)
-	}
-	if hasInitialValidator && !hasPublicSurface &&
+	if hasInitialValidator &&
 		job.block.Role != assemblyline.SourceBlockTaskImplementation {
 		return assemblyline.PortableJob{}, fmt.Errorf(
 			"TypeScript source-only candidate validation is restricted to implementation declarations",
 		)
 	}
-	if strings.TrimSpace(job.current) == "" && job.repairRegion == nil {
+	if strings.TrimSpace(job.current) == "" {
 		if guidance != "" || strings.TrimSpace(job.failure) != "" ||
 			strings.TrimSpace(job.requiredChange) != "" {
 			return assemblyline.PortableJob{}, fmt.Errorf(
@@ -44,14 +33,8 @@ func newDirectCodingTypeScriptPortableJob(
 			Language: "typescript", Dialect: strings.TrimSpace(job.dialect),
 			Signature: strings.TrimSpace(job.block.Signature),
 			Behavior:  strings.TrimSpace(job.block.Contract), Capabilities: capabilities,
-			PermittedSymbols:         append([]string(nil), job.block.Globals...),
-			PublicInteractionSurface: job.publicInteractionSurface,
+			PermittedSymbols: append([]string(nil), job.block.Globals...),
 		})
-	}
-	if hasPublicSurface {
-		return assemblyline.PortableJob{}, fmt.Errorf(
-			"TypeScript correction cannot receive a public interaction surface",
-		)
 	}
 	if guidance == "" {
 		return assemblyline.PortableJob{}, fmt.Errorf(
@@ -63,14 +46,9 @@ func newDirectCodingTypeScriptPortableJob(
 			"guided TypeScript fragment correction cannot carry a raw diagnostic or required change",
 		)
 	}
-	portableCurrent := strings.TrimSpace(job.current)
-	if job.repairRegion != nil {
-		portableCurrent = ""
-	}
 	return assemblyline.NewFragmentCorrectionJob(assemblyline.FragmentCorrectionInput{
 		Language: "typescript", Signature: strings.TrimSpace(job.block.Signature),
-		CurrentDeclaration: portableCurrent,
-		RepairRegion:       job.repairRegion,
+		CurrentDeclaration: strings.TrimSpace(job.current),
 		RepairGuidance:     guidance,
 	})
 }

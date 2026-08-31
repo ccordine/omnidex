@@ -54,10 +54,6 @@ func (r *Repository) ReadJobHistoryPage(
 		page.Evidence, page.NextCursor, err = readHistoricalEvidencePage(
 			ctx, tx, jobID, position, request.Limit,
 		)
-	case JobHistoryLLMCalls:
-		page.LLMCalls, page.NextCursor, err = readHistoricalLLMCallPage(
-			ctx, tx, jobID, position, request.Limit,
-		)
 	default:
 		err = fmt.Errorf("%w: stream %q is not registered", ErrInvalidJobHistoryRequest, request.Stream)
 	}

@@ -8,8 +8,6 @@ import (
 	"path/filepath"
 	"sort"
 
-	"github.com/gryph/omnidex/internal/assemblyline"
-	"github.com/gryph/omnidex/internal/queue"
 )
 
 func directCodingProgramWorkspaceDiagnostic(
@@ -164,86 +162,6 @@ func directCodingProgramSourcePath(path string, program directCodingProgram) (bo
 		}
 	}
 	return false, nil
-}
-
-func directCodingProgramVerificationCommands(
-	specification assemblyline.ApplicationSpecification,
-	program directCodingProgram,
-) ([]testCommand, error) {
-	if _, err := directCodingVersionProfileForProgram(program); err != nil {
-		return nil, err
-	}
-	stack, err := directCodingProjectStackByID(program.StackID)
-	if err != nil {
-		return nil, err
-	}
-	if !stack.SupportsSurface(specification.Surface) {
-		return nil, fmt.Errorf(
-			"project stack %s supports surfaces %s, not %s",
-			stack.ID, directCodingProjectStackSurfaceSummary(stack.SupportedSurfaces), specification.Surface,
-		)
-	}
-	commands, err := stack.VerificationCommands(program)
-	if err != nil {
-		return nil, fmt.Errorf("derive %s verification commands: %w", stack.ID, err)
-	}
-	if len(commands) == 0 {
-		return nil, fmt.Errorf("project stack %s returned no verification commands", stack.ID)
-	}
-	if len(commands) > queue.MaxGeneratedWorkloadVerificationEvidence-1 {
-		return nil, fmt.Errorf(
-			"project stack %s exceeds the %d-command final verification bound",
-			stack.ID, queue.MaxGeneratedWorkloadVerificationEvidence-1,
-		)
-	}
-	tests := 0
-	builds := 0
-	for index, command := range commands {
-		if err := validateV3Command(command.Name, command.Args); err != nil {
-			return nil, fmt.Errorf(
-				"project stack %s verification command %d is outside the code-owned boundary: %w",
-				stack.ID, index, err,
-			)
-		}
-		if command.Timeout < 0 || command.Timeout > maxV3CommandLimit {
-			return nil, fmt.Errorf(
-				"project stack %s verification command %d has invalid timeout %s",
-				stack.ID, index, command.Timeout,
-			)
-		}
-		switch command.Purpose {
-		case verificationSetup, verificationSyntax, verificationTest,
-			verificationBuild, verificationConfig:
-		default:
-			return nil, fmt.Errorf(
-				"project stack %s verification command %d has no registered purpose", stack.ID, index,
-			)
-		}
-		if command.Purpose == verificationTest {
-			tests++
-		}
-		if command.Purpose == verificationBuild {
-			builds++
-		}
-	}
-	if tests == 0 {
-		return nil, fmt.Errorf("project stack %s returned no test command", stack.ID)
-	}
-	if builds == 0 {
-		return nil, fmt.Errorf("project stack %s returned no production-build command", stack.ID)
-	}
-	return commands, nil
-}
-
-func typeScriptBrowserVerificationCommands(
-	_ directCodingProgram,
-) ([]testCommand, error) {
-	return []testCommand{
-		{Family: "node", Name: "npm", Args: directCodingNPMInstallArgs(), Purpose: verificationSetup},
-		{Family: "node", Name: "npm", Args: []string{"test"}, Purpose: verificationTest},
-		{Family: "node", Name: "npm", Args: []string{"run", "typecheck"}, Purpose: verificationSyntax},
-		{Family: "node", Name: "npm", Args: []string{"run", "build"}, Purpose: verificationBuild},
-	}, nil
 }
 
 func directCodingNPMInstallArgs() []string {

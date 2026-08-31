@@ -66,28 +66,6 @@ func (c *Client) HasModel(ctx context.Context, model string) (bool, error) {
 	return found, err
 }
 
-func (c *Client) EnsureModels(ctx context.Context, models []string) ([]string, error) {
-	pulled := []string{}
-	for _, model := range models {
-		model = strings.TrimSpace(model)
-		if model == "" {
-			continue
-		}
-		ok, err := c.HasModel(ctx, model)
-		if err != nil {
-			return pulled, err
-		}
-		if ok {
-			continue
-		}
-		if err := c.PullModel(ctx, model); err != nil {
-			return pulled, fmt.Errorf("pull %s: %w", model, err)
-		}
-		pulled = append(pulled, model)
-	}
-	return pulled, nil
-}
-
 type embeddingsRequest struct {
 	Model string `json:"model"`
 	Input string `json:"input"`

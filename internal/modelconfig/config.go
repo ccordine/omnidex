@@ -33,17 +33,12 @@ var Fields = []Field{
 	{Key: "web_grounded_synthesis_model", Label: "Web grounded synthesis", Description: "Returns one bounded untrusted paragraph inventory, one evidence-support relation, or one paragraph-authorization relation per web-grounding call", EnvKeys: []string{"OMNI_WEB_GROUNDED_SYNTHESIS_MODEL"}},
 	{Key: "coding_surface_model", Label: "Coding surface", Description: "Classifies only the requested delivery surface", EnvKeys: []string{"OMNI_CODING_SURFACE_MODEL"}},
 	{Key: "coding_requirements_model", Label: "Coding intent", Description: "Returns one bounded product or stack value, one untrusted context-question or requirement inventory, or one candidate-bound sieve result per coding-intent call", EnvKeys: []string{"OMNI_CODING_REQUIREMENTS_MODEL"}},
-	// The key and environment name are retained public configuration. One model
-	// selection routes two separately rendered, executed, and persisted calls.
-	{Key: "coding_service_deployment_intent_model", Label: "Service deployment semantics", Description: "Selects the model for separate continued-availability and persistence-destination semantic calls", EnvKeys: []string{"OMNI_CODING_SERVICE_DEPLOYMENT_INTENT_MODEL"}},
-	{Key: "coding_workload_model", Label: "Coding structure", Description: "Returns one bounded target-tree, state-lifetime, state-purpose inventory or relation, state-kind, endpoint-necessity, or endpoint-transport semantic result from accepted local authority", EnvKeys: []string{"OMNI_CODING_WORKLOAD_MODEL"}},
+	{Key: "coding_workload_model", Label: "Coding structure", Description: "Returns one bounded target-tree semantic result from accepted local authority", EnvKeys: []string{"OMNI_CODING_WORKLOAD_MODEL"}},
 	{Key: "coding_artifact_handling_model", Label: "Coding artifact handling", Description: "Classifies explicit artifact truth and resolves bounded path-blind artifact or declaration candidates", EnvKeys: []string{"OMNI_CODING_ARTIFACT_HANDLING_MODEL"}},
 	{Key: "coding_capability_relation_model", Label: "Coding capability relation", Description: "Resolves one pairwise direct-dependency relation or one candidate-bound runtime-necessity relation per call", EnvKeys: []string{"OMNI_CODING_CAPABILITY_RELATION_MODEL"}},
-	{Key: "coding_skill_selection_model", Label: "Coding skill selection", Description: "Selects one opaque validated procedure for one local need, or none", EnvKeys: []string{"OMNI_CODING_SKILL_SELECTION_MODEL"}},
 	{Key: "coding_fragment_model", Label: "Coding fragment", Description: "Returns one exact path-blind function declaration from a bounded local contract", EnvKeys: []string{"OMNI_CODING_FRAGMENT_MODEL"}},
 	{Key: "coding_fragment_repair_guidance_model", Label: "Coding repair guidance", Description: "Diagnoses one exact local validation failure into one self-contained source-repair instruction", EnvKeys: []string{"OMNI_CODING_FRAGMENT_REPAIR_GUIDANCE_MODEL"}},
 	{Key: "coding_fragment_correction_model", Label: "Coding fragment correction", Description: "Executes one repair instruction against only its exact mutable source block", EnvKeys: []string{"OMNI_CODING_FRAGMENT_CORRECTION_MODEL"}},
-	{Key: "coding_repository_change_surface_model", Label: "Repository change surface", Description: "Selects bounded symbol IDs for one established repository requirement", EnvKeys: []string{"OMNI_CODING_REPOSITORY_CHANGE_SURFACE_MODEL"}},
 }
 
 type Config map[string]string

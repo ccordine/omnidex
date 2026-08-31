@@ -13,7 +13,6 @@ const genericTypeScriptBrowserAdapter = "typescript_browser_capabilities_v3"
 func compileGenericTypeScriptBrowserBlueprint(
 	packageName string,
 	specification assemblyline.ApplicationSpecification,
-	skills map[string]directCodingSkillBinding,
 	workload assemblyline.FrozenApplicationWorkload,
 	capabilities directCodingCapabilityGraph,
 	target assemblyline.TargetTree,
@@ -32,9 +31,6 @@ func compileGenericTypeScriptBrowserBlueprint(
 	if err != nil {
 		return assemblyline.SourceBlueprint{}, nil, err
 	}
-	if err := validateDirectCodingSkillBindings(specification.Requirements, skills); err != nil {
-		return assemblyline.SourceBlueprint{}, nil, err
-	}
 	if err := validateDirectCodingCapabilityGraph(specification.Requirements, capabilities); err != nil {
 		return assemblyline.SourceBlueprint{}, nil, err
 	}
@@ -43,24 +39,17 @@ func compileGenericTypeScriptBrowserBlueprint(
 		return assemblyline.SourceBlueprint{}, nil, err
 	}
 	documents := []assemblyline.SourceDocument{genericBrowserRuntimeDocument(specification.Requirements)}
-	featureDocuments, err := genericBrowserFeatureDocuments(specification, skills, contexts, capabilities, coverage)
+	featureDocuments, err := genericBrowserFeatureDocuments(specification, contexts, capabilities, coverage)
 	if err != nil {
 		return assemblyline.SourceBlueprint{}, nil, err
 	}
 	documents = append(documents, featureDocuments...)
-	acceptanceDocuments, err := genericBrowserAcceptanceDocuments(specification, contexts, capabilities, coverage)
-	if err != nil {
-		return assemblyline.SourceBlueprint{}, nil, err
-	}
-	documents = append(documents, acceptanceDocuments...)
 	appDocument, err := genericBrowserAppDocument(specification, contexts, coverage)
 	if err != nil {
 		return assemblyline.SourceBlueprint{}, nil, err
 	}
 	documents = append(documents, appDocument)
 	documents = append(documents, genericBrowserEntrypointDocument())
-	documents = append(documents, genericBrowserSmokeTestDocument(specification))
-	documents = append(documents, genericBrowserRuntimeTestDocument(specification.Requirements))
 	blueprint := assemblyline.SourceBlueprint{Documents: documents}
 	staticFiles, err := typeScriptBrowserStaticFiles(
 		profile,
@@ -76,7 +65,6 @@ func compileGenericTypeScriptBrowserBlueprint(
 
 func genericBrowserFeatureDocuments(
 	specification assemblyline.ApplicationSpecification,
-	skills map[string]directCodingSkillBinding,
 	contexts map[string]assemblyline.ApplicationTaskContext,
 	capabilities directCodingCapabilityGraph,
 	coverage assemblyline.ApplicationFileCoveragePlan,
@@ -85,11 +73,6 @@ func genericBrowserFeatureDocuments(
 	documentByPath := make(map[string]int, len(specification.Requirements))
 	for index, requirement := range specification.Requirements {
 		sequence := index + 1
-		skill, hasSkill := skills[requirement.ID]
-		var activeSkill *directCodingSkillBinding
-		if hasSkill {
-			activeSkill = &skill
-		}
 		functionName := fmt.Sprintf("Feature%03d", sequence)
 		viewName := functionName + "View"
 		viewPropsName := functionName + "ViewProps"
@@ -101,7 +84,9 @@ func genericBrowserFeatureDocuments(
 		if !exists {
 			return nil, fmt.Errorf("application workload omits requirement %s", requirement.ID)
 		}
-		files, err := directCodingTaskSinglePair(coverage, taskContext.Task.TaskID)
+		implementationPath, err := directCodingTaskSingleImplementationPath(
+			coverage, taskContext.Task.TaskID,
+		)
 		if err != nil {
 			return nil, err
 		}
@@ -109,14 +94,14 @@ func genericBrowserFeatureDocuments(
 		if err != nil {
 			return nil, err
 		}
-		documentIndex, exists := documentByPath[files.ImplementationPath]
+		documentIndex, exists := documentByPath[implementationPath]
 		if !exists {
 			documentIndex = len(documents)
-			documentByPath[files.ImplementationPath] = documentIndex
+			documentByPath[implementationPath] = documentIndex
 			documents = append(documents, assemblyline.SourceDocument{
 				ID:       fmt.Sprintf("feature_%03d", sequence),
-				Path:     files.ImplementationPath,
-				Preamble: genericBrowserFeaturePreamble(files.ImplementationPath, nil),
+				Path:     implementationPath,
+				Preamble: genericBrowserFeaturePreamble(implementationPath, nil),
 			})
 		}
 		taskID := taskContext.Task.TaskID
@@ -132,7 +117,7 @@ func genericBrowserFeatureDocuments(
 				Signature: fmt.Sprintf(
 					"function %s({ state, capabilities, actions }: %s): ReactElement", viewName, viewPropsName,
 				),
-				Contract: genericBrowserFeatureContract(behavior, activeSkill),
+				Contract: genericBrowserFeatureContract(behavior),
 				API: fmt.Sprintf(
 					"function %s({ state, capabilities, actions }: %s): ReactElement", viewName, viewPropsName,
 				),
@@ -170,20 +155,14 @@ import type { CapabilitySnapshot, FeatureActions, FeatureProps, FeatureState, Fe
 		strings.Join(values, ", "), runtimeModule, runtimeModule)
 }
 
-func genericBrowserFeatureContract(
-	behavior string,
-	skill *directCodingSkillBinding,
-) string {
+func genericBrowserFeatureContract(behavior string) string {
 	parts := []string{behavior}
-	if skill != nil {
-		parts = append(parts, "Validated procedure: "+skill.Procedure)
-	}
 	parts = append(parts,
 		"Return one complete accessible interactive React view; no placeholder, TODO, endpoint, import, or extra declaration.",
 		"Use one unconditional top-level intrinsic JSX root; no fragment or other JSX. Controls are unconditional, never in branches, ternaries, loops, or maps. Each visible dynamic expression is the sole child of an intrinsic. A derived result is the sole genuinely dynamic child of output with a unique literal aria-label; other dynamic text cannot prove results. Only condition && intrinsic may conditionally show non-control text.",
 		"Controls are intrinsic button, textarea, select, or supported input. Every button has exact type=\"button\" and literal text; other controls have a literal aria-label or label. Public attributes are static quoted literals. No forms, custom components, explicit roles, aria-labelledby, spreads, effectful or unknown attributes, style, script, template, noscript, title, alt, contentEditable, dialog, popover, hidden or visibility changes, disabled or read-only controls, links, datalist, or other native interactive elements.",
 		"Give every requirement-defined result operation a literal accessible control name. Names may identify alternatives but cannot invent result relations.",
-		"Classes are static allowlisted Tailwind display and layout, nonnegative padding and gap, mx-auto, nonzero size, non-color type, border, radius, or shadow utilities; no other classes.",
+		"Class names, when present, are static literal values and carry no behavioral authority.",
 		"Use only the listed direct declarations. Mutate shared state through actions in handlers; read state or capabilities only when this behavior requires them.",
 	)
 	parts = append(parts, "Every referenced capability identifier must be one of the listed capability identifiers.")

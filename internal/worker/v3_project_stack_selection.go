@@ -16,14 +16,10 @@ func selectDirectCodingProject(
 	resolveModel func() (string, error),
 	redactedRequest string,
 	specification assemblyline.ApplicationSpecification,
-	existingManifests map[string]string,
 	identities []assemblyline.ArtifactIdentity,
 ) (directCodingProjectSelection, error) {
-	if err := validateDirectCodingArtifactRegistries(); err != nil {
-		return directCodingProjectSelection{}, err
-	}
 	return selectDirectCodingProjectFromRegistries(
-		runtime, resolveModel, redactedRequest, specification, existingManifests, identities,
+		runtime, resolveModel, redactedRequest, specification, identities,
 		registeredDirectCodingProjectStacks(), registeredDirectCodingProjectVersionProfiles(),
 	)
 }
@@ -33,7 +29,6 @@ func selectDirectCodingProjectFromRegistries(
 	resolveModel func() (string, error),
 	redactedRequest string,
 	specification assemblyline.ApplicationSpecification,
-	existingManifests map[string]string,
 	identities []assemblyline.ArtifactIdentity,
 	registeredStacks []directCodingProjectStack,
 	registeredProfiles []directCodingProjectVersionProfile,
@@ -45,48 +40,9 @@ func selectDirectCodingProjectFromRegistries(
 			specification.Surface,
 		)
 	}
-	profiles, err := directCodingProjectVersionProfilesForStacks(stacks, registeredProfiles)
+	formats, err := directCodingProjectFormatCandidates(stacks, registeredProfiles)
 	if err != nil {
 		return directCodingProjectSelection{}, err
-	}
-	matchedProfiles, applicable, err := matchDirectCodingVersionProfiles(profiles, existingManifests)
-	if err != nil {
-		return directCodingProjectSelection{}, err
-	}
-	if len(matchedProfiles) > 1 {
-		return directCodingProjectSelection{}, fmt.Errorf(
-			"existing workspace surface %s matches %d registered version profiles",
-			specification.Surface, len(matchedProfiles),
-		)
-	}
-	if applicable > 0 && len(matchedProfiles) == 0 {
-		return directCodingProjectSelection{}, fmt.Errorf(
-			"existing workspace surface %s has no compatible registered version profile",
-			specification.Surface,
-		)
-	}
-	var manifestSelection *directCodingProjectSelection
-	var formats []directCodingProjectFormatCandidate
-	if len(matchedProfiles) == 1 {
-		selection, err := directCodingSelectionForMatchedProfile(stacks, matchedProfiles[0])
-		if err != nil {
-			return directCodingProjectSelection{}, err
-		}
-		format, err := directCodingProjectVersionTechnicalFormat(
-			selection.Stack, matchedProfiles[0],
-		)
-		if err != nil {
-			return directCodingProjectSelection{}, err
-		}
-		manifestSelection = &selection
-		formats = []directCodingProjectFormatCandidate{{
-			Stack: selection.Stack, Profile: matchedProfiles[0], Format: format,
-		}}
-	} else {
-		formats, err = directCodingProjectFormatCandidates(stacks, registeredProfiles)
-		if err != nil {
-			return directCodingProjectSelection{}, err
-		}
 	}
 	input, err := directCodingProjectStackConstraintInput(redactedRequest, formats)
 	if err != nil {
@@ -120,7 +76,7 @@ func selectDirectCodingProjectFromRegistries(
 	}
 	return resolveDirectCodingProjectFormatDecision(
 		specification.Surface, stacks, registeredProfiles, formats, input, decision,
-		manifestSelection,
+		nil,
 	)
 }
 

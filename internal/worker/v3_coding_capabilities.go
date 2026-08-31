@@ -27,6 +27,7 @@ type directCodingCapabilityPair struct {
 type directCodingCapabilityResult struct {
 	Pair     directCodingCapabilityPair
 	Decision assemblyline.CapabilityRelationDecision
+	Discarded bool
 	Err      error
 }
 
@@ -40,7 +41,14 @@ func (s *directCodingSession) deriveRequirementCapabilities(
 	if len(requirements) == 1 {
 		return directCodingCapabilityGraph{requirements[0].ID: nil}, nil
 	}
-	modelName, err := stationModel(s.runtime.routing, station.CodingCapabilityRelation)
+	if err := validateDirectCodingFragmentConcurrency(s.runtime.svc.fragmentConcurrency); err != nil {
+		return nil, err
+	}
+	routing, err := s.runtime.modelRouting()
+	if err != nil {
+		return nil, err
+	}
+	modelName, err := stationModel(routing, station.CodingCapabilityRelation)
 	if err != nil {
 		return nil, err
 	}
@@ -108,6 +116,10 @@ func runDirectCodingCapabilityPairs(
 			},
 			func(value assemblyline.CapabilityRelationDecision) error { return value.ValidateFor(pair.Input) },
 		)
+		if isDirectCodingSemanticLeafRejection(err) {
+			results[index] = directCodingCapabilityResult{Pair: pair, Discarded: true}
+			return
+		}
 		results[index] = directCodingCapabilityResult{Pair: pair, Decision: decision, Err: err}
 	}
 	if runtime.MaxConcurrency <= 1 {
@@ -155,6 +167,9 @@ func assembleDirectCodingCapabilityGraph(
 	for _, result := range results {
 		if result.Err != nil {
 			return nil, result.Err
+		}
+		if result.Discarded {
+			continue
 		}
 		if err := result.Decision.ValidateFor(result.Pair.Input); err != nil {
 			return nil, err

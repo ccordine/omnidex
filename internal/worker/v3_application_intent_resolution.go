@@ -76,6 +76,10 @@ func resolveDirectCodingApplicationIntent(
 			identities,
 		)
 		if err != nil {
+			if isDirectCodingSemanticLeafRejection(err) {
+				processedCandidates = append(processedCandidates, currentCandidate)
+				continue
+			}
 			return zero, err
 		}
 		if resolved.Candidate == "" {

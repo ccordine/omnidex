@@ -13,7 +13,7 @@ func genericBrowserRuntimeDocument(
 ) assemblyline.SourceDocument {
 	return assemblyline.SourceDocument{
 		ID: "application_runtime", Path: "src/runtime.tsx",
-		Preamble: `import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
+		Preamble: `import { useCallback, useMemo, useState, useSyncExternalStore } from 'react';
 import type { ReactElement } from 'react';`,
 		Blocks: []assemblyline.SourceBlock{
 			{
@@ -21,73 +21,11 @@ import type { ReactElement } from 'react';`,
 				API: genericBrowserRuntimeAPI(requirements),
 			},
 			{
-				ID: "runtime.host_bridge", Static: genericBrowserHostBridgeSource(),
-				API: strings.Join([]string{
-					"function registerBrowserHostHandler(capability: string, handler: (payload: unknown) => void): void",
-					"function publishBrowserHostRequest(capability: string, payload: unknown): void",
-					"function BrowserHostBridge(): ReactElement | null",
-					"function observeBrowserHostRequestReceipts(observer: (capability: string) => void): () => void",
-				}, "\n"),
-				DependsOn: []string{"runtime.api"},
-			},
-			{
 				ID: "runtime.factory", Static: genericBrowserRuntimeFactorySource(),
 				API: genericBrowserRuntimeFactoryAPI(), DependsOn: []string{"runtime.api"},
 			},
 		},
 	}
-}
-
-func genericBrowserHostBridgeSource() string {
-	return `interface BrowserHostRequest {
-  readonly capability: string;
-  readonly payload: unknown;
-}
-type BrowserHostHandler = (payload: unknown) => void;
-type BrowserHostListener = (request: BrowserHostRequest) => void;
-type BrowserHostReceiptObserver = (capability: string) => void;
-const browserHostHandlers = new Map<string, BrowserHostHandler>();
-const browserHostListeners = new Set<BrowserHostListener>();
-const browserHostReceiptObservers = new Set<BrowserHostReceiptObserver>();
-
-function registerBrowserHostHandler(capability: string, handler: BrowserHostHandler): void {
-  if (!/^runtime\.browser\.[a-z][a-z0-9_]*$/.test(capability)) {
-    throw new Error('Browser host handler capability ID is invalid.');
-  }
-  if (browserHostHandlers.has(capability)) {
-    throw new Error('Browser host handler is already registered: ' + capability);
-  }
-  browserHostHandlers.set(capability, handler);
-}
-
-function publishBrowserHostRequest(capability: string, payload: unknown): void {
-  if (browserHostListeners.size === 0 && browserHostReceiptObservers.size === 0) {
-    throw new Error('Browser host request has no mounted bridge: ' + capability);
-  }
-  const request = Object.freeze({ capability, payload });
-  browserHostListeners.forEach((listener) => listener(request));
-  browserHostReceiptObservers.forEach((observer) => observer(capability));
-}
-
-export function observeBrowserHostRequestReceipts(observer: BrowserHostReceiptObserver): () => void {
-  browserHostReceiptObservers.add(observer);
-  return () => { browserHostReceiptObservers.delete(observer); };
-}
-
-export function BrowserHostBridge(): ReactElement | null {
-  useEffect(() => {
-    const listener: BrowserHostListener = (request) => {
-      const handler = browserHostHandlers.get(request.capability);
-      if (handler === undefined) {
-        throw new Error('Browser host handler disappeared: ' + request.capability);
-      }
-      handler(request.payload);
-    };
-    browserHostListeners.add(listener);
-    return () => { browserHostListeners.delete(listener); };
-  }, []);
-  return null;
-}`
 }
 
 func genericBrowserRuntimeAPI(requirements []assemblyline.Requirement) string {

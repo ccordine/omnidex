@@ -1,6 +1,7 @@
 package worker
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -8,6 +9,24 @@ import (
 )
 
 type directCodingSemanticLeafDecoder[T any] func(string) (T, error)
+
+type directCodingSemanticLeafRejection struct {
+	subject string
+	err     error
+}
+
+func (rejection *directCodingSemanticLeafRejection) Error() string {
+	return fmt.Sprintf("invalid %s semantic result: %v", rejection.subject, rejection.err)
+}
+
+func (rejection *directCodingSemanticLeafRejection) Unwrap() error {
+	return rejection.err
+}
+
+func isDirectCodingSemanticLeafRejection(err error) bool {
+	var rejection *directCodingSemanticLeafRejection
+	return errors.As(err, &rejection)
+}
 
 // runDirectCodingSemanticLeafCall resolves one raw semantic value. The
 // station-specific decoder is the only authority that may turn model bytes
@@ -77,7 +96,7 @@ func runDirectCodingSemanticLeafCall[T any](
 		emitDirectCodingSemanticRejection(runtime, modelName, subject, 1, validationErr)
 		return zero, failDirectCodingSemanticCall(
 			runtime, modelName, subject, 1,
-			fmt.Errorf("invalid %s semantic result: %w", subject, validationErr),
+			&directCodingSemanticLeafRejection{subject: subject, err: validationErr},
 		)
 	}
 	emitTypedWorker(runtime, typedWorkerEvent{

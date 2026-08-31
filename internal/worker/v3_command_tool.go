@@ -26,16 +26,10 @@ var (
 )
 
 type codeCommand struct {
-	Program     string
-	Args        []string
-	Timeout     time.Duration
-	Profile     codeCommandProfile
-	Environment map[string]string
+	Program string
+	Args    []string
+	Timeout time.Duration
 }
-
-type codeCommandProfile string
-
-const codeCommandProfileDeployment codeCommandProfile = "persistent_deployment"
 
 func executeCodeCommandAtRoot(
 	ctx context.Context,
@@ -47,10 +41,7 @@ func executeCodeCommandAtRoot(
 	}
 	program := strings.TrimSpace(command.Program)
 	args := append([]string(nil), command.Args...)
-	if err := validateV3CommandForProfile(program, args, command.Profile); err != nil {
-		return operation.Result{}, operation.Reject(err)
-	}
-	if err := validateV3CommandEnvironment(command); err != nil {
+	if err := validateV3Command(program, args); err != nil {
 		return operation.Result{}, operation.Reject(err)
 	}
 	execution, err := runValidatedV3Command(ctx, root, command)
@@ -103,14 +94,6 @@ func executeCodeCommandAtRoot(
 }
 
 func validateV3Command(program string, args []string) error {
-	return validateV3CommandForProfile(program, args, "")
-}
-
-func validateV3CommandForProfile(
-	program string,
-	args []string,
-	profile codeCommandProfile,
-) error {
 	if program == "" || program != strings.ToLower(program) || filepath.Base(program) != program || strings.ContainsAny(program, `/\\`) {
 		return fmt.Errorf("command.run program must be a bare allowlisted executable name")
 	}
@@ -130,15 +113,6 @@ func validateV3CommandForProfile(
 			return fmt.Errorf("command.run argument %q escapes the authoritative workspace", arg)
 		}
 	}
-	if profile == codeCommandProfileDeployment {
-		if program != "docker" {
-			return fmt.Errorf("persistent deployment permits only Docker Compose")
-		}
-		return validateV3DeploymentDockerCompose(args)
-	}
-	if profile != "" {
-		return fmt.Errorf("command.run profile %q is unsupported", profile)
-	}
 	if directCodingVersionProbeCommand(program, args) {
 		return nil
 	}
@@ -147,7 +121,6 @@ func validateV3CommandForProfile(
 		"go": {"build": {}, "fmt": {}, "list": {}, "mod": {}, "test": {}, "vet": {}}, "git": {"diff": {}, "log": {}, "rev-parse": {}, "show": {}, "status": {}},
 		"node":  {"--permission": {}},
 		"javac": {"--release": {}}, "java": {"-ea": {}}, "jar": {"--create": {}},
-		"docker": {"compose": {}},
 		"npm":    {"ci": {}, "init": {}, "run": {}, "test": {}}, "pnpm": {"run": {}, "test": {}}, "yarn": {"run": {}, "test": {}},
 		"cargo": {"build": {}, "check": {}, "clippy": {}, "fmt": {}, "init": {}, "test": {}}, "pytest": {verb: {}}, "python3": {"-m": {}},
 		"dotnet": {"build": {}, "test": {}}, "mvn": {"test": {}, "verify": {}}, "gradle": {"build": {}, "check": {}, "test": {}},
@@ -199,11 +172,6 @@ func validateV3CommandForProfile(
 	}) {
 		return fmt.Errorf("command.run permits only the code-owned Java application archive command")
 	}
-	if program == "docker" {
-		if err := validateV3DockerCompose(args); err != nil {
-			return err
-		}
-	}
 	if program == "python3" && (len(args) < 2 || args[0] != "-m" || args[1] != "pytest") {
 		return fmt.Errorf("command.run permits python3 only as python3 -m pytest")
 	}
@@ -247,11 +215,6 @@ func directCodingVersionProbeCommand(program string, args []string) bool {
 	case "javac":
 		return len(args) == 3 && args[0] == "--release" &&
 			directCodingRegisteredJavaRelease(args[1]) && args[2] == "-version"
-	case "docker":
-		return slicesEqualStrings(args, []string{"compose", "version", "--short"}) ||
-			slicesEqualStrings(args, []string{
-				"version", "--format", "{{.Server.Version}}",
-			})
 	default:
 		return false
 	}

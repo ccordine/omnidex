@@ -3,6 +3,7 @@ package worker
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
 	"github.com/gryph/omnidex/internal/model"
@@ -15,19 +16,29 @@ type nativeRuntimeV3 struct {
 	action                  string
 	contexts                map[string]string
 	routing                 ModelRouting
+	routingErr              error
+	routingOnce             sync.Once
 	objectivePathProvenance assemblyline.ArtifactIdentityProvenance
 }
 
 func (s *Service) runNativeV3Step(ctx context.Context, claim *model.ClaimedStep, contexts map[string]string, action string) error {
-	routing, err := modelRoutingFromJobMetadata(claim.Job.Metadata, s.models)
-	if err != nil {
-		return err
-	}
 	runtime := &nativeRuntimeV3{
 		svc: s, ctx: ctx, claim: claim,
-		action: action, contexts: contexts, routing: routing,
+		action: action, contexts: contexts,
 	}
 	return runtime.run()
+}
+
+func (r *nativeRuntimeV3) modelRouting() (ModelRouting, error) {
+	if r == nil || r.svc == nil || r.claim == nil {
+		return ModelRouting{}, fmt.Errorf("model routing requires runtime authority")
+	}
+	r.routingOnce.Do(func() {
+		r.routing, r.routingErr = modelRoutingFromJobMetadata(
+			r.claim.Job.Metadata, r.svc.models,
+		)
+	})
+	return r.routing, r.routingErr
 }
 
 func (r *nativeRuntimeV3) run() error {

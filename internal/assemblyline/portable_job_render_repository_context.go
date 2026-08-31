@@ -8,8 +8,6 @@ func renderPortableRepositoryContextJob(job PortableJob) (string, bool, error) {
 		return handledPortableRender(renderDecodedPortableInput(job, BuildRepositoryRequirementCandidateAuthorizationPrompt))
 	case WorkRepositoryRequirementCandidateRelation:
 		return handledPortableRender(renderDecodedPortableInput(job, BuildRepositoryRequirementCandidateRelationPrompt))
-	case WorkRepositoryChangeOwner:
-		return handledPortableRender(renderDecodedPortableInput(job, BuildRepositoryChangeOwnerPrompt))
 	case WorkRepositoryEvidenceRelevanceRelation:
 		return handledPortableRender(renderDecodedPortableInput(job, BuildRepositoryEvidenceRelevanceRelationPrompt))
 	case WorkContextRelevanceRelation:

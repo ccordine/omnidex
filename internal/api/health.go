@@ -9,10 +9,6 @@ import (
 )
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
-	if _, err := version.BuildCommit(); err != nil {
-		writeError(w, http.StatusInternalServerError, "invalid embedded release identity: "+err.Error())
-		return
-	}
 	coreURL, source, err := s.resolveCoreURL(r)
 	if err != nil {
 		writeError(w, http.StatusServiceUnavailable, err.Error())

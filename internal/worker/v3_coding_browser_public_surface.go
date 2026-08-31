@@ -11,13 +11,6 @@ import (
 func extractDirectCodingBrowserPublicInteractionSurface(
 	source string,
 ) (directCodingBrowserPublicInteractionSurface, error) {
-	return extractDirectCodingBrowserPublicInteractionSurfaceWithRuntimeCalls(source, nil)
-}
-
-func extractDirectCodingBrowserPublicInteractionSurfaceWithRuntimeCalls(
-	source string,
-	permittedRuntimeCalls []string,
-) (directCodingBrowserPublicInteractionSurface, error) {
 	if source == "" {
 		return directCodingBrowserPublicInteractionSurface{}, fmt.Errorf("browser public surface source is empty")
 	}
@@ -67,9 +60,7 @@ func extractDirectCodingBrowserPublicInteractionSurfaceWithRuntimeCalls(
 	if err != nil {
 		return directCodingBrowserPublicInteractionSurface{}, err
 	}
-	if err := validateDirectCodingBrowserRuntimeDOMAuthority(
-		root, []byte(source), permittedRuntimeCalls,
-	); err != nil {
+	if err := validateDirectCodingBrowserRuntimeDOMAuthority(root, []byte(source)); err != nil {
 		return directCodingBrowserPublicInteractionSurface{}, err
 	}
 	return surface, nil

@@ -1,7 +1,6 @@
 package worker
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -40,22 +39,9 @@ func runDirectCodingTypeScriptFragmentWorker(
 	if guided {
 		proseContext = []string{job.repairGuidance}
 		sourceContext = []string{job.current}
-		if job.repairRegion != nil {
-			sourceContext = []string{job.repairRegion.Source}
-		}
 	} else {
 		proseContext = append([]string{job.dialect}, proseContext...)
 		sourceContext = append(sourceContext, job.block.Globals...)
-		if job.publicInteractionSurface != nil {
-			receipt, renderErr := job.publicInteractionSurface.Render()
-			if renderErr != nil {
-				return "", failDirectCodingTypeScriptFragmentWorker(
-					runtime, modelName, job.block.ID, 0,
-					fmt.Errorf("render TypeScript public interaction surface: %w", renderErr),
-				)
-			}
-			proseContext = append(proseContext, receipt)
-		}
 	}
 	if err := assemblyline.ValidatePathFreeModelContextWithProvenance(
 		"TypeScript fragment", runtime.PathProvenance, proseContext...,
@@ -75,9 +61,6 @@ func runDirectCodingTypeScriptFragmentWorker(
 		return "", failDirectCodingTypeScriptFragmentWorker(runtime, modelName, job.block.ID, 0, err)
 	}
 	currentBytes := len(strings.TrimSpace(job.current))
-	if job.repairRegion != nil {
-		currentBytes = len(job.repairRegion.Source)
-	}
 	correctionBytes := 0
 	if guided {
 		correctionBytes = len(strings.TrimSpace(job.repairGuidance))
@@ -89,24 +72,7 @@ func runDirectCodingTypeScriptFragmentWorker(
 		CurrentBytes: currentBytes, CorrectionBytes: correctionBytes,
 		Warning: directCodingTypeScriptDeclarationSizeWarning(currentBytes),
 	})
-	var result assemblyline.PortableResult
-	if baseJob.Kind == assemblyline.WorkFragmentGeneration {
-		var generationInput assemblyline.FragmentGenerationInput
-		if err = json.Unmarshal(baseJob.Payload, &generationInput); err != nil {
-			return "", failDirectCodingTypeScriptFragmentWorker(
-				runtime, modelName, job.block.ID, 0,
-				fmt.Errorf("decode validated TypeScript fragment generation input: %w", err),
-			)
-		}
-		baseJob, result, err = executeInitialFragmentGenerationWithReplacement(
-			runtime,
-			baseJob,
-			generationInput,
-			modelName,
-		)
-	} else {
-		result, err = runtime.Execute(baseJob, modelName)
-	}
+	result, err := runtime.Execute(baseJob, modelName)
 	if err != nil {
 		return "", failDirectCodingTypeScriptFragmentWorker(runtime, modelName, job.block.ID, 1, err)
 	}
@@ -116,39 +82,20 @@ func runDirectCodingTypeScriptFragmentWorker(
 	}
 	candidate := ""
 	initialProjectionAccepted := false
-	if job.repairRegion != nil {
-		var replacement string
-		replacement, err = assemblyline.ProjectTypeScriptFragmentRepairResponse(
-			*job.repairRegion, result.Candidate,
-		)
+	var projection assemblyline.TypeScriptFunctionProjection
+	projection, err = assemblyline.ProjectTypeScriptFunctionModelResponse(
+		assemblyline.TypeScriptFunctionContract{
+			Signature: job.block.Signature, TSX: job.tsx, Policy: job.block.Policy,
+		},
+		result.Candidate,
+	)
+	candidate = projection.Source
+	if err == nil {
+		var portableProjection assemblyline.PortableResultProjection
+		portableProjection, err = projection.PortableResultProjection()
 		if err == nil {
-			candidate, err = assemblyline.ApplyTypeScriptFragmentRepairRegion(
-				strings.TrimSpace(job.current), *job.repairRegion, replacement,
-			)
-		}
-		if err == nil {
-			var projection assemblyline.PortableResultProjection
-			projection, err = assemblyline.NewExactPortableResultProjection(result.Candidate)
-			if err == nil {
-				result.Projection = &projection
-			}
-		}
-	} else {
-		var projection assemblyline.TypeScriptFunctionProjection
-		projection, err = assemblyline.ProjectTypeScriptFunctionModelResponse(
-			assemblyline.TypeScriptFunctionContract{
-				Signature: job.block.Signature, TSX: job.tsx, Policy: job.block.Policy,
-			},
-			result.Candidate,
-		)
-		candidate = projection.Source
-		if err == nil {
-			var portableProjection assemblyline.PortableResultProjection
-			portableProjection, err = projection.PortableResultProjection()
-			if err == nil {
-				result.Projection = &portableProjection
-				initialProjectionAccepted = !guided
-			}
+			result.Projection = &portableProjection
+			initialProjectionAccepted = !guided
 		}
 	}
 	candidatePathFree := false
@@ -174,22 +121,6 @@ func runDirectCodingTypeScriptFragmentWorker(
 	}
 	if err == nil && job.validateInitialCandidate != nil {
 		if validationErr := job.validateInitialCandidate(candidate); validationErr != nil {
-			if job.block.Role == assemblyline.SourceBlockTaskVerification {
-				validationErr = fmt.Errorf(
-					"TypeScript verification candidate failed deterministic public-surface grounding: %w",
-					validationErr,
-				)
-				rejectionErr := finalizeTypedWorkerResult(runtime, baseJob, result, validationErr)
-				emitTypedWorker(runtime, typedWorkerEvent{
-					State: typedWorkerRejected, Kind: typedWorkerFragment, Subject: job.block.ID,
-					Model: modelName, Attempt: 1, MaxAttempts: directCodingTypeScriptModelAttempts,
-					Warning: directCodingTypeScriptDeclarationSizeWarning(len(candidate)),
-					Detail:  trimForBudget(rejectionErr.Error(), 1200),
-				})
-				return "", failDirectCodingTypeScriptFragmentWorker(
-					runtime, modelName, job.block.ID, 1, rejectionErr,
-				)
-			}
 			err = fmt.Errorf(
 				"TypeScript implementation candidate has no exact public interaction surface: %w",
 				validationErr,

@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-const SnapshotSchemaV1 = "omnidex.repository-snapshot.v1"
+const SnapshotSchemaV2 = "omnidex.repository-snapshot.v2"
 
 type EntryKind string
 
@@ -33,9 +33,10 @@ type Snapshot struct {
 	ID             string      `json:"id"`
 	RepositoryID   string      `json:"repository_id"`
 	Root           string      `json:"root"`
-	HeadCommit     string      `json:"head_commit"`
-	GitStateSHA256 string      `json:"git_state_sha256"`
-	Dirty          bool        `json:"dirty"`
+	StateSHA256    string      `json:"state_sha256"`
+	HeadCommit     string      `json:"head_commit,omitempty"`
+	GitStateSHA256 string      `json:"git_state_sha256,omitempty"`
+	Dirty          bool        `json:"dirty,omitempty"`
 	GeneratedAt    time.Time   `json:"generated_at"`
 	Files          []File      `json:"files"`
 	Exclusions     []Exclusion `json:"exclusions"`
@@ -63,15 +64,21 @@ type Exclusion struct {
 type snapshotIdentity struct {
 	Schema         string      `json:"schema"`
 	RepositoryID   string      `json:"repository_id"`
+	StateSHA256    string      `json:"state_sha256"`
 	HeadCommit     string      `json:"head_commit"`
 	GitStateSHA256 string      `json:"git_state_sha256"`
 	Files          []File      `json:"files"`
 	Exclusions     []Exclusion `json:"exclusions"`
 }
 
+type snapshotStateIdentity struct {
+	Files      []File      `json:"files"`
+	Exclusions []Exclusion `json:"exclusions"`
+}
+
 func (snapshot Snapshot) Validate() error {
-	if snapshot.Schema != SnapshotSchemaV1 {
-		return fmt.Errorf("repository snapshot schema must be %q", SnapshotSchemaV1)
+	if snapshot.Schema != SnapshotSchemaV2 {
+		return fmt.Errorf("repository snapshot schema must be %q", SnapshotSchemaV2)
 	}
 	if !validOpaqueID(snapshot.RepositoryID, "repository_") {
 		return fmt.Errorf("repository snapshot has an invalid repository ID")
@@ -79,11 +86,18 @@ func (snapshot Snapshot) Validate() error {
 	if strings.TrimSpace(snapshot.Root) == "" || !filepath.IsAbs(snapshot.Root) {
 		return fmt.Errorf("repository snapshot root must be absolute")
 	}
-	if !validGitOID(snapshot.HeadCommit) {
-		return fmt.Errorf("repository snapshot requires one exact Git HEAD commit")
+	if !validSHA256(snapshot.StateSHA256) {
+		return fmt.Errorf("repository snapshot requires one exact content state hash")
 	}
-	if !validSHA256(snapshot.GitStateSHA256) {
-		return fmt.Errorf("repository snapshot requires one Git state hash")
+	if snapshot.HeadCommit != "" && !validGitOID(snapshot.HeadCommit) {
+		return fmt.Errorf("repository snapshot has an invalid optional Git HEAD commit")
+	}
+	if snapshot.GitStateSHA256 == "" {
+		if snapshot.HeadCommit != "" || snapshot.Dirty {
+			return fmt.Errorf("repository snapshot has incomplete optional Git metadata")
+		}
+	} else if !validSHA256(snapshot.GitStateSHA256) {
+		return fmt.Errorf("repository snapshot has an invalid optional Git state hash")
 	}
 	if err := validateCanonicalGeneratedAt("repository snapshot", snapshot.GeneratedAt); err != nil {
 		return err
@@ -93,6 +107,13 @@ func (snapshot Snapshot) Validate() error {
 	}
 	if err := validateSnapshotFacts(snapshot); err != nil {
 		return err
+	}
+	expectedState, err := snapshotStateSHA256(snapshot.Files, snapshot.Exclusions)
+	if err != nil {
+		return err
+	}
+	if snapshot.StateSHA256 != expectedState {
+		return fmt.Errorf("repository snapshot state hash does not match its exact facts")
 	}
 	expected, err := snapshotID(snapshot)
 	if err != nil {
@@ -176,7 +197,8 @@ func (file File) validate(repositoryID string) error {
 func snapshotID(snapshot Snapshot) (string, error) {
 	identity := snapshotIdentity{
 		Schema: snapshot.Schema, RepositoryID: snapshot.RepositoryID,
-		HeadCommit: snapshot.HeadCommit, GitStateSHA256: snapshot.GitStateSHA256,
+		StateSHA256: snapshot.StateSHA256, HeadCommit: snapshot.HeadCommit,
+		GitStateSHA256: snapshot.GitStateSHA256,
 		Files: snapshot.Files, Exclusions: snapshot.Exclusions,
 	}
 	raw, err := json.Marshal(identity)
@@ -185,6 +207,15 @@ func snapshotID(snapshot Snapshot) (string, error) {
 	}
 	hash := sha256.Sum256(raw)
 	return "snapshot_" + hex.EncodeToString(hash[:]), nil
+}
+
+func snapshotStateSHA256(files []File, exclusions []Exclusion) (string, error) {
+	raw, err := json.Marshal(snapshotStateIdentity{Files: files, Exclusions: exclusions})
+	if err != nil {
+		return "", fmt.Errorf("encode repository snapshot state identity: %w", err)
+	}
+	hash := sha256.Sum256(raw)
+	return hex.EncodeToString(hash[:]), nil
 }
 
 func opaqueID(prefix string, values ...string) string {

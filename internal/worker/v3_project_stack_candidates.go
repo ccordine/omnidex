@@ -124,22 +124,6 @@ func directCodingProjectStackConstraintInput(
 	return input, nil
 }
 
-func directCodingSelectionForMatchedProfile(
-	stacks []directCodingProjectStack,
-	profile directCodingProjectVersionProfile,
-) (directCodingProjectSelection, error) {
-	for _, stack := range stacks {
-		if stack.ID == profile.StackID {
-			return directCodingProjectSelection{
-				Stack: stack, VersionProfileID: profile.ID,
-			}, nil
-		}
-	}
-	return directCodingProjectSelection{}, fmt.Errorf(
-		"compatible version profile %s has no surface stack", profile.ID,
-	)
-}
-
 func resolveDirectCodingProjectFormatDecision(
 	surface assemblyline.ApplicationSurface,
 	stacks []directCodingProjectStack,

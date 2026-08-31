@@ -12,6 +12,18 @@ import (
 )
 
 func (s *Service) Start(ctx context.Context) error {
+	if s == nil || s.repo == nil {
+		return fmt.Errorf("worker start requires repository authority")
+	}
+	if s.workerCount < 1 {
+		return fmt.Errorf("worker_count must be at least 1, received %d", s.workerCount)
+	}
+	if s.pollInterval <= 0 {
+		return fmt.Errorf("poll_interval must be positive, received %s", s.pollInterval)
+	}
+	if s.logger == nil {
+		return fmt.Errorf("worker start requires a logger")
+	}
 	var wg sync.WaitGroup
 	for i := 0; i < s.workerCount; i++ {
 		wg.Add(1)
@@ -85,9 +97,6 @@ func (s *Service) run(ctx context.Context, workerID string) {
 
 func (s *Service) processStep(ctx context.Context, claim *model.ClaimedStep) error {
 	if err := requireExecutablePipeline(claim.Job.Pipeline); err != nil {
-		return err
-	}
-	if _, err := modelRoutingFromJobMetadata(claim.Job.Metadata, s.models); err != nil {
 		return err
 	}
 	action := strings.ToLower(strings.TrimSpace(claim.Step.Action))

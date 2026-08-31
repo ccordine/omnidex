@@ -55,10 +55,6 @@ func NewCapabilityRelationJob(input CapabilityRelationInput) (PortableJob, error
 	return newValidatedPortableJob(WorkCapabilityRelation, input, input.validate)
 }
 
-func NewSkillSelectionJob(input SkillSelectionInput) (PortableJob, error) {
-	return newValidatedPortableJob(WorkSkillSelection, input, input.validate)
-}
-
 func NewRuntimeCapabilityNecessityJob(
 	input RuntimeCapabilityNecessityInput,
 ) (PortableJob, error) {

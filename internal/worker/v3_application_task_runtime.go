@@ -1,7 +1,6 @@
 package worker
 
 import (
-	"errors"
 	"fmt"
 	"strings"
 
@@ -13,11 +12,10 @@ func (s *directCodingSession) generateDirectCodingApplicationTaskBlock(
 	_ assemblyline.ApplicationTaskContext,
 	stage *directCodingProgram,
 	ref assemblyline.SourceBlockRef,
-	publicSurface *assemblyline.FragmentPublicInteractionSurface,
 	validateInitialCandidate func(string) error,
 ) (string, error) {
 	job, err := directCodingApplicationTaskFragmentJob(
-		stage, ref, publicSurface, validateInitialCandidate,
+		stage, ref, validateInitialCandidate,
 	)
 	if err != nil {
 		return "", err
@@ -35,7 +33,6 @@ func (s *directCodingSession) generateDirectCodingApplicationTaskBlock(
 func directCodingApplicationTaskFragmentJob(
 	stage *directCodingProgram,
 	ref assemblyline.SourceBlockRef,
-	publicSurface *assemblyline.FragmentPublicInteractionSurface,
 	validateInitialCandidate func(string) error,
 ) (directCodingTypeScriptFragmentJob, error) {
 	if stage == nil {
@@ -71,36 +68,12 @@ func directCodingApplicationTaskFragmentJob(
 	}
 	return directCodingTypeScriptFragmentJob{
 		block: block, dialect: profile.SourceDialect, tsx: tsx, available: available,
-		publicInteractionSurface: publicSurface,
 		validateInitialCandidate: validateInitialCandidate,
 	}, nil
 }
 
-func directCodingApplicationTaskStageCommands(
-	stage directCodingProgram,
-	context assemblyline.ApplicationTaskContext,
-) ([][]string, error) {
-	acceptanceID, err := directCodingTaskBlockIDByRole(
-		stage.Source, context.Task.TaskID, assemblyline.SourceBlockTaskVerification,
-	)
-	if err != nil {
-		return nil, err
-	}
-	path := ""
-	for _, document := range stage.Source.Documents {
-		for _, block := range document.Blocks {
-			if block.ID == acceptanceID {
-				if path != "" {
-					return nil, fmt.Errorf("application task stage repeats acceptance block %s", acceptanceID)
-				}
-				path = document.Path
-			}
-		}
-	}
-	if path == "" {
-		return nil, fmt.Errorf("application task stage lacks acceptance block %s", acceptanceID)
-	}
-	return [][]string{{"run", "typecheck"}, directCodingStructuredVitestCommand(path)}, nil
+func directCodingTypeScriptDocumentIsTSX(document assemblyline.SourceDocument) bool {
+	return strings.HasSuffix(strings.ToLower(document.Path), ".tsx")
 }
 
 func (s *directCodingSession) runDirectCodingApplicationTaskLifecycle(
@@ -117,32 +90,18 @@ func (s *directCodingSession) runDirectCodingApplicationTaskLifecycle(
 	if err != nil {
 		return err
 	}
-	executor, err := stack.NewStageExecutor(s, *program)
+	if stack.NewSourceGenerator == nil {
+		return fmt.Errorf("project stack %s has no source generator", stack.ID)
+	}
+	generator, err := stack.NewSourceGenerator(s, *program)
 	if err != nil {
 		return err
 	}
 	lifecycleErr := runDirectCodingApplicationTaskLifecycle(
 		frozen, program,
 		directCodingApplicationTaskLifecycleHooks{
-			BeginTask: func(context assemblyline.ApplicationTaskContext) error {
-				if s.cognition == nil {
-					return fmt.Errorf("application task lifecycle requires persisted task cognition")
-				}
-				return s.cognition.Begin(context.Task.TaskID)
-			},
-			BuildBlock: executor.GenerateBlock,
-			VerifyTask: executor.VerifyTask,
-			CompleteTask: func(context assemblyline.ApplicationTaskContext, generated map[string]string) error {
-				return s.cognition.CompleteTask(context.Task.TaskID, generated)
-			},
-			FinalStage: func(complete *directCodingProgram) error {
-				return executor.VerifyFinal(complete)
-			},
+			BuildBlock: generator.GenerateBlock,
 		},
 	)
-	closeErr := executor.Close()
-	if lifecycleErr != nil || closeErr != nil {
-		return errors.Join(lifecycleErr, closeErr)
-	}
-	return nil
+	return lifecycleErr
 }

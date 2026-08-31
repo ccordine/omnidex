@@ -6,15 +6,12 @@ import (
 	"slices"
 )
 
-// VerifyExact re-captures the exact workspace root and rejects any change to
-// included authority. Excluded content bytes are intentionally outside the
-// state identity, while additions and removals from the exclusion inventory
-// still change that identity.
+// VerifyExact re-captures only the paths owned by this operation.
 func (snapshot Snapshot) VerifyExact(ctx context.Context) error {
 	if err := snapshot.Validate(); err != nil {
 		return fmt.Errorf("verify workspace source state: %w", err)
 	}
-	current, err := Capture(ctx, snapshot.Root)
+	current, err := Capture(ctx, snapshot.Root, snapshot.Paths)
 	if err != nil {
 		return fmt.Errorf("verify workspace source state changed: %w", err)
 	}
@@ -28,9 +25,6 @@ func (snapshot Snapshot) VerifyExact(ctx context.Context) error {
 			current.ID,
 		)
 	}
-	if !slices.Equal(current.Exclusions, snapshot.Exclusions) {
-		return fmt.Errorf("workspace exclusion authority changed while verifying exact state")
-	}
 	if current.ID != snapshot.ID {
 		return fmt.Errorf(
 			"workspace source identity changed: expected %s, current %s",
@@ -38,15 +32,5 @@ func (snapshot Snapshot) VerifyExact(ctx context.Context) error {
 			current.ID,
 		)
 	}
-	if !equalGitBinding(current.Git, snapshot.Git) {
-		return fmt.Errorf("workspace Git binding changed while verifying exact state")
-	}
 	return nil
-}
-
-func equalGitBinding(left, right *GitBinding) bool {
-	if left == nil || right == nil {
-		return left == nil && right == nil
-	}
-	return *left == *right
 }

@@ -70,9 +70,7 @@ func runDirectCodingLanguageFragmentWorker(
 		Model: modelName, Attempt: 1, MaxAttempts: 1, PromptBytes: len(prompt),
 		CapabilityBytes: languageGenerationCapabilityBytes(job.Input),
 	})
-	portable, result, err := executeInitialFragmentGenerationWithReplacement(
-		runtime, portable, job.Input, modelName,
-	)
+	result, err := runtime.Execute(portable, modelName)
 	if err != nil {
 		return "", failDirectCodingLanguageGeneration(runtime, modelName, job, err)
 	}

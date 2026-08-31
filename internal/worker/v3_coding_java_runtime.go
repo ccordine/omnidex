@@ -10,7 +10,6 @@ import (
 
 const (
 	javaRuntimeFeatureResultBlock      = "runtime.feature.result"
-	javaRuntimeAcceptanceAssertBlock   = "runtime.acceptance.assertions"
 	javaRuntimeApplicationInspectBlock = "runtime.application.inspect"
 )
 
@@ -28,10 +27,6 @@ func javaCommandLineRuntimeDocument() assemblyline.SourceDocument {
 				API: javaCommandLineRuntimeFeatureResultAPI(),
 			},
 			{
-				ID: javaRuntimeAcceptanceAssertBlock, Static: javaCommandLineRuntimeAcceptanceAssertSource(),
-				API: javaCommandLineRuntimeAcceptanceAssertAPI(),
-			},
-			{
 				ID: javaRuntimeApplicationInspectBlock, Static: javaCommandLineRuntimeApplicationInspectSource(),
 				API: javaCommandLineRuntimeApplicationInspectAPI(),
 			},
@@ -46,13 +41,6 @@ func javaCommandLineRuntimeFeatureResultAPI() string {
 }`
 }
 
-func javaCommandLineRuntimeAcceptanceAssertAPI() string {
-	return `final class Runtime {
-  static native void requireResult(Map<String, Object> candidate);
-  static native void require(boolean condition, String failure);
-}`
-}
-
 func javaCommandLineRuntimeApplicationInspectAPI() string {
 	return `final class Runtime {
   static native String output(Map<String, Object> result);
@@ -60,14 +48,6 @@ func javaCommandLineRuntimeApplicationInspectAPI() string {
   static native int exitCode(Map<String, Object> result);
   static native Map<String, Object> state(Map<String, Object> result);
 }`
-}
-
-func javaCommandLineRuntimeSource() string {
-	return strings.Join([]string{
-		javaCommandLineRuntimeFeatureResultSource(),
-		javaCommandLineRuntimeAcceptanceAssertSource(),
-		javaCommandLineRuntimeApplicationInspectSource(),
-	}, "\n\n")
 }
 
 func javaCommandLineRuntimeFeatureResultSource() string {
@@ -128,16 +108,6 @@ static Map<String, Object> dependency(
     throw new IllegalArgumentException("direct capability result must be a map");
   }
   return normalizeResult(copyStringMap(value));
-}`
-}
-
-func javaCommandLineRuntimeAcceptanceAssertSource() string {
-	return `static void requireResult(Map<String, Object> candidate) {
-  normalizeResult(candidate);
-}
-
-static void require(boolean condition, String failure) {
-  if (!condition) throw new AssertionError(failure);
 }`
 }
 
@@ -258,30 +228,4 @@ func javaCommandLineApplicationSource(
   if (exitCode != 0) System.exit(exitCode);
 }`)
 	return source.String()
-}
-
-func javaCommandLineTestRunnerSource() string {
-	return `import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
-
-public final class TestRunner {
-  private TestRunner() {}
-
-  public static void main(String[] target) throws Exception {
-    if (target.length != 2) {
-      throw new IllegalArgumentException("one verification class and method are required");
-    }
-    Method method = Class.forName(target[0]).getDeclaredMethod(target[1]);
-    method.setAccessible(true);
-    try {
-      method.invoke(null);
-    } catch (InvocationTargetException failure) {
-      Throwable cause = failure.getCause();
-      if (cause instanceof Exception exception) throw exception;
-      if (cause instanceof Error error) throw error;
-      throw new IllegalStateException("verification failed", cause);
-    }
-  }
-}
-`
 }

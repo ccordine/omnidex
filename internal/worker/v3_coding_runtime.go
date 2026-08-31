@@ -6,7 +6,6 @@ import (
 
 	"github.com/gryph/omnidex/internal/assemblyline"
 	"github.com/gryph/omnidex/internal/model"
-	"github.com/gryph/omnidex/internal/modelcontext"
 	repositoryindex "github.com/gryph/omnidex/internal/repository/indexing"
 	"github.com/gryph/omnidex/internal/scrum"
 )
@@ -22,7 +21,6 @@ type directCodingSession struct {
 	root                  string
 	specification         *assemblyline.ApplicationSpecification
 	program               *directCodingProgram
-	completion            directCodingCompletionState
 	sequence              int
 	protectedPaths        map[string]directCodingProtectedPath
 	lastCommands          []string
@@ -30,15 +28,7 @@ type directCodingSession struct {
 	plannedFiles          int
 	plannedDeletes        int
 	mutationJournal       []directCodingMutationJournalEntry
-	cognition             *directCodingTaskCognition
 	pathProvenance        assemblyline.ArtifactIdentityProvenance
-	initialPaths          map[string]directCodingInitialPath
-	deploymentResolution  directCodingServiceDeploymentResolution
-	deploymentDisposition assemblyline.ApplicationServiceDeploymentDisposition
-	deploymentOperationID string
-	deploymentReceiptSHA  string
-	deployedEndpoint      directCodingObservedEndpoint
-	deploymentRecovery    directCodingDeploymentRecoveryHook
 }
 
 func (s *directCodingSession) Phase(phase directCodingPhase, detail string) {
@@ -58,6 +48,14 @@ type directCodingMutationJournalEntry struct {
 	Path      string
 	Operation workspaceFileOperation
 }
+
+type workspaceFileOperation string
+
+const (
+	workspaceFileCreate  workspaceFileOperation = "create"
+	workspaceFileReplace workspaceFileOperation = "replace"
+	workspaceFileDelete  workspaceFileOperation = "delete"
+)
 
 func (r *nativeRuntimeV3) runDirectCodingAction() error {
 	request, err := r.directCodingRequest()
@@ -108,55 +106,17 @@ func (r *nativeRuntimeV3) runDirectCodingSession(request directCodingRequest) (s
 	if r == nil || r.svc == nil {
 		return "", fmt.Errorf("direct coding runtime is unavailable")
 	}
-	if summary, handled, err := r.recoverDeploymentBeforeWorkspace(request); handled || err != nil {
-		return summary, err
-	}
 	scope, err := r.svc.workspaceScopeForV3Job(r.claim.Job)
 	if err != nil {
 		return "", err
 	}
-	if summary, handled, err := r.reconcileCurrentWorkspaceMutation(scope.Root, request); handled || err != nil {
-		return summary, err
-	}
-	hasExistingImplementation, err := directCodingWorkspaceHasImplementation(scope.Root, nil)
-	if err != nil {
-		return "", err
-	}
-	var indexed *repositoryindex.Result
-	if hasExistingImplementation {
-		result, indexErr := r.captureExistingRepositoryIndex(scope.Root)
-		if indexErr != nil {
-			return "", indexErr
-		}
-		indexed = &result
-	}
 	session := &directCodingSession{
-		runtime:         r,
-		request:         request,
-		root:            scope.Root,
-		repositoryIndex: indexed,
-		protectedPaths:  map[string]directCodingProtectedPath{},
-		completion: directCodingCompletionState{
-			AllowExistingWorkspace: len(request.Feedback) > 0 || hasExistingImplementation,
-			TestsRequired:          true,
-		},
+		runtime:        r,
+		request:        request,
+		root:           scope.Root,
+		protectedPaths: map[string]directCodingProtectedPath{},
 	}
-	session.deploymentRecovery = newDirectCodingDeploymentRecovery(session)
-	if indexed != nil {
-		paths := make([]string, len(indexed.Snapshot.Files))
-		for index, file := range indexed.Snapshot.Files {
-			paths[index] = file.Path
-		}
-		provenance, provenanceErr := modelcontext.NewArtifactIdentityProvenance(paths)
-		if provenanceErr != nil {
-			return "", fmt.Errorf("derive indexed artifact provenance: %w", provenanceErr)
-		}
-		session.pathProvenance = provenance
-	}
-	if indexed != nil {
-		return session.runExistingRepositoryChangeWorkflow()
-	}
-	summary, err := runDirectCodingWorkflow(session, session.completion.AllowExistingWorkspace)
+	summary, err := runDirectCodingWorkflow(session)
 	return summary, err
 }
 

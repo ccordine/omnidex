@@ -14,7 +14,6 @@ import (
 // raw /api/generate response. The original bytes remain separate evidence.
 type ExactPreparedResponse struct {
 	Disposition  ProviderResponseDisposition
-	Model        string
 	Content      string
 	DonePresent  bool
 	Done         bool
@@ -24,7 +23,6 @@ type ExactPreparedResponse struct {
 }
 
 type exactPreparedResponseWire struct {
-	Model              string  `json:"model"`
 	CreatedAt          string  `json:"created_at"`
 	Response           string  `json:"response"`
 	Thinking           *string `json:"thinking,omitempty"`
@@ -109,7 +107,7 @@ func decodeExactPreparedResponse(status int, body []byte) (ExactPreparedResponse
 	}
 	response := ExactPreparedResponse{
 		Disposition: ProviderResponseSucceeded,
-		Model:       wire.Model, Content: content, DonePresent: wire.Done != nil,
+		Content: content, DonePresent: wire.Done != nil,
 		DoneReason: wire.DoneReason, Usage: exactPreparedResponseUsage(wire),
 	}
 	if wire.Done != nil {
@@ -145,7 +143,7 @@ func ValidateExactPreparedResponseProjection(generation PreparedGeneration) erro
 		generation.ProviderHTTPStatus, generation.ProviderResponseCapture,
 	)
 	if derived.Disposition != generation.ProviderResponseDisposition ||
-		derived.Model != generation.ProviderResponseModel || derived.Content != generation.Content ||
+		derived.Content != generation.Content ||
 		derived.DonePresent != generation.ProviderDonePresent || derived.Done != generation.ProviderDone ||
 		derived.DoneReason != generation.ProviderDoneReason ||
 		derived.UsagePresent != generation.UsagePresent || derived.Usage != generation.Usage {

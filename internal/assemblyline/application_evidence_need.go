@@ -14,7 +14,6 @@ type ApplicationEvidenceNeedKind string
 
 const (
 	ApplicationEvidenceContextFact ApplicationEvidenceNeedKind = "context_fact"
-	ApplicationEvidenceChangeOwner ApplicationEvidenceNeedKind = "change_owner"
 )
 
 type ApplicationEvidenceSourceClass string
@@ -25,14 +24,12 @@ type ApplicationEvidenceCriterion string
 
 const (
 	ApplicationEvidenceDirectlyRelevant ApplicationEvidenceCriterion = "directly_relevant_current_evidence"
-	ApplicationEvidenceOwningSymbol     ApplicationEvidenceCriterion = "existing_owning_symbol"
 )
 
 type ApplicationEvidenceStopCondition string
 
 const (
 	ApplicationEvidenceRelevantSelection ApplicationEvidenceStopCondition = "relevant_current_evidence_selected"
-	ApplicationEvidenceOwnerResolved     ApplicationEvidenceStopCondition = "existing_owner_resolved"
 )
 
 // ApplicationEvidenceNeed is code-owned investigation state. A semantic station
@@ -69,20 +66,6 @@ func NewApplicationRepositoryContextNeed(index int, question string) (Applicatio
 	return need, need.Validate()
 }
 
-func NewApplicationRepositoryChangeOwnerNeed(index int, requirement string) (ApplicationEvidenceNeed, error) {
-	need := ApplicationEvidenceNeed{
-		Schema:           ApplicationEvidenceNeedSchemaV2,
-		ID:               fmt.Sprintf("change_owner_need_%03d", index),
-		Kind:             ApplicationEvidenceChangeOwner,
-		Question:         requirement,
-		WhyItMatters:     "Repository mutation cannot be scoped until the current owning symbol is established.",
-		SourceClasses:    []ApplicationEvidenceSourceClass{ApplicationEvidenceRepository},
-		RequiredEvidence: []ApplicationEvidenceCriterion{ApplicationEvidenceOwningSymbol},
-		StopCondition:    ApplicationEvidenceOwnerResolved,
-	}
-	return need, need.Validate()
-}
-
 func (need ApplicationEvidenceNeed) Validate() error {
 	if need.Schema != ApplicationEvidenceNeedSchemaV2 {
 		return fmt.Errorf("application evidence need schema must be %q", ApplicationEvidenceNeedSchemaV2)
@@ -110,11 +93,6 @@ func (need ApplicationEvidenceNeed) Validate() error {
 		if need.RequiredEvidence[0] != ApplicationEvidenceDirectlyRelevant ||
 			need.StopCondition != ApplicationEvidenceRelevantSelection {
 			return fmt.Errorf("application context evidence need %q has an invalid resolver contract", need.ID)
-		}
-	case ApplicationEvidenceChangeOwner:
-		if need.RequiredEvidence[0] != ApplicationEvidenceOwningSymbol ||
-			need.StopCondition != ApplicationEvidenceOwnerResolved {
-			return fmt.Errorf("application change-owner evidence need %q has an invalid resolver contract", need.ID)
 		}
 	default:
 		return fmt.Errorf("application evidence need %q has unsupported kind %q", need.ID, need.Kind)

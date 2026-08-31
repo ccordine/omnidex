@@ -42,7 +42,7 @@ func (c *Client) EnqueueCoding(ctx context.Context, instruction, workspace, sess
 		"instruction": instruction,
 		"pipeline":    model.PipelineCoding,
 		"metadata": map[string]string{
-			"client_cwd": workspace, "host_env_cwd": workspace, "session_id": sessionID,
+			"client_cwd": workspace, "session_id": sessionID,
 		},
 	}
 

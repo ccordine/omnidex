@@ -94,13 +94,13 @@ func (r *Repository) ListContextProjectionSummaries(
 func validateContextProjectionSummary(item ContextProjectionSummary, afterRecordID int64) error {
 	if item.RecordID <= afterRecordID || !validContextProjectionID(item.ProjectionID) ||
 		validateStepAttemptAuthority(item.Authority.StepAttemptAuthority) != nil ||
-		len(item.WorkID) != 64 || !llmEvidenceLowerHex(item.WorkID) ||
+		!validSHA256Digest(item.WorkID) ||
 		item.SelectedCount < 1 || item.SelectedCount > maxContextProjectionSelected ||
 		item.OmittedCount < 0 || item.SelectedCount+item.OmittedCount > maxContextProjectionRecords ||
 		item.RenderedBytes < 1 || item.RenderedBytes > 1024*1024 ||
 		item.EstimatedTokens != (item.RenderedBytes+3)/4 ||
-		len(item.SpecSHA256) != 64 || !llmEvidenceLowerHex(item.SpecSHA256) ||
-		len(item.RenderedSHA256) != 64 || !llmEvidenceLowerHex(item.RenderedSHA256) ||
+		!validSHA256Digest(item.SpecSHA256) ||
+		!validSHA256Digest(item.RenderedSHA256) ||
 		item.CreatedAt.IsZero() {
 		return fmt.Errorf("%w: projection summary contains invalid durable evidence", ErrInvalidContextProjection)
 	}

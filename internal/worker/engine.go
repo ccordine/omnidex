@@ -25,11 +25,6 @@ type ModelRouting struct {
 
 type stepCompleteFunc func(context.Context, queue.CompleteStepCommand) error
 
-type objectivePortableResultReuseFunc func(
-	context.Context,
-	queue.ObjectivePortableResultReuseRequest,
-) (queue.ObjectivePortableResultReuse, bool, error)
-
 type nativeV3StepRunner func(context.Context, *model.ClaimedStep, map[string]string, string) error
 
 type WorkspaceSettings struct {
@@ -37,27 +32,13 @@ type WorkspaceSettings struct {
 	HostRoot string
 }
 
-// DeploymentSettings are server authority for a generated service that the
-// accepted objective requires Omnidex to leave running. They are never model
-// context and are validated only when that typed disposition is selected.
-type DeploymentSettings struct {
-	KeyFile        string
-	BindAddress    string
-	AdvertisedHost string
-	ProbeHost      string
-}
-
 type Options struct {
 	WorkerCount            int
 	FragmentConcurrency    int
 	PollInterval           time.Duration
 	InferenceContextTokens int
-	InferenceProvider      string
-	EmbeddingProvider      string
-	EmbeddingModel         string
 	Models                 ModelRouting
 	Workspace              WorkspaceSettings
-	Deployment             DeploymentSettings
 	Logger                 *log.Logger
 	OnJobFinished          func(jobID int64)
 	OnJobOutput            func(jobID int64, delta string)
@@ -72,17 +53,12 @@ type Service struct {
 	fragmentConcurrency    int
 	pollInterval           time.Duration
 	inferenceContextTokens int
-	inferenceProvider      string
-	embeddingProvider      string
-	embeddingModel         string
 	models                 ModelRouting
 	workspaceRoot          string
 	repositoryIndex        repositoryIndexService
 	repositoryRetrieval    repositoryEvidenceBuilder
 	workspaceHostRoot      string
-	deployment             DeploymentSettings
 	completeStep           stepCompleteFunc
-	reuseObjectiveResult   objectivePortableResultReuseFunc
 	nativeV3Runner         nativeV3StepRunner
 	logger                 *log.Logger
 	onJobFinished          func(jobID int64)
@@ -99,16 +75,6 @@ func New(
 	if repo == nil {
 		return nil, fmt.Errorf("worker repository is required")
 	}
-	if nilWorkerTransport(stationClient) {
-		return nil, fmt.Errorf("exact station client is required")
-	}
-	if nilWorkerTransport(embeddings) {
-		return nil, fmt.Errorf("embedding client is required")
-	}
-	if err := validateWorkerOptions(opts); err != nil {
-		return nil, fmt.Errorf("invalid worker options: %w", err)
-	}
-	opts = normalizeWorkerOptions(opts)
 
 	repositoryIndex, err := repositoryindex.New(repo)
 	if err != nil {
@@ -132,17 +98,12 @@ func New(
 		fragmentConcurrency:    opts.FragmentConcurrency,
 		pollInterval:           opts.PollInterval,
 		inferenceContextTokens: opts.InferenceContextTokens,
-		inferenceProvider:      opts.InferenceProvider,
-		embeddingProvider:      opts.EmbeddingProvider,
-		embeddingModel:         opts.EmbeddingModel,
 		models:                 opts.Models,
 		workspaceRoot:          opts.Workspace.Root,
 		repositoryIndex:        repositoryIndex,
 		repositoryRetrieval:    repositoryRetrieval,
 		workspaceHostRoot:      opts.Workspace.HostRoot,
-		deployment:             opts.Deployment,
 		completeStep:           completeStep,
-		reuseObjectiveResult:   repo.ReuseObjectivePortableResult,
 		logger:                 opts.Logger,
 		onJobFinished:          opts.OnJobFinished,
 		onJobOutput:            opts.OnJobOutput,

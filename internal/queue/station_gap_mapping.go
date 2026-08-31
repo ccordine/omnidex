@@ -42,44 +42,10 @@ func stationForPortableWorkKind(kind assemblyline.WorkKind) (station.ID, error) 
 		return station.CodingRequirements, nil
 	case assemblyline.WorkApplicationProjectStackConstraint:
 		return station.CodingProjectStackConstraint, nil
-	case assemblyline.WorkApplicationServiceContinuedAvailability:
-		return station.CodingServiceContinuedAvailability, nil
-	case assemblyline.WorkApplicationServicePersistenceDestination:
-		return station.CodingServicePersistenceDestination, nil
-	case assemblyline.WorkApplicationServiceStateLifetime:
-		return station.CodingServiceStateLifetime, nil
-	case assemblyline.WorkApplicationStateFieldPurposeInventory:
-		return station.CodingApplicationStateFieldPurposeInventory, nil
-	case assemblyline.WorkApplicationStateFieldKind:
-		return station.CodingApplicationStateFieldKind, nil
-	case assemblyline.WorkApplicationRecordFieldPurposeInventory:
-		return station.CodingApplicationRecordFieldPurposeInventory, nil
-	case assemblyline.WorkApplicationRecordFieldKind:
-		return station.CodingApplicationRecordFieldKind, nil
-	case assemblyline.WorkApplicationServiceStatePurposeNecessity:
-		return station.CodingApplicationServiceStatePurposeNecessity, nil
-	case assemblyline.WorkApplicationServiceStatePurposeRelation:
-		return station.CodingApplicationServiceStatePurposeRelation, nil
-	case assemblyline.WorkApplicationServiceEndpointRequirement:
-		return station.CodingServiceEndpointRequirement, nil
-	case assemblyline.WorkApplicationServiceEndpointExposure:
-		return station.CodingServiceEndpointExposure, nil
-	case assemblyline.WorkApplicationServiceEndpointMethod:
-		return station.CodingServiceEndpointMethod, nil
-	case assemblyline.WorkApplicationServiceEndpointRouteTemplate:
-		return station.CodingServiceEndpointRouteTemplate, nil
-	case assemblyline.WorkApplicationServiceEndpointRequestMedia:
-		return station.CodingServiceEndpointRequestMedia, nil
-	case assemblyline.WorkApplicationServiceEndpointResponseMedia:
-		return station.CodingServiceEndpointResponseMedia, nil
-	case assemblyline.WorkApplicationServiceEndpointSuccessStatus:
-		return station.CodingServiceEndpointSuccessStatus, nil
 	case assemblyline.WorkApplicationClassify:
 		return station.CodingSurface, nil
 	case assemblyline.WorkApplicationTargetTree:
 		return station.CodingTargetTree, nil
-	case assemblyline.WorkRepositoryChangeOwner:
-		return station.CodingRepositoryChange, nil
 	case assemblyline.WorkContextRelevanceRelation:
 		return station.ContextRelevance, nil
 	case assemblyline.WorkContextMinification:
@@ -140,18 +106,8 @@ func stationForPortableWorkKind(kind assemblyline.WorkKind) (station.ID, error) 
 		return station.WebGroundedSynthesis, nil
 	case assemblyline.WorkArtifactHandling:
 		return station.CodingArtifactHandling, nil
-	case assemblyline.WorkRepositoryArtifactAbsence:
-		return station.CodingRepositoryArtifactAbsence, nil
-	case assemblyline.WorkPlainTextArtifactCreation:
-		return station.CodingPlainTextArtifactCreation, nil
-	case assemblyline.WorkDeclarationArtifactBoundary:
-		return station.CodingDeclarationArtifactBoundary, nil
-	case assemblyline.WorkArtifactCandidateSelection:
-		return station.CodingArtifactCandidateSelection, nil
 	case assemblyline.WorkCapabilityRelation:
 		return station.CodingCapabilityRelation, nil
-	case assemblyline.WorkSkillSelection:
-		return station.CodingSkillSelection, nil
 	case assemblyline.WorkRuntimeCapabilityNecessity:
 		return station.CodingRuntimeCapabilityNecessity, nil
 	case assemblyline.WorkTypeScriptRepairGuidance:

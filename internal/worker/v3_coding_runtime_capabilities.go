@@ -109,6 +109,9 @@ func selectDirectCodingRuntimeCapabilities(
 				},
 			)
 			if err != nil {
+				if isDirectCodingSemanticLeafRejection(err) {
+					continue
+				}
 				return nil, err
 			}
 			if decision.Relation == assemblyline.RuntimeCapabilityNecessary {

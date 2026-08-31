@@ -56,22 +56,3 @@ func ValidateRustFragment(signature, candidate string) (string, error) {
 func ProjectRustFragment(candidate string) (PortableResultProjection, error) {
 	return projectBoundedSourceFragment(rustSourceLanguage(), candidate)
 }
-
-func ValidatePHPSourceBlueprint(blueprint SourceBlueprint) error {
-	return validateBoundedSourceBlueprint(phpSourceLanguage(), blueprint)
-}
-
-func ComposePHPDocument(
-	document SourceDocument,
-	composition SourceComposition,
-) (ComposedSourceDocument, error) {
-	return composeBoundedSourceDocument(phpSourceLanguage(), document, composition)
-}
-
-func ValidatePHPFragment(signature, candidate string) (string, error) {
-	return validateBoundedSourceFragment(phpSourceLanguage(), signature, candidate)
-}
-
-func ProjectPHPFragment(candidate string) (PortableResultProjection, error) {
-	return projectBoundedSourceFragment(phpSourceLanguage(), candidate)
-}

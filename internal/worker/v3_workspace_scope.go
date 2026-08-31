@@ -2,6 +2,7 @@ package worker
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"github.com/gryph/omnidex/internal/model"
@@ -12,11 +13,22 @@ type v3WorkspaceScope struct {
 	Source string
 }
 
-func codingWorkspaceForJob(job model.Job) string {
-	if cwd := clientCWDForJob(job); strings.TrimSpace(cwd) != "" {
-		return cwd
+func resolveV3WorkspaceFile(root, relative string) (string, error) {
+	normalized, err := normalizeDirectCodingPath(relative)
+	if err != nil {
+		return "", err
 	}
-	return metadataString(job.Metadata, "workspace")
+	if normalized != relative {
+		return "", fmt.Errorf("workspace path %q must be exactly normalized as %q", relative, normalized)
+	}
+	if !filepath.IsAbs(root) || filepath.Clean(root) != root {
+		return "", fmt.Errorf("workspace file requires one canonical absolute root")
+	}
+	return filepath.Join(root, filepath.FromSlash(normalized)), nil
+}
+
+func codingWorkspaceForJob(job model.Job) string {
+	return clientCWDForJob(job)
 }
 
 func (s *Service) workspaceScopeForV3Job(job model.Job) (v3WorkspaceScope, error) {

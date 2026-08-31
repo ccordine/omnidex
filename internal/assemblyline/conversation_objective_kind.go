@@ -7,7 +7,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/gryph/omnidex/internal/model"
-	"github.com/gryph/omnidex/internal/modelcontext"
 )
 
 const (
@@ -57,14 +56,8 @@ func (input ConversationObjectiveKindInput) validate() error {
 	if strings.ContainsRune(input.ExactInstruction, '\x00') {
 		return fmt.Errorf("conversation exact instruction contains NUL")
 	}
-	provenance, err := modelcontext.NewArtifactIdentityProvenance(input.KnownArtifactPaths)
-	if err != nil {
-		return fmt.Errorf("conversation objective kind artifact provenance: %w", err)
-	}
-	if err := ValidatePathFreeModelContextWithProvenance(
-		"conversation objective kind instruction", provenance, input.ExactInstruction,
-	); err != nil {
-		return err
+	if input.KnownArtifactPaths == nil {
+		return fmt.Errorf("conversation objective kind requires explicit artifact provenance, including an empty set")
 	}
 	return input.Context.Validate()
 }

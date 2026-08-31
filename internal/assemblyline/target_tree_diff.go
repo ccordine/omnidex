@@ -31,7 +31,16 @@ func DiffTargetTree(
 	target TargetTree,
 	deletionEligible []string,
 ) ([]TargetTreeTransition, error) {
-	if err := input.Validate(); err != nil {
+	if err := input.Constraints.Validate(); err != nil {
+		return nil, err
+	}
+	if err := validateTargetTreePaths("existing workspace path", input.ExistingPaths); err != nil {
+		return nil, err
+	}
+	if err := validateTargetTreePaths("reserved path", input.ReservedPaths); err != nil {
+		return nil, err
+	}
+	if err := validateTargetTreePaths("existing workspace directory", input.ExistingDirs); err != nil {
 		return nil, err
 	}
 	if len(target.Paths) == 0 {

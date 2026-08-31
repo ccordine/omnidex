@@ -26,17 +26,6 @@ func (extractor *directCodingBrowserPublicSurfaceExtractor) elementVisibility(
 			return true, nil
 		}
 	}
-	if className := attributes["className"]; className.present {
-		classes := strings.Fields(className.literal)
-		if len(classes) == 0 {
-			return false, fmt.Errorf("browser public surface rejects empty Tailwind class list")
-		}
-		for _, class := range classes {
-			if err := validateDirectCodingBrowserSafeTailwindClass(class); err != nil {
-				return false, err
-			}
-		}
-	}
 	return false, nil
 }
 

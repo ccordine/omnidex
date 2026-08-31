@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"strings"
 	"sync"
@@ -12,7 +13,6 @@ import (
 	"github.com/gryph/omnidex/internal/llmprovider/catalog"
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/queue"
-	"github.com/gryph/omnidex/internal/secrets"
 )
 
 type Server struct {
@@ -37,7 +37,6 @@ type Server struct {
 	ollamaDownloadRunning      map[string]struct{}
 	ollamaDownloadSlots        chan struct{}
 	webSearchProviders         []string
-	secretsResolver            *secrets.Resolver
 	coreURLDefault             string
 	listenAddr                 string
 	realtimeMaxClients         int
@@ -45,12 +44,9 @@ type Server struct {
 	realtimeHeartbeat          time.Duration
 	realtimeWriteTimeout       time.Duration
 	redisURL                   string
-	uiRedisRequired            bool
 	uiSessionTTL               time.Duration
 	uiRedis                    *uiRedisClient
 	uiRedisInitError           string
-	uiMemoryMu                 sync.RWMutex
-	uiMemorySessions           map[string]uiMemorySessionRecord
 	roleplaySceneDraftMu       sync.Mutex
 	ollamaURLMu                sync.RWMutex
 	hostAgentURL               string
@@ -82,7 +78,6 @@ type ServerOptions struct {
 	RealtimeHeartbeat    time.Duration
 	RealtimeWriteTimeout time.Duration
 	RedisURL             string
-	UIRedisRequired      bool
 	UISessionTTL         time.Duration
 	RoleplaySimulation   RoleplaySimulationStore
 	OllamaModelAuthority OllamaModelAuthority
@@ -106,14 +101,16 @@ type cancelRequest struct {
 	Reason      string                     `json:"reason"`
 }
 
-func NewServer(repo *queue.Repository, embeddingClient llm.EmbeddingClient) *Server {
-	return NewServerWithOptions(repo, embeddingClient, ServerOptions{})
-}
-
-func NewServerWithOptions(repo *queue.Repository, embeddingClient llm.EmbeddingClient, options ServerOptions) *Server {
-	lifecycleContext := options.LifecycleContext
-	if lifecycleContext == nil {
-		lifecycleContext = context.Background()
+func NewServer(
+	repo *queue.Repository,
+	embeddingClient llm.EmbeddingClient,
+	options ServerOptions,
+) (*Server, error) {
+	if repo == nil {
+		return nil, fmt.Errorf("server requires PostgreSQL repository authority")
+	}
+	if options.LifecycleContext == nil {
+		return nil, fmt.Errorf("server requires lifecycle context")
 	}
 	providerConfig := options.ProviderConfig
 	providerConfig.CompatibleProviders = config.CloneCompatibleProviders(providerConfig.CompatibleProviders)
@@ -123,41 +120,7 @@ func NewServerWithOptions(repo *queue.Repository, embeddingClient llm.EmbeddingC
 		defaultProvider = definition.ID
 	}
 	providerConfig.LLMProvider = defaultProvider
-	if options.RequestTimeout <= 0 {
-		options.RequestTimeout = providerConfig.RequestTimeout
-	}
-	if options.RequestTimeout <= 0 {
-		options.RequestTimeout = 90 * time.Second
-	}
 	providerConfig.RequestTimeout = options.RequestTimeout
-	if options.RealtimeMaxClients < 1 {
-		options.RealtimeMaxClients = 512
-	}
-	if options.RealtimeStreamMaxAge < time.Minute {
-		options.RealtimeStreamMaxAge = 10 * time.Minute
-	}
-	if options.RealtimeHeartbeat < 5*time.Second {
-		options.RealtimeHeartbeat = 25 * time.Second
-	}
-	if options.RealtimeWriteTimeout < time.Second {
-		options.RealtimeWriteTimeout = 10 * time.Second
-	}
-	if options.UISessionTTL < time.Minute {
-		options.UISessionTTL = 30 * time.Minute
-	}
-
-	var channels channelStore
-	var enqueueChannelTurn enqueueChannelTurnFunc
-	var enqueueRoleplayChannelTurn enqueueRoleplayChannelTurnFunc
-	var ollamaDownloads OllamaDownloadStore = options.OllamaDownloads
-	if repo != nil {
-		channels = repo
-		enqueueChannelTurn = repo.EnqueueChannelTurnWithDataAuthority
-		enqueueRoleplayChannelTurn = repo.EnqueueRoleplayChannelTurn
-		if ollamaDownloads == nil {
-			ollamaDownloads = repo
-		}
-	}
 	ollamaModels := providerConfig.ProviderModels["ollama"]
 	ollamaEmbeddingModel := strings.TrimSpace(ollamaModels.Embedding)
 	if strings.EqualFold(strings.TrimSpace(providerConfig.EmbeddingProvider), "ollama") && strings.TrimSpace(providerConfig.EmbeddingModel) != "" {
@@ -165,12 +128,12 @@ func NewServerWithOptions(repo *queue.Repository, embeddingClient llm.EmbeddingC
 	}
 
 	s := &Server{
-		lifecycleContext:           lifecycleContext,
+		lifecycleContext:           options.LifecycleContext,
 		repo:                       repo,
-		channelStore:               channels,
+		channelStore:               repo,
 		roleplaySimulation:         options.RoleplaySimulation,
-		enqueueChannelTurn:         enqueueChannelTurn,
-		enqueueRoleplayChannelTurn: enqueueRoleplayChannelTurn,
+		enqueueChannelTurn:         repo.EnqueueChannelTurnWithDataAuthority,
+		enqueueRoleplayChannelTurn: repo.EnqueueRoleplayChannelTurn,
 		embeddingClient:            embeddingClient,
 		mux:                        http.NewServeMux(),
 		providerConfig:             providerConfig,
@@ -180,7 +143,7 @@ func NewServerWithOptions(repo *queue.Repository, embeddingClient llm.EmbeddingC
 		ollamaEmbeddingModel:       ollamaEmbeddingModel,
 		ollamaModelAuthority:       options.OllamaModelAuthority,
 		ollamaModelLifecycle:       options.OllamaModelLifecycle,
-		ollamaDownloads:            ollamaDownloads,
+		ollamaDownloads:            options.OllamaDownloads,
 		ollamaCatalog:              options.OllamaCatalog,
 		ollamaDownloadRunning:      make(map[string]struct{}),
 		ollamaDownloadSlots:        make(chan struct{}, 1),
@@ -192,31 +155,23 @@ func NewServerWithOptions(repo *queue.Repository, embeddingClient llm.EmbeddingC
 		realtimeHeartbeat:          options.RealtimeHeartbeat,
 		realtimeWriteTimeout:       options.RealtimeWriteTimeout,
 		redisURL:                   strings.TrimSpace(options.RedisURL),
-		uiRedisRequired:            options.UIRedisRequired,
 		uiSessionTTL:               options.UISessionTTL,
-		uiMemorySessions:           make(map[string]uiMemorySessionRecord),
 		hostAgentURL:               strings.TrimSpace(options.HostAgentURL),
 		hostAgentToken:             strings.TrimSpace(options.HostAgentToken),
 		integrationAPIToken:        options.IntegrationAPIToken,
 	}
 	if redis, err := newUIRedisClient(s.redisURL); err == nil {
 		s.uiRedis = redis
-	} else if strings.TrimSpace(s.redisURL) != "" {
+	} else {
 		s.uiRedisInitError = err.Error()
-	}
-	if repo != nil {
-		s.secretsResolver = secrets.NewResolver(repo)
-		secrets.SetGlobal(s.secretsResolver)
 	}
 	s.realtimeHub = NewRealtimeHub(RealtimeHubOptions{MaxClients: s.realtimeMaxClients})
 	s.routes()
-	if repo != nil {
-		s.startRealtimeTelemetryListener(lifecycleContext)
-	}
+	s.startRealtimeTelemetryListener(options.LifecycleContext)
 	if s.ollamaDownloads != nil {
 		s.resumeOllamaModelDownloads()
 	}
-	return s
+	return s, nil
 }
 
 func (s *Server) Handler() http.Handler {

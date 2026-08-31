@@ -44,16 +44,6 @@ func (resolver *lazyExactStationResolver) RequireExactPreparedContract() error {
 	return nil
 }
 
-func (resolver *lazyExactStationResolver) ValidateExactPreparedProvider(
-	expected llm.ProviderIdentityExpectation,
-) error {
-	client, err := resolver.resolve()
-	if err != nil {
-		return err
-	}
-	return client.ValidateExactPreparedProvider(expected)
-}
-
 func (resolver *lazyExactStationResolver) ValidateExactPreparedContract(
 	prepared llm.PreparedModel,
 ) error {
@@ -73,43 +63,6 @@ func (resolver *lazyExactStationResolver) GeneratePreparedExact(
 		return llm.PreparedGeneration{}, err
 	}
 	return client.GeneratePreparedExact(ctx, prepared)
-}
-
-func (resolver *lazyExactStationResolver) DiscoverProviderIdentityEvidence(
-	ctx context.Context,
-	selection llm.ProviderIdentitySelection,
-	challenge string,
-) (llm.ObservedProviderIdentity, error) {
-	client, err := resolver.resolve()
-	if err == nil {
-		return client.DiscoverProviderIdentityEvidence(ctx, selection, challenge)
-	}
-	evidence, evidenceErr := llm.NewUndispatchedProviderIdentityEvidence(selection)
-	if evidenceErr != nil {
-		return llm.ObservedProviderIdentity{}, fmt.Errorf(
-			"resolve exact station provider authority: %v; construct undispatched evidence: %w",
-			err, evidenceErr,
-		)
-	}
-	return llm.ObservedProviderIdentity{Evidence: evidence}, fmt.Errorf(
-		"resolve exact station provider authority: %w", err,
-	)
-}
-
-func (resolver *lazyExactStationResolver) ResolveRoleplayCompletionContext(
-	ctx context.Context,
-	model string,
-	requested int,
-) (int, error) {
-	client, err := resolver.resolve()
-	if err != nil {
-		return 0, fmt.Errorf("resolve roleplay completion context provider authority: %w", err)
-	}
-	contextResolver, ok := client.(llm.RoleplayCompletionContextResolver)
-	if !ok {
-		return 0, fmt.Errorf("exact station provider does not implement roleplay completion context resolution")
-	}
-	return contextResolver.ResolveRoleplayCompletionContext(ctx, model, requested)
 }
 
 func (resolver *lazyExactStationResolver) resolve() (llm.ExactStationClient, error) {

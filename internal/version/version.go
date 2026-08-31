@@ -8,7 +8,6 @@ import (
 var (
 	Version      = "v0.5.0"
 	Codename     = "Charmeleon"
-	Commit       = ""
 	SourceSHA256 = ""
 	Date         = ""
 )
@@ -39,27 +38,10 @@ func Label() string {
 
 func Full() string {
 	out := Label()
-	if commit := strings.TrimSpace(Commit); commit != "" {
-		out += " commit=" + commit
-	}
 	if date := strings.TrimSpace(Date); date != "" {
 		out += " date=" + date
 	}
 	return out
-}
-
-// BuildCommit returns the exact Git commit embedded by the authoritative build.
-// Git repositories may use either SHA-1 or SHA-256 object identities.
-func BuildCommit() (string, error) {
-	if len(Commit) != 40 && len(Commit) != 64 {
-		return "", fmt.Errorf("embedded build commit must be exactly 40 or 64 lowercase hexadecimal characters")
-	}
-	for _, character := range Commit {
-		if (character < '0' || character > '9') && (character < 'a' || character > 'f') {
-			return "", fmt.Errorf("embedded build commit must be exactly 40 or 64 lowercase hexadecimal characters")
-		}
-	}
-	return Commit, nil
 }
 
 func JSON() map[string]string {
@@ -69,7 +51,6 @@ func JSON() map[string]string {
 		"release_scheme":     "pride-national-dex",
 		"national_dex_id":    fmt.Sprintf("%d", NationalDexID(Codename)),
 		"next_maturity_name": "Charizard",
-		"commit":             Commit,
 		"source_sha256":      strings.TrimSpace(SourceSHA256),
 		"date":               strings.TrimSpace(Date),
 	}

@@ -12,12 +12,12 @@ import (
 
 func (r *Repository) ResetDatabase(
 	ctx context.Context,
-	setup DatabaseSetup,
+	setupSQL []byte,
 ) (resultErr error) {
 	if ctx == nil || r == nil || r.pool == nil {
 		return fmt.Errorf("reset database requires PostgreSQL and context")
 	}
-	if err := setup.validate(); err != nil {
+	if err := validateDatabaseSetup(setupSQL); err != nil {
 		return err
 	}
 	conn, err := r.pool.Acquire(ctx)
@@ -38,7 +38,7 @@ func (r *Repository) ResetDatabase(
 	if err != nil {
 		return err
 	}
-	body, err := setup.render(runtimeSchema)
+	body, err := renderDatabaseSetup(setupSQL, runtimeSchema)
 	if err != nil {
 		return err
 	}

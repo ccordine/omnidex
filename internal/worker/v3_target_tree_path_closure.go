@@ -3,6 +3,8 @@ package worker
 import (
 	"errors"
 	"fmt"
+	"os"
+	"path"
 	"sort"
 	"strings"
 
@@ -14,22 +16,21 @@ var errDirectCodingTargetTreeExistingFileConflict = errors.New(
 )
 
 type directCodingTargetTreeOccupation struct {
+	Root           string
 	FilePaths      []string
 	DirectoryPaths []string
 }
 
 func directCodingTargetTreeOccupationFor(
+	root string,
 	input assemblyline.TargetTreeInput,
-	existingPaths []string,
 	accepted map[string]struct{},
 ) directCodingTargetTreeOccupation {
 	files := make(
-		map[string]struct{}, len(existingPaths)+len(input.ReservedPaths)+len(accepted),
+		map[string]struct{}, len(input.ReservedPaths)+len(accepted),
 	)
-	for _, paths := range [][]string{existingPaths, input.ReservedPaths} {
-		for _, artifactPath := range paths {
-			files[artifactPath] = struct{}{}
-		}
+	for _, artifactPath := range input.ReservedPaths {
+		files[artifactPath] = struct{}{}
 	}
 	for artifactPath := range accepted {
 		files[artifactPath] = struct{}{}
@@ -42,7 +43,7 @@ func directCodingTargetTreeOccupationFor(
 	directories := append([]string(nil), input.ExistingDirs...)
 	sort.Strings(directories)
 	return directCodingTargetTreeOccupation{
-		FilePaths: filePaths, DirectoryPaths: directories,
+		Root: root, FilePaths: filePaths, DirectoryPaths: directories,
 	}
 }
 
@@ -51,28 +52,11 @@ func directCodingTargetTreeOccupationFor(
 // ancestor boundary. An exact current managed file is the sole allowed file
 // overlap because that leaf is reconciled in place.
 func validateDirectCodingTargetTreePathClosure(
+	root string,
 	input assemblyline.TargetTreeInput,
-	existingFiles []string,
 	target assemblyline.TargetTree,
 ) error {
-	managed := make(map[string]struct{}, len(input.ExistingPaths))
-	for _, artifactPath := range input.ExistingPaths {
-		managed[artifactPath] = struct{}{}
-	}
-	reserved := make(map[string]struct{}, len(input.ReservedPaths))
-	for _, artifactPath := range input.ReservedPaths {
-		reserved[artifactPath] = struct{}{}
-	}
-	directories := make(map[string]struct{}, len(input.ExistingDirs))
-	for _, directory := range input.ExistingDirs {
-		directories[directory] = struct{}{}
-	}
 	for _, candidate := range target.Paths {
-		if _, conflict := directories[candidate]; conflict {
-			return fmt.Errorf(
-				"target-tree file %q occupies existing directory %q", candidate, candidate,
-			)
-		}
 		for _, occupied := range input.ReservedPaths {
 			if directCodingTargetTreeFileHierarchyConflict(candidate, occupied) {
 				return fmt.Errorf(
@@ -80,20 +64,15 @@ func validateDirectCodingTargetTreePathClosure(
 				)
 			}
 		}
-		for _, occupied := range existingFiles {
-			if candidate == occupied {
-				_, managedLeaf := managed[candidate]
-				_, reservedLeaf := reserved[candidate]
-				if managedLeaf && !reservedLeaf {
-					continue
-				}
-			}
-			if directCodingTargetTreeFileHierarchyConflict(candidate, occupied) {
-				return fmt.Errorf(
-					"%w: target-tree file %q crosses existing file boundary %q",
-					errDirectCodingTargetTreeExistingFileConflict, candidate, occupied,
-				)
-			}
+		available, err := directCodingTargetTreeWorkspacePathAvailable(root, candidate)
+		if err != nil {
+			return fmt.Errorf("inspect target-tree file %q: %w", candidate, err)
+		}
+		if !available {
+			return fmt.Errorf(
+				"%w: target-tree file %q crosses an existing non-file boundary",
+				errDirectCodingTargetTreeExistingFileConflict, candidate,
+			)
 		}
 	}
 	return nil
@@ -111,6 +90,16 @@ func directCodingTargetTreePairAvailable(
 	if len(paths) != 2 || paths[0] == paths[1] {
 		return false, fmt.Errorf("mechanical target-tree grammar must return two distinct paths")
 	}
+	return directCodingTargetTreePathsAvailable(paths, occupation)
+}
+
+func directCodingTargetTreePathsAvailable(
+	paths []string,
+	occupation directCodingTargetTreeOccupation,
+) (bool, error) {
+	if len(paths) == 0 {
+		return false, fmt.Errorf("mechanical target-tree grammar returned no paths")
+	}
 	for index, candidate := range paths {
 		normalized, err := normalizeDirectCodingPath(candidate)
 		if err != nil {
@@ -123,8 +112,13 @@ func directCodingTargetTreePairAvailable(
 				"mechanical target-tree path %d changed during normalization", index,
 			)
 		}
-		if directCodingTargetTreeFileHierarchyConflict(candidate, paths[1-index]) {
-			return false, fmt.Errorf("mechanical target-tree paths cross a file hierarchy boundary")
+		for otherIndex, other := range paths {
+			if otherIndex == index {
+				continue
+			}
+			if directCodingTargetTreeFileHierarchyConflict(candidate, other) {
+				return false, fmt.Errorf("mechanical target-tree paths cross a file hierarchy boundary")
+			}
 		}
 		for _, directory := range occupation.DirectoryPaths {
 			if candidate == directory {
@@ -135,6 +129,50 @@ func directCodingTargetTreePairAvailable(
 			if directCodingTargetTreeFileHierarchyConflict(candidate, occupied) {
 				return false, nil
 			}
+		}
+		available, err := directCodingTargetTreeWorkspacePathAvailable(
+			occupation.Root, candidate,
+		)
+		if err != nil {
+			return false, err
+		}
+		if !available {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
+// directCodingTargetTreeWorkspacePathAvailable inspects only the exact leaf
+// being consumed by a code-owned projector. Existing regular files are valid
+// reconcile targets. Directories, symlinks, and non-directory ancestors are
+// left untouched, and an unrelated workspace node is never a prerequisite.
+func directCodingTargetTreeWorkspacePathAvailable(root, candidate string) (bool, error) {
+	resolved, err := resolveV3WorkspaceFile(root, candidate)
+	if err != nil {
+		return false, err
+	}
+	info, err := os.Lstat(resolved)
+	if err == nil {
+		return info.Mode().IsRegular(), nil
+	}
+	if !os.IsNotExist(err) {
+		return false, err
+	}
+	for parent := path.Dir(candidate); parent != "."; parent = path.Dir(parent) {
+		resolvedParent, err := resolveV3WorkspaceFile(root, parent)
+		if err != nil {
+			return false, err
+		}
+		info, err := os.Lstat(resolvedParent)
+		if os.IsNotExist(err) {
+			continue
+		}
+		if err != nil {
+			return false, err
+		}
+		if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+			return false, nil
 		}
 	}
 	return true, nil

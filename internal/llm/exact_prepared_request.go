@@ -10,23 +10,10 @@ import (
 )
 
 const (
-	// The protocol fixes the station result shape. The structurally attested
-	// provider profile separately owns raw/native template framing.
-	ExactPreparedProviderBackend            = "ollama"
-	ExactPreparedProviderVersion            = "0.24.0"
-	ExactPreparedTokenizerProfile           = "ollama-0.24.0-qwen35-gpt2-chatml-boundary-v2"
-	ExactPreparedTokenizerProfileQwen3Qwen2 = "ollama-0.24.0-qwen3-qwen2-boundary-v1"
-	ExactPreparedPromptJoiner               = "\n"
+	ExactPreparedPromptJoiner = "\n"
 	// ExactPreparedLineStopV1 terminates one-line semantic result grammars at
 	// the provider boundary. Decoders still receive and validate exact bytes.
 	ExactPreparedLineStopV1 = "\n"
-	// The sole raw provider profile is the exact Qwen 3.5 tokenizer profile.
-	// Its registered ChatML controls provide a model-native assistant boundary
-	// and end token without adding a semantic delimiter instruction.
-	ExactPreparedRawChatUserPrefixV1        = "<|im_start|>user\n"
-	ExactPreparedRawChatEndV1               = "<|im_end|>"
-	ExactPreparedRawChatAssistantBoundaryV1 = ExactPreparedRawChatEndV1 +
-		"\n<|im_start|>assistant\n<think>\n\n</think>\n\n"
 	// MaxExactPreparedModelInputBytes is a gross transport/resource ceiling.
 	// It is deliberately not a token estimate; the provider's tokenizer owns
 	// native context admission and reports the actual counts in its receipt.
@@ -48,21 +35,6 @@ func (protocol ExactPreparedProtocol) Validate() error {
 	}
 }
 
-func ValidateExactPreparedProviderExpectation(expected ProviderIdentityExpectation) error {
-	if err := expected.Validate(); err != nil {
-		return err
-	}
-	if expected.Backend != ExactPreparedProviderBackend ||
-		expected.BackendVersion != ExactPreparedProviderVersion {
-		return fmt.Errorf(
-			"exact prepared cognition supports only backend %s %s",
-			ExactPreparedProviderBackend, ExactPreparedProviderVersion,
-		)
-	}
-	_, err := exactProviderModelProfileByID(expected.TokenizerProfile)
-	return err
-}
-
 func ExactPreparedModelInput(systemEnvelope, promptHint string) (string, error) {
 	if strings.TrimSpace(systemEnvelope) == "" || promptHint != MinimalGeneratePrompt {
 		return "", fmt.Errorf("exact raw cognition input is incomplete")
@@ -70,52 +42,19 @@ func ExactPreparedModelInput(systemEnvelope, promptHint string) (string, error) 
 	return systemEnvelope + ExactPreparedPromptJoiner + promptHint, nil
 }
 
-// ExactPreparedRequestModelInput returns the exact joined model input bound to
-// one discovered provider profile. Every raw transport receives one code-owned
-// result boundary. Native-template transports retain the unmodified joined
-// input. Result-grammar stops remain separate provider options.
+// ExactPreparedRequestModelInput returns the code-owned joined model input.
+// Provider-specific metadata does not participate in runtime admission.
 func ExactPreparedRequestModelInput(prepared PreparedModel) (string, error) {
-	if prepared.ProviderIdentityExpectation == nil {
-		return "", fmt.Errorf("exact request model input requires one frozen provider identity")
-	}
-	expected := *prepared.ProviderIdentityExpectation
 	if strings.TrimSpace(prepared.BaseModel) == "" || prepared.ContextModel != prepared.BaseModel ||
-		expected.Model != prepared.BaseModel || prepared.ContextTokens != expected.NativeContextLimit {
-		return "", fmt.Errorf("exact request model input differs from its frozen provider identity")
-	}
-	if err := ValidateExactPreparedProviderExpectation(expected); err != nil {
-		return "", err
-	}
-	profile, err := exactProviderModelProfileByID(expected.TokenizerProfile)
-	if err != nil {
-		return "", err
+		prepared.ContextTokens <= 0 {
+		return "", fmt.Errorf("exact request model input is incomplete")
 	}
 	switch prepared.RawTextStopSequence {
-	case "", ExactPreparedLineStopV1, ExactPreparedRawChatEndV1:
+	case "", ExactPreparedLineStopV1:
 	default:
 		return "", fmt.Errorf("exact raw-text protocol stop sequence is not registered")
 	}
-	modelInput, err := ExactPreparedModelInput(prepared.Prompt, prepared.PromptHint)
-	if err != nil {
-		return "", err
-	}
-	if profile.transport != exactPreparedTransportRaw {
-		if prepared.RawTextStopSequence != "" &&
-			prepared.RawTextStopSequence != ExactPreparedLineStopV1 {
-			return "", fmt.Errorf("native provider received a raw-only response stop")
-		}
-		return modelInput, nil
-	}
-	if prepared.RawTextStopSequence != ExactPreparedLineStopV1 &&
-		prepared.RawTextStopSequence != ExactPreparedRawChatEndV1 {
-		return "", fmt.Errorf("exact raw provider requires one registered ChatML result stop")
-	}
-	if strings.Contains(modelInput, "<|im_start|>") ||
-		strings.Contains(modelInput, ExactPreparedRawChatEndV1) {
-		return "", fmt.Errorf("exact raw model input contains a reserved ChatML control token")
-	}
-	return ExactPreparedRawChatUserPrefixV1 + modelInput +
-		ExactPreparedRawChatAssistantBoundaryV1, nil
+	return ExactPreparedModelInput(prepared.Prompt, prepared.PromptHint)
 }
 
 func validateExactPreparedRequest(prepared PreparedModel) error {
@@ -131,35 +70,11 @@ func validateExactPreparedRequest(prepared PreparedModel) error {
 		prepared.ContextTokens <= 0 {
 		return fmt.Errorf("prepared request does not satisfy the exact Ollama generation contract")
 	}
-	if prepared.ProviderIdentityExpectation == nil ||
-		prepared.ProviderIdentityExpectation.Model != prepared.BaseModel ||
-		prepared.ProviderIdentityExpectation.NativeContextLimit != prepared.ContextTokens {
-		return fmt.Errorf("prepared request lacks its frozen provider identity")
-	}
-	if err := ValidateExactPreparedProviderExpectation(*prepared.ProviderIdentityExpectation); err != nil {
-		return err
-	}
-	profile, err := exactProviderModelProfileByID(
-		prepared.ProviderIdentityExpectation.TokenizerProfile,
-	)
-	if err != nil {
-		return err
-	}
-	if err := profile.validatePreparedTemperature(prepared.Temperature); err != nil {
-		return err
-	}
 	if prepared.Temperature != nil && math.Signbit(float64(*prepared.Temperature)) {
 		return fmt.Errorf("prepared request temperature cannot be negative zero")
 	}
-	if err := (ProviderIdentityObservationRequest{
-		Expectation:     *prepared.ProviderIdentityExpectation,
-		ChallengeSHA256: prepared.ProviderObservationChallenge,
-	}).Validate(); err != nil {
-		return fmt.Errorf("prepared request has an invalid provider observation authority: %w", err)
-	}
 	if prepared.RawTextStopSequence != "" &&
-		prepared.RawTextStopSequence != ExactPreparedLineStopV1 &&
-		prepared.RawTextStopSequence != ExactPreparedRawChatEndV1 {
+		prepared.RawTextStopSequence != ExactPreparedLineStopV1 {
 		return fmt.Errorf("exact raw-text protocol stop sequence is not registered")
 	}
 	if err := ValidateResponseContract(prepared); err != nil {

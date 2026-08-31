@@ -16,7 +16,6 @@ const genericGoCommandLineAdapter = "go_command_line_capabilities_v1"
 func compileGenericGoCommandLineBlueprint(
 	packageName string,
 	specification assemblyline.ApplicationSpecification,
-	skills map[string]directCodingSkillBinding,
 	workload assemblyline.FrozenApplicationWorkload,
 	capabilities directCodingCapabilityGraph,
 	target assemblyline.TargetTree,
@@ -34,9 +33,6 @@ func compileGenericGoCommandLineBlueprint(
 	if err != nil {
 		return assemblyline.SourceBlueprint{}, nil, err
 	}
-	if err := validateDirectCodingSkillBindings(specification.Requirements, skills); err != nil {
-		return assemblyline.SourceBlueprint{}, nil, err
-	}
 	if err := validateDirectCodingCapabilityGraph(specification.Requirements, capabilities); err != nil {
 		return assemblyline.SourceBlueprint{}, nil, err
 	}
@@ -45,7 +41,7 @@ func compileGenericGoCommandLineBlueprint(
 		return assemblyline.SourceBlueprint{}, nil, err
 	}
 	documents, err := genericGoCommandLineDocuments(
-		specification, skills, contexts, capabilities, coverage,
+		specification, contexts, capabilities, coverage,
 	)
 	if err != nil {
 		return assemblyline.SourceBlueprint{}, nil, err
@@ -66,7 +62,7 @@ func genericGoCommandLineStaticFiles(
 		return nil, err
 	}
 	return []directCodingFileTask{
-		{Path: ".gitignore", Content: packageName + "\n*.test\ncoverage.out\n"},
+		{Path: ".gitignore", Content: packageName + "\n"},
 		{Path: "go.mod", Content: "module example.invalid/" + packageName + "\n\ngo " + version + "\n"},
 	}, nil
 }
@@ -113,18 +109,4 @@ func validateGoCommandLineAssembly(assembly directCodingAssembly) error {
 		return fmt.Errorf("Go command-line assembly requires exactly one main function, found %d", mainFunctions)
 	}
 	return nil
-}
-
-func goCommandLineVerificationCommands(
-	_ directCodingProgram,
-) ([]testCommand, error) {
-	return goCommandLineVerificationCommandSet(), nil
-}
-
-func goCommandLineVerificationCommandSet() []testCommand {
-	return []testCommand{
-		{Family: "go", Name: "go", Args: []string{"test", "-count=1", "./..."}, Purpose: verificationTest},
-		{Family: "go", Name: "go", Args: []string{"vet", "./..."}, Purpose: verificationSyntax},
-		{Family: "go", Name: "go", Args: []string{"build", "./..."}, Purpose: verificationBuild},
-	}
 }

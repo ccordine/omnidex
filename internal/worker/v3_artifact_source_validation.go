@@ -6,10 +6,8 @@ import (
 	"fmt"
 	"go/parser"
 	"go/token"
-	"io"
 	"path"
 	"strings"
-	"unicode"
 	"unicode/utf8"
 	"unsafe"
 
@@ -19,10 +17,8 @@ import (
 	htmlgrammar "github.com/tree-sitter/tree-sitter-html/bindings/go"
 	javagrammar "github.com/tree-sitter/tree-sitter-java/bindings/go"
 	javascriptgrammar "github.com/tree-sitter/tree-sitter-javascript/bindings/go"
-	phpgrammar "github.com/tree-sitter/tree-sitter-php/bindings/go"
 	rustgrammar "github.com/tree-sitter/tree-sitter-rust/bindings/go"
 	"golang.org/x/mod/modfile"
-	"gopkg.in/yaml.v3"
 )
 
 func validateDirectCodingArtifactSource(
@@ -115,18 +111,6 @@ func validateCargoTOMLArtifactSource(artifactPath string, source []byte) error {
 	return nil
 }
 
-func validatePHPArtifactSource(_ string, source []byte) error {
-	return validateTreeSitterArtifact("PHP", phpgrammar.LanguagePHP(), source)
-}
-
-func validatePHPExecutableArtifactSource(artifactPath string, source []byte) error {
-	if path.Base(artifactPath) != "artisan" ||
-		!bytes.HasPrefix(source, []byte("#!/usr/bin/env php\n<?php\n")) {
-		return fmt.Errorf("PHP executable requires the exact artisan launcher path and shebang")
-	}
-	return validatePHPArtifactSource(artifactPath, source)
-}
-
 func validateJavaScriptArtifactSource(_ string, source []byte) error {
 	return validateTreeSitterArtifact("JavaScript", javascriptgrammar.Language(), source)
 }
@@ -194,70 +178,8 @@ func validateJSONArtifactSource(_ string, source []byte) error {
 	return nil
 }
 
-func validateYAMLArtifactSource(_ string, source []byte) error {
-	decoder := yaml.NewDecoder(bytes.NewReader(source))
-	documents := 0
-	for {
-		var document yaml.Node
-		err := decoder.Decode(&document)
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return fmt.Errorf("parse YAML document %d: %w", documents+1, err)
-		}
-		documents++
-	}
-	if documents == 0 {
-		return fmt.Errorf("YAML source contains no document")
-	}
-	return nil
-}
-
 func validateCSSArtifactSource(_ string, source []byte) error {
 	return validateBalancedArtifact("CSS", source, true, false)
-}
-
-func validateNginxArtifactSource(_ string, source []byte) error {
-	if err := validateBalancedArtifact("NGINX", source, false, true); err != nil {
-		return err
-	}
-	return validateNginxStatements(source)
-}
-
-func validateDockerArtifactSource(artifactPath string, source []byte) error {
-	base := strings.ToLower(path.Base(artifactPath))
-	if strings.HasPrefix(base, "docker-compose") {
-		return validateYAMLArtifactSource(artifactPath, source)
-	}
-	return validateDockerfileStatements(source)
-}
-
-func validateEnvironmentArtifactSource(_ string, source []byte) error {
-	for index, raw := range strings.Split(string(source), "\n") {
-		line := strings.TrimSpace(raw)
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		line = strings.TrimPrefix(line, "export ")
-		separator := strings.IndexByte(line, '=')
-		if separator <= 0 || !validEnvironmentKey(line[:separator]) {
-			return fmt.Errorf("invalid environment assignment at line %d", index+1)
-		}
-	}
-	return nil
-}
-
-func validEnvironmentKey(value string) bool {
-	for index, char := range value {
-		if index == 0 && char != '_' && !unicode.IsLetter(char) {
-			return false
-		}
-		if index > 0 && char != '_' && !unicode.IsLetter(char) && !unicode.IsDigit(char) {
-			return false
-		}
-	}
-	return value != ""
 }
 
 func validatePlainTextArtifactSource(_ string, source []byte) error {

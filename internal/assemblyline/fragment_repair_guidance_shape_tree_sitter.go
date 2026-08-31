@@ -155,13 +155,6 @@ func fragmentRepairGuidanceIsWholeBoundedSourceBody(
 			topKind: "function_item", ownerKind: "function_item",
 			ownerName: "omnidex_repair_instruction", bodyKind: "block",
 		}
-	case "php":
-		grammar = fragmentRepairGuidanceBodyGrammar{
-			label: language.display, pointer: language.fragmentLanguage,
-			prefix: "function omnidexRepairInstruction(){\n", suffix: "\n}",
-			topKind: "function_definition", ownerKind: "function_definition",
-			ownerName: "omnidexRepairInstruction", bodyKind: "compound_statement",
-		}
 	default:
 		return false, fmt.Errorf(
 			"%s has no repair-guidance body grammar", language.display,

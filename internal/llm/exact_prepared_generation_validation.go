@@ -2,7 +2,6 @@ package llm
 
 import (
 	"fmt"
-	"strings"
 )
 
 // ExactPreparedOutputLimitReachedError is a validated provider completion
@@ -58,32 +57,14 @@ func ValidateExactPreparedGenerationForRequest(
 	if err != nil {
 		return err
 	}
-	if generation.ProviderRequestSHA256 != requestSHA256 ||
-		generation.ProviderResponseModel != prepared.ContextModel {
+	if generation.ProviderRequestSHA256 != requestSHA256 {
 		return fmt.Errorf("exact prepared generation differs from its request authority")
 	}
-	profile, err := exactProviderModelProfileByID(
-		prepared.ProviderIdentityExpectation.TokenizerProfile,
-	)
-	if err != nil {
-		return err
-	}
-	if prepared.OutputLimitMode == ExactPreparedOutputLimitNatural &&
-		profile.naturalOutputCeiling {
+	if prepared.OutputLimitMode == ExactPreparedOutputLimitNatural {
 		if err := ValidateExactPreparedNaturalUsageWithOutputCeiling(
 			prepared.ContextTokens, prepared.MaxOutputTokens, generation.Usage,
 		); err != nil {
 			return err
-		}
-	}
-	if profile.transport == exactPreparedTransportRaw {
-		for _, control := range []string{
-			"<|im_start|>",
-			ExactPreparedRawChatEndV1,
-		} {
-			if strings.Contains(generation.Content, control) {
-				return fmt.Errorf("exact raw prepared generation leaked a reserved ChatML control")
-			}
 		}
 	}
 	if generation.ProviderDoneReason == "length" {

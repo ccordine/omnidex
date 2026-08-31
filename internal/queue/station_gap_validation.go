@@ -32,11 +32,6 @@ func validateStationGapOpening(record StationGapOpenRecord) (StationGapOpening, 
 	if record.Station != expectedStation {
 		return StationGapOpening{}, fmt.Errorf("station gap station %q does not own portable work kind %q", record.Station, record.Job.Kind)
 	}
-	if err := validateStationGapReplacementOrigin(
-		record.Job.Kind, record.ReplacementOrigin,
-	); err != nil {
-		return StationGapOpening{}, err
-	}
 	prompt, err := assemblyline.RenderPortableJob(record.Job)
 	if err != nil {
 		return StationGapOpening{}, fmt.Errorf("render exact station gap projection: %w", err)
@@ -44,12 +39,8 @@ func validateStationGapOpening(record StationGapOpenRecord) (StationGapOpening, 
 	if strings.TrimSpace(prompt) == "" {
 		return StationGapOpening{}, fmt.Errorf("station gap prompt must contain exact non-empty text")
 	}
-	profilePolicy, err := PortableJobProviderIdentityProfilePolicy(record.Job)
-	if err != nil {
-		return StationGapOpening{}, fmt.Errorf("classify station context policy: %w", err)
-	}
 	if err := validateStationOutputLimitAuthority(
-		record.OutputLimitMode, record.ContextTokens, record.MaxOutputTokens, profilePolicy,
+		record.OutputLimitMode, record.ContextTokens, record.MaxOutputTokens,
 	); err != nil {
 		return StationGapOpening{}, fmt.Errorf("station gap output authority: %w", err)
 	}
@@ -123,32 +114,7 @@ func validateStationGapOpening(record StationGapOpenRecord) (StationGapOpening, 
 		ContextTokens:                     record.ContextTokens,
 		MaxOutputTokens:                   record.MaxOutputTokens, OutputLimitMode: record.OutputLimitMode,
 	}
-	if record.ReplacementOrigin != nil {
-		opening.OriginGapOpeningID = record.ReplacementOrigin.GapOpeningID
-		opening.OriginCallReceiptID = record.ReplacementOrigin.CallReceiptID
-	}
 	return opening, nil
-}
-
-func validateStationGapReplacementOrigin(
-	kind assemblyline.WorkKind,
-	origin *StationGapReplacementOrigin,
-) error {
-	if kind == assemblyline.WorkFragmentGenerationReplacement {
-		if origin == nil || origin.GapOpeningID < 1 || origin.CallReceiptID < 1 {
-			return fmt.Errorf(
-				"fragment generation replacement requires exact persisted origin gap and call receipt identities",
-			)
-		}
-		return nil
-	}
-	if origin != nil {
-		return fmt.Errorf(
-			"portable work kind %q cannot claim fragment generation replacement origin authority",
-			kind,
-		)
-	}
-	return nil
 }
 
 func validateStationGapModelInputAuthority(record StationGapOpenRecord, modelInput string) error {
@@ -167,17 +133,9 @@ func validateStationOutputLimitAuthority(
 	mode llm.ExactPreparedOutputLimitMode,
 	contextTokens int,
 	maxOutputTokens int,
-	profilePolicy llm.ProviderIdentityProfilePolicy,
 ) error {
-	if err := profilePolicy.Validate(); err != nil {
+	if err := llm.ValidateInferenceContextTokens(contextTokens); err != nil {
 		return err
-	}
-	contextErr := llm.ValidateInferenceContextTokens(contextTokens)
-	if profilePolicy != "" {
-		contextErr = llm.ValidateRoleplayCompletionContextTokens(contextTokens)
-	}
-	if contextErr != nil {
-		return contextErr
 	}
 	if err := mode.Validate(); err != nil {
 		return err
@@ -203,7 +161,7 @@ func validateStationGapTerminal(record StationGapTerminalRecord) error {
 	if err := validateStepAttemptAuthority(record.Authority); err != nil {
 		return fmt.Errorf("station gap terminal authority: %w", err)
 	}
-	if record.OpeningID < 1 || len(record.GapID) != 64 || !llmEvidenceLowerHex(record.GapID) {
+	if record.OpeningID < 1 || !validSHA256Digest(record.GapID) {
 		return fmt.Errorf("station gap terminal requires exact opening and gap identities")
 	}
 	if len(record.Response) > maxStationGapResponseBytes || len(record.Error) > maxStationGapErrorBytes {
@@ -236,8 +194,8 @@ func validateStationGapSourceProjection(
 		projection.Kind != StationGapProjectionTypeScriptFunction {
 		return fmt.Errorf("kind %q is not registered", projection.Kind)
 	}
-	if !llmEvidenceLowerHex(projection.CallReceiptSHA256) || len(projection.CallReceiptSHA256) != 64 ||
-		!llmEvidenceLowerHex(projection.SourceResponseSHA256) || len(projection.SourceResponseSHA256) != 64 {
+	if !validSHA256Digest(projection.CallReceiptSHA256) ||
+		!validSHA256Digest(projection.SourceResponseSHA256) {
 		return fmt.Errorf("requires exact receipt and source response identities")
 	}
 	if projection.StartByte != 0 || projection.EndByte != len(response) {

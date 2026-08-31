@@ -89,11 +89,6 @@ func (r *Repository) completeStep(
 	if err := requireNoOpenStationGapsTx(ctx, tx, command.Authority); err != nil {
 		return err
 	}
-	if err := rejectUnresolvedGeneratedWorkloadDeploymentsTx(
-		ctx, tx, command.Authority.JobID,
-	); err != nil {
-		return err
-	}
 	if objectiveEvidencePayloads != nil {
 		if err := insertObjectiveCompletionEvidenceTx(ctx, tx, command, objectiveEvidencePayloads); err != nil {
 			return err
@@ -244,11 +239,6 @@ func (r *Repository) FailStep(ctx context.Context, command FailStepCommand) erro
 		), nil)
 	}
 	if err := requireNoOpenStationGapsTx(ctx, tx, command.Authority); err != nil {
-		return err
-	}
-	if err := rejectUnresolvedGeneratedWorkloadDeploymentsTx(
-		ctx, tx, command.Authority.JobID,
-	); err != nil {
 		return err
 	}
 	generation := command.Authority.Generation

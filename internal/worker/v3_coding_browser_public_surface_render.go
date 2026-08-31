@@ -63,6 +63,21 @@ type directCodingBrowserJSXAttribute struct {
 	literal string
 }
 
+func validateDirectCodingBrowserPublicInteractionCandidate(source string) error {
+	surface, err := extractDirectCodingBrowserPublicInteractionSurface(source)
+	if err != nil {
+		return err
+	}
+	portable, err := directCodingBrowserPortablePublicInteractionSurface(surface)
+	if err != nil {
+		return err
+	}
+	if _, err := portable.Render(); err != nil {
+		return fmt.Errorf("render browser public interaction candidate: %w", err)
+	}
+	return nil
+}
+
 func renderDirectCodingBrowserPublicInteractionSurface(
 	surface directCodingBrowserPublicInteractionSurface,
 ) (string, error) {

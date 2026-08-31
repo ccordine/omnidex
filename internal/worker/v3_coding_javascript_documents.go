@@ -11,15 +11,12 @@ import (
 func genericJavaScriptCommandLineDocuments(
 	profile directCodingProjectVersionProfile,
 	specification assemblyline.ApplicationSpecification,
-	skills map[string]directCodingSkillBinding,
 	contexts map[string]assemblyline.ApplicationTaskContext,
 	capabilities directCodingCapabilityGraph,
 	coverage assemblyline.ApplicationFileCoveragePlan,
 ) ([]assemblyline.SourceDocument, error) {
 	implementations := make([]assemblyline.SourceDocument, 0, len(specification.Requirements))
-	verifications := make([]assemblyline.SourceDocument, 0, len(specification.Requirements))
 	implementationByPath := make(map[string]int, len(specification.Requirements))
-	verificationByPath := make(map[string]int, len(specification.Requirements))
 	applicationDependencies := []string{"runtime.api"}
 	for index, requirement := range specification.Requirements {
 		sequence := index + 1
@@ -33,23 +30,16 @@ func genericJavaScriptCommandLineDocuments(
 		if err != nil {
 			return nil, err
 		}
-		implementationBehavior := requirementBehavior
-		if skill, exists := skills[requirement.ID]; exists {
-			implementationBehavior += "\nValidated procedure: " + skill.Procedure
-		}
-		pair, err := directCodingTaskSinglePair(coverage, context.Task.TaskID)
+		implementationPath, err := directCodingTaskSingleImplementationPath(
+			coverage, context.Task.TaskID,
+		)
 		if err != nil {
 			return nil, err
 		}
 		implementationIndex := sourceDocumentIndexForPath(
-			&implementations, implementationByPath, pair.ImplementationPath,
+			&implementations, implementationByPath, implementationPath,
 			fmt.Sprintf("workload_implementation_%03d", sequence),
 			"import { normalizeTaskResult } from './runtime.mjs';",
-		)
-		verificationIndex := sourceDocumentIndexForPath(
-			&verifications, verificationByPath, pair.VerificationPath,
-			fmt.Sprintf("workload_verification_%03d", sequence),
-			"import test from 'node:test';\nimport assert from 'node:assert/strict';",
 		)
 		featureID := fmt.Sprintf("feature.%03d", sequence)
 		featureName := fmt.Sprintf("feature%03d", sequence)
@@ -70,39 +60,12 @@ func genericJavaScriptCommandLineDocuments(
 		implementations[implementationIndex].Blocks = append(
 			implementations[implementationIndex].Blocks, assemblyline.SourceBlock{
 				ID: featureID, Signature: "function " + featureName + "(input, dependencies)",
-				Contract:  javaScriptCommandLineFeatureContract(implementationBehavior),
+				Contract:  javaScriptCommandLineFeatureContract(requirementBehavior),
 				API:       "function " + featureName + "(input, dependencies)",
 				DependsOn: dependencies, Capabilities: append([]string(nil), dependencies...),
 				Export: true,
 				TaskID: context.Task.TaskID, Role: assemblyline.SourceBlockTaskImplementation,
 			})
-		verificationID := fmt.Sprintf("acceptance.%03d", sequence)
-		verifyName := fmt.Sprintf("verifyFeature%03d", sequence)
-		verifications[verificationIndex].ScopedPreambles = append(
-			verifications[verificationIndex].ScopedPreambles, assemblyline.SourcePreamble{
-				TaskID: context.Task.TaskID,
-				Source: fmt.Sprintf("import { %s } from %s;", featureName,
-					strconv.Quote(javaScriptRelativeModule(pair.VerificationPath, pair.ImplementationPath))),
-			},
-		)
-		verifications[verificationIndex].Blocks = append(
-			verifications[verificationIndex].Blocks,
-			assemblyline.SourceBlock{
-				ID: verificationID, Signature: "function " + verifyName + "()",
-				Contract:     javaScriptCommandLineAcceptanceContract(requirementBehavior, featureName),
-				API:          "function " + verifyName + "()",
-				DependsOn:    append(append([]string(nil), dependencies...), featureID),
-				Capabilities: []string{featureID}, Globals: []string{"assert"},
-				TaskID: context.Task.TaskID, Role: assemblyline.SourceBlockTaskVerification,
-			},
-			assemblyline.SourceBlock{
-				ID:        fmt.Sprintf("acceptance.register.%03d", sequence),
-				Static:    fmt.Sprintf("test(%s, %s);", strconv.Quote(fmt.Sprintf("Feature %03d", sequence)), verifyName),
-				API:       "registered independent acceptance for " + requirement.ID,
-				DependsOn: []string{verificationID}, TaskID: context.Task.TaskID,
-				Role: assemblyline.SourceBlockTaskSupport,
-			},
-		)
 		applicationDependencies = append(applicationDependencies, featureID)
 	}
 	order, err := goCommandLineRequirementOrder(specification.Requirements, capabilities)
@@ -115,7 +78,6 @@ func genericJavaScriptCommandLineDocuments(
 	}
 	documents := []assemblyline.SourceDocument{runtime}
 	documents = append(documents, implementations...)
-	documents = append(documents, verifications...)
 	documents = append(documents, javaScriptCommandLineApplicationDocument(
 		specification.Requirements, capabilities, order, coverage, contexts, applicationDependencies,
 	))
@@ -165,13 +127,5 @@ func javaScriptCommandLineFeatureContract(behavior string) string {
 	return strings.Join([]string{
 		behavior,
 		"The function body fully implements the exact local behavior and returns one object with output, error, exitCode, and state fields derived from input and declared direct dependency results.",
-	}, "\n")
-}
-
-func javaScriptCommandLineAcceptanceContract(behavior, featureName string) string {
-	return strings.Join([]string{
-		behavior,
-		"Call " + featureName + " with representative input and dependency values.",
-		"The exact accepted requirement is proven with the declared assert capability applied to a value read from that exact call's result.",
 	}, "\n")
 }

@@ -27,7 +27,7 @@ func (adapter portableObjectiveDatabaseStations) SelectJoinPath(
 	if err != nil {
 		return assemblyline.DatabaseJoinPathSelectionDecision{}, objectiveStationReceipt{}, err
 	}
-	return runObjectiveReusablePortableRawLeafCall(
+	return runObjectivePortableRawLeafStation(
 		ctx, adapter.runtime, "database_join_path_selection", job,
 		station.DatabaseJoinPathSelection,
 		func() (string, error) {

@@ -42,10 +42,6 @@ type Config struct {
 	WebSearchTotalBudget      int
 	WorkspaceRoot             string
 	WorkspaceHostRoot         string
-	DeploymentKeyFile         string
-	DeploymentBindAddress     string
-	DeploymentAdvertisedHost  string
-	DeploymentProbeHost       string
 	WorkerCount               int
 	CodingFragmentConcurrency int
 	WorkerPollInterval        time.Duration
@@ -55,18 +51,14 @@ type Config struct {
 	RealtimeHeartbeat         time.Duration
 	RealtimeWriteTimeout      time.Duration
 	RedisURL                  string
-	UIRedisRequired           bool
 	UISessionTTL              time.Duration
 	InferenceContextTokens    int
 }
 
-// Load parses the environment and validates provider-independent runtime
-// structure. It preserves provider selections and credentials without resolving
-// them; provider validation belongs to the first actual provider operation.
+// Load parses the environment and preserves provider selections and credentials
+// without resolving them; provider validation belongs to the first actual
+// provider operation.
 func Load() (Config, error) {
-	if err := validateTypedEnvironment(); err != nil {
-		return Config{}, err
-	}
 	provider, embeddingProvider := loadProviderSelection()
 	compatibleProviders := loadCompatibleProviderConfigs()
 	providerModels := loadProviderModelConfigs()
@@ -105,10 +97,6 @@ func Load() (Config, error) {
 		WebSearchTotalBudget:      getenvInt("WEB_SEARCH_TOTAL_BUDGET", 6000),
 		WorkspaceRoot:             getenv("WORKSPACE_ROOT", ""),
 		WorkspaceHostRoot:         getenv("HOST_WORKSPACE_PATH", ""),
-		DeploymentKeyFile:         getenv("OMNIDEX_DEPLOYMENT_KEY_FILE", "/var/lib/omnidex-deployment/key"),
-		DeploymentBindAddress:     getenv("OMNIDEX_DEPLOYMENT_BIND_ADDRESS", ""),
-		DeploymentAdvertisedHost:  getenv("OMNIDEX_DEPLOYMENT_ADVERTISED_HOST", ""),
-		DeploymentProbeHost:       getenv("OMNIDEX_DEPLOYMENT_PROBE_HOST", ""),
 		WorkerCount:               getenvInt("WORKER_COUNT", 2),
 		CodingFragmentConcurrency: getenvInt("CODING_FRAGMENT_CONCURRENCY", defaultCodingFragmentConcurrency(provider)),
 		WorkerPollInterval:        getenvDuration("WORKER_POLL_INTERVAL", 2*time.Second),
@@ -118,13 +106,8 @@ func Load() (Config, error) {
 		RealtimeHeartbeat:         getenvDuration("REALTIME_HEARTBEAT", 25*time.Second),
 		RealtimeWriteTimeout:      getenvDuration("REALTIME_WRITE_TIMEOUT", 10*time.Second),
 		RedisURL:                  getenv("REDIS_URL", ""),
-		UIRedisRequired:           getenvBool("UI_REDIS_REQUIRED", false),
 		UISessionTTL:              getenvDuration("UI_SESSION_TTL", 30*time.Minute),
 		InferenceContextTokens:    getenvInt("INFERENCE_CONTEXT_TOKENS", llm.DefaultInferenceContextTokens),
-	}
-
-	if err := validateConfigStructure(cfg); err != nil {
-		return Config{}, err
 	}
 
 	cfg.StationModels = loadStationModels(cfg)
@@ -151,46 +134,4 @@ func defaultCodingFragmentConcurrency(provider string) int {
 		return 1
 	}
 	return 4
-}
-
-// Validate checks provider-independent runtime structure. Provider authority is
-// deliberately resolved and validated only at the first provider operation.
-func Validate(cfg Config) error {
-	if err := validateConfigStructure(cfg); err != nil {
-		return err
-	}
-	if cfg.WrapperOnly {
-		return nil
-	}
-	return validateCompleteStationModelRouting(cfg)
-}
-
-func validateConfigStructure(cfg Config) error {
-	if err := validateIntegrationAPIToken(cfg.IntegrationAPIToken); err != nil {
-		return err
-	}
-	if !cfg.WrapperOnly && strings.TrimSpace(cfg.DatabaseURL) == "" {
-		return fmt.Errorf("DATABASE_URL is required")
-	}
-	if !cfg.WrapperOnly {
-		if err := db.ValidateRuntimeSchemaName(cfg.DatabaseSchema); err != nil {
-			return fmt.Errorf("DATABASE_SCHEMA: %w", err)
-		}
-	}
-	return validateRuntimeConfig(cfg)
-}
-
-func validateIntegrationAPIToken(token string) error {
-	if token == "" {
-		return nil
-	}
-	if len(token) < 32 || len(token) > 4096 {
-		return fmt.Errorf("OMNIDEX_INTEGRATION_API_TOKEN must contain 32..4096 exact ASCII bytes")
-	}
-	for _, character := range []byte(token) {
-		if character < 0x21 || character > 0x7e {
-			return fmt.Errorf("OMNIDEX_INTEGRATION_API_TOKEN must contain only exact visible ASCII bytes")
-		}
-	}
-	return nil
 }

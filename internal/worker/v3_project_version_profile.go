@@ -10,7 +10,6 @@ const (
 	javaScriptCommandLineVersionProfileV1 = "javascript_command_line_versions_v1"
 	rustCommandLineVersionProfileV1       = "rust_command_line_versions_v1"
 	javaCommandLineVersionProfileV1       = "java_command_line_versions_v1"
-	phpServiceVersionProfileV1            = "php_http_service_versions_v1"
 )
 
 const (
@@ -21,10 +20,6 @@ const (
 	directCodingRustEdition              = "2024"
 	directCodingRustVersion              = "1.85"
 	directCodingGoVersion                = "1.24.0"
-	directCodingPHPConstraint            = "^8.2"
-	directCodingPHPNodeVersion           = "22.23.2"
-	directCodingDockerEngineVersion      = "29.5.1"
-	directCodingDockerComposeVersion     = "5.1.4"
 )
 
 type directCodingVersionCompatibility string
@@ -59,8 +54,6 @@ type directCodingProjectVersionProfile struct {
 	NPMDependencies         map[string]string
 	NPMDevDependencies      map[string]string
 	NPMLockTemplate         []byte
-	MatchExisting           func(directCodingProjectVersionProfile, map[string]string) (directCodingVersionCompatibility, error)
-	ValidateRuntime         func(directCodingProjectVersionProfile, directCodingVersionProbe) error
 	ValidateAssembly        func(directCodingProjectVersionProfile, directCodingProgram, directCodingAssembly) error
 	ValidateDefinition      func(directCodingProjectVersionProfile) error
 }
@@ -81,19 +74,15 @@ func registeredDirectCodingProjectVersionProfiles() []directCodingProjectVersion
 				"ecmascript", "ES2022", "node", directCodingTypeScriptNodeConstraint,
 				"npm", directCodingTypeScriptNPMConstraint, "npm_lock", "3",
 				"react", "19.2.7", "tailwindcss", "4.1.12", "typescript", "5.9.3",
-				"vite", "6.4.2", "vitest", "4.1.8",
+				"vite", "6.4.2",
 			),
 			NPMDependencies: map[string]string{"react": "19.2.7", "react-dom": "19.2.7"},
 			NPMDevDependencies: map[string]string{
-				"@tailwindcss/vite": "4.1.12", "@testing-library/jest-dom": "7.0.0",
-				"@testing-library/react": "16.3.2", "@types/react": "19.2.17",
-				"@types/react-dom": "19.2.3", "@vitejs/plugin-react": "5.2.0", "dom-accessibility-api": "0.5.16",
-				"jsdom": "26.1.0", "tailwindcss": "4.1.12", "typescript": "5.9.3",
-				"vite": "6.4.2", "vitest": "4.1.8",
+				"@tailwindcss/vite": "4.1.12", "@types/react": "19.2.17",
+				"@types/react-dom": "19.2.3", "@vitejs/plugin-react": "5.2.0",
+				"tailwindcss": "4.1.12", "typescript": "5.9.3", "vite": "6.4.2",
 			},
 			NPMLockTemplate:    typeScriptBrowserPackageLockTemplate,
-			MatchExisting:      matchTypeScriptBrowserVersionProfile,
-			ValidateRuntime:    validateTypeScriptBrowserRuntimeProfile,
 			ValidateAssembly:   validateTypeScriptBrowserVersionProfileAssembly,
 			ValidateDefinition: validateTypeScriptBrowserVersionProfile,
 		},
@@ -107,7 +96,6 @@ func registeredDirectCodingProjectVersionProfiles() []directCodingProjectVersion
 			Components: versionComponents(
 				"go", directCodingGoVersion, "go_manifest", ">=1.24.0 <1.25.0",
 			),
-			MatchExisting: matchGoVersionProfile, ValidateRuntime: validateGoRuntimeProfile,
 			ValidateAssembly:   validateGoVersionProfileAssembly,
 			ValidateDefinition: validateGoVersionProfile,
 		},
@@ -123,8 +111,6 @@ func registeredDirectCodingProjectVersionProfiles() []directCodingProjectVersion
 			Components: versionComponents(
 				"ecmascript", "ES2022", "node", directCodingJavaScriptNodeConstraint,
 			),
-			MatchExisting:      matchJavaScriptVersionProfile,
-			ValidateRuntime:    validateJavaScriptRuntimeProfile,
 			ValidateAssembly:   validateJavaScriptVersionProfileAssembly,
 			ValidateDefinition: validateJavaScriptVersionProfile,
 		},
@@ -141,7 +127,6 @@ func registeredDirectCodingProjectVersionProfiles() []directCodingProjectVersion
 				"cargo_lock", "4", "rust_edition", directCodingRustEdition,
 				"rust_manifest", "1.85.0", "rust_version", directCodingRustVersion,
 			),
-			MatchExisting: matchRustVersionProfile, ValidateRuntime: validateRustRuntimeProfile,
 			ValidateAssembly:   validateRustVersionProfileAssembly,
 			ValidateDefinition: validateRustVersionProfile,
 		},
@@ -153,44 +138,9 @@ func registeredDirectCodingProjectVersionProfiles() []directCodingProjectVersion
 				"java", "Java release 21", "plain_text", "UTF-8 text profile v1",
 			),
 			Components:         versionComponents("java_release", directCodingJavaRelease),
-			MatchExisting:      matchNoManifestVersionProfile,
-			ValidateRuntime:    validateJavaRuntimeProfile,
 			ValidateAssembly:   validateJavaVersionProfileAssembly,
 			ValidateDefinition: validateJavaVersionProfile,
 		},
-		{
-			ID: phpServiceVersionProfileV1, StackID: genericPHPServiceAdapter,
-			SourceDialect:       "PHP >=8.2,<9 function syntax",
-			ParserQualification: "tree-sitter-php-0.23.11-php-8-profile-v1",
-			ManifestPaths:       []string{"composer.json"},
-			ArtifactVersions: artifactVersions(
-				"css_tailwind", "Tailwind CSS CLI 4.1.12", "dockerfile", "Dockerfile and Compose profile v1",
-				"environment_example", "verification-only environment profile v1",
-				"nginx", "Digest-pinned NGINX configuration", "php", "PHP >=8.2,<9",
-				"plain_text", "UTF-8 text profile v1",
-				"postgresql_migration", "PostgreSQL 16 migration profile v1",
-				"structured_json", "RFC 8259",
-			),
-			Components: versionComponents(
-				"composer_image", phpServiceComposerImage,
-				"composer_php", directCodingPHPConstraint,
-				"docker_compose", directCodingDockerComposeVersion,
-				"docker_engine", directCodingDockerEngineVersion,
-				"nginx_image", phpServiceNginxImage,
-				"node", directCodingPHPNodeVersion,
-				"node_image", phpServiceNodeImage, "npm_lock", "3", "php_runtime", ">=8.2,<9",
-				"postgres_image", phpServicePostgresImage,
-				"tailwindcss", "4.1.12",
-			),
-			NPMDevDependencies: map[string]string{
-				"@tailwindcss/cli": "4.1.12", "tailwindcss": "4.1.12",
-			},
-			NPMLockTemplate: phpServicePackageLockTemplate,
-			MatchExisting:   matchPHPVersionProfile, ValidateRuntime: validatePHPRuntimeProfile,
-			ValidateAssembly:   validatePHPVersionProfileAssembly,
-			ValidateDefinition: validatePHPVersionProfile,
-		},
-		registeredLaravelVersionProfile(),
 	}
 	for index := range profiles {
 		profiles[index] = cloneDirectCodingProjectVersionProfile(profiles[index])
@@ -199,9 +149,6 @@ func registeredDirectCodingProjectVersionProfiles() []directCodingProjectVersion
 }
 
 func directCodingProjectVersionProfileByID(id string) (directCodingProjectVersionProfile, error) {
-	if err := validateDirectCodingArtifactRegistries(); err != nil {
-		return directCodingProjectVersionProfile{}, err
-	}
 	profile, exists := directCodingRegisteredProjectVersionProfileByID(id)
 	if exists {
 		return cloneDirectCodingProjectVersionProfile(profile), nil

@@ -63,42 +63,15 @@ func Apply(base Routing, cfg Config) Routing {
 		out.Stations[station.CodingRequirements] = value
 		out.Stations[station.CodingProjectStackConstraint] = value
 	}
-	// The retained setting chooses model identity only. Each station keeps an
-	// independent prompt, result contract, call receipt, and persisted outcome.
-	if value := cfg.Get("coding_service_deployment_intent_model"); value != "" {
-		out.Stations[station.CodingServiceContinuedAvailability] = value
-		out.Stations[station.CodingServicePersistenceDestination] = value
-	}
 	if value := cfg.Get("coding_workload_model"); value != "" {
 		out.Stations[station.CodingTargetTree] = value
-		out.Stations[station.CodingServiceStateLifetime] = value
-		out.Stations[station.CodingApplicationStateFieldPurposeInventory] = value
-		out.Stations[station.CodingApplicationStateFieldKind] = value
-		out.Stations[station.CodingApplicationRecordFieldPurposeInventory] = value
-		out.Stations[station.CodingApplicationRecordFieldKind] = value
-		out.Stations[station.CodingApplicationServiceStatePurposeNecessity] = value
-		out.Stations[station.CodingApplicationServiceStatePurposeRelation] = value
-		out.Stations[station.CodingServiceEndpointRequirement] = value
-		out.Stations[station.CodingServiceEndpointExposure] = value
-		out.Stations[station.CodingServiceEndpointMethod] = value
-		out.Stations[station.CodingServiceEndpointRouteTemplate] = value
-		out.Stations[station.CodingServiceEndpointRequestMedia] = value
-		out.Stations[station.CodingServiceEndpointResponseMedia] = value
-		out.Stations[station.CodingServiceEndpointSuccessStatus] = value
 	}
 	if value := cfg.Get("coding_artifact_handling_model"); value != "" {
 		out.Stations[station.CodingArtifactHandling] = value
-		out.Stations[station.CodingRepositoryArtifactAbsence] = value
-		out.Stations[station.CodingPlainTextArtifactCreation] = value
-		out.Stations[station.CodingDeclarationArtifactBoundary] = value
-		out.Stations[station.CodingArtifactCandidateSelection] = value
 	}
 	if value := cfg.Get("coding_capability_relation_model"); value != "" {
 		out.Stations[station.CodingCapabilityRelation] = value
 		out.Stations[station.CodingRuntimeCapabilityNecessity] = value
-	}
-	if value := cfg.Get("coding_skill_selection_model"); value != "" {
-		out.Stations[station.CodingSkillSelection] = value
 	}
 	if value := cfg.Get("coding_fragment_model"); value != "" {
 		out.Stations[station.CodingFragment] = value
@@ -108,9 +81,6 @@ func Apply(base Routing, cfg Config) Routing {
 	}
 	if value := cfg.Get("coding_fragment_correction_model"); value != "" {
 		out.Stations[station.CodingFragmentCorrection] = value
-	}
-	if value := cfg.Get("coding_repository_change_surface_model"); value != "" {
-		out.Stations[station.CodingRepositoryChange] = value
 	}
 	return out
 }

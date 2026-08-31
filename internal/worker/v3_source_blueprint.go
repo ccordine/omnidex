@@ -117,6 +117,31 @@ func validateDirectCodingApplicationSourceOwnership(
 	return nil
 }
 
+func validateDirectCodingSingleImplementationSourceOwnership(
+	workload assemblyline.FrozenApplicationWorkload,
+	blueprint assemblyline.SourceBlueprint,
+) error {
+	implementation := make(map[string]int, len(workload.Tasks))
+	for _, document := range blueprint.Documents {
+		for _, block := range document.Blocks {
+			switch block.Role {
+			case assemblyline.SourceBlockTaskImplementation:
+				implementation[block.TaskID]++
+			case assemblyline.SourceBlockTaskVerification:
+				return fmt.Errorf("source block %s is an obsolete generated verification artifact", block.ID)
+			}
+		}
+	}
+	for _, task := range workload.Tasks {
+		if implementation[task.ID] != 1 {
+			return fmt.Errorf(
+				"task %s requires exactly one generated implementation source node", task.ID,
+			)
+		}
+	}
+	return nil
+}
+
 func validateDirectCodingSinglePairSourceOwnership(
 	workload assemblyline.FrozenApplicationWorkload,
 	blueprint assemblyline.SourceBlueprint,
@@ -160,8 +185,11 @@ func directCodingTaskGeneratedBlockRefs(
 			blocks = append(blocks, ref)
 			switch ref.Block.Role {
 			case assemblyline.SourceBlockTaskImplementation,
-				assemblyline.SourceBlockTaskRepresentation,
-				assemblyline.SourceBlockTaskVerification:
+				assemblyline.SourceBlockTaskRepresentation:
+			case assemblyline.SourceBlockTaskVerification:
+				return nil, fmt.Errorf(
+					"task %s contains obsolete generated verification block %s", taskID, ref.Block.ID,
+				)
 			default:
 				return nil, fmt.Errorf("generated task block %s has role %q", ref.Block.ID, ref.Block.Role)
 			}

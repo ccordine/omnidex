@@ -38,15 +38,6 @@ type StationGapOpenRecord struct {
 	ContextTokens     int
 	MaxOutputTokens   int
 	OutputLimitMode   llm.ExactPreparedOutputLimitMode
-	ReplacementOrigin *StationGapReplacementOrigin
-}
-
-// StationGapReplacementOrigin is execution authority kept outside the
-// portable semantic envelope. PostgreSQL binds both identities to the exact
-// immutable failed initial fragment journal before a replacement may open.
-type StationGapReplacementOrigin struct {
-	GapOpeningID  int64 `json:"gap_opening_id"`
-	CallReceiptID int64 `json:"call_receipt_id"`
 }
 
 type StationGapOpening struct {
@@ -75,8 +66,6 @@ type StationGapOpening struct {
 	ContextTokens                     int                                      `json:"context_tokens"`
 	MaxOutputTokens                   int                                      `json:"max_output_tokens"`
 	OutputLimitMode                   llm.ExactPreparedOutputLimitMode         `json:"output_limit_mode"`
-	OriginGapOpeningID                int64                                    `json:"origin_gap_opening_id,omitempty"`
-	OriginCallReceiptID               int64                                    `json:"origin_call_receipt_id,omitempty"`
 	CreatedAt                         time.Time                                `json:"created_at"`
 }
 

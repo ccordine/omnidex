@@ -15,26 +15,6 @@ type directCodingTypeScriptRepairEvents struct {
 	correctionStarted func(string)
 }
 
-func (s *directCodingSession) convergeDirectCodingTypeScriptGuidedRepair(
-	target assemblyline.SourceBlock,
-	tsx bool,
-	dialect string,
-	available string,
-	current string,
-	repairRegion *assemblyline.TypeScriptFragmentRepairRegion,
-	failure string,
-) (string, error) {
-	guidanceModel, correctionModel, err := s.typeScriptRepairModels()
-	if err != nil {
-		return "", err
-	}
-	workerRuntime := directCodingWorkerRuntime(s)
-	return convergeDirectCodingTypeScriptGuidedRepairWithRuntime(
-		workerRuntime, guidanceModel, correctionModel, s.typeScriptRepairEvents(),
-		target, tsx, dialect, available, current, repairRegion, failure, nil,
-	)
-}
-
 func (s *directCodingSession) typeScriptRepairEvents() directCodingTypeScriptRepairEvents {
 	return directCodingTypeScriptRepairEvents{
 		guidanceStarted: func(detail string) {
@@ -75,7 +55,6 @@ func convergeDirectCodingTypeScriptGuidedRepairWithRuntime(
 	dialect string,
 	available string,
 	current string,
-	repairRegion *assemblyline.TypeScriptFragmentRepairRegion,
 	failure string,
 	validateCandidate func(string) error,
 ) (string, error) {
@@ -85,7 +64,7 @@ func convergeDirectCodingTypeScriptGuidedRepairWithRuntime(
 		safeLine(trimForBudget(failure, 500), "unknown"),
 	))
 	guidance, err := runDirectCodingTypeScriptRepairGuidance(
-		workerRuntime, guidanceModel, target, dialect, available, current, repairRegion, failure,
+		workerRuntime, guidanceModel, target, dialect, available, current, failure,
 	)
 	if err != nil {
 		return "", fmt.Errorf("derive TypeScript repair guidance: %w", err)
@@ -98,7 +77,7 @@ func convergeDirectCodingTypeScriptGuidedRepairWithRuntime(
 		workerRuntime, correctionModel,
 		directCodingTypeScriptFragmentJob{
 			block: target, tsx: tsx, available: available, current: current,
-			repairRegion: repairRegion, repairGuidance: guidance,
+			repairGuidance: guidance,
 			validateInitialCandidate: validateCandidate,
 		},
 	)

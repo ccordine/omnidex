@@ -10,7 +10,6 @@ import (
 
 func genericGoCommandLineDocuments(
 	specification assemblyline.ApplicationSpecification,
-	skills map[string]directCodingSkillBinding,
 	contexts map[string]assemblyline.ApplicationTaskContext,
 	capabilities directCodingCapabilityGraph,
 	coverage assemblyline.ApplicationFileCoveragePlan,
@@ -20,9 +19,7 @@ func genericGoCommandLineDocuments(
 		return nil, err
 	}
 	implementations := make([]assemblyline.SourceDocument, 0, len(specification.Requirements))
-	verifications := make([]assemblyline.SourceDocument, 0, len(specification.Requirements))
 	implementationByPath := make(map[string]int, len(specification.Requirements))
-	verificationByPath := make(map[string]int, len(specification.Requirements))
 	applicationDependencies := []string{"runtime.api"}
 	for index, requirement := range specification.Requirements {
 		sequence := index + 1
@@ -36,30 +33,19 @@ func genericGoCommandLineDocuments(
 		if err != nil {
 			return nil, err
 		}
-		implementationBehavior := requirementBehavior
-		if skill, exists := skills[requirement.ID]; exists {
-			implementationBehavior += "\nValidated procedure: " + skill.Procedure
-		}
-		pair, err := directCodingTaskSinglePair(coverage, context.Task.TaskID)
+		implementationPath, err := directCodingTaskSingleImplementationPath(
+			coverage, context.Task.TaskID,
+		)
 		if err != nil {
 			return nil, err
 		}
-		implementationIndex, exists := implementationByPath[pair.ImplementationPath]
+		implementationIndex, exists := implementationByPath[implementationPath]
 		if !exists {
 			implementationIndex = len(implementations)
-			implementationByPath[pair.ImplementationPath] = implementationIndex
+			implementationByPath[implementationPath] = implementationIndex
 			implementations = append(implementations, assemblyline.SourceDocument{
 				ID:   fmt.Sprintf("workload_implementation_%03d", sequence),
-				Path: pair.ImplementationPath, Preamble: "package main",
-			})
-		}
-		verificationIndex, exists := verificationByPath[pair.VerificationPath]
-		if !exists {
-			verificationIndex = len(verifications)
-			verificationByPath[pair.VerificationPath] = verificationIndex
-			verifications = append(verifications, assemblyline.SourceDocument{
-				ID:   fmt.Sprintf("workload_verification_%03d", sequence),
-				Path: pair.VerificationPath, Preamble: "package main\n\nimport \"testing\"",
+				Path: implementationPath, Preamble: "package main",
 			})
 		}
 		featureID := fmt.Sprintf("feature.%03d", sequence)
@@ -84,24 +70,12 @@ func genericGoCommandLineDocuments(
 				Signature: fmt.Sprintf(
 					"func %s(input TaskInput, dependencies CapabilityResults) TaskResult", featureName,
 				),
-				Contract: goCommandLineFeatureContract(implementationBehavior),
+				Contract: goCommandLineFeatureContract(requirementBehavior),
 				API: fmt.Sprintf(
 					"func %s(input TaskInput, dependencies CapabilityResults) TaskResult", featureName,
 				),
 				DependsOn: dependencies, Capabilities: append([]string(nil), dependencies...),
 				TaskID: context.Task.TaskID, Role: assemblyline.SourceBlockTaskImplementation,
-			})
-		acceptanceDependencies := []string{"runtime.api", featureID}
-		verifications[verificationIndex].Blocks = append(
-			verifications[verificationIndex].Blocks, assemblyline.SourceBlock{
-				ID:           fmt.Sprintf("acceptance.%03d", sequence),
-				Signature:    fmt.Sprintf("func Test%s(t *testing.T)", featureName),
-				Contract:     goCommandLineAcceptanceContract(requirementBehavior, featureName),
-				API:          fmt.Sprintf("func Test%s(t *testing.T)", featureName),
-				DependsOn:    acceptanceDependencies,
-				Capabilities: append([]string(nil), acceptanceDependencies...),
-				Globals:      []string{"Fatal", "Fatalf", "Error", "Errorf"},
-				TaskID:       context.Task.TaskID, Role: assemblyline.SourceBlockTaskVerification,
 			})
 		applicationDependencies = append(applicationDependencies, featureID)
 	}
@@ -111,7 +85,6 @@ func genericGoCommandLineDocuments(
 	}
 	documents := []assemblyline.SourceDocument{runtimeDocument}
 	documents = append(documents, implementations...)
-	documents = append(documents, verifications...)
 	documents = append(documents, goCommandLineApplicationDocument(
 		specification.Requirements, capabilities, order, applicationDependencies,
 	))
@@ -144,13 +117,5 @@ func goCommandLineFeatureContract(behavior string) string {
 		behavior,
 		"The function body fully implements the exact local behavior and returns one complete TaskResult derived from input and the declared direct dependency results.",
 		"Use Output for user-visible text, Error for a clear failure, ExitCode for process status, and State for reusable string values.",
-	}, "\n")
-}
-
-func goCommandLineAcceptanceContract(behavior, featureName string) string {
-	return strings.Join([]string{
-		behavior,
-		"Call " + featureName + " with representative TaskInput and CapabilityResults values.",
-		"The exact accepted requirement is proven by t.Fatal, t.Fatalf, t.Error, or t.Errorf applied to a value read from that exact call's TaskResult.",
 	}, "\n")
 }

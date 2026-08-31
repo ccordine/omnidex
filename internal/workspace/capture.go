@@ -4,191 +4,113 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"io"
 	"os"
-	"path"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
-
-	repositoryfacts "github.com/gryph/omnidex/internal/repository"
 )
 
-func Capture(ctx context.Context, requestedRoot string) (Snapshot, error) {
+func Capture(ctx context.Context, requestedRoot string, selectedPaths []string) (Snapshot, error) {
 	if ctx == nil {
-		return Snapshot{}, fmt.Errorf("workspace capture requires a context")
+		return Snapshot{}, fmt.Errorf("workspace path capture requires a context")
 	}
 	if err := ctx.Err(); err != nil {
-		return Snapshot{}, fmt.Errorf("workspace capture: %w", err)
+		return Snapshot{}, fmt.Errorf("workspace path capture: %w", err)
 	}
 	root, before, err := exactRootDirectory(requestedRoot)
 	if err != nil {
 		return Snapshot{}, err
 	}
-	gitMarker := filepath.Join(root, ".git")
-	if _, err := os.Lstat(gitMarker); err == nil {
-		repositorySnapshot, captureErr := repositoryfacts.BuildGitSnapshot(
-			ctx, root, repositoryfacts.SnapshotOptions{MaxFiles: maxSnapshotEntries},
-		)
-		if captureErr != nil {
-			return Snapshot{}, fmt.Errorf("capture root-local Git workspace: %w", captureErr)
+	paths := append([]string(nil), selectedPaths...)
+	sort.Strings(paths)
+	for index, relative := range paths {
+		if err := validateRelativePath(relative); err != nil {
+			return Snapshot{}, err
 		}
-		return FromRepositorySnapshot(repositorySnapshot)
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return Snapshot{}, fmt.Errorf("inspect root-local Git authority: %w", err)
-	}
-	snapshot, err := capturePlain(ctx, root)
-	if err != nil {
-		return Snapshot{}, err
-	}
-	after, err := os.Lstat(root)
-	if err != nil || !after.IsDir() || after.Mode()&os.ModeSymlink != 0 || !os.SameFile(before, after) {
-		return Snapshot{}, fmt.Errorf("workspace root changed while it was captured")
-	}
-	if _, err := os.Lstat(gitMarker); err == nil {
-		return Snapshot{}, fmt.Errorf("root-local Git authority appeared while the plain workspace was captured")
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return Snapshot{}, fmt.Errorf("recheck root-local Git authority: %w", err)
-	}
-	return snapshot, nil
-}
-
-func FromRepositorySnapshot(source repositoryfacts.Snapshot) (Snapshot, error) {
-	if err := source.Validate(); err != nil {
-		return Snapshot{}, fmt.Errorf("workspace Git binding source: %w", err)
-	}
-	root, err := exactRootPath(source.Root)
-	if err != nil {
-		return Snapshot{}, err
+		if index > 0 && paths[index-1] == relative {
+			return Snapshot{}, fmt.Errorf("workspace path capture repeats %q", relative)
+		}
 	}
 	snapshot := Snapshot{
-		Schema: SnapshotSchemaV1, WorkspaceID: workspaceID(root), Root: root,
-		GeneratedAt: canonicalTime(source.GeneratedAt),
-		Entries:     make([]Entry, len(source.Files)),
-		Exclusions:  make([]Exclusion, len(source.Exclusions)),
-		Git: &GitBinding{
-			RepositorySnapshotID: source.ID, RepositoryID: source.RepositoryID,
-			HeadCommit: source.HeadCommit, StateSHA256: source.GitStateSHA256,
-		},
+		Schema: SnapshotSchemaV3, WorkspaceID: workspaceID(root), Root: root,
+		GeneratedAt: canonicalTime(time.Now()), Paths: paths, Entries: make([]Entry, 0, len(paths)),
 	}
-	for index, file := range source.Files {
-		kind := EntryRegular
-		if file.Kind == repositoryfacts.EntrySymlink {
-			kind = EntrySymlink
+	for _, relative := range paths {
+		if err := ctx.Err(); err != nil {
+			return Snapshot{}, fmt.Errorf("workspace path capture: %w", err)
 		}
-		snapshot.Entries[index] = Entry{
-			ID:   opaqueID("workspace_file_", snapshot.WorkspaceID, file.Path),
-			Path: file.Path, Kind: kind, SHA256: file.SHA256, Size: file.Size,
-			Mode: file.Mode, LinkTarget: file.LinkTarget, RepositoryFileID: file.ID,
-		}
-	}
-	for index, exclusion := range source.Exclusions {
-		reason, err := repositoryExclusionReason(exclusion.Reason)
+		entry, present, err := inspectSelectedEntry(ctx, root, relative)
 		if err != nil {
 			return Snapshot{}, err
 		}
-		snapshot.Exclusions[index] = Exclusion{Path: exclusion.Path, Reason: reason}
+		if present {
+			snapshot.Entries = append(snapshot.Entries, entry)
+		}
+	}
+	after, err := os.Lstat(root)
+	if err != nil || !after.IsDir() || after.Mode()&os.ModeSymlink != 0 || !os.SameFile(before, after) {
+		return Snapshot{}, fmt.Errorf("workspace root changed while selected paths were captured")
 	}
 	return sealSnapshot(snapshot)
 }
 
-func capturePlain(ctx context.Context, root string) (Snapshot, error) {
-	snapshot := Snapshot{
-		Schema: SnapshotSchemaV1, WorkspaceID: workspaceID(root), Root: root,
-		GeneratedAt: canonicalTime(time.Now()), Entries: make([]Entry, 0),
-		Exclusions: make([]Exclusion, 0),
-	}
-	err := filepath.WalkDir(root, func(absolute string, item os.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return fmt.Errorf("walk workspace path %q: %w", absolute, walkErr)
+func inspectSelectedEntry(ctx context.Context, root, relative string) (Entry, bool, error) {
+	current := root
+	parts := strings.Split(relative, "/")
+	for _, part := range parts[:len(parts)-1] {
+		current = filepath.Join(current, filepath.FromSlash(part))
+		info, err := os.Lstat(current)
+		if os.IsNotExist(err) {
+			return Entry{}, false, nil
 		}
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		if absolute == root {
-			return nil
-		}
-		relative, err := filepath.Rel(root, absolute)
 		if err != nil {
-			return fmt.Errorf("derive workspace-relative path: %w", err)
+			return Entry{}, false, fmt.Errorf("inspect parent for workspace path %q: %w", relative, err)
 		}
-		relative = filepath.ToSlash(relative)
-		if err := validateRelativePath(relative); err != nil {
-			return err
+		if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+			return Entry{}, false, nil
 		}
-		if protectedPath(relative) {
-			snapshot.Exclusions = append(snapshot.Exclusions, Exclusion{
-				Path: relative, Reason: ExclusionProtected,
-			})
-			if item.IsDir() {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if item.IsDir() {
-			return nil
-		}
-		if sensitivePath(relative) {
-			snapshot.Exclusions = append(snapshot.Exclusions, Exclusion{
-				Path: relative, Reason: ExclusionSensitive,
-			})
-			return nil
-		}
-		entry, err := inspectPlainEntry(ctx, root, relative)
-		if err != nil {
-			return err
-		}
-		snapshot.Entries = append(snapshot.Entries, entry)
-		if len(snapshot.Entries) > maxSnapshotEntries {
-			return fmt.Errorf("workspace inventory exceeds %d entries", maxSnapshotEntries)
-		}
-		return nil
-	})
-	if err != nil {
-		return Snapshot{}, fmt.Errorf("capture plain workspace: %w", err)
 	}
-	return sealSnapshot(snapshot)
-}
-
-func inspectPlainEntry(ctx context.Context, root, relative string) (Entry, error) {
 	absolute := filepath.Join(root, filepath.FromSlash(relative))
 	before, err := os.Lstat(absolute)
+	if os.IsNotExist(err) {
+		return Entry{}, false, nil
+	}
 	if err != nil {
-		return Entry{}, fmt.Errorf("inspect workspace entry %q: %w", relative, err)
+		return Entry{}, false, fmt.Errorf("inspect workspace path %q: %w", relative, err)
 	}
 	entry := Entry{
-		ID:   opaqueID("workspace_file_", workspaceID(root), relative),
-		Path: relative, Size: before.Size(), Mode: uint32(before.Mode().Perm()),
+		ID: opaqueID("workspace_file_", workspaceID(root), relative), Path: relative,
+		Mode: uint32(before.Mode().Perm()),
 	}
 	switch {
 	case before.Mode().IsRegular():
 		digest, err := hashFile(ctx, absolute)
 		if err != nil {
-			return Entry{}, fmt.Errorf("hash workspace entry %q: %w", relative, err)
+			return Entry{}, false, fmt.Errorf("hash workspace path %q: %w", relative, err)
 		}
 		after, err := os.Lstat(absolute)
-		if err != nil || !after.Mode().IsRegular() || before.Size() != after.Size() ||
-			before.Mode() != after.Mode() || !before.ModTime().Equal(after.ModTime()) {
-			return Entry{}, fmt.Errorf("workspace entry %q changed while it was captured", relative)
+		if err != nil || !after.Mode().IsRegular() || !os.SameFile(before, after) ||
+			before.Size() != after.Size() || before.Mode() != after.Mode() ||
+			!before.ModTime().Equal(after.ModTime()) {
+			return Entry{}, false, fmt.Errorf("workspace path %q changed while captured", relative)
 		}
-		entry.Kind, entry.SHA256 = EntryRegular, digest
+		entry.Kind, entry.SHA256, entry.Size = EntryRegular, digest, before.Size()
 	case before.Mode()&os.ModeSymlink != 0:
 		target, err := os.Readlink(absolute)
 		if err != nil {
-			return Entry{}, fmt.Errorf("read workspace symlink %q: %w", relative, err)
+			return Entry{}, false, fmt.Errorf("read workspace symlink %q: %w", relative, err)
 		}
-		if err := validateSymlink(relative, target); err != nil {
-			return Entry{}, err
-		}
-		digest := sha256.Sum256([]byte("symlink\x00" + target))
 		entry.Kind, entry.LinkTarget = EntrySymlink, target
-		entry.Size, entry.SHA256 = int64(len(target)), hex.EncodeToString(digest[:])
+		entry.Size, entry.SHA256 = int64(len(target)), digestBytes([]byte("symlink\x00"+target))
+	case before.IsDir():
+		entry.Kind, entry.SHA256 = EntryDirectory, digestBytes([]byte("directory\x00"))
 	default:
-		return Entry{}, fmt.Errorf("workspace entry %q has unsupported filesystem kind", relative)
+		return Entry{}, false, fmt.Errorf("workspace path %q has an unsupported filesystem kind", relative)
 	}
-	return entry, nil
+	return entry, true, nil
 }
 
 func hashFile(ctx context.Context, absolute string) (string, error) {
@@ -227,32 +149,6 @@ func sealSnapshot(snapshot Snapshot) (Snapshot, error) {
 		return Snapshot{}, err
 	}
 	return snapshot, nil
-}
-
-func repositoryExclusionReason(reason repositoryfacts.ExclusionReason) (ExclusionReason, error) {
-	switch reason {
-	case repositoryfacts.ExclusionSensitive:
-		return ExclusionSensitive, nil
-	case repositoryfacts.ExclusionAbsent:
-		return ExclusionAbsent, nil
-	case repositoryfacts.ExclusionUnsupported:
-		return ExclusionUnsupported, nil
-	default:
-		return "", fmt.Errorf("repository exclusion reason %q is not registered for workspace authority", reason)
-	}
-}
-
-func sensitivePath(value string) bool {
-	lower := strings.ToLower(value)
-	base := path.Base(lower)
-	if base == ".env.example" {
-		return false
-	}
-	if base == ".env" || strings.HasPrefix(base, ".env.") {
-		return true
-	}
-	extension := path.Ext(lower)
-	return extension == ".pem" || extension == ".key"
 }
 
 func exactRootPath(requested string) (string, error) {

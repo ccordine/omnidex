@@ -1,12 +1,9 @@
 package worker
 
 import (
-	"errors"
 	"fmt"
 	"strings"
 	"unicode"
-
-	"github.com/gryph/omnidex/internal/queue"
 )
 
 type directCodingPhase string
@@ -15,7 +12,6 @@ const (
 	directCodingPhaseAssembling   directCodingPhase = "assembling"
 	directCodingPhaseConstructing directCodingPhase = "constructing"
 	directCodingPhaseVerifying    directCodingPhase = "verifying"
-	directCodingPhaseDeploying    directCodingPhase = "deploying"
 	directCodingPhaseCompleted    directCodingPhase = "completed"
 	directCodingPhaseFailed       directCodingPhase = "failed"
 )
@@ -56,45 +52,20 @@ func directCodingStaticFileDiagnostic(path, detail string, _ ...string) *directC
 
 type directCodingVerification struct {
 	Passed                  bool
-	TestsPassed             bool
-	Commands                []string
-	EvidenceIDs             []int64
-	MutationOperationID     string
-	MutationReceiptSHA256   string
 	ExactStateAuthorityID   string
 	ExactStateReceiptSHA256 string
 	Diagnostic              *directCodingDiagnostic
 }
 
 func (v directCodingVerification) validate() error {
-	mutationPresent := v.MutationOperationID != "" || v.MutationReceiptSHA256 != ""
 	exactStatePresent := v.ExactStateAuthorityID != "" || v.ExactStateReceiptSHA256 != ""
-	if mutationPresent == exactStatePresent {
-		return fmt.Errorf("coding verification requires exactly one mutation or verified no-delta authority")
-	}
-	if mutationPresent && (!validRepositoryVerificationOpaqueID(v.MutationOperationID, "workspace_mutation_") ||
-		!validRepositoryVerificationSHA256(v.MutationReceiptSHA256)) {
-		return fmt.Errorf("coding verification requires one exact terminal workspace mutation receipt")
-	}
-	if exactStatePresent && (!validRepositoryVerificationOpaqueID(v.ExactStateAuthorityID, "workspace_exact_") ||
+	if !exactStatePresent || (!validRepositoryVerificationOpaqueID(v.ExactStateAuthorityID, "workspace_exact_") ||
 		!validRepositoryVerificationSHA256(v.ExactStateReceiptSHA256)) {
-		return fmt.Errorf("coding verification requires one exact verified no-delta receipt")
-	}
-	if len(v.Commands) != len(v.EvidenceIDs) ||
-		len(v.Commands) > queue.MaxGeneratedWorkloadVerificationEvidence-1 {
-		return fmt.Errorf("coding verification command and evidence identities must be exact")
-	}
-	for index, id := range v.EvidenceIDs {
-		if id <= 0 || index > 0 && id <= v.EvidenceIDs[index-1] {
-			return fmt.Errorf("coding verification evidence identities must be ordered")
-		}
+		return fmt.Errorf("coding verification requires one exact workspace-state receipt")
 	}
 	if v.Passed {
 		if v.Diagnostic != nil {
 			return fmt.Errorf("successful coding verification cannot include a diagnostic")
-		}
-		if len(v.Commands) == 0 {
-			return fmt.Errorf("successful coding verification requires at least one executed command")
 		}
 		return nil
 	}
@@ -110,15 +81,11 @@ type directCodingWorkflowDriver interface {
 	PrepareAssembly(directCodingAssembly) (*directCodingPreparedMutation, error)
 	ApplyAndVerify(
 		*directCodingPreparedMutation,
-	) (directCodingVerification, directCodingCompletionTaskDisposition, error)
-	FinalizeVerified(
-		verification directCodingVerification,
-		beginState directCodingCompletionTaskDisposition,
-	) error
+	) (directCodingVerification, error)
 	Complete(verification directCodingVerification) (string, error)
 }
 
-func runDirectCodingWorkflow(driver directCodingWorkflowDriver, allowExistingWorkspace bool) (string, error) {
+func runDirectCodingWorkflow(driver directCodingWorkflowDriver) (string, error) {
 	if driver == nil {
 		return "", fmt.Errorf("direct coding workflow requires a driver")
 	}
@@ -139,19 +106,8 @@ func runDirectCodingWorkflow(driver directCodingWorkflowDriver, allowExistingWor
 	if prepared == nil {
 		return failDirectCodingWorkflow(driver, "prepare exact workspace mutation", fmt.Errorf("driver returned no prepared mutation"))
 	}
-	mutations := prepared.MutationCount()
-	if mutations == 0 && !(allowExistingWorkspace && prepared.HasExactStateAuthority()) {
-		reason := fmt.Errorf("direct coding requires one journaled workspace mutation")
-		if !allowExistingWorkspace {
-			reason = fmt.Errorf("fresh coding workflow accepted no workspace mutation")
-		}
-		return failDirectCodingWorkflow(
-			driver, "generate coding files", errors.Join(reason, prepared.Cleanup()),
-		)
-	}
-
-	driver.Phase(directCodingPhaseVerifying, "running code-selected verification")
-	verification, verificationBeginState, verifyErr := driver.ApplyAndVerify(prepared)
+	driver.Phase(directCodingPhaseVerifying, "verifying exact workspace post-state")
+	verification, verifyErr := driver.ApplyAndVerify(prepared)
 	if verifyErr != nil {
 		return failDirectCodingWorkflow(driver, "verify accepted workspace", verifyErr)
 	}
@@ -164,9 +120,6 @@ func runDirectCodingWorkflow(driver directCodingWorkflowDriver, allowExistingWor
 			safeLine(verification.Diagnostic.Stage, "unknown"),
 			trimForBudget(verification.Diagnostic.Detail, 1200),
 		))
-	}
-	if err := driver.FinalizeVerified(verification, verificationBeginState); err != nil {
-		return failDirectCodingWorkflow(driver, "finalize verified workspace", err)
 	}
 	summary, completeErr := driver.Complete(verification)
 	if completeErr != nil {

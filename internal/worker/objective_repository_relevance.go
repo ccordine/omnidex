@@ -80,7 +80,7 @@ func (r *nativeRuntimeV3) resolveObjectiveRepositoryRelevance(
 		return assemblyline.RepositoryEvidenceRelevanceDecision{}, objectiveStationReceipt{}, err
 	}
 	resolveModel := func() (string, error) {
-		return r.svc.requiredStationModel(r.routing, station.RepositoryEvidenceRelevance)
+		return objectiveStationModel(r, station.RepositoryEvidenceRelevance)
 	}
 	return resolveObjectiveRepositoryEvidenceRelations(
 		ctx, input,
@@ -92,7 +92,7 @@ func (r *nativeRuntimeV3) resolveObjectiveRepositoryRelevance(
 			if err != nil {
 				return assemblyline.RepositoryEvidenceRelevanceRelationResult{}, objectiveStationReceipt{}, err
 			}
-			return runObjectiveReusablePortableRawLeafCall(
+			return runObjectivePortableRawLeafStation(
 				ctx, r, "repository_evidence_relevance_relation", job,
 				station.RepositoryEvidenceRelevance, resolveModel,
 				func(raw string) (assemblyline.RepositoryEvidenceRelevanceRelationResult, error) {

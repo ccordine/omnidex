@@ -11,7 +11,7 @@ import (
 func validateTypeScriptBrowserVersionProfile(profile directCodingProjectVersionProfile) error {
 	if err := validateProfileComponents(
 		profile, "ecmascript", "node", "npm", "npm_lock", "react", "tailwindcss",
-		"typescript", "vite", "vitest",
+		"typescript", "vite",
 	); err != nil {
 		return err
 	}
@@ -19,7 +19,7 @@ func validateTypeScriptBrowserVersionProfile(profile directCodingProjectVersionP
 		return err
 	}
 	for _, binding := range [][2]string{
-		{"typescript", "typescript"}, {"vite", "vite"}, {"vitest", "vitest"},
+		{"typescript", "typescript"}, {"vite", "vite"},
 		{"tailwindcss", "tailwindcss"},
 	} {
 		if err := validateProfileNPMComponent(profile, true, binding[0], binding[1]); err != nil {

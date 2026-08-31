@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
-	"time"
 )
 
 const uiSessionCookieName = "omni_ui_session"
@@ -19,11 +18,6 @@ type uiSessionResponse struct {
 	Locale    uiLocale       `json:"locale"`
 	Source    string         `json:"source"`
 	TTLMS     int64          `json:"ttl_ms"`
-}
-
-type uiMemorySessionRecord struct {
-	State     map[string]any
-	ExpiresAt time.Time
 }
 
 func (s *Server) handleUISession(w http.ResponseWriter, r *http.Request) {
@@ -38,7 +32,11 @@ func (s *Server) handleUISession(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) readUISession(w http.ResponseWriter, r *http.Request) {
-	sessionID := s.ensureUISessionCookie(w, r)
+	sessionID, err := s.ensureUISessionCookie(w, r)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
 	state, source, err := s.loadUIState(r.Context(), sessionID)
 	if err != nil {
 		writeError(w, http.StatusServiceUnavailable, err.Error())
@@ -70,7 +68,11 @@ func (s *Server) readUISession(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) updateUISession(w http.ResponseWriter, r *http.Request) {
-	sessionID := s.ensureUISessionCookie(w, r)
+	sessionID, err := s.ensureUISessionCookie(w, r)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
 	state, _, err := s.loadUIState(r.Context(), sessionID)
 	if err != nil {
 		writeError(w, http.StatusServiceUnavailable, err.Error())
@@ -116,13 +118,16 @@ func (s *Server) updateUISession(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (s *Server) ensureUISessionCookie(w http.ResponseWriter, r *http.Request) string {
+func (s *Server) ensureUISessionCookie(w http.ResponseWriter, r *http.Request) (string, error) {
 	if cookie, err := r.Cookie(uiSessionCookieName); err == nil {
 		if id := normalizeUISessionID(cookie.Value); id != "" {
-			return id
+			return id, nil
 		}
 	}
-	sessionID := newUISessionID()
+	sessionID, err := newUISessionID()
+	if err != nil {
+		return "", err
+	}
 	http.SetCookie(w, &http.Cookie{
 		Name:     uiSessionCookieName,
 		Value:    sessionID,
@@ -131,54 +136,26 @@ func (s *Server) ensureUISessionCookie(w http.ResponseWriter, r *http.Request) s
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
 	})
-	return sessionID
+	return sessionID, nil
 }
 
 func (s *Server) loadUIState(ctx context.Context, sessionID string) (map[string]any, string, error) {
-	key := uiSessionRedisKey(sessionID)
-	if s.uiRedis != nil {
-		raw, ok, err := s.uiRedis.Get(ctx, key)
-		if err == nil && ok {
-			state, err := decodeUIState([]byte(raw))
-			if err == nil {
-				return state, "redis", nil
-			}
-		}
-		if err != nil && s.uiRedisRequired {
-			return nil, "", fmt.Errorf("redis ui session unavailable: %w", err)
-		}
+	redis, err := s.requireUIRedis()
+	if err != nil {
+		return nil, "", err
 	}
-	if s.repo != nil {
-		record, ok, err := s.repo.GetUISession(ctx, sessionID)
-		if err != nil {
-			return nil, "", err
-		}
-		if ok {
-			state, err := decodeUIState(record.State)
-			if err != nil {
-				return map[string]any{}, "pgsql", nil
-			}
-			if s.uiRedis != nil {
-				_ = s.uiRedis.SetEX(ctx, key, string(record.State), s.uiSessionTTL)
-			}
-			return state, "pgsql", nil
-		}
+	raw, ok, err := redis.Get(ctx, uiSessionRedisKey(sessionID))
+	if err != nil {
+		return nil, "", fmt.Errorf("redis ui session read failed: %w", err)
 	}
-	s.uiMemoryMu.RLock()
-	record, ok := s.uiMemorySessions[sessionID]
-	s.uiMemoryMu.RUnlock()
-	if ok && record.ExpiresAt.After(time.Now()) {
-		raw, err := json.Marshal(record.State)
-		if err != nil {
-			return nil, "", err
-		}
-		state, err := decodeUIState(raw)
-		if err != nil {
-			return nil, "", err
-		}
-		return state, "memory", nil
+	if !ok {
+		return map[string]any{}, "new", nil
 	}
-	return map[string]any{}, "new", nil
+	state, err := decodeUIState([]byte(raw))
+	if err != nil {
+		return nil, "", fmt.Errorf("redis ui session state is invalid: %w", err)
+	}
+	return state, "redis", nil
 }
 
 func (s *Server) persistUIState(ctx context.Context, sessionID string, state map[string]any) (string, error) {
@@ -187,28 +164,24 @@ func (s *Server) persistUIState(ctx context.Context, sessionID string, state map
 	if err != nil {
 		return "", err
 	}
-	if s.uiRedis != nil {
-		if err := s.uiRedis.SetEX(ctx, uiSessionRedisKey(sessionID), string(raw), s.uiSessionTTL); err == nil {
-			if s.repo != nil {
-				_, _ = s.repo.UpsertUISession(ctx, sessionID, raw, s.uiSessionTTL)
-			}
-			return "redis", nil
-		} else if s.uiRedisRequired {
-			return "", fmt.Errorf("redis ui session unavailable: %w", err)
-		}
+	redis, err := s.requireUIRedis()
+	if err != nil {
+		return "", err
 	}
-	if s.repo != nil {
-		if _, err := s.repo.UpsertUISession(ctx, sessionID, raw, s.uiSessionTTL); err != nil {
-			return "", err
-		}
-		return "pgsql", nil
+	if err := redis.SetEX(ctx, uiSessionRedisKey(sessionID), string(raw), s.uiSessionTTL); err != nil {
+		return "", fmt.Errorf("redis ui session write failed: %w", err)
 	}
-	s.uiMemoryMu.Lock()
-	s.uiMemorySessions[sessionID] = uiMemorySessionRecord{
-		State: sanitizeUIState(state), ExpiresAt: time.Now().Add(s.uiSessionTTL),
+	return "redis", nil
+}
+
+func (s *Server) requireUIRedis() (*uiRedisClient, error) {
+	if strings.TrimSpace(s.uiRedisInitError) != "" {
+		return nil, fmt.Errorf("redis ui session backend is invalid: %s", s.uiRedisInitError)
 	}
-	s.uiMemoryMu.Unlock()
-	return "memory", nil
+	if s.uiRedis == nil {
+		return nil, fmt.Errorf("redis ui session backend is not configured")
+	}
+	return s.uiRedis, nil
 }
 
 func decodeUIState(raw []byte) (map[string]any, error) {
@@ -259,12 +232,12 @@ func normalizeUISessionID(value string) string {
 	return value
 }
 
-func newUISessionID() string {
+func newUISessionID() (string, error) {
 	var buf [24]byte
 	if _, err := rand.Read(buf[:]); err != nil {
-		return hex.EncodeToString([]byte(fmt.Sprintf("%d", time.Now().UnixNano())))
+		return "", fmt.Errorf("generate UI session ID: %w", err)
 	}
-	return hex.EncodeToString(buf[:])
+	return hex.EncodeToString(buf[:]), nil
 }
 
 func uiSessionRedisKey(sessionID string) string {

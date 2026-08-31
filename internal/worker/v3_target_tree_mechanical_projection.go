@@ -2,28 +2,19 @@ package worker
 
 import (
 	"fmt"
-	"sort"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
 )
 
 const maxMechanicalTargetTreeOrdinal = 999
 
-type mechanicalTargetTreePair func(int) (string, string)
+type mechanicalTargetTreePath func(int) string
 
-func projectMechanicalCompleteTargetTree(
-	stackLabel string,
-	occupation directCodingTargetTreeOccupation,
-	pair mechanicalTargetTreePair,
-) (assemblyline.TargetTree, error) {
-	return allocateMechanicalTargetTreePair(stackLabel, 1, occupation, pair)
-}
-
-func projectMechanicalFocusedTargetTree(
+func projectSingleImplementationPath(
 	stackLabel string,
 	taskOrdinal int,
 	occupation directCodingTargetTreeOccupation,
-	pair mechanicalTargetTreePair,
+	implementation mechanicalTargetTreePath,
 ) (assemblyline.TargetTree, error) {
 	if taskOrdinal < 1 || taskOrdinal > maxMechanicalTargetTreeOrdinal {
 		return assemblyline.TargetTree{}, fmt.Errorf(
@@ -31,50 +22,39 @@ func projectMechanicalFocusedTargetTree(
 			stackLabel, maxMechanicalTargetTreeOrdinal,
 		)
 	}
-	return allocateMechanicalTargetTreePair(stackLabel, taskOrdinal, occupation, pair)
-}
-
-func allocateMechanicalTargetTreePair(
-	stackLabel string,
-	startOrdinal int,
-	occupation directCodingTargetTreeOccupation,
-	pair mechanicalTargetTreePair,
-) (assemblyline.TargetTree, error) {
-	if pair == nil {
+	if implementation == nil {
 		return assemblyline.TargetTree{}, fmt.Errorf(
-			"%s target tree requires one registered path-pair grammar",
-			stackLabel,
+			"%s target tree requires one registered implementation-path grammar", stackLabel,
 		)
 	}
-	for ordinal := startOrdinal; ordinal <= maxMechanicalTargetTreeOrdinal; ordinal++ {
-		implementation, verification := pair(ordinal)
-		paths := []string{implementation, verification}
-		available, err := directCodingTargetTreePairAvailable(paths, occupation)
+	for ordinal := taskOrdinal; ordinal <= maxMechanicalTargetTreeOrdinal; ordinal++ {
+		artifactPath := implementation(ordinal)
+		available, err := directCodingTargetTreePathsAvailable(
+			[]string{artifactPath}, occupation,
+		)
 		if err != nil {
 			return assemblyline.TargetTree{}, fmt.Errorf(
-				"%s target-tree grammar returned an invalid pair: %w", stackLabel, err,
+				"%s target-tree grammar returned an invalid implementation path: %w",
+				stackLabel, err,
 			)
 		}
-		if !available {
-			continue
+		if available {
+			return assemblyline.TargetTree{Paths: []string{artifactPath}}, nil
 		}
-		sort.Strings(paths)
-		return assemblyline.TargetTree{Paths: paths}, nil
 	}
 	return assemblyline.TargetTree{}, fmt.Errorf(
-		"%s cannot reserve a free three-digit workload pair starting at %d",
-		stackLabel, startOrdinal,
+		"%s cannot reserve a free three-digit workload path starting at %d",
+		stackLabel, taskOrdinal,
 	)
 }
 
 func projectTypeScriptBrowserCompleteTargetTree(
 	occupation directCodingTargetTreeOccupation,
 ) (assemblyline.TargetTree, error) {
-	return projectMechanicalCompleteTargetTree(
-		"TypeScript browser", occupation,
-		func(ordinal int) (string, string) {
-			return fmt.Sprintf("src/feature%03d.tsx", ordinal),
-				fmt.Sprintf("src/feature%03d.test.tsx", ordinal)
+	return projectSingleImplementationPath(
+		"TypeScript browser", 1, occupation,
+		func(ordinal int) string {
+			return fmt.Sprintf("src/feature%03d.tsx", ordinal)
 		},
 	)
 }
@@ -83,11 +63,10 @@ func projectGoCommandLineFocusedTargetTree(
 	taskOrdinal int,
 	occupation directCodingTargetTreeOccupation,
 ) (assemblyline.TargetTree, error) {
-	return projectMechanicalFocusedTargetTree(
+	return projectSingleImplementationPath(
 		"Go command-line", taskOrdinal, occupation,
-		func(ordinal int) (string, string) {
-			return fmt.Sprintf("feature%03d.go", ordinal),
-				fmt.Sprintf("feature%03d_test.go", ordinal)
+		func(ordinal int) string {
+			return fmt.Sprintf("feature%03d.go", ordinal)
 		},
 	)
 }
@@ -96,11 +75,10 @@ func projectJavaScriptCommandLineFocusedTargetTree(
 	taskOrdinal int,
 	occupation directCodingTargetTreeOccupation,
 ) (assemblyline.TargetTree, error) {
-	return projectMechanicalFocusedTargetTree(
+	return projectSingleImplementationPath(
 		"JavaScript command-line", taskOrdinal, occupation,
-		func(ordinal int) (string, string) {
-			return fmt.Sprintf("feature%03d.mjs", ordinal),
-				fmt.Sprintf("feature%03d.test.mjs", ordinal)
+		func(ordinal int) string {
+			return fmt.Sprintf("feature%03d.mjs", ordinal)
 		},
 	)
 }
@@ -109,11 +87,10 @@ func projectRustCommandLineFocusedTargetTree(
 	taskOrdinal int,
 	occupation directCodingTargetTreeOccupation,
 ) (assemblyline.TargetTree, error) {
-	return projectMechanicalFocusedTargetTree(
+	return projectSingleImplementationPath(
 		"Rust command-line", taskOrdinal, occupation,
-		func(ordinal int) (string, string) {
-			return fmt.Sprintf("src/feature%03d.rs", ordinal),
-				fmt.Sprintf("tests/feature%03d_test.rs", ordinal)
+		func(ordinal int) string {
+			return fmt.Sprintf("src/feature%03d.rs", ordinal)
 		},
 	)
 }
@@ -122,11 +99,10 @@ func projectJavaCommandLineFocusedTargetTree(
 	taskOrdinal int,
 	occupation directCodingTargetTreeOccupation,
 ) (assemblyline.TargetTree, error) {
-	return projectMechanicalFocusedTargetTree(
+	return projectSingleImplementationPath(
 		"Java command-line", taskOrdinal, occupation,
-		func(ordinal int) (string, string) {
-			return fmt.Sprintf("Feature%03d.java", ordinal),
-				fmt.Sprintf("Feature%03dTest.java", ordinal)
+		func(ordinal int) string {
+			return fmt.Sprintf("Feature%03d.java", ordinal)
 		},
 	)
 }

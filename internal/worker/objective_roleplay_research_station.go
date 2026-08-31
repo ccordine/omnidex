@@ -30,7 +30,7 @@ func (adapter portableObjectiveRoleplayGroundedStation) RespondGrounded(
 	if err != nil {
 		return assemblyline.RoleplayGroundedResponseDecision{}, objectiveStationReceipt{}, err
 	}
-	inventory, receipt, err := runObjectiveReusablePortableRawLeafCall(
+	inventory, receipt, err := runObjectivePortableRawLeafStation(
 		ctx,
 		adapter.runtime,
 		"roleplay_grounded_paragraph_inventory",
@@ -71,7 +71,7 @@ func (adapter portableObjectiveRoleplayGroundedStation) RespondGrounded(
 		if err != nil {
 			return assemblyline.RoleplayGroundedResponseDecision{}, objectiveStationReceipt{Calls: totalCalls, Reused: allReused}, err
 		}
-		authorization, authorizationReceipt, err := runObjectiveReusablePortableRawLeafCall(
+		authorization, authorizationReceipt, err := runObjectivePortableRawLeafStation(
 			ctx,
 			adapter.runtime,
 			"roleplay_grounded_paragraph_authorization",
@@ -145,7 +145,7 @@ func (adapter portableObjectiveRoleplayGroundedStation) bindRoleplayGroundedEvid
 		if err != nil {
 			return nil, nil, objectiveStationReceipt{Calls: totalCalls, Reused: allReused}, err
 		}
-		relation, receipt, err := runObjectiveReusablePortableRawLeafCall(
+		relation, receipt, err := runObjectivePortableRawLeafStation(
 			ctx,
 			adapter.runtime,
 			"roleplay_grounded_response_evidence_relation",

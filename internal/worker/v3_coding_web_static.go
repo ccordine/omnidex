@@ -37,7 +37,7 @@ func typeScriptBrowserStaticFiles(
 		Name: packageName, Private: true, Version: "1.0.0", Type: "module",
 		Engines: map[string]string{"node": node, "npm": npm},
 		Scripts: map[string]string{
-			"dev": "vite", "test": "vitest run", "typecheck": "tsc --noEmit",
+			"dev": "vite", "typecheck": "tsc --noEmit",
 			"build": "npm run typecheck && vite build",
 		},
 		Dependencies:    profile.NPMDependencies,
@@ -68,7 +68,6 @@ func typeScriptWebIndexSource(productName string) string {
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#0b0d12" />
     <title>%s</title>
   </head>
   <body>
@@ -96,8 +95,7 @@ func typeScriptWebConfigSource(ecmascript string) string {
     "resolveJsonModule": true,
     "isolatedModules": true,
     "noEmit": true,
-    "jsx": "react-jsx",
-    "types": ["vitest/globals"]
+		"jsx": "react-jsx"
   },
   "include": ["src"],
   "exclude": ["dist", "node_modules"]
@@ -106,16 +104,12 @@ func typeScriptWebConfigSource(ecmascript string) string {
 }
 
 func typeScriptViteConfigSource() string {
-	return `import { defineConfig } from 'vitest/config';
+	return `import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
-  test: {
-    environment: 'jsdom',
-    globals: true,
-  },
 });
 `
 }

@@ -164,7 +164,7 @@ type objectiveRoleplayGroundedStation interface {
 }
 
 type objectiveWorkflows struct {
-	ModelPathProvenance   assemblyline.ArtifactIdentityProvenance
+	ResolveModelPathProvenance func() (assemblyline.ArtifactIdentityProvenance, error)
 	WorkspaceMutation     func(context.Context, turnAuthority) (string, error)
 	RepositoryRead        func(context.Context, turnAuthority) (objectiveEvidenceAcquisition, error)
 	ExternalAnswer        func(context.Context, turnAuthority) (objectiveExternalAnswer, error)

@@ -7,7 +7,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"sort"
 	"strings"
 	"time"
 )
@@ -40,14 +39,7 @@ func runValidatedV3Command(
 	}
 	program := strings.TrimSpace(command.Program)
 	args := append([]string(nil), command.Args...)
-	if err := validateV3CommandForProfile(program, args, command.Profile); err != nil {
-		return zero, err
-	}
-	if err := validateV3CommandEnvironment(command); err != nil {
-		return zero, err
-	}
-	executionRoot, commandEnvironment, err := resolveV3CommandExecution(ctx, root, program)
-	if err != nil {
+	if err := validateV3Command(program, args); err != nil {
 		return zero, err
 	}
 	timeout := command.Timeout
@@ -69,11 +61,6 @@ func runValidatedV3Command(
 	if err != nil {
 		return zero, err
 	}
-	environment = append(environment, commandEnvironment...)
-	if command.Profile == codeCommandProfileDeployment {
-		environment = append(environment, "COMPOSE_DISABLE_ENV_FILE=1")
-	}
-	environment = append(environment, renderV3CommandEnvironment(command.Environment)...)
 	stdout, err := newBoundedCommandOutput(maxV3CommandOutput)
 	if err != nil {
 		return zero, err
@@ -85,12 +72,8 @@ func runValidatedV3Command(
 	runCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	started := time.Now()
-	executionArgs := args
-	if program == "docker" {
-		executionArgs = v3DockerCLIArguments(args)
-	}
-	process := exec.CommandContext(runCtx, program, executionArgs...)
-	process.Dir = executionRoot
+	process := exec.CommandContext(runCtx, program, args...)
+	process.Dir = root
 	process.Env = environment
 	process.Stdout = stdout
 	process.Stderr = stderr
@@ -106,41 +89,6 @@ func runValidatedV3Command(
 		}
 	}
 	return result, nil
-}
-
-func validateV3CommandEnvironment(command codeCommand) error {
-	if len(command.Environment) == 0 {
-		return nil
-	}
-	if command.Profile != codeCommandProfileDeployment {
-		return fmt.Errorf("command.run environment is permitted only for persistent deployment")
-	}
-	allowed := map[string]struct{}{
-		"APP_KEY": {}, "DATABASE_PASSWORD": {}, "HOST_BIND_ADDRESS": {},
-		"HOST_HTTP_PORT": {}, "SERVICE_STATE_DB_PASSWORD": {},
-	}
-	for name, value := range command.Environment {
-		if _, ok := allowed[name]; !ok {
-			return fmt.Errorf("persistent deployment environment name %q is not registered", name)
-		}
-		if value == "" || len(value) > 512 || strings.ContainsAny(value, "\x00\r\n") {
-			return fmt.Errorf("persistent deployment environment value for %s is invalid", name)
-		}
-	}
-	return nil
-}
-
-func renderV3CommandEnvironment(values map[string]string) []string {
-	keys := make([]string, 0, len(values))
-	for name := range values {
-		keys = append(keys, name)
-	}
-	sort.Strings(keys)
-	environment := make([]string, 0, len(keys))
-	for _, name := range keys {
-		environment = append(environment, name+"="+values[name])
-	}
-	return environment
 }
 
 func validateV3CommandRoot(root string) error {

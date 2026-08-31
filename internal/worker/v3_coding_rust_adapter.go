@@ -18,7 +18,6 @@ var rustCommandLinePackageSegmentPattern = regexp.MustCompile(`^[a-z0-9]+(?:_[a-
 func compileGenericRustCommandLineBlueprint(
 	packageName string,
 	specification assemblyline.ApplicationSpecification,
-	skills map[string]directCodingSkillBinding,
 	workload assemblyline.FrozenApplicationWorkload,
 	capabilities directCodingCapabilityGraph,
 	target assemblyline.TargetTree,
@@ -36,9 +35,6 @@ func compileGenericRustCommandLineBlueprint(
 	if err != nil {
 		return assemblyline.SourceBlueprint{}, nil, err
 	}
-	if err := validateDirectCodingSkillBindings(specification.Requirements, skills); err != nil {
-		return assemblyline.SourceBlueprint{}, nil, err
-	}
 	if err := validateDirectCodingCapabilityGraph(specification.Requirements, capabilities); err != nil {
 		return assemblyline.SourceBlueprint{}, nil, err
 	}
@@ -51,7 +47,7 @@ func compileGenericRustCommandLineBlueprint(
 		return assemblyline.SourceBlueprint{}, nil, err
 	}
 	documents, err := genericRustCommandLineDocuments(
-		crateName, specification, skills, contexts, capabilities, coverage,
+		crateName, specification, contexts, capabilities, coverage,
 	)
 	if err != nil {
 		return assemblyline.SourceBlueprint{}, nil, err
@@ -172,18 +168,4 @@ func validateRustCommandLineAssembly(assembly directCodingAssembly) error {
 		return fmt.Errorf("Rust command-line lockfile differs from its dependency-free manifest")
 	}
 	return nil
-}
-
-func rustCommandLineVerificationCommands(
-	_ directCodingProgram,
-) ([]testCommand, error) {
-	return rustCommandLineVerificationCommandSet(), nil
-}
-
-func rustCommandLineVerificationCommandSet() []testCommand {
-	return []testCommand{
-		{Family: "cargo", Name: "cargo", Args: []string{"test", "--locked", "--offline"}, Purpose: verificationTest},
-		{Family: "cargo", Name: "cargo", Args: []string{"check", "--locked", "--offline", "--all-targets"}, Purpose: verificationSyntax},
-		{Family: "cargo", Name: "cargo", Args: []string{"build", "--locked", "--offline"}, Purpose: verificationBuild},
-	}
 }

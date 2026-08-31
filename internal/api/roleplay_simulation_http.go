@@ -39,7 +39,11 @@ func (s *Server) writeRoleplaySimulationComponent(
 	world roleplay.World,
 	page roleplaySimulationPageState,
 ) {
-	sessionID := s.ensureUISessionCookie(w, r)
+	sessionID, err := s.ensureUISessionCookie(w, r)
+	if err != nil {
+		writeRoleplaySimulationError(w, err)
+		return
+	}
 	s.roleplaySceneDraftMu.Lock()
 	defer s.roleplaySceneDraftMu.Unlock()
 	draft, err := s.loadRoleplaySceneDraftLocked(r.Context(), sessionID, channel.ID, world.ID)

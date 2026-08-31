@@ -54,29 +54,6 @@ func summarizeChatCodingRepairGuidance(message string) (chatProgressKind, string
 	), err
 }
 
-func summarizeChatSkillBinding(message string) (chatProgressKind, string, error) {
-	fields, err := exactChatEventFields(message, "requirement", "skill", "version", "source", "status")
-	if err != nil {
-		return "", "", err
-	}
-	requirement, err := requireChatEventText(fields, "requirement", 256)
-	if err != nil {
-		return "", "", err
-	}
-	skill, err := requireChatEventText(fields, "skill", 256)
-	if err != nil {
-		return "", "", err
-	}
-	version, err := requireChatEventInteger(fields, "version", false)
-	if err != nil {
-		return "", "", err
-	}
-	if _, err := requireChatEventToken(fields, "status", 32); err != nil {
-		return "", "", err
-	}
-	return chatProgressRetrieval, fmt.Sprintf("Bound skill %s v%d to %s", skill, version, requirement), nil
-}
-
 func summarizeChatRepositoryIntelligence(event parsedChatStepEvent) (chatProgressKind, string, error) {
 	switch event.Type {
 	case "repository_snapshot_started":
@@ -129,57 +106,6 @@ func summarizeChatRepositoryIntelligence(event parsedChatStepEvent) (chatProgres
 		return chatProgressRetrieval, "Repository analysis ready for " + displayChatProgressToken(adapter), nil
 	}
 	return "", "", fmt.Errorf("repository intelligence event %q is not registered", event.Type)
-}
-
-func summarizeChatRepositoryChange(event parsedChatStepEvent) (chatProgressKind, string, error) {
-	if event.Type == "repository_change_staged" || event.Type == "repository_desired_state_staged" {
-		fields, err := exactChatEventFields(event.Message, "contract", "files")
-		if event.Type == "repository_desired_state_staged" {
-			fields, err = exactChatEventFields(event.Message, "graph", "files")
-		}
-		if err != nil {
-			return "", "", err
-		}
-		files, err := requireChatEventInteger(fields, "files", false)
-		return chatProgressPreparation, fmt.Sprintf("Staged an exact repository change across %d files", files), err
-	}
-	fields, err := exactChatEventFields(event.Message, "contract", "files", "snapshot")
-	if event.Type == "repository_desired_state_verified" {
-		fields, err = exactChatEventFields(event.Message, "graph", "files", "snapshot")
-	}
-	if err != nil {
-		return "", "", err
-	}
-	files, err := requireChatEventInteger(fields, "files", false)
-	if err != nil {
-		return "", "", err
-	}
-	if _, err := requireChatEventText(fields, "snapshot", 256); err != nil {
-		return "", "", err
-	}
-	return chatProgressFile, fmt.Sprintf("Committed an exact repository change across %d files", files), nil
-}
-
-func summarizeChatRepositoryVerification(event parsedChatStepEvent) (chatProgressKind, string, error) {
-	if event.Type == "repository_verification_command_passed" {
-		fields, err := exactChatEventFields(event.Message, "scope", "command")
-		if err != nil {
-			return "", "", err
-		}
-		command, err := requireChatEventText(fields, "command", 512)
-		return chatProgressVerification, "Repository verification passed: " + command, err
-	}
-	fields, err := exactChatEventFields(event.Message, "scope", "plan")
-	if err != nil {
-		return "", "", err
-	}
-	if _, err := requireChatEventText(fields, "plan", 256); err != nil {
-		return "", "", err
-	}
-	if event.Type == "repository_verification_baseline_accepted" {
-		return chatProgressVerification, "Accepted the clean repository verification baseline", nil
-	}
-	return chatProgressVerification, "Accepted the code-owned repository verification plan", nil
 }
 
 func chatPortableEventIdentity(eventType string) (namespace, state string, ok bool) {
@@ -273,7 +199,6 @@ func chatStationLabel(subject string) (string, chatProgressKind) {
 		"repository_evidence_relevance": "Repository relevance",
 		"web_relevance":                 "Web relevance",
 		"web_grounded_synthesis":        "Web grounded synthesis",
-		"skill_selection":               "Skill selection",
 	}
 	label := labels[subject]
 	if label == "" {
@@ -285,7 +210,7 @@ func chatStationLabel(subject string) (string, chatProgressKind) {
 	case "context_relevance", "context_minification",
 		"database_schema_selection",
 		"database_join_path_selection", "repository_evidence_relevance",
-		"web_relevance", "skill_selection":
+		"web_relevance":
 		category = chatProgressRetrieval
 	}
 	return label, category

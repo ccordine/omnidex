@@ -27,6 +27,9 @@ func classifyArtifactHandling(
 			func(value assemblyline.ArtifactHandlingDecision) error { return value.Validate(identity.Token) },
 		)
 		if err != nil {
+			if isDirectCodingSemanticLeafRejection(err) {
+				continue
+			}
 			return nil, err
 		}
 		directive := assemblyline.ArtifactReference

@@ -21,9 +21,6 @@ func portableRepositoryConversationResponseMaximum(job PortableJob) (int, bool, 
 			RepositoryEvidenceDirectlyRelevant,
 			RepositoryEvidenceNotDirectlyRelevant,
 		), true, nil
-	case WorkRepositoryChangeOwner:
-		maximum, err := repositoryChangeOwnerMaximum(job)
-		return maximum, true, err
 	case WorkContextRelevanceRelation:
 		return maximumStringBytes(
 			ContextCandidateDirectlyRelevant,
@@ -90,22 +87,4 @@ func portableRepositoryConversationResponseMaximum(job PortableJob) (int, bool, 
 	default:
 		return 0, false, nil
 	}
-}
-
-func repositoryChangeOwnerMaximum(job PortableJob) (int, error) {
-	var input RepositoryChangeOwnerInput
-	if err := decodePortablePayload(job.Payload, &input); err != nil {
-		return 0, err
-	}
-	candidates := []string{RepositoryChangeOwnerNone}
-	for candidate := range eligibleRepositoryChangeOwnerIDs(input.Authority) {
-		candidates = append(candidates, candidate)
-	}
-	return maximumAcceptedCandidateBytes(
-		"repository change owner", candidates,
-		func(candidate string) error {
-			_, err := DecodeRepositoryChangeOwnerLeaf(input, candidate)
-			return err
-		},
-	)
 }

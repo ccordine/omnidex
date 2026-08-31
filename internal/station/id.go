@@ -23,35 +23,13 @@ const (
 	CodingSurface                                 ID = "coding_surface"
 	CodingRequirements                            ID = "coding_requirements"
 	CodingProjectStackConstraint                  ID = "coding_project_stack_constraint"
-	CodingServiceContinuedAvailability            ID = "coding_service_continued_availability"
-	CodingServicePersistenceDestination           ID = "coding_service_persistence_destination"
-	CodingServiceStateLifetime                    ID = "coding_service_state_lifetime"
-	CodingApplicationStateFieldPurposeInventory   ID = "coding_application_state_field_purpose_inventory"
-	CodingApplicationStateFieldKind               ID = "coding_application_state_field_kind"
-	CodingApplicationRecordFieldPurposeInventory  ID = "coding_application_record_field_purpose_inventory"
-	CodingApplicationRecordFieldKind              ID = "coding_application_record_field_kind"
-	CodingApplicationServiceStatePurposeNecessity ID = "coding_application_service_state_purpose_necessity"
-	CodingApplicationServiceStatePurposeRelation  ID = "coding_application_service_state_purpose_relation"
-	CodingServiceEndpointRequirement              ID = "coding_service_endpoint_requirement"
-	CodingServiceEndpointExposure                 ID = "coding_service_endpoint_exposure"
-	CodingServiceEndpointMethod                   ID = "coding_service_endpoint_method"
-	CodingServiceEndpointRouteTemplate            ID = "coding_service_endpoint_route_template"
-	CodingServiceEndpointRequestMedia             ID = "coding_service_endpoint_request_media"
-	CodingServiceEndpointResponseMedia            ID = "coding_service_endpoint_response_media"
-	CodingServiceEndpointSuccessStatus            ID = "coding_service_endpoint_success_status"
 	CodingTargetTree                              ID = "coding_target_tree"
 	CodingArtifactHandling                        ID = "coding_artifact_handling"
-	CodingRepositoryArtifactAbsence               ID = "coding_repository_artifact_absence"
-	CodingPlainTextArtifactCreation               ID = "coding_plain_text_artifact_creation"
-	CodingDeclarationArtifactBoundary             ID = "coding_declaration_artifact_boundary"
-	CodingArtifactCandidateSelection              ID = "coding_artifact_candidate_selection"
 	CodingCapabilityRelation                      ID = "coding_capability_relation"
-	CodingSkillSelection                          ID = "coding_skill_selection"
 	CodingRuntimeCapabilityNecessity              ID = "coding_runtime_capability_necessity"
 	CodingFragment                                ID = "coding_fragment"
 	CodingFragmentRepairGuidance                  ID = "coding_fragment_repair_guidance"
 	CodingFragmentCorrection                      ID = "coding_fragment_correction"
-	CodingRepositoryChange                        ID = "coding_repository_change_surface"
 )
 
 var registered = [...]ID{
@@ -71,35 +49,13 @@ var registered = [...]ID{
 	CodingSurface,
 	CodingRequirements,
 	CodingProjectStackConstraint,
-	CodingServiceContinuedAvailability,
-	CodingServicePersistenceDestination,
-	CodingServiceStateLifetime,
-	CodingApplicationStateFieldPurposeInventory,
-	CodingApplicationStateFieldKind,
-	CodingApplicationRecordFieldPurposeInventory,
-	CodingApplicationRecordFieldKind,
-	CodingApplicationServiceStatePurposeNecessity,
-	CodingApplicationServiceStatePurposeRelation,
-	CodingServiceEndpointRequirement,
-	CodingServiceEndpointExposure,
-	CodingServiceEndpointMethod,
-	CodingServiceEndpointRouteTemplate,
-	CodingServiceEndpointRequestMedia,
-	CodingServiceEndpointResponseMedia,
-	CodingServiceEndpointSuccessStatus,
 	CodingTargetTree,
 	CodingArtifactHandling,
-	CodingRepositoryArtifactAbsence,
-	CodingPlainTextArtifactCreation,
-	CodingDeclarationArtifactBoundary,
-	CodingArtifactCandidateSelection,
 	CodingCapabilityRelation,
-	CodingSkillSelection,
 	CodingRuntimeCapabilityNecessity,
 	CodingFragment,
 	CodingFragmentRepairGuidance,
 	CodingFragmentCorrection,
-	CodingRepositoryChange,
 }
 
 var registeredSet = func() map[ID]struct{} {

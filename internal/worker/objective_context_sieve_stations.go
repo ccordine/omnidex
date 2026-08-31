@@ -31,7 +31,7 @@ func (adapter portableObjectiveContextSieveStations) Relate(
 			adapter.runtime, input.Scope, station.ContextRelevance,
 		)
 	}
-	decision, receipt, err := runObjectiveReusablePortableRawLeafCall(
+	decision, receipt, err := runObjectivePortableRawLeafStation(
 		ctx, adapter.runtime, "context_relevance_relation", job,
 		station.ContextRelevance, resolveModel,
 		func(raw string) (assemblyline.ContextRelevanceRelationResult, error) {
@@ -54,7 +54,7 @@ func (adapter portableObjectiveContextSieveStations) Minify(
 	if err != nil {
 		return assemblyline.ContextMinificationDecision{}, contextcompiler.StationReceipt{}, err
 	}
-	decision, receipt, err := runObjectiveReusablePortableRawLeafCall(
+	decision, receipt, err := runObjectivePortableRawLeafStation(
 		ctx, adapter.runtime, "context_minification", job,
 		station.ContextMinification,
 		func() (string, error) {

@@ -49,9 +49,6 @@ func sessionTag(job model.Job) string {
 func projectTag(job model.Job) string {
 	location := clientCWDForJob(job)
 	if location == "" {
-		location = metadataString(job.Metadata, "host_env_cwd")
-	}
-	if location == "" {
 		return ""
 	}
 	clean := filepath.Clean(location)

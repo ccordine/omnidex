@@ -15,7 +15,6 @@ import (
 func (c *Client) generatePreparedRaw(
 	ctx context.Context,
 	prepared llm.PreparedModel,
-	observed llm.ObservedProviderIdentity,
 ) (llm.PreparedGeneration, error) {
 	payload, err := llm.ExactPreparedRequestBytes(prepared)
 	if err != nil {
@@ -27,8 +26,6 @@ func (c *Client) generatePreparedRaw(
 		Protocol:                   prepared.Protocol,
 		ProviderRequestDisposition: llm.ProviderRequestNotDispatched,
 		ProviderRequestSHA256:      hex.EncodeToString(digest[:]),
-		ProviderObservation:        observed.Observation,
-		ProviderIdentityEvidence:   observed.Evidence,
 	}
 	request, err := http.NewRequestWithContext(
 		ctx, http.MethodPost, c.baseURL+"/api/generate", bytes.NewReader(payload),
@@ -80,7 +77,6 @@ func (c *Client) generatePreparedRaw(
 		prepared.Protocol, response.StatusCode, body,
 	)
 	result.ProviderResponseDisposition = decoded.Disposition
-	result.ProviderResponseModel = decoded.Model
 	result.Content = decoded.Content
 	result.ProviderDonePresent = decoded.DonePresent
 	result.ProviderDone = decoded.Done

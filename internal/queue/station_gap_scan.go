@@ -21,7 +21,6 @@ func scanStationGapOpening(scanner stationGapScanner, opening *StationGapOpening
 		&opening.ProjectionEnvelope, &opening.ProjectionSHA256, &semanticUncertainty,
 		&opening.SemanticUncertaintyContractSHA256, &opening.ContextTokens,
 		&opening.MaxOutputTokens, &opening.OutputLimitMode,
-		&opening.OriginGapOpeningID, &opening.OriginCallReceiptID,
 		&opening.CreatedAt,
 	); err != nil {
 		return err
@@ -48,19 +47,26 @@ func scanStationGapOutcome(scanner stationGapScanner, outcome *StationGapOutcome
 	); err != nil {
 		return err
 	}
-	outcome.Response = llmEvidenceString(response)
-	outcome.ResponseSHA256 = llmEvidenceString(responseHash)
-	outcome.ProjectionKind = StationGapProjectionKind(llmEvidenceString(projectionKind))
-	outcome.CallReceiptSHA256 = llmEvidenceString(receiptHash)
-	outcome.SourceResponseSHA256 = llmEvidenceString(sourceHash)
+	outcome.Response = stationGapText(response)
+	outcome.ResponseSHA256 = stationGapText(responseHash)
+	outcome.ProjectionKind = StationGapProjectionKind(stationGapText(projectionKind))
+	outcome.CallReceiptSHA256 = stationGapText(receiptHash)
+	outcome.SourceResponseSHA256 = stationGapText(sourceHash)
 	if sourceStart != nil {
 		outcome.SourceStartByte = *sourceStart
 	}
 	if sourceEnd != nil {
 		outcome.SourceEndByte = *sourceEnd
 	}
-	outcome.Error = llmEvidenceString(errorText)
+	outcome.Error = stationGapText(errorText)
 	return nil
+}
+
+func stationGapText(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
 }
 
 func loadStationGapOpeningTx(
@@ -75,8 +81,7 @@ func loadStationGapOpeningTx(
 			portable_envelope,portable_envelope_sha256,renderer_version,prompt,
 			projection_envelope,projection_sha256,semantic_uncertainty_contract,
 			semantic_uncertainty_contract_sha256,context_tokens,max_output_tokens,
-			output_limit_mode,COALESCE(origin_gap_opening_id,0),
-			COALESCE(origin_call_receipt_id,0),created_at
+			output_limit_mode,created_at
 		FROM station_gap_openings WHERE id=$1 FOR SHARE
 	`, openingID), &opening)
 	return opening, err

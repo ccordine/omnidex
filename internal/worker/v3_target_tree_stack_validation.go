@@ -12,7 +12,7 @@ func validateTypeScriptBrowserTargetTree(target assemblyline.TargetTree) error {
 	if err != nil {
 		return err
 	}
-	return validateDirectCodingSinglePairTargetTree(stack, target, false)
+	return validateDirectCodingSingleImplementationTargetTree(stack, target, false)
 }
 
 func validateGoCommandLineTargetTree(target assemblyline.TargetTree) error {
@@ -20,42 +20,29 @@ func validateGoCommandLineTargetTree(target assemblyline.TargetTree) error {
 	if err != nil {
 		return err
 	}
-	return validateDirectCodingSinglePairTargetTree(stack, target, true)
+	return validateDirectCodingSingleImplementationTargetTree(stack, target, true)
 }
 
-func validateDirectCodingSinglePairTargetTree(
+func validateDirectCodingSingleImplementationTargetTree(
 	stack directCodingProjectStack,
 	target assemblyline.TargetTree,
 	rootOnly bool,
 ) error {
-	if len(target.Paths) != 2 {
-		return fmt.Errorf(
-			"project stack %s requires exactly one implementation leaf and one verification leaf",
-			stack.ID,
-		)
+	if len(target.Paths) != 1 {
+		return fmt.Errorf("project stack %s requires exactly one implementation leaf", stack.ID)
 	}
-	implementations, verifications := 0, 0
-	for _, artifactPath := range target.Paths {
-		if rootOnly && path.Dir(artifactPath) != "." {
-			return fmt.Errorf("project stack %s requires root package workload leaves", stack.ID)
-		}
-		_, kind, err := directCodingArtifactAdapterForTreePath(stack, artifactPath)
-		if err != nil {
-			return err
-		}
-		switch kind {
-		case assemblyline.TargetArtifactImplementation:
-			implementations++
-		case assemblyline.TargetArtifactVerification:
-			verifications++
-		default:
-			return fmt.Errorf("target-tree path %q has unsupported artifact kind %q", artifactPath, kind)
-		}
+	artifactPath := target.Paths[0]
+	if rootOnly && path.Dir(artifactPath) != "." {
+		return fmt.Errorf("project stack %s requires a root package workload leaf", stack.ID)
 	}
-	if implementations != 1 || verifications != 1 {
+	_, kind, err := directCodingArtifactAdapterForTreePath(stack, artifactPath)
+	if err != nil {
+		return err
+	}
+	if kind != assemblyline.TargetArtifactImplementation {
 		return fmt.Errorf(
-			"project stack %s requires exactly one implementation leaf and one verification leaf",
-			stack.ID,
+			"project stack %s requires one implementation leaf, received %q",
+			stack.ID, kind,
 		)
 	}
 	return nil

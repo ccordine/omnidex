@@ -27,7 +27,7 @@ func validateJobHistoryRequest(jobID int64, request JobHistoryRequest) (int64, e
 func registeredJobHistoryStream(stream JobHistoryStream) bool {
 	switch stream {
 	case JobHistoryGenerations, JobHistorySteps, JobHistoryArtifacts,
-		JobHistoryEvidence, JobHistoryLLMCalls:
+		JobHistoryEvidence:
 		return true
 	default:
 		return false

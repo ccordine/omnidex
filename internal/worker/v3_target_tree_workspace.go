@@ -3,10 +3,8 @@ package worker
 import (
 	"fmt"
 	"io/fs"
-	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 )
 
 // snapshotDirectCodingTargetTreePaths is the code-owned current filesystem
@@ -45,7 +43,8 @@ func snapshotDirectCodingTargetTreePaths(root string) ([]string, []string, error
 			return err
 		}
 		relative = filepath.ToSlash(relative)
-		if err := validateV3WritePath(relative); err != nil {
+		normalized, err := normalizeDirectCodingPath(relative)
+		if err != nil || normalized != relative {
 			return nil
 		}
 		paths = append(paths, relative)
@@ -57,25 +56,4 @@ func snapshotDirectCodingTargetTreePaths(root string) ([]string, []string, error
 	sort.Strings(paths)
 	sort.Strings(directories)
 	return paths, directories, nil
-}
-
-func directCodingTargetTreeExistingSource(root, path string) (string, error) {
-	target, err := resolveV3WorkspaceFile(root, path)
-	if err != nil {
-		return "", err
-	}
-	content, err := os.ReadFile(target)
-	if os.IsNotExist(err) {
-		return "", nil
-	}
-	if err != nil {
-		return "", fmt.Errorf("read target-tree existing file %s: %w", path, err)
-	}
-	if len(content) > maxV3WriteBytes {
-		return "", fmt.Errorf("target-tree existing file %s exceeds the %d-byte model context limit", path, maxV3WriteBytes)
-	}
-	if strings.ContainsRune(string(content), '\x00') {
-		return "", fmt.Errorf("target-tree existing file %s contains NUL bytes", path)
-	}
-	return string(content), nil
 }

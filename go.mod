@@ -12,7 +12,6 @@ require (
 	github.com/tree-sitter/tree-sitter-html v0.23.2
 	github.com/tree-sitter/tree-sitter-java v0.23.5
 	github.com/tree-sitter/tree-sitter-javascript v0.23.1
-	github.com/tree-sitter/tree-sitter-php v0.23.11
 	github.com/tree-sitter/tree-sitter-rust v0.23.2
 	github.com/tree-sitter/tree-sitter-typescript v0.23.2
 	golang.org/x/mod v0.29.0

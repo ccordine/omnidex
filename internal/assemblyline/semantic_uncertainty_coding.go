@@ -12,34 +12,6 @@ func codingSemanticUncertaintyContract(
 			"The immutable request, one opaque artifact token, and the closed handling-relation vocabulary.",
 			"One registered artifact-handling relation.",
 			"DecodeArtifactHandlingDecision validates the relation before code updates the focused artifact obligation.")
-	case WorkRepositoryArtifactAbsence:
-		contract = semanticUncertaintyContract(kind,
-			"Does the exact requirement explicitly require one complete repository-owned semantic artifact to be absent?",
-			"Complete semantic absence cannot be distinguished from partial behavior change by structural parsing.",
-			"One exact cohesive requirement statement.",
-			"One registered repository-artifact absence relation.",
-			"DecodeRepositoryArtifactAbsenceDecision validates the relation before code may derive an absence obligation.")
-	case WorkPlainTextArtifactCreation:
-		contract = semanticUncertaintyContract(kind,
-			"Does the exact cohesive requirement call for exactly one complete unstructured plain-text artifact with no other change?",
-			"The completeness and exclusivity of free-form artifact intent cannot be proven by syntax alone.",
-			"One exact cohesive requirement statement.",
-			"One registered plain-text artifact-creation relation.",
-			"DecodePlainTextArtifactCreationDecision validates the relation before code may create one text-node responsibility.")
-	case WorkDeclarationArtifactBoundary:
-		contract = semanticUncertaintyContract(kind,
-			"What explicit artifact boundary does the requirement assign to the focused declaration?",
-			"A declaration signature establishes syntax but not its semantically intended ownership boundary.",
-			"The exact requirement statement, exact Go signature, and opaque declaration identity.",
-			"One registered declaration-artifact boundary relation.",
-			"DecodeDeclarationArtifactBoundaryDecision validates the relation before code updates the artifact graph.")
-	case WorkArtifactCandidateSelection:
-		contract = semanticUncertaintyContract(kind,
-			"Which known semantic artifact is explicitly identified as required to be absent?",
-			"Bounded declarations establish candidates but cannot resolve ambiguous natural-language reference exactly.",
-			"The exact absence requirement and code-enumerated opaque candidates with bounded declaration evidence.",
-			"One opaque artifact-candidate ID.",
-			"DecodeArtifactCandidateSelectionDecision validates the ID before code binds repository identity.")
 	case WorkCapabilityRelation:
 		contract = semanticUncertaintyContract(kind,
 			"What direct live-state dependency relation exists between two focused local behaviors?",
@@ -47,13 +19,6 @@ func codingSemanticUncertaintyContract(
 			"The bounded local context, left behavior need, right behavior need, and registered relation vocabulary.",
 			"One registered direct capability relation.",
 			"DecodeCapabilityRelationDecision validates the relation before code adds the corresponding dependency edge.")
-	case WorkSkillSelection:
-		contract = semanticUncertaintyContract(kind,
-			"Which existing learned skill directly covers the focused local need?",
-			"Natural-language capability matching cannot be replaced by exact string or keyword comparison.",
-			"The bounded local context, one local need, and code-enumerated opaque skill-purpose candidates.",
-			"One opaque learned-skill candidate token.",
-			"DecodeSkillSelectionDecision validates the token before code binds the accepted skill version.")
 	case WorkRuntimeCapabilityNecessity:
 		contract = semanticUncertaintyContract(kind,
 			"Is this one exact registered runtime behavior necessary for the focused local need?",

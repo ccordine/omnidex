@@ -59,24 +59,6 @@ func registeredDirectCodingParserQualifications() []directCodingParserQualificat
 				AdapterID: "java", Path: "Qualified.java", Source: "final class Qualified { static int value() { return 1; } }\n",
 			}},
 		},
-		{
-			ID: "tree-sitter-php-0.23.11-php-8-profile-v1", StackID: genericPHPServiceAdapter,
-			SourceDialects: []string{"PHP >=8.2,<9 function syntax"},
-			Probes: []directCodingParserProbe{{
-				AdapterID: "php", Path: "qualified.php", Source: "<?php\nfunction qualified(): int { return 1; }\n",
-			}},
-		},
-		{
-			ID: "tree-sitter-php-0.23.11-laravel-13-profile-v1", StackID: laravelHTTPServiceAdapter,
-			SourceDialects: []string{"PHP " + laravelPHPVersion + " function syntax"},
-			Probes: []directCodingParserProbe{{
-				AdapterID: "php", Path: "qualified.php",
-				Source: "<?php\nfunction qualified(): int { return 1; }\n",
-			}, {
-				AdapterID: "php_executable", Path: "artisan",
-				Source: "#!/usr/bin/env php\n<?php\nfunction qualified(): int { return 1; }\n",
-			}},
-		},
 	}
 }
 

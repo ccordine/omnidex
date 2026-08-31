@@ -60,18 +60,9 @@ func (service *Service) Capture(ctx context.Context, projectID int64, root strin
 	if service == nil || service.store == nil {
 		return Result{}, fmt.Errorf("repository indexing service is unavailable")
 	}
-	snapshot, err := repositoryfacts.BuildGitSnapshot(ctx, root, repositoryfacts.SnapshotOptions{})
-	if err != nil {
-		return Result{}, err
-	}
-	result := Result{
-		Snapshot: snapshot, Analyses: []repositoryfacts.Analysis{},
-	}
-	if err := service.store.StoreRepositorySnapshot(ctx, projectID, snapshot); err != nil {
-		return result, err
-	}
-	result.Complete = true
-	return result, nil
+	return Result{}, fmt.Errorf(
+		"repository indexing is not available on the filesystem-authoritative direct-coding path",
+	)
 }
 
 // Analyze runs exactly one code-demanded adapter against one already captured

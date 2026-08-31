@@ -29,19 +29,16 @@ func (mode ExactPreparedOutputLimitMode) Validate() error {
 }
 
 type PreparedModel struct {
-	Protocol                     ExactPreparedProtocol
-	BaseModel                    string
-	ContextModel                 string
-	ModelfilePath                string
-	PromptHint                   string
-	Prompt                       string
-	MaxOutputTokens              int
-	OutputLimitMode              ExactPreparedOutputLimitMode
-	ContextTokens                int
-	Temperature                  *ExactPreparedTemperature
-	RawTextStopSequence          string
-	ProviderIdentityExpectation  *ProviderIdentityExpectation
-	ProviderObservationChallenge string
+	Protocol            ExactPreparedProtocol
+	BaseModel           string
+	ContextModel        string
+	PromptHint          string
+	Prompt              string
+	MaxOutputTokens     int
+	OutputLimitMode     ExactPreparedOutputLimitMode
+	ContextTokens       int
+	Temperature         *ExactPreparedTemperature
+	RawTextStopSequence string
 }
 
 func ValidateResponseContract(prepared PreparedModel) error {
@@ -59,5 +56,4 @@ type EmbeddingClient interface {
 
 type ExactStationClient interface {
 	ExactPreparedContractClient
-	ProviderIdentityEvidenceDiscoverer
 }

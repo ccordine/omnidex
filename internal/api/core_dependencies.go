@@ -67,18 +67,13 @@ func (s *Server) checkPostgresDependency(ctx context.Context) coreDependencyStat
 func (s *Server) checkRedisDependency(ctx context.Context) coreDependencyStatus {
 	dependency := coreDependencyStatus{
 		Configured: strings.TrimSpace(s.redisURL) != "",
-		Required:   s.uiRedisRequired,
+		Required:   true,
 		Target:     redactedRedisTarget(s.redisURL),
 	}
 	if !dependency.Configured {
-		if dependency.Required {
-			dependency.Status = "error"
-			dependency.Error = "redis url is required but not configured"
-			dependency.Message = "UI Redis is required but REDIS_URL is not configured."
-			return dependency
-		}
-		dependency.Status = "not_configured"
-		dependency.Message = "UI Redis is not configured; UI session state uses in-process storage."
+		dependency.Status = "error"
+		dependency.Error = "redis url is required but not configured"
+		dependency.Message = "UI Redis is required but REDIS_URL is not configured."
 		return dependency
 	}
 	if strings.TrimSpace(s.uiRedisInitError) != "" {

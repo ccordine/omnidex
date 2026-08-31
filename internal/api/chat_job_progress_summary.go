@@ -112,18 +112,9 @@ func summarizeChatStepEvent(event parsedChatStepEvent, stepAction string) (chatP
 		return summarizeChatCodingRepairGuidance(event.Message)
 	case "coding_fragment_correction_started":
 		return summarizeChatCodingCorrection(event.Message)
-	case "coding_skill_bound":
-		return summarizeChatSkillBinding(event.Message)
 	case "repository_snapshot_started", "repository_snapshot_ready", "repository_snapshot_failed",
 		"repository_analysis_started", "repository_analysis_ready", "repository_analysis_failed":
 		return summarizeChatRepositoryIntelligence(event)
-	case "repository_change_staged", "repository_change_completed",
-		"repository_desired_state_staged", "repository_desired_state_verified":
-		return summarizeChatRepositoryChange(event)
-	case "repository_verification_command_passed", "repository_verification_baseline_accepted", "repository_verification_plan_accepted":
-		return summarizeChatRepositoryVerification(event)
-	case "workspace_mutation_recovery_started", "workspace_mutation_recovered":
-		return summarizeChatWorkspaceRecovery(event)
 	}
 	if namespace, state, ok := chatPortableEventIdentity(event.Type); ok {
 		return summarizeChatPortableEvent(namespace, state, event.Message)

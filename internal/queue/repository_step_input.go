@@ -34,11 +34,6 @@ func (r *Repository) PauseStepForInput(
 			"input-pause writer job status %q step status %q", jobStatus, stepStatus,
 		), nil)
 	}
-	if err := rejectUnresolvedGeneratedWorkloadDeploymentsTx(
-		ctx, tx, authority.JobID,
-	); err != nil {
-		return err
-	}
 	if err := terminalizeStepAttemptTx(ctx, tx, authority, model.StepAttemptWaiting); err != nil {
 		return err
 	}

@@ -1,12 +1,9 @@
 package worker
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
-	"github.com/gryph/omnidex/internal/exactjson"
 	"github.com/gryph/omnidex/internal/llm"
 	"github.com/gryph/omnidex/internal/queue"
 )
@@ -14,11 +11,8 @@ import (
 func validateExactStationStaticCall(
 	prompt string,
 	contract llmResponseContract,
-	selection llm.ProviderIdentitySelection,
+	contextTokens int,
 ) error {
-	if err := selection.Validate(); err != nil {
-		return fmt.Errorf("validate exact station selection before provider discovery: %w", err)
-	}
 	if err := contract.Protocol.Validate(); err != nil {
 		return err
 	}
@@ -36,7 +30,7 @@ func validateExactStationStaticCall(
 		return err
 	}
 	return llm.ValidateExactPreparedNaturalInputAuthority(
-		selection.NativeContextLimit,
+		contextTokens,
 		input,
 	)
 }
@@ -45,58 +39,19 @@ func prepareExactStationCall(
 	gap queue.StationGapOpening,
 	contract llmResponseContract,
 	modelName string,
-	expected llm.ProviderIdentityExpectation,
 	temperature *llm.ExactPreparedTemperature,
 ) (llm.PreparedModel, error) {
-	if err := queue.ValidateStationGapSemanticUncertainty(gap); err != nil {
-		return llm.PreparedModel{}, fmt.Errorf("prepare station semantic uncertainty: %w", err)
-	}
 	if gap.OutputLimitMode != contract.OutputLimitMode {
 		return llm.PreparedModel{}, fmt.Errorf(
 			"durable station gap output-limit mode %q differs from response contract %q",
 			gap.OutputLimitMode, contract.OutputLimitMode,
 		)
 	}
-	transport, err := llm.ResolveExactPreparedTransport(expected)
-	if err != nil {
-		return llm.PreparedModel{}, err
-	}
 	if temperature == nil {
-		temperature = transport.Temperature
-		if gap.WorkKind == string(assemblyline.WorkFragmentGenerationReplacement) {
-			next, ok, progressionErr := llm.NextExactPreparedTemperature(
-				expected, temperature,
-			)
-			if progressionErr != nil {
-				return llm.PreparedModel{}, fmt.Errorf(
-					"derive %s exploration temperature: %w",
-					gap.WorkKind, progressionErr,
-				)
-			}
-			if !ok {
-				return llm.PreparedModel{}, fmt.Errorf(
-					"%s has no registered temperature above its provider baseline",
-					gap.WorkKind,
-				)
-			}
-			temperature = next
-		}
+		value := llm.ExactPreparedTemperature(0)
+		temperature = &value
 	}
-	stop, err := queue.ExpectedStationCallStopSequence(gap, expected)
-	if err != nil {
-		return llm.PreparedModel{}, err
-	}
-	responseFramingIdentity, err := llm.ExactPreparedResponseFramingIdentity(expected)
-	if err != nil {
-		return llm.PreparedModel{}, err
-	}
-	challengeScope, err := stationCallChallengeScope(
-		gap, contract, modelName, responseFramingIdentity, stop, temperature,
-	)
-	if err != nil {
-		return llm.PreparedModel{}, err
-	}
-	challenge, err := llm.DeriveProviderIdentityObservationChallenge(challengeScope, expected)
+	stop, err := directStationStopSequence(gap)
 	if err != nil {
 		return llm.PreparedModel{}, err
 	}
@@ -104,56 +59,24 @@ func prepareExactStationCall(
 		Protocol: contract.Protocol, BaseModel: modelName, ContextModel: modelName,
 		Prompt: gap.Prompt, PromptHint: llm.MinimalGeneratePrompt,
 		MaxOutputTokens: gap.MaxOutputTokens, OutputLimitMode: gap.OutputLimitMode,
-		ContextTokens:               gap.ContextTokens,
-		RawTextStopSequence:         stop,
-		Temperature:                 temperature,
-		ProviderIdentityExpectation: &expected, ProviderObservationChallenge: challenge,
+		ContextTokens: gap.ContextTokens, RawTextStopSequence: stop,
+		Temperature: temperature,
 	}, nil
 }
 
-func stationCallChallengeScope(
-	gap queue.StationGapOpening,
-	contract llmResponseContract,
-	modelName string,
-	responseFramingIdentity string,
-	rawTextStopSequence string,
-	temperature *llm.ExactPreparedTemperature,
-) (string, error) {
-	raw, err := exactjson.Canonical(struct {
-		JobID                                                        int64
-		Generation, StepID, StepAttempt                              int64
-		WorkerID, GapID, Station, WorkID, WorkKind, ProjectionSHA256 string
-		SemanticUncertaintyContractSHA256                            string
-		RendererVersion, Model, Protocol, ResponseFramingIdentity    string
-		RawTextStopSequence                                          string
-		OutputLimitMode                                              llm.ExactPreparedOutputLimitMode
-		Temperature                                                  *llm.ExactPreparedTemperature
-		ContextTokens, MaxOutputTokens                               int
-	}{
-		JobID: gap.JobID, Generation: gap.Generation, StepID: gap.StepID,
-		StepAttempt: gap.StepAttempt, WorkerID: gap.WorkerID,
-		GapID: gap.GapID, Station: string(gap.Station), WorkID: gap.WorkID,
-		WorkKind: gap.WorkKind, ProjectionSHA256: gap.ProjectionSHA256,
-		SemanticUncertaintyContractSHA256: gap.SemanticUncertaintyContractSHA256,
-		RendererVersion:                   gap.RendererVersion, Model: modelName,
-		Protocol: string(contract.Protocol), ContextTokens: gap.ContextTokens,
-		ResponseFramingIdentity: responseFramingIdentity,
-		MaxOutputTokens:         gap.MaxOutputTokens, RawTextStopSequence: rawTextStopSequence,
-		OutputLimitMode: gap.OutputLimitMode,
-		Temperature:     temperature,
-	})
+func directStationStopSequence(gap queue.StationGapOpening) (string, error) {
+	framing, err := assemblyline.PortableResponseFramingForWorkKind(
+		assemblyline.WorkKind(gap.WorkKind),
+	)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("resolve station response framing: %w", err)
 	}
-	digest := sha256.Sum256(raw)
-	return "station-call:" + hex.EncodeToString(digest[:]), nil
-}
-
-func ownStationDiscovery(observed llm.ObservedProviderIdentity) (llm.ObservedProviderIdentity, error) {
-	evidence, err := llm.OwnBoundedProviderIdentityEvidence(observed.Evidence)
-	if err != nil {
-		return llm.ObservedProviderIdentity{}, fmt.Errorf("own bounded provider discovery: %w", err)
+	switch framing {
+	case assemblyline.PortableResponseFramingSingleLine:
+		return llm.ExactPreparedLineStopV1, nil
+	case assemblyline.PortableResponseFramingNaturalMultiline:
+		return "", nil
+	default:
+		return "", fmt.Errorf("station response framing %q is not registered", framing)
 	}
-	observed.Evidence = evidence
-	return observed, nil
 }

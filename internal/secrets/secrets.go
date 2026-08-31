@@ -2,7 +2,6 @@ package secrets
 
 import (
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/gryph/omnidex/internal/llmprovider/catalog"
@@ -49,15 +48,6 @@ func buildFields() []Field {
 		})
 	}
 	return fields
-}
-
-func LookupEnv(keys []string) string {
-	for _, key := range keys {
-		if value := strings.TrimSpace(os.Getenv(key)); value != "" {
-			return value
-		}
-	}
-	return ""
 }
 
 func ValidateStored(stored map[string]string) error {
@@ -128,15 +118,10 @@ func FieldList(stored map[string]string) []map[string]any {
 	items := make([]map[string]any, 0, len(Fields))
 	for _, field := range Fields {
 		value := strings.TrimSpace(stored[field.Key])
-		if value == "" {
-			value = LookupEnv(field.EnvKeys)
-		}
 		configured := value != ""
 		source := "none"
-		if strings.TrimSpace(stored[field.Key]) != "" {
+		if configured {
 			source = "database"
-		} else if configured {
-			source = "environment"
 		}
 		items = append(items, map[string]any{
 			"key":         field.Key,

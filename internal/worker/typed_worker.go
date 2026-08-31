@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
-	"github.com/gryph/omnidex/internal/queue"
 )
 
 const exactSemanticLeafCalls = assemblyline.ExactSemanticLeafCalls
@@ -57,11 +56,6 @@ type typedWorkerRuntime struct {
 	CorrectionModel                      string
 	PathProvenance                       assemblyline.ArtifactIdentityProvenance
 	Execute                              func(job assemblyline.PortableJob, model string) (assemblyline.PortableResult, error)
-	ExecuteFragmentGenerationReplacement func(
-		job assemblyline.PortableJob,
-		model string,
-		origin queue.StationGapReplacementOrigin,
-	) (assemblyline.PortableResult, error)
 	Finalize func(job assemblyline.PortableJob, result assemblyline.PortableResult, validationErr error) error
 	Emit     func(event typedWorkerEvent)
 }

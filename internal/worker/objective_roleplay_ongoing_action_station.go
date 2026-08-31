@@ -19,7 +19,7 @@ func (adapter portableObjectiveRoleplayOngoingActionStation) ResolveOngoingActio
 	if err != nil {
 		return assemblyline.RoleplayOngoingActionDecision{}, objectiveStationReceipt{}, err
 	}
-	decision, receipt, err := runObjectiveReusablePortableRawLeafCall(
+	decision, receipt, err := runObjectivePortableRawLeafStation(
 		ctx, adapter.runtime, "roleplay_ongoing_action", job,
 		station.RoleplayOngoingAction,
 		func() (string, error) { return objectiveRoleplaySemanticModel(adapter.runtime) },

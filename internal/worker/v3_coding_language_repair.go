@@ -10,7 +10,7 @@ import (
 
 const maxDirectCodingLanguageRepairDiagnosticBytes = 1024
 
-func (executor *directCodingLanguageProjectStageExecutor) repairLanguageBlock(
+func (executor *directCodingLanguageSourceGenerator) repairLanguageBlock(
 	stage *directCodingProgram,
 	ref assemblyline.SourceBlockRef,
 	generation assemblyline.FragmentGenerationInput,
@@ -28,7 +28,7 @@ func (executor *directCodingLanguageProjectStageExecutor) repairLanguageBlock(
 	)
 }
 
-func (executor *directCodingLanguageProjectStageExecutor) languageRepairModels() (
+func (executor *directCodingLanguageSourceGenerator) languageRepairModels() (
 	string,
 	string,
 	error,
@@ -47,7 +47,7 @@ func (executor *directCodingLanguageProjectStageExecutor) languageRepairModels()
 	return guidanceModel, correctionModel, nil
 }
 
-func (executor *directCodingLanguageProjectStageExecutor) repairLanguageBlockWithRuntime(
+func (executor *directCodingLanguageSourceGenerator) repairLanguageBlockWithRuntime(
 	runtime typedWorkerRuntime,
 	guidanceModel string,
 	correctionModel string,
@@ -116,7 +116,7 @@ func (executor *directCodingLanguageProjectStageExecutor) repairLanguageBlockWit
 	return candidate, nil
 }
 
-func (executor *directCodingLanguageProjectStageExecutor) observeLanguageRepairDiagnostic(
+func (executor *directCodingLanguageSourceGenerator) observeLanguageRepairDiagnostic(
 	blockID string,
 	diagnostic string,
 ) error {
@@ -214,4 +214,9 @@ func directCodingLanguageParserRepairDiagnostic(
 		return "", err
 	}
 	return "SOURCE_DIAGNOSTIC: " + diagnostic, nil
+}
+
+func firstDirectCodingDiagnosticLine(message string) string {
+	line, _, _ := strings.Cut(strings.TrimSpace(message), "\n")
+	return line
 }

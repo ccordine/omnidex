@@ -33,13 +33,6 @@ func repositorySemanticUncertaintyContract(
 			"Only the exact requirement and one code-bound evidence candidate text, without other candidates or retained state.",
 			"One candidate-bound directly-relevant-or-not-directly-relevant relation.",
 			"DecodeRepositoryEvidenceRelevanceRelationResult validates the relation before code retains that candidate ID in source order or discards only that candidate; code owns the citation cap and exhaustion.")
-	case WorkRepositoryChangeOwner:
-		contract = semanticUncertaintyContract(kind,
-			"Which eligible symbol directly owns the existing declaration that must change for the focused requirement?",
-			"Parser-proven symbols expose structure but cannot assign requirement meaning to one declaration owner.",
-			"The focused requirement plus bounded symbol signatures, relations, and code-owned eligibility.",
-			"One opaque repository symbol ID.",
-			"DecodeRepositoryChangeOwnerLeaf validates the ID before code binds the focused change responsibility.")
 	case WorkContextRelevanceRelation:
 		contract = semanticUncertaintyContract(kind,
 			"Does this exact code-known context candidate directly contribute context needed for the exact instruction?",

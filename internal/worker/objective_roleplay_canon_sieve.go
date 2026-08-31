@@ -19,7 +19,7 @@ func resolveRoleplayCanonCandidateQueue(
 	if err != nil {
 		return assemblyline.RoleplayCanonExtractionDecision{}, objectiveStationReceipt{}, err
 	}
-	inventory, receipt, err := runObjectiveReusablePortableRawLeafCall(
+	inventory, receipt, err := runObjectivePortableRawLeafStation(
 		ctx, adapter.runtime, "roleplay_canon_fact_inventory", inventoryJob,
 		station.RoleplayCanonExtraction, resolveModel,
 		func(raw string) (assemblyline.RoleplayCanonFactInventory, error) {
@@ -51,7 +51,7 @@ func resolveRoleplayCanonCandidateQueue(
 		if err != nil {
 			return assemblyline.RoleplayCanonExtractionDecision{}, objectiveStationReceipt{Calls: totalCalls}, err
 		}
-		authorization, leafReceipt, err := runObjectiveReusablePortableRawLeafCall(
+		authorization, leafReceipt, err := runObjectivePortableRawLeafStation(
 			ctx, adapter.runtime, "roleplay_canon_fact_candidate_authorization",
 			authorizationJob, station.RoleplayCanonExtraction, resolveModel,
 			func(raw string) (assemblyline.RoleplayCanonFactCandidateAuthorization, error) {
@@ -81,7 +81,7 @@ func resolveRoleplayCanonCandidateQueue(
 			if err != nil {
 				return assemblyline.RoleplayCanonExtractionDecision{}, objectiveStationReceipt{Calls: totalCalls}, err
 			}
-			relation, relationReceipt, err := runObjectiveReusablePortableRawLeafCall(
+			relation, relationReceipt, err := runObjectivePortableRawLeafStation(
 				ctx, adapter.runtime, "roleplay_canon_fact_candidate_relation",
 				relationJob, station.RoleplayCanonExtraction, resolveModel,
 				func(raw string) (assemblyline.RoleplayCanonFactCandidateRelation, error) {

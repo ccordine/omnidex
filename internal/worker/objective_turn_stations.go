@@ -29,7 +29,7 @@ func (adapter portableObjectiveKindStation) Classify(
 	if err != nil {
 		return assemblyline.ConversationObjectiveKindDecision{}, objectiveStationReceipt{}, err
 	}
-	return runObjectiveReusablePortableRawLeafCall(
+	return runObjectivePortableRawLeafStation(
 		ctx, adapter.runtime, "conversation_objective_kind", job,
 		station.ConversationObjectiveKind,
 		func() (string, error) {
@@ -74,7 +74,7 @@ func (adapter portableObjectiveConversationStation) Respond(
 		}
 		return objectiveStationModel(adapter.runtime, station.ConversationResponse)
 	}
-	return runObjectiveReusablePortableRawLeafCall(
+	return runObjectivePortableRawLeafStation(
 		ctx, adapter.runtime, "conversation_response", job,
 		station.ConversationResponse, resolveModel,
 		func(raw string) (assemblyline.ConversationResponseDecision, error) {
@@ -93,12 +93,20 @@ func objectiveStationModel(runtime *nativeRuntimeV3, id station.ID) (string, err
 	if runtime == nil || runtime.svc == nil {
 		return "", fmt.Errorf("objective station %q requires runtime authority", id)
 	}
-	return runtime.svc.requiredStationModel(runtime.routing, id)
+	routing, err := runtime.modelRouting()
+	if err != nil {
+		return "", err
+	}
+	return runtime.svc.requiredStationModel(routing, id)
 }
 
 func objectiveRoleplaySemanticModel(runtime *nativeRuntimeV3) (string, error) {
 	if runtime == nil || runtime.svc == nil {
 		return "", fmt.Errorf("roleplay semantic stations require runtime authority")
 	}
-	return runtime.svc.requiredRoleplaySemanticModel(runtime.routing)
+	routing, err := runtime.modelRouting()
+	if err != nil {
+		return "", err
+	}
+	return runtime.svc.requiredRoleplaySemanticModel(routing)
 }

@@ -111,7 +111,7 @@ func validateContextProjectionStoreAuthority(
 	if err := validateContextProjectionExact(authority.WorkKind, "work kind", 256); err != nil {
 		return err
 	}
-	if len(projection.WorkID) != 64 || !llmEvidenceLowerHex(projection.WorkID) {
+	if !validSHA256Digest(projection.WorkID) {
 		return fmt.Errorf("%w: durable work ID is invalid", ErrInvalidContextProjection)
 	}
 	if err := projection.Validate(); err != nil {

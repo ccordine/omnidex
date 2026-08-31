@@ -26,7 +26,7 @@ func validateContextProjectionStore(
 	if err := projection.Validate(); err != nil {
 		return fmt.Errorf("%w: %v", ErrInvalidContextProjection, err)
 	}
-	if len(projection.WorkID) != 64 || !llmEvidenceLowerHex(projection.WorkID) {
+	if !validSHA256Digest(projection.WorkID) {
 		return fmt.Errorf("%w: work ID must be one lowercase SHA-256 digest", ErrInvalidContextProjection)
 	}
 	if len(projection.Selected) > maxContextProjectionSelected ||
@@ -71,5 +71,5 @@ func validateContextProjectionExact(value, field string, maxBytes int) error {
 func validContextProjectionID(id string) bool {
 	const prefix = "context_projection_"
 	return strings.HasPrefix(id, prefix) && len(id) == len(prefix)+64 &&
-		llmEvidenceLowerHex(strings.TrimPrefix(id, prefix))
+		validSHA256Digest(strings.TrimPrefix(id, prefix))
 }

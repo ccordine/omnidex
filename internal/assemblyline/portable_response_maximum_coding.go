@@ -9,44 +9,11 @@ func portableCodingResponseMaximum(job PortableJob) (int, bool, error) {
 			ArtifactPreserveUnchanged, ArtifactMustExist, ArtifactMustBeAbsent,
 			ArtifactPossibleAbsenceCandidate, ArtifactMentionedOnly,
 		), true, nil
-	case WorkRepositoryArtifactAbsence:
-		return maximumStringBytes(
-			RepositoryArtifactMustBeAbsent, RepositoryArtifactAbsenceNotExplicit,
-		), true, nil
-	case WorkPlainTextArtifactCreation:
-		return maximumStringBytes(
-			OneNewCompletePlainTextArtifactRequired, PlainTextArtifactCreationNotExplicit,
-		), true, nil
-	case WorkDeclarationArtifactBoundary:
-		return maximumStringBytes(
-			DeclarationBoundaryIndependentArtifact,
-			DeclarationBoundaryExistingArtifact, DeclarationBoundaryNone,
-		), true, nil
-	case WorkArtifactCandidateSelection:
-		var input ArtifactCandidateSelectionInput
-		if err := decodePortablePayload(job.Payload, &input); err != nil {
-			return 0, true, err
-		}
-		maximum := len(ArtifactCandidateSelectionNone)
-		for _, candidate := range input.Candidates {
-			maximum = max(maximum, len(candidate.CandidateID))
-		}
-		return maximum, true, nil
 	case WorkCapabilityRelation:
 		return maximumStringBytes(
 			CapabilityIndependent, CapabilityLeftReadsRight,
 			CapabilityRightReadsLeft,
 		), true, nil
-	case WorkSkillSelection:
-		var input SkillSelectionInput
-		if err := decodePortablePayload(job.Payload, &input); err != nil {
-			return 0, true, err
-		}
-		maximum := len(SkillSelectionNone)
-		for _, candidate := range input.Candidates {
-			maximum = max(maximum, len(candidate.Token))
-		}
-		return maximum, true, nil
 	case WorkRuntimeCapabilityNecessity:
 		return maximumStringBytes(
 			RuntimeCapabilityNecessary,
@@ -90,7 +57,7 @@ func fragmentGenerationResponseMaximum(job PortableJob) (int, error) {
 	switch input.Language {
 	case "go", "typescript":
 		return MaxPortableRawCandidateBytes, nil
-	case TextFragmentLanguage, "javascript", "java", "rust", "php":
+	case TextFragmentLanguage, "javascript", "java", "rust":
 		return MaxPortableSemanticCandidateBytes, nil
 	default:
 		return 0, fmt.Errorf(

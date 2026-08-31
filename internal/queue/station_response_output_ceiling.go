@@ -10,10 +10,6 @@ import (
 
 // ExpectedPortableStationMaxOutputTokens derives the sole persisted natural
 // output ceiling from the exact decoder bound and its code-owned stop grammar.
-// The attested byte-level raw profile cannot require more generated tokens
-// than accepted response bytes plus the stop bytes. Native profiles retain
-// this value as acceptance authority even when their attested template owns
-// termination and therefore omits num_predict.
 func ExpectedPortableStationMaxOutputTokens(
 	job assemblyline.PortableJob,
 	contextTokens int,
@@ -34,7 +30,7 @@ func ExpectedPortableStationMaxOutputTokens(
 	case assemblyline.PortableResponseFramingSingleLine:
 		reserve = len(llm.ExactPreparedLineStopV1)
 	case assemblyline.PortableResponseFramingNaturalMultiline:
-		reserve = len(llm.ExactPreparedRawChatEndV1)
+		reserve = 0
 	default:
 		return 0, fmt.Errorf("portable response framing %q has no output reserve", framing)
 	}

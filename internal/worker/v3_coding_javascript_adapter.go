@@ -14,7 +14,6 @@ const genericJavaScriptCommandLineAdapter = "javascript_command_line_capabilitie
 func compileGenericJavaScriptCommandLineBlueprint(
 	packageName string,
 	specification assemblyline.ApplicationSpecification,
-	skills map[string]directCodingSkillBinding,
 	workload assemblyline.FrozenApplicationWorkload,
 	capabilities directCodingCapabilityGraph,
 	target assemblyline.TargetTree,
@@ -32,9 +31,6 @@ func compileGenericJavaScriptCommandLineBlueprint(
 	if err != nil {
 		return assemblyline.SourceBlueprint{}, nil, err
 	}
-	if err := validateDirectCodingSkillBindings(specification.Requirements, skills); err != nil {
-		return assemblyline.SourceBlueprint{}, nil, err
-	}
 	if err := validateDirectCodingCapabilityGraph(specification.Requirements, capabilities); err != nil {
 		return assemblyline.SourceBlueprint{}, nil, err
 	}
@@ -43,7 +39,7 @@ func compileGenericJavaScriptCommandLineBlueprint(
 		return assemblyline.SourceBlueprint{}, nil, err
 	}
 	documents, err := genericJavaScriptCommandLineDocuments(
-		profile, specification, skills, contexts, capabilities, coverage,
+		profile, specification, contexts, capabilities, coverage,
 	)
 	if err != nil {
 		return assemblyline.SourceBlueprint{}, nil, err
@@ -67,8 +63,7 @@ func genericJavaScriptCommandLineStaticFiles(
 		"name": packageName, "private": true, "type": "module",
 		"engines": map[string]string{"node": node},
 		"scripts": map[string]string{
-			"test":  "node " + strings.Join(javaScriptNodeTestArgs(), " "),
-			"build": "node " + strings.Join(javaScriptNodeCheckArgs("main.mjs"), " "),
+			"build": "node --check main.mjs",
 		},
 	}
 	encoded, err := json.MarshalIndent(manifest, "", "  ")
@@ -76,7 +71,7 @@ func genericJavaScriptCommandLineStaticFiles(
 		return nil, fmt.Errorf("encode code-owned JavaScript manifest: %w", err)
 	}
 	return []directCodingFileTask{
-		{Path: ".gitignore", Content: "node_modules\ncoverage\n"},
+		{Path: ".gitignore", Content: "node_modules\n"},
 		{Path: "package.json", Content: string(encoded) + "\n"},
 	}, nil
 }
@@ -86,7 +81,7 @@ func validateJavaScriptCommandLineTargetTree(target assemblyline.TargetTree) err
 	if err != nil {
 		return err
 	}
-	return validateDirectCodingSinglePairTargetTree(stack, target, true)
+	return validateDirectCodingSingleImplementationTargetTree(stack, target, true)
 }
 
 func validateJavaScriptCommandLineAssembly(assembly directCodingAssembly) error {
@@ -114,17 +109,4 @@ func validateJavaScriptCommandLineAssembly(assembly directCodingAssembly) error 
 		}
 	}
 	return nil
-}
-
-func javaScriptCommandLineVerificationCommands(
-	_ directCodingProgram,
-) ([]testCommand, error) {
-	return javaScriptCommandLineVerificationCommandSet(), nil
-}
-
-func javaScriptCommandLineVerificationCommandSet() []testCommand {
-	return []testCommand{
-		{Family: "node", Name: "node", Args: javaScriptNodeTestArgs(), Purpose: verificationTest},
-		{Family: "node", Name: "npm", Args: []string{"run", "build"}, Purpose: verificationBuild},
-	}
 }

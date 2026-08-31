@@ -25,14 +25,12 @@ type enqueueRequest struct {
 }
 
 type genericCodingMetadata struct {
-	ClientCWD  string `json:"client_cwd"`
-	HostEnvCWD string `json:"host_env_cwd"`
-	SessionID  string `json:"session_id,omitempty"`
+	ClientCWD string `json:"client_cwd"`
+	SessionID string `json:"session_id,omitempty"`
 }
 
 type genericCodingRuntimeMetadata struct {
 	ClientCWD   string             `json:"client_cwd"`
-	HostEnvCWD  string             `json:"host_env_cwd"`
 	SessionID   string             `json:"session_id,omitempty"`
 	ModelConfig modelconfig.Config `json:"model_config"`
 }
@@ -46,8 +44,8 @@ func (s *Server) genericCodingRuntimeMetadata(metadata genericCodingMetadata) ([
 		return nil, err
 	}
 	return json.Marshal(genericCodingRuntimeMetadata{
-		ClientCWD: metadata.ClientCWD, HostEnvCWD: metadata.HostEnvCWD,
-		SessionID: metadata.SessionID, ModelConfig: modelSnapshot,
+		ClientCWD: metadata.ClientCWD, SessionID: metadata.SessionID,
+		ModelConfig: modelSnapshot,
 	})
 }
 
@@ -91,16 +89,10 @@ func decodeGenericCodingEnqueue(w http.ResponseWriter, r *http.Request) (enqueue
 }
 
 func validateGenericCodingMetadata(metadata genericCodingMetadata) error {
-	for name, value := range map[string]string{
-		"client_cwd": metadata.ClientCWD, "host_env_cwd": metadata.HostEnvCWD,
-	} {
-		if value == "" || value != strings.TrimSpace(value) || strings.ContainsRune(value, '\x00') ||
-			len(value) > 4096 || !filepath.IsAbs(value) || filepath.Clean(value) != value {
-			return fmt.Errorf("coding enqueue metadata %s must be one canonical absolute workspace root", name)
-		}
-	}
-	if metadata.ClientCWD != metadata.HostEnvCWD {
-		return fmt.Errorf("coding enqueue workspace roots must match exactly")
+	if value := metadata.ClientCWD; value == "" || value != strings.TrimSpace(value) ||
+		strings.ContainsRune(value, '\x00') || len(value) > 4096 ||
+		!filepath.IsAbs(value) || filepath.Clean(value) != value {
+		return fmt.Errorf("coding enqueue metadata client_cwd must be one canonical absolute workspace root")
 	}
 	if metadata.SessionID != "" && (metadata.SessionID != strings.TrimSpace(metadata.SessionID) ||
 		strings.ContainsRune(metadata.SessionID, '\x00') || len(metadata.SessionID) > 256) {

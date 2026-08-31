@@ -6,7 +6,7 @@ import (
 )
 
 // BuildBoundedSourceFragmentGenerationPrompt renders one path-blind source
-// declaration question for the registered JavaScript, Java, Rust, or PHP
+// declaration question for a registered bounded source language
 // parser. It grants no document, placement, operation, or completion authority.
 func BuildBoundedSourceFragmentGenerationPrompt(
 	input FragmentGenerationInput,

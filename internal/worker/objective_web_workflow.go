@@ -86,14 +86,14 @@ func runtimeWebPortableRuntime(
 			if validate == nil {
 				return webresearch.SemanticCallReceipt{}, fmt.Errorf("web station %q requires one exact decoder", id)
 			}
-			_, receipt, err := runObjectiveReusablePortableRawLeafCall(
+			_, receipt, err := runObjectivePortableRawLeafStation(
 				ctx,
 				runtime,
 				"web_"+string(job.Kind),
 				job,
 				id,
 				func() (string, error) {
-					return runtime.svc.requiredStationModel(runtime.routing, id)
+					return objectiveStationModel(runtime, id)
 				},
 				func(raw string) (string, error) {
 					if err := validate(raw); err != nil {

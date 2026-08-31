@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
-	"github.com/gryph/omnidex/internal/modelcontext"
 	"github.com/gryph/omnidex/internal/station"
 	"github.com/gryph/omnidex/internal/webresearch"
 )
@@ -14,11 +13,6 @@ func (r *nativeRuntimeV3) runObjectiveResolve() error {
 	if r == nil || r.svc == nil || r.claim == nil {
 		return fmt.Errorf("conversation objective runtime requires a claimed job")
 	}
-	modelProvenance, err := r.captureObjectiveInstructionProvenance()
-	if err != nil {
-		return err
-	}
-	r.objectivePathProvenance = modelProvenance
 	repositoryStations, err := newPortableObjectiveRepositoryGroundingStation(r)
 	if err != nil {
 		return err
@@ -32,7 +26,13 @@ func (r *nativeRuntimeV3) runObjectiveResolve() error {
 		portableObjectiveConversationStation{runtime: r},
 		repositoryStations,
 		objectiveWorkflows{
-			ModelPathProvenance:   modelProvenance,
+			ResolveModelPathProvenance: func() (assemblyline.ArtifactIdentityProvenance, error) {
+				provenance, err := r.deriveObjectiveInstructionProvenance()
+				if err == nil {
+					r.objectivePathProvenance = provenance
+				}
+				return provenance, err
+			},
 			WorkspaceMutation:     r.runObjectiveWorkspaceMutation,
 			RepositoryRead:        r.acquireObjectiveRepositoryEvidence,
 			ExternalAnswer:        r.acquireObjectiveExternalEvidence,
@@ -60,7 +60,7 @@ func (r *nativeRuntimeV3) runObjectiveResolve() error {
 	)
 }
 
-func (r *nativeRuntimeV3) captureObjectiveInstructionProvenance() (
+func (r *nativeRuntimeV3) deriveObjectiveInstructionProvenance() (
 	assemblyline.ArtifactIdentityProvenance,
 	error,
 ) {
@@ -73,15 +73,9 @@ func (r *nativeRuntimeV3) captureObjectiveInstructionProvenance() (
 	if err != nil {
 		return assemblyline.ArtifactIdentityProvenance{}, err
 	}
-	indexed, err := r.captureExistingRepositoryIndex(scope.Root)
-	if err != nil {
-		return assemblyline.ArtifactIdentityProvenance{}, err
-	}
-	paths := make([]string, len(indexed.Snapshot.Files))
-	for index, file := range indexed.Snapshot.Files {
-		paths[index] = file.Path
-	}
-	provenance, err := modelcontext.NewArtifactIdentityProvenance(paths)
+	provenance, err := objectiveInstructionPathProvenance(
+		r.ctx, scope.Root, r.claim.Job.Instruction,
+	)
 	if err != nil {
 		return assemblyline.ArtifactIdentityProvenance{}, fmt.Errorf(
 			"derive objective instruction artifact provenance: %w", err,

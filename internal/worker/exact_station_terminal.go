@@ -2,6 +2,8 @@ package worker
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"strings"
@@ -15,53 +17,10 @@ import (
 
 const stationPersistenceTimeout = 30 * time.Second
 
-func (s *Service) recordAuthorityEndedExactStationCall(
-	ctx context.Context,
-	authority model.StepAttemptAuthority,
-	gap queue.StationGapOpening,
-	call queue.StationCallOpening,
-	requestedModel string,
-	prepared llm.PreparedModel,
-	observed llm.ObservedProviderIdentity,
-	attemptStatus model.StepAttemptStatus,
-) (assemblyline.PortableResult, exactStationExecution, error) {
-	reason, err := providerRequestFailureForAttempt(attemptStatus)
-	if err != nil {
-		return assemblyline.PortableResult{}, exactStationExecution{}, err
-	}
-	cause := fmt.Errorf("exact station authority became %s before provider dispatch", attemptStatus)
-	result := llm.PreparedGeneration{
-		Schema: llm.PreparedGenerationSchemaV1, Protocol: prepared.Protocol,
-		ProviderRequestDisposition:   llm.ProviderRequestNotDispatched,
-		ProviderRequestFailureReason: reason,
-		ProviderRequestSHA256:        call.WireRequestSHA256,
-		ProviderIdentityEvidence:     observed.Evidence,
-	}
-	return s.persistExactStationCallResult(
-		ctx, authority, gap, call, requestedModel, result, cause, 0,
-	)
-}
-
-func providerRequestFailureForAttempt(
-	status model.StepAttemptStatus,
-) (llm.ProviderRequestFailureReason, error) {
-	switch status {
-	case model.StepAttemptCanceled:
-		return llm.ProviderRequestFailureAuthorityCanceled, nil
-	case model.StepAttemptSuperseded:
-		return llm.ProviderRequestFailureAuthoritySuperseded, nil
-	case model.StepAttemptExpired:
-		return llm.ProviderRequestFailureAuthorityExpired, nil
-	default:
-		return "", fmt.Errorf("step attempt status %q is not terminal provider authority", status)
-	}
-}
-
 func (s *Service) dispatchExactStationCall(
 	ctx context.Context,
 	authority model.StepAttemptAuthority,
 	gap queue.StationGapOpening,
-	call queue.StationCallOpening,
 	requestedModel string,
 	prepared llm.PreparedModel,
 ) (assemblyline.PortableResult, exactStationExecution, error) {
@@ -71,103 +30,34 @@ func (s *Service) dispatchExactStationCall(
 	stopHeartbeat()
 	owned, ownershipErr := llm.OwnBoundedPreparedGeneration(result)
 	if ownershipErr != nil {
-		return assemblyline.PortableResult{}, exactStationExecution{}, fmt.Errorf(
-			"own bounded exact station result: %w", ownershipErr,
-		)
-	}
-	validationErr := llm.ValidateExactPreparedGenerationForRequest(prepared, owned)
-	var validatedLimit *llm.ExactPreparedOutputLimitReachedError
-	if errors.As(validationErr, &validatedLimit) {
-		callErr = errors.Join(validationErr, callErr)
-	} else if callErr == nil {
-		callErr = validationErr
+		callErr = errors.Join(callErr, ownershipErr)
 	} else {
-		// A provider client cannot create output-limit routing authority merely
-		// by returning an error of the registered type. Only independently
-		// validated owned response evidence may preserve that classification.
-		var unvalidatedLimit *llm.ExactPreparedOutputLimitReachedError
-		if errors.As(callErr, &unvalidatedLimit) {
-			callErr = fmt.Errorf(
-				"provider claimed output-limit completion without validated response evidence: %v",
-				callErr,
-			)
+		result = owned
+		validationErr := llm.ValidateExactPreparedGenerationForRequest(prepared, result)
+		if callErr == nil {
+			callErr = validationErr
+		} else if validationErr != nil {
+			callErr = errors.Join(callErr, validationErr)
 		}
 	}
-	return s.persistExactStationCallResult(
-		ctx, authority, gap, call, requestedModel, owned, callErr,
-		time.Since(started).Milliseconds(),
-	)
-}
-
-func (s *Service) persistExactStationCallResult(
-	ctx context.Context,
-	authority model.StepAttemptAuthority,
-	gap queue.StationGapOpening,
-	call queue.StationCallOpening,
-	requestedModel string,
-	result llm.PreparedGeneration,
-	callErr error,
-	latencyMS int64,
-) (assemblyline.PortableResult, exactStationExecution, error) {
-	persistCtx, cancel := stationPersistenceContext(ctx)
-	receiptEvidence, receiptErr := s.repo.RecordStationCallReceiptAndEvidence(
-		persistCtx,
-		queue.StationCallReceiptEvidenceRecord{
-			Receipt: queue.StationCallReceiptRecord{
-				Authority: authority, OpeningID: call.ID, GapID: gap.GapID,
-				Result: result, Error: stationFailureText(callErr),
-			},
-			RequestedModel: requestedModel, EvidenceAttempt: 1, LatencyMS: latencyMS,
-		},
-	)
-	cancel()
-	if receiptErr != nil {
-		return assemblyline.PortableResult{}, exactStationExecution{}, fmt.Errorf(
-			"persist exact station call receipt and evidence: %w", receiptErr,
+	latency := time.Since(started)
+	if metricsErr := s.recordWorkerLLMCall(
+		ctx, authority, gap.Scope, requestedModel, len(gap.Prompt), 1,
+		callErr == nil, callErr, latency,
+	); metricsErr != nil && s.logger != nil {
+		s.logger.Printf(
+			"job=%d step=%d station=%s telemetry error: %v",
+			authority.JobID, authority.StepID, gap.Station, metricsErr,
 		)
 	}
 	if callErr != nil {
-		var outputLimit *llm.ExactPreparedOutputLimitReachedError
-		if gap.WorkKind == string(assemblyline.WorkFragmentGeneration) &&
-			errors.As(callErr, &outputLimit) {
-			return assemblyline.PortableResult{}, exactStationExecution{},
-				s.persistFragmentGenerationOutputLimitFailure(
-					ctx, authority, gap, receiptEvidence.Receipt,
-					outputLimit, fmt.Errorf("exact station provider call: %w", callErr),
-				)
-		}
 		return assemblyline.PortableResult{}, exactStationExecution{}, s.failStationGap(
 			ctx, authority, gap, fmt.Errorf("exact station provider call: %w", callErr),
 		)
 	}
-	if err := queue.ValidateStationCallNativeUsage(call, result); err != nil {
-		return assemblyline.PortableResult{}, exactStationExecution{}, s.failStationGap(
-			ctx, authority, gap, fmt.Errorf("validate exact provider native context usage: %w", err),
-		)
-	}
 	if err := ctx.Err(); err != nil {
-		return assemblyline.PortableResult{}, exactStationExecution{}, s.failStationGap(ctx, authority, gap, err)
-	}
-	latency := time.Duration(latencyMS) * time.Millisecond
-	if err := s.recordWorkerLLMCall(ctx, authority, gap.Scope, requestedModel, len(gap.Prompt), 1, true, nil, latency); err != nil {
 		return assemblyline.PortableResult{}, exactStationExecution{}, s.failStationGap(
-			ctx, authority, gap, fmt.Errorf("record exact station metrics: %w", err),
-		)
-	}
-	selection, err := llm.ProviderIdentitySelectionForProfile(
-		requestedModel, call.ContextTokens, call.TokenizerProfile,
-	)
-	if err != nil {
-		return assemblyline.PortableResult{}, exactStationExecution{}, s.failStationGap(
-			ctx, authority, gap, fmt.Errorf("reconstruct completed station provider policy: %w", err),
-		)
-	}
-	identity, err := llm.DeriveExactProviderIdentityExpectation(
-		result.ProviderIdentityEvidence, selection,
-	)
-	if err != nil {
-		return assemblyline.PortableResult{}, exactStationExecution{}, s.failStationGap(
-			ctx, authority, gap, fmt.Errorf("derive completed station provider identity: %w", err),
+			ctx, authority, gap, err,
 		)
 	}
 	projection, err := assemblyline.NewExactPortableResultProjection(result.Content)
@@ -181,10 +71,19 @@ func (s *Service) persistExactStationCallResult(
 	}
 	return portable, exactStationExecution{
 		Gap: gap, Candidate: result.Content,
-		CallReceiptSHA256:       receiptEvidence.Receipt.GenerationSHA256,
-		CandidateResponseSHA256: receiptEvidence.Evidence.ResponseSHA256,
-		ProviderIdentity:        identity,
+		CallReceiptSHA256:       directStationReceiptSHA256(result),
+		CandidateResponseSHA256: projection.SourceResponseSHA256,
 	}, nil
+}
+
+func directStationReceiptSHA256(result llm.PreparedGeneration) string {
+	value := strings.Join([]string{
+		result.ProviderRequestSHA256,
+		result.ProviderResponseSHA256,
+		result.Content,
+	}, "\n")
+	digest := sha256.Sum256([]byte(value))
+	return hex.EncodeToString(digest[:])
 }
 
 func (s *Service) failStationGap(
@@ -202,10 +101,6 @@ func (s *Service) failStationGap(
 	return persistedStationGapFailure(cause, closeErr)
 }
 
-// persistedStationGapFailure preserves typed failure routing authority only
-// after the terminal gap outcome was durably recorded. A persistence failure
-// still reports the original cause as text, but it must not unwrap to that
-// cause: downstream code cannot open replacement work from unmatched state.
 func persistedStationGapFailure(cause, persistenceErr error) error {
 	if cause == nil {
 		return fmt.Errorf("station gap failure requires one exact cause")

@@ -40,9 +40,6 @@ func (r *nativeRuntimeV3) acquireObjectiveDatabaseEvidence(
 		}
 		return r.acquireDirectDatabaseEvidence(ctx, authority, requirementID, record)
 	case datasource.ExecutionModeDelegated:
-		if err := validateDelegatedDatabaseInferenceProvider(r.svc.inferenceProvider); err != nil {
-			return objectiveEvidenceAcquisition{}, err
-		}
 		if err := datasource.ValidateDelegatedAuthorityID(authority.DelegatedDataAuthorityID); err != nil {
 			return objectiveEvidenceAcquisition{}, fmt.Errorf("delegated database authority is unavailable: %w", err)
 		}
@@ -181,13 +178,4 @@ func (r *nativeRuntimeV3) persistDatabaseEvidence(
 
 func sameDatabaseSnapshotAuthority(left, right datasource.SchemaSnapshot) bool {
 	return left.SourceID == right.SourceID && left.Fingerprint == right.Fingerprint
-}
-
-func validateDelegatedDatabaseInferenceProvider(provider string) error {
-	if provider != "ollama" {
-		return fmt.Errorf(
-			"delegated database evidence requires local Ollama inference; active provider is %q", provider,
-		)
-	}
-	return nil
 }

@@ -19,7 +19,6 @@ const (
 	JobHistorySteps       JobHistoryStream = "steps"
 	JobHistoryArtifacts   JobHistoryStream = "artifacts"
 	JobHistoryEvidence    JobHistoryStream = "evidence"
-	JobHistoryLLMCalls    JobHistoryStream = "llm_calls"
 )
 
 type JobHistoryRequest struct {
@@ -69,11 +68,6 @@ type HistoricalEvidence struct {
 	Step     HistoricalStepReference `json:"step"`
 }
 
-type HistoricalLLMCall struct {
-	Call LLMCallEvidence         `json:"call"`
-	Step HistoricalStepReference `json:"step"`
-}
-
 type JobHistoryPage struct {
 	JobID       int64                  `json:"job_id"`
 	Stream      JobHistoryStream       `json:"stream"`
@@ -81,6 +75,5 @@ type JobHistoryPage struct {
 	Steps       []HistoricalStep       `json:"steps,omitempty"`
 	Artifacts   []HistoricalArtifact   `json:"artifacts,omitempty"`
 	Evidence    []HistoricalEvidence   `json:"evidence,omitempty"`
-	LLMCalls    []HistoricalLLMCall    `json:"llm_calls,omitempty"`
 	NextCursor  string                 `json:"next_cursor,omitempty"`
 }

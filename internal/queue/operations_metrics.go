@@ -22,9 +22,6 @@ var telemetryFailureEventTypes = []string{
 	"objective_worker_failed",
 	"web_research_worker_rejected",
 	"web_research_worker_failed",
-	"workspace_mutation_deferred",
-	"workspace_mutation_verification_deferred",
-	"workspace_mutation_indeterminate",
 }
 
 type OperationsFailureEvent struct {

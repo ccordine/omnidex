@@ -2,79 +2,9 @@ package worker
 
 import (
 	"fmt"
-	"sort"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
 )
-
-func snapshotDirectCodingVersionManifests(
-	root string,
-	existingPaths []string,
-) (map[string]string, error) {
-	present := make(map[string]struct{}, len(existingPaths))
-	for index, value := range existingPaths {
-		normalized, err := normalizeDirectCodingPath(value)
-		if err != nil || normalized != value {
-			return nil, fmt.Errorf("version evidence path %d is not exactly normalized", index)
-		}
-		if _, duplicate := present[value]; duplicate {
-			return nil, fmt.Errorf("version evidence path %d duplicates %q", index, value)
-		}
-		present[value] = struct{}{}
-	}
-	manifestSet := make(map[string]struct{})
-	for _, profile := range registeredDirectCodingProjectVersionProfiles() {
-		for _, manifestPath := range profile.ManifestPaths {
-			manifestSet[manifestPath] = struct{}{}
-		}
-	}
-	manifestPaths := make([]string, 0, len(manifestSet))
-	for manifestPath := range manifestSet {
-		if _, exists := present[manifestPath]; exists {
-			manifestPaths = append(manifestPaths, manifestPath)
-		}
-	}
-	sort.Strings(manifestPaths)
-	manifests := make(map[string]string, len(manifestPaths))
-	for _, manifestPath := range manifestPaths {
-		source, err := directCodingTargetTreeExistingSource(root, manifestPath)
-		if err != nil {
-			return nil, fmt.Errorf("read version evidence %s: %w", manifestPath, err)
-		}
-		manifests[manifestPath] = source
-	}
-	return manifests, nil
-}
-
-func matchDirectCodingVersionProfiles(
-	profiles []directCodingProjectVersionProfile,
-	manifests map[string]string,
-) ([]directCodingProjectVersionProfile, int, error) {
-	compatible := make([]directCodingProjectVersionProfile, 0, 1)
-	applicable := 0
-	for _, profile := range profiles {
-		if profile.MatchExisting == nil {
-			return nil, 0, fmt.Errorf("project version profile %s has no compatibility matcher", profile.ID)
-		}
-		status, err := profile.MatchExisting(profile, manifests)
-		if err != nil {
-			return nil, 0, fmt.Errorf("match project version profile %s: %w", profile.ID, err)
-		}
-		switch status {
-		case directCodingVersionNotApplicable:
-		case directCodingVersionCompatible:
-			applicable++
-			compatible = append(compatible, profile)
-		case directCodingVersionUnsupported:
-			applicable++
-		default:
-			return nil, 0, fmt.Errorf(
-				"project version profile %s returned unsupported compatibility %q", profile.ID, status,
-			)
-		}
-	}
-	return compatible, applicable, nil
-}
 
 func directCodingVersionProfilesForStack(
 	stack directCodingProjectStack,

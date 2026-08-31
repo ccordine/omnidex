@@ -101,8 +101,8 @@ func (interpretation directCodingApplicationInterpretation) validateForAuthority
 func runDirectCodingApplicationInterpreter(
 	runtime typedWorkerRuntime,
 	intentModel string,
-	surfaceModel string,
-	artifactModel string,
+	surfaceModel func() (string, error),
+	artifactModel func() (string, error),
 	authority directCodingApplicationRequestAuthority,
 	applicationContext assemblyline.ApplicationContext,
 	identities []assemblyline.ArtifactIdentity,
@@ -128,17 +128,28 @@ func runDirectCodingApplicationInterpreter(
 	if err != nil {
 		return zero, err
 	}
+	modelName, err := surfaceModel()
+	if err != nil {
+		return zero, err
+	}
 	classification, err := classifyApplicationSurface(
-		runtime, surfaceModel, authority.modelRequest, identities,
+		runtime, modelName, authority.modelRequest, identities,
 	)
 	if err != nil {
 		return zero, err
 	}
-	artifacts, err := classifyArtifactHandling(
-		runtime, artifactModel, authority.modelRequest, identities,
-	)
-	if err != nil {
-		return zero, err
+	artifacts := []assemblyline.ArtifactDirective(nil)
+	if len(identities) > 0 {
+		modelName, err = artifactModel()
+		if err != nil {
+			return zero, err
+		}
+		artifacts, err = classifyArtifactHandling(
+			runtime, modelName, authority.modelRequest, identities,
+		)
+		if err != nil {
+			return zero, err
+		}
 	}
 	artifacts, err = sieveDirectCodingApplicationArtifactDirectives(artifacts)
 	if err != nil {
