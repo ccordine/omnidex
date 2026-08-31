@@ -52,7 +52,7 @@ func (c *Client) Embedding(ctx context.Context, input string) ([]float64, error)
 
 func (c *Client) doJSON(ctx context.Context, path string, payload any, out any) error {
 	if strings.TrimSpace(c.apiKey) == "" {
-		return fmt.Errorf("HUGGINGFACE_API_KEY or HF_TOKEN is required")
+		return fmt.Errorf("HUGGINGFACE_API_KEY is required")
 	}
 	encoded, err := json.Marshal(payload)
 	if err != nil {

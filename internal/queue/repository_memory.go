@@ -111,10 +111,10 @@ func addMemoryChunkTx(
 	if len(write.Embedding) > 0 {
 		err = tx.QueryRow(ctx, `
 			INSERT INTO memory_chunks (project_id, channel_id, source, kind, content, embedding)
-			VALUES ($1, $2, $3, $4, $5, $6::vector)
+			VALUES ($1, $2, $3, $4, $5, $6::double precision[])
 			RETURNING id, project_id, channel_id, source, kind, content, created_at
 		`, input.Scope.ProjectID, input.Scope.ChannelID, input.Source, input.Kind,
-			input.Content, vectorLiteral(write.Embedding)).Scan(
+			input.Content, write.Embedding).Scan(
 			&chunk.ID, &chunk.Scope.ProjectID, &chunk.Scope.ChannelID,
 			&chunk.Source, &chunk.Kind, &chunk.Content, &chunk.CreatedAt,
 		)

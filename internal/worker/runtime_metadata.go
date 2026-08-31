@@ -31,7 +31,7 @@ func metadataString(metadata json.RawMessage, key string) string {
 	if !ok {
 		return ""
 	}
-	return strings.TrimSpace(text)
+	return text
 }
 
 func clientCWDForJob(job model.Job) string {

@@ -19,6 +19,7 @@ type directCodingProgram struct {
 	StaticFiles          []directCodingFileTask
 	Generated            map[string]string
 	ProtectedPaths       []string
+	DeletePaths          []string
 }
 
 func compileDirectCodingProgram(
@@ -34,7 +35,7 @@ func compileDirectCodingProgram(
 	if err != nil {
 		return directCodingProgram{}, err
 	}
-	protected, err := resolveDirectCodingProtectedArtifacts(specification.Artifacts, identities)
+	protected, deletions, err := resolveDirectCodingArtifactPaths(specification.Artifacts, identities)
 	if err != nil {
 		return directCodingProgram{}, err
 	}
@@ -109,39 +110,47 @@ func compileDirectCodingProgram(
 		Workload: workload, TargetTree: targetTree, Coverage: coverage,
 		Source:           blueprint,
 		StaticFiles:      staticFiles, Generated: map[string]string{},
-		ProtectedPaths: protected,
+		ProtectedPaths: protected, DeletePaths: deletions,
 	}, nil
 }
 
-func resolveDirectCodingProtectedArtifacts(
+func resolveDirectCodingArtifactPaths(
 	directives []assemblyline.ArtifactDirective,
 	identities []assemblyline.ArtifactIdentity,
-) ([]string, error) {
+) ([]string, []string, error) {
 	values := make(map[string]string, len(identities))
 	for _, identity := range identities {
 		values[identity.Token] = identity.Value
 	}
 	protected := make([]string, 0)
-	seen := make(map[string]struct{})
+	deletions := make([]string, 0)
+	seenProtected := make(map[string]struct{})
+	seenDeletions := make(map[string]struct{})
 	for _, directive := range directives {
 		value, exists := values[directive.Token]
 		if !exists {
-			return nil, fmt.Errorf("semantic contract references unresolved opaque artifact %s", directive.Token)
-		}
-		if directive.Disposition != assemblyline.ArtifactProtect {
-			return nil, fmt.Errorf("generic coding adapters do not support artifact disposition %s for %s", directive.Disposition, directive.Token)
+			return nil, nil, fmt.Errorf("semantic contract references unresolved opaque artifact %s", directive.Token)
 		}
 		path, err := normalizeDirectCodingPath(value)
 		if err != nil {
-			return nil, fmt.Errorf("resolve protected artifact %s: %w", directive.Token, err)
+			return nil, nil, fmt.Errorf("resolve artifact %s: %w", directive.Token, err)
 		}
-		if _, exists := seen[path]; exists {
-			continue
+		switch directive.Disposition {
+		case assemblyline.ArtifactProtect:
+			if _, exists := seenProtected[path]; !exists {
+				seenProtected[path] = struct{}{}
+				protected = append(protected, path)
+			}
+		case assemblyline.ArtifactForbid:
+			if _, exists := seenDeletions[path]; !exists {
+				seenDeletions[path] = struct{}{}
+				deletions = append(deletions, path)
+			}
+		default:
+			return nil, nil, fmt.Errorf("artifact disposition %s has no filesystem consumer", directive.Disposition)
 		}
-		seen[path] = struct{}{}
-		protected = append(protected, path)
 	}
-	return protected, nil
+	return protected, deletions, nil
 }
 
 func normalizeDirectCodingModuleSegment(raw string) (string, error) {

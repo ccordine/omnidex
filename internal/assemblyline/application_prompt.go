@@ -8,8 +8,8 @@ func BuildApplicationClassificationPrompt(input ApplicationClassificationInput) 
 	}
 	return strings.Join([]string{
 		"Classify only the observable delivery surface of one software request.",
-		"Choose browser_application for an interactive browser page, command_line_application for a terminal program, service_application for a server/API, or unsupported when none applies.",
-		"Output grammar: browser_application | command_line_application | service_application | unsupported",
+		"Choose browser_application for an interactive browser page, command_line_application for a terminal program, or unsupported when neither applies.",
+		"Output grammar: browser_application | command_line_application | unsupported",
 		"CURRENT_REQUEST:\n" + input.UserRequest,
 	}, "\n\n"), nil
 }

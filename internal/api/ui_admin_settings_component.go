@@ -3,8 +3,6 @@ package api
 import (
 	"strconv"
 	"strings"
-
-	"github.com/gryph/omnidex/internal/secrets"
 )
 
 func renderUIAdminNetwork(settings map[string]any) string {
@@ -67,14 +65,6 @@ func renderUIAdminIngest() string {
 		`<button type="submit" class="rounded-md bg-cyan-300 px-4 py-2 text-sm font-semibold text-zinc-950">Upload and study</button></form>`
 }
 
-func renderUIModelFields(payload map[string]any) string {
-	fields, _ := payload["fields"].([]map[string]any)
-	envFile, _ := payload["env_file"].(string)
-	return `<p class="mb-3 font-mono text-xs text-zinc-500">Env file: ` + uiEscape(envFile) + `</p>` +
-		renderUIConfigFields(fields, "model_") +
-		`<button type="button" data-action="admin#saveGlobalModels" class="mt-4 rounded-md bg-cyan-300 px-4 py-2 text-sm font-semibold text-zinc-950">Save global model settings</button>`
-}
-
 func renderUIConfigFields(fields []map[string]any, prefix string) string {
 	var body strings.Builder
 	body.WriteString(`<div class="grid gap-4 lg:grid-cols-2">`)
@@ -101,28 +91,5 @@ func renderUIConfigFields(fields []map[string]any, prefix string) string {
 		body.WriteString(`<span class="mt-1 block text-[11px] text-zinc-600">` + uiEscape(description) + `</span></label>`)
 	}
 	body.WriteString(`</div>`)
-	return body.String()
-}
-
-func renderUISecretFields(stored map[string]string) string {
-	var body strings.Builder
-	body.WriteString(`<div class="grid gap-4 lg:grid-cols-2">`)
-	for _, field := range secrets.FieldList(stored) {
-		key := stringMapValue(field, "key")
-		label := stringMapValue(field, "label")
-		description := stringMapValue(field, "description")
-		source := stringMapValue(field, "source")
-		hint := stringMapValue(field, "hint")
-		status := source
-		if hint != "" {
-			status += " " + hint
-		}
-		body.WriteString(`<div class="rounded-md border border-white/10 bg-zinc-900/50 p-4"><div class="flex items-center justify-between gap-2"><span class="text-sm font-medium text-zinc-100">` + uiEscape(label) + `</span><span class="text-[10px] uppercase text-zinc-400">` + uiEscape(status) + `</span></div><input type="password" autocomplete="off" data-admin-field="secret_` + uiAttribute(key) + `" class="mt-3 w-full rounded-md border border-white/10 bg-zinc-950 px-3 py-2 font-mono text-xs" /><div class="mt-2 flex items-center justify-between gap-2"><span class="text-[11px] text-zinc-600">` + uiEscape(description) + `</span>`)
-		if source == "database" {
-			body.WriteString(`<button type="button" data-action="admin#clearSecret" data-secret-key="` + uiAttribute(key) + `" class="rounded-md border border-rose-300/30 px-2 py-1 text-[11px] text-rose-200">Clear stored</button>`)
-		}
-		body.WriteString(`</div></div>`)
-	}
-	body.WriteString(`</div><button type="button" data-action="admin#saveAPISecrets" class="mt-4 rounded-md bg-cyan-300 px-4 py-2 text-sm font-semibold text-zinc-950">Save API keys</button>`)
 	return body.String()
 }

@@ -17,13 +17,11 @@ const (
 	DatabaseSchemaSelection                       ID = "database_schema_selection"
 	DatabaseQueryIntent                           ID = "database_query_intent"
 	DatabaseJoinPathSelection                     ID = "database_join_path_selection"
-	RepositoryEvidenceRelevance                   ID = "repository_evidence_relevance"
 	WebRelevance                                  ID = "web_relevance"
 	WebGroundedSynthesis                          ID = "web_grounded_synthesis"
 	CodingSurface                                 ID = "coding_surface"
 	CodingRequirements                            ID = "coding_requirements"
 	CodingProjectStackConstraint                  ID = "coding_project_stack_constraint"
-	CodingTargetTree                              ID = "coding_target_tree"
 	CodingArtifactHandling                        ID = "coding_artifact_handling"
 	CodingCapabilityRelation                      ID = "coding_capability_relation"
 	CodingRuntimeCapabilityNecessity              ID = "coding_runtime_capability_necessity"
@@ -43,13 +41,11 @@ var registered = [...]ID{
 	DatabaseSchemaSelection,
 	DatabaseQueryIntent,
 	DatabaseJoinPathSelection,
-	RepositoryEvidenceRelevance,
 	WebRelevance,
 	WebGroundedSynthesis,
 	CodingSurface,
 	CodingRequirements,
 	CodingProjectStackConstraint,
-	CodingTargetTree,
 	CodingArtifactHandling,
 	CodingCapabilityRelation,
 	CodingRuntimeCapabilityNecessity,

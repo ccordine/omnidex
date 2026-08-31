@@ -83,49 +83,6 @@ func ConnectRuntime(
 	return pool, nil
 }
 
-// ConnectRuntimeReadOnly selects an existing dedicated runtime schema without
-// bootstrap or schema mutation. It is for immutable evidence
-// inspection such as station replay; callers must still use read-only
-// transactions for every query.
-func ConnectRuntimeReadOnly(
-	ctx context.Context,
-	databaseURL string,
-	runtimeSchema string,
-) (*pgxpool.Pool, error) {
-	if ctx == nil {
-		return nil, fmt.Errorf("read-only runtime database connection requires context")
-	}
-	runtimeSearchPath, err := RuntimeSearchPath(runtimeSchema)
-	if err != nil {
-		return nil, err
-	}
-	cfg, err := pgxpool.ParseConfig(databaseURL)
-	if err != nil {
-		return nil, err
-	}
-	_, directSearchPath := cfg.ConnConfig.RuntimeParams["search_path"]
-	options := cfg.ConnConfig.RuntimeParams["options"]
-	if directSearchPath || strings.Contains(strings.ToLower(options), "search_path") {
-		return nil, fmt.Errorf("DATABASE_URL search_path is forbidden; use DATABASE_SCHEMA")
-	}
-	configurePool(cfg)
-	cfg.ConnConfig.RuntimeParams["search_path"] = runtimeSearchPath
-	pool, err := pgxpool.NewWithConfig(ctx, cfg)
-	if err != nil {
-		return nil, err
-	}
-	var selected string
-	if err := pool.QueryRow(ctx, `SELECT current_schema()`).Scan(&selected); err != nil {
-		pool.Close()
-		return nil, err
-	}
-	if selected != runtimeSchema {
-		pool.Close()
-		return nil, fmt.Errorf("runtime database did not select its exact schema")
-	}
-	return pool, nil
-}
-
 func Connect(ctx context.Context, databaseURL string) (*pgxpool.Pool, error) {
 	cfg, err := pgxpool.ParseConfig(databaseURL)
 	if err != nil {

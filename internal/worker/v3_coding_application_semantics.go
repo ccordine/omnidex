@@ -112,16 +112,10 @@ func runDirectCodingApplicationInterpreter(
 		return zero, err
 	}
 
-	formalizedContext, err := resolveDirectCodingApplicationContext(
-		runtime, intentModel, authority.modelRequest, applicationContext, identities, nil,
-	)
-	if err != nil {
-		return zero, err
-	}
 	resolution, err := resolveDirectCodingApplicationIntent(
 		runtime, intentModel,
 		assemblyline.ApplicationIntentInput{
-			UserRequest: authority.modelRequest, Context: formalizedContext,
+			UserRequest: authority.modelRequest, Context: applicationContext,
 		},
 		identities,
 	)

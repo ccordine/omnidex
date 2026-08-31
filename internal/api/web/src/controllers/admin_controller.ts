@@ -1,8 +1,6 @@
 import { Controller } from "@hotwired/stimulus";
 import {
   ingestDocuments,
-  saveAPISecrets,
-  saveModelSettings,
   saveNetworkSettings,
 } from "../lib/admin_api";
 import { deleteOllamaModel, pullOllamaModel } from "../lib/ollama_model_api";
@@ -197,24 +195,6 @@ export default class AdminController extends Controller {
     const port = Number.parseInt(this.field(this.element, "networkPort")?.value ?? "", 10);
     if (!host || !Number.isSafeInteger(port) || port < 1) return reportErrorMessage(this.setAdminStatus.bind(this), "Enter a valid host and port");
     await this.mutate("Saving network URL…", "Network URL saved", () => saveNetworkSettings({ host, port }));
-  }
-
-  async saveGlobalModels(event: Event): Promise<void> {
-    event.preventDefault();
-    await this.mutate("Saving model settings…", "Model settings saved", () => saveModelSettings(this.collect("model_")));
-  }
-
-  async saveAPISecrets(event: Event): Promise<void> {
-    event.preventDefault();
-    const values = Object.fromEntries(Object.entries(this.collect("secret_")).filter(([, value]) => value));
-    await this.mutate("Saving API keys…", "API keys saved; restart core to activate provider changes", () => saveAPISecrets(values));
-  }
-
-  async clearSecret(event: Event): Promise<void> {
-    event.preventDefault();
-    const key = (event.currentTarget as HTMLElement).dataset.secretKey ?? "";
-    if (!key || !window.confirm(`Clear stored value for ${key}?`)) return;
-    await this.mutate("Clearing API key…", "Stored API key cleared", () => saveAPISecrets({}, [key]));
   }
 
   async pullModel(event: Event): Promise<void> {

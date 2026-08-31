@@ -12,7 +12,6 @@ import (
 
 	"github.com/gryph/omnidex/internal/datasource"
 	"github.com/gryph/omnidex/internal/queue"
-	"github.com/gryph/omnidex/internal/secrets"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -66,16 +65,8 @@ func (s *Server) handleDataSourceByID(w http.ResponseWriter, r *http.Request) {
 		s.handleDataSourceQuery(w, r, strings.TrimSuffix(id, "/query"))
 		return
 	}
-	if strings.HasSuffix(id, "/ask") {
-		s.handleDataSourceAsk(w, r, strings.TrimSuffix(id, "/ask"))
-		return
-	}
 	if strings.HasSuffix(id, "/catalog") {
 		s.handleDataSourceCatalog(w, r, strings.TrimSuffix(id, "/catalog"))
-		return
-	}
-	if strings.HasSuffix(id, "/explore") {
-		s.handleDataSourceExplore(w, r, strings.TrimSuffix(id, "/explore"))
 		return
 	}
 	switch r.Method {
@@ -205,14 +196,6 @@ func (s *Server) handleDataSourceQuery(w http.ResponseWriter, r *http.Request, i
 	})
 }
 
-func (s *Server) handleDataSourceAsk(w http.ResponseWriter, r *http.Request, id string) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	writeRemovedInferenceAction(w, "data-source natural-language query")
-}
-
 func (s *Server) handleDataSourceCatalog(w http.ResponseWriter, r *http.Request, id string) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -233,14 +216,6 @@ func (s *Server) handleDataSourceCatalog(w http.ResponseWriter, r *http.Request,
 		"schema_snapshot": snapshot,
 		"ready":           ok && len(snapshot.Relations) > 0,
 	})
-}
-
-func (s *Server) handleDataSourceExplore(w http.ResponseWriter, r *http.Request, id string) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	writeRemovedInferenceAction(w, "data-source inferred schema exploration")
 }
 
 func decodeDataSourceUpsert(r *http.Request) (queue.DataSourceUpsert, error) {
@@ -346,9 +321,20 @@ func dataSourceAdmin(record queue.DataSourceRecord) map[string]any {
 
 func dataSourceSecretHint(record queue.DataSourceRecord) string {
 	if record.UseDSN {
-		return secrets.MaskHint(record.DSN)
+		return dataSourceCredentialHint(record.DSN)
 	}
-	return secrets.MaskHint(record.Password)
+	return dataSourceCredentialHint(record.Password)
+}
+
+func dataSourceCredentialHint(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	if len(value) <= 4 {
+		return "••••"
+	}
+	return "••••" + value[len(value)-4:]
 }
 
 func writeDataSourceError(w http.ResponseWriter, err error) {

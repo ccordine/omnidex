@@ -27,8 +27,7 @@ func llmResponseContractForScope(scope string) (llmResponseContract, error) {
 			PromptHint:      llm.MinimalGeneratePrompt,
 		}, nil
 	}
-	if scope == assemblyline.PortableSemanticWorkerScope ||
-		scope == assemblyline.PortableStructuralWorkerScope {
+	if scope == assemblyline.PortableSemanticWorkerScope {
 		return llmResponseContract{
 			Protocol:        llm.ExactPreparedProtocolRawTextV2,
 			OutputLimitMode: llm.ExactPreparedOutputLimitNatural,

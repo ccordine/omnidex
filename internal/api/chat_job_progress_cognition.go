@@ -34,11 +34,6 @@ func summarizeChatDeterministicCognitionEvent(event parsedChatStepEvent) (chatPr
 			return "", "", true, err
 		}
 		return chatProgressRetrieval, fmt.Sprintf("Resolved %s with %d repository facts", need, facts), true, nil
-	case "coding_target_tree_validation_failed":
-		fields, err := exactChatEventFields(event.Message, "diagnostic")
-		diagnostic, fieldErr := requireChatEventText(fields, "diagnostic", maxChatProgressRawBytes)
-		return chatProgressDiagnostic, "Target tree validation failed: " + boundedChatProgressText(diagnostic), true,
-			firstChatProgressError(err, fieldErr)
 	case "coding_compiler_repair_applied":
 		fields, err := exactChatEventFields(event.Message, "block", "mechanism")
 		if err != nil {

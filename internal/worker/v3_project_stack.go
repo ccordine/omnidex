@@ -28,7 +28,6 @@ type directCodingProjectStack struct {
 	ProjectCompleteTargetTree func(directCodingTargetTreeOccupation) (assemblyline.TargetTree, error)
 	ProjectFocusedTargetTree  func(int, directCodingTargetTreeOccupation) (assemblyline.TargetTree, error)
 	CompileSource             directCodingProjectCompiler
-	ValidateTargetTree      func(assemblyline.TargetTree) error
 	ValidateBlueprint       func(assemblyline.SourceBlueprint) error
 	ValidateSourceOwnership func(
 		assemblyline.FrozenApplicationWorkload,
@@ -83,7 +82,6 @@ func registeredDirectCodingProjectStacks() []directCodingProjectStack {
 			},
 			ProjectCompleteTargetTree: projectTypeScriptBrowserCompleteTargetTree,
 			CompileSource:             compileGenericTypeScriptBrowserBlueprint,
-			ValidateTargetTree:        validateTypeScriptBrowserTargetTree,
 			ValidateBlueprint:         assemblyline.ValidateTypeScriptSourceBlueprint,
 			ValidateSourceOwnership:   validateDirectCodingSingleImplementationSourceOwnership,
 			ValidateAssembly:          validateTypeScriptBrowserAssembly,
@@ -106,7 +104,6 @@ func registeredDirectCodingProjectStacks() []directCodingProjectStack {
 			RuntimeCapabilities:      directCodingGoRuntimeCapabilities,
 			BindRuntimeCapabilities:  bindDirectCodingGoRuntimeCapabilities,
 			CompileSource:            compileGenericGoCommandLineBlueprint,
-			ValidateTargetTree:       validateGoCommandLineTargetTree,
 			ValidateBlueprint:        assemblyline.ValidateGoSourceBlueprint,
 			ValidateSourceOwnership:  validateDirectCodingSingleImplementationSourceOwnership,
 			ValidateAssembly:         validateGoCommandLineAssembly,
@@ -126,7 +123,6 @@ func registeredDirectCodingProjectStacks() []directCodingProjectStack {
 			TargetTreeReservedPaths:  []string{"main.mjs", "runtime.mjs"},
 			ProjectFocusedTargetTree: projectJavaScriptCommandLineFocusedTargetTree,
 			CompileSource:            compileGenericJavaScriptCommandLineBlueprint,
-			ValidateTargetTree:       validateJavaScriptCommandLineTargetTree,
 			ValidateBlueprint:        assemblyline.ValidateJavaScriptSourceBlueprint,
 			ValidateSourceOwnership:  validateDirectCodingSingleImplementationSourceOwnership,
 			ValidateAssembly:         validateJavaScriptCommandLineAssembly,
@@ -148,7 +144,6 @@ func registeredDirectCodingProjectStacks() []directCodingProjectStack {
 			},
 			ProjectFocusedTargetTree: projectRustCommandLineFocusedTargetTree,
 			CompileSource:            compileGenericRustCommandLineBlueprint,
-			ValidateTargetTree:       validateRustCommandLineTargetTree,
 			ValidateBlueprint:        assemblyline.ValidateRustSourceBlueprint,
 			ValidateSourceOwnership:  validateDirectCodingSingleImplementationSourceOwnership,
 			ValidateAssembly:         validateRustCommandLineAssembly,
@@ -168,7 +163,6 @@ func registeredDirectCodingProjectStacks() []directCodingProjectStack {
 			TargetTreeReservedPaths:  []string{"Main.java", "Runtime.java"},
 			ProjectFocusedTargetTree: projectJavaCommandLineFocusedTargetTree,
 			CompileSource:            compileGenericJavaCommandLineBlueprint,
-			ValidateTargetTree:       validateJavaCommandLineTargetTree,
 			ValidateBlueprint:        assemblyline.ValidateJavaSourceBlueprint,
 			ValidateSourceOwnership:  validateDirectCodingSingleImplementationSourceOwnership,
 			ValidateAssembly:         validateJavaCommandLineAssembly,

@@ -15,15 +15,6 @@ func getenv(key, fallback string) string {
 	return fallback
 }
 
-func firstEnv(keys ...string) string {
-	for _, key := range keys {
-		if value := strings.TrimSpace(os.Getenv(key)); value != "" {
-			return value
-		}
-	}
-	return ""
-}
-
 func getenvInt(key string, fallback int) int {
 	if value := os.Getenv(key); value != "" {
 		parsed, err := strconv.Atoi(value)

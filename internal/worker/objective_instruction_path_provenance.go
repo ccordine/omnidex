@@ -48,7 +48,13 @@ func objectiveInstructionPathProvenance(
 	basenames := make(map[string]objectiveBasenameOwner)
 	err = filepath.WalkDir(root, func(absolute string, entry os.DirEntry, walkErr error) error {
 		if walkErr != nil {
-			return fmt.Errorf("walk objective instruction path %q: %w", absolute, walkErr)
+			if absolute == root {
+				return fmt.Errorf("walk objective instruction path %q: %w", absolute, walkErr)
+			}
+			if entry != nil && entry.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
 		}
 		if err := ctx.Err(); err != nil {
 			return err

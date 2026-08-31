@@ -47,9 +47,6 @@ func Apply(base Routing, cfg Config) Routing {
 	if value := cfg.Get("database_join_path_selection_model"); value != "" {
 		out.Stations[station.DatabaseJoinPathSelection] = value
 	}
-	if value := cfg.Get("repository_evidence_relevance_model"); value != "" {
-		out.Stations[station.RepositoryEvidenceRelevance] = value
-	}
 	if value := cfg.Get("web_relevance_model"); value != "" {
 		out.Stations[station.WebRelevance] = value
 	}
@@ -62,9 +59,6 @@ func Apply(base Routing, cfg Config) Routing {
 	if value := cfg.Get("coding_requirements_model"); value != "" {
 		out.Stations[station.CodingRequirements] = value
 		out.Stations[station.CodingProjectStackConstraint] = value
-	}
-	if value := cfg.Get("coding_workload_model"); value != "" {
-		out.Stations[station.CodingTargetTree] = value
 	}
 	if value := cfg.Get("coding_artifact_handling_model"); value != "" {
 		out.Stations[station.CodingArtifactHandling] = value

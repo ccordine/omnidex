@@ -68,11 +68,7 @@ func (s *Server) listOllamaModels(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
 	}
-	modelConfig, err := s.envModelConfig()
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
+	modelConfig := s.envModelConfig()
 	configured := []string{}
 	if s.defaultProvider == "ollama" {
 		configured = modelConfig.ModelNames()

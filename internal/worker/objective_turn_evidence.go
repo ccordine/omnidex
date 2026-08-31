@@ -77,28 +77,6 @@ func validateObjectiveEvidence(item objectiveEvidence) error {
 	if item.SHA256 != validated.SHA256 {
 		return fmt.Errorf("objective evidence %q projection hash does not match exact text", item.Capsule.ID)
 	}
-	switch item.SourceType {
-	case "repository_symbol", "repository_relation":
-		if err := assemblyline.ValidatePathFreeModelContext(
-			"repository evidence selection projection", item.SelectionText,
-		); err != nil {
-			return err
-		}
-		if strings.TrimSpace(item.SelectionText) == "" ||
-			len(item.SelectionText) > maxObjectiveEvidenceTextBytes {
-			return fmt.Errorf(
-				"repository evidence %q requires one bounded selection projection",
-				item.Capsule.ID,
-			)
-		}
-	default:
-		if item.SelectionText != "" {
-			return fmt.Errorf(
-				"objective evidence %q carries an unsupported selection projection",
-				item.Capsule.ID,
-			)
-		}
-	}
 	if !validObjectiveSHA256(item.SourceSHA256) {
 		return fmt.Errorf("objective evidence %q requires an exact authoritative source SHA-256", item.Capsule.ID)
 	}
@@ -276,8 +254,7 @@ func validateObjectiveTurnResult(result objectiveTurnResult) error {
 		}
 	}
 	switch result.Kind {
-	case assemblyline.ObjectiveKindRepositoryRead, assemblyline.ObjectiveKindExternalAnswer,
-		assemblyline.ObjectiveKindDatabaseRead:
+	case assemblyline.ObjectiveKindExternalAnswer, assemblyline.ObjectiveKindDatabaseRead:
 		if len(result.Citations) == 0 {
 			return fmt.Errorf("grounded objective result requires cited evidence")
 		}

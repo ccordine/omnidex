@@ -54,60 +54,6 @@ func summarizeChatCodingRepairGuidance(message string) (chatProgressKind, string
 	), err
 }
 
-func summarizeChatRepositoryIntelligence(event parsedChatStepEvent) (chatProgressKind, string, error) {
-	switch event.Type {
-	case "repository_snapshot_started":
-		fields, err := exactChatEventFields(event.Message, "authority")
-		if err != nil || fields["authority"] != "server" {
-			return "", "", firstChatProgressError(err, fmt.Errorf("repository snapshot authority must be server"))
-		}
-		return chatProgressRetrieval, "Capturing the authoritative repository snapshot", nil
-	case "repository_snapshot_failed":
-		message, err := requireChatProgressMessage(event.Message)
-		return chatProgressDiagnostic, "Repository snapshot failed: " + message, err
-	case "repository_snapshot_ready":
-		fields, err := exactChatEventFields(event.Message, "snapshot", "files")
-		if err != nil {
-			return "", "", err
-		}
-		if _, err := requireChatEventText(fields, "snapshot", 256); err != nil {
-			return "", "", err
-		}
-		files, err := requireChatEventInteger(fields, "files", true)
-		return chatProgressRetrieval, fmt.Sprintf("Repository snapshot ready: %d files", files), err
-	case "repository_analysis_started":
-		fields, err := exactChatEventFields(event.Message, "snapshot", "adapter")
-		if err != nil {
-			return "", "", err
-		}
-		if _, err := requireChatEventText(fields, "snapshot", 256); err != nil {
-			return "", "", err
-		}
-		adapter, err := requireChatEventToken(fields, "adapter", 128)
-		return chatProgressRetrieval, "Analyzing the repository with " + displayChatProgressToken(adapter), err
-	case "repository_analysis_failed":
-		message, err := requireChatProgressMessage(event.Message)
-		return chatProgressDiagnostic, "Repository analysis failed: " + message, err
-	case "repository_analysis_ready":
-		fields, err := exactChatEventFields(event.Message, "snapshot", "adapter", "analysis")
-		if err != nil {
-			return "", "", err
-		}
-		if _, err := requireChatEventText(fields, "snapshot", 256); err != nil {
-			return "", "", err
-		}
-		adapter, err := requireChatEventToken(fields, "adapter", 128)
-		if err != nil {
-			return "", "", err
-		}
-		if _, err := requireChatEventText(fields, "analysis", 256); err != nil {
-			return "", "", err
-		}
-		return chatProgressRetrieval, "Repository analysis ready for " + displayChatProgressToken(adapter), nil
-	}
-	return "", "", fmt.Errorf("repository intelligence event %q is not registered", event.Type)
-}
-
 func chatPortableEventIdentity(eventType string) (namespace, state string, ok bool) {
 	for _, candidate := range []string{"coding", "objective", "web_research"} {
 		prefix := candidate + "_"
@@ -196,7 +142,6 @@ func chatStationLabel(subject string) (string, chatProgressKind) {
 		"database_query_intent":         "Database relational intent",
 		"database_join_path_selection":  "Database relationship selection",
 		"repository_change_surface":     "Repository change-surface",
-		"repository_evidence_relevance": "Repository relevance",
 		"web_relevance":                 "Web relevance",
 		"web_grounded_synthesis":        "Web grounded synthesis",
 	}
@@ -209,7 +154,7 @@ func chatStationLabel(subject string) (string, chatProgressKind) {
 	switch subject {
 	case "context_relevance", "context_minification",
 		"database_schema_selection",
-		"database_join_path_selection", "repository_evidence_relevance",
+		"database_join_path_selection",
 		"web_relevance":
 		category = chatProgressRetrieval
 	}

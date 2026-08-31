@@ -2,7 +2,6 @@ package assemblyline
 
 const (
 	WorkApplicationProjectStackConstraint        WorkKind = "application_project_stack_constraint"
-	WorkApplicationTargetTree                    WorkKind = "application_target_tree"
 	WorkContextMinification                      WorkKind = "context_minification"
 	WorkConversationObjectiveKind                WorkKind = "conversation_objective_kind"
 	WorkConversationResponse                     WorkKind = "conversation_response"
@@ -36,11 +35,9 @@ func validWorkKind(kind WorkKind) bool {
 		WorkApplicationRequirementCandidatePartition,
 		WorkApplicationProjectStackConstraint,
 		WorkApplicationClassify,
-		WorkApplicationTargetTree,
 		WorkRepositoryRequirementInventory,
 		WorkRepositoryRequirementCandidateAuthorization,
 		WorkRepositoryRequirementCandidateRelation,
-		WorkRepositoryEvidenceRelevanceRelation,
 		WorkContextRelevanceRelation, WorkContextMinification,
 		WorkConversationObjectiveKind, WorkConversationResponse,
 		WorkRoleplayGroundedResponseParagraphInventory,
@@ -103,11 +100,9 @@ func AllWorkKinds() []WorkKind {
 		WorkApplicationRequirementCandidatePartition,
 		WorkApplicationProjectStackConstraint,
 		WorkApplicationClassify,
-		WorkApplicationTargetTree,
 		WorkRepositoryRequirementInventory,
 		WorkRepositoryRequirementCandidateAuthorization,
 		WorkRepositoryRequirementCandidateRelation,
-		WorkRepositoryEvidenceRelevanceRelation,
 		WorkContextRelevanceRelation, WorkContextMinification,
 		WorkConversationObjectiveKind, WorkConversationResponse,
 		WorkRoleplayGroundedResponseParagraphInventory,

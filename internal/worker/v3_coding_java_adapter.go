@@ -54,14 +54,6 @@ func compileGenericJavaCommandLineBlueprint(
 	return blueprint, nil, nil
 }
 
-func validateJavaCommandLineTargetTree(target assemblyline.TargetTree) error {
-	stack, err := directCodingProjectStackByID(genericJavaCommandLineAdapter)
-	if err != nil {
-		return err
-	}
-	return validateDirectCodingSingleImplementationTargetTree(stack, target, true)
-}
-
 func validateJavaCommandLineCoverage(
 	target assemblyline.TargetTree,
 	workload assemblyline.FrozenApplicationWorkload,

@@ -82,25 +82,12 @@ func (s *Server) renderUIAdminOverview(r *http.Request) (string, error) {
 }
 
 func (s *Server) renderUIAdminAI(ctx context.Context, query uiOllamaManagerQuery) (string, error) {
-	modelSettings, err := buildModelSettingsResponse()
-	if err != nil {
-		return "", fmt.Errorf("load model settings: %w", err)
-	}
-	storedSecrets := map[string]string{}
-	if s.repo != nil {
-		storedSecrets, err = s.repo.GetAPISecrets(ctx)
-		if err != nil {
-			return "", fmt.Errorf("load stored API secrets: %w", err)
-		}
-	}
 	modelsBody, err := s.renderUIOllamaManager(ctx, query)
 	if err != nil {
 		return "", err
 	}
 	return `<div data-admin-tab-panel="ai" class="mx-auto max-w-5xl space-y-4">` +
-		uiAdminSection("API keys", "Stored in PostgreSQL; environment values are used only when no database value is set.", renderUISecretFields(storedSecrets)) +
 		uiAdminSection("Local Ollama model manager", "Search the official catalog, watch durable downloads, and manage models available to character personalities.", modelsBody) +
-		uiAdminSection("Global model defaults", "Exact station model settings from the authoritative environment file.", renderUIModelFields(modelSettings)) +
 		`</div>`, nil
 }
 

@@ -96,8 +96,8 @@ func (r *Repository) FindRelevantMemory(
 	if r == nil || r.pool == nil {
 		return nil, fmt.Errorf("memory retrieval requires PostgreSQL")
 	}
-	rows, err := r.pool.Query(ctx, memoryVectorRetrievalSQL,
-		scope.ProjectID, scope.ChannelID, vectorLiteral(embedding), limit)
+	rows, err := r.pool.Query(ctx, memoryCosineRetrievalSQL,
+		scope.ProjectID, scope.ChannelID, embedding, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -129,19 +129,24 @@ func (r *Repository) FindRelevantMemory(
 	return matches, rows.Err()
 }
 
-const memoryVectorRetrievalSQL = `
+const memoryCosineRetrievalSQL = `
 	SELECT mc.id,mc.project_id,mc.channel_id,mc.kind,mc.content,mc.created_at,
-		COALESCE(array_remove(array_agg(DISTINCT t.name),NULL),ARRAY[]::text[]),
-		COALESCE(array_remove(array_agg(DISTINCT c.name),NULL),ARRAY[]::text[]),
-		COALESCE(1-(mc.embedding <=> $3::vector),0)
+		COALESCE((SELECT array_agg(DISTINCT t.name ORDER BY t.name)
+			FROM memory_chunk_tags mct JOIN tags t ON t.id=mct.tag_id
+			WHERE mct.memory_chunk_id=mc.id),ARRAY[]::text[]),
+		COALESCE((SELECT array_agg(DISTINCT c.name ORDER BY c.name)
+			FROM memory_chunk_categories mcc JOIN memory_categories c ON c.id=mcc.category_id
+			WHERE mcc.memory_chunk_id=mc.id),ARRAY[]::text[]),
+		COALESCE((
+			SELECT SUM(stored.value*query.value) /
+				NULLIF(SQRT(SUM(stored.value*stored.value))*SQRT(SUM(query.value*query.value)),0)
+			FROM unnest(mc.embedding) WITH ORDINALITY AS stored(value,ordinal)
+			JOIN unnest($3::double precision[]) WITH ORDINALITY AS query(value,ordinal)
+			USING (ordinal)
+		),0) AS score
 	FROM memory_chunks mc
-	LEFT JOIN memory_chunk_tags mct ON mct.memory_chunk_id=mc.id
-	LEFT JOIN tags t ON t.id=mct.tag_id
-	LEFT JOIN memory_chunk_categories mcc ON mcc.memory_chunk_id=mc.id
-	LEFT JOIN memory_categories c ON c.id=mcc.category_id
 	WHERE mc.project_id=$1 AND mc.channel_id=$2 AND mc.embedding IS NOT NULL
-	GROUP BY mc.id
-	ORDER BY mc.embedding <=> $3::vector,mc.id ASC
+	ORDER BY score DESC,mc.id ASC
 	LIMIT $4`
 
 func (r *Repository) ListMemoryCategories(ctx context.Context, limit int) ([]model.MemoryFacet, error) {

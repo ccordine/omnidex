@@ -15,7 +15,6 @@ const (
 	MaxTargetTreePathBytes      = 512
 	MaxTargetTreeDepth          = 16
 	maxTargetTreePathBytes      = MaxTargetTreePathBytes
-	maxTargetTreeObjectiveBytes = 64 * 1024
 )
 
 var (
@@ -49,79 +48,18 @@ func (constraints TargetTreeConstraints) Validate() error {
 	return nil
 }
 
-// TargetTreeInput is code-owned context for one complete workload-tree
-// question. ExistingPaths is the current managed workload tree. ReservedPaths
-// contains code-owned leaves that cannot enter the workload tree. ExistingDirs
-// is code-only collision evidence and is not model-visible.
+// TargetTreeInput is code-owned state for deriving filesystem transitions.
 type TargetTreeInput struct {
-	Objective        string                `json:"objective"`
-	TechnicalContext string                `json:"technical_context"`
 	Constraints      TargetTreeConstraints `json:"constraints"`
 	ExistingPaths    []string              `json:"existing_paths"`
 	ReservedPaths    []string              `json:"reserved_paths"`
 	ExistingDirs     []string              `json:"existing_dirs"`
-	Correction       *TargetTreeCorrection `json:"correction,omitempty"`
-}
-
-type TargetTreeCorrection struct {
-	CandidateTree string `json:"candidate_tree,omitempty"`
-	Failure       string `json:"failure"`
 }
 
 type TargetTree struct {
 	StackID          string
 	VersionProfileID string
 	Paths            []string
-}
-
-func (input TargetTreeInput) Validate() error {
-	if err := validateTargetTreeText("objective", input.Objective, maxTargetTreeObjectiveBytes); err != nil {
-		return err
-	}
-	if err := ValidatePathFreeModelContext("target tree accepted goals", input.Objective); err != nil {
-		return err
-	}
-	if err := validateTargetTreeText("technical context", input.TechnicalContext, maxTargetTreePathBytes); err != nil {
-		return err
-	}
-	if err := ValidatePathFreeModelContext("target tree technical context", input.TechnicalContext); err != nil {
-		return err
-	}
-	if err := input.Constraints.Validate(); err != nil {
-		return err
-	}
-	if input.ExistingPaths == nil {
-		return fmt.Errorf("target tree existing workspace paths must be a non-nil array")
-	}
-	if input.ReservedPaths == nil {
-		return fmt.Errorf("target tree reserved paths must be a non-nil array")
-	}
-	if input.ExistingDirs == nil {
-		return fmt.Errorf("target tree existing workspace directories must be a non-nil array")
-	}
-	if err := validateTargetTreePaths("existing workspace path", input.ExistingPaths); err != nil {
-		return err
-	}
-	if err := validateTargetTreePaths("reserved path", input.ReservedPaths); err != nil {
-		return err
-	}
-	if err := validateTargetTreePaths("existing workspace directory", input.ExistingDirs); err != nil {
-		return err
-	}
-	if correction := input.Correction; correction != nil {
-		if correction.CandidateTree != "" {
-			if _, err := ParseTargetTree(correction.CandidateTree); err != nil {
-				return fmt.Errorf("target tree correction candidate is not a safe raw tree: %w", err)
-			}
-		}
-		if err := validateTargetTreeText("correction failure", correction.Failure, 1200); err != nil {
-			return err
-		}
-		if err := ValidatePathFreeModelContext("target tree correction failure", correction.Failure); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 // ValidateTargetTreeConstraints applies the same code-owned structural facts
@@ -186,32 +124,6 @@ func ValidateTargetTreeReservedPaths(reservedPaths []string, target TargetTree) 
 	return nil
 }
 
-// TargetTreeCorrectionFailure returns the bounded path-free semantic defect
-// exposed to a replacement call after the raw hierarchy parsed successfully.
-// The full validation error remains code-owned evidence.
-func TargetTreeCorrectionFailure(err error) (string, error) {
-	if err == nil {
-		return "", fmt.Errorf("target tree correction requires one validation failure")
-	}
-	var failure string
-	switch {
-	case errors.Is(err, errTargetTreeFileCount):
-		failure = "The response has the wrong number of F nodes for EXACT_FILE_COUNT."
-	case errors.Is(err, errTargetTreeRootFilesOnly):
-		failure = "The response contains a D node while ROOT_FILES_ONLY is true."
-	case errors.Is(err, errTargetTreeDirectoryConflict):
-		failure = "One F node occupies a basename hierarchy already held by an existing workspace directory."
-	case errors.Is(err, errTargetTreeReservedConflict):
-		failure = "One F node duplicates a basename hierarchy in RESERVED_TREE."
-	default:
-		failure = "The response violates TECHNICAL_CONTEXT."
-	}
-	if pathErr := ValidatePathFreeModelContext("target tree correction failure", failure); pathErr != nil {
-		return "", pathErr
-	}
-	return failure, nil
-}
-
 func validateTargetTreePaths(label string, paths []string) error {
 	if len(paths) > maxTargetTreePaths {
 		return fmt.Errorf("target tree %s set exceeds %d paths", label, maxTargetTreePaths)
@@ -247,10 +159,18 @@ func validateTargetTreePath(value string) error {
 	return nil
 }
 
+func validateTargetTreeBasename(value string) error {
+	if value == "" || value == "." || value == ".." || len(value) > 255 ||
+		!utf8.ValidString(value) || strings.ContainsAny(value, "/\\\x00\r\n") {
+		return fmt.Errorf("path contains an invalid basename")
+	}
+	return nil
+}
+
 func validateTargetTreeText(label, value string, maximum int) error {
 	if value == "" || value != strings.TrimSpace(value) || !utf8.ValidString(value) ||
 		strings.ContainsRune(value, '\x00') || len(value) > maximum {
-		return fmt.Errorf("target tree %s must be trimmed UTF-8 text of at most %d bytes", label, maximum)
+		return fmt.Errorf("%s must be trimmed UTF-8 text of at most %d bytes", label, maximum)
 	}
 	return nil
 }

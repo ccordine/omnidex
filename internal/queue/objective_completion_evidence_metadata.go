@@ -105,14 +105,7 @@ func validateObjectiveCitationMetadata(record evidence.Record) error {
 		}
 		return nil
 	}
-	if kind != "repository_read" {
-		return fmt.Errorf("objective non-web citation requires objective kind %q", "repository_read")
-	}
-	if len(record.RequirementAuthorityBindings) != 1 ||
-		record.RequirementAuthorityBindings[0] != requirementID {
-		return fmt.Errorf("objective non-web citation binding differs from its requirement authority")
-	}
-	return nil
+	return fmt.Errorf("objective citation source type %q is unsupported", record.SourceType)
 }
 
 func objectiveCitationMetadataKeyAllowed(key string, web, database, roleplayResearch bool) bool {

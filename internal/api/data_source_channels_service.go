@@ -51,12 +51,6 @@ func (s *Server) handlePublicDataSourceByID(w http.ResponseWriter, r *http.Reque
 		case "catalog":
 			s.handleDataSourceCatalog(w, r, sourceID)
 			return
-		case "explore":
-			s.handleDataSourceExplore(w, r, sourceID)
-			return
-		case "ask":
-			s.handlePublicDataSourceAsk(w, r, sourceID)
-			return
 		}
 	}
 	if len(parts) == 1 {
@@ -185,21 +179,7 @@ func (s *Server) handleDataSourceChannelMessages(w http.ResponseWriter, r *http.
 			"messages": page.Items, "offset": page.Offset, "has_more": page.HasMore,
 			"next_offset": dataSourceNextOffset(page.Offset, len(page.Items), page.HasMore),
 		})
-	case http.MethodPost:
-		s.postDataSourceChannelMessage(w, r, sourceID, channelID)
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
-}
-
-func (s *Server) postDataSourceChannelMessage(w http.ResponseWriter, r *http.Request, sourceID, channelID string) {
-	writeRemovedInferenceAction(w, "data-source channel inference")
-}
-
-func (s *Server) handlePublicDataSourceAsk(w http.ResponseWriter, r *http.Request, id string) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	writeRemovedInferenceAction(w, "public data-source natural-language query")
 }

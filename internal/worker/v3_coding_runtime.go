@@ -6,7 +6,6 @@ import (
 
 	"github.com/gryph/omnidex/internal/assemblyline"
 	"github.com/gryph/omnidex/internal/model"
-	repositoryindex "github.com/gryph/omnidex/internal/repository/indexing"
 	"github.com/gryph/omnidex/internal/scrum"
 )
 
@@ -23,8 +22,6 @@ type directCodingSession struct {
 	program               *directCodingProgram
 	sequence              int
 	protectedPaths        map[string]directCodingProtectedPath
-	lastCommands          []string
-	repositoryIndex       *repositoryindex.Result
 	plannedFiles          int
 	plannedDeletes        int
 	mutationJournal       []directCodingMutationJournalEntry

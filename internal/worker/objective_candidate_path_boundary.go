@@ -35,7 +35,6 @@ func validateObjectiveRawCandidatePathBoundary(
 		assemblyline.WorkGroundedAnswerParagraphInventory,
 		assemblyline.WorkGroundedAnswerParagraphEvidenceRelation,
 		assemblyline.WorkGroundedAnswerParagraphAuthorization,
-		assemblyline.WorkRepositoryEvidenceRelevanceRelation,
 		assemblyline.WorkDatabaseSchemaRelationInventory,
 		assemblyline.WorkDatabaseSchemaRelationNecessity,
 		assemblyline.WorkDatabaseSchemaRelationResolution,

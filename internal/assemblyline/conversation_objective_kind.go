@@ -18,7 +18,6 @@ type ConversationObjectiveKind string
 
 const (
 	ObjectiveKindAnswer            ConversationObjectiveKind = "answer"
-	ObjectiveKindRepositoryRead    ConversationObjectiveKind = "repository_read"
 	ObjectiveKindWorkspaceMutation ConversationObjectiveKind = "workspace_mutation"
 	ObjectiveKindExternalAnswer    ConversationObjectiveKind = "external_answer"
 	ObjectiveKindStory             ConversationObjectiveKind = "story"
@@ -73,7 +72,6 @@ func (decision ConversationObjectiveKindDecision) ValidateFor(input Conversation
 	}
 	switch decision.Kind {
 	case ObjectiveKindAnswer,
-		ObjectiveKindRepositoryRead,
 		ObjectiveKindWorkspaceMutation,
 		ObjectiveKindExternalAnswer,
 		ObjectiveKindStory:
@@ -120,12 +118,11 @@ func BuildConversationObjectiveKindPrompt(input ConversationObjectiveKindInput) 
 	}
 	lines := []string{
 		"Classify one exact user instruction into exactly one listed objective kind.",
-		"answer: converse directly, including greetings and small talk, or answer without inspecting a repository or acquiring current external evidence.",
-		"repository_read: satisfying the instruction requires inspecting an existing repository without changing it.",
+		"answer: converse directly, including greetings and small talk, or answer without acquiring current external evidence.",
 		"workspace_mutation: satisfying the instruction requires changing a workspace and verifying the change.",
 		"external_answer: satisfying the instruction requires current or externally acquired evidence, including an explicit web-search or research request.",
 		"story: produce narrative or roleplay text.",
-		"Choose repository_read, workspace_mutation, or external_answer only when the instruction requires that corresponding evidence or side effect; otherwise choose answer or story.",
+		"Choose workspace_mutation or external_answer only when the instruction requires that corresponding evidence or side effect; otherwise choose answer or story.",
 	}
 	if input.DatabaseEvidenceAvailable {
 		lines = append(lines, "database_read: answer using the explicitly bound database when its records are required as evidence.")

@@ -3,7 +3,6 @@ package llmprovider
 import (
 	"context"
 	"fmt"
-	"strings"
 	"sync"
 
 	"github.com/gryph/omnidex/internal/config"
@@ -70,7 +69,7 @@ func (resolver *lazyExactStationResolver) resolve() (llm.ExactStationClient, err
 		return nil, fmt.Errorf("lazy exact station resolver is uninitialized")
 	}
 	resolver.once.Do(func() {
-		provider := strings.TrimSpace(resolver.cfg.LLMProvider)
+		provider := resolver.cfg.LLMProvider
 		if provider == "" {
 			resolver.err = fmt.Errorf("LLM_PROVIDER is not configured")
 			return
@@ -114,7 +113,7 @@ func (resolver *lazyEmbeddingResolver) resolve() (llm.EmbeddingClient, error) {
 		return nil, fmt.Errorf("lazy embedding resolver is uninitialized")
 	}
 	resolver.once.Do(func() {
-		provider := strings.TrimSpace(resolver.cfg.EmbeddingProvider)
+		provider := resolver.cfg.EmbeddingProvider
 		if provider == "" {
 			resolver.err = fmt.Errorf("EMBEDDING_PROVIDER is not configured")
 			return

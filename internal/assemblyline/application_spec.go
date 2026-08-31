@@ -17,7 +17,6 @@ type ApplicationSurface string
 const (
 	ApplicationSurfaceBrowser     ApplicationSurface = "browser_application"
 	ApplicationSurfaceCommandLine ApplicationSurface = "command_line_application"
-	ApplicationSurfaceService     ApplicationSurface = "service_application"
 	ApplicationSurfaceUnsupported ApplicationSurface = "unsupported"
 )
 
@@ -48,8 +47,7 @@ func (classification ApplicationClassification) Validate() error {
 		return fmt.Errorf("application classification schema must be %q", ApplicationClassificationSchemaV1)
 	}
 	switch classification.Surface {
-	case ApplicationSurfaceBrowser, ApplicationSurfaceCommandLine,
-		ApplicationSurfaceService, ApplicationSurfaceUnsupported:
+	case ApplicationSurfaceBrowser, ApplicationSurfaceCommandLine, ApplicationSurfaceUnsupported:
 		return nil
 	default:
 		return fmt.Errorf("application surface %q is unsupported", classification.Surface)
@@ -58,7 +56,7 @@ func (classification ApplicationClassification) Validate() error {
 
 func (specification ApplicationSpecification) Validate() error {
 	switch specification.Surface {
-	case ApplicationSurfaceBrowser, ApplicationSurfaceCommandLine, ApplicationSurfaceService:
+	case ApplicationSurfaceBrowser, ApplicationSurfaceCommandLine:
 	case ApplicationSurfaceUnsupported:
 		return fmt.Errorf("unsupported surface cannot be compiled")
 	default:

@@ -36,18 +36,6 @@ func (r *Repository) Ping(ctx context.Context) error {
 	return r.pool.Ping(ctx)
 }
 
-// ValidateRuntimeAuthority checks post-setup invariants that must hold
-// before the production API or worker loops are allowed to start.
-func (r *Repository) ValidateRuntimeAuthority(ctx context.Context) error {
-	if err := r.validateExecutablePipelineState(ctx); err != nil {
-		return err
-	}
-	if err := r.validateJobStepExecutionIdentityAuthority(ctx); err != nil {
-		return err
-	}
-	return nil
-}
-
 func (r *Repository) EnqueueJob(ctx context.Context, instruction, pipeline string, metadataJSON []byte) (model.Job, error) {
 	pipeline, err := validatePublicEnqueuePipeline(pipeline)
 	if err != nil {
@@ -251,7 +239,7 @@ func projectReferenceFromMetadata(metadataJSON []byte) (metadataProjectReference
 		}
 		ref.HasProjectID = true
 	}
-	for _, key := range []string{"client_cwd", "host_env_cwd"} {
+	for _, key := range []string{"client_cwd"} {
 		raw, ok := payload[key]
 		if !ok {
 			continue
@@ -260,10 +248,12 @@ func projectReferenceFromMetadata(metadataJSON []byte) (metadataProjectReference
 		if err := json.Unmarshal(raw, &location); err != nil {
 			return metadataProjectReference{}, fmt.Errorf("%s must be a string: %w", key, err)
 		}
-		if location = strings.TrimSpace(location); location != "" {
-			ref.Location = filepath.Clean(location)
-			break
+		if location == "" || location != strings.TrimSpace(location) ||
+			!filepath.IsAbs(location) || filepath.Clean(location) != location {
+			return metadataProjectReference{}, fmt.Errorf("%s must be one canonical absolute workspace root", key)
 		}
+		ref.Location = location
+		break
 	}
 	return ref, nil
 }
@@ -328,7 +318,7 @@ func projectLocationFromMetadata(metadataJSON []byte) string {
 	if err := json.Unmarshal(metadataJSON, &payload); err != nil {
 		return ""
 	}
-	for _, key := range []string{"client_cwd", "host_env_cwd"} {
+	for _, key := range []string{"client_cwd"} {
 		raw, ok := payload[key]
 		if !ok {
 			continue
@@ -337,11 +327,11 @@ func projectLocationFromMetadata(metadataJSON []byte) string {
 		if !ok {
 			continue
 		}
-		text = strings.TrimSpace(text)
-		if text == "" {
+		if text == "" || text != strings.TrimSpace(text) ||
+			!filepath.IsAbs(text) || filepath.Clean(text) != text {
 			continue
 		}
-		return filepath.Clean(text)
+		return text
 	}
 	return ""
 }

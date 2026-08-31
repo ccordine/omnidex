@@ -65,8 +65,6 @@ func validatePortableJobPayload(kind WorkKind, payload json.RawMessage) error {
 		)
 	case WorkApplicationClassify:
 		return decodeAndValidatePortablePayload[ApplicationClassificationInput](payload, ApplicationClassificationInput.validate)
-	case WorkApplicationTargetTree:
-		return decodeAndValidatePortablePayload[TargetTreeInput](payload, TargetTreeInput.Validate)
 	case WorkRepositoryRequirementInventory:
 		return decodeAndValidatePortablePayload[RepositoryRequirementInterpretationInput](
 			payload, RepositoryRequirementInterpretationInput.validate,
@@ -78,10 +76,6 @@ func validatePortableJobPayload(kind WorkKind, payload json.RawMessage) error {
 	case WorkRepositoryRequirementCandidateRelation:
 		return decodeAndValidatePortablePayload[RepositoryRequirementCandidateRelationInput](
 			payload, RepositoryRequirementCandidateRelationInput.validate,
-		)
-	case WorkRepositoryEvidenceRelevanceRelation:
-		return decodeAndValidatePortablePayload[RepositoryEvidenceRelevanceRelationInput](
-			payload, RepositoryEvidenceRelevanceRelationInput.validate,
 		)
 	case WorkContextRelevanceRelation:
 		return decodeAndValidatePortablePayload[ContextRelevanceRelationInput](

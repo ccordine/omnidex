@@ -86,10 +86,10 @@ func insertPromotedMemoryChunkTx(
 	var chunk model.MemoryChunk
 	err := tx.QueryRow(ctx, `
 		INSERT INTO memory_chunks (project_id, channel_id, source, kind, content, embedding)
-		VALUES ($1, $2, $3, $4, $5, $6::vector)
+		VALUES ($1, $2, $3, $4, $5, $6::double precision[])
 		RETURNING id, project_id, channel_id, source, kind, content, created_at
 	`, candidate.Scope.ProjectID, candidate.Scope.ChannelID, source, candidate.CandidateKind,
-		candidate.Content, vectorLiteral(request.Embedding)).Scan(
+		candidate.Content, request.Embedding).Scan(
 		&chunk.ID, &chunk.Scope.ProjectID, &chunk.Scope.ChannelID,
 		&chunk.Source, &chunk.Kind, &chunk.Content, &chunk.CreatedAt,
 	)

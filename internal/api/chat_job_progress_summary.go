@@ -112,9 +112,6 @@ func summarizeChatStepEvent(event parsedChatStepEvent, stepAction string) (chatP
 		return summarizeChatCodingRepairGuidance(event.Message)
 	case "coding_fragment_correction_started":
 		return summarizeChatCodingCorrection(event.Message)
-	case "repository_snapshot_started", "repository_snapshot_ready", "repository_snapshot_failed",
-		"repository_analysis_started", "repository_analysis_ready", "repository_analysis_failed":
-		return summarizeChatRepositoryIntelligence(event)
 	}
 	if namespace, state, ok := chatPortableEventIdentity(event.Type); ok {
 		return summarizeChatPortableEvent(namespace, state, event.Message)

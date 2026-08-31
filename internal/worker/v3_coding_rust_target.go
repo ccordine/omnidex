@@ -21,28 +21,6 @@ var rustCommandLineReservedModules = map[string]struct{}{
 	"virtual": {}, "yield": {}, "try": {}, "union": {},
 }
 
-func validateRustCommandLineTargetTree(target assemblyline.TargetTree) error {
-	stack, err := directCodingProjectStackByID(genericRustCommandLineAdapter)
-	if err != nil {
-		return err
-	}
-	if err := validateDirectCodingSingleImplementationTargetTree(stack, target, false); err != nil {
-		return err
-	}
-	artifactPath := target.Paths[0]
-	if !strings.HasPrefix(artifactPath, "src/") || !strings.HasSuffix(artifactPath, ".rs") {
-		return fmt.Errorf("Rust command-line target path %q must be src/<snake>.rs", artifactPath)
-	}
-	implementationModule := strings.TrimSuffix(strings.TrimPrefix(artifactPath, "src/"), ".rs")
-	if strings.Contains(implementationModule, "/") {
-		return fmt.Errorf("Rust implementation %q must be one src/<snake>.rs leaf", artifactPath)
-	}
-	if err := validateRustCommandLineModuleName(implementationModule); err != nil {
-		return fmt.Errorf("Rust implementation module: %w", err)
-	}
-	return nil
-}
-
 func validateRustCommandLineModuleName(value string) error {
 	if !rustCommandLineModulePattern.MatchString(value) {
 		return fmt.Errorf("module %q must be lower snake case", value)
@@ -61,11 +39,7 @@ func rustCommandLineTaskImplementationPath(
 	if err != nil {
 		return "", err
 	}
-	target := assemblyline.TargetTree{
-		StackID: genericRustCommandLineAdapter,
-		Paths:   []string{implementationPath},
-	}
-	if err := validateRustCommandLineTargetTree(target); err != nil {
+	if _, err := rustCommandLineModuleForPath(implementationPath); err != nil {
 		return "", fmt.Errorf("task %s Rust file coverage: %w", taskID, err)
 	}
 	return implementationPath, nil

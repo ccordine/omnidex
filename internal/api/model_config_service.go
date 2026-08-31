@@ -4,43 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strings"
 
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/modelconfig"
 )
 
-func (s *Server) envModelConfig() (modelconfig.Config, error) {
-	path, err := resolveEnvFilePath()
-	if err != nil {
-		return nil, fmt.Errorf("resolve model environment file: %w", err)
-	}
-	values, err := readEnvFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("read model environment file: %w", err)
-	}
-	if err := modelconfig.ValidateEnvironmentValues(values); err != nil {
-		return nil, fmt.Errorf("model environment file: %w", err)
-	}
-	if err := modelconfig.ValidateCurrentEnvironment(); err != nil {
-		return nil, fmt.Errorf("process model environment: %w", err)
-	}
-	fileConfig := modelconfig.Config{}
-	for _, field := range modelconfig.Fields {
-		if value := lookupEnvFileValue(values, field.EnvKeys); value != "" {
-			fileConfig[field.Key] = value
-		}
-	}
-	return modelconfig.Merge(fileConfig, modelconfig.FromEnv()), nil
-}
-
-func lookupEnvFileValue(values map[string]string, keys []string) string {
-	for _, key := range keys {
-		if value := strings.TrimSpace(values[key]); value != "" {
-			return value
-		}
-	}
-	return ""
+func (s *Server) envModelConfig() modelconfig.Config {
+	return modelconfig.FromEnv()
 }
 
 func (s *Server) projectModelConfig(project model.Project) (modelconfig.Config, error) {
@@ -48,10 +18,7 @@ func (s *Server) projectModelConfig(project model.Project) (modelconfig.Config, 
 }
 
 func (s *Server) resolveModelConfig(project model.Project) (modelconfig.Config, string, error) {
-	env, err := s.envModelConfig()
-	if err != nil {
-		return nil, "", err
-	}
+	env := s.envModelConfig()
 	projectCfg, err := s.projectModelConfig(project)
 	if err != nil {
 		return nil, "", fmt.Errorf("parse project model config: %w", err)

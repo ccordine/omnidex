@@ -87,10 +87,7 @@ func (s *Server) ollamaConfiguredUsage(
 	models []ollama.ModelInfo,
 ) (map[string]string, error) {
 	result := make(map[string]string)
-	config, err := s.envModelConfig()
-	if err != nil {
-		return nil, err
-	}
+	config := s.envModelConfig()
 	for _, installed := range models {
 		for _, configured := range config.ModelNames() {
 			if ollama.MatchesOllamaModel(configured, installed.Name) {

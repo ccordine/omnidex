@@ -116,16 +116,6 @@ func runObjectiveTurn(
 	if decision.Kind == assemblyline.ObjectiveKindWorkspaceMutation {
 		return runObjectiveWorkspaceMutation(ctx, authority, result, workflows.WorkspaceMutation)
 	}
-	if decision.Kind == assemblyline.ObjectiveKindRepositoryRead {
-		provenance, err := resolveObjectiveModelPathProvenance(workflows)
-		if err != nil {
-			return result, err
-		}
-		authority, err = bindObjectiveModelInstruction(authority, provenance)
-		if err != nil {
-			return result, err
-		}
-	}
 	authority, contextCalls, err := compileObjectiveTurnContext(
 		ctx, job, authority, candidateProvider, contextStation, nil, nil, nil,
 	)
@@ -142,56 +132,7 @@ func runObjectiveTurn(
 	if decision.Kind == assemblyline.ObjectiveKindDatabaseRead {
 		return runObjectiveDatabaseRead(ctx, authority, result, answerStation, workflows.DatabaseRead)
 	}
-	if answerStation == nil {
-		return result, fmt.Errorf("repository-read objective requires one grounded-answer station")
-	}
-	acquisition, err := acquireObjectiveEvidence(ctx, authority, decision.Kind, workflows)
-	if err != nil {
-		return result, err
-	}
-	acquisitionCalls, err := objectiveRepositoryEvidenceCallTotal(acquisition)
-	if err != nil {
-		return result, err
-	}
-	result.ModelCalls += acquisitionCalls
-	if err := ctx.Err(); err != nil {
-		return result, err
-	}
-	modelEvidence, err := objectiveModelEvidence(acquisition.Evidence)
-	if err != nil {
-		return result, err
-	}
-	answerInput := assemblyline.GroundedAnswerInput{
-		RequirementID:    result.RequirementID,
-		ExactRequirement: acquisition.GroundedRequirement,
-		Context:          assemblyline.CloneObjectiveContext(authority.Context),
-		Evidence:         modelEvidence,
-		KnownArtifactPaths: append(
-			[]string(nil), acquisition.KnownArtifactPaths...,
-		),
-	}
-	grounded, err := runObjectiveRepositoryGroundedClosure(
-		ctx,
-		answerInput,
-		answerStation,
-	)
-	if err != nil {
-		return result, err
-	}
-	result.ModelCalls += grounded.ModelCalls
-	citations, err := selectObjectiveCitations(acquisition.Evidence, grounded.Answer.EvidenceIDs)
-	if err != nil {
-		return result, err
-	}
-	result.Output, err = assemblyline.RestoreArtifactIdentities(
-		grounded.Answer.Text, acquisition.ArtifactIdentities,
-	)
-	if err != nil {
-		return result, fmt.Errorf("restore repository answer artifact identities: %w", err)
-	}
-	result.Citations = citations
-	result.Complete = true
-	return result, nil
+	return result, fmt.Errorf("conversation objective kind %q has no code-owned workflow", decision.Kind)
 }
 
 func resolveObjectiveModelPathProvenance(
@@ -402,14 +343,6 @@ func validObjectiveTextSHA(value, digest string) bool {
 	return digest == hex.EncodeToString(sum[:])
 }
 
-func cloneGroundedAnswerInput(input assemblyline.GroundedAnswerInput) assemblyline.GroundedAnswerInput {
-	copy := input
-	copy.Context = assemblyline.CloneObjectiveContext(input.Context)
-	copy.Evidence = append([]assemblyline.GroundedEvidenceCapsule(nil), input.Evidence...)
-	copy.KnownArtifactPaths = append([]string(nil), input.KnownArtifactPaths...)
-	return copy
-}
-
 func runObjectiveWorkspaceMutation(
 	ctx context.Context,
 	authority turnAuthority,
@@ -432,21 +365,4 @@ func runObjectiveWorkspaceMutation(
 	result.Output = output
 	result.Complete = true
 	return result, nil
-}
-
-func acquireObjectiveEvidence(
-	ctx context.Context,
-	authority turnAuthority,
-	kind assemblyline.ConversationObjectiveKind,
-	workflows objectiveWorkflows,
-) (objectiveEvidenceAcquisition, error) {
-	switch kind {
-	case assemblyline.ObjectiveKindRepositoryRead:
-		if workflows.RepositoryRead == nil {
-			return objectiveEvidenceAcquisition{}, fmt.Errorf("repository-read workflow is unavailable")
-		}
-		return workflows.RepositoryRead(ctx, authority)
-	default:
-		return objectiveEvidenceAcquisition{}, fmt.Errorf("conversation objective kind %q has no code-owned workflow", kind)
-	}
 }

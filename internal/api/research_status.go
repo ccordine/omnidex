@@ -2,9 +2,7 @@ package api
 
 import (
 	"fmt"
-	"net"
 	"net/http"
-	"net/url"
 	"strings"
 )
 
@@ -59,30 +57,7 @@ func configuredWebSearchProviders(values []string) ([]string, error) {
 }
 
 func normalizeURL(raw string) string {
-	value := strings.TrimSpace(raw)
-	if value == "" {
-		return ""
-	}
-	if !strings.Contains(value, "://") {
-		value = "http://" + value
-	}
-	parsed, err := url.Parse(value)
-	if err != nil {
-		return strings.TrimRight(value, "/")
-	}
-	parsed.Host = normalizeURLHost(parsed.Host)
-	return strings.TrimRight(parsed.String(), "/")
-}
-
-func normalizeURLHost(host string) string {
-	host = strings.TrimSpace(host)
-	if host == "" {
-		return host
-	}
-	if hostname, port, err := net.SplitHostPort(host); err == nil {
-		return net.JoinHostPort(strings.TrimSuffix(hostname, "."), port)
-	}
-	return strings.TrimSuffix(host, ".")
+	return strings.TrimRight(strings.TrimSpace(raw), "/")
 }
 
 func truncateStatusText(value string, max int) string {

@@ -110,13 +110,6 @@ func applicationSemanticUncertaintyContract(
 			"The exact immutable software request and the closed delivery-surface vocabulary.",
 			"One registered application classification.",
 			"DecodeApplicationClassification validates the classification before code selects the registered technical pipeline.")
-	case WorkApplicationTargetTree:
-		contract = semanticUncertaintyContract(kind,
-			"What complete managed workload basename hierarchy satisfies all accepted goals?",
-			"Accepted goals admit multiple structurally valid hierarchies that tree rules cannot rank semantically.",
-			"The accepted goals, code-selected technical context, exact tree constraints, current managed hierarchy, and reserved hierarchy.",
-			"One complete raw basename hierarchy.",
-			"DecodeTargetTreeCandidate parses the hierarchy before code constructs normalized paths and filesystem transitions.")
 	default:
 		return SemanticUncertaintyContract{}, false
 	}

@@ -17,9 +17,6 @@ func (s *Server) handleProjectByID(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if routeRemovedProjectAction(w, action) {
-		return
-	}
 	if action != "" && !isLiveProjectAction(action) {
 		writeError(w, http.StatusNotFound, "unknown project action")
 		return
@@ -53,20 +50,6 @@ func (s *Server) handleProjectByID(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
-}
-
-func routeRemovedProjectAction(w http.ResponseWriter, action string) bool {
-	switch action {
-	case "planning-chat":
-		writeRemovedInferenceAction(w, "project planning generation and history")
-	case "planning-chat/drafts":
-		writeRemovedInferenceAction(w, "project planning draft promotion")
-	case "debugger", "debugger/run":
-		writeRemovedInferenceAction(w, "project debugger")
-	default:
-		return false
-	}
-	return true
 }
 
 func isLiveProjectAction(action string) bool {

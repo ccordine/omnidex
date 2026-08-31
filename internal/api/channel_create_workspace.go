@@ -30,12 +30,8 @@ func (root *channelCreateWorkspaceRoot) UnmarshalJSON(raw []byte) error {
 }
 
 func (s *Server) resolveChannelCreateWorkspaceRoot(requested channelCreateWorkspaceRoot) (string, error) {
-	if requested.Present {
-		return requested.Value, nil
+	if !requested.Present {
+		return "", fmt.Errorf("channel workspace_root is required")
 	}
-	configured := s.providerConfig.WorkspaceRoot
-	if err := model.ValidateChannelWorkspaceRoot(configured); err != nil {
-		return "", fmt.Errorf("server default channel workspace root is invalid: %w", err)
-	}
-	return configured, nil
+	return requested.Value, nil
 }

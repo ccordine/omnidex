@@ -20,12 +20,8 @@ const (
 type Definition struct {
 	ID                            string
 	DisplayName                   string
-	Aliases                       []string
 	Protocol                      Protocol
-	EnvironmentPrefixes           []string
-	APIKeyEnvironmentKeys         []string
-	BaseURLEnvironmentKeys        []string
-	EmbeddingModelEnvironmentKeys []string
+	EnvironmentPrefix             string
 	DefaultBaseURL                string
 	DefaultEmbeddingModel         string
 	SupportsExactPreparedStations bool
@@ -34,44 +30,26 @@ type Definition struct {
 	ChineseService                bool
 }
 
-func (d Definition) EnvironmentKeys(suffix string) []string {
+func (d Definition) EnvironmentKey(suffix string) string {
 	suffix = strings.ToUpper(strings.Trim(strings.TrimSpace(suffix), "_"))
 	if suffix == "" {
-		return nil
+		return ""
 	}
-	switch suffix {
-	case "EMBEDDING_MODEL":
-		if len(d.EmbeddingModelEnvironmentKeys) > 0 {
-			return append([]string(nil), d.EmbeddingModelEnvironmentKeys...)
-		}
+	prefix := strings.Trim(strings.ToUpper(strings.TrimSpace(d.EnvironmentPrefix)), "_")
+	if prefix == "" {
+		return ""
 	}
-	keys := make([]string, 0, len(d.EnvironmentPrefixes))
-	for _, prefix := range d.EnvironmentPrefixes {
-		prefix = strings.Trim(strings.ToUpper(strings.TrimSpace(prefix)), "_")
-		if prefix != "" {
-			keys = append(keys, prefix+"_"+suffix)
-		}
-	}
-	return keys
+	return prefix + "_" + suffix
 }
 
 var definitionsByName = mustIndexDefinitions(providerDefinitions)
 
 func Lookup(value string) (Definition, bool) {
-	key := strings.ToLower(strings.TrimSpace(value))
-	definition, ok := definitionsByName[key]
+	definition, ok := definitionsByName[value]
 	if !ok {
 		return Definition{}, false
 	}
 	return cloneDefinition(definition), true
-}
-
-func CanonicalID(value string) (string, error) {
-	definition, ok := Lookup(value)
-	if !ok {
-		return "", fmt.Errorf("unsupported LLM provider %q", strings.TrimSpace(value))
-	}
-	return definition.ID, nil
 }
 
 func Definitions() []Definition {
@@ -118,33 +96,31 @@ func providerIDs(include func(Definition) bool) []string {
 }
 
 func mustIndexDefinitions(definitions []Definition) map[string]Definition {
-	index := make(map[string]Definition, len(definitions)*2)
+	index := make(map[string]Definition, len(definitions))
 	for _, definition := range definitions {
-		if strings.TrimSpace(definition.ID) == "" {
+		if definition.ID == "" {
 			panic("LLM provider catalog contains an empty provider ID")
+		}
+		if definition.ID != strings.ToLower(strings.TrimSpace(definition.ID)) {
+			panic(fmt.Sprintf("LLM provider ID %q is not canonical", definition.ID))
 		}
 		if strings.TrimSpace(definition.DisplayName) == "" {
 			panic(fmt.Sprintf("LLM provider %q has no display name", definition.ID))
 		}
-		for _, name := range append([]string{definition.ID}, definition.Aliases...) {
-			key := strings.ToLower(strings.TrimSpace(name))
-			if key == "" {
-				panic(fmt.Sprintf("LLM provider %q contains an empty alias", definition.ID))
-			}
-			if existing, duplicate := index[key]; duplicate {
-				panic(fmt.Sprintf("LLM provider alias %q is shared by %q and %q", key, existing.ID, definition.ID))
-			}
-			index[key] = definition
+		if definition.EnvironmentPrefix == "" {
+			panic(fmt.Sprintf("LLM provider %q has no environment prefix", definition.ID))
 		}
+		if definition.EnvironmentPrefix != strings.Trim(strings.ToUpper(strings.TrimSpace(definition.EnvironmentPrefix)), "_") {
+			panic(fmt.Sprintf("LLM provider %q has non-canonical environment prefix %q", definition.ID, definition.EnvironmentPrefix))
+		}
+		if existing, duplicate := index[definition.ID]; duplicate {
+			panic(fmt.Sprintf("LLM provider ID %q is shared by %q and %q", definition.ID, existing.ID, definition.ID))
+		}
+		index[definition.ID] = definition
 	}
 	return index
 }
 
 func cloneDefinition(definition Definition) Definition {
-	definition.Aliases = append([]string(nil), definition.Aliases...)
-	definition.EnvironmentPrefixes = append([]string(nil), definition.EnvironmentPrefixes...)
-	definition.APIKeyEnvironmentKeys = append([]string(nil), definition.APIKeyEnvironmentKeys...)
-	definition.BaseURLEnvironmentKeys = append([]string(nil), definition.BaseURLEnvironmentKeys...)
-	definition.EmbeddingModelEnvironmentKeys = append([]string(nil), definition.EmbeddingModelEnvironmentKeys...)
 	return definition
 }

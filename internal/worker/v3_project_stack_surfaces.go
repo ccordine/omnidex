@@ -10,7 +10,6 @@ import (
 var directCodingApplicationSurfaces = []assemblyline.ApplicationSurface{
 	assemblyline.ApplicationSurfaceBrowser,
 	assemblyline.ApplicationSurfaceCommandLine,
-	assemblyline.ApplicationSurfaceService,
 }
 
 func (stack directCodingProjectStack) SupportsSurface(

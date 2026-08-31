@@ -77,39 +77,9 @@ func portableApplicationResponseMaximum(job PortableJob) (int, bool, error) {
 	case WorkApplicationClassify:
 		return maximumStringBytes(
 			ApplicationSurfaceBrowser, ApplicationSurfaceCommandLine,
-			ApplicationSurfaceService, ApplicationSurfaceUnsupported,
+			ApplicationSurfaceUnsupported,
 		), true, nil
-	case WorkApplicationTargetTree:
-		maximum, err := targetTreeResponseMaximum(job)
-		return maximum, true, err
 	default:
 		return 0, false, nil
 	}
-}
-
-func targetTreeResponseMaximum(job PortableJob) (int, error) {
-	var input TargetTreeInput
-	if err := decodePortablePayload(job.Payload, &input); err != nil {
-		return 0, err
-	}
-	depth := MaxTargetTreeDepth
-	if input.Constraints.RootFilesOnly {
-		depth = 1
-	}
-	branchMaximum := targetTreeBranchMaximumBytes(depth)
-	maximum := len(targetTreeRootLine) + 1 +
-		input.Constraints.ExactPathCount*branchMaximum
-	return cappedResponseMaximum(maximum, MaxPortableSemanticCandidateBytes), nil
-}
-
-func targetTreeBranchMaximumBytes(maximumDepth int) int {
-	maximum := 0
-	for depth := 1; depth <= maximumDepth; depth++ {
-		// A depth-d path spends d-1 of the path budget on slash separators.
-		nameBytes := MaxTargetTreePathBytes - (depth - 1)
-		indentBytes := depth * (depth + 1)
-		markerAndLFBytes := 3 * depth
-		maximum = max(maximum, nameBytes+indentBytes+markerAndLFBytes)
-	}
-	return maximum
 }

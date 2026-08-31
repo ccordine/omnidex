@@ -54,8 +54,6 @@ func renderPortableApplicationJob(job PortableJob) (string, bool, error) {
 		return handledPortableRender(renderDecodedPortableInput(job, BuildApplicationProjectStackConstraintPrompt))
 	case WorkApplicationClassify:
 		return handledPortableRender(renderDecodedPortableInput(job, BuildApplicationClassificationPrompt))
-	case WorkApplicationTargetTree:
-		return handledPortableRender(renderDecodedPortableInput(job, BuildTargetTreePrompt))
 	default:
 		return "", false, nil
 	}

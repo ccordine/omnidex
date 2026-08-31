@@ -106,7 +106,7 @@ func newClient(
 		KeepAlive: 30 * time.Second,
 	}).DialContext
 	return &Client{
-		baseURL:        strings.TrimSuffix(NormalizeBaseURL(baseURL), "/"),
+		baseURL:        strings.TrimRight(strings.TrimSpace(baseURL), "/"),
 		defaultModel:   defaultModel,
 		embeddingModel: embeddingModel,
 		contextTokens:  contextTokens,
@@ -237,20 +237,6 @@ func (c *Client) Embedding(ctx context.Context, content string) ([]float64, erro
 	return vector, nil
 }
 
-func (c *Client) wrapConnectivityError(err error, endpoint string) error {
-	if err == nil {
-		return nil
-	}
-
-	msg := strings.ToLower(err.Error())
-	if strings.Contains(msg, "connect: connection refused") && strings.Contains(c.baseURL, "host.docker.internal") {
-		return fmt.Errorf(
-			"%w (cannot reach Ollama at %s%s; if Ollama runs on host, expose it to Docker with OLLAMA_HOST=0.0.0.0:11434 before starting Ollama, or run core locally with OLLAMA_BASE_URL=http://localhost:11434)",
-			err,
-			c.baseURL,
-			endpoint,
-		)
-	}
-
+func (c *Client) wrapConnectivityError(err error, _ string) error {
 	return err
 }

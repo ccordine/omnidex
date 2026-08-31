@@ -46,7 +46,7 @@ func (s *Server) handleHostPickDirectory(w http.ResponseWriter, r *http.Request)
 	}
 	client := s.hostBridgeClient()
 	if client == nil {
-		writeError(w, http.StatusServiceUnavailable, "host bridge unavailable: run `omni host serve` on the host and set HOST_AGENT_URL (for Docker: http://host.docker.internal:8091)")
+		writeError(w, http.StatusServiceUnavailable, "host bridge unavailable: configure one exact HOST_AGENT_URL")
 		return
 	}
 	var req struct {

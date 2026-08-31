@@ -9,10 +9,7 @@ import (
 )
 
 func (s *Server) requireOllamaModelUnused(ctx context.Context, installedModel string) error {
-	config, err := s.envModelConfig()
-	if err != nil {
-		return fmt.Errorf("load model routing before removal: %w", err)
-	}
+	config := s.envModelConfig()
 	configured := config.ModelNames()
 	providerConfig := s.providerConfiguration()
 	if providerConfig.EmbeddingProvider == "ollama" {

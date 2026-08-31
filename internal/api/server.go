@@ -10,7 +10,6 @@ import (
 
 	"github.com/gryph/omnidex/internal/config"
 	"github.com/gryph/omnidex/internal/llm"
-	"github.com/gryph/omnidex/internal/llmprovider/catalog"
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/queue"
 )
@@ -115,15 +114,11 @@ func NewServer(
 	providerConfig := options.ProviderConfig
 	providerConfig.CompatibleProviders = config.CloneCompatibleProviders(providerConfig.CompatibleProviders)
 	providerConfig.ProviderModels = config.CloneProviderModels(providerConfig.ProviderModels)
-	defaultProvider := strings.TrimSpace(providerConfig.LLMProvider)
-	if definition, ok := catalog.Lookup(defaultProvider); ok {
-		defaultProvider = definition.ID
-	}
-	providerConfig.LLMProvider = defaultProvider
+	defaultProvider := providerConfig.LLMProvider
 	providerConfig.RequestTimeout = options.RequestTimeout
 	ollamaModels := providerConfig.ProviderModels["ollama"]
 	ollamaEmbeddingModel := strings.TrimSpace(ollamaModels.Embedding)
-	if strings.EqualFold(strings.TrimSpace(providerConfig.EmbeddingProvider), "ollama") && strings.TrimSpace(providerConfig.EmbeddingModel) != "" {
+	if providerConfig.EmbeddingProvider == "ollama" && strings.TrimSpace(providerConfig.EmbeddingModel) != "" {
 		ollamaEmbeddingModel = strings.TrimSpace(providerConfig.EmbeddingModel)
 	}
 
@@ -186,11 +181,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/v1/scrum", s.handleScrum)
 	s.mux.HandleFunc("/v1/scrum/cards", s.handleScrumCards)
 	s.mux.HandleFunc("/v1/scrum/cards/", s.handleScrumCardByID)
-	s.mux.HandleFunc("/v1/scrum/files", s.handleScrumFiles)
 	s.mux.HandleFunc("/v1/scrum/tags", s.handleScrumTags)
 	s.mux.HandleFunc("/v1/scrum/flow-metrics", s.handleScrumFlowMetrics)
-	s.mux.HandleFunc("/v1/settings/models", s.handleModelSettings)
-	s.mux.HandleFunc("/v1/settings/secrets", s.handleAPISecrets)
 	s.mux.HandleFunc("/v1/settings/network", s.handleNetworkSettings)
 	s.mux.HandleFunc("/v1/browse", s.handleBrowse)
 	s.mux.HandleFunc("/v1/browse/mkdir", s.handleBrowseMkdir)

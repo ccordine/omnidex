@@ -4,14 +4,6 @@ export async function saveNetworkSettings(values: { host: string; port: number }
   await readJSON(await fetch("/v1/settings/network", jsonPut(values)));
 }
 
-export async function saveModelSettings(values: Record<string, string>): Promise<void> {
-  await readJSON(await fetch("/v1/settings/models", jsonRequest({ values })));
-}
-
-export async function saveAPISecrets(values: Record<string, string>, clearKeys: string[] = []): Promise<void> {
-  await readJSON(await fetch("/v1/settings/secrets", jsonPut({ values, clear_keys: clearKeys })));
-}
-
 export async function ingestDocuments(
   files: FileList | File[],
   options: { stage?: string; kind?: string; tags?: string },

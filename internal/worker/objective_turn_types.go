@@ -166,7 +166,6 @@ type objectiveRoleplayGroundedStation interface {
 type objectiveWorkflows struct {
 	ResolveModelPathProvenance func() (assemblyline.ArtifactIdentityProvenance, error)
 	WorkspaceMutation     func(context.Context, turnAuthority) (string, error)
-	RepositoryRead        func(context.Context, turnAuthority) (objectiveEvidenceAcquisition, error)
 	ExternalAnswer        func(context.Context, turnAuthority) (objectiveExternalAnswer, error)
 	DatabaseRead          func(context.Context, turnAuthority, string) (objectiveEvidenceAcquisition, error)
 	RoleplaySimulation    func(context.Context, string, int64) (roleplay.SimulationTurnAuthority, roleplay.NarrativeSimulationProjection, error)
@@ -177,13 +176,9 @@ type objectiveWorkflows struct {
 }
 
 type objectiveEvidenceAcquisition struct {
-	Evidence             []objectiveEvidence
-	ModelCalls           int
-	RepositoryCallLedger objectiveRepositoryAcquisitionCallLedger
-	DatabaseCallLedger   objectiveDatabaseAcquisitionCallLedger
-	GroundedRequirement  string
-	KnownArtifactPaths   []string
-	ArtifactIdentities   []assemblyline.ArtifactIdentity
+	Evidence           []objectiveEvidence
+	ModelCalls         int
+	DatabaseCallLedger objectiveDatabaseAcquisitionCallLedger
 }
 
 type objectiveExternalAnswer struct {
@@ -211,7 +206,6 @@ type objectiveRoleplayResearchAnswer struct {
 
 type objectiveEvidence struct {
 	Capsule       assemblyline.GroundedEvidenceCapsule
-	SelectionText string
 	SourceType    string
 	SourceRef     string
 	SHA256        string

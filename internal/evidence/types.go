@@ -15,8 +15,6 @@ const (
 	KindMemoryExcerpt            = "memory_excerpt"
 	KindGeneratedDiff            = "generated_diff"
 	KindModelJudgment            = "model_judgment"
-	KindRepositoryIndex          = "repository_index"
-	KindRepositoryEvidence       = "repository_evidence"
 	KindObjectiveCitation        = "objective_citation"
 	KindWorkspaceVerification    = "workspace_verification_receipt"
 	KindDeploymentObservation    = "deployment_observation"

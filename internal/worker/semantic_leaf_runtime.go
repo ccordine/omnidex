@@ -37,8 +37,7 @@ func validateDirectCodingSemanticCandidatePathBoundary(
 	provenance assemblyline.ArtifactIdentityProvenance,
 ) error {
 	switch kind {
-	case assemblyline.WorkApplicationTargetTree,
-		assemblyline.WorkFragmentGeneration,
+	case assemblyline.WorkFragmentGeneration,
 		assemblyline.WorkFragmentGenerationReplacement,
 		assemblyline.WorkFragmentModification,
 		assemblyline.WorkFragmentCorrection:

@@ -10,8 +10,6 @@ import (
 	"github.com/gryph/omnidex/internal/llm"
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/queue"
-	repositoryindex "github.com/gryph/omnidex/internal/repository/indexing"
-	repositoryretrieval "github.com/gryph/omnidex/internal/repository/retrieval"
 	"github.com/gryph/omnidex/internal/station"
 	"github.com/gryph/omnidex/internal/websearch"
 )
@@ -27,18 +25,12 @@ type stepCompleteFunc func(context.Context, queue.CompleteStepCommand) error
 
 type nativeV3StepRunner func(context.Context, *model.ClaimedStep, map[string]string, string) error
 
-type WorkspaceSettings struct {
-	Root     string
-	HostRoot string
-}
-
 type Options struct {
 	WorkerCount            int
 	FragmentConcurrency    int
 	PollInterval           time.Duration
 	InferenceContextTokens int
 	Models                 ModelRouting
-	Workspace              WorkspaceSettings
 	Logger                 *log.Logger
 	OnJobFinished          func(jobID int64)
 	OnJobOutput            func(jobID int64, delta string)
@@ -54,10 +46,6 @@ type Service struct {
 	pollInterval           time.Duration
 	inferenceContextTokens int
 	models                 ModelRouting
-	workspaceRoot          string
-	repositoryIndex        repositoryIndexService
-	repositoryRetrieval    repositoryEvidenceBuilder
-	workspaceHostRoot      string
 	completeStep           stepCompleteFunc
 	nativeV3Runner         nativeV3StepRunner
 	logger                 *log.Logger
@@ -76,15 +64,6 @@ func New(
 		return nil, fmt.Errorf("worker repository is required")
 	}
 
-	repositoryIndex, err := repositoryindex.New(repo)
-	if err != nil {
-		return nil, fmt.Errorf("configure repository indexer: %w", err)
-	}
-	repositoryRetrieval, err := repositoryretrieval.New(repo)
-	if err != nil {
-		return nil, fmt.Errorf("configure repository retrieval: %w", err)
-	}
-
 	var completeStep stepCompleteFunc
 	if repo != nil {
 		completeStep = repo.CompleteStep
@@ -99,10 +78,6 @@ func New(
 		pollInterval:           opts.PollInterval,
 		inferenceContextTokens: opts.InferenceContextTokens,
 		models:                 opts.Models,
-		workspaceRoot:          opts.Workspace.Root,
-		repositoryIndex:        repositoryIndex,
-		repositoryRetrieval:    repositoryRetrieval,
-		workspaceHostRoot:      opts.Workspace.HostRoot,
 		completeStep:           completeStep,
 		logger:                 opts.Logger,
 		onJobFinished:          opts.OnJobFinished,

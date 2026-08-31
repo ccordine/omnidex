@@ -16,11 +16,6 @@ func portableRepositoryConversationResponseMaximum(job PortableJob) (int, bool, 
 			RepositoryRequirementCandidatesSameChange,
 			RepositoryRequirementCandidatesDistinctChanges,
 		), true, nil
-	case WorkRepositoryEvidenceRelevanceRelation:
-		return maximumStringBytes(
-			RepositoryEvidenceDirectlyRelevant,
-			RepositoryEvidenceNotDirectlyRelevant,
-		), true, nil
 	case WorkContextRelevanceRelation:
 		return maximumStringBytes(
 			ContextCandidateDirectlyRelevant,
@@ -30,8 +25,7 @@ func portableRepositoryConversationResponseMaximum(job PortableJob) (int, bool, 
 		return MaxContextMinifiedBytes, true, nil
 	case WorkConversationObjectiveKind:
 		return maximumStringBytes(
-			ObjectiveKindAnswer, ObjectiveKindRepositoryRead,
-			ObjectiveKindWorkspaceMutation, ObjectiveKindExternalAnswer,
+			ObjectiveKindAnswer, ObjectiveKindWorkspaceMutation, ObjectiveKindExternalAnswer,
 			ObjectiveKindStory, ObjectiveKindDatabaseRead,
 		), true, nil
 	case WorkConversationResponse:

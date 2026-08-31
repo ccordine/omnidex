@@ -25,7 +25,7 @@ func directCodingAssemblyFromProgram(program directCodingProgram) (directCodingA
 		}
 		byPath[file.Path] = file
 	}
-	deletePaths := make([]string, 0)
+	deletePaths := append([]string(nil), program.DeletePaths...)
 	for _, transition := range program.StructureTransitions {
 		switch transition.Kind {
 		case assemblyline.TargetTreeEnsureDirectory:

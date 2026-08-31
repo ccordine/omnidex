@@ -71,10 +71,7 @@ func newEmbeddingProvider(
 				"compatible provider configuration is missing for %s", definition.ID,
 			)
 		}
-		apiKeyName := "API key"
-		if len(definition.APIKeyEnvironmentKeys) > 0 {
-			apiKeyName = definition.APIKeyEnvironmentKeys[0]
-		}
+		apiKeyName := definition.EnvironmentKey("API_KEY")
 		return openai.NewCompatibleEmbedding(
 			definition.ID, apiKeyName, providerConfig.BaseURL, providerConfig.APIKey,
 			model, providerConfig.Organization, providerConfig.Project, timeout,

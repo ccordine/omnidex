@@ -3,7 +3,6 @@ package config
 import (
 	"fmt"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/gryph/omnidex/internal/db"
@@ -40,8 +39,6 @@ type Config struct {
 	WebSearchTimeout          time.Duration
 	WebSearchPerSourceBudget  int
 	WebSearchTotalBudget      int
-	WorkspaceRoot             string
-	WorkspaceHostRoot         string
 	WorkerCount               int
 	CodingFragmentConcurrency int
 	WorkerPollInterval        time.Duration
@@ -81,22 +78,20 @@ func Load() (Config, error) {
 		ProviderModels:            providerModels,
 		OllamaBaseURL:             getenv("OLLAMA_BASE_URL", ""),
 		CompatibleProviders:       compatibleProviders,
-		AzureAIBaseURL:            firstNonEmptyEnv([]string{"AZURE_AI_BASE_URL", "AZURE_OPENAI_ENDPOINT", "AZURE_OPENAI_BASE_URL"}, ""),
-		AzureAIAPIKey:             firstEnv("AZURE_AI_API_KEY", "AZURE_OPENAI_API_KEY"),
-		AzureAIAPIVersion:         getenv("AZURE_AI_API_VERSION", getenv("AZURE_OPENAI_API_VERSION", "")),
-		AzureAIAPIStyle:           getenv("AZURE_AI_API_STYLE", getenv("AZURE_OPENAI_API_STYLE", "")),
+		AzureAIBaseURL:            os.Getenv("AZURE_AI_BASE_URL"),
+		AzureAIAPIKey:             os.Getenv("AZURE_AI_API_KEY"),
+		AzureAIAPIVersion:         os.Getenv("AZURE_AI_API_VERSION"),
+		AzureAIAPIStyle:           os.Getenv("AZURE_AI_API_STYLE"),
 		GoogleBaseURL:             getenv("GOOGLE_BASE_URL", "https://generativelanguage.googleapis.com/v1beta"),
-		GoogleAPIKey:              firstEnv("GOOGLE_API_KEY", "GEMINI_API_KEY"),
+		GoogleAPIKey:              os.Getenv("GOOGLE_API_KEY"),
 		HuggingFaceBaseURL:        getenv("HUGGINGFACE_BASE_URL", "https://router.huggingface.co"),
-		HuggingFaceAPIKey:         firstEnv("HUGGINGFACE_API_KEY", "HF_TOKEN"),
-		EmbeddingModel:            embeddingModelForProvider(embeddingProvider),
+		HuggingFaceAPIKey:         os.Getenv("HUGGINGFACE_API_KEY"),
+		EmbeddingModel:            embeddingModelForProvider(embeddingProvider, providerModels),
 		RoleplaySemanticModel:     getenv("OMNI_ROLEPLAY_SEMANTIC_MODEL", ""),
 		WebSearchProviders:        getenvCSV("WEB_SEARCH_PROVIDERS", []string{"brave", "google", "reddit"}),
 		WebSearchTimeout:          getenvDuration("WEB_SEARCH_TIMEOUT", 15*time.Second),
 		WebSearchPerSourceBudget:  getenvInt("WEB_SEARCH_PER_SOURCE_BUDGET", 3000),
 		WebSearchTotalBudget:      getenvInt("WEB_SEARCH_TOTAL_BUDGET", 6000),
-		WorkspaceRoot:             getenv("WORKSPACE_ROOT", ""),
-		WorkspaceHostRoot:         getenv("HOST_WORKSPACE_PATH", ""),
 		WorkerCount:               getenvInt("WORKER_COUNT", 2),
 		CodingFragmentConcurrency: getenvInt("CODING_FRAGMENT_CONCURRENCY", defaultCodingFragmentConcurrency(provider)),
 		WorkerPollInterval:        getenvDuration("WORKER_POLL_INTERVAL", 2*time.Second),
@@ -130,7 +125,7 @@ func loadDatabaseSchema() (string, error) {
 }
 
 func defaultCodingFragmentConcurrency(provider string) int {
-	if strings.EqualFold(strings.TrimSpace(provider), "ollama") {
+	if provider == "ollama" {
 		return 1
 	}
 	return 4

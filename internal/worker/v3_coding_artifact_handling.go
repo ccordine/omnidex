@@ -53,11 +53,9 @@ func classifyArtifactHandling(
 }
 
 // sieveDirectCodingApplicationArtifactDirectives keeps only artifact state
-// that can bind the current application workload. A bare reference and one
-// member of an unresolved absence choice are intake candidates, not accepted
-// state, so neither may become a later compiler veto. Exact preserve, create,
-// and absence obligations remain visible and fail loudly when the selected
-// application adapter cannot satisfy them.
+// that has a current consumer. The active compiler consumes only exact
+// preservation. Other classifications remain local intake results and cannot
+// become a later veto merely because no current adapter consumes them.
 func sieveDirectCodingApplicationArtifactDirectives(
 	directives []assemblyline.ArtifactDirective,
 ) ([]assemblyline.ArtifactDirective, error) {
@@ -65,10 +63,10 @@ func sieveDirectCodingApplicationArtifactDirectives(
 	for index, directive := range directives {
 		switch directive.Disposition {
 		case assemblyline.ArtifactReference,
-			assemblyline.ArtifactAbsenceCandidate:
+			assemblyline.ArtifactAbsenceCandidate,
+			assemblyline.ArtifactRequire:
 			continue
 		case assemblyline.ArtifactProtect,
-			assemblyline.ArtifactRequire,
 			assemblyline.ArtifactForbid:
 			retained = append(retained, directive)
 		default:

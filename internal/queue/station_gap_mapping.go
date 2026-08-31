@@ -44,8 +44,6 @@ func stationForPortableWorkKind(kind assemblyline.WorkKind) (station.ID, error) 
 		return station.CodingProjectStackConstraint, nil
 	case assemblyline.WorkApplicationClassify:
 		return station.CodingSurface, nil
-	case assemblyline.WorkApplicationTargetTree:
-		return station.CodingTargetTree, nil
 	case assemblyline.WorkContextRelevanceRelation:
 		return station.ContextRelevance, nil
 	case assemblyline.WorkContextMinification:
@@ -96,8 +94,6 @@ func stationForPortableWorkKind(kind assemblyline.WorkKind) (station.ID, error) 
 		return station.DatabaseQueryIntent, nil
 	case assemblyline.WorkDatabaseJoinPathSelection:
 		return station.DatabaseJoinPathSelection, nil
-	case assemblyline.WorkRepositoryEvidenceRelevanceRelation:
-		return station.RepositoryEvidenceRelevance, nil
 	case assemblyline.WorkWebRelevanceRelation:
 		return station.WebRelevance, nil
 	case assemblyline.WorkWebSynthesisParagraphInventory,

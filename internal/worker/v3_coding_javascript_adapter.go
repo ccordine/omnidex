@@ -76,14 +76,6 @@ func genericJavaScriptCommandLineStaticFiles(
 	}, nil
 }
 
-func validateJavaScriptCommandLineTargetTree(target assemblyline.TargetTree) error {
-	stack, err := directCodingProjectStackByID(genericJavaScriptCommandLineAdapter)
-	if err != nil {
-		return err
-	}
-	return validateDirectCodingSingleImplementationTargetTree(stack, target, true)
-}
-
 func validateJavaScriptCommandLineAssembly(assembly directCodingAssembly) error {
 	files := make(map[string]string, len(assembly.Files))
 	for _, file := range assembly.Files {

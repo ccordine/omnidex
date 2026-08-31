@@ -26,13 +26,6 @@ func repositorySemanticUncertaintyContract(
 			"Exactly one authorized candidate and one retained existing-workspace requirement.",
 			"One pair-bound same-or-distinct workspace-change relation.",
 			"DecodeRepositoryRequirementCandidateRelationResult validates the pair receipt before code discards only the duplicate candidate or compares the next retained requirement.")
-	case WorkRepositoryEvidenceRelevanceRelation:
-		contract = semanticUncertaintyContract(kind,
-			"Is this one exact repository evidence candidate directly relevant to the exact repository requirement?",
-			"Repository indexing establishes available evidence but not its semantic relevance to free-form intent.",
-			"Only the exact requirement and one code-bound evidence candidate text, without other candidates or retained state.",
-			"One candidate-bound directly-relevant-or-not-directly-relevant relation.",
-			"DecodeRepositoryEvidenceRelevanceRelationResult validates the relation before code retains that candidate ID in source order or discards only that candidate; code owns the citation cap and exhaustion.")
 	case WorkContextRelevanceRelation:
 		contract = semanticUncertaintyContract(kind,
 			"Does this exact code-known context candidate directly contribute context needed for the exact instruction?",

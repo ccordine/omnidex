@@ -70,7 +70,7 @@ func (s *directCodingSession) Assemble() (directCodingAssembly, error) {
 		return directCodingAssembly{}, err
 	}
 	targetTree, coverage, err := resolveDirectCodingTargetTree(
-		s.root, specification, workload, selectedStack,
+		specification, workload, selectedStack,
 	)
 	if err != nil {
 		return directCodingAssembly{}, err

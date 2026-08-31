@@ -1,28 +1,18 @@
 package worker
 
 import (
-	"errors"
 	"fmt"
-	"os"
-	"path"
 	"sort"
 	"strings"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
 )
 
-var errDirectCodingTargetTreeExistingFileConflict = errors.New(
-	"target tree existing-file hierarchy constraint failed",
-)
-
 type directCodingTargetTreeOccupation struct {
-	Root           string
-	FilePaths      []string
-	DirectoryPaths []string
+	FilePaths []string
 }
 
 func directCodingTargetTreeOccupationFor(
-	root string,
 	input assemblyline.TargetTreeInput,
 	accepted map[string]struct{},
 ) directCodingTargetTreeOccupation {
@@ -40,19 +30,13 @@ func directCodingTargetTreeOccupationFor(
 		filePaths = append(filePaths, artifactPath)
 	}
 	sort.Strings(filePaths)
-	directories := append([]string(nil), input.ExistingDirs...)
-	sort.Strings(directories)
-	return directCodingTargetTreeOccupation{
-		Root: root, FilePaths: filePaths, DirectoryPaths: directories,
-	}
+	return directCodingTargetTreeOccupation{FilePaths: filePaths}
 }
 
-// validateDirectCodingTargetTreePathClosure proves that a target file cannot
-// replace a directory, occupy a static/reserved file, or cross a regular-file
-// ancestor boundary. An exact current managed file is the sole allowed file
-// overlap because that leaf is reconciled in place.
+// validateDirectCodingTargetTreePathClosure proves only the tree's own
+// reserved-path invariants. Existing filesystem state belongs to the
+// reconciler, which consumes the complete desired state later.
 func validateDirectCodingTargetTreePathClosure(
-	root string,
 	input assemblyline.TargetTreeInput,
 	target assemblyline.TargetTree,
 ) error {
@@ -64,16 +48,6 @@ func validateDirectCodingTargetTreePathClosure(
 				)
 			}
 		}
-		available, err := directCodingTargetTreeWorkspacePathAvailable(root, candidate)
-		if err != nil {
-			return fmt.Errorf("inspect target-tree file %q: %w", candidate, err)
-		}
-		if !available {
-			return fmt.Errorf(
-				"%w: target-tree file %q crosses an existing non-file boundary",
-				errDirectCodingTargetTreeExistingFileConflict, candidate,
-			)
-		}
 	}
 	return nil
 }
@@ -81,16 +55,6 @@ func validateDirectCodingTargetTreePathClosure(
 func directCodingTargetTreeFileHierarchyConflict(left, right string) bool {
 	return left == right || strings.HasPrefix(left, right+"/") ||
 		strings.HasPrefix(right, left+"/")
-}
-
-func directCodingTargetTreePairAvailable(
-	paths []string,
-	occupation directCodingTargetTreeOccupation,
-) (bool, error) {
-	if len(paths) != 2 || paths[0] == paths[1] {
-		return false, fmt.Errorf("mechanical target-tree grammar must return two distinct paths")
-	}
-	return directCodingTargetTreePathsAvailable(paths, occupation)
 }
 
 func directCodingTargetTreePathsAvailable(
@@ -120,59 +84,10 @@ func directCodingTargetTreePathsAvailable(
 				return false, fmt.Errorf("mechanical target-tree paths cross a file hierarchy boundary")
 			}
 		}
-		for _, directory := range occupation.DirectoryPaths {
-			if candidate == directory {
-				return false, nil
-			}
-		}
 		for _, occupied := range occupation.FilePaths {
 			if directCodingTargetTreeFileHierarchyConflict(candidate, occupied) {
 				return false, nil
 			}
-		}
-		available, err := directCodingTargetTreeWorkspacePathAvailable(
-			occupation.Root, candidate,
-		)
-		if err != nil {
-			return false, err
-		}
-		if !available {
-			return false, nil
-		}
-	}
-	return true, nil
-}
-
-// directCodingTargetTreeWorkspacePathAvailable inspects only the exact leaf
-// being consumed by a code-owned projector. Existing regular files are valid
-// reconcile targets. Directories, symlinks, and non-directory ancestors are
-// left untouched, and an unrelated workspace node is never a prerequisite.
-func directCodingTargetTreeWorkspacePathAvailable(root, candidate string) (bool, error) {
-	resolved, err := resolveV3WorkspaceFile(root, candidate)
-	if err != nil {
-		return false, err
-	}
-	info, err := os.Lstat(resolved)
-	if err == nil {
-		return info.Mode().IsRegular(), nil
-	}
-	if !os.IsNotExist(err) {
-		return false, err
-	}
-	for parent := path.Dir(candidate); parent != "."; parent = path.Dir(parent) {
-		resolvedParent, err := resolveV3WorkspaceFile(root, parent)
-		if err != nil {
-			return false, err
-		}
-		info, err := os.Lstat(resolvedParent)
-		if os.IsNotExist(err) {
-			continue
-		}
-		if err != nil {
-			return false, err
-		}
-		if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
-			return false, nil
 		}
 	}
 	return true, nil

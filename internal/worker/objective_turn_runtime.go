@@ -34,7 +34,6 @@ func (r *nativeRuntimeV3) runObjectiveResolve() error {
 				return provenance, err
 			},
 			WorkspaceMutation:     r.runObjectiveWorkspaceMutation,
-			RepositoryRead:        r.acquireObjectiveRepositoryEvidence,
 			ExternalAnswer:        r.acquireObjectiveExternalEvidence,
 			DatabaseRead:          r.acquireObjectiveDatabaseEvidence,
 			RoleplaySimulation:    r.projectObjectiveRoleplaySimulation,
