@@ -152,7 +152,7 @@ networks:
     ipam:
       config:
         # WorkNet permits Docker-to-host Ollama only from 172.16.0.0/12.
-        - subnet: 172.16.90.0/24
+        - subnet: 172.16.91.0/24
   omnidex-backend:
     driver: bridge
     internal: true
