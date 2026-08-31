@@ -2,9 +2,6 @@
 -- The runtime resets its dedicated schema before executing this file.
 -- This is a current-state definition, not an incremental migration.
 
-CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public;
-CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA public;
-
 --
 -- Name: apply_scrum_card_message_counters(); Type: FUNCTION; Schema: current runtime; Owner: -
 --
@@ -136,6 +133,14 @@ BEGIN
         RETURN NEW;
     END IF;
 
+    IF NOT NEW.command_payload ? 'roleplay_responses' THEN
+        IF user_canon IS NOT NULL THEN
+            RAISE EXCEPTION
+                'nonfictional completion cannot carry roleplay user canon';
+        END IF;
+        RETURN NEW;
+    END IF;
+
     SELECT preparation.operation_id,user_turn.persona_kind,
            user_turn.contribution_kind,user_turn.parts
       INTO stored_preparation_id,stored_persona_kind,
@@ -159,13 +164,6 @@ BEGIN
         WHERE completion.operation_id=NEW.operation_id;
     END IF;
 
-    IF NOT NEW.command_payload ? 'roleplay_responses' THEN
-        IF user_canon IS NOT NULL OR receipt_count<>0 THEN
-            RAISE EXCEPTION
-                'nonfictional completion cannot carry roleplay user canon';
-        END IF;
-        RETURN NEW;
-    END IF;
     IF stored_preparation_id IS NULL OR stored_persona_kind IS NULL OR
        stored_contribution_kind IS NULL OR stored_parts IS NULL THEN
         RAISE EXCEPTION
@@ -753,19 +751,6 @@ CREATE FUNCTION reject_memory_capsule_mutation() RETURNS trigger
     AS $$
 BEGIN
     RAISE EXCEPTION 'durable memory capsules are immutable';
-END;
-$$;
-
-
---
--- Name: reject_ollama_model_download_removal(); Type: FUNCTION; Schema: current runtime; Owner: -
---
-
-CREATE FUNCTION reject_ollama_model_download_removal() RETURNS trigger
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    RAISE EXCEPTION 'Ollama model download history is durable';
 END;
 $$;
 
@@ -2355,7 +2340,7 @@ CREATE FUNCTION scrum_channel_command_text(payload jsonb) RETURNS text
 CREATE FUNCTION scrum_channel_command_sha256(payload jsonb) RETURNS text
     LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE
     SET search_path TO 'pg_catalog', '__OMNIDEX_RUNTIME_SCHEMA__', 'pg_temp'
-    RETURN encode(public.digest((((int8send((octet_length('omnidex.scrum-channel-operation.v1'::text))::bigint) || convert_to('omnidex.scrum-channel-operation.v1'::text, 'UTF8'::name)) || int8send((octet_length(scrum_channel_command_text(payload)))::bigint)) || convert_to(scrum_channel_command_text(payload), 'UTF8'::name)), 'sha256'::text), 'hex'::text);
+    RETURN encode(pg_catalog.sha256((((int8send((octet_length('omnidex.scrum-channel-operation.v1'::text))::bigint) || convert_to('omnidex.scrum-channel-operation.v1'::text, 'UTF8'::name)) || int8send((octet_length(scrum_channel_command_text(payload)))::bigint)) || convert_to(scrum_channel_command_text(payload), 'UTF8'::name))), 'hex'::text);
 
 
 --
@@ -2375,7 +2360,7 @@ CREATE FUNCTION scrum_database_time() RETURNS timestamp with time zone
 CREATE FUNCTION scrum_effect_operation_id(outer_operation_id text, effect_kind text, job_id bigint) RETURNS text
     LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE
     SET search_path TO 'pg_catalog', '__OMNIDEX_RUNTIME_SCHEMA__', 'pg_temp'
-    RETURN ('lifecycle_operation_'::text || encode(public.digest((((((((((int8send((octet_length('omnidex.lifecycle-operation-identity.v1'::text))::bigint) || convert_to('omnidex.lifecycle-operation-identity.v1'::text, 'UTF8'::name)) || int8send((octet_length('scrum-channel-effect.v1'::text))::bigint)) || convert_to('scrum-channel-effect.v1'::text, 'UTF8'::name)) || int8send((octet_length(outer_operation_id))::bigint)) || convert_to(outer_operation_id, 'UTF8'::name)) || int8send((octet_length(effect_kind))::bigint)) || convert_to(effect_kind, 'UTF8'::name)) || int8send((octet_length((job_id)::text))::bigint)) || convert_to((job_id)::text, 'UTF8'::name)), 'sha256'::text), 'hex'::text));
+    RETURN ('lifecycle_operation_'::text || encode(pg_catalog.sha256((((((((((int8send((octet_length('omnidex.lifecycle-operation-identity.v1'::text))::bigint) || convert_to('omnidex.lifecycle-operation-identity.v1'::text, 'UTF8'::name)) || int8send((octet_length('scrum-channel-effect.v1'::text))::bigint)) || convert_to('scrum-channel-effect.v1'::text, 'UTF8'::name)) || int8send((octet_length(outer_operation_id))::bigint)) || convert_to(outer_operation_id, 'UTF8'::name)) || int8send((octet_length(effect_kind))::bigint)) || convert_to(effect_kind, 'UTF8'::name)) || int8send((octet_length((job_id)::text))::bigint)) || convert_to((job_id)::text, 'UTF8'::name))), 'hex'::text));
 
 
 --
@@ -2509,34 +2494,6 @@ BEGIN
         RAISE EXCEPTION
             'objective completion evidence set % does not match one exact completed attempt',
             NEW.operation_id;
-    END IF;
-    RETURN NEW;
-END;
-$$;
-
-
---
--- Name: validate_ollama_model_download_transition(); Type: FUNCTION; Schema: current runtime; Owner: -
---
-
-CREATE FUNCTION validate_ollama_model_download_transition() RETURNS trigger
-    LANGUAGE plpgsql
-    AS $$
-BEGIN
-    IF NEW.id IS DISTINCT FROM OLD.id OR
-       NEW.model IS DISTINCT FROM OLD.model OR
-       NEW.created_at IS DISTINCT FROM OLD.created_at OR
-       NEW.updated_at < OLD.updated_at THEN
-        RAISE EXCEPTION 'Ollama model download identity is immutable';
-    END IF;
-    IF OLD.state IN ('completed','failed') THEN
-        RAISE EXCEPTION 'terminal Ollama model download is immutable';
-    END IF;
-    IF OLD.state='queued' AND NEW.state NOT IN ('running','failed') THEN
-        RAISE EXCEPTION 'invalid queued Ollama model download transition';
-    END IF;
-    IF OLD.state='running' AND NEW.state NOT IN ('running','completed','failed') THEN
-        RAISE EXCEPTION 'invalid running Ollama model download transition';
     END IF;
     RETURN NEW;
 END;
@@ -2866,7 +2823,7 @@ BEGIN
          AND operation.kind='complete_step'
          AND operation.command_payload->>'context_key'='objective_result'
         WHERE binding.preparation_id=NEW.preparation_id AND binding.job_id=NEW.job_id
-          AND encode(public.digest(convert_to(message.content,'UTF8'),'sha256'),'hex')=NEW.rendered_sha256
+          AND encode(pg_catalog.sha256(convert_to(message.content,'UTF8')),'hex')=NEW.rendered_sha256
           AND evidence_set.evidence_count BETWEEN 1 AND 4
           AND objective_completion_evidence_set_is_valid(NEW.operation_id)
     ) OR EXISTS (
@@ -2946,7 +2903,7 @@ CREATE FUNCTION validate_roleplay_research_turn() RETURNS trigger
     AS $$
 BEGIN
     IF NEW.question_sha256<>
-       encode(public.digest(convert_to(NEW.question,'UTF8'),'sha256'),'hex') OR
+       encode(pg_catalog.sha256(convert_to(NEW.question,'UTF8')),'hex') OR
        NOT EXISTS (
            SELECT 1
            FROM roleplay_simulation_turn_preparations AS preparation
@@ -3636,7 +3593,7 @@ CREATE TABLE job_generations (
     feedback text,
     feedback_sha256 text,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT job_generations_authoritative_shape CHECK ((((generation = 1) AND (purpose = 'initial'::text) AND (predecessor_generation IS NULL) AND (boundary_action IS NULL) AND (feedback IS NULL) AND (feedback_sha256 IS NULL)) OR ((generation > 1) AND (purpose = 'replan'::text) AND (predecessor_generation = (generation - 1)) AND (boundary_action = ANY (ARRAY['v3_coding'::text, 'objective_resolve'::text, 'v3_planning'::text])) AND lifecycle_feedback_is_valid(feedback, 65536) AND (feedback_sha256 ~ '^[0-9a-f]{64}$'::text) AND (feedback_sha256 = encode(public.digest(feedback, 'sha256'::text), 'hex'::text))))),
+    CONSTRAINT job_generations_authoritative_shape CHECK ((((generation = 1) AND (purpose = 'initial'::text) AND (predecessor_generation IS NULL) AND (boundary_action IS NULL) AND (feedback IS NULL) AND (feedback_sha256 IS NULL)) OR ((generation > 1) AND (purpose = 'replan'::text) AND (predecessor_generation = (generation - 1)) AND (boundary_action = ANY (ARRAY['v3_coding'::text, 'objective_resolve'::text])) AND lifecycle_feedback_is_valid(feedback, 65536) AND (feedback_sha256 ~ '^[0-9a-f]{64}$'::text) AND (feedback_sha256 = encode(pg_catalog.sha256(convert_to(feedback, 'UTF8')), 'hex'::text))))),
     CONSTRAINT job_generations_generation_check CHECK ((generation > 0)),
     CONSTRAINT job_generations_objective_feedback_bounded CHECK (((boundary_action <> 'objective_resolve'::text) OR (octet_length(feedback) <= 2048))),
     CONSTRAINT job_generations_purpose_check CHECK ((purpose = ANY (ARRAY['initial'::text, 'replan'::text])))
@@ -3989,32 +3946,6 @@ CREATE SEQUENCE memory_chunks_id_seq
 --
 
 ALTER SEQUENCE memory_chunks_id_seq OWNED BY memory_chunks.id;
-
-
---
--- Name: ollama_model_downloads; Type: TABLE; Schema: current runtime; Owner: -
---
-
-CREATE TABLE ollama_model_downloads (
-    id text NOT NULL,
-    model text NOT NULL,
-    state text DEFAULT 'queued'::text NOT NULL,
-    status text DEFAULT 'Queued'::text NOT NULL,
-    digest text DEFAULT ''::text NOT NULL,
-    total_bytes bigint DEFAULT 0 NOT NULL,
-    completed_bytes bigint DEFAULT 0 NOT NULL,
-    error text DEFAULT ''::text NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    started_at timestamp with time zone,
-    finished_at timestamp with time zone,
-    CONSTRAINT ollama_model_downloads_identity_check CHECK ((id ~ '^omd_[0-9a-f]{32}$'::text)),
-    CONSTRAINT ollama_model_downloads_lifecycle_check CHECK ((((state = 'queued'::text) AND (started_at IS NULL) AND (finished_at IS NULL) AND (error = ''::text)) OR ((state = 'running'::text) AND (started_at IS NOT NULL) AND (finished_at IS NULL) AND (error = ''::text)) OR ((state = 'completed'::text) AND (started_at IS NOT NULL) AND (finished_at IS NOT NULL) AND (error = ''::text)) OR ((state = 'failed'::text) AND (finished_at IS NOT NULL) AND (error <> ''::text)))),
-    CONSTRAINT ollama_model_downloads_model_check CHECK ((((octet_length(model) >= 1) AND (octet_length(model) <= 256)) AND (model = btrim(model)) AND (model ~ '^[A-Za-z0-9._:/@-]+$'::text))),
-    CONSTRAINT ollama_model_downloads_progress_check CHECK (((total_bytes >= 0) AND (completed_bytes >= 0) AND ((total_bytes = 0) OR (completed_bytes <= total_bytes)))),
-    CONSTRAINT ollama_model_downloads_state_check CHECK ((state = ANY (ARRAY['queued'::text, 'running'::text, 'completed'::text, 'failed'::text]))),
-    CONSTRAINT ollama_model_downloads_text_check CHECK ((((octet_length(status) >= 1) AND (octet_length(status) <= 512)) AND (status = btrim(status)) AND (octet_length(digest) <= 256) AND (digest = btrim(digest)) AND (octet_length(error) <= 2048) AND (error = btrim(error))))
-);
 
 
 --
@@ -5380,14 +5311,6 @@ ALTER TABLE ONLY memory_chunks
 
 
 --
--- Name: ollama_model_downloads ollama_model_downloads_pkey; Type: CONSTRAINT; Schema: current runtime; Owner: -
---
-
-ALTER TABLE ONLY ollama_model_downloads
-    ADD CONSTRAINT ollama_model_downloads_pkey PRIMARY KEY (id);
-
-
---
 -- Name: projects projects_location_key; Type: CONSTRAINT; Schema: current runtime; Owner: -
 --
 
@@ -6249,13 +6172,6 @@ CREATE UNIQUE INDEX idx_jobs_one_active_channel_turn ON jobs USING btree (((meta
 
 
 --
--- Name: idx_jobs_pipeline_session_id; Type: INDEX; Schema: current runtime; Owner: -
---
-
-CREATE INDEX idx_jobs_pipeline_session_id ON jobs USING btree (pipeline, ((metadata ->> 'session_id'::text)), id DESC);
-
-
---
 -- Name: idx_jobs_project_id; Type: INDEX; Schema: current runtime; Owner: -
 --
 
@@ -6341,9 +6257,6 @@ CREATE INDEX idx_memory_chunk_tags_tag_id ON memory_chunk_tags USING btree (tag_
 -- Name: idx_memory_chunks_content_trgm; Type: INDEX; Schema: current runtime; Owner: -
 --
 
-CREATE INDEX idx_memory_chunks_content_trgm ON memory_chunks USING gin (content public.gin_trgm_ops);
-
-
 --
 -- Name: idx_memory_chunks_exact_scope; Type: INDEX; Schema: current runtime; Owner: -
 --
@@ -6356,20 +6269,6 @@ CREATE INDEX idx_memory_chunks_exact_scope ON memory_chunks USING btree (project
 --
 
 CREATE INDEX idx_memory_chunks_kind_created ON memory_chunks USING btree (kind, created_at DESC);
-
-
---
--- Name: idx_ollama_model_downloads_one_active_model; Type: INDEX; Schema: current runtime; Owner: -
---
-
-CREATE UNIQUE INDEX idx_ollama_model_downloads_one_active_model ON ollama_model_downloads USING btree (model) WHERE (state = ANY (ARRAY['queued'::text, 'running'::text]));
-
-
---
--- Name: idx_ollama_model_downloads_recent; Type: INDEX; Schema: current runtime; Owner: -
---
-
-CREATE INDEX idx_ollama_model_downloads_recent ON ollama_model_downloads USING btree (created_at DESC, id DESC);
 
 
 --
@@ -6849,27 +6748,6 @@ CREATE TRIGGER objective_completion_evidence_no_truncate BEFORE TRUNCATE ON evid
 --
 
 CREATE TRIGGER objective_completion_evidence_update_immutable BEFORE UPDATE ON evidence FOR EACH ROW WHEN (((old.kind = 'objective_citation'::text) OR (old.completion_operation_id IS NOT NULL) OR (new.kind = 'objective_citation'::text) OR (new.completion_operation_id IS NOT NULL))) EXECUTE FUNCTION prevent_objective_completion_evidence_mutation();
-
-
---
--- Name: ollama_model_downloads ollama_model_downloads_delete_rejected; Type: TRIGGER; Schema: current runtime; Owner: -
---
-
-CREATE TRIGGER ollama_model_downloads_delete_rejected BEFORE DELETE ON ollama_model_downloads FOR EACH ROW EXECUTE FUNCTION reject_ollama_model_download_removal();
-
-
---
--- Name: ollama_model_downloads ollama_model_downloads_transition_guard; Type: TRIGGER; Schema: current runtime; Owner: -
---
-
-CREATE TRIGGER ollama_model_downloads_transition_guard BEFORE UPDATE ON ollama_model_downloads FOR EACH ROW EXECUTE FUNCTION validate_ollama_model_download_transition();
-
-
---
--- Name: ollama_model_downloads ollama_model_downloads_truncate_rejected; Type: TRIGGER; Schema: current runtime; Owner: -
---
-
-CREATE TRIGGER ollama_model_downloads_truncate_rejected BEFORE TRUNCATE ON ollama_model_downloads FOR EACH STATEMENT EXECUTE FUNCTION reject_ollama_model_download_removal();
 
 
 --

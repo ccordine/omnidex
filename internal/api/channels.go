@@ -1,7 +1,6 @@
 package api
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -20,15 +19,6 @@ import (
 const (
 	defaultChannelHistoryLimit = 24
 )
-
-type channelStore interface {
-	CreateChannel(ctx context.Context, channel model.Channel) (model.Channel, error)
-	CreateRoleplayChannel(ctx context.Context, channel model.Channel, worldName, viewpointName string) (model.Channel, error)
-	GetChannel(ctx context.Context, id model.ChannelID) (model.Channel, error)
-	ListChannels(ctx context.Context, scope model.ChannelScope, limit, offset int) ([]model.Channel, error)
-	ListChannelsByMode(ctx context.Context, scope model.ChannelScope, mode model.ChannelMode, limit, offset int) ([]model.Channel, error)
-	ListChannelMessages(ctx context.Context, channelID model.ChannelID, limit int, beforeID *int64) (model.ChannelMessagePage, error)
-}
 
 type channelCreateRequest struct {
 	ID                    string                     `json:"id"`
@@ -113,20 +103,6 @@ type channelMessageResponse struct {
 	Job         model.Job            `json:"job"`
 }
 
-type enqueueChannelTurnFunc func(
-	context.Context,
-	model.ChannelID,
-	string,
-	string,
-) (model.ChannelMessage, model.Job, error)
-
-type enqueueRoleplayChannelTurnFunc func(
-	context.Context,
-	model.ChannelID,
-	string,
-	roleplay.UserTurnRequest,
-) (model.ChannelMessage, model.Job, error)
-
 func (s *Server) handleChannels(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodPost:
@@ -165,7 +141,7 @@ func (s *Server) createChannel(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, "assistant channel creation cannot carry roleplay names")
 			return
 		}
-		channel, err = s.channelStore.CreateChannel(r.Context(), channelInput)
+		channel, err = s.repo.CreateChannel(r.Context(), channelInput)
 	case model.ChannelModeRoleplay:
 		if req.DataSourceID.Value != "" {
 			writeError(w, http.StatusBadRequest, "roleplay channel cannot bind a real-world data source")
@@ -175,7 +151,7 @@ func (s *Server) createChannel(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, "roleplay channel creation requires exact world and viewpoint names")
 			return
 		}
-		channel, err = s.channelStore.CreateRoleplayChannel(
+		channel, err = s.repo.CreateRoleplayChannel(
 			r.Context(), channelInput, req.RoleplayWorldName.Value, req.RoleplayViewpointName.Value,
 		)
 	default:
@@ -212,7 +188,7 @@ func (s *Server) listChannels(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	channels, err := s.channelStore.ListChannels(r.Context(), model.ChannelScopeUser, limit, offset)
+	channels, err := s.repo.ListChannels(r.Context(), model.ChannelScopeUser, limit, offset)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -264,7 +240,7 @@ func (s *Server) handleChannelByID(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	channel, err := s.channelStore.GetChannel(r.Context(), channelID)
+	channel, err := s.repo.GetChannel(r.Context(), channelID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "channel not found")
@@ -295,18 +271,14 @@ func (s *Server) postChannelMessage(w http.ResponseWriter, r *http.Request, chan
 	var userMessage model.ChannelMessage
 	var job model.Job
 	if req.RoleplayTurn == nil {
-		if s.enqueueChannelTurn == nil {
-			writeError(w, http.StatusServiceUnavailable, "channel job queue is unavailable")
-			return
-		}
-		userMessage, job, err = s.enqueueChannelTurn(
+		userMessage, job, err = s.repo.EnqueueChannelTurnWithDataAuthority(
 			r.Context(), channelID, prompt, req.DelegatedDataAuthorityID.Value,
 		)
 		if err == nil {
-			channel, err = s.channelStore.GetChannel(r.Context(), channelID)
+			channel, err = s.repo.GetChannel(r.Context(), channelID)
 		}
 	} else {
-		channel, err = s.channelStore.GetChannel(r.Context(), channelID)
+		channel, err = s.repo.GetChannel(r.Context(), channelID)
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
 				writeError(w, http.StatusNotFound, "channel not found")
@@ -332,11 +304,7 @@ func (s *Server) postChannelMessage(w http.ResponseWriter, r *http.Request, chan
 			writeError(w, http.StatusBadRequest, err.Error())
 			return
 		}
-		if s.enqueueRoleplayChannelTurn == nil {
-			writeError(w, http.StatusServiceUnavailable, "roleplay channel job queue is unavailable")
-			return
-		}
-		userMessage, job, err = s.enqueueRoleplayChannelTurn(
+		userMessage, job, err = s.repo.EnqueueRoleplayChannelTurn(
 			r.Context(), channel.ID, prompt, *req.RoleplayTurn,
 		)
 		default:

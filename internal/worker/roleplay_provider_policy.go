@@ -3,6 +3,7 @@ package worker
 import (
 	"context"
 	"fmt"
+	"strconv"
 
 	"github.com/gryph/omnidex/internal/llm"
 )
@@ -13,8 +14,12 @@ func (s *Service) exactStationContextTokens(
 	if ctx == nil || s == nil {
 		return 0, fmt.Errorf("exact station context resolution requires context and worker")
 	}
-	if err := llm.ValidateInferenceContextTokens(s.inferenceContextTokens); err != nil {
+	value, err := strconv.Atoi(s.inferenceContextTokens)
+	if err != nil {
+		return 0, fmt.Errorf("INFERENCE_CONTEXT_TOKENS must be an integer: %w", err)
+	}
+	if err := llm.ValidateInferenceContextTokens(value); err != nil {
 		return 0, err
 	}
-	return s.inferenceContextTokens, nil
+	return value, nil
 }

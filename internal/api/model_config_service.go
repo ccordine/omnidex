@@ -9,10 +9,6 @@ import (
 	"github.com/gryph/omnidex/internal/modelconfig"
 )
 
-func (s *Server) runtimeModelConfig() modelconfig.Config {
-	return s.providerConfig.ModelAuthority.Config()
-}
-
 func (s *Server) projectModelConfig(project model.Project) (modelconfig.Config, error) {
 	return modelconfig.FromSettingsJSON(project.Settings)
 }

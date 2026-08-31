@@ -1,14 +1,13 @@
 package api
 
 import (
-	"context"
 	"fmt"
 	"net/http"
 	"strings"
 )
 
 var uiAdminTabs = map[string]struct{}{
-	"overview": {}, "ai": {}, "datasources": {}, "health": {},
+	"overview": {}, "datasources": {}, "health": {},
 }
 
 func (s *Server) handleUIAdminComponent(w http.ResponseWriter, r *http.Request) {
@@ -40,12 +39,6 @@ func (s *Server) renderUIAdminTab(r *http.Request, tab string) (string, error) {
 	switch tab {
 	case "overview":
 		return s.renderUIAdminOverview(r)
-	case "ai":
-		query, err := parseUIOllamaManagerQuery(r)
-		if err != nil {
-			return "", err
-		}
-		return s.renderUIAdminAI(r.Context(), query)
 	case "datasources":
 		return `<div data-admin-tab-panel="datasources" class="mx-auto max-w-6xl space-y-4">` +
 			`<div data-controller="admin-data-sources" data-recyclr-sink="admin-data-sources" class="space-y-4">` + uiLoading("Loading data sources…") + `</div></div>`, nil
@@ -74,16 +67,6 @@ func (s *Server) renderUIAdminOverview(r *http.Request) (string, error) {
 	return `<div data-admin-tab-panel="overview" class="mx-auto max-w-5xl space-y-4">` +
 		uiAdminSection("Mind overview", "Counts for durable memory, candidates, and jobs.", renderUIAdminMindStats(stats)) +
 		uiAdminSection("Document ingest", "Upload reference documents into explicit candidate or durable staging.", renderUIAdminIngest()) +
-		`</div>`, nil
-}
-
-func (s *Server) renderUIAdminAI(ctx context.Context, query uiOllamaManagerQuery) (string, error) {
-	modelsBody, err := s.renderUIOllamaManager(ctx, query)
-	if err != nil {
-		return "", err
-	}
-	return `<div data-admin-tab-panel="ai" class="mx-auto max-w-5xl space-y-4">` +
-		uiAdminSection("Local Ollama model manager", "Search the official catalog, watch durable downloads, and manage models available to character personalities.", modelsBody) +
 		`</div>`, nil
 }
 

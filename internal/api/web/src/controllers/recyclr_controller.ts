@@ -135,7 +135,6 @@ export default class RecyclrController extends Controller<HTMLElement> {
       "scrum-board-refresh": "omni:scrum-refresh",
       "job-progress": "omni:job-progress",
       "ai-control-updated": "omni:ai-control-updated",
-      "ollama-download": "omni:ollama-download",
     };
     const browserEvent = eventMap[eventName];
     if (browserEvent) document.dispatchEvent(new CustomEvent(browserEvent, { detail: message }));

@@ -142,16 +142,16 @@ interface FeatureBoundaryProps {
 }
 
 function useCapabilityValue<T extends SharedValue>(
-  runtime: ApplicationRuntime, capability: CapabilityID, fallback: T,
+  runtime: ApplicationRuntime, capability: CapabilityID, initial: T,
 ): readonly [T, (next: T) => void] {
-	const frozenFallback = useMemo(
-		() => validateAndFreezeSharedValue(fallback, 'hook fallback for ' + capability),
-		[capability, fallback],
+	const frozenInitial = useMemo(
+		() => validateAndFreezeSharedValue(initial, 'initial value for ' + capability),
+		[capability, initial],
 	);
   const value = useSyncExternalStore(
     (listener) => runtime.subscribe(capability, listener),
-    () => runtime.read(capability, frozenFallback),
-    () => frozenFallback,
+    () => runtime.read(capability, frozenInitial),
+    () => frozenInitial,
   );
 	const setValue = useCallback((next: T) => runtime.publish(capability, next), [runtime, capability]);
   return [value, setValue] as const;
@@ -164,9 +164,9 @@ export function useOwnCapabilityState<T extends SharedValue>(
 }
 
 export function useCapabilityState<T extends SharedValue>(
-	runtime: FeatureRuntime, capability: CapabilityID, fallback: T,
+	runtime: FeatureRuntime, capability: CapabilityID, initial: T,
 ): WidenShared<T> {
-	return useCapabilityValue(runtime.application, capability, fallback)[0] as WidenShared<T>;
+	return useCapabilityValue(runtime.application, capability, initial)[0] as WidenShared<T>;
 }
 
 export function publishCapability<T extends SharedValue>(

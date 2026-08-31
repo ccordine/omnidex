@@ -9,18 +9,6 @@ import (
 	"github.com/gryph/omnidex/internal/queue"
 )
 
-type appliedWorkspaceCompletionError struct {
-	err error
-}
-
-func (failure *appliedWorkspaceCompletionError) Error() string {
-	return fmt.Sprintf("workspace is applied and verified but completion projection failed: %v", failure.err)
-}
-
-func (failure *appliedWorkspaceCompletionError) Unwrap() error {
-	return failure.err
-}
-
 func (r *nativeRuntimeV3) complete(output string) error {
 	output = strings.TrimSpace(output)
 	command, err := completeClaimedStepCommand(r.claim, output, "")
@@ -34,10 +22,7 @@ func (r *nativeRuntimeV3) complete(output string) error {
 }
 
 func (r *nativeRuntimeV3) completeAppliedWorkspace(output string) error {
-	if err := r.complete(output); err != nil {
-		return &appliedWorkspaceCompletionError{err: err}
-	}
-	return nil
+	return r.complete(output)
 }
 
 func (r *nativeRuntimeV3) completeWithEvidence(
@@ -85,6 +70,5 @@ func (r *nativeRuntimeV3) completeWithEvidence(
 	}); err != nil {
 		return err
 	}
-	r.svc.notifyJobFinishedForStep(r.ctx, command.StepID)
 	return nil
 }

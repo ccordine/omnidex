@@ -3,7 +3,6 @@ package worker
 import (
 	"context"
 	"fmt"
-	"os"
 	"path"
 	"path/filepath"
 
@@ -24,13 +23,6 @@ func objectiveInstructionPathProvenance(
 			"objective instruction path provenance requires a context",
 		)
 	}
-	workspaceRoot, err := os.OpenRoot(root)
-	if err != nil {
-		return assemblyline.ArtifactIdentityProvenance{}, fmt.Errorf(
-			"open objective workspace root: %w", err,
-		)
-	}
-	defer workspaceRoot.Close()
 	selected := make(map[string]struct{})
 	for _, identity := range modelcontext.PathIdentities(
 		instruction, assemblyline.ArtifactIdentityProvenance{},
@@ -52,8 +44,7 @@ func objectiveInstructionPathProvenance(
 		if err != nil {
 			continue
 		}
-		_, statErr := workspaceRoot.Lstat(relative)
-		if recognized || token.Quoted || statErr == nil {
+		if recognized || token.Quoted {
 			selected[relative] = struct{}{}
 		}
 	}

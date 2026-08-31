@@ -71,7 +71,7 @@ func definitionForKey(key string) (fieldDefinition, bool) {
 
 // LoadEnvironment freezes the process environment once through the canonical
 // registry. Runtime consumers never read environment variables themselves.
-func LoadEnvironment() (Authority, error) {
+func LoadEnvironment() Authority {
 	config := Config{}
 	for _, definition := range fieldRegistry {
 		value, configured := os.LookupEnv(definition.EnvironmentKey)
@@ -80,5 +80,5 @@ func LoadEnvironment() (Authority, error) {
 		}
 		config[definition.Key] = value
 	}
-	return Freeze(config)
+	return Authority{config: config}
 }

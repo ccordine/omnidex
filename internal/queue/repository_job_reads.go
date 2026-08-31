@@ -3,25 +3,10 @@ package queue
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/jackc/pgx/v5"
 )
-
-func (r *Repository) CountStepsByAction(ctx context.Context, jobID int64, action string) (int, error) {
-	if jobID <= 0 || strings.TrimSpace(action) == "" {
-		return 0, nil
-	}
-	var count int
-	err := r.pool.QueryRow(ctx, `
-		SELECT COUNT(*)
-		FROM job_steps
-		WHERE job_id=$1 AND action=$2
-		  AND superseded_at_generation IS NULL
-	`, jobID, strings.TrimSpace(action)).Scan(&count)
-	return count, err
-}
 
 func (r *Repository) ListJobs(ctx context.Context, status string, limit, offset int) ([]model.Job, error) {
 	if limit <= 0 {
@@ -119,30 +104,6 @@ func (r *Repository) CurrentJobDetails(ctx context.Context, jobID int64) (model.
 		return model.JobDetails{}, err
 	}
 	return model.JobDetails{Job: job, Steps: steps}, nil
-}
-
-func (r *Repository) JobProjectID(ctx context.Context, jobID int64) (int64, error) {
-	if jobID <= 0 {
-		return 0, nil
-	}
-	var projectID *int64
-	err := r.pool.QueryRow(ctx, `SELECT project_id FROM jobs WHERE id = $1`, jobID).Scan(&projectID)
-	if err != nil {
-		return 0, err
-	}
-	if projectID == nil || *projectID <= 0 {
-		return 0, nil
-	}
-	return *projectID, nil
-}
-
-func (r *Repository) JobIDForStep(ctx context.Context, stepID int64) (int64, error) {
-	if stepID <= 0 {
-		return 0, nil
-	}
-	var jobID int64
-	err := r.pool.QueryRow(ctx, `SELECT job_id FROM job_steps WHERE id = $1`, stepID).Scan(&jobID)
-	return jobID, err
 }
 
 func (r *Repository) GetStepRuntimeState(ctx context.Context, jobID, stepID int64) (string, string, error) {

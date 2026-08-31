@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"sync"
 	"time"
 
@@ -14,19 +15,27 @@ func (s *Service) Start(ctx context.Context) error {
 	if s == nil || s.repo == nil {
 		return fmt.Errorf("worker start requires repository authority")
 	}
-	if s.workerCount < 1 {
-		return fmt.Errorf("worker_count must be at least 1, received %d", s.workerCount)
+	workerCount, err := strconv.Atoi(s.workerCount)
+	if err != nil {
+		return fmt.Errorf("WORKER_COUNT must be an integer: %w", err)
 	}
-	if s.pollInterval <= 0 {
-		return fmt.Errorf("poll_interval must be positive, received %s", s.pollInterval)
+	if workerCount < 1 {
+		return fmt.Errorf("WORKER_COUNT must be at least 1, received %d", workerCount)
+	}
+	pollInterval, err := time.ParseDuration(s.pollInterval)
+	if err != nil {
+		return fmt.Errorf("WORKER_POLL_INTERVAL must be a duration: %w", err)
+	}
+	if pollInterval <= 0 {
+		return fmt.Errorf("WORKER_POLL_INTERVAL must be positive, received %s", pollInterval)
 	}
 	var wg sync.WaitGroup
-	for i := 0; i < s.workerCount; i++ {
+	for i := 0; i < workerCount; i++ {
 		wg.Add(1)
 		workerID := fmt.Sprintf("worker-%d", i+1)
 		go func(id string) {
 			defer wg.Done()
-			s.run(ctx, id)
+			s.run(ctx, id, pollInterval)
 		}(workerID)
 	}
 	<-ctx.Done()
@@ -34,8 +43,8 @@ func (s *Service) Start(ctx context.Context) error {
 	return nil
 }
 
-func (s *Service) run(ctx context.Context, workerID string) {
-	ticker := time.NewTicker(s.pollInterval)
+func (s *Service) run(ctx context.Context, workerID string, pollInterval time.Duration) {
+	ticker := time.NewTicker(pollInterval)
 	defer ticker.Stop()
 	for {
 		select {
@@ -66,15 +75,6 @@ func (s *Service) run(ctx context.Context, workerID string) {
 			if s.skipFailureForControlledCancel(ctx, workerID, claim, err) {
 				continue
 			}
-			var appliedFailure *appliedWorkspaceCompletionError
-			if errors.As(err, &appliedFailure) {
-				s.emitStepEvent(claim.Authority, "step_projection_error", err.Error())
-				s.logf(
-					"worker=%s job=%d step=%d action=%s left applied workspace awaiting completion projection: %v",
-					workerID, claim.Job.ID, claim.Step.ID, claim.Step.Action, err,
-				)
-				continue
-			}
 			s.emitStepEvent(claim.Authority, "step_error", err.Error())
 			s.logf("worker=%s job=%d step=%d action=%s failed: %v", workerID, claim.Job.ID, claim.Step.ID, claim.Step.Action, err)
 			failCommand, identityErr := failClaimedStepCommand(claim, err.Error())
@@ -85,8 +85,6 @@ func (s *Service) run(ctx context.Context, workerID string) {
 			failErr := s.repo.FailStep(ctx, failCommand)
 			if failErr != nil {
 				s.logf("worker=%s job=%d step=%d fail update error: %v", workerID, claim.Job.ID, claim.Step.ID, failErr)
-			} else {
-				s.notifyJobFinishedForJob(ctx, claim.Job.ID)
 			}
 			continue
 		}

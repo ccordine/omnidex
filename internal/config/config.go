@@ -1,12 +1,9 @@
 package config
 
 import (
-	"fmt"
 	"os"
-	"time"
 
 	"github.com/gryph/omnidex/internal/db"
-	"github.com/gryph/omnidex/internal/llm"
 	"github.com/gryph/omnidex/internal/modelconfig"
 )
 
@@ -33,34 +30,26 @@ type Config struct {
 	HuggingFaceAPIKey         string
 	ModelAuthority            modelconfig.Authority
 	EmbeddingModel            string
-	WorkerCount               int
-	CodingFragmentConcurrency int
-	WorkerPollInterval        time.Duration
-	RequestTimeout            time.Duration
-	RealtimeStreamMaxAge      time.Duration
-	RealtimeHeartbeat         time.Duration
-	RealtimeWriteTimeout      time.Duration
+	WorkerCount               string
+	CodingFragmentConcurrency string
+	WorkerPollInterval        string
+	RequestTimeout            string
+	RealtimeStreamMaxAge      string
+	RealtimeHeartbeat         string
+	RealtimeWriteTimeout      string
 	RedisURL                  string
-	UISessionTTL              time.Duration
-	InferenceContextTokens    int
+	UISessionTTL              string
+	InferenceContextTokens    string
 }
 
 // Load parses the environment and preserves provider selections and credentials
 // without resolving them; provider validation belongs to the first actual
 // provider operation.
-func Load() (Config, error) {
+func Load() Config {
 	provider, embeddingProvider := loadProviderSelection()
 	compatibleProviders := loadCompatibleProviderConfigs()
 	providerModels := loadProviderModelConfigs()
-	modelAuthority, err := modelconfig.LoadEnvironment()
-	if err != nil {
-		return Config{}, fmt.Errorf("load model routing authority: %w", err)
-	}
-	databaseSchema, err := loadDatabaseSchema()
-	if err != nil {
-		return Config{}, err
-	}
-
+	modelAuthority := modelconfig.LoadEnvironment()
 	cfg := Config{
 		ListenAddr:                getenv("LISTEN_ADDR", "0.0.0.0:8090"),
 		HostAgentURL:              getenv("HOST_AGENT_URL", ""),
@@ -68,7 +57,7 @@ func Load() (Config, error) {
 		IntegrationAPIToken:       os.Getenv("OMNIDEX_INTEGRATION_API_TOKEN"),
 		CoreURL:                   os.Getenv("CORE_URL"),
 		DatabaseURL:               os.Getenv("DATABASE_URL"),
-		DatabaseSchema:            databaseSchema,
+		DatabaseSchema:            getenv("DATABASE_SCHEMA", db.DefaultRuntimeSchema),
 		LLMProvider:               provider,
 		EmbeddingProvider:         embeddingProvider,
 		ProviderModels:            providerModels,
@@ -84,38 +73,24 @@ func Load() (Config, error) {
 		HuggingFaceAPIKey:         os.Getenv("HUGGINGFACE_API_KEY"),
 		ModelAuthority:            modelAuthority,
 		EmbeddingModel:            embeddingModelForProvider(embeddingProvider, providerModels),
-		WorkerCount:               getenvInt("WORKER_COUNT", 2),
-		CodingFragmentConcurrency: getenvInt("CODING_FRAGMENT_CONCURRENCY", defaultCodingFragmentConcurrency(provider)),
-		WorkerPollInterval:        getenvDuration("WORKER_POLL_INTERVAL", 2*time.Second),
-		RequestTimeout:            getenvDuration("REQUEST_TIMEOUT", 10*time.Minute),
-		RealtimeStreamMaxAge:      getenvDuration("REALTIME_STREAM_MAX_AGE", 10*time.Minute),
-		RealtimeHeartbeat:         getenvDuration("REALTIME_HEARTBEAT", 25*time.Second),
-		RealtimeWriteTimeout:      getenvDuration("REALTIME_WRITE_TIMEOUT", 10*time.Second),
+		WorkerCount:               getenv("WORKER_COUNT", "2"),
+		CodingFragmentConcurrency: getenv("CODING_FRAGMENT_CONCURRENCY", defaultCodingFragmentConcurrency(provider)),
+		WorkerPollInterval:        getenv("WORKER_POLL_INTERVAL", "2s"),
+		RequestTimeout:            getenv("REQUEST_TIMEOUT", "10m"),
+		RealtimeStreamMaxAge:      getenv("REALTIME_STREAM_MAX_AGE", "10m"),
+		RealtimeHeartbeat:         getenv("REALTIME_HEARTBEAT", "25s"),
+		RealtimeWriteTimeout:      getenv("REALTIME_WRITE_TIMEOUT", "10s"),
 		RedisURL:                  getenv("REDIS_URL", ""),
-		UISessionTTL:              getenvDuration("UI_SESSION_TTL", 30*time.Minute),
-		InferenceContextTokens:    getenvInt("INFERENCE_CONTEXT_TOKENS", llm.DefaultInferenceContextTokens),
+		UISessionTTL:              getenv("UI_SESSION_TTL", "30m"),
+		InferenceContextTokens:    getenv("INFERENCE_CONTEXT_TOKENS", "8192"),
 	}
 
-	return cfg, nil
+	return cfg
 }
 
-func loadDatabaseSchema() (string, error) {
-	value, configured := os.LookupEnv("DATABASE_SCHEMA")
-	if !configured {
-		return db.DefaultRuntimeSchema, nil
-	}
-	if value == "" {
-		return "", fmt.Errorf("DATABASE_SCHEMA is explicitly empty")
-	}
-	if err := db.ValidateRuntimeSchemaName(value); err != nil {
-		return "", fmt.Errorf("DATABASE_SCHEMA: %w", err)
-	}
-	return value, nil
-}
-
-func defaultCodingFragmentConcurrency(provider string) int {
+func defaultCodingFragmentConcurrency(provider string) string {
 	if provider == "ollama" {
-		return 1
+		return "1"
 	}
-	return 4
+	return "4"
 }

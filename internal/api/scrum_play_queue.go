@@ -162,15 +162,6 @@ func scrumPlayTransitionStatus(err error) int {
 	return http.StatusBadRequest
 }
 
-func scrumManagerAutoAdvance(outcome ScrumManagerOutcome) bool {
-	switch outcome {
-	case ScrumOutcomeSuccess, ScrumOutcomeFailed:
-		return true
-	default:
-		return false
-	}
-}
-
 func (s *Server) refreshScrumPlayQueue(r *http.Request, projectID int64, board ScrumBoard) (ScrumBoard, error) {
 	if s.repo == nil || projectID <= 0 {
 		return board, fmt.Errorf("postgres repository and project are required to refresh Scrum play")
@@ -187,20 +178,6 @@ func (s *Server) refreshScrumPlayQueue(r *http.Request, projectID int64, board S
 		active = append(active, *running)
 	}
 	for _, card := range active {
-		reconciled, changed, outcome, err := s.reconcileScrumCardJobState(r.Context(), projectID, card)
-		if err != nil {
-			return board, err
-		}
-		if changed {
-			saved, err := s.persistScrumCardTransition(
-				r.Context(), projectID, card, reconciled, queue.ScrumReconcileJobTerminal, outcome,
-			)
-			if err != nil {
-				return board, err
-			}
-			s.publishScrumCardUpdate(r.Context(), projectID, saved, "job resolved")
-			continue
-		}
 		if strings.TrimSpace(card.JobID) == "" {
 			continue
 		}
@@ -233,7 +210,7 @@ func (s *Server) refreshScrumPlayQueue(r *http.Request, projectID int64, board S
 		}
 		if scrumCardChannelChanged(card, updated) {
 			saved, err := s.persistScrumCardTransition(
-				r.Context(), projectID, card, updated, queue.ScrumReconcileJobProgress, "",
+				r.Context(), projectID, card, updated, queue.ScrumReconcileJobProgress,
 			)
 			if err != nil {
 				return board, err

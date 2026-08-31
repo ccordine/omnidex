@@ -238,11 +238,7 @@ func (s *Server) addMemoryBatch(w http.ResponseWriter, r *http.Request) {
 }
 
 func memoryWriteStatus(err error) int {
-	message := err.Error()
-	if strings.Contains(message, "memory source") || strings.Contains(message, "memory kind") ||
-		strings.Contains(message, "memory content") || strings.Contains(message, "memory tag") ||
-		strings.Contains(message, "memory categor") || strings.Contains(message, "memory embedding") ||
-		strings.Contains(message, "memory batch") {
+	if errors.Is(err, queue.ErrInvalidMemoryWrite) {
 		return http.StatusBadRequest
 	}
 	return http.StatusInternalServerError
@@ -422,7 +418,9 @@ func Run(ctx context.Context, addr string, handler http.Handler) error {
 	case <-ctx.Done():
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		_ = srv.Shutdown(shutdownCtx)
+		if err := srv.Shutdown(shutdownCtx); err != nil {
+			return fmt.Errorf("shutdown http server: %w", err)
+		}
 		return nil
 	case err := <-errCh:
 		if errors.Is(err, http.ErrServerClosed) {

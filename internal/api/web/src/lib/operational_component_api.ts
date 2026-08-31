@@ -12,21 +12,8 @@ export type SelectionComponent = ServerComponent & {
   channel_has_more?: boolean;
 };
 
-export type AdminComponentQuery = {
-  modelOffset?: number;
-  catalogQuery?: string;
-  catalogPage?: number;
-  downloadOffset?: number;
-};
-
-export function fetchAdminComponent(tab: string, options: AdminComponentQuery = {}): Promise<ServerComponent> {
+export function fetchAdminComponent(tab: string): Promise<ServerComponent> {
   const query = new URLSearchParams({ tab });
-  if (tab === "ai") {
-    query.set("model_offset", String(options.modelOffset ?? 0));
-    query.set("catalog_query", options.catalogQuery ?? "");
-    query.set("catalog_page", String(options.catalogPage ?? 1));
-    query.set("download_offset", String(options.downloadOffset ?? 0));
-  }
   return fetchServerComponent(`/v1/ui/admin?${query}`);
 }
 

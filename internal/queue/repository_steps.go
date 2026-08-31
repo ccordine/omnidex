@@ -140,6 +140,11 @@ func (r *Repository) completeStep(
 		if jobUpdate.RowsAffected() != 1 {
 			return staleStepAttemptError(command.Authority, "job lost terminal-completion authority", nil)
 		}
+		if err := terminalizeScrumJobCardTx(
+			ctx, tx, job, model.JobStatusCompleted,
+		); err != nil {
+			return err
+		}
 	} else {
 		if hasRoleplayCompletionPayload(command) {
 			return fmt.Errorf("roleplay facts require the terminal current-generation step")
@@ -239,6 +244,9 @@ func (r *Repository) FailStep(ctx context.Context, command FailStepCommand) erro
 	}
 	if jobUpdate.RowsAffected() != 1 {
 		return staleStepAttemptError(command.Authority, "job lost terminal-failure authority", nil)
+	}
+	if err := terminalizeScrumJobCardTx(ctx, tx, job, model.JobStatusFailed); err != nil {
+		return err
 	}
 	job, err = scanLockedJobTx(ctx, tx, jobID)
 	if err != nil {

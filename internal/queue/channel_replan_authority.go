@@ -23,7 +23,7 @@ func canonicalReplanStepsTx(
 		case model.PipelineChat:
 			return nil, fmt.Errorf("replan chat job %d requires exact channel authority", job.ID)
 		case model.PipelineCoding:
-			return stepsForJob(job.Metadata)
+			return codingSteps(), nil
 		case model.PipelineScrum:
 			if _, err := scrum.DecodeStoredJobMetadata(job.Metadata); err != nil {
 				return nil, err

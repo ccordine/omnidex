@@ -49,9 +49,13 @@ type Routing struct {
 
 // Routing derives the worker projection mechanically from this authority.
 func (authority Authority) Routing() Routing {
+	return authority.config.Routing()
+}
+
+func (config Config) Routing() Routing {
 	routing := Routing{Stations: map[station.ID]string{}}
 	for _, definition := range fieldRegistry {
-		value, configured := authority.config[definition.Key]
+		value, configured := config[definition.Key]
 		if !configured {
 			continue
 		}

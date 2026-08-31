@@ -67,24 +67,22 @@ func (s *Server) validateProjectLocation(ctx context.Context, raw string) (strin
 	if err != nil {
 		return "", err
 	}
-	if stat, err := os.Stat(location); err == nil {
-		if stat.IsDir() {
-			return location, nil
-		}
-		return "", fmt.Errorf("location must be an existing directory")
-	}
 	client := s.hostBridgeClient()
-	if client == nil {
+	if client != nil {
+		ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+		defer cancel()
+		result, err := client.Browse(ctx, location, hostbridge.BrowseOptions{Limit: 1})
+		if err != nil {
+			return "", fmt.Errorf("inspect project location through host bridge: %w", err)
+		}
+		if result == nil || strings.TrimSpace(result.Path) == "" {
+			return "", fmt.Errorf("host bridge returned no project location")
+		}
+		return filepath.Clean(result.Path), nil
+	}
+	stat, err := os.Stat(location)
+	if err != nil || !stat.IsDir() {
 		return "", fmt.Errorf("location must be an existing directory")
 	}
-	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
-	defer cancel()
-	result, err := client.Browse(ctx, location, hostbridge.BrowseOptions{Limit: 1})
-	if err != nil {
-		return "", fmt.Errorf("location must be an existing directory")
-	}
-	if result == nil || strings.TrimSpace(result.Path) == "" {
-		return "", fmt.Errorf("location must be an existing directory")
-	}
-	return filepath.Clean(result.Path), nil
+	return location, nil
 }

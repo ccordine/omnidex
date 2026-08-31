@@ -39,17 +39,14 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*Runtime, 
 	}
 	lifecycleContext, cancel := context.WithCancel(ctx)
 
-	pool, err := db.ConnectRuntime(lifecycleContext, cfg.DatabaseURL, cfg.DatabaseSchema)
+	pool, err := db.ConnectRuntime(
+		lifecycleContext, cfg.DatabaseURL, cfg.DatabaseSchema, database.SetupSQL(),
+	)
 	if err != nil {
 		cancel()
 		return nil, fmt.Errorf("connect runtime database: %w", err)
 	}
 	repo := queue.New(pool, cfg.ModelAuthority)
-	if err := repo.InstallDatabase(lifecycleContext, database.SetupSQL()); err != nil {
-		cancel()
-		pool.Close()
-		return nil, fmt.Errorf("install authoritative database setup: %w", err)
-	}
 
 	transports := llmprovider.NewLazyFromConfig(cfg)
 	server, err := api.NewServer(repo, transports.Embeddings, api.ServerOptions{
@@ -81,7 +78,6 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*Runtime, 
 			PollInterval:           cfg.WorkerPollInterval,
 			InferenceContextTokens: cfg.InferenceContextTokens,
 			Logger:                 logger,
-			OnJobFinished:          server.OnJobFinishedAsync,
 		},
 	)
 	if err != nil {

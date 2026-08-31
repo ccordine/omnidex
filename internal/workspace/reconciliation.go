@@ -48,7 +48,6 @@ type Change struct {
 
 type ReconciliationResult struct {
 	Changes []Change
-	Warnings []string
 }
 
 // PreparedReconciliation owns one exact desired-state transaction. Preparation

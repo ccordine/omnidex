@@ -23,11 +23,7 @@ func (s *Server) handleChatSlashCommands(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if s.channelStore == nil {
-		writeRoleplaySimulationError(w, errRoleplayChannelStoreUnavailable)
-		return
-	}
-	channel, err := s.channelStore.GetChannel(r.Context(), channelID)
+	channel, err := s.repo.GetChannel(r.Context(), channelID)
 	if err != nil {
 		writeRoleplaySimulationError(w, err)
 		return

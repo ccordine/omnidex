@@ -235,8 +235,6 @@ export default class ChatController extends ChatRoleplayTurnController {
     this.slashPalette.dismiss();
   }
 
-  async downloadRoleplayModel(event: Event): Promise<void> { await this.roleplay.downloadModel(event); }
-
   async createRoleplayScene(event: Event): Promise<void> { await this.roleplay.createScene(event); }
 
   async updateRoleplayScene(event: Event): Promise<void> { await this.roleplay.updateScene(event); }

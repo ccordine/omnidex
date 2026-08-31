@@ -2,6 +2,7 @@ package worker
 
 import (
 	"fmt"
+	"strconv"
 	"sync"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
@@ -48,7 +49,13 @@ func (s *directCodingSession) deriveRequirementCapabilities(
 		return nil, err
 	}
 	pairs := directCodingCapabilityPairs(localContext, requirements)
-	results := runDirectCodingCapabilityPairs(directCodingWorkerRuntime(s), modelName, pairs)
+	concurrency, err := directCodingFragmentConcurrency(s.runtime.svc.fragmentConcurrency)
+	if err != nil {
+		return nil, err
+	}
+	results := runDirectCodingCapabilityPairs(
+		directCodingWorkerRuntime(s), modelName, pairs, concurrency,
+	)
 	for _, result := range results {
 		if result.Err != nil {
 			return nil, result.Err
@@ -81,6 +88,7 @@ func runDirectCodingCapabilityPairs(
 	runtime typedWorkerRuntime,
 	modelName string,
 	pairs []directCodingCapabilityPair,
+	maxConcurrency int,
 ) []directCodingCapabilityResult {
 	results := make([]directCodingCapabilityResult, len(pairs))
 	run := func(index int, pair directCodingCapabilityPair) {
@@ -102,7 +110,7 @@ func runDirectCodingCapabilityPairs(
 		}
 		results[index] = directCodingCapabilityResult{Pair: pair, Decision: decision, Err: err}
 	}
-	if runtime.MaxConcurrency <= 1 {
+	if maxConcurrency == 1 {
 		for index, pair := range pairs {
 			run(index, pair)
 			if results[index].Err != nil {
@@ -111,7 +119,7 @@ func runDirectCodingCapabilityPairs(
 		}
 		return results
 	}
-	semaphore := make(chan struct{}, runtime.MaxConcurrency)
+	semaphore := make(chan struct{}, maxConcurrency)
 	var wait sync.WaitGroup
 	for index, pair := range pairs {
 		index, pair := index, pair
@@ -125,6 +133,17 @@ func runDirectCodingCapabilityPairs(
 	}
 	wait.Wait()
 	return results
+}
+
+func directCodingFragmentConcurrency(raw string) (int, error) {
+	value, err := strconv.Atoi(raw)
+	if err != nil {
+		return 0, fmt.Errorf("CODING_FRAGMENT_CONCURRENCY must be an integer: %w", err)
+	}
+	if value < 1 {
+		return 0, fmt.Errorf("CODING_FRAGMENT_CONCURRENCY must be at least 1, received %d", value)
+	}
+	return value, nil
 }
 
 func assembleDirectCodingCapabilityGraph(

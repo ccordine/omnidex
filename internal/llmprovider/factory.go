@@ -2,6 +2,7 @@ package llmprovider
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/gryph/omnidex/internal/config"
 	"github.com/gryph/omnidex/internal/googleai"
@@ -27,13 +28,14 @@ func newExactStationProvider(
 			definition.ID,
 		)
 	}
-	if cfg.RequestTimeout <= 0 {
-		return nil, fmt.Errorf("REQUEST_TIMEOUT must be positive for provider %q", definition.ID)
+	timeout, err := providerRequestTimeout(cfg, definition)
+	if err != nil {
+		return nil, err
 	}
 	switch definition.Protocol {
 	case catalog.ProtocolOllama:
 		return ollama.New(
-			cfg.OllamaBaseURL, "", "", cfg.RequestTimeout, cfg.InferenceContextTokens,
+			cfg.OllamaBaseURL, "", "", timeout,
 		), nil
 	default:
 		return nil, fmt.Errorf(
@@ -54,14 +56,15 @@ func newEmbeddingProvider(
 	if model == "" {
 		return nil, fmt.Errorf("embedding model is required for provider %q", definition.ID)
 	}
-	if cfg.RequestTimeout <= 0 {
-		return nil, fmt.Errorf("REQUEST_TIMEOUT must be positive for provider %q", definition.ID)
+	timeout, err := providerRequestTimeout(cfg, definition)
+	if err != nil {
+		return nil, err
 	}
 
 	switch definition.Protocol {
 	case catalog.ProtocolOllama:
 		return ollama.New(
-			cfg.OllamaBaseURL, "", model, cfg.RequestTimeout, cfg.InferenceContextTokens,
+			cfg.OllamaBaseURL, "", model, timeout,
 		), nil
 	case catalog.ProtocolOpenAICompatible:
 		providerConfig, configured := cfg.CompatibleProviders[definition.ID]
@@ -73,20 +76,20 @@ func newEmbeddingProvider(
 		apiKeyName := definition.EnvironmentKey("API_KEY")
 		return openai.NewCompatibleEmbedding(
 			definition.ID, apiKeyName, providerConfig.BaseURL, providerConfig.APIKey,
-			model, providerConfig.Organization, providerConfig.Project, cfg.RequestTimeout,
+			model, providerConfig.Organization, providerConfig.Project, timeout,
 		)
 	case catalog.ProtocolAzure:
 		return openai.NewAzureAIEmbedding(
 			cfg.AzureAIBaseURL, cfg.AzureAIAPIKey, model, cfg.AzureAIAPIVersion,
-			cfg.AzureAIAPIStyle, cfg.RequestTimeout,
+			cfg.AzureAIAPIStyle, timeout,
 		)
 	case catalog.ProtocolGoogle:
 		return googleai.NewEmbedding(
-			cfg.GoogleBaseURL, cfg.GoogleAPIKey, model, cfg.RequestTimeout,
+			cfg.GoogleBaseURL, cfg.GoogleAPIKey, model, timeout,
 		), nil
 	case catalog.ProtocolHuggingFace:
 		return huggingface.NewEmbedding(
-			cfg.HuggingFaceBaseURL, cfg.HuggingFaceAPIKey, model, cfg.RequestTimeout,
+			cfg.HuggingFaceBaseURL, cfg.HuggingFaceAPIKey, model, timeout,
 		), nil
 	default:
 		return nil, fmt.Errorf(
@@ -94,4 +97,20 @@ func newEmbeddingProvider(
 			definition.ID, definition.Protocol,
 		)
 	}
+}
+
+func providerRequestTimeout(
+	cfg config.Config,
+	definition catalog.Definition,
+) (time.Duration, error) {
+	timeout, err := time.ParseDuration(cfg.RequestTimeout)
+	if err != nil {
+		return 0, fmt.Errorf(
+			"REQUEST_TIMEOUT must be a duration for provider %q: %w", definition.ID, err,
+		)
+	}
+	if timeout <= 0 {
+		return 0, fmt.Errorf("REQUEST_TIMEOUT must be positive for provider %q", definition.ID)
+	}
+	return timeout, nil
 }

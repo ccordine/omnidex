@@ -17,9 +17,6 @@ func (s *directCodingSession) ApplyAndVerify(
 	}
 	result, err := prepared.reconciliation.ApplyVerified(s.runtime.ctx)
 	prepared.result = result
-	for _, warning := range result.Warnings {
-		s.runtime.svc.logf("workspace mutation cleanup warning: %s", warning)
-	}
 	s.recordPreparedWorkspaceMutation(prepared)
 	if err != nil {
 		return fmt.Errorf(

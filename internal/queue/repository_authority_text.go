@@ -1,6 +1,7 @@
 package queue
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"unicode/utf8"
@@ -8,15 +9,17 @@ import (
 	"github.com/gryph/omnidex/internal/model"
 )
 
+var ErrInvalidJobInstruction = errors.New("invalid job instruction")
+
 func validateJobInstruction(instruction string) error {
 	if !utf8.ValidString(instruction) {
-		return fmt.Errorf("job instruction must be valid UTF-8")
+		return fmt.Errorf("%w: must be valid UTF-8", ErrInvalidJobInstruction)
 	}
 	if strings.ContainsRune(instruction, '\x00') {
-		return fmt.Errorf("job instruction must not contain NUL")
+		return fmt.Errorf("%w: must not contain NUL", ErrInvalidJobInstruction)
 	}
 	if strings.TrimSpace(instruction) == "" {
-		return fmt.Errorf("job instruction must contain non-whitespace user authority")
+		return fmt.Errorf("%w: must contain non-whitespace user authority", ErrInvalidJobInstruction)
 	}
 	return nil
 }

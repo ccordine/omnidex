@@ -75,7 +75,6 @@ func (s *directCodingSession) Assemble() (directCodingAssembly, error) {
 	targetTree, coverage, err := resolveDirectCodingTargetTree(
 		specification, workload, selectedStack,
 		append(append(append([]string(nil), protected...), required...), deletions...),
-		s.root,
 	)
 	if err != nil {
 		return directCodingAssembly{}, err

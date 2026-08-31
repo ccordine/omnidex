@@ -19,6 +19,9 @@ func (r *Repository) CancelJob(ctx context.Context, command CancelJobCommand) (m
 	if err != nil {
 		return model.Job{}, err
 	}
+	if err := terminalizeScrumJobCardTx(ctx, tx, job, model.JobStatusCanceled); err != nil {
+		return model.Job{}, err
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return model.Job{}, err
 	}

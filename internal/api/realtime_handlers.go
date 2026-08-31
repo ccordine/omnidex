@@ -128,8 +128,25 @@ func (s *Server) handleRealtimeWS(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if s.realtimeStreamMaxAge <= 0 || s.realtimeHeartbeat <= 0 || s.realtimeWriteTimeout <= 0 {
-		writeError(w, http.StatusServiceUnavailable, "realtime durations must be positive")
+	streamMaxAge, err := parseDurationSetting(
+		"REALTIME_STREAM_MAX_AGE", s.realtimeStreamMaxAge, time.Nanosecond,
+	)
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, err.Error())
+		return
+	}
+	heartbeat, err := parseDurationSetting(
+		"REALTIME_HEARTBEAT", s.realtimeHeartbeat, time.Nanosecond,
+	)
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, err.Error())
+		return
+	}
+	writeTimeout, err := parseDurationSetting(
+		"REALTIME_WRITE_TIMEOUT", s.realtimeWriteTimeout, time.Nanosecond,
+	)
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, err.Error())
 		return
 	}
 	if !realtimeOriginAllowed(r) {
@@ -177,21 +194,21 @@ func (s *Server) handleRealtimeWS(w http.ResponseWriter, r *http.Request) {
 	defer conn.Close()
 	log.Printf("realtime websocket connected client=%d remote=%q topics=%s last_id=%d replay=%d sync_required=%t", subscription.ID, r.RemoteAddr, strings.Join(topics, ","), lastID, subscription.ReplayCount, subscription.ReplayGap)
 	defer log.Printf("realtime websocket disconnected client=%d remote=%q", subscription.ID, r.RemoteAddr)
-	deadline := time.Now().Add(s.realtimeStreamMaxAge)
+	deadline := time.Now().Add(streamMaxAge)
 	conn.SetReadLimit(4096)
-	if err := conn.SetReadDeadline(time.Now().Add(s.realtimeHeartbeat * 3)); err != nil {
+	if err := conn.SetReadDeadline(time.Now().Add(heartbeat * 3)); err != nil {
 		log.Printf("realtime websocket read deadline failed client=%d: %v", subscription.ID, err)
 		return
 	}
 	conn.SetPongHandler(func(string) error {
-		return conn.SetReadDeadline(time.Now().Add(s.realtimeHeartbeat * 3))
+		return conn.SetReadDeadline(time.Now().Add(heartbeat * 3))
 	})
 
 	var writeMu sync.Mutex
 	writeMessage := func(messageType int, payload []byte) error {
 		writeMu.Lock()
 		defer writeMu.Unlock()
-		if err := conn.SetWriteDeadline(time.Now().Add(s.realtimeWriteTimeout)); err != nil {
+		if err := conn.SetWriteDeadline(time.Now().Add(writeTimeout)); err != nil {
 			return fmt.Errorf("set realtime write deadline: %w", err)
 		}
 		return conn.WriteMessage(messageType, payload)
@@ -216,7 +233,7 @@ func (s *Server) handleRealtimeWS(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}()
-	ping := time.NewTicker(s.realtimeHeartbeat)
+	ping := time.NewTicker(heartbeat)
 	defer ping.Stop()
 	expires := time.NewTimer(time.Until(deadline))
 	defer expires.Stop()

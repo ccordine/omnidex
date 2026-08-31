@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/gryph/omnidex/internal/config"
 	"github.com/gryph/omnidex/internal/llm"
@@ -17,33 +16,20 @@ import (
 type Server struct {
 	lifecycleContext           context.Context
 	repo                       *queue.Repository
-	channelStore               channelStore
 	roleplaySimulation         RoleplaySimulationStore
-	enqueueChannelTurn         enqueueChannelTurnFunc
-	enqueueRoleplayChannelTurn enqueueRoleplayChannelTurnFunc
 	embeddingClient            llm.EmbeddingClient
 	mux                        *http.ServeMux
 	providerConfig             config.Config
-	defaultProvider            string
-	ollamaBaseURL              string
-	ollamaModelAuthority       OllamaModelAuthority
-	ollamaModelLifecycle       OllamaModelLifecycleAuthority
-	ollamaDownloads            OllamaDownloadStore
-	ollamaCatalog              OllamaCatalogAuthority
-	ollamaDownloadMu           sync.Mutex
-	ollamaDownloadRunning      map[string]struct{}
-	ollamaDownloadSlots        chan struct{}
 	coreURLDefault             string
 	listenAddr                 string
-	realtimeStreamMaxAge       time.Duration
-	realtimeHeartbeat          time.Duration
-	realtimeWriteTimeout       time.Duration
+	realtimeStreamMaxAge       string
+	realtimeHeartbeat          string
+	realtimeWriteTimeout       string
 	redisURL                   string
-	uiSessionTTL               time.Duration
+	uiSessionTTL               string
 	uiRedisMu                  sync.Mutex
 	uiRedis                    *uiRedisClient
 	roleplaySceneDraftMu       sync.Mutex
-	ollamaURLMu                sync.RWMutex
 	hostAgentURL               string
 	hostAgentToken             string
 	integrationAPIToken        string
@@ -62,16 +48,12 @@ type ServerOptions struct {
 	HostAgentURL         string
 	HostAgentToken       string
 	IntegrationAPIToken  string
-	RealtimeStreamMaxAge time.Duration
-	RealtimeHeartbeat    time.Duration
-	RealtimeWriteTimeout time.Duration
+	RealtimeStreamMaxAge string
+	RealtimeHeartbeat    string
+	RealtimeWriteTimeout string
 	RedisURL             string
-	UISessionTTL         time.Duration
+	UISessionTTL         string
 	RoleplaySimulation   RoleplaySimulationStore
-	OllamaModelAuthority OllamaModelAuthority
-	OllamaModelLifecycle OllamaModelLifecycleAuthority
-	OllamaDownloads      OllamaDownloadStore
-	OllamaCatalog        OllamaCatalogAuthority
 }
 
 type memoryCandidatePromotionRequest struct {
@@ -103,26 +85,13 @@ func NewServer(
 	providerConfig := options.ProviderConfig
 	providerConfig.CompatibleProviders = config.CloneCompatibleProviders(providerConfig.CompatibleProviders)
 	providerConfig.ProviderModels = config.CloneProviderModels(providerConfig.ProviderModels)
-	defaultProvider := providerConfig.LLMProvider
-
 	s := &Server{
 		lifecycleContext:           options.LifecycleContext,
 		repo:                       repo,
-		channelStore:               repo,
 		roleplaySimulation:         options.RoleplaySimulation,
-		enqueueChannelTurn:         repo.EnqueueChannelTurnWithDataAuthority,
-		enqueueRoleplayChannelTurn: repo.EnqueueRoleplayChannelTurn,
 		embeddingClient:            embeddingClient,
 		mux:                        http.NewServeMux(),
 		providerConfig:             providerConfig,
-		defaultProvider:            defaultProvider,
-		ollamaBaseURL:              strings.TrimSpace(providerConfig.OllamaBaseURL),
-		ollamaModelAuthority:       options.OllamaModelAuthority,
-		ollamaModelLifecycle:       options.OllamaModelLifecycle,
-		ollamaDownloads:            options.OllamaDownloads,
-		ollamaCatalog:              options.OllamaCatalog,
-		ollamaDownloadRunning:      make(map[string]struct{}),
-		ollamaDownloadSlots:        make(chan struct{}, 1),
 		coreURLDefault:             strings.TrimSpace(options.CoreURL),
 		listenAddr:                 strings.TrimSpace(options.ListenAddr),
 		realtimeStreamMaxAge:       options.RealtimeStreamMaxAge,
@@ -136,9 +105,6 @@ func NewServer(
 	}
 	s.realtimeHub = NewRealtimeHub()
 	s.routes()
-	if s.ollamaDownloads != nil {
-		s.resumeOllamaModelDownloads()
-	}
 	return s, nil
 }
 
@@ -177,8 +143,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/v1/projects", s.handleProjects)
 	s.mux.HandleFunc("/v1/projects/", s.handleProjectByID)
 	s.mux.HandleFunc("/v1/realtime/ws", s.handleRealtimeWS)
-	if s.repo != nil {
-		s.mux.HandleFunc("/v1/jobs", s.handleJobs)
+	s.mux.HandleFunc("/v1/jobs", s.handleJobs)
 		s.mux.HandleFunc("/v1/jobs/", s.handleJobByID)
 		s.mux.HandleFunc("/v1/activity", s.handleActivity)
 		s.mux.HandleFunc("/v1/memory", s.handleMemory)
@@ -199,10 +164,6 @@ func (s *Server) routes() {
 		s.mux.HandleFunc("/v1/ui/scrum/create-card", s.handleUIScrumCreateCard)
 		s.mux.HandleFunc("/v1/data-sources", s.handlePublicDataSources)
 		s.mux.HandleFunc("/v1/data-sources/", s.handlePublicDataSourceByID)
-		s.mux.HandleFunc("/v1/ollama/models", s.handleOllamaModels)
-		s.mux.HandleFunc("/v1/ollama/models/", s.handleOllamaModelByName)
-		s.mux.HandleFunc("/v1/ollama/catalog", s.handleOllamaCatalog)
-		s.mux.HandleFunc("/v1/ollama/downloads", s.handleOllamaDownloads)
 		s.mux.HandleFunc("/v1/memory-candidates", s.handleMemoryCandidates)
 		s.mux.HandleFunc("/v1/memory-candidates/", s.handleMemoryCandidateByID)
 		s.mux.HandleFunc("/v1/integrations/data-sources", s.requireIntegrationAuthentication(s.handleIntegrationDataSources))
@@ -212,13 +173,10 @@ func (s *Server) routes() {
 		s.mux.HandleFunc("/v1/ui/chat/data-sources", s.handleChatDataSourceOptions)
 		s.mux.HandleFunc("/v1/ui/chat/memory", s.handleChatMemoryComponent)
 		s.mux.HandleFunc("/v1/ui/chat/timeline", s.handleChatTimelineComponent)
-	}
-	if s.channelStore != nil {
-		s.mux.HandleFunc("/v1/channels", s.handleChannels)
+	s.mux.HandleFunc("/v1/channels", s.handleChannels)
 		s.mux.HandleFunc("/v1/channels/", s.handleChannelByID)
 		s.mux.HandleFunc("/v1/ui/chat/channels", s.handleChatChannelOptions)
 		s.mux.HandleFunc("/v1/integrations/channels", s.requireIntegrationAuthentication(s.handleIntegrationChannels))
 		s.mux.HandleFunc("/v1/integrations/channels/", s.requireIntegrationAuthentication(s.handleIntegrationChannelByID))
-	}
 	s.registerUIRoutes()
 }

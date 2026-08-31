@@ -35,9 +35,19 @@ func (r *Repository) Ping(ctx context.Context) error {
 	return r.pool.Ping(ctx)
 }
 
-func (r *Repository) EnqueueCodingJob(ctx context.Context, instruction string, metadataJSON []byte) (model.Job, error) {
-	if len(metadataJSON) == 0 {
-		return model.Job{}, fmt.Errorf("enqueue job requires exact metadata JSON")
+func (r *Repository) EnqueueCodingJob(
+	ctx context.Context,
+	instruction string,
+	clientCWD string,
+) (model.Job, error) {
+	metadataJSON, err := json.Marshal(struct {
+		ClientCWD   string             `json:"client_cwd"`
+		ModelConfig modelconfig.Config `json:"model_config"`
+	}{
+		ClientCWD: clientCWD, ModelConfig: r.modelAuthority.Config(),
+	})
+	if err != nil {
+		return model.Job{}, fmt.Errorf("encode coding job authority: %w", err)
 	}
 	pipeline := model.PipelineCoding
 
@@ -58,11 +68,7 @@ func (r *Repository) EnqueueCodingJob(ctx context.Context, instruction string, m
 }
 
 func (r *Repository) enqueueJobTx(ctx context.Context, tx pgx.Tx, instruction, pipeline string, metadataJSON []byte) (model.Job, error) {
-	steps, err := stepsForJob(metadataJSON)
-	if err != nil {
-		return model.Job{}, fmt.Errorf("resolve job execution steps: %w", err)
-	}
-	return r.enqueueJobWithStepsTx(ctx, tx, instruction, pipeline, metadataJSON, steps, nil)
+	return r.enqueueJobWithStepsTx(ctx, tx, instruction, pipeline, metadataJSON, codingSteps(), nil)
 }
 
 func (r *Repository) enqueueJobWithStepsTx(
@@ -120,20 +126,6 @@ func (r *Repository) enqueueJobWithStepsTx(
 		}
 	}
 	return job, nil
-}
-
-func decodeMetadataObject(raw json.RawMessage) (map[string]any, error) {
-	out := map[string]any{}
-	if len(raw) == 0 {
-		return nil, fmt.Errorf("job metadata must be an exact JSON object")
-	}
-	if err := json.Unmarshal(raw, &out); err != nil {
-		return nil, fmt.Errorf("decode exact job metadata object: %w", err)
-	}
-	if out == nil {
-		return nil, fmt.Errorf("job metadata must be a JSON object")
-	}
-	return out, nil
 }
 
 func projectNameFromLocation(location string) string {

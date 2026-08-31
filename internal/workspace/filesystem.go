@@ -17,6 +17,7 @@ func inspectWorkspaceParents(
 	root *os.Root,
 	relative string,
 	create bool,
+	result *ReconciliationResult,
 ) (bool, error) {
 	if root == nil {
 		return false, fmt.Errorf("workspace parent inspection requires an open root")
@@ -38,8 +39,23 @@ func inspectWorkspaceParents(
 		if err != nil {
 			return false, fmt.Errorf("inspect workspace parent for %q: %w", relative, err)
 		}
-		if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
-			return false, fmt.Errorf("workspace path %q has a non-directory or symlink parent", relative)
+		if info.IsDir() && info.Mode()&os.ModeSymlink == 0 {
+			continue
+		}
+		if !create {
+			return true, nil
+		}
+		if !info.Mode().IsRegular() && info.Mode()&os.ModeSymlink == 0 {
+			return false, fmt.Errorf("workspace path %q has a special filesystem parent", relative)
+		}
+		if err := root.Remove(current); err != nil {
+			return false, fmt.Errorf("replace workspace parent for %q: %w", relative, err)
+		}
+		if result != nil {
+			result.Changes = append(result.Changes, Change{Path: current, Kind: ChangeDelete})
+		}
+		if err := root.Mkdir(current, 0o755); err != nil {
+			return false, fmt.Errorf("create workspace parent for %q: %w", relative, err)
 		}
 	}
 	return false, nil

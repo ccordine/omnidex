@@ -41,9 +41,7 @@ func (prepared *PreparedReconciliation) ApplyVerified(
 		return result, errors.Join(applyErr, closeErr)
 	}
 	if closeErr != nil {
-		result.Warnings = append(result.Warnings, fmt.Errorf(
-			"close authoritative workspace root: %w", closeErr,
-		).Error())
+		return result, fmt.Errorf("close authoritative workspace root: %w", closeErr)
 	}
 	prepared.applied = true
 	return result, nil
@@ -96,7 +94,7 @@ func applyRequiredFile(
 	state DesiredFile,
 	result *ReconciliationResult,
 ) error {
-	missingParent, err := inspectWorkspaceParents(root, state.Path, false)
+	missingParent, err := inspectWorkspaceParents(root, state.Path, false, nil)
 	if err != nil {
 		return err
 	}
@@ -122,7 +120,7 @@ func applyFile(
 	state DesiredFile,
 	result *ReconciliationResult,
 ) (resultErr error) {
-	if _, err := inspectWorkspaceParents(root, state.Path, true); err != nil {
+	if _, err := inspectWorkspaceParents(root, state.Path, true, result); err != nil {
 		return err
 	}
 	before, err := root.Lstat(state.Path)
@@ -152,7 +150,7 @@ func applyFile(
 				}
 				return nil
 			} else {
-			changed, err := verifyOpenFileMode(root, state.Path, file, before, state.Mode, result)
+			changed, err := verifyOpenFileMode(root, state.Path, file, before, state.Mode)
 			if err != nil {
 				return err
 			}
@@ -162,7 +160,9 @@ func applyFile(
 			return nil
 			}
 		}
-		closeWorkspaceHandle(result, state.Path, file)
+		if err := closeWorkspaceHandle(state.Path, file); err != nil {
+			return err
+		}
 	}
 	temporary, temporaryInfo, err := writePreparedFile(
 		ctx, root, path.Dir(state.Path), state.Content, state.Mode,
@@ -199,7 +199,6 @@ func verifyOpenFileMode(
 	file *os.File,
 	before os.FileInfo,
 	mode uint32,
-	result *ReconciliationResult,
 ) (bool, error) {
 	if root == nil || file == nil || before == nil {
 		return false, fmt.Errorf("verify workspace file mode requires exact open-file authority")
@@ -207,18 +206,26 @@ func verifyOpenFileMode(
 	changed := before.Mode().Perm() != os.FileMode(mode)
 	if changed {
 		if err := file.Chmod(os.FileMode(mode)); err != nil {
-			closeWorkspaceHandle(result, relative, file)
-			return false, fmt.Errorf("set workspace file mode %q: %w", relative, err)
+			return false, errors.Join(
+				fmt.Errorf("set workspace file mode %q: %w", relative, err),
+				closeWorkspaceHandle(relative, file),
+			)
 		}
 	}
 	fileInfo, fileErr := file.Stat()
 	pathInfo, pathErr := root.Lstat(relative)
-	closeWorkspaceHandle(result, relative, file)
+	closeErr := closeWorkspaceHandle(relative, file)
 	if fileErr != nil || pathErr != nil || !fileInfo.Mode().IsRegular() ||
 		!os.SameFile(before, fileInfo) || !os.SameFile(before, pathInfo) ||
 		fileInfo.Mode().Perm() != os.FileMode(mode) ||
 		pathInfo.Mode().Perm() != os.FileMode(mode) {
-		return changed, fmt.Errorf("workspace file %q differs from desired permissions", relative)
+		return changed, errors.Join(
+			fmt.Errorf("workspace file %q differs from desired permissions", relative),
+			closeErr,
+		)
+	}
+	if closeErr != nil {
+		return changed, closeErr
 	}
 	return changed, nil
 }
@@ -266,7 +273,7 @@ func applyDeletion(
 	relative string,
 	result *ReconciliationResult,
 ) error {
-	missingParent, err := inspectWorkspaceParents(root, relative, false)
+	missingParent, err := inspectWorkspaceParents(root, relative, false, nil)
 	if err != nil {
 		return err
 	}
@@ -344,7 +351,7 @@ func reconcileMoveDestination(
 	move DesiredFile,
 	result *ReconciliationResult,
 ) (bool, error) {
-	missingParent, err := inspectWorkspaceParents(root, move.Path, false)
+	missingParent, err := inspectWorkspaceParents(root, move.Path, false, nil)
 	if err != nil || missingParent {
 		return false, err
 	}
@@ -363,7 +370,9 @@ func reconcileMoveDestination(
 		return false, err
 	}
 	if !matches {
-		closeWorkspaceHandle(result, move.Path, file)
+		if err := closeWorkspaceHandle(move.Path, file); err != nil {
+			return false, err
+		}
 		return false, nil
 	}
 	if file == nil {
@@ -376,7 +385,7 @@ func reconcileMoveDestination(
 		}
 		return true, nil
 	}
-	changed, err := verifyOpenFileMode(root, move.Path, file, before, move.Mode, result)
+	changed, err := verifyOpenFileMode(root, move.Path, file, before, move.Mode)
 	if err != nil {
 		return false, err
 	}
@@ -392,7 +401,7 @@ func applyRenameFromMatchingSource(
 	move DesiredFile,
 	result *ReconciliationResult,
 ) (bool, error) {
-	missingParent, err := inspectWorkspaceParents(root, move.MoveFrom, false)
+	missingParent, err := inspectWorkspaceParents(root, move.MoveFrom, false, nil)
 	if err != nil || missingParent {
 		return false, err
 	}
@@ -411,34 +420,45 @@ func applyRenameFromMatchingSource(
 		return false, err
 	}
 	if !matches {
-		closeWorkspaceHandle(result, move.MoveFrom, file)
+		if err := closeWorkspaceHandle(move.MoveFrom, file); err != nil {
+			return false, err
+		}
 		return false, nil
 	}
 	if before.Mode().Perm() != os.FileMode(move.Mode) {
-		closeWorkspaceHandle(result, move.MoveFrom, file)
+		if err := closeWorkspaceHandle(move.MoveFrom, file); err != nil {
+			return false, err
+		}
 		return false, nil
 	}
-	if _, err := inspectWorkspaceParents(root, move.Path, true); err != nil {
-		closeWorkspaceHandle(result, move.MoveFrom, file)
-		return false, err
+	if _, err := inspectWorkspaceParents(root, move.Path, true, result); err != nil {
+		return false, errors.Join(err, closeWorkspaceHandle(move.MoveFrom, file))
 	}
 	destination, err := root.Lstat(move.Path)
 	if err == nil {
 		if destination.IsDir() {
-			closeWorkspaceHandle(result, move.MoveFrom, file)
-			return false, fmt.Errorf("workspace move destination %q is a directory", move.Path)
+			return false, errors.Join(
+				fmt.Errorf("workspace move destination %q is a directory", move.Path),
+				closeWorkspaceHandle(move.MoveFrom, file),
+			)
 		}
 		if !destination.Mode().IsRegular() && destination.Mode()&os.ModeSymlink == 0 {
-			closeWorkspaceHandle(result, move.MoveFrom, file)
-			return false, fmt.Errorf("workspace move destination %q is a special filesystem node", move.Path)
+			return false, errors.Join(
+				fmt.Errorf("workspace move destination %q is a special filesystem node", move.Path),
+				closeWorkspaceHandle(move.MoveFrom, file),
+			)
 		}
 	} else if !os.IsNotExist(err) {
-		closeWorkspaceHandle(result, move.MoveFrom, file)
-		return false, fmt.Errorf("inspect workspace move destination %q: %w", move.Path, err)
+		return false, errors.Join(
+			fmt.Errorf("inspect workspace move destination %q: %w", move.Path, err),
+			closeWorkspaceHandle(move.MoveFrom, file),
+		)
 	}
 	if err := root.Rename(move.MoveFrom, move.Path); err != nil {
-		closeWorkspaceHandle(result, move.MoveFrom, file)
-		return false, fmt.Errorf("move workspace file %q to %q: %w", move.MoveFrom, move.Path, err)
+		return false, errors.Join(
+			fmt.Errorf("move workspace file %q to %q: %w", move.MoveFrom, move.Path, err),
+			closeWorkspaceHandle(move.MoveFrom, file),
+		)
 	}
 	result.Changes = append(result.Changes, Change{
 		Path: move.Path, Kind: ChangeMove, SourcePath: move.MoveFrom,
@@ -448,20 +468,19 @@ func applyRenameFromMatchingSource(
 			return false, err
 		}
 	} else {
-		if _, err := verifyOpenFileMode(root, move.Path, file, before, move.Mode, result); err != nil {
+		if _, err := verifyOpenFileMode(root, move.Path, file, before, move.Mode); err != nil {
 			return false, err
 		}
 	}
 	return true, nil
 }
 
-func closeWorkspaceHandle(result *ReconciliationResult, relative string, file *os.File) {
+func closeWorkspaceHandle(relative string, file *os.File) error {
 	if file == nil {
-		return
+		return nil
 	}
-	if err := file.Close(); err != nil && result != nil {
-		result.Warnings = append(result.Warnings, fmt.Sprintf(
-			"close verified workspace handle %q: %v", relative, err,
-		))
+	if err := file.Close(); err != nil {
+		return fmt.Errorf("close verified workspace handle %q: %w", relative, err)
 	}
+	return nil
 }

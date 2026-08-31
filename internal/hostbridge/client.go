@@ -20,9 +20,6 @@ type Client struct {
 }
 
 func NewClient(baseURL, token string, timeout time.Duration) *Client {
-	if timeout <= 0 {
-		timeout = 10 * time.Second
-	}
 	return &Client{
 		BaseURL: strings.TrimRight(strings.TrimSpace(baseURL), "/"),
 		Token:   strings.TrimSpace(token),

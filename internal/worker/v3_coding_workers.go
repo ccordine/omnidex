@@ -75,7 +75,6 @@ func portableWorkerRuntimeWithIdentityGuard(
 	return typedWorkerRuntime{
 		Context:        executionContext,
 		MaxAttempts:    exactSemanticLeafCalls,
-		MaxConcurrency: runtime.svc.fragmentConcurrency,
 		PathProvenance: runtime.objectivePathProvenance,
 		Execute: func(job assemblyline.PortableJob, model string) (assemblyline.PortableResult, error) {
 			return execute(job, model)

@@ -10,7 +10,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/gryph/omnidex/internal/exactjson"
-	"github.com/gryph/omnidex/internal/modelconfig"
 )
 
 const maxGenericCodingEnqueueBodyBytes int64 = 256 * 1024
@@ -22,18 +21,6 @@ type enqueueRequest struct {
 
 type genericCodingMetadata struct {
 	ClientCWD string `json:"client_cwd"`
-}
-
-type genericCodingRuntimeMetadata struct {
-	ClientCWD   string             `json:"client_cwd"`
-	ModelConfig modelconfig.Config `json:"model_config"`
-}
-
-func (s *Server) genericCodingRuntimeMetadata(metadata genericCodingMetadata) ([]byte, error) {
-	modelSnapshot := s.runtimeModelConfig()
-	return json.Marshal(genericCodingRuntimeMetadata{
-		ClientCWD: metadata.ClientCWD, ModelConfig: modelSnapshot,
-	})
 }
 
 func decodeGenericCodingEnqueue(w http.ResponseWriter, r *http.Request) (enqueueRequest, error) {
@@ -62,9 +49,6 @@ func decodeGenericCodingEnqueue(w http.ResponseWriter, r *http.Request) (enqueue
 	}
 	if request.Metadata == nil {
 		return enqueueRequest{}, fmt.Errorf("coding enqueue metadata must be one JSON object")
-	}
-	if _, err := requireFreeFormAuthority(request.Instruction, "instruction"); err != nil {
-		return enqueueRequest{}, err
 	}
 	return request, nil
 }

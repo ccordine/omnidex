@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 
@@ -29,14 +30,15 @@ func (s *Server) enqueueJob(w http.ResponseWriter, r *http.Request) {
 		writeError(w, genericCodingEnqueueStatus(err), err.Error())
 		return
 	}
-	metadata, err := s.genericCodingRuntimeMetadata(*request.Metadata)
+	job, err := s.repo.EnqueueCodingJob(
+		r.Context(), request.Instruction, request.Metadata.ClientCWD,
+	)
 	if err != nil {
-		writeError(w, http.StatusBadGateway, fmt.Sprintf("model setup failed: %v", err))
-		return
-	}
-	job, err := s.repo.EnqueueCodingJob(r.Context(), request.Instruction, metadata)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		status := http.StatusInternalServerError
+		if errors.Is(err, queue.ErrInvalidJobInstruction) {
+			status = http.StatusBadRequest
+		}
+		writeError(w, status, err.Error())
 		return
 	}
 	s.publishJobProgress(job.ID, realtimeJobQueued, "Job queued")

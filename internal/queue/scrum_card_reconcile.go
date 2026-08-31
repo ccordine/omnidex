@@ -12,7 +12,6 @@ type ScrumCardReconcileKind string
 
 const (
 	ScrumReconcileJobProgress    ScrumCardReconcileKind = "job_progress"
-	ScrumReconcileJobTerminal    ScrumCardReconcileKind = "job_terminal"
 	ScrumReconcileAutoWorkReady  ScrumCardReconcileKind = "auto_work_ready"
 	ScrumReconcileAutoWorkFailed ScrumCardReconcileKind = "auto_work_failed"
 )
@@ -104,7 +103,7 @@ func (r *Repository) ReconcileScrumCard(
 
 func validateScrumCardReconcileCommand(command ScrumCardReconcileCommand) error {
 	switch command.Kind {
-	case ScrumReconcileJobProgress, ScrumReconcileJobTerminal,
+	case ScrumReconcileJobProgress,
 		ScrumReconcileAutoWorkReady, ScrumReconcileAutoWorkFailed:
 	default:
 		return fmt.Errorf("Scrum reconciliation kind %q is not registered", command.Kind)
@@ -166,15 +165,6 @@ func validateScrumReconcileTransition(current DBScrumCard, command ScrumCardReco
 	case ScrumReconcileJobProgress:
 		if command.Outcome != "" || current.JobID == "" || command.Column != ScrumCardColumn(current.Column) || command.PlayState != current.PlayState {
 			return fmt.Errorf("job-progress reconciliation may only append typed output rows")
-		}
-	case ScrumReconcileJobTerminal:
-		if current.PlayState != "running" || command.PlayState != "" || current.JobID == "" {
-			return fmt.Errorf("terminal reconciliation requires one running job transition")
-		}
-		switch command.Outcome {
-		case "success", "failed":
-		default:
-			return fmt.Errorf("terminal Scrum reconciliation outcome %q is not registered", command.Outcome)
 		}
 	case ScrumReconcileAutoWorkReady:
 		if command.Outcome != "" || current.JobID != "" || command.JobID != "" || command.Column != ScrumCardColumn(current.Column) ||

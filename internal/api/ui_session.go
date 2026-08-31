@@ -22,26 +22,27 @@ type uiSessionResponse struct {
 }
 
 func (s *Server) handleUISession(w http.ResponseWriter, r *http.Request) {
-	if s.uiSessionTTL < time.Minute {
-		writeError(w, http.StatusServiceUnavailable, "UI_SESSION_TTL must be at least one minute")
+	ttl, err := parseDurationSetting("UI_SESSION_TTL", s.uiSessionTTL, time.Minute)
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, err.Error())
 		return
 	}
 	switch r.Method {
 	case http.MethodGet:
-		s.readUISession(w, r)
+		s.readUISession(w, r, ttl)
 	case http.MethodPatch, http.MethodPost:
-		s.updateUISession(w, r)
+		s.updateUISession(w, r, ttl)
 	default:
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 	}
 }
 
-func (s *Server) readUISession(w http.ResponseWriter, r *http.Request) {
+func (s *Server) readUISession(w http.ResponseWriter, r *http.Request, ttl time.Duration) {
 	if err := validateUIStateQuery(r); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	sessionID, err := s.ensureUISessionCookie(w, r)
+	sessionID, err := s.ensureUISessionCookieWithTTL(w, r, ttl)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -62,7 +63,7 @@ func (s *Server) readUISession(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	if _, err := s.persistUIState(r.Context(), sessionID, state); err != nil {
+	if _, err := s.persistUIStateWithTTL(r.Context(), sessionID, state, ttl); err != nil {
 		writeError(w, http.StatusServiceUnavailable, err.Error())
 		return
 	}
@@ -72,16 +73,16 @@ func (s *Server) readUISession(w http.ResponseWriter, r *http.Request) {
 		State:     state,
 		Locale:    locale,
 		Source:    source,
-		TTLMS:     s.uiSessionTTL.Milliseconds(),
+		TTLMS:     ttl.Milliseconds(),
 	})
 }
 
-func (s *Server) updateUISession(w http.ResponseWriter, r *http.Request) {
+func (s *Server) updateUISession(w http.ResponseWriter, r *http.Request, ttl time.Duration) {
 	if err := validateUIStateQuery(r); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	sessionID, err := s.ensureUISessionCookie(w, r)
+	sessionID, err := s.ensureUISessionCookieWithTTL(w, r, ttl)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -121,7 +122,7 @@ func (s *Server) updateUISession(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	source, err := s.persistUIState(r.Context(), sessionID, state)
+	source, err := s.persistUIStateWithTTL(r.Context(), sessionID, state, ttl)
 	if err != nil {
 		writeError(w, http.StatusServiceUnavailable, err.Error())
 		return
@@ -133,11 +134,23 @@ func (s *Server) updateUISession(w http.ResponseWriter, r *http.Request) {
 		State:     state,
 		Locale:    locale,
 		Source:    source,
-		TTLMS:     s.uiSessionTTL.Milliseconds(),
+		TTLMS:     ttl.Milliseconds(),
 	})
 }
 
 func (s *Server) ensureUISessionCookie(w http.ResponseWriter, r *http.Request) (string, error) {
+	ttl, err := parseDurationSetting("UI_SESSION_TTL", s.uiSessionTTL, time.Minute)
+	if err != nil {
+		return "", err
+	}
+	return s.ensureUISessionCookieWithTTL(w, r, ttl)
+}
+
+func (s *Server) ensureUISessionCookieWithTTL(
+	w http.ResponseWriter,
+	r *http.Request,
+	ttl time.Duration,
+) (string, error) {
 	if cookie, err := r.Cookie(uiSessionCookieName); err == nil {
 		if id := normalizeUISessionID(cookie.Value); id != "" {
 			return id, nil
@@ -151,7 +164,7 @@ func (s *Server) ensureUISessionCookie(w http.ResponseWriter, r *http.Request) (
 		Name:     uiSessionCookieName,
 		Value:    sessionID,
 		Path:     "/",
-		MaxAge:   int(s.uiSessionTTL.Seconds()),
+		MaxAge:   int(ttl.Seconds()),
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
 	})
@@ -177,7 +190,24 @@ func (s *Server) loadUIState(ctx context.Context, sessionID string) (map[string]
 	return state, "redis", nil
 }
 
-func (s *Server) persistUIState(ctx context.Context, sessionID string, state map[string]any) (string, error) {
+func (s *Server) persistUIState(
+	ctx context.Context,
+	sessionID string,
+	state map[string]any,
+) (string, error) {
+	ttl, err := parseDurationSetting("UI_SESSION_TTL", s.uiSessionTTL, time.Minute)
+	if err != nil {
+		return "", err
+	}
+	return s.persistUIStateWithTTL(ctx, sessionID, state, ttl)
+}
+
+func (s *Server) persistUIStateWithTTL(
+	ctx context.Context,
+	sessionID string,
+	state map[string]any,
+	ttl time.Duration,
+) (string, error) {
 	state = sanitizeUIState(state)
 	raw, err := json.Marshal(state)
 	if err != nil {
@@ -187,7 +217,7 @@ func (s *Server) persistUIState(ctx context.Context, sessionID string, state map
 	if err != nil {
 		return "", err
 	}
-	if err := redis.SetEX(ctx, uiSessionRedisKey(sessionID), string(raw), s.uiSessionTTL); err != nil {
+	if err := redis.SetEX(ctx, uiSessionRedisKey(sessionID), string(raw), ttl); err != nil {
 		return "", fmt.Errorf("redis ui session write failed: %w", err)
 	}
 	return "redis", nil

@@ -27,7 +27,6 @@ import {
 } from "./roleplay_form_input";
 import { HTTPResponseError } from "./api";
 import { ChatRoleplayMutationGate } from "./chat_roleplay_mutation_gate";
-import { pullOllamaModel } from "./ollama_model_api";
 import {
   pageFromRoleplayButton,
   roleplayErrorMessage,
@@ -243,33 +242,6 @@ export class ChatRoleplayCoordinator {
 			const input = meterValueInput(form);
 			return () => setRoleplayMeter(channelID, characterID, meterKey, input);
 		}, "meter_saved");
-  }
-
-  async downloadModel(event: Event): Promise<void> {
-    event.preventDefault();
-    const form = event.currentTarget;
-    if (!(form instanceof HTMLFormElement)) throw new Error("Roleplay model download form is invalid.");
-    const control = form.elements.namedItem("model");
-    if (!(control instanceof HTMLInputElement)) throw new Error("Roleplay model download input is missing.");
-    const model = control.value.trim();
-    if (!model || model.length > 256 || !/^[A-Za-z0-9._:/@-]+$/.test(model)) {
-      this.host.setStatus("Enter a valid Ollama model tag.", "error");
-      control.focus();
-      return;
-    }
-    await withRoleplayFormFeedback(form, async () => {
-      try {
-        await pullOllamaModel(model);
-        control.value = "";
-        this.host.setStatus(`Downloading ${model}…`, "active");
-        this.host.addEvent("roleplay_model_download_queued", {
-          channel_id: this.requireChannel(),
-          model,
-        });
-      } catch (error) {
-        this.reportMutationFailure(error);
-      }
-    });
   }
 
   async registerInteraction(event: Event): Promise<void> {

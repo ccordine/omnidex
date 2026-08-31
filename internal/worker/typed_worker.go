@@ -52,7 +52,6 @@ type typedWorkerEvent struct {
 type typedWorkerRuntime struct {
 	Context                              context.Context
 	MaxAttempts                          int
-	MaxConcurrency                       int
 	CorrectionModel                      string
 	PathProvenance                       assemblyline.ArtifactIdentityProvenance
 	Execute                              func(job assemblyline.PortableJob, model string) (assemblyline.PortableResult, error)

@@ -161,7 +161,6 @@ export class ChatExecutionCoordinator {
       error: details.job.error,
       steps: details.steps.map((step) => [step.id, step.action, step.status, step.generation]),
       generation: details.job.current_generation,
-      progress: [details.progress.latest_context_id, details.progress.count],
       jobStateBundle,
     });
     if (signature !== this.lastSignature) {

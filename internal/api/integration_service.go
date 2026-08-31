@@ -71,7 +71,7 @@ func (s *Server) getIntegrationChannel(w http.ResponseWriter, r *http.Request, c
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	channel, err := s.channelStore.GetChannel(r.Context(), channelID)
+	channel, err := s.repo.GetChannel(r.Context(), channelID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		writeError(w, http.StatusNotFound, "channel not found")
 		return
@@ -106,7 +106,7 @@ func (s *Server) listIntegrationChannelMessages(
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	page, err := s.channelStore.ListChannelMessages(r.Context(), channelID, limit, beforeID)
+	page, err := s.repo.ListChannelMessages(r.Context(), channelID, limit, beforeID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		writeError(w, http.StatusNotFound, "channel not found")
 		return

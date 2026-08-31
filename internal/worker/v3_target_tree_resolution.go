@@ -2,7 +2,6 @@ package worker
 
 import (
 	"fmt"
-	"os"
 	"sort"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
@@ -15,21 +14,16 @@ func resolveDirectCodingTargetTree(
 	workload assemblyline.FrozenApplicationWorkload,
 	stack directCodingProjectStack,
 	authoritativePaths []string,
-	rootPath string,
 ) (assemblyline.TargetTree, assemblyline.ApplicationFileCoveragePlan, error) {
 	var zeroTree assemblyline.TargetTree
 	var zeroCoverage assemblyline.ApplicationFileCoveragePlan
 	taskPaths := make(map[string][]string, len(workload.Tasks))
-	root, err := os.OpenRoot(rootPath)
-	if err != nil {
-		return zeroTree, zeroCoverage, fmt.Errorf("open target-tree workspace root: %w", err)
-	}
-	defer root.Close()
 	var target assemblyline.TargetTree
+	var err error
 	switch {
 	case stack.ProjectCompleteTargetTree != nil:
 		target, err = stack.ProjectCompleteTargetTree(
-			directCodingTargetTreeOccupationFor(stack, map[string]struct{}{}, authoritativePaths, root),
+			directCodingTargetTreeOccupationFor(stack, map[string]struct{}{}, authoritativePaths),
 		)
 		if err != nil {
 			return zeroTree, zeroCoverage, fmt.Errorf(
@@ -44,7 +38,7 @@ func resolveDirectCodingTargetTree(
 		for taskIndex, task := range workload.Tasks {
 			var focused assemblyline.TargetTree
 			focused, err = stack.ProjectFocusedTargetTree(
-				taskIndex+1, directCodingTargetTreeOccupationFor(stack, union, authoritativePaths, root),
+				taskIndex+1, directCodingTargetTreeOccupationFor(stack, union, authoritativePaths),
 			)
 			if err != nil {
 				return zeroTree, zeroCoverage, fmt.Errorf(

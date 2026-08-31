@@ -6,8 +6,6 @@ import (
 	"github.com/gryph/omnidex/internal/assemblyline"
 )
 
-const maxMechanicalTargetTreeOrdinal = 999
-
 type mechanicalTargetTreePath func(int) string
 
 func projectSingleImplementationPath(
@@ -16,10 +14,10 @@ func projectSingleImplementationPath(
 	occupation directCodingTargetTreeOccupation,
 	implementation mechanicalTargetTreePath,
 ) (assemblyline.TargetTree, error) {
-	if taskOrdinal < 1 || taskOrdinal > maxMechanicalTargetTreeOrdinal {
+	if taskOrdinal < 1 {
 		return assemblyline.TargetTree{}, fmt.Errorf(
-			"%s focused target tree requires a frozen task ordinal between 1 and %d",
-			stackLabel, maxMechanicalTargetTreeOrdinal,
+			"%s focused target tree requires a positive frozen task ordinal",
+			stackLabel,
 		)
 	}
 	if implementation == nil {
@@ -27,7 +25,11 @@ func projectSingleImplementationPath(
 			"%s target tree requires one registered implementation-path grammar", stackLabel,
 		)
 	}
-	for ordinal := taskOrdinal; ordinal <= maxMechanicalTargetTreeOrdinal; ordinal++ {
+	// Accepted path authority can reserve a mechanically preferred name, but it
+	// cannot veto an independent workload leaf. Scan one more exact filename
+	// than the complete reservation set; a reservation at the fixed parent
+	// boundary remains a real contradiction for this stack.
+	for ordinal, remaining := taskOrdinal, len(occupation.FilePaths)+1; remaining > 0; ordinal, remaining = ordinal+1, remaining-1 {
 		artifactPath := implementation(ordinal)
 		available, err := directCodingTargetTreePathsAvailable(
 			[]string{artifactPath}, occupation,
@@ -43,8 +45,8 @@ func projectSingleImplementationPath(
 		}
 	}
 	return assemblyline.TargetTree{}, fmt.Errorf(
-		"%s cannot reserve a free three-digit workload path starting at %d",
-		stackLabel, taskOrdinal,
+		"%s has no workload path outside the accepted path authority",
+		stackLabel,
 	)
 }
 

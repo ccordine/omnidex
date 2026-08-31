@@ -37,6 +37,15 @@ func coreHealthStatus(dependencies map[string]coreDependencyStatus) string {
 	return "ok"
 }
 
+func coreReadinessStatus(dependencies map[string]coreDependencyStatus) string {
+	for _, dependency := range dependencies {
+		if dependency.Required && dependency.Status == "error" {
+			return "degraded"
+		}
+	}
+	return "ok"
+}
+
 func (s *Server) checkPostgresDependency(ctx context.Context) coreDependencyStatus {
 	dependency := coreDependencyStatus{
 		Configured: s.repo != nil,
@@ -67,13 +76,12 @@ func (s *Server) checkPostgresDependency(ctx context.Context) coreDependencyStat
 func (s *Server) checkRedisDependency(ctx context.Context) coreDependencyStatus {
 	dependency := coreDependencyStatus{
 		Configured: strings.TrimSpace(s.redisURL) != "",
-		Required:   true,
+		Required:   false,
 		Target:     redactedRedisTarget(s.redisURL),
 	}
 	if !dependency.Configured {
-		dependency.Status = "error"
-		dependency.Error = "redis url is required but not configured"
-		dependency.Message = "UI Redis is required but REDIS_URL is not configured."
+		dependency.Status = "not_configured"
+		dependency.Message = "REDIS_URL is not configured; Redis-backed UI features are disabled."
 		return dependency
 	}
 	redis, err := s.requireUIRedis()
@@ -104,7 +112,7 @@ func (s *Server) checkHostBridgeDependency(ctx context.Context) coreDependencySt
 	configured := strings.TrimSpace(s.hostAgentURL) != ""
 	dependency := coreDependencyStatus{
 		Configured: configured,
-		Required:   configured,
+		Required:   false,
 		Target:     strings.TrimSpace(s.hostAgentURL),
 	}
 	if !configured {

@@ -21,8 +21,10 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleReadiness(w http.ResponseWriter, r *http.Request) {
-	dependencies := s.collectCoreDependencies(r.Context())
-	status := coreHealthStatus(dependencies)
+	dependencies := map[string]coreDependencyStatus{
+		"postgres": s.checkPostgresDependency(r.Context()),
+	}
+	status := coreReadinessStatus(dependencies)
 	code := http.StatusOK
 	if status != "ok" {
 		code = http.StatusServiceUnavailable
