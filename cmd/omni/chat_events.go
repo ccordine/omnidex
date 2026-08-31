@@ -6,16 +6,20 @@ import (
 	"time"
 
 	"github.com/gryph/omnidex/internal/client"
+	"github.com/gryph/omnidex/internal/model"
 )
 
 type streamUpdate struct {
 	Event client.RealtimeEvent
 	Err   error
+	Fatal bool
 }
 
 func followJobEvents(
 	ctx context.Context,
 	apiClient *client.Client,
+	channelID model.ChannelID,
+	workspaceIdentity string,
 	initial *client.JobEventStream,
 ) <-chan streamUpdate {
 	updates := make(chan streamUpdate, 64)
@@ -24,24 +28,62 @@ func followJobEvents(
 		stream := initial
 		var lastID uint64
 		for {
-			event, err := stream.Read()
-			if err == nil {
-				if event.ID > lastID {
+			connected := false
+			connectedLatest := uint64(0)
+			replayRemaining := 0
+			for {
+				event, err := stream.Read()
+				if err != nil {
+					_ = stream.Close()
+					if ctx.Err() != nil {
+						return
+					}
+					fatal := client.IsPermanentRealtimeError(err)
+					if !sendStreamUpdate(ctx, updates, streamUpdate{
+						Err: fmt.Errorf("realtime stream disconnected: %w", err), Fatal: fatal,
+					}) || fatal {
+						return
+					}
+					break
+				}
+				if event.EventName == client.RealtimeConnected {
+					if connected {
+						_ = stream.Close()
+						sendStreamUpdate(ctx, updates, streamUpdate{
+							Err:   &client.RealtimeProtocolError{Message: "realtime stream repeated its connection frame"},
+							Fatal: true,
+						})
+						return
+					}
+					connected = true
+					connectedLatest = event.LatestID
+					replayRemaining = event.ReplayCount
+					if event.SyncRequired || replayRemaining == 0 {
+						lastID = connectedLatest
+					}
+				} else {
+					if !connected || event.ID <= lastID {
+						_ = stream.Close()
+						sendStreamUpdate(ctx, updates, streamUpdate{
+							Err:   &client.RealtimeProtocolError{Message: "realtime stream returned an out-of-order event"},
+							Fatal: true,
+						})
+						return
+					}
 					lastID = event.ID
+					if replayRemaining > 0 {
+						replayRemaining--
+						if replayRemaining == 0 && connectedLatest > lastID {
+							lastID = connectedLatest
+						}
+					}
 				}
 				if !sendStreamUpdate(ctx, updates, streamUpdate{Event: event}) {
-					stream.Close()
+					_ = stream.Close()
 					return
 				}
-				continue
 			}
-			stream.Close()
-			if ctx.Err() != nil {
-				return
-			}
-			if !sendStreamUpdate(ctx, updates, streamUpdate{Err: fmt.Errorf("realtime stream disconnected: %w", err)}) {
-				return
-			}
+
 			for {
 				timer := time.NewTimer(time.Second)
 				select {
@@ -50,11 +92,20 @@ func followJobEvents(
 					return
 				case <-timer.C:
 				}
-				stream, err = apiClient.OpenJobEvents(ctx, lastID)
+				var err error
+				stream, err = apiClient.OpenJobEvents(
+					ctx,
+					channelID,
+					workspaceIdentity,
+					&lastID,
+				)
 				if err == nil {
 					break
 				}
-				if !sendStreamUpdate(ctx, updates, streamUpdate{Err: fmt.Errorf("realtime reconnect failed: %w", err)}) {
+				fatal := client.IsPermanentRealtimeError(err)
+				if !sendStreamUpdate(ctx, updates, streamUpdate{
+					Err: fmt.Errorf("realtime reconnect failed: %w", err), Fatal: fatal,
+				}) || fatal {
 					return
 				}
 			}

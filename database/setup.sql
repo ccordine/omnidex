@@ -247,6 +247,122 @@ END $$;
 
 --
 
+-- Name: enforce_channel_session_registry_operation_pair(); Type: FUNCTION; Schema: current runtime; Owner: -
+--
+
+CREATE FUNCTION enforce_channel_session_registry_operation_pair() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'pg_catalog', '__OMNIDEX_RUNTIME_SCHEMA__', 'pg_temp'
+    AS $$
+BEGIN
+    IF NEW.kind='channel_session_turn' AND NOT EXISTS(SELECT 1
+      FROM channel_session_turn_operations WHERE operation_id=NEW.operation_id) THEN
+        RAISE EXCEPTION 'Channel session registry identity lacks immutable operation';
+    END IF;
+    RETURN NULL;
+END $$;
+
+
+--
+
+-- Name: prevent_channel_session_turn_operation_mutation(); Type: FUNCTION; Schema: current runtime; Owner: -
+--
+
+CREATE FUNCTION prevent_channel_session_turn_operation_mutation() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    RAISE EXCEPTION 'channel session turn operations are immutable';
+END;
+$$;
+
+
+--
+
+-- Name: validate_channel_session_turn_operation(); Type: FUNCTION; Schema: current runtime; Owner: -
+--
+
+CREATE FUNCTION validate_channel_session_turn_operation() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'pg_catalog', '__OMNIDEX_RUNTIME_SCHEMA__', 'pg_temp'
+    AS $$
+DECLARE
+    payload JSONB;
+    bound_root TEXT;
+BEGIN
+    SELECT command_payload INTO payload
+    FROM lifecycle_operation_registry
+    WHERE operation_id=NEW.operation_id
+      AND kind=NEW.kind
+      AND command_sha256=NEW.command_sha256
+    FOR SHARE;
+    IF NOT FOUND OR NEW.kind<>'channel_session_turn' OR
+       jsonb_typeof(payload)<>'object' OR
+       NOT (payload ?& ARRAY['operation_id','channel_id','workspace_root','workspace_identity','text']) OR
+       (payload - ARRAY['operation_id','channel_id','workspace_root','workspace_identity','text'])<>'{}'::jsonb OR
+       payload->>'operation_id'<>NEW.operation_id OR
+       payload->>'channel_id'<>NEW.channel_id OR
+       payload->>'workspace_identity' !~ '^directory_identity_v1_[0-9a-f]{64}$' OR
+       NOT lifecycle_feedback_is_valid(payload->>'text',4096) THEN
+        RAISE EXCEPTION 'Channel session operation differs from its exact registry command';
+    END IF;
+    SELECT workspace_root INTO bound_root
+    FROM ai_channels
+    WHERE id=NEW.channel_id AND scope='user' AND mode='assistant'
+    FOR SHARE;
+    IF NOT FOUND OR payload->>'workspace_root'<>bound_root THEN
+        RAISE EXCEPTION 'Channel session operation differs from immutable workspace authority';
+    END IF;
+    IF NOT EXISTS(SELECT 1 FROM jobs
+      WHERE id=NEW.job_id AND pipeline='chat'
+        AND metadata->>'channel_id'=NEW.channel_id
+        AND metadata->>'client_cwd'=bound_root
+        AND metadata->>'client_workspace_identity'=payload->>'workspace_identity'
+        AND current_generation=NEW.result_generation
+        AND status=NEW.result_job->>'status') THEN
+        RAISE EXCEPTION 'Channel session operation differs from same-channel job authority';
+    END IF;
+    IF NEW.disposition='enqueued' THEN
+        IF NEW.result_generation<>1 OR NEW.result_job->>'status'<>'pending' OR
+           NEW.user_message_id IS NULL OR
+           NEW.result_step_id IS NOT NULL OR
+           NOT EXISTS(SELECT 1 FROM ai_channel_messages AS message
+             JOIN jobs AS job ON job.id=NEW.job_id
+             WHERE message.id=NEW.user_message_id
+               AND message.channel_id=NEW.channel_id AND message.role='user'
+               AND message.content=payload->>'text'
+               AND job.instruction=payload->>'text'
+               AND job.metadata->>'channel_user_message_id'=message.id::TEXT) THEN
+            RAISE EXCEPTION 'Channel session enqueue lacks its exact user message and initial job';
+        END IF;
+    ELSIF NEW.disposition='replanned' THEN
+        IF NEW.result_job->>'status'<>'running' OR
+           NEW.user_message_id IS NOT NULL OR NEW.result_step_id IS NOT NULL OR
+           NOT EXISTS(SELECT 1 FROM job_generations
+             WHERE job_id=NEW.job_id AND generation=NEW.result_generation
+               AND purpose='replan' AND feedback=payload->>'text') THEN
+            RAISE EXCEPTION 'Channel session replan lacks its exact generation';
+        END IF;
+    ELSIF NEW.disposition='feedback_submitted' THEN
+        IF NEW.result_job->>'status' NOT IN ('running','completed') OR
+           NEW.user_message_id IS NOT NULL OR NEW.result_step_id IS NULL OR
+           NOT EXISTS(SELECT 1 FROM job_steps
+             WHERE id=NEW.result_step_id AND job_id=NEW.job_id
+               AND generation=NEW.result_generation AND status='completed'
+               AND output=payload->>'text') THEN
+            RAISE EXCEPTION 'Channel session feedback lacks its exact completed input step';
+        END IF;
+    ELSE
+        RAISE EXCEPTION 'Channel session operation has unregistered disposition';
+    END IF;
+    NEW.created_at:=clock_timestamp();
+    RETURN NEW;
+END;
+$$;
+
+
+--
+
 
 --
 -- Name: initialize_roleplay_character_generation_config(); Type: FUNCTION; Schema: current runtime; Owner: -
@@ -667,7 +783,7 @@ BEGIN
             RAISE EXCEPTION 'chat turn pipeline authority is immutable';
         END IF;
         FOREACH binding_key IN ARRAY ARRAY[
-            'channel_id','channel_user_message_id','client_cwd',
+            'channel_id','channel_user_message_id','client_cwd','client_workspace_identity',
             'data_source_id','channel_mode','roleplay_viewpoint_character_id','model_config',
             'roleplay_generation_config','roleplay_responders','roleplay_user_turn',
             'roleplay_simulation_preparation_id','roleplay_world_id','roleplay_scene_id',
@@ -1012,6 +1128,57 @@ BEGIN
     IF NEW.purpose IN ('interrupt', 'replan') AND
        NEW.boundary_action NOT IN ('v3_coding', 'objective_resolve') THEN
         RAISE EXCEPTION 'new job generation boundary % is retired', NEW.boundary_action;
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+
+--
+-- Name: lifecycle_workspace_payload_is_valid(jsonb); Type: FUNCTION; Schema: current runtime; Owner: -
+--
+
+CREATE FUNCTION lifecycle_workspace_payload_is_valid(payload jsonb) RETURNS boolean
+    LANGUAGE sql IMMUTABLE
+    AS $$
+SELECT
+  ((NOT (payload ? 'workspace_root')) AND (NOT (payload ? 'workspace_identity'))) OR
+  ((payload ?& ARRAY['workspace_root','workspace_identity']) AND
+   (jsonb_typeof(payload -> 'workspace_root') = 'string') AND
+   (octet_length(payload ->> 'workspace_root') BETWEEN 1 AND 4096) AND
+   (jsonb_typeof(payload -> 'workspace_identity') = 'string') AND
+   ((payload ->> 'workspace_identity') ~ '^directory_identity_v1_[0-9a-f]{64}$'));
+$$;
+
+
+--
+-- Name: validate_lifecycle_workspace_operation(); Type: FUNCTION; Schema: current runtime; Owner: -
+--
+
+CREATE FUNCTION validate_lifecycle_workspace_operation() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'pg_catalog', '__OMNIDEX_RUNTIME_SCHEMA__', 'pg_temp'
+    AS $$
+DECLARE
+    bound_root TEXT;
+    bound_identity TEXT;
+BEGIN
+    IF NOT (NEW.command_payload ? 'workspace_root') AND
+       NOT (NEW.command_payload ? 'workspace_identity') THEN
+        RETURN NEW;
+    END IF;
+    IF NOT (NEW.command_payload ?& ARRAY['workspace_root','workspace_identity']) OR
+       NEW.command_payload->>'workspace_identity' !~ '^directory_identity_v1_[0-9a-f]{64}$' THEN
+        RAISE EXCEPTION 'Lifecycle workspace authority is incomplete or invalid';
+    END IF;
+    SELECT metadata->>'client_cwd', metadata->>'client_workspace_identity'
+    INTO bound_root, bound_identity
+    FROM jobs
+    WHERE id=NEW.job_id AND pipeline='chat'
+    FOR SHARE;
+    IF NOT FOUND OR bound_root IS DISTINCT FROM NEW.command_payload->>'workspace_root' OR
+       bound_identity IS DISTINCT FROM NEW.command_payload->>'workspace_identity' THEN
+        RAISE EXCEPTION 'Lifecycle workspace authority differs from immutable channel job binding';
     END IF;
     RETURN NEW;
 END;
@@ -3509,6 +3676,32 @@ CREATE TABLE ai_channels (
 
 
 --
+-- Name: channel_session_turn_operations; Type: TABLE; Schema: current runtime; Owner: -
+--
+
+CREATE TABLE channel_session_turn_operations (
+    operation_id text NOT NULL,
+    kind text NOT NULL,
+    command_sha256 text NOT NULL,
+    channel_id text NOT NULL,
+    job_id bigint NOT NULL,
+    result_generation bigint NOT NULL,
+    disposition text NOT NULL,
+    user_message_id bigint,
+    result_step_id bigint,
+    result_job jsonb NOT NULL,
+    created_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
+    CONSTRAINT channel_session_turn_operations_command_sha256_check CHECK ((command_sha256 ~ '^[0-9a-f]{64}$'::text)),
+    CONSTRAINT channel_session_turn_operations_disposition_check CHECK ((disposition = ANY (ARRAY['enqueued'::text, 'replanned'::text, 'feedback_submitted'::text]))),
+    CONSTRAINT channel_session_turn_operations_kind_check CHECK ((kind = 'channel_session_turn'::text)),
+    CONSTRAINT channel_session_turn_operations_operation_id_check CHECK ((operation_id ~ '^lifecycle_operation_[0-9a-f]{64}$'::text)),
+    CONSTRAINT channel_session_turn_operations_result_generation_check CHECK ((result_generation > 0)),
+    CONSTRAINT channel_session_turn_operations_result_job_check CHECK (((jsonb_typeof(result_job) = 'object'::text) AND (result_job ? 'id'::text) AND (result_job ? 'current_generation'::text) AND (result_job ? 'status'::text) AND (((result_job ->> 'id'::text))::bigint = job_id) AND (((result_job ->> 'current_generation'::text))::bigint = result_generation) AND ((result_job ->> 'status'::text) = ANY (ARRAY['pending'::text, 'running'::text, 'completed'::text, 'failed'::text, 'canceled'::text, 'waiting_input'::text])))),
+    CONSTRAINT channel_session_turn_operations_shape_check CHECK ((((disposition = 'enqueued'::text) AND (result_generation = 1) AND (user_message_id IS NOT NULL) AND (result_step_id IS NULL)) OR ((disposition = 'replanned'::text) AND (result_generation > 1) AND (user_message_id IS NULL) AND (result_step_id IS NULL)) OR ((disposition = 'feedback_submitted'::text) AND (user_message_id IS NULL) AND (result_step_id IS NOT NULL))))
+);
+
+
+--
 -- Name: data_source_channels; Type: TABLE; Schema: current runtime; Owner: -
 --
 
@@ -3671,7 +3864,7 @@ CREATE TABLE job_generations (
     feedback text,
     feedback_sha256 text,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT job_generations_authoritative_shape CHECK ((((generation = 1) AND (purpose = 'initial'::text) AND (predecessor_generation IS NULL) AND (boundary_action IS NULL) AND (feedback IS NULL) AND (feedback_sha256 IS NULL)) OR ((generation > 1) AND (purpose = ANY (ARRAY['interrupt'::text, 'replan'::text])) AND (predecessor_generation = (generation - 1)) AND (boundary_action = ANY (ARRAY['v3_coding'::text, 'objective_resolve'::text])) AND lifecycle_feedback_is_valid(feedback, 2048) AND (feedback_sha256 ~ '^[0-9a-f]{64}$'::text) AND (feedback_sha256 = encode(pg_catalog.sha256(convert_to(feedback, 'UTF8')), 'hex'::text))))),
+    CONSTRAINT job_generations_authoritative_shape CHECK ((((generation = 1) AND (purpose = 'initial'::text) AND (predecessor_generation IS NULL) AND (boundary_action IS NULL) AND (feedback IS NULL) AND (feedback_sha256 IS NULL)) OR ((generation > 1) AND (purpose = ANY (ARRAY['interrupt'::text, 'replan'::text])) AND (predecessor_generation = (generation - 1)) AND (boundary_action = ANY (ARRAY['v3_coding'::text, 'objective_resolve'::text])) AND lifecycle_feedback_is_valid(feedback, 4096) AND (feedback_sha256 ~ '^[0-9a-f]{64}$'::text) AND (feedback_sha256 = encode(pg_catalog.sha256(convert_to(feedback, 'UTF8')), 'hex'::text))))),
     CONSTRAINT job_generations_generation_check CHECK ((generation > 0)),
     CONSTRAINT job_generations_purpose_check CHECK ((purpose = ANY (ARRAY['initial'::text, 'interrupt'::text, 'replan'::text])))
 );
@@ -3838,7 +4031,7 @@ CREATE TABLE lifecycle_operation_registry (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT lifecycle_operation_registry_check CHECK (((jsonb_typeof(command_payload) = 'object'::text) AND (command_payload ? 'operation_id'::text) AND ((command_payload ->> 'operation_id'::text) = operation_id))),
     CONSTRAINT lifecycle_operation_registry_command_sha256_check CHECK ((command_sha256 ~ '^[0-9a-f]{64}$'::text)),
-    CONSTRAINT lifecycle_operation_registry_kind_check CHECK ((kind = ANY (ARRAY['complete_step'::text, 'fail_step'::text, 'submit_feedback'::text, 'interrupt_job'::text, 'replan_job'::text, 'scrum_channel_message'::text, 'cancel_job'::text]))),
+    CONSTRAINT lifecycle_operation_registry_kind_check CHECK ((kind = ANY (ARRAY['complete_step'::text, 'fail_step'::text, 'submit_feedback'::text, 'interrupt_job'::text, 'replan_job'::text, 'channel_session_turn'::text, 'scrum_channel_message'::text, 'cancel_job'::text]))),
     CONSTRAINT lifecycle_operation_registry_operation_id_check CHECK ((operation_id ~ '^lifecycle_operation_[0-9a-f]{64}$'::text))
 );
 
@@ -4931,6 +5124,71 @@ CREATE TABLE tags (
 
 
 --
+-- Name: channel_conversation_followup_events; Type: VIEW; Schema: current runtime; Owner: -
+--
+
+CREATE VIEW channel_conversation_followup_events AS
+ SELECT turn.channel_id,
+    turn.job_id,
+    turn.result_generation AS generation,
+        CASE turn.disposition
+            WHEN 'replanned'::text THEN 0
+            WHEN 'feedback_submitted'::text THEN 1
+            ELSE NULL::integer
+        END AS phase,
+	CASE turn.disposition
+		WHEN 'replanned'::text THEN 'redirect'::text
+		WHEN 'feedback_submitted'::text THEN 'follow_up'::text
+		ELSE NULL::text
+	END AS kind,
+    (registry.command_payload ->> 'text'::text) AS text,
+	CASE turn.disposition
+		WHEN 'replanned'::text THEN (E'\n\nuser redirect:\n'::text || (registry.command_payload ->> 'text'::text))
+		WHEN 'feedback_submitted'::text THEN (E'\n\nuser follow-up:\n'::text || (registry.command_payload ->> 'text'::text))
+		ELSE NULL::text
+	END AS context_text,
+    turn.created_at,
+    turn.operation_id
+   FROM (channel_session_turn_operations turn
+     JOIN lifecycle_operation_registry registry ON (((registry.operation_id = turn.operation_id) AND (registry.kind = turn.kind) AND (registry.command_sha256 = turn.command_sha256))))
+  WHERE (turn.disposition = ANY (ARRAY['replanned'::text, 'feedback_submitted'::text]))
+UNION ALL
+ SELECT (job.metadata ->> 'channel_id'::text) AS channel_id,
+    operation.job_id,
+    operation.result_generation AS generation,
+        CASE operation.kind
+            WHEN 'interrupt_job'::text THEN 0
+            WHEN 'replan_job'::text THEN 0
+			WHEN 'submit_feedback'::text THEN 1
+            WHEN 'cancel_job'::text THEN 2
+            ELSE NULL::integer
+        END AS phase,
+        CASE operation.kind
+            WHEN 'interrupt_job'::text THEN 'interruption'::text
+            WHEN 'replan_job'::text THEN 'redirect'::text
+			WHEN 'submit_feedback'::text THEN 'follow_up'::text
+            WHEN 'cancel_job'::text THEN 'cancellation'::text
+            ELSE NULL::text
+        END AS kind,
+        CASE operation.kind
+            WHEN 'cancel_job'::text THEN (operation.command_payload ->> 'reason'::text)
+            ELSE (operation.command_payload ->> 'feedback'::text)
+        END AS text,
+        CASE operation.kind
+            WHEN 'interrupt_job'::text THEN (E'\n\nuser interruption:\n'::text || (operation.command_payload ->> 'feedback'::text))
+            WHEN 'replan_job'::text THEN (E'\n\nuser redirect:\n'::text || (operation.command_payload ->> 'feedback'::text))
+			WHEN 'submit_feedback'::text THEN (E'\n\nuser follow-up:\n'::text || (operation.command_payload ->> 'feedback'::text))
+            WHEN 'cancel_job'::text THEN (E'\n\nuser cancellation:\n'::text || (operation.command_payload ->> 'reason'::text))
+            ELSE NULL::text
+        END AS context_text,
+    operation.created_at,
+    operation.operation_id
+   FROM (job_lifecycle_operations operation
+     JOIN jobs job ON ((job.id = operation.job_id)))
+  WHERE ((job.pipeline = 'chat'::text) AND (job.metadata ? 'channel_id'::text) AND (operation.kind = ANY (ARRAY['submit_feedback'::text, 'interrupt_job'::text, 'replan_job'::text, 'cancel_job'::text])));
+
+
+--
 -- Name: tags_id_seq; Type: SEQUENCE; Schema: current runtime; Owner: -
 --
 
@@ -5193,6 +5451,14 @@ ALTER TABLE ONLY ai_channels
 
 
 --
+-- Name: channel_session_turn_operations channel_session_turn_operations_pkey; Type: CONSTRAINT; Schema: current runtime; Owner: -
+--
+
+ALTER TABLE ONLY channel_session_turn_operations
+    ADD CONSTRAINT channel_session_turn_operations_pkey PRIMARY KEY (operation_id);
+
+
+--
 -- Name: data_source_channels data_source_channels_pkey; Type: CONSTRAINT; Schema: current runtime; Owner: -
 --
 
@@ -5261,7 +5527,24 @@ ALTER TABLE ONLY job_lifecycle_operations
 --
 
 ALTER TABLE job_lifecycle_operations
-    ADD CONSTRAINT job_lifecycle_operations_roleplay_payload_check CHECK ((((kind = 'complete_step'::text) AND (command_payload ?& ARRAY['operation_id'::text, 'step_id'::text, 'output'::text, 'context_key'::text, 'context_value'::text]) AND ((command_payload - ARRAY['operation_id'::text, 'step_id'::text, 'output'::text, 'context_key'::text, 'context_value'::text, 'roleplay_responses'::text, 'roleplay_user_canon'::text, 'roleplay_user_ongoing_action'::text]) = '{}'::jsonb) AND roleplay_lifecycle_response_round_valid(COALESCE((command_payload -> 'roleplay_responses'::text), '[]'::jsonb)) AND ((NOT (command_payload ? 'roleplay_user_canon'::text)) OR roleplay_user_canon_payload_valid((command_payload -> 'roleplay_user_canon'::text))) AND ((NOT (command_payload ? 'roleplay_user_ongoing_action'::text)) OR roleplay_user_ongoing_action_payload_valid((command_payload -> 'roleplay_user_ongoing_action'::text)))) OR ((kind = 'fail_step'::text) AND (command_payload ?& ARRAY['operation_id'::text, 'step_id'::text, 'error'::text]) AND ((command_payload - ARRAY['operation_id'::text, 'step_id'::text, 'error'::text]) = '{}'::jsonb)) OR ((kind = ANY (ARRAY['submit_feedback'::text, 'interrupt_job'::text, 'replan_job'::text])) AND (command_payload ?& ARRAY['operation_id'::text, 'job_id'::text, 'feedback'::text]) AND ((command_payload - ARRAY['operation_id'::text, 'job_id'::text, 'feedback'::text]) = '{}'::jsonb)) OR ((kind = 'cancel_job'::text) AND (command_payload ?& ARRAY['operation_id'::text, 'job_id'::text, 'reason'::text]) AND ((command_payload - ARRAY['operation_id'::text, 'job_id'::text, 'reason'::text]) = '{}'::jsonb)))) NOT VALID;
+    ADD CONSTRAINT job_lifecycle_operations_roleplay_payload_check CHECK (
+      ((kind = 'complete_step'::text) AND
+       (command_payload ?& ARRAY['operation_id'::text, 'step_id'::text, 'output'::text, 'context_key'::text, 'context_value'::text]) AND
+       ((command_payload - ARRAY['operation_id'::text, 'step_id'::text, 'output'::text, 'context_key'::text, 'context_value'::text, 'roleplay_responses'::text, 'roleplay_user_canon'::text, 'roleplay_user_ongoing_action'::text]) = '{}'::jsonb) AND
+       roleplay_lifecycle_response_round_valid(COALESCE((command_payload -> 'roleplay_responses'::text), '[]'::jsonb)) AND
+       ((NOT (command_payload ? 'roleplay_user_canon'::text)) OR roleplay_user_canon_payload_valid((command_payload -> 'roleplay_user_canon'::text))) AND
+       ((NOT (command_payload ? 'roleplay_user_ongoing_action'::text)) OR roleplay_user_ongoing_action_payload_valid((command_payload -> 'roleplay_user_ongoing_action'::text)))) OR
+      ((kind = 'fail_step'::text) AND
+       (command_payload ?& ARRAY['operation_id'::text, 'step_id'::text, 'error'::text]) AND
+       ((command_payload - ARRAY['operation_id'::text, 'step_id'::text, 'error'::text]) = '{}'::jsonb)) OR
+      ((kind = ANY (ARRAY['submit_feedback'::text, 'interrupt_job'::text, 'replan_job'::text])) AND
+       (command_payload ?& ARRAY['operation_id'::text, 'job_id'::text, 'feedback'::text]) AND
+       ((command_payload - ARRAY['operation_id'::text, 'job_id'::text, 'feedback'::text, 'workspace_root'::text, 'workspace_identity'::text]) = '{}'::jsonb) AND
+       lifecycle_workspace_payload_is_valid(command_payload)) OR
+      ((kind = 'cancel_job'::text) AND
+       (command_payload ?& ARRAY['operation_id'::text, 'job_id'::text, 'reason'::text]) AND
+       ((command_payload - ARRAY['operation_id'::text, 'job_id'::text, 'reason'::text, 'workspace_root'::text, 'workspace_identity'::text]) = '{}'::jsonb) AND
+       lifecycle_workspace_payload_is_valid(command_payload))) NOT VALID;
 
 
 --
@@ -6242,6 +6525,13 @@ CREATE INDEX idx_jobs_id_desc ON jobs USING btree (id DESC);
 
 
 --
+-- Name: idx_jobs_channel_history; Type: INDEX; Schema: current runtime; Owner: -
+--
+
+CREATE INDEX idx_jobs_channel_history ON jobs USING btree (((metadata ->> 'channel_id'::text)), id DESC) WHERE ((pipeline = 'chat'::text) AND (metadata ? 'channel_id'::text));
+
+
+--
 -- Name: idx_jobs_one_active_channel_turn; Type: INDEX; Schema: current runtime; Owner: -
 --
 
@@ -6510,6 +6800,13 @@ CREATE INDEX idx_roleplay_user_turns_world_character ON roleplay_user_turns USIN
 
 
 --
+-- Name: idx_channel_session_turn_history; Type: INDEX; Schema: current runtime; Owner: -
+--
+
+CREATE INDEX idx_channel_session_turn_history ON channel_session_turn_operations USING btree (channel_id, created_at DESC, operation_id DESC);
+
+
+--
 -- Name: idx_scrum_cards_project_column; Type: INDEX; Schema: current runtime; Owner: -
 --
 
@@ -6599,6 +6896,27 @@ CREATE TRIGGER ai_channels_roleplay_binding_immutable BEFORE UPDATE ON ai_channe
 
 
 --
+-- Name: channel_session_turn_operations channel_session_turn_operations_immutable; Type: TRIGGER; Schema: current runtime; Owner: -
+--
+
+CREATE TRIGGER channel_session_turn_operations_immutable BEFORE DELETE OR UPDATE ON channel_session_turn_operations FOR EACH ROW EXECUTE FUNCTION prevent_channel_session_turn_operation_mutation();
+
+
+--
+-- Name: channel_session_turn_operations channel_session_turn_operations_truncate_immutable; Type: TRIGGER; Schema: current runtime; Owner: -
+--
+
+CREATE TRIGGER channel_session_turn_operations_truncate_immutable BEFORE TRUNCATE ON channel_session_turn_operations FOR EACH STATEMENT EXECUTE FUNCTION prevent_channel_session_turn_operation_mutation();
+
+
+--
+-- Name: channel_session_turn_operations channel_session_turn_operations_validate; Type: TRIGGER; Schema: current runtime; Owner: -
+--
+
+CREATE TRIGGER channel_session_turn_operations_validate BEFORE INSERT ON channel_session_turn_operations FOR EACH ROW EXECUTE FUNCTION validate_channel_session_turn_operation();
+
+
+--
 -- Name: ai_channels ai_channels_roleplay_viewpoint_authority; Type: TRIGGER; Schema: current runtime; Owner: -
 --
 
@@ -6659,6 +6977,13 @@ CREATE TRIGGER job_generations_truncate_immutable BEFORE TRUNCATE ON job_generat
 --
 
 CREATE TRIGGER job_lifecycle_operations_immutable BEFORE DELETE OR UPDATE ON job_lifecycle_operations FOR EACH ROW EXECUTE FUNCTION prevent_job_lifecycle_operation_mutation();
+
+
+--
+-- Name: job_lifecycle_operations job_lifecycle_operations_validate_workspace; Type: TRIGGER; Schema: current runtime; Owner: -
+--
+
+CREATE TRIGGER job_lifecycle_operations_validate_workspace BEFORE INSERT ON job_lifecycle_operations FOR EACH ROW EXECUTE FUNCTION validate_lifecycle_workspace_operation();
 
 
 --
@@ -7572,6 +7897,13 @@ CREATE CONSTRAINT TRIGGER scrum_registry_requires_operation AFTER INSERT ON life
 
 
 --
+-- Name: lifecycle_operation_registry channel_session_registry_requires_operation; Type: TRIGGER; Schema: current runtime; Owner: -
+--
+
+CREATE CONSTRAINT TRIGGER channel_session_registry_requires_operation AFTER INSERT ON lifecycle_operation_registry DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION enforce_channel_session_registry_operation_pair();
+
+
+--
 
 
 --
@@ -7644,6 +7976,54 @@ ALTER TABLE ONLY ai_channels
 
 ALTER TABLE ONLY ai_channels
     ADD CONSTRAINT ai_channels_roleplay_viewpoint_fkey FOREIGN KEY (roleplay_viewpoint_character_id) REFERENCES roleplay_characters(id) ON DELETE RESTRICT DEFERRABLE INITIALLY DEFERRED;
+
+
+--
+-- Name: channel_session_turn_operations channel_session_turn_operations_channel_id_fkey; Type: FK CONSTRAINT; Schema: current runtime; Owner: -
+--
+
+ALTER TABLE ONLY channel_session_turn_operations
+    ADD CONSTRAINT channel_session_turn_operations_channel_id_fkey FOREIGN KEY (channel_id) REFERENCES ai_channels(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: channel_session_turn_operations channel_session_turn_operations_generation_fkey; Type: FK CONSTRAINT; Schema: current runtime; Owner: -
+--
+
+ALTER TABLE ONLY channel_session_turn_operations
+    ADD CONSTRAINT channel_session_turn_operations_generation_fkey FOREIGN KEY (job_id, result_generation) REFERENCES job_generations(job_id, generation) ON DELETE RESTRICT;
+
+
+--
+-- Name: channel_session_turn_operations channel_session_turn_operations_job_id_fkey; Type: FK CONSTRAINT; Schema: current runtime; Owner: -
+--
+
+ALTER TABLE ONLY channel_session_turn_operations
+    ADD CONSTRAINT channel_session_turn_operations_job_id_fkey FOREIGN KEY (job_id) REFERENCES jobs(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: channel_session_turn_operations channel_session_turn_operations_operation_fkey; Type: FK CONSTRAINT; Schema: current runtime; Owner: -
+--
+
+ALTER TABLE ONLY channel_session_turn_operations
+    ADD CONSTRAINT channel_session_turn_operations_operation_fkey FOREIGN KEY (operation_id, kind, command_sha256) REFERENCES lifecycle_operation_registry(operation_id, kind, command_sha256) ON DELETE RESTRICT;
+
+
+--
+-- Name: channel_session_turn_operations channel_session_turn_operations_result_step_id_fkey; Type: FK CONSTRAINT; Schema: current runtime; Owner: -
+--
+
+ALTER TABLE ONLY channel_session_turn_operations
+    ADD CONSTRAINT channel_session_turn_operations_result_step_id_fkey FOREIGN KEY (result_step_id) REFERENCES job_steps(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: channel_session_turn_operations channel_session_turn_operations_user_message_id_fkey; Type: FK CONSTRAINT; Schema: current runtime; Owner: -
+--
+
+ALTER TABLE ONLY channel_session_turn_operations
+    ADD CONSTRAINT channel_session_turn_operations_user_message_id_fkey FOREIGN KEY (user_message_id) REFERENCES ai_channel_messages(id) ON DELETE RESTRICT;
 
 
 --

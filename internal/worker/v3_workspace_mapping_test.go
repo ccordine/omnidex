@@ -1,50 +1,23 @@
 package worker
 
 import (
-	"os"
-	"path/filepath"
-	"strings"
+	"encoding/json"
 	"testing"
+
+	"github.com/gryph/omnidex/internal/model"
 )
 
-func TestResolveV3WorkspaceRootMapsDistinctConfiguredHostRoot(t *testing.T) {
-	temporary := t.TempDir()
-	runtimeRoot := filepath.Join(temporary, "runtime")
-	hostRoot := filepath.Join(temporary, "host")
-	runtimeProject := filepath.Join(runtimeRoot, "projects", "example")
-	hostProject := filepath.Join(hostRoot, "projects", "example")
-	for _, directory := range []string{runtimeProject, hostProject} {
-		if err := os.MkdirAll(directory, 0o755); err != nil {
-			t.Fatalf("create workspace fixture: %v", err)
-		}
-	}
-
-	resolved, err := resolveV3WorkspaceRoot(runtimeRoot, hostRoot, hostProject)
+func TestCodingWorkspaceForJobPreservesExactClientCWD(t *testing.T) {
+	const exactRoot = "/home/example/Projects/calculator"
+	metadata, err := json.Marshal(map[string]string{"client_cwd": exactRoot})
 	if err != nil {
-		t.Fatalf("map configured host workspace: %v", err)
+		t.Fatalf("marshal exact workspace metadata: %v", err)
 	}
-	expected, err := filepath.EvalSymlinks(runtimeProject)
+	resolved, err := codingWorkspaceForJob(model.Job{Metadata: metadata})
 	if err != nil {
-		t.Fatalf("resolve expected runtime workspace: %v", err)
+		t.Fatalf("resolve exact workspace metadata: %v", err)
 	}
-	if resolved != expected {
-		t.Fatalf("resolved workspace=%q, want %q", resolved, expected)
-	}
-}
-
-func TestResolveV3WorkspaceRootRejectsPathOutsideConfiguredBoundaries(t *testing.T) {
-	temporary := t.TempDir()
-	runtimeRoot := filepath.Join(temporary, "runtime")
-	hostRoot := filepath.Join(temporary, "host")
-	outside := filepath.Join(temporary, "outside")
-	for _, directory := range []string{runtimeRoot, hostRoot, outside} {
-		if err := os.MkdirAll(directory, 0o755); err != nil {
-			t.Fatalf("create workspace fixture: %v", err)
-		}
-	}
-
-	_, err := resolveV3WorkspaceRoot(runtimeRoot, hostRoot, outside)
-	if err == nil || !strings.Contains(err.Error(), "outside the configured workspace boundary") {
-		t.Fatalf("outside workspace was not rejected explicitly: %v", err)
+	if resolved != exactRoot {
+		t.Fatalf("resolved workspace=%q, want exact client_cwd %q", resolved, exactRoot)
 	}
 }

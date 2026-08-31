@@ -16,13 +16,12 @@ func directCodingDigest(value string) string {
 type directCodingPreparedMutation struct {
 	reconciliation *workspacefacts.PreparedReconciliation
 	result         workspacefacts.ReconciliationResult
-	recorded       bool
 }
 
 func (s *directCodingSession) PrepareAssembly(
 	assembly directCodingAssembly,
 ) (*directCodingPreparedMutation, error) {
-	if s == nil || s.runtime == nil || s.runtime.ctx == nil {
+	if s == nil || s.runtime == nil || s.runtime.ctx == nil || s.runtime.svc == nil {
 		return nil, fmt.Errorf("workspace mutation preparation requires one active session")
 	}
 	desired, err := s.directCodingAssemblyDesiredStates(assembly)
@@ -38,7 +37,18 @@ func (s *directCodingSession) PrepareAssembly(
 			s.plannedDeletes++
 		}
 	}
-	reconciliation, err := workspacefacts.PrepareReconciliation(s.runtime.ctx, s.root, desired)
+	if err := s.runtime.svc.requireWorkspaceScopeForV3Job(
+		s.runtime.claim.Job,
+		s.root,
+	); err != nil {
+		return nil, fmt.Errorf("validate host workspace before mutation preparation: %w", err)
+	}
+	reconciliation, err := workspacefacts.PrepareReconciliation(
+		s.runtime.ctx,
+		s.runtime.svc.hostDirectoryAccess,
+		s.root,
+		desired,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("prepare direct-coding workspace reconciliation: %w", err)
 	}

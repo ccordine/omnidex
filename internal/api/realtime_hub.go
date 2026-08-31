@@ -5,27 +5,31 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/gryph/omnidex/internal/model"
 )
 
 var (
-	ErrRealtimeHubUnavailable   = errors.New("realtime hub is not initialized")
+	ErrRealtimeHubUnavailable       = errors.New("realtime hub is not initialized")
 	ErrRealtimeLifecycleUnavailable = errors.New("realtime lifecycle context is not initialized")
-	ErrRealtimeEventNameMissing = errors.New("realtime event name is required")
+	ErrRealtimeEventNameMissing     = errors.New("realtime event name is required")
 )
 
 const (
-	realtimeTopicUI      = "ui"
-	realtimeTopicScrum   = "scrum"
-	realtimeTopicJobs    = "jobs"
+	realtimeTopicUI            = "ui"
+	realtimeTopicScrum         = "scrum"
+	realtimeTopicJobs          = "jobs"
+	realtimeChannelTopicPrefix = "channel:"
 )
 
 var realtimeTopics = map[string]struct{}{
-	realtimeTopicUI:      {},
-	realtimeTopicScrum:   {},
-	realtimeTopicJobs:    {},
+	realtimeTopicUI:    {},
+	realtimeTopicScrum: {},
+	realtimeTopicJobs:  {},
 }
 
 type RealtimeClient struct {
@@ -84,7 +88,18 @@ func NewRealtimeHub() *RealtimeHub {
 	}
 }
 
-func (h *RealtimeHub) Subscribe(topics []string, afterID uint64) (RealtimeSubscription, error) {
+// Cursor returns the latest assigned event identity without mutating hub
+// state. A snapshot handler captures it immediately before its persisted read.
+func (h *RealtimeHub) Cursor() (uint64, error) {
+	if h == nil {
+		return 0, ErrRealtimeHubUnavailable
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.nextMessageID, nil
+}
+
+func (h *RealtimeHub) Subscribe(topics []string, afterID *uint64) (RealtimeSubscription, error) {
 	topicSet, err := normalizeRealtimeTopics(topics)
 	if err != nil {
 		return RealtimeSubscription{}, err
@@ -92,14 +107,17 @@ func (h *RealtimeHub) Subscribe(topics []string, afterID uint64) (RealtimeSubscr
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	latestID := h.nextMessageID
-	replayGap := afterID > latestID
-	if afterID > 0 && len(h.history) > 0 && afterID+1 < h.history[0].id {
-		replayGap = true
-	}
+	replayGap := false
 	replay := make([][]byte, 0)
-	if afterID > 0 && !replayGap {
+	if afterID != nil {
+		replayGap = *afterID > latestID
+		if !replayGap && len(h.history) > 0 && *afterID+1 < h.history[0].id {
+			replayGap = true
+		}
+	}
+	if afterID != nil && !replayGap {
 		for _, frame := range h.history {
-			if frame.id > afterID && topicSetsIntersect(topicSet, frame.topics) {
+			if frame.id > *afterID && topicSetsIntersect(topicSet, frame.topics) {
 				replay = append(replay, frame.data)
 			}
 		}
@@ -211,11 +229,10 @@ func realtimeFingerprintKey(stateKey string, topics map[string]struct{}) string 
 		return ""
 	}
 	names := make([]string, 0, len(topics))
-	for _, topic := range []string{realtimeTopicUI, realtimeTopicScrum, realtimeTopicJobs} {
-		if _, ok := topics[topic]; ok {
-			names = append(names, topic)
-		}
+	for topic := range topics {
+		names = append(names, topic)
 	}
+	sort.Strings(names)
 	return stateKey + "\x00" + strings.Join(names, ",")
 }
 
@@ -245,7 +262,7 @@ func normalizeRealtimeTopics(topics []string) (map[string]struct{}, error) {
 		if topic == "" || topic != strings.TrimSpace(topic) {
 			return nil, fmt.Errorf("realtime topic %q must be a non-empty canonical string", topic)
 		}
-		if _, ok := realtimeTopics[topic]; !ok {
+		if _, ok := realtimeTopics[topic]; !ok && !validRealtimeChannelTopic(topic) {
 			return nil, fmt.Errorf("unknown realtime topic %q", topic)
 		}
 		if _, exists := set[topic]; exists {
@@ -273,6 +290,11 @@ func parseRealtimeTopics(raw string) ([]string, error) {
 		return nil, errors.New("realtime topics are required when provided")
 	}
 	parts := strings.Split(raw, ",")
+	for _, topic := range parts {
+		if _, ok := realtimeTopics[topic]; !ok {
+			return nil, fmt.Errorf("unknown public realtime topic %q", topic)
+		}
+	}
 	set, err := normalizeRealtimeTopics(parts)
 	if err != nil {
 		return nil, err
@@ -284,4 +306,19 @@ func parseRealtimeTopics(raw string) ([]string, error) {
 		}
 	}
 	return out, nil
+}
+
+func realtimeChannelTopic(channelID model.ChannelID) (string, error) {
+	if err := channelID.Validate(); err != nil {
+		return "", err
+	}
+	return realtimeChannelTopicPrefix + string(channelID), nil
+}
+
+func validRealtimeChannelTopic(topic string) bool {
+	if !strings.HasPrefix(topic, realtimeChannelTopicPrefix) {
+		return false
+	}
+	channelID := model.ChannelID(strings.TrimPrefix(topic, realtimeChannelTopicPrefix))
+	return channelID.Validate() == nil
 }

@@ -96,9 +96,17 @@ func (s *Server) submitJobFeedback(w http.ResponseWriter, r *http.Request, jobID
 		writeError(w, lifecycleControlBodyStatus(err), err.Error())
 		return
 	}
+	if err := s.requireOptionalLifecycleWorkspaceIdentity(
+		req.WorkspaceRoot.Value,
+		req.WorkspaceIdentity.Value,
+	); err != nil {
+		writeError(w, http.StatusConflict, err.Error())
+		return
+	}
 
-	job, err := s.repo.SubmitJobFeedback(r.Context(), queue.SubmitJobFeedbackCommand{
+	result, err := s.repo.SubmitJobFeedback(r.Context(), queue.SubmitJobFeedbackCommand{
 		OperationID: req.OperationID, JobID: jobID, Feedback: req.Feedback,
+		WorkspaceRoot: req.WorkspaceRoot.Value, WorkspaceIdentity: req.WorkspaceIdentity.Value,
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -108,12 +116,14 @@ func (s *Server) submitJobFeedback(w http.ResponseWriter, r *http.Request, jobID
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	receipt, err := newLifecycleControlReceipt(jobID, req.OperationID, job)
+	receipt, err := newLifecycleControlReceipt(jobID, req.OperationID, result.Job)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	s.publishJobProgress(jobID, realtimeJobChanged, "Job feedback accepted")
+	if result.Applied {
+		s.publishJobProgressForJob(result.Job, realtimeJobChanged, "Job feedback accepted")
+	}
 
 	writeJSON(w, http.StatusOK, receipt)
 }
@@ -124,9 +134,17 @@ func (s *Server) interruptJob(w http.ResponseWriter, r *http.Request, jobID int6
 		writeError(w, lifecycleControlBodyStatus(err), err.Error())
 		return
 	}
+	if err := s.requireOptionalLifecycleWorkspaceIdentity(
+		req.WorkspaceRoot.Value,
+		req.WorkspaceIdentity.Value,
+	); err != nil {
+		writeError(w, http.StatusConflict, err.Error())
+		return
+	}
 
-	job, err := s.repo.InterruptJob(r.Context(), queue.ReplanJobCommand{
+	result, err := s.repo.InterruptJob(r.Context(), queue.ReplanJobCommand{
 		OperationID: req.OperationID, JobID: jobID, Feedback: req.Feedback,
+		WorkspaceRoot: req.WorkspaceRoot.Value, WorkspaceIdentity: req.WorkspaceIdentity.Value,
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -136,12 +154,14 @@ func (s *Server) interruptJob(w http.ResponseWriter, r *http.Request, jobID int6
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	receipt, err := newLifecycleControlReceipt(jobID, req.OperationID, job)
+	receipt, err := newLifecycleControlReceipt(jobID, req.OperationID, result.Job)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	s.publishJobProgress(jobID, realtimeJobChanged, "Job interruption accepted")
+	if result.Applied {
+		s.publishJobProgressForJob(result.Job, realtimeJobChanged, "Job interruption accepted")
+	}
 
 	writeJSON(w, http.StatusOK, receipt)
 }
@@ -152,9 +172,17 @@ func (s *Server) cancelJob(w http.ResponseWriter, r *http.Request, jobID int64) 
 		writeError(w, lifecycleControlBodyStatus(err), err.Error())
 		return
 	}
+	if err := s.requireOptionalLifecycleWorkspaceIdentity(
+		req.WorkspaceRoot.Value,
+		req.WorkspaceIdentity.Value,
+	); err != nil {
+		writeError(w, http.StatusConflict, err.Error())
+		return
+	}
 
-	job, err := s.repo.CancelJob(r.Context(), queue.CancelJobCommand{
+	result, err := s.repo.CancelJob(r.Context(), queue.CancelJobCommand{
 		OperationID: req.OperationID, JobID: jobID, Reason: req.Reason,
+		WorkspaceRoot: req.WorkspaceRoot.Value, WorkspaceIdentity: req.WorkspaceIdentity.Value,
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -164,12 +192,14 @@ func (s *Server) cancelJob(w http.ResponseWriter, r *http.Request, jobID int64) 
 		writeError(w, cancelJobHTTPStatus(err), err.Error())
 		return
 	}
-	receipt, err := newLifecycleControlReceipt(jobID, req.OperationID, job)
+	receipt, err := newLifecycleControlReceipt(jobID, req.OperationID, result.Job)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	s.publishJobProgress(jobID, realtimeJobFinished, "Job canceled")
+	if result.Applied {
+		s.publishJobProgressForJob(result.Job, realtimeJobFinished, "Job canceled")
+	}
 
 	writeJSON(w, http.StatusOK, receipt)
 }

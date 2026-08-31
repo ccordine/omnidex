@@ -20,7 +20,7 @@ func validateReplanFeedback(feedback string) (string, string, error) {
 	return validateLifecycleFeedback(
 		feedback,
 		"replan feedback",
-		assemblyline.MaxObjectiveReplanFeedbackBytes,
+		assemblyline.MaxObjectiveControlFeedbackBytes,
 	)
 }
 
@@ -28,6 +28,14 @@ func validateInterruptFeedback(feedback string) (string, string, error) {
 	return validateLifecycleFeedback(
 		feedback,
 		"interrupt feedback",
+		assemblyline.MaxObjectiveControlFeedbackBytes,
+	)
+}
+
+func validateSessionReplanFeedback(feedback string) (string, string, error) {
+	return validateLifecycleFeedback(
+		feedback,
+		"session replan feedback",
 		assemblyline.MaxObjectiveReplanFeedbackBytes,
 	)
 }

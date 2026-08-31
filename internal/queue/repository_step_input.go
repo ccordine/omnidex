@@ -8,31 +8,28 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-func (r *Repository) SubmitJobFeedback(ctx context.Context, command SubmitJobFeedbackCommand) (model.Job, error) {
+func (r *Repository) SubmitJobFeedback(ctx context.Context, command SubmitJobFeedbackCommand) (LifecycleJobResult, error) {
 	command, err := normalizeSubmitFeedbackCommand(command)
 	if err != nil {
-		return model.Job{}, err
+		return LifecycleJobResult{}, err
 	}
 	descriptor, err := describeLifecycleOperation(command.OperationID, LifecycleSubmitFeedback, command)
 	if err != nil {
-		return model.Job{}, err
+		return LifecycleJobResult{}, err
 	}
 	tx, err := r.pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
-		return model.Job{}, err
+		return LifecycleJobResult{}, err
 	}
 	defer tx.Rollback(ctx)
-	if err := lockLifecycleOperationIdentityTx(ctx, tx, command.OperationID); err != nil {
-		return model.Job{}, err
-	}
-	job, err := submitJobFeedbackTx(ctx, tx, command, descriptor)
+	result, err := submitJobFeedbackTx(ctx, tx, command, descriptor)
 	if err != nil {
-		return model.Job{}, err
+		return LifecycleJobResult{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return model.Job{}, err
+		return LifecycleJobResult{}, err
 	}
-	return job, nil
+	return result, nil
 }
 
 func submitJobFeedbackTx(
@@ -40,21 +37,53 @@ func submitJobFeedbackTx(
 	tx pgx.Tx,
 	command SubmitJobFeedbackCommand,
 	descriptor lifecycleOperationDescriptor,
-) (model.Job, error) {
+) (LifecycleJobResult, error) {
+	if err := lockLifecycleOperationIdentityTx(ctx, tx, command.OperationID); err != nil {
+		return LifecycleJobResult{}, err
+	}
 	job, err := lockedJobTx(ctx, tx, command.JobID)
 	if err != nil {
-		return model.Job{}, err
+		return LifecycleJobResult{}, err
+	}
+	if err := requireLifecycleWorkspaceAuthority(
+		job,
+		command.WorkspaceRoot,
+		command.WorkspaceIdentity,
+	); err != nil {
+		return LifecycleJobResult{}, err
 	}
 	if existing, found, err := loadLifecycleOperationTx(ctx, tx, descriptor, command.JobID); err != nil {
-		return model.Job{}, err
+		return LifecycleJobResult{}, err
 	} else if found {
 		if err := requireSubmitFeedbackReplayTx(ctx, tx, existing, command); err != nil {
-			return model.Job{}, err
+			return LifecycleJobResult{}, err
 		}
-		return existing.ResultJob, nil
+		return LifecycleJobResult{Job: existing.ResultJob}, nil
 	}
+	job, stepID, err := applyJobFeedbackTx(ctx, tx, command, job)
+	if err != nil {
+		return LifecycleJobResult{}, err
+	}
+	stepStatus := model.StepStatusCompleted
+	if err := insertLifecycleOperationTx(ctx, tx, descriptor, lifecycleOperationRecord{
+		ID: descriptor.ID, JobID: command.JobID, ObservedGeneration: job.CurrentGeneration,
+		ResultGeneration: job.CurrentGeneration, StepID: &stepID,
+		Kind: descriptor.Kind, CommandSHA256: descriptor.SHA256,
+		ResultJobStatus: job.Status, ResultStepStatus: &stepStatus, ResultJob: job,
+	}); err != nil {
+		return LifecycleJobResult{}, err
+	}
+	return LifecycleJobResult{Job: job, Applied: true}, nil
+}
+
+func applyJobFeedbackTx(
+	ctx context.Context,
+	tx pgx.Tx,
+	command SubmitJobFeedbackCommand,
+	job model.Job,
+) (model.Job, int64, error) {
 	if job.Status != model.JobStatusWaiting {
-		return model.Job{}, fmt.Errorf(
+		return model.Job{}, 0, fmt.Errorf(
 			"%w: job %d status is %q, expected %q",
 			ErrStepNotWritable, job.ID, job.Status, model.JobStatusWaiting,
 		)
@@ -65,13 +94,13 @@ func submitJobFeedbackTx(
 		FROM job_generations
 		WHERE job_id=$1 AND generation=$2
 		FOR SHARE
-	`, command.JobID, job.CurrentGeneration).Scan(&generationPurpose); err != nil {
-		return model.Job{}, fmt.Errorf("read waiting job %d generation purpose: %w", command.JobID, err)
+		`, command.JobID, job.CurrentGeneration).Scan(&generationPurpose); err != nil {
+		return model.Job{}, 0, fmt.Errorf("read waiting job %d generation purpose: %w", command.JobID, err)
 	}
 	switch generationPurpose {
 	case jobGenerationPurposeInitial, jobGenerationPurposeReplan:
 	case jobGenerationPurposeInterrupt:
-		return model.Job{}, fmt.Errorf(
+		return model.Job{}, 0, fmt.Errorf(
 			"%w: %w: job %d generation %d cannot accept generic feedback",
 			ErrStepNotWritable,
 			ErrInterruptedJobRequiresReplan,
@@ -79,7 +108,7 @@ func submitJobFeedbackTx(
 			job.CurrentGeneration,
 		)
 	default:
-		return model.Job{}, fmt.Errorf(
+		return model.Job{}, 0, fmt.Errorf(
 			"%w: job %d generation %d has unregistered purpose %q",
 			ErrInvalidJobGeneration,
 			job.ID,
@@ -87,9 +116,18 @@ func submitJobFeedbackTx(
 			generationPurpose,
 		)
 	}
+	if err := requireObjectiveSessionContextAdmissionTx(
+		ctx,
+		tx,
+		job,
+		conversationFollowupUserTurn,
+		command.Feedback,
+	); err != nil {
+		return model.Job{}, 0, err
+	}
 
 	var stepID int64
-	err = tx.QueryRow(ctx, `
+	err := tx.QueryRow(ctx, `
 		SELECT job_steps.id
 		FROM job_steps, jobs
 		WHERE job_steps.job_id = $1
@@ -102,7 +140,7 @@ func submitJobFeedbackTx(
 		LIMIT 1
 	`, command.JobID, model.StepStatusWaiting).Scan(&stepID)
 	if err != nil {
-		return model.Job{}, err
+		return model.Job{}, 0, err
 	}
 
 	stepUpdate, err := tx.Exec(ctx, `
@@ -111,10 +149,10 @@ func submitJobFeedbackTx(
 		WHERE id = $1
 	`, stepID, model.StepStatusCompleted, command.Feedback)
 	if err != nil {
-		return model.Job{}, err
+		return model.Job{}, 0, err
 	}
 	if stepUpdate.RowsAffected() != 1 {
-		return model.Job{}, fmt.Errorf("%w: waiting step %d disappeared", ErrStepNotWritable, stepID)
+		return model.Job{}, 0, fmt.Errorf("%w: waiting step %d disappeared", ErrStepNotWritable, stepID)
 	}
 
 	var openSteps int
@@ -125,7 +163,7 @@ func submitJobFeedbackTx(
 		  AND superseded_at_generation IS NULL
 		  AND status IN ($2, $3, $4)
 	`, command.JobID, model.StepStatusPending, model.StepStatusRunning, model.StepStatusWaiting).Scan(&openSteps); err != nil {
-		return model.Job{}, err
+		return model.Job{}, 0, err
 	}
 
 	if openSteps == 0 {
@@ -133,24 +171,24 @@ func submitJobFeedbackTx(
 			UPDATE jobs
 			SET status = $2, result = COALESCE(NULLIF($3, ''), result), completed_at = NOW(), updated_at = NOW(), error = NULL
 			WHERE id = $1 AND status IN ($4, $5, $6)
-		`, command.JobID, model.JobStatusCompleted, command.Feedback, model.JobStatusPending, model.JobStatusRunning, model.JobStatusWaiting)
+			`, command.JobID, model.JobStatusCompleted, command.Feedback, model.JobStatusPending, model.JobStatusRunning, model.JobStatusWaiting)
 		if err != nil {
-			return model.Job{}, err
+			return model.Job{}, 0, err
 		}
 		if jobUpdate.RowsAffected() != 1 {
-			return model.Job{}, fmt.Errorf("%w: job %d did not accept feedback completion", ErrStepNotWritable, command.JobID)
+			return model.Job{}, 0, fmt.Errorf("%w: job %d did not accept feedback completion", ErrStepNotWritable, command.JobID)
 		}
 	} else {
 		jobUpdate, err := tx.Exec(ctx, `
 			UPDATE jobs
 			SET status = $2, updated_at = NOW(), error = NULL
 			WHERE id = $1 AND status IN ($3, $4, $5)
-		`, command.JobID, model.JobStatusRunning, model.JobStatusPending, model.JobStatusRunning, model.JobStatusWaiting)
+			`, command.JobID, model.JobStatusRunning, model.JobStatusPending, model.JobStatusRunning, model.JobStatusWaiting)
 		if err != nil {
-			return model.Job{}, err
+			return model.Job{}, 0, err
 		}
 		if jobUpdate.RowsAffected() != 1 {
-			return model.Job{}, fmt.Errorf("%w: job %d did not resume after feedback", ErrStepNotWritable, command.JobID)
+			return model.Job{}, 0, fmt.Errorf("%w: job %d did not resume after feedback", ErrStepNotWritable, command.JobID)
 		}
 	}
 
@@ -162,16 +200,7 @@ func submitJobFeedbackTx(
 
 	job, err = scanJob(row)
 	if err != nil {
-		return model.Job{}, err
+		return model.Job{}, 0, err
 	}
-	stepStatus := model.StepStatusCompleted
-	if err := insertLifecycleOperationTx(ctx, tx, descriptor, lifecycleOperationRecord{
-		ID: descriptor.ID, JobID: command.JobID, ObservedGeneration: job.CurrentGeneration,
-		ResultGeneration: job.CurrentGeneration, StepID: &stepID,
-		Kind: descriptor.Kind, CommandSHA256: descriptor.SHA256,
-		ResultJobStatus: job.Status, ResultStepStatus: &stepStatus, ResultJob: job,
-	}); err != nil {
-		return model.Job{}, err
-	}
-	return job, nil
+	return job, stepID, nil
 }

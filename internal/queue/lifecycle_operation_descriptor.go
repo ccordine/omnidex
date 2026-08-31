@@ -7,6 +7,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/gryph/omnidex/internal/evidence"
+	"github.com/gryph/omnidex/internal/model"
+	"github.com/gryph/omnidex/internal/projectroot"
 )
 
 const (
@@ -201,6 +203,9 @@ func normalizeSubmitFeedbackCommand(command SubmitJobFeedbackCommand) (SubmitJob
 		return SubmitJobFeedbackCommand{}, err
 	}
 	command.Feedback = feedback
+	if err := validateLifecycleWorkspaceBinding(command.WorkspaceRoot, command.WorkspaceIdentity); err != nil {
+		return SubmitJobFeedbackCommand{}, err
+	}
 	return command, nil
 }
 
@@ -213,6 +218,9 @@ func normalizeReplanJobCommand(command ReplanJobCommand) (ReplanJobCommand, stri
 		return ReplanJobCommand{}, "", err
 	}
 	command.Feedback = feedback
+	if err := validateLifecycleWorkspaceBinding(command.WorkspaceRoot, command.WorkspaceIdentity); err != nil {
+		return ReplanJobCommand{}, "", err
+	}
 	return command, feedbackSHA, nil
 }
 
@@ -225,6 +233,9 @@ func normalizeInterruptJobCommand(command ReplanJobCommand) (ReplanJobCommand, s
 		return ReplanJobCommand{}, "", err
 	}
 	command.Feedback = feedback
+	if err := validateLifecycleWorkspaceBinding(command.WorkspaceRoot, command.WorkspaceIdentity); err != nil {
+		return ReplanJobCommand{}, "", err
+	}
 	return command, feedbackSHA, nil
 }
 
@@ -237,7 +248,26 @@ func normalizeCancelJobCommand(command CancelJobCommand) (CancelJobCommand, erro
 		return CancelJobCommand{}, err
 	}
 	command.Reason = reason
+	if err := validateLifecycleWorkspaceBinding(command.WorkspaceRoot, command.WorkspaceIdentity); err != nil {
+		return CancelJobCommand{}, err
+	}
 	return command, nil
+}
+
+func validateLifecycleWorkspaceBinding(root, identity string) error {
+	if root == "" && identity == "" {
+		return nil
+	}
+	if root == "" || identity == "" {
+		return fmt.Errorf("lifecycle workspace root and identity must be supplied together")
+	}
+	if err := model.ValidateChannelWorkspaceRoot(root); err != nil {
+		return fmt.Errorf("lifecycle workspace root: %w", err)
+	}
+	if err := projectroot.ValidateDirectoryIdentity(identity); err != nil {
+		return fmt.Errorf("lifecycle workspace identity: %w", err)
+	}
+	return nil
 }
 
 func validateLifecycleText(name, value string, maximum int, allowEmpty bool) error {
@@ -256,7 +286,7 @@ func validateLifecycleText(name, value string, maximum int, allowEmpty bool) err
 func registeredLifecycleOperationKind(kind LifecycleOperationKind) bool {
 	switch kind {
 	case LifecycleCompleteStep, LifecycleFailStep, LifecycleSubmitFeedback, LifecycleInterruptJob,
-		LifecycleReplanJob, LifecycleCancelJob:
+		LifecycleReplanJob, LifecycleChannelSession, LifecycleCancelJob:
 		return true
 	default:
 		return false

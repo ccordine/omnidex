@@ -45,7 +45,11 @@ func (provider boundObjectiveContextProvider) Retrieve(
 	if err := provider.validateAuthority(); err != nil {
 		return contextcompiler.CandidateSet{}, err
 	}
-	continuity, err := provider.runtime.svc.repo.ObjectiveContinuityAuthorities(ctx, provider.job)
+	continuity, err := provider.runtime.svc.repo.ObjectiveContinuityAuthorities(
+		ctx,
+		provider.job,
+		"objective_resolve",
+	)
 	if err != nil {
 		return contextcompiler.CandidateSet{}, err
 	}
@@ -86,13 +90,25 @@ func (provider boundObjectiveContextProvider) retrieveAssistant(
 		}
 	}
 	records := interleaveContextRecordGroups(recentRecords, searched)
+	required, err := objectiveSessionContextRecords(
+		provider.job,
+		continuity.Session,
+	)
+	if err != nil {
+		return contextcompiler.CandidateSet{}, err
+	}
+	if continuity.Replan != nil && !continuity.ReplanRepresentedBySession() {
+		required = append(required, replanContextRecords(continuity.Replan)...)
+	}
 	set, err := buildContextCandidateSet(
-		replanContextRecords(continuity.Replan), records,
+		required,
+		records,
 	)
 	if err != nil {
 		return contextcompiler.CandidateSet{}, err
 	}
 	set.Replan = continuity.Replan
+	set.ReplanRepresentedByRequiredContext = continuity.ReplanRepresentedBySession()
 	return set, nil
 }
 
@@ -226,6 +242,44 @@ func replanContextRecords(
 	}}
 }
 
+func objectiveSessionContextRecords(
+	job model.Job,
+	session *queue.ObjectiveSessionContextAuthority,
+) ([]queue.ContextSearchRecord, error) {
+	if session == nil {
+		return nil, nil
+	}
+	if session.JobID != job.ID || session.InitialInstruction != job.Instruction {
+		return nil, fmt.Errorf("same-session context differs from exact current job authority")
+	}
+	records := make([]queue.ContextSearchRecord, 0, len(session.Turns))
+	for _, turn := range session.Turns {
+		var namespace string
+		switch turn.Kind {
+		case queue.ObjectiveSessionFollowup:
+			namespace = "session_follow_up"
+		case queue.ObjectiveSessionRedirect:
+			namespace = "session_redirect"
+		case queue.ObjectiveSessionInterruption:
+			namespace = "session_interruption"
+		case queue.ObjectiveSessionCancellation:
+			namespace = "session_cancellation"
+		default:
+			return nil, fmt.Errorf(
+				"same-session operation %q has unregistered kind %q",
+				turn.OperationID,
+				turn.Kind,
+			)
+		}
+		records = append(records, queue.ContextSearchRecord{
+			Namespace: namespace,
+			SourceID:  string(turn.OperationID),
+			Content:   turn.ContextText,
+		})
+	}
+	return records, nil
+}
+
 func interleaveContextRecordGroups(groups ...[]queue.ContextSearchRecord) []queue.ContextSearchRecord {
 	total := 0
 	maximum := 0
@@ -265,7 +319,8 @@ func buildContextCandidateSet(
 				return fmt.Errorf("context source %q has invalid exact authority", record.SourceID)
 			}
 			recordHash := assemblyline.ExactObjectiveContextSHA(record.Content)
-			if _, duplicate := seenRecordContent[recordHash]; duplicate {
+			_, duplicate := seenRecordContent[recordHash]
+			if duplicate && !(required && strings.HasPrefix(record.Namespace, "session_")) {
 				continue
 			}
 			seenRecordContent[recordHash] = struct{}{}

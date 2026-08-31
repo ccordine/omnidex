@@ -3,6 +3,8 @@ package queue
 import (
 	"context"
 	"fmt"
+	"strings"
+	"unicode/utf8"
 
 	"github.com/gryph/omnidex/internal/model"
 )
@@ -39,16 +41,28 @@ func (r *Repository) SearchConversationContextRecords(
 		WITH query_terms AS (
 			SELECT websearch_to_tsquery('simple', term) AS query
 			FROM unnest($3::text[]) AS term
+		), conversation_followups AS (
+			SELECT channel_id,job_id,
+			       string_agg(
+			           context_text,''
+			           ORDER BY generation ASC,phase ASC,created_at ASC,operation_id ASC
+			       ) AS content
+			FROM channel_conversation_followup_events
+			WHERE channel_id=$1
+			GROUP BY channel_id,job_id
 		), completed AS (
 			SELECT job.id AS job_id,job.instruction,
 			       COALESCE(job.result,'') AS result,
 			       job.result IS NOT NULL AS result_present,
 			       message.id AS user_message_id,message.content AS user_content,
+			       message.content || COALESCE(followups.content,'') AS projected_user_content,
 			       COUNT(*) OVER (PARTITION BY message.id) AS completion_count
 			FROM jobs AS job
 			JOIN ai_channel_messages AS message
 			  ON message.channel_id=$1 AND message.role='user'
 			 AND message.id::text=job.metadata->>'channel_user_message_id'
+			LEFT JOIN conversation_followups AS followups
+			  ON followups.channel_id=message.channel_id AND followups.job_id=job.id
 			WHERE job.pipeline='chat' AND job.status='completed'
 			  AND job.metadata->>'channel_id'=$1 AND message.id<$2
 		), exchanges AS (
@@ -67,23 +81,24 @@ func (r *Repository) SearchConversationContextRecords(
 		), ranked AS (
 			SELECT exchanges.*,
 			       MAX(ts_rank_cd(
-			           to_tsvector('simple',exchanges.user_content || E'\n' ||
+			           to_tsvector('simple',exchanges.projected_user_content || E'\n' ||
 			               COALESCE(exchanges.assistant_content,'')),
 			           query_terms.query
 			       )) AS rank
 			FROM exchanges
 			JOIN query_terms ON to_tsvector(
-			    'simple',exchanges.user_content || E'\n' ||
+			    'simple',exchanges.projected_user_content || E'\n' ||
 			    COALESCE(exchanges.assistant_content,'')
 			) @@ query_terms.query
 			GROUP BY exchanges.job_id,exchanges.instruction,exchanges.result,
 			         exchanges.result_present,
 			         exchanges.user_message_id,exchanges.user_content,
+			         exchanges.projected_user_content,
 			         exchanges.completion_count,exchanges.assistant_message_id,
 			         exchanges.assistant_role,exchanges.assistant_content
 		)
 		SELECT job_id,instruction,result,result_present,
-		       user_message_id,user_content,completion_count,
+		       user_message_id,user_content,projected_user_content,completion_count,
 		       COALESCE(assistant_message_id,0),COALESCE(assistant_role,''),
 		       COALESCE(assistant_content,''),rank
 		FROM ranked
@@ -101,6 +116,7 @@ func (r *Repository) SearchConversationContextRecords(
 			jobID, userID, assistantID int64
 			instruction, result        string
 			userContent                string
+			projectedUserContent       string
 			resultPresent              bool
 			completionCount            int64
 			assistantRole              model.ChannelMessageRole
@@ -109,7 +125,7 @@ func (r *Repository) SearchConversationContextRecords(
 		)
 		if err := rows.Scan(
 			&jobID, &instruction, &result, &resultPresent,
-			&userID, &userContent, &completionCount,
+			&userID, &userContent, &projectedUserContent, &completionCount,
 			&assistantID, &assistantRole, &assistantContent, &rank,
 		); err != nil {
 			return nil, fmt.Errorf("scan searched conversation exchange: %w", err)
@@ -131,6 +147,13 @@ func (r *Repository) SearchConversationContextRecords(
 		if err := model.ValidateChannelMessage(model.ChannelMessageRoleUser, userContent); err != nil {
 			return nil, fmt.Errorf("searched user message %d is invalid: %w", userID, err)
 		}
+		if !utf8.ValidString(projectedUserContent) || strings.ContainsRune(projectedUserContent, '\x00') ||
+			!strings.HasPrefix(projectedUserContent, userContent) {
+			return nil, fmt.Errorf(
+				"searched user message %d has invalid persisted follow-up projection",
+				userID,
+			)
+		}
 		if assistantID <= userID || assistantRole != model.ChannelMessageRoleAssistant ||
 			assistantContent != result {
 			return nil, fmt.Errorf(
@@ -146,7 +169,9 @@ func (r *Repository) SearchConversationContextRecords(
 				"channel-message-%d-through-%d", userID, assistantID,
 			),
 			Content: fmt.Sprintf(
-				"user message:\n%s\nassistant response:\n%s", userContent, assistantContent,
+				"user message:\n%s\nassistant response:\n%s",
+				projectedUserContent,
+				assistantContent,
 			),
 		})
 	}

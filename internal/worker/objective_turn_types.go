@@ -54,6 +54,7 @@ type turnAuthority struct {
 	RoleplayIdentity                *assemblyline.RoleplayResponseIdentity
 	RoleplayEarlierResponses        []roleplayRoundResponseAuthority
 	Context                         assemblyline.ObjectiveContext
+	SessionContext                  *queue.ObjectiveSessionContextAuthority
 }
 
 type roleplayRoundResponseAuthority struct {
@@ -164,14 +165,14 @@ type objectiveRoleplayGroundedStation interface {
 
 type objectiveWorkflows struct {
 	ResolveModelPathProvenance func() (assemblyline.ArtifactIdentityProvenance, error)
-	WorkspaceReplanContext func(context.Context, model.Job) (assemblyline.ObjectiveContext, error)
-	WorkspaceMutation     func(context.Context, turnAuthority) (string, error)
-	DatabaseRead          func(context.Context, turnAuthority, string) (objectiveEvidenceAcquisition, error)
-	RoleplaySimulation    func(context.Context, string, int64) (roleplay.SimulationTurnAuthority, roleplay.NarrativeSimulationProjection, error)
-	RoleplayCanon         objectiveRoleplayCanonStation
-	RoleplayCanonDelta    func(context.Context, string, []string) ([]string, error)
-	RoleplayOngoingAction objectiveRoleplayOngoingActionStation
-	RoleplayResearch      func(context.Context, turnAuthority) (objectiveRoleplayResearchAnswer, error)
+	WorkspaceContinuity        func(context.Context, model.Job) (queue.ObjectiveContinuityAuthority, error)
+	WorkspaceMutation          func(context.Context, turnAuthority) (string, error)
+	DatabaseRead               func(context.Context, turnAuthority, string) (objectiveEvidenceAcquisition, error)
+	RoleplaySimulation         func(context.Context, string, int64) (roleplay.SimulationTurnAuthority, roleplay.NarrativeSimulationProjection, error)
+	RoleplayCanon              objectiveRoleplayCanonStation
+	RoleplayCanonDelta         func(context.Context, string, []string) ([]string, error)
+	RoleplayOngoingAction      objectiveRoleplayOngoingActionStation
+	RoleplayResearch           func(context.Context, turnAuthority) (objectiveRoleplayResearchAnswer, error)
 }
 
 type objectiveEvidenceAcquisition struct {
@@ -428,6 +429,21 @@ func objectiveTurnID(authority turnAuthority, kind assemblyline.ConversationObje
 	if replan := authority.Context.ReplanAuthority; replan != nil {
 		_, _ = fmt.Fprintf(hash, "\x00replan\x00%d\x00%d\x00%s",
 			replan.JobID, replan.Generation, replan.FeedbackSHA256)
+	}
+	if session := authority.SessionContext; session != nil {
+		_, _ = fmt.Fprintf(hash, "\x00session-job\x00%d\x00initial\x00%s",
+			session.JobID,
+			assemblyline.ExactObjectiveContextSHA(session.InitialInstruction),
+		)
+		for _, turn := range session.Turns {
+			_, _ = fmt.Fprintf(hash, "\x00session-turn\x00%s\x00%s\x00%d\x00%s\x00%s",
+				turn.OperationID,
+				turn.Kind,
+				turn.Generation,
+				turn.CreatedAt.UTC().Format(time.RFC3339Nano),
+				assemblyline.ExactObjectiveContextSHA(turn.ContextText),
+			)
+		}
 	}
 	return "objective-" + hex.EncodeToString(hash.Sum(nil))
 }

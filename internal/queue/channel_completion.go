@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/gryph/omnidex/internal/model"
+	"github.com/gryph/omnidex/internal/projectroot"
 	"github.com/gryph/omnidex/internal/roleplay"
 	"github.com/jackc/pgx/v5"
 )
@@ -16,6 +17,8 @@ import (
 type channelCompletionBinding struct {
 	ChannelID                       string
 	UserMessageID                   int64
+	ClientCWD                       string
+	ClientWorkspaceIdentity         string
 	Mode                            model.ChannelMode
 	RoleplayViewpointCharacterID    model.RoleplayCharacterID
 	RoleplaySimulationPreparationID string
@@ -27,6 +30,8 @@ type channelCompletionBinding struct {
 
 func (binding channelCompletionBinding) equal(other channelCompletionBinding) bool {
 	return binding.ChannelID == other.ChannelID && binding.UserMessageID == other.UserMessageID &&
+		binding.ClientCWD == other.ClientCWD &&
+		binding.ClientWorkspaceIdentity == other.ClientWorkspaceIdentity &&
 		binding.Mode == other.Mode &&
 		binding.RoleplayViewpointCharacterID == other.RoleplayViewpointCharacterID &&
 		binding.RoleplaySimulationPreparationID == other.RoleplaySimulationPreparationID &&
@@ -60,15 +65,17 @@ func channelBindingForJob(job model.Job) (channelCompletionBinding, bool, error)
 		return channelCompletionBinding{}, false, fmt.Errorf("channel completion metadata is incomplete")
 	}
 	var metadataBinding struct {
-		ChannelID                       model.ChannelID                   `json:"channel_id"`
-		ChannelUserMessageID            int64                             `json:"channel_user_message_id"`
-		ChannelMode                     model.ChannelMode                 `json:"channel_mode"`
-		RoleplayViewpointCharacterID    model.RoleplayCharacterID         `json:"roleplay_viewpoint_character_id"`
-		RoleplaySimulationPreparationID string                            `json:"roleplay_simulation_preparation_id"`
-		RoleplaySceneRevision           int64                             `json:"roleplay_scene_revision"`
-		RoleplayParticipantCharacterIDs []model.RoleplayCharacterID       `json:"roleplay_participant_character_ids"`
+		ChannelID                       model.ChannelID                     `json:"channel_id"`
+		ChannelUserMessageID            int64                               `json:"channel_user_message_id"`
+		ClientCWD                       string                              `json:"client_cwd"`
+		ClientWorkspaceIdentity         string                              `json:"client_workspace_identity"`
+		ChannelMode                     model.ChannelMode                   `json:"channel_mode"`
+		RoleplayViewpointCharacterID    model.RoleplayCharacterID           `json:"roleplay_viewpoint_character_id"`
+		RoleplaySimulationPreparationID string                              `json:"roleplay_simulation_preparation_id"`
+		RoleplaySceneRevision           int64                               `json:"roleplay_scene_revision"`
+		RoleplayParticipantCharacterIDs []model.RoleplayCharacterID         `json:"roleplay_participant_character_ids"`
 		RoleplayResponders              []roleplay.SimulationResponderRoute `json:"roleplay_responders"`
-		RoleplayUserTurn                *roleplay.UserTurnAuthority       `json:"roleplay_user_turn"`
+		RoleplayUserTurn                *roleplay.UserTurnAuthority         `json:"roleplay_user_turn"`
 	}
 	if err := json.Unmarshal(job.Metadata, &metadataBinding); err != nil {
 		return channelCompletionBinding{}, false, fmt.Errorf("decode exact channel completion binding: %w", err)
@@ -79,6 +86,16 @@ func channelBindingForJob(job model.Job) (channelCompletionBinding, bool, error)
 	if metadataBinding.ChannelUserMessageID < 1 {
 		return channelCompletionBinding{}, false, fmt.Errorf("channel completion message ID is absent")
 	}
+	if err := model.ValidateChannelWorkspaceRoot(metadataBinding.ClientCWD); err != nil {
+		return channelCompletionBinding{}, false, fmt.Errorf("channel completion client_cwd: %w", err)
+	}
+	if metadataBinding.ClientWorkspaceIdentity != "" {
+		if err := projectroot.ValidateDirectoryIdentity(metadataBinding.ClientWorkspaceIdentity); err != nil {
+			return channelCompletionBinding{}, false, fmt.Errorf(
+				"channel completion client workspace identity: %w", err,
+			)
+		}
+	}
 	if err := metadataBinding.ChannelMode.Validate(); err != nil {
 		return channelCompletionBinding{}, false, fmt.Errorf("channel completion mode: %w", err)
 	}
@@ -87,6 +104,8 @@ func channelBindingForJob(job model.Job) (channelCompletionBinding, bool, error)
 	}
 	binding := channelCompletionBinding{
 		ChannelID: string(metadataBinding.ChannelID), UserMessageID: metadataBinding.ChannelUserMessageID,
+		ClientCWD:                       metadataBinding.ClientCWD,
+		ClientWorkspaceIdentity:         metadataBinding.ClientWorkspaceIdentity,
 		Mode:                            metadataBinding.ChannelMode,
 		RoleplayViewpointCharacterID:    metadataBinding.RoleplayViewpointCharacterID,
 		RoleplaySimulationPreparationID: metadataBinding.RoleplaySimulationPreparationID,

@@ -26,6 +26,15 @@ func (prepared *PreparedReconciliation) ApplyVerified(
 	if err := ctx.Err(); err != nil {
 		return ReconciliationResult{}, fmt.Errorf("apply workspace reconciliation: %w", err)
 	}
+	boundaryRoot, err := prepared.hostAccess.captureWorkspaceRoot(prepared.root)
+	if err != nil {
+		return ReconciliationResult{}, fmt.Errorf("revalidate host-authoritative workspace root: %w", err)
+	}
+	if !os.SameFile(prepared.rootInfo, boundaryRoot) {
+		return ReconciliationResult{}, fmt.Errorf(
+			"host-authoritative workspace root changed after reconciliation preparation",
+		)
+	}
 	rootFS, err := os.OpenRoot(prepared.root)
 	if err != nil {
 		return ReconciliationResult{}, fmt.Errorf("open authoritative workspace root: %w", err)
@@ -197,7 +206,8 @@ func applyFile(
 		after.Size() != int64(len(state.Content)) || after.Mode().Perm() != os.FileMode(state.Mode) {
 		return fmt.Errorf("installed workspace file %q differs from desired bytes or permissions", state.Path)
 	}
-	return recordVerifiedChange(result, observer, Change{Path: state.Path, Kind: kind})
+	recordVerifiedChange(result, observer, Change{Path: state.Path, Kind: kind})
+	return nil
 }
 
 func verifyOpenFileExact(
@@ -258,8 +268,9 @@ func applyDeletion(
 	root *authoritativeWorkspaceRoot,
 	relative string,
 	result *ReconciliationResult,
+	observer VerifiedChangeObserver,
 ) error {
-	missingParent, err := inspectWorkspaceParents(ctx, root, relative, false, nil)
+	missingParent, err := inspectWorkspaceParents(ctx, root, relative, false, nil, nil)
 	if err != nil {
 		return err
 	}
@@ -279,7 +290,9 @@ func applyDeletion(
 	if err := removeWorkspaceEntry(ctx, root, relative); err != nil {
 		return fmt.Errorf("delete workspace file %q: %w", relative, err)
 	}
-	result.Changes = append(result.Changes, Change{Path: relative, Kind: ChangeDelete})
+	if err := verifyAndRecordWorkspaceDeletion(root, result, observer, relative); err != nil {
+		return fmt.Errorf("verify deleted workspace path %q: %w", relative, err)
+	}
 	return nil
 }
 
@@ -288,6 +301,7 @@ func applyMoves(
 	root *authoritativeWorkspaceRoot,
 	moves []DesiredFile,
 	result *ReconciliationResult,
+	observer VerifiedChangeObserver,
 ) error {
 	targets := make(map[string]struct{}, len(moves))
 	for _, move := range moves {
@@ -297,7 +311,7 @@ func applyMoves(
 		if err := ctx.Err(); err != nil {
 			return fmt.Errorf("apply workspace move: %w", err)
 		}
-		settled, err := reconcileMoveDestination(ctx, root, move, result)
+		settled, err := reconcileMoveDestination(ctx, root, move)
 		if err != nil {
 			return err
 		}
@@ -306,7 +320,7 @@ func applyMoves(
 		}
 		_, sourceIsTarget := targets[move.MoveFrom]
 		if !sourceIsTarget {
-			moved, err := applyRenameFromMatchingSource(ctx, root, move, result)
+			moved, err := applyRenameFromMatchingSource(ctx, root, move, result, observer)
 			if err != nil {
 				return err
 			}
@@ -316,7 +330,7 @@ func applyMoves(
 		}
 		replacement := move
 		replacement.MoveFrom = ""
-		if err := applyFile(ctx, root, replacement, result); err != nil {
+		if err := applyFile(ctx, root, replacement, result, observer); err != nil {
 			return err
 		}
 	}
@@ -324,7 +338,7 @@ func applyMoves(
 		if _, retained := targets[move.MoveFrom]; retained {
 			continue
 		}
-		if err := applyDeletion(ctx, root, move.MoveFrom, result); err != nil {
+		if err := applyDeletion(ctx, root, move.MoveFrom, result, observer); err != nil {
 			return err
 		}
 	}
@@ -335,9 +349,8 @@ func reconcileMoveDestination(
 	ctx context.Context,
 	root *authoritativeWorkspaceRoot,
 	move DesiredFile,
-	result *ReconciliationResult,
 ) (bool, error) {
-	missingParent, err := inspectWorkspaceParents(ctx, root, move.Path, false, nil)
+	missingParent, err := inspectWorkspaceParents(ctx, root, move.Path, false, nil, nil)
 	if err != nil || missingParent {
 		return false, err
 	}
@@ -378,8 +391,9 @@ func applyRenameFromMatchingSource(
 	root *authoritativeWorkspaceRoot,
 	move DesiredFile,
 	result *ReconciliationResult,
+	observer VerifiedChangeObserver,
 ) (bool, error) {
-	missingParent, err := inspectWorkspaceParents(ctx, root, move.MoveFrom, false, nil)
+	missingParent, err := inspectWorkspaceParents(ctx, root, move.MoveFrom, false, nil, nil)
 	if err != nil || missingParent {
 		return false, err
 	}
@@ -409,7 +423,7 @@ func applyRenameFromMatchingSource(
 		}
 		return false, nil
 	}
-	if _, err := inspectWorkspaceParents(ctx, root, move.Path, true, result); err != nil {
+	if _, err := inspectWorkspaceParents(ctx, root, move.Path, true, result, observer); err != nil {
 		return false, errors.Join(err, closeWorkspaceHandle(move.MoveFrom, file))
 	}
 	destination, err := root.Lstat(move.Path)
@@ -440,9 +454,6 @@ func applyRenameFromMatchingSource(
 			closeWorkspaceHandle(move.MoveFrom, file),
 		)
 	}
-	result.Changes = append(result.Changes, Change{
-		Path: move.Path, Kind: ChangeMove, SourcePath: move.MoveFrom,
-	})
 	if file == nil {
 		if err := verifyPathFileExact(root, move.Path, before, move.Mode); err != nil {
 			return false, err
@@ -452,6 +463,14 @@ func applyRenameFromMatchingSource(
 			return false, err
 		}
 	}
+	if err := verifyWorkspacePathAbsent(root, move.MoveFrom); err != nil {
+		return false, fmt.Errorf(
+			"verify workspace move source %q is absent: %w", move.MoveFrom, err,
+		)
+	}
+	recordVerifiedChange(result, observer, Change{
+		Path: move.Path, Kind: ChangeMove, SourcePath: move.MoveFrom,
+	})
 	return true, nil
 }
 

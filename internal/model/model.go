@@ -190,9 +190,10 @@ type ChannelMessageRoleplayPart struct {
 }
 
 type ChannelMessageTurnState struct {
-	JobID  int64  `json:"job_id"`
-	Status string `json:"status"`
-	Error  string `json:"error,omitempty"`
+	JobID     int64     `json:"job_id"`
+	Status    string    `json:"status"`
+	Error     string    `json:"error,omitempty"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 type ChannelMessagePage struct {

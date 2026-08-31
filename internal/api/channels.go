@@ -126,7 +126,7 @@ func (s *Server) createChannel(w http.ResponseWriter, r *http.Request) {
 	}
 	workspaceRoot, workspaceErr := s.resolveChannelCreateWorkspaceRoot(req.WorkspaceRoot)
 	if workspaceErr != nil {
-		writeError(w, http.StatusServiceUnavailable, workspaceErr.Error())
+		writeError(w, http.StatusBadRequest, workspaceErr.Error())
 		return
 	}
 	channelInput := model.Channel{
@@ -225,7 +225,23 @@ func (s *Server) handleChannelByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if len(parts) > 1 && parts[1] == "session" {
-		if len(parts) > 2 {
+		if len(parts) == 3 && parts[2] == "state" {
+			if r.Method != http.MethodGet {
+				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+			s.getChannelSessionState(w, r, channelID)
+			return
+		}
+		if len(parts) == 3 && parts[2] == "turn" {
+			if r.Method != http.MethodPost {
+				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+			s.postChannelSessionTurn(w, r, channelID)
+			return
+		}
+		if len(parts) != 2 {
 			writeError(w, http.StatusNotFound, "channel route not found")
 			return
 		}

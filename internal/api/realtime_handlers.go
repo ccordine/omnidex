@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -13,6 +14,8 @@ import (
 
 	"github.com/gorilla/websocket"
 	"github.com/gryph/omnidex/internal/model"
+	"github.com/gryph/omnidex/internal/queue"
+	"github.com/jackc/pgx/v5"
 )
 
 var realtimeUpgrader = websocket.Upgrader{
@@ -20,32 +23,33 @@ var realtimeUpgrader = websocket.Upgrader{
 }
 
 type realtimeMessage struct {
-	ID            uint64           `json:"id,omitempty"`
-	StateKey      string           `json:"stateKey,omitempty"`
-	OccurredAt    string           `json:"occurredAt,omitempty"`
-	HTML          string           `json:"html,omitempty"`
-	EventName     string           `json:"eventName,omitempty"`
-	Reason        string           `json:"reason,omitempty"`
-	Toast         string           `json:"toast,omitempty"`
-	ToastTone     string           `json:"toastTone,omitempty"`
-	ProjectID     int64            `json:"projectID,omitempty"`
-	CardID        string           `json:"cardID,omitempty"`
-	Card          *ScrumCard       `json:"card,omitempty"`
-	PlayQueue     map[string]any   `json:"playQueue,omitempty"`
-	LatestID      uint64           `json:"latestID,omitempty"`
-	ReplayCount   int              `json:"replayCount,omitempty"`
-	SyncRequired  bool             `json:"syncRequired,omitempty"`
-	JobID         int64            `json:"jobID,omitempty"`
-	ChannelID     string           `json:"channelID,omitempty"`
-	Phase         realtimeJobPhase `json:"phase,omitempty"`
-	Summary       string           `json:"summary,omitempty"`
-	StepID        int64            `json:"stepID,omitempty"`
-	Attempt       int64            `json:"attempt,omitempty"`
-	RuntimeEvent  string           `json:"runtimeEvent,omitempty"`
-	Detail        string           `json:"detail,omitempty"`
-	FileOperation string           `json:"fileOperation,omitempty"`
-	FilePath      string           `json:"filePath,omitempty"`
-	Snapshot      bool             `json:"snapshot,omitempty"`
+	ID             uint64           `json:"id,omitempty"`
+	StateKey       string           `json:"stateKey,omitempty"`
+	OccurredAt     string           `json:"occurredAt,omitempty"`
+	HTML           string           `json:"html,omitempty"`
+	EventName      string           `json:"eventName,omitempty"`
+	Reason         string           `json:"reason,omitempty"`
+	Toast          string           `json:"toast,omitempty"`
+	ToastTone      string           `json:"toastTone,omitempty"`
+	ProjectID      int64            `json:"projectID,omitempty"`
+	CardID         string           `json:"cardID,omitempty"`
+	Card           *ScrumCard       `json:"card,omitempty"`
+	PlayQueue      map[string]any   `json:"playQueue,omitempty"`
+	LatestID       uint64           `json:"latestID,omitempty"`
+	ReplayCount    int              `json:"replayCount,omitempty"`
+	SyncRequired   bool             `json:"syncRequired,omitempty"`
+	JobID          int64            `json:"jobID,omitempty"`
+	ChannelID      string           `json:"channelID,omitempty"`
+	Phase          realtimeJobPhase `json:"phase,omitempty"`
+	Summary        string           `json:"summary,omitempty"`
+	StepID         int64            `json:"stepID,omitempty"`
+	Attempt        int64            `json:"attempt,omitempty"`
+	RuntimeEvent   string           `json:"runtimeEvent,omitempty"`
+	Detail         string           `json:"detail,omitempty"`
+	FileOperation  string           `json:"fileOperation,omitempty"`
+	FilePath       string           `json:"filePath,omitempty"`
+	FileSourcePath string           `json:"fileSourcePath,omitempty"`
+	Snapshot       bool             `json:"snapshot,omitempty"`
 }
 
 type realtimeJobPhase string
@@ -111,6 +115,26 @@ func (s *Server) publishJobProgress(jobID int64, phase realtimeJobPhase, summary
 	s.publishJobProgressForChannel("", jobID, phase, summary)
 }
 
+func (s *Server) publishJobProgressForJob(
+	job model.Job,
+	phase realtimeJobPhase,
+	summary string,
+) {
+	var binding struct {
+		ChannelID model.ChannelID `json:"channel_id"`
+	}
+	if len(job.Metadata) > 0 {
+		if err := json.Unmarshal(job.Metadata, &binding); err != nil {
+			log.Printf("realtime job metadata rejected job=%d: %v", job.ID, err)
+		}
+	}
+	if binding.ChannelID == "" {
+		s.publishJobProgress(job.ID, phase, summary)
+		return
+	}
+	s.publishChannelJobProgress(binding.ChannelID, job.ID, phase, summary)
+}
+
 func (s *Server) publishChannelJobProgress(
 	channelID model.ChannelID,
 	jobID int64,
@@ -146,8 +170,16 @@ func (s *Server) publishJobProgressForChannel(
 		Phase:     phase,
 		Summary:   summary,
 	}
-	message.StateKey = fmt.Sprintf("job:%d:%s", jobID, phase)
-	s.broadcastRealtime([]string{realtimeTopicUI, realtimeTopicJobs}, message)
+	topics := []string{realtimeTopicUI, realtimeTopicJobs}
+	if channelID != "" {
+		channelTopic, err := realtimeChannelTopic(model.ChannelID(channelID))
+		if err != nil {
+			log.Printf("realtime job progress rejected job=%d channel=%q: %v", jobID, channelID, err)
+			return
+		}
+		topics = append(topics, channelTopic)
+	}
+	s.broadcastRealtime(topics, message)
 }
 
 func (s *Server) handleRealtimeWS(w http.ResponseWriter, r *http.Request) {
@@ -155,7 +187,7 @@ func (s *Server) handleRealtimeWS(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
-	if err := validateExactQuery(r, "topics", "last_id"); err != nil {
+	if err := validateExactQuery(r, "topics", "last_id", "channel_id", "workspace_identity"); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -196,14 +228,74 @@ func (s *Server) handleRealtimeWS(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	var lastID uint64
-	if rawLastID, exists := query["last_id"]; exists {
-		var err error
-		lastID, err = parseRealtimeLastID(rawLastID[0])
+	var subscribedChannelID model.ChannelID
+	if rawChannelIDs, exists := query["channel_id"]; exists {
+		if len(rawChannelIDs) != 1 || len(topics) != 1 || topics[0] != realtimeTopicJobs {
+			writeError(w, http.StatusBadRequest, "channel realtime requires exactly topics=jobs and one channel_id")
+			return
+		}
+		subscribedChannelID = model.ChannelID(rawChannelIDs[0])
+		if err := subscribedChannelID.Validate(); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		workspaceIdentity, err := requiredWorkspaceIdentityQuery(r)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, err.Error())
 			return
 		}
+		channel, err := s.repo.GetChannel(r.Context(), subscribedChannelID)
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, http.StatusNotFound, "channel not found")
+			return
+		}
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		if channel.Scope != model.ChannelScopeUser {
+			writeError(w, http.StatusBadRequest, "channel realtime requires a user conversation")
+			return
+		}
+		if err := s.requireServerWorkspaceIdentity(
+			channel.WorkspaceRoot,
+			workspaceIdentity,
+		); err != nil {
+			writeError(w, http.StatusConflict, "channel realtime workspace authority: "+err.Error())
+			return
+		}
+		if channel.Mode == model.ChannelModeAssistant {
+			if _, err := s.repo.ChannelSessionState(
+				r.Context(),
+				subscribedChannelID,
+				workspaceIdentity,
+			); err != nil {
+				if errors.Is(err, queue.ErrChannelSessionWorkspace) {
+					writeError(w, http.StatusConflict, err.Error())
+					return
+				}
+				writeError(w, http.StatusInternalServerError, err.Error())
+				return
+			}
+		}
+		channelTopic, err := realtimeChannelTopic(subscribedChannelID)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		topics = []string{channelTopic}
+	} else if _, exists := query["workspace_identity"]; exists {
+		writeError(w, http.StatusBadRequest, "workspace_identity requires one channel_id")
+		return
+	}
+	var lastID *uint64
+	if rawLastID, exists := query["last_id"]; exists {
+		parsed, err := parseRealtimeLastID(rawLastID[0])
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		lastID = &parsed
 	}
 	hub, err := s.requireRealtimeHub()
 	if err != nil {
@@ -223,7 +315,11 @@ func (s *Server) handleRealtimeWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer conn.Close()
-	log.Printf("realtime websocket connected client=%d remote=%q topics=%s last_id=%d replay=%d sync_required=%t", subscription.ID, r.RemoteAddr, strings.Join(topics, ","), lastID, subscription.ReplayCount, subscription.ReplayGap)
+	cursor := "initial"
+	if lastID != nil {
+		cursor = strconv.FormatUint(*lastID, 10)
+	}
+	log.Printf("realtime websocket connected client=%d remote=%q topics=%s cursor=%s replay=%d sync_required=%t", subscription.ID, r.RemoteAddr, strings.Join(topics, ","), cursor, subscription.ReplayCount, subscription.ReplayGap)
 	defer log.Printf("realtime websocket disconnected client=%d remote=%q", subscription.ID, r.RemoteAddr)
 	deadline := time.Now().Add(streamMaxAge)
 	conn.SetReadLimit(4096)
@@ -251,6 +347,7 @@ func (s *Server) handleRealtimeWS(w http.ResponseWriter, r *http.Request) {
 		ReplayCount:  subscription.ReplayCount,
 		SyncRequired: subscription.ReplayGap,
 		OccurredAt:   time.Now().UTC().Format(time.RFC3339Nano),
+		ChannelID:    string(subscribedChannelID),
 	}
 	if data, err := json.Marshal(connected); err != nil || writeMessage(websocket.TextMessage, data) != nil {
 		return

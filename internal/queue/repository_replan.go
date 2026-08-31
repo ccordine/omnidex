@@ -10,28 +10,28 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-func (r *Repository) ReplanJob(ctx context.Context, command ReplanJobCommand) (model.Job, error) {
+func (r *Repository) ReplanJob(ctx context.Context, command ReplanJobCommand) (LifecycleJobResult, error) {
 	command, feedbackSHA, err := normalizeReplanJobCommand(command)
 	if err != nil {
-		return model.Job{}, err
+		return LifecycleJobResult{}, err
 	}
 	descriptor, err := describeLifecycleOperation(command.OperationID, LifecycleReplanJob, command)
 	if err != nil {
-		return model.Job{}, err
+		return LifecycleJobResult{}, err
 	}
 	tx, err := r.pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
-		return model.Job{}, fmt.Errorf("begin replan for job %d: %w", command.JobID, err)
+		return LifecycleJobResult{}, fmt.Errorf("begin replan for job %d: %w", command.JobID, err)
 	}
 	defer tx.Rollback(ctx)
-	job, err := replanJobTx(ctx, tx, command, feedbackSHA, descriptor)
+	result, err := replanJobTx(ctx, tx, command, feedbackSHA, descriptor)
 	if err != nil {
-		return model.Job{}, err
+		return LifecycleJobResult{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return model.Job{}, fmt.Errorf("commit generation %d for job %d: %w", job.CurrentGeneration, command.JobID, err)
+		return LifecycleJobResult{}, fmt.Errorf("commit generation %d for job %d: %w", result.Job.CurrentGeneration, command.JobID, err)
 	}
-	return job, nil
+	return result, nil
 }
 
 func replanJobTx(
@@ -40,82 +40,112 @@ func replanJobTx(
 	command ReplanJobCommand,
 	feedbackSHA string,
 	descriptor lifecycleOperationDescriptor,
-) (model.Job, error) {
+) (LifecycleJobResult, error) {
+	if err := lockLifecycleOperationIdentityTx(ctx, tx, command.OperationID); err != nil {
+		return LifecycleJobResult{}, err
+	}
 	job, err := lockedJobTx(ctx, tx, command.JobID)
 	if err != nil {
-		return model.Job{}, err
+		return LifecycleJobResult{}, err
 	}
-	if err := lockLifecycleOperationIdentityTx(ctx, tx, command.OperationID); err != nil {
-		return model.Job{}, err
+	if err := requireLifecycleWorkspaceAuthority(
+		job,
+		command.WorkspaceRoot,
+		command.WorkspaceIdentity,
+	); err != nil {
+		return LifecycleJobResult{}, err
 	}
 	if existing, found, err := loadLifecycleOperationTx(ctx, tx, descriptor, command.JobID); err != nil {
-		return model.Job{}, err
+		return LifecycleJobResult{}, err
 	} else if found {
 		if err := requireReplanReplayTx(ctx, tx, existing, command, feedbackSHA); err != nil {
-			return model.Job{}, err
+			return LifecycleJobResult{}, err
 		}
-		return existing.ResultJob, nil
+		return LifecycleJobResult{Job: existing.ResultJob}, nil
 	}
+	job, currentGeneration, err := applyReplanJobTx(ctx, tx, command, feedbackSHA, job)
+	if err != nil {
+		return LifecycleJobResult{}, err
+	}
+	if err := insertLifecycleOperationTx(ctx, tx, descriptor, lifecycleOperationRecord{
+		ID: descriptor.ID, JobID: command.JobID, ObservedGeneration: currentGeneration,
+		ResultGeneration: job.CurrentGeneration, Kind: descriptor.Kind, CommandSHA256: descriptor.SHA256,
+		ResultJobStatus: job.Status, ResultJob: job,
+	}); err != nil {
+		return LifecycleJobResult{}, err
+	}
+	return LifecycleJobResult{Job: job, Applied: true}, nil
+}
+
+func applyReplanJobTx(
+	ctx context.Context,
+	tx pgx.Tx,
+	command ReplanJobCommand,
+	feedbackSHA string,
+	job model.Job,
+) (model.Job, int64, error) {
 	if terminalJobStatus(job.Status) {
-		return model.Job{}, fmt.Errorf("job is already %s", job.Status)
+		return model.Job{}, 0, fmt.Errorf("job is already %s", job.Status)
+	}
+	if err := requireObjectiveSessionContextAdmissionTx(
+		ctx,
+		tx,
+		job,
+		conversationFollowupRedirect,
+		command.Feedback,
+	); err != nil {
+		return model.Job{}, 0, err
 	}
 	currentGeneration, err := lockCurrentJobGenerationTx(ctx, tx, command.JobID)
 	if err != nil {
-		return model.Job{}, err
+		return model.Job{}, 0, err
 	}
 	if currentGeneration >= math.MaxInt64 {
-		return model.Job{}, fmt.Errorf("%w: job %d exhausted generation capacity", ErrInvalidJobGeneration, command.JobID)
+		return model.Job{}, 0, fmt.Errorf("%w: job %d exhausted generation capacity", ErrInvalidJobGeneration, command.JobID)
 	}
 	if err := lockGenerationRecordTx(ctx, tx, command.JobID, currentGeneration); err != nil {
-		return model.Job{}, err
+		return model.Job{}, 0, err
 	}
 	seeds, err := canonicalReplanStepsTx(ctx, tx, job)
 	if err != nil {
-		return model.Job{}, fmt.Errorf("recompute canonical steps for job %d: %w", command.JobID, err)
+		return model.Job{}, 0, fmt.Errorf("recompute canonical steps for job %d: %w", command.JobID, err)
 	}
 	boundary, err := canonicalReplanTail(seeds)
 	if err != nil {
-		return model.Job{}, fmt.Errorf("job %d cannot be replanned: %w", command.JobID, err)
+		return model.Job{}, 0, fmt.Errorf("job %d cannot be replanned: %w", command.JobID, err)
 	}
 	currentTail, err := lockCurrentReplanTailTx(ctx, tx, command.JobID, boundary.sortIndex)
 	if err != nil {
-		return model.Job{}, err
+		return model.Job{}, 0, err
 	}
 	retiringIDs, err := validateCurrentReplanTail(currentGeneration, boundary, currentTail)
 	if err != nil {
-		return model.Job{}, fmt.Errorf("validate replan tail for job %d: %w", command.JobID, err)
+		return model.Job{}, 0, fmt.Errorf("validate replan tail for job %d: %w", command.JobID, err)
 	}
 	if err := terminalizeStepAttemptsForAuthorityChangeTx(
 		ctx, tx, command.JobID, currentGeneration, retiringIDs, model.StepAttemptSuperseded,
 	); err != nil {
-		return model.Job{}, err
+		return model.Job{}, 0, err
 	}
 	newGeneration := currentGeneration + 1
 	if err := createReplanGenerationTx(
 		ctx, tx, command, feedbackSHA, currentGeneration, newGeneration, boundary,
 	); err != nil {
-		return model.Job{}, err
+		return model.Job{}, 0, err
 	}
 	if err := retireReplanTailTx(ctx, tx, command.JobID, retiringIDs, newGeneration); err != nil {
-		return model.Job{}, err
+		return model.Job{}, 0, err
 	}
 	if err := insertReplanTailTx(ctx, tx, command.JobID, newGeneration, boundary.seeds); err != nil {
-		return model.Job{}, err
+		return model.Job{}, 0, err
 	}
 	job, err = advanceReplannedJobTx(
 		ctx, tx, command, currentGeneration, newGeneration,
 	)
 	if err != nil {
-		return model.Job{}, err
+		return model.Job{}, 0, err
 	}
-	if err := insertLifecycleOperationTx(ctx, tx, descriptor, lifecycleOperationRecord{
-		ID: descriptor.ID, JobID: command.JobID, ObservedGeneration: currentGeneration,
-		ResultGeneration: newGeneration, Kind: descriptor.Kind, CommandSHA256: descriptor.SHA256,
-		ResultJobStatus: job.Status, ResultJob: job,
-	}); err != nil {
-		return model.Job{}, err
-	}
-	return job, nil
+	return job, currentGeneration, nil
 }
 
 func terminalJobStatus(status string) bool {

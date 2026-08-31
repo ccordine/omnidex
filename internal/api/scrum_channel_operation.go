@@ -88,7 +88,7 @@ func (s *Server) dispatchScrumChannelMessage(
 			return scrumChannelDispatchResult{}, err
 		}
 		s.notifyScrumCardColumnTransition(r.Context(), projectID, previous, decoded.Card)
-		s.publishJobProgress(result.Job.ID, realtimeJobChanged, note)
+		s.publishJobProgressForJob(result.Job, realtimeJobChanged, note)
 	}
 	return decoded, nil
 }

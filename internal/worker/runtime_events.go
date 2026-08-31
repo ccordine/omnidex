@@ -57,15 +57,19 @@ func (s *Service) emitStepEvent(authority model.StepAttemptAuthority, eventType,
 
 func (s *Service) emitWorkspaceFileChange(
 	authority model.StepAttemptAuthority,
-	operation, path string,
+	operation, sourcePath, path string,
 ) {
 	if s == nil {
 		return
 	}
+	detail := operation + " " + path
+	if sourcePath != "" {
+		detail = operation + " " + sourcePath + " -> " + path
+	}
 	s.emitRuntimeEvent(RuntimeEvent{
 		JobID: authority.JobID, StepID: authority.StepID, Attempt: authority.Attempt,
-		Kind: "workspace_file_changed", Detail: boundedRuntimeEventDetail(operation + " " + path),
-		FileOperation: operation, FilePath: path,
+		Kind: "workspace_file_changed", Detail: boundedRuntimeEventDetail(detail),
+		FileOperation: operation, FilePath: path, FileSourcePath: sourcePath,
 	})
 }
 
@@ -87,6 +91,7 @@ func (s *Service) emitRuntimeEvent(event RuntimeEvent) {
 	if s == nil || s.runtimeEventSink == nil {
 		return
 	}
+	event.ChannelID = s.runtimeEventChannel(event.JobID)
 	if err := s.runtimeEventSink(event); err != nil {
 		s.logf(
 			"job=%d step=%d attempt=%d runtime event=%q publication failed: %v",

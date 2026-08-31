@@ -13,7 +13,11 @@ const (
 	MaxMemoryContextCandidateAuthorities = 8
 	MaxMemoryContextCandidateBytes       = 6 * 1024
 	MaxObjectiveContextCapsules          = 1
-	MaxObjectiveReplanFeedbackBytes      = 2 * 1024
+	// MaxObjectiveControlFeedbackBytes retains the narrow explicit lifecycle
+	// command boundary. Ordinary session text has the same 4 KiB authority
+	// whether it starts a job or deterministically replans the active job.
+	MaxObjectiveControlFeedbackBytes = 2 * 1024
+	MaxObjectiveReplanFeedbackBytes  = 4 * 1024
 	// MaxObjectiveContextAuthorityBytes is a coarse portable-payload safety
 	// limit, not a semantic projection target. Per-call context budgets drive
 	// paging and staged reduction before this resource boundary is reached.
@@ -142,7 +146,7 @@ func (context ObjectiveContext) Validate() error {
 			}
 			total += len(source.Namespace) + len(source.CandidateID) + len(source.ContentSHA256)
 		}
-		if err := validateContextText("objective context capsule", capsule.Content, MaxContextMinifiedBytes); err != nil {
+		if err := validateObjectiveContextText("context capsule", capsule.Content, MaxContextMinifiedBytes); err != nil {
 			return fmt.Errorf("objective context capsule %d: %w", capsuleIndex, err)
 		}
 		if !exactObjectiveContextSHA(capsule.Content, capsule.ContentSHA256) {
@@ -198,9 +202,9 @@ func exactObjectiveContextSHA(value, expected string) bool {
 }
 
 func validateObjectiveContextText(label, value string, maximum int) error {
-	if value == "" || value != strings.TrimSpace(value) || !utf8.ValidString(value) ||
+	if strings.TrimSpace(value) == "" || !utf8.ValidString(value) ||
 		strings.ContainsRune(value, '\x00') || len(value) > maximum {
-		return fmt.Errorf("objective %s must be exact non-empty UTF-8 text of at most %d bytes", label, maximum)
+		return fmt.Errorf("objective %s must be exact non-blank UTF-8 text of at most %d bytes", label, maximum)
 	}
 	return nil
 }

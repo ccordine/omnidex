@@ -22,9 +22,17 @@ func (s *Server) replanJob(w http.ResponseWriter, r *http.Request, jobID int64) 
 		writeError(w, lifecycleControlBodyStatus(err), err.Error())
 		return
 	}
+	if err := s.requireOptionalLifecycleWorkspaceIdentity(
+		req.WorkspaceRoot.Value,
+		req.WorkspaceIdentity.Value,
+	); err != nil {
+		writeError(w, http.StatusConflict, err.Error())
+		return
+	}
 
-	job, err := s.repo.ReplanJob(r.Context(), queue.ReplanJobCommand{
+	result, err := s.repo.ReplanJob(r.Context(), queue.ReplanJobCommand{
 		OperationID: req.OperationID, JobID: jobID, Feedback: req.Feedback,
+		WorkspaceRoot: req.WorkspaceRoot.Value, WorkspaceIdentity: req.WorkspaceIdentity.Value,
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -34,12 +42,14 @@ func (s *Server) replanJob(w http.ResponseWriter, r *http.Request, jobID int64) 
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	receipt, err := newLifecycleControlReceipt(jobID, req.OperationID, job)
+	receipt, err := newLifecycleControlReceipt(jobID, req.OperationID, result.Job)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	s.publishJobProgress(jobID, realtimeJobChanged, "Job replanned")
+	if result.Applied {
+		s.publishJobProgressForJob(result.Job, realtimeJobChanged, "Job replanned")
+	}
 
 	writeJSON(w, http.StatusOK, receipt)
 }

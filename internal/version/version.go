@@ -8,6 +8,7 @@ import (
 var (
 	Version      = "v0.5.0"
 	Codename     = "Charmeleon"
+	Commit       = ""
 	SourceSHA256 = ""
 	Date         = ""
 )
@@ -48,6 +49,7 @@ func JSON() map[string]string {
 	return map[string]string{
 		"version":            strings.TrimSpace(Version),
 		"codename":           strings.TrimSpace(Codename),
+		"commit":             strings.TrimSpace(Commit),
 		"release_scheme":     "pride-national-dex",
 		"national_dex_id":    fmt.Sprintf("%d", NationalDexID(Codename)),
 		"next_maturity_name": "Charizard",

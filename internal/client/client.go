@@ -64,9 +64,33 @@ func (client *Client) doJSON(
 	requestPath string,
 	payload any,
 	destination any,
+	expectedStatus int,
+) error {
+	return client.doJSONBounded(
+		ctx,
+		method,
+		requestPath,
+		payload,
+		destination,
+		expectedStatus,
+		maxResponseBytes,
+	)
+}
+
+func (client *Client) doJSONBounded(
+	ctx context.Context,
+	method string,
+	requestPath string,
+	payload any,
+	destination any,
+	expectedStatus int,
+	responseLimit int64,
 ) error {
 	if client == nil || client.httpClient == nil {
 		return fmt.Errorf("Omnidex client is unavailable")
+	}
+	if responseLimit < 1 {
+		return fmt.Errorf("Omnidex response byte limit must be positive")
 	}
 	var body io.Reader
 	if payload != nil {
@@ -86,29 +110,41 @@ func (client *Client) doJSON(
 		return fmt.Errorf("send Omnidex request: %w", err)
 	}
 	defer response.Body.Close()
-	data, err := io.ReadAll(io.LimitReader(response.Body, maxResponseBytes+1))
+	data, err := io.ReadAll(io.LimitReader(response.Body, responseLimit+1))
 	if err != nil {
 		return fmt.Errorf("read Omnidex response: %w", err)
 	}
-	if int64(len(data)) > maxResponseBytes {
-		return fmt.Errorf("Omnidex response exceeds %d bytes", maxResponseBytes)
+	if int64(len(data)) > responseLimit {
+		return fmt.Errorf("Omnidex response exceeds %d bytes", responseLimit)
 	}
-	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
+	if response.StatusCode != expectedStatus {
 		var body struct {
 			Error string `json:"error"`
 		}
 		_ = json.Unmarshal(data, &body)
 		message := strings.TrimSpace(body.Error)
 		if message == "" {
-			message = fmt.Sprintf("Omnidex request failed with status %d", response.StatusCode)
+			message = fmt.Sprintf(
+				"Omnidex request returned status %d, expected %d",
+				response.StatusCode,
+				expectedStatus,
+			)
 		}
 		return &HTTPError{StatusCode: response.StatusCode, Message: message}
 	}
 	if destination == nil {
+		if strings.TrimSpace(string(data)) != "" {
+			return fmt.Errorf("Omnidex response unexpectedly contains a JSON body")
+		}
 		return nil
 	}
-	if err := json.Unmarshal(data, destination); err != nil {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(destination); err != nil {
 		return fmt.Errorf("decode Omnidex response: %w", err)
+	}
+	if err := requireJSONEOF(decoder); err != nil {
+		return err
 	}
 	return nil
 }

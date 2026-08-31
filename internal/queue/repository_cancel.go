@@ -8,55 +8,64 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-func (r *Repository) CancelJob(ctx context.Context, command CancelJobCommand) (model.Job, error) {
+func (r *Repository) CancelJob(ctx context.Context, command CancelJobCommand) (LifecycleJobResult, error) {
 	tx, err := r.pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
-		return model.Job{}, err
+		return LifecycleJobResult{}, err
 	}
 	defer rollbackTx(ctx, tx, "job cancellation")
 
-	job, err := cancelJobTx(ctx, tx, command)
+	result, err := cancelJobTx(ctx, tx, command)
 	if err != nil {
-		return model.Job{}, err
+		return LifecycleJobResult{}, err
 	}
-	if err := terminalizeScrumJobCardTx(ctx, tx, job, model.JobStatusCanceled); err != nil {
-		return model.Job{}, err
+	if result.Applied {
+		if err := terminalizeScrumJobCardTx(ctx, tx, result.Job, model.JobStatusCanceled); err != nil {
+			return LifecycleJobResult{}, err
+		}
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return model.Job{}, err
+		return LifecycleJobResult{}, err
 	}
-	return job, nil
+	return result, nil
 }
 
-func cancelJobTx(ctx context.Context, tx pgx.Tx, command CancelJobCommand) (model.Job, error) {
+func cancelJobTx(ctx context.Context, tx pgx.Tx, command CancelJobCommand) (LifecycleJobResult, error) {
 	command, err := normalizeCancelJobCommand(command)
 	if err != nil {
-		return model.Job{}, err
+		return LifecycleJobResult{}, err
 	}
 	descriptor, err := describeLifecycleOperation(command.OperationID, LifecycleCancelJob, command)
 	if err != nil {
-		return model.Job{}, err
+		return LifecycleJobResult{}, err
+	}
+	if err := lockLifecycleOperationIdentityTx(ctx, tx, command.OperationID); err != nil {
+		return LifecycleJobResult{}, err
 	}
 	job, err := lockedJobTx(ctx, tx, command.JobID)
 	if err != nil {
-		return model.Job{}, err
+		return LifecycleJobResult{}, err
 	}
-	if err := lockLifecycleOperationIdentityTx(ctx, tx, command.OperationID); err != nil {
-		return model.Job{}, err
+	if err := requireLifecycleWorkspaceAuthority(
+		job,
+		command.WorkspaceRoot,
+		command.WorkspaceIdentity,
+	); err != nil {
+		return LifecycleJobResult{}, err
 	}
 	record, found, err := loadLifecycleOperationTx(ctx, tx, descriptor, command.JobID)
 	if err != nil {
-		return model.Job{}, err
+		return LifecycleJobResult{}, err
 	}
 	if found {
 		if err := requireCancelJobReplayTx(ctx, tx, record, command, job); err != nil {
-			return model.Job{}, err
+			return LifecycleJobResult{}, err
 		}
-		return record.ResultJob, nil
+		return LifecycleJobResult{Job: record.ResultJob}, nil
 	}
 	job, err = applyJobCancellationTx(ctx, tx, command, job)
 	if err != nil {
-		return model.Job{}, err
+		return LifecycleJobResult{}, err
 	}
 	if err := insertLifecycleOperationTx(ctx, tx, descriptor, lifecycleOperationRecord{
 		ID: descriptor.ID, JobID: job.ID,
@@ -64,9 +73,9 @@ func cancelJobTx(ctx context.Context, tx pgx.Tx, command CancelJobCommand) (mode
 		Kind: descriptor.Kind, CommandSHA256: descriptor.SHA256,
 		ResultJobStatus: job.Status, ResultJob: job,
 	}); err != nil {
-		return model.Job{}, err
+		return LifecycleJobResult{}, err
 	}
-	return job, nil
+	return LifecycleJobResult{Job: job, Applied: true}, nil
 }
 
 func applyJobCancellationTx(
@@ -83,6 +92,15 @@ func applyJobCancellationTx(
 			"%w: job %d is already canceled under a different lifecycle operation",
 			ErrStepNotWritable, job.ID,
 		)
+	}
+	if err := requireObjectiveSessionContextAdmissionTx(
+		ctx,
+		tx,
+		job,
+		conversationFollowupCancellation,
+		command.Reason,
+	); err != nil {
+		return model.Job{}, err
 	}
 	stepIDs, err := lockCurrentNonterminalStepIDsTx(ctx, tx, command.JobID, job.CurrentGeneration)
 	if err != nil {

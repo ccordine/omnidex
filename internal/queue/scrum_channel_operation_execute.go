@@ -193,7 +193,8 @@ func executeScrumChannelReplanTx(
 	if err := lockLifecycleOperationIdentityTx(ctx, tx, operationID); err != nil {
 		return model.Job{}, err
 	}
-	return replanJobTx(ctx, tx, replan, feedbackSHA, descriptor)
+	result, err := replanJobTx(ctx, tx, replan, feedbackSHA, descriptor)
+	return result.Job, err
 }
 
 func executeScrumChannelFeedbackTx(
@@ -218,7 +219,8 @@ func executeScrumChannelFeedbackTx(
 	if err := lockLifecycleOperationIdentityTx(ctx, tx, operationID); err != nil {
 		return model.Job{}, err
 	}
-	return submitJobFeedbackTx(ctx, tx, feedback, descriptor)
+	result, err := submitJobFeedbackTx(ctx, tx, feedback, descriptor)
+	return result.Job, err
 }
 
 func scrumChannelEffectOperationID(command ScrumChannelOperationCommand) (LifecycleOperationID, error) {

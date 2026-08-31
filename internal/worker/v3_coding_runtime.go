@@ -15,17 +15,17 @@ type directCodingRequest struct {
 }
 
 type directCodingSession struct {
-	runtime               *nativeRuntimeV3
-	request               directCodingRequest
-	root                  string
-	specification         *assemblyline.ApplicationSpecification
-	program               *directCodingProgram
-	sequence              int
-	protectedPaths        map[string]struct{}
-	plannedFiles          int
-	plannedDeletes        int
-	mutationJournal       []directCodingMutationJournalEntry
-	pathProvenance        assemblyline.ArtifactIdentityProvenance
+	runtime         *nativeRuntimeV3
+	request         directCodingRequest
+	root            string
+	specification   *assemblyline.ApplicationSpecification
+	program         *directCodingProgram
+	sequence        int
+	protectedPaths  map[string]struct{}
+	plannedFiles    int
+	plannedDeletes  int
+	mutationJournal []directCodingMutationJournalEntry
+	pathProvenance  assemblyline.ArtifactIdentityProvenance
 }
 
 func (s *directCodingSession) Phase(phase directCodingPhase, detail string) {
@@ -42,8 +42,9 @@ func (s *directCodingSession) directCodingAuthority() string {
 }
 
 type directCodingMutationJournalEntry struct {
-	Path      string
-	Operation workspaceFileOperation
+	Path       string
+	SourcePath string
+	Operation  workspaceFileOperation
 }
 
 type workspaceFileOperation string
@@ -95,12 +96,17 @@ func (r *nativeRuntimeV3) directCodingRequest() (directCodingRequest, error) {
 		return directCodingRequest{}, fmt.Errorf("direct coding requires a non-empty current instruction")
 	}
 	request := directCodingRequest{Instruction: instruction}
-	if r.claim.Job.CurrentGeneration > 1 {
-		replan, err := r.svc.repo.CurrentReplanAuthority(r.ctx, r.claim.Job, "v3_coding")
-		if err != nil {
-			return directCodingRequest{}, err
-		}
-		request.Feedback = []string{replan.Feedback}
+	continuity, err := r.svc.repo.ObjectiveContinuityAuthorities(
+		r.ctx,
+		r.claim.Job,
+		"v3_coding",
+	)
+	if err != nil {
+		return directCodingRequest{}, err
+	}
+	request.Feedback, err = continuity.CodingFeedback()
+	if err != nil {
+		return directCodingRequest{}, err
 	}
 	return request, nil
 }

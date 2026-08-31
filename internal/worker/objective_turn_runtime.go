@@ -6,6 +6,7 @@ import (
 
 	"github.com/gryph/omnidex/internal/assemblyline"
 	"github.com/gryph/omnidex/internal/model"
+	"github.com/gryph/omnidex/internal/queue"
 )
 
 func (r *nativeRuntimeV3) runObjectiveResolve() error {
@@ -32,12 +33,8 @@ func (r *nativeRuntimeV3) runObjectiveResolve() error {
 				}
 				return provenance, err
 			},
-			WorkspaceReplanContext: func(ctx context.Context, job model.Job) (assemblyline.ObjectiveContext, error) {
-				replan, err := r.svc.repo.CurrentReplanAuthority(ctx, job, "objective_resolve")
-				if err != nil {
-					return assemblyline.ObjectiveContext{}, err
-				}
-				return assemblyline.ObjectiveContext{ReplanAuthority: replan}, nil
+			WorkspaceContinuity: func(ctx context.Context, job model.Job) (queue.ObjectiveContinuityAuthority, error) {
+				return r.svc.repo.ObjectiveContinuityAuthorities(ctx, job, "objective_resolve")
 			},
 			WorkspaceMutation:     r.runObjectiveWorkspaceMutation,
 			DatabaseRead:          r.acquireObjectiveDatabaseEvidence,
@@ -128,14 +125,21 @@ func directCodingRequestFromObjectiveAuthority(
 		}
 	}
 	request := directCodingRequest{Instruction: authority.Instruction}
-	if replan != nil {
-		if replan.JobID != authority.JobID {
-			return directCodingRequest{}, fmt.Errorf(
-				"workspace mutation replan authority belongs to job %d, expected %d",
-				replan.JobID, authority.JobID,
-			)
-		}
-		request.Feedback = []string{replan.Feedback}
+	continuity := queue.ObjectiveContinuityAuthority{
+		Replan:  replan,
+		Session: authority.SessionContext,
 	}
+	if continuity.Session != nil &&
+		(continuity.Session.JobID != authority.JobID ||
+			continuity.Session.InitialInstruction != authority.Instruction) {
+		return directCodingRequest{}, fmt.Errorf(
+			"workspace mutation session context differs from exact job authority",
+		)
+	}
+	feedback, err := continuity.CodingFeedback()
+	if err != nil {
+		return directCodingRequest{}, fmt.Errorf("workspace mutation session context: %w", err)
+	}
+	request.Feedback = feedback
 	return request, nil
 }

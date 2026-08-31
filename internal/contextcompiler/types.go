@@ -40,10 +40,11 @@ type OptionalSelectionGroup struct {
 }
 
 type CandidateSet struct {
-	Required                []assemblyline.ContextCandidateAuthority
-	Optional                []assemblyline.ContextCandidateAuthority
-	OptionalSelectionGroups []OptionalSelectionGroup
-	Replan                  *assemblyline.ObjectiveReplanAuthority
+	Required                           []assemblyline.ContextCandidateAuthority
+	Optional                           []assemblyline.ContextCandidateAuthority
+	OptionalSelectionGroups            []OptionalSelectionGroup
+	Replan                             *assemblyline.ObjectiveReplanAuthority
+	ReplanRepresentedByRequiredContext bool
 }
 
 // SearchAvailability is code-owned authority for whether exact-instruction

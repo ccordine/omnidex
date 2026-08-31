@@ -28,6 +28,12 @@ func (s *Service) runNativeV3Step(
 	claim *model.ClaimedStep,
 	action string,
 ) error {
+	if s == nil || claim == nil {
+		return fmt.Errorf("native worker execution requires one claimed step")
+	}
+	if _, err := s.workspaceScopeForV3Job(claim.Job); err != nil {
+		return fmt.Errorf("validate host workspace before action %q: %w", action, err)
+	}
 	runtime := &nativeRuntimeV3{
 		svc: s, ctx: ctx, claim: claim,
 		action: action,

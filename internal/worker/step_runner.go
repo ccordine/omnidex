@@ -52,37 +52,49 @@ func (s *Service) run(ctx context.Context, workerID string, pollInterval time.Du
 			}
 			continue
 		}
-		s.emitStepEvent(claim.Authority, "step_start", fmt.Sprintf("action=%s worker=%s", claim.Step.Action, workerID))
-		if err := s.processStep(ctx, claim); err != nil {
-			if s.skipFailureForLostExecutionAuthority(workerID, claim, err) {
-				continue
-			}
-			if s.skipFailureForControlledCancel(ctx, workerID, claim, err) {
-				continue
-			}
-			s.emitStepEvent(claim.Authority, "step_error", err.Error())
-			s.logf("worker=%s job=%d step=%d action=%s failed: %v", workerID, claim.Job.ID, claim.Step.ID, claim.Step.Action, err)
-			failCommand, identityErr := failClaimedStepCommand(claim, err.Error())
-			if identityErr != nil {
-				s.logf("worker=%s job=%d step=%d failure identity error: %v", workerID, claim.Job.ID, claim.Step.ID, identityErr)
-				continue
-			}
-			failErr := s.repo.FailStep(ctx, failCommand)
-			if failErr != nil {
-				s.logf("worker=%s job=%d step=%d fail update error: %v", workerID, claim.Job.ID, claim.Step.ID, failErr)
-			}
-			continue
-		}
-		s.emitStepEvent(claim.Authority, "step_complete", fmt.Sprintf("action=%s worker=%s", claim.Step.Action, workerID))
-		s.logf(
-			"worker=%s job=%d step=%d action=%s completed",
-			workerID, claim.Job.ID, claim.Step.ID, claim.Step.Action,
-		)
+		releaseRuntimeChannel := s.bindRuntimeEventChannel(claim.Job)
+		s.runClaim(ctx, workerID, claim)
+		releaseRuntimeChannel()
 	}
 }
 
+func (s *Service) runClaim(ctx context.Context, workerID string, claim *model.ClaimedStep) {
+	s.emitStepEvent(claim.Authority, "step_start", fmt.Sprintf("action=%s worker=%s", claim.Step.Action, workerID))
+	if err := s.processStep(ctx, claim); err != nil {
+		if s.skipFailureForLostExecutionAuthority(workerID, claim, err) {
+			return
+		}
+		if s.skipFailureForControlledCancel(ctx, workerID, claim, err) {
+			return
+		}
+		s.emitStepEvent(claim.Authority, "step_error", err.Error())
+		s.logf("worker=%s job=%d step=%d action=%s failed: %v", workerID, claim.Job.ID, claim.Step.ID, claim.Step.Action, err)
+		failCommand, identityErr := failClaimedStepCommand(claim, err.Error())
+		if identityErr != nil {
+			s.logf("worker=%s job=%d step=%d failure identity error: %v", workerID, claim.Job.ID, claim.Step.ID, identityErr)
+			return
+		}
+		failErr := s.repo.FailStep(ctx, failCommand)
+		if failErr != nil {
+			s.logf("worker=%s job=%d step=%d fail update error: %v", workerID, claim.Job.ID, claim.Step.ID, failErr)
+		} else {
+			s.emitStepEvent(
+				claim.Authority,
+				"step_failed",
+				fmt.Sprintf("action=%s worker=%s", claim.Step.Action, workerID),
+			)
+		}
+		return
+	}
+	s.emitStepEvent(claim.Authority, "step_complete", fmt.Sprintf("action=%s worker=%s", claim.Step.Action, workerID))
+	s.logf(
+		"worker=%s job=%d step=%d action=%s completed",
+		workerID, claim.Job.ID, claim.Step.ID, claim.Step.Action,
+	)
+}
+
 func (s *Service) processStep(ctx context.Context, claim *model.ClaimedStep) error {
-	controlCtx, stopControl := s.watchStepControl(ctx, claim.Job.ID, claim.Step.ID)
+	controlCtx, stopControl := s.watchStepControl(ctx, claim.Authority)
 	stepCtx, stopLease := s.watchStepAttemptLease(
 		controlCtx, claim.Authority, claim.LeaseDeadline,
 	)
@@ -92,7 +104,10 @@ func (s *Service) processStep(ctx context.Context, claim *model.ClaimedStep) err
 	return s.finishStepAttemptWatch(workErr, errors.Join(leaseErr, controlErr))
 }
 
-func (s *Service) watchStepControl(ctx context.Context, jobID, stepID int64) (context.Context, func() error) {
+func (s *Service) watchStepControl(
+	ctx context.Context,
+	authority model.StepAttemptAuthority,
+) (context.Context, func() error) {
 	stepCtx, cancel := context.WithCancel(ctx)
 	result := make(chan error, 1)
 	go func() {
@@ -105,22 +120,21 @@ func (s *Service) watchStepControl(ctx context.Context, jobID, stepID int64) (co
 				return
 			case <-ticker.C:
 			}
-			jobStatus, stepStatus, err := s.repo.GetStepRuntimeState(stepCtx, jobID, stepID)
-			if err != nil {
+			if err := s.repo.RequireActiveStepAttempt(stepCtx, authority); err != nil {
 				if errors.Is(err, context.Canceled) || stepCtx.Err() != nil {
 					result <- nil
 					return
 				}
 				result <- fmt.Errorf(
-					"%w: read job %d step %d runtime authority: %v",
-					errStepExecutionAuthorityLost, jobID, stepID, err,
+					"%w: job %d generation %d step %d attempt %d changed: %v",
+					errStepExecutionAuthorityLost,
+					authority.JobID,
+					authority.Generation,
+					authority.StepID,
+					authority.Attempt,
+					err,
 				)
 				cancel()
-				return
-			}
-			if jobStatus == model.JobStatusCanceled || stepStatus == model.StepStatusCanceled {
-				cancel()
-				result <- nil
 				return
 			}
 		}

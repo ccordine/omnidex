@@ -3,55 +3,103 @@ package worker
 import (
 	"encoding/json"
 	"fmt"
-	"path/filepath"
 
 	"github.com/gryph/omnidex/internal/model"
+	"github.com/gryph/omnidex/internal/projectroot"
 )
 
 type v3WorkspaceScope struct {
-	Root string
+	Root     string
+	Identity string
 }
 
 func codingWorkspaceForJob(job model.Job) (string, error) {
+	scope, err := workspaceAuthorityForV3Job(job)
+	if err != nil {
+		return "", err
+	}
+	return scope.Root, nil
+}
+
+func workspaceAuthorityForV3Job(job model.Job) (v3WorkspaceScope, error) {
 	if len(job.Metadata) == 0 {
-		return "", fmt.Errorf("workspace boundary requires job metadata")
+		return v3WorkspaceScope{}, fmt.Errorf("workspace boundary requires job metadata")
 	}
 	var metadata map[string]json.RawMessage
 	if err := json.Unmarshal(job.Metadata, &metadata); err != nil {
-		return "", fmt.Errorf("decode workspace job metadata: %w", err)
+		return v3WorkspaceScope{}, fmt.Errorf("decode workspace job metadata: %w", err)
 	}
 	raw, exists := metadata["client_cwd"]
 	if !exists {
-		return "", fmt.Errorf("workspace boundary requires client_cwd")
+		return v3WorkspaceScope{}, fmt.Errorf("workspace boundary requires client_cwd")
 	}
 	var root string
 	if err := json.Unmarshal(raw, &root); err != nil {
-		return "", fmt.Errorf("workspace boundary client_cwd must be a string: %w", err)
+		return v3WorkspaceScope{}, fmt.Errorf("workspace boundary client_cwd must be a string: %w", err)
 	}
-	return root, nil
+	var identity string
+	if rawIdentity, exists := metadata["client_workspace_identity"]; exists {
+		if err := json.Unmarshal(rawIdentity, &identity); err != nil {
+			return v3WorkspaceScope{}, fmt.Errorf(
+				"workspace boundary client_workspace_identity must be a string: %w",
+				err,
+			)
+		}
+		if err := projectroot.ValidateDirectoryIdentity(identity); err != nil {
+			return v3WorkspaceScope{}, fmt.Errorf("workspace boundary client identity: %w", err)
+		}
+	}
+	return v3WorkspaceScope{Root: root, Identity: identity}, nil
 }
 
 func (s *Service) workspaceScopeForV3Job(job model.Job) (v3WorkspaceScope, error) {
 	if s == nil {
 		return v3WorkspaceScope{}, fmt.Errorf("workspace service is unavailable")
 	}
-	root, err := codingWorkspaceForJob(job)
+	scope, err := workspaceAuthorityForV3Job(job)
 	if err != nil {
 		return v3WorkspaceScope{}, err
 	}
-	if root == "" || !filepath.IsAbs(root) || filepath.Clean(root) != root {
-		return v3WorkspaceScope{}, fmt.Errorf(
-			"bind job workspace %q: root must be one canonical absolute path", root,
-		)
+	if err := s.requireHostWorkspaceRoot(scope.Root); err != nil {
+		return v3WorkspaceScope{}, fmt.Errorf("bind job client_cwd %q: %w", scope.Root, err)
 	}
-	resolvedRoot, err := filepath.EvalSymlinks(root)
+	if scope.Identity != "" {
+		currentIdentity, err := projectroot.DirectoryIdentity(scope.Root)
+		if err != nil {
+			return v3WorkspaceScope{}, fmt.Errorf(
+				"attest job client_cwd %q identity: %w",
+				scope.Root,
+				err,
+			)
+		}
+		if currentIdentity != scope.Identity {
+			return v3WorkspaceScope{}, fmt.Errorf(
+				"job client_cwd %q differs from its immutable client workspace identity",
+				scope.Root,
+			)
+		}
+	}
+	return scope, nil
+}
+
+func (s *Service) requireWorkspaceScopeForV3Job(job model.Job, expectedRoot string) error {
+	scope, err := s.workspaceScopeForV3Job(job)
 	if err != nil {
-		return v3WorkspaceScope{}, fmt.Errorf("resolve authoritative workspace root %q: %w", root, err)
+		return err
 	}
-	if !filepath.IsAbs(resolvedRoot) || filepath.Clean(resolvedRoot) != resolvedRoot {
-		return v3WorkspaceScope{}, fmt.Errorf(
-			"resolved workspace root %q is not one canonical absolute path", resolvedRoot,
+	if scope.Root != expectedRoot {
+		return fmt.Errorf(
+			"workspace root %q differs from exact job authority %q",
+			expectedRoot,
+			scope.Root,
 		)
 	}
-	return v3WorkspaceScope{Root: resolvedRoot}, nil
+	return nil
+}
+
+func (s *Service) requireHostWorkspaceRoot(root string) error {
+	if s == nil {
+		return fmt.Errorf("workspace service is unavailable")
+	}
+	return s.hostDirectoryAccess.ValidateWorkspaceRoot(root)
 }

@@ -19,6 +19,7 @@ func inspectWorkspaceParents(
 	relative string,
 	create bool,
 	result *ReconciliationResult,
+	observer VerifiedChangeObserver,
 ) (bool, error) {
 	if ctx == nil || root == nil {
 		return false, fmt.Errorf("workspace parent inspection requires an open root")
@@ -59,7 +60,9 @@ func inspectWorkspaceParents(
 			return false, fmt.Errorf("replace workspace parent for %q: %w", relative, err)
 		}
 		if result != nil {
-			result.Changes = append(result.Changes, Change{Path: current, Kind: ChangeDelete})
+			if err := verifyAndRecordWorkspaceDeletion(root, result, observer, current); err != nil {
+				return false, fmt.Errorf("verify removed workspace parent %q: %w", current, err)
+			}
 		}
 		if err := root.Mkdir(current, 0o755); err != nil {
 			return false, fmt.Errorf("create workspace parent for %q: %w", relative, err)

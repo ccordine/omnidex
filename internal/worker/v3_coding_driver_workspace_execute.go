@@ -9,15 +9,24 @@ import (
 func (s *directCodingSession) ApplyAndVerify(
 	prepared *directCodingPreparedMutation,
 ) (resultErr error) {
-	if s == nil || s.runtime == nil || s.runtime.ctx == nil || prepared == nil {
+	if s == nil || s.runtime == nil || s.runtime.ctx == nil || s.runtime.svc == nil ||
+		s.runtime.claim == nil || prepared == nil {
 		return fmt.Errorf("apply direct-coding workspace mutation requires one prepared transaction")
 	}
 	if prepared.reconciliation == nil {
 		return fmt.Errorf("apply direct-coding workspace mutation requires one prepared transaction")
 	}
-	result, err := prepared.reconciliation.ApplyVerified(s.runtime.ctx)
+	if err := s.runtime.svc.requireWorkspaceScopeForV3Job(
+		s.runtime.claim.Job,
+		s.root,
+	); err != nil {
+		return fmt.Errorf("validate host workspace before reconciliation: %w", err)
+	}
+	result, err := prepared.reconciliation.ApplyVerified(
+		s.runtime.ctx,
+		s.observeVerifiedWorkspaceChange,
+	)
 	prepared.result = result
-	s.recordPreparedWorkspaceMutation(prepared)
 	if err != nil {
 		return fmt.Errorf(
 			"workspace reconciliation stopped after %d applied changes: %w",
@@ -27,28 +36,30 @@ func (s *directCodingSession) ApplyAndVerify(
 	return nil
 }
 
-func (s *directCodingSession) recordPreparedWorkspaceMutation(
-	prepared *directCodingPreparedMutation,
+func (s *directCodingSession) observeVerifiedWorkspaceChange(
+	change workspacefacts.Change,
 ) {
-	if prepared.recorded {
+	var operation workspaceFileOperation
+	switch change.Kind {
+	case workspacefacts.ChangeCreate:
+		operation = workspaceFileCreate
+	case workspacefacts.ChangeReplace:
+		operation = workspaceFileReplace
+	case workspacefacts.ChangeDelete:
+		operation = workspaceFileDelete
+	case workspacefacts.ChangeMove:
+		operation = workspaceFileMove
+	default:
+		s.runtime.svc.logf("unknown verified workspace change kind=%q path=%q", change.Kind, change.Path)
 		return
 	}
-	for _, change := range prepared.result.Changes {
-		operation := workspaceFileReplace
-		switch change.Kind {
-		case workspacefacts.ChangeCreate:
-			operation = workspaceFileCreate
-		case workspacefacts.ChangeDelete:
-			operation = workspaceFileDelete
-		case workspacefacts.ChangeMove:
-			operation = workspaceFileMove
-		}
-		s.mutationJournal = append(s.mutationJournal, directCodingMutationJournalEntry{
-			Path: change.Path, Operation: operation,
-		})
-		s.runtime.svc.emitWorkspaceFileChange(
-			s.runtime.claim.Authority, string(operation), change.Path,
-		)
-	}
-	prepared.recorded = true
+	s.mutationJournal = append(s.mutationJournal, directCodingMutationJournalEntry{
+		Path: change.Path, SourcePath: change.SourcePath, Operation: operation,
+	})
+	s.runtime.svc.emitWorkspaceFileChange(
+		s.runtime.claim.Authority,
+		string(operation),
+		change.SourcePath,
+		change.Path,
+	)
 }

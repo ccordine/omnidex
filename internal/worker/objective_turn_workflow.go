@@ -108,17 +108,15 @@ func runObjectiveTurn(
 	}
 	result.RequirementID = objectiveRequirementID(result.ObjectiveID)
 	if decision.Kind == assemblyline.ObjectiveKindWorkspaceMutation {
-		replanContext := assemblyline.ObjectiveContext{}
-		if job.CurrentGeneration > 1 {
-			if workflows.WorkspaceReplanContext == nil {
-				return result, fmt.Errorf("workspace mutation replan authority is unavailable")
-			}
-			replanContext, err = workflows.WorkspaceReplanContext(ctx, job)
-			if err != nil {
-				return result, err
-			}
+		if workflows.WorkspaceContinuity == nil {
+			return result, fmt.Errorf("workspace mutation continuity authority is unavailable")
 		}
-		authority.Context = assemblyline.CloneObjectiveContext(replanContext)
+		continuity, err := workflows.WorkspaceContinuity(ctx, job)
+		if err != nil {
+			return result, err
+		}
+		authority.Context = assemblyline.CloneObjectiveContext(continuity.ReplanContext())
+		authority.SessionContext = continuity.SessionContext()
 		result.ObjectiveID = objectiveTurnID(authority, decision.Kind)
 		result.RequirementID = objectiveRequirementID(result.ObjectiveID)
 		return runObjectiveWorkspaceMutation(ctx, authority, result, workflows.WorkspaceMutation)

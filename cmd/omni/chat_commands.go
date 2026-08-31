@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -14,78 +15,208 @@ func parseChatCommand(line string) (name, text string, command bool) {
 	if !strings.HasPrefix(line, "/") {
 		return "", line, false
 	}
-	parts := strings.SplitN(strings.TrimPrefix(strings.TrimSpace(line), "/"), " ", 2)
-	name = strings.ToLower(strings.TrimSpace(parts[0]))
-	if len(parts) == 2 {
-		text = strings.TrimSpace(parts[1])
+	body := strings.TrimPrefix(line, "/")
+	delimiter := strings.IndexByte(body, ' ')
+	if delimiter < 0 {
+		return body, "", true
 	}
-	return name, text, true
+	return body[:delimiter], body[delimiter+1:], true
 }
 
 func newOperationID() (queue.LifecycleOperationID, error) {
 	return queue.NewRandomLifecycleOperationID()
 }
 
-func interruptedBoundary(steps []model.Step) bool {
-	for _, step := range steps {
-		if step.Status != model.StepStatusWaiting {
-			continue
-		}
-		return step.Action == "objective_resolve" || step.Action == "v3_coding"
-	}
-	return false
+type pendingControl struct {
+	jobID         int64
+	action        string
+	exactText     string
+	locallyEchoed bool
+	operationID   queue.LifecycleOperationID
 }
 
-func (session *chatSession) control(action, text string) error {
-	if session.active == nil {
-		return fmt.Errorf("/%s requires an active job", action)
+func (session *chatSession) controlOperationID(
+	jobID int64,
+	action string,
+	exactText string,
+	locallyEchoed bool,
+) (queue.LifecycleOperationID, error) {
+	if session.pendingTurn != nil {
+		return "", fmt.Errorf("session turn %q remains unresolved", session.pendingTurn.operationID)
 	}
-	jobID := session.active.Job.ID
+	if session.pendingControl != nil && session.pendingControl.jobID == jobID &&
+		session.pendingControl.action == action && session.pendingControl.exactText == exactText {
+		return session.pendingControl.operationID, nil
+	}
+	if session.pendingControl != nil {
+		return "", fmt.Errorf(
+			"/%s operation %q remains unresolved",
+			session.pendingControl.action,
+			session.pendingControl.operationID,
+		)
+	}
 	operationID, err := newOperationID()
 	if err != nil {
-		return err
+		return "", err
 	}
-	var receipt model.Job
+	session.pendingControl = &pendingControl{
+		jobID: jobID, action: action, exactText: exactText,
+		locallyEchoed: locallyEchoed, operationID: operationID,
+	}
+	return operationID, nil
+}
+
+func (session *chatSession) control(
+	action,
+	text string,
+	locallyEchoed bool,
+	expectedJobID *int64,
+) (int64, error) {
 	switch action {
 	case "interrupt":
 		if text == "" {
 			text = ctrlCInterruptReason
 		}
-		receipt, err = session.client.Interrupt(session.ctx, jobID, operationID, text)
-	case "redirect", "replan":
-		if text == "" {
-			return fmt.Errorf("/%s requires exact redirection text", action)
+	case "redirect":
+		if strings.TrimSpace(text) == "" {
+			return 0, fmt.Errorf("/redirect requires exact redirection text")
 		}
-		receipt, err = session.client.Replan(session.ctx, jobID, operationID, text)
-	case "feedback":
-		if text == "" {
-			return fmt.Errorf("/feedback requires exact feedback text")
-		}
-		receipt, err = session.client.SubmitFeedback(session.ctx, jobID, operationID, text)
 	case "cancel":
-		if text == "" {
-			return fmt.Errorf("/cancel requires a reason")
+		if strings.TrimSpace(text) == "" {
+			return 0, fmt.Errorf("/cancel requires a reason")
 		}
-		receipt, err = session.client.Cancel(session.ctx, jobID, operationID, text)
 	default:
-		return fmt.Errorf("unsupported active-job control %q", action)
+		return 0, fmt.Errorf("unsupported active-job control %q", action)
+	}
+	unresolvedControl := session.pendingControl
+	if err := session.reloadSnapshot(); err != nil {
+		return 0, err
+	}
+	if pending := unresolvedControl; pending != nil &&
+		pending.action == action && pending.exactText == text {
+		if persisted, exists := session.controls[pending.operationID]; exists {
+			if persisted.JobID != pending.jobID || persisted.Kind != sessionControlKind(pending.action) ||
+				persisted.Text != pending.exactText {
+				return 0, fmt.Errorf("persisted /%s operation differs from pending authority", action)
+			}
+			session.pendingControl = nil
+			return pending.jobID, session.renderer.system("job %d · %s accepted", pending.jobID, action)
+		}
+		job, err := session.replayPendingControl(pending)
+		if err != nil {
+			return 0, err
+		}
+		if err := session.reloadSnapshotAuthoritatively(); err != nil {
+			return 0, err
+		}
+		if _, exists := session.controls[pending.operationID]; !exists {
+			return 0, fmt.Errorf("resolved /%s operation is absent from persisted session authority", action)
+		}
+		session.pendingControl = nil
+		return job.ID, session.renderer.system("job %d · %s accepted", job.ID, action)
+	}
+	if session.active == nil {
+		if expectedJobID != nil && *expectedJobID > 0 {
+			return 0, fmt.Errorf(
+				"/%s target job %d is no longer active",
+				action,
+				*expectedJobID,
+			)
+		}
+		return 0, fmt.Errorf("/%s requires an active server job", action)
+	}
+	jobID := session.active.Job.ID
+	if expectedJobID != nil && jobID != *expectedJobID {
+		return 0, fmt.Errorf(
+			"/%s target job changed from %d to %d before submission",
+			action,
+			*expectedJobID,
+			jobID,
+		)
+	}
+	operationID, err := session.controlOperationID(jobID, action, text, locallyEchoed)
+	if err != nil {
+		return 0, err
+	}
+	var receipt model.Job
+	switch action {
+	case "interrupt":
+		receipt, err = awaitChatRequest(
+			session.ctx,
+			session.signals,
+			func(requestContext context.Context) (model.Job, error) {
+				return session.client.Interrupt(
+					requestContext,
+					session.channel,
+					session.workspaceIdentity,
+					jobID,
+					operationID,
+					text,
+				)
+			},
+		)
+	case "redirect":
+		receipt, err = awaitChatRequest(
+			session.ctx,
+			session.signals,
+			func(requestContext context.Context) (model.Job, error) {
+				return session.client.Replan(
+					requestContext,
+					session.channel,
+					session.workspaceIdentity,
+					jobID,
+					operationID,
+					text,
+				)
+			},
+		)
+	case "cancel":
+		receipt, err = awaitChatRequest(
+			session.ctx,
+			session.signals,
+			func(requestContext context.Context) (model.Job, error) {
+				return session.client.Cancel(
+					requestContext,
+					session.channel,
+					session.workspaceIdentity,
+					jobID,
+					operationID,
+					text,
+				)
+			},
+		)
 	}
 	if err != nil {
-		return err
+		if definitiveChatRequestFailure(err) {
+			session.pendingControl = nil
+		}
+		return 0, err
 	}
 	if receipt.ID != jobID {
-		return fmt.Errorf("/%s changed job identity from %d to %d", action, jobID, receipt.ID)
+		return 0, fmt.Errorf("/%s changed job identity from %d to %d", action, jobID, receipt.ID)
 	}
-	_, err = session.refreshJob(true)
-	return err
+	if err := session.reloadSnapshot(); err != nil {
+		return 0, err
+	}
+	if _, persisted := session.controls[operationID]; !persisted {
+		return 0, fmt.Errorf(
+			"/%s operation %q was accepted but is absent from persisted session state",
+			action,
+			operationID,
+		)
+	}
+	session.pendingControl = nil
+	return jobID, session.renderer.system("job %d · %s accepted", jobID, action)
 }
 
-func printChatHelp(renderer chatRenderer) {
-	fmt.Fprintln(renderer.out, "commands:")
-	fmt.Fprintln(renderer.out, "  /status                 reload authoritative job state")
-	fmt.Fprintln(renderer.out, "  /interrupt [reason]     pause the active job on the same job identity")
-	fmt.Fprintln(renderer.out, "  /redirect <text>        replace active work on the same job with this direction")
-	fmt.Fprintln(renderer.out, "  /cancel <reason>        terminally cancel the active job")
-	fmt.Fprintln(renderer.out, "  /exit                   close this client; server work continues")
-	fmt.Fprintln(renderer.out, "While work is active, ordinary text is an exact same-job redirection.")
+func printChatHelp(renderer chatRenderer) error {
+	return renderer.console.WriteOutput(
+		"commands:\n" +
+			"  /status                 reload authoritative job state\n" +
+			"  /interrupt [reason]     pause the active job on the same job identity\n" +
+			"  /redirect <text>        explicitly redirect the active job\n" +
+			"  /cancel <reason>        terminally cancel the active job\n" +
+			"  /exit                   close this client; server work continues\n" +
+			"Ordinary text is submitted to the server-owned session turn boundary.\n",
+	)
 }

@@ -1,45 +1,52 @@
 package main
 
 import (
-	"bufio"
+	"context"
 	"errors"
 	"io"
 )
 
 type chatInput struct {
-	Text string
-	Err  error
-	EOF  bool
+	Text   string
+	Pasted bool
+	Err    error
+	EOF    bool
 }
 
-func readChatInput(console *chatConsole) <-chan chatInput {
+func readChatInput(ctx context.Context, console *chatConsole) (<-chan chatInput, <-chan struct{}) {
 	events := make(chan chatInput, 16)
+	done := make(chan struct{})
 	go func() {
+		defer close(done)
 		defer close(events)
-		if console.IsTerminal() {
-			for {
-				line, err := console.ReadLine()
-				if errors.Is(err, io.EOF) {
-					events <- chatInput{EOF: true}
+		for {
+			line, pasted, err := console.ReadLine()
+			if errors.Is(err, io.EOF) {
+				sendChatInput(ctx, events, chatInput{EOF: true})
+				return
+			}
+			if err != nil {
+				if !sendChatInput(ctx, events, chatInput{Err: err}) {
 					return
 				}
-				if err != nil {
-					events <- chatInput{Err: err}
-					return
+				if errors.Is(err, errChatInputRejected) {
+					continue
 				}
-				events <- chatInput{Text: line}
+				return
+			}
+			if !sendChatInput(ctx, events, chatInput{Text: line, Pasted: pasted}) {
+				return
 			}
 		}
-		scanner := bufio.NewScanner(console.input)
-		scanner.Buffer(make([]byte, 4096), 64*1024)
-		for scanner.Scan() {
-			events <- chatInput{Text: scanner.Text()}
-		}
-		if err := scanner.Err(); err != nil {
-			events <- chatInput{Err: err}
-			return
-		}
-		events <- chatInput{EOF: true}
 	}()
-	return events
+	return events, done
+}
+
+func sendChatInput(ctx context.Context, events chan<- chatInput, event chatInput) bool {
+	select {
+	case <-ctx.Done():
+		return false
+	case events <- event:
+		return true
+	}
 }

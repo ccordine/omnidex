@@ -62,6 +62,7 @@ const (
 	LifecycleSubmitFeedback LifecycleOperationKind = "submit_feedback"
 	LifecycleInterruptJob   LifecycleOperationKind = "interrupt_job"
 	LifecycleReplanJob      LifecycleOperationKind = "replan_job"
+	LifecycleChannelSession LifecycleOperationKind = "channel_session_turn"
 	LifecycleScrumChannel   LifecycleOperationKind = "scrum_channel_message"
 	LifecycleCancelJob      LifecycleOperationKind = "cancel_job"
 )
@@ -114,21 +115,34 @@ type FailStepCommand struct {
 }
 
 type SubmitJobFeedbackCommand struct {
-	OperationID LifecycleOperationID `json:"operation_id"`
-	JobID       int64                `json:"job_id"`
-	Feedback    string               `json:"feedback"`
+	OperationID       LifecycleOperationID `json:"operation_id"`
+	JobID             int64                `json:"job_id"`
+	Feedback          string               `json:"feedback"`
+	WorkspaceRoot     string               `json:"workspace_root,omitempty"`
+	WorkspaceIdentity string               `json:"workspace_identity,omitempty"`
 }
 
 type ReplanJobCommand struct {
-	OperationID LifecycleOperationID `json:"operation_id"`
-	JobID       int64                `json:"job_id"`
-	Feedback    string               `json:"feedback"`
+	OperationID       LifecycleOperationID `json:"operation_id"`
+	JobID             int64                `json:"job_id"`
+	Feedback          string               `json:"feedback"`
+	WorkspaceRoot     string               `json:"workspace_root,omitempty"`
+	WorkspaceIdentity string               `json:"workspace_identity,omitempty"`
 }
 
 type CancelJobCommand struct {
-	OperationID LifecycleOperationID `json:"operation_id"`
-	JobID       int64                `json:"job_id"`
-	Reason      string               `json:"reason"`
+	OperationID       LifecycleOperationID `json:"operation_id"`
+	JobID             int64                `json:"job_id"`
+	Reason            string               `json:"reason"`
+	WorkspaceRoot     string               `json:"workspace_root,omitempty"`
+	WorkspaceIdentity string               `json:"workspace_identity,omitempty"`
+}
+
+// LifecycleJobResult distinguishes a newly committed mutation from the exact
+// immutable receipt returned for an idempotent operation replay.
+type LifecycleJobResult struct {
+	Job     model.Job
+	Applied bool
 }
 
 func lifecycleIdentityDigest(parts ...string) string {

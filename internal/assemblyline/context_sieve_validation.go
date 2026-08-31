@@ -102,7 +102,8 @@ func validateContextCandidateAuthorities(
 		if !exactObjectiveContextSHA(authority.Content, authority.ContentSHA256) {
 			return fmt.Errorf("%s candidate %s content hash does not match", label, authority.CandidateID)
 		}
-		if _, duplicate := seenContent[authority.ContentSHA256]; duplicate {
+		if _, duplicate := seenContent[authority.ContentSHA256]; duplicate &&
+			!strings.HasPrefix(authority.Namespace, "session_") {
 			return fmt.Errorf("%s candidate %s duplicates exact candidate content", label, authority.CandidateID)
 		}
 		seenContent[authority.ContentSHA256] = struct{}{}

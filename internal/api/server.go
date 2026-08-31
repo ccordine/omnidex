@@ -11,49 +11,52 @@ import (
 	"github.com/gryph/omnidex/internal/llm"
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/queue"
+	workspacefacts "github.com/gryph/omnidex/internal/workspace"
 )
 
 type Server struct {
-	lifecycleContext           context.Context
-	repo                       *queue.Repository
-	roleplaySimulation         RoleplaySimulationStore
-	embeddingClient            llm.EmbeddingClient
-	mux                        *http.ServeMux
-	providerConfig             config.Config
-	coreURLDefault             string
-	listenAddr                 string
-	realtimeStreamMaxAge       string
-	realtimeHeartbeat          string
-	realtimeWriteTimeout       string
-	redisURL                   string
-	uiSessionTTL               string
-	uiRedisMu                  sync.Mutex
-	uiRedis                    *uiRedisClient
-	roleplaySceneDraftMu       sync.Mutex
-	hostAgentURL               string
-	hostAgentToken             string
-	integrationAPIToken        string
-	realtimeHub                *RealtimeHub
-	scrumAutoWorkMu            sync.Mutex
-	scrumAutoWorkAsyncMu       sync.Mutex
-	scrumAutoWorkAsyncRunning  bool
-	scrumAutoWorkAsyncPending  bool
+	lifecycleContext          context.Context
+	repo                      *queue.Repository
+	roleplaySimulation        RoleplaySimulationStore
+	embeddingClient           llm.EmbeddingClient
+	mux                       *http.ServeMux
+	providerConfig            config.Config
+	coreURLDefault            string
+	listenAddr                string
+	realtimeStreamMaxAge      string
+	realtimeHeartbeat         string
+	realtimeWriteTimeout      string
+	redisURL                  string
+	uiSessionTTL              string
+	uiRedisMu                 sync.Mutex
+	uiRedis                   *uiRedisClient
+	roleplaySceneDraftMu      sync.Mutex
+	hostAgentURL              string
+	hostAgentToken            string
+	hostDirectoryAccess       workspacefacts.HostDirectoryAccess
+	integrationAPIToken       string
+	realtimeHub               *RealtimeHub
+	scrumAutoWorkMu           sync.Mutex
+	scrumAutoWorkAsyncMu      sync.Mutex
+	scrumAutoWorkAsyncRunning bool
+	scrumAutoWorkAsyncPending bool
 }
 
 type ServerOptions struct {
-	LifecycleContext     context.Context
-	ProviderConfig       config.Config
-	CoreURL              string
-	ListenAddr           string
-	HostAgentURL         string
-	HostAgentToken       string
-	IntegrationAPIToken  string
-	RealtimeStreamMaxAge string
-	RealtimeHeartbeat    string
-	RealtimeWriteTimeout string
-	RedisURL             string
-	UISessionTTL         string
-	RoleplaySimulation   RoleplaySimulationStore
+	LifecycleContext        context.Context
+	ProviderConfig          config.Config
+	CoreURL                 string
+	ListenAddr              string
+	HostAgentURL            string
+	HostAgentToken          string
+	HostDirectoryAccessRoot string
+	IntegrationAPIToken     string
+	RealtimeStreamMaxAge    string
+	RealtimeHeartbeat       string
+	RealtimeWriteTimeout    string
+	RedisURL                string
+	UISessionTTL            string
+	RoleplaySimulation      RoleplaySimulationStore
 }
 
 type memoryCandidatePromotionRequest struct {
@@ -62,13 +65,17 @@ type memoryCandidatePromotionRequest struct {
 }
 
 type feedbackRequest struct {
-	OperationID queue.LifecycleOperationID `json:"operation_id"`
-	Feedback    string                     `json:"feedback"`
+	OperationID       queue.LifecycleOperationID `json:"operation_id"`
+	Feedback          string                     `json:"feedback"`
+	WorkspaceRoot     lifecycleWorkspaceValue    `json:"workspace_root,omitempty"`
+	WorkspaceIdentity lifecycleWorkspaceValue    `json:"workspace_identity,omitempty"`
 }
 
 type cancelRequest struct {
-	OperationID queue.LifecycleOperationID `json:"operation_id"`
-	Reason      string                     `json:"reason"`
+	OperationID       queue.LifecycleOperationID `json:"operation_id"`
+	Reason            string                     `json:"reason"`
+	WorkspaceRoot     lifecycleWorkspaceValue    `json:"workspace_root,omitempty"`
+	WorkspaceIdentity lifecycleWorkspaceValue    `json:"workspace_identity,omitempty"`
 }
 
 func NewServer(
@@ -82,26 +89,33 @@ func NewServer(
 	if options.LifecycleContext == nil {
 		return nil, fmt.Errorf("server requires lifecycle context")
 	}
+	hostDirectoryAccess, err := workspacefacts.NewHostDirectoryAccess(
+		options.HostDirectoryAccessRoot,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("construct server host directory access authority: %w", err)
+	}
 	providerConfig := options.ProviderConfig
 	providerConfig.CompatibleProviders = config.CloneCompatibleProviders(providerConfig.CompatibleProviders)
 	providerConfig.ProviderModels = config.CloneProviderModels(providerConfig.ProviderModels)
 	s := &Server{
-		lifecycleContext:           options.LifecycleContext,
-		repo:                       repo,
-		roleplaySimulation:         options.RoleplaySimulation,
-		embeddingClient:            embeddingClient,
-		mux:                        http.NewServeMux(),
-		providerConfig:             providerConfig,
-		coreURLDefault:             strings.TrimSpace(options.CoreURL),
-		listenAddr:                 strings.TrimSpace(options.ListenAddr),
-		realtimeStreamMaxAge:       options.RealtimeStreamMaxAge,
-		realtimeHeartbeat:          options.RealtimeHeartbeat,
-		realtimeWriteTimeout:       options.RealtimeWriteTimeout,
-		redisURL:                   strings.TrimSpace(options.RedisURL),
-		uiSessionTTL:               options.UISessionTTL,
-		hostAgentURL:               strings.TrimSpace(options.HostAgentURL),
-		hostAgentToken:             strings.TrimSpace(options.HostAgentToken),
-		integrationAPIToken:        options.IntegrationAPIToken,
+		lifecycleContext:     options.LifecycleContext,
+		repo:                 repo,
+		roleplaySimulation:   options.RoleplaySimulation,
+		embeddingClient:      embeddingClient,
+		mux:                  http.NewServeMux(),
+		providerConfig:       providerConfig,
+		coreURLDefault:       strings.TrimSpace(options.CoreURL),
+		listenAddr:           strings.TrimSpace(options.ListenAddr),
+		realtimeStreamMaxAge: options.RealtimeStreamMaxAge,
+		realtimeHeartbeat:    options.RealtimeHeartbeat,
+		realtimeWriteTimeout: options.RealtimeWriteTimeout,
+		redisURL:             strings.TrimSpace(options.RedisURL),
+		uiSessionTTL:         options.UISessionTTL,
+		hostAgentURL:         strings.TrimSpace(options.HostAgentURL),
+		hostAgentToken:       strings.TrimSpace(options.HostAgentToken),
+		hostDirectoryAccess:  hostDirectoryAccess,
+		integrationAPIToken:  options.IntegrationAPIToken,
 	}
 	s.realtimeHub = NewRealtimeHub()
 	s.routes()
@@ -144,39 +158,40 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/v1/projects/", s.handleProjectByID)
 	s.mux.HandleFunc("/v1/realtime/ws", s.handleRealtimeWS)
 	s.mux.HandleFunc("/v1/jobs", s.handleJobs)
-		s.mux.HandleFunc("/v1/jobs/", s.handleJobByID)
-		s.mux.HandleFunc("/v1/activity", s.handleActivity)
-		s.mux.HandleFunc("/v1/memory", s.handleMemory)
-		s.mux.HandleFunc("/v1/memory/batch", s.handleMemoryBatch)
-		s.mux.HandleFunc("/v1/memory/", s.handleMemoryByID)
-		s.mux.HandleFunc("/v1/memory/categories", s.handleMemoryCategories)
-		s.mux.HandleFunc("/v1/memory/tags", s.handleMemoryTags)
-		s.mux.HandleFunc("/v1/ingest/documents", s.handleIngestDocuments)
-		s.mux.HandleFunc("/v1/admin/mind/stats", s.handleMindStats)
-		s.mux.HandleFunc("/v1/admin/data-sources", s.handleDataSources)
-		s.mux.HandleFunc("/v1/admin/data-sources/", s.handleDataSourceByID)
-		s.mux.HandleFunc("/v1/ui/admin/data-sources", s.handleUIAdminDataSources)
-		s.mux.HandleFunc("/v1/ui/admin/data-sources/schema", s.handleUIAdminDataSourceSchema)
-		s.mux.HandleFunc("/v1/ui/data", s.handleUIDataComponent)
-		s.mux.HandleFunc("/v1/ui/projects", s.handleUIProjectsComponent)
-		s.mux.HandleFunc("/v1/ui/projects/modal", s.handleUIProjectModal)
-		s.mux.HandleFunc("/v1/ui/projects/", s.handleUIProjectComponent)
-		s.mux.HandleFunc("/v1/ui/scrum/create-card", s.handleUIScrumCreateCard)
-		s.mux.HandleFunc("/v1/data-sources", s.handlePublicDataSources)
-		s.mux.HandleFunc("/v1/data-sources/", s.handlePublicDataSourceByID)
-		s.mux.HandleFunc("/v1/memory-candidates", s.handleMemoryCandidates)
-		s.mux.HandleFunc("/v1/memory-candidates/", s.handleMemoryCandidateByID)
-		s.mux.HandleFunc("/v1/integrations/data-sources", s.requireIntegrationAuthentication(s.handleIntegrationDataSources))
-		s.mux.HandleFunc("/v1/integrations/jobs/", s.requireIntegrationAuthentication(s.handleIntegrationJobByID))
-		s.mux.HandleFunc("/v1/ui/chat/jobs", s.handleChatJobsComponent)
-		s.mux.HandleFunc("/v1/ui/chat/jobs/", s.handleChatJobStateComponent)
-		s.mux.HandleFunc("/v1/ui/chat/data-sources", s.handleChatDataSourceOptions)
-		s.mux.HandleFunc("/v1/ui/chat/memory", s.handleChatMemoryComponent)
-		s.mux.HandleFunc("/v1/ui/chat/timeline", s.handleChatTimelineComponent)
+	s.mux.HandleFunc("/v1/jobs/", s.handleJobByID)
+	s.mux.HandleFunc("/v1/activity", s.handleActivity)
+	s.mux.HandleFunc("/v1/memory", s.handleMemory)
+	s.mux.HandleFunc("/v1/memory/batch", s.handleMemoryBatch)
+	s.mux.HandleFunc("/v1/memory/", s.handleMemoryByID)
+	s.mux.HandleFunc("/v1/memory/categories", s.handleMemoryCategories)
+	s.mux.HandleFunc("/v1/memory/tags", s.handleMemoryTags)
+	s.mux.HandleFunc("/v1/ingest/documents", s.handleIngestDocuments)
+	s.mux.HandleFunc("/v1/admin/mind/stats", s.handleMindStats)
+	s.mux.HandleFunc("/v1/admin/data-sources", s.handleDataSources)
+	s.mux.HandleFunc("/v1/admin/data-sources/", s.handleDataSourceByID)
+	s.mux.HandleFunc("/v1/ui/admin/data-sources", s.handleUIAdminDataSources)
+	s.mux.HandleFunc("/v1/ui/admin/data-sources/schema", s.handleUIAdminDataSourceSchema)
+	s.mux.HandleFunc("/v1/ui/data", s.handleUIDataComponent)
+	s.mux.HandleFunc("/v1/ui/projects", s.handleUIProjectsComponent)
+	s.mux.HandleFunc("/v1/ui/projects/modal", s.handleUIProjectModal)
+	s.mux.HandleFunc("/v1/ui/projects/", s.handleUIProjectComponent)
+	s.mux.HandleFunc("/v1/ui/scrum/create-card", s.handleUIScrumCreateCard)
+	s.mux.HandleFunc("/v1/data-sources", s.handlePublicDataSources)
+	s.mux.HandleFunc("/v1/data-sources/", s.handlePublicDataSourceByID)
+	s.mux.HandleFunc("/v1/memory-candidates", s.handleMemoryCandidates)
+	s.mux.HandleFunc("/v1/memory-candidates/", s.handleMemoryCandidateByID)
+	s.mux.HandleFunc("/v1/integrations/data-sources", s.requireIntegrationAuthentication(s.handleIntegrationDataSources))
+	s.mux.HandleFunc("/v1/integrations/jobs/", s.requireIntegrationAuthentication(s.handleIntegrationJobByID))
+	s.mux.HandleFunc("/v1/ui/chat/jobs", s.handleChatJobsComponent)
+	s.mux.HandleFunc("/v1/ui/chat/jobs/", s.handleChatJobStateComponent)
+	s.mux.HandleFunc("/v1/ui/chat/data-sources", s.handleChatDataSourceOptions)
+	s.mux.HandleFunc("/v1/ui/chat/memory", s.handleChatMemoryComponent)
+	s.mux.HandleFunc("/v1/ui/chat/timeline", s.handleChatTimelineComponent)
 	s.mux.HandleFunc("/v1/channels", s.handleChannels)
-		s.mux.HandleFunc("/v1/channels/", s.handleChannelByID)
-		s.mux.HandleFunc("/v1/ui/chat/channels", s.handleChatChannelOptions)
-		s.mux.HandleFunc("/v1/integrations/channels", s.requireIntegrationAuthentication(s.handleIntegrationChannels))
-		s.mux.HandleFunc("/v1/integrations/channels/", s.requireIntegrationAuthentication(s.handleIntegrationChannelByID))
+	s.mux.HandleFunc("/v1/channels/cli-session", s.handleCLIChatSessionBootstrap)
+	s.mux.HandleFunc("/v1/channels/", s.handleChannelByID)
+	s.mux.HandleFunc("/v1/ui/chat/channels", s.handleChatChannelOptions)
+	s.mux.HandleFunc("/v1/integrations/channels", s.requireIntegrationAuthentication(s.handleIntegrationChannels))
+	s.mux.HandleFunc("/v1/integrations/channels/", s.requireIntegrationAuthentication(s.handleIntegrationChannelByID))
 	s.registerUIRoutes()
 }

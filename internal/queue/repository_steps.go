@@ -33,14 +33,14 @@ func (r *Repository) completeStep(
 		return err
 	}
 	defer tx.Rollback(ctx)
-	lockedAttempt, err := lockStepAttemptAuthorityTx(ctx, tx, command.Authority)
-	if err != nil {
-		return err
-	}
 	if descriptor != nil {
 		if err := lockLifecycleOperationIdentityTx(ctx, tx, command.OperationID); err != nil {
 			return err
 		}
+	}
+	lockedAttempt, err := lockStepAttemptAuthorityTx(ctx, tx, command.Authority)
+	if err != nil {
+		return err
 	}
 	jobID := command.Authority.JobID
 	job, err := scanLockedJobTx(ctx, tx, jobID)
@@ -190,11 +190,11 @@ func (r *Repository) FailStep(ctx context.Context, command FailStepCommand) erro
 		return err
 	}
 	defer tx.Rollback(ctx)
-	lockedAttempt, err := lockStepAttemptAuthorityTx(ctx, tx, command.Authority)
-	if err != nil {
+	if err := lockLifecycleOperationIdentityTx(ctx, tx, command.OperationID); err != nil {
 		return err
 	}
-	if err := lockLifecycleOperationIdentityTx(ctx, tx, command.OperationID); err != nil {
+	lockedAttempt, err := lockStepAttemptAuthorityTx(ctx, tx, command.Authority)
+	if err != nil {
 		return err
 	}
 	jobID := command.Authority.JobID

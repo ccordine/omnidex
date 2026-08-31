@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+
+	"github.com/gryph/omnidex/internal/model"
 )
 
 type channelCreateWorkspaceRoot struct {
@@ -25,8 +27,17 @@ func (root *channelCreateWorkspaceRoot) UnmarshalJSON(raw []byte) error {
 }
 
 func (s *Server) resolveChannelCreateWorkspaceRoot(requested channelCreateWorkspaceRoot) (string, error) {
+	if s == nil {
+		return "", fmt.Errorf("channel workspace authority is unavailable")
+	}
 	if !requested.Present {
 		return "", fmt.Errorf("channel workspace_root is required")
+	}
+	if err := model.ValidateChannelWorkspaceRoot(requested.Value); err != nil {
+		return "", err
+	}
+	if err := s.hostDirectoryAccess.ValidateWorkspaceRoot(requested.Value); err != nil {
+		return "", fmt.Errorf("channel workspace_root: %w", err)
 	}
 	return requested.Value, nil
 }

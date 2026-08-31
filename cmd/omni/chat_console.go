@@ -1,15 +1,22 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"sync"
+	"sync/atomic"
+	"unicode"
+	"unicode/utf8"
 
-	"golang.org/x/sys/unix"
+	"github.com/gryph/omnidex/internal/model"
 	"golang.org/x/term"
 )
+
+var errChatInputRejected = errors.New("interactive input rejected")
 
 type terminalReadWriter struct {
 	reader io.Reader
@@ -25,28 +32,29 @@ func (stream terminalReadWriter) Write(buffer []byte) (int, error) {
 }
 
 type chatConsole struct {
-	input io.Reader
-	out   io.Writer
-	err   io.Writer
-
 	terminal      *term.Terminal
+	pasteReader   *bracketedPasteReader
 	terminalFD    int
 	terminalState *term.State
 	closeOnce     sync.Once
+	inputOverflow atomic.Bool
 	promptMu      sync.Mutex
 	prompt        string
 }
 
-func newChatConsole(input io.Reader, output, errorsOutput io.Writer) (*chatConsole, error) {
-	if input == nil || output == nil || errorsOutput == nil {
+func newChatConsole(
+	ctx context.Context,
+	input io.Reader,
+	output,
+	errorsOutput io.Writer,
+) (*chatConsole, error) {
+	if ctx == nil || input == nil || output == nil || errorsOutput == nil {
 		return nil, fmt.Errorf("interactive console requires stdin, stdout, and stderr")
 	}
-	console := &chatConsole{input: input, out: output, err: errorsOutput, terminalFD: -1}
-	inputFile, inputOK := input.(*os.File)
-	outputFile, outputOK := output.(*os.File)
-	if !inputOK || !outputOK || !term.IsTerminal(int(inputFile.Fd())) ||
-		!term.IsTerminal(int(outputFile.Fd())) {
-		return console, nil
+	console := &chatConsole{terminalFD: -1}
+	inputFile, outputFile, err := requireChatTerminalStreams(input, output)
+	if err != nil {
+		return nil, err
 	}
 
 	fd := int(inputFile.Fd())
@@ -58,30 +66,38 @@ func newChatConsole(input io.Reader, output, errorsOutput io.Writer) (*chatConso
 		_ = term.Restore(fd, state)
 		return nil, err
 	}
+	pasteReader := newBracketedPasteReader(
+		newTerminalContextReader(ctx, inputFile),
+		model.MaxFreeFormTurnBytes,
+	)
 	interactive := term.NewTerminal(
-		terminalReadWriter{reader: inputFile, writer: output},
+		terminalReadWriter{
+			reader: pasteReader,
+			writer: output,
+		},
 		"you> ",
 	)
+	interactive.AutoCompleteCallback = console.boundTerminalInput
+	interactive.SetBracketedPasteMode(true)
 	if width, height, sizeErr := term.GetSize(int(outputFile.Fd())); sizeErr == nil {
 		_ = interactive.SetSize(width, height)
 	}
 	console.terminal = interactive
+	console.pasteReader = pasteReader
 	console.terminalFD = fd
 	console.terminalState = state
 	console.prompt = "you> "
 	return console, nil
 }
 
-func enableTerminalInterruptSignal(fd int) error {
-	settings, err := unix.IoctlGetTermios(fd, unix.TCGETS)
-	if err != nil {
-		return fmt.Errorf("read terminal interrupt settings: %w", err)
+func requireChatTerminalStreams(input io.Reader, output io.Writer) (*os.File, *os.File, error) {
+	inputFile, inputOK := input.(*os.File)
+	outputFile, outputOK := output.(*os.File)
+	if !inputOK || !outputOK || !term.IsTerminal(int(inputFile.Fd())) ||
+		!term.IsTerminal(int(outputFile.Fd())) {
+		return nil, nil, fmt.Errorf("omni chat requires an interactive terminal on stdin and stdout")
 	}
-	settings.Lflag |= unix.ISIG
-	if err := unix.IoctlSetTermios(fd, unix.TCSETS, settings); err != nil {
-		return fmt.Errorf("enable terminal interrupt signal: %w", err)
-	}
-	return nil
+	return inputFile, outputFile, nil
 }
 
 func (console *chatConsole) Close() error {
@@ -90,6 +106,9 @@ func (console *chatConsole) Close() error {
 	}
 	var closeErr error
 	console.closeOnce.Do(func() {
+		if console.terminal != nil {
+			console.terminal.SetBracketedPasteMode(false)
+		}
 		if console.terminalState != nil && console.terminalFD >= 0 {
 			closeErr = term.Restore(console.terminalFD, console.terminalState)
 		}
@@ -100,18 +119,70 @@ func (console *chatConsole) Close() error {
 	return nil
 }
 
-func (console *chatConsole) ReadLine() (string, error) {
+func (console *chatConsole) ReadLine() (string, bool, error) {
 	if console == nil {
-		return "", fmt.Errorf("interactive console is unavailable")
+		return "", false, fmt.Errorf("interactive console is unavailable")
 	}
 	if console.terminal != nil {
+		console.inputOverflow.Store(false)
 		line, err := console.terminal.ReadLine()
-		if errors.Is(err, term.ErrPasteIndicator) {
-			return line, nil
+		pasted, pasteOverflow, mixedPaste, invalidUTF8, unsafeText, exactPaste := console.pasteReader.consumeLineState()
+		if console.inputOverflow.Load() || pasteOverflow || len(line) > model.MaxFreeFormTurnBytes {
+			return "", false, fmt.Errorf(
+				"%w: input exceeded the %d-byte terminal boundary and was not submitted",
+				errChatInputRejected,
+				model.MaxFreeFormTurnBytes,
+			)
 		}
-		return line, err
+		if pasted && mixedPaste {
+			return "", false, fmt.Errorf(
+				"%w: pasted input cannot be combined with typed terminal edits; the turn was not submitted",
+				errChatInputRejected,
+			)
+		}
+		if invalidUTF8 {
+			return "", false, fmt.Errorf(
+				"%w: terminal input was not valid UTF-8 and was not submitted",
+				errChatInputRejected,
+			)
+		}
+		if unsafeText {
+			return "", false, fmt.Errorf(
+				"%w: terminal input contained unsafe formatting controls and was not submitted",
+				errChatInputRejected,
+			)
+		}
+		if err != nil && !errors.Is(err, term.ErrPasteIndicator) {
+			return "", false, err
+		}
+		if pasted {
+			return exactPaste, true, nil
+		}
+		if errors.Is(err, term.ErrPasteIndicator) {
+			return "", false, fmt.Errorf("terminal paste provenance was not preserved")
+		}
+		return line, false, err
 	}
-	return "", fmt.Errorf("non-terminal input requires the buffered reader")
+	return "", false, fmt.Errorf("interactive terminal is unavailable")
+}
+
+func (console *chatConsole) boundTerminalInput(
+	line string,
+	position int,
+	key rune,
+) (string, int, bool) {
+	if !utf8.ValidRune(key) || key < ' ' {
+		return "", 0, false
+	}
+	if console.inputOverflow.Load() {
+		return line, position, true
+	}
+	keyBytes := utf8.RuneLen(key)
+	if keyBytes > 0 && len(line)+keyBytes <= model.MaxFreeFormTurnBytes {
+		return "", 0, false
+	}
+	console.inputOverflow.Store(true)
+	return line, position, true
 }
 
 func (console *chatConsole) IsTerminal() bool {
@@ -129,8 +200,7 @@ func (console *chatConsole) SetPrompt(prompt string) error {
 	}
 	console.prompt = prompt
 	if console.terminal == nil {
-		_, err := fmt.Fprint(console.out, prompt)
-		return err
+		return fmt.Errorf("interactive terminal is unavailable")
 	}
 	console.terminal.SetPrompt(prompt)
 	_, err := console.terminal.Write(nil)
@@ -141,11 +211,11 @@ func (console *chatConsole) WriteOutput(value string) error {
 	if console == nil {
 		return fmt.Errorf("interactive console is unavailable")
 	}
-	if console.terminal != nil {
-		_, err := console.terminal.Write([]byte(value))
-		return err
+	value = safeConsoleText(value)
+	if console.terminal == nil {
+		return fmt.Errorf("interactive terminal is unavailable")
 	}
-	_, err := io.WriteString(console.out, value)
+	_, err := console.terminal.Write([]byte(value))
 	return err
 }
 
@@ -153,10 +223,35 @@ func (console *chatConsole) WriteError(value string) error {
 	if console == nil {
 		return fmt.Errorf("interactive console is unavailable")
 	}
-	if console.terminal != nil {
-		_, err := console.terminal.Write([]byte(value))
-		return err
+	value = safeConsoleText(value)
+	if console.terminal == nil {
+		return fmt.Errorf("interactive terminal is unavailable")
 	}
-	_, err := io.WriteString(console.err, value)
+	_, err := console.terminal.Write([]byte(value))
 	return err
+}
+
+func safeConsoleText(value string) string {
+	var rendered strings.Builder
+	for _, character := range value {
+		switch {
+		case character == '\n' || character == '\t':
+			rendered.WriteRune(character)
+		case unsafeTerminalTextRune(character):
+			if character <= '\uffff' {
+				fmt.Fprintf(&rendered, "\\u%04x", character)
+			} else {
+				fmt.Fprintf(&rendered, "\\U%08x", character)
+			}
+		default:
+			rendered.WriteRune(character)
+		}
+	}
+	return rendered.String()
+}
+
+func unsafeTerminalTextRune(character rune) bool {
+	return character < ' ' || character == '\x7f' ||
+		character >= '\u0080' && character <= '\u009f' ||
+		unicode.Is(unicode.Cf, character) || character == '\u2028' || character == '\u2029'
 }

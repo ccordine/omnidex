@@ -50,18 +50,19 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*Runtime, 
 
 	transports := llmprovider.NewLazyFromConfig(cfg)
 	server, err := api.NewServer(repo, transports.Embeddings, api.ServerOptions{
-		LifecycleContext:     lifecycleContext,
-		ProviderConfig:       cfg,
-		CoreURL:              cfg.CoreURL,
-		ListenAddr:           cfg.ListenAddr,
-		HostAgentURL:         cfg.HostAgentURL,
-		HostAgentToken:       cfg.HostAgentToken,
-		IntegrationAPIToken:  cfg.IntegrationAPIToken,
-		RealtimeStreamMaxAge: cfg.RealtimeStreamMaxAge,
-		RealtimeHeartbeat:    cfg.RealtimeHeartbeat,
-		RealtimeWriteTimeout: cfg.RealtimeWriteTimeout,
-		RedisURL:             cfg.RedisURL,
-		UISessionTTL:         cfg.UISessionTTL,
+		LifecycleContext:        lifecycleContext,
+		ProviderConfig:          cfg,
+		CoreURL:                 cfg.CoreURL,
+		ListenAddr:              cfg.ListenAddr,
+		HostAgentURL:            cfg.HostAgentURL,
+		HostAgentToken:          cfg.HostAgentToken,
+		HostDirectoryAccessRoot: cfg.HostDirectoryAccessRoot,
+		IntegrationAPIToken:     cfg.IntegrationAPIToken,
+		RealtimeStreamMaxAge:    cfg.RealtimeStreamMaxAge,
+		RealtimeHeartbeat:       cfg.RealtimeHeartbeat,
+		RealtimeWriteTimeout:    cfg.RealtimeWriteTimeout,
+		RedisURL:                cfg.RedisURL,
+		UISessionTTL:            cfg.UISessionTTL,
 	})
 	if err != nil {
 		cancel()
@@ -73,14 +74,17 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*Runtime, 
 		transports.Stations,
 		nil,
 		worker.Options{
-			PollInterval:           cfg.WorkerPollInterval,
-			InferenceContextTokens: cfg.InferenceContextTokens,
-			Logger:                 logger,
+			PollInterval:            cfg.WorkerPollInterval,
+			InferenceContextTokens:  cfg.InferenceContextTokens,
+			HostDirectoryAccessRoot: cfg.HostDirectoryAccessRoot,
+			Logger:                  logger,
 			RuntimeEventSink: func(event worker.RuntimeEvent) error {
 				return server.PublishJobRuntimeEvent(api.JobRuntimeEvent{
-					JobID: event.JobID, StepID: event.StepID, Attempt: event.Attempt,
+					JobID: event.JobID, ChannelID: event.ChannelID,
+					StepID: event.StepID, Attempt: event.Attempt,
 					RuntimeEvent: event.Kind, Detail: event.Detail,
 					FileOperation: event.FileOperation, FilePath: event.FilePath,
+					FileSourcePath: event.FileSourcePath,
 				})
 			},
 		},

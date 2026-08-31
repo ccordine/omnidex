@@ -51,23 +51,25 @@ type ReconciliationResult struct {
 }
 
 // VerifiedChangeObserver receives one bounded change only after that exact
-// filesystem mutation has been committed and verified. Returning an error
-// stops the reconciliation; the applied change remains present in the result.
-type VerifiedChangeObserver func(Change) error
+// filesystem mutation has been committed and verified. It observes retained
+// state and has no authority over reconciliation control flow.
+type VerifiedChangeObserver func(Change)
 
 // PreparedReconciliation owns one exact desired-state transaction. Preparation
 // validates only the values the filesystem consumer needs; it creates no
 // staging directories and performs no mutation.
 type PreparedReconciliation struct {
-	mu       sync.Mutex
-	root     string
-	rootInfo os.FileInfo
-	desired  []DesiredFile
-	applied  bool
+	mu         sync.Mutex
+	hostAccess HostDirectoryAccess
+	root       string
+	rootInfo   os.FileInfo
+	desired    []DesiredFile
+	applied    bool
 }
 
 func PrepareReconciliation(
 	ctx context.Context,
+	hostAccess HostDirectoryAccess,
 	root string,
 	desired []DesiredFile,
 ) (*PreparedReconciliation, error) {
@@ -77,16 +79,16 @@ func PrepareReconciliation(
 	if err := ctx.Err(); err != nil {
 		return nil, fmt.Errorf("prepare workspace reconciliation: %w", err)
 	}
-	rootInfo, err := exactRootDirectory(root)
+	rootInfo, err := hostAccess.captureWorkspaceRoot(root)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("prepare host-authoritative workspace root: %w", err)
 	}
 	normalized, err := validateDesiredFiles(desired)
 	if err != nil {
 		return nil, err
 	}
 	return &PreparedReconciliation{
-		root: root, rootInfo: rootInfo, desired: normalized,
+		hostAccess: hostAccess, root: root, rootInfo: rootInfo, desired: normalized,
 	}, nil
 }
 

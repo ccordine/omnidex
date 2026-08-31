@@ -2,56 +2,121 @@ package main
 
 import (
 	"fmt"
-	"io"
 	"strings"
 
 	"github.com/gryph/omnidex/internal/client"
 	"github.com/gryph/omnidex/internal/model"
+	"github.com/gryph/omnidex/internal/queue"
 )
 
 type chatRenderer struct {
-	out io.Writer
-	err io.Writer
+	console *chatConsole
 }
 
-func (renderer chatRenderer) banner(channel model.Channel) {
-	fmt.Fprintf(renderer.out, "Omnidex chat\nproject: %s\nsession: %s\n", channel.WorkspaceRoot, channel.ID)
-	fmt.Fprintln(renderer.out, "Type /help for controls. Exit with /exit or Ctrl-D; active server work continues.")
+func (renderer chatRenderer) banner(channel model.Channel) error {
+	return renderer.console.WriteOutput(fmt.Sprintf(
+		"Omnidex chat\nproject: %s\nsession: %s\nType /help for controls. Exit with /exit or Ctrl-D; active server work continues.\n",
+		channel.WorkspaceRoot,
+		channel.ID,
+	))
 }
 
-func (renderer chatRenderer) transcript(messages []model.ChannelMessage) {
-	if len(messages) == 0 {
-		return
+func (renderer chatRenderer) resumed(
+	activity int,
+	messagesTruncated bool,
+	turnsTruncated bool,
+	controlsTruncated bool,
+) error {
+	if activity == 0 && !messagesTruncated && !turnsTruncated && !controlsTruncated {
+		return nil
 	}
-	fmt.Fprintf(renderer.out, "resumed %d persisted messages\n", len(messages))
-	for _, message := range messages {
-		label := "you"
-		if message.Role == model.ChannelMessageRoleAssistant {
-			label = "omni"
-		}
-		renderBlock(renderer.out, label+">", message.Content)
+	var rendered strings.Builder
+	fmt.Fprintf(&rendered, "[omni] resumed %d persisted session entries\n", activity)
+	if messagesTruncated || turnsTruncated || controlsTruncated {
+		fmt.Fprintln(&rendered, "[omni] older persisted session history exists outside this bounded view")
 	}
+	return renderer.console.WriteError(rendered.String())
 }
 
-func (renderer chatRenderer) prompt(details *model.JobDetails) {
+func (renderer chatRenderer) message(message model.ChannelMessage) error {
+	var rendered strings.Builder
+	label := "you>"
+	if message.Role == model.ChannelMessageRoleAssistant {
+		label = "omni>"
+	}
+	renderBlock(&rendered, label, message.Content)
+	return renderer.console.WriteOutput(rendered.String())
+}
+
+func (renderer chatRenderer) messageTurnState(message model.ChannelMessage) error {
+	if message.Turn == nil {
+		return fmt.Errorf("job-turn presentation requires persisted turn authority")
+	}
+	if message.Turn.Status == model.JobStatusCompleted {
+		return renderer.system("job %d · completed", message.Turn.JobID)
+	}
+	var rendered strings.Builder
+	fmt.Fprintf(&rendered, "[omni] job %d · %s\n", message.Turn.JobID, message.Turn.Status)
+	renderBlock(&rendered, "error>", message.Turn.Error)
+	return renderer.console.WriteError(rendered.String())
+}
+
+func (renderer chatRenderer) sessionTurn(turn queue.ChannelSessionTurn) error {
+	label := "you>"
+	switch turn.Disposition {
+	case queue.ChannelSessionTurnReplanned:
+		label = "you redirect>"
+	case queue.ChannelSessionTurnFeedback:
+		label = "you follow-up>"
+	case queue.ChannelSessionTurnEnqueued:
+	default:
+		return fmt.Errorf("cannot render session turn disposition %q", turn.Disposition)
+	}
+	var rendered strings.Builder
+	renderBlock(&rendered, label, turn.Text)
+	return renderer.console.WriteOutput(rendered.String())
+}
+
+func (renderer chatRenderer) sessionControl(control queue.ChannelSessionControl) error {
+	label := "you control>"
+	switch control.Kind {
+	case queue.ChannelSessionControlInterrupt:
+		label = "you /interrupt>"
+	case queue.ChannelSessionControlReplan:
+		label = "you /redirect>"
+	case queue.ChannelSessionControlCancel:
+		label = "you /cancel>"
+	default:
+		return fmt.Errorf("cannot render session control kind %q", control.Kind)
+	}
+	var rendered strings.Builder
+	renderBlock(&rendered, label, control.Text)
+	return renderer.console.WriteOutput(rendered.String())
+}
+
+func (renderer chatRenderer) prompt(details *model.JobDetails) error {
 	label := "you> "
 	if details != nil {
-		label = fmt.Sprintf("redirect #%d> ", details.Job.ID)
-		if details.Job.Status == model.JobStatusWaiting && !interruptedBoundary(details.Steps) {
-			label = fmt.Sprintf("feedback #%d> ", details.Job.ID)
-		}
+		label = fmt.Sprintf("you #%d> ", details.Job.ID)
 	}
-	fmt.Fprint(renderer.out, label)
+	return renderer.console.SetPrompt(label)
 }
 
-func (renderer chatRenderer) system(format string, values ...any) {
-	fmt.Fprintf(renderer.err, "\n[omni] "+format+"\n", values...)
+func (renderer chatRenderer) system(format string, values ...any) error {
+	return renderer.console.WriteError(fmt.Sprintf("[omni] "+format+"\n", values...))
 }
 
-func (renderer chatRenderer) job(details model.JobDetails, previous *model.JobDetails) {
+func (renderer chatRenderer) job(details model.JobDetails, previous *model.JobDetails) error {
+	var rendered strings.Builder
 	if previous == nil || previous.Job.Status != details.Job.Status ||
 		previous.Job.CurrentGeneration != details.Job.CurrentGeneration {
-		renderer.system("job %d · generation %d · %s", details.Job.ID, details.Job.CurrentGeneration, details.Job.Status)
+		fmt.Fprintf(
+			&rendered,
+			"[omni] job %d · generation %d · %s\n",
+			details.Job.ID,
+			details.Job.CurrentGeneration,
+			details.Job.Status,
+		)
 	}
 	prior := map[int64]string{}
 	if previous != nil {
@@ -61,40 +126,81 @@ func (renderer chatRenderer) job(details model.JobDetails, previous *model.JobDe
 	}
 	for _, step := range details.Steps {
 		if prior[step.ID] != step.Status {
-			renderer.system("stage %s · %s", step.Action, step.Status)
+			fmt.Fprintf(
+				&rendered,
+				"[omni] job %d · step %d · stage %s · %s\n",
+				details.Job.ID,
+				step.ID,
+				step.Action,
+				step.Status,
+			)
 		}
 	}
+	if rendered.Len() == 0 {
+		return nil
+	}
+	return renderer.console.WriteError(rendered.String())
 }
 
-func (renderer chatRenderer) realtime(event client.RealtimeEvent) {
+func (renderer chatRenderer) status(details model.JobDetails) error {
+	var rendered strings.Builder
+	fmt.Fprintf(
+		&rendered,
+		"[omni] job %d · generation %d · %s\n",
+		details.Job.ID,
+		details.Job.CurrentGeneration,
+		details.Job.Status,
+	)
+	for _, step := range details.Steps {
+		fmt.Fprintf(
+			&rendered,
+			"[omni] job %d · step %d · stage %s · %s\n",
+			details.Job.ID,
+			step.ID,
+			step.Action,
+			step.Status,
+		)
+	}
+	return renderer.console.WriteError(rendered.String())
+}
+
+func (renderer chatRenderer) realtime(event client.RealtimeEvent) error {
 	if event.EventName == client.RealtimeJobProgress {
-		renderer.system("job %d · %s", event.JobID, event.Summary)
-		return
+		return renderer.system("job %d · %s", event.JobID, event.Summary)
 	}
 	if event.FilePath != "" {
-		renderer.system("file %s · %s", event.FileOperation, event.FilePath)
-		return
+		if event.FileOperation == "move" && event.FileSourcePath != "" {
+			return renderer.system(
+				"job %d · step %d · file move · %q → %q",
+				event.JobID,
+				event.StepID,
+				event.FileSourcePath,
+				event.FilePath,
+			)
+		}
+		return renderer.system(
+			"job %d · step %d · file %s · %q",
+			event.JobID,
+			event.StepID,
+			event.FileOperation,
+			event.FilePath,
+		)
 	}
 	detail := strings.TrimSpace(event.Detail)
 	if detail == "" {
 		detail = event.RuntimeEvent
 	}
-	renderer.system("work %s · %s", event.RuntimeEvent, detail)
+	return renderer.system(
+		"job %d · step %d · work %s · %s",
+		event.JobID,
+		event.StepID,
+		event.RuntimeEvent,
+		detail,
+	)
 }
 
-func (renderer chatRenderer) terminal(details model.JobDetails) {
-	switch details.Job.Status {
-	case model.JobStatusCompleted:
-		if strings.TrimSpace(details.Job.Result) != "" {
-			renderBlock(renderer.out, "omni>", details.Job.Result)
-		}
-	case model.JobStatusFailed, model.JobStatusCanceled:
-		renderBlock(renderer.err, "error>", details.Job.Error)
-	}
-}
-
-func renderBlock(destination io.Writer, label, value string) {
-	lines := strings.Split(strings.TrimSpace(value), "\n")
+func renderBlock(destination *strings.Builder, label, value string) {
+	lines := strings.Split(value, "\n")
 	if len(lines) == 0 || (len(lines) == 1 && lines[0] == "") {
 		fmt.Fprintln(destination, label)
 		return
