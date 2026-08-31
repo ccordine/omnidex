@@ -57,17 +57,13 @@ func (authority directCodingApplicationRequestAuthority) validate() error {
 }
 
 type directCodingApplicationInterpretation struct {
-	Specification        assemblyline.ApplicationSpecification
-	RequestSHA256        string
-	AcceptedRequirements []assemblyline.ApplicationRequirement
+	Specification assemblyline.ApplicationSpecification
+	RequestSHA256 string
 }
 
 func (interpretation directCodingApplicationInterpretation) validateForAuthority(
 	authority directCodingApplicationRequestAuthority,
 ) error {
-	if err := interpretation.Specification.Validate(); err != nil {
-		return err
-	}
 	if err := authority.validate(); err != nil {
 		return err
 	}
@@ -76,24 +72,14 @@ func (interpretation directCodingApplicationInterpretation) validateForAuthority
 			"application interpretation request provenance does not match authoritative request",
 		)
 	}
-	if len(interpretation.AcceptedRequirements) != len(interpretation.Specification.Requirements) {
-		return fmt.Errorf("application interpretation result-relation receipts do not cover accepted requirements")
+	if len(interpretation.Specification.Requirements) == 0 {
+		if interpretation.Specification.Surface != "" || interpretation.Specification.ProductQuote != "" {
+			return fmt.Errorf("filesystem-only interpretation carries unused application authority")
+		}
+		return nil
 	}
-	for index, accepted := range interpretation.AcceptedRequirements {
-		requirement := interpretation.Specification.Requirements[index]
-		if accepted.ID != requirement.ID || accepted.Statement != requirement.SourceQuote ||
-			accepted.RequestSHA256 != authority.requestSHA256 {
-			return fmt.Errorf(
-				"application interpretation requirement %d differs from accepted specification authority",
-				index,
-			)
-		}
-		if err := accepted.ResultRelation.ValidateAcceptedFor(accepted.Statement); err != nil {
-			return fmt.Errorf(
-				"application interpretation requirement %s result relation: %w",
-				accepted.ID, err,
-			)
-		}
+	if err := interpretation.Specification.Validate(); err != nil {
+		return err
 	}
 	return nil
 }
@@ -122,19 +108,9 @@ func runDirectCodingApplicationInterpreter(
 	if err != nil {
 		return zero, err
 	}
-	modelName, err := surfaceModel()
-	if err != nil {
-		return zero, err
-	}
-	classification, err := classifyApplicationSurface(
-		runtime, modelName, authority.modelRequest, identities,
-	)
-	if err != nil {
-		return zero, err
-	}
 	artifacts := []assemblyline.ArtifactDirective(nil)
 	if len(identities) > 0 {
-		modelName, err = artifactModel()
+		modelName, err := artifactModel()
 		if err != nil {
 			return zero, err
 		}
@@ -146,6 +122,26 @@ func runDirectCodingApplicationInterpreter(
 		}
 	}
 	artifacts, err = sieveDirectCodingApplicationArtifactDirectives(artifacts)
+	if err != nil {
+		return zero, err
+	}
+	if len(resolution.Requirements) == 0 {
+		interpretation := directCodingApplicationInterpretation{
+			Specification: assemblyline.ApplicationSpecification{Artifacts: artifacts},
+			RequestSHA256: authority.requestSHA256,
+		}
+		if err := interpretation.validateForAuthority(authority); err != nil {
+			return zero, err
+		}
+		return interpretation, nil
+	}
+	modelName, err := surfaceModel()
+	if err != nil {
+		return zero, err
+	}
+	classification, err := classifyApplicationSurface(
+		runtime, modelName, authority.modelRequest, identities,
+	)
 	if err != nil {
 		return zero, err
 	}
@@ -162,13 +158,8 @@ func runDirectCodingApplicationInterpreter(
 	if resolution.RequestSHA256 != assemblyline.ExactObjectiveContextSHA(authority.modelRequest) {
 		return zero, fmt.Errorf("application interpretation resolution differs from model request authority")
 	}
-	accepted := append([]assemblyline.ApplicationRequirement(nil), resolution.Requirements...)
-	for index := range accepted {
-		accepted[index].RequestSHA256 = authority.requestSHA256
-	}
 	interpretation := directCodingApplicationInterpretation{
 		Specification: specification, RequestSHA256: authority.requestSHA256,
-		AcceptedRequirements: accepted,
 	}
 	if err := interpretation.validateForAuthority(authority); err != nil {
 		return zero, err

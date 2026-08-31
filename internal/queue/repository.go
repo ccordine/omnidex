@@ -2,7 +2,6 @@ package queue
 
 import (
 	"context"
-	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,12 +11,14 @@ import (
 	"github.com/gryph/omnidex/internal/artifacts"
 	"github.com/gryph/omnidex/internal/evidence"
 	"github.com/gryph/omnidex/internal/model"
+	"github.com/gryph/omnidex/internal/modelconfig"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type Repository struct {
-	pool *pgxpool.Pool
+	pool           *pgxpool.Pool
+	modelAuthority modelconfig.Authority
 }
 
 type stepSeed struct {
@@ -25,8 +26,8 @@ type stepSeed struct {
 	sortIndex int
 }
 
-func New(pool *pgxpool.Pool) *Repository {
-	return &Repository{pool: pool}
+func New(pool *pgxpool.Pool, modelAuthority modelconfig.Authority) *Repository {
+	return &Repository{pool: pool, modelAuthority: modelAuthority}
 }
 
 func (r *Repository) Ping(ctx context.Context) error {
@@ -119,41 +120,12 @@ func (r *Repository) enqueueJobWithStepsTx(
 	job.Result = stringOrEmpty(result)
 	job.Error = stringOrEmpty(errText)
 
-	telemetryRunID, err := createTelemetryRunForJob(ctx, tx, job, projectID)
-	if err != nil {
-		return model.Job{}, err
-	}
-	if telemetryRunID == "" {
-		return model.Job{}, fmt.Errorf("create telemetry run for job %d returned an empty identity", job.ID)
-	}
-	if err := tx.QueryRow(ctx, `
-		UPDATE jobs
-		SET metadata = jsonb_set(COALESCE(metadata, '{}'::jsonb), '{telemetry_run_id}', to_jsonb($2::text), true)
-		WHERE id = $1
-		RETURNING metadata
-	`, job.ID, telemetryRunID).Scan(&job.Metadata); err != nil {
-		return model.Job{}, err
-	}
-	if err := recordTelemetryJobEvent(ctx, tx, job.ID, "run_started", map[string]any{
-		"job_id":   job.ID,
-		"pipeline": job.Pipeline,
-		"status":   job.Status,
-	}); err != nil {
-		return model.Job{}, err
-	}
-	if err := createTaskLedgerTx(ctx, tx, job.ID, telemetryRunID); err != nil {
-		return model.Job{}, err
-	}
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO job_generations (job_id, generation, purpose)
 		VALUES ($1, 1, $2)
 	`, job.ID, jobGenerationPurposeInitial); err != nil {
 		return model.Job{}, fmt.Errorf("create initial generation for job %d: %w", job.ID, err)
 	}
-	if err := seedInitialTaskAuthorityTx(ctx, tx, job); err != nil {
-		return model.Job{}, err
-	}
-
 	for _, step := range steps {
 		if _, err := tx.Exec(ctx, `
 			INSERT INTO job_steps (job_id, action, sort_index, status, generation)
@@ -171,48 +143,22 @@ func resolveProjectID(ctx context.Context, tx pgx.Tx, metadataJSON []byte) (*int
 		return nil, err
 	}
 	if ref.HasProjectID {
-		var location string
+		var projectID int64
 		err := tx.QueryRow(ctx, `
 			UPDATE projects
 			SET last_seen_at = NOW(), updated_at = NOW()
 			WHERE id = $1
-			RETURNING location
-		`, ref.ProjectID).Scan(&location)
+			RETURNING id
+		`, ref.ProjectID).Scan(&projectID)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, fmt.Errorf("project_id %d does not exist", ref.ProjectID)
 		}
 		if err != nil {
 			return nil, err
 		}
-		if ref.Location != "" && filepath.Clean(location) != ref.Location {
-			return nil, fmt.Errorf(
-				"job metadata project mismatch: project_id %d owns %q, received %q",
-				ref.ProjectID,
-				filepath.Clean(location),
-				ref.Location,
-			)
-		}
-		projectID := ref.ProjectID
 		return &projectID, nil
 	}
-	if ref.Location == "" {
-		return nil, nil
-	}
-	name := projectNameFromLocation(ref.Location)
-
-	var projectID int64
-	err = tx.QueryRow(ctx, `
-		INSERT INTO projects (location, name, last_seen_at)
-		VALUES ($1, $2, NOW())
-		ON CONFLICT (location) DO UPDATE
-		SET last_seen_at = NOW(),
-		    updated_at = NOW()
-		RETURNING id
-	`, ref.Location, name).Scan(&projectID)
-	if err != nil {
-		return nil, err
-	}
-	return &projectID, nil
+	return nil, nil
 }
 
 type metadataProjectReference struct {
@@ -265,75 +211,6 @@ func decodeMetadataObject(raw json.RawMessage) map[string]any {
 	}
 	_ = json.Unmarshal(raw, &out)
 	return out
-}
-
-func firstMetadataString(metadata map[string]any, keys ...string) string {
-	for _, key := range keys {
-		if value := strings.TrimSpace(fmt.Sprint(metadata[key])); value != "" && value != "<nil>" {
-			return value
-		}
-	}
-	return ""
-}
-
-func metadataValue(metadata map[string]any, key string) any {
-	if value, ok := metadata[key]; ok && value != nil {
-		return value
-	}
-	return map[string]any{}
-}
-
-func inferTelemetryTaskKind(pipeline string, metadata map[string]any) string {
-	if kind := strings.TrimSpace(firstMetadataString(metadata, "research_topic")); kind != "" {
-		return "research"
-	}
-	pipeline = strings.ToLower(strings.TrimSpace(pipeline))
-	switch pipeline {
-	case model.PipelineCoding:
-		return "coding"
-	case model.PipelineChat:
-		return "chat"
-	}
-	return pipeline
-}
-
-func telemetryPromptHash(instruction string) string {
-	sum := sha256.Sum256([]byte(strings.TrimSpace(instruction)))
-	return fmt.Sprintf("%x", sum[:])
-}
-
-func telemetryPromptSummary(instruction string, max int) string {
-	text := strings.Join(strings.Fields(strings.TrimSpace(instruction)), " ")
-	if max > 0 && len(text) > max {
-		return TruncateUTF8Text(text, max, "...[redacted]")
-	}
-	return text
-}
-
-func projectLocationFromMetadata(metadataJSON []byte) string {
-	if len(metadataJSON) == 0 {
-		return ""
-	}
-	var payload map[string]any
-	if err := json.Unmarshal(metadataJSON, &payload); err != nil {
-		return ""
-	}
-	for _, key := range []string{"client_cwd"} {
-		raw, ok := payload[key]
-		if !ok {
-			continue
-		}
-		text, ok := raw.(string)
-		if !ok {
-			continue
-		}
-		if text == "" || text != strings.TrimSpace(text) ||
-			!filepath.IsAbs(text) || filepath.Clean(text) != text {
-			continue
-		}
-		return text
-	}
-	return ""
 }
 
 func projectNameFromLocation(location string) string {

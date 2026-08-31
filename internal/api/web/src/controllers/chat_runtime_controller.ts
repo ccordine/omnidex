@@ -251,8 +251,6 @@ export abstract class ChatRuntimeController extends ChatSynchronizationControlle
 	  statusOutput: () => this.statusOutputTarget,
       hasHostBridgeStatus: () => this.hasHostBridgeStatusOutputTarget,
 	  hostBridgeStatus: () => this.hostBridgeStatusOutputTarget,
-      hasResearchStatus: () => this.hasResearchStatusOutputTarget,
-	  researchStatus: () => this.researchStatusOutputTarget,
       hasMetrics: () => this.hasMetricsOutputTarget,
 	  metrics: () => this.metricsOutputTarget,
       updateTransportLabel: () => this.channel.updateTransportLabel(),

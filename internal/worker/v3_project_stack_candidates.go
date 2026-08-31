@@ -131,7 +131,6 @@ func resolveDirectCodingProjectFormatDecision(
 	formats []directCodingProjectFormatCandidate,
 	input assemblyline.ApplicationProjectStackConstraintInput,
 	decision assemblyline.ApplicationProjectStackConstraintDecision,
-	manifestSelection *directCodingProjectSelection,
 ) (directCodingProjectSelection, error) {
 	if err := decision.ValidateFor(input); err != nil {
 		return directCodingProjectSelection{}, err
@@ -143,9 +142,6 @@ func resolveDirectCodingProjectFormatDecision(
 			surface,
 		)
 	case assemblyline.ApplicationProjectStackUnconstrained:
-		if manifestSelection != nil {
-			return *manifestSelection, nil
-		}
 		return directCodingDefaultProjectSelection(surface, stacks, profiles)
 	default:
 		for index, candidate := range input.Candidates {
@@ -157,14 +153,6 @@ func resolveDirectCodingProjectFormatDecision(
 				}
 				selection := directCodingProjectSelection{
 					Stack: formats[index].Stack, VersionProfileID: formats[index].Profile.ID,
-				}
-				if manifestSelection != nil &&
-					(selection.Stack.ID != manifestSelection.Stack.ID ||
-						selection.VersionProfileID != manifestSelection.VersionProfileID) {
-					return directCodingProjectSelection{}, fmt.Errorf(
-						"project format candidate %q conflicts with the compatible workspace manifest",
-						candidate.CandidateID,
-					)
 				}
 				return selection, nil
 			}

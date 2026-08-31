@@ -6,13 +6,10 @@ import (
 	"strings"
 )
 
-const (
-	maxDirectCodingAssemblyUnits = 32
-)
-
 type directCodingFileTask struct {
 	Path    string
-	Content string
+	Content []byte
+	Mode    uint32
 }
 
 func (t *directCodingFileTask) normalize() error {
@@ -21,8 +18,8 @@ func (t *directCodingFileTask) normalize() error {
 		return err
 	}
 	t.Path = path
-	if t.Content == "" {
-		return fmt.Errorf("code-owned source %s is empty", t.Path)
+	if t.Mode&^uint32(0o777) != 0 {
+		return fmt.Errorf("code-owned source %s has invalid permission bits", t.Path)
 	}
 	return nil
 }
@@ -34,36 +31,15 @@ func (t directCodingFileTask) validate() error {
 
 type directCodingAssembly struct {
 	VersionProfileID string
-	Directories      []string
 	Files            []directCodingFileTask
 	DeletePaths      []string
 }
 
 func (a *directCodingAssembly) normalize() error {
-	if a.VersionProfileID == "" || a.VersionProfileID != strings.TrimSpace(a.VersionProfileID) ||
-		strings.ContainsAny(a.VersionProfileID, "\x00\r\n") {
-		return fmt.Errorf("coding assembly requires one normalized version profile ID")
+	if a.VersionProfileID != "" && (a.VersionProfileID != strings.TrimSpace(a.VersionProfileID) ||
+		strings.ContainsAny(a.VersionProfileID, "\x00\r\n")) {
+		return fmt.Errorf("coding assembly version profile ID is not normalized")
 	}
-	if len(a.Files) > maxDirectCodingAssemblyUnits {
-		return fmt.Errorf("coding assembly exceeds the %d-source-unit limit", maxDirectCodingAssemblyUnits)
-	}
-	if len(a.Directories) == 0 && len(a.Files) == 0 && len(a.DeletePaths) == 0 {
-		return fmt.Errorf("coding assembly requires at least one mutation")
-	}
-	directories := make([]string, 0, len(a.Directories))
-	seenDirectories := make(map[string]struct{}, len(a.Directories))
-	for index, raw := range a.Directories {
-		path, err := normalizeDirectCodingPath(raw)
-		if err != nil {
-			return fmt.Errorf("coding directory %d: %w", index, err)
-		}
-		if _, duplicate := seenDirectories[path]; duplicate {
-			return fmt.Errorf("coding assembly repeats directory %s", path)
-		}
-		seenDirectories[path] = struct{}{}
-		directories = append(directories, path)
-	}
-	a.Directories = directories
 	seen := map[string]string{}
 	for index := range a.Files {
 		if err := a.Files[index].normalize(); err != nil {
@@ -74,9 +50,6 @@ func (a *directCodingAssembly) normalize() error {
 			return fmt.Errorf("coding assembly repeats path %s as %s and source", path, previous)
 		}
 		seen[path] = "source"
-	}
-	if len(a.DeletePaths) > maxDirectCodingAssemblyUnits {
-		return fmt.Errorf("coding assembly exceeds the %d-delete limit", maxDirectCodingAssemblyUnits)
 	}
 	deletes := make([]string, 0, len(a.DeletePaths))
 	for index, raw := range a.DeletePaths {
@@ -100,8 +73,7 @@ func (a directCodingAssembly) validate() error {
 }
 
 func normalizeDirectCodingPath(raw string) (string, error) {
-	raw = strings.TrimSpace(raw)
-	if raw == "" || strings.Contains(raw, "\\") || filepath.IsAbs(raw) {
+	if raw == "" || raw != strings.TrimSpace(raw) || strings.Contains(raw, "\\") || filepath.IsAbs(raw) {
 		return "", fmt.Errorf("coding path %q must be a non-empty relative slash path", raw)
 	}
 	path := filepath.ToSlash(filepath.Clean(raw))

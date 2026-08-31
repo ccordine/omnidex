@@ -211,8 +211,6 @@ export default class ChatController extends ChatRoleplayTurnController {
 
   async loadHostBridgeStatus(): Promise<void> { await this.system.loadHostBridgeStatus(); }
 
-  async loadResearchStatus(): Promise<void> { await this.system.loadResearchStatus(); }
-
   async loadMetrics(options: { strict?: boolean } = {}): Promise<void> { await this.system.loadMetrics(options); }
 
   async newThread(): Promise<void> {

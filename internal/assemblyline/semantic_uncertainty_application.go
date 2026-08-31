@@ -68,27 +68,6 @@ func applicationSemanticUncertaintyContract(
 			"One exact current candidate, one exact accepted requirement, and the registered same-or-distinct outcome vocabulary.",
 			"One registered pair-bound runtime-outcome relation.",
 			"DecodeApplicationRequirementCandidateOutcomeRelationResult validates both statement hashes before code discards the new duplicate or continues candidate validation; accepted state is never reopened.")
-	case WorkApplicationRequirementCandidateResultRelation:
-		contract = semanticUncertaintyContractV3(kind,
-			"Does the exact one-outcome runtime requirement contain the code-selected result dimension?",
-			"Whether natural-language outcome semantics assert a derived value, and whether that value has an independently computable determining relation, cannot be established by syntax or byte validation.",
-			"One exact requirement candidate, its TASK_LOCAL_RUNTIME_OUTCOME and ONE_RUNTIME_OUTCOME receipts, one code-selected result dimension, and for determining-relation presence only the positive derived-value receipt.",
-			"One candidate-dimension-bound present-or-absent relation.",
-			"DecodeApplicationRequirementCandidateResultPresenceResult validates each binary receipt; code alone combines them into NO_DERIVED_RESULT, EXPLICIT_DERIVED_RESULT_RELATION, or MISSING_DERIVED_RESULT_RELATION before retaining or grounding the candidate.")
-	case WorkApplicationRequirementCandidateResultRelationGrounding:
-		contract = semanticUncertaintyContractV2(kind,
-			"Do the immutable request and established application facts entail exactly one determining relation for the exact candidate outcome whose derived-result relation is missing?",
-			"A candidate-only missing-relation receipt cannot establish whether natural-language request and verified context authority uniquely supply the omitted semantic rule.",
-			"The immutable request, validated application context, exact current candidate, and its code-bound MISSING_DERIVED_RESULT_RELATION receipt.",
-			"One registered request-context-and-candidate-bound entailment relation.",
-			"DecodeApplicationRequirementCandidateResultRelationGroundingResult validates the receipt before code discards only that underdetermined candidate or opens one exact one-leaf correction.")
-	case WorkApplicationRequirementCandidateResultRelationCorrection:
-		contract = semanticUncertaintyContract(kind,
-			"What complete replacement corrects the exact one-outcome requirement whose derived-result relation is underdetermined?",
-			"The exact determining relation must be expressed from immutable natural-language authority and cannot be supplied by structural validation.",
-			"The immutable request, validated application context, exact current candidate, code-bound MISSING_DERIVED_RESULT_RELATION defect, and positive request-context-and-candidate-bound grounding receipt.",
-			"One complete byte-different one-outcome runtime requirement with an explicit determining relation.",
-			"DecodeApplicationRequirementCandidateResultRelationCorrectionLeaf validates the replacement before code reruns ordinary kind, cardinality, and result-relation validation.")
 	case WorkApplicationRequirementCandidatePartition:
 		contract = semanticUncertaintyContractV3(kind,
 			"What complete source-ordered proper refinement is contained in this exact compound candidate?",

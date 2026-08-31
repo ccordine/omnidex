@@ -150,8 +150,8 @@ const memoryCosineRetrievalSQL = `
 	LIMIT $4`
 
 func (r *Repository) ListMemoryCategories(ctx context.Context, limit int) ([]model.MemoryFacet, error) {
-	if limit <= 0 {
-		limit = 100
+	if limit <= 0 || limit > 500 {
+		return nil, fmt.Errorf("memory category limit must be between 1 and 500")
 	}
 	rows, err := r.pool.Query(ctx, `
 		SELECT c.name,COUNT(mcc.memory_chunk_id)::bigint FROM memory_categories c
@@ -166,8 +166,8 @@ func (r *Repository) ListMemoryCategories(ctx context.Context, limit int) ([]mod
 }
 
 func (r *Repository) ListMemoryTags(ctx context.Context, limit int) ([]model.MemoryFacet, error) {
-	if limit <= 0 {
-		limit = 100
+	if limit <= 0 || limit > 500 {
+		return nil, fmt.Errorf("memory tag limit must be between 1 and 500")
 	}
 	rows, err := r.pool.Query(ctx, `
 		SELECT t.name,COUNT(mct.memory_chunk_id)::bigint FROM tags t

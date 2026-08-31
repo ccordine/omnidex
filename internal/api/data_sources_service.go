@@ -61,10 +61,6 @@ func (s *Server) handleDataSourceByID(w http.ResponseWriter, r *http.Request) {
 		s.handleDataSourceSchema(w, r, strings.TrimSuffix(id, "/schema"))
 		return
 	}
-	if strings.HasSuffix(id, "/query") {
-		s.handleDataSourceQuery(w, r, strings.TrimSuffix(id, "/query"))
-		return
-	}
 	if strings.HasSuffix(id, "/catalog") {
 		s.handleDataSourceCatalog(w, r, strings.TrimSuffix(id, "/catalog"))
 		return
@@ -159,41 +155,6 @@ func (s *Server) handleDataSourceSchema(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"schema": schema})
-}
-
-func (s *Server) handleDataSourceQuery(w http.ResponseWriter, r *http.Request, id string) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	var req struct {
-		SQL string `json:"sql"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid json body")
-		return
-	}
-	record, err := s.repo.GetDataSource(r.Context(), id)
-	if err != nil {
-		writeDataSourceError(w, err)
-		return
-	}
-	connection, err := record.DirectConnection()
-	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	result, err := datasource.RunSQL(r.Context(), connection, req.SQL)
-	if err != nil {
-		writeError(w, http.StatusBadGateway, err.Error())
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{
-		"sql":     result.SQL,
-		"columns": result.Columns,
-		"rows":    result.Rows,
-		"count":   result.Count,
-	})
 }
 
 func (s *Server) handleDataSourceCatalog(w http.ResponseWriter, r *http.Request, id string) {

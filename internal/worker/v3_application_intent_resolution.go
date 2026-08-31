@@ -95,19 +95,13 @@ func resolveDirectCodingApplicationIntent(
 			directCodingApplicationRequirementUnrequested,
 			directCodingApplicationRequirementDuplicate,
 			directCodingApplicationRequirementUnresolved:
-			if resolved.ResultRelation != (assemblyline.ApplicationRequirementCandidateResultRelationResult{}) ||
-				resolved.PartitionInput != (assemblyline.ApplicationRequirementCandidatePartitionInput{}) ||
+			if resolved.PartitionInput != (assemblyline.ApplicationRequirementCandidatePartitionInput{}) ||
 				!directCodingApplicationRequirementPartitionIsZero(resolved.Partition) {
 				return zero, fmt.Errorf(
 					"discarded application requirement unexpectedly carries retained state",
 				)
 			}
 		case directCodingApplicationRequirementPartitioned:
-			if resolved.ResultRelation != (assemblyline.ApplicationRequirementCandidateResultRelationResult{}) {
-				return zero, fmt.Errorf(
-					"partitioned application requirement unexpectedly carries a result-relation receipt",
-				)
-			}
 			if len(current.Lineage) == assemblyline.MaxApplicationRequirementCandidatePartitionDepth {
 				return zero, fmt.Errorf(
 					"application requirement candidate crossed the partition-depth preflight",
@@ -136,11 +130,8 @@ func resolveDirectCodingApplicationIntent(
 					"retained application requirement unexpectedly carries a partition receipt",
 				)
 			}
-			if err := resolved.ResultRelation.ValidateAcceptedFor(resolved.Candidate); err != nil {
-				return zero, fmt.Errorf("retained application requirement result relation: %w", err)
-			}
 			requirements = append(requirements, assemblyline.ApplicationIntentCandidateRequirement{
-				Statement: resolved.Candidate, ResultRelation: resolved.ResultRelation,
+				Statement: resolved.Candidate,
 			})
 		default:
 			return zero, fmt.Errorf(
@@ -150,9 +141,10 @@ func resolveDirectCodingApplicationIntent(
 		}
 	}
 	if len(requirements) == 0 {
-		return zero, fmt.Errorf(
-			"application requirement inventory produced no retained task-local runtime outcome",
-		)
+		return assemblyline.ApplicationIntentResolution{
+			RequestSHA256: authority.Context.RequestSHA256,
+			Requirements:  []assemblyline.ApplicationRequirement{},
+		}, nil
 	}
 	productInput := assemblyline.ApplicationProductContextInput{
 		UserRequest: authority.UserRequest,

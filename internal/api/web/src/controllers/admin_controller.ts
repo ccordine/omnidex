@@ -1,7 +1,6 @@
 import { Controller } from "@hotwired/stimulus";
 import {
   ingestDocuments,
-  saveNetworkSettings,
 } from "../lib/admin_api";
 import { deleteOllamaModel, pullOllamaModel } from "../lib/ollama_model_api";
 import { fetchAdminComponent } from "../lib/operational_component_api";
@@ -173,28 +172,6 @@ export default class AdminController extends Controller {
     }
     this.catalogPage = page;
     void this.load();
-  }
-
-  private field(root: ParentNode, name: string): HTMLInputElement | HTMLSelectElement | null {
-    return root.querySelector(`[data-admin-field='${name}']`);
-  }
-
-  private collect(prefix: string): Record<string, string> {
-    const values: Record<string, string> = {};
-    this.element.querySelectorAll(`[data-admin-field^='${prefix}']`).forEach((node) => {
-      const input = node as HTMLInputElement | HTMLSelectElement;
-      const key = input.dataset.adminField?.slice(prefix.length) ?? "";
-      if (key) values[key] = input.value.trim();
-    });
-    return values;
-  }
-
-  async saveNetwork(event: Event): Promise<void> {
-    event.preventDefault();
-    const host = this.field(this.element, "networkHost")?.value.trim() ?? "";
-    const port = Number.parseInt(this.field(this.element, "networkPort")?.value ?? "", 10);
-    if (!host || !Number.isSafeInteger(port) || port < 1) return reportErrorMessage(this.setAdminStatus.bind(this), "Enter a valid host and port");
-    await this.mutate("Saving network URL…", "Network URL saved", () => saveNetworkSettings({ host, port }));
   }
 
   async pullModel(event: Event): Promise<void> {

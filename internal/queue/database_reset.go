@@ -108,9 +108,6 @@ func resetExactRuntimeSchema(ctx context.Context, conn *pgxpool.Conn) error {
 	if err := rejectRuntimeSchemaExtensions(ctx, tx, runtimeSchema); err != nil {
 		return err
 	}
-	if err := dropExactFenceAuthoritySchema(ctx, tx, runtimeSchema); err != nil {
-		return err
-	}
 	if _, err := tx.Exec(ctx, `DROP SCHEMA `+
 		pgx.Identifier{runtimeSchema}.Sanitize()+` CASCADE`); err != nil {
 		return fmt.Errorf("drop exact runtime schema: %w", err)
@@ -177,69 +174,6 @@ func rejectRuntimeSchemaExtensions(
 	}
 	if count != 0 {
 		return fmt.Errorf("database reset refuses runtime schema containing extensions")
-	}
-	return nil
-}
-
-func dropExactFenceAuthoritySchema(
-	ctx context.Context,
-	tx pgx.Tx,
-	runtimeSchema string,
-) error {
-	var registryExists bool
-	if err := tx.QueryRow(ctx, `
-		SELECT EXISTS (
-			SELECT 1 FROM pg_class relations
-			JOIN pg_namespace namespaces ON namespaces.oid=relations.relnamespace
-			WHERE namespaces.nspname=$1 AND
-			      relations.relname='step_attempt_transaction_fence_authority' AND
-			      relations.relkind='r'
-		)
-	`, runtimeSchema).Scan(&registryExists); err != nil {
-		return fmt.Errorf("inspect step-attempt fence registry: %w", err)
-	}
-	var authoritySchema string
-	if err := tx.QueryRow(ctx, `SELECT 'omnidex_host_authority_' || md5($1)`,
-		runtimeSchema,
-	).Scan(&authoritySchema); err != nil {
-		return fmt.Errorf("derive exact step-attempt fence schema: %w", err)
-	}
-	if registryExists {
-		registered, err := loadInstalledStepAttemptFenceTx(ctx, tx)
-		if err != nil {
-			return err
-		}
-		if registered != authoritySchema {
-			return fmt.Errorf("database reset refuses changed step-attempt fence schema authority")
-		}
-	}
-	var exists, owned bool
-	if err := tx.QueryRow(ctx, `
-		SELECT EXISTS (SELECT 1 FROM pg_namespace WHERE nspname=$1),
-		       EXISTS (
-			   SELECT 1 FROM pg_namespace namespaces
-			   WHERE namespaces.nspname=$1 AND namespaces.nspowner=(
-				   SELECT oid FROM pg_roles WHERE rolname=current_user
-			   )
-		       )
-	`, authoritySchema).Scan(&exists, &owned); err != nil {
-		return fmt.Errorf("inspect exact step-attempt fence schema: %w", err)
-	}
-	if !exists {
-		if registryExists {
-			return fmt.Errorf("database reset requires the registered step-attempt fence schema")
-		}
-		return nil
-	}
-	if !registryExists {
-		return fmt.Errorf("database reset refuses unregistered step-attempt fence schema")
-	}
-	if !owned {
-		return fmt.Errorf("database reset refuses non-owned step-attempt fence schema")
-	}
-	if _, err := tx.Exec(ctx, `DROP SCHEMA `+
-		pgx.Identifier{authoritySchema}.Sanitize()+` CASCADE`); err != nil {
-		return fmt.Errorf("drop exact step-attempt fence schema: %w", err)
 	}
 	return nil
 }

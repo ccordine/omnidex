@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/gryph/omnidex/internal/model"
-	"github.com/gryph/omnidex/internal/taskstate"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -106,12 +105,6 @@ func applyJobCancellationTx(
 	`, command.JobID, model.StepStatusCanceled, command.Reason, model.StepStatusPending, model.StepStatusRunning, model.StepStatusWaiting); err != nil {
 		return model.Job{}, err
 	}
-	if err := transitionInitialTaskRootTx(
-		ctx, tx, command.JobID, job.CurrentGeneration, 0, taskstate.NodeCanceled, "", command.Reason,
-	); err != nil {
-		return model.Job{}, err
-	}
-
 	jobUpdate, err := tx.Exec(ctx, `
 		UPDATE jobs
 		SET status = $2, error = $3, completed_at = NOW(), updated_at = NOW()
@@ -123,18 +116,6 @@ func applyJobCancellationTx(
 	if jobUpdate.RowsAffected() != 1 {
 		return model.Job{}, fmt.Errorf("job %d disappeared during cancellation", command.JobID)
 	}
-	if err := terminalizeTaskLedgerTx(
-		ctx, tx, command.JobID, job.CurrentGeneration, model.JobStatusCanceled, nil, command.Reason,
-	); err != nil {
-		return model.Job{}, err
-	}
-	if err := completeTelemetryRunForJob(ctx, tx, command.JobID, model.JobStatusCanceled, map[string]any{"job_id": command.JobID, "error": command.Reason}, map[string]any{"cancel_reason": command.Reason}); err != nil {
-		return model.Job{}, err
-	}
-	if err := recordTelemetryJobEvent(ctx, tx, command.JobID, "run_cancelled", map[string]any{"job_id": command.JobID, "reason": command.Reason}); err != nil {
-		return model.Job{}, err
-	}
-
 	row := tx.QueryRow(ctx, `
 		SELECT id, instruction, pipeline, status, result, error, metadata, current_generation, created_at, updated_at, completed_at
 		FROM jobs

@@ -59,10 +59,7 @@ func validateObjectiveRawCandidatePathBoundary(
 		assemblyline.WorkDatabaseQueryOrderProjection,
 		assemblyline.WorkDatabaseQueryOrderDirection,
 		assemblyline.WorkDatabaseJoinPathSelection,
-		assemblyline.WorkWebRelevanceRelation,
-		assemblyline.WorkWebSynthesisParagraphInventory,
-		assemblyline.WorkWebSynthesisEvidenceRelation,
-		assemblyline.WorkWebSynthesisParagraphAuthorization:
+		assemblyline.WorkWebRelevanceRelation:
 		return assemblyline.ValidatePathFreeModelContextWithProvenance(
 			"objective semantic raw result", provenance, candidate,
 		)

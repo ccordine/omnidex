@@ -18,7 +18,7 @@ var removedProjectSettingKeys = []string{
 
 func validateProjectSettings(settings json.RawMessage) error {
 	if len(settings) == 0 {
-		return nil
+		return fmt.Errorf("project settings must be a JSON object")
 	}
 	var payload map[string]json.RawMessage
 	if err := json.Unmarshal(settings, &payload); err != nil {

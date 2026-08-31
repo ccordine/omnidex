@@ -30,6 +30,10 @@ func (s *Server) handleUIPanel(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
+	if err := validateUIStateQuery(r); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	panel := normalizeUIPanel(r.URL.Query().Get("panel"))
 	if panel == "" {
 		writeError(w, http.StatusBadRequest, "invalid panel")

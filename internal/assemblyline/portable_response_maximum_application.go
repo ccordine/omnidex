@@ -38,18 +38,6 @@ func portableApplicationResponseMaximum(job PortableJob) (int, bool, error) {
 			ApplicationRequirementSameRuntimeOutcome,
 			ApplicationRequirementDistinctRuntimeOutcomes,
 		), true, nil
-	case WorkApplicationRequirementCandidateResultRelation:
-		return maximumStringBytes(
-			string(ApplicationRequirementCandidateResultPresent),
-			string(ApplicationRequirementCandidateResultAbsent),
-		), true, nil
-	case WorkApplicationRequirementCandidateResultRelationGrounding:
-		return maximumStringBytes(
-			ApplicationRequirementExactlyOneDeterminingRelationEntailed,
-			ApplicationRequirementNoExactlyOneDeterminingRelationEntailed,
-		), true, nil
-	case WorkApplicationRequirementCandidateResultRelationCorrection:
-		return maxRequirementQuoteBytes, true, nil
 	case WorkApplicationRequirementCandidatePartition:
 		var input ApplicationRequirementCandidatePartitionInput
 		if err := decodePortablePayload(job.Payload, &input); err != nil {

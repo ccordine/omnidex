@@ -1,12 +1,19 @@
 package worker
 
 import (
+	"crypto/sha256"
 	"encoding/json"
+	"encoding/hex"
 	"errors"
 	"fmt"
 
 	workspacefacts "github.com/gryph/omnidex/internal/workspace"
 )
+
+func directCodingDigest(value string) string {
+	digest := sha256.Sum256([]byte(value))
+	return hex.EncodeToString(digest[:])
+}
 
 type directCodingPreparedMutation struct {
 	assembly      directCodingAssembly
@@ -28,9 +35,8 @@ func (prepared *directCodingPreparedMutation) Cleanup() error {
 func (s *directCodingSession) PrepareAssembly(
 	assembly directCodingAssembly,
 ) (_ *directCodingPreparedMutation, resultErr error) {
-	if s == nil || s.runtime == nil || s.runtime.ctx == nil ||
-		s.specification == nil || s.program == nil {
-		return nil, fmt.Errorf("workspace mutation preparation requires one compiled direct-coding session")
+	if s == nil || s.runtime == nil || s.runtime.ctx == nil {
+		return nil, fmt.Errorf("workspace mutation preparation requires one active session")
 	}
 	if err := assembly.validate(); err != nil {
 		return nil, err
@@ -75,11 +81,9 @@ func (s *directCodingSession) directCodingAssemblyDesiredStates(
 		if err := rejectDirectCodingProtectedMutation(task.Path, s.protectedPaths); err != nil {
 			return nil, err
 		}
-		if err := s.validateProgramSource(task.Path, task.Content); err != nil {
-			return nil, err
-		}
 		state := workspacefacts.DesiredFile{
-			Path: task.Path, Present: true, Content: []byte(task.Content), Mode: 0o644,
+			Path: task.Path, Present: true,
+			Content: append([]byte(nil), task.Content...), Mode: task.Mode,
 		}
 		desired = append(desired, state)
 	}

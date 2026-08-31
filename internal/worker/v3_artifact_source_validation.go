@@ -1,14 +1,12 @@
 package worker
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"go/parser"
 	"go/token"
 	"path"
 	"strings"
-	"unicode/utf8"
 	"unsafe"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
@@ -29,24 +27,8 @@ func validateDirectCodingArtifactSource(
 	if adapter.ID == "" || adapter.Validation.Execute == nil {
 		return fmt.Errorf("artifact adapter %q has no executable source validator", adapter.ID)
 	}
-	if err := validateArtifactText(artifactPath, source); err != nil {
-		return fmt.Errorf("%s adapter source: %w", adapter.ID, err)
-	}
 	if err := adapter.Validation.Execute(artifactPath, source); err != nil {
 		return fmt.Errorf("%s adapter rejected %s: %w", adapter.ID, artifactPath, err)
-	}
-	return nil
-}
-
-func validateArtifactText(artifactPath string, source []byte) error {
-	if strings.TrimSpace(artifactPath) == "" {
-		return fmt.Errorf("artifact path is required")
-	}
-	if len(source) == 0 {
-		return fmt.Errorf("artifact %s is empty", artifactPath)
-	}
-	if !utf8.Valid(source) || bytes.IndexByte(source, 0) >= 0 {
-		return fmt.Errorf("artifact %s must be valid UTF-8 without NUL bytes", artifactPath)
 	}
 	return nil
 }
@@ -189,7 +171,7 @@ func validatePlainTextArtifactSource(_ string, source []byte) error {
 func validateTypeScriptBrowserAssembly(assembly directCodingAssembly) error {
 	files := make(map[string]string, len(assembly.Files))
 	for _, file := range assembly.Files {
-		files[file.Path] = file.Content
+		files[file.Path] = string(file.Content)
 	}
 	index, exists := files["index.html"]
 	if !exists {

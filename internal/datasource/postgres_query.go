@@ -44,27 +44,3 @@ func InspectSchema(ctx context.Context, conn Connection) ([]omni.DBSchemaTable, 
 	defer pool.Close()
 	return omni.InspectPostgresSchema(ctx, omni.NewPgxMemoryRunner(pool))
 }
-
-func RunSQL(ctx context.Context, conn Connection, sqlText string) (QueryResult, error) {
-	sqlText = strings.TrimSpace(sqlText)
-	if err := omni.ValidateReadOnlyPostgresQuery(sqlText); err != nil {
-		return QueryResult{}, err
-	}
-	sqlText = enforceQueryLimit(sqlText, MaxQueryRows)
-	pool, err := ConnectReadOnly(ctx, conn)
-	if err != nil {
-		return QueryResult{}, err
-	}
-	defer pool.Close()
-	rows, err := omni.NewPgxMemoryRunner(pool).Query(ctx, sqlText)
-	if err != nil {
-		return QueryResult{}, err
-	}
-	columns, publicRows := rowsToColumns(rows)
-	return QueryResult{
-		SQL:     sqlText,
-		Columns: columns,
-		Rows:    publicRows,
-		Count:   len(publicRows),
-	}, nil
-}

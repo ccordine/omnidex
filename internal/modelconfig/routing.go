@@ -1,80 +1,70 @@
 package modelconfig
 
 import (
+	"fmt"
+	"strings"
+
 	"github.com/gryph/omnidex/internal/station"
 )
+
+// Authority is one immutable runtime model-config snapshot. Its internal map
+// is never exposed; callers receive isolated projections.
+type Authority struct {
+	config Config
+}
+
+func Freeze(config Config) (Authority, error) {
+	frozen := Config{}
+	for key, value := range config {
+		if _, ok := definitionForKey(key); !ok {
+			return Authority{}, fmt.Errorf("model config contains unsupported field %q", key)
+		}
+		if value == "" || value != strings.TrimSpace(value) {
+			return Authority{}, fmt.Errorf("model config field %q must name one canonical model", key)
+		}
+		frozen[key] = value
+	}
+	return Authority{config: frozen}, nil
+}
+
+func (authority Authority) Config() Config {
+	return authority.config.Clone()
+}
+
+// Resolve applies explicit project overrides to the frozen runtime snapshot.
+// The returned config is complete and can be persisted as the sole job-level
+// routing authority.
+func (authority Authority) Resolve(overrides Config) (Config, error) {
+	frozenOverrides, err := Freeze(overrides)
+	if err != nil {
+		return nil, err
+	}
+	resolved := authority.Config()
+	for key, value := range frozenOverrides.config {
+		resolved[key] = value
+	}
+	return resolved, nil
+}
 
 type Routing struct {
 	Stations              map[station.ID]string
 	RoleplaySemanticModel string
 }
 
-func Apply(base Routing, cfg Config) Routing {
-	out := base
-	if out.Stations == nil {
-		out.Stations = map[station.ID]string{}
-	} else {
-		clone := map[station.ID]string{}
-		for key, value := range out.Stations {
-			clone[key] = value
+// Routing derives the worker projection mechanically from this authority.
+func (authority Authority) Routing() Routing {
+	routing := Routing{Stations: map[station.ID]string{}}
+	for _, definition := range fieldRegistry {
+		value := authority.config.Get(definition.Key)
+		if value == "" {
+			continue
 		}
-		out.Stations = clone
+		for _, stationID := range definition.Stations {
+			routing.Stations[stationID] = value
+		}
+		if definition.RoleplaySemantic {
+			routing.RoleplaySemanticModel = value
+		}
 	}
-	if value := cfg.Get("context_relevance_model"); value != "" {
-		out.Stations[station.ContextRelevance] = value
-	}
-	if value := cfg.Get("context_minification_model"); value != "" {
-		out.Stations[station.ContextMinification] = value
-	}
-	if value := cfg.Get("conversation_objective_kind_model"); value != "" {
-		out.Stations[station.ConversationObjectiveKind] = value
-	}
-	if value := cfg.Get("conversation_response_model"); value != "" {
-		out.Stations[station.ConversationResponse] = value
-	}
-	if value := cfg.Get("roleplay_semantic_model"); value != "" {
-		out.RoleplaySemanticModel = value
-	}
-	if value := cfg.Get("grounded_answer_model"); value != "" {
-		out.Stations[station.GroundedAnswer] = value
-	}
-	if value := cfg.Get("database_schema_selection_model"); value != "" {
-		out.Stations[station.DatabaseSchemaSelection] = value
-	}
-	if value := cfg.Get("database_query_intent_model"); value != "" {
-		out.Stations[station.DatabaseQueryIntent] = value
-	}
-	if value := cfg.Get("database_join_path_selection_model"); value != "" {
-		out.Stations[station.DatabaseJoinPathSelection] = value
-	}
-	if value := cfg.Get("web_relevance_model"); value != "" {
-		out.Stations[station.WebRelevance] = value
-	}
-	if value := cfg.Get("web_grounded_synthesis_model"); value != "" {
-		out.Stations[station.WebGroundedSynthesis] = value
-	}
-	if value := cfg.Get("coding_surface_model"); value != "" {
-		out.Stations[station.CodingSurface] = value
-	}
-	if value := cfg.Get("coding_requirements_model"); value != "" {
-		out.Stations[station.CodingRequirements] = value
-		out.Stations[station.CodingProjectStackConstraint] = value
-	}
-	if value := cfg.Get("coding_artifact_handling_model"); value != "" {
-		out.Stations[station.CodingArtifactHandling] = value
-	}
-	if value := cfg.Get("coding_capability_relation_model"); value != "" {
-		out.Stations[station.CodingCapabilityRelation] = value
-		out.Stations[station.CodingRuntimeCapabilityNecessity] = value
-	}
-	if value := cfg.Get("coding_fragment_model"); value != "" {
-		out.Stations[station.CodingFragment] = value
-	}
-	if value := cfg.Get("coding_fragment_repair_guidance_model"); value != "" {
-		out.Stations[station.CodingFragmentRepairGuidance] = value
-	}
-	if value := cfg.Get("coding_fragment_correction_model"); value != "" {
-		out.Stations[station.CodingFragmentCorrection] = value
-	}
-	return out
+	return routing
 }

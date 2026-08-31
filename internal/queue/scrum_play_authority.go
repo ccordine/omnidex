@@ -14,7 +14,12 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-func scrumPlayAuthorityTx(ctx context.Context, tx pgx.Tx, card DBScrumCard) (scrum.JobMetadata, string, error) {
+func scrumPlayAuthorityTx(
+	ctx context.Context,
+	tx pgx.Tx,
+	card DBScrumCard,
+	modelAuthority modelconfig.Authority,
+) (scrum.JobMetadata, string, error) {
 	if err := requireScrumAIActiveTx(ctx, tx); err != nil {
 		return scrum.JobMetadata{}, "", err
 	}
@@ -22,9 +27,13 @@ func scrumPlayAuthorityTx(ctx context.Context, tx pgx.Tx, card DBScrumCard) (scr
 	if err := tx.QueryRow(ctx, `SELECT settings FROM projects WHERE id=$1 FOR UPDATE`, card.ProjectID).Scan(&settings); err != nil {
 		return scrum.JobMetadata{}, "", err
 	}
-	modelSnapshot, err := modelconfig.FromSettingsJSON(settings)
+	modelOverrides, err := modelconfig.FromSettingsJSON(settings)
 	if err != nil {
 		return scrum.JobMetadata{}, "", fmt.Errorf("parse locked Scrum project model routing: %w", err)
+	}
+	modelSnapshot, err := modelAuthority.Resolve(modelOverrides)
+	if err != nil {
+		return scrum.JobMetadata{}, "", fmt.Errorf("resolve locked Scrum model routing snapshot: %w", err)
 	}
 	checklist, err := decodeScrumPlayItems(card.Checklist, "checklist")
 	if err != nil {

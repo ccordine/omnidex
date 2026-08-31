@@ -6,14 +6,23 @@ import (
 	"strings"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
+	"github.com/gryph/omnidex/internal/llm"
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/queue"
 )
 
+type exactStationCall struct {
+	WorkID          string
+	WorkKind        assemblyline.WorkKind
+	Prompt          string
+	ContextTokens   int
+	MaxOutputTokens int
+	OutputLimitMode llm.ExactPreparedOutputLimitMode
+}
+
 type exactStationExecution struct {
-	Gap                     queue.StationGapOpening
+	WorkID                  string
 	Candidate               string
-	CallReceiptSHA256       string
 	CandidateResponseSHA256 string
 }
 
@@ -32,10 +41,6 @@ func (s *Service) executeExactPortableStation(
 	modelName = strings.TrimSpace(modelName)
 	if modelName == "" {
 		return assemblyline.PortableResult{}, exactStationExecution{}, fmt.Errorf("exact station model is required")
-	}
-	stationID, err := queue.StationForPortableJob(job)
-	if err != nil {
-		return assemblyline.PortableResult{}, exactStationExecution{}, err
 	}
 	prompt, err := assemblyline.RenderPortableJob(job)
 	if err != nil {
@@ -60,29 +65,24 @@ func (s *Service) executeExactPortableStation(
 	if err := validateExactStationStaticCall(prompt, contract, contextTokens); err != nil {
 		return assemblyline.PortableResult{}, exactStationExecution{}, err
 	}
-	gap, err := s.repo.OpenStationGap(ctx, queue.StationGapOpenRecord{
-		Authority: authority, Job: job, Station: stationID,
+	call := exactStationCall{
+		WorkID: job.ID, WorkKind: job.Kind, Prompt: prompt,
 		ContextTokens: contextTokens, MaxOutputTokens: maxOutputTokens,
 		OutputLimitMode: contract.OutputLimitMode,
-	})
-	if err != nil {
-		return assemblyline.PortableResult{}, exactStationExecution{}, fmt.Errorf("persist typed station gap: %w", err)
 	}
 	if nilWorkerTransport(s.stationClient) {
-		return assemblyline.PortableResult{}, exactStationExecution{}, s.failStationGap(
-			ctx, authority, gap, fmt.Errorf("exact station generation provider is not configured"),
+		return assemblyline.PortableResult{}, exactStationExecution{}, fmt.Errorf(
+			"exact station generation provider is not configured",
 		)
 	}
 	if err := s.stationClient.RequireExactPreparedContract(); err != nil {
-		return assemblyline.PortableResult{}, exactStationExecution{}, s.failStationGap(
-			ctx, authority, gap, fmt.Errorf("exact station provider: %w", err),
+		return assemblyline.PortableResult{}, exactStationExecution{}, fmt.Errorf(
+			"exact station provider: %w", err,
 		)
 	}
-	prepared, err := prepareExactStationCall(gap, contract, modelName, nil)
+	prepared, err := prepareExactStationCall(call, contract, modelName, nil)
 	if err != nil {
-		return assemblyline.PortableResult{}, exactStationExecution{}, s.failStationGap(
-			ctx, authority, gap, err,
-		)
+		return assemblyline.PortableResult{}, exactStationExecution{}, err
 	}
-	return s.dispatchExactStationCall(ctx, authority, gap, modelName, prepared)
+	return s.dispatchExactStationCall(ctx, authority, call, prepared)
 }

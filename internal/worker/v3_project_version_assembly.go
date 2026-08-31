@@ -178,7 +178,7 @@ func validateNPMManifestVersionProfile(
 func directCodingAssemblyFiles(assembly directCodingAssembly) map[string]string {
 	files := make(map[string]string, len(assembly.Files))
 	for _, file := range assembly.Files {
-		files[file.Path] = file.Content
+		files[file.Path] = string(file.Content)
 	}
 	return files
 }

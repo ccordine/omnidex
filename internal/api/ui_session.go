@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 )
 
 const uiSessionCookieName = "omni_ui_session"
@@ -21,6 +22,10 @@ type uiSessionResponse struct {
 }
 
 func (s *Server) handleUISession(w http.ResponseWriter, r *http.Request) {
+	if s.uiSessionTTL < time.Minute {
+		writeError(w, http.StatusServiceUnavailable, "UI_SESSION_TTL must be at least one minute")
+		return
+	}
 	switch r.Method {
 	case http.MethodGet:
 		s.readUISession(w, r)
@@ -32,6 +37,10 @@ func (s *Server) handleUISession(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) readUISession(w http.ResponseWriter, r *http.Request) {
+	if err := validateUIStateQuery(r); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	sessionID, err := s.ensureUISessionCookie(w, r)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -68,6 +77,10 @@ func (s *Server) readUISession(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) updateUISession(w http.ResponseWriter, r *http.Request) {
+	if err := validateUIStateQuery(r); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	sessionID, err := s.ensureUISessionCookie(w, r)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -81,7 +94,13 @@ func (s *Server) updateUISession(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		State map[string]any `json:"state"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+	if err := requireJSONEOF(decoder, "UI session request"); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON")
 		return
 	}
@@ -175,12 +194,19 @@ func (s *Server) persistUIState(ctx context.Context, sessionID string, state map
 }
 
 func (s *Server) requireUIRedis() (*uiRedisClient, error) {
-	if strings.TrimSpace(s.uiRedisInitError) != "" {
-		return nil, fmt.Errorf("redis ui session backend is invalid: %s", s.uiRedisInitError)
+	s.uiRedisMu.Lock()
+	defer s.uiRedisMu.Unlock()
+	if s.uiRedis != nil {
+		return s.uiRedis, nil
 	}
-	if s.uiRedis == nil {
+	redis, err := newUIRedisClient(s.redisURL)
+	if err != nil {
+		return nil, fmt.Errorf("redis ui session backend is invalid: %w", err)
+	}
+	if redis == nil {
 		return nil, fmt.Errorf("redis ui session backend is not configured")
 	}
+	s.uiRedis = redis
 	return s.uiRedis, nil
 }
 

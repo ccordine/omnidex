@@ -20,7 +20,6 @@ const (
 var (
 	errTargetTreeFileCount         = errors.New("target tree file-count constraint failed")
 	errTargetTreeRootFilesOnly     = errors.New("target tree root-files-only constraint failed")
-	errTargetTreeDirectoryConflict = errors.New("target tree existing-directory constraint failed")
 	errTargetTreeReservedConflict  = errors.New("target tree reserved-node constraint failed")
 )
 
@@ -46,14 +45,6 @@ func (constraints TargetTreeConstraints) Validate() error {
 		)
 	}
 	return nil
-}
-
-// TargetTreeInput is code-owned state for deriving filesystem transitions.
-type TargetTreeInput struct {
-	Constraints      TargetTreeConstraints `json:"constraints"`
-	ExistingPaths    []string              `json:"existing_paths"`
-	ReservedPaths    []string              `json:"reserved_paths"`
-	ExistingDirs     []string              `json:"existing_dirs"`
 }
 
 type TargetTree struct {
@@ -83,25 +74,6 @@ func ValidateTargetTreeConstraints(constraints TargetTreeConstraints, target Tar
 					artifactPath,
 				)
 			}
-		}
-	}
-	return nil
-}
-
-// ValidateTargetTreeExistingDirectories prevents a file leaf from claiming an
-// exact path that the workspace snapshot proves is already a directory.
-func ValidateTargetTreeExistingDirectories(existingDirs []string, target TargetTree) error {
-	directories := make(map[string]struct{}, len(existingDirs))
-	for _, directory := range existingDirs {
-		directories[directory] = struct{}{}
-	}
-	for _, artifactPath := range target.Paths {
-		if _, conflict := directories[artifactPath]; conflict {
-			return fmt.Errorf(
-				"%w: target-tree path %q conflicts with an existing workspace directory",
-				errTargetTreeDirectoryConflict,
-				artifactPath,
-			)
 		}
 	}
 	return nil

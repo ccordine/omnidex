@@ -2,7 +2,6 @@ package api
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -64,12 +63,11 @@ func realtimeOriginAllowed(r *http.Request) bool {
 }
 
 func parseRealtimeLastID(raw string) (uint64, error) {
-	raw = strings.TrimSpace(raw)
 	if raw == "" {
-		return 0, nil
+		return 0, fmt.Errorf("realtime last_id is required when provided")
 	}
 	id, err := strconv.ParseUint(raw, 10, 64)
-	if err != nil {
+	if err != nil || strconv.FormatUint(id, 10) != raw {
 		return 0, fmt.Errorf("invalid realtime last_id %q", raw)
 	}
 	return id, nil
@@ -130,21 +128,38 @@ func (s *Server) handleRealtimeWS(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
+	if err := validateExactQuery(r, "topics", "last_id"); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if s.realtimeStreamMaxAge <= 0 || s.realtimeHeartbeat <= 0 || s.realtimeWriteTimeout <= 0 {
+		writeError(w, http.StatusServiceUnavailable, "realtime durations must be positive")
+		return
+	}
 	if !realtimeOriginAllowed(r) {
 		log.Printf("realtime websocket rejected remote=%q origin=%q: cross-origin connection is not allowed", r.RemoteAddr, r.Header.Get("Origin"))
 		writeError(w, http.StatusForbidden, "realtime origin is not allowed")
 		return
 	}
 
-	topics, err := parseRealtimeTopics(r.URL.Query().Get("topics"))
-	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
+	query := r.URL.Query()
+	topics := []string{realtimeTopicUI, realtimeTopicMetrics, realtimeTopicScrum, realtimeTopicJobs}
+	if rawTopics, exists := query["topics"]; exists {
+		var err error
+		topics, err = parseRealtimeTopics(rawTopics[0])
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
 	}
-	lastID, err := parseRealtimeLastID(r.URL.Query().Get("last_id"))
-	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
+	var lastID uint64
+	if rawLastID, exists := query["last_id"]; exists {
+		var err error
+		lastID, err = parseRealtimeLastID(rawLastID[0])
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
 	}
 	hub, err := s.requireRealtimeHub()
 	if err != nil {
@@ -153,11 +168,6 @@ func (s *Server) handleRealtimeWS(w http.ResponseWriter, r *http.Request) {
 	}
 	subscription, err := hub.Subscribe(topics, lastID)
 	if err != nil {
-		if errors.Is(err, ErrRealtimeHubFull) {
-			log.Printf("realtime websocket rejected remote=%q: client limit reached", r.RemoteAddr)
-			writeError(w, http.StatusServiceUnavailable, "realtime client limit reached")
-			return
-		}
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}

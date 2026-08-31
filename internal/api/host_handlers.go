@@ -15,11 +15,7 @@ func (s *Server) hostBridgeClient() *hostbridge.Client {
 	if strings.TrimSpace(s.hostAgentURL) == "" {
 		return nil
 	}
-	timeout := 10 * time.Second
-	if s.requestTimeout > 0 && s.requestTimeout < timeout {
-		timeout = s.requestTimeout
-	}
-	return hostbridge.NewClient(s.hostAgentURL, s.hostAgentToken, timeout)
+	return hostbridge.NewClient(s.hostAgentURL, s.hostAgentToken, 10*time.Second)
 }
 
 func (s *Server) handleHostBridgeStatus(w http.ResponseWriter, r *http.Request) {

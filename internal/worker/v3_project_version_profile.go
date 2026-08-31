@@ -22,14 +22,6 @@ const (
 	directCodingGoVersion                = "1.24.0"
 )
 
-type directCodingVersionCompatibility string
-
-const (
-	directCodingVersionNotApplicable directCodingVersionCompatibility = "not_applicable"
-	directCodingVersionCompatible    directCodingVersionCompatibility = "compatible"
-	directCodingVersionUnsupported   directCodingVersionCompatibility = "unsupported"
-)
-
 type directCodingArtifactVersion struct {
 	AdapterID string
 	Version   string
@@ -48,9 +40,6 @@ type directCodingProjectVersionProfile struct {
 	ManifestPaths           []string
 	ArtifactVersions        []directCodingArtifactVersion
 	Components              []directCodingProjectVersionComponent
-	ComposerDependencies    map[string]string
-	ComposerDevDependencies map[string]string
-	ComposerLockTemplate    []byte
 	NPMDependencies         map[string]string
 	NPMDevDependencies      map[string]string
 	NPMLockTemplate         []byte
@@ -174,9 +163,6 @@ func cloneDirectCodingProjectVersionProfile(
 	clone.ManifestPaths = append([]string(nil), profile.ManifestPaths...)
 	clone.ArtifactVersions = append([]directCodingArtifactVersion(nil), profile.ArtifactVersions...)
 	clone.Components = append([]directCodingProjectVersionComponent(nil), profile.Components...)
-	clone.ComposerDependencies = cloneStringMap(profile.ComposerDependencies)
-	clone.ComposerDevDependencies = cloneStringMap(profile.ComposerDevDependencies)
-	clone.ComposerLockTemplate = append([]byte(nil), profile.ComposerLockTemplate...)
 	clone.NPMDependencies = cloneStringMap(profile.NPMDependencies)
 	clone.NPMDevDependencies = cloneStringMap(profile.NPMDevDependencies)
 	clone.NPMLockTemplate = append([]byte(nil), profile.NPMLockTemplate...)

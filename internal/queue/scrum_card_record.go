@@ -69,8 +69,20 @@ func (r *Repository) CreateScrumCard(
 	if _, err := ParseScrumCardColumn(column); err != nil {
 		return DBScrumCard{}, err
 	}
-	checklist = SanitizeUTF8Bytes(defaultJSON(checklist, `[]`))
-	refFiles = SanitizeUTF8Bytes(defaultJSON(refFiles, `[]`))
+	if len(checklist) == 0 {
+		checklist = json.RawMessage(`[]`)
+	}
+	if len(refFiles) == 0 {
+		refFiles = json.RawMessage(`[]`)
+	}
+	checklist = SanitizeUTF8Bytes(checklist)
+	refFiles = SanitizeUTF8Bytes(refFiles)
+	if err := validateStoredScrumArray("checklist", checklist); err != nil {
+		return DBScrumCard{}, err
+	}
+	if err := validateStoredScrumArray("ref_files", refFiles); err != nil {
+		return DBScrumCard{}, err
+	}
 	tx, err := r.beginLockedProjectTx(ctx, projectID, "create Scrum card")
 	if err != nil {
 		return DBScrumCard{}, err

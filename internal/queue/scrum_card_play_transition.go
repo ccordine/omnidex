@@ -202,7 +202,7 @@ func (r *Repository) prepareScrumCardPlayTx(
 		return ScrumCardPlayResult{}, fmt.Errorf("Scrum card %q column %q is not playable", card.ID, card.Column)
 	}
 	previous := card
-	metadata, instruction, err := scrumPlayAuthorityTx(ctx, tx, card)
+	metadata, instruction, err := scrumPlayAuthorityTx(ctx, tx, card, r.modelAuthority)
 	if err != nil {
 		return ScrumCardPlayResult{}, err
 	}

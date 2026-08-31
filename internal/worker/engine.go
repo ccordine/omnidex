@@ -9,17 +9,14 @@ import (
 
 	"github.com/gryph/omnidex/internal/llm"
 	"github.com/gryph/omnidex/internal/model"
+	"github.com/gryph/omnidex/internal/modelconfig"
 	"github.com/gryph/omnidex/internal/queue"
-	"github.com/gryph/omnidex/internal/station"
 	"github.com/gryph/omnidex/internal/websearch"
 )
 
 const stepControlPollInterval = 300 * time.Millisecond
 
-type ModelRouting struct {
-	Stations              map[station.ID]string
-	RoleplaySemanticModel string
-}
+type ModelRouting = modelconfig.Routing
 
 type stepCompleteFunc func(context.Context, queue.CompleteStepCommand) error
 
@@ -30,7 +27,6 @@ type Options struct {
 	FragmentConcurrency    int
 	PollInterval           time.Duration
 	InferenceContextTokens int
-	Models                 ModelRouting
 	Logger                 *log.Logger
 	OnJobFinished          func(jobID int64)
 	OnJobOutput            func(jobID int64, delta string)
@@ -45,7 +41,6 @@ type Service struct {
 	fragmentConcurrency    int
 	pollInterval           time.Duration
 	inferenceContextTokens int
-	models                 ModelRouting
 	completeStep           stepCompleteFunc
 	nativeV3Runner         nativeV3StepRunner
 	logger                 *log.Logger
@@ -77,7 +72,6 @@ func New(
 		fragmentConcurrency:    opts.FragmentConcurrency,
 		pollInterval:           opts.PollInterval,
 		inferenceContextTokens: opts.InferenceContextTokens,
-		models:                 opts.Models,
 		completeStep:           completeStep,
 		logger:                 opts.Logger,
 		onJobFinished:          opts.OnJobFinished,

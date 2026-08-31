@@ -7,9 +7,9 @@ import (
 func isNoisyStepEvent(eventType string) bool {
 	switch eventType {
 	case "operation_heartbeat",
-		"coding_portable_dispatched", "objective_portable_dispatched", "web_research_portable_dispatched",
-		"coding_worker_started", "objective_worker_started", "web_research_worker_started",
-		"coding_worker_completed", "objective_worker_completed", "web_research_worker_completed":
+		"coding_portable_dispatched", "objective_portable_dispatched",
+		"coding_worker_started", "objective_worker_started",
+		"coding_worker_completed", "objective_worker_completed":
 		return true
 	default:
 		return false

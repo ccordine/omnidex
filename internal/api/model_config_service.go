@@ -9,8 +9,8 @@ import (
 	"github.com/gryph/omnidex/internal/modelconfig"
 )
 
-func (s *Server) envModelConfig() modelconfig.Config {
-	return modelconfig.FromEnv()
+func (s *Server) runtimeModelConfig() modelconfig.Config {
+	return s.providerConfig.ModelAuthority.Config()
 }
 
 func (s *Server) projectModelConfig(project model.Project) (modelconfig.Config, error) {
@@ -18,12 +18,14 @@ func (s *Server) projectModelConfig(project model.Project) (modelconfig.Config, 
 }
 
 func (s *Server) resolveModelConfig(project model.Project) (modelconfig.Config, string, error) {
-	env := s.envModelConfig()
 	projectCfg, err := s.projectModelConfig(project)
 	if err != nil {
 		return nil, "", fmt.Errorf("parse project model config: %w", err)
 	}
-	resolved := modelconfig.Merge(env, projectCfg)
+	resolved, err := s.providerConfig.ModelAuthority.Resolve(projectCfg)
+	if err != nil {
+		return nil, "", fmt.Errorf("resolve project model config: %w", err)
+	}
 	source := "env"
 	if len(projectCfg) > 0 {
 		source = "project"
@@ -68,7 +70,7 @@ func (s *Server) resolvedModelsForProject(ctx context.Context, projectID int64) 
 		return map[string]any{
 			"resolved": resolved.ToMap(),
 			"source":   source,
-			"fields":   resolved.FieldList(map[string]string{}),
+			"fields":   resolved.FieldList(),
 		}, nil
 	}
 	project, err := s.repo.GetProject(ctx, projectID)
@@ -82,7 +84,7 @@ func (s *Server) resolvedModelsForProject(ctx context.Context, projectID int64) 
 	return map[string]any{
 		"resolved": resolved.ToMap(),
 		"source":   source,
-		"fields":   resolved.FieldList(map[string]string{}),
+		"fields":   resolved.FieldList(),
 	}, nil
 }
 

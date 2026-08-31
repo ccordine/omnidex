@@ -47,7 +47,7 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*Runtime, 
 		cancel()
 		return nil, fmt.Errorf("connect runtime database: %w", err)
 	}
-	repo := queue.New(pool)
+	repo := queue.New(pool, cfg.ModelAuthority)
 	if err := repo.ResetDatabase(lifecycleContext, database.SetupSQL()); err != nil {
 		cancel()
 		pool.Close()
@@ -58,14 +58,11 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*Runtime, 
 	server, err := api.NewServer(repo, transports.Embeddings, api.ServerOptions{
 		LifecycleContext:     lifecycleContext,
 		ProviderConfig:       cfg,
-		RequestTimeout:       cfg.RequestTimeout,
-		WebSearchProviders:   cfg.WebSearchProviders,
 		CoreURL:              cfg.CoreURL,
 		ListenAddr:           cfg.ListenAddr,
 		HostAgentURL:         cfg.HostAgentURL,
 		HostAgentToken:       cfg.HostAgentToken,
 		IntegrationAPIToken:  cfg.IntegrationAPIToken,
-		RealtimeMaxClients:   cfg.RealtimeMaxClients,
 		RealtimeStreamMaxAge: cfg.RealtimeStreamMaxAge,
 		RealtimeHeartbeat:    cfg.RealtimeHeartbeat,
 		RealtimeWriteTimeout: cfg.RealtimeWriteTimeout,
@@ -87,13 +84,9 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*Runtime, 
 			FragmentConcurrency:    cfg.CodingFragmentConcurrency,
 			PollInterval:           cfg.WorkerPollInterval,
 			InferenceContextTokens: cfg.InferenceContextTokens,
-			Models: worker.ModelRouting{
-				Stations:              cfg.StationModels,
-				RoleplaySemanticModel: cfg.RoleplaySemanticModel,
-			},
-			Logger:    logger,
-			OnJobFinished: server.OnJobFinishedAsync,
-			OnJobOutput:   server.OnJobOutputAsync,
+			Logger:                 logger,
+			OnJobFinished:          server.OnJobFinishedAsync,
+			OnJobOutput:            server.OnJobOutputAsync,
 		},
 	)
 	if err != nil {

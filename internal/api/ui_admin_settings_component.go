@@ -5,37 +5,6 @@ import (
 	"strings"
 )
 
-func renderUIAdminNetwork(settings map[string]any) string {
-	coreURL := stringMapValue(settings, "core_url")
-	host := stringMapValue(settings, "host")
-	listen := stringMapValue(settings, "listen_addr")
-	requestURL := stringMapValue(settings, "request_url")
-	source := stringMapValue(settings, "source")
-	port, _ := settings["port"].(int)
-	if port == 0 {
-		if numeric, ok := settings["port"].(float64); ok {
-			port = int(numeric)
-		}
-	}
-	requestHint := ""
-	if requestURL != "" {
-		requestHint = `<p class="mt-2 text-xs text-zinc-500">This browser session: <span class="font-mono text-zinc-300">` + uiEscape(requestURL) + `</span></p>`
-	}
-	return `<p class="text-sm text-zinc-400">Use this URL on other LAN devices, not localhost.</p>` +
-		`<div class="mt-3 rounded-md border border-cyan-300/20 bg-cyan-300/5 px-3 py-2"><a href="` + uiAttribute(coreURL) +
-		`" target="_blank" rel="noopener noreferrer" class="font-mono text-sm text-cyan-200">` + uiEscape(coreURL) + `</a>` +
-		`<div class="mt-1 text-[11px] uppercase tracking-wide text-zinc-500">` + uiEscape(source) + ` · listen ` + uiEscape(listen) + `</div></div>` + requestHint +
-		`<form data-action="submit->admin#saveNetwork" class="mt-4 grid gap-3 md:grid-cols-[minmax(0,1fr)_120px_auto]">` +
-		uiAdminInput("Host / IP", "networkHost", host, "text") + uiAdminInput("Port", "networkPort", strconv.Itoa(port), "number") +
-		`<div class="self-end"><button type="submit" class="rounded-md bg-cyan-300 px-4 py-2 text-sm font-semibold text-zinc-950">Save URL</button></div></form>`
-}
-
-func uiAdminInput(label, field, value, inputType string) string {
-	return `<label class="block"><span class="text-xs text-zinc-500">` + uiEscape(label) + `</span><input data-admin-field="` + uiAttribute(field) +
-		`" type="` + uiAttribute(inputType) + `" value="` + uiAttribute(value) +
-		`" class="mt-1 w-full rounded-md border border-white/10 bg-zinc-900 px-3 py-2 font-mono text-sm text-zinc-100 outline-none focus:border-cyan-300/40" /></label>`
-}
-
 func renderUIAdminMindStats(stats map[string]int64) string {
 	if len(stats) == 0 {
 		return `<p class="text-sm text-zinc-500">Mind stats require PostgreSQL.</p>`

@@ -4,23 +4,33 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
-	"strings"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
 	"github.com/gryph/omnidex/internal/modelcontext"
 )
 
-type objectiveBasenameOwner struct {
-	path      string
-	ambiguous bool
+func objectiveWorkspaceState(root string) (assemblyline.ApplicationWorkspaceState, error) {
+	root = filepath.Clean(root)
+	if !filepath.IsAbs(root) {
+		return "", fmt.Errorf("objective workspace root must be absolute")
+	}
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return "", fmt.Errorf("inspect objective workspace root %q: %w", root, err)
+	}
+	for _, entry := range entries {
+		if entry.Name() != ".git" && entry.Name() != ".omni" {
+			return assemblyline.ApplicationWorkspaceExisting, nil
+		}
+	}
+	return assemblyline.ApplicationWorkspaceEmpty, nil
 }
 
-// objectiveInstructionPathProvenance derives only the filesystem names needed
-// to keep one instruction path-blind. It deliberately does not hash content,
-// invoke Git, persist a repository snapshot, or build a semantic index. Those
-// operations belong to the first workflow that actually consumes repository
-// authority.
+// objectiveInstructionPathProvenance derives artifact identities directly
+// from the instruction's path grammar. It never inventories the workspace:
+// existence and contents belong to the first filesystem consumer.
 func objectiveInstructionPathProvenance(
 	ctx context.Context,
 	root string,
@@ -37,72 +47,27 @@ func objectiveInstructionPathProvenance(
 			"objective instruction path provenance root must be absolute",
 		)
 	}
-	before, err := os.Lstat(root)
-	if err != nil || !before.IsDir() || before.Mode()&os.ModeSymlink != 0 {
-		return assemblyline.ArtifactIdentityProvenance{}, fmt.Errorf(
-			"objective instruction path provenance root %q is not one exact directory", root,
-		)
-	}
-
 	selected := make(map[string]struct{})
-	basenames := make(map[string]objectiveBasenameOwner)
-	err = filepath.WalkDir(root, func(absolute string, entry os.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			if absolute == root {
-				return fmt.Errorf("walk objective instruction path %q: %w", absolute, walkErr)
-			}
-			if entry != nil && entry.IsDir() {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		if absolute == root {
-			return nil
-		}
-		if entry.IsDir() && (entry.Name() == ".git" || entry.Name() == ".omni") {
-			return filepath.SkipDir
-		}
-		if entry.IsDir() || !entry.Type().IsRegular() && entry.Type()&os.ModeSymlink == 0 {
-			return nil
-		}
-		relative, err := filepath.Rel(root, absolute)
-		if err != nil {
-			return fmt.Errorf("derive objective instruction relative path: %w", err)
-		}
-		relative = filepath.ToSlash(relative)
-		base := filepath.Base(absolute)
-		if strings.Contains(instruction, relative) {
+	for _, identity := range modelcontext.PathIdentities(
+		instruction, assemblyline.ArtifactIdentityProvenance{},
+	) {
+		relative, err := objectiveRelativeArtifactPath(root, identity.Value)
+		if err == nil {
 			selected[relative] = struct{}{}
 		}
-		if !strings.Contains(instruction, base) {
-			return nil
-		}
-		owner, exists := basenames[base]
-		if !exists {
-			basenames[base] = objectiveBasenameOwner{path: relative}
-			return nil
-		}
-		if owner.path != relative {
-			owner.ambiguous = true
-			basenames[base] = owner
-		}
-		return nil
-	})
-	if err != nil {
-		return assemblyline.ArtifactIdentityProvenance{}, err
 	}
-	after, err := os.Lstat(root)
-	if err != nil || !after.IsDir() || after.Mode()&os.ModeSymlink != 0 || !os.SameFile(before, after) {
-		return assemblyline.ArtifactIdentityProvenance{}, fmt.Errorf(
-			"objective instruction path provenance root changed during inspection",
-		)
-	}
-	for _, owner := range basenames {
-		if !owner.ambiguous {
-			selected[owner.path] = struct{}{}
+	for _, token := range modelcontext.LexicalPathTokens(instruction) {
+		if err := ctx.Err(); err != nil {
+			return assemblyline.ArtifactIdentityProvenance{}, err
+		}
+		if _, _, recognized, err := recognizeDirectCodingArtifactAdapterForPath(token.Value); err != nil {
+			return assemblyline.ArtifactIdentityProvenance{}, err
+		} else if !recognized {
+			continue
+		}
+		relative, err := objectiveRelativeArtifactPath(root, token.Value)
+		if err == nil {
+			selected[relative] = struct{}{}
 		}
 	}
 	paths := make([]string, 0, len(selected))
@@ -110,4 +75,22 @@ func objectiveInstructionPathProvenance(
 		paths = append(paths, path)
 	}
 	return modelcontext.NewArtifactIdentityProvenance(paths)
+}
+
+func objectiveRelativeArtifactPath(root, candidate string) (string, error) {
+	if filepath.IsAbs(candidate) {
+		relative, err := filepath.Rel(root, filepath.Clean(candidate))
+		if err != nil {
+			return "", err
+		}
+		candidate = filepath.ToSlash(relative)
+	} else {
+		candidate = filepath.ToSlash(candidate)
+	}
+	candidate = path.Clean(candidate)
+	if candidate == "." || candidate == ".." || path.IsAbs(candidate) ||
+		len(candidate) >= 3 && candidate[:3] == "../" {
+		return "", fmt.Errorf("artifact path is outside the authoritative workspace")
+	}
+	return candidate, nil
 }

@@ -72,13 +72,14 @@ func uiProjectConfigSection(projectID int64, updatedAt time.Time, title, prefix,
 }
 
 func decodeUIProjectModelFields(models map[string]any) ([]uiProjectModelField, error) {
+	definitions := modelconfig.RegisteredFields()
 	rawFields, ok := models["fields"].([]map[string]any)
-	if !ok || len(rawFields) != len(modelconfig.Fields) {
+	if !ok || len(rawFields) != len(definitions) {
 		return nil, fmt.Errorf("project model field inventory is not exact")
 	}
 	fields := make([]uiProjectModelField, 0, len(rawFields))
 	for index, raw := range rawFields {
-		definition := modelconfig.Fields[index]
+		definition := definitions[index]
 		if len(raw) != 6 || raw["key"] != definition.Key || raw["label"] != definition.Label ||
 			raw["description"] != definition.Description {
 			return nil, fmt.Errorf("project model field %d does not match its registered definition", index)

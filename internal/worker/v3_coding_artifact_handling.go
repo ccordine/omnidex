@@ -63,10 +63,10 @@ func sieveDirectCodingApplicationArtifactDirectives(
 	for index, directive := range directives {
 		switch directive.Disposition {
 		case assemblyline.ArtifactReference,
-			assemblyline.ArtifactAbsenceCandidate,
-			assemblyline.ArtifactRequire:
+			assemblyline.ArtifactAbsenceCandidate:
 			continue
 		case assemblyline.ArtifactProtect,
+			assemblyline.ArtifactRequire,
 			assemblyline.ArtifactForbid:
 			retained = append(retained, directive)
 		default:

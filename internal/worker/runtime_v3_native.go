@@ -34,9 +34,7 @@ func (r *nativeRuntimeV3) modelRouting() (ModelRouting, error) {
 		return ModelRouting{}, fmt.Errorf("model routing requires runtime authority")
 	}
 	r.routingOnce.Do(func() {
-		r.routing, r.routingErr = modelRoutingFromJobMetadata(
-			r.claim.Job.Metadata, r.svc.models,
-		)
+		r.routing, r.routingErr = modelRoutingFromJobMetadata(r.claim.Job.Metadata)
 	})
 	return r.routing, r.routingErr
 }

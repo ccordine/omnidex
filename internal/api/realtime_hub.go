@@ -11,7 +11,6 @@ import (
 )
 
 var (
-	ErrRealtimeHubFull          = errors.New("realtime hub client limit reached")
 	ErrRealtimeHubUnavailable   = errors.New("realtime hub is not initialized")
 	ErrRealtimeEventNameMissing = errors.New("realtime event name is required")
 )
@@ -51,18 +50,11 @@ type RealtimeHub struct {
 	mu              sync.Mutex
 	nextClientID    uint64
 	nextMessageID   uint64
-	maxClients      int
 	clientBuffer    int
 	replayCapacity  int
 	clients         map[uint64]*RealtimeClient
 	history         []realtimeFrame
 	lastFingerprint map[string]realtimeFingerprint
-}
-
-type RealtimeHubOptions struct {
-	MaxClients     int
-	ClientBuffer   int
-	ReplayCapacity int
 }
 
 type RealtimeSubscription struct {
@@ -81,25 +73,14 @@ type RealtimeBroadcastResult struct {
 	Duplicate           bool
 }
 
-func NewRealtimeHub(options ...RealtimeHubOptions) *RealtimeHub {
-	config := RealtimeHubOptions{MaxClients: 512, ClientBuffer: 64, ReplayCapacity: 256}
-	if len(options) > 0 {
-		if options[0].MaxClients > 0 {
-			config.MaxClients = options[0].MaxClients
-		}
-		if options[0].ClientBuffer > 0 {
-			config.ClientBuffer = options[0].ClientBuffer
-		}
-		if options[0].ReplayCapacity > 0 {
-			config.ReplayCapacity = options[0].ReplayCapacity
-		}
-	}
+func NewRealtimeHub() *RealtimeHub {
+	const clientBuffer = 64
+	const replayCapacity = 256
 	return &RealtimeHub{
-		maxClients:      config.MaxClients,
-		clientBuffer:    config.ClientBuffer,
-		replayCapacity:  config.ReplayCapacity,
+		clientBuffer:    clientBuffer,
+		replayCapacity:  replayCapacity,
 		clients:         make(map[uint64]*RealtimeClient),
-		history:         make([]realtimeFrame, 0, config.ReplayCapacity),
+		history:         make([]realtimeFrame, 0, replayCapacity),
 		lastFingerprint: make(map[string]realtimeFingerprint),
 	}
 }
@@ -111,10 +92,6 @@ func (h *RealtimeHub) Subscribe(topics []string, afterID uint64) (RealtimeSubscr
 	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	if h.maxClients > 0 && len(h.clients) >= h.maxClients {
-		return RealtimeSubscription{}, ErrRealtimeHubFull
-	}
-
 	latestID := h.nextMessageID
 	replayGap := afterID > latestID
 	if afterID > 0 && len(h.history) > 0 && afterID+1 < h.history[0].id {
@@ -266,9 +243,14 @@ func realtimePayloadID(raw []byte) uint64 {
 func normalizeRealtimeTopics(topics []string) (map[string]struct{}, error) {
 	set := make(map[string]struct{}, len(topics))
 	for _, topic := range topics {
-		topic = strings.ToLower(strings.TrimSpace(topic))
+		if topic == "" || topic != strings.TrimSpace(topic) {
+			return nil, fmt.Errorf("realtime topic %q must be a non-empty canonical string", topic)
+		}
 		if _, ok := realtimeTopics[topic]; !ok {
 			return nil, fmt.Errorf("unknown realtime topic %q", topic)
+		}
+		if _, exists := set[topic]; exists {
+			return nil, fmt.Errorf("duplicate realtime topic %q", topic)
 		}
 		set[topic] = struct{}{}
 	}
@@ -288,8 +270,8 @@ func topicSetsIntersect(left, right map[string]struct{}) bool {
 }
 
 func parseRealtimeTopics(raw string) ([]string, error) {
-	if strings.TrimSpace(raw) == "" {
-		return []string{realtimeTopicUI, realtimeTopicMetrics, realtimeTopicScrum, realtimeTopicJobs}, nil
+	if raw == "" {
+		return nil, errors.New("realtime topics are required when provided")
 	}
 	parts := strings.Split(raw, ",")
 	set, err := normalizeRealtimeTopics(parts)

@@ -23,15 +23,13 @@ type ApplicationIntentCandidate struct {
 }
 
 type ApplicationIntentCandidateRequirement struct {
-	Statement      string                                              `json:"statement"`
-	ResultRelation ApplicationRequirementCandidateResultRelationResult `json:"result_relation"`
+	Statement string `json:"statement"`
 }
 
 type ApplicationRequirement struct {
-	ID             string                                              `json:"id"`
-	Statement      string                                              `json:"statement"`
-	RequestSHA256  string                                              `json:"request_sha256"`
-	ResultRelation ApplicationRequirementCandidateResultRelationResult `json:"result_relation"`
+	ID            string `json:"id"`
+	Statement     string `json:"statement"`
+	RequestSHA256 string `json:"request_sha256"`
 }
 
 type ApplicationIntentResolution struct {
@@ -82,11 +80,6 @@ func (candidate ApplicationIntentCandidate) Validate() error {
 		); err != nil {
 			return fmt.Errorf("application intent requirement %d: %w", index, err)
 		}
-		if err := requirement.ResultRelation.ValidateAcceptedFor(statement); err != nil {
-			return fmt.Errorf(
-				"application intent requirement %d result relation: %w", index, err,
-			)
-		}
 		if _, duplicate := seen[statement]; duplicate {
 			return fmt.Errorf("application intent requirement %d is duplicated", index)
 		}
@@ -123,7 +116,7 @@ func ResolveApplicationIntent(
 	for index, requirement := range candidate.Requirements {
 		requirements[index] = ApplicationRequirement{
 			ID: fmt.Sprintf("requirement_%03d", index+1), Statement: requirement.Statement,
-			RequestSHA256: input.Context.RequestSHA256, ResultRelation: requirement.ResultRelation,
+			RequestSHA256: input.Context.RequestSHA256,
 		}
 	}
 	return ApplicationIntentResolution{

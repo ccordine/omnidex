@@ -8,6 +8,9 @@ import (
 )
 
 func updateScrumCardFieldsTx(ctx context.Context, tx pgx.Tx, card DBScrumCard) error {
+	if err := validateStoredScrumCard(card); err != nil {
+		return err
+	}
 	tag, err := tx.Exec(ctx, `
 		UPDATE scrum_cards SET title=$3,description=$4,column_name=$5,
 		 checklist=$6::jsonb,ref_files=$7::jsonb,card_ticket=$8,card_prompt=$9,
@@ -17,7 +20,7 @@ func updateScrumCardFieldsTx(ctx context.Context, tx pgx.Tx, card DBScrumCard) e
 		WHERE project_id=$1 AND id=$2
 	`, card.ProjectID, card.ID, card.Title, card.Description, card.Column,
 		string(card.Checklist), string(card.RefFiles), card.CardTicket, card.CardPrompt,
-		string(defaultJSON(card.Tags, `[]`)), string(defaultJSON(card.TestCriteria, `[]`)),
+		string(card.Tags), string(card.TestCriteria),
 		card.JobID, card.PlayState, card.QueueOrder,
 		card.BoardOrder, card.SyncJobID, card.StepContextCursor)
 	if err != nil {

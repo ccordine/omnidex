@@ -26,12 +26,13 @@ func ValidateRuntimeSchemaName(name string) error {
 }
 
 // RuntimeSearchPath returns the sole search-path projection used by runtime
-// connections.
+// connections. PostgreSQL searches pg_catalog implicitly before this path;
+// pg_temp remains an explicit, lower-priority session-local facility.
 func RuntimeSearchPath(runtimeSchema string) (string, error) {
 	if err := ValidateRuntimeSchemaName(runtimeSchema); err != nil {
 		return "", err
 	}
-	return runtimeSchema + ",public", nil
+	return runtimeSchema + ",pg_temp", nil
 }
 
 func ConnectRuntime(

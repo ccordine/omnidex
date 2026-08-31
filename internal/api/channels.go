@@ -382,10 +382,13 @@ func exactChannelQueryInteger(r *http.Request, key string, fallback, minimum, ma
 	if len(values) != 1 || values[0] == "" {
 		return 0, errors.New(key + " must be one canonical integer")
 	}
-	raw := values[0]
+	return exactIntegerValue(values[0], key, minimum, maximum)
+}
+
+func exactIntegerValue(raw, label string, minimum, maximum int) (int, error) {
 	value, err := strconv.Atoi(raw)
 	if err != nil || strconv.Itoa(value) != raw || value < minimum || value > maximum {
-		return 0, errors.New(key + " is outside its accepted integer range")
+		return 0, errors.New(label + " is outside its accepted integer range")
 	}
 	return value, nil
 }

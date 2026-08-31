@@ -63,19 +63,15 @@ func uiAdminSection(title, description, body string) string {
 }
 
 func (s *Server) renderUIAdminOverview(r *http.Request) (string, error) {
-	network, err := s.networkSettingsPayload(r)
-	if err != nil {
-		return "", err
-	}
 	stats := map[string]int64{}
 	if s.repo != nil {
+		var err error
 		stats, err = s.repo.MindStats(r.Context())
 		if err != nil {
 			return "", fmt.Errorf("load mind statistics: %w", err)
 		}
 	}
 	return `<div data-admin-tab-panel="overview" class="mx-auto max-w-5xl space-y-4">` +
-		uiAdminSection("Network access", "LAN URL for phones, tablets, and other devices on your network.", renderUIAdminNetwork(network)) +
 		uiAdminSection("Mind overview", "Counts for durable memory, candidates, jobs, and telemetry.", renderUIAdminMindStats(stats)) +
 		uiAdminSection("Document ingest", "Upload reference documents into explicit candidate or durable staging.", renderUIAdminIngest()) +
 		`</div>`, nil
@@ -94,9 +90,7 @@ func (s *Server) renderUIAdminAI(ctx context.Context, query uiOllamaManagerQuery
 func renderUIAdminHealth() string {
 	return `<div data-admin-tab-panel="health" class="mx-auto max-w-6xl space-y-4">` +
 		uiAdminSection("Core health", "Live health from the running core service.", `<pre data-chat-target="statusOutput" data-recyclr-sink="status-output" class="scrollbar max-h-[360px] overflow-y-auto whitespace-pre-wrap rounded-lg border border-white/10 bg-zinc-900/60 p-4 text-sm leading-6 text-zinc-200">`+uiLoading("Loading health…")+`</pre>`) +
-		`<div class="grid gap-4 lg:grid-cols-2">` +
-		uiAdminSection("Research stack", "Generation, embedding, runtime, and search readiness.", `<div data-chat-target="researchStatusOutput" data-recyclr-sink="research-status-output">`+uiLoading("Loading research health…")+`</div>`) +
-		uiAdminSection("Host bridge", "Folder, terminal, and screen bridge state.", `<div data-chat-target="hostBridgeStatusOutput" data-recyclr-sink="host-bridge-status-output">`+uiLoading("Loading host bridge…")+`</div>`) + `</div></div>`
+		uiAdminSection("Host bridge", "Folder, terminal, and screen bridge state.", `<div data-chat-target="hostBridgeStatusOutput" data-recyclr-sink="host-bridge-status-output">`+uiLoading("Loading host bridge…")+`</div>`) + `</div>`
 }
 
 func stringMapValue(values map[string]any, key string) string {

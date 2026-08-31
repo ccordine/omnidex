@@ -9,9 +9,9 @@ import (
 	"github.com/gryph/omnidex/internal/station"
 )
 
-func modelRoutingFromJobMetadata(metadata json.RawMessage, base ModelRouting) (ModelRouting, error) {
+func modelRoutingFromJobMetadata(metadata json.RawMessage) (ModelRouting, error) {
 	if len(metadata) == 0 {
-		return base, nil
+		return ModelRouting{}, fmt.Errorf("job model routing metadata is required")
 	}
 	var payload map[string]any
 	if err := json.Unmarshal(metadata, &payload); err != nil {
@@ -20,27 +20,23 @@ func modelRoutingFromJobMetadata(metadata json.RawMessage, base ModelRouting) (M
 	if err := rejectRemovedJobModelAliases(payload); err != nil {
 		return ModelRouting{}, err
 	}
-	cfg := modelconfig.Config{}
-	if raw, ok := payload["model_config"]; ok {
-		bytes, err := json.Marshal(raw)
-		if err != nil {
-			return ModelRouting{}, fmt.Errorf("encode job model config: %w", err)
-		}
-		cfg, err = modelconfig.FromJSON(bytes)
-		if err != nil {
-			return ModelRouting{}, fmt.Errorf("parse job model config: %w", err)
-		}
+	raw, ok := payload["model_config"]
+	if !ok {
+		return ModelRouting{}, fmt.Errorf("job model routing metadata requires model_config")
 	}
-	if len(cfg) == 0 {
-		return base, nil
+	bytes, err := json.Marshal(raw)
+	if err != nil {
+		return ModelRouting{}, fmt.Errorf("encode job model config: %w", err)
 	}
-	baseRouting := modelconfig.Routing{
-		Stations: base.Stations, RoleplaySemanticModel: base.RoleplaySemanticModel,
+	cfg, err := modelconfig.FromJSON(bytes)
+	if err != nil {
+		return ModelRouting{}, fmt.Errorf("parse job model config: %w", err)
 	}
-	applied := modelconfig.Apply(baseRouting, cfg)
-	return ModelRouting{
-		Stations: applied.Stations, RoleplaySemanticModel: applied.RoleplaySemanticModel,
-	}, nil
+	authority, err := modelconfig.Freeze(cfg)
+	if err != nil {
+		return ModelRouting{}, fmt.Errorf("freeze job model config: %w", err)
+	}
+	return authority.Routing(), nil
 }
 
 func rejectRemovedJobModelAliases(payload map[string]any) error {

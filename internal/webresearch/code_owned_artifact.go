@@ -49,11 +49,8 @@ func BuildGroundedCompletionArtifact(
 		}
 	}
 	artifact, err := buildArtifact(
-		GroundedSynthesisDecision{Paragraphs: cloneParagraphs(paragraphs)},
-		projected, cloneEvidence(evidence), Config{
-			MaxSynthesisParagraphs:     maxParagraphs,
-			MaxSynthesisParagraphBytes: maxParagraphBytes,
-		},
+		cloneParagraphs(paragraphs), projected, cloneEvidence(evidence),
+		maxParagraphs, maxParagraphBytes,
 	)
 	if err != nil {
 		return Artifact{}, err

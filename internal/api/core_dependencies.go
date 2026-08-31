@@ -76,22 +76,17 @@ func (s *Server) checkRedisDependency(ctx context.Context) coreDependencyStatus 
 		dependency.Message = "UI Redis is required but REDIS_URL is not configured."
 		return dependency
 	}
-	if strings.TrimSpace(s.uiRedisInitError) != "" {
+	redis, err := s.requireUIRedis()
+	if err != nil {
 		dependency.Status = "error"
-		dependency.Error = s.uiRedisInitError
-		dependency.Message = "Core cannot initialize the Redis client."
-		return dependency
-	}
-	if s.uiRedis == nil {
-		dependency.Status = "error"
-		dependency.Error = "redis client is not initialized"
+		dependency.Error = err.Error()
 		dependency.Message = "Core cannot initialize the Redis client."
 		return dependency
 	}
 	started := time.Now()
 	checkCtx, cancel := context.WithTimeout(ctx, coreDependencyCheckTimeout)
 	defer cancel()
-	err := s.uiRedis.Ping(checkCtx)
+	err = redis.Ping(checkCtx)
 	dependency.LatencyMS = time.Since(started).Milliseconds()
 	if err != nil {
 		dependency.Status = "error"

@@ -87,9 +87,7 @@ func (resolver *lazyExactStationResolver) resolve() (llm.ExactStationClient, err
 			resolver.err = err
 			return
 		}
-		resolver.client, resolver.err = newExactStationProvider(
-			resolver.cfg, definition, resolver.cfg.RequestTimeout,
-		)
+		resolver.client, resolver.err = newExactStationProvider(resolver.cfg, definition)
 		if resolver.err == nil {
 			resolver.err = resolver.client.RequireExactPreparedContract()
 		}
@@ -129,9 +127,7 @@ func (resolver *lazyEmbeddingResolver) resolve() (llm.EmbeddingClient, error) {
 			resolver.err = err
 			return
 		}
-		resolver.client, resolver.err = newEmbeddingProvider(
-			resolver.cfg, definition, resolver.cfg.EmbeddingModel, resolver.cfg.RequestTimeout,
-		)
+		resolver.client, resolver.err = newEmbeddingProvider(resolver.cfg, definition)
 	})
 	return resolver.client, resolver.err
 }

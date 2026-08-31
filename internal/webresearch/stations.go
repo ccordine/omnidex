@@ -48,27 +48,9 @@ type ProjectedEvidence struct {
 	Truncated   bool
 }
 
-type GroundedSynthesisCall struct {
-	Question          string
-	Context           assemblyline.ObjectiveContext
-	Evidence          []ProjectedEvidence
-	MaxParagraphs     int
-	MaxParagraphBytes int
-}
-
 type GroundedParagraph struct {
 	Text        string
 	EvidenceIDs []EvidenceID
-}
-
-type GroundedSynthesisDecision struct {
-	Paragraphs    []GroundedParagraph
-	SemanticCalls int
-	CallLedger    SemanticCallLedger
-}
-
-type GroundedSynthesisStation interface {
-	Synthesize(context.Context, GroundedSynthesisCall) (GroundedSynthesisDecision, error)
 }
 
 // Acquisition is code-operated web mechanics. It is deliberately not exposed

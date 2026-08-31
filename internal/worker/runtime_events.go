@@ -46,12 +46,4 @@ func (s *Service) emitStepEvent(authority model.StepAttemptAuthority, eventType,
 	if eventType != "step_complete" && eventType != "step_canceled" {
 		s.emitStepContext(authority, "event", payload)
 	}
-	if s.repo == nil {
-		return
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	if err := s.repo.RecordTelemetryStepEvent(ctx, authority, eventType, message); err != nil {
-		s.logger.Printf("step=%d attempt=%d telemetry event=%s write error: %v", authority.StepID, authority.Attempt, eventType, err)
-	}
 }

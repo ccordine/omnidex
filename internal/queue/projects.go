@@ -41,10 +41,10 @@ const projectSelectColumns = `
 
 func (r *Repository) ListProjects(ctx context.Context, limit, offset int) ([]model.Project, error) {
 	if limit <= 0 {
-		limit = 100
+		return nil, fmt.Errorf("project list limit must be positive")
 	}
 	if offset < 0 {
-		offset = 0
+		return nil, fmt.Errorf("project list offset must be non-negative")
 	}
 	rows, err := r.pool.Query(ctx, `
 		SELECT `+projectSelectColumns+` FROM projects
@@ -150,7 +150,6 @@ func (r *Repository) UpdateProjectAtRevision(
 	if patch.Settings != nil {
 		current.Settings = *patch.Settings
 	}
-	current.Settings = defaultJSON(current.Settings, `{}`)
 	if err := validateProjectSettings(current.Settings); err != nil {
 		return model.Project{}, err
 	}
@@ -268,13 +267,6 @@ func (r *Repository) HasRunningScrumPlay(ctx context.Context) (bool, error) {
 		SELECT EXISTS(SELECT 1 FROM scrum_cards WHERE play_state='running' LIMIT 1)
 	`).Scan(&exists)
 	return exists, err
-}
-
-func defaultJSON(raw json.RawMessage, fallback string) json.RawMessage {
-	if len(raw) > 0 {
-		return raw
-	}
-	return json.RawMessage(fallback)
 }
 
 func ProjectNameFromLocation(location string) string { return projectNameFromLocation(location) }

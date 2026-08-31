@@ -1,48 +1,37 @@
 package worker
 
 import (
-	"errors"
 	"fmt"
 )
 
 func (s *directCodingSession) ApplyAndVerify(
 	prepared *directCodingPreparedMutation,
-) (verification directCodingVerification, resultErr error) {
+) (resultErr error) {
 	if s == nil || s.runtime == nil || s.runtime.ctx == nil || prepared == nil {
-		return directCodingVerification{}, fmt.Errorf("apply direct-coding workspace mutation requires one prepared transaction")
+		return fmt.Errorf("apply direct-coding workspace mutation requires one prepared transaction")
 	}
 	if prepared.stage == nil {
-		return directCodingVerification{}, fmt.Errorf("apply direct-coding workspace mutation requires one prepared transaction")
+		return fmt.Errorf("apply direct-coding workspace mutation requires one prepared transaction")
 	}
 	defer func() {
-		resultErr = errors.Join(resultErr, prepared.Cleanup())
+		if err := prepared.Cleanup(); err != nil && s.runtime.svc.logger != nil {
+			s.runtime.svc.logger.Printf("workspace mutation staging cleanup failed after terminal apply state: %v", err)
+		}
 	}()
 	plan := prepared.stage.Plan()
 	result, err := prepared.stage.ApplyVerified(s.runtime.ctx)
 	if err != nil {
-		return directCodingVerification{}, err
+		return err
 	}
 	current := result.Snapshot
 	if err := plan.VerifyExpected(current); err != nil {
-		return directCodingVerification{}, err
+		return err
 	}
 	if err := current.VerifyExact(s.runtime.ctx); err != nil {
-		return directCodingVerification{}, fmt.Errorf("verify stable direct-coding workspace post-state: %w", err)
+		return fmt.Errorf("verify stable direct-coding workspace post-state: %w", err)
 	}
 	s.recordPreparedWorkspaceMutation(prepared)
-	authority, err := newDirectCodingExactStateAuthority(current, plan.OwnerID)
-	if err != nil {
-		return directCodingVerification{}, err
-	}
-	receiptSHA256, err := directCodingExactStateReceiptSHA256(authority, true)
-	if err != nil {
-		return directCodingVerification{}, err
-	}
-	return directCodingVerification{
-		Passed:                  true,
-		ExactStateAuthorityID:   authority.ID,
-		ExactStateReceiptSHA256: receiptSHA256,
-	}, nil
+	return nil
 }
 
 func (s *directCodingSession) recordPreparedWorkspaceMutation(

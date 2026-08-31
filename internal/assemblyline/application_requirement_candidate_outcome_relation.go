@@ -15,20 +15,16 @@ const (
 )
 
 type ApplicationRequirementCandidateOutcomeRelationInput struct {
-	Candidate              string                                              `json:"candidate"`
-	Kind                   ApplicationRequirementCandidateKindResult           `json:"kind"`
-	Cardinality            ApplicationRequirementCandidateCardinalityResult    `json:"cardinality"`
-	AcceptedRequirement    string                                              `json:"accepted_requirement"`
-	AcceptedResultRelation ApplicationRequirementCandidateResultRelationResult `json:"accepted_result_relation"`
+	Candidate           string                                           `json:"candidate"`
+	Kind                ApplicationRequirementCandidateKindResult        `json:"kind"`
+	Cardinality         ApplicationRequirementCandidateCardinalityResult `json:"cardinality"`
+	AcceptedRequirement string                                           `json:"accepted_requirement"`
 }
 
 type ApplicationRequirementCandidateOutcomeRelationResult struct {
 	Schema                    string `json:"schema"`
 	CandidateSHA256           string `json:"candidate_sha256"`
 	AcceptedRequirementSHA256 string `json:"accepted_requirement_sha256"`
-	KindReceiptSHA256         string `json:"kind_receipt_sha256"`
-	CardinalityReceiptSHA256  string `json:"cardinality_receipt_sha256"`
-	AcceptedReceiptSHA256     string `json:"accepted_receipt_sha256"`
 	Relation                  string `json:"relation"`
 }
 
@@ -79,11 +75,6 @@ func (input ApplicationRequirementCandidateOutcomeRelationInput) validate() erro
 			ApplicationRequirementOneRuntimeOutcome,
 		)
 	}
-	if err := input.AcceptedResultRelation.ValidateAcceptedFor(
-		input.AcceptedRequirement,
-	); err != nil {
-		return fmt.Errorf("validate accepted outcome-relation authority: %w", err)
-	}
 	return nil
 }
 
@@ -114,29 +105,6 @@ func (result ApplicationRequirementCandidateOutcomeRelationResult) ValidateFor(
 	}
 	if result.AcceptedRequirementSHA256 != ExactObjectiveContextSHA(input.AcceptedRequirement) {
 		return fmt.Errorf("application requirement outcome-relation accepted hash does not match")
-	}
-	kindSHA256, err := applicationRequirementSemanticReceiptSHA256(input.Kind)
-	if err != nil {
-		return fmt.Errorf("hash outcome-relation kind receipt: %w", err)
-	}
-	if result.KindReceiptSHA256 != kindSHA256 {
-		return fmt.Errorf("application requirement outcome-relation kind receipt hash does not match")
-	}
-	cardinalitySHA256, err := applicationRequirementSemanticReceiptSHA256(input.Cardinality)
-	if err != nil {
-		return fmt.Errorf("hash outcome-relation cardinality receipt: %w", err)
-	}
-	if result.CardinalityReceiptSHA256 != cardinalitySHA256 {
-		return fmt.Errorf("application requirement outcome-relation cardinality receipt hash does not match")
-	}
-	acceptedSHA256, err := applicationRequirementSemanticReceiptSHA256(
-		input.AcceptedResultRelation,
-	)
-	if err != nil {
-		return fmt.Errorf("hash accepted outcome-relation receipt: %w", err)
-	}
-	if result.AcceptedReceiptSHA256 != acceptedSHA256 {
-		return fmt.Errorf("application requirement outcome-relation accepted receipt hash does not match")
 	}
 	switch result.Relation {
 	case ApplicationRequirementSameRuntimeOutcome,
@@ -204,26 +172,10 @@ func applicationRequirementCandidateOutcomeRelationResult(
 	input ApplicationRequirementCandidateOutcomeRelationInput,
 	relation string,
 ) (ApplicationRequirementCandidateOutcomeRelationResult, error) {
-	var zero ApplicationRequirementCandidateOutcomeRelationResult
-	kindSHA256, err := applicationRequirementSemanticReceiptSHA256(input.Kind)
-	if err != nil {
-		return zero, fmt.Errorf("hash outcome-relation kind receipt: %w", err)
-	}
-	cardinalitySHA256, err := applicationRequirementSemanticReceiptSHA256(input.Cardinality)
-	if err != nil {
-		return zero, fmt.Errorf("hash outcome-relation cardinality receipt: %w", err)
-	}
-	acceptedSHA256, err := applicationRequirementSemanticReceiptSHA256(input.AcceptedResultRelation)
-	if err != nil {
-		return zero, fmt.Errorf("hash accepted outcome-relation receipt: %w", err)
-	}
 	return ApplicationRequirementCandidateOutcomeRelationResult{
 		Schema:                    ApplicationRequirementCandidateOutcomeRelationSchemaV1,
 		CandidateSHA256:           ExactObjectiveContextSHA(input.Candidate),
 		AcceptedRequirementSHA256: ExactObjectiveContextSHA(input.AcceptedRequirement),
-		KindReceiptSHA256:         kindSHA256,
-		CardinalityReceiptSHA256:  cardinalitySHA256,
-		AcceptedReceiptSHA256:     acceptedSHA256,
 		Relation:                  relation,
 	}, nil
 }

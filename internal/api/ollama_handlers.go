@@ -68,7 +68,7 @@ func (s *Server) listOllamaModels(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadGateway, err.Error())
 		return
 	}
-	modelConfig := s.envModelConfig()
+	modelConfig := s.runtimeModelConfig()
 	configured := []string{}
 	if s.defaultProvider == "ollama" {
 		configured = modelConfig.ModelNames()
@@ -76,9 +76,6 @@ func (s *Server) listOllamaModels(w http.ResponseWriter, r *http.Request) {
 	providerConfig := s.providerConfiguration()
 	if providerConfig.EmbeddingProvider == "ollama" {
 		embeddingModel := strings.TrimSpace(providerConfig.EmbeddingModel)
-		if embeddingModel == "" {
-			embeddingModel = strings.TrimSpace(providerConfig.ProviderModels["ollama"].Embedding)
-		}
 		if embeddingModel != "" {
 			configured = append(configured, embeddingModel)
 		}

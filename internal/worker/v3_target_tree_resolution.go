@@ -19,14 +19,13 @@ func resolveDirectCodingTargetTree(
 	if err := assemblyline.ValidateFrozenApplicationWorkloadFor(specification, workload); err != nil {
 		return zeroTree, zeroCoverage, err
 	}
-	input := directCodingTargetTreeInput(stack)
 	taskPaths := make(map[string][]string, len(workload.Tasks))
 	var target assemblyline.TargetTree
 	var err error
 	switch {
 	case stack.ProjectCompleteTargetTree != nil:
 		target, err = stack.ProjectCompleteTargetTree(
-			directCodingTargetTreeOccupationFor(input, map[string]struct{}{}),
+			directCodingTargetTreeOccupationFor(stack, map[string]struct{}{}),
 		)
 		if err == nil {
 			err = validateDirectCodingFocusedTargetTree(stack, target)
@@ -44,7 +43,7 @@ func resolveDirectCodingTargetTree(
 		for taskIndex, task := range workload.Tasks {
 			var focused assemblyline.TargetTree
 			focused, err = stack.ProjectFocusedTargetTree(
-				taskIndex+1, directCodingTargetTreeOccupationFor(input, union),
+				taskIndex+1, directCodingTargetTreeOccupationFor(stack, union),
 			)
 			if err == nil {
 				err = validateDirectCodingFocusedTargetTree(stack, focused)
@@ -74,14 +73,11 @@ func resolveDirectCodingTargetTree(
 		return zeroTree, zeroCoverage, fmt.Errorf("resolve complete target tree: %w", err)
 	}
 	target.StackID = stack.ID
-	if err := validateDirectCodingTargetTreePathClosure(input, target); err != nil {
+	if err := validateDirectCodingTargetTreePathClosure(stack, target); err != nil {
 		return zeroTree, zeroCoverage, err
 	}
 	if err := validateDirectCodingTargetTreeUnion(stack, target); err != nil {
 		return zeroTree, zeroCoverage, err
-	}
-	if _, err := assemblyline.DiffTargetTree(input, target, nil); err != nil {
-		return zeroTree, zeroCoverage, fmt.Errorf("derive target tree transitions: %w", err)
 	}
 	coverage, err := buildDirectCodingApplicationFileCoveragePlan(stack, workload, target, taskPaths)
 	if err != nil {

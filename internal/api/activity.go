@@ -10,7 +10,11 @@ func (s *Server) handleActivity(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
-	limit := parsePositiveInt(r.URL.Query().Get("limit"), 50)
+	limit, err := exactChannelQueryInteger(r, "limit", 50, 1, 500)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	jobs, err := s.repo.ListJobs(r.Context(), "", minInt(limit, 30), 0)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -40,7 +44,11 @@ func (s *Server) handleActivity(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) listMemory(w http.ResponseWriter, r *http.Request) {
-	limit := parsePositiveInt(r.URL.Query().Get("limit"), 50)
+	limit, err := exactChannelQueryInteger(r, "limit", 50, 1, 500)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	kind := strings.TrimSpace(r.URL.Query().Get("kind"))
 	tags := splitCommaQuery(r.URL.Query().Get("tags"))
 	memories, err := s.repo.ListMemoryChunks(r.Context(), kind, tags, limit)

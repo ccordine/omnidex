@@ -31,8 +31,12 @@ func (s *directCodingSession) Assemble() (directCodingAssembly, error) {
 		return directCodingAssembly{}, err
 	}
 	workerRuntime := directCodingWorkerRuntime(s)
+	workspaceState, err := objectiveWorkspaceState(s.root)
+	if err != nil {
+		return directCodingAssembly{}, err
+	}
 	applicationContext, err := assemblyline.BootstrapApplicationContext(
-		redacted, assemblyline.ApplicationWorkspaceEmpty,
+		redacted, workspaceState,
 	)
 	if err != nil {
 		return directCodingAssembly{}, err
@@ -47,6 +51,26 @@ func (s *directCodingSession) Assemble() (directCodingAssembly, error) {
 		return directCodingAssembly{}, err
 	}
 	specification := interpretation.Specification
+	if len(specification.Requirements) == 0 {
+		protected, required, deletions, err := resolveDirectCodingArtifactPaths(
+			specification.Artifacts, identities,
+		)
+		if err != nil {
+			return directCodingAssembly{}, err
+		}
+		s.protectedPaths = directCodingProtectedPathSet(protected)
+		files, err := s.requiredArtifactFiles(required, nil)
+		if err != nil {
+			return directCodingAssembly{}, err
+		}
+		assembly := directCodingAssembly{Files: files, DeletePaths: deletions}
+		if err := assembly.normalize(); err != nil {
+			return directCodingAssembly{}, err
+		}
+		s.plannedFiles = len(files)
+		s.plannedDeletes = len(deletions)
+		return assembly, nil
+	}
 	if err := validateDirectCodingRequirementCount(specification.Requirements); err != nil {
 		return directCodingAssembly{}, err
 	}
@@ -60,12 +84,6 @@ func (s *directCodingSession) Assemble() (directCodingAssembly, error) {
 	}
 	selectedStack := selection.Stack
 	workload, err := assemblyline.FreezeApplicationWorkload(specification)
-	if err != nil {
-		return directCodingAssembly{}, err
-	}
-	requirementRelations, err := newDirectCodingApplicationTaskResultRelationPlan(
-		workload, interpretation.AcceptedRequirements, requestAuthority,
-	)
 	if err != nil {
 		return directCodingAssembly{}, err
 	}
@@ -84,13 +102,6 @@ func (s *directCodingSession) Assemble() (directCodingAssembly, error) {
 		return directCodingAssembly{}, err
 	}
 	workerRuntime.PathProvenance = s.pathProvenance
-	targetTreeInput := directCodingTargetTreeInput(selectedStack)
-	structureTransitions, err := assemblyline.DiffTargetTree(
-		targetTreeInput, targetTree, nil,
-	)
-	if err != nil {
-		return directCodingAssembly{}, err
-	}
 	s.runtime.svc.emitStepEvent(s.runtime.claim.Authority, "coding_workload_frozen", fmt.Sprintf(
 		"tasks=%d sha256=%s", len(workload.Tasks), workload.SHA256,
 	))
@@ -114,7 +125,6 @@ func (s *directCodingSession) Assemble() (directCodingAssembly, error) {
 	if err != nil {
 		return directCodingAssembly{}, err
 	}
-	program.RequirementRelations = requirementRelations
 	program, err = bindDirectCodingRuntimeCapabilities(
 		selectedStack, program, runtimeCapabilities,
 	)
@@ -129,64 +139,39 @@ func (s *directCodingSession) Assemble() (directCodingAssembly, error) {
 	}
 	program.TargetTree = targetTree
 	program.Coverage = coverage
-	program.StructureTransitions = append([]assemblyline.TargetTreeTransition(nil), structureTransitions...)
 	if err := s.bindDirectCodingProgramPathProvenance(program); err != nil {
 		return directCodingAssembly{}, err
 	}
 	if err := s.runDirectCodingApplicationTaskLifecycle(workload, &program); err != nil {
 		return directCodingAssembly{}, err
 	}
-	protectedPaths, err := snapshotDirectCodingProtectedPathList(s.root, program.ProtectedPaths)
-	if err != nil {
-		return directCodingAssembly{}, err
-	}
 	s.specification = &specification
 	s.program = &program
-	s.protectedPaths = protectedPaths
+	s.protectedPaths = directCodingProtectedPathSet(program.ProtectedPaths)
 	assembly, err := directCodingAssemblyFromProgram(program)
 	if err != nil {
 		return directCodingAssembly{}, err
 	}
+	assembly.Files, err = s.requiredArtifactFiles(program.RequiredPaths, assembly.Files)
+	if err != nil {
+		return directCodingAssembly{}, err
+	}
 	if err := validateDirectCodingAssemblySources(program, assembly); err != nil {
-		return directCodingAssembly{}, fmt.Errorf("validate complete in-memory artifact assembly: %w", err)
+		return directCodingAssembly{}, fmt.Errorf("validate compiled application artifacts: %w", err)
 	}
 	s.runtime.svc.emitStepEvent(s.runtime.claim.Authority, "coding_artifact_sieve_passed", fmt.Sprintf(
 		"stack=%s files=%d", program.StackID, len(assembly.Files),
 	))
-	artifactGraph, err := directCodingArtifactGraphFromProgram(program, assembly)
-	if err != nil {
-		return directCodingAssembly{}, err
-	}
-	filesystemTransitions, err := directCodingAssemblyFilesystemTransitions(
-		nil, nil, program.StructureTransitions, assembly,
-	)
-	if err != nil {
-		return directCodingAssembly{}, err
-	}
-	for _, transition := range filesystemTransitions {
-		if transition.Kind == assemblyline.TargetTreeEnsureDirectory {
-			assembly.Directories = append(assembly.Directories, transition.Path)
-		}
-	}
-	if err := assembly.normalize(); err != nil {
-		return directCodingAssembly{}, err
-	}
-	if err := validateDirectCodingAssemblyProtection(assembly, s.protectedPaths); err != nil {
-		return directCodingAssembly{}, err
-	}
 	s.plannedFiles = len(assembly.Files)
 	s.plannedDeletes = len(assembly.DeletePaths)
-	blockCount, waveCount, err := directCodingProgramGraphMetrics(program)
-	if err != nil {
-		return directCodingAssembly{}, err
-	}
+	blockCount := directCodingSourceBlueprintBlockCount(program.Source)
 	s.runtime.svc.emitStepEvent(s.runtime.claim.Authority, "coding_specification_accepted", fmt.Sprintf(
 		"surface=%s requirements=%d product_bytes=%d",
 		specification.Surface, len(specification.Requirements), len(specification.ProductQuote),
 	))
 	s.runtime.svc.emitStepEvent(s.runtime.claim.Authority, "coding_assembly_ready", fmt.Sprintf(
-		"adapter=%s files=%d blocks=%d waves=%d artifact_graph_nodes=%d artifact_graph_relations=%d",
-		program.StackID, len(assembly.Files), blockCount, waveCount, len(artifactGraph.Artifacts), len(artifactGraph.Relations),
+		"adapter=%s files=%d blocks=%d",
+		program.StackID, len(assembly.Files), blockCount,
 	))
 	return assembly, nil
 }

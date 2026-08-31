@@ -7,7 +7,6 @@ import (
 	"sync"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
-	"github.com/gryph/omnidex/internal/queue"
 	"github.com/gryph/omnidex/internal/station"
 )
 
@@ -65,9 +64,7 @@ func portableWorkerRuntimeWithIdentityGuard(
 		}
 		if identityGuard != nil {
 			if guardErr := identityGuard(job, execution); guardErr != nil {
-				return assemblyline.PortableResult{}, runtime.svc.failStationGap(
-					executionContext, runtime.claim.Authority, execution.Gap, guardErr,
-				)
+				return assemblyline.PortableResult{}, guardErr
 			}
 		}
 		if _, loaded := pending.LoadOrStore(job.ID, execution); loaded {
@@ -89,44 +86,23 @@ func portableWorkerRuntimeWithIdentityGuard(
 				return fmt.Errorf("portable work %s has no pending exact station result", job.ID)
 			}
 			execution, ok := stored.(exactStationExecution)
-			if !ok || execution.Gap.GapID != job.ID || result.JobID != job.ID ||
+			if !ok || execution.WorkID != job.ID || result.JobID != job.ID ||
 				execution.Candidate != result.Candidate {
 				return fmt.Errorf("portable work %s result differs from its exact station receipt", job.ID)
 			}
 			if err := result.ValidateFor(job); err != nil {
 				return fmt.Errorf("portable work %s result projection is invalid: %w", job.ID, err)
 			}
-			status := queue.StationGapResolved
-			terminal := queue.StationGapTerminalRecord{
-				Authority: runtime.claim.Authority, OpeningID: execution.Gap.ID,
-				GapID: execution.Gap.GapID, Status: status,
-			}
 			if validationErr != nil {
-				terminal.Status = queue.StationGapFailed
-				terminal.Error = stationFailureText(validationErr)
-			} else {
-				if result.Projection == nil {
-					return fmt.Errorf("portable work %s accepted result lacks an exact source projection", job.ID)
-				}
-				projectionKind, err := stationGapProjectionKind(result.Projection.Kind)
-				if err != nil {
-					return fmt.Errorf("portable work %s: %w", job.ID, err)
-				}
-				if result.Projection.SourceResponseSHA256 != execution.CandidateResponseSHA256 ||
-					execution.CallReceiptSHA256 == "" {
-					return fmt.Errorf("portable work %s projection differs from its exact call receipt", job.ID)
-				}
-				terminal.Response = result.Projection.Source
-				terminal.Projection = &queue.StationGapSourceProjection{
-					Kind: projectionKind, CallReceiptSHA256: execution.CallReceiptSHA256,
-					SourceResponseSHA256: result.Projection.SourceResponseSHA256,
-					StartByte:            result.Projection.StartByte, EndByte: result.Projection.EndByte,
-				}
+				return validationErr
 			}
-			persistCtx, cancel := stationPersistenceContext(executionContext)
-			defer cancel()
-			_, err := runtime.svc.repo.CloseStationGap(persistCtx, terminal)
-			return err
+			if result.Projection == nil {
+				return fmt.Errorf("portable work %s accepted result lacks an exact source projection", job.ID)
+			}
+			if result.Projection.SourceResponseSHA256 != execution.CandidateResponseSHA256 {
+				return fmt.Errorf("portable work %s projection differs from its exact response", job.ID)
+			}
+			return nil
 		},
 		Emit: func(event typedWorkerEvent) {
 			runtime.svc.emitStepEvent(
@@ -135,21 +111,6 @@ func portableWorkerRuntimeWithIdentityGuard(
 				renderDirectCodingWorkerEvent(event),
 			)
 		},
-	}
-}
-
-func stationGapProjectionKind(
-	kind assemblyline.PortableResultProjectionKind,
-) (queue.StationGapProjectionKind, error) {
-	switch kind {
-	case assemblyline.PortableResultProjectionExactResponse:
-		return queue.StationGapProjectionExactResponse, nil
-	case assemblyline.PortableResultProjectionSourceDeclaration:
-		return queue.StationGapProjectionSourceDeclaration, nil
-	case assemblyline.PortableResultProjectionTypeScriptFunction:
-		return queue.StationGapProjectionTypeScriptFunction, nil
-	default:
-		return "", fmt.Errorf("portable result projection kind %q is not registered", kind)
 	}
 }
 

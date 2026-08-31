@@ -80,7 +80,7 @@ func validateJavaCommandLineCoverage(
 func validateJavaCommandLineAssembly(assembly directCodingAssembly) error {
 	files := make(map[string]string, len(assembly.Files))
 	for _, file := range assembly.Files {
-		files[file.Path] = file.Content
+		files[file.Path] = string(file.Content)
 		if strings.HasSuffix(file.Path, ".java") && path.Dir(file.Path) != "." {
 			return fmt.Errorf("Java command-line source %s must belong to the root package", file.Path)
 		}

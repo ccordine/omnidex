@@ -5,7 +5,6 @@ import (
 
 	"github.com/gryph/omnidex/internal/assemblyline"
 	"github.com/gryph/omnidex/internal/llm"
-	"github.com/gryph/omnidex/internal/queue"
 )
 
 func validateExactStationStaticCall(
@@ -36,38 +35,36 @@ func validateExactStationStaticCall(
 }
 
 func prepareExactStationCall(
-	gap queue.StationGapOpening,
+	call exactStationCall,
 	contract llmResponseContract,
 	modelName string,
 	temperature *llm.ExactPreparedTemperature,
 ) (llm.PreparedModel, error) {
-	if gap.OutputLimitMode != contract.OutputLimitMode {
+	if call.OutputLimitMode != contract.OutputLimitMode {
 		return llm.PreparedModel{}, fmt.Errorf(
-			"durable station gap output-limit mode %q differs from response contract %q",
-			gap.OutputLimitMode, contract.OutputLimitMode,
+			"station call output-limit mode %q differs from response contract %q",
+			call.OutputLimitMode, contract.OutputLimitMode,
 		)
 	}
 	if temperature == nil {
 		value := llm.ExactPreparedTemperature(0)
 		temperature = &value
 	}
-	stop, err := directStationStopSequence(gap)
+	stop, err := directStationStopSequence(call.WorkKind)
 	if err != nil {
 		return llm.PreparedModel{}, err
 	}
 	return llm.PreparedModel{
 		Protocol: contract.Protocol, BaseModel: modelName, ContextModel: modelName,
-		Prompt: gap.Prompt, PromptHint: llm.MinimalGeneratePrompt,
-		MaxOutputTokens: gap.MaxOutputTokens, OutputLimitMode: gap.OutputLimitMode,
-		ContextTokens: gap.ContextTokens, RawTextStopSequence: stop,
+		Prompt: call.Prompt, PromptHint: llm.MinimalGeneratePrompt,
+		MaxOutputTokens: call.MaxOutputTokens, OutputLimitMode: call.OutputLimitMode,
+		ContextTokens: call.ContextTokens, RawTextStopSequence: stop,
 		Temperature: temperature,
 	}, nil
 }
 
-func directStationStopSequence(gap queue.StationGapOpening) (string, error) {
-	framing, err := assemblyline.PortableResponseFramingForWorkKind(
-		assemblyline.WorkKind(gap.WorkKind),
-	)
+func directStationStopSequence(kind assemblyline.WorkKind) (string, error) {
+	framing, err := assemblyline.PortableResponseFramingForWorkKind(kind)
 	if err != nil {
 		return "", fmt.Errorf("resolve station response framing: %w", err)
 	}

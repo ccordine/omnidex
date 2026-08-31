@@ -19,8 +19,6 @@ var telemetryStruggleEventTypes = []string{
 	"coding_worker_failed",
 	"objective_worker_rejected",
 	"objective_worker_failed",
-	"web_research_worker_rejected",
-	"web_research_worker_failed",
 }
 
 var telemetryAcceptEventTypes = []string{
@@ -29,7 +27,6 @@ var telemetryAcceptEventTypes = []string{
 	"coding_stage_passed",
 	"coding_worker_completed",
 	"objective_worker_completed",
-	"web_research_worker_completed",
 }
 
 type TelemetryStruggleSummary struct {
@@ -80,7 +77,7 @@ func isTelemetryOpsEvent(eventType string) bool {
 	}
 	switch e {
 	case "step_complete", "run_completed", "coding_stage_passed",
-		"coding_worker_completed", "objective_worker_completed", "web_research_worker_completed",
+		"coding_worker_completed", "objective_worker_completed",
 		"coding_fragment_repair_guidance_started", "coding_fragment_correction_started":
 		return true
 	}

@@ -61,26 +61,6 @@ func cloneArtifact(value Artifact) Artifact {
 	return value
 }
 
-func cloneResult(value Result) Result {
-	value.Objective = cloneObjective(value.Objective)
-	value.Steps = append([]Step{}, value.Steps...)
-	discovery := value.Discovery
-	value.Discovery = make([]websearch.CandidateReport, len(discovery))
-	for index, report := range discovery {
-		value.Discovery[index] = cloneCandidateReport(report)
-	}
-	fetches := value.Fetches
-	value.Fetches = make([]websearch.DocumentReport, len(fetches))
-	for index, report := range fetches {
-		value.Fetches[index] = cloneDocumentReport(report)
-	}
-	value.Evidence = cloneEvidence(value.Evidence)
-	value.Projected = cloneProjection(value.Projected)
-	value.Artifact = cloneArtifact(value.Artifact)
-	value.CallLedger = value.CallLedger.Clone()
-	return value
-}
-
 func truncateBytes(value string, limit int) string {
 	if limit <= 0 {
 		return ""

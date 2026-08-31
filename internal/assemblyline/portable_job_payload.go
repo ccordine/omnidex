@@ -31,18 +31,6 @@ func validatePortableJobPayload(kind WorkKind, payload json.RawMessage) error {
 		return decodeAndValidatePortablePayload[ApplicationRequirementCandidateOutcomeRelationInput](
 			payload, ApplicationRequirementCandidateOutcomeRelationInput.validateForModel,
 		)
-	case WorkApplicationRequirementCandidateResultRelation:
-		return decodeAndValidatePortablePayload[ApplicationRequirementCandidateResultPresenceInput](
-			payload, ApplicationRequirementCandidateResultPresenceInput.validate,
-		)
-	case WorkApplicationRequirementCandidateResultRelationGrounding:
-		return decodeAndValidatePortablePayload[ApplicationRequirementCandidateResultRelationGroundingInput](
-			payload, ApplicationRequirementCandidateResultRelationGroundingInput.validate,
-		)
-	case WorkApplicationRequirementCandidateResultRelationCorrection:
-		return decodeAndValidatePortablePayload[ApplicationRequirementCandidateResultRelationCorrectionInput](
-			payload, ApplicationRequirementCandidateResultRelationCorrectionInput.validate,
-		)
 	case WorkApplicationRequirementCandidatePartition:
 		return decodeAndValidatePortablePayload[ApplicationRequirementCandidatePartitionInput](
 			payload, ApplicationRequirementCandidatePartitionInput.validate,
@@ -228,18 +216,6 @@ func validatePortableJobPayload(kind WorkKind, payload json.RawMessage) error {
 	case WorkWebRelevanceRelation:
 		return decodeAndValidatePortablePayload[WebRelevanceRelationInput](
 			payload, WebRelevanceRelationInput.validate,
-		)
-	case WorkWebSynthesisParagraphInventory:
-		return decodeAndValidatePortablePayload[WebGroundedSynthesisInput](
-			payload, WebGroundedSynthesisInput.validate,
-		)
-	case WorkWebSynthesisEvidenceRelation:
-		return decodeAndValidatePortablePayload[WebSynthesisEvidenceRelationInput](
-			payload, WebSynthesisEvidenceRelationInput.validate,
-		)
-	case WorkWebSynthesisParagraphAuthorization:
-		return decodeAndValidatePortablePayload[WebSynthesisParagraphAuthorizationInput](
-			payload, WebSynthesisParagraphAuthorizationInput.validate,
 		)
 	case WorkArtifactHandling:
 		return decodeAndValidatePortablePayload[ArtifactHandlingInput](payload, ArtifactHandlingInput.validate)

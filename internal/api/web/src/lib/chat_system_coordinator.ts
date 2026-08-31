@@ -9,8 +9,6 @@ export interface ChatSystemHost {
   statusOutput(): HTMLElement;
   hasHostBridgeStatus(): boolean;
   hostBridgeStatus(): HTMLElement;
-  hasResearchStatus(): boolean;
-  researchStatus(): HTMLElement;
   hasMetrics(): boolean;
   metrics(): HTMLElement;
   updateTransportLabel(): void;
@@ -33,7 +31,7 @@ export class ChatSystemCoordinator {
       if (this.host.hasStatusOutput()) this.setText(this.host.statusOutput(), `Error loading /healthz: ${message}`);
       this.host.addEvent("status_load_failed", { error: message });
     }
-    await Promise.all([this.loadResearchStatus(), this.loadHostBridgeStatus()]);
+    await this.loadHostBridgeStatus();
   }
 
   async loadHostBridgeStatus(): Promise<void> {
@@ -54,25 +52,6 @@ export class ChatSystemCoordinator {
       const message = errorMessage(error);
       this.setText(target, `Host bridge status unavailable: ${message}`);
       this.host.addEvent("host_bridge_status_failed", { error: message });
-    }
-  }
-
-  async loadResearchStatus(): Promise<void> {
-    if (!this.host.hasResearchStatus()) return;
-    const target = this.host.researchStatus();
-    this.setLoading(target, "Loading research status…");
-    try {
-      const payload = await readJSON<Record<string, unknown>>(await fetch("/v1/status/research"));
-      await this.host.renderComponentBundle(requireServerComponentBundle(payload, "Research status"));
-      this.clearLoading(target);
-      const web = payload.web_search as Record<string, unknown> | undefined;
-      this.host.addEvent("research_status_loaded", {
-        web_configured: Boolean(web?.enabled),
-      }, payload);
-    } catch (error) {
-      const message = errorMessage(error);
-      this.setText(target, `Research status unavailable: ${message}`);
-      this.host.addEvent("research_status_failed", { error: message });
     }
   }
 

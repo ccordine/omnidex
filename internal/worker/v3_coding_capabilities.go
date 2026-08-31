@@ -155,14 +155,18 @@ func assembleDirectCodingCapabilityGraph(
 	for _, requirement := range requirements {
 		graph[requirement.ID] = nil
 	}
-	add := func(ownerIndex, dependencyIndex int) {
+	add := func(ownerIndex, dependencyIndex int) bool {
 		owner := requirements[ownerIndex]
 		dependency := requirements[dependencyIndex]
+		if directCodingCapabilityPathExists(graph, dependency.ID, owner.ID) {
+			return false
+		}
 		graph[owner.ID] = append(graph[owner.ID], directCodingCapabilityBinding{
 			RequirementID: dependency.ID,
 			CapabilityID:  genericApplicationCapabilityID(dependencyIndex + 1),
 			Purpose:       dependency.SourceQuote,
 		})
+		return true
 	}
 	for _, result := range results {
 		if result.Err != nil {
@@ -186,6 +190,30 @@ func assembleDirectCodingCapabilityGraph(
 		return nil, err
 	}
 	return graph, nil
+}
+
+func directCodingCapabilityPathExists(
+	graph directCodingCapabilityGraph,
+	from, target string,
+) bool {
+	seen := make(map[string]struct{}, len(graph))
+	var visit func(string) bool
+	visit = func(current string) bool {
+		if current == target {
+			return true
+		}
+		if _, exists := seen[current]; exists {
+			return false
+		}
+		seen[current] = struct{}{}
+		for _, dependency := range graph[current] {
+			if visit(dependency.RequirementID) {
+				return true
+			}
+		}
+		return false
+	}
+	return visit(from)
 }
 
 func validateDirectCodingCapabilityGraph(

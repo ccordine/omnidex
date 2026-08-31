@@ -55,7 +55,7 @@ func summarizeChatCodingRepairGuidance(message string) (chatProgressKind, string
 }
 
 func chatPortableEventIdentity(eventType string) (namespace, state string, ok bool) {
-	for _, candidate := range []string{"coding", "objective", "web_research"} {
+	for _, candidate := range []string{"coding", "objective"} {
 		prefix := candidate + "_"
 		if !strings.HasPrefix(eventType, prefix) {
 			continue
@@ -143,7 +143,6 @@ func chatStationLabel(subject string) (string, chatProgressKind) {
 		"database_join_path_selection":  "Database relationship selection",
 		"repository_change_surface":     "Repository change-surface",
 		"web_relevance":                 "Web relevance",
-		"web_grounded_synthesis":        "Web grounded synthesis",
 	}
 	label := labels[subject]
 	if label == "" {

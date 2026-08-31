@@ -25,9 +25,7 @@ type Server struct {
 	mux                        *http.ServeMux
 	providerConfig             config.Config
 	defaultProvider            string
-	requestTimeout             time.Duration
 	ollamaBaseURL              string
-	ollamaEmbeddingModel       string
 	ollamaModelAuthority       OllamaModelAuthority
 	ollamaModelLifecycle       OllamaModelLifecycleAuthority
 	ollamaDownloads            OllamaDownloadStore
@@ -35,17 +33,15 @@ type Server struct {
 	ollamaDownloadMu           sync.Mutex
 	ollamaDownloadRunning      map[string]struct{}
 	ollamaDownloadSlots        chan struct{}
-	webSearchProviders         []string
 	coreURLDefault             string
 	listenAddr                 string
-	realtimeMaxClients         int
 	realtimeStreamMaxAge       time.Duration
 	realtimeHeartbeat          time.Duration
 	realtimeWriteTimeout       time.Duration
 	redisURL                   string
 	uiSessionTTL               time.Duration
+	uiRedisMu                  sync.Mutex
 	uiRedis                    *uiRedisClient
-	uiRedisInitError           string
 	roleplaySceneDraftMu       sync.Mutex
 	ollamaURLMu                sync.RWMutex
 	hostAgentURL               string
@@ -65,14 +61,11 @@ type Server struct {
 type ServerOptions struct {
 	LifecycleContext     context.Context
 	ProviderConfig       config.Config
-	RequestTimeout       time.Duration
-	WebSearchProviders   []string
 	CoreURL              string
 	ListenAddr           string
 	HostAgentURL         string
 	HostAgentToken       string
 	IntegrationAPIToken  string
-	RealtimeMaxClients   int
 	RealtimeStreamMaxAge time.Duration
 	RealtimeHeartbeat    time.Duration
 	RealtimeWriteTimeout time.Duration
@@ -115,12 +108,6 @@ func NewServer(
 	providerConfig.CompatibleProviders = config.CloneCompatibleProviders(providerConfig.CompatibleProviders)
 	providerConfig.ProviderModels = config.CloneProviderModels(providerConfig.ProviderModels)
 	defaultProvider := providerConfig.LLMProvider
-	providerConfig.RequestTimeout = options.RequestTimeout
-	ollamaModels := providerConfig.ProviderModels["ollama"]
-	ollamaEmbeddingModel := strings.TrimSpace(ollamaModels.Embedding)
-	if providerConfig.EmbeddingProvider == "ollama" && strings.TrimSpace(providerConfig.EmbeddingModel) != "" {
-		ollamaEmbeddingModel = strings.TrimSpace(providerConfig.EmbeddingModel)
-	}
 
 	s := &Server{
 		lifecycleContext:           options.LifecycleContext,
@@ -133,19 +120,15 @@ func NewServer(
 		mux:                        http.NewServeMux(),
 		providerConfig:             providerConfig,
 		defaultProvider:            defaultProvider,
-		requestTimeout:             options.RequestTimeout,
 		ollamaBaseURL:              strings.TrimSpace(providerConfig.OllamaBaseURL),
-		ollamaEmbeddingModel:       ollamaEmbeddingModel,
 		ollamaModelAuthority:       options.OllamaModelAuthority,
 		ollamaModelLifecycle:       options.OllamaModelLifecycle,
 		ollamaDownloads:            options.OllamaDownloads,
 		ollamaCatalog:              options.OllamaCatalog,
 		ollamaDownloadRunning:      make(map[string]struct{}),
 		ollamaDownloadSlots:        make(chan struct{}, 1),
-		webSearchProviders:         append([]string(nil), options.WebSearchProviders...),
 		coreURLDefault:             strings.TrimSpace(options.CoreURL),
 		listenAddr:                 strings.TrimSpace(options.ListenAddr),
-		realtimeMaxClients:         options.RealtimeMaxClients,
 		realtimeStreamMaxAge:       options.RealtimeStreamMaxAge,
 		realtimeHeartbeat:          options.RealtimeHeartbeat,
 		realtimeWriteTimeout:       options.RealtimeWriteTimeout,
@@ -155,12 +138,7 @@ func NewServer(
 		hostAgentToken:             strings.TrimSpace(options.HostAgentToken),
 		integrationAPIToken:        options.IntegrationAPIToken,
 	}
-	if redis, err := newUIRedisClient(s.redisURL); err == nil {
-		s.uiRedis = redis
-	} else {
-		s.uiRedisInitError = err.Error()
-	}
-	s.realtimeHub = NewRealtimeHub(RealtimeHubOptions{MaxClients: s.realtimeMaxClients})
+	s.realtimeHub = NewRealtimeHub()
 	s.routes()
 	s.startRealtimeTelemetryListener(options.LifecycleContext)
 	if s.ollamaDownloads != nil {
@@ -177,13 +155,11 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/healthz", s.handleHealth)
 	s.mux.HandleFunc("/readyz", s.handleReadiness)
 	s.mux.HandleFunc("/v1/providers", s.handleProviderCatalog)
-	s.mux.HandleFunc("/v1/status/research", s.handleResearchStatus)
 	s.mux.HandleFunc("/v1/scrum", s.handleScrum)
 	s.mux.HandleFunc("/v1/scrum/cards", s.handleScrumCards)
 	s.mux.HandleFunc("/v1/scrum/cards/", s.handleScrumCardByID)
 	s.mux.HandleFunc("/v1/scrum/tags", s.handleScrumTags)
 	s.mux.HandleFunc("/v1/scrum/flow-metrics", s.handleScrumFlowMetrics)
-	s.mux.HandleFunc("/v1/settings/network", s.handleNetworkSettings)
 	s.mux.HandleFunc("/v1/browse", s.handleBrowse)
 	s.mux.HandleFunc("/v1/browse/mkdir", s.handleBrowseMkdir)
 	s.mux.HandleFunc("/v1/host/status", s.handleHostBridgeStatus)
@@ -222,7 +198,6 @@ func (s *Server) routes() {
 		s.mux.HandleFunc("/v1/admin/data-sources/", s.handleDataSourceByID)
 		s.mux.HandleFunc("/v1/ui/admin/data-sources", s.handleUIAdminDataSources)
 		s.mux.HandleFunc("/v1/ui/admin/data-sources/schema", s.handleUIAdminDataSourceSchema)
-		s.mux.HandleFunc("/v1/ui/admin/data-sources/query", s.handleUIAdminDataSourceQuery)
 		s.mux.HandleFunc("/v1/ui/data", s.handleUIDataComponent)
 		s.mux.HandleFunc("/v1/ui/projects", s.handleUIProjectsComponent)
 		s.mux.HandleFunc("/v1/ui/projects/modal", s.handleUIProjectModal)

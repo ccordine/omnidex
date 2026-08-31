@@ -114,6 +114,19 @@ func runObjectiveTurn(
 	}
 	result.RequirementID = objectiveRequirementID(result.ObjectiveID)
 	if decision.Kind == assemblyline.ObjectiveKindWorkspaceMutation {
+		if workflows.WorkspaceReplanContext == nil {
+			return result, fmt.Errorf("workspace mutation replan authority is unavailable")
+		}
+		replanContext, err := workflows.WorkspaceReplanContext(ctx, job)
+		if err != nil {
+			return result, err
+		}
+		if err := replanContext.Validate(); err != nil {
+			return result, fmt.Errorf("workspace mutation replan authority: %w", err)
+		}
+		authority.Context = assemblyline.CloneObjectiveContext(replanContext)
+		result.ObjectiveID = objectiveTurnID(authority, decision.Kind)
+		result.RequirementID = objectiveRequirementID(result.ObjectiveID)
 		return runObjectiveWorkspaceMutation(ctx, authority, result, workflows.WorkspaceMutation)
 	}
 	authority, contextCalls, err := compileObjectiveTurnContext(
@@ -125,9 +138,6 @@ func runObjectiveTurn(
 	result.ModelCalls += contextCalls
 	if decision.Kind == assemblyline.ObjectiveKindAnswer || decision.Kind == assemblyline.ObjectiveKindStory {
 		return runObjectiveConversationResponse(ctx, authority, result, conversationStation, "")
-	}
-	if decision.Kind == assemblyline.ObjectiveKindExternalAnswer {
-		return runObjectiveExternalAnswer(ctx, authority, result, workflows.ExternalAnswer)
 	}
 	if decision.Kind == assemblyline.ObjectiveKindDatabaseRead {
 		return runObjectiveDatabaseRead(ctx, authority, result, answerStation, workflows.DatabaseRead)
@@ -277,63 +287,6 @@ func runObjectiveDatabaseRead(
 		return result, err
 	}
 	result.Citations = citations
-	result.Complete = true
-	return result, nil
-}
-
-func runObjectiveExternalAnswer(
-	ctx context.Context,
-	authority turnAuthority,
-	result objectiveTurnResult,
-	run func(context.Context, turnAuthority) (objectiveExternalAnswer, error),
-) (objectiveTurnResult, error) {
-	if run == nil {
-		return result, fmt.Errorf("external-answer workflow is unavailable")
-	}
-	answer, err := run(ctx, authority)
-	if err != nil {
-		return result, err
-	}
-	if err := ctx.Err(); err != nil {
-		return result, err
-	}
-	webReceipt, err := answer.WebCallLedger.ValidateForMaximum(
-		"external-answer completion", maxObjectiveWebSemanticCalls,
-	)
-	if err != nil {
-		return result, err
-	}
-	if answer.ModelCalls != webReceipt.Calls {
-		return result, fmt.Errorf(
-			"external-answer workflow reported %d calls but its exact ledger proves %d",
-			answer.ModelCalls, webReceipt.Calls,
-		)
-	}
-	if strings.TrimSpace(answer.Text) == "" || answer.Text != strings.TrimSpace(answer.Text) ||
-		len(answer.Text) > maxObjectiveOutputBytes ||
-		answer.Rendered == "" || answer.Rendered != strings.TrimSpace(answer.Rendered) ||
-		len(answer.Rendered) > maxObjectiveOutputBytes ||
-		!validObjectiveTextSHA(answer.Rendered, answer.RenderedSHA256) || len(answer.Paragraphs) == 0 {
-		return result, fmt.Errorf("external-answer workflow returned invalid bounded completion authority")
-	}
-	citations, err := selectObjectiveCitations(answer.Evidence, answer.EvidenceIDs)
-	if err != nil {
-		return result, err
-	}
-	if err := validateObjectiveModelInput(
-		authority, "external grounded model answer", answer.Text,
-	); err != nil {
-		return result, err
-	}
-	result.Output, err = restoreObjectiveCodeRenderedArtifact(
-		authority, "external grounded answer", answer.Rendered,
-	)
-	if err != nil {
-		return result, err
-	}
-	result.Citations = citations
-	result.CitationsRendered = true
-	result.ModelCalls += answer.ModelCalls
 	result.Complete = true
 	return result, nil
 }

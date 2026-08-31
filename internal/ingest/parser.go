@@ -132,19 +132,16 @@ func parseVTTBytes(path string, data []byte) (ParsedFile, error) {
 	return ParsedFile{Path: path, Format: "vtt", Content: normalizeWhitespace(strings.Join(out, " "))}, nil
 }
 
-func ChunkText(content string, chunkSize, overlap int) []string {
+func ChunkText(content string, chunkSize, overlap int) ([]string, error) {
 	content = normalizeWhitespace(content)
 	if content == "" {
-		return nil
+		return nil, nil
 	}
 	if chunkSize <= 0 {
-		chunkSize = 1800
+		return nil, fmt.Errorf("chunk size must be positive")
 	}
-	if overlap < 0 {
-		overlap = 0
-	}
-	if overlap >= chunkSize {
-		overlap = chunkSize / 4
+	if overlap < 0 || overlap >= chunkSize {
+		return nil, fmt.Errorf("chunk overlap must be non-negative and smaller than chunk size")
 	}
 
 	runes := []rune(content)
@@ -171,7 +168,7 @@ func ChunkText(content string, chunkSize, overlap int) []string {
 		}
 	}
 
-	return out
+	return out, nil
 }
 
 func parseTextLike(path, format string) (ParsedFile, error) {

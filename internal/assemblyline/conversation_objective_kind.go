@@ -73,7 +73,6 @@ func (decision ConversationObjectiveKindDecision) ValidateFor(input Conversation
 	switch decision.Kind {
 	case ObjectiveKindAnswer,
 		ObjectiveKindWorkspaceMutation,
-		ObjectiveKindExternalAnswer,
 		ObjectiveKindStory:
 		return nil
 	case ObjectiveKindDatabaseRead:
@@ -120,9 +119,8 @@ func BuildConversationObjectiveKindPrompt(input ConversationObjectiveKindInput) 
 		"Classify one exact user instruction into exactly one listed objective kind.",
 		"answer: converse directly, including greetings and small talk, or answer without acquiring current external evidence.",
 		"workspace_mutation: satisfying the instruction requires changing a workspace and verifying the change.",
-		"external_answer: satisfying the instruction requires current or externally acquired evidence, including an explicit web-search or research request.",
 		"story: produce narrative or roleplay text.",
-		"Choose workspace_mutation or external_answer only when the instruction requires that corresponding evidence or side effect; otherwise choose answer or story.",
+		"Choose workspace_mutation only when the instruction requires that side effect; otherwise choose answer or story.",
 	}
 	if input.DatabaseEvidenceAvailable {
 		lines = append(lines, "database_read: answer using the explicitly bound database when its records are required as evidence.")

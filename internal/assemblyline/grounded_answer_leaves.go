@@ -105,7 +105,7 @@ func validateGroundedAnswerParagraphText(text string, knownArtifactPaths []strin
 	if strings.ContainsAny(text, "\r\n") {
 		return fmt.Errorf("grounded answer paragraph must be one line")
 	}
-	if webModelCitationSyntax.MatchString(text) {
+	if modelAuthoredCitationSyntax.MatchString(text) {
 		return fmt.Errorf("grounded answer paragraph contains model-authored citation syntax")
 	}
 	provenance, err := modelcontext.NewArtifactIdentityProvenance(knownArtifactPaths)

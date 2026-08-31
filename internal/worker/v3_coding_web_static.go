@@ -52,13 +52,12 @@ func typeScriptBrowserStaticFiles(
 		return nil, err
 	}
 	return []directCodingFileTask{
-		{Path: ".gitignore", Content: "node_modules\ndist\n.vite\n*.log\n"},
-		{Path: "package.json", Content: string(encoded) + "\n"},
-		{Path: "package-lock.json", Content: packageLock},
-		{Path: "index.html", Content: typeScriptWebIndexSource(productName)},
-		{Path: "tsconfig.json", Content: typeScriptWebConfigSource(ecmascript)},
-		{Path: "vite.config.ts", Content: typeScriptViteConfigSource()},
-		{Path: "src/styles.css", Content: typeScriptTailwindStylesSource(stylesheet)},
+		{Path: "package.json", Content: append(encoded, '\n'), Mode: 0o644},
+		{Path: "package-lock.json", Content: []byte(packageLock), Mode: 0o644},
+		{Path: "index.html", Content: []byte(typeScriptWebIndexSource(productName)), Mode: 0o644},
+		{Path: "tsconfig.json", Content: []byte(typeScriptWebConfigSource(ecmascript)), Mode: 0o644},
+		{Path: "vite.config.ts", Content: []byte(typeScriptViteConfigSource()), Mode: 0o644},
+		{Path: "src/styles.css", Content: []byte(typeScriptTailwindStylesSource(stylesheet)), Mode: 0o644},
 	}, nil
 }
 

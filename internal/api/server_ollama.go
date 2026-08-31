@@ -37,7 +37,7 @@ type OllamaCatalogAuthority interface {
 func (s *Server) ollamaEndpoint() string {
 	s.ollamaURLMu.RLock()
 	defer s.ollamaURLMu.RUnlock()
-	return normalizeURL(s.ollamaBaseURL)
+	return s.ollamaBaseURL
 }
 
 func (s *Server) ollamaClientWithTimeout(timeout time.Duration) *ollama.Client {

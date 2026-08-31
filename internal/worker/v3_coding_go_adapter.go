@@ -62,8 +62,7 @@ func genericGoCommandLineStaticFiles(
 		return nil, err
 	}
 	return []directCodingFileTask{
-		{Path: ".gitignore", Content: packageName + "\n"},
-		{Path: "go.mod", Content: "module example.invalid/" + packageName + "\n\ngo " + version + "\n"},
+		{Path: "go.mod", Content: []byte("module example.invalid/" + packageName + "\n\ngo " + version + "\n"), Mode: 0o644},
 	}, nil
 }
 
@@ -71,7 +70,7 @@ func validateGoCommandLineAssembly(assembly directCodingAssembly) error {
 	files := make(map[string]string, len(assembly.Files))
 	mainFunctions := 0
 	for _, file := range assembly.Files {
-		files[file.Path] = file.Content
+		files[file.Path] = string(file.Content)
 		if !strings.HasSuffix(file.Path, ".go") {
 			continue
 		}

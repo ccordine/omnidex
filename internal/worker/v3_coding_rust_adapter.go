@@ -100,11 +100,10 @@ version = %s
 [[package]]
 name = %q
 version = "0.1.0"
-`, lockVersion, packageName)
+	`, lockVersion, packageName)
 	return []directCodingFileTask{
-		{Path: ".gitignore", Content: "target\n"},
-		{Path: "Cargo.toml", Content: manifest},
-		{Path: "Cargo.lock", Content: lockfile},
+		{Path: "Cargo.toml", Content: []byte(manifest), Mode: 0o644},
+		{Path: "Cargo.lock", Content: []byte(lockfile), Mode: 0o644},
 	}, nil
 }
 
@@ -119,10 +118,10 @@ func rustCommandLineCrateName(packageName string) (string, error) {
 func validateRustCommandLineAssembly(assembly directCodingAssembly) error {
 	files := make(map[string]string, len(assembly.Files))
 	for _, file := range assembly.Files {
-		files[file.Path] = file.Content
+		files[file.Path] = string(file.Content)
 	}
 	for _, required := range []string{
-		"Cargo.toml", "Cargo.lock", ".gitignore",
+		"Cargo.toml", "Cargo.lock",
 		"src/runtime.rs", "src/lib.rs", "src/main.rs",
 	} {
 		if _, exists := files[required]; !exists {

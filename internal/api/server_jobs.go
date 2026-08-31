@@ -68,9 +68,18 @@ func (s *Server) handleMemoryCandidates(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	jobID, _ := strconv.ParseInt(strings.TrimSpace(r.URL.Query().Get("job_id")), 10, 64)
+	jobIDValue, err := exactChannelQueryInteger(r, "job_id", 0, 1, int(^uint(0)>>1))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	jobID := int64(jobIDValue)
 	status := strings.TrimSpace(r.URL.Query().Get("status"))
-	limit := parseInt(r.URL.Query().Get("limit"), 50)
+	limit, err := exactChannelQueryInteger(r, "limit", 50, 1, 500)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	items, err := s.repo.ListHistoricalMemoryCandidates(r.Context(), jobID, status, limit)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -266,7 +275,11 @@ func (s *Server) handleMemoryCategories(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	limit := parsePositiveInt(r.URL.Query().Get("limit"), 100)
+	limit, err := exactChannelQueryInteger(r, "limit", 100, 1, 500)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	facets, err := s.repo.ListMemoryCategories(r.Context(), limit)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -280,7 +293,11 @@ func (s *Server) handleMemoryTags(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	limit := parsePositiveInt(r.URL.Query().Get("limit"), 100)
+	limit, err := exactChannelQueryInteger(r, "limit", 100, 1, 500)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	facets, err := s.repo.ListMemoryTags(r.Context(), limit)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -384,25 +401,6 @@ func (s *Server) rejectMemoryCandidate(w http.ResponseWriter, r *http.Request, c
 	writeJSON(w, http.StatusOK, map[string]any{
 		"memory_candidate": item,
 	})
-}
-
-func parseInt(v string, fallback int) int {
-	if strings.TrimSpace(v) == "" {
-		return fallback
-	}
-	parsed, err := strconv.Atoi(v)
-	if err != nil {
-		return fallback
-	}
-	return parsed
-}
-
-func parsePositiveInt(v string, fallback int) int {
-	parsed := parseInt(v, fallback)
-	if parsed <= 0 {
-		return fallback
-	}
-	return parsed
 }
 
 func Run(ctx context.Context, addr string, handler http.Handler) error {

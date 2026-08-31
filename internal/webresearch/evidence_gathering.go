@@ -9,7 +9,7 @@ import (
 	"github.com/gryph/omnidex/internal/websearch"
 )
 
-func (machine *Machine) gatherRelevantEvidence(ctx context.Context, result *Result) error {
+func (machine *evidenceMachine) gatherRelevantEvidence(ctx context.Context, result *evidenceRun) error {
 	if machine == nil || result == nil {
 		return fmt.Errorf("%w: evidence gathering authority is unavailable", ErrInvalidConfiguration)
 	}

@@ -4,7 +4,7 @@ export abstract class ChatTargetsController extends Controller {
   static targets = [
     "messages", "timeline", "input", "send", "status", "transport", "networkUrl", "job", "liveBadge", "activityDot", "activityText", "activityProblems", "eventCount", "panel",
     "jobFilter", "jobsList", "jobDetails", "memoryCandidates", "memoryList", "memoryKind", "memoryKindFilter", "memoryTags", "memoryContent",
-    "statusOutput", "researchStatusOutput", "hostBridgeStatusOutput",
+    "statusOutput", "hostBridgeStatusOutput",
     "metricsOutput", "progress", "progressState", "progressLoading", "modal", "modalPanel", "channelSelect", "newChannelDataSourceSelect", "newChannelModeSelect", "newChannelRoleplayFields", "newChannelRoleplayWorldName", "newChannelRoleplayViewpointName", "transcriptLoading", "typingIndicator", "roleplayPanel", "roleplayLoading", "roleplayWorkspaceLoading", "roleplayWorldDialog", "roleplayCharacterDialog", "roleplaySetupDialog", "roleplayCharacterEditorDialog", "roleplayPersona", "roleplayPersonaCreator", "roleplayNewPersona", "roleplayDraftParts", "roleplayDraftPartPool", "roleplayDraftPart", "slashPalette", "slashOptions",
   ];
 
@@ -32,7 +32,6 @@ export abstract class ChatTargetsController extends Controller {
   declare readonly memoryTagsTarget: HTMLInputElement;
   declare readonly memoryContentTarget: HTMLTextAreaElement;
   declare readonly statusOutputTarget: HTMLElement;
-  declare readonly researchStatusOutputTarget: HTMLElement;
   declare readonly hostBridgeStatusOutputTarget: HTMLElement;
   declare readonly metricsOutputTarget: HTMLElement;
   declare readonly progressTarget: HTMLElement;
@@ -42,7 +41,6 @@ export abstract class ChatTargetsController extends Controller {
   declare readonly modalPanelTarget: HTMLElement;
   declare readonly hasMemoryListTarget: boolean;
   declare readonly hasStatusOutputTarget: boolean;
-  declare readonly hasResearchStatusOutputTarget: boolean;
   declare readonly hasHostBridgeStatusOutputTarget: boolean;
   declare readonly hasMetricsOutputTarget: boolean;
   declare readonly hasProgressStateTarget: boolean;

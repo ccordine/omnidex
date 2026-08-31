@@ -18,7 +18,6 @@ const (
 	DatabaseQueryIntent                           ID = "database_query_intent"
 	DatabaseJoinPathSelection                     ID = "database_join_path_selection"
 	WebRelevance                                  ID = "web_relevance"
-	WebGroundedSynthesis                          ID = "web_grounded_synthesis"
 	CodingSurface                                 ID = "coding_surface"
 	CodingRequirements                            ID = "coding_requirements"
 	CodingProjectStackConstraint                  ID = "coding_project_stack_constraint"
@@ -42,7 +41,6 @@ var registered = [...]ID{
 	DatabaseQueryIntent,
 	DatabaseJoinPathSelection,
 	WebRelevance,
-	WebGroundedSynthesis,
 	CodingSurface,
 	CodingRequirements,
 	CodingProjectStackConstraint,

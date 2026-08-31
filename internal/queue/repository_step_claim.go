@@ -17,11 +17,6 @@ func (r *Repository) ClaimNextStep(ctx context.Context, workerID string) (*model
 		!utf8.ValidString(workerID) || strings.ContainsRune(workerID, '\x00') {
 		return nil, fmt.Errorf("worker identity must be exact PostgreSQL-compatible text of at most 256 bytes")
 	}
-	if paused, err := r.IsAIPaused(ctx); err != nil {
-		return nil, err
-	} else if paused {
-		return nil, nil
-	}
 	tx, err := r.pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return nil, err
@@ -191,18 +186,6 @@ func (r *Repository) ClaimNextStep(ctx context.Context, workerID string) (*model
 		return nil, fmt.Errorf("%w: job %d changed during step claim", ErrStepNotWritable, job.ID)
 	}
 	job.Status = model.JobStatusRunning
-	if err := activateInitialTaskRootTx(ctx, tx, job.ID, job.CurrentGeneration); err != nil {
-		return nil, err
-	}
-	if err := markTelemetryRunRunningForJob(ctx, tx, job.ID); err != nil {
-		return nil, err
-	}
-	if err := recordTelemetryJobEvent(ctx, tx, job.ID, "run_running", map[string]any{
-		"job_id": job.ID, "step_id": step.ID, "action": step.Action,
-		"attempt": attemptNumber, "worker_id": workerID,
-	}); err != nil {
-		return nil, err
-	}
 	contexts, err := loadClaimedStepContexts(ctx, tx, job.ID, step.ID)
 	if err != nil {
 		return nil, err

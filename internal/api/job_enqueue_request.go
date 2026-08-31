@@ -39,7 +39,7 @@ func (s *Server) genericCodingRuntimeMetadata(metadata genericCodingMetadata) ([
 	if err := validateGenericCodingMetadata(metadata); err != nil {
 		return nil, err
 	}
-	modelSnapshot := s.envModelConfig()
+	modelSnapshot := s.runtimeModelConfig()
 	return json.Marshal(genericCodingRuntimeMetadata{
 		ClientCWD: metadata.ClientCWD, SessionID: metadata.SessionID,
 		ModelConfig: modelSnapshot,

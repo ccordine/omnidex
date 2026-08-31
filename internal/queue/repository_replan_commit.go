@@ -32,9 +32,7 @@ func advanceReplannedJobTx(
 	ctx context.Context,
 	tx pgx.Tx,
 	command ReplanJobCommand,
-	feedbackSHA string,
 	currentGeneration, newGeneration int64,
-	boundaryAction string,
 ) (model.Job, error) {
 	result, err := tx.Exec(ctx, `
 		UPDATE jobs
@@ -49,17 +47,6 @@ func advanceReplannedJobTx(
 	}
 	if result.RowsAffected() != 1 {
 		return model.Job{}, fmt.Errorf("%w: job %d generation changed during replan", ErrStaleJobGeneration, command.JobID)
-	}
-	if err := recordReplanFeedbackTx(
-		ctx, tx, command.JobID, newGeneration, command.Feedback,
-		feedbackSHA,
-	); err != nil {
-		return model.Job{}, err
-	}
-	if err := recordTelemetryJobEvent(ctx, tx, command.JobID, "job_replanned", map[string]any{
-		"job_id": command.JobID, "generation": newGeneration, "boundary_action": boundaryAction,
-	}); err != nil {
-		return model.Job{}, err
 	}
 	return scanJob(tx.QueryRow(ctx, `
 		SELECT id, instruction, pipeline, status, result, error, metadata,

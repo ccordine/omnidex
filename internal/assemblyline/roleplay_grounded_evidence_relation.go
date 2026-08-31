@@ -129,7 +129,7 @@ func validateRoleplayGroundedParagraphText(text string) error {
 	if strings.ContainsAny(text, "\r\n") {
 		return fmt.Errorf("roleplay grounded paragraph must be one line")
 	}
-	if webModelCitationSyntax.MatchString(text) {
+	if modelAuthoredCitationSyntax.MatchString(text) {
 		return fmt.Errorf("roleplay grounded paragraph contains model-authored citation syntax")
 	}
 	return validateRoleplayProse("roleplay grounded paragraph", text)

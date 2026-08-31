@@ -1,46 +1,6 @@
 package worker
 
-import (
-	"fmt"
-)
-
-func (s *directCodingSession) validateProgramSource(path, content string) error {
-	if s.program == nil || s.specification == nil {
-		return fmt.Errorf("coding program validation requires accepted typed semantics and a compiled adapter")
-	}
-	return validateDirectCodingProgramSource(path, content, *s.program)
-}
-
-func validateDirectCodingProgramSource(path, content string, program directCodingProgram) error {
-	assembly, err := directCodingAssemblyFromProgram(program)
-	if err != nil {
-		return err
-	}
-	expected := ""
-	for _, file := range assembly.Files {
-		if file.Path == path {
-			expected = file.Content
-			break
-		}
-	}
-	if expected == "" {
-		return fmt.Errorf("adapter %s emitted undeclared source path %s", program.StackID, path)
-	}
-	if content != expected {
-		return fmt.Errorf("adapter %s source %s differs from its parser-validated in-memory authority", program.StackID, path)
-	}
-	stack, err := directCodingProjectStackByID(program.StackID)
-	if err != nil {
-		return err
-	}
-	if err := validateDirectCodingStackArtifactSource(stack, path, []byte(content)); err != nil {
-		return err
-	}
-	if err := validateDirectCodingStackAssembly(stack, assembly); err != nil {
-		return err
-	}
-	return validateDirectCodingProgramVersionProfile(program, assembly)
-}
+import "fmt"
 
 func validateDirectCodingAssemblySources(
 	program directCodingProgram,
@@ -54,7 +14,7 @@ func validateDirectCodingAssemblySources(
 		return err
 	}
 	for _, file := range assembly.Files {
-		if err := validateDirectCodingStackArtifactSource(stack, file.Path, []byte(file.Content)); err != nil {
+		if err := validateDirectCodingStackArtifactSource(stack, file.Path, file.Content); err != nil {
 			return err
 		}
 	}

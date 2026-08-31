@@ -17,8 +17,6 @@ var telemetryFailureEventTypes = []string{
 	"coding_worker_failed",
 	"objective_worker_rejected",
 	"objective_worker_failed",
-	"web_research_worker_rejected",
-	"web_research_worker_failed",
 }
 
 type OperationsFailureEvent struct {

@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/gryph/omnidex/internal/model"
-	"github.com/gryph/omnidex/internal/taskstate"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -116,39 +115,9 @@ func requireTerminalLifecycleAuthorityTx(
 	ctx context.Context,
 	tx pgx.Tx,
 	record lifecycleOperationRecord,
-	proofContent, failureReason string,
+	_, _ string,
 ) error {
-	if record.ResultJobStatus != model.JobStatusCompleted && record.ResultJobStatus != model.JobStatusFailed {
-		return requireLifecycleGenerationExistsTx(ctx, tx, record.JobID, record.ObservedGeneration)
-	}
-	header, root, err := loadInitialTaskRootTx(ctx, tx, record.JobID, record.ObservedGeneration)
-	if err != nil {
-		return err
-	}
-	wantRoot, wantLedger := taskstate.NodeDone, taskstate.LedgerClosed
-	reason := ""
-	if record.ResultJobStatus == model.JobStatusFailed {
-		wantRoot, wantLedger, reason = taskstate.NodeFailed, taskstate.LedgerFailed, failureReason
-	}
-	if root.Status != wantRoot || root.StatusReason != reason || header.Status != wantLedger {
-		return lifecycleReplayStateError(record.ID, "terminal task state")
-	}
-	if err := requireCanonicalRootTransitionEventTx(
-		ctx, tx, header, record.ObservedGeneration, *record.StepID,
-		wantRoot, proofContent, reason,
-	); err != nil {
-		return err
-	}
-	terminalReason := "job completed after every current-generation step completed"
-	if record.Kind == LifecycleSubmitFeedback {
-		terminalReason = "job completed after its final waiting step received user feedback"
-	}
-	if record.ResultJobStatus == model.JobStatusFailed {
-		terminalReason = "job failed after its current-generation step failed"
-	}
-	return requireCanonicalLedgerCloseEventTx(
-		ctx, tx, header, record.ObservedGeneration, wantLedger, record.StepID, terminalReason,
-	)
+	return requireLifecycleGenerationExistsTx(ctx, tx, record.JobID, record.ObservedGeneration)
 }
 
 func requireLifecycleGenerationExistsTx(ctx context.Context, tx pgx.Tx, jobID, generation int64) error {
@@ -181,5 +150,5 @@ func requireLifecycleStepContextTx(
 }
 
 func lifecycleReplayStateError(id LifecycleOperationID, subject string) error {
-	return fmt.Errorf("%w: lifecycle operation %q has inconsistent %s", taskstate.ErrInvalidState, id, subject)
+	return fmt.Errorf("%w: lifecycle operation %q has inconsistent %s", ErrStepNotWritable, id, subject)
 }

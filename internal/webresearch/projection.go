@@ -15,10 +15,10 @@ const (
 	relevanceTruncationMarker  = "...[truncated]"
 )
 
-func (machine *Machine) selectAndProject(
+func (machine *evidenceMachine) selectAndProject(
 	ctx context.Context,
 	evidence []Evidence,
-	result *Result,
+	result *evidenceRun,
 ) ([]ProjectedEvidence, bool, error) {
 	if err := validateEvidence(evidence); err != nil {
 		return nil, false, err

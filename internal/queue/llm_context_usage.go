@@ -418,7 +418,7 @@ func (r *Repository) LLMContextUsageMetrics(ctx context.Context, source string, 
 
 func (r *Repository) ListRecentLLMActivity(ctx context.Context, limit int) ([]LLMContextUsageEntry, error) {
 	if limit <= 0 || limit > 100 {
-		limit = 30
+		return nil, fmt.Errorf("recent LLM activity limit must be between 1 and 100")
 	}
 	rows, err := r.pool.Query(ctx, `
 		SELECT id::text, source, COALESCE(model,''), COALESCE(provider,''), COALESCE(card_id,''), project_id,

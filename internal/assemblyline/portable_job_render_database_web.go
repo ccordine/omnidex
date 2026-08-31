@@ -23,12 +23,6 @@ func renderPortableDatabaseWebJob(job PortableJob) (string, bool, error) {
 		return handledPortableRender(renderDecodedPortableInput(job, BuildDatabaseJoinPathSelectionPrompt))
 	case WorkWebRelevanceRelation:
 		return handledPortableRender(renderDecodedPortableInput(job, BuildWebRelevanceRelationPrompt))
-	case WorkWebSynthesisParagraphInventory:
-		return handledPortableRender(renderDecodedPortableInput(job, BuildWebSynthesisParagraphInventoryPrompt))
-	case WorkWebSynthesisEvidenceRelation:
-		return handledPortableRender(renderDecodedPortableInput(job, BuildWebSynthesisEvidenceRelationPrompt))
-	case WorkWebSynthesisParagraphAuthorization:
-		return handledPortableRender(renderDecodedPortableInput(job, BuildWebSynthesisParagraphAuthorizationPrompt))
 	default:
 		return "", false, nil
 	}

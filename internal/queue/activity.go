@@ -3,6 +3,7 @@ package queue
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"time"
 
@@ -23,7 +24,7 @@ type MemoryChunkSummary struct {
 
 func (r *Repository) ListMemoryChunks(ctx context.Context, kind string, tags []string, limit int) ([]MemoryChunkSummary, error) {
 	if limit <= 0 || limit > 500 {
-		limit = 50
+		return nil, fmt.Errorf("memory chunk limit must be between 1 and 500")
 	}
 	kind = strings.TrimSpace(kind)
 	tags = cleanTags(tags)
@@ -75,7 +76,7 @@ func (r *Repository) ListMemoryChunks(ctx context.Context, kind string, tags []s
 
 func (r *Repository) ListTelemetryEvents(ctx context.Context, limit int) ([]TelemetryEventSummary, error) {
 	if limit <= 0 || limit > 500 {
-		limit = 100
+		return nil, fmt.Errorf("telemetry event limit must be between 1 and 500")
 	}
 	rows, err := r.pool.Query(ctx, `
 		SELECT id::text, run_id::text, step, event_type, created_at, payload

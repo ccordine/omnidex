@@ -76,7 +76,6 @@ func selectDirectCodingProjectFromRegistries(
 	}
 	return resolveDirectCodingProjectFormatDecision(
 		specification.Surface, stacks, registeredProfiles, formats, input, decision,
-		nil,
 	)
 }
 

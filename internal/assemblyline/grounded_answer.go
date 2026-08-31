@@ -2,11 +2,14 @@ package assemblyline
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 	"unicode/utf8"
 
 	"github.com/gryph/omnidex/internal/modelcontext"
 )
+
+var modelAuthoredCitationSyntax = regexp.MustCompile(`(?i)https?://|\[[0-9]+\]`)
 
 const (
 	GroundedAnswerSchemaV1        = "omnidex.grounded-answer.v1"

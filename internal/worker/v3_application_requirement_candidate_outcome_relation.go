@@ -40,8 +40,7 @@ func directCodingApplicationRequirementSemanticDuplicate(
 	for _, accepted := range acceptedRequirements {
 		input := assemblyline.ApplicationRequirementCandidateOutcomeRelationInput{
 			Candidate: candidate, Kind: kind, Cardinality: cardinality,
-			AcceptedRequirement:    accepted.Statement,
-			AcceptedResultRelation: accepted.ResultRelation,
+			AcceptedRequirement: accepted.Statement,
 		}
 		job, err := assemblyline.NewApplicationRequirementCandidateOutcomeRelationJob(input)
 		if err != nil {

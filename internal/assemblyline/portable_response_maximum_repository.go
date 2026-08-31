@@ -25,7 +25,7 @@ func portableRepositoryConversationResponseMaximum(job PortableJob) (int, bool, 
 		return MaxContextMinifiedBytes, true, nil
 	case WorkConversationObjectiveKind:
 		return maximumStringBytes(
-			ObjectiveKindAnswer, ObjectiveKindWorkspaceMutation, ObjectiveKindExternalAnswer,
+			ObjectiveKindAnswer, ObjectiveKindWorkspaceMutation,
 			ObjectiveKindStory, ObjectiveKindDatabaseRead,
 		), true, nil
 	case WorkConversationResponse:

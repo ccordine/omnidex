@@ -21,7 +21,7 @@ type directCodingSession struct {
 	specification         *assemblyline.ApplicationSpecification
 	program               *directCodingProgram
 	sequence              int
-	protectedPaths        map[string]directCodingProtectedPath
+	protectedPaths        map[string]struct{}
 	plannedFiles          int
 	plannedDeletes        int
 	mutationJournal       []directCodingMutationJournalEntry
@@ -111,7 +111,7 @@ func (r *nativeRuntimeV3) runDirectCodingSession(request directCodingRequest) (s
 		runtime:        r,
 		request:        request,
 		root:           scope.Root,
-		protectedPaths: map[string]directCodingProtectedPath{},
+		protectedPaths: map[string]struct{}{},
 	}
 	summary, err := runDirectCodingWorkflow(session)
 	return summary, err

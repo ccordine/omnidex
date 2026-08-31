@@ -13,13 +13,13 @@ type directCodingTargetTreeOccupation struct {
 }
 
 func directCodingTargetTreeOccupationFor(
-	input assemblyline.TargetTreeInput,
+	stack directCodingProjectStack,
 	accepted map[string]struct{},
 ) directCodingTargetTreeOccupation {
 	files := make(
-		map[string]struct{}, len(input.ReservedPaths)+len(accepted),
+		map[string]struct{}, len(stack.TargetTreeReservedPaths)+len(accepted),
 	)
-	for _, artifactPath := range input.ReservedPaths {
+	for _, artifactPath := range stack.TargetTreeReservedPaths {
 		files[artifactPath] = struct{}{}
 	}
 	for artifactPath := range accepted {
@@ -37,11 +37,11 @@ func directCodingTargetTreeOccupationFor(
 // reserved-path invariants. Existing filesystem state belongs to the
 // reconciler, which consumes the complete desired state later.
 func validateDirectCodingTargetTreePathClosure(
-	input assemblyline.TargetTreeInput,
+	stack directCodingProjectStack,
 	target assemblyline.TargetTree,
 ) error {
 	for _, candidate := range target.Paths {
-		for _, occupied := range input.ReservedPaths {
+		for _, occupied := range stack.TargetTreeReservedPaths {
 			if directCodingTargetTreeFileHierarchyConflict(candidate, occupied) {
 				return fmt.Errorf(
 					"target-tree file %q crosses reserved file boundary %q", candidate, occupied,

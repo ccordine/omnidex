@@ -2,7 +2,6 @@ package queue
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	"github.com/gryph/omnidex/internal/model"
@@ -41,31 +40,6 @@ func lockCurrentReplanTailTx(
 		return nil, fmt.Errorf("read current replan tail for job %d: %w", jobID, err)
 	}
 	return records, nil
-}
-
-func rejectAssignedRetiringStepsTx(ctx context.Context, tx pgx.Tx, jobID int64, stepIDs []int64) error {
-	if len(stepIDs) == 0 {
-		return fmt.Errorf("%w: replan tail has no retiring steps", ErrInvalidJobGeneration)
-	}
-	var nodeID string
-	var stepID int64
-	err := tx.QueryRow(ctx, `
-		SELECT id, assigned_step_id
-		FROM task_nodes
-		WHERE job_id=$1 AND assigned_step_id=ANY($2::bigint[])
-		ORDER BY id ASC
-		LIMIT 1
-	`, jobID, stepIDs).Scan(&nodeID, &stepID)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return nil
-	}
-	if err != nil {
-		return fmt.Errorf("check task assignments for job %d replan: %w", jobID, err)
-	}
-	return fmt.Errorf(
-		"%w: task node %q remains assigned to retiring step %d",
-		ErrInvalidJobGeneration, nodeID, stepID,
-	)
 }
 
 func retireReplanTailTx(

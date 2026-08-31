@@ -2,8 +2,6 @@ package llmprovider
 
 import (
 	"fmt"
-	"strings"
-	"time"
 
 	"github.com/gryph/omnidex/internal/config"
 	"github.com/gryph/omnidex/internal/googleai"
@@ -22,7 +20,6 @@ type Transports struct {
 func newExactStationProvider(
 	cfg config.Config,
 	definition catalog.Definition,
-	timeout time.Duration,
 ) (llm.ExactStationClient, error) {
 	if !definition.SupportsExactPreparedStations {
 		return nil, fmt.Errorf(
@@ -30,11 +27,13 @@ func newExactStationProvider(
 			definition.ID,
 		)
 	}
-	timeout = providerTimeout(timeout, cfg.RequestTimeout)
+	if cfg.RequestTimeout <= 0 {
+		return nil, fmt.Errorf("REQUEST_TIMEOUT must be positive for provider %q", definition.ID)
+	}
 	switch definition.Protocol {
 	case catalog.ProtocolOllama:
 		return ollama.New(
-			cfg.OllamaBaseURL, "", "", timeout, cfg.InferenceContextTokens,
+			cfg.OllamaBaseURL, "", "", cfg.RequestTimeout, cfg.InferenceContextTokens,
 		), nil
 	default:
 		return nil, fmt.Errorf(
@@ -47,22 +46,22 @@ func newExactStationProvider(
 func newEmbeddingProvider(
 	cfg config.Config,
 	definition catalog.Definition,
-	requestedModel string,
-	timeout time.Duration,
 ) (llm.EmbeddingClient, error) {
 	if !definition.SupportsEmbeddings {
 		return nil, fmt.Errorf("provider %q does not implement embeddings", definition.ID)
 	}
-	model := resolvedEmbeddingModel(definition, cfg, requestedModel)
+	model := cfg.EmbeddingModel
 	if model == "" {
 		return nil, fmt.Errorf("embedding model is required for provider %q", definition.ID)
 	}
-	timeout = providerTimeout(timeout, cfg.RequestTimeout)
+	if cfg.RequestTimeout <= 0 {
+		return nil, fmt.Errorf("REQUEST_TIMEOUT must be positive for provider %q", definition.ID)
+	}
 
 	switch definition.Protocol {
 	case catalog.ProtocolOllama:
 		return ollama.New(
-			cfg.OllamaBaseURL, "", model, timeout, cfg.InferenceContextTokens,
+			cfg.OllamaBaseURL, "", model, cfg.RequestTimeout, cfg.InferenceContextTokens,
 		), nil
 	case catalog.ProtocolOpenAICompatible:
 		providerConfig, configured := cfg.CompatibleProviders[definition.ID]
@@ -74,20 +73,20 @@ func newEmbeddingProvider(
 		apiKeyName := definition.EnvironmentKey("API_KEY")
 		return openai.NewCompatibleEmbedding(
 			definition.ID, apiKeyName, providerConfig.BaseURL, providerConfig.APIKey,
-			model, providerConfig.Organization, providerConfig.Project, timeout,
+			model, providerConfig.Organization, providerConfig.Project, cfg.RequestTimeout,
 		)
 	case catalog.ProtocolAzure:
 		return openai.NewAzureAIEmbedding(
 			cfg.AzureAIBaseURL, cfg.AzureAIAPIKey, model, cfg.AzureAIAPIVersion,
-			cfg.AzureAIAPIStyle, timeout,
+			cfg.AzureAIAPIStyle, cfg.RequestTimeout,
 		)
 	case catalog.ProtocolGoogle:
 		return googleai.NewEmbedding(
-			cfg.GoogleBaseURL, cfg.GoogleAPIKey, model, timeout,
+			cfg.GoogleBaseURL, cfg.GoogleAPIKey, model, cfg.RequestTimeout,
 		), nil
 	case catalog.ProtocolHuggingFace:
 		return huggingface.NewEmbedding(
-			cfg.HuggingFaceBaseURL, cfg.HuggingFaceAPIKey, model, timeout,
+			cfg.HuggingFaceBaseURL, cfg.HuggingFaceAPIKey, model, cfg.RequestTimeout,
 		), nil
 	default:
 		return nil, fmt.Errorf(
@@ -95,36 +94,4 @@ func newEmbeddingProvider(
 			definition.ID, definition.Protocol,
 		)
 	}
-}
-
-func providerTimeout(requested, configured time.Duration) time.Duration {
-	if requested > 0 {
-		return requested
-	}
-	if configured > 0 {
-		return configured
-	}
-	return 90 * time.Second
-}
-
-func resolvedEmbeddingModel(
-	definition catalog.Definition,
-	cfg config.Config,
-	requested string,
-) string {
-	if model := strings.TrimSpace(requested); model != "" {
-		return model
-	}
-	if configuredProvider, ok := catalog.Lookup(cfg.EmbeddingProvider); ok &&
-		configuredProvider.ID == definition.ID {
-		if model := strings.TrimSpace(cfg.EmbeddingModel); model != "" {
-			return model
-		}
-	}
-	if providerModels, ok := cfg.ProviderModels[definition.ID]; ok {
-		if model := strings.TrimSpace(providerModels.Embedding); model != "" {
-			return model
-		}
-	}
-	return strings.TrimSpace(definition.DefaultEmbeddingModel)
 }

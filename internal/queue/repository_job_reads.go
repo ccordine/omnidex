@@ -25,10 +25,10 @@ func (r *Repository) CountStepsByAction(ctx context.Context, jobID int64, action
 
 func (r *Repository) ListJobs(ctx context.Context, status string, limit, offset int) ([]model.Job, error) {
 	if limit <= 0 {
-		limit = 20
+		return nil, fmt.Errorf("job list limit must be positive")
 	}
 	if offset < 0 {
-		offset = 0
+		return nil, fmt.Errorf("job list offset must be non-negative")
 	}
 
 	args := []any{}
@@ -178,7 +178,7 @@ func (r *Repository) ListRecentSessionJobs(ctx context.Context, pipeline, sessio
 		return nil, nil
 	}
 	if limit <= 0 {
-		limit = 6
+		return nil, fmt.Errorf("recent session job limit must be positive")
 	}
 
 	rows, err := r.pool.Query(ctx, `

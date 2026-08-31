@@ -16,73 +16,12 @@ const (
 	directCodingPhaseFailed       directCodingPhase = "failed"
 )
 
-type directCodingDiagnostic struct {
-	Stage      string
-	Command    string
-	TargetPath string
-	Detail     string
-}
-
-func (d directCodingDiagnostic) validate() error {
-	if strings.TrimSpace(d.Stage) == "" {
-		return fmt.Errorf("coding diagnostic requires a stage")
-	}
-	if strings.TrimSpace(d.Detail) == "" {
-		return fmt.Errorf("coding diagnostic requires exact failure detail")
-	}
-	target := strings.TrimSpace(d.TargetPath)
-	if target == "" {
-		return nil
-	}
-	normalizedTarget, err := normalizeDirectCodingPath(target)
-	if err != nil {
-		return fmt.Errorf("coding diagnostic target path: %w", err)
-	}
-	if target != normalizedTarget {
-		return fmt.Errorf("coding diagnostic target path %q must be normalized as %q", target, normalizedTarget)
-	}
-	return nil
-}
-
-func directCodingStaticFileDiagnostic(path, detail string, _ ...string) *directCodingDiagnostic {
-	return &directCodingDiagnostic{
-		Stage: "static_validation", TargetPath: path, Detail: detail,
-	}
-}
-
-type directCodingVerification struct {
-	Passed                  bool
-	ExactStateAuthorityID   string
-	ExactStateReceiptSHA256 string
-	Diagnostic              *directCodingDiagnostic
-}
-
-func (v directCodingVerification) validate() error {
-	exactStatePresent := v.ExactStateAuthorityID != "" || v.ExactStateReceiptSHA256 != ""
-	if !exactStatePresent || (!validRepositoryVerificationOpaqueID(v.ExactStateAuthorityID, "workspace_exact_") ||
-		!validRepositoryVerificationSHA256(v.ExactStateReceiptSHA256)) {
-		return fmt.Errorf("coding verification requires one exact workspace-state receipt")
-	}
-	if v.Passed {
-		if v.Diagnostic != nil {
-			return fmt.Errorf("successful coding verification cannot include a diagnostic")
-		}
-		return nil
-	}
-	if v.Diagnostic == nil {
-		return fmt.Errorf("failed coding verification requires an exact diagnostic")
-	}
-	return v.Diagnostic.validate()
-}
-
 type directCodingWorkflowDriver interface {
 	Phase(phase directCodingPhase, detail string)
 	Assemble() (directCodingAssembly, error)
 	PrepareAssembly(directCodingAssembly) (*directCodingPreparedMutation, error)
-	ApplyAndVerify(
-		*directCodingPreparedMutation,
-	) (directCodingVerification, error)
-	Complete(verification directCodingVerification) (string, error)
+	ApplyAndVerify(*directCodingPreparedMutation) error
+	Complete() (string, error)
 }
 
 func runDirectCodingWorkflow(driver directCodingWorkflowDriver) (string, error) {
@@ -94,11 +33,7 @@ func runDirectCodingWorkflow(driver directCodingWorkflowDriver) (string, error) 
 	if err != nil {
 		return failDirectCodingWorkflow(driver, "compile deterministic assembly", err)
 	}
-	if err := assembly.validate(); err != nil {
-		return failDirectCodingWorkflow(driver, "validate deterministic assembly", err)
-	}
-
-	driver.Phase(directCodingPhaseConstructing, fmt.Sprintf("directories=%d files=%d deletes=%d", len(assembly.Directories), len(assembly.Files), len(assembly.DeletePaths)))
+	driver.Phase(directCodingPhaseConstructing, fmt.Sprintf("files=%d deletes=%d", len(assembly.Files), len(assembly.DeletePaths)))
 	prepared, err := driver.PrepareAssembly(assembly)
 	if err != nil {
 		return failDirectCodingWorkflow(driver, "prepare exact workspace mutation", err)
@@ -107,21 +42,10 @@ func runDirectCodingWorkflow(driver directCodingWorkflowDriver) (string, error) 
 		return failDirectCodingWorkflow(driver, "prepare exact workspace mutation", fmt.Errorf("driver returned no prepared mutation"))
 	}
 	driver.Phase(directCodingPhaseVerifying, "verifying exact workspace post-state")
-	verification, verifyErr := driver.ApplyAndVerify(prepared)
-	if verifyErr != nil {
-		return failDirectCodingWorkflow(driver, "verify accepted workspace", verifyErr)
+	if err := driver.ApplyAndVerify(prepared); err != nil {
+		return failDirectCodingWorkflow(driver, "verify accepted workspace", err)
 	}
-	if err := verification.validate(); err != nil {
-		return failDirectCodingWorkflow(driver, "validate verification result", err)
-	}
-	if !verification.Passed {
-		return failDirectCodingWorkflow(driver, "verify completed program", fmt.Errorf(
-			"%s: %s",
-			safeLine(verification.Diagnostic.Stage, "unknown"),
-			trimForBudget(verification.Diagnostic.Detail, 1200),
-		))
-	}
-	summary, completeErr := driver.Complete(verification)
+	summary, completeErr := driver.Complete()
 	if completeErr != nil {
 		return failDirectCodingWorkflow(driver, "complete coding workflow", completeErr)
 	}

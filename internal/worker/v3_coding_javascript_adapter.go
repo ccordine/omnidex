@@ -71,15 +71,14 @@ func genericJavaScriptCommandLineStaticFiles(
 		return nil, fmt.Errorf("encode code-owned JavaScript manifest: %w", err)
 	}
 	return []directCodingFileTask{
-		{Path: ".gitignore", Content: "node_modules\n"},
-		{Path: "package.json", Content: string(encoded) + "\n"},
+		{Path: "package.json", Content: append(encoded, '\n'), Mode: 0o644},
 	}, nil
 }
 
 func validateJavaScriptCommandLineAssembly(assembly directCodingAssembly) error {
 	files := make(map[string]string, len(assembly.Files))
 	for _, file := range assembly.Files {
-		files[file.Path] = file.Content
+		files[file.Path] = string(file.Content)
 	}
 	for _, required := range []string{"package.json", "runtime.mjs", "main.mjs"} {
 		if _, exists := files[required]; !exists {

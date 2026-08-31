@@ -11,7 +11,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/gryph/omnidex/internal/model"
-	"github.com/gryph/omnidex/internal/taskstate"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -95,18 +94,6 @@ func replanJobTx(
 	if err != nil {
 		return model.Job{}, fmt.Errorf("validate replan tail for job %d: %w", command.JobID, err)
 	}
-	header, err := loadTaskLedgerHeaderTx(ctx, tx, command.JobID, true)
-	if err != nil {
-		return model.Job{}, err
-	}
-	if header.Status != taskstate.LedgerActive {
-		return model.Job{}, fmt.Errorf(
-			"%w: nonterminal job %d has %s task ledger", ErrInvalidJobGeneration, command.JobID, header.Status,
-		)
-	}
-	if err := rejectAssignedRetiringStepsTx(ctx, tx, command.JobID, retiringIDs); err != nil {
-		return model.Job{}, err
-	}
 	if err := terminalizeStepAttemptsForAuthorityChangeTx(
 		ctx, tx, command.JobID, currentGeneration, retiringIDs, model.StepAttemptSuperseded,
 	); err != nil {
@@ -125,7 +112,7 @@ func replanJobTx(
 		return model.Job{}, err
 	}
 	job, err = advanceReplannedJobTx(
-		ctx, tx, command, feedbackSHA, currentGeneration, newGeneration, boundary.action,
+		ctx, tx, command, currentGeneration, newGeneration,
 	)
 	if err != nil {
 		return model.Job{}, err

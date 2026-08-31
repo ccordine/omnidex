@@ -24,7 +24,9 @@ func requireCancelJobReplayTx(
 	if !sameCanceledJobAuthority(current, record.ResultJob) || current.Error != command.Reason {
 		return lifecycleReplayStateError(record.ID, "canceled job authority")
 	}
-	return requireCanceledTaskAuthorityTx(ctx, tx, current, command.Reason)
+	return requireLifecycleGenerationExistsTx(
+		ctx, tx, current.ID, current.CurrentGeneration,
+	)
 }
 
 func sameCanceledJobAuthority(current, recorded model.Job) bool {

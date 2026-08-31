@@ -101,19 +101,18 @@ func (r *Repository) enqueueChannelTurn(
 	var dataSourceID *string
 	var channelMode model.ChannelMode
 	var roleplayViewpointID *string
-	var projectLocation string
 	var projectSettings json.RawMessage
 	if err := tx.QueryRow(ctx, `
 		SELECT channel.scope, channel.project_id, channel.workspace_root, channel.data_source_id,
 		       channel.mode, channel.roleplay_viewpoint_character_id,
-		       project.location, project.settings
+		       project.settings
 		FROM ai_channels AS channel
 		JOIN projects AS project ON project.id=channel.project_id
 		WHERE channel.id=$1
 		FOR UPDATE OF channel, project
 	`, channelID).Scan(
 		&scope, &projectID, &workspaceRoot, &dataSourceID, &channelMode, &roleplayViewpointID,
-		&projectLocation, &projectSettings,
+		&projectSettings,
 	); err == pgx.ErrNoRows {
 		return model.ChannelMessage{}, model.Job{}, fmt.Errorf("channel %q does not exist", channelID)
 	} else if err != nil {
@@ -144,16 +143,16 @@ func (r *Repository) enqueueChannelTurn(
 			return model.ChannelMessage{}, model.Job{}, err
 		}
 	}
-	if projectLocation != workspaceRoot {
-		return model.ChannelMessage{}, model.Job{}, fmt.Errorf(
-			"channel %q project location %q differs from workspace binding %q",
-			channelID, projectLocation, workspaceRoot,
-		)
-	}
-	modelSnapshot, err := modelconfig.FromSettingsJSON(projectSettings)
+	modelOverrides, err := modelconfig.FromSettingsJSON(projectSettings)
 	if err != nil {
 		return model.ChannelMessage{}, model.Job{}, fmt.Errorf(
 			"channel %q project model config: %w", channelID, err,
+		)
+	}
+	modelSnapshot, err := r.modelAuthority.Resolve(modelOverrides)
+	if err != nil {
+		return model.ChannelMessage{}, model.Job{}, fmt.Errorf(
+			"channel %q model routing snapshot: %w", channelID, err,
 		)
 	}
 	var activeJobID int64

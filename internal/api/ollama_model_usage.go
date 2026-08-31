@@ -9,14 +9,11 @@ import (
 )
 
 func (s *Server) requireOllamaModelUnused(ctx context.Context, installedModel string) error {
-	config := s.envModelConfig()
+	config := s.runtimeModelConfig()
 	configured := config.ModelNames()
 	providerConfig := s.providerConfiguration()
 	if providerConfig.EmbeddingProvider == "ollama" {
 		embedding := strings.TrimSpace(providerConfig.EmbeddingModel)
-		if embedding == "" {
-			embedding = strings.TrimSpace(providerConfig.ProviderModels["ollama"].Embedding)
-		}
 		if embedding != "" {
 			configured = append(configured, embedding)
 		}

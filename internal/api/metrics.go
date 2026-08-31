@@ -1,8 +1,8 @@
 package api
 
 import (
+	"fmt"
 	"net/http"
-	"strconv"
 	"strings"
 
 	"github.com/jackc/pgx/v5"
@@ -26,11 +26,14 @@ func (s *Server) handleMetricsRuns(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
-	limit := 50
-	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
-		if parsed, err := strconv.Atoi(raw); err == nil {
-			limit = parsed
-		}
+	if err := validateExactQuery(r, "limit"); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	limit, err := exactChannelQueryInteger(r, "limit", 50, 1, 200)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
 	}
 	runs, err := s.repo.ListTelemetryRuns(r.Context(), limit)
 	if err != nil {
@@ -77,17 +80,24 @@ func (s *Server) handleMetricsContextShrink(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
+	if err := validateExactQuery(r, "limit", "source"); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	limit, err := exactChannelQueryInteger(r, "limit", 100, 1, 500)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	source, err := exactMetricsSource(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	if s.repo == nil {
 		writeError(w, http.StatusServiceUnavailable, "repository mode required for context shrink metrics")
 		return
 	}
-	limit := 100
-	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
-		if parsed, err := strconv.Atoi(raw); err == nil {
-			limit = parsed
-		}
-	}
-	source := strings.TrimSpace(r.URL.Query().Get("source"))
 	metrics, err := s.repo.ContextShrinkMetrics(r.Context(), source, limit)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -101,17 +111,24 @@ func (s *Server) handleMetricsContextUsage(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
+	if err := validateExactQuery(r, "limit", "source"); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	limit, err := exactChannelQueryInteger(r, "limit", 100, 1, 500)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	source, err := exactMetricsSource(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	if s.repo == nil {
 		writeError(w, http.StatusServiceUnavailable, "repository mode required for context usage metrics")
 		return
 	}
-	limit := 100
-	if raw := strings.TrimSpace(r.URL.Query().Get("limit")); raw != "" {
-		if parsed, err := strconv.Atoi(raw); err == nil {
-			limit = parsed
-		}
-	}
-	source := strings.TrimSpace(r.URL.Query().Get("source"))
 	metrics, err := s.repo.LLMContextUsageMetrics(r.Context(), source, limit)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -135,4 +152,15 @@ func (s *Server) handleMetricsOperations(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	writeJSON(w, http.StatusOK, metrics)
+}
+
+func exactMetricsSource(r *http.Request) (string, error) {
+	values, exists := r.URL.Query()["source"]
+	if !exists {
+		return "", nil
+	}
+	if len(values) != 1 || values[0] == "" || values[0] != strings.TrimSpace(values[0]) {
+		return "", fmt.Errorf("source must be one non-empty canonical string")
+	}
+	return values[0], nil
 }

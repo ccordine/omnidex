@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/gryph/omnidex/internal/model"
-	"github.com/gryph/omnidex/internal/taskstate"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -191,11 +190,6 @@ func submitJobFeedbackTx(
 	}
 
 	if openSteps == 0 {
-		if err := transitionInitialTaskRootTx(
-			ctx, tx, command.JobID, job.CurrentGeneration, stepID, taskstate.NodeDone, command.Feedback, "",
-		); err != nil {
-			return model.Job{}, err
-		}
 		jobUpdate, err := tx.Exec(ctx, `
 			UPDATE jobs
 			SET status = $2, result = COALESCE(NULLIF($3, ''), result), completed_at = NOW(), updated_at = NOW(), error = NULL
@@ -206,18 +200,6 @@ func submitJobFeedbackTx(
 		}
 		if jobUpdate.RowsAffected() != 1 {
 			return model.Job{}, fmt.Errorf("%w: job %d did not accept feedback completion", ErrStepNotWritable, command.JobID)
-		}
-		if err := terminalizeTaskLedgerTx(
-			ctx, tx, command.JobID, job.CurrentGeneration, model.JobStatusCompleted, &stepID,
-			"job completed after its final waiting step received user feedback",
-		); err != nil {
-			return model.Job{}, err
-		}
-		if err := completeTelemetryRunForJob(ctx, tx, command.JobID, model.JobStatusCompleted, map[string]any{"job_id": command.JobID, "result": command.Feedback}, map[string]any{"user_feedback_step_id": stepID}); err != nil {
-			return model.Job{}, err
-		}
-		if err := recordTelemetryJobEvent(ctx, tx, command.JobID, "run_completed", map[string]any{"job_id": command.JobID, "step_id": stepID, "source": "user_feedback"}); err != nil {
-			return model.Job{}, err
 		}
 	} else {
 		jobUpdate, err := tx.Exec(ctx, `
