@@ -3,3 +3,5 @@
 .codex
 .env
 bin
+internal/api/web/node_modules
+internal/api/web/dist

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"io"
 	"log"
 	"os"
 	"os/signal"
@@ -12,13 +13,20 @@ import (
 )
 
 func main() {
-	if err := run(); err != nil {
+	if err := run(os.Args[1:], os.Stdin, os.Stdout); err != nil {
 		log.Printf("omnidex stopped: %v", err)
 		os.Exit(1)
 	}
 }
 
-func run() error {
+func run(args []string, stdin io.Reader, stdout io.Writer) error {
+	if len(args) > 0 {
+		return runCommand(args, stdin, stdout)
+	}
+	return runServer()
+}
+
+func runServer() error {
 	cfg := config.Load()
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

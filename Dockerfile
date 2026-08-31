@@ -5,9 +5,14 @@ WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 
+COPY internal/api/web/package.json internal/api/web/package-lock.json ./internal/api/web/
+RUN cd internal/api/web && npm ci
+
 COPY . .
 RUN cd internal/api/web && npm run build
+ARG OMNIDEX_COMMIT
 RUN CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -trimpath \
+    -ldflags "-X github.com/gryph/omnidex/internal/version.Commit=${OMNIDEX_COMMIT}" \
     -o /out/omnidex ./cmd/omnidex
 
 FROM docker/compose-bin:v5.1.4@sha256:88d82497d9be33710c959aeaad5e541de5aa41a36d733e04ab09ccce74fa6b4c AS compose
@@ -16,6 +21,8 @@ FROM docker:29.5.1-cli@sha256:b40b3737eb3bf588d25bb856d3564dd3f9fdb32ac2fc19ebe8
 
 ARG APP_UID=1000
 ARG APP_GID=1000
+ARG OMNIDEX_COMMIT
+LABEL org.opencontainers.image.revision="${OMNIDEX_COMMIT}"
 COPY --from=compose /docker-compose /usr/local/libexec/docker/cli-plugins/docker-compose
 RUN validate_host_id() { \
         label="$1"; value="$2"; \
@@ -44,7 +51,7 @@ ENV DOCKER_COMPOSE_VERSION=5.1.4
 # location explicit for deterministic standard-library type checking.
 ENV GOROOT=/usr/local/go
 # docker compose loads .env via env_file; a host PATH (e.g. for mise/node on the
-# bridge) must not replace this — agent-core lives in /usr/local/bin.
+# bridge) must not replace this — omnidex lives in /usr/local/bin.
 ENV PATH=/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 ENV HOME=/home/app
 EXPOSE 8090

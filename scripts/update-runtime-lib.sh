@@ -248,7 +248,7 @@ compose_require_running_image() {
   compose_command_array "${compose_cmd}" cmd
   [[ -z "${compose_file}" ]] || cmd+=(-f "${compose_file}")
   cmd+=(ps -q "${service}")
-  local container_id running_image running_commit running_user health_commit
+  local container_id running_image running_commit running_user running_health health_commit
   container_id="$(
     cd "${repo_dir}"
     export OMNIDEX_COMMIT="${expected_commit}"
@@ -266,13 +266,108 @@ compose_require_running_image() {
   running_user="$(context_docker inspect --type container --format '{{.Config.User}}' "${container_id}")"
   [[ "${running_user}" == "${expected_user}" ]] ||
     die "compose service ${service} is running as ${running_user:-<missing>}, expected ${expected_user}"
-  if ! health_commit="$(context_docker exec "${container_id}" /usr/local/bin/agent-core release:verify-running-health "${expected_commit}")"; then
-    die "compose service ${service} health release identity is unreachable"
-  fi
+  running_health="$(context_docker inspect --type container --format '{{if .State.Health}}{{.State.Health.Status}}{{end}}' "${container_id}")"
+  [[ "${running_health}" == "healthy" ]] ||
+    die "compose service ${service} health is ${running_health:-<missing>}, expected healthy"
+  health_commit="$(context_docker exec "${container_id}" /usr/local/bin/omnidex health --expect-commit "${expected_commit}")" ||
+    die "compose service ${service} typed health verification failed"
   [[ "${health_commit}" == "${expected_commit}" ]] ||
     die "compose service ${service} health reports release commit ${health_commit:-<missing>}, expected ${expected_commit}"
   log "verified running service ${service} image ${running_image} release commit ${running_commit} runtime user ${running_user}"
 }
+
+compose_require_healthy_service() {
+  local repo_dir="$1" compose_cmd="$2" compose_file="$3" service="$4"
+  [[ "${service}" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*$ ]] ||
+    die "compose service name is invalid: ${service}"
+  local -a base_cmd=() image_cmd=() container_cmd=() configured_images=()
+  compose_command_array "${compose_cmd}" base_cmd
+  [[ -z "${compose_file}" ]] || base_cmd+=(-f "${compose_file}")
+  image_cmd=("${base_cmd[@]}" config --images "${service}")
+  container_cmd=("${base_cmd[@]}" ps -q "${service}")
+  mapfile -t configured_images < <(
+    cd "${repo_dir}"
+    runtime_export_compose_identity
+    "${image_cmd[@]}"
+  )
+  (( ${#configured_images[@]} == 1 )) ||
+    die "compose service ${service} resolved ${#configured_images[@]} configured images; expected exactly one"
+  local configured_image="${configured_images[0]}" configured_image_id container_id
+  local running_image_id running_image_ref running_project running_service running_status running_health
+  [[ -n "${configured_image}" && "${configured_image}" != -* && ! "${configured_image}" =~ [[:space:]] ]] ||
+    die "compose service ${service} returned an invalid configured image reference"
+  configured_image_id="$(context_docker image inspect --format '{{.Id}}' "${configured_image}")" ||
+    die "compose service ${service} configured image is unavailable: ${configured_image}"
+  [[ "${configured_image_id}" =~ ^sha256:[0-9a-f]{64}$ ]] ||
+    die "compose service ${service} configured image has invalid identity"
+  container_id="$(
+    cd "${repo_dir}"
+    runtime_export_compose_identity
+    "${container_cmd[@]}"
+  )"
+  [[ "${container_id}" =~ ^[0-9a-f]{12,64}$ ]] ||
+    die "compose service ${service} did not resolve to one running container"
+  running_image_id="$(context_docker inspect --type container --format '{{.Image}}' "${container_id}")"
+  running_image_ref="$(context_docker inspect --type container --format '{{.Config.Image}}' "${container_id}")"
+  running_project="$(context_docker inspect --type container --format '{{ index .Config.Labels "com.docker.compose.project" }}' "${container_id}")"
+  running_service="$(context_docker inspect --type container --format '{{ index .Config.Labels "com.docker.compose.service" }}' "${container_id}")"
+  running_status="$(context_docker inspect --type container --format '{{.State.Status}}' "${container_id}")"
+  running_health="$(context_docker inspect --type container --format '{{if .State.Health}}{{.State.Health.Status}}{{end}}' "${container_id}")"
+  [[ "${running_image_id}" == "${configured_image_id}" && "${running_image_ref}" == "${configured_image}" ]] ||
+    die "compose service ${service} is not running its exact configured image"
+  [[ "${running_project}" == "${COMPOSE_PROJECT}" && "${running_service}" == "${service}" ]] ||
+    die "compose service ${service} container labels differ from exact project authority"
+  [[ "${running_status}" == "running" && "${running_health}" == "healthy" ]] ||
+    die "compose service ${service} is ${running_status:-<missing>}/${running_health:-<missing>}, expected running/healthy"
+  log "verified service ${service} container ${container_id} image ${configured_image_id} running healthy"
+}
+
+runtime_validate_core_url() {
+  local core_url="$1" authority
+  [[ -n "${core_url}" && ${#core_url} -le 4096 && ! "${core_url}" =~ [[:space:]] ]] ||
+    die "CORE_URL must be one absolute HTTP or HTTPS URL"
+  [[ "${core_url}" != *\?* && "${core_url}" != *\#* ]] ||
+    die "CORE_URL must not contain a query or fragment"
+  case "${core_url}" in
+    http://*) authority="${core_url#http://}" ;;
+    https://*) authority="${core_url#https://}" ;;
+    *) die "CORE_URL must be one absolute HTTP or HTTPS URL" ;;
+  esac
+  authority="${authority%%/*}"
+  [[ -n "${authority}" ]] || die "CORE_URL must include one network authority"
+  [[ "${authority}" != *@* ]] || die "CORE_URL must not include credentials"
+}
+
+compose_require_public_health() (
+  local container_id="$1" expected_commit="$2" core_url="$3"
+  local body_file http_status health_commit
+  [[ "${container_id}" =~ ^[0-9a-f]{12,64}$ ]] ||
+    die "public health verification requires one exact core container"
+  runtime_validate_build_commit "${expected_commit}"
+  runtime_validate_core_url "${core_url}"
+  command -v curl >/dev/null 2>&1 || die "curl is required for public core health verification"
+
+  body_file="$(mktemp /tmp/omnidex-public-health.XXXXXX)" ||
+    die "cannot allocate public core health response file"
+  trap 'rm -f -- "${body_file}"' EXIT
+  http_status="$(
+    curl --disable --silent --show-error --fail \
+      --retry 20 --retry-delay 1 --retry-all-errors --retry-max-time 30 \
+      --max-time 10 --proto '=http,https' \
+      --output "${body_file}" --write-out '%{http_code}' \
+      "${core_url%/}/healthz"
+  )" || die "configured public core health endpoint is unreachable or unhealthy"
+  [[ "${http_status}" == "200" ]] ||
+    die "configured public core health endpoint returned HTTP ${http_status:-<missing>}, expected 200"
+  health_commit="$(
+    context_docker exec -i "${container_id}" \
+      /usr/local/bin/omnidex health --expect-commit "${expected_commit}" --stdin \
+      < "${body_file}"
+  )" || die "configured public core endpoint failed typed health verification"
+  [[ "${health_commit}" == "${expected_commit}" ]] ||
+    die "configured public core endpoint does not expose the expected running release"
+  log "verified configured public core endpoint release commit ${health_commit}"
+)
 
 host_bridge_unit_file() {
   printf '%s\n' "${HOME}/.config/systemd/user/omni-host-bridge.service"
