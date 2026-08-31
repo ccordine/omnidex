@@ -10,7 +10,8 @@ import (
 const (
 	WorkApplicationRequirementInventory WorkKind = "application_requirement_inventory"
 
-	ApplicationNoRuntimeRequirementCandidates = "NO_RUNTIME_REQUIREMENT_CANDIDATES"
+	ApplicationNoRuntimeRequirementCandidates      = "NO_RUNTIME_REQUIREMENT_CANDIDATES"
+	applicationRequirementInventoryCandidatePrefix = "The finished software "
 
 	MaxApplicationRequirementInventoryCandidates = MaxApplicationRequirementLeaves * 3
 	maxApplicationRequirementInventoryBytes      = MaxApplicationRequirementInventoryCandidates*maxRequirementQuoteBytes +
@@ -71,6 +72,7 @@ func BuildApplicationRequirementInventoryPrompt(
 		"Do not add a generic trigger frame such as 'when invoked' or 'on request' unless the immutable request states that trigger.",
 		"Do not return bare product identity, build or create directions, delivery surface, language, framework, toolchain, packaging, testing, deployment, or other construction constraints. Do not invent customary controls, history, persistence, process steps, enhancements, prerequisites, or implementation choices.",
 		"Every positive candidate line must begin exactly with 'The finished software ' and continue with one complete runtime outcome. Order candidates by the first request meaning that grounds each one; do not duplicate a candidate. The maximum is a safety bound, not a target.",
+		"Each positive candidate line must begin at byte zero and end immediately after its last non-whitespace byte. Do not emit leading or trailing spaces or tabs, and do not use Markdown hard-break spaces before a line feed.",
 		fmt.Sprintf("Return at most %d candidates, one complete raw candidate per non-empty line. Return only the permitted absence value or candidate lines, with no JSON, labels, numbering, bullets, Markdown, commentary, or surrounding envelope.", MaxApplicationRequirementInventoryCandidates),
 		"APPLICATION REQUIREMENT INVENTORY INPUT:\n" + projection,
 		"FINAL QUESTION:\nWhat bounded atomic finished-software runtime-outcome candidate inventory is grounded by this request? Return only the exact permitted raw absence value or candidate lines.",
@@ -96,7 +98,15 @@ func DecodeApplicationRequirementInventory(
 	}
 	candidates := []string{}
 	if leaf != ApplicationNoRuntimeRequirementCandidates {
-		candidates = decodeApplicationRequirementInventoryCandidateLines(leaf)
+		candidates, _, err = decodeApplicationRequirementCandidateLines(
+			"application requirement inventory",
+			leaf,
+			1,
+			MaxApplicationRequirementInventoryCandidates,
+		)
+		if err != nil {
+			return zero, err
+		}
 	}
 	authoritySHA256, err := applicationRequirementInventoryAuthoritySHA256(input)
 	if err != nil {
@@ -112,41 +122,6 @@ func DecodeApplicationRequirementInventory(
 		return zero, err
 	}
 	return result, nil
-}
-
-// decodeApplicationRequirementInventoryCandidateLines is an intake sieve.
-// One malformed, duplicated, or surplus model-authored line has no authority
-// over independent candidates in the same bounded response.
-func decodeApplicationRequirementInventoryCandidateLines(raw string) []string {
-	candidates := make([]string, 0, MaxApplicationRequirementInventoryCandidates)
-	seen := make(map[string]struct{}, MaxApplicationRequirementInventoryCandidates)
-	for index, candidate := range strings.Split(raw, "\n") {
-		if len(candidates) == MaxApplicationRequirementInventoryCandidates {
-			break
-		}
-		leaf, err := decodeRawSemanticLeaf(
-			fmt.Sprintf("application requirement inventory candidate %d", index),
-			candidate,
-			maxRequirementQuoteBytes,
-			false,
-		)
-		if err != nil || leaf == ApplicationNoRuntimeRequirementCandidates {
-			continue
-		}
-		if err := validateApplicationIntentText(
-			"application requirement inventory candidate",
-			leaf,
-			maxRequirementQuoteBytes,
-		); err != nil {
-			continue
-		}
-		if _, duplicate := seen[leaf]; duplicate {
-			continue
-		}
-		seen[leaf] = struct{}{}
-		candidates = append(candidates, leaf)
-	}
-	return candidates
 }
 
 func applicationRequirementInventoryRaw(candidates []string) string {
@@ -232,6 +207,13 @@ func (inventory ApplicationRequirementInventory) ValidateFor(
 	for index, candidate := range inventory.Candidates {
 		if strings.ContainsAny(candidate, "\r\n") {
 			return fmt.Errorf("application requirement inventory candidate %d must be one line", index)
+		}
+		if !strings.HasPrefix(candidate, applicationRequirementInventoryCandidatePrefix) {
+			return fmt.Errorf(
+				"application requirement inventory candidate %d must begin exactly with %q",
+				index,
+				applicationRequirementInventoryCandidatePrefix,
+			)
 		}
 		if err := validateApplicationIntentText(
 			"requirement inventory candidate",

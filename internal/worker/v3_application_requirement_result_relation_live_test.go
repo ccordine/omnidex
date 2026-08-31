@@ -14,7 +14,7 @@ import (
 	"github.com/gryph/omnidex/internal/queue"
 )
 
-const liveRequirementResultRelationModelEnv = "OMNIDEX_TEST_CODING_REQUIREMENTS_MODEL"
+const liveRequirementResultRelationModelEnv = "OMNIDEX_TEST_CODING_REQUIREMENT_RESULT_RELATION_MODEL"
 
 func TestLiveRequirementResultRelationOperationFamilyQualification(t *testing.T) {
 	modelName := strings.TrimSpace(os.Getenv(liveRequirementResultRelationModelEnv))
@@ -49,8 +49,23 @@ func TestLiveRequirementResultRelationOperationFamilyQualification(t *testing.T)
 			want:      assemblyline.ApplicationRequirementExplicitResultRelation,
 		},
 		{
+			name:      "spatial property measurement",
+			candidate: "The finished software reports the dimensions of each transformed image.",
+			want:      assemblyline.ApplicationRequirementExplicitResultRelation,
+		},
+		{
+			name:      "collection property measurement",
+			candidate: "The finished software reports the item count of each supplied batch.",
+			want:      assemblyline.ApplicationRequirementExplicitResultRelation,
+		},
+		{
 			name:      "unnamed suitability policy",
 			candidate: "The finished software selects the most suitable destination for supplied material.",
+			want:      assemblyline.ApplicationRequirementMissingResultRelation,
+		},
+		{
+			name:      "unnamed qualitative property",
+			candidate: "The finished software reports the quality of each transformed image.",
 			want:      assemblyline.ApplicationRequirementMissingResultRelation,
 		},
 	}
@@ -63,7 +78,7 @@ func TestLiveRequirementResultRelationOperationFamilyQualification(t *testing.T)
 				Context: ctx, MaxAttempts: 1,
 				Execute: func(job assemblyline.PortableJob, requestedModel string) (assemblyline.PortableResult, error) {
 					calls = append(calls, job.Kind)
-					return executeLiveRequirementResultRelationJob(
+					return executeLiveRequirementsSemanticJob(
 						ctx, client, contextTokens, requestedModel, job, t,
 					)
 				},
@@ -86,7 +101,7 @@ func TestLiveRequirementResultRelationOperationFamilyQualification(t *testing.T)
 	}
 }
 
-func executeLiveRequirementResultRelationJob(
+func executeLiveRequirementsSemanticJob(
 	ctx context.Context,
 	client *ollama.Client,
 	contextTokens int,

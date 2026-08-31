@@ -2,17 +2,42 @@ package worker
 
 import (
 	"fmt"
+	"strings"
+	"unicode/utf8"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
 )
 
+type directCodingApplicationIntentModels struct {
+	Requirements   string
+	ResultRelation string
+}
+
+func (models directCodingApplicationIntentModels) validate() error {
+	if err := validateDirectCodingApplicationIntentModel("requirements", models.Requirements); err != nil {
+		return err
+	}
+	return validateDirectCodingApplicationIntentModel("result-relation", models.ResultRelation)
+}
+
+func validateDirectCodingApplicationIntentModel(label, model string) error {
+	if model == "" || model != strings.TrimSpace(model) || !utf8.ValidString(model) ||
+		strings.ContainsRune(model, '\x00') {
+		return fmt.Errorf("application intent %s model must be one exact canonical name", label)
+	}
+	return nil
+}
+
 func resolveDirectCodingApplicationIntent(
 	runtime typedWorkerRuntime,
-	intentModel string,
+	models directCodingApplicationIntentModels,
 	authority assemblyline.ApplicationIntentInput,
 	identities []assemblyline.ArtifactIdentity,
 ) (assemblyline.ApplicationIntentResolution, error) {
 	var zero assemblyline.ApplicationIntentResolution
+	if err := models.validate(); err != nil {
+		return zero, err
+	}
 	inventoryInput := assemblyline.ApplicationRequirementInventoryInput{
 		UserRequest: authority.UserRequest,
 		Context:     authority.Context,
@@ -22,7 +47,7 @@ func resolveDirectCodingApplicationIntent(
 		return zero, err
 	}
 	inventory, err := runDirectCodingSemanticLeafCall(
-		runtime, intentModel, "application_requirement_inventory", inventoryJob, identities,
+		runtime, models.Requirements, "application_requirement_inventory", inventoryJob, identities,
 		func(raw string) (assemblyline.ApplicationRequirementInventory, error) {
 			return assemblyline.DecodeApplicationRequirementInventory(inventoryInput, raw)
 		},
@@ -57,7 +82,8 @@ func resolveDirectCodingApplicationIntent(
 		}
 		resolved, err := resolveDirectCodingApplicationRequirementCandidate(
 			runtime,
-			intentModel,
+			models.Requirements,
+			models.ResultRelation,
 			inventoryInput,
 			current,
 			requirements,
@@ -65,10 +91,6 @@ func resolveDirectCodingApplicationIntent(
 			identities,
 		)
 		if err != nil {
-			if isDirectCodingSemanticLeafRejection(err) {
-				processedCandidates = append(processedCandidates, currentCandidate)
-				continue
-			}
 			return zero, err
 		}
 		if resolved.Candidate == "" {
@@ -134,7 +156,7 @@ func resolveDirectCodingApplicationIntent(
 		return zero, err
 	}
 	productContext, err := runDirectCodingSemanticLeafCall(
-		runtime, intentModel, "application_product_context", productJob, identities,
+		runtime, models.Requirements, "application_product_context", productJob, identities,
 		func(raw string) (string, error) {
 			value, err := assemblyline.DecodeApplicationProductContextLeaf(productInput, raw)
 			if err != nil {

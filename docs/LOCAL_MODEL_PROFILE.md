@@ -36,7 +36,8 @@ split between bounded semantic extraction, deployment-semantics classification, 
 guidance, and source-node generation:
 
 ```dotenv
-OMNI_CODING_REQUIREMENTS_MODEL=phi4:14b
+OMNI_CODING_REQUIREMENTS_MODEL=qwen3.5:9b-q4_K_M
+OMNI_CODING_REQUIREMENT_RESULT_RELATION_MODEL=phi4:14b
 OMNI_CODING_SERVICE_DEPLOYMENT_INTENT_MODEL=phi4:14b
 OMNI_CODING_WORKLOAD_MODEL=qwen3.5:9b-q4_K_M
 OMNI_CODING_FRAGMENT_MODEL=qwen3.5:9b-q4_K_M
@@ -48,9 +49,10 @@ CODING_FRAGMENT_CONCURRENCY=1
 ```
 
 The complete exact station-key list is checked in to `default.env` and `.env.example`.
-Bounded coding-requirement stations use Phi-4 14B after the exact operation-family
-result-relation qualification rejected Qwen 3.5 9B for that semantic boundary. Other
-bounded semantic stations and optional target-tree naming use Qwen 3.5 9B. Frozen
+The requirement inventory, authorization-first sieve, product context, and stack
+constraint use Qwen 3.5 9B. Only the two candidate-bound derived-value and
+determining-relation presence questions use Phi-4 14B; the exact operation-family and
+named-property qualification rejected Qwen for that one semantic boundary. Frozen
 workload construction is entirely code-owned. The
 target-tree station consumes that same
 `OMNI_CODING_WORKLOAD_MODEL` route when a stack retains a genuine structural naming
@@ -76,14 +78,36 @@ projected into station state or retained as a second normalized result.
 
 ### Coding-requirement semantic qualification
 
-The requirements route must recognize a named result-bearing operation family over
-governed inputs as one parametric determining relation while continuing to reject an
-unnamed suitability policy. The env-gated qualification exercises the exact two-call
-production renderer, raw Ollama transport, full-response projection, decoders, and
-code-owned fold against two unrelated positive fixtures and one negative control:
+The split route is admitted end to end by two unrelated, explicit two-outcome
+requests. The test exercises the exact production multiline inventory, authorization,
+kind, cardinality, duplicate relation, result-presence, product-context, raw Ollama
+transport, and code-owned resolution. It asserts that only result-presence calls use
+Phi and every other requirement call uses Qwen:
 
 ```bash
-OMNIDEX_TEST_CODING_REQUIREMENTS_MODEL=phi4:14b \
+OMNIDEX_TEST_CODING_REQUIREMENTS_MODEL=qwen3.5:9b-q4_K_M \
+OMNIDEX_TEST_CODING_REQUIREMENT_RESULT_RELATION_MODEL=phi4:14b \
+OMNIDEX_TEST_OLLAMA_URL=http://127.0.0.1:11434 \
+OMNIDEX_TEST_OLLAMA_CONTEXT=8192 \
+go test ./internal/worker \
+  -run '^TestLiveRequirementInventoryAuthorizationQualification$' \
+  -count=1 -v
+```
+
+On 2026-08-31, both fixtures returned exact clean two-line inventories and retained
+exactly two authorized runtime requirements. The split qualification completed in
+118.47 seconds. Phi alone had failed both inventories with Markdown hard-break spaces
+and commentary and then failed literal candidate authorization; Qwen alone passed this
+route shape but is not admitted to the separately qualified result-presence station.
+
+The result-presence qualification exercises the exact two-call renderer and code-owned
+fold. It requires two unrelated operation families and two unrelated intrinsic-property
+measurements to resolve as `EXPLICIT_DERIVED_RESULT_RELATION`, while an unnamed
+suitability policy and an unnamed qualitative property remain
+`MISSING_DERIVED_RESULT_RELATION`:
+
+```bash
+OMNIDEX_TEST_CODING_REQUIREMENT_RESULT_RELATION_MODEL=phi4:14b \
 OMNIDEX_TEST_OLLAMA_URL=http://127.0.0.1:11434 \
 OMNIDEX_TEST_OLLAMA_CONTEXT=8192 \
 go test ./internal/worker \
@@ -91,10 +115,9 @@ go test ./internal/worker \
   -count=1 -v
 ```
 
-On 2026-08-31, Phi-4 14B classified both unrelated operation-family fixtures as
-`EXPLICIT_DERIVED_RESULT_RELATION` and the unnamed policy as
-`MISSING_DERIVED_RESULT_RELATION`. Qwen 3.5 9B returned the missing relation for all
-three under the identical clarified contract, so it is not admitted to this route.
+On 2026-08-31, Phi-4 14B passed all four unrelated positives and both negative controls.
+Qwen 3.5 9B had returned the missing relation for both operation-family
+positives under the identical bounded contract, so it is not admitted to this station.
 
 Qwen 3.5 9B is the practical source-fragment, repair, and other bounded-semantic choice because its
 Q4_K_M Ollama image is 6.6 GB, earlier bounded semantic qualification converged, and
@@ -134,8 +157,9 @@ planning. They are model-file sizes, not runner-allocation or latency measuremen
 
 | Route | Exact model | Model file |
 | --- | --- | ---: |
-| Coding requirement stations | `phi4:14b` | shared 9.1 GB image |
-| Other semantic leaf stations, target-tree naming, and repair guidance | `qwen3.5:9b-q4_K_M` | 6.6 GB |
+| Requirement inventory, sieve, product, and stack stations | `qwen3.5:9b-q4_K_M` | shared 6.6 GB image |
+| Requirement result-presence station | `phi4:14b` | shared 9.1 GB image |
+| Other semantic leaf stations, target-tree naming, and repair guidance | `qwen3.5:9b-q4_K_M` | shared 6.6 GB image |
 | Source generation and repair execution | `qwen3.5:9b-q4_K_M` | shared 6.6 GB image |
 | Service deployment semantics | `phi4:14b` | 9.1 GB |
 | Local embeddings | `nomic-embed-text` | 0.27 GB |
@@ -184,10 +208,9 @@ iteration-scoped, and rejected or speculative suggestions remain outside current
 authority. Product, surface, and deployment semantics run only after a leaf survives and
 only at their first concrete consumer. There is no completeness or accepted-set review
 call. The test rejects every unexpected work kind, while architecture tests require the
-retired workload-planner symbols to remain absent.
-A new live execution of that current test is required before claiming current route
-qualification; neither the historical measurements nor keyword matching can establish
-it.
+retired workload-planner symbols to remain absent. The current split-route live
+qualification is recorded above; this historical measurement supplies no authority to
+that current contract.
 
 ## Live deployment-semantics qualification
 

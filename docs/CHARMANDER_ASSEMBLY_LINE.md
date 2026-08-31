@@ -126,7 +126,9 @@ tree diff; see [TARGET_TREE_PLANNING.md](TARGET_TREE_PLANNING.md).
    named existing per-item grouping key completely determines
    group membership without requiring its origin or unasserted ordering. An expression,
    formula, predicate, or named operation supplied, configured, or selected by an actor is a
-   rule-bearing input. A bare quality claim or output described only as calculated, computed,
+   rule-bearing input. A named intrinsic or mechanically observable property such as a
+   dimension, length, or count is determined by its governed object and that property; the
+   candidate need not restate the property's measurement procedure. A bare quality claim or output described only as calculated, computed,
    evaluated, generated, or selected remains missing. Actions, controls, unchanged rendering,
    state transitions, artifact availability, and event occurrences are `NO_DERIVED_RESULT`
    when they assert only that behavior.

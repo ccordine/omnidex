@@ -29,6 +29,10 @@ func (s *directCodingSession) Assemble() (directCodingAssembly, error) {
 	if err != nil {
 		return directCodingAssembly{}, err
 	}
+	resultRelationModel, err := s.workerModel(station.CodingRequirementResultRelation)
+	if err != nil {
+		return directCodingAssembly{}, err
+	}
 	workerRuntime := directCodingWorkerRuntime(s)
 	applicationContext, err := assemblyline.BootstrapApplicationContext(
 		redacted,
@@ -37,7 +41,10 @@ func (s *directCodingSession) Assemble() (directCodingAssembly, error) {
 		return directCodingAssembly{}, err
 	}
 	interpretation, err := runDirectCodingApplicationInterpreter(
-		workerRuntime, requirementModel,
+		workerRuntime,
+		directCodingApplicationIntentModels{
+			Requirements: requirementModel, ResultRelation: resultRelationModel,
+		},
 		func() (string, error) { return s.workerModel(station.CodingSurface) },
 		func() (string, error) { return s.workerModel(station.CodingArtifactHandling) },
 		requestAuthority, applicationContext, identities,

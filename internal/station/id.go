@@ -7,25 +7,26 @@ import "fmt"
 type ID string
 
 const (
-	ContextRelevance                              ID = "context_relevance"
-	ContextMinification                           ID = "context_minification"
-	ConversationObjectiveKind                     ID = "conversation_objective_kind"
-	ConversationResponse                          ID = "conversation_response"
-	RoleplayCanonExtraction                       ID = "roleplay_canon_extraction"
-	RoleplayOngoingAction                         ID = "roleplay_ongoing_action"
-	GroundedAnswer                                ID = "grounded_answer"
-	DatabaseSchemaSelection                       ID = "database_schema_selection"
-	DatabaseQueryIntent                           ID = "database_query_intent"
-	DatabaseJoinPathSelection                     ID = "database_join_path_selection"
-	WebRelevance                                  ID = "web_relevance"
-	CodingSurface                                 ID = "coding_surface"
-	CodingRequirements                            ID = "coding_requirements"
-	CodingProjectStackConstraint                  ID = "coding_project_stack_constraint"
-	CodingArtifactHandling                        ID = "coding_artifact_handling"
-	CodingCapabilityRelation                      ID = "coding_capability_relation"
-	CodingFragment                                ID = "coding_fragment"
-	CodingFragmentRepairGuidance                  ID = "coding_fragment_repair_guidance"
-	CodingFragmentCorrection                      ID = "coding_fragment_correction"
+	ContextRelevance                ID = "context_relevance"
+	ContextMinification             ID = "context_minification"
+	ConversationObjectiveKind       ID = "conversation_objective_kind"
+	ConversationResponse            ID = "conversation_response"
+	RoleplayCanonExtraction         ID = "roleplay_canon_extraction"
+	RoleplayOngoingAction           ID = "roleplay_ongoing_action"
+	GroundedAnswer                  ID = "grounded_answer"
+	DatabaseSchemaSelection         ID = "database_schema_selection"
+	DatabaseQueryIntent             ID = "database_query_intent"
+	DatabaseJoinPathSelection       ID = "database_join_path_selection"
+	WebRelevance                    ID = "web_relevance"
+	CodingSurface                   ID = "coding_surface"
+	CodingRequirementResultRelation ID = "coding_requirement_result_relation"
+	CodingRequirements              ID = "coding_requirements"
+	CodingProjectStackConstraint    ID = "coding_project_stack_constraint"
+	CodingArtifactHandling          ID = "coding_artifact_handling"
+	CodingCapabilityRelation        ID = "coding_capability_relation"
+	CodingFragment                  ID = "coding_fragment"
+	CodingFragmentRepairGuidance    ID = "coding_fragment_repair_guidance"
+	CodingFragmentCorrection        ID = "coding_fragment_correction"
 )
 
 var registered = [...]ID{
@@ -41,6 +42,7 @@ var registered = [...]ID{
 	DatabaseJoinPathSelection,
 	WebRelevance,
 	CodingSurface,
+	CodingRequirementResultRelation,
 	CodingRequirements,
 	CodingProjectStackConstraint,
 	CodingArtifactHandling,

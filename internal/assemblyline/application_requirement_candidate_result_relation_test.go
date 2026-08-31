@@ -5,11 +5,13 @@ import (
 	"testing"
 )
 
-func TestApplicationRequirementDeterminingRelationPromptDefinesOperationFamilies(t *testing.T) {
+func TestApplicationRequirementDeterminingRelationPromptDefinesParametricRules(t *testing.T) {
 	t.Parallel()
 	for _, candidate := range []string{
 		"The finished software performs unit-conversion operations on supplied measurements.",
 		"The finished software performs statistical aggregation operations on supplied observations.",
+		"The finished software reports the dimensions of each transformed image.",
+		"The finished software reports the item count of each supplied batch.",
 	} {
 		candidate := candidate
 		t.Run(candidate, func(t *testing.T) {
@@ -39,7 +41,9 @@ func TestApplicationRequirementDeterminingRelationPromptDefinesOperationFamilies
 				candidate,
 				"family of result-bearing operations over governed inputs",
 				"The family name and governed inputs are sufficient by themselves",
-				"Do not apply this ABSENT rule to a named operation family",
+				"named intrinsic or mechanically observable property",
+				"Named dimensions, lengths, counts",
+				"Do not apply this ABSENT rule to a named operation family over governed inputs or a named intrinsic property",
 			} {
 				if !strings.Contains(prompt, required) {
 					t.Fatalf("prompt does not contain required operation-family contract %q", required)

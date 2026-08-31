@@ -343,6 +343,8 @@ machine passes its executable gates:
    independently computable determining relation, or omits that relation. A named existing per-item grouping
    key completely determines group membership; its origin and unasserted ordering are not missing. An expression,
    formula, predicate, or named operation supplied, configured, or selected by an actor is a rule-bearing input.
+   A named intrinsic or mechanically observable property such as a dimension, length, or count is determined by
+   its governed object and that property; the candidate need not restate the property's measurement procedure.
    When an actor performs a calculation, its chosen operation and operands are observable runtime inputs; neither
    form must be fixed before runtime. A named family of result-bearing operations over governed inputs is one
    parametric determining relation; its concrete family member and operand values may be selected or supplied at

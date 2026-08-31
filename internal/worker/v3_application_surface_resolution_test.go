@@ -58,7 +58,10 @@ func TestApplicationInterpreterResolvesSurfaceBeforeSpecification(t *testing.T) 
 				Execute: surfaceResolutionFixtureExecutor(t, fixture),
 			}
 			interpretation, err := runDirectCodingApplicationInterpreter(
-				runtime, "intent-model",
+				runtime,
+				directCodingApplicationIntentModels{
+					Requirements: "intent-model", ResultRelation: "result-model",
+				},
 				func() (string, error) { return "surface-model", nil },
 				func() (string, error) { return "artifact-model", nil },
 				authority, applicationContext, nil,

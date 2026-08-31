@@ -23,6 +23,7 @@ type directCodingApplicationRequirementCandidateResolution struct {
 func resolveDirectCodingApplicationRequirementCandidate(
 	runtime typedWorkerRuntime,
 	intentModel string,
+	resultRelationModel string,
 	authority assemblyline.ApplicationRequirementInventoryInput,
 	entry directCodingApplicationRequirementCandidateQueueEntry,
 	acceptedRequirements []assemblyline.ApplicationIntentCandidateRequirement,
@@ -194,7 +195,7 @@ func resolveDirectCodingApplicationRequirementCandidate(
 
 		resultRelation, err := classifyDirectCodingApplicationRequirementCandidateResultRelation(
 			runtime,
-			intentModel,
+			resultRelationModel,
 			candidate,
 			kind,
 			cardinality,

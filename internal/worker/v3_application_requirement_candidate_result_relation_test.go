@@ -41,6 +41,18 @@ func TestDirectCodingResultRelationUsesSecondQuestionOnlyForDerivedValues(t *tes
 			wantCalls: 2,
 		},
 		{
+			name:      "spatial property measurement",
+			candidate: "The finished software reports the dimensions of each transformed image.",
+			relation:  assemblyline.ApplicationRequirementExplicitResultRelation,
+			wantCalls: 2,
+		},
+		{
+			name:      "collection property measurement",
+			candidate: "The finished software reports the item count of each supplied batch.",
+			relation:  assemblyline.ApplicationRequirementExplicitResultRelation,
+			wantCalls: 2,
+		},
+		{
 			name:      "status control",
 			candidate: "The finished software shows one status control.",
 			relation:  assemblyline.ApplicationRequirementNoDerivedResult,
@@ -55,10 +67,16 @@ func TestDirectCodingResultRelationUsesSecondQuestionOnlyForDerivedValues(t *tes
 			calls := 0
 			runtime := typedWorkerRuntime{
 				Context: context.Background(), MaxAttempts: 1,
-				Execute: func(job assemblyline.PortableJob, _ string) (assemblyline.PortableResult, error) {
+				Execute: func(job assemblyline.PortableJob, requestedModel string) (assemblyline.PortableResult, error) {
 					calls++
 					if job.Kind != assemblyline.WorkApplicationRequirementCandidateResultRelation {
 						return assemblyline.PortableResult{}, fmt.Errorf("unexpected work kind %q", job.Kind)
+					}
+					if requestedModel != "result-model" {
+						return assemblyline.PortableResult{}, fmt.Errorf(
+							"result relation model=%q",
+							requestedModel,
+						)
 					}
 					var input assemblyline.ApplicationRequirementCandidateResultPresenceInput
 					if err := json.Unmarshal(job.Payload, &input); err != nil {
@@ -72,7 +90,7 @@ func TestDirectCodingResultRelationUsesSecondQuestionOnlyForDerivedValues(t *tes
 				},
 			}
 			result, err := classifyDirectCodingApplicationRequirementCandidateResultRelation(
-				runtime, "intent-model", fixture.candidate,
+				runtime, "result-model", fixture.candidate,
 				authority.Kind, authority.Cardinality, nil,
 			)
 			if err != nil {
@@ -100,8 +118,20 @@ func TestDirectCodingUnderdeterminedResultIsGroundedThenDiscarded(t *testing.T) 
 	var calls []assemblyline.WorkKind
 	runtime := typedWorkerRuntime{
 		Context: context.Background(), MaxAttempts: 1,
-		Execute: func(job assemblyline.PortableJob, _ string) (assemblyline.PortableResult, error) {
+		Execute: func(job assemblyline.PortableJob, requestedModel string) (assemblyline.PortableResult, error) {
 			calls = append(calls, job.Kind)
+			wantModel := "intent-model"
+			if job.Kind == assemblyline.WorkApplicationRequirementCandidateResultRelation {
+				wantModel = "result-model"
+			}
+			if requestedModel != wantModel {
+				return assemblyline.PortableResult{}, fmt.Errorf(
+					"work kind %s used model %q, want %q",
+					job.Kind,
+					requestedModel,
+					wantModel,
+				)
+			}
 			response := ""
 			switch job.Kind {
 			case assemblyline.WorkApplicationRequirementCandidateAuthorization:
@@ -135,7 +165,7 @@ func TestDirectCodingUnderdeterminedResultIsGroundedThenDiscarded(t *testing.T) 
 		},
 	}
 	resolved, err := resolveDirectCodingApplicationRequirementCandidate(
-		runtime, "intent-model", authority, entry, nil, nil, nil,
+		runtime, "intent-model", "result-model", authority, entry, nil, nil, nil,
 	)
 	if err != nil {
 		t.Fatal(err)

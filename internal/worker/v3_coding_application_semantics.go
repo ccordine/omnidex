@@ -96,7 +96,7 @@ func (interpretation directCodingApplicationInterpretation) validateForAuthority
 
 func runDirectCodingApplicationInterpreter(
 	runtime typedWorkerRuntime,
-	intentModel string,
+	intentModels directCodingApplicationIntentModels,
 	surfaceModel func() (string, error),
 	artifactModel func() (string, error),
 	authority directCodingApplicationRequestAuthority,
@@ -106,7 +106,7 @@ func runDirectCodingApplicationInterpreter(
 	var zero directCodingApplicationInterpretation
 
 	resolution, err := resolveDirectCodingApplicationIntent(
-		runtime, intentModel,
+		runtime, intentModels,
 		assemblyline.ApplicationIntentInput{
 			UserRequest: authority.modelRequest, Context: applicationContext,
 		},

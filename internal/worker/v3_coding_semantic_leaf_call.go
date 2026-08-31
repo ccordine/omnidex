@@ -1,7 +1,6 @@
 package worker
 
 import (
-	"errors"
 	"fmt"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
@@ -20,11 +19,6 @@ func (rejection *directCodingSemanticLeafRejection) Error() string {
 
 func (rejection *directCodingSemanticLeafRejection) Unwrap() error {
 	return rejection.err
-}
-
-func isDirectCodingSemanticLeafRejection(err error) bool {
-	var rejection *directCodingSemanticLeafRejection
-	return errors.As(err, &rejection)
 }
 
 // runDirectCodingSemanticLeafCall resolves one raw semantic value. The

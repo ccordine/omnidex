@@ -26,9 +26,6 @@ func classifyArtifactHandling(
 			},
 		)
 		if err != nil {
-			if isDirectCodingSemanticLeafRejection(err) {
-				continue
-			}
 			return nil, err
 		}
 		directive := assemblyline.ArtifactReference
