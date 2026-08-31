@@ -2,6 +2,8 @@ package worker
 
 import (
 	"fmt"
+
+	workspacefacts "github.com/gryph/omnidex/internal/workspace"
 )
 
 func (s *directCodingSession) ApplyAndVerify(
@@ -10,25 +12,16 @@ func (s *directCodingSession) ApplyAndVerify(
 	if s == nil || s.runtime == nil || s.runtime.ctx == nil || prepared == nil {
 		return fmt.Errorf("apply direct-coding workspace mutation requires one prepared transaction")
 	}
-	if prepared.stage == nil {
+	if prepared.reconciliation == nil {
 		return fmt.Errorf("apply direct-coding workspace mutation requires one prepared transaction")
 	}
-	defer func() {
-		if err := prepared.Cleanup(); err != nil && s.runtime.svc.logger != nil {
-			s.runtime.svc.logger.Printf("workspace mutation staging cleanup failed after terminal apply state: %v", err)
-		}
-	}()
-	plan := prepared.stage.Plan()
-	result, err := prepared.stage.ApplyVerified(s.runtime.ctx)
+	result, err := prepared.reconciliation.ApplyVerified(s.runtime.ctx)
 	if err != nil {
 		return err
 	}
-	current := result.Snapshot
-	if err := plan.VerifyExpected(current); err != nil {
-		return err
-	}
-	if err := current.VerifyExact(s.runtime.ctx); err != nil {
-		return fmt.Errorf("verify stable direct-coding workspace post-state: %w", err)
+	prepared.result = result
+	for _, warning := range result.Warnings {
+		s.runtime.svc.logf("workspace mutation cleanup warning: %s", warning)
 	}
 	s.recordPreparedWorkspaceMutation(prepared)
 	return nil
@@ -40,16 +33,18 @@ func (s *directCodingSession) recordPreparedWorkspaceMutation(
 	if prepared.recorded {
 		return
 	}
-	for _, transition := range prepared.stage.Plan().Files {
+	for _, change := range prepared.result.Changes {
 		operation := workspaceFileReplace
-		switch {
-		case !transition.Source.Present:
+		switch change.Kind {
+		case workspacefacts.ChangeCreate:
 			operation = workspaceFileCreate
-		case !transition.Expected.Present:
+		case workspacefacts.ChangeDelete:
 			operation = workspaceFileDelete
+		case workspacefacts.ChangeMove:
+			operation = workspaceFileMove
 		}
 		s.mutationJournal = append(s.mutationJournal, directCodingMutationJournalEntry{
-			Path: transition.Path, Operation: operation,
+			Path: change.Path, Operation: operation,
 		})
 	}
 	prepared.recorded = true

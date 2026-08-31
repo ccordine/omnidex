@@ -65,7 +65,7 @@ func directCodingTargetTreePathsAvailable(
 		return false, fmt.Errorf("mechanical target-tree grammar returned no paths")
 	}
 	for index, candidate := range paths {
-		normalized, err := normalizeDirectCodingPath(candidate)
+		normalized, err := requireExactDirectCodingPath(candidate)
 		if err != nil {
 			return false, fmt.Errorf(
 				"mechanical target-tree path %d is not normalized: %w", index, err,

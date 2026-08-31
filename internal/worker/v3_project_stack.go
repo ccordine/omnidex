@@ -12,10 +12,8 @@ import (
 type directCodingProjectStack struct {
 	ID                           string
 	SupportedSurfaces            []assemblyline.ApplicationSurface
-	DefaultSurfaces              []assemblyline.ApplicationSurface
 	ConstraintDescription        string
 	TreeDescription              string
-	DefaultVersionProfileID      string
 	ArtifactAdapterIDs           []string
 	TargetTreeAdapterIDs         []string
 	TargetTreeConstraints        assemblyline.TargetTreeConstraints
@@ -33,7 +31,6 @@ type directCodingProjectStack struct {
 		assemblyline.FrozenApplicationWorkload,
 		assemblyline.SourceBlueprint,
 	) error
-	ValidateAssembly func(assembly directCodingAssembly) error
 	DeriveRelations  func(
 		directCodingProgram,
 		directCodingAssembly,
@@ -52,6 +49,7 @@ type directCodingProjectCompiler func(
 	specification assemblyline.ApplicationSpecification,
 	workload assemblyline.FrozenApplicationWorkload,
 	capabilities directCodingCapabilityGraph,
+	profile directCodingProjectVersionProfile,
 	targetTree assemblyline.TargetTree,
 	coverage assemblyline.ApplicationFileCoveragePlan,
 ) (assemblyline.SourceBlueprint, []directCodingFileTask, error)
@@ -64,9 +62,7 @@ func registeredDirectCodingProjectStacks() []directCodingProjectStack {
 	return []directCodingProjectStack{
 		{
 			ID:                      genericTypeScriptBrowserAdapter,
-			DefaultVersionProfileID: typeScriptBrowserVersionProfileV1,
 			SupportedSurfaces:       []assemblyline.ApplicationSurface{assemblyline.ApplicationSurfaceBrowser},
-			DefaultSurfaces:         []assemblyline.ApplicationSurface{assemblyline.ApplicationSurfaceBrowser},
 			ConstraintDescription:   "TypeScript with React for a browser application",
 			TreeDescription:         "exactly one TypeScript React workload source (.tsx) file",
 			ArtifactAdapterIDs: []string{
@@ -84,14 +80,11 @@ func registeredDirectCodingProjectStacks() []directCodingProjectStack {
 			CompileSource:             compileGenericTypeScriptBrowserBlueprint,
 			ValidateBlueprint:         assemblyline.ValidateTypeScriptSourceBlueprint,
 			ValidateSourceOwnership:   validateDirectCodingSingleImplementationSourceOwnership,
-			ValidateAssembly:          validateTypeScriptBrowserAssembly,
 			NewSourceGenerator:        newDirectCodingTypeScriptSourceGenerator,
 		},
 		{
 			ID:                      genericGoCommandLineAdapter,
-			DefaultVersionProfileID: goCommandLineVersionProfileV1,
 			SupportedSurfaces:       []assemblyline.ApplicationSurface{assemblyline.ApplicationSurfaceCommandLine},
-			DefaultSurfaces:         []assemblyline.ApplicationSurface{assemblyline.ApplicationSurfaceCommandLine},
 			ConstraintDescription:   "Go with a module manifest for a command-line application",
 			TreeDescription:         "exactly one root-package Go workload source (.go) file",
 			ArtifactAdapterIDs:      []string{"go", "go_module", "plain_text"},
@@ -106,12 +99,10 @@ func registeredDirectCodingProjectStacks() []directCodingProjectStack {
 			CompileSource:            compileGenericGoCommandLineBlueprint,
 			ValidateBlueprint:        assemblyline.ValidateGoSourceBlueprint,
 			ValidateSourceOwnership:  validateDirectCodingSingleImplementationSourceOwnership,
-			ValidateAssembly:         validateGoCommandLineAssembly,
 			NewSourceGenerator:       newDirectCodingGoSourceGenerator,
 		},
 		{
 			ID:                      genericJavaScriptCommandLineAdapter,
-			DefaultVersionProfileID: javaScriptCommandLineVersionProfileV1,
 			SupportedSurfaces:       []assemblyline.ApplicationSurface{assemblyline.ApplicationSurfaceCommandLine},
 			ConstraintDescription:   "Modern ECMAScript modules on Node.js for a command-line application",
 			TreeDescription:         "exactly one root ECMAScript workload module (.mjs)",
@@ -125,12 +116,10 @@ func registeredDirectCodingProjectStacks() []directCodingProjectStack {
 			CompileSource:            compileGenericJavaScriptCommandLineBlueprint,
 			ValidateBlueprint:        assemblyline.ValidateJavaScriptSourceBlueprint,
 			ValidateSourceOwnership:  validateDirectCodingSingleImplementationSourceOwnership,
-			ValidateAssembly:         validateJavaScriptCommandLineAssembly,
 			NewSourceGenerator:       newDirectCodingJavaScriptSourceGenerator,
 		},
 		{
 			ID:                      genericRustCommandLineAdapter,
-			DefaultVersionProfileID: rustCommandLineVersionProfileV1,
 			SupportedSurfaces:       []assemblyline.ApplicationSurface{assemblyline.ApplicationSurfaceCommandLine},
 			ConstraintDescription:   "Rust with Cargo for a command-line application",
 			TreeDescription:         "exactly one snake_case Rust workload basename under a directory named src",
@@ -146,12 +135,10 @@ func registeredDirectCodingProjectStacks() []directCodingProjectStack {
 			CompileSource:            compileGenericRustCommandLineBlueprint,
 			ValidateBlueprint:        assemblyline.ValidateRustSourceBlueprint,
 			ValidateSourceOwnership:  validateDirectCodingSingleImplementationSourceOwnership,
-			ValidateAssembly:         validateRustCommandLineAssembly,
 			NewSourceGenerator:       newDirectCodingRustSourceGenerator,
 		},
 		{
 			ID:                      genericJavaCommandLineAdapter,
-			DefaultVersionProfileID: javaCommandLineVersionProfileV1,
 			SupportedSurfaces:       []assemblyline.ApplicationSurface{assemblyline.ApplicationSurfaceCommandLine},
 			ConstraintDescription:   "Java for a command-line application",
 			TreeDescription:         "exactly one root Java workload class (.java)",
@@ -165,7 +152,6 @@ func registeredDirectCodingProjectStacks() []directCodingProjectStack {
 			CompileSource:            compileGenericJavaCommandLineBlueprint,
 			ValidateBlueprint:        assemblyline.ValidateJavaSourceBlueprint,
 			ValidateSourceOwnership:  validateDirectCodingSingleImplementationSourceOwnership,
-			ValidateAssembly:         validateJavaCommandLineAssembly,
 			NewSourceGenerator:       newDirectCodingJavaSourceGenerator,
 		},
 	}

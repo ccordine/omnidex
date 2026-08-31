@@ -137,6 +137,6 @@ const scrumCardSelectionSQL = `
 	SELECT id,project_id,title,description,column_name,checklist,ref_files,
 	       card_ticket,card_prompt,tags,test_criteria,flow_metrics,
 	       job_id,play_state,queue_order,board_order,
-	       sync_job_id,step_context_cursor,channel_message_count,channel_content_bytes,
+	       channel_message_count,channel_content_bytes,
 	       created_at,updated_at
 	FROM scrum_cards WHERE project_id=$1`

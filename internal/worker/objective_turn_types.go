@@ -12,7 +12,6 @@ import (
 
 	"github.com/gryph/omnidex/internal/assemblyline"
 	"github.com/gryph/omnidex/internal/contextcompiler"
-	"github.com/gryph/omnidex/internal/datasource"
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/queue"
 	"github.com/gryph/omnidex/internal/roleplay"
@@ -306,19 +305,6 @@ func newTurnAuthority(job model.Job) (turnAuthority, error) {
 	}
 	if err := metadata.ChannelID.Validate(); err != nil {
 		return turnAuthority{}, fmt.Errorf("conversation turn channel authority: %w", err)
-	}
-	if metadata.DataSourceID != "" {
-		if err := metadata.DataSourceID.Validate(); err != nil {
-			return turnAuthority{}, fmt.Errorf("conversation turn data-source authority: %w", err)
-		}
-	}
-	if metadata.DelegatedDataAuthorityID != "" {
-		if metadata.DataSourceID == "" {
-			return turnAuthority{}, fmt.Errorf("conversation turn delegated authority requires a data source")
-		}
-		if err := datasource.ValidateDelegatedAuthorityID(metadata.DelegatedDataAuthorityID); err != nil {
-			return turnAuthority{}, fmt.Errorf("conversation turn delegated data authority: %w", err)
-		}
 	}
 	switch metadata.ChannelMode {
 	case model.ChannelModeAssistant:

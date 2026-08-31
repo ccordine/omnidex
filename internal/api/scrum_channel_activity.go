@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/gryph/omnidex/internal/model"
 )
 
 type ChannelActivity struct {
@@ -125,65 +124,4 @@ func trimActivityDetail(detail string) string {
 		return detail
 	}
 	return detail[:max-3] + "..."
-}
-
-func parseStepEventContext(value string) (eventType, summary string) {
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return "", ""
-	}
-	parts := strings.Fields(value)
-	for i, part := range parts {
-		if strings.HasPrefix(part, "event=") {
-			eventType = strings.TrimPrefix(part, "event=")
-			if i+1 < len(parts) {
-				summary = strings.Join(parts[i+1:], " ")
-			}
-			return eventType, summary
-		}
-	}
-	return "", value
-}
-
-func stepContextToActivity(ctx model.StepContext) []ScrumChatMessage {
-	key := strings.TrimSpace(ctx.Key)
-	value := strings.TrimSpace(ctx.Value)
-	if value == "" {
-		return nil
-	}
-	switch key {
-	case "event":
-		eventType, summary := parseStepEventContext(value)
-		eventType = strings.ToLower(strings.TrimSpace(eventType))
-		switch {
-		case isNoisyStepEvent(eventType):
-			return nil
-		default:
-			if summary == "" {
-				return nil
-			}
-			return []ScrumChatMessage{activityMessage("tool", ChannelActivity{
-				Activity: "event",
-				Title:    humanizeStepEventType(eventType),
-				Status:   "completed",
-				Detail:   summary,
-			})}
-		}
-	case "tool_stdout":
-		if isLowSignalToolOutput(value) {
-			return nil
-		}
-		title := "stdout"
-		if looksLikeDiff(value) {
-			return []ScrumChatMessage{fileChangeActivity(nil, "completed", "Command produced diff output", value)}
-		}
-		return []ScrumChatMessage{outputActivity(title, value)}
-	case "tool_stderr":
-		if isLowSignalToolOutput(value) {
-			return nil
-		}
-		return []ScrumChatMessage{outputActivity("stderr", value)}
-	default:
-		return nil
-	}
 }

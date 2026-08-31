@@ -36,12 +36,8 @@ func directCodingAssemblyFromProgram(program directCodingProgram) (directCodingA
 	// manifests, generated application composition, and adapter tests are
 	// deterministic adapter output, not omissions from the model tree.
 	assembly := directCodingAssembly{
-		VersionProfileID: program.VersionProfileID,
-		Files:            files,
-		DeletePaths:      deletePaths,
-	}
-	if err := assembly.normalize(); err != nil {
-		return directCodingAssembly{}, err
+		Files:       files,
+		DeletePaths: deletePaths,
 	}
 	return assembly, nil
 }

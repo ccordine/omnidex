@@ -131,7 +131,6 @@ func (r *Repository) UpdateProjectAtRevision(
 	if err != nil {
 		return model.Project{}, err
 	}
-	lockedLocation := current.Location
 	if !current.UpdatedAt.Equal(expectedUpdatedAt) {
 		return model.Project{}, fmt.Errorf("%w: project %d changed; reload server state and retry", ErrProjectVersionConflict, id)
 	}
@@ -158,11 +157,6 @@ func (r *Repository) UpdateProjectAtRevision(
 	current.Description = SanitizeUTF8Text(current.Description)
 	current.ProjectState = SanitizeUTF8Text(current.ProjectState)
 	current.Settings = SanitizeUTF8Bytes(current.Settings)
-	if current.Location != lockedLocation {
-		if err := requireProjectLocationWithoutActiveWorkTx(ctx, tx, id); err != nil {
-			return model.Project{}, err
-		}
-	}
 	updated, err := scanProject(tx.QueryRow(ctx, `
 		UPDATE projects SET name=$2,location=$3,description=$4,
 		 project_state=$5,settings=$6::jsonb,
@@ -206,7 +200,7 @@ func (r *Repository) DeleteProjectAtRevision(ctx context.Context, id int64, expe
 	var activeCardID string
 	err = tx.QueryRow(ctx, `
 		SELECT id FROM scrum_cards
-		WHERE project_id=$1 AND (play_state IN ('running','queued') OR sync_job_id<>'')
+		WHERE project_id=$1 AND play_state IN ('running','queued')
 		ORDER BY id LIMIT 1 FOR SHARE
 	`, id).Scan(&activeCardID)
 	if err == nil {

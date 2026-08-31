@@ -12,13 +12,11 @@ import (
 )
 
 type ObjectiveContinuityAuthority struct {
-	Scope  *model.MemoryScope
 	Replan *assemblyline.ObjectiveReplanAuthority
 }
 
 // ObjectiveContinuityAuthorities loads the current generation's exact replan
-// feedback and the job's immutable channel/project scope. No scope is inferred
-// for jobs that do not carry a channel turn binding.
+// feedback and verifies any immutable channel-turn binding.
 func (r *Repository) ObjectiveContinuityAuthorities(
 	ctx context.Context,
 	job model.Job,
@@ -103,27 +101,22 @@ func (r *Repository) ObjectiveContinuityAuthorities(
 		}
 	}
 	if providedExists {
-		var scope model.MemoryScope
 		var content string
 		if err := tx.QueryRow(ctx, `
-			SELECT channel.project_id,message.content
+			SELECT message.content
 			FROM ai_channels AS channel
 			JOIN ai_channel_messages AS message
 			  ON message.channel_id=channel.id
-			WHERE channel.id=$1 AND message.id=$2 AND message.role='user'
+			WHERE channel.id=$1 AND channel.scope='user'
+			  AND message.id=$2 AND message.role='user'
 		`, providedBinding.ChannelID, providedBinding.UserMessageID).Scan(
-			&scope.ProjectID, &content,
+			&content,
 		); err != nil {
 			return ObjectiveContinuityAuthority{}, err
 		}
-		scope.ChannelID = model.ChannelID(providedBinding.ChannelID)
-		if err := scope.Validate(); err != nil {
-			return ObjectiveContinuityAuthority{}, err
+		if content != stored.Instruction {
+			return ObjectiveContinuityAuthority{}, fmt.Errorf("objective continuity does not match exact channel turn authority")
 		}
-		if scope.ProjectID != providedBinding.ProjectID || content != stored.Instruction {
-			return ObjectiveContinuityAuthority{}, fmt.Errorf("objective continuity scope does not match exact channel turn authority")
-		}
-		authority.Scope = &scope
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return ObjectiveContinuityAuthority{}, err

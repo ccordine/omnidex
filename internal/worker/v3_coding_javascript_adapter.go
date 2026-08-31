@@ -3,8 +3,6 @@ package worker
 import (
 	"encoding/json"
 	"fmt"
-	"path"
-	"strings"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
 )
@@ -16,24 +14,10 @@ func compileGenericJavaScriptCommandLineBlueprint(
 	specification assemblyline.ApplicationSpecification,
 	workload assemblyline.FrozenApplicationWorkload,
 	capabilities directCodingCapabilityGraph,
+	profile directCodingProjectVersionProfile,
 	target assemblyline.TargetTree,
 	coverage assemblyline.ApplicationFileCoveragePlan,
 ) (assemblyline.SourceBlueprint, []directCodingFileTask, error) {
-	if err := specification.Validate(); err != nil {
-		return assemblyline.SourceBlueprint{}, nil, err
-	}
-	if specification.Surface != assemblyline.ApplicationSurfaceCommandLine {
-		return assemblyline.SourceBlueprint{}, nil, fmt.Errorf(
-			"generic JavaScript command-line stack does not support surface %s", specification.Surface,
-		)
-	}
-	profile, err := directCodingVersionProfileForTargetTree(target)
-	if err != nil {
-		return assemblyline.SourceBlueprint{}, nil, err
-	}
-	if err := validateDirectCodingCapabilityGraph(specification.Requirements, capabilities); err != nil {
-		return assemblyline.SourceBlueprint{}, nil, err
-	}
 	contexts, err := directCodingApplicationTaskContexts(workload)
 	if err != nil {
 		return assemblyline.SourceBlueprint{}, nil, err
@@ -73,31 +57,4 @@ func genericJavaScriptCommandLineStaticFiles(
 	return []directCodingFileTask{
 		{Path: "package.json", Content: append(encoded, '\n'), Mode: 0o644},
 	}, nil
-}
-
-func validateJavaScriptCommandLineAssembly(assembly directCodingAssembly) error {
-	files := make(map[string]string, len(assembly.Files))
-	for _, file := range assembly.Files {
-		files[file.Path] = string(file.Content)
-	}
-	for _, required := range []string{"package.json", "runtime.mjs", "main.mjs"} {
-		if _, exists := files[required]; !exists {
-			return fmt.Errorf("JavaScript command-line assembly lacks code-owned artifact %s", required)
-		}
-	}
-	var manifest struct {
-		Type string `json:"type"`
-	}
-	if err := json.Unmarshal([]byte(files["package.json"]), &manifest); err != nil {
-		return fmt.Errorf("decode JavaScript command-line manifest: %w", err)
-	}
-	if manifest.Type != "module" {
-		return fmt.Errorf("JavaScript command-line manifest must select ECMAScript modules")
-	}
-	for artifactPath := range files {
-		if strings.HasSuffix(artifactPath, ".mjs") && path.Dir(artifactPath) != "." {
-			return fmt.Errorf("JavaScript command-line source %s must belong to the root module", artifactPath)
-		}
-	}
-	return nil
 }

@@ -12,6 +12,7 @@ import (
 const (
 	lifecycleOperationCommandSchema = "omnidex.lifecycle-operation-command.v1"
 	maxLifecycleOutputBytes         = 4 << 20
+	maxLifecycleContextKeyBytes     = 512
 	maxObjectiveCompletionEvidence  = 32
 	maxObjectiveEvidenceSetBytes    = 128 << 10
 )
@@ -58,14 +59,8 @@ func normalizeCompleteStepCommand(command CompleteStepCommand) (CompleteStepComm
 		return CompleteStepCommand{}, err
 	}
 	command.ContextKey = strings.TrimSpace(command.ContextKey)
-	if err := validateLifecycleText("step context key", command.ContextKey, maxStepContextKeyBytes, true); err != nil {
+	if err := validateLifecycleText("step context key", command.ContextKey, maxLifecycleContextKeyBytes, true); err != nil {
 		return CompleteStepCommand{}, err
-	}
-	if err := validateLifecycleText("step context value", command.ContextValue, maxStepContextValueBytes, true); err != nil {
-		return CompleteStepCommand{}, err
-	}
-	if command.ContextKey == "" && command.ContextValue != "" {
-		return CompleteStepCommand{}, fmt.Errorf("step context value requires a nonempty context key")
 	}
 	if (len(command.RoleplayResponses) != 0 || command.RoleplayUserCanon != nil ||
 		command.RoleplayUserOngoingAction != nil) &&

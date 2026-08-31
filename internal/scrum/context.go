@@ -120,50 +120,8 @@ func canonicalLifecycleOperationID(value string) bool {
 	return true
 }
 
-// DecodeStoredJobMetadata accepts the one code-owned telemetry binding added
-// during the job transaction, then decodes the remaining Scrum authority with
-// the same closed schema used at enqueue.
 func DecodeStoredJobMetadata(raw json.RawMessage) (JobMetadata, error) {
-	if err := exactjson.ValidateUniqueObject(raw, "stored Scrum job metadata"); err != nil {
-		return JobMetadata{}, err
-	}
-	var fields map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &fields); err != nil {
-		return JobMetadata{}, fmt.Errorf("decode stored Scrum job metadata fields: %w", err)
-	}
-	rawRunID, present := fields["telemetry_run_id"]
-	if !present {
-		return JobMetadata{}, fmt.Errorf("stored Scrum job metadata requires telemetry_run_id")
-	}
-	var runID string
-	if err := json.Unmarshal(rawRunID, &runID); err != nil || !canonicalTelemetryRunID(runID) {
-		return JobMetadata{}, fmt.Errorf("stored Scrum job metadata telemetry_run_id is not canonical")
-	}
-	delete(fields, "telemetry_run_id")
-	semantic, err := json.Marshal(fields)
-	if err != nil {
-		return JobMetadata{}, fmt.Errorf("encode stored Scrum semantic metadata: %w", err)
-	}
-	return DecodeJobMetadata(semantic)
-}
-
-func canonicalTelemetryRunID(value string) bool {
-	if len(value) != 36 {
-		return false
-	}
-	for index := range value {
-		if index == 8 || index == 13 || index == 18 || index == 23 {
-			if value[index] != '-' {
-				return false
-			}
-			continue
-		}
-		if !((value[index] >= '0' && value[index] <= '9') ||
-			(value[index] >= 'a' && value[index] <= 'f')) {
-			return false
-		}
-	}
-	return true
+	return DecodeJobMetadata(raw)
 }
 
 type ChecklistItem struct {

@@ -13,7 +13,13 @@ func (r *Repository) CompleteStep(ctx context.Context, command CompleteStepComma
 	if err != nil {
 		return err
 	}
-	return r.completeStep(ctx, command, nil, nil)
+	descriptor, err := describeLifecycleOperation(
+		command.OperationID, LifecycleCompleteStep, command,
+	)
+	if err != nil {
+		return err
+	}
+	return r.completeStep(ctx, command, &descriptor, nil)
 }
 
 func (r *Repository) completeStep(
@@ -106,19 +112,6 @@ func (r *Repository) completeStep(
 		return staleStepAttemptError(command.Authority, "completion target lost current authority", nil)
 	}
 
-	var contextID *int64
-	if command.ContextKey != "" {
-		var insertedID int64
-		if err := tx.QueryRow(ctx, `
-			INSERT INTO step_contexts (step_id, key, value)
-			VALUES ($1, $2, $3)
-			RETURNING id
-		`, command.StepID, command.ContextKey, command.ContextValue).Scan(&insertedID); err != nil {
-			return err
-		}
-		contextID = &insertedID
-	}
-
 	var openSteps int
 	if err := tx.QueryRow(ctx, `
 		SELECT COUNT(*)
@@ -131,8 +124,10 @@ func (r *Repository) completeStep(
 	}
 
 	if openSteps == 0 {
-		if err := materializeChannelCompletionTx(ctx, tx, job, command); err != nil {
-			return err
+		if descriptor != nil {
+			if err := materializeChannelCompletionTx(ctx, tx, job, command); err != nil {
+				return err
+			}
 		}
 		jobUpdate, err := tx.Exec(ctx, `
 			UPDATE jobs
@@ -166,7 +161,7 @@ func (r *Repository) completeStep(
 		if err := insertLifecycleOperationTx(ctx, tx, *descriptor, lifecycleOperationRecord{
 			ID: descriptor.ID, JobID: jobID, ObservedGeneration: generation,
 			ResultGeneration: job.CurrentGeneration, StepID: &command.StepID,
-			StepContextID: contextID, Kind: descriptor.Kind, CommandSHA256: descriptor.SHA256,
+			Kind: descriptor.Kind, CommandSHA256: descriptor.SHA256,
 			ResultJobStatus: job.Status, ResultStepStatus: &stepStatus, ResultJob: job,
 		}); err != nil {
 			return err

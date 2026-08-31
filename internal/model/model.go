@@ -86,18 +86,9 @@ type Step struct {
 	UpdatedAt              time.Time  `json:"updated_at"`
 }
 
-type StepContext struct {
-	ID        int64     `json:"id"`
-	StepID    int64     `json:"step_id"`
-	Key       string    `json:"key"`
-	Value     string    `json:"value"`
-	CreatedAt time.Time `json:"created_at"`
-}
-
 type JobDetails struct {
-	Job      Job           `json:"job"`
-	Steps    []Step        `json:"steps"`
-	Contexts []StepContext `json:"contexts"`
+	Job   Job    `json:"job"`
+	Steps []Step `json:"steps"`
 }
 
 type ClaimedStep struct {
@@ -105,7 +96,6 @@ type ClaimedStep struct {
 	Step           Step
 	Authority      StepAttemptAuthority
 	LeaseExpiresAt time.Time
-	Contexts       []StepContext
 }
 
 type MemoryChunk struct {
@@ -158,7 +148,6 @@ type Channel struct {
 	Scope                        ChannelScope        `json:"scope"`
 	Name                         string              `json:"name,omitempty"`
 	Tags                         []string            `json:"tags,omitempty"`
-	ProjectID                    int64               `json:"project_id"`
 	WorkspaceRoot                string              `json:"workspace_root"`
 	DataSourceID                 DataSourceID        `json:"data_source_id,omitempty"`
 	Mode                         ChannelMode         `json:"mode"`

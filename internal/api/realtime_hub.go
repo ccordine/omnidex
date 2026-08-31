@@ -12,19 +12,18 @@ import (
 
 var (
 	ErrRealtimeHubUnavailable   = errors.New("realtime hub is not initialized")
+	ErrRealtimeLifecycleUnavailable = errors.New("realtime lifecycle context is not initialized")
 	ErrRealtimeEventNameMissing = errors.New("realtime event name is required")
 )
 
 const (
 	realtimeTopicUI      = "ui"
-	realtimeTopicMetrics = "metrics"
 	realtimeTopicScrum   = "scrum"
 	realtimeTopicJobs    = "jobs"
 )
 
 var realtimeTopics = map[string]struct{}{
 	realtimeTopicUI:      {},
-	realtimeTopicMetrics: {},
 	realtimeTopicScrum:   {},
 	realtimeTopicJobs:    {},
 }
@@ -212,7 +211,7 @@ func realtimeFingerprintKey(stateKey string, topics map[string]struct{}) string 
 		return ""
 	}
 	names := make([]string, 0, len(topics))
-	for _, topic := range []string{realtimeTopicUI, realtimeTopicMetrics, realtimeTopicScrum, realtimeTopicJobs} {
+	for _, topic := range []string{realtimeTopicUI, realtimeTopicScrum, realtimeTopicJobs} {
 		if _, ok := topics[topic]; ok {
 			names = append(names, topic)
 		}
@@ -279,7 +278,7 @@ func parseRealtimeTopics(raw string) ([]string, error) {
 		return nil, err
 	}
 	out := make([]string, 0, len(set))
-	for _, topic := range []string{realtimeTopicUI, realtimeTopicMetrics, realtimeTopicScrum, realtimeTopicJobs} {
+	for _, topic := range []string{realtimeTopicUI, realtimeTopicScrum, realtimeTopicJobs} {
 		if _, ok := set[topic]; ok {
 			out = append(out, topic)
 		}

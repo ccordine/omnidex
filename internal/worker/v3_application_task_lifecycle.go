@@ -2,7 +2,6 @@ package worker
 
 import (
 	"fmt"
-	"reflect"
 	"strings"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
@@ -26,15 +25,6 @@ func runDirectCodingApplicationTaskLifecycle(
 	}
 	if hooks.BuildBlock == nil {
 		return fmt.Errorf("application task lifecycle requires one source-generation hook")
-	}
-	if err := assemblyline.ValidateFrozenApplicationWorkload(frozen); err != nil {
-		return err
-	}
-	if !reflect.DeepEqual(program.Workload, frozen) {
-		return fmt.Errorf("application task lifecycle program workload differs from frozen authority")
-	}
-	if err := program.Source.Validate(); err != nil {
-		return err
 	}
 	if len(program.Generated) != 0 {
 		return fmt.Errorf("application task lifecycle requires an empty generated-source set")

@@ -114,12 +114,15 @@ func runObjectiveTurn(
 	}
 	result.RequirementID = objectiveRequirementID(result.ObjectiveID)
 	if decision.Kind == assemblyline.ObjectiveKindWorkspaceMutation {
-		if workflows.WorkspaceReplanContext == nil {
-			return result, fmt.Errorf("workspace mutation replan authority is unavailable")
-		}
-		replanContext, err := workflows.WorkspaceReplanContext(ctx, job)
-		if err != nil {
-			return result, err
+		replanContext := assemblyline.ObjectiveContext{}
+		if job.CurrentGeneration > 1 {
+			if workflows.WorkspaceReplanContext == nil {
+				return result, fmt.Errorf("workspace mutation replan authority is unavailable")
+			}
+			replanContext, err = workflows.WorkspaceReplanContext(ctx, job)
+			if err != nil {
+				return result, err
+			}
 		}
 		if err := replanContext.Validate(); err != nil {
 			return result, fmt.Errorf("workspace mutation replan authority: %w", err)

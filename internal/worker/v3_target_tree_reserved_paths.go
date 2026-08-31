@@ -9,7 +9,7 @@ func validateDirectCodingTargetTreeReservedPaths(
 ) error {
 	previous := ""
 	for index, artifactPath := range stack.TargetTreeReservedPaths {
-		normalized, err := normalizeDirectCodingPath(artifactPath)
+		normalized, err := requireExactDirectCodingPath(artifactPath)
 		if err != nil || normalized != artifactPath {
 			return fmt.Errorf(
 				"project stack %s target-tree reserved path %d is not normalized",

@@ -8,8 +8,7 @@ import (
 )
 
 type directCodingProgram struct {
-	StackID              string
-	VersionProfileID     string
+	Project              directCodingProjectSelection
 	Workload             assemblyline.FrozenApplicationWorkload
 	TargetTree           assemblyline.TargetTree
 	Coverage             assemblyline.ApplicationFileCoveragePlan
@@ -27,6 +26,7 @@ func compileDirectCodingProgram(
 	identities []assemblyline.ArtifactIdentity,
 	workload assemblyline.FrozenApplicationWorkload,
 	capabilities directCodingCapabilityGraph,
+	project directCodingProjectSelection,
 	targetTree assemblyline.TargetTree,
 	coverage assemblyline.ApplicationFileCoveragePlan,
 ) (directCodingProgram, error) {
@@ -38,55 +38,14 @@ func compileDirectCodingProgram(
 	if err != nil {
 		return directCodingProgram{}, err
 	}
-	if err := validateDirectCodingCapabilityGraph(specification.Requirements, capabilities); err != nil {
-		return directCodingProgram{}, err
-	}
-	if err := assemblyline.ValidateFrozenApplicationWorkloadFor(specification, workload); err != nil {
-		return directCodingProgram{}, err
-	}
-	stack, err := directCodingProjectStackByID(targetTree.StackID)
-	if err != nil {
-		return directCodingProgram{}, err
-	}
-	if !stack.SupportsSurface(specification.Surface) {
-		return directCodingProgram{}, fmt.Errorf(
-			"selected project stack %s supports surfaces %s, not %s",
-			stack.ID, directCodingProjectStackSurfaceSummary(stack.SupportedSurfaces), specification.Surface,
-		)
-	}
-	versionProfile, err := directCodingVersionProfileForTargetTree(targetTree)
-	if err != nil {
-		return directCodingProgram{}, err
-	}
-	if err := validateDirectCodingTargetTreeUnion(stack, targetTree); err != nil {
-		return directCodingProgram{}, fmt.Errorf(
-			"validate %s target tree: %w", stack.ID, err,
-		)
-	}
-	if len(workload.Tasks) == 1 {
-		if err := validateDirectCodingFocusedTargetTree(stack, targetTree); err != nil {
-			return directCodingProgram{}, fmt.Errorf(
-				"validate %s target tree: %w", stack.ID, err,
-			)
-		}
-	}
-	if err := coverage.ValidateFor(targetTree, workload); err != nil {
-		return directCodingProgram{}, fmt.Errorf("validate application file coverage: %w", err)
-	}
-	if len(workload.Tasks) > 1 {
-		if err := validateDirectCodingCoveredFocusedTargetTrees(stack, workload, coverage); err != nil {
-			return directCodingProgram{}, fmt.Errorf(
-				"validate %s target tree: %w", stack.ID, err,
-			)
-		}
-	}
+	stack := project.Stack
 	if stack.CompileSource == nil {
 		return directCodingProgram{}, fmt.Errorf(
 			"project stack %s has no source compiler", stack.ID,
 		)
 	}
 	blueprint, staticFiles, err := stack.CompileSource(
-		moduleSegment, specification, workload, capabilities, targetTree, coverage,
+		moduleSegment, specification, workload, capabilities, project.Profile, targetTree, coverage,
 	)
 	if err != nil {
 		return directCodingProgram{}, err
@@ -105,7 +64,7 @@ func compileDirectCodingProgram(
 		return directCodingProgram{}, fmt.Errorf("validate %s source ownership: %w", stack.ID, err)
 	}
 	return directCodingProgram{
-		StackID: stack.ID, VersionProfileID: versionProfile.ID,
+		Project: project,
 		Workload: workload, TargetTree: targetTree, Coverage: coverage,
 		Source:           blueprint,
 		StaticFiles:      staticFiles, Generated: map[string]string{},
@@ -132,7 +91,7 @@ func resolveDirectCodingArtifactPaths(
 		if !exists {
 			return nil, nil, nil, fmt.Errorf("semantic contract references unresolved opaque artifact %s", directive.Token)
 		}
-		path, err := normalizeDirectCodingPath(value)
+		path, err := requireExactDirectCodingPath(value)
 		if err != nil {
 			return nil, nil, nil, fmt.Errorf("resolve artifact %s: %w", directive.Token, err)
 		}

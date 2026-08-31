@@ -17,7 +17,7 @@ var (
 	localizedUIPanelsErr  error
 )
 
-var uiPanelNames = []string{"chat", "roleplay", "data", "projects", "jobs", "memory", "metrics", "admin"}
+var uiPanelNames = []string{"chat", "roleplay", "data", "projects", "jobs", "memory", "admin"}
 
 type uiPanelResponse struct {
 	Panel  string            `json:"panel"`

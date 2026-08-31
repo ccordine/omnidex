@@ -14,21 +14,6 @@ type directCodingProjectFormatCandidate struct {
 	Format  string
 }
 
-func directCodingProjectVersionProfilesForStacks(
-	stacks []directCodingProjectStack,
-	profiles []directCodingProjectVersionProfile,
-) ([]directCodingProjectVersionProfile, error) {
-	selected := make([]directCodingProjectVersionProfile, 0, len(stacks))
-	for _, stack := range stacks {
-		stackProfiles, err := directCodingVersionProfilesForStackFrom(profiles, stack)
-		if err != nil {
-			return nil, err
-		}
-		selected = append(selected, stackProfiles...)
-	}
-	return selected, nil
-}
-
 func directCodingProjectFormatCandidates(
 	stacks []directCodingProjectStack,
 	profiles []directCodingProjectVersionProfile,
@@ -90,10 +75,7 @@ func directCodingProjectVersionTechnicalFormat(
 	if len(versions) > 0 {
 		format += "; qualified versions: " + strings.Join(versions, ", ")
 	}
-	for _, identity := range append(
-		[]string{stack.ID, profile.ID, profile.ParserQualification},
-		profile.ManifestPaths...,
-	) {
+	for _, identity := range []string{stack.ID, profile.ID} {
 		if identity != "" && strings.Contains(format, identity) {
 			return "", fmt.Errorf("project technical format exposes internal identity %q", identity)
 		}
@@ -125,9 +107,6 @@ func directCodingProjectStackConstraintInput(
 }
 
 func resolveDirectCodingProjectFormatDecision(
-	surface assemblyline.ApplicationSurface,
-	stacks []directCodingProjectStack,
-	profiles []directCodingProjectVersionProfile,
 	formats []directCodingProjectFormatCandidate,
 	input assemblyline.ApplicationProjectStackConstraintInput,
 	decision assemblyline.ApplicationProjectStackConstraintDecision,
@@ -138,11 +117,8 @@ func resolveDirectCodingProjectFormatDecision(
 	switch decision.CandidateID {
 	case assemblyline.ApplicationProjectStackUnsupported:
 		return directCodingProjectSelection{}, fmt.Errorf(
-			"accepted application authority requires an unsupported or contradictory technical format for surface %s",
-			surface,
+			"accepted application authority requires an unsupported or contradictory technical format",
 		)
-	case assemblyline.ApplicationProjectStackUnconstrained:
-		return directCodingDefaultProjectSelection(surface, stacks, profiles)
 	default:
 		for index, candidate := range input.Candidates {
 			if candidate.CandidateID == decision.CandidateID {
@@ -151,8 +127,8 @@ func resolveDirectCodingProjectFormatDecision(
 						"project format candidate %q lost its code-owned mapping", candidate.CandidateID,
 					)
 				}
-				selection := directCodingProjectSelection{
-					Stack: formats[index].Stack, VersionProfileID: formats[index].Profile.ID,
+					selection := directCodingProjectSelection{
+						Stack: formats[index].Stack, Profile: formats[index].Profile,
 				}
 				return selection, nil
 			}
@@ -161,47 +137,4 @@ func resolveDirectCodingProjectFormatDecision(
 			"project format decision %q has no code-owned mapping", decision.CandidateID,
 		)
 	}
-}
-
-func directCodingDefaultProjectSelection(
-	surface assemblyline.ApplicationSurface,
-	stacks []directCodingProjectStack,
-	profiles []directCodingProjectVersionProfile,
-) (directCodingProjectSelection, error) {
-	var selected *directCodingProjectStack
-	for index := range stacks {
-		if !stacks[index].IsDefaultForSurface(surface) {
-			continue
-		}
-		if selected != nil {
-			return directCodingProjectSelection{}, fmt.Errorf(
-				"surface %s has multiple default project stacks", surface,
-			)
-		}
-		selected = &stacks[index]
-	}
-	if selected == nil {
-		return directCodingProjectSelection{}, fmt.Errorf("surface %s has no default project stack", surface)
-	}
-	var defaultProfile *directCodingProjectVersionProfile
-	for index := range profiles {
-		if profiles[index].ID != selected.DefaultVersionProfileID {
-			continue
-		}
-		if defaultProfile != nil {
-			return directCodingProjectSelection{}, fmt.Errorf(
-				"project stack %s has multiple default version profiles", selected.ID,
-			)
-		}
-		profile := cloneDirectCodingProjectVersionProfile(profiles[index])
-		defaultProfile = &profile
-	}
-	if defaultProfile == nil || defaultProfile.StackID != selected.ID {
-		return directCodingProjectSelection{}, fmt.Errorf(
-			"project stack %s has no registered matching default version profile", selected.ID,
-		)
-	}
-	return directCodingProjectSelection{
-		Stack: *selected, VersionProfileID: defaultProfile.ID,
-	}, nil
 }

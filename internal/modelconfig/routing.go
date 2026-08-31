@@ -2,7 +2,6 @@ package modelconfig
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/gryph/omnidex/internal/station"
 )
@@ -18,9 +17,6 @@ func Freeze(config Config) (Authority, error) {
 	for key, value := range config {
 		if _, ok := definitionForKey(key); !ok {
 			return Authority{}, fmt.Errorf("model config contains unsupported field %q", key)
-		}
-		if value == "" || value != strings.TrimSpace(value) {
-			return Authority{}, fmt.Errorf("model config field %q must name one canonical model", key)
 		}
 		frozen[key] = value
 	}
@@ -55,8 +51,8 @@ type Routing struct {
 func (authority Authority) Routing() Routing {
 	routing := Routing{Stations: map[station.ID]string{}}
 	for _, definition := range fieldRegistry {
-		value := authority.config.Get(definition.Key)
-		if value == "" {
+		value, configured := authority.config[definition.Key]
+		if !configured {
 			continue
 		}
 		for _, stationID := range definition.Stations {

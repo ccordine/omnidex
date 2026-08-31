@@ -122,7 +122,6 @@ func (r *Repository) MindStats(ctx context.Context) (map[string]int64, error) {
 		"memory_candidates": `SELECT COUNT(*) FROM memory_candidates`,
 		"candidate_pending": `SELECT COUNT(*) FROM memory_candidates WHERE status = 'candidate'`,
 		"jobs":              `SELECT COUNT(*) FROM jobs`,
-		"telemetry_events":  `SELECT COUNT(*) FROM omni_run_events`,
 	}
 	for key, query := range queries {
 		var count int64

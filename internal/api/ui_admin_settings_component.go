@@ -11,7 +11,7 @@ func renderUIAdminMindStats(stats map[string]int64) string {
 	}
 	rows := []struct{ label, key string }{
 		{"Memory chunks", "memory_chunks"}, {"Memory candidates", "memory_candidates"},
-		{"Pending review", "candidate_pending"}, {"Jobs", "jobs"}, {"Telemetry events", "telemetry_events"},
+		{"Pending review", "candidate_pending"}, {"Jobs", "jobs"},
 	}
 	var body strings.Builder
 	body.WriteString(`<div class="grid gap-2 sm:grid-cols-2">`)

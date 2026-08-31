@@ -7,7 +7,6 @@ import (
 	"maps"
 	"strings"
 
-	"github.com/gryph/omnidex/internal/datasource"
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/modelconfig"
 	"github.com/gryph/omnidex/internal/roleplay"
@@ -16,9 +15,7 @@ import (
 
 type channelTurnMetadata struct {
 	ChannelID                       model.ChannelID                     `json:"channel_id"`
-	SessionID                       string                              `json:"session_id"`
 	ChannelUserMessageID            int64                               `json:"channel_user_message_id"`
-	ProjectID                       int64                               `json:"project_id"`
 	ClientCWD                       string                              `json:"client_cwd"`
 	DataSourceID                    model.DataSourceID                  `json:"data_source_id,omitempty"`
 	DelegatedDataAuthorityID        string                              `json:"delegated_data_authority_id,omitempty"`
@@ -85,34 +82,24 @@ func (r *Repository) enqueueChannelTurn(
 	if err := model.ValidateChannelMessage(model.ChannelMessageRoleUser, instruction); err != nil {
 		return model.ChannelMessage{}, model.Job{}, err
 	}
-	if delegatedAuthorityID != "" {
-		if err := datasource.ValidateDelegatedAuthorityID(delegatedAuthorityID); err != nil {
-			return model.ChannelMessage{}, model.Job{}, fmt.Errorf("%w: %v", ErrChannelDataAuthority, err)
-		}
-	}
 	tx, err := r.pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return model.ChannelMessage{}, model.Job{}, err
 	}
 	defer tx.Rollback(ctx)
 	var scope model.ChannelScope
-	var projectID int64
 	var workspaceRoot string
 	var dataSourceID *string
 	var channelMode model.ChannelMode
 	var roleplayViewpointID *string
-	var projectSettings json.RawMessage
 	if err := tx.QueryRow(ctx, `
-		SELECT channel.scope, channel.project_id, channel.workspace_root, channel.data_source_id,
-		       channel.mode, channel.roleplay_viewpoint_character_id,
-		       project.settings
+		SELECT channel.scope, channel.workspace_root, channel.data_source_id,
+		       channel.mode, channel.roleplay_viewpoint_character_id
 		FROM ai_channels AS channel
-		JOIN projects AS project ON project.id=channel.project_id
 		WHERE channel.id=$1
-		FOR UPDATE OF channel, project
+		FOR UPDATE OF channel
 	`, channelID).Scan(
-		&scope, &projectID, &workspaceRoot, &dataSourceID, &channelMode, &roleplayViewpointID,
-		&projectSettings,
+		&scope, &workspaceRoot, &dataSourceID, &channelMode, &roleplayViewpointID,
 	); err == pgx.ErrNoRows {
 		return model.ChannelMessage{}, model.Job{}, fmt.Errorf("channel %q does not exist", channelID)
 	} else if err != nil {
@@ -120,15 +107,6 @@ func (r *Repository) enqueueChannelTurn(
 	}
 	if scope != model.ChannelScopeUser {
 		return model.ChannelMessage{}, model.Job{}, fmt.Errorf("channel %q is not a user conversation", channelID)
-	}
-	if projectID < 1 {
-		return model.ChannelMessage{}, model.Job{}, fmt.Errorf("channel %q has no authoritative project binding", channelID)
-	}
-	if err := model.ValidateChannelWorkspaceRoot(workspaceRoot); err != nil {
-		return model.ChannelMessage{}, model.Job{}, fmt.Errorf("channel %q workspace binding: %w", channelID, err)
-	}
-	if err := validateChannelTurnDataAuthority(ctx, tx, dataSourceID, delegatedAuthorityID); err != nil {
-		return model.ChannelMessage{}, model.Job{}, err
 	}
 	switch channelMode {
 	case model.ChannelModeAssistant:
@@ -143,18 +121,7 @@ func (r *Repository) enqueueChannelTurn(
 			return model.ChannelMessage{}, model.Job{}, err
 		}
 	}
-	modelOverrides, err := modelconfig.FromSettingsJSON(projectSettings)
-	if err != nil {
-		return model.ChannelMessage{}, model.Job{}, fmt.Errorf(
-			"channel %q project model config: %w", channelID, err,
-		)
-	}
-	modelSnapshot, err := r.modelAuthority.Resolve(modelOverrides)
-	if err != nil {
-		return model.ChannelMessage{}, model.Job{}, fmt.Errorf(
-			"channel %q model routing snapshot: %w", channelID, err,
-		)
-	}
+	modelSnapshot := r.modelAuthority.Config()
 	var activeJobID int64
 	err = tx.QueryRow(ctx, `
 		SELECT id FROM jobs
@@ -223,7 +190,7 @@ func (r *Repository) enqueueChannelTurn(
 		}
 	}
 	metadata, err := marshalChannelTurnMetadata(
-		channelID, message.ID, projectID, workspaceRoot,
+		channelID, message.ID, workspaceRoot,
 		modelDataSourceID(dataSourceID), delegatedAuthorityID, channelMode,
 		modelSnapshot, simulation,
 	)
@@ -278,7 +245,6 @@ func (r *Repository) enqueueChannelJobTx(
 func marshalChannelTurnMetadata(
 	channelID model.ChannelID,
 	messageID int64,
-	projectID int64,
 	workspaceRoot string,
 	dataSourceID model.DataSourceID,
 	delegatedAuthorityID string,
@@ -291,8 +257,8 @@ func marshalChannelTurnMetadata(
 		modelSnapshot = modelconfig.Config{}
 	}
 	binding := channelTurnMetadata{
-		ChannelID: channelID, SessionID: "channel:" + string(channelID),
-		ChannelUserMessageID: messageID, ProjectID: projectID, ClientCWD: workspaceRoot,
+		ChannelID: channelID,
+		ChannelUserMessageID: messageID, ClientCWD: workspaceRoot,
 		DataSourceID:             dataSourceID,
 		DelegatedDataAuthorityID: delegatedAuthorityID,
 		ChannelMode:              channelMode,
@@ -320,9 +286,6 @@ func marshalChannelTurnMetadata(
 		userTurn := simulation.UserTurn
 		binding.RoleplayUserTurn = &userTurn
 	}
-	if err := validateChannelTurnMetadata(binding); err != nil {
-		return nil, err
-	}
 	return json.Marshal(binding)
 }
 
@@ -330,25 +293,8 @@ func validateChannelTurnMetadata(binding channelTurnMetadata) error {
 	if err := binding.ChannelID.Validate(); err != nil {
 		return err
 	}
-	if binding.ChannelUserMessageID < 1 || binding.ProjectID < 1 ||
-		binding.SessionID != "channel:"+string(binding.ChannelID) {
-		return fmt.Errorf("channel job metadata requires exact channel, message, and project identities")
-	}
-	if err := model.ValidateChannelWorkspaceRoot(binding.ClientCWD); err != nil {
-		return fmt.Errorf("channel job metadata workspace binding: %w", err)
-	}
-	if binding.DataSourceID != "" {
-		if err := binding.DataSourceID.Validate(); err != nil {
-			return fmt.Errorf("channel job metadata data-source binding: %w", err)
-		}
-	}
-	if binding.DelegatedDataAuthorityID != "" {
-		if binding.DataSourceID == "" {
-			return fmt.Errorf("channel job delegated data authority requires a bound data source")
-		}
-		if err := datasource.ValidateDelegatedAuthorityID(binding.DelegatedDataAuthorityID); err != nil {
-			return err
-		}
+	if binding.ChannelUserMessageID < 1 {
+		return fmt.Errorf("channel job metadata requires exact channel and message identities")
 	}
 	if err := binding.ChannelMode.Validate(); err != nil {
 		return fmt.Errorf("channel job metadata mode: %w", err)
@@ -414,38 +360,6 @@ func validateChannelTurnMetadata(binding channelTurnMetadata) error {
 	}
 	if !maps.Equal(binding.ModelConfig, validated) {
 		return fmt.Errorf("channel model snapshot is not exact")
-	}
-	return nil
-}
-
-func validateChannelTurnDataAuthority(
-	ctx context.Context,
-	tx pgx.Tx,
-	dataSourceID *string,
-	delegatedAuthorityID string,
-) error {
-	if dataSourceID == nil {
-		if delegatedAuthorityID != "" {
-			return fmt.Errorf("%w: delegated data authority requires a bound data source", ErrChannelDataAuthority)
-		}
-		return nil
-	}
-	var mode datasource.ExecutionMode
-	if err := tx.QueryRow(ctx, `SELECT execution_mode FROM data_sources WHERE id=$1`, *dataSourceID).Scan(&mode); err != nil {
-		return fmt.Errorf("resolve bound data-source execution authority: %w", err)
-	}
-	if err := mode.Validate(); err != nil {
-		return err
-	}
-	switch mode {
-	case datasource.ExecutionModeDirect:
-		if delegatedAuthorityID != "" {
-			return fmt.Errorf("%w: direct data-source turn cannot carry delegated data authority", ErrChannelDataAuthority)
-		}
-	case datasource.ExecutionModeDelegated:
-		if err := datasource.ValidateDelegatedAuthorityID(delegatedAuthorityID); err != nil {
-			return fmt.Errorf("%w: delegated data-source turn requires current host authority: %v", ErrChannelDataAuthority, err)
-		}
 	}
 	return nil
 }

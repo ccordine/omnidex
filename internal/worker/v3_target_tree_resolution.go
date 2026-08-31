@@ -16,9 +16,6 @@ func resolveDirectCodingTargetTree(
 ) (assemblyline.TargetTree, assemblyline.ApplicationFileCoveragePlan, error) {
 	var zeroTree assemblyline.TargetTree
 	var zeroCoverage assemblyline.ApplicationFileCoveragePlan
-	if err := assemblyline.ValidateFrozenApplicationWorkloadFor(specification, workload); err != nil {
-		return zeroTree, zeroCoverage, err
-	}
 	taskPaths := make(map[string][]string, len(workload.Tasks))
 	var target assemblyline.TargetTree
 	var err error
@@ -72,7 +69,6 @@ func resolveDirectCodingTargetTree(
 	if err != nil {
 		return zeroTree, zeroCoverage, fmt.Errorf("resolve complete target tree: %w", err)
 	}
-	target.StackID = stack.ID
 	if err := validateDirectCodingTargetTreePathClosure(stack, target); err != nil {
 		return zeroTree, zeroCoverage, err
 	}
@@ -111,29 +107,6 @@ func validateDirectCodingTargetTreeUnion(
 	for _, filePath := range target.Paths {
 		if _, _, err := directCodingArtifactAdapterForTreePath(stack, filePath); err != nil {
 			return err
-		}
-	}
-	return nil
-}
-
-func validateDirectCodingCoveredFocusedTargetTrees(
-	stack directCodingProjectStack,
-	workload assemblyline.FrozenApplicationWorkload,
-	coverage assemblyline.ApplicationFileCoveragePlan,
-) error {
-	for _, task := range workload.Tasks {
-		files, err := coverage.FilesForTask(task.ID)
-		if err != nil {
-			return err
-		}
-		paths := make([]string, len(files))
-		for index, file := range files {
-			paths[index] = file.Path
-		}
-		if err := validateDirectCodingFocusedTargetTree(
-			stack, assemblyline.TargetTree{Paths: paths},
-		); err != nil {
-			return fmt.Errorf("focused task %s: %w", task.ID, err)
 		}
 	}
 	return nil

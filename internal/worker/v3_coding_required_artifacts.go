@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-
-	workspacefacts "github.com/gryph/omnidex/internal/workspace"
 )
 
 func (s *directCodingSession) requiredArtifactFiles(
@@ -36,24 +34,6 @@ func (s *directCodingSession) requiredArtifactFiles(
 		if !before.Mode().IsRegular() {
 			return nil, fmt.Errorf("required artifact %q is not one regular file", relative)
 		}
-		if before.Size() > workspacefacts.MaxReconciliationFileBytes {
-			return nil, fmt.Errorf(
-				"required artifact %q exceeds the %d-byte mutation boundary",
-				relative, workspacefacts.MaxReconciliationFileBytes,
-			)
-		}
-		content, err := os.ReadFile(absolute)
-		if err != nil {
-			return nil, fmt.Errorf("read required artifact %q: %w", relative, err)
-		}
-		after, err := os.Lstat(absolute)
-		if err != nil || !os.SameFile(before, after) || before.Mode() != after.Mode() ||
-			before.Size() != after.Size() || !before.ModTime().Equal(after.ModTime()) {
-			return nil, fmt.Errorf("required artifact %q changed while consumed", relative)
-		}
-		files = append(files, directCodingFileTask{
-			Path: relative, Content: content, Mode: uint32(before.Mode().Perm()),
-		})
 		known[relative] = struct{}{}
 	}
 	return files, nil

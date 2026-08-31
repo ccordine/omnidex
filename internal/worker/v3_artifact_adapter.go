@@ -144,7 +144,7 @@ func suffixArtifactRecognizer(suffix, testSuffix string) func(string) (assemblyl
 // richer registered parser. Unknown or non-normalized paths remain loud
 // adapter-selection failures.
 func plainTextArtifactRecognizer(value string) (assemblyline.TargetArtifactKind, bool) {
-	normalized, err := normalizeDirectCodingPath(value)
+	normalized, err := requireExactDirectCodingPath(value)
 	if err != nil || normalized != value {
 		return "", false
 	}

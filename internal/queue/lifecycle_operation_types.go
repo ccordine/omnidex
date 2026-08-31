@@ -70,8 +70,7 @@ type CompleteStepCommand struct {
 	Authority                 model.StepAttemptAuthority           `json:"-"`
 	StepID                    int64                                `json:"step_id"`
 	Output                    string                               `json:"output"`
-	ContextKey                string                               `json:"context_key"`
-	ContextValue              string                               `json:"context_value"`
+	ContextKey                string                               `json:"context_key,omitempty"`
 	RoleplayResponses         []RoleplayResponseCompletion         `json:"roleplay_responses,omitempty"`
 	RoleplayUserCanon         *RoleplayUserCanonCompletion         `json:"roleplay_user_canon,omitempty"`
 	RoleplayUserOngoingAction *RoleplayUserOngoingActionCompletion `json:"roleplay_user_ongoing_action,omitempty"`

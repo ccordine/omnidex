@@ -23,6 +23,9 @@ func (r *nativeRuntimeV3) acquireObjectiveDatabaseEvidence(
 		authority.DataSourceID == "" {
 		return objectiveEvidenceAcquisition{}, fmt.Errorf("database-read authority does not match the claimed bound job")
 	}
+	if err := authority.DataSourceID.Validate(); err != nil {
+		return objectiveEvidenceAcquisition{}, fmt.Errorf("database-read data-source authority: %w", err)
+	}
 	record, err := r.svc.repo.GetDataSource(ctx, string(authority.DataSourceID))
 	if err != nil {
 		return objectiveEvidenceAcquisition{}, fmt.Errorf("load bound data source %q: %w", authority.DataSourceID, err)

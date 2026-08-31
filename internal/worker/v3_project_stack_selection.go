@@ -7,8 +7,8 @@ import (
 )
 
 type directCodingProjectSelection struct {
-	Stack            directCodingProjectStack
-	VersionProfileID string
+	Stack   directCodingProjectStack
+	Profile directCodingProjectVersionProfile
 }
 
 func selectDirectCodingProject(
@@ -75,7 +75,7 @@ func selectDirectCodingProjectFromRegistries(
 		return directCodingProjectSelection{}, err
 	}
 	return resolveDirectCodingProjectFormatDecision(
-		specification.Surface, stacks, registeredProfiles, formats, input, decision,
+		formats, input, decision,
 	)
 }
 

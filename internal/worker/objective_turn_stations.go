@@ -69,8 +69,8 @@ func (adapter portableObjectiveConversationStation) Respond(
 		return assemblyline.ConversationResponseDecision{}, objectiveStationReceipt{}, err
 	}
 	resolveModel := func() (string, error) {
-		if model := strings.TrimSpace(requestedModel); model != "" {
-			return model, nil
+		if requestedModel != "" {
+			return requestedModel, nil
 		}
 		return objectiveStationModel(adapter.runtime, station.ConversationResponse)
 	}

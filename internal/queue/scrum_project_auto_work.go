@@ -91,15 +91,12 @@ func (r *Repository) startProjectAutoWorkTx(
 	config ScrumAutoWorkConfig,
 	result *ProjectAutoWorkResult,
 ) error {
-	if err := requireScrumAIActiveTx(ctx, tx); err != nil {
-		return err
-	}
 	running, found, err := findRunningScrumCardTx(ctx, tx, projectID)
 	if err != nil {
 		return err
 	}
 	if found {
-		if running.JobID == "" || running.JobID != running.SyncJobID {
+		if running.JobID == "" {
 			return fmt.Errorf("running Scrum card %q has invalid job authority", running.ID)
 		}
 		parsed, err := strconv.ParseInt(running.JobID, 10, 64)
@@ -168,7 +165,7 @@ func (r *Repository) pauseProjectAutoWorkTx(
 				return err
 			}
 		} else {
-			if card.JobID != "" || card.SyncJobID != "" {
+			if card.JobID != "" {
 				return fmt.Errorf("queued Scrum card %q unexpectedly owns a job", card.ID)
 			}
 			previous := card

@@ -56,7 +56,7 @@ func portableApplicationResponseMaximum(job PortableJob) (int, bool, error) {
 			return 0, true, err
 		}
 		maximum := maximumStringBytes(
-			ApplicationProjectStackUnconstrained, ApplicationProjectStackUnsupported,
+			ApplicationProjectStackUnsupported,
 		)
 		for _, candidate := range input.Candidates {
 			maximum = max(maximum, len(candidate.CandidateID))

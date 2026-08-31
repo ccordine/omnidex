@@ -115,36 +115,10 @@ func (r *Repository) CurrentJobDetails(ctx context.Context, jobID int64) (model.
 	}
 	stepsRows.Close()
 
-	ctxRows, err := tx.Query(ctx, `
-		SELECT c.id, c.step_id, c.key, c.value, c.created_at
-		FROM step_contexts c
-		JOIN job_steps s ON s.id = c.step_id
-		WHERE s.job_id = $1
-		  AND s.superseded_at_generation IS NULL
-		ORDER BY c.id ASC
-	`, jobID)
-	if err != nil {
-		return model.JobDetails{}, err
-	}
-	contexts := []model.StepContext{}
-	for ctxRows.Next() {
-		ctxValue, err := scanStepContext(ctxRows)
-		if err != nil {
-			ctxRows.Close()
-			return model.JobDetails{}, err
-		}
-		contexts = append(contexts, ctxValue)
-	}
-	if err := ctxRows.Err(); err != nil {
-		ctxRows.Close()
-		return model.JobDetails{}, err
-	}
-	ctxRows.Close()
-
 	if err := tx.Commit(ctx); err != nil {
 		return model.JobDetails{}, err
 	}
-	return model.JobDetails{Job: job, Steps: steps, Contexts: contexts}, nil
+	return model.JobDetails{Job: job, Steps: steps}, nil
 }
 
 func (r *Repository) JobProjectID(ctx context.Context, jobID int64) (int64, error) {
@@ -169,49 +143,6 @@ func (r *Repository) JobIDForStep(ctx context.Context, stepID int64) (int64, err
 	var jobID int64
 	err := r.pool.QueryRow(ctx, `SELECT job_id FROM job_steps WHERE id = $1`, stepID).Scan(&jobID)
 	return jobID, err
-}
-
-func (r *Repository) ListRecentSessionJobs(ctx context.Context, pipeline, sessionID string, beforeJobID int64, limit int) ([]model.Job, error) {
-	pipeline = normalizePipeline(pipeline)
-	sessionID = strings.TrimSpace(sessionID)
-	if sessionID == "" || beforeJobID <= 0 {
-		return nil, nil
-	}
-	if limit <= 0 {
-		return nil, fmt.Errorf("recent session job limit must be positive")
-	}
-
-	rows, err := r.pool.Query(ctx, `
-		SELECT id, instruction, pipeline, status, result, error, metadata, current_generation,
-		       created_at, updated_at, completed_at
-		FROM jobs
-		WHERE pipeline = $1
-		  AND COALESCE(metadata->>'session_id', '') = $2
-		  AND id < $3
-		ORDER BY id DESC
-		LIMIT $4
-	`, pipeline, sessionID, beforeJobID, limit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	jobs := make([]model.Job, 0, limit)
-	for rows.Next() {
-		job, err := scanJob(rows)
-		if err != nil {
-			return nil, err
-		}
-		jobs = append(jobs, job)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-
-	for i, j := 0, len(jobs)-1; i < j; i, j = i+1, j-1 {
-		jobs[i], jobs[j] = jobs[j], jobs[i]
-	}
-	return jobs, nil
 }
 
 func (r *Repository) GetStepRuntimeState(ctx context.Context, jobID, stepID int64) (string, string, error) {

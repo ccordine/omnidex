@@ -78,10 +78,7 @@ func LoadEnvironment() (Authority, error) {
 		if !configured {
 			continue
 		}
-		value = strings.TrimSpace(value)
-		if value != "" {
-			config[definition.Key] = value
-		}
+		config[definition.Key] = value
 	}
 	return Freeze(config)
 }

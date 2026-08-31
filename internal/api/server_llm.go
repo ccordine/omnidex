@@ -2,7 +2,6 @@ package api
 
 import (
 	"errors"
-	"log"
 	"net/http"
 	"strings"
 
@@ -169,12 +168,6 @@ func (s *Server) cancelJob(w http.ResponseWriter, r *http.Request, jobID int64) 
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
-	}
-	coalescer, coalescerErr := s.ensureJobOutputCoalescer()
-	if coalescerErr != nil {
-		log.Printf("job cancel output flush rejected job=%d: %v", jobID, coalescerErr)
-	} else {
-		coalescer.FlushNow(jobID)
 	}
 	s.publishJobProgress(jobID, realtimeJobFinished, "Job canceled")
 

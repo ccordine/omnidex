@@ -7,8 +7,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"path/filepath"
-	"strings"
 	"unicode/utf8"
 
 	"github.com/gryph/omnidex/internal/exactjson"
@@ -26,23 +24,17 @@ type enqueueRequest struct {
 
 type genericCodingMetadata struct {
 	ClientCWD string `json:"client_cwd"`
-	SessionID string `json:"session_id,omitempty"`
 }
 
 type genericCodingRuntimeMetadata struct {
 	ClientCWD   string             `json:"client_cwd"`
-	SessionID   string             `json:"session_id,omitempty"`
 	ModelConfig modelconfig.Config `json:"model_config"`
 }
 
 func (s *Server) genericCodingRuntimeMetadata(metadata genericCodingMetadata) ([]byte, error) {
-	if err := validateGenericCodingMetadata(metadata); err != nil {
-		return nil, err
-	}
 	modelSnapshot := s.runtimeModelConfig()
 	return json.Marshal(genericCodingRuntimeMetadata{
-		ClientCWD: metadata.ClientCWD, SessionID: metadata.SessionID,
-		ModelConfig: modelSnapshot,
+		ClientCWD: metadata.ClientCWD, ModelConfig: modelSnapshot,
 	})
 }
 
@@ -76,26 +68,10 @@ func decodeGenericCodingEnqueue(w http.ResponseWriter, r *http.Request) (enqueue
 	if request.Metadata == nil {
 		return enqueueRequest{}, fmt.Errorf("coding enqueue metadata must be one JSON object")
 	}
-	if err := validateGenericCodingMetadata(*request.Metadata); err != nil {
-		return enqueueRequest{}, err
-	}
 	if _, err := requireFreeFormAuthority(request.Instruction, "instruction"); err != nil {
 		return enqueueRequest{}, err
 	}
 	return request, nil
-}
-
-func validateGenericCodingMetadata(metadata genericCodingMetadata) error {
-	if value := metadata.ClientCWD; value == "" || value != strings.TrimSpace(value) ||
-		strings.ContainsRune(value, '\x00') || len(value) > 4096 ||
-		!filepath.IsAbs(value) || filepath.Clean(value) != value {
-		return fmt.Errorf("coding enqueue metadata client_cwd must be one canonical absolute workspace root")
-	}
-	if metadata.SessionID != "" && (metadata.SessionID != strings.TrimSpace(metadata.SessionID) ||
-		strings.ContainsRune(metadata.SessionID, '\x00') || len(metadata.SessionID) > 256) {
-		return fmt.Errorf("coding enqueue session_id must be a canonical string of at most 256 bytes")
-	}
-	return nil
 }
 
 func genericCodingEnqueueStatus(err error) int {

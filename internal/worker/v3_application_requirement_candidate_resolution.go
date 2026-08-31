@@ -14,10 +14,9 @@ const (
 )
 
 type directCodingApplicationRequirementCandidateResolution struct {
-	Candidate      string
-	Disposition    directCodingApplicationRequirementDisposition
-	PartitionInput assemblyline.ApplicationRequirementCandidatePartitionInput
-	Partition      assemblyline.ApplicationRequirementCandidatePartition
+	Candidate   string
+	Disposition directCodingApplicationRequirementDisposition
+	Partition   assemblyline.ApplicationRequirementCandidatePartition
 }
 
 func resolveDirectCodingApplicationRequirementCandidate(
@@ -30,10 +29,7 @@ func resolveDirectCodingApplicationRequirementCandidate(
 	identities []assemblyline.ArtifactIdentity,
 ) (directCodingApplicationRequirementCandidateResolution, error) {
 	var zero directCodingApplicationRequirementCandidateResolution
-	candidate, _, err := entry.validateFor(authority)
-	if err != nil {
-		return zero, err
-	}
+	candidate := entry.Candidate
 	for {
 		exactDuplicate := directCodingApplicationRequirementExactDuplicate(
 			candidate,
@@ -107,7 +103,7 @@ func resolveDirectCodingApplicationRequirementCandidate(
 			}, nil
 		}
 		if kind.Relation == assemblyline.ApplicationRequirementCandidateMixed {
-			if len(entry.Lineage) >= assemblyline.MaxApplicationRequirementCandidatePartitionDepth {
+			if len(entry.Ancestors) >= assemblyline.MaxApplicationRequirementCandidatePartitionDepth {
 				return directCodingApplicationRequirementCandidateResolution{
 					Candidate: candidate, Disposition: directCodingApplicationRequirementUnresolved,
 				}, nil
@@ -126,10 +122,8 @@ func resolveDirectCodingApplicationRequirementCandidate(
 				return zero, err
 			}
 			return directCodingApplicationRequirementCandidateResolution{
-				Candidate:      candidate,
-				Disposition:    directCodingApplicationRequirementPartitioned,
-				PartitionInput: partitionInput,
-				Partition:      partition,
+				Candidate: candidate, Disposition: directCodingApplicationRequirementPartitioned,
+				Partition: partition,
 			}, nil
 		}
 		if kind.Relation == assemblyline.ApplicationRequirementCandidateNonRuntime {
@@ -149,7 +143,7 @@ func resolveDirectCodingApplicationRequirementCandidate(
 			return zero, err
 		}
 		if cardinality.Relation == assemblyline.ApplicationRequirementMultipleRuntimeOutcomes {
-			if len(entry.Lineage) >= assemblyline.MaxApplicationRequirementCandidatePartitionDepth {
+			if len(entry.Ancestors) >= assemblyline.MaxApplicationRequirementCandidatePartitionDepth {
 				return directCodingApplicationRequirementCandidateResolution{
 					Candidate: candidate, Disposition: directCodingApplicationRequirementUnresolved,
 				}, nil
@@ -168,10 +162,8 @@ func resolveDirectCodingApplicationRequirementCandidate(
 				return zero, err
 			}
 			return directCodingApplicationRequirementCandidateResolution{
-				Candidate:      candidate,
-				Disposition:    directCodingApplicationRequirementPartitioned,
-				PartitionInput: partitionInput,
-				Partition:      partition,
+				Candidate: candidate, Disposition: directCodingApplicationRequirementPartitioned,
+				Partition: partition,
 			}, nil
 		}
 

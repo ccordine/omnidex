@@ -2,7 +2,6 @@ package queue
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 
 	"github.com/gryph/omnidex/internal/model"
@@ -24,26 +23,18 @@ func canonicalReplanStepsTx(
 		}
 		return stepsForJob(job.Pipeline, job.Instruction, job.Metadata)
 	}
-	var metadata channelTurnMetadata
-	if err := json.Unmarshal(job.Metadata, &metadata); err != nil {
-		return nil, fmt.Errorf("decode replan channel authority: %w", err)
-	}
 	var valid bool
 	err = tx.QueryRow(ctx, `
 		SELECT EXISTS(
 			SELECT 1
 			FROM jobs AS job_row
 			JOIN ai_channels AS channel ON channel.id=$2
-			JOIN projects AS project ON project.id=channel.project_id
 			JOIN ai_channel_messages AS message
 			  ON message.id=$3 AND message.channel_id=channel.id
-			WHERE job_row.id=$1 AND job_row.project_id=$4
-			  AND channel.scope='user' AND channel.project_id=$4
-			  AND channel.workspace_root=$5 AND project.location=$5
-			  AND message.role='user' AND message.content=$6
+			WHERE job_row.id=$1 AND channel.scope='user'
+			  AND message.role='user' AND message.content=$4
 		)
-	`, job.ID, binding.ChannelID, binding.UserMessageID, binding.ProjectID,
-		metadata.ClientCWD, job.Instruction).Scan(&valid)
+	`, job.ID, binding.ChannelID, binding.UserMessageID, job.Instruction).Scan(&valid)
 	if err != nil {
 		return nil, fmt.Errorf("validate replan channel authority: %w", err)
 	}

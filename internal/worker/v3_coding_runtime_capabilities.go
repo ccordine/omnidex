@@ -31,9 +31,6 @@ func (s *directCodingSession) selectRequirementRuntimeCapabilities(
 	if err != nil {
 		return nil, fmt.Errorf("load %s runtime capabilities: %w", stack.ID, err)
 	}
-	if err := validateDirectCodingRuntimeCapabilityRegistry(candidates); err != nil {
-		return nil, fmt.Errorf("validate %s runtime capabilities: %w", stack.ID, err)
-	}
 	modelName, err := s.workerModel(station.CodingRuntimeCapabilityNecessity)
 	if err != nil {
 		return nil, err
@@ -63,21 +60,6 @@ func selectDirectCodingRuntimeCapabilities(
 	dependencies directCodingCapabilityGraph,
 	candidates []directCodingRuntimeCapability,
 ) (directCodingRuntimeCapabilityGraph, error) {
-	if err := validateDirectCodingRequirementCount(requirements); err != nil {
-		return nil, err
-	}
-	if err := validateDirectCodingRuntimeCapabilityRegistry(candidates); err != nil {
-		return nil, err
-	}
-	if err := validateDirectCodingCapabilityGraph(requirements, dependencies); err != nil {
-		return nil, err
-	}
-	modelName, err := requireDirectCodingModel(
-		station.CodingRuntimeCapabilityNecessity, modelName,
-	)
-	if err != nil {
-		return nil, err
-	}
 	graph := emptyDirectCodingRuntimeCapabilityGraph(requirements)
 	for requirementIndex, requirement := range requirements {
 		selectionContext := directCodingRuntimeCapabilityLocalContext(
@@ -118,9 +100,6 @@ func selectDirectCodingRuntimeCapabilities(
 				graph[requirement.ID] = append(graph[requirement.ID], candidate.ID)
 			}
 		}
-	}
-	if err := validateDirectCodingRuntimeCapabilityGraph(requirements, candidates, graph); err != nil {
-		return nil, err
 	}
 	return graph, nil
 }

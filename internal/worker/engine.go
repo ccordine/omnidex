@@ -20,8 +20,6 @@ type ModelRouting = modelconfig.Routing
 
 type stepCompleteFunc func(context.Context, queue.CompleteStepCommand) error
 
-type nativeV3StepRunner func(context.Context, *model.ClaimedStep, map[string]string, string) error
-
 type Options struct {
 	WorkerCount            int
 	FragmentConcurrency    int
@@ -29,7 +27,6 @@ type Options struct {
 	InferenceContextTokens int
 	Logger                 *log.Logger
 	OnJobFinished          func(jobID int64)
-	OnJobOutput            func(jobID int64, delta string)
 }
 
 type Service struct {
@@ -42,10 +39,8 @@ type Service struct {
 	pollInterval           time.Duration
 	inferenceContextTokens int
 	completeStep           stepCompleteFunc
-	nativeV3Runner         nativeV3StepRunner
 	logger                 *log.Logger
 	onJobFinished          func(jobID int64)
-	onJobOutput            func(jobID int64, delta string)
 }
 
 func New(
@@ -75,12 +70,10 @@ func New(
 		completeStep:           completeStep,
 		logger:                 opts.Logger,
 		onJobFinished:          opts.OnJobFinished,
-		onJobOutput:            opts.OnJobOutput,
 	}
 	if repo != nil && completeStep != nil {
 		svc.completeStep = svc.wrapStepCompleter(completeStep)
 	}
-	svc.nativeV3Runner = svc.runNativeV3Step
 	return svc, nil
 }
 

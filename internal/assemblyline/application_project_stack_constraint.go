@@ -10,7 +10,6 @@ import (
 
 const (
 	ApplicationProjectStackConstraintSchemaV2 = "omnidex.application-project-stack-constraint.v2"
-	ApplicationProjectStackUnconstrained      = "UNCONSTRAINED"
 	ApplicationProjectStackUnsupported        = "UNSUPPORTED"
 	maxApplicationProjectStackCandidates      = 8
 	maxApplicationProjectStackSummaryBytesV2  = 2048
@@ -118,8 +117,7 @@ func validateApplicationProjectStackDecisionCandidates(
 	candidateID string,
 	candidates []ApplicationProjectStackCandidate,
 ) error {
-	if candidateID == ApplicationProjectStackUnconstrained ||
-		candidateID == ApplicationProjectStackUnsupported {
+	if candidateID == ApplicationProjectStackUnsupported {
 		return nil
 	}
 	for _, candidate := range candidates {
@@ -147,8 +145,8 @@ func BuildApplicationProjectStackConstraintPrompt(
 		return "", fmt.Errorf("encode project stack candidates: %w", err)
 	}
 	return strings.Join([]string{
-		"Determine which one registered technical format and packaging shape, if any, is explicitly required by the immutable software request.",
-		"Return one opaque candidate ID when exactly that format is required. Return UNCONSTRAINED when no technical format is explicit. Return UNSUPPORTED when an explicit or contradictory technical constraint cannot be satisfied by exactly one candidate.",
+		"Determine which one registered technical format and packaging shape can realize the immutable software request.",
+		"Return one opaque candidate ID for the suitable format. Return UNSUPPORTED only when none of the registered formats can satisfy an explicit technical constraint in the request.",
 		"Return exactly that raw ID token and nothing else: no JSON, quotes, label, Markdown, or commentary.",
 		"IMMUTABLE_SOFTWARE_REQUEST:\n" + string(authority),
 		"REGISTERED_TECHNICAL_FORMATS:\n" + string(candidates),

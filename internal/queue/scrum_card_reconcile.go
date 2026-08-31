@@ -27,8 +27,6 @@ type ScrumCardReconcileCommand struct {
 	PlayState         string
 	QueueOrder        int
 	JobID             string
-	SyncJobID         string
-	StepContextCursor int64
 	Messages          []ScrumCardMessageAppend
 	Outcome           string
 }
@@ -69,14 +67,14 @@ func (r *Repository) ReconcileScrumCard(
 	}
 	next := current
 	next.Column, next.PlayState, next.QueueOrder = string(command.Column), command.PlayState, command.QueueOrder
-	next.JobID, next.SyncJobID, next.StepContextCursor = command.JobID, command.SyncJobID, command.StepContextCursor
+	next.JobID = command.JobID
 	tag, err := tx.Exec(ctx, `
 		UPDATE scrum_cards SET column_name=$3,play_state=$4,queue_order=$5,
-		 job_id=$6,sync_job_id=$7,step_context_cursor=$8,
+		 job_id=$6,
 		 updated_at=GREATEST(clock_timestamp(),updated_at+interval '1 microsecond')
-		WHERE project_id=$1 AND id=$2 AND updated_at=$9
+		WHERE project_id=$1 AND id=$2 AND updated_at=$7
 	`, command.ProjectID, command.CardID, command.Column, command.PlayState, command.QueueOrder,
-		command.JobID, command.SyncJobID, command.StepContextCursor, command.ExpectedUpdatedAt)
+		command.JobID, command.ExpectedUpdatedAt)
 	if err != nil {
 		return DBScrumCard{}, fmt.Errorf("apply typed Scrum reconciliation: %w", err)
 	}
@@ -116,17 +114,16 @@ func validateScrumCardReconcileCommand(command ScrumCardReconcileCommand) error 
 	}
 	for name, value := range map[string]string{
 		"play state": command.PlayState, "job ID": command.JobID,
-		"sync job ID": command.SyncJobID, "expected job ID": command.ExpectedJobID,
-		"outcome": command.Outcome,
+		"expected job ID": command.ExpectedJobID, "outcome": command.Outcome,
 	} {
 		if value != strings.TrimSpace(value) {
 			return fmt.Errorf("Scrum reconciliation %s is not canonical", name)
 		}
 	}
-	if command.QueueOrder < 0 || command.StepContextCursor < 0 {
-		return fmt.Errorf("Scrum reconciliation queue order and cursor must be non-negative")
+	if command.QueueOrder < 0 {
+		return fmt.Errorf("Scrum reconciliation queue order must be non-negative")
 	}
-	for _, jobID := range []string{command.ExpectedJobID, command.JobID, command.SyncJobID} {
+	for _, jobID := range []string{command.ExpectedJobID, command.JobID} {
 		if jobID == "" {
 			continue
 		}
@@ -153,11 +150,11 @@ func validateScrumReconcileTransition(current DBScrumCard, command ScrumCardReco
 			return fmt.Errorf("inactive Scrum reconciliation requires zero queue order")
 		}
 	case "running":
-		if command.QueueOrder != 0 || command.JobID == "" || command.SyncJobID != command.JobID {
+		if command.QueueOrder != 0 || command.JobID == "" {
 			return fmt.Errorf("running Scrum reconciliation requires one exact job and zero queue order")
 		}
 	case "paused":
-		if command.QueueOrder != 0 || command.JobID != "" || command.SyncJobID != "" || command.StepContextCursor != 0 {
+		if command.QueueOrder != 0 || command.JobID != "" {
 			return fmt.Errorf("paused Scrum reconciliation may not retain job authority")
 		}
 	case "queued":
@@ -165,16 +162,10 @@ func validateScrumReconcileTransition(current DBScrumCard, command ScrumCardReco
 	default:
 		return fmt.Errorf("Scrum reconciliation play state %q is not registered", command.PlayState)
 	}
-	if command.SyncJobID == "" && command.StepContextCursor != 0 {
-		return fmt.Errorf("Scrum reconciliation cursor requires exact sync job authority")
-	}
-	if command.SyncJobID != "" && command.SyncJobID != command.JobID {
-		return fmt.Errorf("Scrum reconciliation sync job differs from card job")
-	}
 	switch command.Kind {
 	case ScrumReconcileJobProgress:
 		if command.Outcome != "" || current.JobID == "" || command.Column != ScrumCardColumn(current.Column) || command.PlayState != current.PlayState {
-			return fmt.Errorf("job-progress reconciliation may only advance typed output rows and cursor")
+			return fmt.Errorf("job-progress reconciliation may only append typed output rows")
 		}
 	case ScrumReconcileJobTerminal:
 		if current.PlayState != "running" || command.PlayState != "" || current.JobID == "" {

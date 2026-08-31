@@ -20,9 +20,6 @@ func scrumPlayAuthorityTx(
 	card DBScrumCard,
 	modelAuthority modelconfig.Authority,
 ) (scrum.JobMetadata, string, error) {
-	if err := requireScrumAIActiveTx(ctx, tx); err != nil {
-		return scrum.JobMetadata{}, "", err
-	}
 	var settings json.RawMessage
 	if err := tx.QueryRow(ctx, `SELECT settings FROM projects WHERE id=$1 FOR UPDATE`, card.ProjectID).Scan(&settings); err != nil {
 		return scrum.JobMetadata{}, "", err
@@ -68,36 +65,6 @@ func scrumPlayAuthorityTx(
 	}
 	lines = append(lines, "Omnidex owns completion from typed job and verification state.")
 	return metadata, strings.Join(lines, "\n\n"), nil
-}
-
-func requireScrumAIActiveTx(ctx context.Context, tx pgx.Tx) error {
-	if _, err := tx.Exec(ctx, `LOCK TABLE workspace_settings IN SHARE MODE`); err != nil {
-		return fmt.Errorf("lock global AI control for Scrum play: %w", err)
-	}
-	var raw json.RawMessage
-	err := tx.QueryRow(ctx, `SELECT value FROM workspace_settings WHERE key=$1`, aiControlKey).Scan(&raw)
-	if err == pgx.ErrNoRows {
-		return nil
-	}
-	if err != nil {
-		return fmt.Errorf("load locked global AI control for Scrum play: %w", err)
-	}
-	var stored struct {
-		Paused *bool `json:"paused"`
-	}
-	if err := exactjson.ValidateObject(raw, stored, "AI control state"); err != nil {
-		return err
-	}
-	if err := json.Unmarshal(raw, &stored); err != nil {
-		return fmt.Errorf("decode AI control state: %w", err)
-	}
-	if stored.Paused == nil {
-		return fmt.Errorf("AI control state requires paused")
-	}
-	if *stored.Paused {
-		return fmt.Errorf("AI is globally paused")
-	}
-	return nil
 }
 
 func decodeScrumPlayItems(raw json.RawMessage, name string) ([]scrum.ChecklistItem, error) {

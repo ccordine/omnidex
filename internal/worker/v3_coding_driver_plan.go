@@ -3,7 +3,6 @@ package worker
 import (
 	"fmt"
 	"path/filepath"
-	"strings"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
 	"github.com/gryph/omnidex/internal/station"
@@ -31,12 +30,8 @@ func (s *directCodingSession) Assemble() (directCodingAssembly, error) {
 		return directCodingAssembly{}, err
 	}
 	workerRuntime := directCodingWorkerRuntime(s)
-	workspaceState, err := objectiveWorkspaceState(s.root)
-	if err != nil {
-		return directCodingAssembly{}, err
-	}
 	applicationContext, err := assemblyline.BootstrapApplicationContext(
-		redacted, workspaceState,
+		redacted, assemblyline.ApplicationWorkspaceExisting,
 	)
 	if err != nil {
 		return directCodingAssembly{}, err
@@ -64,15 +59,9 @@ func (s *directCodingSession) Assemble() (directCodingAssembly, error) {
 			return directCodingAssembly{}, err
 		}
 		assembly := directCodingAssembly{Files: files, DeletePaths: deletions}
-		if err := assembly.normalize(); err != nil {
-			return directCodingAssembly{}, err
-		}
 		s.plannedFiles = len(files)
 		s.plannedDeletes = len(deletions)
 		return assembly, nil
-	}
-	if err := validateDirectCodingRequirementCount(specification.Requirements); err != nil {
-		return directCodingAssembly{}, err
 	}
 	selection, err := selectDirectCodingProject(
 		workerRuntime, func() (string, error) {
@@ -93,11 +82,7 @@ func (s *directCodingSession) Assemble() (directCodingAssembly, error) {
 	if err != nil {
 		return directCodingAssembly{}, err
 	}
-	targetTree.VersionProfileID = selection.VersionProfileID
-	selectedVersionProfile, err := directCodingVersionProfileForTargetTree(targetTree)
-	if err != nil {
-		return directCodingAssembly{}, err
-	}
+	selectedVersionProfile := selection.Profile
 	if err := s.bindDirectCodingTargetTreePathProvenance(targetTree); err != nil {
 		return directCodingAssembly{}, err
 	}
@@ -120,7 +105,7 @@ func (s *directCodingSession) Assemble() (directCodingAssembly, error) {
 	}
 	program, err := compileDirectCodingProgram(
 		filepath.Base(s.root), specification, identities, workload, capabilities,
-		targetTree, coverage,
+		selection, targetTree, coverage,
 	)
 	if err != nil {
 		return directCodingAssembly{}, err
@@ -130,12 +115,6 @@ func (s *directCodingSession) Assemble() (directCodingAssembly, error) {
 	)
 	if err != nil {
 		return directCodingAssembly{}, err
-	}
-	if targetTree.StackID != selectedStack.ID || program.StackID != selectedStack.ID {
-		return directCodingAssembly{}, fmt.Errorf(
-			"project stack authority diverged: selected=%s tree=%s program=%s",
-			selectedStack.ID, targetTree.StackID, program.StackID,
-		)
 	}
 	program.TargetTree = targetTree
 	program.Coverage = coverage
@@ -156,11 +135,8 @@ func (s *directCodingSession) Assemble() (directCodingAssembly, error) {
 	if err != nil {
 		return directCodingAssembly{}, err
 	}
-	if err := validateDirectCodingAssemblySources(program, assembly); err != nil {
-		return directCodingAssembly{}, fmt.Errorf("validate compiled application artifacts: %w", err)
-	}
 	s.runtime.svc.emitStepEvent(s.runtime.claim.Authority, "coding_artifact_sieve_passed", fmt.Sprintf(
-		"stack=%s files=%d", program.StackID, len(assembly.Files),
+		"stack=%s files=%d", selectedStack.ID, len(assembly.Files),
 	))
 	s.plannedFiles = len(assembly.Files)
 	s.plannedDeletes = len(assembly.DeletePaths)
@@ -171,15 +147,7 @@ func (s *directCodingSession) Assemble() (directCodingAssembly, error) {
 	))
 	s.runtime.svc.emitStepEvent(s.runtime.claim.Authority, "coding_assembly_ready", fmt.Sprintf(
 		"adapter=%s files=%d blocks=%d",
-		program.StackID, len(assembly.Files), blockCount,
+		selectedStack.ID, len(assembly.Files), blockCount,
 	))
 	return assembly, nil
-}
-
-func requireDirectCodingModel(id station.ID, modelName string) (string, error) {
-	modelName = strings.TrimSpace(modelName)
-	if modelName == "" {
-		return "", fmt.Errorf("direct coding station %s model is not configured", id)
-	}
-	return modelName, nil
 }

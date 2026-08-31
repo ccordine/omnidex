@@ -51,9 +51,6 @@ func (r *Repository) ApplyScrumCardPlay(
 	if !card.UpdatedAt.Equal(command.ExpectedUpdatedAt) {
 		return ScrumCardPlayResult{}, scrumCardRevisionConflict(command.CardID)
 	}
-	if err := requireScrumAIActiveTx(ctx, tx); err != nil {
-		return ScrumCardPlayResult{}, err
-	}
 	running, found, err := findRunningScrumCardTx(ctx, tx, command.ProjectID)
 	if err != nil {
 		return ScrumCardPlayResult{}, err
@@ -109,7 +106,7 @@ func (r *Repository) PauseScrumCardPlayAtRevision(
 			return DBScrumCard{}, err
 		}
 	} else {
-		if card.JobID != "" || card.SyncJobID != "" {
+		if card.JobID != "" {
 			return DBScrumCard{}, fmt.Errorf("queued Scrum card %q unexpectedly owns a job", card.ID)
 		}
 		previous := card
@@ -215,7 +212,7 @@ func (r *Repository) prepareScrumCardPlayTx(
 		return ScrumCardPlayResult{}, err
 	}
 	card.Column, card.PlayState, card.QueueOrder = "in_progress", "running", 0
-	card.JobID, card.SyncJobID, card.StepContextCursor = strconv.FormatInt(job.ID, 10), strconv.FormatInt(job.ID, 10), 0
+	card.JobID = strconv.FormatInt(job.ID, 10)
 	if err := updateScrumCardFieldsTx(ctx, tx, card); err != nil {
 		return ScrumCardPlayResult{}, err
 	}
@@ -241,7 +238,7 @@ func pauseRunningScrumCardTx(
 	command ScrumCardPlayCommand,
 	card *DBScrumCard,
 ) error {
-	if card == nil || card.PlayState != "running" || card.JobID == "" || card.JobID != card.SyncJobID {
+	if card == nil || card.PlayState != "running" || card.JobID == "" {
 		return fmt.Errorf("running Scrum card has invalid job authority")
 	}
 	jobID, err := strconv.ParseInt(card.JobID, 10, 64)
@@ -270,7 +267,7 @@ func pauseRunningScrumCardTx(
 
 func setScrumCardPausedTx(ctx context.Context, tx pgx.Tx, card *DBScrumCard, note string) error {
 	card.Column, card.PlayState, card.QueueOrder = "assigned", "paused", 0
-	card.JobID, card.SyncJobID, card.StepContextCursor = "", "", 0
+	card.JobID = ""
 	if err := updateScrumCardFieldsTx(ctx, tx, *card); err != nil {
 		return err
 	}

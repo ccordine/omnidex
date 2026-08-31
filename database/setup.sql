@@ -461,7 +461,7 @@ BEGIN
       AND jsonb_typeof(job.metadata->'project_id')='number'
       AND job.metadata->>'project_id'=NEW.project_id::TEXT
       AND job.metadata->>'scrum_card_id'=NEW.card_id
-      AND card.job_id=NEW.job_id::TEXT AND card.sync_job_id=NEW.job_id::TEXT
+      AND card.job_id=NEW.job_id::TEXT
       AND card.column_name='in_progress' AND card.play_state='running'
     FOR SHARE OF job,card;
     IF NOT FOUND THEN
@@ -659,34 +659,6 @@ $$;
 
 
 --
--- Name: prevent_project_location_change_during_active_work(); Type: FUNCTION; Schema: current runtime; Owner: -
---
-
-CREATE FUNCTION prevent_project_location_change_during_active_work() RETURNS trigger
-    LANGUAGE plpgsql
-    AS $$
-DECLARE
-    active_job_id BIGINT;
-    active_job_status TEXT;
-BEGIN
-    IF OLD.location IS NOT DISTINCT FROM NEW.location THEN
-        RETURN NEW;
-    END IF;
-    SELECT id,status INTO active_job_id,active_job_status
-    FROM jobs
-    WHERE project_id=OLD.id AND status NOT IN ('completed','failed','canceled')
-    ORDER BY id
-    LIMIT 1;
-    IF active_job_id IS NOT NULL THEN
-        RAISE EXCEPTION 'project location cannot change while job % remains %',
-            active_job_id,active_job_status;
-    END IF;
-    RETURN NEW;
-END;
-$$;
-
-
---
 -- Name: reject_channel_binding_update(); Type: FUNCTION; Schema: current runtime; Owner: -
 --
 
@@ -694,10 +666,9 @@ CREATE FUNCTION reject_channel_binding_update() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
 BEGIN
-    IF NEW.project_id IS DISTINCT FROM OLD.project_id OR
-       NEW.workspace_root IS DISTINCT FROM OLD.workspace_root OR
+    IF NEW.workspace_root IS DISTINCT FROM OLD.workspace_root OR
        NEW.data_source_id IS DISTINCT FROM OLD.data_source_id THEN
-        RAISE EXCEPTION 'channel project, workspace, and data-source binding is immutable';
+        RAISE EXCEPTION 'channel workspace and data-source binding is immutable';
     END IF;
     RETURN NEW;
 END;
@@ -718,7 +689,7 @@ BEGIN
             RAISE EXCEPTION 'chat turn pipeline authority is immutable';
         END IF;
         FOREACH binding_key IN ARRAY ARRAY[
-            'channel_id','channel_user_message_id','project_id','client_cwd',
+            'channel_id','channel_user_message_id','client_cwd',
             'data_source_id','channel_mode','roleplay_viewpoint_character_id','model_config',
             'roleplay_generation_config','roleplay_responders','roleplay_user_turn',
             'roleplay_simulation_preparation_id','roleplay_world_id','roleplay_scene_id',
@@ -3507,7 +3478,6 @@ CREATE TABLE ai_channels (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     scope text NOT NULL,
-    project_id bigint NOT NULL,
     workspace_root text NOT NULL,
     data_source_id text,
     mode text DEFAULT 'assistant'::text NOT NULL,
@@ -3772,7 +3742,6 @@ CREATE TABLE job_lifecycle_operations (
     observed_generation bigint NOT NULL,
     result_generation bigint NOT NULL,
     step_id bigint,
-    step_context_id bigint,
     kind text NOT NULL,
     command_sha256 text NOT NULL,
     command_payload jsonb NOT NULL,
@@ -3782,7 +3751,7 @@ CREATE TABLE job_lifecycle_operations (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT job_lifecycle_operations_check CHECK (((jsonb_typeof(command_payload) = 'object'::text) AND (command_payload ? 'operation_id'::text) AND ((command_payload ->> 'operation_id'::text) = operation_id))),
     CONSTRAINT job_lifecycle_operations_check2 CHECK (((jsonb_typeof(result_job) = 'object'::text) AND (result_job ? 'id'::text) AND (result_job ? 'current_generation'::text) AND (result_job ? 'status'::text) AND (((result_job ->> 'id'::text))::bigint = job_id) AND (((result_job ->> 'current_generation'::text))::bigint = result_generation) AND ((result_job ->> 'status'::text) = result_job_status))),
-    CONSTRAINT job_lifecycle_operations_check3 CHECK ((((kind = 'complete_step'::text) AND (step_id IS NOT NULL) AND ((((command_payload ->> 'context_key'::text) = ''::text) AND (step_context_id IS NULL)) OR (((command_payload ->> 'context_key'::text) <> ''::text) AND (step_context_id IS NOT NULL))) AND (result_generation = observed_generation) AND (result_step_status = 'completed'::text)) OR ((kind = 'fail_step'::text) AND (step_id IS NOT NULL) AND (step_context_id IS NULL) AND (result_generation = observed_generation) AND (result_step_status = 'failed'::text) AND (result_job_status = 'failed'::text)) OR ((kind = 'submit_feedback'::text) AND (step_id IS NOT NULL) AND (step_context_id IS NOT NULL) AND (result_generation = observed_generation) AND (result_step_status = 'completed'::text)) OR ((kind = 'replan_job'::text) AND (step_id IS NULL) AND (step_context_id IS NULL) AND (result_step_status IS NULL) AND (result_generation = (observed_generation + 1)) AND (result_job_status = 'running'::text)) OR ((kind = 'cancel_job'::text) AND (step_id IS NULL) AND (step_context_id IS NULL) AND (result_step_status IS NULL) AND (result_generation = observed_generation) AND (result_job_status = 'canceled'::text)))),
+    CONSTRAINT job_lifecycle_operations_check3 CHECK ((((kind = 'complete_step'::text) AND (step_id IS NOT NULL) AND (result_generation = observed_generation) AND (result_step_status = 'completed'::text)) OR ((kind = 'fail_step'::text) AND (step_id IS NOT NULL) AND (result_generation = observed_generation) AND (result_step_status = 'failed'::text) AND (result_job_status = 'failed'::text)) OR ((kind = 'submit_feedback'::text) AND (step_id IS NOT NULL) AND (result_generation = observed_generation) AND (result_step_status = 'completed'::text)) OR ((kind = 'replan_job'::text) AND (step_id IS NULL) AND (result_step_status IS NULL) AND (result_generation = (observed_generation + 1)) AND (result_job_status = 'running'::text)) OR ((kind = 'cancel_job'::text) AND (step_id IS NULL) AND (result_step_status IS NULL) AND (result_generation = observed_generation) AND (result_job_status = 'canceled'::text)))),
     CONSTRAINT job_lifecycle_operations_check4 CHECK (
 CASE
     WHEN (kind = ANY (ARRAY['complete_step'::text, 'fail_step'::text])) THEN ((command_payload ? 'step_id'::text) AND (((command_payload ->> 'step_id'::text))::bigint = step_id))
@@ -4134,117 +4103,6 @@ CREATE TABLE ollama_model_downloads (
     CONSTRAINT ollama_model_downloads_progress_check CHECK (((total_bytes >= 0) AND (completed_bytes >= 0) AND ((total_bytes = 0) OR (completed_bytes <= total_bytes)))),
     CONSTRAINT ollama_model_downloads_state_check CHECK ((state = ANY (ARRAY['queued'::text, 'running'::text, 'completed'::text, 'failed'::text]))),
     CONSTRAINT ollama_model_downloads_text_check CHECK ((((octet_length(status) >= 1) AND (octet_length(status) <= 512)) AND (status = btrim(status)) AND (octet_length(digest) <= 256) AND (digest = btrim(digest)) AND (octet_length(error) <= 2048) AND (error = btrim(error))))
-);
-
-
---
--- Name: omni_context_shrink_metrics; Type: TABLE; Schema: current runtime; Owner: -
---
-
-CREATE TABLE omni_context_shrink_metrics (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
-    source text NOT NULL,
-    card_id text,
-    project_id bigint,
-    raw_chars integer NOT NULL,
-    shrunk_chars integer NOT NULL,
-    saved_pct numeric DEFAULT 0 NOT NULL,
-    chat_messages integer DEFAULT 0 NOT NULL,
-    selected_chunks integer DEFAULT 0 NOT NULL,
-    metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL
-);
-
-
---
--- Name: omni_llm_context_usage; Type: TABLE; Schema: current runtime; Owner: -
---
-
-CREATE TABLE omni_llm_context_usage (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
-    source text NOT NULL,
-    model text DEFAULT ''::text NOT NULL,
-    provider text DEFAULT ''::text NOT NULL,
-    project_id bigint,
-    card_id text,
-    prompt_chars integer DEFAULT 0 NOT NULL,
-    sent_chars integer DEFAULT 0 NOT NULL,
-    context_limit_chars integer DEFAULT 0 NOT NULL,
-    utilization_pct numeric DEFAULT 0 NOT NULL,
-    overloaded boolean DEFAULT false NOT NULL,
-    shrunk boolean DEFAULT false NOT NULL,
-    saved_pct numeric DEFAULT 0 NOT NULL,
-    metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    success boolean DEFAULT true NOT NULL,
-    error_class text DEFAULT ''::text NOT NULL,
-    latency_ms bigint,
-    run_id uuid,
-    job_id bigint,
-    step_id bigint,
-    scope text DEFAULT ''::text NOT NULL,
-    attempt integer DEFAULT 1 NOT NULL,
-    delta_chars integer DEFAULT 0 NOT NULL
-);
-
-
---
--- Name: omni_model_calls; Type: TABLE; Schema: current runtime; Owner: -
---
-
-CREATE TABLE omni_model_calls (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
-    run_id uuid,
-    role text,
-    provider text,
-    model text,
-    started_at timestamp with time zone,
-    finished_at timestamp with time zone,
-    latency_ms bigint,
-    input_tokens integer,
-    output_tokens integer,
-    estimated_cost_usd numeric,
-    success boolean,
-    metadata jsonb DEFAULT '{}'::jsonb NOT NULL
-);
-
-
---
--- Name: omni_run_events; Type: TABLE; Schema: current runtime; Owner: -
---
-
-CREATE TABLE omni_run_events (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
-    run_id uuid NOT NULL,
-    step integer,
-    event_type text NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    payload jsonb DEFAULT '{}'::jsonb NOT NULL
-);
-
-
---
--- Name: omni_runs; Type: TABLE; Schema: current runtime; Owner: -
---
-
-CREATE TABLE omni_runs (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
-    session_id text,
-    workspace_id text,
-    task_kind text,
-    prompt_hash text,
-    prompt_summary text,
-    project_type text,
-    status text NOT NULL,
-    started_at timestamp with time zone DEFAULT now() NOT NULL,
-    finished_at timestamp with time zone,
-    duration_ms bigint,
-    local_only boolean DEFAULT true NOT NULL,
-    model_roles jsonb DEFAULT '{}'::jsonb NOT NULL,
-    completion_evidence jsonb DEFAULT '{}'::jsonb NOT NULL,
-    summary jsonb DEFAULT '{}'::jsonb NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
 
@@ -5067,14 +4925,10 @@ CREATE TABLE scrum_cards (
     test_criteria jsonb DEFAULT '[]'::jsonb NOT NULL,
     board_order integer DEFAULT 0 NOT NULL,
     flow_metrics jsonb DEFAULT '{}'::jsonb NOT NULL,
-    sync_job_id text DEFAULT ''::text NOT NULL,
-    step_context_cursor bigint DEFAULT 0 NOT NULL,
     channel_message_count bigint DEFAULT 0 NOT NULL,
     channel_content_bytes bigint DEFAULT 0 NOT NULL,
     CONSTRAINT scrum_cards_channel_counters_closed CHECK ((((channel_message_count >= 0) AND (channel_message_count <= '9007199254740991'::bigint)) AND ((channel_content_bytes >= 0) AND (channel_content_bytes <= '9007199254740991'::bigint)))),
     CONSTRAINT scrum_cards_play_state_typed CHECK ((play_state = ANY (ARRAY[''::text, 'queued'::text, 'running'::text, 'paused'::text]))),
-    CONSTRAINT scrum_cards_sync_cursors_nonnegative CHECK ((step_context_cursor >= 0)),
-    CONSTRAINT scrum_cards_sync_job_authority CHECK ((((sync_job_id = ''::text) AND (step_context_cursor = 0) AND (play_state <> 'running'::text) AND (NOT ((column_name = 'in_progress'::text) AND (job_id <> ''::text)))) OR ((sync_job_id <> ''::text) AND (sync_job_id = job_id)))),
     CONSTRAINT scrum_cards_timestamps_closed CHECK ((scrum_canonical_timestamp(created_at) AND scrum_canonical_timestamp(updated_at)))
 );
 
@@ -5148,38 +5002,6 @@ CREATE TABLE step_completion_evidence_sets (
 
 
 --
--- Name: step_contexts; Type: TABLE; Schema: current runtime; Owner: -
---
-
-CREATE TABLE step_contexts (
-    id bigint NOT NULL,
-    step_id bigint NOT NULL,
-    key text NOT NULL,
-    value text NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL
-);
-
-
---
--- Name: step_contexts_id_seq; Type: SEQUENCE; Schema: current runtime; Owner: -
---
-
-CREATE SEQUENCE step_contexts_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
---
--- Name: step_contexts_id_seq; Type: SEQUENCE OWNED BY; Schema: current runtime; Owner: -
---
-
-ALTER SEQUENCE step_contexts_id_seq OWNED BY step_contexts.id;
-
-
---
 -- Name: tags; Type: TABLE; Schema: current runtime; Owner: -
 --
 
@@ -5207,17 +5029,6 @@ CREATE SEQUENCE tags_id_seq
 --
 
 ALTER SEQUENCE tags_id_seq OWNED BY tags.id;
-
-
---
--- Name: workspace_settings; Type: TABLE; Schema: current runtime; Owner: -
---
-
-CREATE TABLE workspace_settings (
-    key text NOT NULL,
-    value jsonb DEFAULT '{}'::jsonb NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
-);
 
 
 --
@@ -5321,13 +5132,6 @@ ALTER TABLE ONLY projects ALTER COLUMN id SET DEFAULT nextval('projects_id_seq':
 
 
 --
-
-
---
--- Name: step_contexts id; Type: DEFAULT; Schema: current runtime; Owner: -
---
-
-ALTER TABLE ONLY step_contexts ALTER COLUMN id SET DEFAULT nextval('step_contexts_id_seq'::regclass);
 
 
 --
@@ -5476,13 +5280,6 @@ SELECT pg_catalog.setval('roleplay_simulation_transitions_ordinal_seq', 1, false
 
 
 --
--- Name: step_contexts_id_seq; Type: SEQUENCE SET; Schema: current runtime; Owner: -
---
-
-SELECT pg_catalog.setval('step_contexts_id_seq', 1, false);
-
-
---
 -- Name: tags_id_seq; Type: SEQUENCE SET; Schema: current runtime; Owner: -
 --
 
@@ -5495,14 +5292,6 @@ SELECT pg_catalog.setval('tags_id_seq', 1, false);
 
 ALTER TABLE ONLY ai_channel_messages
     ADD CONSTRAINT ai_channel_messages_pkey PRIMARY KEY (id);
-
-
---
--- Name: ai_channels ai_channels_id_project_id_key; Type: CONSTRAINT; Schema: current runtime; Owner: -
---
-
-ALTER TABLE ONLY ai_channels
-    ADD CONSTRAINT ai_channels_id_project_id_key UNIQUE (id, project_id);
 
 
 --
@@ -5730,46 +5519,6 @@ ALTER TABLE ONLY memory_chunks
 
 ALTER TABLE ONLY ollama_model_downloads
     ADD CONSTRAINT ollama_model_downloads_pkey PRIMARY KEY (id);
-
-
---
--- Name: omni_context_shrink_metrics omni_context_shrink_metrics_pkey; Type: CONSTRAINT; Schema: current runtime; Owner: -
---
-
-ALTER TABLE ONLY omni_context_shrink_metrics
-    ADD CONSTRAINT omni_context_shrink_metrics_pkey PRIMARY KEY (id);
-
-
---
--- Name: omni_llm_context_usage omni_llm_context_usage_pkey; Type: CONSTRAINT; Schema: current runtime; Owner: -
---
-
-ALTER TABLE ONLY omni_llm_context_usage
-    ADD CONSTRAINT omni_llm_context_usage_pkey PRIMARY KEY (id);
-
-
---
--- Name: omni_model_calls omni_model_calls_pkey; Type: CONSTRAINT; Schema: current runtime; Owner: -
---
-
-ALTER TABLE ONLY omni_model_calls
-    ADD CONSTRAINT omni_model_calls_pkey PRIMARY KEY (id);
-
-
---
--- Name: omni_run_events omni_run_events_pkey; Type: CONSTRAINT; Schema: current runtime; Owner: -
---
-
-ALTER TABLE ONLY omni_run_events
-    ADD CONSTRAINT omni_run_events_pkey PRIMARY KEY (id);
-
-
---
--- Name: omni_runs omni_runs_pkey; Type: CONSTRAINT; Schema: current runtime; Owner: -
---
-
-ALTER TABLE ONLY omni_runs
-    ADD CONSTRAINT omni_runs_pkey PRIMARY KEY (id);
 
 
 --
@@ -6450,14 +6199,6 @@ ALTER TABLE ONLY step_completion_evidence_sets
 
 
 --
--- Name: step_contexts step_contexts_pkey; Type: CONSTRAINT; Schema: current runtime; Owner: -
---
-
-ALTER TABLE ONLY step_contexts
-    ADD CONSTRAINT step_contexts_pkey PRIMARY KEY (id);
-
-
---
 -- Name: tags tags_name_key; Type: CONSTRAINT; Schema: current runtime; Owner: -
 --
 
@@ -6471,14 +6212,6 @@ ALTER TABLE ONLY tags
 
 ALTER TABLE ONLY tags
     ADD CONSTRAINT tags_pkey PRIMARY KEY (id);
-
-
---
--- Name: workspace_settings workspace_settings_pkey; Type: CONSTRAINT; Schema: current runtime; Owner: -
---
-
-ALTER TABLE ONLY workspace_settings
-    ADD CONSTRAINT workspace_settings_pkey PRIMARY KEY (key);
 
 
 --
@@ -6510,13 +6243,6 @@ CREATE INDEX idx_ai_channels_data_source_updated ON ai_channels USING btree (dat
 
 
 --
--- Name: idx_ai_channels_project_updated; Type: INDEX; Schema: current runtime; Owner: -
---
-
-CREATE INDEX idx_ai_channels_project_updated ON ai_channels USING btree (project_id, updated_at DESC, id);
-
-
---
 -- Name: idx_ai_channels_scope_updated; Type: INDEX; Schema: current runtime; Owner: -
 --
 
@@ -6542,20 +6268,6 @@ CREATE INDEX idx_artifacts_job_step_kind ON artifacts USING btree (job_id, step_
 --
 
 CREATE INDEX idx_artifacts_kind_created ON artifacts USING btree (kind, created_at DESC);
-
-
---
--- Name: idx_context_shrink_saved_pct; Type: INDEX; Schema: current runtime; Owner: -
---
-
-CREATE INDEX idx_context_shrink_saved_pct ON omni_context_shrink_metrics USING btree (saved_pct DESC);
-
-
---
--- Name: idx_context_shrink_source_created; Type: INDEX; Schema: current runtime; Owner: -
---
-
-CREATE INDEX idx_context_shrink_source_created ON omni_context_shrink_metrics USING btree (source, created_at DESC);
 
 
 --
@@ -6739,76 +6451,6 @@ CREATE INDEX idx_jobs_status_id_desc ON jobs USING btree (status, id DESC);
 
 
 --
--- Name: idx_llm_context_usage_created; Type: INDEX; Schema: current runtime; Owner: -
---
-
-CREATE INDEX idx_llm_context_usage_created ON omni_llm_context_usage USING btree (created_at DESC);
-
-
---
--- Name: idx_llm_context_usage_delta; Type: INDEX; Schema: current runtime; Owner: -
---
-
-CREATE INDEX idx_llm_context_usage_delta ON omni_llm_context_usage USING btree (delta_chars DESC, created_at DESC);
-
-
---
--- Name: idx_llm_context_usage_model; Type: INDEX; Schema: current runtime; Owner: -
---
-
-CREATE INDEX idx_llm_context_usage_model ON omni_llm_context_usage USING btree (model, created_at DESC);
-
-
---
--- Name: idx_llm_context_usage_overloaded; Type: INDEX; Schema: current runtime; Owner: -
---
-
-CREATE INDEX idx_llm_context_usage_overloaded ON omni_llm_context_usage USING btree (overloaded, created_at DESC);
-
-
---
--- Name: idx_llm_context_usage_run; Type: INDEX; Schema: current runtime; Owner: -
---
-
-CREATE INDEX idx_llm_context_usage_run ON omni_llm_context_usage USING btree (run_id, created_at DESC);
-
-
---
--- Name: idx_llm_context_usage_run_id; Type: INDEX; Schema: current runtime; Owner: -
---
-
-CREATE INDEX idx_llm_context_usage_run_id ON omni_llm_context_usage USING btree (run_id);
-
-
---
--- Name: idx_llm_context_usage_run_sent; Type: INDEX; Schema: current runtime; Owner: -
---
-
-CREATE INDEX idx_llm_context_usage_run_sent ON omni_llm_context_usage USING btree (run_id, sent_chars DESC);
-
-
---
--- Name: idx_llm_context_usage_scope; Type: INDEX; Schema: current runtime; Owner: -
---
-
-CREATE INDEX idx_llm_context_usage_scope ON omni_llm_context_usage USING btree (scope, created_at DESC);
-
-
---
--- Name: idx_llm_context_usage_source_created; Type: INDEX; Schema: current runtime; Owner: -
---
-
-CREATE INDEX idx_llm_context_usage_source_created ON omni_llm_context_usage USING btree (source, created_at DESC);
-
-
---
--- Name: idx_llm_context_usage_success; Type: INDEX; Schema: current runtime; Owner: -
---
-
-CREATE INDEX idx_llm_context_usage_success ON omni_llm_context_usage USING btree (success, created_at DESC);
-
-
---
 -- Name: idx_memory_candidates_exact_scope; Type: INDEX; Schema: current runtime; Owner: -
 --
 
@@ -6890,83 +6532,6 @@ CREATE UNIQUE INDEX idx_ollama_model_downloads_one_active_model ON ollama_model_
 --
 
 CREATE INDEX idx_ollama_model_downloads_recent ON ollama_model_downloads USING btree (created_at DESC, id DESC);
-
-
---
--- Name: idx_omni_events_created; Type: INDEX; Schema: current runtime; Owner: -
---
-
-CREATE INDEX idx_omni_events_created ON omni_run_events USING btree (created_at DESC);
-
-
---
--- Name: idx_omni_events_payload_gin; Type: INDEX; Schema: current runtime; Owner: -
---
-
-CREATE INDEX idx_omni_events_payload_gin ON omni_run_events USING gin (payload);
-
-
---
--- Name: idx_omni_events_run_created; Type: INDEX; Schema: current runtime; Owner: -
---
-
-CREATE INDEX idx_omni_events_run_created ON omni_run_events USING btree (run_id, created_at DESC);
-
-
---
--- Name: idx_omni_events_type; Type: INDEX; Schema: current runtime; Owner: -
---
-
-CREATE INDEX idx_omni_events_type ON omni_run_events USING btree (event_type);
-
-
---
--- Name: idx_omni_events_type_created; Type: INDEX; Schema: current runtime; Owner: -
---
-
-CREATE INDEX idx_omni_events_type_created ON omni_run_events USING btree (event_type, created_at DESC);
-
-
---
--- Name: idx_omni_model_role_model; Type: INDEX; Schema: current runtime; Owner: -
---
-
-CREATE INDEX idx_omni_model_role_model ON omni_model_calls USING btree (role, model);
-
-
---
--- Name: idx_omni_model_role_provider_model; Type: INDEX; Schema: current runtime; Owner: -
---
-
-CREATE INDEX idx_omni_model_role_provider_model ON omni_model_calls USING btree (role, provider, model);
-
-
---
--- Name: idx_omni_runs_started; Type: INDEX; Schema: current runtime; Owner: -
---
-
-CREATE INDEX idx_omni_runs_started ON omni_runs USING btree (started_at DESC);
-
-
---
--- Name: idx_omni_runs_status_started; Type: INDEX; Schema: current runtime; Owner: -
---
-
-CREATE INDEX idx_omni_runs_status_started ON omni_runs USING btree (status, started_at DESC);
-
-
---
--- Name: idx_omni_runs_task_kind; Type: INDEX; Schema: current runtime; Owner: -
---
-
-CREATE INDEX idx_omni_runs_task_kind ON omni_runs USING btree (task_kind);
-
-
---
--- Name: idx_omni_runs_workspace_started; Type: INDEX; Schema: current runtime; Owner: -
---
-
-CREATE INDEX idx_omni_runs_workspace_started ON omni_runs USING btree (workspace_id, started_at DESC);
 
 
 --
@@ -7149,20 +6714,6 @@ CREATE INDEX idx_scrum_cards_project_column_order ON scrum_cards USING btree (pr
 --
 
 CREATE INDEX idx_scrum_cards_project_play ON scrum_cards USING btree (project_id, play_state, queue_order);
-
-
---
--- Name: idx_step_contexts_step_id; Type: INDEX; Schema: current runtime; Owner: -
---
-
-CREATE INDEX idx_step_contexts_step_id ON step_contexts USING btree (step_id, id);
-
-
---
--- Name: idx_step_contexts_step_identity; Type: INDEX; Schema: current runtime; Owner: -
---
-
-CREATE UNIQUE INDEX idx_step_contexts_step_identity ON step_contexts USING btree (step_id, id);
 
 
 --
@@ -7481,13 +7032,6 @@ CREATE TRIGGER ollama_model_downloads_transition_guard BEFORE UPDATE ON ollama_m
 --
 
 CREATE TRIGGER ollama_model_downloads_truncate_rejected BEFORE TRUNCATE ON ollama_model_downloads FOR EACH STATEMENT EXECUTE FUNCTION reject_ollama_model_download_removal();
-
-
---
--- Name: projects projects_active_work_location_guard; Type: TRIGGER; Schema: current runtime; Owner: -
---
-
-CREATE TRIGGER projects_active_work_location_guard BEFORE UPDATE ON projects FOR EACH ROW EXECUTE FUNCTION prevent_project_location_change_during_active_work();
 
 
 --
@@ -8295,14 +7839,6 @@ ALTER TABLE ONLY ai_channels
 
 
 --
--- Name: ai_channels ai_channels_project_id_fkey; Type: FK CONSTRAINT; Schema: current runtime; Owner: -
---
-
-ALTER TABLE ONLY ai_channels
-    ADD CONSTRAINT ai_channels_project_id_fkey FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE RESTRICT;
-
-
---
 -- Name: ai_channels ai_channels_roleplay_viewpoint_fkey; Type: FK CONSTRAINT; Schema: current runtime; Owner: -
 --
 
@@ -8455,14 +7991,6 @@ ALTER TABLE ONLY job_lifecycle_operations
 
 
 --
--- Name: job_lifecycle_operations job_lifecycle_operations_step_id_step_context_id_fkey; Type: FK CONSTRAINT; Schema: current runtime; Owner: -
---
-
-ALTER TABLE ONLY job_lifecycle_operations
-    ADD CONSTRAINT job_lifecycle_operations_step_id_step_context_id_fkey FOREIGN KEY (step_id, step_context_id) REFERENCES step_contexts(step_id, id) ON DELETE RESTRICT;
-
-
---
 -- Name: job_step_attempts job_step_attempts_job_id_generation_step_id_fkey; Type: FK CONSTRAINT; Schema: current runtime; Owner: -
 --
 
@@ -8559,14 +8087,6 @@ ALTER TABLE ONLY memory_candidates
 
 
 --
--- Name: memory_candidates memory_candidates_scope_fkey; Type: FK CONSTRAINT; Schema: current runtime; Owner: -
---
-
-ALTER TABLE ONLY memory_candidates
-    ADD CONSTRAINT memory_candidates_scope_fkey FOREIGN KEY (channel_id, project_id) REFERENCES ai_channels(id, project_id) ON DELETE RESTRICT;
-
-
---
 -- Name: memory_candidates memory_candidates_source_memory_scope_fkey; Type: FK CONSTRAINT; Schema: current runtime; Owner: -
 --
 
@@ -8604,30 +8124,6 @@ ALTER TABLE ONLY memory_chunk_tags
 
 ALTER TABLE ONLY memory_chunk_tags
     ADD CONSTRAINT memory_chunk_tags_tag_id_fkey FOREIGN KEY (tag_id) REFERENCES tags(id) ON DELETE CASCADE;
-
-
---
--- Name: memory_chunks memory_chunks_scope_fkey; Type: FK CONSTRAINT; Schema: current runtime; Owner: -
---
-
-ALTER TABLE ONLY memory_chunks
-    ADD CONSTRAINT memory_chunks_scope_fkey FOREIGN KEY (channel_id, project_id) REFERENCES ai_channels(id, project_id) ON DELETE RESTRICT;
-
-
---
--- Name: omni_model_calls omni_model_calls_run_id_fkey; Type: FK CONSTRAINT; Schema: current runtime; Owner: -
---
-
-ALTER TABLE ONLY omni_model_calls
-    ADD CONSTRAINT omni_model_calls_run_id_fkey FOREIGN KEY (run_id) REFERENCES omni_runs(id) ON DELETE CASCADE;
-
-
---
--- Name: omni_run_events omni_run_events_run_id_fkey; Type: FK CONSTRAINT; Schema: current runtime; Owner: -
---
-
-ALTER TABLE ONLY omni_run_events
-    ADD CONSTRAINT omni_run_events_run_id_fkey FOREIGN KEY (run_id) REFERENCES omni_runs(id) ON DELETE CASCADE;
 
 
 --
@@ -9405,12 +8901,3 @@ ALTER TABLE ONLY step_completion_evidence_sets
 
 ALTER TABLE ONLY step_completion_evidence_sets
     ADD CONSTRAINT step_completion_evidence_sets_operation_id_fkey FOREIGN KEY (operation_id) REFERENCES job_lifecycle_operations(operation_id) ON DELETE RESTRICT DEFERRABLE INITIALLY DEFERRED;
-
-
---
--- Name: step_contexts step_contexts_step_id_fkey; Type: FK CONSTRAINT; Schema: current runtime; Owner: -
---
-
-ALTER TABLE ONLY step_contexts
-    ADD CONSTRAINT step_contexts_step_id_fkey FOREIGN KEY (step_id) REFERENCES job_steps(id) ON DELETE CASCADE;
-

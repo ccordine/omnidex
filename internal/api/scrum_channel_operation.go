@@ -160,8 +160,6 @@ func buildScrumChannelCardUpdate(
 		return queue.ScrumChannelCardUpdate{}, err
 	}
 	card.JobID = fmt.Sprintf("%d", job.ID)
-	card.SyncJobID = card.JobID
-	card.StepContextCursor = 0
 	card.Column = "in_progress"
 	card.PlayState = scrumPlayRunning
 	card.QueueOrder = 0
@@ -172,7 +170,6 @@ func buildScrumChannelCardUpdate(
 	return queue.ScrumChannelCardUpdate{
 		Messages: messages, Column: card.Column, JobID: card.JobID,
 		PlayState: card.PlayState, QueueOrder: card.QueueOrder,
-		SyncJobID: card.SyncJobID, StepContextCursor: card.StepContextCursor,
 	}, nil
 }
 

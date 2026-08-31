@@ -65,9 +65,6 @@ func (r *Repository) UpdateScrumCardAtRevision(
 	if err := patch.applyTo(&current); err != nil {
 		return DBScrumCard{}, err
 	}
-	if err := validateDBScrumCursorAuthority(current); err != nil {
-		return DBScrumCard{}, err
-	}
 	if err := updateScrumCardFieldsTx(ctx, tx, current); err != nil {
 		return DBScrumCard{}, err
 	}
@@ -208,10 +205,10 @@ func (r *Repository) DeleteScrumCardAtRevision(
 }
 
 func requireInactiveScrumCardForDeleteTx(ctx context.Context, tx pgx.Tx, card DBScrumCard) error {
-	if card.PlayState == "running" || card.PlayState == "queued" || card.SyncJobID != "" {
+	if card.PlayState == "running" || card.PlayState == "queued" {
 		return fmt.Errorf(
-			"%w: card %q has play_state=%q and sync_job_id=%q; pause it before deletion",
-			ErrScrumCardActiveDelete, card.ID, card.PlayState, card.SyncJobID,
+			"%w: card %q has play_state=%q; pause it before deletion",
+			ErrScrumCardActiveDelete, card.ID, card.PlayState,
 		)
 	}
 	if card.JobID == "" {

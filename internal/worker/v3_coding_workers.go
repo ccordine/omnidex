@@ -126,11 +126,7 @@ func (s *directCodingSession) workerModel(id station.ID) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	modelName, err := stationModel(routing, id)
-	if err != nil {
-		return "", err
-	}
-	return requireDirectCodingModel(id, modelName)
+	return stationModel(routing, id)
 }
 
 func renderDirectCodingWorkerEvent(event typedWorkerEvent) string {

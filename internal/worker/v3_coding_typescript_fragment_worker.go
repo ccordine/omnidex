@@ -25,7 +25,6 @@ func runDirectCodingTypeScriptFragmentWorker(
 	if runtime.Context == nil || runtime.Execute == nil {
 		return "", fmt.Errorf("TypeScript fragment worker requires a portable execution runtime")
 	}
-	modelName = strings.TrimSpace(modelName)
 	if modelName == "" {
 		return "", fmt.Errorf("TypeScript fragment worker requires one configured model")
 	}

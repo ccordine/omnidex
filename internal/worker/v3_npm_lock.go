@@ -5,8 +5,21 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"strconv"
 	"strings"
 )
+
+func directCodingNPMLockVersion(profile directCodingProjectVersionProfile) (int, error) {
+	value, err := directCodingVersionComponent(profile, "npm_lock")
+	if err != nil {
+		return 0, err
+	}
+	version, err := strconv.Atoi(value)
+	if err != nil || version <= 0 {
+		return 0, fmt.Errorf("version profile %s has invalid npm lock format %q", profile.ID, value)
+	}
+	return version, nil
+}
 
 func materializePinnedNPMLock(
 	template []byte,

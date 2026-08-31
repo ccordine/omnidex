@@ -23,13 +23,9 @@ func (provider boundObjectiveContextProvider) SearchAvailability(
 	if err := provider.validateAuthority(); err != nil {
 		return "", err
 	}
-	continuity, err := provider.runtime.svc.repo.ObjectiveContinuityAuthorities(ctx, provider.job)
-	if err != nil {
-		return "", err
-	}
 	switch provider.authority.ChannelMode {
 	case model.ChannelModeAssistant:
-		return provider.assistantSearchAvailability(ctx, continuity)
+		return provider.assistantSearchAvailability(ctx)
 	case model.ChannelModeRoleplay:
 		return provider.roleplaySearchAvailability(ctx)
 	default:
@@ -42,7 +38,6 @@ func (provider boundObjectiveContextProvider) SearchAvailability(
 
 func (provider boundObjectiveContextProvider) assistantSearchAvailability(
 	ctx context.Context,
-	continuity queue.ObjectiveContinuityAuthority,
 ) (contextcompiler.SearchAvailability, error) {
 	recent, err := provider.runtime.svc.repo.ConversationCandidateAuthorities(ctx, provider.job)
 	if err != nil {
@@ -66,25 +61,6 @@ func (provider boundObjectiveContextProvider) assistantSearchAvailability(
 		return "", err
 	}
 	if additionalConversation {
-		return contextcompiler.SearchAvailable, nil
-	}
-	if continuity.Scope == nil {
-		return contextcompiler.SearchUnavailable, nil
-	}
-	representedContents := make([]string, 0, len(recentRecords)+1)
-	for _, record := range replanContextRecords(continuity.Replan) {
-		representedContents = append(representedContents, record.Content)
-	}
-	for _, record := range recentRecords {
-		representedContents = append(representedContents, record.Content)
-	}
-	hasMemory, err := provider.runtime.svc.repo.HasAdditionalScopedMemory(
-		ctx, *continuity.Scope, representedContents,
-	)
-	if err != nil {
-		return "", err
-	}
-	if hasMemory {
 		return contextcompiler.SearchAvailable, nil
 	}
 	return contextcompiler.SearchUnavailable, nil

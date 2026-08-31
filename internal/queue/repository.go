@@ -164,7 +164,6 @@ func resolveProjectID(ctx context.Context, tx pgx.Tx, metadataJSON []byte) (*int
 type metadataProjectReference struct {
 	ProjectID    int64
 	HasProjectID bool
-	Location     string
 }
 
 func projectReferenceFromMetadata(metadataJSON []byte) (metadataProjectReference, error) {
@@ -184,22 +183,6 @@ func projectReferenceFromMetadata(metadataJSON []byte) (metadataProjectReference
 			return metadataProjectReference{}, fmt.Errorf("project_id must be a positive integer")
 		}
 		ref.HasProjectID = true
-	}
-	for _, key := range []string{"client_cwd"} {
-		raw, ok := payload[key]
-		if !ok {
-			continue
-		}
-		var location string
-		if err := json.Unmarshal(raw, &location); err != nil {
-			return metadataProjectReference{}, fmt.Errorf("%s must be a string: %w", key, err)
-		}
-		if location == "" || location != strings.TrimSpace(location) ||
-			!filepath.IsAbs(location) || filepath.Clean(location) != location {
-			return metadataProjectReference{}, fmt.Errorf("%s must be one canonical absolute workspace root", key)
-		}
-		ref.Location = location
-		break
 	}
 	return ref, nil
 }

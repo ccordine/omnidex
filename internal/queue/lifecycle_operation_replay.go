@@ -24,15 +24,6 @@ func requireCompleteStepReplayTx(
 	if err != nil {
 		return err
 	}
-	if record.StepContextID != nil {
-		if err := requireLifecycleStepContextTx(
-			ctx, tx, *record.StepContextID, command.StepID, command.ContextKey, command.ContextValue,
-		); err != nil {
-			return err
-		}
-	} else if command.ContextKey != "" {
-		return lifecycleReplayStateError(record.ID, "missing step context")
-	}
 	return requireTerminalLifecycleAuthorityTx(ctx, tx, record, command.Output, "")
 }
 
@@ -42,7 +33,7 @@ func requireFailStepReplayTx(
 	record lifecycleOperationRecord,
 	command FailStepCommand,
 ) error {
-	if record.StepID == nil || *record.StepID != command.StepID || record.StepContextID != nil ||
+	if record.StepID == nil || *record.StepID != command.StepID ||
 		record.ResultStepStatus == nil || *record.ResultStepStatus != model.StepStatusFailed {
 		return lifecycleReplayStateError(record.ID, "failed step result")
 	}
@@ -60,17 +51,12 @@ func requireSubmitFeedbackReplayTx(
 	record lifecycleOperationRecord,
 	command SubmitJobFeedbackCommand,
 ) error {
-	if record.StepID == nil || record.StepContextID == nil ||
+	if record.StepID == nil ||
 		record.ResultStepStatus == nil || *record.ResultStepStatus != model.StepStatusCompleted {
 		return lifecycleReplayStateError(record.ID, "feedback step result")
 	}
 	if err := requireLifecycleStepTx(
 		ctx, tx, record, model.StepStatusCompleted, &command.Feedback, lifecycleExpectedText(""),
-	); err != nil {
-		return err
-	}
-	if err := requireLifecycleStepContextTx(
-		ctx, tx, *record.StepContextID, *record.StepID, "user_feedback", command.Feedback,
 	); err != nil {
 		return err
 	}
@@ -126,25 +112,6 @@ func requireLifecycleGenerationExistsTx(ctx context.Context, tx pgx.Tx, jobID, g
 		SELECT generation FROM job_generations WHERE job_id=$1 AND generation=$2
 	`, jobID, generation).Scan(&found); err != nil {
 		return fmt.Errorf("validate lifecycle generation %d for job %d: %w", generation, jobID, err)
-	}
-	return nil
-}
-
-func requireLifecycleStepContextTx(
-	ctx context.Context,
-	tx pgx.Tx,
-	contextID, stepID int64,
-	wantKey, wantValue string,
-) error {
-	var persistedStepID int64
-	var key, value string
-	if err := tx.QueryRow(ctx, `
-		SELECT step_id, key, value FROM step_contexts WHERE id=$1
-	`, contextID).Scan(&persistedStepID, &key, &value); err != nil {
-		return fmt.Errorf("validate lifecycle step context %d: %w", contextID, err)
-	}
-	if persistedStepID != stepID || key != wantKey || value != wantValue {
-		return fmt.Errorf("lifecycle step context %d has inconsistent authority", contextID)
 	}
 	return nil
 }

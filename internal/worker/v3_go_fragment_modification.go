@@ -24,7 +24,6 @@ func runDirectCodingGoFragmentModificationWorker(
 	if runtime.MaxAttempts != exactSemanticLeafCalls {
 		return "", fmt.Errorf("Go fragment modification requires exactly %d model call", exactSemanticLeafCalls)
 	}
-	modelName = strings.TrimSpace(modelName)
 	if modelName == "" || strings.TrimSpace(job.Subject) == "" {
 		return "", fmt.Errorf("Go fragment modification requires one model and subject")
 	}

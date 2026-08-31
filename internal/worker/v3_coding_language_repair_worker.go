@@ -86,7 +86,7 @@ func runDirectCodingLanguageCorrection(
 		Model: modelName, Attempt: 1, MaxAttempts: 1, PromptBytes: len(prompt),
 		CurrentBytes: len(current), CorrectionBytes: len(instruction),
 	})
-	result, err := runtime.Execute(job, strings.TrimSpace(modelName))
+	result, err := runtime.Execute(job, modelName)
 	if err != nil {
 		return "", failDirectCodingLanguageCorrection(runtime, modelName, subject, err)
 	}

@@ -16,7 +16,6 @@ type lifecycleOperationRecord struct {
 	ObservedGeneration int64
 	ResultGeneration   int64
 	StepID             *int64
-	StepContextID      *int64
 	Kind               LifecycleOperationKind
 	CommandSHA256      string
 	ResultJobStatus    string
@@ -41,14 +40,14 @@ func loadLifecycleOperationTx(
 	var payloadMatches bool
 	err = tx.QueryRow(ctx, `
 		SELECT operation_id, job_id, observed_generation, result_generation,
-		       step_id, step_context_id, kind, command_sha256,
+		       step_id, kind, command_sha256,
 		       result_job_status, result_step_status, result_job,
 		       command_payload = $2::jsonb
 		FROM job_lifecycle_operations
 		WHERE operation_id=$1
 	`, descriptor.ID, string(descriptor.Payload)).Scan(
 		&record.ID, &record.JobID, &record.ObservedGeneration, &record.ResultGeneration,
-		&record.StepID, &record.StepContextID, &record.Kind, &record.CommandSHA256,
+		&record.StepID, &record.Kind, &record.CommandSHA256,
 		&record.ResultJobStatus, &record.ResultStepStatus, &resultJobJSON, &payloadMatches,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -98,12 +97,12 @@ func insertLifecycleOperationTx(
 	result, err := tx.Exec(ctx, `
 		INSERT INTO job_lifecycle_operations (
 			operation_id, job_id, observed_generation, result_generation,
-			step_id, step_context_id, kind, command_sha256, command_payload,
+			step_id, kind, command_sha256, command_payload,
 			result_job_status, result_step_status, result_job
-		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10,$11,$12::jsonb)
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,$10,$11::jsonb)
 		ON CONFLICT (operation_id) DO NOTHING
 	`, descriptor.ID, record.JobID, record.ObservedGeneration, record.ResultGeneration,
-		record.StepID, record.StepContextID, descriptor.Kind, descriptor.SHA256,
+		record.StepID, descriptor.Kind, descriptor.SHA256,
 		string(descriptor.Payload), record.ResultJobStatus, record.ResultStepStatus, string(resultJobJSON))
 	if err != nil {
 		return fmt.Errorf("record lifecycle operation %q: %w", descriptor.ID, err)

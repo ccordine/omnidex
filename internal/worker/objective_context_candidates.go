@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"reflect"
-	"slices"
 	"strings"
 	"unicode/utf8"
 
@@ -70,7 +69,6 @@ func (provider boundObjectiveContextProvider) retrieveAssistant(
 		return contextcompiler.CandidateSet{}, err
 	}
 	searched := []queue.ContextSearchRecord{}
-	memory := []queue.ContextSearchRecord{}
 	if len(terms) != 0 {
 		searched, err = provider.runtime.svc.repo.SearchConversationContextRecords(
 			ctx, provider.job, terms, contextSearchedRecordLimit,
@@ -86,16 +84,8 @@ func (provider boundObjectiveContextProvider) retrieveAssistant(
 				)
 			}
 		}
-		memory, err = provider.retrieveDurableMemory(ctx, continuity.Scope, terms)
-		if err != nil {
-			return contextcompiler.CandidateSet{}, fmt.Errorf(
-				"retrieve assistant durable memory context: %w", err,
-			)
-		}
 	}
-	// Keep every fixed provider represented before later candidates from any
-	// single provider can consume the hard relevance projection budget.
-	records := interleaveContextRecordGroups(recentRecords, searched, memory)
+	records := interleaveContextRecordGroups(recentRecords, searched)
 	set, err := buildContextCandidateSet(
 		replanContextRecords(continuity.Replan), records,
 	)
@@ -104,111 +94,6 @@ func (provider boundObjectiveContextProvider) retrieveAssistant(
 	}
 	set.Replan = continuity.Replan
 	return set, nil
-}
-
-func (provider boundObjectiveContextProvider) retrieveDurableMemory(
-	ctx context.Context,
-	scope *model.MemoryScope,
-	terms []string,
-) ([]queue.ContextSearchRecord, error) {
-	if scope == nil || len(terms) == 0 {
-		return []queue.ContextSearchRecord{}, nil
-	}
-	hasMemory, err := provider.runtime.svc.repo.HasScopedMemory(ctx, *scope)
-	if err != nil || !hasMemory {
-		return nil, err
-	}
-	if provider.runtime.svc.embeddings == nil {
-		return nil, fmt.Errorf("scoped context retrieval requires embedding authority")
-	}
-	embeddings, err := embedContextQueries(ctx, provider.runtime.svc.embeddings, terms)
-	if err != nil {
-		return nil, err
-	}
-	groups := make([][]model.MemoryMatch, 0, len(embeddings))
-	for _, embedding := range embeddings {
-		matches, err := provider.runtime.svc.repo.FindRelevantMemory(
-			ctx, *scope, embedding, assemblyline.MaxMemoryContextCandidateAuthorities,
-		)
-		if err != nil {
-			return nil, err
-		}
-		for _, match := range matches {
-			if match.Scope != *scope {
-				return nil, fmt.Errorf("memory context retrieval escaped its exact scope")
-			}
-		}
-		groups = append(groups, matches)
-	}
-	matches, err := roundRobinMemoryMatches(groups, contextSearchedRecordLimit)
-	if err != nil {
-		return nil, err
-	}
-	records := make([]queue.ContextSearchRecord, len(matches))
-	for index, match := range matches {
-		records[index] = queue.ContextSearchRecord{
-			Namespace: "durable_memory", SourceID: fmt.Sprintf("memory-%d", match.ID),
-			Content: match.Content,
-		}
-	}
-	return records, nil
-}
-
-// roundRobinMemoryMatches gives every canonical query one opportunity to
-// contribute a unique exact memory before any query contributes another.
-// Duplicate rows are skipped within that query's turn, so overlap cannot let
-// an earlier query consume the entire global bound.
-func roundRobinMemoryMatches(
-	groups [][]model.MemoryMatch,
-	limit int,
-) ([]model.MemoryMatch, error) {
-	if limit < 1 || limit > assemblyline.MaxMemoryContextCandidateAuthorities {
-		return nil, fmt.Errorf(
-			"memory context merge limit must be within 1..%d",
-			assemblyline.MaxMemoryContextCandidateAuthorities,
-		)
-	}
-	positions := make([]int, len(groups))
-	seen := make(map[int64]model.MemoryMatch, limit)
-	merged := make([]model.MemoryMatch, 0, limit)
-	for len(merged) < limit {
-		progress := false
-		for groupIndex, group := range groups {
-			for positions[groupIndex] < len(group) {
-				match := group[positions[groupIndex]]
-				positions[groupIndex]++
-				if match.ID < 1 {
-					return nil, fmt.Errorf("memory context retrieval returned an invalid identity")
-				}
-				if previous, duplicate := seen[match.ID]; duplicate {
-					if !sameMemoryMatchAuthority(previous, match) {
-						return nil, fmt.Errorf(
-							"memory context retrieval returned conflicting authority for memory %d",
-							match.ID,
-						)
-					}
-					continue
-				}
-				seen[match.ID] = match
-				merged = append(merged, match)
-				progress = true
-				break
-			}
-			if len(merged) == limit {
-				break
-			}
-		}
-		if !progress {
-			break
-		}
-	}
-	return merged, nil
-}
-
-func sameMemoryMatchAuthority(left, right model.MemoryMatch) bool {
-	return left.ID == right.ID && left.Scope == right.Scope && left.Kind == right.Kind &&
-		left.Content == right.Content && left.CreatedAt.Equal(right.CreatedAt) &&
-		slices.Equal(left.Tags, right.Tags) && slices.Equal(left.Categories, right.Categories)
 }
 
 func (provider boundObjectiveContextProvider) retrieveRoleplay(

@@ -8,8 +8,6 @@ import (
 	"github.com/gryph/omnidex/internal/station"
 )
 
-const maxDirectCodingRequirements = 10
-
 type directCodingCapabilityBinding struct {
 	RequirementID string
 	CapabilityID  string
@@ -35,8 +33,8 @@ func (s *directCodingSession) deriveRequirementCapabilities(
 	localContext string,
 	requirements []assemblyline.Requirement,
 ) (directCodingCapabilityGraph, error) {
-	if err := validateDirectCodingRequirementCount(requirements); err != nil {
-		return nil, err
+	if len(requirements) == 0 {
+		return nil, fmt.Errorf("capability projection requires at least one accepted requirement")
 	}
 	if len(requirements) == 1 {
 		return directCodingCapabilityGraph{requirements[0].ID: nil}, nil
@@ -52,10 +50,6 @@ func (s *directCodingSession) deriveRequirementCapabilities(
 	if err != nil {
 		return nil, err
 	}
-	modelName, err = requireDirectCodingModel(station.CodingCapabilityRelation, modelName)
-	if err != nil {
-		return nil, err
-	}
 	pairs := directCodingCapabilityPairs(localContext, requirements)
 	results := runDirectCodingCapabilityPairs(directCodingWorkerRuntime(s), modelName, pairs)
 	for _, result := range results {
@@ -64,16 +58,6 @@ func (s *directCodingSession) deriveRequirementCapabilities(
 		}
 	}
 	return assembleDirectCodingCapabilityGraph(requirements, results)
-}
-
-func validateDirectCodingRequirementCount(requirements []assemblyline.Requirement) error {
-	if len(requirements) < 1 || len(requirements) > maxDirectCodingRequirements {
-		return fmt.Errorf(
-			"direct coding requirements must be between 1 and %d, received %d",
-			maxDirectCodingRequirements, len(requirements),
-		)
-	}
-	return nil
 }
 
 func directCodingCapabilityPairs(

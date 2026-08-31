@@ -3,14 +3,11 @@ package worker
 import (
 	"fmt"
 	"go/ast"
-	"go/importer"
 	"go/parser"
 	"go/token"
 	"go/types"
-	"path"
 	"sort"
 	"strconv"
-	"strings"
 
 	"github.com/gryph/omnidex/internal/gofragment"
 )
@@ -42,10 +39,7 @@ var directCodingGoStandardLibraryRegistry = []directCodingGoStandardLibraryCapab
 	},
 }
 
-func registeredDirectCodingGoStandardLibraryCapabilities() (
-	[]directCodingGoStandardLibraryCapability,
-	error,
-) {
+func registeredDirectCodingGoStandardLibraryCapabilities() []directCodingGoStandardLibraryCapability {
 	capabilities := append(
 		[]directCodingGoStandardLibraryCapability(nil),
 		directCodingGoStandardLibraryRegistry...,
@@ -53,47 +47,16 @@ func registeredDirectCodingGoStandardLibraryCapabilities() (
 	sort.Slice(capabilities, func(left, right int) bool {
 		return capabilities[left].ID < capabilities[right].ID
 	})
-	seenIDs := make(map[string]struct{}, len(capabilities))
-	standardLibraryImporter := importer.Default()
-	for index, capability := range capabilities {
-		if capability.ID == "" || capability.ID != strings.TrimSpace(capability.ID) {
-			return nil, fmt.Errorf("Go standard-library capability %d has an invalid ID", index)
-		}
-		if _, duplicate := seenIDs[capability.ID]; duplicate {
-			return nil, fmt.Errorf("Go standard-library capability ID %q is registered more than once", capability.ID)
-		}
-		seenIDs[capability.ID] = struct{}{}
-		if capability.Purpose == "" || capability.Purpose != strings.TrimSpace(capability.Purpose) ||
-			strings.ContainsAny(capability.Purpose, "\x00\r\n") {
-			return nil, fmt.Errorf("Go standard-library capability %s has invalid semantic purpose", capability.ID)
-		}
-		if capability.ImportPath == "" || capability.ImportPath != path.Clean(capability.ImportPath) ||
-			capability.PackageName == "" || capability.PackageName != strings.TrimSpace(capability.PackageName) ||
-			capability.SymbolName == "" || capability.SymbolName != strings.TrimSpace(capability.SymbolName) {
-			return nil, fmt.Errorf("Go standard-library capability %s has invalid package authority", capability.ID)
-		}
-		if err := validateDirectCodingGoStandardLibraryCapability(
-			standardLibraryImporter, capability,
-		); err != nil {
-			return nil, fmt.Errorf("validate Go standard-library capability %s: %w", capability.ID, err)
-		}
-	}
-	return capabilities, nil
+	return capabilities
 }
 
 func directCodingGoRuntimeCapabilities() ([]directCodingRuntimeCapability, error) {
-	registered, err := registeredDirectCodingGoStandardLibraryCapabilities()
-	if err != nil {
-		return nil, err
-	}
+	registered := registeredDirectCodingGoStandardLibraryCapabilities()
 	capabilities := make([]directCodingRuntimeCapability, len(registered))
 	for index, capability := range registered {
 		capabilities[index] = directCodingRuntimeCapability{
 			ID: capability.ID, Purpose: capability.Purpose,
 		}
-	}
-	if err := validateDirectCodingRuntimeCapabilityRegistry(capabilities); err != nil {
-		return nil, err
 	}
 	return capabilities, nil
 }

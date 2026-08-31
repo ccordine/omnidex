@@ -72,7 +72,7 @@ func (s *Server) renderUIAdminOverview(r *http.Request) (string, error) {
 		}
 	}
 	return `<div data-admin-tab-panel="overview" class="mx-auto max-w-5xl space-y-4">` +
-		uiAdminSection("Mind overview", "Counts for durable memory, candidates, jobs, and telemetry.", renderUIAdminMindStats(stats)) +
+		uiAdminSection("Mind overview", "Counts for durable memory, candidates, and jobs.", renderUIAdminMindStats(stats)) +
 		uiAdminSection("Document ingest", "Upload reference documents into explicit candidate or durable staging.", renderUIAdminIngest()) +
 		`</div>`, nil
 }

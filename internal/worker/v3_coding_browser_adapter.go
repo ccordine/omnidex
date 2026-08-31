@@ -15,25 +15,10 @@ func compileGenericTypeScriptBrowserBlueprint(
 	specification assemblyline.ApplicationSpecification,
 	workload assemblyline.FrozenApplicationWorkload,
 	capabilities directCodingCapabilityGraph,
+	profile directCodingProjectVersionProfile,
 	target assemblyline.TargetTree,
 	coverage assemblyline.ApplicationFileCoveragePlan,
 ) (assemblyline.SourceBlueprint, []directCodingFileTask, error) {
-	if err := specification.Validate(); err != nil {
-		return assemblyline.SourceBlueprint{}, nil, err
-	}
-	if specification.Surface != assemblyline.ApplicationSurfaceBrowser {
-		return assemblyline.SourceBlueprint{}, nil, fmt.Errorf(
-			"generic TypeScript browser adapter does not support surface %s",
-			specification.Surface,
-		)
-	}
-	profile, err := directCodingVersionProfileForTargetTree(target)
-	if err != nil {
-		return assemblyline.SourceBlueprint{}, nil, err
-	}
-	if err := validateDirectCodingCapabilityGraph(specification.Requirements, capabilities); err != nil {
-		return assemblyline.SourceBlueprint{}, nil, err
-	}
 	contexts, err := directCodingApplicationTaskContexts(workload)
 	if err != nil {
 		return assemblyline.SourceBlueprint{}, nil, err

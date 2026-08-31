@@ -48,10 +48,6 @@ type Server struct {
 	hostAgentToken             string
 	integrationAPIToken        string
 	realtimeHub                *RealtimeHub
-	jobOutputOnce              sync.Once
-	jobOutputCoalescer         *jobOutputCoalescer
-	telemetryRealtimeOnce      sync.Once
-	telemetryRealtime          *telemetryRealtimeCoalescer
 	scrumAutoWorkMu            sync.Mutex
 	scrumAutoWorkAsyncMu       sync.Mutex
 	scrumAutoWorkAsyncRunning  bool
@@ -140,7 +136,6 @@ func NewServer(
 	}
 	s.realtimeHub = NewRealtimeHub()
 	s.routes()
-	s.startRealtimeTelemetryListener(options.LifecycleContext)
 	if s.ollamaDownloads != nil {
 		s.resumeOllamaModelDownloads()
 	}
@@ -183,7 +178,6 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/v1/projects/", s.handleProjectByID)
 	s.mux.HandleFunc("/v1/realtime/ws", s.handleRealtimeWS)
 	if s.repo != nil {
-		s.mux.HandleFunc("/v1/ai/control", s.handleAIControl)
 		s.mux.HandleFunc("/v1/jobs", s.handleJobs)
 		s.mux.HandleFunc("/v1/jobs/", s.handleJobByID)
 		s.mux.HandleFunc("/v1/activity", s.handleActivity)
@@ -211,15 +205,6 @@ func (s *Server) routes() {
 		s.mux.HandleFunc("/v1/ollama/downloads", s.handleOllamaDownloads)
 		s.mux.HandleFunc("/v1/memory-candidates", s.handleMemoryCandidates)
 		s.mux.HandleFunc("/v1/memory-candidates/", s.handleMemoryCandidateByID)
-		s.mux.HandleFunc("/v1/metrics/live", s.handleMetricsLive)
-		s.mux.HandleFunc("/v1/metrics/runs", s.handleMetricsRuns)
-		s.mux.HandleFunc("/v1/metrics/runs/", s.handleMetricsRunByID)
-		s.mux.HandleFunc("/v1/metrics/models", s.handleMetricsModels)
-		s.mux.HandleFunc("/v1/metrics/context-shrink", s.handleMetricsContextShrink)
-		s.mux.HandleFunc("/v1/metrics/context-usage", s.handleMetricsContextUsage)
-		s.mux.HandleFunc("/v1/metrics/operations", s.handleMetricsOperations)
-		s.mux.HandleFunc("/v1/metrics/scrum", s.handleMetricsScrum)
-		s.mux.HandleFunc("/v1/metrics/glance", s.handleMetricsGlance)
 		s.mux.HandleFunc("/v1/integrations/data-sources", s.requireIntegrationAuthentication(s.handleIntegrationDataSources))
 		s.mux.HandleFunc("/v1/integrations/jobs/", s.requireIntegrationAuthentication(s.handleIntegrationJobByID))
 		s.mux.HandleFunc("/v1/ui/chat/jobs", s.handleChatJobsComponent)
@@ -227,7 +212,6 @@ func (s *Server) routes() {
 		s.mux.HandleFunc("/v1/ui/chat/data-sources", s.handleChatDataSourceOptions)
 		s.mux.HandleFunc("/v1/ui/chat/memory", s.handleChatMemoryComponent)
 		s.mux.HandleFunc("/v1/ui/chat/timeline", s.handleChatTimelineComponent)
-		s.mux.HandleFunc("/v1/ui/chat/metrics", s.handleChatMetricsComponent)
 	}
 	if s.channelStore != nil {
 		s.mux.HandleFunc("/v1/channels", s.handleChannels)

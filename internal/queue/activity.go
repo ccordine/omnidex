@@ -73,28 +73,3 @@ func (r *Repository) ListMemoryChunks(ctx context.Context, kind string, tags []s
 	}
 	return out, rows.Err()
 }
-
-func (r *Repository) ListTelemetryEvents(ctx context.Context, limit int) ([]TelemetryEventSummary, error) {
-	if limit <= 0 || limit > 500 {
-		return nil, fmt.Errorf("telemetry event limit must be between 1 and 500")
-	}
-	rows, err := r.pool.Query(ctx, `
-		SELECT id::text, run_id::text, step, event_type, created_at, payload
-		FROM omni_run_events
-		ORDER BY created_at DESC, id DESC
-		LIMIT $1
-	`, limit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	out := []TelemetryEventSummary{}
-	for rows.Next() {
-		var item TelemetryEventSummary
-		if err := rows.Scan(&item.ID, &item.RunID, &item.Step, &item.EventType, &item.CreatedAt, &item.Payload); err != nil {
-			return nil, err
-		}
-		out = append(out, item)
-	}
-	return out, rows.Err()
-}

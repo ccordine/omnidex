@@ -47,8 +47,6 @@ type ScrumCard struct {
 	PlayState              string               `json:"play_state,omitempty"`
 	QueueOrder             int                  `json:"queue_order,omitempty"`
 	BoardOrder             int                  `json:"board_order"`
-	SyncJobID              string               `json:"-"`
-	StepContextCursor      int64                `json:"-"`
 	PendingChannelMessages []ScrumChatMessage   `json:"-"`
 	CreatedAt              string               `json:"created_at"`
 	UpdatedAt              string               `json:"updated_at"`

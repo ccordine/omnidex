@@ -5,7 +5,6 @@ import (
 )
 
 func directCodingProtectedPathSet(paths []string) map[string]struct{} {
-	paths = cleanOrderedStrings(paths)
 	protected := make(map[string]struct{}, len(paths))
 	for _, path := range paths {
 		protected[path] = struct{}{}

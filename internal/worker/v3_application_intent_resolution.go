@@ -41,13 +41,7 @@ func resolveDirectCodingApplicationIntent(
 		return zero, err
 	}
 
-	queue, err := newDirectCodingApplicationRequirementCandidateQueue(
-		inventoryInput,
-		inventory,
-	)
-	if err != nil {
-		return zero, err
-	}
+	queue := newDirectCodingApplicationRequirementCandidateQueue(inventory)
 	requirements := make(
 		[]assemblyline.ApplicationIntentCandidateRequirement,
 		0,
@@ -62,10 +56,7 @@ func resolveDirectCodingApplicationIntent(
 	for len(queue) > 0 && len(requirements) < assemblyline.MaxApplicationRequirementLeaves {
 		current := queue[0]
 		queue = queue[1:]
-		currentCandidate, _, err := current.validateFor(inventoryInput)
-		if err != nil {
-			return zero, err
-		}
+		currentCandidate := current.Candidate
 		resolved, err := resolveDirectCodingApplicationRequirementCandidate(
 			runtime,
 			intentModel,
@@ -95,26 +86,9 @@ func resolveDirectCodingApplicationIntent(
 			directCodingApplicationRequirementUnrequested,
 			directCodingApplicationRequirementDuplicate,
 			directCodingApplicationRequirementUnresolved:
-			if resolved.PartitionInput != (assemblyline.ApplicationRequirementCandidatePartitionInput{}) ||
-				!directCodingApplicationRequirementPartitionIsZero(resolved.Partition) {
-				return zero, fmt.Errorf(
-					"discarded application requirement unexpectedly carries retained state",
-				)
-			}
+			continue
 		case directCodingApplicationRequirementPartitioned:
-			if len(current.Lineage) == assemblyline.MaxApplicationRequirementCandidatePartitionDepth {
-				return zero, fmt.Errorf(
-					"application requirement candidate crossed the partition-depth preflight",
-				)
-			}
-			children, err := current.partitionChildren(
-				inventoryInput,
-				resolved.PartitionInput,
-				resolved.Partition,
-			)
-			if err != nil {
-				return zero, err
-			}
+			children := current.partitionChildren(resolved.Partition)
 			if enqueuedCandidates+len(children) > assemblyline.MaxApplicationRequirementCandidateQueueNodes {
 				// This candidate's proposed partition cannot fit the bounded queue.
 				// Discard only that proposal; it has no authority to stop already
@@ -124,12 +98,6 @@ func resolveDirectCodingApplicationIntent(
 			enqueuedCandidates += len(children)
 			queue = append(children, queue...)
 		case directCodingApplicationRequirementRetained:
-			if resolved.PartitionInput != (assemblyline.ApplicationRequirementCandidatePartitionInput{}) ||
-				!directCodingApplicationRequirementPartitionIsZero(resolved.Partition) {
-				return zero, fmt.Errorf(
-					"retained application requirement unexpectedly carries a partition receipt",
-				)
-			}
 			requirements = append(requirements, assemblyline.ApplicationIntentCandidateRequirement{
 				Statement: resolved.Candidate,
 			})
@@ -168,22 +136,17 @@ func resolveDirectCodingApplicationIntent(
 	if err != nil {
 		return zero, err
 	}
-	candidate := assemblyline.ApplicationIntentCandidate{
-		Schema:         assemblyline.ApplicationIntentCandidateSchemaV1,
-		ProductContext: productContext,
-		Requirements: append(
-			[]assemblyline.ApplicationIntentCandidateRequirement(nil),
-			requirements...,
-		),
+	resolvedRequirements := make([]assemblyline.ApplicationRequirement, len(requirements))
+	for index, requirement := range requirements {
+		resolvedRequirements[index] = assemblyline.ApplicationRequirement{
+			ID:            fmt.Sprintf("requirement_%03d", index+1),
+			Statement:     requirement.Statement,
+			RequestSHA256: authority.Context.RequestSHA256,
+		}
 	}
-	return assemblyline.ResolveApplicationIntent(authority, candidate)
-}
-
-func directCodingApplicationRequirementPartitionIsZero(
-	partition assemblyline.ApplicationRequirementCandidatePartition,
-) bool {
-	return partition.Schema == "" &&
-		partition.AuthoritySHA256 == "" &&
-		partition.RawSHA256 == "" &&
-		partition.Candidates == nil
+	return assemblyline.ApplicationIntentResolution{
+		ProductContext: productContext,
+		RequestSHA256:  authority.Context.RequestSHA256,
+		Requirements:   resolvedRequirements,
+	}, nil
 }

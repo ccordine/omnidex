@@ -9,14 +9,9 @@ import (
 	"github.com/gryph/omnidex/internal/queue"
 )
 
-func (r *nativeRuntimeV3) complete(contextKey, output, contextValue string) error {
+func (r *nativeRuntimeV3) complete(output string) error {
 	output = strings.TrimSpace(output)
-	contextValue = strings.TrimSpace(contextValue)
-	if contextValue == "" {
-		contextValue = output
-	}
-	r.contexts[contextKey] = contextValue
-	command, err := completeClaimedStepCommand(r.claim, output, contextKey, contextValue)
+	command, err := completeClaimedStepCommand(r.claim, output, "")
 	if err != nil {
 		return err
 	}
@@ -24,6 +19,18 @@ func (r *nativeRuntimeV3) complete(contextKey, output, contextValue string) erro
 		return fmt.Errorf("native completion requires the worker step completer")
 	}
 	return r.svc.completeStep(r.ctx, command)
+}
+
+func (r *nativeRuntimeV3) completeAppliedWorkspace(output string) error {
+	if err := r.complete(output); err != nil {
+		if r != nil && r.svc != nil {
+			r.svc.logf(
+				"job=%d step=%d workspace is applied and verified; completion projection failed: %v",
+				r.claim.Job.ID, r.claim.Step.ID, err,
+			)
+		}
+	}
+	return nil
 }
 
 func (r *nativeRuntimeV3) writeEvidence(record evidence.Record) error {
@@ -38,18 +45,14 @@ func (r *nativeRuntimeV3) writeEvidenceReturningID(record evidence.Record) (int6
 }
 
 func (r *nativeRuntimeV3) completeWithEvidence(
-	contextKey, output, contextValue string,
+	contextKey, output string,
 	records []evidence.Record,
 	roleplayResponses []queue.RoleplayResponseCompletion,
 	roleplayUserCanon *queue.RoleplayUserCanonCompletion,
 	roleplayUserOngoingAction *queue.RoleplayUserOngoingActionCompletion,
 ) error {
 	output = strings.TrimSpace(output)
-	contextValue = strings.TrimSpace(contextValue)
-	if contextValue == "" {
-		contextValue = output
-	}
-	command, err := completeClaimedStepCommand(r.claim, output, contextKey, contextValue)
+	command, err := completeClaimedStepCommand(r.claim, output, contextKey)
 	if err != nil {
 		return err
 	}
@@ -87,6 +90,5 @@ func (r *nativeRuntimeV3) completeWithEvidence(
 		return err
 	}
 	r.svc.notifyJobFinishedForStep(r.ctx, command.StepID)
-	r.contexts[contextKey] = contextValue
 	return nil
 }

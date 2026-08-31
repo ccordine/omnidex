@@ -38,10 +38,7 @@ func directCodingApplicationTaskFragmentJob(
 	if stage == nil {
 		return directCodingTypeScriptFragmentJob{}, fmt.Errorf("application task generation requires one isolated stage")
 	}
-	profile, err := directCodingVersionProfileForProgram(*stage)
-	if err != nil {
-		return directCodingTypeScriptFragmentJob{}, err
-	}
+	profile := stage.Project.Profile
 	declarations := make(map[string]string)
 	block := ref.Block
 	tsx := directCodingTypeScriptDocumentIsTSX(ref.Document)
@@ -83,13 +80,7 @@ func (s *directCodingSession) runDirectCodingApplicationTaskLifecycle(
 	if program == nil {
 		return fmt.Errorf("application task lifecycle requires one program")
 	}
-	if _, err := directCodingVersionProfileForProgram(*program); err != nil {
-		return err
-	}
-	stack, err := directCodingProjectStackByID(program.StackID)
-	if err != nil {
-		return err
-	}
+	stack := program.Project.Stack
 	if stack.NewSourceGenerator == nil {
 		return fmt.Errorf("project stack %s has no source generator", stack.ID)
 	}

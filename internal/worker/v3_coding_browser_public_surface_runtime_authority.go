@@ -46,9 +46,6 @@ func validateDirectCodingBrowserRuntimeDOMAuthority(
 		}
 		if name, reference := directCodingBrowserRuntimeReferenceName(source, node); reference {
 			bound := runtimeBindings.binds(name, node)
-			if _, forbidden := directCodingBrowserForbiddenRuntimeHostIdentifiers[name]; forbidden && !bound {
-				return fmt.Errorf("browser public surface rejects runtime host authority identifier %s", name)
-			}
 			if !bound && !directCodingBrowserRuntimeGlobalPermitted(name) &&
 				!directCodingBrowserRuntimeReferenceIsSyntax(node) {
 				return fmt.Errorf("browser public surface rejects undeclared runtime identifier %s", name)

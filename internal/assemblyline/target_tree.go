@@ -48,9 +48,7 @@ func (constraints TargetTreeConstraints) Validate() error {
 }
 
 type TargetTree struct {
-	StackID          string
-	VersionProfileID string
-	Paths            []string
+	Paths []string
 }
 
 // ValidateTargetTreeConstraints applies the same code-owned structural facts

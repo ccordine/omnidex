@@ -20,26 +20,14 @@ func (s *Server) handleActivity(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	events, err := s.repo.ListTelemetryEvents(r.Context(), limit)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
 	memories, err := s.repo.ListMemoryChunks(r.Context(), "", nil, minInt(limit, 30))
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	llmActivity, err := s.repo.ListRecentLLMActivity(r.Context(), minInt(limit, 30))
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"jobs":             jobs,
-		"telemetry_events": events,
-		"memories":         memories,
-		"llm_activity":     llmActivity,
+		"jobs":     jobs,
+		"memories": memories,
 	})
 }
 

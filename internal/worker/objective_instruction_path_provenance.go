@@ -3,30 +3,12 @@ package worker
 import (
 	"context"
 	"fmt"
-	"os"
 	"path"
 	"path/filepath"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
 	"github.com/gryph/omnidex/internal/modelcontext"
 )
-
-func objectiveWorkspaceState(root string) (assemblyline.ApplicationWorkspaceState, error) {
-	root = filepath.Clean(root)
-	if !filepath.IsAbs(root) {
-		return "", fmt.Errorf("objective workspace root must be absolute")
-	}
-	entries, err := os.ReadDir(root)
-	if err != nil {
-		return "", fmt.Errorf("inspect objective workspace root %q: %w", root, err)
-	}
-	for _, entry := range entries {
-		if entry.Name() != ".git" && entry.Name() != ".omni" {
-			return assemblyline.ApplicationWorkspaceExisting, nil
-		}
-	}
-	return assemblyline.ApplicationWorkspaceEmpty, nil
-}
 
 // objectiveInstructionPathProvenance derives artifact identities directly
 // from the instruction's path grammar. It never inventories the workspace:
@@ -41,8 +23,7 @@ func objectiveInstructionPathProvenance(
 			"objective instruction path provenance requires a context",
 		)
 	}
-	root = filepath.Clean(root)
-	if !filepath.IsAbs(root) {
+	if root == "" || !filepath.IsAbs(root) || filepath.Clean(root) != root {
 		return assemblyline.ArtifactIdentityProvenance{}, fmt.Errorf(
 			"objective instruction path provenance root must be absolute",
 		)

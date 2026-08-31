@@ -37,7 +37,6 @@ func runDirectCodingLanguageFragmentWorker(
 	if runtime.MaxAttempts != 1 {
 		return "", fmt.Errorf("language fragment worker requires exactly one generation attempt")
 	}
-	modelName = strings.TrimSpace(modelName)
 	if modelName == "" || strings.TrimSpace(job.Subject) == "" ||
 		job.Project == nil || job.Validate == nil {
 		return "", fmt.Errorf(
@@ -154,10 +153,7 @@ func directCodingLanguageFragmentInput(
 			"%s generation requires one generated source block", language,
 		)
 	}
-	profile, err := directCodingVersionProfileForProgram(*stage)
-	if err != nil {
-		return assemblyline.FragmentGenerationInput{}, err
-	}
+	profile := stage.Project.Profile
 	blocks := make(map[string]assemblyline.SourceBlock)
 	found := false
 	for _, document := range stage.Source.Documents {

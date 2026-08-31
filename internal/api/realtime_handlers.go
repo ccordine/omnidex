@@ -38,7 +38,6 @@ type realtimeMessage struct {
 	Phase        realtimeJobPhase `json:"phase,omitempty"`
 	Summary      string           `json:"summary,omitempty"`
 	Snapshot     bool             `json:"snapshot,omitempty"`
-	AIControl    *aiControlState  `json:"aiControl,omitempty"`
 }
 
 type realtimeJobPhase string
@@ -46,7 +45,6 @@ type realtimeJobPhase string
 const (
 	realtimeJobQueued   realtimeJobPhase = "queued"
 	realtimeJobChanged  realtimeJobPhase = "state_changed"
-	realtimeJobOutput   realtimeJobPhase = "output"
 	realtimeJobFinished realtimeJobPhase = "finished"
 )
 
@@ -117,9 +115,7 @@ func (s *Server) publishJobProgress(jobID int64, phase realtimeJobPhase, summary
 		Phase:     phase,
 		Summary:   summary,
 	}
-	if phase != realtimeJobOutput {
-		message.StateKey = fmt.Sprintf("job:%d:%s", jobID, phase)
-	}
+	message.StateKey = fmt.Sprintf("job:%d:%s", jobID, phase)
 	s.broadcastRealtime([]string{realtimeTopicUI, realtimeTopicJobs}, message)
 }
 
@@ -143,7 +139,7 @@ func (s *Server) handleRealtimeWS(w http.ResponseWriter, r *http.Request) {
 	}
 
 	query := r.URL.Query()
-	topics := []string{realtimeTopicUI, realtimeTopicMetrics, realtimeTopicScrum, realtimeTopicJobs}
+	topics := []string{realtimeTopicUI, realtimeTopicScrum, realtimeTopicJobs}
 	if rawTopics, exists := query["topics"]; exists {
 		var err error
 		topics, err = parseRealtimeTopics(rawTopics[0])
@@ -211,19 +207,6 @@ func (s *Server) handleRealtimeWS(w http.ResponseWriter, r *http.Request) {
 	if data, err := json.Marshal(connected); err != nil || writeMessage(websocket.TextMessage, data) != nil {
 		return
 	}
-	if (lastID == 0 || subscription.ReplayGap) && s.repo != nil {
-		glance, err := s.repo.TelemetryGlance(r.Context())
-		if err != nil {
-			log.Printf("realtime websocket initial metrics failed: %v", err)
-		} else {
-			msg := s.buildMetricsGlanceRealtimeMessage(glance, telemetryNotifyPayload{})
-			msg.Snapshot = true
-			if data, marshalErr := json.Marshal(msg); marshalErr != nil || writeMessage(websocket.TextMessage, data) != nil {
-				return
-			}
-		}
-	}
-
 	done := make(chan struct{})
 	go func() {
 		defer close(done)

@@ -9,7 +9,7 @@ func scanDBScrumCard(row pgx.Row) (DBScrumCard, error) {
 		&card.Checklist, &card.RefFiles, &card.CardTicket, &card.CardPrompt,
 		&card.Tags, &card.TestCriteria, &card.FlowMetrics,
 		&card.JobID, &card.PlayState,
-		&card.QueueOrder, &card.BoardOrder, &card.SyncJobID, &card.StepContextCursor,
+		&card.QueueOrder, &card.BoardOrder,
 		&card.ChannelMessageCount, &card.ChannelContentBytes,
 		&card.CreatedAt, &card.UpdatedAt,
 	)

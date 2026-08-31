@@ -44,13 +44,7 @@ func composeDirectCodingSourceProgram(
 	if len(program.Source.Documents) == 0 {
 		return nil, nil
 	}
-	stack, err := directCodingProjectStackByID(program.StackID)
-	if err != nil {
-		return nil, err
-	}
-	if err := stack.ValidateBlueprint(program.Source); err != nil {
-		return nil, fmt.Errorf("validate %s source blueprint: %w", stack.ID, err)
-	}
+	stack := program.Project.Stack
 	composition := assemblyline.SourceComposition{
 		Generated:  make(map[string]string, len(program.Generated)),
 		Interfaces: make(map[string]string),

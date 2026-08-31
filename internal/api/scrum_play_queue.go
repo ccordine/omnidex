@@ -221,11 +221,6 @@ func (s *Server) refreshScrumPlayQueue(r *http.Request, projectID int64, board S
 		case model.JobStatusCompleted, model.JobStatusFailed, model.JobStatusCanceled:
 			return board, fmt.Errorf("terminal job %d bypassed typed Scrum reconciliation", jobID)
 		case model.JobStatusPending, model.JobStatusRunning, model.JobStatusWaiting:
-			if synced, ok, err := syncRunningJobChannelChat(updated, job); err != nil {
-				return board, err
-			} else if ok {
-				updated = synced
-			}
 			statusLine := fmt.Sprintf("Job status: %s", job.Job.Status)
 			if !pendingScrumMessageContains(updated.PendingChannelMessages, statusLine) {
 				updated, err = appendScrumChannelEvent(updated, "system", statusLine)

@@ -26,7 +26,6 @@ func runDirectCodingGoFragmentGenerationWorker(
 	if runtime.MaxAttempts != exactSemanticLeafCalls {
 		return "", fmt.Errorf("Go fragment generation requires exactly %d model call", exactSemanticLeafCalls)
 	}
-	modelName = strings.TrimSpace(modelName)
 	if modelName == "" || strings.TrimSpace(job.Subject) == "" {
 		return "", fmt.Errorf("Go fragment generation requires one model and opaque subject")
 	}

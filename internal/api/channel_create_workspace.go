@@ -4,8 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-
-	"github.com/gryph/omnidex/internal/model"
 )
 
 type channelCreateWorkspaceRoot struct {
@@ -20,9 +18,6 @@ func (root *channelCreateWorkspaceRoot) UnmarshalJSON(raw []byte) error {
 	var value string
 	if err := json.Unmarshal(raw, &value); err != nil {
 		return fmt.Errorf("decode channel workspace_root: %w", err)
-	}
-	if err := model.ValidateChannelWorkspaceRoot(value); err != nil {
-		return err
 	}
 	root.Value = value
 	root.Present = true

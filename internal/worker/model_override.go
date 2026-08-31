@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/gryph/omnidex/internal/modelconfig"
 	"github.com/gryph/omnidex/internal/station"
@@ -64,10 +65,15 @@ func stationModel(routing ModelRouting, id station.ID) (string, error) {
 	if err := id.Validate(); err != nil {
 		return "", err
 	}
-	if configured := strings.TrimSpace(routing.Stations[id]); configured != "" {
-		return configured, nil
+	configured, exists := routing.Stations[id]
+	if !exists {
+		return "", fmt.Errorf("semantic station %q has no configured model", id)
 	}
-	return "", fmt.Errorf("semantic station %q has no configured model", id)
+	if configured == "" || configured != strings.TrimSpace(configured) ||
+		!utf8.ValidString(configured) || strings.ContainsRune(configured, '\x00') {
+		return "", fmt.Errorf("semantic station %q must configure one exact canonical model name", id)
+	}
+	return configured, nil
 }
 
 func (s *Service) requiredStationModel(routing ModelRouting, id station.ID) (string, error) {

@@ -2,7 +2,6 @@ package worker
 
 import (
 	"fmt"
-	"reflect"
 	"strings"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
@@ -13,13 +12,7 @@ func projectDirectCodingApplicationTaskStage(
 	context assemblyline.ApplicationTaskContext,
 ) (directCodingProgram, error) {
 	var zero directCodingProgram
-	stack, err := directCodingProjectStackByID(program.StackID)
-	if err != nil {
-		return zero, err
-	}
-	if err := stack.ValidateBlueprint(program.Source); err != nil {
-		return zero, err
-	}
+	stack := program.Project.Stack
 	if context.WorkloadSHA256 == "" || context.WorkloadSHA256 != program.Workload.SHA256 {
 		return zero, fmt.Errorf("application task context differs from program workload authority")
 	}
@@ -60,7 +53,7 @@ func projectDirectCodingApplicationTaskStage(
 		}
 	}
 	stage := directCodingProgram{
-		StackID: program.StackID, VersionProfileID: program.VersionProfileID,
+		Project:              program.Project,
 		Workload:             program.Workload,
 		TargetTree:           program.TargetTree, Coverage: program.Coverage,
 		Source:           assemblyline.SourceBlueprint{Documents: documents},
@@ -68,9 +61,6 @@ func projectDirectCodingApplicationTaskStage(
 	}
 	if err := stack.ValidateBlueprint(stage.Source); err != nil {
 		return zero, fmt.Errorf("validate application task stage: %w", err)
-	}
-	if !reflect.DeepEqual(stage.Workload, program.Workload) {
-		return zero, fmt.Errorf("application task stage changed frozen workload authority")
 	}
 	return stage, nil
 }

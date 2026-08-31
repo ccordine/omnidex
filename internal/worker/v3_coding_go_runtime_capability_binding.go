@@ -2,6 +2,7 @@ package worker
 
 import (
 	"fmt"
+	"go/importer"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
 )
@@ -10,44 +11,38 @@ func bindDirectCodingGoRuntimeCapabilities(
 	program directCodingProgram,
 	graph directCodingRuntimeCapabilityGraph,
 ) (directCodingProgram, error) {
-	if program.StackID != genericGoCommandLineAdapter {
-		return directCodingProgram{}, fmt.Errorf(
-			"Go runtime capability binding received project stack %s", program.StackID,
-		)
-	}
 	if len(program.Generated) != 0 {
 		return directCodingProgram{}, fmt.Errorf(
 			"Go runtime capabilities must be bound before source generation",
 		)
 	}
-	registered, err := registeredDirectCodingGoStandardLibraryCapabilities()
-	if err != nil {
-		return directCodingProgram{}, err
-	}
-	candidates := make([]directCodingRuntimeCapability, len(registered))
+	registered := registeredDirectCodingGoStandardLibraryCapabilities()
 	byID := make(map[string]directCodingGoStandardLibraryCapability, len(registered))
-	for index, capability := range registered {
-		candidates[index] = directCodingRuntimeCapability{
-			ID: capability.ID, Purpose: capability.Purpose,
-		}
+	for _, capability := range registered {
 		byID[capability.ID] = capability
 	}
-	requirements, err := directCodingRequirementsFromFrozenWorkload(program.Workload)
-	if err != nil {
-		return directCodingProgram{}, err
-	}
-	if err := validateDirectCodingRuntimeCapabilityGraph(requirements, candidates, graph); err != nil {
-		return directCodingProgram{}, err
-	}
+	requirements := directCodingRequirementsFromFrozenWorkload(program.Workload)
 	selectedUnion := make(map[string]struct{}, len(registered))
 	for _, selected := range graph {
 		for _, capabilityID := range selected {
+			if _, exists := byID[capabilityID]; !exists {
+				return directCodingProgram{}, fmt.Errorf(
+					"Go runtime capability %s is not registered", capabilityID,
+				)
+			}
 			selectedUnion[capabilityID] = struct{}{}
 		}
 	}
 	selectedCapabilities := make([]directCodingGoStandardLibraryCapability, 0, len(selectedUnion))
 	for _, capability := range registered {
 		if _, selected := selectedUnion[capability.ID]; selected {
+			if err := validateDirectCodingGoStandardLibraryCapability(
+				importer.Default(), capability,
+			); err != nil {
+				return directCodingProgram{}, fmt.Errorf(
+					"consume Go runtime capability %s: %w", capability.ID, err,
+				)
+			}
 			selectedCapabilities = append(selectedCapabilities, capability)
 		}
 	}
@@ -120,10 +115,7 @@ func bindDirectCodingGoRuntimeCapabilities(
 			)
 		}
 	}
-	stack, err := directCodingProjectStackByID(program.StackID)
-	if err != nil {
-		return directCodingProgram{}, err
-	}
+	stack := program.Project.Stack
 	if err := stack.ValidateBlueprint(bound.Source); err != nil {
 		return directCodingProgram{}, fmt.Errorf(
 			"validate Go runtime capability source blueprint: %w", err,

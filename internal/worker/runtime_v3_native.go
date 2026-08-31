@@ -14,17 +14,16 @@ type nativeRuntimeV3 struct {
 	ctx                     context.Context
 	claim                   *model.ClaimedStep
 	action                  string
-	contexts                map[string]string
 	routing                 ModelRouting
 	routingErr              error
 	routingOnce             sync.Once
 	objectivePathProvenance assemblyline.ArtifactIdentityProvenance
 }
 
-func (s *Service) runNativeV3Step(ctx context.Context, claim *model.ClaimedStep, contexts map[string]string, action string) error {
+func (s *Service) runNativeV3Step(ctx context.Context, claim *model.ClaimedStep, action string) error {
 	runtime := &nativeRuntimeV3{
 		svc: s, ctx: ctx, claim: claim,
-		action: action, contexts: contexts,
+		action: action,
 	}
 	return runtime.run()
 }

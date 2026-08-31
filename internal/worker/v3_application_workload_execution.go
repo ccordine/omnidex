@@ -37,9 +37,6 @@ func executeDirectCodingApplicationWorkload(
 	if execute == nil {
 		return fmt.Errorf("application workload executor requires one task callback")
 	}
-	if err := assemblyline.ValidateFrozenApplicationWorkload(workload); err != nil {
-		return err
-	}
 	for _, task := range workload.Tasks {
 		context, err := assemblyline.ProjectApplicationTaskContext(workload, task.ID)
 		if err != nil {

@@ -16,7 +16,6 @@ import (
 type channelCompletionBinding struct {
 	ChannelID                       string
 	UserMessageID                   int64
-	ProjectID                       int64
 	Mode                            model.ChannelMode
 	RoleplayViewpointCharacterID    model.RoleplayCharacterID
 	RoleplaySimulationPreparationID string
@@ -28,7 +27,7 @@ type channelCompletionBinding struct {
 
 func (binding channelCompletionBinding) equal(other channelCompletionBinding) bool {
 	return binding.ChannelID == other.ChannelID && binding.UserMessageID == other.UserMessageID &&
-		binding.ProjectID == other.ProjectID && binding.Mode == other.Mode &&
+		binding.Mode == other.Mode &&
 		binding.RoleplayViewpointCharacterID == other.RoleplayViewpointCharacterID &&
 		binding.RoleplaySimulationPreparationID == other.RoleplaySimulationPreparationID &&
 		binding.RoleplaySceneRevision == other.RoleplaySceneRevision &&
@@ -72,7 +71,6 @@ func channelBindingForJob(job model.Job) (channelCompletionBinding, bool, error)
 	}
 	binding := channelCompletionBinding{
 		ChannelID: string(metadataBinding.ChannelID), UserMessageID: metadataBinding.ChannelUserMessageID,
-		ProjectID:                       metadataBinding.ProjectID,
 		Mode:                            metadataBinding.ChannelMode,
 		RoleplayViewpointCharacterID:    metadataBinding.RoleplayViewpointCharacterID,
 		RoleplaySimulationPreparationID: metadataBinding.RoleplaySimulationPreparationID,

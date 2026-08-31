@@ -1,9 +1,9 @@
 package worker
 
 import (
+	"encoding/json"
 	"fmt"
 	"path/filepath"
-	"strings"
 
 	"github.com/gryph/omnidex/internal/model"
 )
@@ -12,35 +12,37 @@ type v3WorkspaceScope struct {
 	Root string
 }
 
-func resolveV3WorkspaceFile(root, relative string) (string, error) {
-	normalized, err := normalizeDirectCodingPath(relative)
-	if err != nil {
-		return "", err
+func codingWorkspaceForJob(job model.Job) (string, error) {
+	if len(job.Metadata) == 0 {
+		return "", fmt.Errorf("workspace boundary requires job metadata")
 	}
-	if normalized != relative {
-		return "", fmt.Errorf("workspace path %q must be exactly normalized as %q", relative, normalized)
+	var metadata map[string]json.RawMessage
+	if err := json.Unmarshal(job.Metadata, &metadata); err != nil {
+		return "", fmt.Errorf("decode workspace job metadata: %w", err)
 	}
-	if !filepath.IsAbs(root) || filepath.Clean(root) != root {
-		return "", fmt.Errorf("workspace file requires one canonical absolute root")
+	raw, exists := metadata["client_cwd"]
+	if !exists {
+		return "", fmt.Errorf("workspace boundary requires client_cwd")
 	}
-	return filepath.Join(root, filepath.FromSlash(normalized)), nil
-}
-
-func codingWorkspaceForJob(job model.Job) string {
-	return clientCWDForJob(job)
+	var root string
+	if err := json.Unmarshal(raw, &root); err != nil {
+		return "", fmt.Errorf("workspace boundary client_cwd must be a string: %w", err)
+	}
+	return root, nil
 }
 
 func (s *Service) workspaceScopeForV3Job(job model.Job) (v3WorkspaceScope, error) {
 	if s == nil {
 		return v3WorkspaceScope{}, fmt.Errorf("workspace service is unavailable")
 	}
-	root := strings.TrimSpace(codingWorkspaceForJob(job))
-	if root == "" {
-		return v3WorkspaceScope{}, fmt.Errorf("workspace boundary requires an authoritative job root")
-	}
-	resolvedRoot, err := resolveV3WorkspaceRoot(root)
+	root, err := codingWorkspaceForJob(job)
 	if err != nil {
-		return v3WorkspaceScope{}, fmt.Errorf("bind job workspace %q: %w", root, err)
+		return v3WorkspaceScope{}, err
 	}
-	return v3WorkspaceScope{Root: resolvedRoot}, nil
+	if root == "" || !filepath.IsAbs(root) || filepath.Clean(root) != root {
+		return v3WorkspaceScope{}, fmt.Errorf(
+			"bind job workspace %q: root must be one canonical absolute path", root,
+		)
+	}
+	return v3WorkspaceScope{Root: root}, nil
 }

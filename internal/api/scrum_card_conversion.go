@@ -12,7 +12,7 @@ func dbScrumCardToAPI(card queue.DBScrumCard) (ScrumCard, error) {
 	out := ScrumCard{
 		ID: card.ID, Title: card.Title, Description: card.Description, Column: card.Column,
 		JobID: card.JobID, PlayState: card.PlayState, QueueOrder: card.QueueOrder,
-		BoardOrder: card.BoardOrder, SyncJobID: card.SyncJobID, StepContextCursor: card.StepContextCursor,
+		BoardOrder: card.BoardOrder,
 		CardTicket: card.CardTicket, CardPrompt: card.CardPrompt,
 		ChatCount: card.ChannelMessageCount, ChannelContentBytes: card.ChannelContentBytes,
 		CreatedAt: card.CreatedAt.UTC().Format(time.RFC3339),

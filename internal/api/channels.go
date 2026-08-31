@@ -11,7 +11,6 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/gryph/omnidex/internal/datasource"
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/queue"
 	"github.com/gryph/omnidex/internal/roleplay"
@@ -102,9 +101,6 @@ func (id *channelDelegatedDataAuthorityID) UnmarshalJSON(raw []byte) error {
 	var value string
 	if err := json.Unmarshal(raw, &value); err != nil {
 		return fmt.Errorf("decode delegated_data_authority_id: %w", err)
-	}
-	if err := datasource.ValidateDelegatedAuthorityID(value); err != nil {
-		return err
 	}
 	id.Value = value
 	id.Present = true
@@ -295,41 +291,41 @@ func (s *Server) postChannelMessage(w http.ResponseWriter, r *http.Request, chan
 		writeError(w, http.StatusBadRequest, "prompt is required")
 		return
 	}
-	channel, err := s.channelStore.GetChannel(r.Context(), channelID)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "channel not found")
-			return
-		}
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	if channel.Scope != model.ChannelScopeUser {
-		writeError(w, http.StatusNotFound, "channel not found")
-		return
-	}
+	var channel model.Channel
 	var userMessage model.ChannelMessage
 	var job model.Job
-	switch channel.Mode {
-	case model.ChannelModeAssistant:
-		if req.RoleplayTurn != nil {
-			writeError(w, http.StatusBadRequest, "assistant channel turn cannot carry roleplay user authority")
-			return
-		}
+	if req.RoleplayTurn == nil {
 		if s.enqueueChannelTurn == nil {
 			writeError(w, http.StatusServiceUnavailable, "channel job queue is unavailable")
 			return
 		}
 		userMessage, job, err = s.enqueueChannelTurn(
-			r.Context(), channel.ID, prompt, req.DelegatedDataAuthorityID.Value,
+			r.Context(), channelID, prompt, req.DelegatedDataAuthorityID.Value,
 		)
-	case model.ChannelModeRoleplay:
-		if req.DelegatedDataAuthorityID.Present {
-			writeError(w, http.StatusBadRequest, "roleplay channel turn cannot carry delegated data authority")
+		if err == nil {
+			channel, err = s.channelStore.GetChannel(r.Context(), channelID)
+		}
+	} else {
+		channel, err = s.channelStore.GetChannel(r.Context(), channelID)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				writeError(w, http.StatusNotFound, "channel not found")
+				return
+			}
+			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
-		if req.RoleplayTurn == nil {
-			writeError(w, http.StatusBadRequest, "roleplay channel turn requires persona and contribution authority")
+		if channel.Scope != model.ChannelScopeUser {
+			writeError(w, http.StatusNotFound, "channel not found")
+			return
+		}
+		switch channel.Mode {
+		case model.ChannelModeAssistant:
+			writeError(w, http.StatusBadRequest, "assistant channel turn cannot carry roleplay user authority")
+			return
+		case model.ChannelModeRoleplay:
+		if req.DelegatedDataAuthorityID.Present {
+			writeError(w, http.StatusBadRequest, "roleplay channel turn cannot carry delegated data authority")
 			return
 		}
 		if err = req.RoleplayTurn.ValidateForExactText(prompt); err != nil {
@@ -343,9 +339,10 @@ func (s *Server) postChannelMessage(w http.ResponseWriter, r *http.Request, chan
 		userMessage, job, err = s.enqueueRoleplayChannelTurn(
 			r.Context(), channel.ID, prompt, *req.RoleplayTurn,
 		)
-	default:
-		writeError(w, http.StatusInternalServerError, "channel has unsupported stored mode")
-		return
+		default:
+			writeError(w, http.StatusInternalServerError, "channel has unsupported stored mode")
+			return
+		}
 	}
 	if err != nil {
 		status := http.StatusInternalServerError
@@ -355,8 +352,6 @@ func (s *Server) postChannelMessage(w http.ResponseWriter, r *http.Request, chan
 			errors.Is(err, roleplay.ErrSimulationStaleRevision),
 			errors.Is(err, roleplay.ErrSimulationConflict):
 			status = http.StatusConflict
-		case errors.Is(err, queue.ErrChannelDataAuthority):
-			status = http.StatusBadRequest
 		case errors.Is(err, roleplay.ErrSimulationUnknown),
 			errors.Is(err, roleplay.ErrSimulationAmbiguous),
 			errors.Is(err, roleplay.ErrSimulationIllegal):

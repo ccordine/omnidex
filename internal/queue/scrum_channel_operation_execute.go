@@ -257,13 +257,11 @@ func validateScrumChannelCardUpdate(
 	}
 	if update.Column != strings.TrimSpace(update.Column) ||
 		update.JobID != strings.TrimSpace(update.JobID) ||
-		update.PlayState != strings.TrimSpace(update.PlayState) ||
-		update.SyncJobID != strings.TrimSpace(update.SyncJobID) {
+		update.PlayState != strings.TrimSpace(update.PlayState) {
 		return fmt.Errorf("Scrum channel card update has noncanonical authority text")
 	}
 	if update.Column != "in_progress" || update.PlayState != "running" || update.QueueOrder != 0 ||
-		update.JobID != strconv.FormatInt(job.ID, 10) || update.SyncJobID != update.JobID ||
-		update.StepContextCursor != 0 {
+		update.JobID != strconv.FormatInt(job.ID, 10) {
 		return fmt.Errorf("Scrum channel card update has invalid job, column, play-state, or queue authority")
 	}
 	return nil

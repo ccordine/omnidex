@@ -3,7 +3,6 @@ package worker
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
 	"github.com/gryph/omnidex/internal/llm"
@@ -38,7 +37,6 @@ func (s *Service) executeExactPortableStation(
 	if err := ctx.Err(); err != nil {
 		return assemblyline.PortableResult{}, exactStationExecution{}, err
 	}
-	modelName = strings.TrimSpace(modelName)
 	if modelName == "" {
 		return assemblyline.PortableResult{}, exactStationExecution{}, fmt.Errorf("exact station model is required")
 	}

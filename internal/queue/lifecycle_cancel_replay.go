@@ -16,7 +16,7 @@ func requireCancelJobReplayTx(
 	current model.Job,
 ) error {
 	if record.JobID != command.JobID || record.Kind != LifecycleCancelJob ||
-		record.StepID != nil || record.StepContextID != nil || record.ResultStepStatus != nil ||
+		record.StepID != nil || record.ResultStepStatus != nil ||
 		record.ResultGeneration != record.ObservedGeneration ||
 		record.ResultJobStatus != model.JobStatusCanceled || record.ResultJob.Error != command.Reason {
 		return lifecycleReplayStateError(record.ID, "canceled job result")

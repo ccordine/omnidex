@@ -14,7 +14,7 @@ func requireReplanReplayTx(
 	command ReplanJobCommand,
 	feedbackSHA string,
 ) error {
-	if record.JobID != command.JobID || record.StepID != nil || record.StepContextID != nil ||
+	if record.JobID != command.JobID || record.StepID != nil ||
 		record.ResultGeneration != record.ObservedGeneration+1 {
 		return lifecycleReplayStateError(record.ID, "replan generation result")
 	}

@@ -33,11 +33,11 @@ func (r *nativeRuntimeV3) runObjectiveResolve() error {
 				return provenance, err
 			},
 			WorkspaceReplanContext: func(ctx context.Context, job model.Job) (assemblyline.ObjectiveContext, error) {
-				continuity, err := r.svc.repo.ObjectiveContinuityAuthorities(ctx, job)
+				replan, err := r.svc.repo.CurrentReplanAuthority(ctx, job, "objective_resolve")
 				if err != nil {
 					return assemblyline.ObjectiveContext{}, err
 				}
-				return continuity.ReplanContext(), nil
+				return assemblyline.ObjectiveContext{ReplanAuthority: replan}, nil
 			},
 			WorkspaceMutation:     r.runObjectiveWorkspaceMutation,
 			DatabaseRead:          r.acquireObjectiveDatabaseEvidence,
@@ -55,14 +55,14 @@ func (r *nativeRuntimeV3) runObjectiveResolve() error {
 		return fmt.Errorf("conversation objective %q returned without code-owned completion", result.ObjectiveID)
 	}
 	if result.Kind == assemblyline.ObjectiveKindWorkspaceMutation {
-		return r.complete("objective_result", result.Output, result.Output)
+		return r.completeAppliedWorkspace(result.Output)
 	}
 	output, records, err := prepareObjectiveTurnCompletion(result)
 	if err != nil {
 		return err
 	}
 	return r.completeWithEvidence(
-		"objective_result", output, result.ObjectiveID, records, result.RoleplayResponses,
+		"objective_result", output, records, result.RoleplayResponses,
 		result.RoleplayUserCanon, result.RoleplayUserOngoingAction,
 	)
 }

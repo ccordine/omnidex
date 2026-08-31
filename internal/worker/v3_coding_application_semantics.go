@@ -20,12 +20,6 @@ func newDirectCodingApplicationRequestAuthority(
 	modelRequest string,
 ) (directCodingApplicationRequestAuthority, error) {
 	var zero directCodingApplicationRequestAuthority
-	if authoritativeRequest == "" || authoritativeRequest != strings.TrimSpace(authoritativeRequest) {
-		return zero, fmt.Errorf("direct coding application authority requires one trimmed request")
-	}
-	if modelRequest == "" || modelRequest != strings.TrimSpace(modelRequest) {
-		return zero, fmt.Errorf("direct coding application authority requires one trimmed model request")
-	}
 	authority := directCodingApplicationRequestAuthority{
 		authoritativeRequest: authoritativeRequest,
 		modelRequest:         modelRequest,
@@ -38,11 +32,10 @@ func newDirectCodingApplicationRequestAuthority(
 }
 
 func (authority directCodingApplicationRequestAuthority) validate() error {
-	if authority.authoritativeRequest == "" ||
-		authority.authoritativeRequest != strings.TrimSpace(authority.authoritativeRequest) {
+	if strings.TrimSpace(authority.authoritativeRequest) == "" {
 		return fmt.Errorf("direct coding application authority has an invalid authoritative request")
 	}
-	if authority.modelRequest == "" || authority.modelRequest != strings.TrimSpace(authority.modelRequest) {
+	if strings.TrimSpace(authority.modelRequest) == "" {
 		return fmt.Errorf("direct coding application authority has an invalid model request")
 	}
 	if err := assemblyline.ValidatePathFreeModelContext(
@@ -64,9 +57,6 @@ type directCodingApplicationInterpretation struct {
 func (interpretation directCodingApplicationInterpretation) validateForAuthority(
 	authority directCodingApplicationRequestAuthority,
 ) error {
-	if err := authority.validate(); err != nil {
-		return err
-	}
 	if interpretation.RequestSHA256 != authority.requestSHA256 {
 		return fmt.Errorf(
 			"application interpretation request provenance does not match authoritative request",
@@ -77,9 +67,6 @@ func (interpretation directCodingApplicationInterpretation) validateForAuthority
 			return fmt.Errorf("filesystem-only interpretation carries unused application authority")
 		}
 		return nil
-	}
-	if err := interpretation.Specification.Validate(); err != nil {
-		return err
 	}
 	return nil
 }
@@ -94,9 +81,6 @@ func runDirectCodingApplicationInterpreter(
 	identities []assemblyline.ArtifactIdentity,
 ) (directCodingApplicationInterpretation, error) {
 	var zero directCodingApplicationInterpretation
-	if err := authority.validate(); err != nil {
-		return zero, err
-	}
 
 	resolution, err := resolveDirectCodingApplicationIntent(
 		runtime, intentModel,

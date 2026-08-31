@@ -3,7 +3,6 @@ package worker
 import (
 	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
 )
@@ -44,7 +43,6 @@ func runDirectCodingSemanticLeafCall[T any](
 	if runtime.Context == nil || runtime.Execute == nil || decode == nil || validate == nil {
 		return zero, fmt.Errorf("coding semantic leaf requires an exact portable runtime, decoder, and validator")
 	}
-	modelName = strings.TrimSpace(modelName)
 	if modelName == "" {
 		return zero, fmt.Errorf("coding semantic leaf requires one configured model")
 	}

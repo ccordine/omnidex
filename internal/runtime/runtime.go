@@ -37,9 +37,6 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*Runtime, 
 	if strings.TrimSpace(cfg.DatabaseURL) == "" {
 		return nil, fmt.Errorf("runtime database operation requires DATABASE_URL")
 	}
-	if logger == nil {
-		return nil, fmt.Errorf("runtime worker requires logger")
-	}
 	lifecycleContext, cancel := context.WithCancel(ctx)
 
 	pool, err := db.ConnectRuntime(lifecycleContext, cfg.DatabaseURL, cfg.DatabaseSchema)
@@ -86,7 +83,6 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*Runtime, 
 			InferenceContextTokens: cfg.InferenceContextTokens,
 			Logger:                 logger,
 			OnJobFinished:          server.OnJobFinishedAsync,
-			OnJobOutput:            server.OnJobOutputAsync,
 		},
 	)
 	if err != nil {

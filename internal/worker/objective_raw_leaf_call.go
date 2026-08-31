@@ -3,7 +3,6 @@ package worker
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
 )
@@ -25,7 +24,6 @@ func runObjectivePortableRawLeafCall[T any](
 	if err := ctx.Err(); err != nil {
 		return zero, 0, err
 	}
-	modelName = strings.TrimSpace(modelName)
 	if modelName == "" {
 		return zero, 0, fmt.Errorf("objective raw leaf %s model is not configured", subject)
 	}

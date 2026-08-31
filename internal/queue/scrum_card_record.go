@@ -28,8 +28,6 @@ type DBScrumCard struct {
 	PlayState           string          `json:"play_state"`
 	QueueOrder          int             `json:"queue_order"`
 	BoardOrder          int             `json:"board_order"`
-	SyncJobID           string          `json:"-"`
-	StepContextCursor   int64           `json:"-"`
 	ChannelMessageCount int64           `json:"channel_message_count"`
 	ChannelContentBytes int64           `json:"channel_content_bytes"`
 	CreatedAt           time.Time       `json:"created_at"`
@@ -39,7 +37,7 @@ type DBScrumCard struct {
 const scrumCardSelectColumns = `id,project_id,title,description,column_name,checklist,ref_files,
 	 card_ticket,card_prompt,tags,test_criteria,flow_metrics,
 	 job_id,play_state,queue_order,board_order,
-	 sync_job_id,step_context_cursor,channel_message_count,channel_content_bytes,
+	 channel_message_count,channel_content_bytes,
 	 created_at,updated_at`
 
 const scrumCardSelectSQL = `SELECT ` + scrumCardSelectColumns + `

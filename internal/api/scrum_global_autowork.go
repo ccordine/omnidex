@@ -105,11 +105,6 @@ func (s *Server) refreshScrumAutoWork(ctx context.Context) error {
 	if ctx == nil {
 		return fmt.Errorf("context is required to refresh Scrum auto-work")
 	}
-	if paused, err := s.repo.IsAIPaused(ctx); err != nil {
-		return err
-	} else if paused {
-		return nil
-	}
 	s.scrumAutoWorkMu.Lock()
 	defer s.scrumAutoWorkMu.Unlock()
 	ctx = context.WithValue(ctx, scrumAutoWorkLockHeldKey{}, true)

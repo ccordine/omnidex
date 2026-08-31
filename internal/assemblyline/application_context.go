@@ -54,8 +54,8 @@ type ApplicationContext struct {
 }
 
 func validateApplicationRequest(label, request string) error {
-	if request == "" || request != strings.TrimSpace(request) {
-		return fmt.Errorf("%s require one trimmed user request", label)
+	if strings.TrimSpace(request) == "" {
+		return fmt.Errorf("%s requires a non-empty user request", label)
 	}
 	if len(request) > maxPortablePayloadBytes/2 {
 		return fmt.Errorf("%s user request exceeds %d bytes", label, maxPortablePayloadBytes/2)

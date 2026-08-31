@@ -22,47 +22,6 @@ var directCodingBrowserPermittedRuntimeGlobalIdentifiers = map[string]struct{}{
 	"useCallback": {}, "useEffect": {}, "useMemo": {}, "useRef": {}, "useState": {},
 }
 
-var directCodingBrowserForbiddenRuntimeHostIdentifiers = map[string]struct{}{
-	// Global object and browsing-context authority.
-	"document": {}, "window": {}, "globalThis": {}, "self": {},
-	"frames": {}, "parent": {}, "top": {}, "opener": {},
-	"navigator": {}, "location": {}, "history": {}, "origin": {},
-	"screen": {}, "visualViewport": {}, "customElements": {},
-
-	// Network, cross-context, worker, and persistent-storage authority.
-	"fetch": {}, "XMLHttpRequest": {}, "WebSocket": {},
-	"EventSource": {}, "WebTransport": {}, "BroadcastChannel": {},
-	"Worker": {}, "SharedWorker": {}, "ServiceWorker": {}, "importScripts": {},
-	"MessageChannel": {}, "MessagePort": {}, "postMessage": {},
-	"localStorage": {}, "sessionStorage": {}, "caches": {}, "indexedDB": {},
-	"cookieStore": {},
-
-	// DOM, resource, media, observer, file, and request constructors.
-	"Audio": {}, "Image": {}, "AudioContext": {}, "OfflineAudioContext": {},
-	"webkitAudioContext": {}, "webkitOfflineAudioContext": {},
-	"DOMParser": {}, "XMLSerializer": {}, "MutationObserver": {},
-	"ResizeObserver": {}, "IntersectionObserver": {}, "PerformanceObserver": {},
-	"FileReader": {}, "File": {}, "Blob": {}, "FormData": {},
-	"URL": {}, "URLSearchParams": {}, "Request": {}, "Response": {},
-	"Headers": {}, "AbortController": {}, "AbortSignal": {},
-	"Notification": {}, "MediaRecorder": {}, "MediaSource": {},
-	"RTCPeerConnection": {}, "webkitRTCPeerConnection": {},
-	"SpeechSynthesisUtterance": {}, "speechSynthesis": {},
-
-	// Scheduling, browser UI, events, and nondeterministic host state.
-	"setTimeout": {}, "clearTimeout": {}, "setInterval": {}, "clearInterval": {},
-	"queueMicrotask": {}, "requestAnimationFrame": {}, "cancelAnimationFrame": {},
-	"requestIdleCallback": {}, "cancelIdleCallback": {},
-	"alert": {}, "confirm": {}, "prompt": {}, "open": {}, "close": {},
-	"print": {}, "focus": {}, "blur": {}, "stop": {}, "matchMedia": {},
-	"addEventListener": {}, "removeEventListener": {}, "dispatchEvent": {},
-	"crypto": {}, "performance": {}, "Intl": {},
-
-	// Dynamic evaluation, reflection, and document-selection authority.
-	"eval": {}, "Function": {}, "Proxy": {}, "Reflect": {},
-	"getSelection": {},
-}
-
 var directCodingBrowserForbiddenRuntimeReflectionProperties = map[string]struct{}{
 	"constructor": {}, "prototype": {}, "__proto__": {},
 	"__defineGetter__": {}, "__defineSetter__": {},

@@ -186,10 +186,6 @@ func (r *Repository) ClaimNextStep(ctx context.Context, workerID string) (*model
 		return nil, fmt.Errorf("%w: job %d changed during step claim", ErrStepNotWritable, job.ID)
 	}
 	job.Status = model.JobStatusRunning
-	contexts, err := loadClaimedStepContexts(ctx, tx, job.ID, step.ID)
-	if err != nil {
-		return nil, err
-	}
 	if err := tx.Commit(ctx); err != nil {
 		return nil, err
 	}
@@ -199,6 +195,6 @@ func (r *Repository) ClaimNextStep(ctx context.Context, workerID string) (*model
 	}
 	return &model.ClaimedStep{
 		Job: job, Step: step, Authority: authority,
-		LeaseExpiresAt: leaseExpiresAt, Contexts: contexts,
+		LeaseExpiresAt: leaseExpiresAt,
 	}, nil
 }

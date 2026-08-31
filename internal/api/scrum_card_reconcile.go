@@ -40,10 +40,6 @@ func (s *Server) reconcileScrumCardJobState(ctx context.Context, projectID int64
 		if !scrumCardNeedsTerminalJobReconcile(card) {
 			return card, false, "", nil
 		}
-		card, err = scrumSyncTerminalPlayOutput(card, job)
-		if err != nil {
-			return card, false, "", err
-		}
 		outcome, err := s.resolveScrumPlayOutcomeForCard(ctx, job, card)
 		if err != nil {
 			return card, false, "", err
@@ -94,7 +90,7 @@ func (s *Server) persistScrumCardTransition(
 		ProjectID: projectID, CardID: previous.ID, ExpectedUpdatedAt: expectedUpdatedAt,
 		ExpectedJobID: previous.JobID, Kind: kind, Column: column,
 		PlayState: next.PlayState, QueueOrder: next.QueueOrder,
-		JobID: next.JobID, SyncJobID: next.SyncJobID, StepContextCursor: next.StepContextCursor,
+		JobID: next.JobID,
 		Messages: messages, Outcome: string(outcome),
 	})
 	if err != nil {

@@ -38,7 +38,7 @@ func (s *directCodingSession) Phase(phase directCodingPhase, detail string) {
 func (s *directCodingSession) directCodingAuthority() string {
 	parts := []string{s.request.Instruction}
 	parts = append(parts, s.request.Feedback...)
-	return strings.TrimSpace(strings.Join(parts, "\n"))
+	return strings.Join(parts, "\n")
 }
 
 type directCodingMutationJournalEntry struct {
@@ -52,6 +52,7 @@ const (
 	workspaceFileCreate  workspaceFileOperation = "create"
 	workspaceFileReplace workspaceFileOperation = "replace"
 	workspaceFileDelete  workspaceFileOperation = "delete"
+	workspaceFileMove    workspaceFileOperation = "move"
 )
 
 func (r *nativeRuntimeV3) runDirectCodingAction() error {
@@ -63,7 +64,7 @@ func (r *nativeRuntimeV3) runDirectCodingAction() error {
 	if err != nil {
 		return err
 	}
-	return r.complete("coding", summary, summary)
+	return r.completeAppliedWorkspace(summary)
 }
 
 func (r *nativeRuntimeV3) directCodingRequest() (directCodingRequest, error) {
@@ -93,10 +94,15 @@ func (r *nativeRuntimeV3) directCodingRequest() (directCodingRequest, error) {
 	if strings.TrimSpace(instruction) == "" {
 		return directCodingRequest{}, fmt.Errorf("direct coding requires a non-empty current instruction")
 	}
-	return directCodingRequest{
-		Instruction: instruction,
-		Feedback:    collectContextValuesByKey(r.claim.Contexts, "user_feedback", "replan_feedback"),
-	}, nil
+	request := directCodingRequest{Instruction: instruction}
+	if r.claim.Job.CurrentGeneration > 1 {
+		replan, err := r.svc.repo.CurrentReplanAuthority(r.ctx, r.claim.Job, "v3_coding")
+		if err != nil {
+			return directCodingRequest{}, err
+		}
+		request.Feedback = []string{replan.Feedback}
+	}
+	return request, nil
 }
 
 func (r *nativeRuntimeV3) runDirectCodingSession(request directCodingRequest) (string, error) {

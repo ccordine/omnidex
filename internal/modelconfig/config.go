@@ -1,28 +1,30 @@
 package modelconfig
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
 	"sort"
-	"strings"
+	"unicode/utf8"
+
+	"github.com/gryph/omnidex/internal/exactjson"
 )
 
 type Config map[string]string
 
 func FromJSON(raw json.RawMessage) (Config, error) {
 	out := Config{}
-	if len(bytes.TrimSpace(raw)) == 0 {
+	if len(raw) == 0 {
 		return out, nil
 	}
-	var payload map[string]json.RawMessage
-	decoder := json.NewDecoder(bytes.NewReader(raw))
-	if err := decoder.Decode(&payload); err != nil {
-		return nil, fmt.Errorf("model config must be a JSON object: %w", err)
+	if !utf8.Valid(raw) {
+		return nil, fmt.Errorf("model config must be valid UTF-8")
 	}
-	if err := requireEOF(decoder, "model config"); err != nil {
+	if err := exactjson.ValidateUniqueObject(raw, "model config"); err != nil {
 		return nil, err
+	}
+	var payload map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return nil, fmt.Errorf("model config must be a JSON object: %w", err)
 	}
 	if payload == nil {
 		return nil, fmt.Errorf("model config must be a JSON object, received null")
@@ -35,25 +37,24 @@ func FromJSON(raw json.RawMessage) (Config, error) {
 		if err := json.Unmarshal(rawValue, &value); err != nil {
 			return nil, fmt.Errorf("model config field %q must be a string: %w", key, err)
 		}
-		if value == "" || value != strings.TrimSpace(value) {
-			return nil, fmt.Errorf("model config field %q must name one canonical model", key)
-		}
 		out[key] = value
 	}
 	return out, nil
 }
 
 func FromSettingsJSON(raw json.RawMessage) (Config, error) {
-	if len(bytes.TrimSpace(raw)) == 0 {
+	if len(raw) == 0 {
 		return Config{}, nil
 	}
-	var settings map[string]json.RawMessage
-	decoder := json.NewDecoder(bytes.NewReader(raw))
-	if err := decoder.Decode(&settings); err != nil {
-		return nil, fmt.Errorf("project settings must be a JSON object: %w", err)
+	if !utf8.Valid(raw) {
+		return nil, fmt.Errorf("project settings must be valid UTF-8")
 	}
-	if err := requireEOF(decoder, "project settings"); err != nil {
+	if err := exactjson.ValidateUniqueObject(raw, "project settings"); err != nil {
 		return nil, err
+	}
+	var settings map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &settings); err != nil {
+		return nil, fmt.Errorf("project settings must be a JSON object: %w", err)
 	}
 	if settings == nil {
 		return nil, fmt.Errorf("project settings must be a JSON object, received null")
@@ -62,18 +63,6 @@ func FromSettingsJSON(raw json.RawMessage) (Config, error) {
 		return FromJSON(nested)
 	}
 	return Config{}, nil
-}
-
-func requireEOF(decoder *json.Decoder, label string) error {
-	var trailing any
-	err := decoder.Decode(&trailing)
-	if err == io.EOF {
-		return nil
-	}
-	if err == nil {
-		return fmt.Errorf("%s contains trailing JSON", label)
-	}
-	return fmt.Errorf("%s contains trailing data: %w", label, err)
 }
 
 func (c Config) Get(key string) string {

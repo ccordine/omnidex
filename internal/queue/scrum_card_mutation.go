@@ -16,13 +16,13 @@ func updateScrumCardFieldsTx(ctx context.Context, tx pgx.Tx, card DBScrumCard) e
 		 checklist=$6::jsonb,ref_files=$7::jsonb,card_ticket=$8,card_prompt=$9,
 		 tags=$10::jsonb,test_criteria=$11::jsonb,job_id=$12,
 		 play_state=$13,queue_order=$14,board_order=$15,
-		 sync_job_id=$16,step_context_cursor=$17,updated_at=NOW()
+		 updated_at=NOW()
 		WHERE project_id=$1 AND id=$2
 	`, card.ProjectID, card.ID, card.Title, card.Description, card.Column,
 		string(card.Checklist), string(card.RefFiles), card.CardTicket, card.CardPrompt,
 		string(card.Tags), string(card.TestCriteria),
 		card.JobID, card.PlayState, card.QueueOrder,
-		card.BoardOrder, card.SyncJobID, card.StepContextCursor)
+		card.BoardOrder)
 	if err != nil {
 		return err
 	}
