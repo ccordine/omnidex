@@ -29,6 +29,18 @@ func TestDirectCodingResultRelationUsesSecondQuestionOnlyForDerivedValues(t *tes
 			wantCalls: 2,
 		},
 		{
+			name:      "measurement operation family",
+			candidate: "The finished software performs unit-conversion operations on supplied measurements.",
+			relation:  assemblyline.ApplicationRequirementExplicitResultRelation,
+			wantCalls: 2,
+		},
+		{
+			name:      "observation operation family",
+			candidate: "The finished software performs statistical aggregation operations on supplied observations.",
+			relation:  assemblyline.ApplicationRequirementExplicitResultRelation,
+			wantCalls: 2,
+		},
+		{
 			name:      "status control",
 			candidate: "The finished software shows one status control.",
 			relation:  assemblyline.ApplicationRequirementNoDerivedResult,

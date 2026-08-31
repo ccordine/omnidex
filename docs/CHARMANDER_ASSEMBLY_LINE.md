@@ -120,7 +120,10 @@ tree diff; see [TARGET_TREE_PLANNING.md](TARGET_TREE_PLANNING.md).
    the only rendered output. A named result-bearing operation applied to its governed object
    still asserts the resulting value when phrased grammatically as an action; action form does
    not turn a transform, read, extraction, decode, ordering, calculation, or selection into a
-   result-free event. A named existing per-item grouping key completely determines
+   result-free event. A named family of result-bearing operations over governed inputs is one
+   parametric determining relation; its concrete family member and operand values may be
+   selected or supplied at runtime and need not be enumerated or fixed in the candidate. A
+   named existing per-item grouping key completely determines
    group membership without requiring its origin or unasserted ordering. An expression,
    formula, predicate, or named operation supplied, configured, or selected by an actor is a
    rule-bearing input. A bare quality claim or output described only as calculated, computed,

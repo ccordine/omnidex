@@ -25,8 +25,8 @@ func BuildApplicationRequirementCandidateResultPresencePrompt(
 	case ApplicationRequirementDeterminingRelationDimension:
 		question = []string{
 			"The exact candidate asserts a derived runtime value. Answer one semantic presence question: does it state an independently computable determining relation for that value?",
-			"Return PRESENT only when the candidate names the necessary input or condition and determining rule. A named result-bearing operation uses its governed object as input and the operation as rule. Named orderings, digests, comparisons, selections, aggregations, and existing per-item grouping keys are rules; equal key values determine groups.",
-			"An actor-supplied expression, formula, or operation, or an actor-performed calculation, supplies runtime rule and operands. Passively calling an unspecified output calculated, computed, evaluated, generated, selected, correct, best, useful, or appropriate supplies no rule.",
+			"Return PRESENT in either of two cases: the candidate names one exact rule with its necessary input or condition; or the candidate names a family of result-bearing operations over governed inputs. The second case is one parametric determining relation because the invoked family member and operand values are observable runtime inputs. The family name and governed inputs are sufficient by themselves: do not require the candidate to fix or enumerate family members or operand values, say actor-selected, or use an explicit result noun. Named orderings, digests, comparisons, selections, aggregations, and existing per-item grouping keys are rules; equal key values determine groups.",
+			"Return ABSENT when the candidate supplies no named rule or result-bearing operation family and only calls an output calculated, computed, evaluated, generated, selected, correct, best, useful, appropriate, or otherwise desirable. Those unnamed qualities supply no rule. Do not apply this ABSENT rule to a named operation family over governed inputs.",
 			"FINAL QUESTION:\nIs the independently computable determining relation PRESENT or ABSENT? Return only PRESENT or ABSENT.",
 		}
 	default:

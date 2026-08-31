@@ -5,6 +5,50 @@ import (
 	"testing"
 )
 
+func TestApplicationRequirementDeterminingRelationPromptDefinesOperationFamilies(t *testing.T) {
+	t.Parallel()
+	for _, candidate := range []string{
+		"The finished software performs unit-conversion operations on supplied measurements.",
+		"The finished software performs statistical aggregation operations on supplied observations.",
+	} {
+		candidate := candidate
+		t.Run(candidate, func(t *testing.T) {
+			t.Parallel()
+			authority := applicationRequirementCandidateResultRelationAuthorityFixture(t, candidate)
+			derivedInput := ApplicationRequirementCandidateResultPresenceInput{
+				Candidate: candidate, Kind: authority.Kind, Cardinality: authority.Cardinality,
+				Dimension: ApplicationRequirementDerivedValueDimension,
+			}
+			derived, err := DecodeApplicationRequirementCandidateResultPresenceResult(
+				derivedInput, string(ApplicationRequirementCandidateResultPresent),
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			prompt, err := BuildApplicationRequirementCandidateResultPresencePrompt(
+				ApplicationRequirementCandidateResultPresenceInput{
+					Candidate: candidate, Kind: authority.Kind, Cardinality: authority.Cardinality,
+					Dimension:            ApplicationRequirementDeterminingRelationDimension,
+					DerivedValuePresence: &derived,
+				},
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, required := range []string{
+				candidate,
+				"family of result-bearing operations over governed inputs",
+				"The family name and governed inputs are sufficient by themselves",
+				"Do not apply this ABSENT rule to a named operation family",
+			} {
+				if !strings.Contains(prompt, required) {
+					t.Fatalf("prompt does not contain required operation-family contract %q", required)
+				}
+			}
+		})
+	}
+}
+
 func TestApplicationRequirementCandidateResultRelationFoldsBoundBinaryLeaves(t *testing.T) {
 	t.Parallel()
 	fixtures := []struct {

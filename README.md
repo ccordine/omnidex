@@ -161,7 +161,7 @@ configurable without giving any model control-plane authority:
 ```dotenv
 LLM_PROVIDER=ollama
 OMNI_CODING_SURFACE_MODEL=qwen3.5:9b-q4_K_M
-OMNI_CODING_REQUIREMENTS_MODEL=qwen3.5:9b-q4_K_M
+OMNI_CODING_REQUIREMENTS_MODEL=phi4:14b
 OMNI_CODING_SERVICE_DEPLOYMENT_INTENT_MODEL=phi4:14b
 OMNI_CODING_WORKLOAD_MODEL=qwen3.5:9b-q4_K_M
 OMNI_CODING_ARTIFACT_HANDLING_MODEL=qwen3.5:9b-q4_K_M
@@ -189,10 +189,12 @@ has no inference transport, model lifecycle, or semantic-result channel.
 ### Deployment sizing
 
 The checked-in profile is Qwen-led, but it is not a single-model deployment.
-The active routes use Qwen 3.5 9B for bounded semantic work including requirement
-extraction and target-tree naming, and for exact raw source-fragment generation and
-repair execution, while code alone constructs the workload. Phi-4 14B is used for
-the two service deployment semantics, and
+The active routes use Phi-4 14B for bounded coding-requirement semantics and the
+two service deployment semantics. Qwen 3.5 9B remains the route for other bounded
+semantic work, target-tree naming, exact raw source-fragment generation, and repair
+execution, while code alone constructs the workload. The checked-in operation-family
+result-relation qualification is what admits Phi-4 to the requirements route; Qwen's
+otherwise valid raw-leaf transport did not satisfy that semantic boundary. The system uses
 `nomic-embed-text` for local embeddings.
 The complete route list is in
 [`default.env`](default.env).
@@ -209,7 +211,8 @@ evidence owns current generation timing.
 
 | Route | Current model | Local model file | Runtime role |
 | --- | --- | ---: | --- |
-| Semantic leaf, requirement, target-tree, database, answer, and repair-guidance stations | `qwen3.5:9b-q4_K_M` | 6.6 GB | One raw semantic result |
+| Coding requirement stations | `phi4:14b` | shared 9.1 GB image | One raw semantic result |
+| Other semantic leaf, target-tree, database, answer, and repair-guidance stations | `qwen3.5:9b-q4_K_M` | 6.6 GB | One raw semantic result |
 | Fragment generation and correction | `qwen3.5:9b-q4_K_M` | shared 6.6 GB image | One exact raw bounded source node |
 | Service deployment semantics | `phi4:14b` | 9.1 GB | Conditional availability and destination leaves |
 | Embeddings | `nomic-embed-text` | 0.27 GB | Retrieval vectors |

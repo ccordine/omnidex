@@ -344,7 +344,9 @@ machine passes its executable gates:
    key completely determines group membership; its origin and unasserted ordering are not missing. An expression,
    formula, predicate, or named operation supplied, configured, or selected by an actor is a rule-bearing input.
    When an actor performs a calculation, its chosen operation and operands are observable runtime inputs; neither
-   form must be fixed before runtime. A bare quality claim or output described only as calculated, computed,
+   form must be fixed before runtime. A named family of result-bearing operations over governed inputs is one
+   parametric determining relation; its concrete family member and operand values may be selected or supplied at
+   runtime and need not be enumerated or fixed in the candidate. A bare quality claim or output described only as calculated, computed,
    evaluated, generated, or selected remains missing. Selection,
    ordering, transformation, aggregation, measurement, or decision can establish a derived relation even when that value is the only rendered output. A named result-bearing operation applied to its governed object still asserts the resulting value when phrased as an action; action form does not turn a transform, read, extraction, decode, ordering, calculation, or selection into a result-free event. Actions, controls, unchanged rendering, state transitions, artifact availability, and event occurrences are `NO_DERIVED_RESULT` when they assert only that behavior. A qualitative descriptor on an action, event, or message does not create a derived value. The result carries the exact
    candidate hash and hashes of both complete input receipts; code validates those identities before the

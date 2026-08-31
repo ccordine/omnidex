@@ -36,7 +36,7 @@ split between bounded semantic extraction, deployment-semantics classification, 
 guidance, and source-node generation:
 
 ```dotenv
-OMNI_CODING_REQUIREMENTS_MODEL=qwen3.5:9b-q4_K_M
+OMNI_CODING_REQUIREMENTS_MODEL=phi4:14b
 OMNI_CODING_SERVICE_DEPLOYMENT_INTENT_MODEL=phi4:14b
 OMNI_CODING_WORKLOAD_MODEL=qwen3.5:9b-q4_K_M
 OMNI_CODING_FRAGMENT_MODEL=qwen3.5:9b-q4_K_M
@@ -48,8 +48,10 @@ CODING_FRAGMENT_CONCURRENCY=1
 ```
 
 The complete exact station-key list is checked in to `default.env` and `.env.example`.
-Bounded semantic stations, including requirement extraction and optional target-tree
-naming, use Qwen 3.5 9B. Frozen workload construction is entirely code-owned. The
+Bounded coding-requirement stations use Phi-4 14B after the exact operation-family
+result-relation qualification rejected Qwen 3.5 9B for that semantic boundary. Other
+bounded semantic stations and optional target-tree naming use Qwen 3.5 9B. Frozen
+workload construction is entirely code-owned. The
 target-tree station consumes that same
 `OMNI_CODING_WORKLOAD_MODEL` route when a stack retains a genuine structural naming
 question. No currently registered stack consumes target-tree inference; the route is
@@ -72,7 +74,29 @@ profiles that expose Ollama's thinking capability are invoked with `think:false`
 A non-empty provider `thinking` field is a transport-contract failure and is never
 projected into station state or retained as a second normalized result.
 
-Qwen 3.5 9B is the practical bounded semantic, source-fragment, and repair choice because its
+### Coding-requirement semantic qualification
+
+The requirements route must recognize a named result-bearing operation family over
+governed inputs as one parametric determining relation while continuing to reject an
+unnamed suitability policy. The env-gated qualification exercises the exact two-call
+production renderer, raw Ollama transport, full-response projection, decoders, and
+code-owned fold against two unrelated positive fixtures and one negative control:
+
+```bash
+OMNIDEX_TEST_CODING_REQUIREMENTS_MODEL=phi4:14b \
+OMNIDEX_TEST_OLLAMA_URL=http://127.0.0.1:11434 \
+OMNIDEX_TEST_OLLAMA_CONTEXT=8192 \
+go test ./internal/worker \
+  -run '^TestLiveRequirementResultRelationOperationFamilyQualification$' \
+  -count=1 -v
+```
+
+On 2026-08-31, Phi-4 14B classified both unrelated operation-family fixtures as
+`EXPLICIT_DERIVED_RESULT_RELATION` and the unnamed policy as
+`MISSING_DERIVED_RESULT_RELATION`. Qwen 3.5 9B returned the missing relation for all
+three under the identical clarified contract, so it is not admitted to this route.
+
+Qwen 3.5 9B is the practical source-fragment, repair, and other bounded-semantic choice because its
 Q4_K_M Ollama image is 6.6 GB, earlier bounded semantic qualification converged, and
 Qwen publishes strong instruction following and coding results for the 9B checkpoint.
 The env-gated raw-fragment qualification exercises the exact Qwen 3.5 ChatML
@@ -110,7 +134,8 @@ planning. They are model-file sizes, not runner-allocation or latency measuremen
 
 | Route | Exact model | Model file |
 | --- | --- | ---: |
-| Semantic leaf stations, requirements, target-tree naming, and repair guidance | `qwen3.5:9b-q4_K_M` | 6.6 GB |
+| Coding requirement stations | `phi4:14b` | shared 9.1 GB image |
+| Other semantic leaf stations, target-tree naming, and repair guidance | `qwen3.5:9b-q4_K_M` | 6.6 GB |
 | Source generation and repair execution | `qwen3.5:9b-q4_K_M` | shared 6.6 GB image |
 | Service deployment semantics | `phi4:14b` | 9.1 GB |
 | Local embeddings | `nomic-embed-text` | 0.27 GB |
