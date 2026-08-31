@@ -1,6 +1,7 @@
 package worker
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
@@ -14,6 +15,7 @@ func javaPermittedAuthorities(
 	map[string]struct{},
 	map[javaMethodKey]struct{},
 	map[string]map[javaMethodKey]javaMethodAuthority,
+	error,
 ) {
 	authorities := javaTaskNeutralAuthorities()
 	methods := make(map[javaMethodKey]struct{})
@@ -26,9 +28,11 @@ func javaPermittedAuthorities(
 			authorities[trimmed] = struct{}{}
 			continue
 		}
-		javaCollectAPIDeclarations([]byte(trimmed), authorities, methods, receivers)
+		if err := javaCollectAPIDeclarations([]byte(trimmed), authorities, methods, receivers); err != nil {
+			return nil, nil, nil, fmt.Errorf("parse permitted Java declaration: %w", err)
+		}
 	}
-	return authorities, methods, receivers
+	return authorities, methods, receivers, nil
 }
 
 func javaCollectAPIDeclarations(
@@ -36,17 +40,38 @@ func javaCollectAPIDeclarations(
 	authorities map[string]struct{},
 	methods map[javaMethodKey]struct{},
 	receivers map[string]map[javaMethodKey]javaMethodAuthority,
-) {
+) error {
+	const scopeClass = "OmnidexCapabilityScope"
+	content := []byte("final class " + scopeClass + " {\n" + string(source) + "\n}")
 	parser := treesitter.NewParser()
 	defer parser.Close()
 	if err := parser.SetLanguage(treesitter.NewLanguage(javagrammar.Language())); err != nil {
-		return
+		return err
 	}
-	tree := parser.Parse(source, nil)
+	tree := parser.Parse(content, nil)
 	if tree == nil {
-		return
+		return fmt.Errorf("Java declaration parser returned no tree")
 	}
 	defer tree.Close()
+	root := tree.RootNode()
+	if root == nil || root.HasError() {
+		return fmt.Errorf("Java declaration parser rejected capability source")
+	}
+	var scopeBody *treesitter.Node
+	for index := uint(0); index < root.NamedChildCount(); index++ {
+		candidate := root.NamedChild(index)
+		if candidate == nil || candidate.Kind() != "class_declaration" {
+			continue
+		}
+		name := candidate.ChildByFieldName("name")
+		if name != nil && javaNodeText(name, content) == scopeClass {
+			scopeBody = candidate.ChildByFieldName("body")
+			break
+		}
+	}
+	if scopeBody == nil {
+		return fmt.Errorf("Java declaration parser omitted capability scope")
+	}
 	var visit func(*treesitter.Node, string)
 	visit = func(node *treesitter.Node, owner string) {
 		if node == nil {
@@ -55,25 +80,25 @@ func javaCollectAPIDeclarations(
 		switch node.Kind() {
 		case "class_declaration", "interface_declaration", "enum_declaration", "record_declaration":
 			if name := node.ChildByFieldName("name"); name != nil {
-				owner = javaNodeText(name, source)
+				owner = javaNodeText(name, content)
 				authorities[owner] = struct{}{}
 			}
 		case "method_declaration":
 			name := node.ChildByFieldName("name")
 			if name != nil {
 				key := javaMethodKey{
-					Name: javaNodeText(name, source), Arity: javaDeclarationArity(node),
+					Name: javaNodeText(name, content), Arity: javaDeclarationArity(node),
 				}
 				if owner != "" {
 					if receivers[owner] == nil {
 						receivers[owner] = make(map[javaMethodKey]javaMethodAuthority)
 					}
-					receivers[owner][key] = javaMethodAuthority{
-						ReturnOwner: javaDeclaredTypeOwner(
-							node.ChildByFieldName("type"), source,
-						),
-						Static: javaMethodDeclarationStatic(node, source),
-					}
+						receivers[owner][key] = javaMethodAuthority{
+							ReturnOwner: javaDeclaredTypeOwner(
+								node.ChildByFieldName("type"), content,
+							),
+							Static: javaMethodDeclarationStatic(node, content),
+						}
 				} else {
 					methods[key] = struct{}{}
 				}
@@ -81,7 +106,7 @@ func javaCollectAPIDeclarations(
 		case "variable_declarator":
 			if parent := node.Parent(); parent != nil && parent.Kind() == "field_declaration" {
 				if name := node.ChildByFieldName("name"); name != nil {
-					authorities[javaNodeText(name, source)] = struct{}{}
+					authorities[javaNodeText(name, content)] = struct{}{}
 				}
 			}
 		}
@@ -89,7 +114,8 @@ func javaCollectAPIDeclarations(
 			visit(node.Child(index), owner)
 		}
 	}
-	visit(tree.RootNode(), "")
+	visit(scopeBody, "")
+	return nil
 }
 
 func javaCollectFragmentBindings(

@@ -119,18 +119,23 @@ func resolveDirectCodingProjectFormatDecision(
 						"project format candidate %q lost its code-owned mapping", candidate.CandidateID,
 					)
 				}
-					dialect, err := directCodingProjectSourceDialect(formats[index].Profile)
-					if err != nil {
-						return directCodingProjectSelection{}, err
-					}
-					selection := directCodingProjectSelection{
-						Stack: formats[index].Stack, Profile: formats[index].Profile, Dialect: dialect,
-					}
-				return selection, nil
+				return directCodingProjectSelectionForFormat(formats[index])
 			}
 		}
 		return directCodingProjectSelection{}, fmt.Errorf(
 			"project format decision %q has no code-owned mapping", decision.CandidateID,
 		)
 	}
+}
+
+func directCodingProjectSelectionForFormat(
+	format directCodingProjectFormatCandidate,
+) (directCodingProjectSelection, error) {
+	dialect, err := directCodingProjectSourceDialect(format.Profile)
+	if err != nil {
+		return directCodingProjectSelection{}, err
+	}
+	return directCodingProjectSelection{
+		Stack: format.Stack, Profile: format.Profile, Dialect: dialect,
+	}, nil
 }

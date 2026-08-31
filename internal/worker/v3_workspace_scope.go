@@ -44,5 +44,14 @@ func (s *Service) workspaceScopeForV3Job(job model.Job) (v3WorkspaceScope, error
 			"bind job workspace %q: root must be one canonical absolute path", root,
 		)
 	}
-	return v3WorkspaceScope{Root: root}, nil
+	resolvedRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return v3WorkspaceScope{}, fmt.Errorf("resolve authoritative workspace root %q: %w", root, err)
+	}
+	if !filepath.IsAbs(resolvedRoot) || filepath.Clean(resolvedRoot) != resolvedRoot {
+		return v3WorkspaceScope{}, fmt.Errorf(
+			"resolved workspace root %q is not one canonical absolute path", resolvedRoot,
+		)
+	}
+	return v3WorkspaceScope{Root: resolvedRoot}, nil
 }

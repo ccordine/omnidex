@@ -1,6 +1,7 @@
 package worker
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"unicode"
@@ -29,25 +30,56 @@ func runDirectCodingWorkflow(driver directCodingWorkflowDriver) (string, error) 
 		return "", fmt.Errorf("direct coding workflow requires a driver")
 	}
 	driver.Phase(directCodingPhaseAssembling, "compiling deterministic source assembly")
-	assembly, err := driver.Assemble()
-	if err != nil {
-		return failDirectCodingWorkflow(driver, "compile deterministic assembly", err)
+	assembly, assemblyErr := driver.Assemble()
+	if assemblyErr != nil {
+		if directCodingAssemblyHasDesiredState(assembly) {
+			if err := applyDirectCodingAssembly(driver, assembly); err != nil {
+				assemblyErr = errors.Join(assemblyErr, fmt.Errorf("preserve accepted partial assembly: %w", err))
+			}
+		}
+		return failDirectCodingWorkflow(driver, "compile deterministic assembly", assemblyErr)
 	}
-	driver.Phase(directCodingPhaseConstructing, fmt.Sprintf("files=%d deletes=%d", len(assembly.Files), len(assembly.DeletePaths)))
-	prepared, err := driver.PrepareAssembly(assembly)
-	if err != nil {
-		return failDirectCodingWorkflow(driver, "prepare exact workspace mutation", err)
+	if !directCodingAssemblyHasDesiredState(assembly) {
+		return failDirectCodingWorkflow(
+			driver,
+			"compile deterministic assembly",
+			fmt.Errorf(
+				"NO_EXECUTABLE_WORK_DERIVED: actionable coding objective produced no accepted desired state",
+			),
+		)
 	}
-	if prepared == nil {
-		return failDirectCodingWorkflow(driver, "prepare exact workspace mutation", fmt.Errorf("driver returned no prepared mutation"))
-	}
-	driver.Phase(directCodingPhaseVerifying, "verifying exact workspace post-state")
-	if err := driver.ApplyAndVerify(prepared); err != nil {
-		return failDirectCodingWorkflow(driver, "verify accepted workspace", err)
+	if err := applyDirectCodingAssembly(driver, assembly); err != nil {
+		return failDirectCodingWorkflow(driver, "apply deterministic assembly", err)
 	}
 	summary := driver.Complete()
 	driver.Phase(directCodingPhaseCompleted, summary)
 	return summary, nil
+}
+
+// directCodingAssemblyHasDesiredState reports accepted filesystem obligations,
+// not observed filesystem changes. Reconciliation may prove that this desired
+// state already exists and correctly return a zero-delta success.
+func directCodingAssemblyHasDesiredState(assembly directCodingAssembly) bool {
+	return len(assembly.Files) > 0 || len(assembly.RequiredPaths) > 0 || len(assembly.DeletePaths) > 0
+}
+
+func applyDirectCodingAssembly(
+	driver directCodingWorkflowDriver,
+	assembly directCodingAssembly,
+) error {
+	driver.Phase(directCodingPhaseConstructing, fmt.Sprintf("files=%d deletes=%d", len(assembly.Files), len(assembly.DeletePaths)))
+	prepared, err := driver.PrepareAssembly(assembly)
+	if err != nil {
+		return fmt.Errorf("prepare exact workspace mutation: %w", err)
+	}
+	if prepared == nil {
+		return fmt.Errorf("prepare exact workspace mutation: driver returned no prepared mutation")
+	}
+	driver.Phase(directCodingPhaseVerifying, "verifying exact workspace post-state")
+	if err := driver.ApplyAndVerify(prepared); err != nil {
+		return fmt.Errorf("verify accepted workspace: %w", err)
+	}
+	return nil
 }
 
 func directCodingEventToken(value, fallback string) string {

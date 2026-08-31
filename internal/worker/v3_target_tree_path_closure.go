@@ -40,6 +40,10 @@ func directCodingTargetTreeFileHierarchyConflict(left, right string) bool {
 		strings.HasPrefix(right, left+"/")
 }
 
+func directCodingTargetTreeFileAncestor(ancestor, descendant string) bool {
+	return strings.HasPrefix(descendant, ancestor+"/")
+}
+
 func directCodingTargetTreePathsAvailable(
 	paths []string,
 	occupation directCodingTargetTreeOccupation,

@@ -84,6 +84,7 @@ func resolveDirectCodingArtifactPaths(
 	seenProtected := make(map[string]struct{})
 	seenRequired := make(map[string]struct{})
 	seenDeletions := make(map[string]struct{})
+	retainedPaths := make(map[string]struct{})
 	for _, directive := range directives {
 		value, exists := values[directive.Token]
 		if !exists {
@@ -93,21 +94,27 @@ func resolveDirectCodingArtifactPaths(
 		if err != nil {
 			return nil, nil, nil, fmt.Errorf("resolve artifact %s: %w", directive.Token, err)
 		}
+		if directCodingPathConflictsWithSet(path, retainedPaths) {
+			continue
+		}
 		switch directive.Disposition {
 		case assemblyline.ArtifactProtect:
 			if _, exists := seenProtected[path]; !exists {
 				seenProtected[path] = struct{}{}
 				protected = append(protected, path)
+				retainedPaths[path] = struct{}{}
 			}
 		case assemblyline.ArtifactRequire:
 			if _, exists := seenRequired[path]; !exists {
 				seenRequired[path] = struct{}{}
 				required = append(required, path)
+				retainedPaths[path] = struct{}{}
 			}
 		case assemblyline.ArtifactForbid:
 			if _, exists := seenDeletions[path]; !exists {
 				seenDeletions[path] = struct{}{}
 				deletions = append(deletions, path)
+				retainedPaths[path] = struct{}{}
 			}
 		default:
 			return nil, nil, nil, fmt.Errorf("artifact disposition %s has no filesystem consumer", directive.Disposition)

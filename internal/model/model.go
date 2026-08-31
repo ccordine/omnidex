@@ -92,10 +92,10 @@ type JobDetails struct {
 }
 
 type ClaimedStep struct {
-	Job            Job
-	Step           Step
-	Authority      StepAttemptAuthority
-	LeaseExpiresAt time.Time
+	Job           Job
+	Step          Step
+	Authority     StepAttemptAuthority
+	LeaseDeadline time.Time
 }
 
 type MemoryChunk struct {

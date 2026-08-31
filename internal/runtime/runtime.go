@@ -73,8 +73,6 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*Runtime, 
 		transports.Stations,
 		nil,
 		worker.Options{
-			WorkerCount:            cfg.WorkerCount,
-			FragmentConcurrency:    cfg.CodingFragmentConcurrency,
 			PollInterval:           cfg.WorkerPollInterval,
 			InferenceContextTokens: cfg.InferenceContextTokens,
 			Logger:                 logger,

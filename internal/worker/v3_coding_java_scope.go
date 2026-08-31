@@ -27,7 +27,10 @@ func validateDirectCodingJavaScope(
 	if root == nil || root.HasError() {
 		return fmt.Errorf("Java scope parser rejected the method declaration")
 	}
-	authorities, methods, receiverMethods := javaPermittedAuthorities(input)
+	authorities, methods, receiverMethods, err := javaPermittedAuthorities(input)
+	if err != nil {
+		return err
+	}
 	bindings := make(map[string]string)
 	javaCollectFragmentBindings(root, content, bindings, methods)
 	return javaInspectFragmentScope(

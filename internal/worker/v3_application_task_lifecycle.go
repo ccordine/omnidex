@@ -30,7 +30,7 @@ func runDirectCodingApplicationTaskLifecycle(
 		return fmt.Errorf("application task lifecycle requires an empty generated-source set")
 	}
 
-	err := executeDirectCodingApplicationWorkload(
+	err := executeIndependentDirectCodingApplicationWorkload(
 		frozen,
 		func(context assemblyline.ApplicationTaskContext) error {
 			stage, projectErr := projectDirectCodingApplicationTaskStage(*program, context)

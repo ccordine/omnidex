@@ -7,6 +7,7 @@ import (
 
 	"github.com/gryph/omnidex/internal/assemblyline"
 	"github.com/gryph/omnidex/internal/model"
+	workspacefacts "github.com/gryph/omnidex/internal/workspace"
 )
 
 type nativeRuntimeV3 struct {
@@ -18,9 +19,15 @@ type nativeRuntimeV3 struct {
 	routingErr              error
 	routingOnce             sync.Once
 	objectivePathProvenance assemblyline.ArtifactIdentityProvenance
+	workspaceFence          *workspacefacts.MutationFence
+	workspaceFenceRoot      string
 }
 
-func (s *Service) runNativeV3Step(ctx context.Context, claim *model.ClaimedStep, action string) error {
+func (s *Service) runNativeV3Step(
+	ctx context.Context,
+	claim *model.ClaimedStep,
+	action string,
+) error {
 	runtime := &nativeRuntimeV3{
 		svc: s, ctx: ctx, claim: claim,
 		action: action,

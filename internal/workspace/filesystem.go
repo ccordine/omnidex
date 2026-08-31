@@ -14,13 +14,17 @@ import (
 )
 
 func inspectWorkspaceParents(
-	root *os.Root,
+	ctx context.Context,
+	root *authoritativeWorkspaceRoot,
 	relative string,
 	create bool,
 	result *ReconciliationResult,
 ) (bool, error) {
-	if root == nil {
+	if ctx == nil || root == nil {
 		return false, fmt.Errorf("workspace parent inspection requires an open root")
+	}
+	if err := ctx.Err(); err != nil {
+		return false, fmt.Errorf("inspect workspace parents: %w", err)
 	}
 	current := ""
 	parts := strings.Split(relative, "/")
@@ -30,6 +34,9 @@ func inspectWorkspaceParents(
 		if os.IsNotExist(err) {
 			if !create {
 				return true, nil
+			}
+			if err := ctx.Err(); err != nil {
+				return false, fmt.Errorf("create workspace parent for %q: %w", relative, err)
 			}
 			if err := root.Mkdir(current, 0o755); err != nil && !os.IsExist(err) {
 				return false, fmt.Errorf("create workspace parent for %q: %w", relative, err)
@@ -45,8 +52,8 @@ func inspectWorkspaceParents(
 		if !create {
 			return true, nil
 		}
-		if !info.Mode().IsRegular() && info.Mode()&os.ModeSymlink == 0 {
-			return false, fmt.Errorf("workspace path %q has a special filesystem parent", relative)
+		if err := ctx.Err(); err != nil {
+			return false, fmt.Errorf("replace workspace parent for %q: %w", relative, err)
 		}
 		if err := root.Remove(current); err != nil {
 			return false, fmt.Errorf("replace workspace parent for %q: %w", relative, err)
@@ -61,15 +68,95 @@ func inspectWorkspaceParents(
 	return false, nil
 }
 
+func removeWorkspaceEntry(
+	ctx context.Context,
+	root *authoritativeWorkspaceRoot,
+	relative string,
+) (resultErr error) {
+	if ctx == nil || root == nil {
+		return fmt.Errorf("workspace entry removal requires an open root")
+	}
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("remove workspace entry %q: %w", relative, err)
+	}
+	info, err := root.Lstat(relative)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("inspect workspace entry %q for removal: %w", relative, err)
+	}
+	if !info.IsDir() {
+		if err := ctx.Err(); err != nil {
+			return fmt.Errorf("remove workspace entry %q: %w", relative, err)
+		}
+		if err := root.Remove(relative); err != nil {
+			return fmt.Errorf("remove workspace entry %q: %w", relative, err)
+		}
+		return nil
+	}
+	directory, err := root.Open(relative)
+	if err != nil {
+		return fmt.Errorf("open workspace directory %q for removal: %w", relative, err)
+	}
+	defer func() {
+		if directory != nil {
+			resultErr = errors.Join(resultErr, directory.Close())
+		}
+	}()
+	opened, err := directory.Stat()
+	if err != nil || !opened.IsDir() || !os.SameFile(info, opened) {
+		return fmt.Errorf("workspace directory %q changed before removal", relative)
+	}
+	for {
+		if err := ctx.Err(); err != nil {
+			return fmt.Errorf("remove workspace directory %q: %w", relative, err)
+		}
+		entries, readErr := directory.ReadDir(128)
+		for _, entry := range entries {
+			if err := removeWorkspaceEntry(ctx, root, path.Join(relative, entry.Name())); err != nil {
+				return err
+			}
+		}
+		if errors.Is(readErr, io.EOF) {
+			break
+		}
+		if readErr != nil {
+			return fmt.Errorf("read workspace directory %q for removal: %w", relative, readErr)
+		}
+	}
+	if err := directory.Close(); err != nil {
+		directory = nil
+		return fmt.Errorf("close workspace directory %q before removal: %w", relative, err)
+	}
+	directory = nil
+	current, err := root.Lstat(relative)
+	if err != nil || !current.IsDir() || !os.SameFile(info, current) {
+		return fmt.Errorf("workspace directory %q changed during removal", relative)
+	}
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("remove workspace directory %q: %w", relative, err)
+	}
+	if err := root.Remove(relative); err != nil {
+		return fmt.Errorf("remove workspace directory %q: %w", relative, err)
+	}
+	return nil
+}
+
 func openRegularFileContentMatch(
 	ctx context.Context,
-	root *os.Root,
+	root *authoritativeWorkspaceRoot,
 	relative string,
 	before os.FileInfo,
 	content []byte,
 ) (*os.File, bool, error) {
-	if ctx == nil || root == nil || before == nil || !before.Mode().IsRegular() ||
-		before.Size() != int64(len(content)) || ctx.Err() != nil {
+	if ctx == nil || root == nil || before == nil {
+		return nil, false, fmt.Errorf("workspace content comparison requires exact file authority")
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, false, fmt.Errorf("compare workspace file %q: %w", relative, err)
+	}
+	if !before.Mode().IsRegular() || before.Size() != int64(len(content)) {
 		return nil, false, nil
 	}
 	file, err := root.Open(relative)
@@ -87,6 +174,12 @@ func openRegularFileContentMatch(
 		return nil, false, nil
 	}
 	read, readErr := io.ReadAll(io.LimitReader(file, int64(len(content))+1))
+	if err := ctx.Err(); err != nil {
+		return nil, false, errors.Join(
+			fmt.Errorf("compare workspace file %q: %w", relative, err),
+			closeWorkspaceHandle(relative, file),
+		)
+	}
 	fileInfo, fileStatErr := file.Stat()
 	pathInfo, pathStatErr := root.Lstat(relative)
 	if readErr != nil || fileStatErr != nil || pathStatErr != nil ||
@@ -99,13 +192,17 @@ func openRegularFileContentMatch(
 }
 
 func createSiblingTemporary(
-	root *os.Root,
+	ctx context.Context,
+	root *authoritativeWorkspaceRoot,
 	parent string,
 ) (*os.File, string, error) {
-	if root == nil {
+	if ctx == nil || root == nil {
 		return nil, "", fmt.Errorf("workspace temporary file requires an open root")
 	}
 	for attempt := 0; attempt < 64; attempt++ {
+		if err := ctx.Err(); err != nil {
+			return nil, "", fmt.Errorf("create workspace temporary file: %w", err)
+		}
 		var entropy [16]byte
 		if _, err := rand.Read(entropy[:]); err != nil {
 			return nil, "", err
@@ -128,12 +225,12 @@ func createSiblingTemporary(
 
 func writePreparedFile(
 	ctx context.Context,
-	root *os.Root,
+	root *authoritativeWorkspaceRoot,
 	parent string,
 	content []byte,
 	mode uint32,
 ) (_ string, _ os.FileInfo, resultErr error) {
-	file, name, err := createSiblingTemporary(root, parent)
+	file, name, err := createSiblingTemporary(ctx, root, parent)
 	if err != nil {
 		return "", nil, err
 	}
@@ -160,7 +257,13 @@ func writePreparedFile(
 		}
 		written += count
 	}
+	if err := ctx.Err(); err != nil {
+		return "", nil, err
+	}
 	if err := file.Sync(); err != nil {
+		return "", nil, err
+	}
+	if err := ctx.Err(); err != nil {
 		return "", nil, err
 	}
 	if err := file.Chmod(os.FileMode(mode)); err != nil {
@@ -182,7 +285,7 @@ func writePreparedFile(
 	return name, info, nil
 }
 
-func removeIfPresent(root *os.Root, name string) error {
+func removeIfPresent(root *authoritativeWorkspaceRoot, name string) error {
 	if root == nil {
 		return fmt.Errorf("workspace removal requires an open root")
 	}

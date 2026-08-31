@@ -49,12 +49,8 @@ func (s *directCodingSession) deriveRequirementCapabilities(
 		return nil, err
 	}
 	pairs := directCodingCapabilityPairs(localContext, requirements)
-	concurrency, err := directCodingFragmentConcurrency(s.runtime.svc.fragmentConcurrency)
-	if err != nil {
-		return nil, err
-	}
 	results := runDirectCodingCapabilityPairs(
-		directCodingWorkerRuntime(s), modelName, pairs, concurrency,
+		directCodingWorkerRuntime(s), modelName, pairs, 1,
 	)
 	for _, result := range results {
 		if result.Err != nil {

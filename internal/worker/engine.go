@@ -20,8 +20,6 @@ type ModelRouting = modelconfig.Routing
 type stepCompleteFunc func(context.Context, queue.CompleteStepCommand) error
 
 type Options struct {
-	WorkerCount            string
-	FragmentConcurrency    string
 	PollInterval           string
 	InferenceContextTokens string
 	Logger                 *log.Logger
@@ -31,8 +29,6 @@ type Service struct {
 	repo                   *queue.Repository
 	stationClient          llm.ExactStationClient
 	webSearch              *websearch.Service
-	workerCount            string
-	fragmentConcurrency    string
 	pollInterval           string
 	inferenceContextTokens string
 	completeStep           stepCompleteFunc
@@ -53,8 +49,6 @@ func New(
 		repo:                   repo,
 		stationClient:          stationClient,
 		webSearch:              webSearch,
-		workerCount:            opts.WorkerCount,
-		fragmentConcurrency:    opts.FragmentConcurrency,
 		pollInterval:           opts.PollInterval,
 		inferenceContextTokens: opts.InferenceContextTokens,
 		completeStep:           repo.CompleteStep,

@@ -4,23 +4,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strconv"
-	"sync"
 	"time"
 
 	"github.com/gryph/omnidex/internal/model"
+	"github.com/gryph/omnidex/internal/queue"
 )
 
 func (s *Service) Start(ctx context.Context) error {
 	if s == nil || s.repo == nil {
 		return fmt.Errorf("worker start requires repository authority")
-	}
-	workerCount, err := strconv.Atoi(s.workerCount)
-	if err != nil {
-		return fmt.Errorf("WORKER_COUNT must be an integer: %w", err)
-	}
-	if workerCount < 1 {
-		return fmt.Errorf("WORKER_COUNT must be at least 1, received %d", workerCount)
 	}
 	pollInterval, err := time.ParseDuration(s.pollInterval)
 	if err != nil {
@@ -29,17 +21,7 @@ func (s *Service) Start(ctx context.Context) error {
 	if pollInterval <= 0 {
 		return fmt.Errorf("WORKER_POLL_INTERVAL must be positive, received %s", pollInterval)
 	}
-	var wg sync.WaitGroup
-	for i := 0; i < workerCount; i++ {
-		wg.Add(1)
-		workerID := fmt.Sprintf("worker-%d", i+1)
-		go func(id string) {
-			defer wg.Done()
-			s.run(ctx, id, pollInterval)
-		}(workerID)
-	}
-	<-ctx.Done()
-	wg.Wait()
+	s.run(ctx, "serial-worker", pollInterval)
 	return nil
 }
 
@@ -72,6 +54,9 @@ func (s *Service) run(ctx context.Context, workerID string, pollInterval time.Du
 		}
 		s.emitStepEvent(claim.Authority, "step_start", fmt.Sprintf("action=%s worker=%s", claim.Step.Action, workerID))
 		if err := s.processStep(ctx, claim); err != nil {
+			if s.skipFailureForLostExecutionAuthority(workerID, claim, err) {
+				continue
+			}
 			if s.skipFailureForControlledCancel(ctx, workerID, claim, err) {
 				continue
 			}
@@ -98,44 +83,69 @@ func (s *Service) run(ctx context.Context, workerID string, pollInterval time.Du
 
 func (s *Service) processStep(ctx context.Context, claim *model.ClaimedStep) error {
 	controlCtx, stopControl := s.watchStepControl(ctx, claim.Job.ID, claim.Step.ID)
-	defer stopControl()
-	stepCtx, stopLease := s.watchStepAttemptLease(controlCtx, claim.Authority)
+	stepCtx, stopLease := s.watchStepAttemptLease(
+		controlCtx, claim.Authority, claim.LeaseDeadline,
+	)
 	workErr := s.runNativeV3Step(stepCtx, claim, claim.Step.Action)
 	leaseErr := stopLease()
-	return s.finishStepAttemptWatch(workErr, leaseErr)
+	controlErr := stopControl()
+	return s.finishStepAttemptWatch(workErr, errors.Join(leaseErr, controlErr))
 }
 
-func (s *Service) watchStepControl(ctx context.Context, jobID, stepID int64) (context.Context, func()) {
+func (s *Service) watchStepControl(ctx context.Context, jobID, stepID int64) (context.Context, func() error) {
 	stepCtx, cancel := context.WithCancel(ctx)
-	done := make(chan struct{})
+	result := make(chan error, 1)
 	go func() {
-		defer close(done)
 		ticker := time.NewTicker(stepControlPollInterval)
 		defer ticker.Stop()
 		for {
 			select {
 			case <-stepCtx.Done():
+				result <- nil
 				return
 			case <-ticker.C:
 			}
 			jobStatus, stepStatus, err := s.repo.GetStepRuntimeState(stepCtx, jobID, stepID)
 			if err != nil {
 				if errors.Is(err, context.Canceled) || stepCtx.Err() != nil {
+					result <- nil
 					return
 				}
-				s.logf("job=%d step=%d control poll error: %v", jobID, stepID, err)
-				continue
+				result <- fmt.Errorf(
+					"%w: read job %d step %d runtime authority: %v",
+					errStepExecutionAuthorityLost, jobID, stepID, err,
+				)
+				cancel()
+				return
 			}
 			if jobStatus == model.JobStatusCanceled || stepStatus == model.StepStatusCanceled {
 				cancel()
+				result <- nil
 				return
 			}
 		}
 	}()
-	return stepCtx, func() {
+	return stepCtx, func() error {
 		cancel()
-		<-done
+		return <-result
 	}
+}
+
+func (s *Service) skipFailureForLostExecutionAuthority(
+	workerID string,
+	claim *model.ClaimedStep,
+	err error,
+) bool {
+	if !errors.Is(err, errStepExecutionAuthorityLost) &&
+		!errors.Is(err, queue.ErrStaleStepAttempt) {
+		return false
+	}
+	s.emitStepEvent(claim.Authority, "step_authority_lost", err.Error())
+	s.logf(
+		"worker=%s job=%d step=%d relinquished stale execution authority: %v",
+		workerID, claim.Job.ID, claim.Step.ID, err,
+	)
+	return true
 }
 
 func (s *Service) skipFailureForControlledCancel(ctx context.Context, workerID string, claim *model.ClaimedStep, err error) bool {

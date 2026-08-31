@@ -25,18 +25,35 @@ func (prepared *PreparedReconciliation) ApplyVerified(
 	if err := ctx.Err(); err != nil {
 		return ReconciliationResult{}, fmt.Errorf("apply workspace reconciliation: %w", err)
 	}
-	root, err := os.OpenRoot(prepared.root)
+	rootFS, err := os.OpenRoot(prepared.root)
 	if err != nil {
 		return ReconciliationResult{}, fmt.Errorf("open authoritative workspace root: %w", err)
 	}
-	current, err := root.Stat(".")
-	if err != nil || !current.IsDir() || !os.SameFile(prepared.rootInfo, current) {
+	directory, err := rootFS.Open(".")
+	if err != nil {
 		return ReconciliationResult{}, errors.Join(
-			fmt.Errorf("authoritative workspace root changed before mutation"), root.Close(),
+			fmt.Errorf("open authoritative workspace root handle: %w", err), rootFS.Close(),
 		)
 	}
+	current, err := directory.Stat()
+	if err != nil || !current.IsDir() || !os.SameFile(prepared.rootInfo, current) {
+		return ReconciliationResult{}, errors.Join(
+			fmt.Errorf("authoritative workspace root changed before mutation"),
+			directory.Close(), rootFS.Close(),
+		)
+	}
+	mountID, err := workspaceMountIDForHandle(directory)
+	if err != nil {
+		return ReconciliationResult{}, errors.Join(
+			fmt.Errorf("resolve authoritative workspace root mount: %w", err),
+			directory.Close(), rootFS.Close(),
+		)
+	}
+	root := &authoritativeWorkspaceRoot{
+		Root: rootFS, authorityFD: int(directory.Fd()), mountID: mountID,
+	}
 	result, applyErr := applyReconciliation(ctx, root, prepared.desired)
-	closeErr := root.Close()
+	closeErr := errors.Join(directory.Close(), rootFS.Close())
 	if applyErr != nil {
 		return result, errors.Join(applyErr, closeErr)
 	}
@@ -49,7 +66,7 @@ func (prepared *PreparedReconciliation) ApplyVerified(
 
 func applyReconciliation(
 	ctx context.Context,
-	root *os.Root,
+	root *authoritativeWorkspaceRoot,
 	desired []DesiredFile,
 ) (ReconciliationResult, error) {
 	result := ReconciliationResult{Changes: []Change{}}
@@ -81,7 +98,7 @@ func applyReconciliation(
 			}
 			continue
 		}
-		if err := applyDeletion(root, state.Path, &result); err != nil {
+		if err := applyDeletion(ctx, root, state.Path, &result); err != nil {
 			return result, err
 		}
 	}
@@ -90,23 +107,21 @@ func applyReconciliation(
 
 func applyRequiredFile(
 	ctx context.Context,
-	root *os.Root,
+	root *authoritativeWorkspaceRoot,
 	state DesiredFile,
 	result *ReconciliationResult,
 ) error {
-	missingParent, err := inspectWorkspaceParents(root, state.Path, false, nil)
+	missingParent, err := inspectWorkspaceParents(ctx, root, state.Path, false, nil)
 	if err != nil {
 		return err
 	}
 	if !missingParent {
 		info, err := root.Lstat(state.Path)
 		if err == nil {
-			if !info.Mode().IsRegular() {
-				return fmt.Errorf("required workspace file %q is not a regular file", state.Path)
+			if info.Mode().IsRegular() {
+				return nil
 			}
-			return nil
-		}
-		if !os.IsNotExist(err) {
+		} else if !os.IsNotExist(err) {
 			return fmt.Errorf("inspect required workspace file %q: %w", state.Path, err)
 		}
 	}
@@ -116,11 +131,11 @@ func applyRequiredFile(
 
 func applyFile(
 	ctx context.Context,
-	root *os.Root,
+	root *authoritativeWorkspaceRoot,
 	state DesiredFile,
 	result *ReconciliationResult,
 ) (resultErr error) {
-	if _, err := inspectWorkspaceParents(root, state.Path, true, result); err != nil {
+	if _, err := inspectWorkspaceParents(ctx, root, state.Path, true, result); err != nil {
 		return err
 	}
 	before, err := root.Lstat(state.Path)
@@ -128,36 +143,17 @@ func applyFile(
 	if err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("inspect workspace file %q: %w", state.Path, err)
 	}
-	if existed && before.IsDir() {
-		return fmt.Errorf("workspace file %q is blocked by a directory", state.Path)
-	}
-	if existed && !before.Mode().IsRegular() && before.Mode()&os.ModeSymlink == 0 {
-		return fmt.Errorf("workspace file %q is blocked by a special filesystem node", state.Path)
-	}
 	if existed && before.Mode().IsRegular() {
 		file, matches, err := openRegularFileContentMatch(ctx, root, state.Path, before, state.Content)
 		if err != nil {
 			return err
 		}
 		if matches {
-			if file == nil {
-				changed, err := verifyPathFileMode(root, state.Path, before, state.Mode)
-				if err != nil {
-					return err
+			if before.Mode().Perm() == os.FileMode(state.Mode) {
+				if file == nil {
+					return verifyPathFileExact(root, state.Path, before, state.Mode)
 				}
-				if changed {
-					result.Changes = append(result.Changes, Change{Path: state.Path, Kind: ChangeReplace})
-				}
-				return nil
-			} else {
-			changed, err := verifyOpenFileMode(root, state.Path, file, before, state.Mode)
-			if err != nil {
-				return err
-			}
-			if changed {
-				result.Changes = append(result.Changes, Change{Path: state.Path, Kind: ChangeReplace})
-			}
-			return nil
+				return verifyOpenFileExact(ctx, root, state.Path, file, before, state.Mode)
 			}
 		}
 		if err := closeWorkspaceHandle(state.Path, file); err != nil {
@@ -176,6 +172,14 @@ func applyFile(
 			resultErr = errors.Join(resultErr, removeIfPresent(root, temporary))
 		}
 	}()
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("install workspace file %q: %w", state.Path, err)
+	}
+	if existed && before.IsDir() {
+		if err := removeWorkspaceEntry(ctx, root, state.Path); err != nil {
+			return fmt.Errorf("replace workspace directory %q with a file: %w", state.Path, err)
+		}
+	}
 	if err := root.Rename(temporary, state.Path); err != nil {
 		return fmt.Errorf("install workspace file %q: %w", state.Path, err)
 	}
@@ -193,45 +197,44 @@ func applyFile(
 	return nil
 }
 
-func verifyOpenFileMode(
-	root *os.Root,
+func verifyOpenFileExact(
+	ctx context.Context,
+	root *authoritativeWorkspaceRoot,
 	relative string,
 	file *os.File,
 	before os.FileInfo,
 	mode uint32,
-) (bool, error) {
-	if root == nil || file == nil || before == nil {
-		return false, fmt.Errorf("verify workspace file mode requires exact open-file authority")
+) error {
+	if ctx == nil || root == nil || file == nil || before == nil {
+		return fmt.Errorf("verify workspace file requires exact open-file authority")
 	}
-	changed := before.Mode().Perm() != os.FileMode(mode)
-	if changed {
-		if err := file.Chmod(os.FileMode(mode)); err != nil {
-			return false, errors.Join(
-				fmt.Errorf("set workspace file mode %q: %w", relative, err),
-				closeWorkspaceHandle(relative, file),
-			)
-		}
+	if err := ctx.Err(); err != nil {
+		return errors.Join(
+			fmt.Errorf("verify workspace file %q: %w", relative, err),
+			closeWorkspaceHandle(relative, file),
+		)
 	}
 	fileInfo, fileErr := file.Stat()
 	pathInfo, pathErr := root.Lstat(relative)
 	closeErr := closeWorkspaceHandle(relative, file)
 	if fileErr != nil || pathErr != nil || !fileInfo.Mode().IsRegular() ||
 		!os.SameFile(before, fileInfo) || !os.SameFile(before, pathInfo) ||
+		before.Mode().Perm() != os.FileMode(mode) ||
 		fileInfo.Mode().Perm() != os.FileMode(mode) ||
 		pathInfo.Mode().Perm() != os.FileMode(mode) {
-		return changed, errors.Join(
-			fmt.Errorf("workspace file %q differs from desired permissions", relative),
+		return errors.Join(
+			fmt.Errorf("workspace file %q differs from desired state", relative),
 			closeErr,
 		)
 	}
 	if closeErr != nil {
-		return changed, closeErr
+		return closeErr
 	}
-	return changed, nil
+	return nil
 }
 
 func verifyPathFileExact(
-	root *os.Root,
+	root *authoritativeWorkspaceRoot,
 	relative string,
 	before os.FileInfo,
 	mode uint32,
@@ -247,50 +250,30 @@ func verifyPathFileExact(
 	return nil
 }
 
-func verifyPathFileMode(
-	root *os.Root,
-	relative string,
-	before os.FileInfo,
-	mode uint32,
-) (bool, error) {
-	if root == nil || before == nil {
-		return false, fmt.Errorf("set workspace file mode requires exact path authority")
-	}
-	changed := before.Mode().Perm() != os.FileMode(mode)
-	if changed {
-		if err := root.Chmod(relative, os.FileMode(mode)); err != nil {
-			return false, fmt.Errorf("set workspace file mode %q: %w", relative, err)
-		}
-	}
-	if err := verifyPathFileExact(root, relative, before, mode); err != nil {
-		return changed, err
-	}
-	return changed, nil
-}
-
 func applyDeletion(
-	root *os.Root,
+	ctx context.Context,
+	root *authoritativeWorkspaceRoot,
 	relative string,
 	result *ReconciliationResult,
 ) error {
-	missingParent, err := inspectWorkspaceParents(root, relative, false, nil)
+	missingParent, err := inspectWorkspaceParents(ctx, root, relative, false, nil)
 	if err != nil {
 		return err
 	}
 	if missingParent {
 		return nil
 	}
-	info, err := root.Lstat(relative)
+	_, err = root.Lstat(relative)
 	if os.IsNotExist(err) {
 		return nil
 	}
 	if err != nil {
 		return fmt.Errorf("inspect workspace deletion %q: %w", relative, err)
 	}
-	if info.IsDir() {
-		return fmt.Errorf("workspace deletion %q names a directory, not a file", relative)
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("delete workspace file %q: %w", relative, err)
 	}
-	if err := root.Remove(relative); err != nil {
+	if err := removeWorkspaceEntry(ctx, root, relative); err != nil {
 		return fmt.Errorf("delete workspace file %q: %w", relative, err)
 	}
 	result.Changes = append(result.Changes, Change{Path: relative, Kind: ChangeDelete})
@@ -299,7 +282,7 @@ func applyDeletion(
 
 func applyMoves(
 	ctx context.Context,
-	root *os.Root,
+	root *authoritativeWorkspaceRoot,
 	moves []DesiredFile,
 	result *ReconciliationResult,
 ) error {
@@ -338,7 +321,7 @@ func applyMoves(
 		if _, retained := targets[move.MoveFrom]; retained {
 			continue
 		}
-		if err := applyDeletion(root, move.MoveFrom, result); err != nil {
+		if err := applyDeletion(ctx, root, move.MoveFrom, result); err != nil {
 			return err
 		}
 	}
@@ -347,11 +330,11 @@ func applyMoves(
 
 func reconcileMoveDestination(
 	ctx context.Context,
-	root *os.Root,
+	root *authoritativeWorkspaceRoot,
 	move DesiredFile,
 	result *ReconciliationResult,
 ) (bool, error) {
-	missingParent, err := inspectWorkspaceParents(root, move.Path, false, nil)
+	missingParent, err := inspectWorkspaceParents(ctx, root, move.Path, false, nil)
 	if err != nil || missingParent {
 		return false, err
 	}
@@ -375,33 +358,25 @@ func reconcileMoveDestination(
 		}
 		return false, nil
 	}
-	if file == nil {
-		changed, err := verifyPathFileMode(root, move.Path, before, move.Mode)
-		if err != nil {
+	if before.Mode().Perm() != os.FileMode(move.Mode) {
+		if err := closeWorkspaceHandle(move.Path, file); err != nil {
 			return false, err
 		}
-		if changed {
-			result.Changes = append(result.Changes, Change{Path: move.Path, Kind: ChangeReplace})
-		}
-		return true, nil
+		return false, nil
 	}
-	changed, err := verifyOpenFileMode(root, move.Path, file, before, move.Mode)
-	if err != nil {
-		return false, err
+	if file == nil {
+		return true, verifyPathFileExact(root, move.Path, before, move.Mode)
 	}
-	if changed {
-		result.Changes = append(result.Changes, Change{Path: move.Path, Kind: ChangeReplace})
-	}
-	return true, nil
+	return true, verifyOpenFileExact(ctx, root, move.Path, file, before, move.Mode)
 }
 
 func applyRenameFromMatchingSource(
 	ctx context.Context,
-	root *os.Root,
+	root *authoritativeWorkspaceRoot,
 	move DesiredFile,
 	result *ReconciliationResult,
 ) (bool, error) {
-	missingParent, err := inspectWorkspaceParents(root, move.MoveFrom, false, nil)
+	missingParent, err := inspectWorkspaceParents(ctx, root, move.MoveFrom, false, nil)
 	if err != nil || missingParent {
 		return false, err
 	}
@@ -431,26 +406,28 @@ func applyRenameFromMatchingSource(
 		}
 		return false, nil
 	}
-	if _, err := inspectWorkspaceParents(root, move.Path, true, result); err != nil {
+	if _, err := inspectWorkspaceParents(ctx, root, move.Path, true, result); err != nil {
 		return false, errors.Join(err, closeWorkspaceHandle(move.MoveFrom, file))
 	}
 	destination, err := root.Lstat(move.Path)
 	if err == nil {
 		if destination.IsDir() {
-			return false, errors.Join(
-				fmt.Errorf("workspace move destination %q is a directory", move.Path),
-				closeWorkspaceHandle(move.MoveFrom, file),
-			)
-		}
-		if !destination.Mode().IsRegular() && destination.Mode()&os.ModeSymlink == 0 {
-			return false, errors.Join(
-				fmt.Errorf("workspace move destination %q is a special filesystem node", move.Path),
-				closeWorkspaceHandle(move.MoveFrom, file),
-			)
+			if err := removeWorkspaceEntry(ctx, root, move.Path); err != nil {
+				return false, errors.Join(
+					fmt.Errorf("replace workspace move destination %q: %w", move.Path, err),
+					closeWorkspaceHandle(move.MoveFrom, file),
+				)
+			}
 		}
 	} else if !os.IsNotExist(err) {
 		return false, errors.Join(
 			fmt.Errorf("inspect workspace move destination %q: %w", move.Path, err),
+			closeWorkspaceHandle(move.MoveFrom, file),
+		)
+	}
+	if err := ctx.Err(); err != nil {
+		return false, errors.Join(
+			fmt.Errorf("move workspace file %q to %q: %w", move.MoveFrom, move.Path, err),
 			closeWorkspaceHandle(move.MoveFrom, file),
 		)
 	}
@@ -468,7 +445,7 @@ func applyRenameFromMatchingSource(
 			return false, err
 		}
 	} else {
-		if _, err := verifyOpenFileMode(root, move.Path, file, before, move.Mode); err != nil {
+		if err := verifyOpenFileExact(ctx, root, move.Path, file, before, move.Mode); err != nil {
 			return false, err
 		}
 	}

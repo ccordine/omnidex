@@ -30,8 +30,6 @@ type Config struct {
 	HuggingFaceAPIKey         string
 	ModelAuthority            modelconfig.Authority
 	EmbeddingModel            string
-	WorkerCount               string
-	CodingFragmentConcurrency string
 	WorkerPollInterval        string
 	RequestTimeout            string
 	RealtimeStreamMaxAge      string
@@ -73,8 +71,6 @@ func Load() Config {
 		HuggingFaceAPIKey:         os.Getenv("HUGGINGFACE_API_KEY"),
 		ModelAuthority:            modelAuthority,
 		EmbeddingModel:            embeddingModelForProvider(embeddingProvider, providerModels),
-		WorkerCount:               getenv("WORKER_COUNT", "2"),
-		CodingFragmentConcurrency: getenv("CODING_FRAGMENT_CONCURRENCY", defaultCodingFragmentConcurrency(provider)),
 		WorkerPollInterval:        getenv("WORKER_POLL_INTERVAL", "2s"),
 		RequestTimeout:            getenv("REQUEST_TIMEOUT", "10m"),
 		RealtimeStreamMaxAge:      getenv("REALTIME_STREAM_MAX_AGE", "10m"),
@@ -86,11 +82,4 @@ func Load() Config {
 	}
 
 	return cfg
-}
-
-func defaultCodingFragmentConcurrency(provider string) string {
-	if provider == "ollama" {
-		return "1"
-	}
-	return "4"
 }

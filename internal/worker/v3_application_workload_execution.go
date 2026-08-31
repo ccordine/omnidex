@@ -1,6 +1,7 @@
 package worker
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -47,6 +48,29 @@ func executeDirectCodingApplicationWorkload(
 		}
 	}
 	return nil
+}
+
+func executeIndependentDirectCodingApplicationWorkload(
+	workload assemblyline.FrozenApplicationWorkload,
+	execute func(assemblyline.ApplicationTaskContext) error,
+) error {
+	if execute == nil {
+		return fmt.Errorf("application workload executor requires one task callback")
+	}
+	var resultErr error
+	for _, task := range workload.Tasks {
+		context, err := assemblyline.ProjectApplicationTaskContext(workload, task.ID)
+		if err == nil {
+			err = execute(context)
+		}
+		if err != nil {
+			resultErr = errors.Join(
+				resultErr,
+				fmt.Errorf("execute application workload task %s: %w", task.ID, err),
+			)
+		}
+	}
+	return resultErr
 }
 
 func compileDirectCodingApplicationTaskBehavior(

@@ -29,6 +29,15 @@ func (s *directCodingSession) PrepareAssembly(
 	if err != nil {
 		return nil, err
 	}
+	s.plannedFiles = 0
+	s.plannedDeletes = 0
+	for _, state := range desired {
+		if state.Present {
+			s.plannedFiles++
+		} else {
+			s.plannedDeletes++
+		}
+	}
 	reconciliation, err := workspacefacts.PrepareReconciliation(s.runtime.ctx, s.root, desired)
 	if err != nil {
 		return nil, fmt.Errorf("prepare direct-coding workspace reconciliation: %w", err)
@@ -48,10 +57,16 @@ func (s *directCodingSession) directCodingAssemblyDesiredStates(
 	}
 	for _, task := range assembly.Files {
 		if directCodingPathProtected(task.Path, s.protectedPaths) {
-			continue
+			return nil, fmt.Errorf(
+				"compiled file %q conflicts with accepted preservation authority", task.Path,
+			)
 		}
-		if _, forbidden := deletions[task.Path]; forbidden {
-			continue
+		for deletion := range deletions {
+			if task.Path == deletion || directCodingTargetTreeFileAncestor(deletion, task.Path) {
+				return nil, fmt.Errorf(
+					"compiled file %q conflicts with accepted deletion %q", task.Path, deletion,
+				)
+			}
 		}
 		state := workspacefacts.DesiredFile{
 			Path: task.Path, Present: true,
@@ -70,13 +85,21 @@ func (s *directCodingSession) directCodingAssemblyDesiredStates(
 			continue
 		}
 		if directCodingPathProtected(required, s.protectedPaths) {
-			continue
+			return nil, fmt.Errorf(
+				"required file %q conflicts with accepted preservation authority", required,
+			)
 		}
-		if _, forbidden := deletions[required]; forbidden {
-			continue
+		for deletion := range deletions {
+			if directCodingTargetTreeFileHierarchyConflict(required, deletion) {
+				return nil, fmt.Errorf(
+					"required file %q conflicts with accepted deletion %q", required, deletion,
+				)
+			}
 		}
 		if directCodingPathConflictsWithSet(required, desiredPaths) {
-			continue
+			return nil, fmt.Errorf(
+				"required file %q crosses an accepted file hierarchy", required,
+			)
 		}
 		desired = append(desired, workspacefacts.DesiredFile{
 			Path: required, Present: true, Content: []byte{}, Mode: 0o644,
@@ -86,9 +109,24 @@ func (s *directCodingSession) directCodingAssemblyDesiredStates(
 	}
 	for _, path := range assembly.DeletePaths {
 		if directCodingPathProtected(path, s.protectedPaths) {
-			continue
+			return nil, fmt.Errorf(
+				"deleted file %q conflicts with accepted preservation authority", path,
+			)
 		}
-		if directCodingPathConflictsWithSet(path, desiredPaths) {
+		redundant := false
+		for desiredPath := range desiredPaths {
+			if !directCodingTargetTreeFileHierarchyConflict(path, desiredPath) {
+				continue
+			}
+			if directCodingTargetTreeFileAncestor(desiredPath, path) {
+				redundant = true
+				break
+			}
+			return nil, fmt.Errorf(
+				"deleted file %q conflicts with accepted file %q", path, desiredPath,
+			)
+		}
+		if redundant {
 			continue
 		}
 		desired = append(desired, workspacefacts.DesiredFile{Path: path})

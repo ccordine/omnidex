@@ -142,13 +142,17 @@ func (r *Repository) ClaimNextStep(ctx context.Context, workerID string) (*model
 		}
 	}
 	attemptNumber := previousAttempt + 1
-	var leaseExpiresAt time.Time
+	leaseMeasurementStarted := time.Now()
+	var leaseValidForNanoseconds int64
 	if err := tx.QueryRow(ctx, `
 		INSERT INTO job_step_attempts (
 			job_id,generation,step_id,attempt,worker_id,claimed_at,renewed_at
 		) VALUES ($1,$2,$3,$4,$5,$6,$6)
-		RETURNING expires_at
-	`, step.JobID, step.Generation, step.ID, attemptNumber, workerID, databaseNow).Scan(&leaseExpiresAt); err != nil {
+		RETURNING GREATEST(
+			FLOOR(EXTRACT(EPOCH FROM (expires_at-clock_timestamp()))*1000000000)::bigint,
+			0::bigint
+		)
+	`, step.JobID, step.Generation, step.ID, attemptNumber, workerID, databaseNow).Scan(&leaseValidForNanoseconds); err != nil {
 		return nil, fmt.Errorf("create step %d attempt %d: %w", step.ID, attemptNumber, err)
 	}
 	stepUpdate, err := tx.Exec(ctx, `
@@ -185,12 +189,16 @@ func (r *Repository) ClaimNextStep(ctx context.Context, workerID string) (*model
 	if err := tx.Commit(ctx); err != nil {
 		return nil, err
 	}
+	leaseDeadline := leaseMeasurementStarted.Add(time.Duration(leaseValidForNanoseconds))
+	if time.Until(leaseDeadline) <= 0 {
+		return nil, fmt.Errorf("step %d attempt %d lease expired before claim delivery", step.ID, attemptNumber)
+	}
 	authority := model.StepAttemptAuthority{
 		JobID: step.JobID, Generation: step.Generation, StepID: step.ID,
 		Attempt: attemptNumber, WorkerID: workerID,
 	}
 	return &model.ClaimedStep{
 		Job: job, Step: step, Authority: authority,
-		LeaseExpiresAt: leaseExpiresAt,
+		LeaseDeadline: leaseDeadline,
 	}, nil
 }

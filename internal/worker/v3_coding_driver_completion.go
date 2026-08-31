@@ -19,7 +19,7 @@ func (s *directCodingSession) Complete() string {
 		}
 	}
 	summary := fmt.Sprintf(
-		"Completed deterministic coding workflow: planned_files=%d planned_deletes=%d accepted_mutations=%d created=%d replaced=%d deleted=%d moved=%d verification=%s",
+		"Completed deterministic coding workflow: accepted_desired_files=%d accepted_absences=%d filesystem_delta=%d created=%d replaced=%d deleted=%d moved=%d verification=%s",
 		s.plannedFiles,
 		s.plannedDeletes,
 		len(s.mutationJournal),
