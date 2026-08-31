@@ -40,6 +40,24 @@ func IsHTTPStatus(err error, status int) bool {
 	return errors.As(err, &responseErr) && responseErr.StatusCode == status
 }
 
+// IsDefinitiveMutationRejection recognizes the pre-commit rejection statuses
+// emitted authoritatively by the production mutation endpoints. Transport
+// failures and every unregistered HTTP response leave the mutation outcome
+// ambiguous and must retain the caller's idempotency identity.
+func IsDefinitiveMutationRejection(err error) bool {
+	var responseErr *HTTPError
+	if !errors.As(err, &responseErr) {
+		return false
+	}
+	switch responseErr.StatusCode {
+	case http.StatusBadRequest, http.StatusNotFound, http.StatusConflict,
+		http.StatusRequestEntityTooLarge:
+		return true
+	default:
+		return false
+	}
+}
+
 func New(baseURL string, timeout time.Duration) (*Client, error) {
 	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
 	parsed, err := url.Parse(baseURL)

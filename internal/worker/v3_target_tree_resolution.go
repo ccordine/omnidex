@@ -14,6 +14,7 @@ func resolveDirectCodingTargetTree(
 	workload assemblyline.FrozenApplicationWorkload,
 	stack directCodingProjectStack,
 	authoritativePaths []string,
+	current directCodingTargetTreeOccupation,
 ) (assemblyline.TargetTree, assemblyline.ApplicationFileCoveragePlan, error) {
 	var zeroTree assemblyline.TargetTree
 	var zeroCoverage assemblyline.ApplicationFileCoveragePlan
@@ -22,9 +23,16 @@ func resolveDirectCodingTargetTree(
 	var err error
 	switch {
 	case stack.ProjectCompleteTargetTree != nil:
-		target, err = stack.ProjectCompleteTargetTree(
-			directCodingTargetTreeOccupationFor(stack, map[string]struct{}{}, authoritativePaths),
+		occupation := directCodingTargetTreeOccupationFor(
+			stack, map[string]struct{}{}, authoritativePaths, current,
 		)
+		if stack.ID == genericTypeScriptBrowserAdapter {
+			target, err = reconcileTypeScriptBrowserCompleteTargetTree(
+				stack, authoritativePaths, current,
+			)
+		} else {
+			target, err = stack.ProjectCompleteTargetTree(occupation)
+		}
 		if err != nil {
 			return zeroTree, zeroCoverage, fmt.Errorf(
 				"project complete target tree: %w", err,
@@ -38,7 +46,7 @@ func resolveDirectCodingTargetTree(
 		for taskIndex, task := range workload.Tasks {
 			var focused assemblyline.TargetTree
 			focused, err = stack.ProjectFocusedTargetTree(
-				taskIndex+1, directCodingTargetTreeOccupationFor(stack, union, authoritativePaths),
+				taskIndex+1, directCodingTargetTreeOccupationFor(stack, union, authoritativePaths, current),
 			)
 			if err != nil {
 				return zeroTree, zeroCoverage, fmt.Errorf(

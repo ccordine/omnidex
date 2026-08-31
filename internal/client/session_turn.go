@@ -42,7 +42,7 @@ func (client *Client) SubmitSessionTurn(
 	if err := projectroot.ValidateDirectoryIdentity(workspaceIdentity); err != nil {
 		return SessionTurnReceipt{}, fmt.Errorf("session turn workspace identity: %w", err)
 	}
-	if err := model.ValidateChannelMessage(model.ChannelMessageRoleUser, exactText); err != nil {
+	if err := ValidateSessionTurnText(exactText); err != nil {
 		return SessionTurnReceipt{}, err
 	}
 	payload := struct {

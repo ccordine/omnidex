@@ -7,6 +7,9 @@ func ProjectApplicationTaskContext(
 	taskID string,
 ) (ApplicationTaskContext, error) {
 	var zero ApplicationTaskContext
+	if err := ValidateFrozenApplicationWorkload(workload); err != nil {
+		return zero, err
+	}
 	for _, task := range workload.Tasks {
 		if task.ID != taskID {
 			continue

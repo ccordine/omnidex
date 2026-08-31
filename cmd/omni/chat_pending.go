@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	"github.com/gryph/omnidex/internal/client"
@@ -182,6 +181,5 @@ func sessionControlKind(action string) queue.ChannelSessionControlKind {
 }
 
 func definitiveChatRequestFailure(err error) bool {
-	var responseErr *client.HTTPError
-	return errors.As(err, &responseErr) && responseErr.StatusCode >= 400 && responseErr.StatusCode < 500
+	return client.IsDefinitiveMutationRejection(err)
 }

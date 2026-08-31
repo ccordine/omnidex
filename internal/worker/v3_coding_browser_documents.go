@@ -27,12 +27,11 @@ func genericBrowserAppDocument(
 				"application workload omits requirement %s", requirement.ID,
 			)
 		}
-		implementationPath, err := directCodingTaskSingleImplementationPath(
-			coverage, context.Task.TaskID,
-		)
+		pair, err := directCodingTaskSinglePair(coverage, context.Task.TaskID)
 		if err != nil {
 			return assemblyline.SourceDocument{}, err
 		}
+		implementationPath := pair.ImplementationPath
 		name := fmt.Sprintf("Feature%03d", index+1)
 		imports = append(imports, fmt.Sprintf("import { %s } from '%s';", name, typeScriptRelativeModule("src/App.tsx", implementationPath)))
 		dependencies = append(dependencies, fmt.Sprintf("feature.%03d", index+1))
@@ -60,15 +59,28 @@ func genericBrowserAppSource(specification assemblyline.ApplicationSpecification
 	}
 	body.WriteString("  }), [runtime]);\n")
 	body.WriteString("  return (\n")
-	body.WriteString("    <>\n")
-	for index := range specification.Requirements {
+	body.WriteString("    <main className=\"isolate mx-auto grid gap-6 p-6\">\n")
+	body.WriteString("      <header>\n")
+	body.WriteString("        <h1>" + escapeTypeScriptJSXText(specification.ProductQuote) + "</h1>\n")
+	body.WriteString("      </header>\n")
+	for index, requirement := range specification.Requirements {
 		sequence := index + 1
-		body.WriteString(fmt.Sprintf("      <Feature%03d runtime={features.feature%03d} />\n", sequence, sequence))
+		body.WriteString(fmt.Sprintf(
+			"      <section aria-label={%s}>\n", strconv.Quote(requirement.SourceQuote),
+		))
+		body.WriteString(fmt.Sprintf("        <Feature%03d runtime={features.feature%03d} />\n", sequence, sequence))
+		body.WriteString("      </section>\n")
 	}
-	body.WriteString("    </>\n")
+	body.WriteString("    </main>\n")
 	body.WriteString("  );\n")
 	body.WriteString("}")
 	return body.String()
+}
+
+func escapeTypeScriptJSXText(value string) string {
+	return strings.NewReplacer(
+		"&", "&amp;", "<", "&lt;", ">", "&gt;", "{", "&#123;", "}", "&#125;",
+	).Replace(value)
 }
 
 func genericBrowserEntrypointDocument() assemblyline.SourceDocument {
@@ -81,8 +93,34 @@ func genericBrowserEntrypointDocument() assemblyline.SourceDocument {
 	}
 }
 
+func genericBrowserSmokeTestDocument(
+	specification assemblyline.ApplicationSpecification,
+) assemblyline.SourceDocument {
+	return assemblyline.SourceDocument{
+		ID: "application_smoke_test", Path: "src/App.test.tsx",
+		Preamble: `import '@testing-library/jest-dom/vitest';
+import { render, screen } from '@testing-library/react';
+import { App } from './App';`,
+		Blocks: []assemblyline.SourceBlock{{
+			ID: "tests.application_smoke", Static: genericBrowserSmokeTestSource(specification),
+			API: "tests assembled application rendering", DependsOn: []string{"application.render"},
+		}},
+	}
+}
+
+func genericBrowserSmokeTestSource(
+	specification assemblyline.ApplicationSpecification,
+) string {
+	return fmt.Sprintf(`describe('assembled application', () => {
+  it('renders every accepted capability surface', () => {
+    render(<App />);
+    expect(screen.getAllByRole('region')).toHaveLength(%d);
+  });
+});`, len(specification.Requirements))
+}
+
 func genericBrowserStylesSource() string {
-return `:root {
+	return `:root {
 	font-family: system-ui, sans-serif;
 }
 

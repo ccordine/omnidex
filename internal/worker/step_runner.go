@@ -11,7 +11,7 @@ import (
 )
 
 func (s *Service) Start(ctx context.Context) error {
-	if s == nil || s.repo == nil {
+	if s == nil || s.repo == nil || s.failStep == nil {
 		return fmt.Errorf("worker start requires repository authority")
 	}
 	pollInterval, err := time.ParseDuration(s.pollInterval)
@@ -21,25 +21,40 @@ func (s *Service) Start(ctx context.Context) error {
 	if pollInterval <= 0 {
 		return fmt.Errorf("WORKER_POLL_INTERVAL must be positive, received %s", pollInterval)
 	}
-	s.run(ctx, "serial-worker", pollInterval)
-	return nil
+	return s.run(ctx, "serial-worker", pollInterval)
 }
 
-func (s *Service) run(ctx context.Context, workerID string, pollInterval time.Duration) {
+func (s *Service) run(ctx context.Context, workerID string, pollInterval time.Duration) error {
+	return s.runLoop(ctx, workerID, pollInterval, s.repo.ClaimNextStep, s.runClaim)
+}
+
+type claimNextStepFunc func(context.Context, string) (*model.ClaimedStep, error)
+type runClaimFunc func(context.Context, string, *model.ClaimedStep) error
+
+func (s *Service) runLoop(
+	ctx context.Context,
+	workerID string,
+	pollInterval time.Duration,
+	claimNextStep claimNextStepFunc,
+	runClaim runClaimFunc,
+) error {
+	if claimNextStep == nil || runClaim == nil {
+		return fmt.Errorf("worker loop requires claim and execution authority")
+	}
 	ticker := time.NewTicker(pollInterval)
 	defer ticker.Stop()
 	for {
 		select {
 		case <-ctx.Done():
-			return
+			return nil
 		default:
 		}
-		claim, err := s.repo.ClaimNextStep(ctx, workerID)
+		claim, err := claimNextStep(ctx, workerID)
 		if err != nil {
 			s.logf("worker=%s claim error: %v", workerID, err)
 			select {
 			case <-ctx.Done():
-				return
+				return nil
 			case <-ticker.C:
 			}
 			continue
@@ -47,50 +62,66 @@ func (s *Service) run(ctx context.Context, workerID string, pollInterval time.Du
 		if claim == nil {
 			select {
 			case <-ctx.Done():
-				return
+				return nil
 			case <-ticker.C:
 			}
 			continue
 		}
 		releaseRuntimeChannel := s.bindRuntimeEventChannel(claim.Job)
-		s.runClaim(ctx, workerID, claim)
+		claimErr := runClaim(ctx, workerID, claim)
 		releaseRuntimeChannel()
+		if claimErr != nil {
+			// Continuing would leave an uncommitted running attempt eligible for
+			// lease reclamation and could repeat the same inference indefinitely.
+			return fmt.Errorf(
+				"worker %q cannot persist terminal state for job %d step %d: %w",
+				workerID, claim.Job.ID, claim.Step.ID, claimErr,
+			)
+		}
 	}
 }
 
-func (s *Service) runClaim(ctx context.Context, workerID string, claim *model.ClaimedStep) {
+func (s *Service) runClaim(ctx context.Context, workerID string, claim *model.ClaimedStep) error {
 	s.emitStepEvent(claim.Authority, "step_start", fmt.Sprintf("action=%s worker=%s", claim.Step.Action, workerID))
 	if err := s.processStep(ctx, claim); err != nil {
 		if s.skipFailureForLostExecutionAuthority(workerID, claim, err) {
-			return
+			return nil
 		}
 		if s.skipFailureForControlledCancel(ctx, workerID, claim, err) {
-			return
+			return nil
 		}
 		s.emitStepEvent(claim.Authority, "step_error", err.Error())
 		s.logf("worker=%s job=%d step=%d action=%s failed: %v", workerID, claim.Job.ID, claim.Step.ID, claim.Step.Action, err)
 		failCommand, identityErr := failClaimedStepCommand(claim, err.Error())
 		if identityErr != nil {
-			s.logf("worker=%s job=%d step=%d failure identity error: %v", workerID, claim.Job.ID, claim.Step.ID, identityErr)
-			return
+			return fmt.Errorf("construct exact failure lifecycle operation: %w", identityErr)
 		}
-		failErr := s.repo.FailStep(ctx, failCommand)
+		failErr := s.failStep(ctx, failCommand)
 		if failErr != nil {
-			s.logf("worker=%s job=%d step=%d fail update error: %v", workerID, claim.Job.ID, claim.Step.ID, failErr)
-		} else {
-			s.emitStepEvent(
-				claim.Authority,
-				"step_failed",
-				fmt.Sprintf("action=%s worker=%s", claim.Step.Action, workerID),
-			)
+			if errors.Is(failErr, queue.ErrStaleStepAttempt) {
+				s.emitStepEvent(claim.Authority, "step_authority_lost", failErr.Error())
+				s.logf(
+					"worker=%s job=%d step=%d failure commit relinquished stale execution authority: %v",
+					workerID, claim.Job.ID, claim.Step.ID, failErr,
+				)
+				return nil
+			}
+			s.emitStepEvent(claim.Authority, "step_failure_persistence_failed", failErr.Error())
+			return fmt.Errorf("commit failed step lifecycle operation: %w", failErr)
 		}
-		return
+		s.emitStepEvent(
+			claim.Authority,
+			"step_failed",
+			fmt.Sprintf("action=%s worker=%s", claim.Step.Action, workerID),
+		)
+		return nil
 	}
 	s.emitStepEvent(claim.Authority, "step_complete", fmt.Sprintf("action=%s worker=%s", claim.Step.Action, workerID))
 	s.logf(
 		"worker=%s job=%d step=%d action=%s completed",
 		workerID, claim.Job.ID, claim.Step.ID, claim.Step.Action,
 	)
+	return nil
 }
 
 func (s *Service) processStep(ctx context.Context, claim *model.ClaimedStep) error {
@@ -151,7 +182,8 @@ func (s *Service) skipFailureForLostExecutionAuthority(
 	err error,
 ) bool {
 	if !errors.Is(err, errStepExecutionAuthorityLost) &&
-		!errors.Is(err, queue.ErrStaleStepAttempt) {
+		!errors.Is(err, queue.ErrStaleStepAttempt) &&
+		!errors.Is(err, queue.ErrLLMCallTerminalizedByAttempt) {
 		return false
 	}
 	s.emitStepEvent(claim.Authority, "step_authority_lost", err.Error())

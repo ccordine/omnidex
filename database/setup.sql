@@ -3,6 +3,580 @@
 -- This is a current-state definition, not an incremental migration.
 
 --
+
+-- Exact append-only provider and semantic-validation evidence for every
+-- portable station invocation. These tables are intentionally independent of
+-- objective citation evidence: model bytes are operational proof, never
+-- completion authority.
+
+CREATE TABLE llm_call_evidence (
+    id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    job_id bigint NOT NULL,
+    generation bigint NOT NULL CHECK (generation > 0),
+    step_id bigint NOT NULL,
+    step_attempt bigint NOT NULL CHECK (step_attempt > 0),
+    worker_id text NOT NULL CHECK (
+        worker_id <> '' AND worker_id=btrim(worker_id) AND octet_length(worker_id) <= 256
+    ),
+    scope text NOT NULL CHECK (
+        scope IN ('portable_semantic_worker','portable_fragment_worker')
+    ),
+    work_id text NOT NULL CHECK (work_id ~ '^[0-9a-f]{64}$'),
+    work_kind text NOT NULL CHECK (
+        work_kind <> '' AND work_kind=btrim(work_kind) AND octet_length(work_kind) <= 128
+    ),
+    requested_model text NOT NULL CHECK (
+        requested_model <> '' AND requested_model=btrim(requested_model)
+        AND octet_length(requested_model) <= 512
+    ),
+    model text NOT NULL CHECK (
+        model <> '' AND model=btrim(model) AND octet_length(model) <= 512
+    ),
+    protocol text NOT NULL CHECK (
+        protocol='omnidex.ollama-raw-text-generate-request.v2'
+    ),
+    system_envelope text NOT NULL CHECK (
+        system_envelope <> '' AND btrim(system_envelope) <> ''
+        AND octet_length(system_envelope) <= 131072
+    ),
+    prompt_hint text NOT NULL CHECK (prompt_hint='Return only the requested output.'),
+    model_input text NOT NULL,
+    model_input_sha256 text NOT NULL CHECK (
+        model_input_sha256 ~ '^[0-9a-f]{64}$'
+        AND model_input_sha256=encode(pg_catalog.sha256(convert_to(model_input,'UTF8')),'hex')
+    ),
+    model_input_bytes integer NOT NULL CHECK (
+        model_input_bytes=octet_length(model_input)
+        AND model_input_bytes BETWEEN 1 AND 131072
+    ),
+    provider_request bytea NOT NULL,
+    provider_request_sha256 text NOT NULL CHECK (
+        provider_request_sha256 ~ '^[0-9a-f]{64}$'
+        AND provider_request_sha256=encode(pg_catalog.sha256(provider_request),'hex')
+    ),
+    provider_request_bytes integer NOT NULL CHECK (
+        provider_request_bytes=octet_length(provider_request)
+        AND provider_request_bytes BETWEEN 1 AND 1048576
+    ),
+    context_tokens integer NOT NULL CHECK (context_tokens BETWEEN 1 AND 262144),
+    max_output_tokens integer NOT NULL CHECK (
+        max_output_tokens BETWEEN 1 AND context_tokens
+    ),
+    output_limit_mode text NOT NULL CHECK (output_limit_mode IN ('explicit','natural')),
+    created_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
+    CONSTRAINT llm_call_evidence_one_invocation
+        UNIQUE (job_id,generation,step_id,step_attempt,work_id)
+);
+
+CREATE INDEX idx_llm_call_evidence_job
+    ON llm_call_evidence (job_id,id);
+
+CREATE INDEX idx_llm_call_evidence_step_attempt
+    ON llm_call_evidence (job_id,generation,step_id,step_attempt,id);
+
+CREATE TABLE llm_call_receipts (
+    call_evidence_id bigint PRIMARY KEY
+        REFERENCES llm_call_evidence(id) ON DELETE RESTRICT,
+    generation_receipt bytea NOT NULL CHECK (
+        octet_length(generation_receipt) BETWEEN 2 AND 34603009
+    ),
+    generation_receipt_sha256 text NOT NULL CHECK (
+        generation_receipt_sha256 ~ '^[0-9a-f]{64}$'
+        AND generation_receipt_sha256=encode(pg_catalog.sha256(generation_receipt),'hex')
+    ),
+    raw_response_present boolean NOT NULL,
+    raw_response bytea,
+    raw_response_sha256 text,
+    raw_response_bytes integer NOT NULL,
+    candidate text,
+    candidate_sha256 text,
+    prompt_tokens integer NOT NULL CHECK (prompt_tokens >= 0),
+    output_tokens integer NOT NULL CHECK (output_tokens >= 0),
+    provider_duration_nanos bigint NOT NULL CHECK (provider_duration_nanos >= 0),
+    status text NOT NULL CHECK (status IN ('succeeded','failed')),
+    error text,
+    error_sha256 text,
+    elapsed_nanos bigint NOT NULL CHECK (elapsed_nanos >= 0),
+    created_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
+    CONSTRAINT llm_call_receipts_exact_raw_response CHECK (
+        (raw_response_present AND raw_response IS NOT NULL
+         AND raw_response_sha256 ~ '^[0-9a-f]{64}$'
+         AND raw_response_sha256=encode(pg_catalog.sha256(raw_response),'hex')
+         AND raw_response_bytes=octet_length(raw_response)
+         AND raw_response_bytes BETWEEN 0 AND 16777217)
+        OR
+        (NOT raw_response_present AND raw_response IS NULL
+         AND raw_response_sha256 IS NULL AND raw_response_bytes=0)
+    ),
+    CONSTRAINT llm_call_receipts_exact_candidate CHECK (
+        (candidate IS NULL AND candidate_sha256 IS NULL)
+        OR
+        (candidate IS NOT NULL AND candidate_sha256 ~ '^[0-9a-f]{64}$'
+         AND candidate_sha256=encode(pg_catalog.sha256(convert_to(candidate,'UTF8')),'hex')
+         AND octet_length(candidate) <= 16777216)
+    ),
+    CONSTRAINT llm_call_receipts_terminal_shape CHECK (
+        (status='succeeded' AND error IS NULL AND error_sha256 IS NULL
+         AND candidate IS NOT NULL
+         AND btrim(candidate) <> '' AND prompt_tokens > 0 AND output_tokens > 0)
+        OR
+        (status='failed' AND error IS NOT NULL AND error=btrim(error)
+         AND error <> '' AND octet_length(error) <= 8192
+         AND error_sha256 ~ '^[0-9a-f]{64}$'
+         AND error_sha256=encode(pg_catalog.sha256(convert_to(error,'UTF8')),'hex'))
+    )
+);
+
+CREATE TABLE llm_call_outcomes (
+    call_evidence_id bigint PRIMARY KEY
+        REFERENCES llm_call_evidence(id) ON DELETE RESTRICT,
+    status text NOT NULL CHECK (status IN (
+        'accepted','rejected','provider_failed','interrupted'
+    )),
+    candidate_sha256 text CHECK (
+        candidate_sha256 IS NULL OR candidate_sha256 ~ '^[0-9a-f]{64}$'
+    ),
+    projection jsonb,
+    validation_error text,
+    validation_error_sha256 text,
+    created_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
+    CONSTRAINT llm_call_outcomes_terminal_shape CHECK (
+        (status='accepted' AND candidate_sha256 IS NOT NULL
+         AND projection IS NOT NULL AND validation_error IS NULL
+         AND validation_error_sha256 IS NULL)
+        OR
+        (status='rejected' AND candidate_sha256 IS NOT NULL
+         AND validation_error IS NOT NULL AND validation_error=btrim(validation_error)
+         AND validation_error <> '' AND octet_length(validation_error) <= 8192
+         AND validation_error_sha256 ~ '^[0-9a-f]{64}$'
+         AND validation_error_sha256=encode(
+             pg_catalog.sha256(convert_to(validation_error,'UTF8')),'hex'
+         ))
+        OR
+        (status='provider_failed' AND projection IS NULL
+         AND validation_error IS NOT NULL AND validation_error=btrim(validation_error)
+         AND validation_error <> '' AND octet_length(validation_error) <= 8192
+         AND validation_error_sha256 ~ '^[0-9a-f]{64}$'
+         AND validation_error_sha256=encode(
+             pg_catalog.sha256(convert_to(validation_error,'UTF8')),'hex'
+         ))
+        OR
+        (status='interrupted' AND candidate_sha256 IS NULL AND projection IS NULL
+         AND validation_error IS NOT NULL AND validation_error=btrim(validation_error)
+         AND validation_error <> '' AND octet_length(validation_error) <= 8192
+         AND validation_error_sha256 ~ '^[0-9a-f]{64}$'
+         AND validation_error_sha256=encode(
+             pg_catalog.sha256(convert_to(validation_error,'UTF8')),'hex'
+         ))
+    ),
+    CONSTRAINT llm_call_outcomes_projection_bound CHECK (
+        projection IS NULL OR octet_length(projection::text) <= 8192
+    )
+);
+
+CREATE FUNCTION prevent_llm_call_evidence_mutation() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    RAISE EXCEPTION 'LLM call evidence is immutable';
+END;
+$$;
+
+CREATE FUNCTION validate_llm_call_outcome_insert() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'pg_catalog', '__OMNIDEX_RUNTIME_SCHEMA__', 'pg_temp'
+    AS $$
+DECLARE
+    call llm_call_evidence%ROWTYPE;
+    receipt llm_call_receipts%ROWTYPE;
+    has_receipt boolean;
+BEGIN
+    SELECT * INTO call FROM llm_call_evidence
+    WHERE id=NEW.call_evidence_id FOR SHARE;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'LLM call outcome lacks exact provider evidence';
+    END IF;
+    SELECT * INTO receipt FROM llm_call_receipts
+    WHERE call_evidence_id=NEW.call_evidence_id FOR SHARE;
+    has_receipt := FOUND;
+    IF NEW.status='interrupted' THEN
+        IF has_receipt THEN
+            RAISE EXCEPTION 'interrupted LLM call outcome contradicts a provider receipt';
+        END IF;
+    ELSIF NOT has_receipt THEN
+        RAISE EXCEPTION 'LLM call outcome lacks an exact provider receipt';
+    ELSIF NEW.status='provider_failed' THEN
+        IF receipt.status <> 'failed' OR
+           NEW.validation_error IS DISTINCT FROM receipt.error OR
+           NEW.candidate_sha256 IS DISTINCT FROM receipt.candidate_sha256 THEN
+            RAISE EXCEPTION 'provider failure outcome differs from exact call evidence';
+        END IF;
+    ELSIF receipt.status <> 'succeeded' OR
+          NEW.candidate_sha256 IS DISTINCT FROM receipt.candidate_sha256 THEN
+        RAISE EXCEPTION 'semantic outcome differs from exact successful call evidence';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+CREATE FUNCTION validate_llm_call_evidence_insert() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'pg_catalog', '__OMNIDEX_RUNTIME_SCHEMA__', 'pg_temp'
+    AS $$
+DECLARE
+	attempt_status text;
+BEGIN
+	SELECT status INTO attempt_status FROM job_step_attempts
+	WHERE job_id=NEW.job_id AND generation=NEW.generation
+	  AND step_id=NEW.step_id AND attempt=NEW.step_attempt
+	  AND worker_id=NEW.worker_id
+	FOR UPDATE;
+	IF NOT FOUND THEN
+		RAISE EXCEPTION 'LLM call evidence lacks exact step attempt worker authority';
+	END IF;
+	IF attempt_status<>'active' THEN
+		RAISE EXCEPTION 'inactive step attempt cannot reserve new LLM call evidence';
+	END IF;
+	RETURN NEW;
+END;
+$$;
+
+CREATE FUNCTION validate_llm_call_receipt_insert() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'pg_catalog', '__OMNIDEX_RUNTIME_SCHEMA__', 'pg_temp'
+    AS $$
+DECLARE
+	attempt_status text;
+BEGIN
+	SELECT attempts.status INTO attempt_status
+	FROM llm_call_evidence AS calls
+	JOIN job_step_attempts AS attempts
+	  ON attempts.job_id=calls.job_id AND attempts.generation=calls.generation
+	 AND attempts.step_id=calls.step_id AND attempts.attempt=calls.step_attempt
+	 AND attempts.worker_id=calls.worker_id
+	WHERE calls.id=NEW.call_evidence_id
+	FOR UPDATE OF attempts;
+	IF NOT FOUND THEN
+		RAISE EXCEPTION 'LLM call receipt lacks exact reserved attempt authority';
+	END IF;
+	IF attempt_status='completed' THEN
+		RAISE EXCEPTION 'completed step attempt cannot acquire a provider receipt';
+	END IF;
+	RETURN NEW;
+END;
+$$;
+
+CREATE FUNCTION require_llm_call_outcomes_before_attempt_completion() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'pg_catalog', '__OMNIDEX_RUNTIME_SCHEMA__', 'pg_temp'
+    AS $$
+BEGIN
+	IF NEW.status IN ('canceled','superseded','expired') THEN
+		INSERT INTO llm_call_outcomes (
+			call_evidence_id,status,candidate_sha256,projection,
+			validation_error,validation_error_sha256
+		)
+		SELECT call.id,'interrupted',NULL,NULL,
+		       format('step attempt transitioned to %s before a provider receipt was journaled',NEW.status),
+		       encode(pg_catalog.sha256(convert_to(
+			       format('step attempt transitioned to %s before a provider receipt was journaled',NEW.status),
+			       'UTF8'
+		       )),'hex')
+		FROM llm_call_evidence AS call
+		LEFT JOIN llm_call_receipts AS receipt ON receipt.call_evidence_id=call.id
+		LEFT JOIN llm_call_outcomes AS outcome ON outcome.call_evidence_id=call.id
+		WHERE call.job_id=NEW.job_id AND call.generation=NEW.generation
+		  AND call.step_id=NEW.step_id AND call.step_attempt=NEW.attempt
+		  AND call.worker_id=NEW.worker_id AND receipt.call_evidence_id IS NULL
+		  AND outcome.call_evidence_id IS NULL;
+
+		INSERT INTO llm_call_outcomes (
+			call_evidence_id,status,candidate_sha256,projection,
+			validation_error,validation_error_sha256
+		)
+		SELECT call.id,'rejected',receipt.candidate_sha256,NULL,
+		       format('step attempt transitioned to %s before semantic result consumption',NEW.status),
+		       encode(pg_catalog.sha256(convert_to(
+			       format('step attempt transitioned to %s before semantic result consumption',NEW.status),
+			       'UTF8'
+		       )),'hex')
+		FROM llm_call_evidence AS call
+		JOIN llm_call_receipts AS receipt ON receipt.call_evidence_id=call.id
+		LEFT JOIN llm_call_outcomes AS outcome ON outcome.call_evidence_id=call.id
+		WHERE call.job_id=NEW.job_id AND call.generation=NEW.generation
+		  AND call.step_id=NEW.step_id AND call.step_attempt=NEW.attempt
+		  AND call.worker_id=NEW.worker_id AND receipt.status='succeeded'
+		  AND outcome.call_evidence_id IS NULL;
+	END IF;
+    IF NEW.status IN ('completed','failed','waiting_input') AND EXISTS (
+        SELECT 1
+        FROM llm_call_evidence AS call
+        LEFT JOIN llm_call_outcomes AS outcome ON outcome.call_evidence_id=call.id
+        WHERE call.job_id=NEW.job_id AND call.generation=NEW.generation
+          AND call.step_id=NEW.step_id AND call.step_attempt=NEW.attempt
+          AND call.worker_id=NEW.worker_id AND outcome.call_evidence_id IS NULL
+    ) THEN
+        RAISE EXCEPTION 'step attempt cannot finish with unterminated LLM call evidence';
+    END IF;
+	IF NEW.status='completed' AND EXISTS (
+		SELECT 1
+		FROM llm_call_evidence AS call
+		LEFT JOIN llm_call_receipts AS receipt ON receipt.call_evidence_id=call.id
+		JOIN llm_call_outcomes AS outcome ON outcome.call_evidence_id=call.id
+		WHERE call.job_id=NEW.job_id AND call.generation=NEW.generation
+		  AND call.step_id=NEW.step_id AND call.step_attempt=NEW.attempt
+		  AND call.worker_id=NEW.worker_id
+		  AND (receipt.call_evidence_id IS NULL OR outcome.status IN ('provider_failed','interrupted'))
+	) THEN
+		RAISE EXCEPTION 'step attempt cannot complete after an unfinished or failed LLM call';
+	END IF;
+	IF NEW.status='completed' AND EXISTS (
+		SELECT 1
+		FROM verification_command_evidence AS command
+		WHERE command.job_id=NEW.job_id AND command.generation=NEW.generation
+		  AND command.step_id=NEW.step_id AND command.step_attempt=NEW.attempt
+		  AND command.worker_id=NEW.worker_id AND command.status <> 'succeeded'
+	) THEN
+		RAISE EXCEPTION 'step attempt cannot complete after failed verification command evidence';
+	END IF;
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER llm_call_evidence_immutable
+    BEFORE DELETE OR UPDATE ON llm_call_evidence
+    FOR EACH ROW EXECUTE FUNCTION prevent_llm_call_evidence_mutation();
+
+CREATE TRIGGER llm_call_evidence_validate_insert
+    BEFORE INSERT ON llm_call_evidence
+    FOR EACH ROW EXECUTE FUNCTION validate_llm_call_evidence_insert();
+
+CREATE TRIGGER llm_call_evidence_truncate_immutable
+    BEFORE TRUNCATE ON llm_call_evidence
+    FOR EACH STATEMENT EXECUTE FUNCTION prevent_llm_call_evidence_mutation();
+
+CREATE TRIGGER llm_call_outcomes_validate_insert
+    BEFORE INSERT ON llm_call_outcomes
+    FOR EACH ROW EXECUTE FUNCTION validate_llm_call_outcome_insert();
+
+CREATE TRIGGER llm_call_outcomes_immutable
+    BEFORE DELETE OR UPDATE ON llm_call_outcomes
+    FOR EACH ROW EXECUTE FUNCTION prevent_llm_call_evidence_mutation();
+
+CREATE TRIGGER llm_call_outcomes_truncate_immutable
+    BEFORE TRUNCATE ON llm_call_outcomes
+    FOR EACH STATEMENT EXECUTE FUNCTION prevent_llm_call_evidence_mutation();
+
+CREATE TRIGGER llm_call_receipts_validate_insert
+    BEFORE INSERT ON llm_call_receipts
+    FOR EACH ROW EXECUTE FUNCTION validate_llm_call_receipt_insert();
+
+CREATE TRIGGER llm_call_receipts_immutable
+    BEFORE DELETE OR UPDATE ON llm_call_receipts
+    FOR EACH ROW EXECUTE FUNCTION prevent_llm_call_evidence_mutation();
+
+CREATE TRIGGER llm_call_receipts_truncate_immutable
+    BEFORE TRUNCATE ON llm_call_receipts
+    FOR EACH STATEMENT EXECUTE FUNCTION prevent_llm_call_evidence_mutation();
+
+CREATE TABLE verification_command_evidence (
+    id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    job_id bigint NOT NULL,
+    generation bigint NOT NULL CHECK (generation > 0),
+    step_id bigint NOT NULL,
+    step_attempt bigint NOT NULL CHECK (step_attempt > 0),
+    worker_id text NOT NULL CHECK (
+        worker_id <> '' AND worker_id=btrim(worker_id) AND octet_length(worker_id) <= 256
+    ),
+    phase text NOT NULL CHECK (phase IN (
+        'isolated_install','isolated_implementation','isolated_task','isolated_final',
+        'host_install','host_final','host_cleanup'
+    )),
+    ordinal bigint NOT NULL CHECK (ordinal > 0),
+    argv bytea NOT NULL,
+    argv_sha256 text NOT NULL CHECK (
+        argv_sha256 ~ '^[0-9a-f]{64}$'
+        AND argv_sha256=encode(pg_catalog.sha256(argv),'hex')
+    ),
+    environment bytea NOT NULL,
+    environment_sha256 text NOT NULL CHECK (
+        environment_sha256 ~ '^[0-9a-f]{64}$'
+        AND environment_sha256=encode(pg_catalog.sha256(environment),'hex')
+    ),
+    stdin_present boolean NOT NULL,
+    stdin bytea,
+    stdin_sha256 text,
+    working_directory text NOT NULL CHECK (
+        working_directory LIKE '/%' AND working_directory=btrim(working_directory)
+        AND octet_length(working_directory) BETWEEN 1 AND 4096
+    ),
+    started_at timestamp with time zone NOT NULL,
+    finished_at timestamp with time zone NOT NULL,
+    duration_nanos bigint NOT NULL CHECK (duration_nanos >= 0),
+    exit_code integer CHECK (exit_code BETWEEN 0 AND 255),
+    launch_error text,
+	observation_error text,
+    stdout bytea NOT NULL CHECK (octet_length(stdout) <= 1048576),
+	stdout_complete boolean NOT NULL,
+    stdout_sha256 text NOT NULL CHECK (
+        stdout_sha256 ~ '^[0-9a-f]{64}$'
+        AND stdout_sha256=encode(pg_catalog.sha256(stdout),'hex')
+    ),
+    stderr bytea NOT NULL CHECK (octet_length(stderr) <= 1048576),
+	stderr_complete boolean NOT NULL,
+    stderr_sha256 text NOT NULL CHECK (
+        stderr_sha256 ~ '^[0-9a-f]{64}$'
+        AND stderr_sha256=encode(pg_catalog.sha256(stderr),'hex')
+    ),
+    workspace_sha256_before text CHECK (
+        workspace_sha256_before IS NULL OR workspace_sha256_before ~ '^[0-9a-f]{64}$'
+    ),
+    workspace_sha256_after text CHECK (
+        workspace_sha256_after IS NULL OR workspace_sha256_after ~ '^[0-9a-f]{64}$'
+    ),
+	status text NOT NULL CHECK (status IN (
+		'succeeded','exit_failed','launch_failed','workspace_changed','observation_failed'
+	)),
+    created_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
+    CONSTRAINT verification_command_argv_bound CHECK (
+        octet_length(argv) BETWEEN 3 AND 65536
+        AND jsonb_typeof(convert_from(argv,'UTF8')::jsonb)='array'
+        AND jsonb_array_length(convert_from(argv,'UTF8')::jsonb) BETWEEN 1 AND 128
+    ),
+    CONSTRAINT verification_command_environment_bound CHECK (
+        octet_length(environment) BETWEEN 2 AND 65536
+        AND jsonb_typeof(convert_from(environment,'UTF8')::jsonb)='array'
+        AND jsonb_array_length(convert_from(environment,'UTF8')::jsonb) BETWEEN 0 AND 64
+    ),
+    CONSTRAINT verification_command_stdin_shape CHECK (
+        (stdin_present AND stdin IS NOT NULL AND octet_length(stdin) <= 1048576
+         AND stdin_sha256 ~ '^[0-9a-f]{64}$'
+         AND stdin_sha256=encode(pg_catalog.sha256(stdin),'hex'))
+        OR
+        (NOT stdin_present AND stdin IS NULL AND stdin_sha256 IS NULL)
+    ),
+    CONSTRAINT verification_command_time_shape CHECK (
+        finished_at >= started_at
+        AND duration_nanos=(extract(epoch FROM (finished_at-started_at))*1000000000)::bigint
+    ),
+    CONSTRAINT verification_command_terminal_shape CHECK (
+		(status='succeeded' AND exit_code=0 AND launch_error IS NULL
+		 AND observation_error IS NULL
+		 AND stdout_complete AND stderr_complete)
+        OR
+		(status='exit_failed' AND exit_code IS NOT NULL AND exit_code<>0 AND launch_error IS NULL
+		 AND observation_error IS NULL
+		 AND stdout_complete AND stderr_complete)
+        OR
+        (status='launch_failed' AND exit_code IS NULL AND launch_error IS NOT NULL
+		 AND observation_error IS NULL
+         AND launch_error=btrim(launch_error) AND launch_error<>''
+         AND octet_length(launch_error) <= 8192)
+		OR
+		(status='workspace_changed' AND observation_error IS NULL
+		 AND ((exit_code IS NOT NULL AND launch_error IS NULL
+		       AND stdout_complete AND stderr_complete) OR
+		      (exit_code IS NULL AND launch_error IS NOT NULL
+		       AND launch_error=btrim(launch_error) AND launch_error<>''
+		       AND octet_length(launch_error) <= 8192)))
+		OR
+		(status='observation_failed' AND observation_error IS NOT NULL
+		 AND observation_error=btrim(observation_error) AND observation_error<>''
+		 AND octet_length(observation_error) <= 8192
+		 AND ((exit_code IS NOT NULL AND launch_error IS NULL
+		       AND stdout_complete AND stderr_complete) OR
+		      (exit_code IS NULL AND launch_error IS NOT NULL
+		       AND launch_error=btrim(launch_error) AND launch_error<>''
+		       AND octet_length(launch_error) <= 8192)))
+    ),
+    CONSTRAINT verification_command_workspace_shape CHECK (
+		(phase NOT IN ('host_install','host_final','host_cleanup') OR
+		 workspace_sha256_before IS NOT NULL)
+		AND (workspace_sha256_after IS NULL OR workspace_sha256_before IS NOT NULL)
+		AND (
+			(status='observation_failed' AND workspace_sha256_before IS NOT NULL
+			 AND workspace_sha256_after IS NULL)
+			OR
+			(status='workspace_changed' AND workspace_sha256_before IS NOT NULL
+			 AND workspace_sha256_after IS NOT NULL
+			 AND workspace_sha256_before<>workspace_sha256_after)
+			OR
+			(status NOT IN ('observation_failed','workspace_changed')
+			 AND (workspace_sha256_before IS NULL)=(workspace_sha256_after IS NULL)
+			 AND (workspace_sha256_before IS NULL OR
+			      workspace_sha256_before=workspace_sha256_after))
+		)
+    ),
+    CONSTRAINT verification_command_one_ordinal
+        UNIQUE (job_id,generation,step_id,step_attempt,ordinal)
+);
+
+CREATE INDEX idx_verification_command_evidence_job
+    ON verification_command_evidence (job_id,id);
+
+CREATE FUNCTION validate_verification_command_evidence_insert() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'pg_catalog', '__OMNIDEX_RUNTIME_SCHEMA__', 'pg_temp'
+    AS $$
+DECLARE
+    prior_ordinal bigint;
+	attempt_status text;
+BEGIN
+	-- Lock the immutable attempt authority before reading its journal. This
+	-- both proves the exact worker binding before insert and serializes ordinal
+	-- allocation for concurrent verification runners.
+	SELECT status INTO attempt_status FROM job_step_attempts
+	WHERE job_id=NEW.job_id AND generation=NEW.generation
+	  AND step_id=NEW.step_id AND attempt=NEW.step_attempt
+	  AND worker_id=NEW.worker_id
+	FOR UPDATE;
+	IF NOT FOUND THEN
+		RAISE EXCEPTION 'verification command lacks exact step attempt worker authority';
+	END IF;
+	IF attempt_status='completed' THEN
+		RAISE EXCEPTION 'completed step attempt cannot acquire new verification command evidence';
+	END IF;
+    IF EXISTS (
+        SELECT 1 FROM jsonb_array_elements(convert_from(NEW.argv,'UTF8')::jsonb) AS item
+        WHERE jsonb_typeof(item) <> 'string'
+    ) OR EXISTS (
+        SELECT 1 FROM jsonb_array_elements(convert_from(NEW.environment,'UTF8')::jsonb) AS item
+        WHERE jsonb_typeof(item) <> 'string'
+    ) THEN
+        RAISE EXCEPTION 'verification command argv and environment must contain exact strings';
+    END IF;
+    SELECT COALESCE(MAX(ordinal),0) INTO prior_ordinal
+    FROM verification_command_evidence
+    WHERE job_id=NEW.job_id AND generation=NEW.generation
+      AND step_id=NEW.step_id AND step_attempt=NEW.step_attempt;
+    IF NEW.ordinal <> prior_ordinal+1 THEN
+        RAISE EXCEPTION 'verification command ordinal must advance exactly once';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+CREATE FUNCTION prevent_verification_command_evidence_mutation() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    RAISE EXCEPTION 'verification command evidence is immutable';
+END;
+$$;
+
+CREATE TRIGGER verification_command_evidence_validate_insert
+    BEFORE INSERT ON verification_command_evidence
+    FOR EACH ROW EXECUTE FUNCTION validate_verification_command_evidence_insert();
+
+CREATE TRIGGER verification_command_evidence_immutable
+    BEFORE DELETE OR UPDATE ON verification_command_evidence
+    FOR EACH ROW EXECUTE FUNCTION prevent_verification_command_evidence_mutation();
+
+CREATE TRIGGER verification_command_evidence_truncate_immutable
+    BEFORE TRUNCATE ON verification_command_evidence
+    FOR EACH STATEMENT EXECUTE FUNCTION prevent_verification_command_evidence_mutation();
+
+--
 -- Name: apply_scrum_card_message_counters(); Type: FUNCTION; Schema: current runtime; Owner: -
 --
 
@@ -1198,6 +1772,7 @@ DECLARE
     transition_predecessor BIGINT;
     transition_boundary TEXT;
     transition_feedback TEXT;
+    expected_transition_purpose TEXT;
 BEGIN
     IF NEW.kind NOT IN ('interrupt_job', 'replan_job', 'submit_feedback') THEN
         RETURN NULL;
@@ -1219,8 +1794,11 @@ BEGIN
         END IF;
         RETURN NULL;
     END IF;
-    IF transition_purpose IS DISTINCT FROM
-           CASE WHEN NEW.kind='interrupt_job' THEN 'interrupt' ELSE 'replan' END OR
+    expected_transition_purpose := CASE
+        WHEN NEW.kind='interrupt_job' THEN 'interrupt'
+        ELSE 'replan'
+    END;
+    IF transition_purpose IS DISTINCT FROM expected_transition_purpose OR
        transition_predecessor IS DISTINCT FROM NEW.observed_generation OR
        transition_feedback IS DISTINCT FROM NEW.command_payload->>'feedback' THEN
         RAISE EXCEPTION 'lifecycle generation differs from its exact transition command';
@@ -7015,6 +7593,13 @@ CREATE TRIGGER job_step_attempt_change_validate BEFORE UPDATE ON job_step_attemp
 
 
 --
+-- Name: job_step_attempts job_step_attempt_requires_llm_outcomes; Type: TRIGGER; Schema: current runtime; Owner: -
+--
+
+CREATE TRIGGER job_step_attempt_requires_llm_outcomes BEFORE UPDATE OF status ON job_step_attempts FOR EACH ROW EXECUTE FUNCTION require_llm_call_outcomes_before_attempt_completion();
+
+
+--
 -- Name: job_step_attempts job_step_attempt_delete_immutable; Type: TRIGGER; Schema: current runtime; Owner: -
 --
 
@@ -9049,3 +9634,27 @@ ALTER TABLE ONLY step_completion_evidence_sets
 
 ALTER TABLE ONLY step_completion_evidence_sets
     ADD CONSTRAINT step_completion_evidence_sets_operation_id_fkey FOREIGN KEY (operation_id) REFERENCES job_lifecycle_operations(operation_id) ON DELETE RESTRICT DEFERRABLE INITIALLY DEFERRED;
+
+
+--
+-- Name: job_step_attempts job_step_attempts_exact_worker_authority; Type: CONSTRAINT; Schema: current runtime; Owner: -
+--
+
+ALTER TABLE ONLY job_step_attempts
+    ADD CONSTRAINT job_step_attempts_exact_worker_authority UNIQUE (job_id,generation,step_id,attempt,worker_id);
+
+
+--
+-- Name: llm_call_evidence llm_call_evidence_attempt_fkey; Type: FK CONSTRAINT; Schema: current runtime; Owner: -
+--
+
+ALTER TABLE ONLY llm_call_evidence
+    ADD CONSTRAINT llm_call_evidence_attempt_fkey FOREIGN KEY (job_id,generation,step_id,step_attempt,worker_id) REFERENCES job_step_attempts(job_id,generation,step_id,attempt,worker_id) ON DELETE RESTRICT;
+
+
+--
+-- Name: verification_command_evidence verification_command_evidence_attempt_fkey; Type: FK CONSTRAINT; Schema: current runtime; Owner: -
+--
+
+ALTER TABLE ONLY verification_command_evidence
+    ADD CONSTRAINT verification_command_evidence_attempt_fkey FOREIGN KEY (job_id,generation,step_id,step_attempt,worker_id) REFERENCES job_step_attempts(job_id,generation,step_id,attempt,worker_id) ON DELETE RESTRICT;

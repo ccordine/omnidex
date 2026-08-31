@@ -23,8 +23,17 @@ func (prepared *PreparedReconciliation) ApplyVerified(
 	if ctx == nil {
 		return ReconciliationResult{}, fmt.Errorf("apply workspace reconciliation requires a context")
 	}
+	if prepared.fence == nil {
+		return ReconciliationResult{}, fmt.Errorf("apply workspace reconciliation requires one mutation fence")
+	}
 	if err := ctx.Err(); err != nil {
 		return ReconciliationResult{}, fmt.Errorf("apply workspace reconciliation: %w", err)
+	}
+	prepared.fence.mu.Lock()
+	defer prepared.fence.mu.Unlock()
+	root, err := prepared.fence.authoritativeRootLocked()
+	if err != nil {
+		return ReconciliationResult{}, fmt.Errorf("reattest fenced workspace before mutation: %w", err)
 	}
 	boundaryRoot, err := prepared.hostAccess.captureWorkspaceRoot(prepared.root)
 	if err != nil {
@@ -35,40 +44,13 @@ func (prepared *PreparedReconciliation) ApplyVerified(
 			"host-authoritative workspace root changed after reconciliation preparation",
 		)
 	}
-	rootFS, err := os.OpenRoot(prepared.root)
-	if err != nil {
-		return ReconciliationResult{}, fmt.Errorf("open authoritative workspace root: %w", err)
-	}
-	directory, err := rootFS.Open(".")
-	if err != nil {
-		return ReconciliationResult{}, errors.Join(
-			fmt.Errorf("open authoritative workspace root handle: %w", err), rootFS.Close(),
-		)
-	}
-	current, err := directory.Stat()
-	if err != nil || !current.IsDir() || !os.SameFile(prepared.rootInfo, current) {
-		return ReconciliationResult{}, errors.Join(
-			fmt.Errorf("authoritative workspace root changed before mutation"),
-			directory.Close(), rootFS.Close(),
-		)
-	}
-	mountID, err := workspaceMountIDForHandle(directory)
-	if err != nil {
-		return ReconciliationResult{}, errors.Join(
-			fmt.Errorf("resolve authoritative workspace root mount: %w", err),
-			directory.Close(), rootFS.Close(),
-		)
-	}
-	root := &authoritativeWorkspaceRoot{
-		Root: rootFS, authorityFD: int(directory.Fd()), mountID: mountID,
+	anchored, err := root.Root.Stat(".")
+	if err != nil || !anchored.IsDir() || !os.SameFile(prepared.rootInfo, anchored) {
+		return ReconciliationResult{}, fmt.Errorf("authoritative workspace root changed before mutation")
 	}
 	result, applyErr := applyReconciliation(ctx, root, prepared.desired, observer)
-	closeErr := errors.Join(directory.Close(), rootFS.Close())
 	if applyErr != nil {
-		return result, errors.Join(applyErr, closeErr)
-	}
-	if closeErr != nil {
-		return result, fmt.Errorf("close authoritative workspace root: %w", closeErr)
+		return result, applyErr
 	}
 	prepared.applied = true
 	return result, nil
@@ -123,7 +105,7 @@ func applyRequiredFile(
 	result *ReconciliationResult,
 	observer VerifiedChangeObserver,
 ) error {
-	missingParent, err := inspectWorkspaceParents(ctx, root, state.Path, false, nil, nil)
+	missingParent, err := inspectWorkspaceParents(ctx, root, state.Path, false, false, nil, nil)
 	if err != nil {
 		return err
 	}
@@ -148,13 +130,21 @@ func applyFile(
 	result *ReconciliationResult,
 	observer VerifiedChangeObserver,
 ) (resultErr error) {
-	if _, err := inspectWorkspaceParents(ctx, root, state.Path, true, result, observer); err != nil {
+	if _, err := inspectWorkspaceParents(
+		ctx, root, state.Path, true, !state.CreateOnly, result, observer,
+	); err != nil {
 		return err
 	}
 	before, err := root.Lstat(state.Path)
 	existed := err == nil
 	if err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("inspect workspace file %q: %w", state.Path, err)
+	}
+	if existed && state.CreateOnly {
+		return fmt.Errorf(
+			"create-only workspace file %q already exists without replacement authority",
+			state.Path,
+		)
 	}
 	if existed && before.Mode().IsRegular() {
 		file, matches, err := openRegularFileContentMatch(ctx, root, state.Path, before, state.Content)
@@ -193,7 +183,11 @@ func applyFile(
 			return fmt.Errorf("replace workspace directory %q with a file: %w", state.Path, err)
 		}
 	}
-	if err := root.Rename(temporary, state.Path); err != nil {
+	rename := root.Rename
+	if state.CreateOnly {
+		rename = root.RenameNoReplace
+	}
+	if err := rename(temporary, state.Path); err != nil {
 		return fmt.Errorf("install workspace file %q: %w", state.Path, err)
 	}
 	keepTemporary = false
@@ -270,7 +264,7 @@ func applyDeletion(
 	result *ReconciliationResult,
 	observer VerifiedChangeObserver,
 ) error {
-	missingParent, err := inspectWorkspaceParents(ctx, root, relative, false, nil, nil)
+	missingParent, err := inspectWorkspaceParents(ctx, root, relative, false, false, nil, nil)
 	if err != nil {
 		return err
 	}
@@ -350,7 +344,7 @@ func reconcileMoveDestination(
 	root *authoritativeWorkspaceRoot,
 	move DesiredFile,
 ) (bool, error) {
-	missingParent, err := inspectWorkspaceParents(ctx, root, move.Path, false, nil, nil)
+	missingParent, err := inspectWorkspaceParents(ctx, root, move.Path, false, false, nil, nil)
 	if err != nil || missingParent {
 		return false, err
 	}
@@ -393,7 +387,7 @@ func applyRenameFromMatchingSource(
 	result *ReconciliationResult,
 	observer VerifiedChangeObserver,
 ) (bool, error) {
-	missingParent, err := inspectWorkspaceParents(ctx, root, move.MoveFrom, false, nil, nil)
+	missingParent, err := inspectWorkspaceParents(ctx, root, move.MoveFrom, false, false, nil, nil)
 	if err != nil || missingParent {
 		return false, err
 	}
@@ -423,7 +417,7 @@ func applyRenameFromMatchingSource(
 		}
 		return false, nil
 	}
-	if _, err := inspectWorkspaceParents(ctx, root, move.Path, true, result, observer); err != nil {
+	if _, err := inspectWorkspaceParents(ctx, root, move.Path, true, true, result, observer); err != nil {
 		return false, errors.Join(err, closeWorkspaceHandle(move.MoveFrom, file))
 	}
 	destination, err := root.Lstat(move.Path)

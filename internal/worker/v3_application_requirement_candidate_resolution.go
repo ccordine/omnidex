@@ -14,9 +14,10 @@ const (
 )
 
 type directCodingApplicationRequirementCandidateResolution struct {
-	Candidate   string
-	Disposition directCodingApplicationRequirementDisposition
-	Partition   assemblyline.ApplicationRequirementCandidatePartition
+	Candidate      string
+	Disposition    directCodingApplicationRequirementDisposition
+	ResultRelation assemblyline.ApplicationRequirementCandidateResultRelationResult
+	Partition      assemblyline.ApplicationRequirementCandidatePartition
 }
 
 func resolveDirectCodingApplicationRequirementCandidate(
@@ -30,6 +31,7 @@ func resolveDirectCodingApplicationRequirementCandidate(
 ) (directCodingApplicationRequirementCandidateResolution, error) {
 	var zero directCodingApplicationRequirementCandidateResolution
 	candidate := entry.Candidate
+	resultRelationCorrectionUsed := false
 	for {
 		exactDuplicate := directCodingApplicationRequirementExactDuplicate(
 			candidate,
@@ -100,7 +102,8 @@ func resolveDirectCodingApplicationRequirementCandidate(
 			}, nil
 		}
 		if kind.Relation == assemblyline.ApplicationRequirementCandidateMixed {
-			if len(entry.Ancestors) >= assemblyline.MaxApplicationRequirementCandidatePartitionDepth {
+			if resultRelationCorrectionUsed ||
+				len(entry.Ancestors) >= assemblyline.MaxApplicationRequirementCandidatePartitionDepth {
 				return directCodingApplicationRequirementCandidateResolution{
 					Candidate: candidate, Disposition: directCodingApplicationRequirementUnresolved,
 				}, nil
@@ -124,6 +127,11 @@ func resolveDirectCodingApplicationRequirementCandidate(
 			}, nil
 		}
 		if kind.Relation == assemblyline.ApplicationRequirementCandidateNonRuntime {
+			if resultRelationCorrectionUsed {
+				return directCodingApplicationRequirementCandidateResolution{
+					Candidate: candidate, Disposition: directCodingApplicationRequirementUnresolved,
+				}, nil
+			}
 			return directCodingApplicationRequirementCandidateResolution{
 				Candidate:   candidate,
 				Disposition: directCodingApplicationRequirementExcluded,
@@ -140,7 +148,8 @@ func resolveDirectCodingApplicationRequirementCandidate(
 			return zero, err
 		}
 		if cardinality.Relation == assemblyline.ApplicationRequirementMultipleRuntimeOutcomes {
-			if len(entry.Ancestors) >= assemblyline.MaxApplicationRequirementCandidatePartitionDepth {
+			if resultRelationCorrectionUsed ||
+				len(entry.Ancestors) >= assemblyline.MaxApplicationRequirementCandidatePartitionDepth {
 				return directCodingApplicationRequirementCandidateResolution{
 					Candidate: candidate, Disposition: directCodingApplicationRequirementUnresolved,
 				}, nil
@@ -183,8 +192,67 @@ func resolveDirectCodingApplicationRequirementCandidate(
 			}, nil
 		}
 
+		resultRelation, err := classifyDirectCodingApplicationRequirementCandidateResultRelation(
+			runtime,
+			intentModel,
+			candidate,
+			kind,
+			cardinality,
+			identities,
+		)
+		if err != nil {
+			return zero, err
+		}
+		if resultRelation.Relation == assemblyline.ApplicationRequirementMissingResultRelation {
+			if resultRelationCorrectionUsed {
+				return directCodingApplicationRequirementCandidateResolution{
+					Candidate: candidate, Disposition: directCodingApplicationRequirementUnresolved,
+				}, nil
+			}
+			grounding, groundingErr := groundDirectCodingApplicationRequirementCandidateResultRelation(
+				runtime,
+				intentModel,
+				authority.UserRequest,
+				authority.Context,
+				candidate,
+				kind,
+				cardinality,
+				resultRelation,
+				identities,
+			)
+			if groundingErr != nil {
+				return zero, groundingErr
+			}
+			if grounding.Relation != assemblyline.ApplicationRequirementExactlyOneDeterminingRelationEntailed {
+				return directCodingApplicationRequirementCandidateResolution{
+					Candidate: candidate, Disposition: directCodingApplicationRequirementUnresolved,
+				}, nil
+			}
+			candidate, err = correctDirectCodingApplicationRequirementCandidateResultRelation(
+				runtime,
+				intentModel,
+				authority.UserRequest,
+				authority.Context,
+				candidate,
+				kind,
+				cardinality,
+				resultRelation,
+				grounding,
+				identities,
+			)
+			if err != nil {
+				return zero, err
+			}
+			resultRelationCorrectionUsed = true
+			continue
+		}
+		if err := resultRelation.ValidateAcceptedFor(candidate); err != nil {
+			return zero, err
+		}
+
 		return directCodingApplicationRequirementCandidateResolution{
 			Candidate: candidate, Disposition: directCodingApplicationRequirementRetained,
+			ResultRelation: resultRelation,
 		}, nil
 	}
 }

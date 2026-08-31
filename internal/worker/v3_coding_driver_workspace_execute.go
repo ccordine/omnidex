@@ -33,6 +33,14 @@ func (s *directCodingSession) ApplyAndVerify(
 			len(result.Changes), err,
 		)
 	}
+	if prepared.hostVerificationProgram != nil {
+		if err := s.verifyAuthoritativeTypeScriptWorkspace(
+			*prepared.hostVerificationProgram,
+			prepared.hostVerificationAssembly,
+		); err != nil {
+			return fmt.Errorf("verify exact authoritative TypeScript workspace: %w", err)
+		}
+	}
 	return nil
 }
 

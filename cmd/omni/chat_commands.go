@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/gryph/omnidex/internal/client"
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/queue"
 )
@@ -72,22 +73,11 @@ func (session *chatSession) control(
 	locallyEchoed bool,
 	expectedJobID *int64,
 ) (int64, error) {
-	switch action {
-	case "interrupt":
-		if text == "" {
-			text = ctrlCInterruptReason
-		}
-	case "redirect":
-		if strings.TrimSpace(text) == "" {
-			return 0, fmt.Errorf("/redirect requires exact redirection text")
-		}
-	case "cancel":
-		if strings.TrimSpace(text) == "" {
-			return 0, fmt.Errorf("/cancel requires a reason")
-		}
-	default:
-		return 0, fmt.Errorf("unsupported active-job control %q", action)
+	validatedText, err := validatedChatControlText(action, text)
+	if err != nil {
+		return 0, err
 	}
+	text = validatedText
 	unresolvedControl := session.pendingControl
 	if err := session.reloadSnapshot(); err != nil {
 		return 0, err
@@ -207,6 +197,35 @@ func (session *chatSession) control(
 	}
 	session.pendingControl = nil
 	return jobID, session.renderer.system("job %d · %s accepted", jobID, action)
+}
+
+func validatedChatControlText(action, exactText string) (string, error) {
+	switch action {
+	case "interrupt":
+		if strings.TrimSpace(exactText) == "" {
+			exactText = ctrlCInterruptReason
+		}
+		if err := client.ValidateInterruptFeedback(exactText); err != nil {
+			return "", err
+		}
+	case "redirect":
+		if strings.TrimSpace(exactText) == "" {
+			return "", fmt.Errorf("/redirect requires exact redirection text")
+		}
+		if err := client.ValidateReplanFeedback(exactText); err != nil {
+			return "", err
+		}
+	case "cancel":
+		if strings.TrimSpace(exactText) == "" {
+			return "", fmt.Errorf("/cancel requires a reason")
+		}
+		if err := client.ValidateCancelReason(exactText); err != nil {
+			return "", err
+		}
+	default:
+		return "", fmt.Errorf("unsupported active-job control %q", action)
+	}
+	return exactText, nil
 }
 
 func printChatHelp(renderer chatRenderer) error {

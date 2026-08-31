@@ -13,6 +13,8 @@ type directCodingApplicationTaskLifecycleHooks struct {
 		*directCodingProgram,
 		assemblyline.SourceBlockRef,
 	) (string, error)
+	VerifyTask func(assemblyline.ApplicationTaskContext, *directCodingProgram) error
+	FinalStage func(*directCodingProgram) error
 }
 
 func runDirectCodingApplicationTaskLifecycle(
@@ -56,6 +58,14 @@ func runDirectCodingApplicationTaskLifecycle(
 			if validationErr := validateApplicationTaskGeneratedSet(stage.Generated, expectedIDs...); validationErr != nil {
 				return validationErr
 			}
+			if hooks.VerifyTask != nil {
+				if verifyErr := hooks.VerifyTask(context, &stage); verifyErr != nil {
+					return fmt.Errorf("verify application task %s: %w", context.Task.TaskID, verifyErr)
+				}
+				if validationErr := validateApplicationTaskGeneratedSet(stage.Generated, expectedIDs...); validationErr != nil {
+					return validationErr
+				}
+			}
 			for _, blockID := range expectedIDs {
 				program.Generated[blockID] = stage.Generated[blockID]
 			}
@@ -64,6 +74,11 @@ func runDirectCodingApplicationTaskLifecycle(
 	)
 	if err != nil {
 		return err
+	}
+	if hooks.FinalStage != nil {
+		if err := hooks.FinalStage(program); err != nil {
+			return fmt.Errorf("verify complete application workload: %w", err)
+		}
 	}
 	return nil
 }

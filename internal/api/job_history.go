@@ -56,6 +56,7 @@ func parseJobHistoryRequest(request *http.Request) (queue.JobHistoryRequest, err
 }
 
 func (s *Server) jobHistory(w http.ResponseWriter, request *http.Request, jobID int64) {
+	w.Header().Set("Cache-Control", "no-store")
 	historyRequest, err := parseJobHistoryRequest(request)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())

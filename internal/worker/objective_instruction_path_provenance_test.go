@@ -33,18 +33,8 @@ func TestObjectiveInstructionPathProvenanceDoesNotRequireGitOrContentCapture(t *
 	}
 }
 
-func TestObjectiveInstructionPathProvenanceKeepsAmbiguousBasenamesUnbound(t *testing.T) {
+func TestObjectiveInstructionPathProvenanceRedactsEveryExplicitAdapterRecognizedPath(t *testing.T) {
 	root := t.TempDir()
-	for _, relative := range []string{"one/main.go", "two/main.go"} {
-		absolute := filepath.Join(root, filepath.FromSlash(relative))
-		if err := os.MkdirAll(filepath.Dir(absolute), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(absolute, []byte("package main\n"), 0o600); err != nil {
-			t.Fatal(err)
-		}
-	}
-
 	provenance, err := objectiveInstructionPathProvenance(
 		context.Background(), root, "repair main.go and one/main.go",
 	)
@@ -57,7 +47,8 @@ func TestObjectiveInstructionPathProvenanceKeepsAmbiguousBasenamesUnbound(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
-	if redacted != "repair main.go and ARTIFACT_1" || len(identities) != 1 || identities[0].Value != "one/main.go" {
-		t.Fatalf("unexpected ambiguous redaction %q with %#v", redacted, identities)
+	if redacted != "repair ARTIFACT_1 and ARTIFACT_2" || len(identities) != 2 ||
+		identities[0].Value != "main.go" || identities[1].Value != "one/main.go" {
+		t.Fatalf("unexpected direct-path redaction %q with %#v", redacted, identities)
 	}
 }

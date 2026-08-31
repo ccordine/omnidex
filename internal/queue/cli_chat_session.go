@@ -2,7 +2,6 @@ package queue
 
 import (
 	"context"
-	"crypto/sha256"
 	"fmt"
 	"slices"
 
@@ -10,8 +9,6 @@ import (
 	"github.com/gryph/omnidex/internal/projectroot"
 	"github.com/jackc/pgx/v5"
 )
-
-const cliChatSessionIdentitySchema = "omnidex.cli-chat-channel.v2"
 
 var cliChatSessionTags = []string{"chat", "cli"}
 
@@ -32,7 +29,10 @@ func (r *Repository) EnsureCLIChatSessionChannel(
 	if err := projectroot.ValidateDirectoryIdentity(workspaceIdentity); err != nil {
 		return model.Channel{}, fmt.Errorf("CLI workspace identity: %w", err)
 	}
-	expected := cliChatSessionChannel(workspaceRoot, workspaceIdentity)
+	expected, err := cliChatSessionChannel(workspaceRoot, workspaceIdentity)
+	if err != nil {
+		return model.Channel{}, err
+	}
 	if err := expected.ValidateForCreate(); err != nil {
 		return model.Channel{}, fmt.Errorf("derive CLI chat session channel: %w", err)
 	}
@@ -70,11 +70,11 @@ func (r *Repository) EnsureCLIChatSessionChannel(
 	return channel, nil
 }
 
-func cliChatSessionChannel(workspaceRoot, workspaceIdentity string) model.Channel {
-	digest := sha256.Sum256([]byte(
-		cliChatSessionIdentitySchema + "\x00" + workspaceRoot + "\x00" + workspaceIdentity,
-	))
-	id := model.ChannelID(fmt.Sprintf("cli-chat-%x", digest[:]))
+func cliChatSessionChannel(workspaceRoot, workspaceIdentity string) (model.Channel, error) {
+	id, err := projectroot.CLIChatChannelID(workspaceRoot, workspaceIdentity)
+	if err != nil {
+		return model.Channel{}, fmt.Errorf("derive CLI chat session channel: %w", err)
+	}
 	return model.Channel{
 		ID:            id,
 		Scope:         model.ChannelScopeUser,
@@ -82,7 +82,7 @@ func cliChatSessionChannel(workspaceRoot, workspaceIdentity string) model.Channe
 		Tags:          append([]string(nil), cliChatSessionTags...),
 		WorkspaceRoot: workspaceRoot,
 		Mode:          model.ChannelModeAssistant,
-	}
+	}, nil
 }
 
 func requireExactCLIChatSessionChannel(expected, actual model.Channel) error {

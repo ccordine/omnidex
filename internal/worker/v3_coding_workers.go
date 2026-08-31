@@ -51,6 +51,11 @@ func portableWorkerRuntimeWithIdentityGuard(
 		job assemblyline.PortableJob,
 		model string,
 	) (assemblyline.PortableResult, error) {
+		if _, loaded := pending.LoadOrStore(job.ID, struct{}{}); loaded {
+			return assemblyline.PortableResult{}, fmt.Errorf(
+				"portable work %s already has an active or unvalidated exact result", job.ID,
+			)
+		}
 		runtime.svc.emitStepEvent(
 			runtime.claim.Authority,
 			eventNamespace+"_portable_dispatched",
@@ -64,12 +69,15 @@ func portableWorkerRuntimeWithIdentityGuard(
 		}
 		if identityGuard != nil {
 			if guardErr := identityGuard(job, execution); guardErr != nil {
+				if persistErr := runtime.svc.persistExactStationSemanticOutcome(
+					executionContext, runtime.claim.Authority, execution, result, guardErr,
+				); persistErr != nil {
+					return assemblyline.PortableResult{}, persistErr
+				}
 				return assemblyline.PortableResult{}, guardErr
 			}
 		}
-		if _, loaded := pending.LoadOrStore(job.ID, execution); loaded {
-			return assemblyline.PortableResult{}, fmt.Errorf("portable work %s already has an unvalidated exact result", job.ID)
-		}
+		pending.Store(job.ID, execution)
 		return result, nil
 	}
 	return typedWorkerRuntime{
@@ -85,23 +93,35 @@ func portableWorkerRuntimeWithIdentityGuard(
 				return fmt.Errorf("portable work %s has no pending exact station result", job.ID)
 			}
 			execution, ok := stored.(exactStationExecution)
-			if !ok || execution.WorkID != job.ID || result.JobID != job.ID ||
-				execution.Candidate != result.Candidate {
-				return fmt.Errorf("portable work %s result differs from its exact station receipt", job.ID)
+			if !ok {
+				return fmt.Errorf("portable work %s has an invalid exact station receipt", job.ID)
 			}
-			if err := result.ValidateFor(job); err != nil {
-				return fmt.Errorf("portable work %s result projection is invalid: %w", job.ID, err)
+			providedValidationErr := validationErr
+			if validationErr == nil && (execution.WorkID != job.ID || result.JobID != job.ID ||
+				execution.Candidate != result.Candidate) {
+				validationErr = fmt.Errorf("portable work %s result differs from its exact station receipt", job.ID)
 			}
-			if validationErr != nil {
-				return validationErr
+			if validationErr == nil {
+				if err := result.ValidateFor(job); err != nil {
+					validationErr = fmt.Errorf("portable work %s result projection is invalid: %w", job.ID, err)
+				}
 			}
-			if result.Projection == nil {
-				return fmt.Errorf("portable work %s accepted result lacks an exact source projection", job.ID)
+			if validationErr == nil && result.Projection == nil {
+				validationErr = fmt.Errorf("portable work %s accepted result lacks an exact source projection", job.ID)
 			}
-			if result.Projection.SourceResponseSHA256 != execution.CandidateResponseSHA256 {
-				return fmt.Errorf("portable work %s projection differs from its exact response", job.ID)
+			if validationErr == nil &&
+				result.Projection.SourceResponseSHA256 != execution.CandidateResponseSHA256 {
+				validationErr = fmt.Errorf("portable work %s projection differs from its exact response", job.ID)
 			}
-			return nil
+			if persistErr := runtime.svc.persistExactStationSemanticOutcome(
+				executionContext, runtime.claim.Authority, execution, result, validationErr,
+			); persistErr != nil {
+				return persistErr
+			}
+			if providedValidationErr != nil {
+				return nil
+			}
+			return validationErr
 		},
 		Emit: func(event typedWorkerEvent) {
 			runtime.svc.emitStepEvent(

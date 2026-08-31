@@ -78,6 +78,7 @@ func compileDirectCodingApplicationTaskBehavior(
 	capabilities []directCodingCapabilityBinding,
 ) (string, error) {
 	if context.Surface == assemblyline.ApplicationSurfaceUnsupported ||
+		context.Surface == assemblyline.ApplicationSurfaceUnspecified ||
 		strings.TrimSpace(string(context.Surface)) == "" ||
 		strings.TrimSpace(context.ProductQuote) == "" ||
 		strings.TrimSpace(context.Task.RequirementQuote) == "" {

@@ -15,17 +15,18 @@ type directCodingRequest struct {
 }
 
 type directCodingSession struct {
-	runtime         *nativeRuntimeV3
-	request         directCodingRequest
-	root            string
-	specification   *assemblyline.ApplicationSpecification
-	program         *directCodingProgram
-	sequence        int
-	protectedPaths  map[string]struct{}
-	plannedFiles    int
-	plannedDeletes  int
-	mutationJournal []directCodingMutationJournalEntry
-	pathProvenance  assemblyline.ArtifactIdentityProvenance
+	runtime                    *nativeRuntimeV3
+	request                    directCodingRequest
+	root                       string
+	specification              *assemblyline.ApplicationSpecification
+	program                    *directCodingProgram
+	sequence                   int
+	protectedPaths             map[string]struct{}
+	plannedFiles               int
+	plannedDeletes             int
+	mutationJournal            []directCodingMutationJournalEntry
+	pathProvenance             assemblyline.ArtifactIdentityProvenance
+	verificationCommandOrdinal int64
 }
 
 func (s *directCodingSession) Phase(phase directCodingPhase, detail string) {
@@ -119,6 +120,9 @@ func (r *nativeRuntimeV3) runDirectCodingSession(request directCodingRequest) (s
 	if err != nil {
 		return "", err
 	}
+	if err := r.acquireWorkspaceMutationFence(scope.Root); err != nil {
+		return "", fmt.Errorf("acquire exact workspace authority for coding session: %w", err)
+	}
 	session := &directCodingSession{
 		runtime:        r,
 		request:        request,
@@ -132,4 +136,12 @@ func (r *nativeRuntimeV3) runDirectCodingSession(request directCodingRequest) (s
 func (s *directCodingSession) nextSequence() int {
 	s.sequence++
 	return s.sequence
+}
+
+func (s *directCodingSession) nextVerificationCommandOrdinal() (int64, error) {
+	if s == nil || s.verificationCommandOrdinal == int64(^uint64(0)>>1) {
+		return 0, fmt.Errorf("verification command ordinal is unavailable or exhausted")
+	}
+	s.verificationCommandOrdinal++
+	return s.verificationCommandOrdinal, nil
 }

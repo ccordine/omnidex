@@ -18,6 +18,7 @@ func inspectWorkspaceParents(
 	root *authoritativeWorkspaceRoot,
 	relative string,
 	create bool,
+	replaceExisting bool,
 	result *ReconciliationResult,
 	observer VerifiedChangeObserver,
 ) (bool, error) {
@@ -52,6 +53,12 @@ func inspectWorkspaceParents(
 		}
 		if !create {
 			return true, nil
+		}
+		if !replaceExisting {
+			return false, fmt.Errorf(
+				"create-only workspace path %q has an existing non-directory parent %q",
+				relative, current,
+			)
 		}
 		if err := ctx.Err(); err != nil {
 			return false, fmt.Errorf("replace workspace parent for %q: %w", relative, err)

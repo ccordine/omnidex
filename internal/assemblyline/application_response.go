@@ -14,7 +14,7 @@ func DecodeApplicationClassification(
 		return ApplicationClassification{}, err
 	}
 	classification := ApplicationClassification{
-		Schema:  ApplicationClassificationSchemaV1,
+		Schema:  ApplicationClassificationSchemaV2,
 		Surface: ApplicationSurface(leaf),
 	}
 	if err := classification.Validate(); err != nil {

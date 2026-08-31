@@ -15,12 +15,13 @@ type ArtifactHandlingInput struct {
 }
 
 type FragmentGenerationInput struct {
-	Language         string   `json:"language"`
-	Dialect          string   `json:"dialect"`
-	Signature        string   `json:"signature"`
-	Behavior         string   `json:"behavior"`
-	Capabilities     []string `json:"capabilities"`
-	PermittedSymbols []string `json:"permitted_symbols"`
+	Language                 string                            `json:"language"`
+	Dialect                  string                            `json:"dialect"`
+	Signature                string                            `json:"signature"`
+	Behavior                 string                            `json:"behavior"`
+	Capabilities             []string                          `json:"capabilities"`
+	PermittedSymbols         []string                          `json:"permitted_symbols"`
+	PublicInteractionSurface *FragmentPublicInteractionSurface `json:"public_interaction_surface,omitempty"`
 }
 
 // FragmentGenerationReplacementInput preserves only the unresolved source

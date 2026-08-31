@@ -20,6 +20,7 @@ const stepControlPollInterval = 300 * time.Millisecond
 type ModelRouting = modelconfig.Routing
 
 type stepCompleteFunc func(context.Context, queue.CompleteStepCommand) error
+type stepFailFunc func(context.Context, queue.FailStepCommand) error
 
 type Options struct {
 	PollInterval            string
@@ -37,6 +38,7 @@ type Service struct {
 	inferenceContextTokens string
 	hostDirectoryAccess    workspacefacts.HostDirectoryAccess
 	completeStep           stepCompleteFunc
+	failStep               stepFailFunc
 	logger                 *log.Logger
 	runtimeEventSink       RuntimeEventSink
 	runtimeEventMu         sync.RWMutex
@@ -67,6 +69,7 @@ func New(
 		inferenceContextTokens: opts.InferenceContextTokens,
 		hostDirectoryAccess:    hostDirectoryAccess,
 		completeStep:           repo.CompleteStep,
+		failStep:               repo.FailStep,
 		logger:                 opts.Logger,
 		runtimeEventSink:       opts.RuntimeEventSink,
 		runtimeEventChannels:   make(map[int64]runtimeEventChannelBinding),

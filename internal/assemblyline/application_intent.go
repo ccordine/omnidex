@@ -16,13 +16,15 @@ type ApplicationIntentInput struct {
 }
 
 type ApplicationIntentCandidateRequirement struct {
-	Statement string `json:"statement"`
+	Statement      string                                              `json:"statement"`
+	ResultRelation ApplicationRequirementCandidateResultRelationResult `json:"result_relation"`
 }
 
 type ApplicationRequirement struct {
-	ID            string `json:"id"`
-	Statement     string `json:"statement"`
-	RequestSHA256 string `json:"request_sha256"`
+	ID             string                                              `json:"id"`
+	Statement      string                                              `json:"statement"`
+	RequestSHA256  string                                              `json:"request_sha256"`
+	ResultRelation ApplicationRequirementCandidateResultRelationResult `json:"result_relation"`
 }
 
 type ApplicationIntentResolution struct {

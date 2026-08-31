@@ -224,10 +224,19 @@ func (session *chatSession) acceptInput(line string, pasted bool) (bool, error) 
 	}
 	switch name {
 	case "exit":
+		if strings.TrimSpace(text) != "" {
+			return false, fmt.Errorf("/exit does not accept arguments")
+		}
 		return true, nil
 	case "help":
+		if strings.TrimSpace(text) != "" {
+			return false, fmt.Errorf("/help does not accept arguments")
+		}
 		return false, printChatHelp(session.renderer)
 	case "status":
+		if strings.TrimSpace(text) != "" {
+			return false, fmt.Errorf("/status does not accept arguments")
+		}
 		if err := session.reloadSnapshot(); err != nil {
 			return false, err
 		}
@@ -269,6 +278,9 @@ func (session *chatSession) acceptText(text string) error {
 		},
 	)
 	if err != nil {
+		if definitiveChatRequestFailure(err) {
+			session.pendingTurn = nil
+		}
 		return err
 	}
 	if err := session.renderer.system(
@@ -291,6 +303,9 @@ func (session *chatSession) acceptText(text string) error {
 func (session *chatSession) sessionTurnOperationID(
 	exactText string,
 ) (queue.LifecycleOperationID, error) {
+	if err := client.ValidateSessionTurnText(exactText); err != nil {
+		return "", err
+	}
 	if session.pendingTurn != nil && session.pendingTurn.exactText == exactText {
 		return session.pendingTurn.operationID, nil
 	}

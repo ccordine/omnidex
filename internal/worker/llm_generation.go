@@ -18,6 +18,7 @@ type exactStationCall struct {
 }
 
 type exactStationExecution struct {
+	CallEvidenceID          int64
 	WorkID                  string
 	Candidate               string
 	CandidateResponseSHA256 string

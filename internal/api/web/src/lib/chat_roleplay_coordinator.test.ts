@@ -5,7 +5,6 @@ import {
   type RoleplayComponentResponse,
 } from "./roleplay_api";
 import { HTTPResponseError } from "./api";
-import { pullOllamaModel } from "./ollama_model_api";
 import { ChatRoleplayCoordinator, type ChatRoleplayHost } from "./chat_roleplay_coordinator";
 
 vi.mock("./roleplay_api", () => ({
@@ -18,10 +17,6 @@ vi.mock("./roleplay_api", () => ({
 	setRoleplayMeter: vi.fn(),
 	updateRoleplayScene: vi.fn(),
 	writeRoleplaySceneDraftParticipant: vi.fn(),
-}));
-
-vi.mock("./ollama_model_api", () => ({
-  pullOllamaModel: vi.fn(),
 }));
 
 const channelID = "story-42";
@@ -80,29 +75,6 @@ describe("ChatRoleplayCoordinator", () => {
     expect(coordinator.isConfigured()).toBe(true);
     expect(fixture.host.setComposerAvailable).toHaveBeenLastCalledWith(true);
     expect(fixture.host.renderComponentBundle).toHaveBeenLastCalledWith(expect.stringContaining("configured"));
-  });
-
-  it("queues an exact model download from the inline roleplay control", async () => {
-    vi.mocked(fetchRoleplayComponent).mockResolvedValueOnce(component(true));
-    vi.mocked(pullOllamaModel).mockResolvedValueOnce(undefined);
-    const fixture = createHost();
-    const coordinator = new ChatRoleplayCoordinator(fixture.host);
-    await coordinator.activate(channelID, "roleplay");
-    const form = document.createElement("form");
-    form.innerHTML = '<input name="model" value="qwen3.5:4b"><button type="submit">Download</button>';
-
-    await coordinator.downloadModel({
-      currentTarget: form,
-      preventDefault: vi.fn(),
-    } as unknown as Event);
-
-    expect(pullOllamaModel).toHaveBeenCalledWith("qwen3.5:4b");
-    expect((form.elements.namedItem("model") as HTMLInputElement).value).toBe("");
-    expect(fixture.host.setStatus).toHaveBeenLastCalledWith("Downloading qwen3.5:4b…", "active");
-    expect(fixture.host.addEvent).toHaveBeenCalledWith("roleplay_model_download_queued", {
-      channel_id: channelID,
-      model: "qwen3.5:4b",
-    });
   });
 
   it("places only exact server-rendered command syntax in the canonical composer", () => {

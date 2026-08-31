@@ -16,6 +16,16 @@ func projectDirectCodingApplicationTaskStage(
 	if context.WorkloadSHA256 == "" || context.WorkloadSHA256 != program.Workload.SHA256 {
 		return zero, fmt.Errorf("application task context differs from program workload authority")
 	}
+	staticFiles, err := cloneValidatedDirectCodingStaticFiles(stack, program.StaticFiles)
+	if err != nil {
+		return zero, fmt.Errorf("project application task static-file authority: %w", err)
+	}
+	requirementRelations, err := program.RequirementRelations.projectTask(
+		program.Workload, context.Task.TaskID,
+	)
+	if err != nil {
+		return zero, err
+	}
 	included, err := directCodingTaskStageBlockIDs(program.Source, context.Task.TaskID)
 	if err != nil {
 		return zero, err
@@ -55,9 +65,11 @@ func projectDirectCodingApplicationTaskStage(
 	stage := directCodingProgram{
 		Project:              program.Project,
 		Workload:             program.Workload,
+		RequirementRelations: requirementRelations,
 		TargetTree:           program.TargetTree, Coverage: program.Coverage,
-		Source:           assemblyline.SourceBlueprint{Documents: documents},
-		Generated:        generated,
+		Source:      assemblyline.SourceBlueprint{Documents: documents},
+		StaticFiles: staticFiles,
+		Generated:   generated,
 	}
 	if err := stack.ValidateBlueprint(stage.Source); err != nil {
 		return zero, fmt.Errorf("validate application task stage: %w", err)

@@ -12,10 +12,10 @@ func newDirectCodingTypeScriptPortableJob(
 ) (assemblyline.PortableJob, error) {
 	guidance := strings.TrimSpace(job.repairGuidance)
 	hasInitialValidator := job.validateInitialCandidate != nil
-	if hasInitialValidator &&
-		job.block.Role != assemblyline.SourceBlockTaskImplementation {
+	if hasInitialValidator && job.block.Role != assemblyline.SourceBlockTaskImplementation &&
+		job.block.Role != assemblyline.SourceBlockTaskVerification {
 		return assemblyline.PortableJob{}, fmt.Errorf(
-			"TypeScript source-only candidate validation is restricted to implementation declarations",
+			"TypeScript source-only candidate validation is restricted to implementation and verification declarations",
 		)
 	}
 	if strings.TrimSpace(job.current) == "" {
@@ -33,7 +33,8 @@ func newDirectCodingTypeScriptPortableJob(
 			Language: "typescript", Dialect: strings.TrimSpace(job.dialect),
 			Signature: strings.TrimSpace(job.block.Signature),
 			Behavior:  strings.TrimSpace(job.block.Contract), Capabilities: capabilities,
-			PermittedSymbols: append([]string(nil), job.block.Globals...),
+			PermittedSymbols:         append([]string(nil), job.block.Globals...),
+			PublicInteractionSurface: job.publicInteractionSurface,
 		})
 	}
 	if guidance == "" {

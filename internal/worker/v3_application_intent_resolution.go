@@ -84,8 +84,15 @@ func resolveDirectCodingApplicationIntent(
 			directCodingApplicationRequirementUnrequested,
 			directCodingApplicationRequirementDuplicate,
 			directCodingApplicationRequirementUnresolved:
+			if resolved.ResultRelation != (assemblyline.ApplicationRequirementCandidateResultRelationResult{}) ||
+				!directCodingApplicationRequirementPartitionIsZero(resolved.Partition) {
+				return zero, fmt.Errorf("discarded application requirement unexpectedly carries retained state")
+			}
 			continue
 		case directCodingApplicationRequirementPartitioned:
+			if resolved.ResultRelation != (assemblyline.ApplicationRequirementCandidateResultRelationResult{}) {
+				return zero, fmt.Errorf("partitioned application requirement unexpectedly carries a result-relation receipt")
+			}
 			children := current.partitionChildren(resolved.Partition)
 			if enqueuedCandidates+len(children) > assemblyline.MaxApplicationRequirementCandidateQueueNodes {
 				// This candidate's proposed partition cannot fit the bounded queue.
@@ -96,8 +103,14 @@ func resolveDirectCodingApplicationIntent(
 			enqueuedCandidates += len(children)
 			queue = append(children, queue...)
 		case directCodingApplicationRequirementRetained:
+			if !directCodingApplicationRequirementPartitionIsZero(resolved.Partition) {
+				return zero, fmt.Errorf("retained application requirement unexpectedly carries a partition receipt")
+			}
+			if err := resolved.ResultRelation.ValidateAcceptedFor(resolved.Candidate); err != nil {
+				return zero, fmt.Errorf("retained application requirement result relation: %w", err)
+			}
 			requirements = append(requirements, assemblyline.ApplicationIntentCandidateRequirement{
-				Statement: resolved.Candidate,
+				Statement: resolved.Candidate, ResultRelation: resolved.ResultRelation,
 			})
 		default:
 			return zero, fmt.Errorf(
@@ -141,9 +154,10 @@ func resolveDirectCodingApplicationIntent(
 	resolvedRequirements := make([]assemblyline.ApplicationRequirement, len(requirements))
 	for index, requirement := range requirements {
 		resolvedRequirements[index] = assemblyline.ApplicationRequirement{
-			ID:            fmt.Sprintf("requirement_%03d", index+1),
-			Statement:     requirement.Statement,
-			RequestSHA256: authority.Context.RequestSHA256,
+			ID:             fmt.Sprintf("requirement_%03d", index+1),
+			Statement:      requirement.Statement,
+			RequestSHA256:  authority.Context.RequestSHA256,
+			ResultRelation: requirement.ResultRelation,
 		}
 	}
 	return assemblyline.ApplicationIntentResolution{
@@ -151,4 +165,13 @@ func resolveDirectCodingApplicationIntent(
 		RequestSHA256:  authority.Context.RequestSHA256,
 		Requirements:   resolvedRequirements,
 	}, nil
+}
+
+func directCodingApplicationRequirementPartitionIsZero(
+	partition assemblyline.ApplicationRequirementCandidatePartition,
+) bool {
+	return partition.Schema == "" &&
+		partition.AuthoritySHA256 == "" &&
+		partition.RawSHA256 == "" &&
+		partition.Candidates == nil
 }

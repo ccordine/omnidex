@@ -1,7 +1,6 @@
 package worker
 
 import (
-	"errors"
 	"fmt"
 	"path/filepath"
 
@@ -54,12 +53,11 @@ func (s *directCodingSession) Assemble() (directCodingAssembly, error) {
 		return directCodingAssembly{}, err
 	}
 	s.protectedPaths = directCodingProtectedPathSet(protected)
-	artifactAssembly := directCodingAssembly{
-		RequiredPaths: append([]string(nil), required...),
-		DeletePaths:   append([]string(nil), deletions...),
-	}
 	if len(specification.Requirements) == 0 {
-		return artifactAssembly, nil
+		return directCodingAssembly{
+			RequiredPaths: append([]string(nil), required...),
+			DeletePaths:   append([]string(nil), deletions...),
+		}, nil
 	}
 	selection, err := selectDirectCodingProject(
 		workerRuntime, func() (string, error) {
@@ -67,22 +65,35 @@ func (s *directCodingSession) Assemble() (directCodingAssembly, error) {
 		}, redacted, specification, identities,
 	)
 	if err != nil {
-		return artifactAssembly, err
+		return directCodingAssembly{}, err
 	}
 	selectedStack := selection.Stack
 	workload, err := assemblyline.FreezeApplicationWorkload(specification)
 	if err != nil {
-		return artifactAssembly, err
+		return directCodingAssembly{}, err
+	}
+	requirementRelations, err := newDirectCodingApplicationTaskResultRelationPlan(
+		workload, interpretation.AcceptedRequirements, requestAuthority,
+	)
+	if err != nil {
+		return directCodingAssembly{}, err
+	}
+	currentTargetOccupation, err := snapshotDirectCodingTargetTreeOccupation(
+		s.root, selectedStack,
+	)
+	if err != nil {
+		return directCodingAssembly{}, err
 	}
 	targetTree, coverage, err := resolveDirectCodingTargetTree(
 		specification, workload, selectedStack,
 		append(append(append([]string(nil), protected...), required...), deletions...),
+		currentTargetOccupation,
 	)
 	if err != nil {
-		return artifactAssembly, err
+		return directCodingAssembly{}, err
 	}
 	if err := s.bindDirectCodingTargetTreePathProvenance(targetTree); err != nil {
-		return artifactAssembly, err
+		return directCodingAssembly{}, err
 	}
 	workerRuntime.PathProvenance = s.pathProvenance
 	s.runtime.svc.emitStepEvent(s.runtime.claim.Authority, "coding_workload_frozen", fmt.Sprintf(
@@ -92,40 +103,35 @@ func (s *directCodingSession) Assemble() (directCodingAssembly, error) {
 		specification.ProductQuote, specification.Requirements,
 	)
 	if err != nil {
-		return artifactAssembly, err
+		return directCodingAssembly{}, err
 	}
 	program, err := compileDirectCodingProgram(
 		filepath.Base(s.root), specification, workload, capabilities,
 		selection, targetTree, coverage, protected, required, deletions,
 	)
 	if err != nil {
-		return artifactAssembly, err
+		return directCodingAssembly{}, err
 	}
+	program.RequirementRelations = requirementRelations
 	program.TargetTree = targetTree
 	program.Coverage = coverage
+	if err := validateDirectCodingTypeScriptGreenfieldProgramRoot(s.root, program); err != nil {
+		return directCodingAssembly{}, err
+	}
 	if err := s.bindDirectCodingProgramPathProvenance(program); err != nil {
-		return artifactAssembly, err
+		return directCodingAssembly{}, err
 	}
 	if err := s.runDirectCodingApplicationTaskLifecycle(workload, &program); err != nil {
 		s.specification = &specification
 		s.program = &program
-		partialProgram, available := directCodingAcceptedPartialProgram(program)
-		if !available {
-			return artifactAssembly, err
-		}
-		partial, partialErr := directCodingAssemblyFromProgram(partialProgram)
-		if partialErr != nil {
-			return artifactAssembly, errors.Join(err, partialErr)
-		}
-		partial.RequiredPaths = append([]string(nil), program.RequiredPaths...)
-		return partial, err
+		return directCodingAssembly{}, err
 	}
 	s.specification = &specification
 	s.program = &program
 	s.protectedPaths = directCodingProtectedPathSet(program.ProtectedPaths)
 	assembly, err := directCodingAssemblyFromProgram(program)
 	if err != nil {
-		return artifactAssembly, err
+		return directCodingAssembly{}, err
 	}
 	assembly.RequiredPaths = append([]string(nil), program.RequiredPaths...)
 	s.runtime.svc.emitStepEvent(s.runtime.claim.Authority, "coding_artifact_sieve_passed", fmt.Sprintf(

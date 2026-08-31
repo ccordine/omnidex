@@ -1,7 +1,6 @@
 package worker
 
 import (
-	"errors"
 	"fmt"
 	"strings"
 	"unicode"
@@ -32,11 +31,6 @@ func runDirectCodingWorkflow(driver directCodingWorkflowDriver) (string, error) 
 	driver.Phase(directCodingPhaseAssembling, "compiling deterministic source assembly")
 	assembly, assemblyErr := driver.Assemble()
 	if assemblyErr != nil {
-		if directCodingAssemblyHasDesiredState(assembly) {
-			if err := applyDirectCodingAssembly(driver, assembly); err != nil {
-				assemblyErr = errors.Join(assemblyErr, fmt.Errorf("preserve accepted partial assembly: %w", err))
-			}
-		}
 		return failDirectCodingWorkflow(driver, "compile deterministic assembly", assemblyErr)
 	}
 	if !directCodingAssemblyHasDesiredState(assembly) {

@@ -2,6 +2,7 @@ package worker
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 
@@ -38,7 +39,12 @@ func (s *Service) runNativeV3Step(
 		svc: s, ctx: ctx, claim: claim,
 		action: action,
 	}
-	return runtime.run()
+	runErr := runtime.run()
+	releaseErr := runtime.releaseWorkspaceMutationFence()
+	if releaseErr != nil {
+		releaseErr = fmt.Errorf("release exact workspace authority after persisted coding completion: %w", releaseErr)
+	}
+	return errors.Join(runErr, releaseErr)
 }
 
 func (r *nativeRuntimeV3) modelRouting() (ModelRouting, error) {

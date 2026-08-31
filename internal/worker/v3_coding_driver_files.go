@@ -14,8 +14,10 @@ func directCodingDigest(value string) string {
 }
 
 type directCodingPreparedMutation struct {
-	reconciliation *workspacefacts.PreparedReconciliation
-	result         workspacefacts.ReconciliationResult
+	reconciliation           *workspacefacts.PreparedReconciliation
+	result                   workspacefacts.ReconciliationResult
+	hostVerificationProgram  *directCodingProgram
+	hostVerificationAssembly directCodingAssembly
 }
 
 func (s *directCodingSession) PrepareAssembly(
@@ -23,6 +25,11 @@ func (s *directCodingSession) PrepareAssembly(
 ) (*directCodingPreparedMutation, error) {
 	if s == nil || s.runtime == nil || s.runtime.ctx == nil || s.runtime.svc == nil {
 		return nil, fmt.Errorf("workspace mutation preparation requires one active session")
+	}
+	if s.program != nil && s.program.Project.Stack.ID == genericTypeScriptBrowserAdapter {
+		if err := validateDirectCodingTypeScriptGreenfieldAssemblyRoot(s.root, assembly); err != nil {
+			return nil, err
+		}
 	}
 	desired, err := s.directCodingAssemblyDesiredStates(assembly)
 	if err != nil {
@@ -43,7 +50,10 @@ func (s *directCodingSession) PrepareAssembly(
 	); err != nil {
 		return nil, fmt.Errorf("validate host workspace before mutation preparation: %w", err)
 	}
-	reconciliation, err := workspacefacts.PrepareReconciliation(
+	if err := s.runtime.requireWorkspaceMutationFence(); err != nil {
+		return nil, err
+	}
+	reconciliation, err := s.runtime.workspaceFence.PrepareReconciliation(
 		s.runtime.ctx,
 		s.runtime.svc.hostDirectoryAccess,
 		s.root,
@@ -52,7 +62,16 @@ func (s *directCodingSession) PrepareAssembly(
 	if err != nil {
 		return nil, fmt.Errorf("prepare direct-coding workspace reconciliation: %w", err)
 	}
-	return &directCodingPreparedMutation{reconciliation: reconciliation}, nil
+	prepared := &directCodingPreparedMutation{reconciliation: reconciliation}
+	program, programAssembly, verify, err := s.hostVerificationAuthority(assembly)
+	if err != nil {
+		return nil, err
+	}
+	if verify {
+		prepared.hostVerificationProgram = program
+		prepared.hostVerificationAssembly = programAssembly
+	}
+	return prepared, nil
 }
 
 func (s *directCodingSession) directCodingAssemblyDesiredStates(
@@ -62,6 +81,8 @@ func (s *directCodingSession) directCodingAssemblyDesiredStates(
 	exactFiles := make(map[string]struct{}, len(assembly.Files))
 	desiredPaths := make(map[string]struct{}, len(assembly.Files)+len(assembly.RequiredPaths)+len(assembly.DeletePaths))
 	deletions := make(map[string]struct{}, len(assembly.DeletePaths))
+	createOnly := s.program != nil &&
+		s.program.Project.Stack.ID == genericTypeScriptBrowserAdapter
 	for _, path := range assembly.DeletePaths {
 		deletions[path] = struct{}{}
 	}
@@ -81,7 +102,7 @@ func (s *directCodingSession) directCodingAssemblyDesiredStates(
 		state := workspacefacts.DesiredFile{
 			Path: task.Path, Present: true,
 			Content: append([]byte(nil), task.Content...), Mode: task.Mode,
-			MoveFrom: task.MoveFrom,
+			MoveFrom: task.MoveFrom, CreateOnly: createOnly,
 		}
 		if state.MoveFrom != "" && directCodingPathProtected(state.MoveFrom, s.protectedPaths) {
 			state.MoveFrom = ""

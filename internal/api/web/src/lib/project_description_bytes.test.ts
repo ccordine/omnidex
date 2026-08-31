@@ -10,7 +10,6 @@ function committedProjectResponse(status = 200): Response {
       name: "Project",
       location: "/srv/project",
       description: "",
-      project_state: "",
       last_seen_at: "2026-08-13T12:00:00Z",
       created_at: "2026-08-13T12:00:00Z",
       updated_at: status === 200 ? "2026-08-13T12:00:01Z" : "2026-08-13T12:00:00Z",
@@ -41,6 +40,10 @@ describe("project description byte authority", () => {
       </form>
     `;
     document.body.append(modal);
+    const toastRoot = document.createElement("div");
+    toastRoot.id = "omni-toast-root";
+    toastRoot.innerHTML = '<div id="omni-toast" hidden></div>';
+    document.body.append(toastRoot);
     const browser = new ProjectBrowserCoordinator({
       detailRoot: () => document.body,
       modalPanel: () => modal,

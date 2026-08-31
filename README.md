@@ -575,23 +575,26 @@ cp default.env deployment.env
 ./install.sh --env-file deployment.env --yes
 ```
 
-The installer stages a complete checkout, builds the GUI and all host binaries,
-validates the explicit deployment environment, then swaps the finished checkout
-into `~/.omnidex`. `default.env` is a template and is never silently promoted to
-active authority. An existing install's regular `.env` is preserved byte-for-byte;
-supplying `--env-file` during replacement is rejected. This environment-file rule
-does not preserve database state: when the installed core next starts, it rebuilds
-the configured Omnidex schema from `database/setup.sql` and discards its old rows.
+The installer stages a complete checkout, builds the GUI and the authoritative
+`bin/omnidex` server and `bin/omni` CLI, verifies their build identity, requires the
+explicit deployment environment to be a regular file, and then swaps the finished
+checkout into `~/.omnidex`. `default.env` is a template and is never silently
+promoted to active authority. An existing install's regular `.env` is preserved
+byte-for-byte; supplying `--env-file` during replacement is rejected. This
+environment-file rule does not preserve database state: when the installed server
+next starts, it rebuilds the configured Omnidex schema from `database/setup.sql`
+and discards its old rows.
 
 From any directory, update the installed host checkout and binaries with:
 
 ```bash
-omni update --host-only
+"${OMNIDEX_DIR}/update.sh" --host-only
 ```
 
-Use `omni update` without `--host-only` to also rebuild and restart the configured
-Compose service. Updates fast-forward a sibling staged checkout and do not replace
-the active install when fetching, GUI compilation, or Go compilation fails.
+Run `"${OMNIDEX_DIR}/update.sh"` without `--host-only` to also rebuild and restart
+the configured Compose service. Updates fast-forward a sibling staged checkout and
+do not replace the active install when fetching, GUI compilation, Go compilation,
+or staged-layout validation fails.
 
 A native binary release archive uses the same environment rule but does not
 contain a Git checkout. After extracting it, prepare and review a deployment file,
@@ -607,28 +610,22 @@ The archive never contains an active `.env`, and its template is never promoted
 implicitly. Replacing a prior binary-release install preserves that install's
 regular `.env` byte-for-byte and rejects a replacement `--env-file`.
 
-## Run a coding job
+## Use the CLI
 
-Build the API CLI:
-
-```bash
-make cli
-```
-
-From the project directory that should be changed:
+Build the CLI:
 
 ```bash
-CORE_URL=http://localhost:8090 /path/to/omnidex/bin/agent-cli run \
-  "Build the requested feature, include focused tests, and run the project test suite."
+make omni
 ```
 
-The CLI prints live phases, file events, diagnostics, and the final state. Explicit
-user feedback updates the same authoritative job:
+From the project directory that should be changed, start the typed chat transport:
 
 ```bash
-CORE_URL=http://localhost:8090 /path/to/omnidex/bin/agent-cli feedback JOB_ID \
-  "Fix the failing boundary test specifically; preserve the accepted implementation."
+CORE_URL=http://localhost:8090 /path/to/omnidex/bin/omni chat
 ```
+
+The CLI streams the server-authoritative session and submits each free-form turn
+through the ordinary production request boundary.
 
 ## Configuration
 
@@ -649,8 +646,8 @@ Optional systems are disabled explicitly; a requested capability that is unavail
 Backend:
 
 ```bash
-go test ./...
-go vet ./...
+go test ./cmd/omni ./cmd/omnidex ./internal/...
+go vet ./cmd/omni ./cmd/omnidex ./internal/...
 ```
 
 Frontend:
@@ -665,7 +662,7 @@ npm run build
 Release identity:
 
 ```bash
-go run ./cmd/cli version
+go run ./cmd/omni version --json
 ./scripts/build-release.sh --version v0.5.0 --codename Charmeleon
 ```
 

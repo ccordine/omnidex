@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-const ApplicationClassificationSchemaV1 = "omnidex.application-class.v1"
+const ApplicationClassificationSchemaV2 = "omnidex.application-class.v2"
 
 const (
 	ArtifactHandlingSchemaV1   = "omnidex.artifact-handling.v1"
@@ -17,7 +17,9 @@ type ApplicationSurface string
 const (
 	ApplicationSurfaceBrowser     ApplicationSurface = "browser_application"
 	ApplicationSurfaceCommandLine ApplicationSurface = "command_line_application"
+	ApplicationSurfaceUnspecified ApplicationSurface = "unspecified"
 	ApplicationSurfaceUnsupported ApplicationSurface = "unsupported"
+	ApplicationDefaultSurface     ApplicationSurface = ApplicationSurfaceBrowser
 )
 
 type ApplicationClassification struct {
@@ -43,20 +45,45 @@ func validateApplicationProductQuote(label, value string) error {
 }
 
 func (classification ApplicationClassification) Validate() error {
-	if classification.Schema != ApplicationClassificationSchemaV1 {
-		return fmt.Errorf("application classification schema must be %q", ApplicationClassificationSchemaV1)
+	if classification.Schema != ApplicationClassificationSchemaV2 {
+		return fmt.Errorf("application classification schema must be %q", ApplicationClassificationSchemaV2)
 	}
 	switch classification.Surface {
-	case ApplicationSurfaceBrowser, ApplicationSurfaceCommandLine, ApplicationSurfaceUnsupported:
+	case ApplicationSurfaceBrowser, ApplicationSurfaceCommandLine,
+		ApplicationSurfaceUnspecified, ApplicationSurfaceUnsupported:
 		return nil
 	default:
 		return fmt.Errorf("application surface %q is unsupported", classification.Surface)
 	}
 }
 
+// ResolveApplicationSurface converts one validated semantic observation into
+// the code-owned delivery authority used by stack selection. A request that
+// does not constrain delivery receives the one registered default;
+// an explicitly unsupported surface never falls through to that default.
+func ResolveApplicationSurface(
+	classification ApplicationClassification,
+) (ApplicationSurface, error) {
+	if err := classification.Validate(); err != nil {
+		return "", err
+	}
+	switch classification.Surface {
+	case ApplicationSurfaceBrowser, ApplicationSurfaceCommandLine:
+		return classification.Surface, nil
+	case ApplicationSurfaceUnspecified:
+		return ApplicationDefaultSurface, nil
+	case ApplicationSurfaceUnsupported:
+		return "", fmt.Errorf("software request requires an unsupported delivery surface")
+	default:
+		return "", fmt.Errorf("application surface %q is unsupported", classification.Surface)
+	}
+}
+
 func (specification ApplicationSpecification) Validate() error {
 	switch specification.Surface {
 	case ApplicationSurfaceBrowser, ApplicationSurfaceCommandLine:
+	case ApplicationSurfaceUnspecified:
+		return fmt.Errorf("unspecified surface must be resolved before compilation")
 	case ApplicationSurfaceUnsupported:
 		return fmt.Errorf("unsupported surface cannot be compiled")
 	default:

@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"strings"
-	"unicode/utf8"
 
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/projectroot"
@@ -185,16 +183,7 @@ func validateLifecycleControl(
 	if _, err := queue.ParseLifecycleOperationID(string(operationID)); err != nil {
 		return err
 	}
-	if !utf8.ValidString(text) || strings.ContainsRune(text, '\x00') {
-		return fmt.Errorf("%s must be valid UTF-8 without NUL", name)
-	}
-	if strings.TrimSpace(text) == "" {
-		return fmt.Errorf("%s is required", name)
-	}
-	if len(text) > maximum {
-		return fmt.Errorf("%s exceeds the %d-byte bound", name, maximum)
-	}
-	return nil
+	return validateLifecycleControlText(text, name, maximum)
 }
 
 func validateLifecycleWorkspace(channel model.Channel, workspaceIdentity string) error {

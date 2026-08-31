@@ -171,6 +171,13 @@ func channelSessionStateTx(
 	if err := model.ValidateChannelWorkspaceRoot(state.WorkspaceRoot); err != nil {
 		return ChannelSessionState{}, fmt.Errorf("channel %q workspace root: %w", channelID, err)
 	}
+	if err := requireCLIChatSessionWorkspaceBinding(
+		state.ChannelID,
+		state.WorkspaceRoot,
+		workspaceIdentity,
+	); err != nil {
+		return ChannelSessionState{}, err
+	}
 	if channelUpdatedAt.IsZero() {
 		return ChannelSessionState{}, fmt.Errorf("channel %q has no update authority", channelID)
 	}

@@ -10,21 +10,22 @@ import (
 // one complete application surface. Leaf recognition remains
 // separate because a parser can exist before a greenfield stack is complete.
 type directCodingProjectStack struct {
-	ID                           string
-	SupportedSurfaces            []assemblyline.ApplicationSurface
-	ConstraintDescription        string
-	ArtifactAdapterIDs           []string
-	TargetTreeAdapterIDs         []string
-	TargetTreeReservedPaths      []string
+	ID                        string
+	SupportedSurfaces         []assemblyline.ApplicationSurface
+	ConstraintDescription     string
+	ArtifactAdapterIDs        []string
+	TargetTreeAdapterIDs      []string
+	TargetTreeReservedPaths   []string
 	ProjectCompleteTargetTree func(directCodingTargetTreeOccupation) (assemblyline.TargetTree, error)
 	ProjectFocusedTargetTree  func(int, directCodingTargetTreeOccupation) (assemblyline.TargetTree, error)
 	CompileSource             directCodingProjectCompiler
-	ValidateBlueprint       func(assemblyline.SourceBlueprint) error
-	ValidateSourceOwnership func(
+	ValidateBlueprint         func(assemblyline.SourceBlueprint) error
+	ValidateSourceOwnership   func(
 		assemblyline.FrozenApplicationWorkload,
 		assemblyline.SourceBlueprint,
 	) error
-	NewSourceGenerator func(*directCodingSession, directCodingProgram) (directCodingProjectSourceGenerator, error)
+	RequireStagedVerification bool
+	NewSourceGenerator        func(*directCodingSession, directCodingProgram) (directCodingProjectSourceGenerator, error)
 }
 
 type directCodingProjectCompiler func(
@@ -41,12 +42,18 @@ type directCodingProjectSourceGenerator interface {
 	GenerateBlock(assemblyline.ApplicationTaskContext, *directCodingProgram, assemblyline.SourceBlockRef) (string, error)
 }
 
+type directCodingProjectStageVerifier interface {
+	VerifyTask(assemblyline.ApplicationTaskContext, *directCodingProgram) error
+	VerifyFinal(*directCodingProgram) error
+	Close() error
+}
+
 func registeredDirectCodingProjectStacks() []directCodingProjectStack {
 	return []directCodingProjectStack{
 		{
-			ID:                      genericTypeScriptBrowserAdapter,
-			SupportedSurfaces:       []assemblyline.ApplicationSurface{assemblyline.ApplicationSurfaceBrowser},
-			ConstraintDescription:   "TypeScript with React for a browser application",
+			ID:                    genericTypeScriptBrowserAdapter,
+			SupportedSurfaces:     []assemblyline.ApplicationSurface{assemblyline.ApplicationSurfaceBrowser},
+			ConstraintDescription: "TypeScript with React for a browser application",
 			ArtifactAdapterIDs: []string{
 				"typescript_react", "typescript", "css_tailwind",
 				"html", "structured_json", "plain_text",
@@ -58,15 +65,16 @@ func registeredDirectCodingProjectStacks() []directCodingProjectStack {
 			ProjectCompleteTargetTree: projectTypeScriptBrowserCompleteTargetTree,
 			CompileSource:             compileGenericTypeScriptBrowserBlueprint,
 			ValidateBlueprint:         assemblyline.ValidateTypeScriptSourceBlueprint,
-			ValidateSourceOwnership:   validateDirectCodingSingleImplementationSourceOwnership,
+			ValidateSourceOwnership:   validateDirectCodingSinglePairSourceOwnership,
+			RequireStagedVerification: true,
 			NewSourceGenerator:        newDirectCodingTypeScriptSourceGenerator,
 		},
 		{
-			ID:                      genericGoCommandLineAdapter,
-			SupportedSurfaces:       []assemblyline.ApplicationSurface{assemblyline.ApplicationSurfaceCommandLine},
-			ConstraintDescription:   "Go with a module manifest for a command-line application",
-			ArtifactAdapterIDs:      []string{"go", "go_module", "plain_text"},
-			TargetTreeAdapterIDs:    []string{"go"},
+			ID:                       genericGoCommandLineAdapter,
+			SupportedSurfaces:        []assemblyline.ApplicationSurface{assemblyline.ApplicationSurfaceCommandLine},
+			ConstraintDescription:    "Go with a module manifest for a command-line application",
+			ArtifactAdapterIDs:       []string{"go", "go_module", "plain_text"},
+			TargetTreeAdapterIDs:     []string{"go"},
 			TargetTreeReservedPaths:  []string{"main.go", "runtime.go"},
 			ProjectFocusedTargetTree: projectGoCommandLineFocusedTargetTree,
 			CompileSource:            compileGenericGoCommandLineBlueprint,
@@ -75,11 +83,11 @@ func registeredDirectCodingProjectStacks() []directCodingProjectStack {
 			NewSourceGenerator:       newDirectCodingLanguageSourceGeneratorForProgram,
 		},
 		{
-			ID:                      genericJavaScriptCommandLineAdapter,
-			SupportedSurfaces:       []assemblyline.ApplicationSurface{assemblyline.ApplicationSurfaceCommandLine},
-			ConstraintDescription:   "Modern ECMAScript modules on Node.js for a command-line application",
-			ArtifactAdapterIDs:      []string{"javascript", "structured_json", "plain_text"},
-			TargetTreeAdapterIDs:    []string{"javascript"},
+			ID:                       genericJavaScriptCommandLineAdapter,
+			SupportedSurfaces:        []assemblyline.ApplicationSurface{assemblyline.ApplicationSurfaceCommandLine},
+			ConstraintDescription:    "Modern ECMAScript modules on Node.js for a command-line application",
+			ArtifactAdapterIDs:       []string{"javascript", "structured_json", "plain_text"},
+			TargetTreeAdapterIDs:     []string{"javascript"},
 			TargetTreeReservedPaths:  []string{"main.mjs", "runtime.mjs"},
 			ProjectFocusedTargetTree: projectJavaScriptCommandLineFocusedTargetTree,
 			CompileSource:            compileGenericJavaScriptCommandLineBlueprint,
@@ -88,11 +96,11 @@ func registeredDirectCodingProjectStacks() []directCodingProjectStack {
 			NewSourceGenerator:       newDirectCodingLanguageSourceGeneratorForProgram,
 		},
 		{
-			ID:                      genericRustCommandLineAdapter,
-			SupportedSurfaces:       []assemblyline.ApplicationSurface{assemblyline.ApplicationSurfaceCommandLine},
-			ConstraintDescription:   "Rust with Cargo for a command-line application",
-			ArtifactAdapterIDs:      []string{"rust", "cargo_toml", "plain_text"},
-			TargetTreeAdapterIDs:    []string{"rust"},
+			ID:                    genericRustCommandLineAdapter,
+			SupportedSurfaces:     []assemblyline.ApplicationSurface{assemblyline.ApplicationSurfaceCommandLine},
+			ConstraintDescription: "Rust with Cargo for a command-line application",
+			ArtifactAdapterIDs:    []string{"rust", "cargo_toml", "plain_text"},
+			TargetTreeAdapterIDs:  []string{"rust"},
 			TargetTreeReservedPaths: []string{
 				"src/lib.rs", "src/main.rs", "src/runtime.rs",
 			},
@@ -103,11 +111,11 @@ func registeredDirectCodingProjectStacks() []directCodingProjectStack {
 			NewSourceGenerator:       newDirectCodingLanguageSourceGeneratorForProgram,
 		},
 		{
-			ID:                      genericJavaCommandLineAdapter,
-			SupportedSurfaces:       []assemblyline.ApplicationSurface{assemblyline.ApplicationSurfaceCommandLine},
-			ConstraintDescription:   "Java for a command-line application",
-			ArtifactAdapterIDs:      []string{"java", "plain_text"},
-			TargetTreeAdapterIDs:    []string{"java"},
+			ID:                       genericJavaCommandLineAdapter,
+			SupportedSurfaces:        []assemblyline.ApplicationSurface{assemblyline.ApplicationSurfaceCommandLine},
+			ConstraintDescription:    "Java for a command-line application",
+			ArtifactAdapterIDs:       []string{"java", "plain_text"},
+			TargetTreeAdapterIDs:     []string{"java"},
 			TargetTreeReservedPaths:  []string{"Main.java", "Runtime.java"},
 			ProjectFocusedTargetTree: projectJavaCommandLineFocusedTargetTree,
 			CompileSource:            compileGenericJavaCommandLineBlueprint,

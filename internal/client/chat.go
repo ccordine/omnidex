@@ -45,7 +45,22 @@ func (client *Client) BootstrapCLIChatSession(
 	if response.WorkspaceIdentity != workspaceIdentity {
 		return model.Channel{}, fmt.Errorf("CLI chat session differs from exact workspace identity")
 	}
-	return requireCLIChatSessionChannel(response.Channel, clientCWD)
+	channel, err := requireCLIChatSessionChannel(response.Channel, clientCWD)
+	if err != nil {
+		return model.Channel{}, err
+	}
+	expectedChannelID, err := projectroot.CLIChatChannelID(clientCWD, workspaceIdentity)
+	if err != nil {
+		return model.Channel{}, fmt.Errorf("derive expected CLI chat channel identity: %w", err)
+	}
+	if channel.ID != expectedChannelID {
+		return model.Channel{}, fmt.Errorf(
+			"CLI chat session channel %q differs from exact workspace channel %q",
+			channel.ID,
+			expectedChannelID,
+		)
+	}
+	return channel, nil
 }
 
 func (client *Client) Job(ctx context.Context, id int64) (model.JobDetails, error) {

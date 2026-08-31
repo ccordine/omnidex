@@ -21,7 +21,7 @@ const (
 // empty Content slice is an empty file. MoveFrom is a rename optimization;
 // Content and Mode remain the authoritative destination state. PreserveExisting
 // keeps any existing regular file and uses Content and Mode only when creating
-// a missing file.
+// a missing file. CreateOnly atomically refuses an existing destination.
 type DesiredFile struct {
 	Path             string
 	Present          bool
@@ -29,6 +29,7 @@ type DesiredFile struct {
 	Mode             uint32
 	MoveFrom         string
 	PreserveExisting bool
+	CreateOnly       bool
 }
 
 type ChangeKind string
@@ -60,6 +61,7 @@ type VerifiedChangeObserver func(Change)
 // staging directories and performs no mutation.
 type PreparedReconciliation struct {
 	mu         sync.Mutex
+	fence      *MutationFence
 	hostAccess HostDirectoryAccess
 	root       string
 	rootInfo   os.FileInfo
@@ -67,28 +69,43 @@ type PreparedReconciliation struct {
 	applied    bool
 }
 
-func PrepareReconciliation(
+func (fence *MutationFence) PrepareReconciliation(
 	ctx context.Context,
 	hostAccess HostDirectoryAccess,
 	root string,
 	desired []DesiredFile,
 ) (*PreparedReconciliation, error) {
+	if fence == nil {
+		return nil, fmt.Errorf("workspace reconciliation requires one mutation fence")
+	}
 	if ctx == nil {
 		return nil, fmt.Errorf("workspace reconciliation requires a context")
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, fmt.Errorf("prepare workspace reconciliation: %w", err)
 	}
+	fence.mu.Lock()
+	defer fence.mu.Unlock()
+	if root == "" || root != fence.root {
+		return nil, fmt.Errorf("workspace reconciliation root differs from its mutation fence")
+	}
+	if _, err := fence.authoritativeRootLocked(); err != nil {
+		return nil, fmt.Errorf("attest fenced workspace reconciliation root: %w", err)
+	}
 	rootInfo, err := hostAccess.captureWorkspaceRoot(root)
 	if err != nil {
 		return nil, fmt.Errorf("prepare host-authoritative workspace root: %w", err)
+	}
+	if !os.SameFile(fence.rootInfo, rootInfo) {
+		return nil, fmt.Errorf("workspace reconciliation root differs from its fenced authority")
 	}
 	normalized, err := validateDesiredFiles(desired)
 	if err != nil {
 		return nil, err
 	}
 	return &PreparedReconciliation{
-		hostAccess: hostAccess, root: root, rootInfo: rootInfo, desired: normalized,
+		fence: fence, hostAccess: hostAccess, root: root,
+		rootInfo: fence.rootInfo, desired: normalized,
 	}, nil
 }
 
@@ -122,12 +139,19 @@ func validateDesiredFiles(desired []DesiredFile) ([]DesiredFile, error) {
 			return nil, fmt.Errorf("workspace desired state repeats path %q", state.Path)
 		}
 		if !state.Present {
-			if state.Content != nil || state.Mode != 0 || state.MoveFrom != "" || state.PreserveExisting {
+			if state.Content != nil || state.Mode != 0 || state.MoveFrom != "" ||
+				state.PreserveExisting || state.CreateOnly {
 				return nil, fmt.Errorf("absent workspace path %q contains file authority", state.Path)
 			}
 		} else {
 			if state.PreserveExisting && state.MoveFrom != "" {
 				return nil, fmt.Errorf("workspace path %q cannot preserve and move existing state", state.Path)
+			}
+			if state.CreateOnly && (state.PreserveExisting || state.MoveFrom != "") {
+				return nil, fmt.Errorf(
+					"workspace path %q cannot combine create-only with preserve or move authority",
+					state.Path,
+				)
 			}
 			if state.Mode&^uint32(0o777) != 0 {
 				return nil, fmt.Errorf("workspace desired file %q has invalid permission bits", state.Path)

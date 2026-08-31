@@ -31,7 +31,7 @@ internal/api/web/
       recyclr.ts      # Page-scoped Recyclr transport initialization
       scrum_api.ts
       types.ts
-  dist/               # Vite build output (embedded into agent-core)
+  dist/               # Vite build output (embedded into the omnidex server)
 ```
 
 ## Commands

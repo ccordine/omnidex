@@ -50,8 +50,9 @@ func (authority directCodingApplicationRequestAuthority) validate() error {
 }
 
 type directCodingApplicationInterpretation struct {
-	Specification assemblyline.ApplicationSpecification
-	RequestSHA256 string
+	Specification        assemblyline.ApplicationSpecification
+	RequestSHA256        string
+	AcceptedRequirements []assemblyline.ApplicationRequirement
 }
 
 func (interpretation directCodingApplicationInterpretation) validateForAuthority(
@@ -63,10 +64,32 @@ func (interpretation directCodingApplicationInterpretation) validateForAuthority
 		)
 	}
 	if len(interpretation.Specification.Requirements) == 0 {
+		if len(interpretation.AcceptedRequirements) != 0 {
+			return fmt.Errorf("filesystem-only interpretation carries unused requirement authority")
+		}
 		if interpretation.Specification.Surface != "" || interpretation.Specification.ProductQuote != "" {
 			return fmt.Errorf("filesystem-only interpretation carries unused application authority")
 		}
 		return nil
+	}
+	if len(interpretation.AcceptedRequirements) != len(interpretation.Specification.Requirements) {
+		return fmt.Errorf("application interpretation result-relation receipts do not cover accepted requirements")
+	}
+	for index, accepted := range interpretation.AcceptedRequirements {
+		requirement := interpretation.Specification.Requirements[index]
+		if accepted.ID != requirement.ID || accepted.Statement != requirement.SourceQuote ||
+			accepted.RequestSHA256 != authority.requestSHA256 {
+			return fmt.Errorf(
+				"application interpretation requirement %d differs from accepted specification authority",
+				index,
+			)
+		}
+		if err := accepted.ResultRelation.ValidateAcceptedFor(accepted.Statement); err != nil {
+			return fmt.Errorf(
+				"application interpretation requirement %s result relation: %w",
+				accepted.ID, err,
+			)
+		}
 	}
 	return nil
 }
@@ -129,6 +152,10 @@ func runDirectCodingApplicationInterpreter(
 	if err != nil {
 		return zero, err
 	}
+	surface, err := assemblyline.ResolveApplicationSurface(classification)
+	if err != nil {
+		return zero, err
+	}
 	requirements := make([]assemblyline.Requirement, len(resolution.Requirements))
 	for index, requirement := range resolution.Requirements {
 		requirements[index] = assemblyline.Requirement{
@@ -136,7 +163,7 @@ func runDirectCodingApplicationInterpreter(
 		}
 	}
 	specification := assemblyline.ApplicationSpecification{
-		Surface: classification.Surface, ProductQuote: resolution.ProductContext,
+		Surface: surface, ProductQuote: resolution.ProductContext,
 		Requirements: requirements, Artifacts: artifacts,
 	}
 	if resolution.RequestSHA256 != assemblyline.ExactObjectiveContextSHA(authority.modelRequest) {
@@ -145,6 +172,11 @@ func runDirectCodingApplicationInterpreter(
 	interpretation := directCodingApplicationInterpretation{
 		Specification: specification, RequestSHA256: authority.requestSHA256,
 	}
+	accepted := append([]assemblyline.ApplicationRequirement(nil), resolution.Requirements...)
+	for index := range accepted {
+		accepted[index].RequestSHA256 = authority.requestSHA256
+	}
+	interpretation.AcceptedRequirements = accepted
 	if err := interpretation.validateForAuthority(authority); err != nil {
 		return zero, err
 	}

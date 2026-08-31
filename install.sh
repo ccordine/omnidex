@@ -36,7 +36,7 @@ What this installer does:
   1) Stages a complete, updateable checkout of the exact source HEAD
   2) Reproducibly builds the embedded GUI and all host binaries
   3) Installs host dependencies via scripts/setup-host-deps.sh (unless --skip-deps)
-  4) Adds a managed shell-init block so aliases are loaded automatically
+  4) Adds the managed bin directory to PATH through one shell-init block
 
 Database contract:
   The installed core has no schema or data upgrade path. Every startup rebuilds
@@ -136,18 +136,14 @@ build_staged_checkout() {
     cd "${repository}"
     ldflags="-X github.com/gryph/omnidex/internal/version.Commit=${OMNIDEX_COMMIT}"
     build_dir="$(mktemp -d "${repository}/bin/.omnidex-build.XXXXXX")"
-    trap 'rm -f "${build_dir}/agent-core" "${build_dir}/agent-cli" "${build_dir}/omni"; rmdir "${build_dir}" 2>/dev/null || true' EXIT
-    go build -trimpath -ldflags "${ldflags}" -o "${build_dir}/agent-core" ./cmd/core
-    go build -trimpath -ldflags "${ldflags}" -o "${build_dir}/agent-cli" ./cmd/cli
+    trap 'rm -f "${build_dir}/omnidex" "${build_dir}/omni"; rmdir "${build_dir}" 2>/dev/null || true' EXIT
+    go build -trimpath -ldflags "${ldflags}" -o "${build_dir}/omnidex" ./cmd/omnidex
     go build -trimpath -ldflags "${ldflags}" -o "${build_dir}/omni" ./cmd/omni
-    managed_checkout_verify_binary_commit "${build_dir}/agent-core" "${OMNIDEX_COMMIT}" core
-    managed_checkout_verify_binary_commit "${build_dir}/agent-cli" "${OMNIDEX_COMMIT}" json
+    managed_checkout_verify_binary_commit "${build_dir}/omnidex" "${OMNIDEX_COMMIT}" metadata
     managed_checkout_verify_binary_commit "${build_dir}/omni" "${OMNIDEX_COMMIT}" json
-    mv -f "${build_dir}/agent-core" bin/agent-core
-    mv -f "${build_dir}/agent-cli" bin/agent-cli
+    mv -f "${build_dir}/omnidex" bin/omnidex
     mv -f "${build_dir}/omni" bin/omni
   )
-  ln -sfn agent-cli "${repository}/bin/acli"
   log "built staged GUI and binaries"
 }
 
@@ -251,7 +247,7 @@ main() {
   managed_checkout_clone_exact "${SCRIPT_DIR}" "${stage}" "${source_branch}" "${source_origin}"
   managed_checkout_stage_env "${PREFIX}" "${stage}" "${ENV_FILE}"
   build_staged_checkout "${stage}"
-  managed_checkout_validate_env "${stage}"
+  managed_checkout_validate_stage "${stage}"
   managed_checkout_publish "${stage}" "${PREFIX}"
   stage=""
   trap - EXIT
@@ -259,8 +255,8 @@ main() {
 
   cat <<EOF
 [install] completed
-[install] omni aliases now auto-load from: ${PREFIX}/agent_aliases.sh
-[install] open a new shell (or run: source ~/.bashrc) to use omni immediately
+[install] authoritative binaries: ${PREFIX}/bin/omnidex and ${PREFIX}/bin/omni
+[install] open a new shell (or run: source ~/.bashrc) to use them immediately
 EOF
 }
 

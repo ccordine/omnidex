@@ -7,16 +7,18 @@ import (
 )
 
 type directCodingTargetTreeOccupation struct {
-	FilePaths []string
+	FilePaths      []string
+	DirectoryPaths []string
 }
 
 func directCodingTargetTreeOccupationFor(
 	stack directCodingProjectStack,
 	accepted map[string]struct{},
 	authoritativePaths []string,
+	current directCodingTargetTreeOccupation,
 ) directCodingTargetTreeOccupation {
 	files := make(
-		map[string]struct{}, len(stack.TargetTreeReservedPaths)+len(accepted)+len(authoritativePaths),
+		map[string]struct{}, len(stack.TargetTreeReservedPaths)+len(accepted)+len(authoritativePaths)+len(current.FilePaths),
 	)
 	for _, artifactPath := range stack.TargetTreeReservedPaths {
 		files[artifactPath] = struct{}{}
@@ -27,12 +29,17 @@ func directCodingTargetTreeOccupationFor(
 	for _, artifactPath := range authoritativePaths {
 		files[artifactPath] = struct{}{}
 	}
+	for _, artifactPath := range current.FilePaths {
+		files[artifactPath] = struct{}{}
+	}
 	filePaths := make([]string, 0, len(files))
 	for artifactPath := range files {
 		filePaths = append(filePaths, artifactPath)
 	}
 	sort.Strings(filePaths)
-	return directCodingTargetTreeOccupation{FilePaths: filePaths}
+	directories := append([]string(nil), current.DirectoryPaths...)
+	sort.Strings(directories)
+	return directCodingTargetTreeOccupation{FilePaths: filePaths, DirectoryPaths: directories}
 }
 
 func directCodingTargetTreeFileHierarchyConflict(left, right string) bool {
@@ -73,6 +80,11 @@ func directCodingTargetTreePathsAvailable(
 		}
 		for _, occupied := range occupation.FilePaths {
 			if directCodingTargetTreeFileHierarchyConflict(candidate, occupied) {
+				return false, nil
+			}
+		}
+		for _, directory := range occupation.DirectoryPaths {
+			if candidate == directory || directCodingTargetTreeFileAncestor(candidate, directory) {
 				return false, nil
 			}
 		}

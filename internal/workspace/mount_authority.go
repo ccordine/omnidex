@@ -108,6 +108,21 @@ func (root *authoritativeWorkspaceRoot) OpenFile(
 }
 
 func (root *authoritativeWorkspaceRoot) Rename(oldRelative, newRelative string) (resultErr error) {
+	return root.rename(oldRelative, newRelative, false)
+}
+
+func (root *authoritativeWorkspaceRoot) RenameNoReplace(
+	oldRelative string,
+	newRelative string,
+) (resultErr error) {
+	return root.rename(oldRelative, newRelative, true)
+}
+
+func (root *authoritativeWorkspaceRoot) rename(
+	oldRelative string,
+	newRelative string,
+	noReplace bool,
+) (resultErr error) {
 	if root == nil || root.Root == nil || root.authorityFD < 0 || root.mountID == 0 {
 		return fmt.Errorf("rename workspace path: root authority is unavailable")
 	}
@@ -140,7 +155,15 @@ func (root *authoritativeWorkspaceRoot) Rename(oldRelative, newRelative string) 
 	}()
 
 	for {
-		err = unix.Renameat(int(oldParent.Fd()), oldName, int(newParent.Fd()), newName)
+		if noReplace {
+			err = unix.Renameat2(
+				int(oldParent.Fd()), oldName,
+				int(newParent.Fd()), newName,
+				unix.RENAME_NOREPLACE,
+			)
+		} else {
+			err = unix.Renameat(int(oldParent.Fd()), oldName, int(newParent.Fd()), newName)
+		}
 		if errors.Is(err, unix.EINTR) {
 			continue
 		}

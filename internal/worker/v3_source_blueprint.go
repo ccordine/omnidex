@@ -122,7 +122,7 @@ func validateDirectCodingSingleImplementationSourceOwnership(
 			case assemblyline.SourceBlockTaskImplementation:
 				implementation[block.TaskID]++
 			case assemblyline.SourceBlockTaskVerification:
-				return fmt.Errorf("source block %s is an obsolete generated verification artifact", block.ID)
+				return fmt.Errorf("source block %s is verification but stack requires implementation-only ownership", block.ID)
 			}
 		}
 	}
@@ -179,11 +179,8 @@ func directCodingTaskGeneratedBlockRefs(
 			blocks = append(blocks, ref)
 			switch ref.Block.Role {
 			case assemblyline.SourceBlockTaskImplementation,
-				assemblyline.SourceBlockTaskRepresentation:
-			case assemblyline.SourceBlockTaskVerification:
-				return nil, fmt.Errorf(
-					"task %s contains obsolete generated verification block %s", taskID, ref.Block.ID,
-				)
+				assemblyline.SourceBlockTaskRepresentation,
+				assemblyline.SourceBlockTaskVerification:
 			default:
 				return nil, fmt.Errorf("generated task block %s has role %q", ref.Block.ID, ref.Block.Role)
 			}

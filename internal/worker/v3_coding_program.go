@@ -10,6 +10,7 @@ import (
 type directCodingProgram struct {
 	Project              directCodingProjectSelection
 	Workload             assemblyline.FrozenApplicationWorkload
+	RequirementRelations directCodingApplicationTaskResultRelationPlan
 	TargetTree           assemblyline.TargetTree
 	Coverage             assemblyline.ApplicationFileCoveragePlan
 	Source               assemblyline.SourceBlueprint
@@ -62,10 +63,10 @@ func compileDirectCodingProgram(
 		return directCodingProgram{}, fmt.Errorf("validate %s source ownership: %w", stack.ID, err)
 	}
 	return directCodingProgram{
-		Project: project,
+		Project:  project,
 		Workload: workload, TargetTree: targetTree, Coverage: coverage,
-		Source:           blueprint,
-		StaticFiles:      staticFiles, Generated: map[string]string{},
+		Source:      blueprint,
+		StaticFiles: staticFiles, Generated: map[string]string{},
 		ProtectedPaths: protected, RequiredPaths: required, DeletePaths: deletions,
 	}, nil
 }

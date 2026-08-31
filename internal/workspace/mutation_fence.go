@@ -78,7 +78,10 @@ func AcquireMutationFence(ctx context.Context, root string) (*MutationFence, err
 		select {
 		case <-ctx.Done():
 			if !timer.Stop() {
-				<-timer.C
+				select {
+				case <-timer.C:
+				default:
+				}
 			}
 			return nil, errors.Join(
 				fmt.Errorf("acquire workspace mutation fence for %q: %w", root, ctx.Err()),

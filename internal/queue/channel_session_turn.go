@@ -205,5 +205,12 @@ func validateAssistantSessionAuthority(
 			command.WorkspaceRoot,
 		)
 	}
+	if err := requireCLIChatSessionWorkspaceBinding(
+		command.ChannelID,
+		command.WorkspaceRoot,
+		command.WorkspaceIdentity,
+	); err != nil {
+		return err
+	}
 	return nil
 }

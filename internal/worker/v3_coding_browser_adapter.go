@@ -29,12 +29,21 @@ func compileGenericTypeScriptBrowserBlueprint(
 		return assemblyline.SourceBlueprint{}, nil, err
 	}
 	documents = append(documents, featureDocuments...)
+	acceptanceDocuments, err := genericBrowserAcceptanceDocuments(
+		specification, contexts, capabilities, coverage,
+	)
+	if err != nil {
+		return assemblyline.SourceBlueprint{}, nil, err
+	}
+	documents = append(documents, acceptanceDocuments...)
 	appDocument, err := genericBrowserAppDocument(specification, contexts, coverage)
 	if err != nil {
 		return assemblyline.SourceBlueprint{}, nil, err
 	}
 	documents = append(documents, appDocument)
 	documents = append(documents, genericBrowserEntrypointDocument())
+	documents = append(documents, genericBrowserSmokeTestDocument(specification))
+	documents = append(documents, genericBrowserRuntimeTestDocument(specification.Requirements))
 	blueprint := assemblyline.SourceBlueprint{Documents: documents}
 	staticFiles, err := typeScriptBrowserStaticFiles(
 		profile,
@@ -69,9 +78,7 @@ func genericBrowserFeatureDocuments(
 		if !exists {
 			return nil, fmt.Errorf("application workload omits requirement %s", requirement.ID)
 		}
-		implementationPath, err := directCodingTaskSingleImplementationPath(
-			coverage, taskContext.Task.TaskID,
-		)
+		files, err := directCodingTaskSinglePair(coverage, taskContext.Task.TaskID)
 		if err != nil {
 			return nil, err
 		}
@@ -79,14 +86,14 @@ func genericBrowserFeatureDocuments(
 		if err != nil {
 			return nil, err
 		}
-		documentIndex, exists := documentByPath[implementationPath]
+		documentIndex, exists := documentByPath[files.ImplementationPath]
 		if !exists {
 			documentIndex = len(documents)
-			documentByPath[implementationPath] = documentIndex
+			documentByPath[files.ImplementationPath] = documentIndex
 			documents = append(documents, assemblyline.SourceDocument{
 				ID:       fmt.Sprintf("feature_%03d", sequence),
-				Path:     implementationPath,
-				Preamble: genericBrowserFeaturePreamble(implementationPath, nil),
+				Path:     files.ImplementationPath,
+				Preamble: genericBrowserFeaturePreamble(files.ImplementationPath, nil),
 			})
 		}
 		taskID := taskContext.Task.TaskID
@@ -143,8 +150,13 @@ import type { CapabilitySnapshot, FeatureActions, FeatureProps, FeatureState, Fe
 func genericBrowserFeatureContract(behavior string) string {
 	return strings.Join([]string{
 		behavior,
-		"Return one React view implementing only this behavior; do not add imports, declarations, placeholders, or unrelated product rules.",
-		"Use only the listed direct declarations and capability identifiers. Shared state changes use the supplied actions.",
+		"Return one complete accessible interactive React view; no placeholder, TODO, endpoint, import, or extra declaration.",
+		"Use one unconditional top-level intrinsic JSX root; no fragment or other JSX. Controls are unconditional, never in branches, ternaries, loops, or maps. Each visible dynamic expression is the sole child of an intrinsic. A derived result is the sole genuinely dynamic child of output with a unique literal aria-label; other dynamic text cannot prove results. Only condition && intrinsic may conditionally show non-control text.",
+		"Controls are intrinsic button, textarea, select, or supported input. Every button has exact type=\"button\" and literal text; other controls have a literal aria-label or label. Public attributes are static quoted literals. No forms, custom components, explicit roles, aria-labelledby, spreads, effectful or unknown attributes, style, script, template, noscript, title, alt, contentEditable, dialog, popover, hidden or visibility changes, disabled or read-only controls, links, datalist, or other native interactive elements.",
+		"Give every requirement-defined result operation a literal accessible control name. Names may identify alternatives but cannot invent result relations.",
+		"Classes are static allowlisted Tailwind display and layout, nonnegative padding and gap, mx-auto, nonzero size, non-color type, border, radius, or shadow utilities; no other classes.",
+		"Use only the listed direct declarations. Mutate shared state through actions in handlers; read state or capabilities only when this behavior requires them.",
+		"Every referenced capability identifier must be one of the listed capability identifiers.",
 	}, "\n")
 }
 

@@ -1,20 +1,20 @@
 package assemblyline
 
 const (
-	WorkApplicationProjectStackConstraint        WorkKind = "application_project_stack_constraint"
-	WorkContextMinification                      WorkKind = "context_minification"
-	WorkConversationObjectiveKind                WorkKind = "conversation_objective_kind"
-	WorkConversationResponse                     WorkKind = "conversation_response"
-	WorkRoleplayOngoingAction                    WorkKind = "roleplay_ongoing_action"
-	WorkDatabaseJoinPathSelection                WorkKind = "database_join_path_selection"
-	WorkApplicationClassify                      WorkKind = "application_classification"
-	WorkArtifactHandling                         WorkKind = "artifact_handling"
-	WorkCapabilityRelation                       WorkKind = "capability_relation"
-	WorkTypeScriptRepairGuidance                 WorkKind = "typescript_repair_guidance"
-	WorkFragmentGeneration                       WorkKind = "fragment_generation"
-	WorkFragmentGenerationReplacement            WorkKind = "fragment_generation_replacement"
-	WorkFragmentModification                     WorkKind = "fragment_modification"
-	WorkFragmentCorrection                       WorkKind = "fragment_correction"
+	WorkApplicationProjectStackConstraint WorkKind = "application_project_stack_constraint"
+	WorkContextMinification               WorkKind = "context_minification"
+	WorkConversationObjectiveKind         WorkKind = "conversation_objective_kind"
+	WorkConversationResponse              WorkKind = "conversation_response"
+	WorkRoleplayOngoingAction             WorkKind = "roleplay_ongoing_action"
+	WorkDatabaseJoinPathSelection         WorkKind = "database_join_path_selection"
+	WorkApplicationClassify               WorkKind = "application_classification"
+	WorkArtifactHandling                  WorkKind = "artifact_handling"
+	WorkCapabilityRelation                WorkKind = "capability_relation"
+	WorkTypeScriptRepairGuidance          WorkKind = "typescript_repair_guidance"
+	WorkFragmentGeneration                WorkKind = "fragment_generation"
+	WorkFragmentGenerationReplacement     WorkKind = "fragment_generation_replacement"
+	WorkFragmentModification              WorkKind = "fragment_modification"
+	WorkFragmentCorrection                WorkKind = "fragment_correction"
 )
 
 func validWorkKind(kind WorkKind) bool {
@@ -28,6 +28,9 @@ func validWorkKind(kind WorkKind) bool {
 		WorkApplicationRequirementCandidateKind,
 		WorkApplicationRequirementCandidateAuthorization,
 		WorkApplicationRequirementCandidateOutcomeRelation,
+		WorkApplicationRequirementCandidateResultRelation,
+		WorkApplicationRequirementCandidateResultRelationGrounding,
+		WorkApplicationRequirementCandidateResultRelationCorrection,
 		WorkApplicationRequirementCandidatePartition,
 		WorkApplicationProjectStackConstraint,
 		WorkApplicationClassify,
@@ -88,6 +91,9 @@ func AllWorkKinds() []WorkKind {
 		WorkApplicationRequirementCandidateKind,
 		WorkApplicationRequirementCandidateAuthorization,
 		WorkApplicationRequirementCandidateOutcomeRelation,
+		WorkApplicationRequirementCandidateResultRelation,
+		WorkApplicationRequirementCandidateResultRelationGrounding,
+		WorkApplicationRequirementCandidateResultRelationCorrection,
 		WorkApplicationRequirementCandidatePartition,
 		WorkApplicationProjectStackConstraint,
 		WorkApplicationClassify,

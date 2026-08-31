@@ -1,6 +1,7 @@
 package worker
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -12,10 +13,11 @@ func (s *directCodingSession) generateDirectCodingApplicationTaskBlock(
 	_ assemblyline.ApplicationTaskContext,
 	stage *directCodingProgram,
 	ref assemblyline.SourceBlockRef,
+	publicSurface *assemblyline.FragmentPublicInteractionSurface,
 	validateInitialCandidate func(string) error,
 ) (string, error) {
 	job, err := directCodingApplicationTaskFragmentJob(
-		stage, ref, validateInitialCandidate,
+		stage, ref, publicSurface, validateInitialCandidate,
 	)
 	if err != nil {
 		return "", err
@@ -33,6 +35,7 @@ func (s *directCodingSession) generateDirectCodingApplicationTaskBlock(
 func directCodingApplicationTaskFragmentJob(
 	stage *directCodingProgram,
 	ref assemblyline.SourceBlockRef,
+	publicSurface *assemblyline.FragmentPublicInteractionSurface,
 	validateInitialCandidate func(string) error,
 ) (directCodingTypeScriptFragmentJob, error) {
 	if stage == nil {
@@ -64,6 +67,7 @@ func directCodingApplicationTaskFragmentJob(
 	}
 	return directCodingTypeScriptFragmentJob{
 		block: block, dialect: stage.Project.Dialect, tsx: tsx, available: available,
+		publicInteractionSurface: publicSurface,
 		validateInitialCandidate: validateInitialCandidate,
 	}, nil
 }
@@ -87,11 +91,23 @@ func (s *directCodingSession) runDirectCodingApplicationTaskLifecycle(
 	if err != nil {
 		return err
 	}
+	verifier, hasVerifier := generator.(directCodingProjectStageVerifier)
+	if stack.RequireStagedVerification && !hasVerifier {
+		return fmt.Errorf("project stack %s requires one staged verifier", stack.ID)
+	}
+	hooks := directCodingApplicationTaskLifecycleHooks{
+		BuildBlock: generator.GenerateBlock,
+	}
+	if hasVerifier {
+		hooks.VerifyTask = verifier.VerifyTask
+		hooks.FinalStage = verifier.VerifyFinal
+	}
 	lifecycleErr := runDirectCodingApplicationTaskLifecycle(
 		frozen, program,
-		directCodingApplicationTaskLifecycleHooks{
-			BuildBlock: generator.GenerateBlock,
-		},
+		hooks,
 	)
-	return lifecycleErr
+	if !hasVerifier {
+		return lifecycleErr
+	}
+	return errors.Join(lifecycleErr, verifier.Close())
 }

@@ -41,7 +41,7 @@ func typeScriptBrowserStaticFiles(
 		Name: packageName, Private: true, Version: "1.0.0", Type: "module",
 		Engines: map[string]string{"node": node, "npm": npm},
 		Scripts: map[string]string{
-			"dev": "vite", "typecheck": "tsc --noEmit",
+			"dev": "vite", "test": "vitest run", "typecheck": "tsc --noEmit",
 			"build": "npm run typecheck && vite build",
 		},
 		Dependencies:    dependencies,
@@ -52,6 +52,7 @@ func typeScriptBrowserStaticFiles(
 		return nil, fmt.Errorf("marshal code-owned TypeScript package manifest: %w", err)
 	}
 	return []directCodingFileTask{
+		{Path: ".gitignore", Content: []byte("node_modules\ndist\n.vite\n*.log\n"), Mode: 0o644},
 		{Path: "package.json", Content: append(encoded, '\n'), Mode: 0o644},
 		{Path: "package-lock.json", Content: []byte(packageLock), Mode: 0o644},
 		{Path: "index.html", Content: []byte(typeScriptWebIndexSource(productName)), Mode: 0o644},
@@ -94,7 +95,8 @@ func typeScriptWebConfigSource(ecmascript string) string {
     "resolveJsonModule": true,
     "isolatedModules": true,
     "noEmit": true,
-		"jsx": "react-jsx"
+		"jsx": "react-jsx",
+		"types": ["vitest/globals"]
   },
   "include": ["src"],
   "exclude": ["dist", "node_modules"]
@@ -103,12 +105,16 @@ func typeScriptWebConfigSource(ecmascript string) string {
 }
 
 func typeScriptViteConfigSource() string {
-	return `import { defineConfig } from 'vite';
+	return `import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+	test: {
+		environment: 'jsdom',
+		globals: true,
+	},
 });
 `
 }
