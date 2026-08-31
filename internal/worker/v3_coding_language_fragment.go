@@ -153,7 +153,6 @@ func directCodingLanguageFragmentInput(
 			"%s generation requires one generated source block", language,
 		)
 	}
-	profile := stage.Project.Profile
 	blocks := make(map[string]assemblyline.SourceBlock)
 	found := false
 	for _, document := range stage.Source.Documents {
@@ -185,7 +184,7 @@ func directCodingLanguageFragmentInput(
 		capabilities = append(capabilities, capability.API)
 	}
 	return assemblyline.FragmentGenerationInput{
-		Language: language, Dialect: profile.SourceDialect, Signature: ref.Block.Signature,
+		Language: language, Dialect: stage.Project.Dialect, Signature: ref.Block.Signature,
 		Behavior: ref.Block.Contract, Capabilities: capabilities,
 		PermittedSymbols: append([]string(nil), ref.Block.Globals...),
 	}, nil

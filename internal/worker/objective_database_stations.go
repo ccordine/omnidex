@@ -36,7 +36,6 @@ func (adapter portableObjectiveDatabaseStations) SelectJoinPath(
 		func(raw string) (assemblyline.DatabaseJoinPathSelectionDecision, error) {
 			return assemblyline.DecodeDatabaseJoinPathSelectionDecision(input, raw)
 		},
-		func(value assemblyline.DatabaseJoinPathSelectionDecision) error { return value.ValidateFor(input) },
 	)
 }
 

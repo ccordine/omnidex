@@ -24,7 +24,6 @@ func classifyArtifactHandling(
 			func(raw string) (assemblyline.ArtifactHandlingDecision, error) {
 				return assemblyline.DecodeArtifactHandlingDecision(input, raw)
 			},
-			func(value assemblyline.ArtifactHandlingDecision) error { return value.Validate(identity.Token) },
 		)
 		if err != nil {
 			if isDirectCodingSemanticLeafRejection(err) {

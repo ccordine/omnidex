@@ -14,11 +14,6 @@ func portableCodingResponseMaximum(job PortableJob) (int, bool, error) {
 			CapabilityIndependent, CapabilityLeftReadsRight,
 			CapabilityRightReadsLeft,
 		), true, nil
-	case WorkRuntimeCapabilityNecessity:
-		return maximumStringBytes(
-			RuntimeCapabilityNecessary,
-			RuntimeCapabilityNotNecessary,
-		), true, nil
 	case WorkTypeScriptRepairGuidance:
 		return maxTypeScriptRepairGuidanceBytes, true, nil
 	case WorkFragmentGeneration:

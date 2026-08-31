@@ -2,22 +2,25 @@ package worker
 
 import (
 	"fmt"
+	"os"
+	"path"
 	"sort"
 	"strings"
-
-	"github.com/gryph/omnidex/internal/assemblyline"
 )
 
 type directCodingTargetTreeOccupation struct {
 	FilePaths []string
+	Root      *os.Root
 }
 
 func directCodingTargetTreeOccupationFor(
 	stack directCodingProjectStack,
 	accepted map[string]struct{},
+	authoritativePaths []string,
+	root *os.Root,
 ) directCodingTargetTreeOccupation {
 	files := make(
-		map[string]struct{}, len(stack.TargetTreeReservedPaths)+len(accepted),
+		map[string]struct{}, len(stack.TargetTreeReservedPaths)+len(accepted)+len(authoritativePaths),
 	)
 	for _, artifactPath := range stack.TargetTreeReservedPaths {
 		files[artifactPath] = struct{}{}
@@ -25,31 +28,15 @@ func directCodingTargetTreeOccupationFor(
 	for artifactPath := range accepted {
 		files[artifactPath] = struct{}{}
 	}
+	for _, artifactPath := range authoritativePaths {
+		files[artifactPath] = struct{}{}
+	}
 	filePaths := make([]string, 0, len(files))
 	for artifactPath := range files {
 		filePaths = append(filePaths, artifactPath)
 	}
 	sort.Strings(filePaths)
-	return directCodingTargetTreeOccupation{FilePaths: filePaths}
-}
-
-// validateDirectCodingTargetTreePathClosure proves only the tree's own
-// reserved-path invariants. Existing filesystem state belongs to the
-// reconciler, which consumes the complete desired state later.
-func validateDirectCodingTargetTreePathClosure(
-	stack directCodingProjectStack,
-	target assemblyline.TargetTree,
-) error {
-	for _, candidate := range target.Paths {
-		for _, occupied := range stack.TargetTreeReservedPaths {
-			if directCodingTargetTreeFileHierarchyConflict(candidate, occupied) {
-				return fmt.Errorf(
-					"target-tree file %q crosses reserved file boundary %q", candidate, occupied,
-				)
-			}
-		}
-	}
-	return nil
+	return directCodingTargetTreeOccupation{FilePaths: filePaths, Root: root}
 }
 
 func directCodingTargetTreeFileHierarchyConflict(left, right string) bool {
@@ -89,6 +76,37 @@ func directCodingTargetTreePathsAvailable(
 				return false, nil
 			}
 		}
+		if !directCodingTargetTreeWorkspacePathAvailable(occupation.Root, candidate) {
+			return false, nil
+		}
 	}
 	return true, nil
+}
+
+// directCodingTargetTreeWorkspacePathAvailable probes only the exact
+// mechanically proposed path and its parents. It never inventories or parses
+// the repository, so unrelated broken and mixed-language state is irrelevant.
+func directCodingTargetTreeWorkspacePathAvailable(root *os.Root, candidate string) bool {
+	if root == nil {
+		return false
+	}
+	current := ""
+	parts := strings.Split(candidate, "/")
+	for index, name := range parts {
+		current = path.Join(current, name)
+		info, err := root.Lstat(current)
+		if os.IsNotExist(err) {
+			return true
+		}
+		if err != nil {
+			return false
+		}
+		if index == len(parts)-1 {
+			return false
+		}
+		if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+			return false
+		}
+	}
+	return false
 }

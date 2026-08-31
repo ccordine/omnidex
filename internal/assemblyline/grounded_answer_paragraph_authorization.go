@@ -8,8 +8,8 @@ import (
 func NewGroundedAnswerParagraphAuthorizationJob(
 	input GroundedAnswerParagraphAuthorizationInput,
 ) (PortableJob, error) {
-	return newValidatedPortableJob(
-		WorkGroundedAnswerParagraphAuthorization, input, input.validate,
+	return newPortableJob(
+		WorkGroundedAnswerParagraphAuthorization, input,
 	)
 }
 

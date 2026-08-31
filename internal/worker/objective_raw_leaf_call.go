@@ -15,7 +15,6 @@ func runObjectivePortableRawLeafCall[T any](
 	modelName, subject string,
 	job assemblyline.PortableJob,
 	decode objectiveRawLeafDecoder[T],
-	validate func(T) error,
 ) (T, int, error) {
 	var zero T
 	if ctx == nil || runtime == nil || runtime.svc == nil || runtime.claim == nil {
@@ -38,7 +37,7 @@ func runObjectivePortableRawLeafCall[T any](
 		return execute(job, model)
 	}
 	value, err := runObjectiveRawLeafWorkerCall(
-		workerRuntime, modelName, subject, job, decode, validate,
+		workerRuntime, modelName, subject, job, decode,
 	)
 	return value, calls, err
 }
@@ -48,10 +47,9 @@ func runObjectiveRawLeafWorkerCall[T any](
 	modelName, subject string,
 	job assemblyline.PortableJob,
 	decode objectiveRawLeafDecoder[T],
-	validate func(T) error,
 ) (T, error) {
 	var zero T
-	if runtime.Context == nil || runtime.Execute == nil || decode == nil || validate == nil {
+	if runtime.Context == nil || runtime.Execute == nil || decode == nil {
 		return zero, fmt.Errorf("objective raw leaf requires an exact portable runtime and decoder")
 	}
 	prompt, err := assemblyline.RenderPortableJob(job)
@@ -88,9 +86,6 @@ func runObjectiveRawLeafWorkerCall[T any](
 	}
 	if validationErr == nil {
 		validationErr = validateObjectiveRawLeafPathBoundary(value, runtime.PathProvenance)
-	}
-	if validationErr == nil {
-		validationErr = validate(value)
 	}
 	validationErr = finalizeTypedWorkerResult(runtime, job, result, validationErr)
 	if validationErr != nil {

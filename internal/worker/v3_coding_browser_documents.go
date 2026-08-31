@@ -60,17 +60,12 @@ func genericBrowserAppSource(specification assemblyline.ApplicationSpecification
 	}
 	body.WriteString("  }), [runtime]);\n")
 	body.WriteString("  return (\n")
-	body.WriteString("    <main>\n")
-	for index, requirement := range specification.Requirements {
+	body.WriteString("    <>\n")
+	for index := range specification.Requirements {
 		sequence := index + 1
-		body.WriteString(fmt.Sprintf(
-			"      <section aria-label={%s}>\n",
-			strconv.Quote(requirement.SourceQuote),
-		))
-		body.WriteString(fmt.Sprintf("        <Feature%03d runtime={features.feature%03d} />\n", sequence, sequence))
-		body.WriteString("      </section>\n")
+		body.WriteString(fmt.Sprintf("      <Feature%03d runtime={features.feature%03d} />\n", sequence, sequence))
 	}
-	body.WriteString("    </main>\n")
+	body.WriteString("    </>\n")
 	body.WriteString("  );\n")
 	body.WriteString("}")
 	return body.String()

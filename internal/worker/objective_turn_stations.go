@@ -38,9 +38,6 @@ func (adapter portableObjectiveKindStation) Classify(
 		func(raw string) (assemblyline.ConversationObjectiveKindDecision, error) {
 			return assemblyline.DecodeConversationObjectiveKindDecision(input, raw)
 		},
-		func(value assemblyline.ConversationObjectiveKindDecision) error {
-			return value.ValidateFor(input)
-		},
 	)
 }
 
@@ -78,13 +75,16 @@ func (adapter portableObjectiveConversationStation) Respond(
 		ctx, adapter.runtime, "conversation_response", job,
 		station.ConversationResponse, resolveModel,
 		func(raw string) (assemblyline.ConversationResponseDecision, error) {
-			return assemblyline.DecodeConversationResponseDecision(input, raw)
-		},
-		func(value assemblyline.ConversationResponseDecision) error {
-			if err := value.ValidateFor(input); err != nil {
-				return err
+			value, err := assemblyline.DecodeConversationResponseDecision(input, raw)
+			if err != nil {
+				return assemblyline.ConversationResponseDecision{}, err
 			}
-			return validateObjectiveTextTransportBoundary("conversation response", value.Text)
+			if err := validateObjectiveTextTransportBoundary(
+				"conversation response", value.Text,
+			); err != nil {
+				return assemblyline.ConversationResponseDecision{}, err
+			}
+			return value, nil
 		},
 	)
 }

@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/gryph/omnidex/internal/model"
+	"github.com/gryph/omnidex/internal/scrum"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -18,10 +19,19 @@ func canonicalReplanStepsTx(
 		return nil, fmt.Errorf("replan channel authority: %w", err)
 	}
 	if !exists {
-		if normalizePipeline(job.Pipeline) == model.PipelineChat {
+		switch job.Pipeline {
+		case model.PipelineChat:
 			return nil, fmt.Errorf("replan chat job %d requires exact channel authority", job.ID)
+		case model.PipelineCoding:
+			return stepsForJob(job.Metadata)
+		case model.PipelineScrum:
+			if _, err := scrum.DecodeStoredJobMetadata(job.Metadata); err != nil {
+				return nil, err
+			}
+			return []stepSeed{{action: "v3_coding", sortIndex: 5}}, nil
+		default:
+			return nil, fmt.Errorf("replan job %d has no executable pipeline %q", job.ID, job.Pipeline)
 		}
-		return stepsForJob(job.Pipeline, job.Instruction, job.Metadata)
 	}
 	var valid bool
 	err = tx.QueryRow(ctx, `

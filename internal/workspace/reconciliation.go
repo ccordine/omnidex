@@ -19,13 +19,16 @@ const (
 
 // DesiredFile is the complete requested truth for one workspace path. An
 // empty Content slice is an empty file. MoveFrom is a rename optimization;
-// Content and Mode remain the authoritative destination state.
+// Content and Mode remain the authoritative destination state. PreserveExisting
+// keeps any existing regular file and uses Content and Mode only when creating
+// a missing file.
 type DesiredFile struct {
-	Path     string
-	Present  bool
-	Content  []byte
-	Mode     uint32
-	MoveFrom string
+	Path             string
+	Present          bool
+	Content          []byte
+	Mode             uint32
+	MoveFrom         string
+	PreserveExisting bool
 }
 
 type ChangeKind string
@@ -113,10 +116,13 @@ func validateDesiredFiles(desired []DesiredFile) ([]DesiredFile, error) {
 			return nil, fmt.Errorf("workspace desired state repeats path %q", state.Path)
 		}
 		if !state.Present {
-			if state.Content != nil || state.Mode != 0 || state.MoveFrom != "" {
+			if state.Content != nil || state.Mode != 0 || state.MoveFrom != "" || state.PreserveExisting {
 				return nil, fmt.Errorf("absent workspace path %q contains file authority", state.Path)
 			}
 		} else {
+			if state.PreserveExisting && state.MoveFrom != "" {
+				return nil, fmt.Errorf("workspace path %q cannot preserve and move existing state", state.Path)
+			}
 			if state.Mode&^uint32(0o777) != 0 {
 				return nil, fmt.Errorf("workspace desired file %q has invalid permission bits", state.Path)
 			}
@@ -143,11 +149,6 @@ func validateDesiredFiles(desired []DesiredFile) ([]DesiredFile, error) {
 		targets[state.Path] = index
 		normalized[index] = state
 		normalized[index].Content = append([]byte(nil), state.Content...)
-	}
-	for source := range sources {
-		if targetIndex, exists := targets[source]; exists && normalized[targetIndex].MoveFrom == "" {
-			return nil, fmt.Errorf("workspace move source %q also has independent desired state", source)
-		}
 	}
 	paths := make([]string, 0, len(targets)+len(sources))
 	for target := range targets {

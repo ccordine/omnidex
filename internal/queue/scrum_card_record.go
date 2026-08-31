@@ -57,7 +57,7 @@ func (r *Repository) CreateScrumCard(
 	cardID, title, description, column string,
 	checklist, refFiles json.RawMessage,
 ) (DBScrumCard, error) {
-	title = SanitizeUTF8Text(strings.TrimSpace(title))
+	title = strings.TrimSpace(title)
 	if title == "" {
 		return DBScrumCard{}, fmt.Errorf("title is required")
 	}
@@ -73,8 +73,16 @@ func (r *Repository) CreateScrumCard(
 	if len(refFiles) == 0 {
 		refFiles = json.RawMessage(`[]`)
 	}
-	checklist = SanitizeUTF8Bytes(checklist)
-	refFiles = SanitizeUTF8Bytes(refFiles)
+	for label, value := range map[string]string{
+		"Scrum title": title,
+		"Scrum description": description,
+		"Scrum checklist": string(checklist),
+		"Scrum reference files": string(refFiles),
+	} {
+		if err := validateDatabaseText(label, value); err != nil {
+			return DBScrumCard{}, err
+		}
+	}
 	if err := validateStoredScrumArray("checklist", checklist); err != nil {
 		return DBScrumCard{}, err
 	}
@@ -91,7 +99,7 @@ func (r *Repository) CreateScrumCard(
 		VALUES($1,$2,$3,$4,$5,$6::jsonb,$7::jsonb,
 		 COALESCE((SELECT MAX(board_order) FROM scrum_cards WHERE project_id=$2 AND column_name=$5),-1)+1)
 		RETURNING `+scrumCardSelectColumns,
-		cardID, projectID, title, SanitizeUTF8Text(description), column,
+		cardID, projectID, title, description, column,
 		string(checklist), string(refFiles),
 	))
 	if err != nil {

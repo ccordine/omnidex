@@ -53,9 +53,6 @@ func (adapter *portableObjectiveRepositoryGroundingStation) Answer(
 				func(raw string) (assemblyline.GroundedAnswerParagraphInventory, error) {
 					return assemblyline.DecodeGroundedAnswerParagraphInventory(leafInput, raw)
 				},
-				func(value assemblyline.GroundedAnswerParagraphInventory) error {
-					return value.ValidateFor(leafInput)
-				},
 			)
 		},
 		func(
@@ -72,9 +69,6 @@ func (adapter *portableObjectiveRepositoryGroundingStation) Answer(
 				func(raw string) (assemblyline.GroundedAnswerParagraphEvidenceRelationDecision, error) {
 					return assemblyline.DecodeGroundedAnswerParagraphEvidenceRelationDecision(leafInput, raw)
 				},
-				func(value assemblyline.GroundedAnswerParagraphEvidenceRelationDecision) error {
-					return value.ValidateFor(leafInput)
-				},
 			)
 		},
 		func(
@@ -90,9 +84,6 @@ func (adapter *portableObjectiveRepositoryGroundingStation) Answer(
 				station.GroundedAnswer, resolveModel,
 				func(raw string) (assemblyline.GroundedAnswerParagraphAuthorizationDecision, error) {
 					return assemblyline.DecodeGroundedAnswerParagraphAuthorizationDecision(leafInput, raw)
-				},
-				func(value assemblyline.GroundedAnswerParagraphAuthorizationDecision) error {
-					return value.ValidateFor(leafInput)
 				},
 			)
 		},

@@ -40,8 +40,8 @@ func NewFragmentRepairGuidanceJob(input FragmentRepairGuidanceInput) (PortableJo
 func NewTypeScriptRepairGuidanceJob(
 	input TypeScriptRepairGuidanceInput,
 ) (PortableJob, error) {
-	return newValidatedPortableJob(
-		WorkTypeScriptRepairGuidance, input, input.validate,
+	return newPortableJob(
+		WorkTypeScriptRepairGuidance, input,
 	)
 }
 
@@ -53,9 +53,6 @@ func DecodeTypeScriptRepairGuidanceResult(
 	raw string,
 ) (TypeScriptRepairGuidance, error) {
 	var guidance TypeScriptRepairGuidance
-	if err := job.Validate(); err != nil {
-		return guidance, err
-	}
 	if job.Kind != WorkTypeScriptRepairGuidance {
 		return guidance, fmt.Errorf(
 			"TypeScript repair-guidance result requires work kind %q",

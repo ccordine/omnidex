@@ -85,14 +85,6 @@ func (input FragmentGenerationInput) validate() error {
 	if err := validatePortableFragmentCore(input.Language, input.Signature, input.Capabilities, input.PermittedSymbols); err != nil {
 		return err
 	}
-	if input.PublicInteractionSurface != nil {
-		if input.Language != "typescript" {
-			return fmt.Errorf("public interaction surface requires TypeScript fragment generation")
-		}
-		if err := input.PublicInteractionSurface.Validate(); err != nil {
-			return fmt.Errorf("fragment generation public interaction surface: %w", err)
-		}
-	}
 	if input.Behavior == "" || input.Behavior != strings.TrimSpace(input.Behavior) {
 		return fmt.Errorf("fragment generation behavior is required and must be trimmed")
 	}
@@ -112,17 +104,6 @@ func (input FragmentGenerationInput) validate() error {
 func (input FragmentGenerationInput) ValidatePathFree(
 	provenance ArtifactIdentityProvenance,
 ) error {
-	if input.PublicInteractionSurface != nil {
-		receipt, err := input.PublicInteractionSurface.Render()
-		if err != nil {
-			return fmt.Errorf("render fragment generation public interaction surface: %w", err)
-		}
-		if err := ValidatePathFreeModelContextWithProvenance(
-			"fragment generation public interaction surface", provenance, receipt,
-		); err != nil {
-			return err
-		}
-	}
 	if err := ValidatePathFreeModelContextWithProvenance(
 		"fragment generation behavior", provenance, input.Dialect, input.Behavior,
 	); err != nil {

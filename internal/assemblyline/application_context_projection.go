@@ -18,11 +18,7 @@ func renderApplicationContextModelProjection(
 ) string {
 	var projection strings.Builder
 	fmt.Fprintf(&projection, "%s\n", renderImmutableUserRequestModelProjection(userRequest))
-	fmt.Fprintf(&projection, "WORKSPACE STATE:\n%s\n", context.WorkspaceState)
 	for _, fact := range context.Facts {
-		if fact.Kind == ApplicationContextWorkspaceState {
-			continue
-		}
 		fmt.Fprintf(
 			&projection,
 			"FACT KIND:\n%s\nFACT VALUE:\n%s\n",

@@ -64,14 +64,12 @@ func directCodingProjectVersionTechnicalFormat(
 		}
 		versions[index] = name + " " + version
 	}
-	packagingShape := strings.TrimSpace(stack.TreeDescription)
-	if packagingShape == "" || stack.TreeDescription != packagingShape ||
-		strings.ContainsAny(packagingShape, "\x00\r\n") {
-		return "", fmt.Errorf("project stack %s has an invalid packaging shape", stack.ID)
+	dialect, err := directCodingProjectSourceDialect(profile)
+	if err != nil {
+		return "", err
 	}
 	format := strings.TrimSpace(stack.ConstraintDescription) +
-		"; packaging shape: " + packagingShape +
-		"; source dialect: " + strings.TrimSpace(profile.SourceDialect)
+		"; source dialect: " + dialect
 	if len(versions) > 0 {
 		format += "; qualified versions: " + strings.Join(versions, ", ")
 	}
@@ -100,9 +98,6 @@ func directCodingProjectStackConstraintInput(
 	input := assemblyline.ApplicationProjectStackConstraintInput{
 		UserRequest: redactedRequest, Candidates: candidates,
 	}
-	if _, err := assemblyline.NewApplicationProjectStackConstraintJob(input); err != nil {
-		return assemblyline.ApplicationProjectStackConstraintInput{}, err
-	}
 	return input, nil
 }
 
@@ -111,9 +106,6 @@ func resolveDirectCodingProjectFormatDecision(
 	input assemblyline.ApplicationProjectStackConstraintInput,
 	decision assemblyline.ApplicationProjectStackConstraintDecision,
 ) (directCodingProjectSelection, error) {
-	if err := decision.ValidateFor(input); err != nil {
-		return directCodingProjectSelection{}, err
-	}
 	switch decision.CandidateID {
 	case assemblyline.ApplicationProjectStackUnsupported:
 		return directCodingProjectSelection{}, fmt.Errorf(
@@ -127,9 +119,13 @@ func resolveDirectCodingProjectFormatDecision(
 						"project format candidate %q lost its code-owned mapping", candidate.CandidateID,
 					)
 				}
+					dialect, err := directCodingProjectSourceDialect(formats[index].Profile)
+					if err != nil {
+						return directCodingProjectSelection{}, err
+					}
 					selection := directCodingProjectSelection{
-						Stack: formats[index].Stack, Profile: formats[index].Profile,
-				}
+						Stack: formats[index].Stack, Profile: formats[index].Profile, Dialect: dialect,
+					}
 				return selection, nil
 			}
 		}

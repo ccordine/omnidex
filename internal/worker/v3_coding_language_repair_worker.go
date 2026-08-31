@@ -45,12 +45,6 @@ func runDirectCodingLanguageRepairGuidance(
 		func(raw string) (assemblyline.FragmentRepairGuidance, error) {
 			return assemblyline.DecodeFragmentRepairGuidanceResult(job, raw)
 		},
-		func(candidate assemblyline.FragmentRepairGuidance) error {
-			if err := candidate.Validate(); err != nil {
-				return err
-			}
-			return candidate.ValidatePathFree(runtime.PathProvenance)
-		},
 	)
 	if err != nil {
 		return "", err
@@ -65,9 +59,10 @@ func runDirectCodingLanguageCorrection(
 	current string,
 	instruction string,
 	sourceProjection string,
+	project directCodingLanguageFragmentProjector,
 	validate func(string) (string, error),
 ) (string, error) {
-	if runtime.Context == nil || runtime.Execute == nil || validate == nil {
+	if runtime.Context == nil || runtime.Execute == nil || project == nil || validate == nil {
 		return "", fmt.Errorf("language correction requires execution, projection, and parser boundaries")
 	}
 	job, err := assemblyline.NewSourceProjectedFragmentCorrectionJob(assemblyline.FragmentCorrectionInput{
@@ -94,7 +89,7 @@ func runDirectCodingLanguageCorrection(
 		err = finalizeTypedWorkerResult(runtime, job, result, err)
 		return "", failDirectCodingLanguageCorrection(runtime, modelName, subject, err)
 	}
-	projection, err := projectDirectCodingSourceDeclaration(sourceProjection, result.Candidate)
+	projection, err := project(result.Candidate)
 	if err != nil {
 		err = fmt.Errorf("%w: %v", errDirectCodingLanguageCorrectionInvalid, err)
 		err = finalizeTypedWorkerResult(runtime, job, result, err)

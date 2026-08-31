@@ -102,6 +102,7 @@ func (executor *directCodingLanguageSourceGenerator) repairLanguageBlockWithRunt
 	candidate, err := runDirectCodingLanguageCorrection(
 		runtime, correctionModel, ref.Block.ID,
 		current, strings.TrimSpace(guidance), generation.Language,
+		executor.config.ProjectFragment,
 		func(candidate string) (string, error) {
 			return validator(generation, candidate)
 		},

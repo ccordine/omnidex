@@ -14,9 +14,6 @@ var errPortableResponseMaximumKindMissing = errors.New(
 // candidate sets and correction inheritance are resolved from immutable job
 // payload authority.
 func PortableResponseMaximumBytesForJob(job PortableJob) (int, error) {
-	if err := job.Validate(); err != nil {
-		return 0, err
-	}
 	maximum, err := portableResponseMaximumBytesForValidatedJob(job)
 	if err != nil {
 		return 0, err

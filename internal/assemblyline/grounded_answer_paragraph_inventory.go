@@ -28,8 +28,8 @@ type GroundedAnswerParagraphInventory struct {
 func NewGroundedAnswerParagraphInventoryJob(
 	input GroundedAnswerParagraphInventoryInput,
 ) (PortableJob, error) {
-	return newValidatedPortableJob(
-		WorkGroundedAnswerParagraphInventory, input, input.validate,
+	return newPortableJob(
+		WorkGroundedAnswerParagraphInventory, input,
 	)
 }
 

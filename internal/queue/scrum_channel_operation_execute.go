@@ -2,7 +2,6 @@ package queue
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strconv"
@@ -149,11 +148,9 @@ func (r *Repository) executeScrumChannelEffectTx(
 		if err := lockedMetadata.Validate(); err != nil {
 			return model.Job{}, fmt.Errorf("validate locked Scrum channel metadata: %w", err)
 		}
-		metadataJSON, marshalErr := json.Marshal(lockedMetadata)
-		if marshalErr != nil {
-			return model.Job{}, fmt.Errorf("encode locked Scrum channel metadata: %w", marshalErr)
-		}
-		job, err = r.enqueueScrumJobTx(ctx, tx, effect.Instruction, metadataJSON)
+		job, err = r.enqueueScrumJobTx(
+			ctx, tx, effect.Instruction, command.Request.ProjectID, lockedMetadata,
+		)
 	case ScrumChannelReplanJob:
 		job, err = executeScrumChannelReplanTx(ctx, tx, command)
 	case ScrumChannelSubmitFeedback:

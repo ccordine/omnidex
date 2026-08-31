@@ -21,8 +21,5 @@ func partitionDirectCodingApplicationRequirementCandidate(
 		func(raw string) (assemblyline.ApplicationRequirementCandidatePartition, error) {
 			return assemblyline.DecodeApplicationRequirementCandidatePartition(input, raw)
 		},
-		func(value assemblyline.ApplicationRequirementCandidatePartition) error {
-			return value.ValidateFor(input)
-		},
 	)
 }

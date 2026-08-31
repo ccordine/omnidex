@@ -45,7 +45,7 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*Runtime, 
 		return nil, fmt.Errorf("connect runtime database: %w", err)
 	}
 	repo := queue.New(pool, cfg.ModelAuthority)
-	if err := repo.ResetDatabase(lifecycleContext, database.SetupSQL()); err != nil {
+	if err := repo.InstallDatabase(lifecycleContext, database.SetupSQL()); err != nil {
 		cancel()
 		pool.Close()
 		return nil, fmt.Errorf("install authoritative database setup: %w", err)
@@ -74,7 +74,6 @@ func New(ctx context.Context, cfg config.Config, logger *log.Logger) (*Runtime, 
 	workers, err := worker.New(
 		repo,
 		transports.Stations,
-		transports.Embeddings,
 		nil,
 		worker.Options{
 			WorkerCount:            cfg.WorkerCount,

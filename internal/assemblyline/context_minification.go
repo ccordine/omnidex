@@ -29,7 +29,7 @@ type contextMinificationModelProjection struct {
 }
 
 func NewContextMinificationJob(input ContextMinificationInput) (PortableJob, error) {
-	return newValidatedPortableJob(WorkContextMinification, input, input.validate)
+	return newPortableJob(WorkContextMinification, input)
 }
 
 func (input ContextMinificationInput) validate() error {

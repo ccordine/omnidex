@@ -15,13 +15,12 @@ type ArtifactHandlingInput struct {
 }
 
 type FragmentGenerationInput struct {
-	Language                 string                            `json:"language"`
-	Dialect                  string                            `json:"dialect"`
-	Signature                string                            `json:"signature"`
-	Behavior                 string                            `json:"behavior"`
-	Capabilities             []string                          `json:"capabilities"`
-	PermittedSymbols         []string                          `json:"permitted_symbols"`
-	PublicInteractionSurface *FragmentPublicInteractionSurface `json:"public_interaction_surface,omitempty"`
+	Language         string   `json:"language"`
+	Dialect          string   `json:"dialect"`
+	Signature        string   `json:"signature"`
+	Behavior         string   `json:"behavior"`
+	Capabilities     []string `json:"capabilities"`
+	PermittedSymbols []string `json:"permitted_symbols"`
 }
 
 // FragmentGenerationReplacementInput preserves only the unresolved source
@@ -44,34 +43,26 @@ type FragmentCorrectionInput struct {
 }
 
 func NewApplicationClassificationJob(input ApplicationClassificationInput) (PortableJob, error) {
-	return newValidatedPortableJob(WorkApplicationClassify, input, input.validate)
+	return newPortableJob(WorkApplicationClassify, input)
 }
 
 func NewArtifactHandlingJob(input ArtifactHandlingInput) (PortableJob, error) {
-	return newValidatedPortableJob(WorkArtifactHandling, input, input.validate)
+	return newPortableJob(WorkArtifactHandling, input)
 }
 
 func NewCapabilityRelationJob(input CapabilityRelationInput) (PortableJob, error) {
-	return newValidatedPortableJob(WorkCapabilityRelation, input, input.validate)
-}
-
-func NewRuntimeCapabilityNecessityJob(
-	input RuntimeCapabilityNecessityInput,
-) (PortableJob, error) {
-	return newValidatedPortableJob(
-		WorkRuntimeCapabilityNecessity, input, input.validate,
-	)
+	return newPortableJob(WorkCapabilityRelation, input)
 }
 
 func NewFragmentGenerationJob(input FragmentGenerationInput) (PortableJob, error) {
-	return newValidatedPortableJob(WorkFragmentGeneration, input, input.validate)
+	return newPortableJob(WorkFragmentGeneration, input)
 }
 
 func NewFragmentGenerationReplacementJob(
 	input FragmentGenerationReplacementInput,
 ) (PortableJob, error) {
-	return newValidatedPortableJob(
-		WorkFragmentGenerationReplacement, input, input.validate,
+	return newPortableJob(
+		WorkFragmentGenerationReplacement, input,
 	)
 }
 
@@ -81,7 +72,7 @@ func NewFragmentCorrectionJob(input FragmentCorrectionInput) (PortableJob, error
 			"language-blind fragment correction requires the source-projected constructor",
 		)
 	}
-	return newValidatedPortableJob(WorkFragmentCorrection, input, input.validate)
+	return newPortableJob(WorkFragmentCorrection, input)
 }
 
 // NewSourceProjectedFragmentCorrectionJob binds a language-blind correction
@@ -96,7 +87,7 @@ func NewSourceProjectedFragmentCorrectionJob(
 			"source-projected fragment correction requires one trimmed projection identity",
 		)
 	}
-	job, err := newValidatedPortableJob(WorkFragmentCorrection, input, input.validate)
+	job, err := newPortableJob(WorkFragmentCorrection, input)
 	if err != nil {
 		return PortableJob{}, err
 	}
@@ -104,15 +95,8 @@ func NewSourceProjectedFragmentCorrectionJob(
 	job.ID = portableJobProjectionDigest(
 		job.Schema, job.Kind, job.Payload, job.SourceProjection,
 	)
-	if err := job.Validate(); err != nil {
+	if err := validatePortableJobSourceProjection(job); err != nil {
 		return PortableJob{}, err
 	}
 	return job, nil
-}
-
-func newValidatedPortableJob(kind WorkKind, input any, validate func() error) (PortableJob, error) {
-	if err := validate(); err != nil {
-		return PortableJob{}, err
-	}
-	return newPortableJob(kind, input)
 }

@@ -13,40 +13,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/gryph/omnidex/internal/hostbridge"
-	"github.com/gryph/omnidex/internal/model"
-	"github.com/gryph/omnidex/internal/omni"
 	"github.com/gryph/omnidex/internal/queue"
 )
-
-func (s *Server) handleProjectSurvey(w http.ResponseWriter, r *http.Request, id int64) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	if err := decodeProjectAutoWorkActionRequest(w, r, "project survey"); err != nil {
-		writeError(w, projectRequestErrorStatus(err), err.Error())
-		return
-	}
-	project, err := s.repo.GetProject(r.Context(), id)
-	if err != nil {
-		writeProjectError(w, err)
-		return
-	}
-	project, err = s.initializeProjectState(r.Context(), project)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	summary, err := s.projectSummary(r.Context(), project)
-	if err != nil {
-		writeCommittedProjectMutation(w, project, "summary", err)
-		return
-	}
-	writeJSON(w, http.StatusOK, projectMutationResponse{
-		CommitState: projectMutationCommitted,
-		Project:     summary,
-	})
-}
 
 func splitProjectPath(path string) (id int64, action string) {
 	const prefix = "/v1/projects/"
@@ -92,22 +60,6 @@ func writeProjectError(w http.ResponseWriter, err error) {
 		return
 	}
 	writeError(w, http.StatusInternalServerError, err.Error())
-}
-
-func (s *Server) initializeProjectState(ctx context.Context, project model.Project) (model.Project, error) {
-	if strings.TrimSpace(project.ProjectState) != "" {
-		return project, nil
-	}
-	survey, err := omni.BuildWorksiteSurvey(project.Location)
-	if err != nil {
-		return project, fmt.Errorf("inspect project workspace: %w", err)
-	}
-	state := strings.TrimSpace(survey.ProjectState)
-	if state == "" {
-		return project, nil
-	}
-	patch := model.ProjectPatch{ProjectState: &state}
-	return s.repo.UpdateProjectAtRevision(ctx, project.ID, project.UpdatedAt, patch)
 }
 
 func (s *Server) validateProjectLocation(ctx context.Context, raw string) (string, error) {

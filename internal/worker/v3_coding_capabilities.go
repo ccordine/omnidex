@@ -23,10 +23,10 @@ type directCodingCapabilityPair struct {
 }
 
 type directCodingCapabilityResult struct {
-	Pair     directCodingCapabilityPair
-	Decision assemblyline.CapabilityRelationDecision
+	Pair      directCodingCapabilityPair
+	Decision  assemblyline.CapabilityRelationDecision
 	Discarded bool
-	Err      error
+	Err       error
 }
 
 func (s *directCodingSession) deriveRequirementCapabilities(
@@ -38,9 +38,6 @@ func (s *directCodingSession) deriveRequirementCapabilities(
 	}
 	if len(requirements) == 1 {
 		return directCodingCapabilityGraph{requirements[0].ID: nil}, nil
-	}
-	if err := validateDirectCodingFragmentConcurrency(s.runtime.svc.fragmentConcurrency); err != nil {
-		return nil, err
 	}
 	routing, err := s.runtime.modelRouting()
 	if err != nil {
@@ -98,7 +95,6 @@ func runDirectCodingCapabilityPairs(
 			func(raw string) (assemblyline.CapabilityRelationDecision, error) {
 				return assemblyline.DecodeCapabilityRelationDecision(pair.Input, raw)
 			},
-			func(value assemblyline.CapabilityRelationDecision) error { return value.ValidateFor(pair.Input) },
 		)
 		if isDirectCodingSemanticLeafRejection(err) {
 			results[index] = directCodingCapabilityResult{Pair: pair, Discarded: true}

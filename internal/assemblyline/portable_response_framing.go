@@ -80,8 +80,7 @@ func PortableResponseFramingForWorkKind(
 		WorkDatabaseJoinPathSelection,
 		WorkWebRelevanceRelation,
 		WorkArtifactHandling,
-		WorkCapabilityRelation,
-		WorkRuntimeCapabilityNecessity:
+		WorkCapabilityRelation:
 		return PortableResponseFramingSingleLine, nil
 	default:
 		return "", fmt.Errorf("portable work kind %q has no registered response framing", kind)
@@ -91,8 +90,5 @@ func PortableResponseFramingForWorkKind(
 // PortableResponseFramingForJob returns only a provider-actionable framing
 // value for one validated job.
 func PortableResponseFramingForJob(job PortableJob) (PortableResponseFraming, error) {
-	if err := job.Validate(); err != nil {
-		return "", err
-	}
 	return PortableResponseFramingForWorkKind(job.Kind)
 }

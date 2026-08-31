@@ -16,14 +16,17 @@ func (s *directCodingSession) ApplyAndVerify(
 		return fmt.Errorf("apply direct-coding workspace mutation requires one prepared transaction")
 	}
 	result, err := prepared.reconciliation.ApplyVerified(s.runtime.ctx)
-	if err != nil {
-		return err
-	}
 	prepared.result = result
 	for _, warning := range result.Warnings {
 		s.runtime.svc.logf("workspace mutation cleanup warning: %s", warning)
 	}
 	s.recordPreparedWorkspaceMutation(prepared)
+	if err != nil {
+		return fmt.Errorf(
+			"workspace reconciliation stopped after %d applied changes: %w",
+			len(result.Changes), err,
+		)
+	}
 	return nil
 }
 

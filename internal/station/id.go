@@ -23,7 +23,6 @@ const (
 	CodingProjectStackConstraint                  ID = "coding_project_stack_constraint"
 	CodingArtifactHandling                        ID = "coding_artifact_handling"
 	CodingCapabilityRelation                      ID = "coding_capability_relation"
-	CodingRuntimeCapabilityNecessity              ID = "coding_runtime_capability_necessity"
 	CodingFragment                                ID = "coding_fragment"
 	CodingFragmentRepairGuidance                  ID = "coding_fragment_repair_guidance"
 	CodingFragmentCorrection                      ID = "coding_fragment_correction"
@@ -46,7 +45,6 @@ var registered = [...]ID{
 	CodingProjectStackConstraint,
 	CodingArtifactHandling,
 	CodingCapabilityRelation,
-	CodingRuntimeCapabilityNecessity,
 	CodingFragment,
 	CodingFragmentRepairGuidance,
 	CodingFragmentCorrection,

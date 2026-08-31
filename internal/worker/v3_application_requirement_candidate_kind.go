@@ -65,8 +65,5 @@ func classifyDirectCodingApplicationRequirementCandidateContentPresence(
 		func(raw string) (assemblyline.ApplicationRequirementCandidateContentPresenceResult, error) {
 			return assemblyline.DecodeApplicationRequirementCandidateContentPresenceResult(input, raw)
 		},
-		func(value assemblyline.ApplicationRequirementCandidateContentPresenceResult) error {
-			return value.ValidateFor(input)
-		},
 	)
 }

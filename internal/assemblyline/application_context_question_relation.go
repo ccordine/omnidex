@@ -34,8 +34,8 @@ type ApplicationContextQuestionRelationResult struct {
 func NewApplicationContextQuestionRelationJob(
 	input ApplicationContextQuestionRelationInput,
 ) (PortableJob, error) {
-	return newValidatedPortableJob(
-		WorkApplicationContextQuestionRelation, input, input.validate,
+	return newPortableJob(
+		WorkApplicationContextQuestionRelation, input,
 	)
 }
 

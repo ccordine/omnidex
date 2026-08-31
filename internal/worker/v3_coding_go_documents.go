@@ -14,10 +14,7 @@ func genericGoCommandLineDocuments(
 	capabilities directCodingCapabilityGraph,
 	coverage assemblyline.ApplicationFileCoveragePlan,
 ) ([]assemblyline.SourceDocument, error) {
-	runtimeDocument, err := goCommandLineRuntimeDocument(nil)
-	if err != nil {
-		return nil, err
-	}
+	runtimeDocument := goCommandLineRuntimeDocument()
 	implementations := make([]assemblyline.SourceDocument, 0, len(specification.Requirements))
 	implementationByPath := make(map[string]int, len(specification.Requirements))
 	applicationDependencies := []string{"runtime.api"}

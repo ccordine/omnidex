@@ -38,10 +38,9 @@ type ApplicationRequirementCandidatePartition struct {
 func NewApplicationRequirementCandidatePartitionJob(
 	input ApplicationRequirementCandidatePartitionInput,
 ) (PortableJob, error) {
-	return newValidatedPortableJob(
+	return newPortableJob(
 		WorkApplicationRequirementCandidatePartition,
 		input,
-		input.validate,
 	)
 }
 

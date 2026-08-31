@@ -54,7 +54,7 @@ type DatabaseQueryPurposeInventory struct {
 func NewDatabaseQueryPurposeInventoryJob(
 	input DatabaseQueryPurposeAuthority,
 ) (PortableJob, error) {
-	return newValidatedPortableJob(WorkDatabaseQueryPurposeInventory, input, input.validate)
+	return newPortableJob(WorkDatabaseQueryPurposeInventory, input)
 }
 
 func (input DatabaseQueryPurposeAuthority) validate() error {

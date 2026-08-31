@@ -10,7 +10,6 @@ const (
 	WorkApplicationClassify                      WorkKind = "application_classification"
 	WorkArtifactHandling                         WorkKind = "artifact_handling"
 	WorkCapabilityRelation                       WorkKind = "capability_relation"
-	WorkRuntimeCapabilityNecessity               WorkKind = "runtime_capability_necessity"
 	WorkTypeScriptRepairGuidance                 WorkKind = "typescript_repair_guidance"
 	WorkFragmentGeneration                       WorkKind = "fragment_generation"
 	WorkFragmentGenerationReplacement            WorkKind = "fragment_generation_replacement"
@@ -66,7 +65,7 @@ func validWorkKind(kind WorkKind) bool {
 		WorkDatabaseJoinPathSelection,
 		WorkWebRelevanceRelation,
 		WorkArtifactHandling,
-		WorkCapabilityRelation, WorkRuntimeCapabilityNecessity,
+		WorkCapabilityRelation,
 		WorkTypeScriptRepairGuidance,
 		WorkFragmentGeneration, WorkFragmentGenerationReplacement,
 		WorkFragmentModification, WorkFragmentCorrection:
@@ -126,7 +125,7 @@ func AllWorkKinds() []WorkKind {
 		WorkDatabaseJoinPathSelection,
 		WorkWebRelevanceRelation,
 		WorkArtifactHandling,
-		WorkCapabilityRelation, WorkRuntimeCapabilityNecessity,
+		WorkCapabilityRelation,
 		WorkTypeScriptRepairGuidance,
 		WorkFragmentGeneration, WorkFragmentGenerationReplacement,
 		WorkFragmentModification, WorkFragmentCorrection,

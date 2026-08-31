@@ -60,33 +60,15 @@ type PreparedGeneration struct {
 }
 
 func (usage ProviderGenerationUsage) ValidateSuccessful() error {
-	if err := usage.Validate(); err != nil {
-		return err
-	}
-	if usage.PromptEvalCount <= 0 || usage.EvalCount <= 0 ||
-		usage.TotalDurationNanos <= 0 || usage.PromptEvalDurationNanos <= 0 ||
-		usage.EvalDurationNanos <= 0 {
-		return fmt.Errorf("successful exact generation requires positive native counts and durations")
-	}
-	remaining := usage.TotalDurationNanos
-	for _, component := range []int64{
-		usage.LoadDurationNanos,
-		usage.PromptEvalDurationNanos,
-		usage.EvalDurationNanos,
-	} {
-		if component > remaining {
-			return fmt.Errorf("exact generation total duration is smaller than its native components")
-		}
-		remaining -= component
+	if usage.PromptEvalCount <= 0 || usage.EvalCount <= 0 {
+		return fmt.Errorf("successful exact generation requires positive native token counts")
 	}
 	return nil
 }
 
 func (usage ProviderGenerationUsage) Validate() error {
-	if usage.PromptEvalCount < 0 || usage.EvalCount < 0 ||
-		usage.TotalDurationNanos < 0 || usage.LoadDurationNanos < 0 ||
-		usage.PromptEvalDurationNanos < 0 || usage.EvalDurationNanos < 0 {
-		return fmt.Errorf("exact prepared provider usage cannot be negative")
+	if usage.PromptEvalCount < 0 || usage.EvalCount < 0 {
+		return fmt.Errorf("exact prepared provider token counts cannot be negative")
 	}
 	return nil
 }
@@ -235,17 +217,5 @@ func registeredProviderResponseDisposition(value ProviderResponseDisposition) bo
 // ExactPreparedContractClient is an explicit provider capability. Cognition
 // policy must reject providers that cannot enforce every PreparedModel field.
 type ExactPreparedContractClient interface {
-	RequireExactPreparedContract() error
-	ValidateExactPreparedContract(PreparedModel) error
 	GeneratePreparedExact(context.Context, PreparedModel) (PreparedGeneration, error)
-}
-
-func RequireExactPreparedContract(client ExactPreparedContractClient) (ExactPreparedContractClient, error) {
-	if client == nil {
-		return nil, fmt.Errorf("configured generation provider does not enforce the exact prepared contract")
-	}
-	if err := client.RequireExactPreparedContract(); err != nil {
-		return nil, err
-	}
-	return client, nil
 }

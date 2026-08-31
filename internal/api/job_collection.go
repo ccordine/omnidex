@@ -1,7 +1,6 @@
 package api
 
 import (
-	"errors"
 	"fmt"
 	"net/http"
 
@@ -35,31 +34,13 @@ func (s *Server) enqueueJob(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadGateway, fmt.Sprintf("model setup failed: %v", err))
 		return
 	}
-	job, err := s.repo.EnqueueJob(r.Context(), request.Instruction, request.Pipeline, metadata)
+	job, err := s.repo.EnqueueCodingJob(r.Context(), request.Instruction, metadata)
 	if err != nil {
-		status := http.StatusInternalServerError
-		if errors.Is(err, queue.ErrUnsupportedPipeline) {
-			status = http.StatusBadRequest
-		}
-		writeError(w, status, err.Error())
+		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	s.publishJobProgress(job.ID, realtimeJobQueued, "Job queued")
 	writeJSON(w, http.StatusCreated, map[string]any{"job": job})
-}
-
-func validateGenericJobPipeline(pipeline string) error {
-	switch pipeline {
-	case model.PipelineCoding:
-		return nil
-	case model.PipelineChat:
-		return fmt.Errorf(
-			"pipeline %q requires the server-authoritative /v1/channels/{id}/messages transport",
-			pipeline,
-		)
-	default:
-		return fmt.Errorf("generic job pipeline %q is unsupported; expected coding", pipeline)
-	}
 }
 
 func (s *Server) listJobs(w http.ResponseWriter, r *http.Request) {

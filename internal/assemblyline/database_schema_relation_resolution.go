@@ -16,10 +16,9 @@ type DatabaseSchemaRelationResolutionResult struct {
 func NewDatabaseSchemaRelationResolutionJob(
 	input DatabaseSchemaRelationResolutionInput,
 ) (PortableJob, error) {
-	return newValidatedPortableJob(
+	return newPortableJob(
 		WorkDatabaseSchemaRelationResolution,
 		input,
-		input.validate,
 	)
 }
 

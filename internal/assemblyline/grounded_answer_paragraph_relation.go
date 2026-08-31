@@ -9,8 +9,8 @@ import (
 func NewGroundedAnswerParagraphEvidenceRelationJob(
 	input GroundedAnswerParagraphEvidenceRelationInput,
 ) (PortableJob, error) {
-	return newValidatedPortableJob(
-		WorkGroundedAnswerParagraphEvidenceRelation, input, input.validate,
+	return newPortableJob(
+		WorkGroundedAnswerParagraphEvidenceRelation, input,
 	)
 }
 

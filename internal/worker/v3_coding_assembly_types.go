@@ -14,8 +14,9 @@ type directCodingFileTask struct {
 }
 
 type directCodingAssembly struct {
-	Files       []directCodingFileTask
-	DeletePaths []string
+	Files         []directCodingFileTask
+	RequiredPaths []string
+	DeletePaths   []string
 }
 
 func requireExactDirectCodingPath(raw string) (string, error) {

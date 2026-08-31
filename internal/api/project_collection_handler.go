@@ -72,11 +72,6 @@ func (s *Server) handleProjectCreate(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	project, err = s.initializeProjectState(r.Context(), project)
-	if err != nil {
-		writeCommittedProjectMutation(w, project, "state survey", err)
-		return
-	}
 	summary, err := s.projectSummary(r.Context(), project)
 	if err != nil {
 		writeCommittedProjectMutation(w, project, "summary", err)

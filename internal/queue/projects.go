@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/jackc/pgx/v5"
@@ -24,7 +25,7 @@ func scanProject(row pgx.Row) (model.Project, error) {
 	var settings []byte
 	err := row.Scan(
 		&project.ID, &project.Location, &project.Name, &project.Description,
-		&project.ProjectState, &settings,
+		&settings,
 		&project.LastSeenAt, &project.CreatedAt, &project.UpdatedAt,
 	)
 	if err != nil {
@@ -35,7 +36,7 @@ func scanProject(row pgx.Row) (model.Project, error) {
 }
 
 const projectSelectColumns = `
-	id, location, name, description, project_state, settings,
+	id, location, name, description, settings,
 	last_seen_at, created_at, updated_at
 `
 
@@ -101,8 +102,14 @@ func (r *Repository) CreateProject(
 	if name == "" {
 		name = projectNameFromLocation(location)
 	}
-	name = SanitizeUTF8Text(name)
-	description = SanitizeUTF8Text(strings.TrimSpace(description))
+	description = strings.TrimSpace(description)
+	for label, value := range map[string]string{
+		"project name": name, "project location": location, "project description": description,
+	} {
+		if err := validateDatabaseText(label, value); err != nil {
+			return model.Project{}, err
+		}
+	}
 	return scanProject(r.pool.QueryRow(ctx, `
 		INSERT INTO projects(location,name,description,last_seen_at)
 		VALUES($1,$2,$3,NOW()) RETURNING `+projectSelectColumns,
@@ -143,27 +150,29 @@ func (r *Repository) UpdateProjectAtRevision(
 	if patch.Description != nil {
 		current.Description = *patch.Description
 	}
-	if patch.ProjectState != nil {
-		current.ProjectState = strings.TrimSpace(*patch.ProjectState)
-	}
 	if patch.Settings != nil {
 		current.Settings = *patch.Settings
 	}
 	if err := validateProjectSettings(current.Settings); err != nil {
 		return model.Project{}, err
 	}
-	current.Name = SanitizeUTF8Text(current.Name)
-	current.Location = SanitizeUTF8Text(current.Location)
-	current.Description = SanitizeUTF8Text(current.Description)
-	current.ProjectState = SanitizeUTF8Text(current.ProjectState)
-	current.Settings = SanitizeUTF8Bytes(current.Settings)
+	for label, value := range map[string]string{
+		"project name": current.Name,
+		"project location": current.Location,
+		"project description": current.Description,
+		"project settings": string(current.Settings),
+	} {
+		if err := validateDatabaseText(label, value); err != nil {
+			return model.Project{}, err
+		}
+	}
 	updated, err := scanProject(tx.QueryRow(ctx, `
 		UPDATE projects SET name=$2,location=$3,description=$4,
-		 project_state=$5,settings=$6::jsonb,
+			 settings=$5::jsonb,
 		 updated_at=GREATEST(clock_timestamp(),updated_at+interval '1 microsecond')
-		WHERE id=$1 AND updated_at=$7 RETURNING `+projectSelectColumns,
+		WHERE id=$1 AND updated_at=$6 RETURNING `+projectSelectColumns,
 		id, current.Name, current.Location, current.Description,
-		current.ProjectState, string(current.Settings), expectedUpdatedAt,
+		string(current.Settings), expectedUpdatedAt,
 	))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return model.Project{}, fmt.Errorf("%w: project %d changed during mutation", ErrProjectVersionConflict, id)
@@ -175,6 +184,13 @@ func (r *Repository) UpdateProjectAtRevision(
 		return model.Project{}, fmt.Errorf("commit revision-bound project update: %w", err)
 	}
 	return updated, nil
+}
+
+func validateDatabaseText(label, value string) error {
+	if !utf8.ValidString(value) || strings.ContainsRune(value, '\x00') {
+		return fmt.Errorf("%s must be valid UTF-8 without NUL", label)
+	}
+	return nil
 }
 
 func (r *Repository) DeleteProjectAtRevision(ctx context.Context, id int64, expectedUpdatedAt time.Time) error {

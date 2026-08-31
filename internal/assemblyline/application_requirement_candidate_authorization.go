@@ -31,10 +31,9 @@ type ApplicationRequirementCandidateAuthorizationResult struct {
 func NewApplicationRequirementCandidateAuthorizationJob(
 	input ApplicationRequirementCandidateAuthorizationInput,
 ) (PortableJob, error) {
-	return newValidatedPortableJob(
+	return newPortableJob(
 		WorkApplicationRequirementCandidateAuthorization,
 		input,
-		input.validate,
 	)
 }
 

@@ -32,10 +32,9 @@ type ApplicationContextQuestionNecessityResult struct {
 func NewApplicationContextQuestionNecessityJob(
 	input ApplicationContextQuestionNecessityInput,
 ) (PortableJob, error) {
-	return newValidatedPortableJob(
+	return newPortableJob(
 		WorkApplicationContextQuestionNecessity,
 		input,
-		input.validate,
 	)
 }
 
@@ -158,7 +157,6 @@ func validateApplicationContextExtension(
 		return err
 	}
 	if current.Schema != initial.Schema ||
-		current.WorkspaceState != initial.WorkspaceState ||
 		current.RequestSHA256 != initial.RequestSHA256 ||
 		len(current.Facts) < len(initial.Facts) {
 		return fmt.Errorf("current application context is not an extension of inventory authority")

@@ -11,11 +11,7 @@ import (
 	"github.com/gryph/omnidex/internal/modelconfig"
 )
 
-const JobMetadataSource = "omni-scrum"
-
 type JobMetadata struct {
-	Source             string             `json:"source"`
-	ProjectID          int64              `json:"project_id"`
 	CardID             string             `json:"scrum_card_id"`
 	CardTitle          string             `json:"scrum_card_title"`
 	CardDescription    string             `json:"scrum_card_description"`
@@ -28,12 +24,6 @@ type JobMetadata struct {
 }
 
 func (metadata JobMetadata) Validate() error {
-	if metadata.Source != JobMetadataSource {
-		return fmt.Errorf("Scrum job source must be exactly %q", JobMetadataSource)
-	}
-	if metadata.ProjectID <= 0 {
-		return fmt.Errorf("Scrum job requires a positive project_id")
-	}
 	for name, value := range map[string]string{
 		"scrum_card_id": metadata.CardID, "scrum_card_title": metadata.CardTitle,
 		"scrum_card_description": metadata.CardDescription, "scrum_checklist": metadata.Checklist,
@@ -92,7 +82,7 @@ func DecodeJobMetadata(raw json.RawMessage) (JobMetadata, error) {
 		return JobMetadata{}, fmt.Errorf("decode Scrum job metadata fields: %w", err)
 	}
 	for _, key := range []string{
-		"source", "project_id", "scrum_card_id", "scrum_card_title",
+		"scrum_card_id", "scrum_card_title",
 		"scrum_card_description", "scrum_checklist", "scrum_test_criteria",
 		"scrum_return_column", "scrum_channel_origin", "model_config",
 		"scrum_channel_operation_id",

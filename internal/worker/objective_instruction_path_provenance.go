@@ -3,6 +3,7 @@ package worker
 import (
 	"context"
 	"fmt"
+	"os"
 	"path"
 	"path/filepath"
 
@@ -23,11 +24,13 @@ func objectiveInstructionPathProvenance(
 			"objective instruction path provenance requires a context",
 		)
 	}
-	if root == "" || !filepath.IsAbs(root) || filepath.Clean(root) != root {
+	workspaceRoot, err := os.OpenRoot(root)
+	if err != nil {
 		return assemblyline.ArtifactIdentityProvenance{}, fmt.Errorf(
-			"objective instruction path provenance root must be absolute",
+			"open objective workspace root: %w", err,
 		)
 	}
+	defer workspaceRoot.Close()
 	selected := make(map[string]struct{})
 	for _, identity := range modelcontext.PathIdentities(
 		instruction, assemblyline.ArtifactIdentityProvenance{},
@@ -41,13 +44,16 @@ func objectiveInstructionPathProvenance(
 		if err := ctx.Err(); err != nil {
 			return assemblyline.ArtifactIdentityProvenance{}, err
 		}
-		if _, _, recognized, err := recognizeDirectCodingArtifactAdapterForPath(token.Value); err != nil {
+		_, _, recognized, err := recognizeDirectCodingArtifactAdapterForPath(token.Value)
+		if err != nil {
 			return assemblyline.ArtifactIdentityProvenance{}, err
-		} else if !recognized {
-			continue
 		}
 		relative, err := objectiveRelativeArtifactPath(root, token.Value)
-		if err == nil {
+		if err != nil {
+			continue
+		}
+		_, statErr := workspaceRoot.Lstat(relative)
+		if recognized || token.Quoted || statErr == nil {
 			selected[relative] = struct{}{}
 		}
 	}

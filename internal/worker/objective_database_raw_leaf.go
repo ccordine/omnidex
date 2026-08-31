@@ -31,7 +31,6 @@ func (adapter portableObjectiveDatabaseStations) rawLeafCall(
 		value, receipt, err := runObjectivePortableRawLeafStation[any](
 			ctx, adapter.runtime, subject, job, owner, resolveModel,
 			objectiveRawLeafDecoder[any](decode),
-			func(any) error { return nil },
 		)
 		if err != nil {
 			return value, receipt.Calls, err

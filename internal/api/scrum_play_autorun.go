@@ -132,16 +132,15 @@ func (s *Server) refreshScrumPlayQueueForJob(ctx context.Context, jobID int64) e
 	default:
 		return nil
 	}
-	ref, err := parseScrumJobReference(details.Job.Metadata)
-	if err != nil {
-		return fmt.Errorf("job %d metadata: %w", jobID, err)
-	}
-	if !ref.IsScrum {
+	if details.Job.Pipeline != model.PipelineScrum {
 		return nil
 	}
-	projectID, err := s.authoritativeScrumJobProjectID(ctx, jobID, ref)
+	projectID, err := s.repo.JobProjectID(ctx, jobID)
 	if err != nil {
-		return err
+		return fmt.Errorf("load project authority for Scrum job %d: %w", jobID, err)
+	}
+	if projectID <= 0 {
+		return fmt.Errorf("Scrum job %d is missing its durable project authority", jobID)
 	}
 	return s.refreshScrumPlayQueueForProject(ctx, projectID, "job finished")
 }

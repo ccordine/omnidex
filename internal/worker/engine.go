@@ -31,7 +31,6 @@ type Options struct {
 
 type Service struct {
 	repo                   *queue.Repository
-	embeddings             llm.EmbeddingClient
 	stationClient          llm.ExactStationClient
 	webSearch              *websearch.Service
 	workerCount            int
@@ -46,7 +45,6 @@ type Service struct {
 func New(
 	repo *queue.Repository,
 	stationClient llm.ExactStationClient,
-	embeddings llm.EmbeddingClient,
 	webSearch *websearch.Service,
 	opts Options,
 ) (*Service, error) {
@@ -60,7 +58,6 @@ func New(
 	}
 	svc := &Service{
 		repo:                   repo,
-		embeddings:             embeddings,
 		stationClient:          stationClient,
 		webSearch:              webSearch,
 		workerCount:            opts.WorkerCount,

@@ -30,10 +30,9 @@ type RepositoryRequirementCandidateRelationResult struct {
 func NewRepositoryRequirementCandidateRelationJob(
 	input RepositoryRequirementCandidateRelationInput,
 ) (PortableJob, error) {
-	return newValidatedPortableJob(
+	return newPortableJob(
 		WorkRepositoryRequirementCandidateRelation,
 		input,
-		input.validate,
 	)
 }
 

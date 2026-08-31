@@ -167,6 +167,5 @@ func classifyApplicationSurface(
 		func(raw string) (assemblyline.ApplicationClassification, error) {
 			return assemblyline.DecodeApplicationClassification(jobInput, raw)
 		},
-		func(value assemblyline.ApplicationClassification) error { return value.Validate() },
 	)
 }

@@ -4,7 +4,6 @@ import (
 	"errors"
 	"time"
 
-	"github.com/gryph/omnidex/internal/artifacts"
 	"github.com/gryph/omnidex/internal/evidence"
 )
 
@@ -17,7 +16,6 @@ type JobHistoryStream string
 const (
 	JobHistoryGenerations JobHistoryStream = "generations"
 	JobHistorySteps       JobHistoryStream = "steps"
-	JobHistoryArtifacts   JobHistoryStream = "artifacts"
 	JobHistoryEvidence    JobHistoryStream = "evidence"
 )
 
@@ -57,12 +55,6 @@ type HistoricalStep struct {
 	UpdatedAt  time.Time  `json:"updated_at"`
 }
 
-type HistoricalArtifact struct {
-	Artifact artifacts.Envelope      `json:"artifact"`
-	Step     HistoricalStepReference `json:"step"`
-	cursorID int64
-}
-
 type HistoricalEvidence struct {
 	Evidence evidence.Record         `json:"evidence"`
 	Step     HistoricalStepReference `json:"step"`
@@ -73,7 +65,6 @@ type JobHistoryPage struct {
 	Stream      JobHistoryStream       `json:"stream"`
 	Generations []JobGenerationHistory `json:"generations,omitempty"`
 	Steps       []HistoricalStep       `json:"steps,omitempty"`
-	Artifacts   []HistoricalArtifact   `json:"artifacts,omitempty"`
 	Evidence    []HistoricalEvidence   `json:"evidence,omitempty"`
 	NextCursor  string                 `json:"next_cursor,omitempty"`
 }

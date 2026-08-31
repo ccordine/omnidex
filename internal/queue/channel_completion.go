@@ -59,12 +59,28 @@ func channelBindingForJob(job model.Job) (channelCompletionBinding, bool, error)
 	if !hasChannel || !hasMessage {
 		return channelCompletionBinding{}, false, fmt.Errorf("channel completion metadata is incomplete")
 	}
-	var metadataBinding channelTurnMetadata
+	var metadataBinding struct {
+		ChannelID                       model.ChannelID                   `json:"channel_id"`
+		ChannelUserMessageID            int64                             `json:"channel_user_message_id"`
+		ChannelMode                     model.ChannelMode                 `json:"channel_mode"`
+		RoleplayViewpointCharacterID    model.RoleplayCharacterID         `json:"roleplay_viewpoint_character_id"`
+		RoleplaySimulationPreparationID string                            `json:"roleplay_simulation_preparation_id"`
+		RoleplaySceneRevision           int64                             `json:"roleplay_scene_revision"`
+		RoleplayParticipantCharacterIDs []model.RoleplayCharacterID       `json:"roleplay_participant_character_ids"`
+		RoleplayResponders              []roleplay.SimulationResponderRoute `json:"roleplay_responders"`
+		RoleplayUserTurn                *roleplay.UserTurnAuthority       `json:"roleplay_user_turn"`
+	}
 	if err := json.Unmarshal(job.Metadata, &metadataBinding); err != nil {
 		return channelCompletionBinding{}, false, fmt.Errorf("decode exact channel completion binding: %w", err)
 	}
-	if err := validateChannelTurnMetadata(metadataBinding); err != nil {
-		return channelCompletionBinding{}, false, fmt.Errorf("channel completion metadata: %w", err)
+	if err := metadataBinding.ChannelID.Validate(); err != nil {
+		return channelCompletionBinding{}, false, fmt.Errorf("channel completion ID: %w", err)
+	}
+	if metadataBinding.ChannelUserMessageID < 1 {
+		return channelCompletionBinding{}, false, fmt.Errorf("channel completion message ID is absent")
+	}
+	if err := metadataBinding.ChannelMode.Validate(); err != nil {
+		return channelCompletionBinding{}, false, fmt.Errorf("channel completion mode: %w", err)
 	}
 	if job.Pipeline != model.PipelineChat {
 		return channelCompletionBinding{}, false, fmt.Errorf("channel completion metadata requires chat pipeline")

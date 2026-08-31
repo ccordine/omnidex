@@ -1,7 +1,6 @@
 package api
 
 import (
-	"encoding/json"
 	"net/http"
 	"strings"
 	"time"
@@ -18,8 +17,6 @@ type uiDataComponent struct {
 	SourceHasMore     bool              `json:"source_has_more"`
 	ChannelOffset     int               `json:"channel_offset"`
 	ChannelHasMore    bool              `json:"channel_has_more"`
-	MessageOffset     int               `json:"message_offset"`
-	MessageHasMore    bool              `json:"message_has_more"`
 }
 
 func (s *Server) handleUIDataComponent(w http.ResponseWriter, r *http.Request) {
@@ -88,26 +85,12 @@ func (s *Server) handleUIDataComponent(w http.ResponseWriter, r *http.Request) {
 	if !channelOK && len(channelPage.Items) > 0 {
 		selectedChannel, channelID, channelOK = channelPage.Items[0], channelPage.Items[0].ID, true
 	}
-	messageRequest, err := fixedDataSourcePageRequest(r, "message_offset", dataSourceUIPageSize)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	messagePage := queue.DataSourceChannelMessagePage{Items: []model.DataSourceChannelMessage{}, Offset: messageRequest.Offset}
-	if channelOK {
-		messagePage, err = s.repo.ListDataSourceChannelMessagePage(r.Context(), channelID, messageRequest)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
-			return
-		}
-	}
-	body := renderUIDataPanel(sourcePage, selected, selectedOK, channelPage, selectedChannel, channelOK, messagePage)
+	body := renderUIDataPanel(sourcePage, selected, selectedOK, channelPage, selectedChannel)
 	writeChatComponentJSON(w, uiDataComponent{
 		HTML:             chatComponentHTML{Bundle: renderRecyclrTemplateHTML("data-panel", body, "innerHTML")},
 		SelectedSourceID: sourceID, SelectedChannelID: channelID,
 		SourceOffset: sourcePage.Offset, SourceHasMore: sourcePage.HasMore,
 		ChannelOffset: channelPage.Offset, ChannelHasMore: channelPage.HasMore,
-		MessageOffset: messagePage.Offset, MessageHasMore: messagePage.HasMore,
 	})
 }
 
@@ -120,12 +103,10 @@ func findUIDataChannel(items []model.DataSourceChannel, id string) (model.DataSo
 	return model.DataSourceChannel{}, false
 }
 
-func renderUIDataPanel(sources queue.DataSourcePage, selected queue.DataSourceRecord, hasSource bool, channels queue.DataSourceChannelPage, channel model.DataSourceChannel, hasChannel bool, messages queue.DataSourceChannelMessagePage) string {
-	return `<div class="grid h-full min-h-0 gap-0 lg:grid-cols-[220px_220px_minmax(0,1fr)]">` +
+func renderUIDataPanel(sources queue.DataSourcePage, selected queue.DataSourceRecord, hasSource bool, channels queue.DataSourceChannelPage, channel model.DataSourceChannel) string {
+	return `<div class="grid h-full min-h-0 gap-0 lg:grid-cols-[minmax(220px,1fr)_minmax(220px,1fr)]">` +
 		`<aside class="border-b border-white/10 lg:border-b-0 lg:border-r"><div class="border-b border-white/10 px-3 py-2 text-[11px] font-semibold uppercase tracking-[.18em] text-zinc-500">Databases</div><div class="scrollbar max-h-[220px] overflow-y-auto">` + renderUIDataSourceButtons(sources.Items, selected.ID) + `</div>` + renderUIDataPagination("data#loadDataPage", "source", sources.Offset, len(sources.Items), sources.HasMore) + `</aside>` +
-		`<aside class="border-b border-white/10 lg:border-b-0 lg:border-r"><div class="border-b border-white/10 px-3 py-2 text-[11px] font-semibold uppercase tracking-[.18em] text-zinc-500">Channels</div><div class="scrollbar p-3">` + renderUIDataChannelButtons(channels.Items, channel.ID, hasSource) + renderUIDataPagination("data#loadDataPage", "channel", channels.Offset, len(channels.Items), channels.HasMore) + `</div></aside>` +
-		`<section class="flex min-h-0 flex-col"><header class="border-b border-white/10 px-4 py-3"><h3 class="text-sm font-semibold text-zinc-100">` + uiEscape(uiDataTitle(selected, channel, hasChannel)) + `</h3><p class="mt-1 text-xs text-zinc-500">Stored server-authoritative data channel history. Natural-language data inference is unavailable.</p></header>` +
-		`<div data-data-target="messageList" class="scrollbar flex-1 space-y-3 overflow-y-auto p-4">` + renderUIDataPagination("data#loadDataPage", "message", messages.Offset, len(messages.Items), messages.HasMore) + renderUIDataMessages(messages.Items, hasChannel) + `</div></section></div>`
+		`<aside class="border-b border-white/10 lg:border-b-0"><div class="border-b border-white/10 px-3 py-2 text-[11px] font-semibold uppercase tracking-[.18em] text-zinc-500">Channels</div><div class="scrollbar p-3">` + renderUIDataChannelButtons(channels.Items, channel.ID, hasSource) + renderUIDataPagination("data#loadDataPage", "channel", channels.Offset, len(channels.Items), channels.HasMore) + `</div></aside></div>`
 }
 
 func renderUIDataSourceButtons(items []queue.DataSourceRecord, selectedID string) string {
@@ -161,53 +142,4 @@ func renderUIDataChannelButtons(items []model.DataSourceChannel, selectedID stri
 	}
 	body.WriteString(`</div><button type="button" data-action="data#createChannel" class="mt-3 w-full rounded-md border border-dashed border-cyan-300/30 px-2 py-2 text-xs font-semibold text-cyan-100">+ New channel</button>`)
 	return body.String()
-}
-
-func renderUIDataMessages(items []model.DataSourceChannelMessage, hasChannel bool) string {
-	if !hasChannel {
-		return `<p class="text-sm text-zinc-500">Select or create a channel.</p>`
-	}
-	if len(items) == 0 {
-		return `<p class="text-sm text-zinc-500">No stored messages.</p>`
-	}
-	var body strings.Builder
-	for _, message := range items {
-		alignment, color := "justify-start", "border-white/10 bg-zinc-900/70"
-		if message.Role == "user" {
-			alignment, color = "justify-end", "border-cyan-300/20 bg-cyan-300/10"
-		}
-		body.WriteString(`<article class="flex ` + alignment + `"><div class="max-w-[92%] rounded-xl border ` + color + ` px-3 py-2"><div class="whitespace-pre-wrap text-sm leading-6">` + uiEscape(message.Content) + `</div>` + renderUIDataMessagePayload(message.Payload) + `<div class="mt-1 text-[10px] text-zinc-600">` + uiEscape(message.CreatedAt.UTC().Format(time.RFC3339)) + `</div></div></article>`)
-	}
-	return body.String()
-}
-
-func renderUIDataMessagePayload(raw json.RawMessage) string {
-	if len(raw) == 0 {
-		return ""
-	}
-	var payload struct {
-		Query struct {
-			SQL     string           `json:"sql"`
-			Columns []string         `json:"columns"`
-			Rows    []map[string]any `json:"rows"`
-			Count   int              `json:"count"`
-		} `json:"query"`
-	}
-	if err := json.Unmarshal(raw, &payload); err != nil {
-		return uiError("Stored message payload is invalid.")
-	}
-	if payload.Query.SQL == "" {
-		return ""
-	}
-	return `<pre class="scrollbar mt-2 max-h-28 overflow-auto rounded border border-white/10 bg-zinc-950/80 p-2 font-mono text-[10px] text-zinc-400">` + uiEscape(payload.Query.SQL) + `</pre>`
-}
-
-func uiDataTitle(source queue.DataSourceRecord, channel model.DataSourceChannel, hasChannel bool) string {
-	if hasChannel {
-		return channel.Name
-	}
-	if source.ID != "" {
-		return source.Name
-	}
-	return "Data"
 }

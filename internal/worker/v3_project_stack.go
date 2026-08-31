@@ -13,16 +13,9 @@ type directCodingProjectStack struct {
 	ID                           string
 	SupportedSurfaces            []assemblyline.ApplicationSurface
 	ConstraintDescription        string
-	TreeDescription              string
 	ArtifactAdapterIDs           []string
 	TargetTreeAdapterIDs         []string
-	TargetTreeConstraints        assemblyline.TargetTreeConstraints
 	TargetTreeReservedPaths      []string
-	RuntimeCapabilities          func() ([]directCodingRuntimeCapability, error)
-	BindRuntimeCapabilities      func(
-		directCodingProgram,
-		directCodingRuntimeCapabilityGraph,
-	) (directCodingProgram, error)
 	ProjectCompleteTargetTree func(directCodingTargetTreeOccupation) (assemblyline.TargetTree, error)
 	ProjectFocusedTargetTree  func(int, directCodingTargetTreeOccupation) (assemblyline.TargetTree, error)
 	CompileSource             directCodingProjectCompiler
@@ -31,17 +24,7 @@ type directCodingProjectStack struct {
 		assemblyline.FrozenApplicationWorkload,
 		assemblyline.SourceBlueprint,
 	) error
-	DeriveRelations  func(
-		directCodingProgram,
-		directCodingAssembly,
-	) ([]directCodingArtifactPathRelation, error)
 	NewSourceGenerator func(*directCodingSession, directCodingProgram) (directCodingProjectSourceGenerator, error)
-}
-
-type directCodingArtifactPathRelation struct {
-	FromPath string
-	ToPath   string
-	Kind     assemblyline.ArtifactRelationKind
 }
 
 type directCodingProjectCompiler func(
@@ -64,15 +47,11 @@ func registeredDirectCodingProjectStacks() []directCodingProjectStack {
 			ID:                      genericTypeScriptBrowserAdapter,
 			SupportedSurfaces:       []assemblyline.ApplicationSurface{assemblyline.ApplicationSurfaceBrowser},
 			ConstraintDescription:   "TypeScript with React for a browser application",
-			TreeDescription:         "exactly one TypeScript React workload source (.tsx) file",
 			ArtifactAdapterIDs: []string{
 				"typescript_react", "typescript", "css_tailwind",
 				"html", "structured_json", "plain_text",
 			},
 			TargetTreeAdapterIDs: []string{"typescript_react"},
-			TargetTreeConstraints: assemblyline.TargetTreeConstraints{
-				ExactPathCount: 1,
-			},
 			TargetTreeReservedPaths: []string{
 				"src/App.tsx", "src/main.tsx", "src/runtime.tsx",
 			},
@@ -86,48 +65,34 @@ func registeredDirectCodingProjectStacks() []directCodingProjectStack {
 			ID:                      genericGoCommandLineAdapter,
 			SupportedSurfaces:       []assemblyline.ApplicationSurface{assemblyline.ApplicationSurfaceCommandLine},
 			ConstraintDescription:   "Go with a module manifest for a command-line application",
-			TreeDescription:         "exactly one root-package Go workload source (.go) file",
 			ArtifactAdapterIDs:      []string{"go", "go_module", "plain_text"},
 			TargetTreeAdapterIDs:    []string{"go"},
-			TargetTreeConstraints: assemblyline.TargetTreeConstraints{
-				ExactPathCount: 1, RootFilesOnly: true,
-			},
 			TargetTreeReservedPaths:  []string{"main.go", "runtime.go"},
 			ProjectFocusedTargetTree: projectGoCommandLineFocusedTargetTree,
-			RuntimeCapabilities:      directCodingGoRuntimeCapabilities,
-			BindRuntimeCapabilities:  bindDirectCodingGoRuntimeCapabilities,
 			CompileSource:            compileGenericGoCommandLineBlueprint,
 			ValidateBlueprint:        assemblyline.ValidateGoSourceBlueprint,
 			ValidateSourceOwnership:  validateDirectCodingSingleImplementationSourceOwnership,
-			NewSourceGenerator:       newDirectCodingGoSourceGenerator,
+			NewSourceGenerator:       newDirectCodingLanguageSourceGeneratorForProgram,
 		},
 		{
 			ID:                      genericJavaScriptCommandLineAdapter,
 			SupportedSurfaces:       []assemblyline.ApplicationSurface{assemblyline.ApplicationSurfaceCommandLine},
 			ConstraintDescription:   "Modern ECMAScript modules on Node.js for a command-line application",
-			TreeDescription:         "exactly one root ECMAScript workload module (.mjs)",
 			ArtifactAdapterIDs:      []string{"javascript", "structured_json", "plain_text"},
 			TargetTreeAdapterIDs:    []string{"javascript"},
-			TargetTreeConstraints: assemblyline.TargetTreeConstraints{
-				ExactPathCount: 1, RootFilesOnly: true,
-			},
 			TargetTreeReservedPaths:  []string{"main.mjs", "runtime.mjs"},
 			ProjectFocusedTargetTree: projectJavaScriptCommandLineFocusedTargetTree,
 			CompileSource:            compileGenericJavaScriptCommandLineBlueprint,
 			ValidateBlueprint:        assemblyline.ValidateJavaScriptSourceBlueprint,
 			ValidateSourceOwnership:  validateDirectCodingSingleImplementationSourceOwnership,
-			NewSourceGenerator:       newDirectCodingJavaScriptSourceGenerator,
+			NewSourceGenerator:       newDirectCodingLanguageSourceGeneratorForProgram,
 		},
 		{
 			ID:                      genericRustCommandLineAdapter,
 			SupportedSurfaces:       []assemblyline.ApplicationSurface{assemblyline.ApplicationSurfaceCommandLine},
 			ConstraintDescription:   "Rust with Cargo for a command-line application",
-			TreeDescription:         "exactly one snake_case Rust workload basename under a directory named src",
 			ArtifactAdapterIDs:      []string{"rust", "cargo_toml", "plain_text"},
 			TargetTreeAdapterIDs:    []string{"rust"},
-			TargetTreeConstraints: assemblyline.TargetTreeConstraints{
-				ExactPathCount: 1,
-			},
 			TargetTreeReservedPaths: []string{
 				"src/lib.rs", "src/main.rs", "src/runtime.rs",
 			},
@@ -135,37 +100,22 @@ func registeredDirectCodingProjectStacks() []directCodingProjectStack {
 			CompileSource:            compileGenericRustCommandLineBlueprint,
 			ValidateBlueprint:        assemblyline.ValidateRustSourceBlueprint,
 			ValidateSourceOwnership:  validateDirectCodingSingleImplementationSourceOwnership,
-			NewSourceGenerator:       newDirectCodingRustSourceGenerator,
+			NewSourceGenerator:       newDirectCodingLanguageSourceGeneratorForProgram,
 		},
 		{
 			ID:                      genericJavaCommandLineAdapter,
 			SupportedSurfaces:       []assemblyline.ApplicationSurface{assemblyline.ApplicationSurfaceCommandLine},
 			ConstraintDescription:   "Java for a command-line application",
-			TreeDescription:         "exactly one root Java workload class (.java)",
 			ArtifactAdapterIDs:      []string{"java", "plain_text"},
 			TargetTreeAdapterIDs:    []string{"java"},
-			TargetTreeConstraints: assemblyline.TargetTreeConstraints{
-				ExactPathCount: 1, RootFilesOnly: true,
-			},
 			TargetTreeReservedPaths:  []string{"Main.java", "Runtime.java"},
 			ProjectFocusedTargetTree: projectJavaCommandLineFocusedTargetTree,
 			CompileSource:            compileGenericJavaCommandLineBlueprint,
 			ValidateBlueprint:        assemblyline.ValidateJavaSourceBlueprint,
 			ValidateSourceOwnership:  validateDirectCodingSingleImplementationSourceOwnership,
-			NewSourceGenerator:       newDirectCodingJavaSourceGenerator,
+			NewSourceGenerator:       newDirectCodingLanguageSourceGeneratorForProgram,
 		},
 	}
-}
-
-func directCodingTreeTechnicalContext(
-	stack directCodingProjectStack,
-) (string, error) {
-	if _, err := directCodingProjectStackByID(stack.ID); err != nil {
-		return "", err
-	}
-	context := "Required project structure: " + stack.TreeDescription +
-		". Return only the application-specific names described here; omit runtime, shell, bootstrap, manifest, style, and infrastructure-support names."
-	return context, nil
 }
 
 func directCodingProjectStackByID(id string) (directCodingProjectStack, error) {

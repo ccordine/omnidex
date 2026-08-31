@@ -6,10 +6,6 @@ func renderPortableCodingJob(job PortableJob) (string, bool, error) {
 		return handledPortableRender(renderDecodedPortableInput(job, BuildArtifactHandlingPrompt))
 	case WorkCapabilityRelation:
 		return handledPortableRender(renderDecodedPortableInput(job, BuildCapabilityRelationPrompt))
-	case WorkRuntimeCapabilityNecessity:
-		return handledPortableRender(renderDecodedPortableInput(
-			job, BuildRuntimeCapabilityNecessityPrompt,
-		))
 	case WorkTypeScriptRepairGuidance:
 		return handledPortableRender(renderDecodedPortableInput(job, BuildFragmentRepairGuidancePrompt))
 	case WorkFragmentGeneration:

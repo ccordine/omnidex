@@ -28,9 +28,6 @@ func (input RepositoryRequirementInterpretationInput) validate() error {
 	if err := input.Context.Validate(); err != nil {
 		return err
 	}
-	if input.Context.WorkspaceState != ApplicationWorkspaceExisting {
-		return fmt.Errorf("repository requirements require an existing-workspace context")
-	}
 	if input.Context.RequestSHA256 != ExactObjectiveContextSHA(input.UserRequest) {
 		return fmt.Errorf("repository requirements request does not match context authority")
 	}

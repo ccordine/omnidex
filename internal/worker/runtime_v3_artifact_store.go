@@ -9,6 +9,18 @@ import (
 	"github.com/gryph/omnidex/internal/queue"
 )
 
+type appliedWorkspaceCompletionError struct {
+	err error
+}
+
+func (failure *appliedWorkspaceCompletionError) Error() string {
+	return fmt.Sprintf("workspace is applied and verified but completion projection failed: %v", failure.err)
+}
+
+func (failure *appliedWorkspaceCompletionError) Unwrap() error {
+	return failure.err
+}
+
 func (r *nativeRuntimeV3) complete(output string) error {
 	output = strings.TrimSpace(output)
 	command, err := completeClaimedStepCommand(r.claim, output, "")
@@ -23,25 +35,9 @@ func (r *nativeRuntimeV3) complete(output string) error {
 
 func (r *nativeRuntimeV3) completeAppliedWorkspace(output string) error {
 	if err := r.complete(output); err != nil {
-		if r != nil && r.svc != nil {
-			r.svc.logf(
-				"job=%d step=%d workspace is applied and verified; completion projection failed: %v",
-				r.claim.Job.ID, r.claim.Step.ID, err,
-			)
-		}
+		return &appliedWorkspaceCompletionError{err: err}
 	}
 	return nil
-}
-
-func (r *nativeRuntimeV3) writeEvidence(record evidence.Record) error {
-	_, err := r.writeEvidenceReturningID(record)
-	return err
-}
-
-func (r *nativeRuntimeV3) writeEvidenceReturningID(record evidence.Record) (int64, error) {
-	record.JobID = r.claim.Job.ID
-	record.StepID = r.claim.Step.ID
-	return r.svc.repo.WriteEvidenceReturningID(r.ctx, r.claim.Authority, record)
 }
 
 func (r *nativeRuntimeV3) completeWithEvidence(

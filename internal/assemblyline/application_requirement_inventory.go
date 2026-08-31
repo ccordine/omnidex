@@ -37,10 +37,9 @@ type ApplicationRequirementInventory struct {
 func NewApplicationRequirementInventoryJob(
 	input ApplicationRequirementInventoryInput,
 ) (PortableJob, error) {
-	return newValidatedPortableJob(
+	return newPortableJob(
 		WorkApplicationRequirementInventory,
 		input,
-		input.validate,
 	)
 }
 
@@ -97,23 +96,7 @@ func DecodeApplicationRequirementInventory(
 	}
 	candidates := []string{}
 	if leaf != ApplicationNoRuntimeRequirementCandidates {
-		if strings.Contains(
-			strings.ToUpper(leaf),
-			ApplicationNoRuntimeRequirementCandidates,
-		) {
-			return zero, fmt.Errorf(
-				"application requirement inventory absence value must be returned exactly",
-			)
-		}
-		candidates, _, err = decodeApplicationRequirementCandidateLines(
-			"application requirement inventory",
-			leaf,
-			1,
-			MaxApplicationRequirementInventoryCandidates,
-		)
-		if err != nil {
-			return zero, err
-		}
+		candidates = decodeApplicationRequirementInventoryCandidateLines(leaf)
 	}
 	authoritySHA256, err := applicationRequirementInventoryAuthoritySHA256(input)
 	if err != nil {
@@ -122,13 +105,55 @@ func DecodeApplicationRequirementInventory(
 	result := ApplicationRequirementInventory{
 		Schema:          ApplicationRequirementInventorySchemaV4,
 		AuthoritySHA256: authoritySHA256,
-		RawSHA256:       ExactObjectiveContextSHA(leaf),
+		RawSHA256:       ExactObjectiveContextSHA(applicationRequirementInventoryRaw(candidates)),
 		Candidates:      append([]string{}, candidates...),
 	}
 	if err := result.ValidateFor(input); err != nil {
 		return zero, err
 	}
 	return result, nil
+}
+
+// decodeApplicationRequirementInventoryCandidateLines is an intake sieve.
+// One malformed, duplicated, or surplus model-authored line has no authority
+// over independent candidates in the same bounded response.
+func decodeApplicationRequirementInventoryCandidateLines(raw string) []string {
+	candidates := make([]string, 0, MaxApplicationRequirementInventoryCandidates)
+	seen := make(map[string]struct{}, MaxApplicationRequirementInventoryCandidates)
+	for index, candidate := range strings.Split(raw, "\n") {
+		if len(candidates) == MaxApplicationRequirementInventoryCandidates {
+			break
+		}
+		leaf, err := decodeRawSemanticLeaf(
+			fmt.Sprintf("application requirement inventory candidate %d", index),
+			candidate,
+			maxRequirementQuoteBytes,
+			false,
+		)
+		if err != nil || leaf == ApplicationNoRuntimeRequirementCandidates {
+			continue
+		}
+		if err := validateApplicationIntentText(
+			"application requirement inventory candidate",
+			leaf,
+			maxRequirementQuoteBytes,
+		); err != nil {
+			continue
+		}
+		if _, duplicate := seen[leaf]; duplicate {
+			continue
+		}
+		seen[leaf] = struct{}{}
+		candidates = append(candidates, leaf)
+	}
+	return candidates
+}
+
+func applicationRequirementInventoryRaw(candidates []string) string {
+	if len(candidates) == 0 {
+		return ApplicationNoRuntimeRequirementCandidates
+	}
+	return strings.Join(candidates, "\n")
 }
 
 func decodeApplicationRequirementCandidateLines(
@@ -216,10 +241,7 @@ func (inventory ApplicationRequirementInventory) ValidateFor(
 			return fmt.Errorf("application requirement inventory candidate %d: %w", index, err)
 		}
 	}
-	raw := ApplicationNoRuntimeRequirementCandidates
-	if len(inventory.Candidates) > 0 {
-		raw = strings.Join(inventory.Candidates, "\n")
-	}
+	raw := applicationRequirementInventoryRaw(inventory.Candidates)
 	if inventory.RawSHA256 != ExactObjectiveContextSHA(raw) {
 		return fmt.Errorf("application requirement inventory raw hash does not match")
 	}

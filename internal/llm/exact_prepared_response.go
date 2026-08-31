@@ -113,18 +113,13 @@ func decodeExactPreparedResponse(status int, body []byte) (ExactPreparedResponse
 	if wire.Done != nil {
 		response.Done = *wire.Done
 	}
-	response.UsagePresent = wire.PromptEvalCount != nil && wire.EvalCount != nil &&
-		wire.TotalDuration != nil && wire.LoadDuration != nil &&
-		wire.PromptEvalDuration != nil && wire.EvalDuration != nil
+	response.UsagePresent = wire.PromptEvalCount != nil && wire.EvalCount != nil
 	if strings.TrimSpace(content) == "" {
 		response.Disposition = ProviderResponseEmptyContent
 		return response, fmt.Errorf("exact provider response contains no model output")
 	}
 	if !response.DonePresent || !response.Done || !response.UsagePresent {
-		return response, fmt.Errorf("exact provider response lacks final usage or timing fields")
-	}
-	if err := response.Usage.ValidateSuccessful(); err != nil {
-		return response, err
+		return response, fmt.Errorf("exact provider response lacks final token counts")
 	}
 	return response, nil
 }

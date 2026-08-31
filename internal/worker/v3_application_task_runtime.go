@@ -38,7 +38,6 @@ func directCodingApplicationTaskFragmentJob(
 	if stage == nil {
 		return directCodingTypeScriptFragmentJob{}, fmt.Errorf("application task generation requires one isolated stage")
 	}
-	profile := stage.Project.Profile
 	declarations := make(map[string]string)
 	block := ref.Block
 	tsx := directCodingTypeScriptDocumentIsTSX(ref.Document)
@@ -64,7 +63,7 @@ func directCodingApplicationTaskFragmentJob(
 		return directCodingTypeScriptFragmentJob{}, err
 	}
 	return directCodingTypeScriptFragmentJob{
-		block: block, dialect: profile.SourceDialect, tsx: tsx, available: available,
+		block: block, dialect: stage.Project.Dialect, tsx: tsx, available: available,
 		validateInitialCandidate: validateInitialCandidate,
 	}, nil
 }

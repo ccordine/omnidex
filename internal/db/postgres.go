@@ -61,7 +61,7 @@ func ConnectRuntime(
 	if err != nil {
 		return nil, err
 	}
-	if err := bootstrapRuntimeSchema(ctx, bootstrap, runtimeSchema); err != nil {
+	if err := resetRuntimeSchema(ctx, bootstrap, runtimeSchema); err != nil {
 		bootstrap.Close()
 		return nil, err
 	}
@@ -112,7 +112,7 @@ func configurePool(cfg *pgxpool.Config) {
 	cfg.HealthCheckPeriod = 30 * time.Second
 }
 
-func bootstrapRuntimeSchema(
+func resetRuntimeSchema(
 	ctx context.Context,
 	pool *pgxpool.Pool,
 	runtimeSchema string,
@@ -138,11 +138,15 @@ func bootstrapRuntimeSchema(
 	if exists && !owned {
 		return fmt.Errorf("runtime schema %q is not owned by the database user", runtimeSchema)
 	}
-	if !exists {
-		if _, err := tx.Exec(ctx, `CREATE SCHEMA `+
-			pgx.Identifier{runtimeSchema}.Sanitize()+` AUTHORIZATION CURRENT_USER`); err != nil {
-			return fmt.Errorf("create dedicated runtime schema: %w", err)
+	if exists {
+		if _, err := tx.Exec(ctx, `DROP SCHEMA `+
+			pgx.Identifier{runtimeSchema}.Sanitize()+` CASCADE`); err != nil {
+			return fmt.Errorf("reset dedicated runtime schema: %w", err)
 		}
+	}
+	if _, err := tx.Exec(ctx, `CREATE SCHEMA `+
+		pgx.Identifier{runtimeSchema}.Sanitize()+` AUTHORIZATION CURRENT_USER`); err != nil {
+		return fmt.Errorf("create dedicated runtime schema: %w", err)
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return fmt.Errorf("commit runtime schema bootstrap: %w", err)

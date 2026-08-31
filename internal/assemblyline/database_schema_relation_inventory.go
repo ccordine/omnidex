@@ -17,10 +17,9 @@ type DatabaseSchemaRelationInventory struct {
 func NewDatabaseSchemaRelationInventoryJob(
 	input DatabaseSchemaRelationInventoryInput,
 ) (PortableJob, error) {
-	return newValidatedPortableJob(
+	return newPortableJob(
 		WorkDatabaseSchemaRelationInventory,
 		input,
-		input.validate,
 	)
 }
 

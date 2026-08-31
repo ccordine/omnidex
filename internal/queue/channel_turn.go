@@ -230,15 +230,8 @@ func (r *Repository) enqueueChannelJobTx(
 	if len(metadata) == 0 {
 		return model.Job{}, fmt.Errorf("channel job metadata is required")
 	}
-	var binding channelTurnMetadata
-	if err := json.Unmarshal(metadata, &binding); err != nil {
-		return model.Job{}, fmt.Errorf("decode channel job metadata: %w", err)
-	}
-	if err := validateChannelTurnMetadata(binding); err != nil {
-		return model.Job{}, err
-	}
 	return r.enqueueJobWithStepsTx(
-		ctx, tx, instruction, model.PipelineChat, metadata, conversationObjectiveSteps(),
+		ctx, tx, instruction, model.PipelineChat, metadata, conversationObjectiveSteps(), nil,
 	)
 }
 

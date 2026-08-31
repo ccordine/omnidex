@@ -2,6 +2,7 @@ package worker
 
 import (
 	"fmt"
+	"os"
 	"sort"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
@@ -13,20 +14,23 @@ func resolveDirectCodingTargetTree(
 	specification assemblyline.ApplicationSpecification,
 	workload assemblyline.FrozenApplicationWorkload,
 	stack directCodingProjectStack,
+	authoritativePaths []string,
+	rootPath string,
 ) (assemblyline.TargetTree, assemblyline.ApplicationFileCoveragePlan, error) {
 	var zeroTree assemblyline.TargetTree
 	var zeroCoverage assemblyline.ApplicationFileCoveragePlan
 	taskPaths := make(map[string][]string, len(workload.Tasks))
+	root, err := os.OpenRoot(rootPath)
+	if err != nil {
+		return zeroTree, zeroCoverage, fmt.Errorf("open target-tree workspace root: %w", err)
+	}
+	defer root.Close()
 	var target assemblyline.TargetTree
-	var err error
 	switch {
 	case stack.ProjectCompleteTargetTree != nil:
 		target, err = stack.ProjectCompleteTargetTree(
-			directCodingTargetTreeOccupationFor(stack, map[string]struct{}{}),
+			directCodingTargetTreeOccupationFor(stack, map[string]struct{}{}, authoritativePaths, root),
 		)
-		if err == nil {
-			err = validateDirectCodingFocusedTargetTree(stack, target)
-		}
 		if err != nil {
 			return zeroTree, zeroCoverage, fmt.Errorf(
 				"project complete target tree: %w", err,
@@ -40,11 +44,8 @@ func resolveDirectCodingTargetTree(
 		for taskIndex, task := range workload.Tasks {
 			var focused assemblyline.TargetTree
 			focused, err = stack.ProjectFocusedTargetTree(
-				taskIndex+1, directCodingTargetTreeOccupationFor(stack, union),
+				taskIndex+1, directCodingTargetTreeOccupationFor(stack, union, authoritativePaths, root),
 			)
-			if err == nil {
-				err = validateDirectCodingFocusedTargetTree(stack, focused)
-			}
 			if err != nil {
 				return zeroTree, zeroCoverage, fmt.Errorf(
 					"project target-tree pair for %s: %w", task.ID, err,
@@ -69,9 +70,6 @@ func resolveDirectCodingTargetTree(
 	if err != nil {
 		return zeroTree, zeroCoverage, fmt.Errorf("resolve complete target tree: %w", err)
 	}
-	if err := validateDirectCodingTargetTreePathClosure(stack, target); err != nil {
-		return zeroTree, zeroCoverage, err
-	}
 	if err := validateDirectCodingTargetTreeUnion(stack, target); err != nil {
 		return zeroTree, zeroCoverage, err
 	}
@@ -80,15 +78,6 @@ func resolveDirectCodingTargetTree(
 		return zeroTree, zeroCoverage, err
 	}
 	return target, coverage, nil
-}
-
-// validateDirectCodingFocusedTargetTree applies constraints at the projected
-// tree's first structural consumer.
-func validateDirectCodingFocusedTargetTree(
-	stack directCodingProjectStack,
-	target assemblyline.TargetTree,
-) error {
-	return assemblyline.ValidateTargetTreeConstraints(stack.TargetTreeConstraints, target)
 }
 
 // validateDirectCodingTargetTreeUnion applies only invariants that remain true
@@ -100,9 +89,6 @@ func validateDirectCodingTargetTreeUnion(
 ) error {
 	if len(target.Paths) == 0 {
 		return fmt.Errorf("project stack %s requires at least one target-tree path", stack.ID)
-	}
-	if err := assemblyline.ValidateTargetTreeReservedPaths(stack.TargetTreeReservedPaths, target); err != nil {
-		return err
 	}
 	for _, filePath := range target.Paths {
 		if _, _, err := directCodingArtifactAdapterForTreePath(stack, filePath); err != nil {

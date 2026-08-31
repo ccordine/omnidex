@@ -42,83 +42,58 @@ func (d Definition) EnvironmentKey(suffix string) string {
 	return prefix + "_" + suffix
 }
 
-var definitionsByName = mustIndexDefinitions(providerDefinitions)
-
-func Lookup(value string) (Definition, bool) {
-	definition, ok := definitionsByName[value]
-	if !ok {
-		return Definition{}, false
+// Resolve validates only the provider selected by the current operation. An
+// unused catalog entry cannot prevent the process from starting or another
+// provider from serving work.
+func Resolve(value string) (Definition, error) {
+	var selected *Definition
+	for index := range providerDefinitions {
+		definition := providerDefinitions[index]
+		if definition.ID != value {
+			continue
+		}
+		if selected != nil {
+			return Definition{}, fmt.Errorf("LLM provider ID %q is duplicated", value)
+		}
+		selected = &definition
 	}
-	return cloneDefinition(definition), true
+	if selected == nil {
+		return Definition{}, fmt.Errorf("unsupported LLM provider %q", value)
+	}
+	if err := validateDefinition(*selected); err != nil {
+		return Definition{}, err
+	}
+	return cloneDefinition(*selected), nil
 }
 
-func Definitions() []Definition {
+func ProductionDefinitions() []Definition {
 	out := make([]Definition, 0, len(providerDefinitions))
 	for _, definition := range providerDefinitions {
-		out = append(out, cloneDefinition(definition))
+		if definition.SupportsExactPreparedStations || definition.SupportsEmbeddings {
+			out = append(out, cloneDefinition(definition))
+		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
 	return out
 }
 
-func ProductionDefinitions() []Definition {
-	definitions := Definitions()
-	out := make([]Definition, 0, len(definitions))
-	for _, definition := range definitions {
-		if definition.SupportsExactPreparedStations || definition.SupportsEmbeddings {
-			out = append(out, definition)
-		}
+func validateDefinition(definition Definition) error {
+	if definition.ID == "" {
+		return fmt.Errorf("LLM provider catalog contains an empty provider ID")
 	}
-	return out
-}
-
-func ExactStationProviderIDs() []string {
-	return providerIDs(func(definition Definition) bool { return definition.SupportsExactPreparedStations })
-}
-
-func EmbeddingProviderIDs() []string {
-	return providerIDs(func(definition Definition) bool { return definition.SupportsEmbeddings })
-}
-
-func ChineseProviderIDs() []string {
-	return providerIDs(func(definition Definition) bool { return definition.ChineseService })
-}
-
-func providerIDs(include func(Definition) bool) []string {
-	ids := make([]string, 0, len(providerDefinitions))
-	for _, definition := range providerDefinitions {
-		if include(definition) {
-			ids = append(ids, definition.ID)
-		}
+	if definition.ID != strings.ToLower(strings.TrimSpace(definition.ID)) {
+		return fmt.Errorf("LLM provider ID %q is not canonical", definition.ID)
 	}
-	sort.Strings(ids)
-	return ids
-}
-
-func mustIndexDefinitions(definitions []Definition) map[string]Definition {
-	index := make(map[string]Definition, len(definitions))
-	for _, definition := range definitions {
-		if definition.ID == "" {
-			panic("LLM provider catalog contains an empty provider ID")
-		}
-		if definition.ID != strings.ToLower(strings.TrimSpace(definition.ID)) {
-			panic(fmt.Sprintf("LLM provider ID %q is not canonical", definition.ID))
-		}
-		if strings.TrimSpace(definition.DisplayName) == "" {
-			panic(fmt.Sprintf("LLM provider %q has no display name", definition.ID))
-		}
-		if definition.EnvironmentPrefix == "" {
-			panic(fmt.Sprintf("LLM provider %q has no environment prefix", definition.ID))
-		}
-		if definition.EnvironmentPrefix != strings.Trim(strings.ToUpper(strings.TrimSpace(definition.EnvironmentPrefix)), "_") {
-			panic(fmt.Sprintf("LLM provider %q has non-canonical environment prefix %q", definition.ID, definition.EnvironmentPrefix))
-		}
-		if existing, duplicate := index[definition.ID]; duplicate {
-			panic(fmt.Sprintf("LLM provider ID %q is shared by %q and %q", definition.ID, existing.ID, definition.ID))
-		}
-		index[definition.ID] = definition
+	if strings.TrimSpace(definition.DisplayName) == "" {
+		return fmt.Errorf("LLM provider %q has no display name", definition.ID)
 	}
-	return index
+	if definition.EnvironmentPrefix == "" {
+		return fmt.Errorf("LLM provider %q has no environment prefix", definition.ID)
+	}
+	if definition.EnvironmentPrefix != strings.Trim(strings.ToUpper(strings.TrimSpace(definition.EnvironmentPrefix)), "_") {
+		return fmt.Errorf("LLM provider %q has non-canonical environment prefix %q", definition.ID, definition.EnvironmentPrefix)
+	}
+	return nil
 }
 
 func cloneDefinition(definition Definition) Definition {

@@ -34,8 +34,8 @@ type roleplayGroundedEvidenceRelationProjection struct {
 func NewRoleplayGroundedResponseEvidenceRelationJob(
 	input RoleplayGroundedEvidenceRelationInput,
 ) (PortableJob, error) {
-	return newValidatedPortableJob(
-		WorkRoleplayGroundedResponseEvidenceRelation, input, input.validate,
+	return newPortableJob(
+		WorkRoleplayGroundedResponseEvidenceRelation, input,
 	)
 }
 

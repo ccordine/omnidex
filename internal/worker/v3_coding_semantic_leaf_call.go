@@ -37,11 +37,10 @@ func runDirectCodingSemanticLeafCall[T any](
 	job assemblyline.PortableJob,
 	identities []assemblyline.ArtifactIdentity,
 	decode directCodingSemanticLeafDecoder[T],
-	validate func(T) error,
 ) (T, error) {
 	var zero T
-	if runtime.Context == nil || runtime.Execute == nil || decode == nil || validate == nil {
-		return zero, fmt.Errorf("coding semantic leaf requires an exact portable runtime, decoder, and validator")
+	if runtime.Context == nil || runtime.Execute == nil || decode == nil {
+		return zero, fmt.Errorf("coding semantic leaf requires an exact portable runtime and decoder")
 	}
 	if modelName == "" {
 		return zero, fmt.Errorf("coding semantic leaf requires one configured model")
@@ -85,9 +84,6 @@ func runDirectCodingSemanticLeafCall[T any](
 		}); ok {
 			validationErr = boundary.ValidatePathFree(runtime.PathProvenance)
 		}
-	}
-	if validationErr == nil {
-		validationErr = validate(value)
 	}
 	validationErr = finalizeTypedWorkerResult(runtime, job, result, validationErr)
 	if validationErr != nil {

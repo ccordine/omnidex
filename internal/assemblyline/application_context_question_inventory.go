@@ -32,10 +32,9 @@ type ApplicationContextQuestionInventory struct {
 func NewApplicationContextQuestionInventoryJob(
 	input ApplicationContextQuestionInventoryInput,
 ) (PortableJob, error) {
-	return newValidatedPortableJob(
+	return newPortableJob(
 		WorkApplicationContextQuestionInventory,
 		input,
-		input.validate,
 	)
 }
 
@@ -52,9 +51,6 @@ func (input ApplicationContextQuestionInventoryInput) validate() error {
 	}
 	if err := input.Context.Validate(); err != nil {
 		return err
-	}
-	if input.Context.WorkspaceState != ApplicationWorkspaceExisting {
-		return fmt.Errorf("application context question inventory requires an existing workspace")
 	}
 	if input.Context.RequestSHA256 != ExactObjectiveContextSHA(input.UserRequest) {
 		return fmt.Errorf("application context question inventory request does not match context authority")

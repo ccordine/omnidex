@@ -2,7 +2,6 @@ package queue
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -203,11 +202,7 @@ func (r *Repository) prepareScrumCardPlayTx(
 	if err != nil {
 		return ScrumCardPlayResult{}, err
 	}
-	metadataJSON, err := json.Marshal(metadata)
-	if err != nil {
-		return ScrumCardPlayResult{}, fmt.Errorf("encode locked Scrum play metadata: %w", err)
-	}
-	job, err := r.enqueueScrumJobTx(ctx, tx, instruction, metadataJSON)
+	job, err := r.enqueueScrumJobTx(ctx, tx, instruction, card.ProjectID, metadata)
 	if err != nil {
 		return ScrumCardPlayResult{}, err
 	}

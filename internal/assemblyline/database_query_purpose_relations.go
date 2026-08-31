@@ -45,7 +45,7 @@ type DatabaseQueryPurposeRelationResult struct {
 func NewDatabaseQueryPurposeNecessityJob(
 	input DatabaseQueryPurposeNecessityInput,
 ) (PortableJob, error) {
-	return newValidatedPortableJob(WorkDatabaseQueryPurposeNecessity, input, input.validate)
+	return newPortableJob(WorkDatabaseQueryPurposeNecessity, input)
 }
 
 func (input DatabaseQueryPurposeNecessityInput) validate() error {
@@ -140,7 +140,7 @@ func (result DatabaseQueryPurposeNecessityResult) ValidateFor(
 func NewDatabaseQueryPurposeRelationJob(
 	input DatabaseQueryPurposeRelationInput,
 ) (PortableJob, error) {
-	return newValidatedPortableJob(WorkDatabaseQueryPurposeRelation, input, input.validate)
+	return newPortableJob(WorkDatabaseQueryPurposeRelation, input)
 }
 
 func (input DatabaseQueryPurposeRelationInput) validate() error {

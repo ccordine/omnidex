@@ -12,6 +12,7 @@ import (
 type directCodingLanguageSourceConfig struct {
 	Language         string
 	AdapterID        string
+	ProjectFragment  directCodingLanguageFragmentProjector
 	ValidateFragment directCodingLanguageFragmentValidator
 }
 
@@ -41,13 +42,55 @@ func newDirectCodingLanguageSourceGenerator(
 	}, nil
 }
 
+func newDirectCodingLanguageSourceGeneratorForProgram(
+	session *directCodingSession,
+	program directCodingProgram,
+) (directCodingProjectSourceGenerator, error) {
+	var selected directCodingArtifactAdapter
+	for _, document := range program.Source.Documents {
+		hasGeneratedBlock := false
+		for _, block := range document.Blocks {
+			if block.Generated() {
+				hasGeneratedBlock = true
+				break
+			}
+		}
+		if !hasGeneratedBlock {
+			continue
+		}
+		adapter, err := directCodingArtifactAdapterByID(document.AdapterID)
+		if err != nil {
+			return nil, err
+		}
+		if adapter.SourceLanguage == "" || adapter.ProjectFragment == nil ||
+			adapter.ValidateFragment == nil {
+			return nil, fmt.Errorf(
+				"artifact adapter %s cannot consume generated source blocks", adapter.ID,
+			)
+		}
+		if selected.ID != "" && selected.ID != adapter.ID {
+			return nil, fmt.Errorf(
+				"one source generator cannot consume both %s and %s artifact adapters",
+				selected.ID, adapter.ID,
+			)
+		}
+		selected = adapter
+	}
+	if selected.ID == "" {
+		return nil, fmt.Errorf("source generation requires one generated artifact adapter")
+	}
+	return newDirectCodingLanguageSourceGenerator(session, directCodingLanguageSourceConfig{
+		Language:         selected.SourceLanguage,
+		AdapterID:        selected.ID,
+		ProjectFragment:  selected.ProjectFragment,
+		ValidateFragment: selected.ValidateFragment,
+	})
+}
+
 func validateDirectCodingLanguageSourceConfig(config directCodingLanguageSourceConfig) error {
 	if strings.TrimSpace(config.Language) == "" || strings.TrimSpace(config.AdapterID) == "" ||
-		config.ValidateFragment == nil {
-		return fmt.Errorf("language source generation requires identity and a parser")
-	}
-	if _, err := directCodingSourceDeclarationProjector(config.Language); err != nil {
-		return fmt.Errorf("language source configuration projection: %w", err)
+		config.ProjectFragment == nil || config.ValidateFragment == nil {
+		return fmt.Errorf("language source generation requires identity, projector, and parser")
 	}
 	return nil
 }
@@ -96,9 +139,7 @@ func (executor *directCodingLanguageSourceGenerator) generateBlockWithRuntime(
 		runtime, modelName,
 		directCodingLanguageGenerationJob{
 			Subject: ref.Block.ID, Input: input,
-			Project: func(raw string) (assemblyline.PortableResultProjection, error) {
-				return projectDirectCodingSourceDeclaration(executor.config.Language, raw)
-			},
+			Project: executor.config.ProjectFragment,
 			Validate: validate,
 		},
 	)

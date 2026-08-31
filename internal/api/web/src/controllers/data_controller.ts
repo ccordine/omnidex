@@ -12,7 +12,6 @@ export default class DataController extends Controller {
   private selectedChannelID = "";
   private sourceOffset = 0;
   private channelOffset = 0;
-	private messageOffset = 0;
   private panelShownHandler: ((event: Event) => void) | null = null;
 
   connect(): void {
@@ -44,15 +43,12 @@ export default class DataController extends Controller {
 
   async load(): Promise<void> {
     try {
-		const payload = await fetchDataComponent(this.selectedSourceID, this.selectedChannelID, this.sourceOffset, this.channelOffset, this.messageOffset);
+      const payload = await fetchDataComponent(this.selectedSourceID, this.selectedChannelID, this.sourceOffset, this.channelOffset);
       this.selectedSourceID = payload.selected_source_id ?? "";
       this.selectedChannelID = payload.selected_channel_id ?? "";
       this.sourceOffset = payload.source_offset ?? 0;
       this.channelOffset = payload.channel_offset ?? 0;
-		this.messageOffset = payload.message_offset ?? 0;
       await renderServerBundle(this.recyclrController(), payload, "Data component");
-      const messages = this.element.querySelector("[data-data-target='messageList']");
-      if (messages) messages.scrollTop = messages.scrollHeight;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       console.error("Server data component failed", error);
@@ -67,7 +63,6 @@ export default class DataController extends Controller {
     this.selectedSourceID = id;
     this.selectedChannelID = "";
     this.channelOffset = 0;
-		this.messageOffset = 0;
     this.pushRoute();
     void this.load();
   }
@@ -77,7 +72,7 @@ export default class DataController extends Controller {
     const node = event.currentTarget as HTMLElement;
     const offset = Number(node.dataset.pageOffset ?? -1);
     const kind = node.dataset.pageKind;
-		if (!Number.isSafeInteger(offset) || offset < 0 || (kind !== "source" && kind !== "channel" && kind !== "message")) {
+    if (!Number.isSafeInteger(offset) || offset < 0 || (kind !== "source" && kind !== "channel")) {
       throw new Error("Data page control is invalid.");
     }
     if (kind === "source") {
@@ -85,15 +80,9 @@ export default class DataController extends Controller {
       this.channelOffset = 0;
       this.selectedSourceID = "";
       this.selectedChannelID = "";
-			this.messageOffset = 0;
     } else {
-			if (kind === "channel") {
-				this.channelOffset = offset;
-				this.selectedChannelID = "";
-				this.messageOffset = 0;
-			} else {
-				this.messageOffset = offset;
-			}
+      this.channelOffset = offset;
+      this.selectedChannelID = "";
     }
     void this.load();
   }
@@ -103,7 +92,6 @@ export default class DataController extends Controller {
     const id = (event.currentTarget as HTMLElement).dataset.channelId?.trim() ?? "";
     if (!id || id === this.selectedChannelID) return;
     this.selectedChannelID = id;
-		this.messageOffset = 0;
     this.pushRoute();
     void this.load();
   }
@@ -118,7 +106,6 @@ export default class DataController extends Controller {
       const channel = await createDataSourceChannel(this.selectedSourceID, name);
       this.selectedChannelID = channel.id;
       this.channelOffset = 0;
-			this.messageOffset = 0;
       this.pushRoute();
       await this.load();
     } catch (error) {

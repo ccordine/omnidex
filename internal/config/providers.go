@@ -54,8 +54,8 @@ func loadProviderModelConfigs() map[string]ProviderModelConfig {
 }
 
 func embeddingModelForProvider(provider string, models map[string]ProviderModelConfig) string {
-	definition, ok := catalog.Lookup(provider)
-	if !ok {
+	definition, err := catalog.Resolve(provider)
+	if err != nil {
 		return ""
 	}
 	return models[definition.ID].Embedding
@@ -72,9 +72,9 @@ func validateSelectedProviderEndpoint(provider string, cfg Config, label string)
 	if strings.TrimSpace(provider) == "" {
 		return fmt.Errorf("%s is not configured", label)
 	}
-	definition, ok := catalog.Lookup(provider)
-	if !ok {
-		return fmt.Errorf("%s contains unsupported provider %q", label, provider)
+	definition, err := catalog.Resolve(provider)
+	if err != nil {
+		return fmt.Errorf("%s is invalid: %w", label, err)
 	}
 	switch definition.Protocol {
 	case catalog.ProtocolOllama:
@@ -100,9 +100,9 @@ func validateSelectedProviderCredential(provider string, cfg Config, label strin
 	if strings.TrimSpace(provider) == "" {
 		return fmt.Errorf("%s is not configured", label)
 	}
-	definition, ok := catalog.Lookup(provider)
-	if !ok {
-		return fmt.Errorf("%s contains unsupported provider %q", label, provider)
+	definition, err := catalog.Resolve(provider)
+	if err != nil {
+		return fmt.Errorf("%s is invalid: %w", label, err)
 	}
 	var value string
 	switch definition.Protocol {

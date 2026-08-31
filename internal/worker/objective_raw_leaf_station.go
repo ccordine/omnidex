@@ -16,11 +16,10 @@ func runObjectivePortableRawLeafStation[T any](
 	_ station.ID,
 	resolveModel func() (string, error),
 	decode objectiveRawLeafDecoder[T],
-	validate func(T) error,
 ) (T, objectiveStationReceipt, error) {
 	var zero T
 	if ctx == nil || runtime == nil || runtime.svc == nil || runtime.claim == nil ||
-		resolveModel == nil || decode == nil || validate == nil {
+		resolveModel == nil || decode == nil {
 		return zero, objectiveStationReceipt{}, fmt.Errorf(
 			"objective raw leaf requires exact running step authority",
 		)
@@ -33,7 +32,7 @@ func runObjectivePortableRawLeafStation[T any](
 		return zero, objectiveStationReceipt{}, err
 	}
 	value, calls, err := runObjectivePortableRawLeafCall(
-		ctx, runtime, model, subject, job, decode, validate,
+		ctx, runtime, model, subject, job, decode,
 	)
 	return value, objectiveStationReceipt{Calls: calls}, err
 }

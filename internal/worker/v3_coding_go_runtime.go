@@ -2,16 +2,13 @@ package worker
 
 import (
 	"fmt"
-	"sort"
 	"strconv"
 	"strings"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
 )
 
-func goCommandLineRuntimeDocument(
-	capabilities []directCodingGoStandardLibraryCapability,
-) (assemblyline.SourceDocument, error) {
+func goCommandLineRuntimeDocument() assemblyline.SourceDocument {
 	const source = `type TaskInput struct {
 	Arguments     []string
 	StandardInput string
@@ -25,34 +22,12 @@ type TaskResult struct {
 }
 
 type CapabilityResults map[string]TaskResult`
-	imports := make(map[string]struct{}, len(capabilities))
-	blocks := make([]assemblyline.SourceBlock, 1, len(capabilities)+1)
-	blocks[0] = assemblyline.SourceBlock{
-		ID: "runtime.api", Static: source, API: source,
-	}
-	for _, capability := range capabilities {
-		imports[capability.ImportPath] = struct{}{}
-		blocks = append(blocks, assemblyline.SourceBlock{
-			ID: capability.ID, Static: capability.Source, API: capability.API,
-		})
-	}
-	importPaths := make([]string, 0, len(imports))
-	for importPath := range imports {
-		importPaths = append(importPaths, importPath)
-	}
-	sort.Strings(importPaths)
-	quotedImports := make([]string, len(importPaths))
-	for index, importPath := range importPaths {
-		quotedImports[index] = "\t" + strconv.Quote(importPath)
-	}
-	preamble := "package main"
-	if len(quotedImports) > 0 {
-		preamble += "\n\nimport (\n" + strings.Join(quotedImports, "\n") + "\n)"
-	}
 	return assemblyline.SourceDocument{
-		ID: "application_runtime", Path: "runtime.go", Preamble: preamble,
-		Blocks: blocks,
-	}, nil
+		ID: "application_runtime", Path: "runtime.go", Preamble: "package main",
+		Blocks: []assemblyline.SourceBlock{{
+			ID: "runtime.api", Static: source, API: source,
+		}},
+	}
 }
 
 func goCommandLineApplicationDocument(

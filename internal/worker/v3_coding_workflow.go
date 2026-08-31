@@ -21,7 +21,7 @@ type directCodingWorkflowDriver interface {
 	Assemble() (directCodingAssembly, error)
 	PrepareAssembly(directCodingAssembly) (*directCodingPreparedMutation, error)
 	ApplyAndVerify(*directCodingPreparedMutation) error
-	Complete() (string, error)
+	Complete() string
 }
 
 func runDirectCodingWorkflow(driver directCodingWorkflowDriver) (string, error) {
@@ -45,10 +45,7 @@ func runDirectCodingWorkflow(driver directCodingWorkflowDriver) (string, error) 
 	if err := driver.ApplyAndVerify(prepared); err != nil {
 		return failDirectCodingWorkflow(driver, "verify accepted workspace", err)
 	}
-	summary, completeErr := driver.Complete()
-	if completeErr != nil {
-		return failDirectCodingWorkflow(driver, "complete coding workflow", completeErr)
-	}
+	summary := driver.Complete()
 	driver.Phase(directCodingPhaseCompleted, summary)
 	return summary, nil
 }

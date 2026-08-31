@@ -43,46 +43,7 @@ func newPortableJob(kind WorkKind, input any) (PortableJob, error) {
 	}
 	job := PortableJob{Schema: PortableJobSchemaV2, Kind: kind, Payload: payload}
 	job.ID = portableJobDigest(job.Schema, job.Kind, job.Payload)
-	if err := job.Validate(); err != nil {
-		return PortableJob{}, err
-	}
 	return job, nil
-}
-
-func (job PortableJob) Validate() error {
-	if err := job.validateIdentity(); err != nil {
-		return err
-	}
-	return validatePortableJobPayload(job.Kind, job.Payload)
-}
-
-func (job PortableJob) validateIdentity() error {
-	if job.Schema != PortableJobSchemaV2 {
-		return fmt.Errorf("portable job schema must be %q", PortableJobSchemaV2)
-	}
-	if !validWorkKind(job.Kind) {
-		return fmt.Errorf("portable job kind %q is unsupported", job.Kind)
-	}
-	if len(job.Payload) == 0 {
-		return fmt.Errorf("portable job payload is empty")
-	}
-	if len(job.Payload) > maxPortablePayloadBytes {
-		return fmt.Errorf(
-			"portable job payload exceeds gross resource ceiling of %d bytes",
-			maxPortablePayloadBytes,
-		)
-	}
-	if err := validatePortableJobSourceProjection(job); err != nil {
-		return err
-	}
-	expectedID := portableJobProjectionDigest(
-		job.Schema, job.Kind, job.Payload, job.SourceProjection,
-	)
-	if job.ID != expectedID {
-		return fmt.Errorf("portable job id does not match its immutable content")
-	}
-
-	return nil
 }
 
 func portableJobDigest(schema string, kind WorkKind, payload []byte) string {

@@ -10,7 +10,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/gryph/omnidex/internal/exactjson"
-	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/modelconfig"
 )
 
@@ -18,7 +17,6 @@ const maxGenericCodingEnqueueBodyBytes int64 = 256 * 1024
 
 type enqueueRequest struct {
 	Instruction string                 `json:"instruction"`
-	Pipeline    string                 `json:"pipeline"`
 	Metadata    *genericCodingMetadata `json:"metadata"`
 }
 
@@ -61,9 +59,6 @@ func decodeGenericCodingEnqueue(w http.ResponseWriter, r *http.Request) (enqueue
 	}
 	if err := requireJSONEOF(decoder, "coding enqueue request"); err != nil {
 		return enqueueRequest{}, err
-	}
-	if request.Pipeline != model.PipelineCoding {
-		return enqueueRequest{}, validateGenericJobPipeline(request.Pipeline)
 	}
 	if request.Metadata == nil {
 		return enqueueRequest{}, fmt.Errorf("coding enqueue metadata must be one JSON object")

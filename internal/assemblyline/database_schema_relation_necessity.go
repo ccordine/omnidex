@@ -21,10 +21,9 @@ type DatabaseSchemaRelationNecessityResult struct {
 func NewDatabaseSchemaRelationNecessityJob(
 	input DatabaseSchemaRelationNecessityInput,
 ) (PortableJob, error) {
-	return newValidatedPortableJob(
+	return newPortableJob(
 		WorkDatabaseSchemaRelationNecessity,
 		input,
-		input.validate,
 	)
 }
 

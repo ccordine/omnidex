@@ -3,12 +3,10 @@ package queue
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
 
-	"github.com/gryph/omnidex/internal/artifacts"
 	"github.com/gryph/omnidex/internal/evidence"
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/modelconfig"
@@ -37,14 +35,11 @@ func (r *Repository) Ping(ctx context.Context) error {
 	return r.pool.Ping(ctx)
 }
 
-func (r *Repository) EnqueueJob(ctx context.Context, instruction, pipeline string, metadataJSON []byte) (model.Job, error) {
-	pipeline, err := validatePublicEnqueuePipeline(pipeline)
-	if err != nil {
-		return model.Job{}, err
-	}
+func (r *Repository) EnqueueCodingJob(ctx context.Context, instruction string, metadataJSON []byte) (model.Job, error) {
 	if len(metadataJSON) == 0 {
-		metadataJSON = []byte(`{}`)
+		return model.Job{}, fmt.Errorf("enqueue job requires exact metadata JSON")
 	}
+	pipeline := model.PipelineCoding
 
 	tx, err := r.pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
@@ -63,11 +58,11 @@ func (r *Repository) EnqueueJob(ctx context.Context, instruction, pipeline strin
 }
 
 func (r *Repository) enqueueJobTx(ctx context.Context, tx pgx.Tx, instruction, pipeline string, metadataJSON []byte) (model.Job, error) {
-	steps, err := stepsForJob(pipeline, instruction, metadataJSON)
+	steps, err := stepsForJob(metadataJSON)
 	if err != nil {
 		return model.Job{}, fmt.Errorf("resolve job execution steps: %w", err)
 	}
-	return r.enqueueJobWithStepsTx(ctx, tx, instruction, pipeline, metadataJSON, steps)
+	return r.enqueueJobWithStepsTx(ctx, tx, instruction, pipeline, metadataJSON, steps, nil)
 }
 
 func (r *Repository) enqueueJobWithStepsTx(
@@ -76,27 +71,17 @@ func (r *Repository) enqueueJobWithStepsTx(
 	instruction, pipeline string,
 	metadataJSON []byte,
 	steps []stepSeed,
+	projectID *int64,
 ) (model.Job, error) {
-	normalizedPipeline, err := validatePipeline(pipeline)
-	if err != nil {
-		return model.Job{}, err
-	}
-	pipeline = normalizedPipeline
 	if err := validateJobInstruction(instruction); err != nil {
 		return model.Job{}, err
 	}
 	if len(steps) == 0 {
 		return model.Job{}, fmt.Errorf("pipeline %q produced no executable steps", pipeline)
 	}
-	projectID, err := resolveProjectID(ctx, tx, metadataJSON)
-	if err != nil {
-		return model.Job{}, err
-	}
-
 	var job model.Job
 	var result, errText *string
-	metadataJSON = SanitizeUTF8Bytes(metadataJSON)
-	err = tx.QueryRow(ctx, `
+	err := tx.QueryRow(ctx, `
 		INSERT INTO jobs (instruction, pipeline, status, metadata, project_id)
 		VALUES ($1, $2, $3, $4::jsonb, $5)
 		RETURNING id, instruction, pipeline, status, result, error, metadata,
@@ -137,63 +122,18 @@ func (r *Repository) enqueueJobWithStepsTx(
 	return job, nil
 }
 
-func resolveProjectID(ctx context.Context, tx pgx.Tx, metadataJSON []byte) (*int64, error) {
-	ref, err := projectReferenceFromMetadata(metadataJSON)
-	if err != nil {
-		return nil, err
-	}
-	if ref.HasProjectID {
-		var projectID int64
-		err := tx.QueryRow(ctx, `
-			UPDATE projects
-			SET last_seen_at = NOW(), updated_at = NOW()
-			WHERE id = $1
-			RETURNING id
-		`, ref.ProjectID).Scan(&projectID)
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, fmt.Errorf("project_id %d does not exist", ref.ProjectID)
-		}
-		if err != nil {
-			return nil, err
-		}
-		return &projectID, nil
-	}
-	return nil, nil
-}
-
-type metadataProjectReference struct {
-	ProjectID    int64
-	HasProjectID bool
-}
-
-func projectReferenceFromMetadata(metadataJSON []byte) (metadataProjectReference, error) {
-	if len(metadataJSON) == 0 {
-		return metadataProjectReference{}, nil
-	}
-	var payload map[string]json.RawMessage
-	if err := json.Unmarshal(metadataJSON, &payload); err != nil {
-		return metadataProjectReference{}, fmt.Errorf("parse job metadata: %w", err)
-	}
-	ref := metadataProjectReference{}
-	if raw, ok := payload["project_id"]; ok {
-		if err := json.Unmarshal(raw, &ref.ProjectID); err != nil {
-			return metadataProjectReference{}, fmt.Errorf("project_id must be a positive integer: %w", err)
-		}
-		if ref.ProjectID <= 0 {
-			return metadataProjectReference{}, fmt.Errorf("project_id must be a positive integer")
-		}
-		ref.HasProjectID = true
-	}
-	return ref, nil
-}
-
-func decodeMetadataObject(raw json.RawMessage) map[string]any {
+func decodeMetadataObject(raw json.RawMessage) (map[string]any, error) {
 	out := map[string]any{}
 	if len(raw) == 0 {
-		return out
+		return nil, fmt.Errorf("job metadata must be an exact JSON object")
 	}
-	_ = json.Unmarshal(raw, &out)
-	return out
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return nil, fmt.Errorf("decode exact job metadata object: %w", err)
+	}
+	if out == nil {
+		return nil, fmt.Errorf("job metadata must be a JSON object")
+	}
+	return out, nil
 }
 
 func projectNameFromLocation(location string) string {
@@ -206,36 +146,6 @@ func projectNameFromLocation(location string) string {
 		return location
 	}
 	return base
-}
-
-func (r *Repository) CurrentArtifact(ctx context.Context, jobID int64, kind string) (artifacts.Envelope, bool, error) {
-	kind = strings.TrimSpace(kind)
-	if jobID <= 0 || kind == "" {
-		return artifacts.Envelope{}, false, fmt.Errorf("current artifact requires a positive job ID and exact kind")
-	}
-	var env artifacts.Envelope
-	var raw []byte
-	var id int64
-	err := r.pool.QueryRow(ctx, `
-		SELECT artifact.id, artifact.job_id, artifact.step_id, artifact.kind,
-		       artifact.version, artifact.payload_json, artifact.created_at
-		FROM artifacts AS artifact
-		JOIN job_steps AS steps
-		  ON steps.job_id=artifact.job_id AND steps.id=artifact.step_id
-		WHERE artifact.job_id=$1 AND artifact.kind=$2
-		  AND steps.superseded_at_generation IS NULL
-		ORDER BY artifact.id DESC
-		LIMIT 1
-	`, jobID, kind).Scan(&id, &env.JobID, &env.StepID, &env.Kind, &env.Version, &raw, &env.CreatedAt)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return artifacts.Envelope{}, false, nil
-		}
-		return artifacts.Envelope{}, false, err
-	}
-	env.ID = fmt.Sprintf("%d", id)
-	env.Payload = append([]byte(nil), raw...)
-	return env, true, nil
 }
 
 func (r *Repository) ListCurrentEvidenceByJob(ctx context.Context, jobID int64, limit int) ([]evidence.Record, error) {

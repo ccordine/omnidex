@@ -12,8 +12,8 @@ type ApplicationProductContextInput struct {
 func NewApplicationProductContextJob(
 	input ApplicationProductContextInput,
 ) (PortableJob, error) {
-	return newValidatedPortableJob(
-		WorkApplicationProductContext, input, input.validate,
+	return newPortableJob(
+		WorkApplicationProductContext, input,
 	)
 }
 

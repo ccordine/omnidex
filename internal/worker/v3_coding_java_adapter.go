@@ -31,9 +31,6 @@ func compileGenericJavaCommandLineBlueprint(
 		return assemblyline.SourceBlueprint{}, nil, err
 	}
 	blueprint := assemblyline.SourceBlueprint{Documents: documents}
-	if err := assemblyline.ValidateJavaSourceBlueprint(blueprint); err != nil {
-		return assemblyline.SourceBlueprint{}, nil, err
-	}
 	return blueprint, nil, nil
 }
 

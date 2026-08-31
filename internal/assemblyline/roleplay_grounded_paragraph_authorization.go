@@ -38,8 +38,8 @@ type roleplayGroundedParagraphAuthorizationProjection struct {
 func NewRoleplayGroundedParagraphAuthorizationJob(
 	input RoleplayGroundedParagraphAuthorizationInput,
 ) (PortableJob, error) {
-	return newValidatedPortableJob(
-		WorkRoleplayGroundedResponseParagraphAuthorization, input, input.validate,
+	return newPortableJob(
+		WorkRoleplayGroundedResponseParagraphAuthorization, input,
 	)
 }
 

@@ -95,79 +95,79 @@ type DatabaseQueryOrderLeafInput struct {
 }
 
 func NewDatabaseQueryFromRelationJob(input DatabaseQueryIntentLeafState) (PortableJob, error) {
-	return newValidatedPortableJob(WorkDatabaseQueryFromRelation, input, input.validate)
+	return newPortableJob(WorkDatabaseQueryFromRelation, input)
 }
 
 func NewDatabaseQueryShapeJob(input DatabaseQueryIntentLeafState) (PortableJob, error) {
-	return newValidatedPortableJob(WorkDatabaseQueryShape, input, input.validate)
+	return newPortableJob(WorkDatabaseQueryShape, input)
 }
 
 func NewDatabaseQueryProjectionAggregateJob(input DatabaseQueryProjectionLeafInput) (PortableJob, error) {
-	return newValidatedPortableJob(WorkDatabaseQueryProjectionAggregate, input, input.validate)
+	return newPortableJob(WorkDatabaseQueryProjectionAggregate, input)
 }
 
 func NewDatabaseQueryProjectionFieldJob(input DatabaseQueryProjectionLeafInput) (PortableJob, error) {
-	return newValidatedPortableJob(WorkDatabaseQueryProjectionField, input, input.validateForField)
+	return newPortableJob(WorkDatabaseQueryProjectionField, input)
 }
 
 func NewDatabaseQueryProjectionTimeBucketJob(input DatabaseQueryProjectionLeafInput) (PortableJob, error) {
-	return newValidatedPortableJob(WorkDatabaseQueryProjectionTimeBucket, input, input.validateForTimeBucket)
+	return newPortableJob(WorkDatabaseQueryProjectionTimeBucket, input)
 }
 
 func NewDatabaseQueryFilterFieldJob(input DatabaseQueryFilterLeafInput) (PortableJob, error) {
-	return newValidatedPortableJob(WorkDatabaseQueryFilterField, input, input.validate)
+	return newPortableJob(WorkDatabaseQueryFilterField, input)
 }
 
 func NewDatabaseQueryFilterOperatorJob(input DatabaseQueryFilterLeafInput) (PortableJob, error) {
-	return newValidatedPortableJob(WorkDatabaseQueryFilterOperator, input, input.validateField)
+	return newPortableJob(WorkDatabaseQueryFilterOperator, input)
 }
 
 func NewDatabaseQueryFilterValueJob(input DatabaseQueryFilterLeafInput) (PortableJob, error) {
-	return newValidatedPortableJob(WorkDatabaseQueryFilterValue, input, input.validateOperator)
+	return newPortableJob(WorkDatabaseQueryFilterValue, input)
 }
 
 func NewDatabaseQueryWindowFieldJob(input DatabaseQueryWindowLeafInput) (PortableJob, error) {
-	return newValidatedPortableJob(WorkDatabaseQueryWindowField, input, input.validate)
+	return newPortableJob(WorkDatabaseQueryWindowField, input)
 }
 
 func NewDatabaseQueryWindowUnitJob(input DatabaseQueryWindowLeafInput) (PortableJob, error) {
-	return newValidatedPortableJob(WorkDatabaseQueryWindowUnit, input, input.validateField)
+	return newPortableJob(WorkDatabaseQueryWindowUnit, input)
 }
 
 func NewDatabaseQueryWindowAmountJob(input DatabaseQueryWindowLeafInput) (PortableJob, error) {
-	return newValidatedPortableJob(WorkDatabaseQueryWindowAmount, input, input.validateUnit)
+	return newPortableJob(WorkDatabaseQueryWindowAmount, input)
 }
 
 func NewDatabaseQueryExistenceRelationJob(input DatabaseQueryExistenceLeafInput) (PortableJob, error) {
-	return newValidatedPortableJob(WorkDatabaseQueryExistenceRelation, input, input.validate)
+	return newPortableJob(WorkDatabaseQueryExistenceRelation, input)
 }
 
 func NewDatabaseQueryExistenceNegatedJob(input DatabaseQueryExistenceLeafInput) (PortableJob, error) {
-	return newValidatedPortableJob(WorkDatabaseQueryExistenceNegated, input, input.validateRelation)
+	return newPortableJob(WorkDatabaseQueryExistenceNegated, input)
 }
 
 func NewDatabaseQueryHavingAggregateJob(input DatabaseQueryHavingLeafInput) (PortableJob, error) {
-	return newValidatedPortableJob(WorkDatabaseQueryHavingAggregate, input, input.validate)
+	return newPortableJob(WorkDatabaseQueryHavingAggregate, input)
 }
 
 func NewDatabaseQueryHavingFieldJob(input DatabaseQueryHavingLeafInput) (PortableJob, error) {
-	return newValidatedPortableJob(WorkDatabaseQueryHavingField, input, input.validateAggregate)
+	return newPortableJob(WorkDatabaseQueryHavingField, input)
 }
 
 func NewDatabaseQueryHavingOperatorJob(input DatabaseQueryHavingLeafInput) (PortableJob, error) {
-	return newValidatedPortableJob(WorkDatabaseQueryHavingOperator, input, input.validateField)
+	return newPortableJob(WorkDatabaseQueryHavingOperator, input)
 }
 
 func NewDatabaseQueryHavingValueJob(input DatabaseQueryHavingLeafInput) (PortableJob, error) {
-	return newValidatedPortableJob(WorkDatabaseQueryHavingValue, input, input.validateOperator)
+	return newPortableJob(WorkDatabaseQueryHavingValue, input)
 }
 
 func NewDatabaseQueryOrderProjectionJob(input DatabaseQueryOrderLeafInput) (PortableJob, error) {
-	return newValidatedPortableJob(WorkDatabaseQueryOrderProjection, input, input.validate)
+	return newPortableJob(WorkDatabaseQueryOrderProjection, input)
 }
 
 func NewDatabaseQueryOrderDirectionJob(input DatabaseQueryOrderLeafInput) (PortableJob, error) {
-	return newValidatedPortableJob(WorkDatabaseQueryOrderDirection, input, input.validateProjection)
+	return newPortableJob(WorkDatabaseQueryOrderDirection, input)
 }
 
 func NewDatabaseQueryIntentLeafState(input DatabaseQueryIntentInput) DatabaseQueryIntentLeafState {

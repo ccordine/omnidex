@@ -25,9 +25,6 @@ func resolveRoleplayCanonCandidateQueue(
 		func(raw string) (assemblyline.RoleplayCanonFactInventory, error) {
 			return assemblyline.DecodeRoleplayCanonFactInventory(input, raw)
 		},
-		func(value assemblyline.RoleplayCanonFactInventory) error {
-			return value.ValidateFor(input)
-		},
 	)
 	totalCalls, allReused := receipt.Calls, receipt.Reused
 	if err != nil {
@@ -59,9 +56,6 @@ func resolveRoleplayCanonCandidateQueue(
 					authorizationInput, raw,
 				)
 			},
-			func(value assemblyline.RoleplayCanonFactCandidateAuthorization) error {
-				return value.ValidateFor(authorizationInput)
-			},
 		)
 		totalCalls += leafReceipt.Calls
 		allReused = allReused && leafReceipt.Reused
@@ -86,9 +80,6 @@ func resolveRoleplayCanonCandidateQueue(
 				relationJob, station.RoleplayCanonExtraction, resolveModel,
 				func(raw string) (assemblyline.RoleplayCanonFactCandidateRelation, error) {
 					return assemblyline.DecodeRoleplayCanonFactCandidateRelation(relationInput, raw)
-				},
-				func(value assemblyline.RoleplayCanonFactCandidateRelation) error {
-					return value.ValidateFor(relationInput)
 				},
 			)
 			totalCalls += relationReceipt.Calls

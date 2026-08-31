@@ -38,8 +38,8 @@ type ApplicationProjectStackConstraintDecision struct {
 func NewApplicationProjectStackConstraintJob(
 	input ApplicationProjectStackConstraintInput,
 ) (PortableJob, error) {
-	return newValidatedPortableJob(
-		WorkApplicationProjectStackConstraint, input, input.validate,
+	return newPortableJob(
+		WorkApplicationProjectStackConstraint, input,
 	)
 }
 

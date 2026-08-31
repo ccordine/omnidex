@@ -36,9 +36,6 @@ type PortableResultProjection struct {
 }
 
 func (result PortableResult) ValidateFor(job PortableJob) error {
-	if err := job.Validate(); err != nil {
-		return err
-	}
 	if result.JobID != job.ID {
 		return fmt.Errorf("portable result job id does not match the claimed job")
 	}

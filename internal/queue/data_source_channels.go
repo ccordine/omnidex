@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -75,53 +74,4 @@ func (r *Repository) DeleteDataSourceChannel(ctx context.Context, dataSourceID, 
 		return pgx.ErrNoRows
 	}
 	return nil
-}
-
-func (r *Repository) AddDataSourceChannelMessage(ctx context.Context, channelID, role, content string, payload json.RawMessage, jobID *int64) (model.DataSourceChannelMessage, error) {
-	channelID = strings.TrimSpace(channelID)
-	role = strings.ToLower(strings.TrimSpace(role))
-	content = strings.TrimSpace(content)
-	if channelID == "" {
-		return model.DataSourceChannelMessage{}, fmt.Errorf("channel id is required")
-	}
-	if role != "user" && role != "assistant" && role != "system" {
-		return model.DataSourceChannelMessage{}, fmt.Errorf("unsupported message role")
-	}
-	if len(payload) == 0 || !json.Valid(payload) {
-		payload = json.RawMessage(`{}`)
-	}
-	var item model.DataSourceChannelMessage
-	err := r.pool.QueryRow(ctx, `
-		INSERT INTO data_source_channel_messages (channel_id, role, content, payload, job_id)
-		VALUES ($1, $2, $3, $4::jsonb, $5)
-		RETURNING id, channel_id, role, content, payload, job_id, created_at
-	`, channelID, role, content, string(payload), jobID).Scan(
-		&item.ID, &item.ChannelID, &item.Role, &item.Content, &item.Payload, &item.JobID, &item.CreatedAt,
-	)
-	if err != nil {
-		return model.DataSourceChannelMessage{}, err
-	}
-	_, _ = r.pool.Exec(ctx, `UPDATE data_source_channels SET updated_at = NOW() WHERE id = $1`, channelID)
-	return item, nil
-}
-
-func (r *Repository) DataSourceChannelMessageForJob(ctx context.Context, jobID int64) (model.DataSourceChannelMessage, bool, error) {
-	if jobID <= 0 {
-		return model.DataSourceChannelMessage{}, false, nil
-	}
-	var item model.DataSourceChannelMessage
-	err := r.pool.QueryRow(ctx, `
-		SELECT id, channel_id, role, content, payload, job_id, created_at
-		FROM data_source_channel_messages
-		WHERE job_id = $1
-		ORDER BY id DESC
-		LIMIT 1
-	`, jobID).Scan(&item.ID, &item.ChannelID, &item.Role, &item.Content, &item.Payload, &item.JobID, &item.CreatedAt)
-	if err != nil {
-		if err == pgx.ErrNoRows {
-			return model.DataSourceChannelMessage{}, false, nil
-		}
-		return model.DataSourceChannelMessage{}, false, err
-	}
-	return item, true, nil
 }

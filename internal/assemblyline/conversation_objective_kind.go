@@ -37,7 +37,7 @@ type ConversationObjectiveKindDecision struct {
 }
 
 func NewConversationObjectiveKindJob(input ConversationObjectiveKindInput) (PortableJob, error) {
-	return newValidatedPortableJob(WorkConversationObjectiveKind, input, input.validate)
+	return newPortableJob(WorkConversationObjectiveKind, input)
 }
 
 func (input ConversationObjectiveKindInput) validate() error {

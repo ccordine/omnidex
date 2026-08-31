@@ -208,7 +208,6 @@ export default class ProjectsController extends Controller {
   saveModelConfig(event: Event): Promise<void> { return this.mutations.saveModelConfig(event); }
   clearModelConfig(event: Event): Promise<void> { return this.mutations.clearModelConfig(event); }
   saveScrumAutomation(event: Event): Promise<void> { return this.mutations.saveScrumAutomation(event); }
-  rescanProject(event: Event): Promise<void> { return this.mutations.rescanProject(event); }
   scanProjectMap(event: Event): Promise<void> { return this.mutations.scanProjectMap(event); }
   refreshProjectGit(event: Event): Promise<void> { return this.mutations.refreshProjectGit(event); }
   startAutoWork(event: Event): Promise<void> { return this.mutations.startAutoWork(event); }

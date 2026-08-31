@@ -37,7 +37,7 @@ type RoleplayOngoingActionDecision struct {
 }
 
 func NewRoleplayOngoingActionJob(input RoleplayOngoingActionInput) (PortableJob, error) {
-	return newValidatedPortableJob(WorkRoleplayOngoingAction, input, input.validate)
+	return newPortableJob(WorkRoleplayOngoingAction, input)
 }
 
 func (input RoleplayOngoingActionInput) validate() error {

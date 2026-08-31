@@ -31,7 +31,7 @@ func (s *directCodingSession) Assemble() (directCodingAssembly, error) {
 	}
 	workerRuntime := directCodingWorkerRuntime(s)
 	applicationContext, err := assemblyline.BootstrapApplicationContext(
-		redacted, assemblyline.ApplicationWorkspaceExisting,
+		redacted,
 	)
 	if err != nil {
 		return directCodingAssembly{}, err
@@ -46,20 +46,16 @@ func (s *directCodingSession) Assemble() (directCodingAssembly, error) {
 		return directCodingAssembly{}, err
 	}
 	specification := interpretation.Specification
+	protected, required, deletions, err := resolveDirectCodingArtifactPaths(
+		specification.Artifacts, identities,
+	)
+	if err != nil {
+		return directCodingAssembly{}, err
+	}
 	if len(specification.Requirements) == 0 {
-		protected, required, deletions, err := resolveDirectCodingArtifactPaths(
-			specification.Artifacts, identities,
-		)
-		if err != nil {
-			return directCodingAssembly{}, err
-		}
 		s.protectedPaths = directCodingProtectedPathSet(protected)
-		files, err := s.requiredArtifactFiles(required, nil)
-		if err != nil {
-			return directCodingAssembly{}, err
-		}
-		assembly := directCodingAssembly{Files: files, DeletePaths: deletions}
-		s.plannedFiles = len(files)
+		assembly := directCodingAssembly{RequiredPaths: required, DeletePaths: deletions}
+		s.plannedFiles = len(required)
 		s.plannedDeletes = len(deletions)
 		return assembly, nil
 	}
@@ -78,11 +74,12 @@ func (s *directCodingSession) Assemble() (directCodingAssembly, error) {
 	}
 	targetTree, coverage, err := resolveDirectCodingTargetTree(
 		specification, workload, selectedStack,
+		append(append(append([]string(nil), protected...), required...), deletions...),
+		s.root,
 	)
 	if err != nil {
 		return directCodingAssembly{}, err
 	}
-	selectedVersionProfile := selection.Profile
 	if err := s.bindDirectCodingTargetTreePathProvenance(targetTree); err != nil {
 		return directCodingAssembly{}, err
 	}
@@ -96,22 +93,9 @@ func (s *directCodingSession) Assemble() (directCodingAssembly, error) {
 	if err != nil {
 		return directCodingAssembly{}, err
 	}
-	runtimeCapabilities, err := s.selectRequirementRuntimeCapabilities(
-		selectedStack, specification.ProductQuote, selectedVersionProfile.SourceDialect,
-		specification.Requirements, capabilities,
-	)
-	if err != nil {
-		return directCodingAssembly{}, err
-	}
 	program, err := compileDirectCodingProgram(
-		filepath.Base(s.root), specification, identities, workload, capabilities,
-		selection, targetTree, coverage,
-	)
-	if err != nil {
-		return directCodingAssembly{}, err
-	}
-	program, err = bindDirectCodingRuntimeCapabilities(
-		selectedStack, program, runtimeCapabilities,
+		filepath.Base(s.root), specification, workload, capabilities,
+		selection, targetTree, coverage, protected, required, deletions,
 	)
 	if err != nil {
 		return directCodingAssembly{}, err
@@ -131,14 +115,11 @@ func (s *directCodingSession) Assemble() (directCodingAssembly, error) {
 	if err != nil {
 		return directCodingAssembly{}, err
 	}
-	assembly.Files, err = s.requiredArtifactFiles(program.RequiredPaths, assembly.Files)
-	if err != nil {
-		return directCodingAssembly{}, err
-	}
+	assembly.RequiredPaths = append([]string(nil), program.RequiredPaths...)
 	s.runtime.svc.emitStepEvent(s.runtime.claim.Authority, "coding_artifact_sieve_passed", fmt.Sprintf(
 		"stack=%s files=%d", selectedStack.ID, len(assembly.Files),
 	))
-	s.plannedFiles = len(assembly.Files)
+	s.plannedFiles = len(assembly.Files) + len(assembly.RequiredPaths)
 	s.plannedDeletes = len(assembly.DeletePaths)
 	blockCount := directCodingSourceBlueprintBlockCount(program.Source)
 	s.runtime.svc.emitStepEvent(s.runtime.claim.Authority, "coding_specification_accepted", fmt.Sprintf(

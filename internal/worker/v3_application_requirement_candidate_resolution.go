@@ -73,9 +73,6 @@ func resolveDirectCodingApplicationRequirementCandidate(
 						raw,
 					)
 				},
-				func(value assemblyline.ApplicationRequirementCandidateAuthorizationResult) error {
-					return value.ValidateFor(authorizationInput)
-				},
 			)
 			if err != nil {
 				return zero, err

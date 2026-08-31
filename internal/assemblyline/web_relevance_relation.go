@@ -37,8 +37,8 @@ type webRelevanceRelationProjection struct {
 func NewWebRelevanceRelationJob(
 	input WebRelevanceRelationInput,
 ) (PortableJob, error) {
-	return newValidatedPortableJob(
-		WorkWebRelevanceRelation, input, input.validate,
+	return newPortableJob(
+		WorkWebRelevanceRelation, input,
 	)
 }
 

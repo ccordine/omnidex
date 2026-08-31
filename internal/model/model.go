@@ -208,13 +208,3 @@ type DataSourceChannel struct {
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
 }
-
-type DataSourceChannelMessage struct {
-	ID        int64           `json:"id"`
-	ChannelID string          `json:"channel_id"`
-	Role      string          `json:"role"`
-	Content   string          `json:"content"`
-	Payload   json.RawMessage `json:"payload,omitempty"`
-	JobID     *int64          `json:"job_id,omitempty"`
-	CreatedAt time.Time       `json:"created_at"`
-}

@@ -36,7 +36,7 @@ func (executor *directCodingTypeScriptSourceGenerator) GenerateBlock(
 		return "", fmt.Errorf("TypeScript source generator cannot build task role %q", ref.Block.Role)
 	}
 	source, err := executor.session.generateDirectCodingApplicationTaskBlock(
-		context, stage, ref, validateDirectCodingBrowserPublicInteractionCandidate,
+		context, stage, ref, nil,
 	)
 	if err != nil {
 		return "", err

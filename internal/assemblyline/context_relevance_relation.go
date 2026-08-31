@@ -41,8 +41,8 @@ type contextRelevanceRelationProjection struct {
 func NewContextRelevanceRelationJob(
 	input ContextRelevanceRelationInput,
 ) (PortableJob, error) {
-	return newValidatedPortableJob(
-		WorkContextRelevanceRelation, input, input.validate,
+	return newPortableJob(
+		WorkContextRelevanceRelation, input,
 	)
 }
 

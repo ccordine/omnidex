@@ -39,8 +39,8 @@ type roleplayGroundedParagraphInventoryProjection struct {
 func NewRoleplayGroundedParagraphInventoryJob(
 	input RoleplayGroundedResponseInput,
 ) (PortableJob, error) {
-	return newValidatedPortableJob(
-		WorkRoleplayGroundedResponseParagraphInventory, input, input.validate,
+	return newPortableJob(
+		WorkRoleplayGroundedResponseParagraphInventory, input,
 	)
 }
 

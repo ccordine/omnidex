@@ -141,17 +141,11 @@ import type { CapabilitySnapshot, FeatureActions, FeatureProps, FeatureState, Fe
 }
 
 func genericBrowserFeatureContract(behavior string) string {
-	parts := []string{behavior}
-	parts = append(parts,
-		"Return one complete accessible interactive React view; no placeholder, TODO, endpoint, import, or extra declaration.",
-		"Use one unconditional top-level intrinsic JSX root; no fragment or other JSX. Controls are unconditional, never in branches, ternaries, loops, or maps. Each visible dynamic expression is the sole child of an intrinsic. A derived result is the sole genuinely dynamic child of output with a unique literal aria-label; other dynamic text cannot prove results. Only condition && intrinsic may conditionally show non-control text.",
-		"Controls are intrinsic button, textarea, select, or supported input. Every button has exact type=\"button\" and literal text; other controls have a literal aria-label or label. Public attributes are static quoted literals. No forms, custom components, explicit roles, aria-labelledby, spreads, effectful or unknown attributes, style, script, template, noscript, title, alt, contentEditable, dialog, popover, hidden or visibility changes, disabled or read-only controls, links, datalist, or other native interactive elements.",
-		"Give every requirement-defined result operation a literal accessible control name. Names may identify alternatives but cannot invent result relations.",
-		"Class names, when present, are static literal values and carry no behavioral authority.",
-		"Use only the listed direct declarations. Mutate shared state through actions in handlers; read state or capabilities only when this behavior requires them.",
-	)
-	parts = append(parts, "Every referenced capability identifier must be one of the listed capability identifiers.")
-	return strings.Join(parts, "\n")
+	return strings.Join([]string{
+		behavior,
+		"Return one React view implementing only this behavior; do not add imports, declarations, placeholders, or unrelated product rules.",
+		"Use only the listed direct declarations and capability identifiers. Shared state changes use the supplied actions.",
+	}, "\n")
 }
 
 func genericBrowserFeatureProjectionSource(

@@ -32,10 +32,9 @@ type RepositoryRequirementInventory struct {
 func NewRepositoryRequirementInventoryJob(
 	input RepositoryRequirementInterpretationInput,
 ) (PortableJob, error) {
-	return newValidatedPortableJob(
+	return newPortableJob(
 		WorkRepositoryRequirementInventory,
 		input,
-		input.validate,
 	)
 }
 

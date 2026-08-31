@@ -16,7 +16,7 @@ type FragmentModificationInput struct {
 }
 
 func NewFragmentModificationJob(input FragmentModificationInput) (PortableJob, error) {
-	return newValidatedPortableJob(WorkFragmentModification, input, input.validate)
+	return newPortableJob(WorkFragmentModification, input)
 }
 
 func (input FragmentModificationInput) validate() error {

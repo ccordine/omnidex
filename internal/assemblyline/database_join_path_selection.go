@@ -37,7 +37,7 @@ type databaseJoinPathSelectionProjection struct {
 }
 
 func NewDatabaseJoinPathSelectionJob(input DatabaseJoinPathSelectionInput) (PortableJob, error) {
-	return newValidatedPortableJob(WorkDatabaseJoinPathSelection, input, input.validate)
+	return newPortableJob(WorkDatabaseJoinPathSelection, input)
 }
 
 func (input DatabaseJoinPathSelectionInput) validate() error {

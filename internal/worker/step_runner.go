@@ -66,6 +66,15 @@ func (s *Service) run(ctx context.Context, workerID string) {
 			if s.skipFailureForControlledCancel(ctx, workerID, claim, err) {
 				continue
 			}
+			var appliedFailure *appliedWorkspaceCompletionError
+			if errors.As(err, &appliedFailure) {
+				s.emitStepEvent(claim.Authority, "step_projection_error", err.Error())
+				s.logf(
+					"worker=%s job=%d step=%d action=%s left applied workspace awaiting completion projection: %v",
+					workerID, claim.Job.ID, claim.Step.ID, claim.Step.Action, err,
+				)
+				continue
+			}
 			s.emitStepEvent(claim.Authority, "step_error", err.Error())
 			s.logf("worker=%s job=%d step=%d action=%s failed: %v", workerID, claim.Job.ID, claim.Step.ID, claim.Step.Action, err)
 			failCommand, identityErr := failClaimedStepCommand(claim, err.Error())
@@ -90,24 +99,12 @@ func (s *Service) run(ctx context.Context, workerID string) {
 }
 
 func (s *Service) processStep(ctx context.Context, claim *model.ClaimedStep) error {
-	if err := requireExecutablePipeline(claim.Job.Pipeline); err != nil {
-		return err
-	}
 	controlCtx, stopControl := s.watchStepControl(ctx, claim.Job.ID, claim.Step.ID)
 	defer stopControl()
 	stepCtx, stopLease := s.watchStepAttemptLease(controlCtx, claim.Authority)
 	workErr := s.runNativeV3Step(stepCtx, claim, claim.Step.Action)
 	leaseErr := stopLease()
-	return s.finishStepAttemptWatch(ctx, claim, workErr, leaseErr)
-}
-
-func requireExecutablePipeline(pipeline string) error {
-	switch pipeline {
-	case model.PipelineChat, model.PipelineCoding, model.PipelineScrum:
-		return nil
-	default:
-		return fmt.Errorf("unsupported executable pipeline %q", pipeline)
-	}
+	return s.finishStepAttemptWatch(workErr, leaseErr)
 }
 
 func (s *Service) watchStepControl(ctx context.Context, jobID, stepID int64) (context.Context, func()) {

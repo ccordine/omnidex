@@ -79,10 +79,6 @@ func (s *Server) handlePublicDataSourceByID(w http.ResponseWriter, r *http.Reque
 		s.handleDataSourceChannelByID(w, r, sourceID, channelID)
 		return
 	}
-	if len(parts) == 4 && parts[3] == "messages" {
-		s.handleDataSourceChannelMessages(w, r, sourceID, channelID)
-		return
-	}
 	writeError(w, http.StatusNotFound, "not found")
 }
 
@@ -149,36 +145,6 @@ func (s *Server) handleDataSourceChannelByID(w http.ResponseWriter, r *http.Requ
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]any{"deleted": true})
-	default:
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-	}
-}
-
-func (s *Server) handleDataSourceChannelMessages(w http.ResponseWriter, r *http.Request, sourceID, channelID string) {
-	if _, err := s.repo.GetDataSourceChannel(r.Context(), sourceID, channelID); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			writeError(w, http.StatusNotFound, "channel not found")
-			return
-		}
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	switch r.Method {
-	case http.MethodGet:
-		request, err := dataSourcePageRequest(r, dataSourceAPIPageSize)
-		if err != nil {
-			writeError(w, http.StatusBadRequest, err.Error())
-			return
-		}
-		page, err := s.repo.ListDataSourceChannelMessagePage(r.Context(), channelID, request)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
-			return
-		}
-		writeJSON(w, http.StatusOK, map[string]any{
-			"messages": page.Items, "offset": page.Offset, "has_more": page.HasMore,
-			"next_offset": dataSourceNextOffset(page.Offset, len(page.Items), page.HasMore),
-		})
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}

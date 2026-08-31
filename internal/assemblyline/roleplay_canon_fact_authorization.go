@@ -21,8 +21,8 @@ type RoleplayCanonFactCandidateAuthorization struct {
 func NewRoleplayCanonFactCandidateAuthorizationJob(
 	input RoleplayCanonFactCandidateAuthorizationInput,
 ) (PortableJob, error) {
-	return newValidatedPortableJob(
-		WorkRoleplayCanonFactCandidateAuthorization, input, input.validate,
+	return newPortableJob(
+		WorkRoleplayCanonFactCandidateAuthorization, input,
 	)
 }
 

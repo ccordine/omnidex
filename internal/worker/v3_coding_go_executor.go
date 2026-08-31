@@ -5,16 +5,6 @@ import (
 	"github.com/gryph/omnidex/internal/gofragment"
 )
 
-func newDirectCodingGoSourceGenerator(
-	session *directCodingSession,
-	_ directCodingProgram,
-) (directCodingProjectSourceGenerator, error) {
-	return newDirectCodingLanguageSourceGenerator(session, directCodingLanguageSourceConfig{
-		Language: "go", AdapterID: "go",
-		ValidateFragment: validateDirectCodingGoFragment,
-	})
-}
-
 func validateDirectCodingGoFragment(
 	input assemblyline.FragmentGenerationInput,
 	candidate string,

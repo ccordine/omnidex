@@ -9,6 +9,7 @@ import (
 type directCodingProjectSelection struct {
 	Stack   directCodingProjectStack
 	Profile directCodingProjectVersionProfile
+	Dialect string
 }
 
 func selectDirectCodingProject(
@@ -66,9 +67,6 @@ func selectDirectCodingProjectFromRegistries(
 		runtime, modelName, "application_project_stack_constraint", job, identities,
 		func(raw string) (assemblyline.ApplicationProjectStackConstraintDecision, error) {
 			return assemblyline.DecodeApplicationProjectStackConstraintDecision(input, raw)
-		},
-		func(value assemblyline.ApplicationProjectStackConstraintDecision) error {
-			return value.ValidateFor(input)
 		},
 	)
 	if err != nil {

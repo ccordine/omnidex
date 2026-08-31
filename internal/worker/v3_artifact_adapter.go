@@ -9,31 +9,21 @@ import (
 	"github.com/gryph/omnidex/internal/assemblyline"
 )
 
-type directCodingArtifactValidationKind string
-
-const (
-	directCodingArtifactParse      directCodingArtifactValidationKind = "parse"
-	directCodingArtifactStructural directCodingArtifactValidationKind = "structural_validate"
-)
-
-type directCodingArtifactValidation struct {
-	Kind    directCodingArtifactValidationKind
-	Execute func(path string, source []byte) error
-}
-
 // directCodingArtifactAdapter is deterministic support for one artifact class.
 // It identifies a leaf, advertises only mechanics that code can really run, and
 // never exposes a tool catalogue or grants the model any authority.
 type directCodingArtifactAdapter struct {
-	ID              string
-	Validation      directCodingArtifactValidation
-	Recognize       func(path string) (assemblyline.TargetArtifactKind, bool)
-	ComposeDocument func(assemblyline.SourceDocument, assemblyline.SourceComposition) (assemblyline.ComposedSourceDocument, error)
+	ID               string
+	Recognize        func(path string) (assemblyline.TargetArtifactKind, bool)
+	ComposeDocument  func(assemblyline.SourceDocument, assemblyline.SourceComposition) (assemblyline.ComposedSourceDocument, error)
+	SourceLanguage   string
+	ProjectFragment  directCodingLanguageFragmentProjector
+	ValidateFragment directCodingLanguageFragmentValidator
 }
 
 func registeredDirectCodingArtifactAdapters() []directCodingArtifactAdapter {
 	return []directCodingArtifactAdapter{
-		parsedArtifactAdapter("typescript_react", func(value string) (assemblyline.TargetArtifactKind, bool) {
+		artifactAdapter("typescript_react", func(value string) (assemblyline.TargetArtifactKind, bool) {
 			switch {
 			case strings.HasSuffix(value, ".test.tsx"):
 				return assemblyline.TargetArtifactVerification, true
@@ -42,22 +32,53 @@ func registeredDirectCodingArtifactAdapters() []directCodingArtifactAdapter {
 			default:
 				return "", false
 			}
-		}, validateTypeScriptReactArtifactSource, assemblyline.ComposeTypeScriptDocument),
-		parsedArtifactAdapter("typescript", suffixArtifactRecognizer(".ts", ".test.ts"), validateTypeScriptArtifactSource, assemblyline.ComposeTypeScriptDocument),
-		parsedArtifactAdapter("go", suffixArtifactRecognizer(".go", "_test.go"), validateGoArtifactSource, assemblyline.ComposeGoDocument),
-		parsedArtifactAdapter("go_module", goModuleArtifactRecognizer, validateGoModuleArtifactSource),
-		parsedArtifactAdapter("javascript", javascriptArtifactRecognizer, validateJavaScriptArtifactSource, assemblyline.ComposeJavaScriptDocument),
-		structuralArtifactAdapter("css_tailwind", suffixArtifactRecognizer(".css", ""), validateCSSArtifactSource),
-		parsedArtifactAdapter("html", suffixArtifactRecognizer(".html", ".test.html"), validateHTMLArtifactSource),
-		parsedArtifactAdapter("java", suffixArtifactRecognizer(".java", "Test.java"), validateJavaArtifactSource, assemblyline.ComposeJavaDocument),
-		parsedArtifactAdapter("rust", suffixArtifactRecognizer(".rs", "_test.rs"), validateRustArtifactSource, assemblyline.ComposeRustDocument),
-		parsedArtifactAdapter("cargo_toml", cargoTOMLArtifactRecognizer, validateCargoTOMLArtifactSource),
-		parsedArtifactAdapter("structured_json", suffixArtifactRecognizer(".json", ""), validateJSONArtifactSource),
-		structuralArtifactAdapter(
+		}, assemblyline.ComposeTypeScriptDocument),
+		artifactAdapter("typescript", suffixArtifactRecognizer(".ts", ".test.ts"), assemblyline.ComposeTypeScriptDocument),
+		sourceArtifactAdapter(
+			"go", "go", suffixArtifactRecognizer(".go", "_test.go"),
+			assemblyline.ComposeGoDocument, projectDirectCodingGoFragment,
+			validateDirectCodingGoFragment,
+		),
+		artifactAdapter("go_module", goModuleArtifactRecognizer),
+		sourceArtifactAdapter(
+			"javascript", "javascript", javascriptArtifactRecognizer,
+			assemblyline.ComposeJavaScriptDocument, assemblyline.ProjectJavaScriptFragment,
+			validateDirectCodingJavaScriptFragment,
+		),
+		artifactAdapter("css_tailwind", suffixArtifactRecognizer(".css", "")),
+		artifactAdapter("html", suffixArtifactRecognizer(".html", ".test.html")),
+		sourceArtifactAdapter(
+			"java", "java", suffixArtifactRecognizer(".java", "Test.java"),
+			assemblyline.ComposeJavaDocument, assemblyline.ProjectJavaFragment,
+			validateDirectCodingJavaFragment,
+		),
+		sourceArtifactAdapter(
+			"rust", "rust", suffixArtifactRecognizer(".rs", "_test.rs"),
+			assemblyline.ComposeRustDocument, assemblyline.ProjectRustFragment,
+			validateDirectCodingRustFragment,
+		),
+		artifactAdapter("cargo_toml", cargoTOMLArtifactRecognizer),
+		artifactAdapter("structured_json", suffixArtifactRecognizer(".json", "")),
+		artifactAdapter(
 			assemblyline.PlainTextAdapterID, plainTextArtifactRecognizer,
-			validatePlainTextArtifactSource, assemblyline.ComposePlainTextDocument,
+			assemblyline.ComposePlainTextDocument,
 		),
 	}
+}
+
+func sourceArtifactAdapter(
+	id string,
+	language string,
+	recognize func(path string) (assemblyline.TargetArtifactKind, bool),
+	compose func(assemblyline.SourceDocument, assemblyline.SourceComposition) (assemblyline.ComposedSourceDocument, error),
+	project directCodingLanguageFragmentProjector,
+	validate directCodingLanguageFragmentValidator,
+) directCodingArtifactAdapter {
+	adapter := artifactAdapter(id, recognize, compose)
+	adapter.SourceLanguage = language
+	adapter.ProjectFragment = project
+	adapter.ValidateFragment = validate
+	return adapter
 }
 
 func goModuleArtifactRecognizer(value string) (assemblyline.TargetArtifactKind, bool) {
@@ -84,40 +105,13 @@ func javascriptArtifactRecognizer(value string) (assemblyline.TargetArtifactKind
 	return assemblyline.TargetArtifactImplementation, true
 }
 
-func parsedArtifactAdapter(
+func artifactAdapter(
 	id string,
-	recognize func(path string) (assemblyline.TargetArtifactKind, bool),
-	parseSource func(path string, source []byte) error,
-	composeDocument ...func(assemblyline.SourceDocument, assemblyline.SourceComposition) (assemblyline.ComposedSourceDocument, error),
-) directCodingArtifactAdapter {
-	return executableArtifactAdapter(
-		id, directCodingArtifactValidation{Kind: directCodingArtifactParse, Execute: parseSource},
-		recognize, composeDocument...,
-	)
-}
-
-func structuralArtifactAdapter(
-	id string,
-	recognize func(path string) (assemblyline.TargetArtifactKind, bool),
-	validateStructure func(path string, source []byte) error,
-	composeDocument ...func(assemblyline.SourceDocument, assemblyline.SourceComposition) (assemblyline.ComposedSourceDocument, error),
-) directCodingArtifactAdapter {
-	return executableArtifactAdapter(
-		id, directCodingArtifactValidation{
-			Kind: directCodingArtifactStructural, Execute: validateStructure,
-		},
-		recognize, composeDocument...,
-	)
-}
-
-func executableArtifactAdapter(
-	id string,
-	validation directCodingArtifactValidation,
 	recognize func(path string) (assemblyline.TargetArtifactKind, bool),
 	composeDocument ...func(assemblyline.SourceDocument, assemblyline.SourceComposition) (assemblyline.ComposedSourceDocument, error),
 ) directCodingArtifactAdapter {
 	adapter := directCodingArtifactAdapter{
-		ID: id, Validation: validation, Recognize: recognize,
+		ID: id, Recognize: recognize,
 	}
 	if len(composeDocument) > 1 {
 		panic("artifact adapter accepts at most one document composer")

@@ -40,9 +40,6 @@ func (adapter portableObjectiveRoleplayGroundedStation) RespondGrounded(
 		func(raw string) (assemblyline.RoleplayGroundedParagraphInventory, error) {
 			return assemblyline.DecodeRoleplayGroundedParagraphInventory(input, raw)
 		},
-		func(value assemblyline.RoleplayGroundedParagraphInventory) error {
-			return value.ValidateFor(input)
-		},
 	)
 	totalCalls, allReused := receipt.Calls, receipt.Reused
 	if err != nil {
@@ -82,9 +79,6 @@ func (adapter portableObjectiveRoleplayGroundedStation) RespondGrounded(
 				return assemblyline.DecodeRoleplayGroundedParagraphAuthorizationDecision(
 					authorizationInput, raw,
 				)
-			},
-			func(value assemblyline.RoleplayGroundedParagraphAuthorizationDecision) error {
-				return value.ValidateFor(authorizationInput)
 			},
 		)
 		totalCalls += authorizationReceipt.Calls
@@ -157,7 +151,6 @@ func (adapter portableObjectiveRoleplayGroundedStation) bindRoleplayGroundedEvid
 					relationInput, raw,
 				)
 			},
-			func(assemblyline.RoleplayGroundedEvidenceRelation) error { return nil },
 		)
 		totalCalls += receipt.Calls
 		allReused = allReused && receipt.Reused

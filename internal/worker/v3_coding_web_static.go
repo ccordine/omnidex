@@ -33,6 +33,10 @@ func typeScriptBrowserStaticFiles(
 	if err != nil {
 		return nil, err
 	}
+	packageLock, dependencies, devDependencies, err := typeScriptBrowserPackageLock(profile, packageName)
+	if err != nil {
+		return nil, err
+	}
 	manifest := typeScriptPackageManifest{
 		Name: packageName, Private: true, Version: "1.0.0", Type: "module",
 		Engines: map[string]string{"node": node, "npm": npm},
@@ -40,16 +44,12 @@ func typeScriptBrowserStaticFiles(
 			"dev": "vite", "typecheck": "tsc --noEmit",
 			"build": "npm run typecheck && vite build",
 		},
-		Dependencies:    profile.NPMDependencies,
-		DevDependencies: profile.NPMDevDependencies,
+		Dependencies:    dependencies,
+		DevDependencies: devDependencies,
 	}
 	encoded, err := json.MarshalIndent(manifest, "", "  ")
 	if err != nil {
 		return nil, fmt.Errorf("marshal code-owned TypeScript package manifest: %w", err)
-	}
-	packageLock, err := typeScriptBrowserPackageLock(profile, packageName)
-	if err != nil {
-		return nil, err
 	}
 	return []directCodingFileTask{
 		{Path: "package.json", Content: append(encoded, '\n'), Mode: 0o644},

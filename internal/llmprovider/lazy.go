@@ -36,23 +36,6 @@ func NewLazyFromConfig(cfg config.Config) Transports {
 	}
 }
 
-func (resolver *lazyExactStationResolver) RequireExactPreparedContract() error {
-	if resolver == nil {
-		return fmt.Errorf("lazy exact station resolver is uninitialized")
-	}
-	return nil
-}
-
-func (resolver *lazyExactStationResolver) ValidateExactPreparedContract(
-	prepared llm.PreparedModel,
-) error {
-	client, err := resolver.resolve()
-	if err != nil {
-		return err
-	}
-	return client.ValidateExactPreparedContract(prepared)
-}
-
 func (resolver *lazyExactStationResolver) GeneratePreparedExact(
 	ctx context.Context,
 	prepared llm.PreparedModel,
@@ -74,8 +57,12 @@ func (resolver *lazyExactStationResolver) resolve() (llm.ExactStationClient, err
 			resolver.err = fmt.Errorf("LLM_PROVIDER is not configured")
 			return
 		}
-		definition, ok := catalog.Lookup(provider)
-		if !ok || !definition.SupportsExactPreparedStations {
+		definition, err := catalog.Resolve(provider)
+		if err != nil {
+			resolver.err = fmt.Errorf("resolve LLM provider %q: %w", provider, err)
+			return
+		}
+		if !definition.SupportsExactPreparedStations {
 			resolver.err = fmt.Errorf(
 				"LLM provider %q does not implement the exact prepared station contract", provider,
 			)
@@ -88,9 +75,6 @@ func (resolver *lazyExactStationResolver) resolve() (llm.ExactStationClient, err
 			return
 		}
 		resolver.client, resolver.err = newExactStationProvider(resolver.cfg, definition)
-		if resolver.err == nil {
-			resolver.err = resolver.client.RequireExactPreparedContract()
-		}
 	})
 	return resolver.client, resolver.err
 }
@@ -116,8 +100,12 @@ func (resolver *lazyEmbeddingResolver) resolve() (llm.EmbeddingClient, error) {
 			resolver.err = fmt.Errorf("EMBEDDING_PROVIDER is not configured")
 			return
 		}
-		definition, ok := catalog.Lookup(provider)
-		if !ok || !definition.SupportsEmbeddings {
+		definition, err := catalog.Resolve(provider)
+		if err != nil {
+			resolver.err = fmt.Errorf("resolve embedding provider %q: %w", provider, err)
+			return
+		}
+		if !definition.SupportsEmbeddings {
 			resolver.err = fmt.Errorf("embedding provider %q is unsupported", provider)
 			return
 		}

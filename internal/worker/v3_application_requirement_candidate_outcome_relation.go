@@ -55,9 +55,6 @@ func directCodingApplicationRequirementSemanticDuplicate(
 			func(raw string) (assemblyline.ApplicationRequirementCandidateOutcomeRelationResult, error) {
 				return assemblyline.DecodeApplicationRequirementCandidateOutcomeRelationResult(input, raw)
 			},
-			func(value assemblyline.ApplicationRequirementCandidateOutcomeRelationResult) error {
-				return value.ValidateFor(input)
-			},
 		)
 		if err != nil {
 			return false, err

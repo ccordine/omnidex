@@ -64,7 +64,6 @@ func runtimeWebPortableRuntime(
 					}
 					return raw, nil
 				},
-				func(string) error { return nil },
 			)
 			return webresearch.SemanticCallReceipt{
 				Calls: receipt.Calls, Reused: receipt.Reused,

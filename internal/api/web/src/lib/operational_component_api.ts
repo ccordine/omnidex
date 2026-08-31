@@ -10,8 +10,6 @@ export type SelectionComponent = ServerComponent & {
   source_has_more?: boolean;
   channel_offset?: number;
   channel_has_more?: boolean;
-	message_offset?: number;
-	message_has_more?: boolean;
 };
 
 export type AdminComponentQuery = {
@@ -37,10 +35,10 @@ export function fetchAdminDataSourcesComponent(editingID = "", selectedID = "", 
   return fetchServerComponent(`/v1/ui/admin/data-sources?${query}`);
 }
 
-export function fetchDataComponent(sourceID = "", channelID = "", sourceOffset = 0, channelOffset = 0, messageOffset = 0): Promise<SelectionComponent> {
+export function fetchDataComponent(sourceID = "", channelID = "", sourceOffset = 0, channelOffset = 0): Promise<SelectionComponent> {
   const query = new URLSearchParams({
     source_id: sourceID, channel_id: channelID,
-    source_offset: String(sourceOffset), channel_offset: String(channelOffset), message_offset: String(messageOffset),
+    source_offset: String(sourceOffset), channel_offset: String(channelOffset),
   });
   return fetchServerComponent(`/v1/ui/data?${query}`);
 }

@@ -24,8 +24,5 @@ func classifyDirectCodingApplicationRequirementCandidateCardinality(
 		func(raw string) (assemblyline.ApplicationRequirementCandidateCardinalityResult, error) {
 			return assemblyline.DecodeApplicationRequirementCandidateCardinalityResult(input, raw)
 		},
-		func(value assemblyline.ApplicationRequirementCandidateCardinalityResult) error {
-			return value.ValidateFor(input)
-		},
 	)
 }

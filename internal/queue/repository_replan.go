@@ -51,9 +51,6 @@ func replanJobTx(
 	if err != nil {
 		return model.Job{}, err
 	}
-	if _, err := validatePipeline(job.Pipeline); err != nil {
-		return model.Job{}, fmt.Errorf("replan job %d: %w", job.ID, err)
-	}
 	if err := lockLifecycleOperationIdentityTx(ctx, tx, command.OperationID); err != nil {
 		return model.Job{}, err
 	}

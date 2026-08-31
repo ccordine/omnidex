@@ -54,10 +54,9 @@ type ApplicationRequirementCandidateKindResult struct {
 func NewApplicationRequirementCandidateContentPresenceJob(
 	input ApplicationRequirementCandidateContentPresenceInput,
 ) (PortableJob, error) {
-	return newValidatedPortableJob(
+	return newPortableJob(
 		WorkApplicationRequirementCandidateKind,
 		input,
-		input.validate,
 	)
 }
 

@@ -27,7 +27,7 @@ func runDirectCodingTypeScriptRepairGuidance(
 			Signature:    strings.TrimSpace(block.Signature),
 			Capabilities: capabilities, PermittedSymbols: permittedSymbols,
 			CurrentDeclaration: strings.TrimSpace(current),
-			Diagnostic: strings.TrimSpace(diagnostic),
+			Diagnostic:         strings.TrimSpace(diagnostic),
 		},
 	)
 	if err != nil {
@@ -37,9 +37,6 @@ func runDirectCodingTypeScriptRepairGuidance(
 		runtime, modelName, block.ID+":repair_guidance", job, nil,
 		func(raw string) (assemblyline.FragmentRepairGuidance, error) {
 			return assemblyline.DecodeFragmentRepairGuidanceResult(job, raw)
-		},
-		func(candidate assemblyline.FragmentRepairGuidance) error {
-			return candidate.Validate()
 		},
 	)
 	if err != nil {

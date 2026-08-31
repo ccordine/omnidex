@@ -36,7 +36,7 @@ type ConversationResponseDecision struct {
 }
 
 func NewConversationResponseJob(input ConversationResponseInput) (PortableJob, error) {
-	return newValidatedPortableJob(WorkConversationResponse, input, input.validate)
+	return newPortableJob(WorkConversationResponse, input)
 }
 
 func (input ConversationResponseInput) validate() error {

@@ -4,7 +4,7 @@ import (
 	"fmt"
 )
 
-func (s *directCodingSession) Complete() (string, error) {
+func (s *directCodingSession) Complete() string {
 	created, replaced, deleted, moved := 0, 0, 0, 0
 	for _, entry := range s.mutationJournal {
 		switch entry.Operation {
@@ -29,5 +29,5 @@ func (s *directCodingSession) Complete() (string, error) {
 		moved,
 		"exact-workspace-state",
 	)
-	return summary, nil
+	return summary
 }

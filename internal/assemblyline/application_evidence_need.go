@@ -111,9 +111,6 @@ func AppendApplicationContextEvidence(
 	if err := need.Validate(); err != nil {
 		return ApplicationContext{}, err
 	}
-	if context.WorkspaceState != ApplicationWorkspaceExisting {
-		return ApplicationContext{}, fmt.Errorf("application repository evidence requires an existing workspace")
-	}
 	if len(evidence) < 1 || len(context.Facts)+len(evidence) > MaxApplicationContextFacts {
 		return ApplicationContext{}, fmt.Errorf("application context cannot admit %d acquired evidence facts", len(evidence))
 	}

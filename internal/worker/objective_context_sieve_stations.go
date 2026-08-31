@@ -37,9 +37,6 @@ func (adapter portableObjectiveContextSieveStations) Relate(
 		func(raw string) (assemblyline.ContextRelevanceRelationResult, error) {
 			return assemblyline.DecodeContextRelevanceRelationResult(input, raw)
 		},
-		func(value assemblyline.ContextRelevanceRelationResult) error {
-			return value.ValidateFor(input)
-		},
 	)
 	return decision, contextcompiler.StationReceipt{
 		Calls: receipt.Calls, Reused: receipt.Reused,
@@ -65,7 +62,6 @@ func (adapter portableObjectiveContextSieveStations) Minify(
 		func(raw string) (assemblyline.ContextMinificationDecision, error) {
 			return assemblyline.DecodeContextMinificationDecision(input, raw)
 		},
-		func(value assemblyline.ContextMinificationDecision) error { return value.ValidateFor(input) },
 	)
 	return decision, contextcompiler.StationReceipt{
 		Calls: receipt.Calls, Reused: receipt.Reused,

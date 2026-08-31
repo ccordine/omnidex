@@ -27,8 +27,8 @@ type ApplicationRequirementCandidateCardinalityResult struct {
 func NewApplicationRequirementCandidateCardinalityJob(
 	input ApplicationRequirementCandidateCardinalityInput,
 ) (PortableJob, error) {
-	return newValidatedPortableJob(
-		WorkApplicationRequirementCandidateCardinality, input, input.validate,
+	return newPortableJob(
+		WorkApplicationRequirementCandidateCardinality, input,
 	)
 }
 

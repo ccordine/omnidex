@@ -1,7 +1,6 @@
 package assemblyline
 
 import (
-	"errors"
 	"fmt"
 	"path"
 	"strings"
@@ -17,12 +16,6 @@ const (
 	maxTargetTreePathBytes      = MaxTargetTreePathBytes
 )
 
-var (
-	errTargetTreeFileCount         = errors.New("target tree file-count constraint failed")
-	errTargetTreeRootFilesOnly     = errors.New("target tree root-files-only constraint failed")
-	errTargetTreeReservedConflict  = errors.New("target tree reserved-node constraint failed")
-)
-
 type TargetArtifactKind string
 
 const (
@@ -30,68 +23,8 @@ const (
 	TargetArtifactVerification   TargetArtifactKind = "verification"
 )
 
-// TargetTreeConstraints are code-selected structural facts. They constrain
-// model output and code-owned candidates identically; they are not inferred.
-type TargetTreeConstraints struct {
-	ExactPathCount int  `json:"exact_path_count"`
-	RootFilesOnly  bool `json:"root_files_only"`
-}
-
-func (constraints TargetTreeConstraints) Validate() error {
-	if constraints.ExactPathCount < 1 || constraints.ExactPathCount > maxTargetTreePaths {
-		return fmt.Errorf(
-			"target tree exact path count must be between 1 and %d",
-			maxTargetTreePaths,
-		)
-	}
-	return nil
-}
-
 type TargetTree struct {
 	Paths []string
-}
-
-// ValidateTargetTreeConstraints applies the same code-owned structural facts
-// at the decoded-candidate, deterministic projection, and compiler boundaries.
-func ValidateTargetTreeConstraints(constraints TargetTreeConstraints, target TargetTree) error {
-	if err := constraints.Validate(); err != nil {
-		return err
-	}
-	if len(target.Paths) != constraints.ExactPathCount {
-		return fmt.Errorf(
-			"%w: requires exactly %d paths", errTargetTreeFileCount,
-			constraints.ExactPathCount,
-		)
-	}
-	if constraints.RootFilesOnly {
-		for _, artifactPath := range target.Paths {
-			if path.Dir(artifactPath) != "." {
-				return fmt.Errorf(
-					"%w: target-tree path %q must be a file in the workspace root",
-					errTargetTreeRootFilesOnly,
-					artifactPath,
-				)
-			}
-		}
-	}
-	return nil
-}
-
-// ValidateTargetTreeReservedPaths is the single collision check used by both
-// inferred target-tree inputs and code-owned project-stack validation.
-func ValidateTargetTreeReservedPaths(reservedPaths []string, target TargetTree) error {
-	for _, artifactPath := range target.Paths {
-		for _, reservedPath := range reservedPaths {
-			if artifactPath == reservedPath || strings.HasPrefix(artifactPath, reservedPath+"/") ||
-				strings.HasPrefix(reservedPath, artifactPath+"/") {
-				return fmt.Errorf(
-					"%w: target-tree path %q crosses reserved file boundary %q",
-					errTargetTreeReservedConflict, artifactPath, reservedPath,
-				)
-			}
-		}
-	}
-	return nil
 }
 
 func validateTargetTreePaths(label string, paths []string) error {

@@ -5,17 +5,10 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
-	"sync"
 )
 
 //go:embed web/panels/*.html
 var uiPanelFS embed.FS
-
-var (
-	localizedUIPanelsOnce sync.Once
-	localizedUIPanels     map[string]map[uiLocale]string
-	localizedUIPanelsErr  error
-)
 
 var uiPanelNames = []string{"chat", "roleplay", "data", "projects", "jobs", "memory", "admin"}
 
@@ -91,42 +84,19 @@ func normalizeUIPanel(value string) string {
 }
 
 func loadUIPanelHTML(panel string, locale uiLocale) (string, error) {
-	if err := prepareLocalizedUIPanels(); err != nil {
-		return "", err
-	}
-	locales, exists := localizedUIPanels[panel]
-	if !exists {
+	if normalizeUIPanel(panel) != panel {
 		return "", fmt.Errorf("UI panel %q is not configured", panel)
 	}
-	html, exists := locales[locale]
-	if !exists {
-		return "", fmt.Errorf("UI panel %q locale %q is not configured", panel, locale)
+	path := "web/panels/" + panel + ".html"
+	raw, err := uiPanelFS.ReadFile(path)
+	if err != nil {
+		return "", fmt.Errorf("read UI panel %q: %w", panel, err)
 	}
-	return html, nil
-}
-
-func prepareLocalizedUIPanels() error {
-	localizedUIPanelsOnce.Do(func() {
-		localizedUIPanels = make(map[string]map[uiLocale]string, len(uiPanelNames))
-		for _, panel := range uiPanelNames {
-			path := "web/panels/" + panel + ".html"
-			raw, err := uiPanelFS.ReadFile(path)
-			if err != nil {
-				localizedUIPanelsErr = fmt.Errorf("read UI panel %q: %w", panel, err)
-				return
-			}
-			template := strings.TrimSpace(string(raw))
-			template = strings.Replace(template, `class="hidden h-full min-h-0 flex-col"`, `class="flex h-full min-h-0 flex-col"`, 1)
-			localizedUIPanels[panel] = make(map[uiLocale]string, len(supportedUILocaleOptions))
-			for _, option := range supportedUILocaleOptions {
-				rendered, err := renderLocalizedHTML(template, option.Code)
-				if err != nil {
-					localizedUIPanelsErr = fmt.Errorf("render UI panel %q locale %q: %w", panel, option.Code, err)
-					return
-				}
-				localizedUIPanels[panel][option.Code] = rendered
-			}
-		}
-	})
-	return localizedUIPanelsErr
+	template := strings.TrimSpace(string(raw))
+	template = strings.Replace(template, `class="hidden h-full min-h-0 flex-col"`, `class="flex h-full min-h-0 flex-col"`, 1)
+	rendered, err := renderLocalizedHTML(template, locale)
+	if err != nil {
+		return "", fmt.Errorf("render UI panel %q locale %q: %w", panel, locale, err)
+	}
+	return rendered, nil
 }

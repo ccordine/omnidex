@@ -27,12 +27,6 @@ type DataSourceChannelPage struct {
 	HasMore bool
 }
 
-type DataSourceChannelMessagePage struct {
-	Items   []model.DataSourceChannelMessage
-	Offset  int
-	HasMore bool
-}
-
 func (request DataSourcePageRequest) validate() error {
 	if request.Limit < 1 || request.Limit > MaxDataSourcePageSize {
 		return fmt.Errorf("data-source page limit must be between 1 and %d", MaxDataSourcePageSize)
@@ -110,44 +104,4 @@ func (r *Repository) ListDataSourceChannelsPage(ctx context.Context, dataSourceI
 		items = items[:request.Limit]
 	}
 	return DataSourceChannelPage{Items: items, Offset: request.Offset, HasMore: hasMore}, nil
-}
-
-func (r *Repository) ListDataSourceChannelMessagePage(ctx context.Context, channelID string, request DataSourcePageRequest) (DataSourceChannelMessagePage, error) {
-	if err := request.validate(); err != nil {
-		return DataSourceChannelMessagePage{}, err
-	}
-	channelID = strings.TrimSpace(channelID)
-	if channelID == "" {
-		return DataSourceChannelMessagePage{}, fmt.Errorf("data-source channel id is required")
-	}
-	rows, err := r.pool.Query(ctx, `
-		SELECT id, channel_id, role, content, payload, job_id, created_at
-		FROM data_source_channel_messages
-		WHERE channel_id = $1
-		ORDER BY created_at DESC, id DESC
-		LIMIT $2 OFFSET $3
-	`, channelID, request.Limit+1, request.Offset)
-	if err != nil {
-		return DataSourceChannelMessagePage{}, err
-	}
-	defer rows.Close()
-	items := make([]model.DataSourceChannelMessage, 0, request.Limit+1)
-	for rows.Next() {
-		var item model.DataSourceChannelMessage
-		if err := rows.Scan(&item.ID, &item.ChannelID, &item.Role, &item.Content, &item.Payload, &item.JobID, &item.CreatedAt); err != nil {
-			return DataSourceChannelMessagePage{}, err
-		}
-		items = append(items, item)
-	}
-	if err := rows.Err(); err != nil {
-		return DataSourceChannelMessagePage{}, err
-	}
-	hasMore := len(items) > request.Limit
-	if hasMore {
-		items = items[:request.Limit]
-	}
-	for left, right := 0, len(items)-1; left < right; left, right = left+1, right-1 {
-		items[left], items[right] = items[right], items[left]
-	}
-	return DataSourceChannelMessagePage{Items: items, Offset: request.Offset, HasMore: hasMore}, nil
 }

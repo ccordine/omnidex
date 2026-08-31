@@ -26,16 +26,6 @@ func resolveDirectCodingApplicationIntent(
 		func(raw string) (assemblyline.ApplicationRequirementInventory, error) {
 			return assemblyline.DecodeApplicationRequirementInventory(inventoryInput, raw)
 		},
-		func(value assemblyline.ApplicationRequirementInventory) error {
-			if err := value.ValidateFor(inventoryInput); err != nil {
-				return err
-			}
-			return assemblyline.ValidatePathFreeModelContextWithProvenance(
-				"application requirement inventory",
-				runtime.PathProvenance,
-				value.Candidates...,
-			)
-		},
 	)
 	if err != nil {
 		return zero, err
@@ -57,6 +47,14 @@ func resolveDirectCodingApplicationIntent(
 		current := queue[0]
 		queue = queue[1:]
 		currentCandidate := current.Candidate
+		if err := assemblyline.ValidatePathFreeModelContextWithProvenance(
+			"application requirement candidate",
+			runtime.PathProvenance,
+			currentCandidate,
+		); err != nil {
+			processedCandidates = append(processedCandidates, currentCandidate)
+			continue
+		}
 		resolved, err := resolveDirectCodingApplicationRequirementCandidate(
 			runtime,
 			intentModel,
@@ -125,12 +123,16 @@ func resolveDirectCodingApplicationIntent(
 	productContext, err := runDirectCodingSemanticLeafCall(
 		runtime, intentModel, "application_product_context", productJob, identities,
 		func(raw string) (string, error) {
-			return assemblyline.DecodeApplicationProductContextLeaf(productInput, raw)
-		},
-		func(value string) error {
-			return assemblyline.ValidatePathFreeModelContextWithProvenance(
+			value, err := assemblyline.DecodeApplicationProductContextLeaf(productInput, raw)
+			if err != nil {
+				return "", err
+			}
+			if err := assemblyline.ValidatePathFreeModelContextWithProvenance(
 				"application product context", runtime.PathProvenance, value,
-			)
+			); err != nil {
+				return "", err
+			}
+			return value, nil
 		},
 	)
 	if err != nil {

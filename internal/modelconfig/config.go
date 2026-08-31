@@ -109,14 +109,13 @@ func (c Config) ToMap() map[string]string {
 func (c Config) FieldList() []map[string]any {
 	items := make([]map[string]any, 0, len(fieldRegistry))
 	for _, definition := range fieldRegistry {
-		field := definition.Field
 		items = append(items, map[string]any{
-			"key":         field.Key,
-			"label":       field.Label,
-			"description": field.Description,
-			"env_keys":    append([]string(nil), field.EnvKeys...),
-			"options":     append([]string(nil), field.Options...),
-			"value":       c.Get(field.Key),
+			"key":         definition.Key,
+			"label":       definition.Label,
+			"description": definition.Description,
+			"env_keys":    []string{definition.EnvironmentKey},
+			"options":     append([]string(nil), definition.Options...),
+			"value":       c.Get(definition.Key),
 		})
 	}
 	return items

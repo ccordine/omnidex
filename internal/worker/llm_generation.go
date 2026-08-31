@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
-	"github.com/gryph/omnidex/internal/llm"
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/queue"
 )
@@ -16,7 +15,6 @@ type exactStationCall struct {
 	Prompt          string
 	ContextTokens   int
 	MaxOutputTokens int
-	OutputLimitMode llm.ExactPreparedOutputLimitMode
 }
 
 type exactStationExecution struct {
@@ -44,11 +42,7 @@ func (s *Service) executeExactPortableStation(
 	if err != nil {
 		return assemblyline.PortableResult{}, exactStationExecution{}, err
 	}
-	contract, err := llmResponseContractForPortableJob(job)
-	if err != nil {
-		return assemblyline.PortableResult{}, exactStationExecution{}, err
-	}
-	contextTokens, err := s.exactStationContextTokens(ctx, job, modelName)
+	contextTokens, err := s.exactStationContextTokens(ctx)
 	if err != nil {
 		return assemblyline.PortableResult{}, exactStationExecution{}, fmt.Errorf(
 			"resolve exact station context: %w", err,
@@ -60,25 +54,16 @@ func (s *Service) executeExactPortableStation(
 			"derive exact station output ceiling: %w", err,
 		)
 	}
-	if err := validateExactStationStaticCall(prompt, contract, contextTokens); err != nil {
-		return assemblyline.PortableResult{}, exactStationExecution{}, err
-	}
 	call := exactStationCall{
 		WorkID: job.ID, WorkKind: job.Kind, Prompt: prompt,
 		ContextTokens: contextTokens, MaxOutputTokens: maxOutputTokens,
-		OutputLimitMode: contract.OutputLimitMode,
 	}
 	if nilWorkerTransport(s.stationClient) {
 		return assemblyline.PortableResult{}, exactStationExecution{}, fmt.Errorf(
 			"exact station generation provider is not configured",
 		)
 	}
-	if err := s.stationClient.RequireExactPreparedContract(); err != nil {
-		return assemblyline.PortableResult{}, exactStationExecution{}, fmt.Errorf(
-			"exact station provider: %w", err,
-		)
-	}
-	prepared, err := prepareExactStationCall(call, contract, modelName, nil)
+	prepared, err := prepareExactStationCall(call, modelName, nil)
 	if err != nil {
 		return assemblyline.PortableResult{}, exactStationExecution{}, err
 	}

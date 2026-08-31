@@ -54,7 +54,7 @@ func (s *Server) handleProjectByID(w http.ResponseWriter, r *http.Request) {
 
 func isLiveProjectAction(action string) bool {
 	switch action {
-	case "survey", "play", "pause", "map", "map/scan", "git":
+	case "play", "pause", "map", "map/scan", "git":
 		return true
 	default:
 		return false
@@ -65,8 +65,6 @@ func routeProjectAction(s *Server, w http.ResponseWriter, r *http.Request, id in
 	switch action {
 	case "":
 		return false
-	case "survey":
-		s.handleProjectSurvey(w, r, id)
 	case "play":
 		s.handleProjectPlay(w, r, id)
 	case "pause":

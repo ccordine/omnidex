@@ -31,10 +31,9 @@ type ApplicationRequirementCandidateOutcomeRelationResult struct {
 func NewApplicationRequirementCandidateOutcomeRelationJob(
 	input ApplicationRequirementCandidateOutcomeRelationInput,
 ) (PortableJob, error) {
-	return newValidatedPortableJob(
+	return newPortableJob(
 		WorkApplicationRequirementCandidateOutcomeRelation,
 		input,
-		input.validateForModel,
 	)
 }
 

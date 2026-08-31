@@ -17,9 +17,9 @@ export type ProjectMutationResponse = {
 
 function validateProjectRecord(value: unknown, expectedID?: number): ProjectRecord {
   const record = exactRecord(value, "Project mutation project", [
-    "id", "name", "location", "description", "project_state", "last_seen_at", "created_at", "updated_at",
+    "id", "name", "location", "description", "last_seen_at", "created_at", "updated_at",
     "job_count", "card_count",
-  ], ["id", "name", "location", "description", "project_state", "last_seen_at", "created_at", "updated_at"]);
+  ], ["id", "name", "location", "description", "last_seen_at", "created_at", "updated_at"]);
   const id = exactInteger(record.id, "Project mutation project.id");
   if (id <= 0 || (expectedID !== undefined && id !== expectedID)) {
     throw new Error("Project mutation response does not match the requested project.");
@@ -29,7 +29,6 @@ function validateProjectRecord(value: unknown, expectedID?: number): ProjectReco
     name: exactString(record.name, "Project mutation project.name", { maxBytes: 256, nonblank: true, canonical: true }),
     location: exactString(record.location, "Project mutation project.location", { maxBytes: 4096, nonblank: true, canonical: true }),
     description: exactString(record.description, "Project mutation project.description", { maxBytes: 16 * 1024 }),
-    project_state: exactString(record.project_state, "Project mutation project.project_state", { maxBytes: 64 * 1024 }),
     last_seen_at: exactTimestamp(record.last_seen_at, "Project mutation project.last_seen_at"),
     created_at: exactTimestamp(record.created_at, "Project mutation project.created_at"),
     updated_at: validateProjectRevision(record.updated_at, "Project mutation project.updated_at"),
@@ -150,16 +149,6 @@ export function projectAutoWorkFailure(payload: ProjectAutoWorkResponse): string
   return payload.commit_state === "committed_degraded"
     ? payload.operation_error
     : "";
-}
-
-export async function surveyProject(id: number): Promise<ProjectMutationResponse> {
-  projectQuery(id);
-  const response = await fetch(`/v1/projects/${id}/survey`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({}),
-  });
-  return validateProjectMutationResponse(await readJSON<unknown>(response, 128 * 1024), id, undefined, response.status, 200);
 }
 
 export function projectMutationFailure(payload: ProjectMutationResponse): string {

@@ -37,7 +37,7 @@ type RoleplayCanonFactInventory struct {
 }
 
 func NewRoleplayCanonFactInventoryJob(input RoleplayCanonExtractionInput) (PortableJob, error) {
-	return newValidatedPortableJob(WorkRoleplayCanonFactInventory, input, input.validate)
+	return newPortableJob(WorkRoleplayCanonFactInventory, input)
 }
 
 func BuildRoleplayCanonFactInventoryPrompt(input RoleplayCanonExtractionInput) (string, error) {

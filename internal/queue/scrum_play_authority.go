@@ -49,7 +49,7 @@ func scrumPlayAuthorityTx(
 		return scrum.JobMetadata{}, "", err
 	}
 	metadata := scrum.JobMetadata{
-		Source: scrum.JobMetadataSource, ProjectID: card.ProjectID, CardID: card.ID,
+		CardID: card.ID,
 		CardTitle: card.Title, CardDescription: card.Description,
 		Checklist: formattedChecklist, TestCriteria: formattedTests, ModelConfig: modelSnapshot,
 	}

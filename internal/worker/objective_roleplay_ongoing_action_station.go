@@ -26,9 +26,6 @@ func (adapter portableObjectiveRoleplayOngoingActionStation) ResolveOngoingActio
 		func(raw string) (assemblyline.RoleplayOngoingActionDecision, error) {
 			return assemblyline.DecodeRoleplayOngoingActionDecision(input, raw)
 		},
-		func(value assemblyline.RoleplayOngoingActionDecision) error {
-			return value.ValidateFor(input)
-		},
 	)
 	return decision, receipt, err
 }

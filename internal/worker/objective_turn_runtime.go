@@ -51,11 +51,11 @@ func (r *nativeRuntimeV3) runObjectiveResolve() error {
 	if err != nil {
 		return err
 	}
-	if !result.Complete {
-		return fmt.Errorf("conversation objective %q returned without code-owned completion", result.ObjectiveID)
-	}
 	if result.Kind == assemblyline.ObjectiveKindWorkspaceMutation {
 		return r.completeAppliedWorkspace(result.Output)
+	}
+	if !result.Complete {
+		return fmt.Errorf("conversation objective %q returned without code-owned completion", result.ObjectiveID)
 	}
 	output, records, err := prepareObjectiveTurnCompletion(result)
 	if err != nil {

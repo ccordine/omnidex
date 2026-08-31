@@ -94,9 +94,6 @@ func runObjectiveTurn(
 	if kindStation == nil {
 		return objectiveTurnResult{}, fmt.Errorf("conversation objective kind station is unavailable")
 	}
-	if _, err := assemblyline.NewConversationObjectiveKindJob(input); err != nil {
-		return objectiveTurnResult{}, err
-	}
 	decision, receipt, err := kindStation.Classify(ctx, input)
 	if err != nil {
 		return objectiveTurnResult{}, err
@@ -105,9 +102,6 @@ func runObjectiveTurn(
 		return objectiveTurnResult{}, err
 	}
 	kindCalls := receipt.Calls
-	if err := decision.ValidateFor(input); err != nil {
-		return objectiveTurnResult{}, err
-	}
 	result := objectiveTurnResult{
 		ObjectiveID: objectiveTurnID(authority, decision.Kind), Kind: decision.Kind,
 		InstructionSHA256: authority.SHA256, ModelCalls: kindCalls,
@@ -123,9 +117,6 @@ func runObjectiveTurn(
 			if err != nil {
 				return result, err
 			}
-		}
-		if err := replanContext.Validate(); err != nil {
-			return result, fmt.Errorf("workspace mutation replan authority: %w", err)
 		}
 		authority.Context = assemblyline.CloneObjectiveContext(replanContext)
 		result.ObjectiveID = objectiveTurnID(authority, decision.Kind)
@@ -315,10 +306,6 @@ func runObjectiveWorkspaceMutation(
 	if err := ctx.Err(); err != nil {
 		return result, err
 	}
-	if strings.TrimSpace(output) == "" || len(output) > maxObjectiveOutputBytes {
-		return result, fmt.Errorf("workspace mutation returned an empty or oversized completion artifact")
-	}
 	result.Output = output
-	result.Complete = true
 	return result, nil
 }

@@ -41,32 +41,16 @@ func (s *Service) watchStepAttemptLease(
 }
 
 func (s *Service) finishStepAttemptWatch(
-	ctx context.Context,
-	claim *model.ClaimedStep,
 	workErr, leaseErr error,
 ) error {
-	if leaseErr == nil {
-		return workErr
-	}
-	if workErr != nil {
-		return errors.Join(workErr, leaseErr)
-	}
-	jobStatus, stepStatus, stateErr := s.repo.GetStepRuntimeState(ctx, claim.Job.ID, claim.Step.ID)
-	if stateErr != nil {
-		return errors.Join(leaseErr, fmt.Errorf("read state after lease renewal failure: %w", stateErr))
-	}
-	if terminalWorkerStepStatus(stepStatus) || jobStatus == model.JobStatusCanceled {
+	if workErr == nil {
+		if leaseErr != nil {
+			s.logf("step operation completed before lease bookkeeping failed: %v", leaseErr)
+		}
 		return nil
 	}
-	return leaseErr
-}
-
-func terminalWorkerStepStatus(status string) bool {
-	switch status {
-	case model.StepStatusCompleted, model.StepStatusFailed,
-		model.StepStatusWaiting, model.StepStatusCanceled:
-		return true
-	default:
-		return false
+	if leaseErr != nil {
+		return errors.Join(workErr, leaseErr)
 	}
+	return workErr
 }

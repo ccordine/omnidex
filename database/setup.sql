@@ -66,10 +66,10 @@ $$;
 
 
 --
--- Name: enforce_jobs_executable_pipeline_authority(); Type: FUNCTION; Schema: current runtime; Owner: -
+-- Name: enforce_jobs_state_authority(); Type: FUNCTION; Schema: current runtime; Owner: -
 --
 
-CREATE FUNCTION enforce_jobs_executable_pipeline_authority() RETURNS trigger
+CREATE FUNCTION enforce_jobs_state_authority() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
 BEGIN
@@ -77,35 +77,15 @@ BEGIN
         RAISE EXCEPTION 'job history is immutable';
     END IF;
     IF TG_OP='DELETE' THEN
-        IF OLD.pipeline NOT IN ('chat','coding','scrum') THEN
-            RAISE EXCEPTION 'historical retired job is immutable';
-        END IF;
         RETURN OLD;
-    END IF;
-    IF TG_OP='INSERT' AND NEW.pipeline NOT IN ('chat','coding','scrum') THEN
-        RAISE EXCEPTION 'new job pipeline % is retired or unregistered', NEW.pipeline;
     END IF;
     IF TG_OP='UPDATE' AND OLD.pipeline IS DISTINCT FROM NEW.pipeline THEN
         RAISE EXCEPTION 'job pipeline identity is immutable';
     END IF;
     IF TG_OP='UPDATE'
-       AND OLD.pipeline NOT IN ('chat','coding','scrum')
-       AND NEW IS DISTINCT FROM OLD THEN
-        RAISE EXCEPTION 'historical retired job is immutable';
-    END IF;
-    IF TG_OP='UPDATE'
-       AND OLD.pipeline IN ('chat','coding','scrum')
-       AND NEW.pipeline NOT IN ('chat','coding','scrum') THEN
-        RAISE EXCEPTION 'current job pipeline cannot become retired or unregistered';
-    END IF;
-    IF TG_OP='UPDATE'
        AND OLD.status IN ('completed','failed','canceled')
        AND NEW.status NOT IN ('completed','failed','canceled') THEN
         RAISE EXCEPTION 'terminal job cannot become nonterminal';
-    END IF;
-    IF NEW.pipeline NOT IN ('chat','coding','scrum')
-       AND NEW.status NOT IN ('completed','failed','canceled') THEN
-        RAISE EXCEPTION 'nonterminal job pipeline % is retired or unregistered', NEW.pipeline;
     END IF;
     RETURN NEW;
 END;
@@ -3494,75 +3474,6 @@ CREATE TABLE ai_channels (
 
 
 --
--- Name: artifacts; Type: TABLE; Schema: current runtime; Owner: -
---
-
-CREATE TABLE artifacts (
-    id bigint NOT NULL,
-    job_id bigint,
-    step_id bigint,
-    kind text NOT NULL,
-    version text NOT NULL,
-    payload_json jsonb NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT artifacts_job_step_shape CHECK ((((job_id IS NULL) AND (step_id IS NULL)) OR ((job_id IS NOT NULL) AND (step_id IS NOT NULL))))
-);
-
-
---
--- Name: artifacts_id_seq; Type: SEQUENCE; Schema: current runtime; Owner: -
---
-
-CREATE SEQUENCE artifacts_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
---
--- Name: artifacts_id_seq; Type: SEQUENCE OWNED BY; Schema: current runtime; Owner: -
---
-
-ALTER SEQUENCE artifacts_id_seq OWNED BY artifacts.id;
-
-
---
--- Name: data_source_channel_messages; Type: TABLE; Schema: current runtime; Owner: -
---
-
-CREATE TABLE data_source_channel_messages (
-    id bigint NOT NULL,
-    channel_id text NOT NULL,
-    role text NOT NULL,
-    content text DEFAULT ''::text NOT NULL,
-    payload jsonb DEFAULT '{}'::jsonb NOT NULL,
-    job_id bigint,
-    created_at timestamp with time zone DEFAULT now() NOT NULL
-);
-
-
---
--- Name: data_source_channel_messages_id_seq; Type: SEQUENCE; Schema: current runtime; Owner: -
---
-
-CREATE SEQUENCE data_source_channel_messages_id_seq
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
---
--- Name: data_source_channel_messages_id_seq; Type: SEQUENCE OWNED BY; Schema: current runtime; Owner: -
---
-
-ALTER SEQUENCE data_source_channel_messages_id_seq OWNED BY data_source_channel_messages.id;
-
-
---
 -- Name: data_source_channels; Type: TABLE; Schema: current runtime; Owner: -
 --
 
@@ -3857,7 +3768,7 @@ CREATE TABLE jobs (
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     current_generation bigint DEFAULT 1 NOT NULL,
     CONSTRAINT jobs_current_generation_positive CHECK ((current_generation > 0)),
-    CONSTRAINT jobs_executable_pipeline_authority CHECK (((pipeline = ANY (ARRAY['chat'::text, 'coding'::text, 'scrum'::text])) OR (status = ANY (ARRAY['completed'::text, 'failed'::text, 'canceled'::text])))),
+    CONSTRAINT jobs_pipeline_check CHECK ((pipeline = ANY (ARRAY['chat'::text, 'coding'::text, 'scrum'::text]))),
     CONSTRAINT jobs_retired_execution_metadata_absent CHECK (((NOT (jsonb_typeof(metadata) IS DISTINCT FROM 'object'::text)) AND (NOT (metadata ?| ARRAY['agent_config'::text, 'agent_config_source'::text, 'instance_agent_config'::text, 'external_agents_used'::text, 'execution_agent'::text, 'agent_strict'::text, 'scrum_raw_play'::text, 'omnidex_no_delegate'::text, 'recipe_id'::text, 'recipe'::text]))))
 );
 
@@ -4118,7 +4029,6 @@ CREATE TABLE projects (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     description text DEFAULT ''::text NOT NULL,
-    project_state text DEFAULT ''::text NOT NULL,
     settings jsonb DEFAULT '{}'::jsonb NOT NULL,
     CONSTRAINT projects_removed_scrum_auto_play_through_setting CHECK ((NOT (settings ? 'scrum_auto_play_through'::text))),
     CONSTRAINT projects_removed_scrum_auto_review_setting CHECK ((NOT (settings ? 'scrum_auto_review'::text))),
@@ -5039,20 +4949,6 @@ ALTER TABLE ONLY ai_channel_messages ALTER COLUMN id SET DEFAULT nextval('ai_cha
 
 
 --
--- Name: artifacts id; Type: DEFAULT; Schema: current runtime; Owner: -
---
-
-ALTER TABLE ONLY artifacts ALTER COLUMN id SET DEFAULT nextval('artifacts_id_seq'::regclass);
-
-
---
--- Name: data_source_channel_messages id; Type: DEFAULT; Schema: current runtime; Owner: -
---
-
-ALTER TABLE ONLY data_source_channel_messages ALTER COLUMN id SET DEFAULT nextval('data_source_channel_messages_id_seq'::regclass);
-
-
---
 -- Name: database_evidence_receipts id; Type: DEFAULT; Schema: current runtime; Owner: -
 --
 
@@ -5146,20 +5042,6 @@ ALTER TABLE ONLY tags ALTER COLUMN id SET DEFAULT nextval('tags_id_seq'::regclas
 --
 
 SELECT pg_catalog.setval('ai_channel_messages_id_seq', 1, false);
-
-
---
--- Name: artifacts_id_seq; Type: SEQUENCE SET; Schema: current runtime; Owner: -
---
-
-SELECT pg_catalog.setval('artifacts_id_seq', 1, false);
-
-
---
--- Name: data_source_channel_messages_id_seq; Type: SEQUENCE SET; Schema: current runtime; Owner: -
---
-
-SELECT pg_catalog.setval('data_source_channel_messages_id_seq', 1, false);
 
 
 --
@@ -5300,22 +5182,6 @@ ALTER TABLE ONLY ai_channel_messages
 
 ALTER TABLE ONLY ai_channels
     ADD CONSTRAINT ai_channels_pkey PRIMARY KEY (id);
-
-
---
--- Name: artifacts artifacts_pkey; Type: CONSTRAINT; Schema: current runtime; Owner: -
---
-
-ALTER TABLE ONLY artifacts
-    ADD CONSTRAINT artifacts_pkey PRIMARY KEY (id);
-
-
---
--- Name: data_source_channel_messages data_source_channel_messages_pkey; Type: CONSTRAINT; Schema: current runtime; Owner: -
---
-
-ALTER TABLE ONLY data_source_channel_messages
-    ADD CONSTRAINT data_source_channel_messages_pkey PRIMARY KEY (id);
 
 
 --
@@ -6250,34 +6116,6 @@ CREATE INDEX idx_ai_channels_scope_updated ON ai_channels USING btree (scope, up
 
 
 --
--- Name: idx_artifacts_job_id_id; Type: INDEX; Schema: current runtime; Owner: -
---
-
-CREATE INDEX idx_artifacts_job_id_id ON artifacts USING btree (job_id, id);
-
-
---
--- Name: idx_artifacts_job_step_kind; Type: INDEX; Schema: current runtime; Owner: -
---
-
-CREATE INDEX idx_artifacts_job_step_kind ON artifacts USING btree (job_id, step_id, kind, id DESC);
-
-
---
--- Name: idx_artifacts_kind_created; Type: INDEX; Schema: current runtime; Owner: -
---
-
-CREATE INDEX idx_artifacts_kind_created ON artifacts USING btree (kind, created_at DESC);
-
-
---
--- Name: idx_data_source_channel_messages_channel; Type: INDEX; Schema: current runtime; Owner: -
---
-
-CREATE INDEX idx_data_source_channel_messages_channel ON data_source_channel_messages USING btree (channel_id, created_at, id);
-
-
---
 -- Name: idx_data_source_channels_source; Type: INDEX; Schema: current runtime; Owner: -
 --
 
@@ -6932,17 +6770,17 @@ CREATE TRIGGER jobs_database_evidence_binding_immutable BEFORE UPDATE OF metadat
 
 
 --
--- Name: jobs jobs_executable_pipeline_authority; Type: TRIGGER; Schema: current runtime; Owner: -
+-- Name: jobs jobs_state_authority; Type: TRIGGER; Schema: current runtime; Owner: -
 --
 
-CREATE TRIGGER jobs_executable_pipeline_authority BEFORE INSERT OR DELETE OR UPDATE ON jobs FOR EACH ROW EXECUTE FUNCTION enforce_jobs_executable_pipeline_authority();
+CREATE TRIGGER jobs_state_authority BEFORE DELETE OR UPDATE ON jobs FOR EACH ROW EXECUTE FUNCTION enforce_jobs_state_authority();
 
 
 --
 -- Name: jobs jobs_history_truncate_immutable; Type: TRIGGER; Schema: current runtime; Owner: -
 --
 
-CREATE TRIGGER jobs_history_truncate_immutable BEFORE TRUNCATE ON jobs FOR EACH STATEMENT EXECUTE FUNCTION enforce_jobs_executable_pipeline_authority();
+CREATE TRIGGER jobs_history_truncate_immutable BEFORE TRUNCATE ON jobs FOR EACH STATEMENT EXECUTE FUNCTION enforce_jobs_state_authority();
 
 
 --
@@ -7844,38 +7682,6 @@ ALTER TABLE ONLY ai_channels
 
 ALTER TABLE ONLY ai_channels
     ADD CONSTRAINT ai_channels_roleplay_viewpoint_fkey FOREIGN KEY (roleplay_viewpoint_character_id) REFERENCES roleplay_characters(id) ON DELETE RESTRICT DEFERRABLE INITIALLY DEFERRED;
-
-
---
--- Name: artifacts artifacts_job_id_fkey; Type: FK CONSTRAINT; Schema: current runtime; Owner: -
---
-
-ALTER TABLE ONLY artifacts
-    ADD CONSTRAINT artifacts_job_id_fkey FOREIGN KEY (job_id) REFERENCES jobs(id) ON DELETE CASCADE;
-
-
---
--- Name: artifacts artifacts_job_step_fkey; Type: FK CONSTRAINT; Schema: current runtime; Owner: -
---
-
-ALTER TABLE ONLY artifacts
-    ADD CONSTRAINT artifacts_job_step_fkey FOREIGN KEY (job_id, step_id) REFERENCES job_steps(job_id, id) ON DELETE RESTRICT;
-
-
---
--- Name: artifacts artifacts_step_id_fkey; Type: FK CONSTRAINT; Schema: current runtime; Owner: -
---
-
-ALTER TABLE ONLY artifacts
-    ADD CONSTRAINT artifacts_step_id_fkey FOREIGN KEY (step_id) REFERENCES job_steps(id) ON DELETE CASCADE;
-
-
---
--- Name: data_source_channel_messages data_source_channel_messages_channel_id_fkey; Type: FK CONSTRAINT; Schema: current runtime; Owner: -
---
-
-ALTER TABLE ONLY data_source_channel_messages
-    ADD CONSTRAINT data_source_channel_messages_channel_id_fkey FOREIGN KEY (channel_id) REFERENCES data_source_channels(id) ON DELETE CASCADE;
 
 
 --

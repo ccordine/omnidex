@@ -23,18 +23,16 @@ type directCodingProgram struct {
 func compileDirectCodingProgram(
 	projectName string,
 	specification assemblyline.ApplicationSpecification,
-	identities []assemblyline.ArtifactIdentity,
 	workload assemblyline.FrozenApplicationWorkload,
 	capabilities directCodingCapabilityGraph,
 	project directCodingProjectSelection,
 	targetTree assemblyline.TargetTree,
 	coverage assemblyline.ApplicationFileCoveragePlan,
+	protected []string,
+	required []string,
+	deletions []string,
 ) (directCodingProgram, error) {
 	moduleSegment, err := normalizeDirectCodingModuleSegment(projectName)
-	if err != nil {
-		return directCodingProgram{}, err
-	}
-	protected, required, deletions, err := resolveDirectCodingArtifactPaths(specification.Artifacts, identities)
 	if err != nil {
 		return directCodingProgram{}, err
 	}
