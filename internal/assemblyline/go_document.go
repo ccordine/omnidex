@@ -3,6 +3,7 @@ package assemblyline
 import (
 	"fmt"
 	"go/ast"
+	"go/format"
 	"go/parser"
 	"go/token"
 	"path"
@@ -25,7 +26,10 @@ func ComposeGoDocument(
 	}
 
 	var source strings.Builder
-	preamble := composeSourceDocumentPreamble(document)
+	preamble, err := formatGoPreamble(composeSourceDocumentPreamble(document))
+	if err != nil {
+		return ComposedSourceDocument{}, fmt.Errorf("format Go document %s preamble: %w", document.ID, err)
+	}
 	source.WriteString(preamble)
 	source.WriteString("\n\n")
 	line := strings.Count(preamble, "\n") + 3
@@ -47,6 +51,12 @@ func ComposeGoDocument(
 			}
 		}
 
+		declaration, err = formatGoDeclaration(declaration)
+		if err != nil {
+			return ComposedSourceDocument{}, fmt.Errorf(
+				"format Go document %s block %s: %w", document.ID, block.ID, err,
+			)
+		}
 		start := line
 		source.WriteString(declaration)
 		source.WriteString("\n")
@@ -65,6 +75,27 @@ func ComposeGoDocument(
 	return ComposedSourceDocument{
 		ID: document.ID, Path: document.Path, Source: assembled, Spans: spans,
 	}, nil
+}
+
+func formatGoPreamble(source string) (string, error) {
+	formatted, err := format.Source([]byte(strings.TrimSpace(source) + "\n"))
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(formatted)), nil
+}
+
+func formatGoDeclaration(source string) (string, error) {
+	const prefix = "package fragment\n\n"
+	formatted, err := format.Source([]byte(prefix + strings.TrimSpace(source) + "\n"))
+	if err != nil {
+		return "", err
+	}
+	value := string(formatted)
+	if !strings.HasPrefix(value, prefix) {
+		return "", fmt.Errorf("formatted declaration lost its code-owned package prefix")
+	}
+	return strings.TrimSpace(strings.TrimPrefix(value, prefix)), nil
 }
 
 // ValidateGoSourceBlueprint proves that every document has a Go path,

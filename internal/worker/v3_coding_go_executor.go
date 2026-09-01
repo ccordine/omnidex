@@ -1,47 +1,74 @@
 package worker
 
 import (
-	"errors"
 	"fmt"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
-	"github.com/gryph/omnidex/internal/gofragment"
 )
 
-func validateDirectCodingGoFragment(
-	input assemblyline.FragmentGenerationInput,
-	candidate string,
+type directCodingGoProjectStageExecutor struct {
+	generator *directCodingLanguageSourceGenerator
+	workspace *directCodingGoStageWorkspace
+}
+
+func newDirectCodingGoSourceGenerator(
+	session *directCodingSession,
+	program directCodingProgram,
+) (_ directCodingProjectSourceGenerator, resultErr error) {
+	generated, err := newDirectCodingLanguageSourceGeneratorForProgram(session, program)
+	if err != nil {
+		return nil, err
+	}
+	generator, ok := generated.(*directCodingLanguageSourceGenerator)
+	if !ok {
+		return nil, fmt.Errorf("Go source generation requires the bounded language generator")
+	}
+	workspace, err := newDirectCodingGoStageWorkspace(session, program)
+	if err != nil {
+		return nil, err
+	}
+	return &directCodingGoProjectStageExecutor{
+		generator: generator, workspace: workspace,
+	}, nil
+}
+
+func (executor *directCodingGoProjectStageExecutor) GenerateBlock(
+	context assemblyline.ApplicationTaskContext,
+	stage *directCodingProgram,
+	ref assemblyline.SourceBlockRef,
 ) (string, error) {
-	permitted := append([]string(nil), input.Capabilities...)
-	permitted = append(permitted, input.PermittedSymbols...)
-	validated, err := gofragment.ParseNewFunctionBody(input.Signature, permitted, candidate)
-	if err == nil {
-		return validated, nil
+	if executor == nil || executor.generator == nil {
+		return "", fmt.Errorf("Go source generation requires one active bounded generator")
 	}
-	var located *gofragment.BodySpanViolation
-	if !errors.As(err, &located) {
-		return "", err
+	return generateDirectCodingGoBlock(executor.generator, context, stage, ref)
+}
+
+func (executor *directCodingGoProjectStageExecutor) VerifyTask(
+	context assemblyline.ApplicationTaskContext,
+	stage *directCodingProgram,
+) error {
+	if executor == nil || executor.workspace == nil {
+		return fmt.Errorf("Go task verification requires one active isolated workspace")
 	}
-	failed := candidate[located.StartByte:located.EndByte]
-	replacements, replacementErr := directCodingGoIdentifierChoices(
-		input, candidate, failed, located.StartByte,
-	)
-	if replacementErr != nil {
-		return "", fmt.Errorf("enumerate exact Go identifier replacements: %w", replacementErr)
+	testName, err := directCodingGoTaskAcceptanceName(*stage, context.Task.TaskID)
+	if err != nil {
+		return err
 	}
-	if located.StartByte == 0 && located.EndByte == len(candidate) {
-		return "", err
+	return executor.workspace.VerifyTask(stage, context, testName)
+}
+
+func (executor *directCodingGoProjectStageExecutor) VerifyFinal(
+	program *directCodingProgram,
+) error {
+	if executor == nil || executor.workspace == nil {
+		return fmt.Errorf("Go final verification requires one active isolated workspace")
 	}
-	defect, defectErr := assemblyline.NewSourceBodyIdentifierDefect(
-		candidate,
-		located.StartByte,
-		located.EndByte,
-		"Which available value has the meaning required at this unresolved reference?",
-		err,
-		replacements,
-	)
-	if defectErr != nil {
-		return "", fmt.Errorf("map exact Go identifier to implementation body: %w", defectErr)
+	return executor.workspace.VerifyFinal(program)
+}
+
+func (executor *directCodingGoProjectStageExecutor) Close() error {
+	if executor == nil || executor.workspace == nil {
+		return nil
 	}
-	return "", defect
+	return executor.workspace.Close()
 }

@@ -79,8 +79,9 @@ func registeredDirectCodingProjectStacks() []directCodingProjectStack {
 			ProjectFocusedTargetTree: projectGoCommandLineFocusedTargetTree,
 			CompileSource:            compileGenericGoCommandLineBlueprint,
 			ValidateBlueprint:        assemblyline.ValidateGoSourceBlueprint,
-			ValidateSourceOwnership:  validateDirectCodingSingleImplementationSourceOwnership,
-			NewSourceGenerator:       newDirectCodingLanguageSourceGeneratorForProgram,
+			ValidateSourceOwnership:  validateDirectCodingSinglePairSourceOwnership,
+			RequireStagedVerification: true,
+			NewSourceGenerator:        newDirectCodingGoSourceGenerator,
 		},
 		{
 			ID:                       genericJavaScriptCommandLineAdapter,

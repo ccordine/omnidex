@@ -34,11 +34,28 @@ func (s *directCodingSession) ApplyAndVerify(
 		)
 	}
 	if prepared.hostVerificationProgram != nil {
-		if err := s.verifyAuthoritativeTypeScriptWorkspace(
-			*prepared.hostVerificationProgram,
-			prepared.hostVerificationAssembly,
-		); err != nil {
-			return fmt.Errorf("verify exact authoritative TypeScript workspace: %w", err)
+		program := *prepared.hostVerificationProgram
+		var verifyErr error
+		switch program.Project.Stack.ID {
+		case genericTypeScriptBrowserAdapter:
+			verifyErr = s.verifyAuthoritativeTypeScriptWorkspace(
+				program, prepared.hostVerificationAssembly,
+			)
+		case genericGoCommandLineAdapter:
+			verifyErr = s.verifyAuthoritativeGoWorkspace(
+				program, prepared.hostVerificationAssembly,
+			)
+		default:
+			verifyErr = fmt.Errorf(
+				"project stack %s has no authoritative host verifier",
+				program.Project.Stack.ID,
+			)
+		}
+		if verifyErr != nil {
+			return fmt.Errorf(
+				"verify exact authoritative %s workspace: %w",
+				program.Project.Stack.ID, verifyErr,
+			)
 		}
 	}
 	return nil

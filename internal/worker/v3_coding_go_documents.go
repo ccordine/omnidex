@@ -16,7 +16,9 @@ func genericGoCommandLineDocuments(
 ) ([]assemblyline.SourceDocument, error) {
 	runtimeDocument := goCommandLineRuntimeDocument()
 	implementations := make([]assemblyline.SourceDocument, 0, len(specification.Requirements))
+	verifications := make([]assemblyline.SourceDocument, 0, len(specification.Requirements))
 	implementationByPath := make(map[string]int, len(specification.Requirements))
+	verificationByPath := make(map[string]int, len(specification.Requirements))
 	applicationDependencies := []string{"runtime.api"}
 	for index, requirement := range specification.Requirements {
 		sequence := index + 1
@@ -30,19 +32,26 @@ func genericGoCommandLineDocuments(
 		if err != nil {
 			return nil, err
 		}
-		implementationPath, err := directCodingTaskSingleImplementationPath(
-			coverage, context.Task.TaskID,
-		)
+		pair, err := directCodingTaskSinglePair(coverage, context.Task.TaskID)
 		if err != nil {
 			return nil, err
 		}
-		implementationIndex, exists := implementationByPath[implementationPath]
+		implementationIndex, exists := implementationByPath[pair.ImplementationPath]
 		if !exists {
 			implementationIndex = len(implementations)
-			implementationByPath[implementationPath] = implementationIndex
+			implementationByPath[pair.ImplementationPath] = implementationIndex
 			implementations = append(implementations, assemblyline.SourceDocument{
 				ID:   fmt.Sprintf("workload_implementation_%03d", sequence),
-				Path: implementationPath, Preamble: "package main",
+				Path: pair.ImplementationPath, Preamble: "package main",
+			})
+		}
+		verificationIndex, exists := verificationByPath[pair.VerificationPath]
+		if !exists {
+			verificationIndex = len(verifications)
+			verificationByPath[pair.VerificationPath] = verificationIndex
+			verifications = append(verifications, assemblyline.SourceDocument{
+				ID:   fmt.Sprintf("workload_verification_%03d", sequence),
+				Path: pair.VerificationPath, Preamble: "package main\n\nimport \"testing\"",
 			})
 		}
 		featureID := fmt.Sprintf("feature.%03d", sequence)
@@ -74,6 +83,21 @@ func genericGoCommandLineDocuments(
 				DependsOn: dependencies, Capabilities: append([]string(nil), dependencies...),
 				TaskID: context.Task.TaskID, Role: assemblyline.SourceBlockTaskImplementation,
 			})
+		acceptanceDependencies := []string{"runtime.api", featureID}
+		verifications[verificationIndex].Blocks = append(
+			verifications[verificationIndex].Blocks, assemblyline.SourceBlock{
+				ID:        fmt.Sprintf("acceptance.%03d", sequence),
+				Signature: fmt.Sprintf("func Test%s(t *testing.T)", featureName),
+				Contract:  goCommandLineAcceptanceContract(requirementBehavior, featureName),
+				API:       fmt.Sprintf("func Test%s(t *testing.T)", featureName),
+				DependsOn: acceptanceDependencies,
+				Capabilities: append(
+					[]string(nil), acceptanceDependencies...,
+				),
+				Globals: []string{"Fatal", "Fatalf", "Error", "Errorf"},
+				TaskID:  context.Task.TaskID,
+				Role:    assemblyline.SourceBlockTaskVerification,
+			})
 		applicationDependencies = append(applicationDependencies, featureID)
 	}
 	order, err := goCommandLineRequirementOrder(specification.Requirements, capabilities)
@@ -82,6 +106,7 @@ func genericGoCommandLineDocuments(
 	}
 	documents := []assemblyline.SourceDocument{runtimeDocument}
 	documents = append(documents, implementations...)
+	documents = append(documents, verifications...)
 	documents = append(documents, goCommandLineApplicationDocument(
 		specification.Requirements, capabilities, order, applicationDependencies,
 	))
@@ -111,4 +136,12 @@ func goCommandLineCapabilityProjection(
 
 func goCommandLineFeatureContract(behavior string) string {
 	return strings.TrimSpace(behavior)
+}
+
+func goCommandLineAcceptanceContract(behavior, featureName string) string {
+	return strings.Join([]string{
+		strings.TrimSpace(behavior),
+		"Demonstrate this behavior by exercising " + featureName + " with representative TaskInput and CapabilityResults values.",
+		"Treat the returned TaskResult as the observed behavior and fail the test when that behavior violates the requirement.",
+	}, "\n")
 }

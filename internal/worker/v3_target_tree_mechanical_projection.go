@@ -88,9 +88,12 @@ func projectGoCommandLineFocusedTargetTree(
 	taskOrdinal int,
 	occupation directCodingTargetTreeOccupation,
 ) (assemblyline.TargetTree, error) {
-	return projectSingleImplementationPath(
+	return projectMechanicalFocusedTargetTree(
 		"Go command-line", taskOrdinal, occupation,
-		func(ordinal int) string { return fmt.Sprintf("feature%03d.go", ordinal) },
+		func(ordinal int) (string, string) {
+			return fmt.Sprintf("feature%03d.go", ordinal),
+				fmt.Sprintf("feature%03d_test.go", ordinal)
+		},
 	)
 }
 

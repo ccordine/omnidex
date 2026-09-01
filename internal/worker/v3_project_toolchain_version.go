@@ -10,6 +10,9 @@ import (
 )
 
 func directCodingToolchainVersionCommand(program string) directCodingVerificationCommand {
+	if program == "go" {
+		return directCodingGoVersionCommand()
+	}
 	command := directCodingVerificationCommand{
 		Argv: []string{program, "--version"}, Timeout: 15 * time.Second,
 	}
@@ -24,6 +27,9 @@ func validateDirectCodingToolchainVersion(
 	componentName string,
 	output []byte,
 ) error {
+	if componentName == "go" {
+		return validateDirectCodingGoToolchainVersion(profile, output)
+	}
 	constraint, err := directCodingVersionComponent(profile, componentName)
 	if err != nil {
 		return err
@@ -47,6 +53,134 @@ func validateDirectCodingToolchainVersion(
 		)
 	}
 	return nil
+}
+
+func directCodingGoVersionCommand() directCodingVerificationCommand {
+	return directCodingVerificationCommand{
+		Argv: []string{"go", "version"}, Timeout: 15 * time.Second,
+	}
+}
+
+func validateDirectCodingGoToolchainVersion(
+	profile directCodingProjectVersionProfile,
+	output []byte,
+) error {
+	minimum, err := directCodingVersionComponent(profile, "go")
+	if err != nil {
+		return err
+	}
+	minimumVersion, err := directCodingCanonicalSemanticVersion(minimum)
+	if err != nil {
+		return fmt.Errorf("registered Go source version %q: %w", minimum, err)
+	}
+	observed, err := directCodingGoVersionFromOutput(output)
+	if err != nil {
+		return err
+	}
+	if semver.Compare(observed, minimumVersion) < 0 {
+		return fmt.Errorf(
+			"observed Go compiler version %s is older than selected profile %s source version %s",
+			strings.TrimPrefix(observed, "v"), profile.ID, minimum,
+		)
+	}
+	return nil
+}
+
+func directCodingGoVersionFromOutput(output []byte) (string, error) {
+	line := strings.TrimSpace(string(output))
+	if strings.ContainsAny(line, "\r\n") {
+		return "", fmt.Errorf("Go version output %q contains more than one line", line)
+	}
+	fields := strings.Fields(line)
+	if len(fields) != 4 || fields[0] != "go" || fields[1] != "version" {
+		return "", fmt.Errorf("Go version output %q does not have the native four-field form", line)
+	}
+	if !directCodingGoPlatformIsValid(fields[3]) {
+		return "", fmt.Errorf("Go version output %q has an invalid platform", line)
+	}
+	value := strings.TrimPrefix(fields[2], "go")
+	if value == fields[2] {
+		return "", fmt.Errorf("Go version output %q omits the go-prefixed release", line)
+	}
+	coreEnd := 0
+	for coreEnd < len(value) && ((value[coreEnd] >= '0' && value[coreEnd] <= '9') || value[coreEnd] == '.') {
+		coreEnd++
+	}
+	core, suffix := value[:coreEnd], value[coreEnd:]
+	parts := strings.Split(core, ".")
+	if len(parts) != 2 && len(parts) != 3 {
+		return "", fmt.Errorf("Go version output %q has an invalid release", line)
+	}
+	for _, part := range parts {
+		if part == "" {
+			return "", fmt.Errorf("Go version output %q has an invalid release", line)
+		}
+		for _, character := range part {
+			if character < '0' || character > '9' {
+				return "", fmt.Errorf("Go version output %q has an invalid release", line)
+			}
+		}
+	}
+	if len(parts) == 2 {
+		core += ".0"
+	}
+	canonical, err := directCodingCanonicalSemanticVersion(core)
+	if err != nil {
+		return "", fmt.Errorf("Go version output %q: %w", line, err)
+	}
+	if suffix == "" || directCodingGoVendorSuffixIsValid(suffix) {
+		return canonical, nil
+	}
+	if prerelease, ok := directCodingGoPrereleaseSuffix(suffix); ok {
+		return canonical + "-" + prerelease, nil
+	}
+	return "", fmt.Errorf("Go version output %q has an invalid release suffix", line)
+}
+
+func directCodingGoPlatformIsValid(value string) bool {
+	osName, architecture, found := strings.Cut(value, "/")
+	if !found || osName == "" || architecture == "" || strings.Contains(architecture, "/") {
+		return false
+	}
+	for _, component := range []string{osName, architecture} {
+		for _, character := range component {
+			if (character < 'a' || character > 'z') &&
+				(character < '0' || character > '9') && character != '_' {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func directCodingGoVendorSuffixIsValid(value string) bool {
+	if !strings.HasPrefix(value, "-") || len(value) == 1 {
+		return false
+	}
+	for _, character := range value[1:] {
+		if (character < 'a' || character > 'z') &&
+			(character < 'A' || character > 'Z') &&
+			(character < '0' || character > '9') &&
+			!strings.ContainsRune("._:+-", character) {
+			return false
+		}
+	}
+	return true
+}
+
+func directCodingGoPrereleaseSuffix(value string) (string, bool) {
+	for _, prefix := range []string{"beta", "rc"} {
+		if !strings.HasPrefix(value, prefix) || len(value) == len(prefix) {
+			continue
+		}
+		for _, character := range value[len(prefix):] {
+			if character < '0' || character > '9' {
+				return "", false
+			}
+		}
+		return value, true
+	}
+	return "", false
 }
 
 func directCodingCanonicalSemanticVersion(value string) (string, error) {

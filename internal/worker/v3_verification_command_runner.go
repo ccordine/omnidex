@@ -301,6 +301,8 @@ func directCodingVerificationProcessEnvironment(overrides []string) ([]string, e
 	}
 	allowed := map[string]struct{}{
 		"CI": {}, "LANG": {}, "LC_ALL": {}, "PATH": {}, "TMPDIR": {},
+		"GOCACHE": {}, "GOENV": {}, "GOFLAGS": {}, "GOMODCACHE": {}, "GOPROXY": {},
+		"GOSUMDB": {}, "GOTELEMETRY": {}, "GOTOOLCHAIN": {}, "GOWORK": {},
 		"NPM_CONFIG_AUDIT": {}, "NPM_CONFIG_CACHE": {}, "NPM_CONFIG_FUND": {},
 		"NPM_CONFIG_UPDATE_NOTIFIER": {}, "NPM_CONFIG_USERCONFIG": {},
 	}

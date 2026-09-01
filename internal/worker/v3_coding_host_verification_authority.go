@@ -10,8 +10,13 @@ import (
 func (s *directCodingSession) hostVerificationAuthority(
 	requested directCodingAssembly,
 ) (*directCodingProgram, directCodingAssembly, bool, error) {
-	if s == nil || s.program == nil ||
-		s.program.Project.Stack.ID != genericTypeScriptBrowserAdapter {
+	if s == nil || s.program == nil {
+		return nil, directCodingAssembly{}, false, nil
+	}
+	stackID := s.program.Project.Stack.ID
+	switch stackID {
+	case genericTypeScriptBrowserAdapter, genericGoCommandLineAdapter:
+	default:
 		return nil, directCodingAssembly{}, false, nil
 	}
 	complete, err := directCodingProgramHasCompleteGeneratedSet(*s.program)
@@ -20,7 +25,7 @@ func (s *directCodingSession) hostVerificationAuthority(
 	}
 	if !complete {
 		return nil, directCodingAssembly{}, false, fmt.Errorf(
-			"TypeScript host verification requires one complete generated source set",
+			"%s host verification requires one complete generated source set", stackID,
 		)
 	}
 	assembly, err := directCodingAssemblyFromProgram(*s.program)
