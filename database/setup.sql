@@ -25,6 +25,16 @@ CREATE TABLE llm_call_evidence (
     work_kind text NOT NULL CHECK (
         work_kind <> '' AND work_kind=btrim(work_kind) AND octet_length(work_kind) <= 128
     ),
+    iteration integer NOT NULL CHECK (iteration BETWEEN 1 AND 3),
+    output_continuation integer NOT NULL CHECK (output_continuation BETWEEN 0 AND 1),
+    parent_call_evidence_id bigint
+        REFERENCES llm_call_evidence(id) ON DELETE RESTRICT,
+    source_base_candidate text,
+    source_base_sha256 text,
+    source_start_byte integer,
+    source_end_byte integer,
+    source_question text,
+    source_question_sha256 text,
     requested_model text NOT NULL CHECK (
         requested_model <> '' AND requested_model=btrim(requested_model)
         AND octet_length(requested_model) <= 512
@@ -33,13 +43,12 @@ CREATE TABLE llm_call_evidence (
         model <> '' AND model=btrim(model) AND octet_length(model) <= 512
     ),
     protocol text NOT NULL CHECK (
-        protocol='omnidex.ollama-raw-text-generate-request.v2'
+        protocol='omnidex.ollama-plain-completion-request.v4'
     ),
     system_envelope text NOT NULL CHECK (
         system_envelope <> '' AND btrim(system_envelope) <> ''
         AND octet_length(system_envelope) <= 131072
     ),
-    prompt_hint text NOT NULL CHECK (prompt_hint='Return only the requested output.'),
     model_input text NOT NULL,
     model_input_sha256 text NOT NULL CHECK (
         model_input_sha256 ~ '^[0-9a-f]{64}$'
@@ -58,14 +67,58 @@ CREATE TABLE llm_call_evidence (
         provider_request_bytes=octet_length(provider_request)
         AND provider_request_bytes BETWEEN 1 AND 1048576
     ),
-    context_tokens integer NOT NULL CHECK (context_tokens BETWEEN 1 AND 262144),
+    context_tokens integer NOT NULL CHECK (context_tokens BETWEEN 1 AND 1048576),
     max_output_tokens integer NOT NULL CHECK (
         max_output_tokens BETWEEN 1 AND context_tokens
     ),
     output_limit_mode text NOT NULL CHECK (output_limit_mode IN ('explicit','natural')),
     created_at timestamp with time zone DEFAULT clock_timestamp() NOT NULL,
+    CONSTRAINT llm_call_evidence_iteration_shape CHECK (
+        (iteration=1 OR work_kind='fragment_generation')
+        AND
+        (
+        (iteration=1 AND output_continuation=0 AND parent_call_evidence_id IS NULL)
+        OR
+        (output_continuation=1 AND parent_call_evidence_id IS NOT NULL)
+        OR
+        (iteration>1 AND output_continuation=0
+         AND parent_call_evidence_id IS NOT NULL AND work_kind='fragment_generation')
+        )
+    ),
+    CONSTRAINT llm_call_evidence_source_correction_shape CHECK (
+        (iteration=1
+         AND source_base_candidate IS NULL AND source_base_sha256 IS NULL
+         AND source_start_byte IS NULL AND source_end_byte IS NULL
+         AND source_question IS NULL AND source_question_sha256 IS NULL)
+        OR
+        (iteration>1
+         AND source_base_candidate IS NOT NULL
+         AND octet_length(source_base_candidate) BETWEEN 1 AND 32768
+         AND source_base_sha256 ~ '^[0-9a-f]{64}$'
+         AND source_base_sha256=encode(
+             pg_catalog.sha256(convert_to(source_base_candidate,'UTF8')),'hex'
+         )
+         AND source_start_byte>=0 AND source_end_byte>source_start_byte
+         AND source_end_byte<=octet_length(source_base_candidate)
+         AND (source_start_byte>0 OR source_end_byte<octet_length(source_base_candidate))
+         AND source_question IS NOT NULL AND source_question=btrim(source_question)
+         AND source_question<>'' AND octet_length(source_question)<=2048
+         AND source_question_sha256 ~ '^[0-9a-f]{64}$'
+         AND source_question_sha256=encode(
+             pg_catalog.sha256(convert_to(source_question,'UTF8')),'hex'
+         )
+         AND system_envelope=source_question || E'\n\n' || convert_from(
+             substring(
+                 convert_to(source_base_candidate,'UTF8')
+                 FROM source_start_byte+1 FOR source_end_byte-source_start_byte
+             ),
+             'UTF8'
+         ))
+    ),
+    CONSTRAINT llm_call_evidence_one_child
+        UNIQUE (parent_call_evidence_id),
     CONSTRAINT llm_call_evidence_one_invocation
-        UNIQUE (job_id,generation,step_id,step_attempt,work_id)
+        UNIQUE (job_id,generation,step_id,step_attempt,work_id,iteration,output_continuation)
 );
 
 CREATE INDEX idx_llm_call_evidence_job
@@ -78,7 +131,7 @@ CREATE TABLE llm_call_receipts (
     call_evidence_id bigint PRIMARY KEY
         REFERENCES llm_call_evidence(id) ON DELETE RESTRICT,
     generation_receipt bytea NOT NULL CHECK (
-        octet_length(generation_receipt) BETWEEN 2 AND 34603009
+        octet_length(generation_receipt) BETWEEN 2 AND 16384
     ),
     generation_receipt_sha256 text NOT NULL CHECK (
         generation_receipt_sha256 ~ '^[0-9a-f]{64}$'
@@ -93,6 +146,7 @@ CREATE TABLE llm_call_receipts (
     prompt_tokens integer NOT NULL CHECK (prompt_tokens >= 0),
     output_tokens integer NOT NULL CHECK (output_tokens >= 0),
     provider_duration_nanos bigint NOT NULL CHECK (provider_duration_nanos >= 0),
+    output_limit_reached boolean NOT NULL,
     status text NOT NULL CHECK (status IN ('succeeded','failed')),
     error text,
     error_sha256 text,
@@ -103,7 +157,7 @@ CREATE TABLE llm_call_receipts (
          AND raw_response_sha256 ~ '^[0-9a-f]{64}$'
          AND raw_response_sha256=encode(pg_catalog.sha256(raw_response),'hex')
          AND raw_response_bytes=octet_length(raw_response)
-         AND raw_response_bytes BETWEEN 0 AND 16777217)
+         AND raw_response_bytes BETWEEN 0 AND 122748929)
         OR
         (NOT raw_response_present AND raw_response IS NULL
          AND raw_response_sha256 IS NULL AND raw_response_bytes=0)
@@ -116,14 +170,18 @@ CREATE TABLE llm_call_receipts (
          AND octet_length(candidate) <= 16777216)
     ),
     CONSTRAINT llm_call_receipts_terminal_shape CHECK (
-        (status='succeeded' AND error IS NULL AND error_sha256 IS NULL
+        (status='succeeded' AND NOT output_limit_reached
+         AND error IS NULL AND error_sha256 IS NULL
          AND candidate IS NOT NULL
          AND btrim(candidate) <> '' AND prompt_tokens > 0 AND output_tokens > 0)
         OR
         (status='failed' AND error IS NOT NULL AND error=btrim(error)
          AND error <> '' AND octet_length(error) <= 8192
          AND error_sha256 ~ '^[0-9a-f]{64}$'
-         AND error_sha256=encode(pg_catalog.sha256(convert_to(error,'UTF8')),'hex'))
+         AND error_sha256=encode(pg_catalog.sha256(convert_to(error,'UTF8')),'hex')
+         AND (NOT output_limit_reached OR
+              (candidate IS NOT NULL AND btrim(candidate) <> ''
+               AND prompt_tokens > 0 AND output_tokens > 0)))
     )
 );
 
@@ -225,6 +283,7 @@ CREATE FUNCTION validate_llm_call_evidence_insert() RETURNS trigger
     AS $$
 DECLARE
 	attempt_status text;
+	prior_call record;
 BEGIN
 	SELECT status INTO attempt_status FROM job_step_attempts
 	WHERE job_id=NEW.job_id AND generation=NEW.generation
@@ -236,6 +295,72 @@ BEGIN
 	END IF;
 	IF attempt_status<>'active' THEN
 		RAISE EXCEPTION 'inactive step attempt cannot reserve new LLM call evidence';
+	END IF;
+	IF NEW.iteration>1 OR NEW.output_continuation>0 THEN
+		SELECT calls.*,
+		       receipts.status AS prior_receipt_status,
+		       receipts.output_limit_reached AS prior_output_limit_reached,
+		       receipts.prompt_tokens AS prior_prompt_tokens,
+		       outcomes.status AS prior_outcome_status,
+		       parent_attempt.status AS prior_attempt_status
+		INTO prior_call
+		FROM llm_call_evidence AS calls
+		JOIN llm_call_receipts AS receipts ON receipts.call_evidence_id=calls.id
+		JOIN llm_call_outcomes AS outcomes ON outcomes.call_evidence_id=calls.id
+		JOIN job_step_attempts AS parent_attempt
+		  ON parent_attempt.job_id=calls.job_id
+		 AND parent_attempt.generation=calls.generation
+		 AND parent_attempt.step_id=calls.step_id
+		 AND parent_attempt.attempt=calls.step_attempt
+		 AND parent_attempt.worker_id=calls.worker_id
+		WHERE calls.id=NEW.parent_call_evidence_id
+		FOR SHARE OF calls,receipts,outcomes,parent_attempt;
+		IF NOT FOUND THEN
+			RAISE EXCEPTION 'iterative LLM call lacks one terminal parent call';
+		END IF;
+		IF prior_call.job_id<>NEW.job_id OR
+		   prior_call.generation<>NEW.generation OR
+		   prior_call.step_id<>NEW.step_id OR
+		   NOT (
+		       (prior_call.step_attempt=NEW.step_attempt AND
+		        prior_call.worker_id=NEW.worker_id)
+		       OR
+		       (prior_call.step_attempt<NEW.step_attempt AND
+		        prior_call.prior_attempt_status='expired')
+		   ) OR
+		   prior_call.scope<>NEW.scope OR
+		   prior_call.work_id<>NEW.work_id OR
+		   prior_call.work_kind<>NEW.work_kind OR
+		   prior_call.requested_model<>NEW.requested_model OR
+		   prior_call.model<>NEW.model OR
+		   prior_call.protocol<>NEW.protocol THEN
+			RAISE EXCEPTION 'iterative LLM call differs from its persisted job or model context';
+		END IF;
+		IF NEW.output_continuation=1 THEN
+			IF prior_call.iteration<>NEW.iteration OR
+			   prior_call.output_continuation<>0 OR
+			   prior_call.prior_receipt_status<>'failed' OR
+			   NOT prior_call.prior_output_limit_reached OR
+			   prior_call.prior_outcome_status<>'provider_failed' OR
+			   prior_call.system_envelope<>NEW.system_envelope OR
+			   prior_call.model_input_sha256<>NEW.model_input_sha256 OR
+			   prior_call.context_tokens<>NEW.context_tokens OR
+			   prior_call.output_limit_mode<>'explicit' OR
+			   NEW.output_limit_mode<>'explicit' OR
+			   NEW.max_output_tokens<>NEW.context_tokens-prior_call.prior_prompt_tokens OR
+			   NEW.max_output_tokens<=prior_call.max_output_tokens OR
+			   prior_call.source_base_sha256 IS DISTINCT FROM NEW.source_base_sha256 OR
+			   prior_call.source_start_byte IS DISTINCT FROM NEW.source_start_byte OR
+			   prior_call.source_end_byte IS DISTINCT FROM NEW.source_end_byte OR
+			   prior_call.source_question_sha256 IS DISTINCT FROM NEW.source_question_sha256 THEN
+				RAISE EXCEPTION 'output continuation differs from its exact incomplete parent';
+			END IF;
+		ELSIF prior_call.iteration<>NEW.iteration-1 OR
+		      prior_call.prior_receipt_status<>'succeeded' OR
+		      prior_call.prior_output_limit_reached OR
+		      prior_call.prior_outcome_status<>'rejected' THEN
+			RAISE EXCEPTION 'iterative LLM call parent was not a rejected successful response';
+		END IF;
 	END IF;
 	RETURN NEW;
 END;
@@ -323,11 +448,20 @@ BEGIN
 		FROM llm_call_evidence AS call
 		LEFT JOIN llm_call_receipts AS receipt ON receipt.call_evidence_id=call.id
 		JOIN llm_call_outcomes AS outcome ON outcome.call_evidence_id=call.id
-		WHERE call.job_id=NEW.job_id AND call.generation=NEW.generation
-		  AND call.step_id=NEW.step_id AND call.step_attempt=NEW.attempt
-		  AND call.worker_id=NEW.worker_id
-		  AND (receipt.call_evidence_id IS NULL OR outcome.status IN ('provider_failed','interrupted'))
-	) THEN
+			WHERE call.job_id=NEW.job_id AND call.generation=NEW.generation
+			  AND call.step_id=NEW.step_id AND call.step_attempt=NEW.attempt
+			  AND call.worker_id=NEW.worker_id
+			  AND (
+			      receipt.call_evidence_id IS NULL OR outcome.status='interrupted' OR
+			      (outcome.status='provider_failed' AND NOT (
+			          receipt.output_limit_reached AND EXISTS (
+			              SELECT 1 FROM llm_call_evidence AS continuation
+			              WHERE continuation.parent_call_evidence_id=call.id
+			                AND continuation.output_continuation=1
+			          )
+			      ))
+			  )
+		) THEN
 		RAISE EXCEPTION 'step attempt cannot complete after an unfinished or failed LLM call';
 	END IF;
 	IF NEW.status='completed' AND EXISTS (

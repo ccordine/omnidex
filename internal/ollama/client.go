@@ -11,6 +11,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/gryph/omnidex/internal/llm"
 )
 
 type Client struct {
@@ -69,6 +71,7 @@ func newClient(
 	baseURL, defaultModel, embeddingModel string,
 	timeout time.Duration,
 ) *Client {
+	timeout = llm.BoundedModelRequestDuration(timeout)
 	dialTimeout := 5 * time.Second
 	if timeout > 0 && timeout < dialTimeout {
 		dialTimeout = timeout

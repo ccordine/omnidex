@@ -264,13 +264,17 @@ fragment_generation_replacement and similar paths that feed the unchanged origin
 
 Delete them.
 
-A correction only exists when code has produced a new, specific semantic question or new evidence.
+A source-body correction exists only when code has proved one specific defect and its
+exact mutable byte span. It continues the same persisted job/model context, exposes
+only that span and one necessary semantic question, and lets code splice the returned
+ordinary text into its retained base.
 
-NONE is a valid local answer
+An absence relation is a valid local semantic result
 
-If a repository-owner station returns NONE, that means:
-
-no current candidate owns this behavior
+If a repository-owner choice resolves to the code-owned absence relation, that means
+no current candidate owns this behavior. The model does not emit the internal label
+`NONE`; for a genuine plurality it selects one opaque letter and code performs the
+mapping. A sole applicable owner is used directly without a model call.
 
 Code can investigate further, create a new artifact, or leave the task unresolved. It must not become a whole-job veto.
 
@@ -480,11 +484,11 @@ Then apply budgets.
 
 Do not traverse every analyzer and make omissions fatal before determining which artifacts are relevant.
 
-Repair route only after a repair exists
+Source-body correction only after a specific defect exists
 
-Do not resolve a repair executor before guidance has established that execution is required.
-
-Remove the fixed semantic meaning of “two attempts.” Resource ceilings may exist, but progress and changed reality determine convergence.
+Continue the same persisted source-body job with its immutable model route. Do not
+create guidance, executor, replacement, or fallback routes. The current hard resource
+ceiling is three total body attempts; only validated reality determines acceptance.
 
 Remove Go-specific verification assumptions
 

@@ -19,7 +19,7 @@ func resolveDatabaseQueryHaving(
 		assemblyline.DatabaseQueryPurposeAuthority{
 			State: state, Collection: assemblyline.DatabaseQueryHavingPurpose,
 		},
-		datasource.MaxIntentGroups-len(state.Having), call, total,
+		datasource.MaxIntentGroups-len(state.Having), false, call, total,
 	)
 	total = nextTotal
 	if err != nil {
@@ -43,12 +43,12 @@ func resolveDatabaseQueryHaving(
 			return state, total, err
 		}
 		if leaf.Aggregate != datasource.AggregateCountRows {
-			fields := objectiveDatabaseProjectionFields(state, leaf.Aggregate)
-			if len(fields) == 0 {
-				return state, total, fmt.Errorf("database query having aggregate has no compatible field")
+			fieldID, resolved, err := assemblyline.ResolveSoleDatabaseQueryHavingFieldLeaf(leaf)
+			if err != nil {
+				return state, total, err
 			}
-			if len(fields) == 1 {
-				leaf.FieldID = fields[0]
+			if resolved {
+				leaf.FieldID = fieldID
 			} else {
 				fieldJob, err := assemblyline.NewDatabaseQueryHavingFieldJob(leaf)
 				if err != nil {
@@ -113,7 +113,9 @@ func resolveDatabaseQueryOrder(
 		assemblyline.DatabaseQueryPurposeAuthority{
 			State: state, Collection: assemblyline.DatabaseQueryOrderPurpose,
 		},
-		datasource.MaxIntentOrderTerms-len(state.OrderBy), call, total,
+		datasource.MaxIntentOrderTerms-len(state.OrderBy),
+		state.Shape == datasource.ResultRanking && len(state.OrderBy) == 0,
+		call, total,
 	)
 	total = nextTotal
 	if err != nil {
@@ -125,13 +127,13 @@ func resolveDatabaseQueryOrder(
 	for _, purpose := range purposes {
 		leaf := assemblyline.DatabaseQueryOrderLeafInput{State: state, Purpose: purpose}
 		var calls int
-		remaining := objectiveDatabaseOrderProjections(state)
-		if len(remaining) == 0 {
-			return state, total, fmt.Errorf("database query order has no unused projection")
-		}
 		var projection int
-		if len(remaining) == 1 {
-			projection = remaining[0]
+		resolvedProjection, resolved, err := assemblyline.ResolveSoleDatabaseQueryOrderProjectionLeaf(leaf)
+		if err != nil {
+			return state, total, err
+		}
+		if resolved {
+			projection = resolvedProjection
 		} else {
 			projectionJob, err := assemblyline.NewDatabaseQueryOrderProjectionJob(leaf)
 			if err != nil {
@@ -168,18 +170,4 @@ func resolveDatabaseQueryOrder(
 		})
 	}
 	return state, total, nil
-}
-
-func objectiveDatabaseOrderProjections(state assemblyline.DatabaseQueryIntentLeafState) []int {
-	used := map[int]struct{}{}
-	for _, term := range state.OrderBy {
-		used[term.Projection] = struct{}{}
-	}
-	projections := []int{}
-	for index := range state.Projections {
-		if _, duplicate := used[index]; !duplicate {
-			projections = append(projections, index)
-		}
-	}
-	return projections
 }

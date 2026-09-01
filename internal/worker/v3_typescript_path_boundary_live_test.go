@@ -1,15 +1,14 @@
 package worker
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"strconv"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
+	"github.com/gryph/omnidex/internal/llm"
 	"github.com/gryph/omnidex/internal/ollama"
 	treesitter "github.com/tree-sitter/go-tree-sitter"
 	typescript "github.com/tree-sitter/tree-sitter-typescript/bindings/go"
@@ -17,7 +16,7 @@ import (
 
 const liveCodingFragmentModelEnv = "OMNIDEX_TEST_CODING_FRAGMENT_MODEL"
 
-func TestLiveTypeScriptFragmentHonorsPathBlindLiteralGrammar(t *testing.T) {
+func TestLiveTypeScriptFragmentReturnsAnImplementationBody(t *testing.T) {
 	modelName := strings.TrimSpace(os.Getenv(liveCodingFragmentModelEnv))
 	if modelName == "" {
 		t.Skip(liveCodingFragmentModelEnv + " is not set")
@@ -30,9 +29,8 @@ func TestLiveTypeScriptFragmentHonorsPathBlindLiteralGrammar(t *testing.T) {
 	if err != nil || contextTokens <= 0 {
 		t.Fatal("OMNIDEX_TEST_OLLAMA_CONTEXT must be a positive integer")
 	}
-	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Minute)
-	t.Cleanup(cancel)
-	client := ollama.New(baseURL, modelName, "", 5*time.Minute)
+	ctx := t.Context()
+	client := ollama.New(baseURL, modelName, "", llm.MaximumModelRequestDuration)
 
 	fixtures := []struct {
 		input    assemblyline.FragmentGenerationInput
@@ -63,39 +61,89 @@ func TestLiveTypeScriptFragmentHonorsPathBlindLiteralGrammar(t *testing.T) {
 	for _, fixture := range fixtures {
 		fixture := fixture
 		t.Run(fixture.input.Signature, func(t *testing.T) {
-			job, err := assemblyline.NewFragmentGenerationJob(fixture.input)
-			if err != nil {
-				t.Fatal(err)
+			var acceptedResponse string
+			execute := func(
+				job assemblyline.PortableJob,
+				requestedModel string,
+				prompt string,
+			) (assemblyline.PortableResult, error) {
+				if requestedModel != modelName {
+					return assemblyline.PortableResult{}, fmt.Errorf(
+						"live source-body model %q differs from %q", requestedModel, modelName,
+					)
+				}
+				result, err := executeLivePortablePrompt(
+					ctx, client, contextTokens, requestedModel, job, prompt, t,
+				)
+				return result, err
 			}
-			result, err := executeLiveRequirementsSemanticJob(
-				ctx, client, contextTokens, modelName, job, t,
+			runtime := typedWorkerRuntime{
+				Context:     ctx,
+				MaxAttempts: assemblyline.MaxSourceBodyAttempts,
+				Execute: func(
+					job assemblyline.PortableJob,
+					requestedModel string,
+				) (assemblyline.PortableResult, error) {
+					prompt, err := assemblyline.RenderPortableJob(job)
+					if err != nil {
+						return assemblyline.PortableResult{}, err
+					}
+					return execute(job, requestedModel, prompt)
+				},
+				Correct: func(
+					job assemblyline.PortableJob,
+					requestedModel string,
+					correction assemblyline.SourceBodyCorrection,
+				) (assemblyline.PortableResult, error) {
+					prompt, err := correction.ModelInput()
+					if err != nil {
+						return assemblyline.PortableResult{}, err
+					}
+					return execute(job, requestedModel, prompt)
+				},
+				Release: func(assemblyline.PortableJob) error { return nil },
+				Finalize: func(
+					_ assemblyline.PortableJob,
+					result assemblyline.PortableResult,
+					validationErr error,
+				) error {
+					if validationErr == nil {
+						acceptedResponse = result.Candidate
+					}
+					return nil
+				},
+			}
+			source, err := runDirectCodingLanguageFragmentWorker(
+				runtime,
+				modelName,
+				directCodingLanguageGenerationJob{
+					Subject: fixture.input.Signature,
+					Input:   fixture.input,
+					Validate: func(
+						_ assemblyline.FragmentGenerationInput,
+						body string,
+					) (string, error) {
+						fragment, err := assemblyline.ParseTypeScriptFunctionBody(
+							assemblyline.TypeScriptFunctionContract{
+								Signature: fixture.input.Signature,
+							},
+							body,
+						)
+						return fragment.Source, err
+					},
+				},
 			)
 			if err != nil {
 				t.Fatal(err)
 			}
-			contract := assemblyline.TypeScriptFunctionContract{Signature: fixture.input.Signature}
-			projection, err := assemblyline.ProjectTypeScriptFunctionModelResponse(
-				contract, result.Candidate,
-			)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if err := assemblyline.ValidatePathFreeSourceModelContext(
-				"live TypeScript fragment candidate", projection.Source,
-			); err != nil {
-				t.Fatal(err)
-			}
-			if _, err := assemblyline.ParseTypeScriptFunction(contract, projection.Source); err != nil {
-				t.Fatal(err)
-			}
-			actual, err := evaluateRestrictedLiveTypeScriptReturn(projection.Source, fixture.values)
+			actual, err := evaluateRestrictedLiveTypeScriptReturn(source, fixture.values)
 			if err != nil {
 				t.Fatal(err)
 			}
 			if actual != fixture.expected {
 				t.Fatalf("result=%q, want %q", actual, fixture.expected)
 			}
-			t.Logf("model=%s accepted_path_blind_source=%q", modelName, projection.Source)
+			t.Logf("model=%s accepted_ordinary_response=%q", modelName, acceptedResponse)
 		})
 	}
 }

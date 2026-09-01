@@ -6,7 +6,7 @@ import (
 )
 
 const (
-	CapabilityRelationSchemaV1 = "omnidex.capability-relation.v1"
+	CapabilityRelationSchemaV1   = "omnidex.capability-relation.v1"
 	maxCapabilityRelationContext = 12288
 	maxCapabilityRelationNeed    = 2000
 )
@@ -72,17 +72,19 @@ func BuildCapabilityRelationPrompt(input CapabilityRelationInput) (string, error
 	if err := input.validate(); err != nil {
 		return "", err
 	}
-	return strings.Join([]string{
-		"Classify only the direct live-state dependency between two local behaviors.",
-		"Return independent when neither behavior must consume a result uniquely produced by the other. Shared request or user input, related subject matter, validation overlap, visual proximity, possible reuse, or convenience does not create an edge.",
-		"Return left_reads_right only when LEFT_NEED cannot satisfy its named behavior without consuming a result uniquely produced by RIGHT_NEED.",
-		"Return right_reads_left only when RIGHT_NEED cannot satisfy its named behavior without consuming a result uniquely produced by LEFT_NEED.",
-		"When the two phrases do not establish one necessary unique producer result, return independent.",
-		"Return exactly one raw registered relation value with no JSON, quotes, label, Markdown, or commentary.",
-		"LOCAL_CONTEXT:\n" + input.LocalContext,
-		"LEFT_NEED:\n" + input.LeftNeed,
-		"RIGHT_NEED:\n" + input.RightNeed,
-	}, "\n\n"), nil
+	choices, err := capabilityRelationOpaqueChoices()
+	if err != nil {
+		return "", err
+	}
+	return RenderOpaqueModelChoiceQuestion(
+		"What direct live-state dependency exists between these two local behaviors?",
+		[]string{
+			"Local context:\n" + input.LocalContext,
+			"Left behavior:\n" + input.LeftNeed,
+			"Right behavior:\n" + input.RightNeed,
+		},
+		choices,
+	)
 }
 
 func DecodeCapabilityRelationDecision(
@@ -92,7 +94,11 @@ func DecodeCapabilityRelationDecision(
 	if err := input.validate(); err != nil {
 		return CapabilityRelationDecision{}, err
 	}
-	leaf, err := decodeRawSemanticLeaf("capability relation", raw, 64, false)
+	choices, err := capabilityRelationOpaqueChoices()
+	if err != nil {
+		return CapabilityRelationDecision{}, err
+	}
+	leaf, err := DecodeOpaqueModelChoice(raw, choices)
 	if err != nil {
 		return CapabilityRelationDecision{}, err
 	}
@@ -103,4 +109,36 @@ func DecodeCapabilityRelationDecision(
 		return CapabilityRelationDecision{}, err
 	}
 	return decision, nil
+}
+
+func capabilityRelationOpaqueChoices() ([]OpaqueModelChoice, error) {
+	definitions := []struct {
+		description string
+		value       CapabilityRelation
+	}{
+		{
+			description: "Neither behavior must consume a result uniquely produced by the other. Shared inputs, related subject matter, validation overlap, visual proximity, possible reuse, and convenience do not create a dependency.",
+			value:       CapabilityIndependent,
+		},
+		{
+			description: "The left behavior cannot satisfy its stated need without consuming a result uniquely produced by the right behavior.",
+			value:       CapabilityLeftReadsRight,
+		},
+		{
+			description: "The right behavior cannot satisfy its stated need without consuming a result uniquely produced by the left behavior.",
+			value:       CapabilityRightReadsLeft,
+		},
+	}
+	choices := make([]OpaqueModelChoice, 0, len(definitions))
+	for _, definition := range definitions {
+		choice, err := NewOpaqueModelChoice(
+			definition.description,
+			string(definition.value),
+		)
+		if err != nil {
+			return nil, err
+		}
+		choices = append(choices, choice)
+	}
+	return choices, nil
 }

@@ -25,7 +25,7 @@ func TestFreshSchemaRejectsStepCompletionWithUnterminatedLLMCall(t *testing.T) {
 		t.Fatalf("claim=%#v err=%v", claim, err)
 	}
 	record := exactLLMEvidenceFixture(
-		t, assemblyline.WorkApplicationClassify, "Classify a delivery.", "browser",
+		t, assemblyline.WorkApplicationClassify, "Classify a delivery.", "A",
 	)
 	record.Authority = claim.Authority
 	evidence, err := recordExactLLMEvidenceFixture(ctx, repository, record)
@@ -63,7 +63,7 @@ func TestFreshSchemaAbandonedLLMOpeningBlocksCompletionAndExpiresInterrupted(t *
 		t.Fatalf("claim=%#v err=%v", claim, err)
 	}
 	record := exactLLMEvidenceFixture(
-		t, assemblyline.WorkApplicationClassify, "Classify before process death.", "browser",
+		t, assemblyline.WorkApplicationClassify, "Classify before process death.", "A",
 	)
 	record.Authority = claim.Authority
 	opening, err := repository.ReserveLLMCallEvidence(ctx, record.LLMCallOpeningRecord)
@@ -97,7 +97,7 @@ func TestFreshSchemaTerminalAttemptPreservesBothLLMCallRaceOrderings(t *testing.
 	}
 
 	receiptFirst := exactLLMEvidenceFixture(
-		t, assemblyline.WorkApplicationClassify, "Classify before cancellation.", "browser",
+		t, assemblyline.WorkApplicationClassify, "Classify before cancellation.", "A",
 	)
 	receiptFirst.Authority = claim.Authority
 	receiptEvidence, err := recordExactLLMEvidenceFixture(ctx, repository, receiptFirst)
@@ -105,7 +105,7 @@ func TestFreshSchemaTerminalAttemptPreservesBothLLMCallRaceOrderings(t *testing.
 		t.Fatalf("receipt-first evidence=%#v err=%v", receiptEvidence, err)
 	}
 	terminalFirst := exactLLMEvidenceFixture(
-		t, assemblyline.WorkArtifactHandling, "Classify ARTIFACT_1 after cancellation.", "must_exist",
+		t, assemblyline.WorkArtifactHandling, "Classify ARTIFACT_1 after cancellation.", "B",
 	)
 	terminalFirst.Authority = claim.Authority
 	terminalFirst.WorkID = strings.Repeat("b", 64)
@@ -160,7 +160,7 @@ func TestFreshSchemaCompletedAttemptRejectsNewEvidence(t *testing.T) {
 		t.Fatal(err)
 	}
 	record := exactLLMEvidenceFixture(
-		t, assemblyline.WorkArtifactHandling, "Classify after completion.", "must_exist",
+		t, assemblyline.WorkArtifactHandling, "Classify after completion.", "B",
 	)
 	record.Authority = claim.Authority
 	if _, err := repository.ReserveLLMCallEvidence(ctx, record.LLMCallOpeningRecord); err == nil {

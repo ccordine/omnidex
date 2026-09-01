@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -25,7 +26,7 @@ func TestFreshSchemaLLMCallEvidenceIsExactTerminalAndImmutable(t *testing.T) {
 	}
 
 	accepted := exactLLMEvidenceFixture(
-		t, assemblyline.WorkApplicationClassify, "Classify one exact value.", "browser",
+		t, assemblyline.WorkApplicationClassify, "Classify one exact value.", "A",
 	)
 	accepted.Authority = claim.Authority
 	accepted.WorkID = strings.Repeat("a", 64)
@@ -45,7 +46,7 @@ func TestFreshSchemaLLMCallEvidenceIsExactTerminalAndImmutable(t *testing.T) {
 	}
 
 	rejected := exactLLMEvidenceFixture(
-		t, assemblyline.WorkFragmentGeneration, "Return one declaration.", "invalid declaration",
+		t, assemblyline.WorkFragmentGeneration, "Write one implementation body.", "invalid body (",
 	)
 	rejected.Authority = claim.Authority
 	rejected.WorkID = strings.Repeat("b", 64)
@@ -56,7 +57,7 @@ func TestFreshSchemaLLMCallEvidenceIsExactTerminalAndImmutable(t *testing.T) {
 	if _, err := repository.RecordLLMCallOutcome(ctx, LLMCallOutcomeRecord{
 		Authority: claim.Authority, CallEvidenceID: rejectedEvidence.ID,
 		Candidate:       rejected.Generation.Content,
-		ValidationError: "declaration parser rejected the exact candidate",
+		ValidationError: "implementation body parser rejected the exact response",
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -122,7 +123,7 @@ func TestFreshSchemaLLMCallEvidenceIsExactTerminalAndImmutable(t *testing.T) {
 		t.Fatal("duplicate station invocation evidence was accepted")
 	}
 	mismatched := exactLLMEvidenceFixture(
-		t, assemblyline.WorkApplicationClassify, "Classify another value.", "cli",
+		t, assemblyline.WorkApplicationClassify, "Classify another value.", "B",
 	)
 	mismatched.Authority = claim.Authority
 	mismatched.Authority.WorkerID = "different-worker"
@@ -163,5 +164,158 @@ func TestFreshSchemaLLMCallEvidenceIsExactTerminalAndImmutable(t *testing.T) {
 	secondPage, err := repository.ListLLMCallEvidenceForJob(ctx, job.ID, firstPage[0].ID, 1)
 	if err != nil || len(secondPage) != 1 {
 		t.Fatalf("second station-call page=%#v err=%v", secondPage, err)
+	}
+}
+
+func TestFreshSchemaSourceBodyCorrectionRequiresRejectedSameJobAndModelParent(t *testing.T) {
+	databaseURL := evidenceDatabaseURL(t)
+	_, repository := freshEvidenceRepository(t, databaseURL)
+	ctx := context.Background()
+	job, err := repository.EnqueueCodingJob(ctx, "exercise source-body continuation", t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	claim, err := repository.ClaimNextStep(ctx, "source-body-continuation-worker")
+	if err != nil || claim == nil || claim.Job.ID != job.ID {
+		t.Fatalf("claim=%#v err=%v", claim, err)
+	}
+
+	initial := exactLLMEvidenceFixture(
+		t, assemblyline.WorkFragmentGeneration,
+		"Write one implementation body.", "return missingValue;",
+	)
+	initial.Authority = claim.Authority
+	initial.WorkID = strings.Repeat("f", 64)
+	initialEvidence, err := recordExactLLMEvidenceFixture(ctx, repository, initial)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repository.RecordLLMCallOutcome(ctx, LLMCallOutcomeRecord{
+		Authority: claim.Authority, CallEvidenceID: initialEvidence.ID,
+		Candidate:       initial.Generation.Content,
+		ValidationError: "implementation body uses undeclared identifier missingValue",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	startByte := strings.Index(initial.Generation.Content, "missingValue")
+	defect, err := assemblyline.NewSourceBodyDefect(
+		initial.Generation.Content,
+		startByte,
+		startByte+len("missingValue"),
+		"Which expression returns the required value without the undeclared symbol?",
+		fmt.Errorf("implementation body uses undeclared identifier missingValue"),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	correctionState, err := defect.Correction(initial.Generation.Content)
+	if err != nil {
+		t.Fatal(err)
+	}
+	correctionPrompt, err := correctionState.ModelInput()
+	if err != nil {
+		t.Fatal(err)
+	}
+	correctionEvidence, err := correctionState.Evidence()
+	if err != nil {
+		t.Fatal(err)
+	}
+	correction := exactLLMEvidenceFixture(
+		t, assemblyline.WorkFragmentGeneration, correctionPrompt, "7",
+	)
+	correction.Authority = claim.Authority
+	correction.WorkID = initial.WorkID
+	correction.Iteration = 2
+	correction.ParentCallEvidenceID = initialEvidence.ID
+	correction.SourceCorrection = &correctionEvidence
+	correctedEvidence, err := recordExactLLMEvidenceFixture(ctx, repository, correction)
+	if err != nil {
+		t.Fatal(err)
+	}
+	projection, err := assemblyline.NewExactPortableResultProjection(
+		correction.Generation.Content,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repository.RecordLLMCallOutcome(ctx, LLMCallOutcomeRecord{
+		Authority: claim.Authority, CallEvidenceID: correctedEvidence.ID,
+		Candidate: correction.Generation.Content, Projection: &projection,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if correctedEvidence.Iteration != 2 ||
+		correctedEvidence.ParentCallEvidenceID != initialEvidence.ID ||
+		correctedEvidence.WorkID != initialEvidence.WorkID ||
+		correctedEvidence.Model != initialEvidence.Model ||
+		correctedEvidence.SystemEnvelope != correctionPrompt ||
+		correctedEvidence.SourceBaseCandidate != initial.Generation.Content ||
+		correctedEvidence.SourceStartByte != startByte ||
+		correctedEvidence.SourceEndByte != startByte+len("missingValue") {
+		t.Fatalf("correction lineage=%#v initial=%#v", correctedEvidence, initialEvidence)
+	}
+
+	unrejected := exactLLMEvidenceFixture(
+		t, assemblyline.WorkFragmentGeneration,
+		"Write another implementation body.", "return unknown;",
+	)
+	unrejected.Authority = claim.Authority
+	unrejected.WorkID = strings.Repeat("e", 64)
+	unrejectedEvidence, err := recordExactLLMEvidenceFixture(ctx, repository, unrejected)
+	if err != nil {
+		t.Fatal(err)
+	}
+	illegalStart := strings.Index(unrejected.Generation.Content, "unknown")
+	illegalDefect, err := assemblyline.NewSourceBodyDefect(
+		unrejected.Generation.Content,
+		illegalStart,
+		illegalStart+len("unknown"),
+		"Which expression should replace this undeclared symbol?",
+		fmt.Errorf("implementation body uses undeclared identifier unknown"),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	illegalState, err := illegalDefect.Correction(unrejected.Generation.Content)
+	if err != nil {
+		t.Fatal(err)
+	}
+	illegalPrompt, err := illegalState.ModelInput()
+	if err != nil {
+		t.Fatal(err)
+	}
+	illegalEvidence, err := illegalState.Evidence()
+	if err != nil {
+		t.Fatal(err)
+	}
+	illegal := exactLLMEvidenceFixture(
+		t, assemblyline.WorkFragmentGeneration,
+		illegalPrompt, "9",
+	)
+	illegal.Authority = claim.Authority
+	illegal.WorkID = unrejected.WorkID
+	illegal.Iteration = 2
+	illegal.ParentCallEvidenceID = unrejectedEvidence.ID
+	illegal.SourceCorrection = &illegalEvidence
+	if _, err := repository.ReserveLLMCallEvidence(
+		ctx, illegal.LLMCallOpeningRecord,
+	); err == nil {
+		t.Fatal("source-body correction without a rejected parent was accepted")
+	}
+	if _, err := repository.RecordLLMCallOutcome(ctx, LLMCallOutcomeRecord{
+		Authority: claim.Authority, CallEvidenceID: unrejectedEvidence.ID,
+		Candidate:       unrejected.Generation.Content,
+		ValidationError: "implementation body uses undeclared identifier unknown",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	illegal.RequestedModel = "different-model"
+	illegal.Prepared.BaseModel = "different-model"
+	illegal.Prepared.ContextModel = "different-model"
+	if _, err := repository.ReserveLLMCallEvidence(
+		ctx, illegal.LLMCallOpeningRecord,
+	); err == nil {
+		t.Fatal("source-body correction with a different model was accepted")
 	}
 }

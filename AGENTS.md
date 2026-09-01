@@ -114,9 +114,10 @@ Code parses and diffs the returned tree and creates the filesystem workload. It 
 compiles the accepted tree and code-owned coverage into bounded source-block
 responsibilities.
 
-A declaration/source station receives one exact path-blind source responsibility and
-returns one declaration or source node. Each call remains a different semantic
-function even when the same underlying model is used.
+A source-body station receives one exact path-blind source responsibility and returns
+ordinary implementation-body text. Code supplies the declaration and every structural
+byte. Each call remains a different semantic function even when the same underlying
+model is used.
 
 # FUNDAMENTAL TEST
 
@@ -268,9 +269,11 @@ Code must own:
 * Parser and compiler context extraction.
 * Imports, stitching, formatting, complete-graph dependency checks, isolated compiler/test staging, workspace writes, and final test execution.
 
-A coding LLM may only fill one explicitly defined code block when deterministic code cannot provide that block. Initial generation receives only the language, exact signature, local behavioral contract, and strictly required declarations/symbols. Validation repair is split across two separate envelopes. A repair-guidance LLM receives the signature, required declarations/symbols, exact mutable block, compiler-proven lexical scope when available, and one exact path-free failure; it returns one self-contained imperative repair instruction and no replacement source. A repair-executor LLM then receives only that instruction and the exact mutable block; it returns exactly one parseable code node. The executor never receives the raw failure, capability inventory, scope inventory, or superseded initial behavioral narrative.
+A coding LLM may only fill one explicitly defined implementation body when deterministic code cannot provide that body. Initial generation receives only the language, exact signature as lexical-scope context, local behavioral contract, and strictly required declarations/symbols. It returns ordinary plain text containing the implementation body. It is never required to reproduce or preserve the signature, parameters, declaration, schema, JSON, control labels, AST shape, path, framework grammar, or any other mechanically known state; code owns and supplies all of that structure.
 
-Dependency order does not grant model context. Every model-visible declaration must be named in a separate explicit capability allowlist, must be a direct dependency, and must be projected at symbol level rather than through an aggregate domain API. Transitive dependencies are invisible. Capability, current-declaration, repair-guidance, repair-execution, initial-envelope, and total-envelope budgets are hard failures at the final model-call boundary. A compiler or test failure contributes one bounded sanitized diagnostic only to the repair-guidance station; test source is never model context. Guidance has no mutation authority and becomes useful only when ordinary code validates the executor's returned block against the original signature and reruns the exact compiler/test stage.
+If deterministic validation proves one specific defect and its exact mutable byte span, correction continues the SAME persisted generation job with the SAME immutable model route and retained model context. The continuation receives one necessary semantic question and only that exact defective span. It does not receive the previous complete body, surrounding accepted source, a preservation instruction, or framework information about how the result will be applied. It returns ordinary replacement text for that span. Code verifies the persisted base digest and range, performs the exact splice into its retained body, reassembles the code-owned declaration, and reruns the original validators. Every accepted byte outside the span and every unrelated job remain untouched and runnable. There is no repair-guidance model, repair-executor model, replacement response format, alternate work kind, restart, or model swap.
+
+Dependency order does not grant model context. Every model-visible declaration must be named in a separate explicit capability allowlist, must be a direct dependency, and must be projected at symbol level rather than through an aggregate domain API. Transitive dependencies are invisible. Capability, current-declaration, initial-body, correction-span, and total-input budgets are hard failures at the final model-call boundary. A compiler or test failure can authorize inference only after code maps it to one exact owning mutable span and one path-free semantic question; the raw diagnostic and test source are never correction context.
 
 No coding, repair, test-generation, or semantic-review LLM may receive or choose:
 
@@ -298,9 +301,34 @@ Every model call must have all of the following before dispatch:
 
 Models return semantic content only. They must not return a framework control plane such as `accept`, `reject`, `repair`, `replace`, `retry`, `search`, `apply`, `plan`, or completion status. A station that needs a corrected semantic value returns only that complete value. A station that needs to choose among code-enumerated alternatives returns only the selected opaque candidate ID. Code determines whether a returned value creates a delta, which exact retained leaf it binds to, whether a splice is legal, and whether the workflow continues.
 
+The provider response is ordinary plain text. Typed values exist only after code parses
+and maps that text. Model qualification MUST NOT depend on reproducing or preserving a
+schema, JSON object, internal enum, signature, parameter, declaration, path, AST shape,
+framework grammar, or any other value code already owns. The sole closed-choice output
+convention is one call-local opaque ID or letter when two or more choices genuinely
+remain.
+
+Closed-choice cardinality is literal and code-owned. Code materializes the complete applicable option set before considering inference:
+
+* zero options follows that station's explicit zero-option behavior;
+* one option is used immediately by code with zero model-resolution and zero model-execution calls; it is not rejected and is not an error; and
+* two or more options may create one bounded semantic choice call whose response is only the selected opaque ID or letter. Code maps that ID to the already-known value.
+
+A one-option set must never be rendered for model selection. Strict validation must not turn a deterministically resolved sole option into a new failure mode.
+
+When one uncertainty requires selecting any applicable subset from a code-known finite
+set, code reduces it through repeated single-choice rounds. Each round contains only
+the still-unselected candidates plus one semantic no-additional-choice alternative.
+After a candidate is selected, code persists it and removes it before rendering the
+next round, so duplicate selection is impossible. Opaque letters are round-local and
+are remapped to the remaining code-owned values each time. An initially sole candidate
+is consumed without inference; a sole candidate left after earlier selections is still
+compared with the no-additional-choice alternative. The model never returns a list of
+IDs or reproduces the accepted set.
+
 If code compares a returned candidate with the exact retained value and the bytes are identical, there is no mutation to perform. Code records the zero delta and continues deterministically; it must not create a retry prompt, response-correction job, reviewer history, or terminal failure from a model-authored action label. A further model call is legal only if a separate, still-unresolved semantic question has been persisted.
 
-Do not fake natural-language understanding with keyword lists, regex phrase routing, or checks for one expected wording. Human phrasing is variable and semantic interpretation is one of the narrow jobs that legitimately requires a model. Split interpretation into fixed tiny stations: bounded repository-fact questions when context is needed, one bounded untrusted requirement inventory, one-candidate authorization and classification, bounded compound-candidate partitioning, exact product-context extraction and surface or deployment semantics only at their first downstream consumer, opaque artifact handling, pairwise direct capability relation, bounded learned-skill selection, and one-need procedure synthesis. No semantic station pre-counts the inventory, and no pre-count receipt exists. Candidate-level cardinality remains one local candidate question and may only permit bounded partitioning. No station may emit an expanded software contract. Every station remains blind to documents, paths, workers, and orchestration. A capability-relation station sees exactly two local needs and returns only one registered direction; code owns the resulting graph and compiler-enforced per-feature projection. Code validates every small output and deterministically maps the result to one registered technical adapter. Invalid, contradictory, or unsupported semantic output fails loudly.
+Do not fake natural-language understanding with keyword lists, regex phrase routing, or checks for one expected wording. Human phrasing is variable and semantic interpretation is one of the narrow jobs that legitimately requires a model. Split interpretation into fixed tiny stations: bounded repository-fact questions when context is needed, one bounded untrusted requirement inventory, one-candidate authorization and classification, bounded compound-candidate partitioning, exact product-context extraction and surface or deployment semantics only at their first downstream consumer, opaque artifact handling, pairwise direct capability relation, bounded learned-skill selection, and one-need procedure synthesis. No semantic station pre-counts the inventory, and no pre-count receipt exists. Candidate-level cardinality remains one local candidate question and may only permit bounded partitioning. No station may emit an expanded software contract. Every station remains blind to documents, paths, workers, and orchestration. A capability-relation station sees exactly two local needs and, when inference is required, receives one opaque letter that code maps to one registered direction; code owns the resulting graph and compiler-enforced per-feature projection. Code validates every small output and deterministically maps the result to one registered technical adapter. Invalid, contradictory, or unsupported semantic output fails loudly.
 
 Semantic correction must preserve the decoded candidate in code. It is legal only after code has established one exact, grounded semantic defect that deterministic machinery cannot correct. The model receives that defect, the exact current leaf, and the minimum authority required to return only one complete replacement value. Code performs the exact one-leaf splice and preserves all accepted state. Never ask a model to reconstruct already accepted semantic fields, emit a repair plan, or decide whether the workflow advances.
 
@@ -332,8 +360,8 @@ separately proves that exact current managed file is eligible. There is no file-
 station. The selected stack
 compiler turns the accepted tree and code-owned coverage into bounded source-block
 responsibilities. Each source call remains path-blind and returns only one exact
-declaration or source node; code parses, validates, stitches, and verifies the complete
-documents.
+ordinary implementation body; code supplies the declaration, parses and validates the
+assembled node, stitches it, and verifies the complete documents.
 
 Artifact support is adapter-based, never language-hard-coded into the tree or
 model prompt. Code selects the registered stack from authoritative project

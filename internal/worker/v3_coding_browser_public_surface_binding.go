@@ -117,41 +117,41 @@ func (executor *directCodingTypeScriptProjectStageExecutor) bindBrowserPublicSur
 	context assemblyline.ApplicationTaskContext,
 	stage *directCodingProgram,
 	ref assemblyline.SourceBlockRef,
-) (*assemblyline.FragmentPublicInteractionSurface, func(string) error, error) {
+) (directCodingBrowserPublicSurfaceBinding, error) {
 	taskID := context.Task.TaskID
 	if ref.Block.Role != assemblyline.SourceBlockTaskVerification ||
 		ref.Block.TaskID != taskID {
-		return nil, nil, fmt.Errorf(
+		return directCodingBrowserPublicSurfaceBinding{}, fmt.Errorf(
 			"browser public surface can bind only the current task verification declaration",
 		)
 	}
 	if executor.publicSurfaceBindings == nil {
-		return nil, nil, fmt.Errorf("browser public-surface binding authority is unavailable")
+		return directCodingBrowserPublicSurfaceBinding{}, fmt.Errorf("browser public-surface binding authority is unavailable")
 	}
 	if _, exists := executor.publicSurfaceBindings[taskID]; exists {
-		return nil, nil, fmt.Errorf("browser public surface is already bound for task %s", taskID)
+		return directCodingBrowserPublicSurfaceBinding{}, fmt.Errorf("browser public surface is already bound for task %s", taskID)
 	}
 	resultRelation, err := stage.RequirementRelations.bindingForTask(stage.Workload, taskID)
 	if err != nil {
-		return nil, nil, err
+		return directCodingBrowserPublicSurfaceBinding{}, err
 	}
 	if context.WorkloadSHA256 != stage.Workload.SHA256 ||
 		context.Task.RequirementID != resultRelation.RequirementID {
-		return nil, nil, fmt.Errorf(
+		return directCodingBrowserPublicSurfaceBinding{}, fmt.Errorf(
 			"browser public-surface result relation differs from current task authority",
 		)
 	}
 	if err := resultRelation.Receipt.ValidateAcceptedFor(
 		context.Task.RequirementQuote,
 	); err != nil {
-		return nil, nil, fmt.Errorf("browser public-surface result relation: %w", err)
+		return directCodingBrowserPublicSurfaceBinding{}, fmt.Errorf("browser public-surface result relation: %w", err)
 	}
 	binding, err := deriveDirectCodingBrowserPublicSurfaceBinding(stage, taskID)
 	if err != nil {
-		return nil, nil, err
+		return directCodingBrowserPublicSurfaceBinding{}, err
 	}
 	if !directCodingBrowserBlockDirectlyDependsOn(ref.Block, binding.implementationBlockID) {
-		return nil, nil, fmt.Errorf(
+		return directCodingBrowserPublicSurfaceBinding{}, fmt.Errorf(
 			"browser verification %s does not directly depend on implementation %s",
 			ref.Block.ID, binding.implementationBlockID,
 		)
@@ -160,14 +160,7 @@ func (executor *directCodingTypeScriptProjectStageExecutor) bindBrowserPublicSur
 	binding.verificationTSX = directCodingTypeScriptDocumentIsTSX(ref.Document)
 	binding.resultRelation = resultRelation.Receipt
 	executor.publicSurfaceBindings[taskID] = binding
-	portable := cloneFragmentPublicInteractionSurface(binding.portable)
-	validate := func(candidate string) error {
-		return validateDirectCodingBrowserAcceptanceRoleQueries(
-			candidate, binding.verificationTSX, binding.surface,
-			binding.resultRelation.Relation,
-		)
-	}
-	return &portable, validate, nil
+	return binding, nil
 }
 
 func (executor *directCodingTypeScriptProjectStageExecutor) validateTaskBrowserPublicSurface(
@@ -292,16 +285,4 @@ func directCodingBrowserBlockDirectlyDependsOn(
 		}
 	}
 	return false
-}
-
-func cloneFragmentPublicInteractionSurface(
-	surface assemblyline.FragmentPublicInteractionSurface,
-) assemblyline.FragmentPublicInteractionSurface {
-	return assemblyline.FragmentPublicInteractionSurface{
-		Schema: surface.Schema,
-		Controls: append(
-			[]assemblyline.FragmentPublicInteractionControl(nil), surface.Controls...,
-		),
-		Outputs: append([]assemblyline.FragmentPublicOutput(nil), surface.Outputs...),
-	}
 }

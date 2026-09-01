@@ -3,19 +3,10 @@ package worker
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
-	"github.com/gryph/omnidex/internal/llm"
 	"github.com/gryph/omnidex/internal/station"
 )
-
-func validateObjectiveTextTransportBoundary(label, value string) error {
-	if strings.Contains(value, llm.MinimalGeneratePrompt) {
-		return fmt.Errorf("%s exposed the private provider prompt hint", label)
-	}
-	return nil
-}
 
 type portableObjectiveKindStation struct {
 	runtime *nativeRuntimeV3
@@ -75,16 +66,7 @@ func (adapter portableObjectiveConversationStation) Respond(
 		ctx, adapter.runtime, "conversation_response", job,
 		station.ConversationResponse, resolveModel,
 		func(raw string) (assemblyline.ConversationResponseDecision, error) {
-			value, err := assemblyline.DecodeConversationResponseDecision(input, raw)
-			if err != nil {
-				return assemblyline.ConversationResponseDecision{}, err
-			}
-			if err := validateObjectiveTextTransportBoundary(
-				"conversation response", value.Text,
-			); err != nil {
-				return assemblyline.ConversationResponseDecision{}, err
-			}
-			return value, nil
+			return assemblyline.DecodeConversationResponseDecision(input, raw)
 		},
 	)
 }

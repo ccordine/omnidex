@@ -92,27 +92,21 @@ func BuildApplicationRequirementCandidatePartitionPrompt(
 		return "", err
 	}
 	common := []string{
-		"Return one complete lossless proper refinement of the exact compound candidate into strictly narrower semantic children.",
-		"Treat the supplied compound relation as fixed. Preserve every explicit meaning exactly once; omit nothing and add nothing.",
-		"Every child must be strictly narrower than and byte-different from the parent. Return only the distinct semantic child text; omit parent restatements, summaries, and umbrella clauses.",
-		"Do not propose alternative implementations, technologies, architectures, APIs, algorithms, storage mechanisms, tools, or multiple ways to satisfy the parent. Do not repeat the parent with added implementation details or added using-clauses.",
+		"Identify the complete lossless partition of this compound requirement into narrower semantic statements.",
+		"Include every explicit meaning exactly once; omit nothing and add nothing. Each statement must be narrower than the compound requirement, not a parent restatement, summary, or umbrella clause.",
+		"Exclude alternative implementations, technologies, architectures, APIs, algorithms, storage mechanisms, tools, multiple ways to satisfy the parent, and parent restatements with added implementation details or using-clauses.",
 	}
 	if input.Kind != nil {
 		return strings.Join(append(common,
-			"Return exactly two raw child lines. The first line must contain all and only the task-local runtime-outcome meaning already asserted by the parent. Express it as one complete declarative runtime outcome with an explicit running-software or user subject; exclude build wording, delivery surface, language, framework, and toolchain. The second line must contain all and only the non-runtime constraint meaning already asserted by the parent.",
+			"Write two statements on separate lines: first the complete task-local runtime outcome, then the complete construction or delivery constraint. The first statement needs an explicit running-software or user subject and excludes build wording, delivery surface, language, framework, and toolchain.",
 			"A behavior-denoting product or category noun may be restated only as the core runtime action or governed result it literally denotes. Do not add customary controls, variants, inputs, outputs, or features.",
-			"Return child text only, with no JSON, labels, Markdown, commentary, or blank lines.",
-			"EXACT COMPOUND CANDIDATE:\n"+input.Candidate,
-			"EXACT COMPOUND RELATION:\n"+ApplicationRequirementCandidateMixed,
-			"FINAL QUESTION:\nWhat are the exact runtime component and exact non-runtime component? Return exactly those two raw child lines, runtime first and non-runtime second.",
+			"Compound requirement:\n"+input.Candidate,
 		), "\n\n"), nil
 	}
 	return strings.Join(append(common,
 		"Keep one runtime outcome's operands, condition, determining rule, and resulting output together when they jointly describe that outcome.",
-		fmt.Sprintf("Return between 2 and %d raw child lines, one complete runtime outcome per line, with no blank lines or surrounding envelope. Return child text only, with no JSON, labels, Markdown, or commentary.", MaxApplicationRequirementCandidatePartitionLeaves),
-		"EXACT COMPOUND CANDIDATE:\n"+input.Candidate,
-		"EXACT COMPOUND RELATION:\n"+ApplicationRequirementMultipleRuntimeOutcomes,
-		"FINAL QUESTION:\nWhat is the complete source-ordered partition? Return only one raw child candidate per non-empty line.",
+		fmt.Sprintf("Write the source-ordered partition as 2 to %d complete runtime outcomes, one statement per line.", MaxApplicationRequirementCandidatePartitionLeaves),
+		"Compound requirement:\n"+input.Candidate,
 	), "\n\n"), nil
 }
 

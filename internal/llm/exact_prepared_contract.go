@@ -9,8 +9,26 @@ import (
 )
 
 const (
-	PreparedGenerationSchemaV1            = "omnidex.prepared-generation.v1"
-	MaxExactPreparedProviderResponseBytes = 16 * 1024 * 1024
+	PreparedGenerationSchemaV1 = "omnidex.prepared-generation.v1"
+
+	// MaxExactPreparedModelContentBytes bounds the decoded, model-authored
+	// plain-text result. Provider JSON encoding and provider-owned metadata do
+	// not consume this semantic-content authority.
+	MaxExactPreparedModelContentBytes = 16 * 1024 * 1024
+
+	// A JSON string can encode one decoded ASCII control byte as six bytes
+	// (for example, `\u0001`). Ollama may also return one context token ID for
+	// every allowed native-context token. Reserve 21 bytes per ID: the widest
+	// signed 64-bit decimal integer plus its delimiter. The final 64 KiB bounds
+	// the remaining scalar provider envelope and field names.
+	maxExactPreparedJSONBytesPerContentByte = 6
+	maxExactPreparedJSONBytesPerContextID   = 21
+	maxExactPreparedProviderScalarBytes     = 64 * 1024
+	MaxExactPreparedProviderResponseBytes   =
+		(maxExactPreparedJSONBytesPerContentByte * MaxExactPreparedModelContentBytes) +
+		(maxExactPreparedJSONBytesPerContextID * MaxInferenceContextTokens) +
+		maxExactPreparedProviderScalarBytes
+	maxExactPreparedProviderBoundaryBytes = 1
 )
 
 var exactSHA256Digest = regexp.MustCompile(`^[0-9a-f]{64}$`)
@@ -93,6 +111,7 @@ func (generation PreparedGeneration) validateSuccessfulContentEvidence() error {
 	}
 	if generation.ProviderResponseDisposition != ProviderResponseSucceeded ||
 		strings.TrimSpace(generation.Content) == "" ||
+		len(generation.Content) > MaxExactPreparedModelContentBytes ||
 		!utf8.ValidString(generation.Content) || strings.ContainsRune(generation.Content, 0) ||
 		!generation.ProviderDonePresent || !generation.ProviderDone ||
 		(generation.ProviderDoneReason != "stop" && generation.ProviderDoneReason != "length") ||
@@ -155,7 +174,8 @@ func (generation PreparedGeneration) ValidateProviderResponseReceipt() error {
 	if !registeredProviderResponseDisposition(generation.ProviderResponseDisposition) ||
 		generation.ProviderHTTPStatus < 100 || generation.ProviderHTTPStatus > 599 ||
 		generation.ProviderResponseBytes < 0 || generation.ProviderResponseCapturedBytes < 0 ||
-		generation.ProviderResponseCapturedBytes > MaxExactPreparedProviderResponseBytes+1 ||
+		generation.ProviderResponseCapturedBytes >
+			MaxExactPreparedProviderResponseBytes+maxExactPreparedProviderBoundaryBytes ||
 		!exactSHA256Digest.MatchString(generation.ProviderResponseCaptureSHA256) ||
 		generation.ProviderContentEncoding.Validate() != nil {
 		return fmt.Errorf("provider response receipt is invalid")
@@ -180,7 +200,8 @@ func (generation PreparedGeneration) ValidateProviderResponseReceipt() error {
 			return fmt.Errorf("partial provider response claims a complete raw body identity")
 		}
 		if generation.ProviderResponseDisposition == ProviderResponseBodyLimit &&
-			generation.ProviderResponseCapturedBytes != MaxExactPreparedProviderResponseBytes+1 {
+			generation.ProviderResponseCapturedBytes !=
+				MaxExactPreparedProviderResponseBytes+maxExactPreparedProviderBoundaryBytes {
 			return fmt.Errorf("provider body-limit receipt lacks the exact bounded capture")
 		}
 	}

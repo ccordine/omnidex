@@ -6,8 +6,8 @@ import (
 )
 
 // BuildBoundedSourceFragmentGenerationPrompt renders one path-blind source
-// declaration question for a registered bounded source language
-// parser. It grants no document, placement, operation, or completion authority.
+// body question for a registered bounded source language parser. Declaration
+// structure is code-owned and is deliberately not part of the requested reply.
 func BuildBoundedSourceFragmentGenerationPrompt(
 	input FragmentGenerationInput,
 ) (string, error) {
@@ -18,21 +18,26 @@ func BuildBoundedSourceFragmentGenerationPrompt(
 	if err != nil {
 		return "", err
 	}
-	if _, err := validateBoundedSourceFragment(
-		language, input.Signature, input.Signature+" {}",
-	); err != nil {
+	if _, err := boundedSourceDeclarationShape(language, input.Signature+" {}"); err != nil {
 		return "", fmt.Errorf("validate exact %s fragment signature: %w", language.display, err)
 	}
-	prompt := strings.Join([]string{
-		"The complete response grammar is exactly one raw " + language.display + " " + language.declaration +
-			" with the exact declared signature and one body.",
-		"Implement only the exact local behavior. The declaration's identifier vocabulary consists of language-predeclared values and the explicitly listed direct capabilities and permitted symbols.",
-		"SOURCE_DIALECT:\n" + input.Dialect,
-		"EXACT_SIGNATURE:\n" + input.Signature,
-		"EXACT_LOCAL_BEHAVIOR:\n" + input.Behavior,
-		"DIRECT_CAPABILITIES:\n" + strings.Join(input.Capabilities, "\n"),
-		"PERMITTED_SYMBOLS:\n" + strings.Join(input.PermittedSymbols, "\n"),
-	}, "\n\n")
+	parts := []string{
+		"What " + language.display + " statements implement this behavior?",
+		input.Behavior,
+		"The source dialect is " + input.Dialect + ".",
+		"These parameters and return constraints are in scope:\n" + input.Signature,
+	}
+	if len(input.Capabilities) > 0 {
+		parts = append(parts,
+			"These direct declarations are available:\n"+strings.Join(input.Capabilities, "\n"),
+		)
+	}
+	if len(input.PermittedSymbols) > 0 {
+		parts = append(parts,
+			"These additional identifiers are available:\n"+strings.Join(input.PermittedSymbols, "\n"),
+		)
+	}
+	prompt := strings.Join(parts, "\n\n")
 	if len(prompt) > maxPortableResourceBytes {
 		return "", fmt.Errorf(
 			"%s fragment generation prompt exceeds %d bytes",

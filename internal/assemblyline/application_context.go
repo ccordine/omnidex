@@ -6,11 +6,10 @@ import (
 )
 
 const (
-	ApplicationContextSchemaV1              = "omnidex.application-context.v1"
-	MaxApplicationContextFacts              = 12
-	MaxApplicationContextFactBytes          = 1024
-	MaxApplicationContextQuestionCandidates = 3
-	maxApplicationEvidenceQuestionBytes     = 512
+	ApplicationContextSchemaV1          = "omnidex.application-context.v1"
+	MaxApplicationContextFacts          = 12
+	MaxApplicationContextFactBytes      = 1024
+	maxApplicationEvidenceQuestionBytes = 512
 )
 
 type ApplicationContextFactKind string
@@ -61,7 +60,7 @@ func BootstrapApplicationContext(
 		return zero, err
 	}
 	context := ApplicationContext{
-		Schema: ApplicationContextSchemaV1,
+		Schema:        ApplicationContextSchemaV1,
 		RequestSHA256: ExactObjectiveContextSHA(request), Facts: []ApplicationContextFact{},
 	}
 	if err := context.Validate(); err != nil {

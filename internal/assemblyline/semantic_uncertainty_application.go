@@ -5,27 +5,6 @@ func applicationSemanticUncertaintyContract(
 ) (SemanticUncertaintyContract, bool) {
 	var contract SemanticUncertaintyContract
 	switch kind {
-	case WorkApplicationContextQuestionInventory:
-		contract = semanticUncertaintyContractV3(kind,
-			"What bounded source-ordered inventory of candidate repository-fact questions, if any, may be needed to interpret the immutable request under the established context?",
-			"Potential semantic dependencies between unconstrained request language and repository facts cannot be enumerated from repository syntax alone.",
-			"The immutable request, established application facts, and exact candidate count and byte bounds.",
-			"One bounded raw-line repository-fact-question inventory or the registered semantic absence.",
-			"DecodeApplicationContextQuestionInventory parses and binds the inventory before code alone owns exact deduplication, the candidate queue, authorization, evidence resolution, accepted context, and exhaustion.")
-	case WorkApplicationContextQuestionNecessity:
-		contract = semanticUncertaintyContractV2(kind,
-			"Is one exact inventory candidate a necessary, still-unresolved repository-fact question under the immutable request and current established context?",
-			"Necessity and unresolvedness of a natural-language repository-fact dependency cannot be established by byte comparison or repository syntax.",
-			"The immutable request, current established facts, and one exact inventory candidate; accepted question text is excluded.",
-			"One registered necessary-unresolved or not-necessary/already-resolved relation.",
-			"DecodeApplicationContextQuestionNecessityResult validates the candidate-bound relation before code discards a negative candidate immediately or admits a positive candidate to pairwise duplicate checks and one registered repository-evidence resolution.")
-	case WorkApplicationContextQuestionRelation:
-		contract = semanticUncertaintyContract(kind,
-			"Do one exact queued repository-fact question and one exact accepted question ask for the same repository fact?",
-			"Semantic identity between byte-different natural-language questions cannot be established by byte comparison or repository syntax.",
-			"Exactly one queued candidate question and one immutable accepted question; no request, facts, accepted set, or queue state.",
-			"One registered pair-bound same-fact or distinct-facts relation.",
-			"DecodeApplicationContextQuestionRelationResult binds the pair before code discards only the duplicate candidate or compares the next accepted question; accepted state is never reopened.")
 	case WorkApplicationProductContext:
 		contract = semanticUncertaintyContractV2(kind,
 			"What concise product or domain identity is explicitly established by the immutable software request and established facts, excluding its requirements?",
@@ -74,21 +53,7 @@ func applicationSemanticUncertaintyContract(
 			"Whether natural-language outcome semantics assert a derived value, and whether that value has an independently computable determining relation, cannot be established by syntax or byte validation.",
 			"One exact requirement candidate, its TASK_LOCAL_RUNTIME_OUTCOME and ONE_RUNTIME_OUTCOME receipts, one code-selected result dimension, and for determining-relation presence only the positive derived-value receipt.",
 			"One candidate-dimension-bound present-or-absent relation.",
-			"DecodeApplicationRequirementCandidateResultPresenceResult validates each binary receipt; code alone combines them into NO_DERIVED_RESULT, EXPLICIT_DERIVED_RESULT_RELATION, or MISSING_DERIVED_RESULT_RELATION before retaining or grounding the candidate.")
-	case WorkApplicationRequirementCandidateResultRelationGrounding:
-		contract = semanticUncertaintyContractV2(kind,
-			"Do the immutable request and established application facts entail exactly one determining relation for the exact candidate outcome whose derived-result relation is missing?",
-			"A candidate-only missing-relation receipt cannot establish whether natural-language request and verified context authority uniquely supply the omitted semantic rule.",
-			"The immutable request, validated application context, exact current candidate, and its code-bound MISSING_DERIVED_RESULT_RELATION receipt.",
-			"One registered request-context-and-candidate-bound entailment relation.",
-			"DecodeApplicationRequirementCandidateResultRelationGroundingResult validates the receipt before code discards only that underdetermined candidate or opens one exact one-leaf correction.")
-	case WorkApplicationRequirementCandidateResultRelationCorrection:
-		contract = semanticUncertaintyContract(kind,
-			"What complete replacement corrects the exact one-outcome requirement whose derived-result relation is underdetermined?",
-			"The exact determining relation must be expressed from immutable natural-language authority and cannot be supplied by structural validation.",
-			"The immutable request, validated application context, exact current candidate, code-bound MISSING_DERIVED_RESULT_RELATION defect, and positive request-context-and-candidate-bound grounding receipt.",
-			"One complete byte-different one-outcome runtime requirement with an explicit determining relation.",
-			"DecodeApplicationRequirementCandidateResultRelationCorrectionLeaf validates the replacement before code reruns ordinary authorization, kind, cardinality, duplicate, and result-relation validation.")
+			"DecodeApplicationRequirementCandidateResultPresenceResult validates each binary receipt; code alone combines them into NO_DERIVED_RESULT, EXPLICIT_DERIVED_RESULT_RELATION, or MISSING_DERIVED_RESULT_RELATION before retaining or locally discarding only that candidate.")
 	case WorkApplicationRequirementCandidatePartition:
 		contract = semanticUncertaintyContractV3(kind,
 			"What complete source-ordered proper refinement is contained in this exact compound candidate?",

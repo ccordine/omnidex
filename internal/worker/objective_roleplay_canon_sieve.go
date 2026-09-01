@@ -15,18 +15,56 @@ func resolveRoleplayCanonCandidateQueue(
 	resolveModel := func() (string, error) {
 		return objectiveRoleplaySemanticModel(adapter.runtime)
 	}
-	inventoryJob, err := assemblyline.NewRoleplayCanonFactInventoryJob(input)
+	call := func(
+		ctx context.Context,
+		subject string,
+		job assemblyline.PortableJob,
+		decode roleplayCanonRawLeafDecoder,
+	) (any, objectiveStationReceipt, error) {
+		return runObjectivePortableRawLeafStation(
+			ctx, adapter.runtime, subject, job,
+			station.RoleplayCanonExtraction, resolveModel,
+			objectiveRawLeafDecoder[any](decode),
+		)
+	}
+	return resolveRoleplayCanonCandidateQueueWithCall(ctx, input, call)
+}
+
+func resolveRoleplayCanonCandidateQueueWithCall(
+	ctx context.Context,
+	input assemblyline.RoleplayCanonExtractionInput,
+	call roleplayCanonRawLeafCall,
+) (assemblyline.RoleplayCanonExtractionDecision, objectiveStationReceipt, error) {
+	presenceJob, err := assemblyline.NewRoleplayCanonFactPresenceJob(input)
 	if err != nil {
 		return assemblyline.RoleplayCanonExtractionDecision{}, objectiveStationReceipt{}, err
 	}
-	inventory, receipt, err := runObjectivePortableRawLeafStation(
-		ctx, adapter.runtime, "roleplay_canon_fact_inventory", inventoryJob,
-		station.RoleplayCanonExtraction, resolveModel,
+	presence, receipt, err := callRoleplayCanonRawLeaf(
+		ctx, call, "roleplay_canon_fact_presence", presenceJob,
+		func(raw string) (assemblyline.RoleplayCanonFactPresenceResult, error) {
+			return assemblyline.DecodeRoleplayCanonFactPresenceResult(input, raw)
+		},
+	)
+	totalCalls, allReused := receipt.Calls, receipt.Reused
+	if err != nil {
+		return assemblyline.RoleplayCanonExtractionDecision{}, objectiveStationReceipt{Calls: totalCalls}, err
+	}
+	if presence.Relation == assemblyline.RoleplayCanonContributionEstablishesNoFact {
+		decision, err := assemblyline.AssembleRoleplayCanonExtractionDecision(input, []string{})
+		return decision, objectiveStationReceipt{Calls: totalCalls, Reused: allReused}, err
+	}
+	inventoryJob, err := assemblyline.NewRoleplayCanonFactInventoryJob(input)
+	if err != nil {
+		return assemblyline.RoleplayCanonExtractionDecision{}, objectiveStationReceipt{Calls: totalCalls}, err
+	}
+	inventory, inventoryReceipt, err := callRoleplayCanonRawLeaf(
+		ctx, call, "roleplay_canon_fact_inventory", inventoryJob,
 		func(raw string) (assemblyline.RoleplayCanonFactInventory, error) {
 			return assemblyline.DecodeRoleplayCanonFactInventory(input, raw)
 		},
 	)
-	totalCalls, allReused := receipt.Calls, receipt.Reused
+	totalCalls += inventoryReceipt.Calls
+	allReused = allReused && inventoryReceipt.Reused
 	if err != nil {
 		return assemblyline.RoleplayCanonExtractionDecision{}, objectiveStationReceipt{Calls: totalCalls}, err
 	}
@@ -48,9 +86,9 @@ func resolveRoleplayCanonCandidateQueue(
 		if err != nil {
 			return assemblyline.RoleplayCanonExtractionDecision{}, objectiveStationReceipt{Calls: totalCalls}, err
 		}
-		authorization, leafReceipt, err := runObjectivePortableRawLeafStation(
-			ctx, adapter.runtime, "roleplay_canon_fact_candidate_authorization",
-			authorizationJob, station.RoleplayCanonExtraction, resolveModel,
+		authorization, leafReceipt, err := callRoleplayCanonRawLeaf(
+			ctx, call, "roleplay_canon_fact_candidate_authorization",
+			authorizationJob,
 			func(raw string) (assemblyline.RoleplayCanonFactCandidateAuthorization, error) {
 				return assemblyline.DecodeRoleplayCanonFactCandidateAuthorization(
 					authorizationInput, raw,
@@ -75,9 +113,9 @@ func resolveRoleplayCanonCandidateQueue(
 			if err != nil {
 				return assemblyline.RoleplayCanonExtractionDecision{}, objectiveStationReceipt{Calls: totalCalls}, err
 			}
-			relation, relationReceipt, err := runObjectivePortableRawLeafStation(
-				ctx, adapter.runtime, "roleplay_canon_fact_candidate_relation",
-				relationJob, station.RoleplayCanonExtraction, resolveModel,
+			relation, relationReceipt, err := callRoleplayCanonRawLeaf(
+				ctx, call, "roleplay_canon_fact_candidate_relation",
+				relationJob,
 				func(raw string) (assemblyline.RoleplayCanonFactCandidateRelation, error) {
 					return assemblyline.DecodeRoleplayCanonFactCandidateRelation(relationInput, raw)
 				},

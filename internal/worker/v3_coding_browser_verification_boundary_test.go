@@ -233,7 +233,7 @@ func TestBrowserVerificationBindingRejectsImplementationSurfaceDrift(t *testing.
 	}
 }
 
-func TestTypeScriptInitialCandidateValidatorsReachOnlyImplementationAndVerificationGeneration(t *testing.T) {
+func TestTypeScriptInitialCandidateValidatorsReachOnlyImplementationGeneration(t *testing.T) {
 	validatorCalls := 0
 	validator := func(string) error {
 		validatorCalls++
@@ -241,7 +241,6 @@ func TestTypeScriptInitialCandidateValidatorsReachOnlyImplementationAndVerificat
 	}
 	for _, role := range []assemblyline.SourceBlockRole{
 		assemblyline.SourceBlockTaskImplementation,
-		assemblyline.SourceBlockTaskVerification,
 	} {
 		job := directCodingTypeScriptFragmentJob{
 			block: assemblyline.SourceBlock{
@@ -260,11 +259,12 @@ func TestTypeScriptInitialCandidateValidatorsReachOnlyImplementationAndVerificat
 			t.Fatalf("%s validator rejected fixture candidate: %v", role, err)
 		}
 	}
-	if validatorCalls != 2 {
-		t.Fatalf("validator calls=%d; want implementation and verification", validatorCalls)
+	if validatorCalls != 1 {
+		t.Fatalf("validator calls=%d; want implementation only", validatorCalls)
 	}
 
 	for _, role := range []assemblyline.SourceBlockRole{
+		assemblyline.SourceBlockTaskVerification,
 		assemblyline.SourceBlockTaskRepresentation,
 		assemblyline.SourceBlockRole("unsupported"),
 	} {
@@ -278,5 +278,139 @@ func TestTypeScriptInitialCandidateValidatorsReachOnlyImplementationAndVerificat
 		if err == nil {
 			t.Fatalf("%s validator unexpectedly crossed the role boundary", role)
 		}
+	}
+}
+
+func TestTypeScriptVerificationGenerationIsCodeOwnedAndDoesNotRequireASession(t *testing.T) {
+	program := testTypeScriptBrowserProgram(
+		t,
+		"code-owned-verification",
+		"neutral control",
+		"The finished software lets a user confirm the item.",
+	)
+	task := program.Workload.Tasks[0]
+	implementationID, err := directCodingTaskBlockIDByRole(
+		program.Source, task.ID, assemblyline.SourceBlockTaskImplementation,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	implementationBlock, exists := directCodingSourceBlueprintBlock(
+		program.Source, implementationID,
+	)
+	if !exists {
+		t.Fatalf("implementation block %s is absent", implementationID)
+	}
+	implementation, err := assemblyline.ComposeSourceDeclaration(
+		implementationBlock.Signature,
+		`return <div><button type="button" onClick={() => actions.set('confirmed', true)}>Confirm item</button></div>;`,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	program.Generated[implementationID] = implementation
+
+	verificationID, err := directCodingTaskBlockIDByRole(
+		program.Source, task.ID, assemblyline.SourceBlockTaskVerification,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var verificationRef assemblyline.SourceBlockRef
+	for _, document := range program.Source.Documents {
+		for _, block := range document.Blocks {
+			if block.ID == verificationID {
+				verificationRef = assemblyline.SourceBlockRef{Document: document, Block: block}
+			}
+		}
+	}
+	if verificationRef.Block.ID == "" {
+		t.Fatalf("verification block %s is absent", verificationID)
+	}
+	contexts, err := directCodingApplicationTaskContexts(program.Workload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	context, exists := contexts[task.RequirementID]
+	if !exists {
+		t.Fatalf("task context for %s is absent", task.RequirementID)
+	}
+
+	// A nil session is intentional: reaching the provider/model path would panic.
+	executor := &directCodingTypeScriptProjectStageExecutor{
+		publicSurfaceBindings: make(map[string]directCodingBrowserPublicSurfaceBinding),
+	}
+	verification, err := executor.GenerateBlock(context, &program, verificationRef)
+	if err != nil {
+		t.Fatalf("generate code-owned verification: %v", err)
+	}
+	for _, wanted := range []string{
+		`fireEvent.click(screen.getByRole("button", { name: "Confirm item" }));`,
+		`expect(screen.getByRole("button", { name: "Confirm item" })).toBeInTheDocument();`,
+	} {
+		if !strings.Contains(verification, wanted) {
+			t.Fatalf("code-owned verification omitted %q: %s", wanted, verification)
+		}
+	}
+	for _, forbidden := range []string{
+		"PUBLIC_INTERACTION_SURFACE", "role_ordinal", "response schema", "Return only",
+	} {
+		if strings.Contains(verification, forbidden) {
+			t.Fatalf("code-owned verification contains model protocol text %q: %s", forbidden, verification)
+		}
+	}
+	assertion := strings.Index(verification, `expect(screen.getByRole("button", { name: "Confirm item" })).toBeInTheDocument();`)
+	interaction := strings.Index(verification, `fireEvent.click(screen.getByRole("button", { name: "Confirm item" }));`)
+	if assertion < 0 || interaction < 0 || assertion > interaction {
+		t.Fatalf("code-owned verifier invented a post-interaction assertion: %s", verification)
+	}
+}
+
+func TestCodeOwnedBrowserVerificationFailsWithoutExactDerivedResultOracle(t *testing.T) {
+	ref := assemblyline.SourceBlockRef{Block: assemblyline.SourceBlock{
+		ID:        "acceptance.001",
+		Signature: "async function VerifyFeature001(): Promise<void>",
+		Role:      assemblyline.SourceBlockTaskVerification,
+	}}
+	binding := directCodingBrowserPublicSurfaceBinding{
+		verificationBlockID: ref.Block.ID,
+		verificationTSX:     true,
+		surface: directCodingBrowserPublicInteractionSurface{
+			Controls: []directCodingBrowserPublicControl{{
+				Role: "button", RoleOrdinal: 1, RoleCount: 1,
+				AccessibleName: "Calculate", ValueKind: "action",
+			}},
+			Outputs: []directCodingBrowserPublicOutput{{AccessibleName: "Result"}},
+		},
+		resultRelation: assemblyline.ApplicationRequirementCandidateResultRelationResult{
+			Relation: assemblyline.ApplicationRequirementExplicitResultRelation,
+		},
+	}
+	_, err := renderDirectCodingBrowserVerificationDeclaration(ref, binding)
+	if err == nil || !strings.Contains(err.Error(), "exact derived-result oracle") {
+		t.Fatalf("derived-result oracle failure=%v", err)
+	}
+}
+
+func TestCodeOwnedBrowserVerificationRejectsUnprovenSelectionValue(t *testing.T) {
+	_, err := renderDirectCodingBrowserMechanicalVerificationStatements(
+		directCodingBrowserPublicInteractionSurface{
+			Controls: []directCodingBrowserPublicControl{{
+				Role: "combobox", RoleOrdinal: 1, RoleCount: 1,
+				AccessibleName: "Destination", ValueKind: "selection",
+			}},
+		},
+	)
+	if err == nil || !strings.Contains(err.Error(), "exact selectable value") {
+		t.Fatalf("unproven selection failure=%v", err)
+	}
+}
+
+func TestBrowserPublicSurfaceRejectsConditionalOutputPresence(t *testing.T) {
+	_, err := extractDirectCodingBrowserPublicInteractionSurface(`function Feature001View({ state }: Feature001ViewProps): ReactElement {
+  return <div>{state.ready && <output aria-label="Result">{String(state.result ?? '')}</output>}</div>;
+}`)
+	if err == nil || !strings.Contains(err.Error(), "dynamic output cardinality") {
+		t.Fatalf("conditional output failure=%v", err)
 	}
 }

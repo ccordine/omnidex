@@ -2,7 +2,6 @@ package assemblyline
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/gryph/omnidex/internal/exactjson"
 )
@@ -13,31 +12,33 @@ func BuildApplicationRequirementCandidateResultPresencePrompt(
 	if err := input.validate(); err != nil {
 		return "", err
 	}
-	var question []string
+	var question string
+	var presentDescription string
+	var absentDescription string
 	switch input.Dimension {
 	case ApplicationRequirementDerivedValueDimension:
-		question = []string{
-			"Answer one semantic presence question about the exact candidate: does it assert a derived runtime value?",
-			"A derived value is selected, ordered, transformed, read, extracted, decoded, hashed, grouped, aggregated, measured, calculated, or decided from inputs. A named result-bearing operation over its governed object is PRESENT even when phrased as an action.",
-			"Return ABSENT when the candidate asserts only an action, control, state transition, event, message, artifact creation or availability, or unchanged supplied data. A trigger condition and qualitative adjective do not create a derived value.",
-			"FINAL QUESTION:\nIs a derived runtime value PRESENT or ABSENT? Return only PRESENT or ABSENT.",
-		}
+		question = "Does the candidate assert a derived runtime value? A value is derived when it is selected, ordered, transformed, read, extracted, decoded, hashed, grouped, aggregated, measured, calculated, or decided from inputs. A named result-bearing operation over its governed object qualifies even when phrased as an action. An action, control, state transition, event, message, artifact creation or availability, unchanged supplied data, trigger condition, or qualitative adjective alone does not create a derived value."
+		presentDescription = "The candidate asserts a derived runtime value."
+		absentDescription = "The candidate does not assert a derived runtime value."
 	case ApplicationRequirementDeterminingRelationDimension:
-		question = []string{
-			"The exact candidate asserts a derived runtime value. Answer one semantic presence question: does it state an independently computable determining relation for that value?",
-			"Return PRESENT in any of three cases: the candidate names one exact rule with its necessary input or condition; the candidate names a family of result-bearing operations over governed inputs; or the candidate reads, measures, or reports one named intrinsic or mechanically observable property of a governed object. An intrinsic-property relation is determined by that object and the named property; do not require the candidate to restate the property's measurement procedure. An operation family is one parametric determining relation because the invoked family member and operand values are observable runtime inputs. The family name and governed inputs are sufficient by themselves: do not require the candidate to fix or enumerate family members or operand values, say actor-selected, or use an explicit result noun. Named dimensions, lengths, counts, orderings, digests, comparisons, selections, aggregations, and existing per-item grouping keys are rules; equal key values determine groups.",
-			"Return ABSENT when the candidate supplies no named rule, result-bearing operation family, or intrinsic mechanically observable property and only calls an output calculated, computed, evaluated, generated, selected, correct, best, useful, appropriate, high-quality, or otherwise desirable. Those unnamed qualities supply no rule. Do not apply this ABSENT rule to a named operation family over governed inputs or a named intrinsic property of its governed object.",
-			"FINAL QUESTION:\nIs the independently computable determining relation PRESENT or ABSENT? Return only PRESENT or ABSENT.",
-		}
+		question = "The candidate asserts a derived runtime value. Does it state an independently computable determining relation for that value? A relation exists when the candidate names one exact rule with its necessary input or condition, a family of result-bearing operations over governed inputs, or one named intrinsic or mechanically observable property of a governed object. The object and named intrinsic property suffice without restating a measurement procedure. An operation-family name and governed inputs suffice because the invoked member and operand values are runtime inputs. Named dimensions, lengths, counts, orderings, digests, comparisons, selections, aggregations, and existing per-item grouping keys are rules. Merely calling an output calculated, computed, evaluated, generated, selected, correct, best, useful, appropriate, high-quality, or otherwise desirable supplies no rule."
+		presentDescription = "The candidate states an independently computable determining relation for the derived value."
+		absentDescription = "The candidate does not state an independently computable determining relation for the derived value."
 	default:
 		return "", fmt.Errorf("application requirement candidate result dimension %q is not registered", input.Dimension)
 	}
-	return strings.Join([]string{
-		question[0], question[1], question[2],
-		"Inspect only the exact candidate. Return only the raw registered presence with no JSON, label, Markdown, or explanation.",
-		"EXACT REQUIREMENT CANDIDATE:\n" + input.Candidate,
-		question[3],
-	}, "\n\n"), nil
+	choices, err := applicationRequirementCandidateResultPresenceOpaqueChoices(
+		presentDescription,
+		absentDescription,
+	)
+	if err != nil {
+		return "", err
+	}
+	return RenderOpaqueModelChoiceQuestion(
+		question+" Inspect only this candidate.",
+		[]string{"Requirement candidate:\n" + input.Candidate},
+		choices,
+	)
 }
 
 func DecodeApplicationRequirementCandidateResultPresenceResult(
@@ -48,18 +49,32 @@ func DecodeApplicationRequirementCandidateResultPresenceResult(
 	if err := input.validate(); err != nil {
 		return zero, err
 	}
-	leaf, err := decodeRawSemanticLeaf(
-		"application requirement candidate result presence",
-		raw,
-		maximumStringBytes(
-			string(ApplicationRequirementCandidateResultPresent),
-			string(ApplicationRequirementCandidateResultAbsent),
-		),
-		false,
+	presentDescription, absentDescription, err := applicationRequirementCandidateResultPresenceDescriptions(input.Dimension)
+	if err != nil {
+		return zero, err
+	}
+	choices, err := applicationRequirementCandidateResultPresenceOpaqueChoices(
+		presentDescription,
+		absentDescription,
 	)
 	if err != nil {
 		return zero, err
 	}
+	leaf, err := DecodeOpaqueModelChoice(raw, choices)
+	if err != nil {
+		return zero, err
+	}
+	return applicationRequirementCandidateResultPresenceResult(
+		input,
+		ApplicationRequirementCandidateResultPresence(leaf),
+	)
+}
+
+func applicationRequirementCandidateResultPresenceResult(
+	input ApplicationRequirementCandidateResultPresenceInput,
+	presence ApplicationRequirementCandidateResultPresence,
+) (ApplicationRequirementCandidateResultPresenceResult, error) {
+	var zero ApplicationRequirementCandidateResultPresenceResult
 	authoritySHA256, err := applicationRequirementCandidateResultPresenceAuthoritySHA256(input)
 	if err != nil {
 		return zero, err
@@ -67,12 +82,51 @@ func DecodeApplicationRequirementCandidateResultPresenceResult(
 	result := ApplicationRequirementCandidateResultPresenceResult{
 		Schema:          ApplicationRequirementCandidateResultPresenceSchemaV1,
 		AuthoritySHA256: authoritySHA256,
-		Presence:        ApplicationRequirementCandidateResultPresence(leaf),
+		Presence:        presence,
 	}
 	if err := result.ValidateFor(input); err != nil {
 		return zero, err
 	}
 	return result, nil
+}
+
+func applicationRequirementCandidateResultPresenceDescriptions(
+	dimension ApplicationRequirementCandidateResultDimension,
+) (string, string, error) {
+	switch dimension {
+	case ApplicationRequirementDerivedValueDimension:
+		return "The candidate asserts a derived runtime value.",
+			"The candidate does not assert a derived runtime value.", nil
+	case ApplicationRequirementDeterminingRelationDimension:
+		return "The candidate states an independently computable determining relation for the derived value.",
+			"The candidate does not state an independently computable determining relation for the derived value.", nil
+	default:
+		return "", "", fmt.Errorf(
+			"application requirement candidate result dimension %q is not registered",
+			dimension,
+		)
+	}
+}
+
+func applicationRequirementCandidateResultPresenceOpaqueChoices(
+	presentDescription string,
+	absentDescription string,
+) ([]OpaqueModelChoice, error) {
+	present, err := NewOpaqueModelChoice(
+		presentDescription,
+		string(ApplicationRequirementCandidateResultPresent),
+	)
+	if err != nil {
+		return nil, err
+	}
+	absent, err := NewOpaqueModelChoice(
+		absentDescription,
+		string(ApplicationRequirementCandidateResultAbsent),
+	)
+	if err != nil {
+		return nil, err
+	}
+	return []OpaqueModelChoice{present, absent}, nil
 }
 
 func applicationRequirementCandidateResultPresenceAuthoritySHA256(

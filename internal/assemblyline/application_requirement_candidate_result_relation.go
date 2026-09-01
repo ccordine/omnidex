@@ -26,9 +26,12 @@ type ApplicationRequirementCandidateResultDimension string
 
 type ApplicationRequirementCandidateResultPresence string
 
-// ApplicationRequirementCandidateResultPresenceInput is one model-visible
-// binary semantic question. The determining-relation question is legal only
-// after a candidate-bound positive derived-value receipt.
+// ApplicationRequirementCandidateResultPresenceInput is code-owned authority
+// for one binary semantic question. Its renderer exposes only the candidate
+// and the exact question semantics; kind, cardinality, dimension, receipts,
+// schemas, and hashes remain deterministic state. The determining-relation
+// question is legal only after a candidate-bound positive derived-value
+// receipt.
 type ApplicationRequirementCandidateResultPresenceInput struct {
 	Candidate            string                                               `json:"candidate"`
 	Kind                 ApplicationRequirementCandidateKindResult            `json:"kind"`

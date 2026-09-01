@@ -2,7 +2,6 @@ package assemblyline
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/gryph/omnidex/internal/exactjson"
 )
@@ -155,37 +154,27 @@ func BuildApplicationRequirementCandidateContentPresencePrompt(
 	if err := input.validate(); err != nil {
 		return "", err
 	}
-	var dimensionQuestion []string
+	var question string
 	switch input.Dimension {
 	case ApplicationRequirementCandidateRuntimeContentDimension:
-		dimensionQuestion = []string{
-			"Answer one semantic presence question about the exact candidate: does it specify anything the finished software itself must do, show, accept, change, store, or produce while running?",
-			"Runtime content includes a software behavior, observable result, user-visible element or quality, state or persistence behavior, or runtime data or output format.",
-			"Return PRESENT when the candidate directly requires an action or result of completed software, including a subjectless imperative acting on runtime or user-provided data. A product or category name alone is not direct behavior for this question. Do not infer customary controls, variants, features, prerequisites, or presentation.",
-			"FINAL QUESTION:\nIs directly stated finished-software runtime content PRESENT or ABSENT? Return only PRESENT or ABSENT.",
-		}
+		question = "Does the candidate directly specify anything the finished software must do, show, accept, change, store, or produce while running? Runtime content includes a software behavior, observable result, user-visible element or quality, state or persistence behavior, or runtime data or output format. A subjectless imperative acting on runtime or user-provided data directly requires runtime content. A product or category name alone does not. Do not infer customary controls, variants, features, prerequisites, or presentation."
 	case ApplicationRequirementCandidateNonRuntimeContentDimension:
-		dimensionQuestion = []string{
-			"Answer one semantic presence question about the exact candidate: does it explicitly say how or where the software must be constructed, implemented, packaged, delivered, run, deployed, or verified?",
-			"The instruction to build or create the requested software is itself construction content: when either direction is present, return PRESENT regardless of any runtime meaning in the same candidate. Also return PRESENT for a stated delivery surface, language, framework, toolchain, version, packaging, tree or named-artifact shape, verification obligation, deployment obligation, or continued-availability obligation.",
-			"Such content remains PRESENT when the same candidate also names runtime behavior. A subject that merely refers to finished software while stating its behavior is not enough. Determine only whether construction or delivery content is present; do not classify the candidate as a whole.",
-			"FINAL QUESTION:\nIs construction-or-delivery constraint content PRESENT or ABSENT? Return only PRESENT or ABSENT.",
-		}
+		question = "Does the candidate explicitly say how or where the software must be constructed, implemented, packaged, delivered, run, deployed, or verified? A direction to build or create the software is construction content, including when runtime meaning is also present. Delivery surfaces, languages, frameworks, toolchains, versions, packaging, tree or named-artifact shapes, verification obligations, deployment obligations, and continued-availability obligations are construction or delivery content. A subject that merely refers to finished software while stating its behavior is not enough. Evaluate only whether this content exists, not the candidate as a whole."
 	default:
 		return "", fmt.Errorf(
 			"application requirement candidate content dimension %q is not registered",
 			input.Dimension,
 		)
 	}
-	return strings.Join([]string{
-		dimensionQuestion[0],
-		dimensionQuestion[1],
-		dimensionQuestion[2],
-		"Inspect only the exact candidate. Do not rewrite it, infer another requirement, or use surrounding context.",
-		"Return only the raw registered presence with no JSON, label, Markdown, or explanation.",
-		"EXACT REQUIREMENT CANDIDATE:\n" + input.Candidate,
-		dimensionQuestion[3],
-	}, "\n\n"), nil
+	choices, err := applicationRequirementCandidateContentPresenceOpaqueChoices(input.Dimension)
+	if err != nil {
+		return "", err
+	}
+	return RenderOpaqueModelChoiceQuestion(
+		question+" Inspect only this candidate; do not infer another requirement or use surrounding context.",
+		[]string{"Requirement candidate:\n" + input.Candidate},
+		choices,
+	)
 }
 
 func DecodeApplicationRequirementCandidateContentPresenceResult(
@@ -196,15 +185,11 @@ func DecodeApplicationRequirementCandidateContentPresenceResult(
 	if err := input.validate(); err != nil {
 		return zero, err
 	}
-	leaf, err := decodeRawSemanticLeaf(
-		"application requirement candidate content presence",
-		raw,
-		maximumStringBytes(
-			string(ApplicationRequirementCandidateContentPresent),
-			string(ApplicationRequirementCandidateContentAbsent),
-		),
-		false,
-	)
+	choices, err := applicationRequirementCandidateContentPresenceOpaqueChoices(input.Dimension)
+	if err != nil {
+		return zero, err
+	}
+	leaf, err := DecodeOpaqueModelChoice(raw, choices)
 	if err != nil {
 		return zero, err
 	}
@@ -221,6 +206,41 @@ func DecodeApplicationRequirementCandidateContentPresenceResult(
 		return zero, err
 	}
 	return result, nil
+}
+
+func applicationRequirementCandidateContentPresenceOpaqueChoices(
+	dimension ApplicationRequirementCandidateContentDimension,
+) ([]OpaqueModelChoice, error) {
+	var presentDescription string
+	var absentDescription string
+	switch dimension {
+	case ApplicationRequirementCandidateRuntimeContentDimension:
+		presentDescription = "The candidate directly states finished-software runtime content."
+		absentDescription = "The candidate does not directly state finished-software runtime content."
+	case ApplicationRequirementCandidateNonRuntimeContentDimension:
+		presentDescription = "The candidate explicitly states construction or delivery content."
+		absentDescription = "The candidate does not explicitly state construction or delivery content."
+	default:
+		return nil, fmt.Errorf(
+			"application requirement candidate content dimension %q is not registered",
+			dimension,
+		)
+	}
+	present, err := NewOpaqueModelChoice(
+		presentDescription,
+		string(ApplicationRequirementCandidateContentPresent),
+	)
+	if err != nil {
+		return nil, err
+	}
+	absent, err := NewOpaqueModelChoice(
+		absentDescription,
+		string(ApplicationRequirementCandidateContentAbsent),
+	)
+	if err != nil {
+		return nil, err
+	}
+	return []OpaqueModelChoice{present, absent}, nil
 }
 
 // ResolveApplicationRequirementCandidateKind folds two independently bound

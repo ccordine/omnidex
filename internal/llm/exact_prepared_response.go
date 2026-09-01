@@ -41,7 +41,7 @@ type exactPreparedResponseWire struct {
 // provider-contract failure so callers can journal the evidence durably.
 func DecodeExactPreparedResponse(status int, body []byte) (ExactPreparedResponse, error) {
 	return DecodeExactPreparedResponseForProtocol(
-		ExactPreparedProtocolRawTextV2, status, body,
+		ExactPreparedProtocolPlainCompletionV4, status, body,
 	)
 }
 
@@ -107,7 +107,7 @@ func decodeExactPreparedResponse(status int, body []byte) (ExactPreparedResponse
 	}
 	response := ExactPreparedResponse{
 		Disposition: ProviderResponseSucceeded,
-		Content: content, DonePresent: wire.Done != nil,
+		Content:     content, DonePresent: wire.Done != nil,
 		DoneReason: wire.DoneReason, Usage: exactPreparedResponseUsage(wire),
 	}
 	if wire.Done != nil {

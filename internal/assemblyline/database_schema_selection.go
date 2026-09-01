@@ -12,17 +12,20 @@ const (
 	maxDatabaseSchemaCandidateSetBytes  = 48 * 1024
 )
 
+const MaxDatabaseSchemaCandidates = maxDatabaseSchemaCandidates
+
 type DatabaseSchemaCandidate struct {
 	RelationID string `json:"relation_id"`
 	Descriptor string `json:"descriptor"`
 }
 
 type DatabaseSchemaSelectionInput struct {
-	EvidenceNeedID string                    `json:"evidence_need_id"`
-	ExactNeed      string                    `json:"exact_need"`
-	Context        ObjectiveContext          `json:"objective_context"`
-	Candidates     []DatabaseSchemaCandidate `json:"candidates"`
-	MaxSelections  int                       `json:"max_selections"`
+	EvidenceNeedID       string                    `json:"evidence_need_id"`
+	ExactNeed            string                    `json:"exact_need"`
+	Context              ObjectiveContext          `json:"objective_context"`
+	Candidates           []DatabaseSchemaCandidate `json:"candidates"`
+	MaxSelections        int                       `json:"max_selections"`
+	HasAcceptedRelations bool                      `json:"has_accepted_relations"`
 }
 
 type DatabaseSchemaSelectionDecision struct {

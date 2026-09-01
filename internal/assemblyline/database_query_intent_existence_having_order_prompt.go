@@ -1,10 +1,6 @@
 package assemblyline
 
-import (
-	"fmt"
-
-	"github.com/gryph/omnidex/internal/datasource"
-)
+import "github.com/gryph/omnidex/internal/datasource"
 
 func BuildDatabaseQueryExistenceRelationPrompt(input DatabaseQueryExistenceLeafInput) (string, error) {
 	if err := input.validate(); err != nil {
@@ -18,14 +14,15 @@ func BuildDatabaseQueryExistenceRelationPrompt(input DatabaseQueryExistenceLeafI
 	for _, accepted := range input.State.Exists {
 		excluded[accepted.RelationID] = struct{}{}
 	}
-	authority = extendDatabaseQueryAuthority(
-		authority, renderDatabaseQueryRelationCandidates(input.State, excluded),
-	)
-	return databaseQueryLeafPrompt(
-		"Select the one opaque relation ID whose row existence is tested by the focused accepted existence purpose.",
-		"Return exactly one projected relation ID as a raw line.",
+	choices, err := databaseQueryRelationChoicesExcluding(input.State, excluded)
+	if err != nil {
+		return "", err
+	}
+	return databaseQueryOpaqueChoicePrompt(
+		"Which relation's row existence is tested by the focused accepted purpose?",
 		authority,
-	), nil
+		choices,
+	)
 }
 
 func BuildDatabaseQueryExistenceNegatedPrompt(input DatabaseQueryExistenceLeafInput) (string, error) {
@@ -40,11 +37,15 @@ func BuildDatabaseQueryExistenceNegatedPrompt(input DatabaseQueryExistenceLeafIn
 	if err != nil {
 		return "", err
 	}
-	return databaseQueryLeafPrompt(
-		"Select whether rows in the focused relation must exist or must not exist.",
-		"Return exactly one raw registered value: EXISTS or NOT_EXISTS.",
+	choices, err := databaseQueryExistenceNegatedChoices()
+	if err != nil {
+		return "", err
+	}
+	return databaseQueryOpaqueChoicePrompt(
+		"Must matching rows in the focused relation exist or not exist?",
 		extendDatabaseQueryAuthority(authority, focused),
-	), nil
+		choices,
+	)
 }
 
 func BuildDatabaseQueryHavingAggregatePrompt(input DatabaseQueryHavingLeafInput) (string, error) {
@@ -55,11 +56,15 @@ func BuildDatabaseQueryHavingAggregatePrompt(input DatabaseQueryHavingLeafInput)
 	if err != nil {
 		return "", err
 	}
-	return databaseQueryLeafPrompt(
-		"Select the one aggregate measured by the focused accepted having purpose.",
-		"Return exactly one raw registered value: count_rows, count, count_distinct, sum, or average.",
+	choices, err := databaseQueryHavingAggregateChoices()
+	if err != nil {
+		return "", err
+	}
+	return databaseQueryOpaqueChoicePrompt(
+		"Which aggregate is measured by the focused accepted having purpose?",
 		authority,
-	), nil
+		choices,
+	)
 }
 
 func BuildDatabaseQueryHavingFieldPrompt(input DatabaseQueryHavingLeafInput) (string, error) {
@@ -70,18 +75,21 @@ func BuildDatabaseQueryHavingFieldPrompt(input DatabaseQueryHavingLeafInput) (st
 	if err != nil {
 		return "", err
 	}
-	authority = extendDatabaseQueryAuthority(
-		authority,
-		"ACCEPTED HAVING AGGREGATE:\n"+string(input.Aggregate),
-		renderDatabaseQueryFieldCandidates(
-			input.State, "", databaseQueryAggregateFieldEligible(input.Aggregate),
-		),
+	choices, err := databaseQueryFieldChoices(
+		input.State, "", databaseQueryAggregateFieldEligible(input.Aggregate),
 	)
-	return databaseQueryLeafPrompt(
-		"Select the one opaque field ID measured by the accepted having aggregate.",
-		"Return exactly one projected field ID as a raw line.",
-		authority,
-	), nil
+	if err != nil {
+		return "", err
+	}
+	aggregate, err := databaseQueryAggregateDescription(input.Aggregate)
+	if err != nil {
+		return "", err
+	}
+	return databaseQueryOpaqueChoicePrompt(
+		"Which field is measured by the accepted having aggregate?",
+		extendDatabaseQueryAuthority(authority, "FOCUSED AGGREGATE:\n"+aggregate),
+		choices,
+	)
 }
 
 func BuildDatabaseQueryHavingOperatorPrompt(input DatabaseQueryHavingLeafInput) (string, error) {
@@ -96,11 +104,15 @@ func BuildDatabaseQueryHavingOperatorPrompt(input DatabaseQueryHavingLeafInput) 
 	if err != nil {
 		return "", err
 	}
-	return databaseQueryLeafPrompt(
-		"Select the one numeric comparison relation for the current having predicate.",
-		"Return exactly one raw registered value: eq, neq, gt, gte, lt, or lte.",
+	choices, err := databaseQueryHavingOperatorChoices()
+	if err != nil {
+		return "", err
+	}
+	return databaseQueryOpaqueChoicePrompt(
+		"Which numeric comparison relation does the current having predicate require?",
 		extendDatabaseQueryAuthority(authority, focused),
-	), nil
+		choices,
+	)
 }
 
 func BuildDatabaseQueryHavingValuePrompt(input DatabaseQueryHavingLeafInput) (string, error) {
@@ -115,11 +127,14 @@ func BuildDatabaseQueryHavingValuePrompt(input DatabaseQueryHavingLeafInput) (st
 	if err != nil {
 		return "", err
 	}
-	return databaseQueryLeafPrompt(
-		"Return the one exact numeric literal compared by the current having predicate.",
-		"Return exactly one raw base-10 integer or decimal.",
+	operator, err := databaseQueryFilterOperatorDescription(input.Operator)
+	if err != nil {
+		return "", err
+	}
+	return databaseQueryPlainTextPrompt(
+		"What numeric threshold does the focused having predicate require?",
 		extendDatabaseQueryAuthority(
-			authority, focused, "ACCEPTED HAVING OPERATOR:\n"+string(input.Operator),
+			authority, focused, "ACCEPTED HAVING RELATION:\n"+operator,
 		),
 	), nil
 }
@@ -132,15 +147,15 @@ func BuildDatabaseQueryOrderProjectionPrompt(input DatabaseQueryOrderLeafInput) 
 	if err != nil {
 		return "", err
 	}
-	candidates, err := renderDatabaseQueryProjectionCandidates(input.State)
+	choices, err := databaseQueryOrderProjectionChoices(input)
 	if err != nil {
 		return "", err
 	}
-	return databaseQueryLeafPrompt(
-		"Select the one opaque projection index ordered by the focused accepted ordering purpose.",
-		"Return exactly one raw zero-based projection index shown in the authority.",
-		extendDatabaseQueryAuthority(authority, candidates),
-	), nil
+	return databaseQueryOpaqueChoicePrompt(
+		"Which accepted projection is ordered by the focused accepted ordering purpose?",
+		authority,
+		choices,
+	)
 }
 
 func BuildDatabaseQueryOrderDirectionPrompt(input DatabaseQueryOrderLeafInput) (string, error) {
@@ -155,11 +170,15 @@ func BuildDatabaseQueryOrderDirectionPrompt(input DatabaseQueryOrderLeafInput) (
 	if err != nil {
 		return "", err
 	}
-	return databaseQueryLeafPrompt(
-		"Select the one ordering direction for the focused projection.",
-		"Return exactly one raw registered value: asc or desc.",
+	choices, err := databaseQueryOrderDirectionChoices()
+	if err != nil {
+		return "", err
+	}
+	return databaseQueryOpaqueChoicePrompt(
+		"Which ordering direction does the focused projection require?",
 		extendDatabaseQueryAuthority(authority, focused),
-	), nil
+		choices,
+	)
 }
 
 func renderDatabaseQueryExistenceAuthority(input DatabaseQueryExistenceLeafInput) (string, error) {
@@ -203,15 +222,17 @@ func renderDatabaseQueryHavingAuthority(
 
 func renderDatabaseQueryFocusedHaving(input DatabaseQueryHavingLeafInput) (string, error) {
 	if input.Aggregate == datasource.AggregateCountRows {
-		return "FOCUSED HAVING MEASURE:\naggregate=count_rows field=rows", nil
+		return "FOCUSED HAVING MEASURE:\ncount matching rows", nil
 	}
 	field, err := databaseQueryFieldSemantic(input.State, input.FieldID)
 	if err != nil {
 		return "", err
 	}
-	return fmt.Sprintf(
-		"FOCUSED HAVING MEASURE:\naggregate=%s field=%s", input.Aggregate, field,
-	), nil
+	aggregate, err := databaseQueryAggregateDescription(input.Aggregate)
+	if err != nil {
+		return "", err
+	}
+	return "FOCUSED HAVING MEASURE:\n" + aggregate + " for " + field, nil
 }
 
 func renderDatabaseQueryOrderAuthority(input DatabaseQueryOrderLeafInput) (string, error) {

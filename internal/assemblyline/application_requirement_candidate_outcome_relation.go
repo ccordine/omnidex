@@ -2,7 +2,6 @@ package assemblyline
 
 import (
 	"fmt"
-	"strings"
 )
 
 const (
@@ -153,18 +152,18 @@ func BuildApplicationRequirementCandidateOutcomeRelationPrompt(
 	if err := input.validateForModel(); err != nil {
 		return "", err
 	}
-	return strings.Join([]string{
-		"Decide whether the two exact one-outcome runtime requirements describe the same independently observable outcome or distinct independently observable outcomes.",
-		"Reference relations: making a transformed value visible versus keeping it after a session restart is DISTINCT_RUNTIME_OUTCOMES; returning a response versus returning it before a fixed deadline is DISTINCT_RUNTIME_OUTCOMES; showing a response visually versus also delivering it to a nonvisual consumer is DISTINCT_RUNTIME_OUTCOMES; returning the value yielded by rule R versus returning the value that conforms to that same R is SAME_RUNTIME_OUTCOME.",
-		"CURRENT CANDIDATE:\n" + input.Candidate,
-		"ACCEPTED REQUIREMENT:\n" + input.AcceptedRequirement,
-		"Use this decision order after reading the exact pair.",
-		"1. Return DISTINCT_RUNTIME_OUTCOMES if exactly one statement adds runtime evidence through a different determining rule, external reference, scope, response, event, observation time, retention boundary, time bound, presentation or delivery channel, recipient, data format, or state. A runtime can satisfy a one-time output while failing a later observation or retention check, can provide an output while missing its time bound, and can show a value while failing to deliver it through another channel. Each is distinct even though the value is shared.",
-		"2. Conformance of the identical value to its identical already-named determining rule is not added evidence. A value named as the result yielded by a rule already must conform to that rule. If the other statement only restates that relation, return SAME_RUNTIME_OUTCOME. A modifier alone does not add evidence, and producing, returning, or showing that sole value does not split it when no different delivery is required.",
-		"3. Otherwise return SAME_RUNTIME_OUTCOME only for a paraphrase that adds no runtime evidence. Shared input, subject, element, or dependency alone is insufficient; all other pairs are DISTINCT_RUNTIME_OUTCOMES.",
-		"Return exactly one raw registered value and nothing else: no JSON, quotes, label, Markdown, or commentary.",
-		"FINAL QUESTION:\nDo these statements require SAME_RUNTIME_OUTCOME or DISTINCT_RUNTIME_OUTCOMES? Return only that registered value.",
-	}, "\n\n"), nil
+	choices, err := applicationRequirementCandidateOutcomeRelationOpaqueChoices()
+	if err != nil {
+		return "", err
+	}
+	return RenderOpaqueModelChoiceQuestion(
+		"Do these one-outcome runtime requirements describe the same independently observable outcome or distinct outcomes? They are distinct when exactly one adds runtime evidence through a different determining rule, external reference, scope, response, event, observation time, retention boundary, time bound, presentation or delivery channel, recipient, data format, or state. Making a value visible and retaining it after restart are distinct; an ordinary response and the same response under a fixed deadline are distinct; visual presentation and delivery to a nonvisual consumer are distinct. Conformance of an identical value to its identical already-named determining rule adds no evidence. A modifier alone adds no evidence, and producing, returning, or showing the sole value does not split it when no different delivery is required. Otherwise, only a paraphrase adding no runtime evidence describes the same outcome; shared input, subject, element, or dependency alone is insufficient.",
+		[]string{
+			"Current candidate:\n" + input.Candidate,
+			"Accepted requirement:\n" + input.AcceptedRequirement,
+		},
+		choices,
+	)
 }
 
 func DecodeApplicationRequirementCandidateOutcomeRelationResult(
@@ -175,15 +174,11 @@ func DecodeApplicationRequirementCandidateOutcomeRelationResult(
 	if err := input.validateForModel(); err != nil {
 		return zero, err
 	}
-	leaf, err := decodeRawSemanticLeaf(
-		"application requirement candidate outcome relation",
-		raw,
-		maximumStringBytes(
-			ApplicationRequirementSameRuntimeOutcome,
-			ApplicationRequirementDistinctRuntimeOutcomes,
-		),
-		false,
-	)
+	choices, err := applicationRequirementCandidateOutcomeRelationOpaqueChoices()
+	if err != nil {
+		return zero, err
+	}
+	leaf, err := DecodeOpaqueModelChoice(raw, choices)
 	if err != nil {
 		return zero, err
 	}
@@ -195,6 +190,24 @@ func DecodeApplicationRequirementCandidateOutcomeRelationResult(
 		return zero, err
 	}
 	return result, nil
+}
+
+func applicationRequirementCandidateOutcomeRelationOpaqueChoices() ([]OpaqueModelChoice, error) {
+	same, err := NewOpaqueModelChoice(
+		"The statements are paraphrases requiring the same independently observable runtime evidence.",
+		ApplicationRequirementSameRuntimeOutcome,
+	)
+	if err != nil {
+		return nil, err
+	}
+	distinct, err := NewOpaqueModelChoice(
+		"At least one statement requires independently observable runtime evidence that the other does not.",
+		ApplicationRequirementDistinctRuntimeOutcomes,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return []OpaqueModelChoice{same, distinct}, nil
 }
 
 func applicationRequirementCandidateOutcomeRelationResult(

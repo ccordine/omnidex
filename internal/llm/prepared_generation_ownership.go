@@ -2,7 +2,8 @@ package llm
 
 import "fmt"
 
-const MaxOwnedPreparedGenerationBytes = (2 * MaxExactPreparedProviderResponseBytes) + 1
+const MaxOwnedPreparedGenerationBytes = MaxExactPreparedModelContentBytes +
+	MaxExactPreparedProviderResponseBytes + maxExactPreparedProviderBoundaryBytes
 
 // OwnBoundedPreparedGeneration checks every provider-owned slice before the
 // policy allocates a private copy. Metadata counters are never trusted as a
@@ -10,8 +11,9 @@ const MaxOwnedPreparedGenerationBytes = (2 * MaxExactPreparedProviderResponseByt
 func OwnBoundedPreparedGeneration(
 	generation PreparedGeneration,
 ) (PreparedGeneration, error) {
-	if len(generation.Content) > MaxExactPreparedProviderResponseBytes ||
-		len(generation.ProviderResponseCapture) > MaxExactPreparedProviderResponseBytes+1 {
+	if len(generation.Content) > MaxExactPreparedModelContentBytes ||
+		len(generation.ProviderResponseCapture) >
+			MaxExactPreparedProviderResponseBytes+maxExactPreparedProviderBoundaryBytes {
 		return PreparedGeneration{}, fmt.Errorf("prepared generation response exceeds its ownership bound")
 	}
 	total := len(generation.Content)

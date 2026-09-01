@@ -31,10 +31,12 @@ authority, one bounded API, explicit direct dependencies, and optional
 code-owned frozen-task ownership and source role.
 
 A generated-source call receives one exact signature, local behavioral
-contract, direct declarations, and permitted symbols. It never receives the
-document path. Code validates the returned node, inserts it into the neutral
-document, composes the complete bytes, records spans, and invokes the selected
-stack's compiler and tests.
+contract, direct declarations, and permitted symbols for scope. It never receives the
+document path and returns only an ordinary plain-text implementation body. Code places
+that body inside the exact declaration, validates the assembled node, inserts it into
+the neutral document, composes the complete bytes, records spans, and invokes the
+selected stack's compiler and tests. Reproducing the signature, parameters, schema,
+AST, or any other code-owned structure is never a model qualification requirement.
 
 Code binds every accepted target, compiled document, and static-file path into
 the exact artifact-identity provenance boundary before the first generated
@@ -130,8 +132,14 @@ output.
 Parser qualifications execute real leaf-parser probes and enumerate the exact
 source-dialect labels they prove. Before any source inference, code also runs
 only the profile's bounded, allowlisted runtime-version probes. Initial source
-stations receive the one selected dialect label; repair execution remains blind
-to it and receives only its already-derived repair instruction and mutable node.
+stations receive the one selected dialect label. When code finds one specific
+source-body defect, it must also identify the exact mutable byte span before continuing
+that same persisted station job with the same model. The model receives one necessary
+semantic question and that span alone and returns ordinary replacement text. Code
+verifies the retained base digest and range and performs the splice. The complete
+previous body, surrounding accepted source, paths, and preservation instructions are
+not model context. There is no separate repair station, replacement node format, or
+alternate model route.
 Manifests, compiler flags, runtime guards, container images, package versions,
 and lock formats are generated from the selected profile rather than from stack
 conditionals.

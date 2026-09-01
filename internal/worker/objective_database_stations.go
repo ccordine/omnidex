@@ -2,6 +2,7 @@ package worker
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
 	"github.com/gryph/omnidex/internal/station"
@@ -23,6 +24,13 @@ func (adapter portableObjectiveDatabaseStations) SelectJoinPath(
 	ctx context.Context,
 	input assemblyline.DatabaseJoinPathSelectionInput,
 ) (assemblyline.DatabaseJoinPathSelectionDecision, objectiveStationReceipt, error) {
+	decision, resolved, err := assemblyline.ResolveSoleDatabaseJoinPathSelectionDecision(input)
+	if err != nil {
+		return assemblyline.DatabaseJoinPathSelectionDecision{}, objectiveStationReceipt{}, err
+	}
+	if resolved {
+		return decision, objectiveStationReceipt{}, nil
+	}
 	job, err := assemblyline.NewDatabaseJoinPathSelectionJob(input)
 	if err != nil {
 		return assemblyline.DatabaseJoinPathSelectionDecision{}, objectiveStationReceipt{}, err
@@ -57,6 +65,15 @@ func (adapter portableObjectiveDatabaseStations) SelectSchema(
 	)
 	if err != nil {
 		return decision, ledger.partial(), err
+	}
+	if len(ledger.receipts) == 0 {
+		if calls != 0 {
+			return decision, objectiveStationReceipt{}, fmt.Errorf(
+				"database schema selection reported %d calls without a leaf receipt",
+				calls,
+			)
+		}
+		return decision, objectiveStationReceipt{}, nil
 	}
 	receipt, err := ledger.complete(calls)
 	return decision, receipt, err

@@ -10,7 +10,6 @@ import (
 )
 
 const (
-	ExactPreparedPromptJoiner = "\n"
 	// ExactPreparedLineStopV1 terminates one-line semantic result grammars at
 	// the provider boundary. Decoders still receive and validate exact bytes.
 	ExactPreparedLineStopV1 = "\n"
@@ -23,27 +22,28 @@ const (
 type ExactPreparedProtocol string
 
 const (
-	ExactPreparedProtocolRawTextV2 ExactPreparedProtocol = "omnidex.ollama-raw-text-generate-request.v2"
+	ExactPreparedProtocolPlainCompletionV4 ExactPreparedProtocol = "omnidex.ollama-plain-completion-request.v4"
 )
 
 func (protocol ExactPreparedProtocol) Validate() error {
 	switch protocol {
-	case ExactPreparedProtocolRawTextV2:
+	case ExactPreparedProtocolPlainCompletionV4:
 		return nil
 	default:
 		return fmt.Errorf("exact prepared protocol is not registered")
 	}
 }
 
-func ExactPreparedModelInput(systemEnvelope, promptHint string) (string, error) {
-	if strings.TrimSpace(systemEnvelope) == "" || promptHint != MinimalGeneratePrompt {
-		return "", fmt.Errorf("exact raw cognition input is incomplete")
+func ExactPreparedModelInput(prompt string) (string, error) {
+	if strings.TrimSpace(prompt) == "" {
+		return "", fmt.Errorf("exact semantic prompt is incomplete")
 	}
-	return systemEnvelope + ExactPreparedPromptJoiner + promptHint, nil
+	return prompt, nil
 }
 
-// ExactPreparedRequestModelInput returns the code-owned joined model input.
-// Provider-specific metadata does not participate in runtime admission.
+// ExactPreparedRequestModelInput returns the one code-owned semantic prompt.
+// Model-native provider framing carries no application state or response
+// contract and does not participate in semantic admission.
 func ExactPreparedRequestModelInput(prepared PreparedModel) (string, error) {
 	if strings.TrimSpace(prepared.BaseModel) == "" || prepared.ContextModel != prepared.BaseModel ||
 		prepared.ContextTokens <= 0 {
@@ -52,9 +52,9 @@ func ExactPreparedRequestModelInput(prepared PreparedModel) (string, error) {
 	switch prepared.RawTextStopSequence {
 	case "", ExactPreparedLineStopV1:
 	default:
-		return "", fmt.Errorf("exact raw-text protocol stop sequence is not registered")
+		return "", fmt.Errorf("exact completion stop sequence is not registered")
 	}
-	return ExactPreparedModelInput(prepared.Prompt, prepared.PromptHint)
+	return ExactPreparedModelInput(prepared.Prompt)
 }
 
 func validateExactPreparedRequest(prepared PreparedModel) error {
@@ -66,7 +66,7 @@ func validateExactPreparedRequest(prepared PreparedModel) error {
 	}
 	if strings.TrimSpace(prepared.BaseModel) == "" ||
 		prepared.ContextModel != prepared.BaseModel || strings.TrimSpace(prepared.Prompt) == "" ||
-		prepared.PromptHint != MinimalGeneratePrompt || prepared.MaxOutputTokens <= 0 ||
+		prepared.MaxOutputTokens <= 0 ||
 		prepared.ContextTokens <= 0 {
 		return fmt.Errorf("prepared request does not satisfy the exact Ollama generation contract")
 	}
@@ -75,7 +75,7 @@ func validateExactPreparedRequest(prepared PreparedModel) error {
 	}
 	if prepared.RawTextStopSequence != "" &&
 		prepared.RawTextStopSequence != ExactPreparedLineStopV1 {
-		return fmt.Errorf("exact raw-text protocol stop sequence is not registered")
+		return fmt.Errorf("exact completion stop sequence is not registered")
 	}
 	if err := ValidateResponseContract(prepared); err != nil {
 		return err
@@ -84,28 +84,12 @@ func validateExactPreparedRequest(prepared PreparedModel) error {
 	if err != nil {
 		return err
 	}
-	if prepared.OutputLimitMode == ExactPreparedOutputLimitNatural {
-		if prepared.MaxOutputTokens > prepared.ContextTokens {
-			return fmt.Errorf("natural output ceiling exceeds the native context")
-		}
-		return ValidateExactPreparedNaturalInputAuthority(prepared.ContextTokens, rawInput)
-	}
 	return ValidateExactPreparedInputAuthority(
 		prepared.ContextTokens,
 		prepared.ContextTokens-prepared.MaxOutputTokens,
 		prepared.MaxOutputTokens,
 		rawInput,
 	)
-}
-
-// ValidateExactPreparedNaturalInputAuthority enforces only native context and
-// transport bounds. Natural output shares the remaining native context and is
-// checked from the provider's tokenizer-owned receipt.
-func ValidateExactPreparedNaturalInputAuthority(contextTokens int, rawInput string) error {
-	if err := ValidateExactPreparedContextTokens(contextTokens); err != nil {
-		return err
-	}
-	return validateExactPreparedInputBytes(rawInput)
 }
 
 func ExactPreparedRequestSHA256(prepared PreparedModel) (string, error) {
@@ -132,7 +116,7 @@ func ValidateExactPreparedInputAuthority(
 	}
 	if maxInputTokens <= 0 || maxOutputTokens <= 0 ||
 		maxInputTokens != contextTokens-maxOutputTokens {
-		return fmt.Errorf("exact raw cognition token ceilings must be positive")
+		return fmt.Errorf("exact completion token ceilings must be positive")
 	}
 	return validateExactPreparedInputBytes(rawInput)
 }
@@ -140,11 +124,11 @@ func ValidateExactPreparedInputAuthority(
 func validateExactPreparedInputBytes(rawInput string) error {
 	if !utf8.ValidString(rawInput) || strings.ContainsRune(rawInput, 0) ||
 		strings.TrimSpace(rawInput) == "" {
-		return fmt.Errorf("exact raw cognition input is invalid")
+		return fmt.Errorf("exact semantic prompt is invalid")
 	}
 	if len(rawInput) > MaxExactPreparedModelInputBytes {
 		return fmt.Errorf(
-			"exact raw cognition input exceeds %d-byte transport ceiling",
+			"exact semantic prompt exceeds %d-byte transport ceiling",
 			MaxExactPreparedModelInputBytes,
 		)
 	}
@@ -172,51 +156,6 @@ func ValidateExactPreparedNativeUsage(
 		return fmt.Errorf(
 			"exact provider context exceeded: prompt_tokens=%d input_ceiling=%d output_tokens=%d output_ceiling=%d native_context=%d",
 			usage.PromptEvalCount, maxInputTokens, usage.EvalCount, maxOutputTokens, contextTokens,
-		)
-	}
-	return nil
-}
-
-// ValidateExactPreparedNaturalUsage validates a natural-stop receipt without
-// inventing separate prompt/output sub-ceilings that were not sent to Ollama.
-func ValidateExactPreparedNaturalUsage(
-	contextTokens int,
-	usage ProviderGenerationUsage,
-) error {
-	if err := ValidateExactPreparedContextTokens(contextTokens); err != nil {
-		return err
-	}
-	if usage.PromptEvalCount <= 0 || usage.EvalCount <= 0 {
-		return fmt.Errorf("exact natural usage requires positive prompt and output token counts")
-	}
-	if usage.PromptEvalCount+usage.EvalCount > contextTokens {
-		return fmt.Errorf(
-			"exact provider natural context exceeded: prompt_tokens=%d output_tokens=%d native_context=%d",
-			usage.PromptEvalCount, usage.EvalCount, contextTokens,
-		)
-	}
-	return nil
-}
-
-// ValidateExactPreparedNaturalUsageWithOutputCeiling validates natural shared
-// context plus the finite output ceiling actually sent to the provider. It is
-// illegal to use this function for a native profile whose request omitted
-// num_predict.
-func ValidateExactPreparedNaturalUsageWithOutputCeiling(
-	contextTokens int,
-	maxOutputTokens int,
-	usage ProviderGenerationUsage,
-) error {
-	if maxOutputTokens < 1 || maxOutputTokens > contextTokens {
-		return fmt.Errorf("exact natural output ceiling must be within the native context")
-	}
-	if err := ValidateExactPreparedNaturalUsage(contextTokens, usage); err != nil {
-		return err
-	}
-	if usage.EvalCount > maxOutputTokens {
-		return fmt.Errorf(
-			"exact provider natural output exceeded: output_tokens=%d output_ceiling=%d native_context=%d",
-			usage.EvalCount, maxOutputTokens, contextTokens,
 		)
 	}
 	return nil

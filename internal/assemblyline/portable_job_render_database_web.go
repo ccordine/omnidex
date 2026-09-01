@@ -2,9 +2,9 @@ package assemblyline
 
 func renderPortableDatabaseWebJob(job PortableJob) (string, bool, error) {
 	switch job.Kind {
-	case WorkDatabaseSchemaRelationInventory, WorkDatabaseSchemaRelationNecessity,
-		WorkDatabaseSchemaRelationResolution,
+	case WorkDatabaseSchemaRelationChoice,
 		WorkDatabaseQueryFromRelation, WorkDatabaseQueryShape,
+		WorkDatabaseQueryPurposePresence,
 		WorkDatabaseQueryPurposeInventory, WorkDatabaseQueryPurposeNecessity,
 		WorkDatabaseQueryPurposeRelation,
 		WorkDatabaseQueryProjectionAggregate,

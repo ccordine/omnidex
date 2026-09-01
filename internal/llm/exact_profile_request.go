@@ -6,7 +6,7 @@ import (
 
 type exactPreparedRequestOptions struct {
 	NumCtx      int                       `json:"num_ctx"`
-	NumPredict  int                       `json:"num_predict,omitempty"`
+	NumPredict  int                       `json:"num_predict"`
 	Stop        []string                  `json:"stop,omitempty"`
 	Temperature *ExactPreparedTemperature `json:"temperature,omitempty"`
 }
@@ -37,12 +37,13 @@ func ExactPreparedRequestBytes(prepared PreparedModel) ([]byte, error) {
 	request := exactPreparedRequest{
 		Model: prepared.ContextModel,
 		Options: exactPreparedRequestOptions{
-			NumCtx: prepared.ContextTokens, NumPredict: prepared.MaxOutputTokens,
+			NumCtx:      prepared.ContextTokens,
 			Temperature: prepared.Temperature,
 		},
 		Prompt: prompt, Raw: false, Shift: false, Stream: false,
 		Think: &think, Truncate: false,
 	}
+	request.Options.NumPredict = prepared.MaxOutputTokens
 	if prepared.RawTextStopSequence != "" {
 		request.Options.Stop = []string{prepared.RawTextStopSequence}
 	}

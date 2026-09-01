@@ -19,8 +19,6 @@ const (
 	DatabaseQueryHavingPurpose      DatabaseQueryPurposeCollection = "having"
 	DatabaseQueryOrderPurpose       DatabaseQueryPurposeCollection = "order"
 
-	DatabaseQueryNoPurposeCandidates = "NO_QUERY_PURPOSE_CANDIDATES"
-
 	DatabaseQueryPurposeInventorySchemaV1 = "omnidex.database-query-purpose-inventory.v1"
 
 	MaxDatabaseQueryPurposeCandidates     = 64
@@ -126,12 +124,11 @@ func BuildDatabaseQueryPurposeInventoryPrompt(
 	}
 	label := databaseQueryPurposeCollectionLabel(input.Collection)
 	prompt := strings.Join([]string{
-		fmt.Sprintf("Return one bounded source-ordered raw inventory of candidate %s purposes expressed by the exact evidence need.", label),
+		fmt.Sprintf("What candidate %s purposes are expressed by the exact evidence need?", label),
 		"Include each semantically separable purpose that could belong to this exact collection, including repeated or potentially unnecessary purposes. Make every candidate a concise standalone statement of why that query-clause collection is needed. For filter values, each line states only one requested literal meaning.",
-		"Do not add customary constraints, implied reporting conventions, implementation details, or purposes from another collection. Preserve the source order in which the evidence need expresses the candidate purposes.",
-		fmt.Sprintf("Return at most %d candidates, one concise candidate purpose per non-empty raw line. If no candidate exists for this collection, return only %s.", MaxDatabaseQueryPurposeCandidates, DatabaseQueryNoPurposeCandidates),
-		"Return raw candidate text only, with no JSON, labels, Markdown, explanation, or surrounding envelope.",
-		"DATABASE QUERY PURPOSE INVENTORY AUTHORITY:\n" + authority,
+		"Do not add customary constraints, implied reporting conventions, implementation details, or purposes from another collection.",
+		fmt.Sprintf("Write between 1 and %d concise candidate purposes, one per line.", MaxDatabaseQueryPurposeCandidates),
+		"Database query context:\n" + authority,
 	}, "\n\n")
 	if len(prompt) > maxPortablePayloadBytes {
 		return "", fmt.Errorf("database query purpose inventory prompt exceeds %d bytes", maxPortablePayloadBytes)
@@ -156,18 +153,18 @@ func DecodeDatabaseQueryPurposeInventory(
 	if strings.ContainsRune(leaf, '\r') {
 		return zero, fmt.Errorf("database query purpose inventory must use LF line boundaries")
 	}
-	candidates := []string{}
-	if leaf != DatabaseQueryNoPurposeCandidates {
-		candidates = strings.Split(leaf, "\n")
-		if len(candidates) > MaxDatabaseQueryPurposeCandidates {
-			return zero, fmt.Errorf("database query purpose inventory exceeds its %d-candidate bound", MaxDatabaseQueryPurposeCandidates)
-		}
-		for index, candidate := range candidates {
-			if err := validateDatabaseQueryPurpose(
-				fmt.Sprintf("database query purpose candidate %d", index), candidate,
-			); err != nil {
-				return zero, err
-			}
+	candidates := strings.Split(leaf, "\n")
+	if len(candidates) < 1 || len(candidates) > MaxDatabaseQueryPurposeCandidates {
+		return zero, fmt.Errorf(
+			"database query purpose inventory must contain 1..%d candidates",
+			MaxDatabaseQueryPurposeCandidates,
+		)
+	}
+	for index, candidate := range candidates {
+		if err := validateDatabaseQueryPurpose(
+			fmt.Sprintf("database query purpose candidate %d", index), candidate,
+		); err != nil {
+			return zero, err
 		}
 	}
 	authoritySHA256, err := databaseQueryPurposeAuthoritySHA256(input)
@@ -200,8 +197,8 @@ func (inventory DatabaseQueryPurposeInventory) ValidateFor(
 	if inventory.AuthoritySHA256 != authoritySHA256 {
 		return fmt.Errorf("database query purpose inventory authority hash does not match")
 	}
-	if inventory.Candidates == nil || len(inventory.Candidates) > MaxDatabaseQueryPurposeCandidates {
-		return fmt.Errorf("database query purpose inventory must contain 0..%d candidates", MaxDatabaseQueryPurposeCandidates)
+	if len(inventory.Candidates) < 1 || len(inventory.Candidates) > MaxDatabaseQueryPurposeCandidates {
+		return fmt.Errorf("database query purpose inventory must contain 1..%d candidates", MaxDatabaseQueryPurposeCandidates)
 	}
 	for index, candidate := range inventory.Candidates {
 		if err := validateDatabaseQueryPurpose(
@@ -210,10 +207,7 @@ func (inventory DatabaseQueryPurposeInventory) ValidateFor(
 			return err
 		}
 	}
-	raw := DatabaseQueryNoPurposeCandidates
-	if len(inventory.Candidates) > 0 {
-		raw = strings.Join(inventory.Candidates, "\n")
-	}
+	raw := strings.Join(inventory.Candidates, "\n")
 	if inventory.RawSHA256 != ExactObjectiveContextSHA(raw) {
 		return fmt.Errorf("database query purpose inventory raw hash does not match")
 	}
@@ -221,14 +215,8 @@ func (inventory DatabaseQueryPurposeInventory) ValidateFor(
 }
 
 func validateDatabaseQueryPurpose(label, purpose string) error {
-	leaf, err := decodeRawSemanticLeaf(label, purpose, maxDatabaseQueryPurposeBytes, false)
-	if err != nil {
-		return err
-	}
-	if leaf == DatabaseQueryNoPurposeCandidates {
-		return fmt.Errorf("%s cannot equal the inventory absence value", label)
-	}
-	return nil
+	_, err := decodeRawSemanticLeaf(label, purpose, maxDatabaseQueryPurposeBytes, false)
+	return err
 }
 
 func databaseQueryPurposeAuthoritySHA256(value any) (string, error) {

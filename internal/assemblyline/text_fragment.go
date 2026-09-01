@@ -30,23 +30,34 @@ func BuildTextFragmentGenerationPrompt(input FragmentGenerationInput) (string, e
 	if len(input.Capabilities) != 0 || len(input.PermittedSymbols) != 0 {
 		return "", fmt.Errorf("text fragment generation cannot receive source capabilities or symbols")
 	}
-	prompt := strings.Join([]string{
-		"The complete response grammar is exactly one raw UTF-8 text node.",
-		"Return only the node bytes without a label, quotation, JSON wrapper, or Markdown wrapper.",
-		"Use LF bytes for line endings. End the node with exactly one LF byte. Do not return a carriage return or NUL byte.",
-		"Implement only the exact local behavior.",
-		"TEXT_DIALECT:\n" + input.Dialect,
-		"TEXT_NODE_GRAMMAR:\n" + input.Signature,
-		"EXACT_LOCAL_BEHAVIOR:\n" + input.Behavior,
-	}, "\n\n")
+	prompt := "Write text that fulfills this request.\n\n" + input.Behavior
 	if len(prompt) > maxPortableResourceBytes {
 		return "", fmt.Errorf("text fragment generation prompt exceeds %d bytes", maxPortableResourceBytes)
 	}
 	return prompt, nil
 }
 
-// ValidateTextFragment enforces the exact raw-node transport grammar. It does
-// not trim, normalize, or reconstruct any accepted byte.
+// NormalizeTextFragmentResponse applies the code-owned line-ending contract to
+// an ordinary text response. Provider formatting is not a model qualification
+// responsibility.
+func NormalizeTextFragmentResponse(raw string) (string, error) {
+	if raw == "" || !utf8.ValidString(raw) || strings.ContainsRune(raw, '\x00') {
+		return "", fmt.Errorf("text response must be non-empty UTF-8 without NUL bytes")
+	}
+	if len(raw) > maxPortableCandidateBytes {
+		return "", fmt.Errorf("text response exceeds %d bytes", maxPortableCandidateBytes)
+	}
+	normalized := strings.ReplaceAll(raw, "\r\n", "\n")
+	normalized = strings.ReplaceAll(normalized, "\r", "\n")
+	normalized = strings.TrimRight(normalized, "\n") + "\n"
+	if normalized == "\n" {
+		return "", fmt.Errorf("text response contains no content")
+	}
+	return normalized, nil
+}
+
+// ValidateTextFragment validates a text node after code has applied its
+// document framing. It is not a response format imposed on the model.
 func ValidateTextFragment(raw string) error {
 	if raw == "" {
 		return fmt.Errorf("text fragment is empty")
@@ -70,13 +81,4 @@ func ValidateTextFragment(raw string) error {
 		return fmt.Errorf("text fragment must contain content and exactly one terminal LF")
 	}
 	return nil
-}
-
-// ProjectTextFragment binds the validated node to the complete provider
-// response. No prefix, suffix, or formatting transport may be discarded.
-func ProjectTextFragment(raw string) (PortableResultProjection, error) {
-	if err := ValidateTextFragment(raw); err != nil {
-		return PortableResultProjection{}, err
-	}
-	return NewExactPortableResultProjection(raw)
 }

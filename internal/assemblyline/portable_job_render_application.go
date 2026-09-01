@@ -26,29 +26,9 @@ func renderPortableApplicationJob(job PortableJob) (string, bool, error) {
 		return handledPortableRender(renderDecodedPortableInput(
 			job, BuildApplicationRequirementCandidateResultPresencePrompt,
 		))
-	case WorkApplicationRequirementCandidateResultRelationGrounding:
-		return handledPortableRender(renderDecodedPortableInput(
-			job, BuildApplicationRequirementCandidateResultRelationGroundingPrompt,
-		))
-	case WorkApplicationRequirementCandidateResultRelationCorrection:
-		return handledPortableRender(renderDecodedPortableInput(
-			job, BuildApplicationRequirementCandidateResultRelationCorrectionPrompt,
-		))
 	case WorkApplicationRequirementCandidatePartition:
 		return handledPortableRender(renderDecodedPortableInput(
 			job, BuildApplicationRequirementCandidatePartitionPrompt,
-		))
-	case WorkApplicationContextQuestionInventory:
-		return handledPortableRender(renderDecodedPortableInput(
-			job, BuildApplicationContextQuestionInventoryPrompt,
-		))
-	case WorkApplicationContextQuestionNecessity:
-		return handledPortableRender(renderDecodedPortableInput(
-			job, BuildApplicationContextQuestionNecessityPrompt,
-		))
-	case WorkApplicationContextQuestionRelation:
-		return handledPortableRender(renderDecodedPortableInput(
-			job, BuildApplicationContextQuestionRelationPrompt,
 		))
 	case WorkApplicationProjectStackConstraint:
 		return handledPortableRender(renderDecodedPortableInput(job, BuildApplicationProjectStackConstraintPrompt))

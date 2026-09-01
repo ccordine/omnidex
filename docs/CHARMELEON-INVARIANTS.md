@@ -77,15 +77,16 @@ The code machine invokes those when its state says they are required.
 The model receives something like:
 
 Which candidate interpretation best explains the observed behavior?
-C17: dispatches all invitations immediately
-C31: schedules invitations over a configurable interval
-Return one candidate ID.
+A. dispatches all invitations immediately
+B. schedules invitations over a configurable interval
 
 And returns:
 
-{"candidate_id":"C31"}
+B
 
-That is one semantic bridge.
+That is one semantic bridge. The letters are call-local opaque identities. Code maps
+`B` to its retained candidate; the model never reproduces an internal identity or JSON
+packet.
 
 ⸻
 
@@ -400,7 +401,9 @@ direct dependencies
 allowed symbols
 applicable invariants
 
-The generation station returns one source declaration.
+The generation station returns one ordinary plain-text implementation body. Code places
+it inside the exact immutable declaration; the model never reproduces the signature,
+parameters, schema, AST structure, or another mechanically known byte.
 
 Then code owns:
 
@@ -438,12 +441,15 @@ Valid state advances without a semantic review call. A real parser, compiler, te
 proof-obligation, or workspace mismatch is reduced by code to the smallest owning
 objective or generated block. Accepted state is preserved.
 
-For supported source failures, one exact path-free diagnostic permits one
-repair-guidance call whose sole result is an instruction, followed by one executor
-call whose sole result is a replacement node. Invalid or byte-identical output stops.
-A later pair requires a distinct diagnostic after a validated source transition.
-There is no generic response correction, critique station, accept-or-replace gate, or
-review-again loop.
+For a supported source-body failure, code must prove one exact path-free defect and its
+exact mutable byte span. Only the same persisted generation job and same model context
+may continue. It receives one necessary semantic question and that span alone and
+returns ordinary replacement text for the span, not another complete body, repair
+instruction, or replacement packet. Code verifies and splices into its retained base,
+then repeats declaration assembly and validation for at most three total attempts while
+every accepted byte outside the span and every sibling remain untouched. There is no
+generic response correction, critique station, accept-or-replace gate, alternate model,
+or review-again loop.
 
 ⸻
 
@@ -463,7 +469,7 @@ RelateRequirementDuplicate	One atomic candidate and one retained requirement	One
 RelateContextCandidate	Exact instruction, one candidate content	One relevance relation
 ResolveReference	One phrase and candidate symbols	One candidate ID or none
 ClassifyRelationship	Two bounded facts	One relation enum
-GenerateDeclaration	Exact source contract	One declaration
+GenerateImplementationBody	Exact local source responsibility	Ordinary implementation-body text
 InventoryAnswerParagraphs	One exact requirement and selected evidence	Bounded untrusted paragraph candidates
 AuthorizeAnswerParagraph	One candidate paragraph, exact requirement, and the complete supplied evidence set	One responsiveness-and-collective-support relation
 RelateParagraphEvidence	One authorized candidate paragraph and one evidence capsule	One citation-attribution relation
@@ -472,9 +478,13 @@ Each station gets:
 
 * one verb;
 * one subject;
-* one evidence packet;
-* one output schema;
+* only the minimum evidence needed for that question;
+* one ordinary semantic result, except that a genuine closed choice returns one opaque ID;
 * no authority.
+
+Closed-choice cardinality is literal: zero options use the station's explicit
+zero-option behavior, one option is used immediately by code with zero model calls and
+no rejection, and two or more options may invoke one opaque-ID selection call.
 
 Each station has one immutable configured route whose model has qualified for that
 exact contract. Models do not select routes, and an unavailable route fails instead
@@ -495,8 +505,8 @@ Top-level objective
 │   ├── Determine change surface
 │   └── Determine verification
 ├── Execution objective
-│   ├── Generate declaration A
-│   ├── Generate declaration B
+│   ├── Generate implementation body A
+│   ├── Generate implementation body B
 │   └── Apply configuration change
 └── Verification objective
     ├── Exact verification
@@ -593,7 +603,7 @@ cognitive gaps opened
 model calls
 model tokens
 artifact-generation calls
-repair-guidance/executor pairs by exact diagnostic
+same-job source-body continuation calls by exact defect
 
 Useful target metrics:
 
@@ -668,7 +678,8 @@ Already demonstrated in the new reference path.
 
 Gate 2 — one genuine semantic gap
 
-Code reaches one real ambiguity. Qwen sees one bounded packet and returns one candidate ID.
+Code reaches one real ambiguity among at least two options. Qwen sees only the bounded
+semantic context and opaque option descriptions and returns one opaque letter.
 
 Required result:
 
@@ -720,12 +731,13 @@ exists and only at their first consumer.
 
 Gate 6 — Charmander generation handoff
 
-Cognition establishes the exact change surface and behavior. Charmander generates bounded declarations. Code verifies.
+Cognition establishes the exact change surface and behavior. Charmander requests bounded
+implementation bodies; code supplies declarations and verifies them.
 
-Gate 7 — deterministic failure localization and bounded source repair
+Gate 7 — deterministic failure localization and bounded source-body correction
 
-Code maps a real diagnostic to one owning block. One guidance/executor pair may change
-only that block; valid retained state is preserved and no review model is invoked.
+Code maps a real defect to one owning body job. Only that same persisted job/model
+context may continue; valid retained state is preserved and no review model is invoked.
 
 Gate 8 — persistence and recovery
 

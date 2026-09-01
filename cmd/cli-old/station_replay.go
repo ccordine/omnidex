@@ -13,6 +13,7 @@ import (
 
 	"github.com/gryph/omnidex/internal/db"
 	"github.com/gryph/omnidex/internal/envfile"
+	"github.com/gryph/omnidex/internal/llm"
 	"github.com/gryph/omnidex/internal/ollama"
 	"github.com/gryph/omnidex/internal/queue"
 	"github.com/gryph/omnidex/internal/worker"
@@ -133,16 +134,23 @@ func parseStationReplayOptions(args []string) (stationReplayOptions, error) {
 	fs.SetOutput(io.Discard)
 	fs.Int64Var(&options.OpeningID, "opening", 0, "exact historical station-call opening ID")
 	fs.Int64Var(&options.JobID, "job", 0, "historical job ID; selects latest matching opening")
-	fs.StringVar(&options.WorkKind, "work-kind", "fragment_correction", "portable work kind used with --job")
+	fs.StringVar(&options.WorkKind, "work-kind", "fragment_generation", "portable work kind used with --job")
 	fs.Var(&models, "model", "exact installed model to replay (repeatable)")
 	fs.StringVar(&options.Report, "report", "", "new JSONL evidence file path")
 	fs.StringVar(&options.Config, "config", "", "read-only Omnidex environment file")
 	fs.StringVar(&options.OllamaURL, "ollama-url", "", "Ollama URL override")
-	fs.DurationVar(&options.Timeout, "timeout", 0, "per-model timeout; 0 waits for provider completion")
+	fs.DurationVar(
+		&options.Timeout,
+		"timeout",
+		llm.MaximumModelRequestDuration,
+		"per-model timeout; must be positive and no greater than 30 minutes",
+	)
 	if err := fs.Parse(args); err != nil {
 		return options, err
 	}
-	if len(fs.Args()) != 0 || options.Timeout < 0 || (options.OpeningID > 0) == (options.JobID > 0) ||
+	if len(fs.Args()) != 0 || options.Timeout <= 0 ||
+		options.Timeout > llm.MaximumModelRequestDuration ||
+		(options.OpeningID > 0) == (options.JobID > 0) ||
 		len(models) == 0 || strings.TrimSpace(options.Report) == "" {
 		return options, errors.New("requires exactly one of --opening or --job, one or more --model values, and --report")
 	}
@@ -221,15 +229,10 @@ func loadStationReplayPoint(
 }
 
 func stationReplayClient(baseURL string, contextTokens int, timeout time.Duration) *ollama.Client {
-	if timeout == 0 {
-		return ollama.NewUnbounded(baseURL, "", "", contextTokens)
-	}
-	return ollama.New(baseURL, "", "", timeout, contextTokens)
+	_ = contextTokens
+	return ollama.New(baseURL, "", "", timeout)
 }
 
 func stationReplayContext(timeout time.Duration) (context.Context, context.CancelFunc) {
-	if timeout == 0 {
-		return context.Background(), func() {}
-	}
 	return context.WithTimeout(context.Background(), timeout)
 }

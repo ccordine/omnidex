@@ -40,25 +40,24 @@ func (executor *directCodingTypeScriptProjectStageExecutor) GenerateBlock(
 			ref.Document.AdapterID, ref.Block.ID,
 		)
 	}
-	var publicSurface *assemblyline.FragmentPublicInteractionSurface
 	var validateInitialCandidate func(string) error
 	switch ref.Block.Role {
 	case assemblyline.SourceBlockTaskImplementation:
 		validateInitialCandidate = validateDirectCodingBrowserPublicInteractionCandidate
 	case assemblyline.SourceBlockTaskVerification:
-		var err error
-		publicSurface, validateInitialCandidate, err = executor.bindBrowserPublicSurface(
+		binding, err := executor.bindBrowserPublicSurface(
 			context, stage, ref,
 		)
 		if err != nil {
 			return "", err
 		}
+		return renderDirectCodingBrowserVerificationDeclaration(ref, binding)
 	case assemblyline.SourceBlockTaskRepresentation:
 	default:
 		return "", fmt.Errorf("TypeScript source generator cannot build task role %q", ref.Block.Role)
 	}
 	source, err := executor.session.generateDirectCodingApplicationTaskBlock(
-		context, stage, ref, publicSurface, validateInitialCandidate,
+		context, stage, ref, validateInitialCandidate,
 	)
 	if err != nil {
 		return "", err

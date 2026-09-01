@@ -16,14 +16,20 @@ func prepareExactStationCall(
 		value := llm.ExactPreparedTemperature(0)
 		temperature = &value
 	}
-	stop, err := directStationStopSequence(call.WorkKind)
-	if err != nil {
-		return llm.PreparedModel{}, err
+	stop := ""
+	if call.SingleLine {
+		stop = llm.ExactPreparedLineStopV1
+	} else {
+		var err error
+		stop, err = directStationStopSequence(call.WorkKind)
+		if err != nil {
+			return llm.PreparedModel{}, err
+		}
 	}
 	return llm.PreparedModel{
-		Protocol: llm.ExactPreparedProtocolRawTextV2, BaseModel: modelName, ContextModel: modelName,
-		Prompt: call.Prompt, PromptHint: llm.MinimalGeneratePrompt,
-		MaxOutputTokens: call.MaxOutputTokens, OutputLimitMode: llm.ExactPreparedOutputLimitNatural,
+		Protocol: llm.ExactPreparedProtocolPlainCompletionV4, BaseModel: modelName, ContextModel: modelName,
+		Prompt:          call.Prompt,
+		MaxOutputTokens: call.MaxOutputTokens, OutputLimitMode: llm.ExactPreparedOutputLimitExplicit,
 		ContextTokens: call.ContextTokens, RawTextStopSequence: stop,
 		Temperature: temperature,
 	}, nil

@@ -112,5 +112,11 @@ func providerRequestTimeout(
 	if timeout <= 0 {
 		return 0, fmt.Errorf("REQUEST_TIMEOUT must be positive for provider %q", definition.ID)
 	}
+	if timeout > llm.MaximumModelRequestDuration {
+		return 0, fmt.Errorf(
+			"REQUEST_TIMEOUT must not exceed %s for provider %q",
+			llm.MaximumModelRequestDuration, definition.ID,
+		)
+	}
 	return timeout, nil
 }

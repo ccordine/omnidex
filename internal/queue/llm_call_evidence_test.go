@@ -24,7 +24,7 @@ func TestNormalizeLLMCallEvidencePreservesUnrelatedStationEnvelopes(t *testing.T
 	}{
 		{
 			name: "semantic classification", kind: assemblyline.WorkApplicationClassify,
-			prompt: "Classify one delivery surface exactly.\n", candidate: "browser",
+			prompt: "Classify one delivery surface exactly.\n", candidate: "A",
 		},
 		{
 			name: "source fragment", kind: assemblyline.WorkFragmentGeneration,
@@ -58,7 +58,7 @@ func TestNormalizeLLMCallEvidencePreservesUnrelatedStationEnvelopes(t *testing.T
 func TestNormalizeLLMCallEvidencePreservesFailedPartialProviderCapture(t *testing.T) {
 	t.Parallel()
 	record := exactLLMEvidenceFixture(
-		t, assemblyline.WorkApplicationClassify, "Classify one value.", "browser",
+		t, assemblyline.WorkApplicationClassify, "Classify one value.", "A",
 	)
 	record.Generation.ProviderResponseDisposition = llm.ProviderResponseBodyReadError
 	record.Generation.ProviderResponseComplete = false
@@ -83,16 +83,110 @@ func TestNormalizeLLMCallEvidencePreservesFailedPartialProviderCapture(t *testin
 	}
 }
 
+func TestNormalizeLLMCallEvidenceClassifiesOnlyValidatedOutputLimit(t *testing.T) {
+	t.Parallel()
+	record := exactLLMEvidenceFixture(
+		t, assemblyline.WorkApplicationClassify, "Classify one value.", "unfinished",
+	)
+	raw := []byte(fmt.Sprintf(
+		`{"created_at":"2026-08-31T12:00:00Z","response":%q,"done":true,"done_reason":"length","total_duration":19,"load_duration":2,"prompt_eval_count":11,"prompt_eval_duration":3,"eval_count":512,"eval_duration":5}`,
+		record.Generation.Content,
+	))
+	decoded, err := llm.DecodeExactPreparedResponseForProtocol(
+		record.Prepared.Protocol, 200, raw,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	responseDigest := sha256.Sum256(raw)
+	record.Generation.ProviderResponseDisposition = decoded.Disposition
+	record.Generation.ProviderResponseSHA256 = hex.EncodeToString(responseDigest[:])
+	record.Generation.ProviderResponseBytes = int64(len(raw))
+	record.Generation.ProviderResponseCaptureSHA256 = hex.EncodeToString(responseDigest[:])
+	record.Generation.ProviderResponseCapturedBytes = len(raw)
+	record.Generation.ProviderResponseCapture = raw
+	record.Generation.ProviderDonePresent = decoded.DonePresent
+	record.Generation.ProviderDone = decoded.Done
+	record.Generation.ProviderDoneReason = decoded.DoneReason
+	record.Generation.UsagePresent = decoded.UsagePresent
+	record.Generation.Usage = decoded.Usage
+	record.OutputLimitReached = true
+	record.CallError = (&llm.ExactPreparedOutputLimitReachedError{
+		DoneReason: "length", PromptTokens: 11, OutputTokens: 512,
+		ContextTokens:   record.Prepared.ContextTokens,
+		MaxOutputTokens: record.Prepared.MaxOutputTokens,
+		ContentBytes:    len(record.Generation.Content),
+	}).Error()
+
+	_, normalized, err := normalizeExactLLMEvidenceFixture(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if normalized.status != LLMCallFailed || !normalized.record.OutputLimitReached ||
+		normalized.record.Generation.Content != "unfinished" {
+		t.Fatalf("output-limit evidence=%#v", normalized)
+	}
+
+	missingClassification := record
+	missingClassification.OutputLimitReached = false
+	if _, _, err := normalizeExactLLMEvidenceFixture(missingClassification); err == nil {
+		t.Fatal("validated length completion was accepted without its exact classification")
+	}
+	forgedClassification := exactLLMEvidenceFixture(
+		t, assemblyline.WorkApplicationClassify, "Classify one value.", "A",
+	)
+	forgedClassification.OutputLimitReached = true
+	forgedClassification.CallError = "forged output limit"
+	if _, _, err := normalizeExactLLMEvidenceFixture(forgedClassification); err == nil {
+		t.Fatal("ordinary stop completion was accepted as an output-limit result")
+	}
+}
+
+func TestCompactLLMCallGenerationReceiptDoesNotDuplicateLargeModelContent(t *testing.T) {
+	t.Parallel()
+	content := strings.Repeat("\"", llm.MaxExactPreparedProviderResponseBytes)
+	receipt, err := encodeLLMCallGenerationReceipt(llm.PreparedGeneration{
+		Schema: llm.PreparedGenerationSchemaV1, Content: content,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(receipt) > maxLLMCallGenerationReceiptBytes ||
+		strings.Contains(string(receipt), strings.Repeat("\\\"", 64)) {
+		t.Fatalf("compact receipt duplicated escaped model content: bytes=%d", len(receipt))
+	}
+	var decoded llmCallGenerationReceipt
+	if err := json.Unmarshal(receipt, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if decoded.ContentBytes != len(content) ||
+		decoded.ContentSHA256 != llmEvidenceSHA256([]byte(content)) {
+		t.Fatalf("compact content identity=%#v", decoded)
+	}
+}
+
 func TestNormalizeLLMCallEvidenceRejectsUnboundOrInexactRecords(t *testing.T) {
 	t.Parallel()
 	base := exactLLMEvidenceFixture(
-		t, assemblyline.WorkApplicationClassify, "Classify one value.", "browser",
+		t, assemblyline.WorkApplicationClassify, "Classify one value.", "A",
 	)
 	for name, mutate := range map[string]func(*exactLLMEvidenceFixtureRecord){
 		"wrong scope":    func(record *exactLLMEvidenceFixtureRecord) { record.Scope = assemblyline.PortableFragmentWorkerScope },
 		"forged work":    func(record *exactLLMEvidenceFixtureRecord) { record.WorkID = "forged" },
 		"model mismatch": func(record *exactLLMEvidenceFixtureRecord) { record.RequestedModel = "other" },
-		"fake success":   func(record *exactLLMEvidenceFixtureRecord) { record.Generation.Content = "" },
+		"zero iteration": func(record *exactLLMEvidenceFixtureRecord) { record.Iteration = 0 },
+		"parent on initial": func(record *exactLLMEvidenceFixtureRecord) {
+			record.ParentCallEvidenceID = 7
+		},
+		"second output continuation": func(record *exactLLMEvidenceFixtureRecord) {
+			record.OutputContinuation = 2
+			record.ParentCallEvidenceID = 7
+		},
+		"semantic correction": func(record *exactLLMEvidenceFixtureRecord) {
+			record.Iteration = 2
+			record.ParentCallEvidenceID = 7
+		},
+		"fake success": func(record *exactLLMEvidenceFixtureRecord) { record.Generation.Content = "" },
 		"unbounded error": func(record *exactLLMEvidenceFixtureRecord) {
 			record.CallError = strings.Repeat("x", 8193)
 		},
@@ -106,6 +200,19 @@ func TestNormalizeLLMCallEvidenceRejectsUnboundOrInexactRecords(t *testing.T) {
 				t.Fatalf("accepted invalid evidence: %#v", record)
 			}
 		})
+	}
+}
+
+func TestNormalizeLLMCallOpeningAcceptsOneSameIterationOutputContinuation(t *testing.T) {
+	t.Parallel()
+	record := exactLLMEvidenceFixture(
+		t, assemblyline.WorkApplicationClassify, "Classify one value.", "A",
+	)
+	opening := record.LLMCallOpeningRecord
+	opening.OutputContinuation = 1
+	opening.ParentCallEvidenceID = 7
+	if _, err := normalizeLLMCallOpening(opening); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -143,10 +250,10 @@ func exactLLMEvidenceFixture(
 	t.Helper()
 	temperature := llm.ExactPreparedTemperature(0)
 	prepared := llm.PreparedModel{
-		Protocol:  llm.ExactPreparedProtocolRawTextV2,
+		Protocol:  llm.ExactPreparedProtocolPlainCompletionV4,
 		BaseModel: "fixture-model", ContextModel: "fixture-model",
-		PromptHint: llm.MinimalGeneratePrompt, Prompt: prompt,
-		MaxOutputTokens: 512, OutputLimitMode: llm.ExactPreparedOutputLimitNatural,
+		Prompt:          prompt,
+		MaxOutputTokens: 512, OutputLimitMode: llm.ExactPreparedOutputLimitExplicit,
 		ContextTokens: 8192, Temperature: &temperature,
 	}
 	raw := []byte(fmt.Sprintf(
@@ -168,7 +275,8 @@ func exactLLMEvidenceFixture(
 			JobID: 1, Generation: 1, StepID: 1, Attempt: 1, WorkerID: "fixture-worker",
 		},
 			Scope: mustLLMEvidenceScope(t, kind), WorkID: strings.Repeat("a", 64),
-			WorkKind: kind, RequestedModel: prepared.BaseModel, Prepared: prepared,
+			WorkKind: kind, Iteration: 1,
+			RequestedModel: prepared.BaseModel, Prepared: prepared,
 		},
 		Generation: llm.PreparedGeneration{
 			Schema: llm.PreparedGenerationSchemaV1, Protocol: prepared.Protocol,
@@ -193,16 +301,19 @@ func exactLLMEvidenceFixture(
 
 type exactLLMEvidenceFixtureRecord struct {
 	LLMCallOpeningRecord
-	Generation llm.PreparedGeneration
-	CallError  string
-	Elapsed    time.Duration
+	Generation         llm.PreparedGeneration
+	OutputLimitReached bool
+	CallError          string
+	Elapsed            time.Duration
 }
 
 func (record exactLLMEvidenceFixtureRecord) receipt(callID int64) LLMCallReceiptRecord {
 	return LLMCallReceiptRecord{
 		Authority: record.Authority, CallEvidenceID: callID,
 		Prepared: record.Prepared, Generation: record.Generation,
-		CallError: record.CallError, Elapsed: record.Elapsed,
+		OutputLimitReached: record.OutputLimitReached,
+		CallError:          record.CallError,
+		Elapsed:            record.Elapsed,
 	}
 }
 

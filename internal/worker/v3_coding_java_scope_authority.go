@@ -82,6 +82,9 @@ func javaCollectAPIDeclarations(
 			if name := node.ChildByFieldName("name"); name != nil {
 				owner = javaNodeText(name, content)
 				authorities[owner] = struct{}{}
+				if receivers[owner] == nil {
+					receivers[owner] = make(map[javaMethodKey]javaMethodAuthority)
+				}
 			}
 		case "method_declaration":
 			name := node.ChildByFieldName("name")
@@ -93,12 +96,12 @@ func javaCollectAPIDeclarations(
 					if receivers[owner] == nil {
 						receivers[owner] = make(map[javaMethodKey]javaMethodAuthority)
 					}
-						receivers[owner][key] = javaMethodAuthority{
-							ReturnOwner: javaDeclaredTypeOwner(
-								node.ChildByFieldName("type"), content,
-							),
-							Static: javaMethodDeclarationStatic(node, content),
-						}
+					receivers[owner][key] = javaMethodAuthority{
+						ReturnOwner: javaDeclaredTypeOwner(
+							node.ChildByFieldName("type"), content,
+						),
+						Static: javaMethodDeclarationStatic(node, content),
+					}
 				} else {
 					methods[key] = struct{}{}
 				}

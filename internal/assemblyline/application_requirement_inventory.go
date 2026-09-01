@@ -10,14 +10,13 @@ import (
 const (
 	WorkApplicationRequirementInventory WorkKind = "application_requirement_inventory"
 
-	ApplicationNoRuntimeRequirementCandidates      = "NO_RUNTIME_REQUIREMENT_CANDIDATES"
-	applicationRequirementInventoryCandidatePrefix = "The finished software "
+	ApplicationNoRuntimeRequirementCandidates = "NO_RUNTIME_REQUIREMENT_CANDIDATES"
 
 	MaxApplicationRequirementInventoryCandidates = MaxApplicationRequirementLeaves * 3
 	maxApplicationRequirementInventoryBytes      = MaxApplicationRequirementInventoryCandidates*maxRequirementQuoteBytes +
 		MaxApplicationRequirementInventoryCandidates - 1
 
-	ApplicationRequirementInventorySchemaV4 = "omnidex.application-requirement-inventory.v4"
+	ApplicationRequirementInventorySchemaV5 = "omnidex.application-requirement-inventory.v5"
 )
 
 type ApplicationRequirementInventoryInput struct {
@@ -62,20 +61,15 @@ func BuildApplicationRequirementInventoryPrompt(
 	}
 	projection := renderApplicationContextModelProjection(input.UserRequest, input.Context)
 	return strings.Join([]string{
-		"Return one bounded source-ordered inventory of atomic finished-software runtime-outcome candidates required by the immutable software request.",
-		fmt.Sprintf("Return exactly %s when the request grounds no runtime-outcome candidate. Otherwise return between 1 and %d positive candidate lines, one per independent runtime outcome.", ApplicationNoRuntimeRequirementCandidates, MaxApplicationRequirementInventoryCandidates),
+		fmt.Sprintf("What atomic finished-software runtime outcomes are grounded by this request? List one independent outcome per line, up to %d. If there are none, answer %s.", MaxApplicationRequirementInventoryCandidates, ApplicationNoRuntimeRequirementCandidates),
 		"This is minimal semantic extraction, not brainstorming. Each candidate must state exactly one independently testable runtime outcome: one behavior, user-visible element, observable quality, state or persistence behavior, or runtime data or output requirement. Split only independent outcomes; never enumerate modes, variants, cases, algorithms, optional features, or alternative ways to perform the same outcome.",
-		"The ordinary meaning of a purpose-denoting product or category name is request content. For each such named purpose, return exactly one minimal end-to-end candidate containing only the literal core operation or governed result inherent in that name. If one named purpose is the request's only runtime meaning, return exactly one candidate line. Express the purpose noun as the simplest corresponding action and governed object. Do not add an input, parameter, criterion, destination, mechanism, interface, trigger, or qualifying phrase unless the request states it.",
+		"The ordinary meaning of a purpose-denoting product or category name is request content. For each such named purpose, include one minimal end-to-end candidate containing only the literal core operation or governed result inherent in that name. Express the purpose noun as the simplest corresponding action and governed object. Do not add an input, parameter, criterion, destination, mechanism, interface, trigger, or qualifying phrase unless the request states it.",
 		"When the literal purpose is to transform, read, extract, decode, calculate, or otherwise derive a governed value, state the minimal independently verifiable governed result instead of a bare activity. Express the value produced by the operation at the abstraction inherent in the purpose. Verifiable does not authorize a presentation or delivery channel: never add display, show, render, return, download, store, transmit, notify, an interface, an output format, or any other unstated mechanism. Never invent the result's format, algorithm, defaults, quality rules, or limits.",
 		"A delivery surface or construction technology does not imply a runtime mechanism, interface, input source, or interaction. Do not add one unless the immutable request states it.",
-		"Keep the inputs or trigger, determining relation, and resulting observation together when they jointly define one outcome. Preserve every separately stated runtime outcome, but do not repeat a named core outcome when a more explicit statement already represents it.",
+		"Keep the inputs or trigger, determining relation, and resulting observation together when they jointly define one outcome. Keep every separately stated runtime outcome eligible for its own candidate; a more explicit statement already represents its named core outcome.",
 		"Do not add a generic trigger frame such as 'when invoked' or 'on request' unless the immutable request states that trigger.",
-		"Do not return bare product identity, build or create directions, delivery surface, language, framework, toolchain, packaging, testing, deployment, or other construction constraints. Do not invent customary controls, history, persistence, process steps, enhancements, prerequisites, or implementation choices.",
-		"Every positive candidate line must begin exactly with 'The finished software ' and continue with one complete runtime outcome. Order candidates by the first request meaning that grounds each one; do not duplicate a candidate. The maximum is a safety bound, not a target.",
-		"Each positive candidate line must begin at byte zero and end immediately after its last non-whitespace byte. Do not emit leading or trailing spaces or tabs, and do not use Markdown hard-break spaces before a line feed.",
-		fmt.Sprintf("Return at most %d candidates, one complete raw candidate per non-empty line. Return only the permitted absence value or candidate lines, with no JSON, labels, numbering, bullets, Markdown, commentary, or surrounding envelope.", MaxApplicationRequirementInventoryCandidates),
-		"APPLICATION REQUIREMENT INVENTORY INPUT:\n" + projection,
-		"FINAL QUESTION:\nWhat bounded atomic finished-software runtime-outcome candidate inventory is grounded by this request? Return only the exact permitted raw absence value or candidate lines.",
+		"Exclude bare product identity, build or create directions, delivery surface, language, framework, toolchain, packaging, testing, deployment, and other construction constraints. Do not invent customary controls, history, persistence, process steps, enhancements, prerequisites, or implementation choices.",
+		projection,
 	}, "\n\n"), nil
 }
 
@@ -113,7 +107,7 @@ func DecodeApplicationRequirementInventory(
 		return zero, err
 	}
 	result := ApplicationRequirementInventory{
-		Schema:          ApplicationRequirementInventorySchemaV4,
+		Schema:          ApplicationRequirementInventorySchemaV5,
 		AuthoritySHA256: authoritySHA256,
 		RawSHA256:       ExactObjectiveContextSHA(applicationRequirementInventoryRaw(candidates)),
 		Candidates:      append([]string{}, candidates...),
@@ -162,6 +156,13 @@ func decodeApplicationRequirementCandidateLines(
 		if err != nil {
 			return nil, "", err
 		}
+		if leaf == ApplicationNoRuntimeRequirementCandidates {
+			return nil, "", fmt.Errorf(
+				"%s candidate %d cannot mix the registered absence result with positive candidates",
+				label,
+				index,
+			)
+		}
 		if err := validateApplicationIntentText(
 			label+" candidate",
 			leaf,
@@ -180,10 +181,10 @@ func (inventory ApplicationRequirementInventory) ValidateFor(
 	if err := input.validate(); err != nil {
 		return err
 	}
-	if inventory.Schema != ApplicationRequirementInventorySchemaV4 {
+	if inventory.Schema != ApplicationRequirementInventorySchemaV5 {
 		return fmt.Errorf(
 			"application requirement inventory schema must be %q",
-			ApplicationRequirementInventorySchemaV4,
+			ApplicationRequirementInventorySchemaV5,
 		)
 	}
 	authoritySHA256, err := applicationRequirementInventoryAuthoritySHA256(input)
@@ -208,11 +209,10 @@ func (inventory ApplicationRequirementInventory) ValidateFor(
 		if strings.ContainsAny(candidate, "\r\n") {
 			return fmt.Errorf("application requirement inventory candidate %d must be one line", index)
 		}
-		if !strings.HasPrefix(candidate, applicationRequirementInventoryCandidatePrefix) {
+		if candidate == ApplicationNoRuntimeRequirementCandidates {
 			return fmt.Errorf(
-				"application requirement inventory candidate %d must begin exactly with %q",
+				"application requirement inventory candidate %d cannot be the registered absence result",
 				index,
-				applicationRequirementInventoryCandidatePrefix,
 			)
 		}
 		if err := validateApplicationIntentText(

@@ -51,8 +51,12 @@ func (s *Service) reserveExactStationCallEvidence(
 		persistCtx,
 		queue.LLMCallOpeningRecord{
 			Authority: authority, Scope: scope, WorkID: call.WorkID,
-			WorkKind: call.WorkKind, RequestedModel: prepared.BaseModel,
-			Prepared: prepared,
+			WorkKind: call.WorkKind, Iteration: call.Iteration,
+			OutputContinuation:   call.OutputContinuation,
+			ParentCallEvidenceID: call.ParentCallID,
+			SourceCorrection:     call.SourceCorrection,
+			RequestedModel:       prepared.BaseModel,
+			Prepared:             prepared,
 		},
 	)
 	if persistErr != nil {
@@ -80,6 +84,8 @@ func (s *Service) finalizeExactStationCallEvidence(
 	}
 	if callErr != nil {
 		record.CallError = exactStationEvidenceError(callErr)
+		var outputLimit *llm.ExactPreparedOutputLimitReachedError
+		record.OutputLimitReached = errors.As(callErr, &outputLimit)
 	}
 	evidence, persistErr := s.repo.FinalizeLLMCallEvidence(persistCtx, record)
 	if persistErr != nil {

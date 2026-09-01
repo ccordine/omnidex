@@ -16,7 +16,7 @@ func TestAuthoritativeSetupDefinesExactImmutableLLMCallEvidence(t *testing.T) {
 		"model_input_sha256",
 		"provider_request_sha256",
 		"generation_receipt_sha256",
-		"octet_length(generation_receipt) BETWEEN 2 AND 34603009",
+		"octet_length(generation_receipt) BETWEEN 2 AND 16384",
 		"raw_response_present boolean NOT NULL",
 		"raw_response_sha256",
 		"error_sha256",

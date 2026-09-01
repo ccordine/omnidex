@@ -101,20 +101,20 @@ func surfaceResolutionFixtureExecutor(
 			if err := json.Unmarshal(job.Payload, &input); err != nil {
 				return assemblyline.PortableResult{}, err
 			}
-			candidate = string(assemblyline.ApplicationRequirementCandidateContentPresent)
+			candidate = "A"
 			if input.Dimension == assemblyline.ApplicationRequirementCandidateNonRuntimeContentDimension {
-				candidate = string(assemblyline.ApplicationRequirementCandidateContentAbsent)
+				candidate = "B"
 			}
 		case assemblyline.WorkApplicationRequirementCandidateCardinality:
-			candidate = assemblyline.ApplicationRequirementOneRuntimeOutcome
+			candidate = "A"
 		case assemblyline.WorkApplicationRequirementCandidateResultRelation:
 			var input assemblyline.ApplicationRequirementCandidateResultPresenceInput
 			if err := json.Unmarshal(job.Payload, &input); err != nil {
 				return assemblyline.PortableResult{}, err
 			}
-			candidate = string(assemblyline.ApplicationRequirementCandidateResultAbsent)
+			candidate = "B"
 			if fixture.name == "surface-neutral text summarizer" {
-				candidate = string(assemblyline.ApplicationRequirementCandidateResultPresent)
+				candidate = "A"
 			}
 		case assemblyline.WorkApplicationProductContext:
 			candidate = fixture.product
@@ -122,7 +122,21 @@ func surfaceResolutionFixtureExecutor(
 			if model != "surface-model" {
 				return assemblyline.PortableResult{}, fmt.Errorf("surface model=%q", model)
 			}
-			candidate = string(fixture.rawSurface)
+			switch fixture.rawSurface {
+			case assemblyline.ApplicationSurfaceBrowser:
+				candidate = "A"
+			case assemblyline.ApplicationSurfaceCommandLine:
+				candidate = "B"
+			case assemblyline.ApplicationSurfaceUnspecified:
+				candidate = "C"
+			case assemblyline.ApplicationSurfaceUnsupported:
+				candidate = "D"
+			default:
+				return assemblyline.PortableResult{}, fmt.Errorf(
+					"unregistered fixture surface %q",
+					fixture.rawSurface,
+				)
+			}
 		default:
 			return assemblyline.PortableResult{}, fmt.Errorf("unexpected work kind %q", job.Kind)
 		}

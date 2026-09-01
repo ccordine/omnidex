@@ -14,15 +14,11 @@ func DecodeDatabaseQueryFilterFieldLeaf(
 	if err := input.validate(); err != nil {
 		return "", err
 	}
-	leaf, err := decodeDatabaseQueryRawLeaf("database query filter field", raw)
+	choices, err := databaseQueryFieldChoices(input.State, input.ScopeRelationID, nil)
 	if err != nil {
 		return "", err
 	}
-	_, relationID, ok := databaseQueryColumn(input.State, leaf)
-	if !ok || input.ScopeRelationID != "" && relationID != input.ScopeRelationID {
-		return "", fmt.Errorf("database query filter field ID %q is outside its authority", leaf)
-	}
-	return leaf, nil
+	return DecodeOpaqueModelChoice(raw, choices)
 }
 
 func DecodeDatabaseQueryFilterOperatorLeaf(
@@ -32,17 +28,15 @@ func DecodeDatabaseQueryFilterOperatorLeaf(
 	if err := input.validateField(); err != nil {
 		return "", err
 	}
-	leaf, err := decodeDatabaseQueryRawLeaf("database query filter operator", raw)
+	choices, err := databaseQueryFilterOperatorChoices(input)
 	if err != nil {
 		return "", err
 	}
-	operator := datasource.FilterOperator(leaf)
-	for _, allowed := range databaseQueryFilterOperators(input.State, input.FieldID) {
-		if operator == allowed {
-			return operator, nil
-		}
+	value, err := DecodeOpaqueModelChoice(raw, choices)
+	if err != nil {
+		return "", err
 	}
-	return "", fmt.Errorf("database query filter operator %q is invalid for field %q", operator, input.FieldID)
+	return datasource.FilterOperator(value), nil
 }
 
 func DecodeDatabaseQueryFilterValueLeaf(
@@ -52,13 +46,29 @@ func DecodeDatabaseQueryFilterValueLeaf(
 	if err := input.validateOperator(); err != nil {
 		return datasource.IntentLiteral{}, err
 	}
-	leaf, err := decodeRawSemanticLeaf(
-		"database query filter value", raw, maxDatabaseQueryLeafBytes, false,
-	)
+	choices, closed, err := databaseQueryFilterValueChoices(input)
 	if err != nil {
 		return datasource.IntentLiteral{}, err
 	}
-	literal, err := databaseQueryLiteral(input.State, input.FieldID, leaf)
+	var value string
+	if closed {
+		value, err = DecodeOpaqueModelChoice(raw, choices)
+	} else {
+		value, err = decodeRawSemanticLeaf(
+			"database query filter value", raw, maxDatabaseQueryLeafBytes, false,
+		)
+	}
+	if err != nil {
+		return datasource.IntentLiteral{}, err
+	}
+	return databaseQueryFilterValue(input, value)
+}
+
+func databaseQueryFilterValue(
+	input DatabaseQueryFilterLeafInput,
+	value string,
+) (datasource.IntentLiteral, error) {
+	literal, err := databaseQueryLiteral(input.State, input.FieldID, value)
 	if err != nil {
 		return datasource.IntentLiteral{}, err
 	}
@@ -84,15 +94,11 @@ func DecodeDatabaseQueryWindowFieldLeaf(
 	if err := input.validate(); err != nil {
 		return "", err
 	}
-	leaf, err := decodeDatabaseQueryRawLeaf("database query window field", raw)
+	choices, err := databaseQueryFieldChoices(input.State, "", databaseQueryTemporalFieldEligible)
 	if err != nil {
 		return "", err
 	}
-	column, _, ok := databaseQueryColumn(input.State, leaf)
-	if !ok || column.TypeCategory != datasource.TypeTemporal && column.TypeCategory != datasource.TypeDate {
-		return "", fmt.Errorf("database query window field %q is not temporal", leaf)
-	}
-	return leaf, nil
+	return DecodeOpaqueModelChoice(raw, choices)
 }
 
 func DecodeDatabaseQueryWindowUnitLeaf(
@@ -102,19 +108,15 @@ func DecodeDatabaseQueryWindowUnitLeaf(
 	if err := input.validateField(); err != nil {
 		return "", err
 	}
-	leaf, err := decodeDatabaseQueryRawLeaf("database query window unit", raw)
+	choices, err := databaseQueryWindowUnitChoices(input)
 	if err != nil {
 		return "", err
 	}
-	unit := datasource.WindowUnit(leaf)
-	if !validDatabaseQueryWindowUnit(unit) {
-		return "", fmt.Errorf("database query window unit %q is not registered", unit)
+	value, err := DecodeOpaqueModelChoice(raw, choices)
+	if err != nil {
+		return "", err
 	}
-	column, _, _ := databaseQueryColumn(input.State, input.FieldID)
-	if unit == datasource.WindowHour && column.TypeCategory == datasource.TypeDate {
-		return "", fmt.Errorf("database query hour window does not support date field %q", input.FieldID)
-	}
-	return unit, nil
+	return datasource.WindowUnit(value), nil
 }
 
 func DecodeDatabaseQueryWindowAmountLeaf(

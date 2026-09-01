@@ -13,13 +13,15 @@ question; code binds that authority as the query and constructs every provider
 operation and argument. There is no search-term model station. No web model returns
 a JSON object, array, query, tool request, workflow decision, or aggregate review.
 
-Relevance is one candidate relation per call. Each raw result classifies only the
-supplied candidate as relevant or irrelevant. Code restores the opaque candidate ID,
-enforces the selection bound, and assembles the typed selection.
+Relevance is one candidate relation per call. Each raw result selects one call-local
+opaque letter between the relevant and irrelevant descriptions. Code maps that letter
+to its internal relation, restores the candidate identity, enforces the selection
+bound, and assembles the typed selection. Internal relation values never enter the
+model-visible text.
 
-Grounded synthesis begins with one bounded raw paragraph-candidate inventory, or the
-exact registered absence `NO_GROUNDED_PARAGRAPH_CANDIDATES`. Code parses that inventory
-once and owns a source-order queue. Each unique candidate first receives one
+Grounded synthesis begins with one bounded positive raw paragraph-candidate inventory
+containing between one and the code-owned maximum candidate lines. Code parses that
+inventory once and owns a source-order queue. Each unique candidate first receives one
 paragraph-local authorization relation against the exact question and complete supplied
 evidence set. That relation asks only whether the complete paragraph directly answers
 the question and whether every factual claim is fully supported by that evidence. A

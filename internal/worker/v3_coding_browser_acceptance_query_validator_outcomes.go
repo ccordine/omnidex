@@ -27,25 +27,20 @@ func (validator *directCodingBrowserAcceptanceQueryValidator) validateRequiredOu
 			"browser acceptance for an explicit derived-result relation requires at least one receipt-grounded public interaction; current result-relation authority does not prove a no-interaction result",
 		)
 	}
-	if validator.finalFireEventEnd > 0 {
-		if resultRelation == assemblyline.ApplicationRequirementExplicitResultRelation {
-			if !validator.hasOutputAssertionAfterFinalFireEvent() {
-				if validator.hasUnprovenTextAssertionAfterFinalFireEvent() {
-					return validator.unprovenTextOutcomeError()
-				}
-				return fmt.Errorf(
-					"browser acceptance for an explicit derived-result relation requires one qualifying exact named status-output assertion after the final fireEvent interaction",
-				)
-			}
-		} else if !validator.hasOutcomeAssertionAfterFinalFireEvent() {
+	if validator.finalFireEventEnd > 0 &&
+		resultRelation == assemblyline.ApplicationRequirementExplicitResultRelation {
+		if !validator.hasOutputAssertionAfterFinalFireEvent() {
 			if validator.hasUnprovenTextAssertionAfterFinalFireEvent() {
 				return validator.unprovenTextOutcomeError()
 			}
 			return fmt.Errorf(
-				"browser acceptance requires one qualifying outcome assertion after the final fireEvent interaction",
+				"browser acceptance for an explicit derived-result relation requires one qualifying exact named status-output assertion after the final fireEvent interaction",
 			)
 		}
 	}
+	// A no-derived-result receipt does not authorize code to invent a semantic
+	// postcondition. Its code-owned verifier may prove the initial surface and
+	// dispatch compatible interactions, but it cannot claim an unknown result.
 	if resultRelation == assemblyline.ApplicationRequirementExplicitResultRelation &&
 		len(validator.outputAssertionStarts) == 0 {
 		if len(validator.unprovenTextStarts) > 0 {
@@ -93,15 +88,6 @@ func (validator *directCodingBrowserAcceptanceQueryValidator) recordOutcomeAsser
 
 func (validator *directCodingBrowserAcceptanceQueryValidator) hasOutputAssertionAfterFinalFireEvent() bool {
 	for _, start := range validator.outputAssertionStarts {
-		if start > validator.finalFireEventEnd {
-			return true
-		}
-	}
-	return false
-}
-
-func (validator *directCodingBrowserAcceptanceQueryValidator) hasOutcomeAssertionAfterFinalFireEvent() bool {
-	for _, start := range validator.outcomeAssertionStarts {
 		if start > validator.finalFireEventEnd {
 			return true
 		}

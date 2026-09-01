@@ -26,8 +26,8 @@ var (
 )
 
 // ContextCandidateAuthority is one exact, code-acquired candidate. Namespace
-// identifies its code-owned authority class; CandidateID is the only value a
-// relevance station may return.
+// identifies its code-owned authority class. CandidateID remains code-owned;
+// one relevance call returns only the binary relation for this candidate.
 type ContextCandidateAuthority struct {
 	Namespace     string `json:"namespace"`
 	CandidateID   string `json:"candidate_id"`

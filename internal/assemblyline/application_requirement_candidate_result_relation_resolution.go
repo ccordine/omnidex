@@ -79,8 +79,8 @@ func canonicalApplicationRequirementCandidateResultRelation(
 		Candidate: input.Candidate, Kind: input.Kind, Cardinality: input.Cardinality,
 		Dimension: ApplicationRequirementDerivedValueDimension,
 	}
-	derived, err := DecodeApplicationRequirementCandidateResultPresenceResult(
-		derivedInput, string(derivedPresence),
+	derived, err := applicationRequirementCandidateResultPresenceResult(
+		derivedInput, derivedPresence,
 	)
 	if err != nil {
 		return ApplicationRequirementCandidateResultRelationResult{}, err
@@ -106,8 +106,8 @@ func canonicalApplicationRequirementCandidateResultRelation(
 		Dimension:            ApplicationRequirementDeterminingRelationDimension,
 		DerivedValuePresence: &derived,
 	}
-	determining, err := DecodeApplicationRequirementCandidateResultPresenceResult(
-		determiningInput, string(determiningPresence),
+	determining, err := applicationRequirementCandidateResultPresenceResult(
+		determiningInput, determiningPresence,
 	)
 	if err != nil {
 		return ApplicationRequirementCandidateResultRelationResult{}, err

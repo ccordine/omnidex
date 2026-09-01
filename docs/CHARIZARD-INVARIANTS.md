@@ -1,3 +1,13 @@
+# Historical, Non-Normative Charizard Design Material
+
+This transcript predates the current plain-text semantic-function boundary and is
+retained only as design provenance. Its response-schema, model-role, tool, planning,
+retry, review, and workflow-control language is not an Omnidex contract. `AGENTS.md`
+and the normative documents it names supersede every such example: code owns all
+structure and state, closed choices use the literal 0/1/2+ cardinality rule, and
+source correction exposes only one code-proven span to the same persisted job/model
+context.
+
 Charizard should be compounding competence
 
 This is bigger than “memory.”

@@ -34,21 +34,26 @@ const (
 )
 
 type LLMCallOpeningRecord struct {
-	Authority      model.StepAttemptAuthority
-	Scope          string
-	WorkID         string
-	WorkKind       assemblyline.WorkKind
-	RequestedModel string
-	Prepared       llm.PreparedModel
+	Authority            model.StepAttemptAuthority
+	Scope                string
+	WorkID               string
+	WorkKind             assemblyline.WorkKind
+	Iteration            int
+	OutputContinuation   int
+	ParentCallEvidenceID int64
+	SourceCorrection     *assemblyline.SourceBodyCorrectionEvidence
+	RequestedModel       string
+	Prepared             llm.PreparedModel
 }
 
 type LLMCallReceiptRecord struct {
-	Authority      model.StepAttemptAuthority
-	CallEvidenceID int64
-	Prepared       llm.PreparedModel
-	Generation     llm.PreparedGeneration
-	CallError      string
-	Elapsed        time.Duration
+	Authority          model.StepAttemptAuthority
+	CallEvidenceID     int64
+	Prepared           llm.PreparedModel
+	Generation         llm.PreparedGeneration
+	OutputLimitReached bool
+	CallError          string
+	Elapsed            time.Duration
 }
 
 // LLMCallOutcomeRecord appends the code-owned semantic validation result for
@@ -71,10 +76,8 @@ type LLMCallOutcome struct {
 	CreatedAt             time.Time            `json:"created_at"`
 }
 
-// LLMCallProjectionEvidence records the code-owned accepted span without
-// duplicating the potentially multi-megabyte source. Candidate remains the
-// immutable source of bytes on the call receipt; these fields bind the exact
-// accepted artifact to that source by kind, hashes, and byte boundaries.
+// LLMCallProjectionEvidence records the exact provider response identity
+// without duplicating its potentially multi-megabyte bytes.
 type LLMCallProjectionEvidence struct {
 	Kind                 assemblyline.PortableResultProjectionKind `json:"kind"`
 	SourceResponseSHA256 string                                    `json:"source_response_sha256"`
@@ -95,11 +98,19 @@ type LLMCallEvidence struct {
 	Scope                    string          `json:"scope"`
 	WorkID                   string          `json:"work_id"`
 	WorkKind                 string          `json:"work_kind"`
+	Iteration                int             `json:"iteration"`
+	OutputContinuation       int             `json:"output_continuation"`
+	ParentCallEvidenceID     int64           `json:"parent_call_evidence_id,omitempty"`
+	SourceBaseCandidate      string          `json:"source_base_candidate,omitempty"`
+	SourceBaseSHA256         string          `json:"source_base_sha256,omitempty"`
+	SourceStartByte          int             `json:"source_start_byte,omitempty"`
+	SourceEndByte            int             `json:"source_end_byte,omitempty"`
+	SourceQuestion           string          `json:"source_question,omitempty"`
+	SourceQuestionSHA256     string          `json:"source_question_sha256,omitempty"`
 	RequestedModel           string          `json:"requested_model"`
 	Model                    string          `json:"model"`
 	Protocol                 string          `json:"protocol"`
 	SystemEnvelope           string          `json:"system_envelope"`
-	PromptHint               string          `json:"prompt_hint"`
 	ModelInput               string          `json:"model_input"`
 	ModelInputSHA256         string          `json:"model_input_sha256"`
 	ModelInputBytes          int             `json:"model_input_bytes"`
@@ -121,6 +132,7 @@ type LLMCallEvidence struct {
 	PromptTokens             int             `json:"prompt_tokens"`
 	OutputTokens             int             `json:"output_tokens"`
 	ProviderDurationNanos    int64           `json:"provider_duration_nanos"`
+	OutputLimitReached       bool            `json:"output_limit_reached"`
 	Status                   LLMCallStatus   `json:"status"`
 	Error                    string          `json:"error,omitempty"`
 	ErrorSHA256              string          `json:"error_sha256,omitempty"`

@@ -9,7 +9,7 @@ import (
 const PlainTextAdapterID = "plain_text"
 
 // ComposePlainTextDocument constructs one document from independently owned
-// text nodes. It preserves accepted node bytes exactly and adds no framing.
+// text nodes. Code applies the LF framing to generated plain-text responses.
 func ComposePlainTextDocument(
 	document SourceDocument,
 	composition SourceComposition,
@@ -35,7 +35,13 @@ func ComposePlainTextDocument(
 					"generated block %s has no text node", block.ID,
 				)
 			}
-			node = candidate
+			var err error
+			node, err = NormalizeTextFragmentResponse(candidate)
+			if err != nil {
+				return ComposedSourceDocument{}, fmt.Errorf(
+					"plain-text block %s response: %w", block.ID, err,
+				)
+			}
 		}
 		if err := ValidateTextFragment(node); err != nil {
 			return ComposedSourceDocument{}, fmt.Errorf(

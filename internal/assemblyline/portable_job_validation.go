@@ -85,14 +85,6 @@ func (input FragmentGenerationInput) validate() error {
 	if err := validatePortableFragmentCore(input.Language, input.Signature, input.Capabilities, input.PermittedSymbols); err != nil {
 		return err
 	}
-	if input.PublicInteractionSurface != nil {
-		if input.Language != "typescript" {
-			return fmt.Errorf("public interaction surface requires TypeScript fragment generation")
-		}
-		if err := input.PublicInteractionSurface.Validate(); err != nil {
-			return fmt.Errorf("fragment generation public interaction surface: %w", err)
-		}
-	}
 	if input.Behavior == "" || input.Behavior != strings.TrimSpace(input.Behavior) {
 		return fmt.Errorf("fragment generation behavior is required and must be trimmed")
 	}
@@ -112,17 +104,6 @@ func (input FragmentGenerationInput) validate() error {
 func (input FragmentGenerationInput) ValidatePathFree(
 	provenance ArtifactIdentityProvenance,
 ) error {
-	if input.PublicInteractionSurface != nil {
-		receipt, err := input.PublicInteractionSurface.Render()
-		if err != nil {
-			return fmt.Errorf("render fragment generation public interaction surface: %w", err)
-		}
-		if err := ValidatePathFreeModelContextWithProvenance(
-			"fragment generation public interaction surface", provenance, receipt,
-		); err != nil {
-			return err
-		}
-	}
 	if err := ValidatePathFreeModelContextWithProvenance(
 		"fragment generation behavior", provenance, input.Dialect, input.Behavior,
 	); err != nil {
@@ -136,104 +117,6 @@ func (input FragmentGenerationInput) ValidatePathFree(
 	)
 }
 
-func (input FragmentGenerationReplacementInput) validate() error {
-	if err := input.Original.validate(); err != nil {
-		return fmt.Errorf("fragment generation replacement original: %w", err)
-	}
-	return nil
-}
-
-func (input FragmentCorrectionInput) validate() error {
-	if (input.Language == "") != (input.Signature == "") {
-		return fmt.Errorf("fragment correction language and signature metadata must be both present or both absent")
-	}
-	if input.Language != "" {
-		if err := validatePortableFragmentCore(
-			input.Language, input.Signature, input.Capabilities, input.PermittedSymbols,
-		); err != nil {
-			return err
-		}
-	}
-	if input.RepairGuidance == "" || input.RepairGuidance != strings.TrimSpace(input.RepairGuidance) {
-		return fmt.Errorf("fragment correction requires one trimmed repair guidance instruction")
-	}
-	if len(input.RepairGuidance) > maxTypeScriptRepairGuidanceBytes {
-		return fmt.Errorf(
-			"fragment correction repair guidance exceeds %d bytes",
-			maxTypeScriptRepairGuidanceBytes,
-		)
-	}
-	if input.RequiredChange != "" || input.Diagnostic != "" {
-		return fmt.Errorf(
-			"fragment correction executor cannot receive a raw diagnostic or required change",
-		)
-	}
-	if len(input.Capabilities) != 0 || len(input.PermittedSymbols) != 0 {
-		return fmt.Errorf(
-			"fragment correction executor cannot receive diagnostic-analysis context",
-		)
-	}
-	current := input.CurrentDeclaration
-	if (current == "") == (input.RepairRegion == nil) {
-		return fmt.Errorf("fragment correction requires exactly one current declaration or repair region")
-	}
-	if current != "" {
-		if current != strings.TrimSpace(current) {
-			return fmt.Errorf("fragment correction current declaration must be trimmed")
-		}
-	}
-	if input.RepairRegion != nil {
-		if input.Language != "typescript" || input.Signature == "" {
-			return fmt.Errorf("fragment correction repair regions require TypeScript")
-		}
-		if err := input.RepairRegion.validate(); err != nil {
-			return fmt.Errorf("fragment correction repair region: %w", err)
-		}
-	}
-	return input.ValidatePathFree(ArtifactIdentityProvenance{})
-}
-
-// ValidatePathFree preserves source grammar in declaration and repair-region
-// fields, keeps diagnostics on the strict prose boundary, and preserves the
-// already validated repair instruction's mixed prose/source-literal grammar.
-func (input FragmentCorrectionInput) ValidatePathFree(
-	provenance ArtifactIdentityProvenance,
-) error {
-	proseValues := []string{input.RequiredChange, input.Diagnostic}
-	sourceValues := []string{input.Signature, input.CurrentDeclaration}
-	sourceValues = append(sourceValues, input.Capabilities...)
-	sourceValues = append(sourceValues, input.PermittedSymbols...)
-	if input.RepairRegion != nil {
-		sourceValues = append(sourceValues, input.RepairRegion.Source)
-		for _, binding := range append(
-			append([]TypeScriptRepairBinding(nil), input.RepairRegion.Bindings...),
-			input.RepairRegion.UnavailableBindings...,
-		) {
-			sourceValues = append(sourceValues, binding.Name, binding.Type)
-			sourceValues = append(sourceValues, binding.CallableSignatures...)
-			sourceValues = append(sourceValues, binding.Members...)
-		}
-		for _, evidence := range input.RepairRegion.ExpressionEvidence {
-			sourceValues = append(sourceValues, evidence.Source, evidence.InferredType, evidence.ContextualType)
-			sourceValues = append(sourceValues, evidence.IncompatibleTypes...)
-			sourceValues = append(sourceValues, evidence.ReferencedBindings...)
-		}
-	}
-	if err := ValidatePathFreeModelContextWithProvenance(
-		"fragment correction", provenance, proseValues...,
-	); err != nil {
-		return err
-	}
-	if err := ValidatePathFreeRepairInstructionModelContextWithProvenance(
-		"fragment correction repair guidance", provenance, input.RepairGuidance,
-	); err != nil {
-		return err
-	}
-	return ValidatePathFreeSourceModelContextWithProvenance(
-		"fragment correction", provenance, sourceValues...,
-	)
-}
-
 func validatePortableFragmentCore(language, signature string, capabilities, symbols []string) error {
 	if language == "" || language != strings.TrimSpace(language) {
 		return fmt.Errorf("fragment language is required and must be trimmed")
@@ -244,7 +127,9 @@ func validatePortableFragmentCore(language, signature string, capabilities, symb
 	if len(signature) > 1024 {
 		return fmt.Errorf("fragment signature exceeds 1024 bytes")
 	}
-	if err := validatePortableStringSet("capability", capabilities); err != nil {
+	if err := validateBoundedPortableStringSet(
+		"capability", capabilities, MaxSourceCapabilityContextBytes,
+	); err != nil {
 		return err
 	}
 	return validateBoundedPortableStringSet("permitted symbol", symbols, 1024)

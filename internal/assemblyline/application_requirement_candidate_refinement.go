@@ -2,7 +2,6 @@ package assemblyline
 
 import (
 	"fmt"
-	"strings"
 )
 
 const (
@@ -71,17 +70,15 @@ func BuildApplicationRequirementCandidateCardinalityPrompt(
 	if err := input.validate(); err != nil {
 		return "", err
 	}
-	return strings.Join([]string{
-		"Answer one semantic relation about the exact candidate below: does it describe exactly one independently testable runtime outcome, or multiple independently testable runtime outcomes?",
-		"A runtime outcome is one concrete capability, observable behavior, user-visible element, observable quality, state or persistence behavior, or runtime data or output format. Count distinct concrete actions, elements, qualities, or outcomes separately even when one sentence or umbrella phrase joins them.",
-		"The observable operands, condition or trigger, determining relation, and resulting output that jointly define one end-to-end behavior are parts of that one outcome, not separate outcomes.",
-		"That end-to-end grouping applies to one required observable response meaning. A second required response meaning is a separate outcome whether its condition or trigger differs or is shared.",
-		"Do not count the grammatical subject, presentation or container wording, modifiers, or a purpose clause as additional outcomes. Presenting one concrete behavior or element inside an interface, page, command, output, or other container is one outcome unless the candidate independently requires another concrete behavior or element.",
-		"Return ONE_RUNTIME_OUTCOME only when one independent runtime assertion is sufficient to test the whole candidate. Return MULTIPLE_RUNTIME_OUTCOMES when two or more independent runtime assertions are required.",
-		"Return exactly that raw registered value and nothing else: no JSON, quotes, label, Markdown, or commentary.",
-		"EXACT REQUIREMENT CANDIDATE:\n" + input.Candidate,
-		"FINAL QUESTION:\nDoes this exact candidate contain one runtime outcome or multiple runtime outcomes? Return only ONE_RUNTIME_OUTCOME or MULTIPLE_RUNTIME_OUTCOMES.",
-	}, "\n\n"), nil
+	choices, err := applicationRequirementCandidateCardinalityOpaqueChoices()
+	if err != nil {
+		return "", err
+	}
+	return RenderOpaqueModelChoiceQuestion(
+		"How many independently testable runtime outcomes does this candidate describe? A runtime outcome is one concrete capability, observable behavior, user-visible element, observable quality, state or persistence behavior, or runtime data or output format. Count distinct concrete actions, elements, qualities, or outcomes separately. Operands, a condition or trigger, a determining relation, and the resulting output that jointly define one end-to-end behavior remain one outcome. A second observable response meaning is separate. Grammatical subjects, container wording, modifiers, and purpose clauses do not add outcomes by themselves.",
+		[]string{"Requirement candidate:\n" + input.Candidate},
+		choices,
+	)
 }
 
 func DecodeApplicationRequirementCandidateCardinalityResult(
@@ -92,9 +89,11 @@ func DecodeApplicationRequirementCandidateCardinalityResult(
 	if err := input.validate(); err != nil {
 		return zero, err
 	}
-	leaf, err := decodeRawSemanticLeaf(
-		"application requirement candidate cardinality", raw, 32, false,
-	)
+	choices, err := applicationRequirementCandidateCardinalityOpaqueChoices()
+	if err != nil {
+		return zero, err
+	}
+	leaf, err := DecodeOpaqueModelChoice(raw, choices)
 	if err != nil {
 		return zero, err
 	}
@@ -107,4 +106,22 @@ func DecodeApplicationRequirementCandidateCardinalityResult(
 		return zero, err
 	}
 	return result, nil
+}
+
+func applicationRequirementCandidateCardinalityOpaqueChoices() ([]OpaqueModelChoice, error) {
+	one, err := NewOpaqueModelChoice(
+		"One independent runtime assertion is sufficient to test the complete candidate.",
+		ApplicationRequirementOneRuntimeOutcome,
+	)
+	if err != nil {
+		return nil, err
+	}
+	multiple, err := NewOpaqueModelChoice(
+		"Two or more independent runtime assertions are required to test the complete candidate.",
+		ApplicationRequirementMultipleRuntimeOutcomes,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return []OpaqueModelChoice{one, multiple}, nil
 }

@@ -40,7 +40,8 @@ operation inputs, selects supporting evidence, executes transitions, and repeats
 Inference is an interrupt, not the loop. A model call is invalid unless code has first
 exhausted registered deterministic work and persisted one precisely named semantic
 uncertainty that it cannot resolve. The model crosses only that uncertainty and
-returns one station-specific typed leaf. It never chooses an environment operation,
+returns one ordinary raw-text semantic value. Code alone decodes that value into the
+station-specific typed leaf. It never chooses an environment operation,
 constructs an operation input, cites action evidence, predicts an effect, manages the
 Working Set, proposes a plan while acting, or declares completion.
 
@@ -203,9 +204,10 @@ surface, station boundary, recovery rules, forbidden model outputs, and removal 
 the rejected universal decision path are normative in
 [`CHARMELEON_COGNITION_RESOLUTION.md`](CHARMELEON_COGNITION_RESOLUTION.md).
 
-The model never decides what operation to invoke. It may return only the one typed
-leaf permitted by the station for the persisted uncertainty. Code records that value
-and reruns deterministic closure.
+The model never decides what operation to invoke. It returns one ordinary raw-text
+semantic value for the persisted uncertainty. Code parses it into the station's typed
+leaf, records that value, and reruns deterministic closure; typed structure is never a
+model reproduction requirement.
 
 ## Obligation graph
 
@@ -240,9 +242,9 @@ one registered named semantic uncertainty?
               ↓
         Context Builder seals one station-specific projection
               ↓
-        model returns one typed leaf
+        model returns one ordinary raw-text semantic value
               ↓
-        code validates and records it, then reruns closure
+        code decodes, validates, and records the typed leaf, then reruns closure
         ↓
 environment commits one transition or one explicit failure
         ↓
@@ -272,9 +274,14 @@ disposable station Context Projection and load it by exact projection identity
 immediately before inference. Deterministic operations create no fake model work and
 require no model provider. Provider discovery, attestation, and process activation
 are also deferred until that uncertainty exists. A fully deterministic episode starts
-and seals without provider bootstrap, activation, projection, or call evidence. A
-station retains no prior prompt, response, transcript tail, or message buffer after
-the call.
+and seals without provider bootstrap, activation, projection, or call evidence. An
+accepted or terminal semantic station retains no conversation tail or message buffer.
+The sole source-body exception exists only while one response is deterministically
+rejected: code persists its exact prompt, response, job, model, and defect outcome so a
+bounded continuation can remain in that same context. Persistence does not make the
+complete response model-visible again: code projects only the proven mutable span and
+one necessary semantic question, then splices the returned ordinary text into the
+retained base. Acceptance or exhaustion releases the continuation context.
 
 Two budgets remain distinct:
 
@@ -285,9 +292,9 @@ Two budgets remain distinct:
 
 Consuming one episode call decrements only the remaining-call allowance. It does not
 shrink the next station's input or output capacity. Candidate selection, semantic
-classification, one declaration, one repair-guidance instruction, and one
-repair-executor source node may therefore each use their complete registered budget
-while seeing different exact projections. Environment execution is not itself a model
+classification, and one ordinary source-body response each use their registered budget.
+A rejected source body can consume only the remainder of its three-call job-local bound
+while retaining the same model route. Environment execution is not itself a model
 station.
 
 Conversation history is never selected by `last N`. The current direct instruction,

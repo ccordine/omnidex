@@ -74,7 +74,7 @@ func Load() Config {
 		ModelAuthority:          modelAuthority,
 		EmbeddingModel:          embeddingModelForProvider(embeddingProvider, providerModels),
 		WorkerPollInterval:      getenv("WORKER_POLL_INTERVAL", "2s"),
-		RequestTimeout:          getenv("REQUEST_TIMEOUT", "10m"),
+		RequestTimeout:          getenv("REQUEST_TIMEOUT", "30m"),
 		RealtimeStreamMaxAge:    getenv("REALTIME_STREAM_MAX_AGE", "10m"),
 		RealtimeHeartbeat:       getenv("REALTIME_HEARTBEAT", "25s"),
 		RealtimeWriteTimeout:    getenv("REALTIME_WRITE_TIMEOUT", "10s"),

@@ -69,6 +69,9 @@ func reduceObjectiveDatabaseCandidates(
 	var ledger objectiveDatabaseBoundedCallLedger
 	selected := make([]assemblyline.DatabaseSchemaCandidate, 0, databaseSchemaSelectionLimit)
 	for start := 0; start < len(candidates); start += databaseSchemaSelectionChunk {
+		if len(selected) == databaseSchemaSelectionLimit {
+			break
+		}
 		if ledger.freshCalls() > maxDatabaseSchemaSelectionModelCalls-exactSemanticLeafCalls {
 			return nil, ledger.partial(), fmt.Errorf(
 				"database schema selection exceeded its %d-call semantic reduction bound",
@@ -80,24 +83,29 @@ func reduceObjectiveDatabaseCandidates(
 			end = len(candidates)
 		}
 		chunk := append([]assemblyline.DatabaseSchemaCandidate(nil), candidates[start:end]...)
-		bound := databaseSchemaSelectionLimit
+		remainingCapacity := databaseSchemaSelectionLimit - len(selected)
+		bound := remainingCapacity
 		if bound > len(chunk) {
 			bound = len(chunk)
 		}
 		input := assemblyline.DatabaseSchemaSelectionInput{
 			EvidenceNeedID: evidenceNeedID, ExactNeed: exactNeed,
-			Context:    assemblyline.CloneObjectiveContext(objectiveContext),
-			Candidates: chunk, MaxSelections: bound,
+			Context:              assemblyline.CloneObjectiveContext(objectiveContext),
+			Candidates:           chunk,
+			MaxSelections:        bound,
+			HasAcceptedRelations: len(selected) > 0,
 		}
 		decision, receipt, err := stations.SelectSchema(ctx, input)
 		if err != nil {
 			return nil, ledger.partial(), err
 		}
-		if err := ledger.record(
-			"database schema reduction", "selection chunk", receipt,
-			maxDatabaseSchemaSelectionLeafCalls,
-		); err != nil {
-			return nil, ledger.partial(), err
+		if receipt != (objectiveStationReceipt{}) {
+			if err := ledger.record(
+				"database schema reduction", "selection chunk", receipt,
+				maxDatabaseSchemaSelectionLeafCalls,
+			); err != nil {
+				return nil, ledger.partial(), err
+			}
 		}
 		if ledger.freshCalls() > maxDatabaseSchemaSelectionModelCalls {
 			return nil, ledger.partial(), fmt.Errorf(
@@ -133,14 +141,21 @@ func objectiveDatabaseRelationDescriptor(snapshot datasource.SchemaSnapshot, rel
 	}
 	relation := projection.Relations[0]
 	var rendered strings.Builder
-	fmt.Fprintf(&rendered, "RELATION label=%s.%s kind=%s\n", relation.SchemaName, relation.Name, relation.Kind)
+	fmt.Fprintf(
+		&rendered, "%s.%s is a %s relation.\n",
+		relation.SchemaName, relation.Name, relation.Kind,
+	)
 	for _, column := range relation.Columns {
+		nullability := "does not allow missing values"
+		if column.Nullable {
+			nullability = "allows missing values"
+		}
 		fmt.Fprintf(
-			&rendered, "FIELD label=%s type=%s nullable=%t",
-			column.Name, column.TypeCategory, column.Nullable,
+			&rendered, "Field %s contains %s values and %s.",
+			column.Name, column.TypeCategory, nullability,
 		)
 		if len(column.AllowedValues) > 0 {
-			fmt.Fprintf(&rendered, " allowed=%s", strings.Join(column.AllowedValues, " | "))
+			fmt.Fprintf(&rendered, " Its allowed values are %s.", strings.Join(column.AllowedValues, ", "))
 		}
 		rendered.WriteByte('\n')
 	}
@@ -160,9 +175,9 @@ func objectiveDatabaseRelationDescriptor(snapshot datasource.SchemaSnapshot, rel
 			return "", fmt.Errorf("database relation %q referenced foreign key: %w", relation.Name, err)
 		}
 		fmt.Fprintf(
-			&rendered, "FOREIGN KEY fields=%s references=%s.%s fields=%s\n",
-			strings.Join(columnLabels, " | "), referencedRelation.Schema, referencedRelation.Name,
-			strings.Join(referencedLabels, " | "),
+			&rendered, "Fields %s reference %s.%s fields %s.\n",
+			strings.Join(columnLabels, ", "), referencedRelation.Schema, referencedRelation.Name,
+			strings.Join(referencedLabels, ", "),
 		)
 	}
 	value := strings.TrimSpace(rendered.String())

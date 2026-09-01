@@ -1,7 +1,6 @@
 package assemblyline
 
 import (
-	"encoding/json"
 	"fmt"
 	"regexp"
 	"strings"
@@ -134,30 +133,29 @@ func BuildApplicationProjectStackConstraintPrompt(
 	if err := input.validate(); err != nil {
 		return "", err
 	}
-	authority, err := json.Marshal(struct {
-		UserRequest string `json:"user_request"`
-	}{input.UserRequest})
+	choices, err := applicationProjectStackConstraintOpaqueChoices(input.Candidates)
 	if err != nil {
-		return "", fmt.Errorf("encode project stack constraint authority: %w", err)
+		return "", err
 	}
-	candidates, err := json.Marshal(input.Candidates)
-	if err != nil {
-		return "", fmt.Errorf("encode project stack candidates: %w", err)
-	}
-	return strings.Join([]string{
-		"Determine which one registered technical format and packaging shape can realize the immutable software request.",
-		"Return one opaque candidate ID for the suitable format. Return UNSUPPORTED only when none of the registered formats can satisfy an explicit technical constraint in the request.",
-		"Return exactly that raw ID token and nothing else: no JSON, quotes, label, Markdown, or commentary.",
-		"IMMUTABLE_SOFTWARE_REQUEST:\n" + string(authority),
-		"REGISTERED_TECHNICAL_FORMATS:\n" + string(candidates),
-	}, "\n\n"), nil
+	return RenderOpaqueModelChoiceQuestion(
+		"Which registered technical format and packaging shape can realize the software request? Select the no-suitable-format choice only when every registered format conflicts with an explicit technical constraint in the request.",
+		[]string{"Software request:\n" + input.UserRequest},
+		choices,
+	)
 }
 
 func DecodeApplicationProjectStackConstraintDecision(
 	input ApplicationProjectStackConstraintInput,
 	raw string,
 ) (ApplicationProjectStackConstraintDecision, error) {
-	leaf, err := decodeRawSemanticLeaf("project stack candidate", raw, 64, false)
+	if err := input.validate(); err != nil {
+		return ApplicationProjectStackConstraintDecision{}, err
+	}
+	choices, err := applicationProjectStackConstraintOpaqueChoices(input.Candidates)
+	if err != nil {
+		return ApplicationProjectStackConstraintDecision{}, err
+	}
+	leaf, err := DecodeOpaqueModelChoice(raw, choices)
 	if err != nil {
 		return ApplicationProjectStackConstraintDecision{}, err
 	}
@@ -168,4 +166,38 @@ func DecodeApplicationProjectStackConstraintDecision(
 		return ApplicationProjectStackConstraintDecision{}, err
 	}
 	return decision, nil
+}
+
+func applicationProjectStackCandidateOpaqueChoices(
+	candidates []ApplicationProjectStackCandidate,
+) ([]OpaqueModelChoice, error) {
+	choices := make([]OpaqueModelChoice, 0, len(candidates))
+	for _, candidate := range candidates {
+		choice, err := NewOpaqueModelChoice(
+			"Use this technical format and packaging shape: "+candidate.TechnicalFormat,
+			candidate.CandidateID,
+		)
+		if err != nil {
+			return nil, err
+		}
+		choices = append(choices, choice)
+	}
+	return choices, nil
+}
+
+func applicationProjectStackConstraintOpaqueChoices(
+	candidates []ApplicationProjectStackCandidate,
+) ([]OpaqueModelChoice, error) {
+	choices, err := applicationProjectStackCandidateOpaqueChoices(candidates)
+	if err != nil {
+		return nil, err
+	}
+	unsupported, err := NewOpaqueModelChoice(
+		"No registered technical format can satisfy an explicit technical constraint in the request.",
+		ApplicationProjectStackUnsupported,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return append(choices, unsupported), nil
 }

@@ -22,7 +22,7 @@ func TestApplicationRequirementDeterminingRelationPromptDefinesParametricRules(t
 				Dimension: ApplicationRequirementDerivedValueDimension,
 			}
 			derived, err := DecodeApplicationRequirementCandidateResultPresenceResult(
-				derivedInput, string(ApplicationRequirementCandidateResultPresent),
+				derivedInput, "A",
 			)
 			if err != nil {
 				t.Fatal(err)
@@ -40,10 +40,10 @@ func TestApplicationRequirementDeterminingRelationPromptDefinesParametricRules(t
 			for _, required := range []string{
 				candidate,
 				"family of result-bearing operations over governed inputs",
-				"The family name and governed inputs are sufficient by themselves",
+				"An operation-family name and governed inputs suffice",
 				"named intrinsic or mechanically observable property",
 				"Named dimensions, lengths, counts",
-				"Do not apply this ABSENT rule to a named operation family over governed inputs or a named intrinsic property",
+				"Merely calling an output calculated, computed, evaluated",
 			} {
 				if !strings.Contains(prompt, required) {
 					t.Fatalf("prompt does not contain required operation-family contract %q", required)
@@ -99,8 +99,12 @@ func TestApplicationRequirementCandidateResultRelationFoldsBoundBinaryLeaves(t *
 				Cardinality: authority.Cardinality,
 				Dimension:   ApplicationRequirementDerivedValueDimension,
 			}
+			derivedRaw := "B"
+			if fixture.derived == ApplicationRequirementCandidateResultPresent {
+				derivedRaw = "A"
+			}
 			derived, err := DecodeApplicationRequirementCandidateResultPresenceResult(
-				derivedInput, string(fixture.derived),
+				derivedInput, derivedRaw,
 			)
 			if err != nil {
 				t.Fatal(err)
@@ -114,8 +118,12 @@ func TestApplicationRequirementCandidateResultRelationFoldsBoundBinaryLeaves(t *
 					Dimension:            ApplicationRequirementDeterminingRelationDimension,
 					DerivedValuePresence: &derived,
 				}
+				determiningRaw := "B"
+				if fixture.determining == ApplicationRequirementCandidateResultPresent {
+					determiningRaw = "A"
+				}
 				decoded, decodeErr := DecodeApplicationRequirementCandidateResultPresenceResult(
-					determiningInput, string(fixture.determining),
+					determiningInput, determiningRaw,
 				)
 				if decodeErr != nil {
 					t.Fatal(decodeErr)
@@ -147,7 +155,7 @@ func TestApplicationRequirementCandidateResultRelationRejectsTamperAndUnderdeter
 		Dimension: ApplicationRequirementDerivedValueDimension,
 	}
 	derived, err := DecodeApplicationRequirementCandidateResultPresenceResult(
-		derivedInput, string(ApplicationRequirementCandidateResultPresent),
+		derivedInput, "A",
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -158,7 +166,7 @@ func TestApplicationRequirementCandidateResultRelationRejectsTamperAndUnderdeter
 		DerivedValuePresence: &derived,
 	}
 	determining, err := DecodeApplicationRequirementCandidateResultPresenceResult(
-		determiningInput, string(ApplicationRequirementCandidateResultAbsent),
+		determiningInput, "B",
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -207,7 +215,7 @@ func TestApplicationRequirementOutcomeRelationBindsAcceptedResultReceipt(t *test
 		Dimension:   ApplicationRequirementDerivedValueDimension,
 	}
 	derived, err := DecodeApplicationRequirementCandidateResultPresenceResult(
-		derivedInput, string(ApplicationRequirementCandidateResultAbsent),
+		derivedInput, "B",
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -224,7 +232,7 @@ func TestApplicationRequirementOutcomeRelationBindsAcceptedResultReceipt(t *test
 		AcceptedRequirement: accepted, AcceptedResultRelation: acceptedReceipt,
 	}
 	result, err := DecodeApplicationRequirementCandidateOutcomeRelationResult(
-		input, ApplicationRequirementDistinctRuntimeOutcomes,
+		input, "B",
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -248,7 +256,7 @@ func applicationRequirementCandidateResultRelationAuthorityFixture(
 		Candidate: candidate, Dimension: ApplicationRequirementCandidateRuntimeContentDimension,
 	}
 	runtimeContent, err := DecodeApplicationRequirementCandidateContentPresenceResult(
-		runtimeInput, string(ApplicationRequirementCandidateContentPresent),
+		runtimeInput, "A",
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -257,7 +265,7 @@ func applicationRequirementCandidateResultRelationAuthorityFixture(
 		Candidate: candidate, Dimension: ApplicationRequirementCandidateNonRuntimeContentDimension,
 	}
 	nonRuntimeContent, err := DecodeApplicationRequirementCandidateContentPresenceResult(
-		nonRuntimeInput, string(ApplicationRequirementCandidateContentAbsent),
+		nonRuntimeInput, "B",
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -270,7 +278,7 @@ func applicationRequirementCandidateResultRelationAuthorityFixture(
 	}
 	cardinality, err := DecodeApplicationRequirementCandidateCardinalityResult(
 		ApplicationRequirementCandidateCardinalityInput{Candidate: candidate},
-		ApplicationRequirementOneRuntimeOutcome,
+		"A",
 	)
 	if err != nil {
 		t.Fatal(err)

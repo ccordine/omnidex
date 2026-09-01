@@ -36,9 +36,8 @@ type ArtifactAdapter interface {
     Recognize(path string, project ProjectFacts) bool
     Parse(source []byte) ArtifactStructure
     Validate(source []byte) []Diagnostic
-    LocateDiagnostic(source []byte, diagnostic Diagnostic) RepairRegion
-    LocalContext(source []byte, region RepairRegion) LocalFacts
-    Splice(source []byte, region RepairRegion, replacement []byte) []byte
+    LocateDefect(source []byte, diagnostic Diagnostic) MutableSpan
+    Splice(source []byte, span MutableSpan, replacement []byte) []byte
 }
 
 Not necessarily literally this interface, but that boundary.
@@ -49,19 +48,21 @@ FILE LEAF
    ↓
 CODE chooses artifact adapter
    ↓
-CONTENT STATION
-"What must this file contain/change?"
+CODE compiles exact declaration and one unresolved body responsibility
    ↓
-CODE decomposes it appropriately
+SOURCE-BODY STATION
+ordinary implementation text for that one responsibility
    ↓
-SOURCE STATION
-one bounded responsibility
-   ↓
-ADAPTER validates
+CODE supplies the declaration; ADAPTER parses and validates
    ↓
 real compiler/linter/parser/test/runtime
    ↓
 continue
+
+When validation proves one exact mutable span, only the same persisted source-body
+job/model context continues. It sees one necessary semantic question and that span,
+returns ordinary replacement text, and code performs the splice. It never receives the
+complete previous body or responsibility for preserving surrounding source.
 
 What differs by language is the deterministic machinery, not the architecture
 

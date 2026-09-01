@@ -1,18 +1,10 @@
 package assemblyline
 
 import (
-	"bytes"
-	"encoding/json"
 	"fmt"
-	"io"
 	"strings"
 
 	"github.com/gryph/omnidex/internal/roleplay"
-)
-
-const (
-	RoleplayOngoingStateLeafV1 = "omnidex.roleplay-ongoing-action.v1"
-	RoleplayOngoingActionNone  = "NONE"
 )
 
 type RoleplayOngoingActionSource string
@@ -22,27 +14,52 @@ const (
 	RoleplayOngoingActionSourceUserAction        RoleplayOngoingActionSource = "user_action"
 )
 
-type RoleplayOngoingActionInput struct {
+// RoleplayOngoingActionRelation is a code-owned interpretation of one opaque
+// model choice. Its values are never rendered into model context.
+type RoleplayOngoingActionRelation string
+
+const (
+	RoleplayOngoingActionAbsent      RoleplayOngoingActionRelation = "absent"
+	RoleplayOngoingActionUnchanged   RoleplayOngoingActionRelation = "unchanged"
+	RoleplayOngoingActionReplacement RoleplayOngoingActionRelation = "replacement"
+)
+
+type RoleplayOngoingActionRelationInput struct {
 	CharacterName         string                      `json:"character_name"`
 	Source                RoleplayOngoingActionSource `json:"source"`
 	ExactContribution     string                      `json:"exact_contribution"`
 	PreviousOngoingAction *string                     `json:"previous_ongoing_action"`
 }
 
-// RoleplayOngoingActionDecision carries exactly one nullable semantic leaf.
-// Code constructs the internal RawMessage after decoding the model's raw leaf.
-type RoleplayOngoingActionDecision struct {
-	Schema        string          `json:"schema"`
-	OngoingAction json.RawMessage `json:"ongoing_action"`
+// RoleplayOngoingActionValueInput contains only the context needed to name a
+// newly established ongoing action. The previous state remains code-owned.
+type RoleplayOngoingActionValueInput struct {
+	CharacterName     string                      `json:"character_name"`
+	Source            RoleplayOngoingActionSource `json:"source"`
+	ExactContribution string                      `json:"exact_contribution"`
 }
 
-func NewRoleplayOngoingActionJob(input RoleplayOngoingActionInput) (PortableJob, error) {
-	return newPortableJob(WorkRoleplayOngoingAction, input)
+func NewRoleplayOngoingActionRelationJob(
+	input RoleplayOngoingActionRelationInput,
+) (PortableJob, error) {
+	if err := input.validate(); err != nil {
+		return PortableJob{}, err
+	}
+	return newPortableJob(WorkRoleplayOngoingActionRelation, input)
 }
 
-func (input RoleplayOngoingActionInput) validate() error {
-	if err := validateContextText(
-		"roleplay ongoing-action character name", input.CharacterName, 256,
+func NewRoleplayOngoingActionValueJob(
+	input RoleplayOngoingActionValueInput,
+) (PortableJob, error) {
+	if err := input.validate(); err != nil {
+		return PortableJob{}, err
+	}
+	return newPortableJob(WorkRoleplayOngoingActionValue, input)
+}
+
+func (input RoleplayOngoingActionRelationInput) validate() error {
+	if err := validateRoleplayOngoingActionAuthority(
+		input.CharacterName, input.Source, input.ExactContribution,
 	); err != nil {
 		return err
 	}
@@ -51,8 +68,27 @@ func (input RoleplayOngoingActionInput) validate() error {
 			return fmt.Errorf("roleplay previous ongoing action: %w", err)
 		}
 	}
+	return nil
+}
+
+func (input RoleplayOngoingActionValueInput) validate() error {
+	return validateRoleplayOngoingActionAuthority(
+		input.CharacterName, input.Source, input.ExactContribution,
+	)
+}
+
+func validateRoleplayOngoingActionAuthority(
+	characterName string,
+	source RoleplayOngoingActionSource,
+	exactContribution string,
+) error {
+	if err := validateContextText(
+		"roleplay ongoing-action character name", characterName, 256,
+	); err != nil {
+		return err
+	}
 	maximum := 0
-	switch input.Source {
+	switch source {
 	case RoleplayOngoingActionSourceAssistantResponse:
 		maximum = roleplay.MaxNarrativeResponseBytes
 	case RoleplayOngoingActionSourceUserAction:
@@ -61,95 +97,148 @@ func (input RoleplayOngoingActionInput) validate() error {
 		return fmt.Errorf("roleplay ongoing-action source is invalid")
 	}
 	return validateGroundedText(
-		"roleplay ongoing-action exact contribution", input.ExactContribution,
+		"roleplay ongoing-action exact contribution", exactContribution,
 		maximum, true,
 	)
 }
 
-func (decision RoleplayOngoingActionDecision) ResolveFor(
-	input RoleplayOngoingActionInput,
-) (*string, error) {
-	if err := input.validate(); err != nil {
-		return nil, err
-	}
-	if decision.Schema != RoleplayOngoingStateLeafV1 {
-		return nil, fmt.Errorf(
-			"roleplay ongoing-action schema must be %q", RoleplayOngoingStateLeafV1,
-		)
-	}
-	if len(decision.OngoingAction) == 0 {
-		return nil, fmt.Errorf("roleplay ongoing_action must be an explicit string or null")
-	}
-	if bytes.Equal(bytes.TrimSpace(decision.OngoingAction), []byte("null")) {
-		return nil, nil
-	}
-	var action string
-	decoder := json.NewDecoder(bytes.NewReader(decision.OngoingAction))
-	if err := decoder.Decode(&action); err != nil {
-		return nil, fmt.Errorf("roleplay ongoing_action must be an explicit string or null: %w", err)
-	}
-	var trailing any
-	if err := decoder.Decode(&trailing); err != io.EOF {
-		if err == nil {
-			return nil, fmt.Errorf("roleplay ongoing_action contains trailing JSON")
-		}
-		return nil, fmt.Errorf("decode roleplay ongoing_action trailing data: %w", err)
-	}
-	if err := roleplay.ValidateOngoingActionText(action); err != nil {
-		return nil, err
-	}
-	return &action, nil
-}
-
-func (decision RoleplayOngoingActionDecision) ValidateFor(
-	input RoleplayOngoingActionInput,
-) error {
-	_, err := decision.ResolveFor(input)
-	return err
-}
-
-func DecodeRoleplayOngoingActionDecision(
-	input RoleplayOngoingActionInput,
-	raw string,
-) (RoleplayOngoingActionDecision, error) {
-	if err := input.validate(); err != nil {
-		return RoleplayOngoingActionDecision{}, err
-	}
-	leaf, err := decodeRawSemanticLeaf(
-		"roleplay ongoing action", raw, roleplay.MaxOngoingActionBytes, true,
-	)
-	if err != nil {
-		return RoleplayOngoingActionDecision{}, err
-	}
-	ongoingAction := json.RawMessage("null")
-	if leaf != RoleplayOngoingActionNone {
-		encoded, err := json.Marshal(leaf)
-		if err != nil {
-			return RoleplayOngoingActionDecision{}, fmt.Errorf("encode roleplay ongoing action: %w", err)
-		}
-		ongoingAction = encoded
-	}
-	decision := RoleplayOngoingActionDecision{
-		Schema: RoleplayOngoingStateLeafV1, OngoingAction: ongoingAction,
-	}
-	return decision, decision.ValidateFor(input)
-}
-
-func BuildRoleplayOngoingActionPrompt(input RoleplayOngoingActionInput) (string, error) {
+func BuildRoleplayOngoingActionRelationPrompt(
+	input RoleplayOngoingActionRelationInput,
+) (string, error) {
 	if err := input.validate(); err != nil {
 		return "", err
 	}
-	payload, err := json.Marshal(input)
+	choices, err := roleplayOngoingActionRelationChoices(input)
 	if err != nil {
-		return "", fmt.Errorf("encode roleplay ongoing-action input: %w", err)
+		return "", err
+	}
+	context := []string{roleplayOngoingActionContribution(input.CharacterName, input.Source, input.ExactContribution)}
+	if input.PreviousOngoingAction == nil {
+		context = append([]string{
+			input.CharacterName + " had no ongoing action before this contribution.",
+		}, context...)
+	} else {
+		context = append([]string{
+			input.CharacterName + "'s ongoing action before this contribution was:\n" + *input.PreviousOngoingAction,
+		}, context...)
+	}
+	return RenderOpaqueModelChoiceQuestion(
+		"At the end of this contribution, which description applies to "+input.CharacterName+"'s action?",
+		context,
+		choices,
+	)
+}
+
+func DecodeRoleplayOngoingActionRelation(
+	input RoleplayOngoingActionRelationInput,
+	raw string,
+) (RoleplayOngoingActionRelation, error) {
+	if err := input.validate(); err != nil {
+		return "", err
+	}
+	choices, err := roleplayOngoingActionRelationChoices(input)
+	if err != nil {
+		return "", err
+	}
+	value, err := DecodeOpaqueModelChoice(raw, choices)
+	if err != nil {
+		return "", err
+	}
+	relation := RoleplayOngoingActionRelation(value)
+	if err := relation.ValidateFor(input); err != nil {
+		return "", err
+	}
+	return relation, nil
+}
+
+func (relation RoleplayOngoingActionRelation) ValidateFor(
+	input RoleplayOngoingActionRelationInput,
+) error {
+	if err := input.validate(); err != nil {
+		return err
+	}
+	switch relation {
+	case RoleplayOngoingActionAbsent, RoleplayOngoingActionReplacement:
+		return nil
+	case RoleplayOngoingActionUnchanged:
+		if input.PreviousOngoingAction == nil {
+			return fmt.Errorf("an absent previous ongoing action cannot remain unchanged")
+		}
+		return nil
+	default:
+		return fmt.Errorf("roleplay ongoing-action relation is not registered")
+	}
+}
+
+func BuildRoleplayOngoingActionValuePrompt(
+	input RoleplayOngoingActionValueInput,
+) (string, error) {
+	if err := input.validate(); err != nil {
+		return "", err
 	}
 	return strings.Join([]string{
-		"Determine the single current action, if any, that the named character is still carrying out at the end of this one exact contribution.",
-		"The source identifies whether the exact contribution is the character's assistant response or the user's typed action contribution for that character.",
-		"The previous_ongoing_action value is the exact current state before the contribution. Preserve it byte-for-byte unless the contribution establishes that the character completed it or replaced it with another action.",
-		"Return one concise standalone present-tense statement naming the character when a replacement action remains underway. Return the exact previous string when it remains underway. Return the registered token NONE only when no action remains underway, including when the contribution establishes completion.",
-		"Return only that raw statement or NONE with no JSON, quotes, label, Markdown, commentary, or additional fields.",
-		"Do not return intentions that have not begun, completed acts, dialogue topics, feelings, traits, facts, or explanations.",
-		"ROLEPLAY_ONGOING_ACTION_JSON:\n" + string(payload),
+		"What concise present-tense description captures the new action still underway for " + input.CharacterName + " at the end of this contribution?",
+		roleplayOngoingActionContribution(input.CharacterName, input.Source, input.ExactContribution),
 	}, "\n\n"), nil
+}
+
+func DecodeRoleplayOngoingActionValue(
+	input RoleplayOngoingActionValueInput,
+	raw string,
+) (string, error) {
+	if err := input.validate(); err != nil {
+		return "", err
+	}
+	value, err := decodeRawSemanticLeaf(
+		"roleplay ongoing action", raw, roleplay.MaxOngoingActionBytes, false,
+	)
+	if err != nil {
+		return "", err
+	}
+	if err := roleplay.ValidateOngoingActionText(value); err != nil {
+		return "", err
+	}
+	return value, nil
+}
+
+func roleplayOngoingActionRelationChoices(
+	input RoleplayOngoingActionRelationInput,
+) ([]OpaqueModelChoice, error) {
+	absent, err := NewOpaqueModelChoice(
+		"No action is underway.", string(RoleplayOngoingActionAbsent),
+	)
+	if err != nil {
+		return nil, err
+	}
+	replacement, err := NewOpaqueModelChoice(
+		"A new or different action is underway.", string(RoleplayOngoingActionReplacement),
+	)
+	if err != nil {
+		return nil, err
+	}
+	if input.PreviousOngoingAction == nil {
+		return []OpaqueModelChoice{absent, replacement}, nil
+	}
+	unchanged, err := NewOpaqueModelChoice(
+		"The same action remains underway.", string(RoleplayOngoingActionUnchanged),
+	)
+	if err != nil {
+		return nil, err
+	}
+	return []OpaqueModelChoice{absent, unchanged, replacement}, nil
+}
+
+func roleplayOngoingActionContribution(
+	characterName string,
+	source RoleplayOngoingActionSource,
+	exactContribution string,
+) string {
+	switch source {
+	case RoleplayOngoingActionSourceAssistantResponse:
+		return characterName + "'s response:\n" + exactContribution
+	case RoleplayOngoingActionSourceUserAction:
+		return "A user-provided action for " + characterName + ":\n" + exactContribution
+	default:
+		return ""
+	}
 }

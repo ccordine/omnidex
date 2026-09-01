@@ -2,7 +2,6 @@ package assemblyline
 
 import (
 	"fmt"
-	"strings"
 )
 
 const (
@@ -75,14 +74,18 @@ func BuildDatabaseQueryPurposeNecessityPrompt(
 	if err != nil {
 		return "", err
 	}
-	return strings.Join([]string{
-		"Answer one candidate-bound semantic relation: is the exact candidate purpose explicitly required to answer the exact evidence need within the focused query collection?",
-		"Evaluate only the necessity of this exact candidate within the focused collection.",
-		"Return NECESSARY_QUERY_PURPOSE only when the evidence need directly requires this complete candidate in this collection. Return NOT_NECESSARY_QUERY_PURPOSE for an unrequested, merely plausible, customary, inferred, redundant-across-collections, implementation-oriented, or non-query candidate.",
-		"Return only the registered raw relation, with no JSON, label, Markdown, or explanation.",
-		"DATABASE QUERY PURPOSE AUTHORITY:\n" + authority,
-		"EXACT CANDIDATE PURPOSE:\n" + input.candidate(),
-	}, "\n\n"), nil
+	choices, err := databaseQueryPurposeNecessityChoices()
+	if err != nil {
+		return "", err
+	}
+	return RenderOpaqueModelChoiceQuestion(
+		"Is the exact candidate purpose explicitly required to answer the exact evidence need within the focused query collection?",
+		[]string{
+			"Database query purpose authority:\n" + authority,
+			"Candidate purpose:\n" + input.candidate(),
+		},
+		choices,
+	)
 }
 
 func DecodeDatabaseQueryPurposeNecessityResult(
@@ -93,10 +96,11 @@ func DecodeDatabaseQueryPurposeNecessityResult(
 	if err := input.validate(); err != nil {
 		return zero, err
 	}
-	leaf, err := decodeRawSemanticLeaf(
-		"database query purpose necessity", raw,
-		maximumStringBytes(DatabaseQueryPurposeNecessary, DatabaseQueryPurposeNotNecessary), false,
-	)
+	choices, err := databaseQueryPurposeNecessityChoices()
+	if err != nil {
+		return zero, err
+	}
+	leaf, err := DecodeOpaqueModelChoice(raw, choices)
 	if err != nil {
 		return zero, err
 	}
@@ -165,14 +169,18 @@ func BuildDatabaseQueryPurposeRelationPrompt(
 	if err := input.validate(); err != nil {
 		return "", err
 	}
-	return strings.Join([]string{
-		fmt.Sprintf("Answer one pairwise semantic relation: do the candidate and already accepted %s purpose express the same query responsibility?", databaseQueryPurposeCollectionLabel(input.Collection)),
-		"Compare only whether these two purposes express the same query responsibility.",
-		"Return SAME_QUERY_PURPOSE when retaining both would duplicate one query responsibility despite wording differences. Return DISTINCT_QUERY_PURPOSES when each purpose adds a different requested responsibility within this collection.",
-		"Return only the registered raw relation, with no JSON, label, Markdown, or explanation.",
-		"CANDIDATE PURPOSE:\n" + input.Candidate,
-		"ALREADY ACCEPTED PURPOSE:\n" + input.AcceptedPurpose,
-	}, "\n\n"), nil
+	choices, err := databaseQueryPurposeRelationChoices()
+	if err != nil {
+		return "", err
+	}
+	return RenderOpaqueModelChoiceQuestion(
+		fmt.Sprintf("Do these two %s purposes express the same query responsibility?", databaseQueryPurposeCollectionLabel(input.Collection)),
+		[]string{
+			"Candidate purpose:\n" + input.Candidate,
+			"Already accepted purpose:\n" + input.AcceptedPurpose,
+		},
+		choices,
+	)
 }
 
 func DecodeDatabaseQueryPurposeRelationResult(
@@ -183,10 +191,11 @@ func DecodeDatabaseQueryPurposeRelationResult(
 	if err := input.validate(); err != nil {
 		return zero, err
 	}
-	leaf, err := decodeRawSemanticLeaf(
-		"database query purpose relation", raw,
-		maximumStringBytes(DatabaseQueryPurposesSame, DatabaseQueryPurposesDistinct), false,
-	)
+	choices, err := databaseQueryPurposeRelationChoices()
+	if err != nil {
+		return zero, err
+	}
+	leaf, err := DecodeOpaqueModelChoice(raw, choices)
 	if err != nil {
 		return zero, err
 	}
@@ -201,6 +210,26 @@ func DecodeDatabaseQueryPurposeRelationResult(
 		return zero, err
 	}
 	return result, nil
+}
+
+func databaseQueryPurposeNecessityChoices() ([]OpaqueModelChoice, error) {
+	return databaseOpaqueChoices([]databaseOpaqueChoiceSpec{
+		{
+			"The exact evidence need directly requires this complete candidate in the focused collection",
+			DatabaseQueryPurposeNecessary,
+		},
+		{
+			"The candidate is unrequested, merely plausible, customary, inferred, redundant, implementation-oriented, or belongs outside the focused collection",
+			DatabaseQueryPurposeNotNecessary,
+		},
+	})
+}
+
+func databaseQueryPurposeRelationChoices() ([]OpaqueModelChoice, error) {
+	return databaseOpaqueChoices([]databaseOpaqueChoiceSpec{
+		{"Retaining both would duplicate one query responsibility", DatabaseQueryPurposesSame},
+		{"Each purpose adds a different requested query responsibility", DatabaseQueryPurposesDistinct},
+	})
 }
 
 func (result DatabaseQueryPurposeRelationResult) ValidateFor(
@@ -278,7 +307,11 @@ func renderDatabaseQueryPurposeAuthority(input DatabaseQueryPurposeAuthority) (s
 		sections = append(sections, focused)
 	}
 	if input.FocusedOperator != "" {
-		sections = append(sections, "ACCEPTED FILTER OPERATOR:\n"+string(input.FocusedOperator))
+		description, err := databaseQueryFilterOperatorDescription(input.FocusedOperator)
+		if err != nil {
+			return "", err
+		}
+		sections = append(sections, "ACCEPTED FILTER RELATION:\n"+description)
 	}
 	return renderDatabaseQueryAuthority(input.State, sections...), nil
 }

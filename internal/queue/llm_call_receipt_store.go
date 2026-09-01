@@ -123,16 +123,17 @@ func insertLLMCallReceiptTx(
 			call_evidence_id,generation_receipt,generation_receipt_sha256,
 			raw_response_present,raw_response,raw_response_sha256,raw_response_bytes,
 			candidate,candidate_sha256,prompt_tokens,output_tokens,
-			provider_duration_nanos,status,error,error_sha256,elapsed_nanos
+			provider_duration_nanos,output_limit_reached,status,error,error_sha256,elapsed_nanos
 		) VALUES (
-			$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16
+			$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17
 		)
 	`, record.CallEvidenceID, normalized.generationReceipt,
 		normalized.generationReceiptSHA256, normalized.rawResponsePresent,
 		rawResponse, rawResponseSHA256, len(normalized.rawResponse),
 		candidate, candidateSHA256, record.Generation.Usage.PromptEvalCount,
 		record.Generation.Usage.EvalCount, record.Generation.Usage.TotalDurationNanos,
-		string(normalized.status), callError, callErrorSHA256, record.Elapsed.Nanoseconds())
+		record.OutputLimitReached, string(normalized.status), callError, callErrorSHA256,
+		record.Elapsed.Nanoseconds())
 	if err != nil {
 		return fmt.Errorf("record exact LLM provider receipt: %w", err)
 	}

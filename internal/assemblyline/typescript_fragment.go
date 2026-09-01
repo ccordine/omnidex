@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/gryph/omnidex/internal/sourcebodyresponse"
 	treesitter "github.com/tree-sitter/go-tree-sitter"
 	typescript "github.com/tree-sitter/tree-sitter-typescript/bindings/go"
 )
@@ -22,21 +23,15 @@ type TypeScriptFragment struct {
 }
 
 type TypeScriptSyntaxFailure struct {
-	Kind   string
-	Line   int
-	Column int
+	Kind      string
+	Line      int
+	Column    int
+	StartByte int
+	EndByte   int
 }
 
 func (failure TypeScriptSyntaxFailure) Error() string {
 	return fmt.Sprintf("%s at line %d column %d", failure.Kind, failure.Line, failure.Column)
-}
-
-func TypeScriptSyntaxFailureFromError(err error) (TypeScriptSyntaxFailure, bool) {
-	var failure TypeScriptSyntaxFailure
-	if !errors.As(err, &failure) {
-		return TypeScriptSyntaxFailure{}, false
-	}
-	return failure, true
 }
 
 func ParseTypeScriptFunction(contract TypeScriptFunctionContract, raw string) (TypeScriptFragment, error) {
@@ -69,6 +64,183 @@ func ParseTypeScriptFunction(contract TypeScriptFunctionContract, raw string) (T
 	return TypeScriptFragment{
 		Name: actual.name, API: signature, Source: content + "\n",
 	}, nil
+}
+
+// ParseTypeScriptFunctionBody applies an ordinary source-body response inside
+// the exact declaration owned by code, then delegates every syntax, signature,
+// policy, and scope-sensitive check to the established parser boundary.
+func ParseTypeScriptFunctionBody(
+	contract TypeScriptFunctionContract,
+	rawBody string,
+) (TypeScriptFragment, error) {
+	body, err := ExtractTypeScriptFunctionBodyResponse(contract, rawBody)
+	if err != nil {
+		return TypeScriptFragment{}, fmt.Errorf("TypeScript source body: %w", err)
+	}
+	declaration, err := ComposeSourceDeclaration(contract.Signature, body)
+	if err != nil {
+		return TypeScriptFragment{}, fmt.Errorf("TypeScript source body: %w", err)
+	}
+	_, closeExpected, err := parseSingleTypeScriptFunction(
+		strings.TrimSpace(contract.Signature)+" {}",
+		contract.TSX,
+		false,
+		SourceFunctionPolicy{},
+	)
+	if err != nil {
+		return TypeScriptFragment{}, fmt.Errorf("invalid code-owned TypeScript signature: %w", err)
+	}
+	closeExpected()
+	fragment, err := ParseTypeScriptFunction(contract, declaration)
+	if err == nil {
+		return fragment, nil
+	}
+	prefix := strings.TrimSpace(contract.Signature) + " {\n"
+	if declaration != prefix+body+"\n}" {
+		return TypeScriptFragment{}, fmt.Errorf(
+			"TypeScript validator could not prove the code-owned declaration projection: %w",
+			err,
+		)
+	}
+	bodyStart, bodyEnd := len(prefix), len(prefix)+len(body)
+	startByte, endByte := 0, 0
+	question := ""
+	identifierFailure := false
+	var syntaxFailure TypeScriptSyntaxFailure
+	if errors.As(err, &syntaxFailure) {
+		startByte, endByte = syntaxFailure.StartByte, syntaxFailure.EndByte
+		question = "What should replace this syntactically invalid span?"
+	} else {
+		var violation *TypeScriptFragmentViolation
+		if !errors.As(err, &violation) ||
+			violation.Code != TypeScriptViolationForbiddenIdentifier {
+			return TypeScriptFragment{}, err
+		}
+		startByte, endByte = violation.StartByte, violation.EndByte
+		question = "Which available value has the meaning required at this unavailable reference?"
+		identifierFailure = true
+	}
+	if startByte < bodyStart || endByte > bodyEnd || startByte >= endByte {
+		return TypeScriptFragment{}, err
+	}
+	var defect *SourceBodyDefect
+	var defectErr error
+	if identifierFailure {
+		defect, defectErr = NewSourceBodyIdentifierDefect(
+			body,
+			startByte-bodyStart,
+			endByte-bodyStart,
+			question,
+			err,
+			nil,
+		)
+	} else {
+		defect, defectErr = NewSourceBodyDefect(
+			body,
+			startByte-bodyStart,
+			endByte-bodyStart,
+			question,
+			err,
+		)
+	}
+	if defectErr != nil {
+		return TypeScriptFragment{}, fmt.Errorf(
+			"map exact TypeScript validation node to implementation body: %w",
+			defectErr,
+		)
+	}
+	return TypeScriptFragment{}, defect
+}
+
+// ExtractTypeScriptFunctionBodyResponse treats a complete declaration as
+// ordinary redundant source. Code extracts only its body and validates that
+// body under the authoritative contract signature. A single fenced body is
+// tolerated only when it is already parseable under that signature, preventing
+// prose from becoming an inferred correction span.
+func ExtractTypeScriptFunctionBodyResponse(
+	contract TypeScriptFunctionContract,
+	raw string,
+) (string, error) {
+	candidate, err := sourcebodyresponse.ExtractCandidate(raw, MaxPortableRawCandidateBytes)
+	if err != nil {
+		return "", err
+	}
+	body, declaration, err := extractTypeScriptDeclarationBody(candidate.Source, contract.TSX)
+	if err != nil {
+		return "", err
+	}
+	if declaration {
+		return NormalizeSourceBodyResponse(body)
+	}
+	if candidate.Fenced {
+		assembled, err := ComposeSourceDeclaration(contract.Signature, candidate.Source)
+		if err != nil {
+			return "", err
+		}
+		_, closeBody, parseErr := parseSingleTypeScriptFunction(
+			assembled, contract.TSX, false, SourceFunctionPolicy{},
+		)
+		if parseErr != nil {
+			return "", fmt.Errorf(
+				"fenced TypeScript response contains neither one declaration nor one parseable implementation body: %w",
+				parseErr,
+			)
+		}
+		closeBody()
+	}
+	return NormalizeSourceBodyResponse(candidate.Source)
+}
+
+func extractTypeScriptDeclarationBody(source string, tsx bool) (string, bool, error) {
+	parser := treesitter.NewParser()
+	languagePointer := typescript.LanguageTypescript()
+	if tsx {
+		languagePointer = typescript.LanguageTSX()
+	}
+	if err := parser.SetLanguage(treesitter.NewLanguage(languagePointer)); err != nil {
+		parser.Close()
+		return "", false, fmt.Errorf("configure TypeScript extraction parser: %w", err)
+	}
+	tree := parser.Parse([]byte(source), nil)
+	if tree == nil {
+		parser.Close()
+		return "", false, fmt.Errorf("TypeScript extraction parser returned no syntax tree")
+	}
+	defer tree.Close()
+	defer parser.Close()
+	root := tree.RootNode()
+	if root == nil || root.HasError() || root.NamedChildCount() != 1 {
+		return "", false, nil
+	}
+	top := root.NamedChild(0)
+	if top == nil || int(top.StartByte()) != 0 || int(top.EndByte()) != len(source) {
+		return "", false, nil
+	}
+	declaration := top
+	if top.Kind() == "export_statement" {
+		declaration = nil
+		for index := uint(0); index < top.NamedChildCount(); index++ {
+			child := top.NamedChild(index)
+			if child != nil && child.Kind() == "function_declaration" {
+				if declaration != nil {
+					return "", false, nil
+				}
+				declaration = child
+			}
+		}
+	}
+	if declaration == nil || declaration.Kind() != "function_declaration" {
+		return "", false, nil
+	}
+	body := declaration.ChildByFieldName("body")
+	if body == nil {
+		return "", false, nil
+	}
+	start, end := int(body.StartByte()), int(body.EndByte())
+	if start < 0 || end <= start+1 || end > len(source) || source[start] != '{' || source[end-1] != '}' {
+		return "", false, fmt.Errorf("TypeScript declaration body range is invalid")
+	}
+	return source[start+1 : end-1], true, nil
 }
 
 type parsedTypeScriptFunction struct {
@@ -104,8 +276,13 @@ func parseSingleTypeScriptFunction(
 	}
 	root := tree.RootNode()
 	if root.HasError() {
-		detail := firstTypeScriptSyntaxFailure(root)
+		detail, located := firstTypeScriptSyntaxFailure(root)
 		closeAll()
+		if !located {
+			return parsedTypeScriptFunction{}, func() {}, fmt.Errorf(
+				"TypeScript syntax rejected without one exact non-empty parser-error leaf",
+			)
+		}
 		return parsedTypeScriptFunction{}, func() {}, fmt.Errorf("TypeScript syntax rejected: %w", detail)
 	}
 	if root.NamedChildCount() != 1 {
@@ -198,22 +375,16 @@ func canonicalTypeScriptNode(node *treesitter.Node, skippedID uintptr, source []
 	return output.String()
 }
 
-func firstTypeScriptSyntaxFailure(root *treesitter.Node) TypeScriptSyntaxFailure {
-	if root == nil {
-		return TypeScriptSyntaxFailure{Kind: "unknown parser failure", Line: 1, Column: 1}
+func firstTypeScriptSyntaxFailure(root *treesitter.Node) (TypeScriptSyntaxFailure, bool) {
+	leaf := smallestNonemptyParserErrorLeaf(root)
+	if leaf == nil {
+		return TypeScriptSyntaxFailure{}, false
 	}
-	if root.IsError() || root.IsMissing() {
-		position := root.StartPosition()
-		return TypeScriptSyntaxFailure{Kind: root.Kind(), Line: int(position.Row) + 1, Column: int(position.Column) + 1}
-	}
-	for index := uint(0); index < root.ChildCount(); index++ {
-		child := root.Child(index)
-		if child != nil && child.HasError() {
-			return firstTypeScriptSyntaxFailure(child)
-		}
-	}
-	position := root.StartPosition()
-	return TypeScriptSyntaxFailure{Kind: "invalid syntax", Line: int(position.Row) + 1, Column: int(position.Column) + 1}
+	position := leaf.StartPosition()
+	return TypeScriptSyntaxFailure{
+		Kind: leaf.Kind(), Line: int(position.Row) + 1, Column: int(position.Column) + 1,
+		StartByte: int(leaf.StartByte()), EndByte: int(leaf.EndByte()),
+	}, true
 }
 
 func ValidateTypeScriptSource(source string, tsx bool) error {
@@ -233,7 +404,13 @@ func ValidateTypeScriptSource(source string, tsx bool) error {
 	}
 	defer tree.Close()
 	if root := tree.RootNode(); root.HasError() {
-		return fmt.Errorf("TypeScript syntax rejected: %w", firstTypeScriptSyntaxFailure(root))
+		failure, located := firstTypeScriptSyntaxFailure(root)
+		if !located {
+			return fmt.Errorf(
+				"TypeScript syntax rejected without one exact non-empty parser-error leaf",
+			)
+		}
+		return fmt.Errorf("TypeScript syntax rejected: %w", failure)
 	}
 	return nil
 }

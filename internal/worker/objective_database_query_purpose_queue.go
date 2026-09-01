@@ -14,6 +14,7 @@ func resolveDatabaseQueryPurposeQueue(
 	ctx context.Context,
 	authority assemblyline.DatabaseQueryPurposeAuthority,
 	maximumAccepted int,
+	required bool,
 	call objectiveDatabaseRawLeafCall,
 	total int,
 ) ([]string, int, error) {
@@ -22,6 +23,25 @@ func resolveDatabaseQueryPurposeQueue(
 	}
 	if maximumAccepted == 0 {
 		return []string{}, total, nil
+	}
+	if !required {
+		presenceJob, err := assemblyline.NewDatabaseQueryPurposePresenceJob(authority)
+		if err != nil {
+			return nil, total, err
+		}
+		presence, calls, err := callObjectiveDatabaseRawLeaf(
+			ctx, call, "database_query_purpose_presence", presenceJob,
+			func(raw string) (assemblyline.DatabaseQueryPurposePresenceResult, error) {
+				return assemblyline.DecodeDatabaseQueryPurposePresenceResult(authority, raw)
+			},
+		)
+		total += calls
+		if err != nil {
+			return nil, total, err
+		}
+		if !presence.Present {
+			return []string{}, total, nil
+		}
 	}
 	inventoryJob, err := assemblyline.NewDatabaseQueryPurposeInventoryJob(authority)
 	if err != nil {

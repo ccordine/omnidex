@@ -5,27 +5,13 @@ func databaseSemanticUncertaintyContract(
 ) (SemanticUncertaintyContract, bool) {
 	var contract SemanticUncertaintyContract
 	switch kind {
-	case WorkDatabaseSchemaRelationInventory:
+	case WorkDatabaseSchemaRelationChoice:
 		contract = semanticUncertaintyContract(kind,
-			"What bounded inventory of available relation responsibilities might be necessary for the exact database objective?",
-			"Natural-language database objectives and relation descriptors cannot be semantically aligned by syntax or schema structure alone.",
-			"The exact database objective, compact context, and bounded registered relation descriptors without their identifiers.",
-			"One bounded raw-line inventory of candidate relation responsibilities with no selection or completion metadata.",
-			"DecodeDatabaseSchemaRelationInventory binds the inventory to its authority; code alone owns the candidate queue and every subsequent disposition.")
-	case WorkDatabaseSchemaRelationNecessity:
-		contract = semanticUncertaintyContract(kind,
-			"Is this exact candidate relation responsibility necessary for the exact database objective?",
-			"Semantic necessity for a free-form database objective cannot be established by schema syntax or structural validation.",
-			"Only the exact database objective, compact context, and one exact candidate relation responsibility.",
-			"One candidate-bound necessary-or-not-necessary relation.",
-			"DecodeDatabaseSchemaRelationNecessityResult validates the relation before code skips the suggestion or opens its independent registered-relation resolution.")
-	case WorkDatabaseSchemaRelationResolution:
-		contract = semanticUncertaintyContract(kind,
-			"Which one registered relation supplies this exact necessary relation responsibility?",
-			"Relation descriptors expose semantic meaning that opaque IDs and structural validation cannot map to a free-form responsibility.",
-			"Only one exact necessary relation responsibility and the bounded registered relation IDs with their descriptors.",
-			"One opaque registered database-relation ID.",
-			"DecodeDatabaseSchemaRelationResolutionResult validates the ID before code skips a duplicate or retains the new selection; accepted selections are never reopened.")
+			"Which one remaining relation, if any, is necessary to answer the exact database objective?",
+			"Schema structure cannot determine which semantically described relation the free-form objective still requires.",
+			"Only the exact database objective, compact context, remaining relation descriptions without their identifiers, and the no-additional-relation alternative.",
+			"One call-local opaque letter selecting a remaining relation description or the no-additional-relation alternative.",
+			"DecodeDatabaseSchemaRelationChoiceResult maps the letter to code-owned state; code retains and removes a selected relation before independently deciding whether another round is needed.")
 	case WorkDatabaseQueryFromRelation:
 		contract = semanticUncertaintyContract(kind,
 			"Which projected relation should anchor the query for the exact evidence need?",
@@ -40,6 +26,13 @@ func databaseSemanticUncertaintyContract(
 			"The exact evidence need, compact context, accepted anchor relation, and registered result shapes.",
 			"One registered database-result shape.",
 			"DecodeDatabaseQueryShapeLeaf validates the shape before code opens its compatible query leaves.")
+	case WorkDatabaseQueryPurposePresence:
+		contract = semanticUncertaintyContract(kind,
+			"Does the exact evidence need express any additional purpose for this focused query collection?",
+			"Query structure and already accepted leaves cannot establish whether free-form intent expresses another collection-specific responsibility.",
+			"The exact evidence need, compact context, accepted query leaves, and one code-owned collection focus.",
+			"One opaque present-or-absent semantic choice.",
+			"DecodeDatabaseQueryPurposePresenceResult validates the opaque choice; code alone skips the collection or opens one positive candidate inventory.")
 	case WorkDatabaseQueryPurposeInventory:
 		contract = semanticUncertaintyContract(kind,
 			"What bounded source-ordered candidate-purpose inventory is expressed for this one focused query collection?",

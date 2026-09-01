@@ -128,10 +128,5 @@ func javaCommandLineCapabilityProjection(
 }
 
 func javaCommandLineFeatureContract(behavior string) string {
-	return strings.Join([]string{
-		behavior,
-		"Return one Map<String, Object> produced with Runtime.result and derived only from input and declared direct dependency results.",
-		"Use output for user-visible text, error for a clear failure, exitCode for process status, and state for reusable values.",
-		"Return exactly the declared complete method with all logic inside its body.",
-	}, "\n")
+	return strings.TrimSpace(behavior)
 }

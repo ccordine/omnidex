@@ -33,8 +33,8 @@ type Request struct {
 
 // OptionalSelectionGroup binds contiguous optional candidate chunks that must
 // remain one code-owned selection unit. The relationship is never projected to
-// a semantic station; stations continue to receive only ordinary candidate
-// authorities and return only opaque candidate IDs.
+// a semantic station; each relevance call continues to receive one ordinary
+// candidate authority and returns only its binary relevance relation.
 type OptionalSelectionGroup struct {
 	CandidateIDs []string
 }

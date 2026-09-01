@@ -49,7 +49,7 @@ func extractRoleplayCanonSource(
 	station objectiveRoleplayCanonStation,
 	input assemblyline.RoleplayCanonExtractionInput,
 ) ([]string, int, error) {
-	if _, err := assemblyline.NewRoleplayCanonFactInventoryJob(input); err != nil {
+	if _, err := assemblyline.NewRoleplayCanonFactPresenceJob(input); err != nil {
 		return nil, 0, err
 	}
 	decision, receipt, err := station.ExtractCanon(ctx, input)
@@ -74,7 +74,7 @@ func validateRoleplayCanonExtractionReceipt(receipt objectiveStationReceipt) err
 		}
 		return nil
 	}
-	maximumLeaves := 1 +
+	maximumLeaves := 2 +
 		assemblyline.MaxRoleplayCanonFactsPerTurn +
 		(assemblyline.MaxRoleplayCanonFactsPerTurn*(assemblyline.MaxRoleplayCanonFactsPerTurn-1))/2
 	maximum := maximumLeaves * exactSemanticLeafCalls

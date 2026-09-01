@@ -8,50 +8,53 @@ import (
 
 func portableDatabaseResponseMaximum(job PortableJob) (int, bool, error) {
 	switch job.Kind {
-	case WorkDatabaseSchemaRelationInventory:
-		return maxDatabaseSchemaRelationInventoryBytes, true, nil
-	case WorkDatabaseSchemaRelationNecessity:
-		return maximumStringBytes(
-			DatabaseSchemaRelationNecessary, DatabaseSchemaRelationNotNecessary,
-		), true, nil
-	case WorkDatabaseSchemaRelationResolution:
-		maximum, err := databaseSchemaRelationMaximum(job)
+	case WorkDatabaseSchemaRelationChoice:
+		maximum, err := databaseSchemaRelationChoiceMaximum(job)
 		return maximum, true, err
 	case WorkDatabaseQueryFromRelation:
 		maximum, err := databaseFromRelationMaximum(job)
 		return maximum, true, err
 	case WorkDatabaseQueryShape:
-		return maximumStringBytes(
-			datasource.ResultRecords, datasource.ResultScalar,
-			datasource.ResultRanking, datasource.ResultDistribution,
-			datasource.ResultComparison, datasource.ResultTrend,
-			datasource.ResultExistence,
-		), true, nil
+		maximum, err := opaqueModelChoiceBuilderResponseMaximum(databaseQueryShapeChoices)
+		return maximum, true, err
+	case WorkDatabaseQueryPurposePresence:
+		var input DatabaseQueryPurposeAuthority
+		if err := decodePortablePayload(job.Payload, &input); err != nil {
+			return 0, true, err
+		}
+		maximum, err := opaqueModelChoiceBuilderResponseMaximum(func() ([]OpaqueModelChoice, error) {
+			return databaseQueryPurposePresenceChoices(input)
+		})
+		return maximum, true, err
 	case WorkDatabaseQueryPurposeInventory:
 		return maxDatabaseQueryPurposeInventoryBytes, true, nil
 	case WorkDatabaseQueryPurposeNecessity:
-		return maximumStringBytes(
-			DatabaseQueryPurposeNecessary, DatabaseQueryPurposeNotNecessary,
-		), true, nil
+		maximum, err := opaqueModelChoiceBuilderResponseMaximum(
+			databaseQueryPurposeNecessityChoices,
+		)
+		return maximum, true, err
 	case WorkDatabaseQueryPurposeRelation:
-		return maximumStringBytes(
-			DatabaseQueryPurposesSame, DatabaseQueryPurposesDistinct,
-		), true, nil
+		maximum, err := opaqueModelChoiceBuilderResponseMaximum(
+			databaseQueryPurposeRelationChoices,
+		)
+		return maximum, true, err
 	case WorkDatabaseQueryProjectionAggregate:
-		return maximumStringBytes(
-			datasource.AggregateCountRows, datasource.AggregateCount,
-			datasource.AggregateCountDistinct, datasource.AggregateSum,
-			datasource.AggregateAverage, datasource.AggregateMinimum,
-			datasource.AggregateMaximum,
-		), true, nil
+		var input DatabaseQueryProjectionLeafInput
+		if err := decodePortablePayload(job.Payload, &input); err != nil {
+			return 0, true, err
+		}
+		maximum, err := opaqueModelChoiceBuilderResponseMaximum(func() ([]OpaqueModelChoice, error) {
+			return databaseQueryProjectionAggregateChoices(input)
+		})
+		return maximum, true, err
 	case WorkDatabaseQueryProjectionField:
 		maximum, err := databaseProjectionFieldMaximum(job)
 		return maximum, true, err
 	case WorkDatabaseQueryProjectionTimeBucket:
-		return maximumStringBytes(
-			datasource.BucketDay, datasource.BucketWeek, datasource.BucketMonth,
-			datasource.BucketQuarter, datasource.BucketYear,
-		), true, nil
+		maximum, err := opaqueModelChoiceBuilderResponseMaximum(
+			databaseQueryProjectionTimeBucketChoices,
+		)
+		return maximum, true, err
 	case WorkDatabaseQueryFilterField:
 		maximum, err := databaseFilterFieldMaximum(job)
 		return maximum, true, err
@@ -65,41 +68,47 @@ func portableDatabaseResponseMaximum(job PortableJob) (int, bool, error) {
 		maximum, err := databaseWindowFieldMaximum(job)
 		return maximum, true, err
 	case WorkDatabaseQueryWindowUnit:
-		return maximumStringBytes(
-			datasource.WindowHour, datasource.WindowDay, datasource.WindowWeek,
-			datasource.WindowMonth, datasource.WindowYear,
-		), true, nil
+		var input DatabaseQueryWindowLeafInput
+		if err := decodePortablePayload(job.Payload, &input); err != nil {
+			return 0, true, err
+		}
+		maximum, err := opaqueModelChoiceBuilderResponseMaximum(func() ([]OpaqueModelChoice, error) {
+			return databaseQueryWindowUnitChoices(input)
+		})
+		return maximum, true, err
 	case WorkDatabaseQueryWindowAmount:
 		return len(strconv.Itoa(10000)), true, nil
 	case WorkDatabaseQueryExistenceRelation:
 		maximum, err := databaseExistenceRelationMaximum(job)
 		return maximum, true, err
 	case WorkDatabaseQueryExistenceNegated:
-		return maximumStringBytes("EXISTS", "NOT_EXISTS"), true, nil
+		maximum, err := opaqueModelChoiceBuilderResponseMaximum(
+			databaseQueryExistenceNegatedChoices,
+		)
+		return maximum, true, err
 	case WorkDatabaseQueryHavingAggregate:
-		return maximumStringBytes(
-			datasource.AggregateCountRows, datasource.AggregateCount,
-			datasource.AggregateCountDistinct, datasource.AggregateSum,
-			datasource.AggregateAverage,
-		), true, nil
+		maximum, err := opaqueModelChoiceBuilderResponseMaximum(
+			databaseQueryHavingAggregateChoices,
+		)
+		return maximum, true, err
 	case WorkDatabaseQueryHavingField:
 		maximum, err := databaseHavingFieldMaximum(job)
 		return maximum, true, err
 	case WorkDatabaseQueryHavingOperator:
-		return maximumStringBytes(
-			datasource.FilterEqual, datasource.FilterNotEqual,
-			datasource.FilterGT, datasource.FilterGTE,
-			datasource.FilterLT, datasource.FilterLTE,
-		), true, nil
+		maximum, err := opaqueModelChoiceBuilderResponseMaximum(
+			databaseQueryHavingOperatorChoices,
+		)
+		return maximum, true, err
 	case WorkDatabaseQueryHavingValue:
 		return datasource.MaxIntentDecimalLiteralBytes, true, nil
 	case WorkDatabaseQueryOrderProjection:
 		maximum, err := databaseOrderProjectionMaximum(job)
 		return maximum, true, err
 	case WorkDatabaseQueryOrderDirection:
-		return maximumStringBytes(
-			datasource.OrderAscending, datasource.OrderDescending,
-		), true, nil
+		maximum, err := opaqueModelChoiceBuilderResponseMaximum(
+			databaseQueryOrderDirectionChoices,
+		)
+		return maximum, true, err
 	case WorkDatabaseJoinPathSelection:
 		maximum, err := databaseJoinPathMaximum(job)
 		return maximum, true, err
@@ -108,22 +117,14 @@ func portableDatabaseResponseMaximum(job PortableJob) (int, bool, error) {
 	}
 }
 
-func databaseSchemaRelationMaximum(job PortableJob) (int, error) {
-	var input DatabaseSchemaRelationResolutionInput
+func databaseSchemaRelationChoiceMaximum(job PortableJob) (int, error) {
+	var input DatabaseSchemaRelationChoiceInput
 	if err := decodePortablePayload(job.Payload, &input); err != nil {
 		return 0, err
 	}
-	candidates := make([]string, 0, len(input.Candidates))
-	for _, candidate := range input.Candidates {
-		candidates = append(candidates, candidate.RelationID)
-	}
-	return maximumAcceptedCandidateBytes(
-		"database schema relation resolution", candidates,
-		func(candidate string) error {
-			_, err := DecodeDatabaseSchemaRelationResolutionResult(input, candidate)
-			return err
-		},
-	)
+	return opaqueModelChoiceBuilderResponseMaximum(func() ([]OpaqueModelChoice, error) {
+		return databaseSchemaRelationChoices(input)
+	})
 }
 
 func databaseFromRelationMaximum(job PortableJob) (int, error) {
@@ -131,14 +132,9 @@ func databaseFromRelationMaximum(job PortableJob) (int, error) {
 	if err := decodePortablePayload(job.Payload, &state); err != nil {
 		return 0, err
 	}
-	candidates := databaseRelationCandidates(state)
-	return maximumAcceptedCandidateBytes(
-		"database query from relation", candidates,
-		func(candidate string) error {
-			_, err := DecodeDatabaseQueryFromRelationLeaf(state, candidate)
-			return err
-		},
-	)
+	return opaqueModelChoiceBuilderResponseMaximum(func() ([]OpaqueModelChoice, error) {
+		return databaseQueryFromRelationChoices(state)
+	})
 }
 
 func databaseProjectionFieldMaximum(job PortableJob) (int, error) {
@@ -146,11 +142,9 @@ func databaseProjectionFieldMaximum(job PortableJob) (int, error) {
 	if err := decodePortablePayload(job.Payload, &input); err != nil {
 		return 0, err
 	}
-	return maximumAcceptedCandidateBytes(
-		"database query projection field", databaseColumnCandidates(input.State),
-		func(candidate string) error {
-			_, err := DecodeDatabaseQueryProjectionFieldLeaf(input, candidate)
-			return err
-		},
-	)
+	return opaqueModelChoiceBuilderResponseMaximum(func() ([]OpaqueModelChoice, error) {
+		return databaseQueryFieldChoices(
+			input.State, "", databaseQueryAggregateFieldEligible(input.Aggregate),
+		)
+	})
 }

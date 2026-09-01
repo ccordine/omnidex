@@ -52,26 +52,6 @@ type GroundedAnswerParagraphAuthorizationDecision struct {
 	Relation GroundedAnswerParagraphAuthorization `json:"relation"`
 }
 
-type groundedAnswerParagraphInventoryProjection struct {
-	ExactRequirement  string           `json:"exact_requirement"`
-	Context           ObjectiveContext `json:"objective_context"`
-	Evidence          []string         `json:"evidence"`
-	MaxParagraphs     int              `json:"max_paragraphs"`
-	MaxParagraphBytes int              `json:"max_paragraph_bytes"`
-}
-
-type groundedAnswerParagraphEvidenceRelationProjection struct {
-	ParagraphText string `json:"paragraph_text"`
-	EvidenceText  string `json:"evidence_text"`
-}
-
-type groundedAnswerParagraphAuthorizationProjection struct {
-	ExactRequirement string           `json:"exact_requirement"`
-	Context          ObjectiveContext `json:"objective_context"`
-	ParagraphText    string           `json:"paragraph_text"`
-	Evidence         []string         `json:"evidence"`
-}
-
 func (input GroundedAnswerParagraphInventoryInput) validate() error {
 	return validateGroundedAnswerAuthority(
 		input.ExactRequirement, input.Context, input.Evidence,
@@ -123,4 +103,27 @@ func groundedAnswerEvidenceText(evidence []GroundedEvidenceCapsule) []string {
 		result[index] = capsule.Text
 	}
 	return result
+}
+
+func renderGroundedAnswerModelContext(
+	exactRequirement string,
+	context ObjectiveContext,
+	paragraph string,
+	evidence []string,
+) (string, error) {
+	contextText, err := renderObjectiveContextForModel(context)
+	if err != nil {
+		return "", err
+	}
+	parts := []string{"Question:\n" + exactRequirement}
+	if contextText != "" {
+		parts = append(parts, "Relevant context:\n"+contextText)
+	}
+	if paragraph != "" {
+		parts = append(parts, "Paragraph:\n"+paragraph)
+	}
+	for _, item := range evidence {
+		parts = append(parts, "Evidence:\n"+item)
+	}
+	return strings.Join(parts, "\n\n"), nil
 }

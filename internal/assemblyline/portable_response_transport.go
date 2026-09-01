@@ -8,11 +8,11 @@ import "fmt"
 type PortableResponseTransport string
 
 const (
-	PortableResponseTransportSemanticRaw   PortableResponseTransport = "semantic_raw"
-	PortableResponseTransportFragmentRaw   PortableResponseTransport = "fragment_raw"
+	PortableResponseTransportSemanticRaw PortableResponseTransport = "semantic_raw"
+	PortableResponseTransportFragmentRaw PortableResponseTransport = "fragment_raw"
 
-	PortableSemanticWorkerScope   = "portable_semantic_worker"
-	PortableFragmentWorkerScope   = "portable_fragment_worker"
+	PortableSemanticWorkerScope = "portable_semantic_worker"
+	PortableFragmentWorkerScope = "portable_fragment_worker"
 )
 
 // PortableResponseTransportForWorkKind returns the one registered response
@@ -24,8 +24,7 @@ func PortableResponseTransportForWorkKind(
 		return "", fmt.Errorf("portable work kind %q has no registered response transport", kind)
 	}
 	switch kind {
-	case WorkFragmentGeneration, WorkFragmentGenerationReplacement,
-		WorkFragmentModification, WorkFragmentCorrection:
+	case WorkFragmentGeneration:
 		return PortableResponseTransportFragmentRaw, nil
 	default:
 		return PortableResponseTransportSemanticRaw, nil

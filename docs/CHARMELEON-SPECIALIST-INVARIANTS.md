@@ -119,15 +119,15 @@ application uses ongoing websocket connection
 Current wait:
 network_idle
 Choose next bounded wait strategy:
-C1: wait for loading indicator to disappear
-C2: wait 15 seconds
-C3: wait for chart canvas to appear
+A. wait for loading indicator to disappear
+B. wait 15 seconds
+C. wait for chart canvas to appear
 
 Model:
 
-{"candidate_id":"C1"}
+A
 
-Code turns C1 into the actual Chromium/Playwright configuration and reruns it.
+Code turns A into the retained Chromium/Playwright configuration and reruns it.
 
 That’s much closer to the thing you’ve been trying to build everywhere else.
 
@@ -285,13 +285,13 @@ Code may already derive those interactions from a test fixture, DOM structure, o
 If it can’t map “Analytics” to one of several controls:
 
 Which element corresponds to the requested Analytics view?
-E17: button "Analytics"
-E18: link "/analytics"
-E19: div aria-label="analytics-chart"
+A. button "Analytics"
+B. link "/analytics"
+C. div aria-label="analytics-chart"
 
 Model:
 
-{"candidate_id":"E17"}
+A
 
 Code generates the click.
 

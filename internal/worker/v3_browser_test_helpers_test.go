@@ -128,7 +128,7 @@ func testTypeScriptBrowserProgramAtRoot(
 			Kind:      relationAuthority.Kind, Cardinality: relationAuthority.Cardinality,
 			Dimension: assemblyline.ApplicationRequirementDerivedValueDimension,
 		},
-		string(assemblyline.ApplicationRequirementCandidateResultAbsent),
+		"B",
 	)
 	if err != nil {
 		t.Fatalf("decode browser fixture result presence: %v", err)

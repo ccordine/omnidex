@@ -16,14 +16,12 @@ type PortableResult struct {
 type PortableResultProjectionKind string
 
 const (
-	PortableResultProjectionExactResponse      PortableResultProjectionKind = "exact_response"
-	PortableResultProjectionSourceDeclaration  PortableResultProjectionKind = "source_declaration"
-	PortableResultProjectionTypeScriptFunction PortableResultProjectionKind = "typescript_function"
+	PortableResultProjectionExactResponse PortableResultProjectionKind = "exact_response"
 )
 
-// PortableResultProjection is code-owned metadata binding the accepted leaf
-// to an exact byte span in Candidate. Candidate remains the complete untrusted
-// final response and is preserved separately as call evidence.
+// PortableResultProjection is code-owned evidence that Candidate is the exact
+// ordinary response captured from the provider. It is not model-visible and
+// carries no source, schema, or workflow responsibility.
 type PortableResultProjection struct {
 	Kind                 PortableResultProjectionKind
 	Source               string
@@ -36,6 +34,9 @@ type PortableResultProjection struct {
 }
 
 func (result PortableResult) ValidateFor(job PortableJob) error {
+	if err := job.Validate(); err != nil {
+		return err
+	}
 	if result.JobID != job.ID {
 		return fmt.Errorf("portable result job id does not match the claimed job")
 	}
@@ -46,6 +47,16 @@ func (result PortableResult) ValidateFor(job PortableJob) error {
 		return fmt.Errorf(
 			"portable result candidate exceeds gross resource ceiling of %d bytes",
 			maxPortableRawCandidateBytes,
+		)
+	}
+	maximum, err := PortableResponseMaximumBytesForJob(job)
+	if err != nil {
+		return err
+	}
+	if len(result.Candidate) > maximum {
+		return fmt.Errorf(
+			"portable result candidate exceeds %s response ceiling of %d bytes",
+			job.Kind, maximum,
 		)
 	}
 	if result.Projection != nil {
@@ -69,28 +80,8 @@ func NewExactPortableResultProjection(raw string) (PortableResultProjection, err
 	return projection, nil
 }
 
-func (projection TypeScriptFunctionProjection) PortableResultProjection() (PortableResultProjection, error) {
-	result := PortableResultProjection{
-		Kind: PortableResultProjectionTypeScriptFunction, Source: projection.Source,
-		SourceResponseSHA256: projection.RawSHA256, SourceSHA256: projection.SourceSHA256,
-		StartByte: projection.StartByte, EndByte: projection.EndByte,
-		RawBytes: projection.RawBytes, DiscardedBytes: projection.DiscardedBytes,
-	}
-	if projection.SourceBytes != len(projection.Source) ||
-		projection.RawBytes != len(projection.Source) ||
-		projection.RawSHA256 != projection.SourceSHA256 {
-		return PortableResultProjection{}, fmt.Errorf("TypeScript projection metadata is not exact")
-	}
-	if err := result.ValidateFor(projection.Source); err != nil {
-		return PortableResultProjection{}, err
-	}
-	return result, nil
-}
-
 func (projection PortableResultProjection) ValidateFor(raw string) error {
-	if projection.Kind != PortableResultProjectionExactResponse &&
-		projection.Kind != PortableResultProjectionSourceDeclaration &&
-		projection.Kind != PortableResultProjectionTypeScriptFunction {
+	if projection.Kind != PortableResultProjectionExactResponse {
 		return fmt.Errorf("projection kind %q is not registered", projection.Kind)
 	}
 	if projection.RawBytes != len(raw) || projection.SourceResponseSHA256 != portableProjectionSHA256(raw) {

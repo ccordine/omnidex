@@ -1,10 +1,6 @@
 package worker
 
-import (
-	"fmt"
-
-	"github.com/gryph/omnidex/internal/assemblyline"
-)
+import "github.com/gryph/omnidex/internal/assemblyline"
 
 func classifyDirectCodingApplicationRequirementCandidateResultRelation(
 	runtime typedWorkerRuntime,
@@ -77,101 +73,6 @@ func classifyDirectCodingApplicationRequirementCandidateResultPresence(
 		identities,
 		func(raw string) (assemblyline.ApplicationRequirementCandidateResultPresenceResult, error) {
 			return assemblyline.DecodeApplicationRequirementCandidateResultPresenceResult(input, raw)
-		},
-	)
-}
-
-func groundDirectCodingApplicationRequirementCandidateResultRelation(
-	runtime typedWorkerRuntime,
-	intentModel string,
-	immutableRequest string,
-	context assemblyline.ApplicationContext,
-	candidate string,
-	kind assemblyline.ApplicationRequirementCandidateKindResult,
-	cardinality assemblyline.ApplicationRequirementCandidateCardinalityResult,
-	resultRelation assemblyline.ApplicationRequirementCandidateResultRelationResult,
-	identities []assemblyline.ArtifactIdentity,
-) (assemblyline.ApplicationRequirementCandidateResultRelationGroundingResult, error) {
-	input := assemblyline.ApplicationRequirementCandidateResultRelationGroundingInput{
-		ImmutableRequest: immutableRequest,
-		Context:          context,
-		CandidateAuthority: assemblyline.ApplicationRequirementCandidateResultRelationInput{
-			Candidate: candidate, Kind: kind, Cardinality: cardinality,
-		},
-		MissingResultRelation: resultRelation,
-	}
-	job, err := assemblyline.NewApplicationRequirementCandidateResultRelationGroundingJob(input)
-	if err != nil {
-		return assemblyline.ApplicationRequirementCandidateResultRelationGroundingResult{}, err
-	}
-	return runDirectCodingSemanticLeafCall(
-		runtime,
-		intentModel,
-		"application_requirement_candidate_result_relation_grounding",
-		job,
-		identities,
-		func(raw string) (assemblyline.ApplicationRequirementCandidateResultRelationGroundingResult, error) {
-			return assemblyline.DecodeApplicationRequirementCandidateResultRelationGroundingResult(input, raw)
-		},
-	)
-}
-
-func correctDirectCodingApplicationRequirementCandidateResultRelation(
-	runtime typedWorkerRuntime,
-	intentModel string,
-	immutableRequest string,
-	context assemblyline.ApplicationContext,
-	candidate string,
-	kind assemblyline.ApplicationRequirementCandidateKindResult,
-	cardinality assemblyline.ApplicationRequirementCandidateCardinalityResult,
-	resultRelation assemblyline.ApplicationRequirementCandidateResultRelationResult,
-	grounding assemblyline.ApplicationRequirementCandidateResultRelationGroundingResult,
-	identities []assemblyline.ArtifactIdentity,
-) (string, error) {
-	candidateAuthority := assemblyline.ApplicationRequirementCandidateResultRelationInput{
-		Candidate: candidate, Kind: kind, Cardinality: cardinality,
-	}
-	if err := resultRelation.ValidateFor(candidateAuthority); err != nil {
-		return "", fmt.Errorf("validate result-relation correction defect receipt: %w", err)
-	}
-	if resultRelation.Relation != assemblyline.ApplicationRequirementMissingResultRelation {
-		return "", fmt.Errorf(
-			"result-relation correction requires code-established defect %q",
-			assemblyline.ApplicationRequirementMissingResultRelation,
-		)
-	}
-	input := assemblyline.ApplicationRequirementCandidateResultRelationCorrectionInput{
-		ImmutableRequest: immutableRequest,
-		Context:          context,
-		CurrentCandidate: candidate,
-		Defect:           resultRelation.Relation,
-		Grounding:        grounding,
-	}
-	job, err := assemblyline.NewApplicationRequirementCandidateResultRelationCorrectionJob(input)
-	if err != nil {
-		return "", err
-	}
-	return runDirectCodingSemanticLeafCall(
-		runtime,
-		intentModel,
-		"application_requirement_candidate_result_relation_correction",
-		job,
-		identities,
-		func(raw string) (string, error) {
-			leaf, err := assemblyline.DecodeApplicationRequirementCandidateResultRelationCorrectionLeaf(
-				input, raw,
-			)
-			if err != nil {
-				return "", err
-			}
-			if err := assemblyline.ValidatePathFreeModelContextWithProvenance(
-				"application requirement candidate result-relation correction",
-				runtime.PathProvenance,
-				leaf,
-			); err != nil {
-				return "", err
-			}
-			return leaf, nil
 		},
 	)
 }

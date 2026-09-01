@@ -45,6 +45,12 @@ deterministic work for that exact task and persisted the precise semantic
 uncertainty. A model result is data for that station, never instructions for
 the coordinator.
 
+Finite closed choices obey their literal cardinality after code constructs the
+applicable set: zero options take the station's explicit zero-option transition;
+one option is consumed immediately with no model resolution, no model execution,
+and no rejection; two or more options may open one bounded opaque-ID selection.
+Code alone maps the returned ID to the retained value.
+
 ## 3. Planning hierarchy
 
 Strategic planning establishes objectives. It does not decide files,
@@ -132,12 +138,16 @@ For a coding task, code reduces accepted artifact work into declarations and
 then exact mutable blocks. The coding assembly line owns signatures, paths,
 imports, dependency order, local scopes, staging, writes, and verification.
 
-The source model receives one code block's language, signature, local
-behavioral contract, and allowlisted declarations. Repair remains the two
-separate bounded calls defined by the Charmander assembly line: guidance
-receives one exact current failure; the executor receives only the guidance and
-the exact mutable region. Code applies the validated replacement and reruns
-reality.
+The source model receives one code block's language, signature as scope context,
+local behavioral contract, and allowlisted declarations and returns ordinary
+implementation-body text. Code supplies the declaration and owns parsing and
+validation. If code proves one specific defect and its exact mutable byte span,
+only the same persisted source job and immutable model route may continue. The
+model receives one necessary semantic question plus that span alone and returns
+ordinary replacement text. Code digest-checks the retained base, splices only
+the span, and reruns validation and reality. It never asks inference to preserve
+the surrounding body and never opens guidance, executor, restart, or model-swap
+paths.
 
 ## 9. Verification and completion
 

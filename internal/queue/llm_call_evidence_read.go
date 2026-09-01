@@ -11,15 +11,20 @@ import (
 
 const llmCallEvidenceColumns = `
 	calls.id,calls.job_id,calls.generation,calls.step_id,calls.step_attempt,calls.worker_id,
-	calls.scope,calls.work_id,calls.work_kind,calls.requested_model,calls.model,calls.protocol,
-	calls.system_envelope,calls.prompt_hint,calls.model_input,calls.model_input_sha256,
+	 calls.scope,calls.work_id,calls.work_kind,calls.iteration,calls.output_continuation,
+	 calls.parent_call_evidence_id,
+	calls.source_base_candidate,calls.source_base_sha256,calls.source_start_byte,
+	calls.source_end_byte,calls.source_question,calls.source_question_sha256,
+	calls.requested_model,calls.model,calls.protocol,
+	calls.system_envelope,calls.model_input,calls.model_input_sha256,
 	calls.model_input_bytes,calls.provider_request,calls.provider_request_sha256,
 	calls.provider_request_bytes,calls.context_tokens,calls.max_output_tokens,
 	calls.output_limit_mode,calls.created_at,
 	receipts.call_evidence_id,receipts.generation_receipt,receipts.generation_receipt_sha256,
 	receipts.raw_response_present,receipts.raw_response,receipts.raw_response_sha256,
 	receipts.raw_response_bytes,receipts.candidate,receipts.candidate_sha256,
-	receipts.prompt_tokens,receipts.output_tokens,receipts.provider_duration_nanos,
+	 receipts.prompt_tokens,receipts.output_tokens,receipts.provider_duration_nanos,
+	 receipts.output_limit_reached,
 	receipts.status,receipts.error,receipts.error_sha256,receipts.elapsed_nanos,
 	receipts.created_at`
 
@@ -130,6 +135,33 @@ func readLLMCallEvidenceByIDTx(
 	return evidence, nil
 }
 
+func (r *Repository) GetLLMCallEvidence(
+	ctx context.Context,
+	callID int64,
+) (LLMCallEvidence, error) {
+	if ctx == nil || r == nil || r.pool == nil || callID < 1 {
+		return LLMCallEvidence{}, fmt.Errorf(
+			"exact LLM call evidence lookup requires context, PostgreSQL, and a positive call",
+		)
+	}
+	var evidence LLMCallEvidence
+	if err := scanLLMCallEvidenceWithOutcome(r.pool.QueryRow(
+		ctx,
+		`SELECT `+llmCallEvidenceColumns+`,
+		 outcomes.call_evidence_id,outcomes.status,outcomes.candidate_sha256,
+		 outcomes.projection,outcomes.validation_error,outcomes.validation_error_sha256,
+		 outcomes.created_at
+		 FROM llm_call_evidence AS calls
+		 LEFT JOIN llm_call_receipts AS receipts ON receipts.call_evidence_id=calls.id
+		 LEFT JOIN llm_call_outcomes AS outcomes ON outcomes.call_evidence_id=calls.id
+		 WHERE calls.id=$1`,
+		callID,
+	), &evidence); err != nil {
+		return LLMCallEvidence{}, fmt.Errorf("read exact LLM call evidence: %w", err)
+	}
+	return evidence, nil
+}
+
 func (r *Repository) ListLLMCallEvidenceForJob(
 	ctx context.Context,
 	jobID, afterID int64,
@@ -176,11 +208,18 @@ type llmCallEvidenceScanner interface {
 
 func scanLLMCallOpening(scanner llmCallEvidenceScanner, evidence *LLMCallEvidence) error {
 	var providerRequest []byte
+	var parentCallEvidenceID *int64
+	var sourceBaseCandidate, sourceBaseSHA256, sourceQuestion, sourceQuestionSHA256 *string
+	var sourceStartByte, sourceEndByte *int
 	if err := scanner.Scan(
 		&evidence.ID, &evidence.JobID, &evidence.Generation, &evidence.StepID,
 		&evidence.StepAttempt, &evidence.WorkerID, &evidence.Scope, &evidence.WorkID,
-		&evidence.WorkKind, &evidence.RequestedModel, &evidence.Model, &evidence.Protocol,
-		&evidence.SystemEnvelope, &evidence.PromptHint, &evidence.ModelInput,
+		&evidence.WorkKind, &evidence.Iteration, &evidence.OutputContinuation,
+		&parentCallEvidenceID,
+		&sourceBaseCandidate, &sourceBaseSHA256, &sourceStartByte, &sourceEndByte,
+		&sourceQuestion, &sourceQuestionSHA256,
+		&evidence.RequestedModel, &evidence.Model, &evidence.Protocol,
+		&evidence.SystemEnvelope, &evidence.ModelInput,
 		&evidence.ModelInputSHA256, &evidence.ModelInputBytes, &providerRequest,
 		&evidence.ProviderRequestSHA256, &evidence.ProviderRequestBytes,
 		&evidence.ContextTokens, &evidence.MaxOutputTokens, &evidence.OutputLimitMode,
@@ -188,6 +227,13 @@ func scanLLMCallOpening(scanner llmCallEvidenceScanner, evidence *LLMCallEvidenc
 	); err != nil {
 		return err
 	}
+	if parentCallEvidenceID != nil {
+		evidence.ParentCallEvidenceID = *parentCallEvidenceID
+	}
+	assignLLMCallSourceCorrection(
+		evidence, sourceBaseCandidate, sourceBaseSHA256, sourceStartByte,
+		sourceEndByte, sourceQuestion, sourceQuestionSHA256,
+	)
 	evidence.ProviderRequest = append([]byte(nil), providerRequest...)
 	return nil
 }
@@ -200,7 +246,7 @@ func scanLLMCallEvidenceWithOutcome(
 	var rawResponseSHA256, candidate, candidateSHA256, callError, callErrorSHA256 *string
 	var receiptID *int64
 	var generationReceiptSHA256, receiptStatus *string
-	var rawResponsePresent *bool
+	var rawResponsePresent, outputLimitReached *bool
 	var rawResponseBytes, promptTokens, outputTokens *int
 	var providerDurationNanos, elapsedNanos *int64
 	var receiptCreatedAt *time.Time
@@ -208,24 +254,38 @@ func scanLLMCallEvidenceWithOutcome(
 	var outcomeStatus, outcomeCandidateSHA256, outcomeError, outcomeErrorSHA256 *string
 	var outcomeProjection []byte
 	var outcomeCreatedAt *time.Time
+	var parentCallEvidenceID *int64
+	var sourceBaseCandidate, sourceBaseSHA256, sourceQuestion, sourceQuestionSHA256 *string
+	var sourceStartByte, sourceEndByte *int
 	if err := scanner.Scan(
 		&evidence.ID, &evidence.JobID, &evidence.Generation, &evidence.StepID,
 		&evidence.StepAttempt, &evidence.WorkerID, &evidence.Scope, &evidence.WorkID,
-		&evidence.WorkKind, &evidence.RequestedModel, &evidence.Model, &evidence.Protocol,
-		&evidence.SystemEnvelope, &evidence.PromptHint, &evidence.ModelInput,
+		&evidence.WorkKind, &evidence.Iteration, &evidence.OutputContinuation,
+		&parentCallEvidenceID,
+		&sourceBaseCandidate, &sourceBaseSHA256, &sourceStartByte, &sourceEndByte,
+		&sourceQuestion, &sourceQuestionSHA256,
+		&evidence.RequestedModel, &evidence.Model, &evidence.Protocol,
+		&evidence.SystemEnvelope, &evidence.ModelInput,
 		&evidence.ModelInputSHA256, &evidence.ModelInputBytes, &providerRequest,
 		&evidence.ProviderRequestSHA256, &evidence.ProviderRequestBytes,
 		&evidence.ContextTokens, &evidence.MaxOutputTokens, &evidence.OutputLimitMode,
 		&evidence.CreatedAt, &receiptID, &generationReceipt, &generationReceiptSHA256,
 		&rawResponsePresent, &rawResponse, &rawResponseSHA256, &rawResponseBytes,
 		&candidate, &candidateSHA256, &promptTokens, &outputTokens,
-		&providerDurationNanos, &receiptStatus, &callError, &callErrorSHA256,
+		&providerDurationNanos, &outputLimitReached, &receiptStatus, &callError, &callErrorSHA256,
 		&elapsedNanos, &receiptCreatedAt,
 		&outcomeID, &outcomeStatus, &outcomeCandidateSHA256, &outcomeProjection,
 		&outcomeError, &outcomeErrorSHA256, &outcomeCreatedAt,
 	); err != nil {
 		return err
 	}
+	if parentCallEvidenceID != nil {
+		evidence.ParentCallEvidenceID = *parentCallEvidenceID
+	}
+	assignLLMCallSourceCorrection(
+		evidence, sourceBaseCandidate, sourceBaseSHA256, sourceStartByte,
+		sourceEndByte, sourceQuestion, sourceQuestionSHA256,
+	)
 	evidence.ProviderRequest = append([]byte(nil), providerRequest...)
 	if receiptID != nil {
 		evidence.ProviderReceiptPresent = true
@@ -240,6 +300,7 @@ func scanLLMCallEvidenceWithOutcome(
 		evidence.PromptTokens = *promptTokens
 		evidence.OutputTokens = *outputTokens
 		evidence.ProviderDurationNanos = *providerDurationNanos
+		evidence.OutputLimitReached = *outputLimitReached
 		evidence.Status = LLMCallStatus(*receiptStatus)
 		evidence.ElapsedNanos = *elapsedNanos
 		evidence.ProviderReceiptCreatedAt = receiptCreatedAt
@@ -278,6 +339,36 @@ func scanLLMCallEvidenceWithOutcome(
 		evidence.Outcome = outcome
 	}
 	return nil
+}
+
+func assignLLMCallSourceCorrection(
+	evidence *LLMCallEvidence,
+	baseCandidate *string,
+	baseSHA256 *string,
+	startByte *int,
+	endByte *int,
+	question *string,
+	questionSHA256 *string,
+) {
+	if evidence == nil || baseCandidate == nil {
+		return
+	}
+	evidence.SourceBaseCandidate = *baseCandidate
+	if baseSHA256 != nil {
+		evidence.SourceBaseSHA256 = *baseSHA256
+	}
+	if startByte != nil {
+		evidence.SourceStartByte = *startByte
+	}
+	if endByte != nil {
+		evidence.SourceEndByte = *endByte
+	}
+	if question != nil {
+		evidence.SourceQuestion = *question
+	}
+	if questionSHA256 != nil {
+		evidence.SourceQuestionSHA256 = *questionSHA256
+	}
 }
 
 func optionalLLMCallEvidenceHash(value string) any {

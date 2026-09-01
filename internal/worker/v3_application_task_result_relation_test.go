@@ -125,8 +125,12 @@ func directCodingAcceptedResultRelationFixture(
 			Cardinality: authority.Cardinality,
 			Dimension:   assemblyline.ApplicationRequirementDerivedValueDimension,
 		}
+		derivedResponse := "B"
+		if derivedPresence == assemblyline.ApplicationRequirementCandidateResultPresent {
+			derivedResponse = "A"
+		}
 		derived, err := assemblyline.DecodeApplicationRequirementCandidateResultPresenceResult(
-			derivedInput, string(derivedPresence),
+			derivedInput, derivedResponse,
 		)
 		if err != nil {
 			t.Fatal(err)
@@ -141,7 +145,7 @@ func directCodingAcceptedResultRelationFixture(
 			}
 			decoded, decodeErr := assemblyline.DecodeApplicationRequirementCandidateResultPresenceResult(
 				determiningInput,
-				string(assemblyline.ApplicationRequirementCandidateResultPresent),
+				"A",
 			)
 			if decodeErr != nil {
 				t.Fatal(decodeErr)

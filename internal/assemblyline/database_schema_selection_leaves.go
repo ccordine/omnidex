@@ -7,69 +7,52 @@ import (
 	"github.com/gryph/omnidex/internal/exactjson"
 )
 
-const (
-	WorkDatabaseSchemaRelationInventory  WorkKind = "database_schema_relation_inventory"
-	WorkDatabaseSchemaRelationNecessity  WorkKind = "database_schema_relation_necessity"
-	WorkDatabaseSchemaRelationResolution WorkKind = "database_schema_relation_resolution"
+const WorkDatabaseSchemaRelationChoice WorkKind = "database_schema_relation_choice"
 
-	MaxDatabaseSchemaRelationInventoryCandidates = maxDatabaseSchemaCandidates
-	maxDatabaseSchemaRelationCandidateBytes      = 1024
-	maxDatabaseSchemaRelationInventoryBytes      = MaxDatabaseSchemaRelationInventoryCandidates*maxDatabaseSchemaRelationCandidateBytes +
-		MaxDatabaseSchemaRelationInventoryCandidates - 1
-)
-
-type DatabaseSchemaRelationInventoryInput struct {
+type DatabaseSchemaRelationChoiceInput struct {
 	ExactNeed  string                    `json:"exact_need"`
 	Context    ObjectiveContext          `json:"objective_context"`
 	Candidates []DatabaseSchemaCandidate `json:"candidates"`
 }
 
-type DatabaseSchemaRelationNecessityInput struct {
-	ExactNeed string           `json:"exact_need"`
-	Context   ObjectiveContext `json:"objective_context"`
-	Candidate string           `json:"candidate"`
-}
-
-type DatabaseSchemaRelationResolutionInput struct {
-	Candidate  string                    `json:"candidate"`
-	Candidates []DatabaseSchemaCandidate `json:"candidates"`
-}
-
-func ProjectDatabaseSchemaRelationInventoryInput(
+func ProjectDatabaseSchemaRelationChoiceInput(
 	input DatabaseSchemaSelectionInput,
-) (DatabaseSchemaRelationInventoryInput, error) {
+	remaining []DatabaseSchemaCandidate,
+) (DatabaseSchemaRelationChoiceInput, error) {
 	if err := input.validate(); err != nil {
-		return DatabaseSchemaRelationInventoryInput{}, err
+		return DatabaseSchemaRelationChoiceInput{}, err
 	}
-	projected := DatabaseSchemaRelationInventoryInput{
+	if err := validateDatabaseSchemaRelationCandidates(remaining); err != nil {
+		return DatabaseSchemaRelationChoiceInput{}, err
+	}
+	authority := make(map[string]string, len(input.Candidates))
+	for _, candidate := range input.Candidates {
+		authority[candidate.RelationID] = candidate.Descriptor
+	}
+	for _, candidate := range remaining {
+		descriptor, exists := authority[candidate.RelationID]
+		if !exists || descriptor != candidate.Descriptor {
+			return DatabaseSchemaRelationChoiceInput{}, fmt.Errorf(
+				"database schema remaining relation %q differs from its selection authority",
+				candidate.RelationID,
+			)
+		}
+	}
+	projected := DatabaseSchemaRelationChoiceInput{
 		ExactNeed: input.ExactNeed,
 		Context:   CloneObjectiveContext(input.Context),
 		Candidates: append(
-			[]DatabaseSchemaCandidate(nil), input.Candidates...,
+			[]DatabaseSchemaCandidate(nil), remaining...,
 		),
 	}
 	if err := projected.validate(); err != nil {
-		return DatabaseSchemaRelationInventoryInput{}, err
+		return DatabaseSchemaRelationChoiceInput{}, err
 	}
 	return projected, nil
 }
 
-func (input DatabaseSchemaRelationInventoryInput) validate() error {
+func (input DatabaseSchemaRelationChoiceInput) validate() error {
 	if err := validateDatabaseSchemaObjective(input.ExactNeed, input.Context); err != nil {
-		return err
-	}
-	return validateDatabaseSchemaRelationCandidates(input.Candidates)
-}
-
-func (input DatabaseSchemaRelationNecessityInput) validate() error {
-	if err := validateDatabaseSchemaObjective(input.ExactNeed, input.Context); err != nil {
-		return err
-	}
-	return validateDatabaseSchemaRelationCandidatePurpose(input.Candidate)
-}
-
-func (input DatabaseSchemaRelationResolutionInput) validate() error {
-	if err := validateDatabaseSchemaRelationCandidatePurpose(input.Candidate); err != nil {
 		return err
 	}
 	return validateDatabaseSchemaRelationCandidates(input.Candidates)
@@ -88,45 +71,17 @@ func validateDatabaseSchemaRelationCandidates(candidates []DatabaseSchemaCandida
 	return validateDatabaseSchemaCandidates(candidates)
 }
 
-func validateDatabaseSchemaRelationCandidatePurpose(candidate string) error {
-	return validateGroundedText(
-		"database schema relation candidate purpose",
-		candidate,
-		maxDatabaseSchemaRelationCandidateBytes,
-		false,
-	)
-}
-
 func renderDatabaseSchemaObjective(exactNeed string, context ObjectiveContext) (string, error) {
 	if err := validateDatabaseSchemaObjective(exactNeed, context); err != nil {
 		return "", err
 	}
-	projection, err := marshalObjectiveContextInputForModel(struct {
-		ExactNeed string           `json:"exact_need"`
-		Context   ObjectiveContext `json:"objective_context"`
-	}{ExactNeed: exactNeed, Context: context}, context)
-	if err != nil {
-		return "", err
-	}
-	return string(projection), nil
-}
-
-func renderDatabaseSchemaRelationOptions(
-	candidates []DatabaseSchemaCandidate,
-	includeIDs bool,
-) (string, error) {
-	if err := validateDatabaseSchemaRelationCandidates(candidates); err != nil {
-		return "", err
-	}
 	var rendered strings.Builder
-	for index, candidate := range candidates {
-		if includeIDs {
-			fmt.Fprintf(&rendered, "RELATION ID %s:\n%s\n", candidate.RelationID, candidate.Descriptor)
-			continue
-		}
-		fmt.Fprintf(&rendered, "RELATION OPTION %d:\n%s\n", index+1, candidate.Descriptor)
+	rendered.WriteString(exactNeed)
+	for _, capsule := range context.Capsules {
+		rendered.WriteString("\n\n")
+		rendered.WriteString(capsule.Content)
 	}
-	return strings.TrimSuffix(rendered.String(), "\n"), nil
+	return rendered.String(), nil
 }
 
 func databaseSchemaSemanticAuthoritySHA256(

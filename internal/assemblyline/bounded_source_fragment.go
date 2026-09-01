@@ -1,25 +1,162 @@
 package assemblyline
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"unicode/utf8"
 	"unsafe"
 
+	"github.com/gryph/omnidex/internal/sourcebodyresponse"
 	treesitter "github.com/tree-sitter/go-tree-sitter"
 )
 
 func validateBoundedSourceFragment(
 	language boundedSourceLanguage,
 	signature string,
-	candidate string,
+	responseBody string,
 ) (string, error) {
 	signature = strings.TrimSpace(signature)
 	if signature == "" || strings.ContainsAny(signature, "\x00\r\n") ||
 		!utf8.ValidString(signature) || len(signature) > 1024 {
 		return "", fmt.Errorf("%s fragment signature must be one trimmed line", language.display)
 	}
-	content, actual, err := projectBoundedSourceDeclaration(language, candidate)
+	normalizedBody, err := extractBoundedSourceBodyResponse(
+		language, signature, responseBody,
+	)
+	if err != nil {
+		return "", fmt.Errorf("%s source body: %w", language.display, err)
+	}
+	declaration, err := ComposeSourceDeclaration(signature, normalizedBody)
+	if err != nil {
+		return "", fmt.Errorf("%s source body: %w", language.display, err)
+	}
+	if _, err := boundedSourceDeclarationShape(language, signature+" {}"); err != nil {
+		return "", fmt.Errorf("invalid code-owned %s signature: %w", language.display, err)
+	}
+	validated, err := validateBoundedSourceDeclaration(language, signature, declaration)
+	if err == nil {
+		return validated, nil
+	}
+	var syntaxFailure *boundedSourceSyntaxFailure
+	if !errors.As(err, &syntaxFailure) {
+		return "", err
+	}
+	prefix := signature + " {\n"
+	bodyStart := len(prefix)
+	bodyEnd := bodyStart + len(normalizedBody)
+	if declaration != prefix+normalizedBody+"\n}" ||
+		syntaxFailure.startByte < bodyStart || syntaxFailure.endByte > bodyEnd ||
+		syntaxFailure.startByte >= syntaxFailure.endByte {
+		return "", err
+	}
+	defect, defectErr := NewSourceBodyDefect(
+		normalizedBody,
+		syntaxFailure.startByte-bodyStart,
+		syntaxFailure.endByte-bodyStart,
+		"What should replace this syntactically invalid span?",
+		err,
+	)
+	if defectErr != nil {
+		return "", fmt.Errorf("map exact %s syntax node to implementation body: %w", language.display, defectErr)
+	}
+	return "", defect
+}
+
+func extractBoundedSourceBodyResponse(
+	language boundedSourceLanguage,
+	signature string,
+	raw string,
+) (string, error) {
+	candidate, err := sourcebodyresponse.ExtractCandidate(raw, MaxPortableRawCandidateBytes)
+	if err != nil {
+		return "", err
+	}
+	body, declaration, err := boundedSourceDeclarationBody(language, candidate.Source)
+	if err != nil {
+		return "", err
+	}
+	if declaration {
+		return NormalizeSourceBodyResponse(body)
+	}
+	if candidate.Fenced {
+		assembled, err := ComposeSourceDeclaration(signature, candidate.Source)
+		if err != nil {
+			return "", err
+		}
+		if _, err := boundedSourceDeclarationShape(language, assembled); err != nil {
+			return "", fmt.Errorf(
+				"fenced %s response contains neither one declaration nor one parseable implementation body: %w",
+				language.display, err,
+			)
+		}
+	}
+	return NormalizeSourceBodyResponse(candidate.Source)
+}
+
+func boundedSourceDeclarationBody(
+	language boundedSourceLanguage,
+	source string,
+) (string, bool, error) {
+	parser := treesitter.NewParser()
+	if err := parser.SetLanguage(treesitter.NewLanguage(language.fragmentLanguage())); err != nil {
+		parser.Close()
+		return "", false, fmt.Errorf("configure %s extraction parser: %w", language.display, err)
+	}
+	tree := parser.Parse([]byte(source), nil)
+	if tree == nil {
+		parser.Close()
+		return "", false, fmt.Errorf("%s extraction parser returned no syntax tree", language.display)
+	}
+	defer tree.Close()
+	defer parser.Close()
+	root := tree.RootNode()
+	if root == nil || root.HasError() || root.NamedChildCount() != 1 {
+		return "", false, nil
+	}
+	top := root.NamedChild(0)
+	if top == nil || int(top.StartByte()) != 0 || int(top.EndByte()) != len(source) {
+		return "", false, nil
+	}
+	declaration := top
+	if language.allowCodeOwnedExport && top.Kind() == "export_statement" {
+		declaration = nil
+		for index := uint(0); index < top.NamedChildCount(); index++ {
+			child := top.NamedChild(index)
+			if child == nil {
+				continue
+			}
+			if _, allowed := language.declarationKinds[child.Kind()]; allowed {
+				if declaration != nil {
+					return "", false, nil
+				}
+				declaration = child
+			}
+		}
+	}
+	if declaration == nil {
+		return "", false, nil
+	}
+	if _, allowed := language.declarationKinds[declaration.Kind()]; !allowed {
+		return "", false, nil
+	}
+	body := declaration.ChildByFieldName("body")
+	if body == nil {
+		return "", false, nil
+	}
+	start, end := int(body.StartByte()), int(body.EndByte())
+	if start < 0 || end <= start+1 || end > len(source) || source[start] != '{' || source[end-1] != '}' {
+		return "", false, fmt.Errorf("%s declaration body range is invalid", language.display)
+	}
+	return source[start+1 : end-1], true, nil
+}
+
+func validateBoundedSourceDeclaration(
+	language boundedSourceLanguage,
+	signature string,
+	declaration string,
+) (string, error) {
+	content, actual, err := projectBoundedSourceDeclaration(language, declaration)
 	if err != nil {
 		return "", err
 	}
@@ -34,17 +171,6 @@ func validateBoundedSourceFragment(
 		)
 	}
 	return content, nil
-}
-
-func projectBoundedSourceFragment(
-	language boundedSourceLanguage,
-	raw string,
-) (PortableResultProjection, error) {
-	content, _, err := projectBoundedSourceDeclaration(language, raw)
-	if err != nil {
-		return PortableResultProjection{}, err
-	}
-	return NewExactSourceDeclarationPortableResultProjection(content)
 }
 
 func projectBoundedSourceDeclaration(
@@ -138,29 +264,80 @@ func parseBoundedSourceTree(
 		detail := firstBoundedSourceSyntaxFailure(root)
 		tree.Close()
 		parser.Close()
-		return nil, nil, fmt.Errorf("%s syntax rejected: %s", language.display, detail)
+		if detail == nil {
+			return nil, nil, fmt.Errorf(
+				"%s syntax rejected without one exact non-empty parser-error leaf",
+				language.display,
+			)
+		}
+		return nil, nil, fmt.Errorf("%s syntax rejected: %w", language.display, detail)
 	}
 	return parser, tree, nil
 }
 
-func firstBoundedSourceSyntaxFailure(node *treesitter.Node) string {
-	if node == nil {
+type boundedSourceSyntaxFailure struct {
+	kind      string
+	line      int
+	column    int
+	startByte int
+	endByte   int
+}
+
+func (failure *boundedSourceSyntaxFailure) Error() string {
+	if failure == nil {
 		return "unknown parser failure at line 1 column 1"
 	}
-	if node.IsError() || node.IsMissing() {
-		position := node.StartPosition()
-		return fmt.Sprintf(
-			"%s at line %d column %d", node.Kind(), position.Row+1, position.Column+1,
-		)
+	return fmt.Sprintf(
+		"%s at line %d column %d", failure.kind, failure.line, failure.column,
+	)
+}
+
+func firstBoundedSourceSyntaxFailure(node *treesitter.Node) *boundedSourceSyntaxFailure {
+	leaf := smallestNonemptyParserErrorLeaf(node)
+	if leaf == nil {
+		return nil
+	}
+	position := leaf.StartPosition()
+	return &boundedSourceSyntaxFailure{
+		kind: leaf.Kind(), line: int(position.Row) + 1, column: int(position.Column) + 1,
+		startByte: int(leaf.StartByte()), endByte: int(leaf.EndByte()),
+	}
+}
+
+// smallestNonemptyParserErrorLeaf returns only a byte range the parser proves
+// contains no accepted surrounding syntax. Missing nodes are zero-width repair
+// suggestions and cannot authorize model mutation. A composite ERROR node is
+// also insufficient unless it contains a smaller exact error leaf. Tree-sitter
+// may wrap one unexpected token in an ERROR node whose sole child covers the
+// identical range; that wrapper remains one exact contiguous leaf.
+func smallestNonemptyParserErrorLeaf(node *treesitter.Node) *treesitter.Node {
+	if node == nil || (!node.HasError() && !node.IsError() && !node.IsMissing()) {
+		return nil
 	}
 	for index := uint(0); index < node.ChildCount(); index++ {
 		child := node.Child(index)
-		if child != nil && child.HasError() {
-			return firstBoundedSourceSyntaxFailure(child)
+		if child == nil || (!child.HasError() && !child.IsError() && !child.IsMissing()) {
+			continue
+		}
+		if leaf := smallestNonemptyParserErrorLeaf(child); leaf != nil {
+			return leaf
 		}
 	}
-	position := node.StartPosition()
-	return fmt.Sprintf("invalid syntax at line %d column %d", position.Row+1, position.Column+1)
+	if node.IsMissing() || !node.IsError() || node.StartByte() >= node.EndByte() {
+		return nil
+	}
+	if node.ChildCount() == 0 {
+		return node
+	}
+	if node.ChildCount() != 1 {
+		return nil
+	}
+	child := node.Child(0)
+	if child == nil || child.HasError() || child.IsMissing() ||
+		child.StartByte() != node.StartByte() || child.EndByte() != node.EndByte() {
+		return nil
+	}
+	return node
 }
 
 func canonicalBoundedSourceNode(node *treesitter.Node, skippedID uintptr, source []byte) string {

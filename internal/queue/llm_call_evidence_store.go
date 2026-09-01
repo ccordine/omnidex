@@ -30,27 +30,47 @@ func insertLLMCallOpening(
 ) (LLMCallEvidence, error) {
 	record := normalized.record
 	var evidence LLMCallEvidence
+	var sourceBaseCandidate, sourceBaseSHA256, sourceStartByte, sourceEndByte any
+	var sourceQuestion, sourceQuestionSHA256 any
+	if record.SourceCorrection != nil {
+		sourceBaseCandidate = record.SourceCorrection.BaseCandidate
+		sourceBaseSHA256 = record.SourceCorrection.BaseSHA256
+		sourceStartByte = record.SourceCorrection.StartByte
+		sourceEndByte = record.SourceCorrection.EndByte
+		sourceQuestion = record.SourceCorrection.Question
+		sourceQuestionSHA256 = record.SourceCorrection.QuestionSHA256
+	}
 	err := scanLLMCallOpening(querier.QueryRow(ctx, `
 		INSERT INTO llm_call_evidence (
 			job_id,generation,step_id,step_attempt,worker_id,
-			scope,work_id,work_kind,requested_model,model,protocol,
-			system_envelope,prompt_hint,model_input,model_input_sha256,model_input_bytes,
+			scope,work_id,work_kind,iteration,output_continuation,parent_call_evidence_id,
+			source_base_candidate,source_base_sha256,source_start_byte,source_end_byte,
+			source_question,source_question_sha256,
+			requested_model,model,protocol,
+			system_envelope,model_input,model_input_sha256,model_input_bytes,
 			provider_request,provider_request_sha256,provider_request_bytes,
 			context_tokens,max_output_tokens,output_limit_mode
 		) VALUES (
-			$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,
-			$17,$18,$19,$20,$21,$22
+			$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,
+			$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30
 		)
 		RETURNING id,job_id,generation,step_id,step_attempt,worker_id,
-		          scope,work_id,work_kind,requested_model,model,protocol,
-		          system_envelope,prompt_hint,model_input,model_input_sha256,model_input_bytes,
+		          scope,work_id,work_kind,iteration,output_continuation,parent_call_evidence_id,
+		          source_base_candidate,source_base_sha256,source_start_byte,source_end_byte,
+		          source_question,source_question_sha256,
+		          requested_model,model,protocol,
+		          system_envelope,model_input,model_input_sha256,model_input_bytes,
 		          provider_request,provider_request_sha256,provider_request_bytes,
 		          context_tokens,max_output_tokens,output_limit_mode,created_at
-	`, record.Authority.JobID, record.Authority.Generation, record.Authority.StepID,
+		`, record.Authority.JobID, record.Authority.Generation, record.Authority.StepID,
 		record.Authority.Attempt, record.Authority.WorkerID,
-		record.Scope, record.WorkID, string(record.WorkKind), record.RequestedModel,
+		record.Scope, record.WorkID, string(record.WorkKind), record.Iteration,
+		record.OutputContinuation,
+		optionalLLMCallParentID(record.ParentCallEvidenceID),
+		sourceBaseCandidate, sourceBaseSHA256, sourceStartByte, sourceEndByte,
+		sourceQuestion, sourceQuestionSHA256, record.RequestedModel,
 		record.Prepared.ContextModel, string(record.Prepared.Protocol),
-		record.Prepared.Prompt, record.Prepared.PromptHint, normalized.modelInput,
+		record.Prepared.Prompt, normalized.modelInput,
 		normalized.modelInputSHA256, len(normalized.modelInput),
 		normalized.providerRequest, normalized.providerRequestSHA256,
 		len(normalized.providerRequest), record.Prepared.ContextTokens,
@@ -59,6 +79,13 @@ func insertLLMCallOpening(
 		return LLMCallEvidence{}, fmt.Errorf("reserve exact LLM call evidence: %w", err)
 	}
 	return evidence, nil
+}
+
+func optionalLLMCallParentID(id int64) any {
+	if id == 0 {
+		return nil
+	}
+	return id
 }
 
 type llmCallEvidenceQuerier interface {

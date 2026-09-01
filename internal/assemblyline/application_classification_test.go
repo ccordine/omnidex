@@ -21,16 +21,26 @@ func TestUnspecifiedApplicationSurfaceUsesCodeOwnedBrowserDefault(t *testing.T) 
 				t.Fatal(err)
 			}
 			for _, required := range []string{
-				"unspecified only when the request does not constrain",
-				"Do not choose unsupported merely because the surface is omitted",
-				"browser_application | command_line_application | unspecified | unsupported",
+				"The request does not constrain its observable delivery surface.",
+				"A missing surface constraint is different from an explicit requirement outside the registered set",
+				"Answer with A or B or C or D.",
 			} {
 				if !strings.Contains(prompt, required) {
 					t.Fatalf("surface prompt omitted %q: %s", required, prompt)
 				}
 			}
+			for _, forbidden := range []string{
+				string(ApplicationSurfaceBrowser),
+				string(ApplicationSurfaceCommandLine),
+				string(ApplicationSurfaceUnspecified),
+				string(ApplicationSurfaceUnsupported),
+			} {
+				if strings.Contains(prompt, forbidden) {
+					t.Fatalf("surface prompt exposed code-owned value %q: %s", forbidden, prompt)
+				}
+			}
 			classification, err := DecodeApplicationClassification(
-				input, string(ApplicationSurfaceUnspecified),
+				input, "C",
 			)
 			if err != nil {
 				t.Fatal(err)
@@ -38,6 +48,12 @@ func TestUnspecifiedApplicationSurfaceUsesCodeOwnedBrowserDefault(t *testing.T) 
 			if classification.Schema != ApplicationClassificationSchemaV2 ||
 				classification.Surface != ApplicationSurfaceUnspecified {
 				t.Fatalf("classification=%+v", classification)
+			}
+			if _, err := DecodeApplicationClassification(
+				input,
+				string(ApplicationSurfaceUnspecified),
+			); err == nil {
+				t.Fatal("code-owned surface value was accepted as model output")
 			}
 			surface, err := ResolveApplicationSurface(classification)
 			if err != nil || surface != ApplicationDefaultSurface ||
@@ -54,7 +70,7 @@ func TestExplicitUnsupportedApplicationSurfaceDoesNotUseDefault(t *testing.T) {
 		UserRequest: "Build a native smartwatch application.",
 	}
 	classification, err := DecodeApplicationClassification(
-		input, string(ApplicationSurfaceUnsupported),
+		input, "D",
 	)
 	if err != nil {
 		t.Fatal(err)

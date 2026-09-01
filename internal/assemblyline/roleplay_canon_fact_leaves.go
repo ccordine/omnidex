@@ -14,8 +14,6 @@ const (
 	WorkRoleplayCanonFactCandidateAuthorization WorkKind = "roleplay_canon_fact_candidate_authorization"
 	WorkRoleplayCanonFactCandidateRelation      WorkKind = "roleplay_canon_fact_candidate_relation"
 
-	RoleplayNoCanonFactCandidates = "NO_CANON_FACT_CANDIDATES"
-
 	RoleplayCanonFactEstablished    = "ESTABLISHED_BY_CURRENT_CONTRIBUTION"
 	RoleplayCanonFactNotEstablished = "NOT_ESTABLISHED_BY_CURRENT_CONTRIBUTION"
 
@@ -46,12 +44,11 @@ func BuildRoleplayCanonFactInventoryPrompt(input RoleplayCanonExtractionInput) (
 		return "", err
 	}
 	return strings.Join([]string{
-		"Return one bounded source-ordered inventory of candidate durable fictional facts directly established by the exact current contribution.",
-		"Treat only the exact contribution as the fact source. Established context is reference material, and an antecedent user turn only resolves references in an assistant contribution. Questions, requests, and directions are not fictional events.",
+		"What durable fictional facts are directly established by this contribution?",
+		"Treat the current contribution as the only fact source. Established fictional context is reference material, and an earlier user contribution may only resolve references in an in-character response. Questions, requests, and directions are not fictional events.",
 		"Exclude implications, restatements of established context, inferred character visibility, decorative sensory detail, and real-world claims. Attribute first-person statements, actions, possessions, and knowledge only to " + strconv.Quote(input.Source.AttributedPersonaName) + ".",
-		fmt.Sprintf("Return at most %d candidates, one concise standalone candidate fact per non-empty raw line in contribution source order. Do not merge distinct facts, add customary detail, or infer a future event.", MaxRoleplayCanonFactsPerTurn),
-		"When the contribution directly establishes no durable fictional fact, return only NO_CANON_FACT_CANDIDATES. Otherwise return candidate text only, with no JSON, labels, Markdown, explanation, or surrounding envelope.",
-		"ROLEPLAY CANON CANDIDATE INVENTORY AUTHORITY:\n" + authority,
+		fmt.Sprintf("List between 1 and %d concise standalone facts in contribution source order, one fact per line. Do not merge distinct facts, add customary detail, or infer a future event.", MaxRoleplayCanonFactsPerTurn),
+		authority,
 	}, "\n\n"), nil
 }
 
@@ -69,22 +66,19 @@ func DecodeRoleplayCanonFactInventory(
 	if err != nil {
 		return zero, err
 	}
-	candidates := []string{}
-	if leaf != RoleplayNoCanonFactCandidates {
-		if strings.ContainsRune(leaf, '\r') {
-			return zero, fmt.Errorf("roleplay canon fact inventory must use LF line boundaries")
-		}
-		candidates = strings.Split(leaf, "\n")
-		if len(candidates) > MaxRoleplayCanonFactsPerTurn {
-			return zero, fmt.Errorf(
-				"roleplay canon fact inventory must contain 0..%d candidates",
-				MaxRoleplayCanonFactsPerTurn,
-			)
-		}
-		for index, candidate := range candidates {
-			if err := roleplay.ValidateCanonFact(candidate); err != nil {
-				return zero, fmt.Errorf("roleplay canon fact inventory candidate %d: %w", index, err)
-			}
+	if strings.ContainsRune(leaf, '\r') {
+		return zero, fmt.Errorf("roleplay canon fact inventory must use LF line boundaries")
+	}
+	candidates := strings.Split(leaf, "\n")
+	if len(candidates) < 1 || len(candidates) > MaxRoleplayCanonFactsPerTurn {
+		return zero, fmt.Errorf(
+			"roleplay canon fact inventory must contain 1..%d candidates",
+			MaxRoleplayCanonFactsPerTurn,
+		)
+	}
+	for index, candidate := range candidates {
+		if err := roleplay.ValidateCanonFact(candidate); err != nil {
+			return zero, fmt.Errorf("roleplay canon fact inventory candidate %d: %w", index, err)
 		}
 	}
 	authoritySHA256, err := roleplayCanonSemanticAuthoritySHA256(input)
@@ -117,8 +111,8 @@ func (inventory RoleplayCanonFactInventory) ValidateFor(input RoleplayCanonExtra
 	if inventory.AuthoritySHA256 != authoritySHA256 {
 		return fmt.Errorf("roleplay canon fact inventory authority hash does not match")
 	}
-	if inventory.Candidates == nil || len(inventory.Candidates) > MaxRoleplayCanonFactsPerTurn {
-		return fmt.Errorf("roleplay canon fact inventory must contain 0..%d candidates", MaxRoleplayCanonFactsPerTurn)
+	if len(inventory.Candidates) < 1 || len(inventory.Candidates) > MaxRoleplayCanonFactsPerTurn {
+		return fmt.Errorf("roleplay canon fact inventory must contain 1..%d candidates", MaxRoleplayCanonFactsPerTurn)
 	}
 	for index, candidate := range inventory.Candidates {
 		if strings.ContainsAny(candidate, "\r\n") {
@@ -128,10 +122,7 @@ func (inventory RoleplayCanonFactInventory) ValidateFor(input RoleplayCanonExtra
 			return fmt.Errorf("roleplay canon fact inventory candidate %d: %w", index, err)
 		}
 	}
-	raw := RoleplayNoCanonFactCandidates
-	if len(inventory.Candidates) > 0 {
-		raw = strings.Join(inventory.Candidates, "\n")
-	}
+	raw := strings.Join(inventory.Candidates, "\n")
 	if inventory.RawSHA256 != ExactObjectiveContextSHA(raw) {
 		return fmt.Errorf("roleplay canon fact inventory raw hash does not match")
 	}
@@ -153,36 +144,93 @@ func renderRoleplayCanonExtractionAuthority(input RoleplayCanonExtractionInput) 
 	if err := input.validate(); err != nil {
 		return "", err
 	}
-	modelContext, err := projectObjectiveContextForModel(input.Context)
+	contextText, err := renderObjectiveContextForModel(input.Context)
 	if err != nil {
 		return "", err
 	}
-	var authority strings.Builder
-	fmt.Fprintf(&authority, "SOURCE KIND:\n%s\n", input.Source.Kind)
-	fmt.Fprintf(&authority, "ATTRIBUTED PERSONA:\n%s\n", input.Source.AttributedPersonaName)
+	parts := make([]string, 0, 3)
 	if input.Source.Kind == RoleplayCanonSourceUserContribution {
-		fmt.Fprintf(&authority, "PERSONA KIND:\n%s\n", input.Source.PersonaKind)
-		fmt.Fprintf(&authority, "CONTRIBUTION KIND:\n%s\n", input.Source.ContributionKind)
+		description, err := describeRoleplayCanonUserContribution(
+			input.Source.PersonaKind,
+			input.Source.ContributionKind,
+		)
+		if err != nil {
+			return "", err
+		}
+		parts = append(parts, fmt.Sprintf(
+			"Current %s by %s:\n%s",
+			description,
+			strconv.Quote(input.Source.AttributedPersonaName),
+			input.Source.ExactContribution,
+		))
+	} else {
+		parts = append(parts, fmt.Sprintf(
+			"Current in-character response by %s:\n%s",
+			strconv.Quote(input.Source.AttributedPersonaName),
+			input.Source.ExactContribution,
+		))
 	}
-	fmt.Fprintf(&authority, "EXACT CONTRIBUTION:\n%s\n", input.Source.ExactContribution)
 	if input.AntecedentUserTurn != nil {
 		antecedent := input.AntecedentUserTurn
-		fmt.Fprintf(&authority, "ANTECEDENT PERSONA KIND:\n%s\n", antecedent.PersonaKind)
-		fmt.Fprintf(&authority, "ANTECEDENT PERSONA NAME:\n%s\n", antecedent.PersonaName)
-		fmt.Fprintf(&authority, "ANTECEDENT CONTRIBUTION KIND:\n%s\n", antecedent.ContributionKind)
-		fmt.Fprintf(&authority, "ANTECEDENT CONTRIBUTION:\n%s\n", antecedent.ContributionContext)
-	}
-	if len(modelContext.Capsules) == 0 {
-		authority.WriteString("ESTABLISHED CONTEXT:\n(none)\n")
-	} else {
-		for index, capsule := range modelContext.Capsules {
-			fmt.Fprintf(&authority, "ESTABLISHED CONTEXT %d:\n%s\n", index+1, capsule)
+		description, err := describeRoleplayCanonUserContribution(
+			antecedent.PersonaKind,
+			antecedent.ContributionKind,
+		)
+		if err != nil {
+			return "", err
 		}
+		parts = append(parts, fmt.Sprintf(
+			"Earlier %s by %s, supplied only to resolve references in the response:\n%s",
+			description,
+			strconv.Quote(antecedent.PersonaName),
+			antecedent.ContributionContext,
+		))
 	}
-	if authority.Len() > maxPortablePayloadBytes {
+	if contextText != "" {
+		parts = append(parts, "Established fictional context:\n"+contextText)
+	}
+	authority := strings.Join(parts, "\n\n")
+	if len(authority) > maxPortablePayloadBytes {
 		return "", fmt.Errorf("roleplay canon fact authority exceeds %d bytes", maxPortablePayloadBytes)
 	}
-	return strings.TrimSuffix(authority.String(), "\n"), nil
+	return authority, nil
+}
+
+func describeRoleplayCanonUserContribution(
+	persona roleplay.UserPersonaKind,
+	contribution roleplay.UserContributionKind,
+) (string, error) {
+	personaText := ""
+	switch persona {
+	case roleplay.UserPersonaCharacter:
+		personaText = "character contribution"
+	case roleplay.UserPersonaNarrator:
+		personaText = "narrator contribution"
+	default:
+		return "", fmt.Errorf("roleplay canon persona kind %q is unsupported", persona)
+	}
+	contributionText := ""
+	switch contribution {
+	case roleplay.UserContributionDialogue:
+		contributionText = "spoken dialogue"
+	case roleplay.UserContributionAction:
+		contributionText = "a described action"
+	case roleplay.UserContributionActionDialogue:
+		contributionText = "a described action and spoken dialogue"
+	case roleplay.UserContributionNarration:
+		contributionText = "narration"
+	case roleplay.UserContributionDirection:
+		contributionText = "a direction"
+	case roleplay.UserContributionNarrationDirection:
+		contributionText = "narration containing a direction"
+	case roleplay.UserContributionStructured:
+		contributionText = "structured action, dialogue, or events"
+	case roleplay.UserContributionCommand:
+		contributionText = "a command"
+	default:
+		return "", fmt.Errorf("roleplay canon contribution kind %q is unsupported", contribution)
+	}
+	return personaText + " consisting of " + contributionText, nil
 }
 
 func roleplayCanonSemanticAuthoritySHA256(value any) (string, error) {

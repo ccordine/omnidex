@@ -13,8 +13,25 @@ func validateTypeScriptFunctionPolicyNode(
 	policy SourceFunctionPolicy,
 ) error {
 	for _, identifier := range policy.ForbiddenIdentifiers {
-		if containsTypeScriptIdentifier(declaration, source, identifier) {
-			return fmt.Errorf("TypeScript fragment uses forbidden direct identifier %s", identifier)
+		reference, uncorrectable := findTypeScriptForbiddenIdentifierUses(
+			declaration, source, identifier,
+		)
+		if uncorrectable != nil {
+			return newTypeScriptFragmentViolation(
+				TypeScriptViolationForbiddenIdentifier,
+				fmt.Sprintf(
+					"TypeScript fragment uses forbidden identifier %s in a non-value-reference role",
+					identifier,
+				),
+			)
+		}
+		if reference != nil {
+			return newLocatedTypeScriptFragmentViolation(
+				TypeScriptViolationForbiddenIdentifier,
+				fmt.Sprintf("TypeScript fragment uses forbidden direct identifier %s", identifier),
+				int(reference.StartByte()),
+				int(reference.EndByte()),
+			)
 		}
 	}
 	for _, element := range policy.RequiredElementNames {
@@ -128,15 +145,100 @@ func validateTypeScriptCallRestriction(
 	return nil
 }
 
-func containsTypeScriptIdentifier(node *treesitter.Node, source []byte, expected string) bool {
+// findTypeScriptForbiddenIdentifierUses separates one direct runtime value
+// reference from identifier spellings whose syntactic role cannot be changed
+// by an exact one-token value splice. Properties and type names are different
+// semantic categories and do not match this value-authority policy. Bindings,
+// shorthand values, JSX names, and type queries still fail the policy, but
+// remain deliberately unlocated so they cannot authorize an invalid value
+// replacement.
+func findTypeScriptForbiddenIdentifierUses(
+	node *treesitter.Node,
+	source []byte,
+	expected string,
+
+) (reference *treesitter.Node, uncorrectable *treesitter.Node) {
 	if node == nil {
-		return false
+		return nil, nil
 	}
-	if strings.Contains(node.Kind(), "identifier") && node.Utf8Text(source) == expected {
-		return true
+	if node.Utf8Text(source) == expected {
+		switch node.Kind() {
+		case "identifier":
+			if typeScriptIdentifierIsUncorrectableValueRole(node) {
+				uncorrectable = node
+			} else if !typeScriptIdentifierIsPropertyRole(node) {
+				reference = node
+			}
+		case "shorthand_property_identifier", "shorthand_property_identifier_pattern":
+			uncorrectable = node
+		}
 	}
 	for index := uint(0); index < node.NamedChildCount(); index++ {
-		if containsTypeScriptIdentifier(node.NamedChild(index), source, expected) {
+		childReference, childUncorrectable := findTypeScriptForbiddenIdentifierUses(
+			node.NamedChild(index), source, expected,
+		)
+		if uncorrectable == nil {
+			uncorrectable = childUncorrectable
+		}
+		if reference == nil {
+			reference = childReference
+		}
+	}
+	return reference, uncorrectable
+}
+
+func typeScriptIdentifierIsPropertyRole(node *treesitter.Node) bool {
+	parent := node.Parent()
+	if parent == nil {
+		return false
+	}
+	switch parent.Kind() {
+	case "member_expression":
+		return typeScriptNodeOccupiesField(node, parent, "property")
+	case "pair", "pair_pattern", "method_definition", "public_field_definition":
+		return typeScriptNodeOccupiesField(node, parent, "key", "name", "property")
+	default:
+		return false
+	}
+}
+
+func typeScriptIdentifierIsUncorrectableValueRole(node *treesitter.Node) bool {
+	parent := node.Parent()
+	if parent == nil {
+		return true
+	}
+	switch parent.Kind() {
+	case "variable_declarator":
+		return typeScriptNodeOccupiesField(node, parent, "name")
+	case "function_declaration", "function_expression", "generator_function_declaration",
+		"generator_function", "class_declaration", "class", "interface_declaration",
+		"type_alias_declaration", "enum_declaration", "internal_module", "module":
+		return typeScriptNodeOccupiesField(node, parent, "name", "parameter", "parameters")
+	case "arrow_function":
+		return typeScriptNodeOccupiesField(node, parent, "parameter", "parameters")
+	case "required_parameter", "optional_parameter", "rest_pattern", "object_pattern",
+		"array_pattern", "assignment_pattern", "catch_clause", "import_clause",
+		"import_specifier", "namespace_import", "namespace_export", "import_alias",
+		"export_specifier", "type_query", "type_predicate", "nested_identifier",
+		"nested_type_identifier", "jsx_opening_element", "jsx_closing_element",
+		"jsx_self_closing_element", "jsx_attribute":
+		return true
+	default:
+		return false
+	}
+}
+
+func typeScriptNodeOccupiesField(
+	node *treesitter.Node,
+	parent *treesitter.Node,
+	fields ...string,
+) bool {
+	if node == nil || parent == nil {
+		return false
+	}
+	for _, field := range fields {
+		candidate := parent.ChildByFieldName(field)
+		if candidate != nil && candidate.Id() == node.Id() {
 			return true
 		}
 	}

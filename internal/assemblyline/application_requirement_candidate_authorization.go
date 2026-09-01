@@ -2,7 +2,6 @@ package assemblyline
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/gryph/omnidex/internal/exactjson"
 )
@@ -52,9 +51,8 @@ func ResolveExactSourceApplicationRequirementCandidateAuthorization(
 	if input.Candidate != input.UserRequest {
 		return zero, false, nil
 	}
-	result, err := DecodeApplicationRequirementCandidateAuthorizationResult(
-		input,
-		ApplicationRequirementCandidateEntailed,
+	result, err := applicationRequirementCandidateAuthorizationResult(
+		input, ApplicationRequirementCandidateEntailed,
 	)
 	if err != nil {
 		return zero, false, err
@@ -83,18 +81,18 @@ func BuildApplicationRequirementCandidateAuthorizationPrompt(
 		return "", err
 	}
 	projection := renderApplicationContextModelProjection(input.UserRequest, input.Context)
-	return strings.Join([]string{
-		"Answer one semantic entailment question about the exact candidate below: is its complete semantic meaning required by the immutable current request together with only its established facts?",
-		"Entailment is semantic, not textual identity. A direct imperative that states an operation over runtime input is itself a finished-software runtime requirement. Recasting 'Process each supplied item.' as 'The finished software processes each supplied item.' adds no semantic detail. Ordinary grammatical inflection, a neutral finished-software subject, or an exact synonym likewise adds no meaning. When those are the only differences, return ENTAILED_BY_CURRENT_REQUEST.",
-		"A purpose-bearing product or category name entails only the literal core runtime action or governed result denoted by that name. Expressing the purpose noun as its corresponding action or adding a neutral runtime subject adds no meaning. The name does not entail customary controls, variants, history, persistence, presentation, process steps, triggers, or enhancements unless the request separately says so.",
-		"A direction to build, test, check, or verify may itself be request-grounded and may also contain an embedded assertion about required runtime behavior.",
-		"A framework, language, database, toolchain, delivery-surface, packaging, test, or deployment instruction is construction authority only. By itself it does not entail that the finished software renders an interface, stores data, exposes a service, or performs any other runtime outcome.",
-		"Return ENTAILED_BY_CURRENT_REQUEST only when every semantic detail in the exact candidate is grounded by the current request. Return NOT_ENTAILED_BY_CURRENT_REQUEST if the candidate adds any unstated mechanism, interface, device or input source, algorithm, mode, prerequisite, customary feature, speculative enhancement, or merely useful behavior. An entailed core does not excuse one added detail.",
-		"Return only the raw registered relation, with no JSON, label, Markdown, or explanation.",
-		"IMMUTABLE CURRENT REQUEST AND ESTABLISHED FACTS:\n" + projection,
-		"EXACT CANDIDATE:\n" + input.Candidate,
-		"FINAL QUESTION:\nIs the complete semantic content of this exact candidate entailed by the immutable current request? Return only ENTAILED_BY_CURRENT_REQUEST or NOT_ENTAILED_BY_CURRENT_REQUEST.",
-	}, "\n\n"), nil
+	choices, err := applicationRequirementCandidateAuthorizationOpaqueChoices()
+	if err != nil {
+		return "", err
+	}
+	return RenderOpaqueModelChoiceQuestion(
+		"Is every semantic detail in the candidate required by the software request and established facts? Entailment is semantic, not textual identity. A neutral finished-software subject, ordinary inflection, or exact synonym adds no meaning. A purpose-bearing product name entails only its literal core runtime action or governed result, not customary controls, variants, history, persistence, presentation, process steps, triggers, or enhancements. A direction to build, test, check, or verify can itself be request-grounded and can contain an embedded runtime assertion. Construction technologies and delivery instructions do not by themselves entail runtime outcomes. Any unstated mechanism, interface, input source, algorithm, mode, prerequisite, customary feature, speculative enhancement, or merely useful behavior is additional meaning.",
+		[]string{
+			projection,
+			"Candidate:\n" + input.Candidate,
+		},
+		choices,
+	)
 }
 
 func DecodeApplicationRequirementCandidateAuthorizationResult(
@@ -105,18 +103,22 @@ func DecodeApplicationRequirementCandidateAuthorizationResult(
 	if err := input.validate(); err != nil {
 		return zero, err
 	}
-	leaf, err := decodeRawSemanticLeaf(
-		"application requirement candidate authorization",
-		raw,
-		maximumStringBytes(
-			ApplicationRequirementCandidateEntailed,
-			ApplicationRequirementCandidateNotEntailed,
-		),
-		false,
-	)
+	choices, err := applicationRequirementCandidateAuthorizationOpaqueChoices()
 	if err != nil {
 		return zero, err
 	}
+	leaf, err := DecodeOpaqueModelChoice(raw, choices)
+	if err != nil {
+		return zero, err
+	}
+	return applicationRequirementCandidateAuthorizationResult(input, leaf)
+}
+
+func applicationRequirementCandidateAuthorizationResult(
+	input ApplicationRequirementCandidateAuthorizationInput,
+	relation string,
+) (ApplicationRequirementCandidateAuthorizationResult, error) {
+	var zero ApplicationRequirementCandidateAuthorizationResult
 	authoritySHA256, err := applicationRequirementCandidateAuthorizationAuthoritySHA256(input)
 	if err != nil {
 		return zero, err
@@ -124,12 +126,30 @@ func DecodeApplicationRequirementCandidateAuthorizationResult(
 	result := ApplicationRequirementCandidateAuthorizationResult{
 		Schema:          ApplicationRequirementCandidateAuthorizationSchemaV1,
 		AuthoritySHA256: authoritySHA256,
-		Relation:        leaf,
+		Relation:        relation,
 	}
 	if err := result.ValidateFor(input); err != nil {
 		return zero, err
 	}
 	return result, nil
+}
+
+func applicationRequirementCandidateAuthorizationOpaqueChoices() ([]OpaqueModelChoice, error) {
+	entailed, err := NewOpaqueModelChoice(
+		"Every semantic detail in the candidate is grounded by the request and established facts.",
+		ApplicationRequirementCandidateEntailed,
+	)
+	if err != nil {
+		return nil, err
+	}
+	notEntailed, err := NewOpaqueModelChoice(
+		"The candidate adds at least one semantic detail not grounded by the request and established facts.",
+		ApplicationRequirementCandidateNotEntailed,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return []OpaqueModelChoice{entailed, notEntailed}, nil
 }
 
 func (result ApplicationRequirementCandidateAuthorizationResult) ValidateFor(

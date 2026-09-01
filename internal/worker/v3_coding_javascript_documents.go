@@ -124,8 +124,5 @@ func javaScriptCapabilityProjection(
 }
 
 func javaScriptCommandLineFeatureContract(behavior string) string {
-	return strings.Join([]string{
-		behavior,
-		"The function body fully implements the exact local behavior and returns one object with output, error, exitCode, and state fields derived from input and declared direct dependency results.",
-	}, "\n")
+	return strings.TrimSpace(behavior)
 }

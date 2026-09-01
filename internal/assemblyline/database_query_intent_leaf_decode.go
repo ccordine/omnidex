@@ -1,10 +1,6 @@
 package assemblyline
 
-import (
-	"fmt"
-
-	"github.com/gryph/omnidex/internal/datasource"
-)
+import "github.com/gryph/omnidex/internal/datasource"
 
 func DecodeDatabaseQueryFromRelationLeaf(
 	state DatabaseQueryIntentLeafState,
@@ -13,14 +9,11 @@ func DecodeDatabaseQueryFromRelationLeaf(
 	if err := state.validate(); err != nil {
 		return "", err
 	}
-	leaf, err := decodeDatabaseQueryRawLeaf("database query from relation", raw)
+	choices, err := databaseQueryFromRelationChoices(state)
 	if err != nil {
 		return "", err
 	}
-	if !databaseQueryRelationExists(state, leaf) {
-		return "", fmt.Errorf("database query from relation ID %q was not projected", leaf)
-	}
-	return leaf, nil
+	return DecodeOpaqueModelChoice(raw, choices)
 }
 
 func DecodeDatabaseQueryShapeLeaf(
@@ -30,15 +23,15 @@ func DecodeDatabaseQueryShapeLeaf(
 	if err := state.validate(); err != nil {
 		return "", err
 	}
-	leaf, err := decodeDatabaseQueryRawLeaf("database query shape", raw)
+	choices, err := databaseQueryShapeChoices()
 	if err != nil {
 		return "", err
 	}
-	shape := datasource.ResultShape(leaf)
-	if !validDatabaseQueryShape(shape) {
-		return "", fmt.Errorf("database query shape %q is not registered", shape)
+	value, err := DecodeOpaqueModelChoice(raw, choices)
+	if err != nil {
+		return "", err
 	}
-	return shape, nil
+	return datasource.ResultShape(value), nil
 }
 
 func DecodeDatabaseQueryProjectionAggregateLeaf(
@@ -48,21 +41,18 @@ func DecodeDatabaseQueryProjectionAggregateLeaf(
 	if err := input.validate(); err != nil {
 		return "", err
 	}
-	leaf, err := decodeDatabaseQueryRawLeaf("database query projection aggregate", raw)
+	choices, err := databaseQueryProjectionAggregateChoices(input)
 	if err != nil {
 		return "", err
 	}
-	if leaf == "none" {
-		if input.State.Shape == datasource.ResultScalar {
-			return "", fmt.Errorf("database query scalar projection requires one aggregate")
-		}
+	value, err := DecodeOpaqueModelChoice(raw, choices)
+	if err != nil {
+		return "", err
+	}
+	if value == databaseQueryDirectProjectionChoice {
 		return "", nil
 	}
-	operation := datasource.AggregateOperation(leaf)
-	if !validDatabaseQueryProjectionAggregate(operation) {
-		return "", fmt.Errorf("database query projection aggregate %q is not registered", leaf)
-	}
-	return operation, nil
+	return datasource.AggregateOperation(value), nil
 }
 
 func DecodeDatabaseQueryProjectionFieldLeaf(
@@ -72,18 +62,21 @@ func DecodeDatabaseQueryProjectionFieldLeaf(
 	if err := input.validateForField(); err != nil {
 		return "", err
 	}
-	leaf, err := decodeDatabaseQueryRawLeaf("database query projection field", raw)
+	choices, err := databaseQueryFieldChoices(
+		input.State, "", databaseQueryAggregateFieldEligible(input.Aggregate),
+	)
 	if err != nil {
 		return "", err
 	}
-	if _, _, ok := databaseQueryColumn(input.State, leaf); !ok {
-		return "", fmt.Errorf("database query projection field ID %q was not projected", leaf)
+	fieldID, err := DecodeOpaqueModelChoice(raw, choices)
+	if err != nil {
+		return "", err
 	}
-	projection := datasource.RelationalProjection{FieldID: leaf, Aggregate: input.Aggregate}
+	projection := datasource.RelationalProjection{FieldID: fieldID, Aggregate: input.Aggregate}
 	if err := validateDatabaseQueryProjection(input.State, projection); err != nil {
 		return "", err
 	}
-	return leaf, nil
+	return fieldID, nil
 }
 
 func DecodeDatabaseQueryProjectionTimeBucketLeaf(
@@ -93,19 +86,17 @@ func DecodeDatabaseQueryProjectionTimeBucketLeaf(
 	if err := input.validateForTimeBucket(); err != nil {
 		return "", err
 	}
-	leaf, err := decodeDatabaseQueryRawLeaf("database query projection time bucket", raw)
+	choices, err := databaseQueryProjectionTimeBucketChoices()
+	if err != nil {
+		return "", err
+	}
+	value, err := DecodeOpaqueModelChoice(raw, choices)
 	if err != nil {
 		return "", err
 	}
 	var bucket datasource.TimeBucketUnit
-	if leaf != "none" {
-		bucket = datasource.TimeBucketUnit(leaf)
-		switch bucket {
-		case datasource.BucketDay, datasource.BucketWeek, datasource.BucketMonth,
-			datasource.BucketQuarter, datasource.BucketYear:
-		default:
-			return "", fmt.Errorf("database query time bucket %q is not registered", leaf)
-		}
+	if value != databaseQueryNoTimeBucketChoice {
+		bucket = datasource.TimeBucketUnit(value)
 	}
 	projection := datasource.RelationalProjection{FieldID: input.FieldID, TimeBucket: bucket}
 	if err := validateDatabaseQueryProjection(input.State, projection); err != nil {

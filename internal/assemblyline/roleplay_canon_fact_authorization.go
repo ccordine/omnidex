@@ -2,7 +2,6 @@ package assemblyline
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/gryph/omnidex/internal/roleplay"
 )
@@ -43,15 +42,19 @@ func BuildRoleplayCanonFactCandidateAuthorizationPrompt(
 	if err != nil {
 		return "", err
 	}
-	return strings.Join([]string{
-		"Answer one semantic entailment question: is the exact candidate a durable fictional fact directly established by the exact current contribution under the supplied attribution authority?",
-		"Evaluate only whether the complete exact candidate is directly established by the contribution.",
-		"The contribution is the only fact source. Context may resolve a reference but cannot independently establish the candidate. Implications, requests, questions, directions, decorative detail, inferred visibility, real-world claims, and facts merely plausible for a later turn are not established by the contribution.",
-		"Return ESTABLISHED_BY_CURRENT_CONTRIBUTION only when the complete candidate is directly entailed. Otherwise return NOT_ESTABLISHED_BY_CURRENT_CONTRIBUTION.",
-		"Return only the registered raw relation, with no JSON, label, Markdown, or explanation.",
-		"ROLEPLAY CANON AUTHORITY:\n" + authority,
-		"EXACT CANDIDATE FACT:\n" + input.Candidate,
-	}, "\n\n"), nil
+	choices, err := roleplayCanonFactAuthorizationChoices()
+	if err != nil {
+		return "", err
+	}
+	return RenderOpaqueModelChoiceQuestion(
+		"Is the exact candidate a durable fictional fact directly established by the exact current contribution?",
+		[]string{
+			"The contribution is the only fact source. Context may resolve a reference but cannot independently establish the candidate. Implications, requests, questions, directions, decorative detail, inferred visibility, real-world claims, and facts merely plausible for a later turn are not established by the contribution.",
+			authority,
+			"Exact candidate fact:\n" + input.Candidate,
+		},
+		choices,
+	)
 }
 
 func DecodeRoleplayCanonFactCandidateAuthorization(
@@ -62,12 +65,11 @@ func DecodeRoleplayCanonFactCandidateAuthorization(
 	if err := input.validate(); err != nil {
 		return zero, err
 	}
-	leaf, err := decodeRawSemanticLeaf(
-		"roleplay canon fact candidate authorization",
-		raw,
-		maximumStringBytes(RoleplayCanonFactEstablished, RoleplayCanonFactNotEstablished),
-		false,
-	)
+	choices, err := roleplayCanonFactAuthorizationChoices()
+	if err != nil {
+		return zero, err
+	}
+	leaf, err := DecodeOpaqueModelChoice(raw, choices)
 	if err != nil {
 		return zero, err
 	}
@@ -82,6 +84,24 @@ func DecodeRoleplayCanonFactCandidateAuthorization(
 		return zero, err
 	}
 	return result, nil
+}
+
+func roleplayCanonFactAuthorizationChoices() ([]OpaqueModelChoice, error) {
+	established, err := NewOpaqueModelChoice(
+		"The complete candidate is directly entailed by the current contribution.",
+		RoleplayCanonFactEstablished,
+	)
+	if err != nil {
+		return nil, err
+	}
+	notEstablished, err := NewOpaqueModelChoice(
+		"The complete candidate is not directly entailed by the current contribution.",
+		RoleplayCanonFactNotEstablished,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return []OpaqueModelChoice{established, notEstablished}, nil
 }
 
 func (result RoleplayCanonFactCandidateAuthorization) ValidateFor(

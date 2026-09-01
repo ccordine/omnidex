@@ -122,6 +122,53 @@ func (adapter portableObjectiveRoleplayGroundedStation) bindRoleplayGroundedEvid
 	paragraphText string,
 	resolveModel func() (string, error),
 ) ([]string, []assemblyline.GroundedEvidenceCapsule, objectiveStationReceipt, error) {
+	return resolveRoleplayGroundedEvidenceRelations(
+		ctx,
+		input,
+		paragraphText,
+		func(
+			ctx context.Context,
+			relationInput assemblyline.RoleplayGroundedEvidenceRelationInput,
+		) (assemblyline.RoleplayGroundedEvidenceRelation, objectiveStationReceipt, error) {
+			relationJob, err := assemblyline.NewRoleplayGroundedResponseEvidenceRelationJob(
+				relationInput,
+			)
+			if err != nil {
+				return "", objectiveStationReceipt{}, err
+			}
+			return runObjectivePortableRawLeafStation(
+				ctx,
+				adapter.runtime,
+				"roleplay_grounded_response_evidence_relation",
+				relationJob,
+				station.ConversationResponse,
+				resolveModel,
+				func(raw string) (assemblyline.RoleplayGroundedEvidenceRelation, error) {
+					return assemblyline.DecodeRoleplayGroundedResponseEvidenceRelationLeaf(
+						relationInput, raw,
+					)
+				},
+			)
+		},
+	)
+}
+
+type roleplayGroundedEvidenceRelationLeaf func(
+	context.Context,
+	assemblyline.RoleplayGroundedEvidenceRelationInput,
+) (assemblyline.RoleplayGroundedEvidenceRelation, objectiveStationReceipt, error)
+
+func resolveRoleplayGroundedEvidenceRelations(
+	ctx context.Context,
+	input assemblyline.RoleplayGroundedResponseInput,
+	paragraphText string,
+	relate roleplayGroundedEvidenceRelationLeaf,
+) ([]string, []assemblyline.GroundedEvidenceCapsule, objectiveStationReceipt, error) {
+	if relate == nil {
+		return nil, nil, objectiveStationReceipt{}, fmt.Errorf(
+			"roleplay grounded evidence requires one binary relation leaf",
+		)
+	}
 	evidenceIDs := make([]string, 0, len(input.RealWorldEvidence))
 	supporting := make([]assemblyline.GroundedEvidenceCapsule, 0, len(input.RealWorldEvidence))
 	totalCalls := 0
@@ -133,25 +180,7 @@ func (adapter portableObjectiveRoleplayGroundedStation) bindRoleplayGroundedEvid
 			Evidence:           evidence,
 			KnownArtifactPaths: append([]string{}, input.KnownArtifactPaths...),
 		}
-		relationJob, err := assemblyline.NewRoleplayGroundedResponseEvidenceRelationJob(
-			relationInput,
-		)
-		if err != nil {
-			return nil, nil, objectiveStationReceipt{Calls: totalCalls, Reused: allReused}, err
-		}
-		relation, receipt, err := runObjectivePortableRawLeafStation(
-			ctx,
-			adapter.runtime,
-			"roleplay_grounded_response_evidence_relation",
-			relationJob,
-			station.ConversationResponse,
-			resolveModel,
-			func(raw string) (assemblyline.RoleplayGroundedEvidenceRelation, error) {
-				return assemblyline.DecodeRoleplayGroundedResponseEvidenceRelationLeaf(
-					relationInput, raw,
-				)
-			},
-		)
+		relation, receipt, err := relate(ctx, relationInput)
 		totalCalls += receipt.Calls
 		allReused = allReused && receipt.Reused
 		if err != nil {

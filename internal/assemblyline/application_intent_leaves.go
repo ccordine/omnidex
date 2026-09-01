@@ -32,10 +32,9 @@ func BuildApplicationProductContextPrompt(
 	}
 	projection := renderApplicationContextModelProjection(input.UserRequest, input.Context)
 	return strings.Join([]string{
-		"Answer one semantic question: what concise product or domain identity is explicitly established by this software request and its established facts?",
+		"What concise product or domain identity is explicitly established by this software request and its established facts?",
 		"Product context contains only the product identity, subject or domain, intended audience, and stated setting or purpose. Exclude requested qualities, capabilities, behaviors, user-visible elements, state or persistence, artifact or format constraints, accessibility or responsiveness, tests, build or deployment constraints, and implementation detail.",
-		"Return only one concise product or domain identity phrase as raw prose. Do not prefix it with meta-language such as a description of product context. Do not return requirements, JSON, quotes, a label, Markdown, or commentary.",
-		"APPLICATION PRODUCT INPUT:\n" + projection,
+		projection,
 	}, "\n\n"), nil
 }
 

@@ -124,14 +124,7 @@ func genericBrowserAcceptanceDocuments(
 func genericBrowserAcceptanceContract(
 	behavior string,
 ) string {
-	return strings.Join([]string{
-		behavior,
-		"The harness renders first. Use one flat sequence of direct fireEvent calls and screen-grounded expect assertions. No declarations, branches, loops, returns, helpers, nested calls, or side effects. An awaited waitFor callback may contain only direct expect assertions.",
-		"Realize every explicit interaction condition before observing its outcome. Enter concrete static user values with fireEvent.change or fireEvent.input before activation; never assume preloaded values. Derive the unique expected result independently from the exact requirement relation and static payloads. An action name is only a selector claim, never a missing relation, expected value, or proof.",
-		"Receipt accessible_name literals are the only named selectors. role_ordinal is one-based; all-query indexes are zero-based. Never invent names or use placeholder_hint.",
-		"Use only screen.getByRole, awaited screen.findByRole, indexed screen.getAllByRole, awaited indexed screen.findAllByRole, screen.getByText, and awaited screen.findByText. Role status requires a singular query with its exact receipt name and is never a fireEvent target. Use only compatible direct fireEvent.click, fireEvent.change, and fireEvent.input.",
-		"For a derived result, select its exact named status output and assert non-negated toHaveTextContent with one no-flags ^literal$ regex; escape regex metacharacters. Compute the literal independently: output names locate nodes but never supply results. getByText and findByText never prove output ownership.",
-	}, "\n")
+	return strings.TrimSpace(behavior)
 }
 
 func genericBrowserAcceptanceHarnessSource(

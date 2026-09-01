@@ -38,23 +38,23 @@ func TestApplicationIntentValidNegativeDoesNotStopIndependentCandidate(t *testin
 					return assemblyline.PortableResult{}, err
 				}
 				authorizationSubjects = append(authorizationSubjects, input.Candidate)
-				candidate = assemblyline.ApplicationRequirementCandidateEntailed
+				candidate = "A"
 				if input.Candidate == addedMechanism {
-					candidate = assemblyline.ApplicationRequirementCandidateNotEntailed
+					candidate = "B"
 				}
 			case assemblyline.WorkApplicationRequirementCandidateKind:
 				var input assemblyline.ApplicationRequirementCandidateContentPresenceInput
 				if err := json.Unmarshal(job.Payload, &input); err != nil {
 					return assemblyline.PortableResult{}, err
 				}
-				candidate = string(assemblyline.ApplicationRequirementCandidateContentPresent)
+				candidate = "A"
 				if input.Dimension == assemblyline.ApplicationRequirementCandidateNonRuntimeContentDimension {
-					candidate = string(assemblyline.ApplicationRequirementCandidateContentAbsent)
+					candidate = "B"
 				}
 			case assemblyline.WorkApplicationRequirementCandidateCardinality:
-				candidate = assemblyline.ApplicationRequirementOneRuntimeOutcome
+				candidate = "A"
 			case assemblyline.WorkApplicationRequirementCandidateResultRelation:
-				candidate = string(assemblyline.ApplicationRequirementCandidateResultPresent)
+				candidate = "A"
 			case assemblyline.WorkApplicationProductContext:
 				candidate = "image resizer"
 			default:

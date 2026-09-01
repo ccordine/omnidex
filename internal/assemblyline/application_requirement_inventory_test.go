@@ -11,8 +11,8 @@ func TestApplicationRequirementInventoryPreservesCleanSourceOrderedLines(t *test
 	t.Parallel()
 	input := applicationRequirementInventoryTestInput(t)
 	want := []string{
-		"The finished software transforms supplied records.",
-		"The finished software reports the transformed result.",
+		"Transforms supplied records.",
+		"Reports the transformed result.",
 	}
 	raw := strings.Join(want, "\n")
 
@@ -31,24 +31,23 @@ func TestApplicationRequirementInventoryPreservesCleanSourceOrderedLines(t *test
 func TestApplicationRequirementInventoryRejectsStructurallyInvalidResponse(t *testing.T) {
 	t.Parallel()
 	input := applicationRequirementInventoryTestInput(t)
-	clean := "The finished software transforms supplied records."
+	clean := "Transforms supplied records."
 	tooMany := make([]string, MaxApplicationRequirementInventoryCandidates+1)
 	for index := range tooMany {
 		tooMany[index] = fmt.Sprintf(
-			"The finished software produces governed result %d.",
+			"Produces governed result %d.",
 			index+1,
 		)
 	}
 	fixtures := map[string]string{
 		"markdown hard break before independent line": clean + "  \n" +
-			"The finished software reports the transformed result.",
+			"Reports the transformed result.",
 		"leading whitespace":               " " + clean,
 		"trailing whitespace":              clean + " ",
 		"tab before line feed":             clean + "\t\n" + clean,
 		"carriage return boundary":         clean + "\r\n" + clean,
 		"blank line":                       clean + "\n\n" + clean,
 		"mixed registered absence":         clean + "\n" + ApplicationNoRuntimeRequirementCandidates,
-		"missing candidate frame":          "Transforms supplied records.",
 		"candidate count above hard bound": strings.Join(tooMany, "\n"),
 	}
 	for name, raw := range fixtures {
@@ -84,37 +83,37 @@ func TestApplicationRequirementInventoryAcceptsOnlyExactAbsence(t *testing.T) {
 	}
 }
 
-func TestApplicationRequirementInventoryValidationEnforcesCandidateFrame(t *testing.T) {
+func TestApplicationRequirementInventoryAcceptsSemanticTextWithoutFrameworkPrefix(t *testing.T) {
 	t.Parallel()
 	input := applicationRequirementInventoryTestInput(t)
 	result, err := DecodeApplicationRequirementInventory(
 		input,
-		"The finished software transforms supplied records.",
+		"Transforms supplied records.",
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	result.Candidates = []string{"Transforms supplied records."}
-	result.RawSHA256 = ExactObjectiveContextSHA(result.Candidates[0])
-	if err := result.ValidateFor(input); err == nil {
-		t.Fatal("typed inventory state bypassed the exact candidate frame")
+	if !reflect.DeepEqual(result.Candidates, []string{"Transforms supplied records."}) {
+		t.Fatalf("semantic candidates=%q", result.Candidates)
 	}
 }
 
-func TestApplicationRequirementInventoryPromptForbidsLineBoundaryWhitespace(t *testing.T) {
+func TestApplicationRequirementInventoryPromptHasNoCandidateResponseFrame(t *testing.T) {
 	t.Parallel()
 	input := applicationRequirementInventoryTestInput(t)
 	prompt, err := BuildApplicationRequirementInventoryPrompt(input)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, required := range []string{
+	for _, forbidden := range []string{
+		"The finished software ",
 		"begin at byte zero",
-		"end immediately after its last non-whitespace byte",
-		"do not use Markdown hard-break spaces before a line feed",
+		"Return only",
+		"JSON",
+		"FINAL QUESTION",
 	} {
-		if !strings.Contains(strings.ToLower(prompt), strings.ToLower(required)) {
-			t.Fatalf("inventory prompt omits %q", required)
+		if strings.Contains(strings.ToLower(prompt), strings.ToLower(forbidden)) {
+			t.Fatalf("inventory prompt leaked response framing %q: %q", forbidden, prompt)
 		}
 	}
 }

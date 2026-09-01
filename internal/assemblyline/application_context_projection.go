@@ -1,12 +1,11 @@
 package assemblyline
 
 import (
-	"fmt"
 	"strings"
 )
 
 func renderImmutableUserRequestModelProjection(userRequest string) string {
-	return "IMMUTABLE USER REQUEST:\n" + userRequest
+	return "Software request:\n" + userRequest
 }
 
 // renderApplicationContextModelProjection exposes only the semantic facts a
@@ -16,15 +15,9 @@ func renderApplicationContextModelProjection(
 	userRequest string,
 	context ApplicationContext,
 ) string {
-	var projection strings.Builder
-	fmt.Fprintf(&projection, "%s\n", renderImmutableUserRequestModelProjection(userRequest))
+	projection := []string{renderImmutableUserRequestModelProjection(userRequest)}
 	for _, fact := range context.Facts {
-		fmt.Fprintf(
-			&projection,
-			"FACT KIND:\n%s\nFACT VALUE:\n%s\n",
-			fact.Kind,
-			fact.Value,
-		)
+		projection = append(projection, "Established fact:\n"+fact.Value)
 	}
-	return strings.TrimSuffix(projection.String(), "\n")
+	return strings.Join(projection, "\n\n")
 }

@@ -9,8 +9,9 @@ import (
 )
 
 type javaScriptLexicalScope struct {
-	start uint
-	end   uint
+	start          uint
+	end            uint
+	availableAfter uint
 }
 
 type javaScriptLexicalBindings struct {
@@ -28,7 +29,8 @@ func (bindings javaScriptLexicalBindings) referenceAllowed(
 	node *treesitter.Node,
 ) bool {
 	for _, scope := range bindings.byName[name] {
-		if node.StartByte() >= scope.start && node.EndByte() <= scope.end {
+		if node.StartByte() >= scope.start && node.EndByte() <= scope.end &&
+			node.StartByte() >= scope.availableAfter {
 			return true
 		}
 	}
@@ -158,8 +160,21 @@ func (bindings javaScriptLexicalBindings) addPattern(
 		if _, shadows := external[name]; shadows {
 			return fmt.Errorf("JavaScript fragment shadows permitted direct symbol %s", name)
 		}
+		availableAfter := node.EndByte()
+		for parent := node.Parent(); parent != nil; parent = parent.Parent() {
+			if parent.Kind() == "variable_declarator" {
+				availableAfter = parent.EndByte()
+				break
+			}
+			if javaScriptFunctionScopeKind(parent.Kind()) ||
+				javaScriptBlockScopeKind(parent.Kind()) {
+				break
+			}
+		}
+		bindingScope := scope
+		bindingScope.availableAfter = availableAfter
 		bindings.declarations[node.Id()] = struct{}{}
-		bindings.byName[name] = append(bindings.byName[name], scope)
+		bindings.byName[name] = append(bindings.byName[name], bindingScope)
 		return nil
 	}
 	if node.Kind() == "assignment_pattern" {

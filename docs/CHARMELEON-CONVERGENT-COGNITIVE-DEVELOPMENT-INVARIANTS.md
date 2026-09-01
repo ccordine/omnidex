@@ -317,8 +317,9 @@ The target-tree station is the sole tree-visible exception: only when structural
 is genuinely unresolved, it returns one complete raw hierarchy of directory and file
 basenames. Code constructs every normalized relative path and filesystem transition.
 
-A bounded source station returns one exact path-blind declaration or source node. There
-is no file-content station and no whole-file model responsibility.
+A bounded source station returns one ordinary path-blind plain-text implementation
+body. Code supplies the declaration and validates the assembled source. There is no
+file-content station and no whole-file or declaration-shape model responsibility.
 
 None of them is Omnidex.
 

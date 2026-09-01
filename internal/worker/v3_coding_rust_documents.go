@@ -130,9 +130,5 @@ func rustCommandLineCapabilityProjection(
 }
 
 func rustCommandLineFeatureContract(behavior string) string {
-	return strings.Join([]string{
-		behavior,
-		"The function body fully implements the exact local behavior and returns one complete TaskResult derived from input and the declared direct dependency results.",
-		"Use output for user-visible text, error for a clear failure, exit_code for process status, and state for reusable string values.",
-	}, "\n")
+	return strings.TrimSpace(behavior)
 }

@@ -32,8 +32,8 @@ second channel. Framework documents two SODIMM slots and support for up to
 ## Authoritative station-routed profile
 
 Use one exact configured model per station. The active coding routes are deliberately
-split between bounded semantic extraction, deployment-semantics classification, repair
-guidance, and source-node generation:
+split between bounded semantic extraction, deployment-semantics classification, and
+source-body generation:
 
 ```dotenv
 OMNI_CODING_REQUIREMENTS_MODEL=qwen3.5:9b-q4_K_M
@@ -41,8 +41,6 @@ OMNI_CODING_REQUIREMENT_RESULT_RELATION_MODEL=phi4:14b
 OMNI_CODING_SERVICE_DEPLOYMENT_INTENT_MODEL=phi4:14b
 OMNI_CODING_WORKLOAD_MODEL=qwen3.5:9b-q4_K_M
 OMNI_CODING_FRAGMENT_MODEL=qwen3.5:9b-q4_K_M
-OMNI_CODING_FRAGMENT_REPAIR_GUIDANCE_MODEL=qwen3.5:9b-q4_K_M
-OMNI_CODING_FRAGMENT_CORRECTION_MODEL=qwen3.5:9b-q4_K_M
 
 INFERENCE_CONTEXT_TOKENS=8192
 CODING_FRAGMENT_CONCURRENCY=1
@@ -119,36 +117,35 @@ On 2026-08-31, Phi-4 14B passed all four unrelated positives and both negative c
 Qwen 3.5 9B had returned the missing relation for both operation-family
 positives under the identical bounded contract, so it is not admitted to this station.
 
-Qwen 3.5 9B is the practical source-fragment, repair, and other bounded-semantic choice because its
+Qwen 3.5 9B is the practical source-body and other bounded-semantic choice because its
 Q4_K_M Ollama image is 6.6 GB, earlier bounded semantic qualification converged, and
 Qwen publishes strong instruction following and coding results for the 9B checkpoint.
-The env-gated raw-fragment qualification exercises the exact Qwen 3.5 ChatML
-transport through production TSX and Go generation workers plus the production
-instruction-only correction worker. Every fixture requires one semantic station
-generation call, a zero-discard full-response projection, parser/signature/scope
-validation, and compiler/type validity. Provider discovery may issue a separate model
+The env-gated source-body qualification exercises the exact Qwen 3.5 ChatML
+transport through the TypeScript body worker and its bounded same-job/model continuation.
+Every accepted fixture is an ordinary plain-text body; code supplies and validates the
+signature, declaration, parser structure, and behavior result. A correction fixture
+exposes only one code-proven mutable span and its necessary semantic question and accepts
+ordinary replacement text which code splices into the retained body; qualification never
+depends on reproducing the signature, declaration, surrounding body, schema, or framework
+grammar. Provider discovery may issue a separate model
 preload request; it is deterministic transport setup, not another semantic station call.
 This qualification selects the named model candidate explicitly. It does not resolve
 that candidate through production station routing or independently execute the fixture's
 requested behavior; checked configuration tests and a fresh uncontaminated application
 run prove those separate boundaries.
-The test creates and drops an isolated schema, so `OMNI_TEST_DATABASE_URL` must name a
-disposable PostgreSQL database whose role can create schemas and the required public
-extensions. Run the qualification against that database and the exact local model
-candidate with:
+Run the qualification against the exact local model candidate with:
 
 ```bash
-OMNI_TEST_DATABASE_URL='postgres://test:test@127.0.0.1:5432/omnidex_test?sslmode=disable' \
-OMNIDEX_TEST_QWEN_RAW_FRAGMENT_MODEL=qwen3.5:9b-q4_K_M \
+OMNIDEX_TEST_CODING_FRAGMENT_MODEL=qwen3.5:9b-q4_K_M \
 OMNIDEX_TEST_OLLAMA_URL=http://127.0.0.1:11434 \
 OMNIDEX_TEST_OLLAMA_CONTEXT=8192 \
-go test ./internal/worker -run '^TestLiveQwenRawFragmentRouteQualification$' -count=1 -v
+go test ./internal/worker -run '^TestLiveTypeScriptFragmentReturnsAnImplementationBody$' -count=1 -v
 ```
 
 Qwen3-Coder 30B
 is a 30.5B-total, 3.3B-active MoE
 trained primarily on code and is non-thinking by design, which fits Omnidex's
-bounded single-node output contract.
+bounded plain-text source-body contract.
 
 ### Active local model inventory
 
@@ -159,8 +156,8 @@ planning. They are model-file sizes, not runner-allocation or latency measuremen
 | --- | --- | ---: |
 | Requirement inventory, sieve, product, and stack stations | `qwen3.5:9b-q4_K_M` | shared 6.6 GB image |
 | Requirement result-presence station | `phi4:14b` | shared 9.1 GB image |
-| Other semantic leaf stations, target-tree naming, and repair guidance | `qwen3.5:9b-q4_K_M` | shared 6.6 GB image |
-| Source generation and repair execution | `qwen3.5:9b-q4_K_M` | shared 6.6 GB image |
+| Other semantic leaf stations and target-tree naming | `qwen3.5:9b-q4_K_M` | shared 6.6 GB image |
+| Source-body generation and same-context correction | `qwen3.5:9b-q4_K_M` | shared 6.6 GB image |
 | Service deployment semantics | `phi4:14b` | 9.1 GB |
 | Local embeddings | `nomic-embed-text` | 0.27 GB |
 
@@ -281,7 +278,7 @@ inference-context minimum and cannot be selected through the command.
 | `qwen3-coder:30b` | 16K | 22.41 GB | 7.28 GB | 13.12 tok/s |
 | `qwen3-coder:30b` | 32K | 26.24 GB | 7.28 GB | 11.06 tok/s |
 
-The 30B MoE is almost twice as fast as the old 14B dense correction model on
+The 30B MoE is almost twice as fast as the historical 14B dense model on
 this host despite the larger total checkpoint. At 32K it also pushed an
 already busy host deep into swap. The observed semantic envelopes and the
 fragment prompt/output limits also fit inside the exact 8K minimum, so the
@@ -319,7 +316,8 @@ Sources for the alternatives:
 If the machine receives a second 48 GB SODIMM, retest Qwen 3.6 35B-A3B at 16K.
 Do not change the production route based on parameter counts or published
 benchmarks alone; compare cold load, warm throughput, exact raw-leaf acceptance,
-target-tree replacement and source-repair rates, and a fresh uncontaminated Omnidex run.
+target-tree replacement and exact-span source-body correction rates, and a fresh
+uncontaminated Omnidex run.
 
 ## Hosted capability ceiling
 

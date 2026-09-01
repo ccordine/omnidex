@@ -12,7 +12,8 @@ const (
 	ConversationObjectiveKind       ID = "conversation_objective_kind"
 	ConversationResponse            ID = "conversation_response"
 	RoleplayCanonExtraction         ID = "roleplay_canon_extraction"
-	RoleplayOngoingAction           ID = "roleplay_ongoing_action"
+	RoleplayOngoingActionRelation   ID = "roleplay_ongoing_action_relation"
+	RoleplayOngoingActionValue      ID = "roleplay_ongoing_action_value"
 	GroundedAnswer                  ID = "grounded_answer"
 	DatabaseSchemaSelection         ID = "database_schema_selection"
 	DatabaseQueryIntent             ID = "database_query_intent"
@@ -25,8 +26,6 @@ const (
 	CodingArtifactHandling          ID = "coding_artifact_handling"
 	CodingCapabilityRelation        ID = "coding_capability_relation"
 	CodingFragment                  ID = "coding_fragment"
-	CodingFragmentRepairGuidance    ID = "coding_fragment_repair_guidance"
-	CodingFragmentCorrection        ID = "coding_fragment_correction"
 )
 
 var registered = [...]ID{
@@ -35,7 +34,8 @@ var registered = [...]ID{
 	ConversationObjectiveKind,
 	ConversationResponse,
 	RoleplayCanonExtraction,
-	RoleplayOngoingAction,
+	RoleplayOngoingActionRelation,
+	RoleplayOngoingActionValue,
 	GroundedAnswer,
 	DatabaseSchemaSelection,
 	DatabaseQueryIntent,
@@ -48,8 +48,6 @@ var registered = [...]ID{
 	CodingArtifactHandling,
 	CodingCapabilityRelation,
 	CodingFragment,
-	CodingFragmentRepairGuidance,
-	CodingFragmentCorrection,
 }
 
 var registeredSet = func() map[ID]struct{} {

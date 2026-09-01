@@ -13,11 +13,10 @@ func (s *directCodingSession) generateDirectCodingApplicationTaskBlock(
 	_ assemblyline.ApplicationTaskContext,
 	stage *directCodingProgram,
 	ref assemblyline.SourceBlockRef,
-	publicSurface *assemblyline.FragmentPublicInteractionSurface,
 	validateInitialCandidate func(string) error,
 ) (string, error) {
 	job, err := directCodingApplicationTaskFragmentJob(
-		stage, ref, publicSurface, validateInitialCandidate,
+		stage, ref, validateInitialCandidate,
 	)
 	if err != nil {
 		return "", err
@@ -27,15 +26,15 @@ func (s *directCodingSession) generateDirectCodingApplicationTaskBlock(
 		return "", err
 	}
 	runtime := directCodingWorkerRuntime(s)
+	runtime.MaxAttempts = assemblyline.MaxSourceBodyAttempts
 	return generateDirectCodingTypeScriptBlockWithRuntime(
-		runtime, modelName, s.typeScriptRepairModels, s.typeScriptRepairEvents(), job,
+		runtime, modelName, job,
 	)
 }
 
 func directCodingApplicationTaskFragmentJob(
 	stage *directCodingProgram,
 	ref assemblyline.SourceBlockRef,
-	publicSurface *assemblyline.FragmentPublicInteractionSurface,
 	validateInitialCandidate func(string) error,
 ) (directCodingTypeScriptFragmentJob, error) {
 	if stage == nil {
@@ -67,7 +66,6 @@ func directCodingApplicationTaskFragmentJob(
 	}
 	return directCodingTypeScriptFragmentJob{
 		block: block, dialect: stage.Project.Dialect, tsx: tsx, available: available,
-		publicInteractionSurface: publicSurface,
 		validateInitialCandidate: validateInitialCandidate,
 	}, nil
 }

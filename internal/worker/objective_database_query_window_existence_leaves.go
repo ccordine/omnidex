@@ -2,7 +2,6 @@ package worker
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
 	"github.com/gryph/omnidex/internal/datasource"
@@ -19,7 +18,7 @@ func resolveDatabaseQueryWindows(
 		assemblyline.DatabaseQueryPurposeAuthority{
 			State: state, Collection: assemblyline.DatabaseQueryWindowPurpose,
 		},
-		datasource.MaxIntentFilters-len(state.TemporalWindows), call, total,
+		datasource.MaxIntentFilters-len(state.TemporalWindows), false, call, total,
 	)
 	total = nextTotal
 	if err != nil {
@@ -28,12 +27,12 @@ func resolveDatabaseQueryWindows(
 	for _, purpose := range purposes {
 		leaf := assemblyline.DatabaseQueryWindowLeafInput{State: state, Purpose: purpose}
 		var calls int
-		fields := objectiveDatabaseTemporalFields(state)
-		if len(fields) == 0 {
-			return state, total, fmt.Errorf("database query window has no temporal field")
+		fieldID, resolved, err := assemblyline.ResolveSoleDatabaseQueryWindowFieldLeaf(leaf)
+		if err != nil {
+			return state, total, err
 		}
-		if len(fields) == 1 {
-			leaf.FieldID = fields[0]
+		if resolved {
+			leaf.FieldID = fieldID
 		} else {
 			fieldJob, err := assemblyline.NewDatabaseQueryWindowFieldJob(leaf)
 			if err != nil {
@@ -50,19 +49,27 @@ func resolveDatabaseQueryWindows(
 				return state, total, err
 			}
 		}
-		unitJob, err := assemblyline.NewDatabaseQueryWindowUnitJob(leaf)
+		unit, resolved, err := assemblyline.ResolveSoleDatabaseQueryWindowUnitLeaf(leaf)
 		if err != nil {
 			return state, total, err
 		}
-		leaf.Unit, calls, err = callObjectiveDatabaseRawLeaf(
-			ctx, call, "database_query_window_unit", unitJob,
-			func(raw string) (datasource.WindowUnit, error) {
-				return assemblyline.DecodeDatabaseQueryWindowUnitLeaf(leaf, raw)
-			},
-		)
-		total += calls
-		if err != nil {
-			return state, total, err
+		if resolved {
+			leaf.Unit = unit
+		} else {
+			unitJob, err := assemblyline.NewDatabaseQueryWindowUnitJob(leaf)
+			if err != nil {
+				return state, total, err
+			}
+			leaf.Unit, calls, err = callObjectiveDatabaseRawLeaf(
+				ctx, call, "database_query_window_unit", unitJob,
+				func(raw string) (datasource.WindowUnit, error) {
+					return assemblyline.DecodeDatabaseQueryWindowUnitLeaf(leaf, raw)
+				},
+			)
+			total += calls
+			if err != nil {
+				return state, total, err
+			}
 		}
 		amountJob, err := assemblyline.NewDatabaseQueryWindowAmountJob(leaf)
 		if err != nil {
@@ -96,7 +103,7 @@ func resolveDatabaseQueryExistence(
 		assemblyline.DatabaseQueryPurposeAuthority{
 			State: state, Collection: assemblyline.DatabaseQueryExistencePurpose,
 		},
-		datasource.MaxIntentExistenceChecks-len(state.Exists), call, total,
+		datasource.MaxIntentExistenceChecks-len(state.Exists), false, call, total,
 	)
 	total = nextTotal
 	if err != nil {
@@ -107,12 +114,12 @@ func resolveDatabaseQueryExistence(
 			State: state, Purpose: purpose, Filters: []datasource.RelationalPredicate{},
 		}
 		var calls int
-		relations := objectiveDatabaseExistenceRelations(state)
-		if len(relations) == 0 {
-			return state, total, fmt.Errorf("database query existence has no unused projected relation")
+		relationID, resolved, err := assemblyline.ResolveSoleDatabaseQueryExistenceRelationLeaf(leaf)
+		if err != nil {
+			return state, total, err
 		}
-		if len(relations) == 1 {
-			leaf.RelationID = relations[0]
+		if resolved {
+			leaf.RelationID = relationID
 		} else {
 			relationJob, err := assemblyline.NewDatabaseQueryExistenceRelationJob(leaf)
 			if err != nil {
@@ -176,18 +183,4 @@ func objectiveDatabaseTemporalField(state assemblyline.DatabaseQueryIntentLeafSt
 		}
 	}
 	return false
-}
-
-func objectiveDatabaseExistenceRelations(state assemblyline.DatabaseQueryIntentLeafState) []string {
-	used := map[string]struct{}{}
-	for _, predicate := range state.Exists {
-		used[predicate.RelationID] = struct{}{}
-	}
-	relations := []string{}
-	for _, relation := range state.Authority.SchemaProjection.Relations {
-		if _, duplicate := used[relation.ID]; !duplicate {
-			relations = append(relations, relation.ID)
-		}
-	}
-	return relations
 }

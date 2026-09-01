@@ -190,12 +190,17 @@ version, renderer/spec versions, byte and token estimates, and the exact rendere
 The projection identity is bound to immutable LLM call evidence. If a required selector
 cannot fit or resolve, context construction fails; it does not silently drop authority.
 
-Source models retain the strictest contract. Initial fragment generation receives only
-its immutable signature, exact local behavior, direct allowed declarations/symbols, and
-accepted local invariants. Repair guidance separately receives one exact mutable block,
-the minimum diagnostic-analysis evidence, and at most one current path-free diagnostic.
-Repair execution receives only the resulting instruction and exact mutable block. None
-of these stations gains a ledger, repository browser, or free-form attention interface.
+Source models retain the strictest contract. A fragment job receives only its immutable
+signature for lexical scope, exact local behavior, direct allowed declarations/symbols,
+and accepted local invariants, then returns an ordinary plain-text implementation body.
+Code owns the declaration and all structural validation. If code proves one body defect,
+it must also prove the exact mutable byte span. The same persisted job and immutable
+model route then continue with one necessary semantic question and only that span. The
+ordinary result replaces the span by a digest- and range-checked code splice into the
+retained base. The model does not receive the complete prior body, surrounding accepted
+source, a preservation instruction, or application mechanics. There is no repair
+station, response schema, replacement node, or alternate route, and the source function
+gains no ledger, repository browser, or free-form attention interface.
 
 ## Acquisition providers
 
@@ -272,28 +277,20 @@ machine passes its executable gates:
 1. **Deterministic closure** — a missing prerequisite is acquired through registered
    producers and the objective completes with zero model calls and no provider
    configured.
-2. **One named semantic gap** — deterministic closure stops at one genuine ambiguity;
-   one station returns one opaque candidate ID; code incorporates the typed fact and
-   completes.
+2. **One named semantic gap** — deterministic closure stops at one genuine ambiguity
+   among at least two applicable candidates; one station returns one opaque candidate
+   ID, code incorporates the typed fact, and completes. A sole candidate would be
+   consumed directly with zero model calls and no rejection.
 3. **Procedural transfer** — the same control rule drives a bounded world whose
    mechanics, legal transitions, backtracking, and completion remain code-owned.
 4. **Read-only repository work** — exact snapshot, index, parser, symbol, reference,
    and test providers run under code control; inference can select only among an exact
    bounded semantic remainder.
 5. **Bounded front door and workload compilation** — code first records exact workspace
-   state as a typed, hashed fact. For an existing workspace, one bounded raw call returns a
-   source-ordered repository-fact-question candidate inventory or the registered semantic
-   absence. The inventory is untrusted candidate data; code owns the queue and exact
-   deduplication. Each unique candidate first receives one necessity/unresolvedness relation
-   against only the request, current facts, and candidate. A not-necessary or already-resolved
-   candidate evaporates without a pairwise relation or evidence acquisition. Only a necessary
-   unresolved candidate is compared with one accepted question at a time through a separate
-   same-fact/distinct-facts relation. Accepted questions remain immutable, and a same-fact
-   candidate evaporates. Code resolves each necessary distinct question exactly once through
-   a registered deterministic provider, formalizes selected evidence as
-   compact source-backed facts, and makes those facts visible to later queued candidates. Queue
-   exhaustion—not a model absence or completeness claim—returns the context without a second review, completeness call, or bound-overflow
-   request for more work. Exactly one bounded, source-ordered requirement-inventory call
+   state as a typed, hashed fact. Registered deterministic providers acquire repository,
+   runtime, and external facts only when authoritative state requires them. There is no
+   application-context-question model station or model-authored context-completeness claim.
+   Exactly one bounded, source-ordered requirement-inventory call
    then returns either `NO_RUNTIME_REQUIREMENT_CANDIDATES` or between one and the
    code-owned maximum positive atomic finished-software runtime-outcome candidates. Code
    parses and counts the returned lines mechanically. No semantic station pre-counts the
@@ -331,16 +328,17 @@ machine passes its executable gates:
    channel or recipient, output format, or state remains a distinct outcome when authorized.
 
    Only an authorized task-local one-outcome candidate is compared pairwise with one retained
-   requirement at a time. The station returns only `SAME_RUNTIME_OUTCOME` or
-   `DISTINCT_RUNTIME_OUTCOMES`; the model sees only the two statements, while code binds the job and
-   result to the complete candidate kind/cardinality receipts and the retained requirement's
-   result-relation receipt. Language that only restates conformance of the identical value to the
+   requirement at a time. The station presents opaque descriptions for the two semantic
+   relations and receives one call-local letter; code maps it to its internal same-or-distinct
+   value and binds the job and result to the complete candidate kind/cardinality receipts and
+   the retained requirement's result-relation receipt. Language that only restates conformance of the identical value to the
    identical determining rule is `SAME_RUNTIME_OUTCOME`; another determining rule, reference, scope,
    response, event, observation time, retention boundary, time bound, delivery channel, recipient,
    format, or state remains distinct. An exact or semantic duplicate evaporates, and the retained
    requirement is never reviewed or reopened. Only a distinct candidate proceeds to the separate three-way
-   result-relation question. It returns only that the outcome needs no derived result, explicitly states an
-   independently computable determining relation, or omits that relation. A named existing per-item grouping
+   result-relation question. Its opaque choice maps in code to whether the outcome needs no
+   derived result, explicitly states an independently computable determining relation, or
+   omits that relation. A named existing per-item grouping
    key completely determines group membership; its origin and unasserted ordering are not missing. An expression,
    formula, predicate, or named operation supplied, configured, or selected by an actor is a rule-bearing input.
    A named intrinsic or mechanically observable property such as a dimension, length, or count is determined by
@@ -445,12 +443,15 @@ machine passes its executable gates:
    reviewer. A generated verifier's receipt-grounding or grammar rejection, and any staged execution
    failure originating in the generated verification block, is terminal and cannot authorize
    implementation-repair inference. Code verifies the grounded artifact before advancing.
-6. **Charmander handoff** — cognition produces one existing bounded declaration job;
-   code parses, stitches, formats, stages, tests, applies, and reconciles it.
+6. **Charmander handoff** — cognition produces one existing bounded source-body job;
+   code supplies its declaration, parses, stitches, formats, stages, tests, applies, and reconciles it.
 7. **Failure-specific replacement** — ordinary invalid semantic leaves fail explicitly and cannot
    dispatch a generic correction job. The target-tree station alone may replace its complete raw
-   hierarchy once after one exact code-proven tree defect. Source repair remains the separate
-   guidance-instruction then executor-node boundary. Neither path can reconstruct aggregate state,
+   hierarchy once after one exact code-proven tree defect. Source-body correction instead
+   continues only the same persisted generation job and model for a bounded number of attempts,
+   exposes only the code-proven defective span and its necessary semantic question, and lets
+   code splice the returned ordinary replacement text into the retained body.
+   Neither path can reconstruct aggregate state,
    review valid output, return a merge patch, or author an acceptance control plane.
 8. **Incompatible production cutover** — remove the universal model-action path and
    its schemas, recovery consumers, and provider eagerness. There is no fallback or

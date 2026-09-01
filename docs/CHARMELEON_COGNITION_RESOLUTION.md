@@ -40,24 +40,11 @@ afterward must be acquired by a registered code-owned provider and retained with
 identity and digest.
 It never asks a model what files exist, which command to run, or which provider to use.
 
-Only after deterministic bootstrap may code request one bounded raw inventory of
-repository-fact-question candidates, or the registered semantic absence
-`NO_REPOSITORY_FACT_QUESTION_CANDIDATES`. The inventory is untrusted semantic data.
-Code owns its source-order queue and skips exact repeats mechanically. Each remaining
-candidate first receives one necessity/unresolvedness relation against only the immutable
-request, current established facts, and exact candidate.
-`NOT_NECESSARY_OR_ALREADY_RESOLVED` evaporates without a pairwise relation or evidence
-acquisition. Only a necessary unresolved candidate is compared with each already accepted
-question by a separate same-fact/distinct-facts relation; each call sees only that exact
-pair and cannot review or revoke accepted state. A same-fact candidate evaporates. For a
-necessary distinct question, code maps it to the registered evidence class, invokes the
-deterministic provider with code-owned arguments, validates the result, and records compact
-facts with source identity and digest before evaluating the next queued candidate. An
-accepted question is resolved once and never reviewed again.
-Queue exhaustion—not a model absence or completeness claim—returns the evolved context without a completeness call or a
-max-bound "another need" failure. Provider transcripts and broad search results are not
-planning context. If no provider owns an authorized necessary question, resolution
-fails loudly. The promoted fresh-workspace vertical resolves context mechanically and
+Repository, runtime, and external facts after bootstrap are acquired only by registered
+deterministic providers when authoritative state requires them. There is no
+application-context-question inventory, necessity, duplicate-relation, or completeness
+model station. Provider transcripts and broad search results are not planning context.
+The promoted fresh-workspace vertical resolves context mechanically and
 makes no context-question model call.
 
 When a semantic stage begins with one bounded inventory, that output is untrusted
@@ -75,9 +62,10 @@ Existing-repository artifact interpretation keeps two unresolved relations separ
 One station answers only whether one repository-authoritative semantic artifact and all
 behavior it owns must be absent. A different station answers only whether one exact
 cohesive requirement calls for one new complete unstructured plain-text artifact and no
-other change. Each returns one closed raw relation. Code decides which uncertainty is
-present, invokes only that station, and owns candidate selection, target construction,
-mutation, and verification.
+other change. Each genuine closed choice returns only a call-local opaque ID which code
+maps to its retained relation; internal relation labels are not model text. Code decides
+which uncertainty is present, invokes only that station, and owns candidate selection,
+target construction, mutation, and verification.
 
 Intent interpretation occurs only after that closure. Exactly one bounded,
 source-ordered requirement-inventory station returns either
@@ -123,8 +111,8 @@ the target-tree declaration station defined in
 receives the exact immutable request, selected technical tree context, and a bounded
 code-built current tree and returns one complete raw node hierarchy. Code constructs all
 normalized relative paths, and the request is not forwarded into source generation.
-Source-generation, repair-guidance, repair-execution, and test-generation stations
-remain path-blind.
+Source-body generation and its same-job correction continuation remain path-blind;
+there is no repair-guidance or repair-execution station.
 
 Code projects each accepted task-local runtime implementation requirement into exactly one frozen task in source order.
 That task contains only its code-owned task identity, requirement identity, and exact
@@ -153,8 +141,8 @@ inference receives only the unresolved semantic remainder produced after determi
 closure. A tool registry, function-call catalog, shell operation,
 repository operation, environment operation, or adapter command is never a
 provider-visible capability. Code owns tool selection, arguments, ordering,
-invocation, retries, budgets, and validation. For example, after code accepts one
-model-generated declaration, code parses it, inserts it into an in-memory document,
+invocation, retries, budgets, and validation. For example, after code receives one
+model-generated implementation body, code supplies and parses the declaration, inserts it into an in-memory document,
 formats it, compiles it, runs the predetermined checks, and routes an exact failure;
 the model is never asked whether to perform any of those operations.
 
@@ -361,13 +349,17 @@ type CandidateSelection struct {
 }
 ```
 
-The provider-visible response contains only one candidate ID from the exact bounded
-set. Code owns the ID mapping, validates and persists the result as typed state, and
-reruns deterministic closure.
+This port is legal only for a real plurality. Code constructs the complete applicable
+set first: zero candidates take the station's explicit zero-candidate behavior and one
+candidate is consumed immediately with zero model resolution, zero model execution,
+and no rejection. With two or more candidates, the provider-visible response contains
+only one call-local opaque ID from the exact bounded set. Code owns the mapping,
+validates and persists the result as typed state, and reruns deterministic closure.
 
-Classification, extraction, hypothesis selection, declaration generation, and
-failure-specific repair guidance require separate hard-typed ports and minimal schemas
-if later justified. No such port may review accepted state or decide completion.
+Classification, extraction, and hypothesis selection require separate hard-typed semantic
+ports when justified. Source-body generation instead returns ordinary raw text with no
+model-visible schema; one proven body defect continues that same persisted source job and
+model rather than creating a repair port. No port may review accepted state or decide completion.
 There is no generic station result union. A station cannot emit:
 
 - an environment operation or its arguments;
@@ -413,12 +405,14 @@ required before freezing a persistence representation or implementing recovery:
   observation, grounds the consumer operation, and completes with zero model calls;
 - both deterministic cases run with no provider configured and contain no provider
   discovery, bootstrap, activation, projection, or call records;
-- two genuinely ambiguous opaque candidates cause exactly one candidate-selection
-  call whose payload contains no environment-action or memory-management surface;
+- zero candidates follow the registered zero-option rule with no model call, one
+  candidate is used directly with no model call or rejection, and two genuinely
+  ambiguous opaque candidates cause exactly one candidate-selection call whose payload
+  contains no environment-action or memory-management surface;
 - missing, contradictory, cyclic, ambiguous-unregistered, or stale state fails
   loudly;
 - procedural mechanics, read-only repository traversal, recursive workload
-  compilation, bounded declaration generation, and deterministic verification each
+  compilation, bounded implementation-body generation with code-owned declarations, and deterministic verification each
   preserve the same code-owned operation and completion authority; and
 - source-level absence tests reject the universal decision APIs, renderer instruction,
   JSON fields, persistence consumers, compatibility aliases, and fallbacks.

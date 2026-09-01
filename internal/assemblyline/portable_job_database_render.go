@@ -4,16 +4,14 @@ import "fmt"
 
 func renderPortableDatabaseLeaf(job PortableJob) (string, error) {
 	switch job.Kind {
-	case WorkDatabaseSchemaRelationInventory:
-		return renderPortableDatabaseInput(job, BuildDatabaseSchemaRelationInventoryPrompt)
-	case WorkDatabaseSchemaRelationNecessity:
-		return renderPortableDatabaseInput(job, BuildDatabaseSchemaRelationNecessityPrompt)
-	case WorkDatabaseSchemaRelationResolution:
-		return renderPortableDatabaseInput(job, BuildDatabaseSchemaRelationResolutionPrompt)
+	case WorkDatabaseSchemaRelationChoice:
+		return renderPortableDatabaseInput(job, BuildDatabaseSchemaRelationChoicePrompt)
 	case WorkDatabaseQueryFromRelation:
 		return renderPortableDatabaseInput(job, BuildDatabaseQueryFromRelationPrompt)
 	case WorkDatabaseQueryShape:
 		return renderPortableDatabaseInput(job, BuildDatabaseQueryShapePrompt)
+	case WorkDatabaseQueryPurposePresence:
+		return renderPortableDatabaseInput(job, BuildDatabaseQueryPurposePresencePrompt)
 	case WorkDatabaseQueryPurposeInventory:
 		return renderPortableDatabaseInput(job, BuildDatabaseQueryPurposeInventoryPrompt)
 	case WorkDatabaseQueryPurposeNecessity:

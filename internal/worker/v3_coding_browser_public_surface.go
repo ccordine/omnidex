@@ -200,6 +200,9 @@ func (extractor *directCodingBrowserPublicSurfaceExtractor) inspectElement(
 	if err := extractor.addControl(tag, attributes, element, label); err != nil {
 		return err
 	}
+	if conditional && tag == "output" {
+		return fmt.Errorf("browser public surface rejects dynamic output cardinality")
+	}
 	if err := extractor.addOutput(tag, attributes, element); err != nil {
 		return err
 	}

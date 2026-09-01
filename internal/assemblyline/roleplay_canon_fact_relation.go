@@ -2,7 +2,6 @@ package assemblyline
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/gryph/omnidex/internal/roleplay"
 )
@@ -45,14 +44,18 @@ func BuildRoleplayCanonFactCandidateRelationPrompt(
 	if err := input.validate(); err != nil {
 		return "", err
 	}
-	return strings.Join([]string{
-		"Answer one pairwise semantic relation: do the candidate fact and the already accepted fact express the same durable fictional fact?",
-		"Compare only whether these two statements express the same durable fictional fact.",
-		"Return SAME_CANON_FACT when retaining both would duplicate one fact despite wording differences. Return DISTINCT_CANON_FACT when each fact adds a different durable assertion.",
-		"Return only the registered raw relation, with no JSON, label, Markdown, or explanation.",
-		"CANDIDATE FACT:\n" + input.Candidate,
-		"ALREADY ACCEPTED FACT:\n" + input.AcceptedFact,
-	}, "\n\n"), nil
+	choices, err := roleplayCanonFactRelationChoices()
+	if err != nil {
+		return "", err
+	}
+	return RenderOpaqueModelChoiceQuestion(
+		"Do these two statements express the same durable fictional fact?",
+		[]string{
+			"Candidate fact:\n" + input.Candidate,
+			"Already accepted fact:\n" + input.AcceptedFact,
+		},
+		choices,
+	)
 }
 
 func DecodeRoleplayCanonFactCandidateRelation(
@@ -63,12 +66,11 @@ func DecodeRoleplayCanonFactCandidateRelation(
 	if err := input.validate(); err != nil {
 		return zero, err
 	}
-	leaf, err := decodeRawSemanticLeaf(
-		"roleplay canon fact candidate relation",
-		raw,
-		maximumStringBytes(RoleplayCanonFactsEquivalent, RoleplayCanonFactsDistinct),
-		false,
-	)
+	choices, err := roleplayCanonFactRelationChoices()
+	if err != nil {
+		return zero, err
+	}
+	leaf, err := DecodeOpaqueModelChoice(raw, choices)
 	if err != nil {
 		return zero, err
 	}
@@ -83,6 +85,24 @@ func DecodeRoleplayCanonFactCandidateRelation(
 		return zero, err
 	}
 	return result, nil
+}
+
+func roleplayCanonFactRelationChoices() ([]OpaqueModelChoice, error) {
+	same, err := NewOpaqueModelChoice(
+		"Retaining both would duplicate one durable fictional fact despite wording differences.",
+		RoleplayCanonFactsEquivalent,
+	)
+	if err != nil {
+		return nil, err
+	}
+	distinct, err := NewOpaqueModelChoice(
+		"Each statement adds a different durable fictional assertion.",
+		RoleplayCanonFactsDistinct,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return []OpaqueModelChoice{same, distinct}, nil
 }
 
 func (result RoleplayCanonFactCandidateRelation) ValidateFor(

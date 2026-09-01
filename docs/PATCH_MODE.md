@@ -21,7 +21,7 @@ free-form command, or alternate mutation path.
 Patch application is the final mechanical step of a code-owned change:
 
 1. deterministic probes gather the exact relevant source state
-2. bounded stations fill only declared source nodes that code cannot render
-3. code parses, assembles, stages, and derives the unified diff
+2. bounded source stations return only ordinary implementation-body text that code cannot determine
+3. code supplies declarations, parses and assembles source, stages it, and derives the unified diff
 4. Omnidex validates and applies the exact accepted diff
 5. code-owned project tooling formats and verifies the resulting state

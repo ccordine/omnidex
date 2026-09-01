@@ -27,18 +27,13 @@ func runObjectivePortableRawLeafCall[T any](
 		return zero, 0, fmt.Errorf("objective raw leaf %s model is not configured", subject)
 	}
 	workerRuntime := portableWorkerRuntimeWithContext(runtime, "objective", ctx)
-	calls := 0
-	execute := workerRuntime.Execute
-	workerRuntime.Execute = func(
-		job assemblyline.PortableJob,
-		model string,
-	) (assemblyline.PortableResult, error) {
-		calls++
-		return execute(job, model)
-	}
 	value, err := runObjectiveRawLeafWorkerCall(
 		workerRuntime, modelName, subject, job, decode,
 	)
+	calls := 0
+	if workerRuntime.ProviderCalls != nil {
+		calls = workerRuntime.ProviderCalls()
+	}
 	return value, calls, err
 }
 

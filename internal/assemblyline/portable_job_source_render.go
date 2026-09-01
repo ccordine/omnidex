@@ -15,12 +15,11 @@ func renderPortableFragmentGeneration(input FragmentGenerationInput) (string, er
 		prompt, err = BuildTextFragmentGenerationPrompt(input)
 	case "typescript":
 		prompt, err = BuildTypeScriptFragmentPrompt(TypeScriptFragmentPrompt{
-			Dialect:                  input.Dialect,
-			Signature:                input.Signature,
-			Contract:                 input.Behavior,
-			Available:                strings.Join(input.Capabilities, "\n"),
-			Globals:                  input.PermittedSymbols,
-			PublicInteractionSurface: input.PublicInteractionSurface,
+			Dialect:   input.Dialect,
+			Signature: input.Signature,
+			Contract:  input.Behavior,
+			Available: strings.Join(input.Capabilities, "\n"),
+			Globals:   input.PermittedSymbols,
 		})
 	case "javascript", "java", "rust":
 		prompt, err = BuildBoundedSourceFragmentGenerationPrompt(input)
@@ -31,17 +30,4 @@ func renderPortableFragmentGeneration(input FragmentGenerationInput) (string, er
 		return "", err
 	}
 	return prompt, nil
-}
-
-func renderPortableFragmentGenerationReplacement(
-	input FragmentGenerationReplacementInput,
-) (string, error) {
-	if err := input.validate(); err != nil {
-		return "", err
-	}
-	return renderPortableFragmentGeneration(input.Original)
-}
-
-func renderPortableFragmentCorrection(input FragmentCorrectionInput) (string, error) {
-	return BuildFragmentCorrectionPrompt(input)
 }

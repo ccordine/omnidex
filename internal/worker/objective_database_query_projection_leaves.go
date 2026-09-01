@@ -23,7 +23,7 @@ func resolveDatabaseQueryProjections(
 		assemblyline.DatabaseQueryPurposeAuthority{
 			State: state, Collection: assemblyline.DatabaseQueryProjectionPurpose,
 		},
-		maximumPurposes, call, total,
+		maximumPurposes, true, call, total,
 	)
 	total = nextTotal
 	if err != nil {
@@ -49,12 +49,12 @@ func resolveDatabaseQueryProjections(
 			}
 		}
 		if leaf.Aggregate != datasource.AggregateCountRows {
-			fields := objectiveDatabaseProjectionFields(state, leaf.Aggregate)
-			if len(fields) == 0 {
-				return state, total, fmt.Errorf("database query projection has no compatible field")
+			fieldID, resolved, err := assemblyline.ResolveSoleDatabaseQueryProjectionFieldLeaf(leaf)
+			if err != nil {
+				return state, total, err
 			}
-			if len(fields) == 1 {
-				leaf.FieldID = fields[0]
+			if resolved {
+				leaf.FieldID = fieldID
 			} else {
 				job, err := assemblyline.NewDatabaseQueryProjectionFieldJob(leaf)
 				if err != nil {
@@ -101,25 +101,4 @@ func resolveDatabaseQueryProjections(
 		)
 	}
 	return state, total, nil
-}
-
-func objectiveDatabaseProjectionFields(
-	state assemblyline.DatabaseQueryIntentLeafState,
-	aggregate datasource.AggregateOperation,
-) []string {
-	fields := []string{}
-	for _, relation := range state.Authority.SchemaProjection.Relations {
-		for _, column := range relation.Columns {
-			compatible := true
-			switch aggregate {
-			case datasource.AggregateSum, datasource.AggregateAverage:
-				compatible = column.TypeCategory == datasource.TypeInteger ||
-					column.TypeCategory == datasource.TypeDecimal
-			}
-			if compatible {
-				fields = append(fields, column.ID)
-			}
-		}
-	}
-	return fields
 }

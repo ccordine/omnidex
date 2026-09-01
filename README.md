@@ -25,13 +25,13 @@ one frozen task per accepted task-local requirement code-owned
     ↓
 stack, target tree, workload + block graph code-owned
     ↓
-static declarations + bounded source nodes code + source model(s)
+static declarations + bounded source bodies code + source model(s)
     ↓
 AST assembly + isolated full tests        code-owned
     ↓
 authoritative writes + exact verification code-owned
-    ↑ exact code-routed diagnostic
-guidance instruction → one replacement node model(s)
+    ↑ exact code-routed body defect
+same persisted body job/model context
 ```
 
 ## What changed after Venusaur
@@ -43,7 +43,7 @@ guidance instruction → one replacement node model(s)
 | Correction arrived late or restarted the build. | Accepted blocks remain in memory and only one declared generated owner can be corrected. |
 | Models chose commands, declared success, and confused advice with execution. | Code owns tools, mutation authority, verification, and completion. |
 | Intermediate files were rejected because unfinished siblings did not compile. | Dependency waves complete before the whole staged program is compiled or tested. |
-| Source workers received paths, trees, plans, and excessive project context. | Initial generation receives one signature, one local behavior, direct declarations, and allowed symbols. Repair guidance receives one path-free diagnostic; the executor receives only its instruction and mutable source. |
+| Source workers received paths, trees, plans, and excessive project context. | One source job receives one signature for scope, one local behavior, direct declarations, and allowed symbols, then returns only an ordinary implementation body. A specific defect continues that same persisted job and model context. |
 | Hidden ledgers and duplicate recovery systems accumulated stale state. | Git is the source history; Omnidex keeps one current workspace and one coding engine. |
 | Long generic status streams obscured real progress. | Live events report phase, active station, target, accepted diff, diagnostic, and terminal outcome. |
 
@@ -54,8 +54,8 @@ The runtime has deliberately unequal stations:
 1. **Semantic intake (models, one responsibility at a time)** — after code resolves needed context facts, one bounded requirement-inventory call returns exactly `NO_RUNTIME_REQUIREMENT_CANDIDATES` or between one and the code-owned maximum positive atomic runtime-candidate lines. Every positive candidate then receives only its independently necessary candidate-bound relations. No call emits an authoritative application contract, plan, workflow decision, or completion state.
 2. **Intent and workload compiler (code)** — parses and counts inventory lines mechanically; no semantic station pre-counts the inventory, and no pre-count receipt exists. The inventory is untrusted intake, not a completeness claim. Code owns its source-ordered queue; sends every positive candidate through authorization first; discards exact repeats, unrequested candidates, non-runtime candidates, and semantic duplicates; partitions only an authorized compound candidate; and projects each surviving task-local runtime outcome directly into one frozen task. Rejected candidates cannot block or reopen accepted state. Queue exhaustion freezes the current iteration without a completeness review. Optional rejected or speculative suggestions remain outside current authority.
 3. **Consumer semantics, stack, tree, and graph compilers** — only after at least one requirement survives does code resolve product identity, delivery surface, deployment semantics, or another semantic leaf at its first actual consumer. Code then selects a registered stack, derives every mechanical target, parses the optional target-tree station's complete raw basename hierarchy, constructs all paths, and compiles exact block ownership and direct capabilities.
-4. **Source transformer (model, only when required)** — returns exactly one parser-qualified declaration or source node with an immutable signature. It never sees a path, document, project, job, plan, or filesystem operation.
-5. **Stager and repair controller (code)** — stitch and format complete documents, run isolated verification, and map one exact compiler-proven diagnostic to one generated owner. One guidance call returns only an instruction; one executor call returns only the replacement node. A later pair requires a distinct diagnostic after a validated source transition.
+4. **Source-body function (model, only when required)** — returns ordinary plain text containing only one implementation body. It is never required to reproduce a signature, parameter list, schema, JSON packet, control label, AST, path, or framework grammar, and it never sees a document, project plan, queue, or filesystem operation.
+5. **Stager and correction controller (code)** — place the body inside the code-owned declaration, parse and validate it, stitch and format complete documents, and run isolated verification. A specific body defect continues the same persisted job with the same model for at most three total attempts; every other accepted block remains untouched.
 6. **Mutation, verification, and completion controllers (code)** — write only a verified staged program, emit reviewable diffs, verify exact workspace content, rerun fixed checks, and declare the outcome.
 
 The detailed contract lives in [internal/worker/RUNTIME.md](internal/worker/RUNTIME.md).
@@ -66,62 +66,6 @@ want. Rejected or speculative candidates do not enter the workload. If they are 
 as optional follow-up suggestions, they remain non-authoritative until a later explicit
 user turn sends them through the ordinary candidate sieve.
 
-## Existing-repository path (development)
-
-Charmeleon's existing-repository workflow is deliberately separate from the
-greenfield application builder. It currently supports Go repositories through one
-server-owned path:
-
-1. Git and the active worktree produce a complete, content-addressed snapshot.
-2. Compiler-backed analysis stores files, symbols, direct edges, tests, and exact
-   source spans as derived PostgreSQL facts.
-3. Typed semantic-excerpt, declaration, and incoming-reference queries construct a
-   bounded evidence pack; the model never receives a path or repository tree.
-4. One bounded raw call returns a source-ordered inventory of exact request clauses.
-   Code owns the candidate queue, removes exact repeats and overlapping source spans,
-   and asks one candidate-bound relation only whether that clause requires or directly
-   constrains a persisted workspace change. A separately authorized candidate is compared
-   pairwise with retained requirements only to discard a semantic duplicate; retained state
-   cannot be reopened. Queue exhaustion closes intake, never a model-authored completeness
-   result. Code then resolves one opaque
-   change owner per retained requirement from bounded evidence and builds the
-   source-snapshot-bound change contract and ordered verification plan itself.
-5. Before any fragment generation, the complete focused-plus-terminal-broad plan must
-   pass in a disposable projection containing exactly the validated source-snapshot
-   files. Git metadata, `.omni`, ignored files, and excluded paths are never mounted.
-   A failing or drifting baseline stops with no generation, correction, or mutation
-   authority.
-6. Each fragment call receives only one function plus direct capabilities. Candidate
-   declarations are AST-validated and applied to a complete disposable
-   stage. Focused direct tests and a terminal broad test run through a read-only,
-   network-isolated bubblewrap sandbox with structured `go test -json` proof. The
-   sandbox receives a disposable checksum-validated projection of only the source
-   module's resolved build-list dependencies; it never receives the host-wide Go
-   module cache.
-7. Only a uniquely owned, path-free ordinary test/compiler failure may enter the
-   separated repair boundary for one function. One diagnostic permits one guidance
-   call and one executor call. Invalid or byte-identical replacement source stops
-   loudly; another pair requires a newly proven diagnostic after a validated source
-   transition.
-8. A PostgreSQL mutation journal binds the exact source snapshot, contract, stage,
-   patch, source/post file states, claim, and generated-diff evidence. Exact source may
-   apply once; exact post may finalize once; every other state is indeterminate and
-   fails loudly. Authoritative verification uses a newly constructed exact post-state
-   projection rather than the already-tested candidate stage or the live worktree.
-
-These proofs establish a clean pre-change baseline, exact patch integrity, and
-regression verification against the repository's existing tests. They do not prove
-that an arbitrary new user requirement was satisfied: that requires an independent,
-requirement-bound or held-out proof unavailable to the builder until it stops. The
-existing-repository path therefore remains unpromoted as an autonomy claim. Context
-Projection is also shadow-only, the index is not yet incrementally refreshed, and a
-lost running worker cannot be reclaimed until all worker writes carry a monotonic
-step-attempt lease. In addition, an `applied` mutation-journal row is not a resumable
-authoritative-proof or completion checkpoint: interruption after patch finalization
-can restart the semantic change workflow. The current path must not be described as
-crash-safe end-to-end execution. The exact promotion gates and restart boundary are
-documented in [docs/CHARMELEON_CONTEXT_SYSTEM.md](docs/CHARMELEON_CONTEXT_SYSTEM.md).
-
 ## Reliability rules
 
 - One authoritative implementation; no legacy fallback engine.
@@ -131,11 +75,13 @@ documented in [docs/CHARMELEON_CONTEXT_SYSTEM.md](docs/CHARMELEON_CONTEXT_SYSTEM
 - No rollback of valid file work because a later file fails.
 - No deletion unless the current instruction authorizes deletion.
 - No modification of protected instruction files.
-- One bounded raw semantic result per inventory, classification, relation, selection, or value question; code alone assembles typed state. Coding transforms return one raw AST declaration.
-- One guidance/executor pair per exact source diagnostic; invalid or unchanged output stops loudly, and another pair requires a newly proven diagnostic after a validated transition.
+- One bounded raw semantic result per inventory, classification, relation, selection, or value question; code alone assembles typed state. A coding model returns one ordinary plain-text implementation body.
+- Closed choices are resolved by literal cardinality: zero options follow the station's explicit zero-option rule, one option is used immediately by code with no model call and no rejection, and only two or more options permit one opaque-ID selection call.
+- Finite subset choices repeat that operation over a code-reduced candidate set: each accepted candidate is persisted and removed, each new round remaps opaque letters over only the remaining candidates plus a no-additional-choice alternative, and duplicate selection is mechanically impossible.
+- A specific source-body defect continues the same persisted job and model context for at most three total attempts; unrelated accepted work is never reopened.
 - Verification commands are selected from the accepted typed program, never inferred from prose or workspace guesses.
 - Direct, exact diagnostic feedback reaches the next worker immediately.
-- Source repair uses the separately configured guidance and executor routes; the executor receives only the instruction and mutable source, never the raw diagnostic, a fallback model, or rejected-response history.
+- Source correction has no separate route or response protocol. Code retains the rejected body as evidence but exposes only the exact code-proven mutable span and one necessary semantic question to the same job/model continuation. The returned ordinary text replaces only that span by deterministic splice.
 
 ## Live operator experience
 
@@ -169,8 +115,6 @@ OMNI_CODING_ARTIFACT_HANDLING_MODEL=qwen3.5:9b-q4_K_M
 OMNI_CODING_CAPABILITY_RELATION_MODEL=qwen3.5:9b-q4_K_M
 OMNI_CODING_SKILL_SELECTION_MODEL=qwen3.5:9b-q4_K_M
 OMNI_CODING_FRAGMENT_MODEL=qwen3.5:9b-q4_K_M
-OMNI_CODING_FRAGMENT_REPAIR_GUIDANCE_MODEL=qwen3.5:9b-q4_K_M
-OMNI_CODING_FRAGMENT_CORRECTION_MODEL=qwen3.5:9b-q4_K_M
 OMNI_CODING_REPOSITORY_CHANGE_SURFACE_MODEL=qwen3.5:9b-q4_K_M
 INFERENCE_CONTEXT_TOKENS=8192
 CODING_FRAGMENT_CONCURRENCY=1
@@ -193,8 +137,8 @@ The checked-in profile is Qwen-led, but it is not a single-model deployment.
 The active routes use Phi-4 14B only for the two candidate-bound coding
 result-presence questions and the two service deployment semantics. Qwen 3.5 9B owns
 the requirement inventory, authorization-first sieve, product and stack leaves, other
-bounded semantic work, target-tree naming, exact raw source-fragment generation, and
-repair execution, while code alone constructs the workload. Exact live qualification
+bounded semantic work, target-tree naming, and ordinary source-body generation and
+same-context correction, while code alone constructs the workload. Exact live qualification
 admits each model only to that bounded responsibility: Phi satisfies the named
 operation/property result-relation boundary that Qwen does not, while Qwen satisfies
 the strict multiline inventory and authorization boundary that Phi does not. The system
@@ -215,9 +159,9 @@ evidence owns current generation timing.
 | Route | Current model | Local model file | Runtime role |
 | --- | --- | ---: | --- |
 | Requirement inventory, sieve, product, and stack stations | `qwen3.5:9b-q4_K_M` | shared 6.6 GB image | One raw semantic result |
-| Requirement result-presence station | `phi4:14b` | shared 9.1 GB image | One raw `PRESENT`/`ABSENT` leaf |
-| Other semantic leaf, target-tree, database, answer, and repair-guidance stations | `qwen3.5:9b-q4_K_M` | shared 6.6 GB image | One raw semantic result |
-| Fragment generation and correction | `qwen3.5:9b-q4_K_M` | shared 6.6 GB image | One exact raw bounded source node |
+| Requirement result-presence station | `phi4:14b` | shared 9.1 GB image | One opaque candidate ID |
+| Other semantic leaf, target-tree, database, and answer stations | `qwen3.5:9b-q4_K_M` | shared 6.6 GB image | One raw semantic result |
+| Source-body generation and same-context correction | `qwen3.5:9b-q4_K_M` | shared 6.6 GB image | One ordinary plain-text implementation body |
 | Service deployment semantics | `phi4:14b` | 9.1 GB | Conditional availability and destination leaves |
 | Embeddings | `nomic-embed-text` | 0.27 GB | Retrieval vectors |
 
@@ -310,7 +254,7 @@ On the measured 8 GB GPU, 100 output tokens take roughly 5 seconds of Qwen 3.5
 decode after prompt evaluation. The retained Qwen 2.5 Coder row below is a
 historical comparison, not an active route. Historical cold probes added roughly
 12–14 seconds. Larger prompts,
-additional bounded semantic leaves, and compiler-validation repairs add time
+additional bounded semantic leaves, and exact-span compiler-validation corrections add time
 even when their output is short.
 
 These ranges are deployment-planning estimates for one active inference stream:
@@ -319,7 +263,7 @@ These ranges are deployment-planning estimates for one active inference stream:
 | --- | ---: | --- |
 | Short conversational turn | 5–30 s | Context selection, answer length, memory retrieval |
 | Simple database-RAG turn | 20–90 s | Relation count, schema-selection chunks, query-intent leaves, answer length |
-| Small bounded coding change | 5–30 min | Requirements, generated declarations, model swaps, compiler/test runs, repairs |
+| Small bounded coding change | 5–30 min | Requirements, generated bodies, model loads, compiler/test runs, exact-span corrections |
 | Multi-feature repository build | Tens of minutes to hours | Task count, dependency waves, corrections, project build/test cost |
 
 A simple database turn normally needs schema selection, typed query-intent
@@ -402,11 +346,9 @@ Upstream capacity references: the
 [Ollama GPU support matrix](https://docs.ollama.com/gpu).
 
 Before intent interpretation, code hashes the immutable request and records the exact
-workspace state as a typed fact. For an existing workspace, one bounded call proposes a
-repository-fact-question inventory. Code owns its queue, tests one candidate at a time,
-and resolves only a necessary distinct question through its registered provider. A fresh
-workspace needs no context-question call. Queue exhaustion closes context intake without
-a coverage or completeness claim.
+workspace state as a typed fact. Repository, runtime, and external facts are acquired by
+registered deterministic providers when authoritative state requires them. There is no
+application-context-question model station or model-authored context-completeness claim.
 
 After context closure, exactly one bounded requirement-inventory call returns either
 `NO_RUNTIME_REQUIREMENT_CANDIDATES` or between one and the code-owned maximum positive,
@@ -456,23 +398,22 @@ remains a separate code-owned projection. It returns the raw `ROOT` node grammar
 constructs and validates all normalized relative paths. The raw request stops at this
 structural boundary and is never forwarded to a source call. The
 selected compiler turns the accepted tree and frozen workload into bounded source-block
-responsibilities. Each source call returns one exact path-blind
-declaration or source node; code owns document construction, imports, formatting,
+responsibilities. Each source call returns one ordinary path-blind implementation
+body; code owns the signature and declaration, parsing, document construction, imports, formatting,
 stitching, isolated checks, and final verification.
 
-A mapped source failure is diagnosed by the separately routed repair-guidance model
-into one self-contained instruction; the correction model sees only that instruction
-and the exact mutable source block. Code validates and verifies the result. Invalid or
-byte-identical source stops; a later guidance/execution pair is legal only for a newly
-compiler-proven diagnostic after a validated transition. Every call is an immutable
-content-addressed work unit. Local Ollama station models are selected through
+A specific validation defect continues the same immutable, persisted source-body work
+unit with the same model only after code proves its exact mutable byte span. The model
+receives one necessary semantic question and that span alone and returns ordinary
+replacement text. Code checks the retained base and span, performs the splice, and keeps
+the signature, declaration, parser state, application state, and every other accepted
+block. It accepts only a newly validated assembled declaration and stops loudly after the
+bounded attempt limit. There is no repair model, replacement work kind, response packet,
+or textual correction protocol. Local Ollama station models are selected through
 environment-backed routing, so structurally qualified local models can be measured
 against the same unchanged gates without application changes. A missing model, context
-mismatch, or invalid capacity fails explicitly. The current repair boundary is
-documented in
-[docs/CHARMANDER_ASSEMBLY_LINE.md](docs/CHARMANDER_ASSEMBLY_LINE.md#production-flow);
-historical live primitive evidence remains in
-[docs/evidence/2026-08-15-guided-typescript-repair-iterative-live.jsonl](docs/evidence/2026-08-15-guided-typescript-repair-iterative-live.jsonl).
+mismatch, or invalid capacity fails explicitly. The current boundary is documented in
+[docs/CHARMANDER_ASSEMBLY_LINE.md](docs/CHARMANDER_ASSEMBLY_LINE.md#production-flow).
 
 Production station inference currently requires Ollama's exact prepared contract.
 OpenAI, Azure AI, Google, Hugging Face, and compatible services appear only when

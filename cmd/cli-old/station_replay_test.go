@@ -3,19 +3,20 @@ package main
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestParseStationReplayOptionsRequiresOneFrozenPointAndReport(t *testing.T) {
 	options, err := parseStationReplayOptions([]string{
-		"--job", "22", "--work-kind", "fragment_correction",
+		"--job", "22", "--work-kind", "fragment_generation",
 		"--model", "qwen3.5:9b-q4_K_M", "--model", "deepseek-r1:8b",
 		"--report", "/tmp/replay.jsonl",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if options.JobID != 22 || options.OpeningID != 0 || options.WorkKind != "fragment_correction" ||
-		len(options.Models) != 2 || options.Timeout != 0 {
+	if options.JobID != 22 || options.OpeningID != 0 || options.WorkKind != "fragment_generation" ||
+		len(options.Models) != 2 || options.Timeout != 30*time.Minute {
 		t.Fatalf("options=%+v", options)
 	}
 
@@ -29,6 +30,8 @@ func TestParseStationReplayOptionsRequiresOneFrozenPointAndReport(t *testing.T) 
 		"removed guidance model":       {"--opening", "7", "--model", "qwen", "--report", "/tmp/replay.jsonl", "--guidance-model", "deepseek"},
 		"retired workload convergence": {"--opening", "7", "--model", "qwen", "--report", "/tmp/replay.jsonl", "--specification-converge"},
 		"retired alternate replay":     {"--opening", "7", "--model", "qwen", "--report", "/tmp/replay.jsonl", "--current-contract"},
+		"zero timeout":                 {"--opening", "7", "--model", "qwen", "--report", "/tmp/replay.jsonl", "--timeout", "0s"},
+		"over maximum timeout":         {"--opening", "7", "--model", "qwen", "--report", "/tmp/replay.jsonl", "--timeout", "30m1s"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			if _, err := parseStationReplayOptions(args); err == nil {

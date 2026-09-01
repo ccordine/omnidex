@@ -1,7 +1,6 @@
 package worker
 
 import (
-	"errors"
 	"fmt"
 	"strings"
 
@@ -12,17 +11,12 @@ import (
 type directCodingLanguageSourceConfig struct {
 	Language         string
 	AdapterID        string
-	ProjectFragment  directCodingLanguageFragmentProjector
 	ValidateFragment directCodingLanguageFragmentValidator
 }
 
-type directCodingLanguageRepairModelResolver func() (string, string, error)
-
 type directCodingLanguageSourceGenerator struct {
-	session                   *directCodingSession
-	config                    directCodingLanguageSourceConfig
-	acceptedRepairTransitions map[string]int
-	repairDiagnostics         map[string]map[string]struct{}
+	session *directCodingSession
+	config  directCodingLanguageSourceConfig
 }
 
 func newDirectCodingLanguageSourceGenerator(
@@ -37,8 +31,6 @@ func newDirectCodingLanguageSourceGenerator(
 	}
 	return &directCodingLanguageSourceGenerator{
 		session: session, config: config,
-		acceptedRepairTransitions: make(map[string]int),
-		repairDiagnostics:         make(map[string]map[string]struct{}),
 	}, nil
 }
 
@@ -62,8 +54,7 @@ func newDirectCodingLanguageSourceGeneratorForProgram(
 		if err != nil {
 			return nil, err
 		}
-		if adapter.SourceLanguage == "" || adapter.ProjectFragment == nil ||
-			adapter.ValidateFragment == nil {
+		if adapter.SourceLanguage == "" || adapter.ValidateFragment == nil {
 			return nil, fmt.Errorf(
 				"artifact adapter %s cannot consume generated source blocks", adapter.ID,
 			)
@@ -82,15 +73,14 @@ func newDirectCodingLanguageSourceGeneratorForProgram(
 	return newDirectCodingLanguageSourceGenerator(session, directCodingLanguageSourceConfig{
 		Language:         selected.SourceLanguage,
 		AdapterID:        selected.ID,
-		ProjectFragment:  selected.ProjectFragment,
 		ValidateFragment: selected.ValidateFragment,
 	})
 }
 
 func validateDirectCodingLanguageSourceConfig(config directCodingLanguageSourceConfig) error {
 	if strings.TrimSpace(config.Language) == "" || strings.TrimSpace(config.AdapterID) == "" ||
-		config.ProjectFragment == nil || config.ValidateFragment == nil {
-		return fmt.Errorf("language source generation requires identity, projector, and parser")
+		config.ValidateFragment == nil {
+		return fmt.Errorf("language source generation requires identity and parser")
 	}
 	return nil
 }
@@ -115,59 +105,24 @@ func (executor *directCodingLanguageSourceGenerator) GenerateBlock(
 		return "", err
 	}
 	runtime := directCodingWorkerRuntime(executor.session)
-	runtime.MaxAttempts = 1
-	runtime.CorrectionModel = ""
+	runtime.MaxAttempts = assemblyline.MaxSourceBodyAttempts
 	if ref.Block.Role == assemblyline.SourceBlockTaskVerification {
 		return "", fmt.Errorf("generated verification block %s is obsolete", ref.Block.ID)
 	}
-	return executor.generateBlockWithRuntime(
-		runtime, modelName, executor.languageRepairModels,
-		stage, ref, input, executor.config.ValidateFragment,
-	)
+	return executor.generateBlockWithRuntime(runtime, modelName, ref, input)
 }
 
 func (executor *directCodingLanguageSourceGenerator) generateBlockWithRuntime(
 	runtime typedWorkerRuntime,
 	modelName string,
-	repairModels directCodingLanguageRepairModelResolver,
-	stage *directCodingProgram,
 	ref assemblyline.SourceBlockRef,
 	input assemblyline.FragmentGenerationInput,
-	validate directCodingLanguageFragmentValidator,
 ) (string, error) {
-	source, err := runDirectCodingLanguageFragmentWorker(
+	return runDirectCodingLanguageFragmentWorker(
 		runtime, modelName,
 		directCodingLanguageGenerationJob{
 			Subject: ref.Block.ID, Input: input,
-			Project: executor.config.ProjectFragment,
-			Validate: validate,
+			Validate: executor.config.ValidateFragment,
 		},
 	)
-	if err != nil {
-		var rejection *directCodingLanguageFragmentRejection
-		if ref.Block.Role != assemblyline.SourceBlockTaskVerification &&
-			errors.As(err, &rejection) {
-			diagnostic, diagnosticErr := directCodingLanguageParserRepairDiagnostic(
-				runtime.PathProvenance, rejection.Failure,
-			)
-			if diagnosticErr != nil {
-				return "", errors.Join(err, diagnosticErr)
-			}
-			if repairModels == nil {
-				return "", fmt.Errorf("initial language fragment repair model routing is unavailable")
-			}
-			guidanceModel, correctionModel, modelErr := repairModels()
-			if modelErr != nil {
-				return "", modelErr
-			}
-			repairRuntime := runtime
-			repairRuntime.MaxAttempts = 1
-			return executor.repairLanguageBlockWithRuntime(
-				repairRuntime, guidanceModel, correctionModel,
-				stage, ref, input, rejection.Candidate, diagnostic, validate,
-			)
-		}
-		return "", err
-	}
-	return source, nil
 }

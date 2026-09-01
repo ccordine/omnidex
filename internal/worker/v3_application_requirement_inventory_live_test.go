@@ -1,15 +1,14 @@
 package worker
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"strconv"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
+	"github.com/gryph/omnidex/internal/llm"
 	"github.com/gryph/omnidex/internal/ollama"
 )
 
@@ -32,9 +31,8 @@ func TestLiveRequirementInventoryAuthorizationQualification(t *testing.T) {
 	if err != nil || contextTokens <= 0 {
 		t.Fatal("OMNIDEX_TEST_OLLAMA_CONTEXT must be a positive integer")
 	}
-	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Minute)
-	t.Cleanup(cancel)
-	client := ollama.New(baseURL, requirementsModel, "", 5*time.Minute)
+	ctx := t.Context()
+	client := ollama.New(baseURL, requirementsModel, "", llm.MaximumModelRequestDuration)
 
 	for _, fixture := range []struct {
 		name    string

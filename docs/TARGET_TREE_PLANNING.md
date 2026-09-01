@@ -5,8 +5,8 @@
 This is the sole tree-visible model boundary in the coding assembly line, and
 it is never a normalized-path-visible boundary. It answers one structural
 semantic question and has no filesystem or workflow authority. Every source,
-declaration, repair, verification, and other semantic model remains path- and
-tree-blind.
+source-body correction, verification, and other semantic model remains path- and
+tree-blind. Code alone supplies source declarations.
 
 ## One frozen workload, one complete answer
 

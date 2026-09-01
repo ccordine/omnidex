@@ -1,7 +1,6 @@
 package assemblyline
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 	"unicode/utf8"
@@ -55,8 +54,10 @@ func (input ConversationObjectiveKindInput) validate() error {
 	if strings.ContainsRune(input.ExactInstruction, '\x00') {
 		return fmt.Errorf("conversation exact instruction contains NUL")
 	}
-	if input.KnownArtifactPaths == nil {
-		return fmt.Errorf("conversation objective kind requires explicit artifact provenance, including an empty set")
+	if _, err := validateContextArtifactProvenance(
+		"conversation objective kind", input.KnownArtifactPaths,
+	); err != nil {
+		return err
 	}
 	return input.Context.Validate()
 }
@@ -89,7 +90,14 @@ func DecodeConversationObjectiveKindDecision(
 	input ConversationObjectiveKindInput,
 	raw string,
 ) (ConversationObjectiveKindDecision, error) {
-	leaf, err := decodeRawSemanticLeaf("conversation objective kind", raw, 64, false)
+	if err := input.validate(); err != nil {
+		return ConversationObjectiveKindDecision{}, err
+	}
+	choices, err := conversationObjectiveKindChoices(input)
+	if err != nil {
+		return ConversationObjectiveKindDecision{}, err
+	}
+	leaf, err := DecodeOpaqueModelChoice(raw, choices)
 	if err != nil {
 		return ConversationObjectiveKindDecision{}, err
 	}
@@ -107,29 +115,79 @@ func BuildConversationObjectiveKindPrompt(input ConversationObjectiveKindInput) 
 	if err := input.validate(); err != nil {
 		return "", err
 	}
-	modelContext, err := projectObjectiveContextForModel(input.Context)
+	contextText, err := renderObjectiveContextForModel(input.Context)
 	if err != nil {
 		return "", err
 	}
-	context, err := json.Marshal(modelContext)
+	provenance, err := validateContextArtifactProvenance(
+		"conversation objective kind", input.KnownArtifactPaths,
+	)
 	if err != nil {
-		return "", fmt.Errorf("encode objective context: %w", err)
+		return "", err
 	}
-	lines := []string{
-		"Classify one exact user instruction into exactly one listed objective kind.",
-		"answer: converse directly, including greetings and small talk, or answer without acquiring current external evidence.",
-		"workspace_mutation: satisfying the instruction requires changing a workspace and verifying the change.",
-		"story: produce narrative or roleplay text.",
-		"Choose workspace_mutation only when the instruction requires that side effect; otherwise choose answer or story.",
+	contextText, err = redactContextModelText(
+		"conversation objective context", contextText, provenance,
+	)
+	if err != nil {
+		return "", err
+	}
+	exactInstruction, err := redactContextModelText(
+		"conversation exact instruction", input.ExactInstruction, provenance,
+	)
+	if err != nil {
+		return "", err
+	}
+	choices, err := conversationObjectiveKindChoices(input)
+	if err != nil {
+		return "", err
+	}
+	return RenderOpaqueModelChoiceQuestion(
+		"Which description exactly characterizes the objective of this one instruction?",
+		[]string{
+			"Choose the workspace-changing description only when satisfying the instruction requires that side effect.",
+			"Objective context:\n" + contextText,
+			"Exact instruction:\n" + exactInstruction,
+		},
+		choices,
+	)
+}
+
+func conversationObjectiveKindChoices(
+	input ConversationObjectiveKindInput,
+) ([]OpaqueModelChoice, error) {
+	descriptions := []struct {
+		description string
+		kind        ConversationObjectiveKind
+	}{
+		{
+			description: "Converse directly, including greetings and small talk, or answer without acquiring current external evidence.",
+			kind:        ObjectiveKindAnswer,
+		},
+		{
+			description: "Satisfying the instruction requires changing a workspace and verifying the change.",
+			kind:        ObjectiveKindWorkspaceMutation,
+		},
+		{
+			description: "Produce narrative or roleplay text.",
+			kind:        ObjectiveKindStory,
+		},
 	}
 	if input.DatabaseEvidenceAvailable {
-		lines = append(lines, "database_read: answer using the explicitly bound database when its records are required as evidence.")
+		descriptions = append(descriptions, struct {
+			description string
+			kind        ConversationObjectiveKind
+		}{
+			description: "Answer using the explicitly bound database because its records are required as evidence.",
+			kind:        ObjectiveKindDatabaseRead,
+		})
 	}
-	lines = append(lines,
-		"Return the one registered semantic objective kind that exactly describes this instruction.",
-		"Return only that raw registered kind with no JSON, quotes, label, Markdown, or commentary.",
-		"OBJECTIVE_CONTEXT_JSON:\n"+string(context),
-		"EXACT_INSTRUCTION:\n"+input.ExactInstruction,
-	)
-	return strings.Join(lines, "\n\n"), nil
+	choices := make([]OpaqueModelChoice, 0, len(descriptions))
+	for _, candidate := range descriptions {
+		choice, err := NewOpaqueModelChoice(candidate.description, string(candidate.kind))
+		if err != nil {
+			return nil, err
+		}
+		choices = append(choices, choice)
+	}
+	return choices, nil
 }

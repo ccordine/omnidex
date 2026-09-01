@@ -81,8 +81,11 @@ A model response is not a state transition.
    preservation review, or narrative restatement chain.
 8. Separate bounded semantic calls extract newly established canon once from
    the exact fictional user contribution and once from each final response.
-   One inventory call returns bounded source-local fact candidates or
-   `NO_CANON_FACT_CANDIDATES`. The inventory is untrusted data. Code owns its
+   One binary presence call determines whether the contribution directly
+   establishes any durable fictional fact. On absence, code assembles an empty
+   fact set without opening an inventory. On presence, one positive-only
+   inventory returns between one and the code-owned maximum ordinary
+   source-local fact lines. The inventory is untrusted data. Code owns its
    queue, removes exact repeats, asks one contribution-bound authorization
    relation for each candidate, and compares an authorized byte-different
    candidate with one accepted fact at a time only to remove semantic
@@ -126,15 +129,22 @@ cursor, global turn, and fictional-time tick once. The round increments only
 when that cursor crosses the end of the persisted participant order.
 
 Per-character ongoing action is another separate semantic leaf. For a selected
-character turn, code supplies the ongoing-action station only that character's
-exact persisted `[Action]` parts and previous current action. For an assistant
-response, it supplies only that responder's final prose and previous current
-action. The station returns one complete current-action value or its exact
-absence; code validates and appends the result under the exact character and
-source message. Narrator contributions have no unambiguous actor target, and
-typed Event or dialogue parts are not character actions, so those inputs do
-not invoke or mutate per-character ongoing-action state. Their scene
-continuity remains in canon and observer-scoped history.
+character turn, code first asks only what semantic relation the exact persisted
+`[Action]` contribution has to that character's previous current action. For an
+assistant response, the relation call sees only that responder's final prose and
+previous current action. The available relations are rendered as call-local opaque
+letters; code maps the selected letter to absent, unchanged, or replacement.
+
+An absent relation clears the action directly. An unchanged relation copies the exact
+previous value directly. Neither branch invokes a value model or asks inference to
+reproduce or preserve the previous text. Only a replacement relation opens a separate
+plain-text value job. That value job receives the exact contribution and character
+identity needed to name the new action, but never the previous action or the relation
+labels, and returns one concise ordinary present-tense action value. Code validates and
+appends the result under the exact character and source message. Narrator contributions
+have no unambiguous actor target, and typed Event or dialogue parts are not character
+actions, so those inputs do not invoke or mutate per-character ongoing-action state.
+Their scene continuity remains in canon and observer-scoped history.
 
 When a retained character memory is exactly the newly granted visible canon
 fact, code copies those already-validated bytes into `CHARACTER_MEMORY` in the

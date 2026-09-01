@@ -37,17 +37,10 @@ func validateDirectCodingSemanticCandidatePathBoundary(
 	provenance assemblyline.ArtifactIdentityProvenance,
 ) error {
 	switch kind {
-	case assemblyline.WorkFragmentGeneration,
-		assemblyline.WorkFragmentGenerationReplacement,
-		assemblyline.WorkFragmentModification,
-		assemblyline.WorkFragmentCorrection:
+	case assemblyline.WorkFragmentGeneration:
 		return fmt.Errorf(
 			"work kind %q cannot use the raw semantic-leaf candidate boundary",
 			kind,
-		)
-	case assemblyline.WorkTypeScriptRepairGuidance:
-		return assemblyline.ValidatePathFreeRepairInstructionModelContextWithProvenance(
-			"coding semantic result", provenance, candidate,
 		)
 	default:
 		return assemblyline.ValidatePathFreeModelContextWithProvenance(

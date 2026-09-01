@@ -5,27 +5,6 @@ func repositorySemanticUncertaintyContract(
 ) (SemanticUncertaintyContract, bool) {
 	var contract SemanticUncertaintyContract
 	switch kind {
-	case WorkRepositoryRequirementInventory:
-		contract = semanticUncertaintyContractV5(kind,
-			"What bounded source-ordered raw-clause candidate inventory is explicitly present in the immutable existing-repository request?",
-			"Semantic clause boundaries in unconstrained human phrasing cannot be derived by repository parsing or byte validation.",
-			"Only the immutable repository request.",
-			"One bounded raw-line inventory of exact source clauses without classifications or workflow authority.",
-			"DecodeRepositoryRequirementInventory binds exact source quotes to request authority; code alone owns the candidate queue, duplicate filtering, and exhaustion.")
-	case WorkRepositoryRequirementCandidateAuthorization:
-		contract = semanticUncertaintyContractV3(kind,
-			"Does this exact source clause require or directly constrain a persisted change to the existing workspace?",
-			"Whether a natural-language clause establishes desired repository mutation is semantic and cannot be inferred from syntax or keywords.",
-			"The immutable repository request, established context, and one exact inventory-bound source clause.",
-			"One request-and-candidate-bound existing-workspace-change relation.",
-			"DecodeRepositoryRequirementCandidateAuthorizationResult validates the relation before code continues sieving or discards only that queued candidate.")
-	case WorkRepositoryRequirementCandidateRelation:
-		contract = semanticUncertaintyContractV3(kind,
-			"Do this exact authorized candidate and one retained requirement express the same requested existing-workspace change?",
-			"Semantic equivalence between byte-different natural-language change statements cannot be established by syntax or byte comparison.",
-			"Exactly one authorized candidate and one retained existing-workspace requirement.",
-			"One pair-bound same-or-distinct workspace-change relation.",
-			"DecodeRepositoryRequirementCandidateRelationResult validates the pair receipt before code discards only the duplicate candidate or compares the next retained requirement.")
 	case WorkContextRelevanceRelation:
 		contract = semanticUncertaintyContract(kind,
 			"Does this exact code-known context candidate directly contribute context needed for the exact instruction?",
@@ -59,7 +38,7 @@ func repositorySemanticUncertaintyContract(
 			"What bounded source-ordered candidate paragraphs could answer the exact real-world question in character from supplied evidence?",
 			"Code cannot mechanically compose faithful narrative language or identify every semantically responsive formulation.",
 			"The exact question, roleplay identity, compact fictional context, and bounded real-world evidence text.",
-			"One raw candidate-paragraph inventory or the registered absence value.",
+			"One bounded positive raw candidate-paragraph inventory.",
 			"DecodeRoleplayGroundedParagraphInventory validates the inventory before code sieves each candidate independently.")
 	case WorkRoleplayGroundedResponseEvidenceRelation:
 		contract = semanticUncertaintyContractV2(kind,
@@ -75,12 +54,19 @@ func repositorySemanticUncertaintyContract(
 			"The exact question, roleplay identity, compact fictional context, exact candidate paragraph, and the complete bounded evidence text supplied for the answer.",
 			"One registered paragraph-admissibility relation.",
 			"DecodeRoleplayGroundedParagraphAuthorizationDecision validates the relation before code discards a negative candidate immediately or performs pairwise evidence attribution for only that positive candidate.")
+	case WorkRoleplayCanonFactPresence:
+		contract = semanticUncertaintyContract(kind,
+			"Does the current contribution directly establish any durable fictional fact?",
+			"Durable fictional meaning cannot be determined from contribution shape alone.",
+			"The exact attributed contribution, reference context, and typed antecedent when present.",
+			"One opaque binary choice identifying presence or absence.",
+			"DecodeRoleplayCanonFactPresenceResult validates the relation before code either assembles an empty fact set or opens the positive-only inventory.")
 	case WorkRoleplayCanonFactInventory:
 		contract = semanticUncertaintyContract(kind,
-			"What bounded source-ordered candidate facts does the exact current contribution directly express?",
+			"What bounded source-ordered durable fictional facts does the exact current contribution directly establish?",
 			"Attribution and durable narrative meaning require semantic interpretation beyond structural validation.",
 			"The exact attributed contribution, reference context, and typed antecedent when present.",
-			"One raw candidate-fact inventory or the registered absence value.",
+			"Between one and the code-owned maximum ordinary candidate-fact lines.",
 			"DecodeRoleplayCanonFactInventory validates the inventory before code sieves each candidate independently.")
 	case WorkRoleplayCanonFactCandidateAuthorization:
 		contract = semanticUncertaintyContract(kind,
@@ -96,13 +82,20 @@ func repositorySemanticUncertaintyContract(
 			"Exactly one candidate fact and one already accepted fact.",
 			"One registered pairwise fact relation.",
 			"DecodeRoleplayCanonFactCandidateRelation validates the relation before code retains or discards only the candidate.")
-	case WorkRoleplayOngoingAction:
+	case WorkRoleplayOngoingActionRelation:
 		contract = semanticUncertaintyContract(kind,
-			"What single action remains underway for the named character after the exact contribution?",
+			"Is no action, the same action, or a different action underway for the named character after the exact contribution?",
 			"Completion or continuation of a described action is a narrative semantic relation not encoded structurally.",
 			"The named character, contribution source, exact contribution, and previous ongoing-action state.",
-			"One optional ongoing-action text leaf.",
-			"DecodeRoleplayOngoingActionDecision validates the leaf before code replaces the character's persisted ongoing-action state.")
+			"One opaque choice identifying the bounded action-state relation.",
+			"DecodeRoleplayOngoingActionRelation maps the opaque choice to code-owned state; code then clears, retains, or requests one new action value.")
+	case WorkRoleplayOngoingActionValue:
+		contract = semanticUncertaintyContract(kind,
+			"What one action newly remains underway for the named character after the exact contribution?",
+			"The current action's concise natural-language meaning cannot be generated mechanically.",
+			"The named character, contribution source, exact contribution, and code-owned fact that a new ongoing action was selected.",
+			"One ordinary plain-text ongoing-action value.",
+			"DecodeRoleplayOngoingActionValue validates the text before code binds it to the already selected replacement branch.")
 	case WorkGroundedAnswerParagraphInventory:
 		contract = semanticUncertaintyContract(kind,
 			"What bounded candidate paragraphs could directly answer the exact requirement using only the selected evidence capsules?",

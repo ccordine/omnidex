@@ -82,9 +82,9 @@ func TestDirectCodingResultRelationUsesSecondQuestionOnlyForDerivedValues(t *tes
 					if err := json.Unmarshal(job.Payload, &input); err != nil {
 						return assemblyline.PortableResult{}, err
 					}
-					candidate := string(assemblyline.ApplicationRequirementCandidateResultAbsent)
+					candidate := "B"
 					if fixture.relation == assemblyline.ApplicationRequirementExplicitResultRelation {
-						candidate = string(assemblyline.ApplicationRequirementCandidateResultPresent)
+						candidate = "A"
 					}
 					return assemblyline.PortableResult{JobID: job.ID, Candidate: candidate}, nil
 				},
@@ -103,7 +103,7 @@ func TestDirectCodingResultRelationUsesSecondQuestionOnlyForDerivedValues(t *tes
 	}
 }
 
-func TestDirectCodingUnderdeterminedResultIsGroundedThenDiscarded(t *testing.T) {
+func TestDirectCodingUnderdeterminedResultIsDiscardedWithoutAnotherModelCall(t *testing.T) {
 	t.Parallel()
 	const request = "Build a material routing aid that selects the best destination for supplied material."
 	const candidate = "The finished software selects the best destination for supplied material."
@@ -135,29 +135,27 @@ func TestDirectCodingUnderdeterminedResultIsGroundedThenDiscarded(t *testing.T) 
 			response := ""
 			switch job.Kind {
 			case assemblyline.WorkApplicationRequirementCandidateAuthorization:
-				response = assemblyline.ApplicationRequirementCandidateEntailed
+				response = "A"
 			case assemblyline.WorkApplicationRequirementCandidateKind:
 				var input assemblyline.ApplicationRequirementCandidateContentPresenceInput
 				if err := json.Unmarshal(job.Payload, &input); err != nil {
 					return assemblyline.PortableResult{}, err
 				}
-				response = string(assemblyline.ApplicationRequirementCandidateContentPresent)
+				response = "A"
 				if input.Dimension == assemblyline.ApplicationRequirementCandidateNonRuntimeContentDimension {
-					response = string(assemblyline.ApplicationRequirementCandidateContentAbsent)
+					response = "B"
 				}
 			case assemblyline.WorkApplicationRequirementCandidateCardinality:
-				response = assemblyline.ApplicationRequirementOneRuntimeOutcome
+				response = "A"
 			case assemblyline.WorkApplicationRequirementCandidateResultRelation:
 				var input assemblyline.ApplicationRequirementCandidateResultPresenceInput
 				if err := json.Unmarshal(job.Payload, &input); err != nil {
 					return assemblyline.PortableResult{}, err
 				}
-				response = string(assemblyline.ApplicationRequirementCandidateResultPresent)
+				response = "A"
 				if input.Dimension == assemblyline.ApplicationRequirementDeterminingRelationDimension {
-					response = string(assemblyline.ApplicationRequirementCandidateResultAbsent)
+					response = "B"
 				}
-			case assemblyline.WorkApplicationRequirementCandidateResultRelationGrounding:
-				response = assemblyline.ApplicationRequirementNoExactlyOneDeterminingRelationEntailed
 			default:
 				return assemblyline.PortableResult{}, fmt.Errorf("unexpected work kind %q", job.Kind)
 			}
@@ -177,15 +175,85 @@ func TestDirectCodingUnderdeterminedResultIsGroundedThenDiscarded(t *testing.T) 
 	wantTail := []assemblyline.WorkKind{
 		assemblyline.WorkApplicationRequirementCandidateResultRelation,
 		assemblyline.WorkApplicationRequirementCandidateResultRelation,
-		assemblyline.WorkApplicationRequirementCandidateResultRelationGrounding,
 	}
 	if len(calls) < len(wantTail) || !reflect.DeepEqual(calls[len(calls)-len(wantTail):], wantTail) {
 		t.Fatalf("calls=%v", calls)
 	}
-	for _, call := range calls {
-		if call == assemblyline.WorkApplicationRequirementCandidateResultRelationCorrection {
-			t.Fatalf("negative grounding opened a correction: %v", calls)
+	for _, call := range calls[:len(calls)-len(wantTail)] {
+		if call == assemblyline.WorkApplicationRequirementCandidateResultRelation {
+			t.Fatalf("result-relation question ran before the final two bounded calls: %v", calls)
 		}
+	}
+}
+
+func TestApplicationIntentMissingResultRelationDoesNotStopIndependentCandidate(t *testing.T) {
+	t.Parallel()
+	const request = "Build a utility that selects a destination for supplied material and computes a SHA-256 digest of supplied content."
+	const unresolved = "The finished software selects a destination for supplied material."
+	const retained = "The finished software computes a SHA-256 digest of supplied content."
+	applicationContext, err := assemblyline.BootstrapApplicationContext(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resultCalls := make(map[string]int)
+	runtime := typedWorkerRuntime{
+		Context: context.Background(), MaxAttempts: 1,
+		Execute: func(job assemblyline.PortableJob, requestedModel string) (assemblyline.PortableResult, error) {
+			response := ""
+			switch job.Kind {
+			case assemblyline.WorkApplicationRequirementInventory:
+				response = unresolved + "\n" + retained
+			case assemblyline.WorkApplicationRequirementCandidateAuthorization:
+				response = "A"
+			case assemblyline.WorkApplicationRequirementCandidateKind:
+				var input assemblyline.ApplicationRequirementCandidateContentPresenceInput
+				if err := json.Unmarshal(job.Payload, &input); err != nil {
+					return assemblyline.PortableResult{}, err
+				}
+				response = "A"
+				if input.Dimension == assemblyline.ApplicationRequirementCandidateNonRuntimeContentDimension {
+					response = "B"
+				}
+			case assemblyline.WorkApplicationRequirementCandidateCardinality:
+				response = "A"
+			case assemblyline.WorkApplicationRequirementCandidateResultRelation:
+				if requestedModel != "result-model" {
+					return assemblyline.PortableResult{}, fmt.Errorf("result relation used model %q", requestedModel)
+				}
+				var input assemblyline.ApplicationRequirementCandidateResultPresenceInput
+				if err := json.Unmarshal(job.Payload, &input); err != nil {
+					return assemblyline.PortableResult{}, err
+				}
+				resultCalls[input.Candidate]++
+				response = "A"
+				if input.Candidate == unresolved &&
+					input.Dimension == assemblyline.ApplicationRequirementDeterminingRelationDimension {
+					response = "B"
+				}
+			case assemblyline.WorkApplicationProductContext:
+				response = "material routing and content digest utility"
+			default:
+				return assemblyline.PortableResult{}, fmt.Errorf("unexpected work kind %q", job.Kind)
+			}
+			return assemblyline.PortableResult{JobID: job.ID, Candidate: response}, nil
+		},
+	}
+	resolution, err := resolveDirectCodingApplicationIntent(
+		runtime,
+		directCodingApplicationIntentModels{
+			Requirements: "intent-model", ResultRelation: "result-model",
+		},
+		assemblyline.ApplicationIntentInput{UserRequest: request, Context: applicationContext},
+		nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(resolution.Requirements) != 1 || resolution.Requirements[0].Statement != retained {
+		t.Fatalf("resolution=%+v; want only independent retained candidate", resolution)
+	}
+	if resultCalls[unresolved] != 2 || resultCalls[retained] != 2 {
+		t.Fatalf("result-relation calls=%v; want exactly two bounded questions per candidate", resultCalls)
 	}
 }
 
@@ -199,7 +267,7 @@ func directCodingResultRelationAuthorityFixture(
 		Dimension: assemblyline.ApplicationRequirementCandidateRuntimeContentDimension,
 	}
 	runtimeContent, err := assemblyline.DecodeApplicationRequirementCandidateContentPresenceResult(
-		runtimeInput, string(assemblyline.ApplicationRequirementCandidateContentPresent),
+		runtimeInput, "A",
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -209,7 +277,7 @@ func directCodingResultRelationAuthorityFixture(
 		Dimension: assemblyline.ApplicationRequirementCandidateNonRuntimeContentDimension,
 	}
 	nonRuntimeContent, err := assemblyline.DecodeApplicationRequirementCandidateContentPresenceResult(
-		nonRuntimeInput, string(assemblyline.ApplicationRequirementCandidateContentAbsent),
+		nonRuntimeInput, "B",
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -222,7 +290,7 @@ func directCodingResultRelationAuthorityFixture(
 	}
 	cardinality, err := assemblyline.DecodeApplicationRequirementCandidateCardinalityResult(
 		assemblyline.ApplicationRequirementCandidateCardinalityInput{Candidate: candidate},
-		assemblyline.ApplicationRequirementOneRuntimeOutcome,
+		"A",
 	)
 	if err != nil {
 		t.Fatal(err)

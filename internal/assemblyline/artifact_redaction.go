@@ -158,35 +158,6 @@ func ValidatePathFreeSourceModelContextWithProvenance(
 	return nil
 }
 
-// ValidatePathFreeRepairInstructionModelContext validates the mixed grammar of
-// one imperative repair instruction. Prose retains the strict path boundary;
-// quoted source literals may contain ordinary source escapes, which are
-// decoded before their semantic content is checked for filesystem identity.
-func ValidatePathFreeRepairInstructionModelContext(label string, values ...string) error {
-	return ValidatePathFreeRepairInstructionModelContextWithProvenance(
-		label, modelcontext.ArtifactIdentityProvenance{}, values...,
-	)
-}
-
-func ValidatePathFreeRepairInstructionModelContextWithProvenance(
-	label string,
-	provenance modelcontext.ArtifactIdentityProvenance,
-	values ...string,
-) error {
-	for index, value := range values {
-		matches := modelcontext.RepairInstructionPathIdentities(value, provenance)
-		if len(matches) == 0 {
-			continue
-		}
-		match := matches[0]
-		return fmt.Errorf(
-			"%s field %d contains filesystem identity %q",
-			label, index+1, value[match.Start:match.End],
-		)
-	}
-	return nil
-}
-
 func artifactIdentityMap(identities []ArtifactIdentity) (map[string]string, error) {
 	resolved := make(map[string]string, len(identities))
 	for _, identity := range identities {

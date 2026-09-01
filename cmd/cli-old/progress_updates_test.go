@@ -110,8 +110,7 @@ func TestSlimProgressShowsCodingMilestonesButNotHeartbeatNoise(t *testing.T) {
 		"coding_stage_passed",
 		"coding_target_tree_validation_failed",
 		"coding_compiler_repair_applied",
-		"coding_fragment_repair_guidance_started",
-		"coding_fragment_correction_started",
+		"coding_portable_correction_dispatched",
 		"coding_worker_rejected",
 		"coding_worker_failed",
 	} {
@@ -143,8 +142,7 @@ func TestSummarizeStepEventExplainsCodingState(t *testing.T) {
 		{event: stepEventPayload{EventType: "coding_worker_rejected", Message: "kind=semantic subject=application_surface model=qwen3.5:9b attempt=1/1 error=raw leaf is malformed"}, want: "Semantic station rejected application_surface (1/1): raw leaf is malformed"},
 		{event: stepEventPayload{EventType: "coding_worker_failed", Message: "kind=fragment subject=feature.001 model=qwen3-coder:30b attempt=1/1 error=source node is malformed"}, want: "Source station failed for feature.001: source node is malformed"},
 		{event: stepEventPayload{EventType: "coding_compiler_repair_applied", Message: "block=feature.001 mechanism=deterministic_primitive_nullish_narrowing"}, want: "Applied deterministic compiler repair to feature.001"},
-		{event: stepEventPayload{EventType: "coding_fragment_repair_guidance_started", Message: "block=feature.001 exact_failure=TypeError: value is not defined"}, want: "Deriving repair guidance for feature.001: TypeError: value is not defined"},
-		{event: stepEventPayload{EventType: "coding_fragment_correction_started", Message: "block=feature.001 guidance_bytes=92"}, want: "Executing repair guidance for feature.001 (92 bytes)"},
+		{event: stepEventPayload{EventType: "coding_portable_correction_dispatched", Message: "kind=fragment_generation work=abc123 iteration=2 model=qwen3.5:9b defect=92B"}, want: "Continuing source job abc123 in the same model context (iteration 2)"},
 	}
 	for _, test := range cases {
 		if got := summarizeStepEvent(test.event); !strings.Contains(got, test.want) {

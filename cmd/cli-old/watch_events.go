@@ -52,14 +52,10 @@ func summarizeStepEvent(payload stepEventPayload) string {
 		return "Target tree validation failed: " + fallbackWatchValue(eventMessageTail(message, "diagnostic"), "see diagnostic")
 	case "coding_compiler_repair_applied":
 		return "Applied deterministic compiler repair to " + fallbackWatchValue(eventMessageField(message, "block"), "assigned block")
-	case "coding_fragment_repair_guidance_started":
-		block := fallbackWatchValue(eventMessageField(message, "block"), "assigned function")
-		failure := fallbackWatchValue(eventMessageTail(message, "exact_failure"), "see diagnostic")
-		return "Deriving repair guidance for " + block + ": " + compactProgressValue(failure, 240)
-	case "coding_fragment_correction_started":
-		block := fallbackWatchValue(eventMessageField(message, "block"), "assigned function")
-		guidanceBytes := fallbackWatchValue(eventMessageField(message, "guidance_bytes"), "unknown")
-		return "Executing repair guidance for " + block + " (" + guidanceBytes + " bytes)"
+	case "coding_portable_correction_dispatched":
+		work := fallbackWatchValue(eventMessageField(message, "work"), "assigned source job")
+		iteration := fallbackWatchValue(eventMessageField(message, "iteration"), "unknown")
+		return "Continuing source job " + work + " in the same model context (iteration " + iteration + ")"
 	case "coding_worker_rejected":
 		kind := codingWorkerLabel(eventMessageField(message, "kind"))
 		subject := fallbackWatchValue(eventMessageField(message, "subject"), "assigned input")
@@ -113,8 +109,7 @@ func showStepEventInSlimProgress(eventType string) bool {
 		"coding_stage_passed",
 		"coding_target_tree_validation_failed",
 		"coding_compiler_repair_applied",
-		"coding_fragment_repair_guidance_started",
-		"coding_fragment_correction_started",
+		"coding_portable_correction_dispatched",
 		"coding_worker_rejected",
 		"coding_worker_failed":
 		return true

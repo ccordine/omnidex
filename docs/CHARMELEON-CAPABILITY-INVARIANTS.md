@@ -366,9 +366,15 @@ A model call is legal only when Omnidex can name the unresolved semantic questio
 Which of these two services owns the scheduling policy?
 Which interpretation of “dynamic filters” matches the requirement?
 Which DOM candidate corresponds to the requested appointment modal?
-What source declaration satisfies this exact executable job?
+What implementation body satisfies this exact executable job?
 
-Then the model gets one sufficient packet and returns one bounded result.
+Then the model gets only sufficient bounded context and returns one ordinary result.
+
+For a finite closed choice, code resolves cardinality before inference: zero options
+follow the station's explicit zero-option behavior; one option is used immediately
+with zero model-resolution and zero model-execution calls and is never rejected merely
+for being singular; only two or more options may invoke a model, which returns one
+call-local opaque letter for code to map.
 
 7. Specialists are code workflows, not agents
 
@@ -398,12 +404,13 @@ Observed:
 - websocket remains active
 - chart container exists
 Candidates:
-C1 wait for loading indicator to disappear
-C2 wait for chart canvas to appear
-C3 fixed 15-second delay
-Return one candidate ID.
+A. wait for loading indicator to disappear
+B. wait for chart canvas to appear
+C. fixed 15-second delay
 
-Then code continues the browser workflow.
+The model returns one letter. Then code maps that opaque letter to the retained
+candidate and continues the browser workflow. This call exists only because at least
+two applicable candidates remain; a sole candidate would be used directly by code.
 
 The same specialist kernel can support:
 
@@ -438,13 +445,13 @@ strictly required direct declarations and permitted symbols
 minimum source/runtime evidence required by that block
 
 It receives no artifact path, document, project plan, objective graph, acceptance
-contract, queue, sibling task, or whole-workload responsibility. The packet is subject
+contract, queue, sibling task, or whole-workload responsibility. The context is subject
 to hard station-specific byte and capability budgets at the final call boundary.
 
 Then:
 
-model returns one parser-qualified declaration or source node
-→ parser validates structure
+model returns one ordinary plain-text implementation body
+→ code supplies the declaration and parser validates the assembled structure
 → code stages it
 → formatter/linter
 → focused verification
@@ -492,9 +499,13 @@ code-owned proof obligations satisfied
 promote atomically
 
 If integration fails, code maps the failure to the smallest owning generated
-block/capability. A supported source failure may enter one guidance-instruction then
-executor-node repair pair for that exact diagnostic. It does not ask one model to
-reconsider the whole stack or review valid output.
+block/capability. A supported source-body defect may continue only that same persisted
+job with its immutable model route for the bounded attempt limit after code proves its
+exact mutable byte span. The model receives only one necessary semantic question and
+that span and returns ordinary replacement text; code splices it into the retained
+base. It does not receive the complete prior body or a preservation instruction and
+does not ask a second model to diagnose, reconsider the whole stack, or review valid
+output.
 
 10. Model routing is station-specific
 
@@ -512,9 +523,7 @@ pairwise requirement relation → bounded equivalence classifier
 candidate relevance        → cheap small model
 pairwise capability relation → bounded classifier
 surface/product/deployment → model proven at grounded interpretation when first consumed
-source generation          → coder model
-repair guidance            → semantic diagnostic model
-repair execution           → coder model
+source-body generation and correction → one immutable coder-model route per persisted job
 
 A station manifest can record:
 
@@ -528,9 +537,7 @@ failure rate
 That lets Omnidex use:
 
 one qualified route for each semantic leaf
-one qualified route for bounded source generation
-one qualified route for repair guidance
-one qualified route for repair execution
+one qualified route for bounded source-body generation and same-context correction
 
 without changing authority or workflow.
 

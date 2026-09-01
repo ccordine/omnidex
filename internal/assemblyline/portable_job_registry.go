@@ -5,53 +5,44 @@ const (
 	WorkContextMinification               WorkKind = "context_minification"
 	WorkConversationObjectiveKind         WorkKind = "conversation_objective_kind"
 	WorkConversationResponse              WorkKind = "conversation_response"
-	WorkRoleplayOngoingAction             WorkKind = "roleplay_ongoing_action"
+	WorkRoleplayOngoingActionRelation     WorkKind = "roleplay_ongoing_action_relation"
+	WorkRoleplayOngoingActionValue        WorkKind = "roleplay_ongoing_action_value"
 	WorkDatabaseJoinPathSelection         WorkKind = "database_join_path_selection"
 	WorkApplicationClassify               WorkKind = "application_classification"
 	WorkArtifactHandling                  WorkKind = "artifact_handling"
 	WorkCapabilityRelation                WorkKind = "capability_relation"
-	WorkTypeScriptRepairGuidance          WorkKind = "typescript_repair_guidance"
 	WorkFragmentGeneration                WorkKind = "fragment_generation"
-	WorkFragmentGenerationReplacement     WorkKind = "fragment_generation_replacement"
-	WorkFragmentModification              WorkKind = "fragment_modification"
-	WorkFragmentCorrection                WorkKind = "fragment_correction"
 )
 
 func validWorkKind(kind WorkKind) bool {
 	switch kind {
-	case WorkApplicationContextQuestionInventory,
-		WorkApplicationContextQuestionNecessity,
-		WorkApplicationContextQuestionRelation,
-		WorkApplicationProductContext,
+	case WorkApplicationProductContext,
 		WorkApplicationRequirementInventory,
 		WorkApplicationRequirementCandidateCardinality,
 		WorkApplicationRequirementCandidateKind,
 		WorkApplicationRequirementCandidateAuthorization,
 		WorkApplicationRequirementCandidateOutcomeRelation,
 		WorkApplicationRequirementCandidateResultRelation,
-		WorkApplicationRequirementCandidateResultRelationGrounding,
-		WorkApplicationRequirementCandidateResultRelationCorrection,
 		WorkApplicationRequirementCandidatePartition,
 		WorkApplicationProjectStackConstraint,
 		WorkApplicationClassify,
-		WorkRepositoryRequirementInventory,
-		WorkRepositoryRequirementCandidateAuthorization,
-		WorkRepositoryRequirementCandidateRelation,
 		WorkContextRelevanceRelation, WorkContextMinification,
 		WorkConversationObjectiveKind, WorkConversationResponse,
 		WorkRoleplayGroundedResponseParagraphInventory,
 		WorkRoleplayGroundedResponseEvidenceRelation,
 		WorkRoleplayGroundedResponseParagraphAuthorization,
+		WorkRoleplayCanonFactPresence,
 		WorkRoleplayCanonFactInventory,
 		WorkRoleplayCanonFactCandidateAuthorization,
 		WorkRoleplayCanonFactCandidateRelation,
-		WorkRoleplayOngoingAction,
+		WorkRoleplayOngoingActionRelation,
+		WorkRoleplayOngoingActionValue,
 		WorkGroundedAnswerParagraphInventory,
 		WorkGroundedAnswerParagraphEvidenceRelation,
 		WorkGroundedAnswerParagraphAuthorization,
-		WorkDatabaseSchemaRelationInventory, WorkDatabaseSchemaRelationNecessity,
-		WorkDatabaseSchemaRelationResolution,
+		WorkDatabaseSchemaRelationChoice,
 		WorkDatabaseQueryFromRelation, WorkDatabaseQueryShape,
+		WorkDatabaseQueryPurposePresence,
 		WorkDatabaseQueryPurposeInventory, WorkDatabaseQueryPurposeNecessity,
 		WorkDatabaseQueryPurposeRelation,
 		WorkDatabaseQueryProjectionAggregate,
@@ -69,9 +60,7 @@ func validWorkKind(kind WorkKind) bool {
 		WorkWebRelevanceRelation,
 		WorkArtifactHandling,
 		WorkCapabilityRelation,
-		WorkTypeScriptRepairGuidance,
-		WorkFragmentGeneration, WorkFragmentGenerationReplacement,
-		WorkFragmentModification, WorkFragmentCorrection:
+		WorkFragmentGeneration:
 		return true
 	default:
 		return false
@@ -82,9 +71,6 @@ func validWorkKind(kind WorkKind) bool {
 // it to prove exhaustive station mappings without inventing string routing.
 func AllWorkKinds() []WorkKind {
 	return []WorkKind{
-		WorkApplicationContextQuestionInventory,
-		WorkApplicationContextQuestionNecessity,
-		WorkApplicationContextQuestionRelation,
 		WorkApplicationProductContext,
 		WorkApplicationRequirementInventory,
 		WorkApplicationRequirementCandidateCardinality,
@@ -92,29 +78,26 @@ func AllWorkKinds() []WorkKind {
 		WorkApplicationRequirementCandidateAuthorization,
 		WorkApplicationRequirementCandidateOutcomeRelation,
 		WorkApplicationRequirementCandidateResultRelation,
-		WorkApplicationRequirementCandidateResultRelationGrounding,
-		WorkApplicationRequirementCandidateResultRelationCorrection,
 		WorkApplicationRequirementCandidatePartition,
 		WorkApplicationProjectStackConstraint,
 		WorkApplicationClassify,
-		WorkRepositoryRequirementInventory,
-		WorkRepositoryRequirementCandidateAuthorization,
-		WorkRepositoryRequirementCandidateRelation,
 		WorkContextRelevanceRelation, WorkContextMinification,
 		WorkConversationObjectiveKind, WorkConversationResponse,
 		WorkRoleplayGroundedResponseParagraphInventory,
 		WorkRoleplayGroundedResponseEvidenceRelation,
 		WorkRoleplayGroundedResponseParagraphAuthorization,
+		WorkRoleplayCanonFactPresence,
 		WorkRoleplayCanonFactInventory,
 		WorkRoleplayCanonFactCandidateAuthorization,
 		WorkRoleplayCanonFactCandidateRelation,
-		WorkRoleplayOngoingAction,
+		WorkRoleplayOngoingActionRelation,
+		WorkRoleplayOngoingActionValue,
 		WorkGroundedAnswerParagraphInventory,
 		WorkGroundedAnswerParagraphEvidenceRelation,
 		WorkGroundedAnswerParagraphAuthorization,
-		WorkDatabaseSchemaRelationInventory, WorkDatabaseSchemaRelationNecessity,
-		WorkDatabaseSchemaRelationResolution,
+		WorkDatabaseSchemaRelationChoice,
 		WorkDatabaseQueryFromRelation, WorkDatabaseQueryShape,
+		WorkDatabaseQueryPurposePresence,
 		WorkDatabaseQueryPurposeInventory, WorkDatabaseQueryPurposeNecessity,
 		WorkDatabaseQueryPurposeRelation,
 		WorkDatabaseQueryProjectionAggregate,
@@ -132,8 +115,6 @@ func AllWorkKinds() []WorkKind {
 		WorkWebRelevanceRelation,
 		WorkArtifactHandling,
 		WorkCapabilityRelation,
-		WorkTypeScriptRepairGuidance,
-		WorkFragmentGeneration, WorkFragmentGenerationReplacement,
-		WorkFragmentModification, WorkFragmentCorrection,
+		WorkFragmentGeneration,
 	}
 }

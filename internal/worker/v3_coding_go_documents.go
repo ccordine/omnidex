@@ -110,9 +110,5 @@ func goCommandLineCapabilityProjection(
 }
 
 func goCommandLineFeatureContract(behavior string) string {
-	return strings.Join([]string{
-		behavior,
-		"The function body fully implements the exact local behavior and returns one complete TaskResult derived from input and the declared direct dependency results.",
-		"Use Output for user-visible text, Error for a clear failure, ExitCode for process status, and State for reusable string values.",
-	}, "\n")
+	return strings.TrimSpace(behavior)
 }

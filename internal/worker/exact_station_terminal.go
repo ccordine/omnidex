@@ -29,7 +29,9 @@ func (s *Service) dispatchExactStationCall(
 	}
 	started := time.Now()
 	stopHeartbeat := s.startProgressHeartbeat(ctx, authority, "station-call:"+call.WorkID)
-	result, callErr := s.stationClient.GeneratePreparedExact(ctx, prepared)
+	result, callErr := generatePreparedExactWithinMaximumDuration(
+		ctx, s.stationClient, prepared,
+	)
 	stopHeartbeat()
 	owned, ownershipErr := llm.OwnBoundedPreparedGeneration(result)
 	if ownershipErr != nil {
@@ -46,11 +48,22 @@ func (s *Service) dispatchExactStationCall(
 	evidence, evidenceErr := s.finalizeExactStationCallEvidence(
 		ctx, authority, opening.ID, prepared, result, callErr, time.Since(started),
 	)
+	execution := exactStationExecution{
+		CallEvidenceID: opening.ID, WorkID: call.WorkID, WorkKind: call.WorkKind,
+		Model: prepared.BaseModel, Iteration: call.Iteration,
+		OutputContinuation: call.OutputContinuation, ProviderCalls: 1,
+	}
 	if evidenceErr != nil {
-		return assemblyline.PortableResult{}, exactStationExecution{}, evidenceErr
+		return assemblyline.PortableResult{}, execution, evidenceErr
 	}
 	if callErr != nil {
-		return assemblyline.PortableResult{}, exactStationExecution{}, fmt.Errorf(
+		var outputLimit *llm.ExactPreparedOutputLimitReachedError
+		if call.OutputContinuation == 0 && errors.As(callErr, &outputLimit) {
+			return s.continueExactStationAfterOutputLimit(
+				ctx, authority, call, prepared, evidence, outputLimit,
+			)
+		}
+		return assemblyline.PortableResult{}, execution, fmt.Errorf(
 			"exact station provider call: %w", callErr,
 		)
 	}
@@ -63,9 +76,7 @@ func (s *Service) dispatchExactStationCall(
 	}
 	projection, err := assemblyline.NewExactPortableResultProjection(result.Content)
 	if err != nil {
-		execution := exactStationExecution{
-			CallEvidenceID: evidence.ID, WorkID: call.WorkID, Candidate: result.Content,
-		}
+		execution.Candidate = result.Content
 		if persistErr := s.persistExactStationSemanticOutcome(
 			ctx, authority, execution,
 			assemblyline.PortableResult{JobID: call.WorkID, Candidate: result.Content}, err,
@@ -79,10 +90,9 @@ func (s *Service) dispatchExactStationCall(
 	portable := assemblyline.PortableResult{
 		JobID: call.WorkID, Candidate: result.Content, Projection: &projection,
 	}
-	execution := exactStationExecution{
-		CallEvidenceID: evidence.ID, WorkID: call.WorkID, Candidate: result.Content,
-		CandidateResponseSHA256: projection.SourceResponseSHA256,
-	}
+	execution.CallEvidenceID = evidence.ID
+	execution.Candidate = result.Content
+	execution.CandidateResponseSHA256 = projection.SourceResponseSHA256
 	if err := ctx.Err(); err != nil {
 		if persistErr := s.persistExactStationSemanticOutcome(
 			ctx, authority, execution, portable, err,
@@ -92,4 +102,14 @@ func (s *Service) dispatchExactStationCall(
 		return assemblyline.PortableResult{}, exactStationExecution{}, err
 	}
 	return portable, execution, nil
+}
+
+func generatePreparedExactWithinMaximumDuration(
+	ctx context.Context,
+	client llm.ExactStationClient,
+	prepared llm.PreparedModel,
+) (llm.PreparedGeneration, error) {
+	callCtx, cancelCall := context.WithTimeout(ctx, llm.MaximumModelRequestDuration)
+	defer cancelCall()
+	return client.GeneratePreparedExact(callCtx, prepared)
 }

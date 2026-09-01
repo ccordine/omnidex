@@ -23,7 +23,7 @@ func resolveDatabaseQueryFilters(
 			State: state, Collection: assemblyline.DatabaseQueryFilterPurpose,
 			ScopeRelationID: scopeRelationID, ParentPurpose: parentPurpose,
 		},
-		datasource.MaxIntentFilters-len(accepted), call, total,
+		datasource.MaxIntentFilters-len(accepted), false, call, total,
 	)
 	total = nextTotal
 	if err != nil {
@@ -37,12 +37,12 @@ func resolveDatabaseQueryFilters(
 			AcceptedValues:  []datasource.IntentLiteral{},
 		}
 		var calls int
-		fields := objectiveDatabaseFilterFields(state, scopeRelationID)
-		if len(fields) == 0 {
-			return nil, total, fmt.Errorf("database query filter has no compatible field")
+		fieldID, resolved, err := assemblyline.ResolveSoleDatabaseQueryFilterFieldLeaf(leaf)
+		if err != nil {
+			return nil, total, err
 		}
-		if len(fields) == 1 {
-			leaf.FieldID = fields[0]
+		if resolved {
+			leaf.FieldID = fieldID
 		} else {
 			job, err := assemblyline.NewDatabaseQueryFilterFieldJob(leaf)
 			if err != nil {
@@ -59,19 +59,27 @@ func resolveDatabaseQueryFilters(
 				return nil, total, err
 			}
 		}
-		operatorJob, err := assemblyline.NewDatabaseQueryFilterOperatorJob(leaf)
+		operator, resolved, err := assemblyline.ResolveSoleDatabaseQueryFilterOperatorLeaf(leaf)
 		if err != nil {
 			return nil, total, err
 		}
-		leaf.Operator, calls, err = callObjectiveDatabaseRawLeaf(
-			ctx, call, "database_query_filter_operator", operatorJob,
-			func(raw string) (datasource.FilterOperator, error) {
-				return assemblyline.DecodeDatabaseQueryFilterOperatorLeaf(leaf, raw)
-			},
-		)
-		total += calls
-		if err != nil {
-			return nil, total, err
+		if resolved {
+			leaf.Operator = operator
+		} else {
+			operatorJob, err := assemblyline.NewDatabaseQueryFilterOperatorJob(leaf)
+			if err != nil {
+				return nil, total, err
+			}
+			leaf.Operator, calls, err = callObjectiveDatabaseRawLeaf(
+				ctx, call, "database_query_filter_operator", operatorJob,
+				func(raw string) (datasource.FilterOperator, error) {
+					return assemblyline.DecodeDatabaseQueryFilterOperatorLeaf(leaf, raw)
+				},
+			)
+			total += calls
+			if err != nil {
+				return nil, total, err
+			}
 		}
 		values := []datasource.IntentLiteral{}
 		switch leaf.Operator {
@@ -80,18 +88,23 @@ func resolveDatabaseQueryFilters(
 			values, total, err = resolveDatabaseQueryFilterValues(ctx, leaf, call, total)
 		default:
 			leaf.AcceptedValues = values
-			valueJob, jobErr := assemblyline.NewDatabaseQueryFilterValueJob(leaf)
-			if jobErr != nil {
-				return nil, total, jobErr
+			value, resolved, valueErr := assemblyline.ResolveSoleDatabaseQueryFilterValueLeaf(leaf)
+			if valueErr != nil {
+				return nil, total, valueErr
 			}
-			var value datasource.IntentLiteral
-			value, calls, err = callObjectiveDatabaseRawLeaf(
-				ctx, call, "database_query_filter_value", valueJob,
-				func(raw string) (datasource.IntentLiteral, error) {
-					return assemblyline.DecodeDatabaseQueryFilterValueLeaf(leaf, raw)
-				},
-			)
-			total += calls
+			if !resolved {
+				valueJob, jobErr := assemblyline.NewDatabaseQueryFilterValueJob(leaf)
+				if jobErr != nil {
+					return nil, total, jobErr
+				}
+				value, calls, err = callObjectiveDatabaseRawLeaf(
+					ctx, call, "database_query_filter_value", valueJob,
+					func(raw string) (datasource.IntentLiteral, error) {
+						return assemblyline.DecodeDatabaseQueryFilterValueLeaf(leaf, raw)
+					},
+				)
+				total += calls
+			}
 			values = append(values, value)
 		}
 		if err != nil {
@@ -117,7 +130,7 @@ func resolveDatabaseQueryFilterValues(
 			ScopeRelationID: leaf.ScopeRelationID, ParentPurpose: leaf.Purpose,
 			FocusedFieldID: leaf.FieldID, FocusedOperator: leaf.Operator,
 		},
-		datasource.MaxIntentFilterValues, call, total,
+		datasource.MaxIntentFilterValues, true, call, total,
 	)
 	total = nextTotal
 	if err != nil {
@@ -132,37 +145,28 @@ func resolveDatabaseQueryFilterValues(
 		valueLeaf.ParentPurpose = leaf.Purpose
 		valueLeaf.Purpose = purpose
 		valueLeaf.AcceptedValues = append([]datasource.IntentLiteral{}, values...)
-		valueJob, err := assemblyline.NewDatabaseQueryFilterValueJob(valueLeaf)
+		value, resolved, err := assemblyline.ResolveSoleDatabaseQueryFilterValueLeaf(valueLeaf)
 		if err != nil {
 			return nil, total, err
 		}
-		value, calls, err := callObjectiveDatabaseRawLeaf(
-			ctx, call, "database_query_filter_value", valueJob,
-			func(raw string) (datasource.IntentLiteral, error) {
-				return assemblyline.DecodeDatabaseQueryFilterValueLeaf(valueLeaf, raw)
-			},
-		)
-		total += calls
-		if err != nil {
-			return nil, total, err
+		if !resolved {
+			valueJob, err := assemblyline.NewDatabaseQueryFilterValueJob(valueLeaf)
+			if err != nil {
+				return nil, total, err
+			}
+			var calls int
+			value, calls, err = callObjectiveDatabaseRawLeaf(
+				ctx, call, "database_query_filter_value", valueJob,
+				func(raw string) (datasource.IntentLiteral, error) {
+					return assemblyline.DecodeDatabaseQueryFilterValueLeaf(valueLeaf, raw)
+				},
+			)
+			total += calls
+			if err != nil {
+				return nil, total, err
+			}
 		}
 		values = append(values, value)
 	}
 	return values, total, nil
-}
-
-func objectiveDatabaseFilterFields(
-	state assemblyline.DatabaseQueryIntentLeafState,
-	scopeRelationID string,
-) []string {
-	fields := []string{}
-	for _, relation := range state.Authority.SchemaProjection.Relations {
-		if scopeRelationID != "" && relation.ID != scopeRelationID {
-			continue
-		}
-		for _, column := range relation.Columns {
-			fields = append(fields, column.ID)
-		}
-	}
-	return fields
 }

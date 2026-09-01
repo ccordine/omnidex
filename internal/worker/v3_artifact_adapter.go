@@ -30,7 +30,6 @@ type directCodingArtifactAdapter struct {
 	Recognize        func(path string) (assemblyline.TargetArtifactKind, bool)
 	ComposeDocument  func(assemblyline.SourceDocument, assemblyline.SourceComposition) (assemblyline.ComposedSourceDocument, error)
 	SourceLanguage   string
-	ProjectFragment  directCodingLanguageFragmentProjector
 	ValidateFragment directCodingLanguageFragmentValidator
 }
 
@@ -49,25 +48,25 @@ func registeredDirectCodingArtifactAdapters() []directCodingArtifactAdapter {
 		parsedArtifactAdapter("typescript", suffixArtifactRecognizer(".ts", ".test.ts"), validateTypeScriptArtifactSource, assemblyline.ComposeTypeScriptDocument),
 		sourceArtifactAdapter(
 			"go", "go", suffixArtifactRecognizer(".go", "_test.go"),
-			assemblyline.ComposeGoDocument, validateGoArtifactSource, projectDirectCodingGoFragment,
+			assemblyline.ComposeGoDocument, validateGoArtifactSource,
 			validateDirectCodingGoFragment,
 		),
 		parsedArtifactAdapter("go_module", goModuleArtifactRecognizer, validateGoModuleArtifactSource),
 		sourceArtifactAdapter(
 			"javascript", "javascript", javascriptArtifactRecognizer,
-			assemblyline.ComposeJavaScriptDocument, validateJavaScriptArtifactSource, assemblyline.ProjectJavaScriptFragment,
+			assemblyline.ComposeJavaScriptDocument, validateJavaScriptArtifactSource,
 			validateDirectCodingJavaScriptFragment,
 		),
 		structuralArtifactAdapter("css_tailwind", suffixArtifactRecognizer(".css", ""), validateCSSArtifactSource),
 		parsedArtifactAdapter("html", suffixArtifactRecognizer(".html", ".test.html"), validateHTMLArtifactSource),
 		sourceArtifactAdapter(
 			"java", "java", suffixArtifactRecognizer(".java", "Test.java"),
-			assemblyline.ComposeJavaDocument, validateJavaArtifactSource, assemblyline.ProjectJavaFragment,
+			assemblyline.ComposeJavaDocument, validateJavaArtifactSource,
 			validateDirectCodingJavaFragment,
 		),
 		sourceArtifactAdapter(
 			"rust", "rust", suffixArtifactRecognizer(".rs", "_test.rs"),
-			assemblyline.ComposeRustDocument, validateRustArtifactSource, assemblyline.ProjectRustFragment,
+			assemblyline.ComposeRustDocument, validateRustArtifactSource,
 			validateDirectCodingRustFragment,
 		),
 		parsedArtifactAdapter("cargo_toml", cargoTOMLArtifactRecognizer, validateCargoTOMLArtifactSource),
@@ -85,12 +84,10 @@ func sourceArtifactAdapter(
 	recognize func(path string) (assemblyline.TargetArtifactKind, bool),
 	compose func(assemblyline.SourceDocument, assemblyline.SourceComposition) (assemblyline.ComposedSourceDocument, error),
 	parseSource func(path string, source []byte) error,
-	project directCodingLanguageFragmentProjector,
 	validate directCodingLanguageFragmentValidator,
 ) directCodingArtifactAdapter {
 	adapter := parsedArtifactAdapter(id, recognize, parseSource, compose)
 	adapter.SourceLanguage = language
-	adapter.ProjectFragment = project
 	adapter.ValidateFragment = validate
 	return adapter
 }

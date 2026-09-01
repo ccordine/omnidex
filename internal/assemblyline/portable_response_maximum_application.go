@@ -2,54 +2,47 @@ package assemblyline
 
 func portableApplicationResponseMaximum(job PortableJob) (int, bool, error) {
 	switch job.Kind {
-	case WorkApplicationContextQuestionInventory:
-		return applicationContextQuestionInventoryMaximum(), true, nil
-	case WorkApplicationContextQuestionNecessity:
-		return maximumStringBytes(
-			ApplicationContextQuestionNecessary,
-			ApplicationContextQuestionNotNecessary,
-		), true, nil
-	case WorkApplicationContextQuestionRelation:
-		return maximumStringBytes(
-			ApplicationContextQuestionsSameFact,
-			ApplicationContextQuestionsDistinctFact,
-		), true, nil
 	case WorkApplicationProductContext:
 		return maxApplicationProductBytes, true, nil
 	case WorkApplicationRequirementInventory:
 		return max(maxApplicationRequirementInventoryBytes, len(ApplicationNoRuntimeRequirementCandidates)), true, nil
 	case WorkApplicationRequirementCandidateCardinality:
-		return maximumStringBytes(
-			ApplicationRequirementOneRuntimeOutcome,
-			ApplicationRequirementMultipleRuntimeOutcomes,
-		), true, nil
+		maximum, err := opaqueModelChoiceBuilderResponseMaximum(
+			applicationRequirementCandidateCardinalityOpaqueChoices,
+		)
+		return maximum, true, err
 	case WorkApplicationRequirementCandidateKind:
-		return maximumStringBytes(
-			string(ApplicationRequirementCandidateContentPresent),
-			string(ApplicationRequirementCandidateContentAbsent),
-		), true, nil
+		var input ApplicationRequirementCandidateContentPresenceInput
+		if err := decodePortablePayload(job.Payload, &input); err != nil {
+			return 0, true, err
+		}
+		maximum, err := opaqueModelChoiceBuilderResponseMaximum(func() ([]OpaqueModelChoice, error) {
+			return applicationRequirementCandidateContentPresenceOpaqueChoices(input.Dimension)
+		})
+		return maximum, true, err
 	case WorkApplicationRequirementCandidateAuthorization:
-		return maximumStringBytes(
-			ApplicationRequirementCandidateEntailed,
-			ApplicationRequirementCandidateNotEntailed,
-		), true, nil
+		maximum, err := opaqueModelChoiceBuilderResponseMaximum(
+			applicationRequirementCandidateAuthorizationOpaqueChoices,
+		)
+		return maximum, true, err
 	case WorkApplicationRequirementCandidateOutcomeRelation:
-		return maximumStringBytes(
-			ApplicationRequirementSameRuntimeOutcome,
-			ApplicationRequirementDistinctRuntimeOutcomes,
-		), true, nil
+		maximum, err := opaqueModelChoiceBuilderResponseMaximum(
+			applicationRequirementCandidateOutcomeRelationOpaqueChoices,
+		)
+		return maximum, true, err
 	case WorkApplicationRequirementCandidateResultRelation:
-		return maximumStringBytes(
-			string(ApplicationRequirementCandidateResultPresent),
-			string(ApplicationRequirementCandidateResultAbsent),
-		), true, nil
-	case WorkApplicationRequirementCandidateResultRelationGrounding:
-		return maximumStringBytes(
-			ApplicationRequirementExactlyOneDeterminingRelationEntailed,
-			ApplicationRequirementNoExactlyOneDeterminingRelationEntailed,
-		), true, nil
-	case WorkApplicationRequirementCandidateResultRelationCorrection:
-		return maxRequirementQuoteBytes, true, nil
+		var input ApplicationRequirementCandidateResultPresenceInput
+		if err := decodePortablePayload(job.Payload, &input); err != nil {
+			return 0, true, err
+		}
+		present, absent, err := applicationRequirementCandidateResultPresenceDescriptions(input.Dimension)
+		if err != nil {
+			return 0, true, err
+		}
+		maximum, err := opaqueModelChoiceBuilderResponseMaximum(func() ([]OpaqueModelChoice, error) {
+			return applicationRequirementCandidateResultPresenceOpaqueChoices(present, absent)
+		})
+		return maximum, true, err
 	case WorkApplicationRequirementCandidatePartition:
 		var input ApplicationRequirementCandidatePartitionInput
 		if err := decodePortablePayload(job.Payload, &input); err != nil {
@@ -67,18 +60,15 @@ func portableApplicationResponseMaximum(job PortableJob) (int, bool, error) {
 		if err := decodePortablePayload(job.Payload, &input); err != nil {
 			return 0, true, err
 		}
-		maximum := maximumStringBytes(
-			ApplicationProjectStackUnsupported,
-		)
-		for _, candidate := range input.Candidates {
-			maximum = max(maximum, len(candidate.CandidateID))
-		}
-		return maximum, true, nil
+		maximum, err := opaqueModelChoiceBuilderResponseMaximum(func() ([]OpaqueModelChoice, error) {
+			return applicationProjectStackConstraintOpaqueChoices(input.Candidates)
+		})
+		return maximum, true, err
 	case WorkApplicationClassify:
-		return maximumStringBytes(
-			ApplicationSurfaceBrowser, ApplicationSurfaceCommandLine,
-			ApplicationSurfaceUnspecified, ApplicationSurfaceUnsupported,
-		), true, nil
+		maximum, err := opaqueModelChoiceBuilderResponseMaximum(
+			applicationClassificationOpaqueChoices,
+		)
+		return maximum, true, err
 	default:
 		return 0, false, nil
 	}

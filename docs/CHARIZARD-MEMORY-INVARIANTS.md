@@ -1,4 +1,13 @@
-# to dYes. I would lock this in as a normative Charizard architecture, not merely a loose feature idea.
+# Historical, Non-Normative Charizard Memory Design Material
+
+This transcript is retained for provenance only. Any response schema, model-owned
+memory action, tool, workflow label, broad context packet, or preservation request in
+the discussion below is superseded by `AGENTS.md` and its named normative documents.
+The current runtime gives each model one minimum-context semantic question and an
+ordinary result; finite choices obey the literal 0/1/2+ rule, and source correction
+exposes only one code-proven mutable span in the same persisted job/model context.
+
+Yes. I would lock this in as a normative Charizard architecture, not merely a loose feature idea.
 
 The central idea is:
 
@@ -1299,15 +1308,14 @@ repository attached
 running application available
 workspace writable
 Candidate objective families:
-C1 = answer_question
-C2 = investigate_only
-C3 = investigate_and_change
-C4 = create_artifact
-Return candidate ID.
+A. answer the question
+B. investigate without changing the workspace
+C. investigate and change the workspace
+D. create the requested artifact
 
 Maybe:
 
-{"candidate_id":"C3"}
+C
 
 Then code starts the appropriate workflow.
 

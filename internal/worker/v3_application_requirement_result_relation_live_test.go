@@ -2,11 +2,12 @@ package worker
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"os"
 	"strconv"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
 	"github.com/gryph/omnidex/internal/llm"
@@ -29,9 +30,8 @@ func TestLiveRequirementResultRelationOperationFamilyQualification(t *testing.T)
 	if err != nil || contextTokens <= 0 {
 		t.Fatal("OMNIDEX_TEST_OLLAMA_CONTEXT must be a positive integer")
 	}
-	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Minute)
-	t.Cleanup(cancel)
-	client := ollama.New(baseURL, modelName, "", 5*time.Minute)
+	ctx := t.Context()
+	client := ollama.New(baseURL, modelName, "", llm.MaximumModelRequestDuration)
 
 	fixtures := []struct {
 		name      string
@@ -103,7 +103,7 @@ func TestLiveRequirementResultRelationOperationFamilyQualification(t *testing.T)
 
 func executeLiveRequirementsSemanticJob(
 	ctx context.Context,
-	client *ollama.Client,
+	client llm.ExactStationClient,
 	contextTokens int,
 	modelName string,
 	job assemblyline.PortableJob,
@@ -114,29 +114,67 @@ func executeLiveRequirementsSemanticJob(
 	if err != nil {
 		return assemblyline.PortableResult{}, err
 	}
+	return executeLivePortablePrompt(
+		ctx, client, contextTokens, modelName, job, prompt, t,
+	)
+}
+
+func executeLivePortablePrompt(
+	ctx context.Context,
+	client llm.ExactStationClient,
+	contextTokens int,
+	modelName string,
+	job assemblyline.PortableJob,
+	prompt string,
+	t *testing.T,
+) (assemblyline.PortableResult, error) {
+	t.Helper()
 	maxOutputTokens, err := queue.ExpectedPortableStationMaxOutputTokens(job, contextTokens)
 	if err != nil {
 		return assemblyline.PortableResult{}, err
 	}
 	prepared, err := prepareExactStationCall(exactStationCall{
-		WorkID: job.ID, WorkKind: job.Kind, Prompt: prompt,
+		WorkID: job.ID, WorkKind: job.Kind, Iteration: 1, Prompt: prompt,
 		ContextTokens: contextTokens, MaxOutputTokens: maxOutputTokens,
 	}, modelName, nil)
 	if err != nil {
 		return assemblyline.PortableResult{}, err
 	}
-	generation, err := client.GeneratePreparedExact(ctx, prepared)
+	generation, err := generatePreparedExactWithinMaximumDuration(ctx, client, prepared)
 	if err != nil {
 		return assemblyline.PortableResult{}, err
 	}
-	if err := llm.ValidateExactPreparedGenerationForRequest(prepared, generation); err != nil {
-		return assemblyline.PortableResult{}, err
+	validationErr := llm.ValidateExactPreparedGenerationForRequest(prepared, generation)
+	var outputLimit *llm.ExactPreparedOutputLimitReachedError
+	if errors.As(validationErr, &outputLimit) {
+		nextMaximum := prepared.ContextTokens - outputLimit.PromptTokens
+		if nextMaximum <= prepared.MaxOutputTokens || nextMaximum >= prepared.ContextTokens {
+			return assemblyline.PortableResult{}, fmt.Errorf(
+				"live exact station reached its hard native-context authority: %w",
+				validationErr,
+			)
+		}
+		continued := prepared
+		continued.MaxOutputTokens = nextMaximum
+		if _, err := llm.ExactPreparedRequestBytes(continued); err != nil {
+			return assemblyline.PortableResult{}, err
+		}
+		generation, err = generatePreparedExactWithinMaximumDuration(ctx, client, continued)
+		if err != nil {
+			return assemblyline.PortableResult{}, err
+		}
+		prepared = continued
+		validationErr = llm.ValidateExactPreparedGenerationForRequest(prepared, generation)
+	}
+	t.Logf("kind=%s response=%q done_reason=%s output_tokens=%d", job.Kind,
+		generation.Content, generation.ProviderDoneReason, generation.Usage.EvalCount)
+	if validationErr != nil {
+		return assemblyline.PortableResult{}, validationErr
 	}
 	projection, err := assemblyline.NewExactPortableResultProjection(generation.Content)
 	if err != nil {
 		return assemblyline.PortableResult{}, err
 	}
-	t.Logf("kind=%s response=%q", job.Kind, generation.Content)
 	return assemblyline.PortableResult{
 		JobID: job.ID, Candidate: generation.Content, Projection: &projection,
 	}, nil

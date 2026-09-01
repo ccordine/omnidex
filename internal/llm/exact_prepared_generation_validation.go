@@ -5,9 +5,10 @@ import (
 )
 
 // ExactPreparedOutputLimitReachedError is a validated provider completion
-// fact. It contains no returned content and grants no retry or workflow
-// authority. Source-specific code may use it to preserve the unresolved leaf
-// while opening one separately persisted bounded replacement responsibility.
+// fact. It contains no returned content and is never semantic output. Code may
+// use it only to repeat the same persisted call once with the remaining native
+// context assigned to num_predict; it grants no correction or workflow
+// authority.
 type ExactPreparedOutputLimitReachedError struct {
 	DoneReason      string
 	PromptTokens    int
@@ -34,7 +35,7 @@ func (failure ExactPreparedOutputLimitReachedError) Validate() error {
 		failure.MaxOutputTokens < 1 || failure.MaxOutputTokens > failure.ContextTokens ||
 		failure.PromptTokens+failure.OutputTokens > failure.ContextTokens ||
 		failure.ContentBytes < 1 ||
-		failure.ContentBytes > MaxExactPreparedProviderResponseBytes {
+		failure.ContentBytes > MaxExactPreparedModelContentBytes {
 		return fmt.Errorf("exact prepared output limit evidence is invalid")
 	}
 	return nil
@@ -60,12 +61,13 @@ func ValidateExactPreparedGenerationForRequest(
 	if generation.ProviderRequestSHA256 != requestSHA256 {
 		return fmt.Errorf("exact prepared generation differs from its request authority")
 	}
-	if prepared.OutputLimitMode == ExactPreparedOutputLimitNatural {
-		if err := ValidateExactPreparedNaturalUsageWithOutputCeiling(
-			prepared.ContextTokens, prepared.MaxOutputTokens, generation.Usage,
-		); err != nil {
-			return err
-		}
+	if err := ValidateExactPreparedNativeUsage(
+		prepared.ContextTokens,
+		prepared.ContextTokens-prepared.MaxOutputTokens,
+		prepared.MaxOutputTokens,
+		generation.Usage,
+	); err != nil {
+		return err
 	}
 	if generation.ProviderDoneReason == "length" {
 		failure := &ExactPreparedOutputLimitReachedError{

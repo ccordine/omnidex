@@ -10,8 +10,8 @@ func validateDirectCodingJavaFragment(
 	if err != nil {
 		return "", err
 	}
-	if err := validateDirectCodingJavaScope(input, validated); err != nil {
-		return "", err
+	if err := validateDirectCodingJavaScope(input, candidate, validated); err != nil {
+		return "", directCodingSourceBodyError(input, candidate, validated, err)
 	}
 	return validated, nil
 }

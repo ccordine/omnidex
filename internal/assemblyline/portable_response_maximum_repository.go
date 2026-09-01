@@ -4,30 +4,22 @@ import "github.com/gryph/omnidex/internal/roleplay"
 
 func portableRepositoryConversationResponseMaximum(job PortableJob) (int, bool, error) {
 	switch job.Kind {
-	case WorkRepositoryRequirementInventory:
-		return maxRepositoryRequirementInventoryBytes, true, nil
-	case WorkRepositoryRequirementCandidateAuthorization:
-		return maximumStringBytes(
-			RepositoryRequirementCandidateRequiresChange,
-			RepositoryRequirementCandidateNoChange,
-		), true, nil
-	case WorkRepositoryRequirementCandidateRelation:
-		return maximumStringBytes(
-			RepositoryRequirementCandidatesSameChange,
-			RepositoryRequirementCandidatesDistinctChanges,
-		), true, nil
 	case WorkContextRelevanceRelation:
-		return maximumStringBytes(
-			ContextCandidateDirectlyRelevant,
-			ContextCandidateNotDirectlyRelevant,
-		), true, nil
+		maximum, err := opaqueModelChoiceBuilderResponseMaximum(
+			contextRelevanceRelationChoices,
+		)
+		return maximum, true, err
 	case WorkContextMinification:
 		return MaxContextMinifiedBytes, true, nil
 	case WorkConversationObjectiveKind:
-		return maximumStringBytes(
-			ObjectiveKindAnswer, ObjectiveKindWorkspaceMutation,
-			ObjectiveKindStory, ObjectiveKindDatabaseRead,
-		), true, nil
+		var input ConversationObjectiveKindInput
+		if err := decodePortablePayload(job.Payload, &input); err != nil {
+			return 0, true, err
+		}
+		maximum, err := opaqueModelChoiceBuilderResponseMaximum(func() ([]OpaqueModelChoice, error) {
+			return conversationObjectiveKindChoices(input)
+		})
+		return maximum, true, err
 	case WorkConversationResponse:
 		var input ConversationResponseInput
 		if err := decodePortablePayload(job.Payload, &input); err != nil {
@@ -38,46 +30,50 @@ func portableRepositoryConversationResponseMaximum(job PortableJob) (int, bool, 
 		}
 		return maxConversationResponseTextBytes, true, nil
 	case WorkRoleplayGroundedResponseParagraphInventory:
-		return max(
-			maxRoleplayGroundedParagraphInventoryBytes,
-			len(RoleplayNoGroundedParagraphCandidates),
-		), true, nil
+		return maxRoleplayGroundedParagraphInventoryBytes, true, nil
 	case WorkRoleplayGroundedResponseEvidenceRelation:
-		return maximumStringBytes(
-			RoleplayGroundedEvidenceSupportsParagraph,
-			RoleplayGroundedEvidenceDoesNotSupport,
-		), true, nil
+		maximum, err := opaqueModelChoiceBuilderResponseMaximum(
+			roleplayGroundedEvidenceRelationChoices,
+		)
+		return maximum, true, err
 	case WorkRoleplayGroundedResponseParagraphAuthorization:
-		return maximumStringBytes(
-			RoleplayGroundedParagraphResponsiveAndSupported,
-			RoleplayGroundedParagraphNotAuthorized,
-		), true, nil
+		maximum, err := opaqueModelChoiceBuilderResponseMaximum(
+			roleplayGroundedParagraphAuthorizationChoices,
+		)
+		return maximum, true, err
+	case WorkRoleplayCanonFactPresence:
+		maximum, err := opaqueModelChoiceBuilderResponseMaximum(
+			roleplayCanonFactPresenceChoices,
+		)
+		return maximum, true, err
 	case WorkRoleplayCanonFactInventory:
 		return maxRoleplayCanonFactInventoryBytes, true, nil
 	case WorkRoleplayCanonFactCandidateAuthorization:
-		return maximumStringBytes(
-			RoleplayCanonFactEstablished, RoleplayCanonFactNotEstablished,
-		), true, nil
+		maximum, err := opaqueModelChoiceBuilderResponseMaximum(
+			roleplayCanonFactAuthorizationChoices,
+		)
+		return maximum, true, err
 	case WorkRoleplayCanonFactCandidateRelation:
-		return maximumStringBytes(
-			RoleplayCanonFactsEquivalent, RoleplayCanonFactsDistinct,
-		), true, nil
-	case WorkRoleplayOngoingAction:
+		maximum, err := opaqueModelChoiceBuilderResponseMaximum(
+			roleplayCanonFactRelationChoices,
+		)
+		return maximum, true, err
+	case WorkRoleplayOngoingActionRelation:
+		return 1, true, nil
+	case WorkRoleplayOngoingActionValue:
 		return roleplay.MaxOngoingActionBytes, true, nil
 	case WorkGroundedAnswerParagraphInventory:
-		return max(
-			maxGroundedAnswerParagraphInventoryBytes,
-			len(GroundedAnswerNoParagraphCandidates),
-		), true, nil
+		return maxGroundedAnswerParagraphInventoryBytes, true, nil
 	case WorkGroundedAnswerParagraphEvidenceRelation:
-		return maximumStringBytes(
-			GroundedEvidenceSupportsParagraph, GroundedEvidenceDoesNotSupport,
-		), true, nil
+		maximum, err := opaqueModelChoiceBuilderResponseMaximum(
+			groundedAnswerParagraphEvidenceRelationChoices,
+		)
+		return maximum, true, err
 	case WorkGroundedAnswerParagraphAuthorization:
-		return maximumStringBytes(
-			GroundedParagraphResponsiveAndFullySupported,
-			GroundedParagraphNotResponsiveOrUnsupported,
-		), true, nil
+		maximum, err := opaqueModelChoiceBuilderResponseMaximum(
+			groundedAnswerParagraphAuthorizationChoices,
+		)
+		return maximum, true, err
 	default:
 		return 0, false, nil
 	}

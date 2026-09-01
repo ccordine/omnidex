@@ -45,9 +45,6 @@ func selectDirectCodingProjectFromRegistries(
 	if err != nil {
 		return directCodingProjectSelection{}, err
 	}
-	if len(formats) == 1 {
-		return directCodingProjectSelectionForFormat(formats[0])
-	}
 	input, err := directCodingProjectStackConstraintInput(redactedRequest, formats)
 	if err != nil {
 		return directCodingProjectSelection{}, err

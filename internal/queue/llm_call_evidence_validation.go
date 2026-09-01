@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"unicode/utf8"
@@ -12,7 +13,33 @@ import (
 	"github.com/gryph/omnidex/internal/llm"
 )
 
-const maxLLMCallGenerationReceiptBytes = llm.MaxOwnedPreparedGenerationBytes + (1024 * 1024)
+const maxLLMCallGenerationReceiptBytes = 16 * 1024
+
+// llmCallGenerationReceipt retains the provider-derived metadata and exact
+// identities without serializing model content a second time. The candidate
+// and raw response bytes are stored in their dedicated immutable columns.
+type llmCallGenerationReceipt struct {
+	Schema                        string                              `json:"schema"`
+	Protocol                      llm.ExactPreparedProtocol           `json:"protocol"`
+	ProviderRequestDisposition    llm.ProviderRequestDisposition      `json:"provider_request_disposition"`
+	ContentBytes                  int                                 `json:"content_bytes"`
+	ContentSHA256                 string                              `json:"content_sha256"`
+	ProviderRequestSHA256         string                              `json:"provider_request_sha256"`
+	ProviderHTTPStatus            int                                 `json:"provider_http_status"`
+	ProviderResponseDisposition   llm.ProviderResponseDisposition     `json:"provider_response_disposition"`
+	ProviderResponseComplete      bool                                `json:"provider_response_complete"`
+	ProviderContentEncoding       llm.ProviderContentEncodingEvidence `json:"provider_content_encoding"`
+	ProviderResponseBytesKnown    bool                                `json:"provider_response_bytes_known"`
+	ProviderResponseSHA256        string                              `json:"provider_response_sha256"`
+	ProviderResponseBytes         int64                               `json:"provider_response_bytes"`
+	ProviderResponseCaptureSHA256 string                              `json:"provider_response_capture_sha256"`
+	ProviderResponseCapturedBytes int                                 `json:"provider_response_captured_bytes"`
+	ProviderDonePresent           bool                                `json:"provider_done_present"`
+	ProviderDone                  bool                                `json:"provider_done"`
+	ProviderDoneReason            string                              `json:"provider_done_reason"`
+	UsagePresent                  bool                                `json:"usage_present"`
+	Usage                         llm.ProviderGenerationUsage         `json:"usage"`
+}
 
 type normalizedLLMCallOpening struct {
 	record                LLMCallOpeningRecord
@@ -50,6 +77,50 @@ func normalizeLLMCallOpening(record LLMCallOpeningRecord) (normalizedLLMCallOpen
 	}
 	if !exactLowerSHA256(record.WorkID) {
 		return normalizedLLMCallOpening{}, fmt.Errorf("LLM call evidence work ID must be one exact SHA-256")
+	}
+	if record.Iteration < 1 || record.Iteration > assemblyline.MaxSourceBodyAttempts {
+		return normalizedLLMCallOpening{}, fmt.Errorf(
+			"LLM call evidence iteration must be between 1 and %d",
+			assemblyline.MaxSourceBodyAttempts,
+		)
+	}
+	if record.OutputContinuation < 0 || record.OutputContinuation > 1 {
+		return normalizedLLMCallOpening{}, fmt.Errorf(
+			"LLM call evidence output continuation must be zero or one",
+		)
+	}
+	isLineageRoot := record.Iteration == 1 && record.OutputContinuation == 0
+	if isLineageRoot && record.ParentCallEvidenceID != 0 {
+		return normalizedLLMCallOpening{}, fmt.Errorf(
+			"initial LLM call evidence cannot name a parent call",
+		)
+	}
+	if !isLineageRoot && record.ParentCallEvidenceID < 1 {
+		return normalizedLLMCallOpening{}, fmt.Errorf(
+			"continued LLM call evidence requires one parent call",
+		)
+	}
+	if record.Iteration > 1 && record.WorkKind != assemblyline.WorkFragmentGeneration {
+		return normalizedLLMCallOpening{}, fmt.Errorf(
+			"iterative LLM call evidence requires fragment generation",
+		)
+	}
+	if record.Iteration == 1 && record.SourceCorrection != nil {
+		return normalizedLLMCallOpening{}, fmt.Errorf(
+			"initial LLM call evidence cannot carry source correction state",
+		)
+	}
+	if record.Iteration > 1 && record.SourceCorrection == nil {
+		return normalizedLLMCallOpening{}, fmt.Errorf(
+			"iterative fragment evidence requires exact source correction state",
+		)
+	}
+	if record.SourceCorrection != nil {
+		if err := record.SourceCorrection.Validate(record.Prepared.Prompt); err != nil {
+			return normalizedLLMCallOpening{}, fmt.Errorf(
+				"LLM call source correction evidence: %w", err,
+			)
+		}
 	}
 	if record.RequestedModel == "" || record.RequestedModel != strings.TrimSpace(record.RequestedModel) ||
 		record.Prepared.BaseModel != record.RequestedModel ||
@@ -96,12 +167,26 @@ func normalizeLLMCallReceipt(record LLMCallReceiptRecord) (normalizedLLMCallRece
 		return normalizedLLMCallReceipt{}, fmt.Errorf("own exact provider response evidence: %w", err)
 	}
 	record.Generation = owned
-	if record.CallError == "" {
-		if err := llm.ValidateExactPreparedGenerationForRequest(record.Prepared, owned); err != nil {
-			return normalizedLLMCallReceipt{}, fmt.Errorf("successful LLM evidence has invalid provider result: %w", err)
-		}
+	generationErr := llm.ValidateExactPreparedGenerationForRequest(record.Prepared, owned)
+	var outputLimit *llm.ExactPreparedOutputLimitReachedError
+	validatedOutputLimit := errors.As(generationErr, &outputLimit)
+	if record.OutputLimitReached != validatedOutputLimit {
+		return normalizedLLMCallReceipt{}, fmt.Errorf(
+			"LLM call output-limit classification differs from exact provider evidence",
+		)
 	}
-	generationReceipt, err := json.Marshal(owned)
+	if record.CallError == "" {
+		if generationErr != nil {
+			return normalizedLLMCallReceipt{}, fmt.Errorf(
+				"successful LLM evidence has invalid provider result: %w", generationErr,
+			)
+		}
+	} else if record.OutputLimitReached && outputLimit.Validate() != nil {
+		return normalizedLLMCallReceipt{}, fmt.Errorf(
+			"LLM call output-limit evidence is invalid",
+		)
+	}
+	generationReceipt, err := encodeLLMCallGenerationReceipt(owned)
 	if err != nil {
 		return normalizedLLMCallReceipt{}, fmt.Errorf("encode exact provider generation receipt: %w", err)
 	}
@@ -137,6 +222,33 @@ func normalizeLLMCallReceipt(record LLMCallReceiptRecord) (normalizedLLMCallRece
 		candidateSHA256:         candidateSHA256,
 		status:                  status,
 	}, nil
+}
+
+func encodeLLMCallGenerationReceipt(
+	generation llm.PreparedGeneration,
+) ([]byte, error) {
+	receipt := llmCallGenerationReceipt{
+		Schema: generation.Schema, Protocol: generation.Protocol,
+		ProviderRequestDisposition:    generation.ProviderRequestDisposition,
+		ContentBytes:                  len(generation.Content),
+		ContentSHA256:                 llmEvidenceSHA256([]byte(generation.Content)),
+		ProviderRequestSHA256:         generation.ProviderRequestSHA256,
+		ProviderHTTPStatus:            generation.ProviderHTTPStatus,
+		ProviderResponseDisposition:   generation.ProviderResponseDisposition,
+		ProviderResponseComplete:      generation.ProviderResponseComplete,
+		ProviderContentEncoding:       generation.ProviderContentEncoding,
+		ProviderResponseBytesKnown:    generation.ProviderResponseBytesKnown,
+		ProviderResponseSHA256:        generation.ProviderResponseSHA256,
+		ProviderResponseBytes:         generation.ProviderResponseBytes,
+		ProviderResponseCaptureSHA256: generation.ProviderResponseCaptureSHA256,
+		ProviderResponseCapturedBytes: generation.ProviderResponseCapturedBytes,
+		ProviderDonePresent:           generation.ProviderDonePresent,
+		ProviderDone:                  generation.ProviderDone,
+		ProviderDoneReason:            generation.ProviderDoneReason,
+		UsagePresent:                  generation.UsagePresent,
+		Usage:                         generation.Usage,
+	}
+	return json.Marshal(receipt)
 }
 
 func llmGenerationHasRawResponse(generation llm.PreparedGeneration) bool {
