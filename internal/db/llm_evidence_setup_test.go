@@ -16,8 +16,9 @@ func TestAuthoritativeSetupDefinesExactImmutableLLMCallEvidence(t *testing.T) {
 		"CREATE TABLE llm_call_evidence",
 		"system_envelope text NOT NULL",
 		"model_input_sha256",
-		"dispatch_attempt integer NOT NULL CHECK (dispatch_attempt BETWEEN 1 AND 2)",
-		"replaces_call_evidence_id bigint",
+		"output_continuation integer NOT NULL CHECK (output_continuation=0)",
+		"dispatch_attempt integer NOT NULL CHECK (dispatch_attempt=1)",
+		"replaces_call_evidence_id bigint CHECK (replaces_call_evidence_id IS NULL)",
 		"provider_request_sha256",
 		"generation_receipt_sha256",
 		"octet_length(generation_receipt) BETWEEN 2 AND 16384",
@@ -55,6 +56,15 @@ func TestAuthoritativeSetupDefinesExactImmutableLLMCallEvidence(t *testing.T) {
 	}
 	if strings.Contains(setup, "source_atomic_whole_leaf") {
 		t.Fatal("authoritative setup retains forbidden whole-body correction authority")
+	}
+	for _, forbidden := range []string{
+		"replacement dispatch lacks",
+		"output continuation differs",
+		"continuation.output_continuation=1",
+	} {
+		if strings.Contains(setup, forbidden) {
+			t.Fatalf("authoritative setup retains forbidden repeated provider-call authority %q", forbidden)
+		}
 	}
 }
 

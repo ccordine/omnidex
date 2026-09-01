@@ -164,10 +164,6 @@ func (r *Repository) RecordLLMCallOutcome(
 		WHERE calls.id=$1 AND calls.job_id=$2 AND calls.generation=$3
 		  AND calls.step_id=$4
 		  AND receipts.status='succeeded'
-		  AND NOT EXISTS (
-		      SELECT 1 FROM llm_call_evidence AS replacement
-		      WHERE replacement.replaces_call_evidence_id=calls.id
-		  )
 		  AND (
 		      (calls.step_attempt=$5 AND calls.worker_id=$6
 		       AND origin_attempt.status='active')

@@ -84,27 +84,22 @@ func normalizeLLMCallOpening(record LLMCallOpeningRecord) (normalizedLLMCallOpen
 			assemblyline.MaxSourceBodyAttempts,
 		)
 	}
-	if record.OutputContinuation < 0 || record.OutputContinuation > 1 {
+	if record.OutputContinuation != 0 {
 		return normalizedLLMCallOpening{}, fmt.Errorf(
-			"LLM call evidence output continuation must be zero or one",
+			"LLM call evidence cannot authorize output continuation",
 		)
 	}
-	if record.DispatchAttempt < 1 || record.DispatchAttempt > 2 {
+	if record.DispatchAttempt != 1 {
 		return normalizedLLMCallOpening{}, fmt.Errorf(
-			"LLM call evidence dispatch attempt must be one or two",
+			"LLM call evidence requires exactly one provider dispatch",
 		)
 	}
-	if record.DispatchAttempt == 1 && record.ReplacesCallEvidenceID != 0 {
+	if record.ReplacesCallEvidenceID != 0 {
 		return normalizedLLMCallOpening{}, fmt.Errorf(
-			"initial LLM dispatch evidence cannot replace another call",
+			"LLM call evidence cannot replace another provider dispatch",
 		)
 	}
-	if record.DispatchAttempt == 2 && record.ReplacesCallEvidenceID < 1 {
-		return normalizedLLMCallOpening{}, fmt.Errorf(
-			"replacement LLM dispatch evidence requires one interrupted call",
-		)
-	}
-	isLineageRoot := record.Iteration == 1 && record.OutputContinuation == 0
+	isLineageRoot := record.Iteration == 1
 	if isLineageRoot && record.ParentCallEvidenceID != 0 {
 		return normalizedLLMCallOpening{}, fmt.Errorf(
 			"initial LLM call evidence cannot name a parent call",

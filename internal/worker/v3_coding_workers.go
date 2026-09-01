@@ -192,7 +192,7 @@ func portableWorkerRuntimeWithIdentityGuard(
 		}
 		recovered, err := runtime.svc.recoverExactPortableStationChild(
 			executionContext, runtime.claim.Authority, job, model,
-			previous.CallEvidenceID, &correction,
+			previous.CallEvidenceID,
 		)
 		if recovered != nil && recovered.Execution.ProviderCalls > 0 {
 			providerCalls.Add(int64(recovered.Execution.ProviderCalls))

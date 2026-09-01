@@ -11,18 +11,15 @@ import (
 )
 
 type exactStationCall struct {
-	WorkID             string
-	WorkKind           assemblyline.WorkKind
-	Iteration          int
-	OutputContinuation int
-	DispatchAttempt    int
-	ParentCallID       int64
-	ReplacesCallID     int64
-	Prompt             string
-	ContextTokens      int
-	MaxOutputTokens    int
-	SingleLine         bool
-	SourceCorrection   *assemblyline.SourceBodyCorrectionEvidence
+	WorkID           string
+	WorkKind         assemblyline.WorkKind
+	Iteration        int
+	ParentCallID     int64
+	Prompt           string
+	ContextTokens    int
+	MaxOutputTokens  int
+	SingleLine       bool
+	SourceCorrection *assemblyline.SourceBodyCorrectionEvidence
 }
 
 type exactStationExecution struct {
@@ -31,8 +28,6 @@ type exactStationExecution struct {
 	WorkKind                 assemblyline.WorkKind
 	Model                    string
 	Iteration                int
-	OutputContinuation       int
-	DispatchAttempt          int
 	ProviderCalls            int
 	Candidate                string
 	CandidateResponseSHA256  string
@@ -87,7 +82,7 @@ func (s *Service) executeExactPortableStation(
 	}
 	call := exactStationCall{
 		WorkID: job.ID, WorkKind: job.Kind, Prompt: prompt,
-		Iteration: 1, DispatchAttempt: 1,
+		Iteration:     1,
 		ContextTokens: contextTokens, MaxOutputTokens: maxOutputTokens,
 	}
 	if nilWorkerTransport(s.stationClient) {
@@ -187,7 +182,7 @@ func (s *Service) executeExactPortableStationCorrection(
 	}
 	call := exactStationCall{
 		WorkID: job.ID, WorkKind: job.Kind, Iteration: previous.Iteration + 1,
-		DispatchAttempt: 1, ParentCallID: previous.CallEvidenceID, Prompt: prompt,
+		ParentCallID: previous.CallEvidenceID, Prompt: prompt,
 		ContextTokens: contextTokens, MaxOutputTokens: maxOutputTokens,
 		SingleLine:       opaqueCorrection,
 		SourceCorrection: &correctionEvidence,

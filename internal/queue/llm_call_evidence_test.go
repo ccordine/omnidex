@@ -182,11 +182,22 @@ func TestNormalizeLLMCallEvidenceRejectsUnboundOrInexactRecords(t *testing.T) {
 			record.OutputContinuation = 2
 			record.ParentCallEvidenceID = 7
 		},
+		"first output continuation": func(record *exactLLMEvidenceFixtureRecord) {
+			record.OutputContinuation = 1
+			record.ParentCallEvidenceID = 7
+		},
 		"zero dispatch attempt": func(record *exactLLMEvidenceFixtureRecord) {
 			record.DispatchAttempt = 0
 		},
 		"replacement without interrupted call": func(record *exactLLMEvidenceFixtureRecord) {
 			record.DispatchAttempt = 2
+		},
+		"replacement dispatch": func(record *exactLLMEvidenceFixtureRecord) {
+			record.DispatchAttempt = 2
+			record.ReplacesCallEvidenceID = 7
+		},
+		"replacement identity": func(record *exactLLMEvidenceFixtureRecord) {
+			record.ReplacesCallEvidenceID = 7
 		},
 		"semantic correction": func(record *exactLLMEvidenceFixtureRecord) {
 			record.Iteration = 2
@@ -209,7 +220,7 @@ func TestNormalizeLLMCallEvidenceRejectsUnboundOrInexactRecords(t *testing.T) {
 	}
 }
 
-func TestNormalizeLLMCallOpeningAcceptsOneSameIterationOutputContinuation(t *testing.T) {
+func TestNormalizeLLMCallOpeningRejectsOutputContinuation(t *testing.T) {
 	t.Parallel()
 	record := exactLLMEvidenceFixture(
 		t, assemblyline.WorkApplicationClassify, "Classify one value.", "A",
@@ -217,8 +228,8 @@ func TestNormalizeLLMCallOpeningAcceptsOneSameIterationOutputContinuation(t *tes
 	opening := record.LLMCallOpeningRecord
 	opening.OutputContinuation = 1
 	opening.ParentCallEvidenceID = 7
-	if _, err := normalizeLLMCallOpening(opening); err != nil {
-		t.Fatal(err)
+	if _, err := normalizeLLMCallOpening(opening); err == nil {
+		t.Fatal("output continuation was admitted")
 	}
 }
 

@@ -56,8 +56,7 @@ func (s *Service) dispatchExactStationCall(
 	execution := exactStationExecution{
 		CallEvidenceID: opening.ID, WorkID: call.WorkID, WorkKind: call.WorkKind,
 		Model: prepared.BaseModel, Iteration: call.Iteration,
-		OutputContinuation: call.OutputContinuation,
-		DispatchAttempt:    call.DispatchAttempt, ProviderCalls: 1,
+		ProviderCalls: 1,
 	}
 	if evidenceErr != nil {
 		return assemblyline.PortableResult{}, execution, evidenceErr

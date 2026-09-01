@@ -49,8 +49,7 @@ func TestFreshSchemaExpiredAttemptReplaysTerminalOutputLimitWithoutDispatch(t *t
 	}
 	call := exactStationCall{
 		WorkID: classification.ID, WorkKind: classification.Kind, Iteration: 1,
-		DispatchAttempt: 1,
-		Prompt:          prompt, ContextTokens: 8192, MaxOutputTokens: initialMaximum,
+		Prompt: prompt, ContextTokens: 8192, MaxOutputTokens: initialMaximum,
 	}
 	prepared, err := prepareExactStationCall(call, "fixture-model", nil)
 	if err != nil {

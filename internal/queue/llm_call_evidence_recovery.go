@@ -62,7 +62,7 @@ func (r *Repository) LatestReusableLLMCallEvidence(
 		      (calls.step_attempt<$5 AND attempts.status='expired')
 		  )
 		ORDER BY calls.step_attempt DESC,calls.iteration DESC,
-		         calls.output_continuation DESC,calls.dispatch_attempt DESC,calls.id DESC
+		         calls.id DESC
 		LIMIT 1`,
 		authority.JobID, authority.Generation, authority.StepID, workID,
 		authority.Attempt, authority.WorkerID,
@@ -89,9 +89,7 @@ func (r *Repository) LatestReusableLLMCallEvidence(
 }
 
 // ReusableLLMCallChildEvidence returns the immutable next call in one source
-// correction lineage. PostgreSQL permits one first dispatch and at most one
-// physical replacement for that same semantic child; dispatch-attempt ordering
-// makes the replacement authoritative without creating a competing child.
+// correction lineage. Every semantic child has exactly one provider dispatch.
 func (r *Repository) ReusableLLMCallChildEvidence(
 	ctx context.Context,
 	authority model.StepAttemptAuthority,
@@ -135,7 +133,7 @@ func (r *Repository) ReusableLLMCallChildEvidence(
 		      OR
 		      (calls.step_attempt<$5 AND attempts.status='expired')
 		  )
-		ORDER BY calls.dispatch_attempt DESC,calls.id DESC
+		ORDER BY calls.id DESC
 		LIMIT 1`,
 		parentCallID, authority.JobID, authority.Generation, authority.StepID,
 		authority.Attempt, authority.WorkerID,
