@@ -35,7 +35,6 @@ type ScrumFlowMetrics struct {
 	CompletionStatus  string   `json:"completion_status"`
 	Signals           []string `json:"signals"`
 	LastPlayOutcome   string   `json:"last_play_outcome,omitempty"`
-	ReviewGate        string   `json:"review_gate,omitempty"`
 	Column            string   `json:"column,omitempty"`
 	UpdatedAt         string   `json:"updated_at,omitempty"`
 }

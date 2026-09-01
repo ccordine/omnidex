@@ -16,7 +16,6 @@ type providerCatalogResponse struct {
 type providerCatalogItem struct {
 	ID                    string   `json:"id"`
 	DisplayName           string   `json:"display_name"`
-	Aliases               []string `json:"aliases,omitempty"`
 	Protocol              string   `json:"protocol"`
 	DefaultBaseURL        string   `json:"default_base_url,omitempty"`
 	ChineseService        bool     `json:"chinese_service"`
@@ -38,8 +37,8 @@ func (s *Server) handleProviderCatalog(w http.ResponseWriter, r *http.Request) {
 func (s *Server) providerCatalog() providerCatalogResponse {
 	cfg := s.providerConfiguration()
 	response := providerCatalogResponse{
-		ExactStationProvider: canonicalProviderID(cfg.LLMProvider),
-		EmbeddingProvider:    canonicalProviderID(cfg.EmbeddingProvider),
+		ExactStationProvider: cfg.LLMProvider,
+		EmbeddingProvider:    cfg.EmbeddingProvider,
 		Providers:            make([]providerCatalogItem, 0, len(catalog.ProductionDefinitions())),
 	}
 	for _, definition := range catalog.ProductionDefinitions() {
@@ -49,7 +48,7 @@ func (s *Server) providerCatalog() providerCatalogResponse {
 		}
 		item := providerCatalogItem{
 			ID: definition.ID, DisplayName: definition.DisplayName,
-			Aliases: append([]string(nil), definition.Aliases...), Protocol: string(definition.Protocol),
+			Protocol: string(definition.Protocol),
 			DefaultBaseURL: definition.DefaultBaseURL, ChineseService: definition.ChineseService,
 			SupportsExactStations: definition.SupportsExactPreparedStations,
 			SupportsEmbeddings:    definition.SupportsEmbeddings,
@@ -60,12 +59,4 @@ func (s *Server) providerCatalog() providerCatalogResponse {
 		response.Providers = append(response.Providers, item)
 	}
 	return response
-}
-
-func canonicalProviderID(provider string) string {
-	definition, ok := catalog.Lookup(provider)
-	if !ok {
-		return strings.ToLower(strings.TrimSpace(provider))
-	}
-	return definition.ID
 }

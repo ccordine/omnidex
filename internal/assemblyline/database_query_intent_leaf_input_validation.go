@@ -7,7 +7,10 @@ import (
 )
 
 func (input DatabaseQueryProjectionLeafInput) validate() error {
-	return input.State.validateReady()
+	if err := input.State.validateReady(); err != nil {
+		return err
+	}
+	return validateDatabaseQueryPurpose("database query projection purpose", input.Purpose)
 }
 
 func (input DatabaseQueryProjectionLeafInput) validateForField() error {
@@ -38,6 +41,14 @@ func (input DatabaseQueryProjectionLeafInput) validateForTimeBucket() error {
 func (input DatabaseQueryFilterLeafInput) validate() error {
 	if err := input.State.validateReady(); err != nil {
 		return err
+	}
+	if err := validateDatabaseQueryPurpose("database query filter purpose", input.Purpose); err != nil {
+		return err
+	}
+	if input.ParentPurpose != "" {
+		if err := validateDatabaseQueryPurpose("database query filter parent purpose", input.ParentPurpose); err != nil {
+			return err
+		}
 	}
 	if input.AcceptedFilters == nil || input.AcceptedValues == nil {
 		return fmt.Errorf("database query filter partial collections must be explicit")
@@ -92,7 +103,12 @@ func (input DatabaseQueryFilterLeafInput) validateOperator() error {
 	return nil
 }
 
-func (input DatabaseQueryWindowLeafInput) validate() error { return input.State.validateReady() }
+func (input DatabaseQueryWindowLeafInput) validate() error {
+	if err := input.State.validateReady(); err != nil {
+		return err
+	}
+	return validateDatabaseQueryPurpose("database query window purpose", input.Purpose)
+}
 
 func (input DatabaseQueryWindowLeafInput) validateField() error {
 	if err := input.validate(); err != nil {
@@ -117,6 +133,9 @@ func (input DatabaseQueryWindowLeafInput) validateUnit() error {
 
 func (input DatabaseQueryExistenceLeafInput) validate() error {
 	if err := input.State.validateReady(); err != nil {
+		return err
+	}
+	if err := validateDatabaseQueryPurpose("database query existence purpose", input.Purpose); err != nil {
 		return err
 	}
 	if input.Filters == nil || len(input.Filters) > datasource.MaxIntentFilters {
@@ -145,7 +164,12 @@ func (input DatabaseQueryExistenceLeafInput) validateRelation() error {
 	return nil
 }
 
-func (input DatabaseQueryHavingLeafInput) validate() error { return input.State.validateReady() }
+func (input DatabaseQueryHavingLeafInput) validate() error {
+	if err := input.State.validateReady(); err != nil {
+		return err
+	}
+	return validateDatabaseQueryPurpose("database query having purpose", input.Purpose)
+}
 
 func (input DatabaseQueryHavingLeafInput) validateAggregate() error {
 	if err := input.validate(); err != nil {
@@ -182,7 +206,12 @@ func (input DatabaseQueryHavingLeafInput) validateOperator() error {
 	}
 }
 
-func (input DatabaseQueryOrderLeafInput) validate() error { return input.State.validateReady() }
+func (input DatabaseQueryOrderLeafInput) validate() error {
+	if err := input.State.validateReady(); err != nil {
+		return err
+	}
+	return validateDatabaseQueryPurpose("database query order purpose", input.Purpose)
+}
 
 func (input DatabaseQueryOrderLeafInput) validateProjection() error {
 	if err := input.validate(); err != nil {

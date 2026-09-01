@@ -22,69 +22,38 @@ func selectRelevantAuthorities(
 	if station == nil {
 		return nil, 0, fmt.Errorf("context relevance remains unresolved but the station is unavailable")
 	}
-	pages, err := partitionContextAuthorities(
-		authorities,
-		assemblyline.MaxContextCandidateAuthorities,
-		assemblyline.MaxContextCandidateProjectionBytes,
-	)
-	if err != nil {
-		return nil, 0, fmt.Errorf("partition context relevance candidates: %w", err)
-	}
 	selected := make([]assemblyline.ContextCandidateAuthority, 0, len(authorities))
 	calls := 0
-	for pageIndex, page := range pages {
-		input := assemblyline.ContextRelevanceInput{
-			ExactInstruction:     modelInstruction,
-			CandidateAuthorities: append([]assemblyline.ContextCandidateAuthority(nil), page...),
-			MaxSelections:        min(assemblyline.MaxContextRelevanceSelections, len(page)),
-			Scope:                scope,
-			KnownArtifactPaths:   append([]string{}, knownArtifactPaths...),
+	for candidateIndex, candidate := range authorities {
+		input := assemblyline.ContextRelevanceRelationInput{
+			ExactInstruction:   modelInstruction,
+			Candidate:          candidate,
+			Scope:              scope,
+			KnownArtifactPaths: append([]string{}, knownArtifactPaths...),
 		}
-		if _, err := assemblyline.NewContextRelevanceSelectionJob(
-			assemblyline.ContextRelevanceSelectionInput{
-				Authority: input, AcceptedCandidateIDs: []string{},
-			},
-		); err != nil {
-			return nil, calls, fmt.Errorf("context relevance page %d: %w", pageIndex+1, err)
+		if _, err := assemblyline.NewContextRelevanceRelationJob(input); err != nil {
+			return nil, calls, fmt.Errorf(
+				"context relevance candidate %d: %w", candidateIndex+1, err,
+			)
 		}
-		decision, receipt, err := station.SelectRelevant(ctx, input)
+		relation, receipt, err := station.Relate(ctx, input)
 		if err != nil {
-			return nil, calls, fmt.Errorf("context relevance page %d: %w", pageIndex+1, err)
+			return nil, calls, fmt.Errorf(
+				"context relevance candidate %d: %w", candidateIndex+1, err,
+			)
 		}
-		if err := validateContextRelevanceReceipt(input, receipt); err != nil {
+		if err := validateReceipt("context relevance relation", receipt); err != nil {
 			return nil, calls, err
 		}
 		calls += receipt.Calls
-		if err := decision.ValidateFor(input); err != nil {
+		if err := relation.ValidateFor(input); err != nil {
 			return nil, calls, err
 		}
-		selected = append(selected, selectedInAuthorityOrder(
-			page, decision.ReferencedCandidateIDs,
-		)...)
+		if relation.Relation == assemblyline.ContextCandidateDirectlyRelevant {
+			selected = append(selected, candidate)
+		}
 	}
 	return selected, calls, nil
-}
-
-func validateContextRelevanceReceipt(
-	input assemblyline.ContextRelevanceInput,
-	receipt StationReceipt,
-) error {
-	if receipt.Reused {
-		if receipt.Calls != 0 {
-			return fmt.Errorf(
-				"context relevance reuse reported %d provider calls", receipt.Calls,
-			)
-		}
-		return nil
-	}
-	maximum := input.MaxSelections * assemblyline.ExactSemanticLeafCalls
-	if receipt.Calls < 1 || receipt.Calls > maximum {
-		return fmt.Errorf(
-			"context relevance reported %d calls outside the bounded fixed-point budget",
-			receipt.Calls,
-		)
-	}
-	return nil
 }
 
 func reduceSelectedAuthorities(

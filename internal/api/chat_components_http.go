@@ -46,14 +46,14 @@ func (s *Server) handleChatChannelOptions(w http.ResponseWriter, r *http.Request
 	}
 	var channels []model.Channel
 	if modeValue == "" {
-		channels, err = s.channelStore.ListChannels(r.Context(), model.ChannelScopeUser, limit+1, offset)
+		channels, err = s.repo.ListChannels(r.Context(), model.ChannelScopeUser, limit+1, offset)
 	} else {
 		mode := model.ChannelMode(modeValue)
 		if err := mode.Validate(); err != nil {
 			writeError(w, http.StatusBadRequest, err.Error())
 			return
 		}
-		channels, err = s.channelStore.ListChannelsByMode(r.Context(), model.ChannelScopeUser, mode, limit+1, offset)
+		channels, err = s.repo.ListChannelsByMode(r.Context(), model.ChannelScopeUser, mode, limit+1, offset)
 	}
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())

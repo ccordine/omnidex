@@ -6,8 +6,6 @@ import (
 
 	"github.com/gryph/omnidex/internal/assemblyline"
 	"github.com/gryph/omnidex/internal/model"
-	"github.com/gryph/omnidex/internal/modelcontext"
-	repositoryindex "github.com/gryph/omnidex/internal/repository/indexing"
 	"github.com/gryph/omnidex/internal/scrum"
 )
 
@@ -17,28 +15,18 @@ type directCodingRequest struct {
 }
 
 type directCodingSession struct {
-	runtime               *nativeRuntimeV3
-	request               directCodingRequest
-	root                  string
-	specification         *assemblyline.ApplicationSpecification
-	program               *directCodingProgram
-	completion            directCodingCompletionState
-	sequence              int
-	protectedPaths        map[string]directCodingProtectedPath
-	lastCommands          []string
-	repositoryIndex       *repositoryindex.Result
-	plannedFiles          int
-	plannedDeletes        int
-	mutationJournal       []directCodingMutationJournalEntry
-	cognition             *directCodingTaskCognition
-	pathProvenance        assemblyline.ArtifactIdentityProvenance
-	initialPaths          map[string]directCodingInitialPath
-	deploymentResolution  directCodingServiceDeploymentResolution
-	deploymentDisposition assemblyline.ApplicationServiceDeploymentDisposition
-	deploymentOperationID string
-	deploymentReceiptSHA  string
-	deployedEndpoint      directCodingObservedEndpoint
-	deploymentRecovery    directCodingDeploymentRecoveryHook
+	runtime                    *nativeRuntimeV3
+	request                    directCodingRequest
+	root                       string
+	specification              *assemblyline.ApplicationSpecification
+	program                    *directCodingProgram
+	sequence                   int
+	protectedPaths             map[string]struct{}
+	plannedFiles               int
+	plannedDeletes             int
+	mutationJournal            []directCodingMutationJournalEntry
+	pathProvenance             assemblyline.ArtifactIdentityProvenance
+	verificationCommandOrdinal int64
 }
 
 func (s *directCodingSession) Phase(phase directCodingPhase, detail string) {
@@ -51,13 +39,23 @@ func (s *directCodingSession) Phase(phase directCodingPhase, detail string) {
 func (s *directCodingSession) directCodingAuthority() string {
 	parts := []string{s.request.Instruction}
 	parts = append(parts, s.request.Feedback...)
-	return strings.TrimSpace(strings.Join(parts, "\n"))
+	return strings.Join(parts, "\n")
 }
 
 type directCodingMutationJournalEntry struct {
-	Path      string
-	Operation workspaceFileOperation
+	Path       string
+	SourcePath string
+	Operation  workspaceFileOperation
 }
+
+type workspaceFileOperation string
+
+const (
+	workspaceFileCreate  workspaceFileOperation = "create"
+	workspaceFileReplace workspaceFileOperation = "replace"
+	workspaceFileDelete  workspaceFileOperation = "delete"
+	workspaceFileMove    workspaceFileOperation = "move"
+)
 
 func (r *nativeRuntimeV3) runDirectCodingAction() error {
 	request, err := r.directCodingRequest()
@@ -68,7 +66,7 @@ func (r *nativeRuntimeV3) runDirectCodingAction() error {
 	if err != nil {
 		return err
 	}
-	return r.complete("coding", summary, summary)
+	return r.completeAppliedWorkspace(summary)
 }
 
 func (r *nativeRuntimeV3) directCodingRequest() (directCodingRequest, error) {
@@ -98,70 +96,56 @@ func (r *nativeRuntimeV3) directCodingRequest() (directCodingRequest, error) {
 	if strings.TrimSpace(instruction) == "" {
 		return directCodingRequest{}, fmt.Errorf("direct coding requires a non-empty current instruction")
 	}
-	return directCodingRequest{
-		Instruction: instruction,
-		Feedback:    collectContextValuesByKey(r.claim.Contexts, "user_feedback", "replan_feedback"),
-	}, nil
+	request := directCodingRequest{Instruction: instruction}
+	continuityBoundary := "v3_coding_plan"
+	if r.claim.Job.Pipeline == model.PipelineChat {
+		continuityBoundary = "objective_resolve"
+	}
+	continuity, err := r.svc.repo.ObjectiveContinuityAuthorities(
+		r.ctx,
+		r.claim.Job,
+		continuityBoundary,
+	)
+	if err != nil {
+		return directCodingRequest{}, err
+	}
+	request.Feedback, err = continuity.CodingFeedback()
+	if err != nil {
+		return directCodingRequest{}, err
+	}
+	return request, nil
 }
 
 func (r *nativeRuntimeV3) runDirectCodingSession(request directCodingRequest) (string, error) {
 	if r == nil || r.svc == nil {
 		return "", fmt.Errorf("direct coding runtime is unavailable")
 	}
-	if summary, handled, err := r.recoverDeploymentBeforeWorkspace(request); handled || err != nil {
-		return summary, err
-	}
 	scope, err := r.svc.workspaceScopeForV3Job(r.claim.Job)
 	if err != nil {
 		return "", err
 	}
-	if summary, handled, err := r.reconcileCurrentWorkspaceMutation(scope.Root, request); handled || err != nil {
-		return summary, err
-	}
-	hasExistingImplementation, err := directCodingWorkspaceHasImplementation(scope.Root, nil)
-	if err != nil {
-		return "", err
-	}
-	var indexed *repositoryindex.Result
-	if hasExistingImplementation {
-		result, indexErr := r.captureExistingRepositoryIndex(scope.Root)
-		if indexErr != nil {
-			return "", indexErr
-		}
-		indexed = &result
+	if err := r.acquireWorkspaceMutationFence(scope.Root); err != nil {
+		return "", fmt.Errorf("acquire exact workspace authority for coding session: %w", err)
 	}
 	session := &directCodingSession{
-		runtime:         r,
-		request:         request,
-		root:            scope.Root,
-		repositoryIndex: indexed,
-		protectedPaths:  map[string]directCodingProtectedPath{},
-		completion: directCodingCompletionState{
-			AllowExistingWorkspace: len(request.Feedback) > 0 || hasExistingImplementation,
-			TestsRequired:          true,
-			WrittenSource:          map[string]string{},
-		},
+		runtime:        r,
+		request:        request,
+		root:           scope.Root,
+		protectedPaths: map[string]struct{}{},
 	}
-	session.deploymentRecovery = newDirectCodingDeploymentRecovery(session)
-	if indexed != nil {
-		paths := make([]string, len(indexed.Snapshot.Files))
-		for index, file := range indexed.Snapshot.Files {
-			paths[index] = file.Path
-		}
-		provenance, provenanceErr := modelcontext.NewArtifactIdentityProvenance(paths)
-		if provenanceErr != nil {
-			return "", fmt.Errorf("derive indexed artifact provenance: %w", provenanceErr)
-		}
-		session.pathProvenance = provenance
-	}
-	if indexed != nil {
-		return session.runExistingRepositoryChangeWorkflow()
-	}
-	summary, err := runDirectCodingWorkflow(session, session.completion.AllowExistingWorkspace)
+	summary, err := runDirectCodingWorkflow(session)
 	return summary, err
 }
 
 func (s *directCodingSession) nextSequence() int {
 	s.sequence++
 	return s.sequence
+}
+
+func (s *directCodingSession) nextVerificationCommandOrdinal() (int64, error) {
+	if s == nil || s.verificationCommandOrdinal == int64(^uint64(0)>>1) {
+		return 0, fmt.Errorf("verification command ordinal is unavailable or exhausted")
+	}
+	s.verificationCommandOrdinal++
+	return s.verificationCommandOrdinal, nil
 }

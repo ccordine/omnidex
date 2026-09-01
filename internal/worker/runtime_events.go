@@ -1,57 +1,101 @@
 package worker
 
 import (
-	"context"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/gryph/omnidex/internal/model"
 )
 
-const stepEventWriteTimeout = 5 * time.Second
-
-func (s *Service) emitStepStream(authority model.StepAttemptAuthority, stream, message string) {
-	key := "tool_stdout"
-	if strings.EqualFold(strings.TrimSpace(stream), "stderr") {
-		key = "tool_stderr"
-	}
-	s.emitStepContext(authority, key, message)
-}
-
-func (s *Service) emitStepContext(authority model.StepAttemptAuthority, key, value string) {
-	s.emitStepContextWithBudget(authority, key, value, 1800)
-}
-
-func (s *Service) emitStepContextWithBudget(authority model.StepAttemptAuthority, key, value string, maxChars int) {
-	value = strings.TrimSpace(value)
-	if value == "" {
+func (s *Service) logf(format string, values ...any) {
+	if s == nil || s.logger == nil {
 		return
 	}
-	if maxChars <= 0 {
-		maxChars = 1800
+	s.logger.Printf(format, values...)
+}
+
+func (s *Service) emitStepStream(authority model.StepAttemptAuthority, stream, message string) {
+	message = strings.TrimSpace(message)
+	if message == "" || s == nil || s.logger == nil {
+		return
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), stepEventWriteTimeout)
-	defer cancel()
-	if err := s.repo.AddStepContext(ctx, authority, key, trimForBudget(value, maxChars)); err != nil {
-		s.logger.Printf("step=%d attempt=%d context key=%s write error: %v", authority.StepID, authority.Attempt, key, err)
+	stream = strings.ToLower(strings.TrimSpace(stream))
+	if stream != "stderr" {
+		stream = "stdout"
 	}
+	s.logf(
+		"job=%d step=%d attempt=%d %s: %s",
+		authority.JobID, authority.StepID, authority.Attempt, stream,
+		trimForBudget(message, 1800),
+	)
 }
 
 func (s *Service) emitStepEvent(authority model.StepAttemptAuthority, eventType, message string) {
-	payload := strings.TrimSpace(strings.Join([]string{
-		"time=" + time.Now().UTC().Format(time.RFC3339),
-		"event=" + strings.TrimSpace(eventType),
-		strings.TrimSpace(message),
-	}, " "))
-	if eventType != "step_complete" && eventType != "step_canceled" {
-		s.emitStepContext(authority, "event", payload)
-	}
-	if s.repo == nil {
+	if s == nil {
 		return
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	if err := s.repo.RecordTelemetryStepEvent(ctx, authority, eventType, message); err != nil {
-		s.logger.Printf("step=%d attempt=%d telemetry event=%s write error: %v", authority.StepID, authority.Attempt, eventType, err)
+	eventType = strings.TrimSpace(eventType)
+	message = boundedRuntimeEventDetail(message)
+	s.emitRuntimeEvent(RuntimeEvent{
+		JobID: authority.JobID, StepID: authority.StepID, Attempt: authority.Attempt,
+		Kind: eventType, Detail: message,
+	})
+	payload := strings.TrimSpace(strings.Join([]string{
+		"time=" + time.Now().UTC().Format(time.RFC3339),
+		"event=" + eventType,
+		message,
+	}, " "))
+	if payload == "" || s.logger == nil {
+		return
+	}
+	s.logf(
+		"job=%d step=%d attempt=%d %s",
+		authority.JobID, authority.StepID, authority.Attempt, trimForBudget(payload, 1800),
+	)
+}
+
+func (s *Service) emitWorkspaceFileChange(
+	authority model.StepAttemptAuthority,
+	operation, sourcePath, path string,
+) {
+	if s == nil {
+		return
+	}
+	detail := operation + " " + path
+	if sourcePath != "" {
+		detail = operation + " " + sourcePath + " -> " + path
+	}
+	s.emitRuntimeEvent(RuntimeEvent{
+		JobID: authority.JobID, StepID: authority.StepID, Attempt: authority.Attempt,
+		Kind: "workspace_file_changed", Detail: boundedRuntimeEventDetail(detail),
+		FileOperation: operation, FilePath: path, FileSourcePath: sourcePath,
+	})
+}
+
+func boundedRuntimeEventDetail(value string) string {
+	const maxBytes = 1800
+	const suffix = "\n...[truncated]"
+	value = strings.TrimSpace(value)
+	if len(value) <= maxBytes {
+		return value
+	}
+	end := maxBytes - len(suffix)
+	for end > 0 && !utf8.ValidString(value[:end]) {
+		end--
+	}
+	return value[:end] + suffix
+}
+
+func (s *Service) emitRuntimeEvent(event RuntimeEvent) {
+	if s == nil || s.runtimeEventSink == nil {
+		return
+	}
+	event.ChannelID = s.runtimeEventChannel(event.JobID)
+	if err := s.runtimeEventSink(event); err != nil {
+		s.logf(
+			"job=%d step=%d attempt=%d runtime event=%q publication failed: %v",
+			event.JobID, event.StepID, event.Attempt, event.Kind, err,
+		)
 	}
 }

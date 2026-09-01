@@ -7,25 +7,25 @@ import (
 )
 
 type directCodingTypeScriptProjectStageExecutor struct {
-	session   *directCodingSession
-	workspace *directCodingTypeScriptStageWorkspace
-	progress  *directCodingTypeScriptCorrectionProgress
+	session               *directCodingSession
+	workspace             *directCodingTypeScriptStageWorkspace
+	publicSurfaceBindings map[string]directCodingBrowserPublicSurfaceBinding
 }
 
-func newDirectCodingTypeScriptProjectStageExecutor(
+func newDirectCodingTypeScriptSourceGenerator(
 	session *directCodingSession,
 	program directCodingProgram,
-) (directCodingProjectStageExecutor, error) {
+) (directCodingProjectSourceGenerator, error) {
 	if session == nil {
-		return nil, fmt.Errorf("TypeScript project stage requires one coding session")
+		return nil, fmt.Errorf("TypeScript source generation requires one coding session")
 	}
-	workspace, err := newDirectCodingTypeScriptStageWorkspace(session.runtime.ctx, program)
+	workspace, err := newDirectCodingTypeScriptStageWorkspace(session, program)
 	if err != nil {
 		return nil, err
 	}
 	return &directCodingTypeScriptProjectStageExecutor{
 		session: session, workspace: workspace,
-		progress: newDirectCodingTypeScriptCorrectionProgress(),
+		publicSurfaceBindings: make(map[string]directCodingBrowserPublicSurfaceBinding),
 	}, nil
 }
 
@@ -36,11 +36,36 @@ func (executor *directCodingTypeScriptProjectStageExecutor) GenerateBlock(
 ) (string, error) {
 	if ref.Document.AdapterID != "typescript" && ref.Document.AdapterID != "typescript_react" {
 		return "", fmt.Errorf(
-			"TypeScript project stage cannot generate adapter %q block %s",
+			"TypeScript source generator cannot generate adapter %q block %s",
 			ref.Document.AdapterID, ref.Block.ID,
 		)
 	}
-	return executor.session.generateDirectCodingApplicationTaskBlock(context, stage, ref)
+	var validateInitialCandidate func(string) error
+	switch ref.Block.Role {
+	case assemblyline.SourceBlockTaskImplementation:
+		validateInitialCandidate = validateDirectCodingBrowserPublicInteractionCandidate
+	case assemblyline.SourceBlockTaskVerification:
+		binding, err := executor.bindBrowserPublicSurface(
+			context, stage, ref,
+		)
+		if err != nil {
+			return "", err
+		}
+		return renderDirectCodingBrowserVerificationDeclaration(ref, binding)
+	case assemblyline.SourceBlockTaskRepresentation:
+	default:
+		return "", fmt.Errorf("TypeScript source generator cannot build task role %q", ref.Block.Role)
+	}
+	source, err := executor.session.generateDirectCodingApplicationTaskBlock(
+		context, stage, ref, validateInitialCandidate,
+	)
+	if err != nil {
+		return "", err
+	}
+	if ref.Block.Role == assemblyline.SourceBlockTaskImplementation {
+		return executor.closeImplementationBeforeVerification(stage, ref, source)
+	}
+	return source, nil
 }
 
 func (executor *directCodingTypeScriptProjectStageExecutor) VerifyTask(
@@ -51,22 +76,27 @@ func (executor *directCodingTypeScriptProjectStageExecutor) VerifyTask(
 	if err != nil {
 		return err
 	}
-	return executor.session.stageTypeScriptProgramIn(
-		executor.workspace.Root(), stage, commands, executor.progress,
+	return executor.workspace.Verify(
+		stage, directCodingVerificationPhaseIsolatedTask, commands,
+		func(current *directCodingProgram) error {
+			return executor.validateTaskBrowserPublicSurface(current, context.Task.TaskID)
+		},
 	)
 }
 
 func (executor *directCodingTypeScriptProjectStageExecutor) VerifyFinal(
 	program *directCodingProgram,
 ) error {
-	return executor.session.stageTypeScriptProgramIn(
-		executor.workspace.Root(), program, directCodingFullStageCommands(), executor.progress,
+	return executor.workspace.Verify(
+		program, directCodingVerificationPhaseIsolatedFinal,
+		directCodingFullTypeScriptStageCommands(),
+		executor.validateAllBrowserPublicSurfaces,
 	)
 }
 
 func (executor *directCodingTypeScriptProjectStageExecutor) Close() error {
-	if executor != nil && executor.workspace != nil {
-		return executor.workspace.Close()
+	if executor == nil || executor.workspace == nil {
+		return nil
 	}
-	return nil
+	return executor.workspace.Close()
 }

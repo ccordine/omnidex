@@ -1,8 +1,6 @@
 package worker
 
-import (
-	"fmt"
-)
+import "fmt"
 
 const (
 	typeScriptBrowserVersionProfileV1     = "typescript_browser_versions_v1"
@@ -10,7 +8,6 @@ const (
 	javaScriptCommandLineVersionProfileV1 = "javascript_command_line_versions_v1"
 	rustCommandLineVersionProfileV1       = "rust_command_line_versions_v1"
 	javaCommandLineVersionProfileV1       = "java_command_line_versions_v1"
-	phpServiceVersionProfileV1            = "php_http_service_versions_v1"
 )
 
 const (
@@ -21,24 +18,7 @@ const (
 	directCodingRustEdition              = "2024"
 	directCodingRustVersion              = "1.85"
 	directCodingGoVersion                = "1.24.0"
-	directCodingPHPConstraint            = "^8.2"
-	directCodingPHPNodeVersion           = "22.23.2"
-	directCodingDockerEngineVersion      = "29.5.1"
-	directCodingDockerComposeVersion     = "5.1.4"
 )
-
-type directCodingVersionCompatibility string
-
-const (
-	directCodingVersionNotApplicable directCodingVersionCompatibility = "not_applicable"
-	directCodingVersionCompatible    directCodingVersionCompatibility = "compatible"
-	directCodingVersionUnsupported   directCodingVersionCompatibility = "unsupported"
-)
-
-type directCodingArtifactVersion struct {
-	AdapterID string
-	Version   string
-}
 
 type directCodingProjectVersionComponent struct {
 	Name    string
@@ -46,151 +26,43 @@ type directCodingProjectVersionComponent struct {
 }
 
 type directCodingProjectVersionProfile struct {
-	ID                      string
-	StackID                 string
-	SourceDialect           string
-	ParserQualification     string
-	ManifestPaths           []string
-	ArtifactVersions        []directCodingArtifactVersion
-	Components              []directCodingProjectVersionComponent
-	ComposerDependencies    map[string]string
-	ComposerDevDependencies map[string]string
-	ComposerLockTemplate    []byte
-	NPMDependencies         map[string]string
-	NPMDevDependencies      map[string]string
-	NPMLockTemplate         []byte
-	MatchExisting           func(directCodingProjectVersionProfile, map[string]string) (directCodingVersionCompatibility, error)
-	ValidateRuntime         func(directCodingProjectVersionProfile, directCodingVersionProbe) error
-	ValidateAssembly        func(directCodingProjectVersionProfile, directCodingProgram, directCodingAssembly) error
-	ValidateDefinition      func(directCodingProjectVersionProfile) error
+	ID         string
+	StackID    string
+	Components []directCodingProjectVersionComponent
 }
 
 func registeredDirectCodingProjectVersionProfiles() []directCodingProjectVersionProfile {
 	profiles := []directCodingProjectVersionProfile{
 		{
 			ID: typeScriptBrowserVersionProfileV1, StackID: genericTypeScriptBrowserAdapter,
-			SourceDialect:       "TypeScript 5.9.3 with TSX react-jsx targeting ECMAScript 2022",
-			ParserQualification: "tree-sitter-typescript-0.23.2-typescript-5.9-profile-v1",
-			ManifestPaths:       []string{"package.json"},
-			ArtifactVersions: artifactVersions(
-				"css_tailwind", "Tailwind CSS 4.1.12", "html", "HTML5 qualified subset v1",
-				"plain_text", "UTF-8 text profile v1", "structured_json", "RFC 8259",
-				"typescript", "TypeScript 5.9.3", "typescript_react", "TypeScript 5.9.3 and React 19.2.7",
-			),
 			Components: versionComponents(
 				"ecmascript", "ES2022", "node", directCodingTypeScriptNodeConstraint,
-				"npm", directCodingTypeScriptNPMConstraint, "npm_lock", "3",
-				"react", "19.2.7", "tailwindcss", "4.1.12", "typescript", "5.9.3",
-				"vite", "6.4.2", "vitest", "4.1.8",
+				"npm", directCodingTypeScriptNPMConstraint,
 			),
-			NPMDependencies: map[string]string{"react": "19.2.7", "react-dom": "19.2.7"},
-			NPMDevDependencies: map[string]string{
-				"@tailwindcss/vite": "4.1.12", "@testing-library/jest-dom": "7.0.0",
-				"@testing-library/react": "16.3.2", "@types/react": "19.2.17",
-				"@types/react-dom": "19.2.3", "@vitejs/plugin-react": "5.2.0", "dom-accessibility-api": "0.5.16",
-				"jsdom": "26.1.0", "tailwindcss": "4.1.12", "typescript": "5.9.3",
-				"vite": "6.4.2", "vitest": "4.1.8",
-			},
-			NPMLockTemplate:    typeScriptBrowserPackageLockTemplate,
-			MatchExisting:      matchTypeScriptBrowserVersionProfile,
-			ValidateRuntime:    validateTypeScriptBrowserRuntimeProfile,
-			ValidateAssembly:   validateTypeScriptBrowserVersionProfileAssembly,
-			ValidateDefinition: validateTypeScriptBrowserVersionProfile,
 		},
 		{
 			ID: goCommandLineVersionProfileV1, StackID: genericGoCommandLineAdapter,
-			SourceDialect: "Go 1.24.0", ParserQualification: "go-parser-go1.24-profile-v1",
-			ManifestPaths: []string{"go.mod"},
-			ArtifactVersions: artifactVersions(
-				"go", "Go 1.24.0", "go_module", "Go module 1.24.0", "plain_text", "UTF-8 text profile v1",
-			),
 			Components: versionComponents(
 				"go", directCodingGoVersion, "go_manifest", ">=1.24.0 <1.25.0",
 			),
-			MatchExisting: matchGoVersionProfile, ValidateRuntime: validateGoRuntimeProfile,
-			ValidateAssembly:   validateGoVersionProfileAssembly,
-			ValidateDefinition: validateGoVersionProfile,
 		},
 		{
 			ID: javaScriptCommandLineVersionProfileV1, StackID: genericJavaScriptCommandLineAdapter,
-			SourceDialect:       "ECMAScript 2022 modules on Node.js >=22.0.0",
-			ParserQualification: "tree-sitter-javascript-0.23.1-es2022-profile-v1",
-			ManifestPaths:       []string{"package.json"},
-			ArtifactVersions: artifactVersions(
-				"javascript", "ECMAScript 2022 modules", "plain_text", "UTF-8 text profile v1",
-				"structured_json", "RFC 8259",
-			),
 			Components: versionComponents(
 				"ecmascript", "ES2022", "node", directCodingJavaScriptNodeConstraint,
 			),
-			MatchExisting:      matchJavaScriptVersionProfile,
-			ValidateRuntime:    validateJavaScriptRuntimeProfile,
-			ValidateAssembly:   validateJavaScriptVersionProfileAssembly,
-			ValidateDefinition: validateJavaScriptVersionProfile,
 		},
 		{
 			ID: rustCommandLineVersionProfileV1, StackID: genericRustCommandLineAdapter,
-			SourceDialect:       "Rust 2024 edition with rust-version 1.85",
-			ParserQualification: "tree-sitter-rust-0.23.2-edition-2024-profile-v1",
-			ManifestPaths:       []string{"Cargo.toml"},
-			ArtifactVersions: artifactVersions(
-				"cargo_toml", "Cargo lock format 4", "plain_text", "UTF-8 text profile v1",
-				"rust", "Rust 2024 edition",
-			),
 			Components: versionComponents(
 				"cargo_lock", "4", "rust_edition", directCodingRustEdition,
 				"rust_manifest", "1.85.0", "rust_version", directCodingRustVersion,
 			),
-			MatchExisting: matchRustVersionProfile, ValidateRuntime: validateRustRuntimeProfile,
-			ValidateAssembly:   validateRustVersionProfileAssembly,
-			ValidateDefinition: validateRustVersionProfile,
 		},
 		{
 			ID: javaCommandLineVersionProfileV1, StackID: genericJavaCommandLineAdapter,
-			SourceDialect:       "Java 21 source and class-file API release",
-			ParserQualification: "tree-sitter-java-0.23.5-release-21-profile-v1",
-			ArtifactVersions: artifactVersions(
-				"java", "Java release 21", "plain_text", "UTF-8 text profile v1",
-			),
-			Components:         versionComponents("java_release", directCodingJavaRelease),
-			MatchExisting:      matchNoManifestVersionProfile,
-			ValidateRuntime:    validateJavaRuntimeProfile,
-			ValidateAssembly:   validateJavaVersionProfileAssembly,
-			ValidateDefinition: validateJavaVersionProfile,
+			Components: versionComponents("java_release", directCodingJavaRelease),
 		},
-		{
-			ID: phpServiceVersionProfileV1, StackID: genericPHPServiceAdapter,
-			SourceDialect:       "PHP >=8.2,<9 function syntax",
-			ParserQualification: "tree-sitter-php-0.23.11-php-8-profile-v1",
-			ManifestPaths:       []string{"composer.json"},
-			ArtifactVersions: artifactVersions(
-				"css_tailwind", "Tailwind CSS CLI 4.1.12", "dockerfile", "Dockerfile and Compose profile v1",
-				"environment_example", "verification-only environment profile v1",
-				"nginx", "Digest-pinned NGINX configuration", "php", "PHP >=8.2,<9",
-				"plain_text", "UTF-8 text profile v1",
-				"postgresql_migration", "PostgreSQL 16 migration profile v1",
-				"structured_json", "RFC 8259",
-			),
-			Components: versionComponents(
-				"composer_image", phpServiceComposerImage,
-				"composer_php", directCodingPHPConstraint,
-				"docker_compose", directCodingDockerComposeVersion,
-				"docker_engine", directCodingDockerEngineVersion,
-				"nginx_image", phpServiceNginxImage,
-				"node", directCodingPHPNodeVersion,
-				"node_image", phpServiceNodeImage, "npm_lock", "3", "php_runtime", ">=8.2,<9",
-				"postgres_image", phpServicePostgresImage,
-				"tailwindcss", "4.1.12",
-			),
-			NPMDevDependencies: map[string]string{
-				"@tailwindcss/cli": "4.1.12", "tailwindcss": "4.1.12",
-			},
-			NPMLockTemplate: phpServicePackageLockTemplate,
-			MatchExisting:   matchPHPVersionProfile, ValidateRuntime: validatePHPRuntimeProfile,
-			ValidateAssembly:   validatePHPVersionProfileAssembly,
-			ValidateDefinition: validatePHPVersionProfile,
-		},
-		registeredLaravelVersionProfile(),
 	}
 	for index := range profiles {
 		profiles[index] = cloneDirectCodingProjectVersionProfile(profiles[index])
@@ -198,61 +70,62 @@ func registeredDirectCodingProjectVersionProfiles() []directCodingProjectVersion
 	return profiles
 }
 
-func directCodingProjectVersionProfileByID(id string) (directCodingProjectVersionProfile, error) {
-	if err := validateDirectCodingArtifactRegistries(); err != nil {
-		return directCodingProjectVersionProfile{}, err
+func directCodingProjectSourceDialect(
+	profile directCodingProjectVersionProfile,
+) (string, error) {
+	component := func(name string) (string, error) {
+		return directCodingVersionComponent(profile, name)
 	}
-	profile, exists := directCodingRegisteredProjectVersionProfileByID(id)
-	if exists {
-		return cloneDirectCodingProjectVersionProfile(profile), nil
-	}
-	return directCodingProjectVersionProfile{}, fmt.Errorf("project version profile %q is not registered", id)
-}
-
-func directCodingRegisteredProjectVersionProfileByID(
-	id string,
-) (directCodingProjectVersionProfile, bool) {
-	for _, profile := range registeredDirectCodingProjectVersionProfiles() {
-		if profile.ID == id {
-			return cloneDirectCodingProjectVersionProfile(profile), true
+	switch profile.StackID {
+	case genericTypeScriptBrowserAdapter:
+		ecmascript, err := component("ecmascript")
+		if err != nil {
+			return "", err
 		}
+		return fmt.Sprintf("TypeScript with TSX react-jsx targeting ECMAScript %s", ecmascript), nil
+	case genericGoCommandLineAdapter:
+		version, err := component("go")
+		if err != nil {
+			return "", err
+		}
+		return "Go " + version, nil
+	case genericJavaScriptCommandLineAdapter:
+		ecmascript, err := component("ecmascript")
+		if err != nil {
+			return "", err
+		}
+		node, err := component("node")
+		if err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("ECMAScript %s modules on Node.js %s", ecmascript, node), nil
+	case genericRustCommandLineAdapter:
+		edition, err := component("rust_edition")
+		if err != nil {
+			return "", err
+		}
+		version, err := component("rust_version")
+		if err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("Rust %s edition with rust-version %s", edition, version), nil
+	case genericJavaCommandLineAdapter:
+		release, err := component("java_release")
+		if err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("Java %s source and class-file API release", release), nil
+	default:
+		return "", fmt.Errorf("version profile %s has no registered source dialect", profile.ID)
 	}
-	return directCodingProjectVersionProfile{}, false
 }
 
 func cloneDirectCodingProjectVersionProfile(
 	profile directCodingProjectVersionProfile,
 ) directCodingProjectVersionProfile {
 	clone := profile
-	clone.ManifestPaths = append([]string(nil), profile.ManifestPaths...)
-	clone.ArtifactVersions = append([]directCodingArtifactVersion(nil), profile.ArtifactVersions...)
 	clone.Components = append([]directCodingProjectVersionComponent(nil), profile.Components...)
-	clone.ComposerDependencies = cloneStringMap(profile.ComposerDependencies)
-	clone.ComposerDevDependencies = cloneStringMap(profile.ComposerDevDependencies)
-	clone.ComposerLockTemplate = append([]byte(nil), profile.ComposerLockTemplate...)
-	clone.NPMDependencies = cloneStringMap(profile.NPMDependencies)
-	clone.NPMDevDependencies = cloneStringMap(profile.NPMDevDependencies)
-	clone.NPMLockTemplate = append([]byte(nil), profile.NPMLockTemplate...)
 	return clone
-}
-
-func cloneStringMap(values map[string]string) map[string]string {
-	if values == nil {
-		return nil
-	}
-	clone := make(map[string]string, len(values))
-	for key, value := range values {
-		clone[key] = value
-	}
-	return clone
-}
-
-func artifactVersions(values ...string) []directCodingArtifactVersion {
-	versions := make([]directCodingArtifactVersion, 0, len(values)/2)
-	for index := 0; index+1 < len(values); index += 2 {
-		versions = append(versions, directCodingArtifactVersion{AdapterID: values[index], Version: values[index+1]})
-	}
-	return versions
 }
 
 func versionComponents(values ...string) []directCodingProjectVersionComponent {

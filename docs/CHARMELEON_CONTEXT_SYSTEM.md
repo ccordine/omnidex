@@ -22,12 +22,14 @@ The context system has five separate authorities:
 | Task Ledger | Goals, constraints, execution graph, decisions, questions, failures, and checkpoints | One job initially | Typed and provenance-labelled |
 | Working Set | References currently resident for one scope | Call, step, task, objective, or job | Code managed |
 | Context Projection | Exact immutable material rendered for one inference | One model call | Code selected and immutable |
-| Durable Memory | Explicitly promoted cross-job preferences, references, and lessons | Cross-job | Reference only |
+| Durable Memory (historical name) | Explicitly promoted cross-job preferences, references, and lessons | Later jobs in the current service/database lifecycle | Reference only |
 
 These layers must not share tables merely because all of them can be called memory.
-Durable memory is historical reference. Repository intelligence is disposable,
-hash-bound derived state. The task ledger is current execution state. A working set is
-attention. A context projection is evidence of one call.
+The historically named durable memory is reference material only for the current
+service/database lifecycle. Repository intelligence is disposable, hash-bound
+derived state. The task ledger is current execution state. A working set is
+attention. A context projection is evidence of one call. No internal layer survives
+the next Omnidex startup.
 
 ## Authority flow
 
@@ -50,7 +52,9 @@ user authority ─────────┘
                   Code coordinator
 ```
 
-The model may forget everything after every call. Omnidex must not.
+The model may forget everything after every call. Within the current running service,
+Omnidex must not. A service startup intentionally begins a new empty internal state
+lifecycle.
 
 The domain-neutral coordinator that consumes these authorities is specified in
 [`CHARMELEON_COGNITION_RUNTIME.md`](CHARMELEON_COGNITION_RUNTIME.md), with its
@@ -78,9 +82,10 @@ Inline execution exists solely for bounded child work that is deterministically
 executed inside its already-authorized outer step. Both forms use the same
 Task Ledger, verification requirements, and loud failure behavior.
 
-PostgreSQL is canonical. One transaction updates normalized current state, appends one
-audit event, and increments the ledger version. Optimistic version conflicts fail
-explicitly. Pure event replay is an audit and recovery proof, not the normal read path.
+PostgreSQL is canonical during the current running service. One transaction updates
+normalized current state, appends one audit event, and increments the ledger version.
+Optimistic version conflicts fail explicitly. Event reduction may verify the audit
+log within that database lifecycle; it is not a startup recovery path.
 
 The first supported owner is one job. Card- and project-scoped ledgers remain disabled
 until job continuity is proven. Job enqueue creates the authoritative telemetry run,
@@ -94,9 +99,11 @@ Dependencies and verification relationships are explicit edges. Current status i
 of pending, ready, active, blocked, done, failed, or canceled.
 
 Entries have epistemic type and provenance. Initial kinds are constraints, facts,
-observations, hypotheses, decision candidates, accepted decisions, questions,
-failures, checkpoints, notes, and typed user feedback. Authority is one of user, code, tool evidence, model
-proposal, or accepted model decision.
+observations, hypotheses, questions, failures, checkpoints, notes, and typed user
+feedback. Authority is user, code, or tool evidence. Model-proposal and
+accepted-model-decision authorities and entry kinds are retired. A model result remains
+station evidence; only code may persist a validated bound value into an appropriate
+entry under the registered rule and evidence references.
 
 Rules:
 
@@ -116,9 +123,11 @@ Rules:
 
 The initial immutable plan remains evidence of what was authorized. Mutable task nodes
 record execution under that authority; they do not rewrite the plan artifact. Direct
-coding transports that do not emit an intent or plan artifact must project their
-accepted application specification and requirements before generation begins; they may
-not run without task authority merely because their transport is shorter.
+coding transports that do not emit an intent or plan artifact must first acquire needed
+context facts, then freeze task-local requirements through the ordinary inventory and
+sieve. Only if a leaf survives may they resolve surface, product, or deployment
+semantics, each at its first concrete consumer and before that consumer generates work.
+They may not run without task authority merely because their transport is shorter.
 
 Claim, completion, failure, cancellation, interruption, input, and replan transitions
 are committed inside the queue transactions that own job and step state. Worker
@@ -137,7 +146,8 @@ before a plan can become mutable current authority without surviving its generat
 
 ## Working Set
 
-The ledger records what must survive during the job. A working set records what is
+The ledger records what must remain available during the job in the current running
+service. A working set records what is
 currently resident. Items have a stable reference, role, retention scope, priority,
 freshness identity, byte cost, acquisition provenance, and use counters.
 
@@ -180,12 +190,17 @@ version, renderer/spec versions, byte and token estimates, and the exact rendere
 The projection identity is bound to immutable LLM call evidence. If a required selector
 cannot fit or resolve, context construction fails; it does not silently drop authority.
 
-Source models retain the strictest contract. Initial fragment generation receives only
-its immutable signature, exact local behavior, direct allowed declarations/symbols, and
-accepted local invariants. Repair guidance separately receives one exact mutable block,
-the minimum diagnostic-analysis evidence, and at most one current path-free diagnostic.
-Repair execution receives only the resulting instruction and exact mutable block. None
-of these stations gains a ledger, repository browser, or free-form attention interface.
+Source models retain the strictest contract. A fragment job receives only its immutable
+signature for lexical scope, exact local behavior, direct allowed declarations/symbols,
+and accepted local invariants, then returns an ordinary plain-text implementation body.
+Code owns the declaration and all structural validation. If code proves one body defect,
+it must also prove the exact mutable byte span. The same persisted job and immutable
+model route then continue with one necessary semantic question and only that span. The
+ordinary result replaces the span by a digest- and range-checked code splice into the
+retained base. The model does not receive the complete prior body, surrounding accepted
+source, a preservation instruction, or application mechanics. There is no repair
+station, response schema, replacement node, or alternate route, and the source function
+gains no ledger, repository browser, or free-form attention interface.
 
 ## Acquisition providers
 
@@ -212,10 +227,15 @@ that environment-operation argument. Database queries, ranking, filtering, autho
 checks, deduplication, ordering, hashing, provenance binding, and result combination
 remain deterministic.
 
-After code has acquired and validated candidates, `context_relevance` receives only
-bounded pages of candidate text and may return only opaque supplied IDs. Code restores
-the selected authorities in authoritative order. Per-call count and byte budgets
-partition work; they are not global correctness ceilings.
+After code has acquired and validated candidates, it owns one source-ordered relevance
+queue. `context_relevance` receives the exact instruction and exactly one untrusted
+candidate content value and returns only the registered directly-relevant or
+not-directly-relevant relation. Candidate identity, authority class, provenance, queue
+state, and whether another candidate exists remain code-owned. A negative candidate
+evaporates; a positive candidate is preserved in authoritative order and is never
+reviewed again. Queue exhaustion ends relevance processing without a model-authored
+absence, completeness, or continuation claim. Per-call byte budgets are local safety
+bounds, not global correctness ceilings.
 
 Selected content that fits the target projection budget is used verbatim with zero
 minification calls. Content beyond the target first exhausts the available lossless
@@ -233,13 +253,15 @@ model. Context relevance has no browser inference provider or alternate result p
 
 ## Human-readable projections
 
-PostgreSQL remains authoritative. For terminal jobs, an explicit server-authorized
+PostgreSQL remains authoritative until the service stops. For terminal jobs, an explicit server-authorized
 operation may atomically generate disposable, read-only inspection files under
 `.omni/runs/<job-id>/`, including a manifest, task-ledger state, and bounded artifact,
 evidence, and call indexes.
 
 These files are an inspection ABI for humans and external tools. Models do not edit
-them, workers do not read them as authority, and deleting them does not delete state.
+them, workers do not read them as authority, and deleting them does not delete state
+during the current database lifecycle. Conversely, retaining them across startup
+does not restore or reconstruct discarded internal state.
 Default exports omit prompts, responses, native thinking, source excerpts, web bodies,
 memory, diffs, command output, job metadata, and private benchmark evaluation. The
 repository inventory and Git-state identity exclude `.omni/**` before counting and
@@ -247,63 +269,203 @@ hashing, so an inspection export cannot invalidate repository truth.
 
 ## Behavior-first implementation sequence
 
-Context persistence mirrors proven cognition behavior; it must not define that
-behavior. New Task Ledger, Working Set, projection, restart, replay, and provenance
-work for the replacement cognition path is blocked until the in-memory objective
+Context recording mirrors proven cognition behavior; it must not define that
+behavior. New Task Ledger, Working Set, projection, same-runtime transaction, and
+provenance work for the replacement cognition path is blocked until the in-memory objective
 machine passes its executable gates:
 
 1. **Deterministic closure** — a missing prerequisite is acquired through registered
    producers and the objective completes with zero model calls and no provider
    configured.
-2. **One named semantic gap** — deterministic closure stops at one genuine ambiguity;
-   one station returns one opaque candidate ID; code incorporates the typed fact and
-   completes.
+2. **One named semantic gap** — deterministic closure stops at one genuine ambiguity
+   among at least two applicable candidates; one station returns one opaque candidate
+   ID, code incorporates the typed fact, and completes. A sole candidate would be
+   consumed directly with zero model calls and no rejection.
 3. **Procedural transfer** — the same control rule drives a bounded world whose
    mechanics, legal transitions, backtracking, and completion remain code-owned.
 4. **Read-only repository work** — exact snapshot, index, parser, symbol, reference,
    and test providers run under code control; inference can select only among an exact
    bounded semantic remainder.
 5. **Bounded front door and workload compilation** — code first records exact workspace
-   state as a typed, hashed fact. For an existing workspace,
-   code alternates one raw context-need coverage call with one raw question call only while
-   coverage remains; it resolves each decoded question through a registered deterministic
-   provider and formalizes selected evidence as compact source-backed facts. A separate raw call
-   returns the product context. Code then alternates one raw requirement-coverage call with one
-   raw requirement call only while coverage remains and assembles the typed intent itself. A model
-   is not called merely to emit, accept, reject, or restate the aggregate intent.
+   state as a typed, hashed fact. Registered deterministic providers acquire repository,
+   runtime, and external facts only when authoritative state requires them. There is no
+   application-context-question model station or model-authored context-completeness claim.
+   Exactly one bounded, source-ordered requirement-inventory call
+   then returns either `NO_RUNTIME_REQUIREMENT_CANDIDATES` or between one and the
+   code-owned maximum positive atomic finished-software runtime-outcome candidates. Code
+   parses and counts the returned lines mechanically. No semantic station pre-counts the
+   inventory, and no pre-count receipt exists. Inventory generation is
+   untrusted candidate intake, not authorization or a completeness claim. Every positive
+   candidate enters the ordinary authorization-first sieve. The inventory generator
+   splits independent outcomes and may express only the
+   literal core operation or governed result inherent in a purpose-denoting product or
+   category name. Independently verifiable means that the governed result exists; it does
+   not authorize an unstated presentation, delivery, storage, interface, or output format.
+   It omits construction constraints, customary features, and speculative
+   enhancements. Code owns exact deduplication and the queue.
+   Every remaining candidate first receives one request-entailment authorization relation; an
+   unauthorized candidate evaporates before classification. Only then does code ask kind and
+   cardinality. An authorized candidate that still proves mixed or compound may return one bounded
+   partition whose children re-enter the same queue and authorization boundary. A structurally invalid
+   station response fails at that station. A structurally valid candidate whose semantic content
+   remains malformed, cyclic, over-depth, or over-capacity dies without blocking an independent
+   candidate or reopening accepted state. There is no later requirement generator or aggregate review.
+
+   Product or category identity never licenses customary features, prerequisites, enabling behavior,
+   or likely consequences. Its literal core action or governed result is proposed once at inventory
+   intake and has no authority until its own candidate passes the ordinary sieve. Separately named
+   controls, elements, states, persistence behavior, channels, formats, or other behavior still require
+   their own authorized candidates. Candidate interpretation preserves semantic subjects: when the
+   software produces a derived value from actor-selected or actor-supplied rule-bearing inputs, the
+   application applies the rule and exposes the result; an actor or external source that supplies an
+   already-derived value remains the source. Surface, technical or structural format, generic test or
+   build, and deployment constraints are non-runtime and remain owned by their narrow code paths. A
+   construction-workflow descriptor attached to the builder's act is non-runtime unless the request
+   assigns that behavior or data flow to the completed application. A builder-directed test or
+   verification clause adds no runtime outcome when it merely confirms that an accepted governed result
+   is produced or conforms to the same determining rule. An explicitly different rule, external
+   reference, scope, tolerance, event or observation time, retention boundary, time bound, delivery
+   channel or recipient, output format, or state remains a distinct outcome when authorized.
+
+   Only an authorized task-local one-outcome candidate is compared pairwise with one retained
+   requirement at a time. The station presents opaque descriptions for the two semantic
+   relations and receives one call-local letter; code maps it to its internal same-or-distinct
+   value and binds the job and result to the complete candidate kind/cardinality receipts and
+   the retained requirement's result-relation receipt. Language that only restates conformance of the identical value to the
+   identical determining rule is `SAME_RUNTIME_OUTCOME`; another determining rule, reference, scope,
+   response, event, observation time, retention boundary, time bound, delivery channel, recipient,
+   format, or state remains distinct. An exact or semantic duplicate evaporates, and the retained
+   requirement is never reviewed or reopened. Only a distinct candidate proceeds to the separate three-way
+   result-relation question. Its opaque choice maps in code to whether the outcome needs no
+   derived result, explicitly states an independently computable determining relation, or
+   omits that relation. A named existing per-item grouping
+   key completely determines group membership; its origin and unasserted ordering are not missing. An expression,
+   formula, predicate, or named operation supplied, configured, or selected by an actor is a rule-bearing input.
+   A named intrinsic or mechanically observable property such as a dimension, length, or count is determined by
+   its governed object and that property; the candidate need not restate the property's measurement procedure.
+   When an actor performs a calculation, its chosen operation and operands are observable runtime inputs; neither
+   form must be fixed before runtime. A named family of result-bearing operations over governed inputs is one
+   parametric determining relation; its concrete family member and operand values may be selected or supplied at
+   runtime and need not be enumerated or fixed in the candidate. A bare quality claim or output described only as calculated, computed,
+   evaluated, generated, or selected remains missing. Selection,
+   ordering, transformation, aggregation, measurement, or decision can establish a derived relation even when that value is the only rendered output. A named result-bearing operation applied to its governed object still asserts the resulting value when phrased as an action; action form does not turn a transform, read, extraction, decode, ordering, calculation, or selection into a result-free event. Actions, controls, unchanged rendering, state transitions, artifact availability, and event occurrences are `NO_DERIVED_RESULT` when they assert only that behavior. A qualitative descriptor on an action, event, or message does not create a derived value. The result carries the exact
+   candidate hash and hashes of both complete input receipts; code validates those identities before the
+   relation can be retained. The last value first opens one separate entailment relation over only the
+   immutable request, established verified application facts, exact current candidate, and complete
+   missing-relation authority. The same minimal code-owned context projection used by requirement
+   interpretation is rendered; source identities, evidence-need identities, and hashes stay code-only.
+   Its receipt binds the request, validated `ApplicationContext`, candidate, and missing-relation receipt.
+   `NO_EXACTLY_ONE_DETERMINING_RELATION_ENTAILED` discards only that candidate before correction and cannot authorize a guessed policy.
+   Only `EXACTLY_ONE_DETERMINING_RELATION_ENTAILED` opens one exact candidate correction, and that positive
+   receipt is mandatory correction input. Its context contains only the immutable semantic request,
+   minimal verified facts, current candidate, code-established defect, and positive grounding relation.
+   Code preserves every retained leaf and reruns exact deduplication, authorization, kind, cardinality, outcome-relation, and
+   result-relation closure. A repeated omission exhausts the one-correction bound and discards only that candidate; there is no reviewer.
    Substring, interval, overlap, source-order, punctuation, and exact-quote allocation are not
-   authority checks. Code projects each accepted requirement directly into one frozen task in
+   authority checks. Queue exhaustion freezes the currently accepted functional objective for this
+   iteration without a coverage, review, completeness, or `REQUIREMENT_REMAINS` call; later objectives
+   may continue iteratively from verified reality. Rejected, speculative, or over-capacity candidates
+   may be retained only as non-authoritative follow-up suggestions outside the current ledger,
+   workload, verifier, and completion criteria; a later explicit user objective must send one through
+   the ordinary sieve before it can become work. Only when a task-local leaf survives does
+   code resolve product, surface, or deployment semantics, and each runs only at its first
+   concrete consumer; an empty accepted queue creates no downstream interpretation work.
+   Code projects each accepted task-local runtime implementation requirement directly into one frozen task in
    accepted source order. The task contains only its code-owned task identity, requirement identity,
    and exact accepted requirement; there are no objective, behavior, acceptance-criterion,
    dependency, schedule, or completion model calls. Code validates every leaf and assembles the
    typed job specification itself. Invalid semantic leaves fail at their owning station; there is
    no generic response-correction station or retry path.
-   Code preserves user authority separately from derived build decisions, assigns identity and
-   order, freezes only validated state, executes one task at a time with
+   Code preserves user authority separately from derived build decisions. A private authority pairs the
+   raw production-request digest with the path-redacted semantic request, and only the redacted request is
+   model-visible. Code rebinds accepted receipts to the raw digest after semantic resolution and rejects
+   individual or coordinated digest drift. It assigns identity and order, and builds a separate
+   result-relation validation plan bound to both that authenticated request digest and the frozen workload SHA.
+   The plan has one task/requirement/receipt binding per frozen task, projects exactly one binding into
+   the current task stage, and remains code-only: it is absent from the frozen task, task context, and
+   every model envelope. Code freezes only validated state and executes one task at a time with
    the minimum sufficient authoritative task projection, and alone decides completion. A
+   task-local source projection contains its exact accepted product identity, exact accepted
+   requirement, and direct declared capabilities, but no derived aggregate product summary or
+   sibling requirement. A
    static code-owned harness alone renders the exact public feature with its runtime and capability
-   identity. The generated acceptance declaration receives no render, JSX, component, runtime, or
-   source authority and is source-free inventoried before it executes. Code binds the closed awaited
-   wait mechanic, observes the returned result, and evaluates the frozen criteria deterministically;
-   there is no acceptance-grounding reviewer. Code verifies the grounded artifact before advancing.
-6. **Charmander handoff** — cognition produces one existing bounded declaration job;
-   code parses, stitches, formats, stages, tests, applies, and reconciles it.
+   identity. The generated browser acceptance declaration receives no render, JSX, component, runtime,
+   or source authority. Code first stages the accepted implementation without its unresolved verification
+   declaration, closes that implementation-only projection through the real typechecker and registered
+   deterministic compiler corrections, and revalidates its source and public-surface shape. Only then may
+   code extract the declaration's sole implementation-derived projection: a bounded public-interaction
+   receipt containing allowlisted intrinsic control roles, canonical counts/ordinals, literal accessible
+   names and hints, value kinds, explicit public action claims, and named dynamic `<output>` selector facts.
+   Each visible output has a unique exact literal accessible name, direct dynamic-only nonmixed content,
+   code-proven dataflow from declared state/capabilities or event/prior-state-derived local state, and an
+   implicit `status` role. Literal expressions, constant aliases, static memoization, and constant setter
+   calls cannot obtain output authority. Its receipt fact contains only the selector name, never static text, a
+   current value, a JSX expression, handler source, an expected result, or ordinary dynamic text outside
+   a registered output.
+
+   Extraction is fail-closed over registered intrinsic elements, an exact per-attribute grammar, accessible
+   and available ancestry, and an allowlisted Tailwind utility grammar. Unknown, effectful, namespaced,
+   duplicate, spread, or wrongly typed attributes fail; forms are unavailable and buttons require exact
+   `type="button"`. Custom or unsupported intrinsics, dynamic visibility state,
+   hidden/inert/ARIA-hidden or disabled ancestry, and any unproved
+   opacity, pointer-event, clipping, transform, zero-size, screen-reader-only, or arbitrary Tailwind form
+   fail. All unbound runtime identifiers require an exact deterministic ECMAScript/React allowlist. Code
+   statically binds JSX event handlers and rejects browser-host, DOM-selection, navigation, network,
+   storage, audio, scheduling, dynamic import, host metadata, dynamic-evaluation, reflection, alias,
+   unresolved computed-property, computed-event, mutation, and event escape authority. Only literal or
+   immutable numeric-constant domain indexing is admitted. Only a direct read-only `value` or `checked` leaf through `event.target` or
+   `event.currentTarget` is admitted, represented by the canonical `event.target.value` and
+   `event.currentTarget.checked` forms.
+
+   Browser `state` and `capabilities` are immutable authority. Extraction rejects direct or aliased writes
+   and mutators. Every `SharedValue` fallback and publication accepts only bounded dense arrays or plain
+   records, atomically rejects cycles, accessors, hidden/symbol keys, custom prototypes, and unsupported values, and deep-freezes accepted graphs before exposure.
+
+   Code freezes the receipt, result-relation receipt, and internal element-ID sequence before verification
+   generation, then re-extracts and compares them after every staged attempt and before final execution.
+   IDs are never model-visible, must remain globally unique across task surfaces, and cannot collide with
+   reserved code-owned mount IDs. The verifier grammar is exhaustive: one executable function contains a
+   non-empty flat sequence of direct registered `fireEvent` calls, direct screen-grounded expectations, or
+   an awaited `waitFor` whose parameterless callback contains only direct expectations. Queries are direct
+   throwing allowlisted `screen` calls with exact receipt roles, names, cardinality, and literal indexes;
+   asynchronous queries and `waitFor` are explicitly awaited; events use compatible static payloads.
+   Declarations, branches, loops, returns, helpers, nested/dead closures, aliases, optional chains, and
+   every unregistered statement, query, event, matcher, or consumer fail.
+
+   An explicit derived-result relation requires a singular receipt-named implicit-`status` output asserted
+   with non-negated `toHaveTextContent` and an anchored literal regular expression, even when no event is
+   needed; with interactions, that exact assertion must follow the final `fireEvent`. Any other interacting
+   verification also needs a qualifying outcome after its final event. Only when no named output owns that
+   outcome may a compatible checked, validity, value, or display-value control-state assertion qualify.
+   Generic text and presence assertions do not prove a derived result. An action claim may select only among
+   alternatives already established by the exact requirement and remains independent from static inputs;
+   it is never a missing relation, proof, or expected-output authority. There is no acceptance-grounding
+   reviewer. A generated verifier's receipt-grounding or grammar rejection, and any staged execution
+   failure originating in the generated verification block, is terminal and cannot authorize
+   implementation-repair inference. Code verifies the grounded artifact before advancing.
+6. **Charmander handoff** — cognition produces one existing bounded source-body job;
+   code supplies its declaration, parses, stitches, formats, stages, tests, applies, and reconciles it.
 7. **Failure-specific replacement** — ordinary invalid semantic leaves fail explicitly and cannot
    dispatch a generic correction job. The target-tree station alone may replace its complete raw
-   hierarchy once after one exact code-proven tree defect. Source repair remains the separate
-   guidance-instruction then executor-node boundary. Neither path can reconstruct aggregate state,
+   hierarchy once after one exact code-proven tree defect. Source-body correction instead
+   continues only the same persisted generation job and model for a bounded number of attempts,
+   exposes only the code-proven defective span and its necessary semantic question, and lets
+   code splice the returned ordinary replacement text into the retained body.
+   Neither path can reconstruct aggregate state,
    review valid output, return a merge patch, or author an acceptance control plane.
 8. **Incompatible production cutover** — remove the universal model-action path and
    its schemas, recovery consumers, and provider eagerness. There is no fallback or
    feature flag.
-9. **Durability** — only after the preceding behavior survives the production path do
-   PostgreSQL Task Ledger state, accepted facts, gap records, artifacts, Working Set,
-   projections, restart, replay, and provenance become promotion work.
+9. **Current-runtime state** — only after the preceding behavior survives the
+   production path do PostgreSQL Task Ledger state, accepted facts, gap records,
+   artifacts, Working Set, projections, same-runtime transaction integrity,
+   provenance, and fresh-start reset evidence become promotion work.
 
 Existing ledger and context primitives remain useful foundations, but their existence
-is not evidence that the replacement cognition behavior works. Persistence may add
-authority and recovery; it may not add a planner, alternate transition rule, or other
-behavioral semantics. There is one implementation of each promoted primitive.
+is not evidence that the replacement cognition behavior works. Current-runtime
+recording may add authority and transactional integrity; it may not add startup
+recovery, a planner, an alternate transition rule, or other behavioral semantics.
+There is one implementation of each promoted primitive.
 
 ## Existing-repository proof boundary
 
@@ -338,69 +500,56 @@ or held-out evaluator, unavailable to the builder until the run stops, proves th
 requested behavior without model-authored self-tests or benchmark-specific framework
 logic. A passing regression suite alone is not a requirement-completion claim.
 
-## Current process-restart boundary
+## Startup reset boundary
 
-Repository mutations use a durable prepared/applying/applied/indeterminate journal.
-The journal binds the exact job generation, step, worker, source snapshot, contract,
-stage, full patch, and source/post file states. A retry classifies the complete current
+`database/setup.sql` is the one authoritative definition of Omnidex's internal
+PostgreSQL schema. Every Omnidex process/service startup drops and recreates the
+configured dedicated schema from that file. Previous jobs, ledger events and
+materializations, Working Sets, projections, memory, evidence, attempts, leases, and
+repository-mutation journal rows are intentionally discarded.
+
+There is no internal database migration sequence, restart continuation, phase
+takeover, PostgreSQL replay, or in-place upgrade contract. Filesystem mutations from
+a stopped process may still exist as ordinary repository reality, but neither those
+files nor exported `.omni` projections restore the previous job or its authority. A
+subsequent request starts with new internal identity and proves the current repository
+state normally.
+
+During one running service, repository mutations may use a
+prepared/applying/applied/indeterminate journal. The journal binds the exact job
+generation, step, worker, source snapshot, contract, stage, full patch, and
+source/post file states. A same-runtime retry classifies the complete current
 repository inventory: exact source permits the same patch, exact post permits atomic
-generated-diff evidence finalization, and any other state fails as indeterminate. An
-unresolved command can be loaded before repository indexing, but that read does not
-claim or transfer its running step.
+generated-diff evidence finalization, and any other state fails as indeterminate.
+This journal provides transaction and retry safety only within the current database
+lifecycle.
 
-The journal currently ends at exact patch application. Its `applied` state is not a
-durable acceptance of the subsequent authoritative verification plan, refreshed
-repository index, or completed task. An interruption after exact-post finalization and
-before those later phases cannot resume at the missing proof boundary; the current
-runtime may begin semantic routing and change generation again from the post-patch
-repository. Therefore the mutation journal must not be cited as crash-safe end-to-end
-existing-repository execution. Promotion requires a code-owned phase checkpoint that
-binds and resumes the baseline, staged proof, mutation, authoritative proof, refresh,
-and completion sequence without rerunning an already applied request.
-
-The cross-cutting step-attempt lease cutover is implemented. Every worker-originated
-durable write is bound to one monotonically increasing attempt, an expired attempt is
-reclaimed only as a later attempt, and the stale worker is fenced from subsequent
-writes and completion. The former lease-required error and its unfenced writer path
-are removed and must not return.
-
-The implemented lease authority:
-
-- add a monotonic attempt identity and one expiring active lease to each claimed step;
-- carry the exact job, generation, step, attempt, and worker identity through every
-  worker-originated durable write, model-call record, lifecycle operation, working-set
-  mutation, memory decision, tool result, and domain side effect;
-- use one job-then-step-then-attempt lock order before any ledger or working-set lock;
-- reject every stale attempt through one typed error and remove every old writer
-  signature rather than retaining compatibility overloads;
-- allow repository-journal recovery under a later attempt only through an explicit
-  actor-attempt field while preserving the immutable attempt that prepared the patch;
-- prove expiry and reclaim with two workers, including rejection of the old worker's
-  writes and completion, safe waiting-for-feedback behavior, and post-state mutation
-  finalization after a real repository-process restart.
-
-This lease authority does not by itself promote end-to-end repository-process restart.
-That claim remains blocked by the missing phase checkpoint described above: the
-baseline, staged proof, mutation, authoritative proof, refreshed index, and completion
-sequence must resume from PostgreSQL without rerunning an already accepted phase.
-Omnidex fails loudly at that boundary instead of treating attempt fencing as proof of
-phase-level continuity or inventing a repository-only takeover path.
+The cross-cutting step-attempt lease authority is likewise current-runtime only. Each
+worker-originated write is bound to one monotonically increasing attempt; an expired
+attempt may be reclaimed as a later attempt while the service remains running, and
+the stale worker is fenced from subsequent writes and completion. Tests may prove
+expiry, reclaim, same-runtime journal finalization, and stale-write rejection with
+concurrent workers. They must not claim continuation after stopping and starting the
+Omnidex service.
 
 ## Proof gates
 
-The first proof is continuity, not a large-repository edit:
+The first proof is current-runtime continuity plus an exact startup reset, not a
+large-repository edit:
 
-- kill a worker after every completed step;
-- clear all model conversation state;
-- restart from PostgreSQL alone;
-- select the same next runnable task;
+- clear all model conversation state after every completed step while the service
+  remains running;
+- select the same next runnable task from code-owned current state;
 - preserve active constraints, accepted decisions, unresolved failures, and completed
-  work;
-- never reuse rejected hypotheses or repeat completed work.
+  work during that database lifecycle;
+- never reuse rejected hypotheses or repeat completed work;
+- stop and start the Omnidex service, then prove the schema was recreated from
+  `database/setup.sql` and contains none of the prior internal rows.
 
-Required promotion invariants are 100% state validity and forced-restart recovery, zero
-authority violations, zero stale references admitted to model context, no end-to-end
-correctness regression, and a material reduction in context and duplicate acquisition.
+Required promotion invariants are 100% same-runtime state validity, 100% fresh-start
+reset, zero prior internal rows after startup, zero authority violations, zero stale
+references admitted to model context, no end-to-end correctness regression, and a
+material reduction in context and duplicate acquisition.
 
 Repository scaling is measured with the same relevant module surrounded by increasing
 amounts of unrelated source. Index and storage cost may grow. Model-visible context and

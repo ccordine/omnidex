@@ -1,10 +1,7 @@
 package api
 
 import (
-	"encoding/json"
-	"io"
 	"net/http"
-	"strconv"
 	"strings"
 
 	"github.com/gryph/omnidex/internal/datasource"
@@ -32,41 +29,6 @@ func (s *Server) handleUIAdminDataSourceSchema(w http.ResponseWriter, r *http.Re
 		return
 	}
 	writeUIOperationalComponent(w, "data-source-schema", renderUIDataSourceSchema(schema))
-}
-
-func (s *Server) handleUIAdminDataSourceQuery(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
-		return
-	}
-	source, ok := s.uiDataSourceFromRequest(w, r)
-	if !ok {
-		return
-	}
-	var request struct {
-		SQL string `json:"sql"`
-	}
-	decoder := json.NewDecoder(io.LimitReader(r.Body, 64<<10))
-	if err := decoder.Decode(&request); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid query request")
-		return
-	}
-	var trailing any
-	if err := decoder.Decode(&trailing); err != io.EOF {
-		writeError(w, http.StatusBadRequest, "query request contains trailing data")
-		return
-	}
-	connection, err := source.DirectConnection()
-	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	result, err := datasource.RunSQL(r.Context(), connection, request.SQL)
-	if err != nil {
-		writeError(w, http.StatusBadGateway, err.Error())
-		return
-	}
-	writeUIOperationalComponent(w, "data-source-query-result", renderUIDataSourceQueryResult(result))
 }
 
 func (s *Server) uiDataSourceFromRequest(w http.ResponseWriter, r *http.Request) (source queue.DataSourceRecord, ok bool) {
@@ -110,43 +72,8 @@ func renderUIDataSourceSchema(tables []omni.DBSchemaTable) string {
 			}
 			body.WriteString(`<li class="font-mono text-[11px] text-zinc-400">` + uiEscape(column.Name) + ` <span class="text-zinc-600">` + uiEscape(column.DataType+nullability) + `</span></li>`)
 		}
-		body.WriteString(`</ul><button type="button" data-action="admin-data-sources#insertSchemaQuery" data-table-name="` + uiAttribute(fullName) + `" class="mt-2 rounded border border-white/10 px-2 py-0.5 text-[11px] text-zinc-400">Insert SELECT *</button></details>`)
+		body.WriteString(`</ul></details>`)
 	}
 	body.WriteString(`</div>`)
 	return body.String()
-}
-
-func renderUIDataSourceQueryResult(result datasource.QueryResult) string {
-	if len(result.Columns) == 0 {
-		return `<p class="text-sm text-zinc-500">Query returned no columns.</p>`
-	}
-	var body strings.Builder
-	body.WriteString(`<p class="font-mono text-[11px] text-zinc-500">` + uiEscape(result.SQL) + `</p><p class="mt-1 text-[11px] text-zinc-600">` + strconv.Itoa(result.Count) + ` rows</p><div class="scrollbar mt-3 max-h-[360px] overflow-auto rounded-lg border border-white/10"><table class="min-w-full border-collapse"><thead class="sticky top-0 bg-zinc-950/95"><tr>`)
-	for _, column := range result.Columns {
-		body.WriteString(`<th class="px-3 py-2 text-left font-mono text-[11px] uppercase text-zinc-500">` + uiEscape(column) + `</th>`)
-	}
-	body.WriteString(`</tr></thead><tbody>`)
-	for _, row := range result.Rows {
-		body.WriteString(`<tr class="border-t border-white/5">`)
-		for _, column := range result.Columns {
-			body.WriteString(`<td class="px-3 py-2 font-mono text-xs text-zinc-300">` + uiEscape(stringifyUIValue(row[column])) + `</td>`)
-		}
-		body.WriteString(`</tr>`)
-	}
-	body.WriteString(`</tbody></table></div>`)
-	return body.String()
-}
-
-func stringifyUIValue(value any) string {
-	if value == nil {
-		return ""
-	}
-	if text, ok := value.(string); ok {
-		return text
-	}
-	raw, err := json.Marshal(value)
-	if err != nil {
-		return "[unrepresentable value]"
-	}
-	return string(raw)
 }

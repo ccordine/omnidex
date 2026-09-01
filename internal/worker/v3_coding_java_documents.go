@@ -10,16 +10,13 @@ import (
 
 func genericJavaCommandLineDocuments(
 	specification assemblyline.ApplicationSpecification,
-	skills map[string]directCodingSkillBinding,
 	contexts map[string]assemblyline.ApplicationTaskContext,
 	capabilities directCodingCapabilityGraph,
 	coverage assemblyline.ApplicationFileCoveragePlan,
 ) ([]assemblyline.SourceDocument, error) {
 	implementations := make([]assemblyline.SourceDocument, 0, len(specification.Requirements))
-	verifications := make([]assemblyline.SourceDocument, 0, len(specification.Requirements))
 	applicationDependencies := []string{
 		javaRuntimeFeatureResultBlock,
-		javaRuntimeAcceptanceAssertBlock,
 		javaRuntimeApplicationInspectBlock,
 	}
 	for index, requirement := range specification.Requirements {
@@ -28,14 +25,15 @@ func genericJavaCommandLineDocuments(
 		if !exists {
 			return nil, fmt.Errorf("Java command-line workload omits requirement %s", requirement.ID)
 		}
-		behavior, err := compileDirectCodingApplicationTaskBehavior(context, capabilities[requirement.ID])
+		requirementBehavior, err := compileDirectCodingApplicationTaskBehavior(
+			context, capabilities[requirement.ID],
+		)
 		if err != nil {
 			return nil, err
 		}
-		if skill, exists := skills[requirement.ID]; exists {
-			behavior += "\nValidated procedure: " + skill.Procedure
-		}
-		pair, err := directCodingTaskSinglePair(coverage, context.Task.TaskID)
+		implementationPath, err := directCodingTaskSingleImplementationPath(
+			coverage, context.Task.TaskID,
+		)
 		if err != nil {
 			return nil, err
 		}
@@ -61,7 +59,7 @@ func genericJavaCommandLineDocuments(
 		)
 		implementationBlocks = append(implementationBlocks, assemblyline.SourceBlock{
 			ID: featureID, Signature: featureSignature,
-			Contract:     javaCommandLineFeatureContract(behavior),
+			Contract:     javaCommandLineFeatureContract(requirementBehavior),
 			API:          javaCommandLineFeatureAPI(featureClass, featureSignature),
 			DependsOn:    dependencies,
 			Capabilities: append([]string(nil), dependencies...),
@@ -70,29 +68,9 @@ func genericJavaCommandLineDocuments(
 			Role:         assemblyline.SourceBlockTaskImplementation,
 		})
 		implementations = append(implementations, assemblyline.SourceDocument{
-			ID: fmt.Sprintf("workload_implementation_%03d", sequence), Path: pair.ImplementationPath,
+			ID: fmt.Sprintf("workload_implementation_%03d", sequence), Path: implementationPath,
 			Preamble: javaCommandLineClassPreamble(featureClass), Postamble: "}",
 			Blocks: implementationBlocks,
-		})
-
-		verificationID := fmt.Sprintf("acceptance.%03d", sequence)
-		verificationSignature := fmt.Sprintf("static void verifyFeature%03d()", sequence)
-		verifications = append(verifications, assemblyline.SourceDocument{
-			ID: fmt.Sprintf("workload_verification_%03d", sequence), Path: pair.VerificationPath,
-			Preamble:  javaCommandLineClassPreamble(fmt.Sprintf("FeatureTest%03d", sequence)),
-			Postamble: "}",
-			Blocks: []assemblyline.SourceBlock{{
-				ID: verificationID, Signature: verificationSignature,
-				Contract: javaCommandLineAcceptanceContract(
-					behavior, featureClass+"."+featureMethod,
-				),
-				API:          verificationSignature,
-				DependsOn:    []string{javaRuntimeAcceptanceAssertBlock, featureID},
-				Capabilities: []string{javaRuntimeAcceptanceAssertBlock, featureID},
-				Globals:      javaCommandLineFragmentGlobals(),
-				TaskID:       context.Task.TaskID,
-				Role:         assemblyline.SourceBlockTaskVerification,
-			}},
 		})
 		applicationDependencies = append(applicationDependencies, featureID)
 	}
@@ -102,7 +80,6 @@ func genericJavaCommandLineDocuments(
 	}
 	documents := []assemblyline.SourceDocument{javaCommandLineRuntimeDocument()}
 	documents = append(documents, implementations...)
-	documents = append(documents, verifications...)
 	documents = append(documents, javaCommandLineApplicationDocument(
 		specification.Requirements, capabilities, order, applicationDependencies,
 	))
@@ -151,20 +128,5 @@ func javaCommandLineCapabilityProjection(
 }
 
 func javaCommandLineFeatureContract(behavior string) string {
-	return strings.Join([]string{
-		behavior,
-		"Return one Map<String, Object> produced with Runtime.result and derived only from input and declared direct dependency results.",
-		"Use output for user-visible text, error for a clear failure, exitCode for process status, and state for reusable values.",
-		"Return exactly the declared complete method with all logic inside its body.",
-	}, "\n")
-}
-
-func javaCommandLineAcceptanceContract(behavior, callable string) string {
-	return strings.Join([]string{
-		behavior,
-		"Call exactly " + callable + " with representative Map input and dependency values and store its returned map in one local variable.",
-		"Pass that variable to Runtime.requireResult exactly once.",
-		"Prove the exact accepted requirement with one Runtime.require using expected.equals(result.get(\"output\")), expected.equals(result.get(\"error\")), expected.equals(result.get(\"exitCode\")), or expected.equals(result.get(\"state\")); prefix that predicate with ! when inequality is required.",
-		"Return exactly the declared complete verification method.",
-	}, "\n")
+	return strings.TrimSpace(behavior)
 }

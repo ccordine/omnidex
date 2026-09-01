@@ -4,33 +4,89 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/gryph/omnidex/internal/model"
 )
 
-const stepAttemptRenewInterval = 25 * time.Second
+const (
+	stepAttemptRenewInterval      = 25 * time.Second
+	stepAttemptExpirySafetyMargin = 5 * time.Second
+)
+
+var errStepExecutionAuthorityLost = errors.New("step execution authority was lost")
 
 func (s *Service) watchStepAttemptLease(
 	ctx context.Context,
 	authority model.StepAttemptAuthority,
+	leaseDeadline time.Time,
 ) (context.Context, func() error) {
 	leaseCtx, cancel := context.WithCancel(ctx)
 	result := make(chan error, 1)
+	fenceDuration, err := stepAttemptFenceDuration(leaseDeadline)
+	if err != nil {
+		cancel()
+		result <- err
+		return leaseCtx, func() error { return <-result }
+	}
+	renewAfter := stepAttemptRenewDelay(fenceDuration)
+	expired := make(chan struct{})
+	var expireOnce sync.Once
+	deadline := time.AfterFunc(fenceDuration, func() {
+		expireOnce.Do(func() {
+			close(expired)
+			cancel()
+		})
+	})
+	renewal := time.NewTimer(renewAfter)
 	go func() {
-		ticker := time.NewTicker(stepAttemptRenewInterval)
-		defer ticker.Stop()
+		defer cancel()
+		defer deadline.Stop()
+		defer renewal.Stop()
 		for {
 			select {
 			case <-leaseCtx.Done():
-				result <- nil
+				select {
+				case <-expired:
+					result <- fmt.Errorf(
+						"%w: exact step attempt reached its database lease fence",
+						errStepExecutionAuthorityLost,
+					)
+				default:
+					result <- nil
+				}
 				return
-			case <-ticker.C:
-				if _, err := s.repo.RenewStepAttempt(leaseCtx, authority); err != nil {
-					result <- fmt.Errorf("renew exact step attempt: %w", err)
-					cancel()
+			case <-renewal.C:
+				renewedDeadline, err := s.repo.RenewStepAttempt(leaseCtx, authority)
+				if err != nil {
+					select {
+					case <-expired:
+						result <- fmt.Errorf(
+							"%w: exact step attempt reached its database lease fence: %v",
+							errStepExecutionAuthorityLost, err,
+						)
+					default:
+						result <- fmt.Errorf(
+							"%w: renew exact step attempt: %v", errStepExecutionAuthorityLost, err,
+						)
+					}
 					return
 				}
+				fenceDuration, err = stepAttemptFenceDuration(renewedDeadline)
+				if err != nil {
+					result <- err
+					return
+				}
+				if !deadline.Reset(fenceDuration) {
+					deadline.Stop()
+					result <- fmt.Errorf(
+						"%w: exact step attempt reached its database lease fence during renewal",
+						errStepExecutionAuthorityLost,
+					)
+					return
+				}
+				renewal.Reset(stepAttemptRenewDelay(fenceDuration))
 			}
 		}
 	}()
@@ -40,33 +96,41 @@ func (s *Service) watchStepAttemptLease(
 	}
 }
 
-func (s *Service) finishStepAttemptWatch(
-	ctx context.Context,
-	claim *model.ClaimedStep,
-	workErr, leaseErr error,
-) error {
-	if leaseErr == nil {
-		return workErr
+func stepAttemptFenceDuration(leaseDeadline time.Time) (time.Duration, error) {
+	if leaseDeadline.IsZero() {
+		return 0, fmt.Errorf(
+			"%w: exact step attempt lease deadline is unavailable",
+			errStepExecutionAuthorityLost,
+		)
 	}
-	if workErr != nil {
-		return errors.Join(workErr, leaseErr)
+	leaseValidFor := time.Until(leaseDeadline)
+	if leaseValidFor <= stepAttemptExpirySafetyMargin {
+		return 0, fmt.Errorf(
+			"%w: exact step attempt lease has only %s remaining; more than %s is required",
+			errStepExecutionAuthorityLost, leaseValidFor, stepAttemptExpirySafetyMargin,
+		)
 	}
-	jobStatus, stepStatus, stateErr := s.repo.GetStepRuntimeState(ctx, claim.Job.ID, claim.Step.ID)
-	if stateErr != nil {
-		return errors.Join(leaseErr, fmt.Errorf("read state after lease renewal failure: %w", stateErr))
-	}
-	if terminalWorkerStepStatus(stepStatus) || jobStatus == model.JobStatusCanceled {
-		return nil
-	}
-	return leaseErr
+	return leaseValidFor - stepAttemptExpirySafetyMargin, nil
 }
 
-func terminalWorkerStepStatus(status string) bool {
-	switch status {
-	case model.StepStatusCompleted, model.StepStatusFailed,
-		model.StepStatusWaiting, model.StepStatusCanceled:
-		return true
-	default:
-		return false
+func stepAttemptRenewDelay(fenceDuration time.Duration) time.Duration {
+	if fenceDuration/2 < stepAttemptRenewInterval {
+		return fenceDuration / 2
 	}
+	return stepAttemptRenewInterval
+}
+
+func (s *Service) finishStepAttemptWatch(
+	workErr, leaseErr error,
+) error {
+	if workErr == nil {
+		if leaseErr != nil {
+			s.logf("step operation committed before authority watcher stopped: %v", leaseErr)
+		}
+		return nil
+	}
+	if leaseErr != nil {
+		return errors.Join(workErr, leaseErr)
+	}
+	return workErr
 }

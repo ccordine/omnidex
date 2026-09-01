@@ -5,7 +5,6 @@ import {
   projectMutationFailure,
   scanProjectMap,
   startProjectAutoWork,
-  surveyProject,
   updateProject,
   validateProjectRevision,
 } from "./project_api";
@@ -120,17 +119,6 @@ export class ProjectMutationCoordinator {
       if (outcome.commit_state === "committed_degraded") {
         throw new ReconciledMutationError(outcome.operation_error);
       }
-    }, () => this.reconcileProject());
-  }
-
-  async rescanProject(event: Event): Promise<void> {
-    event.preventDefault();
-    const id = this.id(event);
-    await this.run(event, "Detecting project stack…", "Project stack detected", async () => {
-      const outcome = await surveyProject(id);
-      await this.reconcileProject();
-      const degraded = projectMutationFailure(outcome);
-      if (degraded) throw new ReconciledMutationError(degraded);
     }, () => this.reconcileProject());
   }
 

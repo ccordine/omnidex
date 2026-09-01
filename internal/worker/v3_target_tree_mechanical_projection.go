@@ -10,6 +10,7 @@ import (
 const maxMechanicalTargetTreeOrdinal = 999
 
 type mechanicalTargetTreePair func(int) (string, string)
+type mechanicalTargetTreePath func(int) string
 
 func projectMechanicalCompleteTargetTree(
 	stackLabel string,
@@ -42,14 +43,18 @@ func allocateMechanicalTargetTreePair(
 ) (assemblyline.TargetTree, error) {
 	if pair == nil {
 		return assemblyline.TargetTree{}, fmt.Errorf(
-			"%s target tree requires one registered path-pair grammar",
-			stackLabel,
+			"%s target tree requires one registered path-pair grammar", stackLabel,
 		)
 	}
 	for ordinal := startOrdinal; ordinal <= maxMechanicalTargetTreeOrdinal; ordinal++ {
 		implementation, verification := pair(ordinal)
 		paths := []string{implementation, verification}
-		available, err := directCodingTargetTreePairAvailable(paths, occupation)
+		if implementation == verification {
+			return assemblyline.TargetTree{}, fmt.Errorf(
+				"%s target-tree grammar returned one path for two authorities", stackLabel,
+			)
+		}
+		available, err := directCodingTargetTreePathsAvailable(paths, occupation)
 		if err != nil {
 			return assemblyline.TargetTree{}, fmt.Errorf(
 				"%s target-tree grammar returned an invalid pair: %w", stackLabel, err,
@@ -96,12 +101,9 @@ func projectJavaScriptCommandLineFocusedTargetTree(
 	taskOrdinal int,
 	occupation directCodingTargetTreeOccupation,
 ) (assemblyline.TargetTree, error) {
-	return projectMechanicalFocusedTargetTree(
+	return projectSingleImplementationPath(
 		"JavaScript command-line", taskOrdinal, occupation,
-		func(ordinal int) (string, string) {
-			return fmt.Sprintf("feature%03d.mjs", ordinal),
-				fmt.Sprintf("feature%03d.test.mjs", ordinal)
-		},
+		func(ordinal int) string { return fmt.Sprintf("feature%03d.mjs", ordinal) },
 	)
 }
 
@@ -109,12 +111,9 @@ func projectRustCommandLineFocusedTargetTree(
 	taskOrdinal int,
 	occupation directCodingTargetTreeOccupation,
 ) (assemblyline.TargetTree, error) {
-	return projectMechanicalFocusedTargetTree(
+	return projectSingleImplementationPath(
 		"Rust command-line", taskOrdinal, occupation,
-		func(ordinal int) (string, string) {
-			return fmt.Sprintf("src/feature%03d.rs", ordinal),
-				fmt.Sprintf("tests/feature%03d_test.rs", ordinal)
-		},
+		func(ordinal int) string { return fmt.Sprintf("src/feature%03d.rs", ordinal) },
 	)
 }
 
@@ -122,11 +121,39 @@ func projectJavaCommandLineFocusedTargetTree(
 	taskOrdinal int,
 	occupation directCodingTargetTreeOccupation,
 ) (assemblyline.TargetTree, error) {
-	return projectMechanicalFocusedTargetTree(
+	return projectSingleImplementationPath(
 		"Java command-line", taskOrdinal, occupation,
-		func(ordinal int) (string, string) {
-			return fmt.Sprintf("Feature%03d.java", ordinal),
-				fmt.Sprintf("Feature%03dTest.java", ordinal)
-		},
+		func(ordinal int) string { return fmt.Sprintf("Feature%03d.java", ordinal) },
+	)
+}
+
+func projectSingleImplementationPath(
+	stackLabel string,
+	taskOrdinal int,
+	occupation directCodingTargetTreeOccupation,
+	implementation mechanicalTargetTreePath,
+) (assemblyline.TargetTree, error) {
+	if taskOrdinal < 1 || implementation == nil {
+		return assemblyline.TargetTree{}, fmt.Errorf(
+			"%s target tree requires a positive task ordinal and path grammar", stackLabel,
+		)
+	}
+	for ordinal, remaining := taskOrdinal, len(occupation.FilePaths)+1; remaining > 0; ordinal, remaining = ordinal+1, remaining-1 {
+		artifactPath := implementation(ordinal)
+		available, err := directCodingTargetTreePathsAvailable(
+			[]string{artifactPath}, occupation,
+		)
+		if err != nil {
+			return assemblyline.TargetTree{}, fmt.Errorf(
+				"%s target-tree grammar returned an invalid implementation path: %w",
+				stackLabel, err,
+			)
+		}
+		if available {
+			return assemblyline.TargetTree{Paths: []string{artifactPath}}, nil
+		}
+	}
+	return assemblyline.TargetTree{}, fmt.Errorf(
+		"%s has no workload path outside the accepted path authority", stackLabel,
 	)
 }

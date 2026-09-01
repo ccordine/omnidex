@@ -2,11 +2,14 @@ package assemblyline
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 	"unicode/utf8"
 
 	"github.com/gryph/omnidex/internal/modelcontext"
 )
+
+var modelAuthoredCitationSyntax = regexp.MustCompile(`(?i)https?://|\[[0-9]+\]`)
 
 const (
 	GroundedAnswerSchemaV1        = "omnidex.grounded-answer.v1"
@@ -17,6 +20,10 @@ const (
 	maxGroundedEvidenceTextBytes  = 2 * 1024
 	maxGroundedEvidenceTotalBytes = 8 * 1024
 	maxGroundedAnswerTextBytes    = 4 * 1024
+
+	MaxGroundedAnswerParagraphCandidates = 4
+	maxGroundedAnswerParagraphBytes      = (maxGroundedAnswerTextBytes - 2*(MaxGroundedAnswerParagraphCandidates-1)) /
+		MaxGroundedAnswerParagraphCandidates
 )
 
 type GroundedEvidenceCapsule struct {
@@ -37,6 +44,11 @@ type GroundedAnswerDecision struct {
 	RequirementID string   `json:"requirement_id"`
 	Text          string   `json:"text"`
 	EvidenceIDs   []string `json:"evidence_ids"`
+}
+
+type GroundedAnswerParagraph struct {
+	Text        string
+	EvidenceIDs []string
 }
 
 func (input GroundedAnswerInput) Validate() error {
@@ -83,6 +95,10 @@ func validateGroundedAnswerAuthority(
 			return err
 		}
 	}
+	return validateGroundedEvidenceCapsules(evidence)
+}
+
+func validateGroundedEvidenceCapsules(evidence []GroundedEvidenceCapsule) error {
 	if len(evidence) < 1 || len(evidence) > maxGroundedEvidenceCapsules {
 		return fmt.Errorf(
 			"grounded answer requires between 1 and %d evidence capsules", maxGroundedEvidenceCapsules,
@@ -114,6 +130,67 @@ func validateGroundedAnswerAuthority(
 		return fmt.Errorf("grounded evidence exceeds %d total bytes", maxGroundedEvidenceTotalBytes)
 	}
 	return nil
+}
+
+func AssembleGroundedAnswerDecision(
+	input GroundedAnswerInput,
+	paragraphs []GroundedAnswerParagraph,
+) (GroundedAnswerDecision, error) {
+	var zero GroundedAnswerDecision
+	if err := input.validate(); err != nil {
+		return zero, err
+	}
+	if len(paragraphs) < 1 || len(paragraphs) > MaxGroundedAnswerParagraphCandidates {
+		return zero, fmt.Errorf(
+			"grounded answer requires between 1 and %d accepted paragraphs",
+			MaxGroundedAnswerParagraphCandidates,
+		)
+	}
+	available := make(map[string]struct{}, len(input.Evidence))
+	for _, evidence := range input.Evidence {
+		available[evidence.ID] = struct{}{}
+	}
+	texts := make([]string, 0, len(paragraphs))
+	seenTexts := make(map[string]struct{}, len(paragraphs))
+	evidenceIDs := make([]string, 0, len(input.Evidence))
+	seenEvidence := make(map[string]struct{}, len(input.Evidence))
+	for index, paragraph := range paragraphs {
+		if err := validateGroundedAnswerParagraphText(
+			paragraph.Text, input.KnownArtifactPaths,
+		); err != nil {
+			return zero, fmt.Errorf("grounded answer paragraph %d: %w", index, err)
+		}
+		if _, duplicate := seenTexts[paragraph.Text]; duplicate {
+			return zero, fmt.Errorf("grounded answer paragraph %d duplicates accepted text", index)
+		}
+		seenTexts[paragraph.Text] = struct{}{}
+		if len(paragraph.EvidenceIDs) < 1 || len(paragraph.EvidenceIDs) > len(input.Evidence) {
+			return zero, fmt.Errorf("grounded answer paragraph %d requires projected evidence IDs", index)
+		}
+		paragraphSeen := make(map[string]struct{}, len(paragraph.EvidenceIDs))
+		for _, id := range paragraph.EvidenceIDs {
+			if _, exists := available[id]; !exists {
+				return zero, fmt.Errorf("grounded answer paragraph %d cites unavailable evidence %q", index, id)
+			}
+			if _, duplicate := paragraphSeen[id]; duplicate {
+				return zero, fmt.Errorf("grounded answer paragraph %d duplicates evidence %q", index, id)
+			}
+			paragraphSeen[id] = struct{}{}
+			if _, retained := seenEvidence[id]; !retained {
+				evidenceIDs = append(evidenceIDs, id)
+				seenEvidence[id] = struct{}{}
+			}
+		}
+		texts = append(texts, paragraph.Text)
+	}
+	decision := GroundedAnswerDecision{
+		Schema: GroundedAnswerSchemaV1, RequirementID: input.RequirementID,
+		Text: strings.Join(texts, "\n\n"), EvidenceIDs: evidenceIDs,
+	}
+	if err := decision.ValidateFor(input); err != nil {
+		return zero, err
+	}
+	return decision, nil
 }
 
 func (decision GroundedAnswerDecision) ValidateFor(input GroundedAnswerInput) error {

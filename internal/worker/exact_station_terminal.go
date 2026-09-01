@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
@@ -13,186 +12,103 @@ import (
 	"github.com/gryph/omnidex/internal/queue"
 )
 
-const stationPersistenceTimeout = 30 * time.Second
-
-func (s *Service) recordAuthorityEndedExactStationCall(
-	ctx context.Context,
-	authority model.StepAttemptAuthority,
-	gap queue.StationGapOpening,
-	call queue.StationCallOpening,
-	requestedModel string,
-	prepared llm.PreparedModel,
-	observed llm.ObservedProviderIdentity,
-	attemptStatus model.StepAttemptStatus,
-) (assemblyline.PortableResult, exactStationExecution, error) {
-	reason, err := providerRequestFailureForAttempt(attemptStatus)
-	if err != nil {
-		return assemblyline.PortableResult{}, exactStationExecution{}, err
-	}
-	cause := fmt.Errorf("exact station authority became %s before provider dispatch", attemptStatus)
-	result := llm.PreparedGeneration{
-		Schema: llm.PreparedGenerationSchemaV1, Protocol: prepared.Protocol,
-		ProviderRequestDisposition:   llm.ProviderRequestNotDispatched,
-		ProviderRequestFailureReason: reason,
-		ProviderRequestSHA256:        call.WireRequestSHA256,
-		ProviderIdentityEvidence:     observed.Evidence,
-	}
-	return s.persistExactStationCallResult(
-		ctx, authority, gap, call, requestedModel, result, cause, 0,
-	)
-}
-
-func providerRequestFailureForAttempt(
-	status model.StepAttemptStatus,
-) (llm.ProviderRequestFailureReason, error) {
-	switch status {
-	case model.StepAttemptCanceled:
-		return llm.ProviderRequestFailureAuthorityCanceled, nil
-	case model.StepAttemptSuperseded:
-		return llm.ProviderRequestFailureAuthoritySuperseded, nil
-	case model.StepAttemptExpired:
-		return llm.ProviderRequestFailureAuthorityExpired, nil
-	default:
-		return "", fmt.Errorf("step attempt status %q is not terminal provider authority", status)
-	}
-}
-
 func (s *Service) dispatchExactStationCall(
 	ctx context.Context,
 	authority model.StepAttemptAuthority,
-	gap queue.StationGapOpening,
-	call queue.StationCallOpening,
-	requestedModel string,
+	call exactStationCall,
 	prepared llm.PreparedModel,
 ) (assemblyline.PortableResult, exactStationExecution, error) {
+	if _, err := assemblyline.SemanticUncertaintyContractForWorkKind(call.WorkKind); err != nil {
+		return assemblyline.PortableResult{}, exactStationExecution{}, fmt.Errorf(
+			"admit exact station semantic uncertainty before dispatch: %w", err,
+		)
+	}
+	if _, err := llm.ExactPreparedRequestBytes(prepared); err != nil {
+		return assemblyline.PortableResult{}, exactStationExecution{}, fmt.Errorf(
+			"validate exact station request before dispatch: %w", err,
+		)
+	}
+	opening, err := s.reserveExactStationCallEvidence(ctx, authority, call, prepared)
+	if err != nil {
+		return assemblyline.PortableResult{}, exactStationExecution{}, err
+	}
 	started := time.Now()
-	stopHeartbeat := s.startProgressHeartbeat(ctx, authority, "station-call:"+gap.GapID)
-	result, callErr := s.stationClient.GeneratePreparedExact(ctx, prepared)
+	stopHeartbeat := s.startProgressHeartbeat(ctx, authority, "station-call:"+call.WorkID)
+	result, callErr := generatePreparedExactWithinMaximumDuration(
+		ctx, s.stationClient, prepared,
+	)
 	stopHeartbeat()
 	owned, ownershipErr := llm.OwnBoundedPreparedGeneration(result)
 	if ownershipErr != nil {
-		return assemblyline.PortableResult{}, exactStationExecution{}, fmt.Errorf(
-			"own bounded exact station result: %w", ownershipErr,
-		)
+		callErr = errors.Join(callErr, ownershipErr)
+	} else {
+		result = owned
+		validationErr := llm.ValidateExactPreparedGenerationForRequest(prepared, result)
+		if callErr == nil {
+			callErr = validationErr
+		} else if validationErr != nil {
+			callErr = errors.Join(callErr, validationErr)
+		}
 	}
-	if callErr == nil {
-		callErr = llm.ValidateExactPreparedGenerationForRequest(prepared, owned)
+	evidence, evidenceErr := s.finalizeExactStationCallEvidence(
+		ctx, authority, opening.ID, prepared, result, callErr, time.Since(started),
+	)
+	execution := exactStationExecution{
+		CallEvidenceID: opening.ID, WorkID: call.WorkID, WorkKind: call.WorkKind,
+		Model: prepared.BaseModel, Iteration: call.Iteration,
+		ProviderCalls: 1,
 	}
-	return s.persistExactStationCallResult(
-		ctx, authority, gap, call, requestedModel, owned, callErr,
-		time.Since(started).Milliseconds(),
-	)
-}
-
-func (s *Service) persistExactStationCallResult(
-	ctx context.Context,
-	authority model.StepAttemptAuthority,
-	gap queue.StationGapOpening,
-	call queue.StationCallOpening,
-	requestedModel string,
-	result llm.PreparedGeneration,
-	callErr error,
-	latencyMS int64,
-) (assemblyline.PortableResult, exactStationExecution, error) {
-	persistCtx, cancel := stationPersistenceContext(ctx)
-	receiptEvidence, receiptErr := s.repo.RecordStationCallReceiptAndEvidence(
-		persistCtx,
-		queue.StationCallReceiptEvidenceRecord{
-			Receipt: queue.StationCallReceiptRecord{
-				Authority: authority, OpeningID: call.ID, GapID: gap.GapID,
-				Result: result, Error: stationFailureText(callErr),
-			},
-			RequestedModel: requestedModel, EvidenceAttempt: 1, LatencyMS: latencyMS,
-		},
-	)
-	cancel()
-	if receiptErr != nil {
-		return assemblyline.PortableResult{}, exactStationExecution{}, fmt.Errorf(
-			"persist exact station call receipt and evidence: %w", receiptErr,
-		)
+	if evidenceErr != nil {
+		return assemblyline.PortableResult{}, execution, evidenceErr
 	}
 	if callErr != nil {
-		return assemblyline.PortableResult{}, exactStationExecution{}, s.failStationGap(
-			ctx, authority, gap, fmt.Errorf("exact station provider call: %w", callErr),
+		return assemblyline.PortableResult{}, execution, fmt.Errorf(
+			"exact station provider call: %w", callErr,
 		)
 	}
-	if err := queue.ValidateStationCallNativeUsage(call, result); err != nil {
-		return assemblyline.PortableResult{}, exactStationExecution{}, s.failStationGap(
-			ctx, authority, gap, fmt.Errorf("validate exact provider native context usage: %w", err),
-		)
-	}
-	if err := ctx.Err(); err != nil {
-		return assemblyline.PortableResult{}, exactStationExecution{}, s.failStationGap(ctx, authority, gap, err)
-	}
-	latency := time.Duration(latencyMS) * time.Millisecond
-	if err := s.recordWorkerLLMCall(ctx, authority, gap.Scope, requestedModel, len(gap.Prompt), 1, true, nil, latency); err != nil {
-		return assemblyline.PortableResult{}, exactStationExecution{}, s.failStationGap(
-			ctx, authority, gap, fmt.Errorf("record exact station metrics: %w", err),
-		)
-	}
-	selection, err := llm.ProviderIdentitySelectionForProfile(
-		requestedModel, call.ContextTokens, call.TokenizerProfile,
-	)
-	if err != nil {
-		return assemblyline.PortableResult{}, exactStationExecution{}, s.failStationGap(
-			ctx, authority, gap, fmt.Errorf("reconstruct completed station provider policy: %w", err),
-		)
-	}
-	identity, err := llm.DeriveExactProviderIdentityExpectation(
-		result.ProviderIdentityEvidence, selection,
-	)
-	if err != nil {
-		return assemblyline.PortableResult{}, exactStationExecution{}, s.failStationGap(
-			ctx, authority, gap, fmt.Errorf("derive completed station provider identity: %w", err),
+	if evidence.Outcome != nil {
+		return assemblyline.PortableResult{}, exactStationExecution{}, fmt.Errorf(
+			"%w: exact station response was rejected before semantic consumption: %s",
+			queue.ErrLLMCallTerminalizedByAttempt,
+			evidence.Outcome.ValidationError,
 		)
 	}
 	projection, err := assemblyline.NewExactPortableResultProjection(result.Content)
 	if err != nil {
-		return assemblyline.PortableResult{}, exactStationExecution{}, s.failStationGap(
-			ctx, authority, gap, fmt.Errorf("bind exact station response projection: %w", err),
+		execution.Candidate = result.Content
+		if persistErr := s.persistExactStationSemanticOutcome(
+			ctx, authority, execution,
+			assemblyline.PortableResult{JobID: call.WorkID, Candidate: result.Content}, err,
+		); persistErr != nil {
+			return assemblyline.PortableResult{}, exactStationExecution{}, persistErr
+		}
+		return assemblyline.PortableResult{}, exactStationExecution{}, fmt.Errorf(
+			"bind exact station response projection: %w", err,
 		)
 	}
 	portable := assemblyline.PortableResult{
-		JobID: gap.WorkID, Candidate: result.Content, Projection: &projection,
+		JobID: call.WorkID, Candidate: result.Content, Projection: &projection,
 	}
-	return portable, exactStationExecution{
-		Gap: gap, Candidate: result.Content,
-		CallReceiptSHA256:       receiptEvidence.Receipt.GenerationSHA256,
-		CandidateResponseSHA256: receiptEvidence.Evidence.ResponseSHA256,
-		ProviderIdentity:        identity,
-	}, nil
+	execution.CallEvidenceID = evidence.ID
+	execution.Candidate = result.Content
+	execution.CandidateResponseSHA256 = projection.SourceResponseSHA256
+	if err := ctx.Err(); err != nil {
+		if persistErr := s.persistExactStationSemanticOutcome(
+			ctx, authority, execution, portable, err,
+		); persistErr != nil {
+			return assemblyline.PortableResult{}, exactStationExecution{}, persistErr
+		}
+		return assemblyline.PortableResult{}, exactStationExecution{}, err
+	}
+	return portable, execution, nil
 }
 
-func (s *Service) failStationGap(
+func generatePreparedExactWithinMaximumDuration(
 	ctx context.Context,
-	authority model.StepAttemptAuthority,
-	gap queue.StationGapOpening,
-	cause error,
-) error {
-	persistCtx, cancel := stationPersistenceContext(ctx)
-	defer cancel()
-	_, closeErr := s.repo.CloseStationGap(persistCtx, queue.StationGapTerminalRecord{
-		Authority: authority, OpeningID: gap.ID, GapID: gap.GapID,
-		Status: queue.StationGapFailed, Error: stationFailureText(cause),
-	})
-	return errors.Join(cause, closeErr)
-}
-
-func stationPersistenceContext(ctx context.Context) (context.Context, context.CancelFunc) {
-	base := context.Background()
-	if ctx != nil {
-		base = context.WithoutCancel(ctx)
-	}
-	return context.WithTimeout(base, stationPersistenceTimeout)
-}
-
-func stationFailureText(err error) string {
-	if err == nil {
-		return ""
-	}
-	value := queue.SanitizeUTF8Text(strings.TrimSpace(err.Error()))
-	if value == "" {
-		value = "station boundary failed without a diagnostic"
-	}
-	return queue.TruncateUTF8Text(value, 7900, "...[truncated]")
+	client llm.ExactStationClient,
+	prepared llm.PreparedModel,
+) (llm.PreparedGeneration, error) {
+	callCtx, cancelCall := context.WithTimeout(ctx, llm.MaximumModelRequestDuration)
+	defer cancelCall()
+	return client.GeneratePreparedExact(callCtx, prepared)
 }

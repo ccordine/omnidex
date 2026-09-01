@@ -9,10 +9,10 @@ import (
 	"github.com/gryph/omnidex/internal/websearch"
 )
 
-func (machine *Machine) initialAcquisition(
+func (machine *evidenceMachine) initialAcquisition(
 	ctx context.Context,
 	attempts *specialistworkflow.AttemptBudget,
-	result *Result,
+	result *evidenceRun,
 ) ([]websearch.Candidate, bool, error) {
 	if machine.objective.InitialQuery == "" {
 		return nil, false, fmt.Errorf("%w: exact initial query is unavailable", ErrInvalidObjective)
@@ -37,7 +37,7 @@ func (machine *Machine) initialAcquisition(
 	return nil, false, nil
 }
 
-func (machine *Machine) discover(
+func (machine *evidenceMachine) discover(
 	ctx context.Context,
 	attempts *specialistworkflow.AttemptBudget,
 	query string,
@@ -71,11 +71,11 @@ func (machine *Machine) discover(
 	return cloneCandidateReport(observation.report), websearch.ErrNoCandidates
 }
 
-func (machine *Machine) fetch(
+func (machine *evidenceMachine) fetch(
 	ctx context.Context,
 	attempts *specialistworkflow.AttemptBudget,
 	candidates []websearch.Candidate,
-	result *Result,
+	result *evidenceRun,
 ) ([]websearch.Document, error) {
 	if err := validateCandidateSliceBounds(candidates); err != nil {
 		return nil, fmt.Errorf("%w: fetch input bounds: %v", ErrInvalidAcquisition, err)
@@ -110,7 +110,7 @@ func (machine *Machine) fetch(
 	return nil, websearch.ErrNoDocuments
 }
 
-func recordDiscoveryAttempt(result *Result, attempts *specialistworkflow.AttemptBudget) {
+func recordDiscoveryAttempt(result *evidenceRun, attempts *specialistworkflow.AttemptBudget) {
 	used := int(attempts.Used())
 	if used > result.AcquisitionAttempts {
 		result.DiscoveryAttempts += used - result.AcquisitionAttempts
@@ -118,7 +118,7 @@ func recordDiscoveryAttempt(result *Result, attempts *specialistworkflow.Attempt
 	}
 }
 
-func recordFetchAttempt(result *Result, attempts *specialistworkflow.AttemptBudget) {
+func recordFetchAttempt(result *evidenceRun, attempts *specialistworkflow.AttemptBudget) {
 	used := int(attempts.Used())
 	if used > result.AcquisitionAttempts {
 		result.FetchAttempts += used - result.AcquisitionAttempts

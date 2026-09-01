@@ -16,7 +16,6 @@ const (
 	chatJobsPaginationTarget = "jobs-pagination"
 	chatProgressTarget       = "progress"
 	chatProgressStateTarget  = "progress-state"
-	chatProgressEventsTarget = "job-progress-events"
 	chatJobDetailsTarget     = "job-details"
 )
 
@@ -66,10 +65,6 @@ func renderChatJobStateBundle(presentation queue.JobPresentation) (string, error
 	if err := validateChatJobPresentation(presentation); err != nil {
 		return "", err
 	}
-	events, err := projectChatProgress(presentation.Progress)
-	if err != nil {
-		return "", err
-	}
 	progress, err := renderChatProgress(presentation)
 	if err != nil {
 		return "", err
@@ -78,14 +73,9 @@ func renderChatJobStateBundle(presentation queue.JobPresentation) (string, error
 	if err != nil {
 		return "", err
 	}
-	progressEvents, err := renderChatJobProgressEvents(events)
-	if err != nil {
-		return "", err
-	}
 	return renderRecyclrTemplateHTML(chatProgressTarget, progress, "innerHTML") +
 		renderRecyclrTemplateHTML(chatProgressStateTarget, html.EscapeString(presentation.Job.Status), "innerHTML") +
-		renderRecyclrTemplateHTML(chatJobDetailsTarget, jobDetails, "innerHTML") +
-		renderRecyclrTemplateHTML(chatProgressEventsTarget, progressEvents, "innerHTML"), nil
+		renderRecyclrTemplateHTML(chatJobDetailsTarget, jobDetails, "innerHTML"), nil
 }
 
 func renderChatProgress(presentation queue.JobPresentation) (string, error) {
@@ -103,12 +93,11 @@ func renderChatProgress(presentation queue.JobPresentation) (string, error) {
 	}
 	return `<div class="space-y-3"><div class="flex items-center justify-between gap-3"><span class="font-mono text-xs text-cyan-200">#` +
 		strconv.FormatInt(presentation.Job.ID, 10) + `</span><span class="` + pill + `">` + html.EscapeString(presentation.Job.Status) +
-		`</span></div><div class="grid grid-cols-3 gap-2 text-center text-xs">` +
-		chatMetricTile(strconv.Itoa(len(presentation.Steps)), "steps") + chatMetricTile(strconv.Itoa(len(presentation.Progress.Items)), "latest events") +
+		`</span></div><div class="grid grid-cols-2 gap-2 text-center text-xs">` +
+		chatMetricTile(strconv.Itoa(len(presentation.Steps)), "steps") +
 		chatMetricTile(presentation.Job.UpdatedAt.UTC().Format("15:04"), "updated") + `</div>` +
 		`<div class="rounded border border-white/10 bg-white/[.03] p-3"><div class="text-xs uppercase tracking-[.16em] text-zinc-500">Current step</div>` +
 		`<div class="mt-1 text-sm text-zinc-200">` + html.EscapeString(current) + `</div></div>` +
-		`<div data-recyclr-sink="` + chatProgressEventsTarget + `"></div>` +
 		`<p data-chat-target="progressLoading" class="hidden text-sm text-cyan-100" role="status"></p></div>`, nil
 }
 
@@ -148,9 +137,8 @@ func renderChatJobDetails(presentation queue.JobPresentation) (string, error) {
 		}
 		body += chatJobErrorSection(details.Job.Error)
 	}
-	body += `<dl class="mt-5 grid grid-cols-2 gap-3 text-sm"><div><dt class="text-zinc-500">Steps</dt><dd class="font-mono text-zinc-200">` +
-		strconv.Itoa(len(details.Steps)) + `</dd></div><div><dt class="text-zinc-500">Contexts</dt><dd class="font-mono text-zinc-200">` +
-		strconv.Itoa(len(details.Progress.Items)) + ` latest events</dd></div></dl>`
+	body += `<dl class="mt-5 grid grid-cols-1 gap-3 text-sm"><div><dt class="text-zinc-500">Steps</dt><dd class="font-mono text-zinc-200">` +
+		strconv.Itoa(len(details.Steps)) + `</dd></div></dl>`
 	return body, nil
 }
 

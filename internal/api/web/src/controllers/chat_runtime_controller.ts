@@ -4,7 +4,6 @@ import { ChatDataSourceCoordinator } from "../lib/chat_data_source_coordinator";
 import { ChatExecutionCoordinator } from "../lib/chat_execution_coordinator";
 import { ChatJobsCoordinator } from "../lib/chat_jobs_coordinator";
 import { ChatMemoryCoordinator } from "../lib/chat_memory_coordinator";
-import { handleOllamaDownload } from "../lib/chat_ollama_download";
 import { ChatPanelCoordinator } from "../lib/chat_panel_coordinator";
 import { ChatRoleplayCoordinator } from "../lib/chat_roleplay_coordinator";
 import { RoleplayCharacterEditorCoordinator } from "../lib/roleplay_character_editor_coordinator";
@@ -24,14 +23,6 @@ export abstract class ChatRuntimeController extends ChatSynchronizationControlle
   private projectOpenedHandler: ((event: Event) => void) | null = null;
   private projectClosedHandler: (() => void) | null = null;
   private metricsGlanceHandler: (() => void) | null = null;
-  private readonly ollamaDownloadHandler = (event: Event) => handleOllamaDownload(event, {
-    roleplayIsCurrent: () => this.panels.isCurrent("roleplay"),
-    hasSelectedChannel: () => this.channel.hasSelection(),
-    setStatus: (message, tone) => this.setStatus(message, tone),
-    refreshRoleplay: async () => { await Promise.all([this.roleplay.refresh(), this.roleplayCharacterEditor.refreshIfOpen()]); },
-    addEvent: (type, details) => this.addEvent(type, details),
-    reportError: (error) => this.reportRuntimeError(error),
-  });
   private readonly jobProgressHandler = (event: Event) => this.execution.handleProgress(event);
   private readonly realtimeSyncHandler = (event: Event) => {
     const detail = (event as CustomEvent<RealtimeSyncDetail>).detail;
@@ -94,7 +85,6 @@ export abstract class ChatRuntimeController extends ChatSynchronizationControlle
     if (this.projectOpenedHandler) document.removeEventListener("omni:project-opened", this.projectOpenedHandler);
     if (this.projectClosedHandler) document.removeEventListener("omni:project-closed", this.projectClosedHandler);
     if (this.metricsGlanceHandler) document.removeEventListener("omni:metrics-glance", this.metricsGlanceHandler);
-    document.removeEventListener("omni:ollama-download", this.ollamaDownloadHandler);
     document.removeEventListener("omni:job-progress", this.jobProgressHandler);
     document.removeEventListener("omni:realtime-sync-required", this.realtimeSyncHandler);
     document.removeEventListener("omni:realtime-activity", this.realtimeActivityHandler);
@@ -251,8 +241,6 @@ export abstract class ChatRuntimeController extends ChatSynchronizationControlle
 	  statusOutput: () => this.statusOutputTarget,
       hasHostBridgeStatus: () => this.hasHostBridgeStatusOutputTarget,
 	  hostBridgeStatus: () => this.hostBridgeStatusOutputTarget,
-      hasResearchStatus: () => this.hasResearchStatusOutputTarget,
-	  researchStatus: () => this.researchStatusOutputTarget,
       hasMetrics: () => this.hasMetricsOutputTarget,
 	  metrics: () => this.metricsOutputTarget,
       updateTransportLabel: () => this.channel.updateTransportLabel(),
@@ -284,7 +272,6 @@ export abstract class ChatRuntimeController extends ChatSynchronizationControlle
       if (this.panels.isCurrent("metrics")) void this.system.loadMetrics();
     };
     document.addEventListener("omni:metrics-glance", this.metricsGlanceHandler);
-    document.addEventListener("omni:ollama-download", this.ollamaDownloadHandler);
     document.addEventListener("omni:job-progress", this.jobProgressHandler);
     document.addEventListener("omni:realtime-sync-required", this.realtimeSyncHandler);
     document.addEventListener("omni:realtime-activity", this.realtimeActivityHandler);

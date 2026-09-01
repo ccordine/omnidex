@@ -3,13 +3,13 @@ services:
     image: ${COMPOSE_PROJECT_NAME:?COMPOSE_PROJECT_NAME must be configured}-core
     # The rootful daemon exposes the bind with host ownership unchanged. Pin
     # the core process to that exact owner so host mutations remain user-owned.
-    user: "${HOST_UID:?HOST_UID must match the owner of HOST_WORKSPACE_PATH}:${HOST_GID:?HOST_GID must match the group of HOST_WORKSPACE_PATH}"
+    user: "${HOST_UID:?HOST_UID must match the owner of HOST_DIRECTORY_ACCESS_ROOT}:${HOST_GID:?HOST_GID must match the group of HOST_DIRECTORY_ACCESS_ROOT}"
     build:
       context: .
       dockerfile: Dockerfile
       args:
-        APP_UID: ${HOST_UID:?HOST_UID must match the owner of HOST_WORKSPACE_PATH}
-        APP_GID: ${HOST_GID:?HOST_GID must match the group of HOST_WORKSPACE_PATH}
+        APP_UID: ${HOST_UID:?HOST_UID must match the owner of HOST_DIRECTORY_ACCESS_ROOT}
+        APP_GID: ${HOST_GID:?HOST_GID must match the group of HOST_DIRECTORY_ACCESS_ROOT}
         OMNIDEX_COMMIT: ${OMNIDEX_COMMIT:-}
     # APP_UID/APP_GID keep the image account aligned with the explicit runtime
     # identity above and with the host-authoritative workspace bind.
@@ -27,6 +27,8 @@ services:
     environment:
       # Host .env sometimes sets PATH for the bridge; never let that override the container PATH.
       PATH: /usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+      # A trimpath-built core cannot infer the copied toolchain root for go/importer.
+      GOROOT: /usr/local/go
       LISTEN_ADDR: ${LISTEN_ADDR:-0.0.0.0:8090}
       CORE_URL: ${CORE_URL:?CORE_URL must be configured}
       WRAPPER_ONLY: ${WRAPPER_ONLY:-false}
@@ -56,28 +58,24 @@ services:
       WEB_SEARCH_TIMEOUT: ${WEB_SEARCH_TIMEOUT:-15s}
       WEB_SEARCH_PER_SOURCE_BUDGET: ${WEB_SEARCH_PER_SOURCE_BUDGET:-3000}
       WEB_SEARCH_TOTAL_BUDGET: ${WEB_SEARCH_TOTAL_BUDGET:-6000}
-      WORKSPACE_ROOT: ${WORKSPACE_ROOT:-/workspace}
-      HOST_WORKSPACE_PATH: ${HOST_WORKSPACE_PATH:-}
-      # Dependency acquisition and offline verification share one durable,
-      # code-owned cache. The verification sandbox receives only its exact
-      # checksum-proven module projection, never this whole volume.
       GOMODCACHE: /var/cache/omnidex/gomod
-      OMNIDEX_DEPLOYMENT_KEY_FILE: /var/lib/omnidex-deployment/key
       OMNIDEX_DEPLOYMENT_BIND_ADDRESS: ${OMNIDEX_DEPLOYMENT_BIND_ADDRESS:-}
       OMNIDEX_DEPLOYMENT_ADVERTISED_HOST: ${OMNIDEX_DEPLOYMENT_ADVERTISED_HOST:-}
       OMNIDEX_DEPLOYMENT_PROBE_HOST: ${OMNIDEX_DEPLOYMENT_PROBE_HOST:-}
       WORKER_COUNT: ${WORKER_COUNT:-3}
       CODING_FRAGMENT_CONCURRENCY: ${CODING_FRAGMENT_CONCURRENCY:-1}
       WORKER_POLL_INTERVAL: ${WORKER_POLL_INTERVAL:-2s}
-      REQUEST_TIMEOUT: ${REQUEST_TIMEOUT:-10m}
+      REQUEST_TIMEOUT: ${REQUEST_TIMEOUT:-30m}
       HOST_AGENT_URL: ${HOST_AGENT_URL:-}
       HOST_AGENT_TOKEN: ${HOST_AGENT_TOKEN:-}
       HOST_BRIDGE_PUBLIC_WS_URL: ${HOST_BRIDGE_PUBLIC_WS_URL:-}
+      # This exact interpolated value also owns the same-path bind below. Keep
+      # the process authority identical even when the shell overrides .env.
+      HOST_DIRECTORY_ACCESS_ROOT: ${HOST_DIRECTORY_ACCESS_ROOT:?HOST_DIRECTORY_ACCESS_ROOT must contain every permitted client_cwd}
       # Generated Docker verification is still code-owned. The client may use
       # only this mounted default Unix socket; TCP Docker endpoints are rejected.
       DOCKER_HOST: unix:///var/run/docker.sock
       INFERENCE_CONTEXT_TOKENS: ${INFERENCE_CONTEXT_TOKENS:?INFERENCE_CONTEXT_TOKENS must be configured}
-      MIGRATE_ON_STARTUP: ${MIGRATE_ON_STARTUP:-true}
     expose:
       - "8090"
     healthcheck:
@@ -87,8 +85,6 @@ services:
       retries: 24
       start_period: 10s
     depends_on:
-      runtime-volume-init:
-        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       redis:
@@ -96,17 +92,12 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
+      # client_cwd is the sole project identity. Expose the configured host
+      # project boundary at the identical absolute path so reconciliation writes
+      # the exact files named by the invoking CLI.
       - type: bind
-        source: ${HOST_WORKSPACE_PATH:?HOST_WORKSPACE_PATH must be set to an absolute project root}
-        target: /workspace
-        bind:
-          create_host_path: false
-      # Docker Compose resolves relative bind sources for the host daemon. Mirror
-      # the same source at its host-absolute path so Docker-only commands can use
-      # that identity while every other command remains under /workspace.
-      - type: bind
-        source: ${HOST_WORKSPACE_PATH:?HOST_WORKSPACE_PATH must be set to an absolute project root}
-        target: ${HOST_WORKSPACE_PATH:?HOST_WORKSPACE_PATH must be set to an absolute project root}
+        source: ${HOST_DIRECTORY_ACCESS_ROOT:?HOST_DIRECTORY_ACCESS_ROOT must contain every permitted client_cwd}
+        target: ${HOST_DIRECTORY_ACCESS_ROOT:?HOST_DIRECTORY_ACCESS_ROOT must contain every permitted client_cwd}
         bind:
           create_host_path: false
       - type: bind
@@ -114,46 +105,12 @@ services:
         target: /var/run/docker.sock
         bind:
           create_host_path: false
-      - type: volume
-        source: deploymentkeys
-        target: /var/lib/omnidex-deployment
-      - type: volume
-        source: gomodcache
-        target: /var/cache/omnidex/gomod
     networks:
       - omnidex-edge
       - omnidex-backend
       # WorkNet Edge publishes omni.worknet through its declared shared app network.
       - dev-net
     restart: unless-stopped
-
-  runtime-volume-init:
-    image: ${COMPOSE_PROJECT_NAME:?COMPOSE_PROJECT_NAME must be configured}-core
-    user: "0:0"
-    command:
-      - /usr/local/bin/initialize-omnidex-volumes
-      - ${HOST_UID:?HOST_UID must match the owner of HOST_WORKSPACE_PATH}
-      - ${HOST_GID:?HOST_GID must match the group of HOST_WORKSPACE_PATH}
-      - /var/lib/omnidex-deployment
-      - /var/cache/omnidex/gomod
-    read_only: true
-    network_mode: none
-    cap_drop:
-      - ALL
-    cap_add:
-      - CHOWN
-      - DAC_OVERRIDE
-      - FOWNER
-    security_opt:
-      - no-new-privileges:true
-    volumes:
-      - type: volume
-        source: deploymentkeys
-        target: /var/lib/omnidex-deployment
-      - type: volume
-        source: gomodcache
-        target: /var/cache/omnidex/gomod
-    restart: "no"
 
   postgres:
     image: pgvector/pgvector@sha256:1d533553fefe4f12e5d80c7b80622ba0c382abb5758856f52983d8789179f0fb
@@ -166,8 +123,8 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-    volumes:
-      - pgdata:/var/lib/postgresql/data
+    tmpfs:
+      - /var/lib/postgresql/data
     networks:
       - omnidex-backend
     restart: unless-stopped
@@ -187,10 +144,7 @@ services:
     restart: unless-stopped
 
 volumes:
-  pgdata:
   redisdata:
-  deploymentkeys:
-  gomodcache:
 
 networks:
   omnidex-edge:
@@ -198,7 +152,7 @@ networks:
     ipam:
       config:
         # WorkNet permits Docker-to-host Ollama only from 172.16.0.0/12.
-        - subnet: 172.16.90.0/24
+        - subnet: 172.16.91.0/24
   omnidex-backend:
     driver: bridge
     internal: true

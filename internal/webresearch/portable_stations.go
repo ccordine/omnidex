@@ -15,29 +15,22 @@ const (
 	maxPortableCandidates              = 32
 	maxPortableCandidateProjection     = 8 * 1024
 	maxPortableEvidence                = 32
-	maxPortableEvidenceProjection      = 8 * 1024
 	maxPortableStationIdentityBytes    = 128
 	maxPortableCandidateFieldBytes     = 2 * 1024
-	maxPortableEvidenceFieldBytes      = 8 * 1024
 	maxPortableSynthesisParagraphs     = 4
 	maxPortableSynthesisParagraphBytes = 2 * 1024
 )
 
-type PortableExecutor func(
-	context.Context,
-	assemblyline.PortableJob,
-) (assemblyline.PortableResult, error)
+type PortableCandidateValidator func(string) error
 
-type PortableFinalizer func(
+type PortableResolver func(
 	context.Context,
 	assemblyline.PortableJob,
-	assemblyline.PortableResult,
-	error,
-) error
+	PortableCandidateValidator,
+) (SemanticCallReceipt, error)
 
 type PortableRuntime struct {
-	Execute  PortableExecutor
-	Finalize PortableFinalizer
+	Resolve PortableResolver
 }
 
 type PortableStations struct {
@@ -45,7 +38,7 @@ type PortableStations struct {
 }
 
 func NewPortableStations(runtime PortableRuntime) (*PortableStations, error) {
-	if runtime.Execute == nil || runtime.Finalize == nil {
+	if runtime.Resolve == nil {
 		return nil, fmt.Errorf("portable web stations require one exact runtime")
 	}
 	return &PortableStations{runtime: runtime}, nil
@@ -83,48 +76,6 @@ func validatePortableRelevanceCall(call RelevanceCall) error {
 		}
 		for _, value := range []string{candidate.Title, candidate.Snippet, candidate.Excerpt} {
 			if err := validatePortableField(value, maxPortableCandidateFieldBytes); err != nil {
-				return err
-			}
-		}
-	}
-	return nil
-}
-
-func validatePortableSynthesisCall(call GroundedSynthesisCall) error {
-	if err := validatePortableQuestion(call.Question); err != nil {
-		return err
-	}
-	if err := validatePortableObjectiveContext(call.Question, call.Context); err != nil {
-		return err
-	}
-	if len(call.Evidence) < 1 || len(call.Evidence) > maxPortableEvidence {
-		return fmt.Errorf("portable synthesis requires 1..%d evidence capsules", maxPortableEvidence)
-	}
-	if call.MaxParagraphs < 1 || call.MaxParagraphs > maxPortableSynthesisParagraphs {
-		return fmt.Errorf("portable synthesis paragraph count bound must be 1..%d", maxPortableSynthesisParagraphs)
-	}
-	if call.MaxParagraphBytes < 1 || call.MaxParagraphBytes > maxPortableSynthesisParagraphBytes {
-		return fmt.Errorf("portable synthesis paragraph byte bound must be 1..%d", maxPortableSynthesisParagraphBytes)
-	}
-	total := 0
-	seen := make(map[EvidenceID]struct{}, len(call.Evidence))
-	for _, item := range call.Evidence {
-		if err := validatePortableIdentity(string(item.EvidenceID)); err != nil {
-			return err
-		}
-		if _, duplicate := seen[item.EvidenceID]; duplicate {
-			return fmt.Errorf("portable synthesis evidence ID %q is duplicated", item.EvidenceID)
-		}
-		seen[item.EvidenceID] = struct{}{}
-		if strings.TrimSpace(item.Content) == "" {
-			return fmt.Errorf("portable synthesis evidence %q has no content", item.EvidenceID)
-		}
-		total += len(item.EvidenceID) + len(item.Title) + len(item.Snippet) + len(item.Content)
-		if total > maxPortableEvidenceProjection {
-			return fmt.Errorf("portable synthesis projection exceeds %d bytes", maxPortableEvidenceProjection)
-		}
-		for _, value := range []string{item.Title, item.Snippet, item.Content} {
-			if err := validatePortableField(value, maxPortableEvidenceFieldBytes); err != nil {
 				return err
 			}
 		}

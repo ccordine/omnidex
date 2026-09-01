@@ -32,6 +32,9 @@ func validateDirectCodingJavaScriptFragment(
 		"parseInt": {}, "parseFloat": {}, "isNaN": {}, "Infinity": {}, "NaN": {},
 	}
 	computedKeys := make(map[string]string)
+	replaceableExternal := directCodingExplicitIdentifierAuthorities(
+		input, javaScriptIdentifier,
+	)
 	for _, authority := range append(
 		append([]string(nil), input.Capabilities...), input.PermittedSymbols...,
 	) {
@@ -52,15 +55,20 @@ func validateDirectCodingJavaScriptFragment(
 			}
 		}
 	}
-	if err := validateJavaScriptFreeIdentifiers([]byte(validated), allowed, computedKeys); err != nil {
-		return "", err
+	if err := validateJavaScriptFreeIdentifiers(
+		input, candidate, []byte(validated), allowed, replaceableExternal, computedKeys,
+	); err != nil {
+		return "", directCodingSourceBodyError(input, candidate, validated, err)
 	}
 	return validated, nil
 }
 
 func validateJavaScriptFreeIdentifiers(
+	input assemblyline.FragmentGenerationInput,
+	body string,
 	source []byte,
 	allowed map[string]struct{},
+	replaceableExternal map[string]struct{},
 	computedKeys map[string]string,
 ) error {
 	parser := treesitter.NewParser()
@@ -90,63 +98,48 @@ func validateJavaScriptFreeIdentifiers(
 		if node == nil {
 			return nil
 		}
-		if node.Kind() == "call_expression" {
-			callable := node.ChildByFieldName("function")
-			if callable != nil && strings.TrimSpace(string(source[callable.StartByte():callable.EndByte()])) == "import" {
-				return fmt.Errorf("JavaScript fragment uses forbidden dynamic import authority")
-			}
-		}
-		if node.Kind() == "meta_property" {
-			return fmt.Errorf("JavaScript fragment uses forbidden host metadata authority")
-		}
-		if node.Kind() == "member_expression" {
-			property := node.ChildByFieldName("property")
-			if property != nil {
-				name := string(source[property.StartByte():property.EndByte()])
-				if javaScriptSensitiveProperty(name) {
-					return fmt.Errorf("JavaScript fragment uses forbidden dynamic property %s", name)
-				}
-			}
-		}
-		if node.Kind() == "pair_pattern" {
-			key := node.ChildByFieldName("key")
-			name, resolved, authorized := javaScriptPatternProperty(
-				source, key, computedKeys,
-			)
-			if !authorized {
-				return fmt.Errorf("JavaScript fragment uses unresolved destructured property authority")
-			}
-			if resolved && javaScriptSensitiveProperty(name) {
-				return fmt.Errorf("JavaScript fragment uses forbidden destructured property %s", name)
-			}
-		}
-		if node.Kind() == "shorthand_property_identifier_pattern" {
-			name := string(source[node.StartByte():node.EndByte()])
-			if javaScriptSensitiveProperty(name) {
-				return fmt.Errorf("JavaScript fragment binds forbidden destructured property %s", name)
-			}
-		}
-		if node.Kind() == "subscript_expression" {
-			index := node.ChildByFieldName("index")
-			if name, resolved := javaScriptStaticPropertyName(source, index); resolved {
-				if javaScriptSensitiveProperty(name) {
-					return fmt.Errorf("JavaScript fragment uses forbidden computed property %s", name)
-				}
-			} else if !javaScriptNumericSubscript(index) &&
-				!javaScriptCodeOwnedComputedKey(source, index, computedKeys) {
-				return fmt.Errorf("JavaScript fragment uses unresolved computed property authority")
-			}
+		if err := directCodingJavaScriptClosedAuthorityError(
+			input, body, node, root, source, bindings, computedKeys,
+		); err != nil {
+			return err
 		}
 		if node.Kind() == "identifier" {
 			name := string(source[node.StartByte():node.EndByte()])
+			bodyStart := len(strings.TrimSpace(input.Signature) + " {\n")
+			failedStart := int(node.StartByte()) - bodyStart
+			failedEnd := int(node.EndByte()) - bodyStart
 			if _, denied := forbidden[name]; denied {
-				return fmt.Errorf("JavaScript fragment uses forbidden identifier %s", name)
+				replacements, replacementErr := directCodingJavaScriptIdentifierChoices(
+					input, body, failedStart, failedEnd,
+					name, node, source, bindings, replaceableExternal,
+				)
+				if replacementErr != nil {
+					return replacementErr
+				}
+				return directCodingIdentifierNodeError(
+					node,
+					"Which available value has the meaning required at this unavailable reference?",
+					replacements,
+					fmt.Errorf("JavaScript fragment uses forbidden identifier %s", name),
+				)
 			}
 			if !bindings.declaration(node) &&
 				!javaScriptNonReferenceIdentifier(node) {
 				_, externallyAllowed := allowed[name]
 				if !externallyAllowed && !bindings.referenceAllowed(name, node) {
-					return fmt.Errorf("JavaScript fragment references undeclared direct symbol %s", name)
+					replacements, replacementErr := directCodingJavaScriptIdentifierChoices(
+						input, body, failedStart, failedEnd,
+						name, node, source, bindings, replaceableExternal,
+					)
+					if replacementErr != nil {
+						return replacementErr
+					}
+					return directCodingIdentifierNodeError(
+						node,
+						"Which available value has the meaning required at this unresolved reference?",
+						replacements,
+						fmt.Errorf("JavaScript fragment references undeclared direct symbol %s", name),
+					)
 				}
 			}
 		}

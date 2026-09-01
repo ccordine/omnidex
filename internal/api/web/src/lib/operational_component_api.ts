@@ -10,25 +10,10 @@ export type SelectionComponent = ServerComponent & {
   source_has_more?: boolean;
   channel_offset?: number;
   channel_has_more?: boolean;
-	message_offset?: number;
-	message_has_more?: boolean;
 };
 
-export type AdminComponentQuery = {
-  modelOffset?: number;
-  catalogQuery?: string;
-  catalogPage?: number;
-  downloadOffset?: number;
-};
-
-export function fetchAdminComponent(tab: string, options: AdminComponentQuery = {}): Promise<ServerComponent> {
+export function fetchAdminComponent(tab: string): Promise<ServerComponent> {
   const query = new URLSearchParams({ tab });
-  if (tab === "ai") {
-    query.set("model_offset", String(options.modelOffset ?? 0));
-    query.set("catalog_query", options.catalogQuery ?? "");
-    query.set("catalog_page", String(options.catalogPage ?? 1));
-    query.set("download_offset", String(options.downloadOffset ?? 0));
-  }
   return fetchServerComponent(`/v1/ui/admin?${query}`);
 }
 
@@ -37,10 +22,10 @@ export function fetchAdminDataSourcesComponent(editingID = "", selectedID = "", 
   return fetchServerComponent(`/v1/ui/admin/data-sources?${query}`);
 }
 
-export function fetchDataComponent(sourceID = "", channelID = "", sourceOffset = 0, channelOffset = 0, messageOffset = 0): Promise<SelectionComponent> {
+export function fetchDataComponent(sourceID = "", channelID = "", sourceOffset = 0, channelOffset = 0): Promise<SelectionComponent> {
   const query = new URLSearchParams({
     source_id: sourceID, channel_id: channelID,
-    source_offset: String(sourceOffset), channel_offset: String(channelOffset), message_offset: String(messageOffset),
+    source_offset: String(sourceOffset), channel_offset: String(channelOffset),
   });
   return fetchServerComponent(`/v1/ui/data?${query}`);
 }

@@ -1,7 +1,6 @@
 package api
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,7 +10,6 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/gryph/omnidex/internal/datasource"
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/queue"
 	"github.com/gryph/omnidex/internal/roleplay"
@@ -21,15 +19,6 @@ import (
 const (
 	defaultChannelHistoryLimit = 24
 )
-
-type channelStore interface {
-	CreateChannel(ctx context.Context, channel model.Channel) (model.Channel, error)
-	CreateRoleplayChannel(ctx context.Context, channel model.Channel, worldName, viewpointName string) (model.Channel, error)
-	GetChannel(ctx context.Context, id model.ChannelID) (model.Channel, error)
-	ListChannels(ctx context.Context, scope model.ChannelScope, limit, offset int) ([]model.Channel, error)
-	ListChannelsByMode(ctx context.Context, scope model.ChannelScope, mode model.ChannelMode, limit, offset int) ([]model.Channel, error)
-	ListChannelMessages(ctx context.Context, channelID model.ChannelID, limit int, beforeID *int64) (model.ChannelMessagePage, error)
-}
 
 type channelCreateRequest struct {
 	ID                    string                     `json:"id"`
@@ -103,9 +92,6 @@ func (id *channelDelegatedDataAuthorityID) UnmarshalJSON(raw []byte) error {
 	if err := json.Unmarshal(raw, &value); err != nil {
 		return fmt.Errorf("decode delegated_data_authority_id: %w", err)
 	}
-	if err := datasource.ValidateDelegatedAuthorityID(value); err != nil {
-		return err
-	}
 	id.Value = value
 	id.Present = true
 	return nil
@@ -116,20 +102,6 @@ type channelMessageResponse struct {
 	UserMessage model.ChannelMessage `json:"user_message"`
 	Job         model.Job            `json:"job"`
 }
-
-type enqueueChannelTurnFunc func(
-	context.Context,
-	model.ChannelID,
-	string,
-	string,
-) (model.ChannelMessage, model.Job, error)
-
-type enqueueRoleplayChannelTurnFunc func(
-	context.Context,
-	model.ChannelID,
-	string,
-	roleplay.UserTurnRequest,
-) (model.ChannelMessage, model.Job, error)
 
 func (s *Server) handleChannels(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
@@ -154,7 +126,7 @@ func (s *Server) createChannel(w http.ResponseWriter, r *http.Request) {
 	}
 	workspaceRoot, workspaceErr := s.resolveChannelCreateWorkspaceRoot(req.WorkspaceRoot)
 	if workspaceErr != nil {
-		writeError(w, http.StatusServiceUnavailable, workspaceErr.Error())
+		writeError(w, http.StatusBadRequest, workspaceErr.Error())
 		return
 	}
 	channelInput := model.Channel{
@@ -169,7 +141,7 @@ func (s *Server) createChannel(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, "assistant channel creation cannot carry roleplay names")
 			return
 		}
-		channel, err = s.channelStore.CreateChannel(r.Context(), channelInput)
+		channel, err = s.repo.CreateChannel(r.Context(), channelInput)
 	case model.ChannelModeRoleplay:
 		if req.DataSourceID.Value != "" {
 			writeError(w, http.StatusBadRequest, "roleplay channel cannot bind a real-world data source")
@@ -179,7 +151,7 @@ func (s *Server) createChannel(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, "roleplay channel creation requires exact world and viewpoint names")
 			return
 		}
-		channel, err = s.channelStore.CreateRoleplayChannel(
+		channel, err = s.repo.CreateRoleplayChannel(
 			r.Context(), channelInput, req.RoleplayWorldName.Value, req.RoleplayViewpointName.Value,
 		)
 	default:
@@ -216,7 +188,7 @@ func (s *Server) listChannels(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	channels, err := s.channelStore.ListChannels(r.Context(), model.ChannelScopeUser, limit, offset)
+	channels, err := s.repo.ListChannels(r.Context(), model.ChannelScopeUser, limit, offset)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -252,6 +224,34 @@ func (s *Server) handleChannelByID(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
+	if len(parts) > 1 && parts[1] == "session" {
+		if len(parts) == 3 && parts[2] == "state" {
+			if r.Method != http.MethodGet {
+				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+			s.getChannelSessionState(w, r, channelID)
+			return
+		}
+		if len(parts) == 3 && parts[2] == "turn" {
+			if r.Method != http.MethodPost {
+				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+			s.postChannelSessionTurn(w, r, channelID)
+			return
+		}
+		if len(parts) != 2 {
+			writeError(w, http.StatusNotFound, "channel route not found")
+			return
+		}
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		s.getChannelSession(w, r, channelID)
+		return
+	}
 	if len(parts) > 1 && parts[1] == "roleplay" {
 		s.handleRoleplaySimulationChannel(w, r, channelID, parts[2:])
 		return
@@ -268,7 +268,7 @@ func (s *Server) handleChannelByID(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	channel, err := s.channelStore.GetChannel(r.Context(), channelID)
+	channel, err := s.repo.GetChannel(r.Context(), channelID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "channel not found")
@@ -295,57 +295,50 @@ func (s *Server) postChannelMessage(w http.ResponseWriter, r *http.Request, chan
 		writeError(w, http.StatusBadRequest, "prompt is required")
 		return
 	}
-	channel, err := s.channelStore.GetChannel(r.Context(), channelID)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
+	var channel model.Channel
+	var userMessage model.ChannelMessage
+	var job model.Job
+	if req.RoleplayTurn == nil {
+		userMessage, job, err = s.repo.EnqueueChannelTurnWithDataAuthority(
+			r.Context(), channelID, prompt, req.DelegatedDataAuthorityID.Value,
+		)
+		if err == nil {
+			channel, err = s.repo.GetChannel(r.Context(), channelID)
+		}
+	} else {
+		channel, err = s.repo.GetChannel(r.Context(), channelID)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				writeError(w, http.StatusNotFound, "channel not found")
+				return
+			}
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		if channel.Scope != model.ChannelScopeUser {
 			writeError(w, http.StatusNotFound, "channel not found")
 			return
 		}
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	if channel.Scope != model.ChannelScopeUser {
-		writeError(w, http.StatusNotFound, "channel not found")
-		return
-	}
-	var userMessage model.ChannelMessage
-	var job model.Job
-	switch channel.Mode {
-	case model.ChannelModeAssistant:
-		if req.RoleplayTurn != nil {
+		switch channel.Mode {
+		case model.ChannelModeAssistant:
 			writeError(w, http.StatusBadRequest, "assistant channel turn cannot carry roleplay user authority")
 			return
-		}
-		if s.enqueueChannelTurn == nil {
-			writeError(w, http.StatusServiceUnavailable, "channel job queue is unavailable")
+		case model.ChannelModeRoleplay:
+			if req.DelegatedDataAuthorityID.Present {
+				writeError(w, http.StatusBadRequest, "roleplay channel turn cannot carry delegated data authority")
+				return
+			}
+			if err = req.RoleplayTurn.ValidateForExactText(prompt); err != nil {
+				writeError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			userMessage, job, err = s.repo.EnqueueRoleplayChannelTurn(
+				r.Context(), channel.ID, prompt, *req.RoleplayTurn,
+			)
+		default:
+			writeError(w, http.StatusInternalServerError, "channel has unsupported stored mode")
 			return
 		}
-		userMessage, job, err = s.enqueueChannelTurn(
-			r.Context(), channel.ID, prompt, req.DelegatedDataAuthorityID.Value,
-		)
-	case model.ChannelModeRoleplay:
-		if req.DelegatedDataAuthorityID.Present {
-			writeError(w, http.StatusBadRequest, "roleplay channel turn cannot carry delegated data authority")
-			return
-		}
-		if req.RoleplayTurn == nil {
-			writeError(w, http.StatusBadRequest, "roleplay channel turn requires persona and contribution authority")
-			return
-		}
-		if err = req.RoleplayTurn.ValidateForExactText(prompt); err != nil {
-			writeError(w, http.StatusBadRequest, err.Error())
-			return
-		}
-		if s.enqueueRoleplayChannelTurn == nil {
-			writeError(w, http.StatusServiceUnavailable, "roleplay channel job queue is unavailable")
-			return
-		}
-		userMessage, job, err = s.enqueueRoleplayChannelTurn(
-			r.Context(), channel.ID, prompt, *req.RoleplayTurn,
-		)
-	default:
-		writeError(w, http.StatusInternalServerError, "channel has unsupported stored mode")
-		return
 	}
 	if err != nil {
 		status := http.StatusInternalServerError
@@ -355,8 +348,6 @@ func (s *Server) postChannelMessage(w http.ResponseWriter, r *http.Request, chan
 			errors.Is(err, roleplay.ErrSimulationStaleRevision),
 			errors.Is(err, roleplay.ErrSimulationConflict):
 			status = http.StatusConflict
-		case errors.Is(err, queue.ErrChannelDataAuthority):
-			status = http.StatusBadRequest
 		case errors.Is(err, roleplay.ErrSimulationUnknown),
 			errors.Is(err, roleplay.ErrSimulationAmbiguous),
 			errors.Is(err, roleplay.ErrSimulationIllegal):
@@ -369,6 +360,7 @@ func (s *Server) postChannelMessage(w http.ResponseWriter, r *http.Request, chan
 		"channel turn accepted channel=%s mode=%s message=%d job=%d",
 		channel.ID, channel.Mode, userMessage.ID, job.ID,
 	)
+	s.publishChannelJobProgress(channel.ID, job.ID, realtimeJobQueued, "Job queued")
 	writeJSON(w, http.StatusAccepted, channelMessageResponse{
 		Channel: channel, UserMessage: userMessage, Job: job,
 	})
@@ -382,10 +374,13 @@ func exactChannelQueryInteger(r *http.Request, key string, fallback, minimum, ma
 	if len(values) != 1 || values[0] == "" {
 		return 0, errors.New(key + " must be one canonical integer")
 	}
-	raw := values[0]
+	return exactIntegerValue(values[0], key, minimum, maximum)
+}
+
+func exactIntegerValue(raw, label string, minimum, maximum int) (int, error) {
 	value, err := strconv.Atoi(raw)
 	if err != nil || strconv.Itoa(value) != raw || value < minimum || value > maximum {
-		return 0, errors.New(key + " is outside its accepted integer range")
+		return 0, errors.New(label + " is outside its accepted integer range")
 	}
 	return value, nil
 }

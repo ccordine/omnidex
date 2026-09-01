@@ -2,6 +2,7 @@ package worker
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
 	treesitter "github.com/tree-sitter/go-tree-sitter"
@@ -10,6 +11,7 @@ import (
 
 func validateDirectCodingJavaScope(
 	input assemblyline.FragmentGenerationInput,
+	body string,
 	source string,
 ) error {
 	parser := treesitter.NewParser()
@@ -27,21 +29,32 @@ func validateDirectCodingJavaScope(
 	if root == nil || root.HasError() {
 		return fmt.Errorf("Java scope parser rejected the method declaration")
 	}
-	authorities, methods, receiverMethods := javaPermittedAuthorities(input)
+	authorities, methods, receiverMethods, err := javaPermittedAuthorities(input)
+	if err != nil {
+		return err
+	}
 	bindings := make(map[string]string)
 	javaCollectFragmentBindings(root, content, bindings, methods)
+	replaceableExternal, err := directCodingJavaPermittedValueAuthorities(input)
+	if err != nil {
+		return err
+	}
 	return javaInspectFragmentScope(
-		root, content, authorities, methods, receiverMethods, bindings,
+		input, body, root, content, authorities, methods, receiverMethods, bindings,
+		replaceableExternal,
 	)
 }
 
 func javaInspectFragmentScope(
+	input assemblyline.FragmentGenerationInput,
+	body string,
 	node *treesitter.Node,
 	source []byte,
 	authorities map[string]struct{},
 	methods map[javaMethodKey]struct{},
 	receiverMethods map[string]map[javaMethodKey]javaMethodAuthority,
 	bindings map[string]string,
+	replaceableExternal map[string]struct{},
 ) error {
 	if node == nil {
 		return nil
@@ -52,25 +65,74 @@ func javaInspectFragmentScope(
 		"annotation_type_declaration", "constructor_declaration":
 		return fmt.Errorf("Java fragment contains forbidden %s authority", node.Kind())
 	case "method_invocation":
-		if err := javaValidateMethodInvocation(
-			node, source, authorities, methods, receiverMethods, bindings,
-		); err != nil {
-			return err
+		if defect := javaMethodInvocationCorrection(
+			node, directCodingTreeRoot(node), source,
+			authorities, methods, receiverMethods, bindings,
+		); defect != nil {
+			if defect.target == nil {
+				return defect.cause
+			}
+			choices, err := directCodingJavaTokenChoices(
+				input, body, defect.target, source, defect.candidates,
+			)
+			if err != nil {
+				return fmt.Errorf("enumerate exact Java invocation correction: %w", err)
+			}
+			return directCodingIdentifierNodeError(
+				defect.target, defect.question, choices, defect.cause,
+			)
 		}
 	case "method_reference":
 		return fmt.Errorf("Java fragment cannot introduce method-reference authority")
 	case "type_identifier":
 		name := javaNodeText(node, source)
 		if _, forbidden := javaForbiddenAuthority[name]; forbidden {
-			return fmt.Errorf("Java fragment uses forbidden authority %s", name)
+			choices, err := directCodingJavaTypeChoices(
+				input, body, node, source, receiverMethods,
+			)
+			if err != nil {
+				return fmt.Errorf("enumerate exact Java type correction: %w", err)
+			}
+			return directCodingIdentifierNodeError(
+				node,
+				"Which available type should replace this unavailable type reference?",
+				choices,
+				fmt.Errorf("Java fragment uses forbidden authority %s", name),
+			)
 		}
 		if _, allowed := authorities[name]; !allowed {
-			return fmt.Errorf("Java fragment references undeclared direct type %s", name)
+			choices, err := directCodingJavaTypeChoices(
+				input, body, node, source, receiverMethods,
+			)
+			if err != nil {
+				return fmt.Errorf("enumerate exact Java type correction: %w", err)
+			}
+			return directCodingIdentifierNodeError(
+				node,
+				"Which available type should replace this unresolved type reference?",
+				choices,
+				fmt.Errorf("Java fragment references undeclared direct type %s", name),
+			)
 		}
 	case "identifier":
 		name := javaNodeText(node, source)
+		bodyStart := len(strings.TrimSpace(input.Signature) + " {\n")
+		failedStart := int(node.StartByte()) - bodyStart
+		failedEnd := int(node.EndByte()) - bodyStart
 		if _, forbidden := javaForbiddenAuthority[name]; forbidden {
-			return fmt.Errorf("Java fragment uses forbidden authority %s", name)
+			replacements, replacementErr := directCodingJavaIdentifierChoices(
+				input, body, failedStart, failedEnd,
+				name, directCodingTreeRoot(node), source, node, replaceableExternal,
+			)
+			if replacementErr != nil {
+				return replacementErr
+			}
+			return directCodingIdentifierNodeError(
+				node,
+				"Which available value has the meaning required at this unavailable reference?",
+				replacements,
+				fmt.Errorf("Java fragment uses forbidden authority %s", name),
+			)
 		}
 		if javaIdentifierIsNonReference(node) {
 			break
@@ -81,56 +143,27 @@ func javaInspectFragmentScope(
 		if _, allowed := authorities[name]; allowed {
 			break
 		}
-		return fmt.Errorf("Java fragment references undeclared direct symbol %s", name)
+		replacements, replacementErr := directCodingJavaIdentifierChoices(
+			input, body, failedStart, failedEnd,
+			name, directCodingTreeRoot(node), source, node, replaceableExternal,
+		)
+		if replacementErr != nil {
+			return replacementErr
+		}
+		return directCodingIdentifierNodeError(
+			node,
+			"Which available value has the meaning required at this unresolved reference?",
+			replacements,
+			fmt.Errorf("Java fragment references undeclared direct symbol %s", name),
+		)
 	}
 	for index := uint(0); index < node.ChildCount(); index++ {
 		if err := javaInspectFragmentScope(
-			node.Child(index), source, authorities, methods, receiverMethods, bindings,
+			input, body, node.Child(index), source, authorities, methods, receiverMethods, bindings,
+			replaceableExternal,
 		); err != nil {
 			return err
 		}
-	}
-	return nil
-}
-
-func javaValidateMethodInvocation(
-	node *treesitter.Node,
-	source []byte,
-	authorities map[string]struct{},
-	methods map[javaMethodKey]struct{},
-	receiverMethods map[string]map[javaMethodKey]javaMethodAuthority,
-	bindings map[string]string,
-) error {
-	nameNode := node.ChildByFieldName("name")
-	if nameNode == nil {
-		return fmt.Errorf("Java fragment has an unnamed method invocation")
-	}
-	name := javaNodeText(nameNode, source)
-	key := javaMethodKey{Name: name, Arity: javaMethodInvocationArity(node)}
-	if _, forbidden := javaForbiddenMethods[name]; forbidden {
-		return fmt.Errorf("Java fragment calls forbidden method %s", name)
-	}
-	object := node.ChildByFieldName("object")
-	if object == nil {
-		if _, allowed := methods[key]; !allowed {
-			return fmt.Errorf("Java fragment calls undeclared direct method %s", name)
-		}
-		return nil
-	}
-	owner, staticReceiver := javaExpressionOwner(
-		object, source, authorities, receiverMethods, bindings,
-	)
-	if owner == "" {
-		return fmt.Errorf("Java fragment cannot prove the owner of method %s", name)
-	}
-	if _, forbidden := javaForbiddenAuthority[owner]; forbidden {
-		return fmt.Errorf("Java fragment uses forbidden authority %s", owner)
-	}
-	method, allowed := javaLookupMethodAuthority(owner, key, receiverMethods)
-	if !allowed || method.Static != staticReceiver {
-		return fmt.Errorf(
-			"Java fragment calls undeclared method %s/%d on %s", name, key.Arity, owner,
-		)
 	}
 	return nil
 }

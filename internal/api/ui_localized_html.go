@@ -23,12 +23,16 @@ func renderLocalizedHTML(source string, locale uiLocale) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	rendered, err := localizeElementText(source, locale)
+	catalog, err := loadUIMessageCatalog(locale)
+	if err != nil {
+		return "", err
+	}
+	rendered, err := localizeElementText(source, locale, catalog)
 	if err != nil {
 		return "", err
 	}
 	for _, attribute := range localizedHTMLAttributes {
-		rendered, err = localizeElementAttribute(rendered, locale, attribute)
+		rendered, err = localizeElementAttribute(rendered, locale, catalog, attribute)
 		if err != nil {
 			return "", err
 		}
@@ -47,7 +51,7 @@ func renderLocalizedHTML(source string, locale uiLocale) (string, error) {
 	return rendered, nil
 }
 
-func localizeElementText(source string, locale uiLocale) (string, error) {
+func localizeElementText(source string, locale uiLocale, catalog map[string]string) (string, error) {
 	const marker = `data-i18n="`
 	rendered := source
 	cursor := 0
@@ -63,7 +67,7 @@ func localizeElementText(source string, locale uiLocale) (string, error) {
 			return "", fmt.Errorf("unterminated data-i18n attribute")
 		}
 		key := rendered[keyStart : keyStart+keyEndRelative]
-		message, err := uiMessage(locale, key)
+		message, err := uiMessage(catalog, locale, key)
 		if err != nil {
 			return "", err
 		}
@@ -93,7 +97,7 @@ func localizeElementText(source string, locale uiLocale) (string, error) {
 	}
 }
 
-func localizeElementAttribute(source string, locale uiLocale, attribute localizedAttribute) (string, error) {
+func localizeElementAttribute(source string, locale uiLocale, catalog map[string]string, attribute localizedAttribute) (string, error) {
 	marker := attribute.Marker + `="`
 	rendered := source
 	cursor := 0
@@ -109,7 +113,7 @@ func localizeElementAttribute(source string, locale uiLocale, attribute localize
 			return "", fmt.Errorf("unterminated %s attribute", attribute.Marker)
 		}
 		key := rendered[keyStart : keyStart+keyEndRelative]
-		message, err := uiMessage(locale, key)
+		message, err := uiMessage(catalog, locale, key)
 		if err != nil {
 			return "", err
 		}

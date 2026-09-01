@@ -64,7 +64,7 @@ func (c *uiRedisClient) Get(ctx context.Context, key string) (string, bool, erro
 func (c *uiRedisClient) SetEX(ctx context.Context, key, value string, ttl time.Duration) error {
 	seconds := int64(ttl.Seconds())
 	if seconds < 60 {
-		seconds = 1800
+		return fmt.Errorf("redis UI session TTL must be at least one minute")
 	}
 	_, err := c.command(ctx, "SETEX", key, strconv.FormatInt(seconds, 10), value)
 	return err

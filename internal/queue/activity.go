@@ -3,6 +3,7 @@ package queue
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"time"
 
@@ -23,7 +24,7 @@ type MemoryChunkSummary struct {
 
 func (r *Repository) ListMemoryChunks(ctx context.Context, kind string, tags []string, limit int) ([]MemoryChunkSummary, error) {
 	if limit <= 0 || limit > 500 {
-		limit = 50
+		return nil, fmt.Errorf("memory chunk limit must be between 1 and 500")
 	}
 	kind = strings.TrimSpace(kind)
 	tags = cleanTags(tags)
@@ -66,31 +67,6 @@ func (r *Repository) ListMemoryChunks(ctx context.Context, kind string, tags []s
 		var item MemoryChunkSummary
 		if err := rows.Scan(&item.ID, &item.Scope.ProjectID, &item.Scope.ChannelID,
 			&item.Source, &item.Kind, &item.Content, &item.CreatedAt, &item.Tags, &item.Categories); err != nil {
-			return nil, err
-		}
-		out = append(out, item)
-	}
-	return out, rows.Err()
-}
-
-func (r *Repository) ListTelemetryEvents(ctx context.Context, limit int) ([]TelemetryEventSummary, error) {
-	if limit <= 0 || limit > 500 {
-		limit = 100
-	}
-	rows, err := r.pool.Query(ctx, `
-		SELECT id::text, run_id::text, step, event_type, created_at, payload
-		FROM omni_run_events
-		ORDER BY created_at DESC, id DESC
-		LIMIT $1
-	`, limit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	out := []TelemetryEventSummary{}
-	for rows.Next() {
-		var item TelemetryEventSummary
-		if err := rows.Scan(&item.ID, &item.RunID, &item.Step, &item.EventType, &item.CreatedAt, &item.Payload); err != nil {
 			return nil, err
 		}
 		out = append(out, item)

@@ -56,7 +56,6 @@ func projectCoreProjection(project model.Project) map[string]any {
 		"name":          project.Name,
 		"location":      project.Location,
 		"description":   project.Description,
-		"project_state": project.ProjectState,
 		"last_seen_at":  project.LastSeenAt,
 		"created_at":    project.CreatedAt,
 		"updated_at":    project.UpdatedAt,

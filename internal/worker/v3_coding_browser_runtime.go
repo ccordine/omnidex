@@ -13,7 +13,7 @@ func genericBrowserRuntimeDocument(
 ) assemblyline.SourceDocument {
 	return assemblyline.SourceDocument{
 		ID: "application_runtime", Path: "src/runtime.tsx",
-		Preamble: `import { useCallback, useMemo, useState, useSyncExternalStore } from 'react';
+		Preamble: `import { useCallback, useMemo, useSyncExternalStore } from 'react';
 import type { ReactElement } from 'react';`,
 		Blocks: []assemblyline.SourceBlock{
 			{
@@ -33,7 +33,7 @@ func genericBrowserRuntimeAPI(requirements []assemblyline.Requirement) string {
 		"type SharedValue = null | boolean | number | string | readonly SharedValue[] | { readonly [key: string]: SharedValue }",
 		"type FeatureState = { readonly [key: string]: SharedValue }",
 		"type CapabilityID = " + genericBrowserCapabilityUnion(requirements),
-		"type CapabilitySnapshot = Readonly<Record<CapabilityID, SharedValue>>",
+		"type CapabilitySnapshot = Readonly<Partial<Record<CapabilityID, SharedValue>>>",
 		genericBrowserFeatureActionsAPI(),
 		"interface FeatureViewProps { state: FeatureState; capabilities: CapabilitySnapshot; actions: FeatureActions }",
 	}, "\n")
@@ -42,11 +42,6 @@ func genericBrowserRuntimeAPI(requirements []assemblyline.Requirement) string {
 func genericBrowserFeatureActionsAPI() string {
 	return `interface FeatureActions {
   set(key: string, value: SharedValue): void;
-  toggle(key: string): void;
-  /** Adds delta, then clamps the numeric result to [min, max]. A missing value starts at finite min, otherwise finite max, otherwise zero. */
-  increment(key: string, delta: number, min: number, max: number): void;
-  append(key: string, value: SharedValue): void;
-  removeAt(key: string, index: number): void;
 }`
 }
 
@@ -71,13 +66,9 @@ func genericBrowserRuntimeSource(requirements []assemblyline.Requirement) string
 export type WidenShared<T extends SharedValue> = T extends string ? string : T extends number ? number : T extends boolean ? boolean : T;
 export type FeatureState = { readonly [key: string]: SharedValue };
 export type CapabilityID = %s;
-export type CapabilitySnapshot = Readonly<Record<CapabilityID, SharedValue>>;
+export type CapabilitySnapshot = Readonly<Partial<Record<CapabilityID, SharedValue>>>;
 export interface FeatureActions {
   set(key: string, value: SharedValue): void;
-  toggle(key: string): void;
-  increment(key: string, delta: number, min: number, max: number): void;
-  append(key: string, value: SharedValue): void;
-  removeAt(key: string, index: number): void;
 }
 export interface FeatureViewProps {
   state: FeatureState;
@@ -86,6 +77,10 @@ export interface FeatureViewProps {
 }
 type ChangeListener = () => void;
 
+%s
+
+const emptyFeatureState: FeatureState = Object.freeze({});
+
 export class ApplicationRuntime {
 	private readonly allowed = new Set<string>([%s]);
 	private readonly changes = new Map<string, Set<ChangeListener>>();
@@ -93,19 +88,19 @@ export class ApplicationRuntime {
 	private snapshotValue: CapabilitySnapshot;
 
 	constructor() {
-		const initial = {} as Record<CapabilityID, SharedValue>;
-		for (const capability of this.allowed) initial[capability as CapabilityID] = null;
-		this.snapshotValue = Object.freeze(initial);
+		this.snapshotValue = Object.freeze({});
 	}
 
 	assertCapability(capability: string): void {
 		if (!this.allowed.has(capability)) throw new Error('Unknown application capability: ' + capability);
 	}
 
-	read<T extends SharedValue>(capability: CapabilityID, fallback: T): T {
+	read<T extends SharedValue>(capability: CapabilityID, initial: T): T {
 		this.assertCapability(capability);
+		const frozenInitial = validateAndFreezeSharedValue(initial, 'initial value for ' + capability);
+		if (!Object.hasOwn(this.snapshotValue, capability)) return frozenInitial;
 		const value = this.snapshotValue[capability];
-		return (value === null ? fallback : value) as T;
+		return value as T;
 	}
 
 	subscribe(capability: CapabilityID, listener: ChangeListener): () => void {
@@ -125,7 +120,8 @@ export class ApplicationRuntime {
 
 	publish<T extends SharedValue>(capability: CapabilityID, value: T): void {
 		this.assertCapability(capability);
-		this.snapshotValue = Object.freeze({ ...this.snapshotValue, [capability]: value });
+		const frozenValue = validateAndFreezeSharedValue(value, 'publication for ' + capability);
+		this.snapshotValue = Object.freeze({ ...this.snapshotValue, [capability]: frozenValue });
 		this.changes.get(capability)?.forEach((listener) => listener());
 		this.allChanges.forEach((listener) => listener());
 	}
@@ -140,23 +136,22 @@ export class FeatureRuntime {
 
 export interface FeatureProps { runtime: FeatureRuntime }
 
-interface OperationStatus {
-  readonly phase: 'ready' | 'working' | 'success' | 'error';
-  readonly message: string;
-}
-
 interface FeatureBoundaryProps {
   readonly runtime: FeatureRuntime;
   readonly view: (props: FeatureViewProps) => ReactElement;
 }
 
 function useCapabilityValue<T extends SharedValue>(
-  runtime: ApplicationRuntime, capability: CapabilityID, fallback: T,
+  runtime: ApplicationRuntime, capability: CapabilityID, initial: T,
 ): readonly [T, (next: T) => void] {
+	const frozenInitial = useMemo(
+		() => validateAndFreezeSharedValue(initial, 'initial value for ' + capability),
+		[capability, initial],
+	);
   const value = useSyncExternalStore(
     (listener) => runtime.subscribe(capability, listener),
-    () => runtime.read(capability, fallback),
-    () => fallback,
+    () => runtime.read(capability, frozenInitial),
+    () => frozenInitial,
   );
 	const setValue = useCallback((next: T) => runtime.publish(capability, next), [runtime, capability]);
   return [value, setValue] as const;
@@ -169,9 +164,9 @@ export function useOwnCapabilityState<T extends SharedValue>(
 }
 
 export function useCapabilityState<T extends SharedValue>(
-	runtime: FeatureRuntime, capability: CapabilityID, fallback: T,
+	runtime: FeatureRuntime, capability: CapabilityID, initial: T,
 ): WidenShared<T> {
-	return useCapabilityValue(runtime.application, capability, fallback)[0] as WidenShared<T>;
+	return useCapabilityValue(runtime.application, capability, initial)[0] as WidenShared<T>;
 }
 
 export function publishCapability<T extends SharedValue>(
@@ -186,92 +181,30 @@ function useCapabilitySnapshot(runtime: FeatureRuntime): CapabilitySnapshot {
 	);
 }
 
-function featureActionError(error: unknown): string {
-	return error instanceof Error ? error.message : 'Unknown feature action failure.';
-}
-
-function assertFeatureStateKey(key: string): void {
-	if (!/^[a-z][a-z0-9_-]{0,63}$/.test(key)) {
-		throw new Error('Feature state key must start with a letter and contain only lowercase letters, digits, underscores, or hyphens.');
-	}
-}
-
 function useFeatureActions(
 	runtime: FeatureRuntime,
-	setStatus: (status: OperationStatus) => void,
 ): FeatureActions {
 	return useMemo(() => {
-			const current = (): FeatureState => runtime.application.read(runtime.capability, {} as FeatureState);
-			const commit = (message: string, update: () => FeatureState): void => {
-				setStatus({ phase: 'working', message: 'Working…' });
-				try {
-					const next = update();
-					runtime.application.publish(runtime.capability, next);
-					queueMicrotask(() => setStatus({ phase: 'success', message }));
-				} catch (error) {
-				const message = featureActionError(error);
-				console.error('Feature action rejected', error);
-				setStatus({ phase: 'error', message });
-			}
+			const current = (): FeatureState => runtime.application.read(runtime.capability, emptyFeatureState);
+			const commit = (update: () => FeatureState): void => {
+				runtime.application.publish(runtime.capability, update());
 		};
 		return {
 			set(key, value) {
-				commit('Updated.', () => { assertFeatureStateKey(key); return { ...current(), [key]: value }; });
-			},
-			toggle(key) {
-				commit('Toggled.', () => {
-					assertFeatureStateKey(key);
-					return { ...current(), [key]: current()[key] !== true };
-				});
-			},
-			increment(key, delta, min, max) {
-				commit('Adjusted.', () => {
-					assertFeatureStateKey(key);
-					if (!Number.isFinite(delta) || Number.isNaN(min) || Number.isNaN(max) || min > max) throw new Error('Invalid numeric action bounds.');
-					const existing = current()[key];
-					const baseline = Number.isFinite(min) ? min : Number.isFinite(max) ? max : 0;
-					const value = typeof existing === 'number' && Number.isFinite(existing) ? existing : baseline;
-					return { ...current(), [key]: Math.min(max, Math.max(min, value + delta)) };
-				});
-			},
-			append(key, value) {
-				commit('Added.', () => {
-					assertFeatureStateKey(key);
-					const existing = current()[key];
-					return { ...current(), [key]: [...(Array.isArray(existing) ? existing : []), value] };
-				});
-			},
-			removeAt(key, index) {
-				commit('Removed.', () => {
-					assertFeatureStateKey(key);
-					if (!Number.isInteger(index) || index < 0) throw new Error('Invalid removal index.');
-					const existing = current()[key];
-					if (!Array.isArray(existing) || index >= existing.length) throw new Error('Removal index is outside the current list.');
-					return { ...current(), [key]: existing.filter((_, itemIndex) => itemIndex !== index) };
-				});
+				commit(() => ({ ...current(), [key]: value }));
 			},
 		};
-	}, [runtime, setStatus]);
+	}, [runtime]);
 }
 
 export function FeatureBoundary({ runtime, view }: FeatureBoundaryProps): ReactElement {
 	const View = view;
-	const [state] = useOwnCapabilityState(runtime, {} as FeatureState);
+	const [state] = useOwnCapabilityState(runtime, emptyFeatureState);
 	const capabilities = useCapabilitySnapshot(runtime);
-	const [status, setStatus] = useState<OperationStatus>({ phase: 'ready', message: 'Ready.' });
-	const actions = useFeatureActions(runtime, setStatus);
-	return (
-		<div className="feature-boundary">
-			<View state={state} capabilities={capabilities} actions={actions} />
-			{status.phase === 'error' ? (
-				<p className="operation-status" role="alert">{status.message}</p>
-			) : (
-				<p className="operation-status" data-phase={status.phase} role="status" aria-live="polite">{status.message}</p>
-			)}
-		</div>
-	);
+	const actions = useFeatureActions(runtime);
+	return <View state={state} capabilities={capabilities} actions={actions} />;
 }
-`, genericBrowserCapabilityUnion(requirements), strings.Join(allowed, ", "))
+`, genericBrowserCapabilityUnion(requirements), genericBrowserSharedValueBoundarySource(), strings.Join(allowed, ", "))
 }
 
 func genericBrowserRuntimeFactoryAPI() string {

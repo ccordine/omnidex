@@ -117,9 +117,7 @@ func applicationSpecificationFromFrozenWorkload(
 		Requirements: requirements,
 	}
 	if err := specification.Validate(); err != nil {
-		return ApplicationSpecification{}, fmt.Errorf(
-			"frozen application workload authority: %w", err,
-		)
+		return ApplicationSpecification{}, fmt.Errorf("frozen application workload authority: %w", err)
 	}
 	return specification, nil
 }

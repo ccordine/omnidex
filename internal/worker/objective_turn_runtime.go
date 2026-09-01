@@ -5,20 +5,14 @@ import (
 	"fmt"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
-	"github.com/gryph/omnidex/internal/modelcontext"
-	"github.com/gryph/omnidex/internal/station"
-	"github.com/gryph/omnidex/internal/webresearch"
+	"github.com/gryph/omnidex/internal/model"
+	"github.com/gryph/omnidex/internal/queue"
 )
 
 func (r *nativeRuntimeV3) runObjectiveResolve() error {
 	if r == nil || r.svc == nil || r.claim == nil {
 		return fmt.Errorf("conversation objective runtime requires a claimed job")
 	}
-	modelProvenance, err := r.captureObjectiveInstructionProvenance()
-	if err != nil {
-		return err
-	}
-	r.objectivePathProvenance = modelProvenance
 	repositoryStations, err := newPortableObjectiveRepositoryGroundingStation(r)
 	if err != nil {
 		return err
@@ -32,10 +26,17 @@ func (r *nativeRuntimeV3) runObjectiveResolve() error {
 		portableObjectiveConversationStation{runtime: r},
 		repositoryStations,
 		objectiveWorkflows{
-			ModelPathProvenance:   modelProvenance,
+			ResolveModelPathProvenance: func() (assemblyline.ArtifactIdentityProvenance, error) {
+				provenance, err := r.deriveObjectiveInstructionProvenance()
+				if err == nil {
+					r.objectivePathProvenance = provenance
+				}
+				return provenance, err
+			},
+			WorkspaceContinuity: func(ctx context.Context, job model.Job) (queue.ObjectiveContinuityAuthority, error) {
+				return r.svc.repo.ObjectiveContinuityAuthorities(ctx, job, "objective_resolve")
+			},
 			WorkspaceMutation:     r.runObjectiveWorkspaceMutation,
-			RepositoryRead:        r.acquireObjectiveRepositoryEvidence,
-			ExternalAnswer:        r.acquireObjectiveExternalEvidence,
 			DatabaseRead:          r.acquireObjectiveDatabaseEvidence,
 			RoleplaySimulation:    r.projectObjectiveRoleplaySimulation,
 			RoleplayCanon:         portableObjectiveRoleplayCanonStation{runtime: r},
@@ -47,6 +48,9 @@ func (r *nativeRuntimeV3) runObjectiveResolve() error {
 	if err != nil {
 		return err
 	}
+	if result.Kind == assemblyline.ObjectiveKindWorkspaceMutation {
+		return r.complete(result.Output)
+	}
 	if !result.Complete {
 		return fmt.Errorf("conversation objective %q returned without code-owned completion", result.ObjectiveID)
 	}
@@ -55,12 +59,12 @@ func (r *nativeRuntimeV3) runObjectiveResolve() error {
 		return err
 	}
 	return r.completeWithEvidence(
-		"objective_result", output, result.ObjectiveID, records, result.RoleplayResponses,
+		"objective_result", output, records, result.RoleplayResponses,
 		result.RoleplayUserCanon, result.RoleplayUserOngoingAction,
 	)
 }
 
-func (r *nativeRuntimeV3) captureObjectiveInstructionProvenance() (
+func (r *nativeRuntimeV3) deriveObjectiveInstructionProvenance() (
 	assemblyline.ArtifactIdentityProvenance,
 	error,
 ) {
@@ -73,15 +77,9 @@ func (r *nativeRuntimeV3) captureObjectiveInstructionProvenance() (
 	if err != nil {
 		return assemblyline.ArtifactIdentityProvenance{}, err
 	}
-	indexed, err := r.captureExistingRepositoryIndex(scope.Root)
-	if err != nil {
-		return assemblyline.ArtifactIdentityProvenance{}, err
-	}
-	paths := make([]string, len(indexed.Snapshot.Files))
-	for index, file := range indexed.Snapshot.Files {
-		paths[index] = file.Path
-	}
-	provenance, err := modelcontext.NewArtifactIdentityProvenance(paths)
+	provenance, err := objectiveInstructionPathProvenance(
+		r.ctx, scope.Root, r.claim.Job.Instruction,
+	)
 	if err != nil {
 		return assemblyline.ArtifactIdentityProvenance{}, fmt.Errorf(
 			"derive objective instruction artifact provenance: %w", err,
@@ -97,11 +95,10 @@ func (r *nativeRuntimeV3) runObjectiveWorkspaceMutation(
 	if r.claim.Job.ID != authority.JobID || r.claim.Job.Instruction != authority.Instruction {
 		return "", fmt.Errorf("workspace mutation authority does not match the claimed conversation job")
 	}
-	request, err := directCodingRequestFromObjectiveAuthority(authority)
-	if err != nil {
+	if _, err := directCodingRequestFromObjectiveAuthority(authority); err != nil {
 		return "", err
 	}
-	return r.runDirectCodingSession(request)
+	return string(assemblyline.ObjectiveKindWorkspaceMutation), nil
 }
 
 func directCodingRequestFromObjectiveAuthority(
@@ -127,55 +124,21 @@ func directCodingRequestFromObjectiveAuthority(
 		}
 	}
 	request := directCodingRequest{Instruction: authority.Instruction}
-	if replan != nil {
-		if replan.JobID != authority.JobID {
-			return directCodingRequest{}, fmt.Errorf(
-				"workspace mutation replan authority belongs to job %d, expected %d",
-				replan.JobID, authority.JobID,
-			)
-		}
-		request.Feedback = []string{replan.Feedback}
+	continuity := queue.ObjectiveContinuityAuthority{
+		Replan:  replan,
+		Session: authority.SessionContext,
 	}
+	if continuity.Session != nil &&
+		(continuity.Session.JobID != authority.JobID ||
+			continuity.Session.InitialInstruction != authority.Instruction) {
+		return directCodingRequest{}, fmt.Errorf(
+			"workspace mutation session context differs from exact job authority",
+		)
+	}
+	feedback, err := continuity.CodingFeedback()
+	if err != nil {
+		return directCodingRequest{}, fmt.Errorf("workspace mutation session context: %w", err)
+	}
+	request.Feedback = feedback
 	return request, nil
-}
-
-func (r *nativeRuntimeV3) acquireObjectiveExternalEvidence(
-	ctx context.Context,
-	authority turnAuthority,
-) (objectiveExternalAnswer, error) {
-	if ctx == nil || r == nil || r.svc == nil || r.claim == nil || r.svc.webSearch == nil {
-		return objectiveExternalAnswer{}, fmt.Errorf("external-answer objective requires configured web acquisition")
-	}
-	if authority.JobID != r.claim.Job.ID || authority.Instruction != r.claim.Job.Instruction {
-		return objectiveExternalAnswer{}, fmt.Errorf("external-answer authority does not match the claimed job")
-	}
-	stations, err := newRoutedWebStations(func(id station.ID) webresearch.PortableRuntime {
-		return runtimeWebPortableRuntime(r, id)
-	})
-	if err != nil {
-		return objectiveExternalAnswer{}, err
-	}
-	query := authority.Instruction
-	if err := validateObjectiveModelInput(
-		authority, "external-answer model question", authority.ModelInstruction,
-	); err != nil {
-		return objectiveExternalAnswer{}, err
-	}
-	machine, err := webresearch.New(webresearch.Objective{
-		ID:                 webresearch.ObjectiveID(objectiveTurnID(authority, assemblyline.ObjectiveKindExternalAnswer)),
-		Question:           authority.ModelInstruction,
-		Context:            assemblyline.CloneObjectiveContext(authority.Context),
-		InitialQuery:       query,
-		KnownArtifactPaths: append([]string{}, authority.ModelArtifactPaths...),
-		Status:             webresearch.ObjectivePending,
-	}, objectiveWebResearchConfig(), r.svc.webSearch, stations.relevance,
-		stations.synthesis)
-	if err != nil {
-		return objectiveExternalAnswer{}, err
-	}
-	result, err := machine.Run(ctx)
-	if err != nil {
-		return objectiveExternalAnswer{}, err
-	}
-	return objectiveExternalAnswerFromWeb(result)
 }

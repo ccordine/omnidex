@@ -241,8 +241,7 @@ func validateRoleplaySimulationComponentState(state roleplaySimulationComponentS
 		if err := state.LastUserTurn.Validate(); err != nil {
 			return fmt.Errorf("roleplay component latest user turn: %w", err)
 		}
-		if state.LastUserTurn.PersonaKind == roleplay.UserPersonaLegacy ||
-			state.LastUserTurn.ContributionKind == roleplay.UserContributionCommand {
+		if state.LastUserTurn.ContributionKind == roleplay.UserContributionCommand {
 			return fmt.Errorf("roleplay component latest user turn is not a reusable composer selection")
 		}
 	}

@@ -9,12 +9,16 @@ func DecodeApplicationClassification(
 	if err := input.validate(); err != nil {
 		return ApplicationClassification{}, err
 	}
-	leaf, err := decodeRawSemanticLeaf("application surface", raw, 64, false)
+	choices, err := applicationClassificationOpaqueChoices()
+	if err != nil {
+		return ApplicationClassification{}, err
+	}
+	leaf, err := DecodeOpaqueModelChoice(raw, choices)
 	if err != nil {
 		return ApplicationClassification{}, err
 	}
 	classification := ApplicationClassification{
-		Schema:  ApplicationClassificationSchemaV1,
+		Schema:  ApplicationClassificationSchemaV2,
 		Surface: ApplicationSurface(leaf),
 	}
 	if err := classification.Validate(); err != nil {
@@ -46,7 +50,11 @@ func DecodeArtifactHandlingDecision(
 	if err := input.validate(); err != nil {
 		return ArtifactHandlingDecision{}, err
 	}
-	leaf, err := decodeRawSemanticLeaf("artifact handling", raw, 64, false)
+	choices, err := artifactHandlingOpaqueChoices()
+	if err != nil {
+		return ArtifactHandlingDecision{}, err
+	}
+	leaf, err := DecodeOpaqueModelChoice(raw, choices)
 	if err != nil {
 		return ArtifactHandlingDecision{}, err
 	}

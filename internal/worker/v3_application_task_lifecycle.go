@@ -2,22 +2,19 @@ package worker
 
 import (
 	"fmt"
-	"reflect"
 	"strings"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
 )
 
 type directCodingApplicationTaskLifecycleHooks struct {
-	BeginTask  func(assemblyline.ApplicationTaskContext) error
 	BuildBlock func(
 		assemblyline.ApplicationTaskContext,
 		*directCodingProgram,
 		assemblyline.SourceBlockRef,
 	) (string, error)
-	VerifyTask   func(assemblyline.ApplicationTaskContext, *directCodingProgram) error
-	CompleteTask func(assemblyline.ApplicationTaskContext, map[string]string) error
-	FinalStage   func(*directCodingProgram) error
+	VerifyTask func(assemblyline.ApplicationTaskContext, *directCodingProgram) error
+	FinalStage func(*directCodingProgram) error
 }
 
 func runDirectCodingApplicationTaskLifecycle(
@@ -28,30 +25,16 @@ func runDirectCodingApplicationTaskLifecycle(
 	if program == nil {
 		return fmt.Errorf("application task lifecycle requires one program")
 	}
-	if hooks.BuildBlock == nil || hooks.VerifyTask == nil || hooks.FinalStage == nil {
-		return fmt.Errorf("application task lifecycle requires generation, verification, and final-stage hooks")
-	}
-	if err := assemblyline.ValidateFrozenApplicationWorkload(frozen); err != nil {
-		return err
-	}
-	if !reflect.DeepEqual(program.Workload, frozen) {
-		return fmt.Errorf("application task lifecycle program workload differs from frozen authority")
-	}
-	if err := program.Source.Validate(); err != nil {
-		return err
+	if hooks.BuildBlock == nil {
+		return fmt.Errorf("application task lifecycle requires one source-generation hook")
 	}
 	if len(program.Generated) != 0 {
 		return fmt.Errorf("application task lifecycle requires an empty generated-source set")
 	}
 
-	err := executeDirectCodingApplicationWorkload(
+	err := executeIndependentDirectCodingApplicationWorkload(
 		frozen,
 		func(context assemblyline.ApplicationTaskContext) error {
-			if hooks.BeginTask != nil {
-				if err := hooks.BeginTask(context); err != nil {
-					return err
-				}
-			}
 			stage, projectErr := projectDirectCodingApplicationTaskStage(*program, context)
 			if projectErr != nil {
 				return projectErr
@@ -75,21 +58,16 @@ func runDirectCodingApplicationTaskLifecycle(
 			if validationErr := validateApplicationTaskGeneratedSet(stage.Generated, expectedIDs...); validationErr != nil {
 				return validationErr
 			}
-			if verifyErr := hooks.VerifyTask(context, &stage); verifyErr != nil {
-				return fmt.Errorf("verify application task %s: %w", context.Task.TaskID, verifyErr)
+			if hooks.VerifyTask != nil {
+				if verifyErr := hooks.VerifyTask(context, &stage); verifyErr != nil {
+					return fmt.Errorf("verify application task %s: %w", context.Task.TaskID, verifyErr)
+				}
+				if validationErr := validateApplicationTaskGeneratedSet(stage.Generated, expectedIDs...); validationErr != nil {
+					return validationErr
+				}
 			}
-			if validationErr := validateApplicationTaskGeneratedSet(stage.Generated, expectedIDs...); validationErr != nil {
-				return validationErr
-			}
-			accepted := make(map[string]string, len(expectedIDs))
 			for _, blockID := range expectedIDs {
 				program.Generated[blockID] = stage.Generated[blockID]
-				accepted[blockID] = stage.Generated[blockID]
-			}
-			if hooks.CompleteTask != nil {
-				if err := hooks.CompleteTask(context, accepted); err != nil {
-					return err
-				}
 			}
 			return nil
 		},
@@ -97,19 +75,21 @@ func runDirectCodingApplicationTaskLifecycle(
 	if err != nil {
 		return err
 	}
-	if err := hooks.FinalStage(program); err != nil {
-		return fmt.Errorf("verify complete application workload: %w", err)
+	if hooks.FinalStage != nil {
+		if err := hooks.FinalStage(program); err != nil {
+			return fmt.Errorf("verify complete application workload: %w", err)
+		}
 	}
 	return nil
 }
 
 func validateApplicationTaskGeneratedSet(generated map[string]string, allowed ...string) error {
 	if len(generated) != len(allowed) {
-		return fmt.Errorf("application task verification changed source outside the current task")
+		return fmt.Errorf("application task generation changed source outside the current task")
 	}
 	for _, blockID := range allowed {
 		if strings.TrimSpace(generated[blockID]) == "" {
-			return fmt.Errorf("application task verification omitted current block %s", blockID)
+			return fmt.Errorf("application task generation omitted current block %s", blockID)
 		}
 	}
 	return nil

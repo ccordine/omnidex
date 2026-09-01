@@ -15,7 +15,6 @@ const (
 	MaxContextCandidateIDBytes            = 64
 	MaxContextCandidateContentBytes       = 2 * 1024
 	MaxContextCandidateProjectionBytes    = 8 * 1024
-	MaxContextRelevanceSelections         = 8
 	MaxContextMinificationAuthorities     = 8
 	MaxContextMinificationProjectionBytes = 6 * 1024
 	MaxContextMinifiedBytes               = 2 * 1024
@@ -27,8 +26,8 @@ var (
 )
 
 // ContextCandidateAuthority is one exact, code-acquired candidate. Namespace
-// identifies its code-owned authority class; CandidateID is the only value a
-// relevance station may return.
+// identifies its code-owned authority class. CandidateID remains code-owned;
+// one relevance call returns only the binary relation for this candidate.
 type ContextCandidateAuthority struct {
 	Namespace     string `json:"namespace"`
 	CandidateID   string `json:"candidate_id"`
@@ -103,7 +102,8 @@ func validateContextCandidateAuthorities(
 		if !exactObjectiveContextSHA(authority.Content, authority.ContentSHA256) {
 			return fmt.Errorf("%s candidate %s content hash does not match", label, authority.CandidateID)
 		}
-		if _, duplicate := seenContent[authority.ContentSHA256]; duplicate {
+		if _, duplicate := seenContent[authority.ContentSHA256]; duplicate &&
+			!strings.HasPrefix(authority.Namespace, "session_") {
 			return fmt.Errorf("%s candidate %s duplicates exact candidate content", label, authority.CandidateID)
 		}
 		seenContent[authority.ContentSHA256] = struct{}{}

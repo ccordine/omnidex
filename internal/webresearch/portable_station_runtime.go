@@ -7,78 +7,42 @@ import (
 	"github.com/gryph/omnidex/internal/assemblyline"
 )
 
-func (stations *PortableStations) run(
-	ctx context.Context,
-	job assemblyline.PortableJob,
-) (assemblyline.PortableResult, error) {
-	if stations == nil || stations.runtime.Execute == nil || stations.runtime.Finalize == nil {
-		return assemblyline.PortableResult{}, fmt.Errorf("portable web stations are uninitialized")
-	}
-	if ctx == nil {
-		return assemblyline.PortableResult{}, fmt.Errorf("portable web station context is nil")
-	}
-	if err := ctx.Err(); err != nil {
-		return assemblyline.PortableResult{}, err
-	}
-	result, err := stations.runtime.Execute(ctx, job)
-	if err != nil {
-		return assemblyline.PortableResult{}, fmt.Errorf("execute portable web station: %w", err)
-	}
-	if err := ctx.Err(); err != nil {
-		return assemblyline.PortableResult{}, combinePortableStationErrors(
-			err, stations.finalize(ctx, job, result, err),
-		)
-	}
-	if err := result.ValidateFor(job); err != nil {
-		validationErr := fmt.Errorf("validate portable web station result: %w", err)
-		return assemblyline.PortableResult{}, combinePortableStationErrors(
-			validationErr, stations.finalize(ctx, job, result, validationErr),
-		)
-	}
-	return result, nil
-}
-
-func (stations *PortableStations) finalize(
-	ctx context.Context,
-	job assemblyline.PortableJob,
-	result assemblyline.PortableResult,
-	validationErr error,
-) error {
-	return stations.runtime.Finalize(ctx, job, result, validationErr)
-}
-
-func combinePortableStationErrors(primary, finalization error) error {
-	if primary == nil {
-		return finalization
-	}
-	if finalization == nil {
-		return primary
-	}
-	return fmt.Errorf("%v; finalize exact portable web station: %w", primary, finalization)
-}
-
 func runPortableSemanticLeaf[T any](
 	ctx context.Context,
 	stations *PortableStations,
 	job assemblyline.PortableJob,
 	decode func(string) (T, error),
-) (T, error) {
+) (T, SemanticCallReceipt, error) {
 	var zero T
+	if stations == nil || stations.runtime.Resolve == nil {
+		return zero, SemanticCallReceipt{}, fmt.Errorf("portable web stations are uninitialized")
+	}
+	if ctx == nil {
+		return zero, SemanticCallReceipt{}, fmt.Errorf("portable web station context is nil")
+	}
+	if err := ctx.Err(); err != nil {
+		return zero, SemanticCallReceipt{}, err
+	}
 	if decode == nil {
-		return zero, fmt.Errorf("portable web semantic leaf requires one exact decoder")
+		return zero, SemanticCallReceipt{}, fmt.Errorf("portable web semantic leaf requires one exact decoder")
 	}
-	result, err := stations.run(ctx, job)
+	var value T
+	receipt, err := stations.runtime.Resolve(
+		ctx,
+		job,
+		func(raw string) error {
+			var decodeErr error
+			value, decodeErr = decode(raw)
+			return decodeErr
+		},
+	)
 	if err != nil {
-		return zero, err
+		return zero, receipt, err
 	}
-	value, validationErr := decode(result.Candidate)
-	if finalizeErr := stations.finalize(
-		ctx, job, result, validationErr,
-	); finalizeErr != nil {
-		return zero, combinePortableStationErrors(validationErr, finalizeErr)
+	if err := ValidateSemanticCallReceipt(
+		"portable web semantic leaf", receipt, exactPortableSemanticLeafCalls,
+	); err != nil {
+		return zero, receipt, err
 	}
-	if validationErr != nil {
-		return zero, validationErr
-	}
-	return value, nil
+	return value, receipt, nil
 }

@@ -6,8 +6,6 @@ import (
 	"math"
 )
 
-const MinimalGeneratePrompt = "Return only the requested output."
-
 type ExactPreparedOutputLimitMode string
 
 // ExactPreparedTemperature is an exact provider sampling value. Callers may
@@ -16,12 +14,11 @@ type ExactPreparedTemperature float64
 
 const (
 	ExactPreparedOutputLimitExplicit ExactPreparedOutputLimitMode = "explicit"
-	ExactPreparedOutputLimitNatural  ExactPreparedOutputLimitMode = "natural"
 )
 
 func (mode ExactPreparedOutputLimitMode) Validate() error {
 	switch mode {
-	case ExactPreparedOutputLimitExplicit, ExactPreparedOutputLimitNatural:
+	case ExactPreparedOutputLimitExplicit:
 		return nil
 	default:
 		return fmt.Errorf("exact prepared output-limit mode is not registered")
@@ -29,19 +26,15 @@ func (mode ExactPreparedOutputLimitMode) Validate() error {
 }
 
 type PreparedModel struct {
-	Protocol                     ExactPreparedProtocol
-	BaseModel                    string
-	ContextModel                 string
-	ModelfilePath                string
-	PromptHint                   string
-	Prompt                       string
-	MaxOutputTokens              int
-	OutputLimitMode              ExactPreparedOutputLimitMode
-	ContextTokens                int
-	Temperature                  *ExactPreparedTemperature
-	RawTextStopSequence          string
-	ProviderIdentityExpectation  *ProviderIdentityExpectation
-	ProviderObservationChallenge string
+	Protocol            ExactPreparedProtocol
+	BaseModel           string
+	ContextModel        string
+	Prompt              string
+	MaxOutputTokens     int
+	OutputLimitMode     ExactPreparedOutputLimitMode
+	ContextTokens       int
+	Temperature         *ExactPreparedTemperature
+	RawTextStopSequence string
 }
 
 func ValidateResponseContract(prepared PreparedModel) error {
@@ -59,5 +52,4 @@ type EmbeddingClient interface {
 
 type ExactStationClient interface {
 	ExactPreparedContractClient
-	ProviderIdentityEvidenceDiscoverer
 }

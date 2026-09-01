@@ -2,18 +2,16 @@ package queue
 
 import (
 	"fmt"
-	"math"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
 	"github.com/gryph/omnidex/internal/llm"
 )
 
-// ExpectedPortableStationMaxOutputTokens derives the sole persisted natural
-// output ceiling from the exact decoder bound and its code-owned stop grammar.
-// The attested byte-level raw profile cannot require more generated tokens
-// than accepted response bytes plus the stop bytes. Native profiles retain
-// this value as acceptance authority even when their attested template owns
-// termination and therefore omits num_predict.
+const minSingleLineCompletionTokens = 8
+
+// ExpectedPortableStationMaxOutputTokens leaves every ordinary station response
+// at the provider's native limit. Code validates the one completed response;
+// it never truncates or regenerates a semantic result to manage output tokens.
 func ExpectedPortableStationMaxOutputTokens(
 	job assemblyline.PortableJob,
 	contextTokens int,
@@ -21,29 +19,48 @@ func ExpectedPortableStationMaxOutputTokens(
 	if err := llm.ValidateExactPreparedContextTokens(contextTokens); err != nil {
 		return 0, err
 	}
-	responseBytes, err := assemblyline.PortableResponseMaximumBytesForJob(job)
-	if err != nil {
-		return 0, fmt.Errorf("derive portable response byte ceiling: %w", err)
+	if err := job.Validate(); err != nil {
+		return 0, err
 	}
-	framing, err := assemblyline.PortableResponseFramingForJob(job)
-	if err != nil {
-		return 0, fmt.Errorf("derive portable response stop reserve: %w", err)
+	return -1, nil
+}
+
+// ExpectedSourceBodyCorrectionMaxOutputTokens gives an exact opaque choice
+// only enough room for its complete ID and line termination. An ordinary
+// exact-span replacement uses Ollama's native unlimited generation.
+func ExpectedSourceBodyCorrectionMaxOutputTokens(
+	opaqueResponseBytes int,
+	opaque bool,
+	contextTokens int,
+) (int, error) {
+	if err := llm.ValidateExactPreparedContextTokens(contextTokens); err != nil {
+		return 0, err
 	}
-	reserve := 0
-	switch framing {
-	case assemblyline.PortableResponseFramingSingleLine:
-		reserve = len(llm.ExactPreparedLineStopV1)
-	case assemblyline.PortableResponseFramingNaturalMultiline:
-		reserve = len(llm.ExactPreparedRawChatEndV1)
-	default:
-		return 0, fmt.Errorf("portable response framing %q has no output reserve", framing)
+	if opaque {
+		if opaqueResponseBytes < 1 {
+			return 0, fmt.Errorf("opaque source correction requires a positive response bound")
+		}
+		budget := opaqueResponseBytes + 1
+		if budget < minSingleLineCompletionTokens {
+			budget = minSingleLineCompletionTokens
+		}
+		return boundedProviderOutputTokens(budget, contextTokens)
 	}
-	if responseBytes < 1 || responseBytes > math.MaxInt-reserve {
-		return 0, fmt.Errorf("portable response byte ceiling cannot form a positive output authority")
+	if opaqueResponseBytes != 0 {
+		return 0, fmt.Errorf("open source correction cannot carry an opaque response bound")
 	}
-	ceiling := responseBytes + reserve
-	if ceiling > contextTokens {
-		ceiling = contextTokens
+	return -1, nil
+}
+
+func boundedProviderOutputTokens(budget, contextTokens int) (int, error) {
+	if budget < 1 {
+		return 0, fmt.Errorf("provider output budget must be positive")
 	}
-	return ceiling, nil
+	if budget >= contextTokens {
+		budget = contextTokens - 1
+	}
+	if budget < 1 {
+		return 0, fmt.Errorf("provider output budget leaves no native input authority")
+	}
+	return budget, nil
 }

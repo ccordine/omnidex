@@ -58,7 +58,11 @@ func (s *Server) writeRoleplaySceneDraftParticipant(
 		writeRoleplaySimulationError(w, err)
 		return
 	}
-	sessionID := s.ensureUISessionCookie(w, r)
+	sessionID, err := s.ensureUISessionCookie(w, r)
+	if err != nil {
+		writeRoleplaySimulationError(w, err)
+		return
+	}
 	s.roleplaySceneDraftMu.Lock()
 	draft, err := s.loadRoleplaySceneDraftLocked(r.Context(), sessionID, channel.ID, world.ID)
 	if err == nil && draft.Revision != *request.ExpectedRevision {

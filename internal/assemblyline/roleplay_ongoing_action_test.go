@@ -1,124 +1,154 @@
 package assemblyline
 
 import (
-	"encoding/json"
 	"strings"
 	"testing"
-
-	"github.com/gryph/omnidex/internal/roleplay"
 )
 
-func TestRoleplayOngoingActionReturnsOneCompleteNullableLeaf(t *testing.T) {
-	t.Parallel()
-	input := RoleplayOngoingActionInput{
-		CharacterName:         "Mara",
+func TestRoleplayOngoingActionRelationUsesOnlyOpaqueChoice(t *testing.T) {
+	previous := "Mira is carrying a lantern through the tunnel."
+	input := RoleplayOngoingActionRelationInput{
+		CharacterName:         "Mira",
 		Source:                RoleplayOngoingActionSourceAssistantResponse,
-		ExactContribution:     "Mara keeps turning the seized wheel against the current.",
-		PreviousOngoingAction: nil,
+		ExactContribution:     "Mira keeps walking, holding the lantern ahead of her.",
+		PreviousOngoingAction: &previous,
 	}
-	action := "Mara is turning the seized wheel against the current."
-	actionJSON, _ := json.Marshal(action)
-	for _, decision := range []RoleplayOngoingActionDecision{
-		{Schema: RoleplayOngoingStateLeafV1, OngoingAction: actionJSON},
-		{Schema: RoleplayOngoingStateLeafV1, OngoingAction: json.RawMessage("null")},
-	} {
-		if err := decision.ValidateFor(input); err != nil {
-			t.Fatalf("decision=%+v error=%v", decision, err)
-		}
-	}
-
-	if _, err := DecodeRoleplayOngoingActionDecision(
-		input, `{"ongoing_action":"Mara keeps turning the wheel."}`,
-	); err == nil {
-		t.Fatalf("missing explicit nullable leaf error=%v", err)
-	}
-	active, err := DecodeRoleplayOngoingActionDecision(input, action)
+	prompt, err := BuildRoleplayOngoingActionRelationPrompt(input)
 	if err != nil {
 		t.Fatal(err)
 	}
-	resolved, err := active.ResolveFor(input)
-	if err != nil || resolved == nil || *resolved != action {
-		t.Fatalf("active=%+v resolved=%v err=%v", active, resolved, err)
-	}
-	cleared, err := DecodeRoleplayOngoingActionDecision(input, RoleplayOngoingActionNone)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if resolved, err := cleared.ResolveFor(input); err != nil || resolved != nil {
-		t.Fatalf("cleared resolved=%v err=%v", resolved, err)
-	}
-	for _, raw := range []string{
-		"",
-		" padded ",
-		`"Mara keeps turning the wheel."`,
-		`null`,
-		`{"ongoing_action":null,"status":"clear"}`,
-	} {
-		if _, err := DecodeRoleplayOngoingActionDecision(input, raw); err == nil {
-			t.Fatalf("invalid candidate was accepted: %s", raw)
-		}
-	}
-}
-
-func TestRoleplayOngoingActionPromptHasOnlyTheNecessarySemanticAuthority(t *testing.T) {
-	t.Parallel()
-	input := RoleplayOngoingActionInput{
-		CharacterName:         "Ivo",
-		Source:                RoleplayOngoingActionSourceAssistantResponse,
-		ExactContribution:     "Ivo finishes tying the last knot and steps away.",
-		PreviousOngoingAction: roleplayOngoingActionPointer("Ivo is tying the last knot."),
-	}
-	job, err := NewRoleplayOngoingActionJob(input)
-	if err != nil {
-		t.Fatal(err)
-	}
-	prompt, err := RenderPortableJob(job)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, want := range []string{
-		input.CharacterName, input.ExactContribution, string(input.Source),
-		*input.PreviousOngoingAction, "previous_ongoing_action", "ongoing_action",
-	} {
-		if !strings.Contains(prompt, want) {
-			t.Fatalf("prompt missing %q: %s", want, prompt)
+	for _, required := range []string{previous, "A. ", "B. ", "C. ", "Answer with A or B or C."} {
+		if !strings.Contains(prompt, required) {
+			t.Fatalf("relation prompt is missing %q:\n%s", required, prompt)
 		}
 	}
 	for _, forbidden := range []string{
-		"exact_instruction", "user_turn", "context", "tool", "operation", "workflow", "complete the turn",
+		"previous_ongoing_action", "assistant_response", "NONE", "preserve",
+		"byte-for-byte", "JSON", "schema", "unchanged", "replacement",
+		"Return only",
 	} {
-		if strings.Contains(strings.ToLower(prompt), forbidden) {
-			t.Fatalf("prompt contains unrelated authority %q: %s", forbidden, prompt)
+		if strings.Contains(prompt, forbidden) {
+			t.Fatalf("relation prompt leaked %q:\n%s", forbidden, prompt)
 		}
 	}
+
+	relation, err := DecodeRoleplayOngoingActionRelation(input, "B")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if relation != RoleplayOngoingActionUnchanged {
+		t.Fatalf("relation = %q, want code-owned unchanged value", relation)
+	}
+	if _, err := DecodeRoleplayOngoingActionRelation(input, "unchanged"); err == nil {
+		t.Fatal("internal relation label was accepted as model output")
+	}
 }
 
-func TestRoleplayOngoingActionRejectsResponseBeyondRoleplayOutputBound(t *testing.T) {
-	t.Parallel()
-	input := RoleplayOngoingActionInput{
-		CharacterName:     "Ivo",
-		Source:            RoleplayOngoingActionSourceAssistantResponse,
-		ExactContribution: strings.Repeat("x", roleplay.MaxNarrativeResponseBytes+1),
-	}
-	if _, err := NewRoleplayOngoingActionJob(input); err == nil {
-		t.Fatal("ongoing-action station accepted a response beyond the roleplay output bound")
-	}
-}
-
-func TestRoleplayOngoingActionAcceptsExactTypedUserActionAtItsOwnBound(t *testing.T) {
-	t.Parallel()
-	input := RoleplayOngoingActionInput{
-		CharacterName:     "Ivo",
+func TestRoleplayOngoingActionRelationWithoutPreviousHasTwoChoices(t *testing.T) {
+	input := RoleplayOngoingActionRelationInput{
+		CharacterName:     "Mira",
 		Source:            RoleplayOngoingActionSourceUserAction,
-		ExactContribution: strings.Repeat("x", roleplay.MaxUserTurnBytes),
+		ExactContribution: "I start crossing the bridge.",
 	}
-	if _, err := NewRoleplayOngoingActionJob(input); err != nil {
-		t.Fatalf("bounded user action rejected: %v", err)
+	prompt, err := BuildRoleplayOngoingActionRelationPrompt(input)
+	if err != nil {
+		t.Fatal(err)
 	}
-	input.ExactContribution += "x"
-	if _, err := NewRoleplayOngoingActionJob(input); err == nil {
-		t.Fatal("over-bound user action was accepted")
+	if !strings.Contains(prompt, "A. ") || !strings.Contains(prompt, "B. ") ||
+		strings.Contains(prompt, "C. ") {
+		t.Fatalf("relation prompt does not expose exactly two opaque choices:\n%s", prompt)
+	}
+	relation, err := DecodeRoleplayOngoingActionRelation(input, "B")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if relation != RoleplayOngoingActionReplacement {
+		t.Fatalf("relation = %q, want code-owned replacement value", relation)
 	}
 }
 
-func roleplayOngoingActionPointer(value string) *string { return &value }
+func TestRoleplayOngoingActionValueIsOrdinaryPlainText(t *testing.T) {
+	input := RoleplayOngoingActionValueInput{
+		CharacterName:     "Mira",
+		Source:            RoleplayOngoingActionSourceUserAction,
+		ExactContribution: "I start crossing the bridge.",
+	}
+	prompt, err := BuildRoleplayOngoingActionValuePrompt(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, forbidden := range []string{
+		"previous", "NONE", "JSON", "schema", "Return", "Answer with",
+	} {
+		if strings.Contains(prompt, forbidden) {
+			t.Fatalf("value prompt leaked %q:\n%s", forbidden, prompt)
+		}
+	}
+
+	const raw = "Crossing the bridge."
+	value, err := DecodeRoleplayOngoingActionValue(input, raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if value != raw {
+		t.Fatalf("value = %q, want exact ordinary response %q", value, raw)
+	}
+	const jsonShaped = `{"ongoing_action":"Crossing the bridge."}`
+	value, err = DecodeRoleplayOngoingActionValue(input, jsonShaped)
+	if err != nil {
+		t.Fatalf("JSON-shaped ordinary action text: %v", err)
+	}
+	if value != jsonShaped {
+		t.Fatalf("JSON-shaped action text changed: got %q want %q", value, jsonShaped)
+	}
+}
+
+func TestRoleplayOngoingActionPortableBoundariesAreSplit(t *testing.T) {
+	relationJob, err := NewRoleplayOngoingActionRelationJob(RoleplayOngoingActionRelationInput{
+		CharacterName:     "Mira",
+		Source:            RoleplayOngoingActionSourceUserAction,
+		ExactContribution: "I stop walking.",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	valueJob, err := NewRoleplayOngoingActionValueJob(RoleplayOngoingActionValueInput{
+		CharacterName:     "Mira",
+		Source:            RoleplayOngoingActionSourceUserAction,
+		ExactContribution: "I start crossing the bridge.",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if relationJob.Kind != WorkRoleplayOngoingActionRelation {
+		t.Fatalf("relation kind = %q", relationJob.Kind)
+	}
+	if valueJob.Kind != WorkRoleplayOngoingActionValue {
+		t.Fatalf("value kind = %q", valueJob.Kind)
+	}
+	for _, job := range []PortableJob{relationJob, valueJob} {
+		prompt, err := RenderPortableJob(job)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, structured := range []string{"character_name", "exact_contribution", `{"`} {
+			if strings.Contains(prompt, structured) {
+				t.Fatalf("%s rendered structured model context %q:\n%s", job.Kind, structured, prompt)
+			}
+		}
+		framing, err := PortableResponseFramingForJob(job)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if framing != PortableResponseFramingSingleLine {
+			t.Fatalf("%s framing = %q", job.Kind, framing)
+		}
+	}
+	maximum, err := PortableResponseMaximumBytesForJob(relationJob)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if maximum != 1 {
+		t.Fatalf("relation maximum = %d, want one opaque ID byte", maximum)
+	}
+}

@@ -2,33 +2,27 @@ package assemblyline
 
 func renderPortableDatabaseWebJob(job PortableJob) (string, bool, error) {
 	switch job.Kind {
-	case WorkDatabaseSchemaSelectionCoverage, WorkDatabaseSchemaRelationSelection,
+	case WorkDatabaseSchemaRelationChoice,
 		WorkDatabaseQueryFromRelation, WorkDatabaseQueryShape,
-		WorkDatabaseQueryProjectionCoverage, WorkDatabaseQueryProjectionAggregate,
+		WorkDatabaseQueryPurposePresence,
+		WorkDatabaseQueryPurposeInventory, WorkDatabaseQueryPurposeNecessity,
+		WorkDatabaseQueryPurposeRelation,
+		WorkDatabaseQueryProjectionAggregate,
 		WorkDatabaseQueryProjectionField, WorkDatabaseQueryProjectionTimeBucket,
-		WorkDatabaseQueryFilterCoverage, WorkDatabaseQueryFilterField,
-		WorkDatabaseQueryFilterOperator, WorkDatabaseQueryFilterValueCoverage,
-		WorkDatabaseQueryFilterValue, WorkDatabaseQueryWindowCoverage,
+		WorkDatabaseQueryFilterField, WorkDatabaseQueryFilterOperator,
+		WorkDatabaseQueryFilterValue,
 		WorkDatabaseQueryWindowField, WorkDatabaseQueryWindowUnit,
-		WorkDatabaseQueryWindowAmount, WorkDatabaseQueryExistenceCoverage,
+		WorkDatabaseQueryWindowAmount,
 		WorkDatabaseQueryExistenceRelation, WorkDatabaseQueryExistenceNegated,
-		WorkDatabaseQueryHavingCoverage, WorkDatabaseQueryHavingAggregate,
+		WorkDatabaseQueryHavingAggregate,
 		WorkDatabaseQueryHavingField, WorkDatabaseQueryHavingOperator,
-		WorkDatabaseQueryHavingValue, WorkDatabaseQueryOrderCoverage,
+		WorkDatabaseQueryHavingValue,
 		WorkDatabaseQueryOrderProjection, WorkDatabaseQueryOrderDirection:
 		return handledPortableRender(renderPortableDatabaseLeaf(job))
-	case WorkDatabaseEvidenceGap:
-		return handledPortableRender(renderDecodedPortableInput(job, BuildDatabaseEvidenceGapPrompt))
 	case WorkDatabaseJoinPathSelection:
 		return handledPortableRender(renderDecodedPortableInput(job, BuildDatabaseJoinPathSelectionPrompt))
 	case WorkWebRelevanceRelation:
 		return handledPortableRender(renderDecodedPortableInput(job, BuildWebRelevanceRelationPrompt))
-	case WorkWebSynthesisParagraphCoverage:
-		return handledPortableRender(renderDecodedPortableInput(job, BuildWebSynthesisParagraphCoveragePrompt))
-	case WorkWebSynthesisParagraph:
-		return handledPortableRender(renderDecodedPortableInput(job, BuildWebSynthesisParagraphPrompt))
-	case WorkWebSynthesisEvidenceRelation:
-		return handledPortableRender(renderDecodedPortableInput(job, BuildWebSynthesisEvidenceRelationPrompt))
 	default:
 		return "", false, nil
 	}

@@ -4,74 +4,62 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
+	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/modelconfig"
 	"github.com/gryph/omnidex/internal/station"
 )
 
-func modelRoutingFromJobMetadata(metadata json.RawMessage, base ModelRouting) (ModelRouting, error) {
+func modelRoutingFromJobMetadata(metadata json.RawMessage) (ModelRouting, error) {
 	if len(metadata) == 0 {
-		return base, nil
+		return ModelRouting{}, fmt.Errorf("job model routing metadata is required")
 	}
-	var payload map[string]any
+	var payload struct {
+		ModelConfig json.RawMessage `json:"model_config"`
+	}
 	if err := json.Unmarshal(metadata, &payload); err != nil {
 		return ModelRouting{}, fmt.Errorf("parse job model routing metadata: %w", err)
 	}
-	if err := rejectRemovedJobModelAliases(payload); err != nil {
-		return ModelRouting{}, err
+	if len(payload.ModelConfig) == 0 {
+		return ModelRouting{}, fmt.Errorf("job model routing metadata requires model_config")
 	}
-	cfg := modelconfig.Config{}
-	if raw, ok := payload["model_config"]; ok {
-		bytes, err := json.Marshal(raw)
-		if err != nil {
-			return ModelRouting{}, fmt.Errorf("encode job model config: %w", err)
-		}
-		cfg, err = modelconfig.FromJSON(bytes)
-		if err != nil {
-			return ModelRouting{}, fmt.Errorf("parse job model config: %w", err)
-		}
+	cfg, err := modelconfig.FromJSON(payload.ModelConfig)
+	if err != nil {
+		return ModelRouting{}, fmt.Errorf("parse job model config: %w", err)
 	}
-	if len(cfg) == 0 {
-		return base, nil
-	}
-	baseRouting := modelconfig.Routing{
-		Stations: base.Stations, RoleplaySemanticModel: base.RoleplaySemanticModel,
-	}
-	applied := modelconfig.Apply(baseRouting, cfg)
-	return ModelRouting{
-		Stations: applied.Stations, RoleplaySemanticModel: applied.RoleplaySemanticModel,
-	}, nil
+	return cfg.Routing(), nil
 }
 
-func rejectRemovedJobModelAliases(payload map[string]any) error {
-	for _, key := range []string{
-		"model_plan",
-		"model_analyze",
-		"model_response",
-		"model_search",
-		"model_tagger",
-		"model_verify",
-		"model_memory",
-		"model_execute",
-		"model_source_review",
-		"model_source",
-		"model_fragment",
-	} {
-		if _, exists := payload[key]; exists {
-			return fmt.Errorf("job model routing metadata %s was removed; configure an exact station field inside model_config", key)
-		}
+func codingScopeModeFromJobMetadata(metadata json.RawMessage) (model.CodingScopeMode, error) {
+	if len(metadata) == 0 {
+		return "", fmt.Errorf("job coding scope metadata is required")
 	}
-	return nil
+	var payload struct {
+		CodingScopeMode model.CodingScopeMode `json:"coding_scope_mode"`
+	}
+	if err := json.Unmarshal(metadata, &payload); err != nil {
+		return "", fmt.Errorf("parse job coding scope metadata: %w", err)
+	}
+	if err := payload.CodingScopeMode.Validate(); err != nil {
+		return "", fmt.Errorf("parse job coding scope mode: %w", err)
+	}
+	return payload.CodingScopeMode, nil
 }
 
 func stationModel(routing ModelRouting, id station.ID) (string, error) {
 	if err := id.Validate(); err != nil {
 		return "", err
 	}
-	if configured := strings.TrimSpace(routing.Stations[id]); configured != "" {
-		return configured, nil
+	configured, exists := routing.Stations[id]
+	if !exists {
+		return "", fmt.Errorf("semantic station %q has no configured model", id)
 	}
-	return "", fmt.Errorf("semantic station %q has no configured model", id)
+	if configured == "" || configured != strings.TrimSpace(configured) ||
+		!utf8.ValidString(configured) || strings.ContainsRune(configured, '\x00') {
+		return "", fmt.Errorf("semantic station %q must configure one exact canonical model name", id)
+	}
+	return configured, nil
 }
 
 func (s *Service) requiredStationModel(routing ModelRouting, id station.ID) (string, error) {

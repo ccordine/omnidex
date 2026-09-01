@@ -12,7 +12,8 @@ rules in [`CHARMANDER_ASSEMBLY_LINE.md`](CHARMANDER_ASSEMBLY_LINE.md) remain in 
 ## Purpose
 
 The Cognition Runtime coordinates code-owned progress across tasks whose relevant
-state is larger or longer-lived than one model context. Production vocabulary is
+state is larger or longer-lived than one model context within the current running
+Omnidex service. It is not a cross-start state mechanism. Production vocabulary is
 limited to:
 
 - goal;
@@ -39,7 +40,8 @@ operation inputs, selects supporting evidence, executes transitions, and repeats
 Inference is an interrupt, not the loop. A model call is invalid unless code has first
 exhausted registered deterministic work and persisted one precisely named semantic
 uncertainty that it cannot resolve. The model crosses only that uncertainty and
-returns one station-specific typed leaf. It never chooses an environment operation,
+returns one ordinary raw-text semantic value. Code alone decodes that value into the
+station-specific typed leaf. It never chooses an environment operation,
 constructs an operation input, cites action evidence, predicts an effect, manages the
 Working Set, proposes a plan while acting, or declares completion.
 
@@ -150,35 +152,40 @@ Identity and transition rules are absolute:
 - A previously unseen action accepts only the exact current revision. A stale
   revision or cross-episode revision fails without an effect.
 - Preconditions, authorization, input validation, state mutation, transition
-  persistence, and the new revision commit atomically.
+  recording, and the new revision commit atomically within the current database
+  lifecycle.
 - Before dispatch, code may prepare an action only from one registered public
   operation contract whose public requirements are satisfied. Every argument and
   evidence reference is derived from accepted typed knowledge or a registered fixed
   binding. Missing, conflicting, stale, or ambiguous grounding fails before dispatch.
 - Invalid actions and failed preconditions do not mutate environment state.
 - Pre- and post-revision hashes, the action request hash, observations, cost, and
-  outcome are durable evidence.
+  outcome are transactional evidence for the current database lifecycle.
 
 Adapters may implement macro-actions. Code may perform deterministic low-level
 transitions inside a registered macro, but reports station results, code-prepared
 environment actions, and low-level transitions separately.
 
-## Durable transition protocol
+## Current-runtime transition protocol
 
-PostgreSQL is canonical for cognition episode identity, active lifecycle attempt,
-action request identity, ingested transition receipts, obligation commands, Task
-Ledger events, Working Set state, Context Projections, and terminal state. Redis may
-coordinate leases and progress but is not recovery authority. An environment host
-must durably commit its own state and transition receipts.
+PostgreSQL is canonical during one running service for cognition episode identity,
+active lifecycle attempt, action request identity, ingested transition receipts,
+obligation commands, Task Ledger events, Working Set state, Context Projections, and
+terminal state. Redis may coordinate leases and progress but is not authoritative.
+An environment host may commit its own state and transition receipts according to
+its adapter contract, but that external state cannot revive an Omnidex episode after
+an Omnidex startup.
 
 The coordinator records a new `ActionID` and canonical request hash before dispatch.
 The environment atomically validates the actor fence and expected revision, applies
 the action, and records its transition under that ID. The coordinator then ingests
 the returned transition exactly once and atomically updates its Task Ledger, Working
-Set, obligation graph, and episode revision. A crash between dispatch and ingestion
-is recovered by retrying the same `ActionID`; the environment returns the prior
-transition. A conflicting result, missing prior revision, nonconsecutive revision,
-cross-episode identity, or terminal episode mutation is an invariant failure.
+Set, obligation graph, and episode revision. While the same Omnidex service remains
+running, an ambiguous dispatch result may be retried with the same `ActionID`; the
+environment returns the prior transition. A conflicting result, missing prior
+revision, nonconsecutive revision, cross-episode identity, or terminal episode
+mutation is an invariant failure. If the Omnidex service stops, the episode ends and
+is not reconstructed on startup.
 
 Every worker-originated read-modify-write is bound to job, run, Task Ledger
 generation, step, monotonically increasing attempt, worker, and lease fence. This
@@ -197,9 +204,10 @@ surface, station boundary, recovery rules, forbidden model outputs, and removal 
 the rejected universal decision path are normative in
 [`CHARMELEON_COGNITION_RESOLUTION.md`](CHARMELEON_COGNITION_RESOLUTION.md).
 
-The model never decides what operation to invoke. It may return only the one typed
-leaf permitted by the station for the persisted uncertainty. Code records that value
-and reruns deterministic closure.
+The model never decides what operation to invoke. It returns one ordinary raw-text
+semantic value for the persisted uncertainty. Code parses it into the station's typed
+leaf, records that value, and reruns deterministic closure; typed structure is never a
+model reproduction requirement.
 
 ## Obligation graph
 
@@ -234,9 +242,9 @@ one registered named semantic uncertainty?
               ↓
         Context Builder seals one station-specific projection
               ↓
-        model returns one typed leaf
+        model returns one ordinary raw-text semantic value
               ↓
-        code validates and records it, then reruns closure
+        code decodes, validates, and records the typed leaf, then reruns closure
         ↓
 environment commits one transition or one explicit failure
         ↓
@@ -260,15 +268,20 @@ becomes stale is rejected.
 ### Every model call gets a clean desk
 
 The context window is reusable compute space, not accumulated memory. PostgreSQL,
-the Task Ledger, the Working Set, and immutable evidence hold long-lived state. Only
-after deterministic closure yields a named uncertainty does code compile a new
+the Task Ledger, the Working Set, and immutable evidence hold state for the current
+service/database lifecycle. Only after deterministic closure yields a named uncertainty does code compile a new
 disposable station Context Projection and load it by exact projection identity
 immediately before inference. Deterministic operations create no fake model work and
 require no model provider. Provider discovery, attestation, and process activation
 are also deferred until that uncertainty exists. A fully deterministic episode starts
-and seals without provider bootstrap, activation, projection, or call evidence. A
-station retains no prior prompt, response, transcript tail, or message buffer after
-the call.
+and seals without provider bootstrap, activation, projection, or call evidence. An
+accepted or terminal semantic station retains no conversation tail or message buffer.
+The sole source-body exception exists only while one response is deterministically
+rejected: code persists its exact prompt, response, job, model, and defect outcome so a
+bounded continuation can remain in that same context. Persistence does not make the
+complete response model-visible again: code projects only the proven mutable span and
+one necessary semantic question, then splices the returned ordinary text into the
+retained base. Acceptance or exhaustion releases the continuation context.
 
 Two budgets remain distinct:
 
@@ -279,9 +292,9 @@ Two budgets remain distinct:
 
 Consuming one episode call decrements only the remaining-call allowance. It does not
 shrink the next station's input or output capacity. Candidate selection, semantic
-classification, one declaration, one repair-guidance instruction, and one
-repair-executor source node may therefore each use their complete registered budget
-while seeing different exact projections. Environment execution is not itself a model
+classification, and one ordinary source-body response each use their registered budget.
+A rejected source body can consume only the remainder of its three-call job-local bound
+while retaining the same model route. Environment execution is not itself a model
 station.
 
 Conversation history is never selected by `last N`. The current direct instruction,
@@ -315,7 +328,7 @@ constraints, current revision summary, ready blockers, and latest unresolved fai
 remain resident. Evidence remains while it causally supports an active obligation.
 Raw evidence may release after a compact evidence-bound fact is accepted; completed,
 rejected, superseded, resolved, or stale material leaves normal projections while its
-history remains durable. Normal station outputs cannot retain, release, pin, or select
+history remains available for the current database lifecycle. Normal station outputs cannot retain, release, pin, or select
 Working Set entries. A future exceptional attention-advice experiment requires its
 own role-specific contract and evidence that deterministic policy cannot perform the
 job; it cannot be added to every station response.
@@ -340,36 +353,24 @@ The evaluator cannot send feedback into a running episode. The coordinator canno
 open oracle storage. Process separation is a required promotion property, not an
 optimization.
 
-## Restart and takeover contract
+## Startup reset boundary
 
-Recovery reconstructs an episode from PostgreSQL and the environment's durable
-revision, never from a conversation transcript, generated inspection file, Redis
-cache, or model recollection. Before the first post-restart deterministic resolution
-or station call, the following must match an uninterrupted execution at the same
-boundary:
+`database/setup.sql` is the sole authoritative definition of the internal Omnidex
+schema. Every Omnidex process/service startup drops and recreates the configured
+dedicated schema from that file. The startup intentionally discards all prior
+episodes, jobs, Task Ledger events and materializations, Working Sets, Context
+Projections, obligations, action receipts, evidence, memory, and terminal state.
 
-- environment revision, registered action catalog, and public causal catalog;
-- Task Ledger materialized state and replay hash;
-- Working Set contents, scopes, freshness, and version;
-- active obligation, dependencies, generation, and status;
-- exact deterministic resolution state and, when present, exact rendered
-  station-visible projection bytes plus an attempt-normalized semantic digest over
-  goal, world revision, graph, ledger, Working Set, active obligation, public causal
-  catalog, named uncertainty, candidate IDs, evidence refs, and non-actor budget and
-  station fields;
-- completed action receipts and remaining budgets.
+There is no restart, takeover, resume, replay-from-PostgreSQL, or in-place database
+upgrade contract. A stopped episode is stopped; external environment or filesystem
+state does not reconstruct its former internal authority. A new request creates new
+identity and state in the fresh database lifecycle.
 
-The replacement Context Projection and snapshot identities are not equal to the old
-worker's identities: those immutable authorities deliberately bind attempt and worker.
-They must differ and the old identities must remain fenced. Continuity requires equal
-rendered content and semantic state after removing only the actor authority fields.
-
-The next stochastic station result need not be byte-identical. The deterministic
-state and named uncertainty presented before that call must be identical. Interruption
-tests cover no kill, one random kill, five random kills, a kill after every station
-result, lease expiry during inference, and an old worker waking after takeover. The
-stale worker must fail every ledger, Working Set, call-evidence, environment-action,
-and completion write.
+Worker attempts, lease fencing, idempotent `ActionID` retry, and stale-write
+rejection still apply while the same Omnidex service remains running. Tests for those
+rules must not stop and restart the service. Startup tests instead prove that the
+schema exactly matches `database/setup.sql` and no row from the previous lifecycle
+is visible.
 
 ## Environment transfer and coding boundary
 
@@ -413,9 +414,10 @@ is:
 7. replace the production universal decision loop incompatibly and prove that a
    deterministic production workload can run without provider configuration or
    contact; and only then
-8. persist the proven objectives, facts, operation receipts, named gaps, accepted
-   semantic leaves, artifacts, and verification results; add restart, replay,
-   provenance, scale, transfer, and promotion evidence in that order.
+8. record the proven objectives, facts, operation receipts, named gaps, accepted
+   semantic leaves, artifacts, and verification results for the current database
+   lifecycle; add same-runtime transaction, provenance, fresh-start reset, scale,
+   transfer, and promotion evidence in that order.
 
 A vertical failure stops the sequence. Persistence design does not continue around a
 failed behavior gate. No later stage supplies evidence for an earlier missing gate.
@@ -432,26 +434,28 @@ tests, and exact evidence proving it.
   are absent, and source-level architecture tests forbid their return.
 - [ ] Environment actions are schema-validated, revision-fenced, transactional, and
   idempotent solely by `ActionID`.
-- [ ] Cognition transitions, obligations, and terminal state survive PostgreSQL-only
-  recovery.
+- [ ] Cognition transitions, obligations, and terminal state are transactionally
+  authoritative within one running service.
 - [ ] Monotonic attempts fence every worker-originated read and write.
 - [ ] Public operation contracts, typed knowledge reducers, grounding, and evidence
   lineage are versioned and contain no private oracle state.
 - [ ] A unique prerequisite producer or goal-achieving operation executes with zero
-  model calls, including after PostgreSQL-only recovery.
+  model calls throughout the current service lifecycle.
 - [ ] Every model call is caused by one persisted named uncertainty and returns only
   its station-specific typed leaf.
 - [ ] Universal model-owned action, argument, evidence, expected-effect, proposal,
   attention, and completion fields are absent from production source and schemas.
-- [ ] Task Ledger integration has one authoritative writer and exact replay.
+- [ ] Task Ledger integration has one authoritative writer and exact same-runtime
+  materialization.
 - [ ] Deterministic Working Set lifecycle is live without a transcript fallback.
 - [ ] Context Projection is live for a promoted consumer and every call is bound.
 - [ ] Obligation generations, contradiction, and replanning pass transition tests.
-- [ ] Restart state is identical and every stale-worker write is rejected.
+- [ ] A service startup recreates the schema from `database/setup.sql`, retains zero
+  prior internal rows, and every same-runtime stale-worker write is rejected.
 - [ ] Two held-out environment surfaces pass without production changes.
 - [ ] Repository investigation passes in shadow without weakening coding boundaries.
 
 Checked items above correspond only to the implementation and exact tests in this
 change. Existing Task Ledger, Working Set, Context Projection, and
 repository-intelligence primitives remain foundations rather than proof of any
-unchecked cognition or restart guarantee.
+unchecked cognition guarantee.

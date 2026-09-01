@@ -5,11 +5,17 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/roleplay"
 	"github.com/jackc/pgx/v5"
 )
+
+type channelMessageQuerier interface {
+	QueryRow(context.Context, string, ...any) pgx.Row
+	Query(context.Context, string, ...any) (pgx.Rows, error)
+}
 
 func (r *Repository) ListChannelMessages(
 	ctx context.Context,
@@ -17,6 +23,22 @@ func (r *Repository) ListChannelMessages(
 	limit int,
 	beforeID *int64,
 ) (model.ChannelMessagePage, error) {
+	if r == nil || r.pool == nil {
+		return model.ChannelMessagePage{}, fmt.Errorf("channel message list requires PostgreSQL")
+	}
+	return listChannelMessages(ctx, r.pool, channelID, limit, beforeID)
+}
+
+func listChannelMessages(
+	ctx context.Context,
+	querier channelMessageQuerier,
+	channelID model.ChannelID,
+	limit int,
+	beforeID *int64,
+) (model.ChannelMessagePage, error) {
+	if ctx == nil || querier == nil {
+		return model.ChannelMessagePage{}, fmt.Errorf("channel message list requires PostgreSQL and context")
+	}
 	if err := channelID.Validate(); err != nil {
 		return model.ChannelMessagePage{}, err
 	}
@@ -27,18 +49,19 @@ func (r *Repository) ListChannelMessages(
 		return model.ChannelMessagePage{}, fmt.Errorf("channel message cursor must be positive")
 	}
 	var exists bool
-	if err := r.pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM ai_channels WHERE id=$1)`, channelID).Scan(&exists); err != nil {
+	if err := querier.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM ai_channels WHERE id=$1)`, channelID).Scan(&exists); err != nil {
 		return model.ChannelMessagePage{}, err
 	}
 	if !exists {
 		return model.ChannelMessagePage{}, pgx.ErrNoRows
 	}
-	rows, err := r.pool.Query(ctx, `
+	rows, err := querier.Query(ctx, `
 		SELECT message.id,message.channel_id,message.role,message.content,message.created_at,
 		       channel.mode,COALESCE(fictional_character.name,research_character.name),
 		       fictional.source_message_id IS NOT NULL,research.source_message_id IS NOT NULL,
 		       user_turn.authority,
-		       turn_job.id,turn_job.status,turn_job.error,turn_job.binding_count
+		       turn_job.id,turn_job.status,turn_job.error,turn_job.updated_at,
+		       turn_job.binding_count
 		FROM ai_channel_messages AS message
 		JOIN ai_channels AS channel ON channel.id=message.channel_id
 		LEFT JOIN roleplay_turn_completions AS fictional
@@ -56,7 +79,7 @@ func (r *Repository) ListChannelMessages(
 		LEFT JOIN roleplay_user_turns AS user_turn
 		  ON user_turn.user_message_id=message.id AND user_turn.channel_id=message.channel_id
 		LEFT JOIN LATERAL (
-			SELECT candidate.id,candidate.status,candidate.error,
+			SELECT candidate.id,candidate.status,candidate.error,candidate.updated_at,
 			       COUNT(*) OVER () AS binding_count
 			FROM jobs AS candidate
 			WHERE message.role='user' AND candidate.pipeline='chat'
@@ -106,11 +129,12 @@ func scanPresentedChannelMessage(row channelRowScanner) (model.ChannelMessage, e
 	var userTurnAuthority []byte
 	var turnJobID, turnBindingCount *int64
 	var turnStatus, turnError *string
+	var turnUpdatedAt *time.Time
 	if err := row.Scan(
 		&message.ID, &message.ChannelID, &message.Role, &message.Content, &message.CreatedAt,
 		&mode, &speakerName, &fictionalCompletion, &researchCompletion,
 		&userTurnAuthority,
-		&turnJobID, &turnStatus, &turnError, &turnBindingCount,
+		&turnJobID, &turnStatus, &turnError, &turnUpdatedAt, &turnBindingCount,
 	); err != nil {
 		return model.ChannelMessage{}, err
 	}
@@ -130,7 +154,7 @@ func scanPresentedChannelMessage(row channelRowScanner) (model.ChannelMessage, e
 			return model.ChannelMessage{}, err
 		}
 		if err := presentChannelTurnState(
-			&message, turnJobID, turnStatus, turnError, turnBindingCount,
+			&message, turnJobID, turnStatus, turnError, turnUpdatedAt, turnBindingCount,
 		); err != nil {
 			return model.ChannelMessage{}, err
 		}
@@ -142,14 +166,16 @@ func scanPresentedChannelMessage(row channelRowScanner) (model.ChannelMessage, e
 		}
 		message.SpeakerName = *speakerName
 		if userTurnAuthority != nil ||
-			turnJobID != nil || turnStatus != nil || turnError != nil || turnBindingCount != nil {
+			turnJobID != nil || turnStatus != nil || turnError != nil || turnUpdatedAt != nil ||
+			turnBindingCount != nil {
 			return model.ChannelMessage{}, fmt.Errorf(
 				"roleplay assistant message %d carries user-turn authority", message.ID,
 			)
 		}
 	} else if fictionalCompletion || researchCompletion || speakerName != nil ||
 		userTurnAuthority != nil ||
-		turnJobID != nil || turnStatus != nil || turnError != nil || turnBindingCount != nil {
+		turnJobID != nil || turnStatus != nil || turnError != nil || turnUpdatedAt != nil ||
+		turnBindingCount != nil {
 		return model.ChannelMessage{}, fmt.Errorf(
 			"assistant channel message %d carries roleplay or user-turn presentation authority", message.ID,
 		)
@@ -210,12 +236,14 @@ func presentChannelTurnState(
 	message *model.ChannelMessage,
 	jobID *int64,
 	status, turnError *string,
+	updatedAt *time.Time,
 	bindingCount *int64,
 ) error {
-	if jobID == nil && status == nil && turnError == nil && bindingCount == nil {
+	if jobID == nil && status == nil && turnError == nil && updatedAt == nil && bindingCount == nil {
 		return nil
 	}
-	if jobID == nil || status == nil || bindingCount == nil || *jobID < 1 || *bindingCount != 1 {
+	if jobID == nil || status == nil || updatedAt == nil || bindingCount == nil ||
+		*jobID < 1 || updatedAt.IsZero() || *bindingCount != 1 {
 		return fmt.Errorf("channel user message %d has contradictory job authority", message.ID)
 	}
 	switch *status {
@@ -231,7 +259,9 @@ func presentChannelTurnState(
 	default:
 		return fmt.Errorf("channel user message %d has unsupported job status %q", message.ID, *status)
 	}
-	state := &model.ChannelMessageTurnState{JobID: *jobID, Status: *status}
+	state := &model.ChannelMessageTurnState{
+		JobID: *jobID, Status: *status, UpdatedAt: *updatedAt,
+	}
 	if turnError != nil {
 		state.Error = *turnError
 	}

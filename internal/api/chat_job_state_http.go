@@ -30,16 +30,10 @@ type chatJobStepAuthority struct {
 	Generation int64  `json:"generation"`
 }
 
-type chatJobProgressAuthority struct {
-	LatestContextID int64 `json:"latest_context_id"`
-	Count           int   `json:"count"`
-}
-
 type chatJobStateResponse struct {
-	Job      chatJobStateAuthority    `json:"job"`
-	Steps    []chatJobStepAuthority   `json:"steps"`
-	Progress chatJobProgressAuthority `json:"progress"`
-	HTML     chatComponentHTML        `json:"html"`
+	Job   chatJobStateAuthority  `json:"job"`
+	Steps []chatJobStepAuthority `json:"steps"`
+	HTML  chatComponentHTML      `json:"html"`
 }
 
 func newChatJobStateResponse(presentation queue.JobPresentation) (chatJobStateResponse, error) {
@@ -60,10 +54,6 @@ func newChatJobStateResponse(presentation queue.JobPresentation) (chatJobStateRe
 			UpdatedAt:         presentation.Job.UpdatedAt, CompletedAt: presentation.Job.CompletedAt,
 		},
 		Steps: steps,
-		Progress: chatJobProgressAuthority{
-			LatestContextID: presentation.Progress.LatestContextID,
-			Count:           len(presentation.Progress.Items),
-		},
 		HTML: chatComponentHTML{Bundle: bundle},
 	}, nil
 }

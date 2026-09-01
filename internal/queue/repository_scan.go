@@ -65,20 +65,6 @@ func scanStep(row pgx.Row) (model.Step, error) {
 	return step, nil
 }
 
-func scanStepContext(row pgx.Row) (model.StepContext, error) {
-	var context model.StepContext
-	if err := row.Scan(
-		&context.ID,
-		&context.StepID,
-		&context.Key,
-		&context.Value,
-		&context.CreatedAt,
-	); err != nil {
-		return model.StepContext{}, err
-	}
-	return context, nil
-}
-
 func scanClaim(row pgx.Row) (model.Step, model.Job, error) {
 	var step model.Step
 	var job model.Job

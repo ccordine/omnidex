@@ -2,9 +2,9 @@ package worker
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
 	"github.com/gryph/omnidex/internal/datasource"
@@ -18,41 +18,48 @@ func prepareObjectiveDatabaseQueryPlan(
 	exactNeed string,
 	objectiveContext assemblyline.ObjectiveContext,
 	stations objectiveDatabaseStations,
-) (datasource.RelationalQueryPlan, int, error) {
+) (datasource.RelationalQueryPlan, objectiveStationReceipt, error) {
 	selected := map[string]string{}
-	totalCalls := 0
+	var ledger objectiveDatabaseBoundedCallLedger
 	for attempts := 0; attempts <= datasource.MaxProjectedRelations; attempts++ {
 		plan, err := datasource.BuildRelationalQueryPlan(snapshot, intent, selected)
 		if err == nil {
-			return plan, totalCalls, nil
+			if ledger.count() == 0 {
+				return plan, objectiveStationReceipt{}, nil
+			}
+			receipt, receiptErr := ledger.totalForSuccess("database join-path planning")
+			return plan, receipt, receiptErr
 		}
 		var ambiguous *datasource.AmbiguousJoinPathError
 		if !errors.As(err, &ambiguous) {
-			return datasource.RelationalQueryPlan{}, totalCalls, err
+			return datasource.RelationalQueryPlan{}, ledger.partial(), err
 		}
 		if _, repeated := selected[ambiguous.ToRelationID]; repeated {
-			return datasource.RelationalQueryPlan{}, totalCalls, fmt.Errorf("database join-path selection made no planning progress")
+			return datasource.RelationalQueryPlan{}, ledger.partial(), fmt.Errorf("database join-path selection made no planning progress")
 		}
 		input, err := objectiveDatabaseJoinPathInput(
 			snapshot, evidenceNeedID, exactNeed, objectiveContext, ambiguous,
 		)
 		if err != nil {
-			return datasource.RelationalQueryPlan{}, totalCalls, err
+			return datasource.RelationalQueryPlan{}, ledger.partial(), err
 		}
 		decision, receipt, err := stations.SelectJoinPath(ctx, input)
-		totalCalls += receipt.Calls
 		if err != nil {
-			return datasource.RelationalQueryPlan{}, totalCalls, err
+			return datasource.RelationalQueryPlan{}, ledger.partial(), err
 		}
-		if err := validateObjectiveDatabaseStationCalls("join-path selection", receipt); err != nil {
-			return datasource.RelationalQueryPlan{}, totalCalls, err
+		if receipt != (objectiveStationReceipt{}) {
+			if err := ledger.record(
+				"database join-path planning", "selection", receipt, exactSemanticLeafCalls,
+			); err != nil {
+				return datasource.RelationalQueryPlan{}, ledger.partial(), err
+			}
 		}
 		if err := decision.ValidateFor(input); err != nil {
-			return datasource.RelationalQueryPlan{}, totalCalls, err
+			return datasource.RelationalQueryPlan{}, ledger.partial(), err
 		}
 		selected[ambiguous.ToRelationID] = decision.PathID
 	}
-	return datasource.RelationalQueryPlan{}, totalCalls, fmt.Errorf("database join-path resolution exceeded its bounded relation count")
+	return datasource.RelationalQueryPlan{}, ledger.partial(), fmt.Errorf("database join-path resolution exceeded its bounded relation count")
 }
 
 func objectiveDatabaseJoinPathInput(
@@ -79,26 +86,17 @@ func objectiveDatabaseJoinPathInput(
 		FromRelationID: ambiguous.FromRelationID, ToRelationID: ambiguous.ToRelationID,
 		Candidates: candidates,
 	}
-	if _, err := assemblyline.NewDatabaseJoinPathSelectionJob(input); err != nil {
+	if _, _, err := assemblyline.ResolveSoleDatabaseJoinPathSelectionDecision(input); err != nil {
 		return assemblyline.DatabaseJoinPathSelectionInput{}, err
 	}
 	return input, nil
-}
-
-type objectiveDatabaseJoinStepDescriptor struct {
-	From       string   `json:"from"`
-	To         string   `json:"to"`
-	ForeignKey string   `json:"foreign_key"`
-	Columns    []string `json:"columns"`
-	References []string `json:"references"`
-	Direction  string   `json:"direction"`
 }
 
 func objectiveDatabaseJoinPathDescriptor(
 	snapshot datasource.SchemaSnapshot,
 	path datasource.JoinPath,
 ) (string, error) {
-	steps := make([]objectiveDatabaseJoinStepDescriptor, len(path.Steps))
+	steps := make([]string, len(path.Steps))
 	for index, step := range path.Steps {
 		from, err := snapshot.Relation(step.FromRelationID)
 		if err != nil {
@@ -120,17 +118,16 @@ func objectiveDatabaseJoinPathDescriptor(
 		if err != nil {
 			return "", err
 		}
-		steps[index] = objectiveDatabaseJoinStepDescriptor{
-			From: from.Schema + "." + from.Name, To: to.Schema + "." + to.Name,
-			ForeignKey: owner.Schema + "." + owner.Name + "." + foreignKey.Name,
-			Columns:    columns, References: references, Direction: string(step.Direction),
-		}
+		steps[index] = fmt.Sprintf(
+			"Step %d: %s.%s relates to %s.%s through the %s.%s.%s foreign key; %s references %s.",
+			index+1,
+			from.Schema, from.Name,
+			to.Schema, to.Name,
+			owner.Schema, owner.Name, foreignKey.Name,
+			strings.Join(columns, ", "), strings.Join(references, ", "),
+		)
 	}
-	encoded, err := json.Marshal(steps)
-	if err != nil {
-		return "", fmt.Errorf("encode database join-path descriptor: %w", err)
-	}
-	return string(encoded), nil
+	return strings.Join(steps, "\n"), nil
 }
 
 func objectiveDatabaseForeignKey(

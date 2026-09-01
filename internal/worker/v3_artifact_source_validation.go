@@ -19,7 +19,6 @@ import (
 	htmlgrammar "github.com/tree-sitter/tree-sitter-html/bindings/go"
 	javagrammar "github.com/tree-sitter/tree-sitter-java/bindings/go"
 	javascriptgrammar "github.com/tree-sitter/tree-sitter-javascript/bindings/go"
-	phpgrammar "github.com/tree-sitter/tree-sitter-php/bindings/go"
 	rustgrammar "github.com/tree-sitter/tree-sitter-rust/bindings/go"
 	"golang.org/x/mod/modfile"
 	"gopkg.in/yaml.v3"
@@ -115,18 +114,6 @@ func validateCargoTOMLArtifactSource(artifactPath string, source []byte) error {
 	return nil
 }
 
-func validatePHPArtifactSource(_ string, source []byte) error {
-	return validateTreeSitterArtifact("PHP", phpgrammar.LanguagePHP(), source)
-}
-
-func validatePHPExecutableArtifactSource(artifactPath string, source []byte) error {
-	if path.Base(artifactPath) != "artisan" ||
-		!bytes.HasPrefix(source, []byte("#!/usr/bin/env php\n<?php\n")) {
-		return fmt.Errorf("PHP executable requires the exact artisan launcher path and shebang")
-	}
-	return validatePHPArtifactSource(artifactPath, source)
-}
-
 func validateJavaScriptArtifactSource(_ string, source []byte) error {
 	return validateTreeSitterArtifact("JavaScript", javascriptgrammar.Language(), source)
 }
@@ -218,21 +205,6 @@ func validateCSSArtifactSource(_ string, source []byte) error {
 	return validateBalancedArtifact("CSS", source, true, false)
 }
 
-func validateNginxArtifactSource(_ string, source []byte) error {
-	if err := validateBalancedArtifact("NGINX", source, false, true); err != nil {
-		return err
-	}
-	return validateNginxStatements(source)
-}
-
-func validateDockerArtifactSource(artifactPath string, source []byte) error {
-	base := strings.ToLower(path.Base(artifactPath))
-	if strings.HasPrefix(base, "docker-compose") {
-		return validateYAMLArtifactSource(artifactPath, source)
-	}
-	return validateDockerfileStatements(source)
-}
-
 func validateEnvironmentArtifactSource(_ string, source []byte) error {
 	for index, raw := range strings.Split(string(source), "\n") {
 		line := strings.TrimSpace(raw)
@@ -267,7 +239,7 @@ func validatePlainTextArtifactSource(_ string, source []byte) error {
 func validateTypeScriptBrowserAssembly(assembly directCodingAssembly) error {
 	files := make(map[string]string, len(assembly.Files))
 	for _, file := range assembly.Files {
-		files[file.Path] = file.Content
+		files[file.Path] = string(file.Content)
 	}
 	index, exists := files["index.html"]
 	if !exists {

@@ -20,26 +20,6 @@ func renderDatabaseQueryAcceptedProjections(state DatabaseQueryIntentLeafState) 
 	return strings.TrimSpace(rendered.String()), nil
 }
 
-func renderDatabaseQueryProjectionCandidates(state DatabaseQueryIntentLeafState) (string, error) {
-	used := make(map[int]struct{}, len(state.OrderBy))
-	for _, term := range state.OrderBy {
-		used[term.Projection] = struct{}{}
-	}
-	var rendered strings.Builder
-	rendered.WriteString("SELECTABLE PROJECTIONS:\n")
-	for index, projection := range state.Projections {
-		if _, exists := used[index]; exists {
-			continue
-		}
-		semantic, err := databaseQueryProjectionSemantic(state, projection)
-		if err != nil {
-			return "", err
-		}
-		fmt.Fprintf(&rendered, "PROJECTION %d %s\n", index, semantic)
-	}
-	return strings.TrimSpace(rendered.String()), nil
-}
-
 func renderDatabaseQueryFocusedProjection(
 	state DatabaseQueryIntentLeafState,
 	index int,
@@ -59,19 +39,27 @@ func databaseQueryProjectionSemantic(
 	projection datasource.RelationalProjection,
 ) (string, error) {
 	if projection.Aggregate == datasource.AggregateCountRows {
-		return "aggregate=count_rows", nil
+		return "count matching rows", nil
 	}
 	field, err := databaseQueryFieldSemantic(state, projection.FieldID)
 	if err != nil {
 		return "", err
 	}
 	if projection.Aggregate != "" {
-		return fmt.Sprintf("aggregate=%s field=%s", projection.Aggregate, field), nil
+		aggregate, err := databaseQueryAggregateDescription(projection.Aggregate)
+		if err != nil {
+			return "", err
+		}
+		return aggregate + " for " + field, nil
 	}
 	if projection.TimeBucket != "" {
-		return fmt.Sprintf("time_bucket=%s field=%s", projection.TimeBucket, field), nil
+		bucket, err := databaseQueryTimeBucketDescription(projection.TimeBucket)
+		if err != nil {
+			return "", err
+		}
+		return field + " grouped by " + bucket, nil
 	}
-	return "field=" + field, nil
+	return field, nil
 }
 
 func renderDatabaseQueryAcceptedFilters(
@@ -102,9 +90,13 @@ func databaseQueryPredicateSemantic(
 	for index, value := range predicate.Values {
 		values[index] = value.Value
 	}
-	semantic := fmt.Sprintf("field=%s operator=%s", field, predicate.Operator)
+	operator, err := databaseQueryFilterOperatorDescription(predicate.Operator)
+	if err != nil {
+		return "", err
+	}
+	semantic := field + " — " + operator
 	if len(values) > 0 {
-		semantic += " values=" + strings.Join(values, " | ")
+		semantic += ": " + strings.Join(values, ", ")
 	}
 	return semantic, nil
 }
@@ -116,20 +108,15 @@ func renderDatabaseQueryFilterScope(input DatabaseQueryFilterLeafInput) (string,
 	return renderDatabaseQueryFocusedRelation(input.State, input.ScopeRelationID)
 }
 
-func renderDatabaseQueryFilterOperator(input DatabaseQueryFilterLeafInput) string {
+func renderDatabaseQueryFilterOperator(input DatabaseQueryFilterLeafInput) (string, error) {
 	if input.Operator == "" {
-		return ""
+		return "", nil
 	}
-	return "ACCEPTED FILTER OPERATOR:\n" + string(input.Operator)
-}
-
-func renderDatabaseQueryAllowedFilterOperators(input DatabaseQueryFilterLeafInput) string {
-	operators := databaseQueryFilterOperators(input.State, input.FieldID)
-	parts := make([]string, len(operators))
-	for index, operator := range operators {
-		parts[index] = string(operator)
+	description, err := databaseQueryFilterOperatorDescription(input.Operator)
+	if err != nil {
+		return "", err
 	}
-	return "SELECTABLE OPERATORS:\n" + strings.Join(parts, " | ")
+	return "ACCEPTED FILTER RELATION:\n" + description, nil
 }
 
 func renderDatabaseQueryAcceptedValues(input DatabaseQueryFilterLeafInput) string {
@@ -149,7 +136,11 @@ func renderDatabaseQueryAcceptedWindows(state DatabaseQueryIntentLeafState) (str
 		if err != nil {
 			return "", err
 		}
-		fmt.Fprintf(&rendered, "- field=%s unit=%s amount=%d\n", field, window.Unit, window.Amount)
+		unit, err := databaseQueryWindowUnitDescription(window.Unit)
+		if err != nil {
+			return "", err
+		}
+		fmt.Fprintf(&rendered, "- the previous %d %s measured on %s\n", window.Amount, unit, field)
 	}
 	return strings.TrimSpace(rendered.String()), nil
 }
@@ -162,11 +153,11 @@ func renderDatabaseQueryAcceptedExistence(state DatabaseQueryIntentLeafState) (s
 		if !ok {
 			return "", fmt.Errorf("database query accepted existence relation %q was not projected", predicate.RelationID)
 		}
-		meaning := "exists"
+		meaning := "must have matching rows"
 		if predicate.Negated {
-			meaning = "does_not_exist"
+			meaning = "must not have matching rows"
 		}
-		fmt.Fprintf(&rendered, "- relation=%s.%s relation_requirement=%s\n", relation.SchemaName, relation.Name, meaning)
+		fmt.Fprintf(&rendered, "- rows in %s.%s %s\n", relation.SchemaName, relation.Name, meaning)
 		for _, filter := range predicate.Filters {
 			semantic, err := databaseQueryPredicateSemantic(state, filter)
 			if err != nil {
@@ -190,10 +181,15 @@ func renderDatabaseQueryAcceptedHaving(state DatabaseQueryIntentLeafState) (stri
 				return "", err
 			}
 		}
-		fmt.Fprintf(
-			&rendered, "- aggregate=%s field=%s operator=%s value=%s\n",
-			predicate.Aggregate, field, predicate.Operator, predicate.Value.Value,
-		)
+		aggregate, err := databaseQueryAggregateDescription(predicate.Aggregate)
+		if err != nil {
+			return "", err
+		}
+		operator, err := databaseQueryFilterOperatorDescription(predicate.Operator)
+		if err != nil {
+			return "", err
+		}
+		fmt.Fprintf(&rendered, "- %s for %s — %s: %s\n", aggregate, field, operator, predicate.Value.Value)
 	}
 	return strings.TrimSpace(rendered.String()), nil
 }
@@ -209,7 +205,11 @@ func renderDatabaseQueryAcceptedOrder(state DatabaseQueryIntentLeafState) (strin
 		if err != nil {
 			return "", err
 		}
-		fmt.Fprintf(&rendered, "- %s direction=%s\n", projection, term.Direction)
+		direction, err := databaseQueryOrderDirectionDescription(term.Direction)
+		if err != nil {
+			return "", err
+		}
+		fmt.Fprintf(&rendered, "- %s — %s\n", projection, direction)
 	}
 	return strings.TrimSpace(rendered.String()), nil
 }

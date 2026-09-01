@@ -31,10 +31,12 @@ authority, one bounded API, explicit direct dependencies, and optional
 code-owned frozen-task ownership and source role.
 
 A generated-source call receives one exact signature, local behavioral
-contract, direct declarations, and permitted symbols. It never receives the
-document path. Code validates the returned node, inserts it into the neutral
-document, composes the complete bytes, records spans, and invokes the selected
-stack's compiler and tests.
+contract, direct declarations, and permitted symbols for scope. It never receives the
+document path and returns only an ordinary plain-text implementation body. Code places
+that body inside the exact declaration, validates the assembled node, inserts it into
+the neutral document, composes the complete bytes, records spans, and invokes the
+selected stack's compiler and tests. Reproducing the signature, parameters, schema,
+AST, or any other code-owned structure is never a model qualification requirement.
 
 Code binds every accepted target, compiled document, and static-file path into
 the exact artifact-identity provenance boundary before the first generated
@@ -130,8 +132,14 @@ output.
 Parser qualifications execute real leaf-parser probes and enumerate the exact
 source-dialect labels they prove. Before any source inference, code also runs
 only the profile's bounded, allowlisted runtime-version probes. Initial source
-stations receive the one selected dialect label; repair execution remains blind
-to it and receives only its already-derived repair instruction and mutable node.
+stations receive the one selected dialect label. When code finds one specific
+source-body defect, it must also identify the exact mutable byte span before continuing
+that same persisted station job with the same model. The model receives one necessary
+semantic question and that span alone and returns ordinary replacement text. Code
+verifies the retained base digest and range and performs the splice. The complete
+previous body, surrounding accepted source, paths, and preservation instructions are
+not model context. There is no separate repair station, replacement node format, or
+alternate model route.
 Manifests, compiler flags, runtime guards, container images, package versions,
 and lock formats are generated from the selected profile rather than from stack
 conditionals.
@@ -175,6 +183,15 @@ This block is also checked against the executable registry by tests.
   Tailwind CSS v4 through its pinned Vite plugin and code-owned CSS import,
   integrity-locked npm dependencies, strict source policy, isolated
   acceptance/runtime tests, typechecking, and a CSS-producing production build.
+  Raw browser host APIs remain unavailable to generated source. A registered
+  technical host capability is considered independently for each accepted
+  requirement, and code projects only a selected wrapper declaration into that
+  task. The wrapper is direct-call-only inside a public event handler and sends
+  one validated owned request to the application-mounted code-owned host bridge;
+  its selected static driver alone holds the raw host API. The code-owned
+  acceptance harness requires a dispatch receipt for each selected host
+  capability. Generated acceptance cannot call wrappers, receipt observers, or
+  raw host APIs and cannot supply a substitute driver.
 - The Go CLI stack supplies a dependency-free module/runtime/entrypoint and runs
   focused tests, `go test -count=1 ./...`, `go vet ./...`, and `go build ./...`.
 - The Laravel HTTP stack supplies Laravel 13's application/router lifecycle,
@@ -207,9 +224,11 @@ This block is also checked against the executable registry by tests.
   those artifacts and services entirely.
 
 One complete target-tree resolution covers the frozen workload under the
-selected stack. When naming remains semantically unresolved, the model returns
+selected stack. When naming remains semantically unresolved, it receives the
+exact immutable request plus separately code-selected technical tree context and returns
 only one raw hierarchy of directory and file basenames; code alone constructs
-normalized relative paths from that hierarchy. No current stack needs that
+normalized relative paths from that hierarchy. The request is not forwarded to
+source generation. No current stack needs that
 call. TypeScript/React allocates one neutral numbered TSX source/test pair for
 the whole workload; the command-line and PHP stacks allocate their registered
 per-task pairs. Each allocator treats the pair atomically, checks regular-file

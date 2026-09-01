@@ -5,53 +5,44 @@ import (
 	"fmt"
 	"io/fs"
 	"net/http"
-	"sync"
 )
 
 //go:embed web/dist/*
 var uiDistFiles embed.FS
 
-var (
-	localizedUIShellsOnce sync.Once
-	localizedUIShells     map[uiLocale]string
-	localizedUIShellsErr  error
-)
-
 func (s *Server) registerUIRoutes() {
-	webRoot, err := fs.Sub(uiDistFiles, "web/dist")
-	if err != nil {
-		panic(fmt.Sprintf("initialize embedded UI filesystem: %v", err))
-	}
-	shells, err := prepareLocalizedUIShells(webRoot)
-	if err != nil {
-		panic(fmt.Sprintf("prepare localized UI shells: %v", err))
-	}
-	if err := prepareLocalizedUIPanels(); err != nil {
-		panic(fmt.Sprintf("prepare localized UI panels: %v", err))
-	}
-	fileServer := http.FileServer(http.FS(webRoot))
-	s.mux.Handle("/ui/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/ui/" || r.URL.Path == "/ui/index.html" {
-			http.NotFound(w, r)
-			return
-		}
-		http.StripPrefix("/ui/", fileServer).ServeHTTP(w, r)
-	}))
-	s.mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/" && r.URL.Path != "/chat" {
-			http.NotFound(w, r)
-			return
-		}
-		s.handleUIShell(w, r, shells)
-	})
+	s.mux.Handle("/ui/", http.HandlerFunc(serveUIAsset))
+	s.mux.HandleFunc("/", s.handleUIShell)
 }
 
-func (s *Server) handleUIShell(w http.ResponseWriter, r *http.Request, shells map[uiLocale]string) {
+func serveUIAsset(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path == "/ui/" || r.URL.Path == "/ui/index.html" {
+		http.NotFound(w, r)
+		return
+	}
+	webRoot, err := fs.Sub(uiDistFiles, "web/dist")
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, fmt.Sprintf("initialize embedded UI filesystem: %v", err))
+		return
+	}
+	fileServer := http.FileServer(http.FS(webRoot))
+	http.StripPrefix("/ui/", fileServer).ServeHTTP(w, r)
+}
+
+func (s *Server) handleUIShell(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path != "/" && r.URL.Path != "/chat" {
+		http.NotFound(w, r)
+		return
+	}
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
-	sessionID := s.ensureUISessionCookie(w, r)
+	sessionID, err := s.ensureUISessionCookie(w, r)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
 	state, _, err := s.loadUIState(r.Context(), sessionID)
 	if err != nil {
 		writeError(w, http.StatusServiceUnavailable, err.Error())
@@ -72,9 +63,9 @@ func (s *Server) handleUIShell(w http.ResponseWriter, r *http.Request, shells ma
 		writeError(w, http.StatusServiceUnavailable, err.Error())
 		return
 	}
-	body, exists := shells[locale]
-	if !exists {
-		writeError(w, http.StatusInternalServerError, fmt.Sprintf("localized UI shell %q is unavailable", locale))
+	body, err := loadLocalizedUIShell(locale)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	setUILocaleResponseHeaders(w, locale)
@@ -86,22 +77,18 @@ func (s *Server) handleUIShell(w http.ResponseWriter, r *http.Request, shells ma
 	_, _ = w.Write([]byte(body))
 }
 
-func prepareLocalizedUIShells(webRoot fs.FS) (map[uiLocale]string, error) {
-	localizedUIShellsOnce.Do(func() {
-		raw, err := fs.ReadFile(webRoot, "index.html")
-		if err != nil {
-			localizedUIShellsErr = fmt.Errorf("embedded UI shell is missing: %w", err)
-			return
-		}
-		localizedUIShells = make(map[uiLocale]string, len(supportedUILocaleOptions))
-		for _, option := range supportedUILocaleOptions {
-			rendered, err := renderLocalizedHTML(string(raw), option.Code)
-			if err != nil {
-				localizedUIShellsErr = fmt.Errorf("render UI shell locale %q: %w", option.Code, err)
-				return
-			}
-			localizedUIShells[option.Code] = rendered
-		}
-	})
-	return localizedUIShells, localizedUIShellsErr
+func loadLocalizedUIShell(locale uiLocale) (string, error) {
+	webRoot, err := fs.Sub(uiDistFiles, "web/dist")
+	if err != nil {
+		return "", fmt.Errorf("initialize embedded UI filesystem: %w", err)
+	}
+	raw, err := fs.ReadFile(webRoot, "index.html")
+	if err != nil {
+		return "", fmt.Errorf("embedded UI shell is missing: %w", err)
+	}
+	rendered, err := renderLocalizedHTML(string(raw), locale)
+	if err != nil {
+		return "", fmt.Errorf("render UI shell locale %q: %w", locale, err)
+	}
+	return rendered, nil
 }

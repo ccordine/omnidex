@@ -16,15 +16,9 @@ export interface JobStepRecord {
   generation: number;
 }
 
-export interface JobProgressRecord {
-  latest_context_id: number;
-  count: number;
-}
-
 export interface JobDetails {
   job: JobRecord;
   steps: JobStepRecord[];
-  progress: JobProgressRecord;
 }
 
 export function positiveJobID(value: unknown, source: string): number {
@@ -55,21 +49,10 @@ export function requireJobDetails(value: Record<string, any>, requestedJobID: nu
     throw new Error(`Job refresh requested #${requestedJobID} but the server returned #${job.id}.`);
   }
   if (!Array.isArray(value.steps)) throw new Error(`Job #${requestedJobID} response did not include a steps array.`);
-  if (!value.progress || typeof value.progress !== "object") {
-    throw new Error(`Job #${requestedJobID} response did not include bounded progress authority.`);
-  }
   const steps = value.steps.map((candidate: unknown, index: number) => requireJobStep(
     candidate, job, `Job #${requestedJobID} step ${index}`,
   ));
-  const progress = value.progress as Record<string, unknown>;
-  const latestContextID = nonnegativeInteger(
-    progress.latest_context_id, `Job #${requestedJobID} latest progress context`,
-  );
-  const count = nonnegativeInteger(progress.count, `Job #${requestedJobID} progress count`);
-  if (count > 24 || (count === 0) !== (latestContextID === 0)) {
-    throw new Error(`Job #${requestedJobID} response contains inconsistent bounded progress authority.`);
-  }
-  return { job, steps, progress: { latest_context_id: latestContextID, count } };
+  return { job, steps };
 }
 
 export function requiredMessage(value: unknown, error: string): string {

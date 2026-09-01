@@ -10,11 +10,11 @@ import (
 
 func genericGoCommandLineDocuments(
 	specification assemblyline.ApplicationSpecification,
-	skills map[string]directCodingSkillBinding,
 	contexts map[string]assemblyline.ApplicationTaskContext,
 	capabilities directCodingCapabilityGraph,
 	coverage assemblyline.ApplicationFileCoveragePlan,
 ) ([]assemblyline.SourceDocument, error) {
+	runtimeDocument := goCommandLineRuntimeDocument()
 	implementations := make([]assemblyline.SourceDocument, 0, len(specification.Requirements))
 	verifications := make([]assemblyline.SourceDocument, 0, len(specification.Requirements))
 	implementationByPath := make(map[string]int, len(specification.Requirements))
@@ -26,12 +26,11 @@ func genericGoCommandLineDocuments(
 		if !exists {
 			return nil, fmt.Errorf("Go command-line workload omits requirement %s", requirement.ID)
 		}
-		behavior, err := compileDirectCodingApplicationTaskBehavior(context, capabilities[requirement.ID])
+		requirementBehavior, err := compileDirectCodingApplicationTaskBehavior(
+			context, capabilities[requirement.ID],
+		)
 		if err != nil {
 			return nil, err
-		}
-		if skill, exists := skills[requirement.ID]; exists {
-			behavior += "\nValidated procedure: " + skill.Procedure
 		}
 		pair, err := directCodingTaskSinglePair(coverage, context.Task.TaskID)
 		if err != nil {
@@ -77,25 +76,27 @@ func genericGoCommandLineDocuments(
 				Signature: fmt.Sprintf(
 					"func %s(input TaskInput, dependencies CapabilityResults) TaskResult", featureName,
 				),
-				Contract: goCommandLineFeatureContract(behavior),
+				Contract: goCommandLineFeatureContract(requirementBehavior),
 				API: fmt.Sprintf(
 					"func %s(input TaskInput, dependencies CapabilityResults) TaskResult", featureName,
 				),
 				DependsOn: dependencies, Capabilities: append([]string(nil), dependencies...),
 				TaskID: context.Task.TaskID, Role: assemblyline.SourceBlockTaskImplementation,
 			})
-		acceptanceDependencies := append([]string(nil), dependencies...)
-		acceptanceDependencies = append(acceptanceDependencies, featureID)
+		acceptanceDependencies := []string{"runtime.api", featureID}
 		verifications[verificationIndex].Blocks = append(
 			verifications[verificationIndex].Blocks, assemblyline.SourceBlock{
-				ID:           fmt.Sprintf("acceptance.%03d", sequence),
-				Signature:    fmt.Sprintf("func Test%s(t *testing.T)", featureName),
-				Contract:     goCommandLineAcceptanceContract(behavior, featureName),
-				API:          fmt.Sprintf("func Test%s(t *testing.T)", featureName),
-				DependsOn:    acceptanceDependencies,
-				Capabilities: append([]string(nil), acceptanceDependencies...),
-				Globals:      []string{"Fatal", "Fatalf", "Error", "Errorf"},
-				TaskID:       context.Task.TaskID, Role: assemblyline.SourceBlockTaskVerification,
+				ID:        fmt.Sprintf("acceptance.%03d", sequence),
+				Signature: fmt.Sprintf("func Test%s(t *testing.T)", featureName),
+				Contract:  goCommandLineAcceptanceContract(requirementBehavior, featureName),
+				API:       fmt.Sprintf("func Test%s(t *testing.T)", featureName),
+				DependsOn: acceptanceDependencies,
+				Capabilities: append(
+					[]string(nil), acceptanceDependencies...,
+				),
+				Globals: []string{"Fatal", "Fatalf", "Error", "Errorf"},
+				TaskID:  context.Task.TaskID,
+				Role:    assemblyline.SourceBlockTaskVerification,
 			})
 		applicationDependencies = append(applicationDependencies, featureID)
 	}
@@ -103,7 +104,7 @@ func genericGoCommandLineDocuments(
 	if err != nil {
 		return nil, err
 	}
-	documents := []assemblyline.SourceDocument{goCommandLineRuntimeDocument()}
+	documents := []assemblyline.SourceDocument{runtimeDocument}
 	documents = append(documents, implementations...)
 	documents = append(documents, verifications...)
 	documents = append(documents, goCommandLineApplicationDocument(
@@ -134,17 +135,13 @@ func goCommandLineCapabilityProjection(
 }
 
 func goCommandLineFeatureContract(behavior string) string {
-	return strings.Join([]string{
-		behavior,
-		"The function body fully implements the exact local behavior and returns one complete TaskResult derived from input and the declared direct dependency results.",
-		"Use Output for user-visible text, Error for a clear failure, ExitCode for process status, and State for reusable string values.",
-	}, "\n")
+	return strings.TrimSpace(behavior)
 }
 
 func goCommandLineAcceptanceContract(behavior, featureName string) string {
 	return strings.Join([]string{
-		behavior,
-		"Call " + featureName + " with representative TaskInput and CapabilityResults values.",
-		"The exact accepted requirement is proven by t.Fatal, t.Fatalf, t.Error, or t.Errorf applied to a value read from that exact call's TaskResult.",
+		strings.TrimSpace(behavior),
+		"Demonstrate this behavior by exercising " + featureName + " with representative TaskInput and CapabilityResults values.",
+		"Treat the returned TaskResult as the observed behavior and fail the test when that behavior violates the requirement.",
 	}, "\n")
 }

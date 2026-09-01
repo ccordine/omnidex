@@ -6,26 +6,28 @@ import (
 )
 
 func renderPortableFragmentGeneration(input FragmentGenerationInput) (string, error) {
+	var prompt string
+	var err error
 	switch input.Language {
 	case "go":
-		return BuildGoFragmentGenerationPrompt(input)
+		prompt, err = BuildGoFragmentGenerationPrompt(input)
 	case TextFragmentLanguage:
-		return BuildTextFragmentGenerationPrompt(input)
+		prompt, err = BuildTextFragmentGenerationPrompt(input)
 	case "typescript":
-		return BuildTypeScriptFragmentPrompt(TypeScriptFragmentPrompt{
+		prompt, err = BuildTypeScriptFragmentPrompt(TypeScriptFragmentPrompt{
 			Dialect:   input.Dialect,
 			Signature: input.Signature,
 			Contract:  input.Behavior,
 			Available: strings.Join(input.Capabilities, "\n"),
 			Globals:   input.PermittedSymbols,
 		})
-	case "javascript", "java", "rust", "php":
-		return BuildBoundedSourceFragmentGenerationPrompt(input)
+	case "javascript", "java", "rust":
+		prompt, err = BuildBoundedSourceFragmentGenerationPrompt(input)
 	default:
 		return "", fmt.Errorf("no fragment renderer supports language %q", input.Language)
 	}
-}
-
-func renderPortableFragmentCorrection(input FragmentCorrectionInput) (string, error) {
-	return BuildFragmentCorrectionPrompt(input)
+	if err != nil {
+		return "", err
+	}
+	return prompt, nil
 }

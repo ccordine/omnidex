@@ -1,7 +1,10 @@
 package db
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/binary"
 	"fmt"
 	"regexp"
 	"strings"
@@ -13,7 +16,7 @@ import (
 
 const DefaultRuntimeSchema = "omnidex_runtime"
 
-const runtimeSchemaBootstrapLockID int64 = 0x4f4d4e4952545343
+const databaseSetupRuntimeSchemaSlot = "__OMNIDEX_RUNTIME_SCHEMA__"
 
 var runtimeSchemaNamePattern = regexp.MustCompile(`^[a-z][a-z0-9_]{0,62}$`)
 
@@ -26,18 +29,20 @@ func ValidateRuntimeSchemaName(name string) error {
 }
 
 // RuntimeSearchPath returns the sole search-path projection used by runtime
-// connections and migration applicability proofs.
+// connections. PostgreSQL searches pg_catalog implicitly before this path;
+// pg_temp remains an explicit, lower-priority session-local facility.
 func RuntimeSearchPath(runtimeSchema string) (string, error) {
 	if err := ValidateRuntimeSchemaName(runtimeSchema); err != nil {
 		return "", err
 	}
-	return runtimeSchema + ",public", nil
+	return runtimeSchema + ",pg_temp", nil
 }
 
 func ConnectRuntime(
 	ctx context.Context,
 	databaseURL string,
 	runtimeSchema string,
+	setupSQL []byte,
 ) (*pgxpool.Pool, error) {
 	if ctx == nil {
 		return nil, fmt.Errorf("runtime database connection requires context")
@@ -52,7 +57,7 @@ func ConnectRuntime(
 	}
 	_, directSearchPath := cfg.ConnConfig.RuntimeParams["search_path"]
 	options := cfg.ConnConfig.RuntimeParams["options"]
-	if directSearchPath || strings.Contains(strings.ToLower(options), "search_path") {
+	if directSearchPath || databaseOptionsSetSearchPath(options) {
 		return nil, fmt.Errorf("DATABASE_URL search_path is forbidden; use DATABASE_SCHEMA")
 	}
 	configurePool(cfg)
@@ -60,55 +65,14 @@ func ConnectRuntime(
 	if err != nil {
 		return nil, err
 	}
-	if err := bootstrapRuntimeSchema(ctx, bootstrap, runtimeSchema); err != nil {
+	if err := installRuntimeSchema(
+		ctx, bootstrap, runtimeSchema, runtimeSearchPath, setupSQL,
+	); err != nil {
 		bootstrap.Close()
 		return nil, err
 	}
 	bootstrap.Close()
 
-	cfg.ConnConfig.RuntimeParams["search_path"] = runtimeSearchPath
-	pool, err := pgxpool.NewWithConfig(ctx, cfg)
-	if err != nil {
-		return nil, err
-	}
-	var selected string
-	if err := pool.QueryRow(ctx, `SELECT current_schema()`).Scan(&selected); err != nil {
-		pool.Close()
-		return nil, err
-	}
-	if selected != runtimeSchema {
-		pool.Close()
-		return nil, fmt.Errorf("runtime database did not select its exact schema")
-	}
-	return pool, nil
-}
-
-// ConnectRuntimeReadOnly selects an existing dedicated runtime schema without
-// bootstrap, migration, or schema mutation. It is for immutable evidence
-// inspection such as station replay; callers must still use read-only
-// transactions for every query.
-func ConnectRuntimeReadOnly(
-	ctx context.Context,
-	databaseURL string,
-	runtimeSchema string,
-) (*pgxpool.Pool, error) {
-	if ctx == nil {
-		return nil, fmt.Errorf("read-only runtime database connection requires context")
-	}
-	runtimeSearchPath, err := RuntimeSearchPath(runtimeSchema)
-	if err != nil {
-		return nil, err
-	}
-	cfg, err := pgxpool.ParseConfig(databaseURL)
-	if err != nil {
-		return nil, err
-	}
-	_, directSearchPath := cfg.ConnConfig.RuntimeParams["search_path"]
-	options := cfg.ConnConfig.RuntimeParams["options"]
-	if directSearchPath || strings.Contains(strings.ToLower(options), "search_path") {
-		return nil, fmt.Errorf("DATABASE_URL search_path is forbidden; use DATABASE_SCHEMA")
-	}
-	configurePool(cfg)
 	cfg.ConnConfig.RuntimeParams["search_path"] = runtimeSearchPath
 	pool, err := pgxpool.NewWithConfig(ctx, cfg)
 	if err != nil {
@@ -154,27 +118,27 @@ func configurePool(cfg *pgxpool.Config) {
 	cfg.HealthCheckPeriod = 30 * time.Second
 }
 
-func bootstrapRuntimeSchema(
+func installRuntimeSchema(
 	ctx context.Context,
 	pool *pgxpool.Pool,
 	runtimeSchema string,
+	runtimeSearchPath string,
+	setupSQL []byte,
 ) error {
+	body, err := renderRuntimeDatabaseSetup(setupSQL, runtimeSchema)
+	if err != nil {
+		return err
+	}
 	tx, err := pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return fmt.Errorf("begin runtime schema bootstrap: %w", err)
 	}
 	defer tx.Rollback(context.Background())
-	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock($1)`, runtimeSchemaBootstrapLockID); err != nil {
+	if _, err := tx.Exec(
+		ctx, `SELECT pg_advisory_xact_lock($1)`, runtimeSchemaBootstrapLockKey(runtimeSchema),
+	); err != nil {
 		return fmt.Errorf("lock runtime schema bootstrap: %w", err)
 	}
-	legacy, err := publicOmnidexSchemaExists(ctx, tx)
-	if err != nil {
-		return err
-	}
-	if err := rejectPublicOmnidexState(legacy); err != nil {
-		return err
-	}
-
 	var exists, owned bool
 	if err := tx.QueryRow(ctx, `
 		SELECT EXISTS (SELECT 1 FROM pg_namespace WHERE nspname=$1),
@@ -188,46 +152,68 @@ func bootstrapRuntimeSchema(
 	if exists && !owned {
 		return fmt.Errorf("runtime schema %q is not owned by the database user", runtimeSchema)
 	}
-	if !exists {
-		if _, err := tx.Exec(ctx, `CREATE SCHEMA `+
-			pgx.Identifier{runtimeSchema}.Sanitize()+` AUTHORIZATION CURRENT_USER`); err != nil {
-			return fmt.Errorf("create dedicated runtime schema: %w", err)
+	if exists {
+		if _, err := tx.Exec(ctx, `DROP SCHEMA `+
+			pgx.Identifier{runtimeSchema}.Sanitize()+` CASCADE`); err != nil {
+			return fmt.Errorf("reset dedicated runtime schema: %w", err)
 		}
 	}
+	if _, err := tx.Exec(ctx, `CREATE SCHEMA `+
+		pgx.Identifier{runtimeSchema}.Sanitize()+` AUTHORIZATION CURRENT_USER`); err != nil {
+		return fmt.Errorf("create dedicated runtime schema: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `SELECT set_config('search_path', $1, true)`, runtimeSearchPath); err != nil {
+		return fmt.Errorf("select runtime schema for database setup: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `
+		SET LOCAL standard_conforming_strings TO on;
+		SET LOCAL check_function_bodies TO off;
+	`); err != nil {
+		return fmt.Errorf("set database setup SQL mode: %w", err)
+	}
+	if _, err := tx.Exec(ctx, string(body)); err != nil {
+		return fmt.Errorf("execute authoritative database setup: %w", err)
+	}
 	if err := tx.Commit(ctx); err != nil {
-		return fmt.Errorf("commit runtime schema bootstrap: %w", err)
+		return fmt.Errorf("commit authoritative runtime schema: %w", err)
 	}
 	return nil
 }
 
-func rejectPublicOmnidexState(legacy bool) error {
-	if legacy {
-		return fmt.Errorf("legacy Omnidex state exists in public; explicit migration is required")
+func renderRuntimeDatabaseSetup(body []byte, runtimeSchema string) ([]byte, error) {
+	if len(body) == 0 {
+		return nil, fmt.Errorf("database setup bytes are unavailable")
 	}
-	return nil
+	if !bytes.Contains(body, []byte(databaseSetupRuntimeSchemaSlot)) {
+		return nil, fmt.Errorf("database setup lacks its runtime schema slot")
+	}
+	return bytes.ReplaceAll(
+		body,
+		[]byte(databaseSetupRuntimeSchemaSlot),
+		[]byte(runtimeSchema),
+	), nil
 }
 
-func publicOmnidexSchemaExists(ctx context.Context, tx pgx.Tx) (bool, error) {
-	var legacy bool
-	if err := tx.QueryRow(ctx, `
-		SELECT EXISTS (
-			SELECT 1 FROM pg_class relations
-			JOIN pg_namespace namespaces ON namespaces.oid=relations.relnamespace
-			WHERE namespaces.nspname='public' AND relations.relkind IN ('r','p') AND (
-				relations.relname IN (
-					'schema_migrations','omni_migrations','omni_runs','task_ledgers',
-					'memory_chunks','memory_chunk_tags'
-				) OR
-				relations.relname='jobs' AND EXISTS (
-					SELECT 1 FROM pg_class steps
-					JOIN pg_namespace step_namespaces ON step_namespaces.oid=steps.relnamespace
-					WHERE step_namespaces.nspname='public' AND steps.relname='job_steps' AND
-					      steps.relkind IN ('r','p')
-				)
-			)
-		)
-	`).Scan(&legacy); err != nil {
-		return false, fmt.Errorf("inspect legacy public Omnidex state: %w", err)
+func runtimeSchemaBootstrapLockKey(runtimeSchema string) int64 {
+	digest := sha256.Sum256([]byte("omnidex.runtime-schema-bootstrap.v1\x00" + runtimeSchema))
+	return int64(binary.BigEndian.Uint64(digest[:8]))
+}
+
+func databaseOptionsSetSearchPath(options string) bool {
+	fields := strings.Fields(options)
+	for index := 0; index < len(fields); index++ {
+		setting := ""
+		switch {
+		case fields[index] == "-c" && index+1 < len(fields):
+			index++
+			setting = fields[index]
+		case strings.HasPrefix(fields[index], "-c"):
+			setting = strings.TrimPrefix(fields[index], "-c")
+		}
+		name, _, _ := strings.Cut(setting, "=")
+		if strings.EqualFold(strings.TrimSpace(name), "search_path") {
+			return true
+		}
 	}
-	return legacy, nil
+	return false
 }

@@ -12,26 +12,20 @@ import (
 //go:embed web/locales/*.json
 var uiLocaleFiles embed.FS
 
-var uiLocaleCatalogs = mustLoadUILocaleCatalogs()
-
-func mustLoadUILocaleCatalogs() map[uiLocale]map[string]string {
-	catalogs := make(map[uiLocale]map[string]string, len(supportedUILocaleOptions))
-	for _, option := range supportedUILocaleOptions {
-		path := "web/locales/" + string(option.Code) + ".json"
-		raw, err := uiLocaleFiles.ReadFile(path)
-		if err != nil {
-			panic(fmt.Sprintf("load UI locale %q: %v", option.Code, err))
-		}
-		catalog, err := decodeUIMessageCatalog(raw)
-		if err != nil {
-			panic(fmt.Sprintf("decode UI locale %q: %v", option.Code, err))
-		}
-		catalogs[option.Code] = catalog
+func loadUIMessageCatalog(locale uiLocale) (map[string]string, error) {
+	if _, err := uiLocaleOptionFor(locale); err != nil {
+		return nil, err
 	}
-	if err := validateUILocaleCatalogs(catalogs); err != nil {
-		panic("validate UI locale catalogs: " + err.Error())
+	path := "web/locales/" + string(locale) + ".json"
+	raw, err := uiLocaleFiles.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("load UI locale %q: %w", locale, err)
 	}
-	return catalogs
+	catalog, err := decodeUIMessageCatalog(raw)
+	if err != nil {
+		return nil, fmt.Errorf("decode UI locale %q: %w", locale, err)
+	}
+	return catalog, nil
 }
 
 func decodeUIMessageCatalog(raw []byte) (map[string]string, error) {
@@ -74,50 +68,7 @@ func decodeUIMessageCatalog(raw []byte) (map[string]string, error) {
 	return catalog, nil
 }
 
-func validateUILocaleCatalogs(catalogs map[uiLocale]map[string]string) error {
-	english, ok := catalogs[uiLocaleEnglish]
-	if !ok {
-		return fmt.Errorf("English UI catalog is missing")
-	}
-	if len(english) == 0 {
-		return fmt.Errorf("English UI catalog is empty")
-	}
-	for key, message := range english {
-		if strings.TrimSpace(key) == "" || strings.TrimSpace(message) == "" {
-			return fmt.Errorf("English UI message %q is blank", key)
-		}
-	}
-	for _, option := range supportedUILocaleOptions {
-		catalog, exists := catalogs[option.Code]
-		if !exists {
-			return fmt.Errorf("UI catalog %q is missing", option.Code)
-		}
-		for key := range english {
-			message, exists := catalog[key]
-			if !exists {
-				return fmt.Errorf("UI catalog %q is missing message %q", option.Code, key)
-			}
-			if strings.TrimSpace(message) == "" {
-				return fmt.Errorf("UI catalog %q message %q is blank", option.Code, key)
-			}
-		}
-		for key := range catalog {
-			if _, exists := english[key]; !exists {
-				return fmt.Errorf("UI catalog %q has unknown message %q", option.Code, key)
-			}
-		}
-	}
-	if len(catalogs) != len(supportedUILocaleOptions) {
-		return fmt.Errorf("UI catalog set has %d locales; expected %d", len(catalogs), len(supportedUILocaleOptions))
-	}
-	return nil
-}
-
-func uiMessage(locale uiLocale, key string) (string, error) {
-	catalog, ok := uiLocaleCatalogs[locale]
-	if !ok {
-		return "", fmt.Errorf("unsupported UI locale %q", locale)
-	}
+func uiMessage(catalog map[string]string, locale uiLocale, key string) (string, error) {
 	message, ok := catalog[key]
 	if !ok {
 		return "", fmt.Errorf("UI locale %q has no message %q", locale, key)

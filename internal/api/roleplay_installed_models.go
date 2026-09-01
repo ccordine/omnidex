@@ -13,7 +13,7 @@ import (
 var errRoleplayModelCatalogUnavailable = errors.New("roleplay model catalog is unavailable")
 
 func (s *Server) loadInstalledRoleplayModelNames(ctx context.Context) ([]string, error) {
-	if s.ollamaModelAuthority == nil && s.ollamaEndpoint() == "" {
+	if s.ollamaEndpoint() == "" {
 		return nil, nil
 	}
 	listPage := s.installedRoleplayModelPageLoader()
@@ -71,9 +71,6 @@ func (s *Server) loadInstalledRoleplayModelNames(ctx context.Context) ([]string,
 }
 
 func (s *Server) installedRoleplayModelPageLoader() func(context.Context, int, int) (ollama.ModelPage, error) {
-	if s.ollamaModelAuthority != nil {
-		return s.ollamaModelAuthority.ListModelPage
-	}
 	client := s.ollamaClientWithTimeout(10 * time.Second)
 	return client.ListModelPage
 }

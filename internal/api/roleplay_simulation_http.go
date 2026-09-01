@@ -39,7 +39,11 @@ func (s *Server) writeRoleplaySimulationComponent(
 	world roleplay.World,
 	page roleplaySimulationPageState,
 ) {
-	sessionID := s.ensureUISessionCookie(w, r)
+	sessionID, err := s.ensureUISessionCookie(w, r)
+	if err != nil {
+		writeRoleplaySimulationError(w, err)
+		return
+	}
 	s.roleplaySceneDraftMu.Lock()
 	defer s.roleplaySceneDraftMu.Unlock()
 	draft, err := s.loadRoleplaySceneDraftLocked(r.Context(), sessionID, channel.ID, world.ID)
@@ -138,10 +142,7 @@ func (s *Server) resolveRoleplayChannel(
 	if s.roleplaySimulation == nil {
 		return model.Channel{}, roleplay.World{}, errRoleplaySimulationUnavailable
 	}
-	if s.channelStore == nil {
-		return model.Channel{}, roleplay.World{}, errRoleplayChannelStoreUnavailable
-	}
-	channel, err := s.channelStore.GetChannel(ctx, channelID)
+	channel, err := s.repo.GetChannel(ctx, channelID)
 	if err != nil {
 		return model.Channel{}, roleplay.World{}, err
 	}

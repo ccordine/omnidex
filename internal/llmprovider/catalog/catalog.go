@@ -20,12 +20,8 @@ const (
 type Definition struct {
 	ID                            string
 	DisplayName                   string
-	Aliases                       []string
 	Protocol                      Protocol
-	EnvironmentPrefixes           []string
-	APIKeyEnvironmentKeys         []string
-	BaseURLEnvironmentKeys        []string
-	EmbeddingModelEnvironmentKeys []string
+	EnvironmentPrefix             string
 	DefaultBaseURL                string
 	DefaultEmbeddingModel         string
 	SupportsExactPreparedStations bool
@@ -34,117 +30,72 @@ type Definition struct {
 	ChineseService                bool
 }
 
-func (d Definition) EnvironmentKeys(suffix string) []string {
+func (d Definition) EnvironmentKey(suffix string) string {
 	suffix = strings.ToUpper(strings.Trim(strings.TrimSpace(suffix), "_"))
 	if suffix == "" {
-		return nil
+		return ""
 	}
-	switch suffix {
-	case "EMBEDDING_MODEL":
-		if len(d.EmbeddingModelEnvironmentKeys) > 0 {
-			return append([]string(nil), d.EmbeddingModelEnvironmentKeys...)
+	prefix := strings.Trim(strings.ToUpper(strings.TrimSpace(d.EnvironmentPrefix)), "_")
+	if prefix == "" {
+		return ""
+	}
+	return prefix + "_" + suffix
+}
+
+// Resolve validates only the provider selected by the current operation. An
+// unused catalog entry cannot prevent the process from starting or another
+// provider from serving work.
+func Resolve(value string) (Definition, error) {
+	var selected *Definition
+	for index := range providerDefinitions {
+		definition := providerDefinitions[index]
+		if definition.ID != value {
+			continue
 		}
-	}
-	keys := make([]string, 0, len(d.EnvironmentPrefixes))
-	for _, prefix := range d.EnvironmentPrefixes {
-		prefix = strings.Trim(strings.ToUpper(strings.TrimSpace(prefix)), "_")
-		if prefix != "" {
-			keys = append(keys, prefix+"_"+suffix)
+		if selected != nil {
+			return Definition{}, fmt.Errorf("LLM provider ID %q is duplicated", value)
 		}
+		selected = &definition
 	}
-	return keys
+	if selected == nil {
+		return Definition{}, fmt.Errorf("unsupported LLM provider %q", value)
+	}
+	if err := validateDefinition(*selected); err != nil {
+		return Definition{}, err
+	}
+	return cloneDefinition(*selected), nil
 }
 
-var definitionsByName = mustIndexDefinitions(providerDefinitions)
-
-func Lookup(value string) (Definition, bool) {
-	key := strings.ToLower(strings.TrimSpace(value))
-	definition, ok := definitionsByName[key]
-	if !ok {
-		return Definition{}, false
-	}
-	return cloneDefinition(definition), true
-}
-
-func CanonicalID(value string) (string, error) {
-	definition, ok := Lookup(value)
-	if !ok {
-		return "", fmt.Errorf("unsupported LLM provider %q", strings.TrimSpace(value))
-	}
-	return definition.ID, nil
-}
-
-func Definitions() []Definition {
+func ProductionDefinitions() []Definition {
 	out := make([]Definition, 0, len(providerDefinitions))
 	for _, definition := range providerDefinitions {
-		out = append(out, cloneDefinition(definition))
+		if definition.SupportsExactPreparedStations || definition.SupportsEmbeddings {
+			out = append(out, cloneDefinition(definition))
+		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
 	return out
 }
 
-func ProductionDefinitions() []Definition {
-	definitions := Definitions()
-	out := make([]Definition, 0, len(definitions))
-	for _, definition := range definitions {
-		if definition.SupportsExactPreparedStations || definition.SupportsEmbeddings {
-			out = append(out, definition)
-		}
+func validateDefinition(definition Definition) error {
+	if definition.ID == "" {
+		return fmt.Errorf("LLM provider catalog contains an empty provider ID")
 	}
-	return out
-}
-
-func ExactStationProviderIDs() []string {
-	return providerIDs(func(definition Definition) bool { return definition.SupportsExactPreparedStations })
-}
-
-func EmbeddingProviderIDs() []string {
-	return providerIDs(func(definition Definition) bool { return definition.SupportsEmbeddings })
-}
-
-func ChineseProviderIDs() []string {
-	return providerIDs(func(definition Definition) bool { return definition.ChineseService })
-}
-
-func providerIDs(include func(Definition) bool) []string {
-	ids := make([]string, 0, len(providerDefinitions))
-	for _, definition := range providerDefinitions {
-		if include(definition) {
-			ids = append(ids, definition.ID)
-		}
+	if definition.ID != strings.ToLower(strings.TrimSpace(definition.ID)) {
+		return fmt.Errorf("LLM provider ID %q is not canonical", definition.ID)
 	}
-	sort.Strings(ids)
-	return ids
-}
-
-func mustIndexDefinitions(definitions []Definition) map[string]Definition {
-	index := make(map[string]Definition, len(definitions)*2)
-	for _, definition := range definitions {
-		if strings.TrimSpace(definition.ID) == "" {
-			panic("LLM provider catalog contains an empty provider ID")
-		}
-		if strings.TrimSpace(definition.DisplayName) == "" {
-			panic(fmt.Sprintf("LLM provider %q has no display name", definition.ID))
-		}
-		for _, name := range append([]string{definition.ID}, definition.Aliases...) {
-			key := strings.ToLower(strings.TrimSpace(name))
-			if key == "" {
-				panic(fmt.Sprintf("LLM provider %q contains an empty alias", definition.ID))
-			}
-			if existing, duplicate := index[key]; duplicate {
-				panic(fmt.Sprintf("LLM provider alias %q is shared by %q and %q", key, existing.ID, definition.ID))
-			}
-			index[key] = definition
-		}
+	if strings.TrimSpace(definition.DisplayName) == "" {
+		return fmt.Errorf("LLM provider %q has no display name", definition.ID)
 	}
-	return index
+	if definition.EnvironmentPrefix == "" {
+		return fmt.Errorf("LLM provider %q has no environment prefix", definition.ID)
+	}
+	if definition.EnvironmentPrefix != strings.Trim(strings.ToUpper(strings.TrimSpace(definition.EnvironmentPrefix)), "_") {
+		return fmt.Errorf("LLM provider %q has non-canonical environment prefix %q", definition.ID, definition.EnvironmentPrefix)
+	}
+	return nil
 }
 
 func cloneDefinition(definition Definition) Definition {
-	definition.Aliases = append([]string(nil), definition.Aliases...)
-	definition.EnvironmentPrefixes = append([]string(nil), definition.EnvironmentPrefixes...)
-	definition.APIKeyEnvironmentKeys = append([]string(nil), definition.APIKeyEnvironmentKeys...)
-	definition.BaseURLEnvironmentKeys = append([]string(nil), definition.BaseURLEnvironmentKeys...)
-	definition.EmbeddingModelEnvironmentKeys = append([]string(nil), definition.EmbeddingModelEnvironmentKeys...)
 	return definition
 }

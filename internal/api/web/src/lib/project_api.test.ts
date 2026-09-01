@@ -30,7 +30,6 @@ describe("project mutation authority", () => {
           name: "Project",
           location: "/srv/project",
           description: "",
-          project_state: "",
           last_seen_at: "2026-08-13T12:00:00Z",
           created_at: "2026-08-13T12:00:00Z",
           updated_at: init?.method === "PATCH" ? "2026-08-13T12:00:01Z" : "2026-08-13T12:00:00Z",
@@ -56,7 +55,6 @@ describe("project mutation authority", () => {
         name: "Project",
         location: "/srv/project",
         description: "",
-        project_state: "",
         last_seen_at: "2026-08-13T12:00:00Z",
         created_at: "2026-08-13T12:00:00Z",
         updated_at: "2026-08-13T12:00:00Z",
@@ -114,20 +112,20 @@ describe("project mutation authority", () => {
   it.each([
     ["unknown response field", {
       commit_state: "committed", project: {
-        id: 7, name: "Project", location: "/srv/project", description: "", project_state: "",
+        id: 7, name: "Project", location: "/srv/project", description: "",
         last_seen_at: "2026-08-13T12:00:00Z", created_at: "2026-08-13T12:00:00Z", updated_at: "2026-08-13T12:00:00Z",
       }, fallback: true,
     }],
     ["unknown project field", {
       commit_state: "committed", project: {
-        id: 7, name: "Project", location: "/srv/project", description: "", project_state: "",
+        id: 7, name: "Project", location: "/srv/project", description: "",
         last_seen_at: "2026-08-13T12:00:00Z", created_at: "2026-08-13T12:00:00Z", updated_at: "2026-08-13T12:00:00Z",
         agent: "forbidden",
       },
     }],
     ["wrong project", {
       commit_state: "committed", project: {
-        id: 8, name: "Project", location: "/srv/project", description: "", project_state: "",
+        id: 8, name: "Project", location: "/srv/project", description: "",
         last_seen_at: "2026-08-13T12:00:00Z", created_at: "2026-08-13T12:00:00Z", updated_at: "2026-08-13T12:00:00Z",
       },
     }],

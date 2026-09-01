@@ -2,8 +2,44 @@ package llm
 
 import (
 	"fmt"
-	"strings"
 )
+
+// ExactPreparedOutputLimitReachedError is a validated provider completion
+// fact. It contains no returned content and is never semantic output. It is a
+// terminal provider failure and grants no retry, correction, or workflow
+// authority.
+type ExactPreparedOutputLimitReachedError struct {
+	DoneReason      string
+	PromptTokens    int
+	OutputTokens    int
+	ContextTokens   int
+	MaxOutputTokens int
+	ContentBytes    int
+}
+
+func (failure *ExactPreparedOutputLimitReachedError) Error() string {
+	if failure == nil {
+		return "exact prepared output limit evidence is absent"
+	}
+	return fmt.Sprintf(
+		"exact prepared output ended with done_reason=%s: prompt_tokens=%d output_tokens=%d native_context=%d max_output_tokens=%d content_bytes=%d",
+		failure.DoneReason, failure.PromptTokens, failure.OutputTokens,
+		failure.ContextTokens, failure.MaxOutputTokens, failure.ContentBytes,
+	)
+}
+
+func (failure ExactPreparedOutputLimitReachedError) Validate() error {
+	if failure.DoneReason != "length" || failure.PromptTokens < 1 ||
+		failure.OutputTokens < 1 || failure.ContextTokens < 1 ||
+		(failure.MaxOutputTokens != -1 &&
+			(failure.MaxOutputTokens < 1 || failure.MaxOutputTokens > failure.ContextTokens)) ||
+		failure.PromptTokens+failure.OutputTokens > failure.ContextTokens ||
+		failure.ContentBytes < 1 ||
+		failure.ContentBytes > MaxExactPreparedModelContentBytes {
+		return fmt.Errorf("exact prepared output limit evidence is invalid")
+	}
+	return nil
+}
 
 // ValidateExactPreparedGenerationForRequest binds a successful provider
 // generation to the exact request that produced it. Generic receipt validation
@@ -15,41 +51,36 @@ func ValidateExactPreparedGenerationForRequest(
 	if err := validateExactPreparedRequest(prepared); err != nil {
 		return fmt.Errorf("validate exact prepared generation request: %w", err)
 	}
-	if err := generation.Validate(); err != nil {
+	if err := generation.validateSuccessfulContentEvidence(); err != nil {
 		return err
 	}
 	requestSHA256, err := ExactPreparedRequestSHA256(prepared)
 	if err != nil {
 		return err
 	}
-	if generation.ProviderRequestSHA256 != requestSHA256 ||
-		generation.ProviderResponseModel != prepared.ContextModel {
+	if generation.ProviderRequestSHA256 != requestSHA256 {
 		return fmt.Errorf("exact prepared generation differs from its request authority")
 	}
-	profile, err := exactProviderModelProfileByID(
-		prepared.ProviderIdentityExpectation.TokenizerProfile,
-	)
-	if err != nil {
+	if err := ValidateExactPreparedNativeUsage(
+		prepared.ContextTokens,
+		prepared.MaxOutputTokens,
+		generation.Usage,
+	); err != nil {
 		return err
 	}
-	if prepared.OutputLimitMode == ExactPreparedOutputLimitNatural &&
-		profile.naturalOutputCeiling {
-		if err := ValidateExactPreparedNaturalUsageWithOutputCeiling(
-			prepared.ContextTokens, prepared.MaxOutputTokens, generation.Usage,
-		); err != nil {
+	if generation.ProviderDoneReason == "length" {
+		failure := &ExactPreparedOutputLimitReachedError{
+			DoneReason:      generation.ProviderDoneReason,
+			PromptTokens:    generation.Usage.PromptEvalCount,
+			OutputTokens:    generation.Usage.EvalCount,
+			ContextTokens:   prepared.ContextTokens,
+			MaxOutputTokens: prepared.MaxOutputTokens,
+			ContentBytes:    len(generation.Content),
+		}
+		if err := failure.Validate(); err != nil {
 			return err
 		}
-	}
-	if profile.transport != exactPreparedTransportRaw {
-		return nil
-	}
-	for _, control := range []string{
-		"<|im_start|>",
-		ExactPreparedRawChatEndV1,
-	} {
-		if strings.Contains(generation.Content, control) {
-			return fmt.Errorf("exact raw prepared generation leaked a reserved ChatML control")
-		}
+		return failure
 	}
 	return nil
 }

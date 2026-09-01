@@ -161,19 +161,30 @@ managed_checkout_stage_env() {
   cp -p "${source}" "${stage}/.env"
 }
 
-managed_checkout_validate_env() {
+managed_checkout_validate_stage() {
   local stage="$1"
-  local core="${stage}/bin/agent-core"
-  local cli="${stage}/bin/agent-cli"
+  local server="${stage}/bin/omnidex"
+  local cli="${stage}/bin/omni"
   local environment="${stage}/.env"
-  [[ -x "${core}" ]] || die "staged agent-core is not executable"
-  [[ -x "${cli}" ]] || die "staged agent-cli is not executable"
+  local path retired
+  [[ -d "${stage}/bin" && ! -L "${stage}/bin" ]] ||
+    die "staged bin must be one real directory"
+  [[ -f "${server}" && ! -L "${server}" && -x "${server}" ]] ||
+    die "staged bin/omnidex must be one regular executable server binary"
+  [[ -f "${cli}" && ! -L "${cli}" && -x "${cli}" ]] ||
+    die "staged bin/omni must be one regular executable CLI binary"
+  for retired in agent-core agent-cli acli; do
+    [[ ! -e "${stage}/bin/${retired}" && ! -L "${stage}/bin/${retired}" ]] ||
+      die "staged install contains retired binary or alias: bin/${retired}"
+  done
   [[ -f "${environment}" && ! -L "${environment}" ]] ||
     die "staged .env must be a regular file"
-  "${core}" config:validate-file "${environment}" >/dev/null ||
-    die "staged .env is incompatible with this Omnidex build"
-  "${cli}" config:validate-file "${environment}" >/dev/null ||
-    die "staged .env does not provide valid managed CLI authority"
+  while IFS= read -r -d '' path; do
+    case "${path}" in
+      "${server}"|"${cli}") ;;
+      *) die "staged bin contains an unsupported install artifact: bin/$(basename "${path}")" ;;
+    esac
+  done < <(find "${stage}/bin" -mindepth 1 -maxdepth 1 -print0)
 }
 
 managed_checkout_env_value() {

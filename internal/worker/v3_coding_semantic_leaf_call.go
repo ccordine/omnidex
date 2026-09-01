@@ -2,12 +2,24 @@ package worker
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
 )
 
 type directCodingSemanticLeafDecoder[T any] func(string) (T, error)
+
+type directCodingSemanticLeafRejection struct {
+	subject string
+	err     error
+}
+
+func (rejection *directCodingSemanticLeafRejection) Error() string {
+	return fmt.Sprintf("invalid %s semantic result: %v", rejection.subject, rejection.err)
+}
+
+func (rejection *directCodingSemanticLeafRejection) Unwrap() error {
+	return rejection.err
+}
 
 // runDirectCodingSemanticLeafCall resolves one raw semantic value. The
 // station-specific decoder is the only authority that may turn model bytes
@@ -19,24 +31,29 @@ func runDirectCodingSemanticLeafCall[T any](
 	job assemblyline.PortableJob,
 	identities []assemblyline.ArtifactIdentity,
 	decode directCodingSemanticLeafDecoder[T],
-	validate func(T) error,
 ) (T, error) {
 	var zero T
-	if runtime.Context == nil || runtime.Execute == nil || decode == nil || validate == nil {
-		return zero, fmt.Errorf("coding semantic leaf requires an exact portable runtime, decoder, and validator")
+	if runtime.Context == nil || runtime.Execute == nil || decode == nil {
+		return zero, fmt.Errorf("coding semantic leaf requires an exact portable runtime and decoder")
 	}
-	modelName = strings.TrimSpace(modelName)
-	if modelName == "" {
-		return zero, fmt.Errorf("coding semantic leaf requires one configured model")
-	}
-	basePrompt, err := assemblyline.RenderPortableJob(job)
+	_, inferenceFree, err := assemblyline.ResolvePortableJobWithoutInference(job)
 	if err != nil {
 		return zero, err
 	}
-	if err := validateDirectCodingSemanticPrompt(
-		basePrompt, identities, runtime.PathProvenance,
-	); err != nil {
-		return zero, err
+	basePrompt := ""
+	if !inferenceFree {
+		if modelName == "" {
+			return zero, fmt.Errorf("coding semantic leaf requires one configured model")
+		}
+		basePrompt, err = assemblyline.RenderPortableJob(job)
+		if err != nil {
+			return zero, err
+		}
+		if err := validateDirectCodingSemanticPrompt(
+			basePrompt, identities, runtime.PathProvenance,
+		); err != nil {
+			return zero, err
+		}
 	}
 	emitTypedWorker(runtime, typedWorkerEvent{
 		State: typedWorkerStarted, Kind: typedWorkerSemantic, Subject: subject,
@@ -69,15 +86,12 @@ func runDirectCodingSemanticLeafCall[T any](
 			validationErr = boundary.ValidatePathFree(runtime.PathProvenance)
 		}
 	}
-	if validationErr == nil {
-		validationErr = validate(value)
-	}
 	validationErr = finalizeTypedWorkerResult(runtime, job, result, validationErr)
 	if validationErr != nil {
 		emitDirectCodingSemanticRejection(runtime, modelName, subject, 1, validationErr)
 		return zero, failDirectCodingSemanticCall(
 			runtime, modelName, subject, 1,
-			fmt.Errorf("invalid %s semantic result: %w", subject, validationErr),
+			&directCodingSemanticLeafRejection{subject: subject, err: validationErr},
 		)
 	}
 	emitTypedWorker(runtime, typedWorkerEvent{

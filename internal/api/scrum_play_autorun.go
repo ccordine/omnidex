@@ -3,22 +3,13 @@ package api
 import (
 	"context"
 	"fmt"
-	"log"
 	"net/http"
 	"net/url"
 	"strconv"
 	"time"
-
-	"github.com/gryph/omnidex/internal/model"
-	"github.com/gryph/omnidex/internal/queue"
 )
 
 const scrumPlayAutoRunTimeout = 2 * time.Minute
-const jobOutputRealtimeWindow = 250 * time.Millisecond
-
-type scrumCardRealtimeReason string
-
-const scrumCardRealtimeJobProgress scrumCardRealtimeReason = "job_progress"
 
 func scrumRequestFromContext(ctx context.Context) *http.Request {
 	if ctx == nil {
@@ -36,109 +27,6 @@ func scrumRequestForProject(ctx context.Context, projectID int64) *http.Request 
 	q.Set("project_id", strconv.FormatInt(projectID, 10))
 	r.URL.RawQuery = q.Encode()
 	return r
-}
-
-// OnJobFinishedAsync handles post-job side effects without requiring the web UI.
-func (s *Server) OnJobFinishedAsync(jobID int64) {
-	if s == nil {
-		log.Printf("job-finished hook rejected job=%d: server is nil", jobID)
-		return
-	}
-	if s.repo == nil {
-		log.Printf("job-finished hook rejected job=%d: PostgreSQL repository is unavailable", jobID)
-		return
-	}
-	if jobID <= 0 {
-		log.Printf("job-finished hook rejected job=%d: job ID must be positive", jobID)
-		return
-	}
-	coalescer, err := s.ensureJobOutputCoalescer()
-	if err != nil {
-		log.Printf("job output final flush rejected job=%d: %v", jobID, err)
-	} else {
-		coalescer.FlushNow(jobID)
-	}
-	s.publishJobProgress(jobID, realtimeJobFinished, "Job finished; reconciling final server state")
-	if err := s.RefreshScrumPlayQueueForJobAsync(jobID); err != nil {
-		log.Printf("Scrum play queue scheduling rejected job=%d: %v", jobID, err)
-	}
-}
-
-// OnJobOutputAsync streams in-flight job output into scrum card state and realtime.
-func (s *Server) OnJobOutputAsync(jobID int64, delta string) {
-	if s == nil || s.repo == nil || jobID <= 0 {
-		log.Printf("job-output hook rejected job=%d: server, repository, and positive job ID are required", jobID)
-		return
-	}
-	if delta == "" {
-		return
-	}
-	coalescer, err := s.ensureJobOutputCoalescer()
-	if err != nil {
-		log.Printf("job output realtime coalescer rejected job=%d: %v", jobID, err)
-		return
-	}
-	if err := coalescer.Signal(jobID); err != nil {
-		log.Printf("job output realtime signal rejected job=%d: %v", jobID, err)
-	}
-}
-
-func (s *Server) ensureJobOutputCoalescer() (*jobOutputCoalescer, error) {
-	if s.lifecycleContext == nil {
-		return nil, ErrRealtimeLifecycleUnavailable
-	}
-	s.jobOutputOnce.Do(func() {
-		s.jobOutputCoalescer = newJobOutputCoalescer(jobOutputRealtimeWindow, s.flushJobOutput)
-		go func() {
-			<-s.lifecycleContext.Done()
-			s.jobOutputCoalescer.Stop()
-		}()
-	})
-	if s.jobOutputCoalescer == nil {
-		return nil, fmt.Errorf("job output coalescer initialization failed")
-	}
-	return s.jobOutputCoalescer, nil
-}
-
-func (s *Server) flushJobOutput(jobID int64) {
-	if s.lifecycleContext == nil {
-		log.Printf("job output flush rejected job=%d: %v", jobID, ErrRealtimeLifecycleUnavailable)
-		return
-	}
-	s.publishJobProgress(jobID, realtimeJobOutput, "Job produced new progress")
-	ctx, cancel := context.WithTimeout(s.lifecycleContext, 15*time.Second)
-	defer cancel()
-	if err := s.refreshScrumCardOutputForJob(ctx, jobID); err != nil {
-		log.Printf("scrum card output refresh job=%d: %v", jobID, err)
-	}
-}
-
-// RefreshScrumPlayQueueForJobAsync advances scrum play state after a terminal job.
-func (s *Server) RefreshScrumPlayQueueForJobAsync(jobID int64) error {
-	if s == nil || s.repo == nil {
-		return fmt.Errorf("Scrum play queue refresh requires a PostgreSQL repository")
-	}
-	if jobID <= 0 {
-		return fmt.Errorf("Scrum play queue refresh requires a positive job ID")
-	}
-	if s.lifecycleContext == nil {
-		return ErrRealtimeLifecycleUnavailable
-	}
-	if err := s.lifecycleContext.Err(); err != nil {
-		return fmt.Errorf("Scrum play queue refresh lifecycle ended: %w", err)
-	}
-	go func() {
-		ctx, cancel := context.WithTimeout(s.lifecycleContext, scrumPlayAutoRunTimeout)
-		defer cancel()
-		if err := s.refreshScrumPlayQueueForJob(ctx, jobID); err != nil {
-			log.Printf("scrum play queue refresh job=%d: %v", jobID, err)
-			return
-		}
-		if err := s.refreshScrumAutoWork(ctx); err != nil {
-			log.Printf("scrum global auto-work refresh after job=%d: %v", jobID, err)
-		}
-	}()
-	return nil
 }
 
 // RefreshScrumPlayQueueForProjectAsync reconciles play queue state and advances global auto-work.
@@ -180,74 +68,6 @@ func (s *Server) refreshScrumPlayQueueForProjectAsync(projectID int64, reason st
 			}
 		}
 	}()
-	return nil
-}
-
-func (s *Server) refreshScrumPlayQueueForJob(ctx context.Context, jobID int64) error {
-	details, err := s.repo.CurrentJobDetails(ctx, jobID)
-	if err != nil {
-		return err
-	}
-	switch details.Job.Status {
-	case model.JobStatusCompleted, model.JobStatusFailed, model.JobStatusCanceled:
-	default:
-		return nil
-	}
-	ref, err := parseScrumJobReference(details.Job.Metadata)
-	if err != nil {
-		return fmt.Errorf("job %d metadata: %w", jobID, err)
-	}
-	if !ref.IsScrum {
-		return nil
-	}
-	projectID, err := s.authoritativeScrumJobProjectID(ctx, jobID, ref)
-	if err != nil {
-		return err
-	}
-	return s.refreshScrumPlayQueueForProject(ctx, projectID, "job finished")
-}
-
-func (s *Server) refreshScrumCardOutputForJob(ctx context.Context, jobID int64) error {
-	details, err := s.repo.CurrentJobDetails(ctx, jobID)
-	if err != nil {
-		return err
-	}
-	ref, err := parseScrumJobReference(details.Job.Metadata)
-	if err != nil {
-		return fmt.Errorf("job %d metadata: %w", jobID, err)
-	}
-	if !ref.IsScrum {
-		return nil
-	}
-	projectID, err := s.authoritativeScrumJobProjectID(ctx, jobID, ref)
-	if err != nil {
-		return err
-	}
-	cardID := ref.CardID
-	dbCard, err := s.repo.GetScrumCard(ctx, projectID, cardID)
-	if err != nil {
-		return err
-	}
-	card, err := dbScrumCardToAPI(dbCard)
-	if err != nil {
-		return fmt.Errorf("decode Scrum card %q for job %d output: %w", cardID, jobID, err)
-	}
-	updated := card
-	if synced, ok, err := syncRunningJobChannelChat(updated, details); err != nil {
-		return err
-	} else if ok {
-		updated = synced
-	}
-	if !scrumCardChannelChanged(card, updated) {
-		return nil
-	}
-	saved, err := s.persistScrumCardTransition(
-		ctx, projectID, card, updated, queue.ScrumReconcileJobProgress, "",
-	)
-	if err != nil {
-		return err
-	}
-	s.publishScrumCardUpdate(ctx, projectID, saved, string(scrumCardRealtimeJobProgress))
 	return nil
 }
 

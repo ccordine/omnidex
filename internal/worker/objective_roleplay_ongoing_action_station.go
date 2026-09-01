@@ -11,24 +11,38 @@ type portableObjectiveRoleplayOngoingActionStation struct {
 	runtime *nativeRuntimeV3
 }
 
-func (adapter portableObjectiveRoleplayOngoingActionStation) ResolveOngoingAction(
+func (adapter portableObjectiveRoleplayOngoingActionStation) ResolveOngoingActionRelation(
 	ctx context.Context,
-	input assemblyline.RoleplayOngoingActionInput,
-) (assemblyline.RoleplayOngoingActionDecision, objectiveStationReceipt, error) {
-	job, err := assemblyline.NewRoleplayOngoingActionJob(input)
+	input assemblyline.RoleplayOngoingActionRelationInput,
+) (assemblyline.RoleplayOngoingActionRelation, objectiveStationReceipt, error) {
+	job, err := assemblyline.NewRoleplayOngoingActionRelationJob(input)
 	if err != nil {
-		return assemblyline.RoleplayOngoingActionDecision{}, objectiveStationReceipt{}, err
+		return "", objectiveStationReceipt{}, err
 	}
-	decision, receipt, err := runObjectiveReusablePortableRawLeafCall(
-		ctx, adapter.runtime, "roleplay_ongoing_action", job,
-		station.RoleplayOngoingAction,
+	return runObjectivePortableRawLeafStation(
+		ctx, adapter.runtime, "roleplay_ongoing_action_relation", job,
+		station.RoleplayOngoingActionRelation,
 		func() (string, error) { return objectiveRoleplaySemanticModel(adapter.runtime) },
-		func(raw string) (assemblyline.RoleplayOngoingActionDecision, error) {
-			return assemblyline.DecodeRoleplayOngoingActionDecision(input, raw)
-		},
-		func(value assemblyline.RoleplayOngoingActionDecision) error {
-			return value.ValidateFor(input)
+		func(raw string) (assemblyline.RoleplayOngoingActionRelation, error) {
+			return assemblyline.DecodeRoleplayOngoingActionRelation(input, raw)
 		},
 	)
-	return decision, receipt, err
+}
+
+func (adapter portableObjectiveRoleplayOngoingActionStation) GenerateOngoingActionValue(
+	ctx context.Context,
+	input assemblyline.RoleplayOngoingActionValueInput,
+) (string, objectiveStationReceipt, error) {
+	job, err := assemblyline.NewRoleplayOngoingActionValueJob(input)
+	if err != nil {
+		return "", objectiveStationReceipt{}, err
+	}
+	return runObjectivePortableRawLeafStation(
+		ctx, adapter.runtime, "roleplay_ongoing_action_value", job,
+		station.RoleplayOngoingActionValue,
+		func() (string, error) { return objectiveRoleplaySemanticModel(adapter.runtime) },
+		func(raw string) (string, error) {
+			return assemblyline.DecodeRoleplayOngoingActionValue(input, raw)
+		},
+	)
 }

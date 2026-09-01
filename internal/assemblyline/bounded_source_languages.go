@@ -3,12 +3,10 @@ package assemblyline
 import (
 	"fmt"
 	"path"
-	"strings"
 	"unsafe"
 
 	java "github.com/tree-sitter/tree-sitter-java/bindings/go"
 	javascript "github.com/tree-sitter/tree-sitter-javascript/bindings/go"
-	php "github.com/tree-sitter/tree-sitter-php/bindings/go"
 	rust "github.com/tree-sitter/tree-sitter-rust/bindings/go"
 )
 
@@ -21,7 +19,6 @@ type boundedSourceLanguage struct {
 	pathAllowed          func(string) bool
 	declarationKinds     map[string]struct{}
 	allowCodeOwnedExport bool
-	requirePHPOpeningTag bool
 }
 
 func javaScriptSourceLanguage() boundedSourceLanguage {
@@ -52,21 +49,9 @@ func rustSourceLanguage() boundedSourceLanguage {
 	}
 }
 
-func phpSourceLanguage() boundedSourceLanguage {
-	return boundedSourceLanguage{
-		id: "php", display: "PHP", declaration: "function declaration",
-		documentLanguage: php.LanguagePHP, fragmentLanguage: php.LanguagePHPOnly,
-		pathAllowed: func(value string) bool {
-			return strings.HasSuffix(value, ".php") && !strings.HasSuffix(value, ".blade.php")
-		},
-		declarationKinds:     sourceNodeKinds("function_definition"),
-		requirePHPOpeningTag: true,
-	}
-}
-
 func boundedSourceLanguageByID(id string) (boundedSourceLanguage, error) {
 	for _, language := range []boundedSourceLanguage{
-		javaScriptSourceLanguage(), javaSourceLanguage(), rustSourceLanguage(), phpSourceLanguage(),
+		javaScriptSourceLanguage(), javaSourceLanguage(), rustSourceLanguage(),
 	} {
 		if language.id == id {
 			return language, nil

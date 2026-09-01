@@ -4,83 +4,96 @@ import (
 	"testing"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
+	"github.com/gryph/omnidex/internal/llm"
+	"github.com/gryph/omnidex/internal/model"
 )
 
-func TestExpectedPortableStationMaxOutputTokensIncludesExactStopReserve(t *testing.T) {
+func TestExpectedPortableStationMaxOutputTokensLeavesSourceBodyUnlimited(t *testing.T) {
 	t.Parallel()
-	request := "Build a small browser tool."
-	context, err := assemblyline.BootstrapApplicationContext(
-		request, assemblyline.ApplicationWorkspaceEmpty,
-	)
+	job, err := assemblyline.NewFragmentGenerationJob(assemblyline.FragmentGenerationInput{
+		Language: "typescript", Dialect: "TypeScript",
+		Signature: "function value(): string", Behavior: "Return one value.",
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	requirement, err := assemblyline.NewApplicationRequirementJob(
-		assemblyline.ApplicationRequirementLeafInput{
-			UserRequest: request, Context: context, ProductContext: "A browser tool.",
-			AcceptedRequirements: []string{},
+	got, err := ExpectedPortableStationMaxOutputTokens(job, llm.MinInferenceContextTokens)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != -1 {
+		t.Fatalf("source num_predict = %d, want provider-native unlimited", got)
+	}
+}
+
+func TestExpectedPortableStationMaxOutputTokensLeavesOpaqueChoiceUnlimited(t *testing.T) {
+	t.Parallel()
+	job, err := assemblyline.NewArtifactHandlingJob(assemblyline.ArtifactHandlingInput{
+		UserRequest: "Keep ARTIFACT_1 unchanged.", Token: "ARTIFACT_1",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := ExpectedPortableStationMaxOutputTokens(job, llm.MinInferenceContextTokens)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != -1 {
+		t.Fatalf("opaque num_predict = %d, want provider-native unlimited", got)
+	}
+}
+
+func TestExpectedPortableStationMaxOutputTokensLeavesInventoryUnlimited(t *testing.T) {
+	t.Parallel()
+	request := "Build software that lets a user confirm an item."
+	context, err := assemblyline.BootstrapApplicationContext(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	job, err := assemblyline.NewApplicationRequirementInventoryJob(
+		assemblyline.ApplicationRequirementInventoryInput{
+			UserRequest: request, Context: context, ScopeMode: model.CodingScopeModeNormal,
 		},
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	requirementBytes, err := assemblyline.PortableResponseMaximumBytesForJob(requirement)
+	got, err := ExpectedPortableStationMaxOutputTokens(job, llm.MinInferenceContextTokens)
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err := ExpectedPortableStationMaxOutputTokens(requirement, 32768)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got != requirementBytes+10 {
-		t.Fatalf("multiline output ceiling=%d want decoder bytes %d + ChatML reserve 10", got, requirementBytes)
-	}
-
-	classification, err := assemblyline.NewApplicationClassificationJob(
-		assemblyline.ApplicationClassificationInput{UserRequest: request},
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	classificationBytes, err := assemblyline.PortableResponseMaximumBytesForJob(classification)
-	if err != nil {
-		t.Fatal(err)
-	}
-	got, err = ExpectedPortableStationMaxOutputTokens(classification, 32768)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got != classificationBytes+1 {
-		t.Fatalf("single-line output ceiling=%d want decoder bytes %d + LF reserve 1", got, classificationBytes)
+	if got != -1 {
+		t.Fatalf("inventory num_predict = %d, want provider-native unlimited", got)
 	}
 }
 
-func TestExpectedPortableStationMaxOutputTokensNeverExceedsContext(t *testing.T) {
+func TestExpectedSourceBodyCorrectionBudgets(t *testing.T) {
 	t.Parallel()
-	job, err := assemblyline.NewConversationResponseJob(assemblyline.ConversationResponseInput{
-		Kind: assemblyline.ObjectiveKindAnswer, ExactInstruction: "Explain the result.",
+	open, err := ExpectedSourceBodyCorrectionMaxOutputTokens(0, false, llm.MinInferenceContextTokens)
+	if err != nil {
+		t.Fatal(err)
+	}
+	opaque, err := ExpectedSourceBodyCorrectionMaxOutputTokens(1, true, llm.MinInferenceContextTokens)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if open != -1 || opaque != minSingleLineCompletionTokens {
+		t.Fatalf("correction budgets = (open=%d opaque=%d)", open, opaque)
+	}
+}
+
+func TestExpectedPortableStationMaxOutputTokensRejectsInvalidNativeContext(t *testing.T) {
+	t.Parallel()
+	job, err := assemblyline.NewFragmentGenerationJob(assemblyline.FragmentGenerationInput{
+		Language: "typescript", Dialect: "TypeScript",
+		Signature: "function value(): string", Behavior: "Return one value.",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err := ExpectedPortableStationMaxOutputTokens(job, 8192)
-	if err != nil {
-		t.Fatal(err)
+	if _, err := ExpectedPortableStationMaxOutputTokens(
+		job, llm.MinInferenceContextTokens-1,
+	); err == nil {
+		t.Fatal("invalid native context was accepted")
 	}
-	if got != 8192 {
-		t.Fatalf("context-clamped output ceiling=%d want 8192", got)
-	}
-}
-
-func portableStationTestMaxOutputTokens(
-	t *testing.T,
-	job assemblyline.PortableJob,
-	contextTokens int,
-) int {
-	t.Helper()
-	maximum, err := ExpectedPortableStationMaxOutputTokens(job, contextTokens)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return maximum
 }

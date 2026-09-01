@@ -5,8 +5,8 @@
 This is the sole tree-visible model boundary in the coding assembly line, and
 it is never a normalized-path-visible boundary. It answers one structural
 semantic question and has no filesystem or workflow authority. Every source,
-declaration, repair, verification, and other semantic model remains path- and
-tree-blind.
+source-body correction, verification, and other semantic model remains path- and
+tree-blind. Code alone supplies source declarations.
 
 ## One frozen workload, one complete answer
 
@@ -22,7 +22,7 @@ call is for the whole workload:
 
 The input contains only:
 
-* every accepted goal in frozen order, without task IDs or ownership metadata;
+* the exact immutable request, without task IDs or ownership metadata;
 * the selected stack's exact technical tree grammar and file-count constraints;
 * the current managed workload tree, rendered from code-held normalized
   relative paths; and
@@ -31,6 +31,8 @@ The input contains only:
 This is a complete desired workload state, not a per-task fragment or change
 list. There are no earlier-task calls, reusable-path prompts, path-union model
 calls, file-to-task mapper calls, or model-authored operations.
+The immutable request stops at this structural boundary and is never projected
+into a declaration or source-generation prompt.
 
 The model tree excludes paths code already determines exactly, including
 runtime shells, entrypoints, manifests, generated composition, styles, and

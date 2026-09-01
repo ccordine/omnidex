@@ -34,7 +34,7 @@ func (r *Repository) CompleteStepWithEvidence(
 	if err != nil {
 		return err
 	}
-	return r.completeStep(ctx, command.CompleteStepCommand, descriptor, payloads)
+	return r.completeStep(ctx, command.CompleteStepCommand, &descriptor, payloads)
 }
 
 func normalizeObjectiveCompletionEvidence(record evidence.Record, jobID, stepID int64) ([]byte, error) {

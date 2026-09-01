@@ -58,6 +58,37 @@ type directCodingTaskArtifactPair struct {
 	VerificationPath   string
 }
 
+func directCodingTaskSingleImplementationPath(
+	coverage assemblyline.ApplicationFileCoveragePlan,
+	taskID string,
+) (string, error) {
+	files, err := coverage.FilesForTask(taskID)
+	if err != nil {
+		return "", err
+	}
+	implementationPath := ""
+	for _, file := range files {
+		if file.Kind != assemblyline.TargetArtifactImplementation {
+			return "", fmt.Errorf(
+				"task %s has non-implementation artifact %s in an implementation-only stack",
+				taskID, file.Path,
+			)
+		}
+		if implementationPath != "" {
+			return "", fmt.Errorf(
+				"task %s has multiple implementation files in an implementation-only stack", taskID,
+			)
+		}
+		implementationPath = file.Path
+	}
+	if implementationPath == "" {
+		return "", fmt.Errorf(
+			"task %s lacks the implementation file required by the selected stack", taskID,
+		)
+	}
+	return implementationPath, nil
+}
+
 // directCodingTaskSinglePair is a stack-specific constraint helper. The
 // generic coverage plan deliberately permits plural or implementation-only
 // files; stacks that truly require a pair must say so at their own boundary.

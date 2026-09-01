@@ -86,26 +86,16 @@ type Step struct {
 	UpdatedAt              time.Time  `json:"updated_at"`
 }
 
-type StepContext struct {
-	ID        int64     `json:"id"`
-	StepID    int64     `json:"step_id"`
-	Key       string    `json:"key"`
-	Value     string    `json:"value"`
-	CreatedAt time.Time `json:"created_at"`
-}
-
 type JobDetails struct {
-	Job      Job           `json:"job"`
-	Steps    []Step        `json:"steps"`
-	Contexts []StepContext `json:"contexts"`
+	Job   Job    `json:"job"`
+	Steps []Step `json:"steps"`
 }
 
 type ClaimedStep struct {
-	Job            Job
-	Step           Step
-	Authority      StepAttemptAuthority
-	LeaseExpiresAt time.Time
-	Contexts       []StepContext
+	Job           Job
+	Step          Step
+	Authority     StepAttemptAuthority
+	LeaseDeadline time.Time
 }
 
 type MemoryChunk struct {
@@ -158,7 +148,6 @@ type Channel struct {
 	Scope                        ChannelScope        `json:"scope"`
 	Name                         string              `json:"name,omitempty"`
 	Tags                         []string            `json:"tags,omitempty"`
-	ProjectID                    int64               `json:"project_id"`
 	WorkspaceRoot                string              `json:"workspace_root"`
 	DataSourceID                 DataSourceID        `json:"data_source_id,omitempty"`
 	Mode                         ChannelMode         `json:"mode"`
@@ -201,9 +190,10 @@ type ChannelMessageRoleplayPart struct {
 }
 
 type ChannelMessageTurnState struct {
-	JobID  int64  `json:"job_id"`
-	Status string `json:"status"`
-	Error  string `json:"error,omitempty"`
+	JobID     int64     `json:"job_id"`
+	Status    string    `json:"status"`
+	Error     string    `json:"error,omitempty"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 type ChannelMessagePage struct {
@@ -218,14 +208,4 @@ type DataSourceChannel struct {
 	Name         string    `json:"name"`
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
-}
-
-type DataSourceChannelMessage struct {
-	ID        int64           `json:"id"`
-	ChannelID string          `json:"channel_id"`
-	Role      string          `json:"role"`
-	Content   string          `json:"content"`
-	Payload   json.RawMessage `json:"payload,omitempty"`
-	JobID     *int64          `json:"job_id,omitempty"`
-	CreatedAt time.Time       `json:"created_at"`
 }

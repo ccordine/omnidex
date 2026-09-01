@@ -10,13 +10,12 @@ func (s *Server) handleActivity(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
-	limit := parsePositiveInt(r.URL.Query().Get("limit"), 50)
-	jobs, err := s.repo.ListJobs(r.Context(), "", minInt(limit, 30), 0)
+	limit, err := exactChannelQueryInteger(r, "limit", 50, 1, 500)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	events, err := s.repo.ListTelemetryEvents(r.Context(), limit)
+	jobs, err := s.repo.ListJobs(r.Context(), "", minInt(limit, 30), 0)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -26,21 +25,18 @@ func (s *Server) handleActivity(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	llmActivity, err := s.repo.ListRecentLLMActivity(r.Context(), minInt(limit, 30))
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"jobs":             jobs,
-		"telemetry_events": events,
-		"memories":         memories,
-		"llm_activity":     llmActivity,
+		"jobs":     jobs,
+		"memories": memories,
 	})
 }
 
 func (s *Server) listMemory(w http.ResponseWriter, r *http.Request) {
-	limit := parsePositiveInt(r.URL.Query().Get("limit"), 50)
+	limit, err := exactChannelQueryInteger(r, "limit", 50, 1, 500)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	kind := strings.TrimSpace(r.URL.Query().Get("kind"))
 	tags := splitCommaQuery(r.URL.Query().Get("tags"))
 	memories, err := s.repo.ListMemoryChunks(r.Context(), kind, tags, limit)

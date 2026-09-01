@@ -68,8 +68,16 @@ func (s *Server) handleIngestDocuments(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "upload 1..12 files in the files field")
 		return
 	}
-	chunkSize := parsePositiveInt(r.FormValue("chunk_size"), 1800)
-	overlap := parsePositiveInt(r.FormValue("overlap"), 220)
+	chunkSize, err := exactMultipartInteger(r, "chunk_size", 1800, 1, maxIngestFileBytes)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	overlap, err := exactMultipartInteger(r, "overlap", 220, 0, chunkSize-1)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	prepared := make([]preparedIngestDocument, len(files))
 	for index, header := range files {
 		document, err := prepareIngestDocument(header, chunkSize, overlap, tags)
@@ -114,7 +122,10 @@ func prepareIngestDocument(
 		return preparedIngestDocument{}, fmt.Errorf("%s: %w", header.Filename, err)
 	}
 	content := strings.TrimSpace(parsed.Content)
-	chunks := ingest.ChunkText(content, chunkSize, overlap)
+	chunks, err := ingest.ChunkText(content, chunkSize, overlap)
+	if err != nil {
+		return preparedIngestDocument{}, err
+	}
 	if content == "" || len(chunks) == 0 {
 		return preparedIngestDocument{}, fmt.Errorf("%s: no ingestible text", header.Filename)
 	}
@@ -130,6 +141,21 @@ func prepareIngestDocument(
 		Filename: header.Filename, Format: parsed.Format, Content: content,
 		Chunks: chunks, Tags: tags,
 	}, nil
+}
+
+func exactMultipartInteger(
+	r *http.Request,
+	key string,
+	fallback, minimum, maximum int,
+) (int, error) {
+	values, exists := r.MultipartForm.Value[key]
+	if !exists {
+		return fallback, nil
+	}
+	if len(values) != 1 || values[0] == "" {
+		return 0, fmt.Errorf("%s must be one canonical integer", key)
+	}
+	return exactIntegerValue(values[0], key, minimum, maximum)
 }
 
 func (s *Server) persistPreparedIngest(

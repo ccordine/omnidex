@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/gryph/omnidex/internal/hostbridge"
 )
 
 type terminalPreflightResponse struct {
@@ -53,7 +52,7 @@ type terminalConnectionPayload struct {
 func (s *Server) prepareTerminalConnection(r *http.Request, probe bool) (terminalConnectionPayload, error) {
 	client := s.hostBridgeClient()
 	if client == nil {
-		return terminalConnectionPayload{}, fmt.Errorf("host bridge unavailable: run `omni host serve --listen 0.0.0.0:8091` and set HOST_AGENT_URL in core")
+		return terminalConnectionPayload{}, fmt.Errorf("host bridge unavailable: configure one exact HOST_AGENT_URL")
 	}
 
 	projectID, err := s.resolveProjectID(r)
@@ -75,10 +74,6 @@ func (s *Server) prepareTerminalConnection(r *http.Request, probe bool) (termina
 	}
 
 	bridgeBase := strings.TrimRight(strings.TrimSpace(s.hostAgentURL), "/")
-	if resolved, resolveErr := hostbridge.ResolveReachableURL(setupCtx, bridgeBase, s.hostAgentToken, 4*time.Second); resolveErr == nil && resolved != "" {
-		bridgeBase = resolved
-	}
-
 	bridgeURL, err := buildBridgeTerminalWSURL(bridgeBase, cwd, r.URL.Query())
 	if err != nil {
 		return terminalConnectionPayload{}, err
@@ -207,7 +202,7 @@ func terminalBridgeDialError(err error, resp *http.Response) string {
 		}
 	}
 	if strings.Contains(strings.ToLower(message), "bad handshake") {
-		return "host bridge terminal handshake failed — the bridge is reachable but did not upgrade to websocket. Restart the host bridge (`omni host serve --listen 0.0.0.0:8091`) and rebuild core. This is not an SSL issue; use plain http:// and ws:// on your LAN."
+		return "host bridge terminal handshake failed: the configured endpoint did not upgrade to WebSocket"
 	}
 	return message
 }

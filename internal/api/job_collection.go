@@ -30,15 +30,16 @@ func (s *Server) enqueueJob(w http.ResponseWriter, r *http.Request) {
 		writeError(w, genericCodingEnqueueStatus(err), err.Error())
 		return
 	}
-	metadata, err := s.genericCodingRuntimeMetadata(*request.Metadata)
-	if err != nil {
-		writeError(w, http.StatusBadGateway, fmt.Sprintf("model setup failed: %v", err))
+	if err := s.hostDirectoryAccess.ValidateWorkspaceRoot(request.Metadata.ClientCWD); err != nil {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("coding enqueue client_cwd: %v", err))
 		return
 	}
-	job, err := s.repo.EnqueueJob(r.Context(), request.Instruction, request.Pipeline, metadata)
+	job, err := s.repo.EnqueueCodingJob(
+		r.Context(), request.Instruction, request.Metadata.ClientCWD,
+	)
 	if err != nil {
 		status := http.StatusInternalServerError
-		if errors.Is(err, queue.ErrUnsupportedPipeline) {
+		if errors.Is(err, queue.ErrInvalidJobInstruction) {
 			status = http.StatusBadRequest
 		}
 		writeError(w, status, err.Error())
@@ -46,20 +47,6 @@ func (s *Server) enqueueJob(w http.ResponseWriter, r *http.Request) {
 	}
 	s.publishJobProgress(job.ID, realtimeJobQueued, "Job queued")
 	writeJSON(w, http.StatusCreated, map[string]any{"job": job})
-}
-
-func validateGenericJobPipeline(pipeline string) error {
-	switch pipeline {
-	case model.PipelineCoding:
-		return nil
-	case model.PipelineChat:
-		return fmt.Errorf(
-			"pipeline %q requires the server-authoritative /v1/channels/{id}/messages transport",
-			pipeline,
-		)
-	default:
-		return fmt.Errorf("generic job pipeline %q is unsupported; expected coding", pipeline)
-	}
 }
 
 func (s *Server) listJobs(w http.ResponseWriter, r *http.Request) {

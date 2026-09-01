@@ -12,17 +12,20 @@ const (
 	maxDatabaseSchemaCandidateSetBytes  = 48 * 1024
 )
 
+const MaxDatabaseSchemaCandidates = maxDatabaseSchemaCandidates
+
 type DatabaseSchemaCandidate struct {
 	RelationID string `json:"relation_id"`
 	Descriptor string `json:"descriptor"`
 }
 
 type DatabaseSchemaSelectionInput struct {
-	EvidenceNeedID string                    `json:"evidence_need_id"`
-	ExactNeed      string                    `json:"exact_need"`
-	Context        ObjectiveContext          `json:"objective_context"`
-	Candidates     []DatabaseSchemaCandidate `json:"candidates"`
-	MaxSelections  int                       `json:"max_selections"`
+	EvidenceNeedID       string                    `json:"evidence_need_id"`
+	ExactNeed            string                    `json:"exact_need"`
+	Context              ObjectiveContext          `json:"objective_context"`
+	Candidates           []DatabaseSchemaCandidate `json:"candidates"`
+	MaxSelections        int                       `json:"max_selections"`
+	HasAcceptedRelations bool                      `json:"has_accepted_relations"`
 }
 
 type DatabaseSchemaSelectionDecision struct {
@@ -41,15 +44,22 @@ func (input DatabaseSchemaSelectionInput) validate() error {
 	if err := input.Context.Validate(); err != nil {
 		return err
 	}
-	if len(input.Candidates) < 1 || len(input.Candidates) > maxDatabaseSchemaCandidates {
-		return fmt.Errorf("database schema selection requires 1..%d relation candidates", maxDatabaseSchemaCandidates)
+	if err := validateDatabaseSchemaCandidates(input.Candidates); err != nil {
+		return err
 	}
 	if input.MaxSelections < 1 || input.MaxSelections > maxDatabaseSchemaSelections || input.MaxSelections > len(input.Candidates) {
 		return fmt.Errorf("database schema selection bound must be 1..%d and fit its candidates", maxDatabaseSchemaSelections)
 	}
-	seen := make(map[string]struct{}, len(input.Candidates))
+	return nil
+}
+
+func validateDatabaseSchemaCandidates(candidates []DatabaseSchemaCandidate) error {
+	if len(candidates) < 1 || len(candidates) > maxDatabaseSchemaCandidates {
+		return fmt.Errorf("database schema selection requires 1..%d relation candidates", maxDatabaseSchemaCandidates)
+	}
+	seen := make(map[string]struct{}, len(candidates))
 	total := 0
-	for index, candidate := range input.Candidates {
+	for index, candidate := range candidates {
 		if err := validateGroundedID("database relation ID", candidate.RelationID, maxGroundedEvidenceIDBytes); err != nil {
 			return fmt.Errorf("database schema candidate %d: %w", index, err)
 		}

@@ -21,21 +21,23 @@ func (root *channelCreateWorkspaceRoot) UnmarshalJSON(raw []byte) error {
 	if err := json.Unmarshal(raw, &value); err != nil {
 		return fmt.Errorf("decode channel workspace_root: %w", err)
 	}
-	if err := model.ValidateChannelWorkspaceRoot(value); err != nil {
-		return err
-	}
 	root.Value = value
 	root.Present = true
 	return nil
 }
 
 func (s *Server) resolveChannelCreateWorkspaceRoot(requested channelCreateWorkspaceRoot) (string, error) {
-	if requested.Present {
-		return requested.Value, nil
+	if s == nil {
+		return "", fmt.Errorf("channel workspace authority is unavailable")
 	}
-	configured := s.providerConfig.WorkspaceRoot
-	if err := model.ValidateChannelWorkspaceRoot(configured); err != nil {
-		return "", fmt.Errorf("server default channel workspace root is invalid: %w", err)
+	if !requested.Present {
+		return "", fmt.Errorf("channel workspace_root is required")
 	}
-	return configured, nil
+	if err := model.ValidateChannelWorkspaceRoot(requested.Value); err != nil {
+		return "", err
+	}
+	if err := s.hostDirectoryAccess.ValidateWorkspaceRoot(requested.Value); err != nil {
+		return "", fmt.Errorf("channel workspace_root: %w", err)
+	}
+	return requested.Value, nil
 }

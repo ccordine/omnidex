@@ -50,14 +50,16 @@ type typedWorkerEvent struct {
 }
 
 type typedWorkerRuntime struct {
-	Context         context.Context
-	MaxAttempts     int
-	MaxConcurrency  int
-	CorrectionModel string
-	PathProvenance  assemblyline.ArtifactIdentityProvenance
-	Execute         func(job assemblyline.PortableJob, model string) (assemblyline.PortableResult, error)
-	Finalize        func(job assemblyline.PortableJob, result assemblyline.PortableResult, validationErr error) error
-	Emit            func(event typedWorkerEvent)
+	Context        context.Context
+	MaxAttempts    int
+	PathProvenance assemblyline.ArtifactIdentityProvenance
+	Execute        func(job assemblyline.PortableJob, model string) (assemblyline.PortableResult, error)
+	Correct        func(job assemblyline.PortableJob, model string, correction assemblyline.SourceBodyCorrection) (assemblyline.PortableResult, error)
+	AdvanceSource  func(job assemblyline.PortableJob, model string, expectedBase string, updatedBase string) error
+	ProviderCalls  func() int
+	Release        func(job assemblyline.PortableJob) error
+	Finalize       func(job assemblyline.PortableJob, result assemblyline.PortableResult, validationErr error) error
+	Emit           func(event typedWorkerEvent)
 }
 
 func finalizeTypedWorkerResult(

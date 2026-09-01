@@ -96,7 +96,7 @@ function projectResponse(): Response {
   return new Response(JSON.stringify({
     commit_state: "committed",
     project: {
-      id: 7, name: "Project", location: "/srv/project", description: "Exact", project_state: "",
+      id: 7, name: "Project", location: "/srv/project", description: "Exact",
       last_seen_at: "2026-08-13T12:00:00Z", created_at: "2026-08-13T12:00:00Z", updated_at: "2026-08-13T12:00:00Z",
     },
   }), { status: 201, headers: { "Content-Type": "application/json" } });

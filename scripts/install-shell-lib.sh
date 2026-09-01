@@ -26,9 +26,6 @@ if [ -d "\$OMNIDEX_DIR/bin" ]; then
     *) export PATH="\$OMNIDEX_DIR/bin:\$PATH" ;;
   esac
 fi
-if [ -f "\$OMNIDEX_DIR/agent_aliases.sh" ]; then
-  . "\$OMNIDEX_DIR/agent_aliases.sh"
-fi
 ${MANAGED_BLOCK_END}
 EOF
 }

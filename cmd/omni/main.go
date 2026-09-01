@@ -1,54 +1,136 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"fmt"
+	"io"
 	"os"
-	"path/filepath"
+	"os/signal"
 	"strings"
+	"syscall"
+	"time"
 
-	"github.com/gryph/omnidex/internal/omni"
+	"github.com/gryph/omnidex/internal/client"
+	"github.com/gryph/omnidex/internal/model"
+	"github.com/gryph/omnidex/internal/projectroot"
 )
 
+const (
+	defaultCoreURL = "https://omni.worknet"
+	requestTimeout = 30 * time.Second
+)
+
+type chatBootstrap struct {
+	channel  model.Channel
+	snapshot client.ChatSessionSnapshot
+	stream   *client.JobEventStream
+}
+
 func main() {
-	if err := applyInvocationCWDFromEnv(); err != nil {
-		fmt.Fprintln(os.Stderr, "error:", err)
-		os.Exit(1)
-	}
-	app := omni.NewApp(os.Stdin, os.Stdout, os.Stderr)
-	if err := app.Run(os.Args[1:]); err != nil {
-		if code, ok := omni.IsExitCodeError(err); ok {
-			os.Exit(code)
-		}
+	if err := run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
 	}
 }
 
-const invokeCWDEnv = "OMNI_INVOKE_CWD"
+func run(args []string, stdin io.Reader, stdout, stderr io.Writer) error {
+	if len(args) == 2 && args[0] == "version" && args[1] == "--json" {
+		return writeVersionJSON(stdout)
+	}
+	if len(args) != 1 || args[0] != "chat" {
+		return fmt.Errorf("usage: omni chat | omni version --json")
+	}
+	if _, _, err := requireChatTerminalStreams(stdin, stdout); err != nil {
+		return err
+	}
+	if err := requireDirectHostPathPlatform(); err != nil {
+		return err
+	}
+	invokingCWD, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("capture current working directory: %w", err)
+	}
+	clientCWD, err := projectroot.ResolvePhysicalDirectory(invokingCWD)
+	if err != nil {
+		return fmt.Errorf("resolve current working directory authority: %w", err)
+	}
+	if err := model.ValidateChannelWorkspaceRoot(clientCWD); err != nil {
+		return fmt.Errorf("current working directory: %w", err)
+	}
+	workspaceIdentity, err := projectroot.DirectoryIdentity(clientCWD)
+	if err != nil {
+		return fmt.Errorf("attest current working directory identity: %w", err)
+	}
+	coreURL := strings.TrimSpace(os.Getenv("CORE_URL"))
+	if coreURL == "" {
+		coreURL = defaultCoreURL
+	}
+	apiClient, err := client.New(coreURL, requestTimeout)
+	if err != nil {
+		return err
+	}
 
-func applyInvocationCWDFromEnv() error {
-	target := strings.TrimSpace(os.Getenv(invokeCWDEnv))
-	if target == "" {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	signals := make(chan os.Signal, 2)
+	signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
+	defer signal.Stop(signals)
+
+	bootstrap, err := awaitChatRequest(
+		ctx,
+		signals,
+		func(requestContext context.Context) (chatBootstrap, error) {
+			return loadChatBootstrap(requestContext, apiClient, clientCWD, workspaceIdentity)
+		},
+	)
+	if errors.Is(err, errChatRequestInterrupted) || errors.Is(err, errChatTerminated) {
 		return nil
 	}
-
-	if !filepath.IsAbs(target) {
-		abs, err := filepath.Abs(target)
-		if err != nil {
-			return fmt.Errorf("resolve %s: %w", invokeCWDEnv, err)
-		}
-		target = abs
-	}
-
-	info, err := os.Stat(target)
 	if err != nil {
-		return fmt.Errorf("invalid %s %q: %w", invokeCWDEnv, target, err)
+		return err
 	}
-	if !info.IsDir() {
-		return fmt.Errorf("invalid %s %q: not a directory", invokeCWDEnv, target)
+	defer bootstrap.stream.Close()
+	console, err := newChatConsole(ctx, stdin, stdout, stderr)
+	if err != nil {
+		return err
 	}
-	if err := os.Chdir(target); err != nil {
-		return fmt.Errorf("chdir %s=%q: %w", invokeCWDEnv, target, err)
+	sessionErr := runChatSession(chatSessionConfig{
+		Context: ctx, Cancel: cancel, Client: apiClient, Channel: bootstrap.channel,
+		WorkspaceIdentity: workspaceIdentity,
+		Snapshot:          bootstrap.snapshot,
+		Stream:            bootstrap.stream,
+		Console:           console,
+		Signals:           signals,
+	})
+	return errors.Join(sessionErr, console.Close())
+}
+
+func loadChatBootstrap(
+	ctx context.Context,
+	apiClient *client.Client,
+	clientCWD string,
+	workspaceIdentity string,
+) (chatBootstrap, error) {
+	channel, err := apiClient.BootstrapCLIChatSession(ctx, clientCWD, workspaceIdentity)
+	if err != nil {
+		return chatBootstrap{}, err
 	}
-	return nil
+	stream, err := apiClient.OpenJobEvents(ctx, channel.ID, workspaceIdentity, nil)
+	if err != nil {
+		return chatBootstrap{}, fmt.Errorf("open Omnidex realtime session: %w", err)
+	}
+	snapshot, err := apiClient.ChatSession(
+		ctx,
+		channel,
+		workspaceIdentity,
+		client.MaxChatSessionMessages,
+	)
+	if err != nil {
+		return chatBootstrap{}, errors.Join(
+			fmt.Errorf("load CLI chat session: %w", err),
+			stream.Close(),
+		)
+	}
+	return chatBootstrap{channel: channel, snapshot: snapshot, stream: stream}, nil
 }

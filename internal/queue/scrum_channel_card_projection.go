@@ -42,9 +42,9 @@ func newScrumChannelCardProjection(card DBScrumCard) (scrumChannelCardProjection
 	return scrumChannelCardProjection{
 		ID: card.ID, ProjectID: card.ProjectID, Title: card.Title,
 		Description: card.Description, Column: card.Column,
-		Checklist: defaultJSON(card.Checklist, `[]`), RefFiles: defaultJSON(card.RefFiles, `[]`),
+		Checklist: card.Checklist, RefFiles: card.RefFiles,
 		CardTicket: card.CardTicket, CardPrompt: card.CardPrompt,
-		Tags: defaultJSON(card.Tags, `[]`), TestCriteria: defaultJSON(card.TestCriteria, `[]`),
+		Tags: card.Tags, TestCriteria: card.TestCriteria,
 		FlowMetrics: flowMetrics, JobID: card.JobID,
 		PlayState: card.PlayState, QueueOrder: card.QueueOrder, BoardOrder: card.BoardOrder,
 		ChannelMessageCount: card.ChannelMessageCount, ChannelContentBytes: card.ChannelContentBytes,
@@ -126,7 +126,7 @@ func canonicalScrumFlowMetrics(raw json.RawMessage) (json.RawMessage, error) {
 			return nil, fmt.Errorf("Scrum flow metric %s must not be null", name)
 		}
 	}
-	for _, name := range []string{"last_play_outcome", "review_gate", "column", "updated_at"} {
+	for _, name := range []string{"last_play_outcome", "column", "updated_at"} {
 		if value, present := fields[name]; present {
 			switch string(value) {
 			case `""`:

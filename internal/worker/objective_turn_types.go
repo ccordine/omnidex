@@ -12,7 +12,6 @@ import (
 
 	"github.com/gryph/omnidex/internal/assemblyline"
 	"github.com/gryph/omnidex/internal/contextcompiler"
-	"github.com/gryph/omnidex/internal/datasource"
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/queue"
 	"github.com/gryph/omnidex/internal/roleplay"
@@ -55,6 +54,7 @@ type turnAuthority struct {
 	RoleplayIdentity                *assemblyline.RoleplayResponseIdentity
 	RoleplayEarlierResponses        []roleplayRoundResponseAuthority
 	Context                         assemblyline.ObjectiveContext
+	SessionContext                  *queue.ObjectiveSessionContextAuthority
 }
 
 type roleplayRoundResponseAuthority struct {
@@ -80,6 +80,31 @@ func validateObjectiveStationReceipt(label string, receipt objectiveStationRecei
 		return fmt.Errorf(
 			"%s reported %d calls; one exact semantic leaf requires exactly %d",
 			label, receipt.Calls, exactSemanticLeafCalls,
+		)
+	}
+	return nil
+}
+
+func validateObjectiveBoundedStationReceipt(
+	label string,
+	receipt objectiveStationReceipt,
+	maximumCalls int,
+) error {
+	if maximumCalls < exactSemanticLeafCalls {
+		return fmt.Errorf(
+			"%s has invalid maximum call budget %d", label, maximumCalls,
+		)
+	}
+	if receipt.Reused {
+		if receipt.Calls != 0 {
+			return fmt.Errorf("%s reuse reported %d provider calls", label, receipt.Calls)
+		}
+		return nil
+	}
+	if receipt.Calls < exactSemanticLeafCalls || receipt.Calls > maximumCalls {
+		return fmt.Errorf(
+			"%s reported %d calls outside the 1..%d bounded leaf budget",
+			label, receipt.Calls, maximumCalls,
 		)
 	}
 	return nil
@@ -139,35 +164,21 @@ type objectiveRoleplayGroundedStation interface {
 }
 
 type objectiveWorkflows struct {
-	ModelPathProvenance   assemblyline.ArtifactIdentityProvenance
-	WorkspaceMutation     func(context.Context, turnAuthority) (string, error)
-	RepositoryRead        func(context.Context, turnAuthority) (objectiveEvidenceAcquisition, error)
-	ExternalAnswer        func(context.Context, turnAuthority) (objectiveExternalAnswer, error)
-	DatabaseRead          func(context.Context, turnAuthority, string) (objectiveEvidenceAcquisition, error)
-	RoleplaySimulation    func(context.Context, string, int64) (roleplay.SimulationTurnAuthority, roleplay.NarrativeSimulationProjection, error)
-	RoleplayCanon         objectiveRoleplayCanonStation
-	RoleplayCanonDelta    func(context.Context, string, []string) ([]string, error)
-	RoleplayOngoingAction objectiveRoleplayOngoingActionStation
-	RoleplayResearch      func(context.Context, turnAuthority) (objectiveRoleplayResearchAnswer, error)
+	ResolveModelPathProvenance func() (assemblyline.ArtifactIdentityProvenance, error)
+	WorkspaceContinuity        func(context.Context, model.Job) (queue.ObjectiveContinuityAuthority, error)
+	WorkspaceMutation          func(context.Context, turnAuthority) (string, error)
+	DatabaseRead               func(context.Context, turnAuthority, string) (objectiveEvidenceAcquisition, error)
+	RoleplaySimulation         func(context.Context, string, int64) (roleplay.SimulationTurnAuthority, roleplay.NarrativeSimulationProjection, error)
+	RoleplayCanon              objectiveRoleplayCanonStation
+	RoleplayCanonDelta         func(context.Context, string, []string) ([]string, error)
+	RoleplayOngoingAction      objectiveRoleplayOngoingActionStation
+	RoleplayResearch           func(context.Context, turnAuthority) (objectiveRoleplayResearchAnswer, error)
 }
 
 type objectiveEvidenceAcquisition struct {
-	Evidence             []objectiveEvidence
-	ModelCalls           int
-	RepositoryCallLedger objectiveRepositoryAcquisitionCallLedger
-	GroundedRequirement  string
-	KnownArtifactPaths   []string
-	ArtifactIdentities   []assemblyline.ArtifactIdentity
-}
-
-type objectiveExternalAnswer struct {
-	Text           string
-	Rendered       string
-	RenderedSHA256 string
-	Paragraphs     []webresearch.GroundedParagraph
-	Evidence       []objectiveEvidence
-	EvidenceIDs    []string
-	ModelCalls     int
+	Evidence           []objectiveEvidence
+	ModelCalls         int
+	DatabaseCallLedger objectiveDatabaseAcquisitionCallLedger
 }
 
 type objectiveRoleplayResearchAnswer struct {
@@ -179,11 +190,11 @@ type objectiveRoleplayResearchAnswer struct {
 	Evidence       []objectiveEvidence
 	EvidenceIDs    []string
 	ModelCalls     int
+	WebCallLedger  webresearch.SemanticCallLedger
 }
 
 type objectiveEvidence struct {
 	Capsule       assemblyline.GroundedEvidenceCapsule
-	SelectionText string
 	SourceType    string
 	SourceRef     string
 	SHA256        string
@@ -295,19 +306,6 @@ func newTurnAuthority(job model.Job) (turnAuthority, error) {
 	}
 	if err := metadata.ChannelID.Validate(); err != nil {
 		return turnAuthority{}, fmt.Errorf("conversation turn channel authority: %w", err)
-	}
-	if metadata.DataSourceID != "" {
-		if err := metadata.DataSourceID.Validate(); err != nil {
-			return turnAuthority{}, fmt.Errorf("conversation turn data-source authority: %w", err)
-		}
-	}
-	if metadata.DelegatedDataAuthorityID != "" {
-		if metadata.DataSourceID == "" {
-			return turnAuthority{}, fmt.Errorf("conversation turn delegated authority requires a data source")
-		}
-		if err := datasource.ValidateDelegatedAuthorityID(metadata.DelegatedDataAuthorityID); err != nil {
-			return turnAuthority{}, fmt.Errorf("conversation turn delegated data authority: %w", err)
-		}
 	}
 	switch metadata.ChannelMode {
 	case model.ChannelModeAssistant:
@@ -431,6 +429,21 @@ func objectiveTurnID(authority turnAuthority, kind assemblyline.ConversationObje
 	if replan := authority.Context.ReplanAuthority; replan != nil {
 		_, _ = fmt.Fprintf(hash, "\x00replan\x00%d\x00%d\x00%s",
 			replan.JobID, replan.Generation, replan.FeedbackSHA256)
+	}
+	if session := authority.SessionContext; session != nil {
+		_, _ = fmt.Fprintf(hash, "\x00session-job\x00%d\x00initial\x00%s",
+			session.JobID,
+			assemblyline.ExactObjectiveContextSHA(session.InitialInstruction),
+		)
+		for _, turn := range session.Turns {
+			_, _ = fmt.Fprintf(hash, "\x00session-turn\x00%s\x00%s\x00%d\x00%s\x00%s",
+				turn.OperationID,
+				turn.Kind,
+				turn.Generation,
+				turn.CreatedAt.UTC().Format(time.RFC3339Nano),
+				assemblyline.ExactObjectiveContextSHA(turn.ContextText),
+			)
+		}
 	}
 	return "objective-" + hex.EncodeToString(hash.Sum(nil))
 }

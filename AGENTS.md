@@ -69,6 +69,28 @@ If another semantic result is required, that is another station and another boun
 
 - Progress is measured by verified changes in authoritative reality, not by model activity, retries, reviews, token usage, or changed text.
 
+# ITERATIVE FUNCTIONAL COMPLETION
+
+Omnidex is iterative by design. One job must make the accepted current objective real and verified; it does not have to predict the final product the user may eventually want.
+
+- Completion is defined by a functional, verified realization of the accepted current objective. It is not defined by exhausting every plausible feature, enhancement, interpretation, or future requirement.
+
+- After code resolves needed context facts, exactly one bounded requirement-inventory call returns either `NO_RUNTIME_REQUIREMENT_CANDIDATES` or between one and the code-owned maximum positive candidate lines. Code parses and counts those lines mechanically. No semantic station pre-counts the inventory, and no pre-count receipt exists. Inventory generation is untrusted intake, not authority or a completeness claim.
+
+- Every positive inventory candidate enters the ordinary authorization-first sieve independently. A candidate that is unrequested, unnecessary, unsupported, malformed as semantic content, or duplicative is discarded without reopening accepted state or stopping independent work. Only after at least one leaf survives may product-context, delivery-surface, deployment, or other downstream semantic leaves run, each at its first actual consumer.
+
+- Structurally invalid station output still fails loudly. A valid negative semantic relation is not an error or recovery path; it is the expected sieve result for that one candidate.
+
+- Accepted leaves are never placed back before a global review, coverage, challenge, approval, or completion model. New evidence may reopen only the exact leaf whose invariant it changes.
+
+- A model may not veto completion by claiming abstractly that something remains. There is no production completeness-review station. A possible future capability may be retained only as non-authoritative follow-up data outside the current workload and requires a later explicit user objective before it can enter the ordinary sieve.
+
+- Rejected or speculative candidates may be retained outside the current workload as provenance-bound optional follow-up suggestions. They must never enter the current task ledger, verifier, workload, or completion criteria unless a later explicit user turn makes one authoritative.
+
+- Capacity limits do not convert non-authoritative candidates into blockers. Code may defer or discard candidates beyond a bounded iteration. Code fails explicitly only when it can prove that an already authorized user obligation cannot fit a required hard capability boundary without producing an incorrect result.
+
+- A completed job may intentionally leave the product improvable. A later user turn creates a new objective against the resulting authoritative workspace and passes through the same machine.
+
 # CANONICAL EXAMPLE
 
 TREE STATION:
@@ -92,9 +114,10 @@ Code parses and diffs the returned tree and creates the filesystem workload. It 
 compiles the accepted tree and code-owned coverage into bounded source-block
 responsibilities.
 
-A declaration/source station receives one exact path-blind source responsibility and
-returns one declaration or source node. Each call remains a different semantic
-function even when the same underlying model is used.
+A source-body station receives one exact path-blind source responsibility and returns
+ordinary implementation-body text. Code supplies the declaration and every structural
+byte. Each call remains a different semantic function even when the same underlying
+model is used.
 
 # FUNDAMENTAL TEST
 
@@ -232,7 +255,7 @@ Domain Skills Are Learned Data, Not Repository Features
 
 Omnidex must not accumulate product-domain abilities in Go source, checked-in prompts, static skill folders, or adapter branches. Audio production, drawing, simulation, accounting, calendars, and every other workload domain belong outside the Omnidex implementation.
 
-When Omnidex needs a reusable ability that is not already available, it must be able to synthesize a narrowly scoped skill through bounded model jobs, validate that skill with code, and persist the accepted skill in PostgreSQL. Later jobs may retrieve the smallest relevant accepted skills from that registry. Natural-language skill matching is a narrow semantic-model job; it must not be replaced with keyword or phrase heuristics.
+When Omnidex needs a reusable ability that is not already available, it must be able to synthesize a narrowly scoped skill through bounded model jobs, validate that skill with code, and persist the accepted skill in PostgreSQL for the current service/database lifecycle. Later jobs in that same lifecycle may retrieve the smallest relevant accepted skills from the registry; the next service startup discards it with all other internal state. Natural-language skill matching is a narrow semantic-model job; it must not be replaced with keyword or phrase heuristics.
 
 Code owns skill identity, schemas, version numbers, lifecycle state, tool permissions, dependency edges, validation, test evidence, activation, retrieval limits, and database writes. Models may propose only the small semantic or instructional fields that code cannot derive. A proposed skill is unavailable until its schema, boundaries, and executable checks pass. Rejected skill candidates remain rejected; there is no silent fallback to a checked-in domain skill or general-purpose agent.
 
@@ -246,9 +269,11 @@ Code must own:
 * Parser and compiler context extraction.
 * Imports, stitching, formatting, complete-graph dependency checks, isolated compiler/test staging, workspace writes, and final test execution.
 
-A coding LLM may only fill one explicitly defined code block when deterministic code cannot provide that block. Initial generation receives only the language, exact signature, local behavioral contract, and strictly required declarations/symbols. Validation repair is split across two separate envelopes. A repair-guidance LLM receives the signature, required declarations/symbols, exact mutable block, compiler-proven lexical scope when available, and one exact path-free failure; it returns one self-contained imperative repair instruction and no replacement source. A repair-executor LLM then receives only that instruction and the exact mutable block; it returns exactly one parseable code node. The executor never receives the raw failure, capability inventory, scope inventory, or superseded initial behavioral narrative.
+A coding LLM may only fill one explicitly defined implementation body when deterministic code cannot provide that body. Initial generation receives only the language, exact signature as lexical-scope context, local behavioral contract, and strictly required declarations/symbols. It returns ordinary plain text containing the implementation body. It is never required to reproduce or preserve the signature, parameters, declaration, schema, JSON, control labels, AST shape, path, framework grammar, or any other mechanically known state; code owns and supplies all of that structure.
 
-Dependency order does not grant model context. Every model-visible declaration must be named in a separate explicit capability allowlist, must be a direct dependency, and must be projected at symbol level rather than through an aggregate domain API. Transitive dependencies are invisible. Capability, current-declaration, repair-guidance, repair-execution, initial-envelope, and total-envelope budgets are hard failures at the final model-call boundary. A compiler or test failure contributes one bounded sanitized diagnostic only to the repair-guidance station; test source is never model context. Guidance has no mutation authority and becomes useful only when ordinary code validates the executor's returned block against the original signature and reruns the exact compiler/test stage.
+If deterministic validation proves one specific defect and its exact mutable byte span, correction continues the SAME persisted generation job with the SAME immutable model route and retained model context. The continuation receives one necessary semantic question and only that exact defective span. It does not receive the previous complete body, surrounding accepted source, a preservation instruction, or framework information about how the result will be applied. It returns ordinary replacement text for that span. Code verifies the persisted base digest and range, performs the exact splice into its retained body, reassembles the code-owned declaration, and reruns the original validators. Every accepted byte outside the span and every unrelated job remain untouched and runnable. There is no repair-guidance model, repair-executor model, replacement response format, alternate work kind, restart, or model swap.
+
+Dependency order does not grant model context. Every model-visible declaration must be named in a separate explicit capability allowlist, must be a direct dependency, and must be projected at symbol level rather than through an aggregate domain API. Transitive dependencies are invisible. Capability, current-declaration, initial-body, correction-span, and total-input budgets are hard failures at the final model-call boundary. A compiler or test failure can authorize inference only after code maps it to one exact owning mutable span and one path-free semantic question; the raw diagnostic and test source are never correction context.
 
 No coding, repair, test-generation, or semantic-review LLM may receive or choose:
 
@@ -276,9 +301,34 @@ Every model call must have all of the following before dispatch:
 
 Models return semantic content only. They must not return a framework control plane such as `accept`, `reject`, `repair`, `replace`, `retry`, `search`, `apply`, `plan`, or completion status. A station that needs a corrected semantic value returns only that complete value. A station that needs to choose among code-enumerated alternatives returns only the selected opaque candidate ID. Code determines whether a returned value creates a delta, which exact retained leaf it binds to, whether a splice is legal, and whether the workflow continues.
 
+The provider response is ordinary plain text. Typed values exist only after code parses
+and maps that text. Model qualification MUST NOT depend on reproducing or preserving a
+schema, JSON object, internal enum, signature, parameter, declaration, path, AST shape,
+framework grammar, or any other value code already owns. The sole closed-choice output
+convention is one call-local opaque ID or letter when two or more choices genuinely
+remain.
+
+Closed-choice cardinality is literal and code-owned. Code materializes the complete applicable option set before considering inference:
+
+* zero options follows that station's explicit zero-option behavior;
+* one option is used immediately by code with zero model-resolution and zero model-execution calls; it is not rejected and is not an error; and
+* two or more options may create one bounded semantic choice call whose response is only the selected opaque ID or letter. Code maps that ID to the already-known value.
+
+A one-option set must never be rendered for model selection. Strict validation must not turn a deterministically resolved sole option into a new failure mode.
+
+When one uncertainty requires selecting any applicable subset from a code-known finite
+set, code reduces it through repeated single-choice rounds. Each round contains only
+the still-unselected candidates plus one semantic no-additional-choice alternative.
+After a candidate is selected, code persists it and removes it before rendering the
+next round, so duplicate selection is impossible. Opaque letters are round-local and
+are remapped to the remaining code-owned values each time. An initially sole candidate
+is consumed without inference; a sole candidate left after earlier selections is still
+compared with the no-additional-choice alternative. The model never returns a list of
+IDs or reproduces the accepted set.
+
 If code compares a returned candidate with the exact retained value and the bytes are identical, there is no mutation to perform. Code records the zero delta and continues deterministically; it must not create a retry prompt, response-correction job, reviewer history, or terminal failure from a model-authored action label. A further model call is legal only if a separate, still-unresolved semantic question has been persisted.
 
-Do not fake natural-language understanding with keyword lists, regex phrase routing, or checks for one expected wording. Human phrasing is variable and semantic interpretation is one of the narrow jobs that legitimately requires a model. Split interpretation into fixed tiny stations: surface classification, exact product-context extraction, exact requirement extraction and fixed-point splitting, opaque artifact handling, pairwise direct capability relation, bounded learned-skill selection, and one-need procedure synthesis. No station may emit an expanded software contract. Every station remains blind to documents, paths, workers, and orchestration. A capability-relation station sees exactly two local needs and returns only one registered direction; code owns the resulting graph and compiler-enforced per-feature projection. Code validates every small output and deterministically maps the result to one registered technical adapter. Invalid, contradictory, or unsupported semantic output fails loudly.
+Do not fake natural-language understanding with keyword lists, regex phrase routing, or checks for one expected wording. Human phrasing is variable and semantic interpretation is one of the narrow jobs that legitimately requires a model. Split interpretation into fixed tiny stations: bounded repository-fact questions when context is needed, one bounded untrusted requirement inventory, one-candidate authorization and classification, bounded compound-candidate partitioning, exact product-context extraction and surface or deployment semantics only at their first downstream consumer, opaque artifact handling, pairwise direct capability relation, bounded learned-skill selection, and one-need procedure synthesis. No semantic station pre-counts the inventory, and no pre-count receipt exists. Candidate-level cardinality remains one local candidate question and may only permit bounded partitioning. No station may emit an expanded software contract. Every station remains blind to documents, paths, workers, and orchestration. A capability-relation station sees exactly two local needs and, when inference is required, receives one opaque letter that code maps to one registered direction; code owns the resulting graph and compiler-enforced per-feature projection. Code validates every small output and deterministically maps the result to one registered technical adapter. Invalid, contradictory, or unsupported semantic output fails loudly.
 
 Semantic correction must preserve the decoded candidate in code. It is legal only after code has established one exact, grounded semantic defect that deterministic machinery cannot correct. The model receives that defect, the exact current leaf, and the minimum authority required to return only one complete replacement value. Code performs the exact one-leaf splice and preserves all accepted state. Never ask a model to reconstruct already accepted semantic fields, emit a repair plan, or decide whether the workflow advances.
 
@@ -310,8 +360,8 @@ separately proves that exact current managed file is eligible. There is no file-
 station. The selected stack
 compiler turns the accepted tree and code-owned coverage into bounded source-block
 responsibilities. Each source call remains path-blind and returns only one exact
-declaration or source node; code parses, validates, stitches, and verifies the complete
-documents.
+ordinary implementation body; code supplies the declaration, parses and validates the
+assembled node, stitches it, and verifies the complete documents.
 
 Artifact support is adapter-based, never language-hard-coded into the tree or
 model prompt. Code selects the registered stack from authoritative project
@@ -350,11 +400,11 @@ The frontend does not invent application state that conflicts with the server.
 
 Use:
 
-* PostgreSQL for durable state.
+* PostgreSQL for server-authoritative state during the current running build.
 * Redis for temporary/cache/session/realtime coordination state.
 * Server-side singletons where appropriate for application-level orchestration.
 * Middleware for request lifecycle behavior.
-* Migrations for schema changes.
+* `database/setup.sql` as the sole authoritative definition of Omnidex's internal database schema.
 * Components for UI rendering.
 * RecyclrJS for realtime/event bridge behavior.
 * Stimulus for interaction wiring only.
@@ -522,25 +572,34 @@ Do not duplicate lifecycle checks in controllers.
 
 ⸻
 
-12. Use Migrations
+12. Use One Fresh Omnidex Database Setup
 
-Any database schema change must use a migration.
+`database/setup.sql` is the sole authoritative definition of Omnidex's internal
+PostgreSQL schema. Every build carries that one current setup file, and every
+Omnidex service startup drops and recreates the configured dedicated schema from
+it. Any previous internal schema and rows are intentionally discarded.
 
-Do not assume columns exist.
+Do not add internal migration directories, numbered migration files, migration
+ledgers, manifests, digests, hashes, reversible upgrades, or in-place upgrade
+paths. Do not manually patch the internal schema or hide schema requirements
+inside runtime code. Change `database/setup.sql` directly and update the tests
+that prove a fresh setup.
 
-Do not manually patch schema.
-
-Do not hide schema requirements inside runtime code.
-
-Migrations should be reversible when practical.
+Generated workloads are a separate database boundary. A registered artifact
+adapter may generate workload-owned migrations when the workload contract and
+selected stack require them. Those workload artifacts must never become an
+Omnidex internal migration mechanism.
 
 ⸻
 
 State and Data Rules
 
-13. PostgreSQL for Durable State
+13. PostgreSQL for Current Server-Authoritative State
 
-Use PostgreSQL for durable application state.
+Use PostgreSQL as the authoritative store while the current Omnidex service is
+running. Omnidex makes no promise that its internal rows survive a process or
+service startup: startup recreates the dedicated schema from
+`database/setup.sql` and begins empty.
 
 Schema should be explicit.
 
@@ -571,7 +630,7 @@ Good Redis use cases:
 * Job status.
 * UI operation status.
 
-Redis should not become the durable source of truth unless explicitly designed that way.
+Redis should not become the server-authoritative source of truth unless explicitly designed that way.
 
 ⸻
 
@@ -702,13 +761,13 @@ Preferred flow:
 1. User triggers interaction.
 2. UI shows loading state.
 3. Server validates and performs mutation.
-4. Server updates durable/ephemeral state.
+4. Server updates authoritative/ephemeral state.
 5. Server returns updated component or emits Recyclr event.
 6. UI reflects server-confirmed state.
 7. UI clears loading state.
 8. Failures show explicit error state.
 
-Do not optimistically fake durable state unless specifically approved.
+Do not optimistically fake server-authoritative state unless specifically approved.
 
 ⸻
 
@@ -848,7 +907,8 @@ Prefer existing project patterns:
 * Server-side components.
 * Middleware.
 * Traits.
-* Migrations.
+* `database/setup.sql` for Omnidex's internal schema.
+* Workload-owned migrations only through registered workload artifact adapters.
 * PostgreSQL.
 * Redis.
 * Tailwind CSS.
@@ -887,7 +947,7 @@ Do not mix:
 * Rendering and persistence.
 * Validation and transport.
 * JavaScript interaction and server rendering.
-* Durable state and ephemeral state.
+* Server-authoritative database state and ephemeral state.
 * Query building and UI formatting.
 * Authorization and business logic.
 
@@ -953,9 +1013,11 @@ Before reporting completion, verify:
 * Stimulus is only used for interactions/bridges.
 * RecyclrJS is used appropriately for realtime/page bridge behavior.
 * RecyclrJS singleton remains body-scoped for full-page behavior.
-* PostgreSQL is used for durable state.
+* PostgreSQL is authoritative for the current running service, without a cross-start preservation claim.
 * Redis is used only for appropriate ephemeral/realtime state.
-* Migrations exist for schema changes.
+* `database/setup.sql` is the sole Omnidex internal schema source and a fresh startup discards previous internal state.
+* Internal migrations, manifests, hashes, and in-place upgrade paths were not added.
+* Any generated workload migration remains workload-owned and adapter-produced.
 * Middleware is used for lifecycle concerns.
 * Traits are used for focused shared behavior where appropriate.
 * Components are server-rendered.

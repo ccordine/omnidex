@@ -68,8 +68,139 @@ func semanticUncertaintyContract(
 	singleResult string,
 	consumer string,
 ) SemanticUncertaintyContract {
+	return semanticUncertaintyContractVersion(
+		kind, "v1", question, limitation, requiredInformation, singleResult, consumer,
+	)
+}
+
+func semanticUncertaintyContractV2(
+	kind WorkKind,
+	question string,
+	limitation string,
+	requiredInformation string,
+	singleResult string,
+	consumer string,
+) SemanticUncertaintyContract {
+	return semanticUncertaintyContractVersion(
+		kind, "v2", question, limitation, requiredInformation, singleResult, consumer,
+	)
+}
+
+func semanticUncertaintyContractV3(
+	kind WorkKind,
+	question string,
+	limitation string,
+	requiredInformation string,
+	singleResult string,
+	consumer string,
+) SemanticUncertaintyContract {
+	return semanticUncertaintyContractVersion(
+		kind, "v3", question, limitation, requiredInformation, singleResult, consumer,
+	)
+}
+
+func semanticUncertaintyContractV4(
+	kind WorkKind,
+	question string,
+	limitation string,
+	requiredInformation string,
+	singleResult string,
+	consumer string,
+) SemanticUncertaintyContract {
+	return semanticUncertaintyContractVersion(
+		kind, "v4", question, limitation, requiredInformation, singleResult, consumer,
+	)
+}
+
+func semanticUncertaintyContractV5(
+	kind WorkKind,
+	question string,
+	limitation string,
+	requiredInformation string,
+	singleResult string,
+	consumer string,
+) SemanticUncertaintyContract {
+	return semanticUncertaintyContractVersion(
+		kind, "v5", question, limitation, requiredInformation, singleResult, consumer,
+	)
+}
+
+func semanticUncertaintyContractV6(
+	kind WorkKind,
+	question string,
+	limitation string,
+	requiredInformation string,
+	singleResult string,
+	consumer string,
+) SemanticUncertaintyContract {
+	return semanticUncertaintyContractVersion(
+		kind, "v6", question, limitation, requiredInformation, singleResult, consumer,
+	)
+}
+
+func semanticUncertaintyContractV7(
+	kind WorkKind,
+	question string,
+	limitation string,
+	requiredInformation string,
+	singleResult string,
+	consumer string,
+) SemanticUncertaintyContract {
+	return semanticUncertaintyContractVersion(
+		kind, "v7", question, limitation, requiredInformation, singleResult, consumer,
+	)
+}
+
+func semanticUncertaintyContractV8(
+	kind WorkKind,
+	question string,
+	limitation string,
+	requiredInformation string,
+	singleResult string,
+	consumer string,
+) SemanticUncertaintyContract {
+	return semanticUncertaintyContractVersion(
+		kind, "v8", question, limitation, requiredInformation, singleResult, consumer,
+	)
+}
+
+func semanticUncertaintyContractV9(
+	kind WorkKind,
+	question string,
+	limitation string,
+	requiredInformation string,
+	singleResult string,
+	consumer string,
+) SemanticUncertaintyContract {
+	return semanticUncertaintyContractVersion(
+		kind, "v9", question, limitation, requiredInformation, singleResult, consumer,
+	)
+}
+
+func semanticUncertaintyContractV10(
+	kind WorkKind,
+	question string,
+	limitation string,
+	requiredInformation string,
+	singleResult string,
+	consumer string,
+) SemanticUncertaintyContract {
+	return semanticUncertaintyContractVersion(
+		kind, "v10", question, limitation, requiredInformation, singleResult, consumer,
+	)
+}
+
+func semanticUncertaintyContractVersion(
+	kind WorkKind,
+	version string,
+	question string,
+	limitation string,
+	requiredInformation string,
+	singleResult string,
+	consumer string,
+) SemanticUncertaintyContract {
 	return SemanticUncertaintyContract{
-		ID:       semanticUncertaintyContractIDPrefix + string(kind) + ".v1",
+		ID:       semanticUncertaintyContractIDPrefix + string(kind) + "." + version,
 		WorkKind: kind, ExactQuestion: question,
 		DeterministicLimitation: limitation,
 		RequiredInformation:     requiredInformation,
@@ -81,10 +212,6 @@ func semanticUncertaintyContract(
 func (contract SemanticUncertaintyContract) Validate() error {
 	if !validWorkKind(contract.WorkKind) {
 		return fmt.Errorf("work kind %q is unsupported", contract.WorkKind)
-	}
-	expectedID := semanticUncertaintyContractIDPrefix + string(contract.WorkKind) + ".v1"
-	if contract.ID != expectedID {
-		return fmt.Errorf("ID must be %q", expectedID)
 	}
 	fields := []struct {
 		name  string
@@ -119,14 +246,29 @@ func (contract SemanticUncertaintyContract) Validate() error {
 			return fmt.Errorf("contract contains forbidden general authority language %q", term)
 		}
 	}
-	registered, ok := registeredSemanticUncertaintyContract(contract.WorkKind)
+	registered, ok := registeredSemanticUncertaintyContractByID(
+		contract.WorkKind, contract.ID,
+	)
 	if !ok {
-		return fmt.Errorf("work kind %q has no registered contract", contract.WorkKind)
+		return fmt.Errorf(
+			"work kind %q has no registered contract ID %q",
+			contract.WorkKind, contract.ID,
+		)
 	}
 	if contract != registered {
 		return fmt.Errorf("contract differs from the exact code-owned registry value")
 	}
 	return nil
+}
+
+func registeredSemanticUncertaintyContractByID(
+	kind WorkKind,
+	id string,
+) (SemanticUncertaintyContract, bool) {
+	if current, ok := registeredSemanticUncertaintyContract(kind); ok && current.ID == id {
+		return current, true
+	}
+	return SemanticUncertaintyContract{}, false
 }
 
 func validateSemanticUncertaintyContractField(name, value string) error {

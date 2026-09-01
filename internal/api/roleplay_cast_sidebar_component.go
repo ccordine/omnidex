@@ -44,7 +44,6 @@ func renderRoleplayCastSidebar(state roleplaySimulationComponentState) (string, 
   </div>
   ` + setupHint + `
   <ul data-roleplay-cast-list class="scrollbar min-h-0 flex-1 space-y-1 overflow-y-auto p-2">` + strings.Join(ordered, "") + `</ul>
-  <div class="shrink-0 border-t border-white/10 p-2">` + renderRoleplayModelDownloadForm() + `</div>
 </div>`, nil
 }
 
@@ -86,14 +85,4 @@ func renderRoleplayCastCharacter(
   <button type="button" data-action="chat#openRoleplayCharacterEditor" data-roleplay-character-id="` + html.EscapeString(characterID) +
 		`" aria-label="Edit ` + escapedName + `" class="min-w-0 flex-1 truncate rounded px-1 py-1.5 text-left text-xs font-medium hover:text-violet-100">` + escapedName + `</button>
 </li>`
-}
-
-func renderRoleplayModelDownloadForm() string {
-	return `<details class="group/model-download">
-  <summary class="cursor-pointer list-none rounded px-1 py-1 text-[10px] font-semibold text-zinc-500 hover:text-violet-200">＋ Download model</summary>
-  <form data-action="submit->chat#downloadRoleplayModel" class="mt-1 flex gap-1">
-    <label class="min-w-0 flex-1"><span class="sr-only">Ollama model tag</span><input name="model" type="text" maxlength="256" required placeholder="model:tag" autocomplete="off" class="h-7 w-full min-w-0 rounded border border-white/10 bg-zinc-950 px-1.5 font-mono text-[10px] text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-violet-300/40"></label>
-    <button type="submit" aria-label="Download model" title="Download model" class="grid h-7 w-7 shrink-0 place-items-center rounded border border-violet-300/25 bg-violet-300/10 text-xs font-semibold text-violet-100 hover:bg-violet-300/20 disabled:cursor-wait disabled:opacity-60">↓</button>
-  </form>
-</details>`
 }

@@ -1,28 +1,77 @@
 package assemblyline
 
-import "strings"
-
 func BuildApplicationClassificationPrompt(input ApplicationClassificationInput) (string, error) {
 	if err := input.validate(); err != nil {
 		return "", err
 	}
-	return strings.Join([]string{
-		"Classify only the observable delivery surface of one software request.",
-		"Choose browser_application for an interactive browser page, command_line_application for a terminal program, service_application for a server/API, or unsupported when none applies.",
-		"Output grammar: browser_application | command_line_application | service_application | unsupported",
-		"CURRENT_REQUEST:\n" + input.UserRequest,
-	}, "\n\n"), nil
+	choices, err := applicationClassificationOpaqueChoices()
+	if err != nil {
+		return "", err
+	}
+	return RenderOpaqueModelChoiceQuestion(
+		"Which description matches only the observable delivery surface required by this software request? A missing surface constraint is different from an explicit requirement outside the registered set or an incompatible combination of explicit surfaces.",
+		[]string{"Software request:\n" + input.UserRequest},
+		choices,
+	)
 }
 
 func BuildArtifactHandlingPrompt(input ArtifactHandlingInput) (string, error) {
 	if err := input.validate(); err != nil {
 		return "", err
 	}
-	return strings.Join([]string{
-		"Classify only the user's explicit authority over FOCUSED_ARTIFACT.",
-		"Choose preserve_unchanged when it must remain unchanged, must_exist when its existence is required, must_be_absent when its absence is explicitly required, possible_absence_candidate when it is one member of an unresolved explicit absence choice, or mentioned_only when it is referenced without another explicit state relation.",
-		"Output grammar: preserve_unchanged | must_exist | must_be_absent | possible_absence_candidate | mentioned_only",
-		"FOCUSED_ARTIFACT: " + input.Token,
-		"CURRENT_REQUEST:\n" + input.UserRequest,
-	}, "\n\n"), nil
+	choices, err := artifactHandlingOpaqueChoices()
+	if err != nil {
+		return "", err
+	}
+	return RenderOpaqueModelChoiceQuestion(
+		"Which description matches only the user's explicit authority over the focused artifact?",
+		[]string{
+			"Focused artifact: " + input.Token,
+			"Software request:\n" + input.UserRequest,
+		},
+		choices,
+	)
+}
+
+func applicationClassificationOpaqueChoices() ([]OpaqueModelChoice, error) {
+	definitions := []struct {
+		description string
+		value       string
+	}{
+		{"The request requires an interactive browser page.", string(ApplicationSurfaceBrowser)},
+		{"The request requires a terminal program.", string(ApplicationSurfaceCommandLine)},
+		{"The request does not constrain its observable delivery surface.", string(ApplicationSurfaceUnspecified)},
+		{"The request explicitly requires an unregistered surface or incompatible multiple explicit surfaces.", string(ApplicationSurfaceUnsupported)},
+	}
+	choices := make([]OpaqueModelChoice, 0, len(definitions))
+	for _, definition := range definitions {
+		choice, err := NewOpaqueModelChoice(definition.description, definition.value)
+		if err != nil {
+			return nil, err
+		}
+		choices = append(choices, choice)
+	}
+	return choices, nil
+}
+
+func artifactHandlingOpaqueChoices() ([]OpaqueModelChoice, error) {
+	definitions := []struct {
+		description string
+		value       string
+	}{
+		{"The artifact must remain unchanged.", string(ArtifactPreserveUnchanged)},
+		{"The artifact's existence is required.", string(ArtifactMustExist)},
+		{"The artifact's absence is explicitly required.", string(ArtifactMustBeAbsent)},
+		{"The artifact is one member of an unresolved explicit absence choice.", string(ArtifactPossibleAbsenceCandidate)},
+		{"The artifact is referenced without another explicit state relation.", string(ArtifactMentionedOnly)},
+	}
+	choices := make([]OpaqueModelChoice, 0, len(definitions))
+	for _, definition := range definitions {
+		choice, err := NewOpaqueModelChoice(definition.description, definition.value)
+		if err != nil {
+			return nil, err
+		}
+		choices = append(choices, choice)
+	}
+	return choices, nil
 }

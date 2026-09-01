@@ -4,60 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strconv"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 )
-
-func readHistoricalArtifactPage(
-	ctx context.Context,
-	tx pgx.Tx,
-	jobID, afterID int64,
-	limit int,
-) ([]HistoricalArtifact, string, error) {
-	rows, err := tx.Query(ctx, `
-		SELECT artifact.id, artifact.job_id, artifact.step_id, artifact.kind,
-		       artifact.version, artifact.payload_json, artifact.created_at,
-		       steps.generation, steps.superseded_at_generation
-		FROM artifacts AS artifact
-		JOIN job_steps AS steps
-		  ON steps.job_id=artifact.job_id AND steps.id=artifact.step_id
-		WHERE artifact.job_id=$1 AND artifact.id>$2
-		ORDER BY artifact.id ASC
-		LIMIT $3
-	`, jobID, afterID, limit+1)
-	if err != nil {
-		return nil, "", fmt.Errorf("list job %d historical artifacts: %w", jobID, err)
-	}
-	defer rows.Close()
-
-	items := make([]HistoricalArtifact, 0, limit+1)
-	for rows.Next() {
-		var item HistoricalArtifact
-		var id int64
-		var payload []byte
-		if err := rows.Scan(
-			&id, &item.Artifact.JobID, &item.Artifact.StepID, &item.Artifact.Kind,
-			&item.Artifact.Version, &payload, &item.Artifact.CreatedAt,
-			&item.Step.Generation, &item.Step.SupersededAtGeneration,
-		); err != nil {
-			return nil, "", fmt.Errorf("scan job %d historical artifact: %w", jobID, err)
-		}
-		item.Artifact.ID = strconv.FormatInt(id, 10)
-		item.Artifact.Payload = append([]byte(nil), payload...)
-		item.Step.JobID = item.Artifact.JobID
-		item.Step.StepID = item.Artifact.StepID
-		item.cursorID = id
-		items = append(items, item)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, "", fmt.Errorf("iterate job %d historical artifacts: %w", jobID, err)
-	}
-	return finishJobHistoryPage(jobID, JobHistoryArtifacts, items, limit, func(item HistoricalArtifact) int64 {
-		return item.cursorID
-	})
-}
 
 func readHistoricalEvidencePage(
 	ctx context.Context,

@@ -8,32 +8,24 @@ import (
 	"unicode/utf8"
 
 	"github.com/gryph/omnidex/internal/exactjson"
+	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/modelconfig"
 )
 
-const JobMetadataSource = "omni-scrum"
-
 type JobMetadata struct {
-	Source             string             `json:"source"`
-	ProjectID          int64              `json:"project_id"`
-	CardID             string             `json:"scrum_card_id"`
-	CardTitle          string             `json:"scrum_card_title"`
-	CardDescription    string             `json:"scrum_card_description"`
-	Checklist          string             `json:"scrum_checklist"`
-	TestCriteria       string             `json:"scrum_test_criteria"`
-	ReturnColumn       string             `json:"scrum_return_column"`
-	ChannelOrigin      bool               `json:"scrum_channel_origin"`
-	ChannelOperationID string             `json:"scrum_channel_operation_id"`
-	ModelConfig        modelconfig.Config `json:"model_config"`
+	CardID             string                `json:"scrum_card_id"`
+	CardTitle          string                `json:"scrum_card_title"`
+	CardDescription    string                `json:"scrum_card_description"`
+	Checklist          string                `json:"scrum_checklist"`
+	TestCriteria       string                `json:"scrum_test_criteria"`
+	ReturnColumn       string                `json:"scrum_return_column"`
+	ChannelOrigin      bool                  `json:"scrum_channel_origin"`
+	ChannelOperationID string                `json:"scrum_channel_operation_id"`
+	ModelConfig        modelconfig.Config    `json:"model_config"`
+	CodingScopeMode    model.CodingScopeMode `json:"coding_scope_mode"`
 }
 
 func (metadata JobMetadata) Validate() error {
-	if metadata.Source != JobMetadataSource {
-		return fmt.Errorf("Scrum job source must be exactly %q", JobMetadataSource)
-	}
-	if metadata.ProjectID <= 0 {
-		return fmt.Errorf("Scrum job requires a positive project_id")
-	}
 	for name, value := range map[string]string{
 		"scrum_card_id": metadata.CardID, "scrum_card_title": metadata.CardTitle,
 		"scrum_card_description": metadata.CardDescription, "scrum_checklist": metadata.Checklist,
@@ -62,6 +54,9 @@ func (metadata JobMetadata) Validate() error {
 		}
 	} else if metadata.ChannelOperationID != "" {
 		return fmt.Errorf("ordinary Scrum jobs forbid a channel operation ID")
+	}
+	if err := metadata.CodingScopeMode.Validate(); err != nil {
+		return fmt.Errorf("Scrum job metadata coding scope authority: %w", err)
 	}
 	encodedConfig, err := json.Marshal(metadata.ModelConfig)
 	if err != nil {
@@ -92,9 +87,10 @@ func DecodeJobMetadata(raw json.RawMessage) (JobMetadata, error) {
 		return JobMetadata{}, fmt.Errorf("decode Scrum job metadata fields: %w", err)
 	}
 	for _, key := range []string{
-		"source", "project_id", "scrum_card_id", "scrum_card_title",
+		"scrum_card_id", "scrum_card_title",
 		"scrum_card_description", "scrum_checklist", "scrum_test_criteria",
 		"scrum_return_column", "scrum_channel_origin", "model_config",
+		"coding_scope_mode",
 		"scrum_channel_operation_id",
 	} {
 		if _, present := fields[key]; !present {
@@ -120,50 +116,8 @@ func canonicalLifecycleOperationID(value string) bool {
 	return true
 }
 
-// DecodeStoredJobMetadata accepts the one code-owned telemetry binding added
-// during the job transaction, then decodes the remaining Scrum authority with
-// the same closed schema used at enqueue.
 func DecodeStoredJobMetadata(raw json.RawMessage) (JobMetadata, error) {
-	if err := exactjson.ValidateUniqueObject(raw, "stored Scrum job metadata"); err != nil {
-		return JobMetadata{}, err
-	}
-	var fields map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &fields); err != nil {
-		return JobMetadata{}, fmt.Errorf("decode stored Scrum job metadata fields: %w", err)
-	}
-	rawRunID, present := fields["telemetry_run_id"]
-	if !present {
-		return JobMetadata{}, fmt.Errorf("stored Scrum job metadata requires telemetry_run_id")
-	}
-	var runID string
-	if err := json.Unmarshal(rawRunID, &runID); err != nil || !canonicalTelemetryRunID(runID) {
-		return JobMetadata{}, fmt.Errorf("stored Scrum job metadata telemetry_run_id is not canonical")
-	}
-	delete(fields, "telemetry_run_id")
-	semantic, err := json.Marshal(fields)
-	if err != nil {
-		return JobMetadata{}, fmt.Errorf("encode stored Scrum semantic metadata: %w", err)
-	}
-	return DecodeJobMetadata(semantic)
-}
-
-func canonicalTelemetryRunID(value string) bool {
-	if len(value) != 36 {
-		return false
-	}
-	for index := range value {
-		if index == 8 || index == 13 || index == 18 || index == 23 {
-			if value[index] != '-' {
-				return false
-			}
-			continue
-		}
-		if !((value[index] >= '0' && value[index] <= '9') ||
-			(value[index] >= 'a' && value[index] <= 'f')) {
-			return false
-		}
-	}
-	return true
+	return DecodeJobMetadata(raw)
 }
 
 type ChecklistItem struct {

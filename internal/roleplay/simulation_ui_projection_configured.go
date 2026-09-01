@@ -90,8 +90,7 @@ func loadLastPresentedUserTurnTx(
 	err := tx.QueryRow(ctx, `
 		SELECT authority
 		FROM roleplay_user_turns
-		WHERE world_id=$1 AND persona_kind<>'legacy_untyped'
-		  AND contribution_kind<>'command'
+		WHERE world_id=$1 AND contribution_kind<>'command'
 		ORDER BY user_message_id DESC
 		LIMIT 1
 	`, worldID).Scan(&payload)

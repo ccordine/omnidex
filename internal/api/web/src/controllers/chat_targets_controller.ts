@@ -4,8 +4,8 @@ export abstract class ChatTargetsController extends Controller {
   static targets = [
     "messages", "timeline", "input", "send", "status", "transport", "networkUrl", "job", "liveBadge", "activityDot", "activityText", "activityProblems", "eventCount", "panel",
     "jobFilter", "jobsList", "jobDetails", "memoryCandidates", "memoryList", "memoryKind", "memoryKindFilter", "memoryTags", "memoryContent",
-    "statusOutput", "researchStatusOutput", "hostBridgeStatusOutput",
-    "metricsOutput", "progress", "progressState", "progressLoading", "spinner", "modal", "modalPanel", "channelSelect", "newChannelDataSourceSelect", "newChannelModeSelect", "newChannelRoleplayFields", "newChannelRoleplayWorldName", "newChannelRoleplayViewpointName", "transcriptLoading", "typingIndicator", "roleplayPanel", "roleplayLoading", "roleplayWorkspaceLoading", "roleplayWorldDialog", "roleplayCharacterDialog", "roleplaySetupDialog", "roleplayCharacterEditorDialog", "roleplayPersona", "roleplayPersonaCreator", "roleplayNewPersona", "roleplayDraftParts", "roleplayDraftPartPool", "roleplayDraftPart", "slashPalette", "slashOptions",
+    "statusOutput", "hostBridgeStatusOutput",
+    "metricsOutput", "progress", "progressState", "progressLoading", "modal", "modalPanel", "channelSelect", "newChannelDataSourceSelect", "newChannelModeSelect", "newChannelRoleplayFields", "newChannelRoleplayWorldName", "newChannelRoleplayViewpointName", "transcriptLoading", "typingIndicator", "roleplayPanel", "roleplayLoading", "roleplayWorkspaceLoading", "roleplayWorldDialog", "roleplayCharacterDialog", "roleplaySetupDialog", "roleplayCharacterEditorDialog", "roleplayPersona", "roleplayPersonaCreator", "roleplayNewPersona", "roleplayDraftParts", "roleplayDraftPartPool", "roleplayDraftPart", "slashPalette", "slashOptions",
   ];
 
   declare readonly messagesTarget: HTMLElement;
@@ -32,24 +32,20 @@ export abstract class ChatTargetsController extends Controller {
   declare readonly memoryTagsTarget: HTMLInputElement;
   declare readonly memoryContentTarget: HTMLTextAreaElement;
   declare readonly statusOutputTarget: HTMLElement;
-  declare readonly researchStatusOutputTarget: HTMLElement;
   declare readonly hostBridgeStatusOutputTarget: HTMLElement;
   declare readonly metricsOutputTarget: HTMLElement;
   declare readonly progressTarget: HTMLElement;
   declare readonly progressStateTarget: HTMLElement;
   declare readonly progressLoadingTarget: HTMLElement;
-  declare readonly spinnerTarget: HTMLElement;
   declare readonly modalTarget: HTMLElement;
   declare readonly modalPanelTarget: HTMLElement;
   declare readonly hasMemoryListTarget: boolean;
   declare readonly hasStatusOutputTarget: boolean;
-  declare readonly hasResearchStatusOutputTarget: boolean;
   declare readonly hasHostBridgeStatusOutputTarget: boolean;
   declare readonly hasMetricsOutputTarget: boolean;
   declare readonly hasProgressStateTarget: boolean;
   declare readonly hasProgressLoadingTarget: boolean;
   declare readonly hasModalTarget: boolean;
-  declare readonly hasSpinnerTarget: boolean;
   declare readonly hasNetworkUrlTarget: boolean;
   declare readonly hasChannelSelectTarget: boolean;
   declare readonly hasJobsListTarget: boolean;

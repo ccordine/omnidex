@@ -2,6 +2,7 @@ package queue
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 
@@ -13,6 +14,8 @@ const (
 	maxMemoryBatchItems        = 512
 	maxMemoryBatchContentBytes = 16 << 20
 )
+
+var ErrInvalidMemoryWrite = errors.New("invalid memory write")
 
 type MemoryChunkWrite struct {
 	Input     model.MemoryInput
@@ -28,11 +31,11 @@ func (r *Repository) AddMemoryChunk(
 ) (model.MemoryChunk, error) {
 	parsedSource, err := model.ParseMemorySource(source)
 	if err != nil {
-		return model.MemoryChunk{}, err
+		return model.MemoryChunk{}, fmt.Errorf("%w: %v", ErrInvalidMemoryWrite, err)
 	}
 	parsedKind, err := model.ParseMemoryKind(kind)
 	if err != nil {
-		return model.MemoryChunk{}, err
+		return model.MemoryChunk{}, fmt.Errorf("%w: %v", ErrInvalidMemoryWrite, err)
 	}
 	chunks, err := r.AddMemoryChunks(ctx, []MemoryChunkWrite{{
 		Input: model.MemoryInput{
@@ -51,16 +54,16 @@ func (r *Repository) AddMemoryChunks(
 	writes []MemoryChunkWrite,
 ) ([]model.MemoryChunk, error) {
 	if len(writes) == 0 || len(writes) > maxMemoryBatchItems {
-		return nil, fmt.Errorf("memory batch must contain 1..%d writes", maxMemoryBatchItems)
+		return nil, fmt.Errorf("%w: memory batch must contain 1..%d writes", ErrInvalidMemoryWrite, maxMemoryBatchItems)
 	}
 	totalBytes := 0
 	for index, write := range writes {
 		if err := validateMemoryChunkWrite(write); err != nil {
-			return nil, fmt.Errorf("memory batch item %d: %w", index+1, err)
+			return nil, fmt.Errorf("%w: memory batch item %d: %v", ErrInvalidMemoryWrite, index+1, err)
 		}
 		totalBytes += len(write.Input.Content)
 		if totalBytes > maxMemoryBatchContentBytes {
-			return nil, fmt.Errorf("memory batch content exceeds %d bytes", maxMemoryBatchContentBytes)
+			return nil, fmt.Errorf("%w: memory batch content exceeds %d bytes", ErrInvalidMemoryWrite, maxMemoryBatchContentBytes)
 		}
 	}
 	if r == nil || r.pool == nil {
@@ -111,10 +114,10 @@ func addMemoryChunkTx(
 	if len(write.Embedding) > 0 {
 		err = tx.QueryRow(ctx, `
 			INSERT INTO memory_chunks (project_id, channel_id, source, kind, content, embedding)
-			VALUES ($1, $2, $3, $4, $5, $6::vector)
+			VALUES ($1, $2, $3, $4, $5, $6::double precision[])
 			RETURNING id, project_id, channel_id, source, kind, content, created_at
 		`, input.Scope.ProjectID, input.Scope.ChannelID, input.Source, input.Kind,
-			input.Content, vectorLiteral(write.Embedding)).Scan(
+			input.Content, write.Embedding).Scan(
 			&chunk.ID, &chunk.Scope.ProjectID, &chunk.Scope.ChannelID,
 			&chunk.Source, &chunk.Kind, &chunk.Content, &chunk.CreatedAt,
 		)

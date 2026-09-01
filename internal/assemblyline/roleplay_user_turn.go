@@ -23,11 +23,6 @@ func ProjectRoleplayUserTurn(
 	if err := authority.Validate(); err != nil {
 		return RoleplayUserTurnProjection{}, err
 	}
-	if authority.PersonaKind == roleplay.UserPersonaLegacy {
-		return RoleplayUserTurnProjection{}, fmt.Errorf(
-			"historical untyped user turn cannot become current response authority",
-		)
-	}
 	projection := RoleplayUserTurnProjection{
 		PersonaKind: authority.PersonaKind, PersonaName: authority.PersonaName,
 		PersonaSummary: authority.PersonaSummary, ContributionKind: authority.ContributionKind,

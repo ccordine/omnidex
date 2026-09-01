@@ -88,7 +88,7 @@ func (s *Server) dispatchScrumChannelMessage(
 			return scrumChannelDispatchResult{}, err
 		}
 		s.notifyScrumCardColumnTransition(r.Context(), projectID, previous, decoded.Card)
-		s.publishJobProgress(result.Job.ID, realtimeJobChanged, note)
+		s.publishJobProgressForJob(result.Job, realtimeJobChanged, note)
 	}
 	return decoded, nil
 }
@@ -160,8 +160,6 @@ func buildScrumChannelCardUpdate(
 		return queue.ScrumChannelCardUpdate{}, err
 	}
 	card.JobID = fmt.Sprintf("%d", job.ID)
-	card.SyncJobID = card.JobID
-	card.StepContextCursor = 0
 	card.Column = "in_progress"
 	card.PlayState = scrumPlayRunning
 	card.QueueOrder = 0
@@ -172,7 +170,6 @@ func buildScrumChannelCardUpdate(
 	return queue.ScrumChannelCardUpdate{
 		Messages: messages, Column: card.Column, JobID: card.JobID,
 		PlayState: card.PlayState, QueueOrder: card.QueueOrder,
-		SyncJobID: card.SyncJobID, StepContextCursor: card.StepContextCursor,
 	}, nil
 }
 

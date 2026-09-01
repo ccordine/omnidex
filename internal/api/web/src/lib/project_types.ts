@@ -3,7 +3,6 @@ export type ProjectRecord = {
   name: string;
   location: string;
   description: string;
-  project_state: string;
   last_seen_at: string;
   created_at: string;
   updated_at: string;

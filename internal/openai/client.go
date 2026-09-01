@@ -10,6 +10,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/gryph/omnidex/internal/llm"
 )
 
 const (
@@ -85,8 +87,11 @@ func NewCompatibleEmbedding(
 	if embeddingModel == "" {
 		return nil, fmt.Errorf("embedding model is required for provider %s", providerName)
 	}
-	if timeout <= 0 {
-		return nil, fmt.Errorf("request timeout must be positive for provider %s", providerName)
+	if timeout <= 0 || timeout > llm.MaximumModelRequestDuration {
+		return nil, fmt.Errorf(
+			"request timeout for provider %s must be positive and no greater than %s",
+			providerName, llm.MaximumModelRequestDuration,
+		)
 	}
 	return &Client{
 		baseURL: normalizedBaseURL, apiKey: apiKey, embeddingModel: embeddingModel,
@@ -127,8 +132,11 @@ func NewAzureAIEmbedding(
 	if embeddingModel == "" {
 		return nil, fmt.Errorf("embedding model is required for provider azure")
 	}
-	if timeout <= 0 {
-		return nil, fmt.Errorf("request timeout must be positive for provider azure")
+	if timeout <= 0 || timeout > llm.MaximumModelRequestDuration {
+		return nil, fmt.Errorf(
+			"request timeout for provider azure must be positive and no greater than %s",
+			llm.MaximumModelRequestDuration,
+		)
 	}
 	return &Client{
 		baseURL: baseURL, apiKey: apiKey, embeddingModel: embeddingModel,

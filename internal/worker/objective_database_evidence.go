@@ -25,12 +25,11 @@ type objectiveDatabaseEvidencePayload struct {
 }
 
 func projectObjectiveDatabaseEvidence(
-	round int,
 	snapshot datasource.SchemaSnapshot,
 	intent datasource.RelationalIntent,
 	evidence datasource.EvidenceResult,
 ) ([]objectiveEvidence, error) {
-	if round < 1 || evidence.Schema != datasource.EvidenceResultV1 ||
+	if evidence.Schema != datasource.EvidenceResultV1 ||
 		evidence.Provenance.SourceID != snapshot.SourceID ||
 		evidence.Provenance.SchemaFingerprint != snapshot.Fingerprint ||
 		evidence.Result.Hash != evidence.Provenance.ResultHash {
@@ -68,7 +67,7 @@ func projectObjectiveDatabaseEvidence(
 		if total > maxDatabaseEvidenceContextBytes {
 			return nil, fmt.Errorf("database evidence projection exceeds %d context bytes", maxDatabaseEvidenceContextBytes)
 		}
-		id := fmt.Sprintf("DB%d-%02d-%s", round, index+1, evidence.Provenance.ResultHash[:12])
+		id := fmt.Sprintf("DB-%02d-%s", index+1, evidence.Provenance.ResultHash[:12])
 		sourceRef := fmt.Sprintf(
 			"database:%s:intent:%s:result:%s",
 			snapshot.SourceID, evidence.Provenance.IntentHash[:12], evidence.Provenance.ResultHash[:12],

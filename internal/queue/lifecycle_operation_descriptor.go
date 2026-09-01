@@ -7,11 +7,14 @@ import (
 	"unicode/utf8"
 
 	"github.com/gryph/omnidex/internal/evidence"
+	"github.com/gryph/omnidex/internal/model"
+	"github.com/gryph/omnidex/internal/projectroot"
 )
 
 const (
 	lifecycleOperationCommandSchema = "omnidex.lifecycle-operation-command.v1"
 	maxLifecycleOutputBytes         = 4 << 20
+	maxLifecycleContextKeyBytes     = 512
 	maxObjectiveCompletionEvidence  = 32
 	maxObjectiveEvidenceSetBytes    = 128 << 10
 )
@@ -58,14 +61,8 @@ func normalizeCompleteStepCommand(command CompleteStepCommand) (CompleteStepComm
 		return CompleteStepCommand{}, err
 	}
 	command.ContextKey = strings.TrimSpace(command.ContextKey)
-	if err := validateLifecycleText("step context key", command.ContextKey, maxStepContextKeyBytes, true); err != nil {
+	if err := validateLifecycleText("step context key", command.ContextKey, maxLifecycleContextKeyBytes, true); err != nil {
 		return CompleteStepCommand{}, err
-	}
-	if err := validateLifecycleText("step context value", command.ContextValue, maxStepContextValueBytes, true); err != nil {
-		return CompleteStepCommand{}, err
-	}
-	if command.ContextKey == "" && command.ContextValue != "" {
-		return CompleteStepCommand{}, fmt.Errorf("step context value requires a nonempty context key")
 	}
 	if (len(command.RoleplayResponses) != 0 || command.RoleplayUserCanon != nil ||
 		command.RoleplayUserOngoingAction != nil) &&
@@ -201,11 +198,14 @@ func normalizeSubmitFeedbackCommand(command SubmitJobFeedbackCommand) (SubmitJob
 	if command.JobID <= 0 {
 		return SubmitJobFeedbackCommand{}, fmt.Errorf("feedback command requires a positive job ID")
 	}
-	feedback, _, err := validateLifecycleFeedback(command.Feedback, "job feedback")
+	feedback, _, err := validateJobFeedback(command.Feedback)
 	if err != nil {
 		return SubmitJobFeedbackCommand{}, err
 	}
 	command.Feedback = feedback
+	if err := validateLifecycleWorkspaceBinding(command.WorkspaceRoot, command.WorkspaceIdentity); err != nil {
+		return SubmitJobFeedbackCommand{}, err
+	}
 	return command, nil
 }
 
@@ -218,6 +218,24 @@ func normalizeReplanJobCommand(command ReplanJobCommand) (ReplanJobCommand, stri
 		return ReplanJobCommand{}, "", err
 	}
 	command.Feedback = feedback
+	if err := validateLifecycleWorkspaceBinding(command.WorkspaceRoot, command.WorkspaceIdentity); err != nil {
+		return ReplanJobCommand{}, "", err
+	}
+	return command, feedbackSHA, nil
+}
+
+func normalizeInterruptJobCommand(command ReplanJobCommand) (ReplanJobCommand, string, error) {
+	if command.JobID <= 0 {
+		return ReplanJobCommand{}, "", fmt.Errorf("interrupt command requires a positive job ID")
+	}
+	feedback, feedbackSHA, err := validateInterruptFeedback(command.Feedback)
+	if err != nil {
+		return ReplanJobCommand{}, "", err
+	}
+	command.Feedback = feedback
+	if err := validateLifecycleWorkspaceBinding(command.WorkspaceRoot, command.WorkspaceIdentity); err != nil {
+		return ReplanJobCommand{}, "", err
+	}
 	return command, feedbackSHA, nil
 }
 
@@ -230,7 +248,33 @@ func normalizeCancelJobCommand(command CancelJobCommand) (CancelJobCommand, erro
 		return CancelJobCommand{}, err
 	}
 	command.Reason = reason
+	if err := validateLifecycleWorkspaceBinding(command.WorkspaceRoot, command.WorkspaceIdentity); err != nil {
+		return CancelJobCommand{}, err
+	}
 	return command, nil
+}
+
+func validateLifecycleWorkspaceBinding(root, identity string) error {
+	if root == "" && identity == "" {
+		return nil
+	}
+	if root == "" || identity == "" {
+		return fmt.Errorf("lifecycle workspace root and identity must be supplied together")
+	}
+	if err := model.ValidateChannelWorkspaceRoot(root); err != nil {
+		return fmt.Errorf("lifecycle workspace root: %w", err)
+	}
+	if err := projectroot.ValidateDirectoryIdentity(identity); err != nil {
+		return fmt.Errorf("lifecycle workspace identity: %w", err)
+	}
+	return nil
+}
+
+func validateRequiredLifecycleWorkspaceBinding(root, identity string) error {
+	if root == "" || identity == "" {
+		return fmt.Errorf("lifecycle workspace root and identity are required")
+	}
+	return validateLifecycleWorkspaceBinding(root, identity)
 }
 
 func validateLifecycleText(name, value string, maximum int, allowEmpty bool) error {
@@ -248,8 +292,9 @@ func validateLifecycleText(name, value string, maximum int, allowEmpty bool) err
 
 func registeredLifecycleOperationKind(kind LifecycleOperationKind) bool {
 	switch kind {
-	case LifecycleCompleteStep, LifecycleFailStep, LifecycleSubmitFeedback, LifecycleReplanJob,
-		LifecycleCancelJob:
+	case LifecycleCompleteStep, LifecycleFailStep, LifecycleSubmitFeedback, LifecycleInterruptJob,
+		LifecycleReplanJob, LifecycleChannelSession, LifecycleCancelJob,
+		LifecycleCodingPlanDecisions, LifecycleCodingPlanFreeze:
 		return true
 	default:
 		return false

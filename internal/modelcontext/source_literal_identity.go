@@ -21,6 +21,11 @@ func appendDecodedSourceLiteralPathIdentities(
 	provenance ArtifactIdentityProvenance,
 ) []PathIdentity {
 	view, origins := decodedSourceLiteralPathView(raw)
+	// A singleton slash is source punctuation, not a path identity. Qualified
+	// path literals still flow through the ordinary path classifier below.
+	if view == "/" {
+		return destination
+	}
 	for _, identity := range PathIdentities(view, provenance) {
 		if identity.Start < 0 || identity.End <= identity.Start || identity.End > len(origins) {
 			continue

@@ -1,9 +1,12 @@
 package assemblyline
 
 import (
-	"fmt"
 	"strings"
 )
+
+func renderImmutableUserRequestModelProjection(userRequest string) string {
+	return "Software request:\n" + userRequest
+}
 
 // renderApplicationContextModelProjection exposes only the semantic facts a
 // station needs. ApplicationContext retains provenance and identity metadata
@@ -12,19 +15,9 @@ func renderApplicationContextModelProjection(
 	userRequest string,
 	context ApplicationContext,
 ) string {
-	var projection strings.Builder
-	fmt.Fprintf(&projection, "IMMUTABLE USER REQUEST:\n%s\n", userRequest)
-	fmt.Fprintf(&projection, "WORKSPACE STATE:\n%s\n", context.WorkspaceState)
+	projection := []string{renderImmutableUserRequestModelProjection(userRequest)}
 	for _, fact := range context.Facts {
-		if fact.Kind == ApplicationContextWorkspaceState {
-			continue
-		}
-		fmt.Fprintf(
-			&projection,
-			"FACT KIND:\n%s\nFACT VALUE:\n%s\n",
-			fact.Kind,
-			fact.Value,
-		)
+		projection = append(projection, "Established fact:\n"+fact.Value)
 	}
-	return strings.TrimSuffix(projection.String(), "\n")
+	return strings.Join(projection, "\n\n")
 }

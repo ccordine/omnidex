@@ -8,159 +8,44 @@ import (
 )
 
 type directCodingProgram struct {
-	StackID              string
-	VersionProfileID     string
+	Project              directCodingProjectSelection
 	Workload             assemblyline.FrozenApplicationWorkload
+	RequirementRelations directCodingApplicationTaskResultRelationPlan
 	TargetTree           assemblyline.TargetTree
 	Coverage             assemblyline.ApplicationFileCoveragePlan
-	ServiceState         directCodingServiceStatePlan
-	ServiceEndpoints     directCodingServiceEndpointPlan
-	StructureTransitions []assemblyline.TargetTreeTransition
 	Source               assemblyline.SourceBlueprint
 	StaticFiles          []directCodingFileTask
 	Generated            map[string]string
 	ProtectedPaths       []string
+	RequiredPaths        []string
+	DeletePaths          []string
 }
 
 func compileDirectCodingProgram(
 	projectName string,
 	specification assemblyline.ApplicationSpecification,
-	identities []assemblyline.ArtifactIdentity,
-	skills map[string]directCodingSkillBinding,
 	workload assemblyline.FrozenApplicationWorkload,
 	capabilities directCodingCapabilityGraph,
+	project directCodingProjectSelection,
 	targetTree assemblyline.TargetTree,
 	coverage assemblyline.ApplicationFileCoveragePlan,
-) (directCodingProgram, error) {
-	return compileDirectCodingProgramWithServiceEndpoints(
-		projectName, specification, identities, skills, workload, capabilities,
-		targetTree, coverage, directCodingServiceStatePlan{}, directCodingServiceEndpointPlan{},
-	)
-}
-
-func compileDirectCodingServiceProgram(
-	projectName string,
-	specification assemblyline.ApplicationSpecification,
-	identities []assemblyline.ArtifactIdentity,
-	skills map[string]directCodingSkillBinding,
-	workload assemblyline.FrozenApplicationWorkload,
-	capabilities directCodingCapabilityGraph,
-	targetTree assemblyline.TargetTree,
-	coverage assemblyline.ApplicationFileCoveragePlan,
-	state directCodingServiceStatePlan,
-	endpoints directCodingServiceEndpointPlan,
-) (directCodingProgram, error) {
-	return compileDirectCodingProgramWithServiceEndpoints(
-		projectName, specification, identities, skills, workload, capabilities,
-		targetTree, coverage, state, endpoints,
-	)
-}
-
-func compileDirectCodingProgramWithServiceEndpoints(
-	projectName string,
-	specification assemblyline.ApplicationSpecification,
-	identities []assemblyline.ArtifactIdentity,
-	skills map[string]directCodingSkillBinding,
-	workload assemblyline.FrozenApplicationWorkload,
-	capabilities directCodingCapabilityGraph,
-	targetTree assemblyline.TargetTree,
-	coverage assemblyline.ApplicationFileCoveragePlan,
-	state directCodingServiceStatePlan,
-	endpoints directCodingServiceEndpointPlan,
+	protected []string,
+	required []string,
+	deletions []string,
 ) (directCodingProgram, error) {
 	moduleSegment, err := normalizeDirectCodingModuleSegment(projectName)
 	if err != nil {
 		return directCodingProgram{}, err
 	}
-	protected, err := resolveDirectCodingProtectedArtifacts(specification.Artifacts, identities)
-	if err != nil {
-		return directCodingProgram{}, err
-	}
-	if err := validateDirectCodingSkillBindings(specification.Requirements, skills); err != nil {
-		return directCodingProgram{}, err
-	}
-	if err := validateDirectCodingCapabilityGraph(specification.Requirements, capabilities); err != nil {
-		return directCodingProgram{}, err
-	}
-	if err := assemblyline.ValidateFrozenApplicationWorkloadFor(specification, workload); err != nil {
-		return directCodingProgram{}, err
-	}
-	stack, err := directCodingProjectStackByID(targetTree.StackID)
-	if err != nil {
-		return directCodingProgram{}, err
-	}
-	if !stack.SupportsSurface(specification.Surface) {
+	stack := project.Stack
+	if stack.CompileSource == nil {
 		return directCodingProgram{}, fmt.Errorf(
-			"selected project stack %s supports surfaces %s, not %s",
-			stack.ID, directCodingProjectStackSurfaceSummary(stack.SupportedSurfaces), specification.Surface,
+			"project stack %s has no source compiler", stack.ID,
 		)
 	}
-	versionProfile, err := directCodingVersionProfileForTargetTree(targetTree)
-	if err != nil {
-		return directCodingProgram{}, err
-	}
-	if err := validateDirectCodingTargetTreeUnion(stack, targetTree); err != nil {
-		return directCodingProgram{}, fmt.Errorf(
-			"validate %s target tree: %w", stack.ID, err,
-		)
-	}
-	if len(workload.Tasks) == 1 {
-		if err := validateDirectCodingFocusedTargetTree(stack, targetTree); err != nil {
-			return directCodingProgram{}, fmt.Errorf(
-				"validate %s target tree: %w", stack.ID, err,
-			)
-		}
-	}
-	if err := coverage.ValidateFor(targetTree, workload); err != nil {
-		return directCodingProgram{}, fmt.Errorf("validate application file coverage: %w", err)
-	}
-	if len(workload.Tasks) > 1 {
-		if err := validateDirectCodingCoveredFocusedTargetTrees(stack, workload, coverage); err != nil {
-			return directCodingProgram{}, fmt.Errorf(
-				"validate %s target tree: %w", stack.ID, err,
-			)
-		}
-	}
-	var blueprint assemblyline.SourceBlueprint
-	var staticFiles []directCodingFileTask
-	if stack.CompileServiceSource != nil {
-		if stack.CompileSource != nil || stack.ValidateServiceState == nil {
-			return directCodingProgram{}, fmt.Errorf(
-				"HTTP project stack %s requires exactly one HTTP compiler and state validator", stack.ID,
-			)
-		}
-		if err := stack.ValidateServiceState(workload, state); err != nil {
-			return directCodingProgram{}, fmt.Errorf("validate service state plan: %w", err)
-		}
-		if err := endpoints.ValidateForCapabilities(
-			workload, capabilities,
-		); err != nil {
-			return directCodingProgram{}, fmt.Errorf("validate service endpoint plan: %w", err)
-		}
-		blueprint, staticFiles, err = stack.CompileServiceSource(
-			moduleSegment, specification, skills, workload, capabilities, targetTree, coverage, state, endpoints,
-		)
-	} else {
-		if stack.CompileSource == nil {
-			return directCodingProgram{}, fmt.Errorf(
-				"project stack %s requires exactly one non-HTTP compiler", stack.ID,
-			)
-		}
-		if endpoints.WorkloadSHA256 != "" || endpoints.ProductContext != "" ||
-			len(endpoints.Requirements) != 0 || len(endpoints.ByTask) != 0 {
-			return directCodingProgram{}, fmt.Errorf(
-				"non-service project stack %s received service endpoint authority", stack.ID,
-			)
-		}
-		if state.WorkloadSHA256 != "" || len(state.ByTask) != 0 {
-			return directCodingProgram{}, fmt.Errorf(
-				"non-service project stack %s received service state authority", stack.ID,
-			)
-		}
-		blueprint, staticFiles, err = stack.CompileSource(
-			moduleSegment, specification, skills, workload, capabilities, targetTree, coverage,
-		)
-	}
+	blueprint, staticFiles, err := stack.CompileSource(
+		moduleSegment, specification, workload, capabilities, project.Profile, targetTree, coverage,
+	)
 	if err != nil {
 		return directCodingProgram{}, err
 	}
@@ -178,49 +63,71 @@ func compileDirectCodingProgramWithServiceEndpoints(
 		return directCodingProgram{}, fmt.Errorf("validate %s source ownership: %w", stack.ID, err)
 	}
 	return directCodingProgram{
-		StackID: stack.ID, VersionProfileID: versionProfile.ID,
+		Project:  project,
 		Workload: workload, TargetTree: targetTree, Coverage: coverage,
-		ServiceState:     state,
-		ServiceEndpoints: endpoints,
-		Source:           blueprint,
-		StaticFiles:      staticFiles, Generated: map[string]string{},
-		ProtectedPaths: protected,
+		Source:      blueprint,
+		StaticFiles: staticFiles, Generated: map[string]string{},
+		ProtectedPaths: protected, RequiredPaths: required, DeletePaths: deletions,
 	}, nil
 }
 
-func resolveDirectCodingProtectedArtifacts(
+func resolveDirectCodingArtifactPaths(
 	directives []assemblyline.ArtifactDirective,
 	identities []assemblyline.ArtifactIdentity,
-) ([]string, error) {
+) ([]string, []string, []string, error) {
 	values := make(map[string]string, len(identities))
 	for _, identity := range identities {
 		values[identity.Token] = identity.Value
 	}
 	protected := make([]string, 0)
-	seen := make(map[string]struct{})
+	required := make([]string, 0)
+	deletions := make([]string, 0)
+	seenProtected := make(map[string]struct{})
+	seenRequired := make(map[string]struct{})
+	seenDeletions := make(map[string]struct{})
+	retainedPaths := make(map[string]struct{})
 	for _, directive := range directives {
 		value, exists := values[directive.Token]
 		if !exists {
-			return nil, fmt.Errorf("semantic contract references unresolved opaque artifact %s", directive.Token)
+			return nil, nil, nil, fmt.Errorf("semantic contract references unresolved opaque artifact %s", directive.Token)
 		}
-		if directive.Disposition != assemblyline.ArtifactProtect {
-			return nil, fmt.Errorf("generic coding adapters do not support artifact disposition %s for %s", directive.Disposition, directive.Token)
-		}
-		path, err := normalizeDirectCodingPath(value)
+		path, err := requireExactDirectCodingPath(value)
 		if err != nil {
-			return nil, fmt.Errorf("resolve protected artifact %s: %w", directive.Token, err)
+			return nil, nil, nil, fmt.Errorf("resolve artifact %s: %w", directive.Token, err)
 		}
-		if _, exists := seen[path]; exists {
+		if directCodingPathConflictsWithSet(path, retainedPaths) {
 			continue
 		}
-		seen[path] = struct{}{}
-		protected = append(protected, path)
+		switch directive.Disposition {
+		case assemblyline.ArtifactProtect:
+			if _, exists := seenProtected[path]; !exists {
+				seenProtected[path] = struct{}{}
+				protected = append(protected, path)
+				retainedPaths[path] = struct{}{}
+			}
+		case assemblyline.ArtifactRequire:
+			if _, exists := seenRequired[path]; !exists {
+				seenRequired[path] = struct{}{}
+				required = append(required, path)
+				retainedPaths[path] = struct{}{}
+			}
+		case assemblyline.ArtifactForbid:
+			if _, exists := seenDeletions[path]; !exists {
+				seenDeletions[path] = struct{}{}
+				deletions = append(deletions, path)
+				retainedPaths[path] = struct{}{}
+			}
+		default:
+			return nil, nil, nil, fmt.Errorf("artifact disposition %s has no filesystem consumer", directive.Disposition)
+		}
 	}
-	return protected, nil
+	return protected, required, deletions, nil
 }
 
 func normalizeDirectCodingModuleSegment(raw string) (string, error) {
-	raw = strings.ToLower(strings.TrimSpace(raw))
+	raw = strings.TrimSpace(raw)
+	digest := directCodingDigest(raw)
+	raw = strings.ToLower(raw)
 	var output strings.Builder
 	lastDash := false
 	for _, char := range raw {
@@ -236,7 +143,10 @@ func normalizeDirectCodingModuleSegment(raw string) (string, error) {
 	}
 	segment := strings.Trim(output.String(), "-")
 	if segment == "" {
-		return "", fmt.Errorf("project module requires a name containing a letter or digit")
+		segment = "workspace-" + digest[:12]
+	}
+	if len(segment) > 64 {
+		segment = strings.Trim(segment[:51], "-") + "-" + digest[:12]
 	}
 	return segment, nil
 }

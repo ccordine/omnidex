@@ -97,9 +97,6 @@ func (role ChannelMessageRole) Validate() error {
 }
 
 func (channel Channel) ValidateForCreate() error {
-	if channel.ProjectID != 0 {
-		return fmt.Errorf("channel project identity is server-resolved and must be omitted on create")
-	}
 	return channel.validateAuthority()
 }
 
@@ -154,13 +151,7 @@ func (channel Channel) validateAuthority() error {
 }
 
 func (channel Channel) ValidateStored() error {
-	if err := channel.validateAuthority(); err != nil {
-		return err
-	}
-	if channel.ProjectID < 1 {
-		return fmt.Errorf("stored channel requires a positive project identity")
-	}
-	return nil
+	return channel.validateAuthority()
 }
 
 func ValidateChannelWorkspaceRoot(root string) error {

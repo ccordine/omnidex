@@ -1,10 +1,6 @@
 package api
 
 func scrumCardChannelChanged(before, after ScrumCard) bool {
-	if before.SyncJobID != after.SyncJobID ||
-		before.StepContextCursor != after.StepContextCursor {
-		return true
-	}
 	if len(before.PendingChannelMessages) != len(after.PendingChannelMessages) {
 		return true
 	}

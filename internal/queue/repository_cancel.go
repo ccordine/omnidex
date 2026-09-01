@@ -5,56 +5,67 @@ import (
 	"fmt"
 
 	"github.com/gryph/omnidex/internal/model"
-	"github.com/gryph/omnidex/internal/taskstate"
 	"github.com/jackc/pgx/v5"
 )
 
-func (r *Repository) CancelJob(ctx context.Context, command CancelJobCommand) (model.Job, error) {
+func (r *Repository) CancelJob(ctx context.Context, command CancelJobCommand) (LifecycleJobResult, error) {
 	tx, err := r.pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
-		return model.Job{}, err
+		return LifecycleJobResult{}, err
 	}
 	defer rollbackTx(ctx, tx, "job cancellation")
 
-	job, err := cancelJobTx(ctx, tx, command)
+	result, err := cancelJobTx(ctx, tx, command)
 	if err != nil {
-		return model.Job{}, err
+		return LifecycleJobResult{}, err
+	}
+	if result.Applied {
+		if err := terminalizeScrumJobCardTx(ctx, tx, result.Job, model.JobStatusCanceled); err != nil {
+			return LifecycleJobResult{}, err
+		}
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return model.Job{}, err
+		return LifecycleJobResult{}, err
 	}
-	return job, nil
+	return result, nil
 }
 
-func cancelJobTx(ctx context.Context, tx pgx.Tx, command CancelJobCommand) (model.Job, error) {
+func cancelJobTx(ctx context.Context, tx pgx.Tx, command CancelJobCommand) (LifecycleJobResult, error) {
 	command, err := normalizeCancelJobCommand(command)
 	if err != nil {
-		return model.Job{}, err
+		return LifecycleJobResult{}, err
 	}
 	descriptor, err := describeLifecycleOperation(command.OperationID, LifecycleCancelJob, command)
 	if err != nil {
-		return model.Job{}, err
+		return LifecycleJobResult{}, err
+	}
+	if err := lockLifecycleOperationIdentityTx(ctx, tx, command.OperationID); err != nil {
+		return LifecycleJobResult{}, err
 	}
 	job, err := lockedJobTx(ctx, tx, command.JobID)
 	if err != nil {
-		return model.Job{}, err
+		return LifecycleJobResult{}, err
 	}
-	if err := lockLifecycleOperationIdentityTx(ctx, tx, command.OperationID); err != nil {
-		return model.Job{}, err
+	if err := requireLifecycleWorkspaceAuthority(
+		job,
+		command.WorkspaceRoot,
+		command.WorkspaceIdentity,
+	); err != nil {
+		return LifecycleJobResult{}, err
 	}
 	record, found, err := loadLifecycleOperationTx(ctx, tx, descriptor, command.JobID)
 	if err != nil {
-		return model.Job{}, err
+		return LifecycleJobResult{}, err
 	}
 	if found {
 		if err := requireCancelJobReplayTx(ctx, tx, record, command, job); err != nil {
-			return model.Job{}, err
+			return LifecycleJobResult{}, err
 		}
-		return record.ResultJob, nil
+		return LifecycleJobResult{Job: record.ResultJob}, nil
 	}
 	job, err = applyJobCancellationTx(ctx, tx, command, job)
 	if err != nil {
-		return model.Job{}, err
+		return LifecycleJobResult{}, err
 	}
 	if err := insertLifecycleOperationTx(ctx, tx, descriptor, lifecycleOperationRecord{
 		ID: descriptor.ID, JobID: job.ID,
@@ -62,9 +73,9 @@ func cancelJobTx(ctx context.Context, tx pgx.Tx, command CancelJobCommand) (mode
 		Kind: descriptor.Kind, CommandSHA256: descriptor.SHA256,
 		ResultJobStatus: job.Status, ResultJob: job,
 	}); err != nil {
-		return model.Job{}, err
+		return LifecycleJobResult{}, err
 	}
-	return job, nil
+	return LifecycleJobResult{Job: job, Applied: true}, nil
 }
 
 func applyJobCancellationTx(
@@ -82,8 +93,17 @@ func applyJobCancellationTx(
 			ErrStepNotWritable, job.ID,
 		)
 	}
-	if err := rejectUnresolvedGeneratedWorkloadDeploymentsTx(
-		ctx, tx, command.JobID,
+	if err := requireObjectiveSessionContextAdmissionTx(
+		ctx,
+		tx,
+		job,
+		conversationFollowupCancellation,
+		command.Reason,
+	); err != nil {
+		return model.Job{}, err
+	}
+	if err := transitionCodingPlanAuthorityTx(
+		ctx, tx, job, model.CodingPlanStateCanceled,
 	); err != nil {
 		return model.Job{}, err
 	}
@@ -111,12 +131,6 @@ func applyJobCancellationTx(
 	`, command.JobID, model.StepStatusCanceled, command.Reason, model.StepStatusPending, model.StepStatusRunning, model.StepStatusWaiting); err != nil {
 		return model.Job{}, err
 	}
-	if err := transitionInitialTaskRootTx(
-		ctx, tx, command.JobID, job.CurrentGeneration, 0, taskstate.NodeCanceled, "", command.Reason,
-	); err != nil {
-		return model.Job{}, err
-	}
-
 	jobUpdate, err := tx.Exec(ctx, `
 		UPDATE jobs
 		SET status = $2, error = $3, completed_at = NOW(), updated_at = NOW()
@@ -128,18 +142,6 @@ func applyJobCancellationTx(
 	if jobUpdate.RowsAffected() != 1 {
 		return model.Job{}, fmt.Errorf("job %d disappeared during cancellation", command.JobID)
 	}
-	if err := terminalizeTaskLedgerTx(
-		ctx, tx, command.JobID, job.CurrentGeneration, model.JobStatusCanceled, nil, command.Reason,
-	); err != nil {
-		return model.Job{}, err
-	}
-	if err := completeTelemetryRunForJob(ctx, tx, command.JobID, model.JobStatusCanceled, map[string]any{"job_id": command.JobID, "error": command.Reason}, map[string]any{"cancel_reason": command.Reason}); err != nil {
-		return model.Job{}, err
-	}
-	if err := recordTelemetryJobEvent(ctx, tx, command.JobID, "run_cancelled", map[string]any{"job_id": command.JobID, "reason": command.Reason}); err != nil {
-		return model.Job{}, err
-	}
-
 	row := tx.QueryRow(ctx, `
 		SELECT id, instruction, pipeline, status, result, error, metadata, current_generation, created_at, updated_at, completed_at
 		FROM jobs

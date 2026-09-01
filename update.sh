@@ -14,7 +14,6 @@ NO_BUILD=0
 NO_RESTART=0
 NO_CACHE=0
 HOST_ONLY=0
-NO_HOST_RESTART=0
 DOCKER_CONTEXT_NAME=""
 COMPOSE_PROJECT=""
 
@@ -32,24 +31,18 @@ Options:
   --no-build              Skip docker compose build
   --no-restart            Skip docker compose up -d
   --host-only             Only pull latest source and rebuild installed host binaries
-  --no-host-restart       Skip restarting the host bridge systemd user service
   -h, --help              Show this help
 
 What this updater does:
   1) Stages a complete checkout and fast-forwards it to latest
   2) Reproducibly builds the embedded GUI and all host binaries
-  3) Restarts the host bridge user service when installed (omni-host-bridge)
-  4) Rebuilds the Docker image for the core service
-  5) Restarts the core service with docker compose
+  3) Rebuilds the Docker image for the server service
+  4) Restarts the server service with docker compose
 EOF
 }
 
 log() {
   printf '[update] %s\n' "$*"
-}
-
-warn() {
-  printf '[update][warn] %s\n' "$*" >&2
 }
 
 die() {
@@ -124,10 +117,6 @@ parse_args() {
         NO_RESTART=1
         shift
         ;;
-      --no-host-restart)
-        NO_HOST_RESTART=1
-        shift
-        ;;
       -h|--help)
         usage
         exit 0
@@ -154,17 +143,13 @@ build_staged_checkout() {
     ldflags="-X github.com/gryph/omnidex/internal/version.Commit=${OMNIDEX_COMMIT}"
     mkdir -p bin
     build_dir="$(mktemp -d "${repo_dir}/bin/.omnidex-build.XXXXXX")"
-    trap 'rm -f "${build_dir}/agent-core" "${build_dir}/agent-cli" "${build_dir}/omni"; rmdir "${build_dir}" 2>/dev/null || true' EXIT
-    go build -trimpath -ldflags "${ldflags}" -o "${build_dir}/agent-core" ./cmd/core
-    go build -trimpath -ldflags "${ldflags}" -o "${build_dir}/agent-cli" ./cmd/cli
+    trap 'rm -f "${build_dir}/omnidex" "${build_dir}/omni"; rmdir "${build_dir}" 2>/dev/null || true' EXIT
+    go build -trimpath -ldflags "${ldflags}" -o "${build_dir}/omnidex" ./cmd/omnidex
     go build -trimpath -ldflags "${ldflags}" -o "${build_dir}/omni" ./cmd/omni
-    managed_checkout_verify_binary_commit "${build_dir}/agent-core" "${OMNIDEX_COMMIT}" core
-    managed_checkout_verify_binary_commit "${build_dir}/agent-cli" "${OMNIDEX_COMMIT}" json
+    managed_checkout_verify_binary_commit "${build_dir}/omnidex" "${OMNIDEX_COMMIT}" metadata
     managed_checkout_verify_binary_commit "${build_dir}/omni" "${OMNIDEX_COMMIT}" json
-    mv -f "${build_dir}/agent-core" bin/agent-core
-    mv -f "${build_dir}/agent-cli" bin/agent-cli
+    mv -f "${build_dir}/omnidex" bin/omnidex
     mv -f "${build_dir}/omni" bin/omni
-    ln -sfn agent-cli bin/acli
   )
 }
 
@@ -225,11 +210,10 @@ main() {
   fi
   managed_checkout_stage_env "${PREFIX}" "${stage}" ""
   build_staged_checkout "${stage}"
-  managed_checkout_validate_env "${stage}"
+  managed_checkout_validate_stage "${stage}"
   managed_checkout_publish "${stage}" "${PREFIX}"
   stage=""
   trap - EXIT
-  restart_host_bridge "${PREFIX}"
   if needs_compose_work; then
     compose_build "${PREFIX}" "${compose_cmd}" "${COMPOSE_FILE}" core "${OMNIDEX_COMMIT}"
     expected_image="$(compose_image_id "${PREFIX}" "${compose_cmd}" "${COMPOSE_FILE}" core "${OMNIDEX_COMMIT}")"

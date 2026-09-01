@@ -55,18 +55,8 @@ func (s *Server) collectHostBridgeStatusWithTimeout(ctx context.Context, timeout
 		}
 	}
 
-	resolvedURL, resolveErr := hostbridge.ResolveReachableURL(ctx, url, s.hostAgentToken, timeout)
-	if resolveErr == nil && resolvedURL != "" {
-		url = resolvedURL
-		client = hostbridge.NewClient(resolvedURL, s.hostAgentToken, timeout)
-	}
-
 	payload, err := client.Health(ctx)
 	if err != nil {
-		suggestions := hostBridgeSuggestions(true, false, url)
-		if hint := hostbridge.LinuxDockerFirewallHint(err); hint != "" {
-			suggestions = append(suggestions, hint)
-		}
 		return hostBridgeStatusResponse{
 			Configured:  true,
 			Reachable:   false,
@@ -74,7 +64,7 @@ func (s *Server) collectHostBridgeStatusWithTimeout(ctx context.Context, timeout
 			Error:       err.Error(),
 			PickerReady: false,
 			Message:     "Core cannot reach the host bridge.",
-			Suggestions: suggestions,
+			Suggestions: hostBridgeSuggestions(true, false, url),
 		}
 	}
 
@@ -116,28 +106,19 @@ func hostBridgeSuggestions(configured, reachable bool, url string) []string {
 	out := []string{}
 	if !configured {
 		out = append(out,
-			"On the host machine, install the bridge as a service: omni host service install",
-			"Or run manually: omni host serve --listen 0.0.0.0:8091",
-			"In core .env set HOST_AGENT_URL=http://host.docker.internal:8091 (or http://127.0.0.1:8091 when core runs on the host)",
-			"Rebuild/restart core through its managed deployment identity: omni service --service core up --build",
+			"Configure HOST_AGENT_URL with the exact externally managed bridge endpoint.",
 		)
 		return out
 	}
 	out = append(out,
-		"Verify the bridge is running: omni host service status (or curl http://127.0.0.1:8091/healthz)",
-		"If not installed as a service: omni host service install",
-		"If core runs in Docker, start the bridge with --listen 0.0.0.0:8091 (not 127.0.0.1 only)",
+		"Verify that the configured bridge endpoint is running and reachable.",
 	)
 	if url != "" {
 		out = append(out, "Confirm HOST_AGENT_URL matches the bridge listen address (currently "+url+")")
 	} else {
 		out = append(out, "Confirm HOST_AGENT_URL matches the bridge listen address")
 	}
-	out = append(out,
-		"If HOST_AGENT_TOKEN is set on core, pass the same token to omni host serve --token …",
-		"For a manual container probe, use Docker's default rootful context and the exact COMPOSE_PROJECT_NAME recorded in the Omnidex install .env",
-		"Arch Linux + UFW: if probes time out (not refused), run scripts/ufw-docker-host.sh on the host",
-	)
+	out = append(out, "If HOST_AGENT_TOKEN is configured, the bridge must use that exact token.")
 	return out
 }
 

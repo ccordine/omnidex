@@ -18,8 +18,10 @@ The following checks establish framework primitives only:
 * Go tests pass for portable jobs, complete raw-leaf semantic correction, AST parsing, context budgets, capability graph projection, worker routing, skill lifecycle, and workspace reconciliation.
 * The generated generic browser substrate passes its real pinned Node install, Vitest suite, TypeScript type check, and Vite production build.
 * That Node test caught and then guarded a real runtime defect where action status changed but state was never published.
-* Migrations `023_worker_skills.sql` and `024_llm_evidence.sql` are applied through normal core startup.
-* The live core starts with PostgreSQL as registry authority and reports the exact active/bootstrap counts.
+* A historical live-core run established its then-current PostgreSQL registry and
+  reported the exact active/bootstrap counts. That bootstrap path has since been
+  replaced by the single destructive fresh-database setup and is not a current
+  startup contract.
 * Live PostgreSQL integration tests prove immutable bootstrap versioning, required learned-skill checks, immutable embeddings, activation, exact reuse, and bounded semantic retrieval.
 * A live PostgreSQL integration test proves exact prompt and raw-response preservation, request/response hashing, partial failed-output preservation, bounded evidence pagination, and rejection of evidence updates or deletes.
 * The running core, PostgreSQL, and Redis containers remain healthy after those checks.
@@ -55,10 +57,12 @@ resumed or relabelled after the framework change.
 This run proved that immutable evidence, exact requirement partitioning,
 bounded stations, AST rejection, no-progress detection, retained in-memory work,
 and fail-before-write behavior operated. It also proved the correction envelope
-was incorrectly broad. The generic fix removes initial behavior from the
-correction type itself and carries only the literal current declaration, exact
-signature and permitted symbols, one typed code-owned change, and one bounded
-diagnostic. A new source freeze and empty workspace are required before run 2.
+was incorrectly broad. The once-proposed whole-declaration correction described by
+this historical run is also superseded: the current boundary permits continuation
+only after code proves one exact mutable byte span, exposes only that span and one
+necessary semantic question to the same persisted job/model context, and splices the
+ordinary replacement text into the code-retained base. A new source freeze and empty
+workspace are required before run 2.
 
 ## Invalidated evidence removed from consideration
 
@@ -76,7 +80,8 @@ Do not count:
 Before a run starts, record:
 
 * immutable source revision or tree digest;
-* migration state;
+* successful execution of the authoritative fresh-database setup against an empty
+  runtime schema;
 * exact model routing and embedding identity;
 * fresh workspace identity and initial inventory;
 * exact user request digest;
@@ -85,10 +90,10 @@ Before a run starts, record:
 During the run, append immutable evidence for:
 
 * every portable job ID and kind;
-* exact rendered prompt bytes and raw response contract;
+* exact rendered prompt bytes and raw provider-response bytes;
 * exact response bytes;
 * every rejection and direct correction;
-* every accepted AST declaration and content hash;
+* every accepted implementation body, code-assembled AST declaration, and content hash;
 * skill candidates, checks, activation, rejection, and reuse;
 * capability-relation decisions and resulting code-owned graph;
 * staging and authoritative commands with output, duration, and exit status;

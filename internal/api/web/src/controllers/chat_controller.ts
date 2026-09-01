@@ -211,11 +211,7 @@ export default class ChatController extends ChatRoleplayTurnController {
 
   async loadHostBridgeStatus(): Promise<void> { await this.system.loadHostBridgeStatus(); }
 
-  async loadResearchStatus(): Promise<void> { await this.system.loadResearchStatus(); }
-
   async loadMetrics(options: { strict?: boolean } = {}): Promise<void> { await this.system.loadMetrics(options); }
-
-  async migrateFresh(): Promise<void> { await this.system.migrateFresh(); }
 
   async newThread(): Promise<void> {
     if (this.busy) return;
@@ -238,8 +234,6 @@ export default class ChatController extends ChatRoleplayTurnController {
     this.roleplay.useCommand(event);
     this.slashPalette.dismiss();
   }
-
-  async downloadRoleplayModel(event: Event): Promise<void> { await this.roleplay.downloadModel(event); }
 
   async createRoleplayScene(event: Event): Promise<void> { await this.roleplay.createScene(event); }
 

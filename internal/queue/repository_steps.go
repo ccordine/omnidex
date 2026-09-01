@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/gryph/omnidex/internal/model"
-	"github.com/gryph/omnidex/internal/taskstate"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -14,20 +13,19 @@ func (r *Repository) CompleteStep(ctx context.Context, command CompleteStepComma
 	if err != nil {
 		return err
 	}
-	if command.ContextKey == "objective_result" {
-		return fmt.Errorf("objective completion requires one atomic evidence-bound completion")
-	}
-	descriptor, err := describeLifecycleOperation(command.OperationID, LifecycleCompleteStep, command)
+	descriptor, err := describeLifecycleOperation(
+		command.OperationID, LifecycleCompleteStep, command,
+	)
 	if err != nil {
 		return err
 	}
-	return r.completeStep(ctx, command, descriptor, nil)
+	return r.completeStep(ctx, command, &descriptor, nil)
 }
 
 func (r *Repository) completeStep(
 	ctx context.Context,
 	command CompleteStepCommand,
-	descriptor lifecycleOperationDescriptor,
+	descriptor *lifecycleOperationDescriptor,
 	objectiveEvidencePayloads [][]byte,
 ) error {
 	tx, err := r.pool.BeginTx(ctx, pgx.TxOptions{})
@@ -35,11 +33,13 @@ func (r *Repository) completeStep(
 		return err
 	}
 	defer tx.Rollback(ctx)
+	if descriptor != nil {
+		if err := lockLifecycleOperationIdentityTx(ctx, tx, command.OperationID); err != nil {
+			return err
+		}
+	}
 	lockedAttempt, err := lockStepAttemptAuthorityTx(ctx, tx, command.Authority)
 	if err != nil {
-		return err
-	}
-	if err := lockLifecycleOperationIdentityTx(ctx, tx, command.OperationID); err != nil {
 		return err
 	}
 	jobID := command.Authority.JobID
@@ -47,29 +47,31 @@ func (r *Repository) completeStep(
 	if err != nil {
 		return err
 	}
-	if existing, found, err := loadLifecycleOperationTx(ctx, tx, descriptor, jobID); err != nil {
-		return err
-	} else if found {
-		if err := requireCompleteStepReplayTx(ctx, tx, existing, command); err != nil {
+	if descriptor != nil {
+		if existing, found, err := loadLifecycleOperationTx(ctx, tx, *descriptor, jobID); err != nil {
 			return err
-		}
-		researchHandled, err := requireRoleplayResearchCompletionReplayTx(
-			ctx, tx, job, existing, command,
-		)
-		if err != nil {
-			return err
-		}
-		if !researchHandled {
-			if err := requireRoleplayCompletionReplayTx(ctx, tx, job, existing, command); err != nil {
+		} else if found {
+			if err := requireCompleteStepReplayTx(ctx, tx, existing, command); err != nil {
 				return err
 			}
-		}
-		if objectiveEvidencePayloads != nil {
-			return requireObjectiveCompletionEvidenceReplayTx(
-				ctx, tx, command.OperationID, objectiveEvidencePayloads,
+			researchHandled, err := requireRoleplayResearchCompletionReplayTx(
+				ctx, tx, job, existing, command,
 			)
+			if err != nil {
+				return err
+			}
+			if !researchHandled {
+				if err := requireRoleplayCompletionReplayTx(ctx, tx, job, existing, command); err != nil {
+					return err
+				}
+			}
+			if objectiveEvidencePayloads != nil {
+				return requireObjectiveCompletionEvidenceReplayTx(
+					ctx, tx, command.OperationID, objectiveEvidencePayloads,
+				)
+			}
+			return nil
 		}
-		return nil
 	}
 	if err := requireRoleplayCompletionJobAuthority(job, command); err != nil {
 		return err
@@ -85,14 +87,6 @@ func (r *Repository) completeStep(
 			"completion writer job status %q step status %q",
 			lockedAttempt.JobStatus, lockedAttempt.StepStatus,
 		), nil)
-	}
-	if err := requireNoOpenStationGapsTx(ctx, tx, command.Authority); err != nil {
-		return err
-	}
-	if err := rejectUnresolvedGeneratedWorkloadDeploymentsTx(
-		ctx, tx, command.Authority.JobID,
-	); err != nil {
-		return err
 	}
 	if objectiveEvidencePayloads != nil {
 		if err := insertObjectiveCompletionEvidenceTx(ctx, tx, command, objectiveEvidencePayloads); err != nil {
@@ -117,18 +111,10 @@ func (r *Repository) completeStep(
 	if stepUpdate.RowsAffected() == 0 {
 		return staleStepAttemptError(command.Authority, "completion target lost current authority", nil)
 	}
-
-	var contextID *int64
-	if command.ContextKey != "" {
-		var insertedID int64
-		if err := tx.QueryRow(ctx, `
-			INSERT INTO step_contexts (step_id, key, value)
-			VALUES ($1, $2, $3)
-			RETURNING id
-		`, command.StepID, command.ContextKey, command.ContextValue).Scan(&insertedID); err != nil {
+	if command.ContextKey == "objective_result" {
+		if err := cancelTerminalObjectiveCodingTailTx(ctx, tx, job, command); err != nil {
 			return err
 		}
-		contextID = &insertedID
 	}
 
 	var openSteps int
@@ -143,13 +129,10 @@ func (r *Repository) completeStep(
 	}
 
 	if openSteps == 0 {
-		if err := materializeChannelCompletionTx(ctx, tx, job, command); err != nil {
-			return err
-		}
-		if err := transitionInitialTaskRootTx(
-			ctx, tx, jobID, generation, command.StepID, taskstate.NodeDone, command.Output, "",
-		); err != nil {
-			return err
+		if descriptor != nil {
+			if err := materializeChannelCompletionTx(ctx, tx, job, command); err != nil {
+				return err
+			}
 		}
 		jobUpdate, err := tx.Exec(ctx, `
 			UPDATE jobs
@@ -162,16 +145,9 @@ func (r *Repository) completeStep(
 		if jobUpdate.RowsAffected() != 1 {
 			return staleStepAttemptError(command.Authority, "job lost terminal-completion authority", nil)
 		}
-		if err := terminalizeTaskLedgerTx(
-			ctx, tx, jobID, generation, model.JobStatusCompleted, &command.StepID,
-			"job completed after every current-generation step completed",
+		if err := terminalizeScrumJobCardTx(
+			ctx, tx, job, model.JobStatusCompleted,
 		); err != nil {
-			return err
-		}
-		if err := completeTelemetryRunForJob(ctx, tx, jobID, model.JobStatusCompleted, map[string]any{"job_id": jobID, "result": command.Output}, map[string]any{"terminal_step_id": command.StepID, "context_key": command.ContextKey}); err != nil {
-			return err
-		}
-		if err := recordTelemetryJobEvent(ctx, tx, jobID, "run_completed", map[string]any{"job_id": jobID, "step_id": command.StepID}); err != nil {
 			return err
 		}
 	} else {
@@ -190,14 +166,16 @@ func (r *Repository) completeStep(
 	if err != nil {
 		return err
 	}
-	stepStatus := model.StepStatusCompleted
-	if err := insertLifecycleOperationTx(ctx, tx, descriptor, lifecycleOperationRecord{
-		ID: descriptor.ID, JobID: jobID, ObservedGeneration: generation,
-		ResultGeneration: job.CurrentGeneration, StepID: &command.StepID,
-		StepContextID: contextID, Kind: descriptor.Kind, CommandSHA256: descriptor.SHA256,
-		ResultJobStatus: job.Status, ResultStepStatus: &stepStatus, ResultJob: job,
-	}); err != nil {
-		return err
+	if descriptor != nil {
+		stepStatus := model.StepStatusCompleted
+		if err := insertLifecycleOperationTx(ctx, tx, *descriptor, lifecycleOperationRecord{
+			ID: descriptor.ID, JobID: jobID, ObservedGeneration: generation,
+			ResultGeneration: job.CurrentGeneration, StepID: &command.StepID,
+			Kind: descriptor.Kind, CommandSHA256: descriptor.SHA256,
+			ResultJobStatus: job.Status, ResultStepStatus: &stepStatus, ResultJob: job,
+		}); err != nil {
+			return err
+		}
 	}
 
 	return tx.Commit(ctx)
@@ -217,11 +195,11 @@ func (r *Repository) FailStep(ctx context.Context, command FailStepCommand) erro
 		return err
 	}
 	defer tx.Rollback(ctx)
-	lockedAttempt, err := lockStepAttemptAuthorityTx(ctx, tx, command.Authority)
-	if err != nil {
+	if err := lockLifecycleOperationIdentityTx(ctx, tx, command.OperationID); err != nil {
 		return err
 	}
-	if err := lockLifecycleOperationIdentityTx(ctx, tx, command.OperationID); err != nil {
+	lockedAttempt, err := lockStepAttemptAuthorityTx(ctx, tx, command.Authority)
+	if err != nil {
 		return err
 	}
 	jobID := command.Authority.JobID
@@ -243,14 +221,6 @@ func (r *Repository) FailStep(ctx context.Context, command FailStepCommand) erro
 			lockedAttempt.JobStatus, lockedAttempt.StepStatus,
 		), nil)
 	}
-	if err := requireNoOpenStationGapsTx(ctx, tx, command.Authority); err != nil {
-		return err
-	}
-	if err := rejectUnresolvedGeneratedWorkloadDeploymentsTx(
-		ctx, tx, command.Authority.JobID,
-	); err != nil {
-		return err
-	}
 	generation := command.Authority.Generation
 	if err := terminalizeStepAttemptTx(ctx, tx, command.Authority, model.StepAttemptFailed); err != nil {
 		return err
@@ -269,12 +239,6 @@ func (r *Repository) FailStep(ctx context.Context, command FailStepCommand) erro
 	if stepUpdate.RowsAffected() == 0 {
 		return staleStepAttemptError(command.Authority, "failure target lost current authority", nil)
 	}
-	if err := transitionInitialTaskRootTx(
-		ctx, tx, jobID, generation, command.StepID, taskstate.NodeFailed, "", command.Error,
-	); err != nil {
-		return err
-	}
-
 	jobUpdate, err := tx.Exec(ctx, `
 		UPDATE jobs
 		SET status = $2, error = $3, completed_at = NOW(), updated_at = NOW()
@@ -286,16 +250,7 @@ func (r *Repository) FailStep(ctx context.Context, command FailStepCommand) erro
 	if jobUpdate.RowsAffected() != 1 {
 		return staleStepAttemptError(command.Authority, "job lost terminal-failure authority", nil)
 	}
-	if err := terminalizeTaskLedgerTx(
-		ctx, tx, jobID, generation, model.JobStatusFailed, &command.StepID,
-		"job failed after its current-generation step failed",
-	); err != nil {
-		return err
-	}
-	if err := completeTelemetryRunForJob(ctx, tx, jobID, model.JobStatusFailed, map[string]any{"job_id": jobID, "error": command.Error}, map[string]any{"failed_step_id": command.StepID}); err != nil {
-		return err
-	}
-	if err := recordTelemetryJobEvent(ctx, tx, jobID, "run_failed", map[string]any{"job_id": jobID, "step_id": command.StepID, "error": command.Error}); err != nil {
+	if err := terminalizeScrumJobCardTx(ctx, tx, job, model.JobStatusFailed); err != nil {
 		return err
 	}
 	job, err = scanLockedJobTx(ctx, tx, jobID)

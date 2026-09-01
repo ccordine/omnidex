@@ -25,15 +25,16 @@ type directCodingArtifactValidation struct {
 // It identifies a leaf, advertises only mechanics that code can really run, and
 // never exposes a tool catalogue or grants the model any authority.
 type directCodingArtifactAdapter struct {
-	ID              string
-	Validation      directCodingArtifactValidation
-	Recognize       func(path string) (assemblyline.TargetArtifactKind, bool)
-	ComposeDocument func(assemblyline.SourceDocument, assemblyline.SourceComposition) (assemblyline.ComposedSourceDocument, error)
+	ID               string
+	Validation       directCodingArtifactValidation
+	Recognize        func(path string) (assemblyline.TargetArtifactKind, bool)
+	ComposeDocument  func(assemblyline.SourceDocument, assemblyline.SourceComposition) (assemblyline.ComposedSourceDocument, error)
+	SourceLanguage   string
+	ValidateFragment directCodingLanguageFragmentValidator
 }
 
 func registeredDirectCodingArtifactAdapters() []directCodingArtifactAdapter {
 	return []directCodingArtifactAdapter{
-		parsedArtifactAdapter("composer_lock", composerLockArtifactRecognizer, validateJSONArtifactSource),
 		parsedArtifactAdapter("typescript_react", func(value string) (assemblyline.TargetArtifactKind, bool) {
 			switch {
 			case strings.HasSuffix(value, ".test.tsx"):
@@ -45,22 +46,31 @@ func registeredDirectCodingArtifactAdapters() []directCodingArtifactAdapter {
 			}
 		}, validateTypeScriptReactArtifactSource, assemblyline.ComposeTypeScriptDocument),
 		parsedArtifactAdapter("typescript", suffixArtifactRecognizer(".ts", ".test.ts"), validateTypeScriptArtifactSource, assemblyline.ComposeTypeScriptDocument),
-		parsedArtifactAdapter("go", suffixArtifactRecognizer(".go", "_test.go"), validateGoArtifactSource, assemblyline.ComposeGoDocument),
+		sourceArtifactAdapter(
+			"go", "go", suffixArtifactRecognizer(".go", "_test.go"),
+			assemblyline.ComposeGoDocument, validateGoArtifactSource,
+			validateDirectCodingGoFragment,
+		),
 		parsedArtifactAdapter("go_module", goModuleArtifactRecognizer, validateGoModuleArtifactSource),
-		parsedArtifactAdapter("php", phpArtifactRecognizer, validatePHPArtifactSource, assemblyline.ComposePHPDocument),
-		parsedArtifactAdapter("php_executable", phpExecutableArtifactRecognizer, validatePHPExecutableArtifactSource),
-		structuralArtifactAdapter("postgresql_migration", postgreSQLMigrationArtifactRecognizer, validatePostgreSQLMigrationArtifactSource),
-		parsedArtifactAdapter("javascript", javascriptArtifactRecognizer, validateJavaScriptArtifactSource, assemblyline.ComposeJavaScriptDocument),
+		sourceArtifactAdapter(
+			"javascript", "javascript", javascriptArtifactRecognizer,
+			assemblyline.ComposeJavaScriptDocument, validateJavaScriptArtifactSource,
+			validateDirectCodingJavaScriptFragment,
+		),
 		structuralArtifactAdapter("css_tailwind", suffixArtifactRecognizer(".css", ""), validateCSSArtifactSource),
 		parsedArtifactAdapter("html", suffixArtifactRecognizer(".html", ".test.html"), validateHTMLArtifactSource),
-		parsedArtifactAdapter("java", suffixArtifactRecognizer(".java", "Test.java"), validateJavaArtifactSource, assemblyline.ComposeJavaDocument),
-		parsedArtifactAdapter("rust", suffixArtifactRecognizer(".rs", "_test.rs"), validateRustArtifactSource, assemblyline.ComposeRustDocument),
+		sourceArtifactAdapter(
+			"java", "java", suffixArtifactRecognizer(".java", "Test.java"),
+			assemblyline.ComposeJavaDocument, validateJavaArtifactSource,
+			validateDirectCodingJavaFragment,
+		),
+		sourceArtifactAdapter(
+			"rust", "rust", suffixArtifactRecognizer(".rs", "_test.rs"),
+			assemblyline.ComposeRustDocument, validateRustArtifactSource,
+			validateDirectCodingRustFragment,
+		),
 		parsedArtifactAdapter("cargo_toml", cargoTOMLArtifactRecognizer, validateCargoTOMLArtifactSource),
-		parsedArtifactAdapter("nginx", nginxArtifactRecognizer, validateNginxArtifactSource),
-		parsedArtifactAdapter("dockerfile", dockerArtifactRecognizer, validateDockerArtifactSource),
 		parsedArtifactAdapter("structured_json", suffixArtifactRecognizer(".json", ""), validateJSONArtifactSource),
-		parsedArtifactAdapter("structured_yaml", yamlArtifactRecognizer, validateYAMLArtifactSource),
-		parsedArtifactAdapter("environment_example", environmentArtifactRecognizer, validateEnvironmentArtifactSource),
 		structuralArtifactAdapter(
 			assemblyline.PlainTextAdapterID, plainTextArtifactRecognizer,
 			validatePlainTextArtifactSource, assemblyline.ComposePlainTextDocument,
@@ -68,8 +78,18 @@ func registeredDirectCodingArtifactAdapters() []directCodingArtifactAdapter {
 	}
 }
 
-func composerLockArtifactRecognizer(value string) (assemblyline.TargetArtifactKind, bool) {
-	return assemblyline.TargetArtifactImplementation, path.Base(value) == "composer.lock"
+func sourceArtifactAdapter(
+	id string,
+	language string,
+	recognize func(path string) (assemblyline.TargetArtifactKind, bool),
+	compose func(assemblyline.SourceDocument, assemblyline.SourceComposition) (assemblyline.ComposedSourceDocument, error),
+	parseSource func(path string, source []byte) error,
+	validate directCodingLanguageFragmentValidator,
+) directCodingArtifactAdapter {
+	adapter := parsedArtifactAdapter(id, recognize, parseSource, compose)
+	adapter.SourceLanguage = language
+	adapter.ValidateFragment = validate
+	return adapter
 }
 
 func goModuleArtifactRecognizer(value string) (assemblyline.TargetArtifactKind, bool) {
@@ -79,27 +99,6 @@ func goModuleArtifactRecognizer(value string) (assemblyline.TargetArtifactKind, 
 func cargoTOMLArtifactRecognizer(value string) (assemblyline.TargetArtifactKind, bool) {
 	base := path.Base(value)
 	return assemblyline.TargetArtifactImplementation, base == "Cargo.toml" || base == "Cargo.lock"
-}
-
-func phpArtifactRecognizer(value string) (assemblyline.TargetArtifactKind, bool) {
-	if strings.HasSuffix(value, ".blade.php") || !strings.HasSuffix(value, ".php") {
-		return "", false
-	}
-	if strings.HasSuffix(value, "Test.php") {
-		return assemblyline.TargetArtifactVerification, true
-	}
-	return assemblyline.TargetArtifactImplementation, true
-}
-
-func phpExecutableArtifactRecognizer(value string) (assemblyline.TargetArtifactKind, bool) {
-	return assemblyline.TargetArtifactImplementation, path.Base(value) == "artisan"
-}
-
-func postgreSQLMigrationArtifactRecognizer(value string) (assemblyline.TargetArtifactKind, bool) {
-	return assemblyline.TargetArtifactImplementation,
-		!path.IsAbs(value) && path.Clean(value) == value &&
-			strings.HasPrefix(value, "database/migrations/") &&
-			strings.HasSuffix(strings.ToLower(value), ".sql") && path.Base(value) != ".sql"
 }
 
 func javascriptArtifactRecognizer(value string) (assemblyline.TargetArtifactKind, bool) {
@@ -124,8 +123,10 @@ func parsedArtifactAdapter(
 	composeDocument ...func(assemblyline.SourceDocument, assemblyline.SourceComposition) (assemblyline.ComposedSourceDocument, error),
 ) directCodingArtifactAdapter {
 	return executableArtifactAdapter(
-		id, directCodingArtifactValidation{Kind: directCodingArtifactParse, Execute: parseSource},
-		recognize, composeDocument...,
+		id,
+		directCodingArtifactValidation{Kind: directCodingArtifactParse, Execute: parseSource},
+		recognize,
+		composeDocument...,
 	)
 }
 
@@ -136,10 +137,12 @@ func structuralArtifactAdapter(
 	composeDocument ...func(assemblyline.SourceDocument, assemblyline.SourceComposition) (assemblyline.ComposedSourceDocument, error),
 ) directCodingArtifactAdapter {
 	return executableArtifactAdapter(
-		id, directCodingArtifactValidation{
+		id,
+		directCodingArtifactValidation{
 			Kind: directCodingArtifactStructural, Execute: validateStructure,
 		},
-		recognize, composeDocument...,
+		recognize,
+		composeDocument...,
 	)
 }
 
@@ -173,39 +176,16 @@ func suffixArtifactRecognizer(suffix, testSuffix string) func(string) (assemblyl
 	}
 }
 
-func nginxArtifactRecognizer(value string) (assemblyline.TargetArtifactKind, bool) {
-	base := strings.ToLower(path.Base(value))
-	return assemblyline.TargetArtifactImplementation, base == "nginx.conf" || strings.HasSuffix(base, ".conf") && strings.Contains(strings.ToLower(value), "nginx")
-}
-
-func dockerArtifactRecognizer(value string) (assemblyline.TargetArtifactKind, bool) {
-	base := strings.ToLower(path.Base(value))
-	return assemblyline.TargetArtifactImplementation, base == "dockerfile" || strings.HasPrefix(base, "dockerfile.") || strings.HasPrefix(base, "docker-compose") && (strings.HasSuffix(base, ".yml") || strings.HasSuffix(base, ".yaml"))
-}
-
-func yamlArtifactRecognizer(value string) (assemblyline.TargetArtifactKind, bool) {
-	base := strings.ToLower(path.Base(value))
-	if strings.HasPrefix(base, "docker-compose") {
-		return "", false
-	}
-	return assemblyline.TargetArtifactImplementation, strings.HasSuffix(value, ".yaml") || strings.HasSuffix(value, ".yml")
-}
-
-func environmentArtifactRecognizer(value string) (assemblyline.TargetArtifactKind, bool) {
-	base := strings.ToLower(path.Base(value))
-	return assemblyline.TargetArtifactImplementation, base == ".env.example" || strings.HasSuffix(base, ".env.example")
-}
-
 // plainTextArtifactRecognizer covers normalized plain-text leaves that have no
 // richer registered parser. Unknown or non-normalized paths remain loud
 // adapter-selection failures.
 func plainTextArtifactRecognizer(value string) (assemblyline.TargetArtifactKind, bool) {
-	normalized, err := normalizeDirectCodingPath(value)
+	normalized, err := requireExactDirectCodingPath(value)
 	if err != nil || normalized != value {
 		return "", false
 	}
 	base := path.Base(value)
-	stableText := base == ".gitignore" || base == ".dockerignore" ||
+	stableText := base == ".gitignore" ||
 		strings.EqualFold(path.Ext(base), ".txt") && !strings.EqualFold(base, ".txt")
 	if !stableText {
 		return "", false
@@ -214,9 +194,6 @@ func plainTextArtifactRecognizer(value string) (assemblyline.TargetArtifactKind,
 }
 
 func directCodingArtifactAdapterByID(id string) (directCodingArtifactAdapter, error) {
-	if err := validateDirectCodingArtifactRegistries(); err != nil {
-		return directCodingArtifactAdapter{}, err
-	}
 	for _, adapter := range registeredDirectCodingArtifactAdapters() {
 		if adapter.ID == id {
 			return adapter, nil
@@ -239,9 +216,6 @@ func directCodingArtifactAdapterForPath(path string) (directCodingArtifactAdapte
 func recognizeDirectCodingArtifactAdapterForPath(
 	path string,
 ) (directCodingArtifactAdapter, assemblyline.TargetArtifactKind, bool, error) {
-	if err := validateDirectCodingArtifactRegistries(); err != nil {
-		return directCodingArtifactAdapter{}, "", false, err
-	}
 	var matched directCodingArtifactAdapter
 	var kind assemblyline.TargetArtifactKind
 	for _, adapter := range registeredDirectCodingArtifactAdapters() {

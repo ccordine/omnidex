@@ -10,7 +10,6 @@ import {
 } from "../lib/operational_component_api";
 import { fetchServerComponent, renderServerBundle } from "../lib/server_component_api";
 import type RecyclrController from "./recyclr_controller";
-import { jsonRequest } from "../lib/api";
 import { reportError, reportErrorMessage, reportOk } from "../lib/feedback";
 import { setGlobalLoading } from "../lib/loading";
 
@@ -152,30 +151,6 @@ export default class AdminDataSourcesController extends Controller<HTMLElement> 
       const payload = await fetchServerComponent(`/v1/ui/admin/data-sources/schema?id=${encodeURIComponent(id)}`);
       await renderServerBundle(this.recyclrController(), payload, "Data-source schema");
       reportOk(this.setStatus.bind(this), "Schema loaded");
-    } catch (error) {
-      reportError(this.setStatus.bind(this), error);
-    }
-  }
-
-  insertSchemaQuery(event: Event): void {
-    event.preventDefault();
-    const table = (event.currentTarget as HTMLElement).dataset.tableName?.trim() ?? "";
-    const editor = this.element.querySelector("[data-ds-field='sql']") as HTMLTextAreaElement | null;
-    if (!table || !editor) throw new Error("Schema query insertion target is unavailable.");
-    editor.value = `SELECT * FROM ${table} LIMIT 20`;
-    editor.focus();
-  }
-
-  async runDataSourceQuery(event: Event): Promise<void> {
-    event.preventDefault();
-    const id = (event.currentTarget as HTMLElement).dataset.sourceId?.trim() || this.selectedID;
-    const sql = this.optionalValue("sql");
-    if (!id || !sql) return reportErrorMessage(this.setStatus.bind(this), "Select a source and enter SQL.");
-    this.setStatus("Running query…", "busy");
-    try {
-      const payload = await fetchServerComponent(`/v1/ui/admin/data-sources/query?id=${encodeURIComponent(id)}`, jsonRequest({ sql }));
-      await renderServerBundle(this.recyclrController(), payload, "Data-source query result");
-      reportOk(this.setStatus.bind(this), "Query completed");
     } catch (error) {
       reportError(this.setStatus.bind(this), error);
     }

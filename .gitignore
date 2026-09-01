@@ -19,7 +19,6 @@ coverage.out
 .agent-*-cache/
 .agent-*-release/
 .codex-ledger-fixture.*/
-.migration-manifest-*/
 .tmp-ledger-cascade.*/
 /.tmp-go-audit-cache/
 /core

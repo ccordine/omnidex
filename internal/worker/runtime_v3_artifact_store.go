@@ -9,14 +9,9 @@ import (
 	"github.com/gryph/omnidex/internal/queue"
 )
 
-func (r *nativeRuntimeV3) complete(contextKey, output, contextValue string) error {
+func (r *nativeRuntimeV3) complete(output string) error {
 	output = strings.TrimSpace(output)
-	contextValue = strings.TrimSpace(contextValue)
-	if contextValue == "" {
-		contextValue = output
-	}
-	r.contexts[contextKey] = contextValue
-	command, err := completeClaimedStepCommand(r.claim, output, contextKey, contextValue)
+	command, err := completeClaimedStepCommand(r.claim, output, "")
 	if err != nil {
 		return err
 	}
@@ -26,30 +21,19 @@ func (r *nativeRuntimeV3) complete(contextKey, output, contextValue string) erro
 	return r.svc.completeStep(r.ctx, command)
 }
 
-func (r *nativeRuntimeV3) writeEvidence(record evidence.Record) error {
-	_, err := r.writeEvidenceReturningID(record)
-	return err
-}
-
-func (r *nativeRuntimeV3) writeEvidenceReturningID(record evidence.Record) (int64, error) {
-	record.JobID = r.claim.Job.ID
-	record.StepID = r.claim.Step.ID
-	return r.svc.repo.WriteEvidenceReturningID(r.ctx, r.claim.Authority, record)
+func (r *nativeRuntimeV3) completeAppliedWorkspace(output string) error {
+	return r.complete(output)
 }
 
 func (r *nativeRuntimeV3) completeWithEvidence(
-	contextKey, output, contextValue string,
+	contextKey, output string,
 	records []evidence.Record,
 	roleplayResponses []queue.RoleplayResponseCompletion,
 	roleplayUserCanon *queue.RoleplayUserCanonCompletion,
 	roleplayUserOngoingAction *queue.RoleplayUserOngoingActionCompletion,
 ) error {
 	output = strings.TrimSpace(output)
-	contextValue = strings.TrimSpace(contextValue)
-	if contextValue == "" {
-		contextValue = output
-	}
-	command, err := completeClaimedStepCommand(r.claim, output, contextKey, contextValue)
+	command, err := completeClaimedStepCommand(r.claim, output, contextKey)
 	if err != nil {
 		return err
 	}
@@ -86,7 +70,5 @@ func (r *nativeRuntimeV3) completeWithEvidence(
 	}); err != nil {
 		return err
 	}
-	r.svc.notifyJobFinishedForStep(r.ctx, command.StepID)
-	r.contexts[contextKey] = contextValue
 	return nil
 }

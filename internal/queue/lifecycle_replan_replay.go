@@ -3,9 +3,8 @@ package queue
 import (
 	"context"
 	"fmt"
-	"strconv"
 
-	"github.com/gryph/omnidex/internal/taskstate"
+	"github.com/gryph/omnidex/internal/model"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -16,9 +15,52 @@ func requireReplanReplayTx(
 	command ReplanJobCommand,
 	feedbackSHA string,
 ) error {
-	if record.JobID != command.JobID || record.StepID != nil || record.StepContextID != nil ||
-		record.ResultGeneration != record.ObservedGeneration+1 {
-		return lifecycleReplayStateError(record.ID, "replan generation result")
+	return requireGenerationCutoverReplayTx(
+		ctx,
+		tx,
+		record,
+		command,
+		feedbackSHA,
+		LifecycleReplanJob,
+		jobGenerationPurposeReplan,
+		model.JobStatusRunning,
+	)
+}
+
+func requireInterruptReplayTx(
+	ctx context.Context,
+	tx pgx.Tx,
+	record lifecycleOperationRecord,
+	command ReplanJobCommand,
+	feedbackSHA string,
+) error {
+	return requireGenerationCutoverReplayTx(
+		ctx,
+		tx,
+		record,
+		command,
+		feedbackSHA,
+		LifecycleInterruptJob,
+		jobGenerationPurposeInterrupt,
+		model.JobStatusWaiting,
+	)
+}
+
+func requireGenerationCutoverReplayTx(
+	ctx context.Context,
+	tx pgx.Tx,
+	record lifecycleOperationRecord,
+	command ReplanJobCommand,
+	feedbackSHA string,
+	expectedKind LifecycleOperationKind,
+	expectedPurpose string,
+	expectedJobStatus string,
+) error {
+	if record.JobID != command.JobID || record.Kind != expectedKind ||
+		record.StepID != nil || record.ResultStepStatus != nil ||
+		record.ResultGeneration != record.ObservedGeneration+1 ||
+		record.ResultJobStatus != expectedJobStatus {
+		return lifecycleReplayStateError(record.ID, expectedPurpose+" generation result")
 	}
 	var predecessor int64
 	var purpose, boundary, feedback, persistedSHA string
@@ -29,72 +71,12 @@ func requireReplanReplayTx(
 	`, record.JobID, record.ResultGeneration).Scan(
 		&predecessor, &purpose, &boundary, &feedback, &persistedSHA,
 	); err != nil {
-		return fmt.Errorf("validate lifecycle replan generation: %w", err)
+		return fmt.Errorf("validate lifecycle %s generation: %w", expectedPurpose, err)
 	}
-	if predecessor != record.ObservedGeneration || purpose != jobGenerationPurposeReplan ||
+	if predecessor != record.ObservedGeneration || purpose != expectedPurpose ||
 		(boundary != replanCodingBoundary && boundary != replanObjectiveBoundary) ||
 		feedback != command.Feedback || persistedSHA != feedbackSHA {
-		return lifecycleReplayStateError(record.ID, "immutable replan generation")
-	}
-	return requireReplanFeedbackAuthorityTx(
-		ctx, tx, record.JobID, record.ResultGeneration, command.Feedback, feedbackSHA,
-	)
-}
-
-func requireReplanFeedbackAuthorityTx(
-	ctx context.Context,
-	tx pgx.Tx,
-	jobID, generation int64,
-	feedback, feedbackSHA string,
-) error {
-	header, err := loadTaskLedgerHeaderTx(ctx, tx, jobID, true)
-	if err != nil {
-		return err
-	}
-	ledger, err := restoreTaskLedgerTx(ctx, tx, header)
-	if err != nil {
-		return err
-	}
-	entryID := replanFeedbackEntryID(generation)
-	entry, found := ledger.Entry(entryID)
-	wantRef := replanFeedbackRef(jobID, generation, feedbackSHA)
-	if !found || entry.ScopeNodeID != initialTaskRootNodeID ||
-		entry.Kind != taskstate.EntryFeedback || entry.FeedbackPurpose != taskstate.FeedbackReplan ||
-		entry.Status != taskstate.EntryActive || entry.Authority != taskstate.AuthorityUser ||
-		entry.CreatedBy != taskstate.AuthorityUser || entry.Content != feedback ||
-		entry.ContentSHA256 != feedbackSHA || len(entry.Refs) != 1 || entry.Refs[0] != wantRef {
-		return fmt.Errorf("%w: job %d is missing generation %d replan feedback authority",
-			taskstate.ErrInvalidState, jobID, generation)
-	}
-	commandID, err := taskstate.NewCommandID(
-		replanFeedbackAuthoritySchema,
-		strconv.FormatInt(jobID, 10), strconv.FormatInt(generation, 10),
-	)
-	if err != nil {
-		return err
-	}
-	version, err := canonicalTaskEventVersionTx(ctx, tx, header, commandID)
-	if err != nil {
-		return err
-	}
-	taskCommand := taskstate.AddEntryCommand{
-		CommandID: commandID, ExpectedVersion: version - 1,
-		Actor: taskstate.AuthorityUser, ID: entryID, ScopeNodeID: initialTaskRootNodeID,
-		Kind: taskstate.EntryFeedback, FeedbackPurpose: taskstate.FeedbackReplan,
-		Content: feedback, Metadata: taskstate.EmptyJSONObject(), Refs: []taskstate.Ref{wantRef},
-	}
-	descriptor, err := taskstate.DescribeCommand(taskCommand)
-	if err != nil {
-		return err
-	}
-	event, found, err := loadTaskEventByCommandTx(ctx, tx, header, generation, descriptor)
-	if err != nil {
-		return err
-	}
-	if !found || event.Kind != taskstate.EventEntryAdded || event.Entry == nil ||
-		event.Entry.ID != entryID || event.Entry.ContentSHA256 != feedbackSHA {
-		return fmt.Errorf("%w: job %d is missing canonical generation %d feedback event",
-			taskstate.ErrInvalidState, jobID, generation)
+		return lifecycleReplayStateError(record.ID, "immutable "+expectedPurpose+" generation")
 	}
 	return nil
 }

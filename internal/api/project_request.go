@@ -212,25 +212,6 @@ func decodeProjectDeleteRequest(w http.ResponseWriter, r *http.Request) (time.Ti
 }
 
 func validateExactProjectModelConfig(raw json.RawMessage) error {
-	if err := exactjson.ValidateUniqueObject(raw, "project model_config"); err != nil {
-		return err
-	}
-	var fields map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &fields); err != nil {
-		return fmt.Errorf("decode project model_config: %w", err)
-	}
-	for name, rawValue := range fields {
-		var value string
-		if err := json.Unmarshal(rawValue, &value); err != nil {
-			return fmt.Errorf("project model_config field %q must be a string: %w", name, err)
-		}
-		if !utf8.ValidString(value) || strings.ContainsRune(value, '\x00') {
-			return fmt.Errorf("project model_config field %q must be valid UTF-8 without NUL", name)
-		}
-		if value != "" && value != strings.TrimSpace(value) {
-			return fmt.Errorf("project model_config field %q must contain one canonical model name", name)
-		}
-	}
 	if _, err := modelConfigPatchFromRequest(raw); err != nil {
 		return err
 	}

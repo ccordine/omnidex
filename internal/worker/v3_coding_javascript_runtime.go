@@ -72,13 +72,15 @@ func javaScriptCommandLineApplicationDocument(
 	imports := []string{"import { pathToFileURL } from 'node:url';", "import { normalizeTaskResult } from './runtime.mjs';"}
 	for index, requirement := range requirements {
 		context := contexts[requirement.ID]
-		pair, err := directCodingTaskSinglePair(coverage, context.Task.TaskID)
+		implementationPath, err := directCodingTaskSingleImplementationPath(
+			coverage, context.Task.TaskID,
+		)
 		if err != nil {
 			panic(fmt.Sprintf("validated JavaScript coverage changed: %v", err))
 		}
 		name := fmt.Sprintf("feature%03d", index+1)
 		imports = append(imports, fmt.Sprintf("import { %s } from %s;", name,
-			strconv.Quote(javaScriptRelativeModule("main.mjs", pair.ImplementationPath))))
+			strconv.Quote(javaScriptRelativeModule("main.mjs", implementationPath))))
 	}
 	return assemblyline.SourceDocument{
 		ID: "application_entrypoint", Path: "main.mjs", Preamble: strings.Join(imports, "\n"),

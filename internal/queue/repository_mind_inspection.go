@@ -21,11 +21,8 @@ func (r *Repository) ListCurrentMemoryCandidates(ctx context.Context, jobID int6
 }
 
 func (r *Repository) listMemoryCandidates(ctx context.Context, jobID int64, status string, limit int, current bool) ([]model.MemoryCandidate, error) {
-	if limit <= 0 {
-		limit = 20
-	}
-	if limit > 500 {
-		limit = 500
+	if limit <= 0 || limit > 500 {
+		return nil, fmt.Errorf("memory candidate limit must be between 1 and 500")
 	}
 	query := `
 		SELECT candidates.id, candidates.project_id, candidates.channel_id,
@@ -125,7 +122,6 @@ func (r *Repository) MindStats(ctx context.Context) (map[string]int64, error) {
 		"memory_candidates": `SELECT COUNT(*) FROM memory_candidates`,
 		"candidate_pending": `SELECT COUNT(*) FROM memory_candidates WHERE status = 'candidate'`,
 		"jobs":              `SELECT COUNT(*) FROM jobs`,
-		"telemetry_events":  `SELECT COUNT(*) FROM omni_run_events`,
 	}
 	for key, query := range queries {
 		var count int64

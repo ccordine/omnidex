@@ -3,7 +3,6 @@ package worker
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
 )
@@ -16,7 +15,6 @@ func runObjectivePortableRawLeafCall[T any](
 	modelName, subject string,
 	job assemblyline.PortableJob,
 	decode objectiveRawLeafDecoder[T],
-	validate func(T) error,
 ) (T, int, error) {
 	var zero T
 	if ctx == nil || runtime == nil || runtime.svc == nil || runtime.claim == nil {
@@ -25,23 +23,17 @@ func runObjectivePortableRawLeafCall[T any](
 	if err := ctx.Err(); err != nil {
 		return zero, 0, err
 	}
-	modelName = strings.TrimSpace(modelName)
 	if modelName == "" {
 		return zero, 0, fmt.Errorf("objective raw leaf %s model is not configured", subject)
 	}
 	workerRuntime := portableWorkerRuntimeWithContext(runtime, "objective", ctx)
-	calls := 0
-	execute := workerRuntime.Execute
-	workerRuntime.Execute = func(
-		job assemblyline.PortableJob,
-		model string,
-	) (assemblyline.PortableResult, error) {
-		calls++
-		return execute(job, model)
-	}
 	value, err := runObjectiveRawLeafWorkerCall(
-		workerRuntime, modelName, subject, job, decode, validate,
+		workerRuntime, modelName, subject, job, decode,
 	)
+	calls := 0
+	if workerRuntime.ProviderCalls != nil {
+		calls = workerRuntime.ProviderCalls()
+	}
 	return value, calls, err
 }
 
@@ -50,10 +42,9 @@ func runObjectiveRawLeafWorkerCall[T any](
 	modelName, subject string,
 	job assemblyline.PortableJob,
 	decode objectiveRawLeafDecoder[T],
-	validate func(T) error,
 ) (T, error) {
 	var zero T
-	if runtime.Context == nil || runtime.Execute == nil || decode == nil || validate == nil {
+	if runtime.Context == nil || runtime.Execute == nil || decode == nil {
 		return zero, fmt.Errorf("objective raw leaf requires an exact portable runtime and decoder")
 	}
 	prompt, err := assemblyline.RenderPortableJob(job)
@@ -90,9 +81,6 @@ func runObjectiveRawLeafWorkerCall[T any](
 	}
 	if validationErr == nil {
 		validationErr = validateObjectiveRawLeafPathBoundary(value, runtime.PathProvenance)
-	}
-	if validationErr == nil {
-		validationErr = validate(value)
 	}
 	validationErr = finalizeTypedWorkerResult(runtime, job, result, validationErr)
 	if validationErr != nil {

@@ -122,6 +122,7 @@ func (r *Repository) ConversationCandidateAuthorities(
 		user      model.ChannelMessage
 		assistant model.ChannelMessage
 		result    ConversationAssistantResultAuthority
+		followups []conversationFollowup
 	}
 	descendingExchanges := make([]completeExchange, 0, len(descendingAssistants))
 	for _, assistant := range descendingAssistants {
@@ -137,8 +138,17 @@ func (r *Repository) ConversationCandidateAuthorities(
 		if err != nil {
 			return ConversationCandidateAuthoritySet{}, err
 		}
+		followups, err := loadConversationSessionFollowupsTx(
+			ctx,
+			tx,
+			binding.ChannelID,
+			result.JobID,
+		)
+		if err != nil {
+			return ConversationCandidateAuthoritySet{}, err
+		}
 		descendingExchanges = append(descendingExchanges, completeExchange{
-			user: user, assistant: assistant, result: result,
+			user: user, assistant: assistant, result: result, followups: followups,
 		})
 	}
 	set := ConversationCandidateAuthoritySet{
@@ -149,7 +159,7 @@ func (r *Repository) ConversationCandidateAuthorities(
 		exchange := descendingExchanges[index]
 		set.Turns = append(set.Turns, ConversationCandidateTurn{
 			MessageID: exchange.user.ID, Role: ConversationCandidateUser,
-			Content: exchange.user.Content,
+			Content: projectConversationSessionTurns(exchange.user.Content, exchange.followups),
 		})
 		set.Turns = append(set.Turns, ConversationCandidateTurn{
 			MessageID: exchange.assistant.ID, Role: ConversationCandidateAssistant,

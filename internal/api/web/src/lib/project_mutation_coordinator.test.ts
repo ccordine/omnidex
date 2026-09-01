@@ -10,7 +10,7 @@ describe("project mutation interaction lock", () => {
 
   it.each([
     ["save", "saveProject", "PATCH", "Save project"],
-    ["survey", "rescanProject", "POST", "Detect stack"],
+    ["map scan", "scanProjectMap", "POST", "Refresh map"],
     ["auto-work", "saveScrumAutomation", "PATCH", "Save automation"],
     ["delete", "deleteProject", "DELETE", "Delete"],
   ] as const)("suppresses a second %s request while the first response is pending", async (_name, method, verb, label) => {
@@ -188,6 +188,14 @@ function host(detail: HTMLElement, failure: (error: unknown) => void): ProjectMu
 
 function jsonResponse(method: string): Response {
   if (method === "deleteProject") return new Response('{"commit_state":"committed","project_id":7,"expected_updated_at":"2026-08-13T12:00:00Z","deleted":true}', { status: 200 });
+  if (method === "scanProjectMap") return new Response(JSON.stringify({
+    project_id: 7,
+    generated_at: "2026-08-13T12:00:00Z",
+    source: "core-local",
+    file_count: 12,
+    module_count: 3,
+    scan_truncated: false,
+  }), { status: 200 });
   if (method === "saveScrumAutomation") return new Response(JSON.stringify({
     commit_state: "committed",
     auto_work: { enabled: true, source_columns: ["assigned"] },
@@ -195,7 +203,7 @@ function jsonResponse(method: string): Response {
   return new Response(JSON.stringify({
     commit_state: "committed",
     project: {
-      id: 7, name: "Project", location: "/srv/project", description: "Exact", project_state: "",
+      id: 7, name: "Project", location: "/srv/project", description: "Exact",
       last_seen_at: "2026-08-13T12:00:00Z", created_at: "2026-08-13T12:00:00Z", updated_at: "2026-08-13T12:00:01Z",
     },
   }), { status: 200 });

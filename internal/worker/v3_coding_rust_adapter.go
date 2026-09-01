@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
-	"github.com/pelletier/go-toml/v2"
 )
 
 const genericRustCommandLineAdapter = "rust_command_line_capabilities_v1"
@@ -18,30 +17,12 @@ var rustCommandLinePackageSegmentPattern = regexp.MustCompile(`^[a-z0-9]+(?:_[a-
 func compileGenericRustCommandLineBlueprint(
 	packageName string,
 	specification assemblyline.ApplicationSpecification,
-	skills map[string]directCodingSkillBinding,
 	workload assemblyline.FrozenApplicationWorkload,
 	capabilities directCodingCapabilityGraph,
+	profile directCodingProjectVersionProfile,
 	target assemblyline.TargetTree,
 	coverage assemblyline.ApplicationFileCoveragePlan,
 ) (assemblyline.SourceBlueprint, []directCodingFileTask, error) {
-	if err := specification.Validate(); err != nil {
-		return assemblyline.SourceBlueprint{}, nil, err
-	}
-	if specification.Surface != assemblyline.ApplicationSurfaceCommandLine {
-		return assemblyline.SourceBlueprint{}, nil, fmt.Errorf(
-			"generic Rust command-line stack does not support surface %s", specification.Surface,
-		)
-	}
-	profile, err := directCodingVersionProfileForTargetTree(target)
-	if err != nil {
-		return assemblyline.SourceBlueprint{}, nil, err
-	}
-	if err := validateDirectCodingSkillBindings(specification.Requirements, skills); err != nil {
-		return assemblyline.SourceBlueprint{}, nil, err
-	}
-	if err := validateDirectCodingCapabilityGraph(specification.Requirements, capabilities); err != nil {
-		return assemblyline.SourceBlueprint{}, nil, err
-	}
 	contexts, err := directCodingApplicationTaskContexts(workload)
 	if err != nil {
 		return assemblyline.SourceBlueprint{}, nil, err
@@ -51,7 +32,7 @@ func compileGenericRustCommandLineBlueprint(
 		return assemblyline.SourceBlueprint{}, nil, err
 	}
 	documents, err := genericRustCommandLineDocuments(
-		crateName, specification, skills, contexts, capabilities, coverage,
+		crateName, specification, contexts, capabilities, coverage,
 	)
 	if err != nil {
 		return assemblyline.SourceBlueprint{}, nil, err
@@ -104,11 +85,10 @@ version = %s
 [[package]]
 name = %q
 version = "0.1.0"
-`, lockVersion, packageName)
+	`, lockVersion, packageName)
 	return []directCodingFileTask{
-		{Path: ".gitignore", Content: "target\n"},
-		{Path: "Cargo.toml", Content: manifest},
-		{Path: "Cargo.lock", Content: lockfile},
+		{Path: "Cargo.toml", Content: []byte(manifest), Mode: 0o644},
+		{Path: "Cargo.lock", Content: []byte(lockfile), Mode: 0o644},
 	}, nil
 }
 
@@ -118,72 +98,4 @@ func rustCommandLineCrateName(packageName string) (string, error) {
 		return "", fmt.Errorf("Rust package name %q cannot form a crate identifier", packageName)
 	}
 	return "omnidex_" + segment, nil
-}
-
-func validateRustCommandLineAssembly(assembly directCodingAssembly) error {
-	files := make(map[string]string, len(assembly.Files))
-	for _, file := range assembly.Files {
-		files[file.Path] = file.Content
-	}
-	for _, required := range []string{
-		"Cargo.toml", "Cargo.lock", ".gitignore",
-		"src/runtime.rs", "src/lib.rs", "src/main.rs",
-	} {
-		if _, exists := files[required]; !exists {
-			return fmt.Errorf("Rust command-line assembly lacks code-owned artifact %s", required)
-		}
-	}
-	var manifest struct {
-		Package struct {
-			Name        string `toml:"name"`
-			Version     string `toml:"version"`
-			Edition     string `toml:"edition"`
-			RustVersion string `toml:"rust-version"`
-		} `toml:"package"`
-		Library struct {
-			Name string `toml:"name"`
-			Path string `toml:"path"`
-		} `toml:"lib"`
-	}
-	if err := toml.Unmarshal([]byte(files["Cargo.toml"]), &manifest); err != nil {
-		return fmt.Errorf("decode Rust command-line manifest: %w", err)
-	}
-	if manifest.Package.Name == "" || manifest.Package.Version != "0.1.0" ||
-		manifest.Package.Edition == "" || manifest.Package.RustVersion == "" {
-		return fmt.Errorf("Rust command-line manifest has invalid package authority")
-	}
-	if manifest.Library.Path != "src/lib.rs" ||
-		!rustCommandLineModulePattern.MatchString(manifest.Library.Name) {
-		return fmt.Errorf("Rust command-line manifest has invalid library authority")
-	}
-	var lockfile struct {
-		Version  int `toml:"version"`
-		Packages []struct {
-			Name    string `toml:"name"`
-			Version string `toml:"version"`
-		} `toml:"package"`
-	}
-	if err := toml.Unmarshal([]byte(files["Cargo.lock"]), &lockfile); err != nil {
-		return fmt.Errorf("decode Rust command-line lockfile: %w", err)
-	}
-	if lockfile.Version <= 0 || len(lockfile.Packages) != 1 ||
-		lockfile.Packages[0].Name != manifest.Package.Name ||
-		lockfile.Packages[0].Version != manifest.Package.Version {
-		return fmt.Errorf("Rust command-line lockfile differs from its dependency-free manifest")
-	}
-	return nil
-}
-
-func rustCommandLineVerificationCommands(
-	_ directCodingProgram,
-) ([]testCommand, error) {
-	return rustCommandLineVerificationCommandSet(), nil
-}
-
-func rustCommandLineVerificationCommandSet() []testCommand {
-	return []testCommand{
-		{Family: "cargo", Name: "cargo", Args: []string{"test", "--locked", "--offline"}, Purpose: verificationTest},
-		{Family: "cargo", Name: "cargo", Args: []string{"check", "--locked", "--offline", "--all-targets"}, Purpose: verificationSyntax},
-		{Family: "cargo", Name: "cargo", Args: []string{"build", "--locked", "--offline"}, Purpose: verificationBuild},
-	}
 }

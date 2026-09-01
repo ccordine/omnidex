@@ -33,17 +33,18 @@ type Request struct {
 
 // OptionalSelectionGroup binds contiguous optional candidate chunks that must
 // remain one code-owned selection unit. The relationship is never projected to
-// a semantic station; stations continue to receive only ordinary candidate
-// authorities and return only opaque candidate IDs.
+// a semantic station; each relevance call continues to receive one ordinary
+// candidate authority and returns only its binary relevance relation.
 type OptionalSelectionGroup struct {
 	CandidateIDs []string
 }
 
 type CandidateSet struct {
-	Required                []assemblyline.ContextCandidateAuthority
-	Optional                []assemblyline.ContextCandidateAuthority
-	OptionalSelectionGroups []OptionalSelectionGroup
-	Replan                  *assemblyline.ObjectiveReplanAuthority
+	Required                           []assemblyline.ContextCandidateAuthority
+	Optional                           []assemblyline.ContextCandidateAuthority
+	OptionalSelectionGroups            []OptionalSelectionGroup
+	Replan                             *assemblyline.ObjectiveReplanAuthority
+	ReplanRepresentedByRequiredContext bool
 }
 
 // SearchAvailability is code-owned authority for whether exact-instruction
@@ -77,8 +78,8 @@ type StationReceipt struct {
 }
 
 type RelevanceStation interface {
-	SelectRelevant(context.Context, assemblyline.ContextRelevanceInput) (
-		assemblyline.ContextRelevanceDecision, StationReceipt, error,
+	Relate(context.Context, assemblyline.ContextRelevanceRelationInput) (
+		assemblyline.ContextRelevanceRelationResult, StationReceipt, error,
 	)
 }
 

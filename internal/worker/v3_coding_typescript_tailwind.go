@@ -28,15 +28,6 @@ func validateTypeScriptBrowserTailwindAuthority(files map[string]string) error {
 	if err := json.Unmarshal([]byte(manifestSource), &manifest); err != nil {
 		return fmt.Errorf("decode TypeScript browser package manifest: %w", err)
 	}
-	for _, dependency := range []string{"@tailwindcss/vite", "tailwindcss"} {
-		version := manifest.DevDependencies[dependency]
-		if version == "" {
-			return fmt.Errorf(
-				"TypeScript browser requires %s pinned to %s",
-				dependency, version,
-			)
-		}
-	}
 	var lock struct {
 		Packages map[string]struct {
 			Version   string `json:"version"`
@@ -49,10 +40,10 @@ func validateTypeScriptBrowserTailwindAuthority(files map[string]string) error {
 	for _, dependency := range []string{"@tailwindcss/vite", "tailwindcss"} {
 		version := manifest.DevDependencies[dependency]
 		entry, exists := lock.Packages["node_modules/"+dependency]
-		if version == "" || !exists || entry.Version != version || !validSHA512Integrity(entry.Integrity) {
+		if version == "" || !exists || entry.Version != version ||
+			!validSHA512Integrity(entry.Integrity) {
 			return fmt.Errorf(
-				"TypeScript browser lock lacks integrity-pinned %s %s",
-				dependency, version,
+				"TypeScript browser lock lacks integrity-pinned %s %s", dependency, version,
 			)
 		}
 	}

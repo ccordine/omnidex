@@ -11,48 +11,53 @@ import (
 func materializePinnedNPMLock(
 	template []byte,
 	packageName string,
-	expectedLockVersion int,
-	dependencies map[string]string,
-	devDependencies map[string]string,
-	engines ...map[string]string,
-) (string, error) {
-	if packageName == "" || expectedLockVersion <= 0 {
-		return "", fmt.Errorf("npm package lock requires one normalized package name")
+	engines map[string]string,
+) (string, map[string]string, map[string]string, error) {
+	if packageName == "" || len(engines) == 0 {
+		return "", nil, nil, fmt.Errorf("npm package lock requires one normalized package name and engine authority")
 	}
 	var lock map[string]any
 	if err := json.Unmarshal(template, &lock); err != nil {
-		return "", fmt.Errorf("decode code-owned npm package lock: %w", err)
+		return "", nil, nil, fmt.Errorf("decode code-owned npm package lock: %w", err)
 	}
 	packages, packagesOK := lock["packages"].(map[string]any)
 	root, rootOK := packages[""].(map[string]any)
 	lockVersion, versionOK := lock["lockfileVersion"].(float64)
-	if !packagesOK || !rootOK || !versionOK || lockVersion != float64(expectedLockVersion) || len(packages) < 2 {
-		return "", fmt.Errorf(
-			"code-owned npm package lock lacks format %d package authority", expectedLockVersion,
+	if !packagesOK || !rootOK || !versionOK || lockVersion != 3 || len(packages) < 2 {
+		return "", nil, nil, fmt.Errorf(
+			"code-owned npm package lock lacks format 3 package authority",
 		)
 	}
+	dependencies := npmLockStringMap(root["dependencies"])
+	devDependencies := npmLockStringMap(root["devDependencies"])
+	if len(dependencies) == 0 || len(devDependencies) == 0 {
+		return "", nil, nil, fmt.Errorf("code-owned npm package lock lacks direct dependency authority")
+	}
 	if err := validatePinnedNPMDependencySet(root, "dependencies", dependencies); err != nil {
-		return "", err
+		return "", nil, nil, err
 	}
 	if err := validatePinnedNPMDependencySet(root, "devDependencies", devDependencies); err != nil {
-		return "", err
+		return "", nil, nil, err
 	}
 	if err := validatePinnedNPMDirectPackages(packages, dependencies, devDependencies); err != nil {
-		return "", err
+		return "", nil, nil, err
 	}
-	if len(engines) > 1 {
-		return "", fmt.Errorf("npm package lock accepts at most one engine authority")
-	}
-	if len(engines) == 1 {
-		root["engines"] = engines[0]
-	}
+	root["engines"] = engines
 	lock["name"] = packageName
 	root["name"] = packageName
 	encoded, err := json.MarshalIndent(lock, "", "  ")
 	if err != nil {
-		return "", fmt.Errorf("encode code-owned npm package lock: %w", err)
+		return "", nil, nil, fmt.Errorf("encode code-owned npm package lock: %w", err)
 	}
-	return string(encoded) + "\n", nil
+	return string(encoded) + "\n", dependencies, devDependencies, nil
+}
+
+func directCodingNPMLockVersion(profile directCodingProjectVersionProfile) (int, error) {
+	if profile.ID != typeScriptBrowserVersionProfileV1 ||
+		profile.StackID != genericTypeScriptBrowserAdapter {
+		return 0, fmt.Errorf("version profile %s has no registered npm lock format", profile.ID)
+	}
+	return 3, nil
 }
 
 func validatePinnedNPMLockForManifest(manifestSource, lockSource string) error {

@@ -16,7 +16,6 @@ func validateStoredScrumCard(card DBScrumCard) error {
 	for name, value := range map[string]string{
 		"description": card.Description, "card_ticket": card.CardTicket,
 		"card_prompt": card.CardPrompt, "job_id": card.JobID,
-		"sync_job_id": card.SyncJobID,
 	} {
 		if err := validateStoredScrumText(name, value); err != nil {
 			return fmt.Errorf("Scrum card %q: %w", card.ID, err)
@@ -28,13 +27,13 @@ func validateStoredScrumCard(card DBScrumCard) error {
 	if err := validateStoredScrumPlayState(card.PlayState); err != nil {
 		return fmt.Errorf("Scrum card %q: %w", card.ID, err)
 	}
-	for name, value := range map[string]string{"job_id": card.JobID, "sync_job_id": card.SyncJobID} {
+	for name, value := range map[string]string{"job_id": card.JobID} {
 		if value != "" && !canonicalPositiveDecimal(value) {
 			return fmt.Errorf("Scrum card %q %s %q is not one canonical positive integer", card.ID, name, value)
 		}
 	}
-	if card.QueueOrder < 0 || card.BoardOrder < 0 || card.StepContextCursor < 0 {
-		return fmt.Errorf("Scrum card %q has a negative operational position or cursor", card.ID)
+	if card.QueueOrder < 0 || card.BoardOrder < 0 {
+		return fmt.Errorf("Scrum card %q has a negative operational position", card.ID)
 	}
 	if card.ChannelMessageCount < 0 || card.ChannelMessageCount > maxScrumFlowWideCounter ||
 		card.ChannelContentBytes < 0 || card.ChannelContentBytes > maxScrumFlowWideCounter {
@@ -51,7 +50,7 @@ func validateStoredScrumCard(card DBScrumCard) error {
 	if _, err := canonicalScrumFlowMetricsForRevision(card.FlowMetrics, card.UpdatedAt); err != nil {
 		return fmt.Errorf("Scrum card %q flow_metrics: %w", card.ID, err)
 	}
-	return validateDBScrumCursorAuthority(card)
+	return nil
 }
 
 func validateStoredScrumCardSummary(card DBScrumCardSummary) error {

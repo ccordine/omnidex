@@ -1,7 +1,6 @@
 package queue
 
 import (
-	"strconv"
 	"strings"
 
 	"github.com/gryph/omnidex/internal/model"
@@ -68,12 +67,4 @@ func cleanTags(tags []string) []string {
 		out = append(out, tag)
 	}
 	return out
-}
-
-func vectorLiteral(values []float64) string {
-	parts := make([]string, 0, len(values))
-	for _, value := range values {
-		parts = append(parts, strconv.FormatFloat(value, 'g', -1, 64))
-	}
-	return "[" + strings.Join(parts, ",") + "]"
 }

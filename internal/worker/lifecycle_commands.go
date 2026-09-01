@@ -1,7 +1,6 @@
 package worker
 
 import (
-	"context"
 	"fmt"
 	"strconv"
 
@@ -9,22 +8,9 @@ import (
 	"github.com/gryph/omnidex/internal/queue"
 )
 
-func invokeCompleteClaimedStep(
-	ctx context.Context,
-	complete stepCompleteFunc,
-	claim *model.ClaimedStep,
-	output, contextKey, contextValue string,
-) error {
-	command, err := completeClaimedStepCommand(claim, output, contextKey, contextValue)
-	if err != nil {
-		return err
-	}
-	return complete(ctx, command)
-}
-
 func completeClaimedStepCommand(
 	claim *model.ClaimedStep,
-	output, contextKey, contextValue string,
+	output, contextKey string,
 ) (queue.CompleteStepCommand, error) {
 	id, err := claimedStepLifecycleOperationID(claim, queue.LifecycleCompleteStep)
 	if err != nil {
@@ -32,7 +18,7 @@ func completeClaimedStepCommand(
 	}
 	return queue.CompleteStepCommand{
 		OperationID: id, Authority: claim.Authority, StepID: claim.Step.ID, Output: output,
-		ContextKey: contextKey, ContextValue: contextValue,
+		ContextKey: contextKey,
 	}, nil
 }
 

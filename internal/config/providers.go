@@ -21,19 +21,7 @@ type ProviderModelConfig struct {
 }
 
 func loadProviderSelection() (string, string) {
-	return canonicalProviderSelection(os.Getenv("LLM_PROVIDER")),
-		canonicalProviderSelection(os.Getenv("EMBEDDING_PROVIDER"))
-}
-
-func canonicalProviderSelection(value string) string {
-	value = strings.ToLower(strings.TrimSpace(value))
-	if value == "" {
-		return ""
-	}
-	if definition, ok := catalog.Lookup(value); ok {
-		return definition.ID
-	}
-	return value
+	return os.Getenv("LLM_PROVIDER"), os.Getenv("EMBEDDING_PROVIDER")
 }
 
 func loadCompatibleProviderConfigs() map[string]CompatibleProviderConfig {
@@ -43,8 +31,8 @@ func loadCompatibleProviderConfigs() map[string]CompatibleProviderConfig {
 			continue
 		}
 		provider := CompatibleProviderConfig{
-			BaseURL: firstNonEmptyEnv(definition.BaseURLEnvironmentKeys, definition.DefaultBaseURL),
-			APIKey:  firstNonEmptyEnv(definition.APIKeyEnvironmentKeys, ""),
+			BaseURL: getenv(definition.EnvironmentKey("BASE_URL"), definition.DefaultBaseURL),
+			APIKey:  os.Getenv(definition.EnvironmentKey("API_KEY")),
 		}
 		if definition.ID == "openai" {
 			provider.Organization = strings.TrimSpace(os.Getenv("OPENAI_ORGANIZATION"))
@@ -59,36 +47,18 @@ func loadProviderModelConfigs() map[string]ProviderModelConfig {
 	models := make(map[string]ProviderModelConfig)
 	for _, definition := range catalog.ProductionDefinitions() {
 		models[definition.ID] = ProviderModelConfig{
-			Embedding: firstNonEmptyEnv(definition.EnvironmentKeys("EMBEDDING_MODEL"), definition.DefaultEmbeddingModel),
+			Embedding: getenv(definition.EnvironmentKey("EMBEDDING_MODEL"), definition.DefaultEmbeddingModel),
 		}
 	}
 	return models
 }
 
-func embeddingModelForProvider(provider string) string {
-	definition, ok := catalog.Lookup(provider)
-	if !ok {
+func embeddingModelForProvider(provider string, models map[string]ProviderModelConfig) string {
+	definition, err := catalog.Resolve(provider)
+	if err != nil {
 		return ""
 	}
-	keys := append(definition.EnvironmentKeys("EMBEDDING_MODEL"), "EMBEDDING_MODEL")
-	return firstNonEmptyEnv(keys, definition.DefaultEmbeddingModel)
-}
-
-func getenvProvider(provider, suffix, fallback string) string {
-	definition, ok := catalog.Lookup(provider)
-	if !ok {
-		return fallback
-	}
-	return firstNonEmptyEnv(definition.EnvironmentKeys(suffix), fallback)
-}
-
-func firstNonEmptyEnv(keys []string, fallback string) string {
-	for _, key := range keys {
-		if value := strings.TrimSpace(os.Getenv(key)); value != "" {
-			return value
-		}
-	}
-	return strings.TrimSpace(fallback)
+	return models[definition.ID].Embedding
 }
 
 func validateSelectedProvider(provider string, cfg Config, label string) error {
@@ -102,9 +72,9 @@ func validateSelectedProviderEndpoint(provider string, cfg Config, label string)
 	if strings.TrimSpace(provider) == "" {
 		return fmt.Errorf("%s is not configured", label)
 	}
-	definition, ok := catalog.Lookup(provider)
-	if !ok {
-		return fmt.Errorf("%s contains unsupported provider %q", label, provider)
+	definition, err := catalog.Resolve(provider)
+	if err != nil {
+		return fmt.Errorf("%s is invalid: %w", label, err)
 	}
 	switch definition.Protocol {
 	case catalog.ProtocolOllama:
@@ -130,12 +100,11 @@ func validateSelectedProviderCredential(provider string, cfg Config, label strin
 	if strings.TrimSpace(provider) == "" {
 		return fmt.Errorf("%s is not configured", label)
 	}
-	definition, ok := catalog.Lookup(provider)
-	if !ok {
-		return fmt.Errorf("%s contains unsupported provider %q", label, provider)
+	definition, err := catalog.Resolve(provider)
+	if err != nil {
+		return fmt.Errorf("%s is invalid: %w", label, err)
 	}
 	var value string
-	fallback := "API key"
 	switch definition.Protocol {
 	case catalog.ProtocolOllama:
 		return nil
@@ -147,18 +116,15 @@ func validateSelectedProviderCredential(provider string, cfg Config, label strin
 		value = providerConfig.APIKey
 	case catalog.ProtocolAzure:
 		value = cfg.AzureAIAPIKey
-		fallback = "Azure API key"
 	case catalog.ProtocolGoogle:
 		value = cfg.GoogleAPIKey
-		fallback = "Google API key"
 	case catalog.ProtocolHuggingFace:
 		value = cfg.HuggingFaceAPIKey
-		fallback = "Hugging Face API key"
 	default:
 		return fmt.Errorf("provider %q uses unsupported protocol %q", definition.ID, definition.Protocol)
 	}
 	if strings.TrimSpace(value) == "" {
-		return fmt.Errorf("%s is required when %s=%s", environmentChoice(definition.APIKeyEnvironmentKeys, fallback), label, definition.ID)
+		return fmt.Errorf("%s is required when %s=%s", definition.EnvironmentKey("API_KEY"), label, definition.ID)
 	}
 	return nil
 }
@@ -175,7 +141,7 @@ func ValidateProviderConfiguration(cfg Config, provider, label string) error {
 }
 
 func validateProviderBaseURL(definition catalog.Definition, rawURL, label string) error {
-	name := environmentChoice(definition.BaseURLEnvironmentKeys, "base URL")
+	name := definition.EnvironmentKey("BASE_URL")
 	value := strings.TrimSpace(rawURL)
 	if value == "" {
 		return fmt.Errorf("%s is required when %s=%s", name, label, definition.ID)
@@ -189,14 +155,6 @@ func validateProviderBaseURL(definition catalog.Definition, rawURL, label string
 	}
 	return nil
 }
-
-func environmentChoice(keys []string, fallback string) string {
-	if len(keys) == 0 {
-		return fallback
-	}
-	return strings.Join(keys, " or ")
-}
-
 func CloneCompatibleProviders(values map[string]CompatibleProviderConfig) map[string]CompatibleProviderConfig {
 	if values == nil {
 		return nil

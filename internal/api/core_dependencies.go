@@ -37,6 +37,15 @@ func coreHealthStatus(dependencies map[string]coreDependencyStatus) string {
 	return "ok"
 }
 
+func coreReadinessStatus(dependencies map[string]coreDependencyStatus) string {
+	for _, dependency := range dependencies {
+		if dependency.Required && dependency.Status == "error" {
+			return "degraded"
+		}
+	}
+	return "ok"
+}
+
 func (s *Server) checkPostgresDependency(ctx context.Context) coreDependencyStatus {
 	dependency := coreDependencyStatus{
 		Configured: s.repo != nil,
@@ -67,36 +76,25 @@ func (s *Server) checkPostgresDependency(ctx context.Context) coreDependencyStat
 func (s *Server) checkRedisDependency(ctx context.Context) coreDependencyStatus {
 	dependency := coreDependencyStatus{
 		Configured: strings.TrimSpace(s.redisURL) != "",
-		Required:   s.uiRedisRequired,
+		Required:   false,
 		Target:     redactedRedisTarget(s.redisURL),
 	}
 	if !dependency.Configured {
-		if dependency.Required {
-			dependency.Status = "error"
-			dependency.Error = "redis url is required but not configured"
-			dependency.Message = "UI Redis is required but REDIS_URL is not configured."
-			return dependency
-		}
 		dependency.Status = "not_configured"
-		dependency.Message = "UI Redis is not configured; UI session state uses in-process storage."
+		dependency.Message = "REDIS_URL is not configured; Redis-backed UI features are disabled."
 		return dependency
 	}
-	if strings.TrimSpace(s.uiRedisInitError) != "" {
+	redis, err := s.requireUIRedis()
+	if err != nil {
 		dependency.Status = "error"
-		dependency.Error = s.uiRedisInitError
-		dependency.Message = "Core cannot initialize the Redis client."
-		return dependency
-	}
-	if s.uiRedis == nil {
-		dependency.Status = "error"
-		dependency.Error = "redis client is not initialized"
+		dependency.Error = err.Error()
 		dependency.Message = "Core cannot initialize the Redis client."
 		return dependency
 	}
 	started := time.Now()
 	checkCtx, cancel := context.WithTimeout(ctx, coreDependencyCheckTimeout)
 	defer cancel()
-	err := s.uiRedis.Ping(checkCtx)
+	err = redis.Ping(checkCtx)
 	dependency.LatencyMS = time.Since(started).Milliseconds()
 	if err != nil {
 		dependency.Status = "error"
@@ -114,7 +112,7 @@ func (s *Server) checkHostBridgeDependency(ctx context.Context) coreDependencySt
 	configured := strings.TrimSpace(s.hostAgentURL) != ""
 	dependency := coreDependencyStatus{
 		Configured: configured,
-		Required:   configured,
+		Required:   false,
 		Target:     strings.TrimSpace(s.hostAgentURL),
 	}
 	if !configured {

@@ -10,8 +10,6 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-var errRoleplayChannelStoreUnavailable = errors.New("channel store is unavailable")
-
 func roleplayComponentQuery(r *http.Request) (roleplaySimulationPageState, model.ChannelID, error) {
 	if err := validateExactQuery(
 		r, "channel_id", "characters_offset", "personas_offset", "turn_order_offset",
@@ -63,7 +61,7 @@ func roleplayComponentQuery(r *http.Request) (roleplaySimulationPageState, model
 
 func writeRoleplaySimulationError(w http.ResponseWriter, err error) {
 	switch {
-	case errors.Is(err, errRoleplaySimulationUnavailable), errors.Is(err, errRoleplayChannelStoreUnavailable):
+	case errors.Is(err, errRoleplaySimulationUnavailable):
 		writeError(w, http.StatusServiceUnavailable, err.Error())
 	case errors.Is(err, errRoleplayModelCatalogUnavailable):
 		writeError(w, http.StatusBadGateway, err.Error())

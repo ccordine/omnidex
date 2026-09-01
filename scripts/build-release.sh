@@ -29,7 +29,6 @@ SOURCE_TREE=""
 RELEASE_OUTPUT_STAGE=""
 RELEASE_COMMIT=""
 RELEASE_SOURCE_SHA256=""
-RELEASE_MIGRATIONS_SHA256=""
 RELEASE_BUILD_DATE=""
 EXPECTED_SOURCE_MANIFEST=""
 UI_DIST=""
@@ -139,9 +138,6 @@ prepare_source_stage() {
   write_source_manifest "$SOURCE_TREE" "$EXPECTED_SOURCE_MANIFEST"
   chmod 0444 "$archive" "$EXPECTED_SOURCE_MANIFEST"
   chmod -R a-w "$SOURCE_TREE"
-  verify_migration_manifest "${SOURCE_TREE}/migrations"
-  RELEASE_MIGRATIONS_SHA256="$(sha256_file "${SOURCE_TREE}/migrations/SHA256SUMS")"
-  [[ "$RELEASE_MIGRATIONS_SHA256" =~ ^[0-9a-f]{64}$ ]] || die "migration manifest SHA-256 is invalid"
   RELEASE_BUILD_DATE="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
 }
 
@@ -209,7 +205,7 @@ build_target() {
   local target_source
   target_source="$(prepare_target_source "$target_name")"
   local ldflags
-  ldflags="-X github.com/gryph/omnidex/internal/version.Version=${VERSION} -X github.com/gryph/omnidex/internal/version.Codename=${CODENAME} -X github.com/gryph/omnidex/internal/version.Commit=${RELEASE_COMMIT} -X github.com/gryph/omnidex/internal/version.SourceSHA256=${RELEASE_SOURCE_SHA256} -X github.com/gryph/omnidex/internal/version.MigrationsSHA256=${RELEASE_MIGRATIONS_SHA256} -X github.com/gryph/omnidex/internal/version.Date=${RELEASE_BUILD_DATE}"
+  ldflags="-X github.com/gryph/omnidex/internal/version.Version=${VERSION} -X github.com/gryph/omnidex/internal/version.Codename=${CODENAME} -X github.com/gryph/omnidex/internal/version.Commit=${RELEASE_COMMIT} -X github.com/gryph/omnidex/internal/version.SourceSHA256=${RELEASE_SOURCE_SHA256} -X github.com/gryph/omnidex/internal/version.Date=${RELEASE_BUILD_DATE}"
   local target_dir="${RELEASE_OUTPUT_STAGE}/${target_name}"
   mkdir -p "${target_dir}/bin"
   [[ ! -e "${target_source}/internal/api/web/dist" ]] || die "tracked release source contains generated GUI assets"
@@ -234,9 +230,7 @@ build_target() {
 
   cp -a "${target_source}/README.md" "${target_dir}/README.md"
   cp -a "${target_source}/LICENSE" "${target_dir}/LICENSE"
-  cp -a "${target_source}/migrations" "${target_dir}/migrations"
-  verify_migration_manifest "${target_dir}/migrations"
-  [[ "$(sha256_file "${target_dir}/migrations/SHA256SUMS")" == "$RELEASE_MIGRATIONS_SHA256" ]] || die "packaged migration manifest changed"
+  copy_database_setup "$target_source" "$target_dir"
   if [[ -f "${target_source}/CHANGELOG.md" ]]; then
     cp -a "${target_source}/CHANGELOG.md" "${target_dir}/CHANGELOG.md"
   fi

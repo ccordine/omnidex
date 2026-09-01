@@ -46,8 +46,12 @@ func resolveObjectiveDatabaseQueryIntent(
 	}
 	state := assemblyline.NewDatabaseQueryIntentLeafState(input)
 	totalCalls := 0
-	if len(input.SchemaProjection.Relations) == 1 {
-		state.FromRelationID = input.SchemaProjection.Relations[0].ID
+	fromRelationID, resolved, err := assemblyline.ResolveSoleDatabaseQueryFromRelationLeaf(state)
+	if err != nil {
+		return assemblyline.DatabaseQueryIntentDecision{}, totalCalls, err
+	}
+	if resolved {
+		state.FromRelationID = fromRelationID
 	} else {
 		job, err := assemblyline.NewDatabaseQueryFromRelationJob(state)
 		if err != nil {
@@ -80,7 +84,7 @@ func resolveObjectiveDatabaseQueryIntent(
 		}
 	}
 	state.Filters, totalCalls, err = resolveDatabaseQueryFilters(
-		ctx, state, "", state.Filters, call, totalCalls,
+		ctx, state, "", "", state.Filters, call, totalCalls,
 	)
 	if err != nil {
 		return assemblyline.DatabaseQueryIntentDecision{}, totalCalls, err

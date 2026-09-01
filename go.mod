@@ -3,7 +3,6 @@ module github.com/gryph/omnidex
 go 1.24.1
 
 require (
-	github.com/creack/pty v1.1.24
 	github.com/gorilla/websocket v1.5.3
 	github.com/jackc/pgx/v5 v5.8.0
 	github.com/ledongthuc/pdf v0.0.0-20250511090121-5959a4027728
@@ -12,11 +11,12 @@ require (
 	github.com/tree-sitter/tree-sitter-html v0.23.2
 	github.com/tree-sitter/tree-sitter-java v0.23.5
 	github.com/tree-sitter/tree-sitter-javascript v0.23.1
-	github.com/tree-sitter/tree-sitter-php v0.23.11
 	github.com/tree-sitter/tree-sitter-rust v0.23.2
 	github.com/tree-sitter/tree-sitter-typescript v0.23.2
 	golang.org/x/mod v0.29.0
 	golang.org/x/net v0.47.0
+	golang.org/x/sys v0.38.0
+	golang.org/x/term v0.28.0
 	golang.org/x/tools v0.38.0
 	gopkg.in/yaml.v3 v3.0.1
 )

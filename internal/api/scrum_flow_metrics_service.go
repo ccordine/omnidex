@@ -78,7 +78,3 @@ type scrumFlowMetricsResponse struct {
 	Offset    int                            `json:"offset"`
 	HasMore   bool                           `json:"has_more"`
 }
-
-func (s *Server) handleMetricsScrum(w http.ResponseWriter, r *http.Request) {
-	s.handleScrumFlowMetrics(w, r)
-}

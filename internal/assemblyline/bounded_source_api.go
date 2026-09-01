@@ -15,8 +15,8 @@ func ValidateJavaScriptFragment(signature, candidate string) (string, error) {
 	return validateBoundedSourceFragment(javaScriptSourceLanguage(), signature, candidate)
 }
 
-func ProjectJavaScriptFragment(candidate string) (PortableResultProjection, error) {
-	return projectBoundedSourceFragment(javaScriptSourceLanguage(), candidate)
+func ExtractJavaScriptSourceBodyResponse(signature, response string) (string, error) {
+	return extractBoundedSourceBodyResponse(javaScriptSourceLanguage(), signature, response)
 }
 
 func ValidateJavaSourceBlueprint(blueprint SourceBlueprint) error {
@@ -34,8 +34,8 @@ func ValidateJavaFragment(signature, candidate string) (string, error) {
 	return validateBoundedSourceFragment(javaSourceLanguage(), signature, candidate)
 }
 
-func ProjectJavaFragment(candidate string) (PortableResultProjection, error) {
-	return projectBoundedSourceFragment(javaSourceLanguage(), candidate)
+func ExtractJavaSourceBodyResponse(signature, response string) (string, error) {
+	return extractBoundedSourceBodyResponse(javaSourceLanguage(), signature, response)
 }
 
 func ValidateRustSourceBlueprint(blueprint SourceBlueprint) error {
@@ -53,25 +53,6 @@ func ValidateRustFragment(signature, candidate string) (string, error) {
 	return validateBoundedSourceFragment(rustSourceLanguage(), signature, candidate)
 }
 
-func ProjectRustFragment(candidate string) (PortableResultProjection, error) {
-	return projectBoundedSourceFragment(rustSourceLanguage(), candidate)
-}
-
-func ValidatePHPSourceBlueprint(blueprint SourceBlueprint) error {
-	return validateBoundedSourceBlueprint(phpSourceLanguage(), blueprint)
-}
-
-func ComposePHPDocument(
-	document SourceDocument,
-	composition SourceComposition,
-) (ComposedSourceDocument, error) {
-	return composeBoundedSourceDocument(phpSourceLanguage(), document, composition)
-}
-
-func ValidatePHPFragment(signature, candidate string) (string, error) {
-	return validateBoundedSourceFragment(phpSourceLanguage(), signature, candidate)
-}
-
-func ProjectPHPFragment(candidate string) (PortableResultProjection, error) {
-	return projectBoundedSourceFragment(phpSourceLanguage(), candidate)
+func ExtractRustSourceBodyResponse(signature, response string) (string, error) {
+	return extractBoundedSourceBodyResponse(rustSourceLanguage(), signature, response)
 }

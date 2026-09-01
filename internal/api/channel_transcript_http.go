@@ -30,7 +30,7 @@ func (s *Server) listChannelMessages(w http.ResponseWriter, r *http.Request, cha
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	page, err := s.channelStore.ListChannelMessages(r.Context(), channelID, limit, beforeID)
+	page, err := s.repo.ListChannelMessages(r.Context(), channelID, limit, beforeID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "channel not found")

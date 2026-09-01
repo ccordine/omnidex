@@ -1,5 +1,5 @@
 package assemblyline
 
-// PortableRendererV5 identifies the sole supported raw-text portable
-// renderer and its prompt-only durable projection contract.
-const PortableRendererV5 = "omnidex.render-portable-job.v5"
+// PortableRendererV1 is the sole portable rendering contract. Persisted
+// openings with any other identity are invalid and require a fresh database.
+const PortableRendererV1 = "omnidex.render-portable-job.v1"

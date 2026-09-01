@@ -3,6 +3,7 @@ package contextcompiler
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
 	"github.com/gryph/omnidex/internal/modelcontext"
@@ -149,6 +150,7 @@ func validateCandidateSet(set CandidateSet) error {
 	seenIDs := make(map[string]struct{}, len(set.Required)+len(set.Optional))
 	seenContent := make(map[string]struct{}, len(set.Required)+len(set.Optional))
 	replanCandidates := 0
+	requiredSessionRedirects := 0
 	for index, authority := range append(
 		append([]assemblyline.ContextCandidateAuthority(nil), set.Required...), set.Optional...,
 	) {
@@ -165,7 +167,8 @@ func validateCandidateSet(set CandidateSet) error {
 			return fmt.Errorf("context candidate ID %q is duplicated across provider sets", authority.CandidateID)
 		}
 		seenIDs[authority.CandidateID] = struct{}{}
-		if _, duplicate := seenContent[authority.ContentSHA256]; duplicate {
+		if _, duplicate := seenContent[authority.ContentSHA256]; duplicate &&
+			!(index < len(set.Required) && strings.HasPrefix(authority.Namespace, "session_")) {
 			return fmt.Errorf("context candidate %q duplicates exact provider content", authority.CandidateID)
 		}
 		seenContent[authority.ContentSHA256] = struct{}{}
@@ -179,12 +182,27 @@ func validateCandidateSet(set CandidateSet) error {
 			}
 			replanCandidates++
 		}
+		if index < len(set.Required) && authority.Namespace == "session_redirect" {
+			requiredSessionRedirects++
+		}
 	}
-	if set.Replan != nil && replanCandidates != 1 {
+	if set.Replan != nil && set.ReplanRepresentedByRequiredContext {
+		if replanCandidates != 0 || requiredSessionRedirects < 1 {
+			return fmt.Errorf("session-bound replan authority requires redirect context without a duplicate raw candidate")
+		}
+	} else if set.Replan != nil && replanCandidates != 1 {
 		return fmt.Errorf("objective replan authority requires exactly one required context candidate")
 	}
 	if set.Replan == nil && replanCandidates != 0 {
 		return fmt.Errorf("objective replan candidate has no exact replan authority")
+	}
+	if set.Replan == nil && set.ReplanRepresentedByRequiredContext {
+		return fmt.Errorf("required context cannot represent an absent objective replan authority")
+	}
+	for _, authority := range set.Optional {
+		if strings.HasPrefix(authority.Namespace, "session_") {
+			return fmt.Errorf("same-session authority must be required context")
+		}
 	}
 	if err := validateOptionalSelectionGroups(set); err != nil {
 		return err

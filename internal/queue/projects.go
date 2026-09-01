@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/gryph/omnidex/internal/model"
 	"github.com/jackc/pgx/v5"
@@ -17,7 +18,6 @@ var (
 	ErrProjectNotFound        = errors.New("project not found")
 	ErrProjectVersionConflict = errors.New("project version conflict")
 	ErrProjectActiveWork      = errors.New("project has active work")
-	ErrProjectDeploymentAudit = errors.New("project has immutable deployment history")
 )
 
 func scanProject(row pgx.Row) (model.Project, error) {
@@ -25,7 +25,7 @@ func scanProject(row pgx.Row) (model.Project, error) {
 	var settings []byte
 	err := row.Scan(
 		&project.ID, &project.Location, &project.Name, &project.Description,
-		&project.ProjectState, &settings,
+		&settings,
 		&project.LastSeenAt, &project.CreatedAt, &project.UpdatedAt,
 	)
 	if err != nil {
@@ -36,16 +36,16 @@ func scanProject(row pgx.Row) (model.Project, error) {
 }
 
 const projectSelectColumns = `
-	id, location, name, description, project_state, settings,
+	id, location, name, description, settings,
 	last_seen_at, created_at, updated_at
 `
 
 func (r *Repository) ListProjects(ctx context.Context, limit, offset int) ([]model.Project, error) {
 	if limit <= 0 {
-		limit = 100
+		return nil, fmt.Errorf("project list limit must be positive")
 	}
 	if offset < 0 {
-		offset = 0
+		return nil, fmt.Errorf("project list offset must be non-negative")
 	}
 	rows, err := r.pool.Query(ctx, `
 		SELECT `+projectSelectColumns+` FROM projects
@@ -102,8 +102,14 @@ func (r *Repository) CreateProject(
 	if name == "" {
 		name = projectNameFromLocation(location)
 	}
-	name = SanitizeUTF8Text(name)
-	description = SanitizeUTF8Text(strings.TrimSpace(description))
+	description = strings.TrimSpace(description)
+	for label, value := range map[string]string{
+		"project name": name, "project location": location, "project description": description,
+	} {
+		if err := validateDatabaseText(label, value); err != nil {
+			return model.Project{}, err
+		}
+	}
 	return scanProject(r.pool.QueryRow(ctx, `
 		INSERT INTO projects(location,name,description,last_seen_at)
 		VALUES($1,$2,$3,NOW()) RETURNING `+projectSelectColumns,
@@ -132,7 +138,6 @@ func (r *Repository) UpdateProjectAtRevision(
 	if err != nil {
 		return model.Project{}, err
 	}
-	lockedLocation := current.Location
 	if !current.UpdatedAt.Equal(expectedUpdatedAt) {
 		return model.Project{}, fmt.Errorf("%w: project %d changed; reload server state and retry", ErrProjectVersionConflict, id)
 	}
@@ -145,33 +150,29 @@ func (r *Repository) UpdateProjectAtRevision(
 	if patch.Description != nil {
 		current.Description = *patch.Description
 	}
-	if patch.ProjectState != nil {
-		current.ProjectState = strings.TrimSpace(*patch.ProjectState)
-	}
 	if patch.Settings != nil {
 		current.Settings = *patch.Settings
 	}
-	current.Settings = defaultJSON(current.Settings, `{}`)
 	if err := validateProjectSettings(current.Settings); err != nil {
 		return model.Project{}, err
 	}
-	current.Name = SanitizeUTF8Text(current.Name)
-	current.Location = SanitizeUTF8Text(current.Location)
-	current.Description = SanitizeUTF8Text(current.Description)
-	current.ProjectState = SanitizeUTF8Text(current.ProjectState)
-	current.Settings = SanitizeUTF8Bytes(current.Settings)
-	if current.Location != lockedLocation {
-		if err := requireProjectLocationWithoutActiveWorkTx(ctx, tx, id); err != nil {
+	for label, value := range map[string]string{
+		"project name": current.Name,
+		"project location": current.Location,
+		"project description": current.Description,
+		"project settings": string(current.Settings),
+	} {
+		if err := validateDatabaseText(label, value); err != nil {
 			return model.Project{}, err
 		}
 	}
 	updated, err := scanProject(tx.QueryRow(ctx, `
 		UPDATE projects SET name=$2,location=$3,description=$4,
-		 project_state=$5,settings=$6::jsonb,
+			 settings=$5::jsonb,
 		 updated_at=GREATEST(clock_timestamp(),updated_at+interval '1 microsecond')
-		WHERE id=$1 AND updated_at=$7 RETURNING `+projectSelectColumns,
+		WHERE id=$1 AND updated_at=$6 RETURNING `+projectSelectColumns,
 		id, current.Name, current.Location, current.Description,
-		current.ProjectState, string(current.Settings), expectedUpdatedAt,
+		string(current.Settings), expectedUpdatedAt,
 	))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return model.Project{}, fmt.Errorf("%w: project %d changed during mutation", ErrProjectVersionConflict, id)
@@ -183,6 +184,13 @@ func (r *Repository) UpdateProjectAtRevision(
 		return model.Project{}, fmt.Errorf("commit revision-bound project update: %w", err)
 	}
 	return updated, nil
+}
+
+func validateDatabaseText(label, value string) error {
+	if !utf8.ValidString(value) || strings.ContainsRune(value, '\x00') {
+		return fmt.Errorf("%s must be valid UTF-8 without NUL", label)
+	}
+	return nil
 }
 
 func (r *Repository) DeleteProjectAtRevision(ctx context.Context, id int64, expectedUpdatedAt time.Time) error {
@@ -208,7 +216,7 @@ func (r *Repository) DeleteProjectAtRevision(ctx context.Context, id int64, expe
 	var activeCardID string
 	err = tx.QueryRow(ctx, `
 		SELECT id FROM scrum_cards
-		WHERE project_id=$1 AND (play_state IN ('running','queued') OR sync_job_id<>'')
+		WHERE project_id=$1 AND play_state IN ('running','queued')
 		ORDER BY id LIMIT 1 FOR SHARE
 	`, id).Scan(&activeCardID)
 	if err == nil {
@@ -230,20 +238,6 @@ func (r *Repository) DeleteProjectAtRevision(ctx context.Context, id int64, expe
 	}
 	if !errors.Is(err, pgx.ErrNoRows) {
 		return fmt.Errorf("inspect nonterminal jobs before project deletion: %w", err)
-	}
-	var deploymentID string
-	err = tx.QueryRow(ctx, `
-		SELECT id FROM generated_workload_deployments
-		WHERE project_id=$1 ORDER BY prepared_at,id LIMIT 1 FOR SHARE
-	`, id).Scan(&deploymentID)
-	if err == nil {
-		return fmt.Errorf(
-			"%w: deployment %q must remain attached to its audited project",
-			ErrProjectDeploymentAudit, deploymentID,
-		)
-	}
-	if !errors.Is(err, pgx.ErrNoRows) {
-		return fmt.Errorf("inspect deployment history before project deletion: %w", err)
 	}
 	tag, err := tx.Exec(ctx, `DELETE FROM projects WHERE id=$1 AND updated_at=$2`, id, expectedUpdatedAt)
 	if err != nil {
@@ -283,13 +277,6 @@ func (r *Repository) HasRunningScrumPlay(ctx context.Context) (bool, error) {
 		SELECT EXISTS(SELECT 1 FROM scrum_cards WHERE play_state='running' LIMIT 1)
 	`).Scan(&exists)
 	return exists, err
-}
-
-func defaultJSON(raw json.RawMessage, fallback string) json.RawMessage {
-	if len(raw) > 0 {
-		return raw
-	}
-	return json.RawMessage(fallback)
 }
 
 func ProjectNameFromLocation(location string) string { return projectNameFromLocation(location) }

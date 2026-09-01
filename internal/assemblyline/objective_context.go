@@ -3,7 +3,6 @@ package assemblyline
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"unicode/utf8"
@@ -13,7 +12,11 @@ const (
 	MaxMemoryContextCandidateAuthorities = 8
 	MaxMemoryContextCandidateBytes       = 6 * 1024
 	MaxObjectiveContextCapsules          = 1
-	MaxObjectiveReplanFeedbackBytes      = 2 * 1024
+	// MaxObjectiveControlFeedbackBytes retains the narrow explicit lifecycle
+	// command boundary. Ordinary session text has the same 4 KiB authority
+	// whether it starts a job or deterministically replans the active job.
+	MaxObjectiveControlFeedbackBytes = 2 * 1024
+	MaxObjectiveReplanFeedbackBytes  = 4 * 1024
 	// MaxObjectiveContextAuthorityBytes is a coarse portable-payload safety
 	// limit, not a semantic projection target. Per-call context budgets drive
 	// paging and staged reduction before this resource boundary is reached.
@@ -58,59 +61,17 @@ type ObjectiveContext struct {
 	ReplanAuthority *ObjectiveReplanAuthority `json:"replan_authority"`
 }
 
-// objectiveContextModelProjection is the complete context visible to any
-// downstream semantic station after compilation. Source IDs and hashes stay
-// in code-owned portable authority and are deliberately not prompt context.
-type objectiveContextModelProjection struct {
-	Capsules []string `json:"capsules"`
-}
-
-func projectObjectiveContextForModel(
-	context ObjectiveContext,
-) (objectiveContextModelProjection, error) {
+// renderObjectiveContextForModel exposes only accepted context prose. Source
+// identities, hashes, and portable state remain code-owned.
+func renderObjectiveContextForModel(context ObjectiveContext) (string, error) {
 	if err := context.Validate(); err != nil {
-		return objectiveContextModelProjection{}, err
+		return "", err
 	}
-	projection := objectiveContextModelProjection{Capsules: make([]string, len(context.Capsules))}
+	contents := make([]string, len(context.Capsules))
 	for index, capsule := range context.Capsules {
-		projection.Capsules[index] = capsule.Content
+		contents[index] = capsule.Content
 	}
-	return projection, nil
-}
-
-// marshalObjectiveContextInputForModel renders a downstream semantic input
-// with only the compiled context prose. The typed portable payload retains
-// ObjectiveContext source provenance; this helper is used only at the final
-// model-visible prompt boundary.
-func marshalObjectiveContextInputForModel(
-	input any,
-	context ObjectiveContext,
-) ([]byte, error) {
-	modelContext, err := projectObjectiveContextForModel(context)
-	if err != nil {
-		return nil, err
-	}
-	encodedInput, err := json.Marshal(input)
-	if err != nil {
-		return nil, fmt.Errorf("encode objective context input: %w", err)
-	}
-	var fields map[string]json.RawMessage
-	if err := json.Unmarshal(encodedInput, &fields); err != nil {
-		return nil, fmt.Errorf("decode objective context input projection: %w", err)
-	}
-	if _, exists := fields["objective_context"]; !exists {
-		return nil, fmt.Errorf("objective context input has no objective_context field")
-	}
-	encodedContext, err := json.Marshal(modelContext)
-	if err != nil {
-		return nil, fmt.Errorf("encode model-visible objective context: %w", err)
-	}
-	fields["objective_context"] = encodedContext
-	projection, err := json.Marshal(fields)
-	if err != nil {
-		return nil, fmt.Errorf("encode model-visible objective input: %w", err)
-	}
-	return projection, nil
+	return strings.Join(contents, "\n\n"), nil
 }
 
 func (context ObjectiveContext) Validate() error {
@@ -142,7 +103,7 @@ func (context ObjectiveContext) Validate() error {
 			}
 			total += len(source.Namespace) + len(source.CandidateID) + len(source.ContentSHA256)
 		}
-		if err := validateContextText("objective context capsule", capsule.Content, MaxContextMinifiedBytes); err != nil {
+		if err := validateObjectiveContextText("context capsule", capsule.Content, MaxContextMinifiedBytes); err != nil {
 			return fmt.Errorf("objective context capsule %d: %w", capsuleIndex, err)
 		}
 		if !exactObjectiveContextSHA(capsule.Content, capsule.ContentSHA256) {
@@ -198,9 +159,9 @@ func exactObjectiveContextSHA(value, expected string) bool {
 }
 
 func validateObjectiveContextText(label, value string, maximum int) error {
-	if value == "" || value != strings.TrimSpace(value) || !utf8.ValidString(value) ||
+	if strings.TrimSpace(value) == "" || !utf8.ValidString(value) ||
 		strings.ContainsRune(value, '\x00') || len(value) > maximum {
-		return fmt.Errorf("objective %s must be exact non-empty UTF-8 text of at most %d bytes", label, maximum)
+		return fmt.Errorf("objective %s must be exact non-blank UTF-8 text of at most %d bytes", label, maximum)
 	}
 	return nil
 }

@@ -2,7 +2,6 @@ package queue
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strconv"
@@ -72,7 +71,9 @@ func (r *Repository) ExecuteScrumChannelOperation(
 	}
 	var lockedMetadata scrum.JobMetadata
 	if command.Effect.Kind == ScrumChannelStartJob {
-		lockedMetadata, _, err = scrumPlayAuthorityTx(ctx, tx, current)
+		lockedMetadata, _, err = scrumPlayAuthorityTx(
+			ctx, tx, current, r.modelAuthority, r.codingScopeMode,
+		)
 		if err != nil {
 			return ScrumChannelOperationResult{}, err
 		}
@@ -149,11 +150,9 @@ func (r *Repository) executeScrumChannelEffectTx(
 		if err := lockedMetadata.Validate(); err != nil {
 			return model.Job{}, fmt.Errorf("validate locked Scrum channel metadata: %w", err)
 		}
-		metadataJSON, marshalErr := json.Marshal(lockedMetadata)
-		if marshalErr != nil {
-			return model.Job{}, fmt.Errorf("encode locked Scrum channel metadata: %w", marshalErr)
-		}
-		job, err = r.enqueueScrumJobTx(ctx, tx, effect.Instruction, metadataJSON)
+		job, err = r.enqueueScrumJobTx(
+			ctx, tx, effect.Instruction, command.Request.ProjectID, lockedMetadata,
+		)
 	case ScrumChannelReplanJob:
 		job, err = executeScrumChannelReplanTx(ctx, tx, command)
 	case ScrumChannelSubmitFeedback:
@@ -196,7 +195,8 @@ func executeScrumChannelReplanTx(
 	if err := lockLifecycleOperationIdentityTx(ctx, tx, operationID); err != nil {
 		return model.Job{}, err
 	}
-	return replanJobTx(ctx, tx, replan, feedbackSHA, descriptor)
+	result, err := replanJobTx(ctx, tx, replan, feedbackSHA, descriptor)
+	return result.Job, err
 }
 
 func executeScrumChannelFeedbackTx(
@@ -221,7 +221,8 @@ func executeScrumChannelFeedbackTx(
 	if err := lockLifecycleOperationIdentityTx(ctx, tx, operationID); err != nil {
 		return model.Job{}, err
 	}
-	return submitJobFeedbackTx(ctx, tx, feedback, descriptor)
+	result, err := submitJobFeedbackTx(ctx, tx, feedback, descriptor)
+	return result.Job, err
 }
 
 func scrumChannelEffectOperationID(command ScrumChannelOperationCommand) (LifecycleOperationID, error) {
@@ -257,13 +258,11 @@ func validateScrumChannelCardUpdate(
 	}
 	if update.Column != strings.TrimSpace(update.Column) ||
 		update.JobID != strings.TrimSpace(update.JobID) ||
-		update.PlayState != strings.TrimSpace(update.PlayState) ||
-		update.SyncJobID != strings.TrimSpace(update.SyncJobID) {
+		update.PlayState != strings.TrimSpace(update.PlayState) {
 		return fmt.Errorf("Scrum channel card update has noncanonical authority text")
 	}
 	if update.Column != "in_progress" || update.PlayState != "running" || update.QueueOrder != 0 ||
-		update.JobID != strconv.FormatInt(job.ID, 10) || update.SyncJobID != update.JobID ||
-		update.StepContextCursor != 0 {
+		update.JobID != strconv.FormatInt(job.ID, 10) {
 		return fmt.Errorf("Scrum channel card update has invalid job, column, play-state, or queue authority")
 	}
 	return nil

@@ -3,7 +3,6 @@ package worker
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
 	"github.com/gryph/omnidex/internal/station"
@@ -34,100 +33,59 @@ func (adapter *portableObjectiveRepositoryGroundingStation) Answer(
 	if err := input.Validate(); err != nil {
 		return assemblyline.GroundedAnswerDecision{}, objectiveStationReceipt{}, err
 	}
-	textInput := assemblyline.GroundedAnswerTextInput{
-		ExactRequirement:   input.ExactRequirement,
-		Context:            assemblyline.CloneObjectiveContext(input.Context),
-		Evidence:           append([]assemblyline.GroundedEvidenceCapsule(nil), input.Evidence...),
-		KnownArtifactPaths: append([]string(nil), input.KnownArtifactPaths...),
+	resolveModel := func() (string, error) {
+		return objectiveStationModel(adapter.runtime, station.GroundedAnswer)
 	}
-	job, err := assemblyline.NewGroundedAnswerTextJob(textInput)
-	if err != nil {
-		return assemblyline.GroundedAnswerDecision{}, objectiveStationReceipt{}, err
-	}
-	text, receipt, err := runRepositoryGroundedLeafCall(
-		ctx, adapter, station.GroundedAnswer, "grounded_answer_text", job,
-		func(raw string) (assemblyline.GroundedAnswerTextDecision, error) {
-			return assemblyline.DecodeGroundedAnswerTextDecision(textInput, raw)
+	return resolveRepositoryGroundedParagraphQueue(
+		ctx,
+		input,
+		func(
+			ctx context.Context,
+			leafInput assemblyline.GroundedAnswerParagraphInventoryInput,
+		) (assemblyline.GroundedAnswerParagraphInventory, objectiveStationReceipt, error) {
+			job, err := assemblyline.NewGroundedAnswerParagraphInventoryJob(leafInput)
+			if err != nil {
+				return assemblyline.GroundedAnswerParagraphInventory{}, objectiveStationReceipt{}, err
+			}
+			return runObjectivePortableRawLeafStation(
+				ctx, adapter.runtime, "grounded_answer_paragraph_inventory", job,
+				station.GroundedAnswer, resolveModel,
+				func(raw string) (assemblyline.GroundedAnswerParagraphInventory, error) {
+					return assemblyline.DecodeGroundedAnswerParagraphInventory(leafInput, raw)
+				},
+			)
 		},
-		func(value assemblyline.GroundedAnswerTextDecision) error {
-			return value.ValidateFor(textInput)
+		func(
+			ctx context.Context,
+			leafInput assemblyline.GroundedAnswerParagraphEvidenceRelationInput,
+		) (assemblyline.GroundedAnswerParagraphEvidenceRelationDecision, objectiveStationReceipt, error) {
+			job, err := assemblyline.NewGroundedAnswerParagraphEvidenceRelationJob(leafInput)
+			if err != nil {
+				return assemblyline.GroundedAnswerParagraphEvidenceRelationDecision{}, objectiveStationReceipt{}, err
+			}
+			return runObjectivePortableRawLeafStation(
+				ctx, adapter.runtime, "grounded_answer_paragraph_evidence_relation", job,
+				station.GroundedAnswer, resolveModel,
+				func(raw string) (assemblyline.GroundedAnswerParagraphEvidenceRelationDecision, error) {
+					return assemblyline.DecodeGroundedAnswerParagraphEvidenceRelationDecision(leafInput, raw)
+				},
+			)
+		},
+		func(
+			ctx context.Context,
+			leafInput assemblyline.GroundedAnswerParagraphAuthorizationInput,
+		) (assemblyline.GroundedAnswerParagraphAuthorizationDecision, objectiveStationReceipt, error) {
+			job, err := assemblyline.NewGroundedAnswerParagraphAuthorizationJob(leafInput)
+			if err != nil {
+				return assemblyline.GroundedAnswerParagraphAuthorizationDecision{}, objectiveStationReceipt{}, err
+			}
+			return runObjectivePortableRawLeafStation(
+				ctx, adapter.runtime, "grounded_answer_paragraph_authorization", job,
+				station.GroundedAnswer, resolveModel,
+				func(raw string) (assemblyline.GroundedAnswerParagraphAuthorizationDecision, error) {
+					return assemblyline.DecodeGroundedAnswerParagraphAuthorizationDecision(leafInput, raw)
+				},
+			)
 		},
 	)
-	if err != nil {
-		return assemblyline.GroundedAnswerDecision{}, receipt, err
-	}
-	total := receipt.Calls
-	evidenceIDs := make([]string, 0, len(input.Evidence))
-	for _, evidence := range input.Evidence {
-		relationInput := assemblyline.GroundedAnswerEvidenceRelationInput{
-			ExactRequirement:   input.ExactRequirement,
-			Context:            assemblyline.CloneObjectiveContext(input.Context),
-			AnswerText:         text.Text,
-			Evidence:           evidence,
-			KnownArtifactPaths: append([]string(nil), input.KnownArtifactPaths...),
-		}
-		relationJob, err := assemblyline.NewGroundedAnswerEvidenceRelationJob(relationInput)
-		if err != nil {
-			return assemblyline.GroundedAnswerDecision{}, objectiveStationReceipt{Calls: total}, err
-		}
-		relation, relationReceipt, err := runRepositoryGroundedLeafCall(
-			ctx, adapter, station.GroundedAnswer, "grounded_answer_evidence_relation",
-			relationJob,
-			func(raw string) (assemblyline.GroundedAnswerEvidenceRelationDecision, error) {
-				return assemblyline.DecodeGroundedAnswerEvidenceRelationDecision(relationInput, raw)
-			},
-			func(value assemblyline.GroundedAnswerEvidenceRelationDecision) error {
-				return value.ValidateFor(relationInput)
-			},
-		)
-		total += relationReceipt.Calls
-		if err != nil {
-			return assemblyline.GroundedAnswerDecision{}, objectiveStationReceipt{Calls: total}, err
-		}
-		if relation.Relation == assemblyline.GroundedEvidenceSupportsAnswer {
-			evidenceIDs = append(evidenceIDs, evidence.ID)
-		}
-	}
-	decision := assemblyline.GroundedAnswerDecision{
-		Schema:        assemblyline.GroundedAnswerSchemaV1,
-		RequirementID: input.RequirementID,
-		Text:          text.Text, EvidenceIDs: evidenceIDs,
-	}
-	if err := decision.ValidateFor(input); err != nil {
-		return assemblyline.GroundedAnswerDecision{}, objectiveStationReceipt{Calls: total}, err
-	}
-	return decision, objectiveStationReceipt{Calls: total}, nil
-}
-
-func runRepositoryGroundedLeafCall[T any](
-	ctx context.Context,
-	adapter *portableObjectiveRepositoryGroundingStation,
-	id station.ID,
-	subject string,
-	job assemblyline.PortableJob,
-	decode objectiveRawLeafDecoder[T],
-	validate func(T) error,
-) (T, objectiveStationReceipt, error) {
-	var zero T
-	if adapter == nil || adapter.runtime == nil {
-		return zero, objectiveStationReceipt{}, fmt.Errorf("repository grounding station %q is unavailable", id)
-	}
-	modelName, err := objectiveStationModel(adapter.runtime, id)
-	if err != nil {
-		return zero, objectiveStationReceipt{}, err
-	}
-	if ctx == nil || strings.TrimSpace(modelName) == "" {
-		return zero, objectiveStationReceipt{}, fmt.Errorf("repository grounding station %q requires context and model routing", id)
-	}
-	workerRuntime := portableWorkerRuntimeWithContext(adapter.runtime, "objective", ctx)
-	calls := 0
-	execute := workerRuntime.Execute
-	workerRuntime.Execute = func(job assemblyline.PortableJob, model string) (assemblyline.PortableResult, error) {
-		calls++
-		return execute(job, model)
-	}
-	value, err := runObjectiveRawLeafWorkerCall(
-		workerRuntime, modelName, subject, job, decode, validate,
-	)
-	return value, objectiveStationReceipt{Calls: calls}, err
 }

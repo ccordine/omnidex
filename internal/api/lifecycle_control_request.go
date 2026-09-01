@@ -11,6 +11,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/gryph/omnidex/internal/exactjson"
+	"github.com/gryph/omnidex/internal/model"
+	"github.com/gryph/omnidex/internal/projectroot"
 	"github.com/gryph/omnidex/internal/queue"
 )
 
@@ -19,6 +21,27 @@ const (
 	// JSON escaping can expand one accepted lifecycle-text byte to six bytes.
 	maxLifecycleControlBodyBytes int64 = 512 * 1024
 )
+
+type lifecycleWorkspaceValue struct {
+	Value   string
+	Present bool
+}
+
+func (value *lifecycleWorkspaceValue) UnmarshalJSON(raw []byte) error {
+	if value == nil {
+		return fmt.Errorf("lifecycle workspace value is unavailable")
+	}
+	if string(raw) == "null" {
+		return fmt.Errorf("lifecycle workspace values must be omitted or exact strings")
+	}
+	var decoded string
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		return fmt.Errorf("decode lifecycle workspace value: %w", err)
+	}
+	value.Value = decoded
+	value.Present = true
+	return nil
+}
 
 func decodeLifecycleFeedbackRequest(w http.ResponseWriter, r *http.Request) (feedbackRequest, error) {
 	var request feedbackRequest
@@ -30,6 +53,12 @@ func decodeLifecycleFeedbackRequest(w http.ResponseWriter, r *http.Request) (fee
 		return feedbackRequest{}, err
 	}
 	if err := validateLifecycleControlText(request.Feedback, "feedback"); err != nil {
+		return feedbackRequest{}, err
+	}
+	if err := validateLifecycleWorkspaceRequest(
+		request.WorkspaceRoot,
+		request.WorkspaceIdentity,
+	); err != nil {
 		return feedbackRequest{}, err
 	}
 	request.OperationID = operationID
@@ -46,6 +75,12 @@ func decodeLifecycleCancelRequest(w http.ResponseWriter, r *http.Request) (cance
 		return cancelRequest{}, err
 	}
 	if err := validateLifecycleControlText(request.Reason, "cancel reason"); err != nil {
+		return cancelRequest{}, err
+	}
+	if err := validateLifecycleWorkspaceRequest(
+		request.WorkspaceRoot,
+		request.WorkspaceIdentity,
+	); err != nil {
 		return cancelRequest{}, err
 	}
 	request.OperationID = operationID
@@ -98,6 +133,35 @@ func validateLifecycleControlText(value, name string) error {
 		return fmt.Errorf("%s exceeds the %d-byte limit", name, maxLifecycleControlTextBytes)
 	}
 	return nil
+}
+
+func validateLifecycleWorkspaceRequest(
+	root lifecycleWorkspaceValue,
+	identity lifecycleWorkspaceValue,
+) error {
+	if !root.Present && !identity.Present {
+		return nil
+	}
+	if !root.Present || !identity.Present {
+		return fmt.Errorf("lifecycle workspace_root and workspace_identity must be supplied together")
+	}
+	if err := model.ValidateChannelWorkspaceRoot(root.Value); err != nil {
+		return fmt.Errorf("lifecycle workspace_root: %w", err)
+	}
+	if err := projectroot.ValidateDirectoryIdentity(identity.Value); err != nil {
+		return fmt.Errorf("lifecycle workspace_identity: %w", err)
+	}
+	return nil
+}
+
+func validateRequiredLifecycleWorkspaceRequest(
+	root lifecycleWorkspaceValue,
+	identity lifecycleWorkspaceValue,
+) error {
+	if !root.Present || !identity.Present {
+		return fmt.Errorf("lifecycle workspace_root and workspace_identity are required")
+	}
+	return validateLifecycleWorkspaceRequest(root, identity)
 }
 
 func lifecycleControlBodyStatus(err error) int {

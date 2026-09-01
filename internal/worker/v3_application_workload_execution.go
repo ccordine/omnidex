@@ -1,6 +1,7 @@
 package worker
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -37,9 +38,6 @@ func executeDirectCodingApplicationWorkload(
 	if execute == nil {
 		return fmt.Errorf("application workload executor requires one task callback")
 	}
-	if err := assemblyline.ValidateFrozenApplicationWorkload(workload); err != nil {
-		return err
-	}
 	for _, task := range workload.Tasks {
 		context, err := assemblyline.ProjectApplicationTaskContext(workload, task.ID)
 		if err != nil {
@@ -52,19 +50,43 @@ func executeDirectCodingApplicationWorkload(
 	return nil
 }
 
+func executeIndependentDirectCodingApplicationWorkload(
+	workload assemblyline.FrozenApplicationWorkload,
+	execute func(assemblyline.ApplicationTaskContext) error,
+) error {
+	if execute == nil {
+		return fmt.Errorf("application workload executor requires one task callback")
+	}
+	var resultErr error
+	for _, task := range workload.Tasks {
+		context, err := assemblyline.ProjectApplicationTaskContext(workload, task.ID)
+		if err == nil {
+			err = execute(context)
+		}
+		if err != nil {
+			resultErr = errors.Join(
+				resultErr,
+				fmt.Errorf("execute application workload task %s: %w", task.ID, err),
+			)
+		}
+	}
+	return resultErr
+}
+
 func compileDirectCodingApplicationTaskBehavior(
 	context assemblyline.ApplicationTaskContext,
 	capabilities []directCodingCapabilityBinding,
 ) (string, error) {
 	if context.Surface == assemblyline.ApplicationSurfaceUnsupported ||
+		context.Surface == assemblyline.ApplicationSurfaceUnspecified ||
 		strings.TrimSpace(string(context.Surface)) == "" ||
 		strings.TrimSpace(context.ProductQuote) == "" ||
 		strings.TrimSpace(context.Task.RequirementQuote) == "" {
 		return "", fmt.Errorf("application task context lacks one exact accepted requirement")
 	}
 	parts := []string{
-		"Authoritative delivery surface: " + string(context.Surface),
-		"Authoritative product context: " + context.ProductQuote,
+		"Delivery surface: " + string(context.Surface),
+		"Product context: " + context.ProductQuote,
 		"Exact user requirement: " + context.Task.RequirementQuote,
 	}
 	seen := make(map[string]struct{}, len(capabilities))

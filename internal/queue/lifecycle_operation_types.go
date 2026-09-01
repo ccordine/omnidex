@@ -57,12 +57,16 @@ func ParseLifecycleOperationID(value string) (LifecycleOperationID, error) {
 type LifecycleOperationKind string
 
 const (
-	LifecycleCompleteStep   LifecycleOperationKind = "complete_step"
-	LifecycleFailStep       LifecycleOperationKind = "fail_step"
-	LifecycleSubmitFeedback LifecycleOperationKind = "submit_feedback"
-	LifecycleReplanJob      LifecycleOperationKind = "replan_job"
-	LifecycleScrumChannel   LifecycleOperationKind = "scrum_channel_message"
-	LifecycleCancelJob      LifecycleOperationKind = "cancel_job"
+	LifecycleCompleteStep        LifecycleOperationKind = "complete_step"
+	LifecycleFailStep            LifecycleOperationKind = "fail_step"
+	LifecycleSubmitFeedback      LifecycleOperationKind = "submit_feedback"
+	LifecycleInterruptJob        LifecycleOperationKind = "interrupt_job"
+	LifecycleReplanJob           LifecycleOperationKind = "replan_job"
+	LifecycleChannelSession      LifecycleOperationKind = "channel_session_turn"
+	LifecycleScrumChannel        LifecycleOperationKind = "scrum_channel_message"
+	LifecycleCancelJob           LifecycleOperationKind = "cancel_job"
+	LifecycleCodingPlanDecisions LifecycleOperationKind = "coding_plan_decisions"
+	LifecycleCodingPlanFreeze    LifecycleOperationKind = "coding_plan_freeze"
 )
 
 type CompleteStepCommand struct {
@@ -70,8 +74,7 @@ type CompleteStepCommand struct {
 	Authority                 model.StepAttemptAuthority           `json:"-"`
 	StepID                    int64                                `json:"step_id"`
 	Output                    string                               `json:"output"`
-	ContextKey                string                               `json:"context_key"`
-	ContextValue              string                               `json:"context_value"`
+	ContextKey                string                               `json:"context_key,omitempty"`
 	RoleplayResponses         []RoleplayResponseCompletion         `json:"roleplay_responses,omitempty"`
 	RoleplayUserCanon         *RoleplayUserCanonCompletion         `json:"roleplay_user_canon,omitempty"`
 	RoleplayUserOngoingAction *RoleplayUserOngoingActionCompletion `json:"roleplay_user_ongoing_action,omitempty"`
@@ -114,21 +117,34 @@ type FailStepCommand struct {
 }
 
 type SubmitJobFeedbackCommand struct {
-	OperationID LifecycleOperationID `json:"operation_id"`
-	JobID       int64                `json:"job_id"`
-	Feedback    string               `json:"feedback"`
+	OperationID       LifecycleOperationID `json:"operation_id"`
+	JobID             int64                `json:"job_id"`
+	Feedback          string               `json:"feedback"`
+	WorkspaceRoot     string               `json:"workspace_root,omitempty"`
+	WorkspaceIdentity string               `json:"workspace_identity,omitempty"`
 }
 
 type ReplanJobCommand struct {
-	OperationID LifecycleOperationID `json:"operation_id"`
-	JobID       int64                `json:"job_id"`
-	Feedback    string               `json:"feedback"`
+	OperationID       LifecycleOperationID `json:"operation_id"`
+	JobID             int64                `json:"job_id"`
+	Feedback          string               `json:"feedback"`
+	WorkspaceRoot     string               `json:"workspace_root,omitempty"`
+	WorkspaceIdentity string               `json:"workspace_identity,omitempty"`
 }
 
 type CancelJobCommand struct {
-	OperationID LifecycleOperationID `json:"operation_id"`
-	JobID       int64                `json:"job_id"`
-	Reason      string               `json:"reason"`
+	OperationID       LifecycleOperationID `json:"operation_id"`
+	JobID             int64                `json:"job_id"`
+	Reason            string               `json:"reason"`
+	WorkspaceRoot     string               `json:"workspace_root,omitempty"`
+	WorkspaceIdentity string               `json:"workspace_identity,omitempty"`
+}
+
+// LifecycleJobResult distinguishes a newly committed mutation from the exact
+// immutable receipt returned for an idempotent operation replay.
+type LifecycleJobResult struct {
+	Job     model.Job
+	Applied bool
 }
 
 func lifecycleIdentityDigest(parts ...string) string {

@@ -17,11 +17,6 @@ func (r *Repository) ClaimNextStep(ctx context.Context, workerID string) (*model
 		!utf8.ValidString(workerID) || strings.ContainsRune(workerID, '\x00') {
 		return nil, fmt.Errorf("worker identity must be exact PostgreSQL-compatible text of at most 256 bytes")
 	}
-	if paused, err := r.IsAIPaused(ctx); err != nil {
-		return nil, err
-	} else if paused {
-		return nil, nil
-	}
 	tx, err := r.pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return nil, err
@@ -119,10 +114,6 @@ func (r *Repository) ClaimNextStep(ctx context.Context, workerID string) (*model
 	if err != nil {
 		return nil, err
 	}
-	if _, err := validatePipeline(job.Pipeline); err != nil {
-		return nil, fmt.Errorf("claim job %d: %w", job.ID, err)
-	}
-
 	var previousAttempt int64
 	if err := tx.QueryRow(ctx, `
 		SELECT current_attempt FROM job_steps WHERE id=$1 FOR UPDATE
@@ -151,13 +142,17 @@ func (r *Repository) ClaimNextStep(ctx context.Context, workerID string) (*model
 		}
 	}
 	attemptNumber := previousAttempt + 1
-	var leaseExpiresAt time.Time
+	leaseMeasurementStarted := time.Now()
+	var leaseValidForNanoseconds int64
 	if err := tx.QueryRow(ctx, `
 		INSERT INTO job_step_attempts (
 			job_id,generation,step_id,attempt,worker_id,claimed_at,renewed_at
 		) VALUES ($1,$2,$3,$4,$5,$6,$6)
-		RETURNING expires_at
-	`, step.JobID, step.Generation, step.ID, attemptNumber, workerID, databaseNow).Scan(&leaseExpiresAt); err != nil {
+		RETURNING GREATEST(
+			FLOOR(EXTRACT(EPOCH FROM (expires_at-clock_timestamp()))*1000000000)::bigint,
+			0::bigint
+		)
+	`, step.JobID, step.Generation, step.ID, attemptNumber, workerID, databaseNow).Scan(&leaseValidForNanoseconds); err != nil {
 		return nil, fmt.Errorf("create step %d attempt %d: %w", step.ID, attemptNumber, err)
 	}
 	stepUpdate, err := tx.Exec(ctx, `
@@ -191,24 +186,12 @@ func (r *Repository) ClaimNextStep(ctx context.Context, workerID string) (*model
 		return nil, fmt.Errorf("%w: job %d changed during step claim", ErrStepNotWritable, job.ID)
 	}
 	job.Status = model.JobStatusRunning
-	if err := activateInitialTaskRootTx(ctx, tx, job.ID, job.CurrentGeneration); err != nil {
-		return nil, err
-	}
-	if err := markTelemetryRunRunningForJob(ctx, tx, job.ID); err != nil {
-		return nil, err
-	}
-	if err := recordTelemetryJobEvent(ctx, tx, job.ID, "run_running", map[string]any{
-		"job_id": job.ID, "step_id": step.ID, "action": step.Action,
-		"attempt": attemptNumber, "worker_id": workerID,
-	}); err != nil {
-		return nil, err
-	}
-	contexts, err := loadClaimedStepContexts(ctx, tx, job.ID, step.ID)
-	if err != nil {
-		return nil, err
-	}
 	if err := tx.Commit(ctx); err != nil {
 		return nil, err
+	}
+	leaseDeadline := leaseMeasurementStarted.Add(time.Duration(leaseValidForNanoseconds))
+	if time.Until(leaseDeadline) <= 0 {
+		return nil, fmt.Errorf("step %d attempt %d lease expired before claim delivery", step.ID, attemptNumber)
 	}
 	authority := model.StepAttemptAuthority{
 		JobID: step.JobID, Generation: step.Generation, StepID: step.ID,
@@ -216,6 +199,6 @@ func (r *Repository) ClaimNextStep(ctx context.Context, workerID string) (*model
 	}
 	return &model.ClaimedStep{
 		Job: job, Step: step, Authority: authority,
-		LeaseExpiresAt: leaseExpiresAt, Contexts: contexts,
+		LeaseDeadline: leaseDeadline,
 	}, nil
 }

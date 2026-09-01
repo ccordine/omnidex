@@ -47,16 +47,12 @@ func (s *Server) scrumProjectFilePage(
 	if client := s.hostBridgeClient(); client != nil {
 		ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 		defer cancel()
-		mappedRoot, ok := mapWorkspacePathForHostBridge(projectRoot)
-		if !ok {
-			return nil, fmt.Errorf("Scrum host-only project requires exact WORKSPACE_ROOT to HOST_WORKSPACE_PATH mapping")
-		}
 		rel, err := filepath.Rel(filepath.Clean(projectRoot), filepath.Clean(path))
 		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 			return nil, fmt.Errorf("Scrum host-only file path escaped the project root")
 		}
-		resolved := filepath.Join(mappedRoot, rel)
-		opts.RequiredRoot = mappedRoot
+		resolved := filepath.Join(projectRoot, rel)
+		opts.RequiredRoot = projectRoot
 		result, err := client.Browse(ctx, resolved, opts)
 		if err != nil {
 			return nil, fmt.Errorf("browse Scrum project files through host bridge: %w", err)

@@ -1,63 +1,90 @@
 package worker
 
 import (
-	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
-	"github.com/gryph/omnidex/internal/assemblyline"
+	"github.com/gryph/omnidex/internal/queue"
 )
 
 type directCodingTypeScriptStageWorkspace struct {
-	root string
+	root             string
+	cacheRoot        string
+	session          *directCodingSession
+	profile          directCodingProjectVersionProfile
+	packageAuthority map[string]directCodingFileTask
 }
 
 func newDirectCodingTypeScriptStageWorkspace(
-	ctx context.Context,
+	session *directCodingSession,
 	program directCodingProgram,
-) (*directCodingTypeScriptStageWorkspace, error) {
+) (_ *directCodingTypeScriptStageWorkspace, resultErr error) {
+	if session == nil {
+		return nil, fmt.Errorf("isolated TypeScript stage requires one active coding session")
+	}
 	packageFiles, err := directCodingStagePackageFiles(program.StaticFiles)
 	if err != nil {
 		return nil, err
 	}
+	manifest := string(packageFiles[0].Content)
+	lock := string(packageFiles[1].Content)
+	if err := validatePinnedNPMLockForProfile(manifest, lock, program.Project.Profile); err != nil {
+		return nil, fmt.Errorf("validate isolated TypeScript dependency authority: %w", err)
+	}
 	root, err := os.MkdirTemp("", "omnidex-typescript-stage-")
 	if err != nil {
-		return nil, fmt.Errorf("create isolated TypeScript coding stage: %w", err)
+		return nil, fmt.Errorf("create isolated TypeScript stage: %w", err)
 	}
-	workspace := &directCodingTypeScriptStageWorkspace{root: root}
-	if err := writeDirectCodingVitestReporter(root); err != nil {
-		_ = workspace.Close()
-		return nil, err
+	cacheRoot, err := os.MkdirTemp("", "omnidex-npm-cache-")
+	if err != nil {
+		_ = os.RemoveAll(root)
+		return nil, fmt.Errorf("create isolated npm cache: %w", err)
 	}
-	if err := writeDirectCodingTypeScriptScopeInspector(root); err != nil {
-		_ = workspace.Close()
-		return nil, err
+	workspace := &directCodingTypeScriptStageWorkspace{
+		root:             root,
+		cacheRoot:        cacheRoot,
+		session:          session,
+		profile:          program.Project.Profile,
+		packageAuthority: make(map[string]directCodingFileTask, len(packageFiles)),
 	}
+	defer func() {
+		if resultErr != nil {
+			resultErr = errors.Join(resultErr, workspace.Close())
+		}
+	}()
 	for _, packageFile := range packageFiles {
-		if err := os.WriteFile(filepath.Join(root, packageFile.Path), []byte(packageFile.Content), 0o600); err != nil {
-			_ = workspace.Close()
-			return nil, fmt.Errorf("write staged TypeScript package authority %s: %w", packageFile.Path, err)
+		workspace.packageAuthority[packageFile.Path] = packageFile
+		if err := writeDirectCodingStageFile(root, packageFile); err != nil {
+			return nil, err
 		}
 	}
-	output, err := runDirectCodingStageCommand(
-		ctx, root, directCodingTypeScriptInstallTimeout, "npm", directCodingNPMInstallArgs()...,
-	)
+	if err := workspace.verifyToolchain(queue.VerificationIsolatedInstall, true); err != nil {
+		return nil, err
+	}
+	install, err := directCodingNPMInstallCommand(cacheRoot)
 	if err != nil {
-		_ = workspace.Close()
-		return nil, fmt.Errorf(
-			"staged TypeScript dependency installation failed: %w\n%s",
-			err, trimForBudget(output, 12_000),
-		)
+		return nil, err
+	}
+	if _, err := session.runRecordedVerificationCommand(
+		root, queue.VerificationIsolatedInstall, install, true,
+	); err != nil {
+		return nil, fmt.Errorf("isolated TypeScript dependency installation failed: %w", err)
+	}
+	nodeModules, err := os.Lstat(filepath.Join(root, "node_modules"))
+	if err != nil || !nodeModules.IsDir() || nodeModules.Mode()&os.ModeSymlink != 0 {
+		return nil, fmt.Errorf("isolated npm installation did not produce one exact node_modules directory")
 	}
 	return workspace, nil
 }
 
-func directCodingStagePackageFiles(files []directCodingFileTask) ([]directCodingFileTask, error) {
+func directCodingStagePackageFiles(
+	files []directCodingFileTask,
+) ([]directCodingFileTask, error) {
 	required := map[string]directCodingFileTask{
-		"package.json":      {},
-		"package-lock.json": {},
+		"package.json": {}, "package-lock.json": {},
 	}
 	counts := map[string]int{}
 	for _, file := range files {
@@ -69,7 +96,7 @@ func directCodingStagePackageFiles(files []directCodingFileTask) ([]directCoding
 	ordered := make([]directCodingFileTask, 0, len(required))
 	for _, artifactPath := range []string{"package.json", "package-lock.json"} {
 		file := required[artifactPath]
-		if counts[artifactPath] != 1 || strings.TrimSpace(file.Content) == "" {
+		if counts[artifactPath] != 1 || strings.TrimSpace(string(file.Content)) == "" {
 			return nil, fmt.Errorf("TypeScript stage requires one non-empty %s", artifactPath)
 		}
 		ordered = append(ordered, file)
@@ -77,188 +104,164 @@ func directCodingStagePackageFiles(files []directCodingFileTask) ([]directCoding
 	return ordered, nil
 }
 
-func (workspace *directCodingTypeScriptStageWorkspace) Root() string {
-	if workspace == nil {
-		return ""
+func (workspace *directCodingTypeScriptStageWorkspace) Verify(
+	program *directCodingProgram,
+	phase queue.VerificationCommandPhase,
+	commands []directCodingVerificationCommand,
+	validators ...func(*directCodingProgram) error,
+) error {
+	if workspace == nil || workspace.session == nil || workspace.root == "" || program == nil {
+		return fmt.Errorf("TypeScript stage verification requires one active isolated workspace and program")
 	}
-	return workspace.root
+	if len(commands) == 0 {
+		return fmt.Errorf("TypeScript stage verification requires at least one exact command")
+	}
+	for _, validate := range validators {
+		if validate == nil {
+			return fmt.Errorf("TypeScript stage verification received a nil state validator")
+		}
+		if err := validate(program); err != nil {
+			return fmt.Errorf("validate TypeScript stage authority before materialization: %w", err)
+		}
+	}
+	if err := workspace.resetSource(); err != nil {
+		return err
+	}
+	assembly, err := directCodingAssemblyFromProgram(*program)
+	if err != nil {
+		return err
+	}
+	if phase == queue.VerificationIsolatedFinal {
+		err = validateDirectCodingProgramAssembly(*program, assembly)
+	} else {
+		err = validateDirectCodingProjectedProgramAssembly(*program, assembly)
+	}
+	if err != nil {
+		return err
+	}
+	if err := workspace.writeAssembly(assembly); err != nil {
+		return err
+	}
+	for _, command := range commands {
+		if _, err := workspace.session.runRecordedVerificationCommand(
+			workspace.root, phase, command, true,
+		); err != nil {
+			return err
+		}
+	}
+	for _, validate := range validators {
+		if err := validate(program); err != nil {
+			return fmt.Errorf("revalidate TypeScript stage authority after commands: %w", err)
+		}
+	}
+	if phase == queue.VerificationIsolatedFinal {
+		if err := validateDirectCodingBrowserProductionArtifacts(workspace.root); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (workspace *directCodingTypeScriptStageWorkspace) verifyToolchain(
+	phase queue.VerificationCommandPhase,
+	trackWorkspace bool,
+) error {
+	for _, component := range []string{"node", "npm"} {
+		result, err := workspace.session.runRecordedVerificationCommand(
+			workspace.root, phase, directCodingToolchainVersionCommand(component), trackWorkspace,
+		)
+		if err != nil {
+			return fmt.Errorf("observe %s toolchain version: %w", component, err)
+		}
+		if strings.TrimSpace(string(result.Stderr)) != "" {
+			return fmt.Errorf("%s version probe wrote unexpected stderr", component)
+		}
+		if err := validateDirectCodingToolchainVersion(
+			workspace.profile, component, result.Stdout,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (workspace *directCodingTypeScriptStageWorkspace) resetSource() error {
+	entries, err := os.ReadDir(workspace.root)
+	if err != nil {
+		return fmt.Errorf("read isolated TypeScript stage: %w", err)
+	}
+	for _, entry := range entries {
+		switch entry.Name() {
+		case "package.json", "package-lock.json", "node_modules":
+			continue
+		}
+		if err := os.RemoveAll(filepath.Join(workspace.root, entry.Name())); err != nil {
+			return fmt.Errorf("reset isolated TypeScript stage path %s: %w", entry.Name(), err)
+		}
+	}
+	return nil
+}
+
+func (workspace *directCodingTypeScriptStageWorkspace) writeAssembly(
+	assembly directCodingAssembly,
+) error {
+	for _, file := range assembly.Files {
+		if authority, packageFile := workspace.packageAuthority[file.Path]; packageFile {
+			if string(authority.Content) != string(file.Content) || authority.Mode != file.Mode {
+				return fmt.Errorf("staged %s differs from installed dependency authority", file.Path)
+			}
+			continue
+		}
+		if err := writeDirectCodingStageFile(workspace.root, file); err != nil {
+			return err
+		}
+	}
+	for path, authority := range workspace.packageAuthority {
+		content, err := os.ReadFile(filepath.Join(workspace.root, path))
+		if err != nil {
+			return fmt.Errorf("read staged package authority %s: %w", path, err)
+		}
+		if string(content) != string(authority.Content) {
+			return fmt.Errorf("staged package authority %s changed after installation", path)
+		}
+	}
+	return nil
+}
+
+func writeDirectCodingStageFile(root string, file directCodingFileTask) error {
+	if _, err := requireExactDirectCodingPath(file.Path); err != nil {
+		return err
+	}
+	target := filepath.Join(root, filepath.FromSlash(file.Path))
+	if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
+		return fmt.Errorf("create staged directory for %s: %w", file.Path, err)
+	}
+	mode := os.FileMode(file.Mode)
+	if mode == 0 || mode&^os.FileMode(0o777) != 0 {
+		return fmt.Errorf("staged source %s has invalid mode", file.Path)
+	}
+	if err := os.WriteFile(target, file.Content, mode); err != nil {
+		return fmt.Errorf("write staged source %s: %w", file.Path, err)
+	}
+	return nil
 }
 
 func (workspace *directCodingTypeScriptStageWorkspace) Close() error {
-	if workspace == nil || workspace.root == "" {
+	if workspace == nil {
 		return nil
 	}
-	err := os.RemoveAll(workspace.root)
-	workspace.root = ""
-	if err != nil {
-		return fmt.Errorf("remove isolated TypeScript stage: %w", err)
-	}
-	return nil
-}
-
-func resetDirectCodingTypeScriptStage(root string) error {
-	if root == "" || !filepath.IsAbs(root) {
-		return fmt.Errorf("reset TypeScript stage requires one absolute temporary root")
-	}
-	for _, relative := range []string{
-		"src", "dist", ".vite", "index.html", "tsconfig.json", "vite.config.ts", ".gitignore",
-		directCodingVitestReportFile,
-	} {
-		if err := os.RemoveAll(filepath.Join(root, relative)); err != nil {
-			return fmt.Errorf("reset staged TypeScript path %s: %w", relative, err)
+	var failures []error
+	if workspace.root != "" {
+		if err := os.RemoveAll(workspace.root); err != nil {
+			failures = append(failures, fmt.Errorf("remove isolated TypeScript stage: %w", err))
 		}
+		workspace.root = ""
 	}
-	return nil
-}
-
-func (s *directCodingSession) stageTypeScriptProgramIn(
-	root string,
-	program *directCodingProgram,
-	commands [][]string,
-	progress *directCodingTypeScriptCorrectionProgress,
-) error {
-	if program == nil || progress == nil || progress.seen == nil {
-		return fmt.Errorf("staged TypeScript verification requires a program and correction progress authority")
-	}
-	if err := resetDirectCodingTypeScriptStage(root); err != nil {
-		return err
-	}
-	if err := progress.beginStage(); err != nil {
-		return err
-	}
-	for attempt := 1; ; attempt++ {
-		if err := s.runtime.ctx.Err(); err != nil {
-			return fmt.Errorf("staged TypeScript correction stopped by context authority: %w", err)
+	if workspace.cacheRoot != "" {
+		if err := os.RemoveAll(workspace.cacheRoot); err != nil {
+			failures = append(failures, fmt.Errorf("remove isolated npm cache: %w", err))
 		}
-		s.runtime.svc.emitStepEvent(s.runtime.claim.Authority, "coding_stage_started", fmt.Sprintf(
-			"attempt=%d generated_blocks=%d", attempt, len(program.Generated),
-		))
-		if err := writeDirectCodingTypeScriptStage(root, *program); err != nil {
-			return err
-		}
-		diagnostic, err := verifyDirectCodingTypeScriptStageCommands(
-			s.runtime.ctx, root, *program, commands,
-		)
-		if err != nil {
-			return err
-		}
-		if diagnostic == nil {
-			s.runtime.svc.emitStepEvent(s.runtime.claim.Authority, "coding_stage_passed", fmt.Sprintf(
-				"attempt=%d generated_blocks=%d", attempt, len(program.Generated),
-			))
-			return nil
-		}
-		if err := s.correctDirectCodingTypeScriptStage(root, program, diagnostic, progress); err != nil {
-			return err
-		}
+		workspace.cacheRoot = ""
 	}
-}
-
-func (s *directCodingSession) correctDirectCodingTypeScriptStage(
-	root string,
-	program *directCodingProgram,
-	diagnostic *directCodingStageDiagnostic,
-	progress *directCodingTypeScriptCorrectionProgress,
-) error {
-	if diagnostic == nil {
-		return fmt.Errorf("correct staged TypeScript program requires one diagnostic")
-	}
-	target, err := directCodingTypeScriptCorrectionBlock(program.Source, diagnostic.BlockID)
-	if err != nil {
-		return fmt.Errorf("route staged TypeScript diagnostic: %w: %s", err, diagnostic.Message)
-	}
-	current, exists := program.Generated[target.ID]
-	if !exists || strings.TrimSpace(current) == "" {
-		return fmt.Errorf("staged TypeScript diagnostic target %s has no accepted declaration", target.ID)
-	}
-	failure, err := directCodingTypeScriptStageModelFeedback(diagnostic)
-	if err != nil {
-		return err
-	}
-	tsx := directCodingTypeScriptBlockIsTSX(program.Source, target.ID)
-	var repairRegion *assemblyline.TypeScriptFragmentRepairRegion
-	if diagnostic.CompilerIssue {
-		scope, bindingErr := inspectDirectCodingTypeScriptScope(s.runtime.ctx, root, *diagnostic)
-		if bindingErr != nil {
-			return fmt.Errorf("derive staged TypeScript compiler scope for block %s: %w", target.ID, bindingErr)
-		}
-		candidate, repaired, deterministicErr := applyDirectCodingTypeScriptDeterministicRepair(current, scope)
-		if deterministicErr != nil {
-			return fmt.Errorf(
-				"apply deterministic TypeScript compiler repair for block %s: %w",
-				target.ID, deterministicErr,
-			)
-		}
-		if repaired {
-			if _, parseErr := assemblyline.ParseTypeScriptFunction(
-				assemblyline.TypeScriptFunctionContract{
-					Signature: target.Signature, TSX: tsx, Policy: target.Policy,
-				},
-				candidate,
-			); parseErr != nil {
-				return fmt.Errorf(
-					"validate deterministic TypeScript compiler repair for block %s: %w",
-					target.ID, parseErr,
-				)
-			}
-			if err := progress.observe(
-				target.ID, diagnostic.VerificationStage, failure,
-			); err != nil {
-				return err
-			}
-			program.Generated[target.ID] = candidate
-			s.runtime.svc.emitStepEvent(
-				s.runtime.claim.Authority,
-				"coding_compiler_repair_applied",
-				fmt.Sprintf("block=%s mechanism=deterministic_primitive_nullish_narrowing", target.ID),
-			)
-			return nil
-		}
-		localized, regionErr := assemblyline.NewTypeScriptCompilerRepairRegionWithEvidence(
-			current, tsx, diagnostic.DeclarationLine, diagnostic.DeclarationColumn,
-			scope.Bindings, scope.ExpressionEvidence, scope.UnavailableBindings,
-		)
-		if regionErr != nil {
-			return fmt.Errorf("localize staged TypeScript compiler failure for block %s: %w", target.ID, regionErr)
-		}
-		repairRegion = &localized
-	}
-	if err := progress.observe(
-		target.ID, diagnostic.VerificationStage, failure,
-	); err != nil {
-		return err
-	}
-	declarations, err := directCodingTypeScriptAcceptedDeclarations(program.Source, program.Generated)
-	if err != nil {
-		return err
-	}
-	available, err := directCodingTypeScriptAvailableDeclarations(target, declarations)
-	if err != nil {
-		return err
-	}
-	if directCodingTypeScriptRepairRegionHasExactIncompatibility(repairRegion) {
-		// The checker has already projected the exact expression, its complete
-		// inferred/contextual types, incompatible constituents, and referenced
-		// local bindings. Broader capability declarations are unrelated to this
-		// one type-narrowing uncertainty.
-		available = ""
-	}
-	profile, err := directCodingVersionProfileForProgram(*program)
-	if err != nil {
-		return err
-	}
-	source, err := s.convergeDirectCodingTypeScriptGuidedRepair(
-		target, tsx, profile.SourceDialect, available, current, repairRegion, failure,
-	)
-	if err != nil {
-		return fmt.Errorf(
-			"correct block %s for staged failure %s: %w",
-			target.ID, safeLine(firstDirectCodingDiagnosticLine(diagnostic.Message), "unknown"), err,
-		)
-	}
-	if strings.TrimSpace(source) == strings.TrimSpace(current) {
-		return fmt.Errorf("block %s returned an unchanged declaration for staged failure: %s", target.ID, diagnostic.Message)
-	}
-	program.Generated[target.ID] = source
-	return nil
+	return errors.Join(failures...)
 }

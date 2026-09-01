@@ -8,25 +8,18 @@ var typeScriptBrowserPackageLockTemplate []byte
 func typeScriptBrowserPackageLock(
 	profile directCodingProjectVersionProfile,
 	packageName string,
-) (string, error) {
+) (string, map[string]string, map[string]string, error) {
 	node, err := directCodingVersionComponent(profile, "node")
 	if err != nil {
-		return "", err
+		return "", nil, nil, err
 	}
 	npm, err := directCodingVersionComponent(profile, "npm")
 	if err != nil {
-		return "", err
-	}
-	lockVersion, err := directCodingNPMLockVersion(profile)
-	if err != nil {
-		return "", err
+		return "", nil, nil, err
 	}
 	return materializePinnedNPMLock(
-		profile.NPMLockTemplate,
+		typeScriptBrowserPackageLockTemplate,
 		packageName,
-		lockVersion,
-		profile.NPMDependencies,
-		profile.NPMDevDependencies,
 		map[string]string{"node": node, "npm": npm},
 	)
 }

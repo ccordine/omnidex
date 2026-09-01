@@ -1,7 +1,6 @@
 package assemblyline
 
 import (
-	"encoding/json"
 	"fmt"
 	"regexp"
 	"strings"
@@ -9,11 +8,11 @@ import (
 )
 
 const (
-	ApplicationProjectStackConstraintSchemaV1 = "omnidex.application-project-stack-constraint.v1"
+	ApplicationProjectStackConstraintSchemaV2 = "omnidex.application-project-stack-constraint.v2"
 	ApplicationProjectStackUnconstrained      = "UNCONSTRAINED"
 	ApplicationProjectStackUnsupported        = "UNSUPPORTED"
 	maxApplicationProjectStackCandidates      = 8
-	maxApplicationProjectStackSummaryBytes    = 1024
+	maxApplicationProjectStackSummaryBytesV2  = 2048
 )
 
 var opaqueApplicationProjectStackPattern = regexp.MustCompile(`^STACK_CANDIDATE_[1-9][0-9]*$`)
@@ -27,9 +26,8 @@ type ApplicationProjectStackCandidate struct {
 }
 
 type ApplicationProjectStackConstraintInput struct {
-	ProductContext       string                             `json:"product_context"`
-	AcceptedRequirements []string                           `json:"accepted_requirements"`
-	Candidates           []ApplicationProjectStackCandidate `json:"candidates"`
+	UserRequest string                             `json:"user_request"`
+	Candidates  []ApplicationProjectStackCandidate `json:"candidates"`
 }
 
 type ApplicationProjectStackConstraintDecision struct {
@@ -40,31 +38,37 @@ type ApplicationProjectStackConstraintDecision struct {
 func NewApplicationProjectStackConstraintJob(
 	input ApplicationProjectStackConstraintInput,
 ) (PortableJob, error) {
-	return newValidatedPortableJob(WorkApplicationProjectStackConstraint, input, input.validate)
+	return newPortableJob(
+		WorkApplicationProjectStackConstraint, input,
+	)
 }
 
 func (input ApplicationProjectStackConstraintInput) validate() error {
-	if err := validateApplicationProductQuote("project stack constraint", input.ProductContext); err != nil {
+	if err := validateApplicationRequest("project stack constraint", input.UserRequest); err != nil {
 		return err
 	}
-	if len(input.AcceptedRequirements) < 1 || len(input.AcceptedRequirements) > maxRequirementCount {
-		return fmt.Errorf("project stack constraint requires 1..%d accepted requirements", maxRequirementCount)
+	if err := ValidatePathFreeModelContext(
+		"project stack constraint request", input.UserRequest,
+	); err != nil {
+		return err
 	}
-	for index, requirement := range input.AcceptedRequirements {
-		if err := validateApplicationIntentText(
-			"project stack requirement", requirement, maxRequirementQuoteBytes,
-		); err != nil {
-			return fmt.Errorf("project stack constraint requirement %d: %w", index, err)
-		}
-	}
-	if len(input.Candidates) < 1 || len(input.Candidates) > maxApplicationProjectStackCandidates {
+	return validateApplicationProjectStackCandidates(
+		input.Candidates, maxApplicationProjectStackSummaryBytesV2,
+	)
+}
+
+func validateApplicationProjectStackCandidates(
+	candidates []ApplicationProjectStackCandidate,
+	maximumSummaryBytes int,
+) error {
+	if len(candidates) < 1 || len(candidates) > maxApplicationProjectStackCandidates {
 		return fmt.Errorf(
 			"project stack constraint requires 1..%d bounded candidates",
 			maxApplicationProjectStackCandidates,
 		)
 	}
-	seenFormats := make(map[string]struct{}, len(input.Candidates))
-	for index, candidate := range input.Candidates {
+	seenFormats := make(map[string]struct{}, len(candidates))
+	for index, candidate := range candidates {
 		expectedID := fmt.Sprintf("STACK_CANDIDATE_%d", index+1)
 		if candidate.CandidateID != expectedID ||
 			!opaqueApplicationProjectStackPattern.MatchString(candidate.CandidateID) {
@@ -72,8 +76,14 @@ func (input ApplicationProjectStackConstraintInput) validate() error {
 		}
 		format := candidate.TechnicalFormat
 		if format == "" || format != strings.TrimSpace(format) || !utf8.ValidString(format) ||
-			len(format) > maxApplicationProjectStackSummaryBytes || strings.ContainsAny(format, "\x00\r\n") {
+			strings.ContainsAny(format, "\x00\r\n") {
 			return fmt.Errorf("project stack candidate %s has invalid technical format", candidate.CandidateID)
+		}
+		if len(format) > maximumSummaryBytes {
+			return fmt.Errorf(
+				"project stack candidate %s technical format exceeds %d bytes",
+				candidate.CandidateID, maximumSummaryBytes,
+			)
 		}
 		if err := ValidatePathFreeModelContext("project stack candidate technical format", format); err != nil {
 			return err
@@ -92,22 +102,31 @@ func (decision ApplicationProjectStackConstraintDecision) ValidateFor(
 	if err := input.validate(); err != nil {
 		return err
 	}
-	if decision.Schema != ApplicationProjectStackConstraintSchemaV1 {
+	if decision.Schema != ApplicationProjectStackConstraintSchemaV2 {
 		return fmt.Errorf(
 			"project stack constraint schema must be %q",
-			ApplicationProjectStackConstraintSchemaV1,
+			ApplicationProjectStackConstraintSchemaV2,
 		)
 	}
-	if decision.CandidateID == ApplicationProjectStackUnconstrained ||
-		decision.CandidateID == ApplicationProjectStackUnsupported {
+	return validateApplicationProjectStackDecisionCandidates(
+		decision.CandidateID, input.Candidates,
+	)
+}
+
+func validateApplicationProjectStackDecisionCandidates(
+	candidateID string,
+	candidates []ApplicationProjectStackCandidate,
+) error {
+	if candidateID == ApplicationProjectStackUnconstrained ||
+		candidateID == ApplicationProjectStackUnsupported {
 		return nil
 	}
-	for _, candidate := range input.Candidates {
-		if decision.CandidateID == candidate.CandidateID {
+	for _, candidate := range candidates {
+		if candidateID == candidate.CandidateID {
 			return nil
 		}
 	}
-	return fmt.Errorf("project stack candidate %q is unavailable", decision.CandidateID)
+	return fmt.Errorf("project stack candidate %q is unavailable", candidateID)
 }
 
 func BuildApplicationProjectStackConstraintPrompt(
@@ -116,39 +135,78 @@ func BuildApplicationProjectStackConstraintPrompt(
 	if err := input.validate(); err != nil {
 		return "", err
 	}
-	authority, err := json.Marshal(struct {
-		ProductContext       string   `json:"product_context"`
-		AcceptedRequirements []string `json:"accepted_requirements"`
-	}{input.ProductContext, input.AcceptedRequirements})
+	choices, err := applicationProjectStackConstraintOpaqueChoices(input.Candidates)
 	if err != nil {
-		return "", fmt.Errorf("encode project stack constraint authority: %w", err)
+		return "", err
 	}
-	candidates, err := json.Marshal(input.Candidates)
-	if err != nil {
-		return "", fmt.Errorf("encode project stack candidates: %w", err)
-	}
-	return strings.Join([]string{
-		"Determine which one registered technical format, if any, is explicitly required by the accepted application authority.",
-		"Return one opaque candidate ID when exactly that format is required. Return UNCONSTRAINED when no technical format is explicit. Return UNSUPPORTED when an explicit or contradictory technical constraint cannot be satisfied by exactly one candidate.",
-		"Return exactly that raw ID token and nothing else: no JSON, quotes, label, Markdown, or commentary.",
-		"ACCEPTED_APPLICATION_AUTHORITY:\n" + string(authority),
-		"REGISTERED_TECHNICAL_FORMATS:\n" + string(candidates),
-	}, "\n\n"), nil
+	return RenderOpaqueModelChoiceQuestion(
+		"Which registered technical format and packaging shape, if any, is explicitly required by the software request? Select the unconstrained choice when the request establishes none. Select the no-suitable-format choice only when an explicit technical constraint conflicts with every registered format.",
+		[]string{"Software request:\n" + input.UserRequest},
+		choices,
+	)
 }
 
 func DecodeApplicationProjectStackConstraintDecision(
 	input ApplicationProjectStackConstraintInput,
 	raw string,
 ) (ApplicationProjectStackConstraintDecision, error) {
-	leaf, err := decodeRawSemanticLeaf("project stack candidate", raw, 64, false)
+	if err := input.validate(); err != nil {
+		return ApplicationProjectStackConstraintDecision{}, err
+	}
+	choices, err := applicationProjectStackConstraintOpaqueChoices(input.Candidates)
+	if err != nil {
+		return ApplicationProjectStackConstraintDecision{}, err
+	}
+	leaf, err := DecodeOpaqueModelChoice(raw, choices)
 	if err != nil {
 		return ApplicationProjectStackConstraintDecision{}, err
 	}
 	decision := ApplicationProjectStackConstraintDecision{
-		Schema: ApplicationProjectStackConstraintSchemaV1, CandidateID: leaf,
+		Schema: ApplicationProjectStackConstraintSchemaV2, CandidateID: leaf,
 	}
 	if err := decision.ValidateFor(input); err != nil {
 		return ApplicationProjectStackConstraintDecision{}, err
 	}
 	return decision, nil
+}
+
+func applicationProjectStackCandidateOpaqueChoices(
+	candidates []ApplicationProjectStackCandidate,
+) ([]OpaqueModelChoice, error) {
+	choices := make([]OpaqueModelChoice, 0, len(candidates))
+	for _, candidate := range candidates {
+		choice, err := NewOpaqueModelChoice(
+			"Use this technical format and packaging shape: "+candidate.TechnicalFormat,
+			candidate.CandidateID,
+		)
+		if err != nil {
+			return nil, err
+		}
+		choices = append(choices, choice)
+	}
+	return choices, nil
+}
+
+func applicationProjectStackConstraintOpaqueChoices(
+	candidates []ApplicationProjectStackCandidate,
+) ([]OpaqueModelChoice, error) {
+	choices, err := applicationProjectStackCandidateOpaqueChoices(candidates)
+	if err != nil {
+		return nil, err
+	}
+	unconstrained, err := NewOpaqueModelChoice(
+		"The request does not establish a technical format or packaging shape.",
+		ApplicationProjectStackUnconstrained,
+	)
+	if err != nil {
+		return nil, err
+	}
+	unsupported, err := NewOpaqueModelChoice(
+		"No registered technical format can satisfy an explicit technical constraint in the request.",
+		ApplicationProjectStackUnsupported,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return append(choices, unconstrained, unsupported), nil
 }

@@ -2,7 +2,6 @@ package queue
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -13,7 +12,7 @@ import (
 )
 
 const channelSelectColumns = `
-	id, scope, name, tags, project_id, workspace_root, data_source_id,
+	id, scope, name, tags, workspace_root, data_source_id,
 	mode, roleplay_viewpoint_character_id, created_at, updated_at
 `
 
@@ -27,7 +26,7 @@ func scanChannel(row channelRowScanner) (model.Channel, error) {
 	var roleplayViewpointID *string
 	err := row.Scan(
 		&channel.ID, &channel.Scope, &channel.Name, &channel.Tags,
-		&channel.ProjectID, &channel.WorkspaceRoot, &dataSourceID,
+		&channel.WorkspaceRoot, &dataSourceID,
 		&channel.Mode, &roleplayViewpointID,
 		&channel.CreatedAt, &channel.UpdatedAt,
 	)
@@ -104,25 +103,14 @@ func (r *Repository) createChannel(
 		return model.Channel{}, err
 	}
 	defer tx.Rollback(ctx)
-	metadata, err := json.Marshal(map[string]string{"client_cwd": channel.WorkspaceRoot})
-	if err != nil {
-		return model.Channel{}, err
-	}
-	projectID, err := resolveProjectID(ctx, tx, metadata)
-	if err != nil {
-		return model.Channel{}, fmt.Errorf("resolve channel project binding: %w", err)
-	}
-	if projectID == nil || *projectID < 1 {
-		return model.Channel{}, fmt.Errorf("channel project binding was not resolved")
-	}
 	out, err := scanChannel(tx.QueryRow(ctx, `
 		INSERT INTO ai_channels (
-			id, scope, name, tags, project_id, workspace_root, data_source_id,
+			id, scope, name, tags, workspace_root, data_source_id,
 			mode, roleplay_viewpoint_character_id
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		RETURNING `+channelSelectColumns,
-		channel.ID, channel.Scope, channel.Name, channel.Tags, *projectID, channel.WorkspaceRoot,
+		channel.ID, channel.Scope, channel.Name, channel.Tags, channel.WorkspaceRoot,
 		nullableDataSourceID(channel.DataSourceID), channel.Mode,
 		nullableRoleplayCharacterID(channel.RoleplayViewpointCharacterID),
 	))

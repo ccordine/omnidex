@@ -22,24 +22,40 @@ func (s *Server) replanJob(w http.ResponseWriter, r *http.Request, jobID int64) 
 		writeError(w, lifecycleControlBodyStatus(err), err.Error())
 		return
 	}
+	if status, err := s.requireLifecycleWorkspaceIdentity(
+		r.Context(),
+		jobID,
+		req.WorkspaceRoot.Value,
+		req.WorkspaceIdentity.Value,
+	); err != nil {
+		writeError(w, status, err.Error())
+		return
+	}
 
-	job, err := s.repo.ReplanJob(r.Context(), queue.ReplanJobCommand{
+	result, err := s.repo.ReplanJob(r.Context(), queue.ReplanJobCommand{
 		OperationID: req.OperationID, JobID: jobID, Feedback: req.Feedback,
+		WorkspaceRoot: req.WorkspaceRoot.Value, WorkspaceIdentity: req.WorkspaceIdentity.Value,
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "job not found")
 			return
 		}
+		if errors.Is(err, queue.ErrChannelSessionWorkspace) {
+			writeError(w, http.StatusConflict, err.Error())
+			return
+		}
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	receipt, err := newLifecycleControlReceipt(jobID, req.OperationID, job)
+	receipt, err := newLifecycleControlReceipt(jobID, req.OperationID, result.Job)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	s.publishJobProgress(jobID, realtimeJobChanged, "Job replanned")
+	if result.Applied {
+		s.publishJobProgressForJob(result.Job, realtimeJobChanged, "Job replanned")
+	}
 
 	writeJSON(w, http.StatusOK, receipt)
 }
@@ -68,9 +84,18 @@ func (s *Server) handleMemoryCandidates(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	jobID, _ := strconv.ParseInt(strings.TrimSpace(r.URL.Query().Get("job_id")), 10, 64)
+	jobIDValue, err := exactChannelQueryInteger(r, "job_id", 0, 1, int(^uint(0)>>1))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	jobID := int64(jobIDValue)
 	status := strings.TrimSpace(r.URL.Query().Get("status"))
-	limit := parseInt(r.URL.Query().Get("limit"), 50)
+	limit, err := exactChannelQueryInteger(r, "limit", 50, 1, 500)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	items, err := s.repo.ListHistoricalMemoryCandidates(r.Context(), jobID, status, limit)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -229,11 +254,7 @@ func (s *Server) addMemoryBatch(w http.ResponseWriter, r *http.Request) {
 }
 
 func memoryWriteStatus(err error) int {
-	message := err.Error()
-	if strings.Contains(message, "memory source") || strings.Contains(message, "memory kind") ||
-		strings.Contains(message, "memory content") || strings.Contains(message, "memory tag") ||
-		strings.Contains(message, "memory categor") || strings.Contains(message, "memory embedding") ||
-		strings.Contains(message, "memory batch") {
+	if errors.Is(err, queue.ErrInvalidMemoryWrite) {
 		return http.StatusBadRequest
 	}
 	return http.StatusInternalServerError
@@ -266,7 +287,11 @@ func (s *Server) handleMemoryCategories(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	limit := parsePositiveInt(r.URL.Query().Get("limit"), 100)
+	limit, err := exactChannelQueryInteger(r, "limit", 100, 1, 500)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	facets, err := s.repo.ListMemoryCategories(r.Context(), limit)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -280,7 +305,11 @@ func (s *Server) handleMemoryTags(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	limit := parsePositiveInt(r.URL.Query().Get("limit"), 100)
+	limit, err := exactChannelQueryInteger(r, "limit", 100, 1, 500)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	facets, err := s.repo.ListMemoryTags(r.Context(), limit)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -386,41 +415,6 @@ func (s *Server) rejectMemoryCandidate(w http.ResponseWriter, r *http.Request, c
 	})
 }
 
-func (s *Server) handleAdminMigrateFresh(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	if err := s.repo.MigrateFresh(r.Context(), s.migrationBundle); err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-
-	writeJSON(w, http.StatusOK, map[string]any{
-		"status": "ok",
-	})
-}
-
-func parseInt(v string, fallback int) int {
-	if strings.TrimSpace(v) == "" {
-		return fallback
-	}
-	parsed, err := strconv.Atoi(v)
-	if err != nil {
-		return fallback
-	}
-	return parsed
-}
-
-func parsePositiveInt(v string, fallback int) int {
-	parsed := parseInt(v, fallback)
-	if parsed <= 0 {
-		return fallback
-	}
-	return parsed
-}
-
 func Run(ctx context.Context, addr string, handler http.Handler) error {
 	srv := &http.Server{
 		Addr:              addr,
@@ -440,7 +434,9 @@ func Run(ctx context.Context, addr string, handler http.Handler) error {
 	case <-ctx.Done():
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		_ = srv.Shutdown(shutdownCtx)
+		if err := srv.Shutdown(shutdownCtx); err != nil {
+			return fmt.Errorf("shutdown http server: %w", err)
+		}
 		return nil
 	case err := <-errCh:
 		if errors.Is(err, http.ErrServerClosed) {

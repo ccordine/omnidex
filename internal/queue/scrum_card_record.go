@@ -28,8 +28,6 @@ type DBScrumCard struct {
 	PlayState           string          `json:"play_state"`
 	QueueOrder          int             `json:"queue_order"`
 	BoardOrder          int             `json:"board_order"`
-	SyncJobID           string          `json:"-"`
-	StepContextCursor   int64           `json:"-"`
 	ChannelMessageCount int64           `json:"channel_message_count"`
 	ChannelContentBytes int64           `json:"channel_content_bytes"`
 	CreatedAt           time.Time       `json:"created_at"`
@@ -39,7 +37,7 @@ type DBScrumCard struct {
 const scrumCardSelectColumns = `id,project_id,title,description,column_name,checklist,ref_files,
 	 card_ticket,card_prompt,tags,test_criteria,flow_metrics,
 	 job_id,play_state,queue_order,board_order,
-	 sync_job_id,step_context_cursor,channel_message_count,channel_content_bytes,
+	 channel_message_count,channel_content_bytes,
 	 created_at,updated_at`
 
 const scrumCardSelectSQL = `SELECT ` + scrumCardSelectColumns + `
@@ -59,7 +57,7 @@ func (r *Repository) CreateScrumCard(
 	cardID, title, description, column string,
 	checklist, refFiles json.RawMessage,
 ) (DBScrumCard, error) {
-	title = SanitizeUTF8Text(strings.TrimSpace(title))
+	title = strings.TrimSpace(title)
 	if title == "" {
 		return DBScrumCard{}, fmt.Errorf("title is required")
 	}
@@ -69,8 +67,28 @@ func (r *Repository) CreateScrumCard(
 	if _, err := ParseScrumCardColumn(column); err != nil {
 		return DBScrumCard{}, err
 	}
-	checklist = SanitizeUTF8Bytes(defaultJSON(checklist, `[]`))
-	refFiles = SanitizeUTF8Bytes(defaultJSON(refFiles, `[]`))
+	if len(checklist) == 0 {
+		checklist = json.RawMessage(`[]`)
+	}
+	if len(refFiles) == 0 {
+		refFiles = json.RawMessage(`[]`)
+	}
+	for label, value := range map[string]string{
+		"Scrum title": title,
+		"Scrum description": description,
+		"Scrum checklist": string(checklist),
+		"Scrum reference files": string(refFiles),
+	} {
+		if err := validateDatabaseText(label, value); err != nil {
+			return DBScrumCard{}, err
+		}
+	}
+	if err := validateStoredScrumArray("checklist", checklist); err != nil {
+		return DBScrumCard{}, err
+	}
+	if err := validateStoredScrumArray("ref_files", refFiles); err != nil {
+		return DBScrumCard{}, err
+	}
 	tx, err := r.beginLockedProjectTx(ctx, projectID, "create Scrum card")
 	if err != nil {
 		return DBScrumCard{}, err
@@ -81,7 +99,7 @@ func (r *Repository) CreateScrumCard(
 		VALUES($1,$2,$3,$4,$5,$6::jsonb,$7::jsonb,
 		 COALESCE((SELECT MAX(board_order) FROM scrum_cards WHERE project_id=$2 AND column_name=$5),-1)+1)
 		RETURNING `+scrumCardSelectColumns,
-		cardID, projectID, title, SanitizeUTF8Text(description), column,
+		cardID, projectID, title, description, column,
 		string(checklist), string(refFiles),
 	))
 	if err != nil {

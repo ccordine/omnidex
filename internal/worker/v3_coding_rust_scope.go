@@ -17,14 +17,15 @@ func validateDirectCodingRustFragment(
 	if err != nil {
 		return "", err
 	}
-	if err := validateRustFragmentAuthority(input, []byte(source)); err != nil {
-		return "", err
+	if err := validateRustFragmentAuthority(input, candidate, []byte(source)); err != nil {
+		return "", directCodingSourceBodyError(input, candidate, source, err)
 	}
 	return source, nil
 }
 
 func validateRustFragmentAuthority(
 	input assemblyline.FragmentGenerationInput,
+	body string,
 	source []byte,
 ) error {
 	root, closeTree, err := parseRustAuthorityTree(source)
@@ -32,11 +33,11 @@ func validateRustFragmentAuthority(
 		return err
 	}
 	defer closeTree()
-	permitted, err := rustPermittedDeclarationNames(input.PermittedSymbols)
+	catalog, err := newDirectCodingRustAuthorityCatalog(input)
 	if err != nil {
 		return err
 	}
-	locals, bindings, err := rustFragmentLocalBindings(source, root, permitted)
+	locals, bindings, err := rustFragmentLocalBindings(source, root, catalog.allowed)
 	if err != nil {
 		return err
 	}
@@ -49,34 +50,93 @@ func validateRustFragmentAuthority(
 		switch node.Kind() {
 		case "function_item":
 			functionItems++
+			if functionItems > 1 {
+				authorityErr = directCodingSourceNodeError(
+					node,
+					"What in-scope implementation should replace this nested declaration?",
+					fmt.Errorf("Rust fragment contains more than one function declaration"),
+				)
+			}
 		case "use_declaration", "extern_crate_declaration", "macro_definition",
 			"unsafe_block", "attribute_item", "inner_attribute_item", "const_item",
 			"static_item", "struct_item", "enum_item", "type_item", "trait_item",
 			"impl_item", "mod_item", "foreign_mod_item":
-			authorityErr = fmt.Errorf("Rust fragment contains forbidden %s authority", node.Kind())
+			authorityErr = directCodingSourceNodeError(
+				node,
+				"What in-scope implementation should replace this unavailable declaration?",
+				fmt.Errorf("Rust fragment contains forbidden %s authority", node.Kind()),
+			)
 		case "macro_invocation":
-			authorityErr = validateRustFragmentMacro(source, node, permitted)
+			if failure := validateRustFragmentMacro(source, node, root, catalog); failure != nil {
+				authorityErr = directCodingRustAuthorityNodeError(input, body, failure)
+			}
 		case "call_expression":
-			authorityErr = validateRustFragmentCall(source, node, locals, permitted)
+			if failure := validateRustFragmentCall(source, node, root, catalog); failure != nil {
+				authorityErr = directCodingRustAuthorityNodeError(input, body, failure)
+			}
 		case "scoped_identifier", "scoped_type_identifier":
-			authorityErr = validateRustFragmentPath(rustNodeText(source, node), locals, permitted)
+			if failure := validateRustFragmentPath(source, node, root, catalog); failure != nil {
+				authorityErr = directCodingRustAuthorityNodeError(input, body, failure)
+			}
 		case "type_identifier":
+			if rustTypeIdentifierBelongsToPath(node, parent) {
+				return
+			}
 			name := rustNodeText(source, node)
-			if !rustFragmentSymbolAllowed(name, locals, permitted) {
-				authorityErr = fmt.Errorf("Rust fragment type %s is outside declared authority", name)
+			candidates := directCodingRustTypeCandidates(root, source, catalog)
+			if !directCodingRustCandidateNamed(candidates, name) {
+				authorityErr = directCodingRustAuthorityNodeError(
+					input,
+					body,
+					&directCodingRustAuthorityFailure{
+						node:       node,
+						question:   "Which available type satisfies this type position?",
+						candidates: candidates,
+						cause:      fmt.Errorf("Rust fragment type %s is outside declared type authority", name),
+					},
+				)
 			}
 		case "identifier":
 			name := rustNodeText(source, node)
+			bodyStart := len(strings.TrimSpace(input.Signature) + " {\n")
+			failedStart := int(node.StartByte()) - bodyStart
+			failedEnd := int(node.EndByte()) - bodyStart
 			if rustFragmentForbiddenSymbol(name) {
-				authorityErr = fmt.Errorf("Rust fragment uses forbidden environment authority %s", name)
+				replacements, replacementErr := directCodingRustIdentifierChoices(
+					input, body, failedStart, failedEnd,
+					name, root, source, node, bindings, catalog,
+				)
+				if replacementErr != nil {
+					authorityErr = replacementErr
+					return
+				}
+				authorityErr = directCodingIdentifierNodeError(
+					node,
+					"Which available value has the meaning required at this unavailable reference?",
+					replacements,
+					fmt.Errorf("Rust fragment uses forbidden environment authority %s", name),
+				)
 				return
 			}
 			if _, binding := bindings[node.Id()]; binding || rustIdentifierBelongsToPath(node, parent) ||
 				rustIdentifierIsMemberToken(source, node) {
 				return
 			}
-			if !rustFragmentSymbolAllowed(name, locals, permitted) {
-				authorityErr = fmt.Errorf("Rust fragment symbol %s is outside declared authority", name)
+			if !rustFragmentSymbolAllowed(name, locals, catalog.allowed) {
+				replacements, replacementErr := directCodingRustIdentifierChoices(
+					input, body, failedStart, failedEnd,
+					name, root, source, node, bindings, catalog,
+				)
+				if replacementErr != nil {
+					authorityErr = replacementErr
+					return
+				}
+				authorityErr = directCodingIdentifierNodeError(
+					node,
+					"Which available value has the meaning required at this unresolved reference?",
+					replacements,
+					fmt.Errorf("Rust fragment symbol %s is outside declared authority", name),
+				)
 			}
 		}
 	})
@@ -87,6 +147,39 @@ func validateRustFragmentAuthority(
 		return fmt.Errorf("Rust fragment contains %d function declarations", functionItems)
 	}
 	return nil
+}
+
+func directCodingRustAuthorityNodeError(
+	input assemblyline.FragmentGenerationInput,
+	body string,
+	failure *directCodingRustAuthorityFailure,
+) error {
+	if failure == nil || failure.cause == nil {
+		return nil
+	}
+	if failure.node == nil || failure.question == "" {
+		return failure.cause
+	}
+	bodyStart := len(strings.TrimSpace(input.Signature) + " {\n")
+	failedStart := int(failure.node.StartByte()) - bodyStart
+	failedEnd := int(failure.node.EndByte()) - bodyStart
+	if failedStart < 0 || failedEnd <= failedStart || failedEnd > len(body) {
+		return failure.cause
+	}
+	replacements, err := directCodingRustValidatedChoices(
+		input,
+		body,
+		failedStart,
+		failedEnd,
+		body[failedStart:failedEnd],
+		failure.candidates,
+	)
+	if err != nil {
+		return fmt.Errorf("enumerate exact Rust replacement: %w", err)
+	}
+	return directCodingIdentifierNodeError(
+		failure.node, failure.question, replacements, failure.cause,
+	)
 }
 
 func parseRustAuthorityTree(
@@ -109,45 +202,6 @@ func parseRustAuthorityTree(
 		return nil, nil, fmt.Errorf("Rust authority source is not parseable")
 	}
 	return root, func() { tree.Close(); parser.Close() }, nil
-}
-
-func rustPermittedDeclarationNames(values []string) (map[string]struct{}, error) {
-	allowed := make(map[string]struct{})
-	for index, value := range values {
-		text := strings.TrimSpace(value)
-		if text == "" {
-			return nil, fmt.Errorf("Rust permitted API %d is empty", index)
-		}
-		if rustSimpleIdentifier(text) {
-			allowed[text] = struct{}{}
-			continue
-		}
-		parsedText := text
-		root, closeTree, err := parseRustAuthorityTree([]byte(parsedText))
-		if err != nil && !strings.Contains(text, "\n") && strings.Contains(text, "fn ") {
-			parsedText = text + " {}"
-			root, closeTree, err = parseRustAuthorityTree([]byte(parsedText))
-		}
-		if err != nil {
-			return nil, fmt.Errorf("parse Rust permitted API %d: %w", index, err)
-		}
-		declarations := 0
-		walkRustTree(root, func(node *treesitter.Node) {
-			switch node.Kind() {
-			case "function_item", "struct_item", "enum_item", "type_item", "const_item", "static_item", "trait_item":
-				name := node.ChildByFieldName("name")
-				if name != nil {
-					allowed[rustNodeText([]byte(parsedText), name)] = struct{}{}
-					declarations++
-				}
-			}
-		})
-		closeTree()
-		if declarations == 0 {
-			return nil, fmt.Errorf("Rust permitted API %d declares no callable, type, or constant", index)
-		}
-	}
-	return allowed, nil
 }
 
 func rustFragmentLocalBindings(

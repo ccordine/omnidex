@@ -10,15 +10,15 @@ import (
 
 func goCommandLineRuntimeDocument() assemblyline.SourceDocument {
 	const source = `type TaskInput struct {
-	Arguments     []string
-	StandardInput string
+	Arguments     []string // Command-line arguments excluding the executable name.
+	StandardInput string   // Complete standard-input text.
 }
 
 type TaskResult struct {
-	Output   string
-	Error    string
-	ExitCode int
-	State    map[string]string
+	Output   string            // User-visible standard-output text.
+	Error    string            // User-visible standard-error text.
+	ExitCode int               // Process status; zero means success.
+	State    map[string]string // Reusable capability values.
 }
 
 type CapabilityResults map[string]TaskResult`

@@ -2,13 +2,12 @@ package worker
 
 import (
 	"fmt"
+	"strconv"
 	"sync"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
 	"github.com/gryph/omnidex/internal/station"
 )
-
-const maxDirectCodingRequirements = 10
 
 type directCodingCapabilityBinding struct {
 	RequirementID string
@@ -34,38 +33,30 @@ func (s *directCodingSession) deriveRequirementCapabilities(
 	localContext string,
 	requirements []assemblyline.Requirement,
 ) (directCodingCapabilityGraph, error) {
-	if err := validateDirectCodingRequirementCount(requirements); err != nil {
-		return nil, err
+	if len(requirements) == 0 {
+		return nil, fmt.Errorf("capability projection requires at least one accepted requirement")
 	}
 	if len(requirements) == 1 {
 		return directCodingCapabilityGraph{requirements[0].ID: nil}, nil
 	}
-	modelName, err := stationModel(s.runtime.routing, station.CodingCapabilityRelation)
+	routing, err := s.runtime.modelRouting()
 	if err != nil {
 		return nil, err
 	}
-	modelName, err = requireDirectCodingModel(station.CodingCapabilityRelation, modelName)
+	modelName, err := stationModel(routing, station.CodingCapabilityRelation)
 	if err != nil {
 		return nil, err
 	}
 	pairs := directCodingCapabilityPairs(localContext, requirements)
-	results := runDirectCodingCapabilityPairs(directCodingWorkerRuntime(s), modelName, pairs)
+	results := runDirectCodingCapabilityPairs(
+		directCodingWorkerRuntime(s), modelName, pairs, 1,
+	)
 	for _, result := range results {
 		if result.Err != nil {
 			return nil, result.Err
 		}
 	}
 	return assembleDirectCodingCapabilityGraph(requirements, results)
-}
-
-func validateDirectCodingRequirementCount(requirements []assemblyline.Requirement) error {
-	if len(requirements) < 1 || len(requirements) > maxDirectCodingRequirements {
-		return fmt.Errorf(
-			"direct coding requirements must be between 1 and %d, received %d",
-			maxDirectCodingRequirements, len(requirements),
-		)
-	}
-	return nil
 }
 
 func directCodingCapabilityPairs(
@@ -92,6 +83,7 @@ func runDirectCodingCapabilityPairs(
 	runtime typedWorkerRuntime,
 	modelName string,
 	pairs []directCodingCapabilityPair,
+	maxConcurrency int,
 ) []directCodingCapabilityResult {
 	results := make([]directCodingCapabilityResult, len(pairs))
 	run := func(index int, pair directCodingCapabilityPair) {
@@ -106,11 +98,10 @@ func runDirectCodingCapabilityPairs(
 			func(raw string) (assemblyline.CapabilityRelationDecision, error) {
 				return assemblyline.DecodeCapabilityRelationDecision(pair.Input, raw)
 			},
-			func(value assemblyline.CapabilityRelationDecision) error { return value.ValidateFor(pair.Input) },
 		)
 		results[index] = directCodingCapabilityResult{Pair: pair, Decision: decision, Err: err}
 	}
-	if runtime.MaxConcurrency <= 1 {
+	if maxConcurrency == 1 {
 		for index, pair := range pairs {
 			run(index, pair)
 			if results[index].Err != nil {
@@ -119,7 +110,7 @@ func runDirectCodingCapabilityPairs(
 		}
 		return results
 	}
-	semaphore := make(chan struct{}, runtime.MaxConcurrency)
+	semaphore := make(chan struct{}, maxConcurrency)
 	var wait sync.WaitGroup
 	for index, pair := range pairs {
 		index, pair := index, pair
@@ -135,6 +126,17 @@ func runDirectCodingCapabilityPairs(
 	return results
 }
 
+func directCodingFragmentConcurrency(raw string) (int, error) {
+	value, err := strconv.Atoi(raw)
+	if err != nil {
+		return 0, fmt.Errorf("CODING_FRAGMENT_CONCURRENCY must be an integer: %w", err)
+	}
+	if value < 1 {
+		return 0, fmt.Errorf("CODING_FRAGMENT_CONCURRENCY must be at least 1, received %d", value)
+	}
+	return value, nil
+}
+
 func assembleDirectCodingCapabilityGraph(
 	requirements []assemblyline.Requirement,
 	results []directCodingCapabilityResult,
@@ -143,14 +145,18 @@ func assembleDirectCodingCapabilityGraph(
 	for _, requirement := range requirements {
 		graph[requirement.ID] = nil
 	}
-	add := func(ownerIndex, dependencyIndex int) {
+	add := func(ownerIndex, dependencyIndex int) bool {
 		owner := requirements[ownerIndex]
 		dependency := requirements[dependencyIndex]
+		if directCodingCapabilityPathExists(graph, dependency.ID, owner.ID) {
+			return false
+		}
 		graph[owner.ID] = append(graph[owner.ID], directCodingCapabilityBinding{
 			RequirementID: dependency.ID,
 			CapabilityID:  genericApplicationCapabilityID(dependencyIndex + 1),
 			Purpose:       dependency.SourceQuote,
 		})
+		return true
 	}
 	for _, result := range results {
 		if result.Err != nil {
@@ -171,6 +177,30 @@ func assembleDirectCodingCapabilityGraph(
 		return nil, err
 	}
 	return graph, nil
+}
+
+func directCodingCapabilityPathExists(
+	graph directCodingCapabilityGraph,
+	from, target string,
+) bool {
+	seen := make(map[string]struct{}, len(graph))
+	var visit func(string) bool
+	visit = func(current string) bool {
+		if current == target {
+			return true
+		}
+		if _, exists := seen[current]; exists {
+			return false
+		}
+		seen[current] = struct{}{}
+		for _, dependency := range graph[current] {
+			if visit(dependency.RequirementID) {
+				return true
+			}
+		}
+		return false
+	}
+	return visit(from)
 }
 
 func validateDirectCodingCapabilityGraph(
@@ -205,6 +235,40 @@ func validateDirectCodingCapabilityGraph(
 			}
 			seen[dependency.RequirementID] = struct{}{}
 			lastIndex = index
+		}
+	}
+	return validateDirectCodingCapabilityGraphAcyclic(requirements, graph)
+}
+
+func validateDirectCodingCapabilityGraphAcyclic(
+	requirements []assemblyline.Requirement,
+	graph directCodingCapabilityGraph,
+) error {
+	const (
+		capabilityVisiting = iota + 1
+		capabilityVisited
+	)
+	states := make(map[string]int, len(requirements))
+	var visit func(string) error
+	visit = func(requirementID string) error {
+		switch states[requirementID] {
+		case capabilityVisiting:
+			return fmt.Errorf("capability graph contains a cycle through requirement %s", requirementID)
+		case capabilityVisited:
+			return nil
+		}
+		states[requirementID] = capabilityVisiting
+		for _, dependency := range graph[requirementID] {
+			if err := visit(dependency.RequirementID); err != nil {
+				return err
+			}
+		}
+		states[requirementID] = capabilityVisited
+		return nil
+	}
+	for _, requirement := range requirements {
+		if err := visit(requirement.ID); err != nil {
+			return err
 		}
 	}
 	return nil

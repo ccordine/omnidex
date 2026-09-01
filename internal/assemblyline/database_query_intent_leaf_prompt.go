@@ -2,20 +2,22 @@ package assemblyline
 
 import (
 	"fmt"
+	"strings"
 )
 
 func BuildDatabaseQueryFromRelationPrompt(state DatabaseQueryIntentLeafState) (string, error) {
 	if err := state.validate(); err != nil {
 		return "", err
 	}
-	authority := renderDatabaseQueryAuthority(
-		state, renderDatabaseQueryRelationCandidates(state, nil),
+	choices, err := databaseQueryFromRelationChoices(state)
+	if err != nil {
+		return "", err
+	}
+	return databaseQueryOpaqueChoicePrompt(
+		"Which relation should anchor the query for the exact evidence need?",
+		renderDatabaseQueryAuthority(state),
+		choices,
 	)
-	return databaseQueryLeafPrompt(
-		"Select the one opaque relation ID that should anchor the relational query for the exact evidence need.",
-		"Return exactly one projected relation ID. Return no JSON, quotes, label, SQL, explanation, or commentary.",
-		authority,
-	), nil
 }
 
 func BuildDatabaseQueryShapePrompt(state DatabaseQueryIntentLeafState) (string, error) {
@@ -29,71 +31,70 @@ func BuildDatabaseQueryShapePrompt(state DatabaseQueryIntentLeafState) (string, 
 	if err != nil {
 		return "", err
 	}
-	return databaseQueryLeafPrompt(
-		"Select the one result shape that directly answers the exact evidence need.",
-		"Return exactly one registered value: records, scalar, ranking, distribution, comparison, trend, or existence. Return no JSON, quotes, label, SQL, explanation, or commentary.",
-		renderDatabaseQueryAuthority(state, accepted),
-	), nil
-}
-
-func BuildDatabaseQueryProjectionCoveragePrompt(state DatabaseQueryIntentLeafState) (string, error) {
-	if err := state.validateReady(); err != nil {
-		return "", err
-	}
-	authority, err := renderDatabaseQueryProjectionAuthority(state, false)
+	choices, err := databaseQueryShapeChoices()
 	if err != nil {
 		return "", err
 	}
-	return databaseQueryCoveragePrompt(
-		"projection", authority,
-	), nil
+	return databaseQueryOpaqueChoicePrompt(
+		"Which result shape directly answers the exact evidence need?",
+		renderDatabaseQueryAuthority(state, accepted),
+		choices,
+	)
 }
 
 func BuildDatabaseQueryProjectionAggregatePrompt(input DatabaseQueryProjectionLeafInput) (string, error) {
 	if err := input.validate(); err != nil {
 		return "", err
 	}
-	authority, err := renderDatabaseQueryProjectionAuthority(input.State, true)
+	authority, err := renderDatabaseQueryProjectionAuthority(input, true)
 	if err != nil {
 		return "", err
 	}
-	return databaseQueryLeafPrompt(
-		"Select the one aggregate operation for the next projection, or none when that projection is non-aggregate.",
-		"Return exactly one registered value: none, count_rows, count, count_distinct, sum, average, minimum, or maximum. Return no JSON, quotes, label, SQL, explanation, or commentary.",
+	choices, err := databaseQueryProjectionAggregateChoices(input)
+	if err != nil {
+		return "", err
+	}
+	return databaseQueryOpaqueChoicePrompt(
+		"Which operation implements the focused projection purpose?",
 		authority,
-	), nil
+		choices,
+	)
 }
 
 func BuildDatabaseQueryProjectionFieldPrompt(input DatabaseQueryProjectionLeafInput) (string, error) {
 	if err := input.validateForField(); err != nil {
 		return "", err
 	}
-	authority, err := renderDatabaseQueryProjectionAuthority(input.State, false)
+	authority, err := renderDatabaseQueryProjectionAuthority(input, false)
 	if err != nil {
 		return "", err
 	}
 	mode := "direct field"
 	if input.Aggregate != "" {
-		mode = string(input.Aggregate) + " aggregate"
+		mode, err = databaseQueryAggregateDescription(input.Aggregate)
+		if err != nil {
+			return "", err
+		}
+		authority = extendDatabaseQueryAuthority(authority, "FOCUSED OPERATION:\n"+mode)
 	}
-	authority = extendDatabaseQueryAuthority(
-		authority,
-		renderDatabaseQueryFieldCandidates(
-			input.State, "", databaseQueryAggregateFieldEligible(input.Aggregate),
-		),
+	choices, err := databaseQueryFieldChoices(
+		input.State, "", databaseQueryAggregateFieldEligible(input.Aggregate),
 	)
-	return databaseQueryLeafPrompt(
-		fmt.Sprintf("Select the one opaque field ID for the next %s projection.", mode),
-		"Return exactly one projected field ID. Return no JSON, quotes, label, SQL, explanation, or commentary.",
+	if err != nil {
+		return "", err
+	}
+	return databaseQueryOpaqueChoicePrompt(
+		fmt.Sprintf("Which field implements the focused %s projection purpose?", mode),
 		authority,
-	), nil
+		choices,
+	)
 }
 
 func BuildDatabaseQueryProjectionTimeBucketPrompt(input DatabaseQueryProjectionLeafInput) (string, error) {
 	if err := input.validateForTimeBucket(); err != nil {
 		return "", err
 	}
-	authority, err := renderDatabaseQueryProjectionAuthority(input.State, false)
+	authority, err := renderDatabaseQueryProjectionAuthority(input, false)
 	if err != nil {
 		return "", err
 	}
@@ -101,104 +102,77 @@ func BuildDatabaseQueryProjectionTimeBucketPrompt(input DatabaseQueryProjectionL
 	if err != nil {
 		return "", err
 	}
-	return databaseQueryLeafPrompt(
-		"Select whether the focused field is projected directly or as one time bucket.",
-		"Return exactly one registered value: none, day, week, month, quarter, or year. Return no JSON, quotes, label, SQL, explanation, or commentary.",
-		extendDatabaseQueryAuthority(authority, focused),
-	), nil
-}
-
-func BuildDatabaseQueryFilterCoveragePrompt(input DatabaseQueryFilterLeafInput) (string, error) {
-	if err := input.validate(); err != nil {
-		return "", err
-	}
-	label := "top-level filter"
-	if input.ScopeRelationID != "" {
-		label = "filter inside the current existence relation"
-	}
-	authority, err := renderDatabaseQueryFilterAuthority(input, false, false, false)
+	choices, err := databaseQueryProjectionTimeBucketChoices()
 	if err != nil {
 		return "", err
 	}
-	return databaseQueryCoveragePrompt(
-		label, authority,
-	), nil
+	return databaseQueryOpaqueChoicePrompt(
+		"Should the focused temporal field be used directly or grouped into a calendar bucket?",
+		extendDatabaseQueryAuthority(authority, focused),
+		choices,
+	)
 }
 
 func BuildDatabaseQueryFilterFieldPrompt(input DatabaseQueryFilterLeafInput) (string, error) {
 	if err := input.validate(); err != nil {
 		return "", err
 	}
-	authority, err := renderDatabaseQueryFilterAuthority(input, false, false, false)
+	authority, err := renderDatabaseQueryFilterAuthority(input, false, false)
 	if err != nil {
 		return "", err
 	}
-	authority = extendDatabaseQueryAuthority(
+	choices, err := databaseQueryFieldChoices(input.State, input.ScopeRelationID, nil)
+	if err != nil {
+		return "", err
+	}
+	return databaseQueryOpaqueChoicePrompt(
+		"Which field is constrained by the focused accepted filter purpose?",
 		authority,
-		renderDatabaseQueryFieldCandidates(input.State, input.ScopeRelationID, nil),
+		choices,
 	)
-	return databaseQueryLeafPrompt(
-		"Select the one opaque field ID constrained by the next filter.",
-		"Return exactly one projected field ID. Return no JSON, quotes, label, SQL, explanation, or commentary.",
-		authority,
-	), nil
 }
 
 func BuildDatabaseQueryFilterOperatorPrompt(input DatabaseQueryFilterLeafInput) (string, error) {
 	if err := input.validateField(); err != nil {
 		return "", err
 	}
-	authority, err := renderDatabaseQueryFilterAuthority(input, true, false, true)
+	authority, err := renderDatabaseQueryFilterAuthority(input, true, false)
 	if err != nil {
 		return "", err
 	}
-	return databaseQueryLeafPrompt(
-		"Select the one comparison relation required for the focused filter field.",
-		"Return exactly one registered operator shown in the authority. Return no JSON, quotes, label, SQL, explanation, or commentary.",
-		authority,
-	), nil
-}
-
-func BuildDatabaseQueryFilterValueCoveragePrompt(input DatabaseQueryFilterLeafInput) (string, error) {
-	if err := input.validateOperator(); err != nil {
-		return "", err
-	}
-	authority, err := renderDatabaseQueryFilterAuthority(input, true, true, false)
+	choices, err := databaseQueryFilterOperatorChoices(input)
 	if err != nil {
 		return "", err
 	}
-	return databaseQueryLeafPrompt(
-		"Answer whether another distinct literal value is required by this bounded set-membership filter.",
-		"Return VALUE_REMAINS or NO_UNCOVERED_VALUE exactly. Return no literal, JSON, quotes, label, SQL, explanation, or commentary.",
+	return databaseQueryOpaqueChoicePrompt(
+		"Which comparison relation is required by the focused accepted filter purpose?",
 		authority,
-	), nil
+		choices,
+	)
 }
 
 func BuildDatabaseQueryFilterValuePrompt(input DatabaseQueryFilterLeafInput) (string, error) {
 	if err := input.validateOperator(); err != nil {
 		return "", err
 	}
-	authority, err := renderDatabaseQueryFilterAuthority(input, true, true, false)
+	authority, err := renderDatabaseQueryFilterAuthority(input, true, true)
 	if err != nil {
 		return "", err
 	}
-	return databaseQueryLeafPrompt(
-		"Return the one exact literal value required next for the focused field and accepted operator.",
-		"Return only the raw literal value on one line. Return no type, second value, JSON, quotes, label, SQL, explanation, or commentary.",
+	choices, closed, err := databaseQueryFilterValueChoices(input)
+	if err != nil {
+		return "", err
+	}
+	if closed {
+		return databaseQueryOpaqueChoicePrompt(
+			"Which available value implements the focused accepted filter purpose?",
+			authority,
+			choices,
+		)
+	}
+	return databaseQueryPlainTextPrompt(
+		"What literal value implements the focused accepted purpose for the focused field and comparison relation?",
 		authority,
-	), nil
-}
-
-func BuildDatabaseQueryWindowCoveragePrompt(state DatabaseQueryIntentLeafState) (string, error) {
-	if err := state.validateReady(); err != nil {
-		return "", err
-	}
-	authority, err := renderDatabaseQueryWindowAuthority(state)
-	if err != nil {
-		return "", err
-	}
-	return databaseQueryCoveragePrompt(
-		"temporal window", authority,
 	), nil
 }
 
@@ -206,26 +180,26 @@ func BuildDatabaseQueryWindowFieldPrompt(input DatabaseQueryWindowLeafInput) (st
 	if err := input.validate(); err != nil {
 		return "", err
 	}
-	authority, err := renderDatabaseQueryWindowAuthority(input.State)
+	authority, err := renderDatabaseQueryWindowAuthority(input)
 	if err != nil {
 		return "", err
 	}
-	authority = extendDatabaseQueryAuthority(
+	choices, err := databaseQueryFieldChoices(input.State, "", databaseQueryTemporalFieldEligible)
+	if err != nil {
+		return "", err
+	}
+	return databaseQueryOpaqueChoicePrompt(
+		"Which temporal field is constrained by the focused accepted temporal-window purpose?",
 		authority,
-		renderDatabaseQueryFieldCandidates(input.State, "", databaseQueryTemporalFieldEligible),
+		choices,
 	)
-	return databaseQueryLeafPrompt(
-		"Select the one opaque temporal field ID constrained by the next relative window.",
-		"Return exactly one projected temporal field ID. Return no JSON, quotes, label, SQL, explanation, or commentary.",
-		authority,
-	), nil
 }
 
 func BuildDatabaseQueryWindowUnitPrompt(input DatabaseQueryWindowLeafInput) (string, error) {
 	if err := input.validateField(); err != nil {
 		return "", err
 	}
-	authority, err := renderDatabaseQueryWindowAuthority(input.State)
+	authority, err := renderDatabaseQueryWindowAuthority(input)
 	if err != nil {
 		return "", err
 	}
@@ -233,18 +207,22 @@ func BuildDatabaseQueryWindowUnitPrompt(input DatabaseQueryWindowLeafInput) (str
 	if err != nil {
 		return "", err
 	}
-	return databaseQueryLeafPrompt(
-		"Select the one relative time unit for the focused temporal field.",
-		"Return exactly one registered value: hour, day, week, month, or year. Return no amount, JSON, quotes, label, SQL, explanation, or commentary.",
+	choices, err := databaseQueryWindowUnitChoices(input)
+	if err != nil {
+		return "", err
+	}
+	return databaseQueryOpaqueChoicePrompt(
+		"Which relative time unit does the focused temporal-window purpose require?",
 		extendDatabaseQueryAuthority(authority, focused),
-	), nil
+		choices,
+	)
 }
 
 func BuildDatabaseQueryWindowAmountPrompt(input DatabaseQueryWindowLeafInput) (string, error) {
 	if err := input.validateUnit(); err != nil {
 		return "", err
 	}
-	authority, err := renderDatabaseQueryWindowAuthority(input.State)
+	authority, err := renderDatabaseQueryWindowAuthority(input)
 	if err != nil {
 		return "", err
 	}
@@ -252,39 +230,43 @@ func BuildDatabaseQueryWindowAmountPrompt(input DatabaseQueryWindowLeafInput) (s
 	if err != nil {
 		return "", err
 	}
-	return databaseQueryLeafPrompt(
-		"Return the one positive integer amount for the accepted window unit over the focused field.",
-		"Return exactly one base-10 integer within 1..10000. Return no unit, JSON, quotes, label, SQL, explanation, or commentary.",
+	unit, err := databaseQueryWindowUnitDescription(input.Unit)
+	if err != nil {
+		return "", err
+	}
+	return databaseQueryPlainTextPrompt(
+		"How many accepted time units does the focused temporal-window purpose require?",
 		extendDatabaseQueryAuthority(
-			authority, focused, "ACCEPTED WINDOW UNIT:\n"+string(input.Unit),
+			authority, focused, "ACCEPTED WINDOW UNIT:\n"+unit,
 		),
 	), nil
 }
 
 func renderDatabaseQueryProjectionAuthority(
-	state DatabaseQueryIntentLeafState,
+	input DatabaseQueryProjectionLeafInput,
 	includeSemanticFields bool,
 ) (string, error) {
-	accepted, err := renderDatabaseQueryAcceptedQuery(state)
+	accepted, err := renderDatabaseQueryAcceptedQuery(input.State)
 	if err != nil {
 		return "", err
 	}
-	projections, err := renderDatabaseQueryAcceptedProjections(state)
+	projections, err := renderDatabaseQueryAcceptedProjections(input.State)
 	if err != nil {
 		return "", err
 	}
 	sections := []string{accepted, projections}
 	if includeSemanticFields {
-		sections = append(sections, renderDatabaseQuerySemanticFields(state))
+		sections = append(sections, renderDatabaseQuerySemanticFields(input.State))
 	}
-	return renderDatabaseQueryAuthority(state, sections...), nil
+	return renderDatabaseQueryFocusedParameterAuthority(
+		input.Purpose, "projection", sections...,
+	), nil
 }
 
 func renderDatabaseQueryFilterAuthority(
 	input DatabaseQueryFilterLeafInput,
 	includeFocusedField bool,
 	includeAcceptedValues bool,
-	includeOperators bool,
 ) (string, error) {
 	accepted, err := renderDatabaseQueryAcceptedQuery(input.State)
 	if err != nil {
@@ -299,30 +281,42 @@ func renderDatabaseQueryFilterAuthority(
 		return "", err
 	}
 	sections := []string{accepted, scope, filters}
+	if input.ParentPurpose != "" {
+		sections = append(sections, "ACCEPTED PARENT QUERY PURPOSE:\n"+input.ParentPurpose)
+	}
 	if includeFocusedField {
 		focused, err := renderDatabaseQueryFocusedField(input.State, input.FieldID)
 		if err != nil {
 			return "", err
 		}
-		sections = append(sections, focused, renderDatabaseQueryFilterOperator(input))
+		operator, err := renderDatabaseQueryFilterOperator(input)
+		if err != nil {
+			return "", err
+		}
+		sections = append(sections, focused, operator)
 	}
 	if includeAcceptedValues {
 		sections = append(sections, renderDatabaseQueryAcceptedValues(input))
 	}
-	if includeOperators {
-		sections = append(sections, renderDatabaseQueryAllowedFilterOperators(input))
-	}
-	return renderDatabaseQueryAuthority(input.State, sections...), nil
+	return renderDatabaseQueryFocusedParameterAuthority(
+		input.Purpose, "filter", sections...,
+	), nil
 }
 
-func renderDatabaseQueryWindowAuthority(state DatabaseQueryIntentLeafState) (string, error) {
-	accepted, err := renderDatabaseQueryAcceptedQuery(state)
+func renderDatabaseQueryFocusedPurpose(purpose, collection string) string {
+	return "FOCUSED ACCEPTED " + strings.ToUpper(collection) + " PURPOSE:\n" + purpose
+}
+
+func renderDatabaseQueryWindowAuthority(input DatabaseQueryWindowLeafInput) (string, error) {
+	accepted, err := renderDatabaseQueryAcceptedQuery(input.State)
 	if err != nil {
 		return "", err
 	}
-	windows, err := renderDatabaseQueryAcceptedWindows(state)
+	windows, err := renderDatabaseQueryAcceptedWindows(input.State)
 	if err != nil {
 		return "", err
 	}
-	return renderDatabaseQueryAuthority(state, accepted, windows), nil
+	return renderDatabaseQueryFocusedParameterAuthority(
+		input.Purpose, "temporal-window", accepted, windows,
+	), nil
 }

@@ -2,10 +2,13 @@ package worker
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"sync"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
 	"github.com/gryph/omnidex/internal/model"
+	workspacefacts "github.com/gryph/omnidex/internal/workspace"
 )
 
 type nativeRuntimeV3 struct {
@@ -13,27 +16,53 @@ type nativeRuntimeV3 struct {
 	ctx                     context.Context
 	claim                   *model.ClaimedStep
 	action                  string
-	contexts                map[string]string
 	routing                 ModelRouting
+	routingErr              error
+	routingOnce             sync.Once
 	objectivePathProvenance assemblyline.ArtifactIdentityProvenance
+	workspaceFence          *workspacefacts.MutationFence
+	workspaceFenceRoot      string
 }
 
-func (s *Service) runNativeV3Step(ctx context.Context, claim *model.ClaimedStep, contexts map[string]string, action string) error {
-	routing, err := modelRoutingFromJobMetadata(claim.Job.Metadata, s.models)
-	if err != nil {
-		return err
+func (s *Service) runNativeV3Step(
+	ctx context.Context,
+	claim *model.ClaimedStep,
+	action string,
+) error {
+	if s == nil || claim == nil {
+		return fmt.Errorf("native worker execution requires one claimed step")
+	}
+	if _, err := s.workspaceScopeForV3Job(claim.Job); err != nil {
+		return fmt.Errorf("validate host workspace before action %q: %w", action, err)
 	}
 	runtime := &nativeRuntimeV3{
 		svc: s, ctx: ctx, claim: claim,
-		action: action, contexts: contexts, routing: routing,
+		action: action,
 	}
-	return runtime.run()
+	runErr := runtime.run()
+	releaseErr := runtime.releaseWorkspaceMutationFence()
+	if releaseErr != nil {
+		releaseErr = fmt.Errorf("release exact workspace authority after persisted coding completion: %w", releaseErr)
+	}
+	return errors.Join(runErr, releaseErr)
+}
+
+func (r *nativeRuntimeV3) modelRouting() (ModelRouting, error) {
+	if r == nil || r.svc == nil || r.claim == nil {
+		return ModelRouting{}, fmt.Errorf("model routing requires runtime authority")
+	}
+	r.routingOnce.Do(func() {
+		r.routing, r.routingErr = modelRoutingFromJobMetadata(r.claim.Job.Metadata)
+	})
+	return r.routing, r.routingErr
 }
 
 func (r *nativeRuntimeV3) run() error {
 	switch r.action {
 	case "objective_resolve":
 		return r.runObjectiveResolve()
+	case "v3_coding_plan":
+		return r.runDirectCodingPlanAction()
 	case "v3_coding":
 		return r.runDirectCodingAction()
 	default:

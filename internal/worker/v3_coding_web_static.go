@@ -33,6 +33,10 @@ func typeScriptBrowserStaticFiles(
 	if err != nil {
 		return nil, err
 	}
+	packageLock, dependencies, devDependencies, err := typeScriptBrowserPackageLock(profile, packageName)
+	if err != nil {
+		return nil, err
+	}
 	manifest := typeScriptPackageManifest{
 		Name: packageName, Private: true, Version: "1.0.0", Type: "module",
 		Engines: map[string]string{"node": node, "npm": npm},
@@ -40,25 +44,21 @@ func typeScriptBrowserStaticFiles(
 			"dev": "vite", "test": "vitest run", "typecheck": "tsc --noEmit",
 			"build": "npm run typecheck && vite build",
 		},
-		Dependencies:    profile.NPMDependencies,
-		DevDependencies: profile.NPMDevDependencies,
+		Dependencies:    dependencies,
+		DevDependencies: devDependencies,
 	}
 	encoded, err := json.MarshalIndent(manifest, "", "  ")
 	if err != nil {
 		return nil, fmt.Errorf("marshal code-owned TypeScript package manifest: %w", err)
 	}
-	packageLock, err := typeScriptBrowserPackageLock(profile, packageName)
-	if err != nil {
-		return nil, err
-	}
 	return []directCodingFileTask{
-		{Path: ".gitignore", Content: "node_modules\ndist\n.vite\n*.log\n"},
-		{Path: "package.json", Content: string(encoded) + "\n"},
-		{Path: "package-lock.json", Content: packageLock},
-		{Path: "index.html", Content: typeScriptWebIndexSource(productName)},
-		{Path: "tsconfig.json", Content: typeScriptWebConfigSource(ecmascript)},
-		{Path: "vite.config.ts", Content: typeScriptViteConfigSource()},
-		{Path: "src/styles.css", Content: typeScriptTailwindStylesSource(stylesheet)},
+		{Path: ".gitignore", Content: []byte("node_modules\ndist\n.vite\n*.log\n"), Mode: 0o644},
+		{Path: "package.json", Content: append(encoded, '\n'), Mode: 0o644},
+		{Path: "package-lock.json", Content: []byte(packageLock), Mode: 0o644},
+		{Path: "index.html", Content: []byte(typeScriptWebIndexSource(productName)), Mode: 0o644},
+		{Path: "tsconfig.json", Content: []byte(typeScriptWebConfigSource(ecmascript)), Mode: 0o644},
+		{Path: "vite.config.ts", Content: []byte(typeScriptViteConfigSource()), Mode: 0o644},
+		{Path: "src/styles.css", Content: []byte(typeScriptTailwindStylesSource(stylesheet)), Mode: 0o644},
 	}, nil
 }
 
@@ -68,7 +68,6 @@ func typeScriptWebIndexSource(productName string) string {
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#0b0d12" />
     <title>%s</title>
   </head>
   <body>
@@ -96,8 +95,8 @@ func typeScriptWebConfigSource(ecmascript string) string {
     "resolveJsonModule": true,
     "isolatedModules": true,
     "noEmit": true,
-    "jsx": "react-jsx",
-    "types": ["vitest/globals"]
+		"jsx": "react-jsx",
+		"types": ["vitest/globals"]
   },
   "include": ["src"],
   "exclude": ["dist", "node_modules"]
@@ -112,10 +111,10 @@ import tailwindcss from '@tailwindcss/vite';
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
-  test: {
-    environment: 'jsdom',
-    globals: true,
-  },
+	test: {
+		environment: 'jsdom',
+		globals: true,
+	},
 });
 `
 }

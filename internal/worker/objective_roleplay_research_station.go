@@ -8,9 +8,10 @@ import (
 	"github.com/gryph/omnidex/internal/station"
 )
 
-// portableObjectiveRoleplayGroundedStation resolves one narrative text leaf,
-// then code binds each paragraph to evidence through independent pairwise
-// semantic relations. Models never author paragraph arrays or evidence IDs.
+// portableObjectiveRoleplayGroundedStation obtains one untrusted paragraph
+// inventory. Code owns the source-order queue and independently binds and
+// authorizes each candidate. A rejected candidate dies at the sieve boundary;
+// it cannot veto already accepted paragraphs or create more work.
 type portableObjectiveRoleplayGroundedStation struct {
 	runtime *nativeRuntimeV3
 }
@@ -22,71 +23,175 @@ func (adapter portableObjectiveRoleplayGroundedStation) RespondGrounded(
 	if err := input.Validate(); err != nil {
 		return assemblyline.RoleplayGroundedResponseDecision{}, objectiveStationReceipt{}, err
 	}
-	modelName, err := objectiveStationModel(adapter.runtime, station.ConversationResponse)
+	resolveModel := func() (string, error) {
+		return objectiveStationModel(adapter.runtime, station.ConversationResponse)
+	}
+	inventoryJob, err := assemblyline.NewRoleplayGroundedParagraphInventoryJob(input)
 	if err != nil {
 		return assemblyline.RoleplayGroundedResponseDecision{}, objectiveStationReceipt{}, err
 	}
-	job, err := assemblyline.NewRoleplayGroundedResponseTextJob(input)
-	if err != nil {
-		return assemblyline.RoleplayGroundedResponseDecision{}, objectiveStationReceipt{}, err
-	}
-	text, calls, err := runObjectivePortableRawLeafCall(
-		ctx, adapter.runtime, modelName, "roleplay_grounded_response_text", job,
-		func(raw string) (string, error) {
-			return assemblyline.DecodeRoleplayGroundedResponseTextLeaf(input, raw)
+	inventory, receipt, err := runObjectivePortableRawLeafStation(
+		ctx,
+		adapter.runtime,
+		"roleplay_grounded_paragraph_inventory",
+		inventoryJob,
+		station.ConversationResponse,
+		resolveModel,
+		func(raw string) (assemblyline.RoleplayGroundedParagraphInventory, error) {
+			return assemblyline.DecodeRoleplayGroundedParagraphInventory(input, raw)
 		},
-		func(string) error { return nil },
 	)
+	totalCalls, allReused := receipt.Calls, receipt.Reused
 	if err != nil {
-		return assemblyline.RoleplayGroundedResponseDecision{}, objectiveStationReceipt{Calls: calls}, err
+		return assemblyline.RoleplayGroundedResponseDecision{}, objectiveStationReceipt{Calls: totalCalls, Reused: allReused}, err
 	}
-	paragraphTexts, err := assemblyline.SplitRoleplayGroundedResponseParagraphs(text)
-	if err != nil {
-		return assemblyline.RoleplayGroundedResponseDecision{}, objectiveStationReceipt{Calls: calls}, err
+
+	paragraphs := make([]assemblyline.RoleplayGroundedParagraph, 0, len(inventory.Candidates))
+	processed := make(map[string]struct{}, len(inventory.Candidates))
+	for _, candidate := range inventory.Candidates {
+		if _, duplicate := processed[candidate]; duplicate {
+			continue
+		}
+		processed[candidate] = struct{}{}
+
+		authorizationInput := assemblyline.RoleplayGroundedParagraphAuthorizationInput{
+			ExactQuestion:      input.ExactQuestion,
+			RoleplayIdentity:   input.RoleplayIdentity,
+			Context:            assemblyline.CloneObjectiveContext(input.Context),
+			ParagraphText:      candidate,
+			Evidence:           append([]assemblyline.GroundedEvidenceCapsule(nil), input.RealWorldEvidence...),
+			KnownArtifactPaths: append([]string{}, input.KnownArtifactPaths...),
+		}
+		authorizationJob, err := assemblyline.NewRoleplayGroundedParagraphAuthorizationJob(
+			authorizationInput,
+		)
+		if err != nil {
+			return assemblyline.RoleplayGroundedResponseDecision{}, objectiveStationReceipt{Calls: totalCalls, Reused: allReused}, err
+		}
+		authorization, authorizationReceipt, err := runObjectivePortableRawLeafStation(
+			ctx,
+			adapter.runtime,
+			"roleplay_grounded_paragraph_authorization",
+			authorizationJob,
+			station.ConversationResponse,
+			resolveModel,
+			func(raw string) (assemblyline.RoleplayGroundedParagraphAuthorizationDecision, error) {
+				return assemblyline.DecodeRoleplayGroundedParagraphAuthorizationDecision(
+					authorizationInput, raw,
+				)
+			},
+		)
+		totalCalls += authorizationReceipt.Calls
+		allReused = allReused && authorizationReceipt.Reused
+		if err != nil {
+			return assemblyline.RoleplayGroundedResponseDecision{}, objectiveStationReceipt{Calls: totalCalls, Reused: allReused}, err
+		}
+		if authorization.Relation != assemblyline.RoleplayGroundedParagraphResponsiveAndSupported {
+			continue
+		}
+
+		evidenceIDs, _, leafReceipt, err := adapter.bindRoleplayGroundedEvidence(
+			ctx, input, candidate, resolveModel,
+		)
+		totalCalls += leafReceipt.Calls
+		allReused = allReused && leafReceipt.Reused
+		if err != nil {
+			return assemblyline.RoleplayGroundedResponseDecision{}, objectiveStationReceipt{Calls: totalCalls, Reused: allReused}, err
+		}
+		if len(evidenceIDs) == 0 {
+			continue
+		}
+		paragraphs = append(paragraphs, assemblyline.RoleplayGroundedParagraph{
+			Text: candidate, EvidenceIDs: evidenceIDs,
+		})
 	}
-	paragraphs := make([]assemblyline.RoleplayGroundedParagraph, 0, len(paragraphTexts))
-	for _, paragraphText := range paragraphTexts {
-		evidenceIDs := make([]string, 0, len(input.RealWorldEvidence))
-		for _, evidence := range input.RealWorldEvidence {
-			relationInput := assemblyline.RoleplayGroundedEvidenceRelationInput{
-				ExactQuestion:      input.ExactQuestion,
-				ParagraphText:      paragraphText,
-				Evidence:           evidence,
-				KnownArtifactPaths: append([]string{}, input.KnownArtifactPaths...),
-			}
+	if len(paragraphs) == 0 {
+		return assemblyline.RoleplayGroundedResponseDecision{}, objectiveStationReceipt{
+				Calls: totalCalls, Reused: allReused,
+			}, fmt.Errorf(
+				"roleplay grounded paragraph inventory queue produced no responsive fully supported paragraphs",
+			)
+	}
+	decision, err := assemblyline.AssembleRoleplayGroundedResponseDecision(input, paragraphs)
+	return decision, objectiveStationReceipt{Calls: totalCalls, Reused: allReused}, err
+}
+
+func (adapter portableObjectiveRoleplayGroundedStation) bindRoleplayGroundedEvidence(
+	ctx context.Context,
+	input assemblyline.RoleplayGroundedResponseInput,
+	paragraphText string,
+	resolveModel func() (string, error),
+) ([]string, []assemblyline.GroundedEvidenceCapsule, objectiveStationReceipt, error) {
+	return resolveRoleplayGroundedEvidenceRelations(
+		ctx,
+		input,
+		paragraphText,
+		func(
+			ctx context.Context,
+			relationInput assemblyline.RoleplayGroundedEvidenceRelationInput,
+		) (assemblyline.RoleplayGroundedEvidenceRelation, objectiveStationReceipt, error) {
 			relationJob, err := assemblyline.NewRoleplayGroundedResponseEvidenceRelationJob(
 				relationInput,
 			)
 			if err != nil {
-				return assemblyline.RoleplayGroundedResponseDecision{}, objectiveStationReceipt{Calls: calls}, err
+				return "", objectiveStationReceipt{}, err
 			}
-			relation, relationCalls, err := runObjectivePortableRawLeafCall(
-				ctx, adapter.runtime, modelName,
-				"roleplay_grounded_response_evidence_relation", relationJob,
+			return runObjectivePortableRawLeafStation(
+				ctx,
+				adapter.runtime,
+				"roleplay_grounded_response_evidence_relation",
+				relationJob,
+				station.ConversationResponse,
+				resolveModel,
 				func(raw string) (assemblyline.RoleplayGroundedEvidenceRelation, error) {
 					return assemblyline.DecodeRoleplayGroundedResponseEvidenceRelationLeaf(
 						relationInput, raw,
 					)
 				},
-				func(assemblyline.RoleplayGroundedEvidenceRelation) error { return nil },
 			)
-			calls += relationCalls
-			if err != nil {
-				return assemblyline.RoleplayGroundedResponseDecision{}, objectiveStationReceipt{Calls: calls}, err
-			}
-			if relation == assemblyline.RoleplayGroundedEvidenceSupportsParagraph {
-				evidenceIDs = append(evidenceIDs, evidence.ID)
-			}
-		}
-		if len(evidenceIDs) == 0 {
-			return assemblyline.RoleplayGroundedResponseDecision{}, objectiveStationReceipt{Calls: calls}, fmt.Errorf(
-				"roleplay grounded response paragraph has no semantically bound evidence",
-			)
-		}
-		paragraphs = append(paragraphs, assemblyline.RoleplayGroundedParagraph{
-			Text: paragraphText, EvidenceIDs: evidenceIDs,
-		})
+		},
+	)
+}
+
+type roleplayGroundedEvidenceRelationLeaf func(
+	context.Context,
+	assemblyline.RoleplayGroundedEvidenceRelationInput,
+) (assemblyline.RoleplayGroundedEvidenceRelation, objectiveStationReceipt, error)
+
+func resolveRoleplayGroundedEvidenceRelations(
+	ctx context.Context,
+	input assemblyline.RoleplayGroundedResponseInput,
+	paragraphText string,
+	relate roleplayGroundedEvidenceRelationLeaf,
+) ([]string, []assemblyline.GroundedEvidenceCapsule, objectiveStationReceipt, error) {
+	if relate == nil {
+		return nil, nil, objectiveStationReceipt{}, fmt.Errorf(
+			"roleplay grounded evidence requires one binary relation leaf",
+		)
 	}
-	decision, err := assemblyline.AssembleRoleplayGroundedResponseDecision(input, paragraphs)
-	return decision, objectiveStationReceipt{Calls: calls}, err
+	evidenceIDs := make([]string, 0, len(input.RealWorldEvidence))
+	supporting := make([]assemblyline.GroundedEvidenceCapsule, 0, len(input.RealWorldEvidence))
+	totalCalls := 0
+	allReused := true
+	for _, evidence := range input.RealWorldEvidence {
+		relationInput := assemblyline.RoleplayGroundedEvidenceRelationInput{
+			ExactQuestion:      input.ExactQuestion,
+			ParagraphText:      paragraphText,
+			Evidence:           evidence,
+			KnownArtifactPaths: append([]string{}, input.KnownArtifactPaths...),
+		}
+		relation, receipt, err := relate(ctx, relationInput)
+		totalCalls += receipt.Calls
+		allReused = allReused && receipt.Reused
+		if err != nil {
+			return nil, nil, objectiveStationReceipt{Calls: totalCalls, Reused: allReused}, err
+		}
+		if relation == assemblyline.RoleplayGroundedEvidenceSupportsParagraph {
+			evidenceIDs = append(evidenceIDs, evidence.ID)
+			supporting = append(supporting, evidence)
+		}
+	}
+	return evidenceIDs, supporting, objectiveStationReceipt{
+		Calls: totalCalls, Reused: allReused,
+	}, nil
 }

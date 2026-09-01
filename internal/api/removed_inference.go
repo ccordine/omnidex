@@ -4,12 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net/http"
 )
-
-func writeRemovedInferenceAction(w http.ResponseWriter, action string) {
-	writeError(w, http.StatusGone, action+" was removed because it bypassed the authoritative objective workflow")
-}
 
 func requireJSONEOF(decoder *json.Decoder, label string) error {
 	var trailing any

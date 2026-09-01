@@ -32,32 +32,34 @@ second channel. Framework documents two SODIMM slots and support for up to
 ## Authoritative station-routed profile
 
 Use one exact configured model per station. The active coding routes are deliberately
-split between bounded semantic extraction, deployment-semantics classification, repair
-guidance, and source-node generation:
+split between bounded semantic extraction, deployment-semantics classification, and
+source-body generation:
 
 ```dotenv
 OMNI_CODING_REQUIREMENTS_MODEL=qwen3.5:9b-q4_K_M
+OMNI_CODING_REQUIREMENT_RESULT_RELATION_MODEL=phi4:14b
 OMNI_CODING_SERVICE_DEPLOYMENT_INTENT_MODEL=phi4:14b
 OMNI_CODING_WORKLOAD_MODEL=qwen3.5:9b-q4_K_M
 OMNI_CODING_FRAGMENT_MODEL=qwen3.5:9b-q4_K_M
-OMNI_CODING_FRAGMENT_REPAIR_GUIDANCE_MODEL=qwen3.5:9b-q4_K_M
-OMNI_CODING_FRAGMENT_CORRECTION_MODEL=qwen3.5:9b-q4_K_M
 
 INFERENCE_CONTEXT_TOKENS=8192
 CODING_FRAGMENT_CONCURRENCY=1
 ```
 
 The complete exact station-key list is checked in to `default.env` and `.env.example`.
-Bounded semantic stations, including requirement extraction and optional target-tree
-naming, use Qwen 3.5 9B. Frozen workload construction is entirely code-owned. The
+The requirement inventory, authorization-first sieve, product context, and stack
+constraint use Qwen 3.5 9B. Only the two candidate-bound derived-value and
+determining-relation presence questions use Phi-4 14B; the exact operation-family and
+named-property qualification rejected Qwen for that one semantic boundary. Frozen
+workload construction is entirely code-owned. The
 target-tree station consumes that same
 `OMNI_CODING_WORKLOAD_MODEL` route when a stack retains a genuine structural naming
 question. No currently registered stack consumes target-tree inference; the route is
 retained only for a future registered stack with genuinely unresolved structural
-naming. There is no separate target-tree environment key. Independent state-lifetime, state-field
-coverage, state-purpose, state-kind, and endpoint-property stations also share this
-model route while retaining separate IDs, prompts, raw leaves, validation, and call
-evidence. The continued-availability and conditional
+naming. There is no separate target-tree environment key. Independent state-lifetime,
+state-purpose inventory, per-candidate necessity, pairwise purpose relation, state-kind,
+and endpoint-property stations also share this model route while retaining separate
+IDs, prompts, raw leaves, validation, and call evidence. The continued-availability and conditional
 persistence-destination stations share the explicit Phi-4 14B deployment-semantics
 route. The established `OMNI_CODING_SERVICE_DEPLOYMENT_INTENT_MODEL` environment key
 and `coding_service_deployment_intent_model` project-setting key are retained for
@@ -72,36 +74,78 @@ profiles that expose Ollama's thinking capability are invoked with `think:false`
 A non-empty provider `thinking` field is a transport-contract failure and is never
 projected into station state or retained as a second normalized result.
 
-Qwen 3.5 9B is the practical bounded semantic, source-fragment, and repair choice because its
+### Coding-requirement semantic qualification
+
+The split route is admitted end to end by two unrelated, explicit two-outcome
+requests. The test exercises the exact production multiline inventory, authorization,
+kind, cardinality, duplicate relation, result-presence, product-context, raw Ollama
+transport, and code-owned resolution. It asserts that only result-presence calls use
+Phi and every other requirement call uses Qwen:
+
+```bash
+OMNIDEX_TEST_CODING_REQUIREMENTS_MODEL=qwen3.5:9b-q4_K_M \
+OMNIDEX_TEST_CODING_REQUIREMENT_RESULT_RELATION_MODEL=phi4:14b \
+OMNIDEX_TEST_OLLAMA_URL=http://127.0.0.1:11434 \
+OMNIDEX_TEST_OLLAMA_CONTEXT=8192 \
+go test ./internal/worker \
+  -run '^TestLiveRequirementInventoryAuthorizationQualification$' \
+  -count=1 -v
+```
+
+On 2026-08-31, both fixtures returned exact clean two-line inventories and retained
+exactly two authorized runtime requirements. The split qualification completed in
+118.47 seconds. Phi alone had failed both inventories with Markdown hard-break spaces
+and commentary and then failed literal candidate authorization; Qwen alone passed this
+route shape but is not admitted to the separately qualified result-presence station.
+
+The result-presence qualification exercises the exact two-call renderer and code-owned
+fold. It requires two unrelated operation families and two unrelated intrinsic-property
+measurements to resolve as `EXPLICIT_DERIVED_RESULT_RELATION`, while an unnamed
+suitability policy and an unnamed qualitative property remain
+`MISSING_DERIVED_RESULT_RELATION`:
+
+```bash
+OMNIDEX_TEST_CODING_REQUIREMENT_RESULT_RELATION_MODEL=phi4:14b \
+OMNIDEX_TEST_OLLAMA_URL=http://127.0.0.1:11434 \
+OMNIDEX_TEST_OLLAMA_CONTEXT=8192 \
+go test ./internal/worker \
+  -run '^TestLiveRequirementResultRelationOperationFamilyQualification$' \
+  -count=1 -v
+```
+
+On 2026-08-31, Phi-4 14B passed all four unrelated positives and both negative controls.
+Qwen 3.5 9B had returned the missing relation for both operation-family
+positives under the identical bounded contract, so it is not admitted to this station.
+
+Qwen 3.5 9B is the practical source-body and other bounded-semantic choice because its
 Q4_K_M Ollama image is 6.6 GB, earlier bounded semantic qualification converged, and
 Qwen publishes strong instruction following and coding results for the 9B checkpoint.
-The env-gated raw-fragment qualification exercises the exact Qwen 3.5 ChatML
-transport through production TSX and Go generation workers plus the production
-instruction-only correction worker. Every fixture requires one semantic station
-generation call, a zero-discard full-response projection, parser/signature/scope
-validation, and compiler/type validity. Provider discovery may issue a separate model
+The env-gated source-body qualification exercises the exact Qwen 3.5 ChatML
+transport through the TypeScript body worker and its bounded same-job/model continuation.
+Every accepted fixture is an ordinary plain-text body; code supplies and validates the
+signature, declaration, parser structure, and behavior result. A correction fixture
+exposes only one code-proven mutable span and its necessary semantic question and accepts
+ordinary replacement text which code splices into the retained body; qualification never
+depends on reproducing the signature, declaration, surrounding body, schema, or framework
+grammar. Provider discovery may issue a separate model
 preload request; it is deterministic transport setup, not another semantic station call.
 This qualification selects the named model candidate explicitly. It does not resolve
 that candidate through production station routing or independently execute the fixture's
 requested behavior; checked configuration tests and a fresh uncontaminated application
 run prove those separate boundaries.
-The test creates and drops an isolated schema, so `OMNI_TEST_DATABASE_URL` must name a
-disposable PostgreSQL database whose role can create schemas and the required public
-extensions. Run the qualification against that database and the exact local model
-candidate with:
+Run the qualification against the exact local model candidate with:
 
 ```bash
-OMNI_TEST_DATABASE_URL='postgres://test:test@127.0.0.1:5432/omnidex_test?sslmode=disable' \
-OMNIDEX_TEST_QWEN_RAW_FRAGMENT_MODEL=qwen3.5:9b-q4_K_M \
+OMNIDEX_TEST_CODING_FRAGMENT_MODEL=qwen3.5:9b-q4_K_M \
 OMNIDEX_TEST_OLLAMA_URL=http://127.0.0.1:11434 \
 OMNIDEX_TEST_OLLAMA_CONTEXT=8192 \
-go test ./internal/worker -run '^TestLiveQwenRawFragmentRouteQualification$' -count=1 -v
+go test ./internal/worker -run '^TestLiveTypeScriptFragmentReturnsAnImplementationBody$' -count=1 -v
 ```
 
 Qwen3-Coder 30B
 is a 30.5B-total, 3.3B-active MoE
 trained primarily on code and is non-thinking by design, which fits Omnidex's
-bounded single-node output contract.
+bounded plain-text source-body contract.
 
 ### Active local model inventory
 
@@ -110,8 +154,10 @@ planning. They are model-file sizes, not runner-allocation or latency measuremen
 
 | Route | Exact model | Model file |
 | --- | --- | ---: |
-| Semantic leaf stations, requirements, target-tree naming, and repair guidance | `qwen3.5:9b-q4_K_M` | 6.6 GB |
-| Source generation and repair execution | `qwen3.5:9b-q4_K_M` | shared 6.6 GB image |
+| Requirement inventory, sieve, product, and stack stations | `qwen3.5:9b-q4_K_M` | shared 6.6 GB image |
+| Requirement result-presence station | `phi4:14b` | shared 9.1 GB image |
+| Other semantic leaf stations and target-tree naming | `qwen3.5:9b-q4_K_M` | shared 6.6 GB image |
+| Source-body generation and same-context correction | `qwen3.5:9b-q4_K_M` | shared 6.6 GB image |
 | Service deployment semantics | `phi4:14b` | 9.1 GB |
 | Local embeddings | `nomic-embed-text` | 0.27 GB |
 
@@ -137,22 +183,31 @@ Primary and historical measurement model sources:
 On 2026-08-28, an earlier version of
 `TestLiveCodingRequirementsAndWorkloadQualification` exercised three unrelated
 immutable requests through the then-current raw-leaf renderers: a music studio, a
-catalog, and an appointment scheduler. Qwen 3.5 9B completed every requirement
-fixed point and the now-retired objective, behavior, and criterion leaves in 38 calls
-without a correction call. All three then-current frozen workloads passed their
-code-owned validation. This is retained as historical route evidence; it does not
-qualify the current v2 workload contract.
+catalog, and an appointment scheduler. Qwen 3.5 9B completed the now-retired iterative
+coverage route and its objective, behavior, and criterion leaves in 38 calls without a
+correction call. All three then-current frozen workloads passed their code-owned
+validation. This is retained only as historical evidence for a removed route; it does
+not qualify the current inventory-and-sieve workload contract.
 
 Provider identity was Ollama 0.24.0, model digest
 `6488c96fa5faab64bb65cbd30d4289e20e6130ef535a93ef9a49f42eda893ea7`,
 quantization `Q4_K_M`, with an 8192-token context. The complete qualification took
-91.55 seconds. The checked-in test has since been cut over: it now permits only
-product-context, requirement-coverage, and single-requirement work, then asks code to
-freeze one exact task per accepted requirement. The test rejects every unexpected work
-kind, while architecture tests require the retired workload-planner symbols to remain
-absent. A new live execution of that current test is required before claiming current
-route qualification; neither the historical measurements nor keyword matching can
-establish it.
+91.55 seconds. The checked-in test has since been cut over: it now permits one bounded
+untrusted requirement inventory, which returns exactly
+`NO_RUNTIME_REQUIREMENT_CANDIDATES` or between one and the code-owned maximum positive
+candidate lines, followed by the authorization-first per-candidate
+kind/cardinality/partition/duplicate/result sieve. Code parses and counts inventory lines
+mechanically; no semantic station pre-counts the inventory, and no pre-count receipt
+exists. Inventory generation does not authorize candidates or prove completeness. Every
+positive candidate enters the ordinary sieve. Code freezes one exact task per retained
+requirement when the candidate queue is exhausted; the completed functional result is
+iteration-scoped, and rejected or speculative suggestions remain outside current
+authority. Product, surface, and deployment semantics run only after a leaf survives and
+only at their first concrete consumer. There is no completeness or accepted-set review
+call. The test rejects every unexpected work kind, while architecture tests require the
+retired workload-planner symbols to remain absent. The current split-route live
+qualification is recorded above; this historical measurement supplies no authority to
+that current contract.
 
 ## Live deployment-semantics qualification
 
@@ -223,7 +278,7 @@ inference-context minimum and cannot be selected through the command.
 | `qwen3-coder:30b` | 16K | 22.41 GB | 7.28 GB | 13.12 tok/s |
 | `qwen3-coder:30b` | 32K | 26.24 GB | 7.28 GB | 11.06 tok/s |
 
-The 30B MoE is almost twice as fast as the old 14B dense correction model on
+The 30B MoE is almost twice as fast as the historical 14B dense model on
 this host despite the larger total checkpoint. At 32K it also pushed an
 already busy host deep into swap. The observed semantic envelopes and the
 fragment prompt/output limits also fit inside the exact 8K minimum, so the
@@ -261,7 +316,8 @@ Sources for the alternatives:
 If the machine receives a second 48 GB SODIMM, retest Qwen 3.6 35B-A3B at 16K.
 Do not change the production route based on parameter counts or published
 benchmarks alone; compare cold load, warm throughput, exact raw-leaf acceptance,
-target-tree replacement and source-repair rates, and a fresh uncontaminated Omnidex run.
+target-tree replacement and exact-span source-body correction rates, and a fresh
+uncontaminated Omnidex run.
 
 ## Hosted capability ceiling
 

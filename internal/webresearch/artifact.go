@@ -96,12 +96,14 @@ func validateAcquiredArtifactEvidence(item Evidence) error {
 }
 
 func buildArtifact(
-	decision GroundedSynthesisDecision,
+	paragraphs []GroundedParagraph,
 	projected []ProjectedEvidence,
 	allEvidence []Evidence,
-	config Config,
+	maxParagraphs, maxParagraphBytes int,
 ) (Artifact, error) {
-	paragraphs, cited, err := validateSynthesis(decision, projected, config)
+	paragraphs, cited, err := validateSynthesis(
+		paragraphs, projected, maxParagraphs, maxParagraphBytes,
+	)
 	if err != nil {
 		return Artifact{}, err
 	}
@@ -132,22 +134,22 @@ func buildArtifact(
 }
 
 func validateSynthesis(
-	decision GroundedSynthesisDecision,
+	decision []GroundedParagraph,
 	projected []ProjectedEvidence,
-	config Config,
+	maxParagraphs, maxParagraphBytes int,
 ) ([]GroundedParagraph, map[EvidenceID]struct{}, error) {
-	if len(decision.Paragraphs) < 1 || len(decision.Paragraphs) > config.MaxSynthesisParagraphs {
-		return nil, nil, fmt.Errorf("%w: expected 1..%d paragraphs", ErrInvalidSynthesis, config.MaxSynthesisParagraphs)
+	if len(decision) < 1 || len(decision) > maxParagraphs {
+		return nil, nil, fmt.Errorf("%w: expected 1..%d paragraphs", ErrInvalidSynthesis, maxParagraphs)
 	}
 	available := make(map[EvidenceID]struct{}, len(projected))
 	for _, item := range projected {
 		available[item.EvidenceID] = struct{}{}
 	}
-	paragraphs := make([]GroundedParagraph, len(decision.Paragraphs))
+	paragraphs := make([]GroundedParagraph, len(decision))
 	allCited := make(map[EvidenceID]struct{})
-	for index, paragraph := range decision.Paragraphs {
-		if paragraph.Text == "" || paragraph.Text != strings.TrimSpace(paragraph.Text) || len(paragraph.Text) > config.MaxSynthesisParagraphBytes {
-			return nil, nil, fmt.Errorf("%w: paragraph %d must be trimmed and contain 1..%d bytes", ErrInvalidSynthesis, index, config.MaxSynthesisParagraphBytes)
+	for index, paragraph := range decision {
+		if paragraph.Text == "" || paragraph.Text != strings.TrimSpace(paragraph.Text) || len(paragraph.Text) > maxParagraphBytes {
+			return nil, nil, fmt.Errorf("%w: paragraph %d must be trimmed and contain 1..%d bytes", ErrInvalidSynthesis, index, maxParagraphBytes)
 		}
 		if !utf8.ValidString(paragraph.Text) || strings.ContainsRune(paragraph.Text, '\x00') {
 			return nil, nil, fmt.Errorf("%w: paragraph %d must be valid UTF-8 without NUL", ErrInvalidSynthesis, index)

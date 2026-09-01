@@ -99,7 +99,7 @@ function validateFlowMetrics(value: unknown): Record<string, unknown> {
   const fields = [
     "assigned_returns", "review_bounces", "regression_count", "play_runs", "channel_messages",
     "conversation_chars", "incomplete_score", "completion_status", "signals", "last_play_outcome",
-    "review_gate", "column", "updated_at",
+    "column", "updated_at",
   ] as const;
   const empty = exactRecord(value, "Scrum card response.flow_metrics", fields, []);
   if (Object.keys(empty).length === 0) return {};
@@ -129,9 +129,6 @@ function validateFlowMetrics(value: unknown): Record<string, unknown> {
   }
   if ("last_play_outcome" in record && !["success", "failed"].includes(String(record.last_play_outcome))) {
     throw new Error("Scrum card response.flow_metrics.last_play_outcome is not registered.");
-  }
-  if ("review_gate" in record && !["passed", "failed", "pending", "running"].includes(String(record.review_gate))) {
-    throw new Error("Scrum card response.flow_metrics.review_gate is not registered.");
   }
   if ("column" in record && !SCRUM_COLUMNS.includes(record.column as (typeof SCRUM_COLUMNS)[number])) {
     throw new Error("Scrum card response.flow_metrics.column is not registered.");

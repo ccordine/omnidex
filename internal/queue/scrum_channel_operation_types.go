@@ -45,8 +45,6 @@ type ScrumChannelCardUpdate struct {
 	JobID             string
 	PlayState         string
 	QueueOrder        int
-	SyncJobID         string
-	StepContextCursor int64
 }
 
 type ScrumChannelCardBuilder func(DBScrumCard, model.Job) (ScrumChannelCardUpdate, error)

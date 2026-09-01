@@ -8,13 +8,11 @@ import "fmt"
 type PortableResponseTransport string
 
 const (
-	PortableResponseTransportSemanticRaw   PortableResponseTransport = "semantic_raw"
-	PortableResponseTransportStructuralRaw PortableResponseTransport = "structural_raw"
-	PortableResponseTransportFragmentRaw   PortableResponseTransport = "fragment_raw"
+	PortableResponseTransportSemanticRaw PortableResponseTransport = "semantic_raw"
+	PortableResponseTransportFragmentRaw PortableResponseTransport = "fragment_raw"
 
-	PortableSemanticWorkerScope   = "portable_semantic_worker"
-	PortableStructuralWorkerScope = "portable_structural_worker"
-	PortableFragmentWorkerScope   = "portable_fragment_worker"
+	PortableSemanticWorkerScope = "portable_semantic_worker"
+	PortableFragmentWorkerScope = "portable_fragment_worker"
 )
 
 // PortableResponseTransportForWorkKind returns the one registered response
@@ -26,9 +24,7 @@ func PortableResponseTransportForWorkKind(
 		return "", fmt.Errorf("portable work kind %q has no registered response transport", kind)
 	}
 	switch kind {
-	case WorkApplicationTargetTree:
-		return PortableResponseTransportStructuralRaw, nil
-	case WorkFragmentGeneration, WorkFragmentModification, WorkFragmentCorrection:
+	case WorkFragmentGeneration:
 		return PortableResponseTransportFragmentRaw, nil
 	default:
 		return PortableResponseTransportSemanticRaw, nil
@@ -39,8 +35,6 @@ func (transport PortableResponseTransport) WorkerScope() (string, error) {
 	switch transport {
 	case PortableResponseTransportSemanticRaw:
 		return PortableSemanticWorkerScope, nil
-	case PortableResponseTransportStructuralRaw:
-		return PortableStructuralWorkerScope, nil
 	case PortableResponseTransportFragmentRaw:
 		return PortableFragmentWorkerScope, nil
 	default:

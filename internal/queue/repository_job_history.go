@@ -46,16 +46,8 @@ func (r *Repository) ReadJobHistoryPage(
 		page.Steps, page.NextCursor, err = readHistoricalStepPage(
 			ctx, tx, jobID, position, request.Limit,
 		)
-	case JobHistoryArtifacts:
-		page.Artifacts, page.NextCursor, err = readHistoricalArtifactPage(
-			ctx, tx, jobID, position, request.Limit,
-		)
 	case JobHistoryEvidence:
 		page.Evidence, page.NextCursor, err = readHistoricalEvidencePage(
-			ctx, tx, jobID, position, request.Limit,
-		)
-	case JobHistoryLLMCalls:
-		page.LLMCalls, page.NextCursor, err = readHistoricalLLMCallPage(
 			ctx, tx, jobID, position, request.Limit,
 		)
 	default:

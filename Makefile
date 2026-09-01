@@ -1,4 +1,4 @@
-.PHONY: tidy build core cli omni run fmt ui ui-dev
+.PHONY: tidy build omnidex omni fmt ui ui-dev
 
 tidy:
 	go mod tidy
@@ -9,19 +9,13 @@ ui:
 ui-dev:
 	cd internal/api/web && npm install && npm run dev
 
-build: core cli omni
+build: omnidex omni
 
-core:
-	./scripts/build-core.sh
-
-cli:
-	./scripts/build-core.sh --package ./cmd/cli --output bin/agent-cli
+omnidex:
+	go build -trimpath -o bin/omnidex ./cmd/omnidex
 
 omni:
-	./scripts/build-core.sh --package ./cmd/omni --output bin/omni
-
-run: core
-	./bin/agent-core
+	go build -trimpath -o bin/omni ./cmd/omni
 
 fmt:
 	gofmt -w ./cmd ./internal

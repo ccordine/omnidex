@@ -11,31 +11,6 @@ func decodeDatabaseQueryRawLeaf(label, raw string) (string, error) {
 	return decodeRawSemanticLeaf(label, raw, maxDatabaseQueryLeafBytes, false)
 }
 
-func decodeDatabaseQueryCollectionCoverage(
-	label, raw string,
-	hasRequiredShape bool,
-	boundExhausted bool,
-) (string, error) {
-	leaf, err := decodeDatabaseQueryRawLeaf(label, raw)
-	if err != nil {
-		return "", err
-	}
-	switch leaf {
-	case DatabaseQueryNoUncoveredItem:
-		if !hasRequiredShape {
-			return "", fmt.Errorf("%s has an uncovered required semantic shape", label)
-		}
-		return leaf, nil
-	case DatabaseQueryItemRemains:
-		if boundExhausted {
-			return "", fmt.Errorf("%s collection bound is exhausted", label)
-		}
-		return leaf, nil
-	default:
-		return "", fmt.Errorf("%s value %q is not registered", label, leaf)
-	}
-}
-
 // DatabaseQueryProjectionsHaveRequiredShape reports whether the retained
 // projections satisfy the minimum code-owned cardinality and shape invariant.
 // It does not decide whether an open-ended shape has another semantic item.

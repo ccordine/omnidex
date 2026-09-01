@@ -23,10 +23,6 @@ export default class TerminalController extends Controller {
   private onProjectClosed = () => this.handleProjectClosed();
   private onProjectTab = (event: Event) => this.handleProjectTab(event);
   private onFullscreenChange = () => this.handleFullscreenChange();
-  private immersive = false;
-  private immersiveKeydown: ((event: KeyboardEvent) => void) | null = null;
-  private immersiveRestore: { parent: HTMLElement; next: ChildNode | null } | null = null;
-
   connect() {
     document.addEventListener("omni:project-opened", this.onProjectOpened);
     document.addEventListener("omni:project-closed", this.onProjectClosed);
@@ -39,7 +35,6 @@ export default class TerminalController extends Controller {
     document.removeEventListener("omni:project-closed", this.onProjectClosed);
     document.removeEventListener("omni:project-tab", this.onProjectTab);
     document.removeEventListener("fullscreenchange", this.onFullscreenChange);
-    void this.exitImmersive();
     this.teardown();
   }
 
@@ -48,86 +43,50 @@ export default class TerminalController extends Controller {
     void this.connectTerminal(true);
   }
 
-  toggleFullscreen(event: Event) {
+  async toggleFullscreen(event: Event): Promise<void> {
     event.preventDefault();
-    if (!this.frameTarget) return;
-    if (this.isImmersive()) {
-      void this.exitImmersive();
-      return;
+    try {
+      if (this.isImmersive()) {
+        await this.exitImmersive();
+        return;
+      }
+      await this.enterImmersive();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Native fullscreen failed";
+      this.setStatus(message, "error");
+      throw error instanceof Error ? error : new Error(message);
     }
-    void this.enterImmersive();
   }
 
   private isImmersive(): boolean {
-    return document.fullscreenElement === this.frameTarget || this.immersive;
-  }
-
-  private canUseNativeFullscreen(): boolean {
-    if (!window.isSecureContext) return false;
-    const enabled = document.fullscreenEnabled ?? (document as Document & { webkitFullscreenEnabled?: boolean }).webkitFullscreenEnabled;
-    return enabled !== false;
+    return document.fullscreenElement === this.frameTarget;
   }
 
   private async enterImmersive() {
-    if (this.canUseNativeFullscreen()) {
-      try {
-        await this.frameTarget.requestFullscreen();
-        this.syncFullscreenButton();
-        this.fitTerminal();
-        this.sendResize();
-        return;
-      } catch {
-        // Fall back to fixed overlay on LAN http:// or blocked API.
-      }
+    if (!window.isSecureContext) {
+      throw new Error("Native fullscreen requires a secure browser context.");
     }
-    this.enableImmersiveFallback();
-  }
-
-  private async exitImmersive() {
-    if (document.fullscreenElement === this.frameTarget) {
-      try {
-        await document.exitFullscreen();
-      } catch {
-        // ignore
-      }
+    if (!document.fullscreenEnabled || typeof this.frameTarget.requestFullscreen !== "function") {
+      throw new Error("Native fullscreen is unavailable in this browser.");
     }
-    this.disableImmersiveFallback();
-  }
-
-  private enableImmersiveFallback() {
-    this.immersive = true;
-    const frame = this.frameTarget;
-    const parent = frame.parentElement;
-    if (parent) {
-      this.immersiveRestore = { parent, next: frame.nextSibling };
-      document.body.appendChild(frame);
+    try {
+      await this.frameTarget.requestFullscreen();
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      throw new Error(`Native fullscreen request failed: ${detail}`);
     }
-    frame.classList.add("terminal-fullscreen-fallback");
-    document.body.classList.add("screen-fullscreen-active");
-    this.immersiveKeydown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") void this.exitImmersive();
-    };
-    document.addEventListener("keydown", this.immersiveKeydown);
     this.syncFullscreenButton();
     this.fitTerminal();
     this.sendResize();
-    this.term?.focus();
   }
 
-  private disableImmersiveFallback() {
-    this.immersive = false;
-    const frame = this.frameTarget;
-    frame.classList.remove("terminal-fullscreen-fallback");
-    document.body.classList.remove("screen-fullscreen-active");
-    if (this.immersiveRestore) {
-      const { parent, next } = this.immersiveRestore;
-      if (next && next.parentElement === parent) parent.insertBefore(frame, next);
-      else parent.appendChild(frame);
-      this.immersiveRestore = null;
-    }
-    if (this.immersiveKeydown) {
-      document.removeEventListener("keydown", this.immersiveKeydown);
-      this.immersiveKeydown = null;
+  private async exitImmersive() {
+    if (document.fullscreenElement !== this.frameTarget) return;
+    try {
+      await document.exitFullscreen();
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      throw new Error(`Native fullscreen exit failed: ${detail}`);
     }
     this.syncFullscreenButton();
     this.fitTerminal();
@@ -135,10 +94,6 @@ export default class TerminalController extends Controller {
   }
 
   private handleFullscreenChange() {
-    if (document.fullscreenElement !== this.frameTarget && this.immersive) {
-      this.disableImmersiveFallback();
-      return;
-    }
     this.syncFullscreenButton();
     this.fitTerminal();
     this.sendResize();
@@ -398,6 +353,5 @@ export default class TerminalController extends Controller {
   private syncFullscreenButton() {
     const active = this.isImmersive();
     this.fullscreenButtonTarget.textContent = active ? "Exit fullscreen" : "Fullscreen";
-    this.frameTarget.classList.toggle("terminal-fullscreen-active", active);
   }
 }

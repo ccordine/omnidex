@@ -3,7 +3,6 @@ package llmprovider
 import (
 	"context"
 	"fmt"
-	"strings"
 	"sync"
 
 	"github.com/gryph/omnidex/internal/config"
@@ -37,33 +36,6 @@ func NewLazyFromConfig(cfg config.Config) Transports {
 	}
 }
 
-func (resolver *lazyExactStationResolver) RequireExactPreparedContract() error {
-	if resolver == nil {
-		return fmt.Errorf("lazy exact station resolver is uninitialized")
-	}
-	return nil
-}
-
-func (resolver *lazyExactStationResolver) ValidateExactPreparedProvider(
-	expected llm.ProviderIdentityExpectation,
-) error {
-	client, err := resolver.resolve()
-	if err != nil {
-		return err
-	}
-	return client.ValidateExactPreparedProvider(expected)
-}
-
-func (resolver *lazyExactStationResolver) ValidateExactPreparedContract(
-	prepared llm.PreparedModel,
-) error {
-	client, err := resolver.resolve()
-	if err != nil {
-		return err
-	}
-	return client.ValidateExactPreparedContract(prepared)
-}
-
 func (resolver *lazyExactStationResolver) GeneratePreparedExact(
 	ctx context.Context,
 	prepared llm.PreparedModel,
@@ -75,55 +47,22 @@ func (resolver *lazyExactStationResolver) GeneratePreparedExact(
 	return client.GeneratePreparedExact(ctx, prepared)
 }
 
-func (resolver *lazyExactStationResolver) DiscoverProviderIdentityEvidence(
-	ctx context.Context,
-	selection llm.ProviderIdentitySelection,
-	challenge string,
-) (llm.ObservedProviderIdentity, error) {
-	client, err := resolver.resolve()
-	if err == nil {
-		return client.DiscoverProviderIdentityEvidence(ctx, selection, challenge)
-	}
-	evidence, evidenceErr := llm.NewUndispatchedProviderIdentityEvidence(selection)
-	if evidenceErr != nil {
-		return llm.ObservedProviderIdentity{}, fmt.Errorf(
-			"resolve exact station provider authority: %v; construct undispatched evidence: %w",
-			err, evidenceErr,
-		)
-	}
-	return llm.ObservedProviderIdentity{Evidence: evidence}, fmt.Errorf(
-		"resolve exact station provider authority: %w", err,
-	)
-}
-
-func (resolver *lazyExactStationResolver) ResolveRoleplayCompletionContext(
-	ctx context.Context,
-	model string,
-	requested int,
-) (int, error) {
-	client, err := resolver.resolve()
-	if err != nil {
-		return 0, fmt.Errorf("resolve roleplay completion context provider authority: %w", err)
-	}
-	contextResolver, ok := client.(llm.RoleplayCompletionContextResolver)
-	if !ok {
-		return 0, fmt.Errorf("exact station provider does not implement roleplay completion context resolution")
-	}
-	return contextResolver.ResolveRoleplayCompletionContext(ctx, model, requested)
-}
-
 func (resolver *lazyExactStationResolver) resolve() (llm.ExactStationClient, error) {
 	if resolver == nil {
 		return nil, fmt.Errorf("lazy exact station resolver is uninitialized")
 	}
 	resolver.once.Do(func() {
-		provider := strings.TrimSpace(resolver.cfg.LLMProvider)
+		provider := resolver.cfg.LLMProvider
 		if provider == "" {
 			resolver.err = fmt.Errorf("LLM_PROVIDER is not configured")
 			return
 		}
-		definition, ok := catalog.Lookup(provider)
-		if !ok || !definition.SupportsExactPreparedStations {
+		definition, err := catalog.Resolve(provider)
+		if err != nil {
+			resolver.err = fmt.Errorf("resolve LLM provider %q: %w", provider, err)
+			return
+		}
+		if !definition.SupportsExactPreparedStations {
 			resolver.err = fmt.Errorf(
 				"LLM provider %q does not implement the exact prepared station contract", provider,
 			)
@@ -135,12 +74,7 @@ func (resolver *lazyExactStationResolver) resolve() (llm.ExactStationClient, err
 			resolver.err = err
 			return
 		}
-		resolver.client, resolver.err = newExactStationProvider(
-			resolver.cfg, definition, resolver.cfg.RequestTimeout,
-		)
-		if resolver.err == nil {
-			resolver.err = resolver.client.RequireExactPreparedContract()
-		}
+		resolver.client, resolver.err = newExactStationProvider(resolver.cfg, definition)
 	})
 	return resolver.client, resolver.err
 }
@@ -161,13 +95,17 @@ func (resolver *lazyEmbeddingResolver) resolve() (llm.EmbeddingClient, error) {
 		return nil, fmt.Errorf("lazy embedding resolver is uninitialized")
 	}
 	resolver.once.Do(func() {
-		provider := strings.TrimSpace(resolver.cfg.EmbeddingProvider)
+		provider := resolver.cfg.EmbeddingProvider
 		if provider == "" {
 			resolver.err = fmt.Errorf("EMBEDDING_PROVIDER is not configured")
 			return
 		}
-		definition, ok := catalog.Lookup(provider)
-		if !ok || !definition.SupportsEmbeddings {
+		definition, err := catalog.Resolve(provider)
+		if err != nil {
+			resolver.err = fmt.Errorf("resolve embedding provider %q: %w", provider, err)
+			return
+		}
+		if !definition.SupportsEmbeddings {
 			resolver.err = fmt.Errorf("embedding provider %q is unsupported", provider)
 			return
 		}
@@ -177,9 +115,7 @@ func (resolver *lazyEmbeddingResolver) resolve() (llm.EmbeddingClient, error) {
 			resolver.err = err
 			return
 		}
-		resolver.client, resolver.err = newEmbeddingProvider(
-			resolver.cfg, definition, resolver.cfg.EmbeddingModel, resolver.cfg.RequestTimeout,
-		)
+		resolver.client, resolver.err = newEmbeddingProvider(resolver.cfg, definition)
 	})
 	return resolver.client, resolver.err
 }

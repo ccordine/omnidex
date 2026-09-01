@@ -22,8 +22,6 @@ vi.mock("./roleplay_api", () => ({
   writeRoleplaySceneDraftParticipant: vi.fn(),
 }));
 
-vi.mock("./ollama_model_api", () => ({ pullOllamaModel: vi.fn() }));
-
 const firstChannelID = "story-42";
 const secondChannelID = "story-43";
 const personaID = "rpc_abcdef0123456789abcdef0123456789";

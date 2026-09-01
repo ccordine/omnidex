@@ -18,6 +18,7 @@ type LexicalPathToken struct {
 	Start int
 	End   int
 	Value string
+	Quoted bool
 }
 
 // LexicalPathTokens exposes the same deterministic tokenization used by the
@@ -29,7 +30,7 @@ func LexicalPathTokens(value string) []LexicalPathToken {
 	tokens := make([]LexicalPathToken, 0, len(spans))
 	for _, span := range spans {
 		tokens = append(tokens, LexicalPathToken{
-			Start: span.start, End: span.end, Value: value[span.start:span.end],
+			Start: span.start, End: span.end, Value: value[span.start:span.end], Quoted: span.quoted,
 		})
 	}
 	return tokens
@@ -103,6 +104,10 @@ func isQualifiedPath(value string) bool {
 	if value[0] == '~' {
 		return true
 	}
+	// A bare drive designator is already a valid drive-relative filesystem
+	// identity on Windows. Parser-proven source syntax must use
+	// SourcePathIdentities instead of weakening this prose boundary for typed
+	// parameter labels.
 	if len(value) >= 2 && isASCIIAlpha(value[0]) && value[1] == ':' {
 		return true
 	}
@@ -133,6 +138,7 @@ func isASCIIAlpha(value byte) bool {
 type pathTokenSpan struct {
 	start int
 	end   int
+	quoted bool
 }
 
 func lexPathTokens(value string) []pathTokenSpan {
@@ -145,7 +151,8 @@ func lexPathTokens(value string) []pathTokenSpan {
 			break
 		}
 		start, end := offset, offset
-		if pathQuote(value[offset]) {
+		quoted := pathQuote(value[offset])
+		if quoted {
 			quote := value[offset]
 			start = offset + 1
 			end = start
@@ -164,7 +171,7 @@ func lexPathTokens(value string) []pathTokenSpan {
 		}
 		start, end = trimPathToken(value, start, end)
 		if start < end {
-			spans = append(spans, pathTokenSpan{start: start, end: end})
+			spans = append(spans, pathTokenSpan{start: start, end: end, quoted: quoted})
 		}
 	}
 	return spans

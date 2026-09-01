@@ -12,12 +12,6 @@ const (
 	maxWebCandidateIDBytes         = 128
 	maxWebCandidateSummaryBytes    = 2 * 1024
 	maxWebRelevanceProjectionBytes = 8 * 1024
-	maxWebGroundedEvidence         = 32
-	maxWebEvidenceIDBytes          = 128
-	maxWebEvidenceProjectionBytes  = 8 * 1024
-	maxWebSynthesisParagraphs      = 4
-	maxWebSynthesisParagraphBytes  = 2 * 1024
-	maxWebEvidenceIDsPerParagraph  = 4
 )
 
 func validateExactWebQuestion(question string) error {

@@ -37,27 +37,11 @@ func validateDirectCodingSemanticCandidatePathBoundary(
 	provenance assemblyline.ArtifactIdentityProvenance,
 ) error {
 	switch kind {
-	case assemblyline.WorkApplicationTargetTree,
-		assemblyline.WorkFragmentGeneration,
-		assemblyline.WorkFragmentModification,
-		assemblyline.WorkFragmentCorrection:
+	case assemblyline.WorkFragmentGeneration:
 		return fmt.Errorf(
 			"work kind %q cannot use the raw semantic-leaf candidate boundary",
 			kind,
 		)
-	case assemblyline.WorkApplicationServiceEndpointRouteTemplate,
-		assemblyline.WorkApplicationServiceEndpointRequestMedia,
-		assemblyline.WorkApplicationServiceEndpointResponseMedia:
-		// These registered leaves own typed HTTP route or media syntax. Slash
-		// grammar is not filesystem authority, but an exact current-tree name
-		// remains forbidden even inside the typed value.
-		if matches := modelcontext.ProvenArtifactIdentities(candidate, provenance); len(matches) > 0 {
-			return fmt.Errorf(
-				"semantic result contains known artifact identity %q",
-				candidate[matches[0].Start:matches[0].End],
-			)
-		}
-		return nil
 	default:
 		return assemblyline.ValidatePathFreeModelContextWithProvenance(
 			"coding semantic result", provenance, candidate,

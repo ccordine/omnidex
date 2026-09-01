@@ -14,9 +14,6 @@ var errPortableResponseMaximumKindMissing = errors.New(
 // candidate sets and correction inheritance are resolved from immutable job
 // payload authority.
 func PortableResponseMaximumBytesForJob(job PortableJob) (int, error) {
-	if err := job.Validate(); err != nil {
-		return 0, err
-	}
 	maximum, err := portableResponseMaximumBytesForValidatedJob(job)
 	if err != nil {
 		return 0, err
@@ -54,23 +51,6 @@ func maximumStringBytes[T ~string](values ...T) int {
 		}
 	}
 	return maximum
-}
-
-func maximumAcceptedCandidateBytes(
-	label string,
-	candidates []string,
-	accept func(string) error,
-) (int, error) {
-	maximum := 0
-	for _, candidate := range candidates {
-		if err := accept(candidate); err == nil && len(candidate) > maximum {
-			maximum = len(candidate)
-		}
-	}
-	if maximum == 0 {
-		return 0, fmt.Errorf("%s has no decoder-accepted raw candidate", label)
-	}
-	return maximum, nil
 }
 
 func cappedResponseMaximum(maximum, ceiling int) int {

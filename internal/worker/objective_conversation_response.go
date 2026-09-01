@@ -152,7 +152,7 @@ func runObjectiveRoleplayTurn(
 				"resolve roleplay responder %d ongoing-action authority: %w", index, err,
 			)
 		}
-		ongoingAction, ongoingActionCalls, err := extractRoleplayOngoingAction(
+		extractedOngoingAction, ongoingActionCalls, err := extractRoleplayOngoingAction(
 			ctx, ongoingActionStation, assemblyline.RoleplayOngoingActionSourceAssistantResponse,
 			projection.Viewpoint.Name, responseResult.Output,
 			previousOngoingAction,
@@ -161,11 +161,14 @@ func runObjectiveRoleplayTurn(
 			return result, fmt.Errorf("extract roleplay responder %d ongoing action: %w", index, err)
 		}
 		result.ModelCalls += ongoingActionCalls
-		ongoingAction, err = restoreObjectiveOptionalModelText(
-			authority, "roleplay responder ongoing action", ongoingAction,
-		)
-		if err != nil {
-			return result, err
+		ongoingAction := extractedOngoingAction.Action
+		if extractedOngoingAction.RequiresRestoration {
+			ongoingAction, err = restoreObjectiveOptionalModelText(
+				authority, "roleplay responder ongoing action", ongoingAction,
+			)
+			if err != nil {
+				return result, err
+			}
 		}
 		source, err := assemblyline.NewRoleplayAssistantCanonSource(
 			projection.Viewpoint.Name, responseResult.Output,

@@ -38,6 +38,14 @@ type EvidenceResult struct {
 	FetchAttempts       int
 	RelevanceCalls      int
 	SemanticCalls       int
+	CallLedger          SemanticCallLedger
+}
+
+type evidenceMachine struct {
+	objective Objective
+	config    EvidenceConfig
+	relevance RelevanceStation
+	contracts acquisitionContracts
 }
 
 // GatherRelevantEvidence runs the shared deterministic web evidence sieve.
@@ -85,15 +93,15 @@ func GatherRelevantEvidence(
 	if err != nil {
 		return EvidenceResult{}, fmt.Errorf("%w: acquisition contracts: %w", ErrInvalidConfiguration, err)
 	}
-	machine := &Machine{
+	machine := &evidenceMachine{
 		objective: objective,
-		config: Config{
+		config: EvidenceConfig{
 			MaxFetchCandidates: config.MaxFetchCandidates, MaxProjectionBytes: config.MaxProjectionBytes,
 			MaxRelevantCandidates: config.MaxRelevantCandidates, CandidateSummaryBytes: config.CandidateSummaryBytes,
 		},
 		relevance: relevance, contracts: contracts,
 	}
-	result := Result{
+	result := evidenceRun{
 		Objective:               cloneObjective(objective),
 		AcquisitionAttemptLimit: 2,
 	}
@@ -107,13 +115,14 @@ func GatherRelevantEvidence(
 	return evidenceResultFromRun(result, selected), nil
 }
 
-func evidenceResultFromRun(result Result, selected []Evidence) EvidenceResult {
+func evidenceResultFromRun(result evidenceRun, selected []Evidence) EvidenceResult {
 	return EvidenceResult{
 		Evidence: cloneEvidence(selected), Projected: cloneProjection(result.Projected),
 		AcquisitionAttempts: result.AcquisitionAttempts,
 		DiscoveryAttempts:   result.DiscoveryAttempts, FetchAttempts: result.FetchAttempts,
 		RelevanceCalls: result.RelevanceCalls,
 		SemanticCalls:  result.SemanticCalls,
+		CallLedger:     result.CallLedger.Clone(),
 	}
 }
 

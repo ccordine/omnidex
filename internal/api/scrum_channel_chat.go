@@ -6,7 +6,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/gryph/omnidex/internal/model"
 	"github.com/gryph/omnidex/internal/queue"
 )
 
@@ -104,62 +103,4 @@ func pendingScrumMessageContains(messages []ScrumChatMessage, content string) bo
 		}
 	}
 	return false
-}
-
-func syncRunningJobChannelChat(card ScrumCard, job model.JobDetails) (ScrumCard, bool, error) {
-	if err := validateScrumSyncAuthority(card, job); err != nil {
-		return card, false, err
-	}
-	if syncedCtx, ok, err := syncRunningJobStepContexts(card, job); err != nil {
-		return card, false, err
-	} else if ok {
-		return syncedCtx, true, nil
-	}
-	return card, false, nil
-}
-
-func syncRunningJobStepContexts(card ScrumCard, job model.JobDetails) (ScrumCard, bool, error) {
-	if err := validateScrumSyncAuthority(card, job); err != nil {
-		return card, false, err
-	}
-	if len(job.Contexts) == 0 {
-		return card, false, nil
-	}
-	syncedID := card.StepContextCursor
-	updated := card
-	changed := false
-	maxID := syncedID
-	previousID := int64(0)
-	for _, ctxValue := range job.Contexts {
-		if ctxValue.ID <= 0 {
-			return card, false, fmt.Errorf("Scrum step context cursor authority requires positive context IDs")
-		}
-		if previousID != 0 && ctxValue.ID <= previousID {
-			return card, false, fmt.Errorf("Scrum step contexts must be ordered by strictly increasing typed IDs")
-		}
-		previousID = ctxValue.ID
-		if ctxValue.ID <= syncedID {
-			continue
-		}
-		for _, msg := range stepContextToActivity(ctxValue) {
-			before := len(updated.PendingChannelMessages)
-			var err error
-			updated.PendingChannelMessages, err = appendScrumChatMessage(updated.PendingChannelMessages, msg.Role, msg.Content)
-			if err != nil {
-				return card, false, err
-			}
-			changed = changed || len(updated.PendingChannelMessages) != before
-		}
-		if ctxValue.ID > maxID {
-			maxID = ctxValue.ID
-		}
-	}
-	if maxID > syncedID {
-		updated.StepContextCursor = maxID
-		changed = true
-	}
-	if !changed {
-		return card, false, nil
-	}
-	return updated, true, nil
 }

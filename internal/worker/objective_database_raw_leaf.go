@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
+	"github.com/gryph/omnidex/internal/station"
 )
 
 type objectiveDatabaseRawLeafDecoder func(string) (any, error)
@@ -17,7 +18,9 @@ type objectiveDatabaseRawLeafCall func(
 ) (any, int, error)
 
 func (adapter portableObjectiveDatabaseStations) rawLeafCall(
-	modelName string,
+	owner station.ID,
+	resolveModel func() (string, error),
+	ledger *objectiveDatabaseRawLeafCallLedger,
 ) objectiveDatabaseRawLeafCall {
 	return func(
 		ctx context.Context,
@@ -25,11 +28,22 @@ func (adapter portableObjectiveDatabaseStations) rawLeafCall(
 		job assemblyline.PortableJob,
 		decode objectiveDatabaseRawLeafDecoder,
 	) (any, int, error) {
-		return runObjectivePortableRawLeafCall[any](
-			ctx, adapter.runtime, modelName, subject, job,
+		value, receipt, err := runObjectivePortableRawLeafStation[any](
+			ctx, adapter.runtime, subject, job, owner, resolveModel,
 			objectiveRawLeafDecoder[any](decode),
-			func(any) error { return nil },
 		)
+		if err != nil {
+			return value, receipt.Calls, err
+		}
+		if ledger == nil {
+			return nil, receipt.Calls, fmt.Errorf(
+				"database raw semantic leaf %s has no receipt ledger", subject,
+			)
+		}
+		if err := ledger.record(subject, receipt); err != nil {
+			return nil, receipt.Calls, err
+		}
+		return value, receipt.Calls, nil
 	}
 }
 

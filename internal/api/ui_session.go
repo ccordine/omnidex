@@ -21,24 +21,32 @@ type uiSessionResponse struct {
 	TTLMS     int64          `json:"ttl_ms"`
 }
 
-type uiMemorySessionRecord struct {
-	State     map[string]any
-	ExpiresAt time.Time
-}
-
 func (s *Server) handleUISession(w http.ResponseWriter, r *http.Request) {
+	ttl, err := parseDurationSetting("UI_SESSION_TTL", s.uiSessionTTL, time.Minute)
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, err.Error())
+		return
+	}
 	switch r.Method {
 	case http.MethodGet:
-		s.readUISession(w, r)
+		s.readUISession(w, r, ttl)
 	case http.MethodPatch, http.MethodPost:
-		s.updateUISession(w, r)
+		s.updateUISession(w, r, ttl)
 	default:
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 	}
 }
 
-func (s *Server) readUISession(w http.ResponseWriter, r *http.Request) {
-	sessionID := s.ensureUISessionCookie(w, r)
+func (s *Server) readUISession(w http.ResponseWriter, r *http.Request, ttl time.Duration) {
+	if err := validateUIStateQuery(r); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	sessionID, err := s.ensureUISessionCookieWithTTL(w, r, ttl)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
 	state, source, err := s.loadUIState(r.Context(), sessionID)
 	if err != nil {
 		writeError(w, http.StatusServiceUnavailable, err.Error())
@@ -55,7 +63,7 @@ func (s *Server) readUISession(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	if _, err := s.persistUIState(r.Context(), sessionID, state); err != nil {
+	if _, err := s.persistUIStateWithTTL(r.Context(), sessionID, state, ttl); err != nil {
 		writeError(w, http.StatusServiceUnavailable, err.Error())
 		return
 	}
@@ -65,12 +73,20 @@ func (s *Server) readUISession(w http.ResponseWriter, r *http.Request) {
 		State:     state,
 		Locale:    locale,
 		Source:    source,
-		TTLMS:     s.uiSessionTTL.Milliseconds(),
+		TTLMS:     ttl.Milliseconds(),
 	})
 }
 
-func (s *Server) updateUISession(w http.ResponseWriter, r *http.Request) {
-	sessionID := s.ensureUISessionCookie(w, r)
+func (s *Server) updateUISession(w http.ResponseWriter, r *http.Request, ttl time.Duration) {
+	if err := validateUIStateQuery(r); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	sessionID, err := s.ensureUISessionCookieWithTTL(w, r, ttl)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
 	state, _, err := s.loadUIState(r.Context(), sessionID)
 	if err != nil {
 		writeError(w, http.StatusServiceUnavailable, err.Error())
@@ -79,7 +95,13 @@ func (s *Server) updateUISession(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		State map[string]any `json:"state"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+	if err := requireJSONEOF(decoder, "UI session request"); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON")
 		return
 	}
@@ -100,7 +122,7 @@ func (s *Server) updateUISession(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	source, err := s.persistUIState(r.Context(), sessionID, state)
+	source, err := s.persistUIStateWithTTL(r.Context(), sessionID, state, ttl)
 	if err != nil {
 		writeError(w, http.StatusServiceUnavailable, err.Error())
 		return
@@ -112,103 +134,110 @@ func (s *Server) updateUISession(w http.ResponseWriter, r *http.Request) {
 		State:     state,
 		Locale:    locale,
 		Source:    source,
-		TTLMS:     s.uiSessionTTL.Milliseconds(),
+		TTLMS:     ttl.Milliseconds(),
 	})
 }
 
-func (s *Server) ensureUISessionCookie(w http.ResponseWriter, r *http.Request) string {
+func (s *Server) ensureUISessionCookie(w http.ResponseWriter, r *http.Request) (string, error) {
+	ttl, err := parseDurationSetting("UI_SESSION_TTL", s.uiSessionTTL, time.Minute)
+	if err != nil {
+		return "", err
+	}
+	return s.ensureUISessionCookieWithTTL(w, r, ttl)
+}
+
+func (s *Server) ensureUISessionCookieWithTTL(
+	w http.ResponseWriter,
+	r *http.Request,
+	ttl time.Duration,
+) (string, error) {
 	if cookie, err := r.Cookie(uiSessionCookieName); err == nil {
 		if id := normalizeUISessionID(cookie.Value); id != "" {
-			return id
+			return id, nil
 		}
 	}
-	sessionID := newUISessionID()
+	sessionID, err := newUISessionID()
+	if err != nil {
+		return "", err
+	}
 	http.SetCookie(w, &http.Cookie{
 		Name:     uiSessionCookieName,
 		Value:    sessionID,
 		Path:     "/",
-		MaxAge:   int(s.uiSessionTTL.Seconds()),
+		MaxAge:   int(ttl.Seconds()),
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
 	})
-	return sessionID
+	return sessionID, nil
 }
 
 func (s *Server) loadUIState(ctx context.Context, sessionID string) (map[string]any, string, error) {
-	key := uiSessionRedisKey(sessionID)
-	if s.uiRedis != nil {
-		raw, ok, err := s.uiRedis.Get(ctx, key)
-		if err == nil && ok {
-			state, err := decodeUIState([]byte(raw))
-			if err == nil {
-				return state, "redis", nil
-			}
-		}
-		if err != nil && s.uiRedisRequired {
-			return nil, "", fmt.Errorf("redis ui session unavailable: %w", err)
-		}
+	redis, err := s.requireUIRedis()
+	if err != nil {
+		return nil, "", err
 	}
-	if s.repo != nil {
-		record, ok, err := s.repo.GetUISession(ctx, sessionID)
-		if err != nil {
-			return nil, "", err
-		}
-		if ok {
-			state, err := decodeUIState(record.State)
-			if err != nil {
-				return map[string]any{}, "pgsql", nil
-			}
-			if s.uiRedis != nil {
-				_ = s.uiRedis.SetEX(ctx, key, string(record.State), s.uiSessionTTL)
-			}
-			return state, "pgsql", nil
-		}
+	raw, ok, err := redis.Get(ctx, uiSessionRedisKey(sessionID))
+	if err != nil {
+		return nil, "", fmt.Errorf("redis ui session read failed: %w", err)
 	}
-	s.uiMemoryMu.RLock()
-	record, ok := s.uiMemorySessions[sessionID]
-	s.uiMemoryMu.RUnlock()
-	if ok && record.ExpiresAt.After(time.Now()) {
-		raw, err := json.Marshal(record.State)
-		if err != nil {
-			return nil, "", err
-		}
-		state, err := decodeUIState(raw)
-		if err != nil {
-			return nil, "", err
-		}
-		return state, "memory", nil
+	if !ok {
+		return map[string]any{}, "new", nil
 	}
-	return map[string]any{}, "new", nil
+	state, err := decodeUIState([]byte(raw))
+	if err != nil {
+		return nil, "", fmt.Errorf("redis ui session state is invalid: %w", err)
+	}
+	return state, "redis", nil
 }
 
-func (s *Server) persistUIState(ctx context.Context, sessionID string, state map[string]any) (string, error) {
+func (s *Server) persistUIState(
+	ctx context.Context,
+	sessionID string,
+	state map[string]any,
+) (string, error) {
+	ttl, err := parseDurationSetting("UI_SESSION_TTL", s.uiSessionTTL, time.Minute)
+	if err != nil {
+		return "", err
+	}
+	return s.persistUIStateWithTTL(ctx, sessionID, state, ttl)
+}
+
+func (s *Server) persistUIStateWithTTL(
+	ctx context.Context,
+	sessionID string,
+	state map[string]any,
+	ttl time.Duration,
+) (string, error) {
 	state = sanitizeUIState(state)
 	raw, err := json.Marshal(state)
 	if err != nil {
 		return "", err
 	}
+	redis, err := s.requireUIRedis()
+	if err != nil {
+		return "", err
+	}
+	if err := redis.SetEX(ctx, uiSessionRedisKey(sessionID), string(raw), ttl); err != nil {
+		return "", fmt.Errorf("redis ui session write failed: %w", err)
+	}
+	return "redis", nil
+}
+
+func (s *Server) requireUIRedis() (*uiRedisClient, error) {
+	s.uiRedisMu.Lock()
+	defer s.uiRedisMu.Unlock()
 	if s.uiRedis != nil {
-		if err := s.uiRedis.SetEX(ctx, uiSessionRedisKey(sessionID), string(raw), s.uiSessionTTL); err == nil {
-			if s.repo != nil {
-				_, _ = s.repo.UpsertUISession(ctx, sessionID, raw, s.uiSessionTTL)
-			}
-			return "redis", nil
-		} else if s.uiRedisRequired {
-			return "", fmt.Errorf("redis ui session unavailable: %w", err)
-		}
+		return s.uiRedis, nil
 	}
-	if s.repo != nil {
-		if _, err := s.repo.UpsertUISession(ctx, sessionID, raw, s.uiSessionTTL); err != nil {
-			return "", err
-		}
-		return "pgsql", nil
+	redis, err := newUIRedisClient(s.redisURL)
+	if err != nil {
+		return nil, fmt.Errorf("redis ui session backend is invalid: %w", err)
 	}
-	s.uiMemoryMu.Lock()
-	s.uiMemorySessions[sessionID] = uiMemorySessionRecord{
-		State: sanitizeUIState(state), ExpiresAt: time.Now().Add(s.uiSessionTTL),
+	if redis == nil {
+		return nil, fmt.Errorf("redis ui session backend is not configured")
 	}
-	s.uiMemoryMu.Unlock()
-	return "memory", nil
+	s.uiRedis = redis
+	return s.uiRedis, nil
 }
 
 func decodeUIState(raw []byte) (map[string]any, error) {
@@ -259,12 +288,12 @@ func normalizeUISessionID(value string) string {
 	return value
 }
 
-func newUISessionID() string {
+func newUISessionID() (string, error) {
 	var buf [24]byte
 	if _, err := rand.Read(buf[:]); err != nil {
-		return hex.EncodeToString([]byte(fmt.Sprintf("%d", time.Now().UnixNano())))
+		return "", fmt.Errorf("generate UI session ID: %w", err)
 	}
-	return hex.EncodeToString(buf[:])
+	return hex.EncodeToString(buf[:]), nil
 }
 
 func uiSessionRedisKey(sessionID string) string {

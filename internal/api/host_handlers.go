@@ -15,11 +15,7 @@ func (s *Server) hostBridgeClient() *hostbridge.Client {
 	if strings.TrimSpace(s.hostAgentURL) == "" {
 		return nil
 	}
-	timeout := 10 * time.Second
-	if s.requestTimeout > 0 && s.requestTimeout < timeout {
-		timeout = s.requestTimeout
-	}
-	return hostbridge.NewClient(s.hostAgentURL, s.hostAgentToken, timeout)
+	return hostbridge.NewClient(s.hostAgentURL, s.hostAgentToken, 10*time.Second)
 }
 
 func (s *Server) handleHostBridgeStatus(w http.ResponseWriter, r *http.Request) {
@@ -46,7 +42,7 @@ func (s *Server) handleHostPickDirectory(w http.ResponseWriter, r *http.Request)
 	}
 	client := s.hostBridgeClient()
 	if client == nil {
-		writeError(w, http.StatusServiceUnavailable, "host bridge unavailable: run `omni host serve` on the host and set HOST_AGENT_URL (for Docker: http://host.docker.internal:8091)")
+		writeError(w, http.StatusServiceUnavailable, "host bridge unavailable: configure one exact HOST_AGENT_URL")
 		return
 	}
 	var req struct {

@@ -779,8 +779,7 @@ body.scrum-drag-active {
   transition: height 120ms ease;
 }
 
-[data-terminal-target="frame"]:fullscreen,
-[data-terminal-target="frame"].terminal-fullscreen-fallback {
+[data-terminal-target="frame"]:fullscreen {
   position: fixed;
   inset: 0;
   z-index: 10050;
@@ -794,20 +793,17 @@ body.scrum-drag-active {
   overflow: hidden;
 }
 
-[data-terminal-target="frame"]:fullscreen [data-terminal-target="mount"],
-[data-terminal-target="frame"].terminal-fullscreen-fallback [data-terminal-target="mount"] {
+[data-terminal-target="frame"]:fullscreen [data-terminal-target="mount"] {
   min-height: 0;
   height: 100%;
   width: 100%;
 }
 
-[data-terminal-target="frame"].terminal-fullscreen-active .terminal-fullscreen-controls,
 [data-terminal-target="frame"]:fullscreen .terminal-fullscreen-controls {
   opacity: 1;
 }
 
-[data-screen-target="frame"]:fullscreen,
-[data-screen-target="frame"].screen-fullscreen-fallback {
+[data-screen-target="frame"]:fullscreen {
   position: fixed;
   inset: 0;
   z-index: 10050;
@@ -824,8 +820,7 @@ body.scrum-drag-active {
   overflow: hidden;
 }
 
-[data-screen-target="frame"]:fullscreen [data-screen-target="stream"],
-[data-screen-target="frame"].screen-fullscreen-fallback [data-screen-target="stream"] {
+[data-screen-target="frame"]:fullscreen [data-screen-target="stream"] {
   min-height: 0;
   height: 100%;
   width: 100%;
@@ -834,11 +829,6 @@ body.scrum-drag-active {
   object-fit: contain;
 }
 
-[data-screen-target="frame"].screen-fullscreen-active .screen-fullscreen-controls,
 [data-screen-target="frame"]:fullscreen .screen-fullscreen-controls {
   opacity: 1;
-}
-
-body.screen-fullscreen-active {
-  overflow: hidden;
 }

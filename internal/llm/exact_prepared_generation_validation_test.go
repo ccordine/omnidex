@@ -1,98 +1,109 @@
 package llm
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
 	"strings"
 	"testing"
-	"time"
 )
 
-func TestExactPreparedGenerationRejectsRawChatMLControlLeakage(t *testing.T) {
+func TestExactPreparedGenerationAcceptsOnlyCompleteStopWithinBudget(t *testing.T) {
 	t.Parallel()
-	prepared := exactProtocolPrepared(t, ExactPreparedProtocolRawTextV2)
-	valid := exactPreparedGenerationForRequestTest(t, prepared, "semantic leaf")
-	if err := ValidateExactPreparedGenerationForRequest(prepared, valid); err != nil {
-		t.Fatalf("valid request-bound raw generation was rejected: %v", err)
+	prepared := exactPreparedRequestFixture()
+
+	accepted := exactPreparedGenerationFixture(t, prepared, "stop", 40, 12)
+	if err := ValidateExactPreparedGenerationForRequest(prepared, accepted); err != nil {
+		t.Fatalf("complete bounded response was rejected: %v", err)
 	}
 
-	for _, control := range []string{
-		"<|im_start|>", ExactPreparedRawChatEndV1,
-	} {
-		control := control
-		t.Run(control, func(t *testing.T) {
-			leaked := exactPreparedGenerationForRequestTest(
-				t, prepared, "semantic "+control+" leaf",
-			)
-			if err := ValidateExactPreparedGenerationForRequest(prepared, leaked); err == nil {
-				t.Fatalf("raw generation accepted leaked control %q", control)
-			}
-		})
-	}
-	literalTag := exactPreparedGenerationForRequestTest(
-		t, prepared, "A literal <think> element is ordinary result content.",
+	overBudget := exactPreparedGenerationFixture(
+		t, prepared, "stop", 40, prepared.MaxOutputTokens+1,
 	)
-	if err := ValidateExactPreparedGenerationForRequest(prepared, literalTag); err != nil {
-		t.Fatalf("ordinary literal tag content was rejected: %v", err)
-	}
-
-	wrongRequest := valid
-	wrongRequest.ProviderRequestSHA256 = strings.Repeat("f", 64)
-	if err := ValidateExactPreparedGenerationForRequest(prepared, wrongRequest); err == nil {
-		t.Fatal("generation from another exact request was accepted")
+	if err := ValidateExactPreparedGenerationForRequest(prepared, overBudget); err == nil {
+		t.Fatal("response exceeding provider output authority was accepted")
 	}
 }
 
-func exactPreparedGenerationForRequestTest(
+func TestExactPreparedGenerationRejectsLengthAsIncompleteEvidence(t *testing.T) {
+	t.Parallel()
+	prepared := exactPreparedRequestFixture()
+	generation := exactPreparedGenerationFixture(
+		t, prepared, "length", 40, prepared.MaxOutputTokens,
+	)
+	err := ValidateExactPreparedGenerationForRequest(prepared, generation)
+	limit, ok := err.(*ExactPreparedOutputLimitReachedError)
+	if !ok {
+		t.Fatalf("length completion error = %T %v", err, err)
+	}
+	if limit.OutputTokens != prepared.MaxOutputTokens || limit.ContentBytes < 1 {
+		t.Fatalf("length evidence = %#v", limit)
+	}
+}
+
+func TestExactPreparedGenerationRejectsAggregateNativeContextOverflow(t *testing.T) {
+	t.Parallel()
+	prepared := exactPreparedRequestFixture()
+	generation := exactPreparedGenerationFixture(
+		t, prepared, "stop", prepared.ContextTokens-11, 12,
+	)
+	err := ValidateExactPreparedGenerationForRequest(prepared, generation)
+	if err == nil || !strings.Contains(err.Error(), "aggregate native context exceeded") {
+		t.Fatalf("aggregate native overflow error = %v", err)
+	}
+}
+
+func TestExactPreparedGenerationRejectsUnknownCompletionReason(t *testing.T) {
+	t.Parallel()
+	prepared := exactPreparedRequestFixture()
+	generation := exactPreparedGenerationFixture(t, prepared, "cancelled", 40, 12)
+	if err := ValidateExactPreparedGenerationForRequest(prepared, generation); err == nil {
+		t.Fatal("unknown provider completion reason was accepted")
+	}
+}
+
+func exactPreparedGenerationFixture(
 	t *testing.T,
 	prepared PreparedModel,
-	content string,
+	doneReason string,
+	promptTokens int,
+	outputTokens int,
 ) PreparedGeneration {
 	t.Helper()
-	expected := *prepared.ProviderIdentityExpectation
-	attestation, err := NewProviderIdentityAttestation(
-		expected, "test:version", "test:installed", "test:runner",
-	)
+	raw := []byte(fmt.Sprintf(
+		`{"created_at":"2026-09-01T12:00:00Z","response":"candidate","done":true,"done_reason":%q,"total_duration":19,"load_duration":2,"prompt_eval_count":%d,"prompt_eval_duration":3,"eval_count":%d,"eval_duration":5}`,
+		doneReason, promptTokens, outputTokens,
+	))
+	decoded, err := DecodeExactPreparedResponseForProtocol(prepared.Protocol, 200, raw)
 	if err != nil {
 		t.Fatal(err)
 	}
-	observed, err := NewObservedProviderIdentity(
-		time.Now().UTC().Truncate(time.Microsecond), attestation,
-		providerIdentityTestEvidence(t, expected), prepared.ProviderObservationChallenge,
-	)
+	requestSHA, err := ExactPreparedRequestSHA256(prepared)
 	if err != nil {
 		t.Fatal(err)
 	}
-	requestSHA256, err := ExactPreparedRequestSHA256(prepared)
-	if err != nil {
-		t.Fatal(err)
-	}
-	body := exactProtocolResponseBody(t, content)
-	bodySHA256 := providerBodySHA256(body)
+	responseDigest := sha256.Sum256(raw)
+	responseSHA := hex.EncodeToString(responseDigest[:])
 	return PreparedGeneration{
-		Schema: PreparedGenerationSchemaV1, Protocol: prepared.Protocol,
+		Schema:                        PreparedGenerationSchemaV1,
+		Protocol:                      prepared.Protocol,
 		ProviderRequestDisposition:    ProviderRequestDispatched,
-		Content:                       content,
-		ProviderRequestSHA256:         requestSHA256,
+		Content:                       decoded.Content,
+		ProviderRequestSHA256:         requestSHA,
 		ProviderHTTPStatus:            200,
-		ProviderResponseDisposition:   ProviderResponseSucceeded,
+		ProviderResponseDisposition:   decoded.Disposition,
 		ProviderResponseComplete:      true,
 		ProviderContentEncoding:       NewProviderContentEncodingEvidence(nil, false),
 		ProviderResponseBytesKnown:    true,
-		ProviderResponseSHA256:        bodySHA256,
-		ProviderResponseBytes:         int64(len(body)),
-		ProviderResponseCaptureSHA256: bodySHA256,
-		ProviderResponseCapturedBytes: len(body),
-		ProviderResponseCapture:       body,
-		ProviderResponseModel:         prepared.ContextModel,
-		ProviderDonePresent:           true,
-		ProviderDone:                  true,
-		ProviderDoneReason:            "stop",
-		UsagePresent:                  true,
-		Usage: ProviderGenerationUsage{
-			PromptEvalCount: 41, EvalCount: 7, TotalDurationNanos: 101,
-			LoadDurationNanos: 11, PromptEvalDurationNanos: 21,
-			EvalDurationNanos: 31,
-		},
-		ProviderObservation:      observed.Observation,
-		ProviderIdentityEvidence: observed.Evidence,
+		ProviderResponseSHA256:        responseSHA,
+		ProviderResponseBytes:         int64(len(raw)),
+		ProviderResponseCaptureSHA256: responseSHA,
+		ProviderResponseCapturedBytes: len(raw),
+		ProviderResponseCapture:       raw,
+		ProviderDonePresent:           decoded.DonePresent,
+		ProviderDone:                  decoded.Done,
+		ProviderDoneReason:            decoded.DoneReason,
+		UsagePresent:                  decoded.UsagePresent,
+		Usage:                         decoded.Usage,
 	}
 }

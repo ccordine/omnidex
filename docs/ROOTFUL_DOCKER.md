@@ -22,8 +22,8 @@ The project enforces this boundary as follows:
   ownership of files written through the rootful host bind.
 
 Do not run ambient `docker compose` commands for Omnidex. Use `./up.sh`,
-`./down.sh`, `./update.sh`, or `omni service`; these entrypoints own the exact
-daemon and Compose project identity.
+`./down.sh`, or `./update.sh`; these entrypoints own the exact daemon and
+Compose project identity.
 
 Before first use, verify the system socket and configure its group identity:
 

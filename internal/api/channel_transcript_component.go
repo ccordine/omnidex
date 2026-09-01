@@ -197,10 +197,6 @@ func validateChannelTranscriptPresentation(message model.ChannelMessage) error {
 					authority.ContributionKind != string(roleplay.UserContributionCommand)) {
 				return fmt.Errorf("narrator user turn has incompatible contribution authority")
 			}
-		case roleplay.UserPersonaLegacy:
-			if authority.CharacterID != "" || authority.ContributionKind != string(roleplay.UserContributionLegacy) {
-				return fmt.Errorf("historical user turn has contradictory presentation authority")
-			}
 		default:
 			return fmt.Errorf("user turn has unsupported persona kind %q", authority.PersonaKind)
 		}
@@ -245,8 +241,6 @@ func roleplayContributionLabel(kind string) string {
 		return "Narration + direction"
 	case roleplay.UserContributionCommand:
 		return "Command"
-	case roleplay.UserContributionLegacy:
-		return "Historical turn"
 	default:
 		return "Unknown"
 	}

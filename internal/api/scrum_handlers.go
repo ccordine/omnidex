@@ -33,8 +33,6 @@ func (s *Server) handleScrum(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSON(w, http.StatusOK, payload)
-	case http.MethodPut:
-		writeError(w, http.StatusGone, "direct Scrum board mutation is retired; update the authoritative project")
 	case http.MethodPatch:
 		projectID, err := decodeScrumMutationProjectID(r, "Scrum auto-work request")
 		if err != nil {
@@ -116,21 +114,8 @@ func (s *Server) handleScrumCardByID(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "card not found")
 		return
 	}
-	if action == "" && r.Method == http.MethodGet {
-		writeError(w, http.StatusGone, "unbounded Scrum card GET is retired; use the bounded card modal")
-		return
-	}
 	if action != "" {
 		switch action {
-		case "coach":
-			writeRemovedInferenceAction(w, "Scrum card coach")
-			return
-		case "coach-config":
-			writeRemovedInferenceAction(w, "Scrum card coach configuration")
-			return
-		case "tags-suggest":
-			writeRemovedInferenceAction(w, "Scrum card tag suggestion")
-			return
 		case "play", "pause", "chat", "card-ticket", "checklist", "test-criteria", "files", "move", "done", "modal":
 			// Registered live card actions remain repository-gated below.
 		default:

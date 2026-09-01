@@ -2,6 +2,7 @@ package gofragment
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"go/ast"
 	"go/format"
@@ -9,7 +10,39 @@ import (
 	"go/scanner"
 	"go/token"
 	"strings"
+
+	"github.com/gryph/omnidex/internal/sourcebodyresponse"
 )
+
+const (
+	goFragmentFilePrefix          = "package fragment\n\n"
+	maxGoRawSourceResponseBytes   = 16 * 1024 * 1024
+	maxGoExtractedSourceBodyBytes = 32 * 1024
+)
+
+// BodySpanViolation proves that a successfully parsed Go declaration has one
+// exact failed byte range inside the model-returned implementation body.
+// Declaration composition and the semantic correction question remain owned
+// by the calling source adapter.
+type BodySpanViolation struct {
+	StartByte int
+	EndByte   int
+	Cause     error
+}
+
+func (violation *BodySpanViolation) Error() string {
+	if violation == nil || violation.Cause == nil {
+		return "Go source-body violation is nil"
+	}
+	return violation.Cause.Error()
+}
+
+func (violation *BodySpanViolation) Unwrap() error {
+	if violation == nil {
+		return nil
+	}
+	return violation.Cause
+}
 
 type Contract struct {
 	Signature        string
@@ -106,8 +139,125 @@ func ParseNewFunction(signature string, permittedSymbols []string, candidate str
 	return parsed, nil
 }
 
-// ParseFunction is the sole parser and capability validator for a model-owned
-// Go function or method block. Candidate comments are forbidden before the Go
+// ParseNewFunctionBody applies an ordinary model response inside the exact
+// code-owned function declaration before the existing parser and scope checks
+// run. The model is never asked to reproduce declaration structure.
+func ParseNewFunctionBody(
+	signature string,
+	permittedSymbols []string,
+	rawBody string,
+) (string, error) {
+	compiled, err := CompileNewFunctionSignature(signature)
+	if err != nil {
+		return "", err
+	}
+	body, err := ExtractNewFunctionBodyResponse(compiled.Canonical, rawBody)
+	if err != nil {
+		return "", err
+	}
+	assembled := compiled.Canonical + " {\n" + body + "\n}"
+	parsed, err := ParseNewFunction(
+		compiled.Canonical,
+		permittedSymbols,
+		assembled,
+	)
+	if err == nil {
+		return parsed, nil
+	}
+	var undeclared *UndeclaredIdentifierViolation
+	if !errors.As(err, &undeclared) {
+		return "", err
+	}
+	bodyStart := len(compiled.Canonical + " {\n")
+	bodyEnd := bodyStart + len(body)
+	if undeclared.StartByte < bodyStart || undeclared.EndByte > bodyEnd ||
+		undeclared.StartByte >= undeclared.EndByte {
+		return "", err
+	}
+	return "", &BodySpanViolation{
+		StartByte: undeclared.StartByte - bodyStart,
+		EndByte:   undeclared.EndByte - bodyStart,
+		Cause:     err,
+	}
+}
+
+// ExtractNewFunctionBodyResponse tolerates ordinary presentation noise without
+// making it part of the source-body contract. A direct body is retained. A
+// unique complete declaration is reduced to the bytes between its braces, and
+// the declaration supplied by the model is discarded before validation.
+func ExtractNewFunctionBodyResponse(signature, raw string) (string, error) {
+	compiled, err := CompileNewFunctionSignature(signature)
+	if err != nil {
+		return "", err
+	}
+	candidate, err := sourcebodyresponse.ExtractCandidate(
+		raw, maxGoRawSourceResponseBytes,
+	)
+	if err != nil {
+		return "", fmt.Errorf("Go source-body extraction: %w", err)
+	}
+	if body, declaration, extractErr := extractGoDeclarationBody(candidate.Source); extractErr != nil {
+		return "", fmt.Errorf("extract Go declaration body: %w", extractErr)
+	} else if declaration {
+		return normalizeGoSourceBody(body)
+	}
+	if candidate.Fenced {
+		assembled := compiled.Canonical + " {\n" + candidate.Source + "\n}"
+		if _, err := parseOneFunction(assembled, false); err != nil {
+			return "", fmt.Errorf(
+				"fenced Go response contains neither one declaration nor one parseable implementation body: %w",
+				err,
+			)
+		}
+	}
+	return normalizeGoSourceBody(candidate.Source)
+}
+
+func extractGoDeclarationBody(source string) (string, bool, error) {
+	fileSet := token.NewFileSet()
+	file, err := parser.ParseFile(
+		fileSet, "", goFragmentFilePrefix+source, parser.AllErrors|parser.ParseComments,
+	)
+	if err != nil || file == nil || len(file.Decls) != 1 {
+		return "", false, nil
+	}
+	function, ok := file.Decls[0].(*ast.FuncDecl)
+	if !ok || function.Body == nil {
+		return "", false, nil
+	}
+	start := fileSet.Position(function.Pos()).Offset - len(goFragmentFilePrefix)
+	end := fileSet.Position(function.End()).Offset - len(goFragmentFilePrefix)
+	if start != 0 || end != len(source) {
+		return "", false, nil
+	}
+	bodyStart := fileSet.Position(function.Body.Lbrace).Offset - len(goFragmentFilePrefix) + 1
+	bodyEnd := fileSet.Position(function.Body.Rbrace).Offset - len(goFragmentFilePrefix)
+	if bodyStart < 1 || bodyEnd < bodyStart || bodyEnd > len(source) {
+		return "", false, fmt.Errorf("parsed declaration body range is invalid")
+	}
+	return source[bodyStart:bodyEnd], true, nil
+}
+
+func normalizeGoSourceBody(raw string) (string, error) {
+	body := strings.ReplaceAll(raw, "\r\n", "\n")
+	body = strings.ReplaceAll(body, "\r", "\n")
+	if strings.ContainsRune(body, '\x00') {
+		return "", fmt.Errorf("Go source-body response contains invalid bytes")
+	}
+	body = strings.TrimSpace(body)
+	if body == "" {
+		return "", fmt.Errorf("Go source-body response is empty")
+	}
+	if len(body) > maxGoExtractedSourceBodyBytes {
+		return "", fmt.Errorf(
+			"Go source-body response exceeds %d bytes", maxGoExtractedSourceBodyBytes,
+		)
+	}
+	return body, nil
+}
+
+// ParseFunction is the sole parser and capability validator for a complete Go
+// function assembled by code. Candidate comments are forbidden before the Go
 // parser runs so //line and //go directives cannot affect diagnostics or code.
 func ParseFunction(contract Contract, candidate string) (string, error) {
 	if strings.TrimSpace(contract.Signature) == "" || strings.ContainsAny(contract.Signature, "\r\n") {
@@ -150,7 +300,7 @@ func parseOneFunction(source string, allowComments bool) (*ast.FuncDecl, error) 
 		return nil, fmt.Errorf("Go fragment comments and compiler directives are forbidden")
 	}
 	fileSet := token.NewFileSet()
-	file, err := parser.ParseFile(fileSet, "", "package fragment\n\n"+source, parser.AllErrors)
+	file, err := parser.ParseFile(fileSet, "", goFragmentFilePrefix+source, parser.AllErrors)
 	if err != nil {
 		return nil, fmt.Errorf("parse Go fragment: %w", err)
 	}

@@ -3,6 +3,7 @@ import {
   ChatActivityIndicator,
   type ChatTransportActivityState,
 } from "../lib/chat_activity_indicator";
+import { setGlobalLoading } from "../lib/loading";
 import type { StatusTone } from "../lib/types";
 import type RecyclrController from "./recyclr_controller";
 import { ChatTargetsController } from "./chat_targets_controller";
@@ -111,9 +112,10 @@ export abstract class ChatViewController extends ChatTargetsController {
   }
 
   setBusy(value: boolean): void {
+    const changed = this.busy !== value;
     this.busy = value;
+    if (changed) setGlobalLoading(value);
     this.syncComposerAvailability();
-    if (this.hasSpinnerTarget) this.spinnerTarget.classList.toggle("hidden", !value);
     if (!value) this.activityLabel = "";
     if (value) this.systemActivity().begin("request");
     else this.systemActivity().end("request");
@@ -207,6 +209,10 @@ export abstract class ChatViewController extends ChatTargetsController {
   }
 
   protected disconnectSystemActivity(): void {
+    if (this.busy) {
+      this.busy = false;
+      setGlobalLoading(false);
+    }
     this.activityIndicator?.disconnect();
   }
 

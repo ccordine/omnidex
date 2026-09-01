@@ -2,8 +2,6 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-OMNI_BIN="${SCRIPT_DIR}/bin/omni"
-AGENT_CLI_BIN="${SCRIPT_DIR}/bin/agent-cli"
 
 die() {
   printf '[up][error] %s\n' "$*" >&2
@@ -11,17 +9,6 @@ die() {
 }
 
 source "${SCRIPT_DIR}/scripts/managed-checkout-lib.sh"
-
-start_host_bridge() {
-  [[ "$(uname -s)" == "Linux" ]] || return 0
-  [[ -x "${OMNI_BIN}" ]] || die "missing managed omni binary: ${OMNI_BIN}"
-
-  if ! systemctl --user cat omni-host-bridge.service >/dev/null 2>&1; then
-    "${OMNI_BIN}" host service install --omni "${OMNI_BIN}" ||
-      die "failed to install omni-host-bridge.service"
-  fi
-  "${OMNI_BIN}" host service start || die "failed to start omni-host-bridge.service"
-}
 
 start_ollama() {
   local llm_provider embedding_provider
@@ -48,8 +35,5 @@ start_ollama() {
     die "Ollama did not become reachable at http://127.0.0.1:11434"
 }
 
-start_host_bridge
 start_ollama
 "${SCRIPT_DIR}/scripts/compose-deployment.sh" up "$@"
-[[ -x "${AGENT_CLI_BIN}" ]] || die "missing managed agent-cli binary: ${AGENT_CLI_BIN}"
-"${AGENT_CLI_BIN}" core:status || die "core is not reachable through its configured public URL"

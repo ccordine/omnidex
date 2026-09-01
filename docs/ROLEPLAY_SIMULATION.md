@@ -81,24 +81,34 @@ A model response is not a state transition.
    preservation review, or narrative restatement chain.
 8. Separate bounded semantic calls extract newly established canon once from
    the exact fictional user contribution and once from each final response.
-   Canon coverage returns only `CANON_FACT_REMAINS` or
-   `NO_UNCOVERED_CANON_FACT`; code alone interprets that relation and decides
-   whether the separate one-fact call runs again. Code validates, deduplicates,
-   grants, and persists only each returned source-local semantic leaf.
+   One binary presence call determines whether the contribution directly
+   establishes any durable fictional fact. On absence, code assembles an empty
+   fact set without opening an inventory. On presence, one positive-only
+   inventory returns between one and the code-owned maximum ordinary
+   source-local fact lines. The inventory is untrusted data. Code owns its
+   queue, removes exact repeats, asks one contribution-bound authorization
+   relation for each candidate, and compares an authorized byte-different
+   candidate with one accepted fact at a time only to remove semantic
+   duplicates. A rejected or duplicate candidate evaporates; accepted facts
+   are never reviewed again. Queue exhaustion ends extraction without a
+   coverage or completeness call. Code grants and persists only the surviving
+   source-local facts.
 9. At terminal completion, code locks the unchanged base revision, reapplies
    the transition, and verifies that its result and narrative fingerprint equal
    the immutable preview.
 10. Code atomically commits the verified transition, assistant message,
     validated semantic leaves, provenance, and the next turn position.
 
-Canon extraction is split by exact source. Code invokes one user-contribution
-canon station exactly once for the typed fictional user turn and invokes one
-assistant-response canon station separately for each accepted response. Each
-station receives one `exact_contribution`; an assistant station may receive the
-typed user turn only as antecedent context for resolving references, never as a
-second fact source. Exact user facts retain the user message as provenance;
-exact response facts retain that responder's assistant message as provenance.
-Explicit commands do not enter user-contribution canon extraction.
+Canon extraction is split by exact source. Code opens one user-contribution
+candidate queue for the typed fictional user turn and one separate
+assistant-response candidate queue for each accepted response. Every leaf call
+receives one `exact_contribution`; an assistant leaf may receive the typed user
+turn only as antecedent context for resolving references, never as a second
+fact source. Exact user facts retain the user message as provenance; exact
+response facts retain that responder's assistant message as provenance.
+Explicit commands do not enter user-contribution canon extraction. Persisted
+valid leaf results are reused after restore, so accepted facts are not put back
+on trial merely because execution resumed.
 
 Code alone assigns recipients for user-established facts. Character-user facts
 are granted only to the explicit acting character. Narrator facts are granted
@@ -119,15 +129,22 @@ cursor, global turn, and fictional-time tick once. The round increments only
 when that cursor crosses the end of the persisted participant order.
 
 Per-character ongoing action is another separate semantic leaf. For a selected
-character turn, code supplies the ongoing-action station only that character's
-exact persisted `[Action]` parts and previous current action. For an assistant
-response, it supplies only that responder's final prose and previous current
-action. The station returns one complete current-action value or its exact
-absence; code validates and appends the result under the exact character and
-source message. Narrator contributions have no unambiguous actor target, and
-typed Event or dialogue parts are not character actions, so those inputs do
-not invoke or mutate per-character ongoing-action state. Their scene
-continuity remains in canon and observer-scoped history.
+character turn, code first asks only what semantic relation the exact persisted
+`[Action]` contribution has to that character's previous current action. For an
+assistant response, the relation call sees only that responder's final prose and
+previous current action. The available relations are rendered as call-local opaque
+letters; code maps the selected letter to absent, unchanged, or replacement.
+
+An absent relation clears the action directly. An unchanged relation copies the exact
+previous value directly. Neither branch invokes a value model or asks inference to
+reproduce or preserve the previous text. Only a replacement relation opens a separate
+plain-text value job. That value job receives the exact contribution and character
+identity needed to name the new action, but never the previous action or the relation
+labels, and returns one concise ordinary present-tense action value. Code validates and
+appends the result under the exact character and source message. Narrator contributions
+have no unambiguous actor target, and typed Event or dialogue parts are not character
+actions, so those inputs do not invoke or mutate per-character ongoing-action state.
+Their scene continuity remains in canon and observer-scoped history.
 
 When a retained character memory is exactly the newly granted visible canon
 fact, code copies those already-validated bytes into `CHARACTER_MEMORY` in the
@@ -203,11 +220,20 @@ The production research sieve has one fixed shape. The explicit typed research
 request supplies the exact question, and code binds it as the acquisition query,
 invokes the configured providers, and fetches the bounded candidate set. One
 relevance relation call receives one bounded excerpt without its code-owned ID.
-The final roleplay response station receives only the exact question, minimal
-character identity, compiled context, and selected bounded evidence. The full
-simulation projection remains server authority and is never research-response
-context. Code alone binds returned evidence IDs to exact citations. There is no
-search-term, review, or correction model station in this path.
+One response-inventory call receives only the exact question, minimal character
+identity, compiled context, and selected bounded evidence and returns candidate
+paragraphs. Code owns the paragraph queue. It first asks one candidate-local relation
+whether the complete paragraph is responsive in character and fully supported by the
+complete supplied evidence set. A negative candidate dies before citation work and
+without affecting accepted paragraphs. Only a positive candidate receives one
+paragraph-to-evidence attribution relation per capsule so code can bind exact citation
+identities; those calls do not re-authorize or review the paragraph. The full simulation
+projection remains server authority and is never research-response context.
+Code alone binds evidence IDs, assembles the surviving paragraphs in source
+order, and renders exact citations when the queue is exhausted. At least one
+surviving paragraph is required for a functional grounded response; zero survivors
+fails synthesis without reopening rejected candidates. There is no
+search-term, global review, correction, or completeness station in this path.
 
 Do not expose a research checkbox until that end-to-end consumer exists and is
 tested. Write-only capability metadata is forbidden.

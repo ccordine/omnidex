@@ -14,7 +14,6 @@ import (
 // raw /api/generate response. The original bytes remain separate evidence.
 type ExactPreparedResponse struct {
 	Disposition  ProviderResponseDisposition
-	Model        string
 	Content      string
 	DonePresent  bool
 	Done         bool
@@ -24,7 +23,6 @@ type ExactPreparedResponse struct {
 }
 
 type exactPreparedResponseWire struct {
-	Model              string  `json:"model"`
 	CreatedAt          string  `json:"created_at"`
 	Response           string  `json:"response"`
 	Thinking           *string `json:"thinking,omitempty"`
@@ -43,7 +41,7 @@ type exactPreparedResponseWire struct {
 // provider-contract failure so callers can journal the evidence durably.
 func DecodeExactPreparedResponse(status int, body []byte) (ExactPreparedResponse, error) {
 	return DecodeExactPreparedResponseForProtocol(
-		ExactPreparedProtocolRawTextV2, status, body,
+		ExactPreparedProtocolPlainCompletionV4, status, body,
 	)
 }
 
@@ -109,24 +107,19 @@ func decodeExactPreparedResponse(status int, body []byte) (ExactPreparedResponse
 	}
 	response := ExactPreparedResponse{
 		Disposition: ProviderResponseSucceeded,
-		Model:       wire.Model, Content: content, DonePresent: wire.Done != nil,
+		Content:     content, DonePresent: wire.Done != nil,
 		DoneReason: wire.DoneReason, Usage: exactPreparedResponseUsage(wire),
 	}
 	if wire.Done != nil {
 		response.Done = *wire.Done
 	}
-	response.UsagePresent = wire.PromptEvalCount != nil && wire.EvalCount != nil &&
-		wire.TotalDuration != nil && wire.LoadDuration != nil &&
-		wire.PromptEvalDuration != nil && wire.EvalDuration != nil
+	response.UsagePresent = wire.PromptEvalCount != nil && wire.EvalCount != nil
 	if strings.TrimSpace(content) == "" {
 		response.Disposition = ProviderResponseEmptyContent
 		return response, fmt.Errorf("exact provider response contains no model output")
 	}
 	if !response.DonePresent || !response.Done || !response.UsagePresent {
-		return response, fmt.Errorf("exact provider response lacks final usage or timing fields")
-	}
-	if err := response.Usage.ValidateSuccessful(); err != nil {
-		return response, err
+		return response, fmt.Errorf("exact provider response lacks final token counts")
 	}
 	return response, nil
 }
@@ -145,7 +138,7 @@ func ValidateExactPreparedResponseProjection(generation PreparedGeneration) erro
 		generation.ProviderHTTPStatus, generation.ProviderResponseCapture,
 	)
 	if derived.Disposition != generation.ProviderResponseDisposition ||
-		derived.Model != generation.ProviderResponseModel || derived.Content != generation.Content ||
+		derived.Content != generation.Content ||
 		derived.DonePresent != generation.ProviderDonePresent || derived.Done != generation.ProviderDone ||
 		derived.DoneReason != generation.ProviderDoneReason ||
 		derived.UsagePresent != generation.UsagePresent || derived.Usage != generation.Usage {

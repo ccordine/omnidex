@@ -5,152 +5,75 @@ import (
 	"fmt"
 	"log"
 	"reflect"
+	"sync"
 	"time"
 
 	"github.com/gryph/omnidex/internal/llm"
-	"github.com/gryph/omnidex/internal/model"
+	"github.com/gryph/omnidex/internal/modelconfig"
 	"github.com/gryph/omnidex/internal/queue"
-	repositoryindex "github.com/gryph/omnidex/internal/repository/indexing"
-	repositoryretrieval "github.com/gryph/omnidex/internal/repository/retrieval"
-	"github.com/gryph/omnidex/internal/station"
 	"github.com/gryph/omnidex/internal/websearch"
+	workspacefacts "github.com/gryph/omnidex/internal/workspace"
 )
 
 const stepControlPollInterval = 300 * time.Millisecond
 
-type ModelRouting struct {
-	Stations              map[station.ID]string
-	RoleplaySemanticModel string
-}
+type ModelRouting = modelconfig.Routing
 
 type stepCompleteFunc func(context.Context, queue.CompleteStepCommand) error
-
-type roleplayPortableResultReuseFunc func(
-	context.Context,
-	queue.RoleplayPortableResultReuseRequest,
-) (queue.RoleplayPortableResultReuse, bool, error)
-
-type nativeV3StepRunner func(context.Context, *model.ClaimedStep, map[string]string, string) error
-
-type WorkspaceSettings struct {
-	Root     string
-	HostRoot string
-}
-
-// DeploymentSettings are server authority for a generated service that the
-// accepted objective requires Omnidex to leave running. They are never model
-// context and are validated only when that typed disposition is selected.
-type DeploymentSettings struct {
-	KeyFile        string
-	BindAddress    string
-	AdvertisedHost string
-	ProbeHost      string
-}
+type stepFailFunc func(context.Context, queue.FailStepCommand) error
 
 type Options struct {
-	WorkerCount            int
-	FragmentConcurrency    int
-	PollInterval           time.Duration
-	InferenceContextTokens int
-	InferenceProvider      string
-	EmbeddingProvider      string
-	EmbeddingModel         string
-	Models                 ModelRouting
-	Workspace              WorkspaceSettings
-	Deployment             DeploymentSettings
-	Logger                 *log.Logger
-	OnJobFinished          func(jobID int64)
-	OnJobOutput            func(jobID int64, delta string)
+	PollInterval            string
+	InferenceContextTokens  string
+	HostDirectoryAccessRoot string
+	Logger                  *log.Logger
+	RuntimeEventSink        RuntimeEventSink
 }
 
 type Service struct {
 	repo                   *queue.Repository
-	embeddings             llm.EmbeddingClient
 	stationClient          llm.ExactStationClient
 	webSearch              *websearch.Service
-	workerCount            int
-	fragmentConcurrency    int
-	pollInterval           time.Duration
-	inferenceContextTokens int
-	inferenceProvider      string
-	embeddingProvider      string
-	embeddingModel         string
-	models                 ModelRouting
-	workspaceRoot          string
-	repositoryIndex        repositoryIndexService
-	repositoryRetrieval    repositoryEvidenceBuilder
-	workspaceHostRoot      string
-	deployment             DeploymentSettings
+	pollInterval           string
+	inferenceContextTokens string
+	hostDirectoryAccess    workspacefacts.HostDirectoryAccess
 	completeStep           stepCompleteFunc
-	reuseRoleplayResult    roleplayPortableResultReuseFunc
-	nativeV3Runner         nativeV3StepRunner
+	failStep               stepFailFunc
 	logger                 *log.Logger
-	onJobFinished          func(jobID int64)
-	onJobOutput            func(jobID int64, delta string)
+	runtimeEventSink       RuntimeEventSink
+	runtimeEventMu         sync.RWMutex
+	runtimeEventChannels   map[int64]runtimeEventChannelBinding
 }
 
 func New(
 	repo *queue.Repository,
 	stationClient llm.ExactStationClient,
-	embeddings llm.EmbeddingClient,
 	webSearch *websearch.Service,
 	opts Options,
 ) (*Service, error) {
 	if repo == nil {
 		return nil, fmt.Errorf("worker repository is required")
 	}
-	if nilWorkerTransport(stationClient) {
-		return nil, fmt.Errorf("exact station client is required")
-	}
-	if nilWorkerTransport(embeddings) {
-		return nil, fmt.Errorf("embedding client is required")
-	}
-	if err := validateWorkerOptions(opts); err != nil {
-		return nil, fmt.Errorf("invalid worker options: %w", err)
-	}
-	opts = normalizeWorkerOptions(opts)
-
-	repositoryIndex, err := repositoryindex.New(repo)
+	hostDirectoryAccess, err := workspacefacts.NewHostDirectoryAccess(
+		opts.HostDirectoryAccessRoot,
+	)
 	if err != nil {
-		return nil, fmt.Errorf("configure repository indexer: %w", err)
-	}
-	repositoryRetrieval, err := repositoryretrieval.New(repo)
-	if err != nil {
-		return nil, fmt.Errorf("configure repository retrieval: %w", err)
+		return nil, fmt.Errorf("construct worker host directory access authority: %w", err)
 	}
 
-	var completeStep stepCompleteFunc
-	if repo != nil {
-		completeStep = repo.CompleteStep
-	}
 	svc := &Service{
 		repo:                   repo,
-		embeddings:             embeddings,
 		stationClient:          stationClient,
 		webSearch:              webSearch,
-		workerCount:            opts.WorkerCount,
-		fragmentConcurrency:    opts.FragmentConcurrency,
 		pollInterval:           opts.PollInterval,
 		inferenceContextTokens: opts.InferenceContextTokens,
-		inferenceProvider:      opts.InferenceProvider,
-		embeddingProvider:      opts.EmbeddingProvider,
-		embeddingModel:         opts.EmbeddingModel,
-		models:                 opts.Models,
-		workspaceRoot:          opts.Workspace.Root,
-		repositoryIndex:        repositoryIndex,
-		repositoryRetrieval:    repositoryRetrieval,
-		workspaceHostRoot:      opts.Workspace.HostRoot,
-		deployment:             opts.Deployment,
-		completeStep:           completeStep,
-		reuseRoleplayResult:    repo.ReuseRoleplayPortableResult,
+		hostDirectoryAccess:    hostDirectoryAccess,
+		completeStep:           repo.CompleteStep,
+		failStep:               repo.FailStep,
 		logger:                 opts.Logger,
-		onJobFinished:          opts.OnJobFinished,
-		onJobOutput:            opts.OnJobOutput,
+		runtimeEventSink:       opts.RuntimeEventSink,
+		runtimeEventChannels:   make(map[int64]runtimeEventChannelBinding),
 	}
-	if repo != nil && completeStep != nil {
-		svc.completeStep = svc.wrapStepCompleter(completeStep)
-	}
-	svc.nativeV3Runner = svc.runNativeV3Step
 	return svc, nil
 }
 
@@ -164,43 +87,5 @@ func nilWorkerTransport(value any) bool {
 		return reflected.IsNil()
 	default:
 		return false
-	}
-}
-
-func (s *Service) wrapStepCompleter(complete stepCompleteFunc) stepCompleteFunc {
-	if complete == nil {
-		return nil
-	}
-	return func(ctx context.Context, command queue.CompleteStepCommand) error {
-		err := complete(ctx, command)
-		if err == nil {
-			s.notifyJobFinishedForStep(ctx, command.StepID)
-		}
-		return err
-	}
-}
-
-func (s *Service) notifyJobFinishedForStep(ctx context.Context, stepID int64) {
-	if s.onJobFinished == nil || s.repo == nil || stepID <= 0 {
-		return
-	}
-	jobID, err := s.repo.JobIDForStep(ctx, stepID)
-	if err != nil || jobID <= 0 {
-		return
-	}
-	s.notifyJobFinishedForJob(ctx, jobID)
-}
-
-func (s *Service) notifyJobFinishedForJob(ctx context.Context, jobID int64) {
-	if s.onJobFinished == nil || s.repo == nil || jobID <= 0 {
-		return
-	}
-	details, err := s.repo.CurrentJobDetails(ctx, jobID)
-	if err != nil {
-		return
-	}
-	switch details.Job.Status {
-	case model.JobStatusCompleted, model.JobStatusFailed:
-		go s.onJobFinished(jobID)
 	}
 }

@@ -7,15 +7,43 @@ import (
 	"strings"
 )
 
-func mergeUIQueryState(state map[string]any, r *http.Request) error {
-	for _, key := range []string{"panel", "admin_tab", "project_tab", "project_id", "scrum_card", "scrum_tab", "scrum_column", "data_source", "data_channel"} {
-		value := strings.TrimSpace(r.URL.Query().Get(key))
-		if value != "" {
-			state[key] = value
+var uiStateQueryFields = []string{
+	"panel", "admin_tab", "project_tab", "project_id", "scrum_card", "scrum_tab", "scrum_column",
+	"data_source", "data_channel", "locale",
+}
+
+func validateUIStateQuery(r *http.Request) error {
+	if err := validateExactQuery(r, uiStateQueryFields...); err != nil {
+		return err
+	}
+	query := r.URL.Query()
+	for _, key := range uiStateQueryFields {
+		values, exists := query[key]
+		if !exists {
+			continue
+		}
+		if len(values) != 1 || values[0] == "" || values[0] != strings.TrimSpace(values[0]) {
+			return fmt.Errorf("UI query field %q must be one non-empty canonical string", key)
 		}
 	}
-	if r.URL.Query().Has("locale") {
-		locale, err := parseUILocale(r.URL.Query().Get("locale"))
+	return nil
+}
+
+func mergeUIQueryState(state map[string]any, r *http.Request) error {
+	if err := validateUIStateQuery(r); err != nil {
+		return err
+	}
+	query := r.URL.Query()
+	for _, key := range uiStateQueryFields {
+		if key == "locale" {
+			continue
+		}
+		if values, exists := query[key]; exists {
+			state[key] = values[0]
+		}
+	}
+	if values, exists := query["locale"]; exists {
+		locale, err := parseUILocale(values[0])
 		if err != nil {
 			return err
 		}

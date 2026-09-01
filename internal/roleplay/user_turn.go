@@ -8,10 +8,9 @@ import (
 )
 
 const (
-	MaxUserTurnBytes      = 4 * 1024
-	MaxUserTurnParts      = 16
-	NarratorPersonaName   = "Narrator"
-	LegacyUserPersonaName = "Unattributed user"
+	MaxUserTurnBytes    = 4 * 1024
+	MaxUserTurnParts    = 16
+	NarratorPersonaName = "Narrator"
 )
 
 type UserPersonaKind string
@@ -19,9 +18,6 @@ type UserPersonaKind string
 const (
 	UserPersonaCharacter UserPersonaKind = "character"
 	UserPersonaNarrator  UserPersonaKind = "narrator"
-	// UserPersonaLegacy records the honest absence of typed authority on turns
-	// created before the persona boundary existed. New requests cannot select it.
-	UserPersonaLegacy UserPersonaKind = "legacy_untyped"
 )
 
 type UserContributionKind string
@@ -35,7 +31,6 @@ const (
 	UserContributionNarrationDirection UserContributionKind = "narration_direction"
 	UserContributionStructured         UserContributionKind = "structured_turn"
 	UserContributionCommand            UserContributionKind = "command"
-	UserContributionLegacy             UserContributionKind = "legacy_untyped"
 )
 
 type UserTurnPartKind string
@@ -69,9 +64,6 @@ type UserTurnAuthority struct {
 }
 
 func (request UserTurnRequest) ValidateForExactText(exactText string) error {
-	if request.PersonaKind == UserPersonaLegacy || request.ContributionKind == UserContributionLegacy {
-		return fmt.Errorf("legacy roleplay user-turn authority cannot be submitted")
-	}
 	if err := validateUserTurnPair(request.PersonaKind, request.CharacterID, request.ContributionKind); err != nil {
 		return err
 	}
@@ -126,10 +118,6 @@ func (authority UserTurnAuthority) Validate() error {
 	case UserPersonaNarrator:
 		if authority.PersonaName != NarratorPersonaName || authority.PersonaSummary != "" {
 			return fmt.Errorf("narrator turn requires exact narrator presentation authority")
-		}
-	case UserPersonaLegacy:
-		if authority.PersonaName != LegacyUserPersonaName || authority.PersonaSummary != "" {
-			return fmt.Errorf("historical turn requires exact unattributed presentation authority")
 		}
 	}
 	return nil
@@ -193,8 +181,6 @@ func (authority UserTurnAuthority) CanonContribution() (string, bool, error) {
 			return "", false, nil
 		}
 		return strings.Join(sections, "\n\n"), true, nil
-	case UserPersonaLegacy:
-		return "", false, nil
 	default:
 		return "", false, fmt.Errorf(
 			"roleplay canon contribution has unsupported persona kind %q",
@@ -250,10 +236,6 @@ func validateUserTurnPair(
 			contribution != UserContributionNarrationDirection &&
 			contribution != UserContributionCommand {
 			return fmt.Errorf("narrator persona requires narration, direction, combined narration/direction, or command contribution")
-		}
-	case UserPersonaLegacy:
-		if characterID != "" || contribution != UserContributionLegacy {
-			return fmt.Errorf("historical roleplay turn authority is contradictory")
 		}
 	default:
 		return fmt.Errorf("roleplay user persona kind %q is unsupported", persona)
@@ -338,9 +320,6 @@ func validateUserTurnText(kind UserContributionKind, exactText string) error {
 	if len(exactText) == 0 || len(exactText) > MaxUserTurnBytes || !utf8.ValidString(exactText) ||
 		strings.IndexByte(exactText, 0) >= 0 || strings.TrimSpace(exactText) == "" {
 		return fmt.Errorf("roleplay user turn must contain 1..%d nonblank UTF-8 bytes without NUL", MaxUserTurnBytes)
-	}
-	if kind == UserContributionLegacy {
-		return nil
 	}
 	if kind == UserContributionCommand {
 		if !strings.HasPrefix(exactText, "/") {

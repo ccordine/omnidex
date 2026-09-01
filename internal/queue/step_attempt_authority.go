@@ -12,8 +12,6 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-const StepAttemptLeaseDuration = 75 * time.Second
-
 func validateStepAttemptAuthority(authority model.StepAttemptAuthority) error {
 	if authority.JobID <= 0 || authority.Generation <= 0 || authority.StepID <= 0 || authority.Attempt <= 0 {
 		return fmt.Errorf("%w: exact positive job, generation, step, and attempt identities are required", ErrStaleStepAttempt)
@@ -39,6 +37,38 @@ func requireActiveStepAttemptTx(
 		return "", "", time.Time{}, err
 	}
 	return locked.JobStatus, locked.StepStatus, locked.ExpiresAt, nil
+}
+
+func (r *Repository) RequireActiveStepAttempt(
+	ctx context.Context,
+	authority model.StepAttemptAuthority,
+) error {
+	if r == nil || r.pool == nil {
+		return fmt.Errorf("validate active step attempt: PostgreSQL repository is unavailable")
+	}
+	if ctx == nil {
+		return fmt.Errorf("validate active step attempt: context is required")
+	}
+	tx, err := r.pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return fmt.Errorf("begin active step attempt validation: %w", err)
+	}
+	defer tx.Rollback(ctx)
+	jobStatus, stepStatus, _, err := requireActiveStepAttemptTx(ctx, tx, authority)
+	if err != nil {
+		return err
+	}
+	if stepStatus != model.StepStatusRunning || !jobAcceptsStepTerminal(jobStatus) {
+		return staleStepAttemptError(
+			authority,
+			fmt.Sprintf("workspace mutation writer job status %q step status %q", jobStatus, stepStatus),
+			nil,
+		)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit active step attempt validation: %w", err)
+	}
+	return nil
 }
 
 func requireLockedStepAttemptActiveTx(
@@ -173,15 +203,19 @@ func (r *Repository) RenewStepAttempt(
 	} else if stepStatus != model.StepStatusRunning {
 		return time.Time{}, staleStepAttemptError(authority, "step is not running", nil)
 	}
-	var expiresAt time.Time
+	leaseMeasurementStarted := time.Now()
+	var leaseValidForNanoseconds int64
 	err = tx.QueryRow(ctx, `
 		UPDATE job_step_attempts
 		SET renewed_at=clock_timestamp()
 		WHERE job_id=$1 AND generation=$2 AND step_id=$3 AND attempt=$4
 		  AND status=$5 AND expires_at>clock_timestamp()
-		RETURNING expires_at
+		RETURNING GREATEST(
+			FLOOR(EXTRACT(EPOCH FROM (expires_at-clock_timestamp()))*1000000000)::bigint,
+			0::bigint
+		)
 	`, authority.JobID, authority.Generation, authority.StepID, authority.Attempt,
-		model.StepAttemptActive).Scan(&expiresAt)
+		model.StepAttemptActive).Scan(&leaseValidForNanoseconds)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return time.Time{}, staleStepAttemptError(authority, "attempt expired before renewal", nil)
 	}
@@ -191,5 +225,9 @@ func (r *Repository) RenewStepAttempt(
 	if err := tx.Commit(ctx); err != nil {
 		return time.Time{}, err
 	}
-	return expiresAt, nil
+	leaseDeadline := leaseMeasurementStarted.Add(time.Duration(leaseValidForNanoseconds))
+	if time.Until(leaseDeadline) <= 0 {
+		return time.Time{}, staleStepAttemptError(authority, "attempt lease expired before renewal delivery", nil)
+	}
+	return leaseDeadline, nil
 }

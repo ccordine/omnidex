@@ -40,7 +40,9 @@ func composeBoundedSourceDocument(
 				return ComposedSourceDocument{}, err
 			}
 			var err error
-			declaration, err = validateBoundedSourceFragment(language, block.Signature, candidate)
+			declaration, err = validateBoundedSourceDeclaration(
+				language, block.Signature, candidate,
+			)
 			if err != nil {
 				return ComposedSourceDocument{}, fmt.Errorf("generated block %s: %w", block.ID, err)
 			}
@@ -125,15 +127,6 @@ func validateBoundedSourceDocument(
 			"%s document %s does not support a postamble", language.display, document.ID,
 		)
 	}
-	if language.requirePHPOpeningTag {
-		trimmed := strings.TrimSpace(preamble)
-		hasOpeningTag := trimmed == "<?php" || strings.HasPrefix(trimmed, "<?php ") ||
-			strings.HasPrefix(trimmed, "<?php\t") || strings.HasPrefix(trimmed, "<?php\n") ||
-			strings.HasPrefix(trimmed, "<?php\r")
-		if !hasOpeningTag || strings.Count(trimmed, "<?php") != 1 || strings.Contains(trimmed, "?>") {
-			return fmt.Errorf("PHP document %s requires one unclosed <?php preamble", document.ID)
-		}
-	}
 	if preamble != "" && language.id != "java" {
 		if err := validateBoundedSourceSyntax(language, language.documentLanguage, preamble+"\n"); err != nil {
 			return fmt.Errorf("parse %s document %s preamble: %w", language.display, document.ID, err)
@@ -156,7 +149,7 @@ func validateBoundedSourceDocument(
 			)
 		}
 		if block.Generated() {
-			if _, err := validateBoundedSourceFragment(language, block.Signature, block.Signature+" {}"); err != nil {
+			if _, err := boundedSourceDeclarationShape(language, block.Signature+" {}"); err != nil {
 				return fmt.Errorf("document %s block %s: %w", document.ID, block.ID, err)
 			}
 			continue

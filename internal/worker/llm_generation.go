@@ -2,9 +2,7 @@ package worker
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/gryph/omnidex/internal/assemblyline"
 	"github.com/gryph/omnidex/internal/llm"
@@ -12,12 +10,32 @@ import (
 	"github.com/gryph/omnidex/internal/queue"
 )
 
+type exactStationCall struct {
+	WorkID           string
+	WorkKind         assemblyline.WorkKind
+	Iteration        int
+	ParentCallID     int64
+	Prompt           string
+	ContextTokens    int
+	MaxOutputTokens  int
+	SingleLine       bool
+	SourceCorrection *assemblyline.SourceBodyCorrectionEvidence
+}
+
 type exactStationExecution struct {
-	Gap                     queue.StationGapOpening
-	Candidate               string
-	CallReceiptSHA256       string
-	CandidateResponseSHA256 string
-	ProviderIdentity        llm.ProviderIdentityExpectation
+	CallEvidenceID           int64
+	WorkID                   string
+	WorkKind                 assemblyline.WorkKind
+	InferenceFree            bool
+	Model                    string
+	Iteration                int
+	ProviderCalls            int
+	Candidate                string
+	CandidateResponseSHA256  string
+	SourceState              string
+	Replayed                 bool
+	PersistedOutcome         queue.LLMCallOutcomeStatus
+	PersistedValidationError string
 }
 
 func (s *Service) executeExactPortableStation(
@@ -26,37 +44,37 @@ func (s *Service) executeExactPortableStation(
 	job assemblyline.PortableJob,
 	modelName string,
 ) (assemblyline.PortableResult, exactStationExecution, error) {
-	if ctx == nil || s == nil || s.repo == nil {
+	if ctx == nil {
 		return assemblyline.PortableResult{}, exactStationExecution{}, fmt.Errorf("exact station requires context, worker, and PostgreSQL authority")
 	}
 	if err := ctx.Err(); err != nil {
 		return assemblyline.PortableResult{}, exactStationExecution{}, err
 	}
-	modelName = strings.TrimSpace(modelName)
-	if modelName == "" {
-		return assemblyline.PortableResult{}, exactStationExecution{}, fmt.Errorf("exact station model is required")
-	}
-	stationID, err := queue.StationForPortableJob(job)
+	deterministic, resolved, err := assemblyline.ResolvePortableJobWithoutInference(job)
 	if err != nil {
 		return assemblyline.PortableResult{}, exactStationExecution{}, err
+	}
+	if resolved {
+		return deterministic, exactStationExecution{
+			WorkID: job.ID, WorkKind: job.Kind, InferenceFree: true,
+			Candidate: deterministic.Candidate,
+		}, nil
+	}
+	if s == nil || s.repo == nil {
+		return assemblyline.PortableResult{}, exactStationExecution{}, fmt.Errorf("exact station requires context, worker, and PostgreSQL authority")
+	}
+	if modelName == "" {
+		return assemblyline.PortableResult{}, exactStationExecution{}, fmt.Errorf("exact station model is required")
 	}
 	prompt, err := assemblyline.RenderPortableJob(job)
 	if err != nil {
 		return assemblyline.PortableResult{}, exactStationExecution{}, err
 	}
-	contract, err := llmResponseContractForPortableJob(job)
-	if err != nil {
-		return assemblyline.PortableResult{}, exactStationExecution{}, err
-	}
-	contextTokens, err := s.exactStationContextTokens(ctx, job, modelName)
+	contextTokens, err := s.exactStationContextTokens(ctx)
 	if err != nil {
 		return assemblyline.PortableResult{}, exactStationExecution{}, fmt.Errorf(
 			"resolve exact station context: %w", err,
 		)
-	}
-	selection, err := providerSelectionForPortableJob(job, modelName, contextTokens)
-	if err != nil {
-		return assemblyline.PortableResult{}, exactStationExecution{}, err
 	}
 	maxOutputTokens, err := queue.ExpectedPortableStationMaxOutputTokens(job, contextTokens)
 	if err != nil {
@@ -64,119 +82,116 @@ func (s *Service) executeExactPortableStation(
 			"derive exact station output ceiling: %w", err,
 		)
 	}
-	if err := validateExactStationStaticCall(prompt, contract, selection); err != nil {
-		return assemblyline.PortableResult{}, exactStationExecution{}, err
+	call := exactStationCall{
+		WorkID: job.ID, WorkKind: job.Kind, Prompt: prompt,
+		Iteration:     1,
+		ContextTokens: contextTokens, MaxOutputTokens: maxOutputTokens,
 	}
-	opening, err := s.repo.OpenStationGapDiscovery(ctx, queue.StationGapDiscoveryOpenRecord{
-		Gap: queue.StationGapOpenRecord{
-			Authority: authority, Job: job, Station: stationID,
-			ContextTokens: contextTokens, MaxOutputTokens: maxOutputTokens,
-			OutputLimitMode: contract.OutputLimitMode,
-		},
-		Selection: selection,
-	})
-	if err != nil {
-		return assemblyline.PortableResult{}, exactStationExecution{}, fmt.Errorf("persist typed station gap and provider discovery: %w", err)
-	}
-	gap, discovery := opening.Gap, opening.Discovery
 	if nilWorkerTransport(s.stationClient) {
-		return s.rejectStationDiscoveryBeforeProvider(
-			ctx, authority, gap, discovery, selection,
-			fmt.Errorf("exact station generation provider is not configured"),
+		return assemblyline.PortableResult{}, exactStationExecution{}, fmt.Errorf(
+			"exact station generation provider is not configured",
 		)
 	}
-	if err := s.stationClient.RequireExactPreparedContract(); err != nil {
-		return s.rejectStationDiscoveryBeforeProvider(
-			ctx, authority, gap, discovery, selection,
-			fmt.Errorf("exact station provider: %w", err),
-		)
-	}
-	observed, discoveryErr := s.stationClient.DiscoverProviderIdentityEvidence(
-		ctx, selection, discovery.Challenge,
-	)
-	observed, ownershipErr := ownStationDiscovery(observed)
-	if ownershipErr != nil {
-		return assemblyline.PortableResult{}, exactStationExecution{}, fmt.Errorf("station discovery ownership left an unmatched boundary: %w", ownershipErr)
-	}
-	if discoveryErr == nil {
-		expected, deriveErr := llm.DeriveExactProviderIdentityExpectation(observed.Evidence, selection)
-		if deriveErr != nil {
-			discoveryErr = deriveErr
-		} else if validateErr := observed.ValidateFor(llm.ProviderIdentityObservationRequest{
-			Expectation: expected, ChallengeSHA256: discovery.Challenge,
-		}); validateErr != nil {
-			discoveryErr = validateErr
-		}
-	}
-	if discoveryErr != nil {
-		failureReason, failedObservation, reasonErr := classifyStationDiscoveryFailure(
-			observed, selection, discovery.Challenge, discoveryErr,
-		)
-		if reasonErr != nil {
-			return assemblyline.PortableResult{}, exactStationExecution{}, fmt.Errorf(
-				"classify exact station discovery rejection: %w", reasonErr,
-			)
-		}
-		cause := fmt.Errorf("discover exact station provider: %w", discoveryErr)
-		persistCtx, cancel := stationPersistenceContext(ctx)
-		_, persistErr := s.repo.RecordStationDiscoveryFailure(persistCtx, queue.StationDiscoveryFailureRecord{
-			Authority: authority, Gap: gap, Discovery: discovery,
-			Observed: failedObservation, FailureReason: failureReason,
-			Error: stationFailureText(cause),
-		})
-		cancel()
-		return assemblyline.PortableResult{}, exactStationExecution{}, errors.Join(cause, persistErr)
-	}
-	expected, err := llm.DeriveExactProviderIdentityExpectation(observed.Evidence, selection)
+	prepared, err := prepareExactStationCall(call, modelName, nil)
 	if err != nil {
 		return assemblyline.PortableResult{}, exactStationExecution{}, err
 	}
-	prepared, err := prepareExactStationCall(gap, contract, modelName, expected, nil)
-	if err != nil {
-		return assemblyline.PortableResult{}, exactStationExecution{}, err
-	}
-	persistCtx, cancel := stationPersistenceContext(ctx)
-	transition, err := s.repo.RecordStationDiscoveryCallOpening(persistCtx, queue.StationDiscoveryCallOpenRecord{
-		Authority: authority, Gap: gap, Discovery: discovery,
-		Observed: observed, Prepared: prepared,
-	})
-	cancel()
-	if err != nil {
-		return assemblyline.PortableResult{}, exactStationExecution{}, fmt.Errorf("persist discovery receipt and exact station call: %w", err)
-	}
-	if transition.Attempt != model.StepAttemptActive {
-		return s.recordAuthorityEndedExactStationCall(
-			ctx, authority, gap, transition.Call, modelName, prepared, observed, transition.Attempt,
-		)
-	}
-	return s.dispatchExactStationCall(ctx, authority, gap, transition.Call, modelName, prepared)
+	return s.dispatchExactStationCall(ctx, authority, call, prepared)
 }
 
-func classifyStationDiscoveryFailure(
-	observed llm.ObservedProviderIdentity,
-	selection llm.ProviderIdentitySelection,
-	challenge string,
-	discoveryErr error,
-) (queue.StationDiscoveryFailureReason, llm.ObservedProviderIdentity, error) {
-	if discoveryErr == nil {
-		return "", llm.ObservedProviderIdentity{}, fmt.Errorf("station discovery failure requires an exact error")
-	}
-	if evidenceErr := observed.Evidence.ValidateFailure(selection, nil); evidenceErr == nil {
-		observed.Attestation = llm.ProviderIdentityAttestation{}
-		observed.Observation = llm.ProviderIdentityObservation{}
-		return queue.StationDiscoveryFailureEvidenceRejected, observed, nil
-	}
-	expected, err := llm.DeriveExactProviderIdentityExpectation(observed.Evidence, selection)
-	if err != nil {
-		return "", llm.ObservedProviderIdentity{}, fmt.Errorf(
-			"provider discovery error is not proven by its bounded evidence: %w", err,
+func (s *Service) executeExactPortableStationCorrection(
+	ctx context.Context,
+	authority model.StepAttemptAuthority,
+	job assemblyline.PortableJob,
+	modelName string,
+	previous exactStationExecution,
+	correction assemblyline.SourceBodyCorrection,
+) (assemblyline.PortableResult, exactStationExecution, error) {
+	if ctx == nil || s == nil || s.repo == nil {
+		return assemblyline.PortableResult{}, exactStationExecution{}, fmt.Errorf(
+			"exact station correction requires context, worker, and PostgreSQL authority",
 		)
 	}
-	validationErr := observed.ValidateFor(llm.ProviderIdentityObservationRequest{
-		Expectation: expected, ChallengeSHA256: challenge,
-	})
-	if validationErr != nil {
-		return queue.StationDiscoveryFailureObservationRejected, observed, nil
+	if err := ctx.Err(); err != nil {
+		return assemblyline.PortableResult{}, exactStationExecution{}, err
 	}
-	return queue.StationDiscoveryFailureProviderRejected, observed, nil
+	if nilWorkerTransport(s.stationClient) {
+		return assemblyline.PortableResult{}, exactStationExecution{}, fmt.Errorf(
+			"exact station generation provider is not configured",
+		)
+	}
+	if previous.CallEvidenceID < 1 || previous.WorkID != job.ID ||
+		previous.WorkKind != job.Kind || previous.Model != modelName || previous.Iteration < 1 ||
+		previous.Iteration >= assemblyline.MaxSourceBodyAttempts {
+		return assemblyline.PortableResult{}, exactStationExecution{}, fmt.Errorf(
+			"exact station correction differs from its persisted job or model context",
+		)
+	}
+	if err := correction.Validate(); err != nil {
+		return assemblyline.PortableResult{}, exactStationExecution{}, err
+	}
+	correctionEvidence, err := correction.Evidence()
+	if err != nil {
+		return assemblyline.PortableResult{}, exactStationExecution{}, err
+	}
+	if previous.SourceState == "" || correctionEvidence.BaseCandidate != previous.SourceState {
+		return assemblyline.PortableResult{}, exactStationExecution{}, fmt.Errorf(
+			"exact station correction differs from its code-owned current source state",
+		)
+	}
+	persisted, found, err := s.repo.LatestReusableLLMCallEvidence(
+		ctx, authority, job.ID,
+	)
+	if err != nil {
+		return assemblyline.PortableResult{}, exactStationExecution{}, err
+	}
+	if !found || persisted.ID != previous.CallEvidenceID {
+		return assemblyline.PortableResult{}, exactStationExecution{}, fmt.Errorf(
+			"exact station correction parent is not the latest reusable persisted response",
+		)
+	}
+	if persisted.JobID != authority.JobID || persisted.Generation != authority.Generation ||
+		persisted.StepID != authority.StepID || persisted.WorkID != job.ID ||
+		persisted.WorkKind != string(job.Kind) || persisted.Iteration != previous.Iteration ||
+		persisted.Model != modelName || persisted.RequestedModel != modelName ||
+		persisted.Protocol != string(llm.ExactPreparedProtocolPlainCompletionV4) ||
+		persisted.Candidate != previous.Candidate ||
+		persisted.Status != queue.LLMCallSucceeded || persisted.Outcome == nil ||
+		persisted.Outcome.Status != queue.LLMCallRejected {
+		return assemblyline.PortableResult{}, exactStationExecution{}, fmt.Errorf(
+			"exact station correction is not bound to one rejected persisted job/model response",
+		)
+	}
+	prompt, err := correction.ModelInput()
+	if err != nil {
+		return assemblyline.PortableResult{}, exactStationExecution{}, err
+	}
+	contextTokens := persisted.ContextTokens
+	if err := llm.ValidateExactPreparedContextTokens(contextTokens); err != nil {
+		return assemblyline.PortableResult{}, exactStationExecution{}, fmt.Errorf(
+			"persisted exact station model context is invalid: %w", err,
+		)
+	}
+	opaqueResponseBytes, opaqueCorrection, err := correction.OpaqueResponseMaximumBytes()
+	if err != nil {
+		return assemblyline.PortableResult{}, exactStationExecution{}, err
+	}
+	maxOutputTokens, err := queue.ExpectedSourceBodyCorrectionMaxOutputTokens(
+		opaqueResponseBytes, opaqueCorrection, contextTokens,
+	)
+	if err != nil {
+		return assemblyline.PortableResult{}, exactStationExecution{}, err
+	}
+	call := exactStationCall{
+		WorkID: job.ID, WorkKind: job.Kind, Iteration: previous.Iteration + 1,
+		ParentCallID: previous.CallEvidenceID, Prompt: prompt,
+		ContextTokens: contextTokens, MaxOutputTokens: maxOutputTokens,
+		SingleLine:       opaqueCorrection,
+		SourceCorrection: &correctionEvidence,
+	}
+	prepared, err := prepareExactStationCall(call, modelName, nil)
+	if err != nil {
+		return assemblyline.PortableResult{}, exactStationExecution{}, err
+	}
+	return s.dispatchExactStationCall(ctx, authority, call, prepared)
 }

@@ -87,9 +87,9 @@ func uiFindDataSource(items []queue.DataSourceRecord, id string) (queue.DataSour
 }
 
 func renderUIDataSourcesPanel(items []queue.DataSourceRecord, selected queue.DataSourceRecord, hasSelected bool, editing queue.DataSourceRecord, isEditing bool, offset int, hasMore bool) string {
-	return uiAdminSection("Configured sources", "Read-only PostgreSQL connections for bounded SQL queries.", renderUIDataSourceList(items, selected.ID, offset, hasMore)) +
+	return uiAdminSection("Configured sources", "PostgreSQL connections for schema inspection.", renderUIDataSourceList(items, selected.ID, offset, hasMore)) +
 		uiAdminSection(map[bool]string{true: "Edit data source", false: "Add data source"}[isEditing], "Credentials remain server-authoritative and are never returned to the browser.", renderUIDataSourceForm(editing, isEditing)) +
-		uiAdminSection("Query explorer", "Inspect schema and run validated read-only SQL.", renderUIDataSourceExplorer(selected, hasSelected))
+		uiAdminSection("Schema explorer", "Inspect the selected PostgreSQL schema.", renderUIDataSourceExplorer(selected, hasSelected))
 }
 
 func renderUIDataSourceList(items []queue.DataSourceRecord, selectedID string, offset int, hasMore bool) string {
@@ -200,8 +200,6 @@ func renderUIDataSourceExplorer(source queue.DataSourceRecord, exists bool) stri
 	if source.ExecutionMode == "delegated" {
 		return `<p class="text-sm text-zinc-400">Delegated sources expose schema and bounded evidence only inside a turn carrying a current host-issued authority id.</p>`
 	}
-	return `<div class="space-y-4"><div class="flex flex-wrap items-center justify-between gap-2"><div><h4 class="text-sm font-semibold text-zinc-200">` + uiEscape(source.Name) + `</h4><p class="text-xs text-zinc-500">Read-only · maximum 500 rows</p></div><button type="button" data-action="admin-data-sources#loadDataSourceSchema" data-source-id="` + uiAttribute(source.ID) + `" class="rounded-md border border-white/10 px-3 py-1.5 text-xs">Load schema</button></div>` +
-		`<div data-recyclr-sink="data-source-schema" class="scrollbar max-h-[280px] overflow-y-auto"><p class="text-sm text-zinc-500">Load schema to browse tables.</p></div>` +
-		`<div><textarea data-ds-field="sql" rows="5" placeholder="SELECT * FROM my_table LIMIT 20" class="w-full rounded-md border border-white/10 bg-zinc-900 px-3 py-2 font-mono text-xs"></textarea><button type="button" data-action="admin-data-sources#runDataSourceQuery" data-source-id="` + uiAttribute(source.ID) + `" class="mt-2 rounded-md bg-cyan-300 px-3 py-1.5 text-xs font-semibold text-zinc-950">Run query</button></div>` +
-		`<div data-recyclr-sink="data-source-query-result"><p class="text-sm text-zinc-500">Run a query to see results.</p></div></div>`
+	return `<div class="space-y-4"><div class="flex flex-wrap items-center justify-between gap-2"><div><h4 class="text-sm font-semibold text-zinc-200">` + uiEscape(source.Name) + `</h4><p class="text-xs text-zinc-500">Read-only schema authority</p></div><button type="button" data-action="admin-data-sources#loadDataSourceSchema" data-source-id="` + uiAttribute(source.ID) + `" class="rounded-md border border-white/10 px-3 py-1.5 text-xs">Load schema</button></div>` +
+		`<div data-recyclr-sink="data-source-schema" class="scrollbar max-h-[280px] overflow-y-auto"><p class="text-sm text-zinc-500">Load schema to browse tables.</p></div></div>`
 }

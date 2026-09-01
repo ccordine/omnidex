@@ -1,6 +1,10 @@
 package worker
 
-import "github.com/gryph/omnidex/internal/assemblyline"
+import (
+	"fmt"
+
+	"github.com/gryph/omnidex/internal/assemblyline"
+)
 
 func classifyArtifactHandling(
 	runtime typedWorkerRuntime,
@@ -20,7 +24,6 @@ func classifyArtifactHandling(
 			func(raw string) (assemblyline.ArtifactHandlingDecision, error) {
 				return assemblyline.DecodeArtifactHandlingDecision(input, raw)
 			},
-			func(value assemblyline.ArtifactHandlingDecision) error { return value.Validate(identity.Token) },
 		)
 		if err != nil {
 			return nil, err
@@ -43,4 +46,31 @@ func classifyArtifactHandling(
 		})
 	}
 	return artifacts, nil
+}
+
+// sieveDirectCodingApplicationArtifactDirectives keeps only artifact state
+// that has a current consumer. The active compiler consumes only exact
+// preservation. Other classifications remain local intake results and cannot
+// become a later veto merely because no current adapter consumes them.
+func sieveDirectCodingApplicationArtifactDirectives(
+	directives []assemblyline.ArtifactDirective,
+) ([]assemblyline.ArtifactDirective, error) {
+	retained := make([]assemblyline.ArtifactDirective, 0, len(directives))
+	for index, directive := range directives {
+		switch directive.Disposition {
+		case assemblyline.ArtifactReference,
+			assemblyline.ArtifactAbsenceCandidate:
+			continue
+		case assemblyline.ArtifactProtect,
+			assemblyline.ArtifactRequire,
+			assemblyline.ArtifactForbid:
+			retained = append(retained, directive)
+		default:
+			return nil, fmt.Errorf(
+				"application artifact directive %d has unsupported disposition %q",
+				index, directive.Disposition,
+			)
+		}
+	}
+	return retained, nil
 }
